@@ -53,7 +53,7 @@ variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
 /-- Blocks stay inside their region: `q·nc + c < Q·nc`. Public because it is the bound
 `streamPos` carries, and downstream layers (the knowledge-soundness game) index the run's
 flat commitment stream through it rather than re-deriving the arithmetic. -/
-theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
+private theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
     q * nc + c < Q * nc := by
   calc q * nc + c < (q + 1) * nc := by rw [Nat.succ_mul]; omega
     _ ≤ Q * nc := Nat.mul_le_mul_right nc hq
@@ -705,7 +705,7 @@ reads and the key's `comms` view — is the flat stream's commitment at the row'
 position. The layout bridge `hbound₀` consumes. Public because it is the flattening
 identity the downstream layer needs in order to read the run's own commitment stream as
 the abstract batch; `commitmentFn_streamPos` is its restatement at the run's input. -/
-theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
+private theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
     batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
         (fun c => cp.zComm[c])
         (fun c => (publicCommitment C σ cvk pub)[c])
@@ -902,7 +902,7 @@ Alias of `Capstone/Algebraic.commitPolyChunk_eq_commit`, which iter 005 promoted
 it — every in-file use now goes straight to the export — so the NAME survives ONLY for the
 four call sites in `Verifier/KnowledgeSoundness.lean`. When those move, deleting these two
 lines is the whole retirement. -/
-theorem commitPolyChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
+private theorem commitPolyChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
     [Module F G] (σ : SRS G) (p : Polynomial F) (c : ℕ) :
     commitPolyChunk σ p c = commit σ (chunkCoeffs (2 ^ σ.k) p c) 0 :=
   commitPolyChunk_eq_commit σ p c
@@ -963,7 +963,7 @@ new is assumed, only a parameter is exposed. -/
 /-- The public evaluation chunk vectors at a handed-in `ζ`: `runPubEvals`'s body, with the
 three derived powers (`ζω`, `ζⁿ`, `(ζω)ⁿ`) recomputed from the parameter exactly as the
 verifier does. -/
-def runPubEvalsAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private def runPubEvalsAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (zeta : C.ScalarField) :
     Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc) :=
   publicEvalChunks cp cvk.n cvk.omega zeta (zeta * cvk.omega)
@@ -971,7 +971,7 @@ def runPubEvalsAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
 
 /-- The computed `ft(ζ)` claim at handed-in challenges — `runFtEval0`'s body with the four
 fq-side squeezes as parameters. -/
-def runFtEval0At (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private def runFtEval0At (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta : C.ScalarField) : C.ScalarField :=
   ftEval0 cvk.n cvk.zkRows cvk.omega (fun i => cvk.shifts[i]) cvk.endo
@@ -982,14 +982,14 @@ def runFtEval0At (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
 /-- The permutation scalar (the `f_comm` coefficient) at handed-in challenges —
 `runPScalar`'s body with the four fq-side squeezes as parameters. It does not read the
 public input: the sponge did, only to produce the challenges. -/
-def runPScalarAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private def runPScalarAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (beta gamma alpha zeta : C.ScalarField) : C.ScalarField :=
   permScalar beta gamma alpha (zkpmEval cvk.n cvk.zkRows cvk.omega zeta)
     (cp.linEvals (powPow2 zeta σ.k) (powPow2 (zeta * cvk.omega) σ.k))
 
 /-- The constructed `ft` commitment at handed-in challenges — `runFtComm`'s DOUBLE collapse
 at `ζ^{2^σ.k}` with the four fq-side squeezes as parameters. -/
-def runFtCommAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private def runFtCommAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (beta gamma alpha zeta : C.ScalarField) : C.Point :=
   Ipa.combineCommitments C (powPow2 zeta σ.k)
       (cvk.sigmaComm[6].map
@@ -999,7 +999,7 @@ def runFtCommAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
 
 /-- The flat segment stream at handed-in challenges — `runStreamP`'s triple append with the
 public block at the handed-in `ζ` and the `ft` slot rebuilt from the parameters. -/
-def runStreamAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private def runStreamAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta : C.ScalarField) :
     Vector (C.Point × C.ScalarField × C.ScalarField) (nc + 1 + tailRowCount * nc) :=
@@ -1015,7 +1015,7 @@ def runStreamAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
 input the verifier assembles when the six pre-IPA challenges are supplied rather than
 squeezed. This is the claim the knowledge-soundness game's win event checks; its body is
 `runInputP`'s with every sponge read replaced by a parameter. -/
-def runInputAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private def runInputAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) :
     Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts where
@@ -1029,7 +1029,7 @@ def runInputAt (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
 
 /-- At the run's own sponge outputs the challenge-generic claim IS the deployed one —
 definitionally: the `At` functions are the deployed bodies with the squeezes exposed. -/
-theorem runInputAt_eq_runInput (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private theorem runInputAt_eq_runInput (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     runInputAt C σ cvk cp pub (runOracles C σ cvk cp pub).beta
         (runOracles C σ cvk cp pub).gamma (runOracles C σ cvk cp pub).alpha
@@ -1053,7 +1053,7 @@ private theorem runStreamAt_read_eq {C : Ipa.CommitmentCurve} (σ : SRS C.Point)
 column reads, at the stream position of abstract batch row `i` and chunk `c`, exactly the
 abstract batch's own entry there. `commitmentFn_streamPos` with the six challenges as
 parameters. -/
-theorem commitmentFn_streamPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem commitmentFn_streamPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) (i : Fin batchRows) (c : Fin nc) :
     (runInputAt C σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
@@ -1069,7 +1069,7 @@ theorem commitmentFn_streamPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {n
 /-- **The `ft` row's commitment at its own flat position**, challenge-generically: the
 challenge-generic claim carries at flat position `nc` the constructed `ft` commitment
 `runFtCommAt`. `commitmentFn_ftPos` with the challenges as parameters. -/
-theorem commitmentFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem commitmentFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField)
     (hsz : (nc : ℕ) < nc + 1 + tailRowCount * nc) :
@@ -1082,7 +1082,7 @@ theorem commitmentFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : 
 /-- **The `ft` row's claimed evaluation at its own flat position**, challenge-generically:
 the claimed evaluation at flat position `nc` and the zeroth evaluation point is the computed
 `ft` claim `runFtEval0At`. `evalFn_ftPos` with the challenges as parameters. -/
-theorem evalFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem evalFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField)
     (hsz : (nc : ℕ) < nc + 1 + tailRowCount * nc) :
@@ -1100,7 +1100,7 @@ theorem evalFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
 
 /-- The two evaluation points of the challenge-generic claim, in the shape the openings seam
 consumes: the handed-in `ζ` and `ω·ζ` at the corresponded root of unity. -/
-theorem pointFn_runInputAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem pointFn_runInputAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ}
     {idx : Index C.ScalarField n} (homega : cvk.omega = idx.omega) :
@@ -1128,7 +1128,7 @@ exactly that bound, so a consumer whose win event is `kimchiVerifyWith` has it i
 /-- **The σ rows of the challenge-generic claim**: under the key–index correspondence the
 claim carries, at the stream position of the `i`-th σ row and chunk `c`, the unblinded chunk
 commitment of the circuit's own `sigmaPermCol i` permutation polynomial. -/
-theorem commitmentFn_streamPosAt_sRow_eq_commit {C : Ipa.CommitmentCurve}
+private theorem commitmentFn_streamPosAt_sRow_eq_commit {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
@@ -1143,7 +1143,7 @@ theorem commitmentFn_streamPosAt_sRow_eq_commit {C : Ipa.CommitmentCurve}
 
 /-- **The coefficient rows of the challenge-generic claim**: the unblinded chunk commitment
 of the circuit's own `cc`-th coefficient interpolant. -/
-theorem commitmentFn_streamPosAt_cRow_eq_commit {C : Ipa.CommitmentCurve}
+private theorem commitmentFn_streamPosAt_cRow_eq_commit {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
@@ -1158,7 +1158,7 @@ theorem commitmentFn_streamPosAt_cRow_eq_commit {C : Ipa.CommitmentCurve}
 
 /-- **The selector rows of the challenge-generic claim**: the MASKED chunk commitment (fixed
 unit blinder, `mask_custom`) of the circuit's own `selGate jj` selector interpolant. -/
-theorem commitmentFn_streamPosAt_selRow_eq_commit {C : Ipa.CommitmentCurve}
+private theorem commitmentFn_streamPosAt_selRow_eq_commit {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
@@ -1176,7 +1176,7 @@ NEGATED public interpolant. Unlike the other three families the public row is no
 entry — it is recomputed by the verifier from the key's Lagrange basis — so this case
 additionally needs the Lagrange-basis size bound (the challenge-generic verifier's own size
 guard), the public-input arity, and the `.val`-scalar collapse. -/
-theorem commitmentFn_streamPosAt_pubRow_eq_commit {C : Ipa.CommitmentCurve}
+private theorem commitmentFn_streamPosAt_pubRow_eq_commit {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) {n : ℕ} [NeZero n]
@@ -1270,7 +1270,7 @@ extracted table `runWTab` do NOT mention the challenges — they are read off th
 representations at the layout positions `streamPos` — so the exclusion sets and the
 satisfying table are literally the same objects in both predicates; only the six guard
 hypotheses move from the sponge's outputs to the parameters. -/
-def RunGuardImpAt {C : Ipa.CommitmentCurve}
+private def RunGuardImpAt {C : Ipa.CommitmentCurve}
     (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
     (beta gamma alpha zeta : C.ScalarField)
@@ -1498,7 +1498,7 @@ slack and no rounding.
 
 Project-local: the budget is the endpoint's fourth summand, and this is where the sets it
 prices are actually defined. -/
-theorem runBadCard_sum_le {C : Ipa.CommitmentCurve}
+private theorem runBadCard_sum_le {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
@@ -1539,7 +1539,7 @@ boundary points.
 Project-local: classical and short, but it belongs beside `RunGuardImpAt`, and it keeps the
 `by_contra` out of the game file — the same reasoning that put `badChallenge_of_not_pins`
 beside `eval_pins_of_opening_of_eq`. -/
-theorem guard_fails_of_not_satisfies {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem guard_fails_of_not_satisfies {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
     (beta gamma alpha zeta : C.ScalarField)
@@ -1576,7 +1576,7 @@ applies verbatim — no arithmetic is re-derived here.
 
 Project-local: it is the single call the game's algebraic summand makes, replacing the
 by-hand case split it would otherwise carry. -/
-theorem run_sound_algebraic_at_of_opening {C : Ipa.CommitmentCurve}
+private theorem run_sound_algebraic_at_of_opening {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
@@ -1653,7 +1653,7 @@ sets.
 Nothing here is assumed: `runBounds_of_chunking` supplies the cardinality bounds
 unconditionally, and each disjunct is a set whose cardinality this layer bounds
 (`runBounds_zeta_at_assembly`, `card_badXiOf_le`, `card_badROf_le`). -/
-theorem run_badChallenge_of_not_satisfies_at {C : Ipa.CommitmentCurve}
+private theorem run_badChallenge_of_not_satisfies_at {C : Ipa.CommitmentCurve}
     [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (pub : Array C.ScalarField) {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
@@ -1762,7 +1762,7 @@ whole content is the congruence of `assembledRow` in its coefficient argument.
 Project-local: the knowledge-soundness game's adaptive Schwartz–Zippel charge must exhibit its
 exclusion sets as functions of a transcript node, and the fq-side sets are functions of
 `runW`. -/
-theorem runW_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem runW_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
     (h : ∀ (col : Fin wCols) (c : Fin nc),
@@ -1775,7 +1775,7 @@ theorem runW_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
 single accumulator-row stream position. Same two-proof statement, same proof.
 
 Project-local: the `α`/`ζ` exclusion sets are functions of `runZ`. -/
-theorem runZ_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem runZ_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
     (h : ∀ c : Fin nc,
@@ -1789,7 +1789,7 @@ corollary of `runW_congr`, since `runWTab` is `extractTable idx.omega` of `runW`
 
 Project-local: the satisfaction predicate the game's arm (4) contradicts is stated at
 `runWTab`, so the agreement law has to reach the table, not only the columns. -/
-theorem runWTab_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
+private theorem runWTab_congr {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp cp' : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     {n : ℕ} (idx : Index C.ScalarField n)
     (aRef aRef' : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
@@ -1810,7 +1810,7 @@ consumer never has to transport a `Fin` along the count equality.
 
 Project-local: the `ζ` exclusion set is taken at `ftChunkAssembly σ.k cp.tComm.size aT`, whose
 chunk count is adversary-chosen, so node-determinacy of that set needs exactly this. -/
-theorem ftChunkAssembly_congr {F : Type*} [Field F] (k : ℕ) {nt nt' : ℕ} (hnt : nt = nt')
+private theorem ftChunkAssembly_congr {F : Type*} [Field F] (k : ℕ) {nt nt' : ℕ} (hnt : nt = nt')
     (aT : Fin nt → Fin (2 ^ k) → F) (aT' : Fin nt' → Fin (2 ^ k) → F)
     (h : ∀ (j : Fin nt) (j' : Fin nt'), (j : ℕ) = (j' : ℕ) → aT j = aT' j') :
     ftChunkAssembly k nt aT = ftChunkAssembly k nt' aT' := by
@@ -1847,7 +1847,8 @@ Project-local: the arm-(4) exclusion sets take their evaluation points and claim
 from `(runInputAt …).pointFn` / `.evalFn`, and the game states them at the run's own
 `KimchiFamily.runSrs`, whose `U` is a function of the whole run. This is what lets those
 arguments be recognised as the base-free ones. -/
-theorem runInputAt_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+private theorem runInputAt_setBase
+    {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v w : C.ScalarField) :
     runInputAt C { σ with U := u } cvk cp pub beta gamma alpha zeta v w
@@ -1859,20 +1860,20 @@ through the chunk width `2 ^ σ.k`. Definitional.
 Project-local: the four fq-side exclusion sets are functions of `runW`/`runZ`, and the game
 names them at `KimchiFamily.runSrs basis O`, which differs between two runs even when they
 agree at the node the charge is levied at. -/
-theorem runW_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+private theorem runW_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
     runW { σ with U := u } cvk cp pub aRef = runW σ cvk cp pub aRef := rfl
 
 /-- **The assembled accumulator does not read the IPA base** — `runW_setBase` at `runZ`. -/
-theorem runZ_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+private theorem runZ_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :
     runZ { σ with U := u } cvk cp pub aRef = runZ σ cvk cp pub aRef := rfl
 
 /-- **The assembled witness table does not read the IPA base** — `runW_setBase` read through
 `extractTable`. This is the form the game's satisfaction conjunct needs. -/
-theorem runWTab_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
+private theorem runWTab_setBase {C : Ipa.CommitmentCurve} (σ : SRS C.Point) (u : C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     {n : ℕ} (idx : Index C.ScalarField n)
     (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField) :

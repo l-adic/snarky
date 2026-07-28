@@ -155,7 +155,7 @@ squeezing `c`. -/
 
 /-- **Acceptance without knowledge, when `δ` may depend on `c`.** The reason the ordering
 hypothesis below is not optional. -/
-theorem verifierAcceptsAt_of_deferred_delta (σ : SRS G) (b0 v : F) (P : G) (u : Fin σ.k → F)
+private theorem verifierAcceptsAt_of_deferred_delta (σ : SRS G) (b0 v : F) (P : G) (u : Fin σ.k → F)
     (c : F) :
     VerifierAcceptsAt σ
       ({ lr := fun _ => (0, 0), delta := -(c • recombine σ P v u (fun _ => (0, 0))),
@@ -267,7 +267,7 @@ inductive PreservedUpdateChain [DecidableEq T] {N : ℕ} (A : Zcash.Snark.Oracle
       PreservedUpdateChain A prefixes O (Function.update O' (prefixes (A.run O') j) u)
 
 /-- Chains compose. -/
-theorem PreservedUpdateChain.trans [DecidableEq T] {N : ℕ}
+private theorem PreservedUpdateChain.trans [DecidableEq T] {N : ℕ}
     {A : Zcash.Snark.OracleComp T Pre Pf} {prefixes : Pf → Fin N → T} {O₁ O₂ O₃ : T → Pre}
     (h₁ : PreservedUpdateChain A prefixes O₁ O₂)
     (h₂ : PreservedUpdateChain A prefixes O₂ O₃) :
@@ -283,7 +283,7 @@ claim, to every run a certificate records.
 
 The proof is an induction on the chain with no probabilistic content whatsoever: the whole of the
 work is that the chain's ``preserved node'' clause is literally the antecedent of `ClaimStable`. -/
-theorem claim_eq_of_runSuffix_of_stable [DecidableEq T] {N : ℕ}
+private theorem claim_eq_of_runSuffix_of_stable [DecidableEq T] {N : ℕ}
     {A : Zcash.Snark.OracleComp T Pre Pf} {prefixes : Pf → Fin N → T}
     {κ : Pf → (T → Pre) → ClaimData} (hstable : ClaimStable A prefixes κ)
     {O O' : T → Pre} (hchain : PreservedUpdateChain A prefixes O O') :
@@ -295,7 +295,7 @@ theorem claim_eq_of_runSuffix_of_stable [DecidableEq T] {N : ℕ}
 /-- **The fixed-claim game is the trivially stable instance.** A constant claim map is stable, so
 nothing is lost by stating the game over a stable claim map: the present `kimchiExtract`
 statements are recovered at `κ := fun _ _ => c`. -/
-theorem claimStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.OracleComp T Pre Pf)
+private theorem claimStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.OracleComp T Pre Pf)
     (prefixes : Pf → Fin N → T) (c : ClaimData) :
     ClaimStable A prefixes (fun _ _ => c) := fun _ _ _ _ => rfl
 
@@ -313,7 +313,7 @@ make the `_of_runRep` corollaries underivable from it.
 
 `uBase` is taken on the whole claim rather than on a distinguished component: a consumer whose
 base is a function of the claimed *value* alone passes `fun c => uBase c.2.1`. -/
-theorem baseStable_of_claimStable [DecidableEq T] {N : ℕ}
+private theorem baseStable_of_claimStable [DecidableEq T] {N : ℕ}
     {A : Zcash.Snark.OracleComp T Pre Pf} {prefixes : Pf → Fin N → T}
     {κ : Pf → (T → Pre) → ClaimData} (hstable : ClaimStable A prefixes κ)
     {uOf : Pf → (T → Pre) → G} (uBase : ClaimData → G)
@@ -326,7 +326,7 @@ theorem baseStable_of_claimStable [DecidableEq T] {N : ℕ}
 both sides of the conclusion are the same `U`, so nothing has to be checked. This is what recovers
 the fixed-base adaptive-claim bound from the varying-base one at `uOf := fun _ _ => σ.U`, the way
 `claimStable_const` recovers the fixed-claim statements. -/
-theorem baseStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.OracleComp T Pre Pf)
+private theorem baseStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.OracleComp T Pre Pf)
     (prefixes : Pf → Fin N → T) (U : G) :
     BaseStable A prefixes (fun _ _ => U) := fun _ _ _ _ => rfl
 
@@ -379,7 +379,7 @@ run is `Wins` at the *root* claim, whereas the adaptive game asks that run to wi
 claim, and stability identifies the two on precisely the tables the fork reaches. What does not
 survive the instantiation is the escape set, which would become table-dependent — that is the
 remaining obstruction, and it lives in `kimchiForkEscapeSet`, not here. -/
-theorem winsAt_iff_wins_of_stable [DecidableEq T] (σ : SRS G) (expand : Pre → F)
+private theorem winsAt_iff_wins_of_stable [DecidableEq T] (σ : SRS G) (expand : Pre → F)
     {A : Zcash.Snark.OracleComp T Pre Pf} {proofOf : Pf → OpeningProof F G σ.k}
     {prefixes : Pf → Fin (σ.k + 1) → T}
     {κ : Pf → (T → Pre) → (Fin (2 ^ σ.k) → F) × F × G}
@@ -729,7 +729,7 @@ private theorem scanFork_other_good_mem_rest {α : Type*} [DecidableEq F] (expan
 pairwise distinct *images* whose attempts all succeed. Superseded by `Zcash.Snark.ThreeForkSuccess`
 at `Pre`, which the escape set and the scan both use now; this copy dropped ironwood's zero clause
 and so cannot price the `q = 0` branch that `nextForkChallenge` skips. Nothing depends on it. -/
-def PreThreeForkSuccess (expand : Pre → F) (good : Pre → Prop) : Prop :=
+private def PreThreeForkSuccess (expand : Pre → F) (good : Pre → Prop) : Prop :=
   ∃ q₁ q₂ q₃, expand q₁ ≠ expand q₂ ∧ expand q₁ ≠ expand q₃ ∧ expand q₂ ≠ expand q₃ ∧
     good q₁ ∧ good q₂ ∧ good q₃
 
@@ -737,14 +737,14 @@ open Classical in
 /-- **RETIRED — the local escape set over `Pre`** (`def:pre_escape`), ironwood's
 `recursiveForkEscape` with the zero clause dropped. `kimchiForkEscapeSet` uses
 `Zcash.Snark.recursiveForkEscape` directly; nothing depends on this copy. -/
-noncomputable def preForkEscape (expand : Pre → F) (good : Pre → Prop) : Set Pre :=
+private noncomputable def preForkEscape (expand : Pre → F) (good : Pre → Prop) : Set Pre :=
   if PreThreeForkSuccess expand good then ∅ else {q | good q}
 
 omit [Field F] in
 /-- **The escape set fits in three points** (`lem:pre_escape_subset_triple`). This is where
 injectivity of `expand` earns its place in the statement: without it many prechallenges could
 share one field image, three-fork success could fail, and the set would not be small. -/
-theorem preForkEscape_subset_triple [Nonempty Pre] (expand : Pre → F)
+private theorem preForkEscape_subset_triple [Nonempty Pre] (expand : Pre → F)
     (hinj : Function.Injective expand) (good : Pre → Prop) :
     ∃ x a b : Pre, preForkEscape expand good ⊆ {x, a, b} := by
   classical
@@ -927,7 +927,7 @@ the set is the local escape set of that round's success predicate.
 Ironwood's outer guard `roundOf t < k` is subsumed here by the depth guard
 `roundOf t + node.depth = σ.k`, which already forces `roundOf t ≤ σ.k`; the two definitions
 therefore denote the same set. -/
-noncomputable def kimchiForkEscapeSet [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private noncomputable def kimchiForkEscapeSet [DecidableEq F] [DecidableEq G] [DecidableEq T]
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
@@ -945,7 +945,7 @@ noncomputable def kimchiForkEscapeSet [DecidableEq F] [DecidableEq G] [Decidable
 
 /-- **The escape set is blind at its own point** (`lem:escape_blind`) — the `hblind` hypothesis of
 the imported measure lemma, and the only place `PrefixDecode` is used in this subsection. -/
-theorem kimchiForkEscapeSet_blind [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSet_blind [DecidableEq F] [DecidableEq G] [DecidableEq T]
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
@@ -980,7 +980,7 @@ ironwood's own, smallness comes from `recursiveForkEscape_subset_triple` — who
 `0` and the at most two successful challenges — so injectivity of `expand` is **not** used. The
 binder is kept (as `_hexp_inj`) because the call site in `kimchiExtract_failure_measure_le` is
 positional. -/
-theorem kimchiForkEscapeSet_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSet_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
     (_hexp_inj : Function.Injective expand)
@@ -1008,7 +1008,7 @@ theorem kimchiForkEscapeSet_measure_le [DecidableEq F] [DecidableEq G] [Decidabl
 /-- **At a real round prefix the escape set is the local one** (`lem:escape_prefix`): the path of
 the definition is the run's own first `m` answers, so reachedness rewrites `nodeAt` to the current
 tape node and the depth guard holds by arithmetic. -/
-theorem kimchiForkEscapeSet_prefix [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSet_prefix [DecidableEq F] [DecidableEq G] [DecidableEq T]
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
     (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
@@ -1259,7 +1259,7 @@ section ProverOfProof
 /-- **A proof as a constant strategy** (`def:prover_of_proof`): at each round emit the proof's own
 cross-terms and continue, ignoring the challenge, on the tail of the proof; at the leaf emit
 `(sg, δ)` and answer every Schnorr challenge with `(z1, z2)`. -/
-def proverOfProof : {d : ℕ} → OpeningProof F G d → KimchiProver F G d
+private def proverOfProof : {d : ℕ} → OpeningProof F G d → KimchiProver F G d
   | 0, π => .leaf π.sg π.delta fun _ => (π.z1, π.z2)
   | _ + 1, π =>
       .node (π.lr 0).1 (π.lr 0).2 fun _ =>
@@ -1287,14 +1287,14 @@ private theorem leafAt_proverOfProof : {d : ℕ} → (π : OpeningProof F G d) �
 
 omit [Field F] [AddCommGroup G] [Module F G] in
 /-- **The constant strategy reassembles the proof** (`lem:proof_at_of_proof`). -/
-theorem proofAt_proverOfProof {d : ℕ} (π : OpeningProof F G d) (χ : Fin (d + 1) → F) :
+private theorem proofAt_proverOfProof {d : ℕ} (π : OpeningProof F G d) (χ : Fin (d + 1) → F) :
     (proverOfProof π).proofAt χ = π := by
   rw [KimchiProver.proofAt, lrAt_proverOfProof, leafAt_proverOfProof]
 
 /-- **Flat equals folded, for a raw proof** (`lem:flat_folded_bridge`): the wire verifier's
 acceptance of `π` at `(u, c)` is the folded acceptance of `proverOfProof π` at `Fin.snoc u c`.
 This is the whole of the flat↔folded bridge that the realization argument needs. -/
-theorem verifierAcceptsAt_iff_proverOfProof_accept (σ : SRS G) (π : OpeningProof F G σ.k)
+private theorem verifierAcceptsAt_iff_proverOfProof_accept (σ : SRS G) (π : OpeningProof F G σ.k)
     (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (u : Fin σ.k → F) (c : F) :
     VerifierAcceptsAt σ π P (innerProduct (bPolyCoefficients u) b) v c u ↔
       kimchiProverAccept (proverOfProof π) σ.g b σ.U σ.h v P (Fin.snoc u c) := by
@@ -1338,7 +1338,7 @@ the root table `Oroot` by a `PreservedUpdateChain`. Acceptance is still tested a
 `claim_eq_of_runSuffix_of_stable`, so that a *stable* claim map can be shown constant along every
 run the certificate records (`winsAt_of_kimchiRunSuffix`). At the top level `Oroot` is the
 table the extractor was called at, and the chain there is `PreservedUpdateChain.refl`. -/
-def KimchiRunSuffix [DecidableEq T] (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
+private def KimchiRunSuffix [DecidableEq T] (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
     (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf) (proofOf : Pf → OpeningProof F G σ.k)
     (prefixes : Pf → Fin (σ.k + 1) → T) (Oroot : T → Pre) (m e : ℕ) (hme : m + e = σ.k)
@@ -1363,7 +1363,7 @@ fork performs on rewound runs *is* the adaptive one.
 This is the payoff of carrying `PreservedUpdateChain` in `KimchiRunSuffix`: the chain is the only
 thing that relates a recorded run's table to the root's, and it is available nowhere else — the
 existential over `O` in the run relation is otherwise unconstrained. -/
-theorem winsAt_of_kimchiRunSuffix [DecidableEq T] {σ : SRS G} {expand : Pre → F}
+private theorem winsAt_of_kimchiRunSuffix [DecidableEq T] {σ : SRS G} {expand : Pre → F}
     {A : Zcash.Snark.OracleComp T Pre Pf} {proofOf : Pf → OpeningProof F G σ.k}
     {prefixes : Pf → Fin (σ.k + 1) → T}
     {κ : Pf → (T → Pre) → (Fin (2 ^ σ.k) → F) × F × G}
@@ -1869,7 +1869,7 @@ predicate replaced by the adaptive one. Note that no claim appears in the signat
 function of `κ` alone, so it is a legitimate `esc : T → (T → Pre) → Set Pre` for
 `escapesDuringC_measure_le'`, which the naive "claim read at the outer table" formulation is
 not. -/
-noncomputable def kimchiForkEscapeSetAt [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private noncomputable def kimchiForkEscapeSetAt [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -1890,7 +1890,7 @@ noncomputable def kimchiForkEscapeSetAt [DecidableEq F] [DecidableEq G] [Decidab
 /-- **The adaptive escape set is blind at its own point** — and, as the section preamble records,
 this is provable with *no* stability hypothesis precisely because `kimchiForkGoodAt` reads the
 claim at the reprogrammed table. -/
-theorem kimchiForkEscapeSetAt_blind [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSetAt_blind [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -1924,7 +1924,7 @@ theorem kimchiForkEscapeSetAt_blind [DecidableEq F] [DecidableEq G] [DecidableEq
 /-- **Each adaptive escape set has measure at most `3 / |Pre|`** — verbatim the fixed-claim
 argument, since `recursiveForkEscape_subset_triple` is a statement about an arbitrary
 predicate. -/
-theorem kimchiForkEscapeSetAt_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSetAt_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre] [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -1951,7 +1951,7 @@ theorem kimchiForkEscapeSetAt_measure_le [DecidableEq F] [DecidableEq G] [Decida
 
 /-- **At a real round prefix the adaptive escape set is the local one** — the twin of
 `kimchiForkEscapeSet_prefix`, proved by the same rewriting of the tape path. -/
-theorem kimchiForkEscapeSetAt_prefix [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSetAt_prefix [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -2179,7 +2179,7 @@ escape the adaptive escape set, the extractor run at that claim returns.
 This is the adaptive twin of `kimchiExtract_isSome_of_not_escape`: only the route to the fork's
 `isSome` changes: the conversion of a returned certificate into a valid one
 (`kimchiExtract_isSome_of_fork_isSome`) is claim-agnostic and is reused verbatim. -/
-theorem kimchiExtract_isSome_of_not_escape_of_stable [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_isSome_of_not_escape_of_stable [DecidableEq F] [DecidableEq G]
     [DecidableEq T] [Fintype Pre] [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F) (hexp_ne : ∀ q : Pre, expand q ≠ 0)
     (hexp_inj : Function.Injective expand)
@@ -2235,7 +2235,7 @@ occurrence of the setup is unchanged.
 
 Project local: `SRS` has no such "with base" combinator upstream, and naming the record update is
 what lets the tower below quantify over the varying base without a dependent transport. -/
-def srsAt (σ : SRS G) (uOf : Pf → (T → Pre) → G) (p : Pf) (O : T → Pre) : SRS G :=
+private def srsAt (σ : SRS G) (uOf : Pf → (T → Pre) → G) (p : Pf) (O : T → Pre) : SRS G :=
   { σ with U := uOf p O }
 
 /-- The round count of the run's setup is the sampled setup's — by `rfl`, and stated so that the
@@ -2323,7 +2323,7 @@ private theorem kimchiForkGoodAtU_update [DecidableEq F] [DecidableEq G] [Decida
 `kimchiForkGoodAtU`. As there, neither a claim nor a base appears in the signature: the set is a
 function of `κ` and `uOf` alone, hence a legitimate `esc : T → (T → Pre) → Set Pre` for
 `escapesDuringC_measure_le'`. -/
-noncomputable def kimchiForkEscapeSetAtU [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private noncomputable def kimchiForkEscapeSetAtU [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -2345,7 +2345,7 @@ noncomputable def kimchiForkEscapeSetAtU [DecidableEq F] [DecidableEq G] [Decida
 Verbatim `kimchiForkEscapeSetAt_blind`: the tape path is about `D.chainAt`, which does not mention
 the setup, and the round predicate is closed under a second update by
 `kimchiForkGoodAtU_update`. -/
-theorem kimchiForkEscapeSetAtU_blind [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSetAtU_blind [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -2381,7 +2381,7 @@ theorem kimchiForkEscapeSetAtU_blind [DecidableEq F] [DecidableEq G] [DecidableE
 (`lem:adaptive-escape-measure-u`) — verbatim the fixed-base argument, since
 `recursiveForkEscape_subset_triple` is a statement about an arbitrary predicate and never inspects
 the setup. -/
-theorem kimchiForkEscapeSetAtU_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSetAtU_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre] [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -2409,7 +2409,7 @@ theorem kimchiForkEscapeSetAtU_measure_le [DecidableEq F] [DecidableEq G] [Decid
 
 /-- **At a real round prefix the varying-base escape set is the local one** — the twin of
 `kimchiForkEscapeSetAt_prefix`, proved by the same rewriting of the tape path. -/
-theorem kimchiForkEscapeSetAtU_prefix [DecidableEq F] [DecidableEq G] [DecidableEq T]
+private theorem kimchiForkEscapeSetAtU_prefix [DecidableEq F] [DecidableEq G] [DecidableEq T]
     [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F)
     (A : Zcash.Snark.OracleComp T Pre Pf)
@@ -2684,7 +2684,7 @@ private theorem kimchiForkFromAtU_isSome_of_not_escape_root [DecidableEq F] [Dec
 `srsAt σ uOf (A.run O) O` is a single value and the whole fixed-setup chain — in particular
 `kimchiExtract_isSome_of_fork_isSome`, which is setup-generic — applies at it verbatim. Only the
 route to the fork's `isSome` is the varying-base one. -/
-theorem kimchiExtract_isSome_of_not_escape_of_stableBase [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_isSome_of_not_escape_of_stableBase [DecidableEq F] [DecidableEq G]
     [DecidableEq T] [Fintype Pre] [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F) (hexp_ne : ∀ q : Pre, expand q ≠ 0)
     (hexp_inj : Function.Injective expand)
@@ -2717,7 +2717,7 @@ theorem kimchiExtract_isSome_of_not_escape_of_stableBase [DecidableEq F] [Decida
 present-day form of `kimchiExtract_isSome_of_not_escape_of_stableBase`, kept verbatim for its
 consumers: a base map obeying `huOf` is base-stable by `baseStable_of_claimStable`, so this is
 that theorem with its base hypothesis discharged rather than a separate result. -/
-theorem kimchiExtract_isSome_of_not_escape_of_stableU [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_isSome_of_not_escape_of_stableU [DecidableEq F] [DecidableEq G]
     [DecidableEq T] [Fintype Pre] [Zero Pre] [DecidableEq Pre]
     (σ : SRS G) (expand : Pre → F) (hexp_ne : ∀ q : Pre, expand q ≠ 0)
     (hexp_inj : Function.Injective expand)
@@ -2757,7 +2757,7 @@ returns nothing.
 `uOf := fun _ _ => σ.U` (`baseStable_const`), and `kimchiExtract_failure_measure_le_of_stableU` at
 a base factoring through the claimed value (`baseStable_of_claimStable`) — which is what certifies
 that the generalization is genuine rather than a restatement that happens to be easier. -/
-theorem kimchiExtract_failure_measure_le_of_stableBase [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_le_of_stableBase [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     (σ : SRS G)
     -- the claim the run opens, and its AGM representation, both read off the run
@@ -2818,7 +2818,7 @@ is the group-map image of the claim's combined inner product — and such a base
 
 Factoring through the claim is strictly stronger than what the proof consumes, which is why this
 is now a corollary rather than the theorem. -/
-theorem kimchiExtract_failure_measure_le_of_stableU [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_le_of_stableU [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     (σ : SRS G)
     -- the claim the run opens, and its AGM representation, both read off the run
@@ -2867,7 +2867,8 @@ hand; it is performed once, here.
 The base hypothesis needs no reindexing: base stability names `uOf` only at run outputs, so
 `BaseStable A prefixes (fun _ O => uOf (A.run O) O)` and `BaseStable A prefixes uOf` differ by a
 β-step, and `hbase` is passed straight through (`rem:base-stable-run-beta`). -/
-theorem kimchiExtract_failure_measure_le_of_stableBase_of_runRep [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_le_of_stableBase_of_runRep
+    [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     (σ : SRS G) (A : Zcash.Snark.OracleComp T Pre Pf)
     -- the claim the run opens, and its AGM representation, both read at the run's own proof
@@ -2907,7 +2908,8 @@ The re-packaging is exact rather than a genuine weakening, and that is worth rec
 and leaves every occurrence in the statement — all of which are at `p = A.run O` — definitionally
 unchanged. So a consumer holding only the run-level facts need not perform that substitution by
 hand; it is performed once, here. -/
-theorem kimchiExtract_failure_measure_le_of_stableU_of_runRep [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_le_of_stableU_of_runRep
+    [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     (σ : SRS G) (A : Zcash.Snark.OracleComp T Pre Pf)
     -- the claim the run opens, and its AGM representation, both read at the run's own proof
@@ -2952,7 +2954,7 @@ only after an induction on the round predicate) costs nothing.
 adversary that wins on *every* table at a fixed claim, and at a constant `κ` that is exactly
 `WinsAt`, so the win set here can likewise have measure `1` and an extractor that always answers
 `none` cannot satisfy the bound. -/
-theorem kimchiExtract_failure_measure_le_of_stable [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_le_of_stable [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     (σ : SRS G)
     -- the claim the run opens, and its AGM representation, both read off the run
@@ -3166,7 +3168,7 @@ and decidably-equal whenever `Pre` is — so the repaired companion below lives 
 game the measure bound quantifies over. What matters about it is that the round-`j` read point
 is a function of exactly the first `j` answers, so commit-then-challenge is honoured rather
 than circumvented. -/
-abbrev HonestPrefix (Pre : Type*) (N : ℕ) : Type _ := Σ j : Fin N, Fin (j : ℕ) → Pre
+private abbrev HonestPrefix (Pre : Type*) (N : ℕ) : Type _ := Σ j : Fin N, Fin (j : ℕ) → Pre
 
 /-- The round-`i` prefix of an answer vector: the round index together with the answers read
 strictly before it. -/
@@ -3339,7 +3341,7 @@ forced rather than convenient: a round challenge `u = 0` collapses `foldHalves g
 half while leaving the recombination `P + u⁻¹ • L + u • R` untouched, so with `k = 1`, free
 generators and `a = (0, 1)` no proof whose `(L, R)` and `(δ, sg)` are prefix-determined can
 accept at both `c = 0` and any `c ≠ 0`. Without it the statement is false again. -/
-theorem honest_wins_everywhere
+private theorem honest_wins_everywhere
     (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
     (expand : Pre → F) (hexp_ne : ∀ p, expand p ≠ 0)
     (a : Fin (2 ^ σ.k) → F) (ρ : F) (hopen : openingRelationB σ P b v a ρ) :
@@ -3447,7 +3449,7 @@ the adversary-dependent Schwartz–Zippel bad sets of the endpoint's fourth summ
 must be a parameter. The proof is the same twelve lines: complete the machine with one extra
 query at `node`, observe that the event *is* an escape during the completion phase, and price it
 by `Zcash.Snark.escapesDuringC_measure_le'`. -/
-theorem adaptive_badSet_measure_le [Fintype T] [DecidableEq T] [Fintype Pre] [Nonempty Pre]
+private theorem adaptive_badSet_measure_le [Fintype T] [DecidableEq T] [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : Pf → T) (bad : T → (T → Pre) → Finset Pre)
     (hblind : ∀ (t : T) (O : T → Pre) (q : Pre), bad t (Function.update O t q) = bad t O)
@@ -3483,7 +3485,7 @@ an injection has at most `c` elements, and blindness is inherited because the pr
 pointwise in `(t, O)`.
 
 Project local for the same reason as `adaptive_badSet_measure_le`. -/
-theorem adaptive_badSet_expand_measure_le [DecidableEq F] [Fintype T] [DecidableEq T]
+private theorem adaptive_badSet_expand_measure_le [DecidableEq F] [Fintype T] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : Pf → T) (expand : Pre → F) (hexp_inj : Function.Injective expand)
@@ -3510,7 +3512,7 @@ function of the transcript point alone, blindness is `rfl`: no table appears, so
 cannot move the set. Deployed, "a function of the transcript point alone" is the second of the
 two repairs in the chapter's subsection "The blindness question" — the set's data must have been
 absorbed by the node at which the challenge it guards is read. -/
-theorem adaptive_badSet_ofNode_measure_le [Fintype T] [DecidableEq T] [Fintype Pre]
+private theorem adaptive_badSet_ofNode_measure_le [Fintype T] [DecidableEq T] [Fintype Pre]
     [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : Pf → T) (bad : T → Finset Pre) {c : ℕ} (hcard : ∀ t : T, (bad t).card ≤ c) :
@@ -3524,7 +3526,7 @@ theorem adaptive_badSet_ofNode_measure_le [Fintype T] [DecidableEq T] [Fintype P
 `adaptive_badSet_ofNode_measure_le` composed with the injective expansion, which is how a
 Schwartz–Zippel exclusion set (a set of field elements) is priced against a uniform
 prechallenge. -/
-theorem adaptive_badSet_ofNode_expand_measure_le [DecidableEq F] [Fintype T] [DecidableEq T]
+private theorem adaptive_badSet_ofNode_expand_measure_le [DecidableEq F] [Fintype T] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : Pf → T) (expand : Pre → F) (hexp_inj : Function.Injective expand)
@@ -3540,7 +3542,7 @@ a single query factor. This is the shape the endpoint's fourth summand has: six 
 read at its own node with its own exclusion set, priced together by
 `(Q + 1) · szBudget / |Pre|` — and it is a bound on the sum of the budgets rather than on their
 maximum precisely because `∑ᵢ (Q+1)·cᵢ/|Pre| = (Q+1)·(∑ᵢ cᵢ)/|Pre|`. -/
-theorem adaptive_badSet_union_measure_le {ι : Type*} [Fintype ι] [Fintype T] [DecidableEq T]
+private theorem adaptive_badSet_union_measure_le {ι : Type*} [Fintype ι] [Fintype T] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : ι → Pf → T) (bad : ι → T → (T → Pre) → Finset Pre)
@@ -3578,7 +3580,7 @@ ironwood's `Zcash.Snark.FullDecode.chainPre_ne` (`guard t → chainPre t i ≠ t
 Project local: `adaptive_badSet_measure_le` asks for blindness as a hypothesis, and this is the
 one way the deployed exclusion sets discharge it — the `γ`, `α`, `ζ` and evalscale sets each read
 the challenges squeezed strictly before their own. -/
-theorem adaptive_badSet_ofPrefix_measure_le {ι : Type*} [Fintype T] [DecidableEq T]
+private theorem adaptive_badSet_ofPrefix_measure_le {ι : Type*} [Fintype T] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : Pf → T) (guard : T → Prop) (hnode : ∀ p : Pf, guard (node p))
@@ -3610,7 +3612,7 @@ theorem adaptive_badSet_ofPrefix_measure_le {ι : Type*} [Fintype T] [DecidableE
 the exclusion set given as a set of *field* elements, pulled back along the injective endo
 expansion exactly as `adaptive_badSet_expand_measure_le` does. This is the form a Schwartz–Zippel
 argument produces, so it is the one the deployed consumer calls. -/
-theorem adaptive_badSet_ofPrefix_expand_measure_le {ι : Type*} [DecidableEq F] [Fintype T]
+private theorem adaptive_badSet_ofPrefix_expand_measure_le {ι : Type*} [DecidableEq F] [Fintype T]
     [DecidableEq T] [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : Pf → T) (guard : T → Prop) (hnode : ∀ p : Pf, guard (node p))
@@ -3642,7 +3644,7 @@ Note the scope: `guard_prefixes` covers the round prefixes only, so this instant
 sets guard pre-IPA challenges against *earlier pre-IPA* challenges, a chain `FullDecode` does not
 carry; those go through `adaptive_badSet_ofPrefix_measure_le` directly, with the consumer's own
 re-gating retraction as `pre`. -/
-theorem adaptive_badSet_ofChainPre_measure_le {m k : ℕ} [Fintype T] [DecidableEq T]
+private theorem adaptive_badSet_ofChainPre_measure_le {m k : ℕ} [Fintype T] [DecidableEq T]
     [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     {prefixesPre : Pf → Fin m → T} {prefixes : Pf → Fin k → T}
@@ -3665,7 +3667,7 @@ each exclusion set read off the transcript point and the oracle's answers at str
 nodes, as in `adaptive_badSet_ofPrefix_measure_le`. The blindness bookkeeping is done once here so
 that a consumer holding six such sets does not repeat it six times, and the charge is a *single*
 query factor times the *sum* of the six budgets. -/
-theorem adaptive_badSet_ofPrefix_union_measure_le {ι κ : Type*} [Fintype ι] [Fintype T]
+private theorem adaptive_badSet_ofPrefix_union_measure_le {ι κ : Type*} [Fintype ι] [Fintype T]
     [DecidableEq T] [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : ι → Pf → T) (guard : T → Prop) (hnode : ∀ (i : ι) (p : Pf), guard (node i p))
@@ -3699,7 +3701,8 @@ node together with strictly earlier ones, and each read into the field by its ow
 the deployed `β`, `γ` challenges are a plain cast of the prechallenge while the opening-argument
 challenges are the endomorphism expansion, so the expansion is indexed by `ι` rather than fixed.
 The total charge is one query factor times the sum of the budgets. -/
-theorem adaptive_badSet_ofPrefix_union_expand_measure_le {ι κ : Type*} [DecidableEq F] [Fintype ι]
+private theorem adaptive_badSet_ofPrefix_union_expand_measure_le
+    {ι κ : Type*} [DecidableEq F] [Fintype ι]
     [Fintype T] [DecidableEq T] [Fintype Pre] [Nonempty Pre]
     (A : Zcash.Snark.OracleComp T Pre Pf) {Q : ℕ} (hQ : A.QueryBound Q)
     (node : ι → Pf → T) (guard : T → Prop) (hnode : ∀ (i : ι) (p : Pf), guard (node i p))
@@ -3817,7 +3820,7 @@ vocabulary that says which `σ s` the basis induces lives downstream.
 The round count is allowed to vary with `s` and is priced at any common upper bound `k`, so a
 consumer never has to transport a dependent `Fin (2 ^ (σ s).k)` across an equation of round
 counts. -/
-theorem kimchiExtract_failure_measure_prod_le_of_stable [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_prod_le_of_stable [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     {S : Type*} [Fintype S] [Nonempty S]
     (σ : S → SRS G)
@@ -3917,7 +3920,7 @@ theorem kimchiExtract_failure_measure_prod_le_of_stableBase [DecidableEq F] [Dec
 `kimchiExtract_failure_measure_prod_le_of_stableBase`, kept verbatim for its consumers: each
 fibre's base factors through that fibre's claimed value, hence is base-stable by
 `baseStable_of_claimStable`. -/
-theorem kimchiExtract_failure_measure_prod_le_of_stableU [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_prod_le_of_stableU [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     {S : Type*} [Fintype S] [Nonempty S]
     (σ : S → SRS G)
@@ -3959,7 +3962,7 @@ proof `p = (A s).run O`, the shape in which an algebraic-group adversary supplie
 `kimchiExtract_failure_measure_le_of_stableBase_of_runRep` for why the re-packaging is exact:
 `κ s`, `rep s` and `uOf s` are unconstrained off the run, so replacing each by its value there
 changes nothing in the statement, and the fibrewise base hypothesis passes through by a β-step. -/
-theorem kimchiExtract_failure_measure_prod_le_of_stableBase_of_runRep [DecidableEq F]
+private theorem kimchiExtract_failure_measure_prod_le_of_stableBase_of_runRep [DecidableEq F]
     [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     {S : Type*} [Fintype S] [Nonempty S]
@@ -4001,7 +4004,8 @@ run's own proof `p = (A s).run O`, the shape in which an algebraic-group adversa
 See `kimchiExtract_failure_measure_le_of_stableU_of_runRep` for why the re-packaging is exact:
 `κ s`, `rep s` and `uOf s` are unconstrained off the run, so replacing each by its value there
 changes nothing in the statement. -/
-theorem kimchiExtract_failure_measure_prod_le_of_stableU_of_runRep [DecidableEq F] [DecidableEq G]
+private theorem kimchiExtract_failure_measure_prod_le_of_stableU_of_runRep
+    [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
     {S : Type*} [Fintype S] [Nonempty S]
     (σ : S → SRS G) (A : S → Zcash.Snark.OracleComp T Pre Pf)

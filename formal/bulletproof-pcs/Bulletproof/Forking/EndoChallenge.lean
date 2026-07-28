@@ -43,7 +43,7 @@ namespace Bulletproof.Forking
 open Poseidon CompElliptic.Fields.Pasta
 
 /-- The integer model of `endoExpand`'s accumulator fold: the same recursion over `ℤ × ℤ`. -/
-def endoAcc (chal : ℕ) : ℤ × ℤ :=
+private def endoAcc (chal : ℕ) : ℤ × ℤ :=
   (List.range 64).reverse.foldl
     (fun (ab : ℤ × ℤ) i =>
       let (a, b) := (2 * ab.1, 2 * ab.2)
@@ -118,7 +118,7 @@ private theorem endoExpand_eq_fstep {F : Type*} [Field F] (lam : F) (chal : ℕ)
 
 /-- `endoExpand` is the cast of the integer model: the field fold commutes with `Int.cast`
 step by step. -/
-theorem endoExpand_eq_endoAcc {F : Type*} [Field F] (lam : F) (chal : ℕ) :
+private theorem endoExpand_eq_endoAcc {F : Type*} [Field F] (lam : F) (chal : ℕ) :
     FqSponge.endoExpand lam chal
       = ((endoAcc chal).1 : F) * lam + ((endoAcc chal).2 : F) := by
   rw [endoExpand_eq_fstep, endoAcc_eq_foldl]
@@ -163,7 +163,7 @@ private theorem foldl_bound (n : ℕ) (l : List ℕ) :
 
 /-- The accumulators are short: both components of `endoAcc` lie in `[1, 2⁶⁶]`. The invariant is
 `1 ≤ x ≤ B ⟹ 1 ≤ 2x ± 1 ≤ 2B + 1`, folded 64 times from `B = 2`. -/
-theorem endoAcc_bound (chal : ℕ) :
+private theorem endoAcc_bound (chal : ℕ) :
     1 ≤ (endoAcc chal).1 ∧ (endoAcc chal).1 ≤ 2 ^ 66 ∧
       1 ≤ (endoAcc chal).2 ∧ (endoAcc chal).2 ≤ 2 ^ 66 := by
   rw [endoAcc_eq_foldl]
@@ -276,7 +276,7 @@ private theorem signed_unique : ∀ (k : ℕ) (d e : ℕ → ℤ),
 /-- The window encoding is injective on 128-bit prechallenges: the accumulator pair determines
 the bits. Unwinding one step, exactly one of the pair is odd — that parity is the window's high
 bit, the odd component's residue mod 4 is the window's low bit — and the quotients recurse. -/
-theorem endoAcc_injOn {m n : ℕ} (hm : m < 2 ^ 128) (hn : n < 2 ^ 128)
+private theorem endoAcc_injOn {m n : ℕ} (hm : m < 2 ^ 128) (hn : n < 2 ^ 128)
     (h : endoAcc m = endoAcc n) : m = n := by
   -- From equal accumulators, the SUM and DIFF closed forms agree.
   have hsum : ∑ i ∈ Finset.range 64, sigmaBit m i * 2 ^ i

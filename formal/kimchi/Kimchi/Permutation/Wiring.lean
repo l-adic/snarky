@@ -129,7 +129,7 @@ to ensure that the permutation aggregation is quasi-random for those rows"
 (constraints.rs:538–544). These are exactly the rows where the three-factor
 `permutation_vanishing_polynomial` lets the recurrence run through the mask; the range
 is EMPTY at `zkRows = 3`, which is what kept every `zkRows = 3` fixture blind to it. -/
-def sigmaCell (ω : F) (zkRows : ℕ) (shifts : Fin permCols → F)
+private def sigmaCell (ω : F) (zkRows : ℕ) (shifts : Fin permCols → F)
     (σpFull : Equiv.Perm (Fin permCols × Fin n)) (i : Fin permCols) (j : Fin n) : F :=
   if n - zkRows + 2 ≤ (j : ℕ) ∧ (j : ℕ) < n - 1 then 0
   else addr ω shifts (σpFull (i, j))
@@ -150,7 +150,7 @@ theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (zkRows : ℕ)
 
 /-- On the unmasked region the committed cell IS the wired-to address (the zeroing
 range starts at `n − zkRows + 2`). -/
-theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCols → F}
+private theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCols → F}
     {σpFull : Equiv.Perm (Fin permCols × Fin n)} {i : Fin permCols} {j : Fin n}
     (hj : (j : ℕ) < n - zkRows) :
     sigmaCell ω zkRows shifts σpFull i j = addr ω shifts (σpFull (i, j)) := by
@@ -320,13 +320,13 @@ def shiftSideRow (wRow : Fin permCols → F) (shifts : Fin permCols → F) (β �
 def sigmaSideRow (wRow σRow : Fin permCols → F) (β γ : F) : F :=
   ∏ i, (wRow i + γ + β * σRow i)
 
-private theorem shiftSide_eval_row (w : Fin permCols → Polynomial F)
+theorem shiftSide_eval_row (w : Fin permCols → Polynomial F)
     (shifts : Fin permCols → F) (β γ x : F) :
     (shiftSide w shifts β γ).eval x
       = shiftSideRow (fun i => (w i).eval x) shifts β γ x :=
   shiftSide_eval w shifts β γ x
 
-private theorem sigmaSide_eval_row (w σ : Fin permCols → Polynomial F) (β γ x : F) :
+theorem sigmaSide_eval_row (w σ : Fin permCols → Polynomial F) (β γ x : F) :
     (sigmaSide w σ β γ).eval x
       = sigmaSideRow (fun i => (w i).eval x) (fun i => (σ i).eval x) β γ :=
   sigmaSide_eval w σ β γ x

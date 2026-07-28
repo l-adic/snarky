@@ -67,7 +67,7 @@ as `IpaAcceptV` — and check the leaf equations.
 
 This is the `acc : (Fin d → F) → Prop` that ironwood's `Extractable`/`extractable_of_prob` are
 stated over. -/
-def stratAccept : {d : ℕ} → Strategy F G d → (Fin (2 ^ d) → G) → (Fin (2 ^ d) → F) →
+private def stratAccept : {d : ℕ} → Strategy F G d → (Fin (2 ^ d) → G) → (Fin (2 ^ d) → F) →
     G → F → (Fin d → F) → Prop
   | 0, .leaf c, g, b, P, v, _ =>
       P = commitGen g (fun _ => c) ∧ v = commitGen b (fun _ => c)
@@ -81,7 +81,7 @@ the node data being the strategy's own round messages and the extracted challeng
 
 This is the step that makes ironwood's machinery deliver *our* `IpaTreeV`, and hence feed the
 existing Vandermonde extraction `ipaRelation_of_acceptV`. -/
-theorem ipaTreeV_of_extractable : {d : ℕ} → (S : Strategy F G d) → (g : Fin (2 ^ d) → G) →
+private theorem ipaTreeV_of_extractable : {d : ℕ} → (S : Strategy F G d) → (g : Fin (2 ^ d) → G) →
     (b : Fin (2 ^ d) → F) → (P : G) → (v : F) →
     Zcash.Snark.Extractable (stratAccept S g b P v) →
     ∃ t : IpaTreeV F G d, IpaAcceptV g b P v t
@@ -111,7 +111,7 @@ satisfying the opening relation.
 Unlike `FiatShamirTreeB`, this is not satisfiable by construction — the hypothesis demands
 genuine acceptance on a `kerr`-sized fraction of challenge vectors, and the conclusion is
 extracted from the strategy's own messages. -/
-theorem ipa_knowledge_soundness [Fintype F] [DecidableEq F] (σ : SRS G)
+private theorem ipa_knowledge_soundness [Fintype F] [DecidableEq F] (σ : SRS G)
     (S : Strategy F G σ.k) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
     [DecidablePred (stratAccept S σ.g b P v)]
     (hprob : (Zcash.Snark.kerr (Fintype.card F) σ.k : ENNReal) / Fintype.card (Fin σ.k → F)
@@ -137,7 +137,7 @@ group is a 1-dimensional `F`-vector space — and there the conclusion follows f
 
 So at the point of use this theorem is worth no more than the axiom it was meant to replace.
 Recording it as a checkable claim rather than a caveat in prose. -/
-theorem ipa_knowledge_soundness_conclusion_free (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F)
+private theorem ipa_knowledge_soundness_conclusion_free (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F)
     (v : F) (H : G) (hspan : ∀ x : G, ∃ s : F, x = s • H)
     (hh : ∃ s : F, σ.h = s • H ∧ s ≠ 0) (hb : ∃ i, b i ≠ 0) :
     ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ := by

@@ -628,7 +628,7 @@ and the reason the breaks it emits land in the `ε`-priced arm rather than the r
 their `u`-coefficient is `0` by `algebraicRelationOfDL_coeffs_u`, definitionally. `U` is a
 parameter (not `σ.U`) because the run's transcript-derived base is squeezed from the
 transcript, not read off the setup. -/
-def algebraicRelationOfDL [Field F] [AddCommGroup G] [Module F G]
+private def algebraicRelationOfDL [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
     (hrel : DLRelation σ w wh) (hw : w ≠ 0) :
     Zcash.Snark.AlgebraicRelationWitness (F := F)
@@ -642,21 +642,21 @@ def algebraicRelationOfDL [Field F] [AddCommGroup G] [Module F G]
 /-- **The computed break does not touch the transcript-derived base.** Definitional, and the
 reason `algebraicRelationOfDL` lands in the arm the relation finder keeps: the finder retains
 exactly the breaks whose coefficient at `u` vanishes. -/
-theorem algebraicRelationOfDL_coeffs_u [Field F] [AddCommGroup G] [Module F G]
+private theorem algebraicRelationOfDL_coeffs_u [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
     (hrel : DLRelation σ w wh) (hw : w ≠ 0) :
     (algebraicRelationOfDL σ U w wh hrel hw).coeffs Zcash.Snark.AugmentedIndex.u = 0 := rfl
 
 /-- The break's coefficients on the setup generators are the given ones. Definitional; stated
 so the consumer can read the relation off the setup basis without unfolding the injection. -/
-theorem algebraicRelationOfDL_coeffs_gen [Field F] [AddCommGroup G] [Module F G]
+private theorem algebraicRelationOfDL_coeffs_gen [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
     (hrel : DLRelation σ w wh) (hw : w ≠ 0) (i : Fin (2 ^ σ.k)) :
     (algebraicRelationOfDL σ U w wh hrel hw).coeffs (Zcash.Snark.AugmentedIndex.gen i)
       = w i := rfl
 
 /-- The break's coefficient at the blinding base is the given one. Definitional. -/
-theorem algebraicRelationOfDL_coeffs_w [Field F] [AddCommGroup G] [Module F G]
+private theorem algebraicRelationOfDL_coeffs_w [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) (U : G) (w : Fin (2 ^ σ.k) → F) (wh : F)
     (hrel : DLRelation σ w wh) (hw : w ≠ 0) :
     (algebraicRelationOfDL σ U w wh hrel hw).coeffs Zcash.Snark.AugmentedIndex.w = wh := rfl
@@ -673,7 +673,7 @@ extracted table failed at `(i, j)`", and must charge that to one of the two coun
 exclusion sets; stating it here keeps the `by_contra` out of the game file. The per-row
 blinders `ρw₀` and their representation hypothesis do NOT appear — deriving `ha` is what
 consumes them, and here `ha` is given. -/
-theorem badChallenge_of_not_pins [Field F] [DecidableEq F] [AddCommGroup G] [Module F G]
+private theorem badChallenge_of_not_pins [Field F] [DecidableEq F] [AddCommGroup G] [Module F G]
     (σ : SRS G) {m : ℕ} (C : Fin m → G) (x : Fin evalPts → F)
     (aw₀ : Fin m → Fin (2 ^ σ.k) → F) (E : Fin m → Fin evalPts → F) (ξ r : F)
     (a : Fin (2 ^ σ.k) → F) (ρ : F)

@@ -35,7 +35,7 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-- Fold a `2^d`-vector down to a singleton along a challenge vector, head first — the iterated
 `foldHalves`, generic over the module (generators and eval vectors alike). -/
-def foldAll {M : Type*} [AddCommGroup M] [Module F M] :
+private def foldAll {M : Type*} [AddCommGroup M] [Module F M] :
     {d : ℕ} → (Fin (2 ^ d) → M) → (Fin d → F) → (Fin (2 ^ 0) → M)
   | 0, g, _ => g
   | _ + 1, g, u => foldAll (foldHalves g (u 0)) (Fin.tail u)
@@ -43,7 +43,7 @@ def foldAll {M : Type*} [AddCommGroup M] [Module F M] :
 /-- **The s-vector commitment is the full fold**: iterating
 `commitGen_bPolyCoefficients_step` down to the base. At `M := G` this is the wire's
 `sg`-correctness target; at `M := F` it is the wire's `b0`. -/
-theorem commitGen_bPolyCoefficients_foldAll {M : Type*} [AddCommGroup M] [Module F M] :
+private theorem commitGen_bPolyCoefficients_foldAll {M : Type*} [AddCommGroup M] [Module F M] :
     {d : ℕ} → (u : Fin d → F) → (g : Fin (2 ^ d) → M) →
     commitGen g (bPolyCoefficients u) = foldAll g u 0
   | 0, u, g => commitGen_bPolyCoefficients_zero u g
@@ -83,7 +83,7 @@ def kimchiProverAccept : {d : ℕ} → KimchiProver F G d → (Fin (2 ^ d) → G
 ironwood's `proverAccept_forkValid`. The `Extractable` tree hands three distinct nonzero
 challenges per round; interior rounds use all three, and the final (Schnorr) round keeps the
 first two transcripts, which is what the certificate's leaf carries. -/
-theorem kimchiProverAccept_forkValid {U H : G} {v : F} :
+private theorem kimchiProverAccept_forkValid {U H : G} {v : F} :
     {d : ℕ} → (pr : KimchiProver F G d) → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
     (P : G) → Zcash.Snark.Extractable (kimchiProverAccept pr g b U H v P) →
     ∃ cert : KimchiForkCert F G d, KimchiForkValid U H v g b P cert
@@ -151,7 +151,8 @@ private theorem tail_snoc {n : ℕ} {α : Sort*} (u : Fin (n + 1) → α) (c : �
 `Fin.snoc u c` is the wire's two checks — the Schnorr equation over the *flat* recombination sum
 and `sg` pinned to the *flat* s-vector commitment. The fold happens on the left, the s-vector
 bridge (`commitGen_bPolyCoefficients_step`) on the right, and they meet in the middle. -/
-theorem kimchiProverAccept_snoc : {d : ℕ} → (pr : KimchiProver F G d) → (g : Fin (2 ^ d) → G) →
+private theorem kimchiProverAccept_snoc
+    : {d : ℕ} → (pr : KimchiProver F G d) → (g : Fin (2 ^ d) → G) →
     (b : Fin (2 ^ d) → F) → (U H : G) → (v : F) → (P : G) → (u : Fin d → F) → (c : F) →
     (kimchiProverAccept pr g b U H v P (Fin.snoc u c) ↔
       ((pr.leafAt (Fin.snoc u c)).1 = commitGen g (bPolyCoefficients u) ∧

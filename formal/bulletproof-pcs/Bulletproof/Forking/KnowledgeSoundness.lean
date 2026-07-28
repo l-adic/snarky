@@ -178,7 +178,7 @@ def blind {n : ℕ} : SetupIndex n := Sum.inr ()
 end SetupIndex
 
 /-- The setup-only public basis `(g, h)`. -/
-def setupBasis {n : ℕ} (g : Fin n → G) (H : G) : SetupIndex n → G
+private def setupBasis {n : ℕ} (g : Fin n → G) (H : G) : SetupIndex n → G
   | Sum.inl i => g i
   | Sum.inr _ => H
 
@@ -233,7 +233,7 @@ needs, since the break's basis is read off `{ srsOfBasis k basis with U := uBase
 
 /-- **The presented SRS's `U` slot is dead** — two SRSs differing only in `U` give the same
 extractor run, by `rfl`. This is what licenses the dead slot in `augOfSetup`. -/
-theorem deployedExtract_U_irrelevant (σ : SRS C.Point) (X : C.Point) (cip : C.ScalarField)
+private theorem deployedExtract_U_irrelevant (σ : SRS C.Point) (X : C.Point) (cip : C.ScalarField)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
     (pg : Fin (2 ^ σ.k) → C.ScalarField) (pw : C.ScalarField)
     (hP : P = commitGen σ.g pg + pw • σ.h)
@@ -245,7 +245,7 @@ theorem deployedExtract_U_irrelevant (σ : SRS C.Point) (X : C.Point) (cip : C.S
 
 omit [Module C.ScalarField C.Point] in
 /-- Same for the win event: `Ipa.verifyWith` reads only `σ.g` and `σ.h`. -/
-theorem wireWins_U_irrelevant {m p : ℕ} (σ : SRS C.Point) (X : C.Point)
+private theorem wireWins_U_irrelevant {m p : ℕ} (σ : SRS C.Point) (X : C.Point)
     (claim : Ipa.Input C σ.k m p) (O : IpaNode C σ.k → Prechallenge)
     (π : Ipa.Proof C σ.k) :
     wireWins σ claim O π = wireWins { σ with U := X } claim O π := rfl
@@ -259,12 +259,12 @@ section Split
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-- Forget a coefficient vector's `U` entry. -/
-def dropU {n : ℕ} (c : Zcash.Snark.AugmentedIndex n → F) : SetupIndex n → F
+private def dropU {n : ℕ} (c : Zcash.Snark.AugmentedIndex n → F) : SetupIndex n → F
   | Sum.inl i => c (Sum.inl i)
   | Sum.inr _ => c Zcash.Snark.AugmentedIndex.w
 
 /-- **The general split of the augmented MSM**, with no hypothesis on the `U` coefficient. -/
-theorem representationEval_dropU_general {n : ℕ} (g : Fin n → G) (U H : G)
+private theorem representationEval_dropU_general {n : ℕ} (g : Fin n → G) (U H : G)
     (c : Zcash.Snark.AugmentedIndex n → F) :
     Zcash.Snark.representationEval (Zcash.Snark.augmentedBasis g U H) c
       = Zcash.Snark.representationEval (setupBasis g H) (dropU c)
@@ -301,7 +301,7 @@ def restrictToSetup {n : ℕ} {g : Fin n → G} {U H : G}
 representation of the transcript-derived base `U` over the sampled setup generators — the
 adversary opened `uBaseOf C cip` in `(g, h)`. Data-valued, not a `Prop`-level `∃`: this is what
 keeps the third summand's assumption from being vacuous. -/
-def uRepresentationOfBreak {n : ℕ} {g : Fin n → G} {U H : G}
+private def uRepresentationOfBreak {n : ℕ} {g : Fin n → G} {U H : G}
     (r : Zcash.Snark.AlgebraicRelationWitness (F := F) (Zcash.Snark.augmentedBasis g U H))
     (hu : r.coeffs Zcash.Snark.AugmentedIndex.u ≠ 0) :
     Zcash.Snark.GroupRepresentation (F := F) (setupBasis g H) U where
@@ -458,7 +458,7 @@ variable {C : Ipa.CommitmentCurve} {k m p : ℕ} [Module C.ScalarField C.Point]
 /-- A run that accepts and yields no opening either produced nothing at all (the presence rung,
 already bounded by `deployedExtract_failure_measure_le`), or produced a setup-basis relation
 (charged to textbook DL), or produced a `U`-touching break (the residual). -/
-theorem three_way_cover (B : C.Point) (fam : DeployedFamily C k m p)
+private theorem three_way_cover (B : C.Point) (fam : DeployedFamily C k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
     {q : (SetupIndex (2 ^ k) → C.ScalarField) × fam.Coins |
         wireWins (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B q.1)))
@@ -498,7 +498,7 @@ variable {C : Ipa.CommitmentCurve} {k m p : ℕ} [Module C.ScalarField C.Point]
 /-- **First summand — reused verbatim.** `deployedExtract_failure_measure_le` (the LOCKED target)
 lifted across the sampled setup basis by `uniformOfFintype_prod_fiber_bound_right`. Nothing about
 the locked statement changes; only the type of the sampled coefficient vector does. -/
-theorem presence_summand
+private theorem presence_summand
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hinj : Function.Injective (expandPre C)) (hne : ∀ q, expandPre C q ≠ 0)
     (B : C.Point) (fam : DeployedFamily C k m p)
@@ -612,7 +612,7 @@ that constrains the curve.
 This is the statement the incumbent could not have: `hU` at `IpaVesta.curve` would have forced
 `Function.Surjective IpaVesta.curve.toGroup`, and `GroupMapVesta.toGroup` picks one canonical
 `y` per `x`. -/
-theorem vesta_noOpening_measure_le_of_textbookDL {k m p : ℕ}
+private theorem vesta_noOpening_measure_le_of_textbookDL {k m p : ℕ}
     (B : IpaVesta.Point) (fam : DeployedFamily IpaVesta.curve k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hcoins : coins.Complete) {ε δ : ℝ≥0∞}
@@ -630,7 +630,7 @@ theorem vesta_noOpening_measure_le_of_textbookDL {k m p : ℕ}
     expandPre_vesta_injective expandPre_vesta_ne_zero B fam coins hcoins hDL hUDL
 
 /-- **Pallas**, same discharge. -/
-theorem pallas_noOpening_measure_le_of_textbookDL {k m p : ℕ}
+private theorem pallas_noOpening_measure_le_of_textbookDL {k m p : ℕ}
     (B : IpaPallas.Point) (fam : DeployedFamily IpaPallas.curve k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hcoins : coins.Complete) {ε δ : ℝ≥0∞}
@@ -648,7 +648,7 @@ theorem pallas_noOpening_measure_le_of_textbookDL {k m p : ℕ}
     expandPre_pallas_injective expandPre_pallas_ne_zero B fam coins hcoins hDL hUDL
 
 /-- The Vesta bound, with the slot count evaluated: `2 ^ k + 1`. -/
-theorem vesta_card_setup (k : ℕ) : Fintype.card (SetupIndex (2 ^ k)) = 2 ^ k + 1 :=
+private theorem vesta_card_setup (k : ℕ) : Fintype.card (SetupIndex (2 ^ k)) = 2 ^ k + 1 :=
   card_setupIndex _
 
 end PerCurve
@@ -717,7 +717,7 @@ The measured event and the bound are exactly
 `deployedExtract_noOpening_measure_le_of_textbookDL`'s. What changes is the hypothesis: hardness
 is assumed only against reductions respecting the call bound `R`, rather than unconditionally.
 See the section docstring on how large `R` honestly is. -/
-theorem deployedExtract_knowledgeSoundness_under_DL
+private theorem deployedExtract_knowledgeSoundness_under_DL
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hinj : Function.Injective (expandPre C)) (hne : ∀ q, expandPre C q ≠ 0)
     (B : C.Point)
@@ -757,7 +757,7 @@ theorem DeployedFamily.reductionEfficient_exists [Fintype C.Point]
 
 /-- **Vesta, capstone form.** The call-bound-gated statement at the deployed curve, with every
 curve hypothesis discharged. -/
-theorem vesta_knowledgeSoundness_under_DL {k m p : ℕ}
+private theorem vesta_knowledgeSoundness_under_DL {k m p : ℕ}
     (B : IpaVesta.Point) (fam : DeployedFamily IpaVesta.curve k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
@@ -775,7 +775,7 @@ theorem vesta_knowledgeSoundness_under_DL {k m p : ℕ}
     expandPre_vesta_injective expandPre_vesta_ne_zero B coins hcoins hHard hEff
 
 /-- **Pallas, capstone form.** -/
-theorem pallas_knowledgeSoundness_under_DL {k m p : ℕ}
+private theorem pallas_knowledgeSoundness_under_DL {k m p : ℕ}
     (B : IpaPallas.Point) (fam : DeployedFamily IpaPallas.curve k m p)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
@@ -932,7 +932,7 @@ section Honest
 variable {C : Ipa.CommitmentCurve} {k m p : ℕ} [Module C.ScalarField C.Point]
 
 /-- The degenerate claim: every commitment, point, evaluation and scalar zero. -/
-def trivialInput (C : Ipa.CommitmentCurve) (k m p : ℕ) : Ipa.Input C k m p where
+private def trivialInput (C : Ipa.CommitmentCurve) (k m p : ℕ) : Ipa.Input C k m p where
   commitments := Vector.replicate m 0
   xs := Vector.replicate p 0
   evals := Vector.replicate m (Vector.replicate p 0)
@@ -941,7 +941,7 @@ def trivialInput (C : Ipa.CommitmentCurve) (k m p : ℕ) : Ipa.Input C k m p whe
   proof := { lr := Vector.replicate k (0, 0), delta := 0, z1 := 0, z2 := 0, sg := 0 }
 
 /-- `(0, 0)` opens the degenerate claim. -/
-theorem trivial_hopen (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
+private theorem trivial_hopen (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
     openingRelationB
       { srsOfBasis k basis with U := uBaseOf C (Ipa.cipOf (trivialInput C k m p)) }
       (combinedCommitment (trivialInput C k m p).polyscale (trivialInput C k m p).commitmentFn)
@@ -956,7 +956,7 @@ theorem trivial_hopen (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
 /-- **The honest family.** Its adversary is the honest prover of
 `honestNode_wireWins_everywhere`, which wins on every oracle table. `noncomputable` only because
 the adversary is extracted with `.choose`; the extractor it is fed to is untouched. -/
-noncomputable def honestFamily
+private noncomputable def honestFamily
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) (k m p : ℕ) : DeployedFamily C k m p where
   claim := fun _ => trivialInput C k m p
@@ -974,7 +974,7 @@ noncomputable def honestFamily
       (trivialInput C k m p) 0 0 (trivial_hopen basis)).choose_spec.1
 
 /-- **The honest family accepts everywhere** — at every basis, on every oracle table. -/
-theorem honestFamily_accepts_everywhere
+private theorem honestFamily_accepts_everywhere
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)

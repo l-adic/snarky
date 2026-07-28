@@ -66,7 +66,7 @@ private theorem commitGen_sub {n : ℕ} (g : Fin n → G) (a a' : Fin n → F) :
 /-- For distinct `u₁, u₂, u₃` there are coefficients `l₁, l₂, l₃` with `Σ lᵢ = 0`,
 `Σ lᵢuᵢ = 1`, and `Σ lᵢuᵢ² = 0`: the functional `p ↦ Σ lᵢ · p(uᵢ)` reads off the
 linear coefficient of any degree-≤2 polynomial `p`. -/
-theorem vandermonde3 (u₁ u₂ u₃ : F) (h12 : u₁ ≠ u₂) (h13 : u₁ ≠ u₃)
+private theorem vandermonde3 (u₁ u₂ u₃ : F) (h12 : u₁ ≠ u₂) (h13 : u₁ ≠ u₃)
     (h23 : u₂ ≠ u₃) :
     ∃ l₁ l₂ l₃ : F, (l₁ + l₂ + l₃ = 0)
       ∧ (l₁ * u₁ + l₂ * u₂ + l₃ * u₃ = 1)
@@ -396,7 +396,7 @@ sub-transcripts per round), the correspondence between the verifier's multi-scal
 check and the recursive tree, and the Schnorr/hiding reduction extracting the
 blinder `r`, so the tree is over the non-hiding de-blinded commitment
 `P - r • σ.h`. -/
-def FiatShamirTree (σ : SRS G) (P : G) (x v : F) (accepts : Prop) : Prop :=
+private def FiatShamirTree (σ : SRS G) (P : G) (x v : F) (accepts : Prop) : Prop :=
   accepts → ∃ (r : F) (t : IpaTreeV F G σ.k),
     IpaAcceptV σ.g (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t
 

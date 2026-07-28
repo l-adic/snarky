@@ -202,7 +202,7 @@ theorem card_badZetas_le (C t : Polynomial F) {n D : ℕ}
 
 /-- **Single good ζ pins the quotient**: a challenge ζ outside `badZetas C t n` at which
 `C` and `t·zH` agree forces `C = t·zH`, hence `zH ∣ C`. -/
-theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
+private theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
     (hζ : ζ ∉ badZetas C t n)
     (h : C.eval ζ = (t * zH F n).eval ζ) : zH F n ∣ C := by
   have : C = t * zH F n := by

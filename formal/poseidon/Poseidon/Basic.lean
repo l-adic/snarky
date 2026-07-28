@@ -82,7 +82,7 @@ structure State (F : Type*) where
   mode : Mode
 
 /-- Read rate slot `n` (`n < 2`). -/
-private def slot (s : Triple F) : Fin 3 → F
+def slot (s : Triple F) : Fin 3 → F
   | 0 => s.1
   | 1 => s.2.1
   | _ => s.2.2

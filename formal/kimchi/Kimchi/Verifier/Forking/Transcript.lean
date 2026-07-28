@@ -95,7 +95,7 @@ The four prefixes are pairwise distinct — each extends the previous by at leas
 increase. Distinct transcript points is what makes a uniform oracle's four reads
 independent, the hypothesis `Forking.Model`'s per-challenge freshness bounds consume. -/
 
-theorem preBeta_ne_preGamma (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem preBeta_ne_preGamma (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preBeta cvk cp publicComm ≠ preGamma cvk cp publicComm := by
   intro h
@@ -104,7 +104,7 @@ theorem preBeta_ne_preGamma (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
   omega
 
-theorem preGamma_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem preGamma_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preGamma cvk cp publicComm ≠ preAlpha cvk cp publicComm := by
   intro h
@@ -113,7 +113,7 @@ theorem preGamma_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
   omega
 
-theorem preAlpha_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem preAlpha_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preAlpha cvk cp publicComm ≠ preZeta cvk cp publicComm := by
   intro h
@@ -122,7 +122,7 @@ theorem preAlpha_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
   omega
 
-theorem preBeta_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem preBeta_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preBeta cvk cp publicComm ≠ preAlpha cvk cp publicComm := by
   intro h
@@ -131,7 +131,7 @@ theorem preBeta_ne_preAlpha (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
   omega
 
-theorem preBeta_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem preBeta_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preBeta cvk cp publicComm ≠ preZeta cvk cp publicComm := by
   intro h
@@ -140,7 +140,7 @@ theorem preBeta_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     List.length_append, List.length_cons, List.length_map, List.length_nil] at hlen
   omega
 
-theorem preGamma_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem preGamma_ne_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     preGamma cvk cp publicComm ≠ preZeta cvk cp publicComm := by
   intro h
@@ -216,7 +216,7 @@ def preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
   preV cp fqDig pubEvals ++ [frEndo]
 
 /-- `v` and `u` are read at distinct transcript points (`u` has one more squeeze marker). -/
-theorem preV_ne_preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+private theorem preV_ne_preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
     (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     preV cp fqDig pubEvals ≠ preU cp fqDig pubEvals := by
   intro h

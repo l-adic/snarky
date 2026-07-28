@@ -123,7 +123,7 @@ private theorem bound_eq_of_commitPolyMasked (σ : SRS G)
 
 /-- A claimed evaluation of a row bound to an unblinded fixed column is an evaluation of
 that column's own polynomial. -/
-theorem bound_eval_of_commitPoly (σ : SRS G)
+private theorem bound_eval_of_commitPoly (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F}
     (hcommit : commit σ a ρ = commitPoly σ p) (hdeg : p.natDegree < 2 ^ σ.k)
@@ -132,7 +132,7 @@ theorem bound_eval_of_commitPoly (σ : SRS G)
   rw [he, ← rowPoly_eval, (bound_eq_of_commitPoly σ hbind hcommit hdeg).1]
 
 /-- The selector-column analogue. -/
-theorem bound_eval_of_commitPolyMasked (σ : SRS G)
+private theorem bound_eval_of_commitPolyMasked (σ : SRS G)
     (hbind : ∀ (w : Fin (2 ^ σ.k) → F) (w_h : F), DLRelation σ w w_h → w = 0 ∧ w_h = 0)
     {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F}
     (hcommit : commit σ a ρ = commitPolyMasked σ p) (hdeg : p.natDegree < 2 ^ σ.k)

@@ -123,14 +123,14 @@ A row whose first half asserts `w₀ · w₁ = w₂` (as `w₂ − w₀·w₁ = 
 instance : Fact (Nat.Prime 17) := ⟨by norm_num⟩
 
 /-- Coefficient cells asserting `w₀ · w₁ = w₂` on the first half, trivial on the second. -/
-def egQ : Fin 15 → ZMod 17 := ![0, 0, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+private def egQ : Fin 15 → ZMod 17 := ![0, 0, 1, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 /-- A satisfying row: `3 · 4 = 12` in `ZMod 17`. -/
-def egGood : Generic (ZMod 17) :=
+private def egGood : Generic (ZMod 17) :=
   { q := egQ, w := ![3, 4, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
 
 /-- A failing row: `3 · 4 ≠ 13`. -/
-def egBad : Generic (ZMod 17) :=
+private def egBad : Generic (ZMod 17) :=
   { q := egQ, w := ![3, 4, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
 
 #eval satisfies [egGood]   -- true

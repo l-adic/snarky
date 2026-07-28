@@ -38,7 +38,7 @@ def runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
   fqOracles C cvk cp (publicCommitment C σ cvk pub)
 
 /-- The second batch point `ζω`. -/
-def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   (runOracles C σ cvk cp pub).zeta * cvk.omega
 
@@ -58,7 +58,7 @@ def runZetaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
   powPow2 (runOracles C σ cvk cp pub).zeta σ.k
 
 /-- The chunk-combination power `(ζω)^{2^σ.k}`. -/
-def runZetaOmegaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runZetaOmegaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runZetaOmega C σ cvk cp pub) σ.k
 
@@ -73,7 +73,7 @@ def runPubEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
 
 
 /-- The run's chunk-combined evaluation record — the verifier's `evals.combine`. -/
-def runLinEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runLinEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     Evals C.ScalarField :=
   cp.linEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub)
@@ -135,7 +135,7 @@ def runStreamP (σ : SRS C.Point) (cvk : KimchiVK C nc)
     ++ (tailRowsOf C cvk cp).flatten
 
 /-- The batched IPA input at given public evaluations and combination scalars. -/
-def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
     (v u : C.ScalarField) : Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts where

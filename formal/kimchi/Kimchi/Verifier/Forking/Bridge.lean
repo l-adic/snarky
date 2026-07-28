@@ -78,7 +78,7 @@ game uses `KimchiFamily.warmBase` instead.
 Project-local because both sides are this development's own constructions: `uBaseOf` lives in
 `Bulletproof/Forking/Deployed.lean` (frozen) and the start-state-general oracles in
 `Bulletproof/Forking/Transcript.lean`. -/
-theorem uBaseOf_eq_warmBase_init {k m p : ℕ} (inp : Ipa.Input C k m p) :
+private theorem uBaseOf_eq_warmBase_init {k m p : ℕ} (inp : Ipa.Input C k m p) :
     uBaseOf C (Ipa.cipOf inp)
       = C.toGroup ((spongeFSFrom C Poseidon.FqSponge.init).squeezeBase
           (IpaTranscriptElt.preT inp)) := rfl
@@ -235,7 +235,7 @@ squeezes, so the six equations identify them argument by argument.
 This is what makes the remaining two conjuncts of `FSFaithful` — the round reads and the Schnorr
 read — and the opening base statable interchangeably at the game's claim or at the deployed one:
 the two are the same input. -/
-theorem claim_eq_kimchiRunInput (fam : KimchiFamily C nc k n)
+private theorem claim_eq_kimchiRunInput (fam : KimchiFamily C nc k n)
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (h : FSFaithful fam basis O) :
     fam.claim basis O
@@ -290,7 +290,7 @@ measures is the deployed event. It is emphatically **not** "the deployed verifie
 knowledge-sound"; conflating the two is the standard way to overclaim a random-oracle result.
 
 Project-local because it composes this development's own bridge with its own endpoint. -/
-theorem vesta_deployed_failure_measure_le {nc k n : ℕ} [NeZero n]
+private theorem vesta_deployed_failure_measure_le {nc k n : ℕ} [NeZero n]
     (B : IpaVesta.Point) (fam : KimchiFamily IpaVesta.curve nc k n)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
@@ -318,7 +318,7 @@ Pallas-side twin of `vesta_deployed_failure_measure_le`, over `Fq`/`IpaPallas`; 
 four summands, and the same caveat — the faithful tables are a null set and intersecting with
 them restricts the measured event, so this is a modelling statement about where the random-oracle
 idealisation is accurate, not a stronger probability bound. -/
-theorem pallas_deployed_failure_measure_le {nc k n : ℕ} [NeZero n]
+private theorem pallas_deployed_failure_measure_le {nc k n : ℕ} [NeZero n]
     (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}

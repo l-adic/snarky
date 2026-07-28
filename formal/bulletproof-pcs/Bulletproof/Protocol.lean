@@ -154,7 +154,7 @@ def VerifierAcceptsAt (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (b0 v
   with `Q = recombine σ P v u proof.lr`);
 * `sg = ⟨bPolyCoefficients u, σ.g⟩` (the `sg`-correctness check: the final folded
   generator is the challenge-coefficient combination of the generators). -/
-def VerifierAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c : F)
+private def VerifierAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c : F)
     (u : Fin σ.k → F) : Prop :=
   VerifierAcceptsAt σ proof P (bPoly u x) v c u
 
@@ -436,7 +436,7 @@ into the one bound polynomial the commitment opens to. -/
 noncomputable def assemblePoly (n c : ℕ) (as : ℕ → Fin n → F) : Polynomial F :=
   ∑ ci ∈ Finset.range c, ∑ j : Fin n, monomial (ci * n + (j : ℕ)) (as ci j)
 
-theorem assemblePoly_coeff {n c : ℕ} (as : ℕ → Fin n → F) {ci : ℕ} (hci : ci < c)
+private theorem assemblePoly_coeff {n c : ℕ} (as : ℕ → Fin n → F) {ci : ℕ} (hci : ci < c)
     (j : Fin n) : (assemblePoly n c as).coeff (ci * n + (j : ℕ)) = as ci j := by
   -- The windows are disjoint: `ci' * n + j' = ci * n + j` with `j', j < n` forces
   -- `ci' = ci` (divide by `n`) and then `j' = j`.
@@ -501,7 +501,7 @@ def commitₗ (σ : SRS G) : ((Fin (2 ^ σ.k) → F) × F) →ₗ[F] G where
 /-- **Commitment recombination** — kimchi's `chunk_commitment` formula: the `y`-power
 combination of hiding commitments is the hiding commitment of the `y`-power-combined
 witness. `map_sum` of `commitₗ` at the family `i ↦ yⁱ • (asᵢ, rsᵢ)`. -/
-theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
+private theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
     (as : ℕ → Fin (2 ^ σ.k) → F) (rs : ℕ → F) :
     ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i)
       = commit σ (∑ i ∈ Finset.range c, y ^ i • as i)
@@ -524,7 +524,7 @@ theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
 
 /-- The inner product is linear in its first argument — the vector side of the same
 recombination. -/
-theorem innerProduct_combine {n : ℕ} (y : F) (c : ℕ) (as : ℕ → Fin n → F)
+private theorem innerProduct_combine {n : ℕ} (y : F) (c : ℕ) (as : ℕ → Fin n → F)
     (b : Fin n → F) :
     innerProduct (∑ i ∈ Finset.range c, y ^ i • as i) b
       = ∑ i ∈ Finset.range c, y ^ i * innerProduct (as i) b := by

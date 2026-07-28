@@ -41,7 +41,7 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-- Rewire a kimchi-convention transcript tree into ironwood's convention: invert every round
 challenge and exchange the two cross-terms at each node. Leaves are unchanged. -/
-def toZcash : {d : ℕ} → IpaTreeV F G d → Zcash.Snark.IpaTreeV F G d
+private def toZcash : {d : ℕ} → IpaTreeV F G d → Zcash.Snark.IpaTreeV F G d
   | 0, .leaf c => .leaf c
   | _ + 1, .node L R Lv Rv u₁ u₂ u₃ t₁ t₂ t₃ =>
       .node R L Rv Lv u₁⁻¹ u₂⁻¹ u₃⁻¹ (toZcash t₁) (toZcash t₂) (toZcash t₃)
@@ -56,7 +56,7 @@ theorem foldGens_inv {M : Type*} [AddCommGroup M] [Module F M] {k : ℕ}
 /-- **The transport.** An accepting tree in kimchi's convention is an accepting tree in
 ironwood's, after `toZcash`. This is what lets `Zcash.Snark.ipa_extractV` and the AGM/forking
 stack run on kimchi transcripts. -/
-theorem zcash_ipaAcceptV_toZcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
+private theorem zcash_ipaAcceptV_toZcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
     (P : G) → (v : F) → (t : IpaTreeV F G d) → IpaAcceptV g b P v t →
     Zcash.Snark.IpaAcceptV g b P v (toZcash t)
   | 0, _, _, _, _, .leaf _, h => h
@@ -84,7 +84,7 @@ because `0⁻¹ = 0`.
 
 Needed for `Bulletproof.Forking.decIpaAcceptV`: with both directions the accept transfers along
 ironwood's decidability instead of us writing our own. -/
-theorem ipaAcceptV_of_zcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
+private theorem ipaAcceptV_of_zcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin (2 ^ d) → F) →
     (P : G) → (v : F) → (t : IpaTreeV F G d) →
     Zcash.Snark.IpaAcceptV g b P v (toZcash t) → IpaAcceptV g b P v t
   | 0, _, _, _, _, .leaf _, h => h
@@ -110,7 +110,8 @@ theorem ipaAcceptV_of_zcash : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin
         exact ha₃
 
 /-- The accept predicates correspond exactly under the transport. -/
-theorem ipaAcceptV_iff_zcash {d : ℕ} (g : Fin (2 ^ d) → G) (b : Fin (2 ^ d) → F) (P : G) (v : F)
+private theorem ipaAcceptV_iff_zcash
+    {d : ℕ} (g : Fin (2 ^ d) → G) (b : Fin (2 ^ d) → F) (P : G) (v : F)
     (t : IpaTreeV F G d) :
     IpaAcceptV g b P v t ↔ Zcash.Snark.IpaAcceptV g b P v (toZcash t) :=
   ⟨zcash_ipaAcceptV_toZcash g b P v t, ipaAcceptV_of_zcash g b P v t⟩

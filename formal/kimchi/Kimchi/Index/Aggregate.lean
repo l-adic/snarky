@@ -458,7 +458,7 @@ open Kimchi.Permutation in
 `Satisfies idx pub wTab` — every row's gate holds with the public input
 folded in, the copy constraints hold on the whole grid, and the public rows pin the
 first witness column. -/
-theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
     (hβ : β ∉ badBetas
@@ -631,7 +631,7 @@ omit [DecidableEq F] in
 /-- **Gate-member completeness.** Every gate member of a satisfied table is divisible
 by `Z_H` — the converse of the separation argument, for every slot (slots past the
 pool are the zero polynomial). -/
-theorem gateMember_dvd_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem gateMember_dvd_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hrow : ∀ i, rowSatisfies idx pub wTab i) (k : ℕ) :
     zH F n ∣ idx.gateMember pub wTab k := by
@@ -697,7 +697,7 @@ family `Z_H`-divisible — gate members from row satisfaction
 the honest accumulator (`permConstraints_dvd_of_copy`). The converse of
 `satisfies_of_fullFamily_dvd`; with it, satisfiability at a wellformed index is
 *characterized* by the shape of kimchi's one quotient check. -/
-theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
+private theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hsat : Satisfies idx pub wTab) (β γ : F)
     (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts

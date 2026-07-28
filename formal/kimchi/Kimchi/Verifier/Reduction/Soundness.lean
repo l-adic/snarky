@@ -54,7 +54,7 @@ variable {F G : Type*}
 Generic over the commitment carrier, so the chunked reduction reuses it at
 `Fin nc → G`. Public because it is what the batch reads at a selector row
 (`batchC_selRow`), so a downstream statement about the verifying-key rows must name it. -/
-def selComm (comms : IndexComms G) : Fin selCount → G :=
+private def selComm (comms : IndexComms G) : Fin selCount → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
     comms.endoMul, comms.endoScalar]
 
@@ -138,7 +138,7 @@ private theorem batchC_zRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pub
 
 /-- The batch reads the key's `j`-th selector commitment chunks (`selComm`) at the `j`-th
 selector row. Public: the verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
-theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+private theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (j : Fin selCount) :
     batchC wC zC pubC comms (selRow j) = selComm comms j := by
   have h1 : ¬ 2 + (j : ℕ) < 1 := by omega
@@ -167,7 +167,7 @@ private theorem batchC_wRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pub
 
 /-- The batch reads the key's `c`-th coefficient-column commitment chunks at the `c`-th
 coefficient row. Public: the verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
-theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+private theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (c : Fin coeffCols) :
     batchC wC zC pubC comms (cRow c) = comms.coefficients c := by
   have h1 : ¬ 23 + (c : ℕ) < 1 := by omega
@@ -185,7 +185,7 @@ theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin 
 /-- The batch reads the key's σ-column commitment chunks at the `i`-th σ row, at the
 permutation column `sigmaPermCol i`. Public: the verifying-key row bridge
 (`Capstone/Reflection.lean`) names it. -/
-theorem batchC_sRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
+private theorem batchC_sRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (i : Fin sigmaRows) :
     batchC wC zC pubC comms (sRow i) = comms.sigma (sigmaPermCol i) := by
   have h1 : ¬ 38 + (i : ℕ) < 1 := by omega
@@ -204,7 +204,7 @@ commitment of the `selGate j` selector interpolant. Public alongside `selComm` a
 `batchC_selRow`: it is the only route from the batch's selector-row read to the circuit's
 own selector polynomial, so the verifying-key row bridge (`Capstone/Reflection.lean`)
 cannot state its selector case without it. -/
-theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
+private theorem selComm_indexerOf [Field F] [AddCommGroup G] [Module F G] {n : ℕ}
     (σ : SRS G) (nc : ℕ) (idx : Index F n) (j : Fin selCount) :
     selComm (indexerOf σ nc idx) j
       = fun c : Fin nc => commitPolyMaskedChunk σ (idx.selectorPoly (selGate j)) (c : ℕ) := by
@@ -317,7 +317,7 @@ Project-local: it is the binding-free core of the four verifying-key row pinning
 where binding provably FAILS, so the pinning there must come from a representation
 hypothesis (discharged, or reported as a discrete-log relation by
 `dlRelation_of_chunk_rep_ne`) rather than from `hbind`. -/
-theorem combined_eval_of_chunks_of_rep [Field F]
+private theorem combined_eval_of_chunks_of_rep [Field F]
     {k nc : ℕ} {p : Polynomial F} (hdeg : p.natDegree < nc * 2 ^ k)
     {a : Fin nc → Fin (2 ^ k) → F}
     (hrep : ∀ c : Fin nc, a c = chunkCoeffs (2 ^ k) p (c : ℕ))

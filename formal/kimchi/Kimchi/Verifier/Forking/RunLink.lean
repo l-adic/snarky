@@ -20,7 +20,7 @@ variable {C : Ipa.CommitmentCurve} {nc : ℕ}
 
 /-- The fq challenges the soundness guards read (`runOracles`) are exactly the sponge-as-oracle
 reads at the four fq prefixes, taken at the run's own public commitment. -/
-theorem oracleChallenges_runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem oracleChallenges_runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     oracleChallenges poseidonO cvk cp (publicCommitment C σ cvk pub)
       = ((runOracles C σ cvk cp pub).beta, (runOracles C σ cvk cp pub).gamma,
@@ -29,7 +29,7 @@ theorem oracleChallenges_runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
 
 /-- The batch challenges the soundness guards read (`runVU`) are exactly the fr-oracle reads at the
 `v`/`u` prefixes, taken at the run's own fq digest and public evaluations. -/
-theorem oracleVU_runVU (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem oracleVU_runVU (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     oracleVU poseidonOFr cp (runOracles C σ cvk cp pub).digest (runPubEvals C σ cvk cp pub)
       = runVU C σ cvk cp pub := by

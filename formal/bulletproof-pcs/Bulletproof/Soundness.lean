@@ -132,7 +132,7 @@ Under the Fiat-Shamir tree hypothesis an accepting run yields an opening witness
 consumes only the modus ponens of the Fiat-Shamir hypothesis against acceptance, never the
 shape of acceptance itself. This is the form the deployed verifier's acceptance
 (`Ipa.verify … = true`) plugs into. -/
-theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
+private theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
     (hFS : FiatShamirTreeB σ P b v A) (hacc : A) :
     ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ := by
   obtain ⟨ρ, t, ht⟩ := hFS hacc
@@ -222,7 +222,7 @@ Fiat-Shamir hypothesis (`ipa_soundnessA`), so no per-grid-point proof or challen
 appears. This is the form the deployed verifier's acceptance (`Ipa.verify … = true`,
 whose challenges are sponge-derived rather than carried) plugs into — the kernel of the
 chunked batch (`Soundness/ChunkedBatch.lean`). -/
-theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
+private theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
     (ξ : Fin n → F) (hξ : Function.Injective ξ)
     (r : Fin m → F) (hr : Function.Injective r) (hm : 0 < m)
     (C : Fin n → G) (x : Fin m → F) (e : Fin n → Fin m → F)

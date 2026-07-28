@@ -101,7 +101,7 @@ zero.
 Independently valuable — the package proves soundness of `IpaAcceptV`
 (`ipaRelation_of_acceptV`) but never its converse, so nothing currently rules out the predicate
 being unsatisfiable. Modelled on ironwood's `deployedIpaAcceptV_of_witness`. -/
-theorem ipaAcceptV_of_witness (u₁ u₂ u₃ : F)
+private theorem ipaAcceptV_of_witness (u₁ u₂ u₃ : F)
     (h12 : u₁ ≠ u₂) (h13 : u₁ ≠ u₃) (h23 : u₂ ≠ u₃)
     (hu₁ : u₁ ≠ 0) (hu₂ : u₂ ≠ 0) (hu₃ : u₃ ≠ 0) :
     ∀ {d : ℕ} (g : Fin (2 ^ d) → G) (b : Fin (2 ^ d) → F) (a : Fin (2 ^ d) → F),
@@ -162,7 +162,8 @@ parameters rather than assumptions.
 
 The honest consequence: a content-bearing replacement must be AGM-relative or data-valued (as
 ironwood's is), not a `Prop`-level existential over this group. -/
-theorem fiatShamirTreeB_trivial (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) (A : Prop)
+private theorem fiatShamirTreeB_trivial
+    (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) (A : Prop)
     (u₁ u₂ u₃ : F) (h12 : u₁ ≠ u₂) (h13 : u₁ ≠ u₃) (h23 : u₂ ≠ u₃)
     (hu₁ : u₁ ≠ 0) (hu₂ : u₂ ≠ 0) (hu₃ : u₃ ≠ 0)
     (H : G) (hspan : ∀ x : G, ∃ s : F, x = s • H)

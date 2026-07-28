@@ -193,7 +193,7 @@ the deployed sponge carrying a `(state, last challenge)` pair; `Forking.poseidon
 *value* at each prefix. This is the *state* component at the `ζ` prefix — the sponge the
 deployed verifier hands the opening check, obtained as a transcript read rather than as a
 projection of the deployed schedule (`warmState_eq` is the bridge). -/
-def warmState {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private def warmState {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) : Poseidon.FqSponge.S C.base :=
   ((Forking.KimchiTranscriptElt.preZeta cvk cp publicComm).foldl
     Forking.step (Poseidon.FqSponge.init, 0)).1
@@ -201,7 +201,7 @@ def warmState {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
 /-- The warm state read off the transcript is the deployed post-`ζ` sponge state. Same fold and
 same argument as the four value-side bridges (`Forking.poseidonO_pre*`); only the projection
 differs — `foldl_step_fst` says the state component ignores the running challenge. -/
-theorem warmState_eq {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem warmState_eq {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     warmState cvk cp publicComm = (fqOracles C cvk cp publicComm).warm := by
   rw [warmState, Forking.KimchiTranscriptElt.preZeta, Forking.KimchiTranscriptElt.preAlpha,
@@ -220,7 +220,7 @@ def warmDigest {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
 /-- The transcript-read digest is the deployed one. Immediate from `warmState_eq`. -/
-theorem warmDigest_eq {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+private theorem warmDigest_eq {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) :
     warmDigest cvk cp publicComm = (fqOracles C cvk cp publicComm).digest := by
   rw [warmDigest, warmState_eq]
@@ -236,7 +236,7 @@ def kimchiOpeningFS {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
 /-- The three warm opening reads — the base `U⋆`, the round challenges `c⃗` and the Schnorr
 challenge `c` — are the deployed opening derivation continued from the post-`ζ` state. The
 opening-suffix counterpart of `Forking.oracleChallenges_poseidonO`. -/
-theorem transcriptOf_kimchiOpeningFS {nc k m p : ℕ} (cvk : KimchiVK C nc)
+private theorem transcriptOf_kimchiOpeningFS {nc k m p : ℕ} (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc)
     {j : ℕ} (inp : Ipa.Input C j m p) :
     Ipa.Forking.transcriptOf (kimchiOpeningFS cvk cp publicComm) inp
@@ -442,7 +442,7 @@ instance {k : ℕ} : Fintype (Squeeze k) := by
 /-- **One column family's chunked evaluations**, at both evaluation points. Named rather than
 written inline so that instance search takes one step per `EvalsView` field: the five-field
 product of bare `Fin _ → Fin _ → Fin _ → _` exceeds `synthInstance.maxSize`. -/
-def ColEvals (C : Ipa.CommitmentCurve) (nc : ℕ) : Type :=
+private def ColEvals (C : Ipa.CommitmentCurve) (nc : ℕ) : Type :=
   Fin evalPts → Fin nc → C.ScalarField
 
 instance instFintypeColEvals {C : Ipa.CommitmentCurve} {nc : ℕ} : Fintype (ColEvals C nc) :=
@@ -477,7 +477,7 @@ structure EvalsView (C : Ipa.CommitmentCurve) (nc : ℕ) where
   deriving DecidableEq
 
 /-- `EvalsView` as a product, for the `Fintype` transport. -/
-def evalsViewEquiv (C : Ipa.CommitmentCurve) (nc : ℕ) :
+private def evalsViewEquiv (C : Ipa.CommitmentCurve) (nc : ℕ) :
     (Option (ColEvals C nc) × (Fin litRowCount → ColEvals C nc) ×
         (Fin wCols → ColEvals C nc) × (Fin coeffCols → ColEvals C nc) ×
         (Fin sigmaRows → ColEvals C nc)) ≃ EvalsView C nc where
@@ -490,11 +490,11 @@ instance instFintypeEvalsView {C : Ipa.CommitmentCurve} {nc : ℕ} : Fintype (Ev
   Fintype.ofEquiv _ (evalsViewEquiv C nc)
 
 /-- One column family's `(ζ, ζω)` chunk pair, as the view. -/
-def pointView {nc : ℕ} (pe : PointEvaluations (Vector C.ScalarField nc)) : ColEvals C nc :=
+private def pointView {nc : ℕ} (pe : PointEvaluations (Vector C.ScalarField nc)) : ColEvals C nc :=
   fun pt c => if pt = 0 then pe.zeta[c] else pe.zetaOmega[c]
 
 /-- The proof's evaluations as the node's view of them, in the fr-sponge's absorb order. -/
-def evalsViewOf {nc k : ℕ} (cp : KimchiProof C nc k) : EvalsView C nc where
+private def evalsViewOf {nc k : ℕ} (cp : KimchiProof C nc k) : EvalsView C nc where
   pub := match cp.pubEvals with
     | .carried pe => some (pointView pe)
     | .barycentric _ => none
@@ -529,7 +529,7 @@ structure PreIpaData (C : Ipa.CommitmentCurve) (nc : ℕ) where
   deriving DecidableEq
 
 /-- `PreIpaData` as a product, for the `Fintype` transport. -/
-def preIpaDataEquiv (C : Ipa.CommitmentCurve) (nc : ℕ) :
+private def preIpaDataEquiv (C : Ipa.CommitmentCurve) (nc : ℕ) :
     (C.ScalarField × (Fin nc → C.Point) × (Fin wCols → Fin nc → C.Point) ×
         Option (Fin nc → C.Point) × Option (Fin (7 * nc) → Option C.Point) ×
         Option C.ScalarField × Option (EvalsView C nc)) ≃ PreIpaData C nc where
@@ -569,7 +569,7 @@ variable {nc k : ℕ}
 
 /-- The node as a product, hand-written for the same reason `ipaNodeEquivProd` is: `deriving
 Fintype` does not fire through the curve bundle. -/
-def kimchiNodeEquivProd (C : Ipa.CommitmentCurve) (nc k : ℕ) :
+private def kimchiNodeEquivProd (C : Ipa.CommitmentCurve) (nc k : ℕ) :
     (Squeeze k × PreIpaData C nc × (Fin k → Option (C.Point × C.Point)) ×
         Option C.Point × Option C.Point) ≃ KimchiNode C nc k where
   toFun x := ⟨x.1, x.2.1, x.2.2.1, x.2.2.2.1, x.2.2.2.2⟩
@@ -629,14 +629,14 @@ def kimchiNodes (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
 
 /-- The round decoder: at an `ipaRound i` node the cross-terms are present, so round `i`'s pair
 is read straight off. The analogue of `Deployed.nodeRound`. -/
-def kimchiRound (t : KimchiNode C nc k) : C.Point × C.Point :=
+private def kimchiRound (t : KimchiNode C nc k) : C.Point × C.Point :=
   match t.idx with
   | .ipaRound i => (t.lr i).getD (0, 0)
   | _ => (0, 0)
 
 /-- The final decoder: the Schnorr node carries `δ` and `sg`. The analogue of
 `Deployed.nodeFinal`. -/
-def kimchiFinal (t : KimchiNode C nc k) : C.Point × C.Point :=
+private def kimchiFinal (t : KimchiNode C nc k) : C.Point × C.Point :=
   (t.delta.getD 0, t.sg.getD 0)
 
 /-- **The absorbing squeeze of a flat stream row** (`def:absorbed-by`). The squeeze at whose
@@ -656,7 +656,7 @@ transcript:
 This is the index map `hrepPrefix` uses to say *at which node* a row's AGM representation must
 already be fixed. Project-local: it is layout data about `Kimchi.Verifier`'s flat stream, and
 has no Mathlib analogue. -/
-def absorbedBy {nc k : ℕ} (i : Fin (nc + 1 + tailRowCount * nc)) : Squeeze k :=
+private def absorbedBy {nc k : ℕ} (i : Fin (nc + 1 + tailRowCount * nc)) : Squeeze k :=
   if (i : ℕ) < nc then Squeeze.beta
   else if (i : ℕ) = nc then Squeeze.zeta
   else if ((i : ℕ) - (nc + 1)) / nc = 0 then Squeeze.alpha
@@ -664,20 +664,20 @@ def absorbedBy {nc k : ℕ} (i : Fin (nc + 1 + tailRowCount * nc)) : Squeeze k :
 
 /-- `absorbedBy` at the public block: the verifier-computed public commitment chunks are
 present at every node, so `β`. -/
-theorem absorbedBy_streamPos_pubRow (c : Fin nc) :
+private theorem absorbedBy_streamPos_pubRow (c : Fin nc) :
     absorbedBy (k := k) (streamPos nc pubRow c) = Squeeze.beta := by
   have hlo : (streamPos nc pubRow c : ℕ) = (c : ℕ) := rfl
   simp [absorbedBy, hlo, c.isLt]
 
 /-- `absorbedBy` at the derived `ft` row's flat position `nc`: the quotient chunks and the key
 are both absorbed by `ζ`, so the verifier's reconstruction is too. -/
-theorem absorbedBy_ftPos (hi : nc < nc + 1 + tailRowCount * nc) :
+private theorem absorbedBy_ftPos (hi : nc < nc + 1 + tailRowCount * nc) :
     absorbedBy (k := k) ⟨nc, hi⟩ = Squeeze.zeta := by
   simp [absorbedBy]
 
 /-- `absorbedBy` at the permutation-accumulator row (tail row `0`): `α`, the first squeeze at
 whose node `zComm` is present. -/
-theorem absorbedBy_streamPos_zRow (c : Fin nc) :
+private theorem absorbedBy_streamPos_zRow (c : Fin nc) :
     absorbedBy (k := k) (streamPos nc zRow c) = Squeeze.alpha := by
   have hval : (streamPos nc zRow c : ℕ) = nc + 1 + (c : ℕ) := by
     show (if (1 : ℕ) < 1 then (c : ℕ) else nc + 1 + (1 - 1) * nc + (c : ℕ)) = _
@@ -694,7 +694,7 @@ theorem absorbedBy_streamPos_zRow (c : Fin nc) :
 witness columns, the fifteen coefficient columns and the six σ columns: `β`. The witness
 commitments are absorbed immediately before `β` is squeezed, and the key rows are part of the
 absorbed digest, hence present at every node. -/
-theorem absorbedBy_streamPos_of_two_le (hnc : 0 < nc) (i : Fin batchRows)
+private theorem absorbedBy_streamPos_of_two_le (hnc : 0 < nc) (i : Fin batchRows)
     (hi : 2 ≤ (i : ℕ)) (c : Fin nc) :
     absorbedBy (k := k) (streamPos nc i c) = Squeeze.beta := by
   have hval : (streamPos nc i c : ℕ) = nc + 1 + ((i : ℕ) - 1) * nc + (c : ℕ) := by
@@ -743,7 +743,7 @@ carries `δ` and `sg`.
 
 Note the direction it certifies: that each prefix node carries ENOUGH to decode its round,
 never that it carries no more. A node carrying the whole proof satisfies this too. -/
-def kimchiDecodesFromPrefixes (σ : SRS C.Point)
+private def kimchiDecodesFromPrefixes (σ : SRS C.Point)
     (digest : C.ScalarField) (publicComm : Fin nc → C.Point) :
     Bulletproof.Forking.DecodesFromPrefixes σ
       (fun cp : KimchiProof C nc σ.k => Bulletproof.Ipa.Forking.toOpening cp.opening)
@@ -760,7 +760,7 @@ def kimchiDecodesFromPrefixes (σ : SRS C.Point)
 /-- **The IPA extraction inside the kimchi game** — `kimchiExtract` at the kimchi oracle
 domain. That this elaborates at all is the reuse result: the abstract game layer needs no
 change to serve a transcript that is not the IPA's own. -/
-def kimchiIpaExtract (σ : SRS C.Point)
+private def kimchiIpaExtract (σ : SRS C.Point)
     (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
     (pg : Fin (2 ^ σ.k) → C.ScalarField) (pw : C.ScalarField)
@@ -956,7 +956,7 @@ def warmBase (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins
 IPA base. Matching `deployedExtract`, whose `U` override this copies — except that the override
 point is the WARM base `fam.warmBase basis O`, the one the deployed kimchi verifier actually
 squeezes from the post-`ζ` sponge state, not the cold `uBaseOf` of the standalone opening. -/
-def runSrs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def runSrs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     SRS C.Point :=
   { srsOfBasis k basis with U := fam.warmBase basis O }
 
@@ -992,7 +992,7 @@ def Wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C n
 
 /-- The run's transcript node at each squeeze — `kimchiNodes` at the family's own digest,
 public commitment and emitted proof. The index the AGM-faithfulness fields are stated over. -/
-def nodesOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def nodesOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Squeeze k → KimchiNode C nc k :=
   kimchiNodes (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O)
 
@@ -1003,7 +1003,7 @@ them at a node strictly *later* than that squeeze does not read the oracle at it
 
 `absorbedBy_streamPos_pubRow`, `absorbedBy_streamPos_zRow`, `absorbedBy_streamPos_of_two_le`
 and `absorbedBy_ftPos` identify that squeeze for every row family. -/
-theorem repPrefix_of_absorbedBy (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem repPrefix_of_absorbedBy (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O O' : Coins C nc k) (i : Fin (nc + 1 + tailRowCount * nc)) {s : Squeeze k}
     (hs : absorbedBy i = s) (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
     fam.aRef basis O i = fam.aRef basis O' i ∧ fam.ρRef basis O i = fam.ρRef basis O' i := by
@@ -1013,7 +1013,7 @@ theorem repPrefix_of_absorbedBy (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → 
 
 /-- The quotient-chunk half of `repPrefix_of_absorbedBy`: `aT`/`ρT` are functions of the run's
 `ζ` node, the node at which the quotient commitment has been absorbed. -/
-theorem tPrefix_of_zetaNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem tPrefix_of_zetaNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O O' : Coins C nc k) (j : Fin ((fam.adversary basis).run O).tComm.size)
     (j' : Fin ((fam.adversary basis).run O').tComm.size) (hj : (j : ℕ) = (j' : ℕ))
     (hnode : fam.nodesOf basis O Squeeze.zeta = fam.nodesOf basis O' Squeeze.zeta) :
@@ -1023,13 +1023,13 @@ theorem tPrefix_of_zetaNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Po
 /-! ### The AGM representation of the combined commitment -/
 
 /-- The polyscale-combination of the family's per-commitment coefficient vectors. -/
-def pgOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def pgOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Fin (2 ^ k) → C.ScalarField :=
   fun j => ∑ i : Fin (nc + 1 + tailRowCount * nc),
     (fam.claim basis O).polyscale ^ (i : ℕ) * fam.aRef basis O i j
 
 /-- The polyscale-combination of the family's per-commitment blinders. -/
-def pwOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def pwOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     C.ScalarField :=
   ∑ i : Fin (nc + 1 + tailRowCount * nc),
     (fam.claim basis O).polyscale ^ (i : ℕ) * fam.ρRef basis O i
@@ -1038,7 +1038,7 @@ def pwOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C n
 the reason a `KimchiFamily` needs no `pg`/`pw`/`hP` fields of its own: they are projections.
 
 The proof is `Finset.sum_comm` under `commitGen`. -/
-theorem hPOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private theorem hPOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     combinedCommitment (fam.claim basis O).polyscale (fam.claim basis O).commitmentFn
       = commitGen (fam.runSrs basis O).g (fam.pgOf basis O)
         + fam.pwOf basis O • (fam.runSrs basis O).h := by
@@ -1111,7 +1111,7 @@ inductive VkRow where
   deriving DecidableEq, Fintype
 
 /-- The abstract batch row a verifying-key row sits at. -/
-def VkRow.batchRow : VkRow → Fin batchRows
+private def VkRow.batchRow : VkRow → Fin batchRows
   | .pub => pubRow
   | .sel j => selRow j
   | .coeff c => cRow c
@@ -1135,7 +1135,7 @@ variable {F : Type*} [Field F] [DecidableEq F] {n : ℕ} [NeZero n]
 /-- The circuit polynomial a verifying-key row is the chunked commitment of: the σ, coefficient
 and selector interpolants at their rows, and the **negated** public interpolant at the public
 row (kimchi commits to `−pubPoly`, `publicCommitment_corresponds`). -/
-noncomputable def vkRowPoly (idx : Index F n) (pub : Array F) : VkRow → Polynomial F
+private noncomputable def vkRowPoly (idx : Index F n) (pub : Array F) : VkRow → Polynomial F
   | .pub => -(idx.pubPoly (pubView idx pub))
   | .sel j => idx.selectorPoly (selGate j)
   | .coeff c => idx.coeffPoly c
@@ -1144,7 +1144,7 @@ noncomputable def vkRowPoly (idx : Index F n) (pub : Array F) : VkRow → Polyno
 /-- The blinder the honest chunk commitment of a verifying-key row carries: the selectors and
 the public commitment are masked with the fixed unit blinder (`mask_custom`), the σ and
 coefficient columns are unblinded. -/
-def vkRowBlinder : VkRow → F
+private def vkRowBlinder : VkRow → F
   | .pub => 1
   | .sel _ => 1
   | .coeff _ => 0
@@ -1154,7 +1154,7 @@ def vkRowBlinder : VkRow → F
 `runInputWith` verbatim, with the four fq-side squeezes handed in; `runPScalar` is this at the
 sponge's own values. Named here because the `ft` row's honest coefficient window mentions it,
 and the knowledge-soundness game's claim is `runInputWith`, not `runInput`. -/
-def pScalarWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private def pScalarWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (beta gamma alpha zeta : C.ScalarField) : C.ScalarField :=
   Kimchi.Protocol.Linearization.permScalar beta gamma alpha
     (Kimchi.Protocol.Linearization.zkpmEval cvk.n cvk.zkRows cvk.omega zeta)
@@ -1170,7 +1170,7 @@ sponge-driven claim; the game's claim is `runInputWith` at the oracle table's ch
 two flat streams differ in one slot only — the derived `ft` row at flat position `nc` — which
 no batch position reads, and that is exactly the freedom `batchC_eq_flat_gen` was stated
 with. -/
-theorem commitmentFn_streamPos_with {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem commitmentFn_streamPos_with {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) (i : Fin batchRows) (c : Fin nc) :
     (runInputWith σ cvk cp pub beta gamma alpha zeta v u).commitmentFn (streamPos nc i c)
@@ -1198,7 +1198,7 @@ omit [Module C.ScalarField C.Point] in
 /-- **The derived `ft` row at its own flat position, at the game's own claim.** The `ft` slot
 is the one place where `runInputWith` and the sponge-driven `runStreamP` differ, so this read
 is done here rather than borrowed from `commitmentFn_ftPos`. -/
-theorem commitmentFn_ftPos_with {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem commitmentFn_ftPos_with {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (beta gamma alpha zeta v u : C.ScalarField) :
     (runInputWith σ cvk cp pub beta gamma alpha zeta v u).commitmentFn
@@ -1222,12 +1222,12 @@ variable {nc k : ℕ} (fam : KimchiFamily C nc k n)
 
 /-- The flat position of the derived `ft` row: immediately after the public block's `nc`
 chunks. Named because three declarations below index `aRef`/`ρRef` there. -/
-def ftPos (nc : ℕ) : Fin (nc + 1 + tailRowCount * nc) := ⟨nc, by omega⟩
+private def ftPos (nc : ℕ) : Fin (nc + 1 + tailRowCount * nc) := ⟨nc, by omega⟩
 
 /-- The challenge the oracle table hands *this* run at squeeze `s` — `reads` at the family's
 own digest, public commitment and emitted proof. The six pre-IPA values of `fam.claim` are
 exactly these. -/
-def readsOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
+private def readsOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (s : Squeeze k) : C.ScalarField :=
   reads (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O) O s
 
@@ -1238,7 +1238,7 @@ window of the presented circuit's own polynomial.
 This is the predicate the repaired `ipaAttempt` branches on, which is why it is a plain
 `∀`-conjunction over finite index types rather than an existential or a quotient: it is
 decidable (`instDecidableVkRepHonest`). -/
-def VkRepHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def VkRepHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Prop :=
   ∀ (r : VkRow) (c : Fin nc),
     fam.aRef basis O (streamPos nc r.batchRow c)
@@ -1263,7 +1263,7 @@ own polynomial, at that row's fixed blinder.
 Unlike `VkRepHonest` this is *not* adversary-chosen data: it follows from the family's `hvk`
 together with the flat-stream layout. It is a hypothesis here only because that layout bridge
 is `private` to the reflection layer; see this section's preamble. -/
-def VkCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def VkCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Prop :=
   ∀ (r : VkRow) (c : Fin nc),
     (fam.claim basis O).commitmentFn (streamPos nc r.batchRow c)
@@ -1282,7 +1282,7 @@ acceptance (for the Lagrange-basis size), the public-input arity and the `.val`-
 collapse, exactly as `Capstone/Reflection.lean`'s `commitmentFn_streamPos_pubRow_eq_commit`
 does. That bridge is `private` at the moment of writing, so the public row enters here as the
 hypothesis `hpubRow`; a consumer holding `Wins` supplies it. -/
-theorem vkCommHonest_of_pubRow (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem vkCommHonest_of_pubRow (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k)
     (hpubRow : ∀ c : Fin nc,
       (fam.claim basis O).commitmentFn (streamPos nc pubRow c)
@@ -1314,7 +1314,7 @@ theorem vkCommHonest_of_pubRow (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C
 /-- **A winning run has a big enough Lagrange basis.** The challenge-generic verifier's first
 act is the size guard `cvk.lagrangeBasis.size < pub.size || n < pub.size`, so acceptance
 delivers the inequality `publicCommitment_corresponds` needs. -/
-theorem le_lagrangeBasis_size_of_wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem le_lagrangeBasis_size_of_wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (h : fam.Wins basis O) :
     (fam.pub basis).size ≤ (fam.cvk basis).lagrangeBasis.size := by
   by_contra hlt
@@ -1329,7 +1329,7 @@ supplies the Lagrange chunk pin, `hpub` the public-input arity, and the run's ow
 Lagrange-basis size. `hsmul` — the `.val`-scalar collapse — stays a parameter because it is
 curve-specific, exactly as it is in `commitmentFn_streamPos_pubRow_eq_commit` (whose
 orientation is the opposite one; the two are interchanged by `Eq.symm`). -/
-theorem vkCommHonest_of_wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem vkCommHonest_of_wins (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k)
     (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
     (hwin : fam.Wins basis O) : fam.VkCommHonest basis O := by
@@ -1362,7 +1362,7 @@ branch, i.e. to arm (2), rather than to the residual.
 
 The coefficients are explicit terms, not an existential: the extractor has to *emit* this
 witness, so an existence statement would be useless to it. -/
-noncomputable def vkRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def vkRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k)
     (r : VkRow) (c : Fin nc)
     (hcomm : (fam.claim basis O).commitmentFn (streamPos nc r.batchRow c)
@@ -1391,7 +1391,7 @@ noncomputable def vkRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.P
 /-- **The computed relation does not touch the transcript-derived base.** Definitional, and the
 reason `vkRelation` lands in arm (2): `relationFinder` keeps exactly the breaks whose `u`
 coefficient vanishes. -/
-theorem vkRelation_coeffs_u (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem vkRelation_coeffs_u (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (r : VkRow) (c : Fin nc)
     (hcomm : (fam.claim basis O).commitmentFn (streamPos nc r.batchRow c)
       = commit (srsOfBasis k basis)
@@ -1407,7 +1407,7 @@ coefficient at the transcript-derived slot is zero.
 
 The offending row is picked by a search over the finite index type `VkRow × Fin nc`; the
 witness itself is `vkRelation` at that row, so nothing here is merely asserted to exist. -/
-theorem dlRelation_of_vkRep_ne (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem dlRelation_of_vkRep_ne (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (hcomm : fam.VkCommHonest basis O)
     (hne : ¬ fam.VkRepHonest basis O) :
     ∃ rel : Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField)
@@ -1431,7 +1431,7 @@ exactly as `vkRelation` is. -/
 /-- The honest coefficient window of the derived `ft` row, at the family's own challenges:
 `run_sound_algebraic_of_vkrep`'s `hftRep` right-hand side with `runOracles`' squeezes replaced
 by the table's values and `runPScalar` by `pScalarWith`. -/
-noncomputable def ftHonestCoeffs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def ftHonestCoeffs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) : Fin (2 ^ k) → C.ScalarField :=
   pScalarWith (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
       (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma)
@@ -1445,7 +1445,7 @@ noncomputable def ftHonestCoeffs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) →
 /-- The blinder that goes with `ftHonestCoeffs`: the quotient chunks are the only blinded
 contributors to the derived `ft` commitment, since the `σ₆` chunk commitments are unblinded
 fixed key columns. -/
-def ftHonestBlinder (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private def ftHonestBlinder (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) : C.ScalarField :=
   -((fam.readsOf basis O Squeeze.zeta ^ n - 1)
     • ∑ j : Fin (fam.proofOf basis O).tComm.size,
@@ -1459,7 +1459,7 @@ carries, at flat position `nc`, the verifier's own construction of the `ft` comm
 The `ft`-row analogue of `VkCommHonest`, and like it *not* adversary-chosen: it follows from
 the family's key/circuit correspondence together with the flat-stream layout. It is a named
 predicate here because the extractor may not assume it (see the break-selector preamble). -/
-def FtCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def FtCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Prop :=
   (fam.claim basis O).commitmentFn (ftPos nc)
     = pScalarWith (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
@@ -1475,7 +1475,7 @@ def FtCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : C
 /-- **Honest `ft` representation**: the family's coefficient vector at the derived `ft` row is
 the combination the verifier's own construction of that commitment forces. The `ft`-row
 analogue of `VkRepHonest`, and the second half of the extractor's key gate. -/
-def FtRepHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def FtRepHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Prop :=
   fam.aRef basis O (ftPos nc) = fam.ftHonestCoeffs basis O
 
@@ -1493,7 +1493,7 @@ noncomputable instance instDecidableFtRepHonest
 constructed `ft` commitment at flat position `nc`, expanded as the two chunk combinations);
 `hne` is the coefficient mismatch. Their difference is `ft_dlRelation_of_chunks_ne`'s
 discrete-log relation, injected into the augmented basis with coefficient `0` at `u`. -/
-noncomputable def ftRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def ftRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k)
     (hcomm : fam.FtCommHonest basis O)
     (hne : fam.aRef basis O (ftPos nc) ≠ fam.ftHonestCoeffs basis O) :
@@ -1523,7 +1523,7 @@ noncomputable def ftRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.P
 
 /-- **The `ft` relation does not touch the transcript-derived base** — definitional, the twin
 of `vkRelation_coeffs_u`, and the reason an `ft` break lands in arm (2). -/
-theorem ftRelation_coeffs_u (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem ftRelation_coeffs_u (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k)
     (hcomm : fam.FtCommHonest basis O)
     (hne : fam.aRef basis O (ftPos nc) ≠ fam.ftHonestCoeffs basis O) :
@@ -1539,7 +1539,8 @@ The proof is `Capstone/Reflection.lean`'s `runFtComm_eq` transcribed at handed-i
 combinations become `combinedCommitment`s, the squaring ladders become the powers `ζ^{2^k}` and
 `ζ^n`, and the key's `σ₆` chunks become the circuit's own by the correspondence. `hsmul` — the
 `.val`-scalar collapse — stays a parameter because it is curve-specific. -/
-theorem ftCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
+private theorem ftCommHonest
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P) :
     fam.FtCommHonest basis O := by
   have hzM : powPow2 (fam.readsOf basis O Squeeze.zeta) (srsOfBasis k basis).k
@@ -1586,7 +1587,7 @@ facts recovers key-honesty outright (`vkRepHonest_of_no_break`). -/
 
 /-- A verifying-key row at which the family's declaration is both refutable (the group-side
 half holds there) and refuted (the coefficient vector is not the honest window). -/
-def VkBroken (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
+private def VkBroken (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (rc : VkRow × Fin nc) : Prop :=
   ((fam.claim basis O).commitmentFn (streamPos nc rc.1.batchRow rc.2)
       = commit (srsOfBasis k basis)
@@ -1599,7 +1600,7 @@ def VkBroken (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins
 broken row, or `none` when no row is broken. `noncomputable` because the honest chunk window
 is defined by Lagrange interpolation; the choice of row is over the finite type
 `VkRow × Fin nc`. -/
-noncomputable def vkBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def vkBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) :
     Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField)
       (Zcash.Snark.augmentedBasis (fam.runSrs basis O).g (fam.runSrs basis O).U
@@ -1610,12 +1611,12 @@ noncomputable def vkBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Poin
   else none
 
 /-- The `ft`-row analogue of `VkBroken`. -/
-def FtBroken (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
+private def FtBroken (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     Prop :=
   fam.FtCommHonest basis O ∧ fam.aRef basis O (ftPos nc) ≠ fam.ftHonestCoeffs basis O
 
 /-- The `ft`-row break the extractor emits, the twin of `vkBreak`. -/
-noncomputable def ftBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def ftBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) :
     Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField)
       (Zcash.Snark.augmentedBasis (fam.runSrs basis O).g (fam.runSrs basis O).U
@@ -1627,7 +1628,7 @@ noncomputable def ftBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Poin
 consumer needs. `vkBreak = none` says no row is *both* group-honest and rep-dishonest; supply
 group-honesty at every row (`VkCommHonest`, a consequence of `hvk` and the layout) and
 rep-honesty at every row follows. -/
-theorem vkRepHonest_of_no_break (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem vkRepHonest_of_no_break (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (hcomm : fam.VkCommHonest basis O)
     (h : fam.vkBreak basis O = none) : fam.VkRepHonest basis O := by
   intro r c
@@ -1637,7 +1638,7 @@ theorem vkRepHonest_of_no_break (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → 
   exact absurd h (by simp)
 
 /-- The `ft`-row twin of `vkRepHonest_of_no_break`. -/
-theorem ftRepHonest_of_no_break (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem ftRepHonest_of_no_break (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k)
     (hcomm : fam.FtCommHonest basis O)
     (h : fam.ftBreak basis O = none) : fam.FtRepHonest basis O := by
@@ -1656,7 +1657,7 @@ variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 /-! ### The extractor -/
 
 /-- **The IPA forking extraction inside the kimchi transcript**, at the run's own claim. -/
-def ipaAttempt (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
+private def ipaAttempt (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
     Option (OpeningOrBreak (fam.runSrs basis O)
       (combinedCommitment (fam.claim basis O).polyscale (fam.claim basis O).commitmentFn)
@@ -1674,7 +1675,7 @@ when it is not the presented circuit's — the verifying-key relation if some ke
 otherwise the `ft` relation if that row is, otherwise nothing.
 
 `Option.orElse` and not a disjunction because the extractor must *emit* the witness. -/
-noncomputable def keyBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def keyBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) :
     Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField)
       (Zcash.Snark.augmentedBasis (fam.runSrs basis O).g (fam.runSrs basis O).U
@@ -1682,7 +1683,7 @@ noncomputable def keyBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Poi
   (fam.vkBreak basis O).orElse fun _ => fam.ftBreak basis O
 
 /-- No key break means neither channel fired — the form the honesty recovery consumes. -/
-theorem keyBreak_eq_none_iff (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem keyBreak_eq_none_iff (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) :
     fam.keyBreak basis O = none ↔
       fam.vkBreak basis O = none ∧ fam.ftBreak basis O = none := by
@@ -1858,18 +1859,18 @@ reads neither the family's AGM representations, nor the run's commitments, nor a
 challenge — it is a function of the circuit alone. So it is a *constant* function of the node
 at which `ζ` is read, hence trivially blind there, and the adaptive Schwartz–Zippel charge
 applies to it with no faithfulness hypothesis at all. -/
-def zetaBoundaryBad {n : ℕ} (idx : Index C.ScalarField n) :
+private def zetaBoundaryBad {n : ℕ} (idx : Index C.ScalarField n) :
     Finset C.ScalarField :=
   {1, idx.omega ^ (n - idx.zkRows)}
 
 /-- Avoiding the boundary set IS `RunGuardImp`'s two `ζ` side conditions. -/
-theorem not_mem_zetaBoundaryBad_iff {n : ℕ} (idx : Index C.ScalarField n)
+private theorem not_mem_zetaBoundaryBad_iff {n : ℕ} (idx : Index C.ScalarField n)
     (z : C.ScalarField) :
     z ∉ zetaBoundaryBad idx ↔ z ≠ 1 ∧ z ≠ idx.omega ^ (n - idx.zkRows) := by
   simp [zetaBoundaryBad, not_or]
 
 /-- The boundary set costs at most the `2` `szBudget` allots it. -/
-theorem card_zetaBoundaryBad_le {n : ℕ} (idx : Index C.ScalarField n) :
+private theorem card_zetaBoundaryBad_le {n : ℕ} (idx : Index C.ScalarField n) :
     (zetaBoundaryBad idx).card ≤ 2 := by
   refine le_trans (Finset.card_insert_le _ _) ?_
   simp
@@ -2047,7 +2048,7 @@ private theorem deployed_forking_tree_inl_fst [DecidableEq F] [DecidableEq G'] {
 components: the coefficient vector is `pg` and the blinder is `pw`. The blinder is immediate
 from the definition (`.inl ⟨a, pw, _⟩`); the coefficient vector is
 `deployed_forking_tree_inl_fst` transported through the second extraction. -/
-theorem kimchiOpeningOrBreak_inl_fst [DecidableEq F] [DecidableEq G'] (σ : SRS G')
+private theorem kimchiOpeningOrBreak_inl_fst [DecidableEq F] [DecidableEq G'] (σ : SRS G')
     (b : Fin (2 ^ σ.k) → F) (v : F) (P : G')
     (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)
     (cert : KimchiForkCert F G' σ.k) (hv : KimchiForkValid σ.U σ.h v σ.g b P cert)
@@ -2076,7 +2077,7 @@ theorem kimchiOpeningOrBreak_inl_fst [DecidableEq F] [DecidableEq G'] (σ : SRS 
 /-- **The extraction game's left payload is the presented AGM representation.** The same
 statement one layer up: `kimchiExtract` only wraps `kimchiOpeningOrBreak` in the fork's
 `Option`/validity guard, neither of which touches `(pg, pw)`. -/
-theorem kimchiExtract_inl_fst {T Pre Pf : Type*} [DecidableEq F] [DecidableEq G']
+private theorem kimchiExtract_inl_fst {T Pre Pf : Type*} [DecidableEq F] [DecidableEq G']
     [DecidableEq T] [Zero Pre] [DecidableEq Pre]
     (σ : SRS G') (b : Fin (2 ^ σ.k) → F) (v : F) (P : G')
     (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)
@@ -2101,7 +2102,7 @@ variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
 /-- **The kimchi-transcript extraction returns the family's own combination.** `ipaAttempt` is
 `kimchiExtract` at `(fam.pgOf basis O, fam.pwOf basis O)`, so its left payload is that pair. -/
-theorem ipaAttempt_inl_fst
+private theorem ipaAttempt_inl_fst
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (x : Σ' (a : Fin (2 ^ k) → C.ScalarField) (ρ : C.ScalarField),
@@ -2119,7 +2120,7 @@ family's representation table `aRef` (definitional), and — the content — the
 combination `(pgOf, pwOf)` of that table satisfies the opening relation for the run's combined
 commitment. This is the hypothesis `eval_pins_of_opening` derives from `hbind` at its Step B,
 here supplied by the extractor's own coefficient test instead. -/
-theorem attempt_inl_pins
+private theorem attempt_inl_pins
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2141,7 +2142,7 @@ theorem attempt_inl_pins
 
 /-- **A left payload certifies that neither break channel fired.** The definitional half of the
 gate: the extractor reaches `PSum.inl` only through the `keyBreak = none` branch. -/
-theorem attempt_inl_noBreak
+private theorem attempt_inl_noBreak
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2164,7 +2165,7 @@ The two group-side halves are hypotheses here for the reason recorded in the bre
 preamble — they are consequences of the family's `hvk` and the flat-stream layout, but the
 public row's case additionally needs the run's acceptance, so a consumer that has `Wins` in
 hand supplies them; the extractor itself may not. -/
-theorem attempt_inl_keyHonest
+private theorem attempt_inl_keyHonest
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2179,7 +2180,7 @@ theorem attempt_inl_keyHonest
 `attempt_inl_keyHonest`, with both group-side halves discharged: `vkCommHonest_of_wins` from the
 family's `hvk`, `hpub` and the run's own acceptance, and `ftCommHonest` from `hvk` and `hn`.
 Only the curve-specific `.val`-scalar collapse remains a parameter. -/
-theorem attempt_inl_keyHonest_of_wins
+private theorem attempt_inl_keyHonest_of_wins
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2192,7 +2193,7 @@ theorem attempt_inl_keyHonest_of_wins
 
 /-- `pgOf` written as a `Pi`-level ξ-combination, the shape `eval_pins_of_opening`'s
 `∑ i, ξ ^ i • aw₀ i` uses. Pointwise the two differ only by `Finset.sum_apply`. -/
-theorem pgOf_eq_sum_smul (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem pgOf_eq_sum_smul (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) :
     fam.pgOf basis O
       = ∑ i : Fin (nc + 1 + tailRowCount * nc),
@@ -2201,7 +2202,7 @@ theorem pgOf_eq_sum_smul (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point
   simp [KimchiFamily.pgOf, Finset.sum_apply]
 
 /-- `pwOf` as a ξ-combination, the blinder-side twin of `pgOf_eq_sum_smul`. -/
-theorem pwOf_eq_sum_smul (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem pwOf_eq_sum_smul (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) :
     fam.pwOf basis O
       = ∑ i : Fin (nc + 1 + tailRowCount * nc),
@@ -2213,7 +2214,7 @@ the run's combined commitment whose coefficient vector *and* blinder are literal
 ξ-combinations of the family's per-row representations — `eval_pins_of_opening`'s Step B
 conclusion, with no `hbind` anywhere in the ancestry. This is what a binding-free eval-pin
 dichotomy consumes on the `inl` branch. -/
-theorem attempt_inl_opening_eq_combination
+private theorem attempt_inl_opening_eq_combination
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2234,7 +2235,7 @@ theorem attempt_inl_opening_eq_combination
 
 /-- On the left branch the setup-basis relation finder is empty: a left payload is not charged
 to `ε`. Immediate from the definitions, and half of why the branch had looked uncharged. -/
-theorem relationFinder_eq_none_of_attempt_inl
+private theorem relationFinder_eq_none_of_attempt_inl
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (bs : SetupIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2245,7 +2246,7 @@ theorem relationFinder_eq_none_of_attempt_inl
 /-- On the left branch the derived-base discrete-log finder is empty: a left payload is not
 charged to `δ` either. With `attempt_inl_opening_eq_combination` this is now benign — there is
 nothing on that branch left to charge. -/
-theorem derivedULog_eq_none_of_attempt_inl (B : C.Point)
+private theorem derivedULog_eq_none_of_attempt_inl (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (s : SetupIndex (2 ^ k) → C.ScalarField) (O : Coins C nc k)
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -2258,7 +2259,7 @@ end KimchiFamily
 /-- **Every commitment at the sampled basis is a multiple of the one point `B`.** At
 `augOfSetup (scalarBasis B s)` generator `i` is `s (gen i) • B`, so the commitment map collapses
 to the linear functional `d ↦ ∑ i, d i * s (gen i)` followed by `· • B`. -/
-theorem commitGen_srsOfBasis_scalarBasis {k : ℕ} (B : C.Point)
+private theorem commitGen_srsOfBasis_scalarBasis {k : ℕ} (B : C.Point)
     (s : SetupIndex (2 ^ k) → C.ScalarField) (d : Fin (2 ^ k) → C.ScalarField) :
     commitGen (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))).g d
       = (∑ i, d i * s (SetupIndex.gen i)) • B := by
@@ -2293,7 +2294,7 @@ private lemma exists_ne_zero_sum_mul_eq_zero {m : ℕ} (hm : 2 ≤ m) (c : Fin m
 /-- **The sampled basis is maximally non-binding.** At `augOfSetup (scalarBasis B s)` every
 generator is a multiple of the single point `B`, so for `k ≥ 1` the commitment map has a
 nonzero kernel vector: `hbind` is refutable there, exactly as this module's preamble says. -/
-theorem exists_ne_zero_kernel_scalarBasis {k : ℕ} (hk : 1 ≤ k) (B : C.Point)
+private theorem exists_ne_zero_kernel_scalarBasis {k : ℕ} (hk : 1 ≤ k) (B : C.Point)
     (s : SetupIndex (2 ^ k) → C.ScalarField) :
     ∃ d : Fin (2 ^ k) → C.ScalarField, d ≠ 0 ∧
       commitGen (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))).g d = 0 := by
@@ -2374,7 +2375,7 @@ def TouchesU (bs : SetupIndex (2 ^ k) → C.Point) (O : Coins C nc k)
 `ExtractsWitness` with its semantic conjunct negated. This is the arm with no counterpart on
 the IPA side, whose `HasOpening` asks for the branch alone; it is where the algebraic
 run-soundness root has to deliver. -/
-def OpenedUnsatisfying (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private def OpenedUnsatisfying (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) : Prop :=
   ∃ a, fam.attempt basis O coins = some (PSum.inl a) ∧
     ¬ Satisfies fam.idx (pubView fam.idx (fam.pub basis))
@@ -2390,7 +2391,8 @@ its `hftRep`.
 
 The cover itself (`four_way_cover`) is unchanged: no extra conjunct was added to arm (4),
 because under the gate the arm *implies* key-honesty rather than needing it assumed. -/
-theorem keyHonest_of_openedUnsatisfying (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem keyHonest_of_openedUnsatisfying
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
     (hwin : fam.Wins basis O) (h : fam.OpenedUnsatisfying basis O coins) :
@@ -2440,7 +2442,7 @@ It is there because `arm4_hits_badChallenge` needs it: under the extractor's key
 the arm *carries* key-honesty (`keyHonest_of_openedUnsatisfying`), but only on a winning run.
 The narrowing shrinks the fourth arm, so the cover — and every bound derived from it — is
 strictly stronger than with the bare `OpenedUnsatisfying`. -/
-theorem four_way_cover (B : C.Point)
+private theorem four_way_cover (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) :
     {q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k |
         fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 ∧
@@ -2513,7 +2515,7 @@ it is applied to `hEff` first to release its two conjuncts.
 
 This closes the second and third summands of `vesta_kimchi_knowledge_sound` and its Pallas
 twin; only the presence arm and the opened-but-unsatisfying arm remain. -/
-theorem relation_residual_measure_le (B : C.Point)
+private theorem relation_residual_measure_le (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {R : ℕ} {ε δ : ℝ≥0∞}
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
     (hEff : fam.ReductionEfficient coins R) :
@@ -2531,7 +2533,7 @@ theorem relation_residual_measure_le (B : C.Point)
 are undefined (section 8), so the opened-but-unsatisfying arm is disjoint from the relation set
 and from the residual. Nothing in the cover is paid for twice; it also says that the two arms
 still open really are the two arms with no cryptographic price attached to them. -/
-theorem openedUnsatisfying_disjoint (B : C.Point)
+private theorem openedUnsatisfying_disjoint (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (q : (SetupIndex (2 ^ k) → C.ScalarField) × Coins C nc k)
     (h : fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2 coins) :
@@ -2560,7 +2562,7 @@ This is the shape `vesta_kimchi_knowledge_sound` and its Pallas twin consume —
 `hAlgebraic` bounds the arm WITH its win conjunct, matching `four_way_cover`; that is a smaller
 set than bare `OpenedUnsatisfying`, so the hypothesis is weaker and this corollary is
 correspondingly stronger. -/
-theorem wins_notExtracts_measure_le_of_arms (B : C.Point)
+private theorem wins_notExtracts_measure_le_of_arms (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {R : ℕ}
     {ε δ bPresence bAlgebraic : ℝ≥0∞}
     (hHard : fam.DiscreteLogRelationHardFor B coins R ε δ)
@@ -2606,7 +2608,7 @@ section ClaimStability
 variable {nc k : ℕ}
 
 /-- The six pre-opening squeezes, in schedule order: `β`, `γ`, `α`, `ζ`, `ξ`, `r`. -/
-def preSqueeze : Fin 6 → Squeeze k :=
+private def preSqueeze : Fin 6 → Squeeze k :=
   ![.beta, .gamma, .alpha, .zeta, .polyscale, .evalscale]
 
 /-- **The run's pre-opening absorbed data** — the `pre` payload every opening-round node
@@ -2618,7 +2620,7 @@ def preDataOf (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
 /-- **The node at a pre-opening squeeze, rebuilt from the fully-absorbed pre-opening data** by
 re-gating the `Option` fields to the schedule. This is what makes the six challenge-reading
 nodes a function of the pre-opening data alone, as `claimStable_of_preData` requires. -/
-def preNodeOf (d : PreIpaData C nc) (s : Squeeze k) : KimchiNode C nc k where
+private def preNodeOf (d : PreIpaData C nc) (s : Squeeze k) : KimchiNode C nc k where
   idx := s
   pre :=
     { digest := d.digest
@@ -2643,7 +2645,7 @@ def preNodeOf (d : PreIpaData C nc) (s : Squeeze k) : KimchiNode C nc k where
 /-- **Rebuilding is exact at the six pre-opening squeezes**: nothing absorbed after the
 opening begins is visible at them, so re-gating the `ξ`-node payload returns the run's own
 node. Definitional at each squeeze. -/
-theorem preNodeOf_preDataOf (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+private theorem preNodeOf_preDataOf (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (cp : KimchiProof C nc k) (i : Fin 6) :
     preNodeOf (preDataOf digest publicComm cp) (preSqueeze i)
       = kimchiNodes digest publicComm cp (preSqueeze i) := by
@@ -2652,7 +2654,7 @@ theorem preNodeOf_preDataOf (digest : C.ScalarField) (publicComm : Fin nc → C.
 /-- **Every opening-round node carries the run's pre-opening data.** The `hdet` half of
 `claimStable_of_preData` at this transcript: `nodeAt` gates its `Option` fields only against
 the four earliest squeezes, so `ipaRound _` and `schnorr` alike carry the `ξ`-node payload. -/
-theorem preDataOf_eq_of_ipaPrefixes_eq (σ : SRS C.Point) (digest : C.ScalarField)
+private theorem preDataOf_eq_of_ipaPrefixes_eq (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cp cp' : KimchiProof C nc σ.k) (j : Fin (σ.k + 1))
     (h : ipaPrefixes σ digest publicComm cp j = ipaPrefixes σ digest publicComm cp' j) :
     preDataOf digest publicComm cp = preDataOf digest publicComm cp' := by
@@ -2664,7 +2666,7 @@ theorem preDataOf_eq_of_ipaPrefixes_eq (σ : SRS C.Point) (digest : C.ScalarFiel
 `claimStable_of_preData` at this transcript — and it is decided by the squeeze index alone, not
 by the absorbed data, which is exactly why the six `β…r` nodes survive reprogramming at an IPA
 round. -/
-theorem preNodeOf_ne_ipaPrefixes (σ : SRS C.Point) (digest : C.ScalarField)
+private theorem preNodeOf_ne_ipaPrefixes (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (d : PreIpaData C nc) (cp : KimchiProof C nc σ.k)
     (i : Fin 6) (j : Fin (σ.k + 1)) :
     preNodeOf d (preSqueeze i) ≠ ipaPrefixes σ digest publicComm cp j := by
@@ -2678,7 +2680,7 @@ run's pre-opening data and the six pre-opening challenges is stable for the IPA 
 
 This is `Bulletproof.Forking.claimStable_of_preData` with both transcript-specific hypotheses
 already discharged, so a consumer supplies only the factorization `hκ`. -/
-theorem claimStable_of_preDataFactors {ClaimData : Type*} (σ : SRS C.Point)
+private theorem claimStable_of_preDataFactors {ClaimData : Type*} (σ : SRS C.Point)
     (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (A : Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k))
     (κ : KimchiProof C nc σ.k → (KimchiNode C nc σ.k → Prechallenge) → ClaimData)
@@ -2696,7 +2698,7 @@ theorem claimStable_of_preDataFactors {ClaimData : Type*} (σ : SRS C.Point)
 /-- **The run's claim as a function of the proof and the six pre-opening challenges alone** —
 `runInputWith` with the challenges supplied as a `Fin 6`-indexed tuple, each expanded by its
 own squeeze's map. -/
-def kimchiClaimOf (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
+private def kimchiClaimOf (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
     (cp : KimchiProof C nc σ.k) (ch : Fin 6 → Prechallenge) :
     Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
   runInputWith σ cvk cp pub
@@ -2717,7 +2719,7 @@ no pre-opening node carries — and true for the game's claim triple
 evaluation streams. Establishing it is the outstanding obligation, and it needs the
 faithfulness of `evalsViewOf` (a `PointEvaluations` is recovered from its `pointView`) together
 with the recovery of `cp.tComm` from the node's `Fin (7 * nc) → Option _` view. -/
-theorem runClaim_eq_kimchiClaimOf (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem runClaim_eq_kimchiClaimOf (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
     (O : KimchiNode C nc σ.k → Prechallenge) :
     runClaim σ cvk pub digest cp O
@@ -2758,7 +2760,7 @@ variable {nc k : ℕ}
 /-- **A `(ζ, ζω)` pair is recovered from its transcript view.** `pointView` reads the two chunk
 vectors off the two evaluation points, and `evalPts = 2` with `0 ≠ 1`, so nothing is lost. This
 is the base case of "the evaluation families are faithful to their views". -/
-theorem pointView_inj {pe pe' : PointEvaluations (Vector C.ScalarField nc)}
+private theorem pointView_inj {pe pe' : PointEvaluations (Vector C.ScalarField nc)}
     (h : pointView (C := C) pe = pointView pe') : pe = pe' := by
   have h0 : ∀ c : Fin nc, pe.zeta[c] = pe'.zeta[c] := by
     intro c
@@ -2775,7 +2777,7 @@ theorem pointView_inj {pe pe' : PointEvaluations (Vector C.ScalarField nc)}
 /-- **The public-evaluation source is recovered from the node's view of it.** The `carried`
 branch by `pointView_inj`; the `barycentric` branch because its payload is a proof of `nc = 1`,
 hence proof-irrelevant — which is exactly why discarding it in `evalsViewOf` costs nothing. -/
-theorem pubEvals_eq_of_evalsViewOf_eq {cp cp' : KimchiProof C nc k}
+private theorem pubEvals_eq_of_evalsViewOf_eq {cp cp' : KimchiProof C nc k}
     (h : evalsViewOf cp = evalsViewOf cp') : cp.pubEvals = cp'.pubEvals := by
   have hp := congrArg EvalsView.pub h
   simp only [evalsViewOf] at hp
@@ -2789,7 +2791,7 @@ theorem pubEvals_eq_of_evalsViewOf_eq {cp cp' : KimchiProof C nc k}
 /-- **The claimed evaluations are recovered from the node's view of them.** `EvalsView` records
 all forty-three families — the seven single-column rows in `lit`, then `w`, `coefficients` and
 `s` — so `ProofEvaluations` is reassembled field by field, each through `pointView_inj`. -/
-theorem evals_eq_of_evalsViewOf_eq {cp cp' : KimchiProof C nc k}
+private theorem evals_eq_of_evalsViewOf_eq {cp cp' : KimchiProof C nc k}
     (h : evalsViewOf cp = evalsViewOf cp') : cp.evals = cp'.evals := by
   have hlit := congrArg EvalsView.lit h
   have hw := congrArg EvalsView.w h
@@ -2830,7 +2832,8 @@ proofs with the same payload differ at most in `opening`.
 The quotient step is the only one that is not a plain `ext`: the node holds `tComm` as a
 `Fin (7 * nc)`-indexed family of `getElem?` reads, and the array is recovered from it because
 `tComm_le` bounds both sizes by `7 * nc`, so every out-of-range read is `none` on both sides. -/
-theorem kimchiProof_eq_of_preData_eq (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+private theorem kimchiProof_eq_of_preData_eq
+    (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (cp cp' : KimchiProof C nc k)
     (h : preDataOf digest publicComm cp = preDataOf digest publicComm cp') :
     cp = { cp' with opening := cp.opening } := by
@@ -2864,7 +2867,7 @@ variable [Module C.ScalarField C.Point]
 vector, the combined inner product, and the polyscale combination of the commitments. Exactly
 the shape of `Bulletproof.Forking.WinsAt`'s claim map, and deliberately *not* the whole
 `Ipa.Input` — the opening is what makes the full input unstable. -/
-def claimTriple {m : ℕ} (inp : Ipa.Input C k m evalPts) :
+private def claimTriple {m : ℕ} (inp : Ipa.Input C k m evalPts) :
     (Fin (2 ^ k) → C.ScalarField) × C.ScalarField × C.Point :=
   (combinedEvalVector (2 ^ k) inp.evalscale inp.pointFn, Ipa.cipOf inp,
     combinedCommitment inp.polyscale inp.commitmentFn)
@@ -2876,7 +2879,7 @@ evaluation vector, the same inner-product claim and the same combined commitment
 Once `kimchiProof_eq_of_preData_eq` has pushed the two proofs into the shape
 `cp = { cp' with opening := _ }`, the three components are definitionally equal: none of
 `Input.commitmentFn`, `Input.pointFn`, `Input.evalFn` reads `Input.proof`. -/
-theorem triple_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem triple_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp cp' : KimchiProof C nc σ.k)
     (beta gamma alpha zeta v u : C.ScalarField)
     (h : preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
@@ -2893,7 +2896,7 @@ theorem triple_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
 is realized by some proof at all; on the realized branch the choice of realizer does not matter,
 which is `triple_eq_of_preData_eq`. Unrealized payloads never arise from a run, so their value is
 arbitrary. -/
-noncomputable def preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private noncomputable def preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField)
     (d : PreIpaData C nc) (ch : Fin 6 → Prechallenge) :
     (Fin (2 ^ σ.k) → C.ScalarField) × C.ScalarField × C.Point :=
@@ -2907,7 +2910,7 @@ noncomputable def preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
 
 /-- **The factorization, at a realized payload**: the run's own triple is what `preClaimTriple`
 returns at the run's payload. This is the `hκ` of `claimStable_of_preDataFactors`. -/
-theorem claimTriple_kimchiClaimOf_eq_preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem claimTriple_kimchiClaimOf_eq_preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
     (ch : Fin 6 → Prechallenge) :
     claimTriple (kimchiClaimOf σ cvk pub cp ch)
@@ -2922,7 +2925,7 @@ theorem claimTriple_kimchiClaimOf_eq_preClaimTriple (σ : SRS C.Point) (cvk : Ki
 /-- **The claim triple is stable at the kimchi transcript**, for any adversary against the
 transcript of `σ`, `cvk`, `pub`, `digest`. `claimStable_of_preDataFactors` supplies the two
 schedule facts; the factorization is `claimTriple_kimchiClaimOf_eq_preClaimTriple`. -/
-theorem claimStable_claimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem claimStable_claimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField)
     (A : Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k)) :
     Bulletproof.Forking.ClaimStable A
@@ -2978,7 +2981,7 @@ what distinguishes it from the round and Schnorr prefixes.
 
 Deliberately kept local rather than pushed into `Bulletproof/Forking/Transcript.lean`: it is a
 one-step `congrArg` that only this discharge needs. -/
-theorem preT_eq_of_cipOf_eq {j m p : ℕ} (inp inp' : Ipa.Input C j m p)
+private theorem preT_eq_of_cipOf_eq {j m p : ℕ} (inp inp' : Ipa.Input C j m p)
     (h : Ipa.cipOf inp = Ipa.cipOf inp') :
     IpaTranscriptElt.preT inp = IpaTranscriptElt.preT inp' := by
   simp only [IpaTranscriptElt.preT, IpaTranscriptElt.preTAbsorbs, h]
@@ -2991,7 +2994,7 @@ force the two proofs into the same shape and the two folds have the same input.
 
 Mirrors `triple_eq_of_preData_eq` (section 11) verbatim: the same `kimchiProof_eq_of_preData_eq`
 rewrite, the same `subst`, and the same `rfl`. -/
-theorem warmState_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem warmState_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp cp' : KimchiProof C nc σ.k)
     (h : preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
       = preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp') :
@@ -3063,7 +3066,7 @@ branch the choice of realizer does not matter, which is `kimchiWarmBase_eq_of_pr
 Unrealized payloads never arise from a run, so their value is immaterial.
 
 Mirrors `preClaimTriple` (section 11) exactly, with `0` in place of `(0, 0, 0)`. -/
-noncomputable def preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private noncomputable def preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField)
     (d : PreIpaData C nc) (ch : Fin 6 → Prechallenge) : C.Point :=
   letI := Classical.propDecidable
@@ -3082,7 +3085,7 @@ Mirrors `claimTriple_kimchiClaimOf_eq_preClaimTriple` (section 11) line for line
 realized by the run itself, so the defining case split takes its first branch, and
 `kimchiWarmBase_eq_of_preData_eq` at `hex.choose_spec` equates the chosen realizer's value with
 the run's. -/
-theorem kimchiWarmBase_eq_preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem kimchiWarmBase_eq_preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
     (ch : Fin 6 → Prechallenge) :
     kimchiWarmBase σ cvk pub cp ch
@@ -3103,7 +3106,7 @@ Mirrors `claimStable_claimTriple` (section 11), with the skeleton instantiated a
 `ClaimData := C.Point` instead of the triple type. No transport into `BaseStable` is needed or
 wanted: that predicate is a `def` alias of `ClaimStable` at the group
 (`Bulletproof/Forking/Game.lean`), so the skeleton's output already *is* this statement. -/
-theorem baseStable_warmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem baseStable_warmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField)
     (A : Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k)) :
     Bulletproof.Forking.BaseStable A
@@ -3162,7 +3165,7 @@ the arm-(4) argument has to unify the value slot of the extractor's accepted ope
 is in normal form.
 
 Project-local: `Ipa.cipOf` is a `Bulletproof` abbreviation with no `simp` lemma of its own. -/
-theorem cipOf_eq_combinedInnerProduct {k m : ℕ} (inp : Ipa.Input C k m evalPts) :
+private theorem cipOf_eq_combinedInnerProduct {k m : ℕ} (inp : Ipa.Input C k m evalPts) :
     Ipa.cipOf inp = combinedInnerProduct inp.polyscale inp.evalscale inp.evalFn := rfl
 
 namespace KimchiFamily
@@ -3179,7 +3182,7 @@ The accepted opening and the coefficient equality both come from `attempt_inl_pi
 combined inner product the opening is checked against is the claim's own
 (`cipOf_eq_combinedInnerProduct`), so `eval_pins_of_opening_of_eq` applies off the two
 exclusion sets. No binding hypothesis appears anywhere in the ancestry. -/
-theorem pins_or_badChallenge_of_attempt_inl
+private theorem pins_or_badChallenge_of_attempt_inl
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (a : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ k) → C.ScalarField)
@@ -3221,7 +3224,7 @@ representation hypotheses; the family's `hrep` gives the commitment representati
 `run_sound_algebraic_at_of_vkrep` at the run's own six challenges yields `RunGuardImpAt`, whose
 conclusion the arm's own conjunct denies — so one of its six guards fails, and the last two of
 those are `zetaBoundaryBad`. -/
-theorem arm4_hits_badChallenge
+private theorem arm4_hits_badChallenge
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (hsmul : ∀ (a : C.ScalarField) (P : C.Point), a • P = a.val • P)
@@ -3298,7 +3301,7 @@ Their sum is `szBudget nc n fam.idx.zkRows` term for term: nothing is added to t
 this decomposition, because the budget was *defined* as this sum. The closing step is `omega`
 rather than `rfl` — the individual bounds are inequalities, not equalities, so the seven have to
 be added up. -/
-theorem badCard_sum_le_szBudget
+private theorem badCard_sum_le_szBudget
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (beta gamma alpha : C.ScalarField)
     (hbounds : RunBounds (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
@@ -3378,17 +3381,17 @@ its `Squeeze` tag. The two agree, and the expansion map agrees too — `squeezeE
 omit [Module C.ScalarField C.Point] in
 /-- Off `β`/`γ` the kimchi expansion map IS the IPA one: the round squeezes are endo-expanded,
 definitionally. -/
-theorem squeezeExpand_ipaRound {k' : ℕ} (i : Fin k') :
+private theorem squeezeExpand_ipaRound {k' : ℕ} (i : Fin k') :
     squeezeExpand (k := k') C (Squeeze.ipaRound i) = expandPre C := rfl
 
 omit [Module C.ScalarField C.Point] in
 /-- The Schnorr squeeze is endo-expanded too. -/
-theorem squeezeExpand_schnorr {k' : ℕ} :
+private theorem squeezeExpand_schnorr {k' : ℕ} :
     squeezeExpand (k := k') C Squeeze.schnorr = expandPre C := rfl
 
 omit [Module C.ScalarField C.Point] in
 /-- At a round index the IPA prefix is the run's `ipaRound` node. -/
-theorem ipaPrefixes_castSucc {nc : ℕ} (σ : SRS C.Point) (digest : C.ScalarField)
+private theorem ipaPrefixes_castSucc {nc : ℕ} (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cp : KimchiProof C nc σ.k) (i : Fin σ.k) :
     ipaPrefixes σ digest publicComm cp i.castSucc
       = kimchiNodes digest publicComm cp (Squeeze.ipaRound i) := by
@@ -3396,7 +3399,7 @@ theorem ipaPrefixes_castSucc {nc : ℕ} (σ : SRS C.Point) (digest : C.ScalarFie
 
 omit [Module C.ScalarField C.Point] in
 /-- At the last index the IPA prefix is the run's Schnorr node. -/
-theorem ipaPrefixes_last {nc : ℕ} (σ : SRS C.Point) (digest : C.ScalarField)
+private theorem ipaPrefixes_last {nc : ℕ} (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cp : KimchiProof C nc σ.k) :
     ipaPrefixes σ digest publicComm cp (Fin.last σ.k)
       = kimchiNodes digest publicComm cp Squeeze.schnorr := by
@@ -3420,7 +3423,7 @@ collapse. The round and Schnorr challenges match because both sides read the tab
 nodes (`ipaPrefixes_castSucc`, `ipaPrefixes_last`) through the same expansion
 (`squeezeExpand_ipaRound`, `squeezeExpand_schnorr`), and the evaluation slot matches because
 `claimTriple`'s three components are literally `verifyWith_iff_verifierAcceptsAt`'s. -/
-theorem winsAt_of_wins
+private theorem winsAt_of_wins
     (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (hwin : fam.Wins basis O) :
@@ -3515,7 +3518,7 @@ variable {nc k : ℕ}
 then the opening rounds in order, then the Schnorr squeeze. Project-local: it is schedule data
 about `Kimchi.Verifier`'s sponge and has no Mathlib analogue. Phrased as a rank into `ℕ` rather
 than as an inductive relation so that every case split of `regate_nodeAt` closes by `omega`. -/
-def squeezeRank : Squeeze k → ℕ
+private def squeezeRank : Squeeze k → ℕ
   | .beta => 0
   | .gamma => 1
   | .alpha => 2
@@ -3527,7 +3530,7 @@ def squeezeRank : Squeeze k → ℕ
 
 /-- **The schedule order on squeezes** (`def:squeeze-earlier`): `s'` is squeezed strictly before
 `s` in the deployed absorb schedule. -/
-def SqueezeEarlier (s' s : Squeeze k) : Prop := squeezeRank s' < squeezeRank s
+private def SqueezeEarlier (s' s : Squeeze k) : Prop := squeezeRank s' < squeezeRank s
 
 /-- **Re-gating a node to another squeeze** (`def:regate`). Keep the digest, the public
 commitment chunks and the witness commitments — those are present at every node — and re-gate
@@ -3539,7 +3542,7 @@ Finally set the tag to the target.
 This is the retraction `adaptive_badSet_ofPrefix_union_expand_measure_le` asks for; it is a left
 inverse of the schedule only on nodes that really are a run's (`regate_nodeAt`), which is all the
 charge needs, since it is only ever applied to `nodeAt _ _ _ _`. -/
-def regate (t : KimchiNode C nc k) (s : Squeeze k) : KimchiNode C nc k where
+private def regate (t : KimchiNode C nc k) (s : Squeeze k) : KimchiNode C nc k where
   idx := s
   pre :=
     { digest := t.pre.digest
@@ -3569,13 +3572,13 @@ def regate (t : KimchiNode C nc k) (s : Squeeze k) : KimchiNode C nc k where
     | _ => none
 
 /-- The tag of a re-gated node is the target squeeze. -/
-theorem regate_idx (t : KimchiNode C nc k) (s : Squeeze k) : (regate t s).idx = s := rfl
+private theorem regate_idx (t : KimchiNode C nc k) (s : Squeeze k) : (regate t s).idx = s := rfl
 
 /-- **Re-gating to a different squeeze moves the node** — the `hpre` hypothesis of
 `adaptive_badSet_ofPrefix_union_expand_measure_le`, whose guard is exactly the tag condition
 assumed here. The tag component alone separates the two, so no injectivity assumption about the
 rest of the encoding is needed. -/
-theorem regate_ne (t : KimchiNode C nc k) {s : Squeeze k} (h : t.idx ≠ s) :
+private theorem regate_ne (t : KimchiNode C nc k) {s : Squeeze k} (h : t.idx ≠ s) :
     regate t s ≠ t := by
   intro he
   apply h
@@ -3584,7 +3587,7 @@ theorem regate_ne (t : KimchiNode C nc k) {s : Squeeze k} (h : t.idx ≠ s) :
 
 /-- Distinct squeezes give distinct nodes of the same run: the tag component differs. The second
 half of `lem:regate-node`. -/
-theorem nodeAt_ne_of_ne (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+private theorem nodeAt_ne_of_ne (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (cp : KimchiProof C nc k) {s s' : Squeeze k} (h : s ≠ s') :
     nodeAt digest publicComm cp s ≠ nodeAt digest publicComm cp s' := by
   intro he
@@ -3599,7 +3602,7 @@ Case check over the pair of tags: the node at a squeeze is defined by exactly th
 retraction performs, so every pre-opening field matches on the nose. The only non-definitional
 case is round against round, where the retraction truncates a longer cross-term prefix to a
 shorter one — and `i ≤ i'` is exactly what the schedule order supplies. -/
-theorem regate_nodeAt_le (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+private theorem regate_nodeAt_le (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (cp : KimchiProof C nc k) {s s' : Squeeze k} (h : squeezeRank s' ≤ squeezeRank s) :
     regate (nodeAt digest publicComm cp s) s' = nodeAt digest publicComm cp s' := by
   cases s' with
@@ -3626,7 +3629,7 @@ theorem regate_nodeAt_le (digest : C.ScalarField) (publicComm : Fin nc → C.Poi
 two squeezes `s' < s` in the schedule order, re-gating the run's node at `s` to `s'` gives the
 run's node at `s'`. The strict form stated by the blueprint; `regate_nodeAt_le` is the workhorse
 the prefix decoder uses. -/
-theorem regate_nodeAt (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
+private theorem regate_nodeAt (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (cp : KimchiProof C nc k) {s s' : Squeeze k} (h : SqueezeEarlier s' s) :
     regate (nodeAt digest publicComm cp s) s' = nodeAt digest publicComm cp s' :=
   regate_nodeAt_le digest publicComm cp (le_of_lt h)
@@ -3642,11 +3645,11 @@ whose `chainAt` is the same field-truncation written inline. -/
 
 /-- The squeeze the opening argument's index `j` names: round `j` while `j < k`, then the
 Schnorr squeeze at `j = k`. Exactly the tag `ipaPrefixes` selects. -/
-def ipaSqueeze (j : Fin (k + 1)) : Squeeze k :=
+private def ipaSqueeze (j : Fin (k + 1)) : Squeeze k :=
   if h : (j : ℕ) < k then .ipaRound ⟨(j : ℕ), h⟩ else .schnorr
 
 /-- The opening argument's squeezes are the last `k + 1` of the schedule, in order. -/
-theorem squeezeRank_ipaSqueeze (j : Fin (k + 1)) :
+private theorem squeezeRank_ipaSqueeze (j : Fin (k + 1)) :
     squeezeRank (ipaSqueeze j) = 6 + (j : ℕ) := by
   unfold ipaSqueeze
   by_cases h : (j : ℕ) < k
@@ -3659,7 +3662,7 @@ theorem squeezeRank_ipaSqueeze (j : Fin (k + 1)) :
 /-- **The opening-argument round a node belongs to** — the `roundOf` of the prefix decoder.
 Pre-opening nodes are given round `0`; they are never reached, since `chainAt_ne` is only ever
 applied at a node whose round is positive. -/
-def kimchiRoundOf (t : KimchiNode C nc k) : ℕ :=
+private def kimchiRoundOf (t : KimchiNode C nc k) : ℕ :=
   match t.idx with
   | .ipaRound i => (i : ℕ)
   | .schnorr => k
@@ -3667,7 +3670,7 @@ def kimchiRoundOf (t : KimchiNode C nc k) : ℕ :=
 
 /-- The IPA prefix at index `j` is the run's node at `ipaSqueeze j` — the two spellings of the
 same `dite`, named so the decoder's obligations can be rewritten into `nodeAt` form. -/
-theorem ipaPrefixes_eq_nodeAt (σ : SRS C.Point) (digest : C.ScalarField)
+private theorem ipaPrefixes_eq_nodeAt (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cp : KimchiProof C nc σ.k) (j : Fin (σ.k + 1)) :
     ipaPrefixes σ digest publicComm cp j = nodeAt digest publicComm cp (ipaSqueeze j) := rfl
 
@@ -3678,7 +3681,7 @@ at the target squeeze, the two agreement laws are `regate_nodeAt_le` (through
 
 This is what makes the structured `KimchiNode` pay off, exactly as `IpaNode.idx` does on the IPA
 side: no injectivity assumption about a transcript encoding is needed anywhere. -/
-def kimchiPrefixDecode (σ : SRS C.Point) (digest : C.ScalarField)
+private def kimchiPrefixDecode (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) :
     Zcash.Snark.PrefixDecode (KimchiNode C nc σ.k) (σ.k + 1)
       (ipaPrefixes σ digest publicComm) where
@@ -3731,7 +3734,7 @@ variable {n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
 /-- **Two runs that agree at a node agree at every earlier node.** The node at `s'` is the
 retraction of the node at `s` (`regate_nodeAt_le`), and the retraction is a function. -/
-theorem nodesOf_eq_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem nodesOf_eq_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O O' : Coins C nc k) {s s' : Squeeze k} (h : squeezeRank s' ≤ squeezeRank s)
     (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
     fam.nodesOf basis O s' = fam.nodesOf basis O' s' := by
@@ -3743,7 +3746,7 @@ theorem nodesOf_eq_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.
 
 /-- **AGM faithfulness read at a later node**: a stream row's coefficient vector and blinder agree
 between two runs as soon as the runs agree at ANY node at or after the row's absorbing squeeze. -/
-theorem repPrefix_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem repPrefix_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O O' : Coins C nc k) (i : Fin (nc + 1 + tailRowCount * nc)) {s : Squeeze k}
     (h : squeezeRank (absorbedBy (k := k) i) ≤ squeezeRank s)
     (hnode : fam.nodesOf basis O s = fam.nodesOf basis O' s) :
@@ -3753,7 +3756,7 @@ theorem repPrefix_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.P
 
 /-- The quotient-chunk twin of `repPrefix_of_rank_le`: `aT`/`ρT` agree as soon as the two runs
 agree at any node at or after `ζ`. -/
-theorem tPrefix_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem tPrefix_of_rank_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O O' : Coins C nc k) (j : Fin ((fam.adversary basis).run O).tComm.size)
     (j' : Fin ((fam.adversary basis).run O').tComm.size) (hj : (j : ℕ) = (j' : ℕ))
     {s : Squeeze k} (h : squeezeRank (Squeeze.zeta : Squeeze k) ≤ squeezeRank s)
@@ -3795,7 +3798,7 @@ variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 /-- **The key gate does not create presence failures.** `attempt` returns `none` exactly when the
 IPA layer did, so arm (1) is the IPA layer's own presence event — the fact the gate's docstring
 records as "arm (1) is untouched", here proved. -/
-theorem ipaAttempt_eq_none_of_attempt
+private theorem ipaAttempt_eq_none_of_attempt
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
     (h : fam.attempt basis O coins = none) :
@@ -3831,7 +3834,7 @@ does satisfy is the weaker `BaseStable`, and that is exactly `_of_stableBase`'s 
 
 The two expansion facts are hypotheses rather than instances because `expandPre` is injective and
 nonvanishing per curve (`expandPre_vesta_injective` and its three siblings), not generically. -/
-theorem acceptExtractionFailure_measure_prod_le
+private theorem acceptExtractionFailure_measure_prod_le
     (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
     (hexp_inj : Function.Injective (expandPre C))
     (hexp_ne : ∀ q : Prechallenge, expandPre C q ≠ 0)
@@ -3922,7 +3925,7 @@ scalar fields have far more than `2 ^ 128` elements. -/
 Project-local: `Prechallenge` is `Bulletproof`'s own `Fin (2 ^ 128)` and `C.ScalarField` is
 `ZMod C.scalar`, so this is `ZMod.natCast_eq_natCast_iff'` plus `Nat.mod_eq_of_lt` at both
 sides — but the composite is used once per curve and is worth naming. -/
-theorem natCast_prechallenge_injective {m : ℕ} (hm : 2 ^ 128 ≤ m) :
+private theorem natCast_prechallenge_injective {m : ℕ} (hm : 2 ^ 128 ≤ m) :
     Function.Injective (fun q : Prechallenge => ((q : ℕ) : ZMod m)) := by
   intro a b h
   have ha : (a : ℕ) < m := lt_of_lt_of_le a.isLt hm
@@ -3935,7 +3938,7 @@ theorem natCast_prechallenge_injective {m : ℕ} (hm : 2 ^ 128 ≤ m) :
 the plain cast at `β`/`γ` and `expandPre` everywhere else, so injectivity of the two constituent
 maps is exactly what the statement needs; both are supplied per curve, neither holds generically,
 which is why they are hypotheses. -/
-theorem squeezeExpand_injective {k : ℕ} (C : Ipa.CommitmentCurve)
+private theorem squeezeExpand_injective {k : ℕ} (C : Ipa.CommitmentCurve)
     (hcast : Function.Injective (fun q : Prechallenge => ((q : ℕ) : C.ScalarField)))
     (hexp : Function.Injective (expandPre C)) (s : Squeeze k) :
     Function.Injective (squeezeExpand C s) := by
@@ -3954,7 +3957,7 @@ closes.
 
 This is the `htc` step of `kimchiProof_eq_of_preData_eq` extracted so that it is available at
 `ζ`, where `ftEval1`/`evals` are still `none` and that lemma does not apply. -/
-theorem tComm_eq_of_zetaNode {nc k : ℕ} (digest : C.ScalarField)
+private theorem tComm_eq_of_zetaNode {nc k : ℕ} (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cp cp' : KimchiProof C nc k)
     (h : nodeAt digest publicComm cp (Squeeze.zeta : Squeeze k)
       = nodeAt digest publicComm cp' Squeeze.zeta) :
@@ -4072,13 +4075,13 @@ variable [Module C.ScalarField C.Point]
 
 /-- **The squeeze each of the seven exclusion sets guards**: `β`, `γ`, `α`, `ζ` for the four
 Schwartz–Zippel sets, `ζ` again for the boundary set, then the fr-side `ξ` and `r`. -/
-def szSqueeze {k : ℕ} : Fin 7 → Squeeze k :=
+private def szSqueeze {k : ℕ} : Fin 7 → Squeeze k :=
   ![Squeeze.beta, Squeeze.gamma, Squeeze.alpha, Squeeze.zeta, Squeeze.zeta,
     Squeeze.polyscale, Squeeze.evalscale]
 
 /-- **The per-index budget** of the seven exclusion sets: `badCard_sum_le_szBudget`'s seven
 summands, in the order `szSqueeze` names them. -/
-def szCard (nc n zkRows : ℕ) : Fin 7 → ℕ :=
+private def szCard (nc n zkRows : ℕ) : Fin 7 → ℕ :=
   ![7 * (n - zkRows), 7 * (n - zkRows),
     n * (Index.gateAlphaCount + Index.permAlphaCount - 1), Index.degreeBound n, 2,
     2 * (nc + 1 + tailRowCount * nc - 1), 1]
@@ -4086,7 +4089,7 @@ def szCard (nc n zkRows : ℕ) : Fin 7 → ℕ :=
 /-- **The budgets sum to the Schwartz–Zippel budget.** `szBudget` was *defined* as this sum;
 `Fin.sum_univ_seven` unfolds the sum and `omega` does the regrouping (the two `β`/`γ` terms are
 collected into the `2 *` of the budget). -/
-theorem szCard_sum (nc n zkRows : ℕ) :
+private theorem szCard_sum (nc n zkRows : ℕ) :
     ∑ i : Fin 7, szCard nc n zkRows i = szBudget nc n zkRows := by
   have h : ∑ i : Fin 7, szCard nc n zkRows i
       = 7 * (n - zkRows) + 7 * (n - zkRows)
@@ -4106,7 +4109,7 @@ variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 sets named in `arm4_hits_badChallenge`, evaluated at the run the table produces: the `β`, `γ`,
 `α` and `ζ` Schwartz–Zippel sets of the run's assembled columns, accumulator and quotient, the
 two-point `ζ` boundary set, and the run's own `ξ` and `r` sets. -/
-noncomputable def szBadRun (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private noncomputable def szBadRun (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) : Fin 7 → Finset C.ScalarField :=
   ![Protocol.soundBadB fam.idx
       (runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
@@ -4141,7 +4144,7 @@ charge must bound the sets on tables at which nothing was extracted, where the r
 root's hypothesis stack is unavailable. The `ζ` bound is instantiated at the run's own assembled
 quotient by `runBounds_zeta_at_assembly`, the boundary set costs `2` by inspection, and the two
 fr-side sets are the opening argument's own counting bounds at the flat arity. -/
-theorem szBadRun_card_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+private theorem szBadRun_card_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) (i : Fin 7) :
     (fam.szBadRun basis O i).card ≤ szCard nc n fam.idx.zkRows i := by
   have hb : RunBounds (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
@@ -4190,7 +4193,7 @@ the ones naming later squeezes — which the exclusion set at that index never r
 
 The index `i` of the exclusion set does not appear: the retraction is the same at all seven
 sets, so carrying `i` would be an unused argument. -/
-def szPre {nc k : ℕ} (j : Fin 6) (t : KimchiNode C nc k) : KimchiNode C nc k :=
+private def szPre {nc k : ℕ} (j : Fin 6) (t : KimchiNode C nc k) : KimchiNode C nc k :=
   if squeezeRank (preSqueeze j : Squeeze k) < squeezeRank t.idx then regate t (preSqueeze j)
   else regate t Squeeze.schnorr
 
@@ -4199,7 +4202,8 @@ omit [Module C.ScalarField C.Point] in
 `adaptive_badSet_ofPrefix_union_expand_measure_le`. The tag component alone separates the two
 (`regate_ne`): on the strict branch the ranks would have to coincide, and on the fallback branch
 the guard rules out the Schnorr squeeze. -/
-theorem szPre_ne {nc k : ℕ} (t : KimchiNode C nc k) (ht : squeezeRank t.idx < 6) (j : Fin 6) :
+private theorem szPre_ne
+    {nc k : ℕ} (t : KimchiNode C nc k) (ht : squeezeRank t.idx < 6) (j : Fin 6) :
     szPre j t ≠ t := by
   unfold szPre
   split
@@ -4217,7 +4221,7 @@ theorem szPre_ne {nc k : ℕ} (t : KimchiNode C nc k) (ht : squeezeRank t.idx < 
 omit [Module C.ScalarField C.Point] in
 /-- **Every guarded squeeze is a pre-opening one** — `hnode`. The seven exclusion sets are read
 at `β`, `γ`, `α`, `ζ`, `ζ`, `ξ`, `r`, whose ranks are `0`–`5`. -/
-theorem squeezeRank_szSqueeze_lt_six {k : ℕ} (i : Fin 7) :
+private theorem squeezeRank_szSqueeze_lt_six {k : ℕ} (i : Fin 7) :
     squeezeRank (szSqueeze (k := k) i) < 6 := by
   fin_cases i
   · show (0 : ℕ) < 6; omega
@@ -4234,13 +4238,13 @@ variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
 /-- **The transcript node at which the `i`-th exclusion set's challenge is read** — the run's own
 node at `szSqueeze i`. -/
-def szNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+private def szNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
     (cp : KimchiProof C nc k) : KimchiNode C nc k :=
   nodeAt (fam.digest basis) (fam.publicComm basis) cp (szSqueeze i)
 
 /-- The node selector lands on the run's own node, which is what identifies the challenge the
 charge prices with the challenge `arm4_hits_badChallenge` names. -/
-theorem szNode_proofOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+private theorem szNode_proofOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
     (O : Coins C nc k) :
     fam.szNode basis i (fam.proofOf basis O) = fam.nodesOf basis O (szSqueeze i) := rfl
 
@@ -4460,7 +4464,7 @@ the circuit alone; and `ξ`, `r` read every flat row (all absorbed by `ζ`) toge
 batched claim's evaluation points and claimed evaluations, which the `ξ` node fixes up to the
 opening — a component neither set touches. Every earlier challenge a set names is supplied by the
 retracted coordinate at that squeeze. -/
-theorem szBadRun_agree (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+private theorem szBadRun_agree (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
     (O O' : Coins C nc k)
     (hnode : fam.szNode basis i (fam.proofOf basis O)
       = fam.szNode basis i (fam.proofOf basis O'))
@@ -4592,7 +4596,7 @@ carries it to the joint measure. The two curve facts about the expansions are hy
 than instances for the same reason they are in `acceptExtractionFailure_measure_prod_le`:
 `expandPre` is injective per curve, and the `β`/`γ` cast is injective only because the scalar
 field is bigger than `2 ¹²⁸`. -/
-theorem openedUnsatisfying_measure_prod_le
+private theorem openedUnsatisfying_measure_prod_le
     (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
     (hcast : Function.Injective (fun q : Prechallenge => ((q : ℕ) : C.ScalarField)))
     (hexp : Function.Injective (expandPre C))

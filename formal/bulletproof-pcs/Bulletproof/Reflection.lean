@@ -53,7 +53,7 @@ open CompElliptic.Fields.Pasta Bulletproof Bulletproof.Ipa
 /-! ## The checked proof as an abstract opening proof -/
 
 /-- The checked proof as the abstract `OpeningProof` at its round count — total. -/
-private def Ipa.Proof.toOpening {C : CommitmentCurve} {k : ℕ} (p : Ipa.Proof C k) :
+def Ipa.Proof.toOpening {C : CommitmentCurve} {k : ℕ} (p : Ipa.Proof C k) :
     OpeningProof C.ScalarField C.Point k where
   lr := fun j => p.lr[j]
   delta := p.delta
@@ -212,7 +212,7 @@ axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {m p : ℕ}
 /-- The flattened segment stream of a chunked family, as the checked vector:
 polynomial-outer, chunk-inner (`finSigmaFinEquiv`), the deployed `combine_commitments`
 order. -/
-def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
+private def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
     (f : (i : Fin n) → Fin (nc i) → α) : Vector α (∑ i, nc i) :=
   Vector.ofFn fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
 

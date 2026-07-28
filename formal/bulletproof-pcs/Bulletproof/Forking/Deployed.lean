@@ -155,7 +155,7 @@ variable {C : Ipa.CommitmentCurve} {k m p : ℕ}
 /-- A node is the five-fold product of its components — the shape the `Fintype` instance is
 transported along. (Spelled by hand: the `deriving Fintype` handler does not fire through the
 curve bundle's `Fintype (ZMod C.base)`, which is what makes `C.Point` finite.) -/
-def ipaNodeEquivProd (C : Ipa.CommitmentCurve) (k : ℕ) :
+private def ipaNodeEquivProd (C : Ipa.CommitmentCurve) (k : ℕ) :
     (Fin (k + 1) × C.ScalarField × (Fin k → Option (C.Point × C.Point)) ×
         Option C.Point × Option C.Point) ≃ IpaNode C k where
   toFun x := ⟨x.1, x.2.1, x.2.2.1, x.2.2.2.1, x.2.2.2.2⟩
@@ -197,11 +197,11 @@ theorem nodes_eq (cip : C.ScalarField) (π : Ipa.Proof C k) (j : Fin (k + 1)) :
   · intro i; simp [nodes]
 
 /-- The round decoder: a node's own cross-term pair, `(0, 0)` at the Schnorr node. -/
-def nodeRound (t : IpaNode C k) : C.Point × C.Point :=
+private def nodeRound (t : IpaNode C k) : C.Point × C.Point :=
   if h : (t.idx : ℕ) < k then (t.lr ⟨(t.idx : ℕ), h⟩).getD (0, 0) else (0, 0)
 
 /-- The leaf decoder: a node's `(δ, sg)` pair. -/
-def nodeFinal (t : IpaNode C k) : C.Point × C.Point :=
+private def nodeFinal (t : IpaNode C k) : C.Point × C.Point :=
   (t.delta.getD 0, t.sg.getD 0)
 
 /-- The wire proof viewed as the soundness layer's `OpeningProof`: the `Vector`-indexed `lr`
@@ -222,7 +222,7 @@ variable [Module C.ScalarField C.Point]
 every SRS at round count `σ.k`, `(nodeRound, nodeFinal)` witness `DecodesFromPrefixes`. Both
 obligations are unfoldings of `Fin.snoc`'s computation rules; nothing is assumed about the
 adversary. -/
-def decodesFromPrefixes_nodes (σ : SRS C.Point) (cip : C.ScalarField) :
+private def decodesFromPrefixes_nodes (σ : SRS C.Point) (cip : C.ScalarField) :
     DecodesFromPrefixes (F := C.ScalarField) σ toOpening (nodes cip) where
   round := nodeRound
   final := nodeFinal
@@ -240,7 +240,7 @@ end Module
 /-- **The deployed prefixes decode.** The round of a node is its own index, and the chain of a
 node truncates it to an earlier round. This is where the structured node pays off: distinctness
 is an inequality of indices, needing nothing about injectivity of a transcript encoding. -/
-def prefixDecode_nodes (cip : C.ScalarField) :
+private def prefixDecode_nodes (cip : C.ScalarField) :
     Zcash.Snark.PrefixDecode (IpaNode C k) (k + 1) (nodes cip) where
   roundOf t := (t.idx : ℕ)
   chainAt t i :=
@@ -294,7 +294,7 @@ absorbed at `t` — the `cip` absorb and the base-squeeze marker, then one
 `[point L j, point R j, sqEndo]` block per `some` entry of `t.lr` up to `t.idx`, then, when
 `t.delta` is `some`, `[point δ, sqEndo]`. The `sg` component is dropped: it is exactly the
 modelling deviation recorded in the preamble. -/
-def nodeTranscript (t : IpaNode C k) : List (IpaTranscriptElt C) :=
+private def nodeTranscript (t : IpaNode C k) : List (IpaTranscriptElt C) :=
   [frScalar (Ipa.shiftScalar C t.cip), sqBase] ++
     (List.finRange k).flatMap (fun j : Fin k =>
       if (j : ℕ) ≤ (t.idx : ℕ) then
@@ -336,7 +336,7 @@ private theorem toList_eq_map_finRange {α : Type*} {n : ℕ} (v : Vector α n) 
 
 /-- **The nodes are the deployed prefixes.** The round nodes assemble `preU` and the Schnorr node
 assembles `preC`, so the idealized oracle domain really does abstract the deployed schedule. -/
-theorem nodeTranscript_nodes (inp : Ipa.Input C k m p) :
+private theorem nodeTranscript_nodes (inp : Ipa.Input C k m p) :
     (∀ i : Fin k,
         nodeTranscript (nodeU (Ipa.cipOf inp) inp.proof i) = preU inp i) ∧
       nodeTranscript (nodeC (Ipa.cipOf inp) inp.proof) = preC inp := by
@@ -383,7 +383,7 @@ function of the round challenges alone — read at nodes strictly earlier than t
 
 This is the theorem that discharges the modelling deviation: the extra `sg` component of the
 Schnorr node ranges over values of which at most one is compatible with acceptance. -/
-theorem sg_determined_of_verifyWith (σ : SRS C.Point) (uBase : C.Point)
+private theorem sg_determined_of_verifyWith (σ : SRS C.Point) (uBase : C.Point)
     (chals : Vector C.ScalarField σ.k) (c : C.ScalarField) (inp : Ipa.Input C σ.k m p)
     (h : Ipa.verifyWith C σ uBase chals c inp = true) :
     inp.proof.sg = Ipa.msm C σ.g (bPolyCoefficients fun i => chals[i]) := by
@@ -400,7 +400,7 @@ def uBaseOf (C : Ipa.CommitmentCurve) (cip : C.ScalarField) : C.Point :=
   C.toGroup (spongeOBase [frScalar (Ipa.shiftScalar C cip), sqBase])
 
 /-- `uBaseOf` at a checked input's own `cip` is `transcriptFrom`'s `U`. -/
-theorem uBaseOf_eq_transcript (inp : Ipa.Input C k m p) :
+private theorem uBaseOf_eq_transcript (inp : Ipa.Input C k m p) :
     uBaseOf C (Ipa.cipOf inp) = (Ipa.transcriptFrom C FqSponge.init inp).1 :=
   toGroup_spongeOBase_preT inp
 
@@ -545,7 +545,7 @@ machine's algebra delivers `Wins` while the measure bound is stated over `wireWi
 one-directional bridge would leave `{O | wireWins σ claim O π} = ∅` open — exactly the vacuity
 the companion exists to exclude. It costs nothing: every step of the derivation is an equality of
 terms. -/
-theorem wireWins_iff_wins (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+private theorem wireWins_iff_wins (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
     wireWins σ claim O π ↔
       Wins { σ with U := uBaseOf C (Ipa.cipOf claim) }
@@ -583,7 +583,7 @@ it is why the enlarged domain costs nothing beyond the term already present. -/
 /-- **The round truncation of a node**: the node at which round `i`'s challenge is read,
 reconstructed from `t`. It is the `i < k` branch of `prefixDecode_nodes`' `chainAt` field, named
 separately so it can be reasoned about outside that structure. -/
-def roundNodeOf (t : IpaNode C k) (i : Fin k) : IpaNode C k where
+private def roundNodeOf (t : IpaNode C k) (i : Fin k) : IpaNode C k where
   idx := i.castSucc
   cip := t.cip
   lr := fun j => if (j : ℕ) ≤ (i : ℕ) then t.lr j else none
@@ -594,7 +594,7 @@ def roundNodeOf (t : IpaNode C k) (i : Fin k) : IpaNode C k where
 (`i.castSucc` on both sides), `cip` is copied, `δ` and `sg` are `none` on both sides, and the `lr`
 components agree because `(nodeC cip π).lr j = some π.lr[j]` for every `j`, so guarding it by
 `j ≤ i` produces exactly `(nodeU cip π i).lr`. -/
-theorem roundNodeOf_nodeC (cip : C.ScalarField) (π : Ipa.Proof C k) (i : Fin k) :
+private theorem roundNodeOf_nodeC (cip : C.ScalarField) (π : Ipa.Proof C k) (i : Fin k) :
     roundNodeOf (nodeC cip π) i = nodeU cip π i := by
   refine IpaNode.ext rfl rfl ?_ rfl rfl
   funext j
@@ -606,7 +606,7 @@ theorem roundNodeOf_nodeC (cip : C.ScalarField) (π : Ipa.Proof C k) (i : Fin k)
 has genuinely absorbed at a squeeze. A table on the honest domain is the same thing as a table on
 `IpaNode C k` that is constant on the fibres of `sgForget`; "`O` factors through `sgForget`" below
 means exactly that. -/
-def sgForget (t : IpaNode C k) : IpaNode C k := { t with sg := none }
+private def sgForget (t : IpaNode C k) : IpaNode C k := { t with sg := none }
 
 /-- **The pinned node.** A round node has its `sg` slot cleared (at a round node the deployed
 sponge has absorbed no `sg`, and a queried round node already carries `none`); a Schnorr node has
@@ -618,7 +618,7 @@ Both branches discard the incoming `sg` slot outright, and everything they read 
 `lr`, `delta`, and `O` at round truncations, which are built from those same components) survives
 `sgForget`. That is the whole reason `pinNode_factors` holds — note in particular that the round
 branch returns `sgForget t`, **not** `t`. -/
-def pinNode (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge) (t : IpaNode C σ.k) :
+private def pinNode (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge) (t : IpaNode C σ.k) :
     IpaNode C σ.k :=
   if (t.idx : ℕ) < σ.k then sgForget t
   else
@@ -627,7 +627,7 @@ def pinNode (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge) (t : IpaNod
         (bPolyCoefficients fun i => expandPre C (O (roundNodeOf t i)))) }
 
 /-- **The pinned table**: `O` precomposed with `pinNode σ O`. -/
-def pinTable (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge) :
+private def pinTable (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge) :
     IpaNode C σ.k → Prechallenge :=
   fun t => O (pinNode σ O t)
 
@@ -637,7 +637,7 @@ both, so the same branch is taken; in the round branch the value is the hypothes
 the Schnorr branch the record's four surviving components agree while its `sg` slot is `some` of a
 value computed from `O` at the nodes `roundNodeOf t i`, each of which is built from
 `(idx, cip, lr)` alone. -/
-theorem pinNode_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
+private theorem pinNode_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
     {t t' : IpaNode C σ.k} (h : sgForget t = sgForget t') :
     pinNode σ O t = pinNode σ O t' := by
   obtain ⟨i₁, c₁, l₁, d₁, s₁⟩ := t
@@ -650,7 +650,7 @@ theorem pinNode_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
 /-- **The pinned table factors through `sgForget`** — `pinNode_factors` followed by `congr`.
 Equivalently: `pinTable σ O` is the pullback along `sgForget` of a table on the honest, sg-free
 node domain. -/
-theorem pinTable_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
+private theorem pinTable_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge)
     {t t' : IpaNode C σ.k} (h : sgForget t = sgForget t') :
     pinTable σ O t = pinTable σ O t' :=
   congrArg O (pinNode_factors σ O h)
@@ -658,7 +658,7 @@ theorem pinTable_factors (σ : SRS C.Point) (O : IpaNode C σ.k → Prechallenge
 /-- **The Schnorr node is fixed by pinning exactly when its `sg` slot is already the canonical
 one.** The condition is what `sg_determined_of_verifyWith` supplies on the win event; isolating it
 is what makes both directions of `wireWins_pinTable` available. -/
-theorem pinNode_nodeC_of_sg (σ : SRS C.Point) (cip : C.ScalarField)
+private theorem pinNode_nodeC_of_sg (σ : SRS C.Point) (cip : C.ScalarField)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k)
     (hsg : π.sg
       = Ipa.msm C σ.g (bPolyCoefficients fun i => expandPre C (O (nodeU cip π i)))) :
@@ -675,7 +675,7 @@ theorem pinNode_nodeC_of_sg (σ : SRS C.Point) (cip : C.ScalarField)
 /-- **A round node is fixed by pinning, unconditionally.** Its `idx` is `i.castSucc`, of value
 `i < σ.k`, so the first branch applies and returns the node with its `sg` slot set to `none` —
 which it already is. -/
-theorem pinNode_nodeU (σ : SRS C.Point) (cip : C.ScalarField)
+private theorem pinNode_nodeU (σ : SRS C.Point) (cip : C.ScalarField)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) (i : Fin σ.k) :
     pinNode σ O (nodeU cip π i) = nodeU cip π i := by
   have hlt : ((nodeU cip π i).idx : ℕ) < σ.k := by simp [nodeU]
@@ -686,7 +686,7 @@ theorem pinNode_nodeU (σ : SRS C.Point) (cip : C.ScalarField)
 `σ.k + 1` nodes the game reads is already pinned. Part (1) is unconditional; part (2) is
 `pinNode_nodeC_of_sg` fed by `sg_determined_of_verifyWith` applied to `wireWins`' own
 `verifyWith` call. -/
-theorem pinNode_nodes (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+private theorem pinNode_nodes (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
     (∀ i : Fin σ.k,
         pinNode σ O (nodeU (Ipa.cipOf claim) π i) = nodeU (Ipa.cipOf claim) π i) ∧
@@ -702,7 +702,7 @@ theorem pinNode_nodes (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
 /-- **`wireWins` reads its table only at the `σ.k + 1` nodes of `π`.** The locality statement
 behind `wireWins_pinTable`: the query points are determined by `cip` and `π` and do not depend on
 the table, so two tables agreeing there decide the win identically. -/
-theorem wireWins_congr (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+private theorem wireWins_congr (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     {O₁ O₂ : IpaNode C σ.k → Prechallenge} (π : Ipa.Proof C σ.k)
     (hu : ∀ i : Fin σ.k,
       O₁ (nodeU (Ipa.cipOf claim) π i) = O₂ (nodeU (Ipa.cipOf claim) π i))
@@ -724,7 +724,7 @@ At the round nodes the two tables agree unconditionally (`pinNode_nodeU`), so bo
 `sg_determined_of_verifyWith` applied to the *pinned* run pins `π.sg` to `msm` at the pinned round
 challenges, which by the previous sentence are the unpinned ones — precisely the condition
 `pinNode_nodeC_of_sg` asks for. -/
-theorem wireWins_pinTable (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+private theorem wireWins_pinTable (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
     wireWins σ claim O π ↔ wireWins σ claim (pinTable σ O) π := by
   have hu : ∀ i : Fin σ.k,
@@ -751,7 +751,7 @@ the chained node `chainAt t i` of `prefixDecode_nodes` either has `sg = none` (w
 `t` itself (when `i = k`). Consequently the only extra oracle point the fork machinery visits
 beyond the queried nodes carries no `sg` data at all, and `wireWins_pinTable` covers the remaining
 one. -/
-theorem chainAt_sg (cip : C.ScalarField) (t : IpaNode C k) (i : Fin (k + 1)) :
+private theorem chainAt_sg (cip : C.ScalarField) (t : IpaNode C k) (i : Fin (k + 1)) :
     ((i : ℕ) < k → ((prefixDecode_nodes cip).chainAt t i).sg = none) ∧
       (¬ ((i : ℕ) < k) → (prefixDecode_nodes cip).chainAt t i = t) := by
   refine ⟨fun h => ?_, fun h => ?_⟩

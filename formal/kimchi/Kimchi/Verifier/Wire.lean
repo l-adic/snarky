@@ -39,7 +39,7 @@ variable (C : Ipa.CommitmentCurve)
 /-- A wire polynomial commitment: the per-chunk commitment vector (`PolyComm.elems`,
 `Vec<G>`). serde imposes NO length here — the chunk count is a verify-time check
 (`checkChunks` against the run's `chunk_size`). -/
-abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
+private abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
 
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup

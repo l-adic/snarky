@@ -1222,7 +1222,7 @@ conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the 
     degenerate residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any
     prime `order ≡ 1 (mod 4)` (the actual degenerate set is `⊆` these), and exactly tight
     for the Pasta primes. -/
-def forbiddenValues (order : ℕ) : Set ℤ :=
+private def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
 /-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
@@ -1255,7 +1255,7 @@ private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
 private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
 
 /-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
-def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
+private def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 2
   | j + 1 => 2 * gateLadder g j + gateBitSign g j
 
@@ -1277,7 +1277,7 @@ private lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
   unfold gateBitSign ubit; split <;> ring
 
 /-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
-def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
+private def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 0
   | j + 1 => 2 * gateRegister g j + ubit g j
 

@@ -51,12 +51,12 @@ open Kimchi.Verifier.KnowledgeSoundness
 variable {C : Ipa.CommitmentCurve}
 
 /-- The zero evaluation pair at every chunk. -/
-def zeroPE (C : Ipa.CommitmentCurve) (nc : ℕ) :
+private def zeroPE (C : Ipa.CommitmentCurve) (nc : ℕ) :
     PointEvaluations (Vector C.ScalarField nc) :=
   ⟨Vector.replicate nc 0, Vector.replicate nc 0⟩
 
 /-- Every column evaluation zero. -/
-def zeroEvals (C : Ipa.CommitmentCurve) (nc : ℕ) :
+private def zeroEvals (C : Ipa.CommitmentCurve) (nc : ℕ) :
     ProofEvaluations (Vector C.ScalarField nc) where
   w := Vector.replicate wCols (zeroPE C nc)
   z := zeroPE C nc
@@ -76,7 +76,7 @@ demands `0 < tComm.size`, so a family built on an empty array cannot exist. Taki
 chunks (rather than the single chunk of the blueprint) keeps `tComm_le` unconditional —
 `nc ≤ 7 * nc` — and none of the computations below change, since the polyscale
 combination of an all-zero list is `0` either way (`combineCommitments_eq_zero`). -/
-def zeroProof (C : Ipa.CommitmentCurve) (nc k : ℕ) : KimchiProof C nc k where
+private def zeroProof (C : Ipa.CommitmentCurve) (nc k : ℕ) : KimchiProof C nc k where
   wComm := Vector.replicate wCols (Vector.replicate nc 0)
   zComm := Vector.replicate nc 0
   tComm := Array.replicate nc 0
@@ -89,14 +89,14 @@ def zeroProof (C : Ipa.CommitmentCurve) (nc k : ℕ) : KimchiProof C nc k where
 /-! ## The honest verifying key -/
 
 /-- The index with its Poseidon MDS retuned to the curve's own scalar-side table. -/
-def indexAtCurve (C : Ipa.CommitmentCurve) {n : ℕ} (idx : Index C.ScalarField n) :
+private def indexAtCurve (C : Ipa.CommitmentCurve) {n : ℕ} (idx : Index C.ScalarField n) :
     Index C.ScalarField n :=
   { idx with mds := mdsOfParams C.frParams }
 
 /-- The honest verifying key of an index at an SRS: every committed column is the
 indexer's own output, every scalar-side parameter is read off the index, and the
 Lagrange table is the basis polynomials' chunk commitments. -/
-noncomputable def honestVK [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ) {d : ℕ}
+private noncomputable def honestVK [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) : KimchiVK C nc where
   domainLog2 := d
   omega := idx.omega
@@ -125,7 +125,7 @@ noncomputable def honestVK [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc
       commitPolyChunk σ (columnPoly idx.omega (Kimchi.Permutation.rowIndicator j)) (c : ℕ)
 
 /-- **The key–index correspondence holds by construction.** -/
-theorem honestVK_corresponds [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ)
+private theorem honestVK_corresponds [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ)
     {d : ℕ} (idx : Index C.ScalarField (2 ^ d)) :
     KimchiVK.Corresponds σ (honestVK σ nc (indexAtCurve C idx)) (indexAtCurve C idx) := by
   refine ⟨?_, rfl, rfl, ?_, rfl, rfl, ?_⟩
@@ -148,7 +148,7 @@ private theorem combineAt_foldl_zero {F : Type*} [Field F] (xM : F) :
       simpa [hc] using ih
 
 /-- `combineAt` at an all-zero chunk vector is zero. -/
-theorem combineAt_replicate_zero {F : Type*} [Field F] (xM : F) (nc : ℕ) :
+private theorem combineAt_replicate_zero {F : Type*} [Field F] (xM : F) (nc : ℕ) :
     combineAt xM (Array.replicate nc (0 : F)) = 0 := by
   have h : ∀ x ∈ (Array.replicate nc (0 : F)).toList, x = 0 := by
     intro x hx
@@ -159,7 +159,7 @@ theorem combineAt_replicate_zero {F : Type*} [Field F] (xM : F) (nc : ℕ) :
 
 /-- `powPow2` is the `2 ^ k`-th power — restated project-locally (the existing copies
 are `private`). -/
-theorem powPow2_eq_pow {F : Type*} [Field F] (x : F) (k : ℕ) :
+private theorem powPow2_eq_pow {F : Type*} [Field F] (x : F) (k : ℕ) :
     powPow2 x k = x ^ (2 ^ k) := by
   induction k with
   | zero => simp [powPow2]
@@ -172,7 +172,7 @@ theorem powPow2_eq_pow {F : Type*} [Field F] (x : F) (k : ℕ) :
 /-! ## The linearization evaluations at the all-zero proof -/
 
 /-- The all-zero linearization environment. -/
-def zeroLinEvals (C : Ipa.CommitmentCurve) :
+private def zeroLinEvals (C : Ipa.CommitmentCurve) :
     Kimchi.Protocol.Linearization.Evals C.ScalarField where
   w _ := 0
   wOmega _ := 0
@@ -188,7 +188,7 @@ def zeroLinEvals (C : Ipa.CommitmentCurve) :
   endoScalarSelector := 0
 
 /-- Chunk-combining the all-zero proof's evaluations gives the all-zero environment. -/
-theorem linEvals_zeroProof (nc k : ℕ) (zetaM zetaOmegaM : C.ScalarField) :
+private theorem linEvals_zeroProof (nc k : ℕ) (zetaM zetaOmegaM : C.ScalarField) :
     (zeroProof C nc k).linEvals zetaM zetaOmegaM = zeroLinEvals C := by
   ext <;>
     simp [KimchiProof.linEvals, zeroProof, zeroEvals, zeroPE, zeroLinEvals,
@@ -198,12 +198,12 @@ theorem linEvals_zeroProof (nc k : ℕ) (zetaM zetaOmegaM : C.ScalarField) :
 
 /-- The accumulator-boundary quotient of `ft(ζ)` — the only term that survives the
 all-zero evaluations. -/
-def ftBoundary {F : Type*} [Field F] (n zkRows : ℕ) (ω α ζ : F) : F :=
+private def ftBoundary {F : Type*} [Field F] (n zkRows : ℕ) (ω α ζ : F) : F :=
   (ζ ^ n - 1) * (α ^ 22 * (ζ - ω ^ (n - zkRows)) + α ^ 23 * (ζ - 1))
     / ((ζ - ω ^ (n - zkRows)) * (ζ - 1))
 
 /-- **The derived `ft(ζ)` at the all-zero evaluations is the boundary quotient.** -/
-theorem ftEval0_zeroLinEvals (n zkRows : ℕ) (ω : C.ScalarField)
+private theorem ftEval0_zeroLinEvals (n zkRows : ℕ) (ω : C.ScalarField)
     (shifts : Fin permCols → C.ScalarField) (endo : C.ScalarField)
     (mds : Kimchi.Gate.Poseidon.Mds C.ScalarField) (α β γ ζ : C.ScalarField) :
     Kimchi.Protocol.Linearization.ftEval0 n zkRows ω shifts endo mds α β γ ζ 0
@@ -217,7 +217,7 @@ theorem ftEval0_zeroLinEvals (n zkRows : ℕ) (ω : C.ScalarField)
 /-! ## The batch stream at the degenerate data -/
 
 /-- Every tail-row segment of the all-zero proof claims `(0, 0)` at both points. -/
-theorem tailRowsOf_snd_zero {nc k : ℕ} (cvk : KimchiVK C nc) (q r : ℕ)
+private theorem tailRowsOf_snd_zero {nc k : ℕ} (cvk : KimchiVK C nc) (q r : ℕ)
     (hq : q < tailRowCount) (hr : r < nc) :
     (((tailRowsOf C cvk (zeroProof C nc k))[q]'hq)[r]'hr).2 = (0, 0) := by
   rcases Nat.lt_or_ge q litRowCount with h | h
@@ -237,7 +237,7 @@ theorem tailRowsOf_snd_zero {nc k : ℕ} (cvk : KimchiVK C nc) (q r : ℕ)
         simp [zipSeg, zeroProof, zeroEvals, zeroPE]
 
 /-- The flattened tail region of the all-zero proof claims `(0, 0)` everywhere. -/
-theorem tailFlatten_snd_zero {nc k : ℕ} (cvk : KimchiVK C nc) (t : ℕ)
+private theorem tailFlatten_snd_zero {nc k : ℕ} (cvk : KimchiVK C nc) (t : ℕ)
     (ht : t < tailRowCount * nc) :
     (((tailRowsOf C cvk (zeroProof C nc k)).flatten[t]'ht).2) = (0, 0) := by
   have hnc : 0 < nc := by
@@ -255,13 +255,13 @@ theorem tailFlatten_snd_zero {nc k : ℕ} (cvk : KimchiVK C nc) (t : ℕ)
 
 /-- The all-zero proof carries its public evaluations, so the verifier reads them
 straight off — no barycentric fallback, at any chunk count. -/
-theorem publicEvalChunks_zeroProof {nc k : ℕ} (n : ℕ)
+private theorem publicEvalChunks_zeroProof {nc k : ℕ} (n : ℕ)
     (ω ζ ζω ζN ζωN : C.ScalarField) (pub : Array C.ScalarField) :
     publicEvalChunks (zeroProof C nc k) n ω ζ ζω ζN ζωN pub = zeroPE C nc := rfl
 
 /-- **The derived batched claim's evaluation rows at the degenerate data**: every row
 claims `(0, 0)` except the `ft` row, which claims `(ftBoundary, 0)`. -/
-theorem evals_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private theorem evals_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (β γ α ζ v u : C.ScalarField) (i : ℕ) (hi : i < nc + 1 + tailRowCount * nc) :
     ((runInputWith σ cvk (zeroProof C nc σ.k) #[] β γ α ζ v u).evals[i]'hi)
       = if i = nc then ⟨#[ftBoundary cvk.n cvk.zkRows cvk.omega α ζ, 0], rfl⟩
@@ -299,14 +299,14 @@ private theorem combineCommitments_foldl_zero (ξ : C.ScalarField) :
       simpa [hP] using ih
 
 /-- `Ipa.combineCommitments` at an all-zero commitment list is zero. -/
-theorem combineCommitments_eq_zero (ξ : C.ScalarField) (cs : Array C.Point)
+private theorem combineCommitments_eq_zero (ξ : C.ScalarField) (cs : Array C.Point)
     (h : ∀ P ∈ cs, P = 0) : Ipa.combineCommitments C ξ cs = 0 := by
   rw [Ipa.combineCommitments, ← Array.foldl_toList]
   exact combineCommitments_foldl_zero ξ cs.toList (by simpa using h) 0 1
 
 /-- The permutation scalar vanishes at the all-zero evaluations (its `z(ζω)` factor
 does). -/
-theorem permScalar_zeroLinEvals (β γ α zkpmZ : C.ScalarField) :
+private theorem permScalar_zeroLinEvals (β γ α zkpmZ : C.ScalarField) :
     Kimchi.Protocol.Linearization.permScalar β γ α zkpmZ (zeroLinEvals C) = 0 := by
   simp [Kimchi.Protocol.Linearization.permScalar, zeroLinEvals]
 
@@ -315,7 +315,7 @@ vanishes, so the `σ`-commitment term drops, and the all-zero proof carries no q
 chunks. Together with `cipOf_runInputWith_zero_ne_zero` this is the discrete-log
 relation of Corollary "acceptance at an arbitrary basis would break binding": a zero
 commitment claiming a non-zero combined evaluation. -/
-theorem ftComm_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private theorem ftComm_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (β γ α ζ v u : C.ScalarField) (hnc : nc < nc + 1 + tailRowCount * nc) :
     ((runInputWith σ cvk (zeroProof C nc σ.k) #[] β γ α ζ v u).commitments[nc]'hnc)
       = 0 := by
@@ -333,7 +333,7 @@ theorem ftComm_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C
 combined inner product is `ξ^{nc}` times the accumulator-boundary quotient — in
 particular it is NOT identically zero, so the inner-product anti-vacuity template
 (which needs `cip = 0`) does not transport. -/
-theorem cipOf_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private theorem cipOf_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (β γ α ζ v u : C.ScalarField) :
     Ipa.cipOf (runInputWith σ cvk (zeroProof C nc σ.k) #[] β γ α ζ v u)
       = v ^ nc * ftBoundary cvk.n cvk.zkRows cvk.omega α ζ := by
@@ -364,7 +364,7 @@ theorem cipOf_runInputWith_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C 
 /-- **When the boundary quotient is non-zero**, in closed form. The numerator factors as
 `(ζⁿ − 1) · α²² · ((ζ − ω^{n−z}) + α(ζ − 1))`, the denominator as
 `(ζ − ω^{n−z})(ζ − 1)`; a quotient is non-zero exactly when both are. -/
-theorem ftBoundary_ne_zero_iff {F : Type*} [Field F] (n zkRows : ℕ) (ω α ζ : F) :
+private theorem ftBoundary_ne_zero_iff {F : Type*} [Field F] (n zkRows : ℕ) (ω α ζ : F) :
     ftBoundary n zkRows ω α ζ ≠ 0 ↔
       ((ζ ^ n ≠ 1 ∧ α ≠ 0 ∧ (ζ - ω ^ (n - zkRows)) + α * (ζ - 1) ≠ 0)
         ∧ (ζ ≠ ω ^ (n - zkRows) ∧ ζ ≠ 1)) := by
@@ -390,7 +390,7 @@ theorem ftBoundary_ne_zero_iff {F : Type*} [Field F] (n zkRows : ℕ) (ω α ζ 
 /-- **The boundary quotient is not identically zero in `α`.** Away from the two
 degenerate `ζ` loci it vanishes at no more than two values of `α`, so no choice of the
 remaining degenerate data can force the derived `ft` evaluation to vanish. -/
-theorem ftBoundary_alpha_locus {F : Type*} [Field F] (n zkRows : ℕ) (ω ζ : F)
+private theorem ftBoundary_alpha_locus {F : Type*} [Field F] (n zkRows : ℕ) (ω ζ : F)
     (hζn : ζ ^ n ≠ 1) (hw : ζ ≠ ω ^ (n - zkRows)) (h1 : ζ ≠ 1) (α : F)
     (h : ftBoundary n zkRows ω α ζ = 0) :
     α = 0 ∨ α = -(ζ - ω ^ (n - zkRows)) / (ζ - 1) := by
@@ -412,7 +412,7 @@ theorem ftBoundary_alpha_locus {F : Type*} [Field F] (n zkRows : ℕ) (ω ζ : F
 away from the boundary locus. This is the obstruction that stops the standalone
 opening argument's anti-vacuity template from transporting: there the degenerate claim
 has `cip = 0`, here it cannot. -/
-theorem cipOf_runInputWith_zero_ne_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private theorem cipOf_runInputWith_zero_ne_zero (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (β γ α ζ v u : C.ScalarField) (hv : v ≠ 0)
     (hζn : ζ ^ cvk.n ≠ 1) (hα : α ≠ 0)
     (hnum : (ζ - cvk.omega ^ (cvk.n - cvk.zkRows)) + α * (ζ - 1) ≠ 0)
@@ -436,12 +436,12 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-- A generator commitment against generators that are all multiples of one point
 collapses to a single multiple of that point. -/
-theorem commitGen_smul_base {N : ℕ} (B : G) (s a : Fin N → F) :
+private theorem commitGen_smul_base {N : ℕ} (B : G) (s a : Fin N → F) :
     commitGen (fun i => s i • B) a = (∑ i, a i * s i) • B := by
   simp [commitGen, smul_smul, ← Finset.sum_smul]
 
 /-- **The scalar-basis hiding commitment**: `Commitσ(a, ρ) = (⟨a, s⟩ + ρ·s_bl) · B`. -/
-theorem commit_smul_base (σ : SRS G) (B : G) (s : Fin (2 ^ σ.k) → F) (sb : F)
+private theorem commit_smul_base (σ : SRS G) (B : G) (s : Fin (2 ^ σ.k) → F) (sb : F)
     (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B)
     (a : Fin (2 ^ σ.k) → F) (ρ : F) :
     commit σ a ρ = ((∑ i, a i * s i) + ρ * sb) • B := by
@@ -457,7 +457,7 @@ private theorem sum_two_support {N : ℕ} (i0 i1 : Fin N) (x y : F)
 /-- **Solvability with a live blinding slot.** With `s_bl ≠ 0` the first equation is
 solved by the blinding coefficient alone, so only `⟨a, b⟩ = cip` constrains `a`, and a
 single non-zero entry of `b` suffices. -/
-theorem exists_pair_of_blind_ne_zero {N : ℕ} (s b : Fin N → F) (sb lam cip : F)
+private theorem exists_pair_of_blind_ne_zero {N : ℕ} (s b : Fin N → F) (sb lam cip : F)
     (hsb : sb ≠ 0) (i0 : Fin N) (hb : b i0 ≠ 0) :
     ∃ (a : Fin N → F) (ρ : F),
       (∑ i, a i * s i) + ρ * sb = lam ∧ (∑ i, a i * b i) = cip := by
@@ -470,7 +470,7 @@ theorem exists_pair_of_blind_ne_zero {N : ℕ} (s b : Fin N → F) (sb lam cip :
 /-- **Solvability at an invertible minor.** When some `2 × 2` minor of the pair
 `(s, b)` is invertible the two functionals have rank `2`, so the system is solvable for
 every right-hand side — the blinding slot is not needed. -/
-theorem exists_coeffs_of_minor_ne_zero {N : ℕ} (s b : Fin N → F) (lam cip : F)
+private theorem exists_coeffs_of_minor_ne_zero {N : ℕ} (s b : Fin N → F) (lam cip : F)
     (i0 i1 : Fin N) (hD : s i0 * b i1 - s i1 * b i0 ≠ 0) :
     ∃ a : Fin N → F, (∑ i, a i * s i) = lam ∧ (∑ i, a i * b i) = cip := by
   set D : F := s i0 * b i1 - s i1 * b i0 with hDdef
@@ -492,7 +492,7 @@ whose combined commitment is `lam • B` and whose combined evaluation vector ha
 non-zero entry admits an opening witness at ANY combined inner product `cip` — in
 particular at the non-zero `cip` the derived kimchi claim carries
 (`cipOf_runInputWith_zero_ne_zero`). -/
-theorem exists_openingRelationB_smul_base [Module C.ScalarField C.Point]
+private theorem exists_openingRelationB_smul_base [Module C.ScalarField C.Point]
     (σ : SRS C.Point) (B : C.Point) (s : Fin (2 ^ σ.k) → C.ScalarField)
     (sb : C.ScalarField) (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B)
     (hsb : sb ≠ 0) (lam cip : C.ScalarField) (bvec : Fin (2 ^ σ.k) → C.ScalarField)
@@ -515,13 +515,13 @@ definitional — `srsOfBasis` is `srsOf ∘ ursOfAugmentedBasis`, whose `g`/`w` 
 basis at `gen i` / `w`, and `augOfSetup` routes those to the setup slots. -/
 
 /-- **The sampled SRS's generators.** -/
-theorem srsOfBasis_scalarBasis_g [Module C.ScalarField C.Point] (k : ℕ) (B : C.Point)
+private theorem srsOfBasis_scalarBasis_g [Module C.ScalarField C.Point] (k : ℕ) (B : C.Point)
     (s : SetupIndex (2 ^ k) → C.ScalarField) :
     (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))).g
       = fun i => s (SetupIndex.gen i) • B := rfl
 
 /-- **The sampled SRS's blinding base.** -/
-theorem srsOfBasis_scalarBasis_h [Module C.ScalarField C.Point] (k : ℕ) (B : C.Point)
+private theorem srsOfBasis_scalarBasis_h [Module C.ScalarField C.Point] (k : ℕ) (B : C.Point)
     (s : SetupIndex (2 ^ k) → C.ScalarField) :
     (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))).h = s SetupIndex.blind • B :=
   rfl
@@ -542,7 +542,7 @@ variable [Module C.ScalarField C.Point]
 /-- `P` **lies in the line through** `B`: it is a scalar multiple of `B`. At the sampled
 bases the endpoints measure over this holds for every public group element, which is what
 makes the derived kimchi claim openable there. -/
-def InLine (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point] (B P : C.Point) :
+private def InLine (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point] (B P : C.Point) :
     Prop :=
   ∃ c : C.ScalarField, P = c • B
 
@@ -551,35 +551,35 @@ namespace InLine
 variable {B P Q : C.Point}
 
 /-- Every multiple of `B` lies in the line. -/
-theorem of_smul (B : C.Point) (c : C.ScalarField) : InLine C B (c • B) := ⟨c, rfl⟩
+private theorem of_smul (B : C.Point) (c : C.ScalarField) : InLine C B (c • B) := ⟨c, rfl⟩
 
 /-- The line contains the zero point. -/
 theorem zero (B : C.Point) : InLine C B 0 := ⟨0, (zero_smul _ _).symm⟩
 
 /-- The line is closed under addition. -/
-theorem add (hP : InLine C B P) (hQ : InLine C B Q) : InLine C B (P + Q) := by
+private theorem add (hP : InLine C B P) (hQ : InLine C B Q) : InLine C B (P + Q) := by
   obtain ⟨c, rfl⟩ := hP
   obtain ⟨d, rfl⟩ := hQ
   exact ⟨c + d, (add_smul _ _ _).symm⟩
 
 /-- The line is closed under negation. -/
-theorem neg (hP : InLine C B P) : InLine C B (-P) := by
+private theorem neg (hP : InLine C B P) : InLine C B (-P) := by
   obtain ⟨c, rfl⟩ := hP
   exact ⟨-c, (neg_smul _ _).symm⟩
 
 /-- The line is closed under subtraction. -/
-theorem sub (hP : InLine C B P) (hQ : InLine C B Q) : InLine C B (P - Q) := by
+private theorem sub (hP : InLine C B P) (hQ : InLine C B Q) : InLine C B (P - Q) := by
   rw [sub_eq_add_neg]
   exact hP.add hQ.neg
 
 /-- The line is closed under the field-side scalar action. -/
-theorem smul (c : C.ScalarField) (hP : InLine C B P) : InLine C B (c • P) := by
+private theorem smul (c : C.ScalarField) (hP : InLine C B P) : InLine C B (c • P) := by
   obtain ⟨d, rfl⟩ := hP
   exact ⟨c * d, (mul_smul _ _ _).symm⟩
 
 /-- The line is closed under the natural-number action — the one
 `Ipa.combineCommitments` uses, through `ZMod.val`. -/
-theorem nsmul (n : ℕ) (hP : InLine C B P) : InLine C B (n • P) := by
+private theorem nsmul (n : ℕ) (hP : InLine C B P) : InLine C B (n • P) := by
   rw [← Nat.cast_smul_eq_nsmul C.ScalarField]
   exact hP.smul _
 
@@ -595,13 +595,13 @@ theorem sum {ι : Type*} (t : Finset ι) (f : ι → C.Point)
         (ih fun i hi => h i (Finset.mem_insert_of_mem hi))
 
 /-- A generator commitment against generators in the line stays in the line. -/
-theorem of_commitGen {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField)
+private theorem of_commitGen {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField)
     (h : ∀ i, InLine C B (g i)) : InLine C B (Bulletproof.commitGen g a) :=
   sum _ _ fun i _ => (h i).smul _
 
 /-- A hiding commitment at an SRS whose generators and blinding base lie in the line
 stays in the line. -/
-theorem of_commit (σ : SRS C.Point) (a : Fin (2 ^ σ.k) → C.ScalarField)
+private theorem of_commit (σ : SRS C.Point) (a : Fin (2 ^ σ.k) → C.ScalarField)
     (ρ : C.ScalarField) (hg : ∀ i, InLine C B (σ.g i)) (hh : InLine C B σ.h) :
     InLine C B (Bulletproof.commit σ a ρ) :=
   (of_commitGen _ _ hg).add (hh.smul ρ)
@@ -618,13 +618,13 @@ private theorem foldl_aux (B : C.Point) (ξ : C.ScalarField) :
         (ha.add ((h P (by simp)).nsmul _))
 
 /-- The line is closed under the group-side polyscale combination. -/
-theorem of_combineCommitments (ξ : C.ScalarField) (cs : Array C.Point)
+private theorem of_combineCommitments (ξ : C.ScalarField) (cs : Array C.Point)
     (h : ∀ P ∈ cs, InLine C B P) : InLine C B (Ipa.combineCommitments C ξ cs) := by
   rw [Ipa.combineCommitments, ← Array.foldl_toList]
   exact foldl_aux B ξ cs.toList (by simpa using h) 0 1 (zero B)
 
 /-- The line is closed under the abstract combined commitment. -/
-theorem of_combinedCommitment (ξ : C.ScalarField) {n : ℕ} (f : Fin n → C.Point)
+private theorem of_combinedCommitment (ξ : C.ScalarField) {n : ℕ} (f : Fin n → C.Point)
     (h : ∀ i, InLine C B (f i)) :
     InLine C B (Bulletproof.combinedCommitment ξ f) :=
   sum _ _ fun i _ => (h i).smul _
@@ -634,20 +634,20 @@ end InLine
 /-- Every generator of an SRS whose generators are the multiples `s i • B` lies in the
 line — the hypothesis shape `InLine.of_commit` wants, from
 `srsOfBasis_scalarBasis_g`. -/
-theorem inLine_of_g_eq {σ : SRS C.Point} {B : C.Point}
+private theorem inLine_of_g_eq {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} (hg : σ.g = fun i => s i • B) (i : Fin (2 ^ σ.k)) :
     InLine C B (σ.g i) := by
   rw [hg]
   exact InLine.of_smul B (s i)
 
 /-- A chunk commitment at a scalar SRS lies in the line. -/
-theorem inLine_commitPolyChunk {σ : SRS C.Point} {B : C.Point}
+private theorem inLine_commitPolyChunk {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} (hg : σ.g = fun i => s i • B)
     (p : Polynomial C.ScalarField) (c : ℕ) : InLine C B (commitPolyChunk σ p c) :=
   InLine.of_commitGen _ _ (inLine_of_g_eq hg)
 
 /-- A masked chunk commitment at a scalar SRS lies in the line. -/
-theorem inLine_commitPolyMaskedChunk {σ : SRS C.Point} {B : C.Point}
+private theorem inLine_commitPolyMaskedChunk {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} {sb : C.ScalarField}
     (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B)
     (p : Polynomial C.ScalarField) (c : ℕ) :
@@ -659,7 +659,7 @@ theorem inLine_commitPolyMaskedChunk {σ : SRS C.Point} {B : C.Point}
 /-- Every tail-row commitment of the honest key at the all-zero proof lies in the line:
 each is either a commitment the all-zero proof carries (hence `0`) or one of the honest
 key's committed columns, which is a chunk commitment against the same scalar SRS. -/
-theorem tailRowsOf_fst_inLine {σ : SRS C.Point} {B : C.Point}
+private theorem tailRowsOf_fst_inLine {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} {sb : C.ScalarField}
     (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) {nc d k : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (q r : ℕ)
@@ -695,7 +695,7 @@ theorem tailRowsOf_fst_inLine {σ : SRS C.Point} {B : C.Point}
         exact inLine_commitPolyChunk hg _ _
 
 /-- The flattened tail region's commitments all lie in the line. -/
-theorem tailFlatten_fst_inLine {σ : SRS C.Point} {B : C.Point}
+private theorem tailFlatten_fst_inLine {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} {sb : C.ScalarField}
     (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) {nc d k : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (t : ℕ) (ht : t < tailRowCount * nc) :
@@ -719,7 +719,7 @@ chunks are the blinding base `σ.h` (the empty public input takes the `pub.size 
 branch of `publicCommitment`); the `ft` row is `0` (`ftComm_runInputWith_zero`); every
 tail row is either a commitment the all-zero proof carries or one of the honest key's
 committed columns (`tailFlatten_fst_inLine`). -/
-theorem commitments_runInputWith_inLine {σ : SRS C.Point} {B : C.Point}
+private theorem commitments_runInputWith_inLine {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} {sb : C.ScalarField}
     (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) {nc d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField)
@@ -743,7 +743,7 @@ theorem commitments_runInputWith_inLine {σ : SRS C.Point} {B : C.Point}
 
 /-- **The derived claim's combined commitment is a multiple of the sampled base.** This
 is the first of the two hypotheses `exists_openingRelationB_smul_base` needs. -/
-theorem combinedCommitment_runInputWith_smul_base {σ : SRS C.Point} {B : C.Point}
+private theorem combinedCommitment_runInputWith_smul_base {σ : SRS C.Point} {B : C.Point}
     {s : Fin (2 ^ σ.k) → C.ScalarField} {sb : C.ScalarField}
     (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) {nc d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField) :
@@ -771,20 +771,20 @@ variable {F : Type*} [Field F]
 
 /-- **The zeroth entry of the combined evaluation vector** is the geometric sum of the
 evalscale, whatever the evaluation points are. -/
-theorem combinedEvalVector_zero (N : ℕ) (hN : 0 < N) (r : F) {m : ℕ} (x : Fin m → F) :
+private theorem combinedEvalVector_zero (N : ℕ) (hN : 0 < N) (r : F) {m : ℕ} (x : Fin m → F) :
     combinedEvalVector N r x ⟨0, hN⟩ = ∑ j : Fin m, r ^ (j : ℕ) := by
   simp [combinedEvalVector, evalVector]
 
 /-- **The combined evaluation vector is non-zero** at kimchi's two evaluation points,
 away from `u = -1`. -/
-theorem combinedEvalVector_ne_zero (N : ℕ) (hN : 0 < N) (r : F) (x : Fin evalPts → F)
+private theorem combinedEvalVector_ne_zero (N : ℕ) (hN : 0 < N) (r : F) (x : Fin evalPts → F)
     (hr : r ≠ -1) : combinedEvalVector N r x ⟨0, hN⟩ ≠ 0 := by
   rw [combinedEvalVector_zero N hN r x, Fin.sum_univ_two]
   simpa using fun h => hr (by linear_combination h)
 
 /-- **The first entry of the combined evaluation vector** is the evalscale-combination of
 the evaluation points themselves. -/
-theorem combinedEvalVector_one (N : ℕ) (hN : 1 < N) (r : F) {m : ℕ} (x : Fin m → F) :
+private theorem combinedEvalVector_one (N : ℕ) (hN : 1 < N) (r : F) {m : ℕ} (x : Fin m → F) :
     combinedEvalVector N r x ⟨1, hN⟩ = ∑ j : Fin m, r ^ (j : ℕ) * x j := by
   simp [combinedEvalVector, evalVector]
 
@@ -795,7 +795,7 @@ zeroth entry `1 + r` degenerates, but then the first entry is `x₀ − x₁`.
 This is strictly weaker than `combinedEvalVector_ne_zero`'s hypothesis: it removes the
 exclusion `u ≠ -1` from the opening statements below at the cost of `ζ ≠ ζω`, which the
 verifier's own two evaluation points supply whenever `ζ ≠ 0` and `ω ≠ 1`. -/
-theorem combinedEvalVector_exists_ne_zero (N : ℕ) (hN : 1 < N) (r : F)
+private theorem combinedEvalVector_exists_ne_zero (N : ℕ) (hN : 1 < N) (r : F)
     (x : Fin evalPts → F) (hx : x 0 ≠ x 1) :
     ∃ i : Fin N, combinedEvalVector N r x i ≠ 0 := by
   by_cases h : (1 : F) + r = 0
@@ -821,7 +821,7 @@ survives it. -/
 /-- The derived batched claim of the honest key at the all-zero proof and the empty public
 input — the claim every statement of this section is about, named so the assembled
 statements stay readable. -/
-noncomputable def honestClaim [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ)
+private noncomputable def honestClaim [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ)
     {d : ℕ} (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField) :
     Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
   runInputWith σ (honestVK σ nc idx) (zeroProof C nc σ.k) #[] β γ α ζ v u
@@ -836,7 +836,7 @@ The base `U` is a free parameter rather than the cold `uBaseOf C (Ipa.cipOf …)
 name: `openingRelationB σ P b v a ρ` is `commit σ a ρ = P ∧ v = innerProduct a b`, and
 `commit` reads only `σ.g` and `σ.h`, never `σ.U`. So the override is decoration and a
 witness at one base is a witness at every base — the proof below is untouched. -/
-theorem exists_openingRelationB_honestClaim [Module C.ScalarField C.Point]
+private theorem exists_openingRelationB_honestClaim [Module C.ScalarField C.Point]
     {σ : SRS C.Point} {B : C.Point} {s : Fin (2 ^ σ.k) → C.ScalarField}
     {sb : C.ScalarField} (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) (hsb : sb ≠ 0)
     {nc d : ℕ} (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField)
@@ -866,7 +866,7 @@ every opening base.** `exists_openingRelationB_honestClaim` at
 `srsOfBasis k (augOfSetup (scalarBasis B s))`, whose generators and blinding base are read
 off by `srsOfBasis_scalarBasis_g` / `srsOfBasis_scalarBasis_h`; the base `U` is free for
 the same reason it is free there. -/
-theorem exists_opening_runInputWith_scalarBasis [Module C.ScalarField C.Point]
+private theorem exists_opening_runInputWith_scalarBasis [Module C.ScalarField C.Point]
     {k nc d : ℕ} (B : C.Point) (s : SetupIndex (2 ^ k) → C.ScalarField)
     (hsb : s SetupIndex.blind ≠ 0) (idx : Index C.ScalarField (2 ^ d))
     (β γ α ζ v u : C.ScalarField) (hu : u ≠ -1) (U : C.Point) :
@@ -897,7 +897,7 @@ Nothing the verifier derives from a proof other than the IPA proof itself reads 
 field, so the derived claim is the same claim — up to its own `proof` slot. -/
 
 /-- The degenerate proof carrying a given opening proof. -/
-def zeroProofWith (C : Ipa.CommitmentCurve) (nc k : ℕ) (op : Ipa.Proof C k) :
+private def zeroProofWith (C : Ipa.CommitmentCurve) (nc k : ℕ) (op : Ipa.Proof C k) :
     KimchiProof C nc k :=
   { zeroProof C nc k with opening := op }
 
@@ -911,7 +911,7 @@ none. -/
 /-- **Replacing the opening changes only the claim's `proof` slot.** Definitional: the
 batch stream reads the evaluations, the commitment chunks and `ftEval1`, none of which the
 opening field touches. -/
-theorem runInputWith_zeroProofWith (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
+private theorem runInputWith_zeroProofWith (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (β γ α ζ v u : C.ScalarField) (op : Ipa.Proof C σ.k) :
     runInputWith σ cvk (zeroProofWith C nc σ.k op) pub β γ α ζ v u
       = { runInputWith σ cvk (zeroProof C nc σ.k) pub β γ α ζ v u with proof := op } := rfl
@@ -920,7 +920,7 @@ theorem runInputWith_zeroProofWith (σ : SRS C.Point) {nc : ℕ} (cvk : KimchiVK
 the form `Bulletproof.Ipa.Forking.honestNode_wireWins_everywhere` consumes, at the claim the
 honest adversary's own run presents. The base `U` is free because `openingRelationB` reads
 only `σ.g` and `σ.h`; the one-line delegation is unchanged. -/
-theorem exists_openingRelationB_honestClaim_opening [Module C.ScalarField C.Point]
+private theorem exists_openingRelationB_honestClaim_opening [Module C.ScalarField C.Point]
     {σ : SRS C.Point} {B : C.Point} {s : Fin (2 ^ σ.k) → C.ScalarField}
     {sb : C.ScalarField} (hg : σ.g = fun i => s i • B) (hh : σ.h = sb • B) (hsb : sb ≠ 0)
     {nc d : ℕ} (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField)
@@ -950,7 +950,7 @@ so acceptance of the honest family reduces to the opening branch — the second 
 acceptance theorem, the first being `exists_openingRelationB_honestClaim_opening`. -/
 
 /-- **The guard passes at the empty public input**, at any key and any proof. -/
-theorem kimchiVerifyWith_empty_pub [Module C.ScalarField C.Point] {nc : ℕ}
+private theorem kimchiVerifyWith_empty_pub [Module C.ScalarField C.Point] {nc : ℕ}
     (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
     (β γ α ζ v u : C.ScalarField) (uBase : C.Point) (chals : Vector C.ScalarField σ.k)
     (c : C.ScalarField) :
@@ -972,13 +972,13 @@ are definitionally equal, so the machine extracted from either is the same machi
 
 /-- An SRS all of whose generators and whose blinding base are multiples of one point, with
 a live blinding slot — the shape `exists_openingRelationB_smul_base` consumes. -/
-def IsScalarSRS (σ : SRS C.Point) [Module C.ScalarField C.Point] : Prop :=
+private def IsScalarSRS (σ : SRS C.Point) [Module C.ScalarField C.Point] : Prop :=
   ∃ (B : C.Point) (s : Fin (2 ^ σ.k) → C.ScalarField) (sb : C.ScalarField),
     σ.g = (fun i => s i • B) ∧ σ.h = sb • B ∧ sb ≠ 0
 
 /-- The sampled bases the endpoints measure over are scalar, as soon as the sampled
 blinding multiplier is live. -/
-theorem isScalarSRS_srsOfBasis_scalarBasis [Module C.ScalarField C.Point] (k : ℕ)
+private theorem isScalarSRS_srsOfBasis_scalarBasis [Module C.ScalarField C.Point] (k : ℕ)
     (B : C.Point) (s : SetupIndex (2 ^ k) → C.ScalarField)
     (hsb : s SetupIndex.blind ≠ 0) :
     IsScalarSRS (srsOfBasis k (augOfSetup (Zcash.Snark.scalarBasis B s))) :=
@@ -994,7 +994,7 @@ supplies: `ζ` is an endo-expanded prechallenge, hence non-zero, and the index's
 unity is not `1`. -/
 
 /-- The derived claim's two evaluation points, read off `runInputWith`'s `xs`. -/
-theorem honestClaim_pointFn [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ)
+private theorem honestClaim_pointFn [Module C.ScalarField C.Point] (σ : SRS C.Point) (nc : ℕ)
     {d : ℕ} (idx : Index C.ScalarField (2 ^ d)) (β γ α ζ v u : C.ScalarField) :
     (honestClaim σ nc idx β γ α ζ v u).pointFn 0 = ζ ∧
       (honestClaim σ nc idx β γ α ζ v u).pointFn 1 = ζ * idx.omega :=
@@ -1005,7 +1005,7 @@ base.** The `u ≠ -1` hypothesis of `exists_openingRelationB_honestClaim` is re
 `ζ ≠ 0` and `ω ≠ 1` — both properties of data the adversary controls or the oracle's
 expansion guarantees, hence available at every oracle table. The base `U` is free for the
 reason recorded at `exists_openingRelationB_honestClaim`: the relation never reads `σ.U`. -/
-theorem exists_openingRelationB_honestClaim_of_ne [Module C.ScalarField C.Point]
+private theorem exists_openingRelationB_honestClaim_of_ne [Module C.ScalarField C.Point]
     {σ : SRS C.Point} (hscal : IsScalarSRS σ)
     (hk : 0 < σ.k) {nc d : ℕ} (idx : Index C.ScalarField (2 ^ d))
     (β γ α ζ v u : C.ScalarField) (hζ : ζ ≠ 0) (hω : idx.omega ≠ 1) (U : C.Point) :
@@ -1130,7 +1130,7 @@ all-zero proof carries or one of the honest key's committed columns.
 
 Challenge-independence is the point: it is what lets a `KimchiFamily` declare table-free
 `aRef`/`ρRef`, so that `hrepPrefix` holds by reflexivity. -/
-theorem exists_rep_commitments (σ : SRS C.Point) {nc d : ℕ}
+private theorem exists_rep_commitments (σ : SRS C.Point) {nc d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (i : ℕ) (hi : i < nc + 1 + tailRowCount * nc) :
     ∃ (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField),
       ∀ β γ α ζ v u : C.ScalarField, Bulletproof.commit σ a ρ
@@ -1171,7 +1171,7 @@ transports a computation along it. -/
 time the opening argument starts. It reads the digest, the public commitment chunks and the
 NON-opening fields of the proof, so it is the same block for `zeroProofWith C nc k op` at
 every `op`. -/
-def zeroPre (C : Ipa.CommitmentCurve) (nc k : ℕ) (digest : C.ScalarField)
+private def zeroPre (C : Ipa.CommitmentCurve) (nc k : ℕ) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) : PreIpaData C nc :=
   (nodeAt digest publicComm (zeroProof C nc k) Squeeze.schnorr).pre
 
@@ -1180,7 +1180,8 @@ def zeroPre (C : Ipa.CommitmentCurve) (nc k : ℕ) (digest : C.ScalarField)
 block is supplied as a parameter; the cross-terms, `δ` and `sg` are copied unchanged.
 (`IpaNode.cip` has no kimchi counterpart — the kimchi transcript absorbs the combined inner
 product as part of its own pre-opening block — and is discarded.) -/
-def liftIpaNode {nc k : ℕ} (pre : PreIpaData C nc) (t : IpaNode C k) : KimchiNode C nc k where
+private def liftIpaNode
+    {nc k : ℕ} (pre : PreIpaData C nc) (t : IpaNode C k) : KimchiNode C nc k where
   idx := if h : (t.idx : ℕ) < k then Squeeze.ipaRound ⟨(t.idx : ℕ), h⟩ else Squeeze.schnorr
   pre := pre
   lr := t.lr
@@ -1188,7 +1189,7 @@ def liftIpaNode {nc k : ℕ} (pre : PreIpaData C nc) (t : IpaNode C k) : KimchiN
   sg := t.sg
 
 /-- The lift of the opening layer's round-`i` node is the kimchi node at `ipaRound i`. -/
-theorem liftIpaNode_nodeU {nc k : ℕ} (digest : C.ScalarField)
+private theorem liftIpaNode_nodeU {nc k : ℕ} (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cip : C.ScalarField) (op : Ipa.Proof C k) (i : Fin k) :
     liftIpaNode (zeroPre C nc k digest publicComm)
         (Bulletproof.Ipa.Forking.nodeU cip op i)
@@ -1199,7 +1200,7 @@ theorem liftIpaNode_nodeU {nc k : ℕ} (digest : C.ScalarField)
 
 /-- The lift of the opening layer's Schnorr node is the kimchi node at the Schnorr
 squeeze. -/
-theorem liftIpaNode_nodeC {nc k : ℕ} (digest : C.ScalarField)
+private theorem liftIpaNode_nodeC {nc k : ℕ} (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (cip : C.ScalarField) (op : Ipa.Proof C k) :
     liftIpaNode (zeroPre C nc k digest publicComm)
         (Bulletproof.Ipa.Forking.nodeC cip op)
@@ -1212,7 +1213,7 @@ theorem liftIpaNode_nodeC {nc k : ℕ} (digest : C.ScalarField)
 /-- **The lift carries the opening layer's deployed prefixes to the kimchi prefixes.**
 This is the identification that makes the transported machine query the kimchi game's own
 nodes. -/
-theorem liftIpaNode_prefix [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
+private theorem liftIpaNode_prefix [Module C.ScalarField C.Point] (σ : SRS C.Point) {nc : ℕ}
     (digest : C.ScalarField) (publicComm : Fin nc → C.Point) (cip : C.ScalarField)
     (op : Ipa.Proof C σ.k) :
     liftIpaNode (zeroPre C nc σ.k digest publicComm) ∘ Bulletproof.Ipa.Forking.nodes cip op
@@ -1277,7 +1278,7 @@ section Adversary
 prechallenge `qζ` rather than at the field element `ζ`, so that the non-vanishing of `ζ`
 that `exists_openingRelationB_honestClaim_of_ne` needs is available at EVERY oracle
 answer — which is what an everywhere-winning adversary requires. -/
-theorem exists_honestMachine [Module C.ScalarField C.Point]
+private theorem exists_honestMachine [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1296,7 +1297,7 @@ theorem exists_honestMachine [Module C.ScalarField C.Point]
 
 /-- The honest machine itself, named so the adversary and its analysis can refer to the
 same computation. `noncomputable` only because it is extracted with `.choose`. -/
-noncomputable def honestMachine [Module C.ScalarField C.Point]
+private noncomputable def honestMachine [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1306,7 +1307,7 @@ noncomputable def honestMachine [Module C.ScalarField C.Point]
   (exists_honestMachine hsmul hne hscal hk nc idx hω β γ α qζ v u).choose
 
 /-- The honest machine stays within the opening argument's own budget. -/
-theorem honestMachine_queryBound [Module C.ScalarField C.Point]
+private theorem honestMachine_queryBound [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1318,7 +1319,7 @@ theorem honestMachine_queryBound [Module C.ScalarField C.Point]
 
 /-- The honest machine's output is accepted by the challenge-generic opening verifier on
 every table. -/
-theorem honestMachine_wireWins [Module C.ScalarField C.Point]
+private theorem honestMachine_wireWins [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1341,7 +1342,7 @@ The witness it feeds is the same one: `exists_openingRelationB_honestClaim_of_ne
 is the cold witness verbatim because `openingRelationB` never reads `σ.U`. As there, everything
 is at the prechallenge `qζ` rather than at `ζ`, so the non-vanishing of `ζ` is available at EVERY
 oracle answer. -/
-theorem exists_honestMachineAt [Module C.ScalarField C.Point]
+private theorem exists_honestMachineAt [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1359,7 +1360,7 @@ theorem exists_honestMachineAt [Module C.ScalarField C.Point]
 /-- The honest machine at the base `U`, named so the adversary at `U` and its analysis refer to
 the same computation. Mirrors `honestMachine`; `noncomputable` only because it is extracted with
 `.choose`. -/
-noncomputable def honestMachineAt [Module C.ScalarField C.Point]
+private noncomputable def honestMachineAt [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1370,7 +1371,7 @@ noncomputable def honestMachineAt [Module C.ScalarField C.Point]
 
 /-- The honest machine at `U` stays within the opening argument's own budget — the budget does
 not depend on the base. Mirrors `honestMachine_queryBound`. -/
-theorem honestMachineAt_queryBound [Module C.ScalarField C.Point]
+private theorem honestMachineAt_queryBound [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1383,7 +1384,7 @@ theorem honestMachineAt_queryBound [Module C.ScalarField C.Point]
 /-- The honest machine at `U` produces an output the challenge-generic opening verifier accepts
 **at `U`**, on every table. Mirrors `honestMachine_wireWins`, with `wireWins σ …` replaced by
 `winsAtBase σ U …`. -/
-theorem honestMachineAt_winsAtBase [Module C.ScalarField C.Point]
+private theorem honestMachineAt_winsAtBase [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1396,7 +1397,7 @@ theorem honestMachineAt_winsAtBase [Module C.ScalarField C.Point]
 
 /-- **The six pre-opening nodes do not read the opening field**, so the adversary can
 query them before it knows which opening proof it will emit. -/
-theorem kimchiNodes_zeroProofWith_pre {nc k : ℕ} (digest : C.ScalarField)
+private theorem kimchiNodes_zeroProofWith_pre {nc k : ℕ} (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (op : Ipa.Proof C k) :
     kimchiNodes digest publicComm (zeroProofWith C nc k op) Squeeze.beta
         = kimchiNodes digest publicComm (zeroProof C nc k) Squeeze.beta ∧
@@ -1415,7 +1416,7 @@ theorem kimchiNodes_zeroProofWith_pre {nc k : ℕ} (digest : C.ScalarField)
 /-- **The honest kimchi adversary.** Six queries at the degenerate proof's pre-opening
 nodes, then the honest opening machine transported along `liftIpaNode`, then the
 degenerate proof carrying the opening it returns. -/
-noncomputable def honestAdversary [Module C.ScalarField C.Point]
+private noncomputable def honestAdversary [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1439,7 +1440,7 @@ noncomputable def honestAdversary [Module C.ScalarField C.Point]
 
 /-- **The honest adversary's query bound is `k + 7`** — six pre-opening queries and the
 opening machine's `k + 1`, `mapDomain` and `mapComp` adding none. -/
-theorem honestAdversary_queryBound [Module C.ScalarField C.Point]
+private theorem honestAdversary_queryBound [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1471,7 +1472,7 @@ theorem honestAdversary_queryBound [Module C.ScalarField C.Point]
 /-- **What the honest adversary emits**: the degenerate proof carrying the opening the
 transported machine returns, at the six challenges the table supplies at the run's own
 pre-opening nodes. -/
-theorem honestAdversary_run [Module C.ScalarField C.Point]
+private theorem honestAdversary_run [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1516,7 +1517,7 @@ the opening it returns.
 Mirrors `honestAdversary`, whose machine is `honestMachine` (cold base) rather than
 `honestMachineAt`. Taking the base as a function of the six answers rather than as a point is
 what makes a warm, table-derived base reachable; see the section preamble. -/
-noncomputable def honestAdversaryAtFn [Module C.ScalarField C.Point]
+private noncomputable def honestAdversaryAtFn [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1544,7 +1545,7 @@ noncomputable def honestAdversaryAtFn [Module C.ScalarField C.Point]
 /-- **The honest kimchi adversary at a fixed opening base** — `honestAdversaryAtFn` at the
 constant base function. This is the form to use when the base is genuinely a closed term; for
 the warm base, which varies with the table, use `honestAdversaryAtFn` itself. -/
-noncomputable def honestAdversaryAt [Module C.ScalarField C.Point]
+private noncomputable def honestAdversaryAt [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1558,7 +1559,7 @@ noncomputable def honestAdversaryAt [Module C.ScalarField C.Point]
 the opening machine's `k + 1`, `mapDomain` and `mapComp` adding none. The base changes nothing:
 `honestMachineAt_queryBound` is the same bound at every base. Mirrors
 `honestAdversary_queryBound`. -/
-theorem honestAdversaryAtFn_queryBound [Module C.ScalarField C.Point]
+private theorem honestAdversaryAtFn_queryBound [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1592,7 +1593,7 @@ theorem honestAdversaryAtFn_queryBound [Module C.ScalarField C.Point]
 
 /-- The honest adversary at a fixed base is within the same `k + 7` budget — the constant case of
 `honestAdversaryAtFn_queryBound`. -/
-theorem honestAdversaryAt_queryBound [Module C.ScalarField C.Point]
+private theorem honestAdversaryAt_queryBound [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1605,7 +1606,7 @@ theorem honestAdversaryAt_queryBound [Module C.ScalarField C.Point]
 /-- **What the base-generic honest adversary emits**: the degenerate proof carrying the opening
 the transported machine at the base `Ubase` (applied to the six answers the table supplied)
 returns. Mirrors `honestAdversary_run`. -/
-theorem honestAdversaryAtFn_run [Module C.ScalarField C.Point]
+private theorem honestAdversaryAtFn_run [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1636,7 +1637,7 @@ theorem honestAdversaryAtFn_run [Module C.ScalarField C.Point]
 
 /-- What the honest adversary at a fixed base emits — the constant case of
 `honestAdversaryAtFn_run`. -/
-theorem honestAdversaryAt_run [Module C.ScalarField C.Point]
+private theorem honestAdversaryAt_run [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1666,7 +1667,7 @@ end Adversary
 /-- **The honest adversary wins, at the challenges its own run collected.** The kernel of
 `honestAdversary_wins`, stated at named challenges so the six oracle reads do not have to be
 spelled out inside the acceptance predicate. -/
-theorem honestAdversary_wins_aux [Module C.ScalarField C.Point]
+private theorem honestAdversary_wins_aux [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1714,7 +1715,7 @@ verifier accepts the proof it emits, with every challenge — the six pre-openin
 
 Stated at an arbitrary `cp` equal to the run, so that it applies verbatim to a family whose
 adversary is the honest one only after a case split on the basis. -/
-theorem honestAdversary_wins [Module C.ScalarField C.Point]
+private theorem honestAdversary_wins [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1758,7 +1759,7 @@ Mirrors `honestAdversary_wins_aux`, with `honestMachine`/`wireWins` replaced by
 `honestMachineAt`/`winsAtBase` and the cold `uBaseOf C (Ipa.cipOf …)` slot of the verifier
 replaced by `U`. The proof is the frozen one minus the `cipOf_setProof` rewrite, which existed
 only to normalise the cold base's argument and has nothing left to act on. -/
-theorem honestAdversary_wins_aux_at [Module C.ScalarField C.Point]
+private theorem honestAdversary_wins_aux_at [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1806,7 +1807,7 @@ opening base the run's own six answers determine.
 Mirrors `honestAdversary_wins`, whose base slot is the cold `uBaseOf C (Ipa.cipOf …)`. As there,
 it is stated at an arbitrary `cp` equal to the run, so that it applies verbatim to a family whose
 adversary is the honest one only after a case split on the basis. -/
-theorem honestAdversaryAtFn_wins [Module C.ScalarField C.Point]
+private theorem honestAdversaryAtFn_wins [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1856,7 +1857,7 @@ to reduce to it.
 
 The constant case of `honestAdversaryAtFn_wins`. Note that a *fixed* base is not enough to reach
 the warm base, which varies with the table; that is what `honestAdversaryAtFn_wins` is for. -/
-theorem honestAdversary_wins_at [Module C.ScalarField C.Point]
+private theorem honestAdversary_wins_at [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0)
     {σ : SRS C.Point} (hscal : IsScalarSRS σ) (hk : 0 < σ.k) (nc : ℕ) {d : ℕ}
@@ -1917,7 +1918,8 @@ pre-`ζ` absorb schedule never touches it and `preT` reads the claim only throug
 `honestWarmBase_apply_eq_warmBase`.
 
 Project-local: it names the base at which this development's own degenerate family plays. -/
-noncomputable def honestWarmBase {k : ℕ} (nc : ℕ) {d : ℕ} (idx : Index C.ScalarField (2 ^ d))
+private noncomputable def honestWarmBase
+    {k : ℕ} (nc : ℕ) {d : ℕ} (idx : Index C.ScalarField (2 ^ d))
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (qβ qγ qα qζ qv qu : Prechallenge) : C.Point :=
   kimchiWarmBase (srsOfBasis k basis) (honestVK (srsOfBasis k basis) nc idx) #[]
@@ -1939,7 +1941,7 @@ challenge-tuple form, and `kimchiWarmBase_eq_of_preData_eq` — whose hypothesis
 because `preSqueeze` enumerates `β, γ, α, ζ, ξ, r` in the order the tuple packs them.
 
 Project-local: both sides are this development's own constructions. -/
-theorem honestWarmBase_apply_eq_warmBase {k : ℕ} (nc : ℕ) {d : ℕ}
+private theorem honestWarmBase_apply_eq_warmBase {k : ℕ} (nc : ℕ) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d))
     (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (cp : KimchiProof C nc k)
     (hpre : preDataOf (0 : C.ScalarField)
@@ -1973,7 +1975,7 @@ theorem honestWarmBase_apply_eq_warmBase {k : ℕ} (nc : ℕ) {d : ℕ}
 open Classical in
 /-- The family's adversary: the honest one at a scalar basis, at the warm base function
 `honestWarmBase`; the constant degenerate proof elsewhere. -/
-noncomputable def familyAdversary
+private noncomputable def familyAdversary
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
@@ -1987,7 +1989,7 @@ noncomputable def familyAdversary
   else .pure (zeroProof C nc k)
 
 /-- At a scalar basis the family's adversary IS the honest adversary at the warm base. -/
-theorem familyAdversary_scalar
+private theorem familyAdversary_scalar
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
@@ -2002,7 +2004,7 @@ theorem familyAdversary_scalar
 
 /-- **The family's adversary always emits the degenerate proof**, with some opening — the
 fact behind both the quotient-shape field and the algebraic-representation fields. -/
-theorem familyAdversary_run
+private theorem familyAdversary_run
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
@@ -2019,7 +2021,7 @@ theorem familyAdversary_run
   · exact ⟨(zeroProof C nc k).opening, rfl⟩
 
 /-- The family's adversary stays within `k + 7` queries at every basis. -/
-theorem familyAdversary_queryBound
+private theorem familyAdversary_queryBound
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1)
@@ -2048,7 +2050,7 @@ omit [Module C.ScalarField C.Point] in
 
 /-- `exists_rep_commitments` at the proof the honest adversary actually emits, and in the
 `commitmentFn` form the family's `hrep` field is stated in. -/
-theorem exists_rep_commitmentFn (σ : SRS C.Point) {nc d : ℕ}
+private theorem exists_rep_commitmentFn (σ : SRS C.Point) {nc d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (i : Fin (nc + 1 + tailRowCount * nc)) :
     ∃ (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField),
       ∀ (op : Ipa.Proof C σ.k) (β γ α ζ v u : C.ScalarField),
@@ -2063,7 +2065,7 @@ theorem exists_rep_commitmentFn (σ : SRS C.Point) {nc d : ℕ}
 /-- **The degenerate honest family.** Empty public input, zero digest, the honest key of a
 zero-arity circuit whose domain the chunking covers, the branching adversary above, and
 table-free algebraic representations. -/
-noncomputable def honestKimchiFamily
+private noncomputable def honestKimchiFamily
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) {nc : ℕ} (hnc : 0 < nc) {d : ℕ}
     (idx : Index C.ScalarField (2 ^ d)) (hω : idx.omega ≠ 1) (hpc : idx.publicCount = 0)
@@ -2341,7 +2343,7 @@ shifts' cosets. Every remaining law is immediate at this data: the wiring is the
 hence bijective, region-preserving and identity on the masked rows; every row carries the
 `zero` gate, so no gate sits on a masked row and no two-row gate reads into the mask; and
 both public-row conditions are vacuous at zero public rows. -/
-def trivialIndex (F : Type*) [Field F] [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1)
+private def trivialIndex (F : Type*) [Field F] [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1)
     (hω2 : ω ^ 2 ≠ 1)
     (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b) :
     Index F 4 where
@@ -2368,13 +2370,13 @@ def trivialIndex (F : Type*) [Field F] [DecidableEq F] (ω : F) (hω4 : ω ^ 4 =
 
 /-- The trivial index has no public rows — one of `honestKimchiFamily`'s side
 conditions. -/
-theorem trivialIndex_publicCount [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1) (hω2 : ω ^ 2 ≠ 1)
+private theorem trivialIndex_publicCount [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1) (hω2 : ω ^ 2 ≠ 1)
     (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b) :
     (trivialIndex F ω hω4 hω2 hcast).publicCount = 0 := rfl
 
 /-- The trivial index's generator is the supplied `ω` — the other side condition
 (`idx.omega ≠ 1`) is read off this. -/
-theorem trivialIndex_omega [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1) (hω2 : ω ^ 2 ≠ 1)
+private theorem trivialIndex_omega [DecidableEq F] (ω : F) (hω4 : ω ^ 4 = 1) (hω2 : ω ^ 2 ≠ 1)
     (hcast : ∀ a b : ℕ, a < 2402 → b < 2402 → (a : F) = (b : F) → a = b) :
     (trivialIndex F ω hω4 hω2 hcast).omega = ω := rfl
 
@@ -2391,40 +2393,40 @@ private theorem natCast_inj_of_lt_zmod (p : ℕ) [NeZero p] (hp : 2402 ≤ p) :
 /-- A primitive fourth root of unity in Vesta's scalar field `ZMod PALLAS_BASE_CARD`
 (hex `0x36bdcc7b0f28b5df31744fb72326829dff98203a45f8ebf0e047f48898cdb6db`), obtained as
 `5 ^ ((PALLAS_BASE_CARD − 1)/4)`. -/
-def vestaOmega : Bulletproof.IpaVesta.curve.ScalarField :=
+private def vestaOmega : Bulletproof.IpaVesta.curve.ScalarField :=
   24760239192664116622385963963284001971067308018068707868888628426778644166363
 
 /-- A primitive fourth root of unity in Pallas' scalar field `ZMod PALLAS_SCALAR_CARD`
 (hex `0x3691ce115adfa1187d65aa6313c354eb4a146505975fd3435d2f235b4abeb917`), obtained as
 `5 ^ ((PALLAS_SCALAR_CARD − 1)/4)`. -/
-def pallasOmega : Bulletproof.IpaPallas.curve.ScalarField :=
+private def pallasOmega : Bulletproof.IpaPallas.curve.ScalarField :=
   24682508875525884897641270952488416149830453149035712389703207095981135804695
 
 /-- `vestaOmega` is a fourth root of unity. -/
-theorem vestaOmega_pow_four : vestaOmega ^ 4 = 1 := by decide
+private theorem vestaOmega_pow_four : vestaOmega ^ 4 = 1 := by decide
 
 /-- `vestaOmega` is primitive: its square is `−1`, not `1`. -/
-theorem vestaOmega_pow_two_ne_one : vestaOmega ^ 2 ≠ 1 := by decide
+private theorem vestaOmega_pow_two_ne_one : vestaOmega ^ 2 ≠ 1 := by decide
 
 /-- `vestaOmega` is not `1` — `honestKimchiFamily`'s `hω`. -/
-theorem vestaOmega_ne_one : vestaOmega ≠ 1 := by decide
+private theorem vestaOmega_ne_one : vestaOmega ≠ 1 := by decide
 
 /-- `pallasOmega` is a fourth root of unity. -/
-theorem pallasOmega_pow_four : pallasOmega ^ 4 = 1 := by decide
+private theorem pallasOmega_pow_four : pallasOmega ^ 4 = 1 := by decide
 
 /-- `pallasOmega` is primitive: its square is `−1`, not `1`. -/
-theorem pallasOmega_pow_two_ne_one : pallasOmega ^ 2 ≠ 1 := by decide
+private theorem pallasOmega_pow_two_ne_one : pallasOmega ^ 2 ≠ 1 := by decide
 
 /-- `pallasOmega` is not `1` — `honestKimchiFamily`'s `hω`. -/
-theorem pallasOmega_ne_one : pallasOmega ≠ 1 := by decide
+private theorem pallasOmega_ne_one : pallasOmega ≠ 1 := by decide
 
 /-- The trivial index over Vesta's scalar field, at domain size `2 ² = 4`. -/
-def vestaIndex : Index Bulletproof.IpaVesta.curve.ScalarField (2 ^ 2) :=
+private def vestaIndex : Index Bulletproof.IpaVesta.curve.ScalarField (2 ^ 2) :=
   trivialIndex _ vestaOmega vestaOmega_pow_four vestaOmega_pow_two_ne_one
     (natCast_inj_of_lt_zmod _ (by decide))
 
 /-- The trivial index over Pallas' scalar field, at domain size `2 ² = 4`. -/
-def pallasIndex : Index Bulletproof.IpaPallas.curve.ScalarField (2 ^ 2) :=
+private def pallasIndex : Index Bulletproof.IpaPallas.curve.ScalarField (2 ^ 2) :=
   trivialIndex _ pallasOmega pallasOmega_pow_four pallasOmega_pow_two_ne_one
     (natCast_inj_of_lt_zmod _ (by decide))
 
@@ -2442,7 +2444,7 @@ Vesta's scalar field. The four side conditions are arithmetic (`0 < 2`, `0 < 1`,
 `1 · 2² = 2²`) and the two index facts; the two curve facts — that the scalar action agrees
 with the natural-number action, and that the challenge expansion never vanishes — are the
 per-curve facts `vesta_kimchi_knowledge_sound` itself discharges. -/
-noncomputable def vestaHonestFamily :
+private noncomputable def vestaHonestFamily :
     KimchiFamily Bulletproof.IpaVesta.curve 1 2 (2 ^ 2) :=
   honestKimchiFamily (C := Bulletproof.IpaVesta.curve) Pasta.vesta_smul_val
     expandPre_vesta_ne_zero (by decide) (by decide) vestaIndex
@@ -2450,7 +2452,7 @@ noncomputable def vestaHonestFamily :
 
 /-- **The Pallas honest family, with no hypotheses at all** — the Pallas twin of
 `vestaHonestFamily`. -/
-noncomputable def pallasHonestFamily :
+private noncomputable def pallasHonestFamily :
     KimchiFamily Bulletproof.IpaPallas.curve 1 2 (2 ^ 2) :=
   honestKimchiFamily (C := Bulletproof.IpaPallas.curve) Pasta.pallas_smul_val
     expandPre_pallas_ne_zero (by decide) (by decide) pallasIndex
@@ -2459,14 +2461,14 @@ noncomputable def pallasHonestFamily :
 /-- **The Vesta honest family accepts** — at every base point, every multiplier vector with
 a live blinding slot, and every oracle table. This is the non-vacuity statement: a kimchi
 adversary family whose acceptance conjunct is satisfiable exists, unconditionally. -/
-theorem vestaHonestFamily_wins (B : Bulletproof.IpaVesta.Point)
+private theorem vestaHonestFamily_wins (B : Bulletproof.IpaVesta.Point)
     (sm : SetupIndex (2 ^ 2) → Bulletproof.IpaVesta.curve.ScalarField)
     (hsb : sm SetupIndex.blind ≠ 0) (O : Coins Bulletproof.IpaVesta.curve 1 2) :
     vestaHonestFamily.Wins (augOfSetup (Zcash.Snark.scalarBasis B sm)) O :=
   honestKimchiFamily_wins _ _ _ _ _ _ _ _ B sm hsb O
 
 /-- **The Pallas honest family accepts** — the Pallas twin of `vestaHonestFamily_wins`. -/
-theorem pallasHonestFamily_wins (B : Bulletproof.IpaPallas.Point)
+private theorem pallasHonestFamily_wins (B : Bulletproof.IpaPallas.Point)
     (sm : SetupIndex (2 ^ 2) → Bulletproof.IpaPallas.curve.ScalarField)
     (hsb : sm SetupIndex.blind ≠ 0) (O : Coins Bulletproof.IpaPallas.curve 1 2) :
     pallasHonestFamily.Wins (augOfSetup (Zcash.Snark.scalarBasis B sm)) O :=
@@ -2478,7 +2480,7 @@ sampled multipliers the family always wins (`vestaHonestFamily_wins`), so
 `{¬ExtractsWitness} ∩ slice` is contained in the endpoint's `{Wins ∧ ¬ExtractsWitness}`,
 and the right-hand side is verbatim the four-summand bound of
 `vesta_kimchi_knowledge_sound`. -/
-theorem vesta_honest_extraction_failure_measure_le
+private theorem vesta_honest_extraction_failure_measure_le
     (B : Bulletproof.IpaVesta.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (2 + 1))
     (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}
@@ -2501,7 +2503,7 @@ theorem vesta_honest_extraction_failure_measure_le
 
 /-- **On the Pallas honest family the endpoint's bound is a statement about the extractor
 alone** — the Pallas twin of `vesta_honest_extraction_failure_measure_le`. -/
-theorem pallas_honest_extraction_failure_measure_le
+private theorem pallas_honest_extraction_failure_measure_le
     (B : Bulletproof.IpaPallas.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (2 + 1))
     (hcoins : coins.Complete) {R : ℕ} {ε δ : ℝ≥0∞}

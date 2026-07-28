@@ -55,7 +55,7 @@ yields an opening witness for `openingRelationB` — or a nontrivial discrete-lo
 Neither conclusion can be conjured (`Forking/Triviality.lean`): the witness is extracted from
 the strategy's own responses, and the relation carries explicit coefficients. No `hbind`
 hypothesis — binding violations are returned, not assumed away. -/
-theorem kimchi_knowledge_soundness [Fintype F] [DecidableEq F] [DecidableEq G] (σ : SRS G)
+private theorem kimchi_knowledge_soundness [Fintype F] [DecidableEq F] [DecidableEq G] (σ : SRS G)
     (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
     (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)
     (pr : KimchiProver F G σ.k)
@@ -87,7 +87,7 @@ strengthen this `Prop` wrapper. -/
 /-- **At a 1-dimensional group the conclusion is free**: `hprob`, the strategy and the
 representation are all discarded. This is the reason the `Prop`-level headline is *not* the
 deployed-parameters endpoint — the data-valued `kimchiOpeningOrBreak` is. -/
-theorem kimchi_knowledge_soundness_conclusion_free_at_1dim (σ : SRS G)
+private theorem kimchi_knowledge_soundness_conclusion_free_at_1dim (σ : SRS G)
     (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
     (H₀ : G) (hspan : ∀ x : G, ∃ s : F, x = s • H₀)
     (hh : ∃ s : F, σ.h = s • H₀ ∧ s ≠ 0) (hb : ∃ i, b i ≠ 0) :

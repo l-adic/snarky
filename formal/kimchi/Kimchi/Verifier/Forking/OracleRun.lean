@@ -117,7 +117,7 @@ theorem oracleChallenges_poseidonO (cvk : KimchiVK C nc) (cp : KimchiProof C nc 
 open FrTranscriptElt (frAbsorbInto absorbEval preVAbsorbs preV preU)
 
 /-- One fr-interpreter step: `frAbsorb` absorbs its list, `frEndo` endo-expands a squeeze. -/
-def frStep (acc : FqSponge.S C.scalar × C.ScalarField) :
+private def frStep (acc : FqSponge.S C.scalar × C.ScalarField) :
     FrTranscriptElt C → FqSponge.S C.scalar × C.ScalarField
   | .frAbsorb xs => (FqSponge.absorbFq (frSpec C) acc.1 xs, acc.2)
   | .frEndo => ((FqSponge.challengeNat (frSpec C) acc.1).2,
@@ -134,7 +134,7 @@ def oracleVU (O : List (FrTranscriptElt C) → C.ScalarField) (cp : KimchiProof 
   (O (preV cp fqDig pubEvals), O (preU cp fqDig pubEvals))
 
 /-- The fr-interpreter's state component folds `frAbsorbInto`, independent of the value. -/
-theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar)
+private theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar)
     (v : C.ScalarField) :
     (l.foldl frStep (s, v)).1 = l.foldl (fun s e => frAbsorbInto C e s) s := by
   induction l generalizing s v with
@@ -145,7 +145,7 @@ theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar
 
 /-- The fr-interpreter's state after the pre-`v` absorbs is `frOracles`'s pre-squeeze state:
 the fq/fr digests, `ft(ζω)`, the public chunk vectors, then the `absorb_evaluations` folds. -/
-theorem foldl_frAbsorbInto_preVAbsorbs (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+private theorem foldl_frAbsorbInto_preVAbsorbs (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
     (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     (preVAbsorbs cp fqDig pubEvals).foldl (fun s e => frAbsorbInto C e s) FqSponge.init
       = (let sp := frSpec C

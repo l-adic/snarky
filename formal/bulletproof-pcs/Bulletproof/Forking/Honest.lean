@@ -239,7 +239,7 @@ def padChal {F : Type*} [Zero F] {m N : ℕ} (w : Fin m → F) : Fin N → F :=
   simp only [padChal, dif_pos i.isLt, Fin.eta]
 
 /-- Reading a padded vector below the pad length. -/
-theorem padChal_apply_of_lt {F : Type*} [Zero F] {m N : ℕ} (w : Fin m → F) (i : Fin N)
+private theorem padChal_apply_of_lt {F : Type*} [Zero F] {m N : ℕ} (w : Fin m → F) (i : Fin N)
     (h : (i : ℕ) < m) : padChal (N := N) w i = w ⟨i, h⟩ := dif_pos h
 
 /-! ## Mapping the result of an oracle computation
@@ -281,7 +281,7 @@ variable {C : Ipa.CommitmentCurve} {k m p : ℕ}
 
 /-- The abstract `OpeningProof` packed back onto the wire: the `Fin k`-indexed `lr` becomes a
 `Vector`, everything else transfers unchanged. It is a section of `toOpening`. -/
-def wireProofOf (ω : OpeningProof C.ScalarField C.Point k) : Ipa.Proof C k where
+private def wireProofOf (ω : OpeningProof C.ScalarField C.Point k) : Ipa.Proof C k where
   lr := Vector.ofFn ω.lr
   delta := ω.delta
   z1 := ω.z1
@@ -314,7 +314,7 @@ This is well-defined — i.e. `acc` really does contain everything needed — fo
 of `lrAt_congr`: entry `l ≤ j` of `lr` consults only challenges strictly below `l ≤ j`, all of
 which are in `acc`; and the leaf data consult only the `k` round challenges, all of which are in
 `acc` at the last step. -/
-def honestNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
+private def honestNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
     {j : ℕ} (hj : j < k + 1) (acc : Fin j → Prechallenge) : IpaNode C k :=
   if j < k then
     { idx := ⟨j, hj⟩
@@ -333,14 +333,14 @@ def honestNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
 /-- The round-`i` query point of a *completed* answer vector: the honest node built from the
 answers strictly before `i`. This is the node-domain counterpart of `Game.lean`'s
 `honestPrefixes`. -/
-def honestPrefixNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
+private def honestPrefixNode (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
     (q : Fin (k + 1) → Prechallenge) (i : Fin (k + 1)) : IpaNode C k :=
   honestNode cip pr i.isLt (fun l => q (l.castLE i.isLt.le))
 
 /-- The honest machine's query stage, with `j` answers already collected and `m` rounds still to
 read: query at the honest node for the answers so far, then continue; when nothing is left,
 return the answer vector. -/
-def honestNodeAdvAux (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k) :
+private def honestNodeAdvAux (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k) :
     (mm j : ℕ) → j + mm = k + 1 → (Fin j → Prechallenge) →
       Zcash.Snark.OracleComp (IpaNode C k) Prechallenge (Fin (k + 1) → Prechallenge)
   | 0, _, h, acc => .pure fun i => acc (Fin.cast (by omega) i)
@@ -350,13 +350,13 @@ def honestNodeAdvAux (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Po
 
 /-- **The honest machine**: `k + 1` nested queries at its own nodes over a final `pure`,
 returning the wire proof the honest strategy assembles along the challenges it read. -/
-def honestNodeAdv (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k) :
+private def honestNodeAdv (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k) :
     Zcash.Snark.OracleComp (IpaNode C k) Prechallenge (Ipa.Proof C k) :=
   mapComp (fun q => wireProofOf (pr.proofAt fun i => expandPre C (q i)))
     (honestNodeAdvAux cip pr (k + 1) 0 (by omega) Fin.elim0)
 
 /-- The query stage makes exactly `mm` queries on every path. -/
-theorem honestNodeAdvAux_queryBound (cip : C.ScalarField)
+private theorem honestNodeAdvAux_queryBound (cip : C.ScalarField)
     (pr : KimchiProver C.ScalarField C.Point k) :
     ∀ (mm j : ℕ) (h : j + mm = k + 1) (acc : Fin j → Prechallenge),
       (honestNodeAdvAux cip pr mm j h acc).QueryBound mm := by
@@ -368,7 +368,7 @@ theorem honestNodeAdvAux_queryBound (cip : C.ScalarField)
       exact .query fun q => ih (j + 1) (by omega) (Fin.snoc acc q)
 
 /-- **The honest machine stays within budget** `k + 1`. -/
-theorem honestNodeAdv_queryBound (cip : C.ScalarField)
+private theorem honestNodeAdv_queryBound (cip : C.ScalarField)
     (pr : KimchiProver C.ScalarField C.Point k) :
     (honestNodeAdv cip pr).QueryBound (k + 1) :=
   mapComp_queryBound _ (honestNodeAdvAux_queryBound cip pr (k + 1) 0 (by omega) Fin.elim0)
@@ -376,7 +376,8 @@ theorem honestNodeAdv_queryBound (cip : C.ScalarField)
 /-- **The run of the honest machine.** The accumulated answers survive the remaining run, and
 every not-yet-read entry of the output vector is the table's value at exactly the honest node
 built from the run's own earlier entries. -/
-theorem honestNodeAdvAux_run (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
+private theorem honestNodeAdvAux_run
+    (cip : C.ScalarField) (pr : KimchiProver C.ScalarField C.Point k)
     (O : IpaNode C k → Prechallenge) :
     ∀ (mm j : ℕ) (h : j + mm = k + 1) (acc : Fin j → Prechallenge),
       (∀ (i : Fin (k + 1)) (hi : (i : ℕ) < j),
@@ -422,7 +423,7 @@ theorem honestNodeAdvAux_run (cip : C.ScalarField) (pr : KimchiProver C.ScalarFi
 
 /-- **The run reads each answer at its own node.** The `i`-th answer the honest machine collects
 is the table's value at the honest node built from the answers strictly before `i`. -/
-theorem honestNodeAdv_run (cip : C.ScalarField)
+private theorem honestNodeAdv_run (cip : C.ScalarField)
     (pr : KimchiProver C.ScalarField C.Point k) (O : IpaNode C k → Prechallenge)
     (i : Fin (k + 1)) :
     (honestNodeAdvAux cip pr (k + 1) 0 (by omega) Fin.elim0).run O i
@@ -438,7 +439,7 @@ This is the one genuinely new argument of the module, and it is where `lrAt_cong
 /-- **The query points are the nodes of the output.** The honest node built from the first `i`
 answers of `q` is exactly the `i`-th deployed prefix of the proof the honest strategy assembles
 along the *full* challenge vector of `q`. -/
-theorem honestPrefixNode_eq_nodes (cip : C.ScalarField)
+private theorem honestPrefixNode_eq_nodes (cip : C.ScalarField)
     (pr : KimchiProver C.ScalarField C.Point k) (q : Fin (k + 1) → Prechallenge)
     (i : Fin (k + 1)) :
     honestPrefixNode cip pr q i
@@ -492,7 +493,7 @@ theorem honestPrefixNode_eq_nodes (cip : C.ScalarField)
 /-- **The honest run reads its challenges at its own output's nodes.** Combining the run analysis
 with the fixed point: the answer at the `i`-th deployed prefix of the machine's output is exactly
 the `i`-th entry of the vector the machine collected. -/
-theorem honestNodeAdv_prefixes (cip : C.ScalarField)
+private theorem honestNodeAdv_prefixes (cip : C.ScalarField)
     (pr : KimchiProver C.ScalarField C.Point k) (O : IpaNode C k → Prechallenge)
     (i : Fin (k + 1)) :
     O (nodes cip ((honestNodeAdv cip pr).run O) i)
@@ -552,7 +553,7 @@ def winsAtBase (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
 /-- **At the cold base, `winsAtBase` IS `wireWins`.** The transcription check on the definition
 above: the two `Prop`s are the same term, so no bridge lemma is ever needed in the cold direction,
 and the deployed companion is a literal instance of the base-generic one. -/
-theorem winsAtBase_uBaseOf (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
+private theorem winsAtBase_uBaseOf (σ : SRS C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
     winsAtBase σ (uBaseOf C (Ipa.cipOf claim)) claim O π = wireWins σ claim O π := rfl
 
@@ -566,7 +567,7 @@ and is quantified over it; the four proof lines are the frozen ones verbatim, wi
 `uBaseOf C (Ipa.cipOf claim)` replaced by `U`. As there, it is stated as an *equivalence* and it
 is the BACKWARD direction that the anti-vacuity argument spends: the honest machine's algebra
 delivers `Wins`, while the event a measure bound is stated over lives on the wire. -/
-theorem winsAtBase_iff_wins [Module C.ScalarField C.Point]
+private theorem winsAtBase_iff_wins [Module C.ScalarField C.Point]
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (σ : SRS C.Point) (U : C.Point) (claim : Ipa.Input C σ.k m p)
     (O : IpaNode C σ.k → Prechallenge) (π : Ipa.Proof C σ.k) :
@@ -594,7 +595,7 @@ equation, so deleting that line generalises it. Every ingredient it rests on is 
 base-generic — `honestProver_accept` quantifies over `U`, `honestNodeAdv` and its run/budget
 analysis are indexed by `cip` alone, and `kimchiProverAccept_iff_verifierAcceptsAt` takes the SRS
 (hence its base) as an argument. -/
-theorem honestNode_wins_everywhere_at [Module C.ScalarField C.Point]
+private theorem honestNode_wins_everywhere_at [Module C.ScalarField C.Point]
     (hne : ∀ q, expandPre C q ≠ 0)
     (σ : SRS C.Point) (U : C.Point) (cip : C.ScalarField)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
@@ -691,7 +692,7 @@ holds for every prechallenge without any hypothesis.
 
 It is the `U := uBaseOf C cip` instance of the base-generic `honestNode_wins_everywhere_at`
 above — the cold base is nowhere used by the argument, only carried. -/
-theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
+private theorem honestNode_wins_everywhere (hne : ∀ q, expandPre C q ≠ 0)
     (σ : SRS C.Point) (cip : C.ScalarField)
     (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
     (a : Fin (2 ^ σ.k) → C.ScalarField) (ρ : C.ScalarField)

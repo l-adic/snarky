@@ -232,7 +232,7 @@ private def pubDot {F : Type*} [Field F] (omega pt : F) (pub : Array F) : F :=
 empty input, else `(∑ᵢ −(ζ − ωⁱ)⁻¹ pubᵢ ωⁱ) · (ζⁿ − 1) · n⁻¹` and the `ζω` analogue.
 These are the values production uses downstream (the public polynomial is committed
 negated) — no re-negation. -/
-def publicEvals {F : Type*} [Field F] (n : ℕ)
+private def publicEvals {F : Type*} [Field F] (n : ℕ)
     (omega zeta zetaOmega zetaN zetaOmegaN : F) (pub : Array F) : F × F :=
   if pub.size = 0 then (0, 0)
   else

@@ -33,14 +33,14 @@ variable {F : Type*} [Field F]
 /-! ## The doubling recursion of the s-vector -/
 
 /-- At depth `0` the s-vector is the constant `1` (the empty product). -/
-theorem bPolyCoefficients_zero (u : Fin 0 → F) : bPolyCoefficients u = fun _ => 1 := by
+private theorem bPolyCoefficients_zero (u : Fin 0 → F) : bPolyCoefficients u = fun _ => 1 := by
   funext m
   simp [bPolyCoefficients]
 
 /-- **The s-vector doubles by the head challenge, high half scaled** — `sFun`'s recursion in
 kimchi's convention. The low half drops the head factor (top bit unset); the high half's top bit
 contributes `u (Fin.rev (Fin.last k)) = u 0`. -/
-theorem bPolyCoefficients_succ {k : ℕ} (u : Fin (k + 1) → F) :
+private theorem bPolyCoefficients_succ {k : ℕ} (u : Fin (k + 1) → F) :
     bPolyCoefficients u
       = append (bPolyCoefficients (Fin.tail u)) (u 0 • bPolyCoefficients (Fin.tail u)) := by
   funext m
@@ -97,7 +97,7 @@ theorem commitGen_bPolyCoefficients_zero {M : Type*} [AddCommGroup M] [Module F 
 /-! ## The `bPoly` evaluation identity -/
 
 /-- `bPoly`'s recurrence: split off the head factor. -/
-theorem bPoly_succ {k : ℕ} (u : Fin (k + 1) → F) (x : F) :
+private theorem bPoly_succ {k : ℕ} (u : Fin (k + 1) → F) (x : F) :
     bPoly u x = (1 + u 0 * x ^ 2 ^ k) * bPoly (Fin.tail u) x := by
   rw [bPoly, bPoly, Fin.prod_univ_succ]
   have htail : ∀ j : Fin k,
@@ -111,7 +111,7 @@ theorem bPoly_succ {k : ℕ} (u : Fin (k + 1) → F) (x : F) :
 
 /-- Folding the evaluation vector by `c` is scaling it by `bPoly`'s head factor: componentwise,
 `x^i + c·x^{2^k + i} = (1 + c·x^{2^k})·x^i`. -/
-theorem foldHalves_evalVector {k : ℕ} (x c : F) :
+private theorem foldHalves_evalVector {k : ℕ} (x c : F) :
     foldHalves (evalVector (2 ^ (k + 1)) x) c
       = (1 + c * x ^ 2 ^ k) • evalVector (2 ^ k) x := by
   funext i
@@ -122,7 +122,7 @@ theorem foldHalves_evalVector {k : ℕ} (x c : F) :
 /-- **`bPoly` is the inner product of the s-vector with the evaluation vector** — the closed
 form of the wire's `b0` slot. By induction: one `commitGen_bPolyCoefficients_step` at the
 module `M := F`, then `foldHalves_evalVector` produces exactly `bPoly`'s head factor. -/
-theorem bPoly_eq_innerProduct : {k : ℕ} → (u : Fin k → F) → (x : F) →
+private theorem bPoly_eq_innerProduct : {k : ℕ} → (u : Fin k → F) → (x : F) →
     bPoly u x = innerProduct (bPolyCoefficients u) (evalVector (2 ^ k) x)
   | 0, u, x => by
       rw [show innerProduct (bPolyCoefficients u) (evalVector (2 ^ 0) x)

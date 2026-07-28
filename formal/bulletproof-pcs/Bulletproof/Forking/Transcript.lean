@@ -60,7 +60,7 @@ namespace IpaTranscriptElt
 
 /-- The state action of a transcript element on the sponge — the interpreter's state
 component, isolated so it never mentions a challenge value. -/
-def stepState (C : Ipa.CommitmentCurve) :
+private def stepState (C : Ipa.CommitmentCurve) :
     IpaTranscriptElt C → FqSponge.S C.base → FqSponge.S C.base
   | frScalar x, s => FqSponge.absorbFr C.sponge s x
   | point P, s => FqSponge.absorbG C.sponge s P
@@ -108,13 +108,14 @@ and `spongeOBase_eq_from` / `spongeOScalar_eq_from` record that they are the spe
 /-- The base-field oracle **at an arbitrary start state**: the raw squeeze the `U` base is
 derived from, taken after folding the real sponge from `s₀` along everything before the
 trailing marker. -/
-def spongeOBaseFrom (s₀ : FqSponge.S C.base) (t : List (IpaTranscriptElt C)) : C.BaseField :=
+private def spongeOBaseFrom
+    (s₀ : FqSponge.S C.base) (t : List (IpaTranscriptElt C)) : C.BaseField :=
   (FqSponge.challengeFq C.sponge (t.dropLast.foldl (fun s e => stepState C e s) s₀)).1
 
 /-- The scalar-field oracle **at an arbitrary start state**: the endo-expanded squeeze of the
 round and Schnorr challenges, taken after folding the real sponge from `s₀` along everything
 before the trailing marker. -/
-def spongeOScalarFrom (s₀ : FqSponge.S C.base) (t : List (IpaTranscriptElt C)) :
+private def spongeOScalarFrom (s₀ : FqSponge.S C.base) (t : List (IpaTranscriptElt C)) :
     C.ScalarField :=
   (FqSponge.squeezeChallenge C.sponge (t.dropLast.foldl (fun s e => stepState C e s) s₀)).1
 
@@ -123,16 +124,16 @@ def spongeOBase (t : List (IpaTranscriptElt C)) : C.BaseField :=
   (FqSponge.challengeFq C.sponge (t.dropLast.foldl (fun s e => stepState C e s) FqSponge.init)).1
 
 /-- The scalar-field oracle: the endo-expanded squeeze of the round and Schnorr challenges. -/
-def spongeOScalar (t : List (IpaTranscriptElt C)) : C.ScalarField :=
+private def spongeOScalar (t : List (IpaTranscriptElt C)) : C.ScalarField :=
   (FqSponge.squeezeChallenge C.sponge
     (t.dropLast.foldl (fun s e => stepState C e s) FqSponge.init)).1
 
 /-- The cold base oracle is the start-state-general one at `FqSponge.init`. -/
-theorem spongeOBase_eq_from (t : List (IpaTranscriptElt C)) :
+private theorem spongeOBase_eq_from (t : List (IpaTranscriptElt C)) :
     spongeOBase t = spongeOBaseFrom FqSponge.init t := rfl
 
 /-- The cold scalar oracle is the start-state-general one at `FqSponge.init`. -/
-theorem spongeOScalar_eq_from (t : List (IpaTranscriptElt C)) :
+private theorem spongeOScalar_eq_from (t : List (IpaTranscriptElt C)) :
     spongeOScalar t = spongeOScalarFrom FqSponge.init t := rfl
 
 /-! ### Prefix shift
@@ -145,7 +146,7 @@ real: the trailing marker being dropped must come from `t`, not from `t₀`. -/
 
 /-- **Prefix shift, base oracle.** Reading at `t` from the state reached along `t₀` is reading
 at `t₀ ++ t` from the earlier state. -/
-theorem spongeOBaseFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTranscriptElt C))
+private theorem spongeOBaseFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTranscriptElt C))
     (ht : t ≠ []) :
     spongeOBaseFrom s₀ (t₀ ++ t)
       = spongeOBaseFrom (t₀.foldl (fun s e => stepState C e s) s₀) t := by
@@ -153,7 +154,7 @@ theorem spongeOBaseFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTra
 
 /-- **Prefix shift, scalar oracle.** Reading at `t` from the state reached along `t₀` is reading
 at `t₀ ++ t` from the earlier state. -/
-theorem spongeOScalarFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTranscriptElt C))
+private theorem spongeOScalarFrom_append (s₀ : FqSponge.S C.base) (t₀ t : List (IpaTranscriptElt C))
     (ht : t ≠ []) :
     spongeOScalarFrom s₀ (t₀ ++ t)
       = spongeOScalarFrom (t₀.foldl (fun s e => stepState C e s) s₀) t := by
@@ -167,7 +168,7 @@ at an arbitrary start state `s₀` and then specialised to the cold start. -/
 
 /-- **The `U` base, from any start state.** Mapping the base oracle's read at `preT` through
 `toGroup` gives `transcriptFrom`'s `U`. -/
-theorem toGroup_spongeOBaseFrom_preT (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
+private theorem toGroup_spongeOBaseFrom_preT (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
     C.toGroup (spongeOBaseFrom s₀ (preT inp)) = (Ipa.transcriptFrom C s₀ inp).1 := by
   simp only [spongeOBaseFrom, preT, preTAbsorbs, List.dropLast_concat, List.foldl_cons,
     List.foldl_nil, stepState, Ipa.transcriptFrom]
@@ -191,7 +192,7 @@ it transfers verbatim to the warm start kimchi hands the opening verifier. -/
 
 /-- The deployed per-round step, named so the fold rewrites cleanly. Definitionally the body of
 `Ipa.roundChallengesAux`. -/
-def rstep (C : Ipa.CommitmentCurve)
+private def rstep (C : Ipa.CommitmentCurve)
     (acc : Array C.ScalarField × FqSponge.S C.base) (LR : C.Point × C.Point) :
     Array C.ScalarField × FqSponge.S C.base :=
   (acc.1.push (FqSponge.squeezeChallenge C.sponge
@@ -200,7 +201,7 @@ def rstep (C : Ipa.CommitmentCurve)
       (FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge acc.2 LR.1) LR.2)).2)
 
 /-- `Ipa.roundChallengesAux` as a `List.foldl` of the named step over the array's list. -/
-theorem roundChallengesAux_eq_foldl (s : FqSponge.S C.base)
+private theorem roundChallengesAux_eq_foldl (s : FqSponge.S C.base)
     (lr : Array (C.Point × C.Point)) :
     Ipa.roundChallengesAux C s lr = lr.toList.foldl (rstep C) (#[], s) := by
   unfold Ipa.roundChallengesAux
@@ -208,7 +209,7 @@ theorem roundChallengesAux_eq_foldl (s : FqSponge.S C.base)
   rfl
 
 /-- The model sponge state after folding the round block of `L` from `s`. -/
-def mstate (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)
+private def mstate (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)
     (L : List (C.Point × C.Point)) : FqSponge.S C.base :=
   match L with
   | [] => s
@@ -217,7 +218,7 @@ def mstate (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)
       (FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge s LR.1) LR.2)).2 t
 
 /-- The model list of round challenges pushed while folding the round block of `L` from `s`. -/
-def mchals (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)
+private def mchals (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)
     (L : List (C.Point × C.Point)) : List C.ScalarField :=
   match L with
   | [] => []
@@ -228,7 +229,7 @@ def mchals (C : Ipa.CommitmentCurve) (s : FqSponge.S C.base)
         (FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge s LR.1) LR.2)).2 t
 
 /-- The deployed round fold's post-state is the model state (independent of the accumulator). -/
-theorem rstep_foldl_state (L : List (C.Point × C.Point)) :
+private theorem rstep_foldl_state (L : List (C.Point × C.Point)) :
     ∀ (pre : Array C.ScalarField) (s : FqSponge.S C.base),
     (L.foldl (rstep C) (pre, s)).2 = mstate C s L := by
   induction L with
@@ -245,7 +246,7 @@ theorem rstep_foldl_state (L : List (C.Point × C.Point)) :
     simp only [mstate]
 
 /-- The deployed round fold's array is the accumulator prepended to the model challenge list. -/
-theorem rstep_foldl_toList (L : List (C.Point × C.Point)) :
+private theorem rstep_foldl_toList (L : List (C.Point × C.Point)) :
     ∀ (pre : Array C.ScalarField) (s : FqSponge.S C.base),
     (L.foldl (rstep C) (pre, s)).1.toList = pre.toList ++ mchals C s L := by
   induction L with
@@ -262,20 +263,20 @@ theorem rstep_foldl_toList (L : List (C.Point × C.Point)) :
     simp only [mchals, Array.toList_push, List.append_assoc, List.singleton_append]
 
 /-- The deployed round fold's post-state, as the model state over the round list. -/
-theorem roundChallengesAux_snd (s : FqSponge.S C.base)
+private theorem roundChallengesAux_snd (s : FqSponge.S C.base)
     (lr : Array (C.Point × C.Point)) :
     (Ipa.roundChallengesAux C s lr).2 = mstate C s lr.toList := by
   rw [roundChallengesAux_eq_foldl, rstep_foldl_state]
 
 /-- The deployed round fold's challenge array, as the model challenge list over the round list. -/
-theorem roundChallengesAux_fst_toList (s : FqSponge.S C.base)
+private theorem roundChallengesAux_fst_toList (s : FqSponge.S C.base)
     (lr : Array (C.Point × C.Point)) :
     (Ipa.roundChallengesAux C s lr).1.toList = mchals C s lr.toList := by
   rw [roundChallengesAux_eq_foldl, rstep_foldl_toList]
   simp
 
 /-- Folding the model step over `L`'s round block from `s` yields the model state `mstate`. -/
-theorem flatMap_block_foldl (M : List (C.Point × C.Point)) (s : FqSponge.S C.base) :
+private theorem flatMap_block_foldl (M : List (C.Point × C.Point)) (s : FqSponge.S C.base) :
     (M.flatMap (fun LR => [point LR.1, point LR.2, sqEndo])).foldl
       (fun s e => stepState C e s) s = mstate C s M := by
   induction M generalizing s with
@@ -292,7 +293,7 @@ theorem flatMap_block_foldl (M : List (C.Point × C.Point)) (s : FqSponge.S C.ba
 
 /-- The `i`-th model challenge is the endo-squeeze after absorbing round `i`'s `L`, `R` on top of
 the model state after `i` rounds. Stated with `getElem?` to sidestep the length side-goal. -/
-theorem mchals_getElem? (L : List (C.Point × C.Point)) :
+private theorem mchals_getElem? (L : List (C.Point × C.Point)) :
     ∀ (i : ℕ) (s : FqSponge.S C.base) (hi : i < L.length),
     (mchals C s L)[i]? = some (FqSponge.squeezeChallenge C.sponge
       (FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge
@@ -311,7 +312,7 @@ theorem mchals_getElem? (L : List (C.Point × C.Point)) :
       exact ih j _ (by simp only [List.length_cons] at hi; omega)
 
 /-- The `idx`-th deployed round challenge, characterised through `getElem?`. -/
-theorem roundChallengesAux_getElem? (s : FqSponge.S C.base)
+private theorem roundChallengesAux_getElem? (s : FqSponge.S C.base)
     (lr : Array (C.Point × C.Point)) (idx : ℕ) (h : idx < lr.toList.length) :
     (Ipa.roundChallengesAux C s lr).1[idx]? = some (FqSponge.squeezeChallenge C.sponge
       (FqSponge.absorbG C.sponge (FqSponge.absorbG C.sponge
@@ -320,7 +321,7 @@ theorem roundChallengesAux_getElem? (s : FqSponge.S C.base)
   exact mchals_getElem? lr.toList idx s h
 
 /-- `roundBlock` at `i+1` is `roundBlock` at `i` with round `i`'s block appended. -/
-theorem roundBlock_succ (inp : Ipa.Input C k m p) (i : Fin k)
+private theorem roundBlock_succ (inp : Ipa.Input C k m p) (i : Fin k)
     (hik : (i : ℕ) < inp.proof.lr.toList.length) :
     roundBlock inp ((i : ℕ) + 1) = roundBlock inp (i : ℕ) ++
       [point (inp.proof.lr.toList[(i : ℕ)]).1, point (inp.proof.lr.toList[(i : ℕ)]).2,
@@ -333,7 +334,8 @@ theorem roundBlock_succ (inp : Ipa.Input C k m p) (i : Fin k)
 
 /-- **The round challenges, from any start state.** The scalar oracle at `preU i` is round `i`'s
 challenge of the derivation started at `s₀`. -/
-theorem spongeOScalarFrom_preU (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) (i : Fin k) :
+private theorem spongeOScalarFrom_preU
+    (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) (i : Fin k) :
     spongeOScalarFrom s₀ (preU inp i) = (Ipa.transcriptFrom C s₀ inp).2.1[i] := by
   have hik : (i : ℕ) < inp.proof.lr.toList.length := by simp
   -- The post-`challengeFq` state feeding the rounds (shared, verbatim, by both sides).
@@ -383,13 +385,13 @@ theorem spongeOScalarFrom_preU (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m
   rw [hLHS, hRHS]
 
 /-- **The round challenges.** The scalar oracle at `preU i` is round `i`'s challenge. -/
-theorem spongeOScalar_preU (inp : Ipa.Input C k m p) (i : Fin k) :
+private theorem spongeOScalar_preU (inp : Ipa.Input C k m p) (i : Fin k) :
     spongeOScalar (preU inp i) = (Ipa.transcriptFrom C FqSponge.init inp).2.1[i] :=
   spongeOScalarFrom_preU FqSponge.init inp i
 
 /-- **The Schnorr challenge, from any start state.** The scalar oracle at `preC` is the `c` of
 the derivation started at `s₀`. -/
-theorem spongeOScalarFrom_preC (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
+private theorem spongeOScalarFrom_preC (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m p) :
     spongeOScalarFrom s₀ (preC inp) = (Ipa.transcriptFrom C s₀ inp).2.2 := by
   have hlen : inp.proof.lr.toList.length = k := by simp
   have hpreT : (preT inp).foldl (fun s e => stepState C e s) s₀
@@ -432,7 +434,7 @@ theorem spongeOScalarFrom_preC (s₀ : FqSponge.S C.base) (inp : Ipa.Input C k m
   rw [hLHS, hRHS]
 
 /-- **The Schnorr challenge.** The scalar oracle at `preC` is `c`. -/
-theorem spongeOScalar_preC (inp : Ipa.Input C k m p) :
+private theorem spongeOScalar_preC (inp : Ipa.Input C k m p) :
     spongeOScalar (preC inp) = (Ipa.transcriptFrom C FqSponge.init inp).2.2 :=
   spongeOScalarFrom_preC FqSponge.init inp
 
@@ -470,7 +472,7 @@ def transcriptOf (fs : FiatShamir C) (inp : Ipa.Input C k m p) :
 
 /-- The opening verifier over an arbitrary challenge source: the deployed algebra
 (`Ipa.verifyWith`) at the challenges `fs` supplies. -/
-def verifyOracle (fs : FiatShamir C) (σ : SRS C.Point)
+private def verifyOracle (fs : FiatShamir C) (σ : SRS C.Point)
     (inp : Ipa.Input C σ.k m p) : Bool :=
   let (uBase, chals, c) := transcriptOf fs inp
   Ipa.verifyWith C σ uBase chals c inp
@@ -482,23 +484,23 @@ def spongeFSFrom (C : Ipa.CommitmentCurve) (s₀ : FqSponge.S C.base) : FiatSham
   ⟨spongeOBaseFrom s₀, spongeOScalarFrom s₀⟩
 
 /-- The deployed source: the Poseidon sponge read at transcript prefixes from the cold start. -/
-def spongeFS (C : Ipa.CommitmentCurve) : FiatShamir C :=
+private def spongeFS (C : Ipa.CommitmentCurve) : FiatShamir C :=
   ⟨spongeOBase, spongeOScalar⟩
 
 /-- The cold Poseidon source is `spongeFSFrom` at `FqSponge.init`. -/
-theorem spongeFS_eq_from (C : Ipa.CommitmentCurve) :
+private theorem spongeFS_eq_from (C : Ipa.CommitmentCurve) :
     spongeFS C = spongeFSFrom C FqSponge.init := rfl
 
 /-- The opening transcript the deployed Poseidon source produces from the start state `s₀` —
 `transcriptOf` at `spongeFSFrom`, named so the faithfulness statement below can be stated on
 the derivation alone. -/
-def transcriptOfFrom (C : Ipa.CommitmentCurve) (s₀ : FqSponge.S C.base)
+private def transcriptOfFrom (C : Ipa.CommitmentCurve) (s₀ : FqSponge.S C.base)
     (inp : Ipa.Input C k m p) : C.Point × Vector C.ScalarField k × C.ScalarField :=
   transcriptOf (spongeFSFrom C s₀) inp
 
 /-- The opening verifier at the deployed Poseidon source started at `s₀` — `verifyOracle` at
 `spongeFSFrom`, the start-state-indexed counterpart of `Ipa.verifyFrom`. -/
-def verifyOracleFrom (C : Ipa.CommitmentCurve) (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
+private def verifyOracleFrom (C : Ipa.CommitmentCurve) (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
     (inp : Ipa.Input C σ.k m p) : Bool :=
   verifyOracle (spongeFSFrom C s₀) σ inp
 
@@ -526,7 +528,7 @@ theorem verifyOracle_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
 fed the Poseidon source started at `s₀` — is `Ipa.verifyFrom` started at `s₀`. This is what
 makes the abstraction honest at the warm start: the challenge source is a parameter, and the
 deployed verifier is recovered as a theorem rather than assumed. -/
-theorem verifyOracleFrom_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
+private theorem verifyOracleFrom_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base)
     (inp : Ipa.Input C σ.k m p) :
     verifyOracleFrom C σ s₀ inp = Ipa.verifyFrom C σ s₀ inp :=
   verifyOracle_spongeFSFrom σ s₀ inp
@@ -534,7 +536,7 @@ theorem verifyOracleFrom_spongeFSFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.ba
 /-- **The abstract verifier at the Poseidon source is the deployed verifier.** The cold
 specialisation of `verifyOracle_spongeFSFrom`: `Ipa.verify` is `Ipa.verifyFrom` at
 `FqSponge.init`. -/
-theorem verifyOracle_spongeFS (σ : SRS C.Point) (inp : Ipa.Input C σ.k m p) :
+private theorem verifyOracle_spongeFS (σ : SRS C.Point) (inp : Ipa.Input C σ.k m p) :
     verifyOracle (spongeFS C) σ inp = Ipa.verify C σ inp :=
   verifyOracle_spongeFSFrom σ FqSponge.init inp
 

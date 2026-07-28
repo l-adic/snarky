@@ -30,7 +30,7 @@ section Structure
 variable {G : Type*}
 
 /-- Our SRS read as ironwood's URS: `h ↦ w`, `U ↦ u`. -/
-def ursOf (σ : SRS G) : Zcash.Snark.URS G := ⟨σ.k, σ.g, σ.h, σ.U⟩
+private def ursOf (σ : SRS G) : Zcash.Snark.URS G := ⟨σ.k, σ.g, σ.h, σ.U⟩
 
 /-- Ironwood's URS read as our SRS: `w ↦ h`, `u ↦ U`. -/
 def srsOf (urs : Zcash.Snark.URS G) : SRS G := ⟨urs.k, urs.g, urs.w, urs.u⟩
@@ -39,9 +39,9 @@ def srsOf (urs : Zcash.Snark.URS G) : SRS G := ⟨urs.k, urs.g, urs.w, urs.u⟩
 
 @[simp] theorem ursOf_g (σ : SRS G) : (ursOf σ).g = σ.g := rfl
 
-theorem srsOf_ursOf (σ : SRS G) : srsOf (ursOf σ) = σ := rfl
+private theorem srsOf_ursOf (σ : SRS G) : srsOf (ursOf σ) = σ := rfl
 
-theorem ursOf_srsOf (urs : Zcash.Snark.URS G) : ursOf (srsOf urs) = urs := rfl
+private theorem ursOf_srsOf (urs : Zcash.Snark.URS G) : ursOf (srsOf urs) = urs := rfl
 
 end Structure
 
@@ -50,11 +50,11 @@ end Structure
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-- Our blinded commitment is ironwood's unblinded one plus the blinding term. -/
-theorem commit_eq_zcash (σ : SRS G) (a : Fin (2 ^ σ.k) → F) (r : F) :
+private theorem commit_eq_zcash (σ : SRS G) (a : Fin (2 ^ σ.k) → F) (r : F) :
     commit σ a r = Zcash.Snark.commit (ursOf σ) a + r • σ.h := rfl
 
 /-- Our blinded opening relation is ironwood's `IpaRelation` at the de-blinded commitment. -/
-theorem openingRelationB_iff_zcash (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
+private theorem openingRelationB_iff_zcash (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
     (a : Fin (2 ^ σ.k) → F) (ρ : F) :
     openingRelationB σ P b v a ρ ↔ Zcash.Snark.IpaRelation (ursOf σ) (P - ρ • σ.h) b v a := by
   constructor

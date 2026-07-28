@@ -105,7 +105,7 @@ def ArgumentEnv.map {R S : Type u} (f : R → S) (env : ArgumentEnv R) : Argumen
 /-- **Row environment.** The field-level cells at row `i` of a witness table `wTab` and a
 coefficient table `qTab`: current row `wTab i`, next row `wTab (i + 1)` (cyclic), coefficients
 `qTab i`. -/
-def rowEnv [NeZero n] (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F)
+private def rowEnv [NeZero n] (wTab : Fin n → Fin wCols → F) (qTab : Fin n → Fin coeffCols → F)
     (i : Fin n) : ArgumentEnv F :=
   ⟨wTab i, wTab (i + 1), qTab i⟩
 

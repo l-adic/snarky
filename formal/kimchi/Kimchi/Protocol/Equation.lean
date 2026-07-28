@@ -231,7 +231,7 @@ the recurrence member sits at `α ^ gateAlphaCount` (the literal `21` of `permSc
 `Protocol/Linearization.lean`) and the two boundary members at the next slots (the
 literals `22`/`23` of `ftEval0`, same module). The scalar-side closed forms keep the
 literals — this lemma pins their origin. -/
-theorem perm_member_alpha_indices :
+private theorem perm_member_alpha_indices :
     (21 : ℕ) = Index.gateAlphaCount
       ∧ (22 : ℕ) = Index.gateAlphaCount + 1
       ∧ (23 : ℕ) = Index.gateAlphaCount + 2 :=
@@ -340,7 +340,7 @@ aggregate splitting into its gate and permutation halves. -/
 /-- At the honest evaluation record, the scalar-side verifier check is equivalent to the
 quotient identity at `ζ`. Consumed only by the Schwartz–Zippel core below, on the way to
 `Kimchi.Protocol.sound`. -/
-private theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
+theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F)
     (z t : Polynomial F) (ζ β γ α : F)
     (hζ₁ : ζ ≠ 1) (hζb : ζ ≠ idx.omega ^ (n - idx.zkRows)) :
@@ -490,7 +490,7 @@ bad ζ's that fail to pin the claimed quotient. -/
 
 /-- The left grand-product multiset of `sound`: the pairs `(W_c(ω^j), shift_c · ω^j)`
 ranging over every permutation column `c` and masked row `j`. -/
-noncomputable def soundM1 (idx : Index F n) (W : Fin wCols → Polynomial F) :
+private noncomputable def soundM1 (idx : Index F n) (W : Fin wCols → Polynomial F) :
     Multiset (F × F) :=
   Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
     ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
@@ -498,7 +498,7 @@ noncomputable def soundM1 (idx : Index F n) (W : Fin wCols → Polynomial F) :
 
 /-- The right grand-product multiset of `sound`: the same witness values paired against
 the wiring-permuted `shift · node`. -/
-noncomputable def soundM2 (idx : Index F n) (W : Fin wCols → Polynomial F) :
+private noncomputable def soundM2 (idx : Index F n) (W : Fin wCols → Polynomial F) :
     Multiset (F × F) :=
   Finset.univ.val.map fun c : Fin permCols × Fin (n - idx.zkRows) =>
     ((idx.permWitnessPoly (extractTable idx.omega W) c.1).eval (idx.omega ^ (c.2 : ℕ)),
