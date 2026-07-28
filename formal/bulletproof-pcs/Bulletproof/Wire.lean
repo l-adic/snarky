@@ -27,9 +27,13 @@ total; a checked input cannot hold a ragged claim. The raw serde records
 below with their `check` parses: THIS verifier's totality requirements (round count,
 `evals` square against the commitments and points), stated as a total parse — the
 parse IS the proof. Production's `SRS::verify` carries no such explicit guards — its
-`Vec` payloads feed the transcript and the batched MSM equations as-is, so a
-mis-shaped claim reaches the same rejection through the equations it then fails.
-Clients compose check-then-verify.
+`Vec` payloads feed the transcript and the batched MSM equations as-is: an OVERSIZED
+`lr` panics (ipa.rs:296), and an UNDERSIZED `lr` whose claim is committed over the
+SRS prefix is ACCEPTED, so the round-count pin here is a declared modeling
+STRENGTHENING rather than the transcription of a production check (external-audit
+W-F3; in the kimchi composition, exploiting that corner against a
+`Corresponds`-satisfying key requires a discrete-log break, so endpoint exposure is
+priced). Clients compose check-then-verify.
 
 Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
 `G: CommitmentCurve` associated types: the base and scalar cardinalities with their

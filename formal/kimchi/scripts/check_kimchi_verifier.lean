@@ -145,6 +145,8 @@ def runChunked (C : Ipa.CommitmentCurve)
     let mut parses : Array (String × Bool) := #[
       ("ragged z eval chunk vector", (ragged.check nc σ.k).isNone && !verify ragged),
       ("oversized t_comm (size > 7·nc)", (overT.check nc σ.k).isNone),
+      ("empty t_comm (the htpos wire pin, a declared strengthening)",
+        (({ proof with tComm := #[] } : Wire.KimchiProof C).check nc σ.k).isNone),
       ("wrong opening round count (lr pair popped; the IPA-side check)",
         (badLr.check nc σ.k).isNone),
       ("ragged VK chunk vector (sigma_comm[0])", (raggedVK.check nc).isNone)]

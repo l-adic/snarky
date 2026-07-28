@@ -16,6 +16,21 @@ axioms, which asserted an accepted IPA opening of the run's combined commitment 
 that opening is *extracted*, by the forking argument the IPA capstone already runs, and the
 cost of extraction failure is charged to discrete log.
 
+**The modeled fragment** (what "the deployed kimchi verifier" quantifies over; external-audit
+C-1/C-2, full field-by-field delineation in `docs/external-audit-report.md` Appendix W):
+single, unbatched kimchi proofs over the Pasta curves, for circuits in the transcribed basic
+gate set — zero, generic, poseidon, completeAdd, varBaseMul, endoMul, endoScalar — with
+kimchi's public-input gadget layout, at a power-of-two domain with `nc · 2^k = n` (`hkn`).
+The SUB-SRS regime `max_poly_size > n` — the common o1js/Mina configuration — is OUTSIDE the
+fragment, as are lookups, optional gates (range check, foreign field, xor, rot), and
+recursion (`prev_challenges = 0`). On the proof side the fragment also excludes proofs
+carrying optional-gate or lookup EVALUATION fields (production fr-absorbs those even against
+a basic-gate key, so such a proof's transcript differs), proofs with an empty quotient
+commitment (`htpos`; the wire parse now rejects them as a declared strengthening), ragged
+chunk vectors, and openings of other than `σ.k` rounds. Mina/pickles proofs use recursion,
+lookups, optional gates and the sub-SRS regime, and are outside the fragment on four
+independent axes.
+
 The formulation is deliberately **analogous to the IPA one**, clause for clause:
 
 | IPA (`Bulletproof/Forking/KnowledgeSoundness.lean`) | here |
@@ -4356,8 +4371,14 @@ faithfulness, i.e. that a commitment's declared representation is fixed when the
 absorbed — which is what the algebraic group model means and what
 `KimchiFamily.szBadRun_agree` consumes.
 
-`#print axioms` on this theorem gives exactly `propext`, `Classical.choice` and `Quot.sound`: no
-`sorryAx`, and no Fiat–Shamir axiom of any kind. -/
+**Scope.** "The deployed verifier" here means the modeled fragment (see the module
+preamble): basic gate set, `nc · 2^k = n` (no sub-SRS keys — the deployed o1js/Mina default
+is outside), no lookups, no optional gates, no recursion, no optional-gate/lookup evaluation
+fields, non-empty quotient commitment. Mina/pickles proofs are outside on four axes.
+
+`#print axioms` on this theorem: the three standard axioms plus CompElliptic's certified
+`native_decide` witnesses for the Pasta curve constants — no `sorryAx`, and no Fiat–Shamir
+axiom of any kind. -/
 theorem vesta_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
     (B : IpaVesta.Point) (fam : KimchiFamily IpaVesta.curve nc k n)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
@@ -4380,7 +4401,8 @@ theorem vesta_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
 
 /-- **Pallas: the deployed kimchi verifier is knowledge-sound.** The Pallas-side twin of
 `vesta_kimchi_knowledge_sound`, over `Fq`/`IpaPallas`; same shape, same four summands, same
-axiom footprint. Every step of the argument is curve-generic; only the four per-curve facts
+axiom footprint, same modeled-fragment scope (see the Vesta endpoint's docstring and the
+module preamble). Every step of the argument is curve-generic; only the four per-curve facts
 about the expansions and the scalar action are re-discharged. -/
 theorem pallas_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
     (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n)
