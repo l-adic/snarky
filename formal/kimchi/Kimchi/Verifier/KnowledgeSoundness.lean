@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Kimchi.Verifier.Capstone.Reflection
 import Kimchi.Verifier.Forking.OracleRun
 import Bulletproof.Forking.KnowledgeSoundness
@@ -2437,7 +2438,7 @@ section ClaimStability
 variable {nc k : ℕ}
 
 /-- The six pre-opening squeezes, in schedule order: `β`, `γ`, `α`, `ζ`, `ξ`, `r`. -/
-private def preSqueeze : Fin 6 → Squeeze k :=
+private def preSqueeze : Fin preIpaChals → Squeeze k :=
   ![.beta, .gamma, .alpha, .zeta, .polyscale, .evalscale]
 
 /-- **The run's pre-opening absorbed data** — the `pre` payload every opening-round node
@@ -2475,7 +2476,7 @@ private def preNodeOf (d : PreIpaData C nc) (s : Squeeze k) : KimchiNode C nc k 
 opening begins is visible at them, so re-gating the `ξ`-node payload returns the run's own
 node. Definitional at each squeeze. -/
 private theorem preNodeOf_preDataOf (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
-    (cp : KimchiProof C nc k) (i : Fin 6) :
+    (cp : KimchiProof C nc k) (i : Fin preIpaChals) :
     preNodeOf (preDataOf digest publicComm cp) (preSqueeze i)
       = kimchiNodes digest publicComm cp (preSqueeze i) := by
   fin_cases i <;> rfl
@@ -2497,7 +2498,7 @@ by the absorbed data, which is exactly why the six `β…r` nodes survive reprog
 round. -/
 private theorem preNodeOf_ne_ipaPrefixes (σ : SRS C.Point) (digest : C.ScalarField)
     (publicComm : Fin nc → C.Point) (d : PreIpaData C nc) (cp : KimchiProof C nc σ.k)
-    (i : Fin 6) (j : Fin (σ.k + 1)) :
+    (i : Fin preIpaChals) (j : Fin (σ.k + 1)) :
     preNodeOf d (preSqueeze i) ≠ ipaPrefixes σ digest publicComm cp j := by
   intro h
   have hidx := congrArg KimchiNode.idx h
@@ -2513,7 +2514,7 @@ private theorem claimStable_of_preDataFactors {ClaimData : Type*} (σ : SRS C.Po
     (digest : C.ScalarField) (publicComm : Fin nc → C.Point)
     (A : Zcash.Snark.OracleComp (KimchiNode C nc σ.k) Prechallenge (KimchiProof C nc σ.k))
     (κ : KimchiProof C nc σ.k → (KimchiNode C nc σ.k → Prechallenge) → ClaimData)
-    (claimOf : PreIpaData C nc → (Fin 6 → Prechallenge) → ClaimData)
+    (claimOf : PreIpaData C nc → (Fin preIpaChals → Prechallenge) → ClaimData)
     (hκ : ∀ p O, κ p O = claimOf (preDataOf digest publicComm p)
       (fun i => O (kimchiNodes digest publicComm p (preSqueeze i)))) :
     Bulletproof.Forking.ClaimStable A (ipaPrefixes σ digest publicComm) κ :=
@@ -2525,10 +2526,10 @@ private theorem claimStable_of_preDataFactors {ClaimData : Type*} (σ : SRS C.Po
     (fun j p i => preNodeOf_ne_ipaPrefixes σ digest publicComm _ p i j)
 
 /-- **The run's claim as a function of the proof and the six pre-opening challenges alone** —
-`runInputWith` with the challenges supplied as a `Fin 6`-indexed tuple, each expanded by its
-own squeeze's map. -/
+`runInputWith` with the challenges supplied as a `Fin preIpaChals`-indexed tuple, each
+expanded by its own squeeze's map. -/
 private def kimchiClaimOf (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
-    (cp : KimchiProof C nc σ.k) (ch : Fin 6 → Prechallenge) :
+    (cp : KimchiProof C nc σ.k) (ch : Fin preIpaChals → Prechallenge) :
     Ipa.Input C σ.k (nc + 1 + tailRowCount * nc) evalPts :=
   runInputWith σ cvk cp pub
     (squeezeExpand C (Squeeze.beta : Squeeze σ.k) (ch 0))
@@ -2727,7 +2728,7 @@ which is `triple_eq_of_preData_eq`. Unrealized payloads never arise from a run, 
 arbitrary. -/
 private noncomputable def preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField)
-    (d : PreIpaData C nc) (ch : Fin 6 → Prechallenge) :
+    (d : PreIpaData C nc) (ch : Fin preIpaChals → Prechallenge) :
     (Fin (2 ^ σ.k) → C.ScalarField) × C.ScalarField × C.Point :=
   letI := Classical.propDecidable
     (∃ cp : KimchiProof C nc σ.k,
@@ -2741,7 +2742,7 @@ private noncomputable def preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc
 returns at the run's payload. This is the `hκ` of `claimStable_of_preDataFactors`. -/
 private theorem claimTriple_kimchiClaimOf_eq_preClaimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
-    (ch : Fin 6 → Prechallenge) :
+    (ch : Fin preIpaChals → Prechallenge) :
     claimTriple (kimchiClaimOf σ cvk pub cp ch)
       = preClaimTriple σ cvk pub digest
           (preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp) ch := by
@@ -2838,12 +2839,12 @@ variable [Module C.ScalarField C.Point]
 
 /-- **The warm base as a function of the proof and the six pre-opening challenges alone**
 (`def:warm-base`, payload-and-challenges form): `warmBase` with the table replaced by a
-`Fin 6`-indexed tuple of prechallenges, each expanded by its own squeeze's map.
+`Fin preIpaChals`-indexed tuple of prechallenges, each expanded by its own squeeze's map.
 
 Mirrors `kimchiClaimOf` (section 10) exactly — same six arguments, same expansion — and stands
 to `warmBase` as `kimchiClaimOf` stands to `runClaim`. -/
 def kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
-    (cp : KimchiProof C nc σ.k) (ch : Fin 6 → Prechallenge) : C.Point :=
+    (cp : KimchiProof C nc σ.k) (ch : Fin preIpaChals → Prechallenge) : C.Point :=
   C.toGroup ((kimchiOpeningFS cvk cp (publicCommitment C σ cvk pub)).squeezeBase
     (IpaTranscriptElt.preT (kimchiClaimOf σ cvk pub cp ch)))
 
@@ -2871,7 +2872,7 @@ Mirrors the *use* of `triple_eq_of_preData_eq` rather than its proof: no second 
 needed, because both halves are already available as lemmas. -/
 theorem kimchiWarmBase_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp cp' : KimchiProof C nc σ.k)
-    (ch : Fin 6 → Prechallenge)
+    (ch : Fin preIpaChals → Prechallenge)
     (h : preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
       = preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp') :
     kimchiWarmBase σ cvk pub cp ch = kimchiWarmBase σ cvk pub cp' ch := by
@@ -2897,7 +2898,7 @@ Unrealized payloads never arise from a run, so their value is immaterial.
 Mirrors `preClaimTriple` (section 11) exactly, with `0` in place of `(0, 0, 0)`. -/
 private noncomputable def preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField)
-    (d : PreIpaData C nc) (ch : Fin 6 → Prechallenge) : C.Point :=
+    (d : PreIpaData C nc) (ch : Fin preIpaChals → Prechallenge) : C.Point :=
   letI := Classical.propDecidable
     (∃ cp : KimchiProof C nc σ.k,
       preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp = d)
@@ -2916,7 +2917,7 @@ realized by the run itself, so the defining case split takes its first branch, a
 the run's. -/
 private theorem kimchiWarmBase_eq_preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
-    (ch : Fin 6 → Prechallenge) :
+    (ch : Fin preIpaChals → Prechallenge) :
     kimchiWarmBase σ cvk pub cp ch
       = preWarmBase σ cvk pub digest
           (preDataOf digest (fun c => (publicCommitment C σ cvk pub)[c]) cp) ch := by
@@ -3611,9 +3612,9 @@ two:
   family the abstract bound wants, and at any given table the two events are literally the same
   set.
 
-Everything else is bookkeeping: the index set is `Fin 7`, the node selector reads the run's node
-at that index's squeeze, the retraction is `regate` (section 14), and the per-index budgets sum
-to `szBudget` by construction. -/
+Everything else is bookkeeping: the index set is `Fin szSets`, the node selector reads the
+run's node at that index's squeeze, the retraction is `regate` (section 14), and the
+per-index budgets sum to `szBudget` by construction. -/
 
 section Arm4Measure
 
@@ -3767,11 +3768,11 @@ private theorem runInputWith_evalscale {nc : ℕ} (σ : SRS C.Point) (cvk : Kimc
 
 end Locality
 
-/-! ### The seven exclusion sets, as a family indexed by `Fin 7`
+/-! ### The seven exclusion sets, as a family indexed by `Fin szSets`
 
 `adaptive_badSet_ofPrefix_union_expand_measure_le` prices a union over a finite index set, so the
-seven disjuncts of `arm4_hits_badChallenge` are repackaged as a `Fin 7`-indexed family of finite
-sets together with a per-index budget. The budgets are the seven per-squeeze cardinality
+seven disjuncts of `arm4_hits_badChallenge` are repackaged as a `Fin szSets`-indexed family
+of finite sets together with a per-index budget. The budgets are the seven per-squeeze cardinality
 bounds, so their total is `szBudget` on the nose. -/
 
 section BadRun
@@ -3780,13 +3781,13 @@ variable [Module C.ScalarField C.Point]
 
 /-- **The squeeze each of the seven exclusion sets guards**: `β`, `γ`, `α`, `ζ` for the four
 Schwartz–Zippel sets, `ζ` again for the boundary set, then the fr-side `ξ` and `r`. -/
-private def szSqueeze {k : ℕ} : Fin 7 → Squeeze k :=
+private def szSqueeze {k : ℕ} : Fin szSets → Squeeze k :=
   ![Squeeze.beta, Squeeze.gamma, Squeeze.alpha, Squeeze.zeta, Squeeze.zeta,
     Squeeze.polyscale, Squeeze.evalscale]
 
 /-- **The per-index budget** of the seven exclusion sets, in the order `szSqueeze` names
 them. -/
-private def szCard (nc n zkRows : ℕ) : Fin 7 → ℕ :=
+private def szCard (nc n zkRows : ℕ) : Fin szSets → ℕ :=
   ![7 * (n - zkRows), 7 * (n - zkRows),
     n * (Index.gateAlphaCount + Index.permAlphaCount - 1), Index.degreeBound n, 2,
     2 * (nc + 1 + tailRowCount * nc - 1), 1]
@@ -3795,8 +3796,8 @@ private def szCard (nc n zkRows : ℕ) : Fin 7 → ℕ :=
 `Fin.sum_univ_seven` unfolds the sum and `omega` does the regrouping (the two `β`/`γ` terms are
 collected into the `2 *` of the budget). -/
 private theorem szCard_sum (nc n zkRows : ℕ) :
-    ∑ i : Fin 7, szCard nc n zkRows i = szBudget nc n zkRows := by
-  have h : ∑ i : Fin 7, szCard nc n zkRows i
+    ∑ i : Fin szSets, szCard nc n zkRows i = szBudget nc n zkRows := by
+  have h : ∑ i : Fin szSets, szCard nc n zkRows i
       = 7 * (n - zkRows) + 7 * (n - zkRows)
         + n * (Index.gateAlphaCount + Index.permAlphaCount - 1) + Index.degreeBound n + 2
         + 2 * (nc + 1 + tailRowCount * nc - 1) + 1 := by
@@ -3815,7 +3816,7 @@ sets named in `arm4_hits_badChallenge`, evaluated at the run the table produces:
 `α` and `ζ` Schwartz–Zippel sets of the run's assembled columns, accumulator and quotient, the
 two-point `ζ` boundary set, and the run's own `ξ` and `r` sets. -/
 private noncomputable def szBadRun (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
-    (O : Coins C nc k) : Fin 7 → Finset C.ScalarField :=
+    (O : Coins C nc k) : Fin szSets → Finset C.ScalarField :=
   ![Protocol.soundBadB fam.idx
       (runW (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
         (fam.aRef basis O)),
@@ -3850,7 +3851,7 @@ root's hypothesis stack is unavailable. The `ζ` bound is instantiated at the ru
 quotient by `runBounds_zeta_at_assembly`, the boundary set costs `2` by inspection, and the two
 fr-side sets are the opening argument's own counting bounds at the flat arity. -/
 private theorem szBadRun_card_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
-    (O : Coins C nc k) (i : Fin 7) :
+    (O : Coins C nc k) (i : Fin szSets) :
     (fam.szBadRun basis O i).card ≤ szCard nc n fam.idx.zkRows i := by
   have hb : RunBounds (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O)
       (fam.pub basis) fam.idx (fam.aRef basis O) :=
@@ -3898,7 +3899,7 @@ the ones naming later squeezes — which the exclusion set at that index never r
 
 The index `i` of the exclusion set does not appear: the retraction is the same at all seven
 sets, so carrying `i` would be an unused argument. -/
-private def szPre {nc k : ℕ} (j : Fin 6) (t : KimchiNode C nc k) : KimchiNode C nc k :=
+private def szPre {nc k : ℕ} (j : Fin preIpaChals) (t : KimchiNode C nc k) : KimchiNode C nc k :=
   if squeezeRank (preSqueeze j : Squeeze k) < squeezeRank t.idx then regate t (preSqueeze j)
   else regate t Squeeze.schnorr
 
@@ -3908,7 +3909,7 @@ omit [Module C.ScalarField C.Point] in
 (`regate_ne`): on the strict branch the ranks would have to coincide, and on the fallback branch
 the guard rules out the Schnorr squeeze. -/
 private theorem szPre_ne
-    {nc k : ℕ} (t : KimchiNode C nc k) (ht : squeezeRank t.idx < 6) (j : Fin 6) :
+    {nc k : ℕ} (t : KimchiNode C nc k) (ht : squeezeRank t.idx < 6) (j : Fin preIpaChals) :
     szPre j t ≠ t := by
   unfold szPre
   split
@@ -3926,7 +3927,7 @@ private theorem szPre_ne
 omit [Module C.ScalarField C.Point] in
 /-- **Every guarded squeeze is a pre-opening one** — `hnode`. The seven exclusion sets are read
 at `β`, `γ`, `α`, `ζ`, `ζ`, `ξ`, `r`, whose ranks are `0`–`5`. -/
-private theorem squeezeRank_szSqueeze_lt_six {k : ℕ} (i : Fin 7) :
+private theorem squeezeRank_szSqueeze_lt_six {k : ℕ} (i : Fin szSets) :
     squeezeRank (szSqueeze (k := k) i) < 6 := by
   fin_cases i
   · show (0 : ℕ) < 6; omega
@@ -3943,7 +3944,7 @@ variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
 /-- **The transcript node at which the `i`-th exclusion set's challenge is read** — the run's own
 node at `szSqueeze i`. -/
-private def szNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+private def szNode (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin szSets)
     (cp : KimchiProof C nc k) : KimchiNode C nc k :=
   nodeAt (fam.digest basis) (fam.publicComm basis) cp (szSqueeze i)
 
@@ -4062,7 +4063,7 @@ earlier pre-opening squeeze the retraction lands on the run's own node there (`r
 so the hypothesis that the two tables agree at the retracted node says exactly that the two runs
 read the same challenge at that squeeze. -/
 private theorem readsOf_eq_of_ans (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
-    (O O' : Coins C nc k) (s : Squeeze k) (j : Fin 6)
+    (O O' : Coins C nc k) (s : Squeeze k) (j : Fin preIpaChals)
     (hrank : squeezeRank (preSqueeze j : Squeeze k) < squeezeRank s)
     (hans : O (szPre j (fam.nodesOf basis O s)) = O' (szPre j (fam.nodesOf basis O' s))) :
     fam.readsOf basis O (preSqueeze j) = fam.readsOf basis O' (preSqueeze j) := by
@@ -4163,11 +4164,12 @@ the circuit alone; and `ξ`, `r` read every flat row (all absorbed by `ζ`) toge
 batched claim's evaluation points and claimed evaluations, which the `ξ` node fixes up to the
 opening — a component neither set touches. Every earlier challenge a set names is supplied by the
 retracted coordinate at that squeeze. -/
-private theorem szBadRun_agree (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (i : Fin 7)
+private theorem szBadRun_agree (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (i : Fin szSets)
     (O O' : Coins C nc k)
     (hnode : fam.szNode basis i (fam.proofOf basis O)
       = fam.szNode basis i (fam.proofOf basis O'))
-    (hans : ∀ j : Fin 6, O (szPre j (fam.szNode basis i (fam.proofOf basis O)))
+    (hans : ∀ j : Fin preIpaChals, O (szPre j (fam.szNode basis i (fam.proofOf basis O)))
       = O' (szPre j (fam.szNode basis i (fam.proofOf basis O')))) :
     fam.szBadRun basis O i = fam.szBadRun basis O' i := by
   fin_cases i

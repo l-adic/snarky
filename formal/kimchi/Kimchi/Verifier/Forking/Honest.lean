@@ -1,3 +1,4 @@
+import Kimchi.Columns
 import Kimchi.Verifier.KnowledgeSoundness
 import Zcash.Snark.Soundness.Forking.Adversary.DomainReduction
 
@@ -1201,7 +1202,7 @@ variable [Module C.ScalarField C.Point]
 
 /-- **The degenerate family's opening base, as a function of the six pre-opening
 prechallenges.** `kimchiWarmBase` at the family's own SRS, verifying key and (empty) public
-input, on the DEGENERATE proof `zeroProof`, at the six prechallenges packed into a `Fin 6`
+input, on the DEGENERATE proof `zeroProof`, at the six prechallenges packed into a `Fin preIpaChals`
 tuple.
 
 The proof slot is `zeroProof` rather than the run's own proof, and that is what makes the

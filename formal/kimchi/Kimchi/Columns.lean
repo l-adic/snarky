@@ -77,4 +77,17 @@ scoped notation "tailRowCount" => (43 : Nat)
 /-- The abstract batch rows (public row included, ft row excluded). -/
 scoped notation "batchRows" => (44 : Nat)
 
+/-- The six pre-IPA squeezes of a kimchi run — `β, γ, α, ζ`, then the batching scalars
+`polyscale` and `evalscale`: the challenge tuple the knowledge-soundness game hands a run
+(`Verifier/KnowledgeSoundness.lean`'s `Squeeze` minus the IPA rounds and the Schnorr
+squeeze). A formalization-side count, and a third incidental six, distinct from `selCount`
+and `sigmaRows`. -/
+scoped notation "preIpaChals" => (6 : Nat)
+
+/-- The counted Schwartz–Zippel exclusion sets of the knowledge-soundness endpoint —
+`szBudget`'s seven summands, the seven disjuncts of `arm4_hits_badChallenge`. A
+formalization-side count, distinct from the incidental sevens `permCols` and
+`litRowCount`. -/
+scoped notation "szSets" => (7 : Nat)
+
 end Kimchi
