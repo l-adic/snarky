@@ -48,8 +48,8 @@ of its own output.
   `1` for a claim without an opening — both would be false. It establishes reachability of the
   win event, which is all anti-vacuity needs.
 * It does not re-derive `kimchiProverAccept`, `proofAt`, or the folded/flat equivalence. Those
-  are public in `Forking/Prover.lean` and are used, not copied. Only the declarations that are
-  `private` in the frozen `Game.lean` are restated.
+  are public in `Forking/Prover.lean` and are used, not copied. Only declarations that are
+  `private` upstream, and so cannot be imported, are restated.
 -/
 
 namespace Bulletproof.Ipa.Forking
@@ -58,10 +58,11 @@ open Bulletproof Bulletproof.Forking
 
 /-! ## The fold algebra, restated
 
-The five lemmas of this section are verbatim restatements of `private` declarations of
-`Forking/Game.lean` (themselves restatements of `private` declarations of the frozen
-`Forking/Triviality.lean`). Each is a two- or three-line computation; they are listed
-individually so the dependency graph is honest about what the honest strategy rests on. -/
+Three of these lemmas — `commitGen_add_gen`, `commitGen_smul_gen`, `commitGen_split` — are
+verbatim restatements of `private` declarations of `Soundness/SingleOpening.lean`, which
+cannot be imported; the rest are local. Each is a two- or three-line computation, and they are
+listed individually so the dependency graph is honest about what the honest strategy rests
+on. -/
 
 section FoldAlgebra
 

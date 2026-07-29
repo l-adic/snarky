@@ -148,7 +148,7 @@ private theorem eval_sigmaPoly {ω : F} (hω : IsPrimitiveRoot ω n) (zkRows : �
       = sigmaCell ω zkRows shifts σpFull i j :=
   eval_columnPoly hω _ j
 
-/-- On the unmasked region the committed cell IS the wired-to address (the zeroing
+/-- On the unmasked region the committed cell *is* the wired-to address (the zeroing
 range starts at `n − zkRows + 2`). -/
 private theorem sigmaCell_unmasked {ω : F} {zkRows : ℕ} {shifts : Fin permCols → F}
     {σpFull : Equiv.Perm (Fin permCols × Fin n)} {i : Fin permCols} {j : Fin n}

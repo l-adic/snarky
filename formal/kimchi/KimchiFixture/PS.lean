@@ -205,7 +205,7 @@ def build (raw : Raw) : Except String Instance := do
   unless raw.publicInputSize ≤ rows do throw "more public inputs than rows"
   let n := 2 ^ Nat.clog 2 (rows + zkRows)
   let omega : Fp := (powMod fpGenerator ((PALLAS_BASE_CARD - 1) / n) PALLAS_BASE_CARD : ℕ)
-  -- Synthesized generator-power shifts, NOT production's Blake2b-sampled ones — sound for
+  -- Synthesized generator-power shifts, *not* production's Blake2b-sampled ones — sound for
   -- this driver's purpose (the laws it decides are shift-set-generic; external-audit A-15).
   let shifts : Fin permCols → Fp := fun i => (powMod fpGenerator (i : ℕ) PALLAS_BASE_CARD : ℕ)
   let gates ← gateTable raw n

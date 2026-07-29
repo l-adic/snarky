@@ -4,8 +4,7 @@ import Kimchi.Domain
 /-!
 # Counting Schwartz–Zippel: single-challenge α-separation
 
-This file replaces the injective-α-family surrogate of `dvd_separation`
-(`Kimchi/Aggregate.lean`) with the standard **counting** form of the
+This file gives the standard **counting** form of the
 Schwartz–Zippel argument for kimchi's α-aggregation: a *single* challenge `α` suffices to
 separate divisibility across a family of constraint polynomials, provided `α` avoids an
 explicit **bad set** whose cardinality is proved small. Statements stay fully deterministic —
@@ -35,15 +34,14 @@ The main section assembles the rows of the evaluation domain:
   the row-wise bad sets.
 * `card_badAlphas_le` — the bad set has at most `n · (K − 1)` elements.
 * `dvd_separation` — single-challenge α-separation: divisibility of the α-aggregate for
-  ONE good `α` separates across the individual constraint polynomials.
+  *one* good `α` separates across the individual constraint polynomials.
 * `badZetas` — the bad ζ for a claimed quotient `C = t · Z_H`: empty when they agree, else
   the roots of `C − t · Z_H`.
 * `card_badZetas_le` — **counting SZ, ζ-axis**: at most `D` bad ζ when both sides have degree
   `≤ D`.
 * `zH_dvd_of_eval` — a single good ζ pins `C = t · Z_H`, hence `Z_H ∣ C`.
-* `dvd_of_evalCheck` — the composed pinning–separation engine of
-  `dvd_of_evalCheck` (`Kimchi/Lift.lean`), with the α-, ζ- and quotient-families all
-  collapsed to a single `α`, a single ζ, and a single quotient `t`.
+* `dvd_of_evalCheck` — the composed pinning–separation engine, with the α-, ζ- and
+  quotient-families all collapsed to a single `α`, a single ζ, and a single quotient `t`.
 -/
 
 namespace Kimchi
@@ -213,7 +211,7 @@ private theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
     exact ⟨sub_ne_zero.mpr hCT, by rw [IsRoot.def, eval_sub, sub_eq_zero]; exact h⟩
   rw [this]; exact dvd_mul_left _ _
 
-/-- **`dvd_of_evalCheck`, single-challenge form.** One α, one ζ, ONE quotient `t`. A good ζ
+/-- **`dvd_of_evalCheck`, single-challenge form.** One α, one ζ, *one* quotient `t`. A good ζ
 outside `badZetas (aggregate α C) t n` at which the aggregate agrees with `t · Z_H` pins
 `aggregate α C = t · Z_H` via `zH_dvd_of_eval`, and `dvd_separation` separates across
 the constraint indices. -/

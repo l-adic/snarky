@@ -8,12 +8,20 @@ import Pasta.CompElliptic
 /-!
 # The Pasta group orders
 
-The Pallas group has prime order `q = PALLAS_SCALAR_CARD`; the Vesta group has prime
-order `p = PALLAS_BASE_CARD` (the Pasta cycle: each curve's order is the other's
-base-field size). Primality and the short-Weierstrass shape are `Fact` instances, and
-each point group is a module over its scalar field.
+The Pallas group has prime order `q = PALLAS_SCALAR_CARD`; the Vesta group has prime order
+`p = PALLAS_BASE_CARD`. That is the Pasta cycle: each curve's order is the other's
+base-field size.
 
-`c.order` and `C.toAffine` are the vocabulary the kimchi EC gates are stated in.
+- `pallas_card` / `vesta_card` — those orders, in Mathlib's `Nat.card (Point …)` form,
+  reached through the transport in `§ Bridge to Mathlib's Affine.Point` below.
+- `Fact` instances for primality and for the short-Weierstrass shape `a₁ = a₂ = a₃ = 0`.
+- `vestaPointModule` / `pallasPointModule` — each point group as a module over its scalar
+  field.
+- `pastaFieldBits` — the base-field bit width, and the register range-check bound derived
+  from it.
+
+`WeierstrassCurve.Affine.order` and `SWCurve.toAffine` are the vocabulary the kimchi EC
+gates are stated in.
 -/
 
 namespace WeierstrassCurve.Affine
@@ -31,13 +39,14 @@ abbrev SWCurve.toAffine {F : Type*} [Field F] (C : SWCurve F) : WeierstrassCurve
 
 /-! ### Bridge to Mathlib's `Affine.Point`
 
-`SWPoint E` and Mathlib's affine point group `Point (toW E.A E.B)` are two representations of
-the same group: the computable structure (with `DecidableEq` / `native_decide`-friendly scalar
-mul) and Mathlib's inductive `Point` with its proven `AddCommGroup`. The transport maps
-`toPt` / `ofPt` are already mutually inverse on valid coordinates, so they package into an
-`Equiv`. This lets the `SWPoint`-native order theory (`CompElliptic.CurveOrder`,
-`Curves.PastaOrder`) transfer to `Nat.card (Point …)`, the form the `pallas_card` / `vesta_card`
-orders below are stated in. Upstream CompElliptic does not carry this bridge; it lives here. -/
+`SWPoint E` and Mathlib's `Point (toW E.A E.B)` are two representations of the same group.
+CompElliptic's `SWPoint` is the computable one, with `DecidableEq` and an executable scalar
+mul; Mathlib's inductive `Point` is the one carrying the proven `AddCommGroup`. The
+transport maps `toPt` / `ofPt` are mutually inverse on valid coordinates, so they package
+into an `Equiv`. That is what carries the `SWPoint`-native order theory
+(`CompElliptic.CurveOrder`, `Curves.PastaOrder`) over to `Nat.card (Point …)`, the form
+`pallas_card` / `vesta_card` are stated in. Upstream CompElliptic does not carry this
+bridge; it lives here. -/
 
 open WeierstrassCurve.Affine
 
@@ -66,8 +75,7 @@ noncomputable def SWPoint.equivPoint {F : Type*} [Field F] [DecidableEq F] (E : 
     left_inv := fun P => SWPoint.ext_pair (ofPt_toPt E.B_nonzero P.onCurve)
     right_inv := fun Q => toPt_ofPt E.B_nonzero Q }
 
-/-- The order counted on `SWPoint E` equals Mathlib's `Nat.card` of the affine point group — the
-bridge that carries the `SWPoint`-native order theory to the Mathlib-`Point` side. -/
+/-- The order counted on `SWPoint E` equals Mathlib's `Nat.card` of the affine point group. -/
 theorem SWPoint.card_eq_point {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
     Nat.card (SWPoint E) = Nat.card (Point (toW E.A E.B)) :=
   Nat.card_congr (SWPoint.equivPoint E)
@@ -85,18 +93,19 @@ theorem pallas_card : Pallas.curve.toAffine.order = PALLAS_SCALAR_CARD := by
   rw [SWPoint.card_eq_point Pallas.curve] at h
   exact h
 
-/-- The Vesta group order is the prime cardinality `p`. -/
+/-- The Vesta group order is the prime scalar-field cardinality `p`. -/
 theorem vesta_card : Vesta.curve.toAffine.order = PALLAS_BASE_CARD := by
   have h := Vesta.card_eq
   rw [SWPoint.card_eq_point Vesta.curve] at h
   exact h
 
-/-- The Pasta base-field bit width: the circuit's `FieldSizeInBits`, the bound on
-    `bitsUsed = 5·m`; `pastaFieldBits - 1` is `scaleFast2`'s `s_div_2_bits` range-check
-    width. -/
+/-- The Pasta base-field bit width — the circuit's `FieldSizeInBits`, which bounds
+    `bitsUsed = 5·m`. The width one below it, `pastaFieldBits - 1`, is `scaleFast2`'s
+    range-check width `sDiv2Bits` (`Snarky.Circuit.Kimchi.VarBaseMul`). -/
 abbrev pastaFieldBits : ℕ := 255
 
-/-- The register range-check bound: `2^(pastaFieldBits-1) ≤ PALLAS_BASE_CARD` (`scaleFast2`). -/
+/-- The register range-check bound `2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD`, used by
+    `scaleFast2`. -/
 lemma two_pow_le_pallas_base : 2 ^ (pastaFieldBits - 1) ≤ PALLAS_BASE_CARD := by
   norm_num [PALLAS_BASE_CARD]
 
@@ -108,11 +117,11 @@ instance pallas_order_prime : Fact (Nat.Prime Pallas.curve.toAffine.order) :=
 instance vesta_order_prime : Fact (Nat.Prime Vesta.curve.toAffine.order) :=
   ⟨by rw [vesta_card]; exact PALLAS_BASE_is_prime⟩
 
-/-- `a₁ = a₂ = a₃ = 0` on Pallas. -/
+/-- Pallas is in short-Weierstrass shape: `a₁ = a₂ = a₃ = 0`. -/
 instance : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0 ∧
     Pallas.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
 
-/-- `a₁ = a₂ = a₃ = 0` on Vesta. -/
+/-- Vesta is in short-Weierstrass shape: `a₁ = a₂ = a₃ = 0`. -/
 instance : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0 ∧
     Vesta.curve.toAffine.a₃ = 0) := ⟨⟨rfl, rfl, rfl⟩⟩
 
@@ -139,6 +148,7 @@ executable verifiers compute with. -/
 theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
   rfl
 
+/-- The Pallas twin of `vesta_smul_val`. -/
 theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=
   rfl
 

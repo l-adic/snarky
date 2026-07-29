@@ -127,7 +127,7 @@ instance decIpaAcceptV [DecidableEq F] [DecidableEq G] {d : ℕ} (g : Fin (2 ^ d
 /-- **Data-valued extraction at kimchi's convention**, by running ironwood's computable
 `ipa_extractV` through the transport. The witness is returned as data (`Σ'`), not asserted to
 exist — which is the whole point, since the existential form is free at the deployed
-instantiation (`Forking.Extraction.ipa_knowledge_soundness_conclusion_free`).
+instantiation.
 
 This is the reuse the transport exists to enable: no extraction is reproved here. -/
 def ipaExtract {d : ℕ} (g : Fin (2 ^ d) → G) (b : Fin (2 ^ d) → F) (P : G) (v : F)

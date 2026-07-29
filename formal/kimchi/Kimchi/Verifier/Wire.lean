@@ -104,7 +104,7 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
   (constraints.rs:774–784), carried as data here. -/
   zkRows : ℕ
-  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — NOT serialized data
+  /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — *not* serialized data
   (production marks it `#[serde(skip)]` and recomputes it as `G::other_curve_endo()`,
   i.e. `endos::<OtherG>().0`, the OTHER curve's base-field endo — verifier_index.rs:140;
   the endpoints pin it to `idx.endoBase` via `Corresponds`); a model input like `digest`. -/

@@ -5,30 +5,31 @@ import Bulletproof.Soundness.SingleOpening
 # Batched and chunked soundness of the abstract kimchi IPA
 
 Knowledge soundness of the openings the kimchi verifier actually runs — many polynomials,
-two points, per-polynomial chunk counts — over the single-opening soundness of
-`Bulletproof.Soundness.SingleOpening`. The `n`-point Vandermonde dual basis
-(§ Vandermonde) drives the extraction: multi-polynomial / multi-point knowledge soundness
-(§ batched opening soundness), single-chunk soundness (§ chunked opening), and the
-chunked-batch headline (§ chunked batched opening). The two assumptions — the Fiat–Shamir
-tree and binding — stay hypotheses; the instantiation at the deployed Poseidon-driven
-verifier is `Bulletproof.Reflection`.
+two points, per-polynomial chunk counts — built over the single-opening soundness of
+`Bulletproof.Soundness.SingleOpening`.
+
+- `§ Vandermonde dual basis` — the algebraic engine that drives the extraction.
+- `§ Batched opening soundness` — multi-polynomial, multi-point knowledge soundness.
+- `§ Chunked opening soundness` — the chunked-batch headline.
+
+The two assumptions, the Fiat–Shamir tree and binding, stay hypotheses. The instantiation at
+the deployed Poseidon-driven verifier is `Bulletproof.Reflection`.
 -/
 
 /-!
-## The `n`-point Vandermonde dual basis
+## Vandermonde dual basis
 
-The algebraic engine of the batched-opening extraction: reading off one coefficient
-of a degree-`< n` polynomial from its values at `n` distinct nodes.
+The algebraic engine of the batched-opening extraction: reading off one coefficient of a
+degree-`< n` polynomial from its values at `n` distinct nodes.
 
-Given `n` pairwise-distinct nodes `ξ : Fin n → F` and a target index `d : Fin n`,
-there is a coefficient vector `l : Fin n → F` such that the functional
-`p ↦ ∑ s, l s * p (ξ s)` reads off the coefficient of `X ^ d`. Concretely,
-`∑ s, l s * (ξ s) ^ i = [i = d]`.
+Given `n` pairwise-distinct nodes `ξ : Fin n → F` and a target index `d : Fin n`, there is a
+coefficient vector `l : Fin n → F` such that the functional `p ↦ ∑ s, l s * p (ξ s)` reads
+off the coefficient of `X ^ d`. Concretely, `∑ s, l s * (ξ s) ^ i = [i = d]`.
 
-This generalizes the three-node `vandermonde3` (Soundness/Linear.lean) to any
-`n`. The engine is Mathlib's `Matrix.vandermonde` together with
-`Matrix.det_vandermonde` (the determinant is `∏_{s < s'} (ξ s' - ξ s)`, nonzero
-under injectivity, so the Vandermonde matrix is invertible over the field).
+This generalizes the three-node `vandermonde3` of `Bulletproof.Soundness.SingleOpening` to
+any `n`. The engine is Mathlib's `Matrix.vandermonde` together with `Matrix.det_vandermonde`:
+the determinant is `∏_{s < s'} (ξ s' - ξ s)`, nonzero under injectivity, so the Vandermonde
+matrix is invertible over the field.
 -/
 
 namespace Bulletproof
@@ -69,13 +70,13 @@ private theorem vandermondeN {n : ℕ} (ξ : Fin n → F) (hξ : Function.Inject
 end Bulletproof
 
 /-!
-## Knowledge soundness of the batched kimchi IPA opening
+## Batched opening soundness
 
-The headline of the batch development (`batch_soundnessA`): correct combined openings
-at enough distinct `(polyscale ξ, evalscale r)` pairs imply that every individual
-claimed evaluation is the true evaluation of the committed polynomial. Built on the
-single-opening IPA stack (`Basic`/`Verify`/`Soundness`/`Soundness/{Linear,Tree,Binding}`)
-and the batch definitions (`Batch`, `Soundness/Vandermonde`).
+The headline of the batch development (`batch_soundnessA`): correct combined openings at
+enough distinct `(polyscale ξ, evalscale r)` pairs imply that every individual claimed
+evaluation is the true evaluation of the committed polynomial. It is built on the
+single-opening stack of `Bulletproof.Soundness.SingleOpening` and the batch definitions of
+`Bulletproof.Protocol`.
 
 The extraction is the standard multi-poly/multi-point PCS reduction, specialized to
 the kimchi IPA relation:
@@ -87,7 +88,7 @@ the kimchi IPA relation:
 3. use binding to force one witness per commitment, then a second Vandermonde in the
    evalscale to pin every individual evaluation (`batch_soundnessA`).
 
-## Scope: what is proved, and what is assumed
+### Scope: what is proved, and what is assumed
 
 The algebraic core is proved: accepting transcript trees, the special-soundness
 extraction of the single-opening stack, the two Vandermonde separations, and
@@ -112,7 +113,7 @@ namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## Per-commitment separation -/
+/-! ### Per-commitment separation -/
 
 /-- Generalized Fiat–Shamir tree hypothesis, with the eval vector
 abstracted to an arbitrary `b : Fin (2 ^ σ.k) → F`. An accepting run yields a
@@ -126,9 +127,9 @@ def FiatShamirTreeB (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
     IpaAcceptV σ.g b (P - ρ • σ.h) v t
 
 /-- **Single-opening soundness at an arbitrary eval vector, with abstract acceptance.**
-Under the Fiat-Shamir tree hypothesis an accepting run yields an opening witness for
+Under the Fiat–Shamir tree hypothesis an accepting run yields an opening witness for
 `openingRelationB`, with the acceptance proposition `A` fully abstract: the extraction
-consumes only the modus ponens of the Fiat-Shamir hypothesis against acceptance, never the
+consumes only the modus ponens of the Fiat–Shamir hypothesis against acceptance, never the
 shape of acceptance itself. This is the form the deployed verifier's acceptance
 (`Ipa.verify … = true`) plugs into. -/
 private theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
@@ -213,14 +214,14 @@ private theorem perCommitment_separation (σ : SRS G) {n m : ℕ}
     rw [key]
     simp only [hl, ite_mul, one_mul, zero_mul, Finset.sum_ite_eq', Finset.mem_univ, if_true]
 
-/-! ## Per-point separation and the headline -/
+/-! ### Per-point separation and the headline -/
 
 /-- **Batched opening soundness**, with the grid acceptance abstracted to an arbitrary
-family `A`: the proof consumes acceptance only through the modus ponens of the
-Fiat-Shamir hypothesis (`ipa_soundnessA`), so no per-grid-point proof or challenge data
-appears. This is the form the deployed verifier's acceptance (`Ipa.verify … = true`,
-whose challenges are sponge-derived rather than carried) plugs into — the kernel of the
-chunked batch (`Soundness/ChunkedBatch.lean`). -/
+family `A`: the proof consumes acceptance only through the modus ponens of the Fiat–Shamir
+hypothesis (`ipa_soundnessA`), so no per-grid-point proof or challenge data appears. This is
+the form the deployed verifier's acceptance (`Ipa.verify … = true`, whose challenges are
+sponge-derived rather than carried) plugs into, and it is the kernel of
+`chunked_batch_soundness`. -/
 private theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
     (ξ : Fin n → F) (hξ : Function.Injective ξ)
     (r : Fin m → F) (hr : Function.Injective r) (hm : 0 < m)
@@ -309,12 +310,15 @@ end Bulletproof
 /-!
 ## Chunked opening soundness
 
-Chunked-opening soundness over the chunk definitions of `Chunk.lean`: under commitment
-binding, an accepting IPA run on the combined commitment of honestly committed chunks
-forces the claimed value to be the *full* polynomial's evaluation, composing onto the
-single-opening soundness of `Soundness.lean` in the verifier's own combine-then-open
-order. The chunk count is the degree bound, entering as the hypothesis
-`p.natDegree < c · 2^k`.
+Chunked-opening soundness over the chunk definitions of `Bulletproof.Protocol`: under
+commitment binding, an accepting IPA run on the combined commitment of honestly committed
+chunks forces the claimed value to be the *full* polynomial's evaluation. It composes onto
+the single-opening soundness of `Bulletproof.Soundness.SingleOpening`, reaching it by
+flattening the chunk stream into segments through `finSigmaFinEquiv` and applying
+`batch_soundnessA`.
+
+The chunk count is the degree bound, and it is a *conclusion* rather than a hypothesis:
+`chunked_batch_soundness` produces a `q i` with `(q i).natDegree < nc i * 2 ^ σ.k`.
 -/
 
 namespace Bulletproof
@@ -323,7 +327,7 @@ open Polynomial
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## The headline -/
+/-! ### The headline -/
 
 /-- **Chunked batched opening soundness.** Let `nc` be the per-polynomial chunk counts
 (all positive), `ξ` injective over the segment count `∑ i, nc i`, and `r` injective over
@@ -332,11 +336,11 @@ chunked combiners, the no-DL-relation binding hypothesis, and acceptance at ever
 point, every polynomial of the batch is bound: there is a genuine `q i` of degree
 `< nc i · 2^k` whose chunk windows are what the wire chunks commit to, whose
 evaluations are the `x^(2^k)`-power recombinations of the claimed chunk evaluations,
-and whose chunk windows REPRODUCE each per-chunk claim individually (the last clause —
-consumers that pin per-chunk claims against fixed chunk commitments, like the chunked
-kimchi reduction's verifier-key rows, read the claims off it directly). The evaluation
-clause is the recombination corollary of the degree bound and the per-chunk clause
-(through `eval_eq_sum_chunkPoly` and `chunkPoly_eval`), kept for direct consumers. -/
+and whose chunk windows *reproduce* each per-chunk claim individually. That last clause is
+for consumers that pin per-chunk claims against fixed chunk commitments, like the chunked
+kimchi reduction's verifier-key rows, which read the claims off it directly. The evaluation
+clause is the recombination corollary of the degree bound and the per-chunk clause (through
+`eval_eq_sum_chunkPoly` and `chunkPoly_eval`), kept for direct consumers. -/
 theorem chunked_batch_soundness (σ : SRS G) {n m : ℕ} {nc : Fin n → ℕ}
     (hnc : ∀ i, 0 < nc i)
     (ξ : Fin (∑ i, nc i) → F) (hξ : Function.Injective ξ)

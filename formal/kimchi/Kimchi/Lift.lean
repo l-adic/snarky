@@ -44,7 +44,7 @@ cells of row `i`) and `polyEnv` (the column interpolants, with `shift` on the ne
 `Argument.bridge` — evaluation at a node carries `polyEnv` to `rowEnv` — is the one bridge
 in the library; every per-gate bridge is that gate's `constraints_map` pasted onto it.
 
-## Contents
+### Contents
 
 * `ArgumentEnv`, `rowEnv`, `polyEnv` — the cell environment and its two carrier
   instantiations (field-level row cells, and column interpolants with `shift` on the
@@ -175,14 +175,14 @@ end Kimchi.Lift
 ## The CompleteAdd gate lift
 
 The polynomial-algebra lift of kimchi's CompleteAdd gate, built on the generic
-lift engine and the domain substrate (`Kimchi.Lift.Domain`).
+lift engine and the domain substrate (`Kimchi.Domain`).
 
 CompleteAdd is a **single-row** gate, so its cell map reads only the current row. The gate's
 field-level constraint model (`Kimchi.Gate.AddComplete.constraints` / `Holds`) is READ-ONLY
 and reused verbatim: no constraint formula is restated here — the lift is purely the
 naturality of `constraints` under evaluation at the domain nodes.
 
-## Contents
+### Contents
 
 * `cellMap` — assemble a `Gate.AddComplete.Witness R` from a row `cur : Fin wCols → R`.
 * `rowWitness` / `polyWitness` — the row-values and column-interpolant witnesses, both via
@@ -260,7 +260,7 @@ verbatim: no constraint formula is restated — the lift is naturality plus the 
 `i + 1 : Fin n` is taken **cyclically**, needing `[NeZero n]`. A two-row gate is never placed
 on the last domain row, so this agrees with the intended semantics on every occupied row.
 
-## Contents
+### Contents
 
 * `cellMap` — assemble a `Gate.VarBaseMul.Witness R` from a current and next row.
 * `rowWitness` / `polyWitness` — the field-valued row witness and its polynomial lift.
@@ -367,7 +367,7 @@ is naturality of `constraints` under evaluation and holds for *any* internally c
 assignment (the same `cellMap` defines both witnesses). The physical column matters only for
 matching kimchi's concrete circuit table, which this commitment-free layer never pins.
 
-## Column layout
+### Column layout
 
 An `EndoMul` block spans two `EVBSM` rows. Its inputs (`xT, yT, xP, yP, n`, the bits
 `b1..b4`, the slopes `s1, s3`, and the intermediate point `xR, yR`) live on the current row
@@ -375,7 +375,7 @@ An `EndoMul` block spans two `EVBSM` rows. Its inputs (`xT, yT, xP, yP, n`, the 
 
 Source: kimchi `endosclmul.rs`, module-doc layout table and `constraint_checks`.
 
-## Contents
+### Contents
 
 * `cellMap` — reads the two rows into a `Gate.EndoMul.Witness`.
 * `rowWitness` / `polyWitness` — the field-valued row witness and its polynomial lift.
@@ -463,7 +463,7 @@ row, so the cell map reads the current row only (the next-row and coefficient fa
 unused). The cross-row chaining of the scalar register (`n0 ↔ n8`) is a copy-constraint
 concern (the permutation layer), out of scope here.
 
-## Column layout
+### Column layout
 
 Source: proof-systems kimchi `endomul_scalar.rs`, witness-layout comment l.116-122
 (`CONSTRAINTS = 11`):
@@ -475,11 +475,11 @@ Source: proof-systems kimchi `endomul_scalar.rs`, witness-layout comment l.116-1
 
 where each `xi` is a two-bit "crumb".
 
-## Contents
+### Contents
 
 * `cellMap` / `rowWitness` / `polyWitness` — the layout transcription and its two carrier
   instantiations.
-* `argument` — the `Argument F` instance (`def:quotient_endoscalar_lift`).
+* `argument` — the `Argument F` instance.
 -/
 
 namespace Kimchi.Lift.Gate.EndoScalar
@@ -536,7 +536,7 @@ entries are integer literals, so the gate's plain ring-hom naturality
 (`Gate.Poseidon.constraints_map`) already carries the `F`-algebra naturality the instance
 needs.
 
-## The register layout
+### The register layout
 
 The layout (kimchi `poseidon.rs`, module-doc table l.9--13) is a genuine permutation:
 
@@ -550,7 +550,7 @@ Note that `s4` is stored **before** `s1, s2, s3` in the register order; the outp
 sits on the next row; the round constants `rc` come from the coefficient row (`rc()` l.212--217:
 `coeffs[SPONGE_WIDTH * round + col]`, `SPONGE_WIDTH = 3`).
 
-## Contents
+### Contents
 
 * `cellMap` / `rcMap` — the permuted layout transcription (state cells / round constants).
 * `rowWitness` / `rcRow` / `polyWitness` / `rcPoly` — their two carrier instantiations.
@@ -626,14 +626,14 @@ end Kimchi.Lift.Gate.Poseidon
 ## The double generic gate's quotient lift
 
 The polynomial lift of kimchi's **double** generic gate (`generic.rs`,
-`CONSTRAINTS = 2`). Commitment-free, built directly on `Kimchi.Lift.Domain`.
+`CONSTRAINTS = 2`). Commitment-free, built directly on `Kimchi.Domain`.
 
 The row-level gate predicate is `Kimchi.Gate.Generic.Holds` (defined in
 `Kimchi/Gate/Generic.lean` — the double generic gate's two cell constraints); this
 file owns only the *polynomial* side — the cell map into `Gate.Generic` and the
 gate's `Argument` instance over column interpolants.
 
-## Column layout (from `generic.rs`)
+### Column layout (from `generic.rs`)
 
 A generic row carries 15 witness cells `w : Fin wCols → F` and 15 coefficient cells
 `q : Fin coeffCols → F`. The row packs **two** generic gates: the first uses registers
@@ -656,7 +656,7 @@ variable {F : Type*} [Field F] {n : ℕ} {ω : F}
 
 /-! ## The `Argument` instance
 
-The generic gate plugs into the `Argument` primitive of `Kimchi.Lift` exactly like
+The generic gate plugs into the `Argument` primitive above exactly like
 the other five gates: the gate row `Gate.Generic R` is assembled from the current-row cells
 (as `w`) and the coefficient cells (as `q`); the next-row family is unused (single-row). -/
 

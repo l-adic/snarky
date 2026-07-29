@@ -4,29 +4,24 @@ import Mathlib
 # The kimchi IPA polynomial commitment — the abstract protocol
 
 The definitions of the kimchi inner-product-argument (IPA) polynomial commitment,
-curve-generic over a scalar field `F` and an `F`-module `G` (the curve group): the
-structured reference string and commitment (§ SRS and commitment), the opening proof
-and single-opening verifier (§ opening proof and verifier), the batched multi-polynomial
-multi-point opening (§ batched opening), and the chunk layer for polynomials wider than
-the SRS (§ chunk layer). No hardness assumption is invoked; soundness over these
-definitions is `Bulletproof.Soundness`.
+curve-generic over a scalar field `F` and an `F`-module `G` (the curve group, written
+additively):
+
+- `§ SRS and commitment` — the structured reference string and the hiding commitment.
+- `§ Opening proof and verifier` — the opening proof and the single-opening check.
+- `§ Batched opening` — the batched multi-polynomial, multi-point opening.
+- `§ The chunk layer` — polynomials wider than the SRS.
+
+These are definitions only, and no hardness assumption is invoked; soundness over them is
+`Bulletproof.Soundness`. Throughout, `k` is the number of IPA rounds, so the argument
+operates on `2 ^ k` generators and coefficients.
 -/
 
-/-!
-## The kimchi IPA polynomial commitment — structured reference string and commitment
+/-! ## SRS and commitment
 
-The data and functions of the kimchi inner-product-argument (IPA) polynomial
-commitment scheme.
-
-This file carries the structured reference string, the (hiding) commitment, the
-scalar inner product, the evaluation vector, the challenge polynomial `b` and its
-coefficient vector, and the opening relation. It is curve-generic over a scalar
-field `F` and an `F`-module `G` (the curve group, written additively).
-
-These are definitions only: the group and field are abstract and no hardness
-assumption is invoked. `k` is the number of IPA rounds; the argument operates on
-`2 ^ k` generators / coefficients.
--/
+The structured reference string, the hiding commitment, the scalar inner product, the
+evaluation vector, the challenge polynomial `b` with its coefficient vector, and the
+opening relation. -/
 
 namespace Bulletproof
 
@@ -84,23 +79,20 @@ def openingRelation (σ : SRS G) (P : G) (x v : F) (a : Fin (2 ^ σ.k) → F) (r
 
 end Bulletproof
 
-/-!
-## The kimchi IPA opening proof and verifier
+/-! ## Opening proof and verifier
 
-The final stage of the kimchi inner-product-argument (IPA) polynomial commitment:
-the opening proof structure, the recombined commitment `Q`, and the verifier's
-acceptance equation. Definitions only; the group `G` and field `F` are abstract.
+The opening proof structure, the recombined commitment `Q`, and the verifier's acceptance
+equation.
 
-The scheme is asymmetric: `bPoly = ∏(1 + u · x ^ (2 ^ i))` and the recombination
-uses `u⁻¹ • L + u • R`. The opening proof has no final-scalar field — the final
-folded scalar `a₀` is absorbed into the Schnorr response `z1 = a₀ · c + d`.
--/
+The scheme is asymmetric: `bPoly = ∏(1 + u · x ^ (2 ^ i))` and the recombination uses
+`u⁻¹ • L + u • R`. The opening proof carries no final-scalar field, because the final folded
+scalar `a₀` is absorbed into the Schnorr response `z1 = a₀ · c + d`. -/
 
 namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## The opening proof -/
+/-! ### The opening proof -/
 
 /-- An IPA opening proof over `k` rounds: the per-round cross-commitments
 `lr : Fin k → G × G`, the Schnorr commitment `delta : G`, the Schnorr responses
@@ -120,7 +112,7 @@ structure OpeningProof (F G : Type*) (k : ℕ) where
   /-- The final folded generator `sg = g₀`. -/
   sg : G
 
-/-! ## The recombined commitment `Q` -/
+/-! ### The recombined commitment `Q` -/
 
 /-- Recombined commitment `Q`. For a commitment `P`, opened value `v`, round
 challenges `u`, and cross-commitments `lr`,
@@ -130,7 +122,7 @@ def recombine (σ : SRS G) (P : G) (v : F) {k : ℕ} (u : Fin k → F)
     (lr : Fin k → G × G) : G :=
   P + v • σ.U + ∑ j : Fin k, ((u j)⁻¹ • (lr j).1 + (u j) • (lr j).2)
 
-/-! ## The verifier acceptance equation -/
+/-! ### The verifier acceptance equation -/
 
 /-- The verifier acceptance equation with the evaluation slot abstracted to a free
 scalar `b0`. With final Schnorr challenge `c`, accepts iff both hold:
@@ -140,7 +132,7 @@ scalar `b0`. With final Schnorr challenge `c`, accepts iff both hold:
 * `sg = ⟨bPolyCoefficients u, σ.g⟩` (the `sg`-correctness check).
 
 The unbatched acceptance is the specialization at `b0 = bPoly u x`; the batched verifier
-feeds `b0 = combinedB u r x` (see `IPA/Batch.lean`). -/
+feeds `b0 = combinedB u r x` (`§ Batched opening`). -/
 def VerifierAcceptsAt (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (b0 v c : F)
     (u : Fin σ.k → F) : Prop :=
   (c • recombine σ P v u proof.lr + proof.delta
@@ -150,13 +142,12 @@ def VerifierAcceptsAt (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (b0 v
 end Bulletproof
 
 /-!
-## Batched multi-polynomial, multi-point opening of the kimchi IPA commitment
+## Batched opening
 
-The kimchi verifier never opens one polynomial at one point: it opens ~20
-commitments at the two points `{ζ, ζω}` through ONE IPA opening of a random linear
-combination — `polyscale ξ` across polynomials, `evalscale r` across evaluation
-points. This file defines that batching over the single-opening IPA stack
-(`Basic`/`Verify`).
+The kimchi verifier never opens one polynomial at one point. It opens ~20 commitments at the
+two points `{ζ, ζω}` through a *single* IPA opening of a random linear combination:
+`polyscale ξ` across polynomials, `evalscale r` across evaluation points. This section
+defines that batching over the single-opening stack above.
 
 The batched setting fixes:
 
@@ -174,17 +165,17 @@ The chunked-batch section generalizes the combiners to per-polynomial chunk coun
 (`nc : Fin n → ℕ`): in the deployed batch each chunk is one *segment*, consumed
 polynomial-outer, chunk-inner, at one consecutive polyscale power per segment
 (`combined_inner_product` / `combine_commitments`, `poly-commitment/src/commitment.rs`).
-The flattening lemmas show the chunked combiners are the plain combiners of the
-flattened segment family under `finSigmaFinEquiv` — chunking changes the indexing, not
-the combination — which is how `Soundness/ChunkedBatch.lean` reduces chunked-batch
-soundness to `batch_soundnessA`.
+The flattening lemmas show the chunked combiners are the plain combiners of the flattened
+segment family under `finSigmaFinEquiv` — chunking changes the indexing, not the
+combination. That is how `Bulletproof.chunked_batch_soundness` reduces chunked-batch
+soundness to the flat case.
 -/
 
 namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## Batch definitions -/
+/-! ### Batch definitions -/
 
 /-- Combined commitment: the random linear combination of the commitments by
 powers of the polyscale `ξ`,
@@ -245,7 +236,7 @@ def BatchAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (ξ r c : F)
   VerifierAcceptsAt σ proof (combinedCommitment ξ C) (combinedB u r x)
     (combinedInnerProduct ξ r e) c u
 
-/-! ## Chunked batch definitions
+/-! ### Chunked batch definitions
 
 Chunked commitments in the batch (`PolyComm` with more than one chunk): each chunk of
 each polynomial is one *segment* of the batch stream, and the stream is consumed
@@ -336,22 +327,20 @@ theorem innerProduct_combinedEvalVector {N : ℕ} (a : Fin N → F) (r : F) {m :
 end Bulletproof
 
 /-!
-## The chunk layer: long polynomials over a bounded SRS
+## The chunk layer
 
 Kimchi's SRS commits at most `2^k` coefficients, but committed polynomials exceed that
-bound — the quotient `t` does in *every* proof (degree `~7·n` against an SRS of size
-`n`). The scheme's answer (`poly_commitment/src/commitment.rs`) is chunking: split the
-coefficients into width-`2^k` windows, commit each window (`PolyComm.elems`), and at
-evaluation time recombine with powers of `y = x^(2^k)` — one combined commitment, one
-combined claimed value, one IPA run.
+bound — the quotient `t` does in *every* proof, at degree `~7·n` against an SRS of size `n`.
+The scheme's answer (`poly-commitment/src/commitment.rs`) is chunking: split the coefficients
+into width-`2^k` windows, commit each window (`PolyComm.chunks`), and at evaluation time
+recombine with powers of `y = x^(2^k)`, giving one combined commitment, one combined claimed
+value, and one IPA run.
 
-The definitions of the chunk layer: the chunk windows (`chunkCoeffs`/`chunkPoly`), the
-assembly inverse (`assemblePoly` — the long polynomial with prescribed windows, the
-extractor's tool in `Soundness/ChunkedBatch.lean`), the eval recombination
-(`eval_eq_sum_chunkPoly` — the reassembly `p = ∑ Xⁱ·²ᵏ · chunkᵢ` read at a point,
-kimchi's `combined_inner_product` identity), and the commitment recombination
-(kimchi's `chunk_commitment`, by linearity). Chunked-opening
-soundness over these definitions is `Soundness/Chunk.lean`.
+The definitions here are the chunk windows (`chunkCoeffs` / `chunkPoly`), the assembly
+inverse (`assemblePoly`, the long polynomial with prescribed windows), the eval recombination
+(`eval_eq_sum_chunkPoly`, the reassembly `p = ∑ Xⁱ·²ᵏ · chunkᵢ` read at a point, which is
+kimchi's `combined_inner_product` identity), and the commitment recombination (kimchi's
+`chunk_commitment`, by linearity). Soundness over them is `Bulletproof.chunked_batch_soundness`.
 -/
 
 namespace Bulletproof
@@ -360,10 +349,10 @@ open Polynomial
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## Chunk windows -/
+/-! ### Chunk windows -/
 
 /-- The `i`-th width-`n` coefficient window of `p`, as the vector kimchi commits
-(`PolyComm.elems i`). -/
+(`PolyComm.chunks i`). -/
 def chunkCoeffs (n : ℕ) (p : Polynomial F) (i : ℕ) : Fin n → F :=
   fun j => p.coeff (i * n + (j : ℕ))
 
@@ -380,7 +369,7 @@ theorem chunkPoly_eval (n : ℕ) (p : Polynomial F) (i : ℕ) (x : F) :
   simp only [eval_monomial]
   exact (Fin.sum_univ_eq_sum_range (fun j => p.coeff (i * n + j) * x ^ j) n).symm
 
-/-! ## Eval recombination -/
+/-! ### Eval recombination -/
 
 /-- Splitting a `range (c·n)` sum into `c` windows of width `n`. -/
 private theorem sum_range_mul_eq_sum_windows {M : Type*} [AddCommMonoid M]
@@ -406,12 +395,11 @@ theorem eval_eq_sum_chunkPoly {n c : ℕ} (p : Polynomial F)
   rw [eval_monomial, ← pow_mul, ← mul_assoc, mul_comm ((x ^ (n * i))) _, mul_assoc,
     ← pow_add, mul_comm n i]
 
-/-! ## Assembly
+/-! ### Assembly
 
-The inverse of windowing: build the long polynomial with prescribed width-`n` chunk
-windows. This is the extractor's tool — chunked-batch soundness
-(`Soundness/ChunkedBatch.lean`) produces per-chunk witness vectors and assembles them
-into the one bound polynomial the commitment opens to. -/
+The inverse of windowing: build the long polynomial with prescribed width-`n` chunk windows.
+This is the extractor's tool — `chunked_batch_soundness` produces per-chunk witness vectors
+and assembles them into the one bound polynomial the commitment opens to. -/
 
 /-- The polynomial with chunk window `ci` equal to `as ci`, for `ci < c`
 (`chunkCoeffs_assemblePoly`). -/
@@ -463,7 +451,7 @@ theorem assemblePoly_natDegree_lt {n c : ℕ} (hn : 0 < n) (hc : 0 < c)
   exact lt_of_lt_of_le h1
     (Nat.mul_le_mul_right n (Finset.mem_range.mp hci))
 
-/-! ## Commitment recombination -/
+/-! ### Commitment recombination -/
 
 /-- **The hiding commitment is `F`-linear** in the witness pair `(a, r)` — the
 first-class form of "commit is linear"; every recombination fact is an image of a

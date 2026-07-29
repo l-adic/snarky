@@ -16,7 +16,7 @@ which shape the argument can take.
 argument (`Bulletproof/Forking/KnowledgeSoundness.lean`, `trivialInput` /
 `honestFamily_accepts_everywhere`) the claim is a FREE parameter of the family, so one
 takes the all-zero claim: its combined commitment is `0` and its combined inner product
-`cipOf` is `0`, and the pair `(0, 0)` opens it at EVERY public basis. Kimchi's claim is
+`cipOf` is `0`, and the pair `(0, 0)` opens it at *every* public basis. Kimchi's claim is
 not free — it is DERIVED by the verifier from the key, the public input, the proof and
 its own six pre-opening challenges. This module computes that derived claim at the most
 degenerate data available (`zeroProof`, empty public input) and finds:
@@ -1221,7 +1221,7 @@ private noncomputable def honestWarmBase
   kimchiWarmBase (srsOfBasis k basis) (honestVK (srsOfBasis k basis) nc idx) #[]
     (zeroProof C nc k) ![qβ, qγ, qα, qζ, qv, qu]
 
-/-- **The base function, at the run's own six answers, IS the run's warm base.** Fix a proof `cp`
+/-- **The base function, at the run's own six answers, *is* the run's warm base.** Fix a proof `cp`
 whose pre-opening payload is the degenerate one — every proof the family's adversary can emit is
 of this shape, since it differs from `zeroProof` only in its `opening` field. Then evaluating
 `honestWarmBase` at the table's answers at `cp`'s six pre-opening nodes returns exactly
@@ -1284,7 +1284,7 @@ private noncomputable def familyAdversary
       (honestWarmBase nc idx basis)
   else .pure (zeroProof C nc k)
 
-/-- At a scalar basis the family's adversary IS the honest adversary at the warm base. -/
+/-- At a scalar basis the family's adversary *is* the honest adversary at the warm base. -/
 private theorem familyAdversary_scalar
     (hsmul : ∀ (z : C.ScalarField) (Q : C.Point), z • Q = z.val • Q)
     (hne : ∀ q, expandPre C q ≠ 0) {k : ℕ} (hk : 0 < k) (nc : ℕ) {d : ℕ}

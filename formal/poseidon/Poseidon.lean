@@ -7,13 +7,16 @@ import Poseidon.GroupMap
 /-!
 # Poseidon — the kimchi Poseidon sponge, executable and definitional
 
-Root module of the `Poseidon` library: the Poseidon permutation and duplex-sponge
-automaton over both Pasta base fields with the production `fp_kimchi`/`fq_kimchi`
-parameter tables (`Basic`, `ConstantsFp/Fq`), the field-pair generic `FqSponge`
-consumer layer (`FqSponge`), and the SvdW map-to-curve (`GroupMap`).
+Root module of the `Poseidon` library:
 
-Everything here is *specification*, validated against proof-systems vectors by the
-fixture drivers under `scripts/` — not proved sound. Treating this sponge as a random
-oracle is precisely the Fiat–Shamir assumption its consumers (the bulletproof PCS, the
-kimchi verifier) declare as their axiom.
+- `Poseidon/Basic.lean`, with the generated `ConstantsFp` / `ConstantsFq` tables — the
+  Poseidon permutation and duplex-sponge automaton over both Pasta base fields, at the
+  production `fp_kimchi` / `fq_kimchi` parameters.
+- `Poseidon/FqSponge.lean` — the field-pair generic consumer layer.
+- `Poseidon/GroupMap.lean` — the SvdW map-to-curve.
+
+Everything here is *specification*, validated against proof-systems vectors by the fixture
+drivers under `scripts/` and not proved sound. Treating this sponge as a random oracle is the
+Fiat–Shamir idealisation; its consumers, the bulletproof PCS and the kimchi verifier, carry
+that as the uniform challenge table of their forking games rather than as an axiom.
 -/

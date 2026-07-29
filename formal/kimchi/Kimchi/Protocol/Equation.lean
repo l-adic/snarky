@@ -197,8 +197,10 @@ private theorem gateMember_sum_eval [DecidableEq F] [NeZero n] (idx : Index F n)
 /-! ## The permutation vanishing mask, as a polynomial evaluation
 
 `zkpmEval` is the verifier's point-value form of the masked-row product; it is the
-evaluation at `ζ` of the quotient layer's `Permutation.zkpm` interpolant. Both range over
-the same masked window `[n − zkRows, n)`, so the identity is `eval_prod` on that `Ico`. -/
+evaluation at `ζ` of the quotient layer's `Permutation.zkpm` interpolant. Both are the same
+three-factor product `(X − ω^{n−zkRows})(X − ω^{n−zkRows+1})(X − ω^{n−1})`, which coincides
+with the full `∏_{[n−zkRows, n)}` window only at `zkRows = 3`, so the identity is a direct
+`eval_mul` computation. -/
 
 /-- The verifier's masked-row product `zkpmEval` is the evaluation of the quotient's
 `Permutation.zkpm` polynomial at `ζ`. -/
@@ -327,8 +329,9 @@ the quotient identity `(aggregate α (fullFamily …)).eval ζ = (t · Z_H).eval
 aggregate splitting into its gate and permutation halves. -/
 
 /-- At the honest evaluation record, the scalar-side verifier check is equivalent to the
-quotient identity at `ζ`. Consumed only by the Schwartz–Zippel core below, on the way to
-`Kimchi.Protocol.sound`. -/
+quotient identity at `ζ`. Consumed by the Schwartz–Zippel core below, on the way to
+`Kimchi.Protocol.sound`, and by `scripts/check_linearization.lean`, which instantiates it
+numerically. -/
 theorem verifierEquation_iff [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F)
     (z t : Polynomial F) (ζ β γ α : F)
@@ -534,7 +537,7 @@ data — the witness is extracted, never supplied — so the statement is a clai
 protocol's specific challenges and assignment. Nothing here mentions commitments, an SRS, or
 a group: this is the idealized protocol. The commitment layer instantiates it by binding the
 oracles to commitments and certifying the claimed evaluations are the true oracle evaluations
-(`kimchiProof_sound_of_openings`). -/
+(`kimchiProof_sound_of_openings_of_vkrep`). -/
 theorem sound [DecidableEq F] [NeZero n] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (W : Fin wCols → Polynomial F)
     (z : Polynomial F) (hz : z.natDegree < n) :

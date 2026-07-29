@@ -1,8 +1,12 @@
 import Kimchi.Gate.EndoScalar
 
-/-! # EndoScalar gate & circuit semantics: the row runs Halo's Algorithm 2
-    (soundness/completeness, bare-table form), and the multi-row chain composes
-    rows into the effective scalar `a·λ + b`. -/
+/-! # EndoScalar semantics
+
+    The row runs Halo's Algorithm 2, with soundness and completeness in bare-table form; the
+    multi-row chain composes rows into the effective scalar `a·λ + b`.
+
+    Beyond the per-row development the file has two parts: `§ Supporting development` and
+    `§ The effective scalar `a·λ + b``. -/
 
 namespace Kimchi.Gate.EndoScalar
 
@@ -86,11 +90,8 @@ theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
 
 end Kimchi.Gate.EndoScalar
 
-/-! ## Multi-row chain: supporting development (folded from `Circuit/EndoScalar/Internal`). -/
-
-
 /-!
-# The `EndoScalar` circuit: supporting development
+## Supporting development
 
 The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective
 scalar `a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the
@@ -100,7 +101,7 @@ definitions and lemmas on which the three headline theorems (`chain_toField`, `c
 `endoScalar_unique`, in `Kimchi.Gate.EndoScalar`) rest. It mirrors the OCaml/PureScript
 `to_field_checked'`, which runs `mapAccumM` over the row chunks.
 
-## Multi-row composition
+### Multi-row composition
 
 A challenge wider than one row's eight crumbs is laid out over several `EndoScalar` rows, each
 row's output accumulators feeding the next. Every accumulator update is a `List.foldl`, so the
@@ -116,7 +117,7 @@ arithmetic.
   that a threaded run of `m + 1` rows computes the single base-4 decomposition of that stream.
 * `chainBuild` — the honest threaded witness, built from the gate's `build`.
 
-## Uniqueness under the no-wrap bound
+### Uniqueness under the no-wrap bound
 
 The decomposition is a well-defined function of the challenge alone once a challenge determines
 its crumbs. This holds because the crumbs are base-4 digits (each in `{0,1,2,3}`, by
@@ -389,11 +390,8 @@ private theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
 
 end Kimchi.Gate.EndoScalar
 
-/-! ## Multi-row chain: the effective scalar (folded from `Circuit/EndoScalar`). -/
-
-
 /-!
-# The `EndoScalar` circuit: the effective scalar `a·λ + b`
+## The effective scalar `a·λ + b`
 
 The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective scalar
 `a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the `(a, b, n)`
@@ -403,7 +401,7 @@ wrapper asserts equals the input challenge. The construction follows the OCaml/P
 
 This module states the three headline theorems; their supporting development —
 the accumulator folds, the multi-row reconstruction, and the base-4 uniqueness kernel — lives in
-`Kimchi.Gate.EndoScalar.Internal`.
+`§ Supporting development` above.
 
 * `chain_toField` — a satisfying run of `m + 1` sequential gate rows, threaded from the canonical
   init `(a, b, n) = (2, 2, 0)` (`varBaseMul`'s multi-row shape), outputs the effective scalar

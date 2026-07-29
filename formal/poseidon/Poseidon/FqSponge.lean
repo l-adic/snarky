@@ -5,41 +5,40 @@ import Pasta.Endo
 /-!
 # The kimchi Fq-sponge
 
-The consumer-facing sponge of kimchi's Fiat-Shamir transform, transcribed from proof-systems
-`mina_poseidon` `sponge.rs` (`DefaultFqSponge`) on top of the duplex automaton of
-`Poseidon.lean`, generic over the curve's field pair: the sponge state lives in the base
-field `ZMod base`, challenges land in the scalar field `ZMod scalar`. A `Spec` supplies the
-two field-dependent data — the Poseidon parameters and the endomorphism eigenvalue `λ` —
-and everything else, including which `absorb_fr` encoding applies, is determined by the
-cardinalities: a scalar absorbs directly when `scalar < base`, and as (high bits, low bit)
-when the scalar field is the larger (`sponge.rs` `absorb_fr`, both branches).
+The consumer-facing sponge of kimchi's Fiat–Shamir transform, transcribed from proof-systems
+`mina_poseidon` `sponge.rs` (`DefaultFqSponge`) and built on the duplex automaton of
+`Poseidon/Basic.lean`. It is generic over the curve's field pair: the sponge state lives in
+the base field `ZMod base`, and challenges land in the scalar field `ZMod scalar`. The
+field-dependent data comes from a `Spec`; everything else follows from the two
+cardinalities.
 
-Alongside the Poseidon state, the sponge carries a buffer `lastSqueezed` of 64-bit limbs:
-each raw squeeze contributes its two low limbs (128 high-entropy bits), and a scalar
+## The limb buffer
+
+Alongside the Poseidon state, the sponge carries a buffer `lastSqueezed` of 64-bit limbs.
+Each raw squeeze contributes its two low limbs (128 high-entropy bits), and a scalar
 challenge (`challenge`, 128 bits) is packed from the next two buffered limbs. Every
-absorption clears the buffer. Field-element squeezes (`challengeFq`) bypass the buffer and
-clear it.
+absorption clears the buffer, and field-element squeezes (`challengeFq`) bypass it and clear
+it.
 
-A squeezed 128-bit prechallenge becomes an *effective* scalar through the endomorphism
-expansion (`sponge.rs` `to_field_with_length`, Halo §6.2): accumulators `a = b = 2`, then
-for each 2-bit window from the top, `a, b := 2a, 2b`, the low bit selects `s = ±1`, the high
-bit routes `s` into `a` or `b`; the result is `a·λ + b`. This is the same recoding the
-`EndoScalar` gate constrains in-circuit (`Kimchi.Gate.EndoScalar`, accumulator init
-`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates unconditionally — the
-identity is the `(0, 0)` sentinel, absorbed as two zeros exactly as `sponge.rs` `absorb_g`
-does.
+## The endomorphism expansion
 
-`FqVesta` and `FqPallas` instantiate the two sides of the Pasta cycle
-(`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`); each is its
-`Spec` plus name re-exports. Both are validated against `DefaultFqSponge` op traces by
-`scripts/check_fq_sponge.lean`.
+A squeezed 128-bit prechallenge becomes an *effective* scalar `a·λ + b` through the
+endomorphism expansion of `endoExpand` (`sponge.rs` `to_field_with_length`, Halo §6.2). It is
+the same recoding the `EndoScalar` gate constrains in-circuit (`Kimchi.Gate.EndoScalar`,
+accumulator init `(2, 2)`).
+
+## The Pasta instantiations
+
+`FqVesta.spec` and `FqPallas.spec` supply the two sides of the Pasta cycle
+(`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`). Both are
+validated against `DefaultFqSponge` op traces by `scripts/check_fq_sponge.lean`.
 -/
 
 namespace Poseidon.FqSponge
 
-/-- The field-pair data of a curve's Fq-sponge: the Poseidon parameters over the base field
-and the endomorphism eigenvalue `λ` of the scalar field's challenge expansion. Everything
-else is determined by the cardinalities. -/
+/-- The field-dependent data of a curve's Fq-sponge. Everything else, including which
+`absorbFr` branch applies, is determined by the two cardinalities: a scalar absorbs directly
+when `scalar < base`, and as (high bits, low bit) when the scalar field is the larger. -/
 structure Spec (base scalar : ℕ) where
   /-- The Poseidon parameters over the base field. -/
   params : Params (ZMod base)
@@ -50,8 +49,7 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 variable {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
 
-/-- Sponge state: the Poseidon automaton over the base field plus the 64-bit limb buffer
-`lastSqueezed`. -/
+/-- A sponge in flight: the Poseidon automaton over the base field, plus its limb buffer. -/
 structure S (base : ℕ) where
   /-- The Poseidon duplex automaton over the base field. -/
   sponge : State (ZMod base)
@@ -72,11 +70,11 @@ private def lowLimbs (x : ZMod base) : List ℕ :=
 def absorbFq (spec : Spec base scalar) (s : S base) (xs : List (ZMod base)) : S base :=
   ⟨absorb spec.params s.sponge xs, []⟩
 
-/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, unconditionally — the
+/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, unconditionally. The
 identity is the `(0, 0)` sentinel by construction (`SWPoint.zero`), so this absorbs two
-zeros for it, exactly as production does (`sponge.rs:335–339` absorbs `[0]` then `[0]`).
-Branching to a single `0` here would leave the duplex position one slot behind production
-on every transcript containing an identity commitment. -/
+zeros for it, exactly as production does. Branching to a single `0` here would leave the
+duplex position one slot behind production on every transcript containing an identity
+commitment. -/
 def absorbG (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : S base)
     (P : SWPoint E) : S base :=
   absorbFq spec s [P.x, P.y]
@@ -96,9 +94,9 @@ def challengeFq (spec : Spec base scalar) (s : S base) : ZMod base × S base :=
   let (x, sp) := squeeze spec.params s.sponge
   (x, ⟨sp, []⟩)
 
-/-- Take two 64-bit limbs from the buffer, refilling it from the sponge as needed
-(`squeeze_limbs` at `CHALLENGE_LENGTH_IN_LIMBS = 2`); the packed 128-bit value. The fuel
-argument bounds the refills (each adds two limbs, so one suffices from empty). -/
+/-- Take two 64-bit limbs from the buffer and pack them into a 128-bit value, refilling the
+buffer from the sponge as needed (`squeeze_limbs` at `CHALLENGE_LENGTH_IN_LIMBS = 2`). The
+`fuel` argument bounds the refills: each adds two limbs, so one suffices even from empty. -/
 private def squeezeLimbsPacked (spec : Spec base scalar) : ℕ → S base → ℕ × S base
   | 0, s => (0, s)
   | fuel + 1, s =>
@@ -147,8 +145,8 @@ namespace FqVesta
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- `DefaultFqSponge<VestaParameters>`: the `fq_kimchi` parameters and the Vesta
-eigenvalue. -/
+/-- The Vesta side of the cycle: the `fq_kimchi` parameters and the Vesta eigenvalue
+(`DefaultFqSponge<VestaParameters>`). -/
 def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD :=
   ⟨fqParams, ((Pasta.vestaLam : ℤ) : Fp)⟩
 
@@ -158,9 +156,10 @@ namespace FqPallas
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- `DefaultFqSponge<PallasParameters>`: the `fp_kimchi` parameters and the Pallas
-eigenvalue. The scalar field is the larger of the pair, so `absorbFr` takes the
-high-bits/low-bit branch — selected by the cardinalities, not restated here. -/
+/-- The Pallas side of the cycle: the `fp_kimchi` parameters and the Pallas eigenvalue
+(`DefaultFqSponge<PallasParameters>`). Here the scalar field is the larger of the pair, so
+`absorbFr` takes the high-bits/low-bit branch. Nothing selects that branch but the
+cardinalities. -/
 def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD :=
   ⟨fpParams, ((Pasta.pallasLam : ℤ) : Fq)⟩
 

@@ -5,12 +5,13 @@ import Lean.Data.Json
 /-!
 # JSON decoders for proof-systems fixtures
 
-The shared vocabulary of the fixture and vector files under `formal/fixtures` (produced by
-`tools/fixture-dump`), consumed by the `scripts/check_*` drivers: field elements are
-canonical decimal strings, affine points are two-element coordinate arrays, and `(0, 0)` is
-the identity sentinel where a decoder admits it. Decoders compose over a supplied
-element parser, so a driver fixes its fields once (`parseZMod` at the concrete cardinality)
-and builds the rest from these.
+The shared vocabulary of the fixture and vector files in each package's `fixtures/`
+directory, produced by `tools/fixture-dump` and consumed by the `scripts/check_*` drivers.
+Field elements are canonical decimal strings, affine points are two-element coordinate
+arrays, and `(0, 0)` is the identity sentinel where a decoder admits it.
+
+Decoders compose over a supplied element parser, so a driver fixes its fields once
+(`parseZMod` at the concrete cardinality) and builds the rest from these.
 -/
 
 namespace FixtureKit
@@ -25,12 +26,12 @@ def parseNat (j : Json) : Except String ℕ := do
   | none => .error s!"not a decimal natural: {s.take 40}"
 
 /- Decoder hygiene note (external-audit C-4): these decoders read the fields they need and
-DROP unknown keys — an out-of-fragment payload parses-and-drops rather than being rejected,
-and acceptance is then unreachable only through transcript divergence. The drivers consume
-`fixture-dump` output, where no such payloads occur. -/
+*drop* unknown keys, so an out-of-fragment payload is parsed-and-dropped rather than
+rejected, and acceptance is then unreachable only through transcript divergence. The drivers
+consume `fixture-dump` output, where no such payloads occur. -/
 
-/-- A decimal string as an element of `ZMod n`, REJECTING non-canonical numerals (`≥ n`) —
-aligned with arkworks' serde, which errors on out-of-range field elements rather than
+/-- A decimal string as an element of `ZMod n`, *rejecting* non-canonical numerals (`≥ n`).
+This aligns with arkworks' serde, which errors on out-of-range field elements rather than
 reducing them (external-audit C-4). At `n = 0` every numeral is rejected; no fixture uses
 `ZMod 0`. -/
 def parseZMod {n : ℕ} (j : Json) : Except String (ZMod n) := do

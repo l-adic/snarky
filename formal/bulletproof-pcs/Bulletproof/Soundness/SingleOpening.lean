@@ -4,33 +4,36 @@ import Bulletproof.Protocol
 /-!
 # Single-opening soundness of the abstract kimchi IPA
 
-Knowledge soundness of one IPA opening — one committed polynomial, one point — axiom-free:
-an accepting transcript yields an opening witness. The round algebra (§ one IPA round),
-the `3`-ary transcript tree and its `3`-special soundness (§ transcript tree), commitment
-binding as discrete-log-relation triviality (§ binding), and the Fiat–Shamir bridge to the
-opening relation (§ the headline). The batched and chunked openings build on this in
-`Bulletproof.Soundness`.
+Knowledge soundness of one IPA opening — one committed polynomial, one point, axiom-free: an
+accepting transcript yields an opening witness.
+
+- `§ One IPA round` — the round algebra.
+- `§ The transcript tree` — the `3`-ary tree and its `3`-special soundness.
+- `§ Binding` — commitment binding as discrete-log-relation triviality.
+- `§ The headline` — the bridge to the opening relation.
+
+The batched and chunked openings build on this in `Bulletproof.Soundness`.
 -/
 
 /-!
-## The linear algebra of one IPA round (soundness)
+## One IPA round
 
-The elementary algebra behind IPA soundness: bilinearity of the generator
-commitment `⟨a, g⟩`, the three-point Vandermonde functional, and the
-3-special-soundness of a single round.
+The elementary algebra behind IPA soundness: bilinearity of the generator commitment
+`⟨a, g⟩`, the three-point Vandermonde functional, and the 3-special-soundness of a single
+round.
 
-A round folds the generators by the challenge `u` (`g ↦ gLo + u • gHi`) and
-recombines the commitment as `P + u⁻¹ • L + u • R`. From three sub-openings at
-distinct nonzero challenges the round is 3-special-sound: an explicit Vandermonde
-combination of the three folded witnesses opens the parent commitment `P`, with no
-binding assumption — pure module linear algebra.
+A round folds the generators by the challenge `u` (`g ↦ gLo + u • gHi`) and recombines the
+commitment as `P + u⁻¹ • L + u • R`. From three sub-openings at distinct nonzero challenges
+the round is 3-special-sound: an explicit Vandermonde combination of the three folded
+witnesses opens the parent commitment `P`. No binding assumption is needed — it is pure
+module linear algebra.
 -/
 
 namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## Bilinearity of the generator commitment
+/-! ### Bilinearity of the generator commitment
 
 The commitment `⟨a, g⟩ = ∑ i, a i • g i` is bilinear: additive and homogeneous in
 both the witness `a` and the generators `g`. -/
@@ -61,7 +64,7 @@ private theorem commitGen_sub {n : ℕ} (g : Fin n → G) (a a' : Fin n → F) :
     commitGen g (a - a') = commitGen g a - commitGen g a' := by
   simp only [commitGen, Pi.sub_apply, sub_smul, Finset.sum_sub_distrib]
 
-/-! ## The three-point Vandermonde functional -/
+/-! ### The three-point Vandermonde functional -/
 
 /-- For distinct `u₁, u₂, u₃` there are coefficients `l₁, l₂, l₃` with `Σ lᵢ = 0`,
 `Σ lᵢuᵢ = 1`, and `Σ lᵢuᵢ² = 0`: the functional `p ↦ Σ lᵢ · p(uᵢ)` reads off the
@@ -80,7 +83,7 @@ private theorem vandermonde3 (u₁ u₂ u₃ : F) (h12 : u₁ ≠ u₂) (h13 : u
   refine ⟨-(u₂ + u₃) / ((u₁ - u₂) * (u₁ - u₃)), -(u₁ + u₃) / ((u₂ - u₁) * (u₂ - u₃)),
     -(u₁ + u₂) / ((u₃ - u₁) * (u₃ - u₂)), ?_, ?_, ?_⟩ <;> field_simp <;> ring
 
-/-! ## Round soundness (3-special) -/
+/-! ### Round soundness (3-special) -/
 
 /-- One IPA round is 3-special-sound for the commitment, with an explicit witness.
 Given three openings `⟨cᵢ, gLo + uᵢ • gHi⟩ = P + uᵢ⁻¹ • L + uᵢ • R` against the
@@ -135,25 +138,24 @@ private theorem ipa_round_commit_with_coeffs {m : ℕ} (g_lo g_hi : Fin m → G)
 end Bulletproof
 
 /-!
-## IPA soundness: the transcript tree and 3-special soundness
+## The transcript tree
 
-The IPA recursion, packaged as a `3`-ary transcript *tree*. Each node records the
-prover's cross-terms and three challenges, with three sub-transcripts; the whole
-tree witnesses that the verifier accepts three consistent runs at every round.
+The IPA recursion, packaged as a `3`-ary transcript *tree*. Each node records the prover's
+cross-terms and three challenges, with three sub-transcripts; the whole tree witnesses that
+the verifier accepts three consistent runs at every round.
 
-The main result (`ipa_soundV`) is that an accepting tree yields a witness for the
-full opening relation, by induction on the tree: each node applies the 3-special
-round soundness of `Soundness.Linear` (`ipa_round_commit_with_coeffs`,
-`vandermonde3`) to combine the three sub-witnesses, and reassembles the halves
-with `commitGen_append`. The generators fold by the challenge `u`
-(`g ↦ gLo + u • gHi`) and the commitment recombines by `u⁻¹ • L + u • R`.
+The main result (`ipa_soundV`) is that an accepting tree yields a witness for the full
+opening relation, by induction on the tree. Each node applies the 3-special round soundness
+of `§ One IPA round` (`ipa_round_commit_with_coeffs`, `vandermonde3`) to combine the three
+sub-witnesses, then reassembles the halves with `commitGen_append`. The generators fold by
+the challenge `u` (`g ↦ gLo + u • gHi`) and the commitment recombines by `u⁻¹ • L + u • R`.
 -/
 
 namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## Halving the index set
+/-! ### Halving the index set
 
 Using `2 ^ k + 2 ^ k = 2 ^ (k + 1)` and the sum-equivalence
 `Fin (2 ^ k) ⊕ Fin (2 ^ k) ≃ Fin (2 ^ (k + 1))`: `loHalf`/`hiHalf` restrict a
@@ -217,7 +219,7 @@ private theorem commitGen_append {k : ℕ} (g : Fin (2 ^ (k + 1)) → G) (a_lo a
     commitGen g (append a_lo a_hi) = commitGen (loHalf g) a_lo + commitGen (hiHalf g) a_hi := by
   rw [commitGen_split, loHalf_append, hiHalf_append]
 
-/-! ## The opening-relation tree -/
+/-! ### The opening-relation tree -/
 
 /-- A `3`-ary IPA transcript tree carrying both the commitment cross-terms
 `L`, `R : G` and the inner-product cross-terms `Lv`, `Rv : F` per round; a node
@@ -275,16 +277,16 @@ private theorem ipa_soundV : {d : ℕ} → (g : Fin (2 ^ d) → G) → (b : Fin 
 end Bulletproof
 
 /-!
-## Binding of the kimchi IPA commitment as discrete-log-relation hardness
+## Binding
 
-Binding is the sole cryptographic assumption on the group, made auditable: a
-binding violation is reduced to a nontrivial discrete-log relation among the
-generators `σ.g` and the blinding base `σ.h`, and binding is shown to be *exactly*
-DL-relation triviality.
+Binding is the sole cryptographic assumption on the group, and it is made auditable here: a
+binding violation is reduced to a nontrivial discrete-log relation among the generators
+`σ.g` and the blinding base `σ.h`, and binding is shown to be *exactly* DL-relation
+triviality.
 
-The commitment is hiding (`commit σ a r = ⟨a, σ.g⟩ + r • σ.h`), so a witness is
-the pair `(a, r)` and a discrete-log relation ranges over `[σ.g, σ.h]`: a pair
-`(r, r_h)` with `⟨r, σ.g⟩ + r_h • σ.h = 0`.
+The commitment is hiding (`commit σ a r = ⟨a, σ.g⟩ + r • σ.h`), so a witness is the pair
+`(a, r)`, and a discrete-log relation ranges over `[σ.g, σ.h]`: a pair `(r, r_h)` with
+`⟨r, σ.g⟩ + r_h • σ.h = 0`.
 -/
 
 namespace Bulletproof
@@ -343,28 +345,26 @@ theorem ipaRelation_unique {σ : SRS G} {P : G} {x v : F}
 end Bulletproof
 
 /-!
-## The Fiat–Shamir bridge and single-opening soundness of the kimchi IPA
+## The headline
 
-The trust boundary of the IPA soundness development, and the single-opening kernel the
-chunked claims compose onto (`Chunk.lean`, `Soundness/ChunkedBatch.lean`). Everything
-below the Fiat–Shamir bridge is proved; the bridge itself is the single stated
-hypothesis.
+The single-opening kernel that the batched and chunked claims of `Bulletproof.Soundness`
+compose onto. Everything in this file is proved outright; the Fiat–Shamir bridge that turns
+verifier acceptance into a transcript tree is stated as a hypothesis one layer up, as
+`Bulletproof.FiatShamirTreeB`.
 
-The Fiat–Shamir tree hypothesis (`FiatShamirTreeB`) turns an accepting verifier run into a
-clean accepting transcript tree over a de-blinded commitment. It bundles the Fiat–Shamir
-rewinding (uniform challenges yield three distinct sub-transcripts per round), the correspondence
-between the verifier's multi-scalar check and the recursive tree, and the
-Schnorr/hiding reduction that extracts the blinder `r` (so the tree is over the
-non-hiding commitment `P - r • σ.h`). Given the tree, `ipaRelation_of_acceptV` and
-`ipa_soundV` derive the opening witness, and `ipa_soundness` re-blinds it into the
-opening relation.
+That hypothesis bundles three things: the rewinding (uniform challenges yield three distinct
+sub-transcripts per round), the correspondence between the verifier's multi-scalar check and
+the recursive tree, and the Schnorr/hiding reduction that extracts the blinder `r`, which is
+what puts the tree over the non-hiding commitment `P - r • σ.h`. Given the tree,
+`ipaRelation_of_acceptV` below derives the opening witness, and `ipa_soundnessA` re-blinds it
+into the opening relation.
 -/
 
 namespace Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
-/-! ## The tree derives the opening relation -/
+/-! ### The tree derives the opening relation -/
 
 /-- **The tree derives the opening relation.** For an eval vector `b` and
 commitment `P`, an accepting transcript tree yields a non-hiding opening:
@@ -381,8 +381,4 @@ theorem ipaRelation_of_acceptV (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (P : G) (
   have hib : innerProduct a b = commitGen b a := by
     simp only [innerProduct, commitGen, smul_eq_mul]
   rw [hib]; exact hv.symm
-
-/-! ## The Fiat–Shamir rewinding hypothesis -/
-
-/-! ## The headline soundness theorem -/
 

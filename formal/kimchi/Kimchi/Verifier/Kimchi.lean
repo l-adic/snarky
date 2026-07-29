@@ -8,7 +8,7 @@ import Kimchi.Index.Basic
 # The kimchi verifier body over the checked records
 
 The kimchi verifier transcribed from proof-systems `kimchi/src/verifier.rs`: the
-Fiat-Shamir argument (`oracles`, :126–634) and the partial verification (`to_batch`,
+Fiat–Shamir argument (`oracles`, :126–634) and the partial verification (`to_batch`,
 :781–1194), finished by the batched IPA opening check at production chunking
 (`chunk_size = d1 / max_poly_size`, any power-of-two `nc`; `nc = 1` is the one-chunk
 case). The scalar-side closed forms are `Kimchi.Protocol.Linearization`
@@ -17,7 +17,9 @@ at both fields; the opening finish is the `Bulletproof.Ipa` acceptance, restarte
 the **warm** fq-sponge state (`BatchEvaluationProof { sponge: fq_sponge, .. }`,
 verifier.rs:1184–1193).
 
-This module is the CHECKED side of the wire boundary (`Kimchi/Verifier/Wire.lean`):
+## The checked side of the wire boundary
+
+This module is the *checked* side of the wire boundary (`Kimchi/Verifier/Wire.lean`):
 the records here (`KimchiProof C nc`, `KimchiVK C nc`) carry the chunk count in their
 types — they are exactly what `Wire.KimchiProof.check`/`Wire.KimchiVK.check` produce,
 so uniformity is definitional, every read is total, and nothing above this module can
@@ -27,7 +29,9 @@ run's chunk count and call `kimchiVerify` (this module) on the parsed records �
 check-then-verify is the client's one-line composition. The protocol and soundness
 layers never import `Wire`.
 
-Scope (every deferral is declared here):
+## Scope
+
+Every deferral is declared here.
 
 * no lookups (the wire records carry none) and no recursion (`prev_challenges`
   absent) — but the *constant* fr-sponge absorb of the empty recursion list's digest
@@ -36,17 +40,19 @@ Scope (every deferral is declared here):
   `VerifierIndex::digest()` (verifier_index.rs:399) is a declared deferral;
 * `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the
   single σ-commitment term (verifier.rs:897–956);
-* `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of
-  scope (the verifier rejects it);
-* at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production PANICS
+* `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of scope. The
+  verifier does *not* reject it: the guard is the client's, and it is load-bearing, because
+  the `ℕ` subtraction under `runNc` returns `1` on the unguarded underflow (`Wire.lean`,
+  external-audit C-4);
+* at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production *panics*
   (`.expect("negligible probability")`, verifier.rs:459–460) while this executable
   takes `ZMod`'s junk division (`x/0 = 0`) and proceeds — harmless for the theorems,
   which exclude exactly these two points (`zetaBoundaryBad`, the `+2` of `szBudget`),
   but a real algorithm-vs-algorithm difference (external-audit V-3);
-* the final check is the two bracket equations as a DETERMINISTIC conjunction where
+* the final check is the two bracket equations as a *deterministic* conjunction where
   production checks one rng-weighted MSM (`r₁·A + r₂·B = 0`, fresh `thread_rng`) —
   Lean-accept implies production-accept with probability 1, the conservative
-  direction — and this verifier checks ONE proof (= production's `batch_verify` on a
+  direction — and this verifier checks *one* proof (= production's `batch_verify` on a
   singleton); multi-proof batching is out of scope (external-audit V-4);
 * production's key carries the public-input count (`pub public: usize`,
   verifier_index.rs:71 — a serialized field) and `to_batch` rejects a mismatched
@@ -248,7 +254,7 @@ private def publicEvals {F : Type*} [Field F] (n : ℕ)
     (pubDot omega zeta pub * (zetaN - 1) * (n : F)⁻¹,
      pubDot omega zetaOmega pub * (n : F)⁻¹ * (zetaOmegaN - 1))
 
-/-! ## The Fiat-Shamir schedules -/
+/-! ## The Fiat–Shamir schedules -/
 
 /-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): `absorb_commitment` is
 chunk-wise `absorbG`, so the public-commitment and per-column absorbs are chunk
@@ -472,7 +478,7 @@ end TailReads
 /-- **The verifier body over checked records** (`to_batch` + the opening check,
 verifier.rs:781–1194, one proof, basic gate set): the two remaining argument-dependent
 guards (the public input against the domain and the Lagrange table); the per-chunk
-public commitment; the Fiat-Shamir schedules at chunk absorbs; the scalar side on
+public commitment; the Fiat–Shamir schedules at chunk absorbs; the scalar side on
 chunk-COMBINED evaluations; the `ft_comm` double collapse at `ζ^max_poly_size`
 (:960–965); the 45 logical rows in `to_batch` order flattened to the SEGMENT stream
 (one flat row per chunk, ft single — the per-chunk polyscale walk of

@@ -1,7 +1,9 @@
 import Kimchi.Gate.Poseidon
 
-/-! # Poseidon gate semantics: the gate computes the 5-round permutation
-    (soundness), and the honest witness satisfies it (completeness). -/
+/-! # Poseidon semantics
+
+    The gate computes the 5-round permutation (soundness), and the honest witness satisfies
+    it (completeness). -/
 
 namespace Kimchi.Gate.Poseidon
 

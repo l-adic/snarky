@@ -4,33 +4,36 @@ import Mathlib.Tactic.Ring
 
 /-! # The pickles `Shifted_value` algebra
 
-Pure, field-level: the Type1/Type2 shift used to feed a scalar to the `VarBaseMul`
-gate. None of this depends on the curve or the scalar-mul circuit — it is exactly the
-`Shifted_value.to_field` / `of_field` arithmetic, so the circuit theorems can take it as a
-primitive. -/
+The two shifts that encode a scalar for the `VarBaseMul` gate, with their inverses and
+round-trip lemmas. Which one applies is fixed by which field of the pair is larger: Type1
+when the scalar modulus is below the base modulus, Type2 when it is above.
+
+This is field-level arithmetic only — nothing here mentions the curve or the scalar-mul
+circuit. It transcribes `Shifted_value.to_field` / `of_field` directly, so the circuit
+theorems can take it as a primitive. -/
 
 namespace Pasta.Shifted
 
 variable {F : Type*} [Field F]
 
-/-- `Shifted_value.Type1.to_field`: a scalar held as the shifted register `t` (over
-    `numBits` bits) is recovered as `2·t + 2^numBits + 1`. -/
+/-- Recover a scalar from the shifted register `t` that holds it over `numBits` bits:
+    `2·t + 2^numBits + 1`. This is `Shifted_value.Type1.to_field`. -/
 def unshiftType1 (numBits : ℕ) (t : F) : F := 2 * t + 2 ^ numBits + 1
 
-/-- `Shifted_value.Type1.of_field`: the shifted register holding the scalar `s`,
-    `(s − 2^numBits − 1) / 2` — the inverse of `unshiftType1`. It is also the encoding of a
-    scalar absorbed into the Fiat-Shamir transcript when the scalar modulus is below the
-    base modulus (`shift_scalar`, proof-systems `poly-commitment/src/commitment.rs`). -/
+/-- The shifted register holding the scalar `s`, `(s − 2^numBits − 1) / 2` — the inverse of
+    `unshiftType1`, and `Shifted_value.Type1.of_field`. It is also how a scalar is encoded
+    when absorbed into the Fiat–Shamir transcript and the scalar modulus is below the base
+    modulus (`shift_scalar`, proof-systems `poly-commitment/src/commitment.rs`). -/
 def shiftType1 (numBits : ℕ) (s : F) : F := (s - 2 ^ numBits - 1) / 2
 
-/-- `Shifted_value.Type2` value `2·sHi + sOdd + 2^numBits` — the scalar `s + 2^numBits`
-    for `s = 2·sHi + sOdd`, used when the scalar field is larger than the circuit
-    field (so `s` is split into high bits `sHi` and low bit `sOdd`). -/
+/-- The `Shifted_value.Type2` value `2·sHi + sOdd + 2^numBits`, which is `s + 2^numBits` for
+    the scalar `s = 2·sHi + sOdd`. The scalar arrives already split into high bits `sHi` and
+    low bit `sOdd`, because the scalar field is larger than the circuit field. -/
 def unshiftType2 (numBits : ℕ) (sHi sOdd : F) : F := 2 * sHi + sOdd + 2 ^ numBits
 
-/-- The Type2 shift `s − 2^numBits` — the transcript encoding of an absorbed scalar when
-    the scalar field is the larger of the pair (`shift_scalar`,
-    `poly-commitment/src/commitment.rs`, else branch). -/
+/-- The Type2 shift `s − 2^numBits` — how an absorbed scalar is encoded into the transcript
+    when the scalar field is the larger of the pair (`shift_scalar`, the else branch in
+    proof-systems `poly-commitment/src/commitment.rs`). -/
 def shiftType2 (numBits : ℕ) (s : F) : F := s - 2 ^ numBits
 
 /-- The Type1 maps are mutually inverse (outside characteristic 2), unshift after shift. -/

@@ -8,28 +8,33 @@ import Poseidon.ConstantsFp
 /-!
 # The kimchi Poseidon sponge
 
-The Poseidon permutation and the duplex sponge automaton of kimchi's Fiat-Shamir transform,
+The Poseidon permutation and the duplex sponge automaton of kimchi's Fiat–Shamir transform,
 transcribed from proof-systems `mina_poseidon` (`permutation.rs`, `poseidon.rs`,
-`PlonkSpongeConstantsKimchi`): state width 3, rate 2, capacity 1; a permutation of 55 full
-rounds, each applying the `x^7` S-box to every state element, then the full 3 × 3 MDS matrix,
-then adding that round's constants (no initial ARK). The absorb/squeeze automaton tracks a
-mode `absorbed n` / `squeezed n` with `n ≤ rate`; crossing the rate boundary (or switching
-direction into `squeezed`) runs the permutation.
+`PlonkSpongeConstantsKimchi`). The parameter set is width 3, rate 2, capacity 1, with 55 full
+rounds, an `x^7` S-box, a full 3 × 3 MDS matrix, and no initial ARK (no round-constant
+addition before the first round). The absorb/squeeze automaton tracks a mode `absorbed n` /
+`squeezed n` with `n ≤ rate`; crossing the rate boundary, or switching direction into
+`squeezed`, runs the permutation.
 
-The width-3 state is the concrete triple `Triple F = F × F × F` rather than `Fin 3 → F`: the
-compiler eta-expands function-valued definitions, under which a fold of rounds re-evaluates
-its whole prefix at every component lookup — exponentially in the round count. Constructor
-arguments are forced at construction, keeping the fold linear.
+Everything is executable. `fqParams` and `fpParams` instantiate the sponge at the Vesta and
+Pallas base fields from the generated `fq_kimchi` / `fp_kimchi` tables
+(`Poseidon/ConstantsFq.lean`, `Poseidon/ConstantsFp.lean`) — the sponges of kimchi proofs
+over Vesta and Pallas respectively. Both are validated against `mina_poseidon`
+absorb/squeeze traces by `scripts/check_sponge_vectors.lean`.
 
-Everything is executable. `Fq` and `Fp` instantiate the sponge at the Vesta and Pallas base
-fields with the generated `fq_kimchi` / `fp_kimchi` parameters (`PoseidonConstantsFq.lean` /
-`PoseidonConstantsFp.lean`) — the sponges of kimchi proofs over Vesta and Pallas
-respectively. Both validated against `mina_poseidon` absorb/squeeze traces by
-`scripts/check_sponge_vectors.lean`.
+## Why the state is a triple
 
-The sponge is the *definitional* layer of the Fiat-Shamir instantiation: the security of the
-transform (that these challenges behave as the abstract soundness hypotheses require) is a
-separate, explicitly flagged assumption where the instantiation meets the soundness theorems.
+The width-3 state is the concrete triple `Triple F = F × F × F` rather than `Fin 3 → F`. The
+compiler eta-expands function-valued definitions, and under that a fold of rounds
+re-evaluates its whole prefix at every component lookup — exponentially in the round count.
+Constructor arguments are forced at construction, which keeps the fold linear.
+
+## What is assumed elsewhere
+
+This is the *definitional* layer of the Fiat–Shamir instantiation: it fixes what the
+challenges are, not that they are secure. That they behave as the soundness theorems need is
+carried by the consumers, as the uniform challenge table of their forking games, with the
+identification to this sponge recorded in `Bulletproof.Forking` and in kimchi's `FSFaithful`.
 -/
 
 namespace Poseidon

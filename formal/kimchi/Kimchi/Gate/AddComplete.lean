@@ -22,7 +22,9 @@ and the sum of two affine points has coordinates `(addX, addY)`
 
 ## Main results
 
-The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`:
+The gate computes addition in Mathlib's proven elliptic-curve group `W.Point`. This file
+carries the constraint model; the theorems below are proved in
+`Kimchi/Gate/Semantics/AddComplete.lean`:
 * `sound` — SOUNDNESS, both cases in one statement: for a satisfying witness the
   sum `(x₁,y₁) + (x₂,y₂)` is the group element the gate encodes — `0` when `inf = 1`,
   else the affine output `(x₃, y₃)` — using that `inf` is boolean (`inf_boolean`). It

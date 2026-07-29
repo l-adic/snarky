@@ -5,7 +5,7 @@ import Zcash.Snark.Soundness.AGM.Peel
 /-!
 # The kimchi fork certificate, and opening-or-break
 
-The replacement for the declared Fiat–Shamir axioms' conclusion, on ironwood's strategy: from an
+What replaced the conclusion of the former Fiat–Shamir axioms, on ironwood's strategy: from an
 explicit certificate of forked kimchi wire acceptances, *compute* either an opening witness for
 `openingRelationB` or a nontrivial relation over the augmented basis `(g, U, H)` — the
 discrete-log break. No `hbind` hypothesis: where the old statements assumed binding, this one
@@ -129,9 +129,8 @@ component, since `U` is derived after `P` is sent), compute either
 * a nontrivial relation over the augmented basis `(σ.g, σ.U, σ.h)` — the discrete-log break.
 
 Everything below the two validity rewrites is ironwood's machinery; no extraction is reproved.
-Unlike the declared Fiat–Shamir axioms' conclusion, neither branch can be conjured: the opening
-is data extracted from the certificate, and the break is explicit coefficients (see
-`Forking/Triviality.lean` for why the `Prop`-level form is free). -/
+Unlike the conclusion of the former Fiat–Shamir axioms, neither branch here can be conjured:
+the opening is data extracted from the certificate, and the break is explicit coefficients. -/
 def kimchiOpeningOrBreak [DecidableEq F] [DecidableEq G] (σ : SRS G)
     (b : Fin (2 ^ σ.k) → F) (v : F) (P : G)
     (pg : Fin (2 ^ σ.k) → F) (pw : F) (hP : P = commitGen σ.g pg + pw • σ.h)

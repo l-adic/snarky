@@ -2,7 +2,7 @@ import Kimchi.Verifier.Forking.OracleRun
 import Kimchi.Verifier.Reflect
 
 /-!
-# W2 · Run-level faithfulness
+# Run-level faithfulness
 
 The bridges in `Forking.OracleRun` land at `fqOracles` / `frOracles`. The soundness layer consumes
 the *run-level* oracles `runOracles` / `runVU` (`Kimchi.Verifier.Reflect`) — those same functions

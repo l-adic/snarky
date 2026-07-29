@@ -3,18 +3,18 @@ import Bulletproof.Forking.Prover
 import Zcash.Snark.Soundness.Forking.Adversary.Recursive
 
 /-!
-# The Fiat–Shamir extraction game — the statement Stage 5b must prove
+# The Fiat–Shamir extraction game
 
-This module states the endpoint of the refoundation and nothing else: the theorem whose proof
-would let `Bulletproof.poseidon_fiat_shamir_{vesta,pallas}` be deleted. Everything here is a
-statement; the extractor's body and the bound are the remaining work.
+The endpoint of the refoundation: the game, the extractor, and the failure bound whose proof
+retired the former `poseidon_fiat_shamir_{vesta,pallas}` axioms. The extractor
+(`kimchiExtract`) has a body, and the bound (`kimchiExtract_failure_measure_le`) is proved.
 
 ## The model, and every assumption in it
 
 * **The oracle.** Challenges come from a table `O : T → Pre` over transcript prefixes, drawn
   uniformly. Idealizing the Poseidon sponge as such a table is the *sole* trust boundary
-  (decision "Option A") — it is a modelling choice stated in prose, **not** a Lean axiom, so a
-  successful Stage 5b removes two kernel axioms and adds none.
+  (decision "Option A") — it is a modelling choice stated in prose, **not** a Lean axiom, which
+  is why discharging the bound removed two kernel axioms and added none.
 
 * **The challenge domain is the prechallenge domain, not the field.** The deployed verifier
   squeezes a 128-bit prechallenge and endo-expands it, so the oracle's codomain is `Pre` and the
@@ -41,10 +41,9 @@ statement; the extractor's body and the bound are the remaining work.
 ## Why this conclusion carries content where a `Prop` one would not
 
 The extractor returns `Option (OpeningOrBreak …)` — a `Σ'`/`⊕'` of **data**. At the deployed
-Pasta parameters a `Prop`-level `∃ opening ∨ ∃ relation` is free (proved, twice:
-`Forking/Triviality.lean` and `kimchi_knowledge_soundness_conclusion_free_at_1dim`), because the
-point group is a 1-dimensional `F`-vector space. Coefficients that a reduction *computes* are
-not free. Correctness needs no separate theorem: it is the extractor's return type.
+Pasta parameters a `Prop`-level `∃ opening ∨ ∃ relation` is free, because the point group is a
+1-dimensional `F`-vector space. Coefficients that a reduction *computes* are not free.
+Correctness needs no separate theorem: it is the extractor's return type.
 
 ## The two ways this statement could be cheated, and what blocks each
 
@@ -197,7 +196,7 @@ section ClaimStability
 
 variable {ClaimData : Type*}
 
-/-- **Claim stability** (`def:claim-stable`). A *claim map* `κ` sends an adversary output and an
+/-- **Claim stability**. A *claim map* `κ` sends an adversary output and an
 oracle table to the claim that run opens — the adaptive replacement for the fixed `(b, v, P)` of
 the game above. It is **stable** for `A` and `prefixes` when reprogramming the table at the node
 `t` where the current run reads round `j`'s challenge leaves the claim unchanged, *provided* the
@@ -215,7 +214,7 @@ def ClaimStable [DecidableEq T] {N : ℕ} (A : Zcash.Snark.OracleComp T Pre Pf)
       κ (A.run (Function.update O (prefixes (A.run O) j) u))
           (Function.update O (prefixes (A.run O) j) u) = κ (A.run O) O
 
-/-- **Base stability** (`def:base-stable`). The mirror of `ClaimStable` at a *base map*
+/-- **Base stability**. The mirror of `ClaimStable` at a *base map*
 `uOf : Pf → (T → Pre) → G`, which names the group element at which a run's opening argument is
 checked. It is **base-stable** for `A` and `prefixes` when reprogramming the table at the node `t`
 where the current run reads round `j`'s challenge leaves the base unchanged, *provided* the
@@ -276,7 +275,7 @@ private theorem claimStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.Ora
     ClaimStable A prefixes (fun _ _ => c) := fun _ _ _ _ => rfl
 
 omit [Field F] [AddCommGroup G] [Module F G] in
-/-- **A constant base map is base-stable** (`lem:base-stable-const`). The fixed-base instance:
+/-- **A constant base map is base-stable**. The fixed-base instance:
 both sides of the conclusion are the same `U`, so nothing has to be checked. This is what recovers
 the fixed-base adaptive-claim bound from the varying-base one at `uOf := fun _ _ => σ.U`, the way
 `claimStable_const` recovers the fixed-claim statements. -/
@@ -285,7 +284,7 @@ private theorem baseStable_const [DecidableEq T] {N : ℕ} (A : Zcash.Snark.Orac
     BaseStable A prefixes (fun _ _ => U) := fun _ _ _ _ => rfl
 
 /-- **A sufficient condition for stability, in the shape the deployed transcript supplies it**
-(the abstract half of `lem:kimchi-claim-stable`). Suppose the claim is a function `claimOf` of
+(the abstract half of kimchi's claim-stability). Suppose the claim is a function `claimOf` of
 
 * some pre-opening data `preData p` of the run, and
 * the table's answers at finitely many nodes `preNodes (preData p)` determined by that data,
@@ -330,8 +329,8 @@ end ClaimStability
 /-! ## The recursive fork over the prechallenge domain
 
 The two ingredients of the extractor body, in dependency order: the fork itself
-(`kimchiForkFrom` — `def:pre_fork`), and the decision procedure that turns a candidate
-certificate into a *checked* one (`decideKimchiForkValid` — `lem:fork_valid_decidable`).
+(`kimchiForkFrom`), and the decision procedure that turns a candidate
+certificate into a *checked* one (`decideKimchiForkValid`).
 Deciding validity inside the extractor is what makes the extractor's return type its own
 correctness statement: a `some` answer is valid by construction, and the analytic content
 ("`some` happens often enough") stays in the measure bound.
@@ -369,7 +368,7 @@ private def decideWins [DecidableEq G] (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (
   unfold Wins VerifierAcceptsAt
   infer_instance
 
-/-- **Validity is decidable** (`lem:fork_valid_decidable`), by structural recursion on the
+/-- **Validity is decidable**, by structural recursion on the
 certificate: every leaf and node condition is a conjunction of equations and disequations in
 `F` and `G`. The mirror of ironwood's `decideDeployedForkValid`. -/
 private def decideKimchiForkValid [DecidableEq F] [DecidableEq G] (U H : G) (v : F) :
@@ -393,7 +392,7 @@ private def decideKimchiForkValid [DecidableEq F] [DecidableEq G] (U H : G) (v :
         KimchiForkValid U H v (foldHalves g u₃) (foldHalves b u₃) (P + u₃⁻¹ • L + u₃ • R) t₃)
       infer_instance
 
-/-- **The fork over `Pre`** (`def:pre_fork`). Indexed by certificate depth `e` with coin depth
+/-- **The fork over `Pre`**. Indexed by certificate depth `e` with coin depth
 `e + 1`, so the game's depth-`(σ.k + 1)` tape is consumed exactly: `σ.k` node levels
 three-forking the round challenges, then the Schnorr level, which keeps two of three branches
 and emits the leaf.
@@ -469,9 +468,9 @@ private def kimchiForkFrom [DecidableEq F] [DecidableEq G] [DecidableEq T]
 
 end Extractor
 
-/-- **The extractor** (body: Stage 5b). Given the oracle table and the fork tape, run the
-adversary, rewind it at the round prefixes, and compute an opening or a relation — ironwood's
-`recursiveAlgebraicFork` composed with `kimchiOpeningOrBreak`. `none` is the failure branch the
+/-- **The extractor.** Given the oracle table and the fork tape, run the adversary, rewind it at
+the round prefixes, and compute an opening or a relation: `kimchiForkFrom` and
+`decideKimchiForkValid` composed with `kimchiOpeningOrBreak`. `none` is the failure branch the
 theorem below bounds.
 
 Its *type* is the correctness statement: a `some` answer carries the witness or the break as
@@ -517,8 +516,8 @@ def kimchiExtractRuns [DecidableEq F] [DecidableEq G] [DecidableEq T]
 
 /-! ## The escape layer over `Pre`
 
-The port of ironwood's escape layer (`Forking/Adversary/Recursive.lean:1062–1425`) with the
-oracle codomain `Pre` in place of the field. Everything *below* the escape layer is imported
+Ironwood's escape layer (`Forking/Adversary/Recursive.lean:1062–1425`), used at the oracle
+codomain `Pre` in place of the field. Everything *below* the escape layer is imported
 unchanged — `escapesDuringC_measure_le'`, `queryBound_completing`, `escapesDuringC_completing`,
 `PrefixDecode`, `RecursiveForkCoins` with `nodeAt`/`Complete`, and
 `uniformOfFintype_toOuterMeasure_triple_le` — because none of it mentions algebra, so all of it
@@ -607,7 +606,7 @@ here; `kimchiProverAccept_iff_verifierAcceptsAt` already reassociated it. -/
 
 section ProverOfProof
 
-/-- **A proof as a constant strategy** (`def:prover_of_proof`): at each round emit the proof's own
+/-- **A proof as a constant strategy**: at each round emit the proof's own
 cross-terms and continue, ignoring the challenge, on the tail of the proof; at the leaf emit
 `(sg, δ)` and answer every Schnorr challenge with `(z1, z2)`. -/
 private def proverOfProof : {d : ℕ} → OpeningProof F G d → KimchiProver F G d
@@ -637,12 +636,12 @@ private theorem leafAt_proverOfProof : {d : ℕ} → (π : OpeningProof F G d) �
   | _ + 1, π, χ => by rw [proverOfProof, KimchiProver.leafAt, leafAt_proverOfProof]
 
 omit [Field F] [AddCommGroup G] [Module F G] in
-/-- **The constant strategy reassembles the proof** (`lem:proof_at_of_proof`). -/
+/-- **The constant strategy reassembles the proof**. -/
 private theorem proofAt_proverOfProof {d : ℕ} (π : OpeningProof F G d) (χ : Fin (d + 1) → F) :
     (proverOfProof π).proofAt χ = π := by
   rw [KimchiProver.proofAt, lrAt_proverOfProof, leafAt_proverOfProof]
 
-/-- **Flat equals folded, for a raw proof** (`lem:flat_folded_bridge`): the wire verifier's
+/-- **Flat equals folded, for a raw proof**: the wire verifier's
 acceptance of `π` at `(u, c)` is the folded acceptance of `proverOfProof π` at `Fin.snoc u c`.
 This is the whole of the flat↔folded bridge that the realization argument needs. -/
 private theorem verifierAcceptsAt_iff_proverOfProof_accept (σ : SRS G) (π : OpeningProof F G σ.k)
@@ -678,7 +677,7 @@ private theorem tail_snoc' {n : ℕ} {α : Sort*} (u : Fin (n + 1) → α) (c : 
 /-! Run history is ironwood's `RecursiveRunHistory` (`Recursive.lean:780`), consumed
 directly: same signature up to variable naming, no instance binders. -/
 
-/-- **The runs a subtree represents** (`def:run_suffix`): the winning runs that agree with the
+/-- **The runs a subtree represents**: the winning runs that agree with the
 fork points already fixed above round `m`, read off at the transcript points `ts`, the
 prechallenges `qs`, and the leaf data `(sg, δ, c, z1, z2)`.
 
@@ -705,7 +704,7 @@ private def KimchiRunSuffix [DecidableEq T] (σ : SRS G) (b : Fin (2 ^ σ.k) →
     expand (O (prefixes p (Fin.last σ.k))) = c ∧
     (proofOf p).z1 = z1 ∧ (proofOf p).z2 = z2
 
-/-- **Realization** (`def:kimchi_realizes`), ironwood's `AlgebraicForkRealizes` adapted twice:
+/-- **Realization**, ironwood's `AlgebraicForkRealizes` adapted twice:
 our leaf carries *two* Schnorr transcripts (theirs carries one, their leaf level being the last
 forked round), and a node records its challenges together with the prechallenges they came from,
 since the accumulator lives over `Pre` while the certificate lives over `F`. There is no inverse
@@ -727,7 +726,7 @@ private def KimchiForkRealizes (expand : Pre → F) (round : T → G × G) :
             (fun ts qs => acc (Fin.cons t ts) (Fin.cons q₃ qs)) t₃
 
 omit [AddCommGroup G] [Module F G] in
-/-- **Realization is monotone** (`lem:realizes_mono`) in its leaf relation. -/
+/-- **Realization is monotone** in its leaf relation. -/
 theorem KimchiForkRealizes.mono (expand : Pre → F) (round : T → G × G) :
     {e : ℕ} → {acc acc' : (Fin e → T) → (Fin e → Pre) → G → G → F → F → F → Prop} →
     {cert : KimchiForkCert F G e} →
@@ -764,7 +763,7 @@ private theorem snoc_expand_cons_tail {e : ℕ} (expand : Pre → F) (q : Pre) (
   rw [tail_snoc']
   congr 1
 
-/-- **A realized certificate is valid** (`lem:realizes_forkValid`). The induction folds `(g, b, P)`
+/-- **A realized certificate is valid**. The induction folds `(g, b, P)`
 as it descends; at a node, `kimchiProverAccept` at depth `e + 1` unfolds to *exactly* the same
 predicate at the folded data, because the constant strategy's round-`0` cross-terms are the
 certificate's `(L, R)` — which they are, since realization supplies `(L, R) = round t`. No
@@ -817,7 +816,7 @@ private theorem KimchiForkRealizes.forkValid (U H : G) (v : F) (expand : Pre →
 
 omit [Field F] [AddCommGroup G] [Module F G] in
 /-- **Reprogramming at round `m`'s own prefix preserves agreement with the history fixed above
-round `m`** — the one genuinely delicate point of `lem:fork_realizes`. Two facts do it: the
+round `m`** — the one genuinely delicate point of `kimchiForkFrom_realizes`. Two facts do it: the
 earlier round prefixes are `chainAt` of the pinned prefix (`chainAt_prefixes`, used twice, with
 the pinned-prefix guard in the middle), and they differ from the reprogrammed point
 (`chainAt_ne`). -/
@@ -845,7 +844,7 @@ private theorem kimchiRunHistory_update [DecidableEq T] {N : ℕ} {prefixes : Pf
     simp
   exact ⟨hprefix.trans (hhist i).1, by rw [Function.update_apply, if_neg hne]; exact (hhist i).2⟩
 
-/-- **The fork returns a realized certificate** (`lem:fork_realizes`): if the fork started at round
+/-- **The fork returns a realized certificate**: if the fork started at round
 `m` on a history-agreeing run returns a certificate, that certificate realizes
 `KimchiRunSuffix`.
 
@@ -1022,8 +1021,8 @@ private theorem kimchiForkFrom_realizes [DecidableEq F] [DecidableEq G] [Decidab
               · simp at hatt₃
             · simp at hatt₂
 
-/-- **A returned certificate is a valid one, so the extractor answers `some`** — the half of
-`lem:extract_isSome` that says nothing about escape: the certificate realizes `KimchiRunSuffix`,
+/-- **A returned certificate is a valid one, so the extractor answers `some`** — the half that
+says nothing about escape: the certificate realizes `KimchiRunSuffix`,
 every run it records satisfies the folded acceptance (by the flat↔folded bridge), and so the
 validity decision inside `kimchiExtract` takes the positive branch.
 
@@ -1145,7 +1144,7 @@ so a `dec` at `σ` is not a `dec` at `srsAt …` even though every field mention
 `σ.k`. `DecodesFromPrefixes.setBase` is that (definitionally trivial) transport.
 -/
 
-/-- **The run's setup** (`def:srs-at`): the fixed sampled setup `σ` with its base replaced by the
+/-- **The run's setup**: the fixed sampled setup `σ` with its base replaced by the
 run's own `uOf p O`. Generators, blinding base and round count are `σ`'s, so every type-level
 occurrence of the setup is unchanged.
 
@@ -1223,8 +1222,8 @@ private theorem kimchiForkGoodAtU_update [DecidableEq F] [DecidableEq G] [Decida
   | _ + 1, _, _, _, _, _ => by
       funext q'; simp only [kimchiForkGoodAtU]; rw [Function.update_idem]
 
-/-- **The operational escape set over a claim map and a varying base**
-(`def:adaptive-escape-set-u`) — the operational escape set over the round predicate
+/-- **The operational escape set over a claim map and a varying base** —
+the operational escape set over the round predicate
 `kimchiForkGoodAtU`, read off the tape path. Neither a claim nor a base appears in the
 signature: the set is a function of `κ` and `uOf` alone, hence a legitimate
 `esc : T → (T → Pre) → Set Pre` for `escapesDuringC_measure_le'`. -/
@@ -1246,7 +1245,7 @@ private noncomputable def kimchiForkEscapeSetAtU [DecidableEq F] [DecidableEq G]
           (kimchiForkGoodAtU σ expand A proofOf prefixes dec κ uOf (D.roundOf t) hd t O node.child)
       else ∅
 
-/-- **The varying-base escape set is blind at its own point** (`lem:adaptive-escape-blind-u`).
+/-- **The varying-base escape set is blind at its own point**.
 The tape path is about `D.chainAt`, which does not mention
 the setup, and the round predicate is closed under a second update by
 `kimchiForkGoodAtU_update`. -/
@@ -1282,8 +1281,8 @@ private theorem kimchiForkEscapeSetAtU_blind [DecidableEq F] [DecidableEq G] [De
         rw [kimchiForkGoodAtU_update]
       · simp only [dif_neg hd]
 
-/-- **Each varying-base escape set has measure at most `3 / |Pre|`**
-(`lem:adaptive-escape-measure-u`) — verbatim the fixed-base argument, since
+/-- **Each varying-base escape set has measure at most `3 / |Pre|`** —
+verbatim the fixed-base argument, since
 `recursiveForkEscape_subset_triple` is a statement about an arbitrary predicate and never inspects
 the setup. -/
 private theorem kimchiForkEscapeSetAtU_measure_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
@@ -1584,7 +1583,7 @@ private theorem kimchiForkFromAtU_isSome_of_not_escape_root [DecidableEq F] [Dec
   | node order child => rfl
 
 /-- **The extractor answers `some`, over a stable claim map and a base-stable varying base**
-(`thm:adaptive-failure-measure-u`, first move). Here the table `O` is *fixed*, so the run's setup
+(first move). Here the table `O` is *fixed*, so the run's setup
 `srsAt σ uOf (A.run O) O` is a single value and the whole fixed-setup chain — in particular
 `kimchiExtract_isSome_of_fork_isSome`, which is setup-generic — applies at it verbatim. Only the
 route to the fork's `isSome` is the varying-base one. -/
@@ -1617,8 +1616,8 @@ private theorem kimchiExtract_isSome_of_not_escape_of_stableBase [DecidableEq F]
     (kimchiForkFromAtU_isSome_of_not_escape_root σ expand A proofOf prefixes dec D κ uOf
       hbase hstable coins hcomplete O hwin hnoescape)
 
-/-- **THE STATEMENT, over a stable claim map and a base-stable varying base**
-(`thm:adaptive-failure-measure-u`). Same hypotheses as `kimchiExtract_failure_measure_le_of_stable`
+/-- **THE STATEMENT, over a stable claim map and a base-stable varying base.**
+Same hypotheses as `kimchiExtract_failure_measure_le_of_stable`
 plus the base map `uOf`, which is required only to be *stable under the fork's own
 reprogrammings* — the deployed kimchi base, read off the warm Fiat–Shamir state, is such a map and
 is not a function of the claim. The event measured is the one arm (1) of the deployed cover
@@ -1680,7 +1679,7 @@ private theorem kimchiExtract_failure_measure_le_of_stableBase [DecidableEq F] [
   push_cast
   ring
 
-/-- **THE STATEMENT, over a stable claim map** (`thm:adaptive-failure-measure`). Same hypotheses
+/-- **THE STATEMENT, over a stable claim map**. Same hypotheses
 as `kimchiExtract_failure_measure_le` — an injective, nonvanishing expansion map, a `Q`-query
 adversary, commit-then-challenge, chronological distinct round prefixes, a complete fork tape —
 except that the claim is no longer a parameter bound before the oracle table: it is
@@ -1722,7 +1721,7 @@ private theorem kimchiExtract_failure_measure_le_of_stable [DecidableEq F] [Deci
               expand A proofOf prefixes dec O coins = none}
       ≤ (Q + σ.k + 1) * (3 / Fintype.card Pre) :=
   -- the `uOf := fun _ _ => σ.U` instance of `kimchiExtract_failure_measure_le_of_stableBase`
-  -- (`cor:fixed-base-unchanged`): at a constant base map the run's setup is
+  --: at a constant base map the run's setup is
   -- `{ σ with U := σ.U }`, which is `σ` by structure eta, and `dec.setBase σ.U` is `dec` by the
   -- same eta — so every occurrence matches definitionally, and `baseStable_const` discharges the
   -- base hypothesis.
@@ -1740,7 +1739,7 @@ round, over the `2¹²⁸` prechallenge domain. Nothing else is assumed: no `hbi
 violation is *returned*, in the right disjunct), no Fiat–Shamir axiom (the oracle is the model),
 and no claim-adaptivity beyond the fixed-claim scope stated in the preamble.
 
-Discharging this deletes `poseidon_fiat_shamir_{vesta,pallas}` from the trust surface without
+This is what removed `poseidon_fiat_shamir_{vesta,pallas}` from the trust surface, without
 introducing any replacement axiom. -/
 theorem kimchiExtract_failure_measure_le [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]
@@ -1795,7 +1794,7 @@ includes `t` itself. -/
 
 section AdaptiveBadSet
 
-/-- **The generic adaptive Schwartz–Zippel charge** (`lem:adaptive-sz-charge`). For a `Q`-query
+/-- **The generic adaptive Schwartz–Zippel charge**. For a `Q`-query
 adversary `A`, a node selector `node` picking one transcript point out of a run, and a *blind*
 family `bad` of exclusion sets of size at most `c`, the probability that the run's own answer at
 its own node lies in its own exclusion set is at most `(Q + 1) · c / |Pre|`.
@@ -1924,8 +1923,8 @@ private theorem adaptive_badSet_ofPrefix_union_expand_measure_le
   · exact le_trans (Finset.card_le_card_of_injOn (expand i)
       (fun q hq => Finset.mem_preimage.mp hq) (hexp_inj i).injOn) (hcard i t w)
 
-/-- **The union charge from a run-level agreement law**
-(`lem:adaptive-sz-prefix-union-agree`). `adaptive_badSet_ofPrefix_union_expand_measure_le` with
+/-- **The union charge from a run-level agreement law.**
+`adaptive_badSet_ofPrefix_union_expand_measure_le` with
 the exclusion sets given *at the run* — as functions `badRun i : (T → Pre) → Finset F` of the
 whole oracle table — rather than at a transcript point. The only thing asked of them is an
 agreement law: two tables that give the same node at index `i` and the same answers at every
@@ -1995,7 +1994,7 @@ whose SRS itself depends on the basis produces) can hand it over without a `Set.
 
 section FibreLift
 
-/-- **A per-fibre bound lifts to the joint uniform measure** (`lem:fibre-lift`). If for every
+/-- **A per-fibre bound lifts to the joint uniform measure**. If for every
 `s` the uniform measure over `Ω` of `{ω | p s ω}` is at most `β`, then the uniform measure over
 pairs of `{x | p x.1 x.2}` is at most `β`: the joint measure of a set is the average of its fibre
 measures, and bounding every fibre bounds the average.
@@ -2012,8 +2011,8 @@ theorem measure_prod_le_of_forall_fibre {S Ω : Type*} [Fintype S] [Fintype Ω] 
     (PMF.uniformOfFintype (S × Ω)).toOuterMeasure {x : S × Ω | p x.1 x.2} ≤ β :=
   Zcash.Snark.uniformOfFintype_prod_fiber_bound_right (fun s => {ω | p s ω}) hfib
 
-/-- **The base-stable failure bound over the joint measure**
-(`thm:adaptive-failure-measure-u-prod`) — `measure_prod_le_of_forall_fibre` instantiated at
+/-- **The base-stable failure bound over the joint measure** —
+`measure_prod_le_of_forall_fibre` instantiated at
 `kimchiExtract_failure_measure_le_of_stableBase`, with the SRS, the claim map, *the base map*, the
 adversary, the transcript data and the fork tape all depending on the sampled index `s`, and base
 stability demanded fibrewise.

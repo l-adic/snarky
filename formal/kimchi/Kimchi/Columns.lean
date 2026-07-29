@@ -9,25 +9,26 @@ the literals they need. Only the source names the dimension: the notations carry
 unexpander, so goals print the bare `7`s and `15`s. That is deliberate — the same
 numeral serves several roles (`7` is `permCols` and `litRowCount`, `15` is `wCols`
 and `coeffCols`), so any name a delaborator picked for a goal's `7` would be a guess,
-and often the wrong one. Each
-derived constant carries an `rfl` theorem machine-checking its derivation, so the
-connection to the primitive constants is kernel-checked, not prose.
+and often the wrong one. Each derived constant carries an `rfl` theorem machine-checking
+its derivation, so the connection to the primitive constants is kernel-checked, not prose.
 
-The primitives:
+## The primitives
 
 * `wCols = 15` — production `COLUMNS` (proof-systems `circuits/wires.rs`): the
   witness columns, and equally the per-gate coefficient cells.
 * `permCols = 7` — production `PERMUTS` (`circuits/wires.rs`): the wired columns —
   seven wire pointers per row, seven σ polynomials, seven coset shifts.
 * `selCount = 6` — the transcribed basic gate set (generic, poseidon, completeAdd,
-  varBaseMul, endoMul, endoScalar). This is a SCOPE CHOICE of the formalization, not
+  varBaseMul, endoMul, endoScalar). This is a *scope choice* of the formalization, not
   a production constant: production carries further selectors behind optional-gate
   flags, all declared deferrals here.
 * `evalPts = 2` — the two evaluation points of every batch row, `(ζ, ζω)`.
 
-The derived batch layout (`to_batch`, verifier.rs):
+## The derived batch layout
 
-* `sigmaRows = permCols − 1 = 6` — the σ columns IN THE BATCH: production commits
+From `to_batch` (verifier.rs).
+
+* `sigmaRows = permCols − 1 = 6` — the σ columns *in the batch*: production commits
   seven σ polynomials but batches only the first six (`sigma_comm[PERMUTS − 1]` is
   consumed by the linearization instead). Distinct from `selCount` even though both
   are `6`.

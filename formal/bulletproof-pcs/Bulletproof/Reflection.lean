@@ -22,11 +22,11 @@ Three strata:
   sponge-derived challenges, against the SRS whose randomisation base is the derived
   `U` (`verify_reflects` — the `{σ with U := …}` substitution is the deployed
   protocol's transcript-derived base standing in for the abstract one). The checked
-  input's shape lives in its type, so the wire data enters through TOTAL named views
+  input's shape lives in its type, so the wire data enters through total named views
   (`Input.commitmentFn`/`pointFn`/`evalFn`, and the sized challenge vector of
   `transcript`), used identically on both sides.
 
-* **No Fiat-Shamir axiom.** The former `poseidon_fiat_shamir_{vesta,pallas}` axioms and
+* **No Fiat–Shamir axiom.** The former `poseidon_fiat_shamir_{vesta,pallas}` axioms and
   the `ipaVesta_sound` chain they fed are gone. Knowledge soundness of the deployed
   verifier is proved in `Forking/` (`Ipa.Forking.ipa{Vesta,Pallas}_knowledge_sound`),
   with the random-oracle idealisation carried as the game's uniform challenge table and
@@ -171,15 +171,4 @@ theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m
   · exact hsg.trans (msm_eq_commitGen hsmul _ _)
 
 end Reflection
-
-/-! ## The Fiat-Shamir axiom -/
-
-/-! ## The headline -/
-
-section ChunkedHeadline
-
-variable {Cc : CommitmentCurve} [Module Cc.ScalarField Cc.Point]
-
-
-end ChunkedHeadline
 

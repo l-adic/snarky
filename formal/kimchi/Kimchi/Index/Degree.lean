@@ -586,7 +586,9 @@ private theorem permConstraints_natDegree_le [NeZero n] (idx : Index F n)
 
 /-! ## The headlines
 
-The three bounds the caller passes to `Index.satisfies_of_evalCheck`. -/
+The bounds this layer exports. `Kimchi.Protocol.sound` consumes the two public ones,
+`aggregate_natDegree_le` and `t_zH_natDegree_le`, feeding them to `Kimchi.card_badZetas_le`;
+`fullFamily_natDegree_le` is `private` to this file. -/
 
 
 variable [NeZero n]

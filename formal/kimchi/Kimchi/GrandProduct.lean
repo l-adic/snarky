@@ -8,7 +8,8 @@ Polynomial-algebra infrastructure for the kimchi permutation argument (proof-sys
 `∏ (wᵢ + β·posᵢ + γ) = ∏ (wᵢ + β·σ(pos)ᵢ + γ)` at the challenges `β, γ`, and the soundness
 core — proved here — is that such an equality forces the multisets of pairs `(wᵢ, posᵢ)` to
 coincide. This is **pure algebra**: no protocol content whatsoever (no `Z_H`, no domain `H`,
-no root of unity `ω`, no gate). The only project dependency is `Kimchi.Lift.Domain`.
+no root of unity `ω`, no gate). It has no project dependencies at all — `Mathlib` is its
+only import.
 
 We work in the two-variable polynomial ring `F[β][γ] := Polynomial (Polynomial F)` with inner
 variable `β` and outer variable `γ`, over an abstract field `F`. A pair `(w, a) ∈ F × F` gives
@@ -236,7 +237,7 @@ theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
     refine le_trans (Polynomial.natDegree_sub_le _ _) ?_
     exact max_le_max (natDegree_prod_pairFactor m₁) (natDegree_prod_pairFactor m₂)
 
-/-- **The grand product at ONE `(β,γ)`** — the counting-form headline. If the
+/-- **The grand product at *one* `(β,γ)`** — the counting-form headline. If the
 field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at a single good pair `(β,γ)`
 (β outside `badBetas`, γ outside `badGammas … β`), then `m₁ = m₂`. Iterated univariate SZ: a good
 β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet
