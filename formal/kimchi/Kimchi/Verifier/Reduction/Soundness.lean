@@ -574,7 +574,7 @@ theorem kimchiProof_sound_of_openings_of_vkrep [Field F] [AddCommGroup G] [Modul
       (eval_neg _ _).symm]
     exact combined_eval_of_chunks_of_rep hdpub hpubRep
       (fun c => by simpa using (hrow pubRow c).2 0)
-  -- the combined record IS the honest record at the assembled table
+  -- the combined record *is* the honest record at the assembled table
   have hrec : claimedEvals (ζ ^ 2 ^ σ.k) ((idx.omega * ζ) ^ 2 ^ σ.k) E
       = evalsOf idx (extractTable idx.omega W) zg ζ := by
     refine Evals.ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_

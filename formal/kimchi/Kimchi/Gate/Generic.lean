@@ -3,8 +3,10 @@ import Mathlib.Data.ZMod.Basic
 import Mathlib.Data.Fin.VecNotation
 import Mathlib.Tactic
 
-/-! # The generic gate: two linear+bilinear constraints on one row, the "all rows
-    hold" relation, and the executable checker that decides it.
+/-! # The generic gate
+
+    Two linear-plus-bilinear constraints on one row, the "all rows hold" relation, and the
+    executable checker that decides it.
 
     kimchi has a single generic gate — the *double* generic gate (`generic.rs`,
     `CONSTRAINTS = 2`). One row carries 15 witness cells `w` and 15 coefficient

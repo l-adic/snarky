@@ -1131,7 +1131,7 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
   exact mul_left_cancel₀ (sub_ne_zero_of_ne hne) (by linear_combination h_eq)
 
 /-- **t-condition self-enforcement.** The gate constraints together with prime order
-    already force `t ≠ 0` — the forbidden check is NOT needed for the second-addition
+    already force `t ≠ 0` — the forbidden check is *not* needed for the second-addition
     non-degeneracy. If `t = 2·xi + xb − s1² = 0`, then the `xo` constraint
     `u² − t²·(…) = 0` collapses to `u² = 0`, i.e. `u = 2·yi − t·s1 = 2·yi = 0`, so
     `yi = 0`. But a nonsingular affine point with `yi = 0` equals its own negation
@@ -1293,7 +1293,7 @@ private lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : 
   · rcases he with ( rfl | rfl ) <;> norm_num at *;
     grind +extAll
 
-/-- Per sub-step advance using ONLY the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
+/-- Per sub-step advance using *only* the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
     is supplied by `tne_of_holds` (the constraints + prime order), not by `2k ≢ ±1`. -/
 private lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]

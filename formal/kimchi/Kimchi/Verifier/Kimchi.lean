@@ -17,7 +17,9 @@ at both fields; the opening finish is the `Bulletproof.Ipa` acceptance, restarte
 the **warm** fq-sponge state (`BatchEvaluationProof { sponge: fq_sponge, .. }`,
 verifier.rs:1184–1193).
 
-This module is the CHECKED side of the wire boundary (`Kimchi/Verifier/Wire.lean`):
+## The checked side of the wire boundary
+
+This module is the *checked* side of the wire boundary (`Kimchi/Verifier/Wire.lean`):
 the records here (`KimchiProof C nc`, `KimchiVK C nc`) carry the chunk count in their
 types — they are exactly what `Wire.KimchiProof.check`/`Wire.KimchiVK.check` produce,
 so uniformity is definitional, every read is total, and nothing above this module can
@@ -27,7 +29,9 @@ run's chunk count and call `kimchiVerify` (this module) on the parsed records �
 check-then-verify is the client's one-line composition. The protocol and soundness
 layers never import `Wire`.
 
-Scope (every deferral is declared here):
+## Scope
+
+Every deferral is declared here.
 
 * no lookups (the wire records carry none) and no recursion (`prev_challenges`
   absent) — but the *constant* fr-sponge absorb of the empty recursion list's digest
@@ -40,15 +44,15 @@ Scope (every deferral is declared here):
   verifier does *not* reject it: the guard is the client's, and it is load-bearing, because
   the `ℕ` subtraction under `runNc` returns `1` on the unguarded underflow (`Wire.lean`,
   external-audit C-4);
-* at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production PANICS
+* at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production *panics*
   (`.expect("negligible probability")`, verifier.rs:459–460) while this executable
   takes `ZMod`'s junk division (`x/0 = 0`) and proceeds — harmless for the theorems,
   which exclude exactly these two points (`zetaBoundaryBad`, the `+2` of `szBudget`),
   but a real algorithm-vs-algorithm difference (external-audit V-3);
-* the final check is the two bracket equations as a DETERMINISTIC conjunction where
+* the final check is the two bracket equations as a *deterministic* conjunction where
   production checks one rng-weighted MSM (`r₁·A + r₂·B = 0`, fresh `thread_rng`) —
   Lean-accept implies production-accept with probability 1, the conservative
-  direction — and this verifier checks ONE proof (= production's `batch_verify` on a
+  direction — and this verifier checks *one* proof (= production's `batch_verify` on a
   singleton); multi-proof batching is out of scope (external-audit V-4);
 * production's key carries the public-input count (`pub public: usize`,
   verifier_index.rs:71 — a serialized field) and `to_batch` rejects a mismatched

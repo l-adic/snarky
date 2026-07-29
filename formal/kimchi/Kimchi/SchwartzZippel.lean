@@ -34,7 +34,7 @@ The main section assembles the rows of the evaluation domain:
   the row-wise bad sets.
 * `card_badAlphas_le` — the bad set has at most `n · (K − 1)` elements.
 * `dvd_separation` — single-challenge α-separation: divisibility of the α-aggregate for
-  ONE good `α` separates across the individual constraint polynomials.
+  *one* good `α` separates across the individual constraint polynomials.
 * `badZetas` — the bad ζ for a claimed quotient `C = t · Z_H`: empty when they agree, else
   the roots of `C − t · Z_H`.
 * `card_badZetas_le` — **counting SZ, ζ-axis**: at most `D` bad ζ when both sides have degree
@@ -211,7 +211,7 @@ private theorem zH_dvd_of_eval {n : ℕ} (C t : Polynomial F) (ζ : F)
     exact ⟨sub_ne_zero.mpr hCT, by rw [IsRoot.def, eval_sub, sub_eq_zero]; exact h⟩
   rw [this]; exact dvd_mul_left _ _
 
-/-- **`dvd_of_evalCheck`, single-challenge form.** One α, one ζ, ONE quotient `t`. A good ζ
+/-- **`dvd_of_evalCheck`, single-challenge form.** One α, one ζ, *one* quotient `t`. A good ζ
 outside `badZetas (aggregate α C) t n` at which the aggregate agrees with `t · Z_H` pins
 `aggregate α C = t · Z_H` via `zH_dvd_of_eval`, and `dvd_separation` separates across
 the constraint indices. -/

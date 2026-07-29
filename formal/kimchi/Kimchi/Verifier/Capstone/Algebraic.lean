@@ -138,7 +138,7 @@ theorem combinedCommitment_eq_commit_of_rep {F G : Type*} [Field F]
     _ = commit σ (∑ i : Fin m, ξ ^ (i : ℕ) • aw₀ i)
           (∑ i : Fin m, ξ ^ (i : ℕ) • ρw₀ i) := by rw [hpair]; rfl
 
-/-- **The break branch: an opening that misses the ξ-combined representation IS a
+/-- **The break branch: an opening that misses the ξ-combined representation *is* a
 discrete-log relation** (binding-free). Given per-row representations and any pair
 `(a, ρ)` whose commitment is the combined commitment, the difference pair
 `(a − ∑ i, ξ^i • aw₀ i, ρ − ∑ i, ξ^i • ρw₀ i)` satisfies `DLRelation σ` — subtract the
@@ -427,7 +427,7 @@ theorem ft_dlRelation_of_chunks_ne [Field F] [AddCommGroup G]
   have hC6 : ∀ c : Fin nc,
       Cσ6 c = commit σ (chunkCoeffs (2 ^ σ.k) σ₆ (c : ℕ)) 0 := fun c =>
     (hC c).trans (commitPolyChunk_eq_commit σ σ₆ (c : ℕ))
-  -- Step B: the ft commitment as ONE commitment, that of the pointwise-combined witness.
+  -- Step B: the ft commitment as *one* commitment, that of the pointwise-combined witness.
   have hpair : ((b, ρb) : (Fin (2 ^ σ.k) → F) × F)
       = pScalar • ∑ c : Fin nc, (ζ ^ 2 ^ σ.k) ^ (c : ℕ)
             • ((chunkCoeffs (2 ^ σ.k) σ₆ (c : ℕ), 0) : (Fin (2 ^ σ.k) → F) × F)

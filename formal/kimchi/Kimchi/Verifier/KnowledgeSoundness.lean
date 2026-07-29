@@ -171,7 +171,7 @@ def runInputWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     evalscale := u
     proof := cp.opening }
 
-/-- The challenge-generic verifier IS the size guard plus `Ipa.verifyWith` at that claim.
+/-- The challenge-generic verifier *is* the size guard plus `Ipa.verifyWith` at that claim.
 Definitional — the split only names the boundary. -/
 theorem kimchiVerifyWith_eq_verifyWith {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
@@ -249,7 +249,7 @@ def kimchiOpeningFS {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     (publicComm : Vector C.Point nc) : Ipa.Forking.FiatShamir C :=
   Ipa.Forking.spongeFSFrom C (warmState cvk cp publicComm)
 
-/-- The deployed verifier IS the size guard plus `Ipa.verifyFrom` at the warm state, on the
+/-- The deployed verifier *is* the size guard plus `Ipa.verifyFrom` at the warm state, on the
 claim `runInputWith` assembles from the deployed challenges. Definitional, the mirror of
 `kimchiVerifyWith_eq_verifyWith`; it is the shape the faithfulness proof compares. -/
 private theorem kimchiVerify_eq_verifyFrom {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -564,7 +564,7 @@ structure KimchiNode (C : Ipa.CommitmentCurve) (nc k : ℕ) where
   lr : Fin k → Option (C.Point × C.Point)
   /-- The Schnorr commitment `δ`, absorbed only at the Schnorr node. -/
   delta : Option C.Point
-  /-- The folded generator `sg` — NOT absorbed by the deployed sponge, carried for the same
+  /-- The folded generator `sg` — *not* absorbed by the deployed sponge, carried for the same
   reason `IpaNode.sg` is (see `Deployed.lean`'s preamble and `sg_determined_of_verifyWith`). -/
   sg : Option C.Point
   deriving DecidableEq
@@ -815,7 +815,8 @@ def warmBase {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.
     (IpaTranscriptElt.preT (runClaim σ cvk pub digest cp O)))
 
 /-- **The oracle table** the adversary and the extractor share. Ironwood's `Coins`
-(`Algebraic.lean:857`) carries the recursive fork tape alongside; here that tape stays a
+(ironwood's `Forking/Adversary/Algebraic.lean:857`) carries the recursive fork tape
+alongside; here that tape stays a
 parameter, which makes the bound hold for every complete tape rather than on average. -/
 abbrev Coins (C : Ipa.CommitmentCurve) (nc k : ℕ) : Type := KimchiNode C nc k → Prechallenge
 
@@ -1572,7 +1573,7 @@ private noncomputable def ftBreak (basis : Zcash.Snark.AugmentedIndex (2 ^ k) �
   letI : Decidable (fam.FtBroken basis O) := Classical.propDecidable _
   if h : fam.FtBroken basis O then some (fam.ftRelation basis O h.1 h.2) else none
 
-/-- **A no-break verdict plus the group-side facts IS key-honesty** — the direction the arm-(4)
+/-- **A no-break verdict plus the group-side facts *is* key-honesty** — the direction the arm-(4)
 consumer needs. `vkBreak = none` says no row is *both* group-honest and rep-dishonest; supply
 group-honesty at every row (`VkCommHonest`, a consequence of `hvk` and the layout) and
 rep-honesty at every row follows. -/
@@ -1786,7 +1787,7 @@ prechallenge, so a bad set of size `c` is hit with probability at most `c / 2¹�
 challenge fixed in advance. These exclusion sets are NOT fixed in advance: they are functions
 of the adversary's own `aRef`, and the challenge is read at the run's own node, so the event is
 adaptive and carries a query factor. Ironwood charges `(Q + 1)/|F|` for a bad set of size ONE
-of exactly this shape (`fsAdvantageFull_zero_slice_le`, `Forking/Adversary/Adaptive.lean:36`:
+of exactly this shape (`fsAdvantageFull_zero_slice_le`, `Forking/Adversary/Adaptive.lean:37`:
 "the extra query reads that challenge from the output's own prefix"), which is the same reason
 the query-loss summand carries `(Q + k + 1)`. The budget is therefore charged at `(Q + 1)`
 per unit. -/
@@ -1811,7 +1812,7 @@ private def zetaBoundaryBad {n : ℕ} (idx : Index C.ScalarField n) :
     Finset C.ScalarField :=
   {1, idx.omega ^ (n - idx.zkRows)}
 
-/-- Avoiding the boundary set IS `RunGuardImpAt`'s two `ζ` side conditions. -/
+/-- Avoiding the boundary set *is* `RunGuardImpAt`'s two `ζ` side conditions. -/
 private theorem not_mem_zetaBoundaryBad_iff {n : ℕ} (idx : Index C.ScalarField n)
     (z : C.ScalarField) :
     z ∉ zetaBoundaryBad idx ↔ z ≠ 1 ∧ z ≠ idx.omega ^ (n - idx.zkRows) := by
@@ -1904,7 +1905,7 @@ comparison is made one layer down, inside ironwood's `deployed_forking_tree`, an
 extraction chain surfaces it.
 -/
 
-/-! ## 8. The comparison the extractor does NOT discard
+/-! ## 8. The comparison the extractor does *not* discard
 
 `attempt` (above) reads, on its un-broken left branch,
 `| none => some (PSum.inl (fam.aRef basis O))`: it drops the opening `(a, ρ)` the forking
@@ -1916,7 +1917,7 @@ where every generator is a multiple of `B`, `hbind` is not available to supply i
 `exists_ne_zero_kernel_scalarBasis` at the end of this section, which refutes it outright).
 
 **It is tested — one layer down.** Ironwood's `deployed_forking_tree`
-(`references/ironwood/Forking-Extractor.lean:179`) returns its left branch only through
+(ironwood's `Forking/Extractor.lean:179`) returns its left branch only through
 
 ```
 if hcoord : a = aDep ∧ (z * v) = (z * vDep) ∧ blind = blindDep then PSum.inl … else PSum.inr …
@@ -3873,7 +3874,7 @@ private noncomputable def szBadRun (basis : Zcash.Snark.AugmentedIndex (2 ^ k) �
     badROf (fam.runSrs basis O) (fam.aRef basis O) (fam.claim basis O).pointFn
       (fam.claim basis O).evalFn (fam.claim basis O).polyscale]
 
-/-- **Each exclusion set costs its budget term, on EVERY table** —
+/-- **Each exclusion set costs its budget term, on *every* table** —
 winning or not, opened or not. This is why `runBounds_of_chunking` was isolated: the adaptive
 charge must bound the sets on tables at which nothing was extracted, where the run-soundness
 root's hypothesis stack is unavailable. The `ζ` bound is instantiated at the run's own assembled

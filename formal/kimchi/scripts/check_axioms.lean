@@ -81,7 +81,7 @@ def roots : List Name :=
     `native_decide` certificates — CompElliptic's primality, point-count, sqrt-order and
     eigen-anchor witnesses plus pasta's two declared anchors, each trusting the compiler
     through `Lean.trustCompiler` — are permitted separately by `isTrustedNativeDecide`.
-    (`Lean.ofReduceBool` is NOT produced by `native_decide` on this toolchain and is
+    (`Lean.ofReduceBool` is *not* produced by `native_decide` on this toolchain and is
     deliberately absent.) -/
 def allowed : List Name :=
   [ `propext, `Classical.choice, `Quot.sound ]

@@ -237,7 +237,7 @@ theorem card_badGammas_le (m₁ m₂ : Multiset (F × F)) (β : F) :
     refine le_trans (Polynomial.natDegree_sub_le _ _) ?_
     exact max_le_max (natDegree_prod_pairFactor m₁) (natDegree_prod_pairFactor m₂)
 
-/-- **The grand product at ONE `(β,γ)`** — the counting-form headline. If the
+/-- **The grand product at *one* `(β,γ)`** — the counting-form headline. If the
 field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at a single good pair `(β,γ)`
 (β outside `badBetas`, γ outside `badGammas … β`), then `m₁ = m₂`. Iterated univariate SZ: a good
 β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet

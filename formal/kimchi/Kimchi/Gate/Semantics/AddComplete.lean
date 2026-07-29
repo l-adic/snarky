@@ -1,9 +1,11 @@
 import Kimchi.Gate.AddComplete
 import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
 
-/-! # AddComplete gate semantics: the gate computes affine point addition
-    in Mathlib's elliptic-curve group law (field-level soundness/completeness
-    and the point-level payoff), plus a runnable example. -/
+/-! # AddComplete semantics
+
+    The gate computes affine point addition in Mathlib's elliptic-curve group law: the
+    field-level soundness and completeness, the point-level payoff they add up to, and a
+    runnable example. -/
 
 namespace Kimchi.Gate.AddComplete
 

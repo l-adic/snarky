@@ -146,7 +146,7 @@ arguments. `kimchiVerify_eq_verifyWith_of_reads` identifies the deployed nine; `
 identifies eight of the game's nine with them, and the ninth — the opening base — is the same
 term on both sides. Rewriting along it turns one `Bool` into the other. -/
 
-/-- The family's claim at a table IS `runInputWith` at the six pre-opening reads — `claim`
+/-- The family's claim at a table *is* `runInputWith` at the six pre-opening reads — `claim`
 unfolded through `runClaim`. Definitional; named so that the bridge never has to check a large
 `Ipa.Input` equation by `rfl` under metavariables. -/
 private theorem claim_eq_runInputWith (fam : KimchiFamily C nc k n)
@@ -166,7 +166,7 @@ private theorem claim_eq_runInputWith (fam : KimchiFamily C nc k n)
 fed the eight `FSFaithful` equations — the four fq reads, the two fr reads, the `k` round reads
 and the Schnorr read — plus the base agreement, which needs no hypothesis: `KimchiFamily.warmBase`
 unfolds to `toGroup` of `kimchiOpeningFS`'s base squeeze at `preT` of the run's claim, and
-`fam.claim basis O` IS that run's claim, so the two sides are the same term and `rfl` closes it.
+`fam.claim basis O` *is* that run's claim, so the two sides are the same term and `rfl` closes it.
 The remaining three hypotheses of that theorem — the public commitment, the public evaluation
 chunks and the claim — are definitional pins.
 

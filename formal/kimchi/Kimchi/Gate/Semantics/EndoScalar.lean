@@ -1,8 +1,12 @@
 import Kimchi.Gate.EndoScalar
 
-/-! # EndoScalar gate & circuit semantics: the row runs Halo's Algorithm 2
-    (soundness/completeness, bare-table form), and the multi-row chain composes
-    rows into the effective scalar `a·λ + b`. -/
+/-! # EndoScalar semantics
+
+    The row runs Halo's Algorithm 2, with soundness and completeness in bare-table form; the
+    multi-row chain composes rows into the effective scalar `a·λ + b`.
+
+    Beyond the per-row development the file has two parts: `§ Supporting development` and
+    `§ The effective scalar `a·λ + b``. -/
 
 namespace Kimchi.Gate.EndoScalar
 
@@ -87,7 +91,7 @@ theorem sound (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
 end Kimchi.Gate.EndoScalar
 
 /-!
-## The `EndoScalar` circuit: supporting development
+## Supporting development
 
 The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective
 scalar `a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the
@@ -387,7 +391,7 @@ private theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
 end Kimchi.Gate.EndoScalar
 
 /-!
-## The `EndoScalar` circuit: the effective scalar `a·λ + b`
+## The effective scalar `a·λ + b`
 
 The endo-scalar decomposition composes `Kimchi.Gate.EndoScalar` rows into the effective scalar
 `a·λ + b`. A challenge is processed eight crumbs at a time, each row threading the `(a, b, n)`

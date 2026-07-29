@@ -846,7 +846,7 @@ theorem batchC_eq_flat_gen {C : Ipa.CommitmentCurve} {σ : SRS C.Point} {nc : �
 
 
 /-- The masked chunk commitment is the same window at blinder `1`. The masked companion of
-`Capstone/Algebraic.lean`'s `commitPolyChunk_eq_commit` — but NOT an alias: that file exports
+`Capstone/Algebraic.lean`'s `commitPolyChunk_eq_commit` — but *not* an alias: that file exports
 no `commitPolyMaskedChunk_eq_commit`, so this is still the only statement of the masked
 bridge and its four in-file uses stand. Retiring it needs that export first. -/
 theorem commitPolyMaskedChunk_as_commit {F G : Type*} [Field F] [AddCommGroup G]
