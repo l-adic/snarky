@@ -15,15 +15,15 @@ Two fixture kinds, one per production chunk-fold mechanism:
 * **Combine-then-open** (`Raw`, mechanism (a)): per polynomial, the chunk points are
   combined by `chunk_commitment(x^(2^k))` and the combined polynomial is opened. The
   fixture records the production-combined commitment and value per polynomial, so a
-  script can adjudicate the chunk layer's recombination formulas
-  (`Chunk.lean`) against production output; the recombinators here
+  script can adjudicate the chunk layer's recombination formulas (`Bulletproof.Protocol`,
+  `§ The chunk layer`) against production output; the recombinators here
   (`recombinePoint`/`recombineScalar`) are those formulas, executably.
 * **Chunked batch** (`RawBatch`, mechanism (b)): the multi-chunk `PolyComm`s enter the
   batch as-is — each chunk one segment, polynomial-outer, chunk-inner, one consecutive
   polyscale power per segment. The fixture records the production flat combination
   targets (`combine_commitments` at `rand_base = 1`, `combined_inner_product`); the
   combiners here (`segmentCombinePoint`/`segmentCombineScalar`) are the chunked-batch
-  combiners of `Batch.lean`, executably, and `toFlatInput` is the
+  combiners of `Bulletproof.Protocol`, executably, and `toFlatInput` is the
   flattening lemma as data — the segment stream presented to the wire verifier.
 -/
 
@@ -39,8 +39,9 @@ def parsePt (C : Ipa.CommitmentCurve) : Json → Except String C.Point :=
   parseSWPoint (parseZMod (n := C.base)) C.E
 
 /-- The fixture's `srs_g`/`srs_h` as a library SRS at a given round count `k` (the
-IPA fixtures carry `k` directly; the kimchi-proof fixture derives it from the domain
-size — see `parseSRS`). The abstract randomisation base `U` is transcript-derived by
+IPA fixtures carry `k` directly; the kimchi-proof fixture instead derives it from the
+domain size and calls this function at `Nat.log2 max_poly_size`). The abstract
+randomisation base `U` is transcript-derived by
 the verifier and never read; it is filled with `0`. -/
 def parseSRSAt (C : Ipa.CommitmentCurve) (k : ℕ) (j : Json) :
     Except String (SRS C.Point) := do

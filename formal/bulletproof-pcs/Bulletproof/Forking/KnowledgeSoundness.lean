@@ -15,9 +15,10 @@ measures `¬ (…).output.isSome`: *presence* of an instance, not which branch i
 That is not the end of the argument upstream, and it is not the end here. `deployedExtract`
 returns `Option (OpeningOrBreak …)`, whose right branch is an `AlgebraicRelationWitness` — a
 discrete-log relation among the augmented generators. A run returning a break satisfies the
-presence bound while yielding no opening, and at prime order a nontrivial relation among
-`2 ^ k + 2` generators always exists (`Soundness.lean:104-108`). So the presence bound alone does
-not say the extractor produces openings.
+presence bound while yielding no opening, and at prime order a nontrivial relation among the
+`2 ^ k + 2` slots of the augmented basis always exists — the same counting argument
+`Bulletproof.Soundness` makes for `2 ^ k + 1` generators. So the presence bound alone does not
+say the extractor produces openings.
 
 This module states the branch-inspecting bound. `HasOpening` demands `PSum.inl`, mirroring
 ironwood's `hasCleanOpening` (`Algebraic.lean:1164`), and the break branch is paid for rather

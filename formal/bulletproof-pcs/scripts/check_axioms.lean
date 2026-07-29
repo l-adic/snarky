@@ -53,8 +53,12 @@ def roots : List Name :=
     `Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta,
     `Bulletproof.Ipa.Forking.exists_complete_coins ]
 
-/-- Standard logical axioms plus `Lean.ofReduceBool` (CompElliptic's `native_decide`
-    witnesses). NOTE what is NOT here: any Fiat-Shamir axiom. The former
+/-- The standard logical axioms, and nothing else — `native_decide` certificates are
+    admitted separately, by defining module, in `isTrustedNativeDecide` below.
+    (`Lean.ofReduceBool` is not produced by `native_decide` on this toolchain and is
+    deliberately absent, as in kimchi's parallel gate.)
+
+    Note what is *not* here: any Fiat–Shamir axiom. The former
     `poseidon_fiat_shamir_{vesta,pallas}` were deleted along with the old `ipa*_sound`
     chain when the knowledge-soundness results took over as the API; re-introducing an
     axiom of that kind fails this gate. -/

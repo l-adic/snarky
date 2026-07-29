@@ -4,9 +4,10 @@ import Bulletproof.Wire
 # The IPA opening transcript as an oracle domain
 
 `Ipa.transcriptFrom` derives the opening challenges by threading a concrete Poseidon sponge.
-Discharging `poseidon_fiat_shamir_*` by a forking argument needs those challenges to be *reads
-of an oracle at transcript prefixes* instead: forking rewinds the adversary and reprograms the
-oracle, which is only meaningful if the verifier reads from one.
+Discharging Fiat–Shamir by a forking argument — which is what retired the former
+`poseidon_fiat_shamir_*` axioms — needs those challenges to be *reads of an oracle at
+transcript prefixes* instead: forking rewinds the adversary and reprograms the oracle, which
+is only meaningful if the verifier reads from one.
 
 This module supplies the domain, following the pattern proved out for the kimchi fq-sponge in
 `Kimchi/Verifier/Forking/`: an element type for the deployed absorb/squeeze schedule, the
@@ -26,10 +27,10 @@ endo-expanded). So the model carries two oracles rather than one — `spongeOBas
 base and `spongeOScalar` for the round and Schnorr challenges.
 
 Everything is developed **from an arbitrary start state** `s₀` (`spongeOBaseFrom`,
-`spongeOScalarFrom`, and the bridges against `Ipa.transcriptFrom C s₀`). The **cold** statements
-(`spongeOBase`, `spongeOScalar`, and their three bridges) — which `Ipa.verify`, and hence the
-axiom being targeted, is anchored on — are recovered verbatim as the specialisation at
-`s₀ = FqSponge.init`. The generality is the point: kimchi hands the opening verifier a sponge
+`spongeOScalarFrom`, and the bridges against `Ipa.transcriptFrom C s₀`). The **cold** form that
+`Ipa.verify` is anchored on is recovered as the specialisation at `s₀ = FqSponge.init`; the
+base bridge `toGroup_spongeOBase_preT` is the one stated that way. The generality is the
+point: kimchi hands the opening verifier a sponge
 that has already absorbed the whole kimchi transcript and emitted `β, γ, α, ζ`, so its opening
 challenges are *not* functions of the opening transcript alone; parameterising over the start
 state is exactly what makes this suffix model reusable there.
@@ -148,7 +149,8 @@ real: the trailing marker being dropped must come from `t`, not from `t₀`. -/
 
 These pin the hand-written prefixes to the deployed schedule — a mis-transcription makes them
 false, so they are the statements that make the model *about* the real verifier. Each is proved
-at an arbitrary start state `s₀` and then specialised to the cold start. -/
+at an arbitrary start state `s₀`; the base bridge is additionally specialised to the cold
+start, which is the form `Ipa.verify` needs. -/
 
 /-- **The `U` base, from any start state.** Mapping the base oracle's read at `preT` through
 `toGroup` gives `transcriptFrom`'s `U`. -/
@@ -171,8 +173,9 @@ a genuine induction over the round list. `rstep` is the deployed per-round step 
 state and the list of pushed challenges, and the lemmas below tie the deployed `Array.foldl` to
 the model `List.foldl`.
 
-The whole engine is public: every statement already carries the start state as a parameter, so
-it transfers verbatim to the warm start kimchi hands the opening verifier. -/
+The engine is `private`, but every statement in it already carries the start state as a
+parameter, so the reasoning transfers verbatim to the warm start kimchi hands the opening
+verifier. -/
 
 /-- The deployed per-round step, named so the fold rewrites cleanly. Definitionally the body of
 `Ipa.roundChallengesAux`. -/

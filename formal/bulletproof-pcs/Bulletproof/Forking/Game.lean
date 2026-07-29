@@ -3,18 +3,18 @@ import Bulletproof.Forking.Prover
 import Zcash.Snark.Soundness.Forking.Adversary.Recursive
 
 /-!
-# The Fiat–Shamir extraction game — the statement Stage 5b must prove
+# The Fiat–Shamir extraction game
 
-This module states the endpoint of the refoundation and nothing else: the theorem whose proof
-would let `Bulletproof.poseidon_fiat_shamir_{vesta,pallas}` be deleted. Everything here is a
-statement; the extractor's body and the bound are the remaining work.
+The endpoint of the refoundation: the game, the extractor, and the failure bound whose proof
+retired the former `poseidon_fiat_shamir_{vesta,pallas}` axioms. The extractor
+(`kimchiExtract`) has a body, and the bound (`kimchiExtract_failure_measure_le`) is proved.
 
 ## The model, and every assumption in it
 
 * **The oracle.** Challenges come from a table `O : T → Pre` over transcript prefixes, drawn
   uniformly. Idealizing the Poseidon sponge as such a table is the *sole* trust boundary
-  (decision "Option A") — it is a modelling choice stated in prose, **not** a Lean axiom, so a
-  successful Stage 5b removes two kernel axioms and adds none.
+  (decision "Option A") — it is a modelling choice stated in prose, **not** a Lean axiom, which
+  is why discharging the bound removed two kernel axioms and added none.
 
 * **The challenge domain is the prechallenge domain, not the field.** The deployed verifier
   squeezes a 128-bit prechallenge and endo-expands it, so the oracle's codomain is `Pre` and the
@@ -41,10 +41,9 @@ statement; the extractor's body and the bound are the remaining work.
 ## Why this conclusion carries content where a `Prop` one would not
 
 The extractor returns `Option (OpeningOrBreak …)` — a `Σ'`/`⊕'` of **data**. At the deployed
-Pasta parameters a `Prop`-level `∃ opening ∨ ∃ relation` is free (proved, twice:
-`Forking/Triviality.lean` and `kimchi_knowledge_soundness_conclusion_free_at_1dim`), because the
-point group is a 1-dimensional `F`-vector space. Coefficients that a reduction *computes* are
-not free. Correctness needs no separate theorem: it is the extractor's return type.
+Pasta parameters a `Prop`-level `∃ opening ∨ ∃ relation` is free, because the point group is a
+1-dimensional `F`-vector space. Coefficients that a reduction *computes* are not free.
+Correctness needs no separate theorem: it is the extractor's return type.
 
 ## The two ways this statement could be cheated, and what blocks each
 
@@ -469,9 +468,9 @@ private def kimchiForkFrom [DecidableEq F] [DecidableEq G] [DecidableEq T]
 
 end Extractor
 
-/-- **The extractor** (body: Stage 5b). Given the oracle table and the fork tape, run the
-adversary, rewind it at the round prefixes, and compute an opening or a relation — ironwood's
-`recursiveAlgebraicFork` composed with `kimchiOpeningOrBreak`. `none` is the failure branch the
+/-- **The extractor.** Given the oracle table and the fork tape, run the adversary, rewind it at
+the round prefixes, and compute an opening or a relation: `kimchiForkFrom` and
+`decideKimchiForkValid` composed with `kimchiOpeningOrBreak`. `none` is the failure branch the
 theorem below bounds.
 
 Its *type* is the correctness statement: a `some` answer carries the witness or the break as
@@ -517,8 +516,8 @@ def kimchiExtractRuns [DecidableEq F] [DecidableEq G] [DecidableEq T]
 
 /-! ## The escape layer over `Pre`
 
-The port of ironwood's escape layer (`Forking/Adversary/Recursive.lean:1062–1425`) with the
-oracle codomain `Pre` in place of the field. Everything *below* the escape layer is imported
+Ironwood's escape layer (`Forking/Adversary/Recursive.lean:1062–1425`), used at the oracle
+codomain `Pre` in place of the field. Everything *below* the escape layer is imported
 unchanged — `escapesDuringC_measure_le'`, `queryBound_completing`, `escapesDuringC_completing`,
 `PrefixDecode`, `RecursiveForkCoins` with `nodeAt`/`Complete`, and
 `uniformOfFintype_toOuterMeasure_triple_le` — because none of it mentions algebra, so all of it
@@ -1740,7 +1739,7 @@ round, over the `2¹²⁸` prechallenge domain. Nothing else is assumed: no `hbi
 violation is *returned*, in the right disjunct), no Fiat–Shamir axiom (the oracle is the model),
 and no claim-adaptivity beyond the fixed-claim scope stated in the preamble.
 
-Discharging this deletes `poseidon_fiat_shamir_{vesta,pallas}` from the trust surface without
+This is what removed `poseidon_fiat_shamir_{vesta,pallas}` from the trust surface, without
 introducing any replacement axiom. -/
 theorem kimchiExtract_failure_measure_le [DecidableEq F] [DecidableEq G]
     [Fintype T] [DecidableEq T] [Fintype Pre] [DecidableEq Pre] [Nonempty Pre] [Zero Pre]

@@ -205,8 +205,9 @@ private def nodeFinal (t : IpaNode C k) : C.Point × C.Point :=
   (t.delta.getD 0, t.sg.getD 0)
 
 /-- The wire proof viewed as the soundness layer's `OpeningProof`: the `Vector`-indexed `lr`
-becomes the `Fin k`-indexed field, everything else transfers unchanged. (`Reflection.lean` has
-the same map but declares it `private`, so it is redefined here rather than reused.) -/
+becomes the `Fin k`-indexed field, everything else transfers unchanged. `Bulletproof.Reflection`
+has the same map, but that module is not in this file's import closure, so it is redefined here
+rather than reused. -/
 def toOpening (π : Ipa.Proof C k) : OpeningProof C.ScalarField C.Point k where
   lr := fun j => π.lr[j]
   delta := π.delta
@@ -450,9 +451,8 @@ private theorem combineFoldl_aux (ξ : C.ScalarField) (l : List C.Point) (acc : 
 
 include hsmul in
 /-- The executable running-power combination is `combinedCommitment`. (`Reflection.lean` proves
-this as the public `combineCommitments_eq`, but that module is not in this file's import closure —
-`Deployed.lean` sits under `Forking/`, which imports only `Wire`/`Protocol`/`Soundness` through
-`Game` — so it is re-derived here from `combineFoldl_aux`.) -/
+this as the public `combineCommitments_eq`, but that module is not in this file's import
+closure, so it is re-derived here from `combineFoldl_aux`.) -/
 private theorem combineCommitments_arr_eq (ξ : C.ScalarField) (cs : Array C.Point) :
     Ipa.combineCommitments C ξ cs = combinedCommitment ξ (fun i : Fin cs.size => cs[i]) := by
   rw [Ipa.combineCommitments, ← Array.foldl_toList, combineFoldl_aux]

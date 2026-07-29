@@ -7,65 +7,69 @@ import Bulletproof.Protocol
 # The executable kimchi IPA verifier, over checked records
 
 The batched IPA opening verifier of kimchi (`SRS::verify`, proof-systems
-`poly-commitment/src/ipa.rs`), composed as one executable function over the CHECKED
-claim: the per-polynomial commitments, evaluation points and claimed evaluations, the
-combination scalars, and the opening proof, against a separately supplied SRS
-(`Bulletproof.SRS`). Everything
-transcript-derived — the `U` base, the round challenges, the Schnorr challenge — is
-recomputed here through the sponge layer (the `poseidon` package); nothing is taken as
-input that the wire protocol does not carry. In particular the abstract SRS's
-randomisation base `σ.U` is never read: the deployed protocol derives `U` from the
-transcript, and relating the derived base to the abstract one is exactly the
-Fiat-Shamir assumption's junction.
+`poly-commitment/src/ipa.rs`), composed as one executable function over a *checked* claim:
+the per-polynomial commitments, evaluation points and claimed evaluations, the combination
+scalars, and the opening proof, against a separately supplied SRS (`Bulletproof.SRS`).
 
-**The checked records carry their shape in their types.** `Proof C k` pins the round
-count (`lr` is a `Vector` of length `k` — the SRS's `σ.k`); `Input C k m p` pins the
-batch shape (`m` rows, `p` evaluation points, the claimed-evaluation matrix a
-`Vector` of `Vector`s). Every read of the verifier and of every statement over it is
-total; a checked input cannot hold a ragged claim. The raw serde records
-(`Wire.Proof`, `Wire.Input` — every payload a `Vec`) live in the `Wire` namespace
-below with their `check` parses: THIS verifier's totality requirements (round count,
-`evals` square against the commitments and points), stated as a total parse — the
-parse IS the proof. Production's `SRS::verify` carries no such explicit guards — its
-`Vec` payloads feed the transcript and the batched MSM equations as-is: an OVERSIZED
-`lr` panics (ipa.rs:296), and an UNDERSIZED `lr` whose claim is committed over the
-SRS prefix is ACCEPTED, so the round-count pin here is a declared modeling
-STRENGTHENING rather than the transcription of a production check (external-audit
-W-F3; in the kimchi composition, exploiting that corner against a
-`Corresponds`-satisfying key requires a discrete-log break, so endpoint exposure is
-priced). Clients compose check-then-verify.
+Everything transcript-derived — the `U` base, the round challenges, the Schnorr challenge —
+is recomputed here through the sponge layer of the `poseidon` package; nothing is taken as
+input that the wire protocol does not carry. In particular the abstract SRS's randomisation
+base `σ.U` is never read: the deployed protocol derives `U` from the transcript, and relating
+the derived base to the abstract one is exactly the Fiat–Shamir assumption's junction.
+
+## The checked records carry their shape in their types
+
+`Proof C k` pins the round count (`lr` is a `Vector` of length `k`, the SRS's `σ.k`), and
+`Input C k m p` pins the batch shape: `m` rows, `p` evaluation points, and the
+claimed-evaluation matrix a `Vector` of `Vector`s. Every read of the verifier, and of every
+statement over it, is total — a checked input cannot hold a ragged claim.
+
+The raw serde records (`Wire.Proof`, `Wire.Input`, every payload a `Vec`) live in the `Wire`
+namespace below with their `check` parses. Those parses state this verifier's totality
+requirements — the round count, and `evals` square against the commitments and points — as a
+total parse, so the parse *is* the proof. Clients compose check-then-verify.
+
+Production's `SRS::verify` carries no such explicit guards; its `Vec` payloads feed the
+transcript and the batched MSM equations as they are. An oversized `lr` panics, and an
+undersized `lr` whose claim is committed over the SRS prefix is accepted. The round-count pin
+here is therefore a declared modeling *strengthening* rather than the transcription of a
+production check (external-audit W-F3). In the kimchi composition, exploiting that corner
+against a `Corresponds`-satisfying key requires a discrete-log break, so the endpoint
+exposure is priced.
+
+## The curve bundle
 
 Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
-`G: CommitmentCurve` associated types: the base and scalar cardinalities with their
-primality facts, the sponge spec, the curve `E`, and the map-to-curve. The bundle
-carries *facts*, not structures: the field structures are the canonical `ZMod`
-instances synthesized from primality, so the executable and abstract layers cannot
-disagree on any field operation. Points are the library's `SWPoint E` (`Point`), so
-the group structure is inherited: `+`/`0` and the binary-nsmul scalar action from
-CompElliptic's `AddCommGroup` instance, point equality from its `DecidableEq`.
+`G: CommitmentCurve` associated types: the base and scalar cardinalities with their primality
+facts, the sponge spec, the curve `E`, and the map-to-curve. The bundle carries *facts*, not
+structures: the field structures are the canonical `ZMod` instances synthesized from
+primality, so the executable and abstract layers cannot disagree on any field operation.
+Points are the library's `SWPoint E` (`Point`), so the group structure is inherited — `+`/`0`
+and the binary-nsmul scalar action from CompElliptic's `AddCommGroup` instance, point
+equality from its `DecidableEq`.
 
-The scalar side reuses the `Bulletproof` definitions (`bPoly`,
-`bPolyCoefficients`, `combinedB`, `combinedInnerProduct`) at the concrete scalar
-field. Scalars act on points as `z.val • _` (the ℕ-action of the group);
-`Reflection.lean` relates this verifier to the `Prop`-level `BatchAccepts`.
+The scalar side reuses the `Bulletproof` definitions (`bPoly`, `bPolyCoefficients`,
+`combinedB`, `combinedInnerProduct`) at the concrete scalar field. Scalars act on points as
+`z.val • _`, the ℕ-action of the group; `Bulletproof.Reflection` relates this verifier to the
+`Prop`-level `BatchAccepts`.
 
-The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison
-from the cardinalities — the `Shifted_value` Type1 register when the scalar modulus is
-below the base modulus, the Type2 shift otherwise — at the scalar-modulus bit size
-`Nat.size scalar` (the Rust `MODULUS_BIT_SIZE`).
+The absorbed-scalar encoding (`shift_scalar`) is selected by the modulus comparison from the
+cardinalities — the `Shifted_value` Type1 register when the scalar modulus is below the base
+modulus, the Type2 shift otherwise — at the scalar-modulus bit size `Nat.size scalar` (the
+Rust `MODULUS_BIT_SIZE`).
 
-`verify` checks the two acceptance equations at the derived challenges:
+## What `verify` checks
 
-* Schnorr: `c • Q + δ = z1 • sg + (z1 · b0) • U + z2 • H`,
-  with `Q = P + v • U + ∑ (uⱼ⁻¹ • Lⱼ + uⱼ • Rⱼ)`, `P` the polyscale combination of the
-  commitments, `v` the combined inner product, `b0` the evalscale combination of
-  `bPoly`;
+The two acceptance equations, at the derived challenges:
+
+* Schnorr: `c • Q + δ = z1 • sg + (z1 · b0) • U + z2 • H`, with
+  `Q = P + v • U + ∑ (uⱼ⁻¹ • Lⱼ + uⱼ • Rⱼ)`, `P` the polyscale combination of the
+  commitments, `v` the combined inner product, and `b0` the evalscale combination of `bPoly`;
 * `sg`-correctness: `sg = ⟨bPolyCoefficients chal, g⟩`.
 
-`IpaVesta` and `IpaPallas` instantiate the two Pasta curves; both are validated
-against production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`
-(which parses the wire records and composes check-then-verify).
-
+`IpaVesta` and `IpaPallas` instantiate the two Pasta curves. Both are validated against
+production prover/verifier fixtures by `scripts/check_ipa_fixture.lean`, which parses the
+wire records and composes check-then-verify.
 -/
 
 namespace Bulletproof.Ipa
@@ -84,7 +88,7 @@ structure CommitmentCurve where
   scalar : ℕ
   [primeBase : Fact (Nat.Prime base)]
   [primeScalar : Fact (Nat.Prime scalar)]
-  /-- The Fq-sponge spec driving the verifier's Fiat-Shamir transcript. -/
+  /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
   /-- The scalar-side Poseidon parameters — production's `G::sponge_params()`,
   curve-determined like the fq-sponge spec. Not read by the IPA opening verifier
@@ -225,7 +229,7 @@ def roundChallenges (s : FqSponge.S C.base) {k : ℕ} (lr : Vector (C.Point × C
   let r := roundChallengesAux C s lr.toArray
   (⟨r.1, (roundChallengesAux_size C s lr.toArray).trans lr.size_toArray⟩, r.2)
 
-/-- The verifier's Fiat-Shamir schedule from a given initial sponge state `s₀`
+/-- The verifier's Fiat–Shamir schedule from a given initial sponge state `s₀`
 (`SRS::verify`, with the sponge supplied by the caller — kimchi hands the warm post-`ζ`
 fq-sponge state here, `BatchEvaluationProof { sponge: fq_sponge, .. }`): absorb the
 shifted combined inner product; squeeze and map the `U` base; per round absorb `L`, `R`
@@ -242,7 +246,7 @@ def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
   let (c, _) := squeezeChallenge C.sponge s
   (uBase, chals, c)
 
-/-- The standalone verifier's Fiat-Shamir schedule: `transcriptFrom` at the fresh
+/-- The standalone verifier's Fiat–Shamir schedule: `transcriptFrom` at the fresh
 sponge `FqSponge.init` — the cold start. -/
 def transcript (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=

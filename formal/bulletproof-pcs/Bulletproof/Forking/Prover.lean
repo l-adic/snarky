@@ -21,7 +21,7 @@ module produces one from the model that the Fiatâ€“Shamir layer will discharge â
 
 `kimchiProverAccept` is stated in the folded form (`KimchiForkValid`'s shape). Its faithfulness
 to the wire verifier's flat equations (`VerifierAcceptsAt`, with `sg`/`b0` through
-`bPolyCoefficients`) is the s-vector bridge, closed here by `foldAll` and
+`bPolyCoefficients`) is the s-vector bridge, closed here by
 `kimchiProverAccept_iff_verifierAcceptsAt`.
 -/
 
