@@ -4,30 +4,38 @@ import Poseidon.FqSponge
 /-!
 # The SvdW map-to-curve
 
-The SvdW map from a curve's base field onto the curve, transcribed from proof-systems
-`groupmap/src/lib.rs` (`BWParameters::to_group`), generic over the field: the kimchi
-verifier derives the per-proof `U` base by squeezing a base-field element from the
-transcript and mapping it here. A `Spec` carries the curve (with `A = 0` — the
-construction is for curves `y² = x³ + B`), the Tonelli–Shanks square-root data, and the
-`setup()` parameters as fixed numerals, each validated by an `example` beside its
-instantiation. The square-root *choices* baked into the constants are arkworks' (the
-values `setup()` computes); their signs are pinned by the fixture vectors.
+The Shallue–van de Woestijne (SvdW) map from a curve's base field onto the curve,
+transcribed from proof-systems `groupmap/src/lib.rs` (`BWParameters::to_group`) and generic
+over the field. The kimchi verifier uses it to derive the per-proof `U` base: it squeezes a
+base-field element from the transcript and maps it here.
 
-For a field element `t`: `α = (t²·(t² + f(u)))⁻¹` (zero when non-invertible, matching the
-Rust `unwrap_or(zero)` and `ZMod`'s `0⁻¹ = 0`), then three candidate abscissae
+A `Spec` carries the curve (with `A = 0`, since the construction is for curves
+`y² = x³ + B`), the Tonelli–Shanks square-root data, and the `setup()` parameters as fixed
+numerals, each validated by an `example` beside its instantiation. The square-root *choices*
+baked into those constants are arkworks' — the values `setup()` computes — and their signs
+are pinned by the fixture vectors.
+
+## The three candidates
+
+For a field element `t`, put `α = (t²·(t² + f(u)))⁻¹`, which is zero when non-invertible,
+matching the Rust `unwrap_or(zero)` and `ZMod`'s `0⁻¹ = 0`. The candidate abscissae are
 
 * `x₁ = (√(-3u²) − u)/2 − t⁴·α·√(-3u²)`,
 * `x₂ = −u − x₁`,
 * `x₃ = u − (t² + f(u))³·α·(3u²)⁻¹`,
 
-of which at least one is the abscissa of a curve point (SvdW06); the image is the first
-`(xᵢ, √(xᵢ³ + B))` that exists, returned as an `SWPoint` — on-curve by construction, since
-the square roots are CompElliptic's self-validating Tonelli–Shanks. The Rust panics when
-no candidate lands on the curve (unreachable by SvdW06 — that unreachability is SvdW's
-theorem and is not proved here); here that branch returns the identity `𝒪 = (0, 0)`.
+and at least one of them is the abscissa of a curve point. The image is the first
+`(xᵢ, √(xᵢ³ + B))` that exists, returned as an `SWPoint`; it is on-curve by construction,
+because the square roots are CompElliptic's self-validating Tonelli–Shanks.
 
-`GroupMapVesta` and `GroupMapPallas` instantiate the two Pasta curves (both `y² = x³ + 5`,
-both with seed `u = 1`, `f(u) = 6`). Validated against production `to_group` vectors by
+That some candidate always lands on the curve is Shallue and van de Woestijne's theorem, and
+is not proved here. The Rust panics when none does; this branch returns the identity
+`𝒪 = (0, 0)` instead.
+
+## The Pasta instantiations
+
+`GroupMapVesta` and `GroupMapPallas` instantiate the two Pasta curves, both `y² = x³ + 5`
+with seed `u = 1` and `f(u) = 6`. Both are validated against production `to_group` vectors by
 `scripts/check_fq_sponge.lean`.
 -/
 
@@ -42,6 +50,7 @@ and the `setup()` constants. -/
 structure Spec (q : ℕ) [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)] where
   /-- The target curve — of the form `y² = x³ + B`, per `hA`. -/
   E : SWCurve (ZMod q)
+  /-- The curve has no linear term, which the construction assumes throughout. -/
   hA : E.A = 0
   /-- The Tonelli–Shanks square-root data for the base field. -/
   sqrt : TonelliShanks (ZMod q)
@@ -61,11 +70,11 @@ variable {q : ℕ} [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)]
 /-- The curve equation right-hand side `f(x) = x³ + B`. -/
 private def curveEqn (spec : Spec q) (x : ZMod q) : ZMod q := x ^ 3 + spec.E.B
 
-/-- `√(f(x))`, when `x` is the abscissa of a curve point (`get_y`). The SIGN of the root is
-the Tonelli–Shanks representative's, matching arkworks' current convention by construction
-and pinned by the group-map vectors rather than derived — an arkworks sqrt-convention change
-on a proof-systems bump would flip the derived `U` base and surface only as a fixture
-mismatch (external-audit A-14). -/
+/-- `√(f(x))`, when `x` is the abscissa of a curve point (`get_y`). The *sign* of the root is
+the Tonelli–Shanks representative's, which matches arkworks' current convention by
+construction and is pinned by the group-map vectors rather than derived. So an arkworks
+sqrt-convention change on a proof-systems bump would flip the derived `U` base, and would
+surface only as a fixture mismatch (external-audit A-14). -/
 private def getY (spec : Spec q) (x : ZMod q) : Option (ZMod q) :=
   spec.sqrt.sqrt? (curveEqn spec x)
 
@@ -121,8 +130,8 @@ private def sqrtNegThreeUSquared : Fq :=
 
 example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 
-/-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2`, a primitive cube root of unity —
-the Vesta base-field endomorphism coefficient `β`, of which it is a reuse. -/
+/-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2`, a primitive cube root of unity, so
+it is literally `Pasta.vestaEndo` — the Vesta base-field endomorphism coefficient `β`. -/
 private def sqrtNegThreeUSquaredMinusUOver2 : Fq := Pasta.vestaEndo
 
 example : 2 * sqrtNegThreeUSquaredMinusUOver2 = sqrtNegThreeUSquared - u := by decide
@@ -133,7 +142,7 @@ private def invThreeUSquared : Fq :=
 
 example : invThreeUSquared * (3 * u ^ 2) = 1 := by decide
 
-/-- `BWParameters::<VestaParameters>::setup()`. -/
+/-- The Vesta SvdW parameters (`BWParameters::<VestaParameters>::setup()`). -/
 def spec : GroupMap.Spec PALLAS_SCALAR_CARD where
   E := Vesta.curve
   hA := rfl
@@ -170,9 +179,9 @@ private def sqrtNegThreeUSquared : Fp :=
 
 example : sqrtNegThreeUSquared ^ 2 = -3 * u ^ 2 := by decide
 
-/-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2` at `setup()`'s root choice — the
-*other* primitive cube root of unity from the Pallas endomorphism coefficient, i.e.
-`pallasEndo²`. -/
+/-- `(√(-3u²) − u) / 2`. At `u = 1` this is `(√-3 − 1)/2` at `setup()`'s root choice, which
+picks the *other* primitive cube root of unity than the Pallas endomorphism coefficient does:
+it is `pallasEndo²`, not `pallasEndo`. -/
 private def sqrtNegThreeUSquaredMinusUOver2 : Fp :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
 
@@ -186,7 +195,7 @@ private def invThreeUSquared : Fp :=
 
 example : invThreeUSquared * (3 * u ^ 2) = 1 := by decide
 
-/-- `BWParameters::<PallasParameters>::setup()`. -/
+/-- The Pallas SvdW parameters (`BWParameters::<PallasParameters>::setup()`). -/
 def spec : GroupMap.Spec PALLAS_BASE_CARD where
   E := Pallas.curve
   hA := rfl
