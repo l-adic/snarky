@@ -6,18 +6,28 @@ import CompElliptic.Curves.PastaOrder
 /-!
 # The Pasta GLV endomorphisms
 
-Both Pasta curves `y² = x³ + 5` carry the GLV endomorphism `φ(x, y) = (β·x, y)`, `β` a
-primitive cube root of unity in the base field: the coefficients `β` and scalar
-eigenvalues `λ`, the eigenvalue relations `φ(P) = [λ]·P` (`{pallas,vesta}_eigen`), and
-the GLV lattice short-basis bounds (`{pallas,vesta}_glv_no_short_relation`).
+Both Pasta curves have the shape `y² = x³ + 5`, so each carries the endomorphism
+`φ(x, y) = (β·x, y)` for `β` a primitive cube root of unity in its base field. On the point
+group `φ` acts as multiplication by a scalar `λ`. That is the GLV structure, which lets one
+scalar multiplication be split into two half-width ones.
 
-The eigenvalue relation extends a `native_decide` certificate at the generator: `φ` is
-additive, the group is cyclic of prime order, and `toPt` transports to Mathlib's point
-group.
+## What this module proves
 
-**Public surface**: `*_endo`, `*_lam`, `*_endo_nonsingular`, the anchors
-`*_lam_nsmul_Gpt`, `{pallas,vesta}_eigen`, `{pallas,vesta}_glv_no_short_relation`;
-everything else is `private`.
+- `pallas_eigen` / `vesta_eigen` — the eigenvalue relation `φ(P) = [λ]·P` on Mathlib's point
+  group, for the declared coefficients `pallasEndo` / `vestaEndo` and eigenvalues
+  `pallasLam` / `vestaLam`.
+- `pallas_glv_no_short_relation` / `vesta_glv_no_short_relation` — no nonzero `(a, b)` with
+  `|a|, |b| ≤ 2¹²⁶` satisfies `a + b·λ ≡ 0` modulo the group order.
+
+The eigenvalue relation is checked at the standard generator only (`§ The computational
+anchors` below), then extended to every point: `φ` is additive, the group is cyclic of prime
+order, and `toPt` transports the result to Mathlib's point group.
+
+## Public surface
+
+`pallasEndo` / `vestaEndo`, `pallasLam` / `vestaLam`, the anchors `pallas_lam_nsmul_Gpt` /
+`vesta_lam_nsmul_Gpt`, `pallas_eigen` / `vesta_eigen`, and `pallas_glv_no_short_relation` /
+`vesta_glv_no_short_relation`. Everything else is `private`.
 -/
 
 namespace Pasta
@@ -53,7 +63,7 @@ def pallasLam : ℤ :=
   26005156700822196841419187675678338661165322343552424574062261873906994770353
 
 /-- The scalar eigenvalue `λ` of the Vesta endomorphism `φ` — a primitive cube root of
-    unity in the scalar field (`endo_scalar`); also the `λ` of the Fiat-Shamir challenge
+    unity in the scalar field (`endo_scalar`); also the `λ` of the Fiat–Shamir challenge
     expansion (proof-systems `endos::<Vesta>().1`). -/
 def vestaLam : ℤ :=
   8503465768106391777493614032514048814691664078728891710322960303815233784505
@@ -67,10 +77,9 @@ variable {F : Type*} [Field F] [DecidableEq F]
 private def endoPair (β : F) (p : F × F) : F × F := (β * p.1, p.2)
 
 omit [DecidableEq F] in
-/-- The shared slope-branch computation behind `endoPair_add`: if the slope scales by `β²`,
-    then the output point of the chord/tangent formula scales exactly by `endoPair`
-    (`x₃` picks up `β⁴ = β`, `y₃` picks up `β³ = 1`). Stated for an opaque `lam`, so it
-    closes both the doubling and the secant branch. -/
+/-- If the slope scales by `β²`, the output of the chord/tangent formula scales exactly by
+    `endoPair`: `x₃` picks up `β⁴ = β` and `y₃` picks up `β³ = 1`. Stated for an opaque
+    `lam` so that it closes both branches of `endoPair_add`, doubling and secant. -/
 private lemma endoPair_branch {β lam x₁ x₂ y₁ : F} (hβ : β ^ 3 = 1) :
     endoPair β (lam ^ 2 - x₁ - x₂, lam * (x₁ - (lam ^ 2 - x₁ - x₂)) - y₁)
       = ((β ^ 2 * lam) ^ 2 - β * x₁ - β * x₂,
@@ -80,10 +89,10 @@ private lemma endoPair_branch {β lam x₁ x₂ y₁ : F} (hβ : β ^ 3 = 1) :
   · linear_combination (-(β * lam ^ 2)) * hβ
   · linear_combination (lam ^ 3 * β ^ 3 + lam ^ 3 - 2 * lam * x₁ - lam * x₂) * hβ
 
-/-- **`φ` is additive on raw coordinates.** For any `β` with `β³ = 1`,
-    `φ(p + q) = φ(p) + φ(q)` where `+` is the complete short-Weierstrass addition with
-    curve coefficient `a = 0`. Pure field algebra over the five branches of `add`; the
-    junk cases (vanishing denominators) hold because division is total. -/
+/-- `φ` is additive on raw coordinates: for any `β` with `β³ = 1`, `φ(p + q) = φ(p) + φ(q)`,
+    where `+` is the complete short-Weierstrass addition with curve coefficient `a = 0`.
+    Pure field algebra over the five branches of `add`, stepped through in the body; the
+    junk cases with vanishing denominators hold because division is total. -/
 private theorem endoPair_add {β : F} (hβ : β ^ 3 = 1) (p q : F × F) :
     endoPair β (add (0 : F) p q) = add 0 (endoPair β p) (endoPair β q) := by
   have hβ0 : β ≠ 0 := by
@@ -183,16 +192,18 @@ private def endoHom (E : SWCurve F) (hA : E.A = 0) {β : F} (hβ : β ^ 3 = 1) :
 
 /-! ## The computational anchors — `λ • G = φ(G)` at the standard generator
 
-One `native_decide` certificate per curve — the only `native_decide`s in the workspace
-packages; the axiom gates permit exactly these two declarations by name. -/
+One `native_decide` certificate per curve, and the only two in the workspace packages. The
+axiom gates trust a certificate by its defining module — an upstream CompElliptic module, or
+this file — rather than by name, which could be forged from inside a matching `namespace`
+block. -/
 
-/-- **The Pallas eigenvalue anchor**: `λ • G = φ(G)` at the standard generator
+/-- **The Pallas eigenvalue anchor.** `λ • G = φ(G)` at the standard generator
     (`.toNat` puts the `ℤ` eigenvalue in `nsmul` position). -/
 theorem pallas_lam_nsmul_Gpt :
     pallasLam.toNat • Pallas.Gpt = endoHom Pallas.curve rfl pallas_endo_cube Pallas.Gpt := by
   native_decide
 
-/-- **The Vesta eigenvalue anchor**: `λ • G = φ(G)` at the standard generator. -/
+/-- **The Vesta eigenvalue anchor.** `λ • G = φ(G)` at the standard generator. -/
 theorem vesta_lam_nsmul_Gpt :
     vestaLam.toNat • Vesta.Gpt = endoHom Vesta.curve rfl vesta_endo_cube Vesta.Gpt := by
   native_decide
@@ -208,7 +219,7 @@ private noncomputable def toPtHom (E : SWCurve F) : SWPoint E →+ Point E.toAff
 
 /-! ## The anchors extend to every point -/
 
-/-- **The Pallas eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
+/-- The Pallas eigenvalue relation on `SWPoint`: `φ(P) = [λ]·P` for every point. -/
 private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
     endoHom Pallas.curve rfl pallas_endo_cube P = pallasLam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Pallas.Gpt :=
@@ -217,7 +228,7 @@ private theorem pallas_endoHom_eq_lam_smul (P : SWPoint Pallas.curve) :
   rw [← hk, map_zsmul, ← pallas_lam_nsmul_Gpt,
     ← natCast_zsmul, ← natCast_zsmul, ← mul_smul, ← mul_smul, mul_comm]
 
-/-- **The Vesta eigenvalue relation on `SWPoint`**: `φ(P) = [λ]·P` for every point. -/
+/-- The Vesta eigenvalue relation on `SWPoint`: `φ(P) = [λ]·P` for every point. -/
 private theorem vesta_endoHom_eq_lam_smul (P : SWPoint Vesta.curve) :
     endoHom Vesta.curve rfl vesta_endo_cube P = vestaLam.toNat • P := by
   have hmem : P ∈ AddSubgroup.zmultiples Vesta.Gpt :=
@@ -240,8 +251,8 @@ private theorem pallas_endo_nonsingular {x y : Fp}
   rw [show Pallas.curve.A = 0 from rfl] at heq ⊢
   linear_combination heq - x ^ 3 * pallas_endo_cube
 
-/-- The Pallas endomorphism acts as `[λ]` on the point group: `φ(P) = [λ]·P`, the image
-    point supplied by `pallas_endo_nonsingular`. Discharges
+/-- **The Pallas eigenvalue relation.** The endomorphism acts as `[λ]` on the point group:
+    `φ(P) = [λ]·P`, with the image point supplied by `pallas_endo_nonsingular`. It discharges
     `Kimchi.Gate.EndoMul.endoMul`'s hypothesis `heig`. -/
 theorem pallas_eigen {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y) :
@@ -276,8 +287,7 @@ private theorem vesta_endo_nonsingular {x y : Fq}
   rw [show Vesta.curve.A = 0 from rfl] at heq ⊢
   linear_combination heq - x ^ 3 * vesta_endo_cube
 
-/-- The Vesta endomorphism acts as `[λ]` on the point group — the Vesta twin of
-    `pallas_eigen`. -/
+/-- **The Vesta eigenvalue relation.** The Vesta twin of `pallas_eigen`. -/
 theorem vesta_eigen {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y) :
     Point.some _ _ (vesta_endo_nonsingular h) = vestaLam • Point.some _ _ h := by
@@ -301,11 +311,13 @@ theorem vesta_eigen {x y : Fq}
 
 /-! ## The GLV lattice short-basis bounds -/
 
-/-- No short relation in a rank-2 GLV lattice, from a reduced-basis certificate: if
-    `(s, t)` lies in the lattice `{(a,b) : a + b·λ ≡ 0 (mod n)}` (`s + t·λ = k₂·n`), is
-    primitive (`u·s + v·t = 1`), has `|s| > 2¹²⁶`, and the box `[−2¹²⁶, 2¹²⁶]²` fits below
-    the covolume (`2¹²⁶·(|s|+|t|) < n`), then no nonzero `(a,b)` in that box lies in the
-    lattice. -/
+/-- No short relation in a rank-2 GLV lattice, given a reduced-basis certificate. The
+    lattice is `{(a, b) : n ∣ a + b·λ}`, the certificate is one long vector `(s, t)` in it,
+    and the conclusion is that the box `|a|, |b| ≤ 2¹²⁶` meets the lattice only at zero.
+
+    Named assumptions: `hcert` places `(s, t)` in the lattice (`s + t·λ = k₂·n`), `hbez`
+    makes it primitive (`u·s + v·t = 1`), `hsabs` makes it long (`|s| > 2¹²⁶`), and `hbnd`
+    fits the box below the covolume (`2¹²⁶·(|t| + |s|) < n`). -/
 private theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
     (hcert : s + t * lam = k2 * n) (hbez : u * s + v * t = 1)
     (hsabs : 2 ^ 126 < |s|) (hbnd : 2 ^ 126 * |t| + 2 ^ 126 * |s| < n)
@@ -342,10 +354,11 @@ private theorem glv_no_short_of_cert {n lam s t k2 u v : ℤ} (hn : 0 < n)
   · exact h (by rw [hsm, hm0, mul_zero])
   · exact h (by rw [htm, hm0, mul_zero])
 
-/-- **No short relation in the Pallas GLV lattice**: for `(a, b) ≠ 0` with
-    `|a|, |b| ≤ 2¹²⁶`, `a + b·λ ≢ 0 (mod order)`. The bound is `2¹²⁶`, not `2¹²⁷` — the
-    shortest lattice vector has sup-norm `≈ 9.82·10³⁷ ∈ (2¹²⁶, 2¹²⁷)`; `EndoMul` needs
-    `< 2¹²⁴`. Keeps the accumulator off `±T`/`±φT` (`hxne`). -/
+/-- **No short relation in the Pallas GLV lattice.** For `(a, b) ≠ 0` with
+    `|a|, |b| ≤ 2¹²⁶`, `a + b·λ ≢ 0 (mod order)`. The bound is `2¹²⁶` and not `2¹²⁷` because
+    the shortest lattice vector has sup-norm `≈ 9.82·10³⁷`, which lies between the two.
+    `EndoMul` needs only `< 2¹²⁴`, and uses this to keep its accumulator off `±T` and
+    `±φT`. -/
 theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
     ¬ (Pallas.curve.toAffine.order : ℤ) ∣ (a + b * pallasLam) := by
@@ -358,9 +371,9 @@ theorem pallas_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (v := -9986202145198640800203172615810973695)
     (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
-/-- **No short relation in the Vesta GLV lattice**: for `(a, b) ≠ 0` with
-    `|a|, |b| ≤ 2¹²⁶`, `a + b·λ ≢ 0 (mod order)`; the bound is tight for the same
-    shortest-vector reason as Pallas. -/
+/-- **No short relation in the Vesta GLV lattice.** For `(a, b) ≠ 0` with
+    `|a|, |b| ≤ 2¹²⁶`, `a + b·λ ≢ 0 (mod order)`. The bound is tight for the same
+    shortest-vector reason as on Pallas. -/
 theorem vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (ha : |a| ≤ 2 ^ 126) (hb : |b| ≤ 2 ^ 126) :
     ¬ (Vesta.curve.toAffine.order : ℤ) ∣ (a + b * vestaLam) := by
