@@ -172,10 +172,3 @@ theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m
 
 end Reflection
 
-section ChunkedHeadline
-
-variable {Cc : CommitmentCurve} [Module Cc.ScalarField Cc.Point]
-
-
-end ChunkedHeadline
-

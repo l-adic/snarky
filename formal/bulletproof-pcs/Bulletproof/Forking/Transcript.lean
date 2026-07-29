@@ -137,14 +137,6 @@ theorem spongeOBase_eq_from (t : List (IpaTranscriptElt C)) :
 theorem spongeOScalar_eq_from (t : List (IpaTranscriptElt C)) :
     spongeOScalar t = spongeOScalarFrom FqSponge.init t := rfl
 
-/-! ### Prefix shift
-
-A start state that is itself reached by folding along a prefix `t₀` can be traded for that
-prefix: reading at `t` from `δ*(s₀, t₀)` is reading at `t₀ ++ t` from `s₀`. This is the
-formal content of "the opening transcript is a *suffix*" — it is what lets a warm-start read
-be re-expressed against the enclosing protocol's transcript. The `t ≠ []` side condition is
-real: the trailing marker being dropped must come from `t`, not from `t₀`. -/
-
 /-! ## Bridges: the oracle reads are `transcriptFrom`'s outputs
 
 These pin the hand-written prefixes to the deployed schedule — a mis-transcription makes them

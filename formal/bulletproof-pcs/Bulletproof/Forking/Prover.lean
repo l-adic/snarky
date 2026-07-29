@@ -3,18 +3,16 @@ import Bulletproof.Forking.SVector
 import Zcash.Snark.Soundness.Forking.Tree
 
 /-!
-# The kimchi prover strategy, and the certificate from an extractable acceptance
+# The kimchi prover strategy
 
-Stage-4 wiring: `Bulletproof/Forking/Capstone.lean` consumes an explicit `KimchiForkCert`; this
-module produces one from the model that the Fiat–Shamir layer will discharge — a
-**prefix-determined prover strategy** whose acceptance, as a predicate on challenge vectors, is
-`Zcash.Snark.Extractable`. This mirrors ironwood's `Prover`/`proverAccept_forkValid`
-(`Forking/Extractor.lean`) exactly, with kimchi's two twists:
+The **prefix-determined prover strategy** that the `KimchiForkCert` of
+`Bulletproof/Forking/Capstone.lean` is built over. It mirrors ironwood's `Prover`
+(`Forking/Extractor.lean`), with kimchi's two twists:
 
 * the Schnorr layer adds **one more challenge round**: at depth `d` the challenge vector is
-  `Fin (d + 1) → F` — `d` round challenges, then the Schnorr challenge. `Extractable` forks the
-  final round three ways like any other; the certificate keeps two of the three transcripts,
-  which is all `schnorr_fork_eq` needs;
+  `Fin (d + 1) → F` — `d` round challenges, then the Schnorr challenge. A fork splits the final
+  round three ways like any other; the certificate keeps two of the three transcripts, which is
+  all `schnorr_fork_eq` needs;
 * the prover's leaf commits to `sg` and `δ` **before** the Schnorr challenge and answers with
   the responses `(z1, z2)` as a function of it — the commit-then-challenge ordering that makes
   a fork meaningful.
@@ -30,8 +28,6 @@ namespace Bulletproof.Forking
 open Bulletproof
 
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
-
-/-! ## The iterated fold -/
 
 /-! ## The prover strategy -/
 
@@ -58,8 +54,6 @@ def kimchiProverAccept : {d : ℕ} → KimchiProver F G d → (Fin (2 ^ d) → G
   | _ + 1, .node L R cont, g, b, U, H, v, P, χ =>
       kimchiProverAccept (cont (χ 0)) (foldHalves g (χ 0)) (foldHalves b (χ 0)) U H v
         (P + (χ 0)⁻¹ • L + (χ 0) • R) (Fin.tail χ)
-
-/-! ## From extractable acceptance to a valid certificate -/
 
 /-! ## Faithfulness: the folded acceptance is the wire verifier's
 
@@ -163,7 +157,5 @@ theorem kimchiProverAccept_iff_verifierAcceptsAt (σ : SRS G) (pr : KimchiProver
   rw [kimchiProverAccept_snoc, VerifierAcceptsAt, recombine,
     show innerProduct (bPolyCoefficients u) b = commitGen b (bPolyCoefficients u) from rfl]
   exact and_comm
-
-/-! ## The headline composition -/
 
 end Bulletproof.Forking
