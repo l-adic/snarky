@@ -894,7 +894,7 @@ private theorem chain_sum_bound (m : ℕ) (c : ℕ → ℤ) (hc : ∀ i, i < m �
     VarBaseMul gate these are exactly what the deployed guards (`scaleFast1`'s forbidden-value
     check, `scaleFast2`'s register range-check) are supposed to secure for ANY satisfying
     witness (their soundness). -/
-structure NonDegen (g : Witness F) : Prop where
+private structure NonDegen (g : Witness F) : Prop where
   x0 : g.x0 ≠ g.xT
   x1 : g.x1 ≠ g.xT
   x2 : g.x2 ≠ g.xT
@@ -911,7 +911,7 @@ structure NonDegen (g : Witness F) : Prop where
     subsystem `scalarMul` / `scalarMul_type2` consumes all of these via the gate `sound`. The
     deployed entry points derive a `GateStep` per row from `Holds` plus threading, via
     `gateStep_chain`. -/
-structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
+private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Prop where
   a0 : W.Nonsingular g.x0 g.y0
   a1 : W.Nonsingular g.x1 g.y1
   a2 : W.Nonsingular g.x2 g.y2
@@ -1129,31 +1129,6 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
     simp_all +decide [WeierstrassCurve.Affine.equation_iff]
   exact mul_left_cancel₀ (sub_ne_zero_of_ne hne) (by linear_combination h_eq)
 
-/-- **Second-addition non-vertical guarantee.** The geometric non-degeneracy
-    `2·I + Q ≠ 0` forces the field condition `tⱼ = 2·xi + xb − s1² ≠ 0` that the
-    `VarBaseMul` gate bundles. -/
-private lemma singleBit_tne_of_double_ne (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)]
-    {b xb yb s1 xi yi xo yo : F}
-    (hI : c.Nonsingular xi yi)
-    (hQ : c.Nonsingular xb ((2 * b - 1) * yb))
-    (hxne : xi ≠ xb)
-    (h : singleBitHolds b xb yb s1 xi yi xo yo)
-    (hdbl : (2 : ℤ) • Point.some _ _ hI + Point.some _ _ hQ ≠ 0) :
-    2 * xi + xb - s1 * s1 ≠ 0 := by
-  contrapose! hdbl
-  -- the first addition `I + Q` is the secant point `R = (rx, ry)` with slope `s1`
-  have hR : ∃ hR : c.Nonsingular (s1 * s1 - xi - xb)
-      (s1 * (xi - (s1 * s1 - xi - xb)) - yi),
-      Point.some _ _ hI + Point.some _ _ hQ = Point.some _ _ hR := by
-    apply secant_add c (Fact.out : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0) hI hQ hxne (l := s1)
-    · rw [eq_div_iff (sub_ne_zero_of_ne hxne)]
-      linear_combination' ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h).2.1
-    · rfl
-    · rfl
-  grind +suggestions
-
 /-- **t-condition self-enforcement.** The gate constraints together with prime order
     already force `t ≠ 0` — the forbidden check is NOT needed for the second-addition
     non-degeneracy. If `t = 2·xi + xb − s1² = 0`, then the `xo` constraint
@@ -1222,7 +1197,7 @@ conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the 
     degenerate residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any
     prime `order ≡ 1 (mod 4)` (the actual degenerate set is `⊆` these), and exactly tight
     for the Pasta primes. -/
-def forbiddenValues (order : ℕ) : Set ℤ :=
+private def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
 /-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
@@ -1255,11 +1230,11 @@ private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
 private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
 
 /-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
-def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
+private def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 2
   | j + 1 => 2 * gateLadder g j + gateBitSign g j
 
-@[simp] lemma gateLadder_zero (g : ℕ → Witness F) : gateLadder g 0 = 2 := rfl
+@[simp] private lemma gateLadder_zero (g : ℕ → Witness F) : gateLadder g 0 = 2 := rfl
 
 private lemma gateLadder_succ (g : ℕ → Witness F) (j : ℕ) :
     gateLadder g (j + 1) = 2 * gateLadder g j + gateBitSign g j := rfl
@@ -1277,7 +1252,7 @@ private lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
   unfold gateBitSign ubit; split <;> ring
 
 /-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
-def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
+private def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 0
   | j + 1 => 2 * gateRegister g j + ubit g j
 

@@ -110,7 +110,6 @@ structure Witness (F : Type*) where
   s3 : F
   /-- The first-addition slope `s1` of bit block 4 (ZERO row, col 11). -/
   s4 : F
-deriving Repr
 
 variable {F : Type*}
 

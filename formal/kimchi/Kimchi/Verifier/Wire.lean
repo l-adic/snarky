@@ -39,7 +39,7 @@ variable (C : Ipa.CommitmentCurve)
 /-- A wire polynomial commitment: the per-chunk commitment vector (`PolyComm.elems`,
 `Vec<G>`). serde imposes NO length here — the chunk count is a verify-time check
 (`checkChunks` against the run's `chunk_size`). -/
-abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
+private abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
 
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
@@ -105,8 +105,9 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   (constraints.rs:774–784), carried as data here. -/
   zkRows : ℕ
   /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — NOT serialized data
-  (production marks it `#[serde(skip)]` and recomputes it as `endos::<G>()`,
-  verifier_index.rs:140); a model input like `digest`. -/
+  (production marks it `#[serde(skip)]` and recomputes it as `G::other_curve_endo()`,
+  i.e. `endos::<OtherG>().0`, the OTHER curve's base-field endo — verifier_index.rs:140;
+  the endpoints pin it to `idx.endoBase` via `Corresponds`); a model input like `digest`. -/
   endo : C.ScalarField
   /-- The precomputed `VerifierIndex::digest()` — an input here. -/
   digest : C.BaseField
@@ -148,12 +149,18 @@ production never checks those chunk counts (ragged commitment vectors flow into 
 batch equations rather than `Err`-ing), but the checked record is uniform by type, so
 the parse fixes them. Fidelity direction: a production-accepted run with a ragged
 `w_comm` would have no Lean counterpart — such a run would fail the batched opening
-anyway, but that is an argument, not a check. -/
+anyway, but that is an argument, not a check. Two further declared strengthenings of
+the same kind: the quotient commitment must be NON-EMPTY (production processes an
+empty `t_comm`; the endpoints' `htpos` hypothesis excludes it, so the wire boundary
+now matches the hypothesis — external-audit B-1), and `KimchiVK.check` pins every
+VK-side committed column to `nc` chunks, which production likewise never checks
+(honest keys are uniform; external-audit W-F4). -/
 def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C) :
     Option (Kimchi.Verifier.KimchiProof C nc k) := do
   let wComm ← p.wComm.mapM (checkChunks nc)
   let zComm ← checkChunks nc p.zComm
   let opening ← p.opening.check k
+  guard (0 < p.tComm.size)
   if htc : p.tComm.size ≤ 7 * nc then
     let evals ← checkEvals nc p.evals
     let pubEvals ← match p.pubEvals with
@@ -185,7 +192,9 @@ def KimchiVK.check {C : Ipa.CommitmentCurve} (nc : ℕ) (vk : KimchiVK C) :
 /-- The run's chunk count, from the domain and SRS widths (production
 `chunk_size = d1 / max_poly_size`, verifier.rs:145–152): the count clients `check`
 against. Meaningful only under the SRS pin `σ.k ≤ vk.domainLog2` (production's
-sub-SRS `chunk_size = 1` regime is out of scope); clients guard it. -/
+sub-SRS `chunk_size = 1` regime is out of scope); clients guard it — the `ℕ`
+subtraction underneath returns `1` on the unguarded underflow, so the client-side
+guard is load-bearing (external-audit C-4). -/
 def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
   2 ^ (vk.domainLog2 - σ.k)
 
@@ -197,22 +206,10 @@ namespace Kimchi.Verifier.Wire.KimchiVesta
 
 open Kimchi.Verifier Bulletproof
 
-/-- The kimchi proof wire record over the Vesta commitment curve. -/
-abbrev Proof := KimchiProof IpaVesta.curve
-
-/-- The kimchi verifier key wire record over the Vesta commitment curve. -/
-abbrev VK := KimchiVK IpaVesta.curve
-
 end Kimchi.Verifier.Wire.KimchiVesta
 
 namespace Kimchi.Verifier.Wire.KimchiPallas
 
 open Kimchi.Verifier Bulletproof
-
-/-- The kimchi proof wire record over the Pallas commitment curve. -/
-abbrev Proof := KimchiProof IpaPallas.curve
-
-/-- The kimchi verifier key wire record over the Pallas commitment curve. -/
-abbrev VK := KimchiVK IpaPallas.curve
 
 end Kimchi.Verifier.Wire.KimchiPallas

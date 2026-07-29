@@ -25,8 +25,9 @@ expansion (`sponge.rs` `to_field_with_length`, Halo §6.2): accumulators `a = b 
 for each 2-bit window from the top, `a, b := 2a, 2b`, the low bit selects `s = ±1`, the high
 bit routes `s` into `a` or `b`; the result is `a·λ + b`. This is the same recoding the
 `EndoScalar` gate constrains in-circuit (`Kimchi.Gate.EndoScalar`, accumulator init
-`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates, or a single `0` for the
-identity (`sponge.rs` `absorb_g`, both cases).
+`(2, 2)`). Points absorb as `SWPoint`s: the two affine coordinates unconditionally — the
+identity is the `(0, 0)` sentinel, absorbed as two zeros exactly as `sponge.rs` `absorb_g`
+does.
 
 `FqVesta` and `FqPallas` instantiate the two sides of the Pasta cycle
 (`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`); each is its
@@ -71,11 +72,14 @@ private def lowLimbs (x : ZMod base) : List ℕ :=
 def absorbFq (spec : Spec base scalar) (s : S base) (xs : List (ZMod base)) : S base :=
   ⟨absorb spec.params s.sponge xs, []⟩
 
-/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, or a single `0` for the
-identity. -/
+/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, unconditionally — the
+identity is the `(0, 0)` sentinel by construction (`SWPoint.zero`), so this absorbs two
+zeros for it, exactly as production does (`sponge.rs:335–339` absorbs `[0]` then `[0]`).
+Branching to a single `0` here would leave the duplex position one slot behind production
+on every transcript containing an identity commitment. -/
 def absorbG (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : S base)
     (P : SWPoint E) : S base :=
-  if P = 0 then absorbFq spec s [0] else absorbFq spec s [P.x, P.y]
+  absorbFq spec s [P.x, P.y]
 
 /-- Absorb a scalar-field element (`absorb_fr`). The branch is determined by the
 cardinalities: a smaller scalar modulus embeds directly; a larger one absorbs as its high
@@ -148,34 +152,6 @@ eigenvalue. -/
 def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD :=
   ⟨fqParams, ((Pasta.vestaLam : ℤ) : Fp)⟩
 
-/-- The Vesta-side sponge state. -/
-abbrev S := FqSponge.S PALLAS_SCALAR_CARD
-
-/-- `FqSponge.init`: the fresh Vesta-side sponge. -/
-def init : S := FqSponge.init
-
-/-- `FqSponge.absorbFq` at the Vesta spec. -/
-def absorbFq : S → List Fq → S := FqSponge.absorbFq spec
-
-/-- `FqSponge.absorbG` at the Vesta spec. -/
-def absorbG : S → CompElliptic.CurveForms.ShortWeierstrass.SWPoint Vesta.curve → S :=
-  FqSponge.absorbG spec
-
-/-- `FqSponge.absorbFr` at the Vesta spec. -/
-def absorbFr : S → Fp → S := FqSponge.absorbFr spec
-
-/-- `FqSponge.challengeFq` at the Vesta spec. -/
-def challengeFq : S → Fq × S := FqSponge.challengeFq spec
-
-/-- `FqSponge.challengeNat` at the Vesta spec. -/
-def challengeNat : S → ℕ × S := FqSponge.challengeNat spec
-
-/-- `FqSponge.challenge` at the Vesta spec. -/
-def challenge : S → Fp × S := FqSponge.challenge spec
-
-/-- `FqSponge.squeezeChallenge` at the Vesta spec. -/
-def squeezeChallenge : S → Fp × S := FqSponge.squeezeChallenge spec
-
 end FqVesta
 
 namespace FqPallas
@@ -187,34 +163,6 @@ eigenvalue. The scalar field is the larger of the pair, so `absorbFr` takes the
 high-bits/low-bit branch — selected by the cardinalities, not restated here. -/
 def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD :=
   ⟨fpParams, ((Pasta.pallasLam : ℤ) : Fq)⟩
-
-/-- The Pallas-side sponge state. -/
-abbrev S := FqSponge.S PALLAS_BASE_CARD
-
-/-- `FqSponge.init`: the fresh Pallas-side sponge. -/
-def init : S := FqSponge.init
-
-/-- `FqSponge.absorbFq` at the Pallas spec. -/
-def absorbFq : S → List Fp → S := FqSponge.absorbFq spec
-
-/-- `FqSponge.absorbG` at the Pallas spec. -/
-def absorbG : S → CompElliptic.CurveForms.ShortWeierstrass.SWPoint Pallas.curve → S :=
-  FqSponge.absorbG spec
-
-/-- `FqSponge.absorbFr` at the Pallas spec (the high-bits/low-bit branch). -/
-def absorbFr : S → Fq → S := FqSponge.absorbFr spec
-
-/-- `FqSponge.challengeFq` at the Pallas spec. -/
-def challengeFq : S → Fp × S := FqSponge.challengeFq spec
-
-/-- `FqSponge.challengeNat` at the Pallas spec. -/
-def challengeNat : S → ℕ × S := FqSponge.challengeNat spec
-
-/-- `FqSponge.challenge` at the Pallas spec. -/
-def challenge : S → Fq × S := FqSponge.challenge spec
-
-/-- `FqSponge.squeezeChallenge` at the Pallas spec. -/
-def squeezeChallenge : S → Fq × S := FqSponge.squeezeChallenge spec
 
 end FqPallas
 

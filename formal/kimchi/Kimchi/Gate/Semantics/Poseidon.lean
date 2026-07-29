@@ -49,10 +49,10 @@ theorem complete [CommRing F] (M : Mds F) (s0 : F × F × F) (rc : Fin 5 → F �
 /-! ## Runnable example. -/
 
 /-- A small-field MDS for the runnable example. -/
-private def egMds : Mds (ZMod 101) := ⟨2, 3, 5, 7, 11, 13, 17, 19, 23⟩
+def egMds : Mds (ZMod 101) := ⟨2, 3, 5, 7, 11, 13, 17, 19, 23⟩
 
 /-- A concrete satisfying row over a small field: `build` always satisfies `ok`. -/
-private def egPoseidon : Witness (ZMod 101) :=
+def egPoseidon : Witness (ZMod 101) :=
   build egMds (1, 2, 3) (fun _ => (1, 1, 1))
 
 #eval ok egMds (fun _ => (1, 1, 1)) egPoseidon   -- expect true

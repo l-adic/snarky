@@ -27,9 +27,13 @@ total; a checked input cannot hold a ragged claim. The raw serde records
 below with their `check` parses: THIS verifier's totality requirements (round count,
 `evals` square against the commitments and points), stated as a total parse — the
 parse IS the proof. Production's `SRS::verify` carries no such explicit guards — its
-`Vec` payloads feed the transcript and the batched MSM equations as-is, so a
-mis-shaped claim reaches the same rejection through the equations it then fails.
-Clients compose check-then-verify.
+`Vec` payloads feed the transcript and the batched MSM equations as-is: an OVERSIZED
+`lr` panics (ipa.rs:296), and an UNDERSIZED `lr` whose claim is committed over the
+SRS prefix is ACCEPTED, so the round-count pin here is a declared modeling
+STRENGTHENING rather than the transcription of a production check (external-audit
+W-F3; in the kimchi composition, exploiting that corner against a
+`Corresponds`-satisfying key requires a discrete-log break, so endpoint exposure is
+priced). Clients compose check-then-verify.
 
 Generic over a single `CommitmentCurve` bundle — the Lean analogue of the Rust
 `G: CommitmentCurve` associated types: the base and scalar cardinalities with their
@@ -207,7 +211,7 @@ private theorem foldl_fst_size {S γ α : Type*} (step : (Array γ × S) → α 
 /-- The fold squeezes exactly one round challenge per `(L, R)` pair. -/
 theorem roundChallengesAux_size (s : FqSponge.S C.base) (lr : Array (C.Point × C.Point)) :
     (roundChallengesAux C s lr).1.size = lr.size := by
-  simp only [roundChallengesAux]
+  unfold roundChallengesAux
   rw [← Array.foldl_toList, foldl_fst_size]
   · simp
   · intro acc a
@@ -244,14 +248,6 @@ def transcript (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
   transcriptFrom C FqSponge.init inp
 
-/-- A batched claim at given combination scalars — the checked input the grid rows of
-the soundness statements range over. The curve is implicit (inferred from the
-commitment vector). -/
-def mkInput {C : CommitmentCurve} {k m p : ℕ} (commitments : Vector C.Point m)
-    (xs : Vector C.ScalarField p) (evals : Vector (Vector C.ScalarField p) m)
-    (ξ r : C.ScalarField) (proof : Proof C k) : Input C k m p :=
-  { commitments := commitments, xs := xs, evals := evals
-    polyscale := ξ, evalscale := r, proof := proof }
 
 /-- The acceptance decision from a given initial sponge state `s₀`, against a library
 SRS: derive the transcript (from `s₀` — kimchi's warm start hands the post-`ζ`
@@ -259,9 +255,8 @@ fq-sponge state, verifier.rs:1184–1193), combine the claim, and check the Schn
 `sg`-correctness equations. The claim's shape is carried by its type (round count
 `σ.k`), so there are no runtime guards — rejecting ragged input is the wire parse's
 job. `σ.U` is never read — the deployed `U` is transcript-derived. -/
-def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k m p) :
-    Bool :=
-  let (uBase, chals, c) := transcriptFrom C s₀ inp
+def verifyWith (σ : SRS C.Point) (uBase : C.Point) (chals : Vector C.ScalarField σ.k)
+    (c : C.ScalarField) (inp : Input C σ.k m p) : Bool :=
   let chal : Fin σ.k → C.ScalarField := fun i => chals[i]
   let b0 := combinedB chal inp.evalscale inp.pointFn
   let v := cipOf inp
@@ -275,6 +270,16 @@ def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k
         + inp.proof.z2.val • σ.h)
   let sgOk := decide (inp.proof.sg = msm C σ.g (bPolyCoefficients chal))
   schnorr && sgOk
+
+/-- The opening acceptance at the deployed Fiat–Shamir schedule: `verifyWith` fed the
+transcript `transcriptFrom` derives by continuing the warm sponge. Definitionally the
+former body, so every existing statement about `verifyFrom` is unchanged; the split only
+names the boundary between the *derivation* (`transcriptFrom`) and the *algebra*
+(`verifyWith`), so an alternative challenge source can be supplied without touching either. -/
+def verifyFrom (σ : SRS C.Point) (s₀ : FqSponge.S C.base) (inp : Input C σ.k m p) :
+    Bool :=
+  let (uBase, chals, c) := transcriptFrom C s₀ inp
+  verifyWith C σ uBase chals c inp
 
 /-- The standalone acceptance decision: `verifyFrom` at the fresh sponge
 `FqSponge.init` — the cold start, validated against the production opening fixtures. -/
@@ -364,22 +369,6 @@ abbrev curve : Ipa.CommitmentCurve where
 /-- The Vesta point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
 
-/-- The checked opening proof at round count `k`, over Vesta. -/
-abbrev Proof (k : ℕ) := Ipa.Proof curve k
-
-/-- The checked batched claim over Vesta. -/
-abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
-
-/-- The wire (serde) opening proof over Vesta. -/
-abbrev WireProof := Ipa.Wire.Proof curve
-
-/-- The wire (serde) batched claim over Vesta. -/
-abbrev WireInput := Ipa.Wire.Input curve
-
-/-- `Ipa.verify` at the Vesta bundle. -/
-def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
-  Ipa.verify curve σ
-
 end Bulletproof.IpaVesta
 
 namespace Bulletproof.IpaPallas
@@ -399,21 +388,5 @@ abbrev curve : Ipa.CommitmentCurve where
 
 /-- The Pallas point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
-
-/-- The checked opening proof at round count `k`, over Pallas. -/
-abbrev Proof (k : ℕ) := Ipa.Proof curve k
-
-/-- The checked batched claim over Pallas. -/
-abbrev Input (k m p : ℕ) := Ipa.Input curve k m p
-
-/-- The wire (serde) opening proof over Pallas. -/
-abbrev WireProof := Ipa.Wire.Proof curve
-
-/-- The wire (serde) batched claim over Pallas. -/
-abbrev WireInput := Ipa.Wire.Input curve
-
-/-- `Ipa.verify` at the Pallas bundle. -/
-def verify (σ : Bulletproof.SRS Point) {m p : ℕ} : Input σ.k m p → Bool :=
-  Ipa.verify curve σ
 
 end Bulletproof.IpaPallas

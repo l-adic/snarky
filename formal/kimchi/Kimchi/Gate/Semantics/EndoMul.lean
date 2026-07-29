@@ -476,7 +476,7 @@ private def bDigit (g : ℕ → Witness F) (j : ℕ) : F :=
 /-- The `2m`-crumb list the rows feed to `EndoScalar`: row `i` contributes its two
     windows `[b₂+2·b₁, b₄+2·b₃]` in order, so `crumbList[2i] = aDigit/bDigit`'s crumb
     `2i` and `crumbList[2i+1]` crumb `2i+1`. -/
-def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
+private def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap fun i => [(g i).b2 + 2 * (g i).b1, (g i).b4 + 2 * (g i).b3]
 
 omit [DecidableEq F] in

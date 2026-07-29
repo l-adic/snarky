@@ -30,15 +30,6 @@ def step (acc : FqSponge.S C.base × C.ScalarField) :
 def poseidonO (t : List (KimchiTranscriptElt C)) : C.ScalarField :=
   (t.foldl step (FqSponge.init, 0)).2
 
-/-- The four fq-side challenges read from an abstract oracle at the transcript prefixes. -/
-def oracleChallenges (O : List (KimchiTranscriptElt C) → C.ScalarField)
-    (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc) :
-    C.ScalarField × C.ScalarField × C.ScalarField × C.ScalarField :=
-  (O (KimchiTranscriptElt.preBeta cvk cp publicComm),
-   O (KimchiTranscriptElt.preGamma cvk cp publicComm),
-   O (KimchiTranscriptElt.preAlpha cvk cp publicComm),
-   O (KimchiTranscriptElt.preZeta cvk cp publicComm))
-
 /-! ## The bridge: `poseidonO` at each prefix is `fqOracles`'s challenge -/
 
 open KimchiTranscriptElt (absorbInto wCommAbsorbs preAbsorbs preBeta preGamma preAlpha preZeta)
@@ -100,24 +91,12 @@ theorem poseidonO_preZeta (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
     foldl_absorbInto_preAbsorbs]
   simp only [absorbInto, List.foldl_map, Vector.foldl_toList, Array.foldl_toList, fqOracles]
 
-/-- **Faithfulness (W2 acceptance gate).** Reading the sponge-as-oracle `poseidonO` at the
-four fq-side transcript prefixes reproduces the deployed verifier's `(β, γ, α, ζ)` exactly.
-This witnesses that the abstract oracle game (`Forking.Model`) specializes to the real
-verifier at `O := poseidonO`, so the uniform-oracle soundness statement is *about* it. -/
-theorem oracleChallenges_poseidonO (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) :
-    oracleChallenges poseidonO cvk cp publicComm
-      = ((fqOracles C cvk cp publicComm).beta, (fqOracles C cvk cp publicComm).gamma,
-         (fqOracles C cvk cp publicComm).alpha, (fqOracles C cvk cp publicComm).zeta) := by
-  simp only [oracleChallenges, poseidonO_preBeta, poseidonO_preGamma, poseidonO_preAlpha,
-    poseidonO_preZeta]
-
 /-! ## The fr-sponge side: `poseidonOFr` at `preV`/`preU` is `frOracles`'s `(v, u)` -/
 
 open FrTranscriptElt (frAbsorbInto absorbEval preVAbsorbs preV preU)
 
 /-- One fr-interpreter step: `frAbsorb` absorbs its list, `frEndo` endo-expands a squeeze. -/
-def frStep (acc : FqSponge.S C.scalar × C.ScalarField) :
+private def frStep (acc : FqSponge.S C.scalar × C.ScalarField) :
     FrTranscriptElt C → FqSponge.S C.scalar × C.ScalarField
   | .frAbsorb xs => (FqSponge.absorbFq (frSpec C) acc.1 xs, acc.2)
   | .frEndo => ((FqSponge.challengeNat (frSpec C) acc.1).2,
@@ -127,14 +106,8 @@ def frStep (acc : FqSponge.S C.scalar × C.ScalarField) :
 def poseidonOFr (t : List (FrTranscriptElt C)) : C.ScalarField :=
   (t.foldl frStep (FqSponge.init, 0)).2
 
-/-- The two fr-side challenges read from an abstract oracle at the `v`/`u` prefixes. -/
-def oracleVU (O : List (FrTranscriptElt C) → C.ScalarField) (cp : KimchiProof C nc k)
-    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
-    C.ScalarField × C.ScalarField :=
-  (O (preV cp fqDig pubEvals), O (preU cp fqDig pubEvals))
-
 /-- The fr-interpreter's state component folds `frAbsorbInto`, independent of the value. -/
-theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar)
+private theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar)
     (v : C.ScalarField) :
     (l.foldl frStep (s, v)).1 = l.foldl (fun s e => frAbsorbInto C e s) s := by
   induction l generalizing s v with
@@ -145,7 +118,7 @@ theorem foldl_frStep_fst (l : List (FrTranscriptElt C)) (s : FqSponge.S C.scalar
 
 /-- The fr-interpreter's state after the pre-`v` absorbs is `frOracles`'s pre-squeeze state:
 the fq/fr digests, `ft(ζω)`, the public chunk vectors, then the `absorb_evaluations` folds. -/
-theorem foldl_frAbsorbInto_preVAbsorbs (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
+private theorem foldl_frAbsorbInto_preVAbsorbs (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
     (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     (preVAbsorbs cp fqDig pubEvals).foldl (fun s e => frAbsorbInto C e s) FqSponge.init
       = (let sp := frSpec C
@@ -182,12 +155,5 @@ theorem poseidonOFr_preU (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
   rw [poseidonOFr, preU, preV]
   simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, frStep, foldl_frStep_fst,
     foldl_frAbsorbInto_preVAbsorbs, frOracles]
-
-/-- **Faithfulness (fr side).** Reading `poseidonOFr` at the `v`/`u` prefixes reproduces the
-deployed verifier's batch challenges `(v, u)` from `frOracles`. -/
-theorem oracleVU_poseidonOFr (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
-    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
-    oracleVU poseidonOFr cp fqDig pubEvals = frOracles C cp fqDig pubEvals := by
-  rw [oracleVU, poseidonOFr_preV, poseidonOFr_preU]
 
 end Kimchi.Verifier.Forking

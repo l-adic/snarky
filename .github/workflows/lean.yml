@@ -12,8 +12,11 @@ on:
       - 'formal/**'
       - '.github/workflows/lean.yml'
       - '.github/actions/setup-lean/**'
+  # Every pull request that touches formal/, whatever its base — a branch filter here
+  # would leave a STACKED PR (one targeting a feature branch) with no Lean gate at all,
+  # which is how an unaudited formal/ change reaches a base branch. Flagged as an
+  # unnumbered observation in the external audit's §2.1.
   pull_request:
-    branches: [ main ]
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
@@ -55,27 +58,52 @@ jobs:
     - name: Shape-literal gate
       run: bash kimchi/scripts/check_shape_literals.sh
 
+    # GATE (external-audit A-1: previously wired into no automation): the locked
+    # statement texts — the IPA rung and extractor shape, and the kimchi
+    # knowledge-soundness endpoints. Pure source checks, no build needed.
+    - name: Check the locked target statements
+      run: |
+        bash bulletproof-pcs/scripts/check_locked_target.sh
+        bash kimchi/scripts/check_locked_target.sh
+
+    # GATE (A-1): the sorry census — `lake build` treats `sorry` as a warning, and the
+    # axiom gates only see rooted closures; the census pins the whole tree.
+    - name: Check the sorry census
+      run: bash scripts/check_sorry_census.sh
+
+    # GATE (external-audit A-7): every committed fixture is sha256-pinned to a manifest
+    # recording the proof-systems revision it was regenerated from. CI never
+    # regenerates (no submodule), so this is what makes fixture-side accommodation
+    # visible in review.
+    - name: Check the fixture manifest
+      run: bash scripts/check_fixtures_manifest.sh
+
     # elan + Mathlib olean cache + the Kimchi build-directory cache + `lake build
     # Kimchi` — shared with the `check-ps-witness` job in the CI workflow.
     - name: Setup Lean + build the library (= check every proof)
       uses: ./.github/actions/setup-lean
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
-    # explicitly: every headline theorem must reduce to the allowed axiom set (the
-    # standard logical axioms plus the two trusted Pasta point counts). This catches
-    # a `sorryAx` AND any other stray axiom. Roots/allowlist live in the script.
+    # explicitly: every headline theorem — and, per external-audit A-2, the whole
+    # Tier-2/3 faithfulness and anti-vacuity surface, which nothing consumes — must
+    # reduce to the standard logical axioms plus the certified upstream
+    # `native_decide` witnesses (discriminated by defining module, per A-8). This
+    # catches a `sorryAx` AND any other stray axiom. Roots/allowlist in the script.
     - name: Verify headline proofs use only the allowed axioms
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean kimchi/scripts/check_axioms.lean
 
     # Per-package trust-surface gates: each package audits the axiom closure of its own
-    # surface (pasta: the derived trust base, no eigen; bulletproof-pcs: the PCS
-    # soundness surface over its declared FS axioms). Run from the root workspace.
-    - name: Gate the pasta and bulletproof-pcs trust surfaces
+    # surface (pasta: the derived trust base; poseidon: the sponge layer the whole
+    # random-oracle idealisation concerns — external-audit A-5; bulletproof-pcs: the
+    # PCS knowledge-soundness surface, no Fiat-Shamir axiom). Run from the root
+    # workspace.
+    - name: Gate the pasta, poseidon and bulletproof-pcs trust surfaces
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean pasta/scripts/check_axioms.lean
+        lake env lean poseidon/scripts/check_axioms.lean
         lake env lean bulletproof-pcs/scripts/check_axioms.lean
 
     # The snarky DSL package's interpreter laws (pure core Lean — standard axioms
@@ -111,8 +139,9 @@ jobs:
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
           Bulletproof BulletproofFixture
 
-    # Every authored declaration must be reachable from the union of the packages'
-    # roots.txt API manifests (scripts/deadcode.lean).
+    # GATE: every authored declaration must be reachable from the union of the packages'
+    # roots.txt API manifests, and every script-surface root must appear in a scripts/
+    # file (scripts/deadcode.lean exits nonzero otherwise).
     - name: Check for dead code
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
@@ -175,21 +204,33 @@ jobs:
           lake env lean kimchi/scripts/check_linearization.lean
 
     # The composed executable verifier against complete production wire proofs
-    # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_nc8}.json, from
-    # the kimchi_proof_dump binaries).
+    # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_nc8,
+    # vesta_emul}.json from the kimchi_proof_dump binaries — the emul one carries live
+    # EndoMul/VarBaseMul selectors and an empty public input; see the audit's V-1/C-3).
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_kimchi_verifier.lean
 
-    # The verifier-key <-> index correspondence across both curves and both regimes
-    # (the Vesta and Pallas VKs against index_{vesta,pallas}*.json).
+    # The verifier-key <-> index correspondence across both curves and the three
+    # regimes (nc = 1, 2, 8; the Vesta and Pallas VKs against index_{vesta,pallas}*).
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_vk_correspond.lean
+
+    # GATE (external-audit A-1): the only BEHAVIOURAL anti-vacuity check — `#eval` the
+    # extraction pipeline on concrete fixtures and byte-compare the recovered witness;
+    # a check `Classical.choice` cannot fake. Plus the ironwood generic-instantiation
+    # seam (our Wins IS fsWinsFull at m = 0, at the deployed 2^128 alphabet).
+    - name: Check the extractor computes, and the ironwood seam instantiates
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        BULLETPROOF_FIXTURES_DIR=bulletproof-pcs/fixtures \
+          lake env lean bulletproof-pcs/scripts/check_extractor_computes.lean
+        lake env lean bulletproof-pcs/scripts/check_ironwood_generic.lean
 
     # Kernel replay (lean4checker): re-read every library .olean and replay each
     # declaration through the kernel alone, detecting environment tampering that
@@ -197,19 +238,19 @@ jobs:
     # The script prunes stale oleans first (deleted/renamed modules linger in the
     # cached build dirs and would otherwise be replayed too).
     #
-    # Runs on pushes to main (and manual dispatch) only, NOT on PRs: every module
-    # replay reloads its Mathlib-sized import environment, so the sweep costs
-    # ~15 runner-minutes — and every commit that lands still gets the full replay.
-    # A failure surfaces as a red X on main (fix-forward or revert).
+    # Runs on PRs as well as pushes (external-audit A-6: PR-only merging meant a
+    # tampered olean could land before any replay). The sweep costs ~15
+    # runner-minutes per run; the cache below keeps the checker build warm. NOTE
+    # (also A-6): lean4checker replays declarations through the kernel — it does not
+    # recompute the per-module axiom tables `collectAxioms` reads; the axiom gates
+    # trust those tables, and this workflow builds the tree's own oleans from source.
     - name: Cache the lean4checker build
-      if: github.event_name != 'pull_request'
       uses: actions/cache@v3
       with:
         path: formal/.lake/lean4checker
         key: lean4checker-${{ runner.os }}-${{ hashFiles('formal/scripts/kernel-replay.sh', 'formal/lean-toolchain') }}
 
     - name: Kernel-replay all modules (lean4checker)
-      if: github.event_name != 'pull_request'
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/kernel-replay.sh

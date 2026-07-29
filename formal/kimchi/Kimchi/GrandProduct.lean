@@ -52,7 +52,7 @@ private noncomputable def eval2 (b g : F) (P : Polynomial (Polynomial F)) : F :=
 
 /-- **Unique factorisation of pair factors.** If the products of pair factors over two multisets
 of pairs agree in `Polynomial (Polynomial F)`, then the multisets are equal. -/
-theorem multiset_eq_of_pairFactor_prod_eq (m₁ m₂ : Multiset (F × F))
+private theorem multiset_eq_of_pairFactor_prod_eq (m₁ m₂ : Multiset (F × F))
     (h : (m₁.map pairFactor).prod = (m₂.map pairFactor).prod) : m₁ = m₂ := by
   -- `r p` is the (negated) constant so that `pairFactor p = X - C (r p)`.
   set r : F × F → Polynomial F :=
@@ -242,7 +242,7 @@ field-level products `∏ (γ + p.1 + p.2·β)` over `m₁` and `m₂` agree at 
 β keeps the γ-specialisation `Δ.map (evalRingHom β)` nonzero, a good γ is not among its roots, yet
 the product equality forces `(Δ.map (evalRingHom β)).eval γ = 0` — contradiction unless `Δ = 0`,
 i.e. `m₁ = m₂`. The single-challenge grand-product core. -/
-theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ : F)
+private theorem multiset_eq_of_prod_eval (m₁ m₂ : Multiset (F × F)) (β γ : F)
     (hβ : β ∉ badBetas m₁ m₂) (hγ : γ ∉ badGammas m₁ m₂ β)
     (h : (m₁.map (fun p => γ + p.1 + p.2 * β)).prod
        = (m₂.map (fun p => γ + p.1 + p.2 * β)).prod) :

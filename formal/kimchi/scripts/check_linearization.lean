@@ -33,9 +33,12 @@ def parsePE (j : Json) : Except String (F × F) := do
   unless a.size = 2 do throw s!"expected an evaluation pair, got {a.size} entries"
   return (a.getD 0 0, a.getD 1 0)
 
-def main : IO Unit := do
-  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
-  let path := s!"{dir}/linearization_vesta.json"
+/-- One linearization fixture, adjudicated field by field. `liveGates` names the gates whose
+combined-constraint target must be NON-ZERO in this fixture — without it a `0 = 0` agreement
+would read as a passing per-gate check (external-audit R-1: the mixed circuit's `emul`/`mul`
+selectors are identically zero, so exactly the two gates finding V-1 concerned were adjudicated
+vacuously). -/
+def runFixture (path : String) (liveGates : List String) : IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String Bool := do
     let j ← Json.parse raw
@@ -110,8 +113,17 @@ def main : IO Unit := do
         ("endoScalar", e.endoScalarSelector
           * alphaCombo α ((Kimchi.Lift.Gate.EndoScalar.argument (F := F)).constraints gEnv),
           ← gateTarget "endoScalar") ]
+    -- Non-vacuity: every gate this fixture is meant to exercise must have a non-zero
+    -- target, so its check is an agreement rather than `0 = 0`.
+    for g in liveGates do
+      match gates.find? (fun (name, _, _) => name = g) with
+      | none => throw s!"liveGates names an unknown gate: {g}"
+      | some (_, _, target) =>
+        if target = 0 then
+          throw s!"gate {g} has a ZERO combined-constraint target — this fixture \
+            adjudicates it vacuously"
     let gateReport := String.intercalate ", " (gates.map fun (name, mine, target) =>
-      s!"{name}: {if mine = target then "✓" else "✗"}")
+      s!"{name}: {if mine = target then "✓" else "✗"}{if target = 0 then " (0)" else ""}")
     let hGates := gates.all fun (_, mine, target) => mine = target
     let hZkpm := decide (zkpmEval n zkRows ω ζ = zkpmZ)
     let hPerm := decide (permScalar β γ α zkpmZ e = permTarget)
@@ -143,9 +155,21 @@ def main : IO Unit := do
     pure (hZkpm && hPerm && hGates && hConst && hFt && hAgg)
   match r with
   | .error e => throw (IO.userError s!"{path}: {e}")
-  | .ok false => throw (IO.userError "linearization check FAILED")
-  | .ok true => IO.println "✓ the closed-form linearization matches the production \
-      scalar side (zkpm, perm_scalars, constant term, ft_eval0) and the assembled \
-      acceptance identity holds (the verifierEquation_iff instance, numerically)"
+  | .ok false => throw (IO.userError s!"{path}: linearization check FAILED")
+  | .ok true => pure ()
+
+def main : IO Unit := do
+  let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  -- The mixed-gate circuit: generic, poseidon, completeAdd and endoScalar are live here.
+  runFixture s!"{dir}/linearization_vesta.json"
+    ["generic", "poseidon", "completeAdd", "endoScalar"]
+  -- The scalar-multiplication circuit: varBaseMul and endoMul are live here, and nowhere
+  -- else (external-audit R-1). This is what adjudicates those two gates' α-weighted
+  -- constraint order gate-by-gate rather than only through whole-proof acceptance.
+  runFixture s!"{dir}/linearization_vesta_emul.json" ["varBaseMul", "endoMul"]
+  IO.println "✓ the closed-form linearization matches the production scalar side (zkpm, \
+    perm_scalars, constant term, ft_eval0) on both the mixed-gate and the \
+    scalar-multiplication circuits — every gate live in at least one — and the assembled \
+    acceptance identity holds (the verifierEquation_iff instance, numerically)"
 
 #eval main

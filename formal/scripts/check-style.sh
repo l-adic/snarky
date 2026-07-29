@@ -21,11 +21,13 @@ cd "$(dirname "$0")/.." || exit 2   # -> formal/
 fix=0
 [ "${1:-}" = "--fix" ] && fix=1
 
-# Collect our own source files (skip the Lake build dir and the vendored
-# CompElliptic dependency submodule, which has its own upstream style).
+# Collect our own source files (skip the Lake build dir, the vendored CompElliptic dependency
+# submodule, and .archon-seed/, which holds read-only copies of upstream sources staged for the
+# prover harness — all three carry their own upstream style and none is committed here).
 files=()
 while IFS= read -r f; do files+=("$f"); done \
-  < <(find . -name '*.lean' -not -path '*/.lake/*' -not -path './vendor/*' | sort)
+  < <(find . -name '*.lean' \
+        -not -path '*/.lake/*' -not -path './vendor/*' -not -path './.archon-seed/*' | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no .lean files found under formal/"

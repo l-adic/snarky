@@ -77,20 +77,24 @@ scoped notation "tailRowCount" => (43 : Nat)
 /-- The abstract batch rows (public row included, ft row excluded). -/
 scoped notation "batchRows" => (44 : Nat)
 
-/-- `coeffCols` is production's `COLUMNS`, like `wCols` — kernel-checked. -/
-theorem coeffCols_eq : coeffCols = wCols := rfl
+/-- The six pre-IPA squeezes of a kimchi run — `β, γ, α, ζ`, then the batching scalars
+`polyscale` and `evalscale`: the challenge tuple the knowledge-soundness game hands a run
+(`Verifier/KnowledgeSoundness.lean`'s `Squeeze` minus the IPA rounds and the Schnorr
+squeeze). A formalization-side count, and a third incidental six, distinct from `selCount`
+and `sigmaRows`. -/
+scoped notation "preIpaChals" => (6 : Nat)
 
-/-- `sigmaRows` is `permCols − 1` — kernel-checked. -/
-theorem sigmaRows_eq : sigmaRows = permCols - 1 := rfl
+/-- The counted Schwartz–Zippel exclusion sets of the knowledge-soundness endpoint —
+`szBudget`'s seven summands, the seven disjuncts of `arm4_hits_badChallenge`. A
+formalization-side count, distinct from the incidental sevens `permCols` and
+`litRowCount`. -/
+scoped notation "szSets" => (7 : Nat)
 
-/-- `litRowCount` is `z` plus the selectors — kernel-checked. -/
-theorem litRowCount_eq : litRowCount = 1 + selCount := rfl
-
-/-- `tailRowCount` is the four tail regions — kernel-checked. -/
-theorem tailRowCount_eq :
-    tailRowCount = litRowCount + wCols + coeffCols + sigmaRows := rfl
-
-/-- `batchRows` is the public row plus the tail — kernel-checked. -/
-theorem batchRows_eq : batchRows = 1 + tailRowCount := rfl
+/-! The derivation checks the module docstring promises (external-audit A-12): each derived
+constant is kernel-checked against its defining arithmetic. -/
+example : sigmaRows = permCols - 1 := rfl
+example : litRowCount = 1 + selCount := rfl
+example : tailRowCount = litRowCount + wCols + coeffCols + sigmaRows := rfl
+example : batchRows = 1 + tailRowCount := rfl
 
 end Kimchi

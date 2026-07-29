@@ -116,7 +116,6 @@ structure Witness (F : Type*) where
   n8 : F
   /-- The MSB-first 2-bit crumbs of the challenge (the deployed gate carries 8 per row). -/
   crumbs : List F
-deriving Repr
 
 /-- The gate constraint expressions (11 at the deployed 8-crumb width: `3 + #crumbs`) — the
     single transcription: the three accumulator folds (`n := 4n+x`, `a := 2a + cPoly x`,
@@ -148,24 +147,24 @@ def Witness.map {R S : Type*} (f : R → S) (w : Witness R) : Witness S where
 
 /-- `f` commutes with the interpolating cubic `cPoly`: an `F`-algebra hom fixes the
     `algebraMap F _` coefficients (`AlgHom.commutes`) and preserves powers/products. -/
-theorem cPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
+private theorem cPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (x : R) : f (cPoly x (F := F)) = cPoly (f x) (F := F) := by
   simp only [cPoly, map_sub, map_add, map_mul, map_pow, AlgHom.commutes]
 
 /-- `f` commutes with `dPoly` (`cPoly` plus an integer-coefficient tail `−x²+3x−1`). -/
-theorem dPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
+private theorem dPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (x : R) : f (dPoly x (F := F)) = dPoly (f x) (F := F) := by
   simp only [dPoly, map_add, map_sub, map_neg, map_mul, map_pow, map_ofNat, map_one, cPoly_map f]
 
 /-- `f` commutes with the crumb-range polynomial `crumbPoly` (integer coefficients only). -/
-theorem crumbPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
+private theorem crumbPoly_map {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) (x : R) : f (crumbPoly x) = crumbPoly (f x) := by
   simp only [crumbPoly, map_mul, map_sub, map_ofNat, map_one]
 
 /-- `f` distributes through the `n`-accumulator fold `n := 4·n + x` (induction on the crumbs,
     the shape of `foldl_table`; the base is `map f [] = []`, the step pushes `f` past one
     update via `map_add`/`map_mul`/`map_ofNat`). -/
-theorem foldl_map_n {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
+private theorem foldl_map_n {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) :
     ∀ (xs : List R) (init : R),
       f (xs.foldl (fun acc x => 4 * acc + x) init)
@@ -176,7 +175,7 @@ theorem foldl_map_n {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Alge
     rw [foldl_map_n f ys (4 * init + y), map_add, map_mul, map_ofNat]
 
 /-- `f` distributes through the `a`-accumulator fold `a := 2·a + cPoly x`. -/
-theorem foldl_map_c {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
+private theorem foldl_map_c {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) :
     ∀ (xs : List R) (init : R),
       f (xs.foldl (fun acc x => 2 * acc + cPoly x (F := F)) init)
@@ -187,7 +186,7 @@ theorem foldl_map_c {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Alge
     rw [foldl_map_c f ys (2 * init + cPoly y (F := F)), map_add, map_mul, map_ofNat, cPoly_map f]
 
 /-- `f` distributes through the `b`-accumulator fold `b := 2·b + dPoly x`. -/
-theorem foldl_map_d {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
+private theorem foldl_map_d {R S : Type u} [CommRing R] [CommRing S] [Algebra F R] [Algebra F S]
     (f : R →ₐ[F] S) :
     ∀ (xs : List R) (init : R),
       f (xs.foldl (fun acc x => 2 * acc + dPoly x (F := F)) init)

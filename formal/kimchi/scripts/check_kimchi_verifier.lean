@@ -77,6 +77,8 @@ def runChunked (C : Ipa.CommitmentCurve)
     let mps ← match (← (← j.getObjVal? "max_poly_size").getStr?).toNat? with
       | some v => pure v
       | none => throw "field max_poly_size is not a numeral"
+    -- `Nat.log2` truncates a non-two-power `max_poly_size` (external-audit C-4);
+    -- production domains are radix-2, so fixture values are exact powers.
     let σ ← parseSRSAt C (Nat.log2 mps) j
     let proof ← Kimchi.Fixture.parseKimchiProof C j
     let pub ← parseArrOf (parseZMod (n := C.scalar)) (← j.getObjVal? "public")
@@ -145,6 +147,8 @@ def runChunked (C : Ipa.CommitmentCurve)
     let mut parses : Array (String × Bool) := #[
       ("ragged z eval chunk vector", (ragged.check nc σ.k).isNone && !verify ragged),
       ("oversized t_comm (size > 7·nc)", (overT.check nc σ.k).isNone),
+      ("empty t_comm (the htpos wire pin, a declared strengthening)",
+        (({ proof with tComm := #[] } : Wire.KimchiProof C).check nc σ.k).isNone),
       ("wrong opening round count (lr pair popped; the IPA-side check)",
         (badLr.check nc σ.k).isNone),
       ("ragged VK chunk vector (sigma_comm[0])", (raggedVK.check nc).isNone)]
@@ -172,8 +176,13 @@ def main : IO Unit := do
   runChunked CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
   runChunked CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
     (heavy := true)
+  -- Live EndoMul + VarBaseMul selectors at an empty public input (the audit's C-3 /
+  -- V-1 mask): acceptance here pins the α-weighted constraint order and the
+  -- scalar-register sign of both scalar-multiplication gates, and exercises the
+  -- empty-public branch (public commitment = the all-ones blinding mask).
+  runChunked CV s!"{dir}/kimchi_proof_vesta_emul.json" false
   IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
-    barycentric and carried, nc = 2 on both curves, nc = 8), reject corruptions, and \
-    refuse to parse ragged wire data"
+    barycentric and carried, nc = 2 on both curves, nc = 8, and the live-EndoMul/VarBaseMul \
+    empty-public proof), reject corruptions, and refuse to parse ragged wire data"
 
 #eval main

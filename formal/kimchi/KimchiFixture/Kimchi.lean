@@ -40,7 +40,7 @@ def parseComm (C : Ipa.CommitmentCurve) (j : Json) : Except String (Array C.Poin
 
 /-- A chunked evaluation pair: `[ζ, ζω]` value strings (one-chunk format) as singleton
 chunk vectors, else `[[ζ-chunks], [ζω-chunks]]`. -/
-def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
+private def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
     Except String (Kimchi.Verifier.PointEvaluations (Array C.ScalarField)) := do
   let a ← j.getArr?
   unless a.size = 2 do throw s!"expected an evaluation pair, got {a.size} entries"

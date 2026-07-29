@@ -72,7 +72,6 @@ the current block, `squeezed n` after `n` squeezes from the current block (`n �
 private inductive Mode
   | absorbed (n : Fin 3)
   | squeezed (n : Fin 3)
-deriving Repr, DecidableEq
 
 /-- A sponge in flight: the width-3 state and the mode. -/
 structure State (F : Type*) where
@@ -82,7 +81,7 @@ structure State (F : Type*) where
   mode : Mode
 
 /-- Read rate slot `n` (`n < 2`). -/
-private def slot (s : Triple F) : Fin 3 → F
+def slot (s : Triple F) : Fin 3 → F
   | 0 => s.1
   | 1 => s.2.1
   | _ => s.2.2

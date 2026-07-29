@@ -114,13 +114,12 @@ variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-! ## Per-commitment separation -/
 
-/-- Generalized Fiat–Shamir tree hypothesis: `FiatShamirTree` with the eval vector
+/-- Generalized Fiat–Shamir tree hypothesis, with the eval vector
 abstracted to an arbitrary `b : Fin (2 ^ σ.k) → F`. An accepting run yields a
 de-blinded accepting tree over `b`,
 `accepts → ∃ (ρ : F) (t : IpaTreeV F G σ.k), IpaAcceptV σ.g b (P - ρ • σ.h) v t`.
 
-The original is the specialization
-`FiatShamirTree σ P x v accepts = FiatShamirTreeB σ P (evalVector (2 ^ σ.k) x) v accepts`. -/
+The unbatched form is the specialization at `b := evalVector (2 ^ σ.k) x`. -/
 def FiatShamirTreeB (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F)
     (accepts : Prop) : Prop :=
   accepts → ∃ (ρ : F) (t : IpaTreeV F G σ.k),
@@ -132,7 +131,7 @@ Under the Fiat-Shamir tree hypothesis an accepting run yields an opening witness
 consumes only the modus ponens of the Fiat-Shamir hypothesis against acceptance, never the
 shape of acceptance itself. This is the form the deployed verifier's acceptance
 (`Ipa.verify … = true`) plugs into. -/
-theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
+private theorem ipa_soundnessA (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) {A : Prop}
     (hFS : FiatShamirTreeB σ P b v A) (hacc : A) :
     ∃ (a : Fin (2 ^ σ.k) → F) (ρ : F), openingRelationB σ P b v a ρ := by
   obtain ⟨ρ, t, ht⟩ := hFS hacc
@@ -222,7 +221,7 @@ Fiat-Shamir hypothesis (`ipa_soundnessA`), so no per-grid-point proof or challen
 appears. This is the form the deployed verifier's acceptance (`Ipa.verify … = true`,
 whose challenges are sponge-derived rather than carried) plugs into — the kernel of the
 chunked batch (`Soundness/ChunkedBatch.lean`). -/
-theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
+private theorem batch_soundnessA (σ : SRS G) {n m : ℕ}
     (ξ : Fin n → F) (hξ : Function.Injective ξ)
     (r : Fin m → F) (hr : Function.Injective r) (hm : 0 < m)
     (C : Fin n → G) (x : Fin m → F) (e : Fin n → Fin m → F)
@@ -325,70 +324,6 @@ open Polynomial
 variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-! ## The headline -/
-
-/-- **Chunked opening soundness.** The verifier combines the chunk commitments with
-powers of `y = x^(2^k)` and runs one IPA on the combination — kimchi's chunked
-opening. Under commitment binding, an accepting run against honestly committed chunks
-of `p` (degree `< c·2^k`) forces the claimed value to be `p.eval x`: binding pins the
-extracted witness to the combined chunk vector, whose inner product with the
-evaluation vector is `p`'s evaluation by recombination. -/
-theorem chunked_ipa_soundness (σ : SRS G) (proof : OpeningProof F G σ.k)
-    (hbind : CommitmentBinding (F := F) σ)
-    (p : Polynomial F) (c : ℕ) (hdeg : p.natDegree < c * 2 ^ σ.k)
-    (rs : ℕ → F) (x v cc : F) (u : Fin σ.k → F) (P : G)
-    (hP : P = ∑ i ∈ Finset.range c,
-      (x ^ 2 ^ σ.k) ^ i • commit σ (chunkCoeffs (2 ^ σ.k) p i) (rs i))
-    (hFS : FiatShamirTree σ P x v (VerifierAccepts σ proof P x v cc u))
-    (hacc : VerifierAccepts σ proof P x v cc u) :
-    v = p.eval x := by
-  obtain ⟨a, r, hopen⟩ := ipa_soundness σ proof P x v cc u hFS hacc
-  have hhonest : commit σ
-      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • chunkCoeffs (2 ^ σ.k) p i)
-      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • rs i) = P := by
-    rw [hP, commit_combine]
-  have hpair := @hbind (a, r) (_, _) (hopen.1.trans hhonest.symm)
-  have ha : a = ∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • chunkCoeffs (2 ^ σ.k) p i :=
-    (Prod.ext_iff.mp hpair).1
-  have hval : innerProduct
-      (∑ i ∈ Finset.range c, (x ^ 2 ^ σ.k) ^ i • chunkCoeffs (2 ^ σ.k) p i)
-      (evalVector (2 ^ σ.k) x) = p.eval x := by
-    rw [innerProduct_combine, eval_eq_sum_chunkPoly p hdeg x]
-    exact Finset.sum_congr rfl fun i _ => by rw [chunkPoly_eval]
-  rw [hopen.2, ha]
-  exact hval
-
-end Bulletproof
-
-/-!
-## Knowledge soundness of the chunked batched kimchi IPA opening
-
-The headline of the chunked-batch development (`chunked_batch_soundness`): in a batch
-whose commitments are chunked (`PolyComm` with per-polynomial chunk counts
-`nc : Fin n → ℕ`), correct combined openings at enough distinct
-`(polyscale ξ, evalscale r)` pairs bind every commitment to ONE genuine polynomial of
-degree `< nc i · 2^k` — each wire chunk commits to a window of it, and each claimed
-chunk evaluation is that window's true evaluation.
-
-The proof is a reduction, not a new extraction: the flattening lemmas
-(`chunkedCombinedCommitment_eq_flat` / `chunkedCombinedInnerProduct_eq_flat`, in
-`Batch.lean`) identify the chunked combiners with the plain combiners of the flattened
-segment family, so `batch_soundnessA` extracts one witness vector per *segment*; the
-assembly layer (`assemblePoly`, in `Chunk.lean`) then reconstitutes the per-polynomial
-witnesses into the bound long polynomial, whose chunk windows are the segment witnesses
-by `chunkCoeffs_assemblePoly` and whose evaluations recombine the claimed chunk values
-by `eval_eq_sum_chunkPoly`.
-
-The trust boundary is that of `Soundness/Batch.lean` — the Fiat–Shamir tree hypothesis
-per grid point and the no-DL-relation binding idealization.
-The grid is `(∑ i, nc i) × m`: the polyscale Vandermonde must separate *segments*, so
-the polyscale row count is the total chunk count, not the polynomial count.
--/
-
-namespace Bulletproof
-
-open Polynomial
-
-variable {F G : Type*} [Field F] [AddCommGroup G] [Module F G]
 
 /-- **Chunked batched opening soundness.** Let `nc` be the per-polynomial chunk counts
 (all positive), `ξ` injective over the segment count `∑ i, nc i`, and `r` injective over

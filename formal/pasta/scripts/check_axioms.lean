@@ -26,20 +26,21 @@ def roots : List Name :=
 /-- Standard logical axioms and `Lean.ofReduceBool` (the `native_decide` witnesses:
     CompElliptic's prime-order witnesses + this package's two eigenvalue anchors). -/
 def allowed : List Name :=
-  [ `propext, `Classical.choice, `Quot.sound, `Lean.ofReduceBool ]
+  [ `propext, `Classical.choice, `Quot.sound ]
 
-/-- A trusted `native_decide` certificate: CompElliptic's point-count witnesses, or this
-    package's two eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt` in
-    `Pasta/Endo.lean`) — exactly those declarations, by name. Any other `native_decide`
-    in our tree is still rejected. -/
-def isTrustedNativeDecide (ax : Name) : Bool :=
-  let s := ax.toString
-  (s.splitOn "native_decide").length > 1 &&
-    ("CompElliptic.".isPrefixOf s
-      || "Pasta.pallas_lam_nsmul_Gpt.".isPrefixOf s
-      || "Pasta.vesta_lam_nsmul_Gpt.".isPrefixOf s)
+/-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
+    by name prefix (external-audit A-8: the name is forgeable from inside a
+    `namespace CompElliptic` block; the module is not). Trusted: upstream CompElliptic
+    modules, and `Pasta/Endo.lean` — the one tree file declared to hold the two GLV
+    eigenvalue anchors (`Pasta.{pallas,vesta}_lam_nsmul_Gpt`). -/
+def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
+  (ax.toString.splitOn "native_decide").length > 1 &&
+    match env.getModuleFor? ax with
+    | some m => (`CompElliptic).isPrefixOf m || m == `Pasta.Endo
+    | none => false
 
-def isAllowed (ax : Name) : Bool := allowed.contains ax || isTrustedNativeDecide ax
+def isAllowed (env : Environment) (ax : Name) : Bool :=
+  allowed.contains ax || isTrustedNativeDecide env ax
 
 end Pasta.CheckAxioms
 
@@ -50,7 +51,7 @@ run_cmd do
     unless env.contains root do
       throwError "axiom-check root not in environment: {root}"
     for ax in (← liftCoreM <| Lean.collectAxioms root) do
-      unless Pasta.CheckAxioms.isAllowed ax do
+      unless Pasta.CheckAxioms.isAllowed env ax do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Pasta.CheckAxioms.roots.length} Pasta roots reduce to the standard \

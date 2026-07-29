@@ -23,7 +23,7 @@
 
 use ark_ff::Zero;
 use ark_poly::{EvaluationDomain, Polynomial};
-use fixture_dump::{mixed_circuit, mixed_index};
+use fixture_dump::{emul_circuit, emul_index, mixed_circuit, mixed_index};
 use groupmap::GroupMap;
 use kimchi::{
     circuits::{
@@ -70,15 +70,22 @@ fn index_term_name(col: &Column) -> &'static str {
     }
 }
 
-fn main() {
-    let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
-    let rng = &mut ChaCha20Rng::from_seed([71u8; 32]);
-
-    // A production proof over the shared mixed-gate circuit.
-    let (gates, witness, pub0) = mixed_circuit(rng);
-    let index = mixed_index(gates);
+/// One linearization fixture: a production proof over `index`, with its scalar side
+/// recorded. `public` is the circuit's public input (empty for the scalar-mul circuit).
+fn run(
+    out_dir: &str,
+    rng: &mut ChaCha20Rng,
+    index: kimchi::prover_index::ProverIndex<
+        FULL_ROUNDS,
+        Vesta,
+        poly_commitment::ipa::SRS<Vesta>,
+    >,
+    witness: [Vec<Fp>; 15],
+    public: Vec<Fp>,
+    fname: &str,
+) {
     index
-        .verify(&witness, &[pub0])
+        .verify(&witness, &public)
         .expect("kimchi row checker rejected the witness");
     let group_map = <Vesta as poly_commitment::commitment::CommitmentCurve>::Map::setup();
     let proof: ProverProof<
@@ -92,12 +99,12 @@ fn main() {
         &group_map,
         &verifier_index,
         &proof,
-        &[pub0],
+        &public,
     )
     .expect("production verifier rejected the fixture proof");
 
     // The public commitment, exactly as the verifier builds it.
-    let public_input: &[Fp] = &[pub0];
+    let public_input: &[Fp] = &public;
     let public_comm = {
         let lgr_comm = verifier_index
             .srs()
@@ -264,10 +271,51 @@ fn main() {
             .collect::<serde_json::Map<_, _>>(),
     });
 
-    let path = format!("{out_dir}/linearization_vesta.json");
+    let path = format!("{out_dir}/{fname}");
     std::fs::write(&path, serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
+    let live: Vec<&str> = gate_combined
+        .iter()
+        .filter(|(_, v)| !v.is_zero())
+        .map(|(n, _)| *n)
+        .collect();
     println!(
-        "linearization: {} index terms, production verify accepts; wrote {path}",
+        "linearization: {} index terms, live gate terms {live:?}, production verify \
+         accepts; wrote {path}",
         index_terms.len()
     );
+}
+
+fn main() {
+    let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
+    // The shared mixed-gate circuit — same seed as `kimchi_proof_dump`, so the two
+    // fixtures describe the same proof. Its `emul`/`mul` selectors are identically zero,
+    // so its per-gate targets for those two gates are `0 = 0` (external-audit R-1).
+    {
+        let rng = &mut ChaCha20Rng::from_seed([71u8; 32]);
+        let (gates, witness, pub0) = mixed_circuit(rng);
+        run(
+            &out_dir,
+            rng,
+            mixed_index(gates),
+            witness,
+            vec![pub0],
+            "linearization_vesta.json",
+        );
+    }
+    // The scalar-multiplication circuit (same one `kimchi_proof_dump_emul` proves): LIVE
+    // EndoMul and VarBaseMul selectors, so the per-gate combined-constraint targets for
+    // exactly the two gates finding V-1 concerned are non-zero and adjudicated
+    // gate-by-gate, rather than only end-to-end through whole-proof acceptance.
+    {
+        let rng = &mut ChaCha20Rng::from_seed([83u8; 32]);
+        let (gates, witness) = emul_circuit(rng);
+        run(
+            &out_dir,
+            rng,
+            emul_index(gates),
+            witness,
+            vec![],
+            "linearization_vesta_emul.json",
+        );
+    }
 }

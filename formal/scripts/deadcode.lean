@@ -1,16 +1,29 @@
 /-
-Dead-code / reachability report for the Kimchi library.
+Dead-code gate for the workspace.
 
-Lean has no export-list mechanism, so `roots.txt` is the manifest that *defines* the public API
-surface. This script treats it as the root set: it imports `Kimchi`, walks the constant-dependency
-graph (each declaration's type + value), and lists every authored declaration — kimchi and
-the extracted pasta/poseidon/bulletproof-pcs packages — NOT
-reachable from the roots. Auto-generated decls (recursors, constructors, projections, and
-`match_`/`proof_`/`eq_` auxiliaries) are excluded — they are noise, not authored code.
+Lean has no export-list mechanism, so the packages' `roots.txt` manifests *define* the public
+API surface. This script treats their union as the root set: it imports the libraries, walks
+the constant-dependency graph (each declaration's type + value), and FAILS (nonzero exit) if
+any authored declaration — kimchi, pasta, poseidon, bulletproof-pcs, and the fixture libs —
+is not reachable from the roots. Auto-generated decls (recursors, constructors, projections,
+derive/`match_` auxiliaries, syntax parser descriptors) are excluded: they are noise, not
+authored code.
+
+Script surface: a root inside a `-- script-surface:begin` / `-- script-surface:end` block in
+a manifest declares a declaration consumed by the `scripts/` drivers rather than the library.
+The gate additionally checks each such name textually appears in some scripts/ file, so the
+blocks cannot rot into general exemption dumps. A trailing `-- synthesis: ...` comment
+exempts a line from the textual check (instances are found by class resolution, not by name).
+
+The `Snarky` package is traversed for CREDITING only — `Kimchi.*` declarations it consumes
+are live through `snarky/roots.txt` — but `Snarky.*` declarations are not yet audited (see
+the note in that manifest).
 
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
 import Kimchi
+import Snarky
+import Snarky.Kimchi.Backend
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi
@@ -43,34 +56,57 @@ def directDeps (env : Environment) (n : Name) : Array Name :=
     | some v => ci.type.getUsedConstants ++ v.getUsedConstants
     | none   => ci.type.getUsedConstants
 
+/-- Name components that only compiler-generated auxiliaries carry. -/
+def generatedComponents : List String :=
+  [ "rec", "recOn", "casesOn", "brecOn", "below", "ibelow", "binductionOn",
+    "noConfusion", "noConfusionType", "toCtorIdx", "ctorIdx", "ofNat", "sizeOf",
+    "sizeOf_spec", "injEq", "inj", "eq_def", "congr_simp", "mk",
+    "ctorElim", "ctorElimType", "proxyType", "proxyTypeEquiv", "ext", "ext_iff" ]
+
 /-- Is `n` an auto-generated / internal name (or the analyzer's own code) rather than an
-    authored library declaration? -/
+    authored library declaration? Env lookups use the (possibly `_private.`-mangled) name;
+    name-shape checks use the demangled one — otherwise every `private` declaration reads
+    as auxiliary through its `_private` component and escapes the audit. -/
 def isAuxiliary (env : Environment) (n : Name) : Bool :=
+  let u := (privateToUserName? n).getD n
   if n.hasMacroScopes then true
-  else if (`Kimchi.DeadCode).isPrefixOf n then true            -- this analyzer's own decls
+  else if (`Kimchi.DeadCode).isPrefixOf u then true            -- this analyzer's own decls
   else if (env.getProjectionFnInfo? n).isSome then true        -- structure field projections
   else match env.find? n with
     | some (.ctorInfo _) => true                               -- constructors
     | some (.recInfo _)  => true                               -- recursors
-    | _ => match n with
-      | .str _ s =>
-          [ "rec", "recOn", "casesOn", "brecOn", "below", "ibelow", "binductionOn",
-            "noConfusion", "noConfusionType", "toCtorIdx", "ctorIdx", "ofNat", "sizeOf",
-            "sizeOf_spec", "injEq", "inj", "eq_def", "congr_simp", "mk" ].contains s
-          || s.startsWith "proof_" || s.startsWith "match_" || s.startsWith "eq_"
-          || s.startsWith "_"
-          -- compiler-generated helpers nested under a `match_N` (e.g. `….match_1.splitter`)
-          || n.components.any (fun c => c.toString.startsWith "match_")
-      | _ => false
+    | some ci =>
+      -- syntax parser descriptors: used at parse time, invisible to any constant walk
+      if ci.type.isConstOf ``Lean.ParserDescr
+          || ci.type.isConstOf ``Lean.TrailingParserDescr then true
+      -- per-constructor auxiliaries (`Foo.someCtor.elim` and friends)
+      else if (env.find? n.getPrefix).any (fun p => p matches .ctorInfo _) then true
+      else
+        let comps := u.components.map (·.toString)
+        -- any component that only generated code carries, anywhere in the name
+        comps.any (fun c => generatedComponents.contains c || c.startsWith "_"
+          || c.startsWith "match_" || c.startsWith "proof_")
+        -- children of instances (derive-generated `.repr` / `.decEq` / `.default` …)
+          || comps.dropLast.any (fun c => c.startsWith "inst")
+          || (match n with
+              | .str _ s =>
+                  s.startsWith "proof_" || s.startsWith "match_" || s.startsWith "eq_"
+              | _ => false)
+    | none => false
 
-/-- Is `n` one of ours — authored in this repo's packages (kimchi + the extracted
-    pasta / poseidon / bulletproof-pcs packages)? `private` declarations get a mangled
-    `_private.<module>.0.`-prefixed name, so demangle first — otherwise the walk refuses to
-    enter them and everything referenced only *through* a private helper reports dead. -/
+/-- Is `n` traversable — authored in this repo's packages? `private` declarations get a
+    mangled `_private.<module>.0.`-prefixed name, so demangle first — otherwise the walk
+    refuses to enter them and everything referenced only *through* a private helper reports
+    dead. `Snarky` is traversable (crediting) but not audited (see `isAudited`). -/
 def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
-    || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n
+    || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
+
+/-- Is `n` under the dead-zero contract? Everything traversable except `Snarky.*`. -/
+def isAudited (n : Name) : Bool :=
+  let n := (privateToUserName? n).getD n
+  isOurs n && !(`Snarky).isPrefixOf n
 
 /-- Transitive closure of the dependency graph from `roots`, restricted to our packages'
     edges (Mathlib/CompElliptic never reference our code, so nothing of ours is reachable
@@ -89,30 +125,57 @@ end Kimchi.DeadCode
 run_cmd do
   let env ← getEnv
   let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
-    "bulletproof-pcs/roots.txt"]
-  let mut raw := ""
-  for m in manifests do
-    raw := raw ++ (← IO.FS.readFile m) ++ "\n"
-  -- parse roots.txt: one fully-qualified name per line; skip blanks and `--` comments
+    "bulletproof-pcs/roots.txt", "snarky/roots.txt"]
+  -- parse the manifests: one fully-qualified name per line, optional trailing `-- comment`;
+  -- `--` lines and blanks are ignored; `script-surface` markers delimit the script surface
   let mut roots : Array Name := #[]
   let mut missing : Array Name := #[]
-  for line in raw.splitOn "\n" do
-    let t := line.trim
-    if t.isEmpty || t.startsWith "--" then continue
-    let n := t.toName
-    if env.contains n then roots := roots.push n else missing := missing.push n
+  let mut surface : Array (Name × Bool) := #[]   -- (name, exempt-from-textual-check)
+  for m in manifests do
+    let mut inSurface := false
+    for line in (← IO.FS.readFile m).splitOn "\n" do
+      let t := line.trim
+      if t = "-- script-surface:begin" then inSurface := true
+      else if t = "-- script-surface:end" then inSurface := false
+      else if t.isEmpty || t.startsWith "--" then continue
+      else
+        let (nameStr, note) := match t.splitOn " -- " with
+          | n :: rest => (n.trim, String.intercalate " -- " rest)
+          | [] => (t, "")
+        let n := nameStr.toName
+        if env.contains n then roots := roots.push n else missing := missing.push n
+        if inSurface then surface := surface.push (n, note.startsWith "synthesis")
+  -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
+  let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",
+    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts"]
+  let mut corpus := ""
+  for d in scriptDirs do
+    for e in (← System.FilePath.readDir d) do
+      if (← e.path.isDir) then continue
+      if e.fileName = "deadcode.lean" then continue
+      corpus := corpus ++ (← IO.FS.readFile e.path)
+  let mut unanchored : Array Name := #[]
+  for (n, exempt) in surface do
+    if !exempt && (corpus.splitOn n.getString!).length ≤ 1 then
+      unanchored := unanchored.push n
   let live := Kimchi.DeadCode.reachable env roots
-  -- all authored Kimchi.* declarations
+  -- all authored declarations under the dead-zero contract
   let authored : Array Name :=
     (env.constants.fold (init := #[]) fun acc n _ =>
-      if Kimchi.DeadCode.isOurs n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n
+      if Kimchi.DeadCode.isAudited n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n
       else acc)
     |>.qsort (·.toString < ·.toString)
   let dead := authored.filter fun n => !live.contains n
   IO.println s!"roots: {roots.size} resolved, {missing.size} missing"
   for n in missing do IO.println s!"  ⚠ root not in env: {n}"
-  IO.println s!"authored decls (all packages): {authored.size}   \
+  for n in unanchored do
+    IO.println s!"  ⚠ script-surface root not found in any scripts/ file: {n}"
+  IO.println s!"authored decls (audited packages): {authored.size}   \
 live: {authored.size - dead.size}   dead: {dead.size}"
-  IO.println "── dead (authored, unreachable from roots) ──"
-  if dead.isEmpty then IO.println "  (none)"
-  for n in dead do IO.println s!"  {n}"
+  if dead.isEmpty then IO.println "── no dead code ──"
+  else
+    IO.println "── dead (authored, unreachable from roots) ──"
+    for n in dead do IO.println s!"  {n}"
+  unless missing.isEmpty && unanchored.isEmpty && dead.isEmpty do
+    throwError "dead-code gate FAILED: {dead.size} dead, {missing.size} missing roots, \
+{unanchored.size} unanchored script-surface roots"

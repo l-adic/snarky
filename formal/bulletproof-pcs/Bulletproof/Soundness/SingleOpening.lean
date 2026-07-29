@@ -66,7 +66,7 @@ private theorem commitGen_sub {n : ℕ} (g : Fin n → G) (a a' : Fin n → F) :
 /-- For distinct `u₁, u₂, u₃` there are coefficients `l₁, l₂, l₃` with `Σ lᵢ = 0`,
 `Σ lᵢuᵢ = 1`, and `Σ lᵢuᵢ² = 0`: the functional `p ↦ Σ lᵢ · p(uᵢ)` reads off the
 linear coefficient of any degree-≤2 polynomial `p`. -/
-theorem vandermonde3 (u₁ u₂ u₃ : F) (h12 : u₁ ≠ u₂) (h13 : u₁ ≠ u₃)
+private theorem vandermonde3 (u₁ u₂ u₃ : F) (h12 : u₁ ≠ u₂) (h13 : u₁ ≠ u₃)
     (h23 : u₂ ≠ u₃) :
     ∃ l₁ l₂ l₃ : F, (l₁ + l₂ + l₃ = 0)
       ∧ (l₁ * u₁ + l₂ * u₂ + l₃ * u₃ = 1)
@@ -162,12 +162,12 @@ concatenates two halves. -/
 
 /-- Lower half: the restriction of a length-`2^{k+1}` vector to its first `2^k`
 indices. -/
-private def loHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
+def loHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
   fun i => f (Fin.castLE (by rw [pow_succ]; omega) i)
 
 /-- Upper half: the restriction of a length-`2^{k+1}` vector to its last `2^k`
 indices (offset by `2^k`). -/
-private def hiHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
+def hiHalf {α : Type*} {k : ℕ} (f : Fin (2 ^ (k + 1)) → α) : Fin (2 ^ k) → α :=
   fun i => f ⟨2 ^ k + i.val, by have := i.isLt; rw [pow_succ]; omega⟩
 
 /-- Concatenation of two length-`2^k` halves into a length-`2^{k+1}` vector. -/
@@ -181,7 +181,7 @@ def append {α : Type*} {k : ℕ} (lo hi : Fin (2 ^ k) → α) : Fin (2 ^ (k + 1
 loHalf v + u • hiHalf v` — the high half scaled by the challenge `u`. Generic over
 the module `M` so it serves both the generators (`M := G`) and the eval vector
 (`M := F`). -/
-private def foldHalves {M : Type*} [AddCommGroup M] [Module F M] {k : ℕ}
+def foldHalves {M : Type*} [AddCommGroup M] [Module F M] {k : ℕ}
     (v : Fin (2 ^ (k + 1)) → M) (u : F) : Fin (2 ^ k) → M :=
   loHalf v + u • hiHalf v
 
@@ -350,9 +350,9 @@ chunked claims compose onto (`Chunk.lean`, `Soundness/ChunkedBatch.lean`). Every
 below the Fiat–Shamir bridge is proved; the bridge itself is the single stated
 hypothesis.
 
-`FiatShamirTree` turns an accepting verifier run into a clean accepting transcript
-tree over a de-blinded commitment. It bundles the Fiat–Shamir rewinding (uniform
-challenges yield three distinct sub-transcripts per round), the correspondence
+The Fiat–Shamir tree hypothesis (`FiatShamirTreeB`) turns an accepting verifier run into a
+clean accepting transcript tree over a de-blinded commitment. It bundles the Fiat–Shamir
+rewinding (uniform challenges yield three distinct sub-transcripts per round), the correspondence
 between the verifier's multi-scalar check and the recursive tree, and the
 Schnorr/hiding reduction that extracts the blinder `r` (so the tree is over the
 non-hiding commitment `P - r • σ.h`). Given the tree, `ipaRelation_of_acceptV` and
@@ -384,46 +384,5 @@ theorem ipaRelation_of_acceptV (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (P : G) (
 
 /-! ## The Fiat–Shamir rewinding hypothesis -/
 
-/-- **The Fiat–Shamir rewinding hypothesis** — the single trust assumption. An
-accepting run yields a *de-blinded* accepting tree: a blinder `r : F` and a tree
-`t` with
-
-`accepts → ∃ (r : F) (t : IpaTreeV F G σ.k),
-  IpaAcceptV σ.g (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t`.
-
-This bundles the rewinding proper (uniform challenges give three distinct
-sub-transcripts per round), the correspondence between the verifier's multi-scalar
-check and the recursive tree, and the Schnorr/hiding reduction extracting the
-blinder `r`, so the tree is over the non-hiding de-blinded commitment
-`P - r • σ.h`. -/
-def FiatShamirTree (σ : SRS G) (P : G) (x v : F) (accepts : Prop) : Prop :=
-  accepts → ∃ (r : F) (t : IpaTreeV F G σ.k),
-    IpaAcceptV σ.g (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t
-
 /-! ## The headline soundness theorem -/
 
-/-- **IPA knowledge soundness — lands in the opening relation.** Under the
-Fiat–Shamir hypothesis, an accepting run yields a witness in the opening relation:
-
-`VerifierAccepts σ proof P x v c u →
-  ∃ (a : Fin (2 ^ σ.k) → F) (r : F), openingRelation σ P x v a r`.
-
-The hypothesis yields a blinder `r` and an accepting tree over `P - r • σ.h`;
-`ipaRelation_of_acceptV` extracts `a` with `⟨a, σ.g⟩ = P - r • σ.h` and
-`v = ⟨a, evalVector (2 ^ σ.k) x⟩`. Re-blinding,
-`commit σ a r = ⟨a, σ.g⟩ + r • σ.h = (P - r • σ.h) + r • σ.h = P`, so
-`openingRelation σ P x v a r` holds. -/
-theorem ipa_soundness (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c : F)
-    (u : Fin σ.k → F)
-    (hFS : FiatShamirTree σ P x v (VerifierAccepts σ proof P x v c u))
-    (hacc : VerifierAccepts σ proof P x v c u) :
-    ∃ (a : Fin (2 ^ σ.k) → F) (r : F), openingRelation σ P x v a r := by
-  obtain ⟨r, t, ht⟩ := hFS hacc
-  obtain ⟨a, hP, hv⟩ :=
-    ipaRelation_of_acceptV σ (evalVector (2 ^ σ.k) x) (P - r • σ.h) v t ht
-  refine ⟨a, r, ?_, hv⟩
-  show commitGen σ.g a + r • σ.h = P
-  rw [hP]
-  abel
-
-end Bulletproof

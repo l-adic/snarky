@@ -7,9 +7,6 @@
   "Kimchi.Verifier.Reduction.Correspond": [
    "Kimchi.Index.Aggregate"
   ],
-  "Kimchi.Verifier.Capstone.Standard": [
-   "Bulletproof.Reflection"
-  ],
   "Kimchi.Verifier.Capstone.Reflection": [
    "Bulletproof.Reflection"
   ],
@@ -41,11 +38,12 @@
   "Kimchi.Columns": [
    "Init"
   ],
-  "Kimchi.Verifier.Forking.Escape": [
-   "Zcash.Snark.Soundness.Forking.Probability"
+  "Kimchi.Verifier.Reduction.Soundness": [
+   "Bulletproof.Soundness"
   ],
-  "Kimchi.Verifier.Forking.GuardEscape": [
-   "Kimchi.Verifier.Forking.Escape"
+  "Kimchi.Verifier.Capstone.Algebraic": [
+   "Kimchi.Verifier.Reduction.Soundness",
+   "Zcash.Snark.Soundness.AGM.Adapter"
   ]
  }
 }

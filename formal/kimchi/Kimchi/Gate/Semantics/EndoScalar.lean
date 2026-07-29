@@ -35,10 +35,10 @@ private theorem foldl_table {φ ψ : F → F} :
 variable [DecidableEq F]
 
 /-- `c_func` as the bare `(0,0,−1,1)` table. -/
-def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
+private def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
 
 /-- `d_func` as the bare `(−1,1,0,0)` table. -/
-def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
+private def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
 
 /-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
 private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
@@ -154,7 +154,7 @@ def decomposeB (crumbs : List F) : F := crumbs.foldl (fun b x => 2 * b + dPoly x
 
 /-- The raw challenge reconstructed from its base-4 crumbs (`n := 4n + x`), the
     gate's `n` register. -/
-def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
+private def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
 
 /-- The effective scalar the gate outputs: `a·λ + b` (`λ` the endomorphism
     eigenvalue). This is the pure `to_field` of the challenge. -/
@@ -184,11 +184,11 @@ private theorem nReconstruct_append (xs ys : List F) :
   simp only [nReconstruct, List.foldl_append]
 
 /-- The crumbs of the first `m` rows of a run, concatenated MSB-first. -/
-def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
+private def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap (fun i => (w i).crumbs)
 
 omit [Field F] in
-@[simp] theorem chainCrumbs_zero (w : ℕ → Witness F) : chainCrumbs w 0 = [] := rfl
+@[simp] private theorem chainCrumbs_zero (w : ℕ → Witness F) : chainCrumbs w 0 = [] := rfl
 
 omit [Field F] in
 /-- The crumbs through row `m` extend those through the first `m` rows by row `m`'s crumbs. -/
@@ -241,7 +241,7 @@ private theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
 
 /-- The honest multi-row witness: thread the gate's `build` from the canonical `(2, 2, 0)`,
     each row started from the previous row's output accumulators. -/
-def chainBuild (rows : ℕ → List F) : ℕ → Witness F
+private def chainBuild (rows : ℕ → List F) : ℕ → Witness F
   | 0 => build 2 2 0 (rows 0)
   | i + 1 =>
     let prev := chainBuild rows i

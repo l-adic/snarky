@@ -38,6 +38,16 @@ Scope (every deferral is declared here):
   single σ-commitment term (verifier.rs:897–956);
 * `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of
   scope (the verifier rejects it);
+* at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production PANICS
+  (`.expect("negligible probability")`, verifier.rs:459–460) while this executable
+  takes `ZMod`'s junk division (`x/0 = 0`) and proceeds — harmless for the theorems,
+  which exclude exactly these two points (`zetaBoundaryBad`, the `+2` of `szBudget`),
+  but a real algorithm-vs-algorithm difference (external-audit V-3);
+* the final check is the two bracket equations as a DETERMINISTIC conjunction where
+  production checks one rng-weighted MSM (`r₁·A + r₂·B = 0`, fresh `thread_rng`) —
+  Lean-accept implies production-accept with probability 1, the conservative
+  direction — and this verifier checks ONE proof (= production's `batch_verify` on a
+  singleton); multi-proof batching is out of scope (external-audit V-4);
 * production's key carries the public-input count (`pub public: usize`,
   verifier_index.rs:71 — a serialized field) and `to_batch` rejects a mismatched
   argument outright (`public_input.len() != verifier_index.public`,
@@ -64,7 +74,6 @@ structure PointEvaluations (F : Type*) where
   zeta : F
   /-- The evaluation at `ζω`. -/
   zetaOmega : F
-deriving Inhabited
 
 /-- The proof's claimed evaluations, one `PointEvaluations` per column family
 (`ProofEvaluations`, proof.rs), generic in the per-point payload `E`: `Array F` on the
@@ -232,7 +241,7 @@ private def pubDot {F : Type*} [Field F] (omega pt : F) (pub : Array F) : F :=
 empty input, else `(∑ᵢ −(ζ − ωⁱ)⁻¹ pubᵢ ωⁱ) · (ζⁿ − 1) · n⁻¹` and the `ζω` analogue.
 These are the values production uses downstream (the public polynomial is committed
 negated) — no re-negation. -/
-def publicEvals {F : Type*} [Field F] (n : ℕ)
+private def publicEvals {F : Type*} [Field F] (n : ℕ)
     (omega zeta zetaOmega zetaN zetaOmegaN : F) (pub : Array F) : F × F :=
   if pub.size = 0 then (0, 0)
   else

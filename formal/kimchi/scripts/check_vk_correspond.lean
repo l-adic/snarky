@@ -223,7 +223,11 @@ def main : IO Unit := do
   -- Pallas: nc = 2 (zk_rows = 5) against the Pallas index.
   runCurve IpaPallas.curve s!"{dir}/index_pallas_nc2.json"
     [s!"{dir}/kimchi_proof_pallas_nc2.json"]
-  IO.println "✓ the production verifier keys (Vesta nc = 1 and nc = 2, Pallas nc = 2) \
+  -- Vesta nc = 8 (zk_rows = 19, n = 64): `Corresponds` was unwitnessed above nc = 2
+  -- (the audit's C-3) — the same circuit indexed over the max_poly_size = 8 SRS.
+  runCurve IpaVesta.curve s!"{dir}/index_vesta_nc8.json"
+    [s!"{dir}/kimchi_proof_vesta_nc8.json"]
+  IO.println "✓ the production verifier keys (Vesta nc = 1, 2 and 8, Pallas nc = 2) \
     correspond to their indices: every committed column chunk is the value-MSM of its \
     derived column against the Lagrange chunk commitments — σ columns from the model's \
     own Index.sigmaAddrRow, selectors per-chunk masked"

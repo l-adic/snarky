@@ -7,8 +7,7 @@ import Pasta
 
 The bridge between `Bulletproof.Ipa.verify` (executable, over checked wire data,
 challenges derived by the Poseidon sponge) and the `Prop`-level acceptance
-`BatchAccepts` of the IPA soundness development — and, through the Fiat-Shamir axiom,
-the batch knowledge-soundness theorem itself.
+`BatchAccepts` of the IPA soundness development.
 
 Three strata:
 
@@ -27,20 +26,13 @@ Three strata:
   (`Input.commitmentFn`/`pointFn`/`evalFn`, and the sized challenge vector of
   `transcript`), used identically on both sides.
 
-* **The Fiat-Shamir axiom and the headline.** `poseidon_fiat_shamir_vesta` is the
-  project's declared assumption, stated at the junction: a run accepted by the
-  Poseidon-instantiated verifier admits a de-blinded accepting transcript tree over the
-  combined eval vector (`FiatShamirTreeB`, with the deployed acceptance
-  `verify … = true` as the antecedent). It packages the rewinding/forking extraction and
-  the random-oracle behaviour of the sponge; everything downstream of it is proved.
-  `ipaVesta_sound` composes the axiom, the flattening lemmas, and
-  `chunked_batch_soundness`: the claim declares its segment structure (`nc` chunks per
-  polynomial), the verifier consumes the flattened segment stream
-  (`segmentStream`), and a grid of accepting runs at pairwise-distinct combination
-  scalars, under the no-DL-relation binding *hypothesis*, binds every commitment family
-  to one genuine polynomial with its chunk windows and evaluations. Binding stays a
-  hypothesis — it is information-theoretically false at real parameters and meaningful
-  only computationally (see `Soundness/Batch.lean`).
+* **No Fiat-Shamir axiom.** The former `poseidon_fiat_shamir_{vesta,pallas}` axioms and
+  the `ipaVesta_sound` chain they fed are gone. Knowledge soundness of the deployed
+  verifier is proved in `Forking/` (`Ipa.Forking.ipa{Vesta,Pallas}_knowledge_sound`),
+  with the random-oracle idealisation carried as the game's uniform challenge table and
+  the sponge-faithfulness exhibits recorded in `Forking/Transcript.lean` and
+  `Forking/Deployed.lean`. What this module contributes to that development is the
+  reflection layer alone: `verify_reflects` and the combiner identities below.
 -/
 
 namespace Bulletproof
@@ -53,7 +45,7 @@ open CompElliptic.Fields.Pasta Bulletproof Bulletproof.Ipa
 /-! ## The checked proof as an abstract opening proof -/
 
 /-- The checked proof as the abstract `OpeningProof` at its round count — total. -/
-private def Ipa.Proof.toOpening {C : CommitmentCurve} {k : ℕ} (p : Ipa.Proof C k) :
+def Ipa.Proof.toOpening {C : CommitmentCurve} {k : ℕ} (p : Ipa.Proof C k) :
     OpeningProof C.ScalarField C.Point k where
   lr := fun j => p.lr[j]
   delta := p.delta
@@ -164,7 +156,7 @@ theorem verify_reflects (σ : SRS C.Point) {m p : ℕ} (inp : Ipa.Input C σ.k m
       (fun i => (transcript C inp).2.1[i])
       inp.commitmentFn inp.pointFn inp.evalFn := by
   simp only [Ipa.transcript]
-  simp only [Ipa.verify, Ipa.verifyFrom] at hv
+  simp only [Ipa.verify, Ipa.verifyFrom, Ipa.verifyWith] at hv
   rw [Bool.and_eq_true] at hv
   obtain ⟨hsch, hsg⟩ := hv
   rw [decide_eq_true_eq] at hsch hsg
@@ -182,160 +174,12 @@ end Reflection
 
 /-! ## The Fiat-Shamir axiom -/
 
-/-- **AXIOM (Fiat-Shamir, Poseidon instantiation, Vesta).** A run accepted by the
-Poseidon-instantiated verifier admits a de-blinded accepting transcript tree over the
-combined eval vector: `FiatShamirTreeB` with the deployed acceptance
-`Ipa.verify … = true` as the antecedent. This is the project's declared assumption that
-the Poseidon sponge provides a valid Fiat-Shamir transform — it packages the
-rewinding/forking extraction and the random-oracle behaviour of the sponge. It is the
-sole non-standard axiom of the headline `ipaVesta_sound`. -/
-axiom poseidon_fiat_shamir_vesta (σ : SRS IpaVesta.Point) {m p : ℕ}
-    (inp : IpaVesta.Input σ.k m p) :
-  FiatShamirTreeB σ
-    (combinedCommitment inp.polyscale inp.commitmentFn)
-    (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
-    (cipOf inp)
-    (Ipa.verify IpaVesta.curve σ inp = true)
-
-/-- **AXIOM (Fiat-Shamir, Poseidon instantiation, Pallas).** The Pallas-side twin of
-`poseidon_fiat_shamir_vesta`. -/
-axiom poseidon_fiat_shamir_pallas (σ : SRS IpaPallas.Point) {m p : ℕ}
-    (inp : IpaPallas.Input σ.k m p) :
-  FiatShamirTreeB σ
-    (combinedCommitment inp.polyscale inp.commitmentFn)
-    (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
-    (cipOf inp)
-    (Ipa.verify IpaPallas.curve σ inp = true)
-
 /-! ## The headline -/
-
-/-- The flattened segment stream of a chunked family, as the checked vector:
-polynomial-outer, chunk-inner (`finSigmaFinEquiv`), the deployed `combine_commitments`
-order. -/
-def segmentStream {α : Type*} {n : ℕ} {nc : Fin n → ℕ}
-    (f : (i : Fin n) → Fin (nc i) → α) : Vector α (∑ i, nc i) :=
-  Vector.ofFn fun s => f (finSigmaFinEquiv.symm s).1 (finSigmaFinEquiv.symm s).2
 
 section ChunkedHeadline
 
 variable {Cc : CommitmentCurve} [Module Cc.ScalarField Cc.Point]
 
-/-- The Fiat-Shamir axiom's flat tree, reshaped to the chunked combiners of the segment
-stream through the flattening lemmas. Generic over the curve bundle; the per-curve
-headlines instantiate it at their axiom. -/
-private theorem fs_tree_chunked
-    (ax : ∀ (σ : SRS Cc.Point) {m p : ℕ} (inp : Ipa.Input Cc σ.k m p),
-      FiatShamirTreeB σ
-        (combinedCommitment inp.polyscale inp.commitmentFn)
-        (combinedEvalVector (2 ^ σ.k) inp.evalscale inp.pointFn)
-        (cipOf inp)
-        (Ipa.verify Cc σ inp = true))
-    (σ : SRS Cc.Point) {n : ℕ} {nc : Fin n → ℕ}
-    (C : (i : Fin n) → Fin (nc i) → Cc.Point)
-    {p : ℕ} (xs : Vector Cc.ScalarField p)
-    (e : (i : Fin n) → Fin (nc i) → Fin p → Cc.ScalarField)
-    (ξ rr : Cc.ScalarField) (proof : Ipa.Proof Cc σ.k) :
-    FiatShamirTreeB σ (chunkedCombinedCommitment ξ C)
-      (combinedEvalVector (2 ^ σ.k) rr fun j : Fin p => xs[j])
-      (chunkedCombinedInnerProduct ξ rr e)
-      (Ipa.verify Cc σ
-        (mkInput (segmentStream C) xs
-          (segmentStream fun i c => Vector.ofFn (e i c)) ξ rr proof) = true) := by
-  set inp : Ipa.Input Cc σ.k (∑ i, nc i) p :=
-    mkInput (segmentStream C) xs
-      (segmentStream fun i c => Vector.ofFn (e i c)) ξ rr proof with hinp
-  have h := ax σ inp
-  have hC : combinedCommitment inp.polyscale inp.commitmentFn
-      = chunkedCombinedCommitment ξ C := by
-    rw [chunkedCombinedCommitment_eq_flat, combinedCommitment, combinedCommitment]
-    refine Finset.sum_congr rfl fun v _ => ?_
-    congr 1
-    simp [hinp, Ipa.Input.commitmentFn, Ipa.mkInput, segmentStream]
-  have hcip : cipOf inp = chunkedCombinedInnerProduct ξ rr e := by
-    rw [chunkedCombinedInnerProduct_eq_flat, cipOf, combinedInnerProduct,
-      combinedInnerProduct]
-    refine Finset.sum_congr rfl fun v _ => ?_
-    congr 1
-    refine Finset.sum_congr rfl fun j _ => ?_
-    congr 1
-    simp [hinp, Ipa.Input.evalFn, Ipa.mkInput, segmentStream]
-  rw [hC, hcip] at h
-  exact h
 
 end ChunkedHeadline
 
-/-- **Soundness of the deployed Vesta verifier, at the declared chunk structure.** The
-claim carries its segment structure: `n` polynomials with chunk counts `nc`, chunk
-commitments `C i c`, and claimed chunk evaluations `e i c j`; the verifier consumes
-the flattened segment stream. A grid of Poseidon-accepted runs at pairwise-distinct
-polyscales `ξ` and evalscales `r`, under the no-DL-relation binding hypothesis, binds
-every commitment family to one genuine polynomial: `q i` of degree `< nc i · 2^k`, whose
-chunk windows are the committed chunks, whose evaluations recombine the claimed chunk
-values, and whose chunk windows reproduce each per-chunk claim individually. Composes
-`poseidon_fiat_shamir_vesta`, the flattening lemmas, and
-`chunked_batch_soundness`; binding remains a hypothesis (see the module docstring). -/
-theorem ipaVesta_sound (σ : SRS IpaVesta.Point) {n : ℕ} {nc : Fin n → ℕ}
-    (hnc : ∀ i, 0 < nc i)
-    (C : (i : Fin n) → Fin (nc i) → IpaVesta.Point)
-    {p : ℕ} (xs : Vector Fp p) (hm : 0 < p)
-    (e : (i : Fin n) → Fin (nc i) → Fin p → Fp)
-    (ξ : Fin (∑ i, nc i) → Fp) (hξ : Function.Injective ξ)
-    (r : Fin p → Fp) (hr : Function.Injective r)
-    (proofs : Fin (∑ i, nc i) → Fin p → IpaVesta.Proof σ.k)
-    (hacc : ∀ s t, Ipa.verify IpaVesta.curve σ
-      (mkInput (segmentStream C) xs
-        (segmentStream fun i c => Vector.ofFn (e i c))
-        (ξ s) (r t) (proofs s t)) = true)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fp) (wh : Fp),
-      DLRelation σ w wh → w = 0 ∧ wh = 0) :
-    ∃ q : Fin n → Polynomial Fp, ∀ i,
-      (q i).natDegree < nc i * 2 ^ σ.k
-        ∧ (∀ c : Fin (nc i), ∃ ρ,
-            commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ (∀ j : Fin p, (q i).eval xs[j]
-            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
-        ∧ ∀ (c : Fin (nc i)) (j : Fin p),
-            e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
-              (evalVector (2 ^ σ.k) xs[j]) :=
-  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin p => xs[j]) e
-    (fun s t => Ipa.verify IpaVesta.curve σ
-      (mkInput (segmentStream C) xs
-        (segmentStream fun i c => Vector.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
-    (fun s t => fs_tree_chunked (fun σ' {_ _} inp => poseidon_fiat_shamir_vesta σ' inp)
-      σ C xs e (ξ s) (r t) (proofs s t))
-    hbind hacc
-
-/-- **Soundness of the deployed Pallas verifier, at the declared chunk structure.** The
-Pallas-side twin of `ipaVesta_sound`. -/
-theorem ipaPallas_sound (σ : SRS IpaPallas.Point) {n : ℕ} {nc : Fin n → ℕ}
-    (hnc : ∀ i, 0 < nc i)
-    (C : (i : Fin n) → Fin (nc i) → IpaPallas.Point)
-    {p : ℕ} (xs : Vector Fq p) (hm : 0 < p)
-    (e : (i : Fin n) → Fin (nc i) → Fin p → Fq)
-    (ξ : Fin (∑ i, nc i) → Fq) (hξ : Function.Injective ξ)
-    (r : Fin p → Fq) (hr : Function.Injective r)
-    (proofs : Fin (∑ i, nc i) → Fin p → IpaPallas.Proof σ.k)
-    (hacc : ∀ s t, Ipa.verify IpaPallas.curve σ
-      (mkInput (segmentStream C) xs
-        (segmentStream fun i c => Vector.ofFn (e i c))
-        (ξ s) (r t) (proofs s t)) = true)
-    (hbind : ∀ (w : Fin (2 ^ σ.k) → Fq) (wh : Fq),
-      DLRelation σ w wh → w = 0 ∧ wh = 0) :
-    ∃ q : Fin n → Polynomial Fq, ∀ i,
-      (q i).natDegree < nc i * 2 ^ σ.k
-        ∧ (∀ c : Fin (nc i), ∃ ρ,
-            commit σ (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ)) ρ = C i c)
-        ∧ (∀ j : Fin p, (q i).eval xs[j]
-            = ∑ c : Fin (nc i), (xs[j] ^ 2 ^ σ.k) ^ (c : ℕ) * e i c j)
-        ∧ ∀ (c : Fin (nc i)) (j : Fin p),
-            e i c j = innerProduct (chunkCoeffs (2 ^ σ.k) (q i) (c : ℕ))
-              (evalVector (2 ^ σ.k) xs[j]) :=
-  chunked_batch_soundness σ hnc ξ hξ r hr hm C (fun j : Fin p => xs[j]) e
-    (fun s t => Ipa.verify IpaPallas.curve σ
-      (mkInput (segmentStream C) xs
-        (segmentStream fun i c => Vector.ofFn (e i c)) (ξ s) (r t) (proofs s t)) = true)
-    (fun s t => fs_tree_chunked (fun σ' {_ _} inp => poseidon_fiat_shamir_pallas σ' inp)
-      σ C xs e (ξ s) (r t) (proofs s t))
-    hbind hacc
-
-end Bulletproof

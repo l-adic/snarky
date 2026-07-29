@@ -60,12 +60,6 @@ structure IndexComms (G : Type*) where
   /-- The endoScalar selector's commitment. -/
   endoScalar : G
 
-/-- Commitment carrying a fixed unit blinder. Selector columns are committed this way
-while the permutation and coefficient columns are unblinded — an asymmetry inherited
-from the reference implementation. -/
-noncomputable def commitPolyMasked (σ : SRS G) (p : Polynomial F) : G :=
-  commitPoly σ p + σ.h
-
 /-! ## The chunked indexer -/
 
 /-- Chunk `c` of the unblinded commitment of `p`: the commitment of its `c`-th

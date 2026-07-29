@@ -37,6 +37,7 @@ writes both Pasta curves):
 ./target/release/kimchi_proof_dump ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc2 ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc8 ../../formal/kimchi/fixtures
+./target/release/kimchi_proof_dump_emul ../../formal/kimchi/fixtures
 ```
 
 > **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
@@ -86,7 +87,8 @@ Paths below are relative to `formal/`.
 
 | artifact | contents | checked by |
 |---|---|---|
-| `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints) | `kimchi/scripts/check_linearization.sh` |
+| `kimchi/fixtures/linearization_vesta.json` | the verifier's scalar side of a real proof over the same mixed-gate circuit — challenges, combined evaluations at ζ/ζω, and the production outputs (`ft_eval0`, `perm_scalars`, the token-evaluated constant term, per-gate combined constraints). Live gate terms: generic, poseidon, completeAdd, endoScalar | `kimchi/scripts/check_linearization.sh` |
+| `kimchi/fixtures/linearization_vesta_emul.json` | the same scalar-side record over the SCALAR-MULTIPLICATION circuit (`emul_circuit`, the one `kimchi_proof_dump_emul` proves). Live gate terms: **varBaseMul, endoMul** — the two whose per-gate targets are identically zero in the mixed-gate fixture, so without this one their checks read `0 = 0` (external-audit R-1). Every gate is now live in at least one linearization fixture, and the driver FAILS if a gate it is meant to exercise has a zero target | `kimchi/scripts/check_linearization.sh` |
 
 `kimchi_proof_dump` (two serializations of ONE proof — a complete kimchi wire proof + verifier key over the mixed-gate circuit, same seed and domain-sized SRS as `linearization_vesta.json`: all commitments, uncombined evaluations, opening proof, public input, and the VK data incl. Lagrange-basis commitments, both endo coefficients, and the verifier-index digest):
 
@@ -111,6 +113,19 @@ a Lean-side divergence layer by layer). They are debugging aids, gitignored
 | artifact | contents | checked by |
 |---|---|---|
 | `kimchi/fixtures/kimchi_proof_vesta_nc8.json` | an `nc = 8` proof (nc > 2 parameter coverage): the same mixed circuit and seed re-proved over an `max_poly_size = 8` SRS. There the chunked `zk_rows` (19) grow the domain to `n = 64`, so `nc = n / max_poly_size = 8` with a full `56`-chunk quotient, and `max_poly_size = n/8 ≠ n/2`. Same chunk-array encoding as the `nc = 2` twins. (`nc = 3` is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking and the production prover rejects it with `WrongBlinders`; `nc = 4` would need a larger circuit.) No debug sidecar. | `kimchi/scripts/check_kimchi_verifier.sh` |
+
+`kimchi_proof_dump_emul`:
+
+| artifact | contents | checked by |
+|---|---|---|
+| `kimchi/fixtures/kimchi_proof_vesta_emul.json` | a proof over a circuit with LIVE `EndoMul` and `VarBaseMul` rows (an 8-bit endo scalar and a 10-bit variable-base scalar, witnesses from production's own `endosclmul::gen_witness` / `varbasemul::witness`) and an EMPTY public input. Every other proof fixture has `emul_selector ≡ 0` and `mul_selector ≡ 0`, which is what let the audit's V-1 (EndoMul constraint order/sign) hide under green drivers; this proof's acceptance pins the α-weighted constraint order of both scalar-multiplication gates and the empty-public commitment branch. The unused selector/coefficient VK commitments are zero polynomials, encoded as the `(0, 0)` identity sentinel. | `kimchi/scripts/check_kimchi_verifier.sh` |
+
+`index_dump` additionally emits `index_vesta_nc8.json` (the mixed circuit over the
+`max_poly_size = 8` SRS of `kimchi_proof_dump_nc8`, where `zk_rows = 19` grows the domain
+to 64) so `check_vk_correspond.sh` can adjudicate `Corresponds` at `nc = 8` (audit C-3),
+and `sponge_dump`'s fq-sponge traces include the identity-absorb position probe
+`[absorb_g_inf, absorb_fr, challenge]` — the shape class that distinguishes the two-zero
+identity absorb from a one-zero encoding (audit V-2); an immediate squeeze cannot.
 
 `ipa_dump` is a thin wrapper over the production prover/verifier: proofs come from
 `SRS::commit`/`SRS::open`, the batched `SRS::verify` is asserted at dump time, and the

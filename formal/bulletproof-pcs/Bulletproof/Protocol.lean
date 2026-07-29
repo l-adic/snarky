@@ -139,24 +139,13 @@ scalar `b0`. With final Schnorr challenge `c`, accepts iff both hold:
   `Q = recombine σ P v u proof.lr`);
 * `sg = ⟨bPolyCoefficients u, σ.g⟩` (the `sg`-correctness check).
 
-`VerifierAccepts` is the specialization at `b0 = bPoly u x`; the batched verifier
+The unbatched acceptance is the specialization at `b0 = bPoly u x`; the batched verifier
 feeds `b0 = combinedB u r x` (see `IPA/Batch.lean`). -/
 def VerifierAcceptsAt (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (b0 v c : F)
     (u : Fin σ.k → F) : Prop :=
   (c • recombine σ P v u proof.lr + proof.delta
       = proof.z1 • proof.sg + (proof.z1 * b0) • σ.U + proof.z2 • σ.h)
   ∧ (proof.sg = commitGen σ.g (bPolyCoefficients u))
-
-/-- The verifier accepts, with final Schnorr challenge `c`, iff both hold. This is
-`VerifierAcceptsAt` at `b0 = bPoly u x`:
-
-* `c • Q + δ = z1 • sg + (z1 · bPoly(u, x)) • σ.U + z2 • σ.h` (the Schnorr check,
-  with `Q = recombine σ P v u proof.lr`);
-* `sg = ⟨bPolyCoefficients u, σ.g⟩` (the `sg`-correctness check: the final folded
-  generator is the challenge-coefficient combination of the generators). -/
-def VerifierAccepts (σ : SRS G) (proof : OpeningProof F G σ.k) (P : G) (x v c : F)
-    (u : Fin σ.k → F) : Prop :=
-  VerifierAcceptsAt σ proof P (bPoly u x) v c u
 
 end Bulletproof
 
@@ -361,7 +350,7 @@ assembly inverse (`assemblePoly` — the long polynomial with prescribed windows
 extractor's tool in `Soundness/ChunkedBatch.lean`), the eval recombination
 (`eval_eq_sum_chunkPoly` — the reassembly `p = ∑ Xⁱ·²ᵏ · chunkᵢ` read at a point,
 kimchi's `combined_inner_product` identity), and the commitment recombination
-(`commit_combine` — kimchi's `chunk_commitment`, by linearity). Chunked-opening
+(kimchi's `chunk_commitment`, by linearity). Chunked-opening
 soundness over these definitions is `Soundness/Chunk.lean`.
 -/
 
@@ -381,13 +370,6 @@ def chunkCoeffs (n : ℕ) (p : Polynomial F) (i : ℕ) : Fin n → F :=
 /-- The `i`-th window as a polynomial of degree `< n`. -/
 noncomputable def chunkPoly (n : ℕ) (p : Polynomial F) (i : ℕ) : Polynomial F :=
   ∑ j ∈ Finset.range n, monomial j (p.coeff (i * n + j))
-
-private theorem chunkPoly_natDegree_lt {n : ℕ} (hn : 0 < n) (p : Polynomial F) (i : ℕ) :
-    (chunkPoly n p i).natDegree < n := by
-  apply lt_of_le_of_lt (natDegree_sum_le _ _)
-  rw [Finset.fold_max_lt]
-  exact ⟨hn, fun j hj =>
-    lt_of_le_of_lt (natDegree_monomial_le _) (Finset.mem_range.mp hj)⟩
 
 /-- A chunk's evaluation is its window's inner product with the evaluation vector —
 the bridge between the polynomial view and the committed-vector view. -/
@@ -436,7 +418,7 @@ into the one bound polynomial the commitment opens to. -/
 noncomputable def assemblePoly (n c : ℕ) (as : ℕ → Fin n → F) : Polynomial F :=
   ∑ ci ∈ Finset.range c, ∑ j : Fin n, monomial (ci * n + (j : ℕ)) (as ci j)
 
-theorem assemblePoly_coeff {n c : ℕ} (as : ℕ → Fin n → F) {ci : ℕ} (hci : ci < c)
+private theorem assemblePoly_coeff {n c : ℕ} (as : ℕ → Fin n → F) {ci : ℕ} (hci : ci < c)
     (j : Fin n) : (assemblePoly n c as).coeff (ci * n + (j : ℕ)) = as ci j := by
   -- The windows are disjoint: `ci' * n + j' = ci * n + j` with `j', j < n` forces
   -- `ci' = ci` (divide by `n`) and then `j' = j`.
@@ -497,41 +479,5 @@ def commitₗ (σ : SRS G) : ((Fin (2 ^ σ.k) → F) × F) →ₗ[F] G where
     unfold commit commitGen
     simp only [Prod.smul_fst, Prod.smul_snd, Pi.smul_apply, smul_eq_mul, mul_smul,
       smul_add, Finset.smul_sum, RingHom.id_apply]
-
-/-- **Commitment recombination** — kimchi's `chunk_commitment` formula: the `y`-power
-combination of hiding commitments is the hiding commitment of the `y`-power-combined
-witness. `map_sum` of `commitₗ` at the family `i ↦ yⁱ • (asᵢ, rsᵢ)`. -/
-theorem commit_combine (σ : SRS G) (y : F) (c : ℕ)
-    (as : ℕ → Fin (2 ^ σ.k) → F) (rs : ℕ → F) :
-    ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i)
-      = commit σ (∑ i ∈ Finset.range c, y ^ i • as i)
-          (∑ i ∈ Finset.range c, y ^ i • rs i) := by
-  have hpair : (∑ i ∈ Finset.range c, y ^ i • ((as i, rs i) : (Fin (2 ^ σ.k) → F) × F))
-      = (∑ i ∈ Finset.range c, y ^ i • as i, ∑ i ∈ Finset.range c, y ^ i • rs i) := by
-    refine Prod.ext ?_ ?_
-    · rw [Prod.fst_sum]
-      exact Finset.sum_congr rfl fun i _ => rfl
-    · rw [Prod.snd_sum]
-      exact Finset.sum_congr rfl fun i _ => rfl
-  have hmap : commitₗ σ (∑ i ∈ Finset.range c,
-        y ^ i • ((as i, rs i) : (Fin (2 ^ σ.k) → F) × F))
-      = ∑ i ∈ Finset.range c, y ^ i • commit σ (as i) (rs i) := by
-    rw [map_sum]
-    simp only [map_smul]
-    rfl
-  rw [← hmap, hpair]
-  rfl
-
-/-- The inner product is linear in its first argument — the vector side of the same
-recombination. -/
-theorem innerProduct_combine {n : ℕ} (y : F) (c : ℕ) (as : ℕ → Fin n → F)
-    (b : Fin n → F) :
-    innerProduct (∑ i ∈ Finset.range c, y ^ i • as i) b
-      = ∑ i ∈ Finset.range c, y ^ i * innerProduct (as i) b := by
-  unfold innerProduct
-  simp only [Finset.sum_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_mul,
-    Finset.mul_sum]
-  rw [Finset.sum_comm]
-  exact Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun j _ => by ring
 
 end Bulletproof
