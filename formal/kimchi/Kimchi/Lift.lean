@@ -479,7 +479,7 @@ where each `xi` is a two-bit "crumb".
 
 * `cellMap` / `rowWitness` / `polyWitness` — the layout transcription and its two carrier
   instantiations.
-* `argument` — the `Argument F` instance (`def:quotient_endoscalar_lift`).
+* `argument` — the `Argument F` instance.
 -/
 
 namespace Kimchi.Lift.Gate.EndoScalar

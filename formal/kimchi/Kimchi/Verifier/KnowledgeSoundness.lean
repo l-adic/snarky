@@ -645,7 +645,7 @@ private def kimchiRound (t : KimchiNode C nc k) : C.Point × C.Point :=
 private def kimchiFinal (t : KimchiNode C nc k) : C.Point × C.Point :=
   (t.delta.getD 0, t.sg.getD 0)
 
-/-- **The absorbing squeeze of a flat stream row** (`def:absorbed-by`). The squeeze at whose
+/-- **The absorbing squeeze of a flat stream row**. The squeeze at whose
 node the group element sitting at a given flat position has already been absorbed into the
 transcript:
 
@@ -797,7 +797,7 @@ def runClaim {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.
     (reads digest (fun c => (publicCommitment C σ cvk pub)[c]) cp O Squeeze.polyscale)
     (reads digest (fun c => (publicCommitment C σ cvk pub)[c]) cp O Squeeze.evalscale)
 
-/-- **The warm opening base at a run** (`def:warm-base`). The deployed verifier does not derive
+/-- **The warm opening base at a run**. The deployed verifier does not derive
 the `U` base of the opening argument from a cold sponge: it continues the fq sponge from the
 *warm* state — the state reached after the whole pre-opening absorb schedule, i.e. the state at
 which `ζ` is squeezed — and squeezes the base there, at the `preT` prefix of the claim the run
@@ -805,7 +805,7 @@ opens. This is that group element, as a function of the emitted proof and the or
 `toGroup` of `kimchiOpeningFS`'s base squeeze at `preT (runClaim …)`.
 
 It is the map the family's runs are checked at, and it is *not* a function of the claimed value
-alone (`rem:warm-base-not-claim-factored`), which is why it needs base stability rather than the
+alone, which is why it needs base stability rather than the
 older factors-through-the-claim hypothesis. Mirrors nothing directly; it is to the base what
 `runClaim` (just above) is to the claim, and is written in the same table-reading style. -/
 def warmBase {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
@@ -886,7 +886,7 @@ structure KimchiFamily (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
   hTC : ∀ basis O (j : Fin ((adversary basis).run O).tComm.size),
     commit (srsOfBasis k basis) (aT basis O j) (ρT basis O j)
       = ((adversary basis).run O).tComm[j]
-  /-- **AGM faithfulness on the flat stream** (`def:rep-prefix-determined`): the coefficient
+  /-- **AGM faithfulness on the flat stream**: the coefficient
   vector and blinder the family declares for a stream row are a function of the transcript
   prefix at the node where that row was absorbed (`absorbedBy`), not of the whole oracle table.
 
@@ -997,8 +997,8 @@ private def nodesOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O 
   kimchiNodes (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O)
 
 /-- **AGM faithfulness, in the form a Schwartz–Zippel charge consumes** — the representation
-half of `lem:sz-sets-node-determined`: a stream row's coefficient vector and blinder are
-functions of the run's node at that row's absorbing squeeze, so an exclusion set built from
+half of the exclusion sets' node-determinacy: a stream row's coefficient vector and blinder
+are functions of the run's node at that row's absorbing squeeze, so an exclusion set built from
 them at a node strictly *later* than that squeeze does not read the oracle at its own node.
 
 The `absorbedBy_streamPos_*` lemmas identify that squeeze for the row families the proof
@@ -1230,7 +1230,7 @@ private def readsOf (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O 
     (s : Squeeze k) : C.ScalarField :=
   reads (fam.digest basis) (fam.publicComm basis) (fam.proofOf basis O) O s
 
-/-- **Honest verifying-key representations** (`def:vk-rep-honest`). At a basis and a table, the
+/-- **Honest verifying-key representations**. At a basis and a table, the
 family's AGM coefficient vector at every verifying-key stream position is the honest chunk
 window of the presented circuit's own polynomial.
 
@@ -1258,8 +1258,8 @@ private def VkCommHonest (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point
           (chunkCoeffs (2 ^ k) (vkRowPoly fam.idx (fam.pub basis) r) (c : ℕ))
           (vkRowBlinder r)
 
-/-- **The group-side half of key-honesty is a theorem at the three key row families**
-(`thm:vk-comm-of-correspondence`), the public row carried as a hypothesis.
+/-- **The group-side half of key-honesty is a theorem at the three key row families**,
+the public row carried as a hypothesis.
 
 `VkCommHonest` is not adversary-chosen data: at the σ, coefficient and selector rows it is the
 family's `hvk` (key/circuit correspondence) read through the flat-stream layout, and nothing
@@ -1309,8 +1309,8 @@ private theorem le_lagrangeBasis_size_of_wins (basis : Zcash.Snark.AugmentedInde
     if_pos (by simp [Nat.lt_of_not_le hlt])] at h
   exact Bool.noConfusion h
 
-/-- **The group-side half of key-honesty, outright, on a winning run**
-(`thm:vk-comm-of-correspondence`). The public row's hypothesis of `vkCommHonest_of_pubRow` is
+/-- **The group-side half of key-honesty, outright, on a winning run.**
+The public row's hypothesis of `vkCommHonest_of_pubRow` is
 discharged from `Capstone/Reflection.lean`'s `publicCommitment_corresponds`: the family's `hvk`
 supplies the Lagrange chunk pin, `hpub` the public-input arity, and the run's own acceptance the
 Lagrange-basis size. `hsmul` — the `.val`-scalar collapse — stays a parameter because it is
@@ -1802,7 +1802,7 @@ def szBudget (nc n zkRows : ℕ) : ℕ :=
 Schwartz–Zippel set `Protocol.soundBadZ` — the vanishing point `1` of the domain polynomial and
 the zero-knowledge boundary `ω^(n − zkRows)`. They are the `+ 2` of `szBudget`.
 
-The easiest case of `lem:sz-sets-node-determined`, and the reason it is worth naming: this set
+The easiest case of node-determinacy, and the reason it is worth naming: this set
 reads neither the family's AGM representations, nor the run's commitments, nor any earlier
 challenge — it is a function of the circuit alone. So it is a *constant* function of the node
 at which `ζ` is read, hence trivially blind there, and the adaptive Schwartz–Zippel charge
@@ -2105,7 +2105,7 @@ private theorem attempt_inl_noBreak
     · exact absurd h (by simp)
     · assumption
 
-/-- **A left payload certifies key-honesty** (`lem:finder-none-of-inl-honest`). This is the one
+/-- **A left payload certifies key-honesty**. This is the one
 new fact the arm-(4) split needs, and the reason the four-way cover no longer has to carry
 key-honesty as an added conjunct: under the gated extractor, arm (4) *implies* it.
 
@@ -2277,7 +2277,7 @@ private def OpenedUnsatisfying (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C
       (runWTab (srsOfBasis k basis) (fam.cvk basis) (fam.proofOf basis O) (fam.pub basis)
         fam.idx a)
 
-/-- **Arm (4) carries key-honesty** (`thm:four-way-cover-honest`). This is what the gated
+/-- **Arm (4) carries key-honesty**. This is what the gated
 extractor buys and what summand (IV) needs: at every point of the opened-but-unsatisfying arm
 of a winning run, the family's verifying-key representations *are* the presented circuit's
 honest chunk windows and its `ft` representation *is* the combination the verifier's own
@@ -2725,7 +2725,7 @@ private def claimTriple {m : ℕ} (inp : Ipa.Input C k m evalPts) :
   (combinedEvalVector (2 ^ k) inp.evalscale inp.pointFn, Ipa.cipOf inp,
     combinedCommitment inp.polyscale inp.commitmentFn)
 
-/-- **The triple factors through the pre-opening data** (`lem:kimchi-triple-of-predata`). Two
+/-- **The triple factors through the pre-opening data**. Two
 runs with the same pre-opening payload, at the same six challenges, give the same combined
 evaluation vector, the same inner-product claim and the same combined commitment.
 
@@ -2792,7 +2792,7 @@ private theorem claimStable_claimTriple (σ : SRS C.Point) (cvk : KimchiVK C nc)
       rw [runClaim_eq_kimchiClaimOf]
       exact claimTriple_kimchiClaimOf_eq_preClaimTriple σ cvk pub digest p _)
 
-/-- **Arm (1)'s last ingredient** (`lem:kimchi-claim-stable`): at every basis, the family's own
+/-- **Arm (1)'s last ingredient**: at every basis, the family's own
 claim map — proof and table to the triple `(b, v, P)` the win condition reads — is stable under
 the fork's reprogrammings. `Bulletproof.Forking.kimchiExtract_failure_measure_le_of_stable` takes
 exactly this as its `hstable`, so the presence arm's bound now waits on nothing else here. -/
@@ -2827,7 +2827,7 @@ section WarmBase
 
 variable {nc k : ℕ}
 
-/-- **The `U`-base prefix reads the claim only through its value** (`lem:preT-through-cip`).
+/-- **The `U`-base prefix reads the claim only through its value**.
 `preT inp` is the two-element list `[frScalar (shiftScalar (cipOf inp)), sqBase]`, so it is
 literally a function of `cipOf inp`; in particular it does not read the opening proof, which is
 what distinguishes it from the round and Schnorr prefixes.
@@ -2839,8 +2839,8 @@ private theorem preT_eq_of_cipOf_eq {j m p : ℕ} (inp inp' : Ipa.Input C j m p)
     IpaTranscriptElt.preT inp = IpaTranscriptElt.preT inp' := by
   simp only [IpaTranscriptElt.preT, IpaTranscriptElt.preTAbsorbs, h]
 
-/-- **The warm state is determined by the pre-opening payload**
-(`lem:warm-state-through-predata`). The warm state is the fold of the fq sponge along the
+/-- **The warm state is determined by the pre-opening payload.**
+The warm state is the fold of the fq sponge along the
 pre-`ζ` absorb list — the key digest, the public commitment chunks, the witness commitments, the
 permutation commitment and the quotient chunks — none of which is the opening. So equal payloads
 force the two proofs into the same shape and the two folds have the same input.
@@ -2861,7 +2861,7 @@ private theorem warmState_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C 
 variable [Module C.ScalarField C.Point]
 
 /-- **The warm base as a function of the proof and the six pre-opening challenges alone**
-(`def:warm-base`, payload-and-challenges form): `warmBase` with the table replaced by a
+(payload-and-challenges form): `warmBase` with the table replaced by a
 `Fin preIpaChals`-indexed tuple of prechallenges, each expanded by its own squeeze's map.
 
 Mirrors `kimchiClaimOf` (section 10) exactly — same six arguments, same expansion — and stands
@@ -2884,8 +2884,8 @@ theorem warmBase_eq_kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
           O (kimchiNodes digest (fun c => (publicCommitment C σ cvk pub)[c]) cp
             (preSqueeze i))) := rfl
 
-/-- **The warm base is determined by the payload and the six challenges**
-(`lem:warm-base-of-predata`). The base is `toGroup` of one squeeze, so it suffices to equate the
+/-- **The warm base is determined by the payload and the six challenges.**
+The base is `toGroup` of one squeeze, so it suffices to equate the
 squeeze's two arguments: the source is `spongeFSFrom` of the warm state, equal by
 `warmState_eq_of_preData_eq`; the prefix is `preT` of the run's claim, and the two claims have
 the same value because that value is the middle component of the claim triple, which
@@ -2912,7 +2912,7 @@ theorem kimchiWarmBase_eq_of_preData_eq (σ : SRS C.Point) (cvk : KimchiVK C nc)
   rw [kimchiWarmBase, kimchiWarmBase, kimchiOpeningFS, kimchiOpeningFS, hstate,
     preT_eq_of_cipOf_eq _ _ hcip]
 
-/-- **The warm base as a function of the pre-opening payload alone** (`def:pre-warm-base`) — the
+/-- **The warm base as a function of the pre-opening payload alone** — the
 `claimOf` that `claimStable_of_preDataFactors` asks for, at `ClaimData := C.Point`. Total by a
 classical case split on whether the payload is realized by some proof at all; on the realized
 branch the choice of realizer does not matter, which is `kimchiWarmBase_eq_of_preData_eq`.
@@ -2930,7 +2930,7 @@ private noncomputable def preWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     kimchiWarmBase σ cvk pub h.choose ch
   else 0
 
-/-- **The factorization, at a realized payload** (`lem:warm-base-factors`): the run's own warm
+/-- **The factorization, at a realized payload**: the run's own warm
 base is what `preWarmBase` returns at the run's payload. This is the `hκ` of
 `claimStable_of_preDataFactors`.
 
@@ -2950,7 +2950,7 @@ private theorem kimchiWarmBase_eq_preWarmBase (σ : SRS C.Point) (cvk : KimchiVK
   rw [preWarmBase, dif_pos hex]
   exact kimchiWarmBase_eq_of_preData_eq σ cvk pub digest _ cp ch hex.choose_spec |>.symm
 
-/-- **The deployed warm base is base-stable** (`thm:warm-base-stable`), for any adversary against
+/-- **The deployed warm base is base-stable**, for any adversary against
 the transcript of `σ`, `cvk`, `pub`, `digest`. `claimStable_of_preDataFactors` supplies the two
 schedule facts; the factorization is `warmBase_eq_kimchiWarmBase` followed by
 `kimchiWarmBase_eq_preWarmBase`.
@@ -2973,7 +2973,7 @@ private theorem baseStable_warmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
       rw [warmBase_eq_kimchiWarmBase]
       exact kimchiWarmBase_eq_preWarmBase σ cvk pub digest p _)
 
-/-- **The base hypothesis of the family's measure bound** (`thm:warm-base-stable`, family form):
+/-- **The base hypothesis of the family's measure bound** (family form):
 at every basis, the family's own warm base map is stable under the fork's reprogrammings.
 `Bulletproof.Forking.kimchiExtract_failure_measure_prod_le_of_stableBase` takes exactly this as
 its `hbase`, at `uOf s := fun _ O => fam.warmBase basis O`, so the map is written in that
@@ -2999,7 +2999,7 @@ end WarmBase
 /-! ## 12. Arm (4): the algebraic containment
 
 Arm (4) is the arm with no counterpart on the IPA side: the extractor *did* open, but the
-table it assembles fails the circuit. The plan of `thm:arm4-hits-bad` is that such a point
+table it assembles fails the circuit. The plan for arm (4) is that such a point
 carries an accepted opening whose coefficients are the family's own, and key-honest
 representations (the extractor's gate); the challenge-generic run-soundness root then converts
 those into satisfaction of the assembled table PROVIDED eight scalar side conditions hold. So a
@@ -3014,7 +3014,7 @@ namespace KimchiFamily
 
 variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
-/-- **Pins, or a bad opening-argument challenge** (`lem:pins-or-bad-fr`). On a run at which the
+/-- **Pins, or a bad opening-argument challenge**. On a run at which the
 extractor returns a left payload, either every claimed evaluation of the run's batched claim is
 the inner product of that row's declared coefficient vector with the evaluation vector at that
 point, or the run's polyscale challenge lies in the `ξ` exclusion set, or its evalscale
@@ -3054,7 +3054,7 @@ private theorem pins_or_badChallenge_of_attempt_inl
     (fam.claim basis O).pointFn (fam.aRef basis O) (fam.claim basis O).evalFn _ _ hξ hr
     (fam.pgOf basis O) (fam.pwOf basis O) hopen (fam.pgOf_eq_sum_smul basis O)
 
-/-- **Arm (4) is contained in seven bad-challenge events** (`thm:arm4-hits-bad`). Every point of
+/-- **Arm (4) is contained in seven bad-challenge events**. Every point of
 the opened-but-unsatisfying arm on a winning run satisfies at least one of: the run's `β` lies
 in the `β` Schwartz–Zippel set, its `γ` in the `γ` set, its `α` in the `α` set, its `ζ` in the
 `ζ` set at the run's own assembled quotient, its `ζ` in the two-element boundary set, its
@@ -3141,7 +3141,7 @@ end Arm4
 The presence arm is priced by the adaptive game, whose win event is
 `Bulletproof.Forking.WinsAt` — the abstract acceptance predicate at the claim map's own triple.
 The kimchi win event is the executable `kimchiVerifyWith` at the table's challenges. This
-section is the bridge, `lem:wins-to-winsat`.
+section is the bridge to the abstract win, `winsAt_of_wins`.
 
 `Bulletproof.Ipa.Forking.wireWins_iff_wins` (`Deployed.lean`) is the exact pattern, and the step
 it factors through — `verifyWith_iff_verifierAcceptsAt` — is now public in that (protected)
@@ -3163,7 +3163,7 @@ namespace KimchiFamily
 
 variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
-/-- **A deployed win is an abstract win at the claim triple** (`lem:wins-to-winsat`). If the
+/-- **A deployed win is an abstract win at the claim triple**. If the
 challenge-generic kimchi verifier accepts a run at the table's own challenges, then the abstract
 opening-argument win predicate holds at the run's setup — the sampled setup with base the
 group-map image of the run's combined inner product — for the claim triple of the run's batched
@@ -3247,7 +3247,7 @@ end WinBridge
 
 /-! ## 14. The transcript node machinery the charge consumes
 
-`lem:sz-sets-node-determined` says every exclusion set of arm (4) is a function of the run's node
+Node-determinacy says every exclusion set of arm (4) is a function of the run's node
 at a *strictly earlier* squeeze. Feeding that into
 `Bulletproof.Forking.adaptive_badSet_ofPrefix_union_expand_measure_le` — whose `pre` argument is
 a retraction `ι → κ → T → T` on nodes and whose `hpre` demands that it move every guarded node —
@@ -3281,7 +3281,7 @@ private def squeezeRank : Squeeze k → ℕ
   | .ipaRound i => 6 + (i : ℕ)
   | .schnorr => 6 + k
 
-/-- **Re-gating a node to another squeeze** (`def:regate`). Keep the digest, the public
+/-- **Re-gating a node to another squeeze**. Keep the digest, the public
 commitment chunks and the witness commitments — those are present at every node — and re-gate
 each remaining optional field exactly as `nodeAt` gates it: the permutation commitment is absent
 at `β`/`γ`, the quotient chunks also at `α`, the `ft(ζω)` value and the evaluations also at `ζ`,
@@ -3450,7 +3450,7 @@ private def kimchiPrefixDecode (σ : SRS C.Point) (digest : C.ScalarField)
 `repPrefix_of_absorbedBy` and `tPrefix_of_zetaNode` take node agreement at the row's OWN
 absorbing squeeze, while a Schwartz–Zippel charge has agreement at the (later) squeeze whose
 challenge the exclusion set is about. The retraction closes that gap in one rewrite, and the two
-corollaries below are the form `lem:sz-sets-node-determined` will consume for every row
+corollaries below are the form node-determinacy will consume for every row
 family. -/
 
 section RegateFamily
@@ -3542,7 +3542,7 @@ private theorem ipaAttempt_eq_none_of_attempt
     | inl a => cases hk : fam.keyBreak basis O <;> rw [hk] at h <;> simp at h
     | inr r => simp at h
 
-/-- **The presence summand** (`thm:presence-summand`): the measure of arm (1) over the joint
+/-- **The presence summand**: the measure of arm (1) over the joint
 uniform sampling of the setup index and the oracle table is at most
 `(Q + k + 1) · 3 / |Prechallenge|`.
 
@@ -3663,7 +3663,7 @@ private theorem natCast_prechallenge_injective {m : ℕ} (hm : 2 ^ 128 ≤ m) :
   have h' := (ZMod.natCast_eq_natCast_iff' (a : ℕ) (b : ℕ) m).mp h
   rwa [Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at h'
 
-/-- **Every squeeze expansion is injective** (`lem:squeeze-expand-injective`). `squeezeExpand` is
+/-- **Every squeeze expansion is injective**. `squeezeExpand` is
 the plain cast at `β`/`γ` and `expandPre` everywhere else, so injectivity of the two constituent
 maps is exactly what the statement needs; both are supplied per curve, neither holds generically,
 which is why they are hypotheses. -/
@@ -3678,8 +3678,8 @@ private theorem squeezeExpand_injective {k : ℕ} (C : Ipa.CommitmentCurve)
 
 /-! ### The quotient chunk array is fixed by the `ζ` node -/
 
-/-- **Two proofs with the same `ζ` node carry the same quotient chunks**
-(`lem:tcomm-determined`). The `ζ` node records `tComm` as a total function on `Fin (7 · nc)`
+/-- **Two proofs with the same `ζ` node carry the same quotient chunks.**
+The `ζ` node records `tComm` as a total function on `Fin (7 · nc)`
 returning the optional array entry there, and the wire invariant `tComm_le` bounds both arrays'
 sizes by `7 · nc`, so every out-of-range read is `none` on both sides and `Array.ext_getElem?`
 closes.
@@ -3716,7 +3716,7 @@ statements below are exactly the reads that matter:
 
 section Locality
 
-/-- **`runW` is local to the witness stream positions** (`lem:runw-local`). The two proofs are
+/-- **`runW` is local to the witness stream positions**. The two proofs are
 allowed to differ: the coefficient argument's type mentions the proof, but only through a flat
 arity that does not depend on it. -/
 private theorem runW_congr_of_agree {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -3736,8 +3736,8 @@ private theorem runZ_congr_of_agree {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiV
     runZ σ cvk cp pub aRef = runZ σ cvk cp' pub aRef' :=
   congrArg (assembledRow σ.k nc) (funext h)
 
-/-- **The assembled quotient is a function of the chunk count and the chunk vectors**
-(`lem:ftassembly-congr`). Stated with two independently-typed chunk index families related by
+/-- **The assembled quotient is a function of the chunk count and the chunk vectors.**
+Stated with two independently-typed chunk index families related by
 equal underlying naturals, which is the shape the run-agreement argument produces. -/
 private theorem ftChunkAssembly_congr_of_agree {F : Type*} [Field F] (k : ℕ) {nt nt' : ℕ}
     (aT : Fin nt → Fin (2 ^ k) → F) (aT' : Fin nt' → Fin (2 ^ k) → F) (hn : nt = nt')
@@ -3746,7 +3746,7 @@ private theorem ftChunkAssembly_congr_of_agree {F : Type*} [Field F] (k : ℕ) {
   subst hn
   exact congrArg (ftChunkAssembly k nt) (funext fun j => h j j rfl)
 
-/-- **`badXiOf` does not read the transcript-derived base** (`lem:badxi-base-irrelevant`).
+/-- **`badXiOf` does not read the transcript-derived base**.
 Definitional: the set reads the SRS only through `σ.k`, which a `U`-override preserves. -/
 private theorem badXiOf_setBase {G : Type*} (σ : SRS G) (u : G) {m : ℕ}
     (aw₀ : Fin m → Fin (2 ^ σ.k) → C.ScalarField) (x : Fin evalPts → C.ScalarField)
@@ -3834,7 +3834,7 @@ namespace KimchiFamily
 
 variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
 
-/-- **The seven exclusion sets of arm (4), at the run** (`def:sz-bad-run`). Exactly the seven
+/-- **The seven exclusion sets of arm (4), at the run**. Exactly the seven
 sets named in `arm4_hits_badChallenge`, evaluated at the run the table produces: the `β`, `γ`,
 `α` and `ζ` Schwartz–Zippel sets of the run's assembled columns, accumulator and quotient, the
 two-point `ζ` boundary set, and the run's own `ξ` and `r` sets. -/
@@ -3867,7 +3867,7 @@ private noncomputable def szBadRun (basis : Zcash.Snark.AugmentedIndex (2 ^ k) �
     badROf (fam.runSrs basis O) (fam.aRef basis O) (fam.claim basis O).pointFn
       (fam.claim basis O).evalFn (fam.claim basis O).polyscale]
 
-/-- **Each exclusion set costs its budget term, on EVERY table** (`lem:sz-bad-run-card`) —
+/-- **Each exclusion set costs its budget term, on EVERY table** —
 winning or not, opened or not. This is why `runBounds_of_chunking` was isolated: the adaptive
 charge must bound the sets on tables at which nothing was extracted, where the run-soundness
 root's hypothesis stack is unavailable. The `ζ` bound is instantiated at the run's own assembled
@@ -3912,7 +3912,7 @@ private theorem squeezeRank_absorbedBy_le_three {nc k : ℕ}
   unfold absorbedBy
   split_ifs <;> simp [squeezeRank]
 
-/-- **The retraction to an earlier pre-opening node** (`def:regate` at the schedule). At a node
+/-- **The retraction to an earlier pre-opening node**, at the schedule. At a node
 whose own squeeze is `s`, coordinate `j` names the run's node at `preSqueeze j` whenever that
 squeeze is STRICTLY earlier in the schedule; otherwise the retraction falls back on the Schnorr
 re-gating, which is never the node itself, so `hpre`'s distinctness holds at every coordinate.
@@ -4174,7 +4174,7 @@ private theorem badROf_eq_of_node (basis : Zcash.Snark.AugmentedIndex (2 ^ k) �
     (fam.claim_polyscale basis O).trans (hx.trans (fam.claim_polyscale basis O').symm)
   rw [fam.badROf_runSrs basis O, fam.badROf_runSrs basis O', haR, hpe.1, hpe.2, hxi]
 
-/-- **The exclusion sets are node-determined** (`lem:sz-sets-node-determined`) — the mathematical
+/-- **The exclusion sets are node-determined** — the mathematical
 content of summand (IV). Two tables whose runs share the node at the `i`-th guarded squeeze, and
 whose oracle answers agree at every strictly-earlier retracted node, produce the *same* `i`-th
 exclusion set. It says the adversary cannot choose its exclusion set after seeing the challenge
@@ -4310,7 +4310,7 @@ private theorem openedUnsatisfying_measure_le
   · rw [fam.claim_evalscale basis O] at h
     exact ⟨6, h⟩
 
-/-- **The algebraic summand** (`thm:algebraic-summand`): over the joint uniform measure on
+/-- **The algebraic summand**: over the joint uniform measure on
 (setup index, oracle table) pairs, arm (4) — the winning runs on which the extractor opened but
 the assembled table does not satisfy the circuit — has measure at most
 `(Q + 1) · szBudget / 2¹²⁸`.
