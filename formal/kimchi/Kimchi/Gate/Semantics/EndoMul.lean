@@ -3,9 +3,15 @@ import Kimchi.Gate.Semantics.EndoScalar
 import Kimchi.Gate.Semantics.VarBaseMul
 import Pasta.Endo
 
-/-! # EndoMul gate & circuit semantics: one row computes the GLV combination
-    `4·P + c₁·T + c₂·φ(T)` (soundness/completeness), and the multi-row chain
-    proves the endomorphism-accelerated scalar multiplication `endoMul`. -/
+/-! # EndoMul semantics
+
+One gate row computes the GLV combination `4·P + c₁·T + c₂·φ(T)`, with soundness and
+completeness. The multi-row chain folds those rows into the endomorphism-accelerated scalar
+multiplication `endoMul`.
+
+Beyond the per-row development, the file has two parts: `§ Supporting development` (the GLV
+point fold, the `EndoMul ∘ EndoScalar` recoding kernel, and the non-degeneracy lemmas) and
+`§ The deployed circuit` (the per-curve entry points). -/
 
 namespace Kimchi.Gate.EndoMul
 
@@ -35,7 +41,7 @@ private theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
 omit [DecidableEq F] in
 /-- `Point.some` congruence over *both* coordinates: equal `x` and `y` values give
     equal points (the nonsingularity proofs are irrelevant). A small extension of
-    `Kimchi.some_eq_some`, used to transport a target point along an `x`-coordinate
+    the local `some_eq_some`, used to transport a target point along an `x`-coordinate
     identity that holds only `by ring`. -/
 theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
     (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
@@ -45,7 +51,8 @@ theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
 /-- GLV target selection. A window's target
     `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` with `b₁, b₂ ∈ {0,1}` is `±T` (when
     `b₁ = 0`, so `xq = xT`) or `±φ(T)` (when `b₁ = 1`, so `xq = endo·xT`), where
-    `φ(T) = (endo·xT, yT)`. Reuses `Kimchi.signed_target` with base `T` or `φ(T)`. -/
+    `φ(T) = (endo·xT, yT)`. Reuses `Kimchi.Gate.VarBaseMul.signed_target` with base `T` or
+    `φ(T)`. -/
 private theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0))
     {endo b1 b2 xT yT : F}
     (hT : W.Nonsingular xT yT) (hφT : W.Nonsingular (endo * xT) yT)
@@ -101,7 +108,7 @@ private theorem targets_nonsingular (W : WeierstrassCurve.Affine F)
     first-addition slope `s` and the `xR`/`yR` relations — together with the
     non-degeneracy `xP ≠ xq` (first slope), `2·xP − s² + xq ≠ 0` (second addition
     `M + P`, `M = P + Q`), and `xR ≠ xP` force `R = (P + Q) + P`. General in `Q`, so
-    it serves both windows of the row. Closes with `Kimchi.secant_add` twice,
+    it serves both windows of the row. Closes with `Kimchi.Gate.VarBaseMul.secant_add` twice,
     recovering the eliminated intermediate `M` (cf. VarBaseMul's `singleBit_sound`).
 
     `xR ≠ xP` is essential: `hc2` and `hc3` share a `(xP − xR)` factor, so without
@@ -329,12 +336,8 @@ theorem complete (endo xT yT xP yP n b1 b2 b3 b4 : F)
 
 end Kimchi.Gate.EndoMul
 
-/-! ## GLV scalar-mul chain: supporting development (folded from
-    `Circuit/EndoMul/Internal`). -/
-
-
 /-!
-# The `EndoMul` circuit: supporting development
+## Supporting development
 
 Endomorphism-optimized (GLV) scalar multiplication composes `Kimchi.Gate.EndoMul` rows into a
 full scalar multiplication of the base point. Each row contributes `S = 4·P + c₁·T + c₂·φ(T)` (the
@@ -354,7 +357,7 @@ Every intermediate accumulator's nonsingularity is *derived* — the gate's seca
 back the output point on-curve (`gate_advance`), threaded through the chain — so there is no
 per-row hypothesis bundle, only a coordinate side-condition `hxne` discharged at the curve layer.
 
-## The `EndoMul ∘ EndoScalar` recoding kernel
+### The `EndoMul ∘ EndoScalar` recoding kernel
 
 EndoMul's per-window GLV digits coincide with EndoScalar's Algorithm-2 `cPoly`/`dPoly` digits over
 the shared challenge crumbs. This is the technical bridge between the two gates — pure digit/crumb
@@ -367,7 +370,7 @@ bookkeeping, independent of the GLV point-fold.
 * `crumbList` / `decompose_crumbList` — the `2m`-crumb list the rows feed to `EndoScalar`, and the
   init-aligned bridge to its `decomposeA`/`decomposeB`.
 
-## Non-degeneracy
+### Non-degeneracy
 
 The per-row non-degeneracy facts the soundness needs, generic over the curve:
 
@@ -377,7 +380,7 @@ The per-row non-degeneracy facts the soundness needs, generic over the curve:
   two-base combination `[a]·T + [b]·φT` avoids `±T`/`±φT`.
 * `selectQ'` — a bounded variant of `Gate.EndoMul.selectQ` that also returns the sign `e = ±1`.
 
-## The GLV scalar-multiplication chain
+### The GLV scalar-multiplication chain
 
 The point-level fold and the capstone:
 
@@ -690,7 +693,7 @@ private theorem block_produce (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 �
 
 /-- **The producing gate step.** Given the input accumulator on-curve (`hP`), the base
     (`hT`/`hφT`), the row constraints (`Holds`), and the two first-addition non-degeneracies
-    (`hxne1`/`hxne2` — the second-addition `htne`s are self-enforced via `htne_of_holds`), the
+    (`hxne1`/`hxne2` — the second-addition `htne`s are self-enforced via `block_tne`), the
     gate *produces* the output point on-curve (`hS`, existential — via the secant additions, not
     assumed) together with the GLV contribution. The `(c1, c2)` digit identities are the GLV
     window digits, plus the `|·| ≤ 3` bound used by the accumulator invariant. -/
@@ -875,7 +878,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   choose! c1 c2 hc using hrow
   have hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT :=
     fun i hi => (hc i hi).1
-  -- fold the chain and identify the scalar with `EndoScalar.toField` (cf. the old `endoMul_ab`)
+  -- fold the chain and identify the scalar with `EndoScalar.toField`
   set k1 := ∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c1 i with hk1def
   set k2 := ∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c2 i with hk2def
   have hPm : P m = (4 : ℤ) ^ m • P 0 + k1 • T + k2 • φT := chain_endo W m P T φT c1 c2 hstep
@@ -935,8 +938,8 @@ theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
   · simp +decide [EndoScalar.toField, hk1, hk2]
     rw [decompose_crumbList g m |>.1, decompose_crumbList g m |>.2]; ring
 
-/-- **Producing variant of `one_window`.** Given the bounded input accumulator form `[a]·T + [b]·φT`
-    and a window's constraints, derives the window's first-addition non-degeneracy `hxne` and
+/-- **Producing variant.** Given the bounded input accumulator form `[a]·T + [b]·φT` and a
+    window's constraints, derives the window's first-addition non-degeneracy `hxne` and
     advances to the next bounded form, handing back the on-curve output point — the output
     accumulator's nonsingularity `hO` is *produced* (via `block_produce`) rather than consumed. -/
 private theorem one_window_produce (W : WeierstrassCurve.Affine F)
@@ -1033,7 +1036,7 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
       intro hi
       have hi' : i < m := by omega
       obtain ⟨hPi', A, B, hPeq, hAlo, hAhi, hBlo, hBhi⟩ := ih (by omega)
-      -- power bookkeeping (verbatim from `accumulator_invariant`)
+      -- power bookkeeping (verbatim from `accumulator_chain`)
       have h2i : 2 * i ≤ 120 := by omega
       have h4i : (4 : ℤ) ^ i ≤ 2 ^ 120 := by
         calc (4 : ℤ) ^ i = 2 ^ (2 * i) := by rw [pow_mul]; norm_num
@@ -1135,29 +1138,25 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
 
 end Kimchi.Gate.EndoMul
 
-/-! ## GLV scalar-mul chain: `endoMul` at the Pasta curves (folded from
-    `Circuit/EndoMul`). -/
-
-
 /-!
-# The `EndoMul` circuit
+## The deployed circuit
 
 Endomorphism-optimized (GLV) scalar multiplication, instantiated at the real Pasta curves (the
 analog of `VarBaseMul`'s `scaleFast` entry points). A run of `Kimchi.Gate.EndoMul` rows over a base
 point `T` computes `[s]·T`, where `s` is the scalar `EndoScalar` decodes from the row crumbs. The
 generic capstone `Kimchi.Gate.EndoMul.endoMul` and its supporting development — the GLV point
-fold, the `EndoMul ∘ EndoScalar` recoding kernel, and the non-degeneracy lemmas — live in
-`Kimchi.Gate.EndoMul.Internal`.
+fold, the `EndoMul ∘ EndoScalar` recoding kernel, and the non-degeneracy lemmas — are
+`§ Supporting development` above.
 
 This module exposes the deployed entry points at each concrete curve. The prover supplies only the
 gate constraint `Holds` per row, the base nonsingularity (row 0 — genuinely external), the column
 threading, and the initial accumulator `P₀ = 2(T + φT)`. Every intermediate accumulator's
 nonsingularity is *derived* (`endoMul`), and the per-row first-addition non-degeneracy `hxne` is
 *derived* — not assumed — from the GLV short-basis bound. The prime-order / `hodd` / short-shape
-facts come from `Pasta`, and the eigenvalue `φT = [λ]·T` is discharged by the curve's CM
-axiom (`{pallas,vesta}_eigen`).
+facts come from `Pasta`, and the eigenvalue `φT = [λ]·T` is discharged by the proved
+`Pasta.{pallas,vesta}_eigen`.
 
-## Main results
+### Main results
 
 * `{pallas,vesta}_combo_off_targets` — the GLV off-targets fact (the `hxne` core): a bounded
   nonzero two-base accumulator `[a]·T + [b]·φT` avoids `±T`, `±φT`.

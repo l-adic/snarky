@@ -1,7 +1,7 @@
 import Kimchi.Verifier.Kimchi
 
 /-!
-# W2 · The Fiat–Shamir transcript domain (fq-sponge side)
+# The Fiat–Shamir transcript domain (fq-sponge side)
 
 The deployed verifier derives its challenges by threading a concrete Poseidon sponge
 (`fqOracles`, `Kimchi.Verifier.Kimchi`). The soundness proof needs those challenges as

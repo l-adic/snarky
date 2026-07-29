@@ -13,8 +13,9 @@ import Mathlib.Tactic
       q₀·w₀ + q₁·w₁ + q₂·w₂ + q₃·(w₀·w₁) + q₄ = 0     -- registers w₀ w₁ w₂, coeffs q₀…q₄
       q₅·w₃ + q₆·w₄ + q₇·w₅ + q₈·(w₃·w₄) + q₉ = 0     -- registers w₃ w₄ w₅, coeffs q₅…q₉
 
-    (`q₁₀…q₁₄` are unused.) There is no standalone single-constraint gate; the
-    polynomial lift (`Kimchi/Lift.lean`) consumes `Generic.Holds`. -/
+    (`q₁₀…q₁₄` are unused.) There is no standalone single-constraint gate. The polynomial
+    lift (`Kimchi/Lift.lean`) consumes `Generic.constraints`; `Generic.Holds` is what
+    `Kimchi/Index/Satisfies.lean` reads per row. -/
 
 namespace Kimchi.Gate
 
@@ -47,7 +48,7 @@ def Generic.Holds (g : Generic F) : Prop :=
 
 /-- The row with a public input folded in: kimchi's row check subtracts `public[row]`
 from the *first* operation's constraint (`verify_generic`:
-`sum + mul + qC − public = 0`), which is the plain constraint of the row whose first
+`sum + mul + c_coeff − public = 0`), which is the plain constraint of the row whose first
 constant coefficient — `q 4` in the packed `[l, r, o, m, c | l', r', o', m', c']`
 layout — absorbs the public value. -/
 def Generic.withPublic (g : Generic F) (p : F) : Generic F :=

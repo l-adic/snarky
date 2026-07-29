@@ -2,10 +2,15 @@ import Kimchi.Gate.VarBaseMul
 import Pasta.Shifted
 import Mathlib
 
-/-! # VarBaseMul gate & circuit semantics: one row runs a bit of the
-    double-and-add ladder (soundness/completeness), and the multi-row chain
-    proves variable-base scalar multiplication `[σ]·T` (incl. the Type1/Type2
-    caller scalars at the Pasta curves). -/
+/-! # VarBaseMul semantics
+
+One gate row runs a bit of the double-and-add ladder, with soundness and completeness. The
+multi-row chain folds those rows into variable-base scalar multiplication `[σ]·T`, including
+the Type1 and Type2 caller scalars at the Pasta curves.
+
+Beyond the per-row development, the file has two parts: `§ Supporting development` (the
+recurrence folds, the number-theoretic ladder kernel, and the group-order non-degeneracy
+toolkit) and `§ The deployed circuit` (the per-curve entry points). -/
 
 namespace Kimchi.Gate.VarBaseMul
 
@@ -375,12 +380,8 @@ theorem complete [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F)
 
 end Kimchi.Gate.VarBaseMul
 
-/-! ## Multi-row ladder chain: supporting development (folded from
-    `Circuit/VarBaseMul/Internal`). -/
-
-
 /-!
-# The `VarBaseMul` circuit: supporting development
+## Supporting development
 
 Variable-base scalar multiplication composes `Kimchi.Gate.VarBaseMul` gate rows: `m` gates run
 back to back, each consuming five bits of the scalar, with gate `i`'s output accumulator feeding
@@ -391,7 +392,7 @@ theorems rest — the curve-specialized `varBaseMul_scaleFast1` and `varBaseMul_
 `Kimchi.Gate.VarBaseMul`) and the two generic roots `varBaseMul_subwrap_correct` and
 `varBaseMul_forbidden_correct` it exposes here.
 
-## Correspondence to the PureScript circuit
+### Correspondence to the PureScript circuit
 
 The hypotheses are exactly the constraints `Snarky.Circuit.Kimchi.VarBaseMul` emits
 (`packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs`):
@@ -406,7 +407,7 @@ The two circuit entry points appear here as `scalarMul_shifted` (the core `varBa
 correspondence: the model's hypotheses match the PureScript constraints by inspection, not by a
 mechanized extraction.
 
-## Contents
+### Contents
 
 * the point- and register-level recurrence folds (`chain_scalarMul`, `chain_register`,
   `chain_sum_bound`) and the folded scalar-multiplication theorems (`scalarMul`,
@@ -425,7 +426,7 @@ The `scalarMul_shifted` headline closes the loop with proof-systems: at the real
 and reproduces the reference value `[1 + 2^numBits + 2·n_bits]·BasePoint` from `varbasemul.rs`'s own
 test, so the circuit computes `[s]·T` for the caller's scalar `s` once it is fed the shifted scalar.
 
-## The number-theoretic ladder kernel
+### The number-theoretic ladder kernel
 
 The non-degeneracy of every partial accumulator reduces to a pure statement about the integer
 double-and-add ladder `k 0 = 2`, `k (j + 1) = 2·k j + εⱼ` with signs `εⱼ ∈ {-1, 1}`. The degenerate
@@ -1263,7 +1264,7 @@ private lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
     unshift of the unsigned register it encodes, as an honest **ℤ** identity (no booleanity needed —
     the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This links
     the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check
-    `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hcanonical`. -/
+    `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hkL`. -/
 private lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
     gateLadder g L = 2 * gateRegister g L + 2 ^ L + 1 := by
   induction L with
@@ -1675,17 +1676,13 @@ theorem varBaseMul_subwrap_correct (c : WeierstrassCurve.Affine F)
 
 end Kimchi.Gate.VarBaseMul
 
-/-! ## Multi-row ladder chain: the Type1/Type2 caller scalars (folded from
-    `Circuit/VarBaseMul`). -/
-
-
 /-!
-# The `VarBaseMul` circuit
+## The deployed circuit
 
 Variable-base scalar multiplication, instantiated at the real Pasta curves. The supporting
 development — the accumulator and register recurrence folds, the number-theoretic ladder kernel,
-the group-order non-degeneracy toolkit, and the abstract soundness — lives in
-`Kimchi.Gate.VarBaseMul.Internal`.
+the group-order non-degeneracy toolkit, and the abstract soundness — is `§ Supporting
+development` above.
 
 The generic soundness theorems `varBaseMul_subwrap_correct` and `varBaseMul_forbidden_correct` are
 proved over any `WeierstrassCurve.Affine` carrying the short-shape and prime-order `Fact`s, and are
@@ -1700,9 +1697,10 @@ each at its concrete curve:
 
 A bare `varBaseMul` is never deployed on its own — only these two — so the field-bound Pallas
 correctness is *inlined* into `scaleFast2`. The `Fact`s
-are discharged from `Pasta`, the prime-order one through the trusted point count
-(`pallas_card` / `vesta_card`). So these corollaries are the only things that depend on a
-point-count axiom; the abstract development stays axiom-free.
+are discharged from `Pasta`, the prime-order one through `pallas_card` / `vesta_card`. Those
+are theorems, resting on CompElliptic's machine-checked point-count certificates rather than
+on any axiom, and these corollaries are where that per-curve trust enters; the abstract
+development is independent of it.
 -/
 
 namespace Kimchi.Gate.VarBaseMul
@@ -1721,7 +1719,8 @@ Its soundness splits by chunk count `m` (`bitsUsed = 5m ≤ FieldSizeInBits = pa
 forbidden band (`varBaseMul_forbidden_correct`).
 
 The full-width `m = 51` case excludes the COMPLETE forbidden band, which is *stronger* than mina's
-incomplete runtime guard; see `varBaseMul_forbidden_correct` for the faithfulness caveat. -/
+incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding `±T` makes
+    every row non-degenerate`. -/
 
 /-- **scaleFast1 / Type1 on the real Vesta curve: correct + sound for any chunk count `m ∈ 1..51`.**
     The single hypothesis on the bit count is `hbits : 5 * m ≤ pastaFieldBits`
@@ -1731,7 +1730,8 @@ incomplete runtime guard; see `varBaseMul_forbidden_correct` for the faithfulnes
     `5m ≤ pastaFieldBits - 5` → `varBaseMul_subwrap_correct` (`3·2^(5m) ≤ PALLAS_BASE_CARD` by
     computation); `5m = pastaFieldBits` → `varBaseMul_forbidden_correct`
     (one-wrap, regime bounds + `order ≡ 1 mod 4` discharged from the cardinal). See
-    `varBaseMul_forbidden_correct` for the band-vs-deployed-check faithfulness caveat. -/
+    `§ Soundness: avoiding `±T` makes every row non-degenerate` for the band-vs-deployed-check
+    faithfulness caveat. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness Fq)
     (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
@@ -1772,7 +1772,7 @@ theorem varBaseMul_scaleFast1
 `scaleFast2 base {sDiv2, sOdd}` does not call `varBaseMul` directly. It runs the inner
 `varBaseMul base (Type1 sDiv2)`, asserts the high bits of the decomposition zero — forcing
 `sDiv2 < 2^(pastaFieldBits-1)` — and applies the parity correction `if sOdd then g else g − base`.
-So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which discharges `hcanonical` via the
+So the inner register is `sDiv2 < 2^(pastaFieldBits-1) < p`, which discharges `hkL` via the
 signed-ladder/register bridge (`gateLadder_eq_register`): no separate range hypothesis beyond
 `sDiv2`'s bound. The field-bound non-degeneracy at Pallas is inlined below — a bare `varBaseMul` is
 never a deployed entry point on its own. The split itself is modeled by `scalarMul_type2`. -/
@@ -1786,7 +1786,7 @@ never a deployed entry point on its own. The split itself is modeled by `scalarM
     `n` are *exposed in the conclusion*. The parity correction is stated on that accumulator:
     `if sOdd then P m else P m − T = [n]·T`, with `(n : F) = unshiftType2 (5m) (N m) sOdd =
     2·(N m) + sOdd + 2^(5m)`. Non-degeneracy comes from the range-check
-    (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hcanonical` via `gateLadder_eq_register`), feeding
+    (`sDiv2 < 2^(pastaFieldBits-1) ≤ p` ⟹ `hkL` via `gateLadder_eq_register`), feeding
     `gateStep_chain` for the derived `GateStep`s; `scalarMul_type2` then supplies the split +
     correction — matching the PureScript `scaleFast2` exactly. -/
 theorem varBaseMul_scaleFast2

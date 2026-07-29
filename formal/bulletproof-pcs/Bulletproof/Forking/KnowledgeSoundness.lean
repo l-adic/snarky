@@ -572,11 +572,12 @@ theorem deployedExtract_noOpening_measure_le_of_textbookDL
 
 end Terminal
 
-/-! ## 8. THE ACCEPTANCE TEST — the per-curve corollaries -/
+/-! ## 8. THE ACCEPTANCE TEST — the setup slot count -/
 
 section PerCurve
 
-/-- The Vesta bound, with the slot count evaluated: `2 ^ k + 1`. -/
+/-- The setup slot count, evaluated: `2 ^ k + 1`. Curve-independent, and used by both
+    per-curve endpoints. -/
 private theorem vesta_card_setup (k : ℕ) : Fintype.card (SetupIndex (2 ^ k)) = 2 ^ k + 1 :=
   card_setupIndex _
 

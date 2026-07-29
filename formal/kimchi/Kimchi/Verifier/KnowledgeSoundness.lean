@@ -52,7 +52,7 @@ true.
 
 ## Why `hbind` does not appear
 
-`kimchiProof_sound_of_openings` (`Verifier/Reduction/Soundness.lean`) carries
+`kimchiProof_sound_of_openings_of_vkrep` (`Verifier/Reduction/Soundness.lean`) carries
 `hbind : ∀ w wh, DLRelation σ w wh → w = 0 ∧ wh = 0` — binding, which
 `Bulletproof/Soundness.lean` concedes is information-theoretically false at deployed
 parameters. Here it is not merely undesirable but unavailable: the measure samples the basis
@@ -1098,7 +1098,7 @@ section VkChannel
 
 /-- **The verifying-key batch rows**, as one index type: the public row, the six selector
 rows, the fifteen coefficient rows and the six σ rows. These are exactly the rows whose
-chunk representation `kimchiProof_sound_of_openings` pins with binding. -/
+chunk representation `kimchiProof_sound_of_openings_of_vkrep` pins with binding. -/
 private inductive VkRow where
   /-- The public row. -/
   | pub : VkRow
@@ -1164,7 +1164,7 @@ omit [Module C.ScalarField C.Point] in
 column reads, at the stream position of abstract batch row `i` and chunk `c`, exactly the
 abstract batch's entry there.
 
-`Capstone/Reflection.lean`'s `commitmentFn_streamPos` says this at `runInput`, the run's *own*
+`Capstone/Reflection.lean`'s `commitmentFn_streamPosAt` says this at `runInput`, the run's *own*
 sponge-driven claim; the game's claim is `runInputWith` at the oracle table's challenges. The
 two flat streams differ in one slot only — the derived `ft` row at flat position `nc` — which
 no batch position reads, and that is exactly the freedom `batchC_eq_flat_gen` was stated
@@ -1379,14 +1379,14 @@ private noncomputable def vkRelation (basis : Zcash.Snark.AugmentedIndex (2 ^ k)
 
 The derived `ft` commitment sits at flat position `nc`, between the public block and the tail
 rows. It is not a verifying-key row, but its representation is just as unconstrained at the
-sampled basis: `run_sound_algebraic_of_vkrep`'s `hftRep` pins `aRef ⟨nc, _⟩` to the
+sampled basis: `run_sound_algebraic_at_of_vkrep`'s `hftRep` pins `aRef ⟨nc, _⟩` to the
 `pScalar`-scaled `σ₆` chunk combination minus the quotient-chunk combination, and a family may
 declare anything it likes there. The break is `Capstone/Algebraic.lean`'s
 `ft_dlRelation_of_chunks_ne`, injected into the augmented basis with coefficient `0` at `u`
 exactly as `vkRelation` is. -/
 
 /-- The honest coefficient window of the derived `ft` row, at the family's own challenges:
-`run_sound_algebraic_of_vkrep`'s `hftRep` right-hand side with `runOracles`' squeezes replaced
+`run_sound_algebraic_at_of_vkrep`'s `hftRep` right-hand side with `runOracles`' squeezes replaced
 by the table's values and `runPScalar` by `pScalarWith`. -/
 private noncomputable def ftHonestCoeffs (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
     (O : Coins C nc k) : Fin (2 ^ k) → C.ScalarField :=
@@ -1798,7 +1798,7 @@ def szBudget (nc n zkRows : ℕ) : ℕ :=
     + Index.degreeBound n + 2
     + 2 * (nc + 1 + tailRowCount * nc - 1) + 1
 
-/-- **The `ζ` boundary exclusion set**: the two points `RunGuardImp` excludes on top of the
+/-- **The `ζ` boundary exclusion set**: the two points `RunGuardImpAt` excludes on top of the
 Schwartz–Zippel set `Protocol.soundBadZ` — the vanishing point `1` of the domain polynomial and
 the zero-knowledge boundary `ω^(n − zkRows)`. They are the `+ 2` of `szBudget`.
 
@@ -1811,7 +1811,7 @@ private def zetaBoundaryBad {n : ℕ} (idx : Index C.ScalarField n) :
     Finset C.ScalarField :=
   {1, idx.omega ^ (n - idx.zkRows)}
 
-/-- Avoiding the boundary set IS `RunGuardImp`'s two `ζ` side conditions. -/
+/-- Avoiding the boundary set IS `RunGuardImpAt`'s two `ζ` side conditions. -/
 private theorem not_mem_zetaBoundaryBad_iff {n : ℕ} (idx : Index C.ScalarField n)
     (z : C.ScalarField) :
     z ∉ zetaBoundaryBad idx ↔ z ≠ 1 ∧ z ≠ idx.omega ^ (n - idx.zkRows) := by
@@ -1885,14 +1885,18 @@ noncomputable example {nc k n : ℕ} [NeZero n] (fam : KimchiFamily IpaPallas.cu
 
 end PerCurve
 
-/-! ## 7. What must hold before this is worth proving
+/-! ## 7. What had to hold before this was worth proving
 
-* **`kimchiDecodesFromPrefixes` must be discharged.** It returns data, so leaving it open
-  makes `attempt`'s payload carry `sorryAx`. Commit-then-challenge is structurally true of the
-  kimchi schedule; the `Option`-gating exists to make it provable.
-* **Anti-vacuity.** The accepting set must be shown non-empty, the analogue of
-  `Bulletproof.Ipa.Forking.honestFamily_failure_set`, or the bound is a statement about
-  nothing.
+Both conditions are now met.
+
+* **`kimchiDecodesFromPrefixes` had to be discharged**, since it returns data: leaving it open
+  would have made `attempt`'s payload carry `sorryAx`. Commit-then-challenge is structurally
+  true of the kimchi schedule, and the `Option`-gating exists to make it provable. It is
+  discharged above.
+* **Anti-vacuity.** The accepting set had to be shown non-empty, or the bound would be a
+  statement about nothing. `Kimchi.Verifier.Forking.honestKimchiFamily_wins` and
+  `honestKimchiFamily_failure_set` (`Forking/Honest.lean`) show it, and both are roots of
+  `scripts/check_axioms.lean`.
 
 What does **not** need to hold, and is settled in section 8 below: the worry that `attempt`
 silently discards the comparison `a = fam.pgOf basis O` at a basis where binding is false. That
@@ -2281,7 +2285,7 @@ private def OpenedUnsatisfying (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C
 extractor buys and what summand (IV) needs: at every point of the opened-but-unsatisfying arm
 of a winning run, the family's verifying-key representations *are* the presented circuit's
 honest chunk windows and its `ft` representation *is* the combination the verifier's own
-construction forces — i.e. exactly `run_sound_algebraic_of_vkrep`'s four `h*Rep` hypotheses and
+construction forces — i.e. exactly `run_sound_algebraic_at_of_vkrep`'s four `h*Rep` hypotheses and
 its `hftRep`.
 
 The cover itself (`four_way_cover`) is unchanged: no extra conjunct was added to arm (4),
@@ -2569,7 +2573,7 @@ be shown to depend on `cp` only through `preDataOf digest publicComm cp`.
 That last step is *false* for the whole `Ipa.Input` — its `proof` field is `cp.opening`, which
 no pre-opening node carries — and true for the game's claim triple
 `(combinedEvalVector …, cipOf …, combinedCommitment …)`, which reads only the commitment and
-evaluation streams. Establishing it is the outstanding obligation, and it needs the
+evaluation streams. Establishing it is what section 11 below does, and it needs the
 faithfulness of `evalsViewOf` (a `PointEvaluations` is recovered from its `pointView`) together
 with the recovery of `cp.tComm` from the node's `Fin (7 * nc) → Option _` view. -/
 private theorem runClaim_eq_kimchiClaimOf (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -2587,9 +2591,9 @@ end ClaimStability
 `claimStable_of_preDataFactors` (in "Claim stability at the kimchi
 transcript") leaves exactly one obligation for the kimchi transcript: that the claim map
 *factors* through the run's pre-opening payload. That obligation is discharged here, and with it
-the last ingredient of arm (1)'s measure bound — ironwood's
-`kimchiExtract_failure_measure_le_of_stable` takes `ClaimStable` as a hypothesis and this is the
-kimchi instance of it.
+the last ingredient of arm (1)'s measure bound —
+`Bulletproof.Forking.kimchiExtract_failure_measure_le_of_stable` takes `ClaimStable` as a
+hypothesis and this is the kimchi instance of it.
 
 **The retarget.** The obligation is *false* for the whole `Ipa.Input`: `runInputWith` sets
 `proof := cp.opening`, and no pre-opening node carries the opening — the `j = 0` prefix node
@@ -3630,7 +3634,8 @@ two:
   the guarded squeeze, and whose oracle answers agree at the retracted earlier nodes, give the
   *same* seven sets. This is what says the adversary cannot pick its exclusion set after seeing
   the challenge the set is about;
-* **the agreement form of the charge** (`adaptive_union_expand_measure_le_of_agree`): a choice
+* **the agreement form of the charge**
+  (`adaptive_badSet_ofPrefix_union_expand_measure_le_of_agree`): a choice
   function turns a table-indexed family satisfying that agreement law into the node-indexed
   family the abstract bound wants, and at any given table the two events are literally the same
   set.

@@ -38,9 +38,9 @@ identity covers all four cases).
 
 ## Supporting development
 
-The constraint model (`Witness` / `Holds` / `ok` / `ok_iff`) and the cubic↔table bridge
-(`cFunc` / `dFunc`, `cPoly_eq_cFunc` / `dPoly_eq_dFunc`, `foldl_table`). The effective scalar
-`a·λ + b` and the multi-row composition live in `Kimchi.Gate.EndoScalar`.
+The constraint model (`Witness` / `Holds` / `ok` / `ok_iff`) is here. The cubic↔table bridge
+(`cFunc` / `dFunc`, `cPoly_eq_cFunc` / `dPoly_eq_dFunc`, `foldl_table`), the effective scalar
+`a·λ + b`, and the multi-row composition all live in `Kimchi.Gate.Semantics.EndoScalar`.
 -/
 
 namespace Kimchi.Gate.EndoScalar

@@ -291,7 +291,7 @@ private theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.
 Kimchi folds the whole family under a single challenge `α` — powers `α⁰..α²³` weight the
 members — and checks the fold against `t · Z_H` by evaluation. The library's deterministic
 account of "a random `α`" is now the standard **counting** Schwartz–Zippel argument
-(`Quotient/SchwartzZippel.lean`): a *single* challenge `α`, together with a *single*
+(`Kimchi/SchwartzZippel.lean`): a *single* challenge `α`, together with a *single*
 quotient `t`, suffices to separate divisibility across the members, provided `α` avoids the
 explicit **bad set** `badAlphas (idx.fullFamily …) idx.omega n`, whose cardinality is proved
 `≤ n · (K − 1)` (`card_badAlphas_le`). No injective α-family, no Vandermonde. The evaluation

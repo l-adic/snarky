@@ -1,6 +1,3 @@
--- Library root: a formalization of the kimchi proof system.
--- Re-exports the EC oracle, the generic gate, and the custom-gate identities, plus the
--- VarBaseMul scalar-multiplication soundness (abstract + instantiated at the Pasta curves).
 import Pasta.Shifted
 import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
@@ -42,12 +39,37 @@ import Kimchi.Verifier.Wire
 import Kimchi.Verifier.Capstone.Algebraic
 import Kimchi.Verifier.Capstone.Reflection
 
--- W2 · Fiat–Shamir random-oracle model (fq + fr) and its run-level faithfulness
+-- The Fiat–Shamir random-oracle model (fq + fr) and its run-level faithfulness
 import Kimchi.Verifier.Forking.RunLink
--- W3 · The guard-escape engine and the run-level escape bounds
-
 -- Knowledge soundness of the deployed verifier, over the IPA forking extractor
 import Kimchi.Verifier.KnowledgeSoundness
 -- The honest family (anti-vacuity) and the bridge to the deployed verifier
 import Kimchi.Verifier.Forking.Honest
 import Kimchi.Verifier.Forking.Bridge
+
+/-!
+# Kimchi — the kimchi proof system over the Pasta curves
+
+Root module of the `Kimchi` library. The development runs bottom-up, from a single gate row
+to knowledge soundness of the executable verifier:
+
+- `Kimchi/Gate/` — each modelled gate as a constraint predicate over a witness structure
+  (`Holds` / `ok` / `ok_iff`), proved faithful to Mathlib's elliptic-curve group law.
+- `Kimchi/Gate/Semantics/` — the multi-row development: ladders, GLV accumulation, and the
+  per-curve deployed entry points (`pallas_endoMul`, `varBaseMul_scaleFast2`, and the rest).
+- `Kimchi/Index/`, `Kimchi/Permutation/`, `Kimchi/Lift.lean`, and the vanishing-argument
+  modules `Domain`, `GrandProduct`, `SchwartzZippel`, `Aggregate` — the arithmetization: the
+  index, satisfiability as divisibility, and the linearization.
+- `Kimchi/Protocol/` — the ideal polynomial protocol, PCS-free, and its soundness.
+- `Kimchi/Verifier/` — the executable verifier, its reflection, the reduction to the IPA
+  commitment of the `Bulletproof` package, and the forking development.
+
+The headline is per-curve knowledge soundness of the *deployed* verifier,
+`Kimchi.Verifier.KnowledgeSoundness.{vesta,pallas}_kimchi_knowledge_sound`.
+
+**The modelled fragment excludes lookups, optional gates, recursion, and the sub-SRS
+regime.** The canonical statement of that scope is the preamble of
+`Kimchi/Verifier/KnowledgeSoundness.lean`. The package declares no axioms: every endpoint
+reduces to the standard logical axioms plus the Pasta trust base, which
+`scripts/check_axioms.sh` enforces.
+-/

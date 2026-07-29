@@ -1,7 +1,7 @@
 import Kimchi.Verifier.Forking.Transcript
 
 /-!
-# W2 · Interpreting a transcript prefix through the real sponge (fq side)
+# Interpreting a transcript prefix through the real sponge (fq side)
 
 `poseidonO` folds a transcript prefix through the deployed fq-sponge, returning the last
 squeezed challenge. The bridge theorems (`poseidonO_pre*`) prove that reading `poseidonO`

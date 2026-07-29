@@ -31,7 +31,7 @@ and `L_r` the Lagrange basis at row `r` (`columnPoly` at an indicator):
 The permutation is not an `Argument` instance: the aggregation reads the accumulator at
 two rows (`z(X)` and `z(ωX)`) and is gated by the complement of a row set rather than a
 selector column. Its soundness therefore composes the shared quotient machinery directly
-(`zH_dvd_of_eval`, `dvd_separation`, `zH_dvd_iff`) with two bespoke row lemmas: the
+(`zH_dvd_iff`) with two bespoke row lemmas: the
 gate's nonvanishing off the masked rows, and the Lagrange pins.
 
 The conclusion feeds the copy-soundness layer (`Permutation/Copy.lean`): at the
@@ -282,7 +282,7 @@ private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω
 the three permutation constraints, the accumulator telescopes over the unmasked region:
 the grand products of the shift side and the σ side agree,
 `∏_{j < n-zkRows} shiftSide(ωʲ) = ∏_{j < n-zkRows} sigmaSide(ωʲ)`. This is the core the
-derandomized eval-check form (`soundness`) and the full-aggregate assembly
+derandomized eval-check form and the full-aggregate assembly
 (`Kimchi/Index/Aggregate.lean`) both enter through. -/
 theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)

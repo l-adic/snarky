@@ -27,16 +27,20 @@ We model the UPSTREAM-FIXED gate: 12 constraints, including the distinct-point c
 accumulator away from `−P` / `−R`. The pre-fix gate without it is underconstrained
 (it admits the spurious `R = −P`) — see `block_sound` / `distinctPoints`.
 
-The EC core (`(P + Q) + P` per window) reuses `Kimchi.Gate.VarBaseMul`'s
+The EC core (`(P + Q) + P` per window) reuses `Kimchi.Gate.Semantics.VarBaseMul`'s
 `secant_add` (general affine addition) and `signed_target` (the `±` selection); the
 new ingredients are the endomorphism base-choice and the GLV `[k₁]T + [k₂]φ(T)`
 accumulation.
 
 ## Main results
 
-* `selectQ` — GLV target selection: a window's `Q` is `±T` (when `b₁ = 0`) or
-  `±φ(T)` (when `b₁ = 1`), via `Kimchi.signed_target` with base `T` or `φ(T)`.
-* `block_sound` — one window's `(P + Q) + P` double-and-add, via `Kimchi.secant_add`
+These are proved in `Kimchi/Gate/Semantics/EndoMul.lean`; all but `sound` are `private`
+there.
+
+* `selectQ` — GLV target selection: a window's `Q` is `±T` (when `b₁ = 0`) or `±φ(T)` (when
+  `b₁ = 1`), via `Kimchi.Gate.VarBaseMul.signed_target` with base `T` or `φ(T)`.
+* `block_sound` — one window's `(P + Q) + P` double-and-add, via
+  `Kimchi.Gate.VarBaseMul.secant_add`
   twice (general in `Q`; carries the `xR ≠ xP` non-degeneracy the modeled gate
   revision needs — see its docstring + the upstream fix it references).
 * `row_sound` / `sound` — the per-row two-window chain `R = (P+Q₁)+P`,
@@ -49,8 +53,8 @@ The constraint model `Witness` / `Holds`, the booleanity helper `bool_of_mul`, t
 distinct-point lemma `distinctPoints` (which discharges `block_sound`'s
 non-degeneracy at the row level), and the `some_congr` point congruence. The GLV
 accumulation `P_m = 4^m·P₀ + k₁·T + k₂·φ(T)`, its eigenvalue collapse, and the
-recoding correspondence with EndoScalar live in `Kimchi.Gate.EndoMul` /
-`Kimchi.Gate.EndoMul.Recoding`, culminating in `endoMul`: per 2-bit window
+recoding correspondence with EndoScalar live in `Kimchi.Gate.Semantics.EndoMul`,
+culminating in `endoMul`: per 2-bit window
 the two gates assign the same signed base, so `EndoMul` multiplies the base by exactly
 the scalar `EndoScalar` decodes.
 -/

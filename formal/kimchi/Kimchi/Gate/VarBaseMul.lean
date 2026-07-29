@@ -34,8 +34,8 @@ Witness layout (cols 0–14 of the VBSM row `i`, then the ZERO row `i+1`):
 The accumulator chain is (x0,y0) → (x1,y1) → … → (x5,y5); `base = (xT,yT)` is the
 fixed target; `s0..s4` are the per-bit `s1` slopes; `b0..b4` the bits.
 
-This file is the GATE: one 5-bit block. The CIRCUIT that chains gates into a
-full scalar multiplication lives in `Kimchi.Gate.VarBaseMul`.
+This file is the *gate*: one 5-bit block. The *circuit* that chains gates into a full scalar
+multiplication lives in `Kimchi.Gate.Semantics.VarBaseMul`.
 
 ## Main result
 

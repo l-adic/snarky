@@ -5,8 +5,9 @@ Axiom-closure gate for the Kimchi formalization.
 theorems explicitly: it collects the full axiom closure of each root and fails unless every axiom
 is in the allowlist below — the three standard logical axioms and the trusted `native_decide`
 certificates (the Pasta group orders are *unconditional*, derived via
-CompElliptic's fibre-bound argument) — `Lean.ofReduceBool` plus the named certificate
-declarations. This subsumes the old `sorryAx` grep: a `sorry` shows up as
+CompElliptic's fibre-bound argument). `Lean.ofReduceBool` is deliberately absent — it is not
+what `native_decide` produces on this toolchain. This subsumes the old `sorryAx` grep: a
+`sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
 Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean

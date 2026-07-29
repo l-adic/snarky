@@ -52,7 +52,7 @@ variable {F G : Type*}
 
 /-- The six selector commitments of a verifier key, in gate enumeration order.
 Generic over the commitment carrier, so the chunked reduction reuses it at
-`Fin nc → G`. Public because it is what the batch reads at a selector row
+`Fin nc → G`. It is what the batch reads at a selector row
 (`batchC_selRow`), so a downstream statement about the verifying-key rows must name it. -/
 private def selComm (comms : IndexComms G) : Fin selCount → G :=
   ![comms.generic, comms.poseidon, comms.completeAdd, comms.varBaseMul,
@@ -129,7 +129,7 @@ theorem batchC_pubRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fi
   rw [if_pos h1]
 
 /-- The batch reads the key's `j`-th selector commitment chunks (`selComm`) at the `j`-th
-selector row. Public: the verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
+selector row. The verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
 private theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (j : Fin selCount) :
     batchC wC zC pubC comms (selRow j) = selComm comms j := by
@@ -144,7 +144,7 @@ private theorem batchC_selRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC p
   omega
 
 /-- The batch reads the key's `c`-th coefficient-column commitment chunks at the `c`-th
-coefficient row. Public: the verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
+coefficient row. The verifying-key row bridge (`Capstone/Reflection.lean`) names it. -/
 private theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (c : Fin coeffCols) :
     batchC wC zC pubC comms (cRow c) = comms.coefficients c := by
@@ -161,7 +161,7 @@ private theorem batchC_cRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pub
   omega
 
 /-- The batch reads the key's σ-column commitment chunks at the `i`-th σ row, at the
-permutation column `sigmaPermCol i`. Public: the verifying-key row bridge
+permutation column `sigmaPermCol i`. The verifying-key row bridge
 (`Capstone/Reflection.lean`) names it. -/
 private theorem batchC_sRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pubC : Fin nc → G)
     (comms : IndexComms (Fin nc → G)) (i : Fin sigmaRows) :
@@ -178,7 +178,7 @@ private theorem batchC_sRow {nc : ℕ} (wC : Fin wCols → Fin nc → G) (zC pub
   omega
 
 /-- On the honest chunked indexer, the `j`-th selector chunk is the per-chunk masked
-commitment of the `selGate j` selector interpolant. Public alongside `selComm` and
+commitment of the `selGate j` selector interpolant. Sits alongside `selComm` and
 `batchC_selRow`: it is the only route from the batch's selector-row read to the circuit's
 own selector polynomial, so the verifying-key row bridge (`Capstone/Reflection.lean`)
 cannot state its selector case without it. -/
@@ -291,7 +291,7 @@ coefficients) and the masked rows (selectors, public) alike: masking changes a c
 commitment's blinder, never the chunk's coefficient window.
 
 Project-local: it is the binding-free core of the four verifying-key row pinnings inside
-`kimchiProof_sound_of_openings`. The knowledge-soundness reduction runs over a key basis
+`kimchiProof_sound_of_openings_of_vkrep`. The knowledge-soundness reduction runs over a key basis
 where binding provably FAILS, so the pinning there must come from a representation
 hypothesis (discharged, or reported as a discrete-log relation by
 `dlRelation_of_chunk_rep_ne`) rather than from `hbind`. -/
@@ -368,7 +368,7 @@ the discriminator the consumer branches on. Bundling them behind an existential 
 useless downstream, where at the sampled key a relation always exists.
 
 Project-local: this — with `dlRelation_of_chunk_rep_masked_ne` — is where
-`kimchiProof_sound_of_openings` spends its binding hypothesis on the verifying-key rows,
+`kimchiProof_sound_of_openings_of_vkrep` spends its binding hypothesis on the verifying-key rows,
 so the knowledge-soundness reduction gets data instead of an obstruction. -/
 theorem dlRelation_of_chunk_rep_ne [Field F] [AddCommGroup G] [Module F G]
     (σ : SRS G) {a : Fin (2 ^ σ.k) → F} {ρ : F} {p : Polynomial F} {c : ℕ}
@@ -416,10 +416,10 @@ def claimedPub [Field F] {nc : ℕ} (zM : F) (E : Fin batchRows → Fin nc → F
 
 /-! ## Soundness -/
 
-/-- **The chunked openings-interface core, binding-free**: `kimchiProof_sound_of_openings`
-with `hbind` deleted and its two consequences taken as hypotheses instead.
+/-- **The chunked openings-interface core, binding-free.** The openings interface carrying no
+`hbind` hypothesis: binding's two consequences are taken as hypotheses instead.
 
-Binding is spent in the original at exactly six places, of two kinds.
+A binding-carrying form would spend it at exactly six places, of two kinds.
 
 *Cross-point agreement* (two places — the witness columns, the accumulator column): the
 representation supplied at the challenge tuple carries the same row polynomial as the
@@ -432,7 +432,7 @@ the six selector rows, the public row): the challenge-side representation of a r
 verifying key FIXES is the honest chunk window of the presented circuit's own
 polynomial. This is the load-bearing use and is not removable — without it the claimed
 evaluations speak about a different circuit. Here it is a hypothesis, discharged
-downstream either from binding (`kimchiProof_sound_of_openings`) or, over the
+downstream either from binding or, over the
 knowledge-soundness game's key basis where binding fails, by reporting the mismatch as
 the discrete-log relation of `dlRelation_of_chunk_rep_ne`.
 

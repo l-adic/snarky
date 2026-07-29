@@ -8,9 +8,6 @@ an abstract field `[Field F]` with a primitive `n`-th root of unity supplied as 
 This file provides the "next row" access that a two-row custom gate (`VarBaseMul`, `EndoMul`)
 needs on the polynomial side.
 
-**NOTE:** this is a NEW file `Kimchi/Shifted.lean`, distinct from the read-only
-`Kimchi/Shifted.lean`.
-
 A two-row custom gate constrains cells of the current row *and* of the next row. On the
 polynomial side, the "next row" of a column polynomial `W` is read by pre-composing with the
 rotation `X ↦ ω·X`: evaluating `shift ω W` at the node `ω^i` yields `W (ω^(i+1))`, the column's

@@ -5,9 +5,12 @@ import Kimchi.Verifier.Reflect
 /-!
 # The Fiat–Shamir-reflection discharge: ft opening and the terminal roots
 
-The Fiat–Shamir axiom anchored on the deployed verifier's own transcript:
-`kimchi_fiat_shamir_{vesta,pallas}` state the transcript-tree extraction over the warm
-data of a reflected run — the warm-sponge finish `Ipa.verifyFrom … (runWarm …)
+**This module documents a superseded architecture; see the flag at the end of this
+preamble.** It was written against the former `kimchi_fiat_shamir_{vesta,pallas}` axioms,
+which have since been retired — the tree declares no axioms at all, and knowledge soundness
+of the deployed verifier is proved per curve in `Verifier/KnowledgeSoundness.lean`. Those
+axioms stated the transcript-tree extraction over the warm data of a reflected run — the
+warm-sponge finish `Ipa.verifyFrom … (runWarm …)
 (runInput …)` that `kimchiVerify` itself executes (`ReflectedRun.accepts`,
 `Verifier/Reflect.lean`), at the flat segment stream of `44·nc + 1` batch rows. The
 independence criterion: each says only that the Poseidon sponge provides a valid
@@ -20,9 +23,9 @@ the run's own accepted flat stream — flat position `nc` (after the public row'
 chunks) — so `ipa_soundnessA` plus the arity-generic `eval_pins_of_opening` pin
 `runFtComm` to a representation whose evaluation at the run's own `ζ` is `runFtEval0`.
 
-The terminal roots `kimchi{Vesta,Pallas}_run_sound_algebraic_ft` — thin wrappers of
-the curve-generic `run_sound_algebraic_ft`, each consuming exactly one Fiat–Shamir
-axiom instance — feed the openings seam (`kimchiProof_sound_of_openings`) directly:
+The terminal roots this preamble goes on to describe no longer exist under those names, and
+consume no Fiat–Shamir axiom, because there is none. What survives here feeds the openings
+seam (`kimchiProof_sound_of_openings_of_vkrep`) directly:
 the deployed flat stream is read onto the 44-row `batchC` at the stream positions,
 the public row is bound through `publicCommitment_corresponds` and the key's Lagrange
 chunk pin, and the Maller identity comes from the ft opening via
@@ -50,7 +53,7 @@ variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
   {cp : KimchiProof C nc σ.k} {pub : Array C.ScalarField}
   {pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc)}
 
-/-- Blocks stay inside their region: `q·nc + c < Q·nc`. Public because it is the bound
+/-- Blocks stay inside their region: `q·nc + c < Q·nc`. It is the bound
 `streamPos` carries, and downstream layers (the knowledge-soundness game) index the run's
 flat commitment stream through it rather than re-deriving the arithmetic. -/
 private theorem block_lt {q Q c nc : ℕ} (hq : q < Q) (hc : c < nc) :
@@ -653,9 +656,9 @@ variable {σ : SRS C.Point} {nc : ℕ} {cvk : KimchiVK C nc}
 /-- **The abstract 44-row chunked batch is the flat stream's commitment column**: at
 every batch row and chunk, `batchC` — fed the checked witness/accumulator/public chunk
 reads and the key's `comms` view — is the flat stream's commitment at the row's stream
-position. The layout bridge `hbound₀` consumes. Public because it is the flattening
-identity the downstream layer needs in order to read the run's own commitment stream as
-the abstract batch; `commitmentFn_streamPos` is its restatement at the run's input. -/
+position. The layout bridge `hbound₀` consumes. It is the flattening identity the
+downstream layer needs in order to read the run's own commitment stream as the abstract
+batch; `commitmentFn_streamPosAt` is its restatement at the run's input. -/
 private theorem batchC_eq_flat (i : Fin batchRows) (c : Fin nc) :
     batchC (fun (col : Fin wCols) (c : Fin nc) => (cp.wComm[col])[c])
         (fun c => cp.zComm[c])
@@ -954,7 +957,7 @@ private theorem runStreamAt_read_eq {C : Ipa.CommitmentCurve} (σ : SRS C.Point)
 
 /-- **The layout bridge at handed-in challenges**: the challenge-generic claim's commitment
 column reads, at the stream position of abstract batch row `i` and chunk `c`, exactly the
-abstract batch's own entry there. `commitmentFn_streamPos` with the six challenges as
+abstract batch's own entry there. `commitmentFn_streamPosAt` with the six challenges as
 parameters. -/
 private theorem commitmentFn_streamPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc : ℕ}
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
@@ -1009,14 +1012,15 @@ outside the exclusion sets and off the two boundary points `1`, `ω^(n − zkRow
 assembled witness table `runWTab` satisfies the circuit. The exclusion sets are the canonical
 Schwartz–Zippel sets `Protocol.soundBad{B,G,A,Z}` at the run's assembled witness columns
 `runW` and accumulator `runZ` — the same sets the openings seam
-`kimchiProof_sound_of_openings` pins for the run's per-chunk representations, so the proofs
+`kimchiProof_sound_of_openings_of_vkrep` pins for the run's per-chunk representations, so the proofs
 feed the seam directly. Both the exclusion sets and the satisfying table are explicit
 functions of the run, so the conclusion constrains *these* challenges and *this* table.
 
 That a genuine run's challenges avoid the exclusion sets is a hypothesis of `RunGuardImp`, as
 is the good-combination-challenge condition `hξ`/`hr`. Bounding the probability that the
 Fiat–Shamir challenges land in the (`card`-bounded) exclusion sets is the forking/density
-argument, which this development does not carry. -/
+argument, which `Verifier/Forking/` and `Verifier/KnowledgeSoundness.lean` now carry: the
+per-curve endpoints charge exactly these exclusion sets through `szBudget`. -/
 
 /-- The assembled witness-column polynomials of a reflected run: the algebraic prover's own
 per-chunk representations `aRef` at the witness-row stream positions, assembled into

@@ -29,12 +29,12 @@ predicate (`Satisfies`) and every proof consume it directly. Everything else is 
   wired-to addresses of the permutation;
 * the **interpolants** (`selectorPoly`, `coeffPoly`, `sigmaPoly`) — the `columnPoly`
   images of the row forms, the polynomials the quotient layer consumes; each evaluates
-  back to its row form on the domain (`eval_selectorPoly` …), and the sigma interpolants
-  are exactly the wiring instantiation's (`sigmaPoly_eq_wiring`, definitional);
+  back to its row form on the domain, and the sigma interpolants are exactly the wiring
+  instantiation's (`sigmaPoly_eq_wiring`, definitional);
 * the **wiring permutation** (`wiringPerm`) — the stored successor map is kimchi's
   encoding of the wiring (each cell points to the next cell of its copy cycle); it is a
-  permutation by the index's own law, and its underlying function is the stored map
-  (`wiringPerm_apply`, definitional).
+  permutation by the index's own law, and its underlying function is the stored map,
+  definitionally.
 
 Gate types are the formalized six plus `zero` (no constraint — padding and wiring-only
 rows). Flagged optional gates (range check, foreign field, lookups) are out of scope.

@@ -14,7 +14,7 @@ that SUPPLY SRS-basis representations `aw₀`/`ρw₀` of their committed rows (
 algebraic-group-model idiom), so a SINGLE accepted IPA opening suffices — no grid, no
 density. The content delivered here: representations + ONE accepted opening ⟹ the per-row
 eval pins (`eval_pins_of_opening`), replacing the special-soundness grid; the pins land in
-`kimchiProof_sound_of_openings`' consumer verbatim. Two new bad axes appear — the
+`kimchiProof_sound_of_openings_of_vkrep`' consumer verbatim. Two new bad axes appear — the
 combination challenges `(ξ, r)` — with proved-small bad sets (`badXiOf`/`badROf`,
 ≤ `2·(44·nc − 1)` and ≤ 1, counting SZ via `SZ.badComb`), curried by the consumer data
 `(E, ζ)`/`(E, ζ, ξ)` so they are quantified BEFORE `(ξ, r)`. Honest scope note: this
@@ -51,7 +51,7 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
 An ALGEBRAIC prover carries, with each commitment it sends, an SRS-basis representation
 of the committed data — here the witness pairs `aw₀`/`ρw₀` with
 `commit σ (aw₀ i) (ρw₀ i) = batchC wC zC comms i`. Those representations discharge the
-REFERENCE side of `kimchiProof_sound_of_openings` outright, and the bridge below
+REFERENCE side of `kimchiProof_sound_of_openings_of_vkrep` outright, and the bridge below
 (`eval_pins_of_opening`) discharges its CONSUMER side from ONE accepted batch opening:
 by commitment linearity the combined commitment is the commitment of the ξ-combined
 representation; by binding the opened witness IS that combination; substituting into the

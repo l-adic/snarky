@@ -175,7 +175,7 @@ end Kimchi.Lift
 ## The CompleteAdd gate lift
 
 The polynomial-algebra lift of kimchi's CompleteAdd gate, built on the generic
-lift engine and the domain substrate (`Kimchi.Lift.Domain`).
+lift engine and the domain substrate (`Kimchi.Domain`).
 
 CompleteAdd is a **single-row** gate, so its cell map reads only the current row. The gate's
 field-level constraint model (`Kimchi.Gate.AddComplete.constraints` / `Holds`) is READ-ONLY
@@ -626,7 +626,7 @@ end Kimchi.Lift.Gate.Poseidon
 ## The double generic gate's quotient lift
 
 The polynomial lift of kimchi's **double** generic gate (`generic.rs`,
-`CONSTRAINTS = 2`). Commitment-free, built directly on `Kimchi.Lift.Domain`.
+`CONSTRAINTS = 2`). Commitment-free, built directly on `Kimchi.Domain`.
 
 The row-level gate predicate is `Kimchi.Gate.Generic.Holds` (defined in
 `Kimchi/Gate/Generic.lean` — the double generic gate's two cell constraints); this
