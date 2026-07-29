@@ -3,40 +3,31 @@ import Kimchi.Verifier.Reduction.Soundness
 import Zcash.Snark.Soundness.AGM.Adapter
 
 /-!
-# The algebraic-prover corollary and the algebraic quotient (the AGM reading)
+# The AGM reading: exclusion sets, opening pins, and the ft chunk assembly
 
-The algebraic-group-model reading of `kimchiProof_sound`
-(`Kimchi/Verifier/Reduction/Soundness.lean`),
-the sibling of the standard-model capstones in `Capstone/Standard.lean`.
+The algebraic-group-model toolkit over `Kimchi/Verifier/Reduction/Soundness.lean`'s openings
+interface. An *algebraic* prover supplies SRS-basis representations of its committed rows, so
+a single accepted IPA opening replaces the special-soundness grid. This module proves the
+pieces that reading buys, and the knowledge-soundness development consumes them; the endpoints
+themselves are `Verifier/KnowledgeSoundness.lean`'s per-curve theorems.
 
-The **algebraic-prover corollary** `kimchiProof_sound_algebraic` quantifies over provers
-that SUPPLY SRS-basis representations `aw₀`/`ρw₀` of their committed rows (the
-algebraic-group-model idiom), so a SINGLE accepted IPA opening suffices — no grid, no
-density. The content delivered here: representations + ONE accepted opening ⟹ the per-row
-eval pins (`eval_pins_of_opening`), replacing the special-soundness grid; the pins land in
-`kimchiProof_sound_of_openings_of_vkrep`' consumer verbatim. Two new bad axes appear — the
-combination challenges `(ξ, r)` — with proved-small bad sets (`badXiOf`/`badROf`,
-≤ `2·(44·nc − 1)` and ≤ 1, counting SZ via `SZ.badComb`), curried by the consumer data
-`(E, ζ)`/`(E, ζ, ξ)` so they are quantified BEFORE `(ξ, r)`. Honest scope note: this
-corollary KEEPS the
-ft/quotient identity `hteq` (and `t`, `t.natDegree`) as a hypothesis — the same residue as
-the run-level capstones.
+## What is here
 
-The **algebraic quotient** dissolves that residue: `kimchiProof_sound_algebraic_ft`. The
-algebraic prover additionally supplies the 7 `tComm`-chunk representations, and the quotient
-`t` — the genuine degree-`< 7n` assembly `ftChunkAssembly` of the committed chunks — and
-the Maller/ft identity `hteq` are DERIVED from a checked ft opening via
-`ft_identity_of_chunks`; the residue hypotheses disappear from the statement. What stays
-hypothetical is unchanged from the AGM corollary: the ft opening itself (discharged for
-the deployed verifier by `ft_opening_of_reflected_{vesta,pallas}` in
-`Capstone/Reflection.lean`, from the `kimchi_fiat_shamir_{vesta,pallas}` axioms),
-DL-binding, the key correspondence, and the per-transcript Fiat–Shamir families.
+- `eval_pins_of_opening` (and `_of_eq`) — representations plus one accepted opening pin each
+  row's claimed evaluation, in the form the openings interface consumes.
+- `badXiOf` / `badROf`, with `card_badXiOf_le` and `card_badROf_le` — the two exclusion sets
+  for the combination challenges `(ξ, r)`, bounded by `2·(44·nc − 1)` and `1`. They are
+  curried by the consumer data `(E, ζ)` and `(E, ζ, ξ)`, so they are quantified *before*
+  `(ξ, r)`. Arm (4) of the knowledge-soundness game charges them.
+- `ftChunkAssembly` with `ftChunkAssembly_natDegree_lt` — the genuine degree-`< 7n` assembly
+  of the committed quotient chunks — and `ft_identity_of_chunks` (and `_of_eq`), which derives
+  the Maller/ft identity from a checked ft opening rather than assuming it.
+- `combinedCommitment_eq_commit_of_rep`, `dlRelation_of_opening_ne`,
+  `ft_dlRelation_of_chunks_ne`, `commitPolyChunk_eq_commit` — the representation-mismatch
+  seam: where two representations of one commitment disagree, the difference *is* a
+  discrete-log relation, returned as data.
 
-The five workhorses the Fiat–Shamir-reflection roots reuse across the module boundary —
-`badXiOf`, `badROf`, `eval_pins_of_opening`, `ftChunkAssembly`, `ft_identity_of_chunks` —
-are module-public here (consumed by `Capstone/Reflection.lean`); the counting and
-degree lemmas that only support them stay `private`.
-
+The counting and degree lemmas that only support these stay `private`.
 -/
 
 open Bulletproof
@@ -46,13 +37,13 @@ namespace Kimchi.Verifier
 open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation CompElliptic.Fields.Pasta
 
-/-! ## The algebraic-prover corollary (the AGM reading)
+/-! ## The algebraic reading
 
-An ALGEBRAIC prover carries, with each commitment it sends, an SRS-basis representation
+An *algebraic* prover carries, with each commitment it sends, an SRS-basis representation
 of the committed data — here the witness pairs `aw₀`/`ρw₀` with
 `commit σ (aw₀ i) (ρw₀ i) = batchC wC zC comms i`. Those representations discharge the
-REFERENCE side of `kimchiProof_sound_of_openings_of_vkrep` outright, and the bridge below
-(`eval_pins_of_opening`) discharges its CONSUMER side from ONE accepted batch opening:
+*reference* side of `kimchiProof_sound_of_openings_of_vkrep` outright, and the bridge below
+(`eval_pins_of_opening`) discharges its *consumer* side from one accepted batch opening:
 by commitment linearity the combined commitment is the commitment of the ξ-combined
 representation; by binding the opened witness IS that combination; substituting into the
 opening's value equation leaves the single field identity
@@ -334,13 +325,6 @@ open Polynomial Bulletproof Kimchi.Index Kimchi.Protocol.Linearization
   Kimchi.Protocol.Equation Kimchi.Verifier
 
 variable {F G : Type*}
-
-/-! ## Flattening the chunk families -/
-
-
-
-/-! ## The algebraic-prover corollary -/
-
 
 /-! ## The algebraic quotient, chunked -/
 

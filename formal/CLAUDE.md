@@ -37,10 +37,10 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 
 | Package | Lib(s) | Contents |
 | --- | --- | --- |
-| `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the **Hasse/CM axioms** and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
+| `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the certified point counts and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
-| `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the **`poseidon_fiat_shamir_*` axioms** + `ipa{Vesta,Pallas}_sound`, IPA fixtures + check script |
-| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), `Quotient/` (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier + capstones); plus the fixture-decoding lib, kept out of `Kimchi` |
+| `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the forking development and `ipa{Vesta,Pallas}_knowledge_sound`, IPA fixtures + check script |
+| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier + capstones); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
@@ -100,10 +100,12 @@ described are gone; their content lives in `Gate/` + `Gate/Semantics/` + the pas
 `Main.lean` + `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness)
 and run the verified checker".
 
-Above the gate stack, the library has grown four further trees:
+Above the gate stack, the library has grown these further trees:
 
-- **`Kimchi/Quotient/`** — the vanishing-argument layer (domain, divisibility engine, the
-  `Argument`/`ArgumentEnv` per-gate lifts, grand-product core).
+- The vanishing-argument layer, as top-level modules rather than a directory:
+  `Kimchi/Domain.lean`, `Kimchi/Aggregate.lean` and `Kimchi/SchwartzZippel.lean` (the
+  divisibility engine), `Kimchi/Lift.lean` (the `Argument`/`ArgumentEnv` per-gate lifts), and
+  `Kimchi/GrandProduct.lean`.
 - **`Kimchi/Verifier/`** — the executable kimchi verifier, its reflection, and the
   soundness capstones. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
   its OWN library (`KimchiFixture`) sitting beside the `Kimchi/` tree, deliberately NOT

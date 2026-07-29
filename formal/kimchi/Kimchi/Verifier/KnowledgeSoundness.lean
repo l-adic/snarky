@@ -2868,7 +2868,8 @@ variable [Module C.ScalarField C.Point]
 (payload-and-challenges form): `warmBase` with the table replaced by a
 `Fin preIpaChals`-indexed tuple of prechallenges, each expanded by its own squeeze's map.
 
-Mirrors `kimchiClaimOf` (section 10) exactly — same six arguments, same expansion — and stands
+Mirrors `kimchiClaimOf` (`§ Claim stability at the kimchi transcript`) exactly — same six
+arguments, same expansion — and stands
 to `warmBase` as `kimchiClaimOf` stands to `runClaim`. -/
 def kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.ScalarField)
     (cp : KimchiProof C nc σ.k) (ch : Fin preIpaChals → Prechallenge) : C.Point :=
@@ -2878,7 +2879,7 @@ def kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.Scala
 omit [Module C.ScalarField C.Point] in
 /-- **The warm base reads exactly the six pre-opening nodes** — the run form is the
 challenge-tuple form at the table's answers at the run's own six pre-opening nodes. Definitional,
-and the exact mirror of `runClaim_eq_kimchiClaimOf` (section 10), which is `rfl` for the same
+and the exact mirror of `runClaim_eq_kimchiClaimOf` (same section), which is `rfl` for the same
 reason: the base is built from the run's claim and the claim already reads only those six. -/
 theorem warmBase_eq_kimchiWarmBase (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (digest : C.ScalarField) (cp : KimchiProof C nc σ.k)
@@ -3708,7 +3709,7 @@ private theorem tComm_eq_of_zetaNode {nc k : ℕ} (digest : C.ScalarField)
 
 The seven exclusion sets are built from `runW`, `runZ`, `ftChunkAssembly`, `badXiOf` and
 `badROf`. Each of the five reads strictly less than its argument list suggests, and saying so is
-what lets two runs that agree only at an early node be shown to produce the same set. The four
+what lets two runs that agree only at an early node be shown to produce the same set. The
 statements below are exactly the reads that matter:
 
 * `runW`/`runZ` mention the emitted proof only in the TYPE of their coefficient argument (the

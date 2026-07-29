@@ -1139,12 +1139,14 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
     such point. Contradiction.
 
     The hypothesis `c.order ≠ 2` (equivalently, the prime `order` is odd) is genuinely
-    required, not a convenience: for `order = 2` the statement is false. E.g. over
-    `ZMod 7` with the curve `y² = x³ + 6` (group `(ℤ/2)²`, so `order = 2`), the input
-    point `(xi, yi) = (1, 0)` is nonsingular and `singleBitHolds 0 5 0 0 1 0 0 0` holds,
-    yet `2·xi + xb − s1² = 2·1 + 5 − 0 = 7 = 0`. The Pasta `order` is a 255-bit prime,
-    so `order ≠ 2` there. But `order ≠ 2` does not follow from `order` being prime (`2`
-    is prime) or from the short shape, so it is taken as a separate hypothesis. -/
+    required, not a convenience: the degenerate branch is real whenever the input point is
+    2-torsion. Over `ZMod 7` with the curve `y² = x³ + 6` — whose group is `(ℤ/2)²`, of
+    order `4` — the input point `(xi, yi) = (1, 0)` is nonsingular and
+    `singleBitHolds 0 5 0 0 1 0 0 0` holds, yet `2·xi + xb − s1² = 2·1 + 5 − 0 = 7 = 0`.
+    That curve is itself excluded by the prime-order `Fact`; at prime order the same failure
+    is exactly the `order = 2` case, which this hypothesis rules out. The Pasta `order` is a
+    255-bit prime, so it holds there — but it follows neither from `order` being prime (`2`
+    is prime) nor from the short shape, so it is taken separately. -/
 private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
     [Fact (Nat.Prime c.order)] (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)

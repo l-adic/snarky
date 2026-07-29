@@ -3,33 +3,34 @@ import Kimchi.Verifier.Capstone.Algebraic
 import Kimchi.Verifier.Reflect
 
 /-!
-# The Fiat–Shamir-reflection discharge: ft opening and the terminal roots
+# Reflection: the deployed run's own data as the abstract batch
 
-**This module documents a superseded architecture; see the flag at the end of this
-preamble.** It was written against the former `kimchi_fiat_shamir_{vesta,pallas}` axioms,
-which have since been retired — the tree declares no axioms at all, and knowledge soundness
-of the deployed verifier is proved per curve in `Verifier/KnowledgeSoundness.lean`. Those
-axioms stated the transcript-tree extraction over the warm data of a reflected run — the
-warm-sponge finish `Ipa.verifyFrom … (runWarm …)
-(runInput …)` that `kimchiVerify` itself executes (`ReflectedRun.accepts`,
-`Verifier/Reflect.lean`), at the flat segment stream of `44·nc + 1` batch rows. The
-independence criterion: each says only that the Poseidon sponge provides a valid
-Fiat–Shamir transform at the transcript the deployed verifier actually runs; no
-arithmetic content, no reference to the abstract batch.
+The layer that lets the algebraic soundness of `Verifier/Reduction/Soundness.lean` be applied
+to a *run* of the deployed verifier. Everything here is stated over the run's own flat segment
+stream of `44·nc + 1` batch rows, at the run's own Fiat–Shamir challenges.
 
-`ft_opening_of_reflected` (tree-as-hypothesis) derives the ft opening from a
-genuine acceptance: the constructed ft commitment is the single-chunk ft row of
-the run's own accepted flat stream — flat position `nc` (after the public row's `nc`
-chunks) — so `ipa_soundnessA` plus the arity-generic `eval_pins_of_opening` pin
-`runFtComm` to a representation whose evaluation at the run's own `ζ` is `runFtEval0`.
+Historically this module was written against the `kimchi_fiat_shamir_{vesta,pallas}` axioms
+and ended in per-curve terminal roots. Those axioms have been retired — the tree declares no
+axioms at all — and the per-curve endpoints now live in `Verifier/KnowledgeSoundness.lean`,
+which consumes what is proved here.
 
-The terminal roots this preamble goes on to describe no longer exist under those names, and
-consume no Fiat–Shamir axiom, because there is none. What survives here feeds the openings
-seam (`kimchiProof_sound_of_openings_of_vkrep`) directly:
-the deployed flat stream is read onto the 44-row `batchC` at the stream positions,
-the public row is bound through `publicCommitment_corresponds` and the key's Lagrange
-chunk pin, and the Maller identity comes from the ft opening via
-`ft_identity_of_chunks` at the double `ζ^{2^σ.k}` collapse.
+## What is here
+
+- `streamPos` — where each of the 44 abstract batch rows and its chunks sit in the run's flat
+  commitment stream, with the block-containment bound that makes the reads total.
+- `batchC_eq_flat_gen` — the flat stream *is* the abstract batch, read at those positions.
+- `publicCommitment_corresponds` — the public row bound through the key's Lagrange chunk pin.
+- `runW`, `runZ`, `runWTab` — the run's assembled witness columns, accumulator, and witness
+  table, built from the algebraic prover's per-chunk representations.
+- `RunBounds`, `runBounds_of_chunking`, `runBounds_zeta_at_assembly` — the Schwartz–Zippel
+  cardinality bounds at the run's own data.
+- `run_sound_algebraic_at_of_vkrep` — the guarded run-level statement: off the exclusion sets
+  and off the two boundary points `1` and `ω^(n − zkRows)`, `runWTab` satisfies the circuit.
+  Both the exclusion sets and the table are explicit functions of the run, so the conclusion
+  constrains *these* challenges and *this* table.
+
+Charging the probability that a run's challenges land in those exclusion sets is not done
+here; `Verifier/Forking/` and `Verifier/KnowledgeSoundness.lean` do it, through `szBudget`.
 -/
 
 open Bulletproof
@@ -215,10 +216,6 @@ private theorem stream_read_s (q : Fin sigmaRows) (c : Fin nc) :
   rfl
 
 end StreamReads
-
-/-! ## The ft opening from the reflected run -/
-
-
 
 
 
@@ -991,23 +988,11 @@ private theorem evalFn_ftPosAt {C : Ipa.CommitmentCurve} (σ : SRS C.Point) {nc 
   rw [Vector.getElem_map, hft]
   rfl
 
-/-! ### The verifying-key rows of the challenge-generic claim
-
-The four challenge-generic twins of `commitmentFn_streamPos_{s,c,sel,pub}Row_eq_commit`.
-They are what turns "the family's verifying-key representations are honest" from an
-assumption into a theorem for a claim assembled at an oracle table's challenges: the group
-side is fixed by the key–index correspondence, and no batch stream position reads the `ft`
-slot, which is the only place the challenges enter the commitment column.
-
-The public row takes the Lagrange-basis size bound `hlagsz` directly rather than an
-acceptance of the deployed verifier: the challenge-generic verifier's own size guard is
-exactly that bound, so a consumer whose win event is `kimchiVerifyWith` has it in hand. -/
-
-/-! ## The chunked run-level terminal roots
+/-! ## The run-level statement
 
 Residue-free AGM soundness of the deployed Pasta verifiers, stated over the run's own data.
 Each root pairs the Schwartz–Zippel cardinality bounds (`RunBounds`) with a guarded
-implication (`RunGuardImp`): at the run's own Fiat–Shamir challenges — provided they lie
+implication (`RunGuardImpAt`): at the run's own Fiat–Shamir challenges — provided they lie
 outside the exclusion sets and off the two boundary points `1`, `ω^(n − zkRows)` — the
 assembled witness table `runWTab` satisfies the circuit. The exclusion sets are the canonical
 Schwartz–Zippel sets `Protocol.soundBad{B,G,A,Z}` at the run's assembled witness columns
@@ -1016,7 +1001,7 @@ Schwartz–Zippel sets `Protocol.soundBad{B,G,A,Z}` at the run's assembled witne
 feed the seam directly. Both the exclusion sets and the satisfying table are explicit
 functions of the run, so the conclusion constrains *these* challenges and *this* table.
 
-That a genuine run's challenges avoid the exclusion sets is a hypothesis of `RunGuardImp`, as
+That a genuine run's challenges avoid the exclusion sets is a hypothesis of `RunGuardImpAt`, as
 is the good-combination-challenge condition `hξ`/`hr`. Bounding the probability that the
 Fiat–Shamir challenges land in the (`card`-bounded) exclusion sets is the forking/density
 argument, which `Verifier/Forking/` and `Verifier/KnowledgeSoundness.lean` now carry: the
@@ -1072,7 +1057,7 @@ def RunBounds {C : Ipa.CommitmentCurve}
           (runZ σ cvk cp pub aRef) β γ α t).card ≤ Index.degreeBound n)
 
 
-/-- **Guarded satisfaction at handed-in challenges**: `RunGuardImp` with the four fq-side
+/-- **Guarded satisfaction at handed-in challenges**: `RunGuardImpAt` with the four fq-side
 squeezes as parameters. The assembled columns `runW`/`runZ`, the accumulator and the
 extracted table `runWTab` do NOT mention the challenges — they are read off the
 representations at the layout positions `streamPos` — so the exclusion sets and the
