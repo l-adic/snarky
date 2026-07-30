@@ -353,6 +353,27 @@ theorem ftChunkAssembly_natDegree_lt [Field F] (k : ℕ) {nt : ℕ} (hnt : 0 < n
   have hpos : 0 < nt * 2 ^ k := Nat.mul_pos hnt h2k
   omega
 
+/-- **The arity-generic degree bound**: the assembly fits under any positive bound that
+dominates its chunk-count budget `nt · 2^k`, with NO positivity hypothesis on `nt`.
+
+The companion of `ftChunkAssembly_natDegree_lt`, which it calls on the positive branch.
+The `nt = 0` case — an empty quotient commitment, which the production verifier accepts
+(`verifier.rs:260` bounds `t_comm.len()` from above only) — makes the assembly the empty
+sum `0`, whose `natDegree` is `0`; there the bound is exactly `hm`. Note the positivity
+hypothesis cannot be dropped from `ftChunkAssembly_natDegree_lt` itself: at `nt = 0` its
+conclusion reads `0 < 0`.
+
+Project-local: this is what lets the ft-identity theorems below (and the reflection layer
+above them) govern the empty-quotient adversary without carrying a `0 < nt` hypothesis
+that production never enforces. -/
+theorem ftChunkAssembly_natDegree_lt_of_le [Field F] (k : ℕ) {nt m : ℕ} (hm : 0 < m)
+    (hle : nt * 2 ^ k ≤ m) (aT : Fin nt → Fin (2 ^ k) → F) :
+    (ftChunkAssembly k nt aT).natDegree < m := by
+  rcases Nat.eq_zero_or_pos nt with hnt | hnt
+  · subst hnt
+    simpa [ftChunkAssembly] using hm
+  · exact lt_of_lt_of_le (ftChunkAssembly_natDegree_lt k hnt aT) hle
+
 /-- The assembly evaluates as the `(ζ^(2^k))`-power combination of the chunk-row
 evaluations. -/
 private theorem ftChunkAssembly_eval [Field F] (k nt : ℕ)
@@ -477,7 +498,7 @@ it does not. -/
 theorem ft_identity_of_chunks_of_eq [Field F] [AddCommGroup G]
     [Module F G] (σ : SRS G)
     {nc : ℕ} (σ₆ : Polynomial F) (hσ₆ : σ₆.natDegree < nc * 2 ^ σ.k)
-    {nt : ℕ} (hnt0 : 0 < nt) (hnt : nt ≤ 7 * nc)
+    {nt : ℕ} (hnt : nt ≤ 7 * nc)
     (aT : Fin nt → Fin (2 ^ σ.k) → F)
     (pScalar ζ v0 : F) (n : ℕ) (hk : nc * 2 ^ σ.k = n)
     (a b : Fin (2 ^ σ.k) → F)
@@ -495,12 +516,14 @@ theorem ft_identity_of_chunks_of_eq [Field F] [AddCommGroup G]
     rw [eval_eq_sum_chunkPoly _ hσ₆ ζ, ← Fin.sum_univ_eq_sum_range]
     exact Finset.sum_congr rfl fun c _ => by rw [chunkPoly_eval]
   have hdeg : (ftChunkAssembly σ.k nt aT).natDegree < 7 * n := by
-    have h := ftChunkAssembly_natDegree_lt σ.k hnt0 aT
+    -- `hσ₆` already forces the `σ₆` budget positive, hence `0 < 7·n`; no `0 < nt` needed.
+    have hnpos : 0 < nc * 2 ^ σ.k := lt_of_le_of_lt (Nat.zero_le _) hσ₆
+    rw [hk] at hnpos
     have h2 : nt * 2 ^ σ.k ≤ 7 * (nc * 2 ^ σ.k) := by
       rw [← mul_assoc]
       exact Nat.mul_le_mul_right _ hnt
     rw [hk] at h2
-    omega
+    exact ftChunkAssembly_natDegree_lt_of_le σ.k (by omega) h2 aT
   refine ⟨hdeg, ?_⟩
   -- Expand the inner product of `b` linearly and conclude.
   have hipL : ∀ {m : ℕ} (u : Fin m → Fin (2 ^ σ.k) → F),
@@ -553,7 +576,7 @@ theorem ft_identity_of_chunks [Field F] [AddCommGroup G]
     {nc : ℕ}
     (σ₆ : Polynomial F) (hσ₆ : σ₆.natDegree < nc * 2 ^ σ.k)
     (Cσ6 : Fin nc → G) (hC : ∀ c : Fin nc, Cσ6 c = commitPolyChunk σ σ₆ (c : ℕ))
-    {nt : ℕ} (hnt0 : 0 < nt) (hnt : nt ≤ 7 * nc)
+    {nt : ℕ} (hnt : nt ≤ 7 * nc)
     (TC : Fin nt → G) (aT : Fin nt → Fin (2 ^ σ.k) → F) (ρT : Fin nt → F)
     (htc : ∀ j, commit σ (aT j) (ρT j) = TC j)
     (pScalar ζ v0 : F) (n : ℕ) (hk : nc * 2 ^ σ.k = n)
@@ -575,7 +598,6 @@ theorem ft_identity_of_chunks [Field F] [AddCommGroup G]
   have hab : a = b := by
     by_contra hne
     exact hntriv hne (hbind _ _ hrel).1
-  exact ft_identity_of_chunks_of_eq σ σ₆ hσ₆ hnt0 hnt aT pScalar ζ v0 n hk a b hb heval
-    hab
+  exact ft_identity_of_chunks_of_eq σ σ₆ hσ₆ hnt aT pScalar ζ v0 n hk a b hb heval hab
 
 end Kimchi.Verifier

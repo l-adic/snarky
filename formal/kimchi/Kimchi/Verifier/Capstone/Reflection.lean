@@ -1099,7 +1099,6 @@ theorem run_sound_algebraic_at_of_vkrep {C : Ipa.CommitmentCurve}
     (beta gamma alpha zeta v u : C.ScalarField)
     (hnc : 0 < nc) (hk : nc * 2 ^ σ.k = n) (hn : cvk.n = n)
     (hvk : cvk.Corresponds σ idx)
-    (htpos : 0 < cp.tComm.size)
     (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
     (ρRef : Fin (nc + 1 + tailRowCount * nc) → C.ScalarField)
     (hrep : ∀ i, commit σ (aRef i) (ρRef i)
@@ -1167,7 +1166,7 @@ theorem run_sound_algebraic_at_of_vkrep {C : Ipa.CommitmentCurve}
     rw [hk]
     exact columnPoly_natDegree_lt idx.omega_prim _
   obtain ⟨htdeg, hteq0⟩ := ft_identity_of_chunks_of_eq σ (idx.sigmaPoly 6) hσ₆
-    htpos cp.tComm_le aT
+    cp.tComm_le aT
     (runPScalarAt C σ cvk cp beta gamma alpha zeta) zeta
     (runFtEval0At C σ cvk cp pub beta gamma alpha zeta) n hk (aRef ⟨nc, hsz⟩) _ rfl
     heval_ft (hftRep ⟨nc, hsz⟩ rfl)
@@ -1247,10 +1246,12 @@ theorem runBounds_of_chunking {C : Ipa.CommitmentCurve}
 /-- **The `ζ` cardinality bound at the run's own assembled quotient.** `RunBounds`' fourth
 clause is stated for an ARBITRARY polynomial of degree `< 7·n`; the game charges its `ζ` to
 the exclusion set at the run's assembled quotient `ftChunkAssembly σ.k cp.tComm.size aT`, so
-the degree side condition has to be discharged there. It is: `ftChunkAssembly_natDegree_lt`
-bounds the assembly's degree by `cp.tComm.size · 2^σ.k`, the wire invariant `cp.tComm_le`
-bounds the chunk count by `7·nc`, and the production chunking equation turns that into
-`7·n`. The bound therefore holds unconditionally at the assembly.
+the degree side condition has to be discharged there. It is: `ftChunkAssembly_natDegree_lt_of_le`
+bounds the assembly's degree by any positive bound dominating `cp.tComm.size · 2^σ.k`, the wire
+invariant `cp.tComm_le` bounds the chunk count by `7·nc`, and the production chunking equation
+turns that into `7·n` (positive, from the `NeZero n` instance). The bound therefore holds
+unconditionally at the assembly — in particular at an EMPTY quotient commitment, where the
+assembly is the zero polynomial.
 
 Project-local: it keeps the degree bookkeeping out of the game file, where the bound is
 needed once per point of the algebraic summand. -/
@@ -1259,13 +1260,13 @@ theorem runBounds_zeta_at_assembly {C : Ipa.CommitmentCurve} (σ : SRS C.Point) 
     {n : ℕ} [NeZero n] (idx : Index C.ScalarField n)
     (aRef : Fin (nc + 1 + tailRowCount * nc) → Fin (2 ^ σ.k) → C.ScalarField)
     (aT : Fin cp.tComm.size → Fin (2 ^ σ.k) → C.ScalarField)
-    (hk : nc * 2 ^ σ.k = n) (htpos : 0 < cp.tComm.size)
+    (hk : nc * 2 ^ σ.k = n)
     (hbounds : RunBounds σ cvk cp pub idx aRef) (beta gamma alpha : C.ScalarField) :
     (Protocol.soundBadZ idx (pubView idx pub) (runW σ cvk cp pub aRef)
         (runZ σ cvk cp pub aRef) beta gamma alpha
         (ftChunkAssembly σ.k cp.tComm.size aT)).card ≤ Index.degreeBound n := by
   refine hbounds.2.2.2 beta gamma alpha _ ?_
-  refine lt_of_lt_of_le (ftChunkAssembly_natDegree_lt σ.k htpos aT) ?_
+  refine ftChunkAssembly_natDegree_lt_of_le σ.k (by have := NeZero.pos n; omega) ?_ aT
   calc cp.tComm.size * 2 ^ σ.k
       ≤ 7 * nc * 2 ^ σ.k := Nat.mul_le_mul cp.tComm_le (le_refl _)
     _ = 7 * n := by rw [mul_assoc, hk]

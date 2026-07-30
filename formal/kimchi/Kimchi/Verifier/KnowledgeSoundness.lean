@@ -25,8 +25,7 @@ The SUB-SRS regime `max_poly_size > n` — the common o1js/Mina configuration �
 fragment, as are lookups, optional gates (range check, foreign field, xor, rot), and
 recursion (`prev_challenges = 0`). On the proof side the fragment also excludes proofs
 carrying optional-gate or lookup EVALUATION fields (production fr-absorbs those even against
-a basic-gate key, so such a proof's transcript differs), proofs with an empty quotient
-commitment (`htpos`; the wire parse now rejects them as a declared strengthening), ragged
+a basic-gate key, so such a proof's transcript differs), ragged
 chunk vectors, and openings of other than `σ.k` rounds. Mina/pickles proofs use recursion,
 lookups, optional gates and the sub-SRS regime, and are outside the fragment on four
 independent axes.
@@ -825,8 +824,10 @@ abbrev Coins (C : Ipa.CommitmentCurve) (nc k : ℕ) : Type := KimchiNode C nc k 
 Beyond an adversary and its query bound it carries (i) the circuit `idx` and its correspondence
 to the presented verifying key, so the extracted witness satisfies *the circuit the verifier
 checked*, and (ii) the AGM representations `aRef`/`ρRef` of the run's flat commitment stream
-and `aT`/`ρT` of the quotient chunks — the same data `kimchiVesta_run_sound_algebraic_ft` takes
-as hypotheses, here supplied by the family because we are in the algebraic group model. They
+and `aT`/`ρT` of the quotient chunks — the same data the reflection root
+`run_sound_algebraic_at_of_vkrep` takes as hypotheses (`ρT` one layer down, in
+`ft_identity_of_chunks`), here supplied by the family because we are in the algebraic group
+model. They
 are indexed by the oracle table as well as by the basis: kimchi's claim is adversary output, so
 it is table-dependent, unlike `DeployedFamily.claim`. -/
 structure KimchiFamily (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
@@ -859,9 +860,6 @@ structure KimchiFamily (C : Ipa.CommitmentCurve) [Module C.ScalarField C.Point]
   hvk : ∀ basis, (cvk basis).Corresponds (srsOfBasis k basis) idx
   /-- The public input has the circuit's arity. -/
   hpub : ∀ basis, (pub basis).size = idx.publicCount
-  /-- The quotient commitment is non-empty. Not algebraic-group data: this RESTRICTS the
-  adversary, and is required by `run_sound_algebraic_ft`. -/
-  htpos : ∀ basis O, 0 < ((adversary basis).run O).tComm.size
   /-- AGM: the SRS-basis coefficients of every commitment in the run's flat IPA stream. -/
   aRef : (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) →
     (O : KimchiNode C nc k → Prechallenge) →
@@ -3122,7 +3120,7 @@ private theorem arm4_hits_badChallenge
         (fam.readsOf basis O Squeeze.beta) (fam.readsOf basis O Squeeze.gamma)
         (fam.readsOf basis O Squeeze.alpha) (fam.readsOf basis O Squeeze.zeta)
         (fam.readsOf basis O Squeeze.polyscale) (fam.readsOf basis O Squeeze.evalscale)
-        fam.hnc fam.hkn (fam.hn basis) (fam.hvk basis) (fam.htpos basis O)
+        fam.hnc fam.hkn (fam.hn basis) (fam.hvk basis)
         (fam.aRef basis O) (fam.ρRef basis O) (fam.hrep basis O) (fam.aT basis O) hpins
         (fun i c => hvkh (VkRow.sigma i) c) (fun cc c => hvkh (VkRow.coeff cc) c)
         (fun jj c => hvkh (VkRow.sel jj) c) (fun c => hvkh VkRow.pub c)
@@ -3893,7 +3891,7 @@ private theorem szBadRun_card_le (basis : Zcash.Snark.AugmentedIndex (2 ^ k) →
   · exact hb.2.2.1 _ _
   · exact runBounds_zeta_at_assembly (srsOfBasis k basis) (fam.cvk basis)
       (fam.proofOf basis O) (fam.pub basis) fam.idx (fam.aRef basis O) (fam.aT basis O)
-      fam.hkn (fam.htpos basis O) hb _ _ _
+      fam.hkn hb _ _ _
   · exact card_zetaBoundaryBad_le fam.idx
   · exact card_badXiOf_le _ _ _ _
   · exact card_badROf_le _ _ _ _ _

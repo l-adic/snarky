@@ -30,13 +30,20 @@ Each run checks the accept bit, then two negative matrices:
   REJECT): evaluation chunks on the ζ and ζω sides and beyond chunk 0 (`z` chunk 1, a
   witness-column chunk 1), the quotient commitment at chunk 0 and at the high chunk
   (`7·nc − 1`, the second `ft_comm` collapse group — exists only at `nc = 2`),
-  `ft_eval1`, and (where carried) a public-evaluation chunk;
+  an EMPTIED quotient commitment (which parses — production bounds `t_comm.len()` from
+  above only, verifier.rs:260 — and must fail the ft identity), `ft_eval1`, and (where
+  carried) a public-evaluation chunk;
 * **parse rejections** (`Wire.check` must return `none` — ragged or mis-pinned wire
   input, matching production's `Err` returns): a ragged evaluation chunk vector, a
   missing `evals_public` at `nc > 1` (production's `MissingPublicInputEvaluation`,
   verifier.rs:334–335), an oversized `t_comm` (`> 7·nc`), a wrong opening round count
   (an `lr` pair popped — this failure arises in the IPA-side `Ipa.Wire.Proof.check`
   and propagates through `KimchiProof.check`), and a ragged VK chunk vector.
+
+The emptied quotient carries one extra, positive assertion: that it PARSES. `verifyWire`
+is check-then-verify, so a parse rejection would flip its verdict for the wrong reason —
+the assertion is what keeps that corruption from agreeing vacuously if a
+`0 < t_comm.size` wire guard is ever reinstated (negative control NC-5).
 
 Every transcription judgment in the verifier (chunk absorb orders, the segment
 flattening of the batch, the `ft_comm` double collapse, the carried-public precedence)
@@ -100,6 +107,9 @@ def runChunked (C : Ipa.CommitmentCurve)
             { proof.evals.z with zeta := proof.evals.z.zeta.modify c (· + 1) }
           else
             { proof.evals.z with zetaOmega := proof.evals.z.zetaOmega.modify c (· + 1) } } }
+    -- The empty quotient commitment (audit O-2), used twice below: once as a
+    -- verify-level corruption, once as the parse-side non-vacuity control for it.
+    let emptyT : Wire.KimchiProof C := { proof with tComm := #[] }
     -- verify-level corruptions: each mutant still parses; the verdict must flip.
     let mut corrupts : Array (String × Bool) := #[]
     -- The nc-specific high-chunk corruption (the second ft_comm collapse group). Kept
@@ -116,6 +126,11 @@ def runChunked (C : Ipa.CommitmentCurve)
       corrupts := corrupts.push ("corrupted z eval (ζ, chunk 0)", !verify (bumpZ true 0))
       corrupts := corrupts.push ("corrupted t comm (chunk 0)",
         !verify { proof with tComm := proof.tComm.modify 0 (· + σ.h) })
+      -- The empty quotient. Production bounds `t_comm.len()` from above only
+      -- (verifier.rs:260), so this parses — and must be REJECTED at verify time, where
+      -- the quotient side of the ft collapse becomes the empty sum `0`.
+      corrupts := corrupts.push ("emptied t comm (the empty quotient, parses)",
+        !verify emptyT)
       corrupts := corrupts.push ("corrupted ft_eval1",
         !verify { proof with ftEval1 := proof.ftEval1 + 1 })
       if 1 < nc then
@@ -147,8 +162,6 @@ def runChunked (C : Ipa.CommitmentCurve)
     let mut parses : Array (String × Bool) := #[
       ("ragged z eval chunk vector", (ragged.check nc σ.k).isNone && !verify ragged),
       ("oversized t_comm (size > 7·nc)", (overT.check nc σ.k).isNone),
-      ("empty t_comm (the htpos wire pin, a declared strengthening)",
-        (({ proof with tComm := #[] } : Wire.KimchiProof C).check nc σ.k).isNone),
       ("wrong opening round count (lr pair popped; the IPA-side check)",
         (badLr.check nc σ.k).isNone),
       ("ragged VK chunk vector (sigma_comm[0])", (raggedVK.check nc).isNone)]
@@ -157,7 +170,16 @@ def runChunked (C : Ipa.CommitmentCurve)
       parses := parses.push ("missing evals_public at nc > 1", (noPub.check nc σ.k).isNone)
     for (name, rejected) in parses do
       IO.println s!"  {if rejected then "✓ none" else "✗ parsed (BUG)"}: {name}"
-    unless ok && corrupts.all (·.2) && parses.all (·.2) do
+    -- Non-vacuity of the emptied-quotient corruption above (audit O-2). `verify` is
+    -- check-then-verify, so a parse rejection would flip that verdict for the WRONG
+    -- reason. Production bounds `t_comm.len()` from above only (verifier.rs:260), so the
+    -- empty quotient must PARSE here and its rejection must be the ft identity's — the
+    -- quotient side of the collapse being the empty sum `0`. Reinstating a
+    -- `0 < t_comm.size` wire guard fails on THIS line (negative control NC-5).
+    let emptyParses := (emptyT.check nc σ.k).isSome
+    IO.println s!"  {if emptyParses then "✓ parses" else "✗ none (VACUOUS CONTROL)"}: \
+      emptied t comm reaches the verifier"
+    unless ok && emptyParses && corrupts.all (·.2) && parses.all (·.2) do
       throw (IO.userError s!"{path}: chunked kimchi verifier check FAILED")
 
 abbrev CV := IpaVesta.curve
