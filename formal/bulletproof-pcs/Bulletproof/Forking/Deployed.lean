@@ -852,6 +852,37 @@ def deployedExtractRuns (σ : SRS C.Point) (cip : C.ScalarField)
   kimchiExtractRuns { σ with U := uBaseOf C cip } b v P (expandPre C) A toOpening
     (nodes cip) (decodesFromPrefixes_nodes _ cip) O coins
 
+/-- **The deployed extractor's worst-case call count**: `(2n+1)^(k+1)` on any coin tape of node
+degree at most `n`. `kimchiExtractRuns_le` at this instantiation — the base swap
+`{ σ with U := uBaseOf C cip }` leaves `.k` untouched, so no re-indexing is involved.
+
+The caveat travels with the number and must be quoted with it: this is the **worst case**, and
+it is exponential in `k` and in the challenge domain. At the tape `exists_complete_bounded_coins`
+supplies, `n = 2 ^ 128`. It is not a concrete-security statement; what it replaces is the
+absence of any bound at all. -/
+theorem deployedExtractRuns_le (σ : SRS C.Point) (cip : C.ScalarField)
+    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
+    (A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k))
+    (O : IpaNode C σ.k → Prechallenge)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) {n : ℕ}
+    (hB : coins.Bounded n) :
+    deployedExtractRuns σ cip b v P A O coins ≤ (2 * n + 1) ^ (σ.k + 1) :=
+  kimchiExtractRuns_le { σ with U := uBaseOf C cip } b v P (expandPre C) A toOpening
+    (nodes cip) (decodesFromPrefixes_nodes _ cip) O coins hB
+
+/-- **The deployed extractor always runs the adversary at least once**, on every table and every
+tape. `one_le_kimchiExtractRuns` at the same instantiation, and what keeps
+`deployedExtractRuns_le` from being vacuous: an upper bound cannot tell a real reduction from one
+that does nothing if the counter it bounds could be `0`. -/
+theorem one_le_deployedExtractRuns (σ : SRS C.Point) (cip : C.ScalarField)
+    (b : Fin (2 ^ σ.k) → C.ScalarField) (v : C.ScalarField) (P : C.Point)
+    (A : Zcash.Snark.OracleComp (IpaNode C σ.k) Prechallenge (Ipa.Proof C σ.k))
+    (O : IpaNode C σ.k → Prechallenge)
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (σ.k + 1)) :
+    1 ≤ deployedExtractRuns σ cip b v P A O coins :=
+  one_le_kimchiExtractRuns { σ with U := uBaseOf C cip } b v P (expandPre C) A toOpening
+    (nodes cip) (decodesFromPrefixes_nodes _ cip) O coins
+
 end Extractor
 
 /-- **The identity-ordered uniform tape** at every depth: each node carries the identity
@@ -867,6 +898,24 @@ complete by ironwood's `RecursiveForkTape.toCoins_complete`. -/
 theorem exists_complete_coins (d : ℕ) :
     ∃ coins : Zcash.Snark.RecursiveForkCoins Prechallenge d, coins.Complete :=
   ⟨(identityTape d).toCoins, Zcash.Snark.RecursiveForkTape.toCoins_complete _⟩
+
+/-- **One tape is complete *and* bounded**, at every depth: `identityTape`'s coins again, whose
+node degree is exactly `Fintype.card Prechallenge = 2 ^ 128` by ironwood's
+`RecursiveForkTape.toCoins_bounded`.
+
+The two conditions are genuinely independent, which is why this is a theorem and not a
+restatement of `exists_complete_coins`. `Complete` asks that every challenge occur somewhere in
+each node's order list and says nothing about that list's length; a complete tape whose orders
+repeat challenges is complete and unbounded. `Bounded` caps the length and says nothing about
+coverage. Every endpoint hypothesizes the first; the cost bound
+(`deployedExtractRuns_le`) needs the second. This says one witness discharges both at once,
+which is what lets `DeployedFamily.exists_complete_reductionEfficient`
+(`Forking/KnowledgeSoundness.lean`) name an explicit `R`. -/
+theorem exists_complete_bounded_coins (d : ℕ) :
+    ∃ coins : Zcash.Snark.RecursiveForkCoins Prechallenge d,
+      coins.Complete ∧ coins.Bounded (2 ^ 128) :=
+  ⟨(identityTape d).toCoins, Zcash.Snark.RecursiveForkTape.toCoins_complete _,
+    card_prechallenge ▸ Zcash.Snark.RecursiveForkTape.toCoins_bounded _⟩
 
 /-! ## The two anti-vacuity companions
 
