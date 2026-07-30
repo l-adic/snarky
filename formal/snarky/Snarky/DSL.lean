@@ -1,4 +1,5 @@
 import Snarky.Types
+import Snarky.Vec
 
 /-!
 # The user-facing combinators

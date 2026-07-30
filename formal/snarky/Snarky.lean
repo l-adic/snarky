@@ -6,6 +6,7 @@ import Snarky.Builder
 import Snarky.Prover
 import Snarky.Vec
 import Snarky.Constraint.Basic
+import Snarky.Circuit.Types
 import Snarky.Types
 import Snarky.DSL
 import Snarky.Laws

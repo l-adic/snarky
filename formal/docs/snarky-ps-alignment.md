@@ -168,6 +168,17 @@ results so far: `CVar.reduce_eval` (`Circuit/CVar`); `Assignments.Le` (+ `refl`/
 axiom gate resolves them by name). A lemma is promoted from private only when a
 cross-module consumer appears.
 
+**D11 — phantom type tags become nominal wrappers with private constructors.** Where PS
+draws a type-level distinction with a phantom tag on the variable-index parameter
+(`BoolVar f = CVar f (Bool Variable)`; later `SizedF`), the Lean port uses a nominal
+structure wrapping the expression, with a PRIVATE constructor. Introduction flows through
+the `CircuitType`/`CheckedType` pathway (`fieldsToVar` plus the `check` obligation that
+`witness` pays); no blanket "unsafe" doors. Where a PS gadget introduces a tagged result
+some other way, the Lean rendering is decided at that gadget's own port step, against the
+original — note PS's exported `Bool(..)` tags individual variables, not whole
+expressions, so an expression-level escape hatch would be a strictly bigger hammer than
+anything PS exposes.
+
 ## 3. Target layout
 
 Relocations (no semantic change; each lands at its §5 walk step):
@@ -251,7 +262,7 @@ separate sign-offs on the resulting files.
 - [x] 3. `Snarky/Constraint/Basic.lean` — the D4 refound: concrete `Basic F` + 4-method
   `BasicSystem`; `Example.lean` ported off `R1CS`; `Constraint/R1CS.lean` deleted; the two
   R1CS roots swapped for `Basic.holds`/`holds_mono`.
-- [ ] 4. `Snarky/Circuit/Types.lean` — relocate, minus `CheckedType` (moves to step 5, its
+- [x] 4. `Snarky/Circuit/Types.lean` — relocate, minus `CheckedType` (moves to step 5, its
   PS home); missing deriving machinery documented per D8.
 - [ ] 5. `Snarky/Circuit/DSL/Monad.lean` — merge `Monad.lean` + `AsProver.lean`; absorb
   `CheckedType` and `witness`/`readVar`/`mul` (their PS home is `DSL/Monad.purs`); document

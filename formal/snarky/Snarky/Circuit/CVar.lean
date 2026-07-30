@@ -22,8 +22,10 @@ ported.
 
 Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 - `Variable` is `Nat` (PS: a newtype over `Int` with `v0`/`incrementVariable`).
-- `CVar` is monomorphic in the variable type (PS `CVar f i` is a bifunctor; the core
-  package only ever instantiates `i = Variable`).
+- `CVar` is monomorphic in the variable type. PS `CVar f i` is a bifunctor instantiated
+  at `i = Variable` (`FVar`) and at `i = Bool Variable` (`BoolVar`'s phantom tag); the
+  Lean rendering keeps one index type and makes `BoolVar` a nominal wrapper with a
+  private constructor instead (see `Circuit/Types`).
 - `const_` is not ported (`CVar.const` is already first-class); the QuickCheck machinery
   (`Arbitrary`, `genWithAssignments`) is not ported — the property it tested is
   `reduce_eval`; the `Semigroup`/`Monoid` instances (zero-folding append) wait for their
