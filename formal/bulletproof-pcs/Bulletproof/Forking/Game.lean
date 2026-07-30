@@ -466,6 +466,150 @@ private def kimchiForkFrom [DecidableEq F] [DecidableEq G] [DecidableEq T]
                   (expand q₁) (expand q₂) (expand q₃) c₁ c₂ c₃)
                 runs := first.runs + second.runs + third.runs }
 
+/-! ### The worst-case run bound
+
+What the extractor *costs*, read off the same recursion it runs. The bound is **pointwise** in
+the oracle table and in the coin tape, which is what makes it usable on either averaging axis
+without a bridge between them: a pointwise bound sums over tapes at a fixed table and over
+tables at a fixed tape alike.
+
+It is a *worst case*, and an exponential one. At the deployed prechallenge domain the tape
+degree is `n = 2 ^ 128`, so the number is `(2 · 2 ^ 128 + 1) ^ (k + 1)` — the same regime as
+ironwood's `reductionEfficient_exponential`, and **not** a polynomial-AFK claim. What it does
+buy is that the call count is now *computed from the counter* rather than asserted to exist.
+-/
+
+/-- **An `n`-bounded coin tape makes at most `(2n+1)^(e+1)` adversary runs.** The structural
+port of ironwood's `recursiveAlgebraicForkFrom_runs_le`
+(`Forking/Adversary/Recursive.lean:578`) to *our* recursion, which differs from it in the one
+way that moves the arithmetic: the fork is indexed by certificate depth `e` with coins one level
+deeper, and the base case is the Schnorr fork, which runs a scan rather than costing a bare `1`.
+
+Hence the exponent `e + 1`, not `e`. At `e = 0` a losing run costs `1` and a winning run costs
+`1 + second.runs ≤ 1 + n`, both `≤ (2n+1)^1`; the slack `n` in `2n + 1` is exactly what pays for
+that extra leaf scan, so the sharper `(2n+1)^e` is *false* here.
+
+The two scan lemmas consumed are ironwood's own and are used verbatim at the alphabet `Pre`:
+they ask nothing of it beyond `[Zero Pre]` and `[DecidableEq Pre]`. -/
+private theorem kimchiForkFrom_runs_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) (n : ℕ) :
+    {e : ℕ} → (m : ℕ) → (hme : m + e = σ.k) → (O : T → Pre) → (p : Pf) →
+      (coins : Zcash.Snark.RecursiveForkCoins Pre (e + 1)) → coins.Bounded n →
+      (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p coins).runs
+        ≤ (2 * n + 1) ^ (e + 1)
+  | 0, m, hme, O, p, .node order child, hbounded => by
+      have horder : order.length ≤ n := hbounded.1
+      have hscan : ∀ (attempt : Pre → Zcash.Snark.RecursiveForkAttempt (F × F))
+          (seen : List Pre), (∀ q, (attempt q).runs ≤ 1) →
+          1 + (Zcash.Snark.nextForkChallenge attempt seen order).runs
+            ≤ (2 * n + 1) ^ (0 + 1) := by
+        intro attempt seen hq
+        have h := (Zcash.Snark.nextForkChallenge_runs_le attempt seen order 1 hq).trans
+          (by simpa using horder)
+        simp only [zero_add, pow_one]
+        omega
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · split
+        all_goals
+          exact hscan _ _ (fun q => by split <;> exact Nat.le_refl 1)
+      · simp only [zero_add, pow_one]
+        omega
+  | e + 1, m, hme, O, p, .node order child, hbounded => by
+      have horder : order.length ≤ n := hbounded.1
+      have hm : m < σ.k + 1 := by omega
+      have htail : m + 1 + e = σ.k := by omega
+      have hone : 1 ≤ (2 * n + 1) ^ (e + 1) := Nat.one_le_pow _ _ (by omega)
+      have hchild : ∀ (O' : T → Pre) (p' : Pf) (q : Pre),
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) htail O' p'
+            (child q)).runs ≤ (2 * n + 1) ^ (e + 1) := fun O' p' q =>
+        kimchiForkFrom_runs_le σ b v P expand A proofOf prefixes dec n (m + 1) htail O' p'
+          (child q) (hbounded.2 q)
+      let t : T := prefixes p ⟨m, hm⟩
+      let candidate : Pre → Zcash.Snark.RecursiveForkAttempt (KimchiForkCert F G e) := fun q =>
+        let O' := Function.update O t q
+        let p' := A.run O'
+        if prefixes p' ⟨m, hm⟩ = t then
+          kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) htail O' p' (child q)
+        else { output := none, runs := 1 }
+      have hcand : ∀ q, (candidate q).runs ≤ (2 * n + 1) ^ (e + 1) := by
+        intro q
+        dsimp only [candidate]
+        split
+        · exact hchild _ _ q
+        · exact hone
+      have hfirst : (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) htail O p
+          (child (O t))).runs ≤ (2 * n + 1) ^ (e + 1) := hchild O p (O t)
+      have hsecond : (Zcash.Snark.nextForkChallenge candidate [O t] order).runs
+          ≤ n * (2 * n + 1) ^ (e + 1) :=
+        (Zcash.Snark.nextForkChallenge_runs_le candidate [O t] order _ hcand).trans
+          (Nat.mul_le_mul_right _ horder)
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · exact hfirst.trans (Nat.pow_le_pow_right (by omega) (by omega))
+      · rename_i c₁ hfirstSome
+        split
+        · calc _ ≤ (2 * n + 1) ^ (e + 1) + n * (2 * n + 1) ^ (e + 1) :=
+                Nat.add_le_add hfirst hsecond
+            _ ≤ (2 * n + 1) ^ (e + 1) * (2 * n + 1) := by ring_nf; omega
+            _ = (2 * n + 1) ^ (e + 1 + 1) := (pow_succ _ _).symm
+        · rename_i q₂ c₂ rest seen hsecondSome
+          have hrest : rest.length ≤ order.length :=
+            Zcash.Snark.nextForkChallenge_output_rest_length_le candidate [O t] hsecondSome
+          have hthird : (Zcash.Snark.nextForkChallenge candidate seen rest).runs
+              ≤ n * (2 * n + 1) ^ (e + 1) :=
+            (Zcash.Snark.nextForkChallenge_runs_le candidate seen rest _ hcand).trans
+              (Nat.mul_le_mul_right _ (hrest.trans horder))
+          split
+          all_goals
+            calc _ ≤ (2 * n + 1) ^ (e + 1) + n * (2 * n + 1) ^ (e + 1)
+                    + n * (2 * n + 1) ^ (e + 1) :=
+                  Nat.add_le_add (Nat.add_le_add hfirst hsecond) hthird
+              _ = (2 * n + 1) ^ (e + 1) * (2 * n + 1) := by ring
+              _ = (2 * n + 1) ^ (e + 1 + 1) := (pow_succ _ _).symm
+
+/-- **The counter is never zero.** Every arm of the fork charges at least the run it has already
+made: the base case bills `1` outright, and each recursive arm's total leads with `first.runs`.
+
+Anti-vacuity for the bound above, in the shape this project pins rather than argues
+(`docs/negative-controls.md`). An upper bound on a counter says nothing if the counter could be
+provably `0` — a "zero-call reduction" would satisfy `ReductionEfficient` at every `R`. This
+lemma is what rules that reading out. -/
+private theorem one_le_kimchiForkFrom_runs [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) :
+    {e : ℕ} → (m : ℕ) → (hme : m + e = σ.k) → (O : T → Pre) → (p : Pf) →
+      (coins : Zcash.Snark.RecursiveForkCoins Pre (e + 1)) →
+      1 ≤ (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p coins).runs
+  | 0, m, hme, O, p, .node order child => by
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · split <;> exact Nat.le_add_right 1 _
+      · exact Nat.le_refl 1
+  | e + 1, m, hme, O, p, .node order child => by
+      have hm : m < σ.k + 1 := by omega
+      have htail : m + 1 + e = σ.k := by omega
+      have hfirst : 1 ≤ (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) htail O p
+          (child (O (prefixes p ⟨m, hm⟩)))).runs :=
+        one_le_kimchiForkFrom_runs σ b v P expand A proofOf prefixes dec (m + 1) htail O p _
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · exact hfirst
+      · split
+        · exact hfirst.trans (Nat.le_add_right _ _)
+        · split <;> exact hfirst.trans ((Nat.le_add_right _ _).trans (Nat.le_add_right _ _))
+
 end Extractor
 
 /-- **The extractor.** Given the oracle table and the fork tape, run the adversary, rewind it at
@@ -513,6 +657,50 @@ def kimchiExtractRuns [DecidableEq F] [DecidableEq G] [DecidableEq T]
     (O : T → Pre) (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) : ℕ :=
   (kimchiForkFrom σ b v P expand A proofOf prefixes dec 0 (Nat.zero_add σ.k) O
     (A.run O) coins).runs
+
+/-- **The extractor's call count in closed form**, on any coin tape of node degree at most `n`:
+`(2n+1)^(k+1)`. `kimchiForkFrom_runs_le` at the root, `e := σ.k`, `m := 0`.
+
+What this is worth, stated honestly. It is the **worst case**, and it is exponential — both in
+the number of rounds `k` and in the challenge domain, since at the deployed instantiation
+`n = Fintype.card Prechallenge = 2 ^ 128`. It is therefore *not* a polynomial-AFK claim, the
+same caveat ironwood attaches to its own `reductionEfficient_exponential`. The conditional
+average `(6/δ)^k` under a good-challenge density floor is a different theorem, and it is not
+proved anywhere in this tree.
+
+What it does buy: this is the first bound here that is **computed from the counter** rather than
+obtained from a `sup` that never inspects it. Feeding it to `ReductionEfficient`
+(`Forking/KnowledgeSoundness.lean`) turns the endpoints' call-bound hypothesis from an
+existential over unexamined numbers into an explicit one. Paired with
+`one_le_kimchiExtractRuns`, which pins the counter away from `0`, the pair brackets the cost
+rather than merely capping it. -/
+theorem kimchiExtractRuns_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    (O : T → Pre) (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) {n : ℕ}
+    (hB : coins.Bounded n) :
+    kimchiExtractRuns σ b v P expand A proofOf prefixes dec O coins
+      ≤ (2 * n + 1) ^ (σ.k + 1) :=
+  kimchiForkFrom_runs_le σ b v P expand A proofOf prefixes dec n 0 (Nat.zero_add σ.k) O
+    (A.run O) coins hB
+
+/-- **The extractor always runs the adversary at least once**, on every table and every tape —
+`one_le_kimchiForkFrom_runs` at the root. The companion that keeps `kimchiExtractRuns_le` from
+being vacuous: a counter that could be `0` would satisfy every upper bound, and an upper bound
+alone cannot tell a real reduction from one that does nothing. -/
+theorem one_le_kimchiExtractRuns [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    (O : T → Pre) (coins : Zcash.Snark.RecursiveForkCoins Pre (σ.k + 1)) :
+    1 ≤ kimchiExtractRuns σ b v P expand A proofOf prefixes dec O coins :=
+  one_le_kimchiForkFrom_runs σ b v P expand A proofOf prefixes dec 0 (Nat.zero_add σ.k) O
+    (A.run O) coins
 
 /-! ## The escape layer over `Pre`
 
@@ -1153,7 +1341,7 @@ what lets the tower below quantify over the varying base without a dependent tra
 private def srsAt (σ : SRS G) (uOf : Pf → (T → Pre) → G) (p : Pf) (O : T → Pre) : SRS G :=
   { σ with U := uOf p O }
 
-omit [Field F] in
+omit [Field F] [AddCommGroup G] in
 /-- The round count of the run's setup is the sampled setup's — by `rfl`, and stated so that the
 `omega` goals of the fork's arithmetic can be discharged after a `show`. -/
 @[simp] theorem srsAt_k (σ : SRS G) (uOf : Pf → (T → Pre) → G) (p : Pf) (O : T → Pre) :
@@ -1895,6 +2083,7 @@ private theorem adaptive_badSet_ofPrefix_union_measure_le {ι κ : Type*} [Finty
     · simp only [if_neg ht, Finset.card_empty]
       exact Nat.zero_le (c i)
 
+omit [Field F] in
 /-- **The endpoint's fourth summand, in the shape it is consumed.** Finitely many challenges, each
 squeezed at its own transcript node, each guarded by a set of *field* elements determined by that
 node together with strictly earlier ones, and each read into the field by its own injective map —
@@ -1923,6 +2112,7 @@ private theorem adaptive_badSet_ofPrefix_union_expand_measure_le
   · exact le_trans (Finset.card_le_card_of_injOn (expand i)
       (fun q hq => Finset.mem_preimage.mp hq) (hexp_inj i).injOn) (hcard i t w)
 
+omit [Field F] in
 /-- **The union charge from a run-level agreement law.**
 `adaptive_badSet_ofPrefix_union_expand_measure_le` with
 the exclusion sets given *at the run* — as functions `badRun i : (T → Pre) → Finset F` of the

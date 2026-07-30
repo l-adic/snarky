@@ -1759,6 +1759,79 @@ def ReductionEfficient (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k +
   ∀ basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point,
     ∑ O : Coins C nc k, fam.attemptRuns basis O coins ≤ R * Fintype.card (Coins C nc k)
 
+/-- **A call bound computed from the counter** — the analogue of
+`DeployedFamily.reductionEfficient_of_bounded`, consuming
+`Bulletproof.Forking.kimchiExtractRuns_le` directly (this family's `attemptRuns` calls the
+generic extractor at `fam.runSrs basis O`, not the standalone `deployedExtractRuns`).
+
+Pointwise in the oracle table, so the sum over tables is `Finset.sum_le_sum` followed by
+`Finset.sum_const` and nothing else. -/
+theorem reductionEfficient_of_bounded
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {n : ℕ}
+    (hB : coins.Bounded n) :
+    fam.ReductionEfficient coins ((2 * n + 1) ^ (k + 1)) := by
+  intro basis
+  calc ∑ O : Coins C nc k, fam.attemptRuns basis O coins
+      ≤ ∑ _O : Coins C nc k, (2 * n + 1) ^ (k + 1) :=
+        Finset.sum_le_sum fun O _ =>
+          Bulletproof.Forking.kimchiExtractRuns_le (fam.runSrs basis O)
+            (combinedEvalVector (2 ^ k) (fam.claim basis O).evalscale (fam.claim basis O).pointFn)
+            (Ipa.cipOf (fam.claim basis O))
+            (combinedCommitment (fam.claim basis O).polyscale (fam.claim basis O).commitmentFn)
+            (expandPre C) (fam.adversary basis)
+            (fun cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+            (ipaPrefixes (fam.runSrs basis O) (fam.digest basis) (fam.publicComm basis))
+            (kimchiDecodesFromPrefixes (fam.runSrs basis O) (fam.digest basis)
+              (fam.publicComm basis))
+            O coins hB
+    _ = _ := by rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Nat.mul_comm]
+
+/-- **The endpoints' two coin-side hypotheses are jointly dischargeable here too**, with the
+same explicit `R = (2 · 2 ^ 128 + 1) ^ (k + 1)`: the identity tape
+(`Bulletproof.Ipa.Forking.exists_complete_bounded_coins`) is `Complete` — what the kimchi
+knowledge-soundness statements assume — and bounded by `Fintype.card Prechallenge` at every
+node, which is what the cost bound consumes.
+
+Worst case and exponential, as everywhere this number is quoted; it is not a concrete-security
+claim, and no table-averaged or polynomial bound follows from it. -/
+theorem exists_complete_reductionEfficient :
+    ∃ coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1),
+      coins.Complete ∧ fam.ReductionEfficient coins ((2 * 2 ^ 128 + 1) ^ (k + 1)) := by
+  obtain ⟨coins, hc, hb⟩ := Bulletproof.Ipa.Forking.exists_complete_bounded_coins (k + 1)
+  exact ⟨coins, hc, fam.reductionEfficient_of_bounded coins hb⟩
+
+/-- **No `R` below `1` satisfies the efficiency gate.** The extractor runs the adversary at least
+once on every oracle table (`Bulletproof.Forking.one_le_kimchiExtractRuns`), so the sum over
+tables is at least `Fintype.card (Coins C nc k)`, which `R * Fintype.card (Coins C nc k)` does
+not bound at `R = 0`.
+
+It does not make `hEff` non-trivial to *satisfy* — `exists_complete_reductionEfficient` does
+that — only rules out an `R` advertising a zero-call reduction, against which discrete-log
+hardness would be assumed for free. -/
+theorem one_le_of_reductionEfficient
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {R : ℕ}
+    (h : fam.ReductionEfficient coins R) : 1 ≤ R := by
+  -- `ReductionEfficient` quantifies over every basis, so the basis is immaterial: take zero.
+  have hlow : 1 * Fintype.card (Coins C nc k)
+      ≤ ∑ O : Coins C nc k, fam.attemptRuns (fun _ => 0) O coins := by
+    calc 1 * Fintype.card (Coins C nc k) = ∑ _O : Coins C nc k, 1 := by
+          rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Nat.mul_comm]
+      _ ≤ _ := Finset.sum_le_sum fun O _ =>
+          Bulletproof.Forking.one_le_kimchiExtractRuns (fam.runSrs (fun _ => 0) O)
+            (combinedEvalVector (2 ^ k) (fam.claim (fun _ => 0) O).evalscale
+              (fam.claim (fun _ => 0) O).pointFn)
+            (Ipa.cipOf (fam.claim (fun _ => 0) O))
+            (combinedCommitment (fam.claim (fun _ => 0) O).polyscale
+              (fam.claim (fun _ => 0) O).commitmentFn)
+            (expandPre C) (fam.adversary (fun _ => 0))
+            (fun cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+            (ipaPrefixes (fam.runSrs (fun _ => 0) O) (fam.digest (fun _ => 0))
+              (fam.publicComm (fun _ => 0)))
+            (kimchiDecodesFromPrefixes (fam.runSrs (fun _ => 0) O) (fam.digest (fun _ => 0))
+              (fam.publicComm (fun _ => 0)))
+            O coins
+  exact Nat.le_of_mul_le_mul_right (hlow.trans (h fun _ => 0)) Fintype.card_pos
+
 /-- **Discrete log is hard for this family against `R`-call reductions** — the analogue of
 `DeployedFamily.DiscreteLogRelationHardFor`, and what pins `ε` and `δ`. `ε` is a genuine
 reduction to textbook discrete log; `δ` is the residual event's own measure, which is why the
@@ -4377,11 +4450,19 @@ the run's own Fiat–Shamir challenges land in an exclusion set (`szBudget`).
 
 **What the bound rests on.** Two cryptographic assumptions, both hypotheses: `hHard`, which
 prices the two discrete-log arms, and the fork tape's completeness. `hEff` fixes which
-reductions `hHard` is taken against; the extractor's cost is not bounded by any theorem in
-this development (external-audit E-1), so `ε` is assumed for the finder rather than derived
-from a time bound. Everything else is proved:
-the presence arm by the claim-adaptive extraction game, and the algebraic arm by the
-Fiat–Shamir-axiom-free run-soundness root together with the adaptive Schwartz–Zippel charge.
+reductions `hHard` is taken against, and it is dischargeable in this file:
+`KimchiFamily.reductionEfficient_of_bounded` proves it at `R = (2n + 1)^(k+1)` on any tape of
+node degree at most `n`, and `KimchiFamily.exists_complete_reductionEfficient` exhibits a single
+tape that is `Complete` and efficient at once, at `n = 2 ^ 128`. That `R` is the **worst case**,
+exponential in `k` and in the challenge domain, and no table-averaged bound follows from it
+(external-audit O-1b, open). So `ε` is still assumed for the finder rather than derived from a
+time bound: a reduction permitted that many oracle calls solves Pasta discrete log outright, so
+`hHard` at that `R` is satisfiable only at `ε ≈ 1`. Discharging `hEff` therefore buys
+bookkeeping — which reductions the assumption is quantified over — and not a stronger bound.
+
+Everything else is proved: the presence arm by the claim-adaptive extraction game, and the
+algebraic arm by the Fiat–Shamir-axiom-free run-soundness root together with the adaptive
+Schwartz–Zippel charge.
 The narrowing of the family class is `KimchiFamily`'s own `hrepPrefix`/`hTPrefix` — algebraic
 faithfulness, i.e. that a commitment's declared representation is fixed when the commitment is
 absorbed — which is what the algebraic group model means and what

@@ -115,6 +115,18 @@ Kimchi.Permutation.sigmaSide_eval_row
 Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound
 Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound
 
+-- The extractor's cost for THIS family (audit O-1a). The call-bound hypothesis of the
+-- endpoints, discharged at an explicit R = (2·2^128 + 1)^(k+1) on the same tape that
+-- witnesses `Complete`. WORST CASE, exponential in k and in the challenge domain: it records
+-- which reductions the hardness assumption is taken against, and is not a security claim.
+-- The walk reaches KimchiFamily.reductionEfficient_of_bounded from here.
+Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.exists_complete_reductionEfficient
+-- The floor under the same hypothesis: no R below 1 satisfies the efficiency gate, so `hEff`
+-- cannot be met by a number advertising a zero-call reduction. It lifts the counter's own
+-- >= 1 bound to the level the endpoints read it at, and does NOT make `hEff` easier to satisfy
+-- (that is the entry above).
+Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficient
+
 -- Faithfulness: the deployed verifier IS the challenge-generic one at the sponge's own
 -- squeezes, stated at named sources rather than as an existential (an existential over the
 -- challenges is satisfied even by a verifier with Fiat-Shamir deleted).

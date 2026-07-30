@@ -51,7 +51,13 @@ def roots : List Name :=
     `Bulletproof.Ipa.Forking.winsAtBase_uBaseOf,
     `Bulletproof.Ipa.Forking.honestNode_wins_everywhere,
     `Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta,
-    `Bulletproof.Ipa.Forking.exists_complete_coins ]
+    `Bulletproof.Ipa.Forking.exists_complete_coins,
+    -- the extractor's cost (audit O-1a): an explicit, proved call bound on the same tape that
+    -- witnesses `Complete`, plus the anti-vacuity companions pinning the counter away from 0
+    -- and ruling out every `R` below 1 in the gate the endpoints actually read
+    `Bulletproof.Ipa.Forking.DeployedFamily.exists_complete_reductionEfficient,
+    `Bulletproof.Forking.one_le_kimchiExtractRuns,
+    `Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficient ]
 
 /-- The standard logical axioms, and nothing else — `native_decide` certificates are
     admitted separately, by defining module, in `isTrustedNativeDecide` below.

@@ -54,6 +54,11 @@ def roots : List Name :=
     -- over the standard axioms and the Pasta certificates alone.
     `Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound,
     `Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound,
+    -- The extractor's cost for this family (audit O-1a): the endpoints' call-bound hypothesis
+    -- discharged at an explicit, proved R on the same tape that witnesses `Complete`, and the
+    -- floor under that same hypothesis — no R below 1 satisfies it.
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.exists_complete_reductionEfficient,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficient,
     `Kimchi.Verifier.Forking.honestKimchiFamily_wins,
     -- The Tier-2/3 surface (external-audit A-2): the faithfulness layer, the named
     -- anti-vacuity exhibits, and the REVISIT AGM lemmas are consumed by nothing, so no

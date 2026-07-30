@@ -123,13 +123,16 @@ fi
 # Deleting one now fails a LOCK — a statement-level decision needing sign-off — rather than
 # passing silently.
 exhibits_dep='sg_determined_of_verifyWith wireWins_pinTable pinTable_factors chainAt_sg
-              nodeTranscript_nodes uBaseOf_eq_transcript identityTape exists_complete_coins'
+              nodeTranscript_nodes uBaseOf_eq_transcript identityTape exists_complete_coins
+              exists_complete_bounded_coins'
 exhibits_ks='wireWins_U_irrelevant deployedExtract_U_irrelevant uRepresentationOfBreak
-             reductionEfficient_exists derivedUDL_iff_residual_measure honestFamily_failure_set'
+             reductionEfficient_exists derivedUDL_iff_residual_measure honestFamily_failure_set
+             exists_complete_reductionEfficient'
+exhibits_game='one_le_kimchiExtractRuns'
 exhibits_tr='verifyOracle_spongeFS verifyOracleFrom_spongeFSFrom spongeFS_eq_from
              toGroup_spongeOBase_preT'
 exhibits_hon='winsAtBase_uBaseOf honestNode_wins_everywhere'
-for pair in "$dep:$exhibits_dep" "$ks:$exhibits_ks" \
+for pair in "$dep:$exhibits_dep" "$ks:$exhibits_ks" "$game:$exhibits_game" \
             "Bulletproof/Forking/Transcript.lean:$exhibits_tr" \
             "Bulletproof/Forking/Honest.lean:$exhibits_hon"; do
   file="${pair%%:*}"; names="${pair#*:}"
@@ -144,4 +147,4 @@ for pair in "$dep:$exhibits_dep" "$ks:$exhibits_ks" \
 done
 
 echo "✓ locked target intact: statement, extractor type, conclusion type,"
-echo "  plain-def extractor, both anti-vacuity companions, and the 20 exhibits"
+echo "  plain-def extractor, both anti-vacuity companions, and the 23 exhibits"

@@ -598,13 +598,23 @@ non-escape imply extraction — and it does not by itself bound the cost: `Reduc
 averages the run count over oracle tables, and a table on which the adversary loses costs
 exactly ONE run (`recursiveAlgebraicForkFrom` descends without rewinding and returns at the
 leaf), so the quantity gated here is the classical expected-forking cost, not the worst case.
-What is *proved* is only the worst case, ironwood's `(2·|F| + 1) ^ k`
-(`reductionEfficient_exponential`); a table-averaged bound is not proved here. Upstream's
-`ExpectedRuns.lean` proves `E[runs] ≤ (6/δ)^k` under a uniform good-challenge density floor,
-on the tape-averaged axis; porting it to this axis is open, as is any unconditional
-polynomial bound. The gate is therefore honest bookkeeping, not a security claim: it records
-*which* reductions the hardness assumption is taken against, with the extractor's cost an
-open item rather than a known-large one. -/
+
+What is *proved* is the worst case, and now for our own recursion rather than only upstream's:
+`DeployedFamily.reductionEfficient_of_bounded` below discharges `ReductionEfficient` at
+`R = (2n+1)^(k+1)` on any coin tape of node degree at most `n`, and
+`DeployedFamily.exists_complete_reductionEfficient` exhibits a single tape that is `Complete`
+*and* achieves it, at `n = 2 ^ 128`. That chain rests on `Bulletproof.Forking.kimchiExtractRuns_le`,
+which is pointwise in the table, so it crosses the averaging axis for free.
+
+The honest caveats, unchanged. The number is exponential in `k` and in the challenge domain —
+the same regime as ironwood's `reductionEfficient_exponential` — so it is bookkeeping, not a
+concrete-security claim. A *table-averaged* bound is still not proved here: upstream's
+`ExpectedRuns.lean` proves `E[runs] ≤ (6/δ)^k` under a uniform good-challenge density floor on
+the tape-averaged axis, and porting it to this axis remains open, as does any unconditional
+polynomial bound. What has changed is only that `R` is now computed from the counter instead of
+obtained from a `sup` that never inspects it (contrast `reductionEfficient_exists`, kept below
+for exactly that contrast), and that it is bounded away from `0` by
+`Bulletproof.Forking.one_le_kimchiExtractRuns`. -/
 
 section Capstone
 
@@ -687,6 +697,70 @@ theorem DeployedFamily.reductionEfficient_exists [Fintype C.Point]
   refine le_trans (Finset.le_sup (f := fun basis => ∑ O : Coins C k,
     fam.attemptRuns basis O coins) (Finset.mem_univ basis)) ?_
   exact Nat.le_mul_of_pos_right _ Fintype.card_pos
+
+/-- **A call bound computed from the counter**, on any coin tape of node degree at most `n`.
+The pointwise bound `deployedExtractRuns_le` summed over the oracle tables — upstream's
+`recursiveAlgebraicFork_sum_runs_le_unconditional` (`Recursive.lean:679`) is the same two-line
+`calc`. Because the input is pointwise in the table, no averaging argument is involved and the
+sum is trivial; that is precisely why this crosses the tape-vs-table axis that the conditional
+`(6/δ)^k` bound does not.
+
+Stands beside `reductionEfficient_exists`, which it does not supersede: that theorem's job is to
+record what `ReductionEfficient` fails to say, and it still says it. -/
+theorem DeployedFamily.reductionEfficient_of_bounded
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {n : ℕ}
+    (hB : coins.Bounded n) :
+    fam.ReductionEfficient coins ((2 * n + 1) ^ (k + 1)) := by
+  intro basis
+  calc ∑ O : Coins C k, fam.attemptRuns basis O coins
+      ≤ ∑ _O : Coins C k, (2 * n + 1) ^ (k + 1) :=
+        Finset.sum_le_sum fun O _ =>
+          deployedExtractRuns_le (srsOfBasis k basis) (Ipa.cipOf (fam.claim basis))
+            (combinedEvalVector (2 ^ k) (fam.claim basis).evalscale (fam.claim basis).pointFn)
+            (Ipa.cipOf (fam.claim basis))
+            (combinedCommitment (fam.claim basis).polyscale (fam.claim basis).commitmentFn)
+            (fam.adversary basis) O coins hB
+    _ = _ := by rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Nat.mul_comm]
+
+/-- **The two coin-side hypotheses of every endpoint are jointly dischargeable, with an explicit
+proved `R`.** One tape is at once `Complete` — what the knowledge-soundness statements assume, so
+that non-escape forces extraction — and efficient at `R = (2 · 2 ^ 128 + 1) ^ (k + 1)`, a number
+this tree computes from the extractor's own counter rather than obtains from a `sup` over bases.
+
+That sentence is the whole content: before it, the efficiency gate could only be satisfied by an
+`R` nothing had inspected. It remains a *worst-case*, exponential number, and no polynomial or
+table-averaged claim follows from it. -/
+theorem DeployedFamily.exists_complete_reductionEfficient :
+    ∃ coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1),
+      coins.Complete ∧ fam.ReductionEfficient coins ((2 * 2 ^ 128 + 1) ^ (k + 1)) := by
+  obtain ⟨coins, hc, hb⟩ := exists_complete_bounded_coins (k + 1)
+  exact ⟨coins, hc, fam.reductionEfficient_of_bounded coins hb⟩
+
+/-- **No `R` below `1` satisfies the efficiency gate.** The extractor runs the adversary at least
+once on every oracle table (`one_le_deployedExtractRuns`), so the sum over tables is at least
+`Fintype.card (Coins C k)`, which `R * Fintype.card (Coins C k)` does not bound at `R = 0`.
+
+It does not make `hEff` non-trivial to *satisfy* — `exists_complete_reductionEfficient` does
+that — only rules out an `R` advertising a zero-call reduction, against which discrete-log
+hardness would be assumed for free. -/
+theorem DeployedFamily.one_le_of_reductionEfficient
+    (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) {R : ℕ}
+    (h : fam.ReductionEfficient coins R) : 1 ≤ R := by
+  -- `ReductionEfficient` quantifies over every basis, so the basis is immaterial: take zero.
+  have hlow : 1 * Fintype.card (Coins C k)
+      ≤ ∑ O : Coins C k, fam.attemptRuns (fun _ => 0) O coins := by
+    calc 1 * Fintype.card (Coins C k) = ∑ _O : Coins C k, 1 := by
+          rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Nat.mul_comm]
+      _ ≤ _ := Finset.sum_le_sum fun O _ =>
+          one_le_deployedExtractRuns (srsOfBasis k (fun _ => 0))
+            (Ipa.cipOf (fam.claim (fun _ => 0)))
+            (combinedEvalVector (2 ^ k) (fam.claim (fun _ => 0)).evalscale
+              (fam.claim (fun _ => 0)).pointFn)
+            (Ipa.cipOf (fam.claim (fun _ => 0)))
+            (combinedCommitment (fam.claim (fun _ => 0)).polyscale
+              (fam.claim (fun _ => 0)).commitmentFn)
+            (fam.adversary (fun _ => 0)) O coins
+  exact Nat.le_of_mul_le_mul_right (hlow.trans (h fun _ => 0)) Fintype.card_pos
 
 /-! ### The capstone, per curve -/
 
@@ -808,14 +882,18 @@ fork tape is complete.
 2. *`δ` is not a reduction.* `derivedUDL_iff_residual_measure` proves it is the residual event's
    own measure. Only `ε` reduces to a standard problem. This is the price of kimchi's
    transcript-derived `U`, which halo2 does not pay — ironwood has no analogue.
-3. *The extractor's cost is UNPROVED, not known-large* (external-audit E-1).
-   `reductionEfficient_exists` obtains some `R` without inspecting the counter, and the only
-   proved bound is ironwood's worst case `(2·|F| + 1)^k` — but a losing table costs one run,
-   so the table-averaged quantity `ReductionEfficient` gates is the classical
-   expected-forking cost, unbounded by any theorem here. Because `ε` bounds the DL advantage
-   of this specific finder, a generic-group grounding of `ε` needs a cost bound this
-   development does not yet have; `ExpectedRuns.lean` upstream has the conditional bound
-   (`(6/δ)^k` under a fork-spread floor, tape-averaged) that would supply one.
+3. *The extractor's cost is bounded only in the worst case.*
+   `DeployedFamily.reductionEfficient_of_bounded` discharges `hEff` at `R = (2n + 1)^(k+1)`
+   on any tape of node degree at most `n`, and
+   `DeployedFamily.exists_complete_reductionEfficient` exhibits one tape that is `Complete`
+   and efficient at once, at `n = 2 ^ 128` — exponential in `k` and in the challenge domain.
+   No sub-worst-case bound is proved here: `ReductionEfficient` averages over the oracle
+   tables and a losing table costs one run, so what it gates is the classical
+   expected-forking cost, and upstream's tape-averaged `(6/δ)^k` does not cross that axis
+   (see the `ReductionEfficient` section docstring; external-audit O-1b, open). `ε` is still
+   assumed for this finder rather than derived from a time bound: at
+   `R = (2·2¹²⁸ + 1)^(k+1)` a reduction is permitted enough oracle calls to solve discrete log
+   outright, so `hHard` there is satisfiable only at `ε ≈ 1`.
 4. *One claim.* The statement is single-claim; recovering individual polynomials from a batch is
    the separate un-batching layer (`chunked_batch_soundness`).
 

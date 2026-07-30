@@ -101,7 +101,8 @@ fi
 # THE EXHIBIT SET (see the bulletproof-pcs gate's note): certificates consumed by nothing
 # are indistinguishable from dead code once they leave roots.txt, so their existence is
 # pinned here instead of relying on review.
-for n in exists_ne_zero_kernel_scalarBasis kimchiVerify_eq_verifyWith; do
+for n in exists_ne_zero_kernel_scalarBasis kimchiVerify_eq_verifyWith \
+         exists_complete_reductionEfficient; do
   if ! grep -qE "^(theorem|def) $n\b" "$ks"; then
     echo "✗ EXHIBIT MISSING: $n (expected in $ks)"; exit 1
   fi
@@ -115,4 +116,4 @@ for n in vesta_honest_extraction_failure_measure_le \
 done
 
 echo "✓ kimchi locked target intact: both endpoint statements, Wins, ExtractsWitness,"
-echo "  relationFinder, the faithfulness bundle, and the six exhibits"
+echo "  relationFinder, the faithfulness bundle, and the seven exhibits"
