@@ -24,8 +24,8 @@ agreement, and completeness: a successful prover run satisfies every built const
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete
-backends live in downstream files (see `Snarky/Constraint/R1CS.lean` for the
-plain R1CS model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
+backends live in downstream files (see `Snarky/Constraint/Basic.lean` for the concrete
+`Basic` model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
 — use `Snarky.mapVec` from `Snarky/Vec.lean`). The package is being realigned with the
 PureScript original module-by-module — see `formal/docs/snarky-ps-alignment.md` for the

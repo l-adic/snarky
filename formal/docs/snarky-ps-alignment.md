@@ -248,7 +248,7 @@ separate sign-offs on the resulting files.
   PS — so this file does not depend on `Backend/Assignments`.
 - [x] 2. `Snarky/Backend/Assignments.lean` — split out: `Assignments`, `Le`, `extend*`, the
   `Le`/`eval_le` lemmas (declaration names unchanged, D2).
-- [ ] 3. `Snarky/Constraint/Basic.lean` — the D4 refound: concrete `Basic F` + 4-method
+- [x] 3. `Snarky/Constraint/Basic.lean` — the D4 refound: concrete `Basic F` + 4-method
   `BasicSystem`; `Example.lean` ported off `R1CS`; `Constraint/R1CS.lean` deleted; the two
   R1CS roots swapped for `Basic.holds`/`holds_mono`.
 - [ ] 4. `Snarky/Circuit/Types.lean` — relocate, minus `CheckedType` (moves to step 5, its

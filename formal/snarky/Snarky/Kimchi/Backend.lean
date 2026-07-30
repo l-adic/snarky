@@ -64,10 +64,14 @@ structure GateConstraint (F : Type*) where
   o : CVar F
   deriving Repr, DecidableEq
 
-/-- `r1cs a b prod` is `(a·b) − prod = 0` (`q₃ = 1`, `q₂ = -1`); `boolean x` is `x² − x = 0`
-(the same coefficients on the three operands `x`). -/
+/-- The four `BasicSystem` constructors as coefficient patterns: `r1cs a b prod` is
+`(a·b) − prod = 0` (`q₃ = 1`, `q₂ = -1`); `equal a b` is `a − b = 0` (`q₀ = 1`, `q₁ = -1`,
+third operand unused); `square a c` is `(a·a) − c = 0` (the r1cs pattern with both factors
+`a`); `boolean x` is `x² − x = 0` (the same, with all three operands `x`). -/
 instance : BasicSystem F (GateConstraint F) where
   r1cs a b prod := { q0 := 0, q1 := 0, q2 := -1, q3 := 1, q4 := 0, a := a, b := b, o := prod }
+  equal a b := { q0 := 1, q1 := -1, q2 := 0, q3 := 0, q4 := 0, a := a, b := b, o := .const 0 }
+  square a c := { q0 := 0, q1 := 0, q2 := -1, q3 := 1, q4 := 0, a := a, b := a, o := c }
   boolean x := { q0 := 0, q1 := 0, q2 := -1, q3 := 1, q4 := 0, a := x, b := x, o := x }
 
 /-- The affine-bilinear form of a constraint, as a field value — the single transcription

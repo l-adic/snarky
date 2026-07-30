@@ -14,9 +14,9 @@ Snarky.prove_build_agrees
 Snarky.prove_sound
 Snarky.CVar.eval_le
 
--- The concrete R1CS constraint model (Snarky/Constraint/R1CS.lean).
-Snarky.Constraint.R1CS.holds
-Snarky.Constraint.R1CS.holds_mono
+-- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
+Snarky.Basic.holds
+Snarky.Basic.holds_mono
 
 -- The Kimchi Generic-gate bridge (Snarky/Kimchi/Backend.lean): a DSL constraint holds
 -- iff its written Generic row satisfies the verified checker's predicate.
