@@ -1,4 +1,5 @@
 import Snarky.Constraint.Basic
+import Snarky.Backend.Assignments
 
 /-!
 # The plain R1CS constraint model

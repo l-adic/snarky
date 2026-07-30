@@ -1,4 +1,4 @@
-import Snarky.CVar
+import Snarky.Backend.Assignments
 
 /-!
 # The prover-side witness monad

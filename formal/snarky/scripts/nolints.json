@@ -1,3 +1,4 @@
 [
-  ["unusedArguments", "Snarky.Constraint.instReprR1CS.repr"]
+  ["unusedArguments", "Snarky.Constraint.instReprR1CS.repr"],
+  ["unusedArguments", "Snarky.instReprAffineExpression.repr"]
 ]

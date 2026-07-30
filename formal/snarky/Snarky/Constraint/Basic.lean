@@ -1,4 +1,4 @@
-import Snarky.CVar
+import Snarky.Circuit.CVar
 
 /-!
 # The basic constraint interface

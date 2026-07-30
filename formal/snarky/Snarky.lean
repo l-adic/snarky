@@ -1,4 +1,5 @@
-import Snarky.CVar
+import Snarky.Circuit.CVar
+import Snarky.Backend.Assignments
 import Snarky.AsProver
 import Snarky.Monad
 import Snarky.Builder

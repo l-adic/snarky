@@ -21,11 +21,15 @@ tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interprete
 mirroring `Snarky.Backend.Builder`/`Prover`, and the interpreter laws in
 `Snarky/Laws.lean` (witness-independence of the builder, builder/prover allocation
 agreement, and completeness: a successful prover run satisfies every built constraint).
-It is **Mathlib-free by design** (core Lean only, builds in seconds) — keep it that way;
-concrete backends live in downstream files (see `Snarky/Constraint/R1CS.lean` for the
+It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
+`Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
+affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete
+backends live in downstream files (see `Snarky/Constraint/R1CS.lean` for the
 plain R1CS model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Vec.lean`).
+— use `Snarky.mapVec` from `Snarky/Vec.lean`). The package is being realigned with the
+PureScript original module-by-module — see `formal/docs/snarky-ps-alignment.md` for the
+plan and its sign-off walk.
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
