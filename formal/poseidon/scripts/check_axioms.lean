@@ -10,6 +10,10 @@ in particular no `sorryAx` and no tree-local `native_decide` — enters the clos
 map-to-curve reaches CompElliptic's certified curve constants, so upstream `native_decide`
 certificates are permitted by defining module, exactly as in the other packages' gates.
 
+That existence pin makes the root list a deletion guard: a name absent from the environment
+fails with `axiom-check root not in environment`, so removing a listed declaration — even
+together with its `roots.txt` line — cannot pass silently.
+
 Run from `formal/poseidon/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:           lake env lean poseidon/scripts/check_axioms.lean)
 -/

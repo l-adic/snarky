@@ -51,7 +51,8 @@ theorem deployedExtract_failure_measure_le
 ```
 
 The extractor it measures is `deployedExtract` (`Deployed.lean:775`) — a plain `def`, returning
-`Option (OpeningOrBreak {σ with U := uBaseOf C cip} P b v)` where (`Game.lean:109-112`)
+`Option (OpeningOrBreak {σ with U := uBaseOf C cip} P b v)`, where `OpeningOrBreak` is an `abbrev`
+(`Game.lean:110`):
 
 ```lean
 abbrev OpeningOrBreak (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) : Type _ :=
@@ -73,7 +74,8 @@ abbrev OpeningOrBreak (σ : SRS G) (P : G) (b : Fin (2 ^ σ.k) → F) (v : F) : 
 
 The win condition here is strictly tighter than upstream's: theirs is an `accept` predicate applied
 to challenge values, ours is `Ipa.verifyWith … = true`, the executable wire verifier's own `Bool`
-(`Deployed.lean:411`). Our `Wins` equals `fsWinsFull` at `m = 0` by `Iff.rfl`, pinned in
+(`Wire.lean:262`), wrapped as the win event this measure is taken at (`def wireWins`,
+`Deployed.lean:412`). Our `Wins` equals `fsWinsFull` at `m = 0` by `Iff.rfl`, pinned in
 `bulletproof-pcs/scripts/check_ironwood_generic.lean` §7.
 
 ## Three deliberate differences from upstream
@@ -82,18 +84,26 @@ to challenge values, ours is `Ipa.verifyWith … = true`, the executable wire ve
    halo2 does not have.
 2. `3 / 2 ^ 128` rather than `3 / Fintype.card Fp` — the challenges are 128-bit prechallenges
    pushed through `endoExpand`. Dividing by `|F| ≈ 2 ^ 254` understates the per-round cost by
-   about `2 ^ 126`; that is the defect that condemns kimchi's `Forking/GuardEscape.lean`. This is
-   the corrected analogue, not a weakened one.
+   about `2 ^ 126`; that is the defect that condemned kimchi's `Forking/GuardEscape.lean`, since
+   deleted on exactly that reasoning (step 1 of `forking-consolidation-plan.md`). This is the
+   corrected analogue, not a weakened one.
 3. No `z = 0` slice. Upstream carries an extra `(family.Q + 1) * (1 / Fintype.card Fp)` summand for
-   the adaptive zero-challenge case (`snarkNonRelationFailure_measure_le`, `Algebraic.lean:1198-1202`).
+   the adaptive zero-challenge case (`snarkNonRelationFailure_measure_le`,
+   `Algebraic.lean:1198-1202`).
    Here `hne` makes that slice empty.
 
 ## Deliberately out of scope
 
 Upstream reaches `S` through `SnarkRelation` (`KnowledgeSoundness.lean:35-38`), which bundles the
 IPA opening *and* `circuitSat`. `bulletproof-pcs` is a polynomial commitment, not a SNARK, so the
-conclusion here carries only the opening half. The circuit half is kimchi's, and it is where
-`hencodes` and the four `poseidon_fiat_shamir_*` use sites live.
+conclusion here carries only the opening half. The circuit half is kimchi's, and it is where the
+Fiat–Shamir boundary lives — as `structure FSFaithful`
+(`kimchi/Kimchi/Verifier/Forking/Bridge.lean:93`), a per-statement hypothesis bundle. (The
+`hencodes` hypothesis and the four `poseidon_fiat_shamir_*` use sites this section once named are
+both gone *as declarations*: `hencodes` occurs in no Lean source of the five packages, and
+`poseidon_fiat_shamir_*` survives only as retrospective prose — the five surviving mentions are
+enumerated in *It closed, and the retirement landed better than planned* below. The scope
+statement itself stands.)
 
 ## Every hypothesis is discharged by an existing theorem
 
@@ -104,13 +114,14 @@ before.
 | --- | --- |
 | `hinj` | `expandPre_{vesta,pallas}_injective` (`Deployed.lean:105`, `:110`) |
 | `hne` | `expandPre_{vesta,pallas}_ne_zero` (`Deployed.lean:116`, `:120`) |
-| `hsmul` | `Pasta.{vesta,pallas}_smul_val` (`pasta/Pasta/Basic.lean:139`, `:142`) |
-| `[Module C.ScalarField C.Point]` | `{vesta,pallas}PointModule` (`pasta/Pasta/Basic.lean:126`, `:132`) |
+| `hsmul` | `Pasta.{vesta,pallas}_smul_val` (`pasta/Pasta/Basic.lean:148`, `:152`) |
+| `[Module C.ScalarField C.Point]` | `{vesta,pallas}PointModule` (`pasta/Pasta/Basic.lean:135`, `:141`) |
 | `hcoins` | `RecursiveForkTape.toCoins_complete` (`Recursive.lean:147`) |
 
 There is **no `hbind`**. Binding failures are returned as `AlgebraicRelationWitness` in the right
-disjunct — which is what removes the hypothesis the current `ipaVesta_sound` still carries
-(`Reflection.lean:289`).
+disjunct — which is what removed the hypothesis the former `ipaVesta_sound` carried. That chain no
+longer exists: `Bulletproof/Reflection.lean` is 174 lines and contributes the reflection layer
+alone, recording the retirement in its own preamble (`Reflection.lean:29-31`).
 
 ## What makes it non-vacuous
 
@@ -118,20 +129,39 @@ The bound is satisfiable by an extractor that always answers `none` if the win s
 would be false if the win condition were reachable without knowledge. Both are excluded, and both
 exclusions are part of the target:
 
-* `honestNode_wireWins_everywhere` (`Honest.lean:584`) — the honest machine wins on every table,
+* `honestNode_wireWins_everywhere` (`Honest.lean:706`) — the honest machine wins on every table,
   stated at the `wireWins` event the measure is about.
-* `verifyWith_of_deferred_delta` (`Deployed.lean:835`) — with `δ` chosen after reading `c`, the wire
+* `verifyWith_of_deferred_delta` (`Deployed.lean:939`) — with `δ` chosen after reading `c`, the wire
   verifier accepts at any claim while knowing nothing. Commit-then-challenge
-  (`decodesFromPrefixes_nodes`, `:225`) is what excludes it.
+  (`decodesFromPrefixes_nodes`, `Deployed.lean:226`) is what excludes it.
 
 Deleting either one voids the target even if the bound still compiles.
 
-## After it closes
+## It closed, and the retirement landed better than planned
 
-Two per-curve corollaries follow by discharging the three hypotheses. Those replace the
-`poseidon_fiat_shamir_{vesta,pallas}` axioms (`Reflection.lean:192`, `:202`) at the four kimchi use
-sites (`kimchi/…/Capstone/Standard.lean:210`, `:258`, `:349`, `:431`). That retirement, not this
-theorem, is the point.
+The target is proved, and the retirement it was for — the point of the exercise, not the bound
+itself — happened *differently* from the plan recorded here. The plan was two per-curve corollaries
+replacing the `poseidon_fiat_shamir_{vesta,pallas}` **axioms** at four kimchi use sites. What
+actually landed:
+
+* The two axioms are **0 declarations**. They were not swapped for corollaries; they were deleted.
+  The five surviving `poseidon_fiat_shamir` mentions in the tree are all retrospective prose
+  (`Bulletproof/Reflection.lean:29`, `Forking/{Game,Transcript}.lean`,
+  `bulletproof-pcs/scripts/check_axioms.lean:72`) recording that deletion.
+* The Fiat–Shamir boundary is now `structure FSFaithful`
+  (`kimchi/Kimchi/Verifier/Forking/Bridge.lean:93`) — a hypothesis bundle discharged per statement,
+  which is why the whole tree declares **zero** axioms. A hypothesis on the statements that need it
+  is strictly better than an axiom in the environment: it cannot leak into a statement that does
+  not name it.
+* The per-curve endpoints are `ipa{Vesta,Pallas}_knowledge_sound`
+  (`bulletproof-pcs/Bulletproof/Forking/KnowledgeSoundness.lean:902`, `:920`), not corollaries of
+  this theorem's hypothesis-discharge alone.
+* The four cited use sites were in `kimchi/…/Capstone/Standard.lean`, which **does not exist**
+  anywhere in the tree — the kimchi capstone landed as `Capstone/{Algebraic,Reflection}.lean` (see
+  `kimchi-reorg.md`).
+
+So the goal this section set was exceeded, not merely met. Nothing below the bound is conditional on
+an axiom.
 
 ## Regeneration policy (external-audit A-4)
 

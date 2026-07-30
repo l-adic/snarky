@@ -3,7 +3,20 @@
 **Status: IMPLEMENTED (branch `w3-guard-escape`) — all four §3 deliverables proven, no
 sorries; §4's order of work was executed inline in one pass (the spine `escape_coord` closed
 via `Equiv.piSplitAt` + `map_uniformOfFintype_equiv` + `uniformOfFintype_prod_fiber_bound`
-exactly as designed, and the rest followed the pattern), so no Archon hand-off was needed.** Child of `ironwood-refoundation-plan.md` §5/W3, successor to W2
+exactly as designed, and the rest followed the pattern), so no Archon hand-off was needed.**
+
+**SUPERSEDED — the deliverables were proved, then deleted in favour of the upstream
+equivalents, so the declarations named below no longer exist.** Both files this document
+designs are gone (`forking-consolidation-plan.md` step 1: `git rm Escape.lean +
+GuardEscape.lean`), and `escape_coord` — the spine the banner above credits — occurs in **no**
+`.lean` file in the tree. Its disposition is recorded in `forking-consolidation-plan.md`'s
+ledger, in the row keyed `escape_coord` (`:748` as of this note): `DELETE (upstream)`, mapped to
+`Zcash…Forking/Probability.lean:307 uniformOfFintype_point_mem_blind_le` and **verified by
+exact-type-identity `rfl`** — the strongest verification in that whole ledger. So read §§1–4 as
+the design record of a landed and then upstreamed result, not as a scaffold to build. The body's
+line references are likewise historical and have not been re-checked (standing decision).
+
+Child of `ironwood-refoundation-plan.md` §5/W3, successor to W2
 (PR #273: the oracle model + run-level faithfulness). This document pins W3's design against
 the *verified* signatures on both sides, records one deliberate restaging vs. the plan's
 wording, and defines the scaffold.

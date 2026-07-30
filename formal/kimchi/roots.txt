@@ -43,6 +43,16 @@ Kimchi.Gate.EndoScalar.chain_toField
 Kimchi.Gate.EndoScalar.chain_complete
 Kimchi.Gate.EndoScalar.endoScalar_unique
 
+-- The 128-bit range check (`RangeCheck.purs`'s `rangeCheck128 = void ∘ EndoScalar.toField @8`):
+-- the same gate read for its BOUND rather than its decomposition. A satisfying m+1-row run of
+-- uniform width c pins its register to the image of a natural < 4^(c(m+1)) — at the deployed 8
+-- rows of 8 crumbs, < 2^128 — uniquely so under the no-wrap bound, and every value in range is
+-- achieved. Minimal set: `chain_range` is live through both `chain_range_128` and
+-- `chain_range_unique`; `range_complete` reaches the digit-expansion kernel instead.
+Kimchi.Gate.EndoScalar.chain_range_128
+Kimchi.Gate.EndoScalar.chain_range_unique
+Kimchi.Gate.EndoScalar.range_complete
+
 -- GLV endomorphism scalar multiplication (gate)
 Kimchi.Gate.EndoMul.sound
 Kimchi.Gate.EndoMul.complete

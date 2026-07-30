@@ -5,6 +5,12 @@ package on branch `kimchi-cut-standard-model` (step 1 of the kimchi reorganizati
 `kimchi-reorg.md`). It is preserved here so the argument can be reconstructed from git if a
 standard-model soundness statement is ever wanted.
 
+**The stated recovery path is not available in this repository.** Branch
+`kimchi-cut-standard-model` does not exist here: this repo has a single branch, `main`, whose
+single commit (`3c20739`) has an empty tree, with every top-level entry untracked. So the prose
+below is the only in-repo record of the development — treat it as the primary source, not as an
+index into git history.
+
 ## Why it was cut
 
 The kimchi verifier-soundness formalization has **one terminal theorem** (user decision,

@@ -5,6 +5,10 @@ nothing else. There is NO Fiat-Shamir axiom: the random-oracle idealisation ente
 knowledge-soundness results only as the game's uniform challenge table. DL-binding is a
 hypothesis throughout, never an axiom.
 
+The root list is a deletion guard as well as an axiom guard: a name absent from the environment
+fails with `axiom-check root not in environment`, so removing a listed declaration — even
+together with its `roots.txt` line — cannot pass silently.
+
 Run from `formal/bulletproof-pcs/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:                  lake env lean bulletproof-pcs/scripts/check_axioms.lean)
 -/

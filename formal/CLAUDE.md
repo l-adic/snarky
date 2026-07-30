@@ -1,4 +1,4 @@
-# AGENTS-formal.md — agent context for `formal/` (the `Kimchi` Lean library)
+# CLAUDE.md — agent context for `formal/` (the `Kimchi` Lean library)
 
 This directory is a **Lean 4 + Mathlib** formalization of the kimchi proof system over
 the Pasta curves: the basic gate set (Generic, Poseidon, AddComplete, VarBaseMul, EndoMul,
@@ -27,7 +27,13 @@ plain R1CS model). Kernel-reducibility matters there: everything is validated by
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
 — use `Snarky.mapVec` from `Snarky/Vec.lean`).
 
-Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
+Build: `make lean-build` (from the parent repo root), which runs
+`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture` in
+`formal/`; CI runs the same list plus `KimchiFixture`. From `formal/` you must name that
+target list yourself — **bare `lake build` here is not a build gate**: the root package is a
+pure aggregator that owns no library and declares no `defaultTargets`, so it reports
+`Build completed successfully (0 jobs)` while stale modules sit on disk. Per package,
+`cd formal/<pkg> && lake build` does work — all five declare `defaultTargets`. The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
 (Mathlib + `CompElliptic`, a git require pinned to daira upstream, which transitively pulls
 `CompPoly`; `zcash/ironwood` for the forking machinery, sharing the same CompElliptic pin).

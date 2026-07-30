@@ -10,6 +10,10 @@ what `native_decide` produces on this toolchain. This subsumes the old `sorryAx`
 `sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
+The root list is a deletion guard as well as an axiom guard: a name absent from the environment
+fails with `axiom-check root not in environment`, so removing a listed declaration — even
+together with its `roots.txt` line — cannot pass silently.
+
 Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:         lake env lean kimchi/scripts/check_axioms.lean)
 -/
@@ -39,6 +43,11 @@ def roots : List Name :=
     `Kimchi.Gate.EndoScalar.chain_toField,
     `Kimchi.Gate.EndoScalar.chain_complete,
     `Kimchi.Gate.EndoScalar.endoScalar_unique,
+    -- the 128-bit range check the same gate implements (`RangeCheck.purs`)
+    `Kimchi.Gate.EndoScalar.chain_range,
+    `Kimchi.Gate.EndoScalar.chain_range_128,
+    `Kimchi.Gate.EndoScalar.chain_range_unique,
+    `Kimchi.Gate.EndoScalar.range_complete,
     `Kimchi.Gate.EndoMul.sound, `Kimchi.Gate.EndoMul.complete,
     `Kimchi.Gate.EndoMul.endoMul,
     `Kimchi.Gate.EndoMul.pallas_endoMul, `Kimchi.Gate.EndoMul.vesta_endoMul,
