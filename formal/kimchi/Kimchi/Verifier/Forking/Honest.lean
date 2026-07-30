@@ -71,11 +71,11 @@ private def zeroEvals (C : Ipa.CommitmentCurve) (nc : ℕ) :
 
 /-- The all-zero proof.
 
-The quotient array is `nc` **zero** chunks rather than empty: `KimchiFamily.htpos`
-demands `0 < tComm.size`, so a family built on an empty array cannot exist. Taking `nc`
-chunks (rather than the single chunk of the blueprint) keeps `tComm_le` unconditional —
-`nc ≤ 7 * nc` — and none of the computations below change, since the polyscale
-combination of an all-zero list is `0` either way (`combineCommitments_eq_zero`). -/
+The quotient array is `nc` **zero** chunks rather than empty. Nothing forces the choice —
+the endpoints govern the empty quotient too, and `tComm_le` would hold there as well — it
+is a convenience: at `nc` chunks `tComm_le` is the unconditional `nc ≤ 7 * nc`, and none
+of the computations below change either way, since the polyscale combination of an
+all-zero list is `0` regardless (`combineCommitments_eq_zero`). -/
 private def zeroProof (C : Ipa.CommitmentCurve) (nc k : ℕ) : KimchiProof C nc k where
   wComm := Vector.replicate wCols (Vector.replicate nc 0)
   zComm := Vector.replicate nc 0
@@ -577,13 +577,6 @@ field, so the derived claim is the same claim — up to its own `proof` slot. -/
 private def zeroProofWith (C : Ipa.CommitmentCurve) (nc k : ℕ) (op : Ipa.Proof C k) :
     KimchiProof C nc k :=
   { zeroProof C nc k with opening := op }
-
-/-- The quotient array of the degenerate proof has `nc` chunks — the shape
-`KimchiFamily.htpos` reads, which is why `zeroProof` carries zero chunks rather than
-none. -/
-@[simp] private theorem zeroProofWith_tComm_size (nc k : ℕ) (op : Ipa.Proof C k) :
-    (zeroProofWith C nc k op).tComm.size = nc := by
-  simp [zeroProofWith, zeroProof]
 
 /-- **Replacing the opening changes only the claim's `proof` slot.** Definitional: the
 batch stream reads the evaluations, the commitment chunks and `ftEval1`, none of which the
@@ -1381,12 +1374,6 @@ private noncomputable def honestKimchiFamily
   hn := fun _ => rfl
   hvk := fun basis => honestVK_corresponds (srsOfBasis k basis) nc idx
   hpub := fun _ => hpc.symm
-  htpos := by
-    intro basis O
-    obtain ⟨op, hop⟩ :=
-      familyAdversary_run hsmul hne hk nc (indexAtCurve C idx) hω basis O
-    rw [hop, zeroProofWith_tComm_size]
-    exact hnc
   aRef := fun basis _ i =>
     (exists_rep_commitmentFn (srsOfBasis k basis) (indexAtCurve C idx) i).choose
   ρRef := fun basis _ i =>

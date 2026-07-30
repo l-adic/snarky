@@ -149,18 +149,20 @@ production never checks those chunk counts (ragged commitment vectors flow into 
 batch equations rather than `Err`-ing), but the checked record is uniform by type, so
 the parse fixes them. Fidelity direction: a production-accepted run with a ragged
 `w_comm` would have no Lean counterpart — such a run would fail the batched opening
-anyway, but that is an argument, not a check. Two further declared strengthenings of
-the same kind: the quotient commitment must be NON-EMPTY (production processes an
-empty `t_comm`; the endpoints' `htpos` hypothesis excludes it, so the wire boundary
-now matches the hypothesis — external-audit B-1), and `KimchiVK.check` pins every
-VK-side committed column to `nc` chunks, which production likewise never checks
-(honest keys are uniform; external-audit W-F4). -/
+anyway, but that is an argument, not a check. One further declared strengthening of
+the same kind: `KimchiVK.check` pins every VK-side committed column to `nc` chunks,
+which production likewise never checks (honest keys are uniform; external-audit W-F4).
+
+The quotient commitment is NOT pinned non-empty. An earlier revision guarded
+`0 < t_comm.size` to match a `htpos` hypothesis the endpoints then carried; that
+hypothesis has since been retired (external-audit O-2), so the empty quotient — which
+production accepts, `verifier.rs:260` bounding `t_comm.len()` from above only — now
+parses and is governed by the knowledge-soundness endpoints like any other run. -/
 def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C) :
     Option (Kimchi.Verifier.KimchiProof C nc k) := do
   let wComm ← p.wComm.mapM (checkChunks nc)
   let zComm ← checkChunks nc p.zComm
   let opening ← p.opening.check k
-  guard (0 < p.tComm.size)
   if htc : p.tComm.size ≤ 7 * nc then
     let evals ← checkEvals nc p.evals
     let pubEvals ← match p.pubEvals with
