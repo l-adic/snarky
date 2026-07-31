@@ -121,13 +121,20 @@ fi
 # hypothetical: the dead-code sweep at e7c431b2 deleted kimchi's concrete-index exhibits for
 # exactly this reason, which the external audit found and generalized in its addendum.)
 # Deleting one now fails a LOCK — a statement-level decision needing sign-off — rather than
-# passing silently.
+# passing silently. (Their axiom closures are pinned separately by scripts/check_axioms.lean,
+# which also throws when a listed root leaves the environment — these pins are a second,
+# independent guard, not the only one.)
+#
+# COUNTING CONVENTION, shared with the kimchi gate: the closing message's exhibit count is the
+# number of names in the lists below and nothing else. The guards checked by the separate
+# `if`s above are named beside that count, never folded into it.
 exhibits_dep='sg_determined_of_verifyWith wireWins_pinTable pinTable_factors chainAt_sg
               nodeTranscript_nodes uBaseOf_eq_transcript identityTape exists_complete_coins
               exists_complete_bounded_coins'
 exhibits_ks='wireWins_U_irrelevant deployedExtract_U_irrelevant uRepresentationOfBreak
              reductionEfficient_exists derivedUDL_iff_residual_measure honestFamily_failure_set
-             exists_complete_reductionEfficient'
+             exists_complete_reductionEfficient
+             DeployedFamily.one_le_of_reductionEfficient'
 exhibits_game='one_le_kimchiExtractRuns'
 exhibits_tr='verifyOracle_spongeFS verifyOracleFrom_spongeFSFrom spongeFS_eq_from
              toGroup_spongeOBase_preT'
@@ -147,4 +154,4 @@ for pair in "$dep:$exhibits_dep" "$ks:$exhibits_ks" "$game:$exhibits_game" \
 done
 
 echo "✓ locked target intact: statement, extractor type, conclusion type,"
-echo "  plain-def extractor, both anti-vacuity companions, and the 23 exhibits"
+echo "  plain-def extractor, both anti-vacuity companions, and the 24 exhibits"

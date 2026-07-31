@@ -15,5 +15,6 @@ fi
 if [[ -n "$out" ]]; then
   echo "✗ unexpected output (expected none)"; echo "--- got ---"; echo "$out"; exit 1
 fi
-echo "✓ ironwood's PrefixDecode, scanner, escape triple, counting bound and coin-tree traversal"
-echo "  all instantiate at codomain Fin (2^128); our Wins IS fsWinsFull at m = 0 by Iff.rfl"
+echo "✓ ironwood's PrefixDecode, scanner, escape triple, counting bound, coin-tree traversal and"
+echo "  rank/marginalization/scan-bound/tape layer all instantiate at codomain Fin (2^128);"
+echo "  our Wins IS fsWinsFull at m = 0 by Iff.rfl"

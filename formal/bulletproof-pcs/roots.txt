@@ -54,6 +54,74 @@ Bulletproof.Ipa.Forking.DeployedFamily.exists_complete_reductionEfficient
 -- >= 1 on every table and every tape -- so neither needs an entry of its own here.
 Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficient
 
+-- Audit O-1b (M3', half 1): the CONDITIONAL branch of the cost, on upstream's joint
+-- table-and-tape axis. Beside the per-tape worst-case block above, which it replaces nothing
+-- of and which is still what both endpoints read. Conditional on KimchiForkSpreadFamily, a
+-- hypothesis nothing in this tree proves and which -- unlike the abstract layer -- has no
+-- family-level witness at all, so the block has no in-tree consumer and needs a root. The walk
+-- from this one entry reaches all three of its companions -- KimchiForkSpreadFamily,
+-- attemptRuns_sum_le_of_forkSpreadFamily and ReductionEfficientAvg -- so none needs its own.
+Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficientAvg_of_forkSpreadFamily
+-- The average branch's own anti-vacuity pair (M3', half 2). reductionEfficientAvg_of_worstCase
+-- makes ReductionEfficientAvg reachable WITHOUT KimchiForkSpreadFamily -- otherwise the twin
+-- endpoints below would be gated on a hypothesis nothing in this tree can satisfy -- and
+-- one_le_of_reductionEfficientAvg rules out an R = 0 gate on this axis exactly as
+-- one_le_of_reductionEfficient does on the per-tape one. Neither is reachable from the twin
+-- endpoints, which take ReductionEfficientAvg as a hypothesis rather than discharging it.
+Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficientAvg_of_worstCase
+Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficientAvg
+
+-- THE HEADLINE TWINS (M3', half 2): the same knowledge-soundness bound on upstream's joint
+-- (table x tape) axis, with the fork tape SAMPLED rather than fixed. Same right-hand side
+-- (Q + k + 1)·3/2^128 + (2^k + 1)·ε + δ, no coins.Complete hypothesis (discharged structurally
+-- by RecursiveForkTape.toCoins_complete), gated by ReductionEfficientAvg. They stand beside
+-- the per-tape headline above, which they replace nothing of; neither implies the other. The
+-- walk from these two reaches the whole probability half -- relationFinderAvg,
+-- DerivedUDLAdvantageLEAvg, derivedUDLAvg_iff_residual_measure, the three summands, the
+-- three-way cover, the terminal bound and DiscreteLogRelationHardForAvg -- so none needs its own.
+Bulletproof.Ipa.Forking.ipaVesta_knowledge_sound_avg
+Bulletproof.Ipa.Forking.ipaPallas_knowledge_sound_avg
+
+-- Audit O-1b: the conditional tape-averaged run bound. The terminal of the fork-spread counting
+-- layer in Forking/Game.lean -- conditional on a KimchiForkSpread hypothesis nothing in this tree
+-- proves AT DEPLOYED PARAMETERS, so it has no in-tree consumer and needs a root. (It is not an
+-- implication out of an empty hypothesis: see exists_kimchiForkSpread_two_le below.) The walk
+-- reaches the whole layer from it: the depth induction kimchiForkFrom_sum_runs_le_of_forkSpread,
+-- both pointwise bounds (kimchiForkFrom_node_runs_le, kimchiForkFrom_leaf_runs_le), the depth-0
+-- tape sum kimchiForkFrom_sum_runs_le_leaf, kimchiScanCandidate_runs_cases, and the
+-- candidate/good-set definitions KimchiForkSpread, kimchiScanCandidate, kimchiLeafCandidate,
+-- kimchiGoodChallenges, kimchiLeafGoodChallenges. (This entry replaced the M1 TEMPORARY group at
+-- iter-013, exactly as that group's own comment instructed: the corollary consumed both of its
+-- lines.)
+Bulletproof.Forking.kimchiExtractRuns_sum_le_of_forkSpread
+
+-- The anti-vacuity companions of that hypothesis, both exhibits, so nothing consumes them.
+-- (a) a table whose own run is Schnorr-unstable forces sigma0 = 0 and collapses the conditional
+--     bound to `0 <= ...`. The walk reaches kimchiLeafGoodChallenges_eq_empty_of_unstable from it.
+Bulletproof.Forking.kimchiForkSpread_eq_zero_of_leaf_unstable
+-- (b) the coin-side degeneracy (O-1b milestone M4''): a node floor quantified over ARBITRARY coin
+--     trees admits empty sampling orders, which make the fork fail outright, so it forces
+--     sigma0 = 0 at every sigma.k >= 1 -- which is why the node clause reads tape-derived coins.
+--     Stated at the un-narrowed clause so it survives the fix. The walk reaches
+--     kimchiGoodChallenges_eq_empty_of_order_nil and the private
+--     kimchiForkFrom_output_eq_none_of_order_nil from it.
+Bulletproof.Forking.kimchiNodeFloor_eq_zero_of_forall_coins
+
+-- The satisfiability companion, in the other direction: KimchiForkSpread is not a predicate
+-- nothing satisfies. Over Pre = Fin 5 with all-zero generators the adversary wins identically and
+-- its prefixes never move, so BOTH clauses hold at sigma0 = 4 at EVERY round count (O-1b
+-- milestone M5) -- the node clause included, which is vacuous only at sigma.k = 0 -- and the
+-- conditional bound reads a real inequality (3^(k+1) * sum <= 30^(k+1) * |tapes|) rather than
+-- `0 <= ...`. Four roots because none reaches another: two existential headlines (the sigma.k = 0
+-- instance, kept because its statement is quoted downstream, and the every-round-count form,
+-- whose sigma.k = K conjunct is what makes it say more), the applied bound, and its anti-vacuity
+-- companion |tapes| <= sum. The walk reaches spreadExhibit_forkSpread, the fork-success induction
+-- spreadExhibit_forkFrom_isSome and the private exhibit data from them.
+Bulletproof.Forking.exists_kimchiForkSpread_two_le
+Bulletproof.Forking.exists_kimchiForkSpread_two_le_of_rounds
+Bulletproof.Forking.spreadExhibit_extractRuns_sum_le
+Bulletproof.Forking.spreadExhibit_card_le_extractRuns_sum
+
 -- The checked defences of the deployed model's two modelling steps, rooted for the same
 -- reason: nothing consumes an exhibit.
 -- (a) Fiat-Shamir faithfulness: the abstract verifier fed the Poseidon sponge's own reads IS
