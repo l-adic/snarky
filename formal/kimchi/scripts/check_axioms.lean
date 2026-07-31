@@ -10,6 +10,10 @@ what `native_decide` produces on this toolchain. This subsumes the old `sorryAx`
 `sorry` shows up as
 `sorryAx`, which is not in the allowlist, and any *other* stray axiom that slips in is caught too.
 
+The root list is a deletion guard as well as an axiom guard: a name absent from the environment
+fails with `axiom-check root not in environment`, so removing a listed declaration — even
+together with its `roots.txt` line — cannot pass silently.
+
 Run from `formal/kimchi/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:         lake env lean kimchi/scripts/check_axioms.lean)
 -/
@@ -59,6 +63,27 @@ def roots : List Name :=
     -- floor under that same hypothesis — no R below 1 satisfies it.
     `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.exists_complete_reductionEfficient,
     `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficient,
+    -- The conditional-average counting layer (upstream's joint table-and-tape coin axis),
+    -- standing beside the per-tape entries above and replacing neither. Existence as well as
+    -- axioms: every public declaration of the block is pinned by name, terminals and plumbing
+    -- alike, so neither a deletion sweep nor a `sorry` behind a reachable terminal is silent.
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.KimchiForkSpreadFamily,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.attemptRuns_sum_le_of_forkSpreadFamily,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.ReductionEfficientAvg,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_forkSpreadFamily,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_worstCase,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficientAvg,
+    -- The conditional-average PROBABILITY layer, and its two twin endpoints: knowledge
+    -- soundness over (setup basis) x (challenge table x fork tape) jointly, with the tape
+    -- sampled and no completeness hypothesis. Pinned on the same terms as the counting layer
+    -- above — every public declaration of the block by name, terminals and plumbing alike.
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.relationFinderAvg,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.DerivedUDLAdvantageLEAvg,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.relation_summand_avg,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.residual_summand_avg,
+    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.DiscreteLogRelationHardForAvg,
+    `Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound_avg,
+    `Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound_avg,
     `Kimchi.Verifier.Forking.honestKimchiFamily_wins,
     -- The Tier-2/3 surface (external-audit A-2): the faithfulness layer, the named
     -- anti-vacuity exhibits, and the REVISIT AGM lemmas are consumed by nothing, so no
@@ -75,9 +100,12 @@ def roots : List Name :=
     `Kimchi.Verifier.dlRelation_of_chunk_rep_ne,
     `Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne,
     `Kimchi.Verifier.ft_identity_of_chunks,
-    -- the per-curve honest-family corollaries (external-audit B-4)
+    -- the per-curve honest-family corollaries (external-audit B-4), and the same two guards
+    -- against the conditional-average endpoints over the joint (table x tape) space
     `Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le,
-    `Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le ]
+    `Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le,
+    `Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le_avg,
+    `Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le_avg ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms. The pasta
     package declares NO axioms — the group orders are unconditional (CompElliptic's

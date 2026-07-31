@@ -127,6 +127,29 @@ Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.exists_complete_reductionEfficie
 -- (that is the entry above).
 Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficient
 
+-- The CONDITIONAL AVERAGE axis (upstream's joint table-and-tape coin axis), standing beside the
+-- per-tape entries above and replacing neither. The bridge from a family-level fork spread to an
+-- average call bound over (table, tape) pairs; the walk from it reaches KimchiForkSpreadFamily,
+-- attemptRuns_sum_le_of_forkSpreadFamily and ReductionEfficientAvg, so none of those is rooted
+-- separately. `KimchiForkSpreadFamily` has NO witness at any layer, which is why the two
+-- companions are rooted with it: the gate is reachable unconditionally at the worst-case
+-- (2·2^128 + 1)^(k+1), and no R below 1 satisfies it.
+Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_forkSpreadFamily
+Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_worstCase
+Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficientAvg
+
+-- The PROBABILITY half of that same conditional-average axis: the deployed verifier is
+-- knowledge-sound, per curve, over (setup basis) x (challenge table x fork tape) jointly, with
+-- the fork tape SAMPLED rather than fixed. Same four summands and the same constants as the
+-- per-tape endpoints above; the completeness hypothesis is gone, discharged structurally by
+-- RecursiveForkTape.toCoins_complete. NEITHER endpoint implies the other, and the per-tape pair
+-- above is untouched. These two roots are terminal: the walk from them reaches the whole
+-- probability layer (relationFinderAvg, DerivedUDLAdvantageLEAvg, DiscreteLogRelationHardForAvg,
+-- both summands, the cover, both arm measures and the measure transport), so none of those is
+-- rooted separately.
+Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound_avg
+Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound_avg
+
 -- Faithfulness: the deployed verifier IS the challenge-generic one at the sponge's own
 -- squeezes, stated at named sources rather than as an existential (an existential over the
 -- challenges is satisfied even by a verifier with Fiat-Shamir deleted).
@@ -147,6 +170,12 @@ Kimchi.Verifier.Forking.honestKimchiFamily_failure_set
 -- unconditionally at the deployed instantiations.
 Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le
 Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le
+
+-- and the same two guards against the CONDITIONAL-AVERAGE endpoints, over the joint
+-- (table x tape) space: the honest family's win conjunct does not read the tape, so the
+-- containment is the same, and `hcoins` is gone (structural via `toCoins_complete`).
+Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le_avg
+Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le_avg
 -- and: the sampled basis is maximally non-binding -- `hbind` is refutable at
 -- `augOfSetup (scalarBasis B s)`, which is why no binding hypothesis can appear anywhere
 -- in the endpoints' ancestry (the module preamble's "eval pins would be circular" record).

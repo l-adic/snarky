@@ -816,7 +816,9 @@ def warmBase {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc) (pub : Array C.
 /-- **The oracle table** the adversary and the extractor share. Ironwood's `Coins`
 (ironwood's `Forking/Adversary/Algebraic.lean:857`) carries the recursive fork tape
 alongside; here that tape stays a
-parameter, which makes the bound hold for every complete tape rather than on average. -/
+parameter, which makes the bound hold for every complete tape rather than on average; the
+conditional `(6 · 2 ^ 128 / (σ₀ − 1)) ^ (k + 1)` bound lives only on the average — see
+`KimchiFamily.ReductionEfficientAvg`. -/
 abbrev Coins (C : Ipa.CommitmentCurve) (nc k : ℕ) : Type := KimchiNode C nc k → Prechallenge
 
 /-- **A basis-indexed kimchi adversary family** — the analogue of `DeployedFamily`.
@@ -1793,7 +1795,9 @@ knowledge-soundness statements assume — and bounded by `Fintype.card Prechalle
 node, which is what the cost bound consumes.
 
 Worst case and exponential, as everywhere this number is quoted; it is not a concrete-security
-claim, and no table-averaged or polynomial bound follows from it. -/
+claim, and no table-averaged or polynomial bound follows from it — the conditional average branch
+below (`ReductionEfficientAvg` and its bridge) is a **separate statement**, proved on the joint
+table-and-tape axis, not a consequence of this `R`. -/
 theorem exists_complete_reductionEfficient :
     ∃ coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1),
       coins.Complete ∧ fam.ReductionEfficient coins ((2 * 2 ^ 128 + 1) ^ (k + 1)) := by
@@ -1835,12 +1839,286 @@ theorem one_le_of_reductionEfficient
 /-- **Discrete log is hard for this family against `R`-call reductions** — the analogue of
 `DeployedFamily.DiscreteLogRelationHardFor`, and what pins `ε` and `δ`. `ε` is a genuine
 reduction to textbook discrete log; `δ` is the residual event's own measure, which is why the
-two are named separately. -/
+two are named separately.
+
+Its joint-axis twin is `DiscreteLogRelationHardForAvg` (`§ 18`), gated by `ReductionEfficientAvg`
+and stated over the sampled fork tape. Neither implies the other: this one fixes a tape the
+reduction did not choose, that one lets the reduction sample its own. -/
 def DiscreteLogRelationHardFor (B : C.Point)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1)) (R : ℕ) (ε δ : ℝ≥0∞) : Prop :=
   fam.ReductionEfficient coins R →
     Zcash.Snark.TextbookDLWithCoinsAdvantageLE B (fam.relationFinder coins) ε ∧
       fam.DerivedUDLAdvantageLE B coins δ
+
+/-! ### The conditional average axis
+
+Five declarations and one arithmetic helper, standing **beside** the per-tape block above and
+replacing nothing in it: `KimchiForkSpreadFamily` (the spread hypothesis at every basis *and*
+every oracle table of one family), `attemptRuns_sum_le_of_forkSpreadFamily` (the call count summed
+over table and tape jointly), `ReductionEfficientAvg` (that sum read as an efficiency gate),
+`reductionEfficientAvg_of_forkSpreadFamily` (the bridge from the bound to the gate), and its two
+anti-vacuity companions `reductionEfficientAvg_of_worstCase` (the gate is reachable
+unconditionally, so it is not a predicate only an unwitnessed hypothesis can satisfy) and
+`one_le_of_reductionEfficientAvg` (no `R` below `1` satisfies it). This is the kimchi twin of
+`Bulletproof/Forking/KnowledgeSoundness.lean`'s block of the same name.
+
+**What this branch is.** Upstream's own coin axis, added beside ours. Ironwood's family bundles
+`Coins = (oracle table) × (fork tape)` and measures its endpoint with the tape sampled inside the
+probability space; ours splits that pair, and the split is exactly what makes the per-tape bound
+hold for *every* complete tape. This section adds upstream's shape.
+
+**What it is not: a replacement.** The per-tape branch — `Coins`, `ReductionEfficient`,
+`relationFinder`, `attemptRuns`, `reductionEfficient_of_bounded`,
+`exists_complete_reductionEfficient`, `one_le_of_reductionEfficient`,
+`DiscreteLogRelationHardFor`, and both endpoints in `§ 17` — is the **worst-case** branch and
+stands verbatim and unweakened; it is still the branch `vesta_kimchi_knowledge_sound` and
+`pallas_kimchi_knowledge_sound` read. Neither branch implies the other: this one fixes nothing
+and averages over the product, that one fixes a tape and averages over tables only.
+
+**What it costs and what is still assumed.** `ReductionEfficientAvg` is reachable two ways: at the
+worst-case `(2 · 2 ^ 128 + 1) ^ (k + 1)`, unconditionally and with no tape chosen
+(`reductionEfficientAvg_of_worstCase`), and at the conditional
+`(6 · 2 ^ 128 / (σ₀ − 1)) ^ (k + 1)` (`reductionEfficientAvg_of_forkSpreadFamily`). Only the
+second is interesting, and `KimchiForkSpreadFamily` has **no witness at any layer**:
+`Bulletproof.Forking.exists_kimchiForkSpread_two_le_of_rounds` exhibits a spread at `σ₀ = 4` over
+`Pre = Fin 5`, at the abstract layer, instantiating no family whose prechallenge alphabet has
+`2 ^ 128` elements — the exhibit does not transfer. And the regime caveat travels with the number:
+`(6/δ) ^ (k + 1)` at `k = 15` is about `2 ^ 54` calls at `δ = 1/2` and about `2 ^ 339` at
+`δ = 2 ^ (-20)`, worse than solving discrete log outright.
+
+**What is not here.** The probability half of this branch — the averaged relation finder, the
+averaged cover and the two twin endpoints against `ReductionEfficientAvg` — is not in this
+section. Nothing below reaches a knowledge-soundness statement; this is the counting layer only. -/
+
+/-- Fubini plus a constant-sum collapse: a bound `d · ∑ b, f a b ≤ B · |β|` holding at every `a`
+sums to `d · ∑ (a, b), f a b ≤ B · |α × β|`.
+
+**Keep this at variables.** Inlining the same four steps at the concrete
+`Coins C nc k × tape` types in `attemptRuns_sum_le_of_forkSpreadFamily` is what cost ~29 GB of
+elaborator memory and five minutes on the bulletproof side — enough to OOM-kill a 30 GB build —
+because `Finset.sum_le_sum` and `ring` then compare `Fintype.card` atoms whose instance terms
+carry the whole node structure. The risk is higher here than there: `KimchiNode C nc k` bundles
+`PreIpaData` and `EvalsView`, and is heavier than `IpaNode`. At `α`, `β` and `f` abstract the work
+is free and the concrete instance appears once.
+
+`Bulletproof/Forking/KnowledgeSoundness.lean`'s copy is `private` to that module, so this is a
+second copy rather than a reuse. -/
+private theorem sum_prod_le_of_forall {α β : Type*} [Fintype α] [Fintype β]
+    (f : α → β → ℕ) (d B : ℕ) (h : ∀ a, d * ∑ b, f a b ≤ B * Fintype.card β) :
+    d * ∑ c : α × β, f c.1 c.2 ≤ B * Fintype.card (α × β) := by
+  calc d * ∑ c : α × β, f c.1 c.2 = ∑ a, d * ∑ b, f a b := by
+        rw [Fintype.sum_prod_type, Finset.mul_sum]
+    _ ≤ ∑ _a : α, B * Fintype.card β := Finset.sum_le_sum fun a _ => h a
+    _ = B * Fintype.card (α × β) := by
+        rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Fintype.card_prod]; ring
+
+/-- **The fork-spread hypothesis, at every basis and every oracle table of one family.**
+`Bulletproof.Forking.KimchiForkSpread σ₀` at exactly the instantiation `attemptRuns` runs: the SRS
+with `U` overridden to the family's WARM post-`ζ` base `fam.warmBase basis O`, the combined
+evaluation vector, `Ipa.cipOf` and combined commitment of `fam.claim basis O`, `fam.adversary
+basis`, and the deployed prefixes and decoder at that SRS.
+
+**Why it is indexed by the table as well as the basis.** Kimchi's claim is adversary output, so
+both the claim and the SRS the extractor runs against — `fam.runSrs basis O` is `srsOfBasis` with
+its opening base replaced by the base the run's own sponge squeezes after `ζ` — are functions of
+the oracle table. The predicate therefore demands the spread at every `(basis, table)` pair, i.e.
+at every warm base the family can reach. `DeployedFamily.KimchiForkSpreadFamily` needs only the
+basis, because `DeployedFamily.claim` depends on the basis alone; this is neither a weakening nor
+a strengthening of that one, it is what this instantiation requires.
+
+**Why the `dec` slot is named here.** The bulletproof twin ∀-quantifies its `DecodesFromPrefixes`
+witness because the deployed one is `private` to another module. That cost is not paid here:
+`kimchiDecodesFromPrefixes` is `private` to *this* file, so this declaration names it. Demanding
+the spread at one witness rather than all of them makes this hypothesis strictly **weaker** than
+its bulletproof model, and every theorem over it correspondingly **stronger**.
+
+A hypothesis, not a theorem: nothing in this tree proves it, at deployed parameters or otherwise
+(see the subsection preamble on why the abstract exhibit does not transfer, and on the regime in
+which the number it buys says anything at all). -/
+def KimchiForkSpreadFamily (σ₀ : ℕ) : Prop :=
+  ∀ (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k),
+    Bulletproof.Forking.KimchiForkSpread (fam.runSrs basis O)
+      (combinedEvalVector (2 ^ k) (fam.claim basis O).evalscale (fam.claim basis O).pointFn)
+      (Ipa.cipOf (fam.claim basis O))
+      (combinedCommitment (fam.claim basis O).polyscale (fam.claim basis O).commitmentFn)
+      (expandPre C) (fam.adversary basis)
+      (fun cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+      (ipaPrefixes (fam.runSrs basis O) (fam.digest basis) (fam.publicComm basis))
+      (kimchiDecodesFromPrefixes (fam.runSrs basis O) (fam.digest basis) (fam.publicComm basis))
+      σ₀
+
+/-- **The call count summed over table and tape jointly**, at one basis:
+`(σ₀ − 1) ^ (k + 1) · ∑ ≤ (6 · 2 ^ 128) ^ (k + 1) · |tables × tapes|`.
+
+The content is `Bulletproof.Forking.kimchiExtractRuns_sum_le_of_forkSpread` — a tape sum at each
+fixed table — plus Fubini. `attemptRuns` *is* `kimchiExtractRuns` at these arguments, by
+definition, so each instance is one `exact`; in the inner sum the table is fixed and only the tape
+varies, so the corollary's SRS, `b`, `v` and `P` arguments are constant across it even though all
+four depend on the table.
+
+There is no quantifier commute anywhere in this: the table stays universally quantified inside the
+sum, and no witness tape is ever chosen. The Fubini half is `sum_prod_le_of_forall`, kept abstract
+for the reason recorded there. -/
+theorem attemptRuns_sum_le_of_forkSpreadFamily {σ₀ : ℕ}
+    (hs : fam.KimchiForkSpreadFamily σ₀)
+    (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) :
+    (σ₀ - 1) ^ (k + 1)
+        * ∑ c : Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+            fam.attemptRuns basis c.1 c.2.toCoins
+      ≤ (6 * 2 ^ 128) ^ (k + 1)
+          * Fintype.card (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) := by
+  -- The M2 corollary at each table, at the very arguments `attemptRuns` passes.
+  have key : ∀ O : Coins C nc k,
+      (σ₀ - 1) ^ (k + 1)
+          * ∑ τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+              fam.attemptRuns basis O τ.toCoins
+        ≤ (6 * Fintype.card Prechallenge) ^ (k + 1)
+            * Fintype.card (Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) := by
+    intro O
+    exact Bulletproof.Forking.kimchiExtractRuns_sum_le_of_forkSpread (fam.runSrs basis O)
+      (combinedEvalVector (2 ^ k) (fam.claim basis O).evalscale (fam.claim basis O).pointFn)
+      (Ipa.cipOf (fam.claim basis O))
+      (combinedCommitment (fam.claim basis O).polyscale (fam.claim basis O).commitmentFn)
+      (expandPre C) (fam.adversary basis)
+      (fun cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+      (ipaPrefixes (fam.runSrs basis O) (fam.digest basis) (fam.publicComm basis))
+      (kimchiDecodesFromPrefixes (fam.runSrs basis O) (fam.digest basis) (fam.publicComm basis))
+      (hs basis O) O
+  -- Fubini and the constant-sum collapse, at variables; then `|Prechallenge| = 2 ^ 128`.
+  have main := sum_prod_le_of_forall
+    (fun (O : Coins C nc k) (τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) =>
+      fam.attemptRuns basis O τ.toCoins)
+    ((σ₀ - 1) ^ (k + 1)) ((6 * Fintype.card Prechallenge) ^ (k + 1)) key
+  rwa [card_prechallenge] at main
+
+/-- **The extractor makes at most `R` calls on average over table *and* tape** — ironwood's
+`ReductionEfficient` term for term, at our types, with the product spelled out because our `Coins`
+bundles no tape.
+
+Read it next to `KimchiFamily.ReductionEfficient` above, which is the different, worst-case
+predicate: that one fixes a tape and averages over tables only, and it is the one the endpoints
+assume. This is the second branch, not a replacement. -/
+def ReductionEfficientAvg (R : ℕ) : Prop :=
+  ∀ basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point,
+    ∑ c : Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+        fam.attemptRuns basis c.1 c.2.toCoins
+      ≤ R * Fintype.card (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1))
+
+/-- **A fork spread at every basis and table gives an average call bound.** The joint-axis sum
+bound divided through by `(σ₀ − 1) ^ (k + 1)`, which is what makes `ReductionEfficientAvg` a
+reachable predicate rather than a floating one.
+
+`hR` is `R ≥ (6 · 2 ^ 128 / (σ₀ − 1)) ^ (k + 1)` written multiplicatively. Nothing is divided:
+over `ℕ`, `d · S ≤ B · c` does not give `S ≤ (B / d) · c` — at `d = 2`, `B = 3`, `c = 3`, `S = 4`
+the premise holds and the conclusion fails. The cancellation is `Nat.le_of_mul_le_mul_left`, whose
+positivity side condition is where `hσ` is spent. -/
+theorem reductionEfficientAvg_of_forkSpreadFamily {σ₀ R : ℕ} (hσ : 2 ≤ σ₀)
+    (hs : fam.KimchiForkSpreadFamily σ₀)
+    (hR : (6 * 2 ^ 128) ^ (k + 1) ≤ (σ₀ - 1) ^ (k + 1) * R) :
+    fam.ReductionEfficientAvg R := by
+  intro basis
+  have hpos : 0 < (σ₀ - 1) ^ (k + 1) := Nat.one_le_pow _ _ (by omega)
+  refine Nat.le_of_mul_le_mul_left ?_ hpos
+  calc (σ₀ - 1) ^ (k + 1)
+        * ∑ c : Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+            fam.attemptRuns basis c.1 c.2.toCoins
+      ≤ (6 * 2 ^ 128) ^ (k + 1)
+          * Fintype.card (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) :=
+        fam.attemptRuns_sum_le_of_forkSpreadFamily hs basis
+    _ ≤ ((σ₀ - 1) ^ (k + 1) * R)
+          * Fintype.card (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) :=
+        Nat.mul_le_mul_right _ hR
+    _ = (σ₀ - 1) ^ (k + 1)
+          * (R
+              * Fintype.card
+                  (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1))) := by
+        rw [Nat.mul_assoc]
+
+/-- **The average branch is non-empty, unconditionally** — the anti-vacuity companion of
+`ReductionEfficientAvg`.
+
+Without it the only route into that predicate would be
+`reductionEfficientAvg_of_forkSpreadFamily`, whose `KimchiForkSpreadFamily` premise has no witness
+at any layer, and anything gated on it would be a statement whose hypothesis nothing in this tree
+can supply. With it the predicate is reachable outright, at the same worst-case number
+`(2 · 2 ^ 128 + 1) ^ (k + 1)` that `exists_complete_reductionEfficient` reaches on the per-tape
+axis — and here with **no** tape chosen and no completeness side condition, because
+`Zcash.Snark.RecursiveForkTape.toCoins_bounded` bounds *every* tape's node degree by
+`Fintype.card Prechallenge`, which `card_prechallenge` evaluates.
+
+Satisfiability is this theorem's job; `one_le_of_reductionEfficientAvg` below does the other half
+of the bracket, ruling out a degenerate `R`. It supersedes nothing: the interesting bound is still
+the conditional `(6 · 2 ^ 128 / (σ₀ − 1)) ^ (k + 1)`, and this number is exponential in `k` and in
+the challenge domain, so it is bookkeeping rather than a concrete-security claim. -/
+theorem reductionEfficientAvg_of_worstCase :
+    fam.ReductionEfficientAvg ((2 * 2 ^ 128 + 1) ^ (k + 1)) := by
+  intro basis
+  -- The pointwise worst-case bound, summed over the tapes at each fixed table.
+  have key : ∀ O : Coins C nc k,
+      1 * ∑ τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+          fam.attemptRuns basis O τ.toCoins
+        ≤ (2 * 2 ^ 128 + 1) ^ (k + 1)
+            * Fintype.card (Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) := by
+    intro O
+    rw [one_mul]
+    calc ∑ τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+            fam.attemptRuns basis O τ.toCoins
+        ≤ ∑ _τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+            (2 * 2 ^ 128 + 1) ^ (k + 1) :=
+          Finset.sum_le_sum fun τ _ =>
+            Bulletproof.Forking.kimchiExtractRuns_le (fam.runSrs basis O)
+              (combinedEvalVector (2 ^ k) (fam.claim basis O).evalscale
+                (fam.claim basis O).pointFn)
+              (Ipa.cipOf (fam.claim basis O))
+              (combinedCommitment (fam.claim basis O).polyscale (fam.claim basis O).commitmentFn)
+              (expandPre C) (fam.adversary basis)
+              (fun cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+              (ipaPrefixes (fam.runSrs basis O) (fam.digest basis) (fam.publicComm basis))
+              (kimchiDecodesFromPrefixes (fam.runSrs basis O) (fam.digest basis)
+                (fam.publicComm basis))
+              O τ.toCoins
+              (card_prechallenge ▸ Zcash.Snark.RecursiveForkTape.toCoins_bounded τ)
+      _ = _ := by rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Nat.mul_comm]
+  -- Fubini and the constant-sum collapse, at variables, at `d = 1`.
+  have main := sum_prod_le_of_forall
+    (fun (O : Coins C nc k) (τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) =>
+      fam.attemptRuns basis O τ.toCoins)
+    1 ((2 * 2 ^ 128 + 1) ^ (k + 1)) key
+  rwa [one_mul] at main
+
+/-- **No `R` below `1` satisfies the average efficiency gate either** — the joint-axis twin of
+`one_le_of_reductionEfficient`, and it rules out the same degenerate reading: an `R = 0` gate would
+advertise a zero-call reduction, against which discrete-log hardness would be assumed for free.
+
+The extractor runs the adversary at least once at every `(table, tape)` pair
+(`Bulletproof.Forking.one_le_kimchiExtractRuns`), so the joint sum is at least the cardinality of
+the pair type, which `R * Fintype.card …` does not bound at `R = 0`. It does not establish
+satisfiability — that is `reductionEfficientAvg_of_worstCase`'s job, not this one's. -/
+theorem one_le_of_reductionEfficientAvg {R : ℕ}
+    (h : fam.ReductionEfficientAvg R) : 1 ≤ R := by
+  -- `ReductionEfficientAvg` quantifies over every basis, so the basis is immaterial: take zero.
+  have hlow :
+      1 * Fintype.card (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1))
+        ≤ ∑ c : Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1),
+            fam.attemptRuns (fun _ => 0) c.1 c.2.toCoins := by
+    calc 1 * Fintype.card (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1))
+        = ∑ _c : Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1), 1 := by
+          rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Nat.mul_comm]
+      _ ≤ _ := Finset.sum_le_sum fun c _ =>
+          Bulletproof.Forking.one_le_kimchiExtractRuns (fam.runSrs (fun _ => 0) c.1)
+            (combinedEvalVector (2 ^ k) (fam.claim (fun _ => 0) c.1).evalscale
+              (fam.claim (fun _ => 0) c.1).pointFn)
+            (Ipa.cipOf (fam.claim (fun _ => 0) c.1))
+            (combinedCommitment (fam.claim (fun _ => 0) c.1).polyscale
+              (fam.claim (fun _ => 0) c.1).commitmentFn)
+            (expandPre C) (fam.adversary (fun _ => 0))
+            (fun cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+            (ipaPrefixes (fam.runSrs (fun _ => 0) c.1) (fam.digest (fun _ => 0))
+              (fam.publicComm (fun _ => 0)))
+            (kimchiDecodesFromPrefixes (fam.runSrs (fun _ => 0) c.1) (fam.digest (fun _ => 0))
+              (fam.publicComm (fun _ => 0)))
+            c.1 c.2.toCoins
+  exact Nat.le_of_mul_le_mul_right (hlow.trans (h fun _ => 0)) Fintype.card_pos
 
 end KimchiFamily
 
@@ -4455,9 +4733,11 @@ reductions `hHard` is taken against, and it is dischargeable in this file:
 node degree at most `n`, and `KimchiFamily.exists_complete_reductionEfficient` exhibits a single
 tape that is `Complete` and efficient at once, at `n = 2 ^ 128`. That `R` is the **worst case**,
 exponential in `k` and in the challenge domain, and no table-averaged bound follows from it
-(external-audit O-1b, open). So `ε` is still assumed for the finder rather than derived from a
-time bound: a reduction permitted that many oracle calls solves Pasta discrete log outright, so
-`hHard` at that `R` is satisfiable only at `ε ≈ 1`. Discharging `hEff` therefore buys
+(external-audit O-1b, open). The conditional table-and-tape-averaged bound is a **separate
+statement, not a consequence** of this one — neither implies the other — and it is
+`vesta_kimchi_knowledge_sound_avg` in `§ 18`. So `ε` is still assumed for the finder rather than
+derived from a time bound: a reduction permitted that many oracle calls solves Pasta discrete log
+outright, so `hHard` at that `R` is satisfiable only at `ε ≈ 1`. Discharging `hEff` therefore buys
 bookkeeping — which reductions the assumption is quantified over — and not a stronger bound.
 
 Everything else is proved: the presence arm by the claim-adaptive extraction game, and the
@@ -4500,7 +4780,11 @@ theorem vesta_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
 `vesta_kimchi_knowledge_sound`, over `Fq`/`IpaPallas`; same shape, same four summands, same
 axiom footprint, same modeled-fragment scope (see the Vesta endpoint's docstring and the
 module preamble). Every step of the argument is curve-generic; only the four per-curve facts
-about the expansions and the scalar action are re-discharged. -/
+about the expansions and the scalar action are re-discharged.
+
+As on the Vesta side, the conditional table-and-tape-averaged bound is a **separate statement,
+not a consequence** of this one — neither implies the other — and it is
+`pallas_kimchi_knowledge_sound_avg` in `§ 18`. -/
 theorem pallas_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
     (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n)
     (coins : Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
@@ -4520,5 +4804,498 @@ theorem pallas_kimchi_knowledge_sound {nc k n : ℕ} [NeZero n]
   exact fam.wins_notExtracts_measure_le_of_arms B coins hHard hEff hpres
     (fam.openedUnsatisfying_measure_prod_le Pasta.pallas_smul_val
       (natCast_prechallenge_injective (by decide)) expandPre_pallas_injective B coins)
+
+/-! ## 18. The joint (table × tape) axis
+
+The **conditional** branch of the kimchi development, standing beside — never replacing — the
+per-tape **worst-case** branch of `§ 9`, `§ 15`, `§ 16` and `§ 17`.
+
+**What this branch is.** Upstream's own coin axis, added *beside* ours. Ironwood's
+`ComputedAlgebraicFSFamily` bundles `Coins = (oracle table) × (fork tape)` and measures its
+endpoint with the tape sampled inside the probability space; ours splits that pair — `Coins C nc
+k` is the table alone and the tape is a fixed parameter — and that split is exactly what makes the
+per-tape bound hold for *every* complete tape. This section adds upstream's shape; it does not
+swap ours.
+
+**What it is not: a replacement.** The per-tape branch — `Coins`, `ReductionEfficient`,
+`relationFinder`, `attemptRuns`, `DiscreteLogRelationHardFor`, `reductionEfficient_of_bounded`,
+`exists_complete_reductionEfficient`, `one_le_of_reductionEfficient`, and both endpoints of
+`§ 17` — is the **worst-case** branch and stands verbatim and unweakened. Neither branch implies
+the other: this one fixes nothing and averages over the product, that one fixes a tape and
+averages over tables only. A standing directive, not a preference.
+
+**Where the halves are.** The counting half is `§ 9`'s `### The conditional average axis`
+(`KimchiForkSpreadFamily`, `attemptRuns_sum_le_of_forkSpreadFamily`, `ReductionEfficientAvg`,
+`reductionEfficientAvg_of_forkSpreadFamily`, `reductionEfficientAvg_of_worstCase`,
+`one_le_of_reductionEfficientAvg`). This is the probability half, and the two twins
+`vesta_kimchi_knowledge_sound_avg` / `pallas_kimchi_knowledge_sound_avg` at the end read both.
+
+**`hcoins` vanishes, and that is the branch's headline improvement.** Every per-tape statement
+carries `coins.Complete` as a hypothesis, because a tape that never offers some challenge cannot
+force extraction. Here the tape is `q.2.2.toCoins` for a *sampled* `q.2.2`, and
+`Zcash.Snark.RecursiveForkTape.toCoins_complete` holds for **every** tape, so completeness is
+discharged structurally at the one place that needed it —
+`acceptExtractionFailure_measure_prod_le_avg`, where it is a theorem about the sampled tape rather
+than an assumption about an externally fixed one. No statement below carries a completeness
+argument.
+
+**What is paid for it.** The measured event lives over a larger space: a fork tape on which the
+extractor does badly is now charged to the failure probability rather than assumed away.
+
+**What is still assumed, and what it costs.** `ReductionEfficientAvg` is reachable two ways:
+unconditionally at the worst-case `(2 · 2 ^ 128 + 1) ^ (k + 1)`
+(`reductionEfficientAvg_of_worstCase`), and at the conditional
+`(6 · 2 ^ 128 / (σ₀ − 1)) ^ (k + 1)` from a fork spread
+(`reductionEfficientAvg_of_forkSpreadFamily`). Only the second is interesting, and
+`KimchiForkSpreadFamily` has **no witness at any layer**:
+`Bulletproof.Forking.exists_kimchiForkSpread_two_le_of_rounds` exhibits a spread at `σ₀ = 4` over
+`Pre = Fin 5`, at the abstract layer, instantiating no family whose prechallenge alphabet has
+`2 ^ 128` elements. The regime caveat travels with the number: `(6/δ) ^ (k + 1)` at `k = 15` is
+about `2 ^ 54` calls at `δ = 1/2` and about `2 ^ 339` at `δ = 2 ^ (-20)` — worse than solving
+discrete log outright.
+
+**What is not restated here.** The anti-vacuity guards `honestKimchiFamily_wins` and
+`honestKimchiFamily_failure_set` are stated on the per-tape space and are left there. The win
+conjunct does not read the tape, so nothing about them is weakened; the averaged restatements are
+`Kimchi.Verifier.Forking.vesta_/pallas_honest_extraction_failure_measure_le_avg`, downstream in
+`Verifier/Forking/Honest.lean` where the honest families live.
+
+Nothing here averages, commutes or pigeonholes over tapes: the cover is pointwise in the tape, and
+no witness tape is ever chosen. -/
+
+section JointAxis
+
+variable [Module C.ScalarField C.Point]
+
+/-- **The measure transport this branch rests on.** A bound over `(A × ρ₂) × ρ₁` for a predicate
+of the three coordinates is the same bound over `A × (ρ₁ × ρ₂)`.
+
+Mathematically it is one bijection: `q ↦ ((q.1, q.2.2), q.2.1)` relates the two spaces, uniform
+measure pushes forward to uniform measure along any bijection
+(`Zcash.Snark.map_uniformOfFintype_equiv`), and the event on the left is *literally* the preimage
+of the event on the right, so `PMF.toOuterMeasure_map_apply` finishes it. The `Equiv` is built by
+hand rather than composed out of `Equiv.prodAssoc` and `Equiv.prodComm` precisely so that the
+preimage identity stays `rfl` and no set rewriting is needed.
+
+It is what carries the `S`-generic product bounds of `Bulletproof/Forking/Game.lean` — whose fork
+tape rides in the index slot `S := (setup scalars) × tape`, giving a bound over
+`((setup × tape) × Coins)` — onto the space `(setup × (Coins × tape))` this section measures.
+One helper serves both arm (1) and arm (4).
+
+**Keep this at `{A ρ₁ ρ₂}`, which is a memory decision and not a style one.** Same reason as
+`sum_prod_le_of_forall` in `§ 9`: the elaborator's blow-up trigger here is big-operator and
+`Fintype.card` comparison at heavy concrete atoms, and `KimchiNode C nc k` — which bundles
+`PreIpaData` and `EvalsView` — is heavier than anything the bulletproof twin
+(`uniform_prod_prod_fiber_bound`) had to carry. At abstract types the work is free and the
+concrete instance appears once, at each use site. -/
+private theorem uniform_prod_assoc_swap {A ρ₁ ρ₂ : Type*}
+    [Fintype A] [Fintype ρ₁] [Fintype ρ₂] [Nonempty A] [Nonempty ρ₁] [Nonempty ρ₂]
+    (p : A → ρ₁ → ρ₂ → Prop) {β : ℝ≥0∞}
+    (h : (PMF.uniformOfFintype ((A × ρ₂) × ρ₁)).toOuterMeasure
+        {x | p x.1.1 x.2 x.1.2} ≤ β) :
+    (PMF.uniformOfFintype (A × (ρ₁ × ρ₂))).toOuterMeasure {q | p q.1 q.2.1 q.2.2} ≤ β := by
+  rw [← Zcash.Snark.map_uniformOfFintype_equiv
+      (⟨fun x => (x.1.1, (x.2, x.1.2)), fun q => ((q.1, q.2.2), q.2.1),
+        fun _ => rfl, fun _ => rfl⟩ : (A × ρ₂) × ρ₁ ≃ A × (ρ₁ × ρ₂)),
+    PMF.toOuterMeasure_map_apply]
+  exact h
+
+namespace KimchiFamily
+
+variable {nc k n : ℕ} [NeZero n] (fam : KimchiFamily C nc k n)
+
+/-- **The relation finder on the joint axis** — `relationFinder` with the fork tape read off the
+sampled coin pair rather than fixed as a parameter, so that it has the shape
+`(basis) → ρ → Option (AlgebraicRelationWitness …)` at
+`ρ := Coins C nc k × RecursiveForkTape Prechallenge (k + 1)` that `Zcash.Snark.relSetWithCoins`
+and `Zcash.Snark.TextbookDLWithCoinsAdvantageLE` consume. It is upstream's
+`ComputedAlgebraicFSFamily.relationFinder` shape, whose coins already bundle the tape.
+
+`noncomputable` for the same reason `relationFinder` is: the key-gated `attempt` is.
+
+The coin type is written out rather than abbreviated: what an endpoint quantifies over is exactly
+what a reader has to check, and this tree spells it out. -/
+noncomputable def relationFinderAvg :
+    (bs : SetupIndex (2 ^ k) → C.Point) →
+      Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1) →
+        Option (Zcash.Snark.AlgebraicRelationWitness (F := C.ScalarField) bs) :=
+  fun bs c => fam.relationFinder c.2.toCoins bs c.1
+
+/-- **The derived-`U` discrete-log assumption on the joint axis** — `DerivedUDLAdvantageLE`'s twin
+over `(SetupIndex (2 ^ k) → C.ScalarField) × (Coins C nc k × RecursiveForkTape Prechallenge
+(k + 1))`, with the fork tape sampled alongside the setup basis and the oracle table.
+
+Everything the per-tape docstring says about *what* is assumed carries over unchanged — the base
+whose discrete log is computed is still the WARM post-`ζ` one, and this is still an assumption
+about a slice of the conclusion rather than a reduction. Only the space grows.
+
+There is deliberately no `derivedULogAvg`: `derivedULog` already takes the tape as an argument, so
+repackaging it would cost a declaration to root and pin and buy nothing. -/
+def DerivedUDLAdvantageLEAvg (B : C.Point) (bound : ℝ≥0∞) : Prop :=
+  (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+      (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+      {q | (fam.derivedULog B q.2.2.toCoins q.1 q.2.1).isSome} ≤ bound
+
+/-- **The four-way cover on the joint axis.** The same four arms as `four_way_cover` — produced
+nothing at all (arm (1)); produced a relation among the sampled setup generators (arm (2));
+produced a break touching the transcript-derived base (arm (3)); produced a left payload whose
+assembled table fails the circuit (arm (4)) — over the enlarged space, with the tape read off the
+sampled coin pair.
+
+`four_way_cover` is proved at an **arbitrary** `coins`, so this is the identical `by_cases`/`cases`
+argument read at `coins := q.2.2.toCoins`: the cover is **pointwise in the tape** and no new
+mathematics enters with the enlarged space. No tape is chosen, nothing is summed over bases, and
+no quantifier is commuted. -/
+private theorem four_way_cover_avg (B : C.Point) :
+    {q : (SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) |
+        fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+      ⊆ {q | q.2.1 ∈ fam.acceptExtractionFailure
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.2.toCoins}
+        ∪ (↑(Zcash.Snark.relSetWithCoins B fam.relationFinderAvg) :
+            Set ((SetupIndex (2 ^ k) → C.ScalarField) ×
+              (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1))))
+        ∪ {q | fam.TouchesU (Zcash.Snark.scalarBasis B q.1) q.2.1 q.2.2.toCoins}
+        ∪ {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+              fam.OpenedUnsatisfying
+                (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins} := by
+  classical
+  intro q hq
+  obtain ⟨hacc, hnoext⟩ := hq
+  by_cases hsome :
+      (fam.attempt (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins).isSome
+  · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hsome
+    cases x with
+    | inl a =>
+      exact Or.inr ⟨hacc, a, hx, fun hs => hnoext ⟨a, hx, hs⟩⟩
+    | inr rel =>
+      by_cases hu : rel.coeffs Zcash.Snark.AugmentedIndex.u = 0
+      · refine Or.inl (Or.inl (Or.inr ?_))
+        simp only [Finset.mem_coe, Zcash.Snark.relSetWithCoins, Finset.mem_filter,
+          Finset.mem_univ, true_and]
+        show (fam.relationFinderAvg (Zcash.Snark.scalarBasis B q.1) q.2).isSome = true
+        simp only [KimchiFamily.relationFinderAvg, KimchiFamily.relationFinder, hx, dif_pos hu,
+          Option.isSome_some]
+      · exact Or.inl (Or.inr ⟨rel, hx, hu⟩)
+  · exact Or.inl (Or.inl (Or.inl ⟨hacc, Option.not_isSome_iff_eq_none.mp hsome⟩))
+
+/-- **Summand (II) on the joint axis — one upstream call.**
+`Zcash.Snark.relationWithCoins_prob_le_of_textbookDL` is generic in the coin type as well as the
+index (`{ρ} [Fintype ρ] [Nonempty ρ]`), so instantiating
+`ρ := Coins C nc k × RecursiveForkTape Prechallenge (k + 1)` needs no new upstream work and the
+per-tape proof carries over unchanged; `card_setupIndex` turns its `Fintype.card` factor into the
+`2 ^ k + 1` the endpoints state. -/
+theorem relation_summand_avg (B : C.Point) {ε : ℝ≥0∞}
+    (hDL : Zcash.Snark.TextbookDLWithCoinsAdvantageLE B fam.relationFinderAvg ε) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        (Zcash.Snark.relSetWithCoins B fam.relationFinderAvg)
+      ≤ ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε := by
+  have h := Zcash.Snark.relationWithCoins_prob_le_of_textbookDL B fam.relationFinderAvg hDL
+  rwa [card_setupIndex] at h
+
+/-- **Summand (III) on the joint axis — the residual, by its own assumption.**
+`DerivedUDLAdvantageLEAvg` is stated at the derived-base log finder's support, and
+`derivedULog_isSome_iff` — which holds at every `coins`, hence at the sampled tape — says that
+support *is* arm (3), so the bound transfers by rewriting the set. -/
+theorem residual_summand_avg (B : C.Point) {δ : ℝ≥0∞}
+    (hU : fam.DerivedUDLAdvantageLEAvg B δ) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | fam.TouchesU (Zcash.Snark.scalarBasis B q.1) q.2.1 q.2.2.toCoins}
+      ≤ δ := by
+  have hset : {q : (SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) |
+        fam.TouchesU (Zcash.Snark.scalarBasis B q.1) q.2.1 q.2.2.toCoins}
+      = {q | (fam.derivedULog B q.2.2.toCoins q.1 q.2.1).isSome} := by
+    ext q
+    exact (fam.derivedULog_isSome_iff B q.2.2.toCoins q.1 q.2.1).symm
+  rw [hset]
+  exact hU
+
+/-- **The presence summand at an abstract index, with the fork tape carried by the index.** The
+`§ 15` instantiation of `kimchiExtract_failure_measure_prod_le_of_stableBase` with two slots left
+open: the basis map `bs : S → …` and the coin family `coins : S → …`, over an arbitrary finite
+nonempty index `S`.
+
+This is the **`S`-slot trick** in the shape that makes it usable. The abstract bound is generic in
+`S` and — decisively — takes its fork tape as an `S`-indexed *family*
+`coins : ∀ s : S, RecursiveForkCoins Pre ((σ s).k + 1)`, so a tape sampled alongside the setup can
+ride in the index and be read back at each `s`. `§ 15`'s own call is the case `S := (setup
+scalars)`, `bs := augOfSetup ∘ scalarBasis B`, `coins := const`; the joint axis is the case
+`S := (setup scalars) × tape`, `bs := fun s => augOfSetup (scalarBasis B s.1)`,
+`coins := fun s => s.2.toCoins`.
+
+**Keep `bs` an opaque variable, and keep this declaration separate: that is a heartbeat decision,
+not a style one.** Instantiating the abstract bound directly at
+`bs s := augOfSetup (Zcash.Snark.scalarBasis B s.1)` repeats that term in twenty argument slots,
+and the `hstable` slot then has to unify the family's own claim map against the abstract `κ` by
+whnf through all of them; measured here, that overruns the 200000-heartbeat budget outright
+(`(deterministic) timeout at whnf`). At an opaque `bs` each slot is one application and the same
+unification is far inside the budget. Do not inline it back.
+
+Nothing in `§ 15` or in either primary endpoint reads this: the per-tape branch is the worst-case
+branch, it stays verbatim, and its proof path does not move. This is a second, additional copy of
+the same instantiation, which is what the two-branch discipline asks for.
+
+The reasons behind the individual arguments are `§ 15`'s and unchanged — the p-ignoring claim map,
+the base-stable form rather than `_of_stableU` (the warm post-`ζ` base does not factor through the
+claimed value), and the two expansion facts as hypotheses rather than instances, since `expandPre`
+is injective and nonvanishing per curve. The containment is `winsAt_of_wins` on the win conjunct
+and `ipaAttempt_eq_none_of_attempt` on the failure conjunct. -/
+private theorem acceptExtractionFailure_measure_prod_le_index {S : Type*} [Fintype S] [Nonempty S]
+    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
+    (hexp_inj : Function.Injective (expandPre C))
+    (hexp_ne : ∀ q : Prechallenge, expandPre C q ≠ 0)
+    (bs : S → Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point)
+    (coins : S → Zcash.Snark.RecursiveForkCoins Prechallenge (k + 1))
+    (hcoins : ∀ s : S, (coins s).Complete) :
+    (PMF.uniformOfFintype (S × Coins C nc k)).toOuterMeasure
+        {x | x.2 ∈ fam.acceptExtractionFailure (bs x.1) (coins x.1)}
+      ≤ (fam.Q + k + 1) * (3 / Fintype.card Prechallenge) := by
+  classical
+  refine le_trans (MeasureTheory.measure_mono ?_)
+    (kimchiExtract_failure_measure_prod_le_of_stableBase (S := S)
+      (fun s => srsOfBasis k (bs s))
+      (fun s _ O => claimTriple
+        (runClaim (srsOfBasis k (bs s)) (fam.cvk (bs s)) (fam.pub (bs s)) (fam.digest (bs s))
+          ((fam.adversary (bs s)).run O) O))
+      (fun s _ O => (fam.pgOf (bs s) O, fam.pwOf (bs s) O))
+      (fun s _ O => fam.hPOf (bs s) O)
+      (fun s _ O => fam.warmBase (bs s) O)
+      (expandPre C) hexp_inj hexp_ne
+      (fun s => fam.adversary (bs s))
+      (fun s => fam.queryBound (bs s))
+      (fun _ cp => Bulletproof.Ipa.Forking.toOpening cp.opening)
+      (fun s => ipaPrefixes (srsOfBasis k (bs s)) (fam.digest (bs s)) (fam.publicComm (bs s)))
+      (fun s => kimchiDecodesFromPrefixes (srsOfBasis k (bs s)) (fam.digest (bs s))
+        (fam.publicComm (bs s)))
+      (fun s => kimchiPrefixDecode (srsOfBasis k (bs s)) (fam.digest (bs s))
+        (fam.publicComm (bs s)))
+      (fun s => fam.baseStable_warmBase (bs s))
+      (fun s => fam.claimStable_runClaimTriple (bs s))
+      coins hcoins (k := k) (fun _ => le_rfl))
+  rintro ⟨s, O⟩ ⟨hwin, hnone⟩
+  exact ⟨fam.winsAt_of_wins hsmul _ O hwin,
+    fam.ipaAttempt_eq_none_of_attempt _ O (coins s) hnone⟩
+
+/-- **Arm (1) on the joint axis, and no `hcoins`.** The presence summand of `§ 15` over the
+enlarged space, at the same bound `(Q + k + 1) · 3 / |Prechallenge|`.
+
+Two moves, both already made: `acceptExtractionFailure_measure_prod_le_index` at
+`S := (SetupIndex (2 ^ k) → C.ScalarField) × RecursiveForkTape Prechallenge (k + 1)` — the tape
+riding in the index slot, the basis read at `s.1` and the tape at `s.2` — bounds the event over
+`((setup × tape) × Coins)`, and `uniform_prod_assoc_swap` carries that to the
+`(setup × (Coins × tape))` this section measures.
+
+**The completeness hypothesis is discharged, not assumed.** The per-tape statement must assume
+`coins.Complete` of one externally fixed tape; here it is a *theorem* about the sampled one, since
+`Zcash.Snark.RecursiveForkTape.toCoins_complete` holds for every tape. That is the branch's
+headline improvement and it is spent exactly here. -/
+private theorem acceptExtractionFailure_measure_prod_le_avg
+    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
+    (hexp_inj : Function.Injective (expandPre C))
+    (hexp_ne : ∀ q : Prechallenge, expandPre C q ≠ 0)
+    (B : C.Point) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | q.2.1 ∈ fam.acceptExtractionFailure
+          (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.2.toCoins}
+      ≤ (fam.Q + k + 1) * (3 / Fintype.card Prechallenge) := by
+  refine uniform_prod_assoc_swap
+    (fun (s : SetupIndex (2 ^ k) → C.ScalarField) (O : Coins C nc k)
+        (τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) =>
+      O ∈ fam.acceptExtractionFailure (augOfSetup (Zcash.Snark.scalarBasis B s)) τ.toCoins) ?_
+  exact fam.acceptExtractionFailure_measure_prod_le_index
+    (S := (SetupIndex (2 ^ k) → C.ScalarField) ×
+      Zcash.Snark.RecursiveForkTape Prechallenge (k + 1))
+    hsmul hexp_inj hexp_ne (fun s => augOfSetup (Zcash.Snark.scalarBasis B s.1))
+    (fun s => s.2.toCoins) (fun s => Zcash.Snark.RecursiveForkTape.toCoins_complete s.2)
+
+/-- **Arm (4) on the joint axis.** The algebraic summand of `§ 16` over the enlarged space, at the
+same bound `(Q + 1) · szBudget / 2 ¹²⁸`.
+
+Cheaper than arm (1), for a structural reason worth stating: `openedUnsatisfying_measure_le`
+already bounds arm (4) at a **fixed basis and fixed coins**, and that bound mentions neither the
+basis nor the tape. So `measure_prod_le_of_forall_fibre` at the same index type
+`S := (setup scalars) × tape` lifts it for free — its fibre obligation at `s` is literally the
+fixed-basis bound at `augOfSetup (scalarBasis B s.1)` and `s.2.toCoins` — and
+`uniform_prod_assoc_swap` transports the result, the same helper arm (1) uses. -/
+private theorem openedUnsatisfying_measure_prod_le_avg
+    (hsmul : ∀ (z : C.ScalarField) (P : C.Point), z • P = z.val • P)
+    (hcast : Function.Injective (fun q : Prechallenge => ((q : ℕ) : C.ScalarField)))
+    (hexp : Function.Injective (expandPre C)) (B : C.Point) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+          fam.OpenedUnsatisfying
+            (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+      ≤ ((fam.Q + 1 : ℕ) : ℝ≥0∞)
+        * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  refine uniform_prod_assoc_swap
+    (fun (s : SetupIndex (2 ^ k) → C.ScalarField) (O : Coins C nc k)
+        (τ : Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) =>
+      fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B s)) O ∧
+        fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B s)) O τ.toCoins) ?_
+  exact measure_prod_le_of_forall_fibre
+    (fun (s : (SetupIndex (2 ^ k) → C.ScalarField) ×
+        Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)) (O : Coins C nc k) =>
+      fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B s.1)) O ∧
+        fam.OpenedUnsatisfying (augOfSetup (Zcash.Snark.scalarBasis B s.1)) O s.2.toCoins)
+    fun s => fam.openedUnsatisfying_measure_le hsmul hcast hexp
+      (augOfSetup (Zcash.Snark.scalarBasis B s.1)) s.2.toCoins
+
+/-- **Discrete log is hard for this family against `R`-call reductions, on the joint axis** —
+`DiscreteLogRelationHardFor`'s twin, gated by `ReductionEfficientAvg`.
+
+It carries **both** advantage bounds for the same reason the per-tape form does: kimchi's `U` is
+transcript derived, so a `U`-touching break is not a relation among the sampled setup generators
+and cannot be charged to textbook discrete log; `δ` has no upstream counterpart. And as there, `δ`
+is the residual event's own measure — `residual_summand_avg` is the assumption restated, not a
+consequence of it — so only the `ε` component is a genuine reduction to a studied problem.
+
+What is genuinely better here: **the reduction samples its own fork tape as part of its
+randomness**, which is what a real reduction does. The per-tape form instead assumes an advantage
+bound at one externally fixed tape, which is a hypothesis about a tape the reduction did not
+choose. -/
+def DiscreteLogRelationHardForAvg (B : C.Point) (R : ℕ) (ε δ : ℝ≥0∞) : Prop :=
+  fam.ReductionEfficientAvg R →
+    Zcash.Snark.TextbookDLWithCoinsAdvantageLE B fam.relationFinderAvg ε ∧
+      fam.DerivedUDLAdvantageLEAvg B δ
+
+/-- **The joint-axis endpoint, reduced to its two cryptographically-priced arms.** The twin of
+`wins_notExtracts_measure_le_of_arms`, and like it `four_way_cover_avg`, monotonicity and
+subadditivity three times, with nothing else in between.
+
+`hAlgebraic` bounds the arm WITH its win conjunct, matching `four_way_cover_avg`; that is a
+smaller set than bare `OpenedUnsatisfying`, so the hypothesis is weaker and this corollary is
+correspondingly stronger. There is no completeness hypothesis anywhere in the chain. -/
+private theorem wins_notExtracts_measure_le_of_arms_avg (B : C.Point) {R : ℕ}
+    {ε δ bPresence bAlgebraic : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardForAvg B R ε δ)
+    (hEff : fam.ReductionEfficientAvg R)
+    (hPresence : (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | q.2.1 ∈ fam.acceptExtractionFailure
+          (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.2.toCoins} ≤ bPresence)
+    (hAlgebraic : (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+          fam.OpenedUnsatisfying
+            (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+          ≤ bAlgebraic) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → C.ScalarField) ×
+        (Coins C nc k × Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+      ≤ bPresence + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ + bAlgebraic := by
+  obtain ⟨hDL, hU⟩ := hHard hEff
+  refine le_trans (MeasureTheory.measure_mono (fam.four_way_cover_avg B)) ?_
+  refine le_trans (MeasureTheory.measure_union_le _ _) (add_le_add ?_ hAlgebraic)
+  refine le_trans (MeasureTheory.measure_union_le _ _)
+    (add_le_add ?_ (fam.residual_summand_avg B hU))
+  exact le_trans (MeasureTheory.measure_union_le _ _)
+    (add_le_add hPresence (fam.relation_summand_avg B hDL))
+
+end KimchiFamily
+
+/-! ### The joint-axis twins: knowledge soundness on the joint axis, per curve
+
+One statement per curve, every curve-specific hypothesis discharged and every constant evaluated,
+standing beside `vesta_kimchi_knowledge_sound` / `pallas_kimchi_knowledge_sound` rather than
+replacing them. The right-hand side is byte-identical to the primaries': same four summands, same
+constants. What differs is the space, the efficiency gate and the absence of `hcoins`. -/
+
+/-- **Vesta: the deployed kimchi verifier is knowledge-sound on the joint (table × tape) axis, in
+the random-oracle model and the algebraic group model.**
+
+For a family of `Q`-query algebraic adversaries against the executable kimchi verifier, over a
+uniformly sampled setup basis, a uniform challenge table **and a uniform fork tape**: the
+probability that the verifier accepts while the extractor fails to hand back a witness table
+satisfying the circuit the verifying key corresponds to is at most
+
+`(Q + k + 1)·3/2¹²⁸  +  (2ᵏ + 1)·ε  +  δ  +  (Q + 1)·szBudget/2¹²⁸`.
+
+Four summands, four sources, exactly as in `vesta_kimchi_knowledge_sound`: the forking extraction
+returns nothing (query loss, unconditional); it returns a relation among the sampled setup
+generators (`ε`, textbook discrete log); it returns a relation touching the transcript-derived base
+(`δ`, the residual — an assumption about a slice of the conclusion, not a reduction); or it returns
+an opening but the run's own Fiat–Shamir challenges land in an exclusion set (`szBudget`).
+
+**What the bound rests on.** One cryptographic assumption, `hHard`, which prices the two
+discrete-log arms; `hEff` fixes which reductions it is taken against. There is **no** `hcoins`.
+Everything else is proved: the presence arm by the claim-adaptive extraction game, and the
+algebraic arm by the Fiat–Shamir-axiom-free run-soundness root together with the adaptive
+Schwartz–Zippel charge.
+
+**The trade against `vesta_kimchi_knowledge_sound`, stated so it cannot be misread.** *Gained*:
+the efficiency gate is `ReductionEfficientAvg`, which
+`KimchiFamily.reductionEfficientAvg_of_forkSpreadFamily` discharges from a fork spread at the
+conditional `(6 · 2¹²⁸ / (σ₀ − 1))^(k+1)` rather than only at the worst-case
+`(2 · 2¹²⁸ + 1)^(k+1)`; and the completeness hypothesis `hcoins` is **gone**, discharged
+structurally by `Zcash.Snark.RecursiveForkTape.toCoins_complete` rather than assumed. *Paid*: the
+measured event lives over a larger space — the fork tape is sampled, so a bad tape is **charged**
+to the failure probability rather than assumed away. **Neither endpoint implies the other**, and
+the per-tape statement is untouched. *Still assumed*: `KimchiFamily.KimchiForkSpreadFamily` has
+**no witness at any layer** — `Bulletproof.Forking.exists_kimchiForkSpread_two_le_of_rounds`
+exhibits `σ₀ = 4` over `Pre = Fin 5` at the abstract layer and instantiates no family whose
+prechallenge alphabet has `2¹²⁸` elements — and the regime caveat travels with the number:
+`(6/δ)^(k+1)` at `k = 15` is about `2⁵⁴` calls at `δ = 1/2` and about `2³³⁹` at `δ = 2⁻²⁰`, worse
+than solving discrete log outright.
+
+**Scope.** Unchanged: "the deployed verifier" means the modeled fragment (see the module
+preamble) — basic gate set, `nc · 2^k = n` (no sub-SRS keys — the deployed o1js/Mina default is
+outside), no lookups, no optional gates, no recursion, no optional-gate/lookup evaluation fields,
+non-empty quotient commitment. Mina/pickles proofs are outside on four axes.
+
+`#print axioms` on this theorem: the three standard axioms plus CompElliptic's certified
+`native_decide` witnesses for the Pasta curve constants — no `sorryAx`, and no Fiat–Shamir axiom
+of any kind. -/
+theorem vesta_kimchi_knowledge_sound_avg {nc k n : ℕ} [NeZero n]
+    (B : IpaVesta.Point) (fam : KimchiFamily IpaVesta.curve nc k n) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardForAvg B R ε δ)
+    (hEff : fam.ReductionEfficientAvg R) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → IpaVesta.curve.ScalarField) ×
+        (Coins _ nc k ×
+          Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  have hpres := fam.acceptExtractionFailure_measure_prod_le_avg Pasta.vesta_smul_val
+    expandPre_vesta_injective expandPre_vesta_ne_zero B
+  rw [card_prechallenge] at hpres
+  exact fam.wins_notExtracts_measure_le_of_arms_avg B hHard hEff hpres
+    (fam.openedUnsatisfying_measure_prod_le_avg Pasta.vesta_smul_val
+      (natCast_prechallenge_injective (by decide)) expandPre_vesta_injective B)
+
+/-- **Pallas: the deployed kimchi verifier is knowledge-sound on the joint (table × tape) axis.**
+The Pallas-side twin of `vesta_kimchi_knowledge_sound_avg`, over `Fq`/`IpaPallas`; same shape,
+same four summands, same axiom footprint, same absence of `hcoins`, same trade against
+`pallas_kimchi_knowledge_sound`, same modeled-fragment scope (see the Vesta twin's docstring and
+the module preamble). Every step of the argument is curve-generic; only the four per-curve facts
+about the expansions and the scalar action are re-discharged. -/
+theorem pallas_kimchi_knowledge_sound_avg {nc k n : ℕ} [NeZero n]
+    (B : IpaPallas.Point) (fam : KimchiFamily IpaPallas.curve nc k n) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : fam.DiscreteLogRelationHardForAvg B R ε δ)
+    (hEff : fam.ReductionEfficientAvg R) :
+    (PMF.uniformOfFintype ((SetupIndex (2 ^ k) → IpaPallas.curve.ScalarField) ×
+        (Coins _ nc k ×
+          Zcash.Snark.RecursiveForkTape Prechallenge (k + 1)))).toOuterMeasure
+        {q | fam.Wins (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 ∧
+          ¬ fam.ExtractsWitness (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+      ≤ (fam.Q + k + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ k + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((fam.Q + 1 : ℕ) : ℝ≥0∞) * ((szBudget nc n fam.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  have hpres := fam.acceptExtractionFailure_measure_prod_le_avg Pasta.pallas_smul_val
+    expandPre_pallas_injective expandPre_pallas_ne_zero B
+  rw [card_prechallenge] at hpres
+  exact fam.wins_notExtracts_measure_le_of_arms_avg B hHard hEff hpres
+    (fam.openedUnsatisfying_measure_prod_le_avg Pasta.pallas_smul_val
+      (natCast_prechallenge_injective (by decide)) expandPre_pallas_injective B)
+
+end JointAxis
 
 end Kimchi.Verifier.KnowledgeSoundness

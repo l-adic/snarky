@@ -1,6 +1,6 @@
 import Bulletproof.Forking.Capstone
 import Bulletproof.Forking.Prover
-import Zcash.Snark.Soundness.Forking.Adversary.Recursive
+import Zcash.Snark.Soundness.Forking.Adversary.ExpectedRuns
 
 /-!
 # The Fiat–Shamir extraction game
@@ -610,6 +610,1033 @@ private theorem one_le_kimchiForkFrom_runs [DecidableEq F] [DecidableEq G] [Deci
         · exact hfirst.trans (Nat.le_add_right _ _)
         · split <;> exact hfirst.trans ((Nat.le_add_right _ _).trans (Nat.le_add_right _ _))
 
+/-! ### The conditional average under fork spread
+
+Everything above this point is **unconditional**: `kimchiForkFrom_runs_le` bounds the counter on
+every table and every tape at once, at the worst-case `(2n+1)^(e+1)`. This block is the
+**conditional** development — ironwood's `ExpectedRuns.lean`, ported to our recursion — which
+averages over the uniform tape at the far smaller `(6·|Pre|/(σ₀−1))^(e+1)`. It runs from the two
+pointwise bounds through `kimchiForkFrom_sum_runs_le_of_forkSpread`, the depth induction, to
+`kimchiExtractRuns_sum_le_of_forkSpread` at the root (stated below with the extractor, beside the
+unconditional `kimchiExtractRuns_le` it sits next to and does not replace).
+
+**A spread hypothesis is a hypothesis, and nothing in this tree proves one at deployed
+parameters.** `KimchiForkSpread σ₀` says every fork position the recursion can reach has at least
+`σ₀` nonzero challenges whose reprogrammed run still extracts. Deriving such a `σ₀` from an
+adversary's success probability `ε` is recorded **open research**
+(`docs/external-audit-followup.md` §O-1b): the naive split of the table space into spread and
+unspread halves fails, because the unspread half still costs the `(2·2¹²⁸+1)^(k+1)` worst case,
+which no probability weight absorbs. So every bound in this block is conditional on something a
+caller must supply, and none of them weakens or replaces the unconditional bound above — the two
+sit side by side.
+
+**Unproved is not unsatisfiable, and this block compiles the difference.**
+`exists_kimchiForkSpread_two_le_of_rounds` exhibits a parameter telescope carrying
+`KimchiForkSpread … 4` at *every* round count, node clause included, and
+`spreadExhibit_extractRuns_sum_le` reads the conditional bound there as
+`3 ^ (k + 1) * ∑ … ≤ 30 ^ (k + 1) * …` rather than as `0 ≤ …`. What stays open is a spread at
+*deployed* parameters, the ε → σ₀ question named above.
+
+**What is ported and what is instantiated.** Only upstream's §`NodeBound`
+(`ExpectedRuns.lean:426–568`) and §`SpreadTheorem` (`:583–910`) mention `recursiveAlgebraicForkFrom`
+and so must be restated here. Its rank-counting, marginalization, scan-bound and tape layers ask
+nothing of the challenge alphabet beyond `[Zero]`, `[DecidableEq]` and `[Fintype]`, so they are
+used at `Pre` verbatim; that genericity is pinned by literal `exact` in
+`scripts/check_ironwood_generic.lean` §9.
+
+**Where our recursion differs from upstream's**, and therefore where the transcription is not
+mechanical:
+
+* **Certificate depth `e`, coin depth `e + 1`.** Tapes here are `RecursiveForkTape Pre (e + 1)` and
+  the exponent is `e + 1`, exactly as in `kimchiForkFrom_runs_le` above.
+* **The depth-0 case does real work.** Upstream's depth-0 leaf costs a bare `1`; ours is the
+  Schnorr fork, which runs a scan keeping *two* of three branches. So it needs a spread floor of
+  its own and a rank argument of its own, with no upstream lemma to copy — which is why
+  `KimchiForkSpread` has two clauses where upstream's `ForkSpread` has one.
+* **The round prefix is read off the passed proof.** Upstream reads it off `A.run O`; our
+  recursion threads `p` and reads `prefixes p j`. The candidates and good sets below therefore
+  carry `p`, but the *predicate* `KimchiForkSpread` is taken on the **diagonal** `p = A.run O` —
+  which is the only pair the recursion ever visits, and which makes the predicate coincide with
+  upstream's `ForkSpread` rather than strengthen it. Demanding the floor off the diagonal would be
+  vacuous, not strong: `kimchiForkSpread_eq_zero_of_leaf_unstable` is that fact, compiled.
+* **The node floor is read at tape-derived coins**, which is the same doctrine at the other axis:
+  quantify only over what the recursion visits. `Zcash.Snark.RecursiveForkCoins` carries an
+  arbitrary sampling order, `[]` included, and an empty order makes the fork fail outright — so a
+  floor quantified over *all* coin trees forces `σ₀ = 0` at every `σ.k ≥ 1`. That is
+  `kimchiNodeFloor_eq_zero_of_forall_coins`, compiled. A tape's order enumerates the whole
+  alphabet, and the depth induction instantiates the floor only at tape-derived coins, so the
+  narrowing costs it nothing.
+-/
+
+/-- **The node's scan candidate**, named. This is *verbatim* the inline `attempt` lambda of
+`kimchiForkFrom`'s `e + 1` arm: rerun the adversary with round `m` reprogrammed to `q`, reject the
+run if its round-`m` prefix moved, and otherwise recurse. Upstream analogue: `scanCandidate`
+(`ExpectedRuns.lean:426`).
+
+Being *definitionally* that lambda is the point. Every bound below applies an upstream scan lemma
+to the recursion's own inlined term and lets defeq do the matching, as `kimchiForkFrom_runs_le`'s
+proof-local `candidate` already does — and as upstream's `scanCandidate` does, which
+`recursiveAlgebraicForkFrom` never calls by name either. -/
+def kimchiScanCandidate [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    {e : ℕ} (m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre) (p : Pf)
+    (child : Pre → Zcash.Snark.RecursiveForkCoins Pre (e + 1)) (q : Pre) :
+    Zcash.Snark.RecursiveForkAttempt (KimchiForkCert F G e) :=
+  let j : Fin (σ.k + 1) := ⟨m, by omega⟩
+  let t : T := prefixes p j
+  let O' := Function.update O t q
+  let p' := A.run O'
+  if prefixes p' j = t then
+    kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega) O' p' (child q)
+  else { output := none, runs := 1 }
+
+/-- **The leaf's scan candidate**, named — the inline `attempt` lambda of `kimchiForkFrom`'s `0`
+arm, `letI := decideWins …` included. There is no upstream analogue: upstream's depth-0 leaf costs
+a bare `1` and scans nothing, whereas ours is the Schnorr fork and keeps two branches.
+
+It takes **no coins argument**. The leaf arm of `kimchiForkFrom` matches `.node order _` and
+ignores the child entirely, which is what makes the depth-0 tape sum factor through the order
+alone. It also takes no `DecodesFromPrefixes`: the leaf attempt reads only `proofOf p'`, and `dec`
+enters `kimchiForkFrom`'s leaf only when the certificate is *built*, outside the scan. -/
+def kimchiLeafCandidate [DecidableEq G] [DecidableEq T]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (O : T → Pre) (p : Pf) (q : Pre) :
+    Zcash.Snark.RecursiveForkAttempt (F × F) :=
+  let j : Fin (σ.k + 1) := Fin.last σ.k
+  let t : T := prefixes p j
+  let O' := Function.update O t q
+  let p' := A.run O'
+  letI := decideWins σ b v P expand proofOf prefixes O' p'
+  if prefixes p' j = t ∧ Wins σ b v P expand proofOf prefixes O' p' then
+    { output := some ((proofOf p').z1, (proofOf p').z2), runs := 1 }
+  else { output := none, runs := 1 }
+
+/-- **A node's good set**: the nonzero challenges whose reprogrammed candidate returns a
+certificate. Upstream analogue: `goodChallenges` (`ExpectedRuns.lean:440`). Upstream states it as
+an `open Classical in noncomputable def`; here the predicate is genuinely decidable
+(`q ≠ 0` from `[DecidableEq Pre]`, `Option.isSome` a `Bool`), so it stays computable. Nothing on
+the extractor's own path depends on either choice; `scripts/check_extractor_computes.sh` is the
+gate for that. -/
+def kimchiGoodChallenges [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    {e : ℕ} (m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre) (p : Pf)
+    (child : Pre → Zcash.Snark.RecursiveForkCoins Pre (e + 1)) : Finset Pre :=
+  Finset.univ.filter (fun q : Pre => q ≠ 0 ∧
+    (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O p child q).output.isSome)
+
+/-- **The leaf's good set**, the same over `kimchiLeafCandidate`: the nonzero challenges whose
+reprogrammed run still wins at an unmoved final prefix, and so supplies the second branch the
+Schnorr fork consumes. No upstream analogue, for the reason given on `kimchiLeafCandidate`. -/
+def kimchiLeafGoodChallenges [DecidableEq G] [DecidableEq T] [Zero Pre] [DecidableEq Pre]
+    [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (O : T → Pre) (p : Pf) : Finset Pre :=
+  Finset.univ.filter (fun q : Pre => q ≠ 0 ∧
+    (kimchiLeafCandidate σ b v P expand A proofOf prefixes O p q).output.isSome)
+
+/-- **Fork spread**, the hypothesis the conditional bound runs on: every position the recursion can
+reach has at least `σ₀` nonzero, prefix-stable, successful continuations. The bound then reads the
+density `(σ₀−1)/|Pre|` off it, after excluding the incumbent branch.
+
+Two clauses, where upstream's `ForkSpread` (`ExpectedRuns.lean:583`) has one:
+
+* the **node** floor, at every certificate depth `e + 1` and round `m`, read at the coins a
+  *tape* produces;
+* the **leaf** floor, at the Schnorr round. Upstream's depth-0 leaf costs a bare `1` and scans
+  nothing, so it needs no floor there; ours runs a scan keeping two of three branches, so the
+  depth-0 arithmetic needs a floor of its own. It takes no coins argument at all, which is why the
+  narrowing below touches only the node clause.
+
+**The floor is demanded on the diagonal `p = A.run O` only, and that makes this predicate
+*exactly* upstream's.** Upstream's recursion reads the round prefix off `A.run O` in the recursion
+itself, so its `ForkSpread` is a condition on the table alone; ours threads a proof `p` and reads
+`prefixes p j`, so the good sets above carry `p` as a parameter. Quantifying the floor over
+*arbitrary* pairs `(O, p)` would not be a harmless strengthening: at a prefix `t = prefixes p j`
+the adversary never lands on, no reprogrammed run can return to `t`, the good set is empty, and the
+predicate collapses to `σ₀ = 0` — the degeneracy
+`kimchiForkSpread_eq_zero_of_leaf_unstable` below exhibits at the leaf. Restricting to
+`p = A.run O` costs nothing, because that is the only pair the recursion ever visits:
+`kimchiForkFrom`'s `first` arm passes `(O, p)` through unchanged, its scan arm rebuilds
+`p' := A.run O'` before recursing, and `kimchiExtractRuns` enters at `(O, A.run O)`. So the two
+predicates coincide, and the bounds below are neither stronger nor weaker than upstream's on this
+axis.
+
+**The node floor is demanded at tape-derived coins only, for the same reason.** A coin node carries
+an arbitrary `order : List Pre`, and `[]` is legal; every scan it drives is then
+`nextForkChallenge attempt _ []`, which answers `none`. So a floor quantified over all coin trees
+collapses to `σ₀ = 0` at every `σ.k ≥ 1` — `kimchiNodeFloor_eq_zero_of_forall_coins`, stated at the
+un-narrowed clause so that it survives this definition. A tape's order is a full enumeration of
+`Pre`, and the depth induction reads the floor only at tape-derived coins, so nothing is lost.
+Upstream's `ForkSpread` (`ExpectedRuns.lean:583`) quantifies over arbitrary coins and degenerates
+by the same mechanism from `k ≥ 2`; it is a pinned dependency, so that is recorded, not patched.
+
+What remains strong is upstream's own ∀-table floor: a `σ₀` valid at *every* table. Deriving one
+from an adversary's success probability is the recorded open research, not a defect of either
+narrowing.
+
+Nothing in this tree proves a `KimchiForkSpread` at *deployed* parameters, by design. The predicate
+is nonetheless satisfiable above the degenerate floor, and at every round count:
+`exists_kimchiForkSpread_two_le_of_rounds` exhibits an instance at `σ₀ = 4` for each `σ.k`, with
+both clauses discharged. See the section preamble. -/
+def KimchiForkSpread [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) (σ₀ : ℕ) : Prop :=
+  (∀ (e m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre)
+      (child : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+    σ₀ ≤ (kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+      (fun q => (child q).toCoins)).card)
+  ∧ (∀ (O : T → Pre),
+    σ₀ ≤ (kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O (A.run O)).card)
+
+/-- **A leaf position where every reprogrammed run fails has an empty good set.** Stated at a
+*general* pair `(O, p)`, and it is worth reading twice, because the two instantiations say
+different things.
+
+*Off* the diagonal it is the compiled justification for `KimchiForkSpread`'s quantifier: take any
+`p` whose final prefix `t = prefixes p (Fin.last σ.k)` the adversary never lands on. Then no
+`q` can make the reprogrammed run come back to `t`, `kimchiLeafCandidate` answers `none` for every
+`q`, and the good set is empty — so a predicate demanding `σ₀ ≤ 0` there would be satisfiable only
+at `σ₀ = 0`. `A`, `Pf` and `prefixes` are unconstrained parameters here, so that is not an exotic
+corner; it is why the predicate is taken on the diagonal.
+
+*On* the diagonal it says what the surviving hypothesis actually demands: at a table whose own run
+is Schnorr-unstable, `KimchiForkSpread` forces `σ₀ = 0` and the conditional bounds below degrade to
+`0 ≤ …`. That corollary is `kimchiForkSpread_eq_zero_of_leaf_unstable`. -/
+theorem kimchiLeafGoodChallenges_eq_empty_of_unstable [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (O : T → Pre) (p : Pf)
+    (hbad : ∀ q : Pre,
+      (kimchiLeafCandidate σ b v P expand A proofOf prefixes O p q).output = none) :
+    kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O p = ∅ := by
+  rw [kimchiLeafGoodChallenges, Finset.filter_eq_empty_iff]
+  intro q _
+  rw [not_and, hbad q]
+  exact fun _ => Bool.false_ne_true
+
+/-- **A Schnorr-unstable table pins the spread floor to zero.** The anti-vacuity companion of
+`KimchiForkSpread`, in the shape `one_le_kimchiForkFrom_runs` uses for the unconditional bound:
+this project pins a degeneracy rather than arguing it in prose (`docs/negative-controls.md`).
+
+A conditional bound scaled by `σ₀ - 1` says nothing at `σ₀ ≤ 1`, so it matters *which* tables can
+force that. This is the sharp answer at the leaf: if the adversary's own run at `O` is unstable
+under every reprogramming of the final prefix — no `q` brings the rerun back to that prefix with a
+win — then the leaf good set is empty and `KimchiForkSpread σ₀` holds only at `σ₀ = 0`. So the
+hypothesis is not free: it asserts, table by table, that the Schnorr round really does have
+`σ₀` live continuations. -/
+theorem kimchiForkSpread_eq_zero_of_leaf_unstable [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) {σ₀ : ℕ}
+    (hspread : KimchiForkSpread σ b v P expand A proofOf prefixes dec σ₀) (O : T → Pre)
+    (hbad : ∀ q : Pre,
+      (kimchiLeafCandidate σ b v P expand A proofOf prefixes O (A.run O) q).output = none) :
+    σ₀ = 0 := by
+  have h := hspread.2 O
+  rw [kimchiLeafGoodChallenges_eq_empty_of_unstable σ b v P expand A proofOf prefixes O
+    (A.run O) hbad, Finset.card_empty] at h
+  exact Nat.le_zero.mp h
+
+/-- **An empty sampling order makes the fork fail outright**, at every certificate depth. The
+coin-side companion of `kimchiLeafGoodChallenges_eq_empty_of_unstable`, and the mechanical fact
+behind the narrowing of `KimchiForkSpread`'s node clause to tape-derived coins.
+
+`Zcash.Snark.RecursiveForkCoins Pre (e + 1)` carries an *arbitrary* `order : List Pre`
+(`Recursive.lean:16`), so `.node [] grandchild` is a legal coin tree, and every scan it drives is
+`Zcash.Snark.nextForkChallenge attempt _ []`, whose `[]` case is `{ output := none, runs := 0 }`
+(`Recursive.lean:245`). Both arms of the recursion therefore answer `none`: the certificate
+depth-`0` arm returns `none` on both sides of its `Wins` guard, and the `e + 1` arm returns `none`
+whether or not the cached first branch succeeded, because the second scan finds nothing. No
+induction is involved — each arm bottoms out in one `rfl`.
+
+A *tape*-derived coin tree is never of this shape: a tape node's order is `List.ofFn ⇑order` for an
+equivalence `order : Fin (Fintype.card Pre) ≃ Pre`, hence a full enumeration
+(`RecursiveForkTape.mem_orderList`). That is why narrowing the node clause to tape-derived coins
+costs the depth induction nothing while removing this degeneracy's only source. -/
+private theorem kimchiForkFrom_output_eq_none_of_order_nil [DecidableEq F] [DecidableEq G]
+    [DecidableEq T] [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    {e : ℕ} (m : ℕ) (hme : m + e = σ.k) (O : T → Pre) (p : Pf)
+    (grandchild : Pre → Zcash.Snark.RecursiveForkCoins Pre e) :
+    (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p
+        (.node [] grandchild)).output = none := by
+  cases e with
+  | zero =>
+      rw [kimchiForkFrom]
+      simp only []
+      split <;> rfl
+  | succ e =>
+      rw [kimchiForkFrom]
+      simp only []
+      split <;> rfl
+
+/-- **The good set at an empty-order child is empty.** `kimchiGoodChallenges` collects the nonzero
+challenges whose reprogrammed candidate returns a certificate; at a child that answers `none`
+whatever the reprogramming, there are none.
+
+Immediate from `kimchiForkFrom_output_eq_none_of_order_nil` once
+`kimchiScanCandidate`'s stability guard is split: the unstable branch is
+`{ output := none, runs := 1 }` outright, and the stable branch is the recursion at
+`.node [] grandchild`. -/
+theorem kimchiGoodChallenges_eq_empty_of_order_nil [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    {e : ℕ} (m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre) (p : Pf)
+    (grandchild : Pre → Zcash.Snark.RecursiveForkCoins Pre e) :
+    kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O p
+        (fun _ => .node [] grandchild) = ∅ := by
+  rw [kimchiGoodChallenges, Finset.filter_eq_empty_iff]
+  intro q _
+  rw [not_and]
+  intro _
+  simp only [kimchiScanCandidate]
+  split
+  · rw [kimchiForkFrom_output_eq_none_of_order_nil]
+    exact Bool.false_ne_true
+  · exact Bool.false_ne_true
+
+/-- **A node floor quantified over arbitrary coin trees pins the spread to zero.** The second
+degeneracy this block compiles rather than argues in prose (`docs/negative-controls.md`), and the
+permanent record of why `KimchiForkSpread`'s node clause quantifies over *tape-derived* coins.
+
+The hypothesis is written out inline — it is that clause as it stood before the narrowing, with
+`child` ranging over all of `Zcash.Snark.RecursiveForkCoins Pre (e + 1)` — so that the statement
+survives the fix and keeps saying what the fix bought. Read it as: at any positive round count
+that clause alone forces `σ₀ = 0`, so the conditional bounds below would have read `0 ≤ …` at every
+deployed parameter set, `σ.k` being nowhere near `0`.
+
+One instantiation is enough: certificate depth `e := 0`, round `m := σ.k - 1` (legal exactly
+because `1 ≤ σ.k`), the constant table `fun _ => 0`, and the empty-order child
+`fun _ => .node [] (fun _ => .leaf)`, at which `kimchiGoodChallenges_eq_empty_of_order_nil`
+applies.
+
+Upstream's `ForkSpread` (`ExpectedRuns.lean:583`) quantifies over `childC : F → RecursiveForkCoins
+F d` the same way and degenerates by the same mechanism one depth later: its certificate depth-`0`
+arm takes the forced `.leaf` and costs a bare `1` without scanning, so upstream is safe at `d = 0`
+and degenerate from `d ≥ 1`. Ours scans at depth `0` too, which is what moves the collapse a step
+earlier. `zcash/ironwood` is a pinned dependency: the observation is recorded, not patched. -/
+theorem kimchiNodeFloor_eq_zero_of_forall_coins [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) (hk : 1 ≤ σ.k) {σ₀ : ℕ}
+    (h : ∀ (e m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre)
+        (child : Pre → Zcash.Snark.RecursiveForkCoins Pre (e + 1)),
+      σ₀ ≤ (kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O
+        (A.run O) child).card) :
+    σ₀ = 0 := by
+  have hme : σ.k - 1 + (0 + 1) = σ.k := by omega
+  have hfloor := h 0 (σ.k - 1) hme (fun _ => 0) (fun _ => .node [] (fun _ => .leaf))
+  rw [kimchiGoodChallenges_eq_empty_of_order_nil σ b v P expand A proofOf prefixes dec
+    (σ.k - 1) hme (fun _ => 0) (A.run fun _ => 0) (fun _ => .leaf), Finset.card_empty] at hfloor
+  exact Nat.le_zero.mp hfloor
+
+/-- **The leaf pays one cached run and at most its rank-`< 2` candidates.** The depth-0 pointwise
+bound, and the half of this block with no upstream counterpart: upstream's depth-0 leaf costs a
+bare `1`, while ours runs the Schnorr scan.
+
+Stated at a *tape* node — `.node (List.ofFn ⇑order) child` — because that is exactly what
+`RecursiveForkTape.toCoins` produces (`orderList order = List.ofFn ⇑order` by `rfl`) and because
+the rank machinery needs the sampling order to be a permutation. Upstream states its node bound the
+same way (`ExpectedRuns.lean:449`).
+
+The `1` is the cached run the leaf bills before scanning; the sum is upstream's
+`nextForkChallenge_runs_le_rank_sum` (`:368`) at `M := leafGood.erase q₁`, `seen := [q₁]`,
+`l₀ := []`, which is the same instantiation upstream's own `hscan₂` (`:490`) uses. -/
+theorem kimchiForkFrom_leaf_runs_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    (m : ℕ) (hme : m + 0 = σ.k) (O : T → Pre) (p : Pf)
+    (order : Fin (Fintype.card Pre) ≃ Pre)
+    (child : Pre → Zcash.Snark.RecursiveForkCoins Pre 0) :
+    (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p
+        (.node (List.ofFn (⇑order)) child)).runs
+      ≤ 1 + ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+            Zcash.Snark.scanRank order
+              (insert q ((kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O p).erase
+                (O (prefixes p (Fin.last σ.k))))) q < 2),
+          (kimchiLeafCandidate σ b v P expand A proofOf prefixes O p q).runs := by
+  set q₁ : Pre := O (prefixes p (Fin.last σ.k)) with hq₁def
+  set M : Finset Pre :=
+    (kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O p).erase q₁ with hMdef
+  have hMgood : ∀ w ∈ M, w ≠ 0 ∧
+      (kimchiLeafCandidate σ b v P expand A proofOf prefixes O p w).output.isSome := by
+    intro w hw
+    have hw' := Finset.mem_of_mem_erase hw
+    rw [kimchiLeafGoodChallenges, Finset.mem_filter] at hw'
+    exact hw'.2
+  have hscan : (Zcash.Snark.nextForkChallenge
+      (fun q => kimchiLeafCandidate σ b v P expand A proofOf prefixes O p q) [q₁]
+      (List.ofFn (⇑order))).runs
+      ≤ ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+          Zcash.Snark.scanRank order (insert q M) q < 2),
+        (kimchiLeafCandidate σ b v P expand A proofOf prefixes O p q).runs := by
+    apply Zcash.Snark.nextForkChallenge_runs_le_rank_sum _ order M hMgood [q₁] [] _
+      (by rw [List.nil_append])
+    · intro w hw hwseen
+      rw [List.mem_singleton] at hwseen
+      exact absurd (hwseen ▸ hw) (Finset.notMem_erase q₁ _)
+    · simp
+  rw [kimchiForkFrom]
+  simp only []
+  split
+  · split
+    all_goals exact Nat.add_le_add_left hscan 1
+  · exact Nat.le_add_right 1 _
+
+/-- **A node pays its first branch and at most twice its rank-`< 2` candidates.** The pointwise
+bound at certificate depth `e + 1`: upstream's `recursiveAlgebraicForkFrom_node_runs_le`
+(`ExpectedRuns.lean:448`), transcribed onto our recursion. Like the leaf bound it is stated at a
+tape node, for the same reason.
+
+**One difference changes the statement.** Upstream's bound leads with `1 +` because its node has an
+arm that aborts on a zero incumbent challenge and bills a unit for it; `kimchiForkFrom`'s `e + 1`
+case has no such arm — it goes straight to the recursive `first` — so the unit is dropped here.
+Everything else maps one-to-one: the second scan is bounded at `seen = [q₁]` and the third at the
+`(seen, rest)` its predecessor returned, both by `nextForkChallenge_runs_le_rank_sum` (`:368`)
+against the same good set, and `S + S = 2 * S` closes all three result branches. -/
+theorem kimchiForkFrom_node_runs_le [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    {e : ℕ} (m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre) (p : Pf)
+    (order : Fin (Fintype.card Pre) ≃ Pre)
+    (child : Pre → Zcash.Snark.RecursiveForkCoins Pre (e + 1)) :
+    (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p
+        (.node (List.ofFn (⇑order)) child)).runs
+      ≤ (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega) O p
+          (child (O (prefixes p ⟨m, by omega⟩)))).runs
+        + 2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+              Zcash.Snark.scanRank order
+                (insert q ((kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O p
+                  child).erase (O (prefixes p ⟨m, by omega⟩)))) q < 2),
+            (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O p child q).runs := by
+  have hm : m < σ.k + 1 := by omega
+  have htail : m + 1 + e = σ.k := by omega
+  set q₁ : Pre := O (prefixes p ⟨m, hm⟩) with hq₁def
+  set M : Finset Pre :=
+    (kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O p child).erase q₁ with hMdef
+  set S : ℕ := ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+      Zcash.Snark.scanRank order (insert q M) q < 2),
+    (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O p child q).runs with hSdef
+  have hMgood : ∀ w ∈ M, w ≠ 0 ∧ (kimchiScanCandidate σ b v P expand A proofOf prefixes dec
+      m hme O p child w).output.isSome := by
+    intro w hw
+    have hw' := Finset.mem_of_mem_erase hw
+    rw [kimchiGoodChallenges, Finset.mem_filter] at hw'
+    exact hw'.2
+  show (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O p
+      (.node (List.ofFn (⇑order)) child)).runs
+      ≤ (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) htail O p
+          (child q₁)).runs + 2 * S
+  rw [kimchiForkFrom]
+  simp only []
+  split
+  · -- the first branch failed: only its own cost is paid
+    exact Nat.le_add_right _ _
+  · rename_i c₁ hfirstSome
+    have hscan₂ : (Zcash.Snark.nextForkChallenge
+        (fun q => kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O p child q)
+        [q₁] (List.ofFn (⇑order))).runs ≤ S := by
+      rw [hSdef]
+      apply Zcash.Snark.nextForkChallenge_runs_le_rank_sum _ order M hMgood [q₁] [] _
+        (by rw [List.nil_append])
+      · intro w hw hwseen
+        rw [List.mem_singleton] at hwseen
+        exact absurd (hwseen ▸ hw) (Finset.notMem_erase q₁ _)
+      · simp
+    split
+    · -- the second scan failed
+      exact Nat.add_le_add_left (hscan₂.trans (Nat.le_mul_of_pos_left S (by omega))) _
+    · rename_i q₂ c₂ rest seen hsecond
+      have hfresh := Zcash.Snark.nextForkChallenge_output_fresh _ [q₁] hsecond
+      obtain ⟨l₁, hdecomp, hfailL⟩ :=
+        Zcash.Snark.nextForkChallenge_output_decompose _ [q₁] _ hsecond
+      have hscan₃ : (Zcash.Snark.nextForkChallenge
+          (fun q => kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O p child q)
+          seen rest).runs ≤ S := by
+        rw [hSdef]
+        apply Zcash.Snark.nextForkChallenge_runs_le_rank_sum _ order M hMgood seen (l₁ ++ [q₂]) rest
+          (by rw [hdecomp, List.append_assoc, List.singleton_append])
+        · intro w hw hwseen
+          rw [hfresh.2.2, List.mem_cons, List.mem_singleton] at hwseen
+          rcases hwseen with h | h
+          · rw [h]
+            exact List.mem_append.mpr (Or.inr (List.mem_singleton_self q₂))
+          · exact absurd (h ▸ hw) (Finset.notMem_erase q₁ _)
+        · have hsub : M.filter (· ∈ l₁ ++ [q₂]) ⊆ {q₂} := by
+            intro w hw
+            rw [Finset.mem_filter] at hw
+            rcases List.mem_append.mp hw.2 with hwl | hwq
+            · exfalso
+              obtain ⟨hw0, hwsome⟩ := hMgood w hw.1
+              have hwne₁ : w ∉ ([q₁] : List Pre) := by
+                rw [List.mem_singleton]
+                intro h
+                exact absurd (h ▸ hw.1) (Finset.notMem_erase q₁ _)
+              have hnone : (kimchiScanCandidate σ b v P expand A proofOf prefixes dec
+                  m hme O p child w).output = none := hfailL w hwl hw0 hwne₁
+              rw [hnone] at hwsome
+              simp at hwsome
+            · rw [List.mem_singleton] at hwq
+              rw [Finset.mem_singleton]
+              exact hwq
+          calc (M.filter (· ∈ l₁ ++ [q₂])).card
+              ≤ ({q₂} : Finset Pre).card := Finset.card_le_card hsub
+            _ = 1 := Finset.card_singleton q₂
+      split
+      all_goals
+        refine le_trans (Nat.add_le_add (Nat.add_le_add (le_refl _) hscan₂) hscan₃) ?_
+        rw [Nat.add_assoc, ← Nat.two_mul]
+
+/-- **The scan candidate's cost, with its stability test exposed.** A prefix-stable reprogramming
+pays the recursive extraction one round deeper; an unstable one pays the unit rerun and stops.
+Upstream analogue: `scanCandidate_runs_cases` (`ExpectedRuns.lean:557`), transcribed verbatim.
+
+Purely a normal form, but the one the depth induction needs: with the `if` lifted out of the
+`RecursiveForkAttempt` and onto the `ℕ`, `by_cases` on the condition splits the tape sum of scan
+costs into a branch the induction hypothesis closes and a branch that collapses to a constant. -/
+theorem kimchiScanCandidate_runs_cases [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes)
+    {e : ℕ} (m : ℕ) (hme : m + (e + 1) = σ.k) (O : T → Pre) (p : Pf)
+    (child : Pre → Zcash.Snark.RecursiveForkCoins Pre (e + 1)) (q : Pre) :
+    (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O p child q).runs
+      = if prefixes (A.run (Function.update O (prefixes p ⟨m, by omega⟩) q)) ⟨m, by omega⟩
+            = prefixes p ⟨m, by omega⟩ then
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega)
+            (Function.update O (prefixes p ⟨m, by omega⟩) q)
+            (A.run (Function.update O (prefixes p ⟨m, by omega⟩) q)) (child q)).runs
+        else 1 := by
+  simp only [kimchiScanCandidate]
+  rw [apply_ite Zcash.Snark.RecursiveForkAttempt.runs]
+
+/-- **The depth-0 tape sum, under fork spread**: averaged over the uniform depth-1 tape, a Schnorr
+leaf costs at most `6·|Pre|/(σ₀−1)` runs. It is the base case of
+`kimchiForkFrom_sum_runs_le_of_forkSpread` below, and the one upstream does not have — its own base
+case is a bare `1`, ours runs a scan.
+
+The `6` has slack, and the arithmetic is worth stating because of it. Write `N = |Pre|`,
+`CP = |Fin N ≃ Pre|`, `B = σ₀ − 1`. A leaf run costs `≤ 1 + (its scan)`, and each leaf candidate
+costs exactly `1`, so the scan costs at most its number of rank-`< 2` candidates. Summing over the
+depth-1 tape space: the unit costs contribute `B·CP·|tapes₀|^N ≤ N·CP·|tapes₀|^N` (from `σ₀ ≤ N`),
+and the scans contribute `2·N·CP·|tapes₀|^N`, because
+`card_scanRank_lt_mul_le` (`ExpectedRuns.lean:139`) pays `B · #{orders : rank q < 2}
+≤ 2·CP` for **each** of the `N` challenges `q`. Total `3·N·CP·|tapes₀|^N`, and
+`|RecursiveForkTape Pre 1| = CP·|tapes₀|^N`.
+
+Note what is *not* needed: upstream's `2 ≤ σ₀` plays no part at depth 0, so it is absent here. The
+floor consumed is `KimchiForkSpread`'s **leaf** clause; the node clause is untouched at this depth.
+The proof deliberately keeps upstream's `succ`-case shape (transport along `equivSucc`,
+marginalize, then bound the two summands) rather than short-cutting through
+`RecursiveForkTape Pre 0 ≃ Unit`: the induction above transcribes that same skeleton at general
+depth, so a faithful depth-0 case is worth more than a clever one. -/
+theorem kimchiForkFrom_sum_runs_le_leaf [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) {σ₀ : ℕ}
+    (hspread : KimchiForkSpread σ b v P expand A proofOf prefixes dec σ₀)
+    (m : ℕ) (hme : m + 0 = σ.k) (O : T → Pre) :
+    (σ₀ - 1) * ∑ tape : Zcash.Snark.RecursiveForkTape Pre 1,
+        (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O) tape.toCoins).runs
+      ≤ 6 * Fintype.card Pre * Fintype.card (Zcash.Snark.RecursiveForkTape Pre 1) := by
+  set N := Fintype.card Pre with hN
+  set B := σ₀ - 1 with hB
+  set CP := Fintype.card (Fin N ≃ Pre) with hCP
+  set CT := Fintype.card (Zcash.Snark.RecursiveForkTape Pre 0) with hCT
+  set q₁ : Pre := O (prefixes (A.run O) (Fin.last σ.k)) with hq₁def
+  set M : Finset Pre :=
+    (kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O (A.run O)).erase q₁ with hMdef
+  set f : Pre → ℕ := fun q =>
+    (kimchiLeafCandidate σ b v P expand A proofOf prefixes O (A.run O) q).runs with hf
+  -- the tape space factors, and the leaf good set is nonempty enough
+  have hcard : Fintype.card (Zcash.Snark.RecursiveForkTape Pre 1) = CP * CT ^ N := by
+    have h := Fintype.card_congr (Zcash.Snark.RecursiveForkTape.equivSucc (F := Pre) 0)
+    rwa [Fintype.card_prod, Fintype.card_fun] at h
+  have hgoodN :
+      (kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O (A.run O)).card ≤ N := by
+    rw [kimchiLeafGoodChallenges]
+    exact le_trans (Finset.card_filter_le _ _) (le_of_eq Finset.card_univ)
+  have hBN : B ≤ N := le_trans (Nat.sub_le σ₀ 1) (le_trans (hspread.2 O) hgoodN)
+  -- every leaf candidate costs exactly one run
+  have hf1 : ∀ q : Pre, f q = 1 := by
+    intro q
+    rw [hf]
+    simp only [kimchiLeafCandidate]
+    split <;> rfl
+  -- transport the tape sum to the (order, children) product
+  have htrans : ∑ tape : Zcash.Snark.RecursiveForkTape Pre 1,
+      (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O) tape.toCoins).runs
+      = ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs := by
+    rw [← Equiv.sum_comp (Zcash.Snark.RecursiveForkTape.equivSucc (F := Pre) 0).symm
+      (fun tape => (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+        tape.toCoins).runs)]
+    exact Finset.sum_congr rfl (fun pr _ => rfl)
+  -- the pointwise leaf bound, at a tape node
+  have hpoint : ∀ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+      (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+        (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+      ≤ 1 + ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+          Zcash.Snark.scanRank pr.1 (insert q M) q < 2), f q := fun pr =>
+    kimchiForkFrom_leaf_runs_le σ b v P expand A proofOf prefixes dec m hme O (A.run O) pr.1
+      (fun q => (pr.2 q).toCoins)
+  -- summed, with the order axis marginalized out of the scan term
+  have hsum : ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+      (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+        (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+      ≤ CP * CT ^ N
+        + ∑ _childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0, ∑ q : Pre,
+            (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+              Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q := by
+    have hper : ∀ childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0,
+        ∑ order : Fin N ≃ Pre, ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+            Zcash.Snark.scanRank order (insert q M) q < 2), f q
+        = ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+            Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q := by
+      intro _childT
+      calc ∑ order : Fin N ≃ Pre, ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+              Zcash.Snark.scanRank order (insert q M) q < 2), f q
+          = ∑ order : Fin N ≃ Pre, ∑ q : Pre,
+              (if Zcash.Snark.scanRank order (insert q M) q < 2 then f q else 0) :=
+            Finset.sum_congr rfl (fun order _ => Finset.sum_filter _ _)
+        _ = ∑ q : Pre, ∑ order : Fin N ≃ Pre,
+              (if Zcash.Snark.scanRank order (insert q M) q < 2 then f q else 0) :=
+            Finset.sum_comm
+        _ = ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+              Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q := by
+            refine Finset.sum_congr rfl (fun q _ => ?_)
+            rw [← Finset.sum_filter, Finset.sum_const, smul_eq_mul]
+    calc ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+        (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+          (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+        ≤ ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+            (1 + ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+              Zcash.Snark.scanRank pr.1 (insert q M) q < 2), f q) :=
+          Finset.sum_le_sum (fun pr _ => hpoint pr)
+      _ = (∑ _pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0), 1)
+          + ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+              ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                Zcash.Snark.scanRank pr.1 (insert q M) q < 2), f q := by
+          rw [← Finset.sum_add_distrib]
+      _ = CP * CT ^ N
+          + ∑ _childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0, ∑ q : Pre,
+              (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q := by
+          congr 1
+          · rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, mul_one, Fintype.card_prod,
+              Fintype.card_fun]
+          · rw [Fintype.sum_prod_type_right]
+            exact Finset.sum_congr rfl (fun childT _ => hper childT)
+  -- each challenge is low-rank in at most a 2/|good set| fraction of the orders
+  have hOrderCount : ∀ q : Pre, B * (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+      Zcash.Snark.scanRank order (insert q M) q < 2)).card ≤ 2 * CP := by
+    intro q
+    have hA := Zcash.Snark.card_scanRank_lt_mul_le (n := N) (insert q M)
+      (Finset.mem_insert_self q _) 2
+    refine le_trans (Nat.mul_le_mul_right _ ?_) hA
+    have herase : (kimchiLeafGoodChallenges σ b v P expand A proofOf prefixes O (A.run O)).card - 1
+        ≤ M.card := by
+      rw [hMdef]
+      exact Finset.pred_card_le_card_erase
+    have hgood := hspread.2 O
+    have hins : M.card ≤ (insert q M).card := Finset.card_le_card (Finset.subset_insert q _)
+    rw [hB]
+    omega
+  have hscans : B * ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+      Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q ≤ N * (2 * CP) := by
+    rw [Finset.mul_sum]
+    calc ∑ q : Pre, B * ((Finset.univ.filter (fun order : Fin N ≃ Pre =>
+          Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q)
+        = ∑ q : Pre, B * (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+            Zcash.Snark.scanRank order (insert q M) q < 2)).card := by
+          simp only [hf1, mul_one]
+      _ ≤ ∑ _q : Pre, 2 * CP := Finset.sum_le_sum (fun q _ => hOrderCount q)
+      _ = N * (2 * CP) := by rw [Finset.sum_const, Finset.card_univ, smul_eq_mul]
+  rw [hcard, htrans]
+  calc B * ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre 0),
+      (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+        (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+      ≤ B * (CP * CT ^ N
+          + ∑ _childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0, ∑ q : Pre,
+              (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q) :=
+        Nat.mul_le_mul_left _ hsum
+    _ ≤ N * (CP * CT ^ N) + 2 * N * (CP * CT ^ N) := by
+        rw [Nat.mul_add]
+        refine Nat.add_le_add (Nat.mul_le_mul_right _ hBN) ?_
+        calc B * ∑ _childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0, ∑ q : Pre,
+              (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q
+            = ∑ _childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0,
+                B * ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                  Zcash.Snark.scanRank order (insert q M) q < 2)).card * f q :=
+              Finset.mul_sum _ _ _
+          _ ≤ ∑ _childT : Pre → Zcash.Snark.RecursiveForkTape Pre 0, N * (2 * CP) :=
+              Finset.sum_le_sum (fun _ _ => hscans)
+          _ = CT ^ N * (N * (2 * CP)) := by
+              rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, Fintype.card_fun]
+          _ = 2 * N * (CP * CT ^ N) := by ring
+    _ = 3 * N * (CP * CT ^ N) := by ring
+    _ ≤ 6 * N * (CP * CT ^ N) :=
+        Nat.mul_le_mul_right _ (Nat.mul_le_mul_right _ (by omega))
+
+/-- **The depth induction, under fork spread**: averaged over the uniform tape, the fork at
+certificate depth `e` costs at most `(6·|Pre|/(σ₀−1))^(e+1)` runs. Upstream's
+`recursiveAlgebraicForkFrom_sum_runs_le_of_forkSpread` (`ExpectedRuns.lean:590`), transcribed onto
+our recursion; the induction is on the certificate depth, and each step turns the pointwise node
+bound `kimchiForkFrom_node_runs_le` into a bound on the sum over tapes.
+
+**Three deviations from upstream, all in our favour.**
+
+* *The exponents shift by one.* Certificate depth `e` carries coin depth `e + 1`, so tapes are
+  `RecursiveForkTape Pre (e + 1)` and upstream's `d` is our `e + 1` everywhere in the arithmetic,
+  while the induction variable is `e`. The base case sits at tape depth `1`, the step at `e + 2`.
+* *The base case does real work.* Upstream's depth-0 leaf costs a bare `1`; ours runs the Schnorr
+  scan, so `e = 0` is `kimchiForkFrom_sum_runs_le_leaf` — a theorem with a rank argument and a
+  spread clause of its own — rather than a one-line computation.
+* *Two summands, not three.* `kimchiForkFrom_node_runs_le` has no leading `1 +`, because our
+  `e + 1` arm has no zero-incumbent abort; upstream's unit-cost summand and the calc branch that
+  pays for it are therefore absent. The closing arithmetic is
+  `N·(6N)^(e+1) + 4N·(6N)^(e+1) = 5N·(6N)^(e+1) ≤ (6N)^(e+2)`, so the `6` is kept with a factor of
+  slack rather than tightened.
+
+**Upstream's `2 ≤ σ₀` is not a hypothesis here**, so this statement is *weaker in hypotheses*, not
+merely re-indexed. Its only role upstream is to supply `1 ≤ |F|` to the step
+`CT^(N−1)·CT = CT^N`; here `[Zero Pre]` already gives `Nonempty Pre`, hence `1 ≤ |Pre|` outright.
+
+The floor is read on the diagonal `p = A.run O` throughout — the induction hypothesis is quantified
+over the table and is applied at two different tables in the step (`O` for the cached first branch,
+the reprogrammed `O'` for each scan candidate), which is exactly what the narrowed
+`KimchiForkSpread` supports and the un-narrowed one did not need. -/
+theorem kimchiForkFrom_sum_runs_le_of_forkSpread [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) {σ₀ : ℕ}
+    (hspread : KimchiForkSpread σ b v P expand A proofOf prefixes dec σ₀) :
+    ∀ (e m : ℕ) (hme : m + e = σ.k) (O : T → Pre),
+      (σ₀ - 1) ^ (e + 1) * ∑ tape : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            tape.toCoins).runs
+        ≤ (6 * Fintype.card Pre) ^ (e + 1)
+            * Fintype.card (Zcash.Snark.RecursiveForkTape Pre (e + 1)) := by
+  intro e
+  induction e with
+  | zero =>
+      intro m hme O
+      simpa using
+        kimchiForkFrom_sum_runs_le_leaf σ b v P expand A proofOf prefixes dec hspread m hme O
+  | succ e ih =>
+      intro m hme O
+      have hm : m < σ.k + 1 := by omega
+      have htail : m + 1 + e = σ.k := by omega
+      set N := Fintype.card Pre with hN
+      set B := σ₀ - 1 with hB
+      set CP := Fintype.card (Fin N ≃ Pre) with hCP
+      set CT := Fintype.card (Zcash.Snark.RecursiveForkTape Pre (e + 1)) with hCT
+      have hN1 : 1 ≤ N := Fintype.card_pos
+      have hCTN : CT ^ (N - 1) * CT = CT ^ N := by
+        rw [← Nat.pow_succ]
+        congr 1
+        omega
+      obtain ⟨t0⟩ : Nonempty (Zcash.Snark.RecursiveForkTape Pre (e + 1)) :=
+        Zcash.Snark.RecursiveForkTape.instNonempty (e + 1)
+      have hgoodN : ∀ child : Pre → Zcash.Snark.RecursiveForkCoins Pre (e + 1),
+          (kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            child).card ≤ N := by
+        intro child
+        rw [kimchiGoodChallenges]
+        exact le_trans (Finset.card_filter_le _ _) (le_of_eq Finset.card_univ)
+      have hBN : B ≤ N := le_trans (Nat.sub_le σ₀ 1)
+        (le_trans (hspread.1 e m hme O (fun _ => t0)) (hgoodN (fun _ => t0.toCoins)))
+      have hcard : Fintype.card (Zcash.Snark.RecursiveForkTape Pre (e + 1 + 1))
+          = CP * CT ^ N := by
+        have h := Fintype.card_congr (Zcash.Snark.RecursiveForkTape.equivSucc (F := Pre) (e + 1))
+        rwa [Fintype.card_prod, Fintype.card_fun] at h
+      set q₁ : Pre := O (prefixes (A.run O) ⟨m, hm⟩) with hq₁
+      set g' : Zcash.Snark.RecursiveForkTape Pre (e + 1) → ℕ := fun tp =>
+        (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) htail O (A.run O)
+          tp.toCoins).runs with hg'
+      set M : (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)) → Finset Pre := fun childT =>
+        (kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+          (fun w => (childT w).toCoins)).erase q₁ with hM
+      set f : Pre → (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)) → ℕ := fun q childT =>
+        (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+          (fun w => (childT w).toCoins) q).runs with hf
+      -- transport the tape sum to the (order, children) product
+      have htrans : ∑ tape : Zcash.Snark.RecursiveForkTape Pre (e + 1 + 1),
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            tape.toCoins).runs
+          = ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+              (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs := by
+        rw [← Equiv.sum_comp (Zcash.Snark.RecursiveForkTape.equivSucc (F := Pre) (e + 1)).symm
+          (fun tape => (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            tape.toCoins).runs)]
+        exact Finset.sum_congr rfl (fun pr _ => rfl)
+      -- the pointwise node bound, at a tape node
+      have hpoint : ∀ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+          ≤ g' (pr.2 q₁)
+            + 2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                Zcash.Snark.scanRank pr.1 (insert q (M pr.2)) q < 2), f q pr.2 := fun pr =>
+        kimchiForkFrom_node_runs_le σ b v P expand A proofOf prefixes dec m hme O (A.run O) pr.1
+          (fun w => (pr.2 w).toCoins)
+      -- summed, with the first-branch axis marginalized and the order axis commuted inside
+      have hsum : ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+          (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+            (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+          ≤ CP * (CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t)
+            + 2 * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                  Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card
+                  * f q childT := by
+        have hper : ∀ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1),
+            ∑ order : Fin N ≃ Pre, 2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                Zcash.Snark.scanRank order (insert q (M childT)) q < 2), f q childT
+            = 2 * ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card * f q childT := by
+          intro childT
+          rw [← Finset.mul_sum]
+          congr 1
+          calc ∑ order : Fin N ≃ Pre, ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                  Zcash.Snark.scanRank order (insert q (M childT)) q < 2), f q childT
+              = ∑ order : Fin N ≃ Pre, ∑ q : Pre,
+                  (if Zcash.Snark.scanRank order (insert q (M childT)) q < 2 then f q childT
+                    else 0) :=
+                Finset.sum_congr rfl (fun order _ => Finset.sum_filter _ _)
+            _ = ∑ q : Pre, ∑ order : Fin N ≃ Pre,
+                  (if Zcash.Snark.scanRank order (insert q (M childT)) q < 2 then f q childT
+                    else 0) :=
+                Finset.sum_comm
+            _ = ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                  Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card * f q childT := by
+                refine Finset.sum_congr rfl (fun q _ => ?_)
+                rw [← Finset.sum_filter, Finset.sum_const, smul_eq_mul]
+        calc ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+            (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+              (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+            ≤ ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+                (g' (pr.2 q₁)
+                  + 2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                      Zcash.Snark.scanRank pr.1 (insert q (M pr.2)) q < 2), f q pr.2) :=
+              Finset.sum_le_sum (fun pr _ => hpoint pr)
+          _ = (∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+                  g' (pr.2 q₁))
+              + ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+                  2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                    Zcash.Snark.scanRank pr.1 (insert q (M pr.2)) q < 2), f q pr.2 := by
+              rw [← Finset.sum_add_distrib]
+          _ = CP * (CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t)
+              + 2 * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                  (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                    Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card
+                    * f q childT := by
+              congr 1
+              · rw [Fintype.sum_prod_type]
+                calc ∑ _o : Fin N ≃ Pre,
+                      ∑ c : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), g' (c q₁)
+                    = ∑ _o : Fin N ≃ Pre,
+                        CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t :=
+                      Finset.sum_congr rfl (fun _ _ => Zcash.Snark.sum_eval_pi q₁ g')
+                  _ = CP * (CT ^ (N - 1)
+                        * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t) := by
+                      rw [Finset.sum_const, Finset.card_univ, smul_eq_mul]
+              · calc ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+                    2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                      Zcash.Snark.scanRank pr.1 (insert q (M pr.2)) q < 2), f q pr.2
+                    = ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                        ∑ order : Fin N ≃ Pre, 2 * ∑ q ∈ Finset.univ.filter (fun q : Pre =>
+                          Zcash.Snark.scanRank order (insert q (M childT)) q < 2),
+                          f q childT := by rw [Fintype.sum_prod_type_right]
+                  _ = ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                        2 * ∑ q : Pre, (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                          Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card
+                            * f q childT :=
+                      Finset.sum_congr rfl (fun childT _ => hper childT)
+                  _ = 2 * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                        (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                          Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card
+                          * f q childT :=
+                      (Finset.mul_sum _ _ _).symm
+      -- each challenge is low-rank in at most a 2/|good set| fraction of the orders
+      have hOrderCount : ∀ (childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)) (q : Pre),
+          B * (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+            Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card ≤ 2 * CP := by
+        intro childT q
+        have hA := Zcash.Snark.card_scanRank_lt_mul_le (n := N) (insert q (M childT))
+          (Finset.mem_insert_self q _) 2
+        refine le_trans (Nat.mul_le_mul_right _ ?_) hA
+        have herase : (kimchiGoodChallenges σ b v P expand A proofOf prefixes dec m hme O
+            (A.run O) (fun w => (childT w).toCoins)).card - 1 ≤ (M childT).card := by
+          rw [hM]
+          exact Finset.pred_card_le_card_erase
+        have hgood := hspread.1 e m hme O childT
+        have hins : (M childT).card ≤ (insert q (M childT)).card :=
+          Finset.card_le_card (Finset.subset_insert q _)
+        rw [hB]
+        omega
+      -- the scan candidates, marginalized and closed by the induction hypothesis
+      have hfsum : ∀ q : Pre, B ^ (e + 1)
+          * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), f q childT
+          ≤ (6 * N) ^ (e + 1) * (CT ^ (N - 1) * CT) := by
+        intro q
+        have hmarg : ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), f q childT
+            = CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                  (fun _ => t.toCoins) q).runs := by
+          rw [hf]
+          exact Zcash.Snark.sum_eval_pi q
+            (fun t : Zcash.Snark.RecursiveForkTape Pre (e + 1) =>
+              (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                (fun _ => t.toCoins) q).runs)
+        have hinner : B ^ (e + 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+            (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+              (fun _ => t.toCoins) q).runs ≤ (6 * N) ^ (e + 1) * CT := by
+          by_cases hcond : prefixes (A.run (Function.update O
+              (prefixes (A.run O) ⟨m, by omega⟩) q)) ⟨m, by omega⟩
+              = prefixes (A.run O) ⟨m, by omega⟩
+          · have hcases : ∀ t : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                    (fun _ => t.toCoins) q).runs
+                = (kimchiForkFrom σ b v P expand A proofOf prefixes dec (m + 1) (by omega)
+                    (Function.update O (prefixes (A.run O) ⟨m, by omega⟩) q)
+                    (A.run (Function.update O (prefixes (A.run O) ⟨m, by omega⟩) q))
+                    t.toCoins).runs := by
+              intro t
+              rw [kimchiScanCandidate_runs_cases, if_pos hcond]
+            rw [Finset.sum_congr rfl (fun t _ => hcases t)]
+            exact ih (m + 1) (by omega) _
+          · have hcases : ∀ t : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                  (fun _ => t.toCoins) q).runs = 1 := by
+              intro t
+              rw [kimchiScanCandidate_runs_cases, if_neg hcond]
+            rw [Finset.sum_congr rfl (fun t _ => hcases t), Finset.sum_const, Finset.card_univ,
+              smul_eq_mul, mul_one]
+            apply Nat.mul_le_mul_right
+            exact Nat.pow_le_pow_left (le_trans hBN (Nat.le_mul_of_pos_left N (by omega))) (e + 1)
+        calc B ^ (e + 1) * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), f q childT
+            = B ^ (e + 1) * (CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                  (fun _ => t.toCoins) q).runs) := by rw [hmarg]
+          _ = CT ^ (N - 1) * (B ^ (e + 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                (kimchiScanCandidate σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                  (fun _ => t.toCoins) q).runs) := by ring
+          _ ≤ CT ^ (N - 1) * ((6 * N) ^ (e + 1) * CT) := Nat.mul_le_mul_left _ hinner
+          _ = (6 * N) ^ (e + 1) * (CT ^ (N - 1) * CT) := by ring
+      -- the first branch, closed by the induction hypothesis at the same table
+      have hgrec : B ^ (e + 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t
+          ≤ (6 * N) ^ (e + 1) * CT := ih (m + 1) htail O
+      -- assemble
+      rw [htrans]
+      calc B ^ (e + 1 + 1)
+            * ∑ pr : (Fin N ≃ Pre) × (Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1)),
+              (kimchiForkFrom σ b v P expand A proofOf prefixes dec m hme O (A.run O)
+                (Zcash.Snark.RecursiveForkTape.node pr.1 pr.2).toCoins).runs
+          ≤ B ^ (e + 1 + 1)
+              * (CP * (CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t)
+                + 2 * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                    (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                      Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card
+                      * f q childT) := Nat.mul_le_mul_left _ hsum
+        _ ≤ N * (6 * N) ^ (e + 1) * (CP * CT ^ N)
+            + 4 * N * (6 * N) ^ (e + 1) * (CP * CT ^ N) := by
+            rw [Nat.mul_add]
+            refine Nat.add_le_add ?_ ?_
+            · -- the first branches
+              calc B ^ (e + 1 + 1)
+                    * (CP * (CT ^ (N - 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t))
+                  = B * CP * CT ^ (N - 1)
+                      * (B ^ (e + 1) * ∑ t : Zcash.Snark.RecursiveForkTape Pre (e + 1), g' t) := by
+                    rw [Nat.pow_succ]
+                    ring
+                _ ≤ B * CP * CT ^ (N - 1) * ((6 * N) ^ (e + 1) * CT) :=
+                    Nat.mul_le_mul_left _ hgrec
+                _ = B * (6 * N) ^ (e + 1) * (CP * (CT ^ (N - 1) * CT)) := by ring
+                _ = B * (6 * N) ^ (e + 1) * (CP * CT ^ N) := by rw [hCTN]
+                _ ≤ N * (6 * N) ^ (e + 1) * (CP * CT ^ N) :=
+                    Nat.mul_le_mul_right _ (Nat.mul_le_mul_right _ hBN)
+            · -- the scans
+              calc B ^ (e + 1 + 1)
+                    * (2 * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                        (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                          Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card
+                          * f q childT)
+                  = ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                      (B * (Finset.univ.filter (fun order : Fin N ≃ Pre =>
+                        Zcash.Snark.scanRank order (insert q (M childT)) q < 2)).card)
+                        * (2 * (B ^ (e + 1) * f q childT)) := by
+                    simp only [Finset.mul_sum]
+                    refine Finset.sum_congr rfl (fun childT _ =>
+                      Finset.sum_congr rfl (fun q _ => ?_))
+                    rw [Nat.pow_succ]
+                    ring
+                _ ≤ ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1), ∑ q : Pre,
+                      2 * CP * (2 * (B ^ (e + 1) * f q childT)) :=
+                    Finset.sum_le_sum (fun childT _ => Finset.sum_le_sum (fun q _ =>
+                      Nat.mul_le_mul_right _ (hOrderCount childT q)))
+                _ = 4 * CP * ∑ q : Pre, B ^ (e + 1)
+                      * ∑ childT : Pre → Zcash.Snark.RecursiveForkTape Pre (e + 1),
+                        f q childT := by
+                    rw [Finset.sum_comm]
+                    simp only [Finset.mul_sum]
+                    refine Finset.sum_congr rfl (fun q _ =>
+                      Finset.sum_congr rfl (fun childT _ => ?_))
+                    ring
+                _ ≤ 4 * CP * ∑ _q : Pre, (6 * N) ^ (e + 1) * (CT ^ (N - 1) * CT) :=
+                    Nat.mul_le_mul_left _ (Finset.sum_le_sum (fun q _ => hfsum q))
+                _ = 4 * N * (6 * N) ^ (e + 1) * (CP * CT ^ N) := by
+                    rw [Finset.sum_const, Finset.card_univ, smul_eq_mul, hCTN, ← hN]
+                    ring
+        _ = 5 * (N * (6 * N) ^ (e + 1) * (CP * CT ^ N)) := by ring
+        _ ≤ 6 * (N * (6 * N) ^ (e + 1) * (CP * CT ^ N)) :=
+            Nat.mul_le_mul_right _ (by omega)
+        _ = (6 * N) ^ (e + 1 + 1)
+              * Fintype.card (Zcash.Snark.RecursiveForkTape Pre (e + 1 + 1)) := by
+            rw [hcard, Nat.pow_succ]
+            ring
+
 end Extractor
 
 /-- **The extractor.** Given the oracle table and the fork tape, run the adversary, rewind it at
@@ -665,8 +1692,11 @@ What this is worth, stated honestly. It is the **worst case**, and it is exponen
 the number of rounds `k` and in the challenge domain, since at the deployed instantiation
 `n = Fintype.card Prechallenge = 2 ^ 128`. It is therefore *not* a polynomial-AFK claim, the
 same caveat ironwood attaches to its own `reductionEfficient_exponential`. The conditional
-average `(6/δ)^k` under a good-challenge density floor is a different theorem, and it is not
-proved anywhere in this tree.
+average `(6/δ)^k` under a good-challenge density floor is a different theorem: it is
+`kimchiExtractRuns_sum_le_of_forkSpread` below, and it neither supersedes nor weakens this one —
+it holds only over a `KimchiForkSpread` hypothesis that nothing in this tree discharges at deployed
+parameters (`exists_kimchiForkSpread_two_le_of_rounds` discharges it at toy ones, at every round
+count), and it averages over tapes rather than bounding pointwise.
 
 What it does buy: this is the first bound here that is **computed from the counter** rather than
 obtained from a `sup` that never inspects it. Feeding it to `ReductionEfficient`
@@ -701,6 +1731,409 @@ theorem one_le_kimchiExtractRuns [DecidableEq F] [DecidableEq G] [DecidableEq T]
     1 ≤ kimchiExtractRuns σ b v P expand A proofOf prefixes dec O coins :=
   one_le_kimchiForkFrom_runs σ b v P expand A proofOf prefixes dec 0 (Nat.zero_add σ.k) O
     (A.run O) coins
+
+/-- **The extractor's tape-averaged call count under fork spread**: `(6·|Pre|/(σ₀−1))^(k+1)`.
+`kimchiForkFrom_sum_runs_le_of_forkSpread` at the root, `e := σ.k`, `m := 0` — the same
+instantiation `kimchiExtractRuns_le` and `one_le_kimchiExtractRuns` make of their own recursive
+lemmas, and the endpoint of the conditional block.
+
+**This is the *conditional* counterpart of `kimchiExtractRuns_le`, not a replacement for it.**
+Three things it is not, spelled out because the difference is the whole content:
+
+* It is **conditional**. `KimchiForkSpread σ₀` is a hypothesis nothing in this tree proves at
+  deployed parameters, and by design: deriving a spread floor from an adversary's success
+  probability is recorded open research (`docs/external-audit-followup.md` §O-1b). Read as an
+  implication, not as a bound in force. It is not an implication out of an empty hypothesis
+  either — `spreadExhibit_extractRuns_sum_le` is this theorem at parameters that discharge it.
+* It is a **tape average**, not a pointwise bound: it caps `∑` over the uniform depth-`(k+1)` tape
+  at a fixed table, scaled by `(σ₀−1)^(k+1)`. `kimchiExtractRuns_le` still stands unweakened beside
+  it as the unconditional worst case on *every* tape, and remains the bound the endpoints read.
+* It does **not** discharge `ReductionEfficient` (`Forking/KnowledgeSoundness.lean`). That
+  predicate averages over *tables* at a fixed tape; this averages over *tapes* at a fixed table.
+  Crossing the two axes is a separate step (Fubini plus averaging to a witness tape), and it is not
+  taken here.
+
+It is also degenerate exactly where the hypothesis is: at `σ₀ ≤ 1` the left-hand side is `0` and
+the statement is empty. Two compiled exhibits say when that happens —
+`kimchiForkSpread_eq_zero_of_leaf_unstable` for a table that forces it, and
+`kimchiNodeFloor_eq_zero_of_forall_coins` for the coin quantifier that forced it before the node
+clause was narrowed. In the other direction, `spreadExhibit_extractRuns_sum_le` is this bound at a
+telescope that discharges the hypothesis at `σ₀ = 4` for every round count, and
+`spreadExhibit_card_le_extractRuns_sum` bounds that tape sum below by the number of tapes — so
+there the inequality is a real one at every depth. -/
+theorem kimchiExtractRuns_sum_le_of_forkSpread [DecidableEq F] [DecidableEq G] [DecidableEq T]
+    [Zero Pre] [DecidableEq Pre] [Fintype Pre]
+    (σ : SRS G) (b : Fin (2 ^ σ.k) → F) (v : F) (P : G) (expand : Pre → F)
+    (A : Zcash.Snark.OracleComp T Pre Pf)
+    (proofOf : Pf → OpeningProof F G σ.k) (prefixes : Pf → Fin (σ.k + 1) → T)
+    (dec : DecodesFromPrefixes σ proofOf prefixes) {σ₀ : ℕ}
+    (hspread : KimchiForkSpread σ b v P expand A proofOf prefixes dec σ₀) (O : T → Pre) :
+    (σ₀ - 1) ^ (σ.k + 1) * ∑ tape : Zcash.Snark.RecursiveForkTape Pre (σ.k + 1),
+        kimchiExtractRuns σ b v P expand A proofOf prefixes dec O tape.toCoins
+      ≤ (6 * Fintype.card Pre) ^ (σ.k + 1)
+          * Fintype.card (Zcash.Snark.RecursiveForkTape Pre (σ.k + 1)) :=
+  kimchiForkFrom_sum_runs_le_of_forkSpread σ b v P expand A proofOf prefixes dec hspread
+    σ.k 0 (Nat.zero_add σ.k) O
+
+/-! ### A satisfiable instance of the spread hypothesis
+
+Every theorem in the block above is an implication out of `KimchiForkSpread`, so once the node
+clause has been narrowed the honest question runs the other way: does that predicate have a model
+at `2 ≤ σ₀` at all? A hypothesis nothing satisfies makes the whole conditional layer vacuous just
+as surely as the empty-order coin trees did, and this project pins satisfiability rather than
+asserting it.
+
+This subsection exhibits a family, one member per round count `k`, over `T = Pf = Unit`,
+`Pre = Fin 5`, `F = G = ℚ` and the all-zero SRS. That adversary wins identically
+(`spreadExhibit_wins`) and its prefixes never move, so every reprogrammed run counts at every
+round: the leaf good set and each node good set contain all four nonzero prechallenges. Hence
+`KimchiForkSpread … 4` at every `k` (`spreadExhibit_forkSpread`), and
+`kimchiExtractRuns_sum_le_of_forkSpread` there reads a real inequality
+(`3 ^ (k + 1) * ∑ … ≤ 30 ^ (k + 1) * …`) rather than `0 ≤ …`.
+
+The node clause is what needed the work: it is vacuous only at `σ.k = 0`, and above that it asks
+for a certificate out of a positive-depth fork position. That is `spreadExhibit_forkFrom_isSome`,
+an induction on certificate depth over complete coin trees. Its three scans need one arithmetic
+fact between them — a challenge outside `{0, q₁, q₂}` — which is what fixes the alphabet at
+`Fin 5` and the floor at `4`.
+
+**What this does not settle: a spread at *deployed* parameters.** There `Pre = Fin (2 ^ 128)` and
+the adversary is a real one, which does not win identically; the floor would have to come from its
+success probability `ε`, and that derivation is the recorded open research
+(`docs/external-audit-followup.md` §O-1b). The exhibit deliberately does not touch it. What it
+does say is that the conditional layer above is non-vacuous at every certificate depth, not only
+at the Schnorr leaf.
+-/
+
+section SpreadExhibit
+
+/-- **The exhibit's SRS**, at an arbitrary round count `k`: `k` IPA rounds, and every group
+element `0`. The zero generators are what make `Wins` hold identically, whatever `k` is; the
+round count is a parameter precisely so that the node clause — vacuous only at `k = 0` — carries
+content at every `k ≥ 1`. Being a structure literal, its `k` field is *definitionally* `k`, so the
+`Fin (2 ^ σ.k)`-indexed data below typechecks without a cast. -/
+private def spreadExhibitSRS (k : ℕ) : SRS ℚ := { k := k, g := fun _ => 0, h := 0, U := 0 }
+
+/-- **The exhibit's evaluation vector**: the zero vector of length `2 ^ k`. -/
+private def spreadExhibitB (k : ℕ) : Fin (2 ^ (spreadExhibitSRS k).k) → ℚ := fun _ => 0
+
+/-- **The exhibit's adversary**: the machine that queries nothing and returns `()`, so
+`spreadExhibitA.run O = ()` on every table and on every reprogramming of one. It is
+`k`-independent — the adversary reads nothing, so there is nothing for the round count to
+change. -/
+private def spreadExhibitA : Zcash.Snark.OracleComp Unit (Fin 5) Unit := .pure ()
+
+/-- **The exhibit's endo-expansion**, constantly `0`. Injectivity and nonvanishing of `expand` are
+hypotheses of the *realization* lemmas, never of `KimchiForkSpread`, so the counting layer does not
+ask for them and the constant map is legal here. Also `k`-independent: `expand` is a map on the
+prechallenge alphabet, which no round count touches. -/
+private def spreadExhibitExpand : Fin 5 → ℚ := fun _ => 0
+
+/-- **The exhibit's proof map**: the all-zero opening proof, whatever the run — all `k` rounds of
+cross-terms included. -/
+private def spreadExhibitProofOf (k : ℕ) : Unit → OpeningProof ℚ ℚ (spreadExhibitSRS k).k :=
+  fun _ => { lr := fun _ => (0, 0), delta := 0, z1 := 0, z2 := 0, sg := 0 }
+
+/-- **The exhibit's prefix map**. `T = Unit`, so every prefix is the same point and the fork's
+stability test `prefixes p' j = t` closes by `rfl` — which is what lets every reprogrammed run
+count, at every round `j` and not only at the Schnorr one. -/
+private def spreadExhibitPrefixes (k : ℕ) :
+    Unit → Fin ((spreadExhibitSRS k).k + 1) → Unit := fun _ _ => ()
+
+/-- **Commit-then-challenge, discharged for the exhibit.** Both laws are `rfl` at the all-zero
+proof: `round_eq` compares `(0, 0)` with the constant `round` map at each of the `k` rounds, and
+`final_eq` does the same for `(δ, sg)`. (At `k = 0` the first is vacuous; nothing in the proof
+depends on which.) -/
+private def spreadExhibitDec (k : ℕ) :
+    DecodesFromPrefixes (spreadExhibitSRS k) (spreadExhibitProofOf k) (spreadExhibitPrefixes k)
+    where
+  round := fun _ => (0, 0)
+  final := fun _ => (0, 0)
+  round_eq := fun _ _ => rfl
+  final_eq := fun _ => rfl
+
+/-- **The exhibit's adversary wins on every table and every run, at every round count.** The one
+algebraic step, and it is arithmetic rather than geometry: with all-zero generators the recombined
+commitment is `0 + 0 • σ.U + ∑ (j : Fin k), ((u j)⁻¹ • 0 + u j • 0) = 0`, so the Schnorr equation
+reads `0 = 0` whatever `σ.U`, `σ.h` and the challenges are, and the `sg` check reads
+`0 = ∑ i, _ • (0 : ℚ) = 0`. Nothing here was ever about `k = 0`: the round sum is over an
+inhabited index type from `k = 1` on, but every summand is still `0`. -/
+private theorem spreadExhibit_wins (k : ℕ) (O : Unit → Fin 5) (p : Unit) :
+    Wins (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand (spreadExhibitProofOf k)
+      (spreadExhibitPrefixes k) O p := by
+  refine ⟨?_, ?_⟩ <;>
+    simp [spreadExhibitSRS, spreadExhibitProofOf, recombine, commitGen]
+
+/-- **Every reprogrammed leaf run succeeds.** The prefix test is `rfl` at `T = Unit` and the win
+test is `spreadExhibit_wins`, so `kimchiLeafCandidate` takes its `then` branch for every
+prechallenge `q` — including `q = 0`, which the good set then discards on its own nonzero
+clause. -/
+private theorem spreadExhibit_leafCandidate_isSome (k : ℕ) (O : Unit → Fin 5) (p : Unit)
+    (q : Fin 5) :
+    (kimchiLeafCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+      spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) O p q).output.isSome
+      = true := by
+  simp only [kimchiLeafCandidate]
+  rw [if_pos ⟨rfl, spreadExhibit_wins _ _ _⟩]
+  rfl
+
+/-- **`Fin 5` always holds a challenge the scans have not consumed.** A node runs three scans, and
+between them they exclude at most `{0, q₁, q₂}`; four nonzero prechallenges is therefore one more
+than the argument spends. This is the only arithmetic input to the fork-success induction below,
+and it is why the alphabet is `Fin 5` and the floor `σ₀ = 4`. Stated `∀`-closed over both
+exclusions because `decide` cannot see free variables. -/
+private theorem spreadExhibit_exists_fresh :
+    ∀ a b : Fin 5, ∃ u : Fin 5, u ≠ 0 ∧ u ≠ a ∧ u ≠ b := by decide
+
+/-- **The fork succeeds at every certificate depth, on every complete coin tree.** The heart of the
+exhibit, and the one genuine induction in it: against this adversary — which wins identically
+(`spreadExhibit_wins`) and whose prefixes never move (`T = Unit`) — `kimchiForkFrom` returns a
+certificate from *every* position it can be entered at, whatever the round count `k`, the
+certificate depth `e` and the round index `m`.
+
+The induction is on certificate depth, in the structural-recursion shape `kimchiForkFrom_runs_le`
+uses, and the hypothesis is `RecursiveForkCoins.Complete` — "every node's order list enumerates the
+whole alphabet, recursively" — rather than tape-derivedness, because `Complete`'s `.node` arm is
+literally what the scans need and matches `kimchiForkFrom`'s own pattern with no `toCoins` in the
+way. `RecursiveForkTape.toCoins_complete` supplies it for every tape, which is how the node clause
+of `KimchiForkSpread` reads it.
+
+At depth `0` the leaf arm takes its `then` branch by `spreadExhibit_wins`, and its single scan
+finds a challenge by `nextForkChallenge_isSome_of_good` at any `u ∉ {0, q₁}`. At depth `e + 1` the
+cached run succeeds by the induction hypothesis, and so does every reprogrammed one, so the first
+two scans succeed as before; the **third** scan is no harder —
+`nextForkChallenge_other_good_mem_rest` puts every *other* good challenge in the residual list
+`rest`, and `nextForkChallenge_output_fresh` identifies the seen set as `q₂ :: [q₁]`, so all that
+is needed is a `u ∉ {0, q₁, q₂}`. -/
+private theorem spreadExhibit_forkFrom_isSome (k : ℕ) :
+    {e : ℕ} → (m : ℕ) → (hme : m + e = (spreadExhibitSRS k).k) → (O : Unit → Fin 5) →
+      (p : Unit) → (coins : Zcash.Snark.RecursiveForkCoins (Fin 5) (e + 1)) → coins.Complete →
+      (kimchiForkFrom (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+          m hme O p coins).output.isSome = true
+  | 0, m, hme, O, p, .node order child, hc => by
+      obtain ⟨u, hu0, hu1, -⟩ := spreadExhibit_exists_fresh (O ()) (O ())
+      have hscan : (Zcash.Snark.nextForkChallenge
+          (fun q => kimchiLeafCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+            spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k)
+            (spreadExhibitPrefixes k) O p q) [O ()] order).output.isSome = true :=
+        Zcash.Snark.nextForkChallenge_isSome_of_good _ _ (hc.1 u) hu0 (by simpa using hu1)
+          (spreadExhibit_leafCandidate_isSome k O p u)
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · split
+        · rename_i hnone
+          exact absurd hnone (Option.isSome_iff_ne_none.mp hscan)
+        · rfl
+      · exact absurd (spreadExhibit_wins k O p) (by assumption)
+  | e + 1, m, hme, O, p, .node order child, hc => by
+      have htail : m + 1 + e = (spreadExhibitSRS k).k := by omega
+      have hcand : ∀ q, (kimchiScanCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+          spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k)
+          (spreadExhibitDec k) m hme O p child q).output.isSome = true := by
+        intro q
+        rw [kimchiScanCandidate]
+        simp only []
+        rw [if_pos trivial]
+        exact spreadExhibit_forkFrom_isSome k (m + 1) htail _ _ (child q) (hc.2 q)
+      have hfirst : (kimchiForkFrom (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+          spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k)
+          (spreadExhibitDec k) (m + 1) htail O p (child (O ()))).output.isSome = true :=
+        spreadExhibit_forkFrom_isSome k (m + 1) htail O p (child (O ())) (hc.2 _)
+      have hsecond : (Zcash.Snark.nextForkChallenge
+          (fun q => kimchiScanCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+            spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k)
+            (spreadExhibitDec k) m hme O p child q) [O ()] order).output.isSome = true := by
+        obtain ⟨u, hu0, hu1, -⟩ := spreadExhibit_exists_fresh (O ()) (O ())
+        exact Zcash.Snark.nextForkChallenge_isSome_of_good _ _ (hc.1 u) hu0
+          (by simpa using hu1) (hcand u)
+      rw [kimchiForkFrom]
+      simp only []
+      split
+      · rename_i hnone
+        exact absurd hnone (Option.isSome_iff_ne_none.mp hfirst)
+      · rename_i c₁ hfirstSome
+        split
+        · rename_i hnone
+          exact absurd hnone (Option.isSome_iff_ne_none.mp hsecond)
+        · rename_i q₂ c₂ rest seen hsecondSome
+          have hsec : (Zcash.Snark.nextForkChallenge
+              (fun q => kimchiScanCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+                spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k)
+                (spreadExhibitPrefixes k) (spreadExhibitDec k) m hme O p child q)
+              [O ()] order).output = some ((q₂, c₂), rest, seen) := hsecondSome
+          have hthird : (Zcash.Snark.nextForkChallenge
+              (fun q => kimchiScanCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+                spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k)
+                (spreadExhibitPrefixes k) (spreadExhibitDec k) m hme O p child q)
+              seen rest).output.isSome = true := by
+            obtain ⟨u, hu0, hu1, hu2⟩ := spreadExhibit_exists_fresh (O ()) q₂
+            have hmem := Zcash.Snark.nextForkChallenge_other_good_mem_rest _ _ hsec (hc.1 u) hu0
+              (by simpa using hu1) (hcand u) hu2
+            have hfresh := Zcash.Snark.nextForkChallenge_output_fresh _ _ hsec
+            refine Zcash.Snark.nextForkChallenge_isSome_of_good _ _ hmem hu0 ?_ (hcand u)
+            rw [hfresh.2.2]
+            simp [hu1, hu2]
+          split
+          · rename_i hnone
+            exact absurd hnone (Option.isSome_iff_ne_none.mp hthird)
+          · rfl
+
+/-- **Every reprogrammed node run succeeds**, the node counterpart of
+`spreadExhibit_leafCandidate_isSome`: at these parameters the prefix test of `kimchiScanCandidate`
+holds outright (again `T = Unit`), so the candidate is the recursive fork itself, which
+`spreadExhibit_forkFrom_isSome` returns a certificate from. Stated at complete child coins because
+that is what the node clause of `KimchiForkSpread` supplies, via
+`RecursiveForkTape.toCoins_complete`. -/
+private theorem spreadExhibit_scanCandidate_isSome (k : ℕ) {e : ℕ} (m : ℕ)
+    (hme : m + (e + 1) = (spreadExhibitSRS k).k) (O : Unit → Fin 5) (p : Unit)
+    (child : Fin 5 → Zcash.Snark.RecursiveForkCoins (Fin 5) (e + 1))
+    (hc : ∀ q, (child q).Complete) (q : Fin 5) :
+    (kimchiScanCandidate (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+      spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+      m hme O p child q).output.isSome = true := by
+  rw [kimchiScanCandidate]
+  simp only []
+  rw [if_pos trivial]
+  exact spreadExhibit_forkFrom_isSome k (m + 1) (by omega) _ _ (child q) (hc q)
+
+/-- **The exhibit satisfies the spread hypothesis at `σ₀ = 4`, at every round count.** Both
+clauses, and both by the same count: the good set contains `Finset.univ.erase 0`, which has
+`5 - 1 = 4` elements.
+
+For the **node** clause that is `spreadExhibit_scanCandidate_isSome` — every nonzero challenge
+reprograms to a run whose recursive fork still returns a certificate, by
+`spreadExhibit_forkFrom_isSome` at the tape-derived child coins. For the **leaf** clause it is
+`spreadExhibit_leafCandidate_isSome`, unchanged from the `k = 0` reading.
+
+This is what separates "unproved" from "unsatisfiable" for `KimchiForkSpread`: it remains true that
+nothing in this tree proves a spread at *deployed* parameters, and deriving one from an adversary's
+success probability is still the recorded open research. -/
+theorem spreadExhibit_forkSpread (k : ℕ) :
+    KimchiForkSpread (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand spreadExhibitA
+      (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k) 4 := by
+  constructor
+  · intro e m hme O child
+    have hsub : Finset.univ.erase (0 : Fin 5) ⊆
+        kimchiGoodChallenges (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+          m hme O (spreadExhibitA.run O) (fun q => (child q).toCoins) := by
+      intro q hq
+      rw [kimchiGoodChallenges, Finset.mem_filter]
+      exact ⟨Finset.mem_univ q, Finset.ne_of_mem_erase hq,
+        spreadExhibit_scanCandidate_isSome k m hme O (spreadExhibitA.run O) _
+          (fun w => Zcash.Snark.RecursiveForkTape.toCoins_complete (child w)) q⟩
+    calc (4 : ℕ) = (Finset.univ.erase (0 : Fin 5)).card := by
+          rw [Finset.card_erase_of_mem (Finset.mem_univ _), Finset.card_univ, Fintype.card_fin]
+      _ ≤ _ := Finset.card_le_card hsub
+  · intro O
+    have hsub : Finset.univ.erase (0 : Fin 5) ⊆
+        kimchiLeafGoodChallenges (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) O
+          (spreadExhibitA.run O) := by
+      intro q hq
+      rw [kimchiLeafGoodChallenges, Finset.mem_filter]
+      exact ⟨Finset.mem_univ q, Finset.ne_of_mem_erase hq,
+        spreadExhibit_leafCandidate_isSome k O (spreadExhibitA.run O) q⟩
+    calc (4 : ℕ) = (Finset.univ.erase (0 : Fin 5)).card := by
+          rw [Finset.card_erase_of_mem (Finset.mem_univ _), Finset.card_univ, Fintype.card_fin]
+      _ ≤ _ := Finset.card_le_card hsub
+
+/-- **`KimchiForkSpread` is satisfiable above the degenerate floor.** The type-clean headline of
+the exhibit: there really is a parameter telescope carrying a spread with `2 ≤ σ₀`, so the
+conditional block above is not an implication out of an empty hypothesis. Stated existentially so
+that it says nothing about *which* instance discharges it — the witness is
+`spreadExhibit_forkSpread` at round count `0`, and `exists_kimchiForkSpread_two_le_of_rounds` is
+the same claim at *every* round count. -/
+theorem exists_kimchiForkSpread_two_le :
+    ∃ (σ : SRS ℚ) (b : Fin (2 ^ σ.k) → ℚ) (v P : ℚ) (expand : Fin 5 → ℚ)
+      (A : Zcash.Snark.OracleComp Unit (Fin 5) Unit) (proofOf : Unit → OpeningProof ℚ ℚ σ.k)
+      (prefixes : Unit → Fin (σ.k + 1) → Unit) (dec : DecodesFromPrefixes σ proofOf prefixes)
+      (σ₀ : ℕ), 2 ≤ σ₀ ∧ KimchiForkSpread σ b v P expand A proofOf prefixes dec σ₀ :=
+  ⟨spreadExhibitSRS 0, spreadExhibitB 0, 0, 0, spreadExhibitExpand, spreadExhibitA,
+    spreadExhibitProofOf 0, spreadExhibitPrefixes 0, spreadExhibitDec 0, 4, by norm_num,
+    spreadExhibit_forkSpread 0⟩
+
+/-- **`KimchiForkSpread` is satisfiable above the degenerate floor at every round count.** The
+headline of this subsection, and the answer to the question the `σ.k = 0` exhibit left open: both
+clauses of the predicate — the node one included, which is vacuous only at `σ.k = 0` — have a model
+at `σ₀ = 4` for every `K`.
+
+The `σ.k = K` conjunct is what makes the statement say that. Without it the existential is
+discharged by the `K = 0` witness and adds nothing to `exists_kimchiForkSpread_two_le`; with it,
+the conditional layer above is non-vacuous at every certificate depth rather than only at the
+Schnorr leaf. What it does **not** say is anything about deployed parameters: see the subsection
+preamble. -/
+theorem exists_kimchiForkSpread_two_le_of_rounds (K : ℕ) :
+    ∃ (σ : SRS ℚ) (b : Fin (2 ^ σ.k) → ℚ) (v P : ℚ) (expand : Fin 5 → ℚ)
+      (A : Zcash.Snark.OracleComp Unit (Fin 5) Unit) (proofOf : Unit → OpeningProof ℚ ℚ σ.k)
+      (prefixes : Unit → Fin (σ.k + 1) → Unit) (dec : DecodesFromPrefixes σ proofOf prefixes)
+      (σ₀ : ℕ), σ.k = K ∧ 2 ≤ σ₀ ∧ KimchiForkSpread σ b v P expand A proofOf prefixes dec σ₀ :=
+  ⟨spreadExhibitSRS K, spreadExhibitB K, 0, 0, spreadExhibitExpand, spreadExhibitA,
+    spreadExhibitProofOf K, spreadExhibitPrefixes K, spreadExhibitDec K, 4, rfl, by norm_num,
+    spreadExhibit_forkSpread K⟩
+
+/-- **The conditional bound, at parameters that discharge its hypothesis, at every round count.**
+`kimchiExtractRuns_sum_le_of_forkSpread` applied to `spreadExhibit_forkSpread`: with `σ₀ = 4`,
+`σ.k = k` and `|Pre| = 5` the scale factor is `(σ₀ − 1)^(k+1) = 3^(k+1)` and the cap is
+`(6·|Pre|)^(k+1) = 30^(k+1)` per tape, so the conclusion is an inequality with a nonzero left-hand
+side rather than the `0 ≤ …` the un-narrowed hypothesis would have forced.
+`spreadExhibit_card_le_extractRuns_sum` is the companion that compiles "nonzero" instead of
+asserting it. -/
+theorem spreadExhibit_extractRuns_sum_le (k : ℕ) :
+    3 ^ (k + 1) * ∑ tape : Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1),
+        kimchiExtractRuns (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+          (fun _ => 0) tape.toCoins
+      ≤ 30 ^ (k + 1) * Fintype.card (Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1)) := by
+  -- `(spreadExhibitSRS k).k` is definitionally `k`, so each of the four differences between this
+  -- statement and the general bound at these parameters is a `rfl`; discharging them one at a
+  -- time keeps the closing match syntactic, which a single defeq check is not cheap enough to do.
+  have hscale : (3 : ℕ) ^ (k + 1) = (4 - 1) ^ ((spreadExhibitSRS k).k + 1) := rfl
+  have hcap : (30 : ℕ) ^ (k + 1)
+      = (6 * Fintype.card (Fin 5)) ^ ((spreadExhibitSRS k).k + 1) := rfl
+  have hcard : Fintype.card (Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1))
+      = Fintype.card (Zcash.Snark.RecursiveForkTape (Fin 5) ((spreadExhibitSRS k).k + 1)) := rfl
+  have hsum : (∑ tape : Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1),
+        kimchiExtractRuns (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+          (fun _ => 0) tape.toCoins)
+      = ∑ tape : Zcash.Snark.RecursiveForkTape (Fin 5) ((spreadExhibitSRS k).k + 1),
+        kimchiExtractRuns (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+          (fun _ => 0) tape.toCoins :=
+    rfl
+  rw [hscale, hcap, hcard, hsum]
+  exact kimchiExtractRuns_sum_le_of_forkSpread (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+    spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k)
+    (spreadExhibitDec k) (spreadExhibit_forkSpread k) (fun _ => 0)
+
+/-- **The exhibit's tape sum is at least the number of tapes**, so the inequality above is a real
+one at every round count rather than `0 ≤ 0`. `one_le_kimchiExtractRuns` says the extractor bills
+at least one run per tape; summing that floor over the uniform tape space is
+`Finset.card_nsmul_le_sum` at `n := 1`.
+
+This is the anti-vacuity companion of `spreadExhibit_extractRuns_sum_le`, in the shape this
+project pins rather than argues (`docs/negative-controls.md`): an upper bound on a sum says
+nothing if the sum could be provably `0`. -/
+theorem spreadExhibit_card_le_extractRuns_sum (k : ℕ) :
+    Fintype.card (Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1))
+      ≤ ∑ tape : Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1),
+        kimchiExtractRuns (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+          spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+          (fun _ => 0) tape.toCoins := by
+  have h := Finset.card_nsmul_le_sum
+    (Finset.univ : Finset (Zcash.Snark.RecursiveForkTape (Fin 5) (k + 1)))
+    (fun tape => kimchiExtractRuns (spreadExhibitSRS k) (spreadExhibitB k) 0 0 spreadExhibitExpand
+      spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k) (spreadExhibitDec k)
+      (fun _ => 0) tape.toCoins) 1
+    (fun tape _ => one_le_kimchiExtractRuns (spreadExhibitSRS k) (spreadExhibitB k) 0 0
+      spreadExhibitExpand spreadExhibitA (spreadExhibitProofOf k) (spreadExhibitPrefixes k)
+      (spreadExhibitDec k) (fun _ => 0) tape.toCoins)
+  simpa [Finset.card_univ] using h
+
+end SpreadExhibit
 
 /-! ## The escape layer over `Pre`
 

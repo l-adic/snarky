@@ -5,6 +5,10 @@ nothing else. There is NO Fiat-Shamir axiom: the random-oracle idealisation ente
 knowledge-soundness results only as the game's uniform challenge table. DL-binding is a
 hypothesis throughout, never an axiom.
 
+The root list is a deletion guard as well as an axiom guard: a name absent from the environment
+fails with `axiom-check root not in environment`, so removing a listed declaration — even
+together with its `roots.txt` line — cannot pass silently.
+
 Run from `formal/bulletproof-pcs/`:  lake env lean scripts/check_axioms.lean
 (or from `formal/`:                  lake env lean bulletproof-pcs/scripts/check_axioms.lean)
 -/
@@ -57,7 +61,69 @@ def roots : List Name :=
     -- and ruling out every `R` below 1 in the gate the endpoints actually read
     `Bulletproof.Ipa.Forking.DeployedFamily.exists_complete_reductionEfficient,
     `Bulletproof.Forking.one_le_kimchiExtractRuns,
-    `Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficient ]
+    `Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficient,
+    -- audit O-1b: the fork-spread counting layer, from the candidate definitions through the
+    -- two pointwise bounds and the depth induction to the tape-averaged bound at the extractor.
+    -- Conditional on a spread hypothesis nothing in this tree proves AT DEPLOYED PARAMETERS, so
+    -- these carry no trust on their own -- they are pinned for the existence guard, so that a
+    -- deletion sweep over an unconsumed layer fails loudly rather than silently. (The hypothesis
+    -- is not one nothing satisfies: see the exhibit pinned below.)
+    `Bulletproof.Forking.kimchiScanCandidate,
+    `Bulletproof.Forking.kimchiLeafCandidate,
+    `Bulletproof.Forking.kimchiGoodChallenges,
+    `Bulletproof.Forking.kimchiLeafGoodChallenges,
+    `Bulletproof.Forking.KimchiForkSpread,
+    `Bulletproof.Forking.kimchiForkFrom_leaf_runs_le,
+    `Bulletproof.Forking.kimchiForkFrom_node_runs_le,
+    `Bulletproof.Forking.kimchiScanCandidate_runs_cases,
+    `Bulletproof.Forking.kimchiForkFrom_sum_runs_le_leaf,
+    `Bulletproof.Forking.kimchiForkFrom_sum_runs_le_of_forkSpread,
+    `Bulletproof.Forking.kimchiExtractRuns_sum_le_of_forkSpread,
+    -- and its anti-vacuity companions: the empty-good-set lemma and the sigma0 = 0 corollary it
+    -- feeds, which is what keeps the diagonal narrowing of `KimchiForkSpread` honest
+    `Bulletproof.Forking.kimchiLeafGoodChallenges_eq_empty_of_unstable,
+    `Bulletproof.Forking.kimchiForkSpread_eq_zero_of_leaf_unstable,
+    -- the same pair on the coin axis (milestone M4''): empty sampling orders make the fork fail
+    -- outright, so a node floor over arbitrary coin trees forces sigma0 = 0 at every sigma.k >= 1
+    `Bulletproof.Forking.kimchiGoodChallenges_eq_empty_of_order_nil,
+    `Bulletproof.Forking.kimchiNodeFloor_eq_zero_of_forall_coins,
+    -- and the companion in the other direction (milestone M5) -- the hypothesis is satisfiable
+    -- above the degenerate floor at EVERY round count, over Pre = Fin 5 with sigma0 = 4, node
+    -- clause included; plus the applied bound there and its |tapes| <= sum anti-vacuity companion
+    `Bulletproof.Forking.spreadExhibit_forkSpread,
+    `Bulletproof.Forking.exists_kimchiForkSpread_two_le,
+    `Bulletproof.Forking.exists_kimchiForkSpread_two_le_of_rounds,
+    `Bulletproof.Forking.spreadExhibit_extractRuns_sum_le,
+    `Bulletproof.Forking.spreadExhibit_card_le_extractRuns_sum,
+    -- audit O-1b (M3', half 1): the CONDITIONAL/AVERAGE branch of the extractor's cost, on
+    -- upstream's joint table-and-tape axis. It stands beside the per-tape worst-case branch
+    -- pinned above and weakens none of it; both endpoints still read `ReductionEfficient`, and
+    -- nothing here discharges their `hEff`. Conditional on `KimchiForkSpreadFamily`, which has
+    -- no family-level witness in this tree, so like the block above these carry no trust of
+    -- their own and are pinned for the existence guard.
+    `Bulletproof.Ipa.Forking.DeployedFamily.KimchiForkSpreadFamily,
+    `Bulletproof.Ipa.Forking.DeployedFamily.attemptRuns_sum_le_of_forkSpreadFamily,
+    `Bulletproof.Ipa.Forking.DeployedFamily.ReductionEfficientAvg,
+    `Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficientAvg_of_forkSpreadFamily,
+    -- audit O-1b (M3', half 2): the PROBABILITY half of that same conditional/average branch,
+    -- and the twin endpoints reading it. The measured event moves onto the joint axis (the fork
+    -- tape is sampled, not fixed), the bound is unchanged, and `coins.Complete` is discharged
+    -- structurally rather than assumed. Like the counting half these carry no trust of their
+    -- own: the interesting `R` is still conditional on `KimchiForkSpreadFamily`, which has no
+    -- family-level witness in this tree, and the PRIMARY endpoints
+    -- `ipa{Vesta,Pallas}_knowledge_sound` still read the per-tape worst-case branch, unweakened.
+    -- The two anti-vacuity companions are what keep the average gate from being unreachable.
+    `Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficientAvg_of_worstCase,
+    `Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficientAvg,
+    `Bulletproof.Ipa.Forking.relationFinderAvg,
+    `Bulletproof.Ipa.Forking.DerivedUDLAdvantageLEAvg,
+    `Bulletproof.Ipa.Forking.derivedUDLAvg_iff_residual_measure,
+    `Bulletproof.Ipa.Forking.relation_summand_avg,
+    `Bulletproof.Ipa.Forking.residual_summand_avg,
+    `Bulletproof.Ipa.Forking.deployedExtract_noOpening_measure_le_of_textbookDL_avg,
+    `Bulletproof.Ipa.Forking.DeployedFamily.DiscreteLogRelationHardForAvg,
+    `Bulletproof.Ipa.Forking.ipaVesta_knowledge_sound_avg,
+    `Bulletproof.Ipa.Forking.ipaPallas_knowledge_sound_avg ]
 
 /-- The standard logical axioms, and nothing else — `native_decide` certificates are
     admitted separately, by defining module, in `isTrustedNativeDecide` below.
