@@ -13,7 +13,7 @@ theorem `reduce_eval` — the property the PS package checks by QuickCheck, prov
 The public surface is the PS export list, def for def; the public theorems are
 `CVar.reduce_eval`, the fold-evaluation lemmas `CVar.eval_add_`/`eval_scale_`/`eval_sub_`,
 and their inversions `eval_scale_inv`/`eval_sub_inv` (a successful evaluation evaluates
-the operands — how the gadget laws in `Snarky.Laws` read fresh variables out of
+the operands — how the gadget laws read fresh variables out of
 fold-wrapped constraint slots); `DSL/Field.sum_eval` consumes the fold lemmas too.
 The affine-form helpers (`insertTerm`, `unionTerms`, `mergeConst`, `evalTerms`) and every
 supporting lemma are `private` — PS likewise keeps its `reduce'` internal.
@@ -36,7 +36,7 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 - `EvalError` variants: `unassigned` ↔ PS `MissingVariable`; `custom` subsumes PS
   `FailedAssertion`/`DivisionByZero`; `conflict` and `unsatisfiedConstraint` are
   prover-side additions (our prover may never overwrite an assignment — see
-  `Snarky.Laws`); PS `WithContext` awaits `labelOp` error attribution.
+  `Backend/Prover`); PS `WithContext` awaits `labelOp` error attribution.
 
 Definitions keep the weakest classes their bodies need (`Add`, `Mul`, `Zero`, `One`,
 `Neg`, `Sub`, `DecidableEq`); the reduction lemmas assume `CommSemiring` via the targeted
@@ -136,8 +136,7 @@ def eval [Add F] [Mul F] : CVar F → (Variable → Option F) → Except EvalErr
 /-! ## The folds are evaluation-preserving
 
 The smart constructors pre-fold constants; these lemmas say the folds cannot change a
-successful evaluation — what connects gadget fast paths to the gadget laws in
-`Snarky.Laws`. -/
+successful evaluation — what connects gadget fast paths to the gadget laws. -/
 
 /-- `add_` evaluates like the raw constructor. -/
 theorem eval_add_ [Add F] [Mul F] (a b : CVar F) (env : Variable → Option F) :

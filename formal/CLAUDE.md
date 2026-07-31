@@ -18,9 +18,11 @@ PureScript circuit-building DSL
 (`packages/snarky/src/Snarky/Circuit/DSL/Monad.purs`). It models how constraint systems
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
-mirroring `Snarky.Backend.Builder`/`Prover`, and the interpreter laws in
-`Snarky/Laws.lean` (witness-independence of the builder, builder/prover allocation
-agreement, and completeness: a successful prover run satisfies every built constraint).
+mirroring `Snarky.Backend.Builder`/`Prover`, and the Lean-only laws beside their
+subjects: interpreter laws in `Backend/{Builder,Prover}` (witness-independence,
+builder/prover allocation agreement, completeness — a successful prover run satisfies
+every built constraint, plus the bind-composition laws) and per-gadget
+soundness/completeness beside each gadget in `Circuit/DSL/{Field,Boolean}`.
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete

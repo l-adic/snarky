@@ -99,7 +99,7 @@ booleanity the caller's constraints already force; witnessed booleans go through
 def BoolVar.unchecked (x : CVar F) : BoolVar F := ⟨x⟩
 
 /-- The field encoding of a boolean — the single entry of `CircuitType Bool`'s
-`valueToFields`, named so the gadget laws in `Snarky.Laws` can state their conclusions
+`valueToFields`, named so the gadget laws can state their conclusions
 through it (the relation the faithfulness arc composes over). -/
 def bit [Zero F] [One F] (b : Bool) : F := if b then 1 else 0
 
@@ -109,6 +109,16 @@ instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
   fieldsToValue v := decide (v[0] ≠ 0)
   varToFields b := #v[b.toCVar]
   fieldsToVar v := ⟨v[0]⟩
+
+/-- The encoding is multiplicative: bits multiply as booleans conjoin. -/
+theorem bit_mul [MulZeroOneClass F] (a b : Bool) :
+    (bit a : F) * bit b = bit (a && b) := by
+  cases a <;> cases b <;> simp [bit]
+
+/-- A field value that encodes a bit is `0` or `1`. -/
+theorem bit_cases {av : F} {ab : Bool} [Zero F] [One F]
+    (h : av = bit ab) : av = 0 ∨ av = 1 := by
+  cases ab <;> simp [bit] at h <;> [exact Or.inl h; exact Or.inr h]
 
 /-- Wrap a type to skip its `check` constraints (PS `UnChecked a`): the encoding
 delegates to the wrapped instance, and the `CheckedType` instance (in `Circuit/DSL/Monad`)

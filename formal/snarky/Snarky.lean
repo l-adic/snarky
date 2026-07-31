@@ -9,7 +9,6 @@ import Snarky.Backend.Prover
 import Snarky.Vec
 import Snarky.Constraint.Basic
 import Snarky.DSL
-import Snarky.Laws
 import Snarky.Example
 
 /-!
@@ -17,6 +16,7 @@ import Snarky.Example
 
 Root module of the `Snarky` library: a Lean port of the PureScript circuit DSL
 (`Snarky.Circuit.DSL.Monad` and its two backend interpreters). See each module's header
-for the correspondence with the `.purs` sources, and `Snarky/Laws.lean` for the theorems
-the embedding exists to state.
+for the correspondence with the `.purs` sources. The theorems the embedding exists to
+state live beside their subjects: the interpreter laws in `Backend/{Builder,Prover}`, the
+D12 gadget laws beside their gadgets in `Circuit/DSL/{Field,Boolean}`.
 -/

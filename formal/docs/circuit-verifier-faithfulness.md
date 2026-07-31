@@ -44,8 +44,8 @@ sponge/MSM loops — it would consume the same per-op lemmas and bind laws uncha
 
 The layers, bottom to top:
 
-1. **Gadget laws** (plan D12; first instance `Snarky.equals_sound`/`equals_complete` in
-   `Snarky/Laws.lean`): per-gadget soundness — every assignment satisfying the
+1. **Gadget laws** (plan D12; `Snarky.equals_sound`/`equals_complete` and the rest, each
+   beside its gadget in `Circuit/DSL/{Field,Boolean}`): per-gadget soundness — every assignment satisfying the
    constraints `build` emits pins the result's evaluation — and completeness — the
    honest `prove` run succeeds from any fresh-enough assignment. Each law reads off a
    definitional shape lemma of the built circuit, so a drifted gadget cannot keep its

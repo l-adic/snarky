@@ -23,7 +23,7 @@ rendering is a pure function `Variable → Option F`, which collapses most of th
 
 Lean-only additions with no PS analogue: the extension order `Assignments.Le` ("every
 assigned variable keeps its value") and its lemmas, including `CVar.eval_le`. They are the
-backbone of the interpreter laws in `Snarky.Laws`: the prover only ever *extends*
+backbone of the interpreter laws in `Backend/{Builder,Prover}`: the prover only ever *extends*
 assignments (via the guarded `extendPairs`), so constraint checks performed early in a run
 remain valid against the final assignment.
 

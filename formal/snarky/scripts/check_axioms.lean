@@ -16,7 +16,7 @@ open Lean Lean.Elab.Command
 
 namespace Snarky.CheckAxioms
 
-/-- The headline interpreter and gadget laws (see `Snarky/Laws.lean`). -/
+/-- The headline interpreter and gadget laws (beside their interpreters and gadgets). -/
 def roots : List Name :=
   [ `Snarky.build_eraseWitness,
     `Snarky.prove_assignments_le,

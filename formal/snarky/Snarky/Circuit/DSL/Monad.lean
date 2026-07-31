@@ -17,12 +17,12 @@ the witness monad `AsProver`, the circuit monad `CircuitM`, the core operations
 The PS original is DIRECT (final-tagless): `Snarky f c r a = CircuitOps f c r -> Effect a`
 — a bind is a closure, an op is a record-field call, and the two interpreters are just two
 `CircuitOps` records over mutable refs. That shape is uninspectable, so none of the
-interpreter laws in `Snarky.Laws` would even be statable. This port reifies the op tree
+interpreter laws would even be statable. This port reifies the op tree
 instead: `CircuitM` has one constructor per `CircuitOps` field, with continuations stored
 explicitly. The embedding is deep in the *circuit structure* only — witness payloads at
 `existsOp`/`assignOp` are semantic `AsProver` functions, not syntax. Continuations receive
 only freshly allocated `Variable`s, never field values, so a circuit's shape provably
-cannot depend on witness data (`Snarky.Laws.build_eq_of_eraseWitness`). The interpreters
+cannot depend on witness data (`Snarky.build_eq_of_eraseWitness`). The interpreters
 are pure recursive functions: `Snarky.build` (PS `Backend.Builder`) and `Snarky.prove`
 (PS `Backend.Prover`).
 
@@ -32,7 +32,7 @@ are pure recursive functions: `Snarky.build` (PS `Backend.Builder`) and `Snarky.
   dropped; `AsProver` is the pure reader-except stack over `Assignments`. Compilation is
   unaffected: advice is only reachable from witness payloads, which `build` never
   evaluates (PS compiles with the throwing `badAdvice` for the same reason; here
-  `Snarky.Laws.build_eq_of_eraseWitness` proves it). If an advice-consuming circuit ever
+  `Snarky.build_eq_of_eraseWitness` proves it). If an advice-consuming circuit ever
   lands, the rendering is an extra reader component of `AsProver` ONLY — never a
   circuit-level function argument `A → CircuitM …`, which would demand advice at compile
   time and let the circuit's shape depend on it, destroying both properties above.
@@ -248,14 +248,14 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
       .error (.custom "readVar: size mismatch")
 
 /-- `mul`'s witness computation: the product of the operands' values. Public only for
-the gadget laws in `Snarky.Laws`. -/
+the gadget laws. -/
 def mulWit [Add F] [Mul F] (x y : FVar F) : AsProver F F := do
   let xv ← AsProver.readCVar x
   let yv ← AsProver.readCVar y
   pure (xv * yv)
 
 /-- `mul`'s witnessing branch: witness the product, pin it with one `r1cs` constraint.
-Split out so the gadget laws in `Snarky.Laws` quantify over it uniformly. -/
+Split out so the gadget laws (in `DSL/Field`, its family module) quantify over it uniformly. -/
 def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
   let z ← witness (val := F) (mulWit x y)
   addConstraint (BasicSystem.r1cs x y z)
@@ -273,14 +273,14 @@ def mul [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x y 
   | x, y => mulCore x y
 
 /-- `inv`'s witness computation: the inverse, failing on zero (PS `DivisionByZero`).
-Public only for the gadget laws in `Snarky.Laws`. -/
+Public only for the gadget laws. -/
 def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
   let xv ← AsProver.readCVar x
   if xv = 0 then AsProver.throw "inv: division by zero"
   else pure xv⁻¹
 
 /-- `inv`'s witnessing branch: witness the inverse, pin it with `x · xInv = 1`. Split
-out so the gadget laws in `Snarky.Laws` quantify over it uniformly. -/
+out so the gadget laws (in `DSL/Field`) quantify over it uniformly. -/
 def invCore [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
     CircuitM F c (FVar F) := do
   let xInv ← witness (val := F) (invWit x)

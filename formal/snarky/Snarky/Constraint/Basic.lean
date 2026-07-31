@@ -115,6 +115,19 @@ class BasicSystem (F c : Type u) where
   /-- The booleanity constraint: `x` must evaluate to `0` or `1`. -/
   boolean : (x : CVar F) → c
 
+/-- Inversion for a satisfied `r1cs` row: all three operands evaluate and the product
+identity holds — how the gadget laws read values out of constraint slots. -/
+theorem Basic.r1cs_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {l r o : CVar F} {env : Assignments F}
+    (h : (Basic.r1cs l r o).holds env = true) :
+    ∃ x y z, l.eval env = .ok x ∧ r.eval env = .ok y ∧ o.eval env = .ok z ∧ x * y = z := by
+  have h' : (match l.eval env, r.eval env, o.eval env with
+      | .ok x, .ok y, .ok z => decide (x * y = z)
+      | _, _, _ => false) = true := h
+  split at h'
+  · next x y z hx hy hz => exact ⟨x, y, z, hx, hy, hz, by simpa using h'⟩
+  · cases h'
+
 /-- `Basic` is the reference `BasicSystem` instance: each method is its constructor. -/
 instance : BasicSystem F (Basic F) where
   r1cs := .r1cs

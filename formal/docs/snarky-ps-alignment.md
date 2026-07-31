@@ -25,7 +25,9 @@ core package, and its absence is the biggest functional gap in the port.
 **What "follows the layout" does NOT mean.** The PS package is final-tagless
 (`Snarky f c r a = CircuitOps f c r -> Effect a` — uninspectable), so none of the interpreter
 laws are statable against it. The Lean deep embedding (`CircuitM`, one constructor per
-`CircuitOps` field) is the reason `Snarky/Laws.lean` can exist and is **kept exactly as is**.
+`CircuitOps` field) is the reason the laws can exist and is **kept exactly as is**. The laws
+live BESIDE their subjects (interpreter laws in `Backend/{Builder,Prover}`, gadget laws
+beside their gadgets — D3/D12; the dedicated `Laws.lean` was dissolved at step 10b).
 Alignment is about the module tree, the API names, and coverage — not the embedding style.
 
 **Invariants through every step:**
@@ -94,8 +96,8 @@ Known rot, fixed for free by the migration's doc pass:
 ## 2. Decisions
 
 **D1 — layout mirrors PS; embedding does not.** The deep `CircuitM` stays. File paths mirror
-the `.purs` tree so the original is the map; `Laws.lean` is the one sanctioned extra module
-(it is the reason the port exists).
+the `.purs` tree so the original is the map; the Lean-only theorems (the reason the port
+exists) claim no extra module — they live beside their subjects (D3).
 
 **D2 — namespaces stay flat; paths move.** Declarations today live in flat `Snarky.*`
 (`Snarky.build`, `Snarky.prove_complete`) with dot-namespaces only from type names
@@ -105,10 +107,16 @@ its gate split also kept the namespace fixed). The kimchi package's "namespace m
 convention is *not* imported here; for a 20-file package, `Snarky.*` is unambiguous and
 name-stability is worth more.
 
-**D3 — proofs live beside definitions; interpreter-spanning theorems in `Laws.lean`.**
-Per-module lemmas (`eval_le`, `holds_mono`, gadget correctness) sit with their definitions,
-kimchi house style. Only the theorems that quantify over *both* interpreters (witness
-independence, agreement, completeness) stay in `Laws.lean`.
+**D3 — proofs live beside definitions, with no exceptions** (revised at step 10b; the
+original clause parked interpreter-spanning theorems in a dedicated `Laws.lean`, since
+dissolved). Per-module lemmas sit with their definitions, kimchi house style; the
+interpreter laws sit beside the interpreters (`build_eraseWitness`, `build_bind` in
+`Backend/Builder`; `prove_assignments_le`, `prove_build_agrees`, `prove_complete`,
+`prove_bind`, `prove_witnessCore` in `Backend/Prover`); gadget laws sit beside their
+gadgets — for which the gadget modules import the backend, a deliberate deviation from the
+PS import graph (adjacency over layering). One cycle forces one displacement: the
+interpreters import `Circuit/DSL/Monad`, so its gadgets' laws (`mul`/`inv`/`div`,
+`and`/`or`) live with their gadget families (`DSL/Field`, `DSL/Boolean`).
 
 **D4 — `Constraint/Basic` is refounded on the PS shape.** Concrete
 `inductive Basic F | r1cs | equal | square | boolean` with `holds : Basic F → Assignments F →
@@ -218,7 +226,7 @@ Relocations (no semantic change; each lands at its §5 walk step):
 | `Snarky/Backend/Builder.lean` | `Snarky/Builder.lean` | `allocRange`, `Built`, `build`, `constraints` |
 | `Snarky/Backend/Prover.lean` | `Snarky/Prover.lean` | `Proved`, `prove` |
 | `Snarky/Circuit/DSL.lean` | `Snarky/DSL.lean` | ends as the pure re-export barrel: its combinators disperse to their PS homes (`witness`/`readVar`/`mul` → `DSL/Monad`, `assertEq` → `DSL/Assert`) over the walk |
-| `Snarky/Laws.lean` | `Snarky/Laws.lean` | unchanged |
+| `Snarky/Laws.lean` | — | dissolved (step 10b): interpreter laws beside the interpreters, gadget laws beside the gadgets |
 | `Snarky/Vec.lean` | `Snarky/Vec.lean` | unchanged |
 | `Snarky/Example.lean` | `Snarky/Example.lean` | unchanged (grows per-gadget examples later) |
 | `Snarky/Kimchi/*` | `Snarky/Kimchi/*` | untouched (out of scope; stale-comment fixes only) |
@@ -309,6 +317,11 @@ separate sign-offs on the resulting files.
   PS home); D12 laws for all of them plus `neq` (a step-9b gap) — `xor`/`select` with the
   full shape-lemma treatment, `and`/`or`/`neq` composed; the `any`/`all` three-plus-case
   laws are the step's recorded obligation (they need a characteristic-bound hypothesis).
+- [x] 10b. (inserted) Laws beside their subjects: `Laws.lean` dissolved — interpreter laws
+  to `Backend/{Builder,Prover}`, gadget laws beside their gadgets (D1/D3/D12 revised),
+  `Basic.r1cs_inv` beside `Basic.holds`, the `bit` lemmas beside `bit`; plus
+  `prove_witnessCore`, the generic one-variable honest-run lemma that collapses each
+  such gadget's run lemma to its two facts.
 - [ ] 11. `Snarky/Circuit/DSL/Assert.lean` — new; `assertEq` migrates here from the barrel
   (its PS home).
 - [ ] 12. `Snarky/Circuit/DSL/Bits.lean` — new.

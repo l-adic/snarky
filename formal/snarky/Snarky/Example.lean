@@ -1,7 +1,6 @@
 import Mathlib.Algebra.Field.ZMod
 import Snarky.DSL
 import Snarky.Constraint.Basic
-import Snarky.Laws
 
 /-!
 # End-to-end examples over the `Basic` backend
