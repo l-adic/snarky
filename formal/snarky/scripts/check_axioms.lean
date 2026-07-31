@@ -23,8 +23,20 @@ def roots : List Name :=
     `Snarky.prove_build_agrees,
     `Snarky.prove_complete,
     `Snarky.CVar.eval_le,
+    `Snarky.build_bind,
+    `Snarky.prove_bind,
     `Snarky.equals_sound,
     `Snarky.equals_complete,
+    `Snarky.mul_sound,
+    `Snarky.mul_complete,
+    `Snarky.inv_sound,
+    `Snarky.inv_complete,
+    `Snarky.square_sound,
+    `Snarky.square_complete,
+    `Snarky.div_sound,
+    `Snarky.div_complete,
+    `Snarky.pow_sound,
+    `Snarky.pow_complete,
     `Snarky.sum_eval ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/

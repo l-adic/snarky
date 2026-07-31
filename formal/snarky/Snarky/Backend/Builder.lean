@@ -85,4 +85,23 @@ finished `CircuitBuilderState`). -/
 def constraints (m : CircuitM F c α) : List c :=
   (build m 0).constraints
 
+/-- **Building a sequence splits**: the tail builds from the head's result and final
+counter, and the constraints concatenate in emission order — the composition law gadget
+soundness chains through (`Snarky.Laws`, D12). -/
+theorem build_bind (m : CircuitM F c α) (f : α → CircuitM F c β) (nv : Nat) :
+    build (m >>= f) nv =
+      ⟨(build (f (build m nv).result) (build m nv).nextVar).result,
+       (build (f (build m nv).result) (build m nv).nextVar).nextVar,
+       (build m nv).constraints
+         ++ (build (f (build m nv).result) (build m nv).nextVar).constraints⟩ := by
+  show build (CircuitM.bind m f) nv = _
+  induction m generalizing nv with
+  | pure a => rfl
+  | freshOp k ih => exact ih ..
+  | addConstraintOp con k ih =>
+    simp only [CircuitM.bind, build, ih, List.cons_append]
+  | existsOp n wit k ih => exact ih ..
+  | assignOp vs wit k ih => exact ih ..
+  | labelOp s k ih => exact ih ..
+
 end Snarky

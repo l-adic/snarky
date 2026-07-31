@@ -64,6 +64,13 @@ only ever grow during a prover run. -/
 protected def Le (a a' : Assignments F) : Prop :=
   ∀ v x, a v = some x → a' v = some x
 
+/-- `a.FreshFrom nv`: nothing at or above the counter is assigned. The invariant gadget
+completeness runs from — and re-establishes in its conclusion, since there is no general
+preservation theorem: `assignOp` may legally assign into the fresh region (that is what
+`Backend/Compile`'s solver will do to back-fill outputs). -/
+protected def FreshFrom (a : Assignments F) (nv : Nat) : Prop :=
+  ∀ v, nv ≤ v → a v = none
+
 protected theorem Le.refl (a : Assignments F) : a.Le a := fun _ _ h => h
 
 protected theorem Le.trans {a b c : Assignments F} (h₁ : a.Le b) (h₂ : b.Le c) : a.Le c :=

@@ -298,6 +298,11 @@ separate sign-offs on the resulting files.
 - [x] 8. `Snarky/Laws.lean` — no relocation; content review of the five theorems and their
   root entries.
 - [x] 9. `Snarky/Circuit/DSL/Field.lean` — new; targeted Mathlib `Field` import (D6).
+- [x] 9b. (inserted) The interpreter-composition layer and the gadget-law backfill:
+  `build_bind`/`prove_bind` (the bind laws), `Assignments.FreshFrom` (carried per-gadget —
+  `assignOp` forbids a general preservation theorem), and D12 laws for every landed gadget
+  (`mul`/`inv`/`square` directly; `div`/`pow` compositionally through the bind laws) — the
+  lemma library of `formal/docs/circuit-verifier-faithfulness.md`.
 - [ ] 10. `Snarky/Circuit/DSL/Boolean.lean` — new.
 - [ ] 11. `Snarky/Circuit/DSL/Assert.lean` — new; `assertEq` migrates here from the barrel
   (its PS home).

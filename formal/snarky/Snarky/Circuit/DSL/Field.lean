@@ -34,10 +34,11 @@ are stated against the interpreters, never re-derived over the field alone. Inte
 theorems cannot live here (this module mirrors the PS layering, below the backend), so
 they sit with the other interpreter-spanning theorems in `Snarky.Laws` (D3): the `eq`
 rows are `Snarky.equals_sound`/`equals_complete` there, plus the fixed-input `decide`
-examples in `Snarky.Example`. The `sum` row is `sum_eval` below (`sum` is pure — its
-evaluation IS its interpreter semantics). The `mul`/`inv`/`div` rows and `square`/`pow`
-await their D12-form laws — an open obligation, landing with the interpreter-composition
-layer. The `negate` row is `Circuit/CVar` algebra under `reduce_eval`; `seal` is the
+examples in `Snarky.Example`; the `mul`/`inv`/`div` rows and `square`/`pow` likewise
+(`div_sound`/`pow_sound` and their completeness twins are proved compositionally,
+through the bind laws). The `sum` row is `sum_eval` below (`sum` is pure — its
+evaluation IS its interpreter semantics). The `negate` row is `Circuit/CVar` algebra
+under `reduce_eval`; `seal` is the
 `DSL/Utils` follow-on (plan §6). The spec's end-to-end shape — compile, solve against
 public inputs, compare with the model function — awaits `Backend/Compile` (walk
 step 14).
@@ -96,8 +97,9 @@ def sum [Add F] [Zero F] (xs : List (FVar F)) : FVar F :=
 
 /-- Fuel-indexed body of `pow`, structural on the fuel so the definition kernel-reduces
 (`decide`-friendly; PS recurses on `n / 2` directly). The fuel-exhausted branch is
-unreachable: `pow` seeds fuel `n`, and the exponent at least halves each step. -/
-private def powGo [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] :
+unreachable: `pow` seeds fuel `n`, and the exponent at least halves each step. Public
+only for the gadget laws in `Snarky.Laws`. -/
+def powGo [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] :
     Nat → FVar F → Nat → CircuitM F c (FVar F)
   | _, _, 0 => pure (.const 1)
   | _, x, 1 => pure x
@@ -114,17 +116,25 @@ def pow [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
     (x : FVar F) (n : Nat) : CircuitM F c (FVar F) :=
   powGo n x n
 
+/-- `square`'s witness computation: the square of the operand's value. Public only for
+the gadget laws in `Snarky.Laws`. -/
+def squareWit [Add F] [Mul F] (x : FVar F) : AsProver F F := do
+  let xv ← AsProver.readCVar x
+  pure (xv * xv)
+
+/-- `square`'s witnessing branch: witness the square, pin it with one `square`
+constraint. Split out so the gadget laws in `Snarky.Laws` quantify over it uniformly. -/
+def squareCore [Add F] [Mul F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) := do
+  let z ← witness (val := F) (squareWit x)
+  addConstraint (BasicSystem.square x z)
+  pure z
+
 /-- Square a field variable via the dedicated `square` constraint rather than `r1cs`
 (PS `square_`, matching OCaml's `Checked.square`). A constant folds. -/
 def square [Add F] [Mul F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
   match x with
   | .const f => pure (.const (f * f))
-  | x => do
-    let z ← witness (val := F) do
-      let xv ← AsProver.readCVar x
-      pure (xv * xv)
-    addConstraint (BasicSystem.square x z)
-    pure z
+  | x => squareCore x
 
 /-! ## The sum law (D9: the sum spec row) -/
 

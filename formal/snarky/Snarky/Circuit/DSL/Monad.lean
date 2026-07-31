@@ -246,6 +246,20 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
     else
       .error (.custom "readVar: size mismatch")
 
+/-- `mul`'s witness computation: the product of the operands' values. Public only for
+the gadget laws in `Snarky.Laws`. -/
+def mulWit [Add F] [Mul F] (x y : FVar F) : AsProver F F := do
+  let xv ← AsProver.readCVar x
+  let yv ← AsProver.readCVar y
+  pure (xv * yv)
+
+/-- `mul`'s witnessing branch: witness the product, pin it with one `r1cs` constraint.
+Split out so the gadget laws in `Snarky.Laws` quantify over it uniformly. -/
+def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
+  let z ← witness (val := F) (mulWit x y)
+  addConstraint (BasicSystem.r1cs x y z)
+  pure z
+
 /-- Multiply two field variables (PS `mul_`). Constants fold without constraining: two
 constants multiply out, and a constant times an expression is `scale_`. Otherwise the
 product is witnessed and pinned with one `r1cs` constraint. -/
@@ -255,13 +269,22 @@ def mul [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x y 
   | .const a, .const b => pure (.const (a * b))
   | .const a, y => pure (CVar.scale_ a y)
   | x, .const b => pure (CVar.scale_ b x)
-  | x, y => do
-    let z ← witness (val := F) do
-      let xv ← AsProver.readCVar x
-      let yv ← AsProver.readCVar y
-      pure (xv * yv)
-    addConstraint (BasicSystem.r1cs x y z)
-    pure z
+  | x, y => mulCore x y
+
+/-- `inv`'s witness computation: the inverse, failing on zero (PS `DivisionByZero`).
+Public only for the gadget laws in `Snarky.Laws`. -/
+def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
+  let xv ← AsProver.readCVar x
+  if xv = 0 then AsProver.throw "inv: division by zero"
+  else pure xv⁻¹
+
+/-- `inv`'s witnessing branch: witness the inverse, pin it with `x · xInv = 1`. Split
+out so the gadget laws in `Snarky.Laws` quantify over it uniformly. -/
+def invCore [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
+    CircuitM F c (FVar F) := do
+  let xInv ← witness (val := F) (invWit x)
+  addConstraint (BasicSystem.r1cs x xInv (.const 1))
+  pure xInv
 
 /-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1` (PS `inv_`).
 A constant folds to its constant inverse — total where PS crashes on the constant zero
@@ -270,13 +293,7 @@ argument fails the witness computation, as in PS (`DivisionByZero`). -/
 def inv [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
   match x with
   | .const a => pure (.const a⁻¹)
-  | x => do
-    let xInv ← witness (val := F) do
-      let xv ← AsProver.readCVar x
-      if xv = 0 then AsProver.throw "inv: division by zero"
-      else pure xv⁻¹
-    addConstraint (BasicSystem.r1cs x xInv (.const 1))
-    pure xInv
+  | x => invCore x
 
 /-- Divide field variables: `x · y⁻¹`, one `inv` then one `mul` (PS `div_`). A zero
 divisor fails in `inv`'s witness computation. -/

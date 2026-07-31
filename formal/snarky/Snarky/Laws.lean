@@ -30,9 +30,12 @@ final-tagless PureScript original:
    semantics; completeness runs the honest prover from any fresh-enough assignment.
    Stated over the reference `Basic` backend (transport to other backends arrives with a
    lawful-`BasicSystem` consumer); each law reads off a definitional shape lemma for the
-   built circuit, so a drifted gadget cannot keep its law. First instance:
-   `equals_sound`/`equals_complete`. They live here, not beside their gadgets, because
-   the gadget modules mirror the PS layering, below the backend (D3).
+   built circuit, so a drifted gadget cannot keep its law; composite gadgets compose
+   their children's laws through `build_bind`/`prove_bind` (`div` chains `inv` into
+   `mul`; `pow` inducts over its fuel) rather than re-reducing their trees. The roster:
+   `equals`, `mul`, `inv`, `square` directly, `div` and `pow` compositionally. They live
+   here, not beside their gadgets, because the gadget modules mirror the PS layering,
+   below the backend (D3).
 
 The interpreter laws (all but the corollary `build_eq_of_eraseWitness`), the gadget
 laws, and `CVar.eval_le` are audited roots — `roots.txt` is the manifest,
@@ -286,7 +289,7 @@ private theorem equalsCore_sound {F : Type} [Field F] [DecidableEq F] {z : CVar 
 identities: the prover succeeds, assigning `r` at `nv` and `zInv` at `nv + 1`. -/
 private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
     {nv : Nat} {env : Assignments F} {zv v₁ v₂ : F} (hz : z.eval env = .ok zv)
-    (hfresh : ∀ v, nv ≤ v → env v = none)
+    (hfresh : env.FreshFrom nv)
     (hwit : (equalsWit z env).map
         (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
       = .ok ⟨#[v₁, v₂], rfl⟩)
@@ -334,9 +337,10 @@ private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
 honest prover run succeeds and the answer bit is correct. -/
 private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CVar F}
     {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
-    (hfresh : ∀ v, nv ≤ v → env v = none) :
+    (hfresh : env.FreshFrom nv) :
     ∃ out, prove Basic.holds (equalsCore (c := Basic F) z) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (if zv = 0 then 1 else 0) := by
+      out.result.toCVar.eval out.assignments = .ok (if zv = 0 then 1 else 0) ∧
+      out.assignments.FreshFrom out.nextVar := by
   obtain ⟨hc₁, hc₂⟩ := equals_checks (F := F) zv
   have hwit : (equalsWit z env).map
       (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
@@ -344,9 +348,15 @@ private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CV
     by_cases hzv : zv = 0 <;>
       simp [equalsWit, AsProver.readCVar, hz, hzv, Bind.bind, ReaderT.bind, Except.bind,
         Pure.pure, ReaderT.pure, Except.pure, Except.map, CircuitType.valueToFields]
-  refine ⟨_, equalsCore_run hz hfresh hwit hc₁ hc₂, ?_⟩
-  show (CVar.var nv).eval _ = _
-  simp [CVar.eval, Assignments.extend]
+  refine ⟨_, equalsCore_run hz hfresh hwit hc₁ hc₂, ?_, ?_⟩
+  · show (CVar.var nv).eval _ = _
+    simp [CVar.eval, Assignments.extend]
+  · intro v hv
+    replace hv : nv + 2 ≤ v := hv
+    have h1 : v ≠ nv + 1 := by omega
+    have h0 : v ≠ nv := by omega
+    show ((env.extend nv _).extend (nv + 1) _) v = none
+    simp [Assignments.extend, h1, h0, hfresh v (by omega)]
 
 /-- **`equals` soundness** (D12): for every assignment satisfying the constraints
 `equals a b` emits — adversarial witnesses included — the result evaluates to the
@@ -384,10 +394,11 @@ unassigned from `nv` up, the honest prover run of `equals a b` succeeds and its 
 evaluates, under the final assignment, to the equality bit. -/
 theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
     {env : Assignments F} {av bv : F}
-    (hfresh : ∀ v, nv ≤ v → env v = none)
+    (hfresh : env.FreshFrom nv)
     (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
     ∃ out, prove Basic.holds (equals (c := Basic F) a b) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (if av = bv then 1 else 0) := by
+      out.result.toCVar.eval out.assignments = .ok (if av = bv then 1 else 0) ∧
+      out.assignments.FreshFrom out.nextVar := by
   have hz : (CVar.sub_ a b).eval env = .ok (av - bv) := CVar.eval_sub_ ha hb
   have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
   unfold equals
@@ -396,7 +407,7 @@ theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv 
     rw [hcase] at hz
     have hf : f = av - bv := by simpa [CVar.eval] using hz
     subst hf
-    refine ⟨_, rfl, ?_⟩
+    refine ⟨_, rfl, ?_, hfresh⟩
     show Except.ok _ = _
     simp [sub_eq_zero]
   | var v =>
@@ -408,5 +419,453 @@ theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv 
   | scale k x =>
     rw [hcase] at hz
     simpa only [hiff] using equalsCore_complete hz hfresh
+
+/-! ### `mul` (Circuit/DSL/Monad) -/
+
+/-- What `mulCore` builds: one fresh variable, one `r1cs` constraint. -/
+private theorem build_mulCore {F : Type u} [Add F] [Mul F] (x y : FVar F) (nv : Nat) :
+    build (mulCore (c := Basic F) x y) nv = ⟨.var nv, nv + 1, [.r1cs x y (.var nv)]⟩ :=
+  rfl
+
+/-- `mulCore` soundness: the constraint pins the fresh variable to the product. -/
+private theorem mulCore_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
+    (hsat : ∀ con ∈ (build (mulCore (c := Basic F) x y) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
+    (build (mulCore (c := Basic F) x y) nv).result.eval env = .ok (xv * yv) := by
+  rw [build_mulCore] at hsat ⊢
+  have h₁ := hsat _ (List.mem_cons_self ..)
+  cases hnv : env nv with
+  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
+  | some zv =>
+    simp only [Basic.holds, CVar.eval, hx, hy, hnv, decide_eq_true_eq] at h₁
+    show (CVar.var nv).eval env = _
+    simp [CVar.eval, hnv, ← h₁]
+
+/-- The honest `mulCore` run: the prover succeeds, assigning the product at `nv`. -/
+private theorem mulCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
+    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv)
+    (hfresh : env.FreshFrom nv) :
+    prove Basic.holds (mulCore (c := Basic F) x y) nv env
+      = .ok ⟨.var nv, nv + 1, env.extend nv (xv * yv)⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hle : env.Le (env.extend nv (xv * yv)) := by
+    intro v w hv
+    simp only [Assignments.extend]
+    split
+    · next h => rw [h, hnv] at hv; cases hv
+    · exact hv
+  have hwit : (mulWit x y env).map (CircuitType.valueToFields (F := F) (val := F))
+      = .ok ⟨#[xv * yv], rfl⟩ := by
+    simp [mulWit, AsProver.readCVar, hx, hy, Bind.bind, ReaderT.bind, Except.bind,
+      Pure.pure, ReaderT.pure, Except.pure, Except.map, CircuitType.valueToFields]
+  have hext : env.extendPairs
+      ((allocRange nv 1).toList.zip (⟨#[xv * yv], rfl⟩ : Vector F 1).toList)
+      = .ok (env.extend nv (xv * yv)) := by
+    show env.extendPairs [(nv, xv * yv)] = .ok _
+    simp [Assignments.extendPairs, hnv]
+  have hch : Basic.holds (.r1cs x y (.var nv)) (env.extend nv (xv * yv)) = true := by
+    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, CVar.eval_le hle hy,
+      Assignments.extend]
+  show prove Basic.holds (.existsOp 1 (fun e => (mulWit x y e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  show prove Basic.holds
+    (.addConstraintOp (.r1cs x y (.var nv)) (.pure (CVar.var nv))) (nv + 1)
+    (env.extend nv (xv * yv)) = _
+  simp only [prove, hch, if_true]
+
+/-- **`mul` soundness** (D12): any satisfying assignment pins the result to the product
+— the constant-folding fast paths included, which is the fold-preservation content. -/
+theorem mul_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
+    (hsat : ∀ con ∈ (build (mul (c := Basic F) x y) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
+    (build (mul (c := Basic F) x y) nv).result.eval env = .ok (xv * yv) := by
+  unfold mul at hsat ⊢
+  cases x <;> cases y <;>
+    first
+    | (simp only [CVar.eval, Except.ok.injEq] at hx hy; subst hx; subst hy; rfl)
+    | (simp only [CVar.eval, Except.ok.injEq] at hx; subst hx;
+       exact CVar.eval_scale_ hy _)
+    | (simp only [CVar.eval, Except.ok.injEq] at hy; subst hy;
+       simpa [mul_comm] using CVar.eval_scale_ hx _)
+    | exact mulCore_sound hsat hx hy
+
+/-- **`mul` completeness** (D12): the honest prover run succeeds, computes the product,
+and re-establishes freshness. -/
+theorem mul_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
+    (hfresh : env.FreshFrom nv)
+    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
+    ∃ out, prove Basic.holds (mul (c := Basic F) x y) nv env = .ok out ∧
+      out.result.eval out.assignments = .ok (xv * yv) ∧
+      out.assignments.FreshFrom out.nextVar := by
+  unfold mul
+  cases x <;> cases y <;>
+    first
+    | (refine ⟨_, rfl, ?_, hfresh⟩
+       simp only [CVar.eval, Except.ok.injEq] at hx hy
+       subst hx; subst hy; rfl)
+    | (refine ⟨_, rfl, ?_, hfresh⟩
+       simp only [CVar.eval, Except.ok.injEq] at hx
+       subst hx; exact CVar.eval_scale_ hy _)
+    | (refine ⟨_, rfl, ?_, hfresh⟩
+       simp only [CVar.eval, Except.ok.injEq] at hy
+       subst hy; simpa [mul_comm] using CVar.eval_scale_ hx _)
+    | (refine ⟨_, mulCore_run hx hy hfresh, ?_, ?_⟩
+       · show (CVar.var nv).eval _ = _
+         simp [CVar.eval, Assignments.extend]
+       · intro v hv
+         replace hv : nv + 1 ≤ v := hv
+         have h0 : v ≠ nv := by omega
+         show (env.extend nv _) v = none
+         simp [Assignments.extend, h0, hfresh v (by omega)])
+
+/-! ### `inv` (Circuit/DSL/Monad) -/
+
+/-- What `invCore` builds: one fresh variable, the constraint `x · xInv = 1`. -/
+private theorem build_invCore {F : Type u} [Field F] [DecidableEq F] (x : FVar F)
+    (nv : Nat) :
+    build (invCore (c := Basic F) x) nv =
+      ⟨.var nv, nv + 1, [.r1cs x (.var nv) (.const 1)]⟩ := rfl
+
+/-- `invCore` soundness: the constraint pins the fresh variable to the inverse (and, not
+stated here, forces `xv ≠ 0`). -/
+private theorem invCore_sound {F : Type u} [Field F] [DecidableEq F]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hsat : ∀ con ∈ (build (invCore (c := Basic F) x) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) :
+    (build (invCore (c := Basic F) x) nv).result.eval env = .ok xv⁻¹ := by
+  rw [build_invCore] at hsat ⊢
+  have h₁ := hsat _ (List.mem_cons_self ..)
+  cases hnv : env nv with
+  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
+  | some iv =>
+    simp only [Basic.holds, CVar.eval, hx, hnv, decide_eq_true_eq] at h₁
+    show (CVar.var nv).eval env = _
+    simp [CVar.eval, hnv, inv_eq_of_mul_eq_one_right h₁]
+
+/-- The honest `invCore` run on a nonzero operand. -/
+private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hx : x.eval env = .ok xv) (hxv : xv ≠ 0) (hfresh : env.FreshFrom nv) :
+    prove Basic.holds (invCore (c := Basic F) x) nv env
+      = .ok ⟨.var nv, nv + 1, env.extend nv xv⁻¹⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hle : env.Le (env.extend nv xv⁻¹) := by
+    intro v w hv
+    simp only [Assignments.extend]
+    split
+    · next h => rw [h, hnv] at hv; cases hv
+    · exact hv
+  have hwit : (invWit x env).map (CircuitType.valueToFields (F := F) (val := F))
+      = .ok ⟨#[xv⁻¹], rfl⟩ := by
+    simp [invWit, AsProver.readCVar, hx, hxv, Bind.bind, ReaderT.bind, Except.bind,
+      Pure.pure, ReaderT.pure, Except.pure, Except.map, CircuitType.valueToFields]
+  have hext : env.extendPairs
+      ((allocRange nv 1).toList.zip (⟨#[xv⁻¹], rfl⟩ : Vector F 1).toList)
+      = .ok (env.extend nv xv⁻¹) := by
+    show env.extendPairs [(nv, xv⁻¹)] = .ok _
+    simp [Assignments.extendPairs, hnv]
+  have hch : Basic.holds (.r1cs x (.var nv) (.const 1)) (env.extend nv xv⁻¹) = true := by
+    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend,
+      mul_inv_cancel₀ hxv]
+  show prove Basic.holds (.existsOp 1 (fun e => (invWit x e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  show prove Basic.holds
+    (.addConstraintOp (.r1cs x (.var nv) (.const 1)) (.pure (CVar.var nv))) (nv + 1)
+    (env.extend nv xv⁻¹) = _
+  simp only [prove, hch, if_true]
+
+/-- **`inv` soundness** (D12): any satisfying assignment pins the result to the field
+inverse. On the witnessing branch the constraint additionally forces the operand
+nonzero; the constant branch is total via `0⁻¹ = 0`, so the law states the evaluation
+alone. -/
+theorem inv_sound {F : Type u} [Field F] [DecidableEq F]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hsat : ∀ con ∈ (build (inv (c := Basic F) x) nv).constraints, con.holds env = true)
+    (hx : x.eval env = .ok xv) :
+    (build (inv (c := Basic F) x) nv).result.eval env = .ok xv⁻¹ := by
+  unfold inv at hsat ⊢
+  cases x <;>
+    first
+    | (simp only [CVar.eval, Except.ok.injEq] at hx; subst hx; rfl)
+    | exact invCore_sound hsat hx
+
+/-- **`inv` completeness** (D12): on a nonzero operand the honest prover run succeeds,
+computes the inverse, and re-establishes freshness. -/
+theorem inv_complete {F : Type u} [Field F] [DecidableEq F]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) (hxv : xv ≠ 0) :
+    ∃ out, prove Basic.holds (inv (c := Basic F) x) nv env = .ok out ∧
+      out.result.eval out.assignments = .ok xv⁻¹ ∧
+      out.assignments.FreshFrom out.nextVar := by
+  unfold inv
+  cases x <;>
+    first
+    | (refine ⟨_, rfl, ?_, hfresh⟩
+       simp only [CVar.eval, Except.ok.injEq] at hx
+       subst hx; rfl)
+    | (refine ⟨_, invCore_run hx hxv hfresh, ?_, ?_⟩
+       · show (CVar.var nv).eval _ = _
+         simp [CVar.eval, Assignments.extend]
+       · intro v hv
+         replace hv : nv + 1 ≤ v := hv
+         have h0 : v ≠ nv := by omega
+         show (env.extend nv _) v = none
+         simp [Assignments.extend, h0, hfresh v (by omega)])
+
+/-! ### `square` (Circuit/DSL/Field) -/
+
+/-- What `squareCore` builds: one fresh variable, one `square` constraint. -/
+private theorem build_squareCore {F : Type u} [Add F] [Mul F] (x : FVar F) (nv : Nat) :
+    build (squareCore (c := Basic F) x) nv =
+      ⟨.var nv, nv + 1, [.square x (.var nv)]⟩ := rfl
+
+/-- `squareCore` soundness: the constraint pins the fresh variable to the square. -/
+private theorem squareCore_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hsat : ∀ con ∈ (build (squareCore (c := Basic F) x) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) :
+    (build (squareCore (c := Basic F) x) nv).result.eval env = .ok (xv * xv) := by
+  rw [build_squareCore] at hsat ⊢
+  have h₁ := hsat _ (List.mem_cons_self ..)
+  cases hnv : env nv with
+  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
+  | some zv =>
+    simp only [Basic.holds, CVar.eval, hx, hnv, decide_eq_true_eq] at h₁
+    show (CVar.var nv).eval env = _
+    simp [CVar.eval, hnv, ← h₁]
+
+/-- The honest `squareCore` run. -/
+private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hx : x.eval env = .ok xv) (hfresh : env.FreshFrom nv) :
+    prove Basic.holds (squareCore (c := Basic F) x) nv env
+      = .ok ⟨.var nv, nv + 1, env.extend nv (xv * xv)⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hle : env.Le (env.extend nv (xv * xv)) := by
+    intro v w hv
+    simp only [Assignments.extend]
+    split
+    · next h => rw [h, hnv] at hv; cases hv
+    · exact hv
+  have hwit : (squareWit x env).map (CircuitType.valueToFields (F := F) (val := F))
+      = .ok ⟨#[xv * xv], rfl⟩ := by
+    simp [squareWit, AsProver.readCVar, hx, Bind.bind, ReaderT.bind, Except.bind,
+      Pure.pure, ReaderT.pure, Except.pure, Except.map, CircuitType.valueToFields]
+  have hext : env.extendPairs
+      ((allocRange nv 1).toList.zip (⟨#[xv * xv], rfl⟩ : Vector F 1).toList)
+      = .ok (env.extend nv (xv * xv)) := by
+    show env.extendPairs [(nv, xv * xv)] = .ok _
+    simp [Assignments.extendPairs, hnv]
+  have hch : Basic.holds (.square x (.var nv)) (env.extend nv (xv * xv)) = true := by
+    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend]
+  show prove Basic.holds (.existsOp 1 (fun e => (squareWit x e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  show prove Basic.holds
+    (.addConstraintOp (.square x (.var nv)) (.pure (CVar.var nv))) (nv + 1)
+    (env.extend nv (xv * xv)) = _
+  simp only [prove, hch, if_true]
+
+/-- **`square` soundness** (D12): any satisfying assignment pins the result to the
+square. -/
+theorem square_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hsat : ∀ con ∈ (build (square (c := Basic F) x) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) :
+    (build (square (c := Basic F) x) nv).result.eval env = .ok (xv * xv) := by
+  unfold square at hsat ⊢
+  cases x <;>
+    first
+    | (simp only [CVar.eval, Except.ok.injEq] at hx; subst hx; rfl)
+    | exact squareCore_sound hsat hx
+
+/-- **`square` completeness** (D12): the honest prover run succeeds, computes the
+square, and re-establishes freshness. -/
+theorem square_complete {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) :
+    ∃ out, prove Basic.holds (square (c := Basic F) x) nv env = .ok out ∧
+      out.result.eval out.assignments = .ok (xv * xv) ∧
+      out.assignments.FreshFrom out.nextVar := by
+  unfold square
+  cases x <;>
+    first
+    | (refine ⟨_, rfl, ?_, hfresh⟩
+       simp only [CVar.eval, Except.ok.injEq] at hx
+       subst hx; rfl)
+    | (refine ⟨_, squareCore_run hx hfresh, ?_, ?_⟩
+       · show (CVar.var nv).eval _ = _
+         simp [CVar.eval, Assignments.extend]
+       · intro v hv
+         replace hv : nv + 1 ≤ v := hv
+         have h0 : v ≠ nv := by omega
+         show (env.extend nv _) v = none
+         simp [Assignments.extend, h0, hfresh v (by omega)])
+
+/-! ### `div` (Circuit/DSL/Monad) — the first composed law -/
+
+/-- **`div` soundness** (D12), proved compositionally: `build_bind` splits the
+constraints, `inv_sound` pins the inverse, `mul_sound` pins the product. -/
+theorem div_sound {F : Type u} [Field F] [DecidableEq F]
+    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
+    (hsat : ∀ con ∈ (build (div (c := Basic F) x y) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
+    (build (div (c := Basic F) x y) nv).result.eval env = .ok (xv / yv) := by
+  unfold div at hsat ⊢
+  rw [build_bind] at hsat ⊢
+  have h₁ := inv_sound (fun con h => hsat con (List.mem_append_left _ h)) hy
+  have h₂ := mul_sound (fun con h => hsat con (List.mem_append_right _ h)) hx h₁
+  simpa [div_eq_mul_inv] using h₂
+
+/-- **`div` completeness** (D12), proved compositionally through `prove_bind`: a nonzero
+divisor makes the honest run succeed with the quotient. -/
+theorem div_complete {F : Type u} [Field F] [DecidableEq F]
+    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
+    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv)
+    (hyv : yv ≠ 0) :
+    ∃ out, prove Basic.holds (div (c := Basic F) x y) nv env = .ok out ∧
+      out.result.eval out.assignments = .ok (xv / yv) ∧
+      out.assignments.FreshFrom out.nextVar := by
+  unfold div
+  rw [prove_bind]
+  obtain ⟨o₁, hr₁, he₁, hf₁⟩ := inv_complete hfresh hy hyv
+  rw [hr₁]
+  have hx₁ : x.eval o₁.assignments = .ok xv :=
+    CVar.eval_le (prove_assignments_le hr₁) hx
+  obtain ⟨o₂, hr₂, he₂, hf₂⟩ := mul_complete hf₁ hx₁ he₁
+  refine ⟨o₂, hr₂, ?_, hf₂⟩
+  simpa [div_eq_mul_inv] using he₂
+
+/-! ### `pow` (Circuit/DSL/Field) — composed through the fuel recursion -/
+
+/-- `powGo` soundness, by induction on the fuel: with the fuel adequate for the
+exponent, any satisfying assignment pins the result to the power. -/
+private theorem powGo_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F] :
+    ∀ (fuel : Nat) {x : FVar F} (n : Nat) {nv : Nat} {env : Assignments F} {xv : F},
+      n ≤ fuel + 1 →
+      (∀ con ∈ (build (powGo (c := Basic F) fuel x n) nv).constraints,
+        con.holds env = true) →
+      x.eval env = .ok xv →
+      (build (powGo (c := Basic F) fuel x n) nv).result.eval env = .ok (xv ^ n) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro x n nv env xv hfuel hsat hx
+    match n, hfuel with
+    | 0, _ => show Except.ok _ = _; rw [pow_zero]
+    | 1, _ => rw [pow_one]; exact hx
+  | succ fuel ih =>
+    intro x n nv env xv hfuel hsat hx
+    match n with
+    | 0 => show Except.ok _ = _; rw [pow_zero]
+    | 1 => rw [pow_one]; exact hx
+    | m + 2 =>
+      unfold powGo at hsat ⊢
+      simp only [build_bind] at hsat ⊢
+      have hsq := mul_sound
+        (fun con h => hsat con (List.mem_append_left _ h)) hx hx
+      have hrest := fun con h => hsat con (List.mem_append_right _ h)
+      by_cases hpar : (m + 2) % 2 = 0
+      · simp only [eq_true hpar, if_true] at hrest ⊢
+        have hy := ih ((m + 2) / 2) (by omega)
+          (fun con h => hrest con (List.mem_append_left _ h)) hsq
+        have hpow : (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
+          rw [← pow_two, ← pow_mul]
+          congr 1
+          omega
+        exact hpow ▸ hy
+      · simp only [eq_false hpar, if_false] at hrest ⊢
+        have hy := ih ((m + 2) / 2) (by omega)
+          (fun con h => hrest con (List.mem_append_left _ h)) hsq
+        have hfin := mul_sound
+          (fun con h => hrest con (List.mem_append_right _ h)) hx hy
+        have hpow : xv * (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
+          rw [← pow_two, ← pow_mul, mul_comm, ← pow_succ]
+          congr 1
+          omega
+        exact hpow ▸ hfin
+
+/-- **`pow` soundness** (D12), composed through the fuel recursion from `mul_sound` and
+`build_bind`. -/
+theorem pow_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    {x : FVar F} {n : Nat} {nv : Nat} {env : Assignments F} {xv : F}
+    (hsat : ∀ con ∈ (build (pow (c := Basic F) x n) nv).constraints,
+      con.holds env = true)
+    (hx : x.eval env = .ok xv) :
+    (build (pow (c := Basic F) x n) nv).result.eval env = .ok (xv ^ n) := by
+  unfold pow at hsat ⊢
+  exact powGo_sound n n (Nat.le_succ n) hsat hx
+
+/-- `powGo` completeness, by induction on the fuel through `prove_bind` and
+`mul_complete`. -/
+private theorem powGo_complete {F : Type u} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F] :
+    ∀ (fuel : Nat) {x : FVar F} (n : Nat) {nv : Nat} {env : Assignments F} {xv : F},
+      n ≤ fuel + 1 →
+      env.FreshFrom nv →
+      x.eval env = .ok xv →
+      ∃ out, prove Basic.holds (powGo (c := Basic F) fuel x n) nv env = .ok out ∧
+        out.result.eval out.assignments = .ok (xv ^ n) ∧
+        out.assignments.FreshFrom out.nextVar := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro x n nv env xv hfuel hfresh hx
+    match n, hfuel with
+    | 0, _ => exact ⟨_, rfl, by rw [pow_zero]; rfl, hfresh⟩
+    | 1, _ => exact ⟨_, rfl, by rw [pow_one]; exact hx, hfresh⟩
+  | succ fuel ih =>
+    intro x n nv env xv hfuel hfresh hx
+    match n with
+    | 0 => exact ⟨_, rfl, by rw [pow_zero]; rfl, hfresh⟩
+    | 1 => exact ⟨_, rfl, by rw [pow_one]; exact hx, hfresh⟩
+    | m + 2 =>
+      have hdef : powGo (c := Basic F) (fuel + 1) x (m + 2)
+          = (do let sq ← mul x x
+                let y ← powGo (c := Basic F) fuel sq ((m + 2) / 2)
+                if (m + 2) % 2 = 0 then pure y else mul x y) := rfl
+      rw [hdef, prove_bind]
+      obtain ⟨o₁, hr₁, he₁, hf₁⟩ := mul_complete hfresh hx hx
+      rw [hr₁]
+      simp only [Except.bind]
+      obtain ⟨o₂, hr₂, he₂, hf₂⟩ := ih ((m + 2) / 2) (by omega) hf₁ he₁
+      have hx₂ : x.eval o₂.assignments = .ok xv :=
+        CVar.eval_le ((prove_assignments_le hr₁).trans (prove_assignments_le hr₂)) hx
+      rw [prove_bind, hr₂]
+      simp only [Except.bind]
+      by_cases hpar : (m + 2) % 2 = 0
+      · simp only [eq_true hpar, if_true]
+        have hpow : (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
+          rw [← pow_two, ← pow_mul]
+          congr 1
+          omega
+        exact ⟨o₂, rfl, hpow ▸ he₂, hf₂⟩
+      · simp only [eq_false hpar, if_false]
+        obtain ⟨o₃, hr₃, he₃, hf₃⟩ := mul_complete hf₂ hx₂ he₂
+        have hpow : xv * (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
+          rw [← pow_two, ← pow_mul, mul_comm, ← pow_succ]
+          congr 1
+          omega
+        exact ⟨o₃, hr₃, hpow ▸ he₃, hf₃⟩
+
+/-- **`pow` completeness** (D12), composed through the fuel recursion from
+`mul_complete` and `prove_bind`. -/
+theorem pow_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    {x : FVar F} {n : Nat} {nv : Nat} {env : Assignments F} {xv : F}
+    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) :
+    ∃ out, prove Basic.holds (pow (c := Basic F) x n) nv env = .ok out ∧
+      out.result.eval out.assignments = .ok (xv ^ n) ∧
+      out.assignments.FreshFrom out.nextVar := by
+  unfold pow
+  exact powGo_complete n n (Nat.le_succ n) hfresh hx
 
 end Snarky

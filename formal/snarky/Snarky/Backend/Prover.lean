@@ -88,4 +88,39 @@ def prove (holds : c → Assignments F → Bool) :
       | .ok env' => prove holds k nv env'
   | .labelOp _ k, nv, env => prove holds k nv env
 
+/-- **Proving a sequence is proving the head, then the tail from its final state** — the
+composition law gadget completeness chains through (`Snarky.Laws`, D12). Freshness of
+the intermediate state is NOT a general theorem (`assignOp` may assign into the fresh
+region — `Assignments.FreshFrom`); each gadget's completeness law re-establishes it in
+its own conclusion instead. -/
+theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
+    (f : α → CircuitM F c β) (nv : Nat) (env : Assignments F) :
+    prove holds (m >>= f) nv env =
+      (prove holds m nv env).bind
+        fun out => prove holds (f out.result) out.nextVar out.assignments := by
+  show prove holds (CircuitM.bind m f) nv env = _
+  induction m generalizing nv env with
+  | pure a => rfl
+  | freshOp k ih => exact ih ..
+  | addConstraintOp con k ih =>
+    simp only [CircuitM.bind, prove]
+    split
+    · exact ih ..
+    · rfl
+  | existsOp n wit k ih =>
+    simp only [CircuitM.bind, prove]
+    split
+    · rfl
+    · split
+      · rfl
+      · exact ih ..
+  | assignOp vs wit k ih =>
+    simp only [CircuitM.bind, prove]
+    split
+    · rfl
+    · split
+      · rfl
+      · exact ih ..
+  | labelOp s k ih => exact ih ..
+
 end Snarky
