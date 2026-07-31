@@ -19,8 +19,8 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 - Instance coverage is the base pair only (`F`, `Bool`); the PS `Unit`,
   `NoInput`/`NoOutput`, `Tuple`, `Const`, `Product`, `Vector`, and `Record` instances land
   with their first consumers (the `IfThenElse` gadgets, walk step 10; `Backend/Compile`,
-  step 14 — `NoInput`/`NoOutput`'s JSON instances are not ported), and `UnChecked` lands
-  at step 5 with `CheckedType`, whose story it exists for.
+  step 14 — `NoInput`/`NoOutput`'s JSON instances are not ported); `UnChecked` is here,
+  with its no-op `CheckedType` instance beside the class in `Circuit/DSL/Monad`.
 - The generic/rowlist deriving machinery (`GCircuitType`/`RCircuitType`, the `generic*`
   helpers) is out of scope (D8) — Lean would grow a `deriving` handler instead.
 - `CheckedType` is NOT here: its PS home is `Circuit/DSL/Monad.purs`, where it moves at
@@ -83,6 +83,20 @@ instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
   fieldsToValue v := decide (v[0] ≠ 0)
   varToFields b := #v[b.toCVar]
   fieldsToVar v := ⟨v[0]⟩
+
+/-- Wrap a type to skip its `check` constraints (PS `UnChecked a`): the encoding
+delegates to the wrapped instance, and the `CheckedType` instance (in `Circuit/DSL/Monad`)
+is a no-op. Use when the constraints are guaranteed elsewhere. -/
+structure UnChecked (α : Type u) where
+  /-- The wrapped value or variable bundle. -/
+  val : α
+
+instance [inst : CircuitType F val var] : CircuitType F (UnChecked val) (UnChecked var) where
+  size := inst.size
+  valueToFields v := inst.valueToFields v.val
+  fieldsToValue fs := ⟨inst.fieldsToValue fs⟩
+  varToFields v := inst.varToFields v.val
+  fieldsToVar fs := ⟨inst.fieldsToVar fs⟩
 
 /-! ## Round-trip laws (D9)
 

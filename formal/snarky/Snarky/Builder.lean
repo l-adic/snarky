@@ -1,4 +1,4 @@
-import Snarky.Monad
+import Snarky.Circuit.DSL.Monad
 
 /-!
 # The constraint builder
@@ -38,7 +38,7 @@ structure Built (c : Type u) (α : Type v) where
 
 /-- Interpret a circuit as its constraint system: from a next-variable counter, produce
 the result, the final counter, and the constraints in emission order. Witness payloads are
-never inspected — see `Snarky.Laws.build_eq_of_sameShape`. -/
+never inspected — see `Snarky.Laws.build_eq_of_eraseWitness`. -/
 def build : CircuitM F c α → Nat → Built c α
   | .pure a, n => ⟨a, n, []⟩
   | .freshOp k, n => build (k n) (n + 1)

@@ -1,13 +1,11 @@
 import Snarky.Circuit.CVar
 import Snarky.Backend.Assignments
-import Snarky.AsProver
-import Snarky.Monad
+import Snarky.Circuit.Types
+import Snarky.Circuit.DSL.Monad
 import Snarky.Builder
 import Snarky.Prover
 import Snarky.Vec
 import Snarky.Constraint.Basic
-import Snarky.Circuit.Types
-import Snarky.Types
 import Snarky.DSL
 import Snarky.Laws
 import Snarky.Example

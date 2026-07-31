@@ -264,7 +264,7 @@ separate sign-offs on the resulting files.
   R1CS roots swapped for `Basic.holds`/`holds_mono`.
 - [x] 4. `Snarky/Circuit/Types.lean` — relocate, minus `CheckedType` (moves to step 5, its
   PS home); missing deriving machinery documented per D8.
-- [ ] 5. `Snarky/Circuit/DSL/Monad.lean` — merge `Monad.lean` + `AsProver.lean`; absorb
+- [x] 5. `Snarky/Circuit/DSL/Monad.lean` — merge `Monad.lean` + `AsProver.lean`; absorb
   `CheckedType` and `witness`/`readVar`/`mul` (their PS home is `DSL/Monad.purs`); document
   the deep-embedding deviation, the dropped advice row, and the single scoped `labelOp`;
   fix the three stale `build_eq_of_sameShape` cites.
