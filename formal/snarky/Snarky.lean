@@ -3,6 +3,7 @@ import Snarky.Backend.Assignments
 import Snarky.Circuit.Types
 import Snarky.Circuit.DSL.Monad
 import Snarky.Circuit.DSL.Field
+import Snarky.Circuit.DSL.Boolean
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
 import Snarky.Vec

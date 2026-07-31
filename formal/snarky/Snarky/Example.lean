@@ -127,4 +127,65 @@ example : proverValue id
     (do let x ← witness (val := F17) (pure 5); pure (sum [.const 3, x, .const 4]))
     = some 12 := by decide
 
+/-! ## Boolean gadgets (walk step 10) -/
+
+/-- Witness two bits (checked: `witness` at `Bool` emits the `boolean` constraints) and
+combine them with a boolean gadget. -/
+def bitCircuit (f : BoolVar F17 → BoolVar F17 → CircuitM F17 (Basic F17) (BoolVar F17))
+    (x y : Bool) : CircuitM F17 (Basic F17) (BoolVar F17) := do
+  let a ← witness (val := Bool) (pure x)
+  let b ← witness (val := Bool) (pure y)
+  f a b
+
+/-- `and` is conjunction on every input pair. -/
+example : (List.product [true, false] [true, false]).all (fun (x, y) =>
+    proverValue BoolVar.toCVar (bitCircuit Snarky.and x y) = some (bit (x && y))) := by
+  decide
+
+/-- `or` is disjunction on every input pair. -/
+example : (List.product [true, false] [true, false]).all (fun (x, y) =>
+    proverValue BoolVar.toCVar (bitCircuit Snarky.or x y) = some (bit (x || y))) := by
+  decide
+
+/-- `xor` is exclusive-or on every input pair. -/
+example : (List.product [true, false] [true, false]).all (fun (x, y) =>
+    proverValue BoolVar.toCVar (bitCircuit Snarky.xor x y) = some (bit (x ^^ y))) := by
+  decide
+
+/-- `not` is pure negation. -/
+example : proverValue BoolVar.toCVar
+    (do pure (Snarky.not (← witness (val := Bool) (pure true)))) = some 0 := by decide
+
+/-- `select` muxes field variables by the witnessed bit. -/
+example : proverValue id
+    (do let b ← witness (val := Bool) (pure true)
+        let x ← witness (val := F17) (pure 7)
+        let y ← witness (val := F17) (pure 9)
+        select b x y)
+    = some 7 := by decide
+
+/-- `select` on the false bit takes the else branch. -/
+example : proverValue id
+    (do let b ← witness (val := Bool) (pure false)
+        let x ← witness (val := F17) (pure 7)
+        let y ← witness (val := F17) (pure 9)
+        select b x y)
+    = some 9 := by decide
+
+/-- `any` over three witnessed bits uses the sum test. -/
+example : proverValue BoolVar.toCVar
+    (do let a ← witness (val := Bool) (pure false)
+        let b ← witness (val := Bool) (pure true)
+        let c ← witness (val := Bool) (pure false)
+        Snarky.any [a, b, c])
+    = some 1 := by decide
+
+/-- `all` over three witnessed bits uses the length test. -/
+example : proverValue BoolVar.toCVar
+    (do let a ← witness (val := Bool) (pure true)
+        let b ← witness (val := Bool) (pure true)
+        let c ← witness (val := Bool) (pure false)
+        Snarky.all [a, b, c])
+    = some 0 := by decide
+
 end Snarky.Example

@@ -98,9 +98,14 @@ booleanity the caller's constraints already force; witnessed booleans go through
 `witness` at `Bool` or `UnChecked Bool` instead. -/
 def BoolVar.unchecked (x : CVar F) : BoolVar F := ⟨x⟩
 
+/-- The field encoding of a boolean — the single entry of `CircuitType Bool`'s
+`valueToFields`, named so the gadget laws in `Snarky.Laws` can state their conclusions
+through it (the relation the faithfulness arc composes over). -/
+def bit [Zero F] [One F] (b : Bool) : F := if b then 1 else 0
+
 instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
   size := 1
-  valueToFields b := #v[if b then 1 else 0]
+  valueToFields b := #v[bit b]
   fieldsToValue v := decide (v[0] ≠ 0)
   varToFields b := #v[b.toCVar]
   fieldsToVar v := ⟨v[0]⟩

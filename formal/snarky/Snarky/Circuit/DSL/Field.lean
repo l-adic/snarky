@@ -21,10 +21,8 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   order (PS's record rows sort alphabetically: `r`, `zInv`), same absence of `boolean`
   checks — the gadget's two `r1cs` constraints already force booleanity
   (`Snarky.equals_sound`).
-- `neq`'s `1 − r` is a PURE retagging (no witness to route through), so it uses the one
-  explicit door `BoolVar.unchecked` (D11, see the `BoolVar` docstring) — boolean because
-  `r` is. It inlines PS `not_`, whose Lean home (`DSL/Boolean`) lands at walk step 10 —
-  `neq` switches to it then.
+- `neq` is `not` after `equals`, as in PS (whose `not` rides the HeytingAlgebra action
+  instance, D8); `not` lives in `DSL/Monad`, its PS home.
 - The `CircuitType F Bool` instance pins `F : Type 0` (`AsProver` payloads share `F`'s
   universe), so the `BoolVar`-returning gadgets are stated for `Type`-sized fields —
   every concrete field is one.
@@ -82,13 +80,11 @@ def equals {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar 
   | .const f => pure (.unchecked (.const (if f = 0 then 1 else 0)))
   | z => equalsCore z
 
-/-- Negated equality test (PS `neq_`): `1 − r` of the `equals` bit — a pure retagging
-through `BoolVar.unchecked`, boolean because `r` is (see the module docstring on the
-inlined `not_`). -/
+/-- Negated equality test (PS `neq_ = not <<< equals_`): the negated `equals` bit. -/
 def neq {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) :
     CircuitM F c (BoolVar F) := do
   let r ← equals a b
-  pure (.unchecked (CVar.sub_ (.const 1) ↑r))
+  pure (Snarky.not r)
 
 /-- Sum a list of field variables — pure, no constraints (PS `sum_`, which folds an
 `Array` the same way): `add_` over the list from `const 0`. -/

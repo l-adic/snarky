@@ -45,10 +45,11 @@ are pure recursive functions: `Snarky.build` (PS `Backend.Builder`) and `Snarky.
   plain functions.
 - The field primitives `inv_`/`div_` defined here in PS are here as `inv`/`div` (D7
   names), on the targeted `Mathlib.Algebra.Field.Defs` import (D6: `[Field F]`, the
-  weakest fitting class for an inverse); the boolean primitives `not_`/`and_`/`or_` land
-  at step 10, on the D11 doors settled at step 9: witnessed booleans through `witness`
-  at `UnChecked Bool` (the discipline PS's `xor_` models), pure retaggings through
-  `BoolVar.unchecked` (see the `BoolVar` docstring in `Circuit/Types`).
+  weakest fitting class for an inverse); the boolean primitives `not_`/`and_`/`or_`
+  are here as `not`/`and`/`or` (D7 names; they shadow core's Bool functions inside the
+  namespace — type-directed resolution disambiguates), on the D11 doors settled at
+  step 9: `and` is `mul` under the `BoolVar.unchecked` retag (a product of bits is a
+  bit), `or` is De Morgan over `and`/`not`, `not` the pure retag `1 − b`.
 - `CheckedType` instances: `FVar`, `BoolVar`, `UnChecked`, and the `Tuple` pair (step 9,
   `equals`'s witness pair) are here; `Unit`, `NoInput`/`NoOutput`, `Const`, `Product`,
   `Vector`, and `Record` land with their `CircuitType` partners (steps 10/14);
@@ -301,5 +302,36 @@ def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
     CircuitM F c (FVar F) := do
   let yInv ← inv y
   mul x yInv
+
+/-- Negate a boolean variable: `1 − b`, pure — no constraint (PS `not_`), through the
+`BoolVar.unchecked` door (D11): boolean because `b` is. The name shadows core `not`
+inside the `Snarky` namespace; type-directed resolution disambiguates at use sites. -/
+def not [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] (b : BoolVar F) :
+    BoolVar F :=
+  .unchecked (CVar.sub_ (.const 1) ↑b)
+
+/-- Conjoin boolean variables: the product, retagged (PS `and_` is `mul_` under
+`coerce`) — boolean because a product of bits is a bit (`Snarky.and_sound`). -/
+def and [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
+    (a b : BoolVar F) : CircuitM F c (BoolVar F) := do
+  let r ← mul ↑a ↑b
+  pure (.unchecked r)
+
+/-- Disjoin boolean variables by De Morgan: `¬(¬a ∧ ¬b)` (PS `or_`). -/
+def or [Add F] [Sub F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [BasicSystem F c]
+    (a b : BoolVar F) : CircuitM F c (BoolVar F) := do
+  let r ← and (Snarky.not a) (Snarky.not b)
+  pure (Snarky.not r)
+
+/-- `not` computes boolean negation: the bit encoding of `!bb` (the `CircuitType Bool`
+encoding — the relation the gadget laws speak through). Pure gadget, so its law is
+evaluation-level, like `sum_eval`. -/
+theorem not_eval [CommRing F] [DecidableEq F] {b : BoolVar F} {env : Assignments F}
+    {bb : Bool} (hb : (↑b : CVar F).eval env = .ok (if bb then 1 else 0)) :
+    (↑(Snarky.not b) : CVar F).eval env = .ok (if !bb then 1 else 0) := by
+  have h := CVar.eval_sub_ (rfl : (CVar.const (1 : F)).eval env = .ok 1) hb
+  show (CVar.sub_ (.const 1) ↑b).eval env = _
+  rw [h]
+  cases bb <;> simp
 
 end Snarky

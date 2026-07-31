@@ -137,9 +137,11 @@ builds (targeted imports) and `decide`-friendly examples (`ZMod p`), both preser
 **D7 — PS names port without the trailing underscore; renames are recorded.** The PS `_`
 convention separates var-level ops from lifted ones — a distinction the Lean port doesn't
 have (no numeric-tower instances, see D8). So: `mul_` → `mul`, `equals_` → `equals`,
-`assertEqual_` → `assertEq` (already so), `if_` → `ite'` or `select` (open: `if_` is legal but
-ugly in Lean; decide at port time), `exists` → `witness` (Lean keyword, already renamed). Each
-gadget file's docstring carries its PS→Lean name map.
+`assertEqual_` → `assertEq` (already so), `if_` → `select` (decided at step 10: `if` is a Lean
+keyword; the class keeps its PS name `IfThenElse`), `exists` → `witness` (Lean keyword, already
+renamed), `true_`/`false_` keep their underscores (keyword clash), `not_`/`and_`/`or_`/`xor_`/
+`any_`/`all_` drop them, shadowing core's Bool functions inside the namespace (type-directed
+resolution disambiguates). Each gadget file's docstring carries its PS→Lean name map.
 
 **D8 — deliberate non-ports stay non-ported, now documented in place.** The advice row
 (`Backend/Advice`), `MonadRec`, the numeric-tower instances on `Snarky`-actions, and the
@@ -303,7 +305,10 @@ separate sign-offs on the resulting files.
   `assignOp` forbids a general preservation theorem), and D12 laws for every landed gadget
   (`mul`/`inv`/`square` directly; `div`/`pow` compositionally through the bind laws) — the
   lemma library of `formal/docs/circuit-verifier-faithfulness.md`.
-- [ ] 10. `Snarky/Circuit/DSL/Boolean.lean` — new.
+- [x] 10. `Snarky/Circuit/DSL/Boolean.lean` — new; `not`/`and`/`or` in `DSL/Monad` (their
+  PS home); D12 laws for all of them plus `neq` (a step-9b gap) — `xor`/`select` with the
+  full shape-lemma treatment, `and`/`or`/`neq` composed; the `any`/`all` three-plus-case
+  laws are the step's recorded obligation (they need a characteristic-bound hypothesis).
 - [ ] 11. `Snarky/Circuit/DSL/Assert.lean` — new; `assertEq` migrates here from the barrel
   (its PS home).
 - [ ] 12. `Snarky/Circuit/DSL/Bits.lean` — new.
