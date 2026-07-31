@@ -39,9 +39,10 @@ def mulCircuit : CircuitM F17 (Basic F17) (FVar F17) := do
 /-- The builder allocates three variables (`x`, `y`, and the product). -/
 example : (build mulCircuit 0).nextVar = 3 := by decide
 
-/-- The builder emits two constraints (`x * y = z` and `z * 1 = 15`), in emission order. -/
+/-- The builder emits two constraints (`x * y = z` and `z = 15`), in emission order —
+the assertion is the `equal` row `assertEq` gained at walk step 11. -/
 example : constraints mulCircuit =
-    [ .r1cs (.var 0) (.var 1) (.var 2), .r1cs (.var 2) (.const 1) (.const 15) ] := by
+    [ .r1cs (.var 0) (.var 1) (.var 2), .equal (.var 2) (.const 15) ] := by
   decide
 
 /-- The prover succeeds: every witness computation runs and every constraint holds. -/
@@ -186,5 +187,65 @@ example : proverValue BoolVar.toCVar
         let c ← witness (val := Bool) (pure false)
         Snarky.all [a, b, c])
     = some 0 := by decide
+
+/-! ## Assertion gadgets (walk step 11) -/
+
+/-- Does the honest prover accept this assertion circuit? -/
+def proverOk (m : CircuitM F17 (Basic F17) PUnit) : Bool :=
+  (prove Basic.holds m 0 Assignments.empty).isOk
+
+/-- `assertNonZero` accepts a nonzero witness (the inverse witness computes) and
+rejects zero (it fails). -/
+example : proverOk (do assertNonZero (← witness (val := F17) (pure 5))) = true ∧
+    proverOk (do assertNonZero (← witness (val := F17) (pure 0))) = false := by decide
+
+/-- `assertNotEqual` accepts distinct values and rejects equal ones. -/
+example : proverOk (do
+      assertNotEqual (← witness (val := F17) (pure 3)) (← witness (val := F17) (pure 5)))
+      = true ∧
+    proverOk (do
+      assertNotEqual (← witness (val := F17) (pure 4)) (← witness (val := F17) (pure 4)))
+      = false := by decide
+
+/-- `assertSquare` accepts a true square (`4² = 16`) and rejects a false one. -/
+example : proverOk (do
+      assertSquare (← witness (val := F17) (pure 4)) (← witness (val := F17) (pure 16)))
+      = true ∧
+    proverOk (do
+      assertSquare (← witness (val := F17) (pure 4)) (← witness (val := F17) (pure 15)))
+      = false := by decide
+
+/-- `assert` pins a witnessed bit to true. -/
+example : proverOk (do assert (← witness (val := Bool) (pure true))) = true ∧
+    proverOk (do assert (← witness (val := Bool) (pure false))) = false := by decide
+
+/-- `assertExactlyOne` validates a one-hot list and rejects a two-hot one. -/
+example : proverOk (do
+      let a ← witness (val := Bool) (pure false)
+      let b ← witness (val := Bool) (pure true)
+      let c ← witness (val := Bool) (pure false)
+      assertExactlyOne [a, b, c]) = true ∧
+    proverOk (do
+      let a ← witness (val := Bool) (pure true)
+      let b ← witness (val := Bool) (pure true)
+      let c ← witness (val := Bool) (pure false)
+      assertExactlyOne [a, b, c]) = false := by decide
+
+/-- `allBools` over three witnessed bits: the sum test, constant first. -/
+example : proverValue BoolVar.toCVar
+    (do let a ← witness (val := Bool) (pure true)
+        let b ← witness (val := Bool) (pure true)
+        let c ← witness (val := Bool) (pure true)
+        allBools [a, b, c])
+    = some 1 := by decide
+
+/-- The `AssertEqual` pair instance: componentwise test, conjoined. -/
+example : proverValue BoolVar.toCVar
+    (do let x ← witness (val := F17) (pure 3)
+        let y ← witness (val := F17) (pure 3)
+        let b₁ ← witness (val := Bool) (pure true)
+        let b₂ ← witness (val := Bool) (pure true)
+        isEqual (x, b₁) (y, b₂))
+    = some 1 := by decide
 
 end Snarky.Example

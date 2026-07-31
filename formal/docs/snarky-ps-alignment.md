@@ -239,7 +239,7 @@ New files (each at its §5 walk step):
 | `Snarky/Circuit/CVar.lean` (additions) | `Circuit/CVar.purs` | folding smart constructors; `AffineExpression`, `reduceToAffineExpression`, `reduce_eval` |
 | `Snarky/Circuit/DSL/Field.lean` | `DSL/Field.purs` | `equals`, `neq`, `sum`, `pow`, `square`; first module with a targeted Mathlib `Field` import (D6) |
 | `Snarky/Circuit/DSL/Boolean.lean` | `DSL/Boolean.purs` | `IfThenElse` class + base `select`, `xor`, `any`, `all` |
-| `Snarky/Circuit/DSL/Assert.lean` | `DSL/Assert.purs` | `assertNonZero`, `assertNotEq`, `assertSquare`, `assertAny`/`All`/`ExactlyOne`, `allBools` |
+| `Snarky/Circuit/DSL/Assert.lean` | `DSL/Assert.purs` | `assertNonZero`, `assertNotEqual`, `assertSquare`, `assertAny`/`All`/`ExactlyOne`, `allBools` |
 | `Snarky/Circuit/DSL/Bits.lean` | `DSL/Bits.purs` | `unpack` (n booleans + one weighted-sum constraint), `pack`, pure variants |
 | `Snarky/Backend/Compile.lean` | `Backend/Compile.purs` | public input/output allocation, `compile`, `makeSolver`-analogue, end-to-end statement |
 
@@ -322,8 +322,13 @@ separate sign-offs on the resulting files.
   `Basic.r1cs_inv` beside `Basic.holds`, the `bit` lemmas beside `bit`; plus
   `prove_witnessCore`, the generic one-variable honest-run lemma that collapses each
   such gadget's run lemma to its two facts.
-- [ ] 11. `Snarky/Circuit/DSL/Assert.lean` — new; `assertEq` migrates here from the barrel
-  (its PS home).
+- [x] 11. `Snarky/Circuit/DSL/Assert.lean` — new; `assertEq` migrates from the barrel as the
+  `AssertEqual` class method (`FVar` call sites unchanged), switching to the `equal` row with
+  PS constant folding; PS's construction-time crashes on impossible constant assertions
+  become unsatisfiable rows (documented deviation); D12 laws in-file for
+  `assertEqual`/`assertNonZero`/`assertNotEqual`/`assertSquare`/`assert`; the sum-based
+  `assertAny`/`All`/`ExactlyOne` and `allBools` laws join the characteristic obligation;
+  `Basic.{equal,square}_inv` land beside `Basic.holds`.
 - [ ] 12. `Snarky/Circuit/DSL/Bits.lean` — new.
 - [ ] 13. `Snarky/Circuit/DSL.lean` — now the pure re-export barrel + the D7 naming-map
   docs; review the exported surface as a whole.

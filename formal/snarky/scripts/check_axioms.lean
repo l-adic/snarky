@@ -48,7 +48,17 @@ def roots : List Name :=
     `Snarky.xor_sound,
     `Snarky.xor_complete,
     `Snarky.select_sound,
-    `Snarky.select_complete ]
+    `Snarky.select_complete,
+    `Snarky.assertEqual_sound,
+    `Snarky.assertEqual_complete,
+    `Snarky.assertNonZero_sound,
+    `Snarky.assertNonZero_complete,
+    `Snarky.assertNotEqual_sound,
+    `Snarky.assertNotEqual_complete,
+    `Snarky.assertSquare_sound,
+    `Snarky.assertSquare_complete,
+    `Snarky.assert_sound,
+    `Snarky.assert_complete ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

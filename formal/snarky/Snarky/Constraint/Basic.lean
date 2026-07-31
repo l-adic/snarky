@@ -128,6 +128,31 @@ theorem Basic.r1cs_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
   · next x y z hx hy hz => exact ⟨x, y, z, hx, hy, hz, by simpa using h'⟩
   · cases h'
 
+/-- Inversion for a satisfied `equal` row: both operands evaluate, to the same value. -/
+theorem Basic.equal_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {a b : CVar F} {env : Assignments F}
+    (h : (Basic.equal a b).holds env = true) :
+    ∃ x y, a.eval env = .ok x ∧ b.eval env = .ok y ∧ x = y := by
+  have h' : (match a.eval env, b.eval env with
+      | .ok x, .ok y => decide (x = y)
+      | _, _ => false) = true := h
+  split at h'
+  · next x y hx hy => exact ⟨x, y, hx, hy, by simpa using h'⟩
+  · cases h'
+
+/-- Inversion for a satisfied `square` row: both operands evaluate and the square
+identity holds. -/
+theorem Basic.square_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {a c' : CVar F} {env : Assignments F}
+    (h : (Basic.square a c').holds env = true) :
+    ∃ x z, a.eval env = .ok x ∧ c'.eval env = .ok z ∧ x * x = z := by
+  have h' : (match a.eval env, c'.eval env with
+      | .ok x, .ok z => decide (x * x = z)
+      | _, _ => false) = true := h
+  split at h'
+  · next x z hx hz => exact ⟨x, z, hx, hz, by simpa using h'⟩
+  · cases h'
+
 /-- `Basic` is the reference `BasicSystem` instance: each method is its constructor. -/
 instance : BasicSystem F (Basic F) where
   r1cs := .r1cs
