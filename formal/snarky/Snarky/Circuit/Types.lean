@@ -16,8 +16,9 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   dispatches on the plain field type and core `Bool` directly, so `val` is unwrapped. The
   wrapper-lifting instances (`PrimeField (F f)`, `HasEndo (F f)`, `FieldSizeInBits (F f)`)
   therefore have no analogue; `FieldSizeInBits` resurfaces with `SizedF` (plan §6).
-- Instance coverage is the base pair only (`F`, `Bool`); the PS `Unit`,
-  `NoInput`/`NoOutput`, `Tuple`, `Const`, `Product`, `Vector`, and `Record` instances land
+- Instance coverage is the base pair (`F`, `Bool`) plus `Prod` (PS `Tuple`, landed with
+  its first consumer: `DSL/Field.equals`'s witness pair, walk step 9); the PS `Unit`,
+  `NoInput`/`NoOutput`, `Const`, `Product`, `Vector`, and `Record` instances land
   with their first consumers (the `IfThenElse` gadgets, walk step 10; `Backend/Compile`,
   step 14 — `NoInput`/`NoOutput`'s JSON instances are not ported); `UnChecked` is here,
   with its no-op `CheckedType` instance beside the class in `Circuit/DSL/Monad`.
@@ -64,18 +65,38 @@ instance : CircuitType F F (FVar F) where
 
 /-- A boolean as a circuit variable (PS `BoolVar f = CVar f (Bool Variable)`).
 
-Representation deviation: PS makes the distinction type-level — a phantom `Bool` tag on
-the variable-index parameter of the `CVar` bifunctor (the exported `Bool` constructor
-tags individual VARIABLES; a `BoolVar` expression is still built through the typed
-algebra). Here `CVar` is monomorphic (see `Circuit/CVar`), so the tag becomes a nominal
-wrapper on the expression root. The constructor is PRIVATE: introduction flows through
-`CircuitType.fieldsToVar`, whose callers owe the `CheckedType.check` emission (`witness`
-pays it). How the `DSL/Boolean` gadgets introduce their results is decided when they are
-ported (walk step 10), against the PS originals — no blanket escape hatch exists. -/
+Representation deviation: PS tags the variable-index parameter of the `CVar` bifunctor
+with the exported newtype `Bool`, and its gadgets retag freely with `Safe.Coerce` —
+representation-safe, but ambient. Here `CVar` is monomorphic (see `Circuit/CVar`), the
+tag is a nominal wrapper with a PRIVATE constructor, and introduction has exactly two
+doors:
+
+- `witness` at `Bool` — pays the `boolean` constraint through `CheckedType`; at
+  `UnChecked Bool` it skips it, declared in the type. Both are verbatim PS (`xor_`
+  witnesses its result at `UnChecked Boolean` for exactly this reason).
+- `BoolVar.unchecked` — the single explicit rendering of PS's `coerce` introduction,
+  for PURE retaggings only (a negation, a constant answer): each call site owes a
+  booleanity argument from its surrounding constraints (e.g. `Snarky.equals_sound`).
+
+(`CircuitType.fieldsToVar` at `Bool` also builds the wrapper — it must, `witness`
+factors through it — but it is implementation surface, not a gadget door; PS has the
+same shape, its `Bool` instance being itself a `coerce`.) -/
 structure BoolVar (F : Type u) where
   private mk ::
   /-- The underlying field expression, constrained to `{0, 1}` by `CheckedType.check`. -/
   toCVar : CVar F
+
+/-- Forgetting the tag is free: `↑b` eliminates a `BoolVar` to its field expression —
+the direction PS coerces on every arithmetic operand. Only INTRODUCTION is guarded, and
+deliberately not a coercion: the elaborator inserts `↑` silently on type mismatches,
+which would turn any mistyped expression into an unchecked boolean. -/
+instance : Coe (BoolVar F) (CVar F) := ⟨BoolVar.toCVar⟩
+
+/-- Retag an expression as boolean WITHOUT a constraint — the explicit rendering of
+PS's `coerce` introduction (see the `BoolVar` docstring). For pure retaggings whose
+booleanity the caller's constraints already force; witnessed booleans go through
+`witness` at `Bool` or `UnChecked Bool` instead. -/
+def BoolVar.unchecked (x : CVar F) : BoolVar F := ⟨x⟩
 
 instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
   size := 1
@@ -97,6 +118,20 @@ instance [inst : CircuitType F val var] : CircuitType F (UnChecked val) (UnCheck
   fieldsToValue fs := ⟨inst.fieldsToValue fs⟩
   varToFields v := inst.varToFields v.val
   fieldsToVar fs := ⟨inst.fieldsToVar fs⟩
+
+/-- Pairs encode as the concatenation of their components' encodings (PS `CircuitType`
+instance for `Tuple`), first component first. -/
+instance {a b av bv : Type u} [A : CircuitType F a av] [B : CircuitType F b bv] :
+    CircuitType F (a × b) (av × bv) where
+  size := A.size + B.size
+  valueToFields p := A.valueToFields p.1 ++ B.valueToFields p.2
+  fieldsToValue fs :=
+    ( A.fieldsToValue ((fs.take A.size).cast (by omega)),
+      B.fieldsToValue ((fs.drop A.size).cast (by omega)) )
+  varToFields p := A.varToFields p.1 ++ B.varToFields p.2
+  fieldsToVar fs :=
+    ( A.fieldsToVar ((fs.take A.size).cast (by omega)),
+      B.fieldsToVar ((fs.drop A.size).cast (by omega)) )
 
 /-! ## Round-trip laws (D9)
 

@@ -1,26 +1,31 @@
+import Mathlib.Algebra.Field.ZMod
 import Snarky.DSL
 import Snarky.Constraint.Basic
 import Snarky.Laws
 
 /-!
-# End-to-end example: a multiplication circuit over the `Basic` backend
+# End-to-end examples over the `Basic` backend
 
-The concrete `Snarky.Basic` constraint model over `Fin 17`, exercising the whole stack: the typed
-`witness` combinator, both interpreters, and an instantiation of the completeness
-theorem. Everything here reduces by `rfl`/`decide`, so this file doubles as a regression
-test for the executable semantics.
+The concrete `Snarky.Basic` constraint model over `ZMod 17`, exercising the whole stack:
+the typed `witness` combinator, both interpreters, an instantiation of the completeness
+theorem, and the field gadgets (`DSL/Field` and `DSL/Monad`) on the fixed inputs the PS
+QuickCheck specs sample (D9). Everything here reduces by `rfl`/`decide`, so this file
+doubles as a regression test for the executable semantics.
 
-The circuit mirrors the smallest interesting PS example: witness two field elements,
-multiply them (one witnessed product + one `r1cs` constraint), and assert the result
-equals a constant.
+The first circuit mirrors the smallest interesting PS example: witness two field
+elements, multiply them (one witnessed product + one `r1cs` constraint), and assert the
+result equals a constant.
 -/
 
 namespace Snarky.Example
 
 /-! ## The circuit -/
 
-/-- The example's field: the integers mod 17 — small enough for `decide` throughout. -/
-abbrev F17 := Fin 17
+/-- The example's field: the integers mod 17 — small enough for `decide` throughout, and
+a `Field` (17 is prime), which the `equals`/`inv`/`div` gadgets need. -/
+abbrev F17 := ZMod 17
+
+instance : Fact (Nat.Prime 17) := ⟨by decide⟩
 
 /-- Witness `x = 3` and `y = 5`, multiply, assert the product is `15`. -/
 def mulCircuit : CircuitM F17 (Basic F17) (FVar F17) := do
@@ -55,5 +60,71 @@ example {x : FVar F17} {nv : Nat} {env : Assignments F17}
     (h : prove Basic.holds mulCircuit 0 Assignments.empty = .ok ⟨x, nv, env⟩) :
     ∀ con ∈ constraints mulCircuit, con.holds env = true :=
   prove_complete (holds := Basic.holds) (fun _con _ _ hle hh => Basic.holds_mono hle hh) h
+
+/-! ## Field gadgets (walk step 9)
+
+The fixed inputs the PS QuickCheck specs sample, as `decide` checks: run the gadget
+under the prover and read the result's value from the final assignment. -/
+
+/-- Run a circuit under the prover and evaluate the result (through `view`) against the
+final assignment — `none` if the run or the evaluation fails. -/
+def proverValue (view : α → CVar F17) (m : CircuitM F17 (Basic F17) α) : Option F17 :=
+  match prove Basic.holds m 0 Assignments.empty with
+  | .ok p => (CVar.eval (view p.result) p.assignments).toOption
+  | .error _ => none
+
+/-- Witness both inputs and test equality — the PS eq spec's circuit. -/
+def eqCircuit (a b : F17) : CircuitM F17 (Basic F17) (BoolVar F17) := do
+  let x ← witness (val := F17) (pure a)
+  let y ← witness (val := F17) (pure b)
+  equals x y
+
+/-- Equal inputs: the prover succeeds and answers `1`. -/
+example : proverValue BoolVar.toCVar (eqCircuit 7 7) = some 1 := by decide
+
+/-- Distinct inputs: the prover succeeds (witnessing `zInv = (a − b)⁻¹`) and answers
+`0`. -/
+example : proverValue BoolVar.toCVar (eqCircuit 3 5) = some 0 := by decide
+
+/-- `equals` costs two witness variables and two constraints on top of its inputs. -/
+example : (build (eqCircuit 3 5) 0).nextVar = 4 ∧
+    (constraints (eqCircuit 3 5)).length = 2 := by decide
+
+/-- A constant comparison folds — no constraints, constant answer. -/
+def constEq : CircuitM F17 (Basic F17) (BoolVar F17) := equals (.const 3) (.const 4)
+
+example : (constraints constEq).length = 0 ∧ proverValue BoolVar.toCVar constEq = some 0 := by
+  decide
+
+/-- `neq` is the negated `equals` bit. -/
+example : proverValue BoolVar.toCVar
+    (do neq (← witness (val := F17) (pure 3)) (← witness (val := F17) (pure 5)))
+    = some 1 := by decide
+
+/-- `inv` witnesses the inverse: `3⁻¹ = 6` (mod 17). -/
+example : proverValue id (do inv (← witness (val := F17) (pure 3))) = some 6 := by decide
+
+/-- `div` composes `inv` and `mul`: `8 / 2 = 4`. -/
+example : proverValue id
+    (do div (← witness (val := F17) (pure 8)) (← witness (val := F17) (pure 2)))
+    = some 4 := by decide
+
+/-- `mul` by a constant folds to `scale_` — no constraint on top of the witness. -/
+def constMul : CircuitM F17 (Basic F17) (FVar F17) := do
+  mul (.const 3) (← witness (val := F17) (pure 5))
+
+example : proverValue id constMul = some 15 ∧ (constraints constMul).length = 0 := by decide
+
+/-- `square` uses the dedicated constraint: `5² = 8` (mod 17). -/
+example : proverValue id (do square (← witness (val := F17) (pure 5))) = some 8 := by decide
+
+/-- `pow` by repeated squaring: `2¹⁰ = 4` (mod 17). -/
+example : proverValue id (do pow (← witness (val := F17) (pure 2)) 10) = some 4 := by decide
+
+/-- `sum` is pure: `3 + x + 4` with `x = 5` witnessed — the PS sum spec's
+`pure ∘ sum` shape. -/
+example : proverValue id
+    (do let x ← witness (val := F17) (pure 5); pure (sum [.const 3, x, .const 4]))
+    = some 12 := by decide
 
 end Snarky.Example

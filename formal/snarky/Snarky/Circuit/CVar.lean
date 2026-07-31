@@ -10,10 +10,11 @@ constructors, evaluation against a partial assignment, and the reduction to the 
 affine form `c + Σ aᵢ·xᵢ` (`AffineExpression`) together with the evaluation-agreement
 theorem `reduce_eval` — the property the PS package checks by QuickCheck, proved here.
 
-The public surface is the PS export list, def for def; the ONLY public theorem is
-`CVar.reduce_eval`. The affine-form helpers (`insertTerm`, `unionTerms`, `mergeConst`,
-`evalTerms`) and every supporting lemma are `private` — PS likewise keeps its `reduce'`
-internal.
+The public surface is the PS export list, def for def; the public theorems are
+`CVar.reduce_eval` and the fold-evaluation lemmas `CVar.eval_add_`/`eval_scale_`/
+`eval_sub_` (consumed by the gadget laws in `Snarky.Laws` and by `DSL/Field.sum_eval`).
+The affine-form helpers (`insertTerm`, `unionTerms`, `mergeConst`, `evalTerms`) and every
+supporting lemma are `private` — PS likewise keeps its `reduce'` internal.
 
 `EvalError` also lives in this module because its PS original does: `EvaluationError` is
 defined in `Circuit/CVar.purs`, while the separate `Circuit/EvalError.purs` is only the
@@ -28,8 +29,8 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   private constructor instead (see `Circuit/Types`).
 - `const_` is not ported (`CVar.const` is already first-class); the QuickCheck machinery
   (`Arbitrary`, `genWithAssignments`) is not ported — the property it tested is
-  `reduce_eval`; the `Semigroup`/`Monoid` instances (zero-folding append) wait for their
-  first consumer (`DSL/Field.sum`).
+  `reduce_eval`; the `Semigroup`/`Monoid` instances (zero-folding append) are not ported:
+  their would-be consumer `DSL/Field.sum` mirrors PS `sum_`, which folds `add_` directly.
 - `EvalError` variants: `unassigned` ↔ PS `MissingVariable`; `custom` subsumes PS
   `FailedAssertion`/`DivisionByZero`; `conflict` and `unsatisfiedConstraint` are
   prover-side additions (our prover may never overwrite an assignment — see
@@ -129,6 +130,43 @@ def eval [Add F] [Mul F] : CVar F → (Variable → Option F) → Except EvalErr
     match x.eval env with
     | .error e => .error e
     | .ok y => .ok (k * y)
+
+/-! ## The folds are evaluation-preserving
+
+The smart constructors pre-fold constants; these lemmas say the folds cannot change a
+successful evaluation — what connects gadget fast paths to the gadget laws in
+`Snarky.Laws`. -/
+
+/-- `add_` evaluates like the raw constructor. -/
+theorem eval_add_ [Add F] [Mul F] (a b : CVar F) (env : Variable → Option F) :
+    (add_ a b).eval env = (CVar.add a b).eval env := by
+  cases a <;> cases b <;> rfl
+
+/-- `scale_` evaluates to the scalar product. -/
+theorem eval_scale_ [Add F] [MulZeroOneClass F] [DecidableEq F] {x : CVar F}
+    {env : Variable → Option F} {xv : F} (hx : x.eval env = .ok xv) (k : F) :
+    (scale_ k x).eval env = .ok (k * xv) := by
+  unfold scale_
+  split_ifs with h0 h1
+  · subst h0; simp [eval]
+  · subst h1; simpa using hx
+  · simp [eval, hx]
+
+/-- `sub_` evaluates to the difference. -/
+theorem eval_sub_ [CommRing F] [DecidableEq F] {a b : CVar F}
+    {env : Variable → Option F} {av bv : F}
+    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
+    (sub_ a b).eval env = .ok (av - bv) := by
+  unfold sub_
+  split
+  · next c₁ c₂ =>
+    simp only [eval, Except.ok.injEq] at ha hb
+    subst ha; subst hb; rfl
+  · rw [eval_add_]
+    have hs := eval_scale_ hb (-1)
+    simp only [eval, ha, hs]
+    congr 1
+    ring
 
 end CVar
 

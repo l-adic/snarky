@@ -1,18 +1,20 @@
 -- API root set for the snarky package (the deep-embedded circuit DSL).
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). The axiom audit
--- lives in scripts/check_axioms.lean (the same five interpreter laws).
+-- lives in scripts/check_axioms.lean (the interpreter laws and the gadget laws).
 --
 -- NOTE: the dead-code pass traverses Snarky for CREDITING only — a `Kimchi.*` declaration
 -- consumed by this package is live through these roots — but does not yet audit `Snarky.*`
 -- declarations themselves. Bringing the DSL surface under the dead-zero contract is
 -- deferred: it requires deciding which combinators are API of the port.
 --
--- MEASURED, so the deferral is priced rather than open-ended: there are 76 authored
--- `Snarky.*` declarations; 43 are unreachable from the 8 roots below and 33 are credited.
--- (Method: temporarily widen `isAudited` in scripts/deadcode.lean to all of `isOurs`, run
--- scripts/deadcode.sh, restore. The 43 are mostly DSL API — `assertEq`, `mul`, `witness`,
--- `mapVec`, the `CircuitM` instances, the `CheckedType`/`CircuitType` classes — so the open
--- question is which of them this manifest should declare, not whether they are dead.)
+-- MEASURED, so the deferral is priced rather than open-ended (re-measured at walk step 9):
+-- there are 137 authored `Snarky.*` declarations; 63 are unreachable from the 11 roots
+-- below and 74 are credited — the D12 gadget laws root their gadgets, so `equals` and the
+-- evaluation lemmas it rests on are now reachable. (Method: temporarily widen `isAudited`
+-- in scripts/deadcode.lean to all of `isOurs`, run scripts/deadcode.sh, restore. The 63
+-- are mostly DSL API — `assertEq`, `mul`, `witness`, `mapVec`, the `CircuitM` instances,
+-- the `CheckedType`/`CircuitType` classes — so the open question is which of them this
+-- manifest should declare, not whether they are dead.)
 
 -- The interpreter laws the embedding exists to state (Snarky/Laws.lean).
 Snarky.build_eraseWitness
@@ -24,6 +26,12 @@ Snarky.CVar.eval_le
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
 Snarky.Basic.holds
 Snarky.Basic.holds_mono
+
+-- The DSL gadget laws (Snarky/Circuit/DSL/Field.lean): the inverse-or-zero trick is
+-- sound and complete, and `sum` evaluates to the sum.
+Snarky.equals_sound
+Snarky.equals_complete
+Snarky.sum_eval
 
 -- The Kimchi Generic-gate bridge (Snarky/Kimchi/Backend.lean): a DSL constraint holds
 -- iff its written Generic row satisfies the verified checker's predicate.

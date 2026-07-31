@@ -1,3 +1,4 @@
+import Snarky.Circuit.DSL.Field
 import Snarky.Circuit.DSL.Monad
 
 /-!

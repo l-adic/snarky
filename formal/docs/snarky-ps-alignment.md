@@ -171,13 +171,36 @@ cross-module consumer appears.
 **D11 — phantom type tags become nominal wrappers with private constructors.** Where PS
 draws a type-level distinction with a phantom tag on the variable-index parameter
 (`BoolVar f = CVar f (Bool Variable)`; later `SizedF`), the Lean port uses a nominal
-structure wrapping the expression, with a PRIVATE constructor. Introduction flows through
-the `CircuitType`/`CheckedType` pathway (`fieldsToVar` plus the `check` obligation that
-`witness` pays); no blanket "unsafe" doors. Where a PS gadget introduces a tagged result
-some other way, the Lean rendering is decided at that gadget's own port step, against the
-original — note PS's exported `Bool(..)` tags individual variables, not whole
-expressions, so an expression-level escape hatch would be a strictly bigger hammer than
-anything PS exposes.
+structure wrapping the expression, with a PRIVATE constructor. PS itself has three
+introduction mechanisms: `exists` at the tagged type (pays `check`), `exists` at
+`UnChecked _` (the typed opt-out — how `xor_` witnesses its result), and ambient
+`Safe.Coerce` (how `equals_` retags its record-witnessed `r`; `Bool(..)` is exported, so
+retagging is available anywhere). The Lean rendering keeps the first two verbatim through
+`witness`, and replaces the third by ONE explicit function, `BoolVar.unchecked`, reserved
+for pure retaggings (a negation, a constant answer) with each call site owing a
+booleanity argument — strictly narrower than PS's ambient coercibility. Elimination
+(forgetting the tag) is free — a `Coe` instance, so `↑b` — matching PS's eliminating
+coerces; only introduction is guarded, and deliberately NOT a coercion, since the
+elaborator inserts `↑` silently on type mismatches.
+(`CircuitType.fieldsToVar` remains a public class method that builds the wrapper —
+`witness` factors through it — but it is implementation surface, not a gadget door; PS's
+`Bool` instance is itself a `coerce`.) Settled at walk step 9, against `equals_`/`xor_`.
+
+**D12 — gadget laws are stated against the interpreters, never re-derived over the
+field.** A gadget's law must mention the gadget: soundness quantifies over every
+assignment satisfying the constraints `build` emits — adversarial witnesses included —
+and pins the result's evaluation; completeness runs the honest `prove` from any
+fresh-enough assignment. Field-identity reformulations that never reference the circuit
+are proof engines, kept private — they connect to nothing and would survive gadget
+drift. Each law reads off a definitional shape lemma of the built circuit. The laws are
+field-generic and live in `Snarky/Laws.lean` (the gadget modules mirror the PS layering,
+below the backend, so interpreter theorems cannot live beside them — D3's
+interpreter-spanning clause). Stated over the reference `Basic` backend; transport to
+other backends (a lawful-`BasicSystem` class with per-constructor `holds` equations)
+arrives with its first non-reference consumer. This is the form that composes toward the
+arc this package ultimately serves — see
+`formal/docs/circuit-verifier-faithfulness.md` and §6. Settled at walk step 9, first
+instance `equals_sound`/`equals_complete`.
 
 ## 3. Target layout
 
@@ -274,7 +297,7 @@ separate sign-offs on the resulting files.
   (D5) and the emission-time-checking restriction (§6).
 - [x] 8. `Snarky/Laws.lean` — no relocation; content review of the five theorems and their
   root entries.
-- [ ] 9. `Snarky/Circuit/DSL/Field.lean` — new; targeted Mathlib `Field` import (D6).
+- [x] 9. `Snarky/Circuit/DSL/Field.lean` — new; targeted Mathlib `Field` import (D6).
 - [ ] 10. `Snarky/Circuit/DSL/Boolean.lean` — new.
 - [ ] 11. `Snarky/Circuit/DSL/Assert.lean` — new; `assertEq` migrates here from the barrel
   (its PS home).
@@ -294,6 +317,16 @@ laws in its `snarky-test-utils` spec plus `decide` examples for the fixed-vector
 
 ## 6. Out of scope — recorded follow-ons
 
+- **The circuit-verifier faithfulness arc** — the long-range goal past this plan: prove
+  circuit implementations of the kimchi verifier faithful to the wire-protocol verifier.
+  Architecture agreed and recorded in `formal/docs/circuit-verifier-faithfulness.md`:
+  per-fragment lemma towers over the D12 gadget laws (the verifier SPLITS by native
+  field arithmetic, deferred-values style), the deployed `Kimchi.Verifier` run functions
+  as specs, a boundary-encoding library (step 12's Bits round-trips are its engine), and
+  a glue theorem with a boundary-consistency hypothesis. Step 14's compile/solve payoff
+  statement is the fragment-interface seam. Standing discipline from step 10 on: witness
+  code calls the wire functions themselves, keeping the completeness direction
+  quasi-definitional.
 - **Anything snarky-kimchi-shaped** — a second backend, gate reduction, wiring, or growing
   the `Snarky/Kimchi/*` bridge. Not planned here; see the scope banner and D5.
 - **`DSL/SizedF`** — needs Bits plus a `FieldSizeInBits` analogue (a per-field bit-width

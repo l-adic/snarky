@@ -1,3 +1,4 @@
+import Mathlib.Algebra.Field.Defs
 import Snarky.Backend.Assignments
 import Snarky.Circuit.Types
 import Snarky.Constraint.Basic
@@ -42,14 +43,17 @@ are pure recursive functions: `Snarky.build` (PS `Backend.Builder`) and `Snarky.
 - The numeric-tower instances on `Snarky`-actions (`Semiring (Snarky f c r (FVar f))` …,
   with their `Newtype` fallbacks) are not ported (D8); the underlying combinators land as
   plain functions.
-- The field primitives `inv_`/`div_` defined here in PS land in this module at walk step 9
-  (they need the `Field` inverse, D6); the boolean primitives `not_`/`and_`/`or_` land at
-  step 10 — note PS introduces `and_`'s `BoolVar` result via `coerce`, so the
-  `BoolVar`-introduction decision (D11) is made there, against that code.
-- `CheckedType` instances: `FVar`, `BoolVar`, and `UnChecked` are here; `Unit`,
-  `NoInput`/`NoOutput`, `Tuple`, `Const`, `Product`, `Vector`, and `Record` land with
-  their `CircuitType` partners (steps 10/14); `GCheckedType`/`RCheckedType`/
-  `genericCheck` are the deriving machinery, out of scope (D8).
+- The field primitives `inv_`/`div_` defined here in PS are here as `inv`/`div` (D7
+  names), on the targeted `Mathlib.Algebra.Field.Defs` import (D6: `[Field F]`, the
+  weakest fitting class for an inverse); the boolean primitives `not_`/`and_`/`or_` land
+  at step 10, on the D11 doors settled at step 9: witnessed booleans through `witness`
+  at `UnChecked Bool` (the discipline PS's `xor_` models), pure retaggings through
+  `BoolVar.unchecked` (see the `BoolVar` docstring in `Circuit/Types`).
+- `CheckedType` instances: `FVar`, `BoolVar`, `UnChecked`, and the `Tuple` pair (step 9,
+  `equals`'s witness pair) are here; `Unit`, `NoInput`/`NoOutput`, `Const`, `Product`,
+  `Vector`, and `Record` land with their `CircuitType` partners (steps 10/14);
+  `GCheckedType`/`RCheckedType`/`genericCheck` are the deriving machinery, out of scope
+  (D8).
 - PS `exists` is `witness` (`exists` is a Lean keyword). PS `read` is `readVar`: `read`
   is core Lean's `MonadReader` primitive, and `AsProver` is a `ReaderT`, so the bare name
   already means "fetch the assignment table" inside exactly the witness blocks that call
@@ -206,6 +210,14 @@ elsewhere (PS `CheckedType` instance for `UnChecked`). -/
 instance {var : Type u} : CheckedType F c (UnChecked var) where
   check _ := .pure PUnit.unit
 
+/-- A pair is checked componentwise, first component first (PS `CheckedType` instance
+for `Tuple`, via `genericCheck`). -/
+instance {avar bvar : Type u} [CheckedType F c avar] [CheckedType F c bvar] :
+    CheckedType F c (avar × bvar) where
+  check p := do
+    CheckedType.check (c := c) p.1
+    CheckedType.check (c := c) p.2
+
 /-! ## The typed combinators -/
 
 variable {val var : Type u}
@@ -234,15 +246,43 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
     else
       .error (.custom "readVar: size mismatch")
 
-/-- Multiply two field variables: witness the product, constrain it with `r1cs`
-(PS `mul_`, minus the constant-folding fast paths — they return without constraining and
-land with the rest of the folding gadgets at walk step 9). -/
-def mul [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
-  let z ← witness (val := F) do
-    let xv ← AsProver.readCVar x
-    let yv ← AsProver.readCVar y
-    pure (xv * yv)
-  addConstraint (BasicSystem.r1cs x y z)
-  pure z
+/-- Multiply two field variables (PS `mul_`). Constants fold without constraining: two
+constants multiply out, and a constant times an expression is `scale_`. Otherwise the
+product is witnessed and pinned with one `r1cs` constraint. -/
+def mul [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
+    CircuitM F c (FVar F) :=
+  match x, y with
+  | .const a, .const b => pure (.const (a * b))
+  | .const a, y => pure (CVar.scale_ a y)
+  | x, .const b => pure (CVar.scale_ b x)
+  | x, y => do
+    let z ← witness (val := F) do
+      let xv ← AsProver.readCVar x
+      let yv ← AsProver.readCVar y
+      pure (xv * yv)
+    addConstraint (BasicSystem.r1cs x y z)
+    pure z
+
+/-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1` (PS `inv_`).
+A constant folds to its constant inverse — total where PS crashes on the constant zero
+(Lean's `0⁻¹ = 0`); either way no constraint is emitted. During a prover run a zero
+argument fails the witness computation, as in PS (`DivisionByZero`). -/
+def inv [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
+  match x with
+  | .const a => pure (.const a⁻¹)
+  | x => do
+    let xInv ← witness (val := F) do
+      let xv ← AsProver.readCVar x
+      if xv = 0 then AsProver.throw "inv: division by zero"
+      else pure xv⁻¹
+    addConstraint (BasicSystem.r1cs x xInv (.const 1))
+    pure xInv
+
+/-- Divide field variables: `x · y⁻¹`, one `inv` then one `mul` (PS `div_`). A zero
+divisor fails in `inv`'s witness computation. -/
+def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
+    CircuitM F c (FVar F) := do
+  let yInv ← inv y
+  mul x yInv
 
 end Snarky

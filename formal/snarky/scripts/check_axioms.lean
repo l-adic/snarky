@@ -16,13 +16,16 @@ open Lean Lean.Elab.Command
 
 namespace Snarky.CheckAxioms
 
-/-- The headline interpreter laws (see `Snarky/Laws.lean`). -/
+/-- The headline interpreter and gadget laws (see `Snarky/Laws.lean`). -/
 def roots : List Name :=
   [ `Snarky.build_eraseWitness,
     `Snarky.prove_assignments_le,
     `Snarky.prove_build_agrees,
     `Snarky.prove_complete,
-    `Snarky.CVar.eval_le ]
+    `Snarky.CVar.eval_le,
+    `Snarky.equals_sound,
+    `Snarky.equals_complete,
+    `Snarky.sum_eval ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

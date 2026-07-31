@@ -2,6 +2,7 @@ import Snarky.Circuit.CVar
 import Snarky.Backend.Assignments
 import Snarky.Circuit.Types
 import Snarky.Circuit.DSL.Monad
+import Snarky.Circuit.DSL.Field
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
 import Snarky.Vec

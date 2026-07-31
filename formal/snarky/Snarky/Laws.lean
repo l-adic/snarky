@@ -1,3 +1,4 @@
+import Snarky.Circuit.DSL.Field
 import Snarky.Backend.Prover
 
 /-!
@@ -22,12 +23,23 @@ final-tagless PureScript original:
    (`prove_assignments_le`), so a monotone `holds` stays true. Backends discharge the
    monotonicity hypothesis once via their `holds_mono` (`Snarky.Basic.holds_mono`;
    `Snarky.Kimchi.GateConstraint.holds_mono`).
+4. **Gadget laws** (plan D12) — the `## The gadget laws` section: a gadget's law is
+   stated against the interpreters, never re-derived over the field alone. Soundness
+   quantifies over EVERY assignment satisfying the constraints `build` emits —
+   adversarial witnesses included — and pins the result's evaluation to the gadget's
+   semantics; completeness runs the honest prover from any fresh-enough assignment.
+   Stated over the reference `Basic` backend (transport to other backends arrives with a
+   lawful-`BasicSystem` consumer); each law reads off a definitional shape lemma for the
+   built circuit, so a drifted gadget cannot keep its law. First instance:
+   `equals_sound`/`equals_complete`. They live here, not beside their gadgets, because
+   the gadget modules mirror the PS layering, below the backend (D3).
 
-Four of the five theorems here — all but the corollary `build_eq_of_eraseWitness` — plus
-`CVar.eval_le` are the package's audited roots (`scripts/check_axioms.lean`: standard
-axioms only). Deliberately NOT stated: the
-converse of completeness — that satisfiability of the built system implies a successful
-honest-prover run — which would need totality hypotheses on the witness computations;
+The interpreter laws (all but the corollary `build_eq_of_eraseWitness`), the gadget
+laws, and `CVar.eval_le` are audited roots — `roots.txt` is the manifest,
+`scripts/check_axioms.lean` the axiom gate (standard axioms only). Deliberately NOT
+stated: the general converse of completeness — satisfiability of the built system
+implying a successful honest-prover run — which would need totality hypotheses on the
+witness computations (per-gadget completeness supplies exactly this, gadget by gadget);
 and anything about the proof system itself (zero-knowledge, extraction), which lives
 beyond the DSL layer.
 -/
@@ -205,5 +217,196 @@ theorem prove_complete {holds : c → Assignments F → Bool}
     simp only [prove] at h
     simp only [build]
     exact ih h
+
+/-! ## The gadget laws (D12)
+
+Stated against `build`/`prove` over the reference `Basic` backend — see item 4 of the
+module docstring. Each gadget's development: a definitional shape lemma for its built
+circuit (the anti-drift anchor), private field-level engines, and the public
+soundness/completeness pair. -/
+
+/-! ### `equals` (Circuit/DSL/Field) -/
+
+/-- The field engine of `equals` soundness: `r · z = 0` and `zInv · z = 1 − r` pin `r`
+to the equality bit. -/
+private theorem equals_pin {F : Type} [Field F] [DecidableEq F] {r zInv z : F}
+    (h₁ : r * z = 0) (h₂ : zInv * z = 1 - r) : r = if z = 0 then 1 else 0 := by
+  by_cases hz : z = 0
+  · subst hz
+    rw [mul_zero] at h₂
+    rw [if_pos rfl, ← sub_eq_zero.mp h₂.symm]
+  · rw [if_neg hz]
+    rcases mul_eq_zero.mp h₁ with hr | h0
+    · exact hr
+    · exact absurd h0 hz
+
+/-- The field engine of `equals` completeness: the honest witness values satisfy both
+constraints. -/
+private theorem equals_checks {F : Type} [Field F] [DecidableEq F] (zv : F) :
+    (if zv = 0 then (1 : F) else 0) * zv = 0 ∧
+    (if zv = 0 then (0 : F) else zv⁻¹) * zv = 1 - (if zv = 0 then (1 : F) else 0) := by
+  by_cases hz : zv = 0
+  · simp [hz]
+  · simp [hz]
+
+/-- What `equalsCore` builds, pinned definitionally: two fresh variables (`r` at `nv`,
+`zInv` at `nv + 1`) and the two `r1cs` constraints, the answer bit as result — the
+anti-drift anchor both `equals` laws read off. -/
+private theorem build_equalsCore {F : Type} [Field F] [DecidableEq F] (z : CVar F)
+    (nv : Nat) :
+    build (equalsCore (c := Basic F) z) nv =
+      ⟨.unchecked (.var nv), nv + 2,
+        [.r1cs (.var nv) z (.const 0),
+         .r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))]⟩ := rfl
+
+/-- `equalsCore` soundness: any satisfying assignment pins the answer bit. -/
+private theorem equalsCore_sound {F : Type} [Field F] [DecidableEq F] {z : CVar F}
+    {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
+    (hsat : ∀ con ∈ (build (equalsCore (c := Basic F) z) nv).constraints,
+      con.holds env = true) :
+    (build (equalsCore (c := Basic F) z) nv).result.toCVar.eval env
+      = .ok (if zv = 0 then 1 else 0) := by
+  rw [build_equalsCore] at hsat ⊢
+  rw [List.forall_mem_cons, List.forall_mem_cons] at hsat
+  obtain ⟨h₁, h₂, -⟩ := hsat
+  cases hnv : env nv with
+  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
+  | some rv =>
+    cases hnv1 : env (nv + 1) with
+    | none => simp [Basic.holds, CVar.eval, hnv1] at h₂
+    | some iv =>
+      have hvnv : (CVar.var nv).eval env = .ok rv := by simp [CVar.eval, hnv]
+      have hsub : (CVar.sub_ (.const 1) (.var nv)).eval env = .ok (1 - rv) :=
+        CVar.eval_sub_ rfl hvnv
+      simp only [Basic.holds, CVar.eval, hnv, hnv1, hz, hsub, decide_eq_true_eq] at h₁ h₂
+      show (CVar.var nv).eval env = _
+      rw [hvnv, equals_pin h₁ h₂]
+
+/-- The honest `equalsCore` run, from any witness values satisfying the two constraint
+identities: the prover succeeds, assigning `r` at `nv` and `zInv` at `nv + 1`. -/
+private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
+    {nv : Nat} {env : Assignments F} {zv v₁ v₂ : F} (hz : z.eval env = .ok zv)
+    (hfresh : ∀ v, nv ≤ v → env v = none)
+    (hwit : (equalsWit z env).map
+        (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
+      = .ok ⟨#[v₁, v₂], rfl⟩)
+    (hc₁ : v₁ * zv = 0) (hc₂ : v₂ * zv = 1 - v₁) :
+    prove Basic.holds (equalsCore (c := Basic F) z) nv env
+      = .ok ⟨.unchecked (.var nv), nv + 2, (env.extend nv v₁).extend (nv + 1) v₂⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hnv1 : (env.extend nv v₁) (nv + 1) = none := by
+    simp [Assignments.extend, hfresh (nv + 1) (Nat.le_succ nv)]
+  set env₂ : Assignments F := (env.extend nv v₁).extend (nv + 1) v₂ with henv₂
+  have henv₂nv : env₂ nv = some v₁ := by
+    simp [henv₂, Assignments.extend]
+  have henv₂nv1 : env₂ (nv + 1) = some v₂ := by
+    simp [henv₂, Assignments.extend]
+  have hle : env.Le env₂ := by
+    intro v x hv
+    simp only [henv₂, Assignments.extend]
+    split
+    · next h => rw [h, hfresh (nv + 1) (Nat.le_succ nv)] at hv; cases hv
+    · split
+      · next h => rw [h, hnv] at hv; cases hv
+      · exact hv
+  have hzeval₂ : z.eval env₂ = .ok zv := CVar.eval_le hle hz
+  have hext : env.extendPairs
+      ((allocRange nv 2).toList.zip (⟨#[v₁, v₂], rfl⟩ : Vector F 2).toList)
+      = .ok env₂ := by
+    show env.extendPairs [(nv, v₁), (nv + 1, v₂)] = .ok env₂
+    simp [Assignments.extendPairs, hnv, hnv1, henv₂]
+  have hch₁ : Basic.holds (.r1cs (.var nv) z (.const 0)) env₂ = true := by
+    simp [Basic.holds, CVar.eval, henv₂nv, hzeval₂, hc₁]
+  have hch₂ : Basic.holds
+      (.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))) env₂ = true := by
+    have hsub : (CVar.sub_ (.const 1) (.var nv)).eval env₂ = .ok (1 - v₁) :=
+      CVar.eval_sub_ rfl (by simp [CVar.eval, henv₂nv])
+    simp [Basic.holds, CVar.eval, henv₂nv1, hzeval₂, hsub, hc₂]
+  show prove Basic.holds (.existsOp 2 (fun e => (equalsWit z e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  show prove Basic.holds
+    (.addConstraintOp (.r1cs (.var nv) z (.const 0))
+      (.addConstraintOp (.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv)))
+        (.pure (BoolVar.unchecked (.var nv))))) (nv + 2) env₂ = _
+  simp only [prove, hch₁, hch₂, if_true]
+
+/-- `equalsCore` completeness: on a fresh-from-`nv` assignment that evaluates `z`, the
+honest prover run succeeds and the answer bit is correct. -/
+private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CVar F}
+    {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
+    (hfresh : ∀ v, nv ≤ v → env v = none) :
+    ∃ out, prove Basic.holds (equalsCore (c := Basic F) z) nv env = .ok out ∧
+      out.result.toCVar.eval out.assignments = .ok (if zv = 0 then 1 else 0) := by
+  obtain ⟨hc₁, hc₂⟩ := equals_checks (F := F) zv
+  have hwit : (equalsWit z env).map
+      (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
+      = .ok ⟨#[if zv = 0 then 1 else 0, if zv = 0 then 0 else zv⁻¹], rfl⟩ := by
+    by_cases hzv : zv = 0 <;>
+      simp [equalsWit, AsProver.readCVar, hz, hzv, Bind.bind, ReaderT.bind, Except.bind,
+        Pure.pure, ReaderT.pure, Except.pure, Except.map, CircuitType.valueToFields]
+  refine ⟨_, equalsCore_run hz hfresh hwit hc₁ hc₂, ?_⟩
+  show (CVar.var nv).eval _ = _
+  simp [CVar.eval, Assignments.extend]
+
+/-- **`equals` soundness** (D12): for every assignment satisfying the constraints
+`equals a b` emits — adversarial witnesses included — the result evaluates to the
+equality bit of the inputs' values. In particular the result is boolean, which is what
+lets the gadget skip the `boolean` check. -/
+theorem equals_sound {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
+    {env : Assignments F} {av bv : F}
+    (hsat : ∀ con ∈ (build (equals (c := Basic F) a b) nv).constraints,
+      con.holds env = true)
+    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
+    (build (equals (c := Basic F) a b) nv).result.toCVar.eval env
+      = .ok (if av = bv then 1 else 0) := by
+  have hz : (CVar.sub_ a b).eval env = .ok (av - bv) := CVar.eval_sub_ ha hb
+  have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
+  unfold equals at hsat ⊢
+  cases hcase : CVar.sub_ a b with
+  | const f =>
+    rw [hcase] at hz
+    have hf : f = av - bv := by simpa [CVar.eval] using hz
+    subst hf
+    show Except.ok _ = _
+    simp [sub_eq_zero]
+  | var v =>
+    rw [hcase] at hz hsat
+    simpa only [hiff] using equalsCore_sound hz hsat
+  | add x y =>
+    rw [hcase] at hz hsat
+    simpa only [hiff] using equalsCore_sound hz hsat
+  | scale k x =>
+    rw [hcase] at hz hsat
+    simpa only [hiff] using equalsCore_sound hz hsat
+
+/-- **`equals` completeness** (D12): on any assignment that evaluates the inputs and is
+unassigned from `nv` up, the honest prover run of `equals a b` succeeds and its result
+evaluates, under the final assignment, to the equality bit. -/
+theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
+    {env : Assignments F} {av bv : F}
+    (hfresh : ∀ v, nv ≤ v → env v = none)
+    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
+    ∃ out, prove Basic.holds (equals (c := Basic F) a b) nv env = .ok out ∧
+      out.result.toCVar.eval out.assignments = .ok (if av = bv then 1 else 0) := by
+  have hz : (CVar.sub_ a b).eval env = .ok (av - bv) := CVar.eval_sub_ ha hb
+  have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
+  unfold equals
+  cases hcase : CVar.sub_ a b with
+  | const f =>
+    rw [hcase] at hz
+    have hf : f = av - bv := by simpa [CVar.eval] using hz
+    subst hf
+    refine ⟨_, rfl, ?_⟩
+    show Except.ok _ = _
+    simp [sub_eq_zero]
+  | var v =>
+    rw [hcase] at hz
+    simpa only [hiff] using equalsCore_complete hz hfresh
+  | add x y =>
+    rw [hcase] at hz
+    simpa only [hiff] using equalsCore_complete hz hfresh
+  | scale k x =>
+    rw [hcase] at hz
+    simpa only [hiff] using equalsCore_complete hz hfresh
 
 end Snarky
