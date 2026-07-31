@@ -1,5 +1,5 @@
 import Snarky.Constraint.Basic
-import Snarky.Prover
+import Snarky.Backend.Prover
 import Kimchi.Gate.Generic
 
 /-!

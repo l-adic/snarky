@@ -270,7 +270,7 @@ separate sign-offs on the resulting files.
   fix the three stale `build_eq_of_sameShape` cites.
 - [x] 6. `Snarky/Backend/Builder.lean` — relocate; note the un-ported `CompileCircuit` seam
   (D5).
-- [ ] 7. `Snarky/Backend/Prover.lean` — relocate; document the `holds`-parameter deviation
+- [x] 7. `Snarky/Backend/Prover.lean` — relocate; document the `holds`-parameter deviation
   (D5) and the emission-time-checking restriction (§6).
 - [ ] 8. `Snarky/Laws.lean` — no relocation; content review of the five theorems and their
   root entries.

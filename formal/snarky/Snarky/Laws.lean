@@ -1,4 +1,4 @@
-import Snarky.Prover
+import Snarky.Backend.Prover
 
 /-!
 # The interpreter laws
