@@ -272,6 +272,43 @@ def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVa
   addConstraint (BasicSystem.r1cs x y z)
   pure z
 
+/-- Successful `mapM`-evaluation is stable under assignment extension — the list form
+of `CVar.eval_le`. -/
+private theorem mapM_eval_le [Add F] [Mul F] {env env' : Assignments F} (hle : env.Le env') :
+    ∀ {l : List (CVar F)} {res : List F},
+      l.mapM (CVar.eval · env) = .ok res → l.mapM (CVar.eval · env') = .ok res := by
+  intro l
+  induction l with
+  | nil => intro res h; exact h
+  | cons x l ih =>
+    intro res h
+    rw [List.mapM_cons] at h ⊢
+    cases hx : CVar.eval x env with
+    | error e => rw [hx] at h; cases h
+    | ok v =>
+      rw [hx] at h
+      rw [CVar.eval_le hle hx]
+      cases hrest : l.mapM (CVar.eval · env) with
+      | error e => rw [hrest] at h; cases h
+      | ok vs =>
+        rw [hrest] at h
+        rw [ih hrest]
+        exact h
+
+/-- Successful `readVar`s are stable under assignment extension — the bundle form of
+`CVar.eval_le`. `Backend/Compile`'s payoff theorem uses it to carry the output decode
+from the back-fill point to the end of the run. -/
+theorem readVar_le [Add F] [Mul F] [inst : CircuitType F val var] {v : var}
+    {env env' : Assignments F} (hle : env.Le env') {x : val}
+    (h : readVar (F := F) v env = .ok x) : readVar (F := F) v env' = .ok x := by
+  unfold readVar at h ⊢
+  cases hm : (inst.varToFields v).toList.mapM (CVar.eval · env) with
+  | error e => rw [hm] at h; cases h
+  | ok fields =>
+    rw [hm] at h
+    rw [mapM_eval_le hle hm]
+    exact h
+
 /-- Multiply two field variables (PS `mul_`). Constants fold without constraining: two
 constants multiply out, and a constant times an expression is `scale_`. Otherwise the
 product is witnessed and pinned with one `r1cs` constraint. -/

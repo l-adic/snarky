@@ -8,6 +8,7 @@ import Snarky.Circuit.DSL.Assert
 import Snarky.Circuit.DSL.Bits
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
+import Snarky.Backend.Compile
 import Snarky.Vec
 import Snarky.Constraint.Basic
 import Snarky.DSL

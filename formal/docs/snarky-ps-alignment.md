@@ -343,8 +343,19 @@ separate sign-offs on the resulting files.
   docstring, and the two barrel-semantics deviations recorded (import-as-export exposes
   whole module surfaces where PS curates — PS omits `allBools` and the `square` method
   from its list; the backend rides in transitively for the laws).
-- [ ] 14. `Snarky/Backend/Compile.lean` — the §4 design work + end-to-end example and payoff
-  theorem; new roots.
+- [x] 14. `Snarky/Backend/Compile.lean` — the §4 design work + end-to-end example and payoff
+  theorem; new roots. Landed: `compile`/`solve` (PS `compile`/`makeSolver`+`runSolver`)
+  over ONE shared `compileBody` — PS spells two near-identical programs, but the builder
+  ignores `assignOp`, so a single op tree serves both interpreters and the laws quantify
+  over it directly. Public slots are canonical (inputs `0..`, outputs `A.size..`);
+  `assignVars` gains its first real consumer (the output back-fill assigns into the fresh
+  region, the very move that blocks a general freshness-preservation theorem). The payoff
+  `solve_complete`: a successful solve satisfies every compiled constraint AND decodes the
+  input/output slots as declared — proved by `prove_complete` + bind-decomposition of the
+  run, with `readVar_le` (new, beside `readVar`) carrying the mid-run output read to the
+  final assignment. End-to-end `cubeCircuit` examples in `Example.lean` (compiled
+  constraint list, solved output, slot decodes, failing-assertion rejection). Non-ported
+  (D8): `compile'`/`makeSolver'` debug machinery, the advice row, the `Checker` type.
 - [ ] 15. Wrap-up — `Snarky.lean` root imports + orientation docstring; `Vec.lean` and
   `Example.lean` final state; `roots.txt` grown per gadget (retiring the 43-declaration
   dead-code deferral note); the two phantom forward-reference fixes in

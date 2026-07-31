@@ -1,4 +1,5 @@
 import Mathlib.Algebra.Field.ZMod
+import Snarky.Backend.Compile
 import Snarky.DSL
 import Snarky.Constraint.Basic
 
@@ -284,5 +285,37 @@ example : proverValue BoolVar.toCVar
         let b₂ ← witness (val := Bool) (pure true)
         isEqual (x, b₁) (y, b₂))
     = some 1 := by decide
+
+/-! ## Whole-circuit compile/solve (walk step 14) -/
+
+/-- Cube the public input: one `square` row, one `r1cs` row. -/
+def cubeCircuit (x : FVar F17) : CircuitM F17 (Basic F17) (FVar F17) := do
+  let y ← square x
+  mul y x
+
+/-- Public slots come first — input at `0`, output at `1`; the gadgets allocate `2`
+and `3`. -/
+example : (compile (a := F17) (b := F17) cubeCircuit).nextVar = 4 := by decide
+
+/-- The compiled system: the gadget rows read the public-input slot, and the final row
+pins the circuit's result to the public-output slot. -/
+example : (compile (a := F17) (b := F17) cubeCircuit).constraints =
+    [ .square (.var 0) (.var 2), .r1cs (.var 2) (.var 0) (.var 3),
+      .equal (.var 3) (.var 1) ] := by decide
+
+/-- Solving computes the output: `2³ = 8`. -/
+example : ((solve (a := F17) (b := F17) Basic.holds cubeCircuit 2).toOption.map
+    Prod.fst) = some 8 := by decide
+
+/-- The seam, concretely: the solved assignment decodes the input at slot `0` and the
+output at slot `1` — the facts `solve_complete` states in general. -/
+example : ((solve (a := F17) (b := F17) Basic.holds cubeCircuit 2).toOption.map
+    fun r => (r.2 0, r.2 1)) = some (some 2, some 8) := by decide
+
+/-- A failing assertion stops the solver: `2² ≠ 3`. -/
+example : (solve (a := F17) (b := F17) Basic.holds
+    (fun (x : FVar F17) => do let y ← square x; assertEq y (.const 3); pure y)
+    2).isOk = false := by
+  decide
 
 end Snarky.Example
