@@ -337,8 +337,12 @@ separate sign-offs on the resulting files.
   engines proved: `packPure_unpackPure` (the round trip), `pack_eval`, `unpack_sound`
   (bits boolean + weighted sum, canonicity joining the characteristic obligation),
   `unpack_complete` (the honest binary digits).
-- [ ] 13. `Snarky/Circuit/DSL.lean` — now the pure re-export barrel + the D7 naming-map
-  docs; review the exported surface as a whole.
+- [x] 13. `Snarky/Circuit/DSL.lean` — the barrel review: every name on PS's export list
+  audited to exactly one disposition (ported / D7-renamed / D8-non-ported / §6-deferred —
+  no stragglers found), the consolidated PS → Lean surface map written into the barrel's
+  docstring, and the two barrel-semantics deviations recorded (import-as-export exposes
+  whole module surfaces where PS curates — PS omits `allBools` and the `square` method
+  from its list; the backend rides in transitively for the laws).
 - [ ] 14. `Snarky/Backend/Compile.lean` — the §4 design work + end-to-end example and payoff
   theorem; new roots.
 - [ ] 15. Wrap-up — `Snarky.lean` root imports + orientation docstring; `Vec.lean` and
