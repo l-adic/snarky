@@ -268,7 +268,7 @@ separate sign-offs on the resulting files.
   `CheckedType` and `witness`/`readVar`/`mul` (their PS home is `DSL/Monad.purs`); document
   the deep-embedding deviation, the dropped advice row, and the single scoped `labelOp`;
   fix the three stale `build_eq_of_sameShape` cites.
-- [ ] 6. `Snarky/Backend/Builder.lean` — relocate; note the un-ported `CompileCircuit` seam
+- [x] 6. `Snarky/Backend/Builder.lean` — relocate; note the un-ported `CompileCircuit` seam
   (D5).
 - [ ] 7. `Snarky/Backend/Prover.lean` — relocate; document the `holds`-parameter deviation
   (D5) and the emission-time-checking restriction (§6).

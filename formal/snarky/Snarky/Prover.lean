@@ -1,4 +1,4 @@
-import Snarky.Builder
+import Snarky.Backend.Builder
 
 /-!
 # The witness prover
