@@ -31,7 +31,7 @@ Alignment is about the module tree, the API names, and coverage — not the embe
 **Invariants through every step:**
 
 - The five audited roots (`build_eraseWitness`, `prove_assignments_le`, `prove_build_agrees`,
-  `prove_sound`, `CVar.eval_le`) stay green under `scripts/check_axioms.sh` — standard axioms
+  `prove_complete`, `CVar.eval_le`) stay green under `scripts/check_axioms.sh` — standard axioms
   only — at every sign-off boundary (§5).
 - Standard-library discipline: **no reimplementing core-Lean or Mathlib basics** to avoid an
   import. Where a module needs algebraic structure it takes Mathlib's classes (`Field`,
@@ -98,7 +98,7 @@ the `.purs` tree so the original is the map; `Laws.lean` is the one sanctioned e
 (it is the reason the port exists).
 
 **D2 — namespaces stay flat; paths move.** Declarations today live in flat `Snarky.*`
-(`Snarky.build`, `Snarky.prove_sound`) with dot-namespaces only from type names
+(`Snarky.build`, `Snarky.prove_complete`) with dot-namespaces only from type names
 (`Snarky.CVar.eval_le`). The relocation keeps every declaration name byte-identical, so
 `roots.txt` and `scripts/check_axioms.lean` are untouched by the move (kimchi-reorg precedent:
 its gate split also kept the namespace fixed). The kimchi package's "namespace matches path"
@@ -228,9 +228,9 @@ gets this almost for free from the shared `allocRange` discipline:
   outputs back-filled with `assignOp` (its first real consumer — today nothing uses it; the
   `extendPairs` guard is satisfied because the output slots are allocated-but-unassigned until
   exactly this point).
-- The payoff theorem, extending `prove_sound` to the pipeline: a successful `solve` yields an
+- The payoff theorem, extending `prove_complete` to the pipeline: a successful `solve` yields an
   assignment satisfying every compiled constraint *and* agreeing with the declared public
-  input/output encoding — the end-to-end analogue of `prove_sound`, stated once for the whole
+  input/output encoding — the end-to-end analogue of `prove_complete`, stated once for the whole
   compile/solve pair.
 
 ## 5. Execution order — the module-by-module sign-off walk
@@ -272,7 +272,7 @@ separate sign-offs on the resulting files.
   (D5).
 - [x] 7. `Snarky/Backend/Prover.lean` — relocate; document the `holds`-parameter deviation
   (D5) and the emission-time-checking restriction (§6).
-- [ ] 8. `Snarky/Laws.lean` — no relocation; content review of the five theorems and their
+- [x] 8. `Snarky/Laws.lean` — no relocation; content review of the five theorems and their
   root entries.
 - [ ] 9. `Snarky/Circuit/DSL/Field.lean` — new; targeted Mathlib `Field` import (D6).
 - [ ] 10. `Snarky/Circuit/DSL/Boolean.lean` — new.

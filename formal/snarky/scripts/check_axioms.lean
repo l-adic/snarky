@@ -3,6 +3,10 @@ Axiom-closure gate for the Snarky DSL library: the interpreter laws must be prov
 the standard logical axioms alone — the deep embedding is pure core Lean, so nothing else
 (no `sorryAx`, no `native_decide`, no curve axioms) may appear in their closures.
 
+The root list is a deletion guard as well as an axiom guard: a name absent from the environment
+fails with `axiom-check root not in environment`, so removing a listed declaration — even
+together with its `roots.txt` line — cannot pass silently.
+
 Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 -/
 import Snarky
@@ -17,7 +21,7 @@ def roots : List Name :=
   [ `Snarky.build_eraseWitness,
     `Snarky.prove_assignments_le,
     `Snarky.prove_build_agrees,
-    `Snarky.prove_sound,
+    `Snarky.prove_complete,
     `Snarky.CVar.eval_le ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/

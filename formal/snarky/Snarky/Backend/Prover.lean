@@ -17,7 +17,7 @@ during compilation" (module header); `SolveCircuit (Basic f)`'s `proverConstrain
 no-op outside debug mode, and validity is the proof system's concern. `prove` instead
 checks every constraint at emission time with `holds`, unconditionally: it is PS's
 DEBUG-mode semantics (minus message rendering) made total. That is deliberate — it is
-what gives `Snarky.Laws.prove_sound` its content: a successful run is a satisfiability
+what gives `Snarky.Laws.prove_complete` its content: a successful run is a satisfiability
 certificate for the built system, not just a witness table.
 
 Consequence, shared with PS debug mode (whose `debugCheck` also fails on unassigned

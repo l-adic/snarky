@@ -21,11 +21,11 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   property built on it — "generated constraints are satisfiable" — is generator
   correctness, not a law of this module (D9 survey: nothing else here to port). The
   satisfaction semantics are exercised by `Snarky.Example`'s `decide` checks and its
-  `prove_sound` instantiation.
+  `prove_complete` instantiation.
 - The PS functional dependency `c -> f` is not modelled; the class stays two-parameter.
 
 Public results: `Basic.holds` and `Basic.holds_mono` (the monotonicity hypothesis
-`Snarky.prove_sound` needs from a backend, discharged via `CVar.eval_le`) — both are
+`Snarky.prove_complete` needs from a backend, discharged via `CVar.eval_le`) — both are
 `roots.txt` entries.
 -/
 
@@ -67,7 +67,7 @@ def Basic.holds [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
     | _ => false
 
 /-- `Basic.holds` is monotone in the assignment-extension order — the hypothesis
-`Snarky.prove_sound` needs from a backend, discharged via `CVar.eval_le`. -/
+`Snarky.prove_complete` needs from a backend, discharged via `CVar.eval_le`. -/
 theorem Basic.holds_mono [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] {con : Basic F}
     {env env' : Assignments F} (hle : env.Le env') (h : con.holds env = true) :
     con.holds env' = true := by

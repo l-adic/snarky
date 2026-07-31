@@ -16,12 +16,20 @@ final-tagless PureScript original:
    builder and the prover compute the same result and allocate variables identically —
    the deep-embedding counterpart of PS's builder/prover running the *same* closure
    against two `CircuitOps` records.
-3. **Completeness** (`prove_sound`): if the prover run succeeds, the final assignment
+3. **Completeness** (`prove_complete`): if the prover run succeeds, the final assignment
    satisfies *every* constraint the builder emits. The prover checks each constraint
    against the assignment current at emission time; the final assignment only extends it
-   (`prove_assignments_le`), so a monotone `holds` stays true. This is the DSL-level
-   bridge that, once `c` is instantiated at Kimchi gate rows, will feed
-   `Kimchi.Index.Satisfies`.
+   (`prove_assignments_le`), so a monotone `holds` stays true. Backends discharge the
+   monotonicity hypothesis once via their `holds_mono` (`Snarky.Basic.holds_mono`;
+   `Snarky.Kimchi.GateConstraint.holds_mono`).
+
+Four of the five theorems here — all but the corollary `build_eq_of_eraseWitness` — plus
+`CVar.eval_le` are the package's audited roots (`scripts/check_axioms.lean`: standard
+axioms only). Deliberately NOT stated: the
+converse of completeness — that satisfiability of the built system implies a successful
+honest-prover run — which would need totality hypotheses on the witness computations;
+and anything about the proof system itself (zero-knowledge, extraction), which lives
+beyond the DSL layer.
 -/
 
 namespace Snarky
@@ -153,7 +161,7 @@ constraint the builder emits — provided `holds` is monotone in the assignment-
 order (true of any constraint that evaluates its `CVar`s, by `CVar.eval_le`). The prover
 checked each constraint when it was added; monotonicity carries the check to the end of
 the run. -/
-theorem prove_sound {holds : c → Assignments F → Bool}
+theorem prove_complete {holds : c → Assignments F → Bool}
     (hmono : ∀ (con : c) {a a' : Assignments F},
       a.Le a' → holds con a = true → holds con a' = true)
     {m : CircuitM F c α} {nv nv' : Nat} {env env' : Assignments F} {x : α}

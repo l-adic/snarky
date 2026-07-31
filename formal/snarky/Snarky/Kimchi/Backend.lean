@@ -7,7 +7,7 @@ import Kimchi.Gate.Generic
 
 The DSL of `Snarky.*` keeps its constraint type `c` abstract. This module instantiates it
 at a constraint that maps to Kimchi's **Generic gate** (`Kimchi.Gate.Generic`), building
-the bridge the `prove_sound` docstring points at: the constraints a DSL circuit emits
+the bridge the `prove_complete` docstring points at: the constraints a DSL circuit emits
 become Generic gate rows whose `Holds` predicate is exactly what `Kimchi.Index.rowSatisfies`
 dispatches to for generic rows.
 
@@ -87,7 +87,7 @@ def GateConstraint.holds (con : GateConstraint F) (env : Assignments F) : Bool :
   | _, _, _ => false
 
 /-- `holds` is monotone in the assignment-extension order — the hypothesis
-`Snarky.prove_sound` needs, discharged via `CVar.eval_le`. -/
+`Snarky.prove_complete` needs, discharged via `CVar.eval_le`. -/
 theorem GateConstraint.holds_mono {con : GateConstraint F} {env env' : Assignments F}
     (hle : env.Le env') (h : con.holds env = true) : con.holds env' = true := by
   unfold GateConstraint.holds at h ⊢

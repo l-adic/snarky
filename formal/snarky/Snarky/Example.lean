@@ -54,6 +54,6 @@ assignments satisfying every built constraint. -/
 example {x : FVar F17} {nv : Nat} {env : Assignments F17}
     (h : prove Basic.holds mulCircuit 0 Assignments.empty = .ok ⟨x, nv, env⟩) :
     ∀ con ∈ constraints mulCircuit, con.holds env = true :=
-  prove_sound (holds := Basic.holds) (fun _con _ _ hle hh => Basic.holds_mono hle hh) h
+  prove_complete (holds := Basic.holds) (fun _con _ _ hle hh => Basic.holds_mono hle hh) h
 
 end Snarky.Example
