@@ -239,6 +239,43 @@ example : proverValue BoolVar.toCVar
         allBools [a, b, c])
     = some 1 := by decide
 
+/-! ## Bit gadgets (walk step 12) -/
+
+/-- The canonical representative at a concrete prime field: `ZMod.val` — the instance
+that discharges the bit laws' `ToNat` hypotheses. -/
+instance : ToNat F17 := ⟨ZMod.val⟩
+
+/-- The pure round trip at `F17`: five bits carry any value below `2⁵`. -/
+example : packPure (unpackPure (13 : F17) 5) = 13 := by decide
+
+/-- `unpack` then `pack` reproduces the witnessed value — the spec's round-trip
+circuit. -/
+example : proverValue id
+    (do let x ← witness (val := F17) (pure 13)
+        let bits ← unpack x 5
+        pure (pack bits))
+    = some 13 := by decide
+
+/-- The bits are LSB-first: bit 1 of `13 = 0b1101` is `0`, bit 2 is `1`. -/
+example : proverValue BoolVar.toCVar
+    (do let x ← witness (val := F17) (pure 13)
+        let bits ← unpack x 5
+        pure bits[1])
+    = some 0 ∧
+  proverValue BoolVar.toCVar
+    (do let x ← witness (val := F17) (pure 13)
+        let bits ← unpack x 5
+        pure bits[2])
+    = some 1 := by decide
+
+/-- Too few bits: the packing row rejects the honest run (`13` does not fit in two
+bits). -/
+example : (prove Basic.holds
+    ((do let x ← witness (val := F17) (pure 13)
+         let _ ← unpack x 2
+         pure PUnit.unit) : CircuitM F17 (Basic F17) PUnit)
+    0 Assignments.empty).isOk = false := by decide
+
 /-- The `AssertEqual` pair instance: componentwise test, conjoined. -/
 example : proverValue BoolVar.toCVar
     (do let x ← witness (val := F17) (pure 3)

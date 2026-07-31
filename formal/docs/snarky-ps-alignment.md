@@ -329,7 +329,14 @@ separate sign-offs on the resulting files.
   `assertEqual`/`assertNonZero`/`assertNotEqual`/`assertSquare`/`assert`; the sum-based
   `assertAny`/`All`/`ExactlyOne` and `allBools` laws join the characteristic obligation;
   `Basic.{equal,square}_inv` land beside `Basic.holds`.
-- [ ] 12. `Snarky/Circuit/DSL/Bits.lean` — new.
+- [x] 12. `Snarky/Circuit/DSL/Bits.lean` — new; `unpack` (n CHECKED bit witnesses + one
+  weighted-sum row), `pack`, the pure variants; `Snarky.ToNat` (the one `PrimeField`
+  fragment the bit gadgets need — faithfulness and width are law-side hypotheses,
+  discharged at `ZMod` by `ZMod.val`); `generateVec` (kernel-reducible monadic vector
+  builder, `DSL/Monad`) and `Basic.boolean_inv` land as prerequisites. The boundary
+  engines proved: `packPure_unpackPure` (the round trip), `pack_eval`, `unpack_sound`
+  (bits boolean + weighted sum, canonicity joining the characteristic obligation),
+  `unpack_complete` (the honest binary digits).
 - [ ] 13. `Snarky/Circuit/DSL.lean` — now the pure re-export barrel + the D7 naming-map
   docs; review the exported surface as a whole.
 - [ ] 14. `Snarky/Backend/Compile.lean` — the §4 design work + end-to-end example and payoff

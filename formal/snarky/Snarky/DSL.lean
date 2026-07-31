@@ -1,4 +1,5 @@
 import Snarky.Circuit.DSL.Assert
+import Snarky.Circuit.DSL.Bits
 import Snarky.Circuit.DSL.Boolean
 import Snarky.Circuit.DSL.Field
 import Snarky.Circuit.DSL.Monad

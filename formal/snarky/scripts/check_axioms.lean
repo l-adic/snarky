@@ -58,7 +58,11 @@ def roots : List Name :=
     `Snarky.assertSquare_sound,
     `Snarky.assertSquare_complete,
     `Snarky.assert_sound,
-    `Snarky.assert_complete ]
+    `Snarky.assert_complete,
+    `Snarky.pack_eval,
+    `Snarky.packPure_unpackPure,
+    `Snarky.unpack_sound,
+    `Snarky.unpack_complete ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

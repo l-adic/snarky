@@ -153,6 +153,20 @@ theorem Basic.square_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
   · next x z hx hz => exact ⟨x, z, hx, hz, by simpa using h'⟩
   · cases h'
 
+/-- Inversion for a satisfied `boolean` row: the operand evaluates, to `0` or `1`. -/
+theorem Basic.boolean_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {v : CVar F} {env : Assignments F}
+    (h : (Basic.boolean v).holds env = true) :
+    ∃ x, v.eval env = .ok x ∧ (x = 0 ∨ x = 1) := by
+  have h' : (match v.eval env with
+      | .ok x => (decide (x = 0) || decide (x = 1))
+      | _ => false) = true := h
+  split at h'
+  · next x hx =>
+    refine ⟨x, hx, ?_⟩
+    simpa using h'
+  · cases h'
+
 /-- `Basic` is the reference `BasicSystem` instance: each method is its constructor. -/
 instance : BasicSystem F (Basic F) where
   r1cs := .r1cs
