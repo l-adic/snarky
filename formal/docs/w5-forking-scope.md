@@ -5,7 +5,8 @@
 
 **W5's goal has SINCE BEEN ACHIEVED.** The two `poseidon_fiat_shamir_{vesta,pallas}` axioms are
 retired: `grep -c '^axiom'` over the five packages is 0, and the names survive only in
-retrospective prose. `Bulletproof/Forking/Game.lean:1930` records the removal, and the live
+retrospective prose. `Bulletproof/Forking/Game.lean`'s `kimchiExtract_failure_measure_le` records
+the removal, and the live
 endpoints are `ipa{Vesta,Pallas}_knowledge_sound` (`Forking/KnowledgeSoundness.lean:902,920`).
 Read this document as the design record for that result.
 

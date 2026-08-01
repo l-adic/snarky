@@ -119,7 +119,7 @@ root representation, the wire `accept` with its faithfulness equation, and upstr
 `stable`/`stable_update` freeze slots. The endpoint has two additive summands:
 
 ```
-≤ (Q₀ + σ.k + 1) * (3 / |Q|)      -- extraction: exactly today's Game.lean:1447 bound
+≤ (Q₀ + σ.k + 1) * (3 / |Q|)      -- extraction: exactly kimchiExtract_failure_measure_le's bound
   + (Q₀ + m)     * (bPre / |Q|)   -- plonk guards: identically 0 at m = 0
 ```
 
