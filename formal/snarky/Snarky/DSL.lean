@@ -43,7 +43,7 @@ name forces otherwise; `*Generic`/`g*`/`r*` deriving machinery is uniformly non-
 | `exists` | `witness` | `exists` is a Lean keyword |
 | `fresh`, `addConstraint`, `assignVars`, `label` | same | |
 | `check` (class `CheckedType`) | `CheckedType.check` | |
-| `mul_`, `inv_`, `div_` | `mul`, `inv`, `div` | in `DSL/Monad`, their PS home |
+| `mul_`, `inv_`, `div_` | `mul`, `inv`, `div` | in `DSL/Field` (PS parks them in Monad) |
 | `not_`, `and_`, `or_` | `not`, `and`, `or` | shadow core's Bool functions; types resolve |
 | `equals_`, `neq_`, `sum_`, `pow_`, `square_` | drop `_` | action-lifted `equals` non-ported (D8) |
 | `if_` (class `IfThenElse`) | `select` | `if` is a keyword; class name kept |

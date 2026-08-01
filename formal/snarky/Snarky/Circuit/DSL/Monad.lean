@@ -1,4 +1,3 @@
-import Mathlib.Algebra.Field.Defs
 import Snarky.Backend.Assignments
 import Snarky.Circuit.Types
 import Snarky.Constraint.Basic
@@ -9,8 +8,8 @@ import Snarky.Vec
 
 Port of `Snarky.Circuit.DSL.Monad` (packages/snarky/src/Snarky/Circuit/DSL/Monad.purs):
 the witness monad `AsProver`, the circuit monad `CircuitM`, the core operations
-(`fresh`, `addConstraint`, `existsVars`/`witness`, `assignVars`, `label`, `readVar`,
-`mul`), and the `CheckedType` class with its base instances.
+(`fresh`, `addConstraint`, `existsVars`/`witness`, `assignVars`, `label`, `readVar`),
+and the `CheckedType` class with its base instances.
 
 ## The one deliberate architectural deviation
 
@@ -43,13 +42,12 @@ are pure recursive functions: `Snarky.build` (PS `Backend.Builder`) and `Snarky.
 - The numeric-tower instances on `Snarky`-actions (`Semiring (Snarky f c r (FVar f))` …,
   with their `Newtype` fallbacks) are not ported (D8); the underlying combinators land as
   plain functions.
-- The field primitives `inv_`/`div_` defined here in PS are here as `inv`/`div` (D7
-  names), on the targeted `Mathlib.Algebra.Field.Defs` import (D6: `[Field F]`, the
-  weakest fitting class for an inverse); the boolean primitives `not_`/`and_`/`or_`
-  are here as `not`/`and`/`or` (D7 names; they shadow core's Bool functions inside the
-  namespace — type-directed resolution disambiguates), on the D11 doors settled at
-  step 9: `and` is `mul` under the `BoolVar.unchecked` retag (a product of bits is a
-  bit), `or` is De Morgan over `and`/`not`, `not` the pure retag `1 − b`.
+- PS defines the field and boolean primitives (`mul_`/`inv_`/`div_`,
+  `not_`/`and_`/`or_`) in this module only to dodge orphan instances on the `Snarky`
+  newtype. Lean has no orphan restriction, so they live with their families and their
+  laws instead: `mul`/`inv`/`div` in `DSL/Field`, `not`/`and`/`or` in `DSL/Boolean`
+  (D7 names, underscores dropped). This module is the monad alone, and stays plain
+  core Lean.
 - `CheckedType` instances: `FVar`, `BoolVar`, `UnChecked`, and the `Tuple` pair (step 9,
   `equals`'s witness pair) are here; `Unit`, `NoInput`/`NoOutput`, `Const`, `Product`,
   `Vector`, and `Record` land with their `CircuitType` partners (steps 10/14);
@@ -247,20 +245,6 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
     else
       .error (.custom "readVar: size mismatch")
 
-/-- `mul`'s witness computation: the product of the operands' values. Public only for
-the gadget laws. -/
-def mulWit [Add F] [Mul F] (x y : FVar F) : AsProver F F := do
-  let xv ← AsProver.readCVar x
-  let yv ← AsProver.readCVar y
-  pure (xv * yv)
-
-/-- `mul`'s witnessing branch: witness the product, pin it with one `r1cs` constraint.
-Split out so the gadget laws (in `DSL/Field`, its family module) quantify over it uniformly. -/
-def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
-  let z ← witness (val := F) (mulWit x y)
-  addConstraint (BasicSystem.r1cs x y z)
-  pure z
-
 /-- Successful `mapM`-evaluation is stable under assignment extension — the list form
 of `CVar.eval_le`. -/
 private theorem mapM_eval_le [Add F] [Mul F] {env env' : Assignments F} (hle : env.Le env') :
@@ -297,78 +281,5 @@ theorem readVar_le [Add F] [Mul F] [inst : CircuitType F val var] {v : var}
     rw [hm] at h
     rw [mapM_eval_le hle hm]
     exact h
-
-/-- Multiply two field variables (PS `mul_`). Constants fold without constraining: two
-constants multiply out, and a constant times an expression is `scale_`. Otherwise the
-product is witnessed and pinned with one `r1cs` constraint. -/
-def mul [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
-    CircuitM F c (FVar F) :=
-  match x, y with
-  | .const a, .const b => pure (.const (a * b))
-  | .const a, y => pure (CVar.scale_ a y)
-  | x, .const b => pure (CVar.scale_ b x)
-  | x, y => mulCore x y
-
-/-- `inv`'s witness computation: the inverse, failing on zero (PS `DivisionByZero`).
-Public only for the gadget laws. -/
-def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
-  let xv ← AsProver.readCVar x
-  if xv = 0 then AsProver.throw "inv: division by zero"
-  else pure xv⁻¹
-
-/-- `inv`'s witnessing branch: witness the inverse, pin it with `x · xInv = 1`. Split
-out so the gadget laws (in `DSL/Field`) quantify over it uniformly. -/
-def invCore [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
-    CircuitM F c (FVar F) := do
-  let xInv ← witness (val := F) (invWit x)
-  addConstraint (BasicSystem.r1cs x xInv (.const 1))
-  pure xInv
-
-/-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1` (PS `inv_`).
-A constant folds to its constant inverse — total where PS crashes on the constant zero
-(Lean's `0⁻¹ = 0`); either way no constraint is emitted. During a prover run a zero
-argument fails the witness computation, as in PS (`DivisionByZero`). -/
-def inv [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
-  match x with
-  | .const a => pure (.const a⁻¹)
-  | x => invCore x
-
-/-- Divide field variables: `x · y⁻¹`, one `inv` then one `mul` (PS `div_`). A zero
-divisor fails in `inv`'s witness computation. -/
-def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
-    CircuitM F c (FVar F) := do
-  let yInv ← inv y
-  mul x yInv
-
-/-- Negate a boolean variable: `1 − b`, pure — no constraint (PS `not_`), through the
-`BoolVar.unchecked` door (D11): boolean because `b` is. The name shadows core `not`
-inside the `Snarky` namespace; type-directed resolution disambiguates at use sites. -/
-def not [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] (b : BoolVar F) :
-    BoolVar F :=
-  .unchecked (CVar.sub_ (.const 1) ↑b)
-
-/-- Conjoin boolean variables: the product, retagged (PS `and_` is `mul_` under
-`coerce`) — boolean because a product of bits is a bit (`Snarky.and_sound`). -/
-def and [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
-    (a b : BoolVar F) : CircuitM F c (BoolVar F) := do
-  let r ← mul ↑a ↑b
-  pure (.unchecked r)
-
-/-- Disjoin boolean variables by De Morgan: `¬(¬a ∧ ¬b)` (PS `or_`). -/
-def or [Add F] [Sub F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [BasicSystem F c]
-    (a b : BoolVar F) : CircuitM F c (BoolVar F) := do
-  let r ← and (Snarky.not a) (Snarky.not b)
-  pure (Snarky.not r)
-
-/-- `not` computes boolean negation: the bit encoding of `!bb` (the `CircuitType Bool`
-encoding — the relation the gadget laws speak through). Pure gadget, so its law is
-evaluation-level, like `sum_eval`. -/
-theorem not_eval [CommRing F] [DecidableEq F] {b : BoolVar F} {env : Assignments F}
-    {bb : Bool} (hb : (↑b : CVar F).eval env = .ok (if bb then 1 else 0)) :
-    (↑(Snarky.not b) : CVar F).eval env = .ok (if !bb then 1 else 0) := by
-  have h := CVar.eval_sub_ (rfl : (CVar.const (1 : F)).eval env = .ok 1) hb
-  show (CVar.sub_ (.const 1) ↑b).eval env = _
-  rw [h]
-  cases bb <;> simp
 
 end Snarky

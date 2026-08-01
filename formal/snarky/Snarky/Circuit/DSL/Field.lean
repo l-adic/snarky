@@ -1,3 +1,4 @@
+import Mathlib.Algebra.Field.Defs
 import Snarky.Circuit.DSL.Monad
 import Snarky.Backend.Prover
 
@@ -9,10 +10,14 @@ the field comparison and arithmetic gadgets. The centrepiece is `equals` — an 
 *test* returning a `BoolVar` rather than an assertion, via the standard inverse-or-zero
 trick — with `sum`, `pow`, and `square` alongside.
 
-Name map (D7; underscores drop): `equals_` → `equals`, `neq_` → `neq`, `sum_` → `sum`,
-`pow_` → `pow`, `square_` → `square`. The PS action-lifted `equals` variant rides the
-numeric-tower instances and is not ported (D8); `pow`'s exponent is `Nat` (PS `Int`,
-never called negative).
+Name map (D7; underscores drop): `mul_` → `mul`, `inv_` → `inv`, `div_` → `div`,
+`equals_` → `equals`, `neq_` → `neq`, `sum_` → `sum`, `pow_` → `pow`,
+`square_` → `square`. PS parks `mul_`/`inv_`/`div_` in its Monad module to dodge orphan
+instances (see `Circuit/DSL/Monad`); here they live with their laws. The PS
+action-lifted `equals` variant rides the numeric-tower instances and is not ported
+(D8); `pow`'s exponent is `Nat` (PS `Int`, never called negative). The targeted
+`Mathlib.Algebra.Field.Defs` import is `inv`'s (D6: `[Field F]`, the weakest fitting
+class for an inverse).
 
 Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 - PS witnesses `equals_`'s `{r, zInv}` record through the generic deriving machinery
@@ -23,7 +28,8 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   checks — the gadget's two `r1cs` constraints already force booleanity
   (`Snarky.equals_sound`).
 - `neq` is `not` after `equals`, as in PS (whose `not` rides the HeytingAlgebra action
-  instance, D8); `not` lives in `DSL/Monad`, its PS home.
+  instance, D8); `not` lives with its family in `DSL/Boolean`, above this module, so
+  `neq` inlines its one-line retag.
 - The `CircuitType F Bool` instance pins `F : Type 0` (`AsProver` payloads share `F`'s
   universe), so the `BoolVar`-returning gadgets are stated for `Type`-sized fields —
   every concrete field is one.
@@ -42,12 +48,11 @@ under `reduce_eval`; `seal` is the
 public inputs, compare with the model function — awaits `Backend/Compile` (walk
 step 14).
 
-Public results: the D12 gadget laws beside their gadgets — `equals_sound`/`_complete`,
-`neq_sound`/`_complete`, `sum_eval`, `square_sound`/`_complete`, `pow_sound`/`_complete`,
-and (their family module: `DSL/Monad` cannot host interpreter theorems, the interpreters
-import it) `mul_sound`/`_complete`, `inv_sound`/`_complete`, `div_sound`/`_complete` —
-all `roots.txt` entries; the `*Wit`/`*Core` defs are named internals for those laws, not
-user API.
+Public results: the D12 gadget laws beside their gadgets — `mul_sound`/`_complete`,
+`inv_sound`/`_complete`, `div_sound`/`_complete`, `equals_sound`/`_complete`,
+`neq_sound`/`_complete`, `sum_eval`, `square_sound`/`_complete`, `pow_sound`/`_complete`
+— all `roots.txt` entries; the `*Wit`/`*Core` defs are named internals for those laws,
+not user API.
 -/
 
 namespace Snarky
@@ -55,6 +60,62 @@ namespace Snarky
 variable {F c : Type u}
 
 /-! ## The gadgets -/
+
+/-- `mul`'s witness computation: the product of the operands' values. Public only for
+the gadget laws. -/
+def mulWit [Add F] [Mul F] (x y : FVar F) : AsProver F F := do
+  let xv ← AsProver.readCVar x
+  let yv ← AsProver.readCVar y
+  pure (xv * yv)
+
+/-- `mul`'s witnessing branch: witness the product, pin it with one `r1cs` constraint.
+Split out so the gadget laws below quantify over it uniformly. -/
+def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
+  let z ← witness (val := F) (mulWit x y)
+  addConstraint (BasicSystem.r1cs x y z)
+  pure z
+
+/-- Multiply two field variables (PS `mul_`). Constants fold without constraining: two
+constants multiply out, and a constant times an expression is `scale_`. Otherwise the
+product is witnessed and pinned with one `r1cs` constraint. -/
+def mul [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
+    CircuitM F c (FVar F) :=
+  match x, y with
+  | .const a, .const b => pure (.const (a * b))
+  | .const a, y => pure (CVar.scale_ a y)
+  | x, .const b => pure (CVar.scale_ b x)
+  | x, y => mulCore x y
+
+/-- `inv`'s witness computation: the inverse, failing on zero (PS `DivisionByZero`).
+Public only for the gadget laws. -/
+def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
+  let xv ← AsProver.readCVar x
+  if xv = 0 then AsProver.throw "inv: division by zero"
+  else pure xv⁻¹
+
+/-- `inv`'s witnessing branch: witness the inverse, pin it with `x · xInv = 1`. Split
+out so the gadget laws below quantify over it uniformly. -/
+def invCore [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
+    CircuitM F c (FVar F) := do
+  let xInv ← witness (val := F) (invWit x)
+  addConstraint (BasicSystem.r1cs x xInv (.const 1))
+  pure xInv
+
+/-- Invert a field variable: witness the inverse, pin it with `x · xInv = 1` (PS `inv_`).
+A constant folds to its constant inverse — total where PS crashes on the constant zero
+(Lean's `0⁻¹ = 0`); either way no constraint is emitted. During a prover run a zero
+argument fails the witness computation, as in PS (`DivisionByZero`). -/
+def inv [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
+  match x with
+  | .const a => pure (.const a⁻¹)
+  | x => invCore x
+
+/-- Divide field variables: `x · y⁻¹`, one `inv` then one `mul` (PS `div_`). A zero
+divisor fails in `inv`'s witness computation. -/
+def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
+    CircuitM F c (FVar F) := do
+  let yInv ← inv y
+  mul x yInv
 
 /-- `equals`'s witness computation: the claimed answer bit and the inverse-or-zero.
 Public only for the gadget laws. -/
@@ -85,11 +146,13 @@ def equals {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar 
   | .const f => pure (.unchecked (.const (if f = 0 then 1 else 0)))
   | z => equalsCore z
 
-/-- Negated equality test (PS `neq_ = not <<< equals_`): the negated `equals` bit. -/
+/-- Negated equality test (PS `neq_ = not <<< equals_`): the negated `equals` bit. The
+negation is `not`'s retag `1 − r` inlined: `not` lives with its family in
+`DSL/Boolean`, which imports this module. -/
 def neq {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) :
     CircuitM F c (BoolVar F) := do
   let r ← equals a b
-  pure (Snarky.not r)
+  pure (.unchecked (CVar.sub_ (.const 1) ↑r))
 
 /-- Sum a list of field variables — pure, no constraints (PS `sum_`, which folds an
 `Array` the same way): `add_` over the list from `const 0`. -/
@@ -371,7 +434,7 @@ theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv 
     rw [hcase] at hz
     simpa only [hiff] using equalsCore_complete hz hfresh
 
-/-! ### `neq` (Circuit/DSL/Field) — composed from `equals` -/
+/-! ### `neq` — composed from `equals` -/
 
 /-- **`neq` soundness** (D12): the negated equality bit. -/
 theorem neq_sound {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
@@ -400,12 +463,13 @@ theorem neq_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : N
   rw [prove_bind]
   obtain ⟨o₁, hr₁, he₁, hf₁⟩ := equals_complete hfresh ha hb
   rw [hr₁]
-  refine ⟨⟨Snarky.not o₁.result, o₁.nextVar, o₁.assignments⟩, rfl, ?_, hf₁⟩
+  refine ⟨⟨.unchecked (CVar.sub_ (.const 1) ↑o₁.result), o₁.nextVar, o₁.assignments⟩,
+    rfl, ?_, hf₁⟩
   show (CVar.sub_ (.const 1) _).eval _ = _
   rw [CVar.eval_sub_ rfl he₁]
   by_cases h : av = bv <;> simp [h]
 
-/-! ### `mul` (Circuit/DSL/Monad) -/
+/-! ### `mul` -/
 
 /-- What `mulCore` builds: one fresh variable, one `r1cs` constraint. -/
 private theorem build_mulCore {F : Type u} [Add F] [Mul F] (x y : FVar F) (nv : Nat) :
@@ -498,7 +562,7 @@ theorem mul_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
          show (env.extend nv _) v = none
          simp [Assignments.extend, h0, hfresh v (by omega)])
 
-/-! ### `inv` (Circuit/DSL/Monad) -/
+/-! ### `inv` -/
 
 /-- What `invCore` builds: one fresh variable, the constraint `x · xInv = 1`. -/
 private theorem build_invCore {F : Type u} [Field F] [DecidableEq F] (x : FVar F)
@@ -582,7 +646,7 @@ theorem inv_complete {F : Type u} [Field F] [DecidableEq F]
          show (env.extend nv _) v = none
          simp [Assignments.extend, h0, hfresh v (by omega)])
 
-/-! ### `div` (Circuit/DSL/Monad) — the first composed law -/
+/-! ### `div` — the first composed law -/
 
 /-- **`div` soundness** (D12), proved compositionally: `build_bind` splits the
 constraints, `inv_sound` pins the inverse, `mul_sound` pins the product. -/

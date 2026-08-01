@@ -4,14 +4,17 @@ import Snarky.Circuit.DSL.Field
 # Boolean gadgets
 
 Port of `Snarky.Circuit.DSL.Boolean` (packages/snarky/src/Snarky/Circuit/DSL/Boolean.purs):
-the `IfThenElse` selection class with its base instances, the boolean constants, `xor`,
-and the array combinators `any`/`all`. The primitives `not`/`and`/`or` live in
-`Circuit/DSL/Monad`, their PS home.
+the `IfThenElse` selection class with its base instances, the boolean constants,
+`not`/`and`/`or`, `xor`, and the array combinators `any`/`all`. PS parks
+`not_`/`and_`/`or_` in its Monad module to dodge orphan instances; Lean has no orphan
+restriction, so they live here with their family and its laws (`DSL/Field`'s `neq`,
+below this module, inlines `not`'s one-line retag rather than import it).
 
 Name map (D7): `if_` → `select` (`if` is a Lean keyword; the class keeps its PS name
-`IfThenElse`), `xor_` → `xor` (shadows core's `xor`, type-resolved), `any_` → `any`,
-`all_` → `all` (likewise), `true_`/`false_` keep their underscores (`true`/`false` are
-keywords — the same clash rationale as `CVar`'s smart constructors).
+`IfThenElse`), `not_` → `not`, `and_` → `and`, `or_` → `or`, `xor_` → `xor` (shadow
+core's Bool functions, type-resolved), `any_` → `any`, `all_` → `all` (likewise),
+`true_`/`false_` keep their underscores (`true`/`false` are keywords — the same clash
+rationale as `CVar`'s smart constructors).
 
 Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 - The PS class fundeps (`c -> f`, `var -> f`) are not modelled — the class stays
@@ -32,7 +35,7 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   same circuit `not ∘ equals_`; `all` is `equals (length) (sum …)`).
 
 D9 survey (the `snarky-test-utils` Boolean spec), in the D12 form: the `not` row is
-`not_eval` (`Circuit/DSL/Monad` — pure gadget, evaluation-level); the `and`/`or`/`xor`
+`not_eval` (pure gadget, so its law is evaluation-level); the `and`/`or`/`xor`
 and `if` rows land as `and_sound`/`or_sound`/`xor_sound`/`select_sound` and their
 completeness twins below, stated through the `CircuitType Bool` encoding
 (`if bb then 1 else 0` — the relation the faithfulness arc composes through); the
@@ -40,11 +43,11 @@ completeness twins below, stated through the `CircuitType Bool` encoding
 detects `n` only below the characteristic) and are the recorded open obligation of walk
 step 10. Fixed-input `decide` examples in `Snarky.Example`.
 
-Public results: the D12 gadget laws, beside their gadgets — `and_sound`/`and_complete`,
-`or_sound`/`or_complete`, `xor_sound`/`xor_complete`, `select_sound`/`select_complete`
-(`and`/`or`'s live here with their family: `DSL/Monad` cannot host interpreter theorems,
-the interpreters import it); `xorWit`/`xorCore`/`selectWit`/`selectCore` are named
-internals for those laws, not user API.
+Public results: the D12 gadget laws, beside their gadgets — `not_eval`,
+`and_sound`/`and_complete`, `or_sound`/`or_complete`, `xor_sound`/`xor_complete`,
+`select_sound`/`select_complete`;
+`xorWit`/`xorCore`/`selectWit`/`selectCore` are named internals for those laws, not
+user API.
 -/
 
 namespace Snarky
@@ -119,6 +122,39 @@ def true_ {F : Type} [One F] : BoolVar F := .unchecked (.const 1)
 /-- The constant false bit (PS `false_`; the underscore stays — `false` is a keyword). -/
 def false_ {F : Type} [Zero F] : BoolVar F := .unchecked (.const 0)
 
+/-- Negate a boolean variable: `1 − b`, pure — no constraint (PS `not_`), through the
+`BoolVar.unchecked` door (D11): boolean because `b` is. The name shadows core `not`
+inside the `Snarky` namespace; type-directed resolution disambiguates at use sites.
+`DSL/Field`'s `neq`, below this module, inlines the same retag. -/
+def not {F : Type u} [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
+    (b : BoolVar F) : BoolVar F :=
+  .unchecked (CVar.sub_ (.const 1) ↑b)
+
+/-- `not` computes boolean negation: the bit encoding of `!bb` (the `CircuitType Bool`
+encoding — the relation the gadget laws speak through). Pure gadget, so its law is
+evaluation-level, like `sum_eval`. -/
+theorem not_eval {F : Type u} [CommRing F] [DecidableEq F] {b : BoolVar F}
+    {env : Assignments F} {bb : Bool}
+    (hb : (↑b : CVar F).eval env = .ok (if bb then 1 else 0)) :
+    (↑(Snarky.not b) : CVar F).eval env = .ok (if !bb then 1 else 0) := by
+  have h := CVar.eval_sub_ (rfl : (CVar.const (1 : F)).eval env = .ok 1) hb
+  show (CVar.sub_ (.const 1) ↑b).eval env = _
+  rw [h]
+  cases bb <;> simp
+
+/-- Conjoin boolean variables: the product, retagged (PS `and_` is `mul_` under
+`coerce`) — boolean because a product of bits is a bit (`Snarky.and_sound`). -/
+def and {F c : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
+    (a b : BoolVar F) : CircuitM F c (BoolVar F) := do
+  let r ← mul ↑a ↑b
+  pure (.unchecked r)
+
+/-- Disjoin boolean variables by De Morgan: `¬(¬a ∧ ¬b)` (PS `or_`). -/
+def or {F c : Type u} [Add F] [Sub F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
+    [BasicSystem F c] (a b : BoolVar F) : CircuitM F c (BoolVar F) := do
+  let r ← and (Snarky.not a) (Snarky.not b)
+  pure (Snarky.not r)
+
 /-- `xor`'s witness computation: the inequality bit. Public only for the gadget laws in
 the gadget laws. -/
 def xorWit {F : Type} [Add F] [Mul F] [DecidableEq F] (a b : BoolVar F) :
@@ -176,7 +212,7 @@ def all {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 As in `DSL/Field`: interpreter-form laws beside their gadgets, `and`/`or`'s here with
 their family (`DSL/Monad` cannot host interpreter theorems — the cycle). -/
 
-/-! ### `and`/`or` (Circuit/DSL/Monad) — composed from `mul`, `not`
+/-! ### `and`/`or` — composed from `mul`, `not`
 
 The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding — the
 relation form the faithfulness arc composes over. -/

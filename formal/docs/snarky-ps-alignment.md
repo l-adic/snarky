@@ -376,6 +376,15 @@ separate sign-offs on the resulting files.
   paragraph updated in both checkouts: compile/solve + `solve_complete`, all four gadget
   modules, the walk recorded as complete.
 
+Post-walk amendments (user-directed): `generateVec` moved to `Vec.lean`, monad-generic
+(PS `Data.Vector.generateA` is Applicative-generic; the `CircuitM` specialization was
+the only reason it sat in `DSL/Monad`). The PS orphan-parked primitives left `DSL/Monad`
+for their families — `mul`/`inv`/`div` to `DSL/Field`, `not`/`and`/`or` to
+`DSL/Boolean`, with `neq` inlining `not`'s one-line retag to keep the import direction —
+PS defines them in its Monad module only to dodge orphan instances on the `Snarky`
+newtype, a restriction Lean does not have. `DSL/Monad` is now the monad alone, plain
+core Lean (the targeted `Mathlib.Algebra.Field.Defs` import left with `inv`).
+
 Each gadget step (9–12) lands with its PS→Lean name map (D7), theorems for the QuickCheck
 laws in its `snarky-test-utils` spec plus `decide` examples for the fixed-vector cases
 (D9), and correctness lemmas where they are cheap.
