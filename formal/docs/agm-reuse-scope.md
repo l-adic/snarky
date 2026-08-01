@@ -16,7 +16,8 @@ banner — do not read the per-stage `DONE` markers in §4 as covering more than
   cross the `Bulletproof.commitGen` / `Zcash.Snark.commitGen` defeq boundary.
 - **Stage 4 (retire `hbind` and the two FS axioms): half done, and the halves differ.** The two
   `poseidon_fiat_shamir_*` axioms are **gone** — 0 `axiom` declarations in the package, the names
-  surviving only in retrospective prose (`Reflection.lean:29`, `Forking/Game.lean:9,1930`).
+  surviving only in retrospective prose (`Reflection.lean:29`, and in `Forking/Game.lean`'s file
+  docstring and `kimchiExtract_failure_measure_le`).
   `hbind` is **not** gone: it is retired *from the endpoints* — see
   `kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:52`, the section "Why `hbind` does not appear",
   and `Forking/Capstone.lean:11`, "No `hbind` hypothesis" — while remaining a named hypothesis of

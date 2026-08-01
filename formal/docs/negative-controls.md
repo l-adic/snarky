@@ -97,6 +97,16 @@ beside it.
   `exhibits_ks` (`Bulletproof/Forking/KnowledgeSoundness.lean:746` declares it dotted) — each
   renamed to `<name>_DELETED_CONTROL` in place, each observed as `✗ EXHIBIT MISSING: <name>` with
   the gate exiting 1, each restored and re-run green. Grep-only: no rebuild is needed.
+* **Not replayed, and no replay is owed**, for the O-1b certificates pinned since: the two
+  degeneracy exhibits (`kimchiGoodChallenges_eq_empty_of_order_nil`,
+  `kimchiNodeFloor_eq_zero_of_forall_coins`) and the five spread-satisfiability ones
+  (`spreadExhibit_forkSpread`, `exists_kimchiForkSpread_two_le`,
+  `exists_kimchiForkSpread_two_le_of_rounds`, `spreadExhibit_extractRuns_sum_le`,
+  `spreadExhibit_card_le_extractRuns_sum`). None is in either locked-target exhibit block; each
+  is pinned in `bulletproof-pcs/scripts/check_axioms.lean`, whose existence guard NC-6 controls
+  directly. That guard is name-generic — it iterates the root list and throws on the first name
+  the environment lacks — so a per-name replay would re-observe NC-6's own mutation (a) verbatim
+  and adds nothing.
 
 ## NC-5 — the empty-quotient corruption catches a reinstated wire guard
 

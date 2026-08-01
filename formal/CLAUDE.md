@@ -8,7 +8,9 @@ recursion, and the sub-SRS regime** — Mina/pickles proofs are OUTSIDE it on fo
 canonical fragment statement lives in `Kimchi/Verifier/KnowledgeSoundness.lean`'s preamble. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
 monad, no `FormalCircuit`/`ProvableType`/`ElaboratedCircuit`, no `circuit_proof_start`.
 Gates are modelled as **plain Lean predicates over witness structures**, and proved
-faithful to **Mathlib's elliptic-curve group law** (`WeierstrassCurve.Affine`). If you've
+faithful to an external oracle — **Mathlib's elliptic-curve group law**
+(`WeierstrassCurve.Affine`) for the EC gates, and the fixture-validated production sponge
+permutation `Poseidon.blockCipher` for Poseidon. If you've
 seen the Clean framework, forget its vocabulary here — none of it applies.
 
 A second library lives in its own package **`snarky/`** (namespace `Snarky.*`, package
@@ -82,7 +84,8 @@ Three further quality gates are community tools, all CI-enforced:
   the axiom gates inherently trust.
 
 For ad-hoc import analysis, `lake exe graph` (import-graph, via Mathlib) is available —
-e.g. `--to`/`--from` slices; the committed overview graph stays `make lean-dep-graph`.
+e.g. `--to`/`--from` slices; the overview-graph artifact stays `make lean-dep-graph`
+(gitignored — regenerate it, never commit it).
 
 **Always run `formal/scripts/check-style.sh` before committing any change under `formal/`** —
 and fix anything it reports. Lean 4 has no autoformatter, so this script is the formatter
@@ -143,20 +146,32 @@ Each modelled gate is two files:
 
 ## How a gate is modelled
 
-There are **two gate idioms**, by purpose:
+There are **two gate idioms**, split by purpose — *runnable demo* vs *proof-oriented*. Both are
+algebraic; neither is a concrete-integer model.
 
-**(1) The runnable generic checker** (`Gate/Generic.lean`) — a concrete `Generic` gate over
-`Assignment := Array Int`, with a `Bool` checker and its reflection:
+**(1) The generic gate, which is also the runnable demo** (`Gate/Generic.lean`) — a row is 15
+coefficient cells and 15 witness cells over a field, and one `constraints` list over any
+`[CommRing R]` is the single transcription everything else reads:
 
 ```lean
-def Generic.holds (g : Generic) (a : Assignment) : Prop := …  -- relational spec
-def Generic.ok    (g : Generic) (a : Assignment) : Bool := …  -- executable checker
-theorem Generic.ok_iff : g.ok a = true ↔ g.holds a
-def satisfies (gs : List Generic) (a : Assignment) : Bool := …  -- run a whole circuit
-theorem satisfies_iff : satisfies gs a = true ↔ Satisfies gs a
+structure Generic (F : Type*) where
+  q : Fin 15 → F        -- the 15 coefficient cells (q 10 … q 14 unused)
+  w : Fin 15 → F        -- the 15 witness cells
+
+def Generic.constraints [CommRing R] (g : Generic R) : List R := …  -- the two packed equations
+def Generic.Holds (g : Generic F) : Prop := ∀ e ∈ g.constraints, e = 0
+theorem Generic.holds_iff (g : Generic F) : g.Holds ↔ (… ∧ …)   -- the two cell equations
+def Generic.ok [DecidableEq F] (g : Generic F) : Bool := …
+theorem Generic.ok_iff [DecidableEq F] (g : Generic F) : g.ok = true ↔ g.Holds
+def Satisfies (rows : List (Generic F)) : Prop := ∀ g ∈ rows, g.Holds
+def satisfies [DecidableEq F] (rows : List (Generic F)) : Bool := rows.all (·.ok)
+theorem satisfies_iff [DecidableEq F] (rows) : satisfies rows = true ↔ Satisfies rows
 ```
 
-This is what `Main.lean` `#eval`s. It's the bridge to the JSON the PureScript dumpers emit.
+Plus `Generic.map` (the functorial relabelling the polynomial lift instantiates at a ring hom) and
+`Generic.withPublic` (fold a public input into `q 4`). `satisfies` at `ZMod 17` is what `Main.lean`
+prints and what the file's own two `#eval`s report; it's the bridge to the JSON the PureScript
+dumpers emit.
 
 **(2) The algebraic EC gates** (`Gate/AddComplete.lean`, `VarBaseMul.lean`, `EndoMul.lean`,
 `EndoScalar.lean`) — each gate is a `Witness (F : Type*)` structure (one named field per
@@ -176,7 +191,9 @@ is the reflection bridge. Write new gates in this shape.
 
 ## The faithfulness pattern (the heart of the project)
 
-For each algebraic gate, prove a progression that ends at **Mathlib's group law**:
+For each algebraic gate, prove a progression that ends at **Mathlib's group law** — except
+Poseidon, whose external oracle is not an EC one: its progression ends at `Poseidon.blockCipher`,
+the fixture-validated production sponge permutation (`Gate/Semantics/Poseidon.lean`):
 
 1. **Reflection** — `ok_iff : ok w = true ↔ Holds w`. Boolean checker ↔ relational spec.
 2. **Soundness** — `sound_* : Holds w → (the field-level slope/coordinate identities)`.

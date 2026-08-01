@@ -146,7 +146,11 @@ reason*:
 - the `hasse` / CM axioms — the concrete curve;
 - `ft_opening_of_reflected_{vesta,pallas}` and the two terminal theorems
   `kimchi{Vesta,Pallas}_run_sound_algebraic_ft`;
-- EC-gate faithfulness at Pasta (`pallas_endoMul`, `vesta_endoMul`, …).
+- EC-gate faithfulness at Pasta (`pallas_endoMul`, `vesta_endoMul`, …);
+- Poseidon-gate faithfulness at Pasta (`fq_/fp_poseidonChain_blockCipher`) — the one gate whose
+  faithfulness oracle is not Mathlib's group law but the *fixture-validated* sponge permutation
+  `Poseidon.blockCipher`, so the eleven-row chain is checked against recorded `mina_poseidon`
+  traces rather than against a Lean definition of this tree's own.
 
 ## Roots to collapse
 
@@ -177,8 +181,11 @@ This choice sets how much collapses. Everything else in this document is indepen
 ## Migration
 
 - One layer boundary at a time, bottom-up; the root-manifest axiom gate stays green at every step.
-  (It was a 117-root gate when this was written; the manifests total **172** roots today, across
-  five per-package `roots.txt`. Relatedly, *Roots to collapse* above lists milestone roots from the
+  (It was a 117-root gate when this was written; the manifests total **228** roots today, across
+  five per-package `roots.txt` — bulletproof-pcs 61, kimchi 99, pasta 27, poseidon 18, snarky 23.
+  That total is **not** attributable to any one lane: `roots.txt` has concurrent writers, so
+  reconcile per package with `grep -vcE '^\s*(--|#|$)' <pkg>/roots.txt` rather than diffing the
+  workspace number. Relatedly, *Roots to collapse* above lists milestone roots from the
   pre-consolidation manifest: **none** of the names it samples still exists as a declaration — a
   declaration-level grep (`^ *(private )?(theorem|def|abbrev) <name>[^A-Za-z0-9_]`) returns zero for
   every one, `kimchiProof_sound` included, whose only textual hit is inside a `--` comment in

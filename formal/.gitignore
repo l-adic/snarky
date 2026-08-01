@@ -14,3 +14,7 @@
 
 # Archon state directory
 .archon/
+
+# Generated dependency-graph artifacts (make lean-dep-graph) — regenerate, never commit.
+/docs/module-deps.dot
+/docs/module-deps.svg

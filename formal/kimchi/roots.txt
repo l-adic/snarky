@@ -46,12 +46,26 @@ Kimchi.Gate.EndoScalar.endoScalar_unique
 -- The 128-bit range check (`RangeCheck.purs`'s `rangeCheck128 = void ∘ EndoScalar.toField @8`):
 -- the same gate read for its BOUND rather than its decomposition. A satisfying m+1-row run of
 -- uniform width c pins its register to the image of a natural < 4^(c(m+1)) — at the deployed 8
--- rows of 8 crumbs, < 2^128 — uniquely so under the no-wrap bound, and every value in range is
--- achieved. Minimal set: `chain_range` is live through both `chain_range_128` and
--- `chain_range_unique`; `range_complete` reaches the digit-expansion kernel instead.
+-- rows of 8 crumbs, < 2^128 — uniquely so under the no-wrap bound. The converse holds too: every
+-- natural in range IS the register of some satisfying run, at the single-witness shape
+-- (`range_complete`) and at the multi-row shape (`chain_range_complete`), so at a fixed row shape
+-- the bound and its converse jointly pin the accepted set to exactly [0, 4^(c(m+1))).
+-- Minimal set: `chain_range` is live through both `chain_range_128` and `chain_range_unique`,
+-- and `chain_range_complete` through `chain_range_complete_128`; `range_complete` reaches the
+-- digit-expansion kernel instead.
 Kimchi.Gate.EndoScalar.chain_range_128
 Kimchi.Gate.EndoScalar.chain_range_unique
 Kimchi.Gate.EndoScalar.range_complete
+Kimchi.Gate.EndoScalar.chain_range_complete_128
+
+-- That range check at the two deployed Pasta fields (`Chain128` packages the eight-row shape):
+-- sound — a satisfying chain pins its register to the cast of a natural < 2^128 — and complete
+-- — every such natural is the register of some satisfying chain — with every field hypothesis
+-- discharged at Fp and Fq. `Chain128` and its two directions are live through these four.
+Kimchi.Gate.EndoScalar.fp_rangeCheck128_sound
+Kimchi.Gate.EndoScalar.fp_rangeCheck128_complete
+Kimchi.Gate.EndoScalar.fq_rangeCheck128_sound
+Kimchi.Gate.EndoScalar.fq_rangeCheck128_complete
 
 -- GLV endomorphism scalar multiplication (gate)
 Kimchi.Gate.EndoMul.sound
@@ -67,6 +81,18 @@ Kimchi.Gate.EndoMul.vesta_endoMul
 -- Poseidon gate: a satisfying row computes the 5-round permutation.
 Kimchi.Gate.Poseidon.sound
 Kimchi.Gate.Poseidon.complete
+
+-- Poseidon gate-to-sponge faithfulness: an eleven-row chain computes `Poseidon.blockCipher`,
+-- the 55-round `mina_poseidon` permutation the duplex sponge runs, at the deployed
+-- `fq_kimchi` / `fp_kimchi` parameters. The oracle is EXTERNAL to this gate — it is
+-- fixture-validated against recorded production traces by
+-- `poseidon/scripts/check_sponge_vectors.sh` — where `sound` above only compares the row
+-- against `perm`, which the gate file itself defines. The chain machinery (`rounds`,
+-- `Chain`, `chain_blockCipher`, `buildChain`) is live through these four.
+Kimchi.Gate.Poseidon.fq_poseidonChain_blockCipher
+Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher
+Kimchi.Gate.Poseidon.fq_poseidonChain_complete
+Kimchi.Gate.Poseidon.fp_poseidonChain_complete
 
 -- The arithmetization interface: satisfiability characterized by divisibility of the aggregate
 -- family. (Its engine — `zH_dvd_iff`, `dvd_separation`, the `Argument` lifts — is live through
@@ -180,7 +206,6 @@ Kimchi.Verifier.Forking.honestKimchiFamily_failure_set
 -- unconditionally at the deployed instantiations.
 Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le
 Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le
-
 -- and the same two guards against the CONDITIONAL-AVERAGE endpoints, over the joint
 -- (table x tape) space: the honest family's win conjunct does not read the tape, so the
 -- containment is the same, and `hcoins` is gone (structural via `toCoins_complete`).
