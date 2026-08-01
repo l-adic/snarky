@@ -356,6 +356,11 @@ separate sign-offs on the resulting files.
   final assignment. End-to-end `cubeCircuit` examples in `Example.lean` (compiled
   constraint list, solved output, slot decodes, failing-assertion rejection). Non-ported
   (D8): `compile'`/`makeSolver'` debug machinery, the advice row, the `Checker` type.
+  Post-step amendment (user-directed): `Example.lean` reserved for the showcase — the
+  knowledge-of-a-cube-root statement at `ZMod 13` (`PUnit` output, so the root stays
+  private; `solve` accepts exactly the cubes, decided exhaustively over the field),
+  landing the PS `Unit` `CircuitType` instance with this first consumer; the per-gadget
+  D9 checks moved to `Example/Gadgets.lean`.
 - [ ] 15. Wrap-up — `Snarky.lean` root imports + orientation docstring; `Vec.lean` and
   `Example.lean` final state; `roots.txt` grown per gadget (retiring the 43-declaration
   dead-code deferral note); the two phantom forward-reference fixes in

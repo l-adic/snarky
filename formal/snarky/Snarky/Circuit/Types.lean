@@ -16,11 +16,12 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   dispatches on the plain field type and core `Bool` directly, so `val` is unwrapped. The
   wrapper-lifting instances (`PrimeField (F f)`, `HasEndo (F f)`, `FieldSizeInBits (F f)`)
   therefore have no analogue; `FieldSizeInBits` resurfaces with `SizedF` (plan §6).
-- Instance coverage is the base pair (`F`, `Bool`) plus `Prod` (PS `Tuple`, landed with
-  its first consumer: `DSL/Field.equals`'s witness pair, walk step 9); the PS `Unit`,
-  `NoInput`/`NoOutput`, `Const`, `Product`, `Vector`, and `Record` instances land
-  with their first consumers (the `IfThenElse` gadgets, walk step 10; `Backend/Compile`,
-  step 14 — `NoInput`/`NoOutput`'s JSON instances are not ported); `UnChecked` is here,
+- Instance coverage is the base pair (`F`, `Bool`), `Prod` (PS `Tuple`, landed with
+  its first consumer: `DSL/Field.equals`'s witness pair, walk step 9), and the size-0
+  `PUnit` (PS `Unit`, landed with its first consumer: `Example`'s knowledge-statement
+  circuit, which claims no public output); the PS `NoInput`/`NoOutput`, `Const`,
+  `Product`, `Vector`, and `Record` instances land with their first consumers
+  (`NoInput`/`NoOutput`'s JSON instances are not ported); `UnChecked` is here,
   with its no-op `CheckedType` instance beside the class in `Circuit/DSL/Monad`.
 - The generic/rowlist deriving machinery (`GCircuitType`/`RCircuitType`, the `generic*`
   helpers) is out of scope (D8) — Lean would grow a `deriving` handler instead.
@@ -147,6 +148,17 @@ instance {a b av bv : Type u} [A : CircuitType F a av] [B : CircuitType F b bv] 
   fieldsToVar fs :=
     ( A.fieldsToVar ((fs.take A.size).cast (by omega)),
       B.fieldsToVar ((fs.drop A.size).cast (by omega)) )
+
+/-- The size-0 encoding (PS `CircuitType f Unit Unit`): the interface type of a
+statement input or output that carries nothing. A circuit compiled at output `PUnit`
+claims NO public output slots — how a pure knowledge statement (assert, return nothing)
+is expressed. -/
+instance : CircuitType F PUnit PUnit where
+  size := 0
+  valueToFields _ := #v[]
+  fieldsToValue _ := PUnit.unit
+  varToFields _ := #v[]
+  fieldsToVar _ := PUnit.unit
 
 /-! ## Round-trip laws (D9)
 

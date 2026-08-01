@@ -7,16 +7,17 @@
 -- declarations themselves. Bringing the DSL surface under the dead-zero contract is
 -- deferred: it requires deciding which combinators are API of the port.
 --
--- MEASURED, so the deferral is priced rather than open-ended (re-measured at walk
--- step 14): there are 285 authored `Snarky.*` declarations; 69 are unreachable from the
--- 52 roots below and 216 are credited — the D12 gadget laws root their gadgets, and the
+-- MEASURED, so the deferral is priced rather than open-ended (re-measured after the
+-- step-14 examples restructure): there are 289 authored `Snarky.*` declarations; 73 are
+-- unreachable from the 52 roots below and 216 are credited — the D12 gadget laws root
+-- their gadgets, and the
 -- compile/solve roots pull in the `witness`/`readVar`/`assignVars` layer they run on.
 -- (Method: temporarily widen `isAudited` in scripts/deadcode.lean to all of `isOurs`,
--- run scripts/deadcode.sh, restore. The 69 are mostly plain DSL surface — `assertEq`,
+-- run scripts/deadcode.sh, restore. The 73 are mostly plain DSL surface — `assertEq`,
 -- `mapVec`, the `IfThenElse` non-field instances, the `any`/`all` combinators (their
 -- laws are the recorded step-10 obligation), the `CircuitM` instances, the
--- `CheckedType`/`CircuitType` classes — so the open question is which of them this
--- manifest should declare, not whether they are dead.)
+-- `CheckedType`/`CircuitType` classes, the `Example` showcase circuits — so the open
+-- question is which of them this manifest should declare, not whether they are dead.)
 
 -- The interpreter laws the embedding exists to state (Snarky/Backend/{Builder,Prover}.lean).
 Snarky.build_eraseWitness

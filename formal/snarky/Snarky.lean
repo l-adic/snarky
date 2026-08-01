@@ -13,6 +13,7 @@ import Snarky.Vec
 import Snarky.Constraint.Basic
 import Snarky.DSL
 import Snarky.Example
+import Snarky.Example.Gadgets
 
 /-!
 # Snarky — the circuit-building DSL, deep-embedded

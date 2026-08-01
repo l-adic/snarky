@@ -6,285 +6,86 @@ import Snarky.Constraint.Basic
 /-!
 # End-to-end examples over the `Basic` backend
 
-The concrete `Snarky.Basic` constraint model over `ZMod 17`, exercising the whole stack:
-the typed `witness` combinator, both interpreters, an instantiation of the completeness
-theorem, and the field gadgets (`DSL/Field` and `DSL/Monad`) on the fixed inputs the PS
-QuickCheck specs sample (D9). Everything here reduces by `rfl`/`decide`, so this file
-doubles as a regression test for the executable semantics.
+Showcase circuits over the concrete `Snarky.Basic` constraint model, everything reduced
+by `decide` in the kernel.
 
-The first circuit mirrors the smallest interesting PS example: witness two field
-elements, multiply them (one witnessed product + one `r1cs` constraint), and assert the
-result equals a constant.
+The headline is snarky's canonical example — **knowledge of a cube root**. The prover
+finds a root out of circuit (`cubeRoot?`, brute force — untrusted helper code that may
+do anything); the circuit only *checks*, with two multiplications and an equality
+against the public input. The root itself stays private (output type `PUnit`: no public
+output slot), and `solve` succeeds on exactly the cubes — verified exhaustively over
+the whole field. The field is `ZMod 13` because there the statement has content: `3`
+divides `12`, so cubing is 3-to-1 on units and most elements are *not* cubes (at `17`
+every element is a cube and the circuit could never reject).
+
+The second circuit is the whole-circuit seam of walk step 14, concretely: `cubeCircuit`
+(cube the public input) compiled to its three-row system and solved, the public slots
+decoding exactly as `solve_complete` states in general.
+
+The per-gadget D9 regression checks live in `Example/Gadgets.lean`.
 -/
 
 namespace Snarky.Example
 
-/-! ## The circuit -/
+/-! ## The fields -/
 
-/-- The example's field: the integers mod 17 — small enough for `decide` throughout, and
-a `Field` (17 is prime), which the `equals`/`inv`/`div` gadgets need. -/
+/-- The seam example's field: the integers mod 17 — small enough for `decide`
+throughout, and a `Field` (17 is prime), which `Example/Gadgets`'s `equals`/`inv`/`div`
+checks need. -/
 abbrev F17 := ZMod 17
 
 instance : Fact (Nat.Prime 17) := ⟨by decide⟩
 
-/-- Witness `x = 3` and `y = 5`, multiply, assert the product is `15`. -/
-def mulCircuit : CircuitM F17 (Basic F17) (FVar F17) := do
-  let x ← witness (val := F17) (pure 3)
-  let y ← witness (val := F17) (pure 5)
-  let z ← mul x y
-  assertEq z (.const 15)
-  pure z
+/-- The knowledge example's field: the integers mod 13, where cubing is 3-to-1 on units
+(`3 ∣ 12`) — so "x has a cube root" is a statement most elements FAIL. -/
+abbrev F13 := ZMod 13
 
-/-! ## Running it -/
+/-! ## Knowledge of a cube root -/
 
-/-- The builder allocates three variables (`x`, `y`, and the product). -/
-example : (build mulCircuit 0).nextVar = 3 := by decide
+/-- Brute-force root search — the prover's out-of-circuit helper: try every field
+element. Untrusted and expensive; the circuit below only checks its answer. -/
+def cubeRoot? (v : F13) : Option F13 :=
+  ((List.range 13).map fun n => (n : F13)).find? fun y => decide (y * y * y = v)
 
-/-- The builder emits two constraints (`x * y = z` and `z = 15`), in emission order —
-the assertion is the `equal` row `assertEq` gained at walk step 11. -/
-example : constraints mulCircuit =
-    [ .r1cs (.var 0) (.var 1) (.var 2), .equal (.var 2) (.const 15) ] := by
+/-- Prove knowledge of a cube root of the public input: witness the root — computed by
+`cubeRoot?`, failing the run (PS `throwAsProver`) when none exists — then constrain
+`w · w · w = x` in two rows. The root stays private: the `PUnit` output claims no
+public output slot, so the compiled statement is just "x is a cube". -/
+def cubeRootCircuit (x : FVar F13) : CircuitM F13 (Basic F13) PUnit := do
+  let w ← witness (val := F13) fun env => do
+    let v ← x.eval env
+    match cubeRoot? v with
+    | some y => pure y
+    | none => .error (.custom "no cube root")
+  let w2 ← square w
+  let w3 ← mul w2 w
+  assertEqual w3 x
+
+/-- One public slot (the input; `PUnit` claims no output) and three private variables:
+the root and the two products. -/
+example : (compile (a := F13) (b := PUnit) cubeRootCircuit).nextVar = 4 := by decide
+
+/-- The compiled system is only the check — square, multiply, compare against the
+public-input slot. No row reflects the SEARCH for the root. -/
+example : (compile (a := F13) (b := PUnit) cubeRootCircuit).constraints =
+    [ .square (.var 1) (.var 2), .r1cs (.var 2) (.var 1) (.var 3),
+      .equal (.var 3) (.var 0) ] := by decide
+
+/-- `8 = 2³` is a cube: the run accepts, and the root sits at the first private
+variable — readable from the assignment, present in no public slot. -/
+example : ((solve (a := F13) (b := PUnit) Basic.holds cubeRootCircuit 8).toOption.map
+    fun r => r.2 1) = some (some 2) := by decide
+
+/-- `2` is not a cube mod 13: the search comes up empty and the honest run stops inside
+the witness computation, before any constraint is checked. -/
+example : (solve (a := F13) (b := PUnit) Basic.holds cubeRootCircuit 2).isOk = false := by
   decide
 
-/-- The prover succeeds: every witness computation runs and every constraint holds. -/
-example : (prove Basic.holds mulCircuit 0 Assignments.empty).isOk = true := by decide
-
-/-- Changing the asserted constant makes the prover reject at the constraint check. -/
-example :
-    (prove Basic.holds (do let z ← mulCircuit; assertEq z (.const 14))
-      0 Assignments.empty).isOk = false := by
-  decide
-
-/-- The completeness theorem, instantiated: any successful run of `mulCircuit` yields
-assignments satisfying every built constraint. -/
-example {x : FVar F17} {nv : Nat} {env : Assignments F17}
-    (h : prove Basic.holds mulCircuit 0 Assignments.empty = .ok ⟨x, nv, env⟩) :
-    ∀ con ∈ constraints mulCircuit, con.holds env = true :=
-  prove_complete (holds := Basic.holds) (fun _con _ _ hle hh => Basic.holds_mono hle hh) h
-
-/-! ## Field gadgets (walk step 9)
-
-The fixed inputs the PS QuickCheck specs sample, as `decide` checks: run the gadget
-under the prover and read the result's value from the final assignment. -/
-
-/-- Run a circuit under the prover and evaluate the result (through `view`) against the
-final assignment — `none` if the run or the evaluation fails. -/
-def proverValue (view : α → CVar F17) (m : CircuitM F17 (Basic F17) α) : Option F17 :=
-  match prove Basic.holds m 0 Assignments.empty with
-  | .ok p => (CVar.eval (view p.result) p.assignments).toOption
-  | .error _ => none
-
-/-- Witness both inputs and test equality — the PS eq spec's circuit. -/
-def eqCircuit (a b : F17) : CircuitM F17 (Basic F17) (BoolVar F17) := do
-  let x ← witness (val := F17) (pure a)
-  let y ← witness (val := F17) (pure b)
-  equals x y
-
-/-- Equal inputs: the prover succeeds and answers `1`. -/
-example : proverValue BoolVar.toCVar (eqCircuit 7 7) = some 1 := by decide
-
-/-- Distinct inputs: the prover succeeds (witnessing `zInv = (a − b)⁻¹`) and answers
-`0`. -/
-example : proverValue BoolVar.toCVar (eqCircuit 3 5) = some 0 := by decide
-
-/-- `equals` costs two witness variables and two constraints on top of its inputs. -/
-example : (build (eqCircuit 3 5) 0).nextVar = 4 ∧
-    (constraints (eqCircuit 3 5)).length = 2 := by decide
-
-/-- A constant comparison folds — no constraints, constant answer. -/
-def constEq : CircuitM F17 (Basic F17) (BoolVar F17) := equals (.const 3) (.const 4)
-
-example : (constraints constEq).length = 0 ∧ proverValue BoolVar.toCVar constEq = some 0 := by
-  decide
-
-/-- `neq` is the negated `equals` bit. -/
-example : proverValue BoolVar.toCVar
-    (do neq (← witness (val := F17) (pure 3)) (← witness (val := F17) (pure 5)))
-    = some 1 := by decide
-
-/-- `inv` witnesses the inverse: `3⁻¹ = 6` (mod 17). -/
-example : proverValue id (do inv (← witness (val := F17) (pure 3))) = some 6 := by decide
-
-/-- `div` composes `inv` and `mul`: `8 / 2 = 4`. -/
-example : proverValue id
-    (do div (← witness (val := F17) (pure 8)) (← witness (val := F17) (pure 2)))
-    = some 4 := by decide
-
-/-- `mul` by a constant folds to `scale_` — no constraint on top of the witness. -/
-def constMul : CircuitM F17 (Basic F17) (FVar F17) := do
-  mul (.const 3) (← witness (val := F17) (pure 5))
-
-example : proverValue id constMul = some 15 ∧ (constraints constMul).length = 0 := by decide
-
-/-- `square` uses the dedicated constraint: `5² = 8` (mod 17). -/
-example : proverValue id (do square (← witness (val := F17) (pure 5))) = some 8 := by decide
-
-/-- `pow` by repeated squaring: `2¹⁰ = 4` (mod 17). -/
-example : proverValue id (do pow (← witness (val := F17) (pure 2)) 10) = some 4 := by decide
-
-/-- `sum` is pure: `3 + x + 4` with `x = 5` witnessed — the PS sum spec's
-`pure ∘ sum` shape. -/
-example : proverValue id
-    (do let x ← witness (val := F17) (pure 5); pure (sum [.const 3, x, .const 4]))
-    = some 12 := by decide
-
-/-! ## Boolean gadgets (walk step 10) -/
-
-/-- Witness two bits (checked: `witness` at `Bool` emits the `boolean` constraints) and
-combine them with a boolean gadget. -/
-def bitCircuit (f : BoolVar F17 → BoolVar F17 → CircuitM F17 (Basic F17) (BoolVar F17))
-    (x y : Bool) : CircuitM F17 (Basic F17) (BoolVar F17) := do
-  let a ← witness (val := Bool) (pure x)
-  let b ← witness (val := Bool) (pure y)
-  f a b
-
-/-- `and` is conjunction on every input pair. -/
-example : (List.product [true, false] [true, false]).all (fun (x, y) =>
-    proverValue BoolVar.toCVar (bitCircuit Snarky.and x y) = some (bit (x && y))) := by
-  decide
-
-/-- `or` is disjunction on every input pair. -/
-example : (List.product [true, false] [true, false]).all (fun (x, y) =>
-    proverValue BoolVar.toCVar (bitCircuit Snarky.or x y) = some (bit (x || y))) := by
-  decide
-
-/-- `xor` is exclusive-or on every input pair. -/
-example : (List.product [true, false] [true, false]).all (fun (x, y) =>
-    proverValue BoolVar.toCVar (bitCircuit Snarky.xor x y) = some (bit (x ^^ y))) := by
-  decide
-
-/-- `not` is pure negation. -/
-example : proverValue BoolVar.toCVar
-    (do pure (Snarky.not (← witness (val := Bool) (pure true)))) = some 0 := by decide
-
-/-- `select` muxes field variables by the witnessed bit. -/
-example : proverValue id
-    (do let b ← witness (val := Bool) (pure true)
-        let x ← witness (val := F17) (pure 7)
-        let y ← witness (val := F17) (pure 9)
-        select b x y)
-    = some 7 := by decide
-
-/-- `select` on the false bit takes the else branch. -/
-example : proverValue id
-    (do let b ← witness (val := Bool) (pure false)
-        let x ← witness (val := F17) (pure 7)
-        let y ← witness (val := F17) (pure 9)
-        select b x y)
-    = some 9 := by decide
-
-/-- `any` over three witnessed bits uses the sum test. -/
-example : proverValue BoolVar.toCVar
-    (do let a ← witness (val := Bool) (pure false)
-        let b ← witness (val := Bool) (pure true)
-        let c ← witness (val := Bool) (pure false)
-        Snarky.any [a, b, c])
-    = some 1 := by decide
-
-/-- `all` over three witnessed bits uses the length test. -/
-example : proverValue BoolVar.toCVar
-    (do let a ← witness (val := Bool) (pure true)
-        let b ← witness (val := Bool) (pure true)
-        let c ← witness (val := Bool) (pure false)
-        Snarky.all [a, b, c])
-    = some 0 := by decide
-
-/-! ## Assertion gadgets (walk step 11) -/
-
-/-- Does the honest prover accept this assertion circuit? -/
-def proverOk (m : CircuitM F17 (Basic F17) PUnit) : Bool :=
-  (prove Basic.holds m 0 Assignments.empty).isOk
-
-/-- `assertNonZero` accepts a nonzero witness (the inverse witness computes) and
-rejects zero (it fails). -/
-example : proverOk (do assertNonZero (← witness (val := F17) (pure 5))) = true ∧
-    proverOk (do assertNonZero (← witness (val := F17) (pure 0))) = false := by decide
-
-/-- `assertNotEqual` accepts distinct values and rejects equal ones. -/
-example : proverOk (do
-      assertNotEqual (← witness (val := F17) (pure 3)) (← witness (val := F17) (pure 5)))
-      = true ∧
-    proverOk (do
-      assertNotEqual (← witness (val := F17) (pure 4)) (← witness (val := F17) (pure 4)))
-      = false := by decide
-
-/-- `assertSquare` accepts a true square (`4² = 16`) and rejects a false one. -/
-example : proverOk (do
-      assertSquare (← witness (val := F17) (pure 4)) (← witness (val := F17) (pure 16)))
-      = true ∧
-    proverOk (do
-      assertSquare (← witness (val := F17) (pure 4)) (← witness (val := F17) (pure 15)))
-      = false := by decide
-
-/-- `assert` pins a witnessed bit to true. -/
-example : proverOk (do assert (← witness (val := Bool) (pure true))) = true ∧
-    proverOk (do assert (← witness (val := Bool) (pure false))) = false := by decide
-
-/-- `assertExactlyOne` validates a one-hot list and rejects a two-hot one. -/
-example : proverOk (do
-      let a ← witness (val := Bool) (pure false)
-      let b ← witness (val := Bool) (pure true)
-      let c ← witness (val := Bool) (pure false)
-      assertExactlyOne [a, b, c]) = true ∧
-    proverOk (do
-      let a ← witness (val := Bool) (pure true)
-      let b ← witness (val := Bool) (pure true)
-      let c ← witness (val := Bool) (pure false)
-      assertExactlyOne [a, b, c]) = false := by decide
-
-/-- `allBools` over three witnessed bits: the sum test, constant first. -/
-example : proverValue BoolVar.toCVar
-    (do let a ← witness (val := Bool) (pure true)
-        let b ← witness (val := Bool) (pure true)
-        let c ← witness (val := Bool) (pure true)
-        allBools [a, b, c])
-    = some 1 := by decide
-
-/-! ## Bit gadgets (walk step 12) -/
-
-/-- The canonical representative at a concrete prime field: `ZMod.val` — the instance
-that discharges the bit laws' `ToNat` hypotheses. -/
-instance : ToNat F17 := ⟨ZMod.val⟩
-
-/-- The pure round trip at `F17`: five bits carry any value below `2⁵`. -/
-example : packPure (unpackPure (13 : F17) 5) = 13 := by decide
-
-/-- `unpack` then `pack` reproduces the witnessed value — the spec's round-trip
-circuit. -/
-example : proverValue id
-    (do let x ← witness (val := F17) (pure 13)
-        let bits ← unpack x 5
-        pure (pack bits))
-    = some 13 := by decide
-
-/-- The bits are LSB-first: bit 1 of `13 = 0b1101` is `0`, bit 2 is `1`. -/
-example : proverValue BoolVar.toCVar
-    (do let x ← witness (val := F17) (pure 13)
-        let bits ← unpack x 5
-        pure bits[1])
-    = some 0 ∧
-  proverValue BoolVar.toCVar
-    (do let x ← witness (val := F17) (pure 13)
-        let bits ← unpack x 5
-        pure bits[2])
-    = some 1 := by decide
-
-/-- Too few bits: the packing row rejects the honest run (`13` does not fit in two
-bits). -/
-example : (prove Basic.holds
-    ((do let x ← witness (val := F17) (pure 13)
-         let _ ← unpack x 2
-         pure PUnit.unit) : CircuitM F17 (Basic F17) PUnit)
-    0 Assignments.empty).isOk = false := by decide
-
-/-- The `AssertEqual` pair instance: componentwise test, conjoined. -/
-example : proverValue BoolVar.toCVar
-    (do let x ← witness (val := F17) (pure 3)
-        let y ← witness (val := F17) (pure 3)
-        let b₁ ← witness (val := Bool) (pure true)
-        let b₂ ← witness (val := Bool) (pure true)
-        isEqual (x, b₁) (y, b₂))
-    = some 1 := by decide
+/-- The statement, exhaustively: `solve` accepts exactly the five cubes among the
+thirteen public inputs — the compiled circuit really means "x has a cube root". -/
+example : ∀ x : F13,
+    (solve (a := F13) (b := PUnit) Basic.holds cubeRootCircuit x).isOk = true
+      ↔ ∃ y : F13, y * y * y = x := by decide
 
 /-! ## Whole-circuit compile/solve (walk step 14) -/
 
