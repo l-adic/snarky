@@ -16,7 +16,11 @@
 # over the LEAN_PATH oleans, so stale artifacts of deleted/renamed modules would be
 # replayed as if they were part of the library (and can false-fail after refactors).
 #
-# Usage: scripts/kernel-replay.sh          (requires a prior `lake build`)
+# Usage: scripts/kernel-replay.sh          (requires a prior workspace build: `make lean-build`,
+#   or from formal/ the explicit target list
+#   `lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture` — bare
+#   `lake build` there reports 0 jobs, the root package being a pure aggregator, so the oleans
+#   replayed below would be whatever is already on disk)
 #   LEAN4CHECKER_WORKERS=N to override the worker count (default 2 — each worker loads
 #   a full Mathlib-sized import environment, so keep this small on CI runners).
 set -euo pipefail

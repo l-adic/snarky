@@ -1,5 +1,29 @@
 # Scope: the AGM prover model for bulletproof-pcs, by reusing ironwood
 
+**Status: EXECUTED through Stage 5b; Stages 2 and 4 landed only in part.** Tree-verified for this
+banner — do not read the per-stage `DONE` markers in §4 as covering more than they say:
+
+- **Stages 0, 1, 3, 4-wiring, 5a, 5b: done**, as their own markers record. Stage 5a's home
+  (`Forking/Knowledge.lean`) has since been deleted as superseded
+  (`forking-consolidation-plan.md` step 6); the live endpoints are
+  `ipa{Vesta,Pallas}_knowledge_sound` (`Forking/KnowledgeSoundness.lean:902,920`), which replaced
+  the `ipa{Vesta,Pallas}_sound` this document names.
+- **Stage 2 (delete the duplicated core): NOT done, deliberately.** `Bulletproof.commitGen`
+  (`Protocol.lean:46`) and `loHalf`/`hiHalf`/`append` (`Soundness/SingleOpening.lean:167–176`) all
+  still exist. What was retired to upstream is the `commitGen` *algebra* inside the forking tree
+  (`Forking/SVector.lean` now calls `Zcash.Snark.commitGen_{add_gen,smul_gen,smul_left,append}`),
+  not the definitions. `forking-consolidation-plan.md` explains why the two coexist: `rw` does not
+  cross the `Bulletproof.commitGen` / `Zcash.Snark.commitGen` defeq boundary.
+- **Stage 4 (retire `hbind` and the two FS axioms): half done, and the halves differ.** The two
+  `poseidon_fiat_shamir_*` axioms are **gone** — 0 `axiom` declarations in the package, the names
+  surviving only in retrospective prose (`Reflection.lean:29`, `Forking/Game.lean:9,1930`).
+  `hbind` is **not** gone: it is retired *from the endpoints* — see
+  `kimchi/Kimchi/Verifier/KnowledgeSoundness.lean:52`, the section "Why `hbind` does not appear",
+  and `Forking/Capstone.lean:11`, "No `hbind` hypothesis" — while remaining a named hypothesis of
+  the abstract PCS layer (`Soundness.lean:232` `batch_soundnessA`, `:354`
+  `chunked_batch_soundness`) and of the intermediate lemmas, 23 occurrences across six files. The
+  endpoints charge binding failures through `ε`/`δ` and return the relation as data instead.
+
 **Constraint:** use as much of `zcash/ironwood` as possible without redefining or rebinding.
 
 The survey below changes the shape of the job. I previously scoped this as "build an AGM prover
@@ -282,6 +306,12 @@ def ipa_openingOrBreak (σ : SRS G) … :
 ## 5. Acceptance gates
 
 - `lake build` clean, 0 `sorry`.
+  [Note, added after audit **H-3**: this criterion predates the discovery that a bare `lake build`
+  from `formal/` reports `Build completed successfully (0 jobs)` with stale modules on disk — the
+  workspace root is a pure aggregator, owning no library and declaring no `defaultTargets`. The
+  build gate is the explicit target list (`make lean-build`'s
+  `Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture`). The historical
+  criterion is left as written; the operative one is that list.]
 - `#print axioms` on the new capstone: standard three only.
 - **The extractor must compute.** A `Σ'` conjured by choice is the vacuous version wearing a
   `Type`, so the data-valued form needs a gate — but *not* the "no `Classical.choice`" one I first

@@ -1,6 +1,12 @@
 # W2 scope — the oracle model, the bridges, and the Poseidon-RO assumption
 
-**Status: SCOPING ONLY — no code changes.** Child of `ironwood-refoundation-plan.md` §4/W2.
+**Status: SCOPING ONLY — no code changes** *(true of this document; W2 itself has SINCE BEEN
+EXECUTED)*. It landed as PR #273: `Kimchi/Verifier/Forking/{OracleRun,RunLink,Bridge}.lean`. One
+substantive divergence from §5's decision: the Poseidon-RO boundary was **not** taken as an
+axiom. It is the hypothesis bundle `structure FSFaithful` (`Forking/Bridge.lean:93`), discharged
+per-statement, so the tree still declares 0 axioms and §5's sign-off never became necessary.
+
+Child of `ironwood-refoundation-plan.md` §4/W2.
 W1 is done (PR #272: ironwood `Zcash` pinned at `83a98f7f`, CompElliptic a shared git pin at
 daira `a549e455`). This document fixes the design of W2 precisely enough to implement, and
 isolates the one decision that needs user sign-off (§5).

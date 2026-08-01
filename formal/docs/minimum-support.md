@@ -30,25 +30,36 @@ type rather than a transcript prefix — `DecodesFromPrefixes.final` has to retu
 
 ## What we own, and why it cannot be imported
 
+The `lines` column is `wc -l` **as of the reference-doc sweep**, not as of the audit; where the
+audit's figure differed it is given after the arrow. The `why` column is the substance and is
+unchanged.
+
 | ours | lines | why ironwood cannot supply it |
 | --- | --: | --- |
 | `EndoChallenge.lean` | 428 | the four `expandPre` hypotheses of the target. Zero upstream hits for `glv`/`endoExpand`/`challengeNat` |
-| `Convention.lean` | 137 | `foldHalves` ↔ `foldGens`: invert challenges, swap `L`/`R`. Without it no upstream extraction result applies |
-| `Transcript.lean` | 414 | our wire sponge and its absorption order — `preC` absorbs `δ` only, never `sg`, which is what forces the node domain |
-| `Deployed.lean` | ~800 | `IpaNode` + `Fintype`, `nodes`, `nodeTranscript` faithfulness, `decodesFromPrefixes_nodes`, `wireWins`, `wireWins_iff_wins`, `deployedExtract`, the target, `verifyWith_of_deferred_delta` |
-| `Honest.lean` | ~570 | upstream ships **no** wins-on-every-table companion for any of its fork games; each instantiation owes its own |
-| `Prover.lean` | ~226 | the kimchi prover shape and `kimchiProverAccept_iff_verifierAcceptsAt`, the anti-parallel-predicate pin |
+| `Convention.lean` | 138 | `foldHalves` ↔ `foldGens`: invert challenges, swap `L`/`R`. Without it no upstream extraction result applies |
+| `Transcript.lean` | 519 (was 414) | our wire sponge and its absorption order — `preC` absorbs `δ` only, never `sg`, which is what forces the node domain |
+| `Deployed.lean` | 970 (was ~800) | `IpaNode` + `Fintype`, `nodes`, `nodeTranscript` faithfulness, `decodesFromPrefixes_nodes`, `wireWins`, `wireWins_iff_wins`, `deployedExtract`, the target, `verifyWith_of_deferred_delta` |
+| `Honest.lean` | 722 (was ~570) | upstream ships **no** wins-on-every-table companion for any of its fork games; each instantiation owes its own |
+| `Prover.lean` | 161 (was ~226) | the kimchi prover shape and `kimchiProverAccept_iff_verifierAcceptsAt`, the anti-parallel-predicate pin |
 | `SVector.lean` | 155 | `bPolyCoefficients` satisfies the doubling recursion; `combinedB_eq_innerProduct` |
-| `Capstone.lean` | 166 | the cert layer and its exit into upstream `deployed_forking_tree` → `ipa_extractV` |
+| `Capstone.lean` | 165 | the cert layer and its exit into upstream `deployed_forking_tree` → `ipa_extractV` |
 | `Schnorr.lean` | 66 | the Schnorr wrapper is kimchi-only; halo2 has no such round. This is the `+1` in the bound |
-| `Adapter.lean` | ~69 | `SRS ≅ URS` (`rfl`) and `openingRelationB` = upstream `IpaRelation` at `P − ρ • σ.h` |
-| `Triviality.lean` | ~139 | the vacuity results: `Prop`-level `∃`/`∨` is free over the deployed 1-dim group |
-| `Game.lean`, the field-coupled part | ~1,380 | the fork recursion and realization (`u⁻¹` at the node), the extractor, `DecodesFromPrefixes`, and `verifierAcceptsAt_of_deferred_delta` |
-| kimchi `Transcript`/`OracleRun`/`RunLink` | 460 | the fq/fr prefix machinery and its faithfulness — the `m > 0` block |
+| `Adapter.lean` | 70 | `SRS ≅ URS` (`rfl`) and `openingRelationB` = upstream `IpaRelation` at `P − ρ • σ.h` |
+| ~~`Triviality.lean`~~ | **deleted** (was ~139) | the vacuity results: `Prop`-level `∃`/`∨` is free over the deployed 1-dim group. The file went at step 3 of `forking-consolidation-plan.md` and the vacuity results went with it — kept here because *why* it was ours is still the record |
+| `Game.lean`, the field-coupled part | ~1,380 of 2,261 | the fork recursion and realization (`u⁻¹` at the node), the extractor, `DecodesFromPrefixes`, and `verifierAcceptsAt_of_deferred_delta` |
+| kimchi `Transcript`/`OracleRun`/`RunLink` | 346 (was 460) | the fq/fr prefix machinery and its faithfulness — the `m > 0` block |
 
-Roughly **4,700 of 6,253 lines survive**. That is the honest number, and the five absences above
-are why it is not smaller: the parts of this development that look like duplication are mostly the
-parts upstream does not contain.
+"Roughly **4,700 of 6,253 lines survive**" was the estimate **as of the audit** (per-declaration,
+against pinned ironwood `83a98f7f`; the same 6,253 denominator as `forking-consolidation-plan.md`'s
+verdict). Measured today instead: the ten extant single-file rows sum to **3,394** lines and the
+kimchi row adds **346**, so **3,740** lines are accounted for outright; the `Game.lean` row is the
+only estimate left, and its field-coupled/portable split is not cheaply re-derivable from a
+2,261-line file. For a denominator that *is* re-derivable: `bulletproof-pcs/Bulletproof/Forking/`
+is **6,685** lines today and `kimchi/Kimchi/Verifier/Forking/` **2,375**.
+
+Whichever number you take, the five absences above are why it is not smaller: the parts of this
+development that look like duplication are mostly the parts upstream does not contain.
 
 ## What leaves, with the upstream name that replaces it
 
@@ -70,6 +81,12 @@ The nine-step order in `forking-consolidation-plan.md` stands, with one change o
 target above is the acceptance test for every step. A step that keeps the build green but moves the
 target further away is a regression, and a step that deletes either anti-vacuity companion voids
 the target even while the bound still compiles.
+
+Which of the nine still bind: per that document's own status banner, steps **1, 2, 3, 6, 7 and 9
+are executed** and only **4, 5 and 8** remain open — so the order constrains those three (step 8
+is now settled as NOT DONE rather than unsettled: its `good`/`hgood` hoist targets exist as
+`kimchiForkGoodAtU`/`_update`). The ordering constraint **3 and 4 before 7** was already violated
+by execution order, 7 having landed without 4.
 
 ## The standing directive
 

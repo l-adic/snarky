@@ -19,6 +19,16 @@ The `Snarky` package is traversed for CREDITING only — `Kimchi.*` declarations
 are live through `snarky/roots.txt` — but `Snarky.*` declarations are not yet audited (see
 the note in that manifest).
 
+The SIZE of that deferral, measured (temporarily widening `isAudited` to all of `isOurs`, then
+restoring): **76 authored `Snarky.*` declarations, of which 43 are unreachable from the
+manifest's 8 roots and 33 are credited.** So the headline "dead 0 of 1558" is dead-0 over 1558
+of 1634 authored declarations, and the unaudited remainder is 43, not 3 and not 300. Those 43
+are overwhelmingly plain DSL surface — `assertEq`, `mul`, `witness`, `existsVars`,
+`addConstraint`, `fresh`, `readVar`, `mapVec`, the `CircuitM` monad instances, the
+`CheckedType`/`CircuitType` classes, the `Example` demo circuit — which is why closing the
+deferral is a design decision (which combinators are API of the port) rather than a deletion
+pass, and why rooting them liberally would make the gate vacuous for this package.
+
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
 import Kimchi

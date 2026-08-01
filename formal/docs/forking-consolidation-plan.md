@@ -1,5 +1,27 @@
 # Forking-tree consolidation: the disposition ledger and migration order
 
+**Status: EXECUTED for steps 1, 2, 3, 6, 7 and 9; steps 4, 5 and 8 NOT executed.** Established
+by the cheapest existence check each step's own text implies, so a step marked done here means
+its named files/declarations are gone or its named upstream replacement is consumed — not that
+the whole step was re-audited. The ledger tables below are untouched and remain the record.
+
+| Step | Disposition (existence-checked) |
+|---|---|
+| **1** kimchi `git rm Escape.lean + GuardEscape.lean` | **DONE** — neither file exists; `escape_coord` is in no `.lean` file. Its side claim ("removes kimchi's only `import Zcash`") no longer holds: kimchi imports `Zcash` today at `Capstone/Algebraic.lean:3` and `Forking/Honest.lean:3`, deliberately. |
+| **2** kimchi retire `Model.lean` | **DONE** — `Verifier/Forking/Model.lean` does not exist. |
+| **3** bp retire the `commitGen` algebra upstream | **DONE, and further** — `Forking/Triviality.lean` is gone entirely, and `Forking/SVector.lean` now calls `Zcash.Snark.commitGen_{add_gen,smul_gen,smul_left,append}`. Note this retired the *lemmas*, not the definition: `Bulletproof.commitGen` (`Protocol.lean:46`) still exists, per this document's own defeq-boundary finding. |
+| **4** bp hoist 7 duplicated helpers below `Game.lean` | **NOT DONE** — no `Forking/Shared.lean`, and all seven of this document's own non-upstream pairs (see the cross-classifier resolution below: `commitGen_one`, `honestProver`, `honestProver_accept`, `lrAt_congr`, `leafAt_congr`, `padChal`, `tail_snoc'`) survive un-hoisted — six in `Honest.lean` at `:116`, `:133`, `:146`, `:187`, `:206`, `:225`, and the seventh, `tail_snoc'`, in `Game.lean:857`. (`padChal_apply_of_lt`, `Honest.lean:229`, is `padChal`'s companion, not one of the seven.) They were made `private` rather than hoisted, which removes the *public* duplicate surface but not the duplication: `Game.lean:857 tail_snoc'` and `Honest.lean:116 commitGen_one` both survive alongside `Prover.lean:85 tail_snoc` and `Capstone.lean:90 commitGen_singleton`. |
+| **5** bp `import Bulletproof.Reflection`, delete 7 re-derivations | **NOT DONE** — `Deployed.lean` imports only `Forking.{Game,Transcript,EndoChallenge}`, and `verifyWith_iff_verifierAcceptsAt` is still at `Deployed.lean:514`, not moved into `Reflection.lean`. |
+| **6** bp delete the superseded Prop-level knowledge-soundness layer | **DONE** (it needed sign-off and got it) — `Forking/Extraction.lean` and `Forking/Knowledge.lean` are both gone, and `kimchi_knowledge_soundness` occurs nowhere. The rehome target `Triviality.lean` was itself deleted, so `kimchi_knowledge_soundness_conclusion_free_at_1dim` went with it rather than moving. |
+| **7** bp the atomic upstream swap in `Game.lean` | **DONE** — all five deleted strands are absent (`scanFork`, `PreThreeForkSuccess`, `preForkEscape`, `KimchiForkReached`, `KimchiRunHistory`), and `Game.lean` consumes upstream `nextForkChallenge*`, `recursiveForkEscape`, `RecursiveForkReached`, `RecursiveRunHistory`, `ThreeForkSuccess`. `kimchiExtract_failure_measure_le` survives as this step predicted. The specific `shared_failure_measure_le` route is **not** what landed — that name is consumed nowhere; the escape-set quartet was replaced by other upstream names. |
+| **8** bp lift the seam (`Alphabet` / `ForkSetup`) | **NOT DONE** — no `Alphabet.lean`, `ForkSetup.lean` or `Shared.lean`. `Prechallenge`/`expandPre` remain in `Deployed.lean:90,99`; `foldGens_inv` in `Convention.lean:50`. Partially anticipated: `Game.lean`'s `honestAdv*` is gone while `Honest.lean`'s `honestNodeAdv*` remains, so the two honest reader machines were not unified but one side went away. The seam's `good`/`hgood` targets do exist and were not hoisted: `kimchiForkGood` has 25 hits, including `private def kimchiForkGoodAtU` (`Game.lean:1367`) and `private theorem kimchiForkGoodAtU_update` (`:1396`) — the pair this step's own text (below) lists as "`kimchiForkGood` + `_update` (26) as `good`/`hgood`", carrying an `AtU` suffix. So this row is **settled cheaply**, as NOT DONE. |
+| **9** close `Deployed.lean:812` | **DONE** — the tree is sorry-free (census 0 over all five packages). |
+
+Since steps 4, 5 and 8 are open, the ordering constraints stated at the end of this document
+still bind for them: **3 and 4 before 7** was violated by execution order (7 landed without 4),
+and **7 before 8** is satisfied trivially. Anyone resuming step 8 should re-derive its hoist
+list against the tree rather than trusting the line numbers below.
+
 Produced by a per-declaration audit of both forking trees against the pinned `zcash/ironwood`
 (`83a98f7f`). Every `DELETE_UPSTREAM` claim in this document was **compile-tested** — 21 claims
 across four verification files, 21 confirmed, 0 refuted. Claims in the `DELETE_OBSOLETE` tier were

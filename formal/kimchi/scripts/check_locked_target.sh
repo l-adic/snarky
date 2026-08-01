@@ -15,7 +15,7 @@
 #                      `U`-coefficient split (the `else none` branch is the residual)
 #
 # plus grep guards: the faithfulness bundle (`FSFaithful`), the pointwise bridge
-# (`wins_iff_kimchiVerify`), and both honest-family exhibits still exist.
+# (`wins_iff_kimchiVerify`), and both honest-family guards still exist.
 #
 # NOTE on computability, documented here because the IPA gate forbids the same thing:
 # kimchi's `relationFinder` IS `noncomputable` — deliberately. Its key gate reads
@@ -100,9 +100,18 @@ fi
 
 # THE EXHIBIT SET (see the bulletproof-pcs gate's note): certificates consumed by nothing
 # are indistinguishable from dead code once they leave roots.txt, so their existence is
-# pinned here instead of relying on review.
+# pinned here instead of relying on review. (Their axiom closures are pinned separately by
+# scripts/check_axioms.lean, which also throws when a listed root leaves the environment —
+# these pins are a second, independent guard, not the only one.)
+#
+# COUNTING CONVENTION, shared with the bulletproof-pcs gate: the closing message's exhibit
+# count is the number of names in the loops below and nothing else. The guards checked by the
+# separate `if`s above are named beside that count, never folded into it.
+#
+# Bare names: this matcher has no dotted-prefix group, so a declaration written
+# `theorem KimchiFamily.foo` would not match — pin it as the source spells it.
 for n in exists_ne_zero_kernel_scalarBasis kimchiVerify_eq_verifyWith \
-         exists_complete_reductionEfficient; do
+         exists_complete_reductionEfficient one_le_of_reductionEfficient; do
   if ! grep -qE "^(theorem|def) $n\b" "$ks"; then
     echo "✗ EXHIBIT MISSING: $n (expected in $ks)"; exit 1
   fi
@@ -116,4 +125,5 @@ for n in vesta_honest_extraction_failure_measure_le \
 done
 
 echo "✓ kimchi locked target intact: both endpoint statements, Wins, ExtractsWitness,"
-echo "  relationFinder, the faithfulness bundle, and the seven exhibits"
+echo "  relationFinder, the faithfulness bundle (FSFaithful, wins_iff_kimchiVerify), both"
+echo "  honest-family guards, and the six exhibits"

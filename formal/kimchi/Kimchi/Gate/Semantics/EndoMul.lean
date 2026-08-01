@@ -505,7 +505,7 @@ private theorem decompose_crumbList (g : ℕ → Witness F) (m : ℕ) :
     simp_all +decide [ aDigit, bDigit ];
     norm_num [ Nat.add_div ] ; ring_nf ;
     constructor <;> rw [ Finset.sum_mul _ _ _ ] <;>
-      rw [ Finset.sum_congr rfl fun x hx => ?_ ] <;> ring;
+      rw [ Finset.sum_congr rfl fun x hx => ?_ ] <;> ring_nf;
     · split_ifs <;>
         rw [ show 1 + m * 2 - x = (m * 2 - 1 - x) + 2 by
               have := Finset.mem_range.mp hx; omega ] <;> ring;

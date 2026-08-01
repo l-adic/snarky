@@ -1,5 +1,10 @@
 # Applying ironwood's forking machinery generically (IPA now, kimchi next)
 
+**Status: current, and the title's "kimchi next" has happened.** Both cited evidence files exist
+(`bulletproof-pcs/scripts/check_ironwood_generic.{lean,sh}`), and the kimchi side landed —
+`kimchi/Kimchi/Verifier/Forking/` imports `Zcash` and carries the kimchi run-level bridge. See
+`ironwood-refoundation-plan.md`'s banner for the per-workstream picture.
+
 Pin: `zcash/ironwood` `83a98f7f`, at `formal/.lake/packages/Zcash`.
 
 Every claim of the form "upstream applies at our types" is a compiled example in

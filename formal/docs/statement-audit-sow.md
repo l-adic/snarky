@@ -1,5 +1,11 @@
 # Statement of Work — Capstone / Statement-Correctness Audit of `formal/`
 
+**Status: PERFORMED — the audit this work order commissions was carried out; its findings are
+`statement-audit-report.md`,** whose follow-up routes are tracked in
+`external-audit-followup.md`. This document is the work order, kept as written: its line
+references (including `:36`'s `kimchi{Vesta,Pallas}_run_sound_algebraic_ft`, a name that exists
+nowhere in the tree today) describe the tree as it stood when the audit was commissioned.
+
 **Object under audit:** the Lean statements (not the proofs) of the kimchi formalization —
 are the capstone theorems, the definitions they quantify over, and the declared axioms the
 *right things to have proved* about the deployed Rust verifier?
