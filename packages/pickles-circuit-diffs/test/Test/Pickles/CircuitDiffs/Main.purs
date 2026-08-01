@@ -627,9 +627,11 @@ spec bundle =
         exactMatchWitnessEff @(F Fp) @Unit "assert_equal_step_circuit" assertEqualCircuit
           (pure zero)
         exactMatchWitnessEff @(F Fp) @Unit "assert_non_zero_step_circuit"
-          assertNonZeroCircuit genNonZeroF
+          assertNonZeroCircuit
+          genNonZeroF
         exactMatchWitnessEff @(F Fp) @Unit "assert_not_equal_step_circuit"
-          assertNotEqualCircuit genNonZeroF
+          assertNotEqualCircuit
+          genNonZeroF
         exactMatchWitnessEff @(F Fp) @Unit "assert_square_step_circuit" assertSquareCircuit
           (pure zero)
         exactMatchWitnessEff @(F Fp) @Unit "unpack_step_circuit" unpackCircuit arbitrary
@@ -657,9 +659,11 @@ spec bundle =
         -- multi-branch step_main diff comes later, once PS supports
         -- multi-branch compile.
         exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_make_zero"
-          makeZeroAppCircuit (pure zero)
+          makeZeroAppCircuit
+          (pure zero)
         exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_increment"
-          incrementAppCircuit (pure one)
+          incrementAppCircuit
+          (pure one)
         exactMatchEff "app_circuit_chunks2" (compileUU chunks2AppCircuit)
       describe "Witness dump" $
         -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the
