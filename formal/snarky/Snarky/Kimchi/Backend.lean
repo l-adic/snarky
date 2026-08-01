@@ -23,9 +23,9 @@ constants into `q₄` rather than into a witness cell.
 
 The two `BasicSystem` constructors are special cases: `r1cs a b prod` is
 `(a·b) − prod = 0` (`q₃ = 1, q₂ = -1`), and `boolean x` is `x² − x = 0` (same coefficients,
-all three operands `x`). The richer type is deliberately Index-ready — carrying the
-coefficients is what the wired `Kimchi.Index` bridge (`Snarky.Kimchi.Compile`) needs to
-place operands in cells and fold constants, and it is why `c` is the symbolic gate rather
+all three operands `x`). The richer type is deliberately Index-ready — a wired
+`Kimchi.Index` bridge (a recorded follow-on) would need the coefficients to place
+operands in cells and fold constants, and that is why `c` is the symbolic gate rather
 than a bare `a·b = prod` triple.
 
 ## What is (and isn't) bridged here
@@ -34,11 +34,12 @@ This module bridges to the **un-wired Generic gate list** (`Gate.Satisfies : Lis
 F) → Prop`). Because every row is evaluated against the *same* assignment, a variable
 shared across constraints gets the same value in each row it appears in — so
 variable-sharing holds by construction, but it is **not** enforced as a copy constraint.
-Enforcing sharing via the wiring permutation is the wired `Kimchi.Index` bridge (domain
-synthesis + placement), which builds on this constraint type.
+Enforcing sharing via the wiring permutation — domain synthesis plus placement into a
+`Kimchi.Index` — is the recorded follow-on that would build on this constraint type.
 
-This module (and everything under `Snarky.Kimchi.*`) imports Mathlib via `Kimchi`; the
-core `Snarky` library (`import Snarky`) stays Mathlib-free.
+This module (and everything under `Snarky.Kimchi.*`) imports Mathlib wholesale via
+`Kimchi`; the DSL core is plain core Lean — its only Mathlib touch is `Example`'s
+targeted `ZMod` import (the concrete fields).
 -/
 
 namespace Snarky.Kimchi
@@ -113,8 +114,9 @@ def GateConstraint.toRow (con : GateConstraint F) (env : Assignments F) :
 
 /-- **The correspondence.** The prover's decidable check on a constraint agrees exactly
 with the Generic gate's `Holds` on the row it translates to: `holds` succeeds iff the
-constraint evaluates and the resulting row is a satisfying Generic gate. This is the
-per-constraint core of the soundness bridge (`Snarky.Kimchi.satisfies_of_prove`). -/
+constraint evaluates and the resulting row is a satisfying Generic gate. Composed with
+`prove_complete` over a run's emitted constraints, it takes a successful DSL run to a
+list of satisfying Generic rows — that whole-run statement is a recorded follow-on. -/
 theorem GateConstraint.holds_iff_row (con : GateConstraint F) (env : Assignments F) :
     con.holds env = true ↔ ∃ row, con.toRow env = some row ∧ row.Holds := by
   unfold GateConstraint.holds GateConstraint.toRow

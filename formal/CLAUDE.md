@@ -14,24 +14,25 @@ seen the Clean framework, forget its vocabulary here — none of it applies.
 A second library lives in its own package **`snarky/`** (namespace `Snarky.*`, package
 `snarky`, which *requires kimchi* — its `Snarky.Kimchi.*` bridge interprets reified
 circuits against the verified generic-gate checker): a deep-embedded Lean port of the
-PureScript circuit-building DSL
-(`packages/snarky/src/Snarky/Circuit/DSL/Monad.purs`). It models how constraint systems
+PureScript circuit-building DSL (`packages/snarky`). It models how constraint systems
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
-mirroring `Snarky.Backend.Builder`/`Prover`, and the Lean-only laws beside their
+mirroring `Snarky.Backend.Builder`/`Prover`, whole-circuit `compile`/`solve` with the
+seam law `solve_complete` (a successful solve satisfies every compiled constraint and
+decodes the public slots as declared), and the Lean-only laws beside their
 subjects: interpreter laws in `Backend/{Builder,Prover}` (witness-independence,
 builder/prover allocation agreement, completeness — a successful prover run satisfies
 every built constraint, plus the bind-composition laws) and per-gadget
-soundness/completeness beside each gadget in `Circuit/DSL/{Field,Boolean}`.
+soundness/completeness beside each gadget in `Circuit/DSL/{Field,Boolean,Assert,Bits}`.
 It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
 `Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
 affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete
 backends live in downstream files (see `Snarky/Constraint/Basic.lean` for the concrete
 `Basic` model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Vec.lean`). The package is being realigned with the
-PureScript original module-by-module — see `formal/docs/snarky-ps-alignment.md` for the
-plan and its sign-off walk.
+— use `Snarky.mapVec` from `Snarky/Vec.lean`). The package is aligned with the
+PureScript original module by module; `formal/docs/snarky-ps-alignment.md` records the
+completed sign-off walk.
 
 Build: `make lean-build` (from repo root) or `lake build` (from `formal/`). The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`

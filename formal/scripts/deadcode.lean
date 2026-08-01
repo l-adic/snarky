@@ -15,9 +15,10 @@ The gate additionally checks each such name textually appears in some scripts/ f
 blocks cannot rot into general exemption dumps. A trailing `-- synthesis: ...` comment
 exempts a line from the textual check (instances are found by class resolution, not by name).
 
-The `Snarky` package is traversed for CREDITING only — `Kimchi.*` declarations it consumes
-are live through `snarky/roots.txt` — but `Snarky.*` declarations are not yet audited (see
-the note in that manifest).
+All five packages are audited. `snarky/roots.txt` declares the DSL's port surface (the
+PS-export mirrors, the Lean-only laws, and the `Example` exhibits), so `Snarky.*`
+declarations sit under the same dead-zero contract as the rest of the tree; its internal
+machinery must stay reachable from that declared surface.
 
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
@@ -97,16 +98,16 @@ def isAuxiliary (env : Environment) (n : Name) : Bool :=
 /-- Is `n` traversable — authored in this repo's packages? `private` declarations get a
     mangled `_private.<module>.0.`-prefixed name, so demangle first — otherwise the walk
     refuses to enter them and everything referenced only *through* a private helper reports
-    dead. `Snarky` is traversable (crediting) but not audited (see `isAudited`). -/
+    dead. -/
 def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
 
-/-- Is `n` under the dead-zero contract? Everything traversable except `Snarky.*`. -/
+/-- Is `n` under the dead-zero contract? Everything traversable — all five packages
+    declare their surface. -/
 def isAudited (n : Name) : Bool :=
-  let n := (privateToUserName? n).getD n
-  isOurs n && !(`Snarky).isPrefixOf n
+  isOurs n
 
 /-- Transitive closure of the dependency graph from `roots`, restricted to our packages'
     edges (Mathlib/CompElliptic never reference our code, so nothing of ours is reachable

@@ -361,10 +361,20 @@ separate sign-offs on the resulting files.
   private; `solve` accepts exactly the cubes, decided exhaustively over the field),
   landing the PS `Unit` `CircuitType` instance with this first consumer; the per-gadget
   D9 checks moved to `Example/Gadgets.lean`.
-- [ ] 15. Wrap-up — `Snarky.lean` root imports + orientation docstring; `Vec.lean` and
-  `Example.lean` final state; `roots.txt` grown per gadget (retiring the 43-declaration
-  dead-code deferral note); the two phantom forward-reference fixes in
-  `Snarky/Kimchi/Backend.lean`; the `CLAUDE.md` package-table paragraph.
+- [x] 15. Wrap-up — DONE. `Snarky.lean` grew the orientation docstring (the layout map;
+  the Kimchi bridge deliberately outside the root, whose only Mathlib touch is
+  `Example`'s targeted `ZMod` import). `roots.txt` now declares the PORT surface — the
+  PS-export mirrors, the Lean-only laws, the derive/backend instances, and the `Example`
+  exhibits — and `scripts/deadcode.lean` audits `Snarky.*` like every other package
+  (`isAudited = isOurs`; header reconciled, the stale 76/43 paragraph dropped): the
+  workspace gate reports dead 0 of 1996 authored over 314 roots — deferral RETIRED. The
+  axiom gate grew the newly rooted theorems (54 roots). Both `Snarky/Kimchi/Backend.lean`
+  phantom forward references fixed (`Snarky.Kimchi.Compile` and `satisfies_of_prove`
+  became honest follow-on prose), plus its stale "`import Snarky` stays Mathlib-free"
+  claim. `Vec.lean` and `Example.lean` verified in final state (Vec's kernel-opacity
+  claim re-confirmed live against core v4.30's `Vector.map`). The `CLAUDE.md` snarky
+  paragraph updated in both checkouts: compile/solve + `solve_complete`, all four gadget
+  modules, the walk recorded as complete.
 
 Each gadget step (9–12) lands with its PS→Lean name map (D7), theorems for the QuickCheck
 laws in its `snarky-test-utils` spec plus `decide` examples for the fixed-vector cases

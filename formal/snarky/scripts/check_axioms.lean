@@ -64,7 +64,14 @@ def roots : List Name :=
     `Snarky.unpack_sound,
     `Snarky.unpack_complete,
     `Snarky.solve_complete,
-    `Snarky.readVar_le ]
+    `Snarky.readVar_le,
+    `Snarky.CVar.reduce_eval,
+    `Snarky.fvar_value_roundTrip,
+    `Snarky.fvar_var_roundTrip,
+    `Snarky.boolVar_value_roundTrip,
+    `Snarky.boolVar_var_roundTrip,
+    `Snarky.build_eq_of_eraseWitness,
+    `Snarky.CircuitM.instLawfulMonad ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

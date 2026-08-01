@@ -2,22 +2,14 @@
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). The axiom audit
 -- lives in scripts/check_axioms.lean (the interpreter laws and the gadget laws).
 --
--- NOTE: the dead-code pass traverses Snarky for CREDITING only — a `Kimchi.*` declaration
--- consumed by this package is live through these roots — but does not yet audit `Snarky.*`
--- declarations themselves. Bringing the DSL surface under the dead-zero contract is
--- deferred: it requires deciding which combinators are API of the port.
---
--- MEASURED, so the deferral is priced rather than open-ended (re-measured after the
--- step-14 examples restructure): there are 289 authored `Snarky.*` declarations; 73 are
--- unreachable from the 52 roots below and 216 are credited — the D12 gadget laws root
--- their gadgets, and the
--- compile/solve roots pull in the `witness`/`readVar`/`assignVars` layer they run on.
--- (Method: temporarily widen `isAudited` in scripts/deadcode.lean to all of `isOurs`,
--- run scripts/deadcode.sh, restore. The 73 are mostly plain DSL surface — `assertEq`,
--- `mapVec`, the `IfThenElse` non-field instances, the `any`/`all` combinators (their
--- laws are the recorded step-10 obligation), the `CircuitM` instances, the
--- `CheckedType`/`CircuitType` classes, the `Example` showcase circuits — so the open
--- question is which of them this manifest should declare, not whether they are dead.)
+-- The declared surface is the PORT surface: the Lean counterparts of the PS module
+-- exports (each module docstring's D7 name map), the Lean-only laws the embedding exists
+-- to state, and the `Example` exhibits (showcase circuits and the run helpers the
+-- anonymous `decide` examples consume — invisible to any constant walk). Internal
+-- machinery — witness cores, private lemmas, the reduction pipeline's helpers — is
+-- deliberately NOT rooted: it must stay reachable from this surface, which is what keeps
+-- the dead-zero contract meaningful for this package. `Snarky.*` declarations are
+-- audited by the workspace pass like every other package's.
 
 -- The interpreter laws the embedding exists to state (Snarky/Backend/{Builder,Prover}.lean).
 Snarky.build_eraseWitness
@@ -86,6 +78,91 @@ Snarky.solve
 Snarky.solve_complete
 Snarky.readVar_le
 
+-- The DSL primitive surface (Circuit/DSL/Monad.lean): the PS Snarky-monad exports not
+-- already pulled in by the laws above, and the Lean-only monad laws
+-- (`bind_assoc`/`bind_pure` ride along inside the instance).
+Snarky.fresh
+Snarky.existsVars
+Snarky.label
+Snarky.AsProver.run
+Snarky.CircuitM.instLawfulMonad
+
+-- The builder surface (Backend/Builder.lean): the constraint extractor and the
+-- witness-independence corollary.
+Snarky.constraints
+Snarky.build_eq_of_eraseWitness
+
+-- The CVar surface (Circuit/CVar.lean): the fold spelled with `_` (raw-constructor
+-- clash) and the affine-reduction pipeline with its correctness law (the private
+-- `evalTerms` machinery is credited through the proof).
+Snarky.CVar.negate_
+Snarky.CVar.reduceToAffineExpression
+Snarky.CVar.reduce_eval
+
+-- The typed-value surface (Circuit/Types.lean): round-trip laws (D9), the BoolVar
+-- eliminator coercion, and the size-0 PUnit interface.
+Snarky.fvar_value_roundTrip
+Snarky.fvar_var_roundTrip
+Snarky.boolVar_value_roundTrip
+Snarky.boolVar_var_roundTrip
+Snarky.instCoeBoolVarCVar
+Snarky.instCircuitTypePUnit
+
+-- The boolean surface (Circuit/DSL/Boolean.lean): constants, the list combinators
+-- (their laws are the recorded step-10 obligation), and the IfThenElse mux instances.
+Snarky.true_
+Snarky.false_
+Snarky.any
+Snarky.all
+Snarky.instIfThenElseBoolVarOfFieldOfDecidableEqOfBasicSystem
+Snarky.instIfThenElsePUnit
+Snarky.instIfThenElseProd
+
+-- The assertion surface (Circuit/DSL/Assert.lean): the list assertions and the
+-- AssertEqual class with its instances (found by class resolution, not by name).
+Snarky.assertAny
+Snarky.assertAll
+Snarky.assertExactlyOne
+Snarky.allBools
+Snarky.AssertEqual
+Snarky.instAssertEqualFVarOfFieldOfDecidableEqOfBasicSystem
+Snarky.instAssertEqualBoolVarOfFieldOfDecidableEqOfBasicSystem
+Snarky.instAssertEqualPUnitOfOne
+Snarky.instAssertEqualProdOfAddOfMulOfZeroOfOneOfDecidableEqOfBasicSystem
+
+-- The derived Repr/DecidableEq instances: the `decide`/`#eval` surface (PS Eq/Show
+-- parity), consulted by class resolution.
+Snarky.instDecidableEqCVar
+Snarky.instReprCVar
+Snarky.instReprEvalError
+Snarky.instDecidableEqAffineExpression
+Snarky.instReprAffineExpression
+Snarky.instDecidableEqBasic
+Snarky.instReprBasic
+
 -- The Kimchi Generic-gate bridge (Snarky/Kimchi/Backend.lean): a DSL constraint holds
--- iff its written Generic row satisfies the verified checker's predicate.
+-- iff its written Generic row satisfies the verified checker's predicate, plus the
+-- bridge's monotonicity law and its backend/derive instances.
 Snarky.Kimchi.GateConstraint.holds_iff_row
+Snarky.Kimchi.GateConstraint.holds_mono
+Snarky.Kimchi.instBasicSystemGateConstraint
+Snarky.Kimchi.instDecidableEqGateConstraint
+Snarky.Kimchi.instReprGateConstraint
+
+-- The Example exhibits (Example.lean, Example/Gadgets.lean): the showcase circuits and
+-- the run helpers; their consumers are anonymous `example`s, invisible to any constant
+-- walk (exhibits stay rooted).
+Snarky.Example.F17
+Snarky.Example.F13
+Snarky.Example.cubeRoot?
+Snarky.Example.cubeRootCircuit
+Snarky.Example.cubeCircuit
+Snarky.Example.mulCircuit
+Snarky.Example.eqCircuit
+Snarky.Example.constEq
+Snarky.Example.constMul
+Snarky.Example.bitCircuit
+Snarky.Example.proverValue
+Snarky.Example.proverOk
+Snarky.Example.instFactPrimeOfNatNat_snarky
+Snarky.Example.instToNatF17
