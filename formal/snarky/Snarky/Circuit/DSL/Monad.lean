@@ -219,17 +219,6 @@ instance {avar bvar : Type u} [CheckedType F c avar] [CheckedType F c bvar] :
     CheckedType.check (c := c) p.1
     CheckedType.check (c := c) p.2
 
-/-- Collect `n` indexed circuit computations into a sized vector, in index order — the
-`CircuitM` rendering of PS `Vector.generateA`. Structural on `n`, so it kernel-reduces
-(`decide`-friendly); the vector-consuming instances (`IfThenElse`/`AssertEqual` at
-`Vector`) will traverse through it when they land. -/
-def generateVec : (n : Nat) → (Fin n → CircuitM F c α) → CircuitM F c (Vector α n)
-  | 0, _ => pure #v[]
-  | n + 1, f => do
-    let init ← generateVec n fun i => f i.castSucc
-    let last ← f (Fin.last n)
-    pure (init.push last)
-
 /-! ## The typed combinators -/
 
 variable {val var : Type u}
