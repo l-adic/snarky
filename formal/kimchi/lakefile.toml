@@ -76,3 +76,17 @@ globs = ["KimchiFixture", "KimchiFixture.+"]
 [[lean_exe]]
 name = "kimchi-demo"
 root = "Main"
+
+# The two heavy fixture drivers, compiled: native they run ~13x faster than interpreted
+# — but the compiled full runs peak near 30 GB resident (the interpreter fits in 16 GB),
+# so CI runs them INTERPRETED via `lake env lean --run` until that memory is understood.
+# Local use: `lake exe <name>` on a big-RAM machine (each script's `main`); the drivers
+# deliberately have no `#eval main`, so plain `lake env lean` elaborates without
+# running.
+[[lean_exe]]
+name = "check-vk-correspond"
+root = "scripts.check_vk_correspond"
+
+[[lean_exe]]
+name = "check-kimchi-verifier"
+root = "scripts.check_kimchi_verifier"
