@@ -185,6 +185,8 @@ def runChunked (C : Ipa.CommitmentCurve)
 abbrev CV := IpaVesta.curve
 abbrev CP := IpaPallas.curve
 
+-- Compiled entry point: `lake exe check-kimchi-verifier` (a `#eval main` here would run the
+-- check interpreted at elaboration time — the slow path this exe target replaces).
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- nc = 1: the deployed wire form (barycentric public evals), then the carried-public
@@ -207,4 +209,3 @@ def main : IO Unit := do
     barycentric and carried, nc = 2 on both curves, nc = 8, and the live-EndoMul/VarBaseMul \
     empty-public proof), reject corruptions, and refuse to parse ragged wire data"
 
-#eval main

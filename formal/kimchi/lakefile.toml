@@ -76,3 +76,15 @@ globs = ["KimchiFixture", "KimchiFixture.+"]
 [[lean_exe]]
 name = "kimchi-demo"
 root = "Main"
+
+# The two heavy fixture drivers, compiled: interpreted (`lake env lean`) these MSM- and
+# field-arithmetic-bound checks cost ~20 CI minutes; native they run in seconds. Invoke
+# with `lake exe <name>` (each script's `main`); the drivers deliberately have no
+# `#eval main`, so `lake env lean` on them elaborates without running.
+[[lean_exe]]
+name = "check-vk-correspond"
+root = "scripts.check_vk_correspond"
+
+[[lean_exe]]
+name = "check-kimchi-verifier"
+root = "scripts.check_kimchi_verifier"

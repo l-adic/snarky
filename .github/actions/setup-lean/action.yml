@@ -1,9 +1,22 @@
 name: Setup Lean (Kimchi formalization)
 description: >
-  elan (pinned toolchain) + Mathlib olean cloud cache + a build-directory cache for the
-  libraries (Kimchi, Snarky, and the pasta/poseidon/bulletproof-pcs packages), then a full
-  `lake build`. Shared by the Lean workflow and the
-  witness-check job in the CI workflow so both build the library the same way.
+  elan (pinned toolchain) + Mathlib olean cloud cache + a restore of the build-directory
+  cache for the libraries, then a `lake build` of the requested targets. Restore-only:
+  the Lean workflow's build job saves the cache explicitly (even on a failing run, so
+  red iterations stay incremental); every other consumer — the parallel gate jobs and
+  the witness-check job in the CI workflow — restores what that job saved.
+inputs:
+  targets:
+    description: >-
+      Space-separated lake targets to build (from `formal/`, the aggregator workspace).
+    required: false
+    default: >-
+      Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
+      KimchiFixture
+outputs:
+  cache-key:
+    description: The primary key of the build-directory cache (for an explicit save).
+    value: ${{ steps.restore.outputs.cache-primary-key }}
 runs:
   using: composite
   steps:
@@ -14,12 +27,13 @@ runs:
           | sh -s -- -y --default-toolchain none
         echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-    # Cache the project's own build directory (Mathlib oleans come from
+    # Restore the project's own build directory (Mathlib oleans come from
     # `lake exe cache get` below, not from here). `restore-keys` lets a run whose
     # `formal/` sources changed start from the previous build and recompile
     # incrementally instead of from scratch.
-    - name: Cache the Kimchi build directory
-      uses: actions/cache@v3
+    - name: Restore the Kimchi build directory
+      id: restore
+      uses: actions/cache/restore@v4
       with:
         path: |
           formal/.lake/build
@@ -29,7 +43,7 @@ runs:
         restore-keys: |
           lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-
 
-    - name: Fetch deps + build the library (= check every proof)
+    - name: Fetch deps + build the requested targets
       shell: bash
       working-directory: formal
       run: |
@@ -62,7 +76,7 @@ runs:
         else
           echo "No ProofWidgets release tarball for $rev; continuing"
         fi
-        # Build every library across the workspace packages: typechecks every proof
-        # and runs the `#eval`s (Kimchi, Snarky, pasta, poseidon, bulletproof-pcs).
-        lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
-          KimchiFixture
+        # Build the requested targets: the library list typechecks every proof and runs
+        # the `#eval`s; the Lean workflow's build job also passes the compiled fixture
+        # drivers so the gate job finds their binaries in the restored cache.
+        lake build ${{ inputs.targets }}

@@ -214,6 +214,8 @@ def runCurve (C : Ipa.CommitmentCurve)
   for vkPath in vkPaths do
     runRegime C d vkPath
 
+-- Compiled entry point: `lake exe check-vk-correspond` (a `#eval main` here would run the
+-- check interpreted at elaboration time — the slow path this exe target replaces).
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- Vesta: nc = 1 (zk_rows = 3, σ-zeroing range empty) then nc = 2 (zk_rows = 5, rows
@@ -232,4 +234,3 @@ def main : IO Unit := do
     derived column against the Lagrange chunk commitments — σ columns from the model's \
     own Index.sigmaAddrRow, selectors per-chunk masked"
 
-#eval main
