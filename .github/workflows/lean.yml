@@ -6,11 +6,11 @@ name: Lean
 # No submodules are needed: every Lean dependency (Mathlib, CompElliptic, ironwood)
 # is a lake git require; the large `mina` submodule is skipped.
 #
-# Three jobs: `build` runs the cheap source gates, builds every library target plus the
-# compiled fixture drivers, and saves the build cache (even on failure, so red
-# iterations stay incremental); `gates` and `kernel-replay` then run in parallel off
-# that cache. Wall clock is build + max(gates, kernel-replay) instead of one serial
-# chain, and a gate failure reruns only its own lane.
+# Four jobs: `build` runs the cheap source gates, builds every library target, and
+# saves the build cache (even on failure, so red iterations stay incremental);
+# `gates`, `fixtures-heavy` and `kernel-replay` then run in parallel off that cache.
+# Wall clock is build + the slowest lane instead of one serial chain, and a failure
+# reruns only its own lane.
 on:
   push:
     branches: [ main ]
@@ -85,16 +85,14 @@ jobs:
       run: bash scripts/check_fixtures_manifest.sh
 
     # elan + Mathlib olean cache + the Kimchi build-directory cache + `lake build` of
-    # the library list AND the two compiled fixture drivers (the drivers are MSM- and
-    # field-arithmetic-bound; interpreted they cost ~20 minutes, compiled they run in
-    # under a minute each in the gates job).
+    # the library list. The two heavy fixture drivers run INTERPRETED in their own
+    # parallel lane below: their `lean_exe` targets exist (kimchi/lakefile.toml) and are
+    # ~13x faster, but the compiled runtime peaks near 30 GB resident on either driver —
+    # beyond any runner — where the interpreter has fit in 16 GB for months. Recompile
+    # them into CI once the drivers' memory is understood.
     - name: Setup Lean + build the library (= check every proof)
       id: lean
       uses: ./.github/actions/setup-lean
-      with:
-        targets: >-
-          Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
-          KimchiFixture check-vk-correspond check-kimchi-verifier
 
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact
@@ -122,10 +120,7 @@ jobs:
       with:
         submodules: false
 
-    # Restores the cache the build job just saved (library replay only — the compiled
-    # drivers are invoked below as binaries straight from the restored cache, so this
-    # job never asks lake to build them; asking would recompile the dependency
-    # packages' native objects on any cache-key change).
+    # Restores the cache the build job just saved; `lake build` replays as a no-op.
     - name: Setup Lean (restore the build)
       uses: ./.github/actions/setup-lean
 
@@ -249,28 +244,6 @@ jobs:
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_linearization.lean
 
-    # The composed executable verifier against complete production wire proofs
-    # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_nc8,
-    # vesta_emul}.json from the kimchi_proof_dump binaries — the emul one carries live
-    # EndoMul/VarBaseMul selectors and an empty public input; see the audit's V-1/C-3).
-    # Compiled driver (`lakefile.toml`'s `check-kimchi-verifier`): interpreted this
-    # check cost ~9 CI minutes.
-    - name: Check the executable kimchi verifier against a production proof
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
-          ./kimchi/.lake/build/bin/check-kimchi-verifier
-
-    # The verifier-key <-> index correspondence across both curves and the three
-    # regimes (nc = 1, 2, 8; the Vesta and Pallas VKs against index_{vesta,pallas}*).
-    # Compiled driver (`check-vk-correspond`): interpreted this check cost ~12 CI
-    # minutes; compiled it measures ~46 s.
-    - name: Check the verifier key corresponds to the index
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
-          ./kimchi/.lake/build/bin/check-vk-correspond
-
     # GATE (external-audit A-1): the only BEHAVIOURAL anti-vacuity check — `#eval` the
     # extraction pipeline on concrete fixtures and byte-compare the recovered witness;
     # a check `Classical.choice` cannot fake. Plus the ironwood generic-instantiation
@@ -281,6 +254,42 @@ jobs:
         BULLETPROOF_FIXTURES_DIR=bulletproof-pcs/fixtures \
           lake env lean bulletproof-pcs/scripts/check_extractor_computes.lean
         lake env lean bulletproof-pcs/scripts/check_ironwood_generic.lean
+
+  fixtures-heavy:
+    name: Heavy fixture checks (verifier, VK)
+    needs: build
+    runs-on: ubuntu-latest-large
+    defaults:
+      run:
+        working-directory: formal
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Setup Lean (restore the build)
+      uses: ./.github/actions/setup-lean
+
+    # The composed executable verifier against complete production wire proofs
+    # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_emul}.json from
+    # the kimchi_proof_dump binaries — the emul one carries live EndoMul/VarBaseMul
+    # selectors and an empty public input; see the audit's V-1/C-3. The nc = 8 fixture is
+    # disabled in the driver pending its memory — see the note there). Interpreted via
+    # `lean --run` (the script has no `#eval`): the compiled driver peaks ~30 GB
+    # resident; the interpreter fits the runner.
+    - name: Check the executable kimchi verifier against a production proof
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean --run kimchi/scripts/check_kimchi_verifier.lean
+
+    # The verifier-key <-> index correspondence across both curves (nc = 1 and 2; the
+    # nc = 8 regime is disabled in the driver pending its memory). Interpreted, as above.
+    - name: Check the verifier key corresponds to the index
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean --run kimchi/scripts/check_vk_correspond.lean
 
   kernel-replay:
     name: Kernel replay (lean4checker)

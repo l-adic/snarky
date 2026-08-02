@@ -78,6 +78,5 @@ runs:
           echo "No ProofWidgets release tarball for $rev; continuing"
         fi
         # Build the requested targets: the library list typechecks every proof and runs
-        # the `#eval`s; the Lean workflow's build job also passes the compiled fixture
-        # drivers so the gate job finds their binaries in the restored cache.
+        # the `#eval`s.
         lake build ${{ inputs.targets }}
