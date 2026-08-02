@@ -5,9 +5,26 @@ A proposal for re-layering the `Kimchi` soundness proof, partially executed.
 **Executed so far**: the root-list consolidation (superseded milestones demoted, dead
 curve-AGM/`ftQuotient` code deleted), and the package split — `pasta` (curve trust base),
 `poseidon` (sponge spec + fixture kit), `bulletproof-pcs` (the IPA PCS + FS instantiation)
-are now standalone lake packages; the unused ironwood vendor dependency is dropped.
-**Remaining**: the privatization pass and the `Verifier/` (linearization / interactive /
-FS-reflection) split described below.
+are now standalone lake packages. The privatization pass has largely landed as well: ~755
+`private` declarations across the packages, and `Verifier/` has been split, though along a
+different seam than proposed below — it holds `Capstone/` (`Algebraic.lean`,
+`Reflection.lean`), `Forking/`, `Reduction/`, plus `Kimchi.lean`, `KnowledgeSoundness.lean`,
+`Reflect.lean` and `Wire.lean` (the wire split is its own record, `protocol-wire-split.md`).
+**Superseded**: "the unused ironwood vendor dependency is dropped" was true of the *vendored*
+copy — there is no `vendor/` directory at all now — but ironwood is today a deliberate direct
+git require (`lakefile.toml:72–75`, `Zcash @ 83a98f7f`), consumed by
+`Kimchi/Verifier/Forking/` and `Verifier/Capstone/Algebraic.lean`; see
+`ironwood-refoundation-plan.md`.
+
+> **The module paths in the layer sections below are pre-reorg homes, not current ones.** The
+> re-layering happened, but the names moved (`kimchi-reorg.md`; `CLAUDE.md`'s layer and package
+> tables are the maintained description). Specifically: the layer-0 substrate is now the `pasta`
+> package; `Circuit/` folded into `Gate/Semantics/`; `Quotient/` became the top-level
+> `Domain` / `Aggregate` / `SchwartzZippel` / `GrandProduct` modules; `Commitment/IPA/` became the
+> `bulletproof-pcs` package; and `Cycle/` is gone. The two terminal theorems named under *Concrete
+> tip* (`kimchi{Vesta,Pallas}_run_sound_algebraic_ft`) exist under no name today — the deployed
+> endpoints are `{vesta,pallas}_kimchi_knowledge_sound`. The design argument below — the two
+> tiers, the interface-per-layer discipline, the recomposition — stands as written.
 
 ## The idea
 
@@ -69,6 +86,16 @@ decomposition. Stays as is.
 - **Assumes** — DL-binding (a hypothesis, `hbind`) and an abstract accepting transcript.
 - **Status** — fully generic already (0 Pasta references).
 
+> **Assumptions superseded at the tip (layers 3 and 6).** Both `Assumes` lines above and under
+> layer 6 still describe this layer accurately *in isolation* — `hbind` is a live hypothesis of
+> `Bulletproof/Soundness.lean`'s `batch_soundnessA` / `chunked_batch_soundness` — but neither
+> assumption reaches the endpoints any more. `hbind` is retired *from* them (the section "Why
+> `hbind` does not appear", `Verifier/KnowledgeSoundness.lean:52`): binding failures are charged
+> through `ε`/`δ` and the extractor returns the relation as data. The Fiat–Shamir axiom is gone
+> outright — 0 `axiom` declarations in the tree; what layer 6 calls an axiom is now the hypothesis
+> bundle `structure FSFaithful` (`Verifier/Forking/Bridge.lean:93`). See `agm-reuse-scope.md`'s
+> banner for how far each retirement goes.
+
 ### 4 · Linearization — *(new home; today in `Linearization` + `Sound` + `Capstone`)*
 The seam where kimchi couples the IOP and the PCS: the verifier never opens the quotient
 directly, only through the Maller `ft` commitment.
@@ -119,7 +146,11 @@ reason*:
 - the `hasse` / CM axioms — the concrete curve;
 - `ft_opening_of_reflected_{vesta,pallas}` and the two terminal theorems
   `kimchi{Vesta,Pallas}_run_sound_algebraic_ft`;
-- EC-gate faithfulness at Pasta (`pallas_endoMul`, `vesta_endoMul`, …).
+- EC-gate faithfulness at Pasta (`pallas_endoMul`, `vesta_endoMul`, …);
+- Poseidon-gate faithfulness at Pasta (`fq_/fp_poseidonChain_blockCipher`) — the one gate whose
+  faithfulness oracle is not Mathlib's group law but the *fixture-validated* sponge permutation
+  `Poseidon.blockCipher`, so the eleven-row chain is checked against recorded `mina_poseidon`
+  traces rather than against a Lean definition of this tree's own.
 
 ## Roots to collapse
 
@@ -149,6 +180,18 @@ This choice sets how much collapses. Everything else in this document is indepen
 
 ## Migration
 
-- One layer boundary at a time, bottom-up; the 117-root axiom gate stays green at every step.
+- One layer boundary at a time, bottom-up; the root-manifest axiom gate stays green at every step.
+  (It was a 117-root gate when this was written; the manifests total **228** roots today, across
+  five per-package `roots.txt` — bulletproof-pcs 61, kimchi 99, pasta 27, poseidon 18, snarky 23.
+  That total is **not** attributable to any one lane: `roots.txt` has concurrent writers, so
+  reconcile per package with `grep -vcE '^\s*(--|#|$)' <pkg>/roots.txt` rather than diffing the
+  workspace number. Relatedly, *Roots to collapse* above lists milestone roots from the
+  pre-consolidation manifest: **none** of the names it samples still exists as a declaration — a
+  declaration-level grep (`^ *(private )?(theorem|def|abbrev) <name>[^A-Za-z0-9_]`) returns zero for
+  every one, `kimchiProof_sound` included, whose only textual hit is inside a `--` comment in
+  `kimchi/roots.txt`. What survive are two *relatives* under longer names,
+  `kimchiProof_sound_of_openings_of_vkrep` (`Verifier/Reduction/Soundness.lean:444`) and
+  `run_sound_algebraic_at_of_vkrep` (`Verifier/Capstone/Reflection.lean:1095`). So the collapse has
+  already happened — which is the point of the sentence.)
 - Reuse the EC gates' two-file discipline for the concrete tip.
 - Split `Capstone.lean` last, once the interfaces below it have homes.

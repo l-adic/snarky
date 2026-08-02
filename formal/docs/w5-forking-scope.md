@@ -1,7 +1,16 @@
 # W5 scope — deriving IPA tree extraction (the forking instantiation)
 
 **Status: SCOPING ONLY — no code changes. Contains a finding that changes what W5 should be
-(§1.1); read that before costing anything else.** Child of `ironwood-refoundation-plan.md`
+(§1.1); read that before costing anything else.**
+
+**W5's goal has SINCE BEEN ACHIEVED.** The two `poseidon_fiat_shamir_{vesta,pallas}` axioms are
+retired: `grep -c '^axiom'` over the five packages is 0, and the names survive only in
+retrospective prose. `Bulletproof/Forking/Game.lean`'s `kimchiExtract_failure_measure_le` records
+the removal, and the live
+endpoints are `ipa{Vesta,Pallas}_knowledge_sound` (`Forking/KnowledgeSoundness.lean:902,920`).
+Read this document as the design record for that result.
+
+Child of `ironwood-refoundation-plan.md`
 §5/W5. Predecessors: W2 (the kimchi-side oracle model, PR #273), W3 (the guard-escape engine,
 PR #275), and — on this branch — the IPA-side oracle model, `4e303379..c5ebc11c`
 (`Bulletproof/Forking/Transcript.lean`).

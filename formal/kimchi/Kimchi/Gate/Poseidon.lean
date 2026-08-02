@@ -11,10 +11,16 @@ for Vesta proofs, `fq_kimchi` for Pallas proofs), so the matrix is gate data, no
 constants — exactly like `EndoMul`'s endomorphism coefficient. The five rounds chain
 `s0 → s1 → s2 → s3 → s4 → s5`, so one gate row applies five permutation rounds.
 
-Unlike the elliptic-curve gates there is no external Mathlib spec: the gate *defines* the
-permutation. Soundness (`sound`) is therefore that a satisfying witness's output state is the
-5-round permutation `perm` of its input state, and completeness (`complete`) is that the honest
-witness built by iterating `round` satisfies the constraints.
+At the row level the spec is internal: soundness (`sound`) is that a satisfying witness's output
+state is the 5-round permutation `perm` of its input state — `perm` being defined in this file —
+and completeness (`complete`) is that the honest witness built by iterating `round` satisfies the
+constraints. One layer up the gate *does* have an external spec, and it is not a Mathlib
+structure but production data. `Gate/Semantics/Poseidon.lean` proves that the deployed
+**eleven-row chain** computes `Poseidon.blockCipher` at the `fq_kimchi` / `fp_kimchi` parameters:
+the 55-round `mina_poseidon` permutation the duplex sponge runs, which `Poseidon.FqSponge` drives
+to produce every Fiat–Shamir challenge, and which `poseidon/scripts/check_sponge_vectors.sh`
+validates against recorded production traces. `55 = 11 × 5` exactly, so the eleven rows of five
+rounds cover the permutation with no ragged tail.
 
 The witness holds the six 3-element states `s0 .. s5` (`s0` = input, `s5` = output); the 15
 round constants are the gate's coefficient row, supplied as `rc : Fin 5 → F × F × F`. The

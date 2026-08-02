@@ -1,6 +1,33 @@
 # Kimchi reorganization — target structure
 
-A planning document (not yet executed). Reorganizes the `Kimchi` package around the
+**Status: EXECUTED — this is the current layout, kept as the migration record.** Tree-verified:
+of the **22** names in the "new file" column of the tables below, **16 exist as written**, and the
+`Circuit/` and `Cycle/` directories the "from" columns cite are **gone**. The other six are parts
+of the reorg that executed *differently*, not work left undone — their content landed, under other
+paths:
+
+* `Protocol/Soundness.lean` and `Verifier/Sound.lean` → `Verifier/Reduction/Soundness.lean`
+  (`kimchiProof_sound_of_openings_of_vkrep` at `:444`); the reduction layer got its own directory
+  rather than sitting in `Protocol/`.
+* `Verifier/Correspond.lean` → `Verifier/Reduction/Correspond.lean`, beside it.
+* `Verifier/Capstone.lean`, `Verifier/Algebraic.lean` and `Verifier/FiatShamir.lean` → the
+  `Verifier/Capstone/` directory, as the two files named below.
+
+`Gate/` + `Gate/Semantics/` hold the six gates in exactly the two-file split specified by *Side A*'s
+"each gate splits into its **definition** and its **semantics**" and by execution step 2;
+`Protocol/` holds `Equation.lean` + `Linearization.lean`; `Verifier/Capstone/` is split (as
+`Algebraic.lean` + `Reflection.lean`, where execution step 4 proposed
+`Capstone`/`Algebraic`/`FiatShamir`); and the standard-model cut of execution step 1 is recorded in
+`standard-model-line.md`. So **read the migration tables' left columns as the layout you will find
+and their right columns as history** — the reverse of how a plan normally reads. `CLAUDE.md`'s layer
+table is the maintained description.
+
+(Those three cross-references were `:22`/`:107`/`:114` until this pass. They pointed into the
+pre-banner numbering of this file, so adding the banner had already shifted every one of them —
+the same drift this banner exists to correct. Section anchors cannot drift; line numbers into a
+living document can.)
+
+Reorganizes the `Kimchi` package around the
 same axis the `bulletproof-pcs` reorg used: **the idealized polynomial protocol and its
 soundness (Side A)** vs **the concrete PCS instantiation and its soundness (Side B)**. The
 boundary is exactly *"does it mention commitments / the Poseidon sponge / the Fiat–Shamir

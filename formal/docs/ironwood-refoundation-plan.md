@@ -1,7 +1,26 @@
 # Refounding the soundness line on ironwood's forking primitives — plan
 
-**Status: PLAN ONLY — nothing here is enacted.** Companion to
-`statement-audit-report.md` (this plan is the follow-up for finding **M3** and the
+**Status: ENACTED — the goal is achieved; kept as the design record.** The refoundation's
+purpose was to get the Fiat–Shamir axioms off the trust surface, and that is done: `grep -c
+'^axiom'` over the five packages is **0**, and the former
+`{kimchi,poseidon}_fiat_shamir_{vesta,pallas}` names survive only in retrospective prose
+(`Bulletproof/Reflection.lean:29`, `Forking/Game.lean`'s file docstring and
+`kimchiExtract_failure_measure_le`, `Forking/Transcript.lean:8`,
+`Capstone/Reflection.lean:12`). The plan below is **not** a to-do list; read it as the design
+rationale for what shipped. Per workstream, established from the tree (the in-file `STATUS:`
+markers are evidence, not authority — this banner's own prior text disagreed with `:101`):
+
+| WS | Disposition (tree-verified) |
+|---|---|
+| **W1** dependency engineering (§3) | **DONE** — `:101`'s `STATUS: DONE — PR #272`, confirmed: `lakefile.toml:72–75` git-requires `Zcash` at `83a98f7f`. Its stated aim of keeping kimchi free of `import Zcash` did not hold and was not meant to: `Capstone/Algebraic.lean:3` and `Forking/Honest.lean:3` import it deliberately. |
+| **W2** oracle model (§4) | **DONE** (PR #273) as `Forking/{OracleRun,RunLink,Bridge}.lean` — but **without §4's "ONE new axiom"**. The Poseidon-as-RO boundary is a *hypothesis bundle*, `structure FSFaithful` (`Forking/Bridge.lean:93`), so it is discharged per-statement rather than trusted globally. §4's axiom-text sign-off never became necessary. |
+| **W3** guard escape (§5) | **PROVED, THEN DELETED** in favour of upstream equivalents — `Escape.lean` / `GuardEscape.lean` are gone (`forking-consolidation-plan.md` step 1) and `escape_coord` is in no `.lean` file. See `w3-guard-escape-scope.md`'s banner. |
+| **W4** run-level capstones (§5) | **SUPERSEDED.** It was to compose W3 with `kimchi{Vesta,Pallas}_run_sound_algebraic_ft`; those roots exist under no name today. The deployed endpoints are `{vesta,pallas}_kimchi_knowledge_sound` (`Verifier/KnowledgeSoundness.lean:4479,4504`), and the guard implication survives as `RunGuardImpAt` (`Capstone/Reflection.lean:1066`). |
+| **W5** deriving tree extraction (§5) | **DONE**, though §5 scoped it as a severable stretch. This is what retired the FS axioms; `Forking/Game.lean`'s `kimchiExtract_failure_measure_le` records the removal. |
+| **W6** M5 cleanup (§5) | **not re-verified** — opportunistic, and not settleable by a cheap existence check. |
+| **W7** documentation / trust-surface truth (§5) | **ongoing** — the recurring docs-status sweeps (audit H-1 → H-5, `external-audit-followup.md`) are this workstream. |
+
+Companion to `statement-audit-report.md` (this plan is the follow-up for finding **M3** and the
 "deferred forking/density model" scope note carried by the run-level roots after the
 C1 fix, PR #269).
 

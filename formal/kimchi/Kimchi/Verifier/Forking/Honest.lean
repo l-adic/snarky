@@ -1795,6 +1795,60 @@ theorem pallas_honest_extraction_failure_measure_le
   rintro q ⟨hext, hb⟩
   exact ⟨pallasHonestFamily_wins B q.1 hb q.2, hext⟩
 
+/-- **The joint-axis twin of `vesta_honest_extraction_failure_measure_le`.** The same
+anti-vacuity guard against the averaged endpoint `vesta_kimchi_knowledge_sound_avg`: on the
+honest family the measured set is again a statement about the extractor alone, now over the
+joint `(table × tape)` space. Two things change beside the space. The event's challenge-table
+coordinate is `q.2.1` and its coins are `q.2.2.toCoins`, read off the sampled fork tape; and
+the completeness hypothesis `hcoins` is **gone** — the averaged endpoint discharges it
+structurally through `RecursiveForkTape.toCoins_complete`, so this guard has one fewer
+hypothesis than its per-tape twin. The family still wins on the whole non-excluded slice
+(`vestaHonestFamily_wins`, which is uniform in the challenge table), so the containment is the
+same one line. -/
+theorem vesta_honest_extraction_failure_measure_le_avg
+    (B : Bulletproof.IpaVesta.Point) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : vestaHonestFamily.DiscreteLogRelationHardForAvg B R ε δ)
+    (hEff : vestaHonestFamily.ReductionEfficientAvg R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ 2) → Bulletproof.IpaVesta.curve.ScalarField) ×
+          (Coins Bulletproof.IpaVesta.curve 1 2 ×
+            Zcash.Snark.RecursiveForkTape Prechallenge (2 + 1)))).toOuterMeasure
+        ({q | ¬ vestaHonestFamily.ExtractsWitness
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+          ∩ {q | q.1 SetupIndex.blind ≠ 0})
+      ≤ (vestaHonestFamily.Q + 2 + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ 2 + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((vestaHonestFamily.Q + 1 : ℕ) : ℝ≥0∞)
+          * ((szBudget 1 (2 ^ 2) vestaHonestFamily.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_)
+    (vesta_kimchi_knowledge_sound_avg B vestaHonestFamily hHard hEff)
+  rintro q ⟨hext, hb⟩
+  exact ⟨vestaHonestFamily_wins B q.1 hb q.2.1, hext⟩
+
+/-- **The joint-axis twin of `pallas_honest_extraction_failure_measure_le`** — the Pallas side
+of `vesta_honest_extraction_failure_measure_le_avg`, against
+`pallas_kimchi_knowledge_sound_avg`; same space, same absence of `hcoins`, same one-line
+containment. -/
+theorem pallas_honest_extraction_failure_measure_le_avg
+    (B : Bulletproof.IpaPallas.Point) {R : ℕ} {ε δ : ℝ≥0∞}
+    (hHard : pallasHonestFamily.DiscreteLogRelationHardForAvg B R ε δ)
+    (hEff : pallasHonestFamily.ReductionEfficientAvg R) :
+    (PMF.uniformOfFintype
+        ((SetupIndex (2 ^ 2) → Bulletproof.IpaPallas.curve.ScalarField) ×
+          (Coins Bulletproof.IpaPallas.curve 1 2 ×
+            Zcash.Snark.RecursiveForkTape Prechallenge (2 + 1)))).toOuterMeasure
+        ({q | ¬ pallasHonestFamily.ExtractsWitness
+              (augOfSetup (Zcash.Snark.scalarBasis B q.1)) q.2.1 q.2.2.toCoins}
+          ∩ {q | q.1 SetupIndex.blind ≠ 0})
+      ≤ (pallasHonestFamily.Q + 2 + 1) * (3 / (2 ^ 128 : ℕ))
+        + ((2 ^ 2 + 1 : ℕ) : ℝ≥0∞) * ε + δ
+        + ((pallasHonestFamily.Q + 1 : ℕ) : ℝ≥0∞)
+          * ((szBudget 1 (2 ^ 2) pallasHonestFamily.idx.zkRows : ℝ≥0∞) / (2 ^ 128 : ℕ)) := by
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_)
+    (pallas_kimchi_knowledge_sound_avg B pallasHonestFamily hHard hEff)
+  rintro q ⟨hext, hb⟩
+  exact ⟨pallasHonestFamily_wins B q.1 hb q.2.1, hext⟩
+
 end Trivial
 
 end Kimchi.Verifier.Forking

@@ -105,7 +105,7 @@ import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
 import Test.Pickles.CircuitDiffs.WitnessDump (buildWitnessExport)
 import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen, chooseInt, evalGen)
+import Test.QuickCheck.Gen (Gen, chooseInt, evalGen, suchThat)
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -214,7 +214,10 @@ invCircuit x = inv_ x
 
 divCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
 divCircuit x = do
-  y <- exists (pure (zero :: F Fp))
+  -- The divisor's witness must be nonzero for the solver (`inv_` throws
+  -- `DivisionByZero`); the constraint system is witness-independent, so the
+  -- OCaml byte-comparison is unaffected.
+  y <- exists (pure (one :: F Fp))
   div_ x y
 
 ifCircuit :: forall c r. BasicSystem Fp c => FVar Fp -> Snarky Fp c r (FVar Fp)
@@ -350,6 +353,11 @@ affinePt g = case toAffine g of
 -- | A random Pallas point: a nonzero scalar multiple of the generator.
 genPallasPoint :: Gen (AffinePoint Fp)
 genPallasPoint = affinePt <<< power generator <$> chooseInt 1 top
+
+-- | A nonzero field element — the honest domain of `inv_`'s witness (which throws
+-- | `DivisionByZero` on zero) and of the nonzero assertions.
+genNonZeroF :: Gen (F Fp)
+genNonZeroF = arbitrary `suchThat` (_ /= zero)
 
 -- | A random 128-bit scalar for the endo-scalar / endo-mul gadgets, which decode their input
 -- | as a `SizedF 128`. Sampling a `SizedF 128` (its `Arbitrary` draws exactly 128 bits) and
@@ -603,27 +611,43 @@ spec :: SrsBundle -> SpecT Aff Unit Aff Unit
 spec bundle =
   beforeAll_ (liftEffect resetOutputDirs) $
     describe "Circuit comparison" do
+      -- The basic-gadget registrations are all witness-carrying: the sampled input
+      -- must satisfy the circuit — the production solver checks nothing, but the Lean
+      -- index-model checker decides the real constraints (see `genScalar128`'s note) —
+      -- so the assertion circuits sample from their satisfying domains.
       describe "Field arithmetic" do
-        exactMatchEff "mul_step_circuit" (compileFF mulCircuit)
-        exactMatchEff "inv_step_circuit" (compileFF invCircuit)
-        exactMatchEff "div_step_circuit" (compileFF divCircuit)
-        exactMatchEff "if_step_circuit" (compileFF ifCircuit)
-        exactMatchEff "equals_step_circuit" (compileFB equalsCircuit)
-        exactMatchEff "pow7_step_circuit" (compileFF pow7Circuit)
-        exactMatchEff "pow8_step_circuit" (compileFF pow8Circuit)
+        exactMatchWitnessEff @(F Fp) @(F Fp) "mul_step_circuit" mulCircuit arbitrary
+        exactMatchWitnessEff @(F Fp) @(F Fp) "inv_step_circuit" invCircuit genNonZeroF
+        exactMatchWitnessEff @(F Fp) @(F Fp) "div_step_circuit" divCircuit arbitrary
+        exactMatchWitnessEff @(F Fp) @(F Fp) "if_step_circuit" ifCircuit arbitrary
+        exactMatchWitnessEff @(F Fp) @Boolean "equals_step_circuit" equalsCircuit arbitrary
+        exactMatchWitnessEff @(F Fp) @(F Fp) "pow7_step_circuit" pow7Circuit arbitrary
+        exactMatchWitnessEff @(F Fp) @(F Fp) "pow8_step_circuit" pow8Circuit arbitrary
       describe "Assertions" do
-        exactMatchEff "assert_equal_step_circuit" (compileFU assertEqualCircuit)
-        exactMatchEff "assert_non_zero_step_circuit" (compileFU assertNonZeroCircuit)
-        exactMatchEff "assert_not_equal_step_circuit" (compileFU assertNotEqualCircuit)
-        exactMatchEff "assert_square_step_circuit" (compileFU assertSquareCircuit)
-        exactMatchEff "unpack_step_circuit" (compileFU unpackCircuit)
+        exactMatchWitnessEff @(F Fp) @Unit "assert_equal_step_circuit" assertEqualCircuit
+          (pure zero)
+        exactMatchWitnessEff @(F Fp) @Unit "assert_non_zero_step_circuit"
+          assertNonZeroCircuit
+          genNonZeroF
+        exactMatchWitnessEff @(F Fp) @Unit "assert_not_equal_step_circuit"
+          assertNotEqualCircuit
+          genNonZeroF
+        exactMatchWitnessEff @(F Fp) @Unit "assert_square_step_circuit" assertSquareCircuit
+          (pure zero)
+        exactMatchWitnessEff @(F Fp) @Unit "unpack_step_circuit" unpackCircuit arbitrary
       describe "Boolean" do
-        exactMatchEff "bool_and_step_circuit" (compileBB boolAndCircuit)
-        exactMatchEff "bool_or_step_circuit" (compileBB boolOrCircuit)
-        exactMatchEff "bool_xor_step_circuit" (compileBB boolXorCircuit)
-        exactMatchEff "bool_all_step_circuit" (compileBB boolAllCircuit)
-        exactMatchEff "bool_any_step_circuit" (compileBB boolAnyCircuit)
-        exactMatchEff "bool_assert_step_circuit" (compileBU boolAssertCircuit)
+        exactMatchWitnessEff @Boolean @Boolean "bool_and_step_circuit" boolAndCircuit
+          arbitrary
+        exactMatchWitnessEff @Boolean @Boolean "bool_or_step_circuit" boolOrCircuit
+          arbitrary
+        exactMatchWitnessEff @Boolean @Boolean "bool_xor_step_circuit" boolXorCircuit
+          arbitrary
+        exactMatchWitnessEff @Boolean @Boolean "bool_all_step_circuit" boolAllCircuit
+          arbitrary
+        exactMatchWitnessEff @Boolean @Boolean "bool_any_step_circuit" boolAnyCircuit
+          arbitrary
+        exactMatchWitnessEff @Boolean @Unit "bool_assert_step_circuit" boolAssertCircuit
+          (pure true)
       describe "Two-phase chain application circuits" do
         -- App-level rule bodies for `dump_two_phase_chain` (the
         -- minimal multi-branch fixture). We byte-compare ONLY the
@@ -634,8 +658,12 @@ spec bundle =
         -- deferred values, wrap_main) is rooted in noise. The full
         -- multi-branch step_main diff comes later, once PS supports
         -- multi-branch compile.
-        exactMatchEff "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
-        exactMatchEff "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
+        exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_make_zero"
+          makeZeroAppCircuit
+          (pure zero)
+        exactMatchWitnessEff @(F Fp) @Unit "app_circuit_two_phase_chain_increment"
+          incrementAppCircuit
+          (pure one)
         exactMatchEff "app_circuit_chunks2" (compileUU chunks2AppCircuit)
       describe "Witness dump" $
         -- | Gated on `KIMCHI_WITNESS_DUMP` env var. When set, runs the

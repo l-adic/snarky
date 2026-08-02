@@ -54,11 +54,11 @@ structure Params (F : Type*) where
   mds : Triple (Triple F)
 
 /-- The S-box `x ↦ x^7`. -/
-private def sbox (x : F) : F := x ^ 7
+def sbox (x : F) : F := x ^ 7
 
 /-- One full round: S-box every state element, apply the MDS matrix, add the round
 constants (`permutation.rs` `full_round`). -/
-private def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple F :=
+def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) : Triple F :=
   let t0 := sbox s.1; let t1 := sbox s.2.1; let t2 := sbox s.2.2
   let m0 := mds.1; let m1 := mds.2.1; let m2 := mds.2.2
   (m0.1 * t0 + m0.2.1 * t1 + m0.2.2 * t2 + rc.1,
@@ -67,7 +67,7 @@ private def fullRound (mds : Triple (Triple F)) (rc : Triple F) (s : Triple F) :
 
 /-- The Poseidon permutation: the full rounds folded over the round-constant table
 (`permutation.rs` `poseidon_block_cipher`, no initial ARK). -/
-private def blockCipher (p : Params F) (s : Triple F) : Triple F :=
+def blockCipher (p : Params F) (s : Triple F) : Triple F :=
   p.roundConstants.foldl (fun s rc => fullRound p.mds rc s) s
 
 /-! ## The duplex automaton -/

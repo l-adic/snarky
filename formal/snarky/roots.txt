@@ -11,6 +11,7 @@
 -- the dead-zero contract meaningful for this package. `Snarky.*` declarations are
 -- audited by the workspace pass like every other package's.
 
+
 -- The interpreter laws the embedding exists to state (Snarky/Backend/{Builder,Prover}.lean).
 Snarky.build_eraseWitness
 Snarky.prove_assignments_le

@@ -22,12 +22,17 @@ fix=0
 [ "${1:-}" = "--fix" ] && fix=1
 
 # Collect our own source files (skip the Lake build dir, the vendored CompElliptic dependency
-# submodule, and .archon-seed/, which holds read-only copies of upstream sources staged for the
-# prover harness — all three carry their own upstream style and none is committed here).
+# submodule, .archon-seed/, which holds read-only copies of upstream sources staged for the
+# prover harness, and .archon/, the prover harness's own state — all four carry style we do not
+# own and none is committed here). The .archon/ clause matters for the *count* as much as for
+# the checks: .archon/logs/*/snapshots/*/baseline.lean is a pre-edit copy of a source file
+# written once per snapshotting iteration, so without it the printed file count drifts upward
+# over time (and a snapshot taken mid-edit can fail the gate for a reason outside the tree).
 files=()
 while IFS= read -r f; do files+=("$f"); done \
   < <(find . -name '*.lean' \
-        -not -path '*/.lake/*' -not -path './vendor/*' -not -path './.archon-seed/*' | sort)
+        -not -path '*/.lake/*' -not -path './vendor/*' -not -path './.archon-seed/*' \
+        -not -path './.archon/*' | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no .lean files found under formal/"
