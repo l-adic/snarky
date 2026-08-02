@@ -16,18 +16,25 @@ seen the Clean framework, forget its vocabulary here — none of it applies.
 A second library lives in its own package **`snarky/`** (namespace `Snarky.*`, package
 `snarky`, which *requires kimchi* — its `Snarky.Kimchi.*` bridge interprets reified
 circuits against the verified generic-gate checker): a deep-embedded Lean port of the
-PureScript circuit-building DSL
-(`packages/snarky/src/Snarky/Circuit/DSL/Monad.purs`). It models how constraint systems
+PureScript circuit-building DSL (`packages/snarky`). It models how constraint systems
 are *constructed*, complementing `Kimchi`'s constraint-systems-as-data view: a reified op
 tree `CircuitM` (constraint type kept abstract), pure `build`/`prove` interpreters
-mirroring `Snarky.Backend.Builder`/`Prover`, and the interpreter laws in
-`Snarky/Laws.lean` (witness-independence of the builder, builder/prover allocation
-agreement, and completeness: a successful prover run satisfies every built constraint).
-It is **Mathlib-free by design** (core Lean only, builds in seconds) — keep it that way;
-concrete backends live in downstream files (see `Snarky/Constraint/R1CS.lean` for the
-plain R1CS model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
+mirroring `Snarky.Backend.Builder`/`Prover`, whole-circuit `compile`/`solve` with the
+seam law `solve_complete` (a successful solve satisfies every compiled constraint and
+decodes the public slots as declared), and the Lean-only laws beside their
+subjects: interpreter laws in `Backend/{Builder,Prover}` (witness-independence,
+builder/prover allocation agreement, completeness — a successful prover run satisfies
+every built constraint, plus the bind-composition laws) and per-gadget
+soundness/completeness beside each gadget in `Circuit/DSL/{Field,Boolean,Assert,Bits}`.
+It uses **targeted Mathlib imports only** (the weakest classes each module needs — e.g.
+`Mathlib.Algebra.Ring.Defs` + `Mathlib.Tactic.Ring` in `Snarky/Circuit/CVar.lean` for the
+affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast; concrete
+backends live in downstream files (see `Snarky/Constraint/Basic.lean` for the concrete
+`Basic` model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Vec.lean`).
+— use `Snarky.mapVec` from `Snarky/Vec.lean`). The package is aligned with the
+PureScript original module by module; `formal/docs/snarky-ps-alignment.md` records the
+completed sign-off walk.
 
 Build: `make lean-build` (from the parent repo root), which runs
 `lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture` in

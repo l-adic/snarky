@@ -1,21 +1,49 @@
-import Snarky.CVar
-import Snarky.AsProver
-import Snarky.Monad
-import Snarky.Builder
-import Snarky.Prover
+import Snarky.Circuit.CVar
+import Snarky.Backend.Assignments
+import Snarky.Circuit.Types
+import Snarky.Circuit.DSL.Monad
+import Snarky.Circuit.DSL.Field
+import Snarky.Circuit.DSL.Boolean
+import Snarky.Circuit.DSL.Assert
+import Snarky.Circuit.DSL.Bits
+import Snarky.Backend.Builder
+import Snarky.Backend.Prover
+import Snarky.Backend.Compile
 import Snarky.Vec
 import Snarky.Constraint.Basic
-import Snarky.Constraint.R1CS
-import Snarky.Types
 import Snarky.DSL
-import Snarky.Laws
 import Snarky.Example
+import Snarky.Example.Gadgets
 
 /-!
 # Snarky — the circuit-building DSL, deep-embedded
 
 Root module of the `Snarky` library: a Lean port of the PureScript circuit DSL
-(`Snarky.Circuit.DSL.Monad` and its two backend interpreters). See each module's header
-for the correspondence with the `.purs` sources, and `Snarky/Laws.lean` for the theorems
-the embedding exists to state.
+(`packages/snarky`), aligned with it module by module — the completed sign-off walk is
+recorded in `formal/docs/snarky-ps-alignment.md`, and each module header carries its own
+name map against the `.purs` source. The theorems the embedding exists to state live
+beside their subjects.
+
+## The layout
+
+- `Circuit/CVar` — affine expressions over circuit variables, their folds, and the
+  affine-reduction pipeline with its correctness law.
+- `Circuit/Types` — the value/variable duality (`CircuitType`) and the base instances,
+  with their round-trip laws.
+- `Circuit/DSL/Monad` — the reified op tree `CircuitM` (constraint type abstract) and the
+  `witness`/`readVar`/`assignVars` layer; `Circuit/DSL/{Field,Boolean,Assert,Bits}` — the
+  gadgets, each beside its soundness/completeness laws; `DSL` — the PS-export barrel.
+- `Backend/Assignments` — the prover's witness table and its extension order.
+- `Backend/{Builder,Prover}` — the two interpreters, with the interpreter laws
+  (witness-independence, allocation agreement, completeness, the bind laws).
+- `Backend/Compile` — whole-circuit `compile`/`solve` and the seam `solve_complete`.
+- `Constraint/Basic` — the concrete reference constraint model.
+- `Vec` — kernel-reduction-friendly vector utilities (everything here is validated by
+  `decide`).
+- `Example`, `Example/Gadgets` — the showcase (knowledge of a cube root) and the
+  per-gadget regression checks.
+
+The `Snarky.Kimchi.*` bridge — a DSL constraint's check agrees with the verified
+Generic-gate checker — is deliberately NOT imported here: it pulls Mathlib in wholesale
+via `Kimchi`, while this root's only Mathlib touch is `Example`'s targeted `ZMod` import.
 -/
