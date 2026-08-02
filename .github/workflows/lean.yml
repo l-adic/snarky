@@ -40,7 +40,7 @@ concurrency:
 jobs:
   build:
     name: Build (Kimchi formalization)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     defaults:
       run:
         working-directory: formal
@@ -113,7 +113,7 @@ jobs:
   gates:
     name: Gates (axioms, linters, hygiene, fixtures)
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     defaults:
       run:
         working-directory: formal
@@ -285,7 +285,7 @@ jobs:
   kernel-replay:
     name: Kernel replay (lean4checker)
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-large
     defaults:
       run:
         working-directory: formal
