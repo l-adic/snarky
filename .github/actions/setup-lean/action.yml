@@ -39,6 +39,7 @@ runs:
           formal/.lake/build
           formal/*/.lake/build
           formal/vendor/*/.lake/build
+          formal/.lake/packages/*/.lake/build/**/*.c.o*
         key: lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-${{ hashFiles('formal/**/*.lean') }}
         restore-keys: |
           lean-${{ runner.os }}-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.toml') }}-

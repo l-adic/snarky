@@ -107,6 +107,7 @@ jobs:
           formal/.lake/build
           formal/*/.lake/build
           formal/vendor/*/.lake/build
+          formal/.lake/packages/*/.lake/build/**/*.c.o*
         key: ${{ steps.lean.outputs.cache-key }}
 
   gates:
@@ -121,13 +122,12 @@ jobs:
       with:
         submodules: false
 
-    # Restores the cache the build job just saved; `lake build` replays as a no-op.
+    # Restores the cache the build job just saved (library replay only — the compiled
+    # drivers are invoked below as binaries straight from the restored cache, so this
+    # job never asks lake to build them; asking would recompile the dependency
+    # packages' native objects on any cache-key change).
     - name: Setup Lean (restore the build)
       uses: ./.github/actions/setup-lean
-      with:
-        targets: >-
-          Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
-          KimchiFixture check-vk-correspond check-kimchi-verifier
 
     # `lake build` succeeds even with `sorry` (it's only a warning), so gate
     # explicitly: every headline theorem — and, per external-audit A-2, the whole
@@ -259,7 +259,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
-          lake exe check-kimchi-verifier
+          ./kimchi/.lake/build/bin/check-kimchi-verifier
 
     # The verifier-key <-> index correspondence across both curves and the three
     # regimes (nc = 1, 2, 8; the Vesta and Pallas VKs against index_{vesta,pallas}*).
@@ -269,7 +269,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
-          lake exe check-vk-correspond
+          ./kimchi/.lake/build/bin/check-vk-correspond
 
     # GATE (external-audit A-1): the only BEHAVIOURAL anti-vacuity check — `#eval` the
     # extraction pipeline on concrete fixtures and byte-compare the recovered witness;
