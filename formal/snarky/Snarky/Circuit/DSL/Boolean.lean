@@ -41,7 +41,8 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 D9 survey (the `snarky-test-utils` Boolean spec), in the D12 form: the `not` row is
 `not_eval` (pure gadget, so its law is evaluation-level); the `and`/`or`/`xor`
 and `if` rows land as triple laws for `and`/`or` (`*_spec`/`*_complete_spec`),
-`xor_sound`/`select_sound` and their completeness twins below, stated through the
+triple laws for `xor` (`*_spec`/`*_complete_spec`), `select_sound` and its
+completeness twin below, stated through the
 `CircuitType Bool` encoding
 (`if bb then 1 else 0` — the relation the faithfulness arc composes through); the
 `all`/`any` rows' three-plus cases need a cast-injectivity hypothesis (a sum of `n` bits
@@ -51,7 +52,8 @@ step 10. Fixed-input `decide` examples in `Snarky.Example`.
 Public results: the D12 gadget laws, beside their gadgets — `not_eval`,
 `and_spec`/`and_complete_spec`, `or_spec`/`or_complete_spec` (the Except-form
 `and_complete`/`or_complete` retained as the prover reductions),
-`xor_sound`/`xor_complete`,
+`xor_spec`/`xor_complete_spec` (the Except-form `xor_complete` retained as the
+prover reduction),
 `select_sound`/`select_complete`;
 `xorWit`/`xorCore`/`selectWit`/`selectCore` are named internals for those laws, not
 user API.
@@ -362,38 +364,6 @@ private theorem xor_pin {F : Type u} [CommRing F] {ab bb : Bool} {rv : F}
   rw [h']
   cases ab <;> cases bb <;> simp [bit]
 
-/-- What `xorCore` builds: one fresh variable at `UnChecked Bool`, one `r1cs` row
-`2a · b = a + b − r`. -/
-private theorem build_xorCore {F : Type} [Field F] [DecidableEq F] (a b : BoolVar F)
-    (nv : Nat) :
-    build (xorCore (c := Basic F) a b) nv =
-      ⟨.unchecked (.var nv), nv + 1,
-        [.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
-          (CVar.sub_ (CVar.add_ a.toCVar b.toCVar) (.var nv))]⟩ := rfl
-
-/-- `xorCore` soundness: any satisfying assignment pins the xor bit. -/
-private theorem xorCore_sound {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F}
-    {nv : Nat} {env : Assignments F} {ab bb : Bool}
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb))
-    (hsat : ∀ con ∈ (build (xorCore (c := Basic F) a b) nv).constraints,
-      con.holds env = true) :
-    (build (xorCore (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (bit (ab ^^ bb)) := by
-  rw [build_xorCore] at hsat ⊢
-  obtain ⟨x, y, z, hx, hy, hz, hxyz⟩ := Basic.r1cs_inv (hsat _ (List.mem_cons_self ..))
-  have haa : (CVar.add_ (a.toCVar) (a.toCVar)).eval env = .ok (bit ab + bit ab) := by
-    rw [CVar.eval_add_]; simp [CVar.eval, ha]
-  have hab : (CVar.add_ (a.toCVar) (b.toCVar)).eval env = .ok (bit ab + bit bb) := by
-    rw [CVar.eval_add_]; simp [CVar.eval, ha, hb]
-  rw [haa, Except.ok.injEq] at hx
-  rw [hb, Except.ok.injEq] at hy
-  obtain ⟨s₁, s₂, hs₁, hs₂, rfl⟩ := CVar.eval_sub_inv hz
-  rw [hab, Except.ok.injEq] at hs₁
-  subst hx; subst hy; subst hs₁
-  show (CVar.var nv).eval env = _
-  rw [hs₂, xor_pin hxyz]
-
 /-- The honest `xorCore` run. -/
 private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F}
     {nv : Nat} {env : Assignments F} {ab bb : Bool}
@@ -447,90 +417,6 @@ private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar 
       (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
     (env.extend nv (bit (ab ^^ bb))) = _
   simp only [prove, hch, if_true]
-
-/-- The `a`-constant guard chain of `xor`, over syntactic `if`s. -/
-private theorem xor_sound_constA {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F}
-    {nv : Nat} {env : Assignments F} {ab bb : Bool} {av : F}
-    (hA : (↑a : CVar F) = .const av)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    (build (if av = 0 then pure b else if av = 1 then pure (Snarky.not b)
-        else xorCore (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (bit (ab ^^ bb)) := by
-  have hav : av = bit ab := by rw [hA] at ha; simpa [CVar.eval] using ha
-  split_ifs with h0 h1
-  · have : ab = false := by
-      cases ab
-      · rfl
-      · exact absurd (hav.symm.trans h0) (by simp [bit])
-    subst this
-    simpa using hb
-  · have : ab = true := by
-      cases ab
-      · exact absurd (hav ▸ h1) (by simp [bit])
-      · rfl
-    subst this
-    show (CVar.sub_ (.const 1) _).eval env = _
-    rw [CVar.eval_sub_ rfl hb]
-    cases bb <;> simp [bit]
-  · rcases bit_cases hav with h | h
-    · exact absurd h h0
-    · exact absurd h h1
-
-/-- The `b`-constant guard chain of `xor`, over syntactic `if`s. -/
-private theorem xor_sound_constB {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F}
-    {nv : Nat} {env : Assignments F} {ab bb : Bool} {bv : F}
-    (hB : (↑b : CVar F) = .const bv)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    (build (if bv = 0 then pure a else if bv = 1 then pure (Snarky.not a)
-        else xorCore (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (bit (ab ^^ bb)) := by
-  have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
-  split_ifs with h0 h1
-  · have : bb = false := by
-      cases bb
-      · rfl
-      · exact absurd (hbv.symm.trans h0) (by simp [bit])
-    subst this
-    simpa using ha
-  · have : bb = true := by
-      cases bb
-      · exact absurd (hbv ▸ h1) (by simp [bit])
-      · rfl
-    subst this
-    show (CVar.sub_ (.const 1) _).eval env = _
-    rw [CVar.eval_sub_ rfl ha]
-    cases ab <;> simp [bit]
-  · rcases bit_cases hbv with h | h
-    · exact absurd h h0
-    · exact absurd h h1
-
-/-- **`xor` soundness** (D12): any satisfying assignment pins the result to the xor bit,
-through every branch of the PS guard chain. -/
-theorem xor_sound {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F} {nv : Nat}
-    {env : Assignments F} {ab bb : Bool}
-    (hsat : ∀ con ∈ (build (Snarky.xor (c := Basic F) a b) nv).constraints,
-      con.holds env = true)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    (build (Snarky.xor (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (bit (ab ^^ bb)) := by
-  unfold Snarky.xor at hsat ⊢
-  cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F) <;> rw [hA, hB] at hsat
-  case const.const av bv =>
-    have hav : av = bit ab := by rw [hA] at ha; simpa [CVar.eval] using ha
-    have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
-    subst hav; subst hbv
-    show Except.ok _ = _
-    cases ab <;> cases bb <;> simp [bit]
-  case const.var av v => exact xor_sound_constA hA ha hb
-  case const.add av x y => exact xor_sound_constA hA ha hb
-  case const.scale av k x => exact xor_sound_constA hA ha hb
-  case var.const v bv => exact xor_sound_constB hB ha hb
-  case add.const x y bv => exact xor_sound_constB hB ha hb
-  case scale.const k x bv => exact xor_sound_constB hB ha hb
-  all_goals exact xorCore_sound ha hb hsat
 
 /-- The `a`-constant guard chain of `xor`, completeness side. -/
 private theorem xor_complete_constA {F : Type} [Field F] [DecidableEq F]
@@ -630,6 +516,117 @@ theorem xor_complete {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F} {nv 
       have h0 : v ≠ nv := by omega
       show (env.extend nv _) v = none
       simp [Assignments.extend, h0, hfresh v (by omega)]
+
+open Std.Do in
+/-- **`xor` soundness triple**: on bit operands the result reads as the xor bit —
+the constant branches fold through the guards, the core row pins via `xor_pin`.
+Generic over any lawful backend. -/
+@[spec] theorem xor_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃ComputesBool (fun V rv => ∀ ab bb : Bool,
+        (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
+          rv = bit (ab ^^ bb)) Q⦄
+    Snarky.xor (c := c) a b
+    ⦃Q⦄ := by
+  intro V nv hpre
+  cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F) <;>
+    simp only [Snarky.xor, hA, hB]
+  case const.const av bv =>
+    intro _
+    refine hpre _ nv fun ab bb ha hb => ?_
+    rw [hA] at ha
+    rw [hB] at hb
+    replace ha : av = bit ab := ha
+    replace hb : bv = bit bb := hb
+    subst ha; subst hb
+    show (CVar.const _).val V = _
+    cases ab <;> cases bb <;> simp [CVar.val, bit]
+  case const.var av v | const.add av x y | const.scale av k x =>
+    split_ifs with h0 h1
+    · intro _
+      refine hpre b nv fun ab bb ha hb => ?_
+      rw [hA] at ha
+      replace ha : av = bit ab := ha
+      have hab : ab = false := by
+        cases ab
+        · rfl
+        · exact absurd (ha.symm.trans h0) (by simp [bit])
+      subst hab
+      simpa using hb
+    · intro _
+      refine hpre (Snarky.not b) nv fun ab bb ha hb => ?_
+      rw [hA] at ha
+      replace ha : av = bit ab := ha
+      have hab : ab = true := by
+        cases ab
+        · exact absurd (ha ▸ h1) (by simp [bit])
+        · rfl
+      subst hab
+      show (CVar.sub_ ((.const 1 : CVar F)) ↑b).val V = _
+      rw [CVar.val_sub_, hb]
+      cases bb <;> simp [CVar.val, bit]
+    · intro hsat
+      refine hpre (.unchecked (.var nv)) (nv + 1) fun ab bb ha hb => ?_
+      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
+      rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
+      rw [ha, hb] at h
+      exact xor_pin h
+  case var.const v bv | add.const x y bv | scale.const k x bv =>
+    split_ifs with h0 h1
+    · intro _
+      refine hpre a nv fun ab bb ha hb => ?_
+      rw [hB] at hb
+      replace hb : bv = bit bb := hb
+      have hbb : bb = false := by
+        cases bb
+        · rfl
+        · exact absurd (hb.symm.trans h0) (by simp [bit])
+      subst hbb
+      simpa using ha
+    · intro _
+      refine hpre (Snarky.not a) nv fun ab bb ha hb => ?_
+      rw [hB] at hb
+      replace hb : bv = bit bb := hb
+      have hbb : bb = true := by
+        cases bb
+        · exact absurd (hb ▸ h1) (by simp [bit])
+        · rfl
+      subst hbb
+      show (CVar.sub_ ((.const 1 : CVar F)) ↑a).val V = _
+      rw [CVar.val_sub_, ha]
+      cases ab <;> simp [CVar.val, bit]
+    · intro hsat
+      refine hpre (.unchecked (.var nv)) (nv + 1) fun ab bb ha hb => ?_
+      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
+      rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
+      rw [ha, hb] at h
+      exact xor_pin h
+  all_goals
+    (intro hsat
+     refine hpre (.unchecked (.var nv)) (nv + 1) fun ab bb ha hb => ?_
+     have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
+     rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
+     rw [ha, hb] at h
+     exact xor_pin h)
+
+open Std.Do in
+/-- **`xor` completeness triple** (prover reading): on bit operands the run succeeds
+and the result reads as the xor bit in the final table. -/
+@[spec] theorem xor_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (a b : BoolVar F) (ab bb : Bool)
+    (Q : PostCond (BoolVar F)
+      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (Snarky.xor (c := Basic F) a b)
+      (ProverComputesBool
+        (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
+          (↑b : CVar F).eval env = .ok (bit bb))
+        (fun _ => bit (ab ^^ bb)) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := xor_complete hfresh ha hb
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 /-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
 
@@ -790,5 +787,23 @@ theorem select_complete {F : Type} [Field F] [DecidableEq F] {b : BoolVar F}
            have h0 : v ≠ nv := by omega
            show (env.extend nv _) v = none
            simp [Assignments.extend, h0, hfresh v (by omega)])
+
+open Std.Do in
+/-- **`select` completeness triple** (prover reading): on a bit selector the run
+succeeds and the result reads as the chosen branch in the final table. -/
+@[spec] theorem select_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (b : BoolVar F) (t e : FVar F) (bb : Bool) (tv ev : F)
+    (Q : PostCond (FVar F)
+      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (select (c := Basic F) b t e)
+      (ProverComputes
+        (fun env => (↑b : CVar F).eval env = .ok (bit bb) ∧
+          t.eval env = .ok tv ∧ e.eval env = .ok ev)
+        (fun _ => if bb then tv else ev) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨hb, ht, he⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := select_complete hfresh hb ht he
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 end Snarky

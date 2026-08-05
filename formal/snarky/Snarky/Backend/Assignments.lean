@@ -158,6 +158,15 @@ theorem eval_toAssignments [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
   | add a b iha ihb => simp only [eval, val, iha, ihb]
   | scale k y ih => simp only [eval, val, ih]
 
+/-- `add_` reads as the sum — the fold-evaluation lemma `eval_add_`, carried through
+the bridge to the total reading. -/
+theorem val_add_ [Add F] [Mul F] (a b : CVar F) (V : Valuation F) :
+    (CVar.add_ a b).val V = a.val V + b.val V := by
+  have h := (CVar.eval_add_ a b V.toAssignments).trans
+    (eval_toAssignments (CVar.add a b) V)
+  rw [eval_toAssignments] at h
+  injection h
+
 /-- `scale_` reads as the scalar product — the fold-evaluation lemma `eval_scale_`,
 carried through the bridge to the total reading. -/
 theorem val_scale_ [Add F] [MulZeroOneClass F] [DecidableEq F] (k : F) (x : CVar F)
