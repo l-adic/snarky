@@ -216,7 +216,7 @@ tag, and the `⦃⦄` sugar cannot pin it. -/
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hxy := heq xv yv hx hy
-  have hQ := hk nv env hfresh (Assignments.Le.refl env)
+  have hQ := hk nv env (Assignments.Extends.rfl hfresh)
   have hch : (BasicSystem.equal (c := Basic F) x y).holds env = true := by
     show (Basic.equal x y).holds env = true
     simp [Basic.holds, hx, hy, hxy]
@@ -264,13 +264,13 @@ example (x y z : FVar F) (xv yv zv : F) :
   subst hxy
   subst hyz
   refine ⟨hfresh, ⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
-    fun nv' env' hfresh' hle => ?_⟩
+    fun nv' env' ⟨hle, hfresh'⟩ => ?_⟩
   · rw [hx] at ha; rw [hy] at hb
     injection ha with ha; injection hb with hb
     rw [← ha, ← hb]
   · refine assertEqual_complete_spec y z _ nv' env'
       ⟨hfresh', ⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
-        fun a b ha hb => ?_⟩, fun _ _ _ _ => trivial⟩
+        fun a b ha hb => ?_⟩, fun _ _ _ => trivial⟩
     rw [CVar.eval_le hle hy] at ha; rw [CVar.eval_le hle hz] at hb
     injection ha with ha; injection hb with hb
     rw [← ha, ← hb]
@@ -346,11 +346,11 @@ nonzero value, extending the table with the witnessed inverse. -/
   case const f =>
     have hf : f = vv := by simpa [CVar.eval] using hv
     rw [if_neg (by rw [hf]; exact hvv)]
-    exact hk nv env hfresh (Assignments.Le.refl env)
+    exact hk nv env (Assignments.Extends.rfl hfresh)
   all_goals
     (obtain ⟨⟨r, nv', env'⟩, hrun, _, hfresh'⟩ := inv_complete hfresh hv hvv
      simp only [wp, PredTrans.apply, prove_bind, hrun, Except.bind]
-     exact hk nv' env' hfresh' (prove_assignments_le hrun))
+     exact hk nv' env' ⟨prove_assignments_le hrun, hfresh'⟩)
 
 open Std.Do in
 /-- **`assertNotEqual` soundness** (D12), delegated to `assertNonZero` through the
@@ -415,7 +415,7 @@ square, changing nothing. -/
     show (Basic.square x y).holds env = true
     simp [Basic.holds, hx, hy, hsq]
   simp [assertSquare, addConstraint, wp, PredTrans.apply, prove, hch]
-  exact hk nv env hfresh (Assignments.Le.refl env)
+  exact hk nv env (Assignments.Extends.rfl hfresh)
 
 open Std.Do in
 /-- **`assert` soundness** (D12): `assert v` asserts the bit reads `1`. -/

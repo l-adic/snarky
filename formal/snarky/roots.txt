@@ -17,6 +17,8 @@ Snarky.build_eraseWitness
 Snarky.prove_assignments_le
 Snarky.prove_build_agrees
 Snarky.prove_complete
+Snarky.prove_freshFrom
+Snarky.prove_nextVar_le
 Snarky.CVar.eval_le
 
 -- The valuation seam: the total adversarial-witness reading the soundness laws

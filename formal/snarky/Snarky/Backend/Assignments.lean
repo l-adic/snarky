@@ -30,7 +30,9 @@ assignment the soundness laws quantify over (a deployed wire table assigns every
 variable), with `toAssignments` and the bridge `CVar.eval_toAssignments` connecting it
 to the `Except` layer.
 
-Public results: the order `Assignments.Le` (with `Le.refl`/`Le.trans`), the monotonicity
+Public results: the order `Assignments.Le` (with `Le.refl`/`Le.trans`), the composition
+invariant `Assignments.Extends` (growth plus re-established freshness — what a
+completeness law hands its continuation, with `Extends.rfl`/`Extends.trans`), the monotonicity
 law `Assignments.le_extendPairs`, the audited root `CVar.eval_le`, and the valuation
 seam (`Valuation.toAssignments`, `CVar.eval_toAssignments`); `le_extend` is private
 machinery.
@@ -80,11 +82,19 @@ protected def Le (a a' : Assignments F) : Prop :=
   ∀ v x, a v = some x → a' v = some x
 
 /-- `a.FreshFrom nv`: nothing at or above the counter is assigned. The invariant gadget
-completeness runs from — and re-establishes in its conclusion, since there is no general
-preservation theorem: `assignOp` may legally assign into the fresh region (that is what
-`Backend/Compile`'s solver will do to back-fill outputs). -/
+completeness runs from, and — since `prove` refuses to assign at or above its counter —
+one every prover run preserves (`prove_freshFrom`). -/
 protected def FreshFrom (a : Assignments F) (nv : Nat) : Prop :=
   ∀ v, nv ≤ v → a v = none
+
+/-- `a.Extends a' nv'`: the state a prover run leaves behind — the table has only
+grown (`Le`, an interpreter theorem: `prove_assignments_le`) and freshness holds at
+the new counter (`prove_freshFrom`). The pair travels together through every
+composition — it is what a completeness law hands its continuation. The incoming
+counter does not appear: growth concerns the tables, and the freshness concerns the
+counter the continuation will allocate from. -/
+protected def Extends (a a' : Assignments F) (nv' : Nat) : Prop :=
+  a.Le a' ∧ a'.FreshFrom nv'
 
 protected theorem Le.refl (a : Assignments F) : a.Le a := fun _ _ h => h
 
@@ -98,6 +108,15 @@ private theorem le_extend {a : Assignments F} {v : Variable} (hv : a v = none) (
   split
   · next hwv => rw [hwv, hv] at hw; cases hw
   · exact hw
+
+/-- A run that changes nothing extends its own state, given freshness. -/
+protected theorem Extends.rfl {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) :
+    a.Extends a nv := ⟨Assignments.Le.refl a, h⟩
+
+/-- Runs compose: the growth chains, and the freshness is the later run's. -/
+protected theorem Extends.trans {a b c : Assignments F} {nv' nv'' : Nat}
+    (h₁ : a.Extends b nv') (h₂ : b.Extends c nv'') : a.Extends c nv'' :=
+  ⟨h₁.1.trans h₂.1, h₂.2⟩
 
 theorem le_extendPairs {a a' : Assignments F} :
     ∀ {l : List (Variable × F)}, a.extendPairs l = .ok a' → a.Le a' := by
@@ -115,6 +134,26 @@ theorem le_extendPairs {a a' : Assignments F} :
     split at h
     · cases h
     · next hnone => exact (le_extend hnone x).trans (ih h)
+
+/-- A variable the batch never targets keeps its unassigned status. -/
+theorem extendPairs_none {a a' : Assignments F} {v : Variable} :
+    ∀ {l : List (Variable × F)}, a.extendPairs l = .ok a' →
+      (∀ p ∈ l, p.1 ≠ v) → a v = none → a' v = none := by
+  intro l
+  induction l generalizing a with
+  | nil =>
+    intro h _ hv
+    simp only [extendPairs, Except.ok.injEq] at h
+    exact h ▸ hv
+  | cons p rest ih =>
+    intro h hne hv
+    simp only [extendPairs] at h
+    split at h
+    · cases h
+    · refine ih h (fun q hq => hne q (List.mem_cons_of_mem _ hq)) ?_
+      simp only [extend]
+      rw [if_neg (fun hv' => hne p (List.mem_cons_self ..) hv'.symm)]
+      exact hv
 
 end Assignments
 

@@ -199,13 +199,23 @@ theorem solve_complete [A : CircuitType F a avar] [CheckedType F (Basic F) avar]
         -- Decompose the run at the program's binds.
         simp only [compileBody] at hrun
         rw [prove_bind] at hrun
-        obtain ⟨s₁, -, hrun⟩ := bind_ok hrun
+        obtain ⟨s₁, hrun₁, hrun⟩ := bind_ok hrun
         rw [prove_bind] at hrun
-        obtain ⟨s₂, -, hrun⟩ := bind_ok hrun
+        obtain ⟨s₂, hrun₂, hrun⟩ := bind_ok hrun
+        -- The back-fill targets the preallocated output slots, and the counter has
+        -- only advanced since they were reserved — so the assign guard is satisfied.
+        have hslots : (allocRange A.size B.size).toList.find?
+            (s₂.nextVar ≤ ·) = none := by
+          refine List.find?_eq_none.mpr fun v hv => ?_
+          have hlt := (mem_allocRange hv).2
+          have h₁ := prove_nextVar_le hrun₁
+          have h₂ := prove_nextVar_le hrun₂
+          simp only [decide_eq_true_eq]
+          omega
         rw [prove_bind] at hrun
         obtain ⟨s₃, hassign, hrun⟩ := bind_ok hrun
         -- The back-fill stage: recover the mid-run output read and the slot fills.
-        simp only [assignVars, prove, outputWit] at hassign
+        simp only [assignVars, prove, outputWit, hslots] at hassign
         split at hassign
         · cases hassign
         next xs hwit =>

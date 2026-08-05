@@ -58,6 +58,13 @@ seeding from `0` — supply it. -/
 def allocRange (start n : Nat) : Vector Variable n :=
   Vector.ofFn fun i => start + i.val
 
+/-- Every variable the range allocates lies inside it. -/
+theorem mem_allocRange {start n v : Nat} (h : v ∈ (allocRange start n).toList) :
+    start ≤ v ∧ v < start + n := by
+  simp only [allocRange, Vector.toList_ofFn, List.mem_ofFn] at h
+  obtain ⟨i, hi⟩ := h
+  omega
+
 /-- The builder's output: the computation's result, the final next-variable counter, and
 the emitted constraints in emission order (the pure image of PS `runCircuitBuilder`'s
 `Tuple a (CircuitBuilderState c aux)`). -/

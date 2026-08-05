@@ -448,7 +448,7 @@ reads as the answer bit in the final table. -/
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := equals_complete hfresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun a' b' ha' hb' => ?_) hfresh' (prove_assignments_le hrun)
+  refine hk r nv' env' (fun a' b' ha' hb' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
   exact ha' ▸ hb' ▸ heval
@@ -515,7 +515,7 @@ reads as the negated answer bit in the final table. -/
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := neq_complete hfresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun a' b' ha' hb' => ?_) hfresh' (prove_assignments_le hrun)
+  refine hk r nv' env' (fun a' b' ha' hb' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
   exact ha' ▸ hb' ▸ heval
@@ -656,7 +656,7 @@ succeeds and the result reads as the inverse in the final table. -/
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := inv_complete hfresh hx (hne xv hx)
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun x' hx' => ?_) hfresh' (prove_assignments_le hrun)
+  refine hk r nv' env' (fun x' hx' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
   rw [hx] at hx'
   injection hx' with hx'
   exact hx' ▸ heval
@@ -703,7 +703,7 @@ reads as the product in the final table. -/
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := mul_complete hfresh hx hy
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun x' y' hx' hy' => ?_) hfresh' (prove_assignments_le hrun)
+  refine hk r nv' env' (fun x' y' hx' hy' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
   rw [hx] at hx'; rw [hy] at hy'
   injection hx' with hx'; injection hy' with hy'
   exact hx' ▸ hy' ▸ heval
@@ -787,15 +787,16 @@ carrier: a nonzero divisor makes the run succeed with the quotient. -/
   mvcgen
   rename_i nv env hpre
   obtain ⟨hfresh, ⟨hokx, hoky, hyne⟩, hk⟩ := hpre
-  refine ⟨hfresh, ⟨hoky, hyne⟩, fun r nv' env' hr hfresh' hle => ?_⟩
+  refine ⟨hfresh, ⟨hoky, hyne⟩, fun r nv' env' hr ⟨hle, hfresh'⟩ => ?_⟩
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hx' : x.eval env' = .ok xv := CVar.eval_le hle hx
   have hr' : r.eval env' = .ok yv⁻¹ := hr yv hy
   refine mul_complete_spec x r Q nv' env'
     ⟨hfresh', ⟨by rw [hx']; rfl, by rw [hr']; rfl⟩,
-      fun res nv'' env'' hres hfresh'' hle' => ?_⟩
-  refine hk res nv'' env'' (fun a b ha hb => ?_) hfresh'' (hle.trans hle')
+      fun res nv'' env'' hres ⟨hle', hfresh''⟩ => ?_⟩
+  refine hk res nv'' env'' (fun a b ha hb => ?_)
+    (Assignments.Extends.trans ⟨hle, hfresh'⟩ ⟨hle', hfresh''⟩)
   rw [hx] at ha; rw [hy] at hb
   injection ha with ha; injection hb with hb
   subst ha; subst hb
@@ -836,7 +837,7 @@ reads as the square in the final table. -/
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := square_complete hfresh hx
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun x' hx' => ?_) hfresh' (prove_assignments_le hrun)
+  refine hk r nv' env' (fun x' hx' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
   rw [hx] at hx'
   injection hx' with hx'
   exact hx' ▸ heval

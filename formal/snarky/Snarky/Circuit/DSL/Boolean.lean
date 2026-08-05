@@ -297,7 +297,7 @@ and the result reads as the conjunction bit in the final table. -/
   obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := and_complete hfresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
+  exact hk r nv' env' heval ⟨prove_assignments_le hrun, hfresh'⟩
 
 open Std.Do in
 /-- **`or` soundness triple**, composed by `mvcgen` from `and_spec` on the negated
@@ -343,7 +343,7 @@ and the result reads as the disjunction bit in the final table. -/
   obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := or_complete hfresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
+  exact hk r nv' env' heval ⟨prove_assignments_le hrun, hfresh'⟩
 
 /-! ### `xor` (Circuit/DSL/Boolean)
 
@@ -626,7 +626,7 @@ and the result reads as the xor bit in the final table. -/
   obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := xor_complete hfresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
+  exact hk r nv' env' heval ⟨prove_assignments_le hrun, hfresh'⟩
 
 /-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
 
@@ -815,7 +815,7 @@ succeeds and the result reads as the chosen branch in the final table. -/
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := select_complete hfresh hb ht he
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun t' e' ht' he' => ?_) hfresh' (prove_assignments_le hrun)
+  refine hk r nv' env' (fun t' e' ht' he' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
   rw [ht] at ht'; rw [he] at he'
   injection ht' with ht'; injection he' with he'
   exact ht' ▸ he' ▸ heval

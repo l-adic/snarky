@@ -242,7 +242,7 @@ abbrev ProverAsserts (facts : Assignments F → Prop)
     Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
   fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
     ∀ (nv' : Nat) (env' : Assignments F),
-      env'.FreshFrom nv' → env.Le env' → (Q.1 PUnit.unit nv' env').down)
+      env.Extends env' nv' → (Q.1 PUnit.unit nv' env').down)
 
 /-- The prover-reading spec shape of a compute gadget: given `facts`, the run succeeds
 and the result satisfies `post` in the final (extended, fresh) table. Reads "`g`
@@ -260,7 +260,7 @@ abbrev ProverComputes (facts : Assignments F → Prop)
     Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
   fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
     ∀ (r : FVar F) (nv' : Nat) (env' : Assignments F),
-      post env r env' → env'.FreshFrom nv' → env.Le env' → (Q.1 r nv' env').down)
+      post env r env' → env.Extends env' nv' → (Q.1 r nv' env').down)
 
 /-- The prover-reading spec shape of a boolean compute gadget — `ProverComputes` with
 a `BoolVar` result. -/
@@ -270,7 +270,7 @@ abbrev ProverComputesBool (facts : Assignments F → Prop)
     Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
   fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
     ∀ (r : BoolVar F) (nv' : Nat) (env' : Assignments F),
-      post env r env' → env'.FreshFrom nv' → env.Le env' → (Q.1 r nv' env').down)
+      post env r env' → env.Extends env' nv' → (Q.1 r nv' env').down)
 
 /-- Extract the value behind a successful-evaluation fact — the bridge from the
 metavariable-free `isOk` form the specs' `facts` use to the equation their proofs

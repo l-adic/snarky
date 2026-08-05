@@ -85,19 +85,20 @@ def prove (holds : c → Assignments F → Bool) :
       | .error e => .error e
       | .ok env' => prove holds (k (allocRange nv n)) (nv + n) env'
   | .assignOp vs wit k, nv, env =>
-    match wit env with
-    | .error e => .error e
-    | .ok xs =>
-      match env.extendPairs (vs.toList.zip xs.toList) with
+    match vs.toList.find? (nv ≤ ·) with
+    | some v => .error (.conflict v)
+    | none =>
+      match wit env with
       | .error e => .error e
-      | .ok env' => prove holds k nv env'
+      | .ok xs =>
+        match env.extendPairs (vs.toList.zip xs.toList) with
+        | .error e => .error e
+        | .ok env' => prove holds k nv env'
   | .labelOp _ k, nv, env => prove holds k nv env
 
 /-- **Proving a sequence is proving the head, then the tail from its final state** — the
-composition law gadget completeness chains through (plan D12). Freshness of
-the intermediate state is NOT a general theorem (`assignOp` may assign into the fresh
-region — `Assignments.FreshFrom`); each gadget's completeness law re-establishes it in
-its own conclusion instead. -/
+composition law gadget completeness chains through (plan D12). The intermediate state
+is fresh whenever the initial one is, by `prove_freshFrom` below. -/
 theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
     (f : α → CircuitM F c β) (nv : Nat) (env : Assignments F) :
     prove holds (m >>= f) nv env =
@@ -125,7 +126,9 @@ theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
     · rfl
     · split
       · rfl
-      · exact ih ..
+      · split
+        · rfl
+        · exact ih ..
   | labelOp s k ih => exact ih ..
 
 /-- The honest run of the one-variable core shape — `witness` a field value, pin it with
@@ -190,10 +193,96 @@ theorem prove_assignments_le {holds : c → Assignments F → Bool} {m : Circuit
     · cases h
     · split at h
       · cases h
-      · next hext => exact (Assignments.le_extendPairs hext).trans (ih h)
+      · split at h
+        · cases h
+        · next hext => exact (Assignments.le_extendPairs hext).trans (ih h)
   | labelOp str k ih =>
     simp only [prove] at h
     exact ih h
+
+/-- **The counter only advances.** Allocation moves it forward and nothing moves it
+back — what places a run's allocations strictly above every slot preallocated before
+it. -/
+theorem prove_nextVar_le {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {nv nv' : Nat} {env env' : Assignments F} {x : α}
+    (h : prove holds m nv env = .ok ⟨x, nv', env'⟩) : nv ≤ nv' := by
+  induction m generalizing nv env with
+  | pure a =>
+    simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
+    omega
+  | freshOp k ih => exact Nat.le_of_succ_le (ih _ h)
+  | addConstraintOp con k ih =>
+    simp only [prove] at h
+    split at h
+    · exact ih h
+    · cases h
+  | existsOp n wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · exact Nat.le_trans (Nat.le_add_right nv n) (ih _ h)
+  | assignOp vs wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · exact ih h
+  | labelOp s k ih => exact ih h
+
+/-- **Freshness is preserved by every prover run.** A run that starts with nothing
+assigned at or above its counter ends the same way: allocation writes exactly at the
+counter and advances past it, and `assignOp` — guarded above — cannot reach the fresh
+region. The invariant every completeness statement used to re-establish by hand, here
+once and for all. -/
+theorem prove_freshFrom {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {nv nv' : Nat} {env env' : Assignments F} {x : α}
+    (hfresh : env.FreshFrom nv) (h : prove holds m nv env = .ok ⟨x, nv', env'⟩) :
+    env'.FreshFrom nv' := by
+  induction m generalizing nv env with
+  | pure a =>
+    simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
+    obtain ⟨-, hnv, henv⟩ := h
+    exact hnv ▸ henv ▸ hfresh
+  | freshOp k ih => exact ih _ (fun v hv => hfresh v (by omega)) h
+  | addConstraintOp con k ih =>
+    simp only [prove] at h
+    split at h
+    · exact ih hfresh h
+    · cases h
+  | existsOp n wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · next hext =>
+        refine ih _ (fun v hv => ?_) h
+        refine Assignments.extendPairs_none hext (fun p hp hpv => ?_)
+          (hfresh v (by omega))
+        obtain ⟨hmem, -⟩ := List.of_mem_zip hp
+        exact absurd (hpv ▸ (mem_allocRange hmem).2) (by omega)
+  | assignOp vs wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · next hfind =>
+      split at h
+      · cases h
+      · split at h
+        · cases h
+        · next hext =>
+          refine ih (fun v hv => ?_) h
+          refine Assignments.extendPairs_none hext (fun p hp hpv => ?_) (hfresh v hv)
+          obtain ⟨hmem, -⟩ := List.of_mem_zip hp
+          have hlt := List.find?_eq_none.mp hfind p.1 hmem
+          simp only [decide_eq_true_eq] at hlt
+          exact absurd (hpv ▸ hv) hlt
+  | labelOp s k ih => exact ih hfresh h
 
 /-! ## Interpreter agreement -/
 
@@ -235,7 +324,9 @@ theorem prove_build_agrees {holds : c → Assignments F → Bool} {m : CircuitM 
     · cases h
     · split at h
       · cases h
-      · exact ih h
+      · split at h
+        · cases h
+        · exact ih h
   | labelOp str k ih =>
     simp only [prove] at h
     simp only [build]
@@ -287,7 +378,9 @@ theorem prove_complete {holds : c → Assignments F → Bool}
     · cases h
     · split at h
       · cases h
-      · exact ih h
+      · split at h
+        · cases h
+        · exact ih h
   | labelOp str k ih =>
     simp only [prove] at h
     simp only [build]

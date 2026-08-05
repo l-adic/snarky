@@ -177,7 +177,10 @@ the typed, `check`-inserting wrapper is `witness` below). -/
 def existsVars (n : Nat) (wit : AsProver F (Vector F n)) : CircuitM F c (Vector Variable n) :=
   .existsOp n wit .pure
 
-/-- Back-fill already-allocated variables from a witness computation (PS `assignVars`). -/
+/-- Back-fill already-allocated variables from a witness computation (PS `assignVars`).
+"Already-allocated" is enforced, not merely intended: a prover run refuses targets at
+or above its counter (writing to an unallocated slot), which is what makes freshness a
+universal invariant (`prove_freshFrom`). -/
 def assignVars {n : Nat} (vs : Vector Variable n) (wit : AsProver F (Vector F n)) :
     CircuitM F c PUnit :=
   .assignOp vs wit (.pure PUnit.unit)
