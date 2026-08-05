@@ -48,15 +48,11 @@ triple laws for `xor` and `select` (`*_spec`/`*_complete_spec`), stated through 
 detects `n` only below the characteristic) and are the recorded open obligation of walk
 step 10. Fixed-input `decide` examples in `Snarky.Example`.
 
-Public results: the D12 gadget laws, beside their gadgets — `not_eval`,
-`and_spec`/`and_complete_spec`, `or_spec`/`or_complete_spec` (the Except-form
-`and_complete`/`or_complete` retained as the prover reductions),
-`xor_spec`/`xor_complete_spec` (the Except-form `xor_complete` retained as the
-prover reduction),
-`select_spec`/`select_complete_spec` (the Except-form `select_complete` retained
-as the prover reduction);
-`xorWit`/`xorCore`/`selectWit`/`selectCore` are named internals for those laws, not
-user API.
+Public results: the D12 gadget laws, beside their gadgets — `not_eval`, and the triple
+pairs `and`, `or`, `xor`, `select` as `*_spec`/`*_complete_spec` over the two readings;
+the `all`/`any` rows' three-plus cases need a cast-injectivity hypothesis (a sum of `n`
+bits detects `n` only below the characteristic) and are deferred to their first
+consumer.
 -/
 
 namespace Snarky
@@ -226,41 +222,6 @@ their family (`DSL/Monad` cannot host interpreter theorems — the cycle). -/
 The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding — the
 relation form the faithfulness arc composes over. -/
 
-/-- **`and` completeness** (D12). -/
-theorem and_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool}
-    (hfresh : env.FreshFrom nv)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    ∃ out, prove Basic.holds (Snarky.and (c := Basic F) a b) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (bit (ab && bb)) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold Snarky.and
-  rw [prove_bind]
-  obtain ⟨o₁, hr₁, he₁, hf₁⟩ := mul_complete hfresh ha hb
-  rw [hr₁]
-  refine ⟨⟨.unchecked o₁.result, o₁.nextVar, o₁.assignments⟩, rfl, ?_, hf₁⟩
-  show o₁.result.eval o₁.assignments = _
-  rw [he₁, bit_mul]
-
-/-- **`or` completeness** (D12). -/
-theorem or_complete {F : Type u} [CommRing F] [NoZeroDivisors F] [DecidableEq F]
-    {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool}
-    (hfresh : env.FreshFrom nv)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    ∃ out, prove Basic.holds (Snarky.or (c := Basic F) a b) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (bit (ab || bb)) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold Snarky.or
-  rw [prove_bind]
-  obtain ⟨o₁, hr₁, he₁, hf₁⟩ := and_complete hfresh (not_eval ha) (not_eval hb)
-  rw [hr₁]
-  refine ⟨⟨Snarky.not o₁.result, o₁.nextVar, o₁.assignments⟩, rfl, ?_, hf₁⟩
-  show (CVar.sub_ (.const 1) _).eval _ = _
-  rw [CVar.eval_sub_ rfl he₁]
-  cases ab <;> cases bb <;> simp [bit]
-
 open Std.Do in
 /-- **`and` soundness triple**: on bit operands the result reads as the conjunction
 bit. Generic over any lawful backend. -/
@@ -295,10 +256,15 @@ and the result reads as the conjunction bit in the final table. -/
         (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
   intro st hpre
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := and_complete st.fresh ha hb
-  simp only [wp, PredTrans.apply, hrun]
+  simp only [Snarky.and, ProverM.retag_bind, WPMonad.wp_bind,
+    PredTrans.apply_Bind_bind]
+  refine mul_complete_spec ↑a ↑b _ st
+    ⟨⟨by rw [ha]; rfl, by rw [hb]; rfl⟩, fun r st' hr hle => ?_⟩
+  simp only [wp, PredTrans.apply, prove]
   intro hf
-  exact hk r ⟨nv', env', hf⟩ heval (prove_assignments_le hrun)
+  refine hk (.unchecked r) ⟨st'.nv, st'.env, hf⟩ ?_ hle
+  show r.eval st'.env = _
+  rw [hr _ _ ha hb, bit_mul]
 
 open Std.Do in
 /-- **`or` soundness triple**, composed by `mvcgen` from `and_spec` on the negated
@@ -342,10 +308,16 @@ and the result reads as the disjunction bit in the final table. -/
         (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
   intro st hpre
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := or_complete st.fresh ha hb
-  simp only [wp, PredTrans.apply, hrun]
+  simp only [Snarky.or, ProverM.retag_bind, WPMonad.wp_bind,
+    PredTrans.apply_Bind_bind]
+  refine and_complete_spec (Snarky.not a) (Snarky.not b) (!ab) (!bb) _ st
+    ⟨⟨not_eval ha, not_eval hb⟩, fun r st' hr hle => ?_⟩
+  simp only [wp, PredTrans.apply, prove]
   intro hf
-  exact hk r ⟨nv', env', hf⟩ heval (prove_assignments_le hrun)
+  refine hk (Snarky.not r) ⟨st'.nv, st'.env, hf⟩ ?_ hle
+  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).eval st'.env = _
+  rw [CVar.eval_sub_ rfl hr]
+  cases ab <;> cases bb <;> simp [bit]
 
 /-! ### `xor` (Circuit/DSL/Boolean)
 
@@ -484,41 +456,6 @@ private theorem xor_complete_constB {F : Type} [Field F] [DecidableEq F]
     · exact absurd h h0
     · exact absurd h h1
 
-/-- **`xor` completeness** (D12): the honest prover run succeeds through every branch of
-the guard chain and answers the xor bit. -/
-theorem xor_complete {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F} {nv : Nat}
-    {env : Assignments F} {ab bb : Bool}
-    (hfresh : env.FreshFrom nv)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    ∃ out, prove Basic.holds (Snarky.xor (c := Basic F) a b) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (bit (ab ^^ bb)) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold Snarky.xor
-  cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F)
-  case const.const av bv =>
-    have hav : av = bit ab := by rw [hA] at ha; simpa [CVar.eval] using ha
-    have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
-    subst hav; subst hbv
-    refine ⟨_, rfl, ?_, hfresh⟩
-    show Except.ok _ = _
-    cases ab <;> cases bb <;> simp [bit]
-  case const.var av v => exact xor_complete_constA hA ha hb hfresh
-  case const.add av x y => exact xor_complete_constA hA ha hb hfresh
-  case const.scale av k x => exact xor_complete_constA hA ha hb hfresh
-  case var.const v bv => exact xor_complete_constB hB ha hb hfresh
-  case add.const x y bv => exact xor_complete_constB hB ha hb hfresh
-  case scale.const k x bv => exact xor_complete_constB hB ha hb hfresh
-  all_goals
-    refine ⟨_, xorCore_run ha hb hfresh, ?_, ?_⟩
-    · show (CVar.var nv).eval _ = _
-      simp [CVar.eval, Assignments.extend]
-    · intro v hv
-      replace hv : nv + 1 ≤ v := hv
-      have h0 : v ≠ nv := by omega
-      show (env.extend nv _) v = none
-      simp [Assignments.extend, h0, hfresh v (by omega)]
-
 open Std.Do in
 /-- **`xor` soundness triple**: on bit operands the result reads as the xor bit —
 the constant branches fold through the guards, the core row pins via `xor_pin`.
@@ -627,10 +564,32 @@ and the result reads as the xor bit in the final table. -/
         (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
   intro st hpre
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := xor_complete st.fresh ha hb
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  exact hk r ⟨nv', env', hf⟩ heval (prove_assignments_le hrun)
+  simp only [wp, PredTrans.apply, Snarky.xor]
+  cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F)
+  case const.const av bv =>
+    have hav : av = bit ab := by rw [hA] at ha; simpa [CVar.eval] using ha
+    have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
+    subst hav; subst hbv
+    intro hf
+    refine hk _ ⟨_, _, hf⟩ ?_ (Assignments.Le.refl st.env)
+    show Except.ok _ = _
+    cases ab <;> cases bb <;> simp [bit]
+  case const.var av v | const.add av x y | const.scale av k x =>
+    obtain ⟨o, hrun, heval, -⟩ := xor_complete_constA hA ha hb st.fresh
+    rw [hrun]
+    intro hf
+    exact hk _ ⟨_, _, hf⟩ heval (prove_assignments_le hrun)
+  case var.const v bv | add.const x y bv | scale.const k x bv =>
+    obtain ⟨o, hrun, heval, -⟩ := xor_complete_constB hB ha hb st.fresh
+    rw [hrun]
+    intro hf
+    exact hk _ ⟨_, _, hf⟩ heval (prove_assignments_le hrun)
+  all_goals
+    (rw [xorCore_run ha hb st.fresh]
+     intro hf
+     refine hk _ ⟨_, _, hf⟩ ?_ (Assignments.le_extend_self st.fresh _)
+     show (CVar.var st.nv).eval _ = _
+     simp [CVar.eval, Assignments.extend])
 
 /-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
 
@@ -766,41 +725,6 @@ backend. -/
          simp only [CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val, hb]
          cases bb <;> simp [bit])
 
-/-- **`select` completeness** (D12): the honest prover run succeeds through every branch
-and computes the selected value. -/
-theorem select_complete {F : Type} [Field F] [DecidableEq F] {b : BoolVar F}
-    {t e : FVar F} {nv : Nat} {env : Assignments F} {bb : Bool} {tv ev : F}
-    (hfresh : env.FreshFrom nv)
-    (hb : (↑b : CVar F).eval env = .ok (bit bb))
-    (ht : t.eval env = .ok tv) (he : e.eval env = .ok ev) :
-    ∃ out, prove Basic.holds (select (c := Basic F) b t e) nv env = .ok out ∧
-      out.result.eval out.assignments = .ok (if bb then tv else ev) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  show ∃ out, prove Basic.holds (match (↑b : CVar F) with
-    | .const bv => pure (if bv = 1 then t else e)
-    | _ => match t, e with
-      | .const tv', .const ev' =>
-        pure (CVar.add_ (.scale tv' ↑b) (CVar.scale_ ev' (CVar.sub_ (.const 1) ↑b)))
-      | t, e => selectCore b t e) nv env = .ok out ∧ _ ∧ _
-  cases hB : (↑b : CVar F)
-  case const bv =>
-    have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
-    subst hbv
-    refine ⟨_, rfl, ?_, hfresh⟩
-    show (if (bit bb : F) = 1 then t else e).eval env = _
-    cases bb <;> simp [bit] <;> [exact he; exact ht]
-  all_goals cases t <;> cases e <;>
-    first
-      | exact ⟨⟨_, nv, env⟩, rfl, select_mux_eval (hB ▸ hb) ht he, hfresh⟩
-      | (refine ⟨_, selectCore_run hb ht he hfresh, ?_, ?_⟩
-         · show (CVar.var nv).eval _ = _
-           simp [CVar.eval, Assignments.extend]
-         · intro v hv
-           replace hv : nv + 1 ≤ v := hv
-           have h0 : v ≠ nv := by omega
-           show (env.extend nv _) v = none
-           simp [Assignments.extend, h0, hfresh v (by omega)])
-
 open Std.Do in
 /-- **`select` completeness triple** (prover reading): on a bit selector the run
 succeeds and the result reads as the chosen branch in the final table. -/
@@ -818,12 +742,33 @@ succeeds and the result reads as the chosen branch in the final table. -/
   obtain ⟨⟨hb, hokt, hoke⟩, hk⟩ := hpre
   obtain ⟨tv, ht⟩ := CVar.evalOk hokt
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := select_complete st.fresh hb ht he
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  refine hk r ⟨nv', env', hf⟩ (fun t' e' ht' he' => ?_) (prove_assignments_le hrun)
-  rw [ht] at ht'; rw [he] at he'
-  injection ht' with ht'; injection he' with he'
-  exact ht' ▸ he' ▸ heval
+  have hval : ∀ {r : FVar F} {env' : Assignments F},
+      r.eval env' = .ok (if bb then tv else ev) →
+      ∀ t' e', t.eval st.env = .ok t' → e.eval st.env = .ok e' →
+        r.eval env' = .ok (if bb then t' else e') := by
+    intro r env' heval t' e' ht' he'
+    rw [ht] at ht'; rw [he] at he'
+    injection ht' with ht'; injection he' with he'
+    exact ht' ▸ he' ▸ heval
+  simp only [wp, PredTrans.apply, select]
+  cases hB : (↑b : CVar F)
+  case const bv =>
+    rw [hB] at hb
+    have hbv : bv = bit bb := by simpa [CVar.eval] using hb
+    subst hbv
+    intro hf
+    refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+    cases bb <;> simp [bit] <;> [exact he; exact ht]
+  all_goals
+    cases t <;> cases e <;> dsimp only <;>
+      first
+      | (intro hf
+         refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+         exact select_mux_eval (hB ▸ hb) ht he)
+      | (rw [selectCore_run hb ht he st.fresh]
+         intro hf
+         refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
+         show (CVar.var st.nv).eval _ = _
+         simp [CVar.eval, Assignments.extend])
 
 end Snarky

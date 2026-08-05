@@ -33,11 +33,12 @@ the value level under the `ToNat` faithfulness hypotheses; `pack_eval` is the pu
 gadget's evaluation law (like `sum_eval`); `unpack_spec` pins any satisfying
 assignment's bits — boolean, and summing to the operand (their CANONICITY additionally
 needs the standing characteristic hypothesis, recorded with the other sum-based
-obligations); `unpack_complete` runs the honest prover through the `ToNat` witness.
+obligations); `unpack_complete_spec` runs the honest prover through the `ToNat`
+witness.
 
-Public results: `pack_eval`, `pack_val`, `packPure_unpackPure`, the triple law
-`unpack_spec`, and `unpack_complete` —
-`roots.txt` entries; `unpackWit`/`packAux` are named internals for the laws.
+Public results: `pack_eval`, `pack_val`, `packPure_unpackPure`, and the triple pair
+`unpack_spec`/`unpack_complete_spec` — `roots.txt` entries; `unpackWit`/`packAux` and
+`unpack_run` are named internals for the laws.
 -/
 
 namespace Snarky
@@ -399,10 +400,10 @@ private theorem prove_unpackBits {F : Type} [Field F] [DecidableEq F] [ToNat F]
         simp only [Assignments.extend, if_neg this]
         exact hbits₁ i (by omega)
 
-/-- **`unpack` completeness** (D12): on a faithful representative that fits in `n` bits,
-the honest run succeeds, the bits are the operand's binary digits, and freshness is
-re-established. -/
-theorem unpack_complete {F : Type} [Field F] [DecidableEq F] [ToNat F] {v : FVar F}
+/-- The honest `unpack` run: on a faithful representative that fits in `n` bits the run
+succeeds with the operand's binary digits. The spec below is the statement of record;
+this is its run equation. -/
+private theorem unpack_run {F : Type} [Field F] [DecidableEq F] [ToNat F] {v : FVar F}
     {n nv : Nat} {env : Assignments F} {vv : F}
     (hfresh : env.FreshFrom nv) (hv : v.eval env = .ok vv)
     (hval : ((ToNat.toNat vv : Nat) : F) = vv) (hlt : ToNat.toNat vv < 2 ^ n) :
@@ -442,5 +443,34 @@ theorem unpack_complete {F : Type} [Field F] [DecidableEq F] [ToNat F] {v : FVar
   · intro i hi
     simp only [Vector.getElem_ofFn]
     exact hbitEval i hi
+
+open Std.Do in
+/-- **`unpack` completeness triple** (prover reading): on a faithful representative
+that fits in `n` bits, the honest run succeeds and the results are the operand's
+binary digits. -/
+@[spec] theorem unpack_complete_spec {F : Type} [Field F] [DecidableEq F] [ToNat F]
+    (v : FVar F) (n : Nat)
+    (Q : PostCond (Vector (BoolVar F) n)
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    Triple (m := ProverM F) (unpack (c := Basic F) v n)
+      (ProverSpec
+        (fun env => (v.eval env).isOk ∧
+          ∀ vv, v.eval env = .ok vv →
+            ((ToNat.toNat vv : Nat) : F) = vv ∧ ToNat.toNat vv < 2 ^ n)
+        (fun env r env' => ∀ vv, v.eval env = .ok vv →
+          ∀ i (hi : i < n), (r[i]).toCVar.eval env'
+            = .ok (bit ((ToNat.toNat vv).testBit i))) Q) Q := by
+  intro st hpre
+  obtain ⟨⟨hokv, hfaithful⟩, hk⟩ := hpre
+  obtain ⟨vv, hv⟩ := CVar.evalOk hokv
+  obtain ⟨hval, hlt⟩ := hfaithful vv hv
+  obtain ⟨out, hrun, -, hbits⟩ := unpack_run st.fresh hv hval hlt
+  simp only [wp, PredTrans.apply, hrun]
+  intro hf
+  refine hk out.result ⟨out.nextVar, out.assignments, hf⟩ (fun vv' hv' => ?_)
+    (prove_assignments_le hrun)
+  rw [hv] at hv'
+  injection hv' with hv'
+  exact hv' ▸ hbits
 
 end Snarky

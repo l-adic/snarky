@@ -57,11 +57,8 @@ Snarky.prove_bind
 -- correctly. `div` and `pow` are proved compositionally through the bind laws.
 Snarky.equals_spec
 Snarky.equals_complete_spec
-Snarky.equals_complete
 Snarky.mul_spec
 Snarky.mul_complete_spec
-Snarky.mul_complete
-Snarky.inv_complete
 Snarky.inv_spec
 Snarky.inv_complete_spec
 Snarky.mul_spec
@@ -70,26 +67,20 @@ Snarky.div_spec
 Snarky.div_complete_spec
 Snarky.square_spec
 Snarky.square_complete_spec
-Snarky.square_complete
 Snarky.pow_spec
-Snarky.pow_complete
+Snarky.pow_complete_spec
 Snarky.sum_eval
 Snarky.not_eval
 Snarky.neq_spec
 Snarky.neq_complete_spec
-Snarky.neq_complete
 Snarky.and_spec
 Snarky.and_complete_spec
-Snarky.and_complete
 Snarky.or_spec
 Snarky.or_complete_spec
-Snarky.or_complete
 Snarky.xor_spec
 Snarky.xor_complete_spec
-Snarky.xor_complete
 Snarky.select_spec
 Snarky.select_complete_spec
-Snarky.select_complete
 Snarky.assertEqual_spec
 Snarky.assertEqual_complete_spec
 Snarky.assertNonZero_spec
@@ -104,7 +95,7 @@ Snarky.pack_eval
 Snarky.packPure_unpackPure
 Snarky.unpack_spec
 Snarky.pack_val
-Snarky.unpack_complete
+Snarky.unpack_complete_spec
 
 -- Whole-circuit compilation (Snarky/Backend/Compile.lean): the entry points and the
 -- fragment seam — a successful solve satisfies every compiled constraint and decodes the

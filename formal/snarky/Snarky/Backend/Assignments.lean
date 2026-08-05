@@ -98,6 +98,12 @@ private theorem le_extend {a : Assignments F} {v : Variable} (hv : a v = none) (
   · next hwv => rw [hwv, hv] at hw; cases hw
   · exact hw
 
+/-- Extending a fresh slot only grows the table — the `Le` fact a one-variable
+allocation hands its caller. -/
+theorem le_extend_self {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) (x : F) :
+    a.Le (a.extend nv x) :=
+  le_extend (h nv (Nat.le_refl nv)) x
+
 theorem le_extendPairs {a a' : Assignments F} :
     ∀ {l : List (Variable × F)}, a.extendPairs l = .ok a' → a.Le a' := by
   intro l

@@ -54,15 +54,11 @@ under `reduce_eval`; `seal` is the
 public inputs, compare with the model function — awaits `Backend/Compile` (walk
 step 14).
 
-Public results: the D12 gadget laws beside their gadgets — the triple pairs
-`mul_spec`/`_complete_spec`, `inv_spec`/`_complete_spec`, `div_spec`/`_complete_spec`,
-`square_spec`/`_complete_spec`, `pow_spec`/`pow_complete`; the Except-form
-completeness laws are retained as the prover reductions the `*_complete_spec`
-triples derive from; the triple pairs `equals_spec`/`_complete_spec` and
-`neq_spec`/`_complete_spec` (their Except-form completeness twins retained as the
-prover reductions),
-`sum_eval` — all `roots.txt` entries; the `*Wit`/`*Core`
-defs are named internals for those laws, not user API.
+Public results: the D12 gadget laws beside their gadgets, each a triple pair over the
+two readings — `mul`, `inv`, `div`, `square`, `pow`, `equals` and `neq` as
+`*_spec`/`*_complete_spec` — plus `sum_eval`; all `roots.txt` entries. The `*Wit`,
+`*Core` and `*Core_run` declarations are named internals for those proofs, not user
+API.
 -/
 
 namespace Snarky
@@ -349,37 +345,6 @@ private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CV
     show ((env.extend nv _).extend (nv + 1) _) v = none
     simp [Assignments.extend, h1, h0, hfresh v (by omega)]
 
-/-- **`equals` completeness** (D12): on any assignment that evaluates the inputs and is
-unassigned from `nv` up, the honest prover run of `equals a b` succeeds and its result
-evaluates, under the final assignment, to the equality bit. -/
-theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
-    {env : Assignments F} {av bv : F}
-    (hfresh : env.FreshFrom nv)
-    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
-    ∃ out, prove Basic.holds (equals (c := Basic F) a b) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (if av = bv then 1 else 0) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  have hz : (CVar.sub_ a b).eval env = .ok (av - bv) := CVar.eval_sub_ ha hb
-  have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
-  unfold equals
-  cases hcase : CVar.sub_ a b with
-  | const f =>
-    rw [hcase] at hz
-    have hf : f = av - bv := by simpa [CVar.eval] using hz
-    subst hf
-    refine ⟨_, rfl, ?_, hfresh⟩
-    show Except.ok _ = _
-    simp [sub_eq_zero]
-  | var v =>
-    rw [hcase] at hz
-    simpa only [hiff] using equalsCore_complete hz hfresh
-  | add x y =>
-    rw [hcase] at hz
-    simpa only [hiff] using equalsCore_complete hz hfresh
-  | scale k x =>
-    rw [hcase] at hz
-    simpa only [hiff] using equalsCore_complete hz hfresh
-
 /-- What `equalsCore` builds at any backend: two fresh variables, two `r1cs` rows. -/
 private theorem build_equalsCore' {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] (z : CVar F) (nv : Nat) :
@@ -447,33 +412,35 @@ reads as the answer bit in the final table. -/
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := equals_complete st.fresh ha hb
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  refine hk r ⟨nv', env', hf⟩ (fun a' b' ha' hb' => ?_) (prove_assignments_le hrun)
-  rw [ha] at ha'; rw [hb] at hb'
-  injection ha' with ha'; injection hb' with hb'
-  exact ha' ▸ hb' ▸ heval
+  have hval : ∀ {r : BoolVar F} {env' : Assignments F},
+      (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0) →
+      ∀ a' b', a.eval st.env = .ok a' → b.eval st.env = .ok b' →
+        (↑r : CVar F).eval env' = .ok (if a' = b' then 1 else 0) := by
+    intro r env' heval a' b' ha' hb'
+    rw [ha] at ha'; rw [hb] at hb'
+    injection ha' with ha'; injection hb' with hb'
+    exact ha' ▸ hb' ▸ heval
+  have hz : (CVar.sub_ a b).eval st.env = .ok (av - bv) := CVar.eval_sub_ ha hb
+  have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
+  simp only [wp, PredTrans.apply, equals]
+  cases hcase : CVar.sub_ a b with
+  | const f =>
+    rw [hcase] at hz
+    have hf : f = av - bv := by simpa [CVar.eval] using hz
+    subst hf
+    intro hf'
+    refine hk _ ⟨_, _, hf'⟩ (hval ?_) (Assignments.Le.refl st.env)
+    show Except.ok _ = _
+    simp [sub_eq_zero]
+  | var v | add x y | scale k x =>
+    rw [hcase] at hz
+    obtain ⟨o, hrun, heval, -⟩ := equalsCore_complete hz st.fresh
+    rw [hrun]
+    intro hf'
+    refine hk _ ⟨_, _, hf'⟩ (hval ?_) (prove_assignments_le hrun)
+    simpa only [hiff] using heval
 
 /-! ### `neq` — composed from `equals` -/
-
-/-- **`neq` completeness** (D12). -/
-theorem neq_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
-    {env : Assignments F} {av bv : F}
-    (hfresh : env.FreshFrom nv)
-    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
-    ∃ out, prove Basic.holds (neq (c := Basic F) a b) nv env = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (if av = bv then 0 else 1) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold neq
-  rw [prove_bind]
-  obtain ⟨o₁, hr₁, he₁, hf₁⟩ := equals_complete hfresh ha hb
-  rw [hr₁]
-  refine ⟨⟨.unchecked (CVar.sub_ (.const 1) ↑o₁.result), o₁.nextVar, o₁.assignments⟩,
-    rfl, ?_, hf₁⟩
-  show (CVar.sub_ (.const 1) _).eval _ = _
-  rw [CVar.eval_sub_ rfl he₁]
-  by_cases h : av = bv <;> simp [h]
 
 open Std.Do in
 /-- **`neq` soundness triple**, composed by `mvcgen` from `equals_spec`: the result
@@ -515,13 +482,20 @@ reads as the negated answer bit in the final table. -/
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := neq_complete st.fresh ha hb
-  simp only [wp, PredTrans.apply, hrun]
+  simp only [neq, ProverM.retag_bind, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  refine equals_complete_spec a b _ st ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
+  simp only [wp, PredTrans.apply, prove]
   intro hf
-  refine hk r ⟨nv', env', hf⟩ (fun a' b' ha' hb' => ?_) (prove_assignments_le hrun)
+  refine hk (.unchecked (CVar.sub_ (.const 1) ↑r)) ⟨st'.nv, st'.env, hf⟩
+    (fun a' b' ha' hb' => ?_) hle
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
-  exact ha' ▸ hb' ▸ heval
+  subst ha'; subst hb'
+  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).eval st'.env = _
+  rw [CVar.eval_sub_ rfl (hr av bv ha hb)]
+  by_cases h : av = bv
+  · rw [if_pos h, if_pos h]; norm_num
+  · rw [if_neg h, if_neg h]; norm_num
 
 /-! ### `mul` -/
 
@@ -547,36 +521,6 @@ private theorem mulCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F] [Decid
       Assignments.extend]
   exact prove_witnessCore hw hfresh hch
 
-/-- **`mul` completeness** (D12): the honest prover run succeeds, computes the product,
-and re-establishes freshness. -/
-theorem mul_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hfresh : env.FreshFrom nv)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
-    ∃ out, prove Basic.holds (mul (c := Basic F) x y) nv env = .ok out ∧
-      out.result.eval out.assignments = .ok (xv * yv) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold mul
-  cases x <;> cases y <;>
-    first
-    | (refine ⟨_, rfl, ?_, hfresh⟩
-       simp only [CVar.eval, Except.ok.injEq] at hx hy
-       subst hx; subst hy; rfl)
-    | (refine ⟨_, rfl, ?_, hfresh⟩
-       simp only [CVar.eval, Except.ok.injEq] at hx
-       subst hx; exact CVar.eval_scale_ hy _)
-    | (refine ⟨_, rfl, ?_, hfresh⟩
-       simp only [CVar.eval, Except.ok.injEq] at hy
-       subst hy; simpa [mul_comm] using CVar.eval_scale_ hx _)
-    | (refine ⟨_, mulCore_run hx hy hfresh, ?_, ?_⟩
-       · show (CVar.var nv).eval _ = _
-         simp [CVar.eval, Assignments.extend]
-       · intro v hv
-         replace hv : nv + 1 ≤ v := hv
-         have h0 : v ≠ nv := by omega
-         show (env.extend nv _) v = none
-         simp [Assignments.extend, h0, hfresh v (by omega)])
-
 /-! ### `inv` -/
 
 /-- The honest `invCore` run on a nonzero operand. -/
@@ -599,29 +543,6 @@ private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
     simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend,
       mul_inv_cancel₀ hxv]
   exact prove_witnessCore hw hfresh hch
-
-/-- **`inv` completeness** (D12): on a nonzero operand the honest prover run succeeds,
-computes the inverse, and re-establishes freshness. -/
-theorem inv_complete {F : Type u} [Field F] [DecidableEq F]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) (hxv : xv ≠ 0) :
-    ∃ out, prove Basic.holds (inv (c := Basic F) x) nv env = .ok out ∧
-      out.result.eval out.assignments = .ok xv⁻¹ ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold inv
-  cases x <;>
-    first
-    | (refine ⟨_, rfl, ?_, hfresh⟩
-       simp only [CVar.eval, Except.ok.injEq] at hx
-       subst hx; rfl)
-    | (refine ⟨_, invCore_run hx hxv hfresh, ?_, ?_⟩
-       · show (CVar.var nv).eval _ = _
-         simp [CVar.eval, Assignments.extend]
-       · intro v hv
-         replace hv : nv + 1 ≤ v := hv
-         have h0 : v ≠ nv := by omega
-         show (env.extend nv _) v = none
-         simp [Assignments.extend, h0, hfresh v (by omega)])
 
 open Std.Do in
 /-- **`inv` soundness triple**: `inv x` computes the operand's field inverse — the
@@ -658,13 +579,25 @@ succeeds and the result reads as the inverse in the final table. -/
   intro st hpre
   obtain ⟨⟨hokx, hne⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := inv_complete st.fresh hx (hne xv hx)
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  refine hk r ⟨nv', env', hf⟩ (fun x' hx' => ?_) (prove_assignments_le hrun)
-  rw [hx] at hx'
-  injection hx' with hx'
-  exact hx' ▸ heval
+  have hxv := hne xv hx
+  have hval : ∀ {r : FVar F} {env' : Assignments F}, r.eval env' = .ok xv⁻¹ →
+      ∀ x', x.eval st.env = .ok x' → r.eval env' = .ok x'⁻¹ := by
+    intro r env' heval x' hx'
+    rw [hx] at hx'
+    injection hx' with hx'
+    exact hx' ▸ heval
+  simp only [wp, PredTrans.apply, inv]
+  cases x <;>
+    first
+    | (intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+       simp only [CVar.eval, Except.ok.injEq] at hx
+       subst hx; rfl)
+    | (rw [invCore_run hx hxv st.fresh]
+       intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
+       show (CVar.var st.nv).eval _ = _
+       simp [CVar.eval, Assignments.extend])
 
 open Std.Do in
 /-- **`mul` soundness triple**: `mul x y` computes the product — constants fold,
@@ -707,13 +640,34 @@ reads as the product in the final table. -/
   obtain ⟨⟨hokx, hoky⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := mul_complete st.fresh hx hy
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  refine hk r ⟨nv', env', hf⟩ (fun x' y' hx' hy' => ?_) (prove_assignments_le hrun)
-  rw [hx] at hx'; rw [hy] at hy'
-  injection hx' with hx'; injection hy' with hy'
-  exact hx' ▸ hy' ▸ heval
+  have hval : ∀ {r : FVar F} {env' : Assignments F},
+      r.eval env' = .ok (xv * yv) →
+      ∀ x' y', x.eval st.env = .ok x' → y.eval st.env = .ok y' →
+        r.eval env' = .ok (x' * y') := by
+    intro r env' heval x' y' hx' hy'
+    rw [hx] at hx'; rw [hy] at hy'
+    injection hx' with hx'; injection hy' with hy'
+    exact hx' ▸ hy' ▸ heval
+  simp only [wp, PredTrans.apply, mul]
+  cases x <;> cases y <;>
+    first
+    | (intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+       simp only [CVar.eval, Except.ok.injEq] at hx hy
+       subst hx; subst hy; rfl)
+    | (intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+       simp only [CVar.eval, Except.ok.injEq] at hx
+       subst hx; exact CVar.eval_scale_ hy _)
+    | (intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+       simp only [CVar.eval, Except.ok.injEq] at hy
+       subst hy; simpa [mul_comm] using CVar.eval_scale_ hx _)
+    | (rw [mulCore_run hx hy st.fresh]
+       intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
+       show (CVar.var st.nv).eval _ = _
+       simp [CVar.eval, Assignments.extend])
 
 /-! ### `square` (Circuit/DSL/Field) -/
 
@@ -736,29 +690,6 @@ private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
   have hch : Basic.holds (.square x (.var nv)) (env.extend nv (xv * xv)) = true := by
     simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend]
   exact prove_witnessCore hw hfresh hch
-
-/-- **`square` completeness** (D12): the honest prover run succeeds, computes the
-square, and re-establishes freshness. -/
-theorem square_complete {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) :
-    ∃ out, prove Basic.holds (square (c := Basic F) x) nv env = .ok out ∧
-      out.result.eval out.assignments = .ok (xv * xv) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold square
-  cases x <;>
-    first
-    | (refine ⟨_, rfl, ?_, hfresh⟩
-       simp only [CVar.eval, Except.ok.injEq] at hx
-       subst hx; rfl)
-    | (refine ⟨_, squareCore_run hx hfresh, ?_, ?_⟩
-       · show (CVar.var nv).eval _ = _
-         simp [CVar.eval, Assignments.extend]
-       · intro v hv
-         replace hv : nv + 1 ≤ v := hv
-         have h0 : v ≠ nv := by omega
-         show (env.extend nv _) v = none
-         simp [Assignments.extend, h0, hfresh v (by omega)])
 
 open Std.Do in
 /-- **`div` soundness triple**, composed by `mvcgen` from `inv_spec` and `mul_spec`:
@@ -841,13 +772,24 @@ reads as the square in the final table. -/
   intro st hpre
   obtain ⟨hokx, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := square_complete st.fresh hx
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  refine hk r ⟨nv', env', hf⟩ (fun x' hx' => ?_) (prove_assignments_le hrun)
-  rw [hx] at hx'
-  injection hx' with hx'
-  exact hx' ▸ heval
+  have hval : ∀ {r : FVar F} {env' : Assignments F}, r.eval env' = .ok (xv * xv) →
+      ∀ x', x.eval st.env = .ok x' → r.eval env' = .ok (x' * x') := by
+    intro r env' heval x' hx'
+    rw [hx] at hx'
+    injection hx' with hx'
+    exact hx' ▸ heval
+  simp only [wp, PredTrans.apply, square]
+  cases x <;>
+    first
+    | (intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
+       simp only [CVar.eval, Except.ok.injEq] at hx
+       subst hx; rfl)
+    | (rw [squareCore_run hx st.fresh]
+       intro hf
+       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
+       show (CVar.var st.nv).eval _ = _
+       simp [CVar.eval, Assignments.extend])
 
 /-! ### `pow` (Circuit/DSL/Field) — composed through the fuel recursion -/
 
@@ -906,67 +848,98 @@ the result reads as the operand's power. Generic over any lawful backend. -/
     ⦃Q⦄ :=
   powGo_spec n x n (Nat.le_succ n) Q
 
-/-- `powGo` completeness, by induction on the fuel through `prove_bind` and
-`mul_complete`. -/
-private theorem powGo_complete {F : Type u} [Add F] [CommMonoidWithZero F]
+open Std.Do in
+/-- `powGo` completeness as a triple, by induction on the fuel: with the fuel adequate
+for the exponent, the honest run succeeds and the result reads as the power. -/
+@[spec] private theorem powGo_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] :
-    ∀ (fuel : Nat) {x : FVar F} (n : Nat) {nv : Nat} {env : Assignments F} {xv : F},
-      n ≤ fuel + 1 →
-      env.FreshFrom nv →
-      x.eval env = .ok xv →
-      ∃ out, prove Basic.holds (powGo (c := Basic F) fuel x n) nv env = .ok out ∧
-        out.result.eval out.assignments = .ok (xv ^ n) ∧
-        out.assignments.FreshFrom out.nextVar := by
+    ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
+      ∀ (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))),
+        Triple (m := ProverM F) (powGo (c := Basic F) fuel x n)
+          (ProverSpec (fun env => (x.eval env).isOk)
+            (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok (xv ^ n))
+            Q) Q := by
   intro fuel
   induction fuel with
   | zero =>
-    intro x n nv env xv hfuel hfresh hx
+    intro x n hfuel Q st hpre
+    obtain ⟨hokx, hk⟩ := hpre
+    obtain ⟨xv, hx⟩ := CVar.evalOk hokx
     match n, hfuel with
-    | 0, _ => exact ⟨_, rfl, by rw [pow_zero]; rfl, hfresh⟩
-    | 1, _ => exact ⟨_, rfl, by rw [pow_one]; exact hx, hfresh⟩
+    | 0, _ =>
+      simp only [powGo, wp, PredTrans.apply, prove]
+      intro hf
+      exact hk (.const 1) ⟨st.nv, st.env, hf⟩ (fun _ _ => by rw [pow_zero]; rfl)
+        (Assignments.Le.refl st.env)
+    | 1, _ =>
+      simp only [powGo, wp, PredTrans.apply, prove]
+      intro hf
+      refine hk x ⟨st.nv, st.env, hf⟩ (fun x' hx' => ?_) (Assignments.Le.refl st.env)
+      rw [pow_one]
+      exact hx'
   | succ fuel ih =>
-    intro x n nv env xv hfuel hfresh hx
+    intro x n hfuel Q st hpre
+    obtain ⟨hokx, hk⟩ := hpre
+    obtain ⟨xv, hx⟩ := CVar.evalOk hokx
     match n with
-    | 0 => exact ⟨_, rfl, by rw [pow_zero]; rfl, hfresh⟩
-    | 1 => exact ⟨_, rfl, by rw [pow_one]; exact hx, hfresh⟩
+    | 0 =>
+      simp only [powGo, wp, PredTrans.apply, prove]
+      intro hf
+      exact hk (.const 1) ⟨st.nv, st.env, hf⟩ (fun _ _ => by rw [pow_zero]; rfl)
+        (Assignments.Le.refl st.env)
+    | 1 =>
+      simp only [powGo, wp, PredTrans.apply, prove]
+      intro hf
+      refine hk x ⟨st.nv, st.env, hf⟩ (fun x' hx' => ?_) (Assignments.Le.refl st.env)
+      rw [pow_one]
+      exact hx'
     | m + 2 =>
       have hdef : powGo (c := Basic F) (fuel + 1) x (m + 2)
           = (do let sq ← mul x x
                 let y ← powGo (c := Basic F) fuel sq ((m + 2) / 2)
                 if (m + 2) % 2 = 0 then pure y else mul x y) := rfl
-      rw [hdef, prove_bind]
-      obtain ⟨o₁, hr₁, he₁, hf₁⟩ := mul_complete hfresh hx hx
-      rw [hr₁]
-      simp only [Except.bind]
-      obtain ⟨o₂, hr₂, he₂, hf₂⟩ := ih ((m + 2) / 2) (by omega) hf₁ he₁
-      have hx₂ : x.eval o₂.assignments = .ok xv :=
-        CVar.eval_le ((prove_assignments_le hr₁).trans (prove_assignments_le hr₂)) hx
-      rw [prove_bind, hr₂]
-      simp only [Except.bind]
+      rw [hdef]
+      simp only [ProverM.retag_bind, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+      refine mul_complete_spec x x _ st ⟨⟨by rw [hx]; rfl, by rw [hx]; rfl⟩,
+        fun sq st₁ hsq hle₁ => ?_⟩
+      have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
+      have hsq' : sq.eval st₁.env = .ok (xv * xv) := hsq xv xv hx hx
+      have hsqok : (sq.eval st₁.env).isOk = true := by rw [hsq']; rfl
+      refine ih sq ((m + 2) / 2) (by omega) _ st₁ ⟨hsqok,
+        fun y st₂ hy hle₂ => ?_⟩
+      have hy' : y.eval st₂.env = .ok ((xv * xv) ^ ((m + 2) / 2)) := hy _ hsq'
+      have hx₂ : x.eval st₂.env = .ok xv := CVar.eval_le hle₂ hx₁
       by_cases hpar : (m + 2) % 2 = 0
-      · simp only [eq_true hpar, if_true]
-        have hpow : (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
-          rw [← pow_two, ← pow_mul]
-          congr 1
-          omega
-        exact ⟨o₂, rfl, hpow ▸ he₂, hf₂⟩
+      · simp only [eq_true hpar, if_true, wp, PredTrans.apply, prove]
+        intro hf
+        refine hk y ⟨st₂.nv, st₂.env, hf⟩ (fun x' hx' => ?_) (hle₁.trans hle₂)
+        rw [hx] at hx'
+        injection hx' with hx'
+        subst hx'
+        rw [hy', ← pow_two, ← pow_mul]
+        congr 2
+        omega
       · simp only [eq_false hpar, if_false]
-        obtain ⟨o₃, hr₃, he₃, hf₃⟩ := mul_complete hf₂ hx₂ he₂
-        have hpow : xv * (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
-          rw [← pow_two, ← pow_mul, mul_comm, ← pow_succ]
-          congr 1
-          omega
-        exact ⟨o₃, hr₃, hpow ▸ he₃, hf₃⟩
+        refine mul_complete_spec x y _ st₂ ⟨⟨by rw [hx₂]; rfl, by rw [hy']; rfl⟩,
+          fun r st₃ hr hle₃ => ?_⟩
+        refine hk r st₃ (fun x' hx' => ?_) ((hle₁.trans hle₂).trans hle₃)
+        rw [hx] at hx'
+        injection hx' with hx'
+        subst hx'
+        rw [hr _ _ hx₂ hy', ← pow_two, ← pow_mul, mul_comm, ← pow_succ]
+        congr 2
+        omega
 
-/-- **`pow` completeness** (D12), composed through the fuel recursion from
-`mul_complete` and `prove_bind`. -/
-theorem pow_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {x : FVar F} {n : Nat} {nv : Nat} {env : Assignments F} {xv : F}
-    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) :
-    ∃ out, prove Basic.holds (pow (c := Basic F) x n) nv env = .ok out ∧
-      out.result.eval out.assignments = .ok (xv ^ n) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold pow
-  exact powGo_complete n n (Nat.le_succ n) hfresh hx
+open Std.Do in
+/-- **`pow` completeness triple**, composed through the fuel recursion from
+`mul_complete_spec`. -/
+@[spec] theorem pow_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F] (x : FVar F) (n : Nat)
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    Triple (m := ProverM F) (pow (c := Basic F) x n)
+      (ProverSpec (fun env => (x.eval env).isOk)
+        (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok (xv ^ n))
+        Q) Q :=
+  powGo_complete_spec n x n (Nat.le_succ n) Q
 
 end Snarky
