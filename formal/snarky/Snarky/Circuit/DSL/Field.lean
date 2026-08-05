@@ -3,6 +3,10 @@ import Snarky.Circuit.DSL.Monad
 import Snarky.Backend.WP
 import Snarky.Backend.Prover
 
+-- `mvcgen` is experimental; this option is its acknowledged-use switch (see the
+-- `Backend/WP` module docstring for the adoption rationale).
+set_option mvcgen.warning false
+
 /-!
 # Field gadgets
 
@@ -40,20 +44,23 @@ are stated against the interpreters, never re-derived over the field alone, and 
 BESIDE their gadgets (this module imports the backend for exactly that — a deliberate
 deviation from the PS import graph, adjacency over layering): the `eq`
 rows are `equals_sound`/`equals_complete` below, plus the fixed-input `decide`
-examples in `Snarky.Example`; the `mul`/`inv`/`div` rows and `square`/`pow` likewise
-(`div_sound`/`pow_sound` and their completeness twins are proved compositionally,
-through the bind laws). The `sum` row is `sum_eval` below (`sum` is pure — its
+examples in `Snarky.Example`; the `mul`/`inv`/`div` rows and `square` carry triple
+laws (`*_spec`/`*_complete_spec`, all `@[spec]`; `div`'s soundness is composed by
+`mvcgen` from `inv_spec` and `mul_spec`), `pow` its Except-form pair
+(compositional through the bind laws). The `sum` row is `sum_eval` below (`sum` is pure — its
 evaluation IS its interpreter semantics). The `negate` row is `Circuit/CVar` algebra
 under `reduce_eval`; `seal` is the
 `DSL/Utils` follow-on (plan §6). The spec's end-to-end shape — compile, solve against
 public inputs, compare with the model function — awaits `Backend/Compile` (walk
 step 14).
 
-Public results: the D12 gadget laws beside their gadgets — `mul_sound`/`_complete`,
-`inv_sound`/`_complete`, `div_sound`/`_complete`, `equals_sound`/`_complete`,
-`neq_sound`/`_complete`, `sum_eval`, `square_sound`/`_complete`, `pow_sound`/`_complete`
-— all `roots.txt` entries; the `*Wit`/`*Core` defs are named internals for those laws,
-not user API.
+Public results: the D12 gadget laws beside their gadgets — the triple pairs
+`mul_spec`/`_complete_spec`, `inv_spec`/`_complete_spec`, `div_spec`/`_complete_spec`,
+`square_spec`/`_complete_spec`; the Except-form `mul_sound`/`_complete` and
+`inv_complete`/`square_complete` retained while `Boolean`'s laws and the prover
+reductions consume them; `equals_sound`/`_complete`, `neq_sound`/`_complete`,
+`sum_eval`, `pow_sound`/`_complete` — all `roots.txt` entries; the `*Wit`/`*Core`
+defs are named internals for those laws, not user API.
 -/
 
 namespace Snarky
@@ -565,29 +572,6 @@ theorem mul_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
 
 /-! ### `inv` -/
 
-/-- What `invCore` builds: one fresh variable, the constraint `x · xInv = 1`. -/
-private theorem build_invCore {F : Type u} [Field F] [DecidableEq F] (x : FVar F)
-    (nv : Nat) :
-    build (invCore (c := Basic F) x) nv =
-      ⟨.var nv, nv + 1, [.r1cs x (.var nv) (.const 1)]⟩ := rfl
-
-/-- `invCore` soundness: the constraint pins the fresh variable to the inverse (and, not
-stated here, forces `xv ≠ 0`). -/
-private theorem invCore_sound {F : Type u} [Field F] [DecidableEq F]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hsat : ∀ con ∈ (build (invCore (c := Basic F) x) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) :
-    (build (invCore (c := Basic F) x) nv).result.eval env = .ok xv⁻¹ := by
-  rw [build_invCore] at hsat ⊢
-  have h₁ := hsat _ (List.mem_cons_self ..)
-  cases hnv : env nv with
-  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
-  | some iv =>
-    simp only [Basic.holds, CVar.eval, hx, hnv, decide_eq_true_eq] at h₁
-    show (CVar.var nv).eval env = _
-    simp [CVar.eval, hnv, inv_eq_of_mul_eq_one_right h₁]
-
 /-- The honest `invCore` run on a nonzero operand. -/
 private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
     {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
@@ -608,21 +592,6 @@ private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
     simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend,
       mul_inv_cancel₀ hxv]
   exact prove_witnessCore hw hfresh hch
-
-/-- **`inv` soundness** (D12): any satisfying assignment pins the result to the field
-inverse. On the witnessing branch the constraint additionally forces the operand
-nonzero; the constant branch is total via `0⁻¹ = 0`, so the law states the evaluation
-alone. -/
-theorem inv_sound {F : Type u} [Field F] [DecidableEq F]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hsat : ∀ con ∈ (build (inv (c := Basic F) x) nv).constraints, con.holds env = true)
-    (hx : x.eval env = .ok xv) :
-    (build (inv (c := Basic F) x) nv).result.eval env = .ok xv⁻¹ := by
-  unfold inv at hsat ⊢
-  cases x <;>
-    first
-    | (simp only [CVar.eval, Except.ok.injEq] at hx; subst hx; rfl)
-    | exact invCore_sound hsat hx
 
 /-- **`inv` completeness** (D12): on a nonzero operand the honest prover run succeeds,
 computes the inverse, and re-establishes freshness. -/
@@ -682,63 +651,48 @@ succeeds and the result reads as the inverse in the final table. -/
   simp only [wp, PredTrans.apply, hrun]
   exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
-/-! ### `div` — the first composed law -/
+open Std.Do in
+/-- **`mul` soundness triple**: `mul x y` computes the product — constants fold,
+otherwise the `r1cs` row forces it. Generic over any lawful backend. -/
+@[spec] theorem mul_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃Computes (fun V rv => rv = x.val V * y.val V) Q⦄
+    mul (c := c) x y
+    ⦃Q⦄ := by
+  intro V nv hpre
+  cases x <;> cases y <;> simp only [mul]
+  case const.const a b =>
+    intro _
+    exact hpre (.const (a * b)) nv rfl
+  all_goals
+    first
+    | (intro _
+       refine hpre _ nv ?_
+       exact CVar.val_scale_ _ _ _)
+    | (intro _
+       refine hpre _ nv ?_
+       exact (CVar.val_scale_ _ _ _).trans (mul_comm _ _))
+    | (intro hsat
+       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
+       exact hpre (.var nv) (nv + 1) h.symm)
 
-/-- **`div` soundness** (D12), proved compositionally: `build_bind` splits the
-constraints, `inv_sound` pins the inverse, `mul_sound` pins the product. -/
-theorem div_sound {F : Type u} [Field F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (div (c := Basic F) x y) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
-    (build (div (c := Basic F) x y) nv).result.eval env = .ok (xv / yv) := by
-  unfold div at hsat ⊢
-  rw [build_bind] at hsat ⊢
-  have h₁ := inv_sound (fun con h => hsat con (List.mem_append_left _ h)) hy
-  have h₂ := mul_sound (fun con h => hsat con (List.mem_append_right _ h)) hx h₁
-  simpa [div_eq_mul_inv] using h₂
-
-/-- **`div` completeness** (D12), proved compositionally through `prove_bind`: a nonzero
-divisor makes the honest run succeed with the quotient. -/
-theorem div_complete {F : Type u} [Field F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hfresh : env.FreshFrom nv) (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv)
-    (hyv : yv ≠ 0) :
-    ∃ out, prove Basic.holds (div (c := Basic F) x y) nv env = .ok out ∧
-      out.result.eval out.assignments = .ok (xv / yv) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold div
-  rw [prove_bind]
-  obtain ⟨o₁, hr₁, he₁, hf₁⟩ := inv_complete hfresh hy hyv
-  rw [hr₁]
-  have hx₁ : x.eval o₁.assignments = .ok xv :=
-    CVar.eval_le (prove_assignments_le hr₁) hx
-  obtain ⟨o₂, hr₂, he₂, hf₂⟩ := mul_complete hf₁ hx₁ he₁
-  refine ⟨o₂, hr₂, ?_, hf₂⟩
-  simpa [div_eq_mul_inv] using he₂
+open Std.Do in
+/-- **`mul` completeness triple** (prover reading): the run succeeds and the result
+reads as the product in the final table. -/
+@[spec] theorem mul_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F] (x y : FVar F) (xv yv : F)
+    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (mul (c := Basic F) x y)
+      (ProverComputes (fun env => x.eval env = .ok xv ∧ y.eval env = .ok yv)
+        (fun _ => xv * yv) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨hx, hy⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := mul_complete hfresh hx hy
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 /-! ### `square` (Circuit/DSL/Field) -/
-
-/-- What `squareCore` builds: one fresh variable, one `square` constraint. -/
-private theorem build_squareCore {F : Type u} [Add F] [Mul F] (x : FVar F) (nv : Nat) :
-    build (squareCore (c := Basic F) x) nv =
-      ⟨.var nv, nv + 1, [.square x (.var nv)]⟩ := rfl
-
-/-- `squareCore` soundness: the constraint pins the fresh variable to the square. -/
-private theorem squareCore_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hsat : ∀ con ∈ (build (squareCore (c := Basic F) x) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) :
-    (build (squareCore (c := Basic F) x) nv).result.eval env = .ok (xv * xv) := by
-  rw [build_squareCore] at hsat ⊢
-  have h₁ := hsat _ (List.mem_cons_self ..)
-  cases hnv : env nv with
-  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
-  | some zv =>
-    simp only [Basic.holds, CVar.eval, hx, hnv, decide_eq_true_eq] at h₁
-    show (CVar.var nv).eval env = _
-    simp [CVar.eval, hnv, ← h₁]
 
 /-- The honest `squareCore` run. -/
 private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
@@ -759,20 +713,6 @@ private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
   have hch : Basic.holds (.square x (.var nv)) (env.extend nv (xv * xv)) = true := by
     simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend]
   exact prove_witnessCore hw hfresh hch
-
-/-- **`square` soundness** (D12): any satisfying assignment pins the result to the
-square. -/
-theorem square_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hsat : ∀ con ∈ (build (square (c := Basic F) x) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) :
-    (build (square (c := Basic F) x) nv).result.eval env = .ok (xv * xv) := by
-  unfold square at hsat ⊢
-  cases x <;>
-    first
-    | (simp only [CVar.eval, Except.ok.injEq] at hx; subst hx; rfl)
-    | exact squareCore_sound hsat hx
 
 /-- **`square` completeness** (D12): the honest prover run succeeds, computes the
 square, and re-establishes freshness. -/
@@ -796,6 +736,77 @@ theorem square_complete {F : Type u} [Add F] [Mul F] [Zero F] [One F] [Decidable
          have h0 : v ≠ nv := by omega
          show (env.extend nv _) v = none
          simp [Assignments.extend, h0, hfresh v (by omega)])
+
+open Std.Do in
+/-- **`div` soundness triple**, composed by `mvcgen` from `inv_spec` and `mul_spec`:
+`div x y` computes the quotient (`x · y⁻¹`, total via `0⁻¹ = 0`). Generic over any
+lawful backend. -/
+@[spec] theorem div_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃Computes (fun V rv => rv = x.val V / y.val V) Q⦄
+    div (c := c) x y
+    ⦃Q⦄ := by
+  simp only [div]
+  mvcgen
+  rename_i hpre
+  intro r _nv' hr
+  refine mul_spec (c := c) x r _ _ _ fun r' nv'' hr' => ?_
+  exact hpre r' nv'' (hr'.trans (by rw [hr]; exact (div_eq_mul_inv _ _).symm))
+
+open Std.Do in
+/-- **`div` completeness triple** (prover reading), composed from `inv_complete` and
+`mul_complete` through `prove_bind`, the operand fact transported along the
+extension: a nonzero divisor makes the run succeed with the quotient. -/
+@[spec] theorem div_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (x y : FVar F) (xv yv : F)
+    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (div (c := Basic F) x y)
+      (ProverComputes
+        (fun env => x.eval env = .ok xv ∧ y.eval env = .ok yv ∧ yv ≠ 0)
+        (fun _ => xv / yv) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨hx, hy, hyv⟩, hk⟩ := hpre
+  obtain ⟨⟨r₁, nv₁, env₁⟩, hrun₁, heval₁, hfresh₁⟩ := inv_complete hfresh hy hyv
+  have hle₁ := prove_assignments_le hrun₁
+  obtain ⟨⟨r₂, nv₂, env₂⟩, hrun₂, heval₂, hfresh₂⟩ :=
+    mul_complete hfresh₁ (CVar.eval_le hle₁ hx) heval₁
+  simp only [div, wp, PredTrans.apply, prove_bind, hrun₁, Except.bind, hrun₂]
+  exact hk r₂ nv₂ env₂ (by rw [div_eq_mul_inv]; exact heval₂) hfresh₂
+    (hle₁.trans (prove_assignments_le hrun₂))
+
+open Std.Do in
+/-- **`square` soundness triple**: `square x` computes `x · x` through the dedicated
+`square` row; a constant folds. Generic over any lawful backend. -/
+@[spec] theorem square_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃Computes (fun V rv => rv = x.val V * x.val V) Q⦄
+    square (c := c) x
+    ⦃Q⦄ := by
+  intro V nv hpre
+  cases x <;> simp only [square]
+  case const f =>
+    intro _
+    exact hpre (.const (f * f)) nv rfl
+  all_goals
+    (intro hsat
+     have h := LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..))
+     exact hpre (.var nv) (nv + 1) h.symm)
+
+open Std.Do in
+/-- **`square` completeness triple** (prover reading): the run succeeds and the result
+reads as the square in the final table. -/
+@[spec] theorem square_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] (x : FVar F) (xv : F)
+    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (square (c := Basic F) x)
+      (ProverComputes (fun env => x.eval env = .ok xv) (fun _ => xv * xv) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, hx, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := square_complete hfresh hx
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 /-! ### `pow` (Circuit/DSL/Field) — composed through the fuel recursion -/
 
