@@ -204,14 +204,18 @@ Schematic like the soundness spec; the exact equation above supplies the reducti
 Stated as a raw `Triple` with the monad passed explicitly: the carrier is a type-level
 tag, and the `⦃⦄` sugar cannot pin it. -/
 @[spec] theorem assertEqual_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] (x y : FVar F) (xv yv : F)
+    [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Triple (m := ProverM F) (assertEqual (c := Basic F) x y)
       (ProverAsserts
-        (fun env => x.eval env = .ok xv ∧ y.eval env = .ok yv ∧ xv = yv) Q)
+        (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) Q)
       Q := by
   intro nv env hpre
-  obtain ⟨hfresh, ⟨hx, hy, hxy⟩, hk⟩ := hpre
+  obtain ⟨hfresh, ⟨hokx, hoky, heq⟩, hk⟩ := hpre
+  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
+  have hxy := heq xv yv hx hy
   have hQ := hk nv env hfresh (Assignments.Le.refl env)
   have hch : (BasicSystem.equal (c := Basic F) x y).holds env = true := by
     show (Basic.equal x y).holds env = true
@@ -259,10 +263,17 @@ example (x y z : FVar F) (xv yv zv : F) :
   obtain ⟨hfresh, hx, hy, hz, hxy, hyz⟩ := h
   subst hxy
   subst hyz
-  refine ⟨hfresh, ⟨hx, hy⟩, fun nv' env' hfresh' hle => ?_⟩
-  exact assertEqual_complete_spec y z xv xv _ _ _
-    ⟨hfresh', ⟨CVar.eval_le hle hy, CVar.eval_le hle hz, rfl⟩,
-      fun _ _ _ _ => trivial⟩
+  refine ⟨hfresh, ⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
+    fun nv' env' hfresh' hle => ?_⟩
+  · rw [hx] at ha; rw [hy] at hb
+    injection ha with ha; injection hb with hb
+    rw [← ha, ← hb]
+  · refine assertEqual_complete_spec y z _ nv' env'
+      ⟨hfresh', ⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
+        fun a b ha hb => ?_⟩, fun _ _ _ _ => trivial⟩
+    rw [CVar.eval_le hle hy] at ha; rw [CVar.eval_le hle hz] at hb
+    injection ha with ha; injection hb with hb
+    rw [← ha, ← hb]
 
 end MvcgenDemos
 
@@ -322,12 +333,15 @@ open Std.Do in
 /-- **`assertNonZero` completeness** (D12, prover reading): the run succeeds on a
 nonzero value, extending the table with the witnessed inverse. -/
 @[spec] theorem assertNonZero_complete_spec {F : Type} [Field F] [DecidableEq F]
-    (v : FVar F) (vv : F)
+    (v : FVar F)
     (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Triple (m := ProverM F) (assertNonZero (c := Basic F) v)
-      (ProverAsserts (fun env => v.eval env = .ok vv ∧ vv ≠ 0) Q) Q := by
+      (ProverAsserts (fun env => (v.eval env).isOk ∧
+        ∀ vv, v.eval env = .ok vv → vv ≠ 0) Q) Q := by
   intro nv env hpre
-  obtain ⟨hfresh, ⟨hv, hvv⟩, hk⟩ := hpre
+  obtain ⟨hfresh, ⟨hokv, hne⟩, hk⟩ := hpre
+  obtain ⟨vv, hv⟩ := CVar.evalOk hokv
+  have hvv := hne vv hv
   cases v <;> simp only [assertNonZero]
   case const f =>
     have hf : f = vv := by simpa [CVar.eval] using hv
@@ -356,15 +370,20 @@ open Std.Do in
 /-- **`assertNotEqual` completeness** (D12, prover reading), delegated to
 `assertNonZero` through the difference. -/
 @[spec] theorem assertNotEqual_complete_spec {F : Type} [Field F] [DecidableEq F]
-    (x y : FVar F) (xv yv : F)
+    (x y : FVar F)
     (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Triple (m := ProverM F) (assertNotEqual (c := Basic F) x y)
-      (ProverAsserts (fun env => x.eval env = .ok xv ∧ y.eval env = .ok yv ∧ xv ≠ yv)
-        Q) Q := by
+      (ProverAsserts (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv) Q) Q := by
   intro nv env hpre
-  obtain ⟨hfresh, ⟨hx, hy, hne⟩, hk⟩ := hpre
-  exact assertNonZero_complete_spec (CVar.sub_ x y) (xv - yv) Q nv env
-    ⟨hfresh, ⟨CVar.eval_sub_ hx hy, sub_ne_zero.mpr hne⟩, hk⟩
+  obtain ⟨hfresh, ⟨hokx, hoky, hne⟩, hk⟩ := hpre
+  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
+  refine assertNonZero_complete_spec (CVar.sub_ x y) Q nv env
+    ⟨hfresh, ⟨by rw [CVar.eval_sub_ hx hy]; rfl, fun d hd => ?_⟩, hk⟩
+  rw [CVar.eval_sub_ hx hy] at hd
+  injection hd with hd
+  exact hd ▸ sub_ne_zero.mpr (hne xv yv hx hy)
 
 open Std.Do in
 /-- **`assertSquare` soundness** (D12): asserts the square identity on the operands'
@@ -382,13 +401,16 @@ open Std.Do in
 /-- **`assertSquare` completeness** (D12, prover reading): the run succeeds on a true
 square, changing nothing. -/
 @[spec] theorem assertSquare_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] (x y : FVar F) (xv yv : F)
+    [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Triple (m := ProverM F) (assertSquare (c := Basic F) x y)
-      (ProverAsserts (fun env => x.eval env = .ok xv ∧ y.eval env = .ok yv ∧
-        xv * xv = yv) Q) Q := by
+      (ProverAsserts (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv) Q) Q := by
   intro nv env hpre
-  obtain ⟨hfresh, ⟨hx, hy, hsq⟩, hk⟩ := hpre
+  obtain ⟨hfresh, ⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
+  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
+  have hsq := hsq' xv yv hx hy
   have hch : (BasicSystem.square (c := Basic F) x y).holds env = true := by
     show (Basic.square x y).holds env = true
     simp [Basic.holds, hx, hy, hsq]
@@ -413,9 +435,17 @@ reads `1`. -/
     (v : BoolVar F)
     (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Triple (m := ProverM F) (assert (c := Basic F) v)
-      (ProverAsserts (fun env => (↑v : CVar F).eval env = .ok 1) Q) Q := by
+      (ProverAsserts (fun env => ((↑v : CVar F).eval env).isOk ∧
+        ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1) Q) Q := by
   intro nv env hpre
-  obtain ⟨hfresh, hv, hk⟩ := hpre
-  exact assertEqual_complete_spec ↑v (.const 1) 1 1 Q nv env ⟨hfresh, ⟨hv, rfl, rfl⟩, hk⟩
+  obtain ⟨hfresh, ⟨hokv, hone⟩, hk⟩ := hpre
+  obtain ⟨bv, hv⟩ := CVar.evalOk hokv
+  refine assertEqual_complete_spec ↑v (.const 1) Q nv env
+    ⟨hfresh, ⟨by rw [hv]; rfl, by rfl, fun a b ha hb => ?_⟩, hk⟩
+  rw [hv] at ha
+  injection ha with ha
+  injection hb with hb
+  rw [← ha, ← hb]
+  exact hone bv hv
 
 end Snarky

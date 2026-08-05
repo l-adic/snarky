@@ -245,27 +245,53 @@ abbrev ProverAsserts (facts : Assignments F → Prop)
       env'.FreshFrom nv' → env.Le env' → (Q.1 PUnit.unit nv' env').down)
 
 /-- The prover-reading spec shape of a compute gadget: given `facts`, the run succeeds
-and the result reads as `value` in the final (extended, fresh) table. Reads "`g`
-computes `value` given `facts`". -/
-abbrev ProverComputes [Add F] [Mul F] (facts : Assignments F → Prop)
-    (value : Assignments F → F)
+and the result satisfies `post` in the final (extended, fresh) table. Reads "`g`
+computes a result satisfying `post`, given `facts`".
+
+The result is characterized CONDITIONALLY on the operand readings, exactly as the
+soundness shapes are: a spec carrying the operand values as parameters cannot be
+instantiated by unification at a call site (they occur only in the precondition), so
+`mvcgen` matches it and leaves the values as bare metavariable goals. For the same
+reason `facts` should say `(x.eval env).isOk` rather than `∃ xv, x.eval env = .ok xv`
+— `evalOk` below extracts the value inside the proof. -/
+abbrev ProverComputes (facts : Assignments F → Prop)
+    (post : Assignments F → FVar F → Assignments F → Prop)
     (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
   fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
     ∀ (r : FVar F) (nv' : Nat) (env' : Assignments F),
-      r.eval env' = .ok (value env) → env'.FreshFrom nv' → env.Le env' →
-        (Q.1 r nv' env').down)
+      post env r env' → env'.FreshFrom nv' → env.Le env' → (Q.1 r nv' env').down)
 
-/-- The prover-reading spec shape of a boolean compute gadget: given `facts`, the run
-succeeds and the coerced result reads as `value` in the final (extended, fresh)
-table. -/
-abbrev ProverComputesBool [Add F] [Mul F] (facts : Assignments F → Prop)
-    (value : Assignments F → F)
+/-- The prover-reading spec shape of a boolean compute gadget — `ProverComputes` with
+a `BoolVar` result. -/
+abbrev ProverComputesBool (facts : Assignments F → Prop)
+    (post : Assignments F → BoolVar F → Assignments F → Prop)
     (Q : PostCond (BoolVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
     Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
   fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
     ∀ (r : BoolVar F) (nv' : Nat) (env' : Assignments F),
-      (↑r : CVar F).eval env' = .ok (value env) → env'.FreshFrom nv' → env.Le env' →
-        (Q.1 r nv' env').down)
+      post env r env' → env'.FreshFrom nv' → env.Le env' → (Q.1 r nv' env').down)
+
+/-- Extract the value behind a successful-evaluation fact — the bridge from the
+metavariable-free `isOk` form the specs' `facts` use to the equation their proofs
+consume. -/
+theorem CVar.evalOk [Add F] [Mul F] {x : CVar F} {env : Assignments F}
+    (h : (x.eval env).isOk = true) : ∃ xv, x.eval env = .ok xv := by
+  cases hx : x.eval env with
+  | error e => rw [hx] at h; cases h
+  | ok v => exact ⟨v, rfl⟩
+
+/-! ## Reading a program at the prover carrier
+
+A gadget's body elaborates its binds at `CircuitM` (its definition site), so the
+prover reading's `wp_bind` — whose binds are the carrier's — never matches, and the
+verification-condition generator resolves `WPMonad` from the bind's instance, finds
+the SOUNDNESS interpretation, and abandons the goal. The retag is definitional (the
+instances differ only by name) and rewrites a program into the carrier's binds. -/
+
+/-- Retag a bind at the prover carrier. -/
+@[simp] theorem ProverM.retag_bind [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {α β : Type} (x : CircuitM F (Basic F) α) (f : α → CircuitM F (Basic F) β) :
+    (x >>= f : CircuitM F (Basic F) β) = ((x : ProverM F α) >>= f : ProverM F β) := rfl
 
 end Snarky

@@ -37,6 +37,8 @@ Snarky.Basic.instConstraintHolds
 Snarky.Basic.instLawfulBasicSystem
 Snarky.ProverM.instWP
 Snarky.ProverM.instWPMonad
+Snarky.ProverM.retag_bind
+Snarky.CVar.evalOk
 
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
 Snarky.Basic.holds
