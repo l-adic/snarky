@@ -41,8 +41,7 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 D9 survey (the `snarky-test-utils` Boolean spec), in the D12 form: the `not` row is
 `not_eval` (pure gadget, so its law is evaluation-level); the `and`/`or`/`xor`
 and `if` rows land as triple laws for `and`/`or` (`*_spec`/`*_complete_spec`),
-triple laws for `xor` (`*_spec`/`*_complete_spec`), `select_sound` and its
-completeness twin below, stated through the
+triple laws for `xor` and `select` (`*_spec`/`*_complete_spec`), stated through the
 `CircuitType Bool` encoding
 (`if bb then 1 else 0` — the relation the faithfulness arc composes through); the
 `all`/`any` rows' three-plus cases need a cast-injectivity hypothesis (a sum of `n` bits
@@ -54,7 +53,8 @@ Public results: the D12 gadget laws, beside their gadgets — `not_eval`,
 `and_complete`/`or_complete` retained as the prover reductions),
 `xor_spec`/`xor_complete_spec` (the Except-form `xor_complete` retained as the
 prover reduction),
-`select_sound`/`select_complete`;
+`select_spec`/`select_complete_spec` (the Except-form `select_complete` retained
+as the prover reduction);
 `xorWit`/`xorCore`/`selectWit`/`selectCore` are named internals for those laws, not
 user API.
 -/
@@ -630,38 +630,6 @@ and the result reads as the xor bit in the final table. -/
 
 /-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
 
-/-- What `selectCore` builds: one fresh variable, the mux constraint
-`b · (t − e) = r − e`. -/
-private theorem build_selectCore {F : Type} [Field F] [DecidableEq F]
-    (b : BoolVar F) (t e : FVar F) (nv : Nat) :
-    build (selectCore (c := Basic F) b t e) nv =
-      ⟨.var nv, nv + 1,
-        [.r1cs b.toCVar (CVar.sub_ t e) (CVar.sub_ (.var nv) e)]⟩ := rfl
-
-/-- `selectCore` soundness: the constraint pins the mux value. -/
-private theorem selectCore_sound {F : Type} [Field F] [DecidableEq F]
-    {b : BoolVar F} {t e : FVar F} {nv : Nat} {env : Assignments F} {bb : Bool}
-    {tv ev : F}
-    (hb : (↑b : CVar F).eval env = .ok (bit bb))
-    (ht : t.eval env = .ok tv) (he : e.eval env = .ok ev)
-    (hsat : ∀ con ∈ (build (selectCore (c := Basic F) b t e) nv).constraints,
-      con.holds env = true) :
-    (build (selectCore (c := Basic F) b t e) nv).result.eval env
-      = .ok (if bb then tv else ev) := by
-  rw [build_selectCore] at hsat ⊢
-  obtain ⟨x, y, z, hx, hy, hz, hxyz⟩ := Basic.r1cs_inv (hsat _ (List.mem_cons_self ..))
-  rw [hb, Except.ok.injEq] at hx
-  rw [CVar.eval_sub_ ht he, Except.ok.injEq] at hy
-  obtain ⟨s₁, s₂, hs₁, hs₂, rfl⟩ := CVar.eval_sub_inv hz
-  rw [he, Except.ok.injEq] at hs₂
-  subst hx; subst hy; subst hs₂
-  show (CVar.var nv).eval env = _
-  rw [hs₁]
-  congr 1
-  rw [eq_sub_iff_add_eq] at hxyz
-  rw [← hxyz]
-  cases bb <;> simp [bit]
-
 /-- The honest `selectCore` run. -/
 private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
     {b : BoolVar F} {t e : FVar F} {nv : Nat} {env : Assignments F} {bb : Bool}
@@ -718,40 +686,80 @@ private theorem select_mux_eval {F : Type} [Field F] [DecidableEq F] {bc : CVar 
   simp only [CVar.eval, h₁, h₂]
   cases bb <;> simp [bit]
 
-/-- **`select` soundness** (D12, the `IfThenElse` field instance): any satisfying
-assignment pins the result to the selected branch, through the constant-selector fold,
-the constant-branches affine mux, and the witnessing branch. -/
-theorem select_sound {F : Type} [Field F] [DecidableEq F] {b : BoolVar F} {t e : FVar F}
-    {nv : Nat} {env : Assignments F} {bb : Bool} {tv ev : F}
-    (hsat : ∀ con ∈ (build (select (c := Basic F) b t e) nv).constraints,
-      con.holds env = true)
-    (hb : (↑b : CVar F).eval env = .ok (bit bb))
-    (ht : t.eval env = .ok tv) (he : e.eval env = .ok ev) :
-    (build (select (c := Basic F) b t e) nv).result.eval env
-      = .ok (if bb then tv else ev) := by
+/-- The field engine of `select` soundness: the row `b · (t − e) = r − e` pins `r` to
+the chosen branch. -/
+private theorem select_pin {F : Type} [Field F] {bb : Bool} {bv tv ev rv : F}
+    (h : bv * (tv - ev) = rv - ev) (hbv : bv = bit bb) :
+    rv = if bb then tv else ev := by
+  subst hbv
+  cases bb
+  · show rv = ev
+    have h0 : (0 : F) = rv - ev := by
+      rw [← h]
+      show (0 : F) = (bit false : F) * (tv - ev)
+      simp [bit]
+    exact (sub_eq_zero.mp h0.symm).symm ▸ rfl
+  · show rv = tv
+    have h1 : tv - ev = rv - ev := by
+      rw [← h]
+      show _ = (bit true : F) * (tv - ev)
+      simp [bit]
+    exact (sub_left_inj.mp h1).symm
+
+/-- What `selectCore` builds at any backend: one fresh variable, one `r1cs` row. -/
+private theorem build_selectCore' {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] (b : BoolVar F) (t e : FVar F) (nv : Nat) :
+    build (selectCore (c := c) b t e) nv
+      = ⟨.var nv, nv + 1,
+         [BasicSystem.r1cs ↑b (CVar.sub_ t e) (CVar.sub_ (.var nv) e)]⟩ := rfl
+
+open Std.Do in
+/-- **`select` soundness triple**: on a bit selector the result reads as the chosen
+branch — the constant selector folds to a branch, two constant branches fold to the
+affine mux, and otherwise the `r1cs` row pins the choice. Generic over any lawful
+backend. -/
+@[spec] theorem select_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (b : BoolVar F) (t e : FVar F)
+    (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃Computes (fun V rv => ∀ bb : Bool,
+        (↑b : CVar F).val V = bit bb → rv = if bb then t.val V else e.val V) Q⦄
+    select (c := c) b t e
+    ⦃Q⦄ := by
+  intro V nv hpre hsat
+  refine hpre _ _ fun bb hb => ?_
   show (build (match (↑b : CVar F) with
     | .const bv => pure (if bv = 1 then t else e)
     | _ => match t, e with
-      | .const tv', .const ev' =>
-        pure (CVar.add_ (.scale tv' ↑b) (CVar.scale_ ev' (CVar.sub_ (.const 1) ↑b)))
-      | t, e => selectCore b t e) nv).result.eval env = _
+      | .const tv, .const ev =>
+        pure (CVar.add_ (.scale tv ↑b) (CVar.scale_ ev (CVar.sub_ (.const 1) ↑b)))
+      | t, e => selectCore b t e) nv).result.val V = _
   replace hsat : ∀ con ∈ (build (match (↑b : CVar F) with
     | .const bv => pure (if bv = 1 then t else e)
     | _ => match t, e with
-      | .const tv', .const ev' =>
-        pure (CVar.add_ (.scale tv' ↑b) (CVar.scale_ ev' (CVar.sub_ (.const 1) ↑b)))
-      | t, e => selectCore b t e) nv).constraints, Basic.holds con env = true := hsat
+      | .const tv, .const ev =>
+        pure (CVar.add_ (.scale tv ↑b) (CVar.scale_ ev (CVar.sub_ (.const 1) ↑b)))
+      | t, e => selectCore b t e) nv).constraints,
+      ConstraintHolds.Holds V con := hsat
   cases hB : (↑b : CVar F) <;> rw [hB] at hsat
   case const bv =>
-    have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
-    subst hbv
+    rw [hB] at hb
+    replace hb : bv = bit bb := hb
+    subst hb
     show (build (pure (if (bit bb : F) = 1 then t else e) :
-      CircuitM F (Basic F) (FVar F)) nv).result.eval env = _
-    cases bb <;> simp [bit] <;> [exact he; exact ht]
-  all_goals cases t <;> cases e <;>
-    first
-      | exact select_mux_eval (hB ▸ hb) ht he
-      | exact selectCore_sound hb ht he hsat
+      CircuitM F c (FVar F)) nv).result.val V = _
+    cases bb <;> simp [bit] <;> rfl
+  all_goals
+    cases t <;> cases e <;> dsimp only at hsat ⊢ <;>
+      first
+      | (rw [build_selectCore'] at hsat ⊢
+         have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
+         rw [CVar.val_sub_, CVar.val_sub_] at h
+         exact select_pin h hb)
+      | (show (CVar.add_ (CVar.scale _ _) (CVar.scale_ _ _)).val V = _
+         rw [← hB]
+         simp only [CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val, hb]
+         cases bb <;> simp [bit])
 
 /-- **`select` completeness** (D12): the honest prover run succeeds through every branch
 and computes the selected value. -/

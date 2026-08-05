@@ -80,9 +80,9 @@ Snarky.or_complete
 Snarky.xor_spec
 Snarky.xor_complete_spec
 Snarky.xor_complete
-Snarky.select_sound
-Snarky.select_complete
+Snarky.select_spec
 Snarky.select_complete_spec
+Snarky.select_complete
 Snarky.assertEqual_spec
 Snarky.assertEqual_complete_spec
 Snarky.assertNonZero_spec

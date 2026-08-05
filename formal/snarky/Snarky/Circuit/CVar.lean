@@ -11,10 +11,10 @@ affine form `c + Σ aᵢ·xᵢ` (`AffineExpression`) together with the evaluatio
 theorem `reduce_eval` — the property the PS package checks by QuickCheck, proved here.
 
 The public surface is the PS export list, def for def; the public theorems are
-`CVar.reduce_eval`, the fold-evaluation lemmas `CVar.eval_add_`/`eval_scale_`/`eval_sub_`,
-and their inversions `eval_scale_inv`/`eval_sub_inv` (a successful evaluation evaluates
-the operands — how the gadget laws read fresh variables out of
-fold-wrapped constraint slots); `DSL/Field.sum_eval` consumes the fold lemmas too.
+`CVar.reduce_eval` and the fold-evaluation lemmas
+`CVar.eval_add_`/`eval_scale_`/`eval_sub_`; `DSL/Field.sum_eval` consumes them, and
+`Backend/Assignments` carries them across the bridge to the total reading (`val_add_`,
+`val_scale_`, `val_sub_`) for the triple laws.
 The affine-form helpers (`insertTerm`, `unionTerms`, `mergeConst`, `evalTerms`) and every
 supporting lemma are `private` — PS likewise keeps its `reduce'` internal.
 
@@ -178,48 +178,6 @@ theorem eval_sub_ [CommRing F] [DecidableEq F] {a b : CVar F}
     simp only [eval, ha, hs]
     congr 1
     ring
-
-/-- Inversion for `scale_`: a successful evaluation of a NONZERO scaling evaluates its
-operand (a zero scaling folds to `const 0` and forgets it — hence the hypothesis). -/
-theorem eval_scale_inv [Add F] [MulZeroOneClass F] [DecidableEq F] {k : F} (hk : k ≠ 0)
-    {x : CVar F} {env : Variable → Option F} {w : F}
-    (h : (scale_ k x).eval env = .ok w) : ∃ xv, x.eval env = .ok xv ∧ w = k * xv := by
-  unfold scale_ at h
-  rw [if_neg hk] at h
-  split_ifs at h with h1
-  · exact ⟨w, h, by rw [h1, one_mul]⟩
-  · revert h
-    show (CVar.scale k x).eval env = _ → _
-    simp only [eval]
-    split
-    · intro h; cases h
-    · next xv hxv => intro h; exact ⟨xv, hxv, by simpa using h.symm⟩
-
-/-- Inversion for `sub_`: a successful evaluation evaluates both operands. -/
-theorem eval_sub_inv [Field F] [DecidableEq F] {a b : CVar F}
-    {env : Variable → Option F} {w : F}
-    (h : (sub_ a b).eval env = .ok w) :
-    ∃ av bv, a.eval env = .ok av ∧ b.eval env = .ok bv ∧ w = av - bv := by
-  unfold sub_ at h
-  split at h
-  · next c₁ c₂ =>
-    exact ⟨c₁, c₂, rfl, rfl, by simpa [eval] using h.symm⟩
-  · rw [eval_add_] at h
-    revert h
-    show (CVar.add a _).eval env = _ → _
-    simp only [eval]
-    split
-    · intro h; cases h
-    · next av hav =>
-      split
-      · intro h; cases h
-      · next w' hw' =>
-        intro h
-        obtain ⟨bv, hbv, rfl⟩ :=
-          eval_scale_inv (neg_ne_zero.mpr one_ne_zero) hw'
-        exact ⟨av, bv, hav, hbv, by
-          simp only [Except.ok.injEq] at h
-          rw [← h]; ring⟩
 
 end CVar
 
