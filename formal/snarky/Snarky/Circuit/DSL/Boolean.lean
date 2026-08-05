@@ -266,7 +266,7 @@ open Std.Do in
 bit. Generic over any lawful backend. -/
 @[spec] theorem and_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
           (↑r : CVar F).val V = bit (ab && bb)) Q⦄
@@ -305,7 +305,7 @@ open Std.Do in
 bits (De Morgan). Generic over any lawful backend. -/
 @[spec] theorem or_spec {F c : Type} [CommRing F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
           (↑r : CVar F).val V = bit (ab || bb)) Q⦄
@@ -525,13 +525,14 @@ the constant branches fold through the guards, the core row pins via `xor_pin`.
 Generic over any lawful backend. -/
 @[spec] theorem xor_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
           (↑r : CVar F).val V = bit (ab ^^ bb)) Q⦄
     Snarky.xor (c := c) a b
     ⦃Q⦄ := by
-  intro V nv hpre
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
   cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F) <;>
     simp only [Snarky.xor, hA, hB]
   case const.const av bv =>
@@ -569,7 +570,7 @@ Generic over any lawful backend. -/
       rw [CVar.val_sub_, hb]
       cases bb <;> simp [CVar.val, bit]
     · intro hsat
-      refine hpre (.unchecked (.var nv)) (nv + 1) fun ab bb ha hb => ?_
+      refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
       rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
       rw [ha, hb] at h
@@ -599,14 +600,14 @@ Generic over any lawful backend. -/
       rw [CVar.val_sub_, ha]
       cases ab <;> simp [CVar.val, bit]
     · intro hsat
-      refine hpre (.unchecked (.var nv)) (nv + 1) fun ab bb ha hb => ?_
+      refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
       rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
       rw [ha, hb] at h
       exact xor_pin h
   all_goals
     (intro hsat
-     refine hpre (.unchecked (.var nv)) (nv + 1) fun ab bb ha hb => ?_
+     refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
      rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
      rw [ha, hb] at h
@@ -724,12 +725,13 @@ backend. -/
 @[spec] theorem select_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (b : BoolVar F) (t e : FVar F)
-    (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V r => ∀ bb : Bool,
         (↑b : CVar F).val V = bit bb → r.val V = if bb then t.val V else e.val V) Q⦄
     select (c := c) b t e
     ⦃Q⦄ := by
-  intro V nv hpre hsat
+  intro s hpre hsat
+  obtain ⟨V, nv⟩ := s
   refine hpre _ _ fun bb hb => ?_
   show (build (match (↑b : CVar F) with
     | .const bv => pure (if bv = 1 then t else e)

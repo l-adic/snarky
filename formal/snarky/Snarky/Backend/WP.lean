@@ -48,31 +48,43 @@ class ConstraintHolds (F c : Type) where
   /-- The constraint value is satisfied under the valuation. -/
   Holds : Valuation F → c → Prop
 
+/-- The builder state a soundness triple runs over: the adversary's valuation and the
+allocation counter, as ONE object — the prover reading's `ProverState` without an
+invariant to carry, since a valuation is total and allocation position never affects
+soundness. Bundling keeps the two readings the same shape and leaves room for the
+builder's state to grow (labels, public-input slots) without changing every
+statement. -/
+structure BuilderState (F : Type) where
+  /-- The adversary's witness — total, fixed for the whole run. -/
+  V : Valuation F
+  /-- The next-variable counter the run allocates from. -/
+  nv : Nat
+
 /-- The soundness reading of `build`: emitted constraints become assumptions on the
 valuation. -/
 instance CircuitM.instWP [ConstraintHolds F c] :
-    WP (CircuitM F c) (.arg (Valuation F) (.arg Nat .pure)) where
+    WP (CircuitM F c) (.arg (BuilderState F) .pure) where
   wp x := {
-    trans := fun Q V nv =>
-      .up ((∀ con ∈ (build x nv).constraints, ConstraintHolds.Holds V con) →
-        (Q.1 (build x nv).result V (build x nv).nextVar).down)
+    trans := fun Q s =>
+      .up ((∀ con ∈ (build x s.nv).constraints, ConstraintHolds.Holds s.V con) →
+        (Q.1 (build x s.nv).result ⟨s.V, (build x s.nv).nextVar⟩).down)
     conjunctiveRaw := by
       intro Q₁ Q₂
       apply SPred.bientails.of_eq
-      ext V nv
+      ext s
       simp [SPred.and, imp_and]
   }
 
 /-- `wp` is a monad morphism: `pure` emits nothing, and a sequence's constraints
 concatenate (`build_bind`), the satisfaction hypothesis currying across the split. -/
 instance CircuitM.instWPMonad [ConstraintHolds F c] :
-    WPMonad (CircuitM F c) (.arg (Valuation F) (.arg Nat .pure)) where
+    WPMonad (CircuitM F c) (.arg (BuilderState F) .pure) where
   wp_pure a := by
-    ext Q V nv
+    ext Q s
     simp [wp, PredTrans.apply, build]
     rfl
   wp_bind x f := by
-    ext Q V nv
+    ext Q s
     simp only [PredTrans.apply_Bind_bind]
     simp [wp, PredTrans.apply, build_bind]
     constructor
@@ -158,15 +170,17 @@ shapes, named here once, so each spec reads as its contract alone. -/
 caller's obligation. `⦃Sound post Q⦄ g ⦃Q⦄` reads "`g` guarantees `post` of its
 result".
 
-`post` speaks about the RESULT ITSELF, not a reading of it — each gadget's spec
+Only the counter is quantified in the conclusion: the valuation is read-only, so the
+successor state is `⟨s.V, nv'⟩` — quantifying the whole state would lose that and
+break composition. `post` speaks about the RESULT ITSELF, not a reading of it — each gadget's spec
 applies whichever reading its result type has (`r.val V` for an `FVar`,
 `(↑r : CVar F).val V` for a `BoolVar`, componentwise for a bundle), which is what
 keeps one shape serving every return type. The final counter is quantified: a
 caller never learns how many variables a gadget allocated. -/
 abbrev Sound {α : Type} (post : Valuation F → α → Prop)
-    (Q : PostCond α (.arg (Valuation F) (.arg Nat .pure))) :
-    Assertion (.arg (Valuation F) (.arg Nat .pure)) :=
-  fun V _nv => .up (∀ (r : α) (nv' : Nat), post V r → (Q.1 r V nv').down)
+    (Q : PostCond α (.arg (BuilderState F) .pure)) :
+    Assertion (.arg (BuilderState F) .pure) :=
+  fun s => .up (∀ (r : α) (nv' : Nat), post s.V r → (Q.1 r ⟨s.V, nv'⟩).down)
 
 /-! ## The prover reading and its carrier
 

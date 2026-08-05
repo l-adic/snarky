@@ -179,11 +179,12 @@ valuation reads the operands equal — through the fold, the unsatisfiable-const
 row, and the general row. Generic over any lawful backend. -/
 @[spec] theorem assertEqual_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
+    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => x.val V = y.val V) Q⦄
     assertEqual (c := c) x y
     ⦃Q⦄ := by
-  intro V nv hpre
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
   cases x <;> cases y <;> simp only [assertEqual] <;>
     first
     | (rename_i f g
@@ -243,10 +244,10 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     ⦃⌜True⌝⦄
     (do assertEqual (c := c) x y
         assertEqual (c := c) y z : CircuitM F c PUnit)
-    ⦃⇓ _ V _nv => ⌜x.val V = z.val V⌝⦄ := by
+    ⦃⇓ _ s => ⌜x.val s.V = z.val s.V⌝⦄ := by
   mvcgen
   intro _ _nv' hxy
-  exact assertEqual_spec (c := c) y z _ _ _ fun _ _ hyz => hxy.trans hyz
+  exact assertEqual_spec (c := c) y z _ _ fun _ _ hyz => hxy.trans hyz
 
 /-- The SAME chain in the prover reading: on agreeing values the honest run cannot
 fail — the two `@[spec]` lemmas for one head symbol coexist across the two
@@ -291,10 +292,10 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     ⦃⌜True⌝⦄
     (do let r ← inv (c := c) v
         assertEqual (c := c) r w : CircuitM F c PUnit)
-    ⦃⇓ _ V _nv => ⌜w.val V = (v.val V)⁻¹⌝⦄ := by
+    ⦃⇓ _ s => ⌜w.val s.V = (v.val s.V)⁻¹⌝⦄ := by
   mvcgen
   intro r _nv' hr
-  refine assertEqual_spec (c := c) r w _ _ _ fun _ _ heq => ?_
+  refine assertEqual_spec (c := c) r w _ _ fun _ _ heq => ?_
   show w.val _ = _
   exact heq ▸ hr
 
@@ -308,11 +309,12 @@ zero-constant branch carries an unsatisfiable row, the witnessing branch the
 inverse's product row. Generic over any lawful backend. -/
 @[spec] theorem assertNonZero_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (v : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
+    (v : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => v.val V ≠ 0) Q⦄
     assertNonZero (c := c) v
     ⦃Q⦄ := by
-  intro V nv hpre
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
   cases v <;> simp only [assertNonZero]
   case const f =>
     split_ifs with h0
@@ -359,12 +361,13 @@ open Std.Do in
 difference. -/
 @[spec] theorem assertNotEqual_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
+    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => x.val V ≠ y.val V) Q⦄
     assertNotEqual (c := c) x y
     ⦃Q⦄ := by
-  intro V nv hpre
-  refine assertNonZero_spec (c := c) _ Q V nv ?_
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
+  refine assertNonZero_spec (c := c) _ Q ⟨V, nv⟩ ?_
   intro _ _ hne
   exact hpre PUnit.unit _ (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
 
@@ -393,12 +396,14 @@ open Std.Do in
 readings. Generic over any lawful backend. -/
 @[spec] theorem assertSquare_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
+    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => x.val V * x.val V = y.val V) Q⦄
     assertSquare (c := c) x y
     ⦃Q⦄ := by
-  intro V nv hpre hsat
-  exact hpre PUnit.unit _ (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
+  intro s hpre hsat
+  obtain ⟨V, nv⟩ := s
+  exact hpre PUnit.unit _
+    (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
 /-- **`assertSquare` completeness** (D12, prover reading): the run succeeds on a true
@@ -425,7 +430,7 @@ open Std.Do in
 /-- **`assert` soundness** (D12): `assert v` asserts the bit reads `1`. -/
 @[spec] theorem assert_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (v : BoolVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
+    (v : BoolVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => (↑v : CVar F).val V = 1) Q⦄
     assert (c := c) v
     ⦃Q⦄ := by
