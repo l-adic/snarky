@@ -158,6 +158,14 @@ theorem eval_toAssignments [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
   | add a b iha ihb => simp only [eval, val, iha, ihb]
   | scale k y ih => simp only [eval, val, ih]
 
+/-- `sub_` reads as the difference — the fold-evaluation lemma `eval_sub_`, carried
+through the bridge to the total reading. -/
+theorem val_sub_ [CommRing F] [DecidableEq F] (a b : CVar F) (V : Valuation F) :
+    (CVar.sub_ a b).val V = a.val V - b.val V := by
+  have h := CVar.eval_sub_ (eval_toAssignments a V) (eval_toAssignments b V)
+  rw [eval_toAssignments] at h
+  injection h
+
 end CVar
 
 end Snarky

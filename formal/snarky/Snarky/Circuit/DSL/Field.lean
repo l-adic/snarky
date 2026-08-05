@@ -1,5 +1,6 @@
 import Mathlib.Algebra.Field.Defs
 import Snarky.Circuit.DSL.Monad
+import Snarky.Backend.WP
 import Snarky.Backend.Prover
 
 /-!
@@ -645,6 +646,41 @@ theorem inv_complete {F : Type u} [Field F] [DecidableEq F]
          have h0 : v ≠ nv := by omega
          show (env.extend nv _) v = none
          simp [Assignments.extend, h0, hfresh v (by omega)])
+
+open Std.Do in
+/-- **`inv` soundness triple**: `inv x` computes the operand's field inverse — the
+witnessing row forces it; the constant branch is total via `0⁻¹ = 0`. Generic over
+any lawful backend. -/
+@[spec] theorem inv_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃Computes (fun V rv => rv = (x.val V)⁻¹) Q⦄
+    inv (c := c) x
+    ⦃Q⦄ := by
+  intro V nv hpre
+  cases x <;> simp only [inv]
+  case const a =>
+    intro _
+    exact hpre (.const a⁻¹) nv rfl
+  all_goals
+    (intro hsat
+     have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
+     exact hpre (.var nv) (nv + 1) (inv_eq_of_mul_eq_one_right (by simpa using h)).symm)
+
+open Std.Do in
+/-- **`inv` completeness triple** (prover reading): on a nonzero operand the run
+succeeds and the result reads as the inverse in the final table. -/
+@[spec] theorem inv_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (x : FVar F) (xv : F)
+    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (inv (c := Basic F) x)
+      (ProverComputes (fun env => x.eval env = .ok xv ∧ xv ≠ 0) (fun _ => xv⁻¹) Q)
+      Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨hx, hxv⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := inv_complete hfresh hx hxv
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 /-! ### `div` — the first composed law -/
 

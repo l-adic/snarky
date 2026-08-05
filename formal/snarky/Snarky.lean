@@ -8,6 +8,7 @@ import Snarky.Circuit.DSL.Assert
 import Snarky.Circuit.DSL.Bits
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
+import Snarky.Backend.WP
 import Snarky.Backend.Compile
 import Snarky.Vec
 import Snarky.Constraint.Basic
@@ -36,6 +37,8 @@ beside their subjects.
 - `Backend/Assignments` — the prover's witness table and its extension order.
 - `Backend/{Builder,Prover}` — the two interpreters, with the interpreter laws
   (witness-independence, allocation agreement, completeness, the bind laws).
+- `Backend/WP` — the `Std.Do` weakest-precondition interpretation of `build`, the
+  soundness reading the gadget triple laws are stated in.
 - `Backend/Compile` — whole-circuit `compile`/`solve` and the seam `solve_complete`.
 - `Constraint/Basic` — the concrete reference constraint model.
 - `Vec` — kernel-reduction-friendly vector utilities (everything here is validated by

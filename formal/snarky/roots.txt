@@ -26,6 +26,18 @@ Snarky.Valuation.toAssignments
 Snarky.CVar.val
 Snarky.CVar.eval_toAssignments
 
+-- The Std.Do weakest-precondition interpretation of build (Backend/WP.lean):
+-- the soundness reading, generic over the backend's semantic reading of one
+-- constraint value.
+Snarky.ConstraintHolds
+Snarky.CircuitM.instWP
+Snarky.CircuitM.instWPMonad
+Snarky.LawfulBasicSystem
+Snarky.Basic.instConstraintHolds
+Snarky.Basic.instLawfulBasicSystem
+Snarky.ProverM.instWP
+Snarky.ProverM.instWPMonad
+
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
 Snarky.Basic.holds
 Snarky.Basic.holds_mono
@@ -45,6 +57,8 @@ Snarky.mul_sound
 Snarky.mul_complete
 Snarky.inv_sound
 Snarky.inv_complete
+Snarky.inv_spec
+Snarky.inv_complete_spec
 Snarky.square_sound
 Snarky.square_complete
 Snarky.div_sound
@@ -63,16 +77,16 @@ Snarky.xor_sound
 Snarky.xor_complete
 Snarky.select_sound
 Snarky.select_complete
-Snarky.assertEqual_sound
-Snarky.assertEqual_complete
-Snarky.assertNonZero_sound
-Snarky.assertNonZero_complete
-Snarky.assertNotEqual_sound
-Snarky.assertNotEqual_complete
-Snarky.assertSquare_sound
-Snarky.assertSquare_complete
-Snarky.assert_sound
-Snarky.assert_complete
+Snarky.assertEqual_spec
+Snarky.assertEqual_complete_spec
+Snarky.assertNonZero_spec
+Snarky.assertNonZero_complete_spec
+Snarky.assertNotEqual_spec
+Snarky.assertNotEqual_complete_spec
+Snarky.assertSquare_spec
+Snarky.assertSquare_complete_spec
+Snarky.assert_spec
+Snarky.assert_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
 Snarky.unpack_sound
