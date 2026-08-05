@@ -223,6 +223,15 @@ instance ProverM.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
     · simp [Except.bind]
     · simp [Except.bind]
 
+/-- The spec shape of a BOOLEAN compute gadget — returns a `BoolVar` whose coerced
+reading the constraints characterize, conditionally on the operands reading as bits:
+`⦃ComputesBool fact Q⦄ g ⦃Q⦄` reads "`g` computes a bit satisfying `fact`". -/
+abbrev ComputesBool [Add F] [Mul F] (fact : Valuation F → F → Prop)
+    (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    Assertion (.arg (Valuation F) (.arg Nat .pure)) :=
+  fun V _nv => .up (∀ (r : BoolVar F) (nv' : Nat),
+    fact V ((↑r : CVar F).val V) → (Q.1 r V nv').down)
+
 /-- The prover-reading spec shape of an assertion gadget: given `facts` about the
 incoming table (and counter-freshness, the invariant every prover run threads), the
 run cannot fail, and the caller continues at a table that EXTENDS the incoming one
@@ -245,6 +254,18 @@ abbrev ProverComputes [Add F] [Mul F] (facts : Assignments F → Prop)
   fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
     ∀ (r : FVar F) (nv' : Nat) (env' : Assignments F),
       r.eval env' = .ok (value env) → env'.FreshFrom nv' → env.Le env' →
+        (Q.1 r nv' env').down)
+
+/-- The prover-reading spec shape of a boolean compute gadget: given `facts`, the run
+succeeds and the coerced result reads as `value` in the final (extended, fresh)
+table. -/
+abbrev ProverComputesBool [Add F] [Mul F] (facts : Assignments F → Prop)
+    (value : Assignments F → F)
+    (Q : PostCond (BoolVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
+  fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
+    ∀ (r : BoolVar F) (nv' : Nat) (env' : Assignments F),
+      (↑r : CVar F).eval env' = .ok (value env) → env'.FreshFrom nv' → env.Le env' →
         (Q.1 r nv' env').down)
 
 end Snarky

@@ -1,5 +1,9 @@
 import Snarky.Circuit.DSL.Field
 
+-- `mvcgen` is experimental; this option is its acknowledged-use switch (see the
+-- `Backend/WP` module docstring for the adoption rationale).
+set_option mvcgen.warning false
+
 /-!
 # Boolean gadgets
 
@@ -36,15 +40,18 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 
 D9 survey (the `snarky-test-utils` Boolean spec), in the D12 form: the `not` row is
 `not_eval` (pure gadget, so its law is evaluation-level); the `and`/`or`/`xor`
-and `if` rows land as `and_sound`/`or_sound`/`xor_sound`/`select_sound` and their
-completeness twins below, stated through the `CircuitType Bool` encoding
+and `if` rows land as triple laws for `and`/`or` (`*_spec`/`*_complete_spec`),
+`xor_sound`/`select_sound` and their completeness twins below, stated through the
+`CircuitType Bool` encoding
 (`if bb then 1 else 0` — the relation the faithfulness arc composes through); the
 `all`/`any` rows' three-plus cases need a cast-injectivity hypothesis (a sum of `n` bits
 detects `n` only below the characteristic) and are the recorded open obligation of walk
 step 10. Fixed-input `decide` examples in `Snarky.Example`.
 
 Public results: the D12 gadget laws, beside their gadgets — `not_eval`,
-`and_sound`/`and_complete`, `or_sound`/`or_complete`, `xor_sound`/`xor_complete`,
+`and_spec`/`and_complete_spec`, `or_spec`/`or_complete_spec` (the Except-form
+`and_complete`/`or_complete` retained as the prover reductions),
+`xor_sound`/`xor_complete`,
 `select_sound`/`select_complete`;
 `xorWit`/`xorCore`/`selectWit`/`selectCore` are named internals for those laws, not
 user API.
@@ -217,21 +224,6 @@ their family (`DSL/Monad` cannot host interpreter theorems — the cycle). -/
 The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding — the
 relation form the faithfulness arc composes over. -/
 
-/-- **`and` soundness** (D12): the conjunction bit. -/
-theorem and_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool}
-    (hsat : ∀ con ∈ (build (Snarky.and (c := Basic F) a b) nv).constraints,
-      con.holds env = true)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    (build (Snarky.and (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (bit (ab && bb)) := by
-  unfold Snarky.and at hsat ⊢
-  rw [build_bind] at hsat ⊢
-  have h₁ := mul_sound (fun con h => hsat con (List.mem_append_left _ h)) ha hb
-  rw [bit_mul] at h₁
-  exact h₁
-
 /-- **`and` completeness** (D12). -/
 theorem and_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool}
@@ -248,24 +240,6 @@ theorem and_complete {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
   refine ⟨⟨.unchecked o₁.result, o₁.nextVar, o₁.assignments⟩, rfl, ?_, hf₁⟩
   show o₁.result.eval o₁.assignments = _
   rw [he₁, bit_mul]
-
-/-- **`or` soundness** (D12): the disjunction bit, by De Morgan through `and` and
-`not_eval`. -/
-theorem or_sound {F : Type u} [CommRing F] [NoZeroDivisors F] [DecidableEq F]
-    {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool}
-    (hsat : ∀ con ∈ (build (Snarky.or (c := Basic F) a b) nv).constraints,
-      con.holds env = true)
-    (ha : (↑a : CVar F).eval env = .ok (bit ab))
-    (hb : (↑b : CVar F).eval env = .ok (bit bb)) :
-    (build (Snarky.or (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (bit (ab || bb)) := by
-  unfold Snarky.or at hsat ⊢
-  rw [build_bind] at hsat ⊢
-  have h₁ := and_sound (fun con h => hsat con (List.mem_append_left _ h))
-    (not_eval ha) (not_eval hb)
-  show (CVar.sub_ (.const 1) _).eval env = _
-  rw [CVar.eval_sub_ rfl h₁]
-  cases ab <;> cases bb <;> simp [bit]
 
 /-- **`or` completeness** (D12). -/
 theorem or_complete {F : Type u} [CommRing F] [NoZeroDivisors F] [DecidableEq F]
@@ -284,6 +258,90 @@ theorem or_complete {F : Type u} [CommRing F] [NoZeroDivisors F] [DecidableEq F]
   show (CVar.sub_ (.const 1) _).eval _ = _
   rw [CVar.eval_sub_ rfl he₁]
   cases ab <;> cases bb <;> simp [bit]
+
+open Std.Do in
+/-- **`and` soundness triple**: on bit operands the result reads as the conjunction
+bit. Generic over any lawful backend. -/
+@[spec] theorem and_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃ComputesBool (fun V rv => ∀ ab bb : Bool,
+        (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
+          rv = bit (ab && bb)) Q⦄
+    Snarky.and (c := c) a b
+    ⦃Q⦄ := by
+  simp only [Snarky.and]
+  mvcgen
+  rename_i hpre
+  intro r _nv' hr _
+  refine hpre (.unchecked r) _ fun ab bb ha hb => ?_
+  show r.val _ = _
+  rw [hr, ha, hb]
+  exact bit_mul ab bb
+
+open Std.Do in
+/-- **`and` completeness triple** (prover reading): on bit operands the run succeeds
+and the result reads as the conjunction bit in the final table. -/
+@[spec] theorem and_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F] (a b : BoolVar F) (ab bb : Bool)
+    (Q : PostCond (BoolVar F)
+      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (Snarky.and (c := Basic F) a b)
+      (ProverComputesBool
+        (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
+          (↑b : CVar F).eval env = .ok (bit bb))
+        (fun _ => bit (ab && bb)) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := and_complete hfresh ha hb
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
+
+open Std.Do in
+/-- **`or` soundness triple**, composed by `mvcgen` from `and_spec` on the negated
+bits (De Morgan). Generic over any lawful backend. -/
+@[spec] theorem or_spec {F c : Type} [CommRing F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃ComputesBool (fun V rv => ∀ ab bb : Bool,
+        (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
+          rv = bit (ab || bb)) Q⦄
+    Snarky.or (c := c) a b
+    ⦃Q⦄ := by
+  have hnot : ∀ (x : BoolVar F) (xb : Bool) (V : Valuation F),
+      (↑x : CVar F).val V = bit xb →
+        (↑(Snarky.not x) : CVar F).val V = bit (!xb) := by
+    intro x xb V hx
+    show (CVar.sub_ (.const 1) ↑x).val V = _
+    rw [CVar.val_sub_, hx]
+    cases xb <;> simp [CVar.val, bit]
+  simp only [Snarky.or]
+  mvcgen
+  rename_i hpre
+  intro r _nv' hr _
+  refine hpre (Snarky.not r) _ fun ab bb ha hb => ?_
+  have hr' := hr (!ab) (!bb) (hnot a ab _ ha) (hnot b bb _ hb)
+  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).val _ = _
+  rw [CVar.val_sub_, hr']
+  cases ab <;> cases bb <;> simp [CVar.val, bit]
+
+open Std.Do in
+/-- **`or` completeness triple** (prover reading): on bit operands the run succeeds
+and the result reads as the disjunction bit in the final table. -/
+@[spec] theorem or_complete_spec {F : Type} [CommRing F] [NoZeroDivisors F]
+    [DecidableEq F] (a b : BoolVar F) (ab bb : Bool)
+    (Q : PostCond (BoolVar F)
+      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (Snarky.or (c := Basic F) a b)
+      (ProverComputesBool
+        (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
+          (↑b : CVar F).eval env = .ok (bit bb))
+        (fun _ => bit (ab || bb)) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := or_complete hfresh ha hb
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 /-! ### `xor` (Circuit/DSL/Boolean)
 
