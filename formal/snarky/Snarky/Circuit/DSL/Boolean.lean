@@ -287,17 +287,18 @@ and the result reads as the conjunction bit in the final table. -/
 @[spec] theorem and_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (a b : BoolVar F) (ab bb : Bool)
     (Q : PostCond (BoolVar F)
-      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+      (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.and (c := Basic F) a b)
       (ProverComputesBool
         (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
           (↑b : CVar F).eval env = .ok (bit bb))
         (fun _ r env' => (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := and_complete hfresh ha hb
+  intro st hpre
+  obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := and_complete st.fresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  exact hk r nv' env' heval ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  exact hk r ⟨nv', env', hf⟩ heval (prove_assignments_le hrun)
 
 open Std.Do in
 /-- **`or` soundness triple**, composed by `mvcgen` from `and_spec` on the negated
@@ -333,17 +334,18 @@ and the result reads as the disjunction bit in the final table. -/
 @[spec] theorem or_complete_spec {F : Type} [CommRing F] [NoZeroDivisors F]
     [DecidableEq F] (a b : BoolVar F) (ab bb : Bool)
     (Q : PostCond (BoolVar F)
-      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+      (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.or (c := Basic F) a b)
       (ProverComputesBool
         (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
           (↑b : CVar F).eval env = .ok (bit bb))
         (fun _ r env' => (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := or_complete hfresh ha hb
+  intro st hpre
+  obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := or_complete st.fresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  exact hk r nv' env' heval ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  exact hk r ⟨nv', env', hf⟩ heval (prove_assignments_le hrun)
 
 /-! ### `xor` (Circuit/DSL/Boolean)
 
@@ -616,17 +618,18 @@ and the result reads as the xor bit in the final table. -/
 @[spec] theorem xor_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : BoolVar F) (ab bb : Bool)
     (Q : PostCond (BoolVar F)
-      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+      (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.xor (c := Basic F) a b)
       (ProverComputesBool
         (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
           (↑b : CVar F).eval env = .ok (bit bb))
         (fun _ r env' => (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := xor_complete hfresh ha hb
+  intro st hpre
+  obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := xor_complete st.fresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  exact hk r nv' env' heval ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  exact hk r ⟨nv', env', hf⟩ heval (prove_assignments_le hrun)
 
 /-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
 
@@ -802,20 +805,21 @@ succeeds and the result reads as the chosen branch in the final table. -/
 @[spec] theorem select_complete_spec {F : Type} [Field F] [DecidableEq F]
     (b : BoolVar F) (t e : FVar F) (bb : Bool)
     (Q : PostCond (FVar F)
-      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+      (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (select (c := Basic F) b t e)
       (ProverComputes
         (fun env => (↑b : CVar F).eval env = .ok (bit bb) ∧
           (t.eval env).isOk ∧ (e.eval env).isOk)
         (fun env r env' => ∀ tv ev, t.eval env = .ok tv → e.eval env = .ok ev →
           r.eval env' = .ok (if bb then tv else ev)) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hb, hokt, hoke⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hb, hokt, hoke⟩, hk⟩ := hpre
   obtain ⟨tv, ht⟩ := CVar.evalOk hokt
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := select_complete hfresh hb ht he
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := select_complete st.fresh hb ht he
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun t' e' ht' he' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  refine hk r ⟨nv', env', hf⟩ (fun t' e' ht' he' => ?_) (prove_assignments_le hrun)
   rw [ht] at ht'; rw [he] at he'
   injection ht' with ht'; injection he' with he'
   exact ht' ▸ he' ▸ heval

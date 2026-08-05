@@ -284,6 +284,34 @@ theorem prove_freshFrom {holds : c → Assignments F → Bool} {m : CircuitM F c
           exact absurd (hpv ▸ hv) hlt
   | labelOp s k ih => exact ih hfresh h
 
+/-! ## The prover state, invariant-carrying
+
+PS keeps the counter and the store in ONE mutable object whose only mutator is
+allocation, so "nothing at or above the counter is assigned" holds by construction and
+cannot even be violated. The pure rendering above splits them into two independent
+arguments, which lets a caller form a pair PS cannot represent — so the invariant has
+to live somewhere. Here it lives in the type: a `ProverState` cannot be built without
+it, and `prove_freshFrom` supplies it for every successor state, so the statements
+downstream never mention freshness again. -/
+
+/-- A prover state: the allocation counter, the table, and the invariant relating
+them. -/
+structure ProverState (F : Type u) where
+  /-- The next-variable counter. -/
+  nv : Nat
+  /-- The witness table filled so far. -/
+  env : Assignments F
+  /-- Nothing at or above the counter is assigned — carried, never re-proved. -/
+  fresh : env.FreshFrom nv
+
+/-- Every successor state's invariant, packaged for the readings below: a successful
+run from an invariant-carrying state leaves one. -/
+theorem ProverState.freshOut {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {st : ProverState F} {out : Proved F α}
+    (h : prove holds m st.nv st.env = .ok out) :
+    out.assignments.FreshFrom out.nextVar :=
+  prove_freshFrom st.fresh h
+
 /-! ## Interpreter agreement -/
 
 /-- **Builder/prover agreement**: on a successful prover run the two interpreters compute

@@ -436,19 +436,20 @@ reads as the answer bit in the final table. -/
 @[spec] theorem equals_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : FVar F)
     (Q : PostCond (BoolVar F)
-      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+      (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (equals (c := Basic F) a b)
       (ProverComputesBool
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
         (fun env r env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
           (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0)) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hoka, hokb⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := equals_complete hfresh ha hb
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := equals_complete st.fresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun a' b' ha' hb' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  refine hk r ⟨nv', env', hf⟩ (fun a' b' ha' hb' => ?_) (prove_assignments_le hrun)
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
   exact ha' ▸ hb' ▸ heval
@@ -503,19 +504,20 @@ reads as the negated answer bit in the final table. -/
 @[spec] theorem neq_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : FVar F)
     (Q : PostCond (BoolVar F)
-      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+      (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (neq (c := Basic F) a b)
       (ProverComputesBool
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
         (fun env r env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
           (↑r : CVar F).eval env' = .ok (if av = bv then 0 else 1)) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hoka, hokb⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := neq_complete hfresh ha hb
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := neq_complete st.fresh ha hb
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun a' b' ha' hb' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  refine hk r ⟨nv', env', hf⟩ (fun a' b' ha' hb' => ?_) (prove_assignments_le hrun)
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
   exact ha' ▸ hb' ▸ heval
@@ -645,18 +647,19 @@ open Std.Do in
 succeeds and the result reads as the inverse in the final table. -/
 @[spec] theorem inv_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x : FVar F)
-    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (inv (c := Basic F) x)
       (ProverComputes (fun env => (x.eval env).isOk ∧
           ∀ xv, x.eval env = .ok xv → xv ≠ 0)
         (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv⁻¹) Q)
       Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokx, hne⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokx, hne⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := inv_complete hfresh hx (hne xv hx)
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := inv_complete st.fresh hx (hne xv hx)
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun x' hx' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  refine hk r ⟨nv', env', hf⟩ (fun x' hx' => ?_) (prove_assignments_le hrun)
   rw [hx] at hx'
   injection hx' with hx'
   exact hx' ▸ heval
@@ -692,18 +695,19 @@ open Std.Do in
 reads as the product in the final table. -/
 @[spec] theorem mul_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x y : FVar F)
-    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (mul (c := Basic F) x y)
       (ProverComputes (fun env => (x.eval env).isOk ∧ (y.eval env).isOk)
         (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
           r.eval env' = .ok (xv * yv)) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokx, hoky⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokx, hoky⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := mul_complete hfresh hx hy
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := mul_complete st.fresh hx hy
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun x' y' hx' hy' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  refine hk r ⟨nv', env', hf⟩ (fun x' y' hx' hy' => ?_) (prove_assignments_le hrun)
   rw [hx] at hx'; rw [hy] at hy'
   injection hx' with hx'; injection hy' with hy'
   exact hx' ▸ hy' ▸ heval
@@ -776,7 +780,7 @@ open Std.Do in
 carrier: a nonzero divisor makes the run succeed with the quotient. -/
 @[spec] theorem div_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
-    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (div (c := Basic F) x y)
       (ProverComputes
         (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
@@ -785,18 +789,16 @@ carrier: a nonzero divisor makes the run succeed with the quotient. -/
           r.eval env' = .ok (xv / yv)) Q) Q := by
   simp only [div, ProverM.retag_bind]
   mvcgen
-  rename_i nv env hpre
-  obtain ⟨hfresh, ⟨hokx, hoky, hyne⟩, hk⟩ := hpre
-  refine ⟨hfresh, ⟨hoky, hyne⟩, fun r nv' env' hr ⟨hle, hfresh'⟩ => ?_⟩
+  rename_i st hpre
+  obtain ⟨⟨hokx, hoky, hyne⟩, hk⟩ := hpre
+  refine ⟨⟨hoky, hyne⟩, fun r st' hr hle => ?_⟩
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  have hx' : x.eval env' = .ok xv := CVar.eval_le hle hx
-  have hr' : r.eval env' = .ok yv⁻¹ := hr yv hy
-  refine mul_complete_spec x r Q nv' env'
-    ⟨hfresh', ⟨by rw [hx']; rfl, by rw [hr']; rfl⟩,
-      fun res nv'' env'' hres ⟨hle', hfresh''⟩ => ?_⟩
-  refine hk res nv'' env'' (fun a b ha hb => ?_)
-    (Assignments.Extends.trans ⟨hle, hfresh'⟩ ⟨hle', hfresh''⟩)
+  have hx' : x.eval st'.env = .ok xv := CVar.eval_le hle hx
+  have hr' : r.eval st'.env = .ok yv⁻¹ := hr yv hy
+  refine mul_complete_spec x r Q st'
+    ⟨⟨by rw [hx']; rfl, by rw [hr']; rfl⟩, fun res st'' hres hle' => ?_⟩
+  refine hk res st'' (fun a b ha hb => ?_) (hle.trans hle')
   rw [hx] at ha; rw [hy] at hb
   injection ha with ha; injection hb with hb
   subst ha; subst hb
@@ -827,17 +829,18 @@ open Std.Do in
 reads as the square in the final table. -/
 @[spec] theorem square_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x : FVar F)
-    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (square (c := Basic F) x)
       (ProverComputes (fun env => (x.eval env).isOk)
         (fun env r env' => ∀ xv, x.eval env = .ok xv →
           r.eval env' = .ok (xv * xv)) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, hokx, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨hokx, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := square_complete hfresh hx
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := square_complete st.fresh hx
   simp only [wp, PredTrans.apply, hrun]
-  refine hk r nv' env' (fun x' hx' => ?_) ⟨prove_assignments_le hrun, hfresh'⟩
+  intro hf
+  refine hk r ⟨nv', env', hf⟩ (fun x' hx' => ?_) (prove_assignments_le hrun)
   rw [hx] at hx'
   injection hx' with hx'
   exact hx' ▸ heval

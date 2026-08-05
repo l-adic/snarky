@@ -205,30 +205,30 @@ Stated as a raw `Triple` with the monad passed explicitly: the carrier is a type
 tag, and the `⦃⦄` sugar cannot pin it. -/
 @[spec] theorem assertEqual_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
-    (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertEqual (c := Basic F) x y)
       (ProverAsserts
         (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
           ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) Q)
       Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokx, hoky, heq⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokx, hoky, heq⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hxy := heq xv yv hx hy
-  have hQ := hk nv env (Assignments.Extends.rfl hfresh)
-  have hch : (BasicSystem.equal (c := Basic F) x y).holds env = true := by
-    show (Basic.equal x y).holds env = true
+  have hQ := hk st (Assignments.Le.refl st.env)
+  have hch : (BasicSystem.equal (c := Basic F) x y).holds st.env = true := by
+    show (Basic.equal x y).holds st.env = true
     simp [Basic.holds, hx, hy, hxy]
   cases x <;> cases y <;> simp only [assertEqual] <;>
     first
     | (rename_i f g
        split_ifs with hfg
-       · exact hQ
-       · simp [addConstraint, wp, PredTrans.apply, prove, hch]
-         exact hQ)
-    | (simp [addConstraint, wp, PredTrans.apply, prove, hch]
-       exact hQ)
+       · exact fun _ => hQ
+       · simp only [addConstraint, wp, PredTrans.apply, prove, hch, if_true]
+         exact fun _ => hQ)
+    | (simp only [addConstraint, wp, PredTrans.apply, prove, hch, if_true]
+       exact fun _ => hQ)
 
 section MvcgenDemos
 
@@ -255,22 +255,22 @@ example (x y z : FVar F) (xv yv zv : F) :
     Triple (m := ProverM F)
       (do assertEqual (c := Basic F) x y
           assertEqual (c := Basic F) y z)
-      (fun nv env => ⌜Assignments.FreshFrom env nv ∧ x.eval env = .ok xv ∧
-        y.eval env = .ok yv ∧ z.eval env = .ok zv ∧ xv = yv ∧ yv = zv⌝)
-      (PostCond.noThrow fun _ _nv _env => ⌜True⌝) := by
+      (fun st => ⌜x.eval st.env = .ok xv ∧ y.eval st.env = .ok yv ∧
+        z.eval st.env = .ok zv ∧ xv = yv ∧ yv = zv⌝)
+      (PostCond.noThrow fun _ _st => ⌜True⌝) := by
   mvcgen
   rename_i h
-  obtain ⟨hfresh, hx, hy, hz, hxy, hyz⟩ := h
+  obtain ⟨hx, hy, hz, hxy, hyz⟩ := h
   subst hxy
   subst hyz
-  refine ⟨hfresh, ⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
-    fun nv' env' ⟨hle, hfresh'⟩ => ?_⟩
+  refine ⟨⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
+    fun st' hle => ?_⟩
   · rw [hx] at ha; rw [hy] at hb
     injection ha with ha; injection hb with hb
     rw [← ha, ← hb]
-  · refine assertEqual_complete_spec y z _ nv' env'
-      ⟨hfresh', ⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
-        fun a b ha hb => ?_⟩, fun _ _ _ => trivial⟩
+  · refine assertEqual_complete_spec y z _ st'
+      ⟨⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
+        fun a b ha hb => ?_⟩, fun _ _ => trivial⟩
     rw [CVar.eval_le hle hy] at ha; rw [CVar.eval_le hle hz] at hb
     injection ha with ha; injection hb with hb
     rw [← ha, ← hb]
@@ -334,23 +334,24 @@ open Std.Do in
 nonzero value, extending the table with the witnessed inverse. -/
 @[spec] theorem assertNonZero_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : FVar F)
-    (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertNonZero (c := Basic F) v)
       (ProverAsserts (fun env => (v.eval env).isOk ∧
         ∀ vv, v.eval env = .ok vv → vv ≠ 0) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokv, hne⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokv, hne⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
   have hvv := hne vv hv
   cases v <;> simp only [assertNonZero]
   case const f =>
     have hf : f = vv := by simpa [CVar.eval] using hv
     rw [if_neg (by rw [hf]; exact hvv)]
-    exact hk nv env (Assignments.Extends.rfl hfresh)
+    exact fun _ => hk st (Assignments.Le.refl st.env)
   all_goals
-    (obtain ⟨⟨r, nv', env'⟩, hrun, _, hfresh'⟩ := inv_complete hfresh hv hvv
+    (obtain ⟨⟨r, nv', env'⟩, hrun, -, -⟩ := inv_complete st.fresh hv hvv
      simp only [wp, PredTrans.apply, prove_bind, hrun, Except.bind]
-     exact hk nv' env' ⟨prove_assignments_le hrun, hfresh'⟩)
+     intro hf
+     exact hk ⟨nv', env', hf⟩ (prove_assignments_le hrun))
 
 open Std.Do in
 /-- **`assertNotEqual` soundness** (D12), delegated to `assertNonZero` through the
@@ -371,16 +372,16 @@ open Std.Do in
 `assertNonZero` through the difference. -/
 @[spec] theorem assertNotEqual_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
-    (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertNotEqual (c := Basic F) x y)
       (ProverAsserts (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
         ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokx, hoky, hne⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokx, hoky, hne⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  refine assertNonZero_complete_spec (CVar.sub_ x y) Q nv env
-    ⟨hfresh, ⟨by rw [CVar.eval_sub_ hx hy]; rfl, fun d hd => ?_⟩, hk⟩
+  refine assertNonZero_complete_spec (CVar.sub_ x y) Q st
+    ⟨⟨by rw [CVar.eval_sub_ hx hy]; rfl, fun d hd => ?_⟩, hk⟩
   rw [CVar.eval_sub_ hx hy] at hd
   injection hd with hd
   exact hd ▸ sub_ne_zero.mpr (hne xv yv hx hy)
@@ -402,20 +403,20 @@ open Std.Do in
 square, changing nothing. -/
 @[spec] theorem assertSquare_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
-    (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertSquare (c := Basic F) x y)
       (ProverAsserts (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
         ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hsq := hsq' xv yv hx hy
-  have hch : (BasicSystem.square (c := Basic F) x y).holds env = true := by
-    show (Basic.square x y).holds env = true
+  have hch : (BasicSystem.square (c := Basic F) x y).holds st.env = true := by
+    show (Basic.square x y).holds st.env = true
     simp [Basic.holds, hx, hy, hsq]
   simp [assertSquare, addConstraint, wp, PredTrans.apply, prove, hch]
-  exact hk nv env (Assignments.Extends.rfl hfresh)
+  exact fun _ => hk st (Assignments.Le.refl st.env)
 
 open Std.Do in
 /-- **`assert` soundness** (D12): `assert v` asserts the bit reads `1`. -/
@@ -433,15 +434,15 @@ open Std.Do in
 reads `1`. -/
 @[spec] theorem assert_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : BoolVar F)
-    (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assert (c := Basic F) v)
       (ProverAsserts (fun env => ((↑v : CVar F).eval env).isOk ∧
         ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1) Q) Q := by
-  intro nv env hpre
-  obtain ⟨hfresh, ⟨hokv, hone⟩, hk⟩ := hpre
+  intro st hpre
+  obtain ⟨⟨hokv, hone⟩, hk⟩ := hpre
   obtain ⟨bv, hv⟩ := CVar.evalOk hokv
-  refine assertEqual_complete_spec ↑v (.const 1) Q nv env
-    ⟨hfresh, ⟨by rw [hv]; rfl, by rfl, fun a b ha hb => ?_⟩, hk⟩
+  refine assertEqual_complete_spec ↑v (.const 1) Q st
+    ⟨⟨by rw [hv]; rfl, by rfl, fun a b ha hb => ?_⟩, hk⟩
   rw [hv] at ha
   injection ha with ha
   injection hb with hb

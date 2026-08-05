@@ -188,40 +188,53 @@ def ProverM (F : Type) (α : Type) := CircuitM F (Basic F) α
 instance : Monad (ProverM F) := inferInstanceAs (Monad (CircuitM F (Basic F)))
 instance : LawfulMonad (ProverM F) := inferInstanceAs (LawfulMonad (CircuitM F (Basic F)))
 
-/-- The prover reading: the assignment table is mutable state, `EvalError` the
-exception layer — a total-correctness postcondition (`⇓`) asserts the run cannot
-fail. -/
+/-- The prover reading: the state is the invariant-carrying `ProverState` (counter,
+table, and the freshness relating them — PS's single mutable store, rendered as one
+object rather than two arguments), `EvalError` the exception layer. A
+total-correctness postcondition (`⇓`) asserts the run cannot fail.
+
+The successor state's invariant is quantified rather than constructed: `∀ hf, Q …
+⟨…, hf⟩` avoids a dependent match, and proof irrelevance plus
+`ProverState.freshOut` — which inhabits it — make the quantifier free. -/
 instance ProverM.instWP [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
-    WP (ProverM F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) where
+    WP (ProverM F) (.arg (ProverState F) (.except EvalError .pure)) where
   wp x := {
-    trans := fun Q nv env =>
-      match prove Basic.holds x nv env with
-      | .ok out => Q.1 out.result out.nextVar out.assignments
+    trans := fun Q st =>
+      match prove Basic.holds x st.nv st.env with
+      | .ok out => .up (∀ hf : out.assignments.FreshFrom out.nextVar,
+          (Q.1 out.result ⟨out.nextVar, out.assignments, hf⟩).down)
       | .error e => Q.2.1 e
     conjunctiveRaw := by
       intro Q₁ Q₂
       apply SPred.bientails.of_eq
-      ext nv env
-      rcases h : prove Basic.holds x nv env with e | out <;>
-        simp [SPred.and, ExceptConds.and, h]
+      ext st
+      rcases h : prove Basic.holds x st.nv st.env with e | out <;>
+        simp [SPred.and, ExceptConds.and, h, forall_and]
   }
 
-/-- The prover `wp` is a monad morphism: `prove_bind` is the composition law. -/
+/-- The prover `wp` is a monad morphism: `prove_bind` is the composition law, and the
+intermediate state's invariant — the quantifier the successor carries — is discharged
+by `ProverState.freshOut`. -/
 instance ProverM.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
-    WPMonad (ProverM F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) where
+    WPMonad (ProverM F) (.arg (ProverState F) (.except EvalError .pure)) where
   wp_pure a := by
-    ext Q nv env
-    simp [wp, PredTrans.apply]
-    rfl
+    ext Q st
+    simp only [wp, PredTrans.apply]
+    exact ⟨fun h => h st.fresh, fun h _ => h⟩
   wp_bind x f := by
-    ext Q nv env
+    ext Q st
     simp only [PredTrans.apply_Bind_bind]
     simp only [wp, PredTrans.apply]
     rw [show (do let a ← x; f a : ProverM F _)
         = (x >>= f : CircuitM F (Basic F) _) from rfl, prove_bind]
-    rcases h : prove Basic.holds x nv env with e | out
+    rcases h : prove Basic.holds x st.nv st.env with e | out
     · simp [Except.bind]
-    · simp [Except.bind]
+    · simp only [Except.bind]
+      constructor
+      · intro hL _
+        exact hL
+      · intro hR
+        exact hR (ProverState.freshOut (st := st) h)
 
 /-- The spec shape of a BOOLEAN compute gadget — returns a `BoolVar` whose coerced
 reading the constraints characterize, conditionally on the operands reading as bits:
@@ -233,16 +246,15 @@ abbrev ComputesBool [Add F] [Mul F] (fact : Valuation F → F → Prop)
     fact V ((↑r : CVar F).val V) → (Q.1 r V nv').down)
 
 /-- The prover-reading spec shape of an assertion gadget: given `facts` about the
-incoming table (and counter-freshness, the invariant every prover run threads), the
-run cannot fail, and the caller continues at a table that EXTENDS the incoming one
-with freshness re-established — old facts transport along `Assignments.Le` via
-`CVar.eval_le`. Reads "`g` succeeds given `facts`". -/
+incoming table, the run cannot fail, and the caller continues at a state whose table
+extends the incoming one — old facts transport along `Assignments.Le` via
+`CVar.eval_le`. Freshness is absent: the state carries it. Reads "`g` succeeds given
+`facts`". -/
 abbrev ProverAsserts (facts : Assignments F → Prop)
-    (Q : PostCond PUnit (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
-    Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
-  fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
-    ∀ (nv' : Nat) (env' : Assignments F),
-      env.Extends env' nv' → (Q.1 PUnit.unit nv' env').down)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
+  fun st => .up (facts st.env ∧
+    ∀ st' : ProverState F, st.env.Le st'.env → (Q.1 PUnit.unit st').down)
 
 /-- The prover-reading spec shape of a compute gadget: given `facts`, the run succeeds
 and the result satisfies `post` in the final (extended, fresh) table. Reads "`g`
@@ -256,21 +268,21 @@ reason `facts` should say `(x.eval env).isOk` rather than `∃ xv, x.eval env = 
 — `evalOk` below extracts the value inside the proof. -/
 abbrev ProverComputes (facts : Assignments F → Prop)
     (post : Assignments F → FVar F → Assignments F → Prop)
-    (Q : PostCond (FVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
-    Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
-  fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
-    ∀ (r : FVar F) (nv' : Nat) (env' : Assignments F),
-      post env r env' → env.Extends env' nv' → (Q.1 r nv' env').down)
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
+  fun st => .up (facts st.env ∧
+    ∀ (r : FVar F) (st' : ProverState F),
+      post st.env r st'.env → st.env.Le st'.env → (Q.1 r st').down)
 
 /-- The prover-reading spec shape of a boolean compute gadget — `ProverComputes` with
 a `BoolVar` result. -/
 abbrev ProverComputesBool (facts : Assignments F → Prop)
     (post : Assignments F → BoolVar F → Assignments F → Prop)
-    (Q : PostCond (BoolVar F) (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
-    Assertion (.arg Nat (.arg (Assignments F) (.except EvalError .pure))) :=
-  fun nv env => .up (env.FreshFrom nv ∧ facts env ∧
-    ∀ (r : BoolVar F) (nv' : Nat) (env' : Assignments F),
-      post env r env' → env.Extends env' nv' → (Q.1 r nv' env').down)
+    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
+  fun st => .up (facts st.env ∧
+    ∀ (r : BoolVar F) (st' : ProverState F),
+      post st.env r st'.env → st.env.Le st'.env → (Q.1 r st').down)
 
 /-- Extract the value behind a successful-evaluation fact — the bridge from the
 metavariable-free `isOk` form the specs' `facts` use to the equation their proofs
