@@ -44,10 +44,10 @@ are stated against the interpreters, never re-derived over the field alone, and 
 BESIDE their gadgets (this module imports the backend for exactly that — a deliberate
 deviation from the PS import graph, adjacency over layering): the `eq`
 rows are `equals_spec`/`equals_complete_spec` below, plus the fixed-input `decide`
-examples in `Snarky.Example`; the `mul`/`inv`/`div` rows and `square` carry triple
-laws (`*_spec`/`*_complete_spec`, all `@[spec]`; `div`'s soundness is composed by
-`mvcgen` from `inv_spec` and `mul_spec`), `pow` its Except-form pair
-(compositional through the bind laws). The `sum` row is `sum_eval` below (`sum` is pure — its
+examples in `Snarky.Example`; the `mul`/`inv`/`div`/`square`/`pow` rows carry triple
+laws (`*_spec`/`*_complete_spec`, all `@[spec]`), `div`'s soundness composed by
+`mvcgen` from `inv_spec` and `mul_spec` and `pow`'s through the fuel recursion from
+`mul_spec`. The `sum` row is `sum_eval` below (`sum` is pure — its
 evaluation IS its interpreter semantics). The `negate` row is `Circuit/CVar` algebra
 under `reduce_eval`; `seal` is the
 `DSL/Utils` follow-on (plan §6). The spec's end-to-end shape — compile, solve against
@@ -56,12 +56,12 @@ step 14).
 
 Public results: the D12 gadget laws beside their gadgets — the triple pairs
 `mul_spec`/`_complete_spec`, `inv_spec`/`_complete_spec`, `div_spec`/`_complete_spec`,
-`square_spec`/`_complete_spec`; the Except-form `mul_sound`/`_complete` and
-`inv_complete`/`square_complete` retained while `Boolean`'s laws and the prover
-reductions consume them; the triple pairs `equals_spec`/`_complete_spec` and
+`square_spec`/`_complete_spec`, `pow_spec`/`pow_complete`; the Except-form
+completeness laws are retained as the prover reductions the `*_complete_spec`
+triples derive from; the triple pairs `equals_spec`/`_complete_spec` and
 `neq_spec`/`_complete_spec` (their Except-form completeness twins retained as the
 prover reductions),
-`sum_eval`, `pow_sound`/`_complete` — all `roots.txt` entries; the `*Wit`/`*Core`
+`sum_eval` — all `roots.txt` entries; the `*Wit`/`*Core`
 defs are named internals for those laws, not user API.
 -/
 
@@ -510,27 +510,6 @@ reads as the negated answer bit in the final table. -/
 
 /-! ### `mul` -/
 
-/-- What `mulCore` builds: one fresh variable, one `r1cs` constraint. -/
-private theorem build_mulCore {F : Type u} [Add F] [Mul F] (x y : FVar F) (nv : Nat) :
-    build (mulCore (c := Basic F) x y) nv = ⟨.var nv, nv + 1, [.r1cs x y (.var nv)]⟩ :=
-  rfl
-
-/-- `mulCore` soundness: the constraint pins the fresh variable to the product. -/
-private theorem mulCore_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (mulCore (c := Basic F) x y) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
-    (build (mulCore (c := Basic F) x y) nv).result.eval env = .ok (xv * yv) := by
-  rw [build_mulCore] at hsat ⊢
-  have h₁ := hsat _ (List.mem_cons_self ..)
-  cases hnv : env nv with
-  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
-  | some zv =>
-    simp only [Basic.holds, CVar.eval, hx, hy, hnv, decide_eq_true_eq] at h₁
-    show (CVar.var nv).eval env = _
-    simp [CVar.eval, hnv, ← h₁]
-
 /-- The honest `mulCore` run: the prover succeeds, assigning the product at `nv`. -/
 private theorem mulCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
@@ -552,24 +531,6 @@ private theorem mulCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F] [Decid
     simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, CVar.eval_le hle hy,
       Assignments.extend]
   exact prove_witnessCore hw hfresh hch
-
-/-- **`mul` soundness** (D12): any satisfying assignment pins the result to the product
-— the constant-folding fast paths included, which is the fold-preservation content. -/
-theorem mul_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (mul (c := Basic F) x y) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) :
-    (build (mul (c := Basic F) x y) nv).result.eval env = .ok (xv * yv) := by
-  unfold mul at hsat ⊢
-  cases x <;> cases y <;>
-    first
-    | (simp only [CVar.eval, Except.ok.injEq] at hx hy; subst hx; subst hy; rfl)
-    | (simp only [CVar.eval, Except.ok.injEq] at hx; subst hx;
-       exact CVar.eval_scale_ hy _)
-    | (simp only [CVar.eval, Except.ok.injEq] at hy; subst hy;
-       simpa [mul_comm] using CVar.eval_scale_ hx _)
-    | exact mulCore_sound hsat hx hy
 
 /-- **`mul` completeness** (D12): the honest prover run succeeds, computes the product,
 and re-establishes freshness. -/
@@ -841,63 +802,60 @@ reads as the square in the final table. -/
 
 /-! ### `pow` (Circuit/DSL/Field) — composed through the fuel recursion -/
 
-/-- `powGo` soundness, by induction on the fuel: with the fuel adequate for the
-exponent, any satisfying assignment pins the result to the power. -/
-private theorem powGo_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F] :
-    ∀ (fuel : Nat) {x : FVar F} (n : Nat) {nv : Nat} {env : Assignments F} {xv : F},
-      n ≤ fuel + 1 →
-      (∀ con ∈ (build (powGo (c := Basic F) fuel x n) nv).constraints,
-        con.holds env = true) →
-      x.eval env = .ok xv →
-      (build (powGo (c := Basic F) fuel x n) nv).result.eval env = .ok (xv ^ n) := by
+open Std.Do in
+/-- `powGo` soundness as a triple, by induction on the fuel: with the fuel adequate
+for the exponent, the result reads as the power. Generic over any lawful backend. -/
+@[spec] private theorem powGo_spec {F c : Type} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] :
+    ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
+      ∀ (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))),
+        ⦃Computes (fun V rv => rv = x.val V ^ n) Q⦄
+        powGo (c := c) fuel x n
+        ⦃Q⦄ := by
   intro fuel
   induction fuel with
   | zero =>
-    intro x n nv env xv hfuel hsat hx
+    intro x n hfuel Q
     match n, hfuel with
-    | 0, _ => show Except.ok _ = _; rw [pow_zero]
-    | 1, _ => rw [pow_one]; exact hx
+    | 0, _ => exact fun V nv hpre _ => hpre _ nv (by show (1 : F) = _; rw [pow_zero])
+    | 1, _ => exact fun V nv hpre _ => hpre _ nv (by show x.val V = _; rw [pow_one])
   | succ fuel ih =>
-    intro x n nv env xv hfuel hsat hx
+    intro x n hfuel Q
     match n with
-    | 0 => show Except.ok _ = _; rw [pow_zero]
-    | 1 => rw [pow_one]; exact hx
+    | 0 => exact fun V nv hpre _ => hpre _ nv (by show (1 : F) = _; rw [pow_zero])
+    | 1 => exact fun V nv hpre _ => hpre _ nv (by show x.val V = _; rw [pow_one])
     | m + 2 =>
-      unfold powGo at hsat ⊢
-      simp only [build_bind] at hsat ⊢
-      have hsq := mul_sound
-        (fun con h => hsat con (List.mem_append_left _ h)) hx hx
-      have hrest := fun con h => hsat con (List.mem_append_right _ h)
+      simp only [powGo]
+      mvcgen
+      rename_i V nv hpre
+      intro sq _nv₁ hsq
+      simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+      refine ih sq ((m + 2) / 2) (by omega) _ V _ fun y _nv₂ hy => ?_
       by_cases hpar : (m + 2) % 2 = 0
-      · simp only [eq_true hpar, if_true] at hrest ⊢
-        have hy := ih ((m + 2) / 2) (by omega)
-          (fun con h => hrest con (List.mem_append_left _ h)) hsq
-        have hpow : (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
-          rw [← pow_two, ← pow_mul]
-          congr 1
-          omega
-        exact hpow ▸ hy
-      · simp only [eq_false hpar, if_false] at hrest ⊢
-        have hy := ih ((m + 2) / 2) (by omega)
-          (fun con h => hrest con (List.mem_append_left _ h)) hsq
-        have hfin := mul_sound
-          (fun con h => hrest con (List.mem_append_right _ h)) hx hy
-        have hpow : xv * (xv * xv) ^ ((m + 2) / 2) = xv ^ (m + 2) := by
-          rw [← pow_two, ← pow_mul, mul_comm, ← pow_succ]
-          congr 1
-          omega
-        exact hpow ▸ hfin
+      · simp only [eq_true hpar, if_true]
+        intro _
+        refine hpre y _ ?_
+        rw [hy, hsq, ← pow_two, ← pow_mul]
+        congr 1
+        omega
+      · simp only [eq_false hpar, if_false]
+        refine mul_spec (c := c) x y _ V _ fun r _nv₃ hr => ?_
+        refine hpre r _ ?_
+        rw [hr, hy, hsq, ← pow_two, ← pow_mul, mul_comm, ← pow_succ]
+        congr 1
+        omega
 
-/-- **`pow` soundness** (D12), composed through the fuel recursion from `mul_sound` and
-`build_bind`. -/
-theorem pow_sound {F : Type u} [Add F] [CommMonoidWithZero F] [DecidableEq F]
-    {x : FVar F} {n : Nat} {nv : Nat} {env : Assignments F} {xv : F}
-    (hsat : ∀ con ∈ (build (pow (c := Basic F) x n) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) :
-    (build (pow (c := Basic F) x n) nv).result.eval env = .ok (xv ^ n) := by
-  unfold pow at hsat ⊢
-  exact powGo_sound n n (Nat.le_succ n) hsat hx
+open Std.Do in
+/-- **`pow` soundness triple**, composed through the fuel recursion from `mul_spec`:
+the result reads as the operand's power. Generic over any lawful backend. -/
+@[spec] theorem pow_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x : FVar F) (n : Nat)
+    (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃Computes (fun V rv => rv = x.val V ^ n) Q⦄
+    pow (c := c) x n
+    ⦃Q⦄ :=
+  powGo_spec n x n (Nat.le_succ n) Q
 
 /-- `powGo` completeness, by induction on the fuel through `prove_bind` and
 `mul_complete`. -/
