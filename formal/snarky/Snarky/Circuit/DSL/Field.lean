@@ -31,7 +31,7 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   the `Prod` instances' first Lean consumer. Same one `existsOp` of two variables, same
   order (PS's record rows sort alphabetically: `r`, `zInv`), same absence of `boolean`
   checks — the gadget's two `r1cs` constraints already force booleanity
-  (`Snarky.equals_sound`).
+  (`Snarky.equals_spec`).
 - `neq` is `not` after `equals`, as in PS (whose `not` rides the HeytingAlgebra action
   instance, D8); `not` lives with its family in `DSL/Boolean`, above this module, so
   `neq` inlines its one-line retag.
@@ -43,7 +43,7 @@ D9 survey (the `snarky-test-utils` Field spec), in the D12 statement form — ga
 are stated against the interpreters, never re-derived over the field alone, and live
 BESIDE their gadgets (this module imports the backend for exactly that — a deliberate
 deviation from the PS import graph, adjacency over layering): the `eq`
-rows are `equals_sound`/`equals_complete` below, plus the fixed-input `decide`
+rows are `equals_spec`/`equals_complete_spec` below, plus the fixed-input `decide`
 examples in `Snarky.Example`; the `mul`/`inv`/`div` rows and `square` carry triple
 laws (`*_spec`/`*_complete_spec`, all `@[spec]`; `div`'s soundness is composed by
 `mvcgen` from `inv_spec` and `mul_spec`), `pow` its Except-form pair
@@ -58,7 +58,9 @@ Public results: the D12 gadget laws beside their gadgets — the triple pairs
 `mul_spec`/`_complete_spec`, `inv_spec`/`_complete_spec`, `div_spec`/`_complete_spec`,
 `square_spec`/`_complete_spec`; the Except-form `mul_sound`/`_complete` and
 `inv_complete`/`square_complete` retained while `Boolean`'s laws and the prover
-reductions consume them; `equals_sound`/`_complete`, `neq_sound`/`_complete`,
+reductions consume them; the triple pairs `equals_spec`/`_complete_spec` and
+`neq_spec`/`_complete_spec` (their Except-form completeness twins retained as the
+prover reductions),
 `sum_eval`, `pow_sound`/`_complete` — all `roots.txt` entries; the `*Wit`/`*Core`
 defs are named internals for those laws, not user API.
 -/
@@ -146,7 +148,7 @@ def equalsCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (z : CVa
 folds to the constant answer. Otherwise, with `z = a − b`: witness the pair `(r, zInv)`
 — `r` the claimed answer at `UnChecked Bool`, `zInv` the inverse or zero — and constrain
 `r · z = 0` and `zInv · z = 1 − r`. The pair forces `r = (a == b)` — in particular `r`
-is boolean (`Snarky.equals_sound`), which is why the witness may skip the `boolean`
+is boolean (`Snarky.equals_spec`), which is why the witness may skip the `boolean`
 check. -/
 def equals {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) :
     CircuitM F c (BoolVar F) :=
@@ -274,39 +276,6 @@ private theorem equals_checks {F : Type} [Field F] [DecidableEq F] (zv : F) :
   · simp [hz]
   · simp [hz]
 
-/-- What `equalsCore` builds, pinned definitionally: two fresh variables (`r` at `nv`,
-`zInv` at `nv + 1`) and the two `r1cs` constraints, the answer bit as result — the
-anti-drift anchor both `equals` laws read off. -/
-private theorem build_equalsCore {F : Type} [Field F] [DecidableEq F] (z : CVar F)
-    (nv : Nat) :
-    build (equalsCore (c := Basic F) z) nv =
-      ⟨.unchecked (.var nv), nv + 2,
-        [.r1cs (.var nv) z (.const 0),
-         .r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))]⟩ := rfl
-
-/-- `equalsCore` soundness: any satisfying assignment pins the answer bit. -/
-private theorem equalsCore_sound {F : Type} [Field F] [DecidableEq F] {z : CVar F}
-    {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
-    (hsat : ∀ con ∈ (build (equalsCore (c := Basic F) z) nv).constraints,
-      con.holds env = true) :
-    (build (equalsCore (c := Basic F) z) nv).result.toCVar.eval env
-      = .ok (if zv = 0 then 1 else 0) := by
-  rw [build_equalsCore] at hsat ⊢
-  rw [List.forall_mem_cons, List.forall_mem_cons] at hsat
-  obtain ⟨h₁, h₂, -⟩ := hsat
-  cases hnv : env nv with
-  | none => simp [Basic.holds, CVar.eval, hnv] at h₁
-  | some rv =>
-    cases hnv1 : env (nv + 1) with
-    | none => simp [Basic.holds, CVar.eval, hnv1] at h₂
-    | some iv =>
-      have hvnv : (CVar.var nv).eval env = .ok rv := by simp [CVar.eval, hnv]
-      have hsub : (CVar.sub_ (.const 1) (.var nv)).eval env = .ok (1 - rv) :=
-        CVar.eval_sub_ rfl hvnv
-      simp only [Basic.holds, CVar.eval, hnv, hnv1, hz, hsub, decide_eq_true_eq] at h₁ h₂
-      show (CVar.var nv).eval env = _
-      rw [hvnv, equals_pin h₁ h₂]
-
 /-- The honest `equalsCore` run, from any witness values satisfying the two constraint
 identities: the prover succeeds, assigning `r` at `nv` and `zInv` at `nv + 1`. -/
 private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
@@ -380,37 +349,6 @@ private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CV
     show ((env.extend nv _).extend (nv + 1) _) v = none
     simp [Assignments.extend, h1, h0, hfresh v (by omega)]
 
-/-- **`equals` soundness** (D12): for every assignment satisfying the constraints
-`equals a b` emits — adversarial witnesses included — the result evaluates to the
-equality bit of the inputs' values. In particular the result is boolean, which is what
-lets the gadget skip the `boolean` check. -/
-theorem equals_sound {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
-    {env : Assignments F} {av bv : F}
-    (hsat : ∀ con ∈ (build (equals (c := Basic F) a b) nv).constraints,
-      con.holds env = true)
-    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
-    (build (equals (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (if av = bv then 1 else 0) := by
-  have hz : (CVar.sub_ a b).eval env = .ok (av - bv) := CVar.eval_sub_ ha hb
-  have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
-  unfold equals at hsat ⊢
-  cases hcase : CVar.sub_ a b with
-  | const f =>
-    rw [hcase] at hz
-    have hf : f = av - bv := by simpa [CVar.eval] using hz
-    subst hf
-    show Except.ok _ = _
-    simp [sub_eq_zero]
-  | var v =>
-    rw [hcase] at hz hsat
-    simpa only [hiff] using equalsCore_sound hz hsat
-  | add x y =>
-    rw [hcase] at hz hsat
-    simpa only [hiff] using equalsCore_sound hz hsat
-  | scale k x =>
-    rw [hcase] at hz hsat
-    simpa only [hiff] using equalsCore_sound hz hsat
-
 /-- **`equals` completeness** (D12): on any assignment that evaluates the inputs and is
 unassigned from `nv` up, the honest prover run of `equals a b` succeeds and its result
 evaluates, under the final assignment, to the equality bit. -/
@@ -442,22 +380,74 @@ theorem equals_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv 
     rw [hcase] at hz
     simpa only [hiff] using equalsCore_complete hz hfresh
 
-/-! ### `neq` — composed from `equals` -/
+/-- What `equalsCore` builds at any backend: two fresh variables, two `r1cs` rows. -/
+private theorem build_equalsCore' {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] (z : CVar F) (nv : Nat) :
+    build (equalsCore (c := c) z) nv =
+      ⟨.unchecked (.var nv), nv + 2,
+        [BasicSystem.r1cs (.var nv) z (.const 0),
+         BasicSystem.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))]⟩ := rfl
 
-/-- **`neq` soundness** (D12): the negated equality bit. -/
-theorem neq_sound {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
-    {env : Assignments F} {av bv : F}
-    (hsat : ∀ con ∈ (build (neq (c := Basic F) a b) nv).constraints,
-      con.holds env = true)
-    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
-    (build (neq (c := Basic F) a b) nv).result.toCVar.eval env
-      = .ok (if av = bv then 0 else 1) := by
-  unfold neq at hsat ⊢
-  rw [build_bind] at hsat ⊢
-  have h₁ := equals_sound (fun con h => hsat con (List.mem_append_left _ h)) ha hb
-  show (CVar.sub_ (.const 1) _).eval env = _
-  rw [CVar.eval_sub_ rfl h₁]
-  by_cases h : av = bv <;> simp [h]
+open Std.Do in
+/-- **`equals` soundness triple**: the result bit reads `1` exactly when the operands
+read equal — the constant difference folds, the witnessing pair is pinned by its two
+rows (which also force the bit boolean, so the witness may skip the `boolean` check).
+Generic over any lawful backend. -/
+@[spec] theorem equals_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃ComputesBool (fun V rv => rv = if a.val V = b.val V then 1 else 0) Q⦄
+    equals (c := c) a b
+    ⦃Q⦄ := by
+  intro V nv hpre
+  have hz : (CVar.sub_ a b).val V = a.val V - b.val V := CVar.val_sub_ a b V
+  cases hZ : CVar.sub_ a b <;> simp only [equals, hZ]
+  case const f =>
+    intro _
+    refine hpre _ nv ?_
+    rw [hZ] at hz
+    show (CVar.const (if f = 0 then (1 : F) else 0)).val V = _
+    rw [show (f : F) = a.val V - b.val V from hz]
+    by_cases h : a.val V = b.val V
+    · rw [if_pos (sub_eq_zero.mpr h), if_pos h]
+      rfl
+    · rw [if_neg (sub_ne_zero.mpr h), if_neg h]
+      rfl
+  all_goals
+    (intro hsat
+     rw [build_equalsCore'] at hsat ⊢
+     rw [List.forall_mem_cons, List.forall_mem_cons] at hsat
+     obtain ⟨h₁, h₂, -⟩ := hsat
+     have e₁ := LawfulBasicSystem.holds_r1cs V _ _ _ h₁
+     have e₂ := LawfulBasicSystem.holds_r1cs V _ _ _ h₂
+     rw [← hZ, hz] at e₁ e₂
+     rw [CVar.val_sub_] at e₂
+     refine hpre _ (nv + 2) ?_
+     show V nv = _
+     have hpin : V nv = if a.val V - b.val V = 0 then 1 else 0 := equals_pin e₁ e₂
+     rw [hpin]
+     by_cases h : a.val V = b.val V
+     · rw [if_pos (sub_eq_zero.mpr h), if_pos h]
+     · rw [if_neg (sub_ne_zero.mpr h), if_neg h])
+
+open Std.Do in
+/-- **`equals` completeness triple** (prover reading): the run succeeds and the result
+reads as the answer bit in the final table. -/
+@[spec] theorem equals_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (a b : FVar F) (av bv : F)
+    (Q : PostCond (BoolVar F)
+      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (equals (c := Basic F) a b)
+      (ProverComputesBool
+        (fun env => a.eval env = .ok av ∧ b.eval env = .ok bv)
+        (fun _ => if av = bv then 1 else 0) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := equals_complete hfresh ha hb
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
+
+/-! ### `neq` — composed from `equals` -/
 
 /-- **`neq` completeness** (D12). -/
 theorem neq_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : Nat}
@@ -476,6 +466,47 @@ theorem neq_complete {F : Type} [Field F] [DecidableEq F] {a b : FVar F} {nv : N
   show (CVar.sub_ (.const 1) _).eval _ = _
   rw [CVar.eval_sub_ rfl he₁]
   by_cases h : av = bv <;> simp [h]
+
+open Std.Do in
+/-- **`neq` soundness triple**, composed by `mvcgen` from `equals_spec`: the result
+bit is the negated equality answer. Generic over any lawful backend. -/
+@[spec] theorem neq_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+    ⦃ComputesBool (fun V rv => rv = if a.val V = b.val V then 0 else 1) Q⦄
+    neq (c := c) a b
+    ⦃Q⦄ := by
+  simp only [neq]
+  mvcgen
+  rename_i V _nv hpre
+  intro r _nv' hr _
+  refine hpre _ _ ?_
+  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).val V = _
+  rw [CVar.val_sub_, hr]
+  by_cases h : a.val V = b.val V
+  · rw [if_pos h, if_pos h]
+    show (1 : F) - 1 = 0
+    ring
+  · rw [if_neg h, if_neg h]
+    show (1 : F) - 0 = 1
+    ring
+
+open Std.Do in
+/-- **`neq` completeness triple** (prover reading): the run succeeds and the result
+reads as the negated answer bit in the final table. -/
+@[spec] theorem neq_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (a b : FVar F) (av bv : F)
+    (Q : PostCond (BoolVar F)
+      (.arg Nat (.arg (Assignments F) (.except EvalError .pure)))) :
+    Triple (m := ProverM F) (neq (c := Basic F) a b)
+      (ProverComputesBool
+        (fun env => a.eval env = .ok av ∧ b.eval env = .ok bv)
+        (fun _ => if av = bv then 0 else 1) Q) Q := by
+  intro nv env hpre
+  obtain ⟨hfresh, ⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨r, nv', env'⟩, hrun, heval, hfresh'⟩ := neq_complete hfresh ha hb
+  simp only [wp, PredTrans.apply, hrun]
+  exact hk r nv' env' heval hfresh' (prove_assignments_le hrun)
 
 /-! ### `mul` -/
 

@@ -51,7 +51,8 @@ Snarky.prove_bind
 -- assignment satisfying a gadget's
 -- emitted constraints pins its result; the honest prover run succeeds and answers
 -- correctly. `div` and `pow` are proved compositionally through the bind laws.
-Snarky.equals_sound
+Snarky.equals_spec
+Snarky.equals_complete_spec
 Snarky.equals_complete
 Snarky.mul_sound
 Snarky.mul_complete
@@ -69,7 +70,8 @@ Snarky.pow_sound
 Snarky.pow_complete
 Snarky.sum_eval
 Snarky.not_eval
-Snarky.neq_sound
+Snarky.neq_spec
+Snarky.neq_complete_spec
 Snarky.neq_complete
 Snarky.and_spec
 Snarky.and_complete_spec

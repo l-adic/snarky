@@ -77,7 +77,7 @@ doors:
   witnesses its result at `UnChecked Boolean` for exactly this reason).
 - `BoolVar.unchecked` — the single explicit rendering of PS's `coerce` introduction,
   for PURE retaggings only (a negation, a constant answer): each call site owes a
-  booleanity argument from its surrounding constraints (e.g. `Snarky.equals_sound`).
+  booleanity argument from its surrounding constraints (e.g. `Snarky.equals_spec`).
 
 (`CircuitType.fieldsToVar` at `Bool` also builds the wrapper — it must, `witness`
 factors through it — but it is implementation surface, not a gadget door; PS has the
