@@ -25,11 +25,15 @@ Lean-only additions with no PS analogue: the extension order `Assignments.Le` ("
 assigned variable keeps its value") and its lemmas, including `CVar.eval_le`. They are the
 backbone of the interpreter laws in `Backend/{Builder,Prover}`: the prover only ever *extends*
 assignments (via the guarded `extendPairs`), so constraint checks performed early in a run
-remain valid against the final assignment.
+remain valid against the final assignment. Also Lean-only: `Valuation`, the total
+assignment the soundness laws quantify over (a deployed wire table assigns every
+variable), with `toAssignments` and the bridge `CVar.eval_toAssignments` connecting it
+to the `Except` layer.
 
 Public results: the order `Assignments.Le` (with `Le.refl`/`Le.trans`), the monotonicity
-law `Assignments.le_extendPairs`, and the audited root `CVar.eval_le`; `le_extend` is
-private machinery.
+law `Assignments.le_extendPairs`, the audited root `CVar.eval_le`, and the valuation
+seam (`Valuation.toAssignments`, `CVar.eval_toAssignments`); `le_extend` is private
+machinery.
 -/
 
 namespace Snarky
@@ -37,6 +41,17 @@ namespace Snarky
 /-- A partial assignment of field values to variables — the prover's witness table
 (PS `Assignments f`, as a pure lookup instead of the mutable write-once store). -/
 abbrev Assignments (F : Type u) := Variable → Option F
+
+/-- A total assignment — the adversarial-witness reading the soundness laws quantify
+over. A deployed wire table assigns every variable, so the soundness layer takes
+totality in the type instead of threading evaluation success through every statement;
+partiality stays with the prover model above. -/
+abbrev Valuation (F : Type u) := Variable → F
+
+/-- Read a valuation as an everywhere-defined partial assignment — the seam to the
+`Except`-based interpreter laws, under which evaluation never fails. -/
+def Valuation.toAssignments (V : Valuation F) : Assignments F :=
+  fun v => some (V v)
 
 namespace Assignments
 
@@ -131,6 +146,17 @@ theorem eval_le [Add F] [Mul F] {a a' : Assignments F} (hle : a.Le a') {x : CVar
     split at h
     · cases h
     · next y hy => rw [ih hy]; exact h
+
+/-- On a total valuation, evaluation never fails and computes the total reading —
+the bridge between the prover-side `Except` laws and the soundness-side `val`
+statements. -/
+theorem eval_toAssignments [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
+    x.eval V.toAssignments = .ok (x.val V) := by
+  induction x with
+  | var v => rfl
+  | const k => rfl
+  | add a b iha ihb => simp only [eval, val, iha, ihb]
+  | scale k y ih => simp only [eval, val, ih]
 
 end CVar
 

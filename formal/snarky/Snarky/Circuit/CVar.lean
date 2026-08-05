@@ -133,6 +133,16 @@ def eval [Add F] [Mul F] : CVar F → (Variable → Option F) → Except EvalErr
     | .error e => .error e
     | .ok y => .ok (k * y)
 
+/-- The total reading of an expression under a total variable assignment — the
+denotation the soundness layer states values with. `eval` is this same recursion
+lifted over partial assignments (its only failure is an unassigned variable), and
+the two agree wherever `eval` succeeds (`CVar.eval_toAssignments`). -/
+def val [Add F] [Mul F] : CVar F → (Variable → F) → F
+  | .var v, V => V v
+  | .const k, _ => k
+  | .add a b, V => a.val V + b.val V
+  | .scale k x, V => k * x.val V
+
 /-! ## The folds are evaluation-preserving
 
 The smart constructors pre-fold constants; these lemmas say the folds cannot change a

@@ -19,6 +19,13 @@ Snarky.prove_build_agrees
 Snarky.prove_complete
 Snarky.CVar.eval_le
 
+-- The valuation seam: the total adversarial-witness reading the soundness laws
+-- quantify over, and its bridge to the Except layer (Backend/Assignments.lean,
+-- Circuit/CVar.lean).
+Snarky.Valuation.toAssignments
+Snarky.CVar.val
+Snarky.CVar.eval_toAssignments
+
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
 Snarky.Basic.holds
 Snarky.Basic.holds_mono
