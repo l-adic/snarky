@@ -72,7 +72,7 @@ def roots : List Name :=
     `Snarky.assert_complete_spec,
     `Snarky.pack_eval,
     `Snarky.packPure_unpackPure,
-    `Snarky.unpack_sound,
+    `Snarky.unpack_spec,
     `Snarky.unpack_complete,
     `Snarky.solve_complete,
     `Snarky.readVar_le,

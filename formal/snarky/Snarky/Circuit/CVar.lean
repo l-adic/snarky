@@ -64,7 +64,7 @@ inductive EvalError where
   | unsatisfiedConstraint
   /-- A witness computation failed with a message (PS `throwAsProver`). -/
   | custom (msg : String)
-  deriving Repr, DecidableEq
+  deriving Repr
 
 /-! ## Affine expressions -/
 

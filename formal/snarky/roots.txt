@@ -102,7 +102,8 @@ Snarky.assert_spec
 Snarky.assert_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
-Snarky.unpack_sound
+Snarky.unpack_spec
+Snarky.pack_val
 Snarky.unpack_complete
 
 -- Whole-circuit compilation (Snarky/Backend/Compile.lean): the entry points and the

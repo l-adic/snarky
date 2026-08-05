@@ -30,12 +30,13 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
 D9 survey (the `snarky-test-utils` Bits spec), in the D12 form, laws beside the
 gadgets: the pure round trip `packPure_unpackPure` closes the spec's round-trip row at
 the value level under the `ToNat` faithfulness hypotheses; `pack_eval` is the pure
-gadget's evaluation law (like `sum_eval`); `unpack_sound` pins any satisfying
+gadget's evaluation law (like `sum_eval`); `unpack_spec` pins any satisfying
 assignment's bits — boolean, and summing to the operand (their CANONICITY additionally
 needs the standing characteristic hypothesis, recorded with the other sum-based
 obligations); `unpack_complete` runs the honest prover through the `ToNat` witness.
 
-Public results: `pack_eval`, `packPure_unpackPure`, `unpack_sound`, `unpack_complete` —
+Public results: `pack_eval`, `pack_val`, `packPure_unpackPure`, the triple law
+`unpack_spec`, and `unpack_complete` —
 `roots.txt` entries; `unpackWit`/`packAux` are named internals for the laws.
 -/
 
@@ -206,21 +207,23 @@ private theorem ofFn_push {α : Type u} {n : Nat} (f : Fin (n + 1) → α) :
     subst this
     simp [Fin.last]
 
-/-- What one checked-`Bool` witness builds: a fresh variable and its `boolean` row. -/
-private theorem build_witnessBool {F : Type} [Zero F] [One F] [DecidableEq F]
-    (w : AsProver F Bool) (nv : Nat) :
-    build (witness (val := Bool) w : CircuitM F (Basic F) (BoolVar F)) nv
-      = ⟨.unchecked (.var nv), nv + 1, [.boolean (.var nv)]⟩ := rfl
+/-- The same at any backend. -/
+private theorem build_witnessBool' {F c : Type} [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] (w : AsProver F Bool) (nv : Nat) :
+    build (witness (val := Bool) w : CircuitM F c (BoolVar F)) nv
+      = ⟨.unchecked (.var nv), nv + 1,
+         [BasicSystem.boolean (F := F) (c := c) (.var nv)]⟩ := rfl
 
-/-- What the bit-witnessing prefix of `unpack` builds: `n` fresh variables, each with
-its `boolean` row. -/
-private theorem build_unpackBits {F : Type} [Field F] [DecidableEq F] [ToNat F]
-    (v : FVar F) :
+/-- What the bit allocation builds at ANY backend: `n` fresh variables, one `boolean`
+row each. -/
+private theorem build_unpackBits' {F c : Type} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] (v : FVar F) :
     ∀ (n nv : Nat),
       build (generateVec n (fun i => witness (val := Bool) (unpackWit v i.val)) :
-          CircuitM F (Basic F) _) nv
+          CircuitM F c _) nv
         = ⟨Vector.ofFn (fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))), nv + n,
-           (List.range n).map fun i => .boolean (.var (nv + i))⟩ := by
+           (List.range n).map fun i =>
+             BasicSystem.boolean (F := F) (c := c) (.var (nv + i))⟩ := by
   intro n
   induction n with
   | zero => intro nv; rfl
@@ -228,86 +231,96 @@ private theorem build_unpackBits {F : Type} [Field F] [DecidableEq F] [ToNat F]
     intro nv
     show build ((generateVec n _ >>= fun init =>
       witness (val := Bool) (unpackWit v n) >>= fun last => pure (init.push last)) :
-        CircuitM F (Basic F) _) nv = _
+        CircuitM F c _) nv = _
     rw [build_bind]
     simp only [Fin.val_castSucc]
-    rw [ih nv, build_bind, build_witnessBool]
+    rw [ih nv, build_bind, build_witnessBool']
     refine Built.mk.injEq .. ▸ ⟨?_, ?_, ?_⟩
     · show (Vector.ofFn fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))).push
         (BoolVar.unchecked (.var (nv + n))) = _
       exact ofFn_push fun i : Fin (n + 1) => BoolVar.unchecked (.var (nv + i.val))
     · rfl
-    · show ((List.range n).map fun i => Basic.boolean (.var (nv + i)))
-          ++ ([.boolean (.var (nv + n))] ++ []) = _
+    · show ((List.range n).map fun i => BasicSystem.boolean (F := F) (c := c)
+            (.var (nv + i)))
+          ++ ([BasicSystem.boolean (F := F) (c := c) (.var (nv + n))] ++ []) = _
       rw [List.range_succ, List.map_append, List.append_nil]
       rfl
 
-/-- What `unpack` builds: the bit rows then the packing row. -/
-private theorem build_unpack {F : Type} [Field F] [DecidableEq F] [ToNat F]
-    (v : FVar F) (n nv : Nat) :
-    build (unpack (c := Basic F) v n) nv
+/-- What `unpack` builds at ANY backend: the bits' `boolean` rows, then the weighted-sum
+row. -/
+private theorem build_unpack' {F c : Type} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] (v : FVar F) (n nv : Nat) :
+    build (unpack (c := c) v n) nv
       = ⟨Vector.ofFn (fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))), nv + n,
-         ((List.range n).map fun i => .boolean (.var (nv + i)))
-           ++ [.r1cs
+         ((List.range n).map fun i =>
+             BasicSystem.boolean (F := F) (c := c) (.var (nv + i)))
+           ++ [BasicSystem.r1cs (c := c)
                 (pack (Vector.ofFn fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))))
                 (.const 1) v]⟩ := by
   show build ((generateVec n (fun i => witness (val := Bool) (unpackWit v i.val))
       >>= fun bits => addConstraint (BasicSystem.r1cs (pack bits) (.const 1) v)
-      >>= fun _ => pure bits) : CircuitM F (Basic F) _) nv = _
-  rw [build_bind, build_unpackBits]
+      >>= fun _ => pure bits) : CircuitM F c _) nv = _
+  rw [build_bind, build_unpackBits']
   rfl
 
-/-- **`unpack` soundness** (D12): any satisfying assignment's bits are boolean and
-their weighted sum is the operand's value. (Their CANONICITY — that they are THE binary
+/-- `pack` reads as the pure packing — `pack_eval` carried across the bridge to the
+total reading. -/
+theorem pack_val {F : Type} [Semiring F] [DecidableEq F] {n : Nat}
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {V : Valuation F}
+    (h : ∀ i (hi : i < n), (bits[i].toCVar).val V = bit bs[i]) :
+    (pack bits).val V = packPure bs := by
+  have h' : ∀ i (hi : i < n), (bits[i].toCVar).eval V.toAssignments = .ok (bit bs[i]) := by
+    intro i hi
+    rw [CVar.eval_toAssignments, h i hi]
+  have := pack_eval (bits := bits) (bs := bs) (env := V.toAssignments) h'
+  rw [CVar.eval_toAssignments] at this
+  injection this
+
+open Std.Do in
+/-- **`unpack` soundness triple**: the emitted rows force the results to be bits whose
+weighted sum is the operand's reading. (Their CANONICITY — that they are THE binary
 digits — additionally needs the standing characteristic hypothesis, with the other
-sum-based obligations.) -/
-theorem unpack_sound {F : Type} [Field F] [DecidableEq F] [ToNat F] {v : FVar F}
-    {n nv : Nat} {env : Assignments F} {vv : F}
-    (hsat : ∀ con ∈ (build (unpack (c := Basic F) v n) nv).constraints,
-      con.holds env = true)
-    (hv : v.eval env = .ok vv) :
-    ∃ bs : Vector Bool n,
-      (∀ i (hi : i < n),
-        ((build (unpack (c := Basic F) v n) nv).result[i]).toCVar.eval env
-          = .ok (bit bs[i])) ∧
-      packPure bs = vv := by
-  rw [build_unpack] at hsat ⊢
-  refine ⟨Vector.ofFn fun i : Fin n => decide ((CVar.var (nv + i.val)).eval env = .ok 1),
-    ?_, ?_⟩
-  all_goals
-    have hbits : ∀ i, i < n → (CVar.var (nv + i)).eval env
-        = .ok (bit (decide ((CVar.var (nv + i)).eval env = .ok 1))) := by
-      intro i hi
-      obtain ⟨x, hx, hx01⟩ := Basic.boolean_inv
-        (hsat _ (List.mem_append_left _ (List.mem_map_of_mem
-          (List.mem_range.mpr hi))))
-      rcases hx01 with h0 | h1
-      · subst h0
-        rw [hx]
-        simp [bit, zero_ne_one]
-      · subst h1
-        rw [hx]
-        simp [bit]
-  · intro i hi
-    simp only [Vector.getElem_ofFn]
+sum-based obligations.) Generic over any lawful backend; the first gadget whose result
+is a bundle rather than a single variable, which the spec shape takes in stride. -/
+@[spec] theorem unpack_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (v : FVar F) (n : Nat)
+    (Q : PostCond (Vector (BoolVar F) n) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : Vector (BoolVar F) n) => ∃ bs : Vector Bool n,
+        (∀ i (hi : i < n), (r[i].toCVar).val V = bit bs[i]) ∧
+          packPure bs = v.val V) Q⦄
+    unpack (c := c) v n
+    ⦃Q⦄ := by
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
+  intro hsat
+  rw [build_unpack'] at hsat ⊢
+  have hbits : ∀ i, i < n → (CVar.var (nv + i) : CVar F).val V
+      = bit (decide ((CVar.var (nv + i) : CVar F).val V = 1)) := by
+    intro i hi
+    rcases LawfulBasicSystem.holds_boolean (c := c) V _
+      (hsat _ (List.mem_append_left _ (List.mem_map_of_mem (List.mem_range.mpr hi))))
+      with h0 | h1
+    · rw [h0]; simp [bit, zero_ne_one]
+    · rw [h1]; simp [bit]
+  refine hpre _ _ ⟨Vector.ofFn fun i : Fin n =>
+    decide ((CVar.var (nv + i.val) : CVar F).val V = 1), fun i hi => ?_, ?_⟩
+  · simp only [Vector.getElem_ofFn]
     exact hbits i hi
-  · obtain ⟨x, y, z, hx, hy, hz, hxyz⟩ := Basic.r1cs_inv
+  · have hrow := LawfulBasicSystem.holds_r1cs (c := c) V _ _ _
       (hsat _ (List.mem_append_right _ (List.mem_cons_self ..)))
-    have hy1 : (1 : F) = y := by simpa [CVar.eval] using hy
-    rw [hv] at hz
-    injection hz with hz'
-    have hxval : (pack (Vector.ofFn fun i : Fin n =>
-        BoolVar.unchecked (.var (nv + i.val)))).eval env
-        = .ok (packPure (Vector.ofFn fun i : Fin n =>
-          decide ((CVar.var (nv + i.val)).eval env = .ok 1))) := by
-      apply pack_eval
-      intro i hi
+    have hpack : (pack (Vector.ofFn fun i : Fin n =>
+        BoolVar.unchecked (.var (nv + i.val)))).val V
+        = packPure (Vector.ofFn fun i : Fin n =>
+          decide ((CVar.var (nv + i.val) : CVar F).val V = 1)) := by
+      refine pack_val fun i hi => ?_
       simp only [Vector.getElem_ofFn]
       exact hbits i hi
-    rw [hxval] at hx
-    injection hx with hx'
-    rw [← hx', ← hy1, mul_one] at hxyz
-    rw [hxyz, hz']
+    rw [hpack] at hrow
+    show _ = v.val V
+    rw [← hrow]
+    show _ = _ * (CVar.const 1 : CVar F).val V
+    rw [show ((CVar.const 1 : CVar F).val V) = 1 from rfl, mul_one]
 
 /-- The honest run of one checked-`Bool` witness: the `boolean` row always accepts a
 bit. -/
