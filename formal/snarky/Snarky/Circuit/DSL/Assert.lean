@@ -180,7 +180,7 @@ row, and the general row. Generic over any lawful backend. -/
 @[spec] theorem assertEqual_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Asserts (fun V => x.val V = y.val V) Q⦄
+    ⦃Sound (fun V (_ : PUnit) => x.val V = y.val V) Q⦄
     assertEqual (c := c) x y
     ⦃Q⦄ := by
   intro V nv hpre
@@ -189,13 +189,13 @@ row, and the general row. Generic over any lawful backend. -/
     | (rename_i f g
        split_ifs with hfg
        · intro _
-         exact hpre hfg _
+         exact hpre PUnit.unit _ hfg
        · intro hsat
-         exact hpre
-           (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))) _)
+         exact hpre PUnit.unit _
+           (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
     | (intro hsat
-       exact hpre
-         (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))) _)
+       exact hpre PUnit.unit _
+         (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
 
 open Std.Do in
 /-- **`assertEqual` completeness, prover reading**: on equal values the run cannot
@@ -207,16 +207,16 @@ tag, and the `⦃⦄` sugar cannot pin it. -/
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertEqual (c := Basic F) x y)
-      (ProverAsserts
+      (ProverSpec
         (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) Q)
+          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) (fun _ _ _ => True) Q)
       Q := by
   intro st hpre
   obtain ⟨⟨hokx, hoky, heq⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hxy := heq xv yv hx hy
-  have hQ := hk st (Assignments.Le.refl st.env)
+  have hQ := hk PUnit.unit st trivial (Assignments.Le.refl st.env)
   have hch : (BasicSystem.equal (c := Basic F) x y).holds st.env = true := by
     show (Basic.equal x y).holds st.env = true
     simp [Basic.holds, hx, hy, hxy]
@@ -245,8 +245,8 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
         assertEqual (c := c) y z : CircuitM F c PUnit)
     ⦃⇓ _ V _nv => ⌜x.val V = z.val V⌝⦄ := by
   mvcgen
-  intro hxy _nv'
-  exact assertEqual_spec (c := c) y z _ _ _ fun hyz _ => hxy.trans hyz
+  intro _ _nv' hxy
+  exact assertEqual_spec (c := c) y z _ _ _ fun _ _ hyz => hxy.trans hyz
 
 /-- The SAME chain in the prover reading: on agreeing values the honest run cannot
 fail — the two `@[spec]` lemmas for one head symbol coexist across the two
@@ -264,13 +264,13 @@ example (x y z : FVar F) (xv yv zv : F) :
   subst hxy
   subst hyz
   refine ⟨⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
-    fun st' hle => ?_⟩
+    fun _ st' hle => ?_⟩
   · rw [hx] at ha; rw [hy] at hb
     injection ha with ha; injection hb with hb
     rw [← ha, ← hb]
   · refine assertEqual_complete_spec y z _ st'
       ⟨⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
-        fun a b ha hb => ?_⟩, fun _ _ => trivial⟩
+        fun a b ha hb => ?_⟩, fun _ _ _ _ => trivial⟩
     rw [CVar.eval_le hle hy] at ha; rw [CVar.eval_le hle hz] at hb
     injection ha with ha; injection hb with hb
     rw [← ha, ← hb]
@@ -294,7 +294,7 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     ⦃⇓ _ V _nv => ⌜w.val V = (v.val V)⁻¹⌝⦄ := by
   mvcgen
   intro r _nv' hr
-  refine assertEqual_spec (c := c) r w _ _ _ fun heq _ => ?_
+  refine assertEqual_spec (c := c) r w _ _ _ fun _ _ heq => ?_
   show w.val _ = _
   exact heq ▸ hr
 
@@ -309,7 +309,7 @@ inverse's product row. Generic over any lawful backend. -/
 @[spec] theorem assertNonZero_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Asserts (fun V => v.val V ≠ 0) Q⦄
+    ⦃Sound (fun V (_ : PUnit) => v.val V ≠ 0) Q⦄
     assertNonZero (c := c) v
     ⦃Q⦄ := by
   intro V nv hpre
@@ -321,13 +321,13 @@ inverse's product row. Generic over any lawful backend. -/
         (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..)))
         zero_ne_one
     · intro _
-      exact hpre h0 _
+      exact hpre PUnit.unit _ h0
   all_goals
     (intro hsat
      rw [build_bind] at hsat
      have h := LawfulBasicSystem.holds_r1cs V _ _ _
        (hsat _ (List.mem_append_left _ (List.mem_cons_self ..)))
-     exact hpre (left_ne_zero_of_mul_eq_one (by simpa using h)) _)
+     exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one (by simpa using h)))
 
 open Std.Do in
 /-- **`assertNonZero` completeness** (D12, prover reading): the run succeeds on a
@@ -336,8 +336,9 @@ nonzero value, extending the table with the witnessed inverse. -/
     (v : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertNonZero (c := Basic F) v)
-      (ProverAsserts (fun env => (v.eval env).isOk ∧
-        ∀ vv, v.eval env = .ok vv → vv ≠ 0) Q) Q := by
+      (ProverSpec (fun env => (v.eval env).isOk ∧
+        ∀ vv, v.eval env = .ok vv → vv ≠ 0)
+        (fun _ _ _ => True) Q) Q := by
   intro st hpre
   obtain ⟨⟨hokv, hne⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
@@ -346,12 +347,12 @@ nonzero value, extending the table with the witnessed inverse. -/
   case const f =>
     have hf : f = vv := by simpa [CVar.eval] using hv
     rw [if_neg (by rw [hf]; exact hvv)]
-    exact fun _ => hk st (Assignments.Le.refl st.env)
+    exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
   all_goals
     (obtain ⟨⟨r, nv', env'⟩, hrun, -, -⟩ := inv_complete st.fresh hv hvv
      simp only [wp, PredTrans.apply, prove_bind, hrun, Except.bind]
      intro hf
-     exact hk ⟨nv', env', hf⟩ (prove_assignments_le hrun))
+     exact hk PUnit.unit ⟨nv', env', hf⟩ trivial (prove_assignments_le hrun))
 
 open Std.Do in
 /-- **`assertNotEqual` soundness** (D12), delegated to `assertNonZero` through the
@@ -359,13 +360,13 @@ difference. -/
 @[spec] theorem assertNotEqual_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Asserts (fun V => x.val V ≠ y.val V) Q⦄
+    ⦃Sound (fun V (_ : PUnit) => x.val V ≠ y.val V) Q⦄
     assertNotEqual (c := c) x y
     ⦃Q⦄ := by
   intro V nv hpre
   refine assertNonZero_spec (c := c) _ Q V nv ?_
-  intro hne
-  exact hpre (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
+  intro _ _ hne
+  exact hpre PUnit.unit _ (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
 
 open Std.Do in
 /-- **`assertNotEqual` completeness** (D12, prover reading), delegated to
@@ -374,8 +375,9 @@ open Std.Do in
     (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertNotEqual (c := Basic F) x y)
-      (ProverAsserts (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv) Q) Q := by
+      (ProverSpec (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv)
+        (fun _ _ _ => True) Q) Q := by
   intro st hpre
   obtain ⟨⟨hokx, hoky, hne⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
@@ -392,11 +394,11 @@ readings. Generic over any lawful backend. -/
 @[spec] theorem assertSquare_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Asserts (fun V => x.val V * x.val V = y.val V) Q⦄
+    ⦃Sound (fun V (_ : PUnit) => x.val V * x.val V = y.val V) Q⦄
     assertSquare (c := c) x y
     ⦃Q⦄ := by
   intro V nv hpre hsat
-  exact hpre (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..))) _
+  exact hpre PUnit.unit _ (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
 /-- **`assertSquare` completeness** (D12, prover reading): the run succeeds on a true
@@ -405,8 +407,9 @@ square, changing nothing. -/
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assertSquare (c := Basic F) x y)
-      (ProverAsserts (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv) Q) Q := by
+      (ProverSpec (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv)
+        (fun _ _ _ => True) Q) Q := by
   intro st hpre
   obtain ⟨⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
@@ -416,14 +419,14 @@ square, changing nothing. -/
     show (Basic.square x y).holds st.env = true
     simp [Basic.holds, hx, hy, hsq]
   simp [assertSquare, addConstraint, wp, PredTrans.apply, prove, hch]
-  exact fun _ => hk st (Assignments.Le.refl st.env)
+  exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
 
 open Std.Do in
 /-- **`assert` soundness** (D12): `assert v` asserts the bit reads `1`. -/
 @[spec] theorem assert_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v : BoolVar F) (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Asserts (fun V => (↑v : CVar F).val V = 1) Q⦄
+    ⦃Sound (fun V (_ : PUnit) => (↑v : CVar F).val V = 1) Q⦄
     assert (c := c) v
     ⦃Q⦄ := by
   simp only [assert]
@@ -436,8 +439,9 @@ reads `1`. -/
     (v : BoolVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (assert (c := Basic F) v)
-      (ProverAsserts (fun env => ((↑v : CVar F).eval env).isOk ∧
-        ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1) Q) Q := by
+      (ProverSpec (fun env => ((↑v : CVar F).eval env).isOk ∧
+        ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1)
+        (fun _ _ _ => True) Q) Q := by
   intro st hpre
   obtain ⟨⟨hokv, hone⟩, hk⟩ := hpre
   obtain ⟨bv, hv⟩ := CVar.evalOk hokv

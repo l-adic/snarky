@@ -153,23 +153,20 @@ parameter, so `mvcgen` instantiates it exactly at each call site — but written
 buries a gadget's contract in encoding. The DSL's gadgets have a small number of
 shapes, named here once, so each spec reads as its contract alone. -/
 
-/-- The spec shape of an ASSERTION gadget — returns nothing and grants the caller a
-fact: `⦃Asserts fact Q⦄ g ⦃Q⦄` reads "`g` asserts `fact`". Counter-agnostic, so it
-covers assertions that allocate auxiliary witnesses (`assertNonZero`'s inverse) as
-well as pure rows. -/
-abbrev Asserts (fact : Valuation F → Prop)
-    (Q : PostCond PUnit (.arg (Valuation F) (.arg Nat .pure))) :
-    Assertion (.arg (Valuation F) (.arg Nat .pure)) :=
-  fun V _nv => .up (fact V → ∀ nv', (Q.1 PUnit.unit V nv').down)
+/-- **The soundness spec shape**, polymorphic in what the gadget returns: under
+`Q`-whatever-comes-next, a gadget granting `post` about its result satisfies the
+caller's obligation. `⦃Sound post Q⦄ g ⦃Q⦄` reads "`g` guarantees `post` of its
+result".
 
-/-- The spec shape of a COMPUTE gadget — returns a variable whose reading the emitted
-constraints characterize: `⦃Computes fact Q⦄ g ⦃Q⦄` reads "`g` computes a result
-satisfying `fact`". The result variable and final counter are opaque to the caller;
-the fact about the result's reading is the whole interface. -/
-abbrev Computes [Add F] [Mul F] (fact : Valuation F → F → Prop)
-    (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
+`post` speaks about the RESULT ITSELF, not a reading of it — each gadget's spec
+applies whichever reading its result type has (`r.val V` for an `FVar`,
+`(↑r : CVar F).val V` for a `BoolVar`, componentwise for a bundle), which is what
+keeps one shape serving every return type. The final counter is quantified: a
+caller never learns how many variables a gadget allocated. -/
+abbrev Sound {α : Type} (post : Valuation F → α → Prop)
+    (Q : PostCond α (.arg (Valuation F) (.arg Nat .pure))) :
     Assertion (.arg (Valuation F) (.arg Nat .pure)) :=
-  fun V _nv => .up (∀ (r : FVar F) (nv' : Nat), fact V (r.val V) → (Q.1 r V nv').down)
+  fun V _nv => .up (∀ (r : α) (nv' : Nat), post V r → (Q.1 r V nv').down)
 
 /-! ## The prover reading and its carrier
 
@@ -236,52 +233,23 @@ instance ProverM.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
       · intro hR
         exact hR (ProverState.freshOut (st := st) h)
 
-/-- The spec shape of a BOOLEAN compute gadget — returns a `BoolVar` whose coerced
-reading the constraints characterize, conditionally on the operands reading as bits:
-`⦃ComputesBool fact Q⦄ g ⦃Q⦄` reads "`g` computes a bit satisfying `fact`". -/
-abbrev ComputesBool [Add F] [Mul F] (fact : Valuation F → F → Prop)
-    (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    Assertion (.arg (Valuation F) (.arg Nat .pure)) :=
-  fun V _nv => .up (∀ (r : BoolVar F) (nv' : Nat),
-    fact V ((↑r : CVar F).val V) → (Q.1 r V nv').down)
+/-- **The prover-reading spec shape**, polymorphic in what the gadget returns: given
+`pre` about the incoming table, the run cannot fail, and the caller continues at a
+state whose table extends the incoming one — old facts transport along
+`Assignments.Le` via `CVar.eval_le`. Reads "`g` succeeds given `pre`, guaranteeing
+`post`".
 
-/-- The prover-reading spec shape of an assertion gadget: given `facts` about the
-incoming table, the run cannot fail, and the caller continues at a state whose table
-extends the incoming one — old facts transport along `Assignments.Le` via
-`CVar.eval_le`. Freshness is absent: the state carries it. Reads "`g` succeeds given
-`facts`". -/
-abbrev ProverAsserts (facts : Assignments F → Prop)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+Freshness appears nowhere: `ProverState` carries it. As on the soundness side, `post`
+speaks about the result itself and each spec supplies its own reading. `pre` should
+say `(x.eval env).isOk` rather than `∃ xv, x.eval env = .ok xv` — an existential
+leaks an uninstantiable metavariable at call sites; `CVar.evalOk` recovers the value
+inside the proof. -/
+abbrev ProverSpec {α : Type} (pre : Assignments F → Prop)
+    (post : Assignments F → α → Assignments F → Prop)
+    (Q : PostCond α (.arg (ProverState F) (.except EvalError .pure))) :
     Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
-  fun st => .up (facts st.env ∧
-    ∀ st' : ProverState F, st.env.Le st'.env → (Q.1 PUnit.unit st').down)
-
-/-- The prover-reading spec shape of a compute gadget: given `facts`, the run succeeds
-and the result satisfies `post` in the final (extended, fresh) table. Reads "`g`
-computes a result satisfying `post`, given `facts`".
-
-The result is characterized CONDITIONALLY on the operand readings, exactly as the
-soundness shapes are: a spec carrying the operand values as parameters cannot be
-instantiated by unification at a call site (they occur only in the precondition), so
-`mvcgen` matches it and leaves the values as bare metavariable goals. For the same
-reason `facts` should say `(x.eval env).isOk` rather than `∃ xv, x.eval env = .ok xv`
-— `evalOk` below extracts the value inside the proof. -/
-abbrev ProverComputes (facts : Assignments F → Prop)
-    (post : Assignments F → FVar F → Assignments F → Prop)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
-  fun st => .up (facts st.env ∧
-    ∀ (r : FVar F) (st' : ProverState F),
-      post st.env r st'.env → st.env.Le st'.env → (Q.1 r st').down)
-
-/-- The prover-reading spec shape of a boolean compute gadget — `ProverComputes` with
-a `BoolVar` result. -/
-abbrev ProverComputesBool (facts : Assignments F → Prop)
-    (post : Assignments F → BoolVar F → Assignments F → Prop)
-    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
-  fun st => .up (facts st.env ∧
-    ∀ (r : BoolVar F) (st' : ProverState F),
+  fun st => .up (pre st.env ∧
+    ∀ (r : α) (st' : ProverState F),
       post st.env r st'.env → st.env.Le st'.env → (Q.1 r st').down)
 
 /-- Extract the value behind a successful-evaluation fact — the bridge from the

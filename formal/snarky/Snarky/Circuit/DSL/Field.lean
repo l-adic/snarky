@@ -396,7 +396,7 @@ Generic over any lawful backend. -/
 @[spec] theorem equals_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃ComputesBool (fun V rv => rv = if a.val V = b.val V then 1 else 0) Q⦄
+    ⦃Sound (fun V (r : BoolVar F) => (↑r : CVar F).val V = if a.val V = b.val V then 1 else 0) Q⦄
     equals (c := c) a b
     ⦃Q⦄ := by
   intro V nv hpre
@@ -438,9 +438,9 @@ reads as the answer bit in the final table. -/
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (equals (c := Basic F) a b)
-      (ProverComputesBool
+      (ProverSpec
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
-        (fun env r env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
+        (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
           (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0)) Q) Q := by
   intro st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
@@ -480,7 +480,7 @@ bit is the negated equality answer. Generic over any lawful backend. -/
 @[spec] theorem neq_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃ComputesBool (fun V rv => rv = if a.val V = b.val V then 0 else 1) Q⦄
+    ⦃Sound (fun V (r : BoolVar F) => (↑r : CVar F).val V = if a.val V = b.val V then 0 else 1) Q⦄
     neq (c := c) a b
     ⦃Q⦄ := by
   simp only [neq]
@@ -506,9 +506,9 @@ reads as the negated answer bit in the final table. -/
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (neq (c := Basic F) a b)
-      (ProverComputesBool
+      (ProverSpec
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
-        (fun env r env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
+        (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
           (↑r : CVar F).eval env' = .ok (if av = bv then 0 else 1)) Q) Q := by
   intro st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
@@ -629,7 +629,7 @@ any lawful backend. -/
 @[spec] theorem inv_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Computes (fun V rv => rv = (x.val V)⁻¹) Q⦄
+    ⦃Sound (fun V r => r.val V = (x.val V)⁻¹) Q⦄
     inv (c := c) x
     ⦃Q⦄ := by
   intro V nv hpre
@@ -649,7 +649,7 @@ succeeds and the result reads as the inverse in the final table. -/
     (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (inv (c := Basic F) x)
-      (ProverComputes (fun env => (x.eval env).isOk ∧
+      (ProverSpec (fun env => (x.eval env).isOk ∧
           ∀ xv, x.eval env = .ok xv → xv ≠ 0)
         (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv⁻¹) Q)
       Q := by
@@ -670,7 +670,7 @@ otherwise the `r1cs` row forces it. Generic over any lawful backend. -/
 @[spec] theorem mul_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Computes (fun V rv => rv = x.val V * y.val V) Q⦄
+    ⦃Sound (fun V r => r.val V = x.val V * y.val V) Q⦄
     mul (c := c) x y
     ⦃Q⦄ := by
   intro V nv hpre
@@ -697,7 +697,7 @@ reads as the product in the final table. -/
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (mul (c := Basic F) x y)
-      (ProverComputes (fun env => (x.eval env).isOk ∧ (y.eval env).isOk)
+      (ProverSpec (fun env => (x.eval env).isOk ∧ (y.eval env).isOk)
         (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
           r.eval env' = .ok (xv * yv)) Q) Q := by
   intro st hpre
@@ -764,7 +764,7 @@ lawful backend. -/
 @[spec] theorem div_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Computes (fun V rv => rv = x.val V / y.val V) Q⦄
+    ⦃Sound (fun V r => r.val V = x.val V / y.val V) Q⦄
     div (c := c) x y
     ⦃Q⦄ := by
   simp only [div]
@@ -782,7 +782,7 @@ carrier: a nonzero divisor makes the run succeed with the quotient. -/
     (x y : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (div (c := Basic F) x y)
-      (ProverComputes
+      (ProverSpec
         (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
           ∀ yv, y.eval env = .ok yv → yv ≠ 0)
         (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
@@ -811,7 +811,7 @@ open Std.Do in
 @[spec] theorem square_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Computes (fun V rv => rv = x.val V * x.val V) Q⦄
+    ⦃Sound (fun V r => r.val V = x.val V * x.val V) Q⦄
     square (c := c) x
     ⦃Q⦄ := by
   intro V nv hpre
@@ -831,7 +831,7 @@ reads as the square in the final table. -/
     [DecidableEq F] (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (square (c := Basic F) x)
-      (ProverComputes (fun env => (x.eval env).isOk)
+      (ProverSpec (fun env => (x.eval env).isOk)
         (fun env r env' => ∀ xv, x.eval env = .ok xv →
           r.eval env' = .ok (xv * xv)) Q) Q := by
   intro st hpre
@@ -854,7 +854,7 @@ for the exponent, the result reads as the power. Generic over any lawful backend
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] :
     ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
       ∀ (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))),
-        ⦃Computes (fun V rv => rv = x.val V ^ n) Q⦄
+        ⦃Sound (fun V r => r.val V = x.val V ^ n) Q⦄
         powGo (c := c) fuel x n
         ⦃Q⦄ := by
   intro fuel
@@ -897,7 +897,7 @@ the result reads as the operand's power. Generic over any lawful backend. -/
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (n : Nat)
     (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Computes (fun V rv => rv = x.val V ^ n) Q⦄
+    ⦃Sound (fun V r => r.val V = x.val V ^ n) Q⦄
     pow (c := c) x n
     ⦃Q⦄ :=
   powGo_spec n x n (Nat.le_succ n) Q

@@ -267,9 +267,9 @@ bit. Generic over any lawful backend. -/
 @[spec] theorem and_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃ComputesBool (fun V rv => ∀ ab bb : Bool,
+    ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          rv = bit (ab && bb)) Q⦄
+          (↑r : CVar F).val V = bit (ab && bb)) Q⦄
     Snarky.and (c := c) a b
     ⦃Q⦄ := by
   simp only [Snarky.and]
@@ -289,10 +289,10 @@ and the result reads as the conjunction bit in the final table. -/
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.and (c := Basic F) a b)
-      (ProverComputesBool
+      (ProverSpec
         (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
           (↑b : CVar F).eval env = .ok (bit bb))
-        (fun _ r env' => (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
+        (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
   intro st hpre
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := and_complete st.fresh ha hb
@@ -306,9 +306,9 @@ bits (De Morgan). Generic over any lawful backend. -/
 @[spec] theorem or_spec {F c : Type} [CommRing F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃ComputesBool (fun V rv => ∀ ab bb : Bool,
+    ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          rv = bit (ab || bb)) Q⦄
+          (↑r : CVar F).val V = bit (ab || bb)) Q⦄
     Snarky.or (c := c) a b
     ⦃Q⦄ := by
   have hnot : ∀ (x : BoolVar F) (xb : Bool) (V : Valuation F),
@@ -336,10 +336,10 @@ and the result reads as the disjunction bit in the final table. -/
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.or (c := Basic F) a b)
-      (ProverComputesBool
+      (ProverSpec
         (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
           (↑b : CVar F).eval env = .ok (bit bb))
-        (fun _ r env' => (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
+        (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
   intro st hpre
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := or_complete st.fresh ha hb
@@ -526,9 +526,9 @@ Generic over any lawful backend. -/
 @[spec] theorem xor_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃ComputesBool (fun V rv => ∀ ab bb : Bool,
+    ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          rv = bit (ab ^^ bb)) Q⦄
+          (↑r : CVar F).val V = bit (ab ^^ bb)) Q⦄
     Snarky.xor (c := c) a b
     ⦃Q⦄ := by
   intro V nv hpre
@@ -620,10 +620,10 @@ and the result reads as the xor bit in the final table. -/
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.xor (c := Basic F) a b)
-      (ProverComputesBool
+      (ProverSpec
         (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
           (↑b : CVar F).eval env = .ok (bit bb))
-        (fun _ r env' => (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
+        (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
   intro st hpre
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨⟨r, nv', env'⟩, hrun, heval, -⟩ := xor_complete st.fresh ha hb
@@ -725,8 +725,8 @@ backend. -/
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (b : BoolVar F) (t e : FVar F)
     (Q : PostCond (FVar F) (.arg (Valuation F) (.arg Nat .pure))) :
-    ⦃Computes (fun V rv => ∀ bb : Bool,
-        (↑b : CVar F).val V = bit bb → rv = if bb then t.val V else e.val V) Q⦄
+    ⦃Sound (fun V r => ∀ bb : Bool,
+        (↑b : CVar F).val V = bit bb → r.val V = if bb then t.val V else e.val V) Q⦄
     select (c := c) b t e
     ⦃Q⦄ := by
   intro V nv hpre hsat
@@ -807,7 +807,7 @@ succeeds and the result reads as the chosen branch in the final table. -/
     (Q : PostCond (FVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (select (c := Basic F) b t e)
-      (ProverComputes
+      (ProverSpec
         (fun env => (↑b : CVar F).eval env = .ok (bit bb) ∧
           (t.eval env).isOk ∧ (e.eval env).isOk)
         (fun env r env' => ∀ tv ev, t.eval env = .ok tv → e.eval env = .ok ev →
