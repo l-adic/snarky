@@ -372,13 +372,7 @@ Generic over any lawful backend. -/
     intro _
     refine hpre _ _ ?_
     rw [hZ] at hz
-    show (CVar.const (if f = 0 then (1 : F) else 0)).val V = _
-    rw [show (f : F) = a.val V - b.val V from hz]
-    by_cases h : a.val V = b.val V
-    · rw [if_pos (sub_eq_zero.mpr h), if_pos h]
-      rfl
-    · rw [if_neg (sub_ne_zero.mpr h), if_neg h]
-      rfl
+    simp only [circuitVal, show (f : F) = a.val V - b.val V from hz, sub_eq_zero]
   all_goals
     (intro hsat
      rw [build_equalsCore'] at hsat ⊢
@@ -456,15 +450,8 @@ bit is the negated equality answer. Generic over any lawful backend. -/
   rename_i s hpre
   intro r _s' hr _
   refine hpre _ _ ?_
-  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).val s.V = _
-  rw [CVar.val_sub_, hr]
-  by_cases h : a.val s.V = b.val s.V
-  · rw [if_pos h, if_pos h]
-    show (1 : F) - 1 = 0
-    ring
-  · rw [if_neg h, if_neg h]
-    show (1 : F) - 0 = 1
-    ring
+  simp only [circuitVal, hr]
+  split_ifs <;> ring
 
 open Std.Do in
 /-- **`neq` completeness triple** (prover reading): the run succeeds and the result
@@ -808,13 +795,13 @@ for the exponent, the result reads as the power. Generic over any lawful backend
   | zero =>
     intro x n hfuel Q
     match n, hfuel with
-    | 0, _ => exact fun s hpre _ => hpre _ _ (by show (1 : F) = _; rw [pow_zero])
-    | 1, _ => exact fun s hpre _ => hpre _ _ (by show x.val s.V = _; rw [pow_one])
+    | 0, _ => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
+    | 1, _ => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
   | succ fuel ih =>
     intro x n hfuel Q
     match n with
-    | 0 => exact fun s hpre _ => hpre _ _ (by show (1 : F) = _; rw [pow_zero])
-    | 1 => exact fun s hpre _ => hpre _ _ (by show x.val s.V = _; rw [pow_one])
+    | 0 => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
+    | 1 => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
     | m + 2 =>
       simp only [powGo]
       mvcgen

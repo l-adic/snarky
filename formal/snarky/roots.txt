@@ -28,6 +28,18 @@ Snarky.Valuation.toAssignments
 Snarky.CVar.val
 Snarky.CVar.eval_toAssignments
 
+-- The `circuitVal` normal form (declared in Circuit/CVar.lean, members downstream):
+-- what a gadget law reduces to once `mvcgen` has walked its do-block. Consumed by simp
+-- through the attribute, so no constant walk reaches these.
+Snarky.build_pure
+Snarky.CVar.val_add_
+Snarky.CVar.val_scale_
+Snarky.CVar.val_sub_
+Snarky.BoolVar.toCVar_unchecked
+Snarky.bit_true
+Snarky.bit_false
+Snarky.bit_mul
+
 -- The Std.Do weakest-precondition interpretation of build (Backend/WP.lean):
 -- the soundness reading, generic over the backend's semantic reading of one
 -- constraint value.
@@ -61,8 +73,6 @@ Snarky.mul_spec
 Snarky.mul_complete_spec
 Snarky.inv_spec
 Snarky.inv_complete_spec
-Snarky.mul_spec
-Snarky.mul_complete_spec
 Snarky.div_spec
 Snarky.div_complete_spec
 Snarky.square_spec

@@ -31,8 +31,6 @@ def roots : List Name :=
     `Snarky.mul_complete_spec,
     `Snarky.inv_spec,
     `Snarky.inv_complete_spec,
-    `Snarky.mul_spec,
-    `Snarky.mul_complete_spec,
     `Snarky.div_spec,
     `Snarky.div_complete_spec,
     `Snarky.square_spec,

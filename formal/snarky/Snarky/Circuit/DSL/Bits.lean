@@ -318,10 +318,7 @@ is a bundle rather than a single variable, which the spec shape takes in stride.
       simp only [Vector.getElem_ofFn]
       exact hbits i hi
     rw [hpack] at hrow
-    show _ = v.val V
-    rw [← hrow]
-    show _ = _ * (CVar.const 1 : CVar F).val V
-    rw [show ((CVar.const 1 : CVar F).val V) = 1 from rfl, mul_one]
+    simpa [circuitVal] using hrow
 
 /-- The honest run of one checked-`Bool` witness: the `boolean` row always accepts a
 bit. -/

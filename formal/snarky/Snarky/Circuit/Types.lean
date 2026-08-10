@@ -99,6 +99,15 @@ booleanity the caller's constraints already force; witnessed booleans go through
 `witness` at `Bool` or `UnChecked Bool` instead. -/
 def BoolVar.unchecked (x : CVar F) : BoolVar F := ⟨x⟩
 
+/-- Retagging is invisible to the field reading: `↑(unchecked x)` is `x`. -/
+@[circuitVal] theorem BoolVar.toCVar_unchecked (x : CVar F) :
+    (BoolVar.unchecked x).toCVar = x := rfl
+
+-- The reading of a literal expression — the equations fire on constructors only, so an
+-- opaque operand is left alone. Tagged here rather than at the definition because a simp
+-- attribute cannot be used in the file that registers it.
+attribute [circuitVal] CVar.val
+
 /-- The field encoding of a boolean — the single entry of `CircuitType Bool`'s
 `valueToFields`, named so the gadget laws can state their conclusions
 through it (the relation the faithfulness arc composes over). -/
@@ -111,8 +120,14 @@ instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
   varToFields b := #v[b.toCVar]
   fieldsToVar v := ⟨v[0]⟩
 
+/-- The encoding of `true` — one of the two equations a boolean case split leaves. -/
+@[circuitVal] theorem bit_true [Zero F] [One F] : (bit true : F) = 1 := rfl
+
+/-- The encoding of `false` — the other. -/
+@[circuitVal] theorem bit_false [Zero F] [One F] : (bit false : F) = 0 := rfl
+
 /-- The encoding is multiplicative: bits multiply as booleans conjoin. -/
-theorem bit_mul [MulZeroOneClass F] (a b : Bool) :
+@[circuitVal] theorem bit_mul [MulZeroOneClass F] (a b : Bool) :
     (bit a : F) * bit b = bit (a && b) := by
   cases a <;> cases b <;> simp [bit]
 

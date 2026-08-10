@@ -49,6 +49,16 @@ The prover's assignment store lives in `Snarky/Backend/Assignments.lean` (its PS
 
 namespace Snarky
 
+/-- The normal form a gadget law reduces to once its do-block has been walked: the
+value reading pushed through the smart constructors (`val_add_`/`val_scale_`/`val_sub_`),
+the `BoolVar` tag and the bit encoding erased, and `build` of a trailing `pure`
+discharged. `simp [circuitVal]` after `mvcgen` leaves the arithmetic identity the row
+semantics has to prove, which `grind`/`ring` then close. The set is declared here — the
+root module — because a simp attribute cannot be used in the file that registers it, and
+its members live downstream in `Circuit/Types`, `Backend/Assignments` and
+`Backend/Builder`. -/
+register_simp_attr circuitVal
+
 /-- A circuit variable: an index into the wire assignment, allocated sequentially by the
 interpreters (PS `Variable`). -/
 abbrev Variable := Nat

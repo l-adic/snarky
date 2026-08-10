@@ -238,9 +238,7 @@ bit. Generic over any lawful backend. -/
   rename_i hpre
   intro r _nv' hr _
   refine hpre (.unchecked r) _ fun ab bb ha hb => ?_
-  show r.val _ = _
-  rw [hr, ha, hb]
-  exact bit_mul ab bb
+  simp only [circuitVal, hr, ha, hb]
 
 open Std.Do in
 /-- **`and` completeness triple** (prover reading): on bit operands the run succeeds
@@ -281,18 +279,14 @@ bits (De Morgan). Generic over any lawful backend. -/
       (↑x : CVar F).val V = bit xb →
         (↑(Snarky.not x) : CVar F).val V = bit (!xb) := by
     intro x xb V hx
-    show (CVar.sub_ (.const 1) ↑x).val V = _
-    rw [CVar.val_sub_, hx]
-    cases xb <;> simp [CVar.val, bit]
+    cases xb <;> simp [Snarky.not, circuitVal, hx]
   simp only [Snarky.or]
   mvcgen
   rename_i hpre
   intro r _nv' hr _
   refine hpre (Snarky.not r) _ fun ab bb ha hb => ?_
   have hr' := hr (!ab) (!bb) (hnot a ab _ ha) (hnot b bb _ hb)
-  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).val _ = _
-  rw [CVar.val_sub_, hr']
-  cases ab <;> cases bb <;> simp [CVar.val, bit]
+  cases ab <;> cases bb <;> simp_all [Snarky.not, circuitVal]
 
 open Std.Do in
 /-- **`or` completeness triple** (prover reading): on bit operands the run succeeds
@@ -480,8 +474,7 @@ Generic over any lawful backend. -/
     replace ha : av = bit ab := ha
     replace hb : bv = bit bb := hb
     subst ha; subst hb
-    show (CVar.const _).val V = _
-    cases ab <;> cases bb <;> simp [CVar.val, bit]
+    cases ab <;> cases bb <;> simp [circuitVal, bit]
   case const.var av v | const.add av x y | const.scale av k x =>
     split_ifs with h0 h1
     · intro _
@@ -503,13 +496,11 @@ Generic over any lawful backend. -/
         · exact absurd (ha ▸ h1) (by simp [bit])
         · rfl
       subst hab
-      show (CVar.sub_ ((.const 1 : CVar F)) ↑b).val V = _
-      rw [CVar.val_sub_, hb]
-      cases bb <;> simp [CVar.val, bit]
+      cases bb <;> simp [Snarky.not, circuitVal, hb]
     · intro hsat
       refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
-      rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
+      simp only [circuitVal] at h
       rw [ha, hb] at h
       exact xor_pin h
   case var.const v bv | add.const x y bv | scale.const k x bv =>
@@ -533,20 +524,18 @@ Generic over any lawful backend. -/
         · exact absurd (hb ▸ h1) (by simp [bit])
         · rfl
       subst hbb
-      show (CVar.sub_ ((.const 1 : CVar F)) ↑a).val V = _
-      rw [CVar.val_sub_, ha]
-      cases ab <;> simp [CVar.val, bit]
+      cases ab <;> simp [Snarky.not, circuitVal, ha]
     · intro hsat
       refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
-      rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
+      simp only [circuitVal] at h
       rw [ha, hb] at h
       exact xor_pin h
   all_goals
     (intro hsat
      refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
-     rw [CVar.val_add_, CVar.val_sub_, CVar.val_add_] at h
+     simp only [circuitVal] at h
      rw [ha, hb] at h
      exact xor_pin h)
 
@@ -718,11 +707,11 @@ backend. -/
       first
       | (rw [build_selectCore'] at hsat ⊢
          have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
-         rw [CVar.val_sub_, CVar.val_sub_] at h
+         simp only [circuitVal] at h
          exact select_pin h hb)
       | (show (CVar.add_ (CVar.scale _ _) (CVar.scale_ _ _)).val V = _
          rw [← hB]
-         simp only [CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val, hb]
+         simp only [circuitVal, hb]
          cases bb <;> simp [bit])
 
 open Std.Do in

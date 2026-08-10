@@ -185,7 +185,7 @@ theorem eval_toAssignments [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
 
 /-- `add_` reads as the sum — the fold-evaluation lemma `eval_add_`, carried through
 the bridge to the total reading. -/
-theorem val_add_ [Add F] [Mul F] (a b : CVar F) (V : Valuation F) :
+@[circuitVal] theorem val_add_ [Add F] [Mul F] (a b : CVar F) (V : Valuation F) :
     (CVar.add_ a b).val V = a.val V + b.val V := by
   have h := (CVar.eval_add_ a b V.toAssignments).trans
     (eval_toAssignments (CVar.add a b) V)
@@ -194,7 +194,7 @@ theorem val_add_ [Add F] [Mul F] (a b : CVar F) (V : Valuation F) :
 
 /-- `scale_` reads as the scalar product — the fold-evaluation lemma `eval_scale_`,
 carried through the bridge to the total reading. -/
-theorem val_scale_ [Add F] [MulZeroOneClass F] [DecidableEq F] (k : F) (x : CVar F)
+@[circuitVal] theorem val_scale_ [Add F] [MulZeroOneClass F] [DecidableEq F] (k : F) (x : CVar F)
     (V : Valuation F) : (CVar.scale_ k x).val V = k * x.val V := by
   have h := CVar.eval_scale_ (eval_toAssignments x V) k
   rw [eval_toAssignments] at h
@@ -202,7 +202,7 @@ theorem val_scale_ [Add F] [MulZeroOneClass F] [DecidableEq F] (k : F) (x : CVar
 
 /-- `sub_` reads as the difference — the fold-evaluation lemma `eval_sub_`, carried
 through the bridge to the total reading. -/
-theorem val_sub_ [CommRing F] [DecidableEq F] (a b : CVar F) (V : Valuation F) :
+@[circuitVal] theorem val_sub_ [CommRing F] [DecidableEq F] (a b : CVar F) (V : Valuation F) :
     (CVar.sub_ a b).val V = a.val V - b.val V := by
   have h := CVar.eval_sub_ (eval_toAssignments a V) (eval_toAssignments b V)
   rw [eval_toAssignments] at h

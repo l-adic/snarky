@@ -94,6 +94,12 @@ finished `CircuitBuilderState`). -/
 def constraints (m : CircuitM F c α) : List c :=
   (build m 0).constraints
 
+/-- **Building a `pure` emits nothing**: the result passes through, the counter is
+untouched, and the constraint list is empty. This is the reduction a walked do-block's
+trailing step leaves, so it belongs to the `circuitVal` normal form. -/
+@[circuitVal] theorem build_pure (a : α) (nv : Nat) :
+    build (pure a : CircuitM F c α) nv = ⟨a, nv, []⟩ := rfl
+
 /-- **Building a sequence splits**: the tail builds from the head's result and final
 counter, and the constraints concatenate in emission order — the composition law gadget
 soundness chains through (plan D12). -/

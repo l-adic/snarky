@@ -163,7 +163,13 @@ instance Basic.instLawfulBasicSystem [Add F] [Mul F] [Zero F] [One F] [Decidable
 The framework's recommended spec form is schematic — the postcondition is a
 parameter, so `mvcgen` instantiates it exactly at each call site — but written raw it
 buries a gadget's contract in encoding. The DSL's gadgets have a small number of
-shapes, named here once, so each spec reads as its contract alone. -/
+shapes, named here once, so each spec reads as its contract alone.
+
+A proof over these shapes runs: `simp only [<gadget>]` to unfold the body, then `mvcgen`
+to apply one registered spec, then `simp [circuitVal]` (the normal form declared in
+`Circuit/CVar`) to reduce what is left to an arithmetic identity, which `grind`/`ring`
+close. Two rewrites must be avoided: `mvcgen [<gadget>]` unfolds the gadget INSTEAD of
+consulting the `@[spec]` registry, and plain `simp` rewrites `>>=` past `wp_bind`. -/
 
 /-- **The soundness spec shape**, polymorphic in what the gadget returns: under
 `Q`-whatever-comes-next, a gadget granting `post` about its result satisfies the
