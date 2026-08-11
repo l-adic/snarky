@@ -6,7 +6,6 @@ import Snarky.Circuit.DSL.Field
 import Snarky.Circuit.DSL.Boolean
 import Snarky.Circuit.DSL.Assert
 import Snarky.Circuit.DSL.Bits
-import Snarky.Circuit.DSL.Agreement
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
 import Snarky.Backend.WP
@@ -34,9 +33,9 @@ do-block: `simp only` with the circuit's definition, then `mvcgen` — which app
 callee's registered law — then `simp [circuitVal]` (the value-reading simp set
 registered in `Circuit/CVar`), leaving arithmetic for `grind`/`ring`. The prover
 reading is selected by the constraint tag `ProverC`; `sound_spec_iff` and
-`complete_spec_iff` convert either law to its interpreter-level statement;
-`Circuit/DSL/Agreement` checks per gadget that the two readings state the same
-arithmetic; `Example` runs the whole recipe on one circuit.
+`complete_spec_iff` convert either law to its interpreter-level statement, and
+`post_of_prove` ties an honest run to the soundness relation; `Example` runs the
+whole recipe on one circuit.
 
 ## The layout
 
