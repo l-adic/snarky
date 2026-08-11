@@ -17,7 +17,65 @@ Snarky.build_eraseWitness
 Snarky.prove_assignments_le
 Snarky.prove_build_agrees
 Snarky.prove_complete
+Snarky.prove_freshFrom
+Snarky.prove_nextVar_le
 Snarky.CVar.eval_le
+
+-- The valuation seam: the total adversarial-witness reading the soundness laws
+-- quantify over, and its bridge to the Except layer (Backend/Assignments.lean,
+-- Circuit/CVar.lean).
+Snarky.Valuation.toAssignments
+Snarky.CVar.val
+Snarky.CVar.eval_toAssignments
+
+-- The `circuitVal` normal form (declared in Circuit/CVar.lean, members downstream):
+-- what a gadget law reduces to once `mvcgen` has walked its do-block. Consumed by simp
+-- through the attribute, so no constant walk reaches these.
+Snarky.build_pure
+Snarky.prove_pure
+Snarky.Assignments.eval_var_extend
+Snarky.CVar.val_add_
+Snarky.CVar.val_scale_
+Snarky.CVar.val_sub_
+Snarky.BoolVar.toCVar_unchecked
+Snarky.bit_true
+Snarky.bit_false
+Snarky.bit_mul
+Snarky.equalsPure
+Snarky.neqPure
+Snarky.selectPure
+
+-- The alignment bridge: complete a run's table to a valuation, and tie an honest run
+-- to the soundness relation (Backend/{Assignments,WP}.lean).
+Snarky.Assignments.toValuation
+Snarky.CVar.val_toValuation
+Snarky.post_of_prove
+
+-- The Std.Do weakest-precondition interpretation of build (Backend/WP.lean):
+-- the soundness reading, generic over the backend's semantic reading of one
+-- constraint value.
+Snarky.ConstraintHolds
+Snarky.CircuitM.instWP
+Snarky.CircuitM.instWPMonad
+Snarky.LawfulBasicSystem
+Snarky.Basic.instConstraintHolds
+Snarky.Basic.instLawfulBasicSystem
+Snarky.ProverC
+Snarky.ProverC.instWP
+Snarky.ProverC.instWPMonad
+Snarky.sound_spec_iff
+Snarky.complete_spec_iff
+
+-- The primitive specs and the vector loop rules (Backend/WP.lean): triple laws for the
+-- monad's own operations and for `generateVec`, the pieces a walked gadget bottoms out
+-- in.
+Snarky.addConstraint_spec
+Snarky.addConstraint_complete_spec
+Snarky.witnessBool_spec
+Snarky.witnessBool_complete_spec
+Snarky.generateVec_spec
+Snarky.generateVec_complete_spec
+Snarky.CVar.evalOk
 
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
 Snarky.Basic.holds
@@ -32,44 +90,63 @@ Snarky.prove_bind
 -- assignment satisfying a gadget's
 -- emitted constraints pins its result; the honest prover run succeeds and answers
 -- correctly. `div` and `pow` are proved compositionally through the bind laws.
-Snarky.equals_sound
-Snarky.equals_complete
-Snarky.mul_sound
-Snarky.mul_complete
-Snarky.inv_sound
-Snarky.inv_complete
-Snarky.square_sound
-Snarky.square_complete
-Snarky.div_sound
-Snarky.div_complete
-Snarky.pow_sound
-Snarky.pow_complete
+Snarky.equals_spec
+Snarky.equals_complete_spec
+Snarky.mul_spec
+Snarky.mul_complete_spec
+Snarky.inv_spec
+Snarky.inv_complete_spec
+Snarky.div_spec
+Snarky.div_complete_spec
+Snarky.square_spec
+Snarky.square_complete_spec
+Snarky.pow_spec
+Snarky.pow_complete_spec
 Snarky.sum_eval
 Snarky.not_eval
-Snarky.neq_sound
-Snarky.neq_complete
-Snarky.and_sound
-Snarky.and_complete
-Snarky.or_sound
-Snarky.or_complete
-Snarky.xor_sound
-Snarky.xor_complete
-Snarky.select_sound
-Snarky.select_complete
-Snarky.assertEqual_sound
-Snarky.assertEqual_complete
-Snarky.assertNonZero_sound
-Snarky.assertNonZero_complete
-Snarky.assertNotEqual_sound
-Snarky.assertNotEqual_complete
-Snarky.assertSquare_sound
-Snarky.assertSquare_complete
-Snarky.assert_sound
-Snarky.assert_complete
+Snarky.neq_spec
+Snarky.neq_complete_spec
+Snarky.and_spec
+Snarky.and_complete_spec
+Snarky.or_spec
+Snarky.or_complete_spec
+Snarky.xor_spec
+Snarky.xor_complete_spec
+Snarky.select_spec
+Snarky.select_complete_spec
+Snarky.assertEqual_spec
+Snarky.assertEqual_complete_spec
+Snarky.assertNonZero_spec
+Snarky.assertNonZero_complete_spec
+Snarky.assertNotEqual_spec
+Snarky.assertNotEqual_complete_spec
+Snarky.assertSquare_spec
+Snarky.assertSquare_complete_spec
+Snarky.assert_spec
+Snarky.assert_complete_spec
+
+-- The sum-based family (DSL/{Boolean,Assert}): the bit-list relations the laws
+-- quantify over, and the triple pairs under the cast-injectivity hypothesis.
+Snarky.ReadBits
+Snarky.EvalBits
+Snarky.invCore_spec
+Snarky.any_spec
+Snarky.any_complete_spec
+Snarky.all_spec
+Snarky.all_complete_spec
+Snarky.allBools_spec
+Snarky.allBools_complete_spec
+Snarky.assertAny_spec
+Snarky.assertAny_complete_spec
+Snarky.assertAll_spec
+Snarky.assertAll_complete_spec
+Snarky.assertExactlyOne_spec
+Snarky.assertExactlyOne_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
-Snarky.unpack_sound
-Snarky.unpack_complete
+Snarky.unpack_spec
+Snarky.pack_val
+Snarky.unpack_complete_spec
 
 -- Whole-circuit compilation (Snarky/Backend/Compile.lean): the entry points and the
 -- fragment seam — a successful solve satisfies every compiled constraint and decodes the
@@ -150,19 +227,19 @@ Snarky.Kimchi.instBasicSystemGateConstraint
 Snarky.Kimchi.instDecidableEqGateConstraint
 Snarky.Kimchi.instReprGateConstraint
 
--- The Example exhibits (Example.lean, Example/Gadgets.lean): the showcase circuits and
+-- The Example exhibits (Example.lean): the showcase circuit, its laws, and
 -- the run helpers; their consumers are anonymous `example`s, invisible to any constant
 -- walk (exhibits stay rooted).
 Snarky.Example.F17
-Snarky.Example.F13
-Snarky.Example.cubeRoot?
-Snarky.Example.cubeRootCircuit
-Snarky.Example.cubeCircuit
+Snarky.Example.cubic
+Snarky.Example.cubic_spec
+Snarky.Example.cubic_complete_spec
+Snarky.Example.cubic_sound
+Snarky.Example.cubic_complete
 Snarky.Example.mulCircuit
 Snarky.Example.eqCircuit
 Snarky.Example.constEq
 Snarky.Example.constMul
-Snarky.Example.bitCircuit
 Snarky.Example.proverValue
 Snarky.Example.proverOk
 Snarky.Example.instFactPrimeOfNatNat_snarky

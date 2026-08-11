@@ -1,4 +1,9 @@
 import Snarky.Circuit.DSL.Boolean
+import Snarky.Backend.WP
+
+-- `mvcgen` is experimental; this option is its acknowledged-use switch (see the
+-- `Backend/WP` module docstring for the adoption rationale).
+set_option mvcgen.warning false
 
 /-!
 # Assertion gadgets
@@ -6,42 +11,25 @@ import Snarky.Circuit.DSL.Boolean
 Port of `Snarky.Circuit.DSL.Assert` (packages/snarky/src/Snarky/Circuit/DSL/Assert.purs):
 constraints enforced without returning values — equality, non-zeroness (an inverse
 witness, which is what fails on zero), squares, boolean assertions — plus the generic
-`AssertEqual` class and `allBools`.
+`AssertEqual` class and `allBools`. Every gadget carries its two laws beside it.
 
-Name map (D7; underscores drop): `assertEqual_` → `assertEqual`, `assertNonZero_` →
-`assertNonZero`, `assertNotEqual_` → `assertNotEqual`, `assertSquare_` → `assertSquare`,
-`assert_` → `assert`, `assertAny_`/`assertAll_`/`assertExactlyOne_` drop likewise,
-`allBools` keeps its PS name; the class method `assertEq` keeps its PS name — the barrel's
-transitional `assertEq` is subsumed by the class (`FVar` call sites are unchanged).
+Name map (underscores drop): `assertEqual_`, `assertNonZero_`, `assertNotEqual_`,
+`assertSquare_`, `assert_`, `assertAny_`, `assertAll_`, `assertExactlyOne_`;
+`allBools` and the class methods `assertEq`/`isEqual` keep their PS names.
 
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
-- PS CRASHES at circuit construction on impossible constant assertions (`unsafeThrow` on
-  unequal constants in `assertEqual_`; on the constant zero through `inv_` in
-  `assertNonZero_`). The total rendering emits the impossible constraint instead —
-  `assertEqual` emits the unsatisfiable `equal` row verbatim, `assertNonZero` the
-  canonical falsum `0 = 1` — so the prover rejects, and soundness treats the branch by
-  contradiction.
-- The `AssertEqual` class: fundeps unmodelled (house precedent); base instances only
-  (`FVar`, `BoolVar`, `PUnit`, the pair — components FIRST THEN SECOND, PS order, unlike
-  `IfThenElse`); the `Vector`/`Record` instances and the `GAssertEqual`/`RAssertEqual`
-  deriving machinery land with their first consumers (D8; monadic vector traversal needs
-  a kernel-reducible helper in `Snarky/Vec.lean` first).
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
+- PS CRASHES at circuit construction on impossible constant assertions. The total
+  rendering emits the impossible constraint instead — `assertEqual` the unsatisfiable
+  `equal` row, `assertNonZero` the falsum `0 = 1` — so the prover rejects, and
+  soundness treats the branch by contradiction.
+- The `AssertEqual` class: fundeps unmodelled; base instances only (`FVar`, `BoolVar`,
+  `PUnit`, the pair — components FIRST THEN SECOND, PS order, unlike `IfThenElse`).
 - `allBools` keeps the OCaml/PS constant-FIRST argument order in its three-plus case
-  (`equals (const n) (sum bs)`) — the order matters for the constraint's coefficient
-  signs downstream.
+  (`equals (const n) (sum bs)`).
 
-D9 survey (the `snarky-test-utils` Assert spec), in the D12 form, laws beside their
-gadgets: the `assertNonZero`/`assertEqual`/`assertNotEqual`/`assertSquare` rows land as
-the `_sound`/`_complete` pairs below (`assert` gets its pair too — it is the workhorse
-that pins a verifier's output bit). The sum-based `assertAny`/`assertAll`/
-`assertExactlyOne` and `allBools`'s three-plus case share `any`/`all`'s standing
-characteristic obligation (a sum of `n` bits detects `n` only below the characteristic)
-and defer with it. Assertions allocate nothing (except `assertNonZero`'s inverse
-witness), so their completeness laws are exact run equations, not existentials.
-
-Public results: `assertEqual_sound`/`_complete`, `assertNonZero_sound`/`_complete`,
-`assertNotEqual_sound`/`_complete`, `assertSquare_sound`/`_complete`,
-`assert_sound`/`_complete` — all `roots.txt` entries.
+The sum-based laws carry the cast-injectivity hypothesis of `DSL/Boolean`'s sum-based
+section wherever a count must be detected below the characteristic; the direction that
+only needs a count to cast is hypothesis-free.
 -/
 
 namespace Snarky
@@ -159,241 +147,590 @@ instance {F c : Type} {a b : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq
     let r₂ ← isEqual p.2 q.2
     Snarky.and r₁ r₂
 
-/-! ## The `assertEqual` laws (D12) -/
+/-! ## The `assertEqual` laws -/
 
-/-- The constant branch of `assertEqual`, over the syntactic `if`: satisfiable only
-when the constants agree. -/
-private theorem assertEqual_consts_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {f g : F} {nv : Nat} {env : Assignments F}
-    (hsat : ∀ con ∈ (build (if f = g then (pure PUnit.unit : CircuitM F (Basic F) PUnit)
-        else addConstraint (BasicSystem.equal (.const f) (.const g))) nv).constraints,
-      con.holds env = true) :
-    f = g := by
-  split_ifs at hsat with hfg
-  · exact hfg
-  · obtain ⟨x, y, hx, hy, hxy⟩ := Basic.equal_inv (hsat _ (List.mem_cons_self ..))
-    have hfx : f = x := by simpa [CVar.eval] using hx
-    have hgy : g = y := by simpa [CVar.eval] using hy
-    rw [hfx, hgy]
-    exact hxy
-
-/-- The general branch of `assertEqual`: the `equal` row forces the values equal. -/
-private theorem assertEqual_row_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (addConstraint (BasicSystem.equal x y) :
-        CircuitM F (Basic F) PUnit) nv).constraints, con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) : xv = yv := by
-  obtain ⟨a, b, ha, hb, hab⟩ := Basic.equal_inv (hsat _ (List.mem_cons_self ..))
-  rw [hx] at ha
-  rw [hy] at hb
-  injection ha with ha'
-  injection hb with hb'
-  rw [ha', hb']
-  exact hab
-
-/-- **`assertEqual` soundness** (D12): a satisfying assignment forces the operands'
-values equal — through the fold, the unsatisfiable-constants row, and the general row. -/
-theorem assertEqual_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (assertEqual (c := Basic F) x y) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) : xv = yv := by
-  unfold assertEqual at hsat
-  cases x <;> cases y <;>
+open Std.Do in
+/-- `assertEqual x y` asserts that any satisfying valuation reads the operands equal —
+through the fold, the unsatisfiable-constants row, and the general row. -/
+@[spec] theorem assertEqual_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => x.val V = y.val V) Q⦄
+    assertEqual (c := c) x y
+    ⦃Q⦄ := by
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
+  cases x <;> cases y <;> simp only [assertEqual] <;>
     first
     | (rename_i f g
-       have hf : f = xv := by simpa [CVar.eval] using hx
-       have hg : g = yv := by simpa [CVar.eval] using hy
-       rw [← hf, ← hg]
-       exact assertEqual_consts_sound hsat)
-    | exact assertEqual_row_sound hsat hx hy
+       split_ifs with hfg
+       · intro _
+         exact hpre PUnit.unit _ hfg
+       · intro hsat
+         exact hpre PUnit.unit _
+           (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
+    | (intro hsat
+       exact hpre PUnit.unit _
+         (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
 
-/-- The general branch of `assertEqual`, completeness side: the check passes on equal
-values. -/
-private theorem assertEqual_row_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) (hxy : xv = yv) :
-    prove Basic.holds (addConstraint (BasicSystem.equal x y) :
-        CircuitM F (Basic F) PUnit) nv env = .ok ⟨PUnit.unit, nv, env⟩ := by
-  have hch : Basic.holds (.equal x y) env = true := by
+open Std.Do in
+/-- `assertEqual`'s honest run cannot fail on operands reading equal — it changes
+nothing, so the postcondition is claimed at the incoming state. -/
+@[spec] theorem assertEqual_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] (x y : FVar F)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) (fun _ _ _ => True) Q⦄
+    assertEqual (c := ProverC F) x y
+    ⦃Q⦄ := by
+  intro st hpre
+  rw [show (assertEqual (c := ProverC F) x y : CircuitM F (ProverC F) _)
+      = (assertEqual (c := Basic F) x y : CircuitM F (Basic F) _) from rfl]
+  obtain ⟨⟨hokx, hoky, heq⟩, hk⟩ := hpre
+  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
+  have hxy := heq xv yv hx hy
+  have hQ := hk PUnit.unit st trivial (Assignments.Le.refl st.env)
+  have hch : (BasicSystem.equal (c := Basic F) x y).holds st.env = true := by
+    show (Basic.equal x y).holds st.env = true
     simp [Basic.holds, hx, hy, hxy]
-  show prove Basic.holds (.addConstraintOp (Basic.equal x y) (.pure PUnit.unit)) nv env = _
-  simp only [prove, hch, if_true]
-
-/-- The constant branch of `assertEqual`, completeness side. -/
-private theorem assertEqual_consts_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {f g : F} {nv : Nat} {env : Assignments F} (hfg : f = g) :
-    prove Basic.holds (if f = g then (pure PUnit.unit : CircuitM F (Basic F) PUnit)
-        else addConstraint (BasicSystem.equal (.const f) (.const g))) nv env
-      = .ok ⟨PUnit.unit, nv, env⟩ := by
-  rw [if_pos hfg]
-  rfl
-
-/-- **`assertEqual` completeness** (D12): on equal values the run succeeds, allocating
-nothing — an exact equation. -/
-theorem assertEqual_complete {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) (hxy : xv = yv) :
-    prove Basic.holds (assertEqual (c := Basic F) x y) nv env
-      = .ok ⟨PUnit.unit, nv, env⟩ := by
-  unfold assertEqual
-  cases x <;> cases y <;>
+  cases x <;> cases y <;> simp only [assertEqual] <;>
     first
     | (rename_i f g
-       have hf : f = xv := by simpa [CVar.eval] using hx
-       have hg : g = yv := by simpa [CVar.eval] using hy
-       exact assertEqual_consts_run (by rw [hf, hg]; exact hxy))
-    | exact assertEqual_row_run hx hy hxy
+       split_ifs with hfg
+       · exact fun _ => hQ
+       · simp only [addConstraint, wp, PredTrans.apply, prove, hch, if_true]
+         exact fun _ => hQ)
+    | (simp only [addConstraint, wp, PredTrans.apply, prove, hch, if_true]
+       exact fun _ => hQ)
 
-/-! ## The `assertNonZero` laws (D12) -/
+section MvcgenDemos
 
-/-- The constant branch of `assertNonZero`, over the syntactic `if`: satisfiable only
-when the constant is nonzero (the zero branch carries the falsum `0 = 1`). -/
-private theorem assertNonZero_consts_sound {F : Type u} [Field F] [DecidableEq F]
-    {f : F} {nv : Nat} {env : Assignments F}
-    (hsat : ∀ con ∈ (build (if f = 0
-        then (addConstraint (BasicSystem.equal (.const 0 : CVar F) (.const 1)) :
-          CircuitM F (Basic F) PUnit)
-        else pure PUnit.unit) nv).constraints, con.holds env = true) :
-    f ≠ 0 := by
-  split_ifs at hsat with h0
-  · obtain ⟨x, y, hx, hy, hxy⟩ := Basic.equal_inv (hsat _ (List.mem_cons_self ..))
-    have h1 : (0 : F) = x := by simpa [CVar.eval] using hx
-    have h2 : (1 : F) = y := by simpa [CVar.eval] using hy
-    exact absurd (h1.trans (hxy.trans h2.symm)) zero_ne_one
-  · exact h0
+open Std.Do
 
-/-- The witnessing branch of `assertNonZero`: the inverse's `r1cs` row forces the value
-nonzero (stated over `invCore`, which has no scrutinee — `build` reduces for any `v`). -/
-private theorem assertNonZero_core_sound {F : Type u} [Field F] [DecidableEq F]
-    {v : FVar F} {nv : Nat} {env : Assignments F} {vv : F}
-    (hsat : ∀ con ∈ (build (invCore (c := Basic F) v >>= fun _ => pure PUnit.unit)
-        nv).constraints, con.holds env = true)
-    (hv : v.eval env = .ok vv) : vv ≠ 0 := by
-  rw [build_bind] at hsat
-  obtain ⟨a, b, o, ha, hb, ho, hab⟩ := Basic.r1cs_inv
-    (hsat _ (List.mem_append_left _ (List.mem_cons_self ..)))
-  rw [hv] at ha
-  injection ha with ha'
-  have ho' : (1 : F) = o := by simpa [CVar.eval] using ho
-  rw [ha']
-  exact left_ne_zero_of_mul_eq_one (ho'.symm ▸ hab)
+variable {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- **`assertNonZero` soundness** (D12): a satisfying assignment forces the value
-nonzero — through the folds and the inverse-witness row. -/
-theorem assertNonZero_sound {F : Type u} [Field F] [DecidableEq F]
-    {v : FVar F} {nv : Nat} {env : Assignments F} {vv : F}
-    (hsat : ∀ con ∈ (build (assertNonZero (c := Basic F) v) nv).constraints,
-      con.holds env = true)
-    (hv : v.eval env = .ok vv) : vv ≠ 0 := by
-  unfold assertNonZero at hsat
-  cases v <;>
-    first
-    | (rename_i f
-       have hf : f = vv := by simpa [CVar.eval] using hv
-       rw [← hf]
-       exact assertNonZero_consts_sound hsat)
-    | exact assertNonZero_core_sound hsat hv
+/-- A two-step chain: equality is transitive through composition. -/
+example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y z : FVar F) :
+    ⦃⌜True⌝⦄
+    (do assertEqual (c := c) x y
+        assertEqual (c := c) y z : CircuitM F c PUnit)
+    ⦃⇓ _ s => ⌜x.val s.V = z.val s.V⌝⦄ := by
+  mvcgen
+  intro _ _nv' hxy
+  exact assertEqual_spec (c := c) y z _ _ fun _ _ hyz => hxy.trans hyz
 
-/-- The witnessing branch of `assertNonZero`, completeness side. -/
-private theorem assertNonZero_core_run {F : Type u} [Field F] [DecidableEq F]
-    {v : FVar F} {nv : Nat} {env : Assignments F} {vv : F}
-    (hfresh : env.FreshFrom nv) (hv : v.eval env = .ok vv) (hvv : vv ≠ 0) :
-    ∃ out, prove Basic.holds (inv (c := Basic F) v >>= fun _ => pure PUnit.unit) nv env
-        = .ok out ∧ out.assignments.FreshFrom out.nextVar := by
-  rw [prove_bind]
-  obtain ⟨o₁, hr₁, he₁, hf₁⟩ := inv_complete hfresh hv hvv
-  rw [hr₁]
-  exact ⟨⟨PUnit.unit, o₁.nextVar, o₁.assignments⟩, rfl, hf₁⟩
+/-- The same chain in the prover reading: on agreeing values the honest run cannot
+fail. The two `@[spec]` lemmas for one head symbol coexist across the two readings;
+`mvcgen` selects by the ambient monad. -/
+example (x y z : FVar F) (xv yv zv : F) :
+    ⦃fun st => ⌜x.eval st.env = Except.ok xv ∧ y.eval st.env = Except.ok yv ∧
+        z.eval st.env = Except.ok zv ∧ xv = yv ∧ yv = zv⌝⦄
+    (do assertEqual (c := ProverC F) x y
+        assertEqual (c := ProverC F) y z)
+    ⦃PostCond.noThrow fun _ _st => ⌜True⌝⦄ := by
+  mvcgen
+  rename_i h
+  obtain ⟨hx, hy, hz, hxy, hyz⟩ := h
+  subst hxy
+  subst hyz
+  refine ⟨⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
+    fun _ st' hle => ?_⟩
+  · rw [hx] at ha; rw [hy] at hb
+    injection ha with ha; injection hb with hb
+    rw [← ha, ← hb]
+  · refine assertEqual_complete_spec y z _ st'
+      ⟨⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
+        fun a b ha hb => ?_⟩, fun _ _ _ _ => trivial⟩
+    rw [CVar.eval_le hle hy] at ha; rw [CVar.eval_le hle hz] at hb
+    injection ha with ha; injection hb with hb
+    rw [← ha, ← hb]
 
-/-- **`assertNonZero` completeness** (D12): on a nonzero value the run succeeds and
-re-establishes freshness. -/
-theorem assertNonZero_complete {F : Type u} [Field F] [DecidableEq F]
-    {v : FVar F} {nv : Nat} {env : Assignments F} {vv : F}
-    (hfresh : env.FreshFrom nv) (hv : v.eval env = .ok vv) (hvv : vv ≠ 0) :
-    ∃ out, prove Basic.holds (assertNonZero (c := Basic F) v) nv env = .ok out ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold assertNonZero
-  cases v <;>
-    first
-    | (rename_i f
-       have hf : f = vv := by simpa [CVar.eval] using hv
-       refine ⟨⟨PUnit.unit, nv, env⟩, ?_, hfresh⟩
-       show prove Basic.holds (if f = 0
-           then (addConstraint (BasicSystem.equal (.const 0 : CVar F) (.const 1)) :
-             CircuitM F (Basic F) PUnit)
-           else pure PUnit.unit) nv env = _
-       rw [if_neg (by rw [hf]; exact hvv)]
-       rfl)
-    | exact assertNonZero_core_run hfresh hv hvv
+end MvcgenDemos
 
-/-! ## The `assertNotEqual`, `assertSquare`, and `assert` laws (D12) -/
+section MvcgenDemosField
 
-/-- **`assertNotEqual` soundness** (D12), composed from `assertNonZero`. -/
-theorem assertNotEqual_sound {F : Type u} [Field F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (assertNotEqual (c := Basic F) x y) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) : xv ≠ yv := by
-  unfold assertNotEqual at hsat
-  exact sub_ne_zero.mp (assertNonZero_sound hsat (CVar.eval_sub_ hx hy))
+open Std.Do
 
-/-- **`assertNotEqual` completeness** (D12), composed from `assertNonZero`. -/
-theorem assertNotEqual_complete {F : Type u} [Field F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hfresh : env.FreshFrom nv)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) (hne : xv ≠ yv) :
-    ∃ out, prove Basic.holds (assertNotEqual (c := Basic F) x y) nv env = .ok out ∧
-      out.assignments.FreshFrom out.nextVar := by
-  unfold assertNotEqual
-  exact assertNonZero_complete hfresh (CVar.eval_sub_ hx hy) (sub_ne_zero.mpr hne)
+variable {F c : Type} [Field F] [DecidableEq F]
 
-/-- **`assertSquare` soundness** (D12): the row forces the square identity. -/
-theorem assertSquare_sound {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hsat : ∀ con ∈ (build (assertSquare (c := Basic F) x y) nv).constraints,
-      con.holds env = true)
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) : xv * xv = yv := by
-  obtain ⟨a, z, ha, hz, hsq⟩ := Basic.square_inv (hsat _ (List.mem_cons_self ..))
-  rw [hx] at ha
-  rw [hy] at hz
-  injection ha with ha'
-  injection hz with hz'
-  rw [ha', hz']
-  exact hsq
+/-- A compute–assert chain with a mathematical postcondition: pinning `w` to the
+witnessed inverse forces `w` to read as `v`'s field inverse. -/
+example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (v w : FVar F) :
+    ⦃⌜True⌝⦄
+    (do let r ← inv (c := c) v
+        assertEqual (c := c) r w : CircuitM F c PUnit)
+    ⦃⇓ _ s => ⌜w.val s.V = (v.val s.V)⁻¹⌝⦄ := by
+  mvcgen
+  intro r _nv' hr
+  refine assertEqual_spec (c := c) r w _ _ fun _ _ heq => ?_
+  show w.val _ = _
+  exact heq ▸ hr
 
-/-- **`assertSquare` completeness** (D12): an exact run equation on a true square. -/
-theorem assertSquare_complete {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv) (hsq : xv * xv = yv) :
-    prove Basic.holds (assertSquare (c := Basic F) x y) nv env
-      = .ok ⟨PUnit.unit, nv, env⟩ := by
-  have hch : Basic.holds (.square x y) env = true := by
+end MvcgenDemosField
+
+/-! ## The `assertNonZero`, `assertNotEqual`, and `assertSquare` laws -/
+
+open Std.Do in
+/-- `assertNonZero` asserts the operand reads nonzero — the zero-constant branch
+carries an unsatisfiable row, the witnessing branch the inverse's product row. -/
+@[spec] theorem assertNonZero_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (v : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => v.val V ≠ 0) Q⦄
+    assertNonZero (c := c) v
+    ⦃Q⦄ := by
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
+  cases v <;> simp only [assertNonZero]
+  case const f =>
+    split_ifs with h0
+    · intro hsat
+      exact absurd
+        (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..)))
+        zero_ne_one
+    · intro _
+      exact hpre PUnit.unit _ h0
+  all_goals
+    (simp only [inv]
+     mvcgen
+     intro r _nv' hr _
+     exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one hr))
+
+open Std.Do in
+/-- `assertNonZero`'s honest run succeeds on a nonzero value, extending the table with
+the witnessed inverse. -/
+@[spec] theorem assertNonZero_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (v : FVar F)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (v.eval env).isOk ∧
+        ∀ vv, v.eval env = .ok vv → vv ≠ 0)
+        (fun _ _ _ => True) Q⦄
+    assertNonZero (c := ProverC F) v
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨⟨hokv, hne⟩, hk⟩ := hpre
+  obtain ⟨vv, hv⟩ := CVar.evalOk hokv
+  have hvv := hne vv hv
+  cases v <;> simp only [assertNonZero]
+  case const f =>
+    have hf : f = vv := by simpa [CVar.eval] using hv
+    rw [if_neg (by rw [hf]; exact hvv)]
+    exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
+  all_goals
+    (mvcgen
+     refine ⟨⟨by rw [hv]; rfl, fun _ h => ?_⟩, fun _ st' _ hle => ?_⟩
+     · rw [hv] at h
+       injection h with h
+       exact h ▸ hvv
+     · exact fun _ => hk PUnit.unit st' hle)
+
+open Std.Do in
+/-- `assertNotEqual` asserts the operands read unequal — delegated to `assertNonZero`
+on the difference. -/
+@[spec] theorem assertNotEqual_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => x.val V ≠ y.val V) Q⦄
+    assertNotEqual (c := c) x y
+    ⦃Q⦄ := by
+  intro s hpre
+  obtain ⟨V, nv⟩ := s
+  refine assertNonZero_spec (c := c) _ Q ⟨V, nv⟩ ?_
+  intro _ _ hne
+  exact hpre PUnit.unit _ (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
+
+open Std.Do in
+/-- `assertNotEqual`'s honest run succeeds on operands reading unequal —
+`assertNonZero`'s law applied at the difference. -/
+@[spec] theorem assertNotEqual_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (x y : FVar F)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv)
+        (fun _ _ _ => True) Q⦄
+    assertNotEqual (c := ProverC F) x y
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨⟨hokx, hoky, hne⟩, hk⟩ := hpre
+  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
+  refine assertNonZero_complete_spec (CVar.sub_ x y) Q st
+    ⟨⟨by rw [CVar.eval_sub_ hx hy]; rfl, fun d hd => ?_⟩, hk⟩
+  rw [CVar.eval_sub_ hx hy] at hd
+  injection hd with hd
+  exact hd ▸ sub_ne_zero.mpr (hne xv yv hx hy)
+
+open Std.Do in
+/-- `assertSquare x y` asserts `x · x = y` on the operands' readings. -/
+@[spec] theorem assertSquare_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => x.val V * x.val V = y.val V) Q⦄
+    assertSquare (c := c) x y
+    ⦃Q⦄ := by
+  intro s hpre hsat
+  obtain ⟨V, nv⟩ := s
+  exact hpre PUnit.unit _
+    (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
+
+open Std.Do in
+/-- `assertSquare`'s honest run succeeds on a true square, changing nothing. -/
+@[spec] theorem assertSquare_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] (x y : FVar F)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv)
+        (fun _ _ _ => True) Q⦄
+    assertSquare (c := ProverC F) x y
+    ⦃Q⦄ := by
+  intro st hpre
+  rw [show (assertSquare (c := ProverC F) x y : CircuitM F (ProverC F) _)
+      = (assertSquare (c := Basic F) x y : CircuitM F (Basic F) _) from rfl]
+  obtain ⟨⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
+  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
+  have hsq := hsq' xv yv hx hy
+  have hch : (BasicSystem.square (c := Basic F) x y).holds st.env = true := by
+    show (Basic.square x y).holds st.env = true
     simp [Basic.holds, hx, hy, hsq]
-  show prove Basic.holds (.addConstraintOp (Basic.square x y) (.pure PUnit.unit)) nv env
-    = _
-  simp only [prove, hch, if_true]
+  simp [assertSquare, addConstraint, wp, PredTrans.apply, prove, hch]
+  exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
 
-/-- **`assert` soundness** (D12): a satisfying assignment forces the bit true — the
-law that pins a verifier's output bit. -/
-theorem assert_sound {F : Type u} [Field F] [DecidableEq F]
-    {v : BoolVar F} {nv : Nat} {env : Assignments F} {ab : Bool}
-    (hsat : ∀ con ∈ (build (assert (c := Basic F) v) nv).constraints,
-      con.holds env = true)
-    (hv : (↑v : CVar F).eval env = .ok (bit ab)) : ab = true := by
-  unfold assert at hsat
-  have h := assertEqual_sound hsat hv (rfl : (CVar.const (1 : F)).eval env = .ok 1)
-  cases ab
-  · exact absurd h (by simp [bit])
-  · rfl
+open Std.Do in
+/-- `assert v` asserts the bit reads `1`. -/
+@[spec] theorem assert_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (v : BoolVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => (↑v : CVar F).val V = 1) Q⦄
+    assert (c := c) v
+    ⦃Q⦄ := by
+  simp only [assert]
+  exact assertEqual_spec (c := c) ↑v (.const 1) Q
 
-/-- **`assert` completeness** (D12): an exact run equation on a true bit. -/
-theorem assert_complete {F : Type u} [Field F] [DecidableEq F]
-    {v : BoolVar F} {nv : Nat} {env : Assignments F} {ab : Bool}
-    (hv : (↑v : CVar F).eval env = .ok (bit ab)) (hab : ab = true) :
-    prove Basic.holds (assert (c := Basic F) v) nv env = .ok ⟨PUnit.unit, nv, env⟩ := by
-  unfold assert
-  exact assertEqual_complete hv (rfl : (CVar.const (1 : F)).eval env = .ok 1)
-    (by rw [hab]; simp [bit])
+open Std.Do in
+/-- `assert`'s honest run succeeds on a bit reading `1`. -/
+@[spec] theorem assert_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (v : BoolVar F)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => ((↑v : CVar F).eval env).isOk ∧
+        ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1)
+        (fun _ _ _ => True) Q⦄
+    assert (c := ProverC F) v
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨⟨hokv, hone⟩, hk⟩ := hpre
+  obtain ⟨bv, hv⟩ := CVar.evalOk hokv
+  refine assertEqual_complete_spec ↑v (.const 1) Q st
+    ⟨⟨by rw [hv]; rfl, by rfl, fun a b ha hb => ?_⟩, hk⟩
+  rw [hv] at ha
+  injection ha with ha
+  injection hb with hb
+  rw [← ha, ← hb]
+  exact hone bv hv
+
+/-! ## The sum-based combinators (`allBools`, `assertAny`, `assertAll`,
+`assertExactlyOne`)
+
+The three-plus cases test a bit-sum, so the laws carry the cast-injectivity hypothesis
+of `DSL/Boolean`'s sum-based section (`assertAny`'s soundness needs none: a zero count
+casts to zero in any semiring). -/
+
+open Std.Do in
+/-- `allBools`: on bit operands the result reads as the list's conjunction, under
+cast-injectivity up to the length. -/
+@[spec] theorem allBools_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : BoolVar F) => ∀ bl : List Bool, ReadBits V bs bl →
+        (↑r : CVar F).val V = bit (bl.all id)) Q⦄
+    allBools (c := c) bs
+    ⦃Q⦄ := by
+  match bs, hchar with
+  | [], _ =>
+    simp only [allBools]
+    intro s hpre _
+    refine hpre true_ s.nv (fun bl hbl => ?_)
+    cases hbl
+    rfl
+  | [a], _ =>
+    simp only [allBools]
+    intro s hpre _
+    refine hpre a s.nv (fun bl hbl => ?_)
+    obtain - | ⟨hb, hnil⟩ := hbl
+    cases hnil
+    simpa using hb
+  | [a, b], _ =>
+    simp only [allBools]
+    refine fun s hpre => and_spec a b Q s (fun r nv' hr => ?_)
+    refine hpre r nv' (fun bl hbl => ?_)
+    obtain - | ⟨ha', htl⟩ := hbl
+    obtain - | ⟨hb', hnil⟩ := htl
+    cases hnil
+    simpa using hr _ _ ha' hb'
+  | x₁ :: x₂ :: x₃ :: t, hchar =>
+    simp only [allBools]
+    set bs := x₁ :: x₂ :: x₃ :: t with hbs
+    refine fun s hpre => equals_spec _ _ Q s (fun r nv' hr => ?_)
+    refine hpre r nv' (fun bl hbl => ?_)
+    have hsum := sum_bits_val (V := s.V) hbl
+    have hlen := forall₂_length hbl
+    have hcount : bl.count true ≤ bs.length + 1 := by
+      have := List.count_le_length (a := true) (l := bl)
+      omega
+    rw [hr, hsum]
+    simp only [equalsPure]
+    show (if (CVar.const (bs.length : F)).val s.V = (bl.count true : F) then 1 else 0) = _
+    by_cases hall : bl.all id = true
+    · rw [hall]
+      have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
+      simp only [CVar.val]
+      rw [if_pos (by rw [hc, hlen]), bit_true]
+    · have hall' : bl.all id = false := by revert hall; cases bl.all id <;> simp
+      rw [hall']
+      have hc : bl.count true ≠ bl.length := fun hcc =>
+        absurd (count_true_eq_length.mp hcc) (by rw [hall']; simp)
+      have hne : ¬((bs.length : F) = (bl.count true : F)) := by
+        intro hcast
+        have := hchar _ _ (by omega) hcount hcast
+        omega
+      simp only [CVar.val]
+      rw [if_neg hne, bit_false]
+
+open Std.Do in
+/-- `allBools`'s honest run succeeds on evaluable operands; where they read as bits the
+result is the conjunction bit. -/
+@[spec] theorem allBools_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => ∀ b ∈ bs, (((b : BoolVar F) : CVar F).eval env).isOk)
+        (fun env (r : BoolVar F) env' => ∀ bl : List Bool, EvalBits env bs bl →
+          (↑r : CVar F).eval env' = .ok (bit (bl.all id))) Q⦄
+    allBools (c := ProverC F) bs
+    ⦃Q⦄ := by
+  match bs, hchar with
+  | [], _ =>
+    simp only [allBools]
+    intro st hpre
+    obtain ⟨-, hk⟩ := hpre
+    exact fun _ => hk true_ st (fun bl hbl => by cases hbl; rfl)
+      (Assignments.Le.refl st.env)
+  | [a], _ =>
+    simp only [allBools]
+    intro st hpre
+    obtain ⟨-, hk⟩ := hpre
+    refine fun _ => hk a st (fun bl hbl => ?_) (Assignments.Le.refl st.env)
+    obtain - | ⟨hb, hnil⟩ := hbl
+    cases hnil
+    simpa using hb
+  | [a, b], _ =>
+    simp only [allBools]
+    intro st hpre
+    obtain ⟨hok, hk⟩ := hpre
+    refine and_complete_spec a b Q st
+      ⟨⟨hok a (by simp), hok b (by simp)⟩, fun r st' hr hle => ?_⟩
+    refine hk r st' (fun bl hbl => ?_) hle
+    obtain - | ⟨ha', htl⟩ := hbl
+    obtain - | ⟨hb', hnil⟩ := htl
+    cases hnil
+    simpa using hr _ _ ha' hb'
+  | x₁ :: x₂ :: x₃ :: t, hchar =>
+    simp only [allBools]
+    set bs := x₁ :: x₂ :: x₃ :: t with hbs
+    intro st hpre
+    obtain ⟨hok, hk⟩ := hpre
+    refine equals_complete_spec _ _ Q st
+      ⟨⟨by rfl, sum_evalOk hok⟩, fun r st' hr hle => ?_⟩
+    refine hk r st' (fun bl hbl => ?_) hle
+    have hsum := sum_bits_eval hbl
+    have hlen := forall₂_length hbl
+    have hcount : bl.count true ≤ bs.length + 1 := by
+      have := List.count_le_length (a := true) (l := bl)
+      omega
+    have hr' := hr _ _ (by rfl : (CVar.const (bs.length : F)).eval st.env
+      = .ok (bs.length : F)) hsum
+    rw [hr']
+    simp only [equalsPure]
+    by_cases hall : bl.all id = true
+    · rw [hall]
+      have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
+      rw [if_pos (by rw [hc, hlen]), bit_true]
+    · have hall' : bl.all id = false := by revert hall; cases bl.all id <;> simp
+      rw [hall']
+      have hc : bl.count true ≠ bl.length := fun hcc =>
+        absurd (count_true_eq_length.mp hcc) (by rw [hall']; simp)
+      have hne : ¬((bs.length : F) = (bl.count true : F)) := by
+        intro hcast
+        have := hchar _ _ (by omega) hcount hcast
+        omega
+      rw [if_neg hne, bit_false]
+
+open Std.Do in
+/-- `assertAny` asserts some bit is set — no characteristic hypothesis: a zero count
+casts to zero in any semiring. -/
+@[spec] theorem assertAny_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
+        bl.any id = true) Q⦄
+    assertAny (c := c) bs
+    ⦃Q⦄ := by
+  simp only [assertAny]
+  refine fun s hpre => assertNonZero_spec _ Q s (fun u nv' hne => ?_)
+  dsimp only at hne
+  refine hpre u nv' (fun bl hbl => ?_)
+  have hsum := sum_bits_val (V := s.V) hbl
+  rw [hsum] at hne
+  by_contra hany
+  have hany' : bl.any id = false := by revert hany; cases bl.any id <;> simp
+  rw [count_true_eq_zero.mpr hany'] at hne
+  exact hne (by simp)
+
+open Std.Do in
+/-- `assertAny`'s honest run succeeds on bit operands with some bit set —
+cast-injectivity makes the nonzero count a nonzero sum. -/
+@[spec] theorem assertAny_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
+        ∀ bl : List Bool, EvalBits env bs bl → bl.any id = true)
+        (fun _ _ _ => True) Q⦄
+    assertAny (c := ProverC F) bs
+    ⦃Q⦄ := by
+  simp only [assertAny]
+  intro st hpre
+  obtain ⟨⟨hbits, hany⟩, hk⟩ := hpre
+  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
+  have hsum := sum_bits_eval hbl
+  have hlen := forall₂_length hbl
+  have hcount : bl.count true ≤ bs.length + 1 := by
+    have := List.count_le_length (a := true) (l := bl)
+    omega
+  have hne : bl.count true ≠ 0 := by
+    intro h0
+    have := hany bl hbl
+    rw [count_true_eq_zero.mp h0] at this
+    cases this
+  refine assertNonZero_complete_spec _ Q st
+    ⟨⟨by rw [hsum]; rfl, fun sv hsv => ?_⟩, hk⟩
+  rw [hsum] at hsv
+  injection hsv with hsv
+  subst hsv
+  intro hcast
+  exact hne (hchar _ 0 hcount (by omega) (by simpa using hcast))
+
+open Std.Do in
+/-- `assertAll` asserts every bit is set, under cast-injectivity up to the length. -/
+@[spec] theorem assertAll_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
+        bl.all id = true) Q⦄
+    assertAll (c := c) bs
+    ⦃Q⦄ := by
+  simp only [assertAll]
+  refine fun s hpre => assertEqual_spec _ _ Q s (fun u nv' heq => ?_)
+  dsimp only at heq
+  refine hpre u nv' (fun bl hbl => ?_)
+  have hsum := sum_bits_val (V := s.V) hbl
+  have hlen := forall₂_length hbl
+  have hcount : bl.count true ≤ bs.length + 1 := by
+    have := List.count_le_length (a := true) (l := bl)
+    omega
+  rw [hsum] at heq
+  have hconst : (CVar.const (bs.length : F)).val s.V = ((bs.length : Nat) : F) := rfl
+  rw [hconst] at heq
+  have := hchar _ _ hcount (by omega) heq
+  exact count_true_eq_length.mp (by omega)
+
+open Std.Do in
+/-- `assertAll`'s honest run succeeds on bit operands all set — no characteristic
+hypothesis: the full count casts to the length in any semiring. -/
+@[spec] theorem assertAll_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
+        ∀ bl : List Bool, EvalBits env bs bl → bl.all id = true)
+        (fun _ _ _ => True) Q⦄
+    assertAll (c := ProverC F) bs
+    ⦃Q⦄ := by
+  simp only [assertAll]
+  intro st hpre
+  obtain ⟨⟨hbits, hall⟩, hk⟩ := hpre
+  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
+  have hsum := sum_bits_eval hbl
+  have hlen := forall₂_length hbl
+  have hc : bl.count true = bl.length := count_true_eq_length.mpr (hall bl hbl)
+  refine assertEqual_complete_spec _ _ Q st
+    ⟨⟨by rw [hsum]; rfl, by rfl, fun xv yv hx hy => ?_⟩, hk⟩
+  rw [hsum] at hx
+  injection hx with hx
+  injection hy with hy
+  subst hx
+  subst hy
+  rw [hc, hlen]
+
+open Std.Do in
+/-- `assertExactlyOne` asserts a one-hot list — the count is one, under
+cast-injectivity up to the length plus one. -/
+@[spec] theorem assertExactlyOne_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
+        bl.count true = 1) Q⦄
+    assertExactlyOne (c := c) bs
+    ⦃Q⦄ := by
+  simp only [assertExactlyOne]
+  refine fun s hpre => assertEqual_spec _ _ Q s (fun u nv' heq => ?_)
+  dsimp only at heq
+  refine hpre u nv' (fun bl hbl => ?_)
+  have hsum := sum_bits_val (V := s.V) hbl
+  have hlen := forall₂_length hbl
+  have hcount : bl.count true ≤ bs.length + 1 := by
+    have := List.count_le_length (a := true) (l := bl)
+    omega
+  rw [hsum] at heq
+  have hconst : (CVar.const (1 : F)).val s.V = ((1 : Nat) : F) := by
+    simp [CVar.val]
+  rw [hconst] at heq
+  exact hchar _ _ hcount (by omega) heq
+
+open Std.Do in
+/-- `assertExactlyOne`'s honest run succeeds on a one-hot bit list — the unit count
+casts to one in any semiring. -/
+@[spec] theorem assertExactlyOne_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
+        ∀ bl : List Bool, EvalBits env bs bl → bl.count true = 1)
+        (fun _ _ _ => True) Q⦄
+    assertExactlyOne (c := ProverC F) bs
+    ⦃Q⦄ := by
+  simp only [assertExactlyOne]
+  intro st hpre
+  obtain ⟨⟨hbits, hone⟩, hk⟩ := hpre
+  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
+  have hsum := sum_bits_eval hbl
+  have hc : bl.count true = 1 := hone bl hbl
+  refine assertEqual_complete_spec _ _ Q st
+    ⟨⟨by rw [hsum]; rfl, by rfl, fun xv yv hx hy => ?_⟩, hk⟩
+  rw [hsum] at hx
+  injection hx with hx
+  injection hy with hy
+  subst hx
+  subst hy
+  rw [hc]
+  simp
 
 end Snarky

@@ -6,48 +6,36 @@ import Mathlib.Tactic.Ring
 
 Port of `Snarky.Circuit.CVar` (packages/snarky/src/Snarky/Circuit/CVar.purs): the `CVar`
 type of affine expressions over allocated circuit variables, its folding smart
-constructors, evaluation against a partial assignment, and the reduction to the canonical
-affine form `c + Σ aᵢ·xᵢ` (`AffineExpression`) together with the evaluation-agreement
+constructors, evaluation against a partial assignment, and the reduction to the
+canonical affine form `c + Σ aᵢ·xᵢ` (`AffineExpression`) with the evaluation-agreement
 theorem `reduce_eval` — the property the PS package checks by QuickCheck, proved here.
 
-The public surface is the PS export list, def for def; the public theorems are
-`CVar.reduce_eval`, the fold-evaluation lemmas `CVar.eval_add_`/`eval_scale_`/`eval_sub_`,
-and their inversions `eval_scale_inv`/`eval_sub_inv` (a successful evaluation evaluates
-the operands — how the gadget laws read fresh variables out of
-fold-wrapped constraint slots); `DSL/Field.sum_eval` consumes the fold lemmas too.
-The affine-form helpers (`insertTerm`, `unionTerms`, `mergeConst`, `evalTerms`) and every
-supporting lemma are `private` — PS likewise keeps its `reduce'` internal.
+`EvalError` lives here because its PS original does: `EvaluationError` is defined in
+`Circuit/CVar.purs`; the separate `Circuit/EvalError.purs` is only JS-exception
+transport, which `Except` replaces.
 
-`EvalError` also lives in this module because its PS original does: `EvaluationError` is
-defined in `Circuit/CVar.purs`, while the separate `Circuit/EvalError.purs` is only the
-JS-exception transport, which `Except` replaces structurally and which is therefore not
-ported.
-
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
-- `Variable` is `Nat` (PS: a newtype over `Int` with `v0`/`incrementVariable`).
-- `CVar` is monomorphic in the variable type. PS `CVar f i` is a bifunctor instantiated
-  at `i = Variable` (`FVar`) and at `i = Bool Variable` (`BoolVar`'s phantom tag); the
-  Lean rendering keeps one index type and makes `BoolVar` a nominal wrapper with a
-  private constructor instead (see `Circuit/Types`).
-- `const_` is not ported (`CVar.const` is already first-class); the QuickCheck machinery
-  (`Arbitrary`, `genWithAssignments`) is not ported — the property it tested is
-  `reduce_eval`; the `Semigroup`/`Monoid` instances (zero-folding append) are not ported:
-  their would-be consumer `DSL/Field.sum` mirrors PS `sum_`, which folds `add_` directly.
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
+- `Variable` is `Nat` (PS: a newtype over `Int`).
+- `CVar` is monomorphic in the variable type; PS instantiates a bifunctor at `Variable`
+  and at a phantom boolean tag.
+- `const_` is not ported (`CVar.const` is first-class); the QuickCheck machinery and
+  the `Semigroup`/`Monoid` instances are not ported.
 - `EvalError` variants: `unassigned` ↔ PS `MissingVariable`; `custom` subsumes PS
   `FailedAssertion`/`DivisionByZero`; `conflict` and `unsatisfiedConstraint` are
-  prover-side additions (our prover may never overwrite an assignment — see
-  `Backend/Prover`); PS `WithContext` awaits `labelOp` error attribution.
+  prover-side additions; PS `WithContext` awaits `labelOp` error attribution.
 
-Definitions keep the weakest classes their bodies need (`Add`, `Mul`, `Zero`, `One`,
-`Neg`, `Sub`, `DecidableEq`); the reduction lemmas assume `CommSemiring` via the targeted
-Mathlib imports above. Everything is structural recursion, so downstream `decide` works.
-
-The prover's assignment store lives in `Snarky/Backend/Assignments.lean` (its PS home);
-`eval` takes a bare lookup `Variable → Option F`, mirroring the PS `eval`'s
-`(Variable -> m f)` argument.
+Definitions keep the weakest classes their bodies need; the reduction lemmas assume
+`CommSemiring` via the targeted Mathlib imports above. Everything is structural
+recursion, so downstream `decide` works. `eval` takes a bare lookup
+`Variable → Option F`, mirroring PS.
 -/
 
 namespace Snarky
+
+/-- Simp set normalising the value readings of circuit expressions to field
+identities. Registered in this root module because a simp attribute cannot be used in
+its declaring file; members are tagged where they are proved. -/
+register_simp_attr circuitVal
 
 /-- A circuit variable: an index into the wire assignment, allocated sequentially by the
 interpreters (PS `Variable`). -/
@@ -64,7 +52,7 @@ inductive EvalError where
   | unsatisfiedConstraint
   /-- A witness computation failed with a message (PS `throwAsProver`). -/
   | custom (msg : String)
-  deriving Repr, DecidableEq
+  deriving Repr
 
 /-! ## Affine expressions -/
 
@@ -133,6 +121,16 @@ def eval [Add F] [Mul F] : CVar F → (Variable → Option F) → Except EvalErr
     | .error e => .error e
     | .ok y => .ok (k * y)
 
+/-- The total reading of an expression under a total variable assignment — the
+denotation the soundness layer states values with. `eval` is this same recursion
+lifted over partial assignments (its only failure is an unassigned variable), and
+the two agree wherever `eval` succeeds (`CVar.eval_toAssignments`). -/
+def val [Add F] [Mul F] : CVar F → (Variable → F) → F
+  | .var v, V => V v
+  | .const k, _ => k
+  | .add a b, V => a.val V + b.val V
+  | .scale k x, V => k * x.val V
+
 /-! ## The folds are evaluation-preserving
 
 The smart constructors pre-fold constants; these lemmas say the folds cannot change a
@@ -168,48 +166,6 @@ theorem eval_sub_ [CommRing F] [DecidableEq F] {a b : CVar F}
     simp only [eval, ha, hs]
     congr 1
     ring
-
-/-- Inversion for `scale_`: a successful evaluation of a NONZERO scaling evaluates its
-operand (a zero scaling folds to `const 0` and forgets it — hence the hypothesis). -/
-theorem eval_scale_inv [Add F] [MulZeroOneClass F] [DecidableEq F] {k : F} (hk : k ≠ 0)
-    {x : CVar F} {env : Variable → Option F} {w : F}
-    (h : (scale_ k x).eval env = .ok w) : ∃ xv, x.eval env = .ok xv ∧ w = k * xv := by
-  unfold scale_ at h
-  rw [if_neg hk] at h
-  split_ifs at h with h1
-  · exact ⟨w, h, by rw [h1, one_mul]⟩
-  · revert h
-    show (CVar.scale k x).eval env = _ → _
-    simp only [eval]
-    split
-    · intro h; cases h
-    · next xv hxv => intro h; exact ⟨xv, hxv, by simpa using h.symm⟩
-
-/-- Inversion for `sub_`: a successful evaluation evaluates both operands. -/
-theorem eval_sub_inv [Field F] [DecidableEq F] {a b : CVar F}
-    {env : Variable → Option F} {w : F}
-    (h : (sub_ a b).eval env = .ok w) :
-    ∃ av bv, a.eval env = .ok av ∧ b.eval env = .ok bv ∧ w = av - bv := by
-  unfold sub_ at h
-  split at h
-  · next c₁ c₂ =>
-    exact ⟨c₁, c₂, rfl, rfl, by simpa [eval] using h.symm⟩
-  · rw [eval_add_] at h
-    revert h
-    show (CVar.add a _).eval env = _ → _
-    simp only [eval]
-    split
-    · intro h; cases h
-    · next av hav =>
-      split
-      · intro h; cases h
-      · next w' hw' =>
-        intro h
-        obtain ⟨bv, hbv, rfl⟩ :=
-          eval_scale_inv (neg_ne_zero.mpr one_ne_zero) hw'
-        exact ⟨av, bv, hav, hbv, by
-          simp only [Except.ok.injEq] at h
-          rw [← h]; ring⟩
 
 end CVar
 

@@ -14,18 +14,14 @@ run). Both allocate the public interface deterministically from variable `0`: in
 One deliberate deviation: PS spells two near-identical programs — `compile`'s omits the
 output back-fill, the solver's includes it. Since the builder ignores `assignOp`, ONE
 shared program (`compileBody`) serves both interpreters, and the laws below quantify over
-literally the same op tree — no cross-program reasoning. Non-ported (D8): the
+literally the same op tree — no cross-program reasoning. Not ported: the
 `debug`/label-birth machinery (`compile'`/`makeSolver'`), the advice row
 (`AdviceHandler`, the open tail `r`), and the `Checker` type (the `holds` parameter of
 `prove` plays that role).
 
-## The payoff (the fragment-interface seam)
-
-`solve_complete`: a successful solve yields an assignment that satisfies every compiled
-constraint AND decodes at the public slots to the given input and the returned output.
-This is the statement a verifier fragment exports — downstream, per-fragment soundness
-towers consume satisfying assignments through exactly this interface
-(`formal/docs/circuit-verifier-faithfulness.md`).
+The payoff theorem is `solve_complete`: a successful solve yields an assignment that
+satisfies every compiled constraint and decodes at the public slots to the given input
+and the returned output.
 -/
 
 namespace Snarky
@@ -40,7 +36,7 @@ variable {F c : Type u} {a b avar bvar : Type u}
 `for_ (zip (varToFields out) (map Var bvars)) (uncurry assertEqual_)` with the zip fused
 into the recursion. Mismatched lengths cannot arise from `compileBody` (both lists have
 `B.size` elements); the catch-all makes the function total. -/
-def assertEqPairs [DecidableEq F] [BasicSystem F c] :
+private def assertEqPairs [DecidableEq F] [BasicSystem F c] :
     List (CVar F) → List Variable → CircuitM F c PUnit
   | v :: vs, w :: ws => do
     assertEqual v (.var w)
@@ -49,7 +45,7 @@ def assertEqPairs [DecidableEq F] [BasicSystem F c] :
 
 /-- The output back-fill witness: read the output bundle's value and re-encode it as
 field elements — PS `map valueToFields (read out)`. -/
-def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
+private def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
     AsProver F (Vector F B.size) :=
   fun env => (readVar (val := b) out env).map B.valueToFields
 
@@ -58,7 +54,7 @@ preallocated input slots, pay its `check`, run `main`, back-fill the output slot
 the computed output (builder: no-op; prover: the `assignOp` that makes `solve`'s output
 slots live), and constrain the output bundle to those slots. PS splits this into a
 builder program and a solver program; see the module docstring for why Lean shares one. -/
-def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
+private def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F c bvar) : CircuitM F c bvar := do
   let av := A.fieldsToVar (mapVec CVar.var (allocRange 0 A.size))
@@ -155,7 +151,7 @@ private theorem extendPairs_range'_lookup :
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- **The fragment seam**: a successful `solve` produces an assignment that satisfies
+/-- A successful `solve` produces an assignment that satisfies
 every constraint `compile` emits, holds the input's encoding at the input slots, and
 holds the returned output's encoding at the output slots. Stated over the reference
 `Basic F` backend, whose `holds` is monotone (`Basic.holds_mono`).
@@ -199,13 +195,23 @@ theorem solve_complete [A : CircuitType F a avar] [CheckedType F (Basic F) avar]
         -- Decompose the run at the program's binds.
         simp only [compileBody] at hrun
         rw [prove_bind] at hrun
-        obtain ⟨s₁, -, hrun⟩ := bind_ok hrun
+        obtain ⟨s₁, hrun₁, hrun⟩ := bind_ok hrun
         rw [prove_bind] at hrun
-        obtain ⟨s₂, -, hrun⟩ := bind_ok hrun
+        obtain ⟨s₂, hrun₂, hrun⟩ := bind_ok hrun
+        -- The back-fill targets the preallocated output slots, and the counter has
+        -- only advanced since they were reserved — so the assign guard is satisfied.
+        have hslots : (allocRange A.size B.size).toList.find?
+            (s₂.nextVar ≤ ·) = none := by
+          refine List.find?_eq_none.mpr fun v hv => ?_
+          have hlt := (mem_allocRange hv).2
+          have h₁ := prove_nextVar_le hrun₁
+          have h₂ := prove_nextVar_le hrun₂
+          simp only [decide_eq_true_eq]
+          omega
         rw [prove_bind] at hrun
         obtain ⟨s₃, hassign, hrun⟩ := bind_ok hrun
         -- The back-fill stage: recover the mid-run output read and the slot fills.
-        simp only [assignVars, prove, outputWit] at hassign
+        simp only [assignVars, prove, outputWit, hslots] at hassign
         split at hassign
         · cases hassign
         next xs hwit =>

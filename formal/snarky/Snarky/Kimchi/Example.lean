@@ -4,11 +4,11 @@ import Snarky.DSL
 /-!
 # End-to-end: a DSL circuit as Kimchi Generic gate rows
 
-The `Snarky.Example` multiply circuit, rebuilt against the `GateConstraint` backend and
-carried through to Kimchi's Generic gate: build the circuit, dump its constraints, run the
-prover, translate each emitted constraint to a `Gate.Generic` row against the prover's
-assignment, and `decide` that the whole gate list is satisfied (`Gate.satisfies`). Every
-check reduces, so the file is a regression test for the bridge's executable semantics.
+A multiply circuit built against the `GateConstraint` backend and carried through to
+Kimchi's Generic gate: build the circuit, dump its constraints, run the prover, translate
+each emitted constraint to a `Gate.Generic` row against the prover's assignment, and
+`decide` that the whole gate list is satisfied (`Gate.satisfies`). Every check reduces,
+so the file is a regression test for the bridge's executable semantics.
 -/
 
 namespace Snarky.Kimchi.Example
@@ -17,8 +17,8 @@ open Snarky Snarky.Kimchi Kimchi.Gate
 
 abbrev F17 := ZMod 17
 
-/-- Witness `x = 3` and `y = 5`, multiply, assert the product is `15` — the same circuit
-as `Snarky.Example.mulCircuit`, now over the Generic-gate backend. -/
+/-- Witness `x = 3` and `y = 5`, multiply, assert the product is `15` — over the
+Generic-gate backend. -/
 def mulCircuit : CircuitM F17 (GateConstraint F17) (FVar F17) := do
   let x ← witness (val := F17) (pure 3)
   let y ← witness (val := F17) (pure 5)
@@ -27,7 +27,7 @@ def mulCircuit : CircuitM F17 (GateConstraint F17) (FVar F17) := do
   pure z
 
 /-- The prover's final assignment (it succeeds, so this is the `ok` branch). -/
-def solved : Assignments F17 :=
+private def solved : Assignments F17 :=
   match prove GateConstraint.holds mulCircuit 0 Assignments.empty with
   | .ok ⟨_, _, env⟩ => env
   | .error _ => Assignments.empty

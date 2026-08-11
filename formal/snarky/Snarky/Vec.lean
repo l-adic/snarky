@@ -20,9 +20,7 @@ def mapVec (f : α → β) (v : Vector α n) : Vector β n :=
 
 /-- Collect `n` indexed effectful computations into a sized vector, in index order —
 PS `Vector.generateA`, monad-generic. Structural on `n`, so it kernel-reduces at any
-concrete monad; the DSL's bit gadgets run it at `CircuitM`, and the vector-consuming
-instances (`IfThenElse`/`AssertEqual` at `Vector`, a recorded follow-on) would traverse
-through it. -/
+concrete monad. -/
 def generateVec {m : Type u → Type v} [Monad m] :
     (n : Nat) → (Fin n → m α) → m (Vector α n)
   | 0, _ => pure #v[]

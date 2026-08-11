@@ -6,5 +6,9 @@
  [
   "unusedArguments",
   "Snarky.instReprAffineExpression.repr"
+ ],
+ [
+  "defsWithUnderscore",
+  "Snarky.Parser.Attr.circuitVal_proc"
  ]
 ]

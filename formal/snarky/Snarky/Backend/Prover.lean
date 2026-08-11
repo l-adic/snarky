@@ -16,20 +16,20 @@ The PS PRODUCTION prover does not check constraints at all — "they're assumed 
 during compilation" (module header); `SolveCircuit (Basic f)`'s `proverConstraint` is a
 no-op outside debug mode, and validity is the proof system's concern. `prove` instead
 checks every constraint at emission time with `holds`, unconditionally: it is PS's
-DEBUG-mode semantics (minus message rendering) made total. That is deliberate — it is
-what gives `prove_complete` its content: a successful run is a satisfiability
-certificate for the built system, not just a witness table.
+DEBUG-mode semantics (minus message rendering) made total. That is what gives
+`prove_complete` below its content: a successful run is a satisfiability certificate
+for the built system, not just a witness table.
 
 Consequence, shared with PS debug mode (whose `debugCheck` also fails on unassigned
 variables): a constraint may only be emitted once its variables are witnessed —
 "witness before constrain". Not a restriction the PRODUCTION PS prover has (it checks
-nothing); lifting it (deferring checks to the end of the run) is a design change to take
-up only if a ported gadget hits it (plan §6).
+nothing); lifting it (deferring checks to the end of the run) is a design change to
+take up only if a ported circuit hits it.
 
 ## Further dispositions
 
 - The constraint check is a pure parameter `holds : c → Assignments F → Bool`, not the
-  PS `SolveCircuit` class (D5). Note the class is more than a checker: `proverConstraint`
+  PS `SolveCircuit` class. Note the class is more than a checker: `proverConstraint`
   is a STATE TRANSFORM — backends like kimchi allocate and assign intermediates while
   reducing constraints at prove time. `holds` covers the checking fragment; the reducing
   fragment is the un-ported backend seam.
@@ -37,14 +37,16 @@ up only if a ported gadget hits it (plan §6).
   runs are monotone in `Assignments.Le` (`prove_assignments_le`) — enforcing what PS
   `allocAssignments`/`Assignments.set` promise by write-once contract.
 - `debug`, `labelStack`, `contextualize`, and `runWitness`'s error-wrapping are the
-  error-attribution machinery; they follow the inert `labelOp` (plan §6). The advice
-  handler threading in `runWitness` is the dropped advice row (`Circuit/DSL/Monad`).
+  error-attribution machinery; they follow the inert `labelOp`. The advice handler
+  threading in `runWitness` is the dropped advice row (`Circuit/DSL/Monad`).
 
-The public surface is the port surface — `Proved` and `prove` — plus the prover-side
-interpreter laws, which live beside their subject: monotonicity (`prove_assignments_le`),
-builder/prover agreement (`prove_build_agrees`), completeness (`prove_complete` — a
-successful run satisfies every built constraint, given a `holds` monotone in the
-extension order), and the composition/plumbing lemmas (`prove_bind`,
+The public surface is the port surface — `Proved` and `prove` — plus `ProverState` (the
+invariant-carrying state the triple layer runs over) and the prover-side interpreter
+laws, which live beside their subject: monotonicity (`prove_assignments_le`,
+`prove_nextVar_le`), freshness preservation (`prove_freshFrom`, packaged as
+`ProverState.freshOut`), builder/prover agreement (`prove_build_agrees`), completeness
+(`prove_complete` — a successful run satisfies every built constraint, given a `holds`
+monotone in the extension order), and the composition/plumbing lemmas (`prove_bind`,
 `prove_witnessCore`). No PS QuickCheck property targets the prover alone; the suite
 exercises it through solve round trips, and these laws are Lean-only — the reason the
 deep embedding exists.
@@ -85,19 +87,25 @@ def prove (holds : c → Assignments F → Bool) :
       | .error e => .error e
       | .ok env' => prove holds (k (allocRange nv n)) (nv + n) env'
   | .assignOp vs wit k, nv, env =>
-    match wit env with
-    | .error e => .error e
-    | .ok xs =>
-      match env.extendPairs (vs.toList.zip xs.toList) with
+    match vs.toList.find? (nv ≤ ·) with
+    | some v => .error (.conflict v)
+    | none =>
+      match wit env with
       | .error e => .error e
-      | .ok env' => prove holds k nv env'
+      | .ok xs =>
+        match env.extendPairs (vs.toList.zip xs.toList) with
+        | .error e => .error e
+        | .ok env' => prove holds k nv env'
   | .labelOp _ k, nv, env => prove holds k nv env
 
-/-- **Proving a sequence is proving the head, then the tail from its final state** — the
-composition law gadget completeness chains through (plan D12). Freshness of
-the intermediate state is NOT a general theorem (`assignOp` may assign into the fresh
-region — `Assignments.FreshFrom`); each gadget's completeness law re-establishes it in
-its own conclusion instead. -/
+/-- Proving a `pure` is immediate: the result passes through and the state is
+untouched. -/
+@[circuitVal] theorem prove_pure (holds : c → Assignments F → Bool) (a : α) (nv : Nat)
+    (env : Assignments F) :
+    prove holds (pure a : CircuitM F c α) nv env = .ok ⟨a, nv, env⟩ := rfl
+
+/-- Proving a sequence is proving the head, then the tail from its final state. The
+intermediate state is fresh whenever the initial one is, by `prove_freshFrom` below. -/
 theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
     (f : α → CircuitM F c β) (nv : Nat) (env : Assignments F) :
     prove holds (m >>= f) nv env =
@@ -125,15 +133,14 @@ theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
     · rfl
     · split
       · rfl
-      · exact ih ..
+      · split
+        · rfl
+        · exact ih ..
   | labelOp s k ih => exact ih ..
 
 /-- The honest run of the one-variable core shape — `witness` a field value, pin it with
 one constraint, return it: the run succeeds and assigns the witnessed value at `nv`,
-whenever the witness computation succeeds and the constraint accepts the result. Each
-one-variable gadget's run lemma is this plus its two facts; the pair- and
-`UnChecked`-shaped cores keep bespoke run lemmas until a second consumer motivates the
-general arity. -/
+whenever the witness computation succeeds and the constraint accepts the result. -/
 theorem prove_witnessCore {holds : c → Assignments F → Bool} {w : AsProver F F}
     {mk : CVar F → c} {nv : Nat} {env : Assignments F} {v : F}
     (hw : w env = .ok v) (hfresh : env.FreshFrom nv)
@@ -190,14 +197,127 @@ theorem prove_assignments_le {holds : c → Assignments F → Bool} {m : Circuit
     · cases h
     · split at h
       · cases h
-      · next hext => exact (Assignments.le_extendPairs hext).trans (ih h)
+      · split at h
+        · cases h
+        · next hext => exact (Assignments.le_extendPairs hext).trans (ih h)
   | labelOp str k ih =>
     simp only [prove] at h
     exact ih h
 
+/-- The counter only advances. Allocation moves it forward and nothing moves it
+back — what places a run's allocations strictly above every slot preallocated before
+it. -/
+theorem prove_nextVar_le {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {nv nv' : Nat} {env env' : Assignments F} {x : α}
+    (h : prove holds m nv env = .ok ⟨x, nv', env'⟩) : nv ≤ nv' := by
+  induction m generalizing nv env with
+  | pure a =>
+    simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
+    omega
+  | freshOp k ih => exact Nat.le_of_succ_le (ih _ h)
+  | addConstraintOp con k ih =>
+    simp only [prove] at h
+    split at h
+    · exact ih h
+    · cases h
+  | existsOp n wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · exact Nat.le_trans (Nat.le_add_right nv n) (ih _ h)
+  | assignOp vs wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · exact ih h
+  | labelOp s k ih => exact ih h
+
+/-- Freshness is preserved by every prover run. A run that starts with nothing
+assigned at or above its counter ends the same way: allocation writes exactly at the
+counter and advances past it, and `assignOp` — guarded above — cannot reach the fresh
+region. The invariant `ProverState` below carries. -/
+theorem prove_freshFrom {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {nv nv' : Nat} {env env' : Assignments F} {x : α}
+    (hfresh : env.FreshFrom nv) (h : prove holds m nv env = .ok ⟨x, nv', env'⟩) :
+    env'.FreshFrom nv' := by
+  induction m generalizing nv env with
+  | pure a =>
+    simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
+    obtain ⟨-, hnv, henv⟩ := h
+    exact hnv ▸ henv ▸ hfresh
+  | freshOp k ih => exact ih _ (fun v hv => hfresh v (by omega)) h
+  | addConstraintOp con k ih =>
+    simp only [prove] at h
+    split at h
+    · exact ih hfresh h
+    · cases h
+  | existsOp n wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · next hext =>
+        refine ih _ (fun v hv => ?_) h
+        refine Assignments.extendPairs_none hext (fun p hp hpv => ?_)
+          (hfresh v (by omega))
+        obtain ⟨hmem, -⟩ := List.of_mem_zip hp
+        exact absurd (hpv ▸ (mem_allocRange hmem).2) (by omega)
+  | assignOp vs wit k ih =>
+    simp only [prove] at h
+    split at h
+    · cases h
+    · next hfind =>
+      split at h
+      · cases h
+      · split at h
+        · cases h
+        · next hext =>
+          refine ih (fun v hv => ?_) h
+          refine Assignments.extendPairs_none hext (fun p hp hpv => ?_) (hfresh v hv)
+          obtain ⟨hmem, -⟩ := List.of_mem_zip hp
+          have hlt := List.find?_eq_none.mp hfind p.1 hmem
+          simp only [decide_eq_true_eq] at hlt
+          exact absurd (hpv ▸ hv) hlt
+  | labelOp s k ih => exact ih hfresh h
+
+/-! ## The prover state, invariant-carrying
+
+PS keeps the counter and the store in ONE mutable object whose only mutator is
+allocation, so "nothing at or above the counter is assigned" holds by construction and
+cannot even be violated. The pure rendering above splits them into two independent
+arguments, which lets a caller form a pair PS cannot represent — so the invariant has
+to live somewhere. Here it lives in the type: a `ProverState` cannot be built without
+it, and `prove_freshFrom` supplies it for every successor state, so the statements
+downstream never mention freshness again. -/
+
+/-- A prover state: the allocation counter, the table, and the invariant relating
+them. -/
+structure ProverState (F : Type u) where
+  /-- The next-variable counter. -/
+  nv : Nat
+  /-- The witness table filled so far. -/
+  env : Assignments F
+  /-- Nothing at or above the counter is assigned — carried, never re-proved. -/
+  fresh : env.FreshFrom nv
+
+/-- A successful run from an invariant-carrying state leaves an invariant-carrying
+state. -/
+theorem ProverState.freshOut {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {st : ProverState F} {out : Proved F α}
+    (h : prove holds m st.nv st.env = .ok out) :
+    out.assignments.FreshFrom out.nextVar :=
+  prove_freshFrom st.fresh h
+
 /-! ## Interpreter agreement -/
 
-/-- **Builder/prover agreement**: on a successful prover run the two interpreters compute
+/-- Builder/prover agreement: on a successful prover run the two interpreters compute
 the same result and the same final variable counter — they allocate variables in lockstep
 (the PS builder and prover run the same closure against two `CircuitOps` records; here
 that is a theorem rather than an intention). -/
@@ -235,7 +355,9 @@ theorem prove_build_agrees {holds : c → Assignments F → Bool} {m : CircuitM 
     · cases h
     · split at h
       · cases h
-      · exact ih h
+      · split at h
+        · cases h
+        · exact ih h
   | labelOp str k ih =>
     simp only [prove] at h
     simp only [build]
@@ -243,7 +365,7 @@ theorem prove_build_agrees {holds : c → Assignments F → Bool} {m : CircuitM 
 
 /-! ## Completeness -/
 
-/-- **Completeness**: if the prover run succeeds, the final assignment satisfies every
+/-- Completeness: if the prover run succeeds, the final assignment satisfies every
 constraint the builder emits — provided `holds` is monotone in the assignment-extension
 order (true of any constraint that evaluates its `CVar`s, by `CVar.eval_le`). The prover
 checked each constraint when it was added; monotonicity carries the check to the end of
@@ -287,7 +409,9 @@ theorem prove_complete {holds : c → Assignments F → Bool}
     · cases h
     · split at h
       · cases h
-      · exact ih h
+      · split at h
+        · cases h
+        · exact ih h
   | labelOp str k ih =>
     simp only [prove] at h
     simp only [build]
