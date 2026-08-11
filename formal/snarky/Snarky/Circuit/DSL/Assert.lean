@@ -201,18 +201,18 @@ row, and the general row. Generic over any lawful backend. -/
 open Std.Do in
 /-- **`assertEqual` completeness, prover reading**: on equal values the run cannot
 fail — it changes nothing, so the postcondition is claimed at the incoming state.
-Schematic like the soundness spec; the exact equation above supplies the reduction.
-Stated as a raw `Triple` with the monad passed explicitly: the carrier is a type-level
-tag, and the `⦃⦄` sugar cannot pin it. -/
+Schematic like the soundness spec; the exact equation above supplies the reduction. -/
 @[spec] theorem assertEqual_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (assertEqual (c := Basic F) x y)
-      (ProverSpec
+    ⦃Complete
         (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) (fun _ _ _ => True) Q)
-      Q := by
+          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) (fun _ _ _ => True) Q⦄
+    assertEqual (c := ProverC F) x y
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (assertEqual (c := ProverC F) x y : CircuitM F (ProverC F) _)
+      = (assertEqual (c := Basic F) x y : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hokx, hoky, heq⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
@@ -253,12 +253,11 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
 fail — the two `@[spec]` lemmas for one head symbol coexist across the two
 readings, and `mvcgen` selects by the ambient monad. -/
 example (x y z : FVar F) (xv yv zv : F) :
-    Triple (m := ProverM F)
-      (do assertEqual (c := Basic F) x y
-          assertEqual (c := Basic F) y z)
-      (fun st => ⌜x.eval st.env = .ok xv ∧ y.eval st.env = .ok yv ∧
-        z.eval st.env = .ok zv ∧ xv = yv ∧ yv = zv⌝)
-      (PostCond.noThrow fun _ _st => ⌜True⌝) := by
+    ⦃fun st => ⌜x.eval st.env = Except.ok xv ∧ y.eval st.env = Except.ok yv ∧
+        z.eval st.env = Except.ok zv ∧ xv = yv ∧ yv = zv⌝⦄
+    (do assertEqual (c := ProverC F) x y
+        assertEqual (c := ProverC F) y z)
+    ⦃PostCond.noThrow fun _ _st => ⌜True⌝⦄ := by
   mvcgen
   rename_i h
   obtain ⟨hx, hy, hz, hxy, hyz⟩ := h
@@ -337,10 +336,11 @@ nonzero value, extending the table with the witnessed inverse. -/
 @[spec] theorem assertNonZero_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (assertNonZero (c := Basic F) v)
-      (ProverSpec (fun env => (v.eval env).isOk ∧
+    ⦃Complete (fun env => (v.eval env).isOk ∧
         ∀ vv, v.eval env = .ok vv → vv ≠ 0)
-        (fun _ _ _ => True) Q) Q := by
+        (fun _ _ _ => True) Q⦄
+    assertNonZero (c := ProverC F) v
+    ⦃Q⦄ := by
   intro st hpre
   obtain ⟨⟨hokv, hne⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
@@ -351,7 +351,7 @@ nonzero value, extending the table with the witnessed inverse. -/
     rw [if_neg (by rw [hf]; exact hvv)]
     exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
   all_goals
-    (simp only [ProverM.retag_bind, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+    (simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
      refine inv_complete_spec _ _ st ⟨⟨by rw [hv]; rfl, fun _ h => ?_⟩,
        fun _ st' _ hle => ?_⟩
      · rw [hv] at h
@@ -382,10 +382,11 @@ open Std.Do in
 @[spec] theorem assertNotEqual_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (assertNotEqual (c := Basic F) x y)
-      (ProverSpec (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
         ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv)
-        (fun _ _ _ => True) Q) Q := by
+        (fun _ _ _ => True) Q⦄
+    assertNotEqual (c := ProverC F) x y
+    ⦃Q⦄ := by
   intro st hpre
   obtain ⟨⟨hokx, hoky, hne⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
@@ -416,11 +417,14 @@ square, changing nothing. -/
 @[spec] theorem assertSquare_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (assertSquare (c := Basic F) x y)
-      (ProverSpec (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
+    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
         ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv)
-        (fun _ _ _ => True) Q) Q := by
+        (fun _ _ _ => True) Q⦄
+    assertSquare (c := ProverC F) x y
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (assertSquare (c := ProverC F) x y : CircuitM F (ProverC F) _)
+      = (assertSquare (c := Basic F) x y : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
@@ -448,10 +452,11 @@ reads `1`. -/
 @[spec] theorem assert_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : BoolVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (assert (c := Basic F) v)
-      (ProverSpec (fun env => ((↑v : CVar F).eval env).isOk ∧
+    ⦃Complete (fun env => ((↑v : CVar F).eval env).isOk ∧
         ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1)
-        (fun _ _ _ => True) Q) Q := by
+        (fun _ _ _ => True) Q⦄
+    assert (c := ProverC F) v
+    ⦃Q⦄ := by
   intro st hpre
   obtain ⟨⟨hokv, hone⟩, hk⟩ := hpre
   obtain ⟨bv, hv⟩ := CVar.evalOk hokv

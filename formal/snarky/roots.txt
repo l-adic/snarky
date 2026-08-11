@@ -49,9 +49,9 @@ Snarky.CircuitM.instWPMonad
 Snarky.LawfulBasicSystem
 Snarky.Basic.instConstraintHolds
 Snarky.Basic.instLawfulBasicSystem
-Snarky.ProverM.instWP
-Snarky.ProverM.instWPMonad
-Snarky.ProverM.retag_bind
+Snarky.ProverC
+Snarky.ProverC.instWP
+Snarky.ProverC.instWPMonad
 Snarky.CVar.evalOk
 
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).

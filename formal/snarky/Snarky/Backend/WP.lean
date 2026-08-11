@@ -31,8 +31,9 @@ whatever the framework produces — the axiom gates audit these laws like any ot
 
 The PROVER interpretation of the same monad — `prove`-semantics, where the assignment
 table is genuinely mutable state and `EvalError` the exception layer — needs a distinct
-carrier type when it lands (one monad admits one `WP` shape); the bare `CircuitM` is
-deliberately reserved for the soundness reading stated here.
+type (one monad admits one `WP` shape); the tag is `ProverC`, a name for the reference
+backend that selects the prover instances without changing the monad. See the prover
+section below.
 -/
 
 namespace Snarky
@@ -190,27 +191,25 @@ abbrev Sound {α : Type} (post : Valuation F → α → Prop)
 
 /-! ## The prover reading and its carrier
 
-One monad admits one `WP` shape, and the bare `CircuitM` carries the soundness
-reading — so the `prove`-interpretation takes a synonym carrier (the `ZipList`
-pattern: same programs, a type-level tag selecting the second structure). The
-completeness laws are stated against the reference backend, whose prover checks
-each constraint as it is added. -/
+One monad admits one `WP` shape (`ps` is an `outParam`, so resolution keys on the monad
+alone) — the two readings of `CircuitM` must differ somewhere in the type. The tag sits
+on the CONSTRAINT parameter, the type argument that already varies: `ProverC F` is
+`Basic F` under a name instance search will not unfold. `CircuitM F (ProverC F)` then
+keeps the generic `Monad` instance — gadget bodies elaborate at it, so `mvcgen`
+resolves specs and the bind laws with no retagging — while selecting the
+`prove`-interpretation's `WP` instance below. The soundness instance stays out of the
+way because its `ConstraintHolds` guard has no instance at the tag. The completeness
+laws are stated against the reference backend, whose prover checks each constraint as
+it is added. -/
 
-/-- `CircuitM` at the reference backend, tagged for the `prove`-interpretation. A bare
-synonym rather than a wrapper: a `mk` function would hide a gadget's head symbol from
-`mvcgen`'s spec lookup.
+/-- The reference backend tagged for the `prove`-interpretation. A program enters the
+prover reading by naming the tag — `mul (c := ProverC F) x y` — exactly as a soundness
+statement names its backend; the resulting term is definitionally a
+`CircuitM F (Basic F)` program, so the interpreter lemmas apply through a `rfl`
+retag. -/
+def ProverC (F : Type) := Basic F
 
-Being a synonym is also why the prover-reading specs below are stated as
-`Triple (m := ProverM F) …` and not with the `⦃P⦄ x ⦃Q⦄` sugar. The sugar IS `Triple`,
-with the monad implicit and taken from the program's own type — which stays
-`CircuitM F (Basic F) α`, so it resolves `CircuitM.instWP`, the SOUNDNESS instance, and
-the resulting statement is rejected by the kernel. Neither a type ascription on the
-program nor one on the assertion changes that: an ascription is erased at elaboration.
-Only the named argument pins the carrier. -/
-def ProverM (F : Type) (α : Type) := CircuitM F (Basic F) α
-
-instance : Monad (ProverM F) := inferInstanceAs (Monad (CircuitM F (Basic F)))
-instance : LawfulMonad (ProverM F) := inferInstanceAs (LawfulMonad (CircuitM F (Basic F)))
+instance : BasicSystem F (ProverC F) := inferInstanceAs (BasicSystem F (Basic F))
 
 /-- The prover reading: the state is the invariant-carrying `ProverState` (counter,
 table, and the freshness relating them — PS's single mutable store, rendered as one
@@ -220,8 +219,8 @@ total-correctness postcondition (`⇓`) asserts the run cannot fail.
 The successor state's invariant is quantified rather than constructed: `∀ hf, Q …
 ⟨…, hf⟩` avoids a dependent match, and proof irrelevance plus
 `ProverState.freshOut` — which inhabits it — make the quantifier free. -/
-instance ProverM.instWP [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
-    WP (ProverM F) (.arg (ProverState F) (.except EvalError .pure)) where
+instance ProverC.instWP [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
+    WP (CircuitM F (ProverC F)) (.arg (ProverState F) (.except EvalError .pure)) where
   wp x := {
     trans := fun Q st =>
       match prove Basic.holds x st.nv st.env with
@@ -239,8 +238,8 @@ instance ProverM.instWP [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
 /-- The prover `wp` is a monad morphism: `prove_bind` is the composition law, and the
 intermediate state's invariant — the quantifier the successor carries — is discharged
 by `ProverState.freshOut`. -/
-instance ProverM.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
-    WPMonad (ProverM F) (.arg (ProverState F) (.except EvalError .pure)) where
+instance ProverC.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
+    WPMonad (CircuitM F (ProverC F)) (.arg (ProverState F) (.except EvalError .pure)) where
   wp_pure a := by
     ext Q st
     simp only [wp, PredTrans.apply]
@@ -249,7 +248,7 @@ instance ProverM.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
     ext Q st
     simp only [PredTrans.apply_Bind_bind]
     simp only [wp, PredTrans.apply]
-    rw [show (do let a ← x; f a : ProverM F _)
+    rw [show (do let a ← x; f a : CircuitM F (ProverC F) _)
         = (x >>= f : CircuitM F (Basic F) _) from rfl, prove_bind]
     rcases h : prove Basic.holds x st.nv st.env with e | out
     · simp [Except.bind]
@@ -260,18 +259,20 @@ instance ProverM.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
       · intro hR
         exact hR (ProverState.freshOut (st := st) h)
 
-/-- **The prover-reading spec shape**, polymorphic in what the gadget returns: given
+/-- **The completeness spec shape**, polymorphic in what the gadget returns: given
 `pre` about the incoming table, the run cannot fail, and the caller continues at a
 state whose table extends the incoming one — old facts transport along
 `Assignments.Le` via `CVar.eval_le`. Reads "`g` succeeds given `pre`, guaranteeing
 `post`".
 
 Freshness appears nowhere: `ProverState` carries it. As on the soundness side, `post`
-speaks about the result itself and each spec supplies its own reading. `pre` should
-say `(x.eval env).isOk` rather than `∃ xv, x.eval env = .ok xv` — an existential
-leaks an uninstantiable metavariable at call sites; `CVar.evalOk` recovers the value
-inside the proof. -/
-abbrev ProverSpec {α : Type} (pre : Assignments F → Prop)
+speaks about the result itself and each spec supplies its own reading. No spec
+parameter may appear only inside this assertion — such a parameter cannot be
+instantiated by unification at a call site, so `mvcgen` leaves it as a bare
+metavariable goal. In particular `pre` says `(x.eval env).isOk` rather than
+`∃ xv, x.eval env = .ok xv`, and operand facts are quantified in `post`;
+`CVar.evalOk` recovers values inside a proof. -/
+abbrev Complete {α : Type} (pre : Assignments F → Prop)
     (post : Assignments F → α → Assignments F → Prop)
     (Q : PostCond α (.arg (ProverState F) (.except EvalError .pure))) :
     Assertion (.arg (ProverState F) (.except EvalError .pure)) :=
@@ -291,7 +292,7 @@ theorem CVar.evalOk [Add F] [Mul F] {x : CVar F} {env : Assignments F}
 /-- The prover-side reading of "this operand is a bit": it evaluates, and its value is
 `0` or `1`. A gadget whose honest run depends on bit operands — `xor`, `select` — asks
 for this in its `pre`. The value is universally quantified rather than existential, for
-the reason `ProverSpec` records: an existential leaks an uninstantiable metavariable at
+the reason `Complete` records: an existential leaks an uninstantiable metavariable at
 call sites. -/
 def ReadsBit [Add F] [Mul F] [Zero F] [One F] (x : CVar F) (env : Assignments F) : Prop :=
   (x.eval env).isOk ∧ ∀ v, x.eval env = .ok v → v = 0 ∨ v = 1
@@ -305,18 +306,5 @@ theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
   rcases hbit v hv with h0 | h1
   · exact ⟨false, by rw [hv, h0]; rfl⟩
   · exact ⟨true, by rw [hv, h1]; rfl⟩
-
-/-! ## Reading a program at the prover carrier
-
-A gadget's body elaborates its binds at `CircuitM` (its definition site), so the
-prover reading's `wp_bind` — whose binds are the carrier's — never matches, and the
-verification-condition generator resolves `WPMonad` from the bind's instance, finds
-the SOUNDNESS interpretation, and abandons the goal. The retag is definitional (the
-instances differ only by name) and rewrites a program into the carrier's binds. -/
-
-/-- Retag a bind at the prover carrier. -/
-@[simp] theorem ProverM.retag_bind [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    {α β : Type} (x : CircuitM F (Basic F) α) (f : α → CircuitM F (Basic F) β) :
-    (x >>= f : CircuitM F (Basic F) β) = ((x : ProverM F α) >>= f : ProverM F β) := rfl
 
 end Snarky

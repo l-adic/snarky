@@ -397,12 +397,15 @@ reads as the answer bit in the final table. -/
     (a b : FVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (equals (c := Basic F) a b)
-      (ProverSpec
+    ⦃Complete
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
-          (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0)) Q) Q := by
+          (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0)) Q⦄
+    equals (c := ProverC F) a b
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (equals (c := ProverC F) a b : CircuitM F (ProverC F) _)
+      = (equals (c := Basic F) a b : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
@@ -460,16 +463,17 @@ reads as the negated answer bit in the final table. -/
     (a b : FVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (neq (c := Basic F) a b)
-      (ProverSpec
+    ⦃Complete
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
-          (↑r : CVar F).eval env' = .ok (if av = bv then 0 else 1)) Q) Q := by
+          (↑r : CVar F).eval env' = .ok (if av = bv then 0 else 1)) Q⦄
+    neq (c := ProverC F) a b
+    ⦃Q⦄ := by
   intro st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  simp only [neq, ProverM.retag_bind, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  simp only [neq, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   refine equals_complete_spec a b _ st ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
   simp only [wp, PredTrans.apply, prove]
   intro hf
@@ -558,12 +562,14 @@ succeeds and the result reads as the inverse in the final table. -/
 @[spec] theorem inv_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (inv (c := Basic F) x)
-      (ProverSpec (fun env => (x.eval env).isOk ∧
+    ⦃Complete (fun env => (x.eval env).isOk ∧
           ∀ xv, x.eval env = .ok xv → xv ≠ 0)
-        (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv⁻¹) Q)
-      Q := by
+        (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv⁻¹) Q⦄
+    inv (c := ProverC F) x
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (inv (c := ProverC F) x : CircuitM F (ProverC F) _)
+      = (inv (c := Basic F) x : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hokx, hne⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   have hxv := hne xv hx
@@ -619,11 +625,14 @@ reads as the product in the final table. -/
 @[spec] theorem mul_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (mul (c := Basic F) x y)
-      (ProverSpec (fun env => (x.eval env).isOk ∧ (y.eval env).isOk)
+    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk)
         (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
-          r.eval env' = .ok (xv * yv)) Q) Q := by
+          r.eval env' = .ok (xv * yv)) Q⦄
+    mul (c := ProverC F) x y
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (mul (c := ProverC F) x y : CircuitM F (ProverC F) _)
+      = (mul (c := Basic F) x y : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hokx, hoky⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
@@ -702,13 +711,14 @@ carrier: a nonzero divisor makes the run succeed with the quotient. -/
 @[spec] theorem div_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (div (c := Basic F) x y)
-      (ProverSpec
+    ⦃Complete
         (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
           ∀ yv, y.eval env = .ok yv → yv ≠ 0)
         (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
-          r.eval env' = .ok (xv / yv)) Q) Q := by
-  simp only [div, ProverM.retag_bind]
+          r.eval env' = .ok (xv / yv)) Q⦄
+    div (c := ProverC F) x y
+    ⦃Q⦄ := by
+  simp only [div]
   mvcgen
   rename_i st hpre
   obtain ⟨⟨hokx, hoky, hyne⟩, hk⟩ := hpre
@@ -752,11 +762,14 @@ reads as the square in the final table. -/
 @[spec] theorem square_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (square (c := Basic F) x)
-      (ProverSpec (fun env => (x.eval env).isOk)
+    ⦃Complete (fun env => (x.eval env).isOk)
         (fun env r env' => ∀ xv, x.eval env = .ok xv →
-          r.eval env' = .ok (xv * xv)) Q) Q := by
+          r.eval env' = .ok (xv * xv)) Q⦄
+    square (c := ProverC F) x
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (square (c := ProverC F) x : CircuitM F (ProverC F) _)
+      = (square (c := Basic F) x : CircuitM F (Basic F) _) from rfl]
   obtain ⟨hokx, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   have hval : ∀ {r : FVar F} {env' : Assignments F}, r.eval env' = .ok (xv * xv) →
@@ -842,10 +855,11 @@ for the exponent, the honest run succeeds and the result reads as the power. -/
     [DecidableEq F] :
     ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
       ∀ (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))),
-        Triple (m := ProverM F) (powGo (c := Basic F) fuel x n)
-          (ProverSpec (fun env => (x.eval env).isOk)
+        ⦃Complete (fun env => (x.eval env).isOk)
             (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok (xv ^ n))
-            Q) Q := by
+            Q⦄
+        powGo (c := ProverC F) fuel x n
+        ⦃Q⦄ := by
   intro fuel
   induction fuel with
   | zero =>
@@ -881,12 +895,12 @@ for the exponent, the honest run succeeds and the result reads as the power. -/
       rw [pow_one]
       exact hx'
     | m + 2 =>
-      have hdef : powGo (c := Basic F) (fuel + 1) x (m + 2)
+      have hdef : powGo (c := ProverC F) (fuel + 1) x (m + 2)
           = (do let sq ← mul x x
-                let y ← powGo (c := Basic F) fuel sq ((m + 2) / 2)
+                let y ← powGo (c := ProverC F) fuel sq ((m + 2) / 2)
                 if (m + 2) % 2 = 0 then pure y else mul x y) := rfl
       rw [hdef]
-      simp only [ProverM.retag_bind, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+      simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
       refine mul_complete_spec x x _ st ⟨⟨by rw [hx]; rfl, by rw [hx]; rfl⟩,
         fun sq st₁ hsq hle₁ => ?_⟩
       have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
@@ -923,10 +937,11 @@ open Std.Do in
 @[spec] theorem pow_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x : FVar F) (n : Nat)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (pow (c := Basic F) x n)
-      (ProverSpec (fun env => (x.eval env).isOk)
+    ⦃Complete (fun env => (x.eval env).isOk)
         (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok (xv ^ n))
-        Q) Q :=
+        Q⦄
+    pow (c := ProverC F) x n
+    ⦃Q⦄ :=
   powGo_complete_spec n x n (Nat.le_succ n) Q
 
 end Snarky

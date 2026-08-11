@@ -449,15 +449,18 @@ binary digits. -/
     (v : FVar F) (n : Nat)
     (Q : PostCond (Vector (BoolVar F) n)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (unpack (c := Basic F) v n)
-      (ProverSpec
+    ⦃Complete
         (fun env => (v.eval env).isOk ∧
           ∀ vv, v.eval env = .ok vv →
             ((ToNat.toNat vv : Nat) : F) = vv ∧ ToNat.toNat vv < 2 ^ n)
         (fun env r env' => ∀ vv, v.eval env = .ok vv →
           ∀ i (hi : i < n), (r[i]).toCVar.eval env'
-            = .ok (bit ((ToNat.toNat vv).testBit i))) Q) Q := by
+            = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
+    unpack (c := ProverC F) v n
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (unpack (c := ProverC F) v n : CircuitM F (ProverC F) _)
+      = (unpack (c := Basic F) v n : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hokv, hfaithful⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
   obtain ⟨hval, hlt⟩ := hfaithful vv hv

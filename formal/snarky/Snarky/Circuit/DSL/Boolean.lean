@@ -250,16 +250,16 @@ cannot be instantiated by unification at a call site. -/
     [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (Snarky.and (c := Basic F) a b)
-      (ProverSpec
+    ⦃Complete
         (fun env => ((↑a : CVar F).eval env).isOk ∧ ((↑b : CVar F).eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
           (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
-            (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
+            (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q⦄
+    Snarky.and (c := ProverC F) a b
+    ⦃Q⦄ := by
   intro st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
-  simp only [Snarky.and, ProverM.retag_bind, WPMonad.wp_bind,
-    PredTrans.apply_Bind_bind]
+  simp only [Snarky.and, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   refine mul_complete_spec ↑a ↑b _ st ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
   simp only [wp, PredTrans.apply, prove]
   intro hf
@@ -299,12 +299,13 @@ as bits the result reads as the disjunction bit. -/
     [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (Snarky.or (c := Basic F) a b)
-      (ProverSpec
+    ⦃Complete
         (fun env => ((↑a : CVar F).eval env).isOk ∧ ((↑b : CVar F).eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
           (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
-            (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
+            (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q⦄
+    Snarky.or (c := ProverC F) a b
+    ⦃Q⦄ := by
   intro st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
@@ -315,8 +316,7 @@ as bits the result reads as the disjunction bit. -/
     show ((CVar.sub_ (.const 1) (↑x : CVar F)).eval st.env).isOk = true
     rw [CVar.eval_sub_ rfl hx]
     rfl
-  simp only [Snarky.or, ProverM.retag_bind, WPMonad.wp_bind,
-    PredTrans.apply_Bind_bind]
+  simp only [Snarky.or, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   refine and_complete_spec (Snarky.not a) (Snarky.not b) _ st
     ⟨⟨hnotOk a av ha, hnotOk b bv hb⟩, fun r st' hr hle => ?_⟩
   simp only [wp, PredTrans.apply, prove]
@@ -561,13 +561,16 @@ the spec asks for `ReadsBit`, and the result reads as the xor bit in the final t
     (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (Snarky.xor (c := Basic F) a b)
-      (ProverSpec
+    ⦃Complete
         (fun env => ReadsBit (↑a : CVar F) env ∧ ReadsBit (↑b : CVar F) env)
         (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
           (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
-            (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
+            (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q⦄
+    Snarky.xor (c := ProverC F) a b
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (Snarky.xor (c := ProverC F) a b : CircuitM F (ProverC F) _)
+      = (Snarky.xor (c := Basic F) a b : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hbita, hbitb⟩, hk⟩ := hpre
   obtain ⟨ab, ha⟩ := hbita.exists_bit
   obtain ⟨bb, hb⟩ := hbitb.exists_bit
@@ -751,13 +754,16 @@ the chosen branch in the final table. -/
     (b : BoolVar F) (t e : FVar F)
     (Q : PostCond (FVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
-    Triple (m := ProverM F) (select (c := Basic F) b t e)
-      (ProverSpec
+    ⦃Complete
         (fun env => ReadsBit (↑b : CVar F) env ∧ (t.eval env).isOk ∧ (e.eval env).isOk)
         (fun env r env' => ∀ (bb : Bool) tv ev, (↑b : CVar F).eval env = .ok (bit bb) →
           t.eval env = .ok tv → e.eval env = .ok ev →
-          r.eval env' = .ok (if bb then tv else ev)) Q) Q := by
+          r.eval env' = .ok (if bb then tv else ev)) Q⦄
+    select (c := ProverC F) b t e
+    ⦃Q⦄ := by
   intro st hpre
+  rw [show (select (c := ProverC F) b t e : CircuitM F (ProverC F) _)
+      = (select (c := Basic F) b t e : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hbitb, hokt, hoke⟩, hk⟩ := hpre
   obtain ⟨bb, hb⟩ := hbitb.exists_bit
   obtain ⟨tv, ht⟩ := CVar.evalOk hokt
