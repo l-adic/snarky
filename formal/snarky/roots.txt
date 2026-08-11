@@ -32,6 +32,8 @@ Snarky.CVar.eval_toAssignments
 -- what a gadget law reduces to once `mvcgen` has walked its do-block. Consumed by simp
 -- through the attribute, so no constant walk reaches these.
 Snarky.build_pure
+Snarky.prove_pure
+Snarky.Assignments.eval_var_extend
 Snarky.CVar.val_add_
 Snarky.CVar.val_scale_
 Snarky.CVar.val_sub_

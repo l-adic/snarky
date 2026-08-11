@@ -608,8 +608,7 @@ the spec asks for `ReadsBit`, and the result reads as the xor bit in the final t
     (rw [xorCore_run ha hb st.fresh]
      intro hf
      refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-     show (CVar.var st.nv).eval _ = _
-     simp [CVar.eval, Assignments.extend])
+     simp [circuitVal])
 
 /-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
 
@@ -796,7 +795,6 @@ the chosen branch in the final table. -/
       | (rw [selectCore_run hb ht he st.fresh]
          intro hf
          refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-         show (CVar.var st.nv).eval _ = _
-         simp [CVar.eval, Assignments.extend])
+         simp [circuitVal])
 
 end Snarky

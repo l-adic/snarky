@@ -96,6 +96,13 @@ def prove (holds : c → Assignments F → Bool) :
         | .ok env' => prove holds k nv env'
   | .labelOp _ k, nv, env => prove holds k nv env
 
+/-- **Proving a `pure` is immediate**: the result passes through and the state is
+untouched — the reduction a walked do-block's trailing step leaves, the prover-side
+face of `build_pure`, so it belongs to the `circuitVal` normal form. -/
+@[circuitVal] theorem prove_pure (holds : c → Assignments F → Bool) (a : α) (nv : Nat)
+    (env : Assignments F) :
+    prove holds (pure a : CircuitM F c α) nv env = .ok ⟨a, nv, env⟩ := rfl
+
 /-- **Proving a sequence is proving the head, then the tail from its final state** — the
 composition law gadget completeness chains through (plan D12). The intermediate state
 is fresh whenever the initial one is, by `prove_freshFrom` below. -/

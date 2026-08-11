@@ -63,6 +63,13 @@ functional update). -/
 def extend (a : Assignments F) (v : Variable) (x : F) : Assignments F :=
   fun w => if w = v then some x else a w
 
+/-- The extended slot reads back its value — with `CVar.eval` on the freshly
+allocated variable, the reduction every honest-run tail performs, so it belongs to
+the `circuitVal` normal form. -/
+@[circuitVal] theorem eval_var_extend [Add F] [Mul F] (a : Assignments F)
+    (v : Variable) (x : F) : (CVar.var v).eval (a.extend v x) = .ok x := by
+  simp [CVar.eval, extend]
+
 /-- Guarded batch extension: assign each `(variable, value)` pair left to right, erroring
 on any variable that is already assigned — this is what makes prover runs monotone in
 `Assignments.Le`. Callers zip equal-length allocation and witness vectors, so pairing is

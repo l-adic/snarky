@@ -590,7 +590,7 @@ succeeds and the result reads as the inverse in the final table. -/
        intro hf
        refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
        show (CVar.var st.nv).eval _ = _
-       simp [CVar.eval, Assignments.extend])
+       simp [circuitVal])
 
 open Std.Do in
 /-- **`mul` soundness triple**: `mul x y` computes the product — constants fold,
@@ -663,7 +663,7 @@ reads as the product in the final table. -/
        intro hf
        refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
        show (CVar.var st.nv).eval _ = _
-       simp [CVar.eval, Assignments.extend])
+       simp [circuitVal])
 
 /-! ### `square` (Circuit/DSL/Field) -/
 
@@ -789,7 +789,7 @@ reads as the square in the final table. -/
        intro hf
        refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
        show (CVar.var st.nv).eval _ = _
-       simp [CVar.eval, Assignments.extend])
+       simp [circuitVal])
 
 /-! ### `pow` (Circuit/DSL/Field) — composed through the fuel recursion -/
 
