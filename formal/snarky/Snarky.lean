@@ -15,7 +15,6 @@ import Snarky.Vec
 import Snarky.Constraint.Basic
 import Snarky.DSL
 import Snarky.Example
-import Snarky.Example.Gadgets
 
 /-!
 # Snarky — the circuit-building DSL, deep-embedded
@@ -44,8 +43,8 @@ beside their subjects.
 - `Constraint/Basic` — the concrete reference constraint model.
 - `Vec` — kernel-reduction-friendly vector utilities (everything here is validated by
   `decide`).
-- `Example`, `Example/Gadgets` — the showcase (knowledge of a cube root) and the
-  per-gadget regression checks.
+- `Example` — the framework showcase (the walked `cubic` circuit) and the executable
+  edges no triple states.
 
 The `Snarky.Kimchi.*` bridge — a DSL constraint's check agrees with the verified
 Generic-gate checker — is deliberately NOT imported here: it pulls Mathlib in wholesale

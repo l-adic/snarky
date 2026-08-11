@@ -238,7 +238,7 @@ Snarky.Kimchi.instBasicSystemGateConstraint
 Snarky.Kimchi.instDecidableEqGateConstraint
 Snarky.Kimchi.instReprGateConstraint
 
--- The Example exhibits (Example.lean, Example/Gadgets.lean): the showcase circuits and
+-- The Example exhibits (Example.lean): the showcase circuit, its laws, and
 -- the run helpers; their consumers are anonymous `example`s, invisible to any constant
 -- walk (exhibits stay rooted).
 Snarky.Example.F17
