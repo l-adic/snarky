@@ -385,6 +385,17 @@ PS defines them in its Monad module only to dodge orphan instances on the `Snark
 newtype, a restriction Lean does not have. `DSL/Monad` is now the monad alone, plain
 core Lean (the targeted `Mathlib.Algebra.Field.Defs` import left with `inv`).
 
+Post-walk amendment (2026-08, the `Std.Do` triples retrofit): the gadget laws are now
+Hoare triples (`*_spec`/`*_complete_spec`, shapes and interpretations in
+`Backend/WP.lean`), and two freshness claims above are superseded. `prove` now rejects
+an `assignOp` targeting a slot at or above its counter, so freshness preservation is
+the universal `prove_freshFrom` rather than a per-gadget re-establishment (step 9b's
+"forbids a general preservation theorem" no longer holds). Step 14's back-fill
+observation reads the other way around: the output slots sit BELOW the counter `solve`
+seeds — allocated but unassigned — which is exactly why the guard holds universally.
+`Example/Gadgets.lean` was merged back into `Example.lean` (step 14's amendment and
+step 15 describe the pre-merge layout).
+
 Each gadget step (9–12) lands with its PS→Lean name map (D7), theorems for the QuickCheck
 laws in its `snarky-test-utils` spec plus `decide` examples for the fixed-vector cases
 (D9), and correctness lemmas where they are cheap.

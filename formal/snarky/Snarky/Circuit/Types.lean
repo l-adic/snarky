@@ -138,8 +138,8 @@ theorem bit_cases {av : F} {ab : Bool} [Zero F] [One F]
   cases ab <;> simp [bit] at h <;> [exact Or.inl h; exact Or.inr h]
 
 /-- Wrap a type to skip its `check` constraints (PS `UnChecked a`): the encoding
-delegates to the wrapped instance, and the `CheckedType` instance (in `Circuit/DSL/Monad`)
-is a no-op. Use when the constraints are guaranteed elsewhere. -/
+delegates to the wrapped instance, and the `CheckedType` instance is a no-op. Use when
+the constraints are guaranteed elsewhere. -/
 structure UnChecked (α : Type u) where
   /-- The wrapped value or variable bundle. -/
   val : α

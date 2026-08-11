@@ -70,7 +70,10 @@ private def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
   else pure xv⁻¹
 
 /-- `inv`'s witnessing branch: witness the inverse, pin it with `x · xInv = 1`. Split
-out so the gadget laws below quantify over it uniformly. -/
+out so the gadget laws below quantify over it uniformly. Public, unlike the other cores:
+its product-row triple `invCore_spec` is rooted (`assertNonZero`'s soundness needs
+`x · r = 1`, which `inv`'s `0⁻¹ = 0` reading erases), and a rooted statement needs a
+public subject. Soundness-only — the completeness path runs through `inv_complete_spec`. -/
 def invCore [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
     CircuitM F c (FVar F) := do
   let xInv ← witness (val := F) (invWit x)
@@ -130,9 +133,8 @@ def equals {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar 
   | .const f => pure (.unchecked (.const (if f = 0 then 1 else 0)))
   | z => equalsCore z
 
-/-- Negated equality test (PS `neq_ = not <<< equals_`): the negated `equals` bit. The
-negation is `not`'s retag `1 − r` inlined: `not` lives with its family in
-`DSL/Boolean`, which imports this module. -/
+/-- Negated equality test (PS `neq_ = not <<< equals_`): the negated `equals` bit, the
+negation inlined as the retag `1 − r` (`not` itself lives with the Boolean family). -/
 def neq {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : FVar F) :
     CircuitM F c (BoolVar F) := do
   let r ← equals a b
@@ -145,8 +147,7 @@ def sum [Add F] [Zero F] (xs : List (FVar F)) : FVar F :=
 
 /-- Fuel-indexed body of `pow`, structural on the fuel so the definition kernel-reduces
 (`decide`-friendly; PS recurses on `n / 2` directly). The fuel-exhausted branch is
-unreachable: `pow` seeds fuel `n`, and the exponent at least halves each step. Public
-only for the gadget laws. -/
+unreachable: `pow` seeds fuel `n`, and the exponent at least halves each step. -/
 private def powGo [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] :
     Nat → FVar F → Nat → CircuitM F c (FVar F)
   | _, _, 0 => pure (.const 1)
@@ -329,10 +330,9 @@ private theorem build_equalsCore' {F c : Type} [Field F] [DecidableEq F]
          BasicSystem.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))]⟩ := rfl
 
 open Std.Do in
-/-- The result bit reads `1` exactly when the operands
-read equal — the constant difference folds, the witnessing pair is pinned by its two
-rows (which also force the bit boolean, so the witness may skip the `boolean` check).
--/
+/-- `equals a b` returns a bit reading `1` exactly when the operands read equal — the
+constant difference folds, the witnessing pair is pinned by its two rows (which also
+force the bit boolean, so the witness may skip the `boolean` check). -/
 @[spec] theorem equals_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -368,8 +368,8 @@ rows (which also force the bit boolean, so the witness may skip the `boolean` ch
      · rw [if_neg (sub_ne_zero.mpr h), if_neg h])
 
 open Std.Do in
-/-- The run succeeds and the result
-reads as the answer bit in the final table. -/
+/-- `equals`'s honest run succeeds on evaluable operands; the result reads as the
+answer bit in the final table. -/
 @[spec] theorem equals_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : FVar F)
     (Q : PostCond (BoolVar F)
@@ -434,8 +434,8 @@ open Std.Do in
   split_ifs <;> ring
 
 open Std.Do in
-/-- The run succeeds and the result
-reads as the negated answer bit in the final table. -/
+/-- `neq`'s honest run succeeds on evaluable operands; the result reads as the negated
+answer bit in the final table. -/
 @[spec] theorem neq_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : FVar F)
     (Q : PostCond (BoolVar F)
@@ -528,8 +528,8 @@ reading, whose `0⁻¹ = 0` erases the nonzero fact. -/
     (LawfulBasicSystem.holds_r1cs s.V _ _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
-/-- `inv x` computes the operand's field inverse — the
-witnessing row forces it; the constant branch is total via `0⁻¹ = 0`. -/
+/-- `inv x` computes the operand's field inverse — the witnessing row forces it; the
+constant branch is total via `0⁻¹ = 0`. -/
 @[spec] theorem inv_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -548,8 +548,8 @@ witnessing row forces it; the constant branch is total via `0⁻¹ = 0`. -/
      exact hpre (.var nv) _ (inv_eq_of_mul_eq_one_right (by simpa using h)).symm)
 
 open Std.Do in
-/-- On a nonzero operand the run
-succeeds and the result reads as the inverse in the final table. -/
+/-- `inv`'s honest run succeeds on a nonzero operand; the result reads as the inverse
+in the final table. -/
 @[spec] theorem inv_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -584,8 +584,8 @@ succeeds and the result reads as the inverse in the final table. -/
        simp [circuitVal])
 
 open Std.Do in
-/-- `mul x y` computes the product — constants fold,
-otherwise the `r1cs` row forces it. -/
+/-- `mul x y` computes the product — constants fold, otherwise the `r1cs` row forces
+it. -/
 @[spec] theorem mul_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -611,8 +611,8 @@ otherwise the `r1cs` row forces it. -/
        exact hpre (.var nv) _ h.symm)
 
 open Std.Do in
-/-- The run succeeds and the result
-reads as the product in the final table. -/
+/-- `mul`'s honest run succeeds on evaluable operands; the result reads as the product
+in the final table. -/
 @[spec] theorem mul_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -724,8 +724,8 @@ open Std.Do in
   exact hres xv yv⁻¹ hx' hr'
 
 open Std.Do in
-/-- `square x` computes `x · x` through the dedicated
-`square` row; a constant folds. -/
+/-- `square x` computes `x · x` through the dedicated `square` row; a constant
+folds. -/
 @[spec] theorem square_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -744,8 +744,8 @@ open Std.Do in
      exact hpre (.var nv) _ h.symm)
 
 open Std.Do in
-/-- The run succeeds and the result
-reads as the square in the final table. -/
+/-- `square`'s honest run succeeds on an evaluable operand; the result reads as the
+square in the final table. -/
 @[spec] theorem square_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -824,7 +824,7 @@ for the exponent, the result reads as the power. -/
         omega
 
 open Std.Do in
-/-- The result reads as the operand's power. -/
+/-- `pow x n`'s result reads as the operand's `n`-th power. -/
 @[spec] theorem pow_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (n : Nat)
@@ -918,7 +918,8 @@ for the exponent, the honest run succeeds and the result reads as the power. -/
         omega
 
 open Std.Do in
-/-- The run succeeds and the result reads as the operand’s power. -/
+/-- `pow`'s honest run succeeds on an evaluable operand; the result reads as the
+operand's power. -/
 @[spec] theorem pow_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x : FVar F) (n : Nat)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :

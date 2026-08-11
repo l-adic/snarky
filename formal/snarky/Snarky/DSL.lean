@@ -14,10 +14,10 @@ file's import set (`Monad`/`Field`/`Boolean`/`Assert`/`Bits`) is what
 `import Snarky.DSL` exposes.
 
 Two barrel-semantics deviations, consequences of import-as-export:
-- Lean exposes each module's WHOLE surface, where PS curates: PS's list omits
+- Lean exposes each module's public surface whole, where PS curates: PS's list omits
   `allBools` and the `square` constraint method (module-public, not re-exported), and
-  everything here named `*Wit`/`*Core`/`*Aux` plus the gadget laws is law machinery, not
-  user API — the module docstrings mark it.
+  the gadget laws ride along — law machinery, not user API. The `*Wit`/`*Core`/`*Aux`
+  internals are `private` (`invCore` alone stays public, for its rooted law).
 - The backend (`build`/`prove` and the interpreter laws) rides in transitively — the
   gadget modules import it for their laws. PS's barrel does not export the backend;
   treat it as the verification surface, not the circuit-authoring one.
@@ -50,7 +50,7 @@ returning later as a `deriving` handler if wanted.
 | `true_`, `false_` | `true_`, `false_` | keywords keep the underscores |
 | `xor_`, `any_`, `all_` | `xor`, `any`, `all` | |
 | `assert*_` family | drop `_` | impossible constant asserts emit unsatisfiable rows |
-| `assertEq`, `isEqual` (class `AssertEqual`) | same | the old transitional `assertEq` retired |
+| `assertEq`, `isEqual` (class `AssertEqual`) | same | class methods; base instances only |
 | `allBools` | `allBools` | |
 | `unpack_`, `pack_` | `unpack`, `pack` | the width is an explicit `Nat` argument |
 | `unpackPure`, `packPure` | same | |

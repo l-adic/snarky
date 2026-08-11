@@ -194,7 +194,7 @@ theorem pack_val {F : Type} [Semiring F] [DecidableEq F] {n : Nat}
   injection this
 
 open Std.Do in
-/-- The emitted rows force the results to be bits whose weighted sum is the
+/-- `unpack`'s emitted rows force the results to be bits whose weighted sum is the
 operand's reading. Their canonicity — that they are the binary digits — additionally
 needs a characteristic hypothesis and is not stated. -/
 @[spec] theorem unpack_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
@@ -237,9 +237,8 @@ needs a characteristic hypothesis and is not stated. -/
     simpa [circuitVal] using hrow'
 
 open Std.Do in
-/-- On a faithful representative
-that fits in `n` bits, the honest run succeeds and the results are the operand's
-binary digits. -/
+/-- `unpack`'s honest run succeeds on a faithful representative that fits in `n` bits;
+the results are the operand's binary digits. -/
 @[spec] theorem unpack_complete_spec {F : Type} [Field F] [DecidableEq F] [ToNat F]
     (v : FVar F) (n : Nat)
     (Q : PostCond (Vector (BoolVar F) n)

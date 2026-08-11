@@ -40,11 +40,13 @@ take up only if a ported circuit hits it.
   error-attribution machinery; they follow the inert `labelOp`. The advice handler
   threading in `runWitness` is the dropped advice row (`Circuit/DSL/Monad`).
 
-The public surface is the port surface — `Proved` and `prove` — plus the prover-side
-interpreter laws, which live beside their subject: monotonicity (`prove_assignments_le`),
-builder/prover agreement (`prove_build_agrees`), completeness (`prove_complete` — a
-successful run satisfies every built constraint, given a `holds` monotone in the
-extension order), and the composition/plumbing lemmas (`prove_bind`,
+The public surface is the port surface — `Proved` and `prove` — plus `ProverState` (the
+invariant-carrying state the triple layer runs over) and the prover-side interpreter
+laws, which live beside their subject: monotonicity (`prove_assignments_le`,
+`prove_nextVar_le`), freshness preservation (`prove_freshFrom`, packaged as
+`ProverState.freshOut`), builder/prover agreement (`prove_build_agrees`), completeness
+(`prove_complete` — a successful run satisfies every built constraint, given a `holds`
+monotone in the extension order), and the composition/plumbing lemmas (`prove_bind`,
 `prove_witnessCore`). No PS QuickCheck property targets the prover alone; the suite
 exercises it through solve round trips, and these laws are Lean-only — the reason the
 deep embedding exists.
@@ -239,8 +241,7 @@ theorem prove_nextVar_le {holds : c → Assignments F → Bool} {m : CircuitM F 
 /-- Freshness is preserved by every prover run. A run that starts with nothing
 assigned at or above its counter ends the same way: allocation writes exactly at the
 counter and advances past it, and `assignOp` — guarded above — cannot reach the fresh
-region. The invariant every completeness statement used to re-establish by hand, here
-once and for all. -/
+region. The invariant `ProverState` below carries. -/
 theorem prove_freshFrom {holds : c → Assignments F → Bool} {m : CircuitM F c α}
     {nv nv' : Nat} {env env' : Assignments F} {x : α}
     (hfresh : env.FreshFrom nv) (h : prove holds m nv env = .ok ⟨x, nv', env'⟩) :

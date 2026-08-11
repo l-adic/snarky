@@ -46,11 +46,14 @@ whole recipe on one circuit.
 - `Circuit/DSL/Monad` — the reified op tree `CircuitM` (constraint type abstract) and the
   `witness`/`readVar`/`assignVars` layer; `Circuit/DSL/{Field,Boolean,Assert,Bits}` — the
   gadgets, each beside its soundness/completeness laws; `DSL` — the PS-export barrel.
-- `Backend/Assignments` — the prover's witness table and its extension order.
+- `Backend/Assignments` — the prover's witness table with its extension order, and the
+  total `Valuation` the soundness reading quantifies over, with the bridges between the
+  two.
 - `Backend/{Builder,Prover}` — the two interpreters, with the interpreter laws
   (witness-independence, allocation agreement, completeness, the bind laws).
-- `Backend/WP` — the `Std.Do` weakest-precondition interpretation of `build`, the
-  soundness reading the gadget triple laws are stated in.
+- `Backend/WP` — the `Std.Do` weakest-precondition interpretations of `build` and
+  `prove` (the two readings the gadget triples are stated in), the spec shapes, and the
+  primitive/loop specs.
 - `Backend/Compile` — whole-circuit `compile`/`solve` and the seam `solve_complete`.
 - `Constraint/Basic` — the concrete reference constraint model.
 - `Vec` — kernel-reduction-friendly vector utilities (everything here is validated by

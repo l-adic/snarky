@@ -21,7 +21,9 @@ core's Bool functions, type-resolved), `any_` → `any`, `all_` → `all`;
 Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
 - The PS class fundeps are not modelled; instance coverage is the base set (`FVar`,
   `BoolVar`, `PUnit`, and the pair, whose components select SECOND BEFORE FIRST — PS
-  mirrors OCaml's reverse array evaluation order).
+  mirrors OCaml's reverse array evaluation order). The `select` laws cover the `FVar`
+  instance; the others delegate to it (or select nothing) and carry no laws of their
+  own.
 - `xor` witnesses its bit at `UnChecked Bool`, verbatim PS, pinned by the single
   constraint `2a · b = a + b − r`; its constant cases mirror PS's guard chain.
 - `any`/`all` mirror PS's size cases: empty → constant, one → itself, two →
@@ -200,8 +202,7 @@ def all {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding. -/
 
 open Std.Do in
-/-- On bit operands the result reads as the conjunction
-bit. -/
+/-- `and`: on bit operands the result reads as the conjunction bit. -/
 @[spec] theorem and_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -218,11 +219,10 @@ bit. -/
   simp only [circuitVal, hr, ha, hb]
 
 open Std.Do in
-/-- The run succeeds on any operands that
-evaluate — `and` is a multiplication, which cannot fail — and where they read as bits the
-result reads as the conjunction bit in the final table. The bits are quantified in the
-post rather than parameters of the spec: a parameter appearing only in the assertion
-cannot be instantiated by unification at a call site. -/
+/-- `and`'s honest run succeeds on any operands that evaluate — it is a multiplication,
+which cannot fail — and where they read as bits the result reads as the conjunction bit
+in the final table (bits quantified in the post, per the parameter rule `Complete`
+records). -/
 @[spec] theorem and_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
@@ -246,8 +246,8 @@ cannot be instantiated by unification at a call site. -/
   rw [hr _ _ ha hb, bit_mul]
 
 open Std.Do in
-/-- On bit operands the result reads as the disjunction bit — `and` on the negated
-bits, by De Morgan. -/
+/-- `or`: on bit operands the result reads as the disjunction bit — `and` on the
+negated bits, by De Morgan. -/
 @[spec] theorem or_spec {F c : Type} [CommRing F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -270,9 +270,9 @@ bits, by De Morgan. -/
   cases ab <;> cases bb <;> simp_all [Snarky.not, circuitVal]
 
 open Std.Do in
-/-- As for `and`, whose spec it composes
-through De Morgan — the run succeeds on any operands that evaluate, and where they read
-as bits the result reads as the disjunction bit. -/
+/-- `or`'s honest run succeeds on any operands that evaluate — composed through `and`'s
+law by De Morgan — and where they read as bits the result reads as the disjunction
+bit. -/
 @[spec] theorem or_complete_spec {F : Type} [CommRing F] [NoZeroDivisors F]
     [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
@@ -427,8 +427,8 @@ theorem exists_evalBits {F : Type} [Add F] [Mul F] [Zero F] [One F]
     exact ⟨bb :: bl, .cons hb hbl⟩
 
 open Std.Do in
-/-- On bit operands the result is the list's disjunction,
-given cast-injectivity up to the length — a sum of bits detects zero only below the
+/-- `any`: on bit operands the result reads as the list's disjunction, given
+cast-injectivity up to the length — a sum of bits detects zero only below the
 characteristic. -/
 @[spec] theorem any_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -493,9 +493,8 @@ characteristic. -/
       rfl
 
 open Std.Do in
-/-- The run succeeds on any evaluable
-operands, and where they read as bits the result is the disjunction — same
-cast-injectivity hypothesis as the soundness side. -/
+/-- `any`'s honest run succeeds on evaluable operands; where they read as bits the
+result is the disjunction — same cast-injectivity hypothesis as the soundness side. -/
 @[spec] theorem any_complete_spec {F : Type} [Field F] [DecidableEq F]
     (xs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k)
@@ -562,8 +561,8 @@ cast-injectivity hypothesis as the soundness side. -/
       rw [if_neg hcast, bit_true]
 
 open Std.Do in
-/-- On bit operands the result is the list's conjunction,
-given cast-injectivity up to the length — the full count is detected only below the
+/-- `all`: on bit operands the result reads as the list's conjunction, given
+cast-injectivity up to the length — the full count is detected only below the
 characteristic. -/
 @[spec] theorem all_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -626,8 +625,8 @@ characteristic. -/
       rw [if_neg hne, bit_false]
 
 open Std.Do in
-/-- The run succeeds on any evaluable
-operands, and where they read as bits the result is the conjunction. -/
+/-- `all`'s honest run succeeds on evaluable operands; where they read as bits the
+result is the conjunction. -/
 @[spec] theorem all_complete_spec {F : Type} [Field F] [DecidableEq F]
     (xs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k)
@@ -827,9 +826,8 @@ private theorem xor_complete_constB {F : Type} [Field F] [DecidableEq F]
     · exact absurd h h1
 
 open Std.Do in
-/-- On bit operands the result reads as the xor bit —
-the constant branches fold through the guards, the core row pins via `xor_pin`.
--/
+/-- `xor`: on bit operands the result reads as the xor bit — the constant branches fold
+through the guards, the core row pins via `xor_pin`. -/
 @[spec] theorem xor_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -916,9 +914,9 @@ the constant branches fold through the guards, the core row pins via `xor_pin`.
      exact xor_pin h)
 
 open Std.Do in
-/-- Bit operands are a genuine
-precondition here — the witnessed row `2a · b = a + b − r` rejects a non-bit operand — so
-the spec asks for `ReadsBit`, and the result reads as the xor bit in the final table. -/
+/-- `xor`'s honest run needs genuine bit operands — the witnessed row
+`2a · b = a + b − r` rejects a non-bit — so the spec asks for `ReadsBit`; the result
+reads as the xor bit in the final table. -/
 @[spec] theorem xor_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
@@ -1058,9 +1056,9 @@ private theorem build_selectCore' {F c : Type} [Field F] [DecidableEq F]
          [BasicSystem.r1cs ↑b (CVar.sub_ t e) (CVar.sub_ (.var nv) e)]⟩ := rfl
 
 open Std.Do in
-/-- On a bit selector the result reads as the chosen
-branch — the constant selector folds to a branch, two constant branches fold to the
-affine mux, and otherwise the `r1cs` row pins the choice. -/
+/-- `select`: on a bit selector the result reads as the chosen branch — a constant
+selector folds to a branch, two constant branches fold to the affine mux, and otherwise
+the `r1cs` row pins the choice. -/
 @[spec] theorem select_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (b : BoolVar F) (t e : FVar F)
@@ -1106,10 +1104,9 @@ affine mux, and otherwise the `r1cs` row pins the choice. -/
          cases bb <;> simp [bit])
 
 open Std.Do in
-/-- A bit selector is a genuine
-precondition — `selectWit` branches on `bv = 1` while the row `b · (t − e) = r − e` holds
-the selector's actual value — so the spec asks for `ReadsBit`, and the result reads as
-the chosen branch in the final table. -/
+/-- `select`'s honest run needs a genuine bit selector — `selectWit` branches on
+`bv = 1` while the row `b · (t − e) = r − e` holds the selector's actual value — so the
+spec asks for `ReadsBit`; the result reads as the chosen branch in the final table. -/
 @[spec] theorem select_complete_spec {F : Type} [Field F] [DecidableEq F]
     (b : BoolVar F) (t e : FVar F)
     (Q : PostCond (FVar F)

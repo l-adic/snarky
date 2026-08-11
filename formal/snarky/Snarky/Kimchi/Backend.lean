@@ -6,8 +6,8 @@ import Kimchi.Gate.Generic
 # A Kimchi Generic-gate backend for the DSL
 
 The DSL of `Snarky.*` keeps its constraint type `c` abstract. This module instantiates it
-at a constraint that maps to Kimchi's Generic gate (`Kimchi.Gate.Generic`), building
-the bridge the `prove_complete` docstring points at: the constraints a DSL circuit emits
+at a constraint that maps to Kimchi's Generic gate (`Kimchi.Gate.Generic`), bridging a
+successful DSL prover run to satisfied gate rows: the constraints a DSL circuit emits
 become Generic gate rows whose `Holds` predicate is exactly what `Kimchi.Index.rowSatisfies`
 dispatches to for generic rows.
 

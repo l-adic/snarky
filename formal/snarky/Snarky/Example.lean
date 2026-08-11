@@ -12,8 +12,9 @@ set_option mvcgen.warning false
 `cubic` constrains `y = x³ + x + 5` from three gadget calls. Its two laws are proved by
 walking the do-block — unfold, `mvcgen` (the registry supplies each callee's spec),
 close the arithmetic — and then run down to interpreter-level statements through
-`sound_spec_iff`/`complete_spec_iff`. Two `decide` examples execute both directions in
-the kernel.
+`sound_spec_iff`/`complete_spec_iff`. The laws are deliberately not `@[spec]`: `cubic`
+is an endpoint, not a gadget other circuits compose with. Two `decide` examples execute
+both directions in the kernel.
 
 The second half holds the executable edges no triple states: rejection (completeness
 proves acceptance on good inputs; refusal on bad ones is stated nowhere else), emission

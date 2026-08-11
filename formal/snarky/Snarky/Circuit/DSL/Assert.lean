@@ -150,9 +150,8 @@ instance {F c : Type} {a b : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq
 /-! ## The `assertEqual` laws -/
 
 open Std.Do in
-/-- `assertEqual x y` asserts that any satisfying
-valuation reads the operands equal — through the fold, the unsatisfiable-constants
-row, and the general row. -/
+/-- `assertEqual x y` asserts that any satisfying valuation reads the operands equal —
+through the fold, the unsatisfiable-constants row, and the general row. -/
 @[spec] theorem assertEqual_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -175,9 +174,8 @@ row, and the general row. -/
          (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
 
 open Std.Do in
-/-- Prover reading: on equal values the run cannot
-fail — it changes nothing, so the postcondition is claimed at the incoming state.
-Schematic like the soundness spec; the exact equation above supplies the reduction. -/
+/-- `assertEqual`'s honest run cannot fail on operands reading equal — it changes
+nothing, so the postcondition is claimed at the incoming state. -/
 @[spec] theorem assertEqual_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -277,9 +275,8 @@ end MvcgenDemosField
 /-! ## The `assertNonZero`, `assertNotEqual`, and `assertSquare` laws -/
 
 open Std.Do in
-/-- Asserts the operand reads nonzero — the
-zero-constant branch carries an unsatisfiable row, the witnessing branch the
-inverse's product row. -/
+/-- `assertNonZero` asserts the operand reads nonzero — the zero-constant branch
+carries an unsatisfiable row, the witnessing branch the inverse's product row. -/
 @[spec] theorem assertNonZero_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -304,8 +301,8 @@ inverse's product row. -/
      exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one hr))
 
 open Std.Do in
-/-- The run succeeds on a
-nonzero value, extending the table with the witnessed inverse. -/
+/-- `assertNonZero`'s honest run succeeds on a nonzero value, extending the table with
+the witnessed inverse. -/
 @[spec] theorem assertNonZero_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -332,8 +329,8 @@ nonzero value, extending the table with the witnessed inverse. -/
      · exact fun _ => hk PUnit.unit st' hle)
 
 open Std.Do in
-/-- Delegated to `assertNonZero` through the
-difference. -/
+/-- `assertNotEqual` asserts the operands read unequal — delegated to `assertNonZero`
+on the difference. -/
 @[spec] theorem assertNotEqual_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -347,8 +344,8 @@ difference. -/
   exact hpre PUnit.unit _ (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
 
 open Std.Do in
-/-- Delegated to
-`assertNonZero` through the difference. -/
+/-- `assertNotEqual`'s honest run succeeds on operands reading unequal —
+`assertNonZero`'s law applied at the difference. -/
 @[spec] theorem assertNotEqual_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -368,8 +365,7 @@ open Std.Do in
   exact hd ▸ sub_ne_zero.mpr (hne xv yv hx hy)
 
 open Std.Do in
-/-- Asserts the square identity on the operands'
-readings. -/
+/-- `assertSquare x y` asserts `x · x = y` on the operands' readings. -/
 @[spec] theorem assertSquare_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -382,8 +378,7 @@ readings. -/
     (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
-/-- The run succeeds on a true
-square, changing nothing. -/
+/-- `assertSquare`'s honest run succeeds on a true square, changing nothing. -/
 @[spec] theorem assertSquare_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -417,8 +412,7 @@ open Std.Do in
   exact assertEqual_spec (c := c) ↑v (.const 1) Q
 
 open Std.Do in
-/-- The run succeeds on a bit that
-reads `1`. -/
+/-- `assert`'s honest run succeeds on a bit reading `1`. -/
 @[spec] theorem assert_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : BoolVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -446,8 +440,8 @@ of `DSL/Boolean`'s sum-based section (`assertAny`'s soundness needs none: a zero
 casts to zero in any semiring). -/
 
 open Std.Do in
-/-- On bit operands the result is the list's
-conjunction, under cast-injectivity up to the length. -/
+/-- `allBools`: on bit operands the result reads as the list's conjunction, under
+cast-injectivity up to the length. -/
 @[spec] theorem allBools_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F))
@@ -509,8 +503,8 @@ conjunction, under cast-injectivity up to the length. -/
       rw [if_neg hne, bit_false]
 
 open Std.Do in
-/-- The run succeeds on any
-evaluable operands, and where they read as bits the result is the conjunction. -/
+/-- `allBools`'s honest run succeeds on evaluable operands; where they read as bits the
+result is the conjunction bit. -/
 @[spec] theorem allBools_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
@@ -578,8 +572,8 @@ evaluable operands, and where they read as bits the result is the conjunction. -
       rw [if_neg hne, bit_false]
 
 open Std.Do in
-/-- Asserts some bit is set — no characteristic
-hypothesis, since a zero count casts to zero in any semiring. -/
+/-- `assertAny` asserts some bit is set — no characteristic hypothesis: a zero count
+casts to zero in any semiring. -/
 @[spec] theorem assertAny_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -599,8 +593,8 @@ hypothesis, since a zero count casts to zero in any semiring. -/
   exact hne (by simp)
 
 open Std.Do in
-/-- On bit operands with some
-bit set the run succeeds — cast-injectivity makes the nonzero count a nonzero sum. -/
+/-- `assertAny`'s honest run succeeds on bit operands with some bit set —
+cast-injectivity makes the nonzero count a nonzero sum. -/
 @[spec] theorem assertAny_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
@@ -633,8 +627,7 @@ bit set the run succeeds — cast-injectivity makes the nonzero count a nonzero 
   exact hne (hchar _ 0 hcount (by omega) (by simpa using hcast))
 
 open Std.Do in
-/-- Asserts every bit is set, under cast-injectivity
-up to the length. -/
+/-- `assertAll` asserts every bit is set, under cast-injectivity up to the length. -/
 @[spec] theorem assertAll_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F))
@@ -660,9 +653,8 @@ up to the length. -/
   exact count_true_eq_length.mp (by omega)
 
 open Std.Do in
-/-- On bit operands, all set,
-the run succeeds — no characteristic hypothesis, the full count casts to the length
-in any semiring. -/
+/-- `assertAll`'s honest run succeeds on bit operands all set — no characteristic
+hypothesis: the full count casts to the length in any semiring. -/
 @[spec] theorem assertAll_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -688,8 +680,8 @@ in any semiring. -/
   rw [hc, hlen]
 
 open Std.Do in
-/-- Asserts a one-hot list — the count is one,
-under cast-injectivity up to the length plus one. -/
+/-- `assertExactlyOne` asserts a one-hot list — the count is one, under
+cast-injectivity up to the length plus one. -/
 @[spec] theorem assertExactlyOne_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F))
@@ -715,8 +707,8 @@ under cast-injectivity up to the length plus one. -/
   exact hchar _ _ hcount (by omega) heq
 
 open Std.Do in
-/-- On a one-hot bit list
-the run succeeds — the unit count casts to one in any semiring. -/
+/-- `assertExactlyOne`'s honest run succeeds on a one-hot bit list — the unit count
+casts to one in any semiring. -/
 @[spec] theorem assertExactlyOne_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
