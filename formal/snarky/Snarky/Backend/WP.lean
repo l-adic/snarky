@@ -307,6 +307,60 @@ theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
   · exact ⟨false, by rw [hv, h0]; rfl⟩
   · exact ⟨true, by rw [hv, h1]; rfl⟩
 
+/-! ## Running a schematic spec
+
+The spec shapes are continuation-passing: `Q` is a bound consumer, so application at a
+call site is unification. These two laws show the form is CONSERVATIVE — instantiating
+`Q` at the spec's own post (the identity continuation, `runCont c id`) recovers the
+plain interpreter-level statement, and the converse holds because each shape's
+conclusion pins what its reading keeps fixed. The right-hand sides are exactly the
+retired direct-law shapes: one application away, never lost. -/
+
+open Std.Do in
+/-- **Running the soundness shape**: the schematic triple, quantified over `Q`, is the
+plain interpreter law — every satisfying assignment pins the built result. -/
+theorem sound_spec_iff [ConstraintHolds F c] {α : Type}
+    (g : CircuitM F c α) (post : Valuation F → α → Prop) :
+    (∀ Q : PostCond α (.arg (BuilderState F) .pure), ⦃Sound post Q⦄ g ⦃Q⦄)
+      ↔ ∀ (V : Valuation F) (nv : Nat),
+          (∀ con ∈ (build g nv).constraints, ConstraintHolds.Holds V con) →
+          post V (build g nv).result := by
+  constructor
+  · intro h V nv hsat
+    exact h (PostCond.noThrow fun r s => ⌜post s.V r⌝) ⟨V, nv⟩ (fun r _ hp => hp) hsat
+  · intro h Q s hpre hsat
+    exact hpre (build g s.nv).result (build g s.nv).nextVar (h s.V s.nv hsat)
+
+open Std.Do in
+/-- **Running the completeness shape**: the schematic triple is the honest-run
+existential — from any invariant-carrying state satisfying `pre`, the run succeeds,
+grants `post`, and only extends the table. The forward direction runs at the
+total-correctness continuation (`False` on the exception channel forces success). -/
+theorem complete_spec_iff {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {α : Type} (g : CircuitM F (ProverC F) α)
+    (pre : Assignments F → Prop) (post : Assignments F → α → Assignments F → Prop) :
+    (∀ Q : PostCond α (.arg (ProverState F) (.except EvalError .pure)),
+        ⦃Complete pre post Q⦄ g ⦃Q⦄)
+      ↔ ∀ st : ProverState F, pre st.env →
+          ∃ out : Proved F α, prove Basic.holds g st.nv st.env = .ok out
+            ∧ post st.env out.result out.assignments ∧ st.env.Le out.assignments := by
+  constructor
+  · intro h st hpre
+    have hw := h (PostCond.noThrow fun r st' => ⌜post st.env r st'.env ∧ st.env.Le st'.env⌝)
+      st ⟨hpre, fun r st' hp hle => ⟨hp, hle⟩⟩
+    rcases hrun : prove Basic.holds g st.nv st.env with e | out
+    · simp only [wp, PredTrans.apply, hrun] at hw
+      cases hw
+    · simp only [wp, PredTrans.apply, hrun] at hw
+      obtain ⟨hp, hle⟩ := hw (ProverState.freshOut (st := st) hrun)
+      exact ⟨out, rfl, hp, hle⟩
+  · intro h Q st hpre
+    obtain ⟨hp, hk⟩ := hpre
+    obtain ⟨out, hrun, hpost, hle⟩ := h st hp
+    simp only [wp, PredTrans.apply, hrun]
+    intro hf
+    exact hk out.result ⟨out.nextVar, out.assignments, hf⟩ hpost hle
+
 /-! ## Primitive specs
 
 Triple laws for the monad's own operations, the leaves below every gadget: emitting a

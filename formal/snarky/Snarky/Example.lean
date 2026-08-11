@@ -105,6 +105,31 @@ theorem cubic_complete_spec {F : Type} [Field F] [DecidableEq F]
   simp [List.sum]
   ring
 
+/-- The soundness law, run to a plain Prop (`sound_spec_iff`, the identity
+continuation): any assignment satisfying the built constraints places the readings of
+`(x, y)` on the curve `y = x³ + x + 5`. No triple in sight. -/
+theorem cubic_sound {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x y : FVar F) (V : Valuation F) (nv : Nat)
+    (hsat : ∀ con ∈ (build (cubic (c := c) x y) nv).constraints,
+      ConstraintHolds.Holds V con) :
+    x.val V ^ 3 + x.val V + 5 = y.val V :=
+  (sound_spec_iff _ _).mp (fun Q => cubic_spec x y Q) V nv hsat
+
+/-- The completeness law, run to a plain Prop (`complete_spec_iff`): from any table
+where the readings of `(x, y)` form a point of the curve, the honest run succeeds,
+only extending the table. -/
+theorem cubic_complete {F : Type} [Field F] [DecidableEq F]
+    (x y : FVar F) (st : ProverState F)
+    (hx : (x.eval st.env).isOk) (hy : (y.eval st.env).isOk)
+    (hcurve : ∀ xv yv, x.eval st.env = .ok xv → y.eval st.env = .ok yv →
+      xv ^ 3 + xv + 5 = yv) :
+    ∃ out, prove Basic.holds (cubic (c := ProverC F) x y) st.nv st.env = .ok out ∧
+      st.env.Le out.assignments :=
+  let ⟨out, hrun, _, hle⟩ := (complete_spec_iff _ _ _).mp
+    (fun Q => cubic_complete_spec x y Q) st ⟨hx, hy, hcurve⟩
+  ⟨out, hrun, hle⟩
+
 /-- The laws, exercised in the kernel: the honest run accepts `x = 3, y = 35`
 (`27 + 3 + 5`)… -/
 example : (prove Basic.holds

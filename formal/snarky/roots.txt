@@ -76,6 +76,8 @@ Snarky.Basic.instLawfulBasicSystem
 Snarky.ProverC
 Snarky.ProverC.instWP
 Snarky.ProverC.instWPMonad
+Snarky.sound_spec_iff
+Snarky.complete_spec_iff
 
 -- The primitive specs and the vector loop rules (Backend/WP.lean): triple laws for the
 -- monad's own operations and for `generateVec`, the pieces a walked gadget bottoms out
@@ -245,6 +247,8 @@ Snarky.Example.F17
 Snarky.Example.cubic
 Snarky.Example.cubic_spec
 Snarky.Example.cubic_complete_spec
+Snarky.Example.cubic_sound
+Snarky.Example.cubic_complete
 Snarky.Example.mulCircuit
 Snarky.Example.eqCircuit
 Snarky.Example.constEq
