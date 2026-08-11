@@ -27,7 +27,7 @@ def mulCircuit : CircuitM F17 (GateConstraint F17) (FVar F17) := do
   pure z
 
 /-- The prover's final assignment (it succeeds, so this is the `ok` branch). -/
-def solved : Assignments F17 :=
+private def solved : Assignments F17 :=
   match prove GateConstraint.holds mulCircuit 0 Assignments.empty with
   | .ok ⟨_, _, env⟩ => env
   | .error _ => Assignments.empty

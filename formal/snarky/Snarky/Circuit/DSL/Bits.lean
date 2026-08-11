@@ -43,16 +43,15 @@ class ToNat (F : Type u) where
 /-! ## The gadgets -/
 
 /-- `unpack`'s per-bit witness computation: bit `i` of the operand's canonical
-representative. Public only for the gadget laws. -/
-def unpackWit {F : Type} [Add F] [Mul F] [ToNat F] (v : FVar F) (i : Nat) :
+representative. -/
+private def unpackWit {F : Type} [Add F] [Mul F] [ToNat F] (v : FVar F) (i : Nat) :
     AsProver F Bool := do
   let vv ← AsProver.readCVar v
   pure ((ToNat.toNat vv).testBit i)
 
 /-- The weighted-sum expression `acc + Σⱼ 2^(i+j)·bits[j]`, LSB first — the indexed
-fold shared by `pack` and `unpack`'s constraint (PS's `mapWithIndex` fold). Public only
-for the gadget laws. -/
-def packAux [Semiring F] [DecidableEq F] : List (BoolVar F) → Nat → FVar F → FVar F
+fold shared by `pack` and `unpack`'s constraint (PS's `mapWithIndex` fold). -/
+private def packAux [Semiring F] [DecidableEq F] : List (BoolVar F) → Nat → FVar F → FVar F
   | [], _, acc => acc
   | b :: bs, i, acc =>
     packAux bs (i + 1) (CVar.add_ acc (CVar.scale_ ((2 : F) ^ i) ↑b))
@@ -76,8 +75,8 @@ def unpack {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
 def unpackPure [ToNat F] (x : F) (n : Nat) : Vector Bool n :=
   Vector.ofFn fun i => (ToNat.toNat x).testBit i.val
 
-/-- The value-level indexed fold under `packPure`. Public only for the gadget laws. -/
-def packPureAux [Semiring F] : List Bool → Nat → F → F
+/-- The value-level indexed fold under `packPure`. -/
+private def packPureAux [Semiring F] : List Bool → Nat → F → F
   | [], _, acc => acc
   | b :: bs, i, acc => packPureAux bs (i + 1) (acc + (2 : F) ^ i * bit b)
 

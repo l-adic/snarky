@@ -39,16 +39,15 @@ variable {F c : Type u}
 
 /-! ## The gadgets -/
 
-/-- `mul`'s witness computation: the product of the operands' values. Public only for
-the gadget laws. -/
-def mulWit [Add F] [Mul F] (x y : FVar F) : AsProver F F := do
+/-- `mul`'s witness computation: the product of the operands' values. -/
+private def mulWit [Add F] [Mul F] (x y : FVar F) : AsProver F F := do
   let xv ← AsProver.readCVar x
   let yv ← AsProver.readCVar y
   pure (xv * yv)
 
 /-- `mul`'s witnessing branch: witness the product, pin it with one `r1cs` constraint.
 Split out so the gadget laws below quantify over it uniformly. -/
-def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
+private def mulCore [Add F] [Mul F] [BasicSystem F c] (x y : FVar F) : CircuitM F c (FVar F) := do
   let z ← witness (val := F) (mulWit x y)
   addConstraint (BasicSystem.r1cs x y z)
   pure z
@@ -64,9 +63,8 @@ def mul [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] (x y 
   | x, .const b => pure (CVar.scale_ b x)
   | x, y => mulCore x y
 
-/-- `inv`'s witness computation: the inverse, failing on zero (PS `DivisionByZero`).
-Public only for the gadget laws. -/
-def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
+/-- `inv`'s witness computation: the inverse, failing on zero (PS `DivisionByZero`). -/
+private def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
   let xv ← AsProver.readCVar x
   if xv = 0 then AsProver.throw "inv: division by zero"
   else pure xv⁻¹
@@ -95,16 +93,15 @@ def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
   let yInv ← inv y
   mul x yInv
 
-/-- `equals`'s witness computation: the claimed answer bit and the inverse-or-zero.
-Public only for the gadget laws. -/
-def equalsWit {F : Type} [Field F] [DecidableEq F] (z : CVar F) :
+/-- `equals`'s witness computation: the claimed answer bit and the inverse-or-zero. -/
+private def equalsWit {F : Type} [Field F] [DecidableEq F] (z : CVar F) :
     AsProver F (UnChecked Bool × F) := do
   let zv ← AsProver.readCVar z
   pure (if zv = 0 then (⟨true⟩, 0) else (⟨false⟩, zv⁻¹))
 
 /-- `equals`'s witnessing branch, over the precomputed difference `z` — split out so the
-gadget laws below quantify over it uniformly. Public only for those laws. -/
-def equalsCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (z : CVar F) :
+gadget laws below quantify over it uniformly. -/
+private def equalsCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (z : CVar F) :
     CircuitM F c (BoolVar F) := do
   let rz ← witness (val := UnChecked Bool × F) (equalsWit z)
   let r := rz.1.val
@@ -150,7 +147,7 @@ def sum [Add F] [Zero F] (xs : List (FVar F)) : FVar F :=
 (`decide`-friendly; PS recurses on `n / 2` directly). The fuel-exhausted branch is
 unreachable: `pow` seeds fuel `n`, and the exponent at least halves each step. Public
 only for the gadget laws. -/
-def powGo [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] :
+private def powGo [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c] :
     Nat → FVar F → Nat → CircuitM F c (FVar F)
   | _, _, 0 => pure (.const 1)
   | _, x, 1 => pure x
@@ -167,15 +164,14 @@ def pow [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
     (x : FVar F) (n : Nat) : CircuitM F c (FVar F) :=
   powGo n x n
 
-/-- `square`'s witness computation: the square of the operand's value. Public only for
-the gadget laws. -/
-def squareWit [Add F] [Mul F] (x : FVar F) : AsProver F F := do
+/-- `square`'s witness computation: the square of the operand's value. -/
+private def squareWit [Add F] [Mul F] (x : FVar F) : AsProver F F := do
   let xv ← AsProver.readCVar x
   pure (xv * xv)
 
 /-- `square`'s witnessing branch: witness the square, pin it with one `square`
 constraint. Split out so the gadget laws below quantify over it uniformly. -/
-def squareCore [Add F] [Mul F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) := do
+private def squareCore [Add F] [Mul F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) := do
   let z ← witness (val := F) (squareWit x)
   addConstraint (BasicSystem.square x z)
   pure z

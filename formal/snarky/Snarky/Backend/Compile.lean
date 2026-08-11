@@ -36,7 +36,7 @@ variable {F c : Type u} {a b avar bvar : Type u}
 `for_ (zip (varToFields out) (map Var bvars)) (uncurry assertEqual_)` with the zip fused
 into the recursion. Mismatched lengths cannot arise from `compileBody` (both lists have
 `B.size` elements); the catch-all makes the function total. -/
-def assertEqPairs [DecidableEq F] [BasicSystem F c] :
+private def assertEqPairs [DecidableEq F] [BasicSystem F c] :
     List (CVar F) → List Variable → CircuitM F c PUnit
   | v :: vs, w :: ws => do
     assertEqual v (.var w)
@@ -45,7 +45,7 @@ def assertEqPairs [DecidableEq F] [BasicSystem F c] :
 
 /-- The output back-fill witness: read the output bundle's value and re-encode it as
 field elements — PS `map valueToFields (read out)`. -/
-def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
+private def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
     AsProver F (Vector F B.size) :=
   fun env => (readVar (val := b) out env).map B.valueToFields
 
@@ -54,7 +54,7 @@ preallocated input slots, pay its `check`, run `main`, back-fill the output slot
 the computed output (builder: no-op; prover: the `assignOp` that makes `solve`'s output
 slots live), and constrain the output bundle to those slots. PS splits this into a
 builder program and a solver program; see the module docstring for why Lean shares one. -/
-def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
+private def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F c bvar) : CircuitM F c bvar := do
   let av := A.fieldsToVar (mapVec CVar.var (allocRange 0 A.size))

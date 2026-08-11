@@ -44,9 +44,8 @@ class IfThenElse (F c : Type) (var : Type) where
 
 export IfThenElse (select)
 
-/-- `select`'s witness computation: read the selector, then the chosen branch.
-Public only for the gadget laws. -/
-def selectWit {F : Type} [Field F] [DecidableEq F] (b : BoolVar F) (t e : FVar F) :
+/-- `select`'s witness computation: read the selector, then the chosen branch. -/
+private def selectWit {F : Type} [Field F] [DecidableEq F] (b : BoolVar F) (t e : FVar F) :
     AsProver F F := do
   let bv ← AsProver.readCVar ↑b
   if bv = 1 then AsProver.readCVar t else AsProver.readCVar e
@@ -60,7 +59,7 @@ attribute [circuitVal] selectPure
 /-- `select`'s witnessing branch for field variables: witness the chosen value `r`, pin
 it with `b · (t − e) = r − e`. Split out so the gadget laws below quantify over it
 uniformly. -/
-def selectCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+private def selectCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
     (b : BoolVar F) (t e : FVar F) : CircuitM F c (FVar F) := do
   let r ← witness (val := F) (selectWit b t e)
   addConstraint (BasicSystem.r1cs ↑b (CVar.sub_ t e) (CVar.sub_ r e))
@@ -143,9 +142,8 @@ def or {F c : Type u} [Add F] [Sub F] [Mul F] [Zero F] [One F] [Neg F] [Decidabl
   let r ← and (Snarky.not a) (Snarky.not b)
   pure (Snarky.not r)
 
-/-- `xor`'s witness computation: the inequality bit. Public only for the gadget laws in
-the gadget laws. -/
-def xorWit {F : Type} [Add F] [Mul F] [DecidableEq F] (a b : BoolVar F) :
+/-- `xor`'s witness computation: the inequality bit. -/
+private def xorWit {F : Type} [Add F] [Mul F] [DecidableEq F] (a b : BoolVar F) :
     AsProver F (UnChecked Bool) := do
   let av ← AsProver.readCVar ↑a
   let bv ← AsProver.readCVar ↑b
@@ -154,7 +152,7 @@ def xorWit {F : Type} [Add F] [Mul F] [DecidableEq F] (a b : BoolVar F) :
 /-- `xor`'s witnessing branch: witness the bit at `UnChecked Bool` (the typed
 skip-the-check door, verbatim PS) and pin it with `2a · b = a + b − r`. Split out so the
 gadget laws below quantify over it uniformly. -/
-def xorCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : BoolVar F) :
+private def xorCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (a b : BoolVar F) :
     CircuitM F c (BoolVar F) := do
   let res ← witness (val := UnChecked Bool) (xorWit a b)
   addConstraint (BasicSystem.r1cs (CVar.add_ (↑a : CVar F) ↑a) ↑b
@@ -336,7 +334,7 @@ theorem forall₂_length {α β : Type u} {R : α → β → Prop} {l : List α}
   | cons _ _ ih => simpa using ih
 
 /-- The encodings of a bit list sum to its true-count. -/
-theorem bitSum {F : Type} [Semiring F] :
+private theorem bitSum {F : Type} [Semiring F] :
     ∀ bl : List Bool, (bl.map (bit (F := F))).sum = (bl.count true : F) := by
   intro bl
   induction bl with
