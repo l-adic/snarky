@@ -469,13 +469,14 @@ reads as the negated answer bit in the final table. -/
           (↑r : CVar F).eval env' = .ok (if av = bv then 0 else 1)) Q⦄
     neq (c := ProverC F) a b
     ⦃Q⦄ := by
-  intro st hpre
+  simp only [neq]
+  mvcgen
+  rename_i st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  simp only [neq, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine equals_complete_spec a b _ st ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
-  simp only [wp, PredTrans.apply, prove]
+  refine ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
+  simp only [wp, PredTrans.apply]
   intro hf
   refine hk (.unchecked (CVar.sub_ (.const 1) ↑r)) ⟨st'.nv, st'.env, hf⟩
     (fun a' b' ha' hb' => ?_) hle
@@ -727,8 +728,8 @@ carrier: a nonzero divisor makes the run succeed with the quotient. -/
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hx' : x.eval st'.env = .ok xv := CVar.eval_le hle hx
   have hr' : r.eval st'.env = .ok yv⁻¹ := hr yv hy
-  refine mul_complete_spec x r Q st'
-    ⟨⟨by rw [hx']; rfl, by rw [hr']; rfl⟩, fun res st'' hres hle' => ?_⟩
+  mvcgen
+  refine ⟨⟨by rw [hx']; rfl, by rw [hr']; rfl⟩, fun res st'' hres hle' => ?_⟩
   refine hk res st'' (fun a b ha hb => ?_) (hle.trans hle')
   rw [hx] at ha; rw [hy] at hb
   injection ha with ha; injection hb with hb
@@ -900,9 +901,9 @@ for the exponent, the honest run succeeds and the result reads as the power. -/
                 let y ← powGo (c := ProverC F) fuel sq ((m + 2) / 2)
                 if (m + 2) % 2 = 0 then pure y else mul x y) := rfl
       rw [hdef]
+      mvcgen
+      refine ⟨⟨by rw [hx]; rfl, by rw [hx]; rfl⟩, fun sq st₁ hsq hle₁ => ?_⟩
       simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-      refine mul_complete_spec x x _ st ⟨⟨by rw [hx]; rfl, by rw [hx]; rfl⟩,
-        fun sq st₁ hsq hle₁ => ?_⟩
       have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
       have hsq' : sq.eval st₁.env = .ok (xv * xv) := hsq xv xv hx hx
       have hsqok : (sq.eval st₁.env).isOk = true := by rw [hsq']; rfl

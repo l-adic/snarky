@@ -351,15 +351,12 @@ nonzero value, extending the table with the witnessed inverse. -/
     rw [if_neg (by rw [hf]; exact hvv)]
     exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
   all_goals
-    (simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-     refine inv_complete_spec _ _ st ⟨⟨by rw [hv]; rfl, fun _ h => ?_⟩,
-       fun _ st' _ hle => ?_⟩
+    (mvcgen
+     refine ⟨⟨by rw [hv]; rfl, fun _ h => ?_⟩, fun _ st' _ hle => ?_⟩
      · rw [hv] at h
        injection h with h
        exact h ▸ hvv
-     · simp only [wp, PredTrans.apply, prove]
-       intro hf
-       exact hk PUnit.unit ⟨st'.nv, st'.env, hf⟩ trivial hle)
+     · exact fun _ => hk PUnit.unit st' hle)
 
 open Std.Do in
 /-- **`assertNotEqual` soundness** (D12), delegated to `assertNonZero` through the

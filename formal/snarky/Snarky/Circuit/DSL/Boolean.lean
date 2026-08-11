@@ -257,11 +257,12 @@ cannot be instantiated by unification at a call site. -/
             (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q⦄
     Snarky.and (c := ProverC F) a b
     ⦃Q⦄ := by
-  intro st hpre
+  simp only [Snarky.and]
+  mvcgen
+  rename_i st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
-  simp only [Snarky.and, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine mul_complete_spec ↑a ↑b _ st ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
-  simp only [wp, PredTrans.apply, prove]
+  refine ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
+  simp only [wp, PredTrans.apply]
   intro hf
   refine hk (.unchecked r) ⟨st'.nv, st'.env, hf⟩ (fun ab bb ha hb => ?_) hle
   show r.eval st'.env = _
@@ -306,7 +307,9 @@ as bits the result reads as the disjunction bit. -/
             (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q⦄
     Snarky.or (c := ProverC F) a b
     ⦃Q⦄ := by
-  intro st hpre
+  simp only [Snarky.or]
+  mvcgen
+  rename_i st hpre
   obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
@@ -316,10 +319,8 @@ as bits the result reads as the disjunction bit. -/
     show ((CVar.sub_ (.const 1) (↑x : CVar F)).eval st.env).isOk = true
     rw [CVar.eval_sub_ rfl hx]
     rfl
-  simp only [Snarky.or, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine and_complete_spec (Snarky.not a) (Snarky.not b) _ st
-    ⟨⟨hnotOk a av ha, hnotOk b bv hb⟩, fun r st' hr hle => ?_⟩
-  simp only [wp, PredTrans.apply, prove]
+  refine ⟨⟨hnotOk a av ha, hnotOk b bv hb⟩, fun r st' hr hle => ?_⟩
+  simp only [wp, PredTrans.apply]
   intro hf
   refine hk (Snarky.not r) ⟨st'.nv, st'.env, hf⟩ (fun ab bb ha' hb' => ?_) hle
   have hr' := hr (!ab) (!bb) (not_eval ha') (not_eval hb')
