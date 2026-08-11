@@ -242,13 +242,9 @@ Snarky.Kimchi.instReprGateConstraint
 -- the run helpers; their consumers are anonymous `example`s, invisible to any constant
 -- walk (exhibits stay rooted).
 Snarky.Example.F17
-Snarky.Example.F13
-Snarky.Example.cubeRoot?
-Snarky.Example.cubeRootCircuit
 Snarky.Example.cubic
 Snarky.Example.cubic_spec
 Snarky.Example.cubic_complete_spec
-Snarky.Example.cubeCircuit
 Snarky.Example.mulCircuit
 Snarky.Example.eqCircuit
 Snarky.Example.constEq
