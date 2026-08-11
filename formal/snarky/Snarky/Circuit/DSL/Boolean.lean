@@ -71,6 +71,12 @@ def selectWit {F : Type} [Field F] [DecidableEq F] (b : BoolVar F) (t e : FVar F
   let bv ← AsProver.readCVar ↑b
   if bv = 1 then AsProver.readCVar t else AsProver.readCVar e
 
+/-- The value-level answer of `select` — the pure mirror both readings state their
+posts through. -/
+def selectPure {F : Type u} (bb : Bool) (tv ev : F) : F := if bb then tv else ev
+
+attribute [circuitVal] selectPure
+
 /-- `select`'s witnessing branch for field variables: witness the chosen value `r`, pin
 it with `b · (t − e) = r − e`. Split out so the gadget laws below quantify over it
 uniformly. -/
@@ -492,6 +498,7 @@ characteristic. -/
       have := List.count_le_length (a := true) (l := bl)
       omega
     rw [hr, hsum]
+    simp only [neqPure]
     show (if (bl.count true : F) = (CVar.const 0).val s.V then 0 else 1) = _
     by_cases hz : bl.any id = false
     · rw [hz]
@@ -564,6 +571,7 @@ cast-injectivity hypothesis as the soundness side. -/
       omega
     have hr' := hr _ _ hsum (by rfl : (CVar.const 0).eval st.env = .ok 0)
     rw [hr']
+    simp only [neqPure]
     by_cases hz : bl.any id = false
     · rw [hz]
       rw [count_true_eq_zero.mpr hz]
@@ -625,6 +633,7 @@ characteristic. -/
       have := List.count_le_length (a := true) (l := bl)
       omega
     rw [hr, hsum]
+    simp only [equalsPure]
     show (if (CVar.const (xs.length : F)).val s.V = (bl.count true : F) then 1 else 0) = _
     by_cases hall : bl.all id = true
     · rw [hall]
@@ -696,6 +705,7 @@ operands, and where they read as bits the result is the conjunction. -/
     have hr' := hr _ _ (by rfl : (CVar.const (xs.length : F)).eval st.env
       = .ok (xs.length : F)) hsum
     rw [hr']
+    simp only [equalsPure]
     by_cases hall : bl.all id = true
     · rw [hall]
       have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
@@ -1083,7 +1093,7 @@ backend. -/
     (b : BoolVar F) (t e : FVar F)
     (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V r => ∀ bb : Bool,
-        (↑b : CVar F).val V = bit bb → r.val V = if bb then t.val V else e.val V) Q⦄
+        (↑b : CVar F).val V = bit bb → r.val V = selectPure bb (t.val V) (e.val V)) Q⦄
     select (c := c) b t e
     ⦃Q⦄ := by
   intro s hpre hsat
@@ -1109,14 +1119,14 @@ backend. -/
     subst hb
     show (build (pure (if (bit bb : F) = 1 then t else e) :
       CircuitM F c (FVar F)) nv).result.val V = _
-    cases bb <;> simp [bit] <;> rfl
+    cases bb <;> simp [selectPure, bit] <;> rfl
   all_goals
     cases t <;> cases e <;> dsimp only at hsat ⊢ <;>
       first
       | (rw [build_selectCore'] at hsat ⊢
          have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
          simp only [circuitVal] at h
-         exact select_pin h hb)
+         simpa only [selectPure] using select_pin h hb)
       | (show (CVar.add_ (CVar.scale _ _) (CVar.scale_ _ _)).val V = _
          rw [← hB]
          simp only [circuitVal, hb]
@@ -1135,7 +1145,7 @@ the chosen branch in the final table. -/
         (fun env => ReadsBit (↑b : CVar F) env ∧ (t.eval env).isOk ∧ (e.eval env).isOk)
         (fun env r env' => ∀ (bb : Bool) tv ev, (↑b : CVar F).eval env = .ok (bit bb) →
           t.eval env = .ok tv → e.eval env = .ok ev →
-          r.eval env' = .ok (if bb then tv else ev)) Q⦄
+          r.eval env' = .ok (selectPure bb tv ev)) Q⦄
     select (c := ProverC F) b t e
     ⦃Q⦄ := by
   intro st hpre
@@ -1146,10 +1156,10 @@ the chosen branch in the final table. -/
   obtain ⟨tv, ht⟩ := CVar.evalOk hokt
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
   have hval : ∀ {r : FVar F} {env' : Assignments F},
-      r.eval env' = .ok (if bb then tv else ev) →
+      r.eval env' = .ok (selectPure bb tv ev) →
       ∀ (b' : Bool) t' e', (↑b : CVar F).eval st.env = .ok (bit b') →
         t.eval st.env = .ok t' → e.eval st.env = .ok e' →
-        r.eval env' = .ok (if b' then t' else e') := by
+        r.eval env' = .ok (selectPure b' t' e') := by
     intro r env' heval b' t' e' hb' ht' he'
     rw [hb] at hb'; rw [ht] at ht'; rw [he] at he'
     injection hb' with hb'; injection ht' with ht'; injection he' with he'
@@ -1163,13 +1173,13 @@ the chosen branch in the final table. -/
     subst hbv
     intro hf
     refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-    cases bb <;> simp [bit] <;> [exact he; exact ht]
+    cases bb <;> simp [selectPure, bit] <;> [exact he; exact ht]
   all_goals
     cases t <;> cases e <;> dsimp only <;>
       first
       | (intro hf
          refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-         exact select_mux_eval (hB ▸ hb) ht he)
+         simpa only [selectPure] using select_mux_eval (hB ▸ hb) ht he)
       | (rw [selectCore_run hb ht he st.fresh]
          intro hf
          refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)

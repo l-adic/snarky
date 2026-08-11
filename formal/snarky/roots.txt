@@ -41,6 +41,28 @@ Snarky.BoolVar.toCVar_unchecked
 Snarky.bit_true
 Snarky.bit_false
 Snarky.bit_mul
+Snarky.equalsPure
+Snarky.neqPure
+Snarky.selectPure
+
+-- The alignment layer: complete a run's table to a valuation, and the bridge from a
+-- gadget's Sound triple to its honest run (Backend/{Assignments,WP}.lean); the
+-- per-gadget corollaries live in Circuit/DSL/Agreement.lean.
+Snarky.Assignments.toValuation
+Snarky.CVar.val_toValuation
+Snarky.post_of_prove
+Snarky.mul_agrees
+Snarky.inv_agrees
+Snarky.div_agrees
+Snarky.square_agrees
+Snarky.pow_agrees
+Snarky.equals_agrees
+Snarky.neq_agrees
+Snarky.xor_agrees
+Snarky.select_agrees
+Snarky.unpack_agrees
+Snarky.assertEqual_agrees
+Snarky.assertNonZero_agrees
 
 -- The Std.Do weakest-precondition interpretation of build (Backend/WP.lean):
 -- the soundness reading, generic over the backend's semantic reading of one

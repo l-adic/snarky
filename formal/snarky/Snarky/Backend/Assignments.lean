@@ -53,6 +53,12 @@ abbrev Valuation (F : Type u) := Variable → F
 def Valuation.toAssignments (V : Valuation F) : Assignments F :=
   fun v => some (V v)
 
+/-- Complete a partial table to a total valuation, defaulting unassigned slots to
+zero — the reverse of `Valuation.toAssignments`, and the seam the alignment bridge
+(`post_of_prove`) reads an honest run's table through. -/
+def Assignments.toValuation [Zero F] (env : Assignments F) : Valuation F :=
+  fun v => (env v).getD 0
+
 namespace Assignments
 
 /-- The empty assignment (PS `fresh`). -/
@@ -104,6 +110,15 @@ private theorem le_extend {a : Assignments F} {v : Variable} (hv : a v = none) (
   split
   · next hwv => rw [hwv, hv] at hw; cases hw
   · exact hw
+
+/-- Completion extends the table: assigned slots keep their values — what carries a
+run's checked constraints to the completed valuation in the alignment bridge. -/
+theorem le_toValuation [Zero F] (env : Assignments F) :
+    env.Le env.toValuation.toAssignments := by
+  intro v x hv
+  show some ((env v).getD 0) = some x
+  rw [hv]
+  rfl
 
 /-- Extending a fresh slot only grows the table — the `Le` fact a one-variable
 allocation hands its caller. -/
@@ -189,6 +204,14 @@ theorem eval_toAssignments [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
   | const k => rfl
   | add a b iha ihb => simp only [eval, val, iha, ihb]
   | scale k y ih => simp only [eval, val, ih]
+
+/-- A successful evaluation persists at the completed valuation — how an honest run's
+`eval` facts instantiate the conditional posts of the agreement corollaries. -/
+theorem val_toValuation [Add F] [Mul F] [Zero F] {env : Assignments F} {x : CVar F}
+    {xv : F} (h : x.eval env = .ok xv) : x.val env.toValuation = xv := by
+  have h' := eval_le (Assignments.le_toValuation env) h
+  rw [eval_toAssignments] at h'
+  injection h'
 
 /-- `add_` reads as the sum — the fold-evaluation lemma `eval_add_`, carried through
 the bridge to the total reading. -/

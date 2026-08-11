@@ -140,6 +140,15 @@ def equalsCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (z : CVa
   addConstraint (BasicSystem.r1cs rz.2 z (CVar.sub_ (.const 1) ↑r))
   pure r
 
+/-- The value-level answer of `equals` — the pure mirror both readings state their
+posts through, so a drift between them is a visible diff. -/
+def equalsPure [Zero F] [One F] [DecidableEq F] (a b : F) : F := if a = b then 1 else 0
+
+/-- The value-level answer of `neq` — `equalsPure` negated. -/
+def neqPure [Zero F] [One F] [DecidableEq F] (a b : F) : F := if a = b then 0 else 1
+
+attribute [circuitVal] equalsPure neqPure
+
 /-- Equality test returning a boolean variable (PS `equals_`). A constant difference
 folds to the constant answer. Otherwise, with `z = a − b`: witness the pair `(r, zInv)`
 — `r` the claimed answer at `UnChecked Bool`, `zInv` the inverse or zero — and constrain
@@ -361,7 +370,8 @@ Generic over any lawful backend. -/
 @[spec] theorem equals_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => (↑r : CVar F).val V = if a.val V = b.val V then 1 else 0) Q⦄
+    ⦃Sound (fun V (r : BoolVar F) =>
+        (↑r : CVar F).val V = equalsPure (a.val V) (b.val V)) Q⦄
     equals (c := c) a b
     ⦃Q⦄ := by
   intro s hpre
@@ -386,6 +396,7 @@ Generic over any lawful backend. -/
      show V nv = _
      have hpin : V nv = if a.val V - b.val V = 0 then 1 else 0 := equals_pin e₁ e₂
      rw [hpin]
+     simp only [equalsPure]
      by_cases h : a.val V = b.val V
      · rw [if_pos (sub_eq_zero.mpr h), if_pos h]
      · rw [if_neg (sub_ne_zero.mpr h), if_neg h])
@@ -400,7 +411,7 @@ reads as the answer bit in the final table. -/
     ⦃Complete
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
-          (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0)) Q⦄
+          (↑r : CVar F).eval env' = .ok (equalsPure av bv)) Q⦄
     equals (c := ProverC F) a b
     ⦃Q⦄ := by
   intro st hpre
@@ -410,9 +421,9 @@ reads as the answer bit in the final table. -/
   obtain ⟨av, ha⟩ := CVar.evalOk hoka
   obtain ⟨bv, hb⟩ := CVar.evalOk hokb
   have hval : ∀ {r : BoolVar F} {env' : Assignments F},
-      (↑r : CVar F).eval env' = .ok (if av = bv then 1 else 0) →
+      (↑r : CVar F).eval env' = .ok (equalsPure av bv) →
       ∀ a' b', a.eval st.env = .ok a' → b.eval st.env = .ok b' →
-        (↑r : CVar F).eval env' = .ok (if a' = b' then 1 else 0) := by
+        (↑r : CVar F).eval env' = .ok (equalsPure a' b') := by
     intro r env' heval a' b' ha' hb'
     rw [ha] at ha'; rw [hb] at hb'
     injection ha' with ha'; injection hb' with hb'
@@ -428,14 +439,14 @@ reads as the answer bit in the final table. -/
     intro hf'
     refine hk _ ⟨_, _, hf'⟩ (hval ?_) (Assignments.Le.refl st.env)
     show Except.ok _ = _
-    simp [sub_eq_zero]
+    simp [equalsPure, sub_eq_zero]
   | var v | add x y | scale k x =>
     rw [hcase] at hz
     obtain ⟨o, hrun, heval, -⟩ := equalsCore_complete hz st.fresh
     rw [hrun]
     intro hf'
     refine hk _ ⟨_, _, hf'⟩ (hval ?_) (prove_assignments_le hrun)
-    simpa only [hiff] using heval
+    simpa only [hiff, equalsPure] using heval
 
 /-! ### `neq` — composed from `equals` -/
 
@@ -445,7 +456,8 @@ bit is the negated equality answer. Generic over any lawful backend. -/
 @[spec] theorem neq_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => (↑r : CVar F).val V = if a.val V = b.val V then 0 else 1) Q⦄
+    ⦃Sound (fun V (r : BoolVar F) =>
+        (↑r : CVar F).val V = neqPure (a.val V) (b.val V)) Q⦄
     neq (c := c) a b
     ⦃Q⦄ := by
   simp only [neq]
@@ -466,7 +478,7 @@ reads as the negated answer bit in the final table. -/
     ⦃Complete
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
-          (↑r : CVar F).eval env' = .ok (if av = bv then 0 else 1)) Q⦄
+          (↑r : CVar F).eval env' = .ok (neqPure av bv)) Q⦄
     neq (c := ProverC F) a b
     ⦃Q⦄ := by
   simp only [neq]
@@ -485,6 +497,7 @@ reads as the negated answer bit in the final table. -/
   subst ha'; subst hb'
   show (CVar.sub_ ((.const 1 : CVar F)) ↑r).eval st'.env = _
   rw [CVar.eval_sub_ rfl (hr av bv ha hb)]
+  simp only [equalsPure, neqPure]
   by_cases h : av = bv
   · rw [if_pos h, if_pos h]; norm_num
   · rw [if_neg h, if_neg h]; norm_num

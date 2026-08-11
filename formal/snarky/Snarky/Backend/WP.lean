@@ -484,4 +484,37 @@ theorem generateVec_complete_spec {F : Type} {α : Type} [Add F] [Mul F] [Zero F
     · simpa using hpostmono _ st.env st.env init[j] st₁.env st₂.env
         (Assignments.Le.refl st.env) hle₂ (hinit j)
 
+/-! ## The alignment bridge
+
+Soundness states what the constraints FORCE; completeness states what the prover
+COMPUTES. The bridge proves they cohere: an honest run's result satisfies any
+soundness relation its gadget carries, read at the completion of the final table
+(`Assignments.toValuation`). Per gadget this is a two-line corollary
+(`Circuit/DSL/Agreement`) — and a drift between a gadget's two specs would make its
+corollary unprovable, which is the machine check that the arithmetic in the two
+readings is the same. -/
+
+open Std.Do in
+/-- **The alignment bridge**: apply the gadget's `Sound` triple at the completed final
+table — its satisfaction hypothesis is exactly what `prove_complete` establishes, and
+`prove_build_agrees` identifies the two interpreters' results. -/
+theorem post_of_prove {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {α : Type} {post : Valuation F → α → Prop} {g : CircuitM F (Basic F) α}
+    (hspec : ∀ Q, ⦃Sound post Q⦄ g ⦃Q⦄)
+    {nv : Nat} {env env' : Assignments F} {nv' : Nat} {x : α}
+    (hrun : prove Basic.holds g nv env = .ok ⟨x, nv', env'⟩) :
+    post env'.toValuation x := by
+  have hsat : ∀ con ∈ (build g nv).constraints,
+      ConstraintHolds.Holds env'.toValuation con := by
+    intro con hcon
+    have h1 : Basic.holds con env' = true :=
+      prove_complete (holds := Basic.holds)
+        (fun _con _ _ hle hh => Basic.holds_mono hle hh) hrun con hcon
+    exact Basic.holds_mono (Assignments.le_toValuation env') h1
+  have h2 := hspec (PostCond.noThrow fun r s => ⌜post s.V r⌝)
+    ⟨env'.toValuation, nv⟩ (fun r _ h => h) hsat
+  have h3 := prove_build_agrees hrun
+  rw [h3.1] at h2
+  exact h2
+
 end Snarky

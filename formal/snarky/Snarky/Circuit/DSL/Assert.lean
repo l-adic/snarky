@@ -515,6 +515,7 @@ conjunction, under cast-injectivity up to the length. -/
       have := List.count_le_length (a := true) (l := bl)
       omega
     rw [hr, hsum]
+    simp only [equalsPure]
     show (if (CVar.const (bs.length : F)).val s.V = (bl.count true : F) then 1 else 0) = _
     by_cases hall : bl.all id = true
     · rw [hall]
@@ -586,6 +587,7 @@ evaluable operands, and where they read as bits the result is the conjunction. -
     have hr' := hr _ _ (by rfl : (CVar.const (bs.length : F)).eval st.env
       = .ok (bs.length : F)) hsum
     rw [hr']
+    simp only [equalsPure]
     by_cases hall : bl.all id = true
     · rw [hall]
       have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
