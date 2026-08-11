@@ -10,23 +10,15 @@ backend constraint representations so the DSL can emit constraints without namin
 backend. `Basic` is the reference instance; gadgets are written against `BasicSystem`,
 never against `Basic` (the PS discipline).
 
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
 - PS `eval : (Variable -> m f) -> Basic f -> m Boolean` is `Basic.holds : Basic F →
-  Assignments F → Bool` — an evaluation failure reads as "unsatisfied" (`false`) rather
-  than a monadic error, which is the shape `Snarky.prove`'s `holds` parameter wants.
+  Assignments F → Bool` — an evaluation failure reads as "unsatisfied" (`false`)
+  rather than a monadic error.
 - PS `r1cs` takes a record `{left, right, output}`; here three positional arguments.
-- `debugCheck` is not ported: it renders failure messages for the PS debug mode, which
-  the Lean interpreters do not have (`prove` checks every constraint unconditionally).
-- `genWithAssignments` (the QuickCheck generator) is not ported; the Constraint-spec
-  property built on it — "generated constraints are satisfiable" — is generator
-  correctness, not a law of this module (D9 survey: nothing else here to port). The
-  satisfaction semantics are exercised by `Snarky.Example`'s `decide` checks and its
-  `prove_complete` instantiation.
-- The PS functional dependency `c -> f` is not modelled; the class stays two-parameter.
-
-Public results: `Basic.holds` and `Basic.holds_mono` (the monotonicity hypothesis
-`Snarky.prove_complete` needs from a backend, discharged via `CVar.eval_le`) — both are
-`roots.txt` entries.
+- `debugCheck` (PS debug-mode message rendering) and `genWithAssignments` (the
+  QuickCheck generator) are not ported.
+- The PS functional dependency `c -> f` is not modelled; the class stays
+  two-parameter.
 -/
 
 namespace Snarky
@@ -66,8 +58,7 @@ def Basic.holds [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
     | .ok x => decide (x = 0) || decide (x = 1)
     | _ => false
 
-/-- `Basic.holds` is monotone in the assignment-extension order — the hypothesis
-`Snarky.prove_complete` needs from a backend, discharged via `CVar.eval_le`. -/
+/-- `Basic.holds` is monotone in the assignment-extension order, by `CVar.eval_le`. -/
 theorem Basic.holds_mono [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] {con : Basic F}
     {env env' : Assignments F} (hle : env.Le env') (h : con.holds env = true) :
     con.holds env' = true := by
@@ -102,9 +93,8 @@ theorem Basic.holds_mono [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] {con :
     · cases h
 
 /-- The constraint constructors every backend supplies (PS `class BasicSystem f c`).
-Backends instantiate this at their concrete constraint type (`Basic` is the reference
-instance; `Snarky.Kimchi.GateConstraint` the Generic-gate bridge), and every DSL gadget is
-written against it. -/
+Backends instantiate this at their concrete constraint type; `Basic` below is the
+reference instance. -/
 class BasicSystem (F c : Type u) where
   /-- The rank-1 constraint `left * right = output`. -/
   r1cs : (left right output : CVar F) → c
@@ -116,7 +106,7 @@ class BasicSystem (F c : Type u) where
   boolean : (x : CVar F) → c
 
 /-- Inversion for a satisfied `r1cs` row: all three operands evaluate and the product
-identity holds — how the gadget laws read values out of constraint slots. -/
+identity holds. -/
 theorem Basic.r1cs_inv [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     {l r o : CVar F} {env : Assignments F}
     (h : (Basic.r1cs l r o).holds env = true) :

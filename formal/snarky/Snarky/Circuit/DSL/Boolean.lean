@@ -9,47 +9,27 @@ set_option mvcgen.warning false
 
 Port of `Snarky.Circuit.DSL.Boolean` (packages/snarky/src/Snarky/Circuit/DSL/Boolean.purs):
 the `IfThenElse` selection class with its base instances, the boolean constants,
-`not`/`and`/`or`, `xor`, and the array combinators `any`/`all`. PS parks
+`not`/`and`/`or`, `xor`, and the list combinators `any`/`all`. PS parks
 `not_`/`and_`/`or_` in its Monad module to dodge orphan instances; Lean has no orphan
-restriction, so they live here with their family and its laws (`DSL/Field`'s `neq`,
-below this module, inlines `not`'s one-line retag rather than import it).
+restriction, so they live here with their family and its laws.
 
-Name map (D7): `if_` → `select` (`if` is a Lean keyword; the class keeps its PS name
-`IfThenElse`), `not_` → `not`, `and_` → `and`, `or_` → `or`, `xor_` → `xor` (shadow
-core's Bool functions, type-resolved), `any_` → `any`, `all_` → `all` (likewise),
-`true_`/`false_` keep their underscores (`true`/`false` are keywords — the same clash
-rationale as `CVar`'s smart constructors).
+Name map: `if_` → `select` (`if` is a Lean keyword; the class keeps its PS name
+`IfThenElse`), `not_` → `not`, `and_` → `and`, `or_` → `or`, `xor_` → `xor` (shadowing
+core's Bool functions, type-resolved), `any_` → `any`, `all_` → `all`;
+`true_`/`false_` keep their underscores (`true`/`false` are keywords).
 
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
-- The PS class fundeps (`c -> f`, `var -> f`) are not modelled — the class stays
-  three-parameter (the `Constraint/Basic` precedent); PS puts `PrimeField`/`BasicSystem`
-  on the method, here they sit on the instances that need them.
-- Instance coverage is the base set: `FVar` (the gadget), `BoolVar` (the same gadget
-  under retag — PS coerces), `PUnit`, and the pair, whose components select SECOND
-  BEFORE FIRST — PS mirrors OCaml's reverse array evaluation order, and the pair
-  instance preserves that. The PS `Vector` and `Record` instances and the
-  `GIfThenElse`/`RIfThenElse` deriving machinery land with their first consumers (D8;
-  a monadic vector zip needs a kernel-reducible helper in `Snarky/Vec.lean` first).
-- `xor` witnesses its bit at `UnChecked Bool` — the typed skip-the-check door (D11),
-  verbatim PS — and pins it with the single constraint `2a · b = a + b − r`. Its
-  constant cases mirror PS's guard chain, including the fall-through to the witnessing
-  branch on a non-bit constant.
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
+- The PS class fundeps are not modelled; instance coverage is the base set (`FVar`,
+  `BoolVar`, `PUnit`, and the pair, whose components select SECOND BEFORE FIRST — PS
+  mirrors OCaml's reverse array evaluation order).
+- `xor` witnesses its bit at `UnChecked Bool`, verbatim PS, pinned by the single
+  constraint `2a · b = a + b − r`; its constant cases mirror PS's guard chain.
 - `any`/`all` mirror PS's size cases: empty → constant, one → itself, two →
-  `or`/`and`, three or more → the sum test (`any` is `neq (sum …) 0` — PS spells the
-  same circuit `not ∘ equals_`; `all` is `equals (length) (sum …)`).
+  `or`/`and`, three or more → the sum test.
 
-D9 survey (the `snarky-test-utils` Boolean spec), in the D12 form: the `not` row is
-`not_eval` (pure gadget, so its law is evaluation-level); the `and`/`or`/`xor`,
-`if`, and `any`/`all` rows land as triple pairs (`*_spec`/`*_complete_spec`), stated
-through the `CircuitType Bool` encoding (`if bb then 1 else 0` — the relation the
-faithfulness arc composes through). The `any`/`all` three-plus cases carry a
-cast-injectivity hypothesis: a sum of `n` bits detects `n` only below the
-characteristic. Fixed-input `decide` examples in `Snarky.Example`.
-
-Public results: the D12 gadget laws, beside their gadgets — `not_eval`, and the triple
-pairs `and`, `or`, `xor`, `select`, `any`, `all` as `*_spec`/`*_complete_spec` over
-the two readings — plus the sum-based toolkit (`ReadBits`/`EvalBits`, the bit-count
-lemmas) that `DSL/Assert`'s sum-based laws share.
+The laws are stated through the `CircuitType Bool` encoding (`bit`). The sum-based
+cases carry a cast-injectivity hypothesis — a sum of `n` bits detects a count only
+below the field characteristic — introduced in their own section below.
 -/
 
 namespace Snarky
@@ -131,7 +111,7 @@ def true_ {F : Type} [One F] : BoolVar F := .unchecked (.const 1)
 def false_ {F : Type} [Zero F] : BoolVar F := .unchecked (.const 0)
 
 /-- Negate a boolean variable: `1 − b`, pure — no constraint (PS `not_`), through the
-`BoolVar.unchecked` door (D11): boolean because `b` is. The name shadows core `not`
+`BoolVar.unchecked` door: boolean because `b` is. The name shadows core `not`
 inside the `Snarky` namespace; type-directed resolution disambiguates at use sites.
 `DSL/Field`'s `neq`, below this module, inlines the same retag. -/
 def not {F : Type u} [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
@@ -215,19 +195,15 @@ def all {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
   | [a, b] => Snarky.and a b
   | _ => equals (.const (xs.length : F)) (sum (xs.map BoolVar.toCVar))
 
-/-! ## The gadget laws (D12)
-
-As in `DSL/Field`: interpreter-form laws beside their gadgets, `and`/`or`'s here with
-their family (`DSL/Monad` cannot host interpreter theorems — the cycle). -/
+/-! ## The gadget laws -/
 
 /-! ### `and`/`or` — composed from `mul`, `not`
 
-The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding — the
-relation form the faithfulness arc composes over. -/
+The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding. -/
 
 open Std.Do in
-/-- **`and` soundness triple**: on bit operands the result reads as the conjunction
-bit. Generic over any lawful backend. -/
+/-- On bit operands the result reads as the conjunction
+bit. -/
 @[spec] theorem and_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -244,7 +220,7 @@ bit. Generic over any lawful backend. -/
   simp only [circuitVal, hr, ha, hb]
 
 open Std.Do in
-/-- **`and` completeness triple** (prover reading): the run succeeds on any operands that
+/-- The run succeeds on any operands that
 evaluate — `and` is a multiplication, which cannot fail — and where they read as bits the
 result reads as the conjunction bit in the final table. The bits are quantified in the
 post rather than parameters of the spec: a parameter appearing only in the assertion
@@ -272,8 +248,8 @@ cannot be instantiated by unification at a call site. -/
   rw [hr _ _ ha hb, bit_mul]
 
 open Std.Do in
-/-- **`or` soundness triple**, composed by `mvcgen` from `and_spec` on the negated
-bits (De Morgan). Generic over any lawful backend. -/
+/-- On bit operands the result reads as the disjunction bit — `and` on the negated
+bits, by De Morgan. -/
 @[spec] theorem or_spec {F c : Type} [CommRing F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -296,7 +272,7 @@ bits (De Morgan). Generic over any lawful backend. -/
   cases ab <;> cases bb <;> simp_all [Snarky.not, circuitVal]
 
 open Std.Do in
-/-- **`or` completeness triple** (prover reading): as for `and`, whose spec it composes
+/-- As for `and`, whose spec it composes
 through De Morgan — the run succeeds on any operands that evaluate, and where they read
 as bits the result reads as the disjunction bit. -/
 @[spec] theorem or_complete_spec {F : Type} [CommRing F] [NoZeroDivisors F]
@@ -453,7 +429,7 @@ theorem exists_evalBits {F : Type} [Add F] [Mul F] [Zero F] [One F]
     exact ⟨bb :: bl, .cons hb hbl⟩
 
 open Std.Do in
-/-- **`any` soundness triple**: on bit operands the result is the list's disjunction,
+/-- On bit operands the result is the list's disjunction,
 given cast-injectivity up to the length — a sum of bits detects zero only below the
 characteristic. -/
 @[spec] theorem any_spec {F c : Type} [Field F] [DecidableEq F]
@@ -519,7 +495,7 @@ characteristic. -/
       rfl
 
 open Std.Do in
-/-- **`any` completeness triple** (prover reading): the run succeeds on any evaluable
+/-- The run succeeds on any evaluable
 operands, and where they read as bits the result is the disjunction — same
 cast-injectivity hypothesis as the soundness side. -/
 @[spec] theorem any_complete_spec {F : Type} [Field F] [DecidableEq F]
@@ -588,7 +564,7 @@ cast-injectivity hypothesis as the soundness side. -/
       rw [if_neg hcast, bit_true]
 
 open Std.Do in
-/-- **`all` soundness triple**: on bit operands the result is the list's conjunction,
+/-- On bit operands the result is the list's conjunction,
 given cast-injectivity up to the length — the full count is detected only below the
 characteristic. -/
 @[spec] theorem all_spec {F c : Type} [Field F] [DecidableEq F]
@@ -652,7 +628,7 @@ characteristic. -/
       rw [if_neg hne, bit_false]
 
 open Std.Do in
-/-- **`all` completeness triple** (prover reading): the run succeeds on any evaluable
+/-- The run succeeds on any evaluable
 operands, and where they read as bits the result is the conjunction. -/
 @[spec] theorem all_complete_spec {F : Type} [Field F] [DecidableEq F]
     (xs : List (BoolVar F))
@@ -720,7 +696,7 @@ operands, and where they read as bits the result is the conjunction. -/
         omega
       rw [if_neg hne, bit_false]
 
-/-! ### `xor` (Circuit/DSL/Boolean) -/
+/-! ### `xor` -/
 
 /-- The field engine of `xor` soundness: the constraint `2a · b = a + b − r` pins `r` to
 the xor bit. -/
@@ -853,9 +829,9 @@ private theorem xor_complete_constB {F : Type} [Field F] [DecidableEq F]
     · exact absurd h h1
 
 open Std.Do in
-/-- **`xor` soundness triple**: on bit operands the result reads as the xor bit —
+/-- On bit operands the result reads as the xor bit —
 the constant branches fold through the guards, the core row pins via `xor_pin`.
-Generic over any lawful backend. -/
+-/
 @[spec] theorem xor_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -942,7 +918,7 @@ Generic over any lawful backend. -/
      exact xor_pin h)
 
 open Std.Do in
-/-- **`xor` completeness triple** (prover reading): bit operands are a genuine
+/-- Bit operands are a genuine
 precondition here — the witnessed row `2a · b = a + b − r` rejects a non-bit operand — so
 the spec asks for `ReadsBit`, and the result reads as the xor bit in the final table. -/
 @[spec] theorem xor_complete_spec {F : Type} [Field F] [DecidableEq F]
@@ -998,7 +974,7 @@ the spec asks for `ReadsBit`, and the result reads as the xor bit in the final t
      refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
      simp [circuitVal])
 
-/-! ### `select` (Circuit/DSL/Boolean, the `IfThenElse` field instance) -/
+/-! ### `select` (the `IfThenElse` field instance) -/
 
 /-- The honest `selectCore` run. -/
 private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
@@ -1084,10 +1060,9 @@ private theorem build_selectCore' {F c : Type} [Field F] [DecidableEq F]
          [BasicSystem.r1cs ↑b (CVar.sub_ t e) (CVar.sub_ (.var nv) e)]⟩ := rfl
 
 open Std.Do in
-/-- **`select` soundness triple**: on a bit selector the result reads as the chosen
+/-- On a bit selector the result reads as the chosen
 branch — the constant selector folds to a branch, two constant branches fold to the
-affine mux, and otherwise the `r1cs` row pins the choice. Generic over any lawful
-backend. -/
+affine mux, and otherwise the `r1cs` row pins the choice. -/
 @[spec] theorem select_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (b : BoolVar F) (t e : FVar F)
@@ -1133,7 +1108,7 @@ backend. -/
          cases bb <;> simp [bit])
 
 open Std.Do in
-/-- **`select` completeness triple** (prover reading): a bit selector is a genuine
+/-- A bit selector is a genuine
 precondition — `selectWit` branches on `bv = 1` while the row `b · (t − e) = r − e` holds
 the selector's actual value — so the spec asks for `ReadsBit`, and the result reads as
 the chosen branch in the final table. -/

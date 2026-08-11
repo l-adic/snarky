@@ -22,18 +22,10 @@ rendering is a pure function `Variable → Option F`, which collapses most of th
   the PS write-once contract from prose into an enforced invariant.
 
 Lean-only additions with no PS analogue: the extension order `Assignments.Le` ("every
-assigned variable keeps its value") and its lemmas, including `CVar.eval_le`. They are the
-backbone of the interpreter laws in `Backend/{Builder,Prover}`: the prover only ever *extends*
-assignments (via the guarded `extendPairs`), so constraint checks performed early in a run
-remain valid against the final assignment. Also Lean-only: `Valuation`, the total
-assignment the soundness laws quantify over (a deployed wire table assigns every
-variable), with `toAssignments` and the bridge `CVar.eval_toAssignments` connecting it
-to the `Except` layer.
-
-Public results: the order `Assignments.Le` (with `Le.refl`/`Le.trans`), the monotonicity
-law `Assignments.le_extendPairs`, the audited root `CVar.eval_le`, and the valuation
-seam (`Valuation.toAssignments`, `CVar.eval_toAssignments`); `le_extend` is private
-machinery.
+assigned variable keeps its value") with its lemmas and `CVar.eval_le` — an assignment
+that only grows preserves successful evaluations; and `Valuation`, a total assignment,
+with the completion maps in both directions (`Valuation.toAssignments`,
+`Assignments.toValuation`) and the lemmas bridging the total and partial readings.
 -/
 
 namespace Snarky
@@ -42,20 +34,16 @@ namespace Snarky
 (PS `Assignments f`, as a pure lookup instead of the mutable write-once store). -/
 abbrev Assignments (F : Type u) := Variable → Option F
 
-/-- A total assignment — the adversarial-witness reading the soundness laws quantify
-over. A deployed wire table assigns every variable, so the soundness layer takes
-totality in the type instead of threading evaluation success through every statement;
-partiality stays with the prover model above. -/
+/-- A total assignment: every variable has a value, so evaluation cannot fail. -/
 abbrev Valuation (F : Type u) := Variable → F
 
-/-- Read a valuation as an everywhere-defined partial assignment — the seam to the
-`Except`-based interpreter laws, under which evaluation never fails. -/
+/-- Read a valuation as an everywhere-defined partial assignment, under which
+evaluation never fails. -/
 def Valuation.toAssignments (V : Valuation F) : Assignments F :=
   fun v => some (V v)
 
 /-- Complete a partial table to a total valuation, defaulting unassigned slots to
-zero — the reverse of `Valuation.toAssignments`, and the seam the alignment bridge
-(`post_of_prove`) reads an honest run's table through. -/
+zero — the reverse of `Valuation.toAssignments`. -/
 def Assignments.toValuation [Zero F] (env : Assignments F) : Valuation F :=
   fun v => (env v).getD 0
 
@@ -69,17 +57,14 @@ functional update). -/
 def extend (a : Assignments F) (v : Variable) (x : F) : Assignments F :=
   fun w => if w = v then some x else a w
 
-/-- The extended slot reads back its value — with `CVar.eval` on the freshly
-allocated variable, the reduction every honest-run tail performs, so it belongs to
-the `circuitVal` normal form. -/
+/-- The extended slot reads back its value. -/
 @[circuitVal] theorem eval_var_extend [Add F] [Mul F] (a : Assignments F)
     (v : Variable) (x : F) : (CVar.var v).eval (a.extend v x) = .ok x := by
   simp [CVar.eval, extend]
 
 /-- Guarded batch extension: assign each `(variable, value)` pair left to right, erroring
-on any variable that is already assigned — this is what makes prover runs monotone in
-`Assignments.Le`. Callers zip equal-length allocation and witness vectors, so pairing is
-total by construction and the only failure mode is a re-assignment. -/
+on any variable that is already assigned — extension by `extendPairs` is monotone in
+`Assignments.Le`, and re-assignment is the only failure mode. -/
 def extendPairs (a : Assignments F) : List (Variable × F) → Except EvalError (Assignments F)
   | [] => .ok a
   | (v, x) :: rest =>
@@ -87,14 +72,11 @@ def extendPairs (a : Assignments F) : List (Variable × F) → Except EvalError 
     | some _ => .error (.conflict v)
     | none => (a.extend v x).extendPairs rest
 
-/-- `a.Le a'` iff every variable assigned in `a` has the same value in `a'` — assignments
-only ever grow during a prover run. -/
+/-- `a.Le a'` iff every variable assigned in `a` has the same value in `a'`. -/
 protected def Le (a a' : Assignments F) : Prop :=
   ∀ v x, a v = some x → a' v = some x
 
-/-- `a.FreshFrom nv`: nothing at or above the counter is assigned. The invariant gadget
-completeness runs from, and — since `prove` refuses to assign at or above its counter —
-one every prover run preserves (`prove_freshFrom`). -/
+/-- `a.FreshFrom nv`: nothing at or above the counter is assigned. -/
 protected def FreshFrom (a : Assignments F) (nv : Nat) : Prop :=
   ∀ v, nv ≤ v → a v = none
 
@@ -111,8 +93,7 @@ private theorem le_extend {a : Assignments F} {v : Variable} (hv : a v = none) (
   · next hwv => rw [hwv, hv] at hw; cases hw
   · exact hw
 
-/-- Completion extends the table: assigned slots keep their values — what carries a
-run's checked constraints to the completed valuation in the alignment bridge. -/
+/-- Completion extends the table: assigned slots keep their values. -/
 theorem le_toValuation [Zero F] (env : Assignments F) :
     env.Le env.toValuation.toAssignments := by
   intro v x hv
@@ -120,8 +101,7 @@ theorem le_toValuation [Zero F] (env : Assignments F) :
   rw [hv]
   rfl
 
-/-- Extending a fresh slot only grows the table — the `Le` fact a one-variable
-allocation hands its caller. -/
+/-- Extending a fresh slot only grows the table. -/
 theorem le_extend_self {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) (x : F) :
     a.Le (a.extend nv x) :=
   le_extend (h nv (Nat.le_refl nv)) x
@@ -205,8 +185,7 @@ theorem eval_toAssignments [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
   | add a b iha ihb => simp only [eval, val, iha, ihb]
   | scale k y ih => simp only [eval, val, ih]
 
-/-- A successful evaluation persists at the completed valuation — how an honest run's
-`eval` facts instantiate the conditional posts of the agreement corollaries. -/
+/-- A successful evaluation persists at the completed valuation. -/
 theorem val_toValuation [Add F] [Mul F] [Zero F] {env : Assignments F} {x : CVar F}
     {xv : F} (h : x.eval env = .ok xv) : x.val env.toValuation = xv := by
   have h' := eval_le (Assignments.le_toValuation env) h

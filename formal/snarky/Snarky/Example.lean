@@ -9,21 +9,17 @@ set_option mvcgen.warning false
 /-!
 # The framework showcase: a walked circuit
 
-The classic tutorial statement — `y = x³ + x + 5` — composed purely from gadgets, its
-laws proved by walking: unfold, `mvcgen` (the registry supplies each callee's spec),
-close the arithmetic. No constraint row is mentioned anywhere; the leaf analyses were
-paid once, in the gadget laws, and no caller pays them again. The soundness proof is
-the shape every gadget-only circuit proof takes; the completeness proof shows the one
-honest extra cost of the prover reading — threading `Assignments.Le` as the table
-grows. The `decide` examples at the bottom tie the walked laws to the executable
-regression net.
+`cubic` constrains `y = x³ + x + 5` from three gadget calls. Its two laws are proved by
+walking the do-block — unfold, `mvcgen` (the registry supplies each callee's spec),
+close the arithmetic — and then run down to interpreter-level statements through
+`sound_spec_iff`/`complete_spec_iff`. Two `decide` examples execute both directions in
+the kernel.
 
-Below the showcase sit the executable edges no triple states, in three classes —
-rejection (completeness proves the honest run ACCEPTS on good inputs; that it REJECTS
-on bad ones is stated nowhere else), emission shape and cost (which rows a gadget
-emits, and that constant operands fold to NONE — the PS-parity surface), and the one
+The second half holds the executable edges no triple states: rejection (completeness
+proves acceptance on good inputs; refusal on bad ones is stated nowhere else), emission
+shape and cost (which rows a gadget emits; constant operands fold to none), and the one
 exhibit of the lawless `AssertEqual` pair instance. Everything reduces by `decide`,
-so the file doubles as the per-gadget kernel-reduction net.
+making the file the per-gadget kernel-reduction net.
 -/
 
 namespace Snarky.Example
@@ -44,8 +40,7 @@ def cubic {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F
   let x3 ← mul x2 x
   assertEqual (sum [x3, x, .const 5]) y
 
-/-- **`cubic` soundness**: any satisfying assignment forces `y = x³ + x + 5`. Three
-`mvcgen` steps hand over the three gadgets' facts; one `ring` closes. -/
+/-- Any satisfying assignment forces `y = x³ + x + 5`. -/
 theorem cubic_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -53,21 +48,21 @@ theorem cubic_spec {F c : Type} [Field F] [DecidableEq F]
     cubic (c := c) x y
     ⦃Q⦄ := by
   simp only [cubic]
-  mvcgen
+  mvcgen                -- square_spec: hx2 : x2 = x·x
   rename_i s hpre
   intro x2 _ hx2
-  mvcgen
+  mvcgen                -- mul_spec: hx3 : x3 = x2·x
   intro x3 _ hx3
-  mvcgen
+  mvcgen                -- assertEqual_spec: heq : sum = y
   intro u _ heq
   refine hpre u _ ?_
   simp only [sum, List.foldl, circuitVal] at heq
   rw [← heq, hx3, hx2]
   ring
 
-/-- **`cubic` completeness**: on operands satisfying the equation the honest run cannot
-fail. The same walk; the extra lines thread evaluation facts along `Assignments.Le` as
-the table grows — the one cost the prover reading genuinely adds. -/
+/-- On operands satisfying the equation the honest run cannot fail. The extra lines
+relative to the soundness proof thread evaluation facts along `Assignments.Le` as the
+table grows. -/
 theorem cubic_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -105,9 +100,8 @@ theorem cubic_complete_spec {F : Type} [Field F] [DecidableEq F]
   simp [List.sum]
   ring
 
-/-- The soundness law, run to a plain Prop (`sound_spec_iff`, the identity
-continuation): any assignment satisfying the built constraints places the readings of
-`(x, y)` on the curve `y = x³ + x + 5`. No triple in sight. -/
+/-- `cubic_spec` run through `sound_spec_iff`: any assignment satisfying the built
+constraints places the readings of `(x, y)` on the curve `y = x³ + x + 5`. -/
 theorem cubic_sound {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (V : Valuation F) (nv : Nat)
@@ -116,9 +110,9 @@ theorem cubic_sound {F c : Type} [Field F] [DecidableEq F]
     x.val V ^ 3 + x.val V + 5 = y.val V :=
   (sound_spec_iff _ _).mp (fun Q => cubic_spec x y Q) V nv hsat
 
-/-- The completeness law, run to a plain Prop (`complete_spec_iff`): from any table
-where the readings of `(x, y)` form a point of the curve, the honest run succeeds,
-only extending the table. -/
+/-- `cubic_complete_spec` run through `complete_spec_iff`: from any table where the
+readings of `(x, y)` form a point of the curve, the honest run succeeds, extending the
+table. -/
 theorem cubic_complete {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F) (st : ProverState F)
     (hx : (x.eval st.env).isOk) (hy : (y.eval st.env).isOk)

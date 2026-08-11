@@ -14,53 +14,36 @@ and the `CheckedType` class with its base instances.
 ## The one deliberate architectural deviation
 
 The PS original is DIRECT (final-tagless): `Snarky f c r a = CircuitOps f c r -> Effect a`
-— a bind is a closure, an op is a record-field call, and the two interpreters are just two
-`CircuitOps` records over mutable refs. That shape is uninspectable, so none of the
-interpreter laws would even be statable. This port reifies the op tree
-instead: `CircuitM` has one constructor per `CircuitOps` field, with continuations stored
-explicitly. The embedding is deep in the *circuit structure* only — witness payloads at
-`existsOp`/`assignOp` are semantic `AsProver` functions, not syntax. Continuations receive
-only freshly allocated `Variable`s, never field values, so a circuit's shape provably
-cannot depend on witness data (`Snarky.build_eq_of_eraseWitness`). The interpreters
-are pure recursive functions: `Snarky.build` (PS `Backend.Builder`) and `Snarky.prove`
-(PS `Backend.Prover`).
+— a bind is a closure, an op is a record-field call, and an interpreter is a record of
+mutable-ref operations. That shape is uninspectable, so no law about interpretation
+would even be statable. This port reifies the op tree instead: `CircuitM` has one
+constructor per `CircuitOps` field, with continuations stored explicitly, so an
+interpreter is a structural recursion and laws about it are inductions. The embedding
+is deep in the *circuit structure* only — witness payloads at `existsOp`/`assignOp` are
+semantic `AsProver` functions, not syntax. Continuations receive only freshly allocated
+`Variable`s, never field values, so a circuit's shape cannot depend on witness data.
 
 ## Disposition of the rest of the PS module
 
 - The advice row `r` (`AsProverCtx`, `liftAdvice`, `runAdvice`, the `Run` encoding) is
-  dropped; `AsProver` is the pure reader-except stack over `Assignments`. Compilation is
-  unaffected: advice is only reachable from witness payloads, which `build` never
-  evaluates (PS compiles with the throwing `badAdvice` for the same reason; here
-  `Snarky.build_eq_of_eraseWitness` proves it). If an advice-consuming circuit ever
-  lands, the rendering is an extra reader component of `AsProver` ONLY — never a
-  circuit-level function argument `A → CircuitM …`, which would demand advice at compile
-  time and let the circuit's shape depend on it, destroying both properties above.
+  dropped; `AsProver` is the pure reader-except stack over `Assignments`. Compilation
+  is unaffected: advice is only reachable from witness payloads, which building never
+  evaluates. If an advice-consuming circuit ever lands, the rendering is an extra
+  reader component of `AsProver` ONLY — never a circuit-level function argument
+  `A → CircuitM …`, which would let the circuit's shape depend on advice.
 - PS `pushLabelOp`/`popLabelOp` collapse into one scoped `labelOp` node; `MonadRec` is
   unnecessary (recursion over build-time data produces a fixed tree); `MonadEffect`,
-  `liftEffectSnarky`, and `mkWitnessTable` are `Effect`-machinery with no analogue in the
-  pure embedding (memoization is an interpreter concern here, not a circuit one).
-- The numeric-tower instances on `Snarky`-actions (`Semiring (Snarky f c r (FVar f))` …,
-  with their `Newtype` fallbacks) are not ported (D8); the underlying combinators land as
-  plain functions.
-- PS defines the field and boolean primitives (`mul_`/`inv_`/`div_`,
-  `not_`/`and_`/`or_`) in this module only to dodge orphan instances on the `Snarky`
-  newtype. Lean has no orphan restriction, so they live with their families and their
-  laws instead: `mul`/`inv`/`div` in `DSL/Field`, `not`/`and`/`or` in `DSL/Boolean`
-  (D7 names, underscores dropped). This module is the monad alone, and stays plain
-  core Lean.
-- `CheckedType` instances: `FVar`, `BoolVar`, `UnChecked`, and the `Tuple` pair (step 9,
-  `equals`'s witness pair) are here; `Unit`, `NoInput`/`NoOutput`, `Const`, `Product`,
-  `Vector`, and `Record` land with their `CircuitType` partners (steps 10/14);
-  `GCheckedType`/`RCheckedType`/`genericCheck` are the deriving machinery, out of scope
-  (D8).
-- PS `exists` is `witness` (`exists` is a Lean keyword). PS `read` is `readVar`: `read`
-  is core Lean's `MonadReader` primitive, and `AsProver` is a `ReaderT`, so the bare name
-  already means "fetch the assignment table" inside exactly the witness blocks that call
-  it. (`readCVar` keeps its PS name; it is the single-expression primitive `readVar`
-  generalizes through `CircuitType`.)
+  `liftEffectSnarky`, and `mkWitnessTable` are `Effect` machinery with no analogue in
+  the pure embedding.
+- The numeric-tower instances on `Snarky`-actions are not ported; the underlying
+  combinators land as plain functions. PS defines the field and boolean primitives here
+  only to dodge orphan instances; Lean has no orphan restriction, so they live with
+  their families. This module is the monad alone, and stays plain core Lean.
+- PS `exists` is `witness` (`exists` is a Lean keyword). PS `read` is `readVar` (`read`
+  is core's `MonadReader` primitive). `readCVar` keeps its PS name.
 
-Public results: the `LawfulMonad (CircuitM F c)` instance (PS gets the monad laws for
-free from function composition; the deep embedding must prove them).
+The `LawfulMonad (CircuitM F c)` instance is proved by induction — PS gets the monad
+laws for free from function composition; the deep embedding must prove them.
 -/
 
 namespace Snarky
@@ -178,9 +161,8 @@ def existsVars (n : Nat) (wit : AsProver F (Vector F n)) : CircuitM F c (Vector 
   .existsOp n wit .pure
 
 /-- Back-fill already-allocated variables from a witness computation (PS `assignVars`).
-"Already-allocated" is enforced, not merely intended: a prover run refuses targets at
-or above its counter (writing to an unallocated slot), which is what makes freshness a
-universal invariant (`prove_freshFrom`). -/
+"Already-allocated" is enforced: an interpreter may refuse targets at or above its
+counter. -/
 def assignVars {n : Nat} (vs : Vector Variable n) (wit : AsProver F (Vector F n)) :
     CircuitM F c PUnit :=
   .assignOp vs wit (.pure PUnit.unit)
@@ -272,8 +254,7 @@ private theorem mapM_eval_le [Add F] [Mul F] {env env' : Assignments F} (hle : e
         exact h
 
 /-- Successful `readVar`s are stable under assignment extension — the bundle form of
-`CVar.eval_le`. `Backend/Compile`'s payoff theorem uses it to carry the output decode
-from the back-fill point to the end of the run. -/
+`CVar.eval_le`. -/
 theorem readVar_le [Add F] [Mul F] [inst : CircuitType F val var] {v : var}
     {env env' : Assignments F} (hle : env.Le env') {x : val}
     (h : readVar (F := F) v env = .ok x) : readVar (F := F) v env' = .ok x := by

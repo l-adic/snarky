@@ -6,7 +6,7 @@ import Kimchi.Gate.Generic
 # A Kimchi Generic-gate backend for the DSL
 
 The DSL of `Snarky.*` keeps its constraint type `c` abstract. This module instantiates it
-at a constraint that maps to Kimchi's **Generic gate** (`Kimchi.Gate.Generic`), building
+at a constraint that maps to Kimchi's Generic gate (`Kimchi.Gate.Generic`), building
 the bridge the `prove_complete` docstring points at: the constraints a DSL circuit emits
 become Generic gate rows whose `Holds` predicate is exactly what `Kimchi.Index.rowSatisfies`
 dispatches to for generic rows.
@@ -30,10 +30,10 @@ than a bare `a·b = prod` triple.
 
 ## What is (and isn't) bridged here
 
-This module bridges to the **un-wired Generic gate list** (`Gate.Satisfies : List (Generic
+This module bridges to the un-wired Generic gate list (`Gate.Satisfies : List (Generic
 F) → Prop`). Because every row is evaluated against the *same* assignment, a variable
 shared across constraints gets the same value in each row it appears in — so
-variable-sharing holds by construction, but it is **not** enforced as a copy constraint.
+variable-sharing holds by construction, but it is not enforced as a copy constraint.
 Enforcing sharing via the wiring permutation — domain synthesis plus placement into a
 `Kimchi.Index` — is the recorded follow-on that would build on this constraint type.
 
@@ -112,7 +112,7 @@ def GateConstraint.toRow (con : GateConstraint F) (env : Assignments F) :
            w := ![x, y, z, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] }
   | _, _, _ => none
 
-/-- **The correspondence.** The prover's decidable check on a constraint agrees exactly
+/-- The correspondence. The prover's decidable check on a constraint agrees exactly
 with the Generic gate's `Holds` on the row it translates to: `holds` succeeds iff the
 constraint evaluates and the resulting row is a satisfying Generic gate. Composed with
 `prove_complete` over a run's emitted constraints, it takes a successful DSL run to a

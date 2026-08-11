@@ -25,6 +25,19 @@ recorded in `formal/docs/snarky-ps-alignment.md`, and each module header carries
 name map against the `.purs` source. The theorems the embedding exists to state live
 beside their subjects.
 
+## The proof architecture
+
+Every gadget carries one law per reading, stated as a `Std.Do` triple in a schematic
+shape (`Sound` for the builder reading, `Complete` for the prover reading — both in
+`Backend/WP`) and registered with `@[spec]`. A composed circuit's proof walks its
+do-block: `simp only` with the circuit's definition, then `mvcgen` — which applies each
+callee's registered law — then `simp [circuitVal]` (the value-reading simp set
+registered in `Circuit/CVar`), leaving arithmetic for `grind`/`ring`. The prover
+reading is selected by the constraint tag `ProverC`; `sound_spec_iff` and
+`complete_spec_iff` convert either law to its interpreter-level statement;
+`Circuit/DSL/Agreement` checks per gadget that the two readings state the same
+arithmetic; `Example` runs the whole recipe on one circuit.
+
 ## The layout
 
 - `Circuit/CVar` — affine expressions over circuit variables, their folds, and the

@@ -16,20 +16,20 @@ The PS PRODUCTION prover does not check constraints at all — "they're assumed 
 during compilation" (module header); `SolveCircuit (Basic f)`'s `proverConstraint` is a
 no-op outside debug mode, and validity is the proof system's concern. `prove` instead
 checks every constraint at emission time with `holds`, unconditionally: it is PS's
-DEBUG-mode semantics (minus message rendering) made total. That is deliberate — it is
-what gives `prove_complete` its content: a successful run is a satisfiability
-certificate for the built system, not just a witness table.
+DEBUG-mode semantics (minus message rendering) made total. That is what gives
+`prove_complete` below its content: a successful run is a satisfiability certificate
+for the built system, not just a witness table.
 
 Consequence, shared with PS debug mode (whose `debugCheck` also fails on unassigned
 variables): a constraint may only be emitted once its variables are witnessed —
 "witness before constrain". Not a restriction the PRODUCTION PS prover has (it checks
-nothing); lifting it (deferring checks to the end of the run) is a design change to take
-up only if a ported gadget hits it (plan §6).
+nothing); lifting it (deferring checks to the end of the run) is a design change to
+take up only if a ported circuit hits it.
 
 ## Further dispositions
 
 - The constraint check is a pure parameter `holds : c → Assignments F → Bool`, not the
-  PS `SolveCircuit` class (D5). Note the class is more than a checker: `proverConstraint`
+  PS `SolveCircuit` class. Note the class is more than a checker: `proverConstraint`
   is a STATE TRANSFORM — backends like kimchi allocate and assign intermediates while
   reducing constraints at prove time. `holds` covers the checking fragment; the reducing
   fragment is the un-ported backend seam.
@@ -37,8 +37,8 @@ up only if a ported gadget hits it (plan §6).
   runs are monotone in `Assignments.Le` (`prove_assignments_le`) — enforcing what PS
   `allocAssignments`/`Assignments.set` promise by write-once contract.
 - `debug`, `labelStack`, `contextualize`, and `runWitness`'s error-wrapping are the
-  error-attribution machinery; they follow the inert `labelOp` (plan §6). The advice
-  handler threading in `runWitness` is the dropped advice row (`Circuit/DSL/Monad`).
+  error-attribution machinery; they follow the inert `labelOp`. The advice handler
+  threading in `runWitness` is the dropped advice row (`Circuit/DSL/Monad`).
 
 The public surface is the port surface — `Proved` and `prove` — plus the prover-side
 interpreter laws, which live beside their subject: monotonicity (`prove_assignments_le`),
@@ -96,16 +96,14 @@ def prove (holds : c → Assignments F → Bool) :
         | .ok env' => prove holds k nv env'
   | .labelOp _ k, nv, env => prove holds k nv env
 
-/-- **Proving a `pure` is immediate**: the result passes through and the state is
-untouched — the reduction a walked do-block's trailing step leaves, the prover-side
-face of `build_pure`, so it belongs to the `circuitVal` normal form. -/
+/-- Proving a `pure` is immediate: the result passes through and the state is
+untouched. -/
 @[circuitVal] theorem prove_pure (holds : c → Assignments F → Bool) (a : α) (nv : Nat)
     (env : Assignments F) :
     prove holds (pure a : CircuitM F c α) nv env = .ok ⟨a, nv, env⟩ := rfl
 
-/-- **Proving a sequence is proving the head, then the tail from its final state** — the
-composition law gadget completeness chains through (plan D12). The intermediate state
-is fresh whenever the initial one is, by `prove_freshFrom` below. -/
+/-- Proving a sequence is proving the head, then the tail from its final state. The
+intermediate state is fresh whenever the initial one is, by `prove_freshFrom` below. -/
 theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
     (f : α → CircuitM F c β) (nv : Nat) (env : Assignments F) :
     prove holds (m >>= f) nv env =
@@ -140,10 +138,7 @@ theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
 
 /-- The honest run of the one-variable core shape — `witness` a field value, pin it with
 one constraint, return it: the run succeeds and assigns the witnessed value at `nv`,
-whenever the witness computation succeeds and the constraint accepts the result. Each
-one-variable gadget's run lemma is this plus its two facts; the pair- and
-`UnChecked`-shaped cores keep bespoke run lemmas until a second consumer motivates the
-general arity. -/
+whenever the witness computation succeeds and the constraint accepts the result. -/
 theorem prove_witnessCore {holds : c → Assignments F → Bool} {w : AsProver F F}
     {mk : CVar F → c} {nv : Nat} {env : Assignments F} {v : F}
     (hw : w env = .ok v) (hfresh : env.FreshFrom nv)
@@ -207,7 +202,7 @@ theorem prove_assignments_le {holds : c → Assignments F → Bool} {m : Circuit
     simp only [prove] at h
     exact ih h
 
-/-- **The counter only advances.** Allocation moves it forward and nothing moves it
+/-- The counter only advances. Allocation moves it forward and nothing moves it
 back — what places a run's allocations strictly above every slot preallocated before
 it. -/
 theorem prove_nextVar_le {holds : c → Assignments F → Bool} {m : CircuitM F c α}
@@ -241,7 +236,7 @@ theorem prove_nextVar_le {holds : c → Assignments F → Bool} {m : CircuitM F 
         · exact ih h
   | labelOp s k ih => exact ih h
 
-/-- **Freshness is preserved by every prover run.** A run that starts with nothing
+/-- Freshness is preserved by every prover run. A run that starts with nothing
 assigned at or above its counter ends the same way: allocation writes exactly at the
 counter and advances past it, and `assignOp` — guarded above — cannot reach the fresh
 region. The invariant every completeness statement used to re-establish by hand, here
@@ -311,8 +306,8 @@ structure ProverState (F : Type u) where
   /-- Nothing at or above the counter is assigned — carried, never re-proved. -/
   fresh : env.FreshFrom nv
 
-/-- Every successor state's invariant, packaged for the readings below: a successful
-run from an invariant-carrying state leaves one. -/
+/-- A successful run from an invariant-carrying state leaves an invariant-carrying
+state. -/
 theorem ProverState.freshOut {holds : c → Assignments F → Bool} {m : CircuitM F c α}
     {st : ProverState F} {out : Proved F α}
     (h : prove holds m st.nv st.env = .ok out) :
@@ -321,7 +316,7 @@ theorem ProverState.freshOut {holds : c → Assignments F → Bool} {m : Circuit
 
 /-! ## Interpreter agreement -/
 
-/-- **Builder/prover agreement**: on a successful prover run the two interpreters compute
+/-- Builder/prover agreement: on a successful prover run the two interpreters compute
 the same result and the same final variable counter — they allocate variables in lockstep
 (the PS builder and prover run the same closure against two `CircuitOps` records; here
 that is a theorem rather than an intention). -/
@@ -369,7 +364,7 @@ theorem prove_build_agrees {holds : c → Assignments F → Bool} {m : CircuitM 
 
 /-! ## Completeness -/
 
-/-- **Completeness**: if the prover run succeeds, the final assignment satisfies every
+/-- Completeness: if the prover run succeeds, the final assignment satisfies every
 constraint the builder emits — provided `holds` is monotone in the assignment-extension
 order (true of any constraint that evaluates its `CVar`s, by `CVar.eval_le`). The prover
 checked each constraint when it was added; monotonicity carries the check to the end of

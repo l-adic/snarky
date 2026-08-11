@@ -4,13 +4,11 @@ import Snarky.Circuit.DSL.Bits
 /-!
 # The agreement corollaries
 
-Per-gadget instances of the alignment bridge (`Snarky.post_of_prove`): an honest
-prover run's result satisfies the gadget's SOUNDNESS relation, read at the completion
-of the final table (`Assignments.toValuation`). Each corollary is two lines — the
-bridge applied to the gadget's `Sound` triple — so a drift between a gadget's
-soundness and completeness specs would make its corollary unprovable: these are the
-machine check that what the constraints force and what the prover computes is the
-same arithmetic, stated once per gadget instead of trusted by inspection.
+Per-gadget instances of `post_of_prove`: an honest prover run's result satisfies the
+gadget's soundness relation, read at the completion of the final table
+(`Assignments.toValuation`). Each corollary is the bridge applied to the gadget's
+`Sound` triple, so a drift between a gadget's soundness and completeness specs makes
+its corollary unprovable.
 
 The runs are at the reference backend (`Basic F`), where `prove` checks each
 constraint as it is added; operand facts held before the run transport to the

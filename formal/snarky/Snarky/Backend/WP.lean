@@ -22,8 +22,8 @@ under which evaluation never fails); richer backends supply their own reading.
 satisfaction hypothesis. Everything downstream follows from these two laws: the
 framework's Hoare triples `⦃P⦄ x ⦃Q⦄`, their sequencing rules, and the `mvcgen`
 verification-condition generator all apply to `CircuitM` through these instances, so a
-gadget's soundness law is stated as a triple and proved by walking the gadget's own
-do-block, with only the leaf semantic obligations left to hand proofs.
+program's law is stated as a triple and proved by walking its do-block, with only the
+leaf semantic obligations left to hand proofs.
 
 `Std.Do` is experimental (its tactic warns on use; the assertion encoding is documented
 as in flux upstream): the bet is confined by the pinned toolchain, and the kernel checks
@@ -44,7 +44,7 @@ variable {F c : Type}
 
 /-- The backend's semantic reading of one constraint value under a total valuation —
 the parameter the soundness interpretation is generic over. Instances live with their
-backends (`Basic` below; the kimchi bridge supplies its own). -/
+backends (`Basic` below). -/
 class ConstraintHolds (F c : Type) where
   /-- The constraint value is satisfied under the valuation. -/
   Holds : Valuation F → c → Prop
@@ -108,10 +108,9 @@ instance Basic.instConstraintHolds [Add F] [Mul F] [Zero F] [One F] [DecidableEq
 /-! ## The lawful-backend interface -/
 
 /-- A backend whose reading of the `BasicSystem` primitives means what `Basic` means:
-one extraction law per primitive. This is the COMPLETE interface between the
-backend-generic gadget laws and any backend — a gadget can only emit what
-`BasicSystem` offers — so every gadget triple proved over it transfers to a new
-backend by exhibiting one instance. `Basic` is the reference inhabitant below. -/
+one extraction law per primitive. A program can only emit what `BasicSystem` offers,
+so a law proved over this interface transfers to a new backend by exhibiting one
+instance. `Basic` is the reference inhabitant below. -/
 class LawfulBasicSystem (F c : Type) [Add F] [Mul F] [Zero F] [One F]
     [BasicSystem F c] [ConstraintHolds F c] : Prop where
   /-- A satisfied `equal` reads its sides equal. -/
@@ -161,29 +160,29 @@ instance Basic.instLawfulBasicSystem [Add F] [Mul F] [Zero F] [One F] [Decidable
 
 /-! ## Spec shapes
 
-The framework's recommended spec form is schematic — the postcondition is a
-parameter, so `mvcgen` instantiates it exactly at each call site — but written raw it
-buries a gadget's contract in encoding. The DSL's gadgets have a small number of
-shapes, named here once, so each spec reads as its contract alone.
+The framework's recommended spec form is schematic — the postcondition is a parameter,
+so `mvcgen` instantiates it exactly at each call site — but written raw it buries a
+program's contract in encoding. The shapes are named here once, so each spec reads as
+its contract alone.
 
-A proof over these shapes runs: `simp only [<gadget>]` to unfold the body, then `mvcgen`
-to apply one registered spec, then `simp [circuitVal]` (the normal form declared in
-`Circuit/CVar`) to reduce what is left to an arithmetic identity, which `grind`/`ring`
-close. Two rewrites must be avoided: `mvcgen [<gadget>]` unfolds the gadget INSTEAD of
-consulting the `@[spec]` registry, and plain `simp` rewrites `>>=` past `wp_bind`. -/
+A proof over these shapes runs: `simp only` with the program's definition to unfold
+the body, then `mvcgen` to apply one registered spec, then `simp [circuitVal]` (the
+simp set registered in `Circuit/CVar`) to reduce what is left to a field identity,
+closed by `grind`/`ring`. Two rewrites must be avoided: `mvcgen [f]` unfolds `f`
+instead of consulting the `@[spec]` registry, and plain `simp` rewrites `>>=` past
+`wp_bind`. -/
 
-/-- **The soundness spec shape**, polymorphic in what the gadget returns: under
-`Q`-whatever-comes-next, a gadget granting `post` about its result satisfies the
-caller's obligation. `⦃Sound post Q⦄ g ⦃Q⦄` reads "`g` guarantees `post` of its
-result".
+/-- The soundness spec shape, polymorphic in the result: under any consumer `Q`, a
+program granting `post` about its result satisfies the caller's obligation —
+`⦃Sound post Q⦄ g ⦃Q⦄` reads "`g` guarantees `post` of its result".
 
-Only the counter is quantified in the conclusion: the valuation is read-only, so the
-successor state is `⟨s.V, nv'⟩` — quantifying the whole state would lose that and
-break composition. `post` speaks about the RESULT ITSELF, not a reading of it — each gadget's spec
-applies whichever reading its result type has (`r.val V` for an `FVar`,
-`(↑r : CVar F).val V` for a `BoolVar`, componentwise for a bundle), which is what
-keeps one shape serving every return type. The final counter is quantified: a
-caller never learns how many variables a gadget allocated. -/
+Only the counter is quantified in the conclusion: the valuation is read-only, and the
+pinned `⟨s.V, nv'⟩` is what lets the caller apply the granted fact at its own
+valuation. `post` speaks about the result itself, not a reading of it — each spec
+supplies the reading its result type has (`r.val V` for an `FVar`,
+`(↑r : CVar F).val V` for a `BoolVar`, componentwise for a bundle), which keeps one
+shape serving every return type. A caller never learns how many variables were
+allocated. -/
 abbrev Sound {α : Type} (post : Valuation F → α → Prop)
     (Q : PostCond α (.arg (BuilderState F) .pure)) :
     Assertion (.arg (BuilderState F) .pure) :=
@@ -195,7 +194,7 @@ One monad admits one `WP` shape (`ps` is an `outParam`, so resolution keys on th
 alone) — the two readings of `CircuitM` must differ somewhere in the type. The tag sits
 on the CONSTRAINT parameter, the type argument that already varies: `ProverC F` is
 `Basic F` under a name instance search will not unfold. `CircuitM F (ProverC F)` then
-keeps the generic `Monad` instance — gadget bodies elaborate at it, so `mvcgen`
+keeps the generic `Monad` instance — program bodies elaborate at it, so `mvcgen`
 resolves specs and the bind laws with no retagging — while selecting the
 `prove`-interpretation's `WP` instance below. The soundness instance stays out of the
 way because its `ConstraintHolds` guard has no instance at the tag. The completeness
@@ -203,7 +202,7 @@ laws are stated against the reference backend, whose prover checks each constrai
 it is added. -/
 
 /-- The reference backend tagged for the `prove`-interpretation. A program enters the
-prover reading by naming the tag — `mul (c := ProverC F) x y` — exactly as a soundness
+prover reading by naming the tag — `g (c := ProverC F)` — exactly as a soundness
 statement names its backend; the resulting term is definitionally a
 `CircuitM F (Basic F)` program, so the interpreter lemmas apply through a `rfl`
 retag. -/
@@ -259,7 +258,7 @@ instance ProverC.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
       · intro hR
         exact hR (ProverState.freshOut (st := st) h)
 
-/-- **The completeness spec shape**, polymorphic in what the gadget returns: given
+/-- The completeness spec shape, polymorphic in what the gadget returns: given
 `pre` about the incoming table, the run cannot fail, and the caller continues at a
 state whose table extends the incoming one — old facts transport along
 `Assignments.Le` via `CVar.eval_le`. Reads "`g` succeeds given `pre`, guaranteeing
@@ -280,20 +279,16 @@ abbrev Complete {α : Type} (pre : Assignments F → Prop)
     ∀ (r : α) (st' : ProverState F),
       post st.env r st'.env → st.env.Le st'.env → (Q.1 r st').down)
 
-/-- Extract the value behind a successful-evaluation fact — the bridge from the
-metavariable-free `isOk` form the specs' `facts` use to the equation their proofs
-consume. -/
+/-- Extract the value behind a successful-evaluation fact. -/
 theorem CVar.evalOk [Add F] [Mul F] {x : CVar F} {env : Assignments F}
     (h : (x.eval env).isOk = true) : ∃ xv, x.eval env = .ok xv := by
   cases hx : x.eval env with
   | error e => rw [hx] at h; cases h
   | ok v => exact ⟨v, rfl⟩
 
-/-- The prover-side reading of "this operand is a bit": it evaluates, and its value is
-`0` or `1`. A gadget whose honest run depends on bit operands — `xor`, `select` — asks
-for this in its `pre`. The value is universally quantified rather than existential, for
-the reason `Complete` records: an existential leaks an uninstantiable metavariable at
-call sites. -/
+/-- The prover-side reading of "this operand is a bit": it evaluates, and its value
+is `0` or `1`. The value is universally quantified rather than existential, for the
+reason `Complete` records. -/
 def ReadsBit [Add F] [Mul F] [Zero F] [One F] (x : CVar F) (env : Assignments F) : Prop :=
   (x.eval env).isOk ∧ ∀ v, x.eval env = .ok v → v = 0 ∨ v = 1
 
@@ -310,15 +305,14 @@ theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
 /-! ## Running a schematic spec
 
 The spec shapes are continuation-passing: `Q` is a bound consumer, so application at a
-call site is unification. These two laws show the form is CONSERVATIVE — instantiating
-`Q` at the spec's own post (the identity continuation, `runCont c id`) recovers the
-plain interpreter-level statement, and the converse holds because each shape's
-conclusion pins what its reading keeps fixed. The right-hand sides are exactly the
-retired direct-law shapes: one application away, never lost. -/
+call site is unification. Instantiating `Q` at the spec's own post — the identity
+continuation — recovers the plain interpreter-level statement, and the converse holds
+because each shape's conclusion pins what its reading keeps fixed. The two
+equivalences below state this per shape. -/
 
 open Std.Do in
-/-- **Running the soundness shape**: the schematic triple, quantified over `Q`, is the
-plain interpreter law — every satisfying assignment pins the built result. -/
+/-- The schematic soundness triple, quantified over `Q`, is the plain interpreter
+law: every satisfying assignment pins the built result. -/
 theorem sound_spec_iff [ConstraintHolds F c] {α : Type}
     (g : CircuitM F c α) (post : Valuation F → α → Prop) :
     (∀ Q : PostCond α (.arg (BuilderState F) .pure), ⦃Sound post Q⦄ g ⦃Q⦄)
@@ -332,8 +326,8 @@ theorem sound_spec_iff [ConstraintHolds F c] {α : Type}
     exact hpre (build g s.nv).result (build g s.nv).nextVar (h s.V s.nv hsat)
 
 open Std.Do in
-/-- **Running the completeness shape**: the schematic triple is the honest-run
-existential — from any invariant-carrying state satisfying `pre`, the run succeeds,
+/-- The schematic completeness triple, quantified over `Q`, is the honest-run
+existential: from any invariant-carrying state satisfying `pre`, the run succeeds,
 grants `post`, and only extends the table. The forward direction runs at the
 total-correctness continuation (`False` on the exception channel forces success). -/
 theorem complete_spec_iff {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
@@ -363,13 +357,11 @@ theorem complete_spec_iff {F : Type} [Add F] [Mul F] [Zero F] [One F] [Decidable
 
 /-! ## Primitive specs
 
-Triple laws for the monad's own operations, the leaves below every gadget: emitting a
-row and witnessing a checked boolean. A gadget built only from other gadgets and these
-primitives never leaves the walk. -/
+Triple laws for the monad's own operations: emitting a row, and witnessing a checked
+boolean. -/
 
 open Std.Do in
-/-- **`addConstraint` soundness**: emitting a row assumes it — the row IS the fact the
-continuation receives. -/
+/-- Emitting a row assumes it. -/
 @[spec] theorem addConstraint_spec [ConstraintHolds F c]
     (con : c) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => ConstraintHolds.Holds V con) Q⦄
@@ -379,8 +371,7 @@ continuation receives. -/
   exact hpre PUnit.unit _ (hsat con (List.mem_cons_self ..))
 
 open Std.Do in
-/-- **`addConstraint` completeness**: the row's own check is the precondition — the
-prover accepts exactly when the checker does, changing nothing. -/
+/-- The row's own check is the precondition; the state is unchanged. -/
 @[spec] theorem addConstraint_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (con : Basic F)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
@@ -393,8 +384,7 @@ prover accepts exactly when the checker does, changing nothing. -/
   exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
 
 open Std.Do in
-/-- **Checked-boolean witness, soundness**: the `boolean` row the checked witness pays
-makes the result a bit — whatever the witness computation would compute. -/
+/-- The checked witness's `boolean` row makes the result a bit. -/
 @[spec] theorem witnessBool_spec [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (w : AsProver F Bool) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -430,8 +420,8 @@ private theorem prove_witnessBool {F : Type} [Add F] [Mul F] [Zero F] [One F]
   simp only [prove, hch, if_true]
 
 open Std.Do in
-/-- **Checked-boolean witness, completeness**: a witness computation that succeeds makes
-the run succeed, and the result reads as the computed bit's encoding. -/
+/-- A witness computation that succeeds makes the run succeed, and the result reads
+as the computed bit's encoding. -/
 @[spec] theorem witnessBool_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (w : AsProver F Bool)
     (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -459,15 +449,13 @@ the run succeed, and the result reads as the computed bit's encoding. -/
 
 /-! ## The vector loop rule
 
-`generateVec` is the DSL's one monadic iterator; these two rules are its `Sound` and
-`Complete` laws, given a spec for each component — the analogue of the framework's
-`Spec.forIn_list`, stated schematically so a caller instantiates them like any other
-spec (they cannot be `@[spec]`: the componentwise hypothesis is theirs to supply). -/
+The `Sound` and `Complete` laws of `generateVec`, given a spec for each component —
+the analogue of the framework's `Spec.forIn_list`. They cannot be `@[spec]`: the
+componentwise hypothesis is the caller's to supply. -/
 
 open Std.Do in
-/-- **The loop rule, soundness**: componentwise guarantees aggregate componentwise.
-No invariant beyond the components' own facts: the valuation is read-only, so nothing
-threads. -/
+/-- Componentwise guarantees aggregate componentwise. No invariant beyond the
+components' own facts: the valuation is read-only, so nothing threads. -/
 theorem generateVec_spec {α : Type} [ConstraintHolds F c] :
     ∀ (n : Nat) (f : Fin n → CircuitM F c α) (post : Fin n → Valuation F → α → Prop),
       (∀ (i : Fin n) (Q : PostCond α (.arg (BuilderState F) .pure)),
@@ -495,9 +483,9 @@ theorem generateVec_spec {α : Type} [ConstraintHolds F c] :
     · simpa using hinit j
 
 open Std.Do in
-/-- **The loop rule, completeness**: componentwise runs chain, given that each
-component's `pre` and `post` transport along table extension — the two hypotheses that
-replace a loop invariant, since the prover's state genuinely grows. -/
+/-- Componentwise runs chain, given that each component's `pre` and `post` transport
+along table extension — the two hypotheses that replace a loop invariant, since the
+prover's table grows. -/
 theorem generateVec_complete_spec {F : Type} {α : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] :
     ∀ (n : Nat) (f : Fin n → CircuitM F (ProverC F) α)
@@ -540,18 +528,15 @@ theorem generateVec_complete_spec {F : Type} {α : Type} [Add F] [Mul F] [Zero F
 
 /-! ## The alignment bridge
 
-Soundness states what the constraints FORCE; completeness states what the prover
-COMPUTES. The bridge proves they cohere: an honest run's result satisfies any
-soundness relation its gadget carries, read at the completion of the final table
-(`Assignments.toValuation`). Per gadget this is a two-line corollary
-(`Circuit/DSL/Agreement`) — and a drift between a gadget's two specs would make its
-corollary unprovable, which is the machine check that the arithmetic in the two
-readings is the same. -/
+Soundness states what the constraints force; completeness states what the prover
+computes. `post_of_prove` connects them: an honest run's result satisfies any
+soundness relation the program carries, read at the completion of the final table
+(`Assignments.toValuation`). -/
 
 open Std.Do in
-/-- **The alignment bridge**: apply the gadget's `Sound` triple at the completed final
-table — its satisfaction hypothesis is exactly what `prove_complete` establishes, and
-`prove_build_agrees` identifies the two interpreters' results. -/
+/-- Apply a program's `Sound` triple at the completed final table: the satisfaction
+hypothesis is what `prove_complete` establishes, and `prove_build_agrees` identifies
+the two interpreters' results. -/
 theorem post_of_prove {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     {α : Type} {post : Valuation F → α → Prop} {g : CircuitM F (Basic F) α}
     (hspec : ∀ Q, ⦃Sound post Q⦄ g ⦃Q⦄)

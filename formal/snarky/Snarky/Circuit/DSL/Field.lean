@@ -11,54 +11,26 @@ set_option mvcgen.warning false
 # Field gadgets
 
 Port of `Snarky.Circuit.DSL.Field` (packages/snarky/src/Snarky/Circuit/DSL/Field.purs):
-the field comparison and arithmetic gadgets. The centrepiece is `equals` — an equality
-*test* returning a `BoolVar` rather than an assertion, via the standard inverse-or-zero
-trick — with `sum`, `pow`, and `square` alongside.
+the field arithmetic and comparison gadgets — `mul`, `inv`, `div`, `square`, `pow`, the
+pure `sum`, and the equality tests `equals`/`neq` via the inverse-or-zero trick. Each
+gadget carries its two laws (`*_spec`, `*_complete_spec`) beside it; laws are stated
+against the interpreters, which is why this module imports the backend — a deliberate
+deviation from the PS import graph, adjacency over layering.
 
-Name map (D7; underscores drop): `mul_` → `mul`, `inv_` → `inv`, `div_` → `div`,
+Name map (underscores drop): `mul_` → `mul`, `inv_` → `inv`, `div_` → `div`,
 `equals_` → `equals`, `neq_` → `neq`, `sum_` → `sum`, `pow_` → `pow`,
-`square_` → `square`. PS parks `mul_`/`inv_`/`div_` in its Monad module to dodge orphan
-instances (see `Circuit/DSL/Monad`); here they live with their laws. The PS
-action-lifted `equals` variant rides the numeric-tower instances and is not ported
-(D8); `pow`'s exponent is `Nat` (PS `Int`, never called negative). The targeted
-`Mathlib.Algebra.Field.Defs` import is `inv`'s (D6: `[Field F]`, the weakest fitting
-class for an inverse).
+`square_` → `square`.
 
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
-- PS witnesses `equals_`'s `{r, zInv}` record through the generic deriving machinery
-  (D8, not ported) and retags `r` with a bare `coerce`; here the witness is the pair
-  `UnChecked Bool × F` — the typed skip-the-check discipline PS's own `xor_` uses, and
-  the `Prod` instances' first Lean consumer. Same one `existsOp` of two variables, same
-  order (PS's record rows sort alphabetically: `r`, `zInv`), same absence of `boolean`
-  checks — the gadget's two `r1cs` constraints already force booleanity
-  (`Snarky.equals_spec`).
-- `neq` is `not` after `equals`, as in PS (whose `not` rides the HeytingAlgebra action
-  instance, D8); `not` lives with its family in `DSL/Boolean`, above this module, so
-  `neq` inlines its one-line retag.
-- The `CircuitType F Bool` instance pins `F : Type 0` (`AsProver` payloads share `F`'s
-  universe), so the `BoolVar`-returning gadgets are stated for `Type`-sized fields —
-  every concrete field is one.
-
-D9 survey (the `snarky-test-utils` Field spec), in the D12 statement form — gadget laws
-are stated against the interpreters, never re-derived over the field alone, and live
-BESIDE their gadgets (this module imports the backend for exactly that — a deliberate
-deviation from the PS import graph, adjacency over layering): the `eq`
-rows are `equals_spec`/`equals_complete_spec` below, plus the fixed-input `decide`
-examples in `Snarky.Example`; the `mul`/`inv`/`div`/`square`/`pow` rows carry triple
-laws (`*_spec`/`*_complete_spec`, all `@[spec]`), `div`'s soundness composed by
-`mvcgen` from `inv_spec` and `mul_spec` and `pow`'s through the fuel recursion from
-`mul_spec`. The `sum` row is `sum_eval` below (`sum` is pure — its
-evaluation IS its interpreter semantics). The `negate` row is `Circuit/CVar` algebra
-under `reduce_eval`; `seal` is the
-`DSL/Utils` follow-on (plan §6). The spec's end-to-end shape — compile, solve against
-public inputs, compare with the model function — awaits `Backend/Compile` (walk
-step 14).
-
-Public results: the D12 gadget laws beside their gadgets, each a triple pair over the
-two readings — `mul`, `inv`, `div`, `square`, `pow`, `equals` and `neq` as
-`*_spec`/`*_complete_spec` — plus `sum_eval`; all `roots.txt` entries. The `*Wit`,
-`*Core` and `*Core_run` declarations are named internals for those proofs, not user
-API.
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
+- `inv` is total: a constant zero folds via Lean's `0⁻¹ = 0` where PS crashes at
+  construction; a prover run still fails on a zero operand, as in PS.
+- `equals` witnesses the pair `(r, zInv)` at `UnChecked Bool × F` where PS derives a
+  record; same rows, same order.
+- `neq` inlines the one-line negation retag rather than depending on a negation gadget.
+- `pow`'s exponent is `Nat` (PS `Int`, never called negative); the PS action-lifted
+  `equals` variant is not ported.
+- The `CircuitType F Bool` instance pins `F : Type 0`, so the `BoolVar`-returning
+  gadgets are stated for `Type`-sized fields — every concrete field is one.
 -/
 
 namespace Snarky
@@ -140,8 +112,8 @@ def equalsCore {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] (z : CVa
   addConstraint (BasicSystem.r1cs rz.2 z (CVar.sub_ (.const 1) ↑r))
   pure r
 
-/-- The value-level answer of `equals` — the pure mirror both readings state their
-posts through, so a drift between them is a visible diff. -/
+/-- The value-level answer of `equals`: the pure mirror both readings' laws state
+their answer through. -/
 def equalsPure [Zero F] [One F] [DecidableEq F] (a b : F) : F := if a = b then 1 else 0
 
 /-- The value-level answer of `neq` — `equalsPure` negated. -/
@@ -215,7 +187,7 @@ def square [Add F] [Mul F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F
   | .const f => pure (.const (f * f))
   | x => squareCore x
 
-/-! ## The sum law (D9: the sum spec row) -/
+/-! ## The sum law -/
 
 private theorem sum_go [AddMonoid F] [Mul F] {env : Assignments F} :
     ∀ {xs : List (CVar F)} {vals : List F} {acc : CVar F} {a : F},
@@ -248,16 +220,14 @@ theorem sum_eval [AddMonoid F] [Mul F] {env : Assignments F} {xs : List (CVar F)
   have h0 : (CVar.const (0 : F)).eval env = .ok 0 := rfl
   simpa [sum] using sum_go h h0
 
-/-! ## The gadget laws (D12)
+/-! ## The gadget laws
 
-Stated against `build`/`prove` over the reference `Basic` backend — soundness quantifies
-over EVERY satisfying assignment, completeness runs the honest prover, each direct gadget
-anchored by a definitional shape lemma of its built circuit. The laws for `DSL/Monad`'s
-gadgets (`mul`/`inv`/`div`) live here with their gadget family: the interpreters import
-`DSL/Monad`, so its own file cannot state interpreter theorems (a cycle, not a style
-choice). -/
+Soundness quantifies over every satisfying assignment; completeness runs the honest
+prover. The laws for the gadgets PS parks in its Monad module (`mul`/`inv`/`div`) live
+here with their family: the interpreters import `DSL/Monad`, so that module cannot
+state laws about them. -/
 
-/-! ### `equals` (Circuit/DSL/Field) -/
+/-! ### `equals` -/
 
 /-- The field engine of `equals` soundness: `r · z = 0` and `zInv · z = 1 − r` pin `r`
 to the equality bit. -/
@@ -329,7 +299,7 @@ private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
         (.pure (BoolVar.unchecked (.var nv))))) (nv + 2) env₂ = _
   simp only [prove, hch₁, hch₂, if_true]
 
-/-- `equalsCore` completeness: on a fresh-from-`nv` assignment that evaluates `z`, the
+/-- On a fresh-from-`nv` assignment that evaluates `z`, the
 honest prover run succeeds and the answer bit is correct. -/
 private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CVar F}
     {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
@@ -363,10 +333,10 @@ private theorem build_equalsCore' {F c : Type} [Field F] [DecidableEq F]
          BasicSystem.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))]⟩ := rfl
 
 open Std.Do in
-/-- **`equals` soundness triple**: the result bit reads `1` exactly when the operands
+/-- The result bit reads `1` exactly when the operands
 read equal — the constant difference folds, the witnessing pair is pinned by its two
 rows (which also force the bit boolean, so the witness may skip the `boolean` check).
-Generic over any lawful backend. -/
+-/
 @[spec] theorem equals_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -402,7 +372,7 @@ Generic over any lawful backend. -/
      · rw [if_neg (sub_ne_zero.mpr h), if_neg h])
 
 open Std.Do in
-/-- **`equals` completeness triple** (prover reading): the run succeeds and the result
+/-- The run succeeds and the result
 reads as the answer bit in the final table. -/
 @[spec] theorem equals_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : FVar F)
@@ -451,8 +421,7 @@ reads as the answer bit in the final table. -/
 /-! ### `neq` — composed from `equals` -/
 
 open Std.Do in
-/-- **`neq` soundness triple**, composed by `mvcgen` from `equals_spec`: the result
-bit is the negated equality answer. Generic over any lawful backend. -/
+/-- The result bit is the negated equality answer. -/
 @[spec] theorem neq_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -469,7 +438,7 @@ bit is the negated equality answer. Generic over any lawful backend. -/
   split_ifs <;> ring
 
 open Std.Do in
-/-- **`neq` completeness triple** (prover reading): the run succeeds and the result
+/-- The run succeeds and the result
 reads as the negated answer bit in the final table. -/
 @[spec] theorem neq_complete_spec {F : Type} [Field F] [DecidableEq F]
     (a b : FVar F)
@@ -550,9 +519,8 @@ private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
   exact prove_witnessCore hw hfresh hch
 
 open Std.Do in
-/-- **`invCore` soundness triple**: the witnessing row pins the PRODUCT — `x · r = 1` —
-strictly more than `inv`'s inverse reading, whose `0⁻¹ = 0` totalisation erases the
-nonzero fact. `assertNonZero` composes through this one. -/
+/-- The witnessing row pins the product `x · r = 1` — more than `inv`'s inverse
+reading, whose `0⁻¹ = 0` erases the nonzero fact. -/
 @[spec] theorem invCore_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -564,9 +532,8 @@ nonzero fact. `assertNonZero` composes through this one. -/
     (LawfulBasicSystem.holds_r1cs s.V _ _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
-/-- **`inv` soundness triple**: `inv x` computes the operand's field inverse — the
-witnessing row forces it; the constant branch is total via `0⁻¹ = 0`. Generic over
-any lawful backend. -/
+/-- `inv x` computes the operand's field inverse — the
+witnessing row forces it; the constant branch is total via `0⁻¹ = 0`. -/
 @[spec] theorem inv_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -585,7 +552,7 @@ any lawful backend. -/
      exact hpre (.var nv) _ (inv_eq_of_mul_eq_one_right (by simpa using h)).symm)
 
 open Std.Do in
-/-- **`inv` completeness triple** (prover reading): on a nonzero operand the run
+/-- On a nonzero operand the run
 succeeds and the result reads as the inverse in the final table. -/
 @[spec] theorem inv_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x : FVar F)
@@ -621,8 +588,8 @@ succeeds and the result reads as the inverse in the final table. -/
        simp [circuitVal])
 
 open Std.Do in
-/-- **`mul` soundness triple**: `mul x y` computes the product — constants fold,
-otherwise the `r1cs` row forces it. Generic over any lawful backend. -/
+/-- `mul x y` computes the product — constants fold,
+otherwise the `r1cs` row forces it. -/
 @[spec] theorem mul_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -648,7 +615,7 @@ otherwise the `r1cs` row forces it. Generic over any lawful backend. -/
        exact hpre (.var nv) _ h.symm)
 
 open Std.Do in
-/-- **`mul` completeness triple** (prover reading): the run succeeds and the result
+/-- The run succeeds and the result
 reads as the product in the final table. -/
 @[spec] theorem mul_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x y : FVar F)
@@ -693,7 +660,7 @@ reads as the product in the final table. -/
        show (CVar.var st.nv).eval _ = _
        simp [circuitVal])
 
-/-! ### `square` (Circuit/DSL/Field) -/
+/-! ### `square` -/
 
 /-- The honest `squareCore` run. -/
 private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
@@ -716,9 +683,7 @@ private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
   exact prove_witnessCore hw hfresh hch
 
 open Std.Do in
-/-- **`div` soundness triple**, composed by `mvcgen` from `inv_spec` and `mul_spec`:
-`div x y` computes the quotient (`x · y⁻¹`, total via `0⁻¹ = 0`). Generic over any
-lawful backend. -/
+/-- `div x y` computes the quotient — `x · y⁻¹`, total via `0⁻¹ = 0`. -/
 @[spec] theorem div_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -733,9 +698,7 @@ lawful backend. -/
   exact hpre r' s'' (hr'.trans (by rw [hr]; exact (div_eq_mul_inv _ _).symm))
 
 open Std.Do in
-/-- **`div` completeness triple** (prover reading), composed by `mvcgen` from
-`inv_complete_spec` and `mul_complete_spec` once the program is retagged at the
-carrier: a nonzero divisor makes the run succeed with the quotient. -/
+/-- A nonzero divisor makes the run succeed with the quotient. -/
 @[spec] theorem div_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -765,8 +728,8 @@ carrier: a nonzero divisor makes the run succeed with the quotient. -/
   exact hres xv yv⁻¹ hx' hr'
 
 open Std.Do in
-/-- **`square` soundness triple**: `square x` computes `x · x` through the dedicated
-`square` row; a constant folds. Generic over any lawful backend. -/
+/-- `square x` computes `x · x` through the dedicated
+`square` row; a constant folds. -/
 @[spec] theorem square_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
@@ -785,7 +748,7 @@ open Std.Do in
      exact hpre (.var nv) _ h.symm)
 
 open Std.Do in
-/-- **`square` completeness triple** (prover reading): the run succeeds and the result
+/-- The run succeeds and the result
 reads as the square in the final table. -/
 @[spec] theorem square_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x : FVar F)
@@ -819,11 +782,11 @@ reads as the square in the final table. -/
        show (CVar.var st.nv).eval _ = _
        simp [circuitVal])
 
-/-! ### `pow` (Circuit/DSL/Field) — composed through the fuel recursion -/
+/-! ### `pow` -/
 
 open Std.Do in
 /-- `powGo` soundness as a triple, by induction on the fuel: with the fuel adequate
-for the exponent, the result reads as the power. Generic over any lawful backend. -/
+for the exponent, the result reads as the power. -/
 @[spec] private theorem powGo_spec {F c : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] :
     ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
@@ -865,8 +828,7 @@ for the exponent, the result reads as the power. Generic over any lawful backend
         omega
 
 open Std.Do in
-/-- **`pow` soundness triple**, composed through the fuel recursion from `mul_spec`:
-the result reads as the operand's power. Generic over any lawful backend. -/
+/-- The result reads as the operand's power. -/
 @[spec] theorem pow_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x : FVar F) (n : Nat)
@@ -960,8 +922,7 @@ for the exponent, the honest run succeeds and the result reads as the power. -/
         omega
 
 open Std.Do in
-/-- **`pow` completeness triple**, composed through the fuel recursion from
-`mul_complete_spec`. -/
+/-- The run succeeds and the result reads as the operand’s power. -/
 @[spec] theorem pow_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] (x : FVar F) (n : Nat)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :

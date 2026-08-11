@@ -11,42 +11,25 @@ set_option mvcgen.warning false
 Port of `Snarky.Circuit.DSL.Assert` (packages/snarky/src/Snarky/Circuit/DSL/Assert.purs):
 constraints enforced without returning values — equality, non-zeroness (an inverse
 witness, which is what fails on zero), squares, boolean assertions — plus the generic
-`AssertEqual` class and `allBools`.
+`AssertEqual` class and `allBools`. Every gadget carries its two laws beside it.
 
-Name map (D7; underscores drop): `assertEqual_` → `assertEqual`, `assertNonZero_` →
-`assertNonZero`, `assertNotEqual_` → `assertNotEqual`, `assertSquare_` → `assertSquare`,
-`assert_` → `assert`, `assertAny_`/`assertAll_`/`assertExactlyOne_` drop likewise,
-`allBools` keeps its PS name; the class method `assertEq` keeps its PS name — the barrel's
-transitional `assertEq` is subsumed by the class (`FVar` call sites are unchanged).
+Name map (underscores drop): `assertEqual_`, `assertNonZero_`, `assertNotEqual_`,
+`assertSquare_`, `assert_`, `assertAny_`, `assertAll_`, `assertExactlyOne_`;
+`allBools` and the class methods `assertEq`/`isEqual` keep their PS names.
 
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
-- PS CRASHES at circuit construction on impossible constant assertions (`unsafeThrow` on
-  unequal constants in `assertEqual_`; on the constant zero through `inv_` in
-  `assertNonZero_`). The total rendering emits the impossible constraint instead —
-  `assertEqual` emits the unsatisfiable `equal` row verbatim, `assertNonZero` the
-  canonical falsum `0 = 1` — so the prover rejects, and soundness treats the branch by
-  contradiction.
-- The `AssertEqual` class: fundeps unmodelled (house precedent); base instances only
-  (`FVar`, `BoolVar`, `PUnit`, the pair — components FIRST THEN SECOND, PS order, unlike
-  `IfThenElse`); the `Vector`/`Record` instances and the `GAssertEqual`/`RAssertEqual`
-  deriving machinery land with their first consumers (D8; monadic vector traversal needs
-  a kernel-reducible helper in `Snarky/Vec.lean` first).
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
+- PS CRASHES at circuit construction on impossible constant assertions. The total
+  rendering emits the impossible constraint instead — `assertEqual` the unsatisfiable
+  `equal` row, `assertNonZero` the falsum `0 = 1` — so the prover rejects, and
+  soundness treats the branch by contradiction.
+- The `AssertEqual` class: fundeps unmodelled; base instances only (`FVar`, `BoolVar`,
+  `PUnit`, the pair — components FIRST THEN SECOND, PS order, unlike `IfThenElse`).
 - `allBools` keeps the OCaml/PS constant-FIRST argument order in its three-plus case
-  (`equals (const n) (sum bs)`) — the order matters for the constraint's coefficient
-  signs downstream.
+  (`equals (const n) (sum bs)`).
 
-D9 survey (the `snarky-test-utils` Assert spec), in the D12 form, laws beside their
-gadgets: every row is a triple pair — `*_spec` (soundness, generic over any lawful
-backend) and `*_complete_spec` (prover reading), all `@[spec]`. The sum-based
-`assertAny`/`assertAll`/`assertExactlyOne` and `allBools` carry the cast-injectivity
-hypothesis of `DSL/Boolean`'s sum-based section wherever a count must be detected
-below the characteristic; the direction that only needs a count to CAST — a zero
-count for `assertAny`'s soundness, a full or unit count for `assertAll`'s and
-`assertExactlyOne`'s completeness — is hypothesis-free.
-
-Public results: the triple pairs for `assertEqual`, `assertNonZero`, `assertNotEqual`,
-`assertSquare`, `assert`, `assertAny`, `assertAll`, `assertExactlyOne`, and
-`allBools` — all `roots.txt` entries.
+The sum-based laws carry the cast-injectivity hypothesis of `DSL/Boolean`'s sum-based
+section wherever a count must be detected below the characteristic; the direction that
+only needs a count to cast is hypothesis-free.
 -/
 
 namespace Snarky
@@ -164,18 +147,12 @@ instance {F c : Type} {a b : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq
     let r₂ ← isEqual p.2 q.2
     Snarky.and r₁ r₂
 
-/-! ## The `assertEqual` laws (D12)
-
-The soundness law is a Hoare triple in the `Backend/WP` interpretation, generic over
-any lawful backend — the `Basic` form is its instance, and richer backends inherit it
-by exhibiting `LawfulBasicSystem`. The completeness side keeps its exact `prove`
-equation below, with a triple corollary in the prover reading; both specs are
-`@[spec]`, so `mvcgen` consumes them at call sites (the two `example`s). -/
+/-! ## The `assertEqual` laws -/
 
 open Std.Do in
-/-- **`assertEqual` soundness** (D12): `assertEqual x y` asserts that any satisfying
+/-- `assertEqual x y` asserts that any satisfying
 valuation reads the operands equal — through the fold, the unsatisfiable-constants
-row, and the general row. Generic over any lawful backend. -/
+row, and the general row. -/
 @[spec] theorem assertEqual_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -198,7 +175,7 @@ row, and the general row. Generic over any lawful backend. -/
          (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
 
 open Std.Do in
-/-- **`assertEqual` completeness, prover reading**: on equal values the run cannot
+/-- Prover reading: on equal values the run cannot
 fail — it changes nothing, so the postcondition is claimed at the incoming state.
 Schematic like the soundness spec; the exact equation above supplies the reduction. -/
 @[spec] theorem assertEqual_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
@@ -236,8 +213,7 @@ open Std.Do
 
 variable {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- `mvcgen` walks a two-step chain, consuming `assertEqual_spec` at both call
-sites: equality is transitive through composition, at any lawful backend. -/
+/-- A two-step chain: equality is transitive through composition. -/
 example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y z : FVar F) :
     ⦃⌜True⌝⦄
@@ -248,9 +224,9 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
   intro _ _nv' hxy
   exact assertEqual_spec (c := c) y z _ _ fun _ _ hyz => hxy.trans hyz
 
-/-- The SAME chain in the prover reading: on agreeing values the honest run cannot
-fail — the two `@[spec]` lemmas for one head symbol coexist across the two
-readings, and `mvcgen` selects by the ambient monad. -/
+/-- The same chain in the prover reading: on agreeing values the honest run cannot
+fail. The two `@[spec]` lemmas for one head symbol coexist across the two readings;
+`mvcgen` selects by the ambient monad. -/
 example (x y z : FVar F) (xv yv zv : F) :
     ⦃fun st => ⌜x.eval st.env = Except.ok xv ∧ y.eval st.env = Except.ok yv ∧
         z.eval st.env = Except.ok zv ∧ xv = yv ∧ yv = zv⌝⦄
@@ -283,8 +259,7 @@ open Std.Do
 variable {F c : Type} [Field F] [DecidableEq F]
 
 /-- A compute–assert chain with a mathematical postcondition: pinning `w` to the
-witnessed inverse forces `w` to read as `v`'s field inverse — one `mvcgen` walk
-consumes a compute spec (`inv_spec`) and an assert spec (`assertEqual_spec`). -/
+witnessed inverse forces `w` to read as `v`'s field inverse. -/
 example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v w : FVar F) :
     ⦃⌜True⌝⦄
@@ -299,12 +274,12 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
 
 end MvcgenDemosField
 
-/-! ## The `assertNonZero`, `assertNotEqual`, and `assertSquare` laws (D12) -/
+/-! ## The `assertNonZero`, `assertNotEqual`, and `assertSquare` laws -/
 
 open Std.Do in
-/-- **`assertNonZero` soundness** (D12): asserts the operand reads nonzero — the
+/-- Asserts the operand reads nonzero — the
 zero-constant branch carries an unsatisfiable row, the witnessing branch the
-inverse's product row. Generic over any lawful backend. -/
+inverse's product row. -/
 @[spec] theorem assertNonZero_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -329,7 +304,7 @@ inverse's product row. Generic over any lawful backend. -/
      exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one hr))
 
 open Std.Do in
-/-- **`assertNonZero` completeness** (D12, prover reading): the run succeeds on a
+/-- The run succeeds on a
 nonzero value, extending the table with the witnessed inverse. -/
 @[spec] theorem assertNonZero_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : FVar F)
@@ -357,7 +332,7 @@ nonzero value, extending the table with the witnessed inverse. -/
      · exact fun _ => hk PUnit.unit st' hle)
 
 open Std.Do in
-/-- **`assertNotEqual` soundness** (D12), delegated to `assertNonZero` through the
+/-- Delegated to `assertNonZero` through the
 difference. -/
 @[spec] theorem assertNotEqual_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -372,7 +347,7 @@ difference. -/
   exact hpre PUnit.unit _ (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
 
 open Std.Do in
-/-- **`assertNotEqual` completeness** (D12, prover reading), delegated to
+/-- Delegated to
 `assertNonZero` through the difference. -/
 @[spec] theorem assertNotEqual_complete_spec {F : Type} [Field F] [DecidableEq F]
     (x y : FVar F)
@@ -393,8 +368,8 @@ open Std.Do in
   exact hd ▸ sub_ne_zero.mpr (hne xv yv hx hy)
 
 open Std.Do in
-/-- **`assertSquare` soundness** (D12): asserts the square identity on the operands'
-readings. Generic over any lawful backend. -/
+/-- Asserts the square identity on the operands'
+readings. -/
 @[spec] theorem assertSquare_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -407,7 +382,7 @@ readings. Generic over any lawful backend. -/
     (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
-/-- **`assertSquare` completeness** (D12, prover reading): the run succeeds on a true
+/-- The run succeeds on a true
 square, changing nothing. -/
 @[spec] theorem assertSquare_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] (x y : FVar F)
@@ -431,7 +406,7 @@ square, changing nothing. -/
   exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
 
 open Std.Do in
-/-- **`assert` soundness** (D12): `assert v` asserts the bit reads `1`. -/
+/-- `assert v` asserts the bit reads `1`. -/
 @[spec] theorem assert_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v : BoolVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -442,7 +417,7 @@ open Std.Do in
   exact assertEqual_spec (c := c) ↑v (.const 1) Q
 
 open Std.Do in
-/-- **`assert` completeness** (D12, prover reading): the run succeeds on a bit that
+/-- The run succeeds on a bit that
 reads `1`. -/
 @[spec] theorem assert_complete_spec {F : Type} [Field F] [DecidableEq F]
     (v : BoolVar F)
@@ -471,7 +446,7 @@ of `DSL/Boolean`'s sum-based section (`assertAny`'s soundness needs none: a zero
 casts to zero in any semiring). -/
 
 open Std.Do in
-/-- **`allBools` soundness triple**: on bit operands the result is the list's
+/-- On bit operands the result is the list's
 conjunction, under cast-injectivity up to the length. -/
 @[spec] theorem allBools_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -534,7 +509,7 @@ conjunction, under cast-injectivity up to the length. -/
       rw [if_neg hne, bit_false]
 
 open Std.Do in
-/-- **`allBools` completeness triple** (prover reading): the run succeeds on any
+/-- The run succeeds on any
 evaluable operands, and where they read as bits the result is the conjunction. -/
 @[spec] theorem allBools_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))
@@ -603,7 +578,7 @@ evaluable operands, and where they read as bits the result is the conjunction. -
       rw [if_neg hne, bit_false]
 
 open Std.Do in
-/-- **`assertAny` soundness triple**: asserts some bit is set — no characteristic
+/-- Asserts some bit is set — no characteristic
 hypothesis, since a zero count casts to zero in any semiring. -/
 @[spec] theorem assertAny_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -624,7 +599,7 @@ hypothesis, since a zero count casts to zero in any semiring. -/
   exact hne (by simp)
 
 open Std.Do in
-/-- **`assertAny` completeness triple** (prover reading): on bit operands with some
+/-- On bit operands with some
 bit set the run succeeds — cast-injectivity makes the nonzero count a nonzero sum. -/
 @[spec] theorem assertAny_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))
@@ -658,7 +633,7 @@ bit set the run succeeds — cast-injectivity makes the nonzero count a nonzero 
   exact hne (hchar _ 0 hcount (by omega) (by simpa using hcast))
 
 open Std.Do in
-/-- **`assertAll` soundness triple**: asserts every bit is set, under cast-injectivity
+/-- Asserts every bit is set, under cast-injectivity
 up to the length. -/
 @[spec] theorem assertAll_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -685,7 +660,7 @@ up to the length. -/
   exact count_true_eq_length.mp (by omega)
 
 open Std.Do in
-/-- **`assertAll` completeness triple** (prover reading): on bit operands, all set,
+/-- On bit operands, all set,
 the run succeeds — no characteristic hypothesis, the full count casts to the length
 in any semiring. -/
 @[spec] theorem assertAll_complete_spec {F : Type} [Field F] [DecidableEq F]
@@ -713,7 +688,7 @@ in any semiring. -/
   rw [hc, hlen]
 
 open Std.Do in
-/-- **`assertExactlyOne` soundness triple**: asserts a one-hot list — the count is one,
+/-- Asserts a one-hot list — the count is one,
 under cast-injectivity up to the length plus one. -/
 @[spec] theorem assertExactlyOne_spec {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
@@ -740,7 +715,7 @@ under cast-injectivity up to the length plus one. -/
   exact hchar _ _ hcount (by omega) heq
 
 open Std.Do in
-/-- **`assertExactlyOne` completeness triple** (prover reading): on a one-hot bit list
+/-- On a one-hot bit list
 the run succeeds — the unit count casts to one in any semiring. -/
 @[spec] theorem assertExactlyOne_complete_spec {F : Type} [Field F] [DecidableEq F]
     (bs : List (BoolVar F))

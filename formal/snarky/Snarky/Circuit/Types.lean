@@ -8,30 +8,24 @@ value/variable duality — `CircuitType` encodes a value type as field elements 
 with its variable-bundle form — plus the `FVar`/`BoolVar` base instances and their
 round-trip laws.
 
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
 - The field-vector size is type-level (`Vector F size` vs PS `Array f` + the runtime
   `sizeInFields` contract), so the length obligations disappear; the `outParam` on `var`
   models the PS fundep `a f -> var`, while the reverse fundep `var -> f` is not modeled.
 - The PS value wrappers `F f` and `Bool a` are not needed: Lean's class resolution
   dispatches on the plain field type and core `Bool` directly, so `val` is unwrapped. The
   wrapper-lifting instances (`PrimeField (F f)`, `HasEndo (F f)`, `FieldSizeInBits (F f)`)
-  therefore have no analogue; `FieldSizeInBits` resurfaces with `SizedF` (plan §6).
-- Instance coverage is the base pair (`F`, `Bool`), `Prod` (PS `Tuple`, landed with
-  its first consumer: `DSL/Field.equals`'s witness pair, walk step 9), and the size-0
-  `PUnit` (PS `Unit`, landed with its first consumer: `Example`'s knowledge-statement
-  circuit, which claims no public output); the PS `NoInput`/`NoOutput`, `Const`,
-  `Product`, `Vector`, and `Record` instances land with their first consumers
-  (`NoInput`/`NoOutput`'s JSON instances are not ported); `UnChecked` is here,
-  with its no-op `CheckedType` instance beside the class in `Circuit/DSL/Monad`.
+  therefore have no analogue.
+- Instance coverage is the base pair (`F`, `Bool`), `Prod` (PS `Tuple`), and the
+  size-0 `PUnit` (PS `Unit`); the PS `NoInput`/`NoOutput`, `Const`, `Product`,
+  `Vector`, and `Record` instances are not yet ported. `UnChecked` is here.
 - The generic/rowlist deriving machinery (`GCircuitType`/`RCircuitType`, the `generic*`
-  helpers) is out of scope (D8) — Lean would grow a `deriving` handler instead.
-- `CheckedType` is NOT here: its PS home is `Circuit/DSL/Monad.purs`, where it moves at
-  walk step 5 (transitionally it sits in `Snarky.Types`).
+  helpers) is not ported — Lean would grow a `deriving` handler instead.
+- `CheckedType` is not here: its PS home is `Circuit/DSL/Monad.purs`.
 
-Public results: the round-trip laws `fvar_value_roundTrip`, `fvar_var_roundTrip`,
-`boolVar_value_roundTrip`, and `boolVar_var_roundTrip` — the PS
-`Test.Snarky.Circuit.Types` QuickCheck spec as theorems (D9), for the instances above;
-the generic-derived rows of that spec's table await the deriving machinery.
+The round-trip laws (`fvar_value_roundTrip`, `fvar_var_roundTrip`,
+`boolVar_value_roundTrip`, `boolVar_var_roundTrip`) are the PS
+`Test.Snarky.Circuit.Types` QuickCheck spec as theorems, for the instances above.
 -/
 
 namespace Snarky
@@ -77,7 +71,7 @@ doors:
   witnesses its result at `UnChecked Boolean` for exactly this reason).
 - `BoolVar.unchecked` — the single explicit rendering of PS's `coerce` introduction,
   for PURE retaggings only (a negation, a constant answer): each call site owes a
-  booleanity argument from its surrounding constraints (e.g. `Snarky.equals_spec`).
+  booleanity argument from its surrounding constraints.
 
 (`CircuitType.fieldsToVar` at `Bool` also builds the wrapper — it must, `witness`
 factors through it — but it is implementation surface, not a gadget door; PS has the
@@ -103,14 +97,12 @@ def BoolVar.unchecked (x : CVar F) : BoolVar F := ⟨x⟩
 @[circuitVal] theorem BoolVar.toCVar_unchecked (x : CVar F) :
     (BoolVar.unchecked x).toCVar = x := rfl
 
--- The reading of a literal expression — the equations fire on constructors only, so an
--- opaque operand is left alone. Tagged here rather than at the definition because a simp
--- attribute cannot be used in the file that registers it.
+-- `CVar.val`'s equations fire on constructors only, so an opaque operand is left
+-- alone. Tagged here because a simp attribute cannot be used in its declaring file.
 attribute [circuitVal] CVar.val
 
 /-- The field encoding of a boolean — the single entry of `CircuitType Bool`'s
-`valueToFields`, named so the gadget laws can state their conclusions
-through it (the relation the faithfulness arc composes over). -/
+`valueToFields`. -/
 def bit [Zero F] [One F] (b : Bool) : F := if b then 1 else 0
 
 instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
@@ -120,10 +112,10 @@ instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
   varToFields b := #v[b.toCVar]
   fieldsToVar v := ⟨v[0]⟩
 
-/-- The encoding of `true` — one of the two equations a boolean case split leaves. -/
+/-- The encoding of `true`. -/
 @[circuitVal] theorem bit_true [Zero F] [One F] : (bit true : F) = 1 := rfl
 
-/-- The encoding of `false` — the other. -/
+/-- The encoding of `false`. -/
 @[circuitVal] theorem bit_false [Zero F] [One F] : (bit false : F) = 0 := rfl
 
 /-- The encoding is multiplicative: bits multiply as booleans conjoin. -/
@@ -131,8 +123,7 @@ instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
     (bit a : F) * bit b = bit (a && b) := by
   cases a <;> cases b <;> simp [bit]
 
-/-- The encoding is injective where `1 ≠ 0`: a field value encodes at most one bit —
-what lets a proof that named the bit it derived answer a caller who names its own. -/
+/-- The encoding is injective where `1 ≠ 0`: a field value encodes at most one bit. -/
 theorem bit_inj [Zero F] [One F] (h1 : (1 : F) ≠ 0) {a b : Bool}
     (h : (bit a : F) = bit b) : a = b := by
   cases a <;> cases b
@@ -185,7 +176,7 @@ instance : CircuitType F PUnit PUnit where
   varToFields _ := #v[]
   fieldsToVar _ := PUnit.unit
 
-/-! ## Round-trip laws (D9)
+/-! ## Round-trip laws
 
 The PS suite checks these by QuickCheck over a table of types; for the base instances
 they are theorems. The value→fields→value direction is the lawful one (fields→value is

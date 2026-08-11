@@ -14,18 +14,14 @@ run). Both allocate the public interface deterministically from variable `0`: in
 One deliberate deviation: PS spells two near-identical programs — `compile`'s omits the
 output back-fill, the solver's includes it. Since the builder ignores `assignOp`, ONE
 shared program (`compileBody`) serves both interpreters, and the laws below quantify over
-literally the same op tree — no cross-program reasoning. Non-ported (D8): the
+literally the same op tree — no cross-program reasoning. Not ported: the
 `debug`/label-birth machinery (`compile'`/`makeSolver'`), the advice row
 (`AdviceHandler`, the open tail `r`), and the `Checker` type (the `holds` parameter of
 `prove` plays that role).
 
-## The payoff (the fragment-interface seam)
-
-`solve_complete`: a successful solve yields an assignment that satisfies every compiled
-constraint AND decodes at the public slots to the given input and the returned output.
-This is the statement a verifier fragment exports — downstream, per-fragment soundness
-towers consume satisfying assignments through exactly this interface
-(`formal/docs/circuit-verifier-faithfulness.md`).
+The payoff theorem is `solve_complete`: a successful solve yields an assignment that
+satisfies every compiled constraint and decodes at the public slots to the given input
+and the returned output.
 -/
 
 namespace Snarky
@@ -155,7 +151,7 @@ private theorem extendPairs_range'_lookup :
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
-/-- **The fragment seam**: a successful `solve` produces an assignment that satisfies
+/-- A successful `solve` produces an assignment that satisfies
 every constraint `compile` emits, holds the input's encoding at the input slots, and
 holds the returned output's encoding at the output slots. Stated over the reference
 `Basic F` backend, whose `holds` is monotone (`Basic.holds_mono`).

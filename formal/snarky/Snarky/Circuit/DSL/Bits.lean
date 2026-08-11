@@ -5,42 +5,26 @@ import Snarky.Circuit.DSL.Field
 
 Port of `Snarky.Circuit.DSL.Bits` (packages/snarky/src/Snarky/Circuit/DSL/Bits.purs):
 LSB-first bit decomposition and recomposition. `unpack` witnesses `n` CHECKED booleans
-(each through `witness` at `Bool`, paying its `boolean` row) and pins their weighted sum
-`Σ 2ⁱ·bᵢ` to the operand with one `r1cs` row; `pack` is the pure weighted-sum
+(each through `witness` at `Bool`, paying its `boolean` row) and pins their weighted
+sum `Σ 2ⁱ·bᵢ` to the operand with one `r1cs` row; `pack` is the pure weighted-sum
 expression; the `Pure` variants are the value-level mirrors.
 
-These are the faithfulness arc's boundary engines
-(`formal/docs/circuit-verifier-faithfulness.md`): challenge bit-packs cross the field
-boundary through exactly these round trips.
+Name map: `unpack_` → `unpack`, `pack_` → `pack`; `unpackPure`/`packPure` keep their PS
+names. The bit width is an explicit `Nat` argument (PS reflects a type-level `n`).
 
-Name map (D7): `unpack_` → `unpack`, `pack_` → `pack`, `unpackPure`/`packPure` keep
-their PS names. The bit width is an explicit `Nat` argument (PS reflects a type-level
-`n`); the result is the same sized `Vector`.
-
-Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
+Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
 - PS reads the canonical integer representative through `PrimeField.toBigInt`; the port
-  has no curve-class layer, so the ONE fragment these gadgets need lands here as
-  `Snarky.ToNat` — the canonical `Nat` representative. Its faithfulness (`(toNat x : F)
-  = x`) and width (`toNat x < 2 ^ n`) enter the laws as hypotheses, dischargeable at any
-  concrete prime field (`ZMod.val` with `ZMod.natCast_val` and the modulus bound); the
-  `FieldSizeInBits` class the plan defers to `SizedF` (§6) will build on it.
+  has no curve-class layer, so the one fragment these gadgets need lands here as
+  `Snarky.ToNat`. Its faithfulness (`(toNat x : F) = x`) and width (`toNat x < 2 ^ n`)
+  enter the laws as hypotheses, dischargeable at any concrete prime field (`ZMod.val`).
 - The weighted-sum folds carry their index explicitly (`packAux`), mirroring PS's
   `mapWithIndex` fold — same expression tree, LSB first.
 
-D9 survey (the `snarky-test-utils` Bits spec), in the D12 form, laws beside the
-gadgets: the pure round trip `packPure_unpackPure` closes the spec's round-trip row at
-the value level under the `ToNat` faithfulness hypotheses; `pack_eval` is the pure
-gadget's evaluation law (like `sum_eval`); `unpack_spec` pins any satisfying
-assignment's bits — boolean, and summing to the operand (their CANONICITY additionally
-needs the standing characteristic hypothesis, recorded with the other sum-based
-obligations); `unpack_complete_spec` runs the honest prover through the `ToNat`
-witness.
-
-Public results: `pack_eval`, `pack_val`, `packPure_unpackPure`, and the triple pair
-`unpack_spec`/`unpack_complete_spec` — `roots.txt` entries. Both triples walk the
-gadget's do-block: the vector loop rules and the `witnessBool`/`addConstraint`
-primitive specs (`Backend/WP`) do the iteration, so no interpreter induction lives
-here; `unpackWit`/`packAux` are named internals for the laws.
+`unpack_spec` pins any satisfying assignment's bits: boolean, and summing to the
+operand (their canonicity additionally needs a characteristic hypothesis and is not
+stated). `unpack_complete_spec` runs the honest prover through the `ToNat` witness.
+Both walk the gadget's do-block through the vector loop rules;
+`unpackWit`/`packAux` are named internals for the laws.
 -/
 
 namespace Snarky
@@ -101,7 +85,7 @@ def packPureAux [Semiring F] : List Bool → Nat → F → F
 def packPure [Semiring F] {n : Nat} (bs : Vector Bool n) : F :=
   packPureAux bs.toList 0 0
 
-/-! ## The pure laws (D12) -/
+/-! ## The pure laws -/
 
 /-- The circuit fold evaluates to the value fold. -/
 private theorem packAux_eval {F : Type u} [Semiring F] [DecidableEq F]
@@ -129,7 +113,7 @@ private theorem packAux_eval {F : Type u} [Semiring F] [DecidableEq F]
       have hs := CVar.eval_scale_ hb ((2 : F) ^ i)
       simp only [CVar.eval, hacc, hs]
 
-/-- **`pack` evaluation** (D12): the pure gadget computes the weighted bit-sum — if each
+/-- `pack` evaluation: the pure gadget computes the weighted bit-sum — if each
 bit variable evaluates to its bit's encoding, `pack` evaluates to `packPure`. -/
 theorem pack_eval {F : Type u} [Semiring F] [DecidableEq F] {n : Nat}
     {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {env : Assignments F}
@@ -185,7 +169,7 @@ private theorem natHorner_testBit :
     cases htb : m.testBit 0 <;> rw [htb] at hbit <;> simp [Nat.bit] at hbit <;>
       simp <;> omega
 
-/-- **The pure round trip** (D12): packing the unpacking is the identity, given the
+/-- The pure round trip: packing the unpacking is the identity, given the
 representative is faithful (`(toNat x : F) = x`) and fits in `n` bits — the boundary
 library's decode-encode law. -/
 theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] {n : Nat} {x : F}
@@ -195,7 +179,7 @@ theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] {n : Nat} {x
     natHorner_testBit n _ hlt]
   simpa using hval
 
-/-! ## The circuit laws (D12) -/
+/-! ## The circuit laws -/
 
 /-- `pack` reads as the pure packing — `pack_eval` carried across the bridge to the
 total reading. -/
@@ -211,11 +195,9 @@ theorem pack_val {F : Type} [Semiring F] [DecidableEq F] {n : Nat}
   injection this
 
 open Std.Do in
-/-- **`unpack` soundness triple**: the emitted rows force the results to be bits whose
-weighted sum is the operand's reading. (Their CANONICITY — that they are THE binary
-digits — additionally needs the standing characteristic hypothesis, with the other
-sum-based obligations.) Generic over any lawful backend; the first gadget whose result
-is a bundle rather than a single variable, which the spec shape takes in stride. -/
+/-- The emitted rows force the results to be bits whose weighted sum is the
+operand's reading. Their canonicity — that they are the binary digits — additionally
+needs a characteristic hypothesis and is not stated. -/
 @[spec] theorem unpack_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (v : FVar F) (n : Nat)
@@ -256,7 +238,7 @@ is a bundle rather than a single variable, which the spec shape takes in stride.
     simpa [circuitVal] using hrow'
 
 open Std.Do in
-/-- **`unpack` completeness triple** (prover reading): on a faithful representative
+/-- On a faithful representative
 that fits in `n` bits, the honest run succeeds and the results are the operand's
 binary digits. -/
 @[spec] theorem unpack_complete_spec {F : Type} [Field F] [DecidableEq F] [ToNat F]
