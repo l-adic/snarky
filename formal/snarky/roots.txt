@@ -249,7 +249,6 @@ Snarky.Example.mulCircuit
 Snarky.Example.eqCircuit
 Snarky.Example.constEq
 Snarky.Example.constMul
-Snarky.Example.bitCircuit
 Snarky.Example.proverValue
 Snarky.Example.proverOk
 Snarky.Example.instFactPrimeOfNatNat_snarky
