@@ -36,18 +36,17 @@ Deviations from the PS original (per `formal/docs/snarky-ps-alignment.md`):
   signs downstream.
 
 D9 survey (the `snarky-test-utils` Assert spec), in the D12 form, laws beside their
-gadgets: the `assertNonZero`/`assertEqual`/`assertNotEqual`/`assertSquare` rows land as
-the `_sound`/`_complete` pairs below (`assert` gets its pair too — it is the workhorse
-that pins a verifier's output bit). The sum-based `assertAny`/`assertAll`/
-`assertExactlyOne` and `allBools`'s three-plus case share `any`/`all`'s standing
-characteristic obligation (a sum of `n` bits detects `n` only below the characteristic)
-and defer with it. Assertions allocate nothing (except `assertNonZero`'s inverse
-witness), so their completeness laws are exact run equations, not existentials.
+gadgets: every row is a triple pair — `*_spec` (soundness, generic over any lawful
+backend) and `*_complete_spec` (prover reading), all `@[spec]`. The sum-based
+`assertAny`/`assertAll`/`assertExactlyOne` and `allBools` carry the cast-injectivity
+hypothesis of `DSL/Boolean`'s sum-based section wherever a count must be detected
+below the characteristic; the direction that only needs a count to CAST — a zero
+count for `assertAny`'s soundness, a full or unit count for `assertAll`'s and
+`assertExactlyOne`'s completeness — is hypothesis-free.
 
-Public results: the triple laws, all `@[spec]` — `assertEqual`, `assertNonZero`,
-`assertNotEqual`, `assertSquare`, and `assert`, each as `*_spec` (soundness, generic
-over any lawful backend) and `*_complete_spec` (prover reading) — all `roots.txt`
-entries.
+Public results: the triple pairs for `assertEqual`, `assertNonZero`, `assertNotEqual`,
+`assertSquare`, `assert`, `assertAny`, `assertAll`, `assertExactlyOne`, and
+`allBools` — all `roots.txt` entries.
 -/
 
 namespace Snarky
@@ -324,11 +323,10 @@ inverse's product row. Generic over any lawful backend. -/
     · intro _
       exact hpre PUnit.unit _ h0
   all_goals
-    (intro hsat
-     rw [build_bind] at hsat
-     have h := LawfulBasicSystem.holds_r1cs V _ _ _
-       (hsat _ (List.mem_append_left _ (List.mem_cons_self ..)))
-     exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one (by simpa using h)))
+    (simp only [inv]
+     mvcgen
+     intro r _nv' hr _
+     exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one hr))
 
 open Std.Do in
 /-- **`assertNonZero` completeness** (D12, prover reading): the run succeeds on a
@@ -464,5 +462,306 @@ reads `1`. -/
   injection hb with hb
   rw [← ha, ← hb]
   exact hone bv hv
+
+/-! ## The sum-based combinators (`allBools`, `assertAny`, `assertAll`,
+`assertExactlyOne`)
+
+The three-plus cases test a bit-sum, so the laws carry the cast-injectivity hypothesis
+of `DSL/Boolean`'s sum-based section (`assertAny`'s soundness needs none: a zero count
+casts to zero in any semiring). -/
+
+open Std.Do in
+/-- **`allBools` soundness triple**: on bit operands the result is the list's
+conjunction, under cast-injectivity up to the length. -/
+@[spec] theorem allBools_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : BoolVar F) => ∀ bl : List Bool, ReadBits V bs bl →
+        (↑r : CVar F).val V = bit (bl.all id)) Q⦄
+    allBools (c := c) bs
+    ⦃Q⦄ := by
+  match bs, hchar with
+  | [], _ =>
+    simp only [allBools]
+    intro s hpre _
+    refine hpre true_ s.nv (fun bl hbl => ?_)
+    cases hbl
+    rfl
+  | [a], _ =>
+    simp only [allBools]
+    intro s hpre _
+    refine hpre a s.nv (fun bl hbl => ?_)
+    obtain - | ⟨hb, hnil⟩ := hbl
+    cases hnil
+    simpa using hb
+  | [a, b], _ =>
+    simp only [allBools]
+    refine fun s hpre => and_spec a b Q s (fun r nv' hr => ?_)
+    refine hpre r nv' (fun bl hbl => ?_)
+    obtain - | ⟨ha', htl⟩ := hbl
+    obtain - | ⟨hb', hnil⟩ := htl
+    cases hnil
+    simpa using hr _ _ ha' hb'
+  | x₁ :: x₂ :: x₃ :: t, hchar =>
+    simp only [allBools]
+    set bs := x₁ :: x₂ :: x₃ :: t with hbs
+    refine fun s hpre => equals_spec _ _ Q s (fun r nv' hr => ?_)
+    refine hpre r nv' (fun bl hbl => ?_)
+    have hsum := sum_bits_val (V := s.V) hbl
+    have hlen := forall₂_length hbl
+    have hcount : bl.count true ≤ bs.length + 1 := by
+      have := List.count_le_length (a := true) (l := bl)
+      omega
+    rw [hr, hsum]
+    show (if (CVar.const (bs.length : F)).val s.V = (bl.count true : F) then 1 else 0) = _
+    by_cases hall : bl.all id = true
+    · rw [hall]
+      have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
+      simp only [CVar.val]
+      rw [if_pos (by rw [hc, hlen]), bit_true]
+    · have hall' : bl.all id = false := by revert hall; cases bl.all id <;> simp
+      rw [hall']
+      have hc : bl.count true ≠ bl.length := fun hcc =>
+        absurd (count_true_eq_length.mp hcc) (by rw [hall']; simp)
+      have hne : ¬((bs.length : F) = (bl.count true : F)) := by
+        intro hcast
+        have := hchar _ _ (by omega) hcount hcast
+        omega
+      simp only [CVar.val]
+      rw [if_neg hne, bit_false]
+
+open Std.Do in
+/-- **`allBools` completeness triple** (prover reading): the run succeeds on any
+evaluable operands, and where they read as bits the result is the conjunction. -/
+@[spec] theorem allBools_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => ∀ b ∈ bs, (((b : BoolVar F) : CVar F).eval env).isOk)
+        (fun env (r : BoolVar F) env' => ∀ bl : List Bool, EvalBits env bs bl →
+          (↑r : CVar F).eval env' = .ok (bit (bl.all id))) Q⦄
+    allBools (c := ProverC F) bs
+    ⦃Q⦄ := by
+  match bs, hchar with
+  | [], _ =>
+    simp only [allBools]
+    intro st hpre
+    obtain ⟨-, hk⟩ := hpre
+    exact fun _ => hk true_ st (fun bl hbl => by cases hbl; rfl)
+      (Assignments.Le.refl st.env)
+  | [a], _ =>
+    simp only [allBools]
+    intro st hpre
+    obtain ⟨-, hk⟩ := hpre
+    refine fun _ => hk a st (fun bl hbl => ?_) (Assignments.Le.refl st.env)
+    obtain - | ⟨hb, hnil⟩ := hbl
+    cases hnil
+    simpa using hb
+  | [a, b], _ =>
+    simp only [allBools]
+    intro st hpre
+    obtain ⟨hok, hk⟩ := hpre
+    refine and_complete_spec a b Q st
+      ⟨⟨hok a (by simp), hok b (by simp)⟩, fun r st' hr hle => ?_⟩
+    refine hk r st' (fun bl hbl => ?_) hle
+    obtain - | ⟨ha', htl⟩ := hbl
+    obtain - | ⟨hb', hnil⟩ := htl
+    cases hnil
+    simpa using hr _ _ ha' hb'
+  | x₁ :: x₂ :: x₃ :: t, hchar =>
+    simp only [allBools]
+    set bs := x₁ :: x₂ :: x₃ :: t with hbs
+    intro st hpre
+    obtain ⟨hok, hk⟩ := hpre
+    refine equals_complete_spec _ _ Q st
+      ⟨⟨by rfl, sum_evalOk hok⟩, fun r st' hr hle => ?_⟩
+    refine hk r st' (fun bl hbl => ?_) hle
+    have hsum := sum_bits_eval hbl
+    have hlen := forall₂_length hbl
+    have hcount : bl.count true ≤ bs.length + 1 := by
+      have := List.count_le_length (a := true) (l := bl)
+      omega
+    have hr' := hr _ _ (by rfl : (CVar.const (bs.length : F)).eval st.env
+      = .ok (bs.length : F)) hsum
+    rw [hr']
+    by_cases hall : bl.all id = true
+    · rw [hall]
+      have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
+      rw [if_pos (by rw [hc, hlen]), bit_true]
+    · have hall' : bl.all id = false := by revert hall; cases bl.all id <;> simp
+      rw [hall']
+      have hc : bl.count true ≠ bl.length := fun hcc =>
+        absurd (count_true_eq_length.mp hcc) (by rw [hall']; simp)
+      have hne : ¬((bs.length : F) = (bl.count true : F)) := by
+        intro hcast
+        have := hchar _ _ (by omega) hcount hcast
+        omega
+      rw [if_neg hne, bit_false]
+
+open Std.Do in
+/-- **`assertAny` soundness triple**: asserts some bit is set — no characteristic
+hypothesis, since a zero count casts to zero in any semiring. -/
+@[spec] theorem assertAny_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
+        bl.any id = true) Q⦄
+    assertAny (c := c) bs
+    ⦃Q⦄ := by
+  simp only [assertAny]
+  refine fun s hpre => assertNonZero_spec _ Q s (fun u nv' hne => ?_)
+  dsimp only at hne
+  refine hpre u nv' (fun bl hbl => ?_)
+  have hsum := sum_bits_val (V := s.V) hbl
+  rw [hsum] at hne
+  by_contra hany
+  have hany' : bl.any id = false := by revert hany; cases bl.any id <;> simp
+  rw [count_true_eq_zero.mpr hany'] at hne
+  exact hne (by simp)
+
+open Std.Do in
+/-- **`assertAny` completeness triple** (prover reading): on bit operands with some
+bit set the run succeeds — cast-injectivity makes the nonzero count a nonzero sum. -/
+@[spec] theorem assertAny_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
+        ∀ bl : List Bool, EvalBits env bs bl → bl.any id = true)
+        (fun _ _ _ => True) Q⦄
+    assertAny (c := ProverC F) bs
+    ⦃Q⦄ := by
+  simp only [assertAny]
+  intro st hpre
+  obtain ⟨⟨hbits, hany⟩, hk⟩ := hpre
+  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
+  have hsum := sum_bits_eval hbl
+  have hlen := forall₂_length hbl
+  have hcount : bl.count true ≤ bs.length + 1 := by
+    have := List.count_le_length (a := true) (l := bl)
+    omega
+  have hne : bl.count true ≠ 0 := by
+    intro h0
+    have := hany bl hbl
+    rw [count_true_eq_zero.mp h0] at this
+    cases this
+  refine assertNonZero_complete_spec _ Q st
+    ⟨⟨by rw [hsum]; rfl, fun sv hsv => ?_⟩, hk⟩
+  rw [hsum] at hsv
+  injection hsv with hsv
+  subst hsv
+  intro hcast
+  exact hne (hchar _ 0 hcount (by omega) (by simpa using hcast))
+
+open Std.Do in
+/-- **`assertAll` soundness triple**: asserts every bit is set, under cast-injectivity
+up to the length. -/
+@[spec] theorem assertAll_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
+        bl.all id = true) Q⦄
+    assertAll (c := c) bs
+    ⦃Q⦄ := by
+  simp only [assertAll]
+  refine fun s hpre => assertEqual_spec _ _ Q s (fun u nv' heq => ?_)
+  dsimp only at heq
+  refine hpre u nv' (fun bl hbl => ?_)
+  have hsum := sum_bits_val (V := s.V) hbl
+  have hlen := forall₂_length hbl
+  have hcount : bl.count true ≤ bs.length + 1 := by
+    have := List.count_le_length (a := true) (l := bl)
+    omega
+  rw [hsum] at heq
+  have hconst : (CVar.const (bs.length : F)).val s.V = ((bs.length : Nat) : F) := rfl
+  rw [hconst] at heq
+  have := hchar _ _ hcount (by omega) heq
+  exact count_true_eq_length.mp (by omega)
+
+open Std.Do in
+/-- **`assertAll` completeness triple** (prover reading): on bit operands, all set,
+the run succeeds — no characteristic hypothesis, the full count casts to the length
+in any semiring. -/
+@[spec] theorem assertAll_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
+        ∀ bl : List Bool, EvalBits env bs bl → bl.all id = true)
+        (fun _ _ _ => True) Q⦄
+    assertAll (c := ProverC F) bs
+    ⦃Q⦄ := by
+  simp only [assertAll]
+  intro st hpre
+  obtain ⟨⟨hbits, hall⟩, hk⟩ := hpre
+  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
+  have hsum := sum_bits_eval hbl
+  have hlen := forall₂_length hbl
+  have hc : bl.count true = bl.length := count_true_eq_length.mpr (hall bl hbl)
+  refine assertEqual_complete_spec _ _ Q st
+    ⟨⟨by rw [hsum]; rfl, by rfl, fun xv yv hx hy => ?_⟩, hk⟩
+  rw [hsum] at hx
+  injection hx with hx
+  injection hy with hy
+  subst hx
+  subst hy
+  rw [hc, hlen]
+
+open Std.Do in
+/-- **`assertExactlyOne` soundness triple**: asserts a one-hot list — the count is one,
+under cast-injectivity up to the length plus one. -/
+@[spec] theorem assertExactlyOne_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (bs : List (BoolVar F))
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
+    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
+        bl.count true = 1) Q⦄
+    assertExactlyOne (c := c) bs
+    ⦃Q⦄ := by
+  simp only [assertExactlyOne]
+  refine fun s hpre => assertEqual_spec _ _ Q s (fun u nv' heq => ?_)
+  dsimp only at heq
+  refine hpre u nv' (fun bl hbl => ?_)
+  have hsum := sum_bits_val (V := s.V) hbl
+  have hlen := forall₂_length hbl
+  have hcount : bl.count true ≤ bs.length + 1 := by
+    have := List.count_le_length (a := true) (l := bl)
+    omega
+  rw [hsum] at heq
+  have hconst : (CVar.const (1 : F)).val s.V = ((1 : Nat) : F) := by
+    simp [CVar.val]
+  rw [hconst] at heq
+  exact hchar _ _ hcount (by omega) heq
+
+open Std.Do in
+/-- **`assertExactlyOne` completeness triple** (prover reading): on a one-hot bit list
+the run succeeds — the unit count casts to one in any semiring. -/
+@[spec] theorem assertExactlyOne_complete_spec {F : Type} [Field F] [DecidableEq F]
+    (bs : List (BoolVar F))
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
+        ∀ bl : List Bool, EvalBits env bs bl → bl.count true = 1)
+        (fun _ _ _ => True) Q⦄
+    assertExactlyOne (c := ProverC F) bs
+    ⦃Q⦄ := by
+  simp only [assertExactlyOne]
+  intro st hpre
+  obtain ⟨⟨hbits, hone⟩, hk⟩ := hpre
+  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
+  have hsum := sum_bits_eval hbl
+  have hc : bl.count true = 1 := hone bl hbl
+  refine assertEqual_complete_spec _ _ Q st
+    ⟨⟨by rw [hsum]; rfl, by rfl, fun xv yv hx hy => ?_⟩, hk⟩
+  rw [hsum] at hx
+  injection hx with hx
+  injection hy with hy
+  subst hx
+  subst hy
+  rw [hc]
+  simp
 
 end Snarky

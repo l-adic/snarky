@@ -113,6 +113,24 @@ Snarky.assertSquare_spec
 Snarky.assertSquare_complete_spec
 Snarky.assert_spec
 Snarky.assert_complete_spec
+
+-- The sum-based family (DSL/{Boolean,Assert}): the bit-list relations the laws
+-- quantify over, and the triple pairs under the cast-injectivity hypothesis.
+Snarky.ReadBits
+Snarky.EvalBits
+Snarky.invCore_spec
+Snarky.any_spec
+Snarky.any_complete_spec
+Snarky.all_spec
+Snarky.all_complete_spec
+Snarky.allBools_spec
+Snarky.allBools_complete_spec
+Snarky.assertAny_spec
+Snarky.assertAny_complete_spec
+Snarky.assertAll_spec
+Snarky.assertAll_complete_spec
+Snarky.assertExactlyOne_spec
+Snarky.assertExactlyOne_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
 Snarky.unpack_spec

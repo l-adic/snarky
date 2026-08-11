@@ -537,6 +537,20 @@ private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
   exact prove_witnessCore hw hfresh hch
 
 open Std.Do in
+/-- **`invCore` soundness triple**: the witnessing row pins the PRODUCT — `x · r = 1` —
+strictly more than `inv`'s inverse reading, whose `0⁻¹ = 0` totalisation erases the
+nonzero fact. `assertNonZero` composes through this one. -/
+@[spec] theorem invCore_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V r => x.val V * r.val V = 1) Q⦄
+    invCore (c := c) x
+    ⦃Q⦄ := by
+  intro s hpre hsat
+  exact hpre (.var s.nv) _
+    (LawfulBasicSystem.holds_r1cs s.V _ _ _ (hsat _ (List.mem_cons_self ..)))
+
+open Std.Do in
 /-- **`inv` soundness triple**: `inv x` computes the operand's field inverse — the
 witnessing row forces it; the constant branch is total via `0⁻¹ = 0`. Generic over
 any lawful backend. -/
