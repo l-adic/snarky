@@ -131,6 +131,16 @@ instance [Zero F] [One F] [DecidableEq F] : CircuitType F Bool (BoolVar F) where
     (bit a : F) * bit b = bit (a && b) := by
   cases a <;> cases b <;> simp [bit]
 
+/-- The encoding is injective where `1 ≠ 0`: a field value encodes at most one bit —
+what lets a proof that named the bit it derived answer a caller who names its own. -/
+theorem bit_inj [Zero F] [One F] (h1 : (1 : F) ≠ 0) {a b : Bool}
+    (h : (bit a : F) = bit b) : a = b := by
+  cases a <;> cases b
+  · rfl
+  · exact absurd h.symm h1
+  · exact absurd h h1
+  · rfl
+
 /-- A field value that encodes a bit is `0` or `1`. -/
 theorem bit_cases {av : F} {ab : Bool} [Zero F] [One F]
     (h : av = bit ab) : av = 0 ∨ av = 1 := by

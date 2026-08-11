@@ -241,26 +241,29 @@ bit. Generic over any lawful backend. -/
   simp only [circuitVal, hr, ha, hb]
 
 open Std.Do in
-/-- **`and` completeness triple** (prover reading): on bit operands the run succeeds
-and the result reads as the conjunction bit in the final table. -/
+/-- **`and` completeness triple** (prover reading): the run succeeds on any operands that
+evaluate — `and` is a multiplication, which cannot fail — and where they read as bits the
+result reads as the conjunction bit in the final table. The bits are quantified in the
+post rather than parameters of the spec: a parameter appearing only in the assertion
+cannot be instantiated by unification at a call site. -/
 @[spec] theorem and_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
-    [DecidableEq F] (a b : BoolVar F) (ab bb : Bool)
+    [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.and (c := Basic F) a b)
       (ProverSpec
-        (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
-          (↑b : CVar F).eval env = .ok (bit bb))
-        (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
+        (fun env => ((↑a : CVar F).eval env).isOk ∧ ((↑b : CVar F).eval env).isOk)
+        (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
+          (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
+            (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q) Q := by
   intro st hpre
-  obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
   simp only [Snarky.and, ProverM.retag_bind, WPMonad.wp_bind,
     PredTrans.apply_Bind_bind]
-  refine mul_complete_spec ↑a ↑b _ st
-    ⟨⟨by rw [ha]; rfl, by rw [hb]; rfl⟩, fun r st' hr hle => ?_⟩
+  refine mul_complete_spec ↑a ↑b _ st ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
   simp only [wp, PredTrans.apply, prove]
   intro hf
-  refine hk (.unchecked r) ⟨st'.nv, st'.env, hf⟩ ?_ hle
+  refine hk (.unchecked r) ⟨st'.nv, st'.env, hf⟩ (fun ab bb ha hb => ?_) hle
   show r.eval st'.env = _
   rw [hr _ _ ha hb, bit_mul]
 
@@ -289,28 +292,39 @@ bits (De Morgan). Generic over any lawful backend. -/
   cases ab <;> cases bb <;> simp_all [Snarky.not, circuitVal]
 
 open Std.Do in
-/-- **`or` completeness triple** (prover reading): on bit operands the run succeeds
-and the result reads as the disjunction bit in the final table. -/
+/-- **`or` completeness triple** (prover reading): as for `and`, whose spec it composes
+through De Morgan — the run succeeds on any operands that evaluate, and where they read
+as bits the result reads as the disjunction bit. -/
 @[spec] theorem or_complete_spec {F : Type} [CommRing F] [NoZeroDivisors F]
-    [DecidableEq F] (a b : BoolVar F) (ab bb : Bool)
+    [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.or (c := Basic F) a b)
       (ProverSpec
-        (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
-          (↑b : CVar F).eval env = .ok (bit bb))
-        (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
+        (fun env => ((↑a : CVar F).eval env).isOk ∧ ((↑b : CVar F).eval env).isOk)
+        (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
+          (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
+            (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q) Q := by
   intro st hpre
-  obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
+  obtain ⟨av, ha⟩ := CVar.evalOk hoka
+  obtain ⟨bv, hb⟩ := CVar.evalOk hokb
+  have hnotOk : ∀ (x : BoolVar F) (xv : F), (↑x : CVar F).eval st.env = .ok xv →
+      ((↑(Snarky.not x) : CVar F).eval st.env).isOk = true := by
+    intro x xv hx
+    show ((CVar.sub_ (.const 1) (↑x : CVar F)).eval st.env).isOk = true
+    rw [CVar.eval_sub_ rfl hx]
+    rfl
   simp only [Snarky.or, ProverM.retag_bind, WPMonad.wp_bind,
     PredTrans.apply_Bind_bind]
-  refine and_complete_spec (Snarky.not a) (Snarky.not b) (!ab) (!bb) _ st
-    ⟨⟨not_eval ha, not_eval hb⟩, fun r st' hr hle => ?_⟩
+  refine and_complete_spec (Snarky.not a) (Snarky.not b) _ st
+    ⟨⟨hnotOk a av ha, hnotOk b bv hb⟩, fun r st' hr hle => ?_⟩
   simp only [wp, PredTrans.apply, prove]
   intro hf
-  refine hk (Snarky.not r) ⟨st'.nv, st'.env, hf⟩ ?_ hle
+  refine hk (Snarky.not r) ⟨st'.nv, st'.env, hf⟩ (fun ab bb ha' hb' => ?_) hle
+  have hr' := hr (!ab) (!bb) (not_eval ha') (not_eval hb')
   show (CVar.sub_ ((.const 1 : CVar F)) ↑r).eval st'.env = _
-  rw [CVar.eval_sub_ rfl hr]
+  rw [CVar.eval_sub_ rfl hr']
   cases ab <;> cases bb <;> simp [bit]
 
 /-! ### `xor` (Circuit/DSL/Boolean)
@@ -540,19 +554,33 @@ Generic over any lawful backend. -/
      exact xor_pin h)
 
 open Std.Do in
-/-- **`xor` completeness triple** (prover reading): on bit operands the run succeeds
-and the result reads as the xor bit in the final table. -/
+/-- **`xor` completeness triple** (prover reading): bit operands are a genuine
+precondition here — the witnessed row `2a · b = a + b − r` rejects a non-bit operand — so
+the spec asks for `ReadsBit`, and the result reads as the xor bit in the final table. -/
 @[spec] theorem xor_complete_spec {F : Type} [Field F] [DecidableEq F]
-    (a b : BoolVar F) (ab bb : Bool)
+    (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (Snarky.xor (c := Basic F) a b)
       (ProverSpec
-        (fun env => (↑a : CVar F).eval env = .ok (bit ab) ∧
-          (↑b : CVar F).eval env = .ok (bit bb))
-        (fun _ (r : BoolVar F) env' => (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
+        (fun env => ReadsBit (↑a : CVar F) env ∧ ReadsBit (↑b : CVar F) env)
+        (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
+          (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
+            (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q) Q := by
   intro st hpre
-  obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
+  obtain ⟨⟨hbita, hbitb⟩, hk⟩ := hpre
+  obtain ⟨ab, ha⟩ := hbita.exists_bit
+  obtain ⟨bb, hb⟩ := hbitb.exists_bit
+  have hval : ∀ {r : BoolVar F} {env' : Assignments F},
+      (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb)) →
+      ∀ ab' bb' : Bool, (↑a : CVar F).eval st.env = .ok (bit ab') →
+        (↑b : CVar F).eval st.env = .ok (bit bb') →
+        (↑r : CVar F).eval env' = .ok (bit (ab' ^^ bb')) := by
+    intro r env' heval ab' bb' ha' hb'
+    rw [ha] at ha'; rw [hb] at hb'
+    injection ha' with ha'; injection hb' with hb'
+    rw [← bit_inj one_ne_zero ha', ← bit_inj one_ne_zero hb']
+    exact heval
   simp only [wp, PredTrans.apply, Snarky.xor]
   cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F)
   case const.const av bv =>
@@ -560,23 +588,23 @@ and the result reads as the xor bit in the final table. -/
     have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
     subst hav; subst hbv
     intro hf
-    refine hk _ ⟨_, _, hf⟩ ?_ (Assignments.Le.refl st.env)
+    refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
     show Except.ok _ = _
     cases ab <;> cases bb <;> simp [bit]
   case const.var av v | const.add av x y | const.scale av k x =>
     obtain ⟨o, hrun, heval, -⟩ := xor_complete_constA hA ha hb st.fresh
     rw [hrun]
     intro hf
-    exact hk _ ⟨_, _, hf⟩ heval (prove_assignments_le hrun)
+    exact hk _ ⟨_, _, hf⟩ (hval heval) (prove_assignments_le hrun)
   case var.const v bv | add.const x y bv | scale.const k x bv =>
     obtain ⟨o, hrun, heval, -⟩ := xor_complete_constB hB ha hb st.fresh
     rw [hrun]
     intro hf
-    exact hk _ ⟨_, _, hf⟩ heval (prove_assignments_le hrun)
+    exact hk _ ⟨_, _, hf⟩ (hval heval) (prove_assignments_le hrun)
   all_goals
     (rw [xorCore_run ha hb st.fresh]
      intro hf
-     refine hk _ ⟨_, _, hf⟩ ?_ (Assignments.le_extend_self st.fresh _)
+     refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
      show (CVar.var st.nv).eval _ = _
      simp [CVar.eval, Assignments.extend])
 
@@ -715,29 +743,34 @@ backend. -/
          cases bb <;> simp [bit])
 
 open Std.Do in
-/-- **`select` completeness triple** (prover reading): on a bit selector the run
-succeeds and the result reads as the chosen branch in the final table. -/
+/-- **`select` completeness triple** (prover reading): a bit selector is a genuine
+precondition — `selectWit` branches on `bv = 1` while the row `b · (t − e) = r − e` holds
+the selector's actual value — so the spec asks for `ReadsBit`, and the result reads as
+the chosen branch in the final table. -/
 @[spec] theorem select_complete_spec {F : Type} [Field F] [DecidableEq F]
-    (b : BoolVar F) (t e : FVar F) (bb : Bool)
+    (b : BoolVar F) (t e : FVar F)
     (Q : PostCond (FVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     Triple (m := ProverM F) (select (c := Basic F) b t e)
       (ProverSpec
-        (fun env => (↑b : CVar F).eval env = .ok (bit bb) ∧
-          (t.eval env).isOk ∧ (e.eval env).isOk)
-        (fun env r env' => ∀ tv ev, t.eval env = .ok tv → e.eval env = .ok ev →
+        (fun env => ReadsBit (↑b : CVar F) env ∧ (t.eval env).isOk ∧ (e.eval env).isOk)
+        (fun env r env' => ∀ (bb : Bool) tv ev, (↑b : CVar F).eval env = .ok (bit bb) →
+          t.eval env = .ok tv → e.eval env = .ok ev →
           r.eval env' = .ok (if bb then tv else ev)) Q) Q := by
   intro st hpre
-  obtain ⟨⟨hb, hokt, hoke⟩, hk⟩ := hpre
+  obtain ⟨⟨hbitb, hokt, hoke⟩, hk⟩ := hpre
+  obtain ⟨bb, hb⟩ := hbitb.exists_bit
   obtain ⟨tv, ht⟩ := CVar.evalOk hokt
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
   have hval : ∀ {r : FVar F} {env' : Assignments F},
       r.eval env' = .ok (if bb then tv else ev) →
-      ∀ t' e', t.eval st.env = .ok t' → e.eval st.env = .ok e' →
-        r.eval env' = .ok (if bb then t' else e') := by
-    intro r env' heval t' e' ht' he'
-    rw [ht] at ht'; rw [he] at he'
-    injection ht' with ht'; injection he' with he'
+      ∀ (b' : Bool) t' e', (↑b : CVar F).eval st.env = .ok (bit b') →
+        t.eval st.env = .ok t' → e.eval st.env = .ok e' →
+        r.eval env' = .ok (if b' then t' else e') := by
+    intro r env' heval b' t' e' hb' ht' he'
+    rw [hb] at hb'; rw [ht] at ht'; rw [he] at he'
+    injection hb' with hb'; injection ht' with ht'; injection he' with he'
+    rw [← bit_inj one_ne_zero hb']
     exact ht' ▸ he' ▸ heval
   simp only [wp, PredTrans.apply, select]
   cases hB : (↑b : CVar F)

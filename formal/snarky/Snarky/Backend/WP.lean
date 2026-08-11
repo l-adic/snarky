@@ -196,10 +196,17 @@ pattern: same programs, a type-level tag selecting the second structure). The
 completeness laws are stated against the reference backend, whose prover checks
 each constraint as it is added. -/
 
-/-- `CircuitM` at the reference backend, tagged for the `prove`-interpretation.
-Programs enter by type ascription — `(assertEqual x y : ProverM F PUnit)` — which
-keeps their head symbols visible to `mvcgen`'s spec lookup (a wrapper function
-would hide them). -/
+/-- `CircuitM` at the reference backend, tagged for the `prove`-interpretation. A bare
+synonym rather than a wrapper: a `mk` function would hide a gadget's head symbol from
+`mvcgen`'s spec lookup.
+
+Being a synonym is also why the prover-reading specs below are stated as
+`Triple (m := ProverM F) …` and not with the `⦃P⦄ x ⦃Q⦄` sugar. The sugar IS `Triple`,
+with the monad implicit and taken from the program's own type — which stays
+`CircuitM F (Basic F) α`, so it resolves `CircuitM.instWP`, the SOUNDNESS instance, and
+the resulting statement is rejected by the kernel. Neither a type ascription on the
+program nor one on the assertion changes that: an ascription is erased at elaboration.
+Only the named argument pins the carrier. -/
 def ProverM (F : Type) (α : Type) := CircuitM F (Basic F) α
 
 instance : Monad (ProverM F) := inferInstanceAs (Monad (CircuitM F (Basic F)))
@@ -280,6 +287,24 @@ theorem CVar.evalOk [Add F] [Mul F] {x : CVar F} {env : Assignments F}
   cases hx : x.eval env with
   | error e => rw [hx] at h; cases h
   | ok v => exact ⟨v, rfl⟩
+
+/-- The prover-side reading of "this operand is a bit": it evaluates, and its value is
+`0` or `1`. A gadget whose honest run depends on bit operands — `xor`, `select` — asks
+for this in its `pre`. The value is universally quantified rather than existential, for
+the reason `ProverSpec` records: an existential leaks an uninstantiable metavariable at
+call sites. -/
+def ReadsBit [Add F] [Mul F] [Zero F] [One F] (x : CVar F) (env : Assignments F) : Prop :=
+  (x.eval env).isOk ∧ ∀ v, x.eval env = .ok v → v = 0 ∨ v = 1
+
+/-- Name the bit an operand reads as — the form a proof consumes, recovered inside the
+proof rather than quantified in the statement. -/
+theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
+    {env : Assignments F} (h : ReadsBit x env) : ∃ b : Bool, x.eval env = .ok (bit b) := by
+  obtain ⟨hok, hbit⟩ := h
+  obtain ⟨v, hv⟩ := CVar.evalOk hok
+  rcases hbit v hv with h0 | h1
+  · exact ⟨false, by rw [hv, h0]; rfl⟩
+  · exact ⟨true, by rw [hv, h1]; rfl⟩
 
 /-! ## Reading a program at the prover carrier
 
