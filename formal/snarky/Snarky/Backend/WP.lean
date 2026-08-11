@@ -55,7 +55,7 @@ invariant to carry, since a valuation is total and allocation position never aff
 soundness. Bundling keeps the two readings the same shape and leaves room for the
 builder's state to grow (labels, public-input slots) without changing every
 statement. -/
-structure BuilderState (F : Type) where
+structure BuilderState (F : Type u) where
   /-- The adversary's witness — total, fixed for the whole run. -/
   V : Valuation F
   /-- The next-variable counter the run allocates from. -/
@@ -358,7 +358,8 @@ theorem complete_spec_iff {F : Type} [Add F] [Mul F] [Zero F] [One F] [Decidable
 /-! ## Primitive specs
 
 Triple laws for the monad's own operations: emitting a row, and witnessing a checked
-boolean. -/
+boolean. `witness` at other value types carries no triple of its own — each gadget's law
+covers its witness through its private run lemma. -/
 
 open Std.Do in
 /-- Emitting a row assumes it. -/

@@ -340,7 +340,7 @@ private theorem bitSum {F : Type} [Semiring F] :
   induction bl with
   | nil => simp
   | cons b bl ih =>
-    cases b <;> simp [ih, bit, List.count_cons, add_comm]
+    cases b <;> simp [ih, bit, add_comm]
 
 /-- The bit-sum evaluates to the true-count in the table. -/
 theorem sum_bits_eval {F : Type} [Semiring F] [DecidableEq F] {env : Assignments F} :

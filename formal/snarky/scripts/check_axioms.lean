@@ -73,6 +73,7 @@ def roots : List Name :=
     `Snarky.assertExactlyOne_spec,
     `Snarky.assertExactlyOne_complete_spec,
     `Snarky.pack_eval,
+    `Snarky.pack_val,
     `Snarky.packPure_unpackPure,
     `Snarky.unpack_spec,
     `Snarky.unpack_complete_spec,
@@ -121,3 +122,16 @@ run_cmd do
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
     throwError "disallowed axioms found ({bad.size})"
+
+-- The prover-tag invariant (`Backend/WP.lean`): `ProverC` must carry no
+-- `ConstraintHolds` instance — one would make the two `WP` instances on `CircuitM`
+-- ambiguous at the tag. Checked at a concrete field; a violating instance would be
+-- declared generically and land here.
+run_cmd liftTermElabM do
+  let ty := Lean.mkApp2 (Lean.mkConst ``Snarky.ConstraintHolds)
+    (Lean.mkConst ``Snarky.Example.F17)
+    (Lean.mkApp (Lean.mkConst ``Snarky.ProverC) (Lean.mkConst ``Snarky.Example.F17))
+  if (← Lean.Meta.synthInstance? ty).isSome then
+    throwError "ConstraintHolds instance found at ProverC — the prover WP resolution \
+      invariant (Backend/WP.lean) is broken"
+  IO.println "✓ no ConstraintHolds instance at ProverC"
