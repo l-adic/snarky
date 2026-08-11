@@ -37,8 +37,10 @@ obligations); `unpack_complete_spec` runs the honest prover through the `ToNat`
 witness.
 
 Public results: `pack_eval`, `pack_val`, `packPure_unpackPure`, and the triple pair
-`unpack_spec`/`unpack_complete_spec` — `roots.txt` entries; `unpackWit`/`packAux` and
-`unpack_run` are named internals for the laws.
+`unpack_spec`/`unpack_complete_spec` — `roots.txt` entries. Both triples walk the
+gadget's do-block: the vector loop rules and the `witnessBool`/`addConstraint`
+primitive specs (`Backend/WP`) do the iteration, so no interpreter induction lives
+here; `unpackWit`/`packAux` are named internals for the laws.
 -/
 
 namespace Snarky
@@ -195,75 +197,6 @@ theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] {n : Nat} {x
 
 /-! ## The circuit laws (D12) -/
 
-/-- Pushing the last entry completes an `ofFn` vector. -/
-private theorem ofFn_push {α : Type u} {n : Nat} (f : Fin (n + 1) → α) :
-    (Vector.ofFn fun i : Fin n => f i.castSucc).push (f (Fin.last n))
-      = Vector.ofFn f := by
-  ext i hi
-  simp only [Vector.getElem_push, Vector.getElem_ofFn]
-  split
-  · next h => simp [Fin.castSucc, Fin.castAdd, Fin.castLE]
-  · next h =>
-    have : i = n := by omega
-    subst this
-    simp [Fin.last]
-
-/-- The same at any backend. -/
-private theorem build_witnessBool' {F c : Type} [Zero F] [One F] [DecidableEq F]
-    [BasicSystem F c] (w : AsProver F Bool) (nv : Nat) :
-    build (witness (val := Bool) w : CircuitM F c (BoolVar F)) nv
-      = ⟨.unchecked (.var nv), nv + 1,
-         [BasicSystem.boolean (F := F) (c := c) (.var nv)]⟩ := rfl
-
-/-- What the bit allocation builds at ANY backend: `n` fresh variables, one `boolean`
-row each. -/
-private theorem build_unpackBits' {F c : Type} [Field F] [DecidableEq F] [ToNat F]
-    [BasicSystem F c] (v : FVar F) :
-    ∀ (n nv : Nat),
-      build (generateVec n (fun i => witness (val := Bool) (unpackWit v i.val)) :
-          CircuitM F c _) nv
-        = ⟨Vector.ofFn (fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))), nv + n,
-           (List.range n).map fun i =>
-             BasicSystem.boolean (F := F) (c := c) (.var (nv + i))⟩ := by
-  intro n
-  induction n with
-  | zero => intro nv; rfl
-  | succ n ih =>
-    intro nv
-    show build ((generateVec n _ >>= fun init =>
-      witness (val := Bool) (unpackWit v n) >>= fun last => pure (init.push last)) :
-        CircuitM F c _) nv = _
-    rw [build_bind]
-    simp only [Fin.val_castSucc]
-    rw [ih nv, build_bind, build_witnessBool']
-    refine Built.mk.injEq .. ▸ ⟨?_, ?_, ?_⟩
-    · show (Vector.ofFn fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))).push
-        (BoolVar.unchecked (.var (nv + n))) = _
-      exact ofFn_push fun i : Fin (n + 1) => BoolVar.unchecked (.var (nv + i.val))
-    · rfl
-    · show ((List.range n).map fun i => BasicSystem.boolean (F := F) (c := c)
-            (.var (nv + i)))
-          ++ ([BasicSystem.boolean (F := F) (c := c) (.var (nv + n))] ++ []) = _
-      rw [List.range_succ, List.map_append, List.append_nil]
-      rfl
-
-/-- What `unpack` builds at ANY backend: the bits' `boolean` rows, then the weighted-sum
-row. -/
-private theorem build_unpack' {F c : Type} [Field F] [DecidableEq F] [ToNat F]
-    [BasicSystem F c] (v : FVar F) (n nv : Nat) :
-    build (unpack (c := c) v n) nv
-      = ⟨Vector.ofFn (fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))), nv + n,
-         ((List.range n).map fun i =>
-             BasicSystem.boolean (F := F) (c := c) (.var (nv + i)))
-           ++ [BasicSystem.r1cs (c := c)
-                (pack (Vector.ofFn fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))))
-                (.const 1) v]⟩ := by
-  show build ((generateVec n (fun i => witness (val := Bool) (unpackWit v i.val))
-      >>= fun bits => addConstraint (BasicSystem.r1cs (pack bits) (.const 1) v)
-      >>= fun _ => pure bits) : CircuitM F c _) nv = _
-  rw [build_bind, build_unpackBits']
-  rfl
-
 /-- `pack` reads as the pure packing — `pack_eval` carried across the bridge to the
 total reading. -/
 theorem pack_val {F : Type} [Semiring F] [DecidableEq F] {n : Nat}
@@ -292,154 +225,35 @@ is a bundle rather than a single variable, which the spec shape takes in stride.
           packPure bs = v.val V) Q⦄
     unpack (c := c) v n
     ⦃Q⦄ := by
+  simp only [unpack]
   intro s hpre
-  obtain ⟨V, nv⟩ := s
-  intro hsat
-  rw [build_unpack'] at hsat ⊢
-  have hbits : ∀ i, i < n → (CVar.var (nv + i) : CVar F).val V
-      = bit (decide ((CVar.var (nv + i) : CVar F).val V = 1)) := by
+  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  refine generateVec_spec n _ _ (fun i Q => witnessBool_spec (unpackWit v i.val) Q) _ s
+    (fun bits nv₁ hbitness => ?_)
+  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  refine addConstraint_spec _ _ ⟨s.V, nv₁⟩ (fun _ nv₂ hrow => ?_)
+  intro _
+  have hbits : ∀ i (hi : i < n), (bits[i].toCVar).val s.V
+      = bit (decide ((bits[i].toCVar).val s.V = 1)) := by
     intro i hi
-    rcases LawfulBasicSystem.holds_boolean (c := c) V _
-      (hsat _ (List.mem_append_left _ (List.mem_map_of_mem (List.mem_range.mpr hi))))
-      with h0 | h1
+    have h := hbitness ⟨i, hi⟩
+    simp only [Fin.getElem_fin] at h
+    rcases h with h0 | h1
     · rw [h0]; simp [bit, zero_ne_one]
     · rw [h1]; simp [bit]
-  refine hpre _ _ ⟨Vector.ofFn fun i : Fin n =>
-    decide ((CVar.var (nv + i.val) : CVar F).val V = 1), fun i hi => ?_, ?_⟩
+  refine hpre bits nv₂ ⟨Vector.ofFn fun i : Fin n =>
+    decide ((bits[i].toCVar).val s.V = 1), fun i hi => ?_, ?_⟩
   · simp only [Vector.getElem_ofFn]
     exact hbits i hi
-  · have hrow := LawfulBasicSystem.holds_r1cs (c := c) V _ _ _
-      (hsat _ (List.mem_append_right _ (List.mem_cons_self ..)))
-    have hpack : (pack (Vector.ofFn fun i : Fin n =>
-        BoolVar.unchecked (.var (nv + i.val)))).val V
+  · have hrow' := LawfulBasicSystem.holds_r1cs (c := c) s.V _ _ _ hrow
+    have hpack : (pack bits).val s.V
         = packPure (Vector.ofFn fun i : Fin n =>
-          decide ((CVar.var (nv + i.val) : CVar F).val V = 1)) := by
+          decide ((bits[i].toCVar).val s.V = 1)) := by
       refine pack_val fun i hi => ?_
       simp only [Vector.getElem_ofFn]
       exact hbits i hi
-    rw [hpack] at hrow
-    simpa [circuitVal] using hrow
-
-/-- The honest run of one checked-`Bool` witness: the `boolean` row always accepts a
-bit. -/
-private theorem prove_witnessBool {F : Type} [Field F] [DecidableEq F]
-    {w : AsProver F Bool} {nv : Nat} {env : Assignments F} {b : Bool}
-    (hw : w env = .ok b) (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (witness (val := Bool) w : CircuitM F (Basic F) (BoolVar F)) nv env
-      = .ok ⟨.unchecked (.var nv), nv + 1, env.extend nv (bit b)⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := Bool))
-      = .ok ⟨#[bit b], rfl⟩ := by rw [hw]; rfl
-  have hext : env.extendPairs
-      ((allocRange nv 1).toList.zip (⟨#[bit b], rfl⟩ : Vector F 1).toList)
-      = .ok (env.extend nv (bit b)) := by
-    show env.extendPairs [(nv, bit b)] = .ok _
-    simp [Assignments.extendPairs, hnv]
-  have hch : Basic.holds (.boolean (.var nv)) (env.extend nv (bit b)) = true := by
-    cases b <;> simp [Basic.holds, CVar.eval, Assignments.extend, bit]
-  show prove Basic.holds (.existsOp 1 (fun e => (w e).map _) _) nv env = _
-  simp only [prove, hwit, hext]
-  show prove Basic.holds
-    (.addConstraintOp (.boolean (.var nv)) (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
-    (env.extend nv (bit b)) = _
-  simp only [prove, hch, if_true]
-
-/-- The honest run of `unpack`'s bit-witnessing prefix. -/
-private theorem prove_unpackBits {F : Type} [Field F] [DecidableEq F] [ToNat F]
-    {v : FVar F} {vv : F} :
-    ∀ (n nv : Nat) (env : Assignments F), env.FreshFrom nv → v.eval env = .ok vv →
-      ∃ env', prove Basic.holds
-          (generateVec n (fun i => witness (val := Bool) (unpackWit v i.val)) :
-            CircuitM F (Basic F) _) nv env
-        = .ok ⟨Vector.ofFn (fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))),
-            nv + n, env'⟩ ∧
-        env.Le env' ∧ env'.FreshFrom (nv + n) ∧
-        ∀ i, i < n → env' (nv + i) = some (bit ((ToNat.toNat vv).testBit i)) := by
-  intro n
-  induction n with
-  | zero =>
-    intro nv env hfresh hv
-    exact ⟨env, rfl, Assignments.Le.refl env, hfresh, fun i hi => absurd hi (by omega)⟩
-  | succ n ih =>
-    intro nv env hfresh hv
-    obtain ⟨env₁, hr₁, hle₁, hfresh₁, hbits₁⟩ := ih nv env hfresh hv
-    have hv₁ : v.eval env₁ = .ok vv := CVar.eval_le hle₁ hv
-    have hw : unpackWit v n env₁ = .ok ((ToNat.toNat vv).testBit n) := by
-      simp [unpackWit, AsProver.readCVar, hv₁, Bind.bind, ReaderT.bind, Except.bind,
-        Pure.pure, ReaderT.pure, Except.pure]
-    refine ⟨env₁.extend (nv + n) (bit ((ToNat.toNat vv).testBit n)), ?_, ?_, ?_, ?_⟩
-    · show prove Basic.holds ((generateVec n _ >>= fun init =>
-        witness (val := Bool) (unpackWit v n) >>= fun last => pure (init.push last)) :
-          CircuitM F (Basic F) _) nv env = _
-      rw [prove_bind]
-      simp only [Fin.val_castSucc]
-      rw [hr₁]
-      simp only [Except.bind]
-      rw [prove_bind, prove_witnessBool hw hfresh₁]
-      simp only [Except.bind, prove]
-      congr 2
-      exact ofFn_push fun i : Fin (n + 1) => BoolVar.unchecked (.var (nv + i.val))
-    · refine hle₁.trans ?_
-      intro w x hw'
-      simp only [Assignments.extend]
-      split
-      · next h => rw [h, hfresh₁ (nv + n) (Nat.le_refl _)] at hw'; cases hw'
-      · exact hw'
-    · intro w hw'
-      have h1 : w ≠ nv + n := by omega
-      simp only [Assignments.extend, if_neg h1]
-      exact hfresh₁ w (by omega)
-    · intro i hi
-      by_cases hin : i = n
-      · subst hin
-        simp [Assignments.extend]
-      · have : nv + i ≠ nv + n := by omega
-        simp only [Assignments.extend, if_neg this]
-        exact hbits₁ i (by omega)
-
-/-- The honest `unpack` run: on a faithful representative that fits in `n` bits the run
-succeeds with the operand's binary digits. The spec below is the statement of record;
-this is its run equation. -/
-private theorem unpack_run {F : Type} [Field F] [DecidableEq F] [ToNat F] {v : FVar F}
-    {n nv : Nat} {env : Assignments F} {vv : F}
-    (hfresh : env.FreshFrom nv) (hv : v.eval env = .ok vv)
-    (hval : ((ToNat.toNat vv : Nat) : F) = vv) (hlt : ToNat.toNat vv < 2 ^ n) :
-    ∃ out, prove Basic.holds (unpack (c := Basic F) v n) nv env = .ok out ∧
-      out.assignments.FreshFrom out.nextVar ∧
-      ∀ i (hi : i < n), (out.result[i]).toCVar.eval out.assignments
-        = .ok (bit ((ToNat.toNat vv).testBit i)) := by
-  obtain ⟨env', hr, hle, hfresh', hbits⟩ := prove_unpackBits n nv env hfresh hv
-  have hbitEval : ∀ i, i < n → (CVar.var (nv + i)).eval env'
-      = .ok (bit ((ToNat.toNat vv).testBit i)) := by
-    intro i hi
-    simp [CVar.eval, hbits i hi]
-  have hpack : (pack (Vector.ofFn fun i : Fin n =>
-      BoolVar.unchecked (.var (nv + i.val)))).eval env'
-      = .ok (packPure (unpackPure vv n)) := by
-    apply pack_eval
-    intro i hi
-    simp only [Vector.getElem_ofFn, unpackPure]
-    exact hbitEval i hi
-  have hch : Basic.holds
-      (BasicSystem.r1cs (pack (Vector.ofFn fun i : Fin n =>
-        BoolVar.unchecked (.var (nv + i.val)))) (.const 1) v) env' = true := by
-    show Basic.holds (.r1cs _ _ _) env' = true
-    have hv' := CVar.eval_le hle hv
-    rw [packPure_unpackPure hval hlt] at hpack
-    simp [Basic.holds, hpack, CVar.eval, hv']
-  refine ⟨⟨Vector.ofFn (fun i : Fin n => BoolVar.unchecked (.var (nv + i.val))),
-    nv + n, env'⟩, ?_, hfresh', ?_⟩
-  · show prove Basic.holds ((generateVec n (fun i =>
-        witness (val := Bool) (unpackWit v i.val))
-      >>= fun bits => addConstraint (BasicSystem.r1cs (pack bits) (.const 1) v)
-      >>= fun _ => pure bits) : CircuitM F (Basic F) _) nv env = _
-    rw [prove_bind, hr]
-    simp only [Except.bind]
-    show prove Basic.holds (.addConstraintOp _ (.pure _)) (nv + n) env' = _
-    simp only [prove, hch, if_true]
-  · intro i hi
-    simp only [Vector.getElem_ofFn]
-    exact hbitEval i hi
+    rw [hpack] at hrow'
+    simpa [circuitVal] using hrow'
 
 open Std.Do in
 /-- **`unpack` completeness triple** (prover reading): on a faithful representative
@@ -458,19 +272,66 @@ binary digits. -/
             = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
     unpack (c := ProverC F) v n
     ⦃Q⦄ := by
+  simp only [unpack]
   intro st hpre
-  rw [show (unpack (c := ProverC F) v n : CircuitM F (ProverC F) _)
-      = (unpack (c := Basic F) v n : CircuitM F (Basic F) _) from rfl]
   obtain ⟨⟨hokv, hfaithful⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
   obtain ⟨hval, hlt⟩ := hfaithful vv hv
-  obtain ⟨out, hrun, -, hbits⟩ := unpack_run st.fresh hv hval hlt
-  simp only [wp, PredTrans.apply, hrun]
-  intro hf
-  refine hk out.result ⟨out.nextVar, out.assignments, hf⟩ (fun vv' hv' => ?_)
-    (prove_assignments_le hrun)
+  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  -- the component: the checked-bit witness computes the operand's `i`-th digit
+  have hcomp : ∀ (i : Fin n)
+      (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))),
+      ⦃Complete (fun env => (v.eval env).isOk)
+        (fun env (r : BoolVar F) env' => ∀ vv', v.eval env = .ok vv' →
+          (↑r : CVar F).eval env' = .ok (bit ((ToNat.toNat vv').testBit i.val))) Q⦄
+      (witness (val := Bool) (unpackWit v i.val) : CircuitM F (ProverC F) (BoolVar F))
+      ⦃Q⦄ := by
+    intro i Q st' hpre'
+    obtain ⟨hok', hk'⟩ := hpre'
+    obtain ⟨vv', hv'⟩ := CVar.evalOk hok'
+    have hw : unpackWit v i.val st'.env = .ok ((ToNat.toNat vv').testBit i.val) := by
+      simp [unpackWit, AsProver.readCVar, hv', Bind.bind, ReaderT.bind, Except.bind,
+        Pure.pure, ReaderT.pure, Except.pure]
+    refine witnessBool_complete_spec _ _ st'
+      ⟨show (unpackWit v i.val st'.env).isOk = true by rw [hw]; rfl,
+        fun r st'' hr hle => ?_⟩
+    refine hk' r st'' (fun vv'' hv'' => ?_) hle
+    rw [hv'] at hv''
+    injection hv'' with hv''
+    subst hv''
+    exact hr _ hw
+  refine generateVec_complete_spec n _ _ _ hcomp
+    (fun i env env' hle hok => by
+      obtain ⟨vv', hv'⟩ := CVar.evalOk hok
+      rw [CVar.eval_le hle hv']
+      rfl)
+    (fun i e₀ e₁ r e₂ e₃ h01 h23 hpost vv' hv₀ =>
+      CVar.eval_le h23 (hpost vv' (CVar.eval_le h01 hv₀))) _ st
+    ⟨fun _ => hokv, fun bits st₁ hbits hle₁ => ?_⟩
+  -- after the loop: the packing row accepts, and the caller reads the digits
+  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  have hv₁ : v.eval st₁.env = .ok vv := CVar.eval_le hle₁ hv
+  have hbitEval : ∀ i (hi : i < n), (bits[i].toCVar).eval st₁.env
+      = .ok (bit ((ToNat.toNat vv).testBit i)) := by
+    intro i hi
+    have h := hbits ⟨i, hi⟩ vv hv
+    simpa only [Fin.getElem_fin] using h
+  have hpack : (pack bits).eval st₁.env = .ok (packPure (unpackPure vv n)) := by
+    refine pack_eval fun i hi => ?_
+    simp only [unpackPure, Vector.getElem_ofFn]
+    exact hbitEval i hi
+  have hch : Basic.holds
+      (BasicSystem.r1cs (c := ProverC F) (pack bits) (.const 1) v) st₁.env = true := by
+    show Basic.holds (.r1cs _ _ _) st₁.env = true
+    rw [packPure_unpackPure hval hlt] at hpack
+    simp [Basic.holds, hpack, CVar.eval, hv₁]
+  refine addConstraint_complete_spec _ _ st₁ ⟨hch, fun _ st₂ _ hle₂ => ?_⟩
+  intro _
+  refine hk bits st₂ (fun vv' hv' => ?_) (hle₁.trans hle₂)
   rw [hv] at hv'
   injection hv' with hv'
-  exact hv' ▸ hbits
+  subst hv'
+  intro i hi
+  exact CVar.eval_le hle₂ (hbitEval i hi)
 
 end Snarky

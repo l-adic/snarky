@@ -54,6 +54,16 @@ Snarky.Basic.instLawfulBasicSystem
 Snarky.ProverC
 Snarky.ProverC.instWP
 Snarky.ProverC.instWPMonad
+
+-- The primitive specs and the vector loop rules (Backend/WP.lean): triple laws for the
+-- monad's own operations and for `generateVec`, the pieces a walked gadget bottoms out
+-- in.
+Snarky.addConstraint_spec
+Snarky.addConstraint_complete_spec
+Snarky.witnessBool_spec
+Snarky.witnessBool_complete_spec
+Snarky.generateVec_spec
+Snarky.generateVec_complete_spec
 Snarky.CVar.evalOk
 
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).

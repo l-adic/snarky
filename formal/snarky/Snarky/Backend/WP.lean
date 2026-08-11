@@ -307,4 +307,181 @@ theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
   · exact ⟨false, by rw [hv, h0]; rfl⟩
   · exact ⟨true, by rw [hv, h1]; rfl⟩
 
+/-! ## Primitive specs
+
+Triple laws for the monad's own operations, the leaves below every gadget: emitting a
+row and witnessing a checked boolean. A gadget built only from other gadgets and these
+primitives never leaves the walk. -/
+
+open Std.Do in
+/-- **`addConstraint` soundness**: emitting a row assumes it — the row IS the fact the
+continuation receives. -/
+@[spec] theorem addConstraint_spec [ConstraintHolds F c]
+    (con : c) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ConstraintHolds.Holds V con) Q⦄
+    addConstraint (F := F) (c := c) con
+    ⦃Q⦄ := by
+  intro s hpre hsat
+  exact hpre PUnit.unit _ (hsat con (List.mem_cons_self ..))
+
+open Std.Do in
+/-- **`addConstraint` completeness**: the row's own check is the precondition — the
+prover accepts exactly when the checker does, changing nothing. -/
+@[spec] theorem addConstraint_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] (con : Basic F)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => Basic.holds con env = true) (fun _ _ _ => True) Q⦄
+    addConstraint (F := F) (c := ProverC F) con
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨hch, hk⟩ := hpre
+  simp only [wp, PredTrans.apply, addConstraint, prove, hch, if_true]
+  exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
+
+open Std.Do in
+/-- **Checked-boolean witness, soundness**: the `boolean` row the checked witness pays
+makes the result a bit — whatever the witness computation would compute. -/
+@[spec] theorem witnessBool_spec [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (w : AsProver F Bool) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : BoolVar F) => (↑r : CVar F).val V = 0 ∨ (↑r : CVar F).val V = 1) Q⦄
+    (witness (val := Bool) w : CircuitM F c (BoolVar F))
+    ⦃Q⦄ := by
+  intro s hpre hsat
+  exact hpre (.unchecked (.var s.nv)) _
+    (LawfulBasicSystem.holds_boolean s.V _ (hsat _ (List.mem_cons_self ..)))
+
+/-- The honest run of one checked-`Bool` witness: the `boolean` row always accepts a
+bit. The run equation behind `witnessBool_complete_spec`. -/
+private theorem prove_witnessBool {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] {w : AsProver F Bool} {nv : Nat} {env : Assignments F} {b : Bool}
+    (hw : w env = .ok b) (hfresh : env.FreshFrom nv) :
+    prove Basic.holds (witness (val := Bool) w : CircuitM F (Basic F) (BoolVar F)) nv env
+      = .ok ⟨.unchecked (.var nv), nv + 1, env.extend nv (bit b)⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := Bool))
+      = .ok ⟨#[bit b], rfl⟩ := by rw [hw]; rfl
+  have hext : env.extendPairs
+      ((allocRange nv 1).toList.zip (⟨#[bit b], rfl⟩ : Vector F 1).toList)
+      = .ok (env.extend nv (bit b)) := by
+    show env.extendPairs [(nv, bit b)] = .ok _
+    simp [Assignments.extendPairs, hnv]
+  have hch : Basic.holds (.boolean (.var nv)) (env.extend nv (bit b)) = true := by
+    cases b <;> simp [Basic.holds, CVar.eval, Assignments.extend, bit]
+  show prove Basic.holds (.existsOp 1 (fun e => (w e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  show prove Basic.holds
+    (.addConstraintOp (.boolean (.var nv)) (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
+    (env.extend nv (bit b)) = _
+  simp only [prove, hch, if_true]
+
+open Std.Do in
+/-- **Checked-boolean witness, completeness**: a witness computation that succeeds makes
+the run succeed, and the result reads as the computed bit's encoding. -/
+@[spec] theorem witnessBool_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] (w : AsProver F Bool)
+    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (w env).isOk)
+        (fun env (r : BoolVar F) env' => ∀ b, w env = .ok b →
+          (↑r : CVar F).eval env' = .ok (bit b)) Q⦄
+    (witness (val := Bool) w : CircuitM F (ProverC F) (BoolVar F))
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨hok, hk⟩ := hpre
+  obtain ⟨b, hw⟩ : ∃ b, w st.env = .ok b := by
+    cases hwe : w st.env with
+    | error e => rw [hwe] at hok; cases hok
+    | ok b => exact ⟨b, rfl⟩
+  rw [show (witness (val := Bool) w : CircuitM F (ProverC F) (BoolVar F))
+      = (witness (val := Bool) w : CircuitM F (Basic F) (BoolVar F)) from rfl]
+  simp only [wp, PredTrans.apply, prove_witnessBool hw st.fresh]
+  intro hf
+  refine hk (.unchecked (.var st.nv)) ⟨st.nv + 1, st.env.extend st.nv (bit b), hf⟩
+    (fun b' hb' => ?_) (Assignments.le_extend_self st.fresh _)
+  rw [hw] at hb'
+  injection hb' with hb'
+  subst hb'
+  simp [circuitVal]
+
+/-! ## The vector loop rule
+
+`generateVec` is the DSL's one monadic iterator; these two rules are its `Sound` and
+`Complete` laws, given a spec for each component — the analogue of the framework's
+`Spec.forIn_list`, stated schematically so a caller instantiates them like any other
+spec (they cannot be `@[spec]`: the componentwise hypothesis is theirs to supply). -/
+
+open Std.Do in
+/-- **The loop rule, soundness**: componentwise guarantees aggregate componentwise.
+No invariant beyond the components' own facts: the valuation is read-only, so nothing
+threads. -/
+theorem generateVec_spec {α : Type} [ConstraintHolds F c] :
+    ∀ (n : Nat) (f : Fin n → CircuitM F c α) (post : Fin n → Valuation F → α → Prop),
+      (∀ (i : Fin n) (Q : PostCond α (.arg (BuilderState F) .pure)),
+        ⦃Sound (post i) Q⦄ f i ⦃Q⦄) →
+      ∀ (Q : PostCond (Vector α n) (.arg (BuilderState F) .pure)),
+        ⦃Sound (fun V (rs : Vector α n) => ∀ i : Fin n, post i V rs[i]) Q⦄
+        generateVec n f
+        ⦃Q⦄ := by
+  intro n
+  induction n with
+  | zero =>
+    intro f post hf Q s hpre _
+    exact hpre #v[] s.nv (fun i => i.elim0)
+  | succ n ih =>
+    intro f post hf Q s hpre
+    show (wp⟦(generateVec n fun i => f i.castSucc) >>= fun init =>
+        f (Fin.last n) >>= fun last => pure (init.push last)⟧ Q s).down
+    simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+    refine ih _ _ (fun i Q => hf i.castSucc Q) _ s (fun init nv₁ hinit => ?_)
+    refine hf (Fin.last n) _ ⟨s.V, nv₁⟩ (fun last nv₂ hlast => ?_)
+    intro _
+    refine hpre (init.push last) nv₂ (fun i => ?_)
+    refine Fin.lastCases ?_ (fun j => ?_) i
+    · simpa using hlast
+    · simpa using hinit j
+
+open Std.Do in
+/-- **The loop rule, completeness**: componentwise runs chain, given that each
+component's `pre` and `post` transport along table extension — the two hypotheses that
+replace a loop invariant, since the prover's state genuinely grows. -/
+theorem generateVec_complete_spec {F : Type} {α : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] :
+    ∀ (n : Nat) (f : Fin n → CircuitM F (ProverC F) α)
+      (pre : Fin n → Assignments F → Prop)
+      (post : Fin n → Assignments F → α → Assignments F → Prop),
+      (∀ (i : Fin n) (Q : PostCond α (.arg (ProverState F) (.except EvalError .pure))),
+        ⦃Complete (pre i) (post i) Q⦄ f i ⦃Q⦄) →
+      (∀ (i : Fin n) (env env' : Assignments F), env.Le env' → pre i env → pre i env') →
+      (∀ (i : Fin n) (env₀ env₁ : Assignments F) (r : α) (env₂ env₃ : Assignments F),
+        env₀.Le env₁ → env₂.Le env₃ → post i env₁ r env₂ → post i env₀ r env₃) →
+      ∀ (Q : PostCond (Vector α n) (.arg (ProverState F) (.except EvalError .pure))),
+        ⦃Complete (fun env => ∀ i : Fin n, pre i env)
+            (fun env rs env' => ∀ i : Fin n, post i env rs[i] env') Q⦄
+        generateVec n f
+        ⦃Q⦄ := by
+  intro n
+  induction n with
+  | zero =>
+    intro f pre post hf hpremono hpostmono Q st hpre
+    obtain ⟨hpres, hk⟩ := hpre
+    exact fun _ => hk #v[] st (fun i => i.elim0) (Assignments.Le.refl st.env)
+  | succ n ih =>
+    intro f pre post hf hpremono hpostmono Q st hpre
+    obtain ⟨hpres, hk⟩ := hpre
+    show (wp⟦(generateVec n fun i => f i.castSucc) >>= fun init =>
+        f (Fin.last n) >>= fun last => pure (init.push last)⟧ Q st).down
+    simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+    refine ih _ _ _ (fun i Q => hf i.castSucc Q) (fun i => hpremono i.castSucc)
+      (fun i => hpostmono i.castSucc) _ st
+      ⟨fun i => hpres i.castSucc, fun init st₁ hinit hle₁ => ?_⟩
+    refine hf (Fin.last n) _ st₁
+      ⟨hpremono _ _ _ hle₁ (hpres (Fin.last n)), fun last st₂ hlast hle₂ => ?_⟩
+    intro _
+    refine hk (init.push last) st₂ (fun i => ?_) (hle₁.trans hle₂)
+    refine Fin.lastCases ?_ (fun j => ?_) i
+    · simpa using hpostmono _ st.env st₁.env last st₂.env st₂.env hle₁
+        (Assignments.Le.refl st₂.env) hlast
+    · simpa using hpostmono _ st.env st.env init[j] st₁.env st₂.env
+        (Assignments.Le.refl st.env) hle₂ (hinit j)
+
 end Snarky
