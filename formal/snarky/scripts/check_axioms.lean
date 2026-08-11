@@ -95,6 +95,8 @@ def roots : List Name :=
     `Snarky.witnessBool_complete_spec,
     `Snarky.generateVec_spec,
     `Snarky.generateVec_complete_spec,
+    `Snarky.Example.cubic_spec,
+    `Snarky.Example.cubic_complete_spec,
     `Snarky.solve_complete,
     `Snarky.readVar_le,
     `Snarky.CVar.reduce_eval,

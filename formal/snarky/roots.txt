@@ -245,6 +245,9 @@ Snarky.Example.F17
 Snarky.Example.F13
 Snarky.Example.cubeRoot?
 Snarky.Example.cubeRootCircuit
+Snarky.Example.cubic
+Snarky.Example.cubic_spec
+Snarky.Example.cubic_complete_spec
 Snarky.Example.cubeCircuit
 Snarky.Example.mulCircuit
 Snarky.Example.eqCircuit
