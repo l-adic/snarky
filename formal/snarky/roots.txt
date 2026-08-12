@@ -298,7 +298,7 @@ Snarky.Kimchi.PlonkBuilder
 Snarky.Kimchi.PlonkProver
 Snarky.Kimchi.TraceM
 Snarky.Kimchi.EqualsConstraint
-Snarky.Kimchi.mkRawGeneric7Row
+Snarky.Kimchi.mkPadRow
 Snarky.Kimchi.finalizeGateQueue
 
 -- The per-gate constraint payloads and reducers

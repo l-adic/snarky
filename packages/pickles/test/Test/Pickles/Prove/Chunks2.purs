@@ -60,7 +60,7 @@ chunks2Rule _ _ = do
     )
     0
   z <- freshZero
-  addConstraint $ KimchiRawGeneric7
+  addConstraint $ KimchiPad
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
   pure
     { prevPublicInputs: Vector.nil

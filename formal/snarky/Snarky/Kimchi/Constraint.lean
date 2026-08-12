@@ -23,8 +23,8 @@ bytes.
 
 Name map: `KimchiConstraint`/`KimchiGate` keep their names, constructors dropped
 to lowerCamel without the `Kimchi` prefix (`KimchiBasic` → `.basic`, …,
-`KimchiRawGeneric7` → `.rawGeneric7`; `KimchiGateNoOp` → `.noOp`);
-`reduceRawGeneric7` keeps its name; the per-instance `go` dispatch is factored into
+`KimchiPad` → `.pad`; `KimchiGateNoOp` → `.noOp`);
+`reducePad` keeps its name; the per-instance `go` dispatch is factored into
 the one class-polymorphic `KimchiConstraint.reduce` both ops run
 (`appendConstraint` = `reduceAsBuilder` of it, `proveConstraint` = `reduceAsProver`
 of it — the PS instances inline the same dispatch twice); `finalize` is the ops
@@ -61,8 +61,7 @@ namespace Snarky.Kimchi
 open Snarky
 
 /-- The kimchi backend's constraint type (PS `KimchiConstraint`): the DSL's `Basic`
-vocabulary plus the per-gate constraints and the raw seven-cell generic row the
-public-input layer emits. -/
+vocabulary plus the per-gate constraints and the padding row (see `.pad`). -/
 inductive KimchiConstraint (F : Type u) where
   /-- A `Basic` constraint, reduced through the generic-gate fan-out. -/
   | basic (c : Basic F)
@@ -76,8 +75,11 @@ inductive KimchiConstraint (F : Type u) where
   | endoScalar (c : EndoScalar F)
   /-- An endomorphism-optimized scalar-multiplication constraint. -/
   | endoMul (c : EndoMul F)
-  /-- A raw seven-cell generic row (public-input rows). -/
-  | rawGeneric7 (vs : Vector (FVar F) 7)
+  /-- Pad the circuit by one row: a Generic-kind row with no coefficients, so the
+  generic equation is degenerate (`0 = 0`) and the row's only content is its wiring
+  (seven cells — the permutable width). The deployed consumers are the chunk-test
+  circuits, pushing row counts past a domain boundary. -/
+  | pad (vs : Vector (FVar F) 7)
   deriving Repr, DecidableEq
 
 /-- The emitted-gate sum (PS `KimchiGate`): what one constraint reduces to — the
@@ -121,8 +123,8 @@ instance : BasicSystem F (KimchiConstraint F) where
 
 variable {F : Type} {m : Type → Type}
 
-/-- Pin seven operands into a raw generic row (PS `reduceRawGeneric7`). -/
-private def reduceRawGeneric7 [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
+/-- Pin the padding row's seven operands into its emitted row (PS `reducePad`). -/
+private def reducePad [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     [Monad m] [PlonkReductionM F m] (vs : Vector (FVar F) 7) : m (Rows F) := do
   let v0 ← reduceToVariable vs[0]
   let v1 ← reduceToVariable vs[1]
@@ -131,7 +133,7 @@ private def reduceRawGeneric7 [Add F] [Mul F] [Zero F] [One F] [Neg F] [Decidabl
   let v4 ← reduceToVariable vs[4]
   let v5 ← reduceToVariable vs[5]
   let v6 ← reduceToVariable vs[6]
-  pure (mkRawGeneric7Row ⟨⟨[v0, v1, v2, v3, v4, v5, v6]⟩, by simp⟩)
+  pure (mkPadRow ⟨⟨[v0, v1, v2, v3, v4, v5, v6]⟩, by simp⟩)
 
 /-- The one dispatch both interpreters run (the PS instances' `go`, factored): reduce
 a constraint through its gate's reducer and wrap the rows. `Basic` constraints emit
@@ -147,7 +149,7 @@ def KimchiConstraint.reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F]
   | .varBaseMul c => .varBaseMul <$> VarBaseMul.reduce c
   | .endoScalar c => .endoScalar <$> EndoScalar.reduce c
   | .endoMul c => .endoMul <$> c.reduce
-  | .rawGeneric7 vs => .plonk <$> reduceRawGeneric7 vs
+  | .pad vs => .plonk <$> reducePad vs
 
 /-! ## The backend ops (PS's two instances, as one record) -/
 

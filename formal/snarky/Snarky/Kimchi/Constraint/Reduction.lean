@@ -15,7 +15,7 @@ the prover (witness values). A third, Lean-only interpreter (`TraceM`) logs emis
 pre-batching; the traced `decide` examples run it.
 
 Name map: every PS export keeps its name (`PlonkReductionM` with its three methods,
-`reduceAffineExpression`, `reduceToVariable`, `Rows`, `mkRawGeneric7Row`,
+`reduceAffineExpression`, `reduceToVariable`, `Rows`, `mkPadRow`,
 `finalizeGateQueue`, `reduceAsBuilder`, `reduceAsProver`); `completelyReduce` stays the
 private helper. `addEqualsConstraint`'s anonymous record argument gets the Lean name
 `EqualsConstraint`. PS `incrementVariable` is `+ 1` (as in the base interpreters).
@@ -190,9 +190,10 @@ structure Rows (F : Type u) where
 instance : ToKimchiRows F (Rows F) where
   toKimchiRows r := [r.row]
 
-/-- A raw Generic row over seven wired cells and no coefficients (PS
-`mkRawGeneric7Row`) — the shape the public-input rows use. -/
-def mkRawGeneric7Row (vs : Vector Variable 7) : Rows F :=
+/-- The padding row: a Generic-kind row over seven wired cells and no coefficients
+(PS `mkPadRow`) — the generic equation is degenerate, so the row's only content is
+its wiring. -/
+def mkPadRow (vs : Vector Variable 7) : Rows F :=
   ⟨{ kind := .genericPlonk,
      vars := ⟨⟨vs.toList.map some ++ List.replicate 8 none⟩, by simp⟩,
      coeffs := [] }⟩
@@ -476,9 +477,9 @@ example :
               vars := ⟨⟨[some 0, some 1, some 2] ++ List.replicate 12 none⟩, by simp⟩,
               coeffs := [1, 2, 3, 4, 5] }⟩ := by decide
 
-/-- `mkRawGeneric7Row` wires seven cells and leaves the coefficients empty. -/
+/-- `mkPadRow` wires seven cells and leaves the coefficients empty. -/
 example :
-    mkRawGeneric7Row (F := Int) ⟨⟨[0, 1, 2, 3, 4, 5, 6]⟩, by simp⟩ =
+    mkPadRow (F := Int) ⟨⟨[0, 1, 2, 3, 4, 5, 6]⟩, by simp⟩ =
       ⟨{ kind := .genericPlonk,
          vars := ⟨⟨[0, 1, 2, 3, 4, 5, 6].map some ++ List.replicate 8 none⟩, by simp⟩,
          coeffs := [] }⟩ := by decide
