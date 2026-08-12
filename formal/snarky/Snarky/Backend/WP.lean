@@ -385,6 +385,20 @@ open Std.Do in
   exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
 
 open Std.Do in
+/-- A witness promises nothing on the soundness side — uniformly sound for every
+`CheckedType`, since a caller who learns nothing learns nothing falsely. The leaf that
+lets a walk glide over any `witness` whose content arrives through a later
+constraint. -/
+@[spec] theorem witness_spec {val var : Type} [CircuitType F val var]
+    [BasicSystem F c] [ConstraintHolds F c] [CheckedType F c var] (w : AsProver F val)
+    (Q : PostCond var (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun _ (_ : var) => True) Q⦄
+    (witness (val := val) w : CircuitM F c var)
+    ⦃Q⦄ := by
+  intro s hpre hsat
+  exact hpre _ _ trivial
+
+open Std.Do in
 /-- The checked witness's `boolean` row makes the result a bit. -/
 @[spec] theorem witnessBool_spec [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]

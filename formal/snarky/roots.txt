@@ -357,6 +357,7 @@ Snarky.sealVar
 Snarky.sealVar_spec
 Snarky.sealVar_complete_spec
 Snarky.Kimchi.addFast
+Snarky.Kimchi.AddFast.addFast_spec
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar

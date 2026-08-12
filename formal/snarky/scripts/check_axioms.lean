@@ -10,6 +10,7 @@ together with its `roots.txt` line — cannot pass silently.
 Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 -/
 import Snarky
+import Snarky.Kimchi.Circuit.AddComplete
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -79,6 +80,7 @@ def roots : List Name :=
     `Snarky.unpack_complete_spec,
     `Snarky.sealVar_spec,
     `Snarky.sealVar_complete_spec,
+    `Snarky.Kimchi.AddFast.addFast_spec,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
