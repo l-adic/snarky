@@ -96,6 +96,11 @@ structure Raw where
   coeffs : Array (Array Fp)
   /-- The per-row wire targets, `(column, row)` per column position. -/
   wires : Array (Array (ℕ × ℕ))
+  /-- The raw variable id in each register cell, `none` for an empty cell (the dump's
+  `variables` arrays, `-1` encoding absence): the allocation-order contract — cell
+  values and wire cycles are allocation-order-insensitive, so only these ids pin the
+  shared counter's numbering. -/
+  vars : Array (Array (Option ℕ))
   /-- The solved witness rows, one register array per row. -/
   witness : Array (Array Fp)
   /-- The public-input values. -/
@@ -104,6 +109,11 @@ structure Raw where
 /-- A `{row, col}` wire object as a `(column, row)` target. -/
 private def parseWire (j : Json) : Except String (ℕ × ℕ) := do
   return (← (← j.getObjVal? "col").getNat?, ← (← j.getObjVal? "row").getNat?)
+
+/-- A cell's variable id: a natural, or `-1` for an empty cell. -/
+private def parseVarId (j : Json) : Except String (Option ℕ) := do
+  let i ← j.getInt?
+  return if i < 0 then none else some i.toNat
 
 /-- The PureScript side of a comparison JSON; `none` when the JSON is not a comparison
 or carries no witness. -/
@@ -116,11 +126,13 @@ def parseComparison? (j : Json) : Except String (Option Raw) := do
   let coeffs ← gatesJ.mapM fun g => do
     parseArrOf parseSignedDecimal (← g.getObjVal? "coeffs")
   let wires ← gatesJ.mapM fun g => do parseArrOf parseWire (← g.getObjVal? "wires")
+  let vars ← gatesJ.mapM fun g => do parseArrOf parseVarId (← g.getObjVal? "variables")
   return some
     { publicInputSize := ← (← ps.getObjVal? "publicInputSize").getNat?
       typs := typs
       coeffs := coeffs
       wires := wires
+      vars := vars
       witness := ← parseArrOf (parseArrOf parseHexLE) (← w.getObjVal? "witness")
       pub := ← parseArrOf parseHexLE (← w.getObjVal? "publicInputs") }
 

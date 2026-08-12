@@ -54,7 +54,7 @@ preallocated input slots, pay its `check`, run `main`, back-fill the output slot
 the computed output (builder: no-op; prover: the `assignOp` that makes `solve`'s output
 slots live), and constrain the output bundle to those slots. PS splits this into a
 builder program and a solver program; see the module docstring for why Lean shares one. -/
-private def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
+def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F c bvar) : CircuitM F c bvar := do
   let av := A.fieldsToVar (mapVec CVar.var (allocRange 0 A.size))

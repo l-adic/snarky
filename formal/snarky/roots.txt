@@ -240,15 +240,6 @@ Snarky.instReprAffineExpression
 Snarky.instDecidableEqBasic
 Snarky.instReprBasic
 
--- The Kimchi Generic-gate bridge (Snarky/Kimchi/Backend.lean): a DSL constraint holds
--- iff its written Generic row satisfies the verified checker's predicate, plus the
--- bridge's monotonicity law and its backend/derive instances.
-Snarky.Kimchi.GateConstraint.holds_iff_row
-Snarky.Kimchi.GateConstraint.holds_mono
-Snarky.Kimchi.instBasicSystemGateConstraint
-Snarky.Kimchi.instDecidableEqGateConstraint
-Snarky.Kimchi.instReprGateConstraint
-
 -- The Example exhibits (Example.lean): the showcase circuit, its laws, and
 -- the run helpers; their consumers are anonymous `example`s, invisible to any constant
 -- walk (exhibits stay rooted).
@@ -327,11 +318,33 @@ Snarky.Kimchi.KimchiConstraint
 Snarky.Kimchi.KimchiGate
 Snarky.Kimchi.KimchiConstraint.reduce
 Snarky.Kimchi.kimchiOps
-Snarky.Kimchi.kimchiBuild
-Snarky.Kimchi.kimchiProve
 Snarky.Kimchi.instToKimchiRowsKimchiGate
 Snarky.Kimchi.instBasicSystemKimchiConstraint
 Snarky.Kimchi.instDecidableEqKimchiConstraint
 Snarky.Kimchi.instReprKimchiConstraint
 Snarky.Kimchi.instDecidableEqKimchiGate
 Snarky.Kimchi.instReprKimchiGate
+
+-- The CS assembly (Snarky/Kimchi/Backend/Assemble.lean): the wire/gate data records,
+-- the wiring pass, the public-input rows, the assembled gate data, and the witness
+-- table, plus the derive surface the seam script's comparisons resolve.
+Snarky.Kimchi.Wire
+Snarky.Kimchi.AssembledGate
+Snarky.Kimchi.permCells
+Snarky.Kimchi.classCells
+Snarky.Kimchi.wireTarget
+Snarky.Kimchi.assembleGates
+Snarky.Kimchi.makePublicInputRows
+Snarky.Kimchi.makeGateData
+Snarky.Kimchi.makeWitness
+Snarky.Kimchi.instDecidableEqWire
+Snarky.Kimchi.instReprWire
+Snarky.Kimchi.instDecidableEqAssembledGate
+Snarky.Kimchi.instReprAssembledGate
+
+-- script-surface:begin
+-- The whole-circuit kimchi entry points (Snarky/Kimchi/Backend/Compile.lean): their
+-- consumer is scripts/check_cs_equality.lean, invisible to any constant walk.
+Snarky.Kimchi.kimchiSolve
+Snarky.Kimchi.kimchiGateData
+-- script-surface:end

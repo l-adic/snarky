@@ -14,8 +14,7 @@ Port of `Snarky.Constraint.Kimchi`
 sum `KimchiConstraint`, the emitted-gate sum `KimchiGate` with its row dispatch, the
 `BasicSystem` instance, and the backend seams — PS's `CompileCircuit`/`SolveCircuit`
 instances become the ops record `kimchiOps` plugged into the ONE generic interpreter
-pair (`Snarky/Backend/Ops.lean`), exactly the PS architecture. `kimchiBuild`/
-`kimchiProve` name the instantiated interpreters. The one-counter decision
+pair (`Snarky/Backend/Ops.lean`), exactly the PS architecture. The one-counter decision
 (`Constraint/Reduction.lean`'s module docstring) lives in the ops: each constraint's
 reduction borrows
 and returns the SHARED variable counter, whose interleaved numbering is fixture
@@ -40,7 +39,7 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   classes carry consistent values; no analogue is stated here). The PS prover's
   `debug` branch is likewise gone in production semantics (PS's own comment:
   superseded by the circuit-diffs byte-equality).
-- `kimchiProve` checks nothing per constraint (the PS PRODUCTION semantics): a
+- The prover seam checks nothing per constraint (the PS PRODUCTION semantics): a
   kimchi constraint emits rows, not a checkable predicate, and validation is the row
   laws plus the fixture seam. This diverges from the base `prove`'s deliberate
   checking strengthening; the closest kimchi analogue of `prove_complete` is the
@@ -77,8 +76,9 @@ inductive KimchiConstraint (F : Type u) where
   | endoMul (c : EndoMul F)
   /-- Pad the circuit by one row: a Generic-kind row with no coefficients, so the
   generic equation is degenerate (`0 = 0`) and the row's only content is its wiring
-  (seven cells — the permutable width). The deployed consumers are the chunk-test
-  circuits, pushing row counts past a domain boundary. -/
+  (seven cells — the permutable width). The consumers are PS-side: the chunk-test
+  circuits push row counts past a domain boundary with it. No Lean circuit emits
+  it. -/
   | pad (vs : Vector (FVar F) 7)
   deriving Repr, DecidableEq
 
@@ -172,20 +172,5 @@ def kimchiOps [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [Div F]
   finalize aux :=
     ((finalizeGateQueue aux.queuedGenericGate).map .plonk,
      { aux with queuedGenericGate := none })
-
-/-- The kimchi builder: the generic interpreter at `kimchiOps` (PS's
-`runCircuitBuilder` at the `CompileCircuit` instance). Finalize a run with
-`finalizeWith (kimchiOps rc)`. -/
-abbrev kimchiBuild [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [Div F]
-    [DecidableEq F] (rc : ℕ → F × F × F) (m : CircuitM F (KimchiConstraint F) α)
-    (n : Nat) (aux : AuxState F) : BuiltWith (KimchiGate F) (AuxState F) α :=
-  buildWith (kimchiOps rc) m n aux
-
-/-- The kimchi prover: the generic interpreter at `kimchiOps` (PS's
-`runCircuitProver` at the `SolveCircuit` instance). -/
-abbrev kimchiProve [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [Div F]
-    [DecidableEq F] (rc : ℕ → F × F × F) (m : CircuitM F (KimchiConstraint F) α)
-    (nv : Nat) (env : Assignments F) : Except EvalError (Proved F α) :=
-  proveWith (kimchiOps rc) m nv env
 
 end Snarky.Kimchi
