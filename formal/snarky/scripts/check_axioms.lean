@@ -87,9 +87,7 @@ def roots : List Name :=
     `Snarky.addConstraint_spec,
     `Snarky.addConstraint_complete_spec,
     `Snarky.witnessBool_spec,
-    `Snarky.witnessBool_complete_spec,
-    `Snarky.witnessField_complete_spec,
-    `Snarky.witnessUncheckedBool_complete_spec,
+    `Snarky.witness_complete_spec,
     `Snarky.generateVec_spec,
     `Snarky.generateVec_complete_spec,
     `Snarky.sound_spec_iff,
@@ -110,7 +108,13 @@ def roots : List Name :=
     `Snarky.Basic.instLawfulBasicSystem,
     `Snarky.Basic.instLawfulChecker,
     `Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem,
-    `Snarky.Kimchi.KimchiConstraint.instLawfulChecker ]
+    `Snarky.Kimchi.KimchiConstraint.instLawfulChecker,
+    `Snarky.instLawfulCircuitTypeF,
+    `Snarky.instLawfulCircuitTypeBool,
+    `Snarky.instLawfulCircuitTypeUnChecked,
+    `Snarky.instLawfulCheckedTypeF,
+    `Snarky.instLawfulCheckedTypeUnChecked,
+    `Snarky.instLawfulCheckedTypeBool ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

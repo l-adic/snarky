@@ -465,164 +465,255 @@ open Std.Do in
   exact hpre (.unchecked (.var s.nv)) _
     (LawfulBasicSystem.holds_boolean s.V _ (hsat _ (List.mem_cons_self ..)))
 
-/-- The honest run of one checked-`Bool` witness: the `boolean` row always accepts a
-bit. The run equation behind `witnessBool_complete_spec`. -/
-private theorem prove_witnessBool {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    {w : AsProver F Bool} {nv : Nat} {env : Assignments F} {b : Bool}
-    (hw : w env = .ok b) (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c))
-      (witness (val := Bool) w : CircuitM F c (BoolVar F)) nv env
-      = .ok ⟨.unchecked (.var nv), nv + 1, env.extend nv (bit b)⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := Bool))
-      = .ok ⟨#[bit b], rfl⟩ := by rw [hw]; rfl
-  have hext : env.extendPairs
-      ((allocRange nv 1).toList.zip (⟨#[bit b], rfl⟩ : Vector F 1).toList)
-      = .ok (env.extend nv (bit b)) := by
-    show env.extendPairs [(nv, bit b)] = .ok _
-    simp [Assignments.extendPairs, hnv]
-  have hch : Checker.holds (F := F) (c := c) (BasicSystem.boolean (.var nv))
-      (env.extend nv (bit b)) = true :=
-    LawfulChecker.check_boolean _ _ _ (Assignments.eval_var_extend _ _ _)
-      (by cases b <;> simp [bit])
-  show prove (Checker.holds (F := F) (c := c))
-    (.existsOp 1 (fun e => (w e).map _) _) nv env = _
-  simp only [prove, hwit, hext]
-  show prove (Checker.holds (F := F) (c := c))
-    (.addConstraintOp (BasicSystem.boolean (c := c) (.var nv))
-      (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
-    (env.extend nv (bit b)) = _
-  simp only [prove, hch, if_true]
+/-! ## The witness leaf
+
+One completeness spec serves every witnessed type: the honest encoding is written to
+fresh slots and passes its own checks (`LawfulCheckedType`), and the bundle's fields
+read back as the encoding. The per-type readings (`witnessed_fvar_eval`,
+`witnessed_boolVar_eval`, `witnessed_uncheckedBool_eval`) extract the shaped facts
+call sites consume. -/
+
+/-- The completeness contract of a `CheckedType`: an honest encoding passes its own
+checks. PS discharges this dynamically — the prover runs `check` on the freshly
+written fields; here it is the class's law, stated as the completeness triple the
+witness leaf composes. The check instance is bound at the prover tag so the class has
+exactly one derivation path there — a base-`c` binder plus a forwarding instance
+would give two derivations the non-reducible tag keeps from unifying. -/
+class LawfulCheckedType (F c val var : Type) [Add F] [Mul F]
+    [CircuitType F val var] [CheckedType F (Prover c) var] [Checker F c] : Prop where
+  /-- On a table where the bundle's fields read as a value's encoding, the check's
+  honest run accepts. -/
+  check_complete : ∀ (bundle : var) (v : val)
+      (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))),
+    ⦃Complete
+        (fun env =>
+          (CircuitType.varToFields (F := F) (val := val) bundle).toList.mapM
+              (CVar.eval · env)
+            = .ok (CircuitType.valueToFields (F := F) (var := var) v).toList)
+        (fun _ _ _ => True) Q⦄
+    (CheckedType.check bundle : CircuitM F (Prover c) PUnit)
+    ⦃Q⦄
 
 open Std.Do in
-/-- A witness computation that succeeds makes the run succeed, and the result reads
-as the computed bit's encoding. -/
-@[spec] theorem witnessBool_complete_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (w : AsProver F Bool)
-    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+/-- The triple of a check-free `check`: a `pure` accepts anything. -/
+private theorem check_pure_complete {F c : Type} [Checker F c]
+    {pre : Assignments F → Prop}
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete pre (fun _ _ _ => True) Q⦄
+    (.pure PUnit.unit : CircuitM F (Prover c) PUnit)
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨-, hk⟩ := hpre
+  simp only [wp, PredTrans.apply, prove]
+  intro hf
+  exact hk PUnit.unit ⟨st.nv, st.env, hf⟩ trivial (Assignments.Le.refl st.env)
+
+/-- Extract the evaluation behind a singleton fields read. -/
+private theorem mapM_eval_singleton {F : Type} [Add F] [Mul F]
+    {x : CVar F} {env : Assignments F} {v : F}
+    (h : [x].mapM (CVar.eval · env) = .ok [v]) : x.eval env = .ok v := by
+  cases he : x.eval env with
+  | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
+  | ok y =>
+    simp [List.mapM_cons, List.mapM_nil, he, Bind.bind, Except.bind, Pure.pure,
+      Except.pure] at h
+    rw [h]
+
+instance instLawfulCheckedTypeF {F c : Type} [Add F] [Mul F] [Checker F c] :
+    LawfulCheckedType F c F (FVar F) :=
+  ⟨fun _ _ Q => check_pure_complete (c := c) Q⟩
+
+instance instLawfulCheckedTypeUnChecked {F c : Type} [Add F] [Mul F]
+    {val var : Type} [CircuitType F val var] [Checker F c] :
+    LawfulCheckedType F c (UnChecked val) (UnChecked var) :=
+  ⟨fun _ _ Q => check_pure_complete (c := c) Q⟩
+
+open Std.Do in
+instance instLawfulCheckedTypeBool {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c] :
+    LawfulCheckedType F c Bool (BoolVar F) where
+  check_complete bundle b Q := by
+    intro st hpre
+    obtain ⟨hread, hk⟩ := hpre
+    have hb : (bundle.toCVar).eval st.env = .ok (bit b) := mapM_eval_singleton hread
+    refine addConstraint_complete_spec (c := c) _ Q st
+      ⟨?_, fun u st' _ hle => hk u st' trivial hle⟩
+    exact LawfulChecker.check_boolean _ _ _ hb (by cases b <;> simp [bit])
+
+/-- `allocRange`'s underlying list is the consecutive range. -/
+private theorem allocRange_toList : ∀ (n nv : Nat),
+    (allocRange nv n).toList = List.range' nv n
+  | 0, _ => rfl
+  | n + 1, nv => by
+    have ih := allocRange_toList n (nv + 1)
+    simp only [allocRange, Vector.toList_ofFn] at ih ⊢
+    rw [List.ofFn_succ, show List.range' nv (n + 1) = nv :: List.range' (nv + 1) n
+      from rfl, ← ih]
+    congr 1
+    refine congrArg List.ofFn (funext fun i => ?_)
+    simp only [Fin.val_succ]
+    omega
+
+/-- Fresh consecutive slots batch-extend successfully; the table only grows, stays
+fresh past the batch, and each slot holds its value. -/
+private theorem extendPairs_consecutive {F : Type} :
+    ∀ (xs : List F) (nv : Nat) (a : Assignments F), a.FreshFrom nv →
+      ∃ a', a.extendPairs ((List.range' nv xs.length).zip xs) = .ok a' ∧
+        a.Le a' ∧ a'.FreshFrom (nv + xs.length) ∧
+        ∀ i x, xs[i]? = some x → a' (nv + i) = some x
+  | [], nv, a, hfresh =>
+    ⟨a, rfl, Assignments.Le.refl a, by simpa using hfresh,
+      fun i x h => by simp at h⟩
+  | x :: rest, nv, a, hfresh => by
+    have hnv : a nv = none := hfresh nv (Nat.le_refl nv)
+    have hfresh' : (a.extend nv x).FreshFrom (nv + 1) := by
+      intro u hu
+      have hne : ¬ u = nv := by omega
+      simp only [Assignments.extend, if_neg hne]
+      exact hfresh u (by omega)
+    obtain ⟨a', hrun, hle, hfr, hread⟩ :=
+      extendPairs_consecutive rest (nv + 1) (a.extend nv x) hfresh'
+    refine ⟨a', ?_, (Assignments.le_extend_self hfresh x).trans hle, ?_, ?_⟩
+    · show a.extendPairs
+        ((nv :: List.range' (nv + 1) rest.length).zip (x :: rest)) = .ok a'
+      simp only [List.zip_cons_cons, Assignments.extendPairs, hnv]
+      exact hrun
+    · intro u hu
+      simp only [List.length_cons] at hu
+      exact hfr u (by omega)
+    · intro i y hy
+      cases i with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hy
+        exact hy ▸ hle nv x (by simp [Assignments.extend])
+      | succ i =>
+        have := hread i y (by simpa using hy)
+        rw [show nv + (i + 1) = (nv + 1) + i by omega]
+        exact this
+
+/-- Consecutive variables read their recorded values on any extension of the table. -/
+private theorem mapM_eval_range' {F : Type} [Add F] [Mul F]
+    {env env' : Assignments F} (hle : env.Le env') :
+    ∀ (xs : List F) (nv : Nat), (∀ i x, xs[i]? = some x → env (nv + i) = some x) →
+      ((List.range' nv xs.length).map CVar.var).mapM (CVar.eval · env') = .ok xs
+  | [], _, _ => rfl
+  | x :: rest, nv, hread => by
+    have h0 : env' nv = some x := hle nv x (by simpa using hread 0 x (by simp))
+    have hx : (CVar.var nv).eval env' = .ok x := by simp [CVar.eval, h0]
+    have ih := mapM_eval_range' hle rest (nv + 1) fun i y hy => by
+      have := hread (i + 1) y (by simpa using hy)
+      rw [show (nv + 1) + i = nv + (i + 1) by omega]
+      exact this
+    show ((nv :: List.range' (nv + 1) rest.length).map CVar.var).mapM
+      (CVar.eval · env') = _
+    simp [List.mapM_cons, hx, ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
+
+open Std.Do in
+/-- A witness computation that succeeds makes the run succeed — the honest encoding
+passes its own checks — and the bundle's fields read back as the encoding on the
+final table (the `witnessed_*` readings above extract the per-type forms). -/
+@[spec] theorem witness_complete_spec {F c val var : Type} [Add F] [Mul F]
+    [DecidableEq F] [CircuitType F val var] [LawfulCircuitType F val var]
+    [CheckedType F (Prover c) var] [Checker F c] [LawfulCheckedType F c val var]
+    (w : AsProver F val)
+    (Q : PostCond var (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => (w env).isOk)
-        (fun env (r : BoolVar F) env' => ∀ b, w env = .ok b →
-          (↑r : CVar F).eval env' = .ok (bit b)) Q⦄
-    (witness (val := Bool) w : CircuitM F (Prover c) (BoolVar F))
+        (fun env (r : var) env' => ∀ v, w env = .ok v →
+          (CircuitType.varToFields (F := F) (val := val) r).toList.mapM
+              (CVar.eval · env')
+            = .ok (CircuitType.valueToFields (F := F) (var := var) v).toList) Q⦄
+    (witness (val := val) w : CircuitM F (Prover c) var)
     ⦃Q⦄ := by
   intro st hpre
   obtain ⟨hok, hk⟩ := hpre
-  obtain ⟨b, hw⟩ : ∃ b, w st.env = .ok b := by
+  obtain ⟨v, hw⟩ : ∃ v, w st.env = .ok v := by
     cases hwe : w st.env with
     | error e => rw [hwe] at hok; cases hok
-    | ok b => exact ⟨b, rfl⟩
-  rw [show (witness (val := Bool) w : CircuitM F (Prover c) (BoolVar F))
-      = (witness (val := Bool) w : CircuitM F c (BoolVar F)) from rfl]
-  simp only [wp, PredTrans.apply, prove_witnessBool hw st.fresh]
+    | ok v => exact ⟨v, rfl⟩
+  have hwit : (w st.env).map (CircuitType.valueToFields (F := F) (val := val))
+      = .ok (CircuitType.valueToFields (F := F) (var := var) v) := by rw [hw]; rfl
+  obtain ⟨env₁, hext, hle₁, hfr₁, hread⟩ :=
+    extendPairs_consecutive
+      (CircuitType.valueToFields (F := F) (var := var) v).toList st.nv st.env st.fresh
+  have hext' : st.env.extendPairs
+      ((allocRange st.nv (CircuitType.size F val)).toList.zip
+        (CircuitType.valueToFields (F := F) (var := var) v).toList) = .ok env₁ := by
+    rw [allocRange_toList]
+    simpa using hext
+  have hfr₁' : env₁.FreshFrom (st.nv + CircuitType.size F val) := by
+    simpa using hfr₁
+  have hvars : ∀ (env'' : Assignments F), env₁.Le env'' →
+      (CircuitType.varToFields (F := F) (val := val)
+          (CircuitType.fieldsToVar (F := F) (val := val)
+            (mapVec CVar.var (allocRange st.nv (CircuitType.size F val))))).toList.mapM
+          (CVar.eval · env'')
+        = .ok (CircuitType.valueToFields (F := F) (var := var) v).toList := by
+    intro env'' hle''
+    rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
+    show ((allocRange st.nv (CircuitType.size F val)).toList.map CVar.var).mapM
+      (CVar.eval · env'') = _
+    rw [allocRange_toList]
+    have hlen : CircuitType.size F val
+        = (CircuitType.valueToFields (F := F) (var := var) v).toList.length := by simp
+    conv_lhs => rw [hlen]
+    exact mapM_eval_range' hle'' _ st.nv hread
+  rw [show (witness (val := val) w : CircuitM F (Prover c) var)
+      = ((CircuitM.existsOp (CircuitType.size F val)
+            (fun e => (w e).map (CircuitType.valueToFields (F := F) (val := val)))
+            (fun vs => CircuitM.pure vs) : CircuitM F (Prover c) _) >>=
+          fun vs =>
+            (CheckedType.check (c := Prover c)
+                (CircuitType.fieldsToVar (F := F) (val := val)
+                  (mapVec CVar.var vs)) >>=
+              fun _ => pure (CircuitType.fieldsToVar (F := F) (val := val)
+                (mapVec CVar.var vs)))) from rfl]
+  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  simp only [wp, PredTrans.apply, prove, hwit, hext']
   intro hf
-  refine hk (.unchecked (.var st.nv)) ⟨st.nv + 1, st.env.extend st.nv (bit b), hf⟩
-    (fun b' hb' => ?_) (Assignments.le_extend_self st.fresh _)
-  rw [hw] at hb'
-  injection hb' with hb'
-  subst hb'
-  simp [circuitVal]
+  refine LawfulCheckedType.check_complete (c := c) (val := val) _ v
+    (⟨fun _ st' => .up (∀ hf' : st'.env.FreshFrom st'.nv,
+        (Q.1 (CircuitType.fieldsToVar (F := F) (val := val)
+            (mapVec CVar.var (allocRange st.nv (CircuitType.size F val))))
+          ⟨st'.nv, st'.env, hf'⟩).down), Q.2⟩)
+    ⟨st.nv + CircuitType.size F val, env₁, hf⟩
+    ⟨hvars env₁ (Assignments.Le.refl env₁), fun u st' _ hle' => ?_⟩
+  intro hf'
+  refine hk _ ⟨st'.nv, st'.env, hf'⟩ (fun v' hv' => ?_) (hle₁.trans hle')
+  rw [hw] at hv'
+  injection hv' with hv'
+  subst hv'
+  exact hvars st'.env hle'
 
-/-- The honest run of one field witness: no check row. The run equation behind
-`witnessField_complete_spec`. -/
-private theorem prove_witnessField {F c : Type} [DecidableEq F] [Checker F c]
-    {w : AsProver F F} {nv : Nat} {env : Assignments F} {x : F}
-    (hw : w env = .ok x) (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c))
-      (witness (val := F) w : CircuitM F c (FVar F)) nv env
-      = .ok ⟨.var nv, nv + 1, env.extend nv x⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := F))
-      = .ok ⟨#[x], rfl⟩ := by rw [hw]; rfl
-  have hext : env.extendPairs
-      ((allocRange nv 1).toList.zip (⟨#[x], rfl⟩ : Vector F 1).toList)
-      = .ok (env.extend nv x) := by
-    show env.extendPairs [(nv, x)] = .ok _
-    simp [Assignments.extendPairs, hnv]
-  show prove (Checker.holds (F := F) (c := c))
-    (.existsOp 1 (fun e => (w e).map _) _) nv env = _
-  simp only [prove, hwit, hext]
-  rfl
+/-- The witnessed-field reading at `val := F`: the fields fact is the variable's
+evaluation. -/
+theorem witnessed_fvar_eval {F : Type} [Add F] [Mul F]
+    {r : FVar F} {env : Assignments F} {x : F}
+    (h : (CircuitType.varToFields (F := F) (val := F) r).toList.mapM (CVar.eval · env)
+      = .ok (CircuitType.valueToFields (F := F) (var := FVar F) x).toList) :
+    r.eval env = .ok x :=
+  mapM_eval_singleton h
 
-open Std.Do in
-/-- A witness computation that succeeds makes the run succeed, and the result reads
-as the computed value; a field element pays no check row. -/
-@[spec] theorem witnessField_complete_spec {F c : Type} [Add F] [Mul F] [DecidableEq F]
-    [Checker F c] (w : AsProver F F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (w env).isOk)
-        (fun env (r : FVar F) env' => ∀ x, w env = .ok x → r.eval env' = .ok x) Q⦄
-    (witness (val := F) w : CircuitM F (Prover c) (FVar F))
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨hok, hk⟩ := hpre
-  obtain ⟨x, hw⟩ : ∃ x, w st.env = .ok x := by
-    cases hwe : w st.env with
-    | error e => rw [hwe] at hok; cases hok
-    | ok x => exact ⟨x, rfl⟩
-  rw [show (witness (val := F) w : CircuitM F (Prover c) (FVar F))
-      = (witness (val := F) w : CircuitM F c (FVar F)) from rfl]
-  simp only [wp, PredTrans.apply, prove_witnessField hw st.fresh]
-  intro hf
-  refine hk (.var st.nv) ⟨st.nv + 1, st.env.extend st.nv x, hf⟩
-    (fun x' hx' => ?_) (Assignments.le_extend_self st.fresh _)
-  rw [hw] at hx'
-  injection hx' with hx'
-  subst hx'
-  exact Assignments.eval_var_extend _ _ _
+/-- The witnessed-field reading at `val := Bool`: the bit variable evaluates to the
+bit's encoding. -/
+theorem witnessed_boolVar_eval {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] {r : BoolVar F} {env : Assignments F} {b : Bool}
+    (h : (CircuitType.varToFields (F := F) (val := Bool) r).toList.mapM
+        (CVar.eval · env)
+      = .ok (CircuitType.valueToFields (F := F) (var := BoolVar F) b).toList) :
+    (↑r : CVar F).eval env = .ok (bit b) :=
+  mapM_eval_singleton h
 
-/-- The honest run of one `UnChecked Bool` witness: no check row. The run equation
-behind `witnessUncheckedBool_complete_spec`. -/
-private theorem prove_witnessUncheckedBool {F c : Type} [Zero F] [One F] [DecidableEq F]
-    [Checker F c] {w : AsProver F (UnChecked Bool)} {nv : Nat} {env : Assignments F}
-    {u : UnChecked Bool} (hw : w env = .ok u) (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c))
-      (witness (val := UnChecked Bool) w : CircuitM F c (UnChecked (BoolVar F))) nv env
-      = .ok ⟨⟨.unchecked (.var nv)⟩, nv + 1, env.extend nv (bit u.val)⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := UnChecked Bool))
-      = .ok ⟨#[bit u.val], rfl⟩ := by rw [hw]; rfl
-  have hext : env.extendPairs
-      ((allocRange nv 1).toList.zip (⟨#[bit u.val], rfl⟩ : Vector F 1).toList)
-      = .ok (env.extend nv (bit u.val)) := by
-    show env.extendPairs [(nv, bit u.val)] = .ok _
-    simp [Assignments.extendPairs, hnv]
-  show prove (Checker.holds (F := F) (c := c))
-    (.existsOp 1 (fun e => (w e).map _) _) nv env = _
-  simp only [prove, hwit, hext]
-  rfl
-
-open Std.Do in
-/-- A witness computation that succeeds makes the run succeed, and the wrapped bit
-reads as its encoding; an `UnChecked` bundle pays no check row. -/
-@[spec] theorem witnessUncheckedBool_complete_spec {F c : Type} [Add F] [Mul F]
-    [Zero F] [One F] [DecidableEq F] [Checker F c] (w : AsProver F (UnChecked Bool))
-    (Q : PostCond (UnChecked (BoolVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (w env).isOk)
-        (fun env (r : UnChecked (BoolVar F)) env' => ∀ u, w env = .ok u →
-          (↑r.val : CVar F).eval env' = .ok (bit u.val)) Q⦄
-    (witness (val := UnChecked Bool) w : CircuitM F (Prover c) (UnChecked (BoolVar F)))
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨hok, hk⟩ := hpre
-  obtain ⟨u, hw⟩ : ∃ u, w st.env = .ok u := by
-    cases hwe : w st.env with
-    | error e => rw [hwe] at hok; cases hok
-    | ok u => exact ⟨u, rfl⟩
-  rw [show (witness (val := UnChecked Bool) w
-        : CircuitM F (Prover c) (UnChecked (BoolVar F)))
-      = (witness (val := UnChecked Bool) w : CircuitM F c (UnChecked (BoolVar F)))
-      from rfl]
-  simp only [wp, PredTrans.apply, prove_witnessUncheckedBool hw st.fresh]
-  intro hf
-  refine hk ⟨.unchecked (.var st.nv)⟩
-    ⟨st.nv + 1, st.env.extend st.nv (bit u.val), hf⟩
-    (fun u' hu' => ?_) (Assignments.le_extend_self st.fresh _)
-  rw [hw] at hu'
-  injection hu' with hu'
-  subst hu'
-  simp [circuitVal]
+/-- The witnessed-field reading at `val := UnChecked Bool`: the wrapped bit variable
+evaluates to the bit's encoding. -/
+theorem witnessed_uncheckedBool_eval {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] {r : UnChecked (BoolVar F)} {env : Assignments F}
+    {u : UnChecked Bool}
+    (h : (CircuitType.varToFields (F := F) (val := UnChecked Bool) r).toList.mapM
+        (CVar.eval · env)
+      = .ok (CircuitType.valueToFields (F := F)
+          (var := UnChecked (BoolVar F)) u).toList) :
+    (↑r.val : CVar F).eval env = .ok (bit u.val) :=
+  mapM_eval_singleton h
 
 /-! ## The vector loop rule
 

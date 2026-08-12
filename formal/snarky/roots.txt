@@ -72,9 +72,10 @@ Snarky.complete_spec_iff
 Snarky.addConstraint_spec
 Snarky.addConstraint_complete_spec
 Snarky.witnessBool_spec
-Snarky.witnessBool_complete_spec
-Snarky.witnessField_complete_spec
-Snarky.witnessUncheckedBool_complete_spec
+Snarky.witness_complete_spec
+Snarky.witnessed_fvar_eval
+Snarky.witnessed_boolVar_eval
+Snarky.witnessed_uncheckedBool_eval
 Snarky.generateVec_spec
 Snarky.generateVec_complete_spec
 Snarky.CVar.evalOk

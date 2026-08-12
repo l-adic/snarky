@@ -273,14 +273,14 @@ the results are the operand's binary digits. -/
     have hw : unpackWit v i.val st'.env = .ok ((ToNat.toNat vv').testBit i.val) := by
       simp [unpackWit, AsProver.readCVar, hv', Bind.bind, ReaderT.bind, Except.bind,
         Pure.pure, ReaderT.pure, Except.pure]
-    refine witnessBool_complete_spec _ _ st'
+    refine witness_complete_spec (val := Bool) _ _ st'
       ⟨show (unpackWit v i.val st'.env).isOk = true by rw [hw]; rfl,
         fun r st'' hr hle => ?_⟩
     refine hk' r st'' (fun vv'' hv'' => ?_) hle
     rw [hv'] at hv''
     injection hv'' with hv''
     subst hv''
-    exact hr _ hw
+    exact witnessed_boolVar_eval (hr _ hw)
   refine generateVec_complete_spec n _ _ _ hcomp
     (fun i env env' hle hok => by
       obtain ⟨vv', hv'⟩ := CVar.evalOk hok
