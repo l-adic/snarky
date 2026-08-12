@@ -28,7 +28,7 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS's `Rows` newtype over `Vector 12` renders as the bare row list.
 
 No semantics is stated here, and the constraint layer stays free of `Kimchi`
-imports; the `decide` examples below pin the emission shapes.
+imports; the byte-equality corpus is the oracle.
 -/
 
 namespace Snarky.Kimchi
@@ -109,27 +109,5 @@ def PoseidonConstraint.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [Decidabl
     m (List (KimchiRow F)) := do
   let vs ← reduceStates c.state
   pure (rowsFromStates rc 0 vs)
-
-/-! ## Examples -/
-
-/-- A six-state block (one chunk plus the output): the `poseidon` row carries the
-chunk in the permuted order `s0 s4 s1 s2 s3` with rounds `0 … 4`'s constants packed
-as its coefficients, and the `zero` row carries the output state. -/
-example :
-    Id.run ((PoseidonConstraint.reduce (m := TraceM Int)
-        (fun r => ((3 * r : Int), (3 * r + 1 : Int), (3 * r + 2 : Int)))
-        ({ state := [(.var 0, .var 1, .var 2), (.var 3, .var 4, .var 5),
-                     (.var 6, .var 7, .var 8), (.var 9, .var 10, .var 11),
-                     (.var 12, .var 13, .var 14), (.var 15, .var 16, .var 17)] } :
-          PoseidonConstraint Int)).run ⟨18, [], []⟩) =
-      ([{ kind := .poseidon,
-          vars := ⟨⟨[some 0, some 1, some 2, some 12, some 13, some 14, some 3,
-                     some 4, some 5, some 6, some 7, some 8, some 9, some 10,
-                     some 11]⟩, by simp⟩,
-          coeffs := [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] },
-        { kind := .zero,
-          vars := ⟨⟨[some 15, some 16, some 17, none, none, none, none, none,
-                     none, none, none, none, none, none, none]⟩, by simp⟩,
-          coeffs := [] }], ⟨18, [], []⟩) := by decide
 
 end Snarky.Kimchi

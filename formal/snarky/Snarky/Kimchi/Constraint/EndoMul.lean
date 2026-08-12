@@ -132,28 +132,4 @@ def EndoMul.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
   let rows ← EndoMul.reduceRounds c.state
   pure (rows ++ [EndoMul.finalZeroRow xs ys nAcc])
 
-/-! ## Examples -/
-
-/-- A one-round multiplication, all operands variables: the accumulator/scalar header
-reduces FIRST (no allocations here, so only the order is visible), then the round's
-fourteen cells, then the trailing `zero` row carrying the header's variables. -/
-example :
-    Id.run ((EndoMul.reduce (m := TraceM Int)
-        ({ state := [{ t := ⟨.var 0, .var 1⟩, p := ⟨.var 2, .var 3⟩,
-                       r := ⟨.var 5, .var 6⟩, s := ⟨.var 14, .var 15⟩,
-                       s1 := .var 7, s3 := .var 8, nAcc := .var 4,
-                       nAccNext := .var 16, bit0 := .var 9, bit1 := .var 10,
-                       bit2 := .var 11, bit3 := .var 12, inv := .var 13 }],
-           s := ⟨.var 14, .var 15⟩, nAcc := .var 16 } : EndoMul Int)).run
-        ⟨17, [], []⟩) =
-      ([{ kind := .endoMul,
-          vars := ⟨⟨[some 0, some 1, some 13, none, some 2, some 3, some 4, some 5,
-                     some 6, some 7, some 8, some 9, some 10, some 11, some 12]⟩,
-            by simp⟩,
-          coeffs := [] },
-        { kind := .zero,
-          vars := ⟨⟨[none, none, none, none, some 14, some 15, some 16, none, none,
-                     none, none, none, none, none, none]⟩, by simp⟩,
-          coeffs := [] }], ⟨17, [], []⟩) := by decide
-
 end Snarky.Kimchi

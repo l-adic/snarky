@@ -94,31 +94,4 @@ def AddComplete.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
                      some x21Inv] ++ List.replicate 4 none⟩, by simp⟩,
           coeffs := [] }⟩
 
-/-! ## Examples -/
-
-/-- Eleven variable operands pin to themselves: the row's cells are the operands in
-gate-column order, nothing is allocated, nothing is logged. -/
-example :
-    Id.run ((AddComplete.reduce (m := TraceM Int)
-        ({ p1 := ⟨.var 0, .var 1⟩, p2 := ⟨.var 2, .var 3⟩, p3 := ⟨.var 4, .var 5⟩,
-           inf := .var 6, sameX := .var 7, s := .var 8, infZ := .var 9,
-           x21Inv := .var 10 } : AddComplete Int)).run ⟨11, [], []⟩) =
-      (⟨{ kind := .addComplete,
-          vars := ⟨⟨[some 0, some 1, some 2, some 3, some 4, some 5, some 6, some 7,
-                     some 8, some 9, some 10] ++ List.replicate 4 none⟩, by simp⟩,
-          coeffs := [] }⟩, ⟨11, [], []⟩) := by decide
-
-/-- A constant operand allocates and pins: `inf = 0` reduces LAST (the auxiliaries go
-right to left), so the fresh variable is `11`, pinned by one equals constraint. -/
-example :
-    Id.run ((AddComplete.reduce (m := TraceM Int)
-        ({ p1 := ⟨.var 0, .var 1⟩, p2 := ⟨.var 2, .var 3⟩, p3 := ⟨.var 4, .var 5⟩,
-           inf := .const 0, sameX := .var 7, s := .var 8, infZ := .var 9,
-           x21Inv := .var 10 } : AddComplete Int)).run ⟨11, [], []⟩) =
-      (⟨{ kind := .addComplete,
-          vars := ⟨⟨[some 0, some 1, some 2, some 3, some 4, some 5, some 11, some 7,
-                     some 8, some 9, some 10] ++ List.replicate 4 none⟩, by simp⟩,
-          coeffs := [] }⟩,
-        ⟨12, [], [⟨1, some 11, 0, none⟩]⟩) := by decide
-
 end Snarky.Kimchi

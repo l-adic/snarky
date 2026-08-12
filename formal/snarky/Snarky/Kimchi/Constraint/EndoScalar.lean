@@ -94,38 +94,4 @@ def EndoScalar.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     let rest ← EndoScalar.reduce cs
     pure (row :: rest)
 
-/-! ## Examples -/
-
-/-- Fourteen variable operands pin to themselves: cells `[n0 n8 a0 b0 a8 b8 | crumbs]`
-in gate-column order, nothing allocated. -/
-example :
-    Id.run ((EndoScalarRound.reduce (m := TraceM Int)
-        ({ n0 := .var 0, n8 := .var 1, a0 := .var 2, a8 := .var 4, b0 := .var 3,
-           b8 := .var 5,
-           xs := ⟨⟨[.var 6, .var 7, .var 8, .var 9, .var 10, .var 11, .var 12,
-                    .var 13]⟩, by simp⟩ } : EndoScalarRound Int)).run
-        ⟨14, [], []⟩) =
-      ({ kind := .endoScalar,
-         vars := ⟨⟨[some 0, some 1, some 2, some 3, some 4, some 5, some 6, some 7,
-                    some 8, some 9, some 10, some 11, some 12, some 13, none]⟩,
-           by simp⟩,
-         coeffs := [] }, ⟨14, [], []⟩) := by decide
-
-/-- The first-round constants: `b0` reduces BEFORE `a0` (right-to-left), so `b0` pins
-fresh variable `14` and `a0` pins `15` — the builder's constant cache would then WIRE
-`15` to `14`; the trace records both pins. -/
-example :
-    Id.run ((EndoScalarRound.reduce (m := TraceM Int)
-        ({ n0 := .var 0, n8 := .var 1, a0 := .const 2, a8 := .var 4, b0 := .const 2,
-           b8 := .var 5,
-           xs := ⟨⟨[.var 6, .var 7, .var 8, .var 9, .var 10, .var 11, .var 12,
-                    .var 13]⟩, by simp⟩ } : EndoScalarRound Int)).run
-        ⟨14, [], []⟩) =
-      ({ kind := .endoScalar,
-         vars := ⟨⟨[some 0, some 1, some 15, some 14, some 4, some 5, some 6, some 7,
-                    some 8, some 9, some 10, some 11, some 12, some 13, none]⟩,
-           by simp⟩,
-         coeffs := [] },
-        ⟨16, [], [⟨1, some 15, 2, none⟩, ⟨1, some 14, 2, none⟩]⟩) := by decide
-
 end Snarky.Kimchi

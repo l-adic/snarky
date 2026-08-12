@@ -23,8 +23,8 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   emission is a no-op there (the kimchi prover checks nothing per constraint).
 
 No semantics is stated here: the meaning of the emitted encodings and the
-faithfulness of this reducer are deliberately not part of this package. The `decide`
-examples below pin the emission shapes.
+faithfulness of this reducer are deliberately not part of this package; the
+byte-equality corpus is the oracle.
 
 The PS test surface (`test/Test/Snarky/Circuit/Kimchi/GenericTest.purs`) exercises
 the circuit layer end to end (an EC-addition circuit compiled through this reducer);
@@ -121,40 +121,5 @@ def reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] [Mon
       addGenericPlonkConstraint
         { cl := -x.2, vl := some v, cr := 0, vr := some v, co := 0, vo := none,
           m := x.2 * x.2, c := 0 }
-
-/-! ## Examples (no module-level PS QuickCheck rows; these stand in) -/
-
-/-- One multiplication over three variables emits the single product row. -/
-example :
-    Id.run ((reduce (m := TraceM Int) (.r1cs (.var 0) (.var 1) (.var 2))).run
-        ⟨3, [], []⟩) =
-      ((), ⟨3, [⟨0, some 0, 0, some 1, 1, some 2, -1, 0⟩], []⟩) := by decide
-
-/-- Booleanity of a variable emits the self-product row. -/
-example :
-    Id.run ((reduce (m := TraceM Int) (.boolean (.var 0))).run ⟨1, [], []⟩) =
-      ((), ⟨1, [⟨-1, some 0, 0, some 0, 0, none, 1, 0⟩], []⟩) := by decide
-
-/-- Equating a variable with a constant emits one equals constraint. -/
-example :
-    Id.run ((reduce (m := TraceM Int) (.equal (.var 0) (.const 7))).run
-        ⟨1, [], []⟩) =
-      ((), ⟨1, [], [⟨1, some 0, 7, none⟩]⟩) := by decide
-
-/-- A consistent all-constant square emits nothing (the PS-throw rendering's live
-branch). -/
-example :
-    Id.run ((reduce (m := TraceM Int) (.square (.const 3) (.const 9))).run
-        ⟨0, [], []⟩) =
-      ((), ⟨0, [], []⟩) := by decide
-
-/-- The prover ignores emissions: reducing the product constraint on a satisfying
-table succeeds without allocating. -/
-example :
-    ((reduce (m := PlonkProver Int) (.r1cs (.var 0) (.var 1) (.var 2))).run
-        ⟨3, fun v =>
-          if v = 0 then some 2 else if v = 1 then some 3 else
-          if v = 2 then some 6 else none⟩).toOption.map (fun p => p.2.nextVariable) =
-      some 3 := by decide
 
 end Snarky.Kimchi

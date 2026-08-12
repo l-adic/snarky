@@ -287,8 +287,7 @@ Snarky.Kimchi.KimchiWireRow
 Snarky.Kimchi.ToKimchiRows
 
 -- The reduction layer (Snarky/Kimchi/Constraint/Reduction.lean): the op vocabulary,
--- the two reduction algorithms, the builder/prover instances, and the emission-log
--- instance the `decide` exhibits run (anonymous consumers).
+-- the two reduction algorithms, and the builder/prover instances.
 Snarky.Kimchi.PlonkReductionM
 Snarky.Kimchi.reduceAffineExpression
 Snarky.Kimchi.reduceToVariable
@@ -296,15 +295,13 @@ Snarky.Kimchi.reduceAsBuilder
 Snarky.Kimchi.reduceAsProver
 Snarky.Kimchi.PlonkBuilder
 Snarky.Kimchi.PlonkProver
-Snarky.Kimchi.TraceM
 Snarky.Kimchi.EqualsConstraint
 Snarky.Kimchi.mkPadRow
 Snarky.Kimchi.finalizeGateQueue
 
 -- The per-gate constraint payloads and reducers
 -- (Snarky/Kimchi/Constraint/{GenericPlonk,AddComplete,EndoScalar,VarBaseMul,EndoMul,
--- Poseidon}.lean): each payload record with its reducer; `decide` exhibits are
--- anonymous consumers.
+-- Poseidon}.lean): each payload record with its reducer.
 Snarky.Kimchi.reduce
 Snarky.Kimchi.AddComplete
 Snarky.Kimchi.AddComplete.reduce
@@ -338,20 +335,3 @@ Snarky.Kimchi.instDecidableEqKimchiConstraint
 Snarky.Kimchi.instReprKimchiConstraint
 Snarky.Kimchi.instDecidableEqKimchiGate
 Snarky.Kimchi.instReprKimchiGate
-
--- Derive and instance surface consumed only by the anonymous `decide` exhibits
--- (state-equality comparisons and the emission-log instance) — invisible to any
--- constant walk.
-Snarky.Kimchi.instPlonkReductionMTraceM
-Snarky.Kimchi.instDecidableEqEqualsConstraint
-Snarky.Kimchi.instReprEqualsConstraint
-Snarky.Kimchi.instDecidableEqGenericPlonkConstraint
-Snarky.Kimchi.instReprGenericPlonkConstraint
-Snarky.Kimchi.instDecidableEqKimchiWireRow
-Snarky.Kimchi.instReprKimchiWireRow
-Snarky.Kimchi.instDecidableEqReductionTrace
-Snarky.Kimchi.instReprReductionTrace
-Snarky.Kimchi.instDecidableEqAuxState
-Snarky.Kimchi.instReprAuxState
-Snarky.Kimchi.instDecidableEqBuilderReductionState
-Snarky.Kimchi.instReprBuilderReductionState

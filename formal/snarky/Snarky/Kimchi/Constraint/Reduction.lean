@@ -1,6 +1,5 @@
 import Snarky.Backend.Assignments
 import Snarky.Kimchi.Constraint.Types
-import Mathlib.Tactic.LinearCombination
 
 /-!
 # The affine-reduction layer of the kimchi backend
@@ -11,8 +10,7 @@ transcription of OCaml snarky's `reduce_lincom`/`completely_reduce`: the op voca
 `PlonkReductionM`, the generic algorithms `reduceAffineExpression`/`reduceToVariable`
 that rewrite an affine form into `c·v` while emitting generic constraints, and the two
 concrete interpreters — the builder (rows, gate batching, wiring, constant cache) and
-the prover (witness values). A third, Lean-only interpreter (`TraceM`) logs emissions
-pre-batching; the traced `decide` examples run it.
+the prover (witness values).
 
 Name map: every PS export keeps its name (`PlonkReductionM` with its three methods,
 `reduceAffineExpression`, `reduceToVariable`, `Rows`, `mkPadRow`,
@@ -71,9 +69,8 @@ emitted constraints and the faithfulness of the reduction are deliberately not s
 in this package.
 
 The PS package has no QuickCheck rows for this module — its tests exercise the
-circuit layer, and the fixture corpus is the oracle. The `decide` examples below stand
-in: the three-term reduction traced, the prover's values, gate batching, and the
-cache/union interplay.
+circuit layer, and the fixture corpus is the oracle; the byte-equality seam replays
+it against this port.
 -/
 
 namespace Snarky.Kimchi
@@ -93,7 +90,7 @@ structure EqualsConstraint (F : Type u) where
   cr : F
   /-- Right variable; `none` = the constant `1`. -/
   vr : Option Variable
-  deriving Repr, DecidableEq
+
 
 /-! ## The op vocabulary and the generic algorithms -/
 
@@ -224,7 +221,6 @@ structure BuilderReductionState (F : Type u) where
   nextVariable : Variable
   /-- The wire state and the gate queue. -/
   aux : AuxState F
-  deriving Repr, DecidableEq
 
 /-- The builder's reduction monad (PS `PlonkBuilder`, minus the `Effect` that only
 served the mutable union-find). -/
@@ -380,108 +376,5 @@ the evaluation error out. -/
 def reduceAsProver (s : ProverReductionState F) (x : PlonkProver F α) :
     Except EvalError (α × ProverReductionState F) :=
   x.run s
-
-/-! ## The trace — the emission log
-
-PS validates the reduction through the fixture corpus; the third instance logs every
-emission pre-batching, and the traced `decide` examples below run it. -/
-
-/-- The emission log: the counter, and the logged constraints (newest first). -/
-structure ReductionTrace (F : Type u) where
-  /-- The variable counter, in lockstep with the builder's and the prover's. -/
-  nextVariable : Variable
-  /-- Logged generic constraints, newest first. -/
-  generics : List (GenericPlonkConstraint F)
-  /-- Logged equals constraints, newest first. -/
-  equalities : List (EqualsConstraint F)
-  deriving Repr, DecidableEq
-
-/-- The logging reduction monad — Lean-only, no PS counterpart. -/
-abbrev TraceM (F : Type) := StateM (ReductionTrace F)
-
-instance : PlonkReductionM F (TraceM F) where
-  createInternalVariable _ := fun t =>
-    (t.nextVariable, { t with nextVariable := t.nextVariable + 1 })
-  addGenericPlonkConstraint g := fun t => ((), { t with generics := g :: t.generics })
-  addEqualsConstraint e := fun t => ((), { t with equalities := e :: t.equalities })
-
-/-! ## Examples (the module has no PS QuickCheck rows; these stand in)
-
-All over `Int` (core instances only; the one division exercised divides by `1`, where
-integer division is exact). -/
-
-/-- The three-term reduction, traced: the tail combines deepest-first into internal
-`3`, the head folds in with the constant into internal `4`, and the result is `1·v₄`. -/
-example :
-    Id.run ((reduceAffineExpression (m := TraceM Int)
-        ⟨some 7, [(0, 3), (1, 5), (2, 11)]⟩).run ⟨3, [], []⟩) =
-      ((some 4, 1),
-        ⟨5,
-          [⟨3, some 0, 1, some 3, -1, some 4, 0, 7⟩,
-           ⟨5, some 1, 11, some 2, -1, some 3, 0, 0⟩],
-          []⟩) := by decide
-
-/-- The same reduction in the prover: internal `3` gets the tail's value
-`5·3 + 11·4 = 59`, internal `4` the total `7 + 3·2 + 59 = 72`. -/
-example :
-    ((reduceAffineExpression (m := PlonkProver Int)
-          ⟨some 7, [(0, 3), (1, 5), (2, 11)]⟩).run
-        ⟨3, fun v =>
-          if v = 0 then some 2 else if v = 1 then some 3 else
-          if v = 2 then some 4 else none⟩).toOption.map
-        (fun p => (p.1, p.2.nextVariable, p.2.assignments 3, p.2.assignments 4)) =
-      some ((some 4, 1), 5, some 59, some 72) := by decide
-
-/-- Reducing a constant `CVar` pins a fresh variable with an equals constraint. -/
-example :
-    Id.run ((reduceToVariable (m := TraceM Int) (.const 5)).run ⟨0, [], []⟩) =
-      (0, ⟨1, [], [⟨1, some 0, 5, none⟩]⟩) := by decide
-
-/-- Gate batching: the first generic constraint queues, the second packs both into one
-double row — the NEW gate's cells and coefficients first. -/
-example :
-    Id.run ((show PlonkBuilder Int Unit from do
-          let g₁ : GenericPlonkConstraint Int := ⟨1, some 0, 0, none, -1, some 1, 0, 0⟩
-          let g₂ : GenericPlonkConstraint Int := ⟨2, some 2, 0, none, -1, some 3, 0, 5⟩
-          addGenericPlonkConstraint g₁
-          addGenericPlonkConstraint g₂).run
-        ⟨[], 4, initialAuxState⟩) =
-      ((),
-        ⟨[{ kind := .genericPlonk,
-            vars := ⟨⟨[some 2, none, some 3, some 0, none, some 1] ++
-              List.replicate 9 none⟩, by simp⟩,
-            coeffs := [2, 0, -1, 0, 5, 1, 0, -1, 0, 0] }],
-          4, initialAuxState⟩) := by decide
-
-/-- The constant cache: pinning `v₀ = 9` queues one generic row and caches `(9, v₀)`;
-asserting `v₁ = 9` then hits the cache and WIRES `v₁` to `v₀` instead of emitting. -/
-example :
-    (Id.run ((show PlonkBuilder Int Unit from do
-          let e₁ : EqualsConstraint Int := ⟨1, some 0, 9, none⟩
-          let e₂ : EqualsConstraint Int := ⟨1, some 1, 9, none⟩
-          addEqualsConstraint e₁
-          addEqualsConstraint e₂).run
-        ⟨[], 2, initialAuxState⟩)).2 =
-      ⟨[], 2,
-        { wireState :=
-            { internalVariables := [],
-              unionFind := UnionFind.empty.union 1 0,
-              cachedConstants := [(9, 0)] },
-          queuedGenericGate := some ⟨1, some 0, 0, none, 0, none, 0, -9⟩ }⟩ := by
-  decide
-
-/-- `finalizeGateQueue` flushes the queued constraint into its single-constraint row. -/
-example :
-    finalizeGateQueue (F := Int) (some ⟨1, some 0, 2, some 1, 3, some 2, 4, 5⟩) =
-      some ⟨{ kind := .genericPlonk,
-              vars := ⟨⟨[some 0, some 1, some 2] ++ List.replicate 12 none⟩, by simp⟩,
-              coeffs := [1, 2, 3, 4, 5] }⟩ := by decide
-
-/-- `mkPadRow` wires seven cells and leaves the coefficients empty. -/
-example :
-    mkPadRow (F := Int) ⟨⟨[0, 1, 2, 3, 4, 5, 6]⟩, by simp⟩ =
-      ⟨{ kind := .genericPlonk,
-         vars := ⟨⟨[0, 1, 2, 3, 4, 5, 6].map some ++ List.replicate 8 none⟩, by simp⟩,
-         coeffs := [] }⟩ := by decide
 
 end Snarky.Kimchi

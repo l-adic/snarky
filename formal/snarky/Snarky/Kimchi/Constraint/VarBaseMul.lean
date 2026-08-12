@@ -146,31 +146,4 @@ def VarBaseMul.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     let rest ← VarBaseMul.reduce cs
     pure (pair :: rest)
 
-/-! ## Examples -/
-
-/-- Twenty-six variable operands pin to themselves: the `varBaseMul` row carries the
-base, `P₀`, the registers and `P₁ … P₄`; the `zero` row carries `P₅`, the bits and the
-slopes. -/
-example :
-    Id.run ((ScaleRound.reduce (m := TraceM Int)
-        ({ acc0 := ⟨.var 0, .var 1⟩, acc1 := ⟨.var 2, .var 3⟩,
-           acc2 := ⟨.var 4, .var 5⟩, acc3 := ⟨.var 6, .var 7⟩,
-           acc4 := ⟨.var 8, .var 9⟩, acc5 := ⟨.var 10, .var 11⟩,
-           bit0 := .var 12, bit1 := .var 13, bit2 := .var 14, bit3 := .var 15,
-           bit4 := .var 16,
-           slope0 := .var 17, slope1 := .var 18, slope2 := .var 19,
-           slope3 := .var 20, slope4 := .var 21,
-           nPrev := .var 22, nNext := .var 23,
-           base := ⟨.var 24, .var 25⟩ } : ScaleRound Int)).run ⟨26, [], []⟩) =
-      (({ kind := .varBaseMul,
-          vars := ⟨⟨[some 24, some 25, some 0, some 1, some 22, some 23, none,
-                     some 2, some 3, some 4, some 5, some 6, some 7, some 8,
-                     some 9]⟩, by simp⟩,
-          coeffs := [] },
-        { kind := .zero,
-          vars := ⟨⟨[some 10, some 11, some 12, some 13, some 14, some 15, some 16,
-                     some 17, some 18, some 19, some 20, some 21, none, none,
-                     none]⟩, by simp⟩,
-          coeffs := [] }), ⟨26, [], []⟩) := by decide
-
 end Snarky.Kimchi

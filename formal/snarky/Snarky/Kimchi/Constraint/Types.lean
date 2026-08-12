@@ -70,7 +70,7 @@ structure GenericPlonkConstraint (F : Type u) where
   m : F
   /-- The constant term. -/
   c : F
-  deriving Repr, DecidableEq
+
 
 /-- The gate tag on an emitted coefficient row (PS `GateKind`). The emitter's enum, not
 `Kimchi.GateType` — the mapping between the two lands with the CS assembly (see the
@@ -116,7 +116,7 @@ structure KimchiWireRow (F : Type u) where
   /-- Constant values already given a pinned variable, for dedup (PS `Map f Variable`;
   first-match assoc lookup here). -/
   cachedConstants : List (F × Variable)
-  deriving Repr, DecidableEq
+
 
 /-- The empty wire state around a given union-find (PS `emptyKimchiWireState`). -/
 private def emptyKimchiWireState (uf : UnionFind) : KimchiWireRow F :=
@@ -129,7 +129,7 @@ structure AuxState (F : Type u) where
   wireState : KimchiWireRow F
   /-- A generic constraint waiting to be packed with a second one into a row. -/
   queuedGenericGate : Option (GenericPlonkConstraint F)
-  deriving Repr, DecidableEq
+
 
 /-- The initial auxiliary state (PS `initialAuxState`, minus the `Effect` that only
 allocated the mutable union-find). -/
@@ -148,11 +148,5 @@ re-declares a per-module `Rows` newtype over an array for its instance head; Lea
 the bare list). -/
 instance : ToKimchiRows F (List (KimchiRow F)) where
   toKimchiRows := id
-
-/-! ## Examples -/
-
-/-- The initial state is genuinely empty: no internals, no queue, an empty partition. -/
-example : (initialAuxState (F := Nat)).wireState.unionFind.equivalenceClasses = []
-    ∧ (initialAuxState (F := Nat)).queuedGenericGate = none := by decide
 
 end Snarky.Kimchi
