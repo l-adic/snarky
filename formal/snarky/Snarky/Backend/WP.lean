@@ -524,6 +524,106 @@ as the computed bit's encoding. -/
   subst hb'
   simp [circuitVal]
 
+/-- The honest run of one field witness: no check row. The run equation behind
+`witnessField_complete_spec`. -/
+private theorem prove_witnessField {F c : Type} [DecidableEq F] [Checker F c]
+    {w : AsProver F F} {nv : Nat} {env : Assignments F} {x : F}
+    (hw : w env = .ok x) (hfresh : env.FreshFrom nv) :
+    prove (Checker.holds (F := F) (c := c))
+      (witness (val := F) w : CircuitM F c (FVar F)) nv env
+      = .ok ⟨.var nv, nv + 1, env.extend nv x⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := F))
+      = .ok ⟨#[x], rfl⟩ := by rw [hw]; rfl
+  have hext : env.extendPairs
+      ((allocRange nv 1).toList.zip (⟨#[x], rfl⟩ : Vector F 1).toList)
+      = .ok (env.extend nv x) := by
+    show env.extendPairs [(nv, x)] = .ok _
+    simp [Assignments.extendPairs, hnv]
+  show prove (Checker.holds (F := F) (c := c))
+    (.existsOp 1 (fun e => (w e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  rfl
+
+open Std.Do in
+/-- A witness computation that succeeds makes the run succeed, and the result reads
+as the computed value; a field element pays no check row. -/
+@[spec] theorem witnessField_complete_spec {F c : Type} [Add F] [Mul F] [DecidableEq F]
+    [Checker F c] (w : AsProver F F)
+    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (w env).isOk)
+        (fun env (r : FVar F) env' => ∀ x, w env = .ok x → r.eval env' = .ok x) Q⦄
+    (witness (val := F) w : CircuitM F (Prover c) (FVar F))
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨hok, hk⟩ := hpre
+  obtain ⟨x, hw⟩ : ∃ x, w st.env = .ok x := by
+    cases hwe : w st.env with
+    | error e => rw [hwe] at hok; cases hok
+    | ok x => exact ⟨x, rfl⟩
+  rw [show (witness (val := F) w : CircuitM F (Prover c) (FVar F))
+      = (witness (val := F) w : CircuitM F c (FVar F)) from rfl]
+  simp only [wp, PredTrans.apply, prove_witnessField hw st.fresh]
+  intro hf
+  refine hk (.var st.nv) ⟨st.nv + 1, st.env.extend st.nv x, hf⟩
+    (fun x' hx' => ?_) (Assignments.le_extend_self st.fresh _)
+  rw [hw] at hx'
+  injection hx' with hx'
+  subst hx'
+  exact Assignments.eval_var_extend _ _ _
+
+/-- The honest run of one `UnChecked Bool` witness: no check row. The run equation
+behind `witnessUncheckedBool_complete_spec`. -/
+private theorem prove_witnessUncheckedBool {F c : Type} [Zero F] [One F] [DecidableEq F]
+    [Checker F c] {w : AsProver F (UnChecked Bool)} {nv : Nat} {env : Assignments F}
+    {u : UnChecked Bool} (hw : w env = .ok u) (hfresh : env.FreshFrom nv) :
+    prove (Checker.holds (F := F) (c := c))
+      (witness (val := UnChecked Bool) w : CircuitM F c (UnChecked (BoolVar F))) nv env
+      = .ok ⟨⟨.unchecked (.var nv)⟩, nv + 1, env.extend nv (bit u.val)⟩ := by
+  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
+  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := UnChecked Bool))
+      = .ok ⟨#[bit u.val], rfl⟩ := by rw [hw]; rfl
+  have hext : env.extendPairs
+      ((allocRange nv 1).toList.zip (⟨#[bit u.val], rfl⟩ : Vector F 1).toList)
+      = .ok (env.extend nv (bit u.val)) := by
+    show env.extendPairs [(nv, bit u.val)] = .ok _
+    simp [Assignments.extendPairs, hnv]
+  show prove (Checker.holds (F := F) (c := c))
+    (.existsOp 1 (fun e => (w e).map _) _) nv env = _
+  simp only [prove, hwit, hext]
+  rfl
+
+open Std.Do in
+/-- A witness computation that succeeds makes the run succeed, and the wrapped bit
+reads as its encoding; an `UnChecked` bundle pays no check row. -/
+@[spec] theorem witnessUncheckedBool_complete_spec {F c : Type} [Add F] [Mul F]
+    [Zero F] [One F] [DecidableEq F] [Checker F c] (w : AsProver F (UnChecked Bool))
+    (Q : PostCond (UnChecked (BoolVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete (fun env => (w env).isOk)
+        (fun env (r : UnChecked (BoolVar F)) env' => ∀ u, w env = .ok u →
+          (↑r.val : CVar F).eval env' = .ok (bit u.val)) Q⦄
+    (witness (val := UnChecked Bool) w : CircuitM F (Prover c) (UnChecked (BoolVar F)))
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨hok, hk⟩ := hpre
+  obtain ⟨u, hw⟩ : ∃ u, w st.env = .ok u := by
+    cases hwe : w st.env with
+    | error e => rw [hwe] at hok; cases hok
+    | ok u => exact ⟨u, rfl⟩
+  rw [show (witness (val := UnChecked Bool) w
+        : CircuitM F (Prover c) (UnChecked (BoolVar F)))
+      = (witness (val := UnChecked Bool) w : CircuitM F c (UnChecked (BoolVar F)))
+      from rfl]
+  simp only [wp, PredTrans.apply, prove_witnessUncheckedBool hw st.fresh]
+  intro hf
+  refine hk ⟨.unchecked (.var st.nv)⟩
+    ⟨st.nv + 1, st.env.extend st.nv (bit u.val), hf⟩
+    (fun u' hu' => ?_) (Assignments.le_extend_self st.fresh _)
+  rw [hw] at hu'
+  injection hu' with hu'
+  subst hu'
+  simp [circuitVal]
+
 /-! ## The vector loop rule
 
 The `Sound` and `Complete` laws of `generateVec`, given a spec for each component —

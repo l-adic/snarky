@@ -118,4 +118,18 @@ instance KimchiConstraint.instLawfulChecker :
 /-- The kimchi prover carrier: the checking reading at the kimchi backend. -/
 abbrev KimchiProverC (F : Type) := Prover (KimchiConstraint F)
 
+/-- The kimchi constraint vocabulary, as a class over the carrier. NOT a backend
+seam: kimchi is the terminal constraint layer, and the two instances below — the sum
+itself and its prover tag — are the only two that will ever exist. The class exists
+because a completeness triple must elaborate the gadget body at the prover tag, so
+the gadget definitions are polymorphic between exactly these two carriers. One
+method per landed gadget law. -/
+class KimchiSystem (F c : Type) where
+  /-- Embed a complete-addition payload. -/
+  addComplete : AddComplete F → c
+
+instance : KimchiSystem F (KimchiConstraint F) := ⟨.addComplete⟩
+
+instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
+
 end Snarky.Kimchi
