@@ -86,6 +86,28 @@ Snarky.Basic.holds_mono
 Snarky.build_bind
 Snarky.prove_bind
 
+-- The backend seam (Snarky/Backend/Ops.lean): the ops record (the PS
+-- CompileCircuit/SolveCircuit classes), the generic interpreter pair with the
+-- finalize step, the checked instantiation with its agreement laws, the composition
+-- laws every backend inherits, and the ops-coherence facts — the cross-seam law
+-- surface a backend discharges for its own ops record.
+Snarky.BackendOps
+Snarky.BuiltWith
+Snarky.buildWith
+Snarky.proveWith
+Snarky.finalizeWith
+Snarky.checkedOps
+Snarky.buildWith_checkedOps
+Snarky.proveWith_checkedOps
+Snarky.buildWith_bind
+Snarky.proveWith_bind
+Snarky.BackendOps.Lockstep
+Snarky.BackendOps.ProveExtends
+Snarky.buildWith_proveWith_nextVar
+Snarky.proveWith_extends
+Snarky.checkedOps_lockstep
+Snarky.checkedOps_proveExtends
+
 -- The D12 gadget laws (beside their gadgets, Circuit/DSL/{Field,Boolean}.lean): every
 -- assignment satisfying a gadget's
 -- emitted constraints pins its result; the honest prover run succeeds and answers
@@ -244,3 +266,92 @@ Snarky.Example.proverValue
 Snarky.Example.proverOk
 Snarky.Example.instFactPrimeOfNatNat_snarky
 Snarky.Example.instToNatF17
+
+-- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
+-- union-find and the row/state types the reduction emits into. `egUF` is the
+-- union-find exhibit (anonymous `decide` consumers), plus the derive surface.
+Snarky.Kimchi.UnionFind.empty
+Snarky.Kimchi.UnionFind.find
+Snarky.Kimchi.UnionFind.union
+Snarky.Kimchi.UnionFind.rootOf
+Snarky.Kimchi.UnionFind.equivalenceClasses
+Snarky.Kimchi.egUF
+Snarky.Kimchi.instDecidableEqUnionFind
+Snarky.Kimchi.instReprUnionFind
+Snarky.Kimchi.GenericPlonkConstraint
+Snarky.Kimchi.AuxState
+Snarky.Kimchi.initialAuxState
+Snarky.Kimchi.GateKind
+Snarky.Kimchi.KimchiRow
+Snarky.Kimchi.KimchiWireRow
+Snarky.Kimchi.ToKimchiRows
+
+-- The reduction layer (Snarky/Kimchi/Constraint/Reduction.lean): the op vocabulary,
+-- the two reduction algorithms, the builder/prover instances, and the emission-log
+-- instance the `decide` exhibits run (anonymous consumers).
+Snarky.Kimchi.PlonkReductionM
+Snarky.Kimchi.reduceAffineExpression
+Snarky.Kimchi.reduceToVariable
+Snarky.Kimchi.reduceAsBuilder
+Snarky.Kimchi.reduceAsProver
+Snarky.Kimchi.PlonkBuilder
+Snarky.Kimchi.PlonkProver
+Snarky.Kimchi.TraceM
+Snarky.Kimchi.EqualsConstraint
+Snarky.Kimchi.mkRawGeneric7Row
+Snarky.Kimchi.finalizeGateQueue
+
+-- The per-gate constraint payloads and reducers
+-- (Snarky/Kimchi/Constraint/{GenericPlonk,AddComplete,EndoScalar,VarBaseMul,EndoMul,
+-- Poseidon}.lean): each payload record with its reducer; `decide` exhibits are
+-- anonymous consumers.
+Snarky.Kimchi.reduce
+Snarky.Kimchi.AddComplete
+Snarky.Kimchi.AddComplete.reduce
+Snarky.Kimchi.AffinePoint
+Snarky.Kimchi.EndoScalarRound
+Snarky.Kimchi.EndoScalarRound.reduce
+Snarky.Kimchi.EndoScalar
+Snarky.Kimchi.EndoScalar.reduce
+Snarky.Kimchi.ScaleRound
+Snarky.Kimchi.VarBaseMul
+Snarky.Kimchi.VarBaseMul.reduce
+Snarky.Kimchi.EndoMulRound
+Snarky.Kimchi.EndoMul
+Snarky.Kimchi.EndoMul.reduce
+Snarky.Kimchi.PoseidonConstraint
+Snarky.Kimchi.PoseidonConstraint.reduce
+
+-- The kimchi constraint type and its interpreters (Snarky/Kimchi/Constraint.lean):
+-- the constraint and gate sums with their dispatch/BasicSystem instances, the one
+-- reduction dispatch, and the interpreter pair as `kimchiOps` instantiations of the
+-- backend seam.
+Snarky.Kimchi.KimchiConstraint
+Snarky.Kimchi.KimchiGate
+Snarky.Kimchi.KimchiConstraint.reduce
+Snarky.Kimchi.kimchiOps
+Snarky.Kimchi.kimchiBuild
+Snarky.Kimchi.kimchiProve
+Snarky.Kimchi.instToKimchiRowsKimchiGate
+Snarky.Kimchi.instBasicSystemKimchiConstraint
+Snarky.Kimchi.instDecidableEqKimchiConstraint
+Snarky.Kimchi.instReprKimchiConstraint
+Snarky.Kimchi.instDecidableEqKimchiGate
+Snarky.Kimchi.instReprKimchiGate
+
+-- Derive and instance surface consumed only by the anonymous `decide` exhibits
+-- (state-equality comparisons and the emission-log instance) — invisible to any
+-- constant walk.
+Snarky.Kimchi.instPlonkReductionMTraceM
+Snarky.Kimchi.instDecidableEqEqualsConstraint
+Snarky.Kimchi.instReprEqualsConstraint
+Snarky.Kimchi.instDecidableEqGenericPlonkConstraint
+Snarky.Kimchi.instReprGenericPlonkConstraint
+Snarky.Kimchi.instDecidableEqKimchiWireRow
+Snarky.Kimchi.instReprKimchiWireRow
+Snarky.Kimchi.instDecidableEqReductionTrace
+Snarky.Kimchi.instReprReductionTrace
+Snarky.Kimchi.instDecidableEqAuxState
+Snarky.Kimchi.instReprAuxState
+Snarky.Kimchi.instDecidableEqBuilderReductionState
+Snarky.Kimchi.instReprBuilderReductionState
