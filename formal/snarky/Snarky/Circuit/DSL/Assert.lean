@@ -192,7 +192,8 @@ nothing, so the postcondition is claimed at the incoming state. -/
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hxy := heq xv yv hx hy
   have hQ := hk PUnit.unit st trivial (Assignments.Le.refl st.env)
-  have hch : (BasicSystem.equal (c := Basic F) x y).holds st.env = true := by
+  have hch : Checker.holds (F := F) (c := Basic F)
+      (BasicSystem.equal (c := Basic F) x y) st.env = true := by
     show (Basic.equal x y).holds st.env = true
     simp [Basic.holds, hx, hy, hxy]
   cases x <;> cases y <;> simp only [assertEqual] <;>
@@ -394,7 +395,8 @@ open Std.Do in
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   obtain ⟨yv, hy⟩ := CVar.evalOk hoky
   have hsq := hsq' xv yv hx hy
-  have hch : (BasicSystem.square (c := Basic F) x y).holds st.env = true := by
+  have hch : Checker.holds (F := F) (c := Basic F)
+      (BasicSystem.square (c := Basic F) x y) st.env = true := by
     show (Basic.square x y).holds st.env = true
     simp [Basic.holds, hx, hy, hsq]
   simp [assertSquare, addConstraint, wp, PredTrans.apply, prove, hch]

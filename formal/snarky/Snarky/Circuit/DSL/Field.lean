@@ -250,14 +250,15 @@ private theorem equals_checks {F : Type} [Field F] [DecidableEq F] (zv : F) :
 
 /-- The honest `equalsCore` run, from any witness values satisfying the two constraint
 identities: the prover succeeds, assigning `r` at `nv` and `zInv` at `nv + 1`. -/
-private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
+private theorem equalsCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {z : CVar F}
     {nv : Nat} {env : Assignments F} {zv v₁ v₂ : F} (hz : z.eval env = .ok zv)
     (hfresh : env.FreshFrom nv)
     (hwit : (equalsWit z env).map
         (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
       = .ok ⟨#[v₁, v₂], rfl⟩)
     (hc₁ : v₁ * zv = 0) (hc₂ : v₂ * zv = 1 - v₁) :
-    prove Basic.holds (equalsCore (c := Basic F) z) nv env
+    prove (Checker.holds (F := F) (c := c)) (equalsCore (c := c) z) nv env
       = .ok ⟨.unchecked (.var nv), nv + 2, (env.extend nv v₁).extend (nv + 1) v₂⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hnv1 : (env.extend nv v₁) (nv + 1) = none := by
@@ -281,27 +282,35 @@ private theorem equalsCore_run {F : Type} [Field F] [DecidableEq F] {z : CVar F}
       = .ok env₂ := by
     show env.extendPairs [(nv, v₁), (nv + 1, v₂)] = .ok env₂
     simp [Assignments.extendPairs, hnv, hnv1, henv₂]
-  have hch₁ : Basic.holds (.r1cs (.var nv) z (.const 0)) env₂ = true := by
-    simp [Basic.holds, CVar.eval, henv₂nv, hzeval₂, hc₁]
-  have hch₂ : Basic.holds
-      (.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv))) env₂ = true := by
+  have hch₁ : Checker.holds (F := F) (c := c) (BasicSystem.r1cs (.var nv) z (.const 0))
+      env₂ = true :=
+    LawfulChecker.check_r1cs _ _ _ _ _ _ _ (by simp [CVar.eval, henv₂nv]) hzeval₂
+      rfl hc₁
+  have hch₂ : Checker.holds (F := F) (c := c)
+      (BasicSystem.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv)))
+      env₂ = true := by
     have hsub : (CVar.sub_ (.const 1) (.var nv)).eval env₂ = .ok (1 - v₁) :=
       CVar.eval_sub_ rfl (by simp [CVar.eval, henv₂nv])
-    simp [Basic.holds, CVar.eval, henv₂nv1, hzeval₂, hsub, hc₂]
-  show prove Basic.holds (.existsOp 2 (fun e => (equalsWit z e).map _) _) nv env = _
+    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ (by simp [CVar.eval, henv₂nv1])
+      hzeval₂ hsub hc₂
+  show prove (Checker.holds (F := F) (c := c))
+    (.existsOp 2 (fun e => (equalsWit z e).map _) _) nv env = _
   simp only [prove, hwit, hext]
-  show prove Basic.holds
-    (.addConstraintOp (.r1cs (.var nv) z (.const 0))
-      (.addConstraintOp (.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv)))
+  show prove (Checker.holds (F := F) (c := c))
+    (.addConstraintOp (BasicSystem.r1cs (c := c) (.var nv) z (.const 0))
+      (.addConstraintOp
+        (BasicSystem.r1cs (c := c) (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv)))
         (.pure (BoolVar.unchecked (.var nv))))) (nv + 2) env₂ = _
   simp only [prove, hch₁, hch₂, if_true]
 
 /-- On a fresh-from-`nv` assignment that evaluates `z`, the
 honest prover run succeeds and the answer bit is correct. -/
-private theorem equalsCore_complete {F : Type} [Field F] [DecidableEq F] {z : CVar F}
+private theorem equalsCore_complete {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {z : CVar F}
     {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
     (hfresh : env.FreshFrom nv) :
-    ∃ out, prove Basic.holds (equalsCore (c := Basic F) z) nv env = .ok out ∧
+    ∃ out, prove (Checker.holds (F := F) (c := c)) (equalsCore (c := c) z) nv env
+        = .ok out ∧
       out.result.toCVar.eval out.assignments = .ok (if zv = 0 then 1 else 0) ∧
       out.assignments.FreshFrom out.nextVar := by
   obtain ⟨hc₁, hc₂⟩ := equals_checks (F := F) zv
@@ -408,7 +417,7 @@ answer bit in the final table. -/
     simp [equalsPure, sub_eq_zero]
   | var v | add x y | scale k x =>
     rw [hcase] at hz
-    obtain ⟨o, hrun, heval, -⟩ := equalsCore_complete hz st.fresh
+    obtain ⟨o, hrun, heval, -⟩ := equalsCore_complete (c := Basic F) hz st.fresh
     rw [hrun]
     intro hf'
     refine hk _ ⟨_, _, hf'⟩ (hval ?_) (prove_assignments_le hrun)
@@ -470,11 +479,12 @@ answer bit in the final table. -/
 /-! ### `mul` -/
 
 /-- The honest `mulCore` run: the prover succeeds, assigning the product at `nv`. -/
-private theorem mulCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+private theorem mulCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
     (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv)
     (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (mulCore (c := Basic F) x y) nv env
+    prove (Checker.holds (F := F) (c := c)) (mulCore (c := c) x y) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv (xv * yv)⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv (xv * yv)) := by
@@ -486,18 +496,20 @@ private theorem mulCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F] [Decid
   have hw : mulWit x y env = .ok (xv * yv) := by
     simp [mulWit, AsProver.readCVar, hx, hy, Bind.bind, ReaderT.bind, Except.bind,
       Pure.pure, ReaderT.pure, Except.pure]
-  have hch : Basic.holds (.r1cs x y (.var nv)) (env.extend nv (xv * yv)) = true := by
-    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, CVar.eval_le hle hy,
-      Assignments.extend]
+  have hch : Checker.holds (F := F) (c := c) (BasicSystem.r1cs x y (.var nv))
+      (env.extend nv (xv * yv)) = true :=
+    LawfulChecker.check_r1cs _ _ _ _ _ _ _ (CVar.eval_le hle hx) (CVar.eval_le hle hy)
+      (Assignments.eval_var_extend _ _ _) rfl
   exact prove_witnessCore hw hfresh hch
 
 /-! ### `inv` -/
 
 /-- The honest `invCore` run on a nonzero operand. -/
-private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
+private theorem invCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
     (hx : x.eval env = .ok xv) (hxv : xv ≠ 0) (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (invCore (c := Basic F) x) nv env
+    prove (Checker.holds (F := F) (c := c)) (invCore (c := c) x) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv xv⁻¹⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv xv⁻¹) := by
@@ -509,9 +521,10 @@ private theorem invCore_run {F : Type u} [Field F] [DecidableEq F]
   have hw : invWit x env = .ok xv⁻¹ := by
     simp [invWit, AsProver.readCVar, hx, hxv, Bind.bind, ReaderT.bind, Except.bind,
       Pure.pure, ReaderT.pure, Except.pure]
-  have hch : Basic.holds (.r1cs x (.var nv) (.const 1)) (env.extend nv xv⁻¹) = true := by
-    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend,
-      mul_inv_cancel₀ hxv]
+  have hch : Checker.holds (F := F) (c := c) (BasicSystem.r1cs x (.var nv) (.const 1))
+      (env.extend nv xv⁻¹) = true :=
+    LawfulChecker.check_r1cs _ _ _ _ _ _ _ (CVar.eval_le hle hx)
+      (Assignments.eval_var_extend _ _ _) rfl (mul_inv_cancel₀ hxv)
   exact prove_witnessCore hw hfresh hch
 
 open Std.Do in
@@ -659,10 +672,11 @@ in the final table. -/
 /-! ### `square` -/
 
 /-- The honest `squareCore` run. -/
-private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
+private theorem squareCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
+    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
     (hx : x.eval env = .ok xv) (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (squareCore (c := Basic F) x) nv env
+    prove (Checker.holds (F := F) (c := c)) (squareCore (c := c) x) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv (xv * xv)⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv (xv * xv)) := by
@@ -674,8 +688,10 @@ private theorem squareCore_run {F : Type u} [Add F] [Mul F] [Zero F] [One F]
   have hw : squareWit x env = .ok (xv * xv) := by
     simp [squareWit, AsProver.readCVar, hx, Bind.bind, ReaderT.bind, Except.bind,
       Pure.pure, ReaderT.pure, Except.pure]
-  have hch : Basic.holds (.square x (.var nv)) (env.extend nv (xv * xv)) = true := by
-    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend]
+  have hch : Checker.holds (F := F) (c := c) (BasicSystem.square x (.var nv))
+      (env.extend nv (xv * xv)) = true :=
+    LawfulChecker.check_square _ _ _ _ _ (CVar.eval_le hle hx)
+      (Assignments.eval_var_extend _ _ _) rfl
   exact prove_witnessCore hw hfresh hch
 
 open Std.Do in

@@ -708,12 +708,13 @@ private theorem xor_pin {F : Type u} [CommRing F] {ab bb : Bool} {rv : F}
   cases ab <;> cases bb <;> simp [bit]
 
 /-- The honest `xorCore` run. -/
-private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F}
+private theorem xorCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {a b : BoolVar F}
     {nv : Nat} {env : Assignments F} {ab bb : Bool}
     (ha : (↑a : CVar F).eval env = .ok (bit ab))
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (xorCore (c := Basic F) a b) nv env
+    prove (Checker.holds (F := F) (c := c)) (xorCore (c := c) a b) nv env
       = .ok ⟨.unchecked (.var nv), nv + 1, env.extend nv (bit (ab ^^ bb))⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv (bit (ab ^^ bb))) := by
@@ -735,8 +736,8 @@ private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar 
       = .ok (env.extend nv (bit (ab ^^ bb))) := by
     show env.extendPairs [(nv, bit (ab ^^ bb))] = .ok _
     simp [Assignments.extendPairs, hnv]
-  have hch : Basic.holds
-      (.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
+  have hch : Checker.holds (F := F) (c := c)
+      (BasicSystem.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
         (CVar.sub_ (CVar.add_ a.toCVar b.toCVar) (.var nv)))
       (env.extend nv (bit (ab ^^ bb))) = true := by
     have ha' := CVar.eval_le hle ha
@@ -750,12 +751,13 @@ private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar 
         = .ok ((bit ab : F) + bit bb) := by
       rw [CVar.eval_add_]; simp [CVar.eval, ha', hb']
     have hsub := CVar.eval_sub_ hab hvnv
-    simp only [Basic.holds, haa, hb', hsub, decide_eq_true_eq]
-    cases ab <;> cases bb <;> simp [bit]
-  show prove Basic.holds (.existsOp 1 (fun e => (xorWit a b e).map _) _) nv env = _
+    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ haa hb' hsub
+      (by cases ab <;> cases bb <;> simp [bit])
+  show prove (Checker.holds (F := F) (c := c))
+    (.existsOp 1 (fun e => (xorWit a b e).map _) _) nv env = _
   simp only [prove, hwit, hext]
-  show prove Basic.holds
-    (.addConstraintOp (.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
+  show prove (Checker.holds (F := F) (c := c))
+    (.addConstraintOp (BasicSystem.r1cs (c := c) (CVar.add_ a.toCVar a.toCVar) b.toCVar
         (CVar.sub_ (CVar.add_ a.toCVar b.toCVar) (.var nv)))
       (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
     (env.extend nv (bit (ab ^^ bb))) = _
@@ -768,7 +770,8 @@ private theorem xor_complete_constA {F : Type} [Field F] [DecidableEq F]
     (ha : (↑a : CVar F).eval env = .ok (bit ab))
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (hfresh : env.FreshFrom nv) :
-    ∃ out, prove Basic.holds (if av = 0 then pure b else if av = 1 then pure (Snarky.not b)
+    ∃ out, prove (Checker.holds (F := F) (c := Basic F))
+        (if av = 0 then pure b else if av = 1 then pure (Snarky.not b)
         else xorCore (c := Basic F) a b) nv env = .ok out ∧
       out.result.toCVar.eval out.assignments = .ok (bit (ab ^^ bb)) ∧
       out.assignments.FreshFrom out.nextVar := by
@@ -800,7 +803,8 @@ private theorem xor_complete_constB {F : Type} [Field F] [DecidableEq F]
     (ha : (↑a : CVar F).eval env = .ok (bit ab))
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (hfresh : env.FreshFrom nv) :
-    ∃ out, prove Basic.holds (if bv = 0 then pure a else if bv = 1 then pure (Snarky.not a)
+    ∃ out, prove (Checker.holds (F := F) (c := Basic F))
+        (if bv = 0 then pure a else if bv = 1 then pure (Snarky.not a)
         else xorCore (c := Basic F) a b) nv env = .ok out ∧
       out.result.toCVar.eval out.assignments = .ok (bit (ab ^^ bb)) ∧
       out.assignments.FreshFrom out.nextVar := by
@@ -973,13 +977,14 @@ reads as the xor bit in the final table. -/
 /-! ### `select` (the `IfThenElse` field instance) -/
 
 /-- The honest `selectCore` run. -/
-private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
+private theorem selectCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {b : BoolVar F} {t e : FVar F} {nv : Nat} {env : Assignments F} {bb : Bool}
     {tv ev : F}
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (ht : t.eval env = .ok tv) (he : e.eval env = .ok ev)
     (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (selectCore (c := Basic F) b t e) nv env
+    prove (Checker.holds (F := F) (c := c)) (selectCore (c := c) b t e) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv (if bb then tv else ev)⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv (if bb then tv else ev)) := by
@@ -992,8 +997,8 @@ private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
     cases bb <;>
       simp [selectWit, AsProver.readCVar, hb, ht, he, Bind.bind, ReaderT.bind,
         Except.bind, bit]
-  have hch : Basic.holds
-      (.r1cs b.toCVar (CVar.sub_ t e) (CVar.sub_ (.var nv) e))
+  have hch : Checker.holds (F := F) (c := c)
+      (BasicSystem.r1cs b.toCVar (CVar.sub_ t e) (CVar.sub_ (.var nv) e))
       (env.extend nv (if bb then tv else ev)) = true := by
     have hb' := CVar.eval_le hle hb
     have ht' := CVar.eval_le hle ht
@@ -1002,8 +1007,8 @@ private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
         = .ok (if bb then tv else ev) := by simp [CVar.eval, Assignments.extend]
     have hsub₁ := CVar.eval_sub_ ht' he'
     have hsub₂ := CVar.eval_sub_ hvnv he'
-    simp only [Basic.holds, hb', hsub₁, hsub₂, decide_eq_true_eq]
-    cases bb <;> simp [bit]
+    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ hb' hsub₁ hsub₂
+      (by cases bb <;> simp [bit])
   exact prove_witnessCore hw hfresh hch
 
 /-- The evaluation of the constant-branches affine mux, over an arbitrary selector

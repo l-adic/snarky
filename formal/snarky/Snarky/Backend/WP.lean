@@ -201,14 +201,21 @@ way because its `ConstraintHolds` guard has no instance at the tag. The complete
 laws are stated against the reference backend, whose prover checks each constraint as
 it is added. -/
 
-/-- The reference backend tagged for the `prove`-interpretation. A program enters the
-prover reading by naming the tag — `g (c := ProverC F)` — exactly as a soundness
-statement names its backend; the resulting term is definitionally a
-`CircuitM F (Basic F)` program, so the interpreter lemmas apply through a `rfl`
-retag. -/
-def ProverC (F : Type) := Basic F
+/-- The backend's decidable per-constraint check — the prover-side dual of
+`ConstraintHolds`. Instances live with their backends (`Basic` below). -/
+class Checker (F c : Type) where
+  /-- The constraint value passes the backend's check on the current table. -/
+  holds : c → Assignments F → Bool
 
-instance : BasicSystem F (ProverC F) := inferInstanceAs (BasicSystem F (Basic F))
+/-- A checkable backend tagged for the `prove`-interpretation. A program enters the
+prover reading by naming the tag — `g (c := Prover c)` — exactly as a soundness
+statement names its backend; the resulting term is definitionally a `CircuitM F c`
+program, so the interpreter lemmas apply through a `rfl` retag. -/
+def Prover (c : Type) := c
+
+instance [inst : BasicSystem F c] : BasicSystem F (Prover c) := inst
+
+instance [inst : Checker F c] : Checker F (Prover c) := inst
 
 /-- The prover reading: the state is the invariant-carrying `ProverState` (counter,
 table, and the freshness relating them — PS's single mutable store, rendered as one
@@ -218,11 +225,11 @@ total-correctness postcondition (`⇓`) asserts the run cannot fail.
 The successor state's invariant is quantified rather than constructed: `∀ hf, Q …
 ⟨…, hf⟩` avoids a dependent match, and proof irrelevance plus
 `ProverState.freshOut` — which inhabits it — make the quantifier free. -/
-instance ProverC.instWP [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
-    WP (CircuitM F (ProverC F)) (.arg (ProverState F) (.except EvalError .pure)) where
+instance Prover.instWP [Checker F c] :
+    WP (CircuitM F (Prover c)) (.arg (ProverState F) (.except EvalError .pure)) where
   wp x := {
     trans := fun Q st =>
-      match prove Basic.holds x st.nv st.env with
+      match prove (Checker.holds (F := F) (c := c)) x st.nv st.env with
       | .ok out => .up (∀ hf : out.assignments.FreshFrom out.nextVar,
           (Q.1 out.result ⟨out.nextVar, out.assignments, hf⟩).down)
       | .error e => Q.2.1 e
@@ -230,15 +237,15 @@ instance ProverC.instWP [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
       intro Q₁ Q₂
       apply SPred.bientails.of_eq
       ext st
-      rcases h : prove Basic.holds x st.nv st.env with e | out <;>
+      rcases h : prove (Checker.holds (F := F) (c := c)) x st.nv st.env with e | out <;>
         simp [SPred.and, ExceptConds.and, h, forall_and]
   }
 
 /-- The prover `wp` is a monad morphism: `prove_bind` is the composition law, and the
 intermediate state's invariant — the quantifier the successor carries — is discharged
 by `ProverState.freshOut`. -/
-instance ProverC.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
-    WPMonad (CircuitM F (ProverC F)) (.arg (ProverState F) (.except EvalError .pure)) where
+instance Prover.instWPMonad [Checker F c] :
+    WPMonad (CircuitM F (Prover c)) (.arg (ProverState F) (.except EvalError .pure)) where
   wp_pure a := by
     ext Q st
     simp only [wp, PredTrans.apply]
@@ -247,9 +254,9 @@ instance ProverC.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
     ext Q st
     simp only [PredTrans.apply_Bind_bind]
     simp only [wp, PredTrans.apply]
-    rw [show (do let a ← x; f a : CircuitM F (ProverC F) _)
-        = (x >>= f : CircuitM F (Basic F) _) from rfl, prove_bind]
-    rcases h : prove Basic.holds x st.nv st.env with e | out
+    rw [show (do let a ← x; f a : CircuitM F (Prover c) _)
+        = (x >>= f : CircuitM F c _) from rfl, prove_bind]
+    rcases h : prove (Checker.holds (F := F) (c := c)) x st.nv st.env with e | out
     · simp [Except.bind]
     · simp only [Except.bind]
       constructor
@@ -257,6 +264,55 @@ instance ProverC.instWPMonad [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
         exact hL
       · intro hR
         exact hR (ProverState.freshOut (st := st) h)
+
+/-- `Basic`'s check is its checker (the reference instance). -/
+instance Basic.instChecker [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
+    Checker F (Basic F) :=
+  ⟨Basic.holds⟩
+
+/-- The reference prover carrier: the checking reading at the `Basic` backend — every
+base completeness spec enters here. -/
+abbrev ProverC (F : Type) := Prover (Basic F)
+
+/-- The honest values pass the check: the completeness-side dual of
+`LawfulBasicSystem`, one implication per `BasicSystem` primitive — all a completeness
+proof consumes (rejection is the exhibits' territory). `Basic`'s instance is the
+reference inhabitant below. -/
+class LawfulChecker (F c : Type) [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [Checker F c] : Prop where
+  /-- Equal evaluations pass the `equal` check. -/
+  check_equal : ∀ (env : Assignments F) (a b : CVar F) (v : F),
+    a.eval env = .ok v → b.eval env = .ok v →
+    Checker.holds (BasicSystem.equal (c := c) a b) env = true
+  /-- A product identity passes the `r1cs` check. -/
+  check_r1cs : ∀ (env : Assignments F) (l r o : CVar F) (x y z : F),
+    l.eval env = .ok x → r.eval env = .ok y → o.eval env = .ok z →
+    x * y = z → Checker.holds (BasicSystem.r1cs (c := c) l r o) env = true
+  /-- A square identity passes the `square` check. -/
+  check_square : ∀ (env : Assignments F) (a sq : CVar F) (x z : F),
+    a.eval env = .ok x → sq.eval env = .ok z →
+    x * x = z → Checker.holds (BasicSystem.square (c := c) a sq) env = true
+  /-- A bit passes the `boolean` check. -/
+  check_boolean : ∀ (env : Assignments F) (a : CVar F) (v : F),
+    a.eval env = .ok v → v = 0 ∨ v = 1 →
+    Checker.holds (BasicSystem.boolean (c := c) a) env = true
+
+/-- `Basic` is a lawful checker: each field is its checker computation. -/
+instance Basic.instLawfulChecker [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
+    LawfulChecker F (Basic F) where
+  check_equal env a b v ha hb := by
+    show Basic.holds (.equal a b) env = true
+    simp [Basic.holds, ha, hb]
+  check_r1cs env l r o x y z hl hr ho hxyz := by
+    show Basic.holds (.r1cs l r o) env = true
+    simp [Basic.holds, hl, hr, ho, hxyz]
+  check_square env a sq x z ha hsq hxz := by
+    show Basic.holds (.square a sq) env = true
+    simp [Basic.holds, ha, hsq, hxz]
+  check_boolean env a v ha hb := by
+    show Basic.holds (.boolean a) env = true
+    simp only [Basic.holds, ha]
+    rcases hb with h | h <;> simp [h]
 
 /-- The completeness spec shape, polymorphic in what the gadget returns: given
 `pre` about the incoming table, the run cannot fail, and the caller continues at a
@@ -330,19 +386,20 @@ open Std.Do in
 existential: from any invariant-carrying state satisfying `pre`, the run succeeds,
 grants `post`, and only extends the table. The forward direction runs at the
 total-correctness continuation (`False` on the exception channel forces success). -/
-theorem complete_spec_iff {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    {α : Type} (g : CircuitM F (ProverC F) α)
+theorem complete_spec_iff {F c : Type} [Checker F c]
+    {α : Type} (g : CircuitM F (Prover c) α)
     (pre : Assignments F → Prop) (post : Assignments F → α → Assignments F → Prop) :
     (∀ Q : PostCond α (.arg (ProverState F) (.except EvalError .pure)),
         ⦃Complete pre post Q⦄ g ⦃Q⦄)
       ↔ ∀ st : ProverState F, pre st.env →
-          ∃ out : Proved F α, prove Basic.holds g st.nv st.env = .ok out
+          ∃ out : Proved F α,
+            prove (Checker.holds (F := F) (c := c)) g st.nv st.env = .ok out
             ∧ post st.env out.result out.assignments ∧ st.env.Le out.assignments := by
   constructor
   · intro h st hpre
     have hw := h (PostCond.noThrow fun r st' => ⌜post st.env r st'.env ∧ st.env.Le st'.env⌝)
       st ⟨hpre, fun r st' hp hle => ⟨hp, hle⟩⟩
-    rcases hrun : prove Basic.holds g st.nv st.env with e | out
+    rcases hrun : prove (Checker.holds (F := F) (c := c)) g st.nv st.env with e | out
     · simp only [wp, PredTrans.apply, hrun] at hw
       cases hw
     · simp only [wp, PredTrans.apply, hrun] at hw
@@ -373,11 +430,11 @@ open Std.Do in
 
 open Std.Do in
 /-- The row's own check is the precondition; the state is unchanged. -/
-@[spec] theorem addConstraint_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] (con : Basic F)
+@[spec] theorem addConstraint_complete_spec {F c : Type} [Checker F c] (con : c)
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => Basic.holds con env = true) (fun _ _ _ => True) Q⦄
-    addConstraint (F := F) (c := ProverC F) con
+    ⦃Complete (fun env => Checker.holds (F := F) (c := c) con env = true)
+        (fun _ _ _ => True) Q⦄
+    addConstraint (F := F) (c := Prover c) con
     ⦃Q⦄ := by
   intro st hpre
   obtain ⟨hch, hk⟩ := hpre
@@ -412,10 +469,12 @@ open Std.Do in
 
 /-- The honest run of one checked-`Bool` witness: the `boolean` row always accepts a
 bit. The run equation behind `witnessBool_complete_spec`. -/
-private theorem prove_witnessBool {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {w : AsProver F Bool} {nv : Nat} {env : Assignments F} {b : Bool}
+private theorem prove_witnessBool {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
+    {w : AsProver F Bool} {nv : Nat} {env : Assignments F} {b : Bool}
     (hw : w env = .ok b) (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (witness (val := Bool) w : CircuitM F (Basic F) (BoolVar F)) nv env
+    prove (Checker.holds (F := F) (c := c))
+      (witness (val := Bool) w : CircuitM F c (BoolVar F)) nv env
       = .ok ⟨.unchecked (.var nv), nv + 1, env.extend nv (bit b)⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := Bool))
@@ -425,25 +484,30 @@ private theorem prove_witnessBool {F : Type} [Add F] [Mul F] [Zero F] [One F]
       = .ok (env.extend nv (bit b)) := by
     show env.extendPairs [(nv, bit b)] = .ok _
     simp [Assignments.extendPairs, hnv]
-  have hch : Basic.holds (.boolean (.var nv)) (env.extend nv (bit b)) = true := by
-    cases b <;> simp [Basic.holds, CVar.eval, Assignments.extend, bit]
-  show prove Basic.holds (.existsOp 1 (fun e => (w e).map _) _) nv env = _
+  have hch : Checker.holds (F := F) (c := c) (BasicSystem.boolean (.var nv))
+      (env.extend nv (bit b)) = true :=
+    LawfulChecker.check_boolean _ _ _ (Assignments.eval_var_extend _ _ _)
+      (by cases b <;> simp [bit])
+  show prove (Checker.holds (F := F) (c := c))
+    (.existsOp 1 (fun e => (w e).map _) _) nv env = _
   simp only [prove, hwit, hext]
-  show prove Basic.holds
-    (.addConstraintOp (.boolean (.var nv)) (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
+  show prove (Checker.holds (F := F) (c := c))
+    (.addConstraintOp (BasicSystem.boolean (c := c) (.var nv))
+      (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
     (env.extend nv (bit b)) = _
   simp only [prove, hch, if_true]
 
 open Std.Do in
 /-- A witness computation that succeeds makes the run succeed, and the result reads
 as the computed bit's encoding. -/
-@[spec] theorem witnessBool_complete_spec {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] (w : AsProver F Bool)
+@[spec] theorem witnessBool_complete_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
+    (w : AsProver F Bool)
     (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => (w env).isOk)
         (fun env (r : BoolVar F) env' => ∀ b, w env = .ok b →
           (↑r : CVar F).eval env' = .ok (bit b)) Q⦄
-    (witness (val := Bool) w : CircuitM F (ProverC F) (BoolVar F))
+    (witness (val := Bool) w : CircuitM F (Prover c) (BoolVar F))
     ⦃Q⦄ := by
   intro st hpre
   obtain ⟨hok, hk⟩ := hpre
@@ -451,8 +515,8 @@ as the computed bit's encoding. -/
     cases hwe : w st.env with
     | error e => rw [hwe] at hok; cases hok
     | ok b => exact ⟨b, rfl⟩
-  rw [show (witness (val := Bool) w : CircuitM F (ProverC F) (BoolVar F))
-      = (witness (val := Bool) w : CircuitM F (Basic F) (BoolVar F)) from rfl]
+  rw [show (witness (val := Bool) w : CircuitM F (Prover c) (BoolVar F))
+      = (witness (val := Bool) w : CircuitM F c (BoolVar F)) from rfl]
   simp only [wp, PredTrans.apply, prove_witnessBool hw st.fresh]
   intro hf
   refine hk (.unchecked (.var st.nv)) ⟨st.nv + 1, st.env.extend st.nv (bit b), hf⟩
@@ -501,9 +565,8 @@ open Std.Do in
 /-- Componentwise runs chain, given that each component's `pre` and `post` transport
 along table extension — the two hypotheses that replace a loop invariant, since the
 prover's table grows. -/
-theorem generateVec_complete_spec {F : Type} {α : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] :
-    ∀ (n : Nat) (f : Fin n → CircuitM F (ProverC F) α)
+theorem generateVec_complete_spec {F c : Type} {α : Type} [Checker F c] :
+    ∀ (n : Nat) (f : Fin n → CircuitM F (Prover c) α)
       (pre : Fin n → Assignments F → Prop)
       (post : Fin n → Assignments F → α → Assignments F → Prop),
       (∀ (i : Fin n) (Q : PostCond α (.arg (ProverState F) (.except EvalError .pure))),

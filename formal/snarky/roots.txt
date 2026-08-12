@@ -61,8 +61,8 @@ Snarky.LawfulBasicSystem
 Snarky.Basic.instConstraintHolds
 Snarky.Basic.instLawfulBasicSystem
 Snarky.ProverC
-Snarky.ProverC.instWP
-Snarky.ProverC.instWPMonad
+Snarky.Prover.instWP
+Snarky.Prover.instWPMonad
 Snarky.sound_spec_iff
 Snarky.complete_spec_iff
 

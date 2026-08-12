@@ -300,7 +300,7 @@ the results are the operand's binary digits. -/
     refine pack_eval fun i hi => ?_
     simp only [unpackPure, Vector.getElem_ofFn]
     exact hbitEval i hi
-  have hch : Basic.holds
+  have hch : Checker.holds (F := F) (c := ProverC F)
       (BasicSystem.r1cs (c := ProverC F) (pack bits) (.const 1) v) st₁.env = true := by
     show Basic.holds (.r1cs _ _ _) st₁.env = true
     rw [packPure_unpackPure hval hlt] at hpack

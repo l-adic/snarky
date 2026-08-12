@@ -55,10 +55,11 @@ private theorem build_sealCore [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
   cases x <;> rfl
 
 /-- The honest `sealCore` run: the prover succeeds, assigning the value at `nv`. -/
-private theorem sealCore_run [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+private theorem sealCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
     (hx : x.eval env = .ok xv) (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (sealCore (c := Basic F) x) nv env
+    prove (Checker.holds (F := F) (c := c)) (sealCore (c := c) x) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv xv⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv xv) := by
@@ -69,9 +70,12 @@ private theorem sealCore_run [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     · exact hv
   have hw : AsProver.readCVar x env = .ok xv := by
     simpa [AsProver.readCVar] using hx
-  have hch : Basic.holds (.equal x (.var nv)) (env.extend nv xv) = true := by
-    simp [Basic.holds, CVar.eval, CVar.eval_le hle hx, Assignments.extend]
-  have hcore := prove_witnessCore (mk := fun z => Basic.equal x z) hw hfresh hch
+  have hch : Checker.holds (F := F) (c := c) (BasicSystem.equal x (.var nv))
+      (env.extend nv xv) = true :=
+    LawfulChecker.check_equal _ _ _ _ (CVar.eval_le hle hx)
+      (Assignments.eval_var_extend _ _ _)
+  have hcore := prove_witnessCore (mk := fun z => BasicSystem.equal (c := c) x z)
+    hw hfresh hch
   cases x <;> exact hcore
 
 open Std.Do
