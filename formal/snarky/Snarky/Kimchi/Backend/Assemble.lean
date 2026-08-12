@@ -61,7 +61,7 @@ structure AssembledGate (F : Type u) where
 
 /-- The permutation cells of the row list: every `(row, col)` with `col < 7` holding
 a variable, tagged with that variable's class root — in row-major cell order. -/
-def permCells (roots : Array Nat) (rows : List (KimchiRow F)) :
+def permCells (roots : Array Variable) (rows : List (KimchiRow F)) :
     List ((Nat × Nat) × Nat) :=
   (rows.zipIdx.map fun (row, i) =>
     ((row.vars.toList.take 7).zipIdx.filterMap fun (mv, j) =>
@@ -77,7 +77,7 @@ private def insertCell (c : Nat × Nat) : List (Nat × Nat) → List (Nat × Nat
 
 /-- A class's cells, ascending: every permutation cell whose variable shares the
 given root. -/
-def classCells (roots : Array Nat) (rows : List (KimchiRow F)) (root : Nat) :
+def classCells (roots : Array Variable) (rows : List (KimchiRow F)) (root : Variable) :
     List (Nat × Nat) :=
   ((permCells roots rows).filterMap fun (c, r) =>
     if r = root then some c else none).foldl (fun acc c => insertCell c acc) []
@@ -93,7 +93,7 @@ private def cycleNextFrom (head c : Nat × Nat) : List (Nat × Nat) → Nat × N
 /-- The wiring target of cell `(i, j)` (the PS wire map, functionally): the cyclic
 successor within its variable's sorted class when the cell is wired, else the cell
 itself. -/
-def wireTarget (roots : Array Nat) (rows : List (KimchiRow F)) (i j : Nat) : Wire :=
+def wireTarget (roots : Array Variable) (rows : List (KimchiRow F)) (i j : Nat) : Wire :=
   match (permCells roots rows).lookup (i, j) with
   | none => ⟨i, j⟩
   | some root =>
@@ -105,7 +105,7 @@ def wireTarget (roots : Array Nat) (rows : List (KimchiRow F)) (i j : Nat) : Wir
 
 /-- Assemble the gate table (PS `makeGates`): per row the tag, the seven wiring
 targets, and the coefficients. -/
-def assembleGates (roots : Array Nat) (rows : List (KimchiRow F)) :
+def assembleGates (roots : Array Variable) (rows : List (KimchiRow F)) :
     List (AssembledGate F) :=
   rows.zipIdx.map fun (row, i) =>
     { kind := row.kind,
