@@ -354,6 +354,8 @@ Snarky.Kimchi.kimchiGateData
 -- its result record, plus the AffinePoint instance surface the seam script's
 -- comparisons resolve.
 Snarky.sealVar
+Snarky.sealVar_spec
+Snarky.sealVar_complete_spec
 Snarky.Kimchi.addFast
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.instCircuitTypeAffinePointFVar

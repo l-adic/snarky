@@ -77,6 +77,8 @@ def roots : List Name :=
     `Snarky.packPure_unpackPure,
     `Snarky.unpack_spec,
     `Snarky.unpack_complete_spec,
+    `Snarky.sealVar_spec,
+    `Snarky.sealVar_complete_spec,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
