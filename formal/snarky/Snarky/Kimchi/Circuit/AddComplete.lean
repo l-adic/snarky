@@ -243,11 +243,57 @@ namespace AddFast
 
 open WeierstrassCurve.Affine
 
+/-- The tail's soundness, at the sealed operands: any satisfying valuation reads the
+result as the group sum, via the verified gate's `sound`. Applied manually per mode —
+the curve parameters appear only in the promise, so a registry application could not
+infer them. -/
+private theorem addFastTail_spec [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
+    (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F)
+    (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : AddResult F) =>
+        ∀ (h1 : W.Nonsingular (p1.x.val V) (p1.y.val V))
+          (h2 : W.Nonsingular (p2.x.val V) (p2.y.val V)),
+          p1.y.val V ≠ 0 →
+          ((r.isInfinity.toCVar.val V = 1 ∧
+             Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+           (r.isInfinity.toCVar.val V = 0 ∧
+             ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
+               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))) Q⦄
+    addFastTail (c := KimchiConstraint F) p1 p2 sameX inf
+    ⦃Q⦄ := by
+  simp only [addFastTail]
+  mvcgen
+  rename_i s hpre
+  intro infZ _
+  mvcgen
+  intro x21Inv _
+  mvcgen
+  intro sv _
+  mvcgen
+  intro x3 _
+  mvcgen
+  intro y3 _
+  mvcgen
+  intro u _ hpay
+  intro _
+  refine hpre _ _ ?_
+  intro h1 h2 hy1ne
+  rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hpay hy1ne htwo with
+    ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
+  · simp only [AddComplete.read] at hsum
+    exact Or.inl ⟨hinf, hsum⟩
+  · simp only [AddComplete.read] at hsum
+    exact Or.inr ⟨hinf, h3, hsum⟩
+
 /-- `addFast` is sound: under any satisfying valuation, for nonsingular operand
 points with the first finite (`y ≠ 0`), the result reads as the EC group sum —
 the returned point's coordinates when the flag reads `0`, the zero sum when it
 reads `1`. The nonsingularity binders sit inside the promise because they are
-valuation-dependent; proof irrelevance makes any instances agree. -/
+valuation-dependent; proof irrelevance makes any instances agree. The walk shares
+the mode-independent parts: seals and glue before the mode split, the tail behind
+`addFastTail_spec`. -/
 theorem addFast_spec [Field F] [DecidableEq F]
     (fin : Finiteness) (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
@@ -264,30 +310,26 @@ theorem addFast_spec [Field F] [DecidableEq F]
                Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))) Q⦄
     addFast (c := KimchiConstraint F) fin p1' p2'
     ⦃Q⦄ := by
-  cases fin with
-  | checkFinite =>
-    simp only [addFast, addFastTail]
-    mvcgen
-    rename_i s hpre
-    intro p1 _ hp1x hp1y
-    mvcgen
-    intro p2 _ hp2x hp2y
-    mvcgen
-    intro sameXU _
-    mvcgen
-    intro infZ _
-    mvcgen
-    intro x21Inv _
-    mvcgen
-    intro sv _
-    mvcgen
-    intro x3 _
-    mvcgen
-    intro y3 _
-    mvcgen
-    intro u _ hpay
-    intro _
-    refine hpre _ _ ?_
+  simp only [addFast]
+  mvcgen
+  rename_i s hpre
+  intro p1 _ hp1x hp1y
+  mvcgen
+  intro p2 _ hp2x hp2y
+  mvcgen
+  intro sameXU _
+  have hglue : ∀ (r : AddResult F) (nv' : Nat),
+      (∀ (h1 : W.Nonsingular (p1.x.val s.V) (p1.y.val s.V))
+         (h2 : W.Nonsingular (p2.x.val s.V) (p2.y.val s.V)),
+         p1.y.val s.V ≠ 0 →
+         ((r.isInfinity.toCVar.val s.V = 1 ∧
+            Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+          (r.isInfinity.toCVar.val s.V = 0 ∧
+            ∃ h3 : W.Nonsingular (r.p.x.val s.V) (r.p.y.val s.V),
+              Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))) →
+      (Q.1 r ⟨s.V, nv'⟩).down := by
+    intro r nv' hp
+    refine hpre r nv' ?_
     intro h1 h2 hy1ne
     have h1' := h1
     rw [← hp1x, ← hp1y] at h1'
@@ -295,50 +337,20 @@ theorem addFast_spec [Field F] [DecidableEq F]
     rw [← hp2x, ← hp2y] at h2'
     have hy1ne' := hy1ne
     rw [← hp1y] at hy1ne'
-    rcases Kimchi.Gate.AddComplete.sound W ha _ h1' h2' hpay hy1ne' htwo with
-      ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
-    · simp only [AddComplete.read, hp1x, hp1y, hp2x, hp2y] at hsum
+    rcases hp h1' h2' hy1ne' with ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
+    · simp only [hp1x, hp1y, hp2x, hp2y] at hsum
       exact Or.inl ⟨hinf, hsum⟩
-    · simp only [AddComplete.read, hp1x, hp1y, hp2x, hp2y] at hsum
+    · simp only [hp1x, hp1y, hp2x, hp2y] at hsum
       exact Or.inr ⟨hinf, h3, hsum⟩
+  cases fin with
+  | checkFinite =>
+    mvcgen
+    exact addFastTail_spec W ha htwo p1 p2 sameXU.val false_ Q _ hglue
   | dontCheckFinite =>
-    simp only [addFast, addFastTail]
-    mvcgen
-    rename_i s hpre
-    intro p1 _ hp1x hp1y
-    mvcgen
-    intro p2 _ hp2x hp2y
-    mvcgen
-    intro sameXU _
     mvcgen
     intro infU _
     mvcgen
-    intro infZ _
-    mvcgen
-    intro x21Inv _
-    mvcgen
-    intro sv _
-    mvcgen
-    intro x3 _
-    mvcgen
-    intro y3 _
-    mvcgen
-    intro u _ hpay
-    intro _
-    refine hpre _ _ ?_
-    intro h1 h2 hy1ne
-    have h1' := h1
-    rw [← hp1x, ← hp1y] at h1'
-    have h2' := h2
-    rw [← hp2x, ← hp2y] at h2'
-    have hy1ne' := hy1ne
-    rw [← hp1y] at hy1ne'
-    rcases Kimchi.Gate.AddComplete.sound W ha _ h1' h2' hpay hy1ne' htwo with
-      ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
-    · simp only [AddComplete.read, hp1x, hp1y, hp2x, hp2y] at hsum
-      exact Or.inl ⟨hinf, hsum⟩
-    · simp only [AddComplete.read, hp1x, hp1y, hp2x, hp2y] at hsum
-      exact Or.inr ⟨hinf, h3, hsum⟩
+    exact addFastTail_spec W ha htwo p1 p2 sameXU.val infU.val Q _ hglue
 
 end AddFast
 
@@ -569,31 +581,31 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
         Q⦄
     addFast (c := KimchiProverC F) fin p1' p2'
     ⦃Q⦄ := by
+  simp only [addFast]
+  mvcgen
+  rename_i st hpre
+  obtain ⟨⟨hx1ok, hy1ok, hx2ok, hy2ok, hcond⟩, hk⟩ := hpre
+  obtain ⟨x1v, hx1⟩ := CVar.evalOk hx1ok
+  obtain ⟨y1v, hy1⟩ := CVar.evalOk hy1ok
+  obtain ⟨x2v, hx2⟩ := CVar.evalOk hx2ok
+  obtain ⟨y2v, hy2⟩ := CVar.evalOk hy2ok
+  obtain ⟨hon1, hon2, hy1ne, hfin⟩ := hcond _ _ _ _ hx1 hy1 hx2 hy2
+  refine ⟨⟨hx1ok, hy1ok⟩, fun p1 st₁ hp1 hle₁ => ?_⟩
+  obtain ⟨hp1x, hp1y⟩ := hp1 _ _ hx1 hy1
+  mvcgen
+  refine ⟨⟨by rw [CVar.eval_le hle₁ hx2]; rfl, by rw [CVar.eval_le hle₁ hy2]; rfl⟩,
+    fun p2 st₂ hp2 hle₂ => ?_⟩
+  obtain ⟨hp2x, hp2y⟩ := hp2 _ _ (CVar.eval_le hle₁ hx2) (CVar.eval_le hle₁ hy2)
+  mvcgen
+  have hsw : (UnChecked.mk <$> sameXWit p1 p2) st₂.env
+      = .ok ⟨decide (x1v = x2v)⟩ := by
+    simp [sameXWit, AsProver.readCVar, CVar.eval_le hle₂ hp1x, hp2x,
+      Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
+      Pure.pure, ReaderT.pure, Except.pure]
+  refine ⟨by rw [hsw]; rfl, fun sameXU st₃ hsxr hle₃ => ?_⟩
+  have hsx := hsxr _ hsw
   cases fin with
   | checkFinite =>
-    simp only [addFast]
-    mvcgen
-    rename_i st hpre
-    obtain ⟨⟨hx1ok, hy1ok, hx2ok, hy2ok, hcond⟩, hk⟩ := hpre
-    obtain ⟨x1v, hx1⟩ := CVar.evalOk hx1ok
-    obtain ⟨y1v, hy1⟩ := CVar.evalOk hy1ok
-    obtain ⟨x2v, hx2⟩ := CVar.evalOk hx2ok
-    obtain ⟨y2v, hy2⟩ := CVar.evalOk hy2ok
-    obtain ⟨hon1, hon2, hy1ne, hfin⟩ := hcond _ _ _ _ hx1 hy1 hx2 hy2
-    refine ⟨⟨hx1ok, hy1ok⟩, fun p1 st₁ hp1 hle₁ => ?_⟩
-    obtain ⟨hp1x, hp1y⟩ := hp1 _ _ hx1 hy1
-    mvcgen
-    refine ⟨⟨by rw [CVar.eval_le hle₁ hx2]; rfl, by rw [CVar.eval_le hle₁ hy2]; rfl⟩,
-      fun p2 st₂ hp2 hle₂ => ?_⟩
-    obtain ⟨hp2x, hp2y⟩ := hp2 _ _ (CVar.eval_le hle₁ hx2) (CVar.eval_le hle₁ hy2)
-    mvcgen
-    have hsw : (UnChecked.mk <$> sameXWit p1 p2) st₂.env
-        = .ok ⟨decide (x1v = x2v)⟩ := by
-      simp [sameXWit, AsProver.readCVar, CVar.eval_le hle₂ hp1x, hp2x,
-        Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
-        Pure.pure, ReaderT.pure, Except.pure]
-    refine ⟨by rw [hsw]; rfl, fun sameXU st₃ hsxr hle₃ => ?_⟩
-    have hsx := hsxr _ hsw
     mvcgen
     refine addFastTail_complete_spec p1 p2 sameXU.val false_ x1v y1v x2v y2v false
       (valueWitness_holds (checkFinite := true) W ha hon1 hon2 hy1ne htwo
@@ -603,29 +615,6 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
       fun r st' hpost hle => hk r st' hpost.1 hpost.2.1 hpost.2.2
         ((hle₁.trans (hle₂.trans hle₃)).trans hle)⟩
   | dontCheckFinite =>
-    simp only [addFast]
-    mvcgen
-    rename_i st hpre
-    obtain ⟨⟨hx1ok, hy1ok, hx2ok, hy2ok, hcond⟩, hk⟩ := hpre
-    obtain ⟨x1v, hx1⟩ := CVar.evalOk hx1ok
-    obtain ⟨y1v, hy1⟩ := CVar.evalOk hy1ok
-    obtain ⟨x2v, hx2⟩ := CVar.evalOk hx2ok
-    obtain ⟨y2v, hy2⟩ := CVar.evalOk hy2ok
-    obtain ⟨hon1, hon2, hy1ne, -⟩ := hcond _ _ _ _ hx1 hy1 hx2 hy2
-    refine ⟨⟨hx1ok, hy1ok⟩, fun p1 st₁ hp1 hle₁ => ?_⟩
-    obtain ⟨hp1x, hp1y⟩ := hp1 _ _ hx1 hy1
-    mvcgen
-    refine ⟨⟨by rw [CVar.eval_le hle₁ hx2]; rfl, by rw [CVar.eval_le hle₁ hy2]; rfl⟩,
-      fun p2 st₂ hp2 hle₂ => ?_⟩
-    obtain ⟨hp2x, hp2y⟩ := hp2 _ _ (CVar.eval_le hle₁ hx2) (CVar.eval_le hle₁ hy2)
-    mvcgen
-    have hsw : (UnChecked.mk <$> sameXWit p1 p2) st₂.env
-        = .ok ⟨decide (x1v = x2v)⟩ := by
-      simp [sameXWit, AsProver.readCVar, CVar.eval_le hle₂ hp1x, hp2x,
-        Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
-        Pure.pure, ReaderT.pure, Except.pure]
-    refine ⟨by rw [hsw]; rfl, fun sameXU st₃ hsxr hle₃ => ?_⟩
-    have hsx := hsxr _ hsw
     mvcgen
     have hiw : (UnChecked.mk <$> infWit p1 p2 sameXU.val) st₃.env
         = .ok ⟨decide (x1v = x2v) && !decide (y1v = y2v)⟩ := by
