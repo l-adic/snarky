@@ -23,6 +23,7 @@ Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_equality.lean
 import KimchiFixture.PS
 import Snarky.DSL
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Circuit.AddComplete
 
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
@@ -153,6 +154,12 @@ def boolAnyCircuit (x : BoolVar Fp) : CircuitM Fp C (BoolVar Fp) := do
 def boolAssertCircuit (x : BoolVar Fp) : CircuitM Fp C PUnit :=
   Snarky.assert x
 
+/-- `add_complete_step_circuit`: complete addition of two points, infinity
+witnessed. -/
+def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  (·.p) <$> addFast .dontCheckFinite p.1 p.2
+
 /-! ## The comparison -/
 
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
@@ -237,7 +244,10 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("bool_xor_step_circuit", compareWith (a := Bool) (b := Bool) boolXorCircuit),
     ("bool_all_step_circuit", compareWith (a := Bool) (b := Bool) boolAllCircuit),
     ("bool_any_step_circuit", compareWith (a := Bool) (b := Bool) boolAnyCircuit),
-    ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit) ]
+    ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit),
+    ("add_complete_step_circuit",
+      compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
+        addCompleteCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

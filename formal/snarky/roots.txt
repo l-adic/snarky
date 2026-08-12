@@ -348,3 +348,13 @@ Snarky.Kimchi.instReprAssembledGate
 Snarky.Kimchi.kimchiSolve
 Snarky.Kimchi.kimchiGateData
 -- script-surface:end
+
+-- The complete-addition gadget (Snarky/Kimchi/Circuit/AddComplete.lean) and the
+-- sealing utility it builds on (Snarky/Circuit/DSL/Utils.lean): the gadget pair with
+-- its result record, plus the AffinePoint instance surface the seam script's
+-- comparisons resolve.
+Snarky.sealVar
+Snarky.Kimchi.addFast
+Snarky.Kimchi.addComplete
+Snarky.Kimchi.instCircuitTypeAffinePointFVar
+Snarky.Kimchi.instCheckedTypeAffinePointFVar
