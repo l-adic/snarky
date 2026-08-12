@@ -124,16 +124,16 @@ by the affine-form reading, the witnessing branch by its `equal` row. -/
 
 /-- The honest run succeeds on an evaluable operand; the sealed result reads as the
 operand's value in the final table. -/
-@[spec] theorem sealVar_complete_spec {F : Type} [CommSemiring F] [DecidableEq F]
-    (x : FVar F)
+@[spec] theorem sealVar_complete_spec {F c : Type} [CommSemiring F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] (x : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => (x.eval env).isOk)
         (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv) Q⦄
-    sealVar (c := ProverC F) x
+    sealVar (c := Prover c) x
     ⦃Q⦄ := by
   intro st hpre
-  rw [show (sealVar (c := ProverC F) x : CircuitM F (ProverC F) _)
-      = (sealVar (c := Basic F) x : CircuitM F (Basic F) _) from rfl]
+  rw [show (sealVar (c := Prover c) x : CircuitM F (Prover c) _)
+      = (sealVar (c := c) x : CircuitM F c _) from rfl]
   obtain ⟨hokx, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
   have hred := CVar.reduce_eval hx

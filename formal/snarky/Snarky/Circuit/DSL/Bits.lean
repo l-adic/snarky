@@ -239,7 +239,8 @@ needs a characteristic hypothesis and is not stated. -/
 open Std.Do in
 /-- `unpack`'s honest run succeeds on a faithful representative that fits in `n` bits;
 the results are the operand's binary digits. -/
-@[spec] theorem unpack_complete_spec {F : Type} [Field F] [DecidableEq F] [ToNat F]
+@[spec] theorem unpack_complete_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (v : FVar F) (n : Nat)
     (Q : PostCond (Vector (BoolVar F) n)
       (.arg (ProverState F) (.except EvalError .pure))) :
@@ -250,7 +251,7 @@ the results are the operand's binary digits. -/
         (fun env r env' => ∀ vv, v.eval env = .ok vv →
           ∀ i (hi : i < n), (r[i]).toCVar.eval env'
             = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
-    unpack (c := ProverC F) v n
+    unpack (c := Prover c) v n
     ⦃Q⦄ := by
   simp only [unpack]
   intro st hpre
@@ -264,7 +265,7 @@ the results are the operand's binary digits. -/
       ⦃Complete (fun env => (v.eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ vv', v.eval env = .ok vv' →
           (↑r : CVar F).eval env' = .ok (bit ((ToNat.toNat vv').testBit i.val))) Q⦄
-      (witness (val := Bool) (unpackWit v i.val) : CircuitM F (ProverC F) (BoolVar F))
+      (witness (val := Bool) (unpackWit v i.val) : CircuitM F (Prover c) (BoolVar F))
       ⦃Q⦄ := by
     intro i Q st' hpre'
     obtain ⟨hok', hk'⟩ := hpre'
@@ -300,12 +301,11 @@ the results are the operand's binary digits. -/
     refine pack_eval fun i hi => ?_
     simp only [unpackPure, Vector.getElem_ofFn]
     exact hbitEval i hi
-  have hch : Checker.holds (F := F) (c := ProverC F)
-      (BasicSystem.r1cs (c := ProverC F) (pack bits) (.const 1) v) st₁.env = true := by
-    show Basic.holds (.r1cs _ _ _) st₁.env = true
+  have hch : Checker.holds (F := F) (c := c)
+      (BasicSystem.r1cs (c := c) (pack bits) (.const 1) v) st₁.env = true := by
     rw [packPure_unpackPure hval hlt] at hpack
-    simp [Basic.holds, hpack, CVar.eval, hv₁]
-  refine addConstraint_complete_spec _ _ st₁ ⟨hch, fun _ st₂ _ hle₂ => ?_⟩
+    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ hpack (by rfl) hv₁ (mul_one vv)
+  refine addConstraint_complete_spec (c := c) _ _ st₁ ⟨hch, fun _ st₂ _ hle₂ => ?_⟩
   intro _
   refine hk bits st₂ (fun vv' hv' => ?_) (hle₁.trans hle₂)
   rw [hv] at hv'

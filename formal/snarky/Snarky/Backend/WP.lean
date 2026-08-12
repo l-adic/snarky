@@ -192,14 +192,14 @@ abbrev Sound {α : Type} (post : Valuation F → α → Prop)
 
 One monad admits one `WP` shape (`ps` is an `outParam`, so resolution keys on the monad
 alone) — the two readings of `CircuitM` must differ somewhere in the type. The tag sits
-on the CONSTRAINT parameter, the type argument that already varies: `ProverC F` is
-`Basic F` under a name instance search will not unfold. `CircuitM F (ProverC F)` then
+on the CONSTRAINT parameter, the type argument that already varies: `Prover c` is `c`
+under a name instance search will not unfold. `CircuitM F (Prover c)` then
 keeps the generic `Monad` instance — program bodies elaborate at it, so `mvcgen`
 resolves specs and the bind laws with no retagging — while selecting the
 `prove`-interpretation's `WP` instance below. The soundness instance stays out of the
 way because its `ConstraintHolds` guard has no instance at the tag. The completeness
-laws are stated against the reference backend, whose prover checks each constraint as
-it is added. -/
+laws are stated against any backend whose prover-side check accepts honest values
+(`LawfulChecker` below); `ProverC` names the reference instantiation. -/
 
 /-- The backend's decidable per-constraint check — the prover-side dual of
 `ConstraintHolds`. Instances live with their backends (`Basic` below). -/
@@ -214,8 +214,6 @@ program, so the interpreter lemmas apply through a `rfl` retag. -/
 def Prover (c : Type) := c
 
 instance [inst : BasicSystem F c] : BasicSystem F (Prover c) := inst
-
-instance [inst : Checker F c] : Checker F (Prover c) := inst
 
 /-- The prover reading: the state is the invariant-carrying `ProverState` (counter,
 table, and the freshness relating them — PS's single mutable store, rendered as one
@@ -270,8 +268,8 @@ instance Basic.instChecker [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
     Checker F (Basic F) :=
   ⟨Basic.holds⟩
 
-/-- The reference prover carrier: the checking reading at the `Basic` backend — every
-base completeness spec enters here. -/
+/-- The reference prover carrier: the checking reading at the `Basic` backend, where
+the demos and examples run. -/
 abbrev ProverC (F : Type) := Prover (Basic F)
 
 /-- The honest values pass the check: the completeness-side dual of
