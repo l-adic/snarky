@@ -5,14 +5,17 @@ import Kimchi.Gate.AddComplete
 /-!
 # The kimchi constraint semantics
 
-The valuation-level reading of `KimchiConstraint` — the layer gadget laws are stated
-against, with no rows, reduction, or wiring in sight. `.basic` reads as the reference
-`Basic` semantics, so the one `LawfulBasicSystem` instance below transfers every
-backend-generic base gadget law to this backend. `.addComplete` reads as the verified
-gate's own predicate at the payload's operand values (`AddComplete.read`, one field
-per gate column). `.pad` reads vacuously (a padding row asserts nothing), as do the
-gate payloads with no landed gadget: the reading is deliberately per-constructor, and
-a vacuous case marks a constructor outside the landed gadget surface.
+The two readings of `KimchiConstraint` — the layer gadget laws are stated against,
+with no rows, reduction, or wiring in sight. The soundness side reads a constraint at
+a total valuation (`Holds`); the prover side checks it on the prover's partial table
+(`check`). In both, `.basic` is the reference `Basic` reading — so the
+`LawfulBasicSystem` and `LawfulChecker` instances below transfer every backend-generic
+base gadget law, sound and complete, to this backend — and `.addComplete` is the
+verified gate's own predicate/`ok` at the payload's operand values (`read`/`eval`, one
+field per gate column; a value missing from the table rejects). `.pad` reads
+vacuously (a padding row asserts nothing), as do the gate payloads with no landed
+gadget: the reading is deliberately per-constructor, and a vacuous case marks a
+constructor outside the landed gadget surface.
 -/
 
 namespace Snarky.Kimchi
@@ -62,5 +65,57 @@ instance KimchiConstraint.instLawfulBasicSystem :
   holds_r1cs V l r o h := LawfulBasicSystem.holds_r1cs (c := Basic F) V l r o h
   holds_square V a sq h := LawfulBasicSystem.holds_square (c := Basic F) V a sq h
   holds_boolean V x h := LawfulBasicSystem.holds_boolean (c := Basic F) V x h
+
+/-- The payload's operand values on the prover's partial table, as the gate's witness
+record — `read` at an `Assignments`, failing where a value is missing. -/
+def AddComplete.eval (env : Assignments F) (c : AddComplete F) :
+    Except EvalError (Kimchi.Gate.AddComplete.Witness F) := do
+  let x1 ← c.p1.x.eval env
+  let y1 ← c.p1.y.eval env
+  let x2 ← c.p2.x.eval env
+  let y2 ← c.p2.y.eval env
+  let x3 ← c.p3.x.eval env
+  let y3 ← c.p3.y.eval env
+  let inf ← c.inf.eval env
+  let sameX ← c.sameX.eval env
+  let s ← c.s.eval env
+  let infZ ← c.infZ.eval env
+  let x21Inv ← c.x21Inv.eval env
+  return { x1, y1, x2, y2, x3, y3, inf, sameX, s, infZ, x21Inv }
+
+/-- The prover-side check: `.basic` is the reference check, `.addComplete` the gate's
+`ok` at the evaluated payload, and the rest vacuous (module docstring). -/
+def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bool :=
+  match con with
+  | .basic b => Basic.holds b env
+  | .addComplete c =>
+    match AddComplete.eval env c with
+    | .ok w => Kimchi.Gate.AddComplete.ok w
+    | .error _ => false
+  | .poseidon _ => true
+  | .varBaseMul _ => true
+  | .endoScalar _ => true
+  | .endoMul _ => true
+  | .pad _ => true
+
+/-- The prover-side check, packaged for the completeness machinery. -/
+instance KimchiConstraint.instChecker : Checker F (KimchiConstraint F) :=
+  ⟨KimchiConstraint.check⟩
+
+/-- The backend checker is lawful: `.basic` embeds the reference constraints
+verbatim, so each law is `Basic`'s own. -/
+instance KimchiConstraint.instLawfulChecker :
+    LawfulChecker F (KimchiConstraint F) where
+  check_equal env a b v h1 h2 :=
+    LawfulChecker.check_equal (c := Basic F) env a b v h1 h2
+  check_r1cs env l r o x y z hl hr ho hm :=
+    LawfulChecker.check_r1cs (c := Basic F) env l r o x y z hl hr ho hm
+  check_square env a sq x z ha hs hm :=
+    LawfulChecker.check_square (c := Basic F) env a sq x z ha hs hm
+  check_boolean env a v ha hb :=
+    LawfulChecker.check_boolean (c := Basic F) env a v ha hb
+
+/-- The kimchi prover carrier: the checking reading at the kimchi backend. -/
+abbrev KimchiProverC (F : Type) := Prover (KimchiConstraint F)
 
 end Snarky.Kimchi

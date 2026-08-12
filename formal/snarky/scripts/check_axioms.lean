@@ -103,7 +103,11 @@ def roots : List Name :=
     `Snarky.boolVar_value_roundTrip,
     `Snarky.boolVar_var_roundTrip,
     `Snarky.build_eq_of_eraseWitness,
-    `Snarky.CircuitM.instLawfulMonad ]
+    `Snarky.CircuitM.instLawfulMonad,
+    `Snarky.Basic.instLawfulBasicSystem,
+    `Snarky.Basic.instLawfulChecker,
+    `Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem,
+    `Snarky.Kimchi.KimchiConstraint.instLawfulChecker ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
@@ -127,15 +131,16 @@ run_cmd do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
     throwError "disallowed axioms found ({bad.size})"
 
--- The prover-tag invariant (`Backend/WP.lean`): `ProverC` must carry no
+-- The prover-tag invariant (`Backend/WP.lean`): the prover carriers must carry no
 -- `ConstraintHolds` instance — one would make the two `WP` instances on `CircuitM`
 -- ambiguous at the tag. Checked at a concrete field; a violating instance would be
 -- declared generically and land here.
 run_cmd liftTermElabM do
-  let ty := Lean.mkApp2 (Lean.mkConst ``Snarky.ConstraintHolds)
-    (Lean.mkConst ``Snarky.Example.F17)
-    (Lean.mkApp (Lean.mkConst ``Snarky.ProverC) (Lean.mkConst ``Snarky.Example.F17))
-  if (← Lean.Meta.synthInstance? ty).isSome then
-    throwError "ConstraintHolds instance found at ProverC — the prover WP resolution \
-      invariant (Backend/WP.lean) is broken"
-  IO.println "✓ no ConstraintHolds instance at ProverC"
+  for carrier in [``Snarky.ProverC, ``Snarky.Kimchi.KimchiProverC] do
+    let ty := Lean.mkApp2 (Lean.mkConst ``Snarky.ConstraintHolds)
+      (Lean.mkConst ``Snarky.Example.F17)
+      (Lean.mkApp (Lean.mkConst carrier) (Lean.mkConst ``Snarky.Example.F17))
+    if (← Lean.Meta.synthInstance? ty).isSome then
+      throwError "ConstraintHolds instance found at {carrier} — the prover WP \
+        resolution invariant (Backend/WP.lean) is broken"
+    IO.println s!"✓ no ConstraintHolds instance at {carrier}"

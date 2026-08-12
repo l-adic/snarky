@@ -362,11 +362,15 @@ Snarky.Kimchi.addComplete
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 
--- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the valuation-level
--- reading gadget laws are stated against — the read record, the per-constructor
--- Holds, its ConstraintHolds packaging, and the lawful-backend instance that
--- transfers every backend-generic base gadget law to this backend.
+-- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the two readings
+-- gadget laws are stated against — the read/eval records, the per-constructor
+-- Holds and check, their ConstraintHolds/Checker packaging, and the lawful-backend
+-- instance pairs that transfer every backend-generic base gadget law, sound and
+-- complete, to this backend; KimchiProverC names the checking reading's carrier.
 Snarky.Kimchi.AddComplete.read
 Snarky.Kimchi.KimchiConstraint.Holds
 Snarky.Kimchi.KimchiConstraint.instConstraintHolds
 Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem
+Snarky.Kimchi.KimchiConstraint.instChecker
+Snarky.Kimchi.KimchiConstraint.instLawfulChecker
+Snarky.Kimchi.KimchiProverC
