@@ -608,6 +608,23 @@ private theorem mapM_eval_range' {F : Type} [Add F] [Mul F]
       (CVar.eval · env') = _
     simp [List.mapM_cons, hx, ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
+/-- The decoded reading of a witnessed bundle — what the flat fields grant of the
+witness leaf means, in the type's own vocabulary. Instances mirror the `CircuitType`
+grammar, so a composite bundle's reading computes to its components' readings and no
+per-composite extraction lemmas exist: one instance per leaf encoder is the whole
+per-type surface. -/
+class WitnessReads (F val var : Type) [Add F] [Mul F] [CircuitType F val var] where
+  /-- The bundle's decoded reading on a table: `r` witnesses the value `v`. -/
+  Reads : var → Assignments F → val → Prop
+  /-- The flat fields grant implies the reading. -/
+  reads_of_grant : ∀ {r : var} {env : Assignments F} {v : val},
+    (CircuitType.varToFields (F := F) (val := val) r).toList.mapM (CVar.eval · env)
+      = .ok (CircuitType.valueToFields (F := F) (var := var) v).toList →
+    Reads r env v
+  /-- The reading survives table extension. -/
+  reads_le : ∀ {env env' : Assignments F} {r : var} {v : val},
+    env.Le env' → Reads r env v → Reads r env' v
+
 open Std.Do in
 /-- A witness computation that succeeds makes the run succeed — the honest encoding
 passes its own checks — and the bundle's fields read back as the encoding on the
@@ -615,13 +632,11 @@ final table (the `witnessed_*` readings above extract the per-type forms). -/
 @[spec] theorem witness_complete_spec {F c val var : Type} [Add F] [Mul F]
     [DecidableEq F] [CircuitType F val var] [LawfulCircuitType F val var]
     [CheckedType F (Prover c) var] [Checker F c] [LawfulCheckedType F c val var]
-    (w : AsProver F val)
+    [WitnessReads F val var] (w : AsProver F val)
     (Q : PostCond var (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => (w env).isOk)
         (fun env (r : var) env' => ∀ v, w env = .ok v →
-          (CircuitType.varToFields (F := F) (val := val) r).toList.mapM
-              (CVar.eval · env')
-            = .ok (CircuitType.valueToFields (F := F) (var := var) v).toList) Q⦄
+          WitnessReads.Reads (F := F) r env' v) Q⦄
     (witness (val := val) w : CircuitM F (Prover c) var)
     ⦃Q⦄ := by
   intro st hpre
@@ -682,38 +697,7 @@ final table (the `witnessed_*` readings above extract the per-type forms). -/
   rw [hw] at hv'
   injection hv' with hv'
   subst hv'
-  exact hvars st'.env hle'
-
-/-- The witnessed-field reading at `val := F`: the fields fact is the variable's
-evaluation. -/
-theorem witnessed_fvar_eval {F : Type} [Add F] [Mul F]
-    {r : FVar F} {env : Assignments F} {x : F}
-    (h : (CircuitType.varToFields (F := F) (val := F) r).toList.mapM (CVar.eval · env)
-      = .ok (CircuitType.valueToFields (F := F) (var := FVar F) x).toList) :
-    r.eval env = .ok x :=
-  mapM_eval_singleton h
-
-/-- The witnessed-field reading at `val := Bool`: the bit variable evaluates to the
-bit's encoding. -/
-theorem witnessed_boolVar_eval {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {r : BoolVar F} {env : Assignments F} {b : Bool}
-    (h : (CircuitType.varToFields (F := F) (val := Bool) r).toList.mapM
-        (CVar.eval · env)
-      = .ok (CircuitType.valueToFields (F := F) (var := BoolVar F) b).toList) :
-    (↑r : CVar F).eval env = .ok (bit b) :=
-  mapM_eval_singleton h
-
-/-- The witnessed-field reading at `val := UnChecked Bool`: the wrapped bit variable
-evaluates to the bit's encoding. -/
-theorem witnessed_uncheckedBool_eval {F : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] {r : UnChecked (BoolVar F)} {env : Assignments F}
-    {u : UnChecked Bool}
-    (h : (CircuitType.varToFields (F := F) (val := UnChecked Bool) r).toList.mapM
-        (CVar.eval · env)
-      = .ok (CircuitType.valueToFields (F := F)
-          (var := UnChecked (BoolVar F)) u).toList) :
-    (↑r.val : CVar F).eval env = .ok (bit u.val) :=
-  mapM_eval_singleton h
+  exact WitnessReads.reads_of_grant (hvars st'.env hle')
 
 /-- Reads survive table extension, listwise. -/
 private theorem mapM_eval_le {F : Type} [Add F] [Mul F] {env env' : Assignments F}
@@ -875,43 +859,72 @@ instance instLawfulCheckedTypeVector {F c : Type} [Add F] [Mul F] {val var : Typ
       exact List.mem_map_of_mem hp
     exact hsplit _ hmem
 
-/-- The witnessed-field reading at a vector type: each element's fields evaluate to
-that element's encoding. -/
-theorem witnessed_vector_eval {F : Type} [Add F] [Mul F] {val var : Type}
-    [CircuitType F val var] {n : Nat} {r : Vector var n} {env : Assignments F}
-    {v : Vector val n}
-    (h : (CircuitType.varToFields (F := F) (val := Vector val n) r).toList.mapM
-        (CVar.eval · env)
-      = .ok (CircuitType.valueToFields (F := F) (var := Vector var n) v).toList)
-    {i : Nat} (hi : i < n) :
-    (CircuitType.varToFields (F := F) (val := val) r[i]).toList.mapM (CVar.eval · env)
-      = .ok (CircuitType.valueToFields (F := F) (var := var) v[i]).toList := by
-  have hsplit := mapM_eval_flatten_ok (env := env)
-    (bs := r.toList.map fun x =>
-      (CircuitType.varToFields (F := F) (val := val) x).toList)
-    (es := v.toList.map fun x =>
-      (CircuitType.valueToFields (F := F) (var := var) x).toList)
-    (by simp) (fun q hq => by
-      rw [List.zip_map] at hq
-      obtain ⟨q₀, -, rfl⟩ := List.mem_map.mp hq
-      simp)
-    (by
-      have h' : ((r.map (CircuitType.varToFields (F := F)
-              (val := val))).flatten).toList.mapM (CVar.eval · env)
-          = .ok ((v.map (CircuitType.valueToFields (F := F)
-              (var := var))).flatten).toList := h
-      simpa [toList_flatten, Vector.toList_map, List.map_map] using h')
-  have hmem : ((CircuitType.varToFields (F := F) (val := val) r[i]).toList,
-      (CircuitType.valueToFields (F := F) (var := var) v[i]).toList)
-      ∈ (r.toList.map fun x =>
-          (CircuitType.varToFields (F := F) (val := val) x).toList).zip
-        (v.toList.map fun x =>
-          (CircuitType.valueToFields (F := F) (var := var) x).toList) := by
-    rw [List.zip_map]
-    refine List.mem_map_of_mem (a := (r[i], v[i])) ?_
-    refine List.mem_iff_getElem.mpr ⟨i, by simp; omega, ?_⟩
-    simp [List.getElem_zip]
-  exact hsplit _ hmem
+instance instWitnessReadsF {F : Type} [Add F] [Mul F] :
+    WitnessReads F F (FVar F) where
+  Reads r env x := r.eval env = .ok x
+  reads_of_grant h := mapM_eval_singleton h
+  reads_le hle h := CVar.eval_le hle h
+
+instance instWitnessReadsBool {F : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] : WitnessReads F Bool (BoolVar F) where
+  Reads r env b := (↑r : CVar F).eval env = .ok (bit b)
+  reads_of_grant h := mapM_eval_singleton h
+  reads_le hle h := CVar.eval_le hle h
+
+instance instWitnessReadsUnChecked {F val var : Type} [Add F] [Mul F]
+    [CircuitType F val var] [WitnessReads F val var] :
+    WitnessReads F (UnChecked val) (UnChecked var) where
+  Reads r env v := WitnessReads.Reads (F := F) r.val env v.val
+  reads_of_grant h := WitnessReads.reads_of_grant h
+  reads_le hle h := WitnessReads.reads_le hle h
+
+instance instWitnessReadsProd {F a b av bv : Type} [Add F] [Mul F]
+    [A : CircuitType F a av] [B : CircuitType F b bv] [WitnessReads F a av]
+    [WitnessReads F b bv] : WitnessReads F (a × b) (av × bv) where
+  Reads r env v := WitnessReads.Reads (F := F) r.1 env v.1 ∧
+    WitnessReads.Reads (F := F) r.2 env v.2
+  reads_of_grant {r} {env} {v} h := by
+    have h' : (A.varToFields r.1 ++ B.varToFields r.2).toList.mapM (CVar.eval · env)
+        = .ok (A.valueToFields v.1 ++ B.valueToFields v.2).toList := h
+    simp only [Vector.toList_append] at h'
+    obtain ⟨h1, h2⟩ := mapM_eval_append_ok (by simp) h'
+    exact ⟨WitnessReads.reads_of_grant h1, WitnessReads.reads_of_grant h2⟩
+  reads_le hle h := ⟨WitnessReads.reads_le hle h.1, WitnessReads.reads_le hle h.2⟩
+
+instance instWitnessReadsVector {F val var : Type} [Add F] [Mul F]
+    [CircuitType F val var] [WitnessReads F val var] {n : Nat} :
+    WitnessReads F (Vector val n) (Vector var n) where
+  Reads r env v := ∀ (i : ℕ) (hi : i < n), WitnessReads.Reads (F := F) r[i] env v[i]
+  reads_of_grant {r} {env} {v} h := by
+    intro i hi
+    refine WitnessReads.reads_of_grant ?_
+    have hsplit := mapM_eval_flatten_ok (env := env)
+      (bs := r.toList.map fun x =>
+        (CircuitType.varToFields (F := F) (val := val) x).toList)
+      (es := v.toList.map fun x =>
+        (CircuitType.valueToFields (F := F) (var := var) x).toList)
+      (by simp) (fun q hq => by
+        rw [List.zip_map] at hq
+        obtain ⟨q₀, -, rfl⟩ := List.mem_map.mp hq
+        simp)
+      (by
+        have h' : ((r.map (CircuitType.varToFields (F := F)
+                (val := val))).flatten).toList.mapM (CVar.eval · env)
+            = .ok ((v.map (CircuitType.valueToFields (F := F)
+                (var := var))).flatten).toList := h
+        simpa [toList_flatten, Vector.toList_map, List.map_map] using h')
+    have hmem : ((CircuitType.varToFields (F := F) (val := val) r[i]).toList,
+        (CircuitType.valueToFields (F := F) (var := var) v[i]).toList)
+        ∈ (r.toList.map fun x =>
+            (CircuitType.varToFields (F := F) (val := val) x).toList).zip
+          (v.toList.map fun x =>
+            (CircuitType.valueToFields (F := F) (var := var) x).toList) := by
+      rw [List.zip_map]
+      refine List.mem_map_of_mem (a := (r[i], v[i])) ?_
+      refine List.mem_iff_getElem.mpr ⟨i, by simp; omega, ?_⟩
+      simp [List.getElem_zip]
+    exact hsplit _ hmem
+  reads_le hle h := fun i hi => WitnessReads.reads_le hle (h i hi)
 
 /-! ## The vector loop rule
 

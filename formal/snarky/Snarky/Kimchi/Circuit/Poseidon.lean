@@ -173,30 +173,6 @@ readable input state — no domain conditions — and the output reads back as
 so each window's five equations hold by the recursion itself, read through
 `round_eq_fullRound`. -/
 
-/-- Reading a triple bundle's fields is reading its three components. -/
-private theorem mapM_eval_triple [Add F] [Mul F] {env : Assignments F}
-    {t : FVar F × FVar F × FVar F} {v : F × F × F}
-    (h : (CircuitType.varToFields (F := F) (val := F × F × F) t).toList.mapM
-        (CVar.eval · env)
-      = .ok (CircuitType.valueToFields (F := F)
-          (var := FVar F × FVar F × FVar F) v).toList) :
-    t.1.eval env = .ok v.1 ∧ t.2.1.eval env = .ok v.2.1 ∧ t.2.2.eval env = .ok v.2.2 := by
-  have h' : [t.1, t.2.1, t.2.2].mapM (CVar.eval · env) = .ok [v.1, v.2.1, v.2.2] := by
-    simpa [Vector.toList_append] using h
-  cases h1 : t.1.eval env with
-  | error e => simp [List.mapM_cons, h1, Bind.bind, Except.bind] at h'
-  | ok a =>
-    cases h2 : t.2.1.eval env with
-    | error e => simp [List.mapM_cons, h1, h2, Bind.bind, Except.bind] at h'
-    | ok b =>
-      cases h3 : t.2.2.eval env with
-      | error e => simp [List.mapM_cons, h1, h2, h3, Bind.bind, Except.bind] at h'
-      | ok c =>
-        simp only [List.mapM_cons, List.mapM_nil, h1, h2, h3, Bind.bind, Except.bind,
-          Pure.pure, Except.pure, Except.ok.injEq, List.cons.injEq, and_true] at h'
-        obtain ⟨ha, hb, hc⟩ := h'
-        refine ⟨?_, ?_, ?_⟩ <;> simp [ha, hb, hc]
-
 namespace Poseidon
 
 /-- The prefix map is the gate tower's iterate at the parameter family. -/
@@ -326,9 +302,8 @@ theorem poseidon_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
       outs[i].2.1.eval st₁.env = .ok (roundsUpTo p (i + 1) (av, bv, cv)).2.1 ∧
       outs[i].2.2.eval st₁.env = .ok (roundsUpTo p (i + 1) (av, bv, cv)).2.2 := by
     intro i hi
-    have h := witnessed_vector_eval hread hi
-    simp only [Vector.getElem_ofFn] at h
-    exact mapM_eval_triple h
+    have h := hread i hi
+    simpa only [Vector.getElem_ofFn] using h
   mvcgen
   refine addConstraint_complete_spec (c := KimchiConstraint F)
     (KimchiSystem.poseidon ⟨p.mds, p.roundConstants.toList, s :: outs.toList⟩)

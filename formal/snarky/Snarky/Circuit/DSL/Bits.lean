@@ -280,7 +280,7 @@ the results are the operand's binary digits. -/
     rw [hv'] at hv''
     injection hv'' with hv''
     subst hv''
-    exact witnessed_boolVar_eval (hr _ hw)
+    exact hr _ hw
   refine generateVec_complete_spec n _ _ _ hcomp
     (fun i env env' hle hok => by
       obtain ⟨vv', hv'⟩ := CVar.evalOk hok
