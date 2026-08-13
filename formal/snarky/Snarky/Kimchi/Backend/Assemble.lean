@@ -135,9 +135,10 @@ def makeGateData [Zero F] [One F] (publicInputs : List Variable)
   (rows, gates, publicInputs.length)
 
 /-- The witness table (PS `makeWitness`), row-major as the fixture schema records
-it: each row's fifteen register values (an absent or unassigned cell reads `0` — the
-prover laws discharge assignedness on the reachable path), and the public-input
-values. -/
+it: each row's fifteen register values and the public-input values. Total where PS
+throws on a missing assignment: an absent or unassigned cell reads `0`. No stated
+law discharges assignedness of built rows, so a `0` cell can also be an unassigned
+one — the corpus's byte comparison is the only check. -/
 def makeWitness [Zero F] (A : Assignments F) (rows : List (KimchiRow F))
     (publicInputs : List Variable) : List (Vector F 15) × List F :=
   (rows.map fun row =>

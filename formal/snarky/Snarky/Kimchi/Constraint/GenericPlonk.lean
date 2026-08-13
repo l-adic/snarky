@@ -17,10 +17,11 @@ patterns verbatim.
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - The three all-constant contradiction sites (`r1cs`, `square`, `boolean`) throw in PS;
   the total Lean rendering emits the corresponding unsatisfiable generic row
-  (`c = lhs − rhs`), the same move `Reduction.lean`'s equality op makes. Reachable
-  behaviour is unchanged; a statically-false constraint compiles to an unsatisfiable
-  system. The prover interpreter consequently SUCCEEDS where PS would crash — the
-  emission is a no-op there (the kimchi prover checks nothing per constraint).
+  (`c = lhs − rhs`), the same move `Reduction.lean`'s equality op makes.
+  Contradiction-free circuits behave identically; a statically-false constraint
+  compiles to an unsatisfiable system where PS crashes at construction, and the
+  prover interpreter SUCCEEDS where PS's would crash — the emission is a no-op there
+  (the kimchi prover checks nothing per constraint).
 
 No semantics is stated here: the meaning of the emitted encodings and the
 faithfulness of this reducer are deliberately not part of this package; the

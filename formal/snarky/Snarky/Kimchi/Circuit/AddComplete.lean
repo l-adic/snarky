@@ -31,8 +31,8 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 The law pair reads the one emitted constraint through the semantic layer:
 `AddFast.addFast_spec` (any satisfying valuation reads the output as the EC group
 sum, via the verified gate's `sound`) and `AddFast.addFast_complete_spec` (the
-honest run accepts on-curve operands — the witness computations fill the row the
-gate's completeness algebra certifies).
+honest `KimchiProverC` run accepts on-curve operands — the witness computations fill
+the row the gate's completeness algebra certifies).
 -/
 
 namespace Snarky.Kimchi
@@ -558,10 +558,13 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
     · rw [CVar.eval_le hle₆ hy3]; rfl
     · rw [CVar.eval_le (hle05.trans hle₆) hinf]; rfl
 
-/-- `addFast`'s honest run succeeds: with the four operand coordinates readable, the
-operands on-curve (short shape), the first finite (`y ≠ 0`), and — under
-`checkFinite` — the sum finite, the prover accepts every row the gadget emits. The
-grant is the outputs reading on the final table. -/
+/-- `addFast`'s honest run succeeds at the prover carrier: with the four operand
+coordinates readable, the operands on-curve (short shape), the first finite
+(`y ≠ 0`), and — under `checkFinite` — the sum finite, the checking interpreter at
+`KimchiProverC` accepts every row the gadget emits. The grant is the outputs reading
+on the final table. The executable seam (`kimchiSolve` at `kimchiOps`) is outside
+this statement: its ops-coherence lockstep is the open obligation
+`Snarky.Kimchi.Constraint` records. -/
 theorem addFast_complete_spec [Field F] [DecidableEq F]
     (fin : Finiteness) (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)

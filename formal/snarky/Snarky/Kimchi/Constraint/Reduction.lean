@@ -39,8 +39,8 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS throws on the statically-contradictory assertion `constant cl = constant cr` with
   `cl ≠ cr`; the total Lean builder instead emits the corresponding unsatisfiable
   generic row (`c = cl − cr`), the same move PS itself makes in the one-sided constant
-  cases. Reachable behaviour is unchanged; a contradictory circuit now compiles to an
-  unsatisfiable system instead of crashing the compiler.
+  cases. Contradiction-free circuits behave identically; a contradictory circuit now
+  compiles to an unsatisfiable system instead of crashing the compiler.
 - PS `Map.lookup/insert` on the constant cache becomes assoc-list `lookup`/cons: keys
   are inserted only on lookup miss, so first-match lookup is map lookup. The cache's
   iteration order is NOT fixture-observable — the dumper sorts by variable
