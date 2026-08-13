@@ -41,11 +41,13 @@ private theorem foldl_table {φ ψ : F → F} :
 
 variable [DecidableEq F]
 
-/-- `c_func` as the bare `(0,0,−1,1)` table. -/
-private def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
+/-- `c_func` as the bare `(0,0,−1,1)` table — public, as the `a`-fold every deployed
+prover runs (OCaml `Pickles.Scalar_challenge` and its PS port). -/
+def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
 
-/-- `d_func` as the bare `(−1,1,0,0)` table. -/
-private def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
+/-- `d_func` as the bare `(−1,1,0,0)` table — public, as the `b`-fold every deployed
+prover runs. -/
+def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
 
 /-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
 private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
@@ -114,6 +116,8 @@ arithmetic.
 
 * `decomposeA`, `decomposeB`, `nReconstruct`, `toField` — the Algorithm-2 accumulators and the
   effective scalar, as field-valued folds over the crumb stream.
+* `decomposeA_eq_table`, `decomposeB_eq_table` — on valid crumbs the interpolating folds are the
+  bare `cFunc`/`dFunc` table folds.
 * `decomposeA_append`, `decomposeB_append`, `nReconstruct_append` — each fold resumes across a
   row boundary from the partial value of the earlier rows.
 * `nReconstruct_append_pos` — the same boundary read *positionally* instead: the earlier rows'
@@ -175,13 +179,27 @@ def decomposeA (crumbs : List F) : F := crumbs.foldl (fun a x => 2 * a + cPoly x
 def decomposeB (crumbs : List F) : F := crumbs.foldl (fun b x => 2 * b + dPoly x) 2
 
 /-- The raw challenge reconstructed from its base-4 crumbs (`n := 4n + x`), the
-    gate's `n` register. -/
-private def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
+    gate's `n` register — public, as the reconstruction the wrapper pins to the
+    input challenge. -/
+def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
 
 /-- The effective scalar the gate outputs: `a·λ + b` (`λ` the endomorphism
     eigenvalue). This is the pure `to_field` of the challenge. -/
 def toField (crumbs : List F) (lam : F) : F :=
   decomposeA crumbs * lam + decomposeB crumbs
+
+/-- On valid crumbs the `a`-accumulator is the bare-table fold: `cPoly` agrees with
+    `cFunc` there, so the interpolating fold and the table fold coincide. -/
+theorem decomposeA_eq_table [DecidableEq F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    {crumbs : List F} (hv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    decomposeA crumbs = crumbs.foldl (fun a x => 2 * a + cFunc x) 2 :=
+  foldl_table crumbs 2 fun x hx => cPoly_eq_cFunc h2 h3 (hv x hx)
+
+/-- The `b`-accumulator's bare-table fold, likewise. -/
+theorem decomposeB_eq_table [DecidableEq F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    {crumbs : List F} (hv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    decomposeB crumbs = crumbs.foldl (fun b x => 2 * b + dFunc x) 2 :=
+  foldl_table crumbs 2 fun x hx => dPoly_eq_dFunc h2 h3 (hv x hx)
 
 /-! ## Multi-row composition: threading rows is folding the concatenated crumbs.
 

@@ -379,6 +379,8 @@ Snarky.Kimchi.mapAccumM
 Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toFieldChecked'
 Snarky.Kimchi.EndoScalar.toFieldPure
+Snarky.Kimchi.EndoScalar.toFieldChecked'_spec
+Snarky.Kimchi.EndoScalar.toField_spec
 Snarky.Kimchi.Poseidon.poseidon_spec
 Snarky.Kimchi.Poseidon.poseidon_complete_spec
 Snarky.Kimchi.instCircuitTypeAffinePointFVar

@@ -12,6 +12,7 @@ Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
+import Snarky.Kimchi.Circuit.EndoScalar
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -85,6 +86,8 @@ def roots : List Name :=
     `Snarky.Kimchi.Poseidon.poseidon_spec,
     `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
+    `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
+    `Snarky.Kimchi.EndoScalar.toField_spec,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
