@@ -715,6 +715,204 @@ theorem witnessed_uncheckedBool_eval {F : Type} [Add F] [Mul F] [Zero F] [One F]
     (↑r.val : CVar F).eval env = .ok (bit u.val) :=
   mapM_eval_singleton h
 
+/-- Reads survive table extension, listwise. -/
+private theorem mapM_eval_le {F : Type} [Add F] [Mul F] {env env' : Assignments F}
+    (hle : env.Le env') :
+    ∀ {xs : List (CVar F)} {vs : List F},
+      xs.mapM (CVar.eval · env) = .ok vs → xs.mapM (CVar.eval · env') = .ok vs
+  | [], _, h => h
+  | x :: xs, vs, h => by
+    cases he : x.eval env with
+    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
+    | ok y =>
+      cases hr : xs.mapM (CVar.eval · env) with
+      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
+      | ok ys =>
+        simp only [List.mapM_cons, he, hr, Bind.bind, Except.bind, Pure.pure,
+          Except.pure] at h
+        simp [List.mapM_cons, CVar.eval_le hle he, mapM_eval_le hle hr, Bind.bind,
+          Except.bind, Pure.pure, Except.pure, h]
+
+/-- Split a successful read at the append boundary. -/
+private theorem mapM_eval_append_ok {F : Type} [Add F] [Mul F] {env : Assignments F} :
+    ∀ {l₁ : List (CVar F)} {e₁ : List F} {l₂ : List (CVar F)} {e₂ : List F},
+      e₁.length = l₁.length →
+      (l₁ ++ l₂).mapM (CVar.eval · env) = .ok (e₁ ++ e₂) →
+      l₁.mapM (CVar.eval · env) = .ok e₁ ∧ l₂.mapM (CVar.eval · env) = .ok e₂
+  | [], e₁, _, _, hlen, h => by
+    have : e₁ = [] := List.eq_nil_of_length_eq_zero (by simpa using hlen)
+    subst this
+    exact ⟨rfl, by simpa using h⟩
+  | x :: xs, y :: e₁, l₂, e₂, hlen, h => by
+    cases he : x.eval env with
+    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
+    | ok z =>
+      cases hr : (xs ++ l₂).mapM (CVar.eval · env) with
+      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
+      | ok zs =>
+        simp only [List.cons_append, List.mapM_cons, he, hr, Bind.bind, Except.bind,
+          Pure.pure, Except.pure, Except.ok.injEq, List.cons.injEq] at h
+        obtain ⟨hz, hzs⟩ := h
+        obtain ⟨h1, h2⟩ :=
+          mapM_eval_append_ok (by simpa using hlen) (hr.trans (by rw [hzs]))
+        exact ⟨by simp [List.mapM_cons, he, h1, hz, Bind.bind, Except.bind,
+          Pure.pure, Except.pure], h2⟩
+  | x :: xs, [], l₂, e₂, hlen, h => by simp at hlen
+
+/-- Split a successful flattened read into its per-piece reads. -/
+private theorem mapM_eval_flatten_ok {F : Type} [Add F] [Mul F] {env : Assignments F} :
+    ∀ {bs : List (List (CVar F))} {es : List (List F)}, bs.length = es.length →
+      (∀ p ∈ bs.zip es, p.2.length = p.1.length) →
+      bs.flatten.mapM (CVar.eval · env) = .ok es.flatten →
+      ∀ p ∈ bs.zip es, p.1.mapM (CVar.eval · env) = .ok p.2
+  | [], [], _, _, _, _, hp => by simp at hp
+  | [], _ :: _, hlen, _, _, _, _ => by simp at hlen
+  | _ :: _, [], hlen, _, _, _, _ => by simp at hlen
+  | b :: bs, e :: es, hlen, hplen, h, p, hp => by
+    simp only [List.flatten_cons] at h
+    obtain ⟨h1, h2⟩ := mapM_eval_append_ok (hplen (b, e) (by simp)) h
+    rcases List.mem_cons.mp (by simpa using hp) with hhead | htail
+    · rw [hhead]
+      exact h1
+    · exact mapM_eval_flatten_ok (by simpa using hlen)
+        (fun q hq => hplen q (List.mem_cons_of_mem _ hq)) h2 p htail
+
+open Std.Do in
+instance instLawfulCheckedTypeProd {F c : Type} [Add F] [Mul F] {a b av bv : Type}
+    [A : CircuitType F a av] [B : CircuitType F b bv] [CheckedType F (Prover c) av]
+    [CheckedType F (Prover c) bv] [Checker F c] [LawfulCheckedType F c a av]
+    [LawfulCheckedType F c b bv] :
+    LawfulCheckedType F c (a × b) (av × bv) where
+  check_complete bundle v Q := by
+    intro st hpre
+    obtain ⟨hread, hk⟩ := hpre
+    have hread' : (A.varToFields bundle.1 ++ B.varToFields bundle.2).toList.mapM
+          (CVar.eval · st.env)
+        = .ok (A.valueToFields v.1 ++ B.valueToFields v.2).toList := hread
+    simp only [Vector.toList_append] at hread'
+    obtain ⟨hr1, hr2⟩ := mapM_eval_append_ok (by simp) hread'
+    rw [show (CheckedType.check (c := Prover c) bundle : CircuitM F (Prover c) PUnit)
+        = (CheckedType.check (c := Prover c) bundle.1 >>= fun _ =>
+            CheckedType.check (c := Prover c) bundle.2) from rfl]
+    simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+    refine LawfulCheckedType.check_complete (c := c) (val := a) bundle.1 v.1
+      ⟨fun _ st' => (Std.Do.wp (CheckedType.check (c := Prover c) bundle.2 :
+          CircuitM F (Prover c) PUnit)).apply Q st', Q.2⟩ st
+      ⟨hr1, fun u st' _ hle' => ?_⟩
+    exact LawfulCheckedType.check_complete (c := c) (val := b) bundle.2 v.2 Q st'
+      ⟨mapM_eval_le hle' hr2,
+        fun w st'' _ hle'' => hk w st'' trivial (hle'.trans hle'')⟩
+
+open Std.Do in
+/-- The element checks of a list, run in order: each element's read survives to its
+own check through the table growth of the checks before it. -/
+private theorem forM_check_complete {F c val var : Type} [Add F] [Mul F]
+    [CircuitType F val var] [CheckedType F (Prover c) var] [Checker F c]
+    [LawfulCheckedType F c val var] :
+    ∀ (bs : List var) (vs : List val), bs.length = vs.length →
+      ∀ (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))),
+      ⦃Complete
+          (fun env => ∀ p ∈ bs.zip vs,
+            (CircuitType.varToFields (F := F) (val := val) p.1).toList.mapM
+                (CVar.eval · env)
+              = .ok (CircuitType.valueToFields (F := F) (var := var) p.2).toList)
+          (fun _ _ _ => True) Q⦄
+      (bs.forM (CheckedType.check (c := Prover c)) : CircuitM F (Prover c) PUnit)
+      ⦃Q⦄
+  | [], _, _, Q => fun st hpre => check_pure_complete (c := c) Q st hpre
+  | b :: bs, [], hlen, Q => by simp at hlen
+  | b :: bs, v :: vs, hlen, Q => by
+    intro st hpre
+    obtain ⟨hreads, hk⟩ := hpre
+    rw [show ((b :: bs).forM (CheckedType.check (c := Prover c))
+          : CircuitM F (Prover c) PUnit)
+        = (CheckedType.check (c := Prover c) b >>= fun _ =>
+            bs.forM (CheckedType.check (c := Prover c))) from rfl]
+    simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+    refine LawfulCheckedType.check_complete (c := c) (val := val) b v
+      ⟨fun _ st' => (Std.Do.wp (bs.forM (CheckedType.check (c := Prover c))
+          : CircuitM F (Prover c) PUnit)).apply Q st', Q.2⟩ st
+      ⟨hreads (b, v) (by simp), fun u st' _ hle' => ?_⟩
+    refine forM_check_complete bs vs (by simpa using hlen) Q st'
+      ⟨fun p hp => mapM_eval_le hle' (hreads p ?_),
+        fun w st'' _ hle'' => hk w st'' trivial (hle'.trans hle'')⟩
+    rw [List.zip_cons_cons]
+    exact List.mem_cons_of_mem _ hp
+
+open Std.Do in
+instance instLawfulCheckedTypeVector {F c : Type} [Add F] [Mul F] {val var : Type}
+    [A : CircuitType F val var] [CheckedType F (Prover c) var] [Checker F c]
+    [LawfulCheckedType F c val var] {n : Nat} :
+    LawfulCheckedType F c (Vector val n) (Vector var n) where
+  check_complete bundle v Q := by
+    intro st hpre
+    obtain ⟨hread, hk⟩ := hpre
+    refine forM_check_complete bundle.toList v.toList (by simp) Q st
+      ⟨?_, fun u st' _ hle' => hk u st' trivial hle'⟩
+    intro p hp
+    have hsplit := mapM_eval_flatten_ok (env := st.env)
+      (bs := bundle.toList.map fun x =>
+        (CircuitType.varToFields (F := F) (val := val) x).toList)
+      (es := v.toList.map fun x =>
+        (CircuitType.valueToFields (F := F) (var := var) x).toList)
+      (by simp) (fun q hq => by
+        rw [List.zip_map] at hq
+        obtain ⟨q₀, -, rfl⟩ := List.mem_map.mp hq
+        simp)
+      (by
+        have hread' : ((bundle.map (CircuitType.varToFields (F := F)
+                (val := val))).flatten).toList.mapM (CVar.eval · st.env)
+            = .ok ((v.map (CircuitType.valueToFields (F := F)
+                (var := var))).flatten).toList := hread
+        simpa [toList_flatten, Vector.toList_map, List.map_map] using hread')
+    have hmem : ((CircuitType.varToFields (F := F) (val := val) p.1).toList,
+        (CircuitType.valueToFields (F := F) (var := var) p.2).toList)
+        ∈ (bundle.toList.map fun x =>
+            (CircuitType.varToFields (F := F) (val := val) x).toList).zip
+          (v.toList.map fun x =>
+            (CircuitType.valueToFields (F := F) (var := var) x).toList) := by
+      rw [List.zip_map]
+      exact List.mem_map_of_mem hp
+    exact hsplit _ hmem
+
+/-- The witnessed-field reading at a vector type: each element's fields evaluate to
+that element's encoding. -/
+theorem witnessed_vector_eval {F : Type} [Add F] [Mul F] {val var : Type}
+    [CircuitType F val var] {n : Nat} {r : Vector var n} {env : Assignments F}
+    {v : Vector val n}
+    (h : (CircuitType.varToFields (F := F) (val := Vector val n) r).toList.mapM
+        (CVar.eval · env)
+      = .ok (CircuitType.valueToFields (F := F) (var := Vector var n) v).toList)
+    {i : Nat} (hi : i < n) :
+    (CircuitType.varToFields (F := F) (val := val) r[i]).toList.mapM (CVar.eval · env)
+      = .ok (CircuitType.valueToFields (F := F) (var := var) v[i]).toList := by
+  have hsplit := mapM_eval_flatten_ok (env := env)
+    (bs := r.toList.map fun x =>
+      (CircuitType.varToFields (F := F) (val := val) x).toList)
+    (es := v.toList.map fun x =>
+      (CircuitType.valueToFields (F := F) (var := var) x).toList)
+    (by simp) (fun q hq => by
+      rw [List.zip_map] at hq
+      obtain ⟨q₀, -, rfl⟩ := List.mem_map.mp hq
+      simp)
+    (by
+      have h' : ((r.map (CircuitType.varToFields (F := F)
+              (val := val))).flatten).toList.mapM (CVar.eval · env)
+          = .ok ((v.map (CircuitType.valueToFields (F := F)
+              (var := var))).flatten).toList := h
+      simpa [toList_flatten, Vector.toList_map, List.map_map] using h')
+  have hmem : ((CircuitType.varToFields (F := F) (val := val) r[i]).toList,
+      (CircuitType.valueToFields (F := F) (var := var) v[i]).toList)
+      ∈ (r.toList.map fun x =>
+          (CircuitType.varToFields (F := F) (val := val) x).toList).zip
+        (v.toList.map fun x =>
+          (CircuitType.valueToFields (F := F) (var := var) x).toList) := by
+    rw [List.zip_map]
+    refine List.mem_map_of_mem (a := (r[i], v[i])) ?_
+    refine List.mem_iff_getElem.mpr ⟨i, by simp; omega, ?_⟩
+    simp [List.getElem_zip]
+  exact hsplit _ hmem
+
 /-! ## The vector loop rule
 
 The `Sound` and `Complete` laws of `generateVec`, given a spec for each component —

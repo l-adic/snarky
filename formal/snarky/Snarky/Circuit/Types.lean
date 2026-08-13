@@ -16,9 +16,10 @@ Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
   dispatches on the plain field type and core `Bool` directly, so `val` is unwrapped. The
   wrapper-lifting instances (`PrimeField (F f)`, `HasEndo (F f)`, `FieldSizeInBits (F f)`)
   therefore have no analogue.
-- Instance coverage is the base pair (`F`, `Bool`), `Prod` (PS `Tuple`), and the
-  size-0 `PUnit` (PS `Unit`); the PS `NoInput`/`NoOutput`, `Const`, `Product`,
-  `Vector`, and `Record` instances are not yet ported. `UnChecked` is here.
+- Instance coverage is the base pair (`F`, `Bool`), `Prod` (PS `Tuple`), sized
+  vectors (PS `Vector`), and the size-0 `PUnit` (PS `Unit`); the PS
+  `NoInput`/`NoOutput`, `Const`, `Product`, and `Record` instances are not yet
+  ported. `UnChecked` is here.
 - The generic/rowlist deriving machinery (`GCircuitType`/`RCircuitType`, the `generic*`
   helpers) is not ported — Lean would grow a `deriving` handler instead.
 - `CheckedType` is not here: its PS home is `Circuit/DSL/Monad.purs`.
@@ -176,6 +177,28 @@ instance : CircuitType F PUnit PUnit where
   varToFields _ := #v[]
   fieldsToVar _ := PUnit.unit
 
+/-- Every element's block starts strictly inside the flattening: the index bound the
+vector instance's decode direction reads through. -/
+private theorem mul_add_lt {i j n sz : Nat} (hi : i < n) (hj : j < sz) :
+    i * sz + j < n * sz :=
+  calc i * sz + j < (i + 1) * sz := by rw [Nat.succ_mul]; omega
+    _ ≤ n * sz := Nat.mul_le_mul_right sz hi
+
+/-- Sized vectors encode as the concatenation of their elements' encodings, in index
+order (PS `CircuitType` instance for `Vector`); decoding reads element `i`'s fields
+back off block `i`. -/
+instance instCircuitTypeVector {val var : Type u} [A : CircuitType F val var]
+    {n : Nat} : CircuitType F (Vector val n) (Vector var n) where
+  size := n * A.size
+  valueToFields v := (v.map A.valueToFields).flatten
+  fieldsToValue fs := Vector.ofFn fun i =>
+    A.fieldsToValue (Vector.ofFn fun j =>
+      fs[i.1 * A.size + j.1]'(mul_add_lt i.isLt j.isLt))
+  varToFields v := (v.map A.varToFields).flatten
+  fieldsToVar fs := Vector.ofFn fun i =>
+    A.fieldsToVar (Vector.ofFn fun j =>
+      fs[i.1 * A.size + j.1]'(mul_add_lt i.isLt j.isLt))
+
 /-! ## Round-trip laws
 
 The PS suite checks these by QuickCheck over a table of types; for the base instances
@@ -244,5 +267,80 @@ instance instLawfulCircuitTypeUnChecked {val var : Type} [CircuitType F val var]
     LawfulCircuitType F (UnChecked val) (UnChecked var) where
   value_roundTrip v := congrArg UnChecked.mk (LawfulCircuitType.value_roundTrip v.val)
   vars_roundTrip cvs := LawfulCircuitType.vars_roundTrip (val := val) cvs
+
+/-- Taking a concatenation's first block gives it back. -/
+private theorem cast_take_append {α : Type u} {m k : Nat} (v : Vector α m)
+    (w : Vector α k) {h : min m (m + k) = m} : ((v ++ w).take m).cast h = v := by
+  ext i hi
+  simp [hi]
+
+/-- Dropping a concatenation's first block leaves the second. -/
+private theorem cast_drop_append {α : Type u} {m k : Nat} (v : Vector α m)
+    (w : Vector α k) {h : m + k - m = k} : ((v ++ w).drop m).cast h = w := by
+  ext i hi
+  simp
+
+/-- A vector is its first `m` entries followed by the rest. -/
+private theorem take_append_drop {α : Type u} {m k : Nat} (fs : Vector α (m + k))
+    {h₁ : min m (m + k) = m} {h₂ : m + k - m = k} :
+    ((fs.take m).cast h₁ ++ (fs.drop m).cast h₂) = fs := by
+  ext i hi
+  simp only [Vector.getElem_append, Vector.getElem_cast, Vector.getElem_take,
+    Vector.getElem_drop]
+  split
+  · rfl
+  · congr 1
+    omega
+
+instance instLawfulCircuitTypeProd {a b av bv : Type} [A : CircuitType F a av]
+    [B : CircuitType F b bv] [LawfulCircuitType F a av] [LawfulCircuitType F b bv] :
+    LawfulCircuitType F (a × b) (av × bv) where
+  value_roundTrip p := by
+    show (A.fieldsToValue
+          (((A.valueToFields p.1 ++ B.valueToFields p.2).take A.size).cast _),
+        B.fieldsToValue
+          (((A.valueToFields p.1 ++ B.valueToFields p.2).drop A.size).cast _)) = p
+    rw [cast_take_append, cast_drop_append, LawfulCircuitType.value_roundTrip,
+      LawfulCircuitType.value_roundTrip]
+  vars_roundTrip cvs := by
+    show A.varToFields (A.fieldsToVar _) ++ B.varToFields (B.fieldsToVar _) = cvs
+    rw [LawfulCircuitType.vars_roundTrip (val := a),
+      LawfulCircuitType.vars_roundTrip (val := b), take_append_drop]
+
+instance instLawfulCircuitTypeVector {val var : Type} [A : CircuitType F val var]
+    [LawfulCircuitType F val var] {n : Nat} :
+    LawfulCircuitType F (Vector val n) (Vector var n) where
+  value_roundTrip v := by
+    ext i hi
+    show (Vector.ofFn fun i' : Fin n =>
+        A.fieldsToValue (Vector.ofFn fun j : Fin A.size =>
+          ((v.map A.valueToFields).flatten)[i'.1 * A.size + j.1]'(
+            mul_add_lt i'.isLt j.isLt)))[i]
+      = v[i]
+    simp only [Vector.getElem_ofFn]
+    have hinner : (Vector.ofFn fun j : Fin A.size =>
+        ((v.map A.valueToFields).flatten)[i * A.size + j.1]'(mul_add_lt hi j.isLt))
+        = A.valueToFields v[i] := by
+      ext j hj
+      have hdiv : (i * A.size + j) / A.size = i := by
+        rw [Nat.mul_comm i A.size, Nat.mul_add_div (by omega), Nat.div_eq_of_lt hj,
+          Nat.add_zero]
+      have hmod : (i * A.size + j) % A.size = j := by
+        rw [Nat.mul_add_mod', Nat.mod_eq_of_lt hj]
+      simp only [Vector.getElem_ofFn, Vector.getElem_flatten, Vector.getElem_map,
+        hdiv, hmod]
+    rw [hinner]
+    exact LawfulCircuitType.value_roundTrip v[i]
+  vars_roundTrip cvs := by
+    ext i hi
+    show ((Vector.ofFn fun i' : Fin n =>
+        A.fieldsToVar (Vector.ofFn fun j : Fin A.size =>
+          cvs[i'.1 * A.size + j.1]'(mul_add_lt i'.isLt j.isLt))).map
+        A.varToFields).flatten[i]
+      = cvs[i]
+    simp only [Vector.getElem_flatten, Vector.getElem_map, Vector.getElem_ofFn]
+    simp only [LawfulCircuitType.vars_roundTrip (val := val), Vector.getElem_ofFn]
+    congr 1
+    exact Nat.div_add_mod' i A.size
 
 end Snarky

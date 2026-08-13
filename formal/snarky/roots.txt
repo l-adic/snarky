@@ -76,6 +76,11 @@ Snarky.witness_complete_spec
 Snarky.witnessed_fvar_eval
 Snarky.witnessed_boolVar_eval
 Snarky.witnessed_uncheckedBool_eval
+Snarky.witnessed_vector_eval
+Snarky.instLawfulCircuitTypeProd
+Snarky.instLawfulCircuitTypeVector
+Snarky.instLawfulCheckedTypeProd
+Snarky.instLawfulCheckedTypeVector
 Snarky.generateVec_spec
 Snarky.generateVec_complete_spec
 Snarky.CVar.evalOk

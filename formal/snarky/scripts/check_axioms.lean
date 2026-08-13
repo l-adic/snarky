@@ -112,9 +112,14 @@ def roots : List Name :=
     `Snarky.instLawfulCircuitTypeF,
     `Snarky.instLawfulCircuitTypeBool,
     `Snarky.instLawfulCircuitTypeUnChecked,
+    `Snarky.instLawfulCircuitTypeProd,
+    `Snarky.instLawfulCircuitTypeVector,
     `Snarky.instLawfulCheckedTypeF,
     `Snarky.instLawfulCheckedTypeUnChecked,
-    `Snarky.instLawfulCheckedTypeBool ]
+    `Snarky.instLawfulCheckedTypeBool,
+    `Snarky.instLawfulCheckedTypeProd,
+    `Snarky.instLawfulCheckedTypeVector,
+    `Snarky.witnessed_vector_eval ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

@@ -202,6 +202,12 @@ instance {avar bvar : Type u} [CheckedType F c avar] [CheckedType F c bvar] :
     CheckedType.check (c := c) p.1
     CheckedType.check (c := c) p.2
 
+/-- A vector is checked elementwise, in index order (PS `CheckedType` instance for
+`Vector`: `traverse_ check`). -/
+instance {var : Type u} [CheckedType F c var] {n : Nat} :
+    CheckedType F c (Vector var n) where
+  check v := v.toList.forM (CheckedType.check (c := c))
+
 /-! ## The typed combinators -/
 
 variable {val var : Type u}
