@@ -177,8 +177,8 @@ instance : CircuitType F PUnit PUnit where
   varToFields _ := #v[]
   fieldsToVar _ := PUnit.unit
 
-/-- Every element's block starts strictly inside the flattening: the index bound the
-vector instance's decode direction reads through. -/
+/-- Element `i`'s block sits inside the flattening: the index bound of the vector
+instance's decode direction. -/
 private theorem mul_add_lt {i j n sz : Nat} (hi : i < n) (hj : j < sz) :
     i * sz + j < n * sz :=
   calc i * sz + j < (i + 1) * sz := by rw [Nat.succ_mul]; omega

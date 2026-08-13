@@ -468,10 +468,9 @@ open Std.Do in
 /-! ## The witness leaf
 
 One completeness spec serves every witnessed type: the honest encoding is written to
-fresh slots and passes its own checks (`LawfulCheckedType`), and the bundle's fields
-read back as the encoding. The per-type readings (`witnessed_fvar_eval`,
-`witnessed_boolVar_eval`, `witnessed_uncheckedBool_eval`) extract the shaped facts
-call sites consume. -/
+fresh slots and passes its own checks (`LawfulCheckedType`), and the promise arrives
+as the bundle's `WitnessReads.Reads` — already in the type's own vocabulary, so call
+sites consume it directly. -/
 
 /-- The completeness contract of a `CheckedType`: an honest encoding passes its own
 checks. PS discharges this dynamically — the prover runs `check` on the freshly
@@ -627,8 +626,9 @@ class WitnessReads (F val var : Type) [Add F] [Mul F] [CircuitType F val var] wh
 
 open Std.Do in
 /-- A witness computation that succeeds makes the run succeed — the honest encoding
-passes its own checks — and the bundle's fields read back as the encoding on the
-final table (the `witnessed_*` readings above extract the per-type forms). -/
+passes its own checks — and the bundle reads as the computed value on the final table
+(`WitnessReads.Reads`, which at each concrete type computes to its instance's
+shape). -/
 @[spec] theorem witness_complete_spec {F c val var : Type} [Add F] [Mul F]
     [DecidableEq F] [CircuitType F val var] [LawfulCircuitType F val var]
     [CheckedType F (Prover c) var] [Checker F c] [LawfulCheckedType F c val var]
