@@ -48,9 +48,6 @@ def kindType : GateKind → GateType
   | .endoScalar => .endoScalar
   | .zero => .zero
 
-/-- Round constants are inert for the Poseidon-free gadget circuits. -/
-def rc0 : ℕ → Fp × Fp × Fp := fun _ => (0, 0, 0)
-
 /-- `unpack`'s bit reads go through the canonical representative. -/
 instance : ToNat Fp := ⟨ZMod.val⟩
 
@@ -197,7 +194,7 @@ witness re-solve seeds the fixture's recorded public inputs. -/
 def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
     [CheckedType Fp C avar] [B : CircuitType Fp b bvar]
     (main : avar → CircuitM Fp C bvar) (raw : Raw) : List (String × Bool) :=
-  let (rows, gates, pubSize) := kimchiGateData (a := a) (b := b) rc0 main
+  let (rows, gates, pubSize) := kimchiGateData (a := a) (b := b) main
   let csChecks :=
     [ ("publicInputSize", pubSize == raw.publicInputSize),
       ("gate count", gates.length == raw.typs.size),
@@ -211,7 +208,7 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
         (rows.map fun r => r.vars.toList.toArray).toArray == raw.vars) ]
   let input : a := A.fieldsToValue (Vector.ofFn fun i => raw.pub.getD i 0)
   let witChecks := if raw.witness.isEmpty then [] else
-    match kimchiSolve (a := a) (b := b) rc0 main input with
+    match kimchiSolve (a := a) (b := b) main input with
     | .error _ => [("solve", false)]
     | .ok (_, env) =>
       let (wit, pubs) := makeWitness env rows ((allocRange 0 pubSize).toList)

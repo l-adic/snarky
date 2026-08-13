@@ -13,11 +13,15 @@ a trailing `zero` row carrying the output state. The reduction ORDER is the byte
 contract: the states in index order, each triple left to right.
 
 Name map: `PoseidonConstraint` and `reduce` keep their names; `addRoundState`
-and the final row stay named helpers. PS's `PoseidonField` class supplies
-`getRoundConstants`; that renders as the explicit parameter `rc : ℕ → F × F × F`,
-a caller-supplied constant table.
+and the final row stay named helpers.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
+- PS reads the round constants off the ambient `PoseidonField` class at reduction
+  time; a deep embedding has no ambient dictionary, so the payload carries the
+  permutation's parameter set — the MDS matrix rows and the constant table — as
+  data, and `reduce` reads the coefficient rows off the payload. The constants are
+  the coefficient content of the emitted rows; the matrix is the rest of the same
+  parameter record and travels with them.
 - `Vector 56 (Vector 3 _)` renders as a TRIPLE LIST (the width is an emitter
   invariant, not a type index): at 168 operands the per-operand law template of
   steps 4–7 cannot fit the heartbeat budget, and the list shape is what the
@@ -36,8 +40,16 @@ namespace Snarky.Kimchi
 open Snarky
 
 /-- The Poseidon block constraint (PS `PoseidonConstraint`): the 56 chained
-three-element sponge states, input first, permutation output last. -/
+three-element sponge states, input first, permutation output last, together with
+the permutation's parameter set (the payload-data deviation in the module
+docstring). -/
 structure PoseidonConstraint (F : Type u) where
+  /-- The rows of the round function's 3×3 MDS matrix, top to bottom. -/
+  mds : (F × F × F) × (F × F × F) × (F × F × F)
+  /-- The round constants in round order, one width-3 triple per round
+  (55 deployed); `reduce` writes rounds `5k … 5k+4` into row `k`'s
+  coefficient cells. -/
+  rc : List (F × F × F)
   /-- The states in round order, each a width-3 triple. -/
   state : List (FVar F × FVar F × FVar F)
   deriving Repr, DecidableEq
@@ -101,11 +113,12 @@ private def rowsFromStates (rc : ℕ → F × F × F) :
   | _, _ => []
 
 /-- Reduce a Poseidon block (PS `reduce`): pin every state, then lay out the eleven
-rows and the trailing `zero` row. -/
+rows and the trailing `zero` row, with the payload's constant table as the
+coefficient source. -/
 def PoseidonConstraint.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
-    [Monad m] [PlonkReductionM F m] (rc : ℕ → F × F × F) (c : PoseidonConstraint F) :
+    [Monad m] [PlonkReductionM F m] (c : PoseidonConstraint F) :
     m (List (KimchiRow F)) := do
   let vs ← reduceStates c.state
-  pure (rowsFromStates rc 0 vs)
+  pure (rowsFromStates (fun i => c.rc.getD i (0, 0, 0)) 0 vs)
 
 end Snarky.Kimchi

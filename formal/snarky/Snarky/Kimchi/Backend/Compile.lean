@@ -25,10 +25,10 @@ queue flushed). -/
 private def kimchiCompile [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
     [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) avar] [B : CircuitType F b bvar]
-    (rc : ℕ → F × F × F) (main : avar → CircuitM F (KimchiConstraint F) bvar) :
+    (main : avar → CircuitM F (KimchiConstraint F) bvar) :
     BuiltWith (KimchiGate F) (AuxState F) bvar :=
-  finalizeWith (kimchiOps rc)
-    (buildWith (kimchiOps rc) (compileBody (a := a) (b := b) main)
+  finalizeWith kimchiOps
+    (buildWith kimchiOps (compileBody (a := a) (b := b) main)
       (A.size + B.size) initialAuxState)
 
 /-- Solve a circuit at the kimchi backend (the base `solve` at `kimchiOps`): seed the
@@ -36,13 +36,13 @@ input slots, prove, decode the output. -/
 def kimchiSolve [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
     [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) avar] [B : CircuitType F b bvar]
-    (rc : ℕ → F × F × F) (main : avar → CircuitM F (KimchiConstraint F) bvar)
+    (main : avar → CircuitM F (KimchiConstraint F) bvar)
     (input : a) : Except EvalError (b × Assignments F) :=
   match Assignments.empty.extendPairs
       ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList) with
   | .error e => .error e
   | .ok env₀ =>
-    match proveWith (kimchiOps rc) (compileBody (a := a) (b := b) main)
+    match proveWith kimchiOps (compileBody (a := a) (b := b) main)
         (A.size + B.size) env₀ with
     | .error e => .error e
     | .ok p =>
@@ -55,9 +55,9 @@ returning the rows (public rows included), the gate table, and the public size. 
 def kimchiGateData [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
     [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) avar] [B : CircuitType F b bvar]
-    (rc : ℕ → F × F × F) (main : avar → CircuitM F (KimchiConstraint F) bvar) :
+    (main : avar → CircuitM F (KimchiConstraint F) bvar) :
     List (KimchiRow F) × List (AssembledGate F) × Nat :=
-  let built := kimchiCompile (a := a) (b := b) rc main
+  let built := kimchiCompile (a := a) (b := b) main
   let rows := built.constraints.flatMap (toKimchiRows (F := F))
   makeGateData ((allocRange 0 (A.size + B.size)).toList) rows
     built.aux.wireState.unionFind
