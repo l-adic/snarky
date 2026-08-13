@@ -189,8 +189,10 @@ class KimchiSystem (F c : Type) where
   addComplete : AddComplete F → c
   /-- Embed a Poseidon block payload. -/
   poseidon : PoseidonConstraint F → c
+  /-- Embed a challenge-decomposition payload. -/
+  endoScalar : EndoScalar F → c
 
-instance : KimchiSystem F (KimchiConstraint F) := ⟨.addComplete, .poseidon⟩
+instance : KimchiSystem F (KimchiConstraint F) := ⟨.addComplete, .poseidon, .endoScalar⟩
 
 instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 

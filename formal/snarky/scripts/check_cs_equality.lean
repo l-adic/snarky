@@ -11,10 +11,10 @@ ids pin the shared counter's numbering.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
-`Basic` gadget vocabulary, plus the landed gate gadgets (poseidon). The export also
-carries witness dumps for the remaining gate circuits (endo_scalar, endo_mul,
-var_base_mul); those are DELIBERATELY not in the corpus — each joins with its gadget
-slice, so the EndoScalar, EndoMul, and VarBaseMul reducers are uncovered by this
+`Basic` gadget vocabulary, plus the landed gate gadgets (poseidon,
+endo_scalar). The export also carries witness dumps for the remaining gate circuits
+(endo_mul, var_base_mul); those are DELIBERATELY not in the corpus — each joins with
+its gadget slice, so the EndoMul and VarBaseMul reducers are uncovered by this
 oracle until then.
 
 The dumps are the PS suite's gitignored export: generate with
@@ -29,7 +29,9 @@ import Snarky.DSL
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
+import Snarky.Kimchi.Circuit.EndoScalar
 import Poseidon.Basic
+import Pasta.Endo
 
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
@@ -170,6 +172,15 @@ def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3
   let (a, b, c) ← poseidon Poseidon.fpParams (s[0], s[1], s[2])
   pure #v[a, b, c]
 
+/-- The Vesta endomorphism's scalar eigenvalue at the step field (PS
+`endoScalar @Vesta.BaseField @Fp`; `Pasta.vestaLam`). -/
+def endoVestaLam : Fp := (Pasta.vestaLam : ℤ)
+
+/-- `endo_scalar_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.EndoScalar.toField`
+at 8 rows and the constant Vesta eigenvalue). -/
+def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
+  EndoScalar.toField 8 scalar (.const endoVestaLam)
+
 /-! ## The comparison -/
 
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
@@ -259,7 +270,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
       compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
         addCompleteCircuit),
     ("poseidon_step_circuit",
-      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit) ]
+      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit),
+    ("endo_scalar_step_circuit",
+      compareWith (a := Fp) (b := Fp) endoScalarCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
