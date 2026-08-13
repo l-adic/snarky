@@ -11,7 +11,10 @@ ids pin the shared counter's numbering.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
-`Basic` gadget vocabulary.
+`Basic` gadget vocabulary. The export also carries witness dumps for the four kimchi
+gate circuits (poseidon, endo_scalar, endo_mul, var_base_mul); those are DELIBERATELY
+not in the corpus — each joins with its gadget slice, so the Poseidon, EndoScalar,
+EndoMul, and VarBaseMul reducers are uncovered by this oracle until then.
 
 The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
