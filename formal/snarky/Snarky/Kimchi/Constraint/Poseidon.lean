@@ -22,9 +22,9 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   invariant, not a type index): at 168 operands the per-operand law template of
   steps 4–7 cannot fit the heartbeat budget, and the list shape is what the
   recursion below is structural over. The chunking (`splitAt`/`chunks`)
-  becomes the structural recursion `rowsFromStates`, which chunks five states per
-  row while more than one remains and turns the last state into the `zero` row;
-  off-shape tails (unrepresentable in PS's types) emit nothing.
+  becomes the structural recursion `rowsFromStates`, which greedily chunks five
+  states per row and turns a single trailing state into the `zero` row; 2–4-state
+  tails (unrepresentable in PS's types) emit nothing.
 - PS's `Rows` newtype over `Vector 12` renders as the bare row list.
 
 No semantics is stated here, and the constraint layer stays free of `Kimchi`
@@ -88,18 +88,16 @@ private def PoseidonConstraint.finalRow (s : Variable × Variable × Variable) :
                none, none, none, none, none, none, none]⟩, by simp⟩,
     coeffs := [] }
 
-/-- Chunk the pinned states into rows: five per `poseidon` row while more than one
-state remains (`k` counts rows for the constant offsets), the last state becomes the
-`zero` row. Off-shape tails emit nothing (unreachable from the deployed
-`11 × 5 + 1` emitter). -/
+/-- Chunk the pinned states into rows: five per `poseidon` row, greedily (`k` counts
+rows for the constant offsets); a single trailing state becomes the `zero` row.
+A 2–4-state tail (unrepresentable in PS's types, unreachable from the deployed
+`11 × 5 + 1` emitter) emits nothing after the full chunks. -/
 private def rowsFromStates (rc : ℕ → F × F × F) :
     ℕ → List (Variable × Variable × Variable) → List (KimchiRow F)
   | _, [] => []
   | _, [s] => [PoseidonConstraint.finalRow s]
   | k, q0 :: q1 :: q2 :: q3 :: q4 :: rest =>
-    match rest with
-    | [] => []
-    | _ :: _ => addRoundState rc k q0 q1 q2 q3 q4 :: rowsFromStates rc (k + 1) rest
+    addRoundState rc k q0 q1 q2 q3 q4 :: rowsFromStates rc (k + 1) rest
   | _, _ => []
 
 /-- Reduce a Poseidon block (PS `reduce`): pin every state, then lay out the eleven
