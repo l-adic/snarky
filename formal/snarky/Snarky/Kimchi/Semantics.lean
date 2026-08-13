@@ -2,6 +2,7 @@ import Snarky.Kimchi.Constraint
 import Snarky.Backend.WP
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.Poseidon
+import Kimchi.Gate.EndoScalar
 
 /-!
 # The kimchi constraint semantics
@@ -15,7 +16,8 @@ base gadget law, sound and complete, to this backend — and the landed gate pay
 read as the verified gates' own predicates/`ok` at the payload's operand values: one
 witness record for `.addComplete` (`read`/`eval`, one field per gate column), a chain
 of five-round windows over the state list for `.poseidon` (`chainHolds`/`chainOk` at
-the payload's parameter data; a value missing from the table rejects). `.pad` reads
+the payload's parameter data), one witness record per round for `.endoScalar`; a
+value missing from the table rejects. `.pad` reads
 vacuously (a padding row asserts nothing), as do the gate payloads with no landed
 gadget: the reading is deliberately per-constructor, and a vacuous case marks a
 constructor outside the landed gadget surface.
@@ -25,7 +27,9 @@ namespace Snarky.Kimchi
 
 open Snarky
 
-variable {F : Type} [CommRing F] [DecidableEq F]
+-- `Field` rather than `CommRing`: the EndoScalar gate's crumb-interpolation
+-- polynomials carry inverse-of-small-integer coefficients.
+variable {F : Type} [Field F] [DecidableEq F]
 
 /-- The payload's operand values under a valuation, as the verified gate's witness
 record — one field per gate column, in the gate's column order. -/
@@ -74,6 +78,18 @@ def Poseidon.chainHolds (M : Kimchi.Gate.Poseidon.Mds F) (rc : List (F × F × F
     | [] => True
   | _, _ => True
 
+/-- The payload round's operand values under a valuation, as the verified gate's
+witness record — one field per gate cell, the crumbs in index order. -/
+def EndoScalarRound.read (V : Valuation F) (r : EndoScalarRound F) :
+    Kimchi.Gate.EndoScalar.Witness F where
+  a0 := r.a0.val V
+  b0 := r.b0.val V
+  n0 := r.n0.val V
+  a8 := r.a8.val V
+  b8 := r.b8.val V
+  n8 := r.n8.val V
+  crumbs := r.xs.toList.map (·.val V)
+
 /-- The constraint-level semantics: `.basic` is the reference reading, the landed gate
 payloads the verified gates' predicates at the operand values, and the rest vacuous
 (module docstring). -/
@@ -81,8 +97,8 @@ def KimchiConstraint.Holds (V : Valuation F) : KimchiConstraint F → Prop
   | .basic con => ConstraintHolds.Holds V con
   | .addComplete c => Kimchi.Gate.AddComplete.Holds (AddComplete.read V c)
   | .poseidon c => Poseidon.chainHolds (Poseidon.mdsOf c.mds) c.rc 0 (Poseidon.read V c)
+  | .endoScalar rounds => ∀ r ∈ rounds, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read V r)
   | .varBaseMul _ => True
-  | .endoScalar _ => True
   | .endoMul _ => True
   | .pad _ => True
 
@@ -140,6 +156,19 @@ def Poseidon.chainOk (M : Kimchi.Gate.Poseidon.Mds F) (rc : List (F × F × F)) 
     | [] => true
   | _, _ => true
 
+/-- The payload round's operand values on the prover's partial table, failing where
+a value is missing. -/
+def EndoScalarRound.eval (env : Assignments F) (r : EndoScalarRound F) :
+    Except EvalError (Kimchi.Gate.EndoScalar.Witness F) := do
+  let a0 ← r.a0.eval env
+  let b0 ← r.b0.eval env
+  let n0 ← r.n0.eval env
+  let a8 ← r.a8.eval env
+  let b8 ← r.b8.eval env
+  let n8 ← r.n8.eval env
+  let crumbs ← r.xs.toList.mapM (·.eval env)
+  return { a0, b0, n0, a8, b8, n8, crumbs }
+
 /-- The prover-side check: `.basic` is the reference check, the landed gate payloads
 the gates' `ok` at the evaluated values, and the rest vacuous (module docstring). -/
 def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bool :=
@@ -153,8 +182,12 @@ def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bo
     match Poseidon.evalStates env c.state with
     | .ok vs => Poseidon.chainOk (Poseidon.mdsOf c.mds) c.rc 0 vs
     | .error _ => false
+  | .endoScalar rounds =>
+    rounds.all fun r =>
+      match EndoScalarRound.eval env r with
+      | .ok w => Kimchi.Gate.EndoScalar.ok w
+      | .error _ => false
   | .varBaseMul _ => true
-  | .endoScalar _ => true
   | .endoMul _ => true
   | .pad _ => true
 
