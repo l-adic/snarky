@@ -1,6 +1,7 @@
 import Snarky.Kimchi.Constraint
 import Snarky.Backend.WP
 import Kimchi.Gate.AddComplete
+import Kimchi.Gate.Poseidon
 
 /-!
 # The kimchi constraint semantics
@@ -10,9 +11,11 @@ with no rows, reduction, or wiring in sight. The soundness side reads a constrai
 a total valuation (`Holds`); the prover side checks it on the prover's partial table
 (`check`). In both, `.basic` is the reference `Basic` reading — so the
 `LawfulBasicSystem` and `LawfulChecker` instances below transfer every backend-generic
-base gadget law, sound and complete, to this backend — and `.addComplete` is the
-verified gate's own predicate/`ok` at the payload's operand values (`read`/`eval`, one
-field per gate column; a value missing from the table rejects). `.pad` reads
+base gadget law, sound and complete, to this backend — and the landed gate payloads
+read as the verified gates' own predicates/`ok` at the payload's operand values: one
+witness record for `.addComplete` (`read`/`eval`, one field per gate column), a chain
+of five-round windows over the state list for `.poseidon` (`chainHolds`/`chainOk` at
+the payload's parameter data; a value missing from the table rejects). `.pad` reads
 vacuously (a padding row asserts nothing), as do the gate payloads with no landed
 gadget: the reading is deliberately per-constructor, and a vacuous case marks a
 constructor outside the landed gadget surface.
@@ -40,13 +43,44 @@ def AddComplete.read (V : Valuation F) (c : AddComplete F) :
   infZ := c.infZ.val V
   x21Inv := c.x21Inv.val V
 
-/-- The constraint-level semantics: `.basic` is the reference reading, `.addComplete`
-the verified gate's predicate at the operand values, and the rest vacuous (module
-docstring). -/
+/-- The payload's MDS rows as the gate's matrix record. -/
+def Poseidon.mdsOf (m : (F × F × F) × (F × F × F) × (F × F × F)) :
+    Kimchi.Gate.Poseidon.Mds F :=
+  { m00 := m.1.1, m01 := m.1.2.1, m02 := m.1.2.2,
+    m10 := m.2.1.1, m11 := m.2.1.2.1, m12 := m.2.1.2.2,
+    m20 := m.2.2.1, m21 := m.2.2.2.1, m22 := m.2.2.2.2 }
+
+/-- Window `k`'s five constant triples off the payload's table (rounds `5k … 5k+4`,
+the offsets the reducer writes into row `k`'s coefficient cells). -/
+def Poseidon.rcRow (rc : List (F × F × F)) (k : ℕ) : Fin 5 → F × F × F :=
+  fun j => rc.getD (5 * k + j.1) (0, 0, 0)
+
+/-- The payload's state values under a valuation, in round order. -/
+def Poseidon.read (V : Valuation F) (c : PoseidonConstraint F) : List (F × F × F) :=
+  c.state.map fun t => (t.1.val V, t.2.1.val V, t.2.2.val V)
+
+/-- The chain reading of a state list: one gate window per five states from position
+`5k`, each window's sixth state opening the next — the wire layout's next-row read,
+value-level, so the chain's links are shared list elements. Off the deployed
+`11·5 + 1` shape, partial tails assert nothing, matching the reducer's row
+fallbacks. -/
+def Poseidon.chainHolds (M : Kimchi.Gate.Poseidon.Mds F) (rc : List (F × F × F)) :
+    ℕ → List (F × F × F) → Prop
+  | k, s0 :: s1 :: s2 :: s3 :: s4 :: rest =>
+    match rest with
+    | s5 :: _ =>
+      Kimchi.Gate.Poseidon.Holds M (rcRow rc k) ⟨s0, s1, s2, s3, s4, s5⟩ ∧
+        chainHolds M rc (k + 1) rest
+    | [] => True
+  | _, _ => True
+
+/-- The constraint-level semantics: `.basic` is the reference reading, the landed gate
+payloads the verified gates' predicates at the operand values, and the rest vacuous
+(module docstring). -/
 def KimchiConstraint.Holds (V : Valuation F) : KimchiConstraint F → Prop
   | .basic con => ConstraintHolds.Holds V con
   | .addComplete c => Kimchi.Gate.AddComplete.Holds (AddComplete.read V c)
-  | .poseidon _ => True
+  | .poseidon c => Poseidon.chainHolds (Poseidon.mdsOf c.mds) c.rc 0 (Poseidon.read V c)
   | .varBaseMul _ => True
   | .endoScalar _ => True
   | .endoMul _ => True
@@ -83,8 +117,31 @@ def AddComplete.eval (env : Assignments F) (c : AddComplete F) :
   let x21Inv ← c.x21Inv.eval env
   return { x1, y1, x2, y2, x3, y3, inf, sameX, s, infZ, x21Inv }
 
-/-- The prover-side check: `.basic` is the reference check, `.addComplete` the gate's
-`ok` at the evaluated payload, and the rest vacuous (module docstring). -/
+/-- The payload's state values on the prover's partial table, failing where a value
+is missing. -/
+def Poseidon.evalStates (env : Assignments F) :
+    List (FVar F × FVar F × FVar F) → Except EvalError (List (F × F × F))
+  | [] => .ok []
+  | t :: ts => do
+    let a ← t.1.eval env
+    let b ← t.2.1.eval env
+    let c ← t.2.2.eval env
+    let rest ← evalStates env ts
+    return (a, b, c) :: rest
+
+/-- The decidable mirror of `chainHolds`: the gate's `ok` per window. -/
+def Poseidon.chainOk (M : Kimchi.Gate.Poseidon.Mds F) (rc : List (F × F × F)) :
+    ℕ → List (F × F × F) → Bool
+  | k, s0 :: s1 :: s2 :: s3 :: s4 :: rest =>
+    match rest with
+    | s5 :: _ =>
+      Kimchi.Gate.Poseidon.ok M (rcRow rc k) ⟨s0, s1, s2, s3, s4, s5⟩ &&
+        chainOk M rc (k + 1) rest
+    | [] => true
+  | _, _ => true
+
+/-- The prover-side check: `.basic` is the reference check, the landed gate payloads
+the gates' `ok` at the evaluated values, and the rest vacuous (module docstring). -/
 def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bool :=
   match con with
   | .basic b => Basic.holds b env
@@ -92,7 +149,10 @@ def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bo
     match AddComplete.eval env c with
     | .ok w => Kimchi.Gate.AddComplete.ok w
     | .error _ => false
-  | .poseidon _ => true
+  | .poseidon c =>
+    match Poseidon.evalStates env c.state with
+    | .ok vs => Poseidon.chainOk (Poseidon.mdsOf c.mds) c.rc 0 vs
+    | .error _ => false
   | .varBaseMul _ => true
   | .endoScalar _ => true
   | .endoMul _ => true
