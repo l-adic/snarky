@@ -35,7 +35,7 @@ import Snarky.Constraint.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkRawGeneric7Row, reduceAsBuilder, reduceAsProver, reduceToVariable)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, finalizeGateQueue, mkPadRow, reduceAsBuilder, reduceAsProver, reduceToVariable)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), initialAuxState, toKimchiRows)
 import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul)
@@ -52,7 +52,7 @@ data KimchiConstraint f
   | KimchiVarBaseMul (VarBaseMul f)
   | KimchiEndoScalar (EndoScalar f)
   | KimchiEndoMul (EndoMul (FVar f))
-  | KimchiRawGeneric7 (Vector 7 (FVar f))
+  | KimchiPad (Vector 7 (FVar f))
 
 data KimchiGate f
   = KimchiGatePlonk (Reduction.Rows f)
@@ -73,14 +73,14 @@ instance ToKimchiRows f (KimchiGate f) where
     KimchiGateEndoMul a -> toKimchiRows a
     KimchiGateNoOp -> []
 
-reduceRawGeneric7
+reducePad
   :: forall n f
    . PlonkReductionM n f
   => Vector 7 (FVar f)
   -> n (Rows f)
-reduceRawGeneric7 vs = do
+reducePad vs = do
   varsReduced <- traverse reduceToVariable vs
-  pure (mkRawGeneric7Row varsReduced)
+  pure (mkPadRow varsReduced)
 
 instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f) (AuxState f) where
   appendBuilderConstraint = case _ of
@@ -90,7 +90,7 @@ instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f)
     KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
     KimchiEndoScalar c -> go EndoScalar.reduce KimchiGateEndoScalar c
     KimchiEndoMul c -> go EndoMul.reduce KimchiGateEndoMul c
-    KimchiRawGeneric7 vs -> go reduceRawGeneric7 KimchiGatePlonk vs
+    KimchiPad vs -> go reducePad KimchiGatePlonk vs
     where
     go
       :: forall a c
@@ -148,7 +148,7 @@ instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f) where
     KimchiVarBaseMul c -> go VarBaseMul.reduce c
     KimchiEndoScalar c -> go EndoScalar.reduce c
     KimchiEndoMul c -> go EndoMul.reduce c
-    KimchiRawGeneric7 vs -> go reduceRawGeneric7 vs
+    KimchiPad vs -> go reducePad vs
     where
     -- Run the reducer and update prover state. Per-gate equation checks
     -- (formerly in `goDebug`'s `when s.debug …` branch) were removed in

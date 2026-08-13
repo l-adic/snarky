@@ -223,7 +223,8 @@ open Std.Do in
 which cannot fail — and where they read as bits the result reads as the conjunction bit
 in the final table (bits quantified in the post, per the parameter rule `Complete`
 records). -/
-@[spec] theorem and_complete_spec {F : Type} [Add F] [CommMonoidWithZero F]
+@[spec] theorem and_complete_spec {F c : Type} [Add F] [CommMonoidWithZero F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
@@ -232,7 +233,7 @@ records). -/
         (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
           (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
             (↑r : CVar F).eval env' = .ok (bit (ab && bb))) Q⦄
-    Snarky.and (c := ProverC F) a b
+    Snarky.and (c := Prover c) a b
     ⦃Q⦄ := by
   simp only [Snarky.and]
   mvcgen
@@ -273,7 +274,8 @@ open Std.Do in
 /-- `or`'s honest run succeeds on any operands that evaluate — composed through `and`'s
 law by De Morgan — and where they read as bits the result reads as the disjunction
 bit. -/
-@[spec] theorem or_complete_spec {F : Type} [CommRing F] [NoZeroDivisors F]
+@[spec] theorem or_complete_spec {F c : Type} [CommRing F] [NoZeroDivisors F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     [DecidableEq F] (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
@@ -282,7 +284,7 @@ bit. -/
         (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
           (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
             (↑r : CVar F).eval env' = .ok (bit (ab || bb))) Q⦄
-    Snarky.or (c := ProverC F) a b
+    Snarky.or (c := Prover c) a b
     ⦃Q⦄ := by
   simp only [Snarky.or]
   mvcgen
@@ -495,14 +497,15 @@ characteristic. -/
 open Std.Do in
 /-- `any`'s honest run succeeds on evaluable operands; where they read as bits the
 result is the disjunction — same cast-injectivity hypothesis as the soundness side. -/
-@[spec] theorem any_complete_spec {F : Type} [Field F] [DecidableEq F]
+@[spec] theorem any_complete_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (xs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k)
     (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => ∀ b ∈ xs, (((b : BoolVar F) : CVar F).eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ bl : List Bool, EvalBits env xs bl →
           (↑r : CVar F).eval env' = .ok (bit (bl.any id))) Q⦄
-    Snarky.any (c := ProverC F) xs
+    Snarky.any (c := Prover c) xs
     ⦃Q⦄ := by
   match xs, hchar with
   | [], _ =>
@@ -627,14 +630,15 @@ characteristic. -/
 open Std.Do in
 /-- `all`'s honest run succeeds on evaluable operands; where they read as bits the
 result is the conjunction. -/
-@[spec] theorem all_complete_spec {F : Type} [Field F] [DecidableEq F]
+@[spec] theorem all_complete_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (xs : List (BoolVar F))
     (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k)
     (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => ∀ b ∈ xs, (((b : BoolVar F) : CVar F).eval env).isOk)
         (fun env (r : BoolVar F) env' => ∀ bl : List Bool, EvalBits env xs bl →
           (↑r : CVar F).eval env' = .ok (bit (bl.all id))) Q⦄
-    Snarky.all (c := ProverC F) xs
+    Snarky.all (c := Prover c) xs
     ⦃Q⦄ := by
   match xs, hchar with
   | [], _ =>
@@ -708,12 +712,13 @@ private theorem xor_pin {F : Type u} [CommRing F] {ab bb : Bool} {rv : F}
   cases ab <;> cases bb <;> simp [bit]
 
 /-- The honest `xorCore` run. -/
-private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar F}
+private theorem xorCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {a b : BoolVar F}
     {nv : Nat} {env : Assignments F} {ab bb : Bool}
     (ha : (↑a : CVar F).eval env = .ok (bit ab))
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (xorCore (c := Basic F) a b) nv env
+    prove (Checker.holds (F := F) (c := c)) (xorCore (c := c) a b) nv env
       = .ok ⟨.unchecked (.var nv), nv + 1, env.extend nv (bit (ab ^^ bb))⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv (bit (ab ^^ bb))) := by
@@ -735,8 +740,8 @@ private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar 
       = .ok (env.extend nv (bit (ab ^^ bb))) := by
     show env.extendPairs [(nv, bit (ab ^^ bb))] = .ok _
     simp [Assignments.extendPairs, hnv]
-  have hch : Basic.holds
-      (.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
+  have hch : Checker.holds (F := F) (c := c)
+      (BasicSystem.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
         (CVar.sub_ (CVar.add_ a.toCVar b.toCVar) (.var nv)))
       (env.extend nv (bit (ab ^^ bb))) = true := by
     have ha' := CVar.eval_le hle ha
@@ -750,26 +755,29 @@ private theorem xorCore_run {F : Type} [Field F] [DecidableEq F] {a b : BoolVar 
         = .ok ((bit ab : F) + bit bb) := by
       rw [CVar.eval_add_]; simp [CVar.eval, ha', hb']
     have hsub := CVar.eval_sub_ hab hvnv
-    simp only [Basic.holds, haa, hb', hsub, decide_eq_true_eq]
-    cases ab <;> cases bb <;> simp [bit]
-  show prove Basic.holds (.existsOp 1 (fun e => (xorWit a b e).map _) _) nv env = _
+    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ haa hb' hsub
+      (by cases ab <;> cases bb <;> simp [bit])
+  show prove (Checker.holds (F := F) (c := c))
+    (.existsOp 1 (fun e => (xorWit a b e).map _) _) nv env = _
   simp only [prove, hwit, hext]
-  show prove Basic.holds
-    (.addConstraintOp (.r1cs (CVar.add_ a.toCVar a.toCVar) b.toCVar
+  show prove (Checker.holds (F := F) (c := c))
+    (.addConstraintOp (BasicSystem.r1cs (c := c) (CVar.add_ a.toCVar a.toCVar) b.toCVar
         (CVar.sub_ (CVar.add_ a.toCVar b.toCVar) (.var nv)))
       (.pure (BoolVar.unchecked (.var nv)))) (nv + 1)
     (env.extend nv (bit (ab ^^ bb))) = _
   simp only [prove, hch, if_true]
 
 /-- The `a`-constant guard chain of `xor`, completeness side. -/
-private theorem xor_complete_constA {F : Type} [Field F] [DecidableEq F]
+private theorem xor_complete_constA {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool} {av : F}
     (hA : (↑a : CVar F) = .const av)
     (ha : (↑a : CVar F).eval env = .ok (bit ab))
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (hfresh : env.FreshFrom nv) :
-    ∃ out, prove Basic.holds (if av = 0 then pure b else if av = 1 then pure (Snarky.not b)
-        else xorCore (c := Basic F) a b) nv env = .ok out ∧
+    ∃ out, prove (Checker.holds (F := F) (c := c))
+        (if av = 0 then pure b else if av = 1 then pure (Snarky.not b)
+        else xorCore (c := c) a b) nv env = .ok out ∧
       out.result.toCVar.eval out.assignments = .ok (bit (ab ^^ bb)) ∧
       out.assignments.FreshFrom out.nextVar := by
   have hav : av = bit ab := by rw [hA] at ha; simpa [CVar.eval] using ha
@@ -794,14 +802,16 @@ private theorem xor_complete_constA {F : Type} [Field F] [DecidableEq F]
     · exact absurd h h1
 
 /-- The `b`-constant guard chain of `xor`, completeness side. -/
-private theorem xor_complete_constB {F : Type} [Field F] [DecidableEq F]
+private theorem xor_complete_constB {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {a b : BoolVar F} {nv : Nat} {env : Assignments F} {ab bb : Bool} {bv : F}
     (hB : (↑b : CVar F) = .const bv)
     (ha : (↑a : CVar F).eval env = .ok (bit ab))
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (hfresh : env.FreshFrom nv) :
-    ∃ out, prove Basic.holds (if bv = 0 then pure a else if bv = 1 then pure (Snarky.not a)
-        else xorCore (c := Basic F) a b) nv env = .ok out ∧
+    ∃ out, prove (Checker.holds (F := F) (c := c))
+        (if bv = 0 then pure a else if bv = 1 then pure (Snarky.not a)
+        else xorCore (c := c) a b) nv env = .ok out ∧
       out.result.toCVar.eval out.assignments = .ok (bit (ab ^^ bb)) ∧
       out.assignments.FreshFrom out.nextVar := by
   have hbv : bv = bit bb := by rw [hB] at hb; simpa [CVar.eval] using hb
@@ -917,7 +927,8 @@ open Std.Do in
 /-- `xor`'s honest run needs genuine bit operands — the witnessed row
 `2a · b = a + b − r` rejects a non-bit — so the spec asks for `ReadsBit`; the result
 reads as the xor bit in the final table. -/
-@[spec] theorem xor_complete_spec {F : Type} [Field F] [DecidableEq F]
+@[spec] theorem xor_complete_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (a b : BoolVar F)
     (Q : PostCond (BoolVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
@@ -926,11 +937,11 @@ reads as the xor bit in the final table. -/
         (fun env (r : BoolVar F) env' => ∀ ab bb : Bool,
           (↑a : CVar F).eval env = .ok (bit ab) → (↑b : CVar F).eval env = .ok (bit bb) →
             (↑r : CVar F).eval env' = .ok (bit (ab ^^ bb))) Q⦄
-    Snarky.xor (c := ProverC F) a b
+    Snarky.xor (c := Prover c) a b
     ⦃Q⦄ := by
   intro st hpre
-  rw [show (Snarky.xor (c := ProverC F) a b : CircuitM F (ProverC F) _)
-      = (Snarky.xor (c := Basic F) a b : CircuitM F (Basic F) _) from rfl]
+  rw [show (Snarky.xor (c := Prover c) a b : CircuitM F (Prover c) _)
+      = (Snarky.xor (c := c) a b : CircuitM F c _) from rfl]
   obtain ⟨⟨hbita, hbitb⟩, hk⟩ := hpre
   obtain ⟨ab, ha⟩ := hbita.exists_bit
   obtain ⟨bb, hb⟩ := hbitb.exists_bit
@@ -955,12 +966,12 @@ reads as the xor bit in the final table. -/
     show Except.ok _ = _
     cases ab <;> cases bb <;> simp [bit]
   case const.var av v | const.add av x y | const.scale av k x =>
-    obtain ⟨o, hrun, heval, -⟩ := xor_complete_constA hA ha hb st.fresh
+    obtain ⟨o, hrun, heval, -⟩ := xor_complete_constA (c := c) hA ha hb st.fresh
     rw [hrun]
     intro hf
     exact hk _ ⟨_, _, hf⟩ (hval heval) (prove_assignments_le hrun)
   case var.const v bv | add.const x y bv | scale.const k x bv =>
-    obtain ⟨o, hrun, heval, -⟩ := xor_complete_constB hB ha hb st.fresh
+    obtain ⟨o, hrun, heval, -⟩ := xor_complete_constB (c := c) hB ha hb st.fresh
     rw [hrun]
     intro hf
     exact hk _ ⟨_, _, hf⟩ (hval heval) (prove_assignments_le hrun)
@@ -973,13 +984,14 @@ reads as the xor bit in the final table. -/
 /-! ### `select` (the `IfThenElse` field instance) -/
 
 /-- The honest `selectCore` run. -/
-private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
+private theorem selectCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     {b : BoolVar F} {t e : FVar F} {nv : Nat} {env : Assignments F} {bb : Bool}
     {tv ev : F}
     (hb : (↑b : CVar F).eval env = .ok (bit bb))
     (ht : t.eval env = .ok tv) (he : e.eval env = .ok ev)
     (hfresh : env.FreshFrom nv) :
-    prove Basic.holds (selectCore (c := Basic F) b t e) nv env
+    prove (Checker.holds (F := F) (c := c)) (selectCore (c := c) b t e) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv (if bb then tv else ev)⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
   have hle : env.Le (env.extend nv (if bb then tv else ev)) := by
@@ -992,8 +1004,8 @@ private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
     cases bb <;>
       simp [selectWit, AsProver.readCVar, hb, ht, he, Bind.bind, ReaderT.bind,
         Except.bind, bit]
-  have hch : Basic.holds
-      (.r1cs b.toCVar (CVar.sub_ t e) (CVar.sub_ (.var nv) e))
+  have hch : Checker.holds (F := F) (c := c)
+      (BasicSystem.r1cs b.toCVar (CVar.sub_ t e) (CVar.sub_ (.var nv) e))
       (env.extend nv (if bb then tv else ev)) = true := by
     have hb' := CVar.eval_le hle hb
     have ht' := CVar.eval_le hle ht
@@ -1002,8 +1014,8 @@ private theorem selectCore_run {F : Type} [Field F] [DecidableEq F]
         = .ok (if bb then tv else ev) := by simp [CVar.eval, Assignments.extend]
     have hsub₁ := CVar.eval_sub_ ht' he'
     have hsub₂ := CVar.eval_sub_ hvnv he'
-    simp only [Basic.holds, hb', hsub₁, hsub₂, decide_eq_true_eq]
-    cases bb <;> simp [bit]
+    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ hb' hsub₁ hsub₂
+      (by cases bb <;> simp [bit])
   exact prove_witnessCore hw hfresh hch
 
 /-- The evaluation of the constant-branches affine mux, over an arbitrary selector
@@ -1107,7 +1119,8 @@ open Std.Do in
 /-- `select`'s honest run needs a genuine bit selector — `selectWit` branches on
 `bv = 1` while the row `b · (t − e) = r − e` holds the selector's actual value — so the
 spec asks for `ReadsBit`; the result reads as the chosen branch in the final table. -/
-@[spec] theorem select_complete_spec {F : Type} [Field F] [DecidableEq F]
+@[spec] theorem select_complete_spec {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (b : BoolVar F) (t e : FVar F)
     (Q : PostCond (FVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
@@ -1116,11 +1129,11 @@ spec asks for `ReadsBit`; the result reads as the chosen branch in the final tab
         (fun env r env' => ∀ (bb : Bool) tv ev, (↑b : CVar F).eval env = .ok (bit bb) →
           t.eval env = .ok tv → e.eval env = .ok ev →
           r.eval env' = .ok (selectPure bb tv ev)) Q⦄
-    select (c := ProverC F) b t e
+    select (c := Prover c) b t e
     ⦃Q⦄ := by
   intro st hpre
-  rw [show (select (c := ProverC F) b t e : CircuitM F (ProverC F) _)
-      = (select (c := Basic F) b t e : CircuitM F (Basic F) _) from rfl]
+  rw [show (select (c := Prover c) b t e : CircuitM F (Prover c) _)
+      = (select (c := c) b t e : CircuitM F c _) from rfl]
   obtain ⟨⟨hbitb, hokt, hoke⟩, hk⟩ := hpre
   obtain ⟨bb, hb⟩ := hbitb.exists_bit
   obtain ⟨tv, ht⟩ := CVar.evalOk hokt

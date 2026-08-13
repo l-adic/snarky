@@ -207,4 +207,42 @@ theorem boolVar_var_roundTrip [Zero F] [One F] [DecidableEq F] (v : BoolVar F) :
     CircuitType.fieldsToVar (F := F) (val := Bool)
       (CircuitType.varToFields (F := F) (val := Bool) v) = v := rfl
 
+/-! ## The encoding laws -/
+
+/-- The encoding laws of a `CircuitType`: decoding inverts encoding, on the value and
+the variable side. A separate `Prop` class over the operational one (the
+`LawfulBasicSystem` pattern) because the base instances are total while a law can
+carry a genuine extra hypothesis — `Bool`'s value law needs a nontrivial ring, since
+one field element cannot encode two values when `0 = 1`. -/
+class LawfulCircuitType (F val var : Type) [CircuitType F val var] : Prop where
+  /-- Decoding an encoded value gives it back. -/
+  value_roundTrip : ∀ v : val,
+    CircuitType.fieldsToValue (F := F) (var := var)
+      (CircuitType.valueToFields (F := F) (var := var) v) = v
+  /-- Flattening a rebuilt variable bundle gives the `CVar`s back — the inverse the
+  witness leaf reads through, since a witnessed bundle is built by `fieldsToVar`. -/
+  vars_roundTrip : ∀ cvs : Vector (CVar F) (CircuitType.size F val),
+    CircuitType.varToFields (F := F) (val := val)
+      (CircuitType.fieldsToVar (F := F) (val := val) cvs) = cvs
+
+/-- A one-entry vector is its own entry's singleton. -/
+private theorem vector_singleton_eta {α : Type u} (v : Vector α 1) : #v[v[0]] = v := by
+  ext i hi
+  have : i = 0 := by omega
+  subst this
+  simp
+
+instance instLawfulCircuitTypeF : LawfulCircuitType F F (FVar F) :=
+  ⟨fvar_value_roundTrip, vector_singleton_eta⟩
+
+instance instLawfulCircuitTypeBool [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)] :
+    LawfulCircuitType F Bool (BoolVar F) :=
+  ⟨boolVar_value_roundTrip, vector_singleton_eta⟩
+
+instance instLawfulCircuitTypeUnChecked {val var : Type} [CircuitType F val var]
+    [LawfulCircuitType F val var] :
+    LawfulCircuitType F (UnChecked val) (UnChecked var) where
+  value_roundTrip v := congrArg UnChecked.mk (LawfulCircuitType.value_roundTrip v.val)
+  vars_roundTrip cvs := LawfulCircuitType.vars_roundTrip (val := val) cvs
+
 end Snarky

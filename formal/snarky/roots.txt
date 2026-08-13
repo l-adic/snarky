@@ -61,8 +61,8 @@ Snarky.LawfulBasicSystem
 Snarky.Basic.instConstraintHolds
 Snarky.Basic.instLawfulBasicSystem
 Snarky.ProverC
-Snarky.ProverC.instWP
-Snarky.ProverC.instWPMonad
+Snarky.Prover.instWP
+Snarky.Prover.instWPMonad
 Snarky.sound_spec_iff
 Snarky.complete_spec_iff
 
@@ -72,7 +72,10 @@ Snarky.complete_spec_iff
 Snarky.addConstraint_spec
 Snarky.addConstraint_complete_spec
 Snarky.witnessBool_spec
-Snarky.witnessBool_complete_spec
+Snarky.witness_complete_spec
+Snarky.witnessed_fvar_eval
+Snarky.witnessed_boolVar_eval
+Snarky.witnessed_uncheckedBool_eval
 Snarky.generateVec_spec
 Snarky.generateVec_complete_spec
 Snarky.CVar.evalOk
@@ -85,6 +88,28 @@ Snarky.Basic.holds_mono
 -- sequence splits at the bind.
 Snarky.build_bind
 Snarky.prove_bind
+
+-- The backend seam (Snarky/Backend/Ops.lean): the ops record (the PS
+-- CompileCircuit/SolveCircuit classes), the generic interpreter pair with the
+-- finalize step, the checked instantiation with its agreement laws, the composition
+-- laws every backend inherits, and the ops-coherence facts — the cross-seam law
+-- surface a backend discharges for its own ops record.
+Snarky.BackendOps
+Snarky.BuiltWith
+Snarky.buildWith
+Snarky.proveWith
+Snarky.finalizeWith
+Snarky.checkedOps
+Snarky.buildWith_checkedOps
+Snarky.proveWith_checkedOps
+Snarky.buildWith_bind
+Snarky.proveWith_bind
+Snarky.BackendOps.Lockstep
+Snarky.BackendOps.ProveExtends
+Snarky.buildWith_proveWith_nextVar
+Snarky.proveWith_extends
+Snarky.checkedOps_lockstep
+Snarky.checkedOps_proveExtends
 
 -- The D12 gadget laws (beside their gadgets, Circuit/DSL/{Field,Boolean}.lean): every
 -- assignment satisfying a gadget's
@@ -218,15 +243,6 @@ Snarky.instReprAffineExpression
 Snarky.instDecidableEqBasic
 Snarky.instReprBasic
 
--- The Kimchi Generic-gate bridge (Snarky/Kimchi/Backend.lean): a DSL constraint holds
--- iff its written Generic row satisfies the verified checker's predicate, plus the
--- bridge's monotonicity law and its backend/derive instances.
-Snarky.Kimchi.GateConstraint.holds_iff_row
-Snarky.Kimchi.GateConstraint.holds_mono
-Snarky.Kimchi.instBasicSystemGateConstraint
-Snarky.Kimchi.instDecidableEqGateConstraint
-Snarky.Kimchi.instReprGateConstraint
-
 -- The Example exhibits (Example.lean): the showcase circuit, its laws, and
 -- the run helpers; their consumers are anonymous `example`s, invisible to any constant
 -- walk (exhibits stay rooted).
@@ -244,3 +260,121 @@ Snarky.Example.proverValue
 Snarky.Example.proverOk
 Snarky.Example.instFactPrimeOfNatNat_snarky
 Snarky.Example.instToNatF17
+
+-- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
+-- union-find and the row/state types the reduction emits into. `egUF` is the
+-- union-find exhibit (anonymous `decide` consumers), plus the derive surface.
+Snarky.Kimchi.UnionFind.empty
+Snarky.Kimchi.UnionFind.find
+Snarky.Kimchi.UnionFind.union
+Snarky.Kimchi.UnionFind.rootOf
+Snarky.Kimchi.UnionFind.equivalenceClasses
+Snarky.Kimchi.egUF
+Snarky.Kimchi.instDecidableEqUnionFind
+Snarky.Kimchi.instReprUnionFind
+Snarky.Kimchi.GenericPlonkConstraint
+Snarky.Kimchi.AuxState
+Snarky.Kimchi.initialAuxState
+Snarky.Kimchi.GateKind
+Snarky.Kimchi.KimchiRow
+Snarky.Kimchi.KimchiWireRow
+Snarky.Kimchi.ToKimchiRows
+
+-- The reduction layer (Snarky/Kimchi/Constraint/Reduction.lean): the op vocabulary,
+-- the two reduction algorithms, and the builder/prover instances.
+Snarky.Kimchi.PlonkReductionM
+Snarky.Kimchi.reduceAffineExpression
+Snarky.Kimchi.reduceToVariable
+Snarky.Kimchi.reduceAsBuilder
+Snarky.Kimchi.reduceAsProver
+Snarky.Kimchi.PlonkBuilder
+Snarky.Kimchi.PlonkProver
+Snarky.Kimchi.EqualsConstraint
+Snarky.Kimchi.mkPadRow
+Snarky.Kimchi.finalizeGateQueue
+
+-- The per-gate constraint payloads and reducers
+-- (Snarky/Kimchi/Constraint/{GenericPlonk,AddComplete,EndoScalar,VarBaseMul,EndoMul,
+-- Poseidon}.lean): each payload record with its reducer.
+Snarky.Kimchi.reduce
+Snarky.Kimchi.AddComplete
+Snarky.Kimchi.AddComplete.reduce
+Snarky.Kimchi.AffinePoint
+Snarky.Kimchi.EndoScalarRound
+Snarky.Kimchi.EndoScalarRound.reduce
+Snarky.Kimchi.EndoScalar
+Snarky.Kimchi.EndoScalar.reduce
+Snarky.Kimchi.ScaleRound
+Snarky.Kimchi.VarBaseMul
+Snarky.Kimchi.VarBaseMul.reduce
+Snarky.Kimchi.EndoMulRound
+Snarky.Kimchi.EndoMul
+Snarky.Kimchi.EndoMul.reduce
+Snarky.Kimchi.PoseidonConstraint
+Snarky.Kimchi.PoseidonConstraint.reduce
+
+-- The kimchi constraint type and its interpreters (Snarky/Kimchi/Constraint.lean):
+-- the constraint and gate sums with their dispatch/BasicSystem instances, the one
+-- reduction dispatch, and the interpreter pair as `kimchiOps` instantiations of the
+-- backend seam.
+Snarky.Kimchi.KimchiConstraint
+Snarky.Kimchi.KimchiGate
+Snarky.Kimchi.KimchiConstraint.reduce
+Snarky.Kimchi.kimchiOps
+Snarky.Kimchi.instToKimchiRowsKimchiGate
+Snarky.Kimchi.instBasicSystemKimchiConstraint
+Snarky.Kimchi.instDecidableEqKimchiConstraint
+Snarky.Kimchi.instReprKimchiConstraint
+Snarky.Kimchi.instDecidableEqKimchiGate
+Snarky.Kimchi.instReprKimchiGate
+
+-- The CS assembly (Snarky/Kimchi/Backend/Assemble.lean): the wire/gate data records,
+-- the wiring pass, the public-input rows, the assembled gate data, and the witness
+-- table, plus the derive surface the seam script's comparisons resolve.
+Snarky.Kimchi.Wire
+Snarky.Kimchi.AssembledGate
+Snarky.Kimchi.permCells
+Snarky.Kimchi.classCells
+Snarky.Kimchi.wireTarget
+Snarky.Kimchi.assembleGates
+Snarky.Kimchi.makePublicInputRows
+Snarky.Kimchi.makeGateData
+Snarky.Kimchi.makeWitness
+Snarky.Kimchi.instDecidableEqWire
+Snarky.Kimchi.instReprWire
+Snarky.Kimchi.instDecidableEqAssembledGate
+Snarky.Kimchi.instReprAssembledGate
+
+-- script-surface:begin
+-- The whole-circuit kimchi entry points (Snarky/Kimchi/Backend/Compile.lean): their
+-- consumer is scripts/check_cs_equality.lean, invisible to any constant walk.
+Snarky.Kimchi.kimchiSolve
+Snarky.Kimchi.kimchiGateData
+-- script-surface:end
+
+-- The complete-addition gadget (Snarky/Kimchi/Circuit/AddComplete.lean) and the
+-- sealing utility it builds on (Snarky/Circuit/DSL/Utils.lean): the gadget pair with
+-- its result record, plus the AffinePoint instance surface the seam script's
+-- comparisons resolve.
+Snarky.sealVar
+Snarky.sealVar_spec
+Snarky.sealVar_complete_spec
+Snarky.Kimchi.addFast
+Snarky.Kimchi.AddFast.addFast_spec
+Snarky.Kimchi.AddFast.addFast_complete_spec
+Snarky.Kimchi.addComplete
+Snarky.Kimchi.instCircuitTypeAffinePointFVar
+Snarky.Kimchi.instCheckedTypeAffinePointFVar
+
+-- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the two readings
+-- gadget laws are stated against — the read/eval records, the per-constructor
+-- Holds and check, their ConstraintHolds/Checker packaging, and the lawful-backend
+-- instance pairs that transfer every backend-generic base gadget law, sound and
+-- complete, to this backend; KimchiProverC names the checking reading's carrier.
+Snarky.Kimchi.AddComplete.read
+Snarky.Kimchi.KimchiConstraint.Holds
+Snarky.Kimchi.KimchiConstraint.instConstraintHolds
+Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem
+Snarky.Kimchi.KimchiConstraint.instChecker
+Snarky.Kimchi.KimchiConstraint.instLawfulChecker
+Snarky.Kimchi.KimchiProverC

@@ -432,6 +432,37 @@ private theorem mergeConst_getD [CommSemiring F] (c₁ c₂ : Option F) :
     (mergeConst c₁ c₂).getD 0 = c₁.getD 0 + c₂.getD 0 := by
   cases c₁ <;> cases c₂ <;> simp [mergeConst]
 
+/-! ### The evaluation unrolling API
+
+Public unrolling lemmas for `AffineExpression.eval`, so consumers never touch the
+private `evalTerms` machinery: the empty form evaluates to its constant, and a leading
+term peels off against its variable's assignment. -/
+
+/-- The empty affine form evaluates to its constant (`0` if `none`). -/
+theorem eval_nil [Add F] [Mul F] [Zero F] {c? : Option F} {env : Variable → Option F} :
+    (AffineExpression.mk c? []).eval env = .ok (c?.getD 0) := rfl
+
+/-- Peel one leading term off a successful constant-free evaluation: the head variable is
+assigned, the tail evaluates, and the total is the head's contribution plus the tail's
+(and conversely). -/
+theorem eval_none_cons [CommSemiring F] {v : Variable} {k : F} {ts : List (Variable × F)}
+    {env : Variable → Option F} {w : F} :
+    (AffineExpression.mk none ((v, k) :: ts)).eval env = .ok w ↔
+      ∃ x σ, env v = some x ∧ (AffineExpression.mk none ts).eval env = .ok σ ∧
+        w = k * x + σ := by
+  simp only [eval, evalTerms, Option.getD_none]
+  cases henv : env v with
+  | none => simp
+  | some x =>
+    constructor
+    · intro h
+      obtain ⟨σ, hσ, rfl⟩ := evalTerms_unshift h
+      exact ⟨x, σ, rfl, hσ, by ring⟩
+    · rintro ⟨x', σ, hx', hσ, rfl⟩
+      obtain rfl : x = x' := Option.some.inj hx'
+      have := evalTerms_shift (env := env) (0 + k * x) hσ
+      simpa using this
+
 end AffineExpression
 
 namespace CVar
