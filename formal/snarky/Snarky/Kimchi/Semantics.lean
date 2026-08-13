@@ -127,8 +127,10 @@ method per landed gadget law. -/
 class KimchiSystem (F c : Type) where
   /-- Embed a complete-addition payload. -/
   addComplete : AddComplete F → c
+  /-- Embed a Poseidon block payload. -/
+  poseidon : PoseidonConstraint F → c
 
-instance : KimchiSystem F (KimchiConstraint F) := ⟨.addComplete⟩
+instance : KimchiSystem F (KimchiConstraint F) := ⟨.addComplete, .poseidon⟩
 
 instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 
