@@ -11,6 +11,7 @@ Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 -/
 import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.Poseidon
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -81,6 +82,8 @@ def roots : List Name :=
     `Snarky.sealVar_spec,
     `Snarky.sealVar_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_spec,
+    `Snarky.Kimchi.Poseidon.poseidon_spec,
+    `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
     `Snarky.post_of_prove,
 
@@ -112,9 +115,23 @@ def roots : List Name :=
     `Snarky.instLawfulCircuitTypeF,
     `Snarky.instLawfulCircuitTypeBool,
     `Snarky.instLawfulCircuitTypeUnChecked,
+    `Snarky.instLawfulCircuitTypeProd,
+    `Snarky.instLawfulCircuitTypeVector,
     `Snarky.instLawfulCheckedTypeF,
     `Snarky.instLawfulCheckedTypeUnChecked,
-    `Snarky.instLawfulCheckedTypeBool ]
+    `Snarky.instLawfulCheckedTypeBool,
+    `Snarky.instLawfulCheckedTypeProd,
+    `Snarky.instLawfulCheckedTypeVector,
+    `Snarky.instWitnessReadsF,
+    `Snarky.instWitnessReadsBool,
+    `Snarky.instWitnessReadsUnChecked,
+    `Snarky.instWitnessReadsProd,
+    `Snarky.instWitnessReadsVector,
+    `Snarky.CircuitType.ofEquiv,
+    `Snarky.LawfulCircuitType.ofEquiv,
+    `Snarky.CheckedType.ofEquiv,
+    `Snarky.LawfulCheckedType.ofEquiv,
+    `Snarky.WitnessReads.ofEquiv ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

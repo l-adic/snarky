@@ -11,10 +11,11 @@ ids pin the shared counter's numbering.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
-`Basic` gadget vocabulary. The export also carries witness dumps for the four kimchi
-gate circuits (poseidon, endo_scalar, endo_mul, var_base_mul); those are DELIBERATELY
-not in the corpus — each joins with its gadget slice, so the Poseidon, EndoScalar,
-EndoMul, and VarBaseMul reducers are uncovered by this oracle until then.
+`Basic` gadget vocabulary, plus the landed gate gadgets (poseidon). The export also
+carries witness dumps for the remaining gate circuits (endo_scalar, endo_mul,
+var_base_mul); those are DELIBERATELY not in the corpus — each joins with its gadget
+slice, so the EndoScalar, EndoMul, and VarBaseMul reducers are uncovered by this
+oracle until then.
 
 The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
@@ -27,6 +28,8 @@ import KimchiFixture.PS
 import Snarky.DSL
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.Poseidon
+import Poseidon.Basic
 
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
@@ -47,9 +50,6 @@ def kindType : GateKind → GateType
   | .endoMul => .endoMul
   | .endoScalar => .endoScalar
   | .zero => .zero
-
-/-- Round constants are inert for the Poseidon-free gadget circuits. -/
-def rc0 : ℕ → Fp × Fp × Fp := fun _ => (0, 0, 0)
 
 /-- `unpack`'s bit reads go through the canonical representative. -/
 instance : ToNat Fp := ⟨ZMod.val⟩
@@ -163,6 +163,13 @@ def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   (·.p) <$> addFast .dontCheckFinite p.1 p.2
 
+/-- `poseidon_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.Poseidon.poseidon`
+at the step field's parameters; the PS `Vector 3` interface renders as the gadget's
+triples at the boundary). -/
+def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3) := do
+  let (a, b, c) ← poseidon Poseidon.fpParams (s[0], s[1], s[2])
+  pure #v[a, b, c]
+
 /-! ## The comparison -/
 
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
@@ -197,7 +204,7 @@ witness re-solve seeds the fixture's recorded public inputs. -/
 def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
     [CheckedType Fp C avar] [B : CircuitType Fp b bvar]
     (main : avar → CircuitM Fp C bvar) (raw : Raw) : List (String × Bool) :=
-  let (rows, gates, pubSize) := kimchiGateData (a := a) (b := b) rc0 main
+  let (rows, gates, pubSize) := kimchiGateData (a := a) (b := b) main
   let csChecks :=
     [ ("publicInputSize", pubSize == raw.publicInputSize),
       ("gate count", gates.length == raw.typs.size),
@@ -211,7 +218,7 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
         (rows.map fun r => r.vars.toList.toArray).toArray == raw.vars) ]
   let input : a := A.fieldsToValue (Vector.ofFn fun i => raw.pub.getD i 0)
   let witChecks := if raw.witness.isEmpty then [] else
-    match kimchiSolve (a := a) (b := b) rc0 main input with
+    match kimchiSolve (a := a) (b := b) main input with
     | .error _ => [("solve", false)]
     | .ok (_, env) =>
       let (wit, pubs) := makeWitness env rows ((allocRange 0 pubSize).toList)
@@ -250,7 +257,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit),
     ("add_complete_step_circuit",
       compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
-        addCompleteCircuit) ]
+        addCompleteCircuit),
+    ("poseidon_step_circuit",
+      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

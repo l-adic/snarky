@@ -30,10 +30,10 @@ of it — the PS instances inline the same dispatch twice); `finalize` is the op
 record's field.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- The Poseidon round constants thread as the explicit `rc` parameter (PS
-  `PoseidonField`), as in the Poseidon step. The `KimchiVerify` marker class is not
-  ported: it bundles per-curve endo/Poseidon data for PS instance resolution, and the
-  Lean side passes that data explicitly.
+- The Poseidon parameters ride in the payload (the payload-data deviation in
+  `Constraint/Poseidon.lean`), so the reduction seam takes no parameter for them.
+  The `KimchiVerify` marker class is not ported: it bundles per-curve endo/Poseidon
+  data for PS instance resolution, and the Lean side passes that data explicitly.
 - `eval` is not ported (PS keeps it as a vacuous `pure true` stub of the deleted
   Rust cross-check); `postCondition` is not ported (a test-harness check that wired
   classes carry consistent values; no analogue is stated here). The PS prover's
@@ -139,13 +139,13 @@ private def reducePad [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
 a constraint through its gate's reducer and wrap the rows. `Basic` constraints emit
 into the batching queue and wrap as `noOp`. -/
 def KimchiConstraint.reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F]
-    [DecidableEq F] [Monad m] [PlonkReductionM F m] (rc : ℕ → F × F × F) :
+    [DecidableEq F] [Monad m] [PlonkReductionM F m] :
     KimchiConstraint F → m (KimchiGate F)
   | .basic c => do
     Snarky.Kimchi.reduce c
     pure .noOp
   | .addComplete c => .addComplete <$> c.reduce
-  | .poseidon c => .poseidon <$> c.reduce rc
+  | .poseidon c => .poseidon <$> c.reduce
   | .varBaseMul c => .varBaseMul <$> VarBaseMul.reduce c
   | .endoScalar c => .endoScalar <$> EndoScalar.reduce c
   | .endoMul c => .endoMul <$> c.reduce
@@ -160,13 +160,13 @@ gate), in the prover for `proveConstraint` (extending the table, checking nothin
 the PS production semantics; see the module docstring) — and `finalize` flushes the
 odd queued constraint into one more packed row. -/
 def kimchiOps [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [Div F]
-    [DecidableEq F] (rc : ℕ → F × F × F) :
+    [DecidableEq F] :
     BackendOps F (KimchiGate F) (KimchiConstraint F) (AuxState F) where
   appendConstraint con n aux :=
-    let red := reduceAsBuilder n aux (KimchiConstraint.reduce rc con)
+    let red := reduceAsBuilder n aux (KimchiConstraint.reduce con)
     (red.2.1.map .plonk ++ [red.1], red.2.2.1, red.2.2.2)
   proveConstraint con nv env :=
-    match reduceAsProver ⟨nv, env⟩ (KimchiConstraint.reduce rc con) with
+    match reduceAsProver ⟨nv, env⟩ (KimchiConstraint.reduce con) with
     | .error e => .error e
     | .ok (_, s') => .ok (s'.nextVariable, s'.assignments)
   finalize aux :=

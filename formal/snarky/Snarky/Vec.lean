@@ -18,6 +18,14 @@ opaque to the kernel; `List.map` is structural, so this version reduces under `d
 def mapVec (f : α → β) (v : Vector α n) : Vector β n :=
   ⟨⟨v.toList.map f⟩, by simp⟩
 
+/-- A flattening reads as the flattening of the element lists (the `toList` bridge core
+provides for `map` but not `flatten`). -/
+theorem toList_flatten {α : Type u} {m n : Nat} (xss : Vector (Vector α m) n) :
+    xss.flatten.toList = (xss.toList.map Vector.toList).flatten := by
+  rcases xss with ⟨⟨l⟩, h⟩
+  simp [Vector.flatten_mk, List.map_map]
+  rfl
+
 /-- Collect `n` indexed effectful computations into a sized vector, in index order —
 PS `Vector.generateA`, monad-generic. Structural on `n`, so it kernel-reduces at any
 concrete monad. -/

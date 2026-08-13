@@ -485,7 +485,7 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
       simp [infZWit, AsProver.readCVar, hp1y, hp2y, readVar_bool_of_eval hsx, hy, hx,
         Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
   refine ⟨by rw [hinfZw]; rfl, fun infZ st₁ hr₁ hle₁ => ?_⟩
-  have hinfZ := witnessed_fvar_eval (hr₁ _ hinfZw)
+  have hinfZ : _ = _ := hr₁ _ hinfZw
   mvcgen
   have hx21w : x21InvWit p1 p2 sameX st₁.env
       = .ok (if x1v = x2v then 0 else (x2v - x1v)⁻¹) := by
@@ -494,7 +494,7 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
         CVar.eval_le hle₁ hp2x, readVar_bool_of_eval (CVar.eval_le hle₁ hsx), hx,
         Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
   refine ⟨by rw [hx21w]; rfl, fun x21Inv st₂ hr₂ hle₂ => ?_⟩
-  have hx21 := witnessed_fvar_eval (hr₂ _ hx21w)
+  have hx21 : _ = _ := hr₂ _ hx21w
   have hle02 := hle₁.trans hle₂
   mvcgen
   have hsw : slopeWit p1 p2 sameX st₂.env
@@ -506,7 +506,7 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
         readVar_bool_of_eval (CVar.eval_le hle02 hsx), hx,
         Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
   refine ⟨by rw [hsw]; rfl, fun s st₃ hr₃ hle₃ => ?_⟩
-  have hs := witnessed_fvar_eval (hr₃ _ hsw)
+  have hs : _ = _ := hr₃ _ hsw
   have hle03 := hle02.trans hle₃
   mvcgen
   have hx3w : x3Wit p1 p2 s st₃.env
@@ -518,7 +518,7 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
       CVar.eval_le hle03 hp2x,
       Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
   refine ⟨by rw [hx3w]; rfl, fun x3 st₄ hr₄ hle₄ => ?_⟩
-  have hx3 := witnessed_fvar_eval (hr₄ _ hx3w)
+  have hx3 : _ = _ := hr₄ _ hx3w
   have hle04 := hle03.trans hle₄
   mvcgen
   have hy3w : y3Wit p1 s x3 st₄.env
@@ -533,7 +533,7 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
       CVar.eval_le hle04 hp1x, CVar.eval_le hle04 hp1y,
       Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
   refine ⟨by rw [hy3w]; rfl, fun y3 st₅ hr₅ hle₅ => ?_⟩
-  have hy3 := witnessed_fvar_eval (hr₅ _ hy3w)
+  have hy3 : _ = _ := hr₅ _ hy3w
   have hle05 := hle04.trans hle₅
   have hle25 := hle₃.trans (hle₄.trans hle₅)
   mvcgen
@@ -606,7 +606,7 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
       Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
       Pure.pure, ReaderT.pure, Except.pure]
   refine ⟨by rw [hsw]; rfl, fun sameXU st₃ hsxr hle₃ => ?_⟩
-  have hsx := witnessed_uncheckedBool_eval (hsxr _ hsw)
+  have hsx : _ = _ := hsxr _ hsw
   cases fin with
   | checkFinite =>
     mvcgen
@@ -626,7 +626,7 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
         Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
         Pure.pure, ReaderT.pure, Except.pure]
     refine ⟨by rw [hiw]; rfl, fun infU st₄ hinfr hle₄ => ?_⟩
-    have hinfb := witnessed_uncheckedBool_eval (hinfr _ hiw)
+    have hinfb : _ = _ := hinfr _ hiw
     mvcgen
     refine addFastTail_complete_spec p1 p2 sameXU.val infU.val x1v y1v x2v y2v
       (decide (x1v = x2v) && !decide (y1v = y2v))

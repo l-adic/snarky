@@ -73,9 +73,20 @@ Snarky.addConstraint_spec
 Snarky.addConstraint_complete_spec
 Snarky.witnessBool_spec
 Snarky.witness_complete_spec
-Snarky.witnessed_fvar_eval
-Snarky.witnessed_boolVar_eval
-Snarky.witnessed_uncheckedBool_eval
+Snarky.instWitnessReadsF
+Snarky.instWitnessReadsBool
+Snarky.instWitnessReadsUnChecked
+Snarky.instWitnessReadsProd
+Snarky.instWitnessReadsVector
+Snarky.CircuitType.ofEquiv
+Snarky.LawfulCircuitType.ofEquiv
+Snarky.CheckedType.ofEquiv
+Snarky.LawfulCheckedType.ofEquiv
+Snarky.WitnessReads.ofEquiv
+Snarky.instLawfulCircuitTypeProd
+Snarky.instLawfulCircuitTypeVector
+Snarky.instLawfulCheckedTypeProd
+Snarky.instLawfulCheckedTypeVector
 Snarky.generateVec_spec
 Snarky.generateVec_complete_spec
 Snarky.CVar.evalOk
@@ -363,6 +374,9 @@ Snarky.Kimchi.addFast
 Snarky.Kimchi.AddFast.addFast_spec
 Snarky.Kimchi.AddFast.addFast_complete_spec
 Snarky.Kimchi.addComplete
+Snarky.Kimchi.poseidon
+Snarky.Kimchi.Poseidon.poseidon_spec
+Snarky.Kimchi.Poseidon.poseidon_complete_spec
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 
