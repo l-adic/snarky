@@ -83,6 +83,7 @@ def roots : List Name :=
     `Snarky.sealVar_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_spec,
     `Snarky.Kimchi.Poseidon.poseidon_spec,
+    `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
     `Snarky.post_of_prove,
 

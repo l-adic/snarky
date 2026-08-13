@@ -370,6 +370,7 @@ Snarky.Kimchi.AddFast.addFast_complete_spec
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.poseidon
 Snarky.Kimchi.Poseidon.poseidon_spec
+Snarky.Kimchi.Poseidon.poseidon_complete_spec
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 
