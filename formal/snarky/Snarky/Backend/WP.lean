@@ -539,6 +539,20 @@ instance instLawfulCheckedTypeBool {F c : Type} [Add F] [Mul F] [Zero F] [One F]
       ⟨?_, fun u st' _ hle => hk u st' trivial hle⟩
     exact LawfulChecker.check_boolean _ _ _ hb (by cases b <;> simp [bit])
 
+/-- The check-completeness contract transports across the equivalences: the
+transported grant is the base grant at the mapped bundle and value, definitionally.
+Built with `letI` (see `LawfulCircuitType.ofEquiv`). -/
+theorem LawfulCheckedType.ofEquiv {F c : Type} [Add F] [Mul F] [Checker F c]
+    {val var val' var' : Type} [A : CircuitType F val var]
+    [CheckedType F (Prover c) var] [LawfulCheckedType F c val var]
+    (ev : val' ≃ val) (er : var' ≃ var) :
+    @LawfulCheckedType F c val' var' _ _ (A.ofEquiv ev er)
+      (CheckedType.ofEquiv (c := Prover c) er) _ :=
+  letI : CircuitType F val' var' := A.ofEquiv ev er
+  letI : CheckedType F (Prover c) var' := CheckedType.ofEquiv (c := Prover c) er
+  { check_complete := fun bundle v Q =>
+      LawfulCheckedType.check_complete (c := c) (val := val) (er bundle) (ev v) Q }
+
 /-- `allocRange`'s underlying list is the consecutive range. -/
 private theorem allocRange_toList : ∀ (n nv : Nat),
     (allocRange nv n).toList = List.range' nv n
@@ -623,6 +637,17 @@ class WitnessReads (F val var : Type) [Add F] [Mul F] [CircuitType F val var] wh
   /-- The reading survives table extension. -/
   reads_le : ∀ {env env' : Assignments F} {r : var} {v : val},
     env.Le env' → Reads r env v → Reads r env' v
+
+/-- The decoded reading transports across the equivalences: read the mapped bundle
+as the mapped value. Built with `letI` (see `LawfulCircuitType.ofEquiv`). -/
+@[reducible] def WitnessReads.ofEquiv {F : Type} [Add F] [Mul F]
+    {val var val' var' : Type} [A : CircuitType F val var] [WitnessReads F val var]
+    (ev : val' ≃ val) (er : var' ≃ var) :
+    @WitnessReads F val' var' _ _ (A.ofEquiv ev er) :=
+  letI : CircuitType F val' var' := A.ofEquiv ev er
+  { Reads := fun r env v => WitnessReads.Reads (F := F) (er r) env (ev v)
+    reads_of_grant := fun h => WitnessReads.reads_of_grant h
+    reads_le := fun hle h => WitnessReads.reads_le hle h }
 
 open Std.Do in
 /-- A witness computation that succeeds makes the run succeed — the honest encoding

@@ -1,4 +1,5 @@
 import Snarky.Backend.Assignments
+import Mathlib.Logic.Equiv.Defs
 import Snarky.Circuit.Types
 import Snarky.Constraint.Basic
 import Snarky.Vec
@@ -207,6 +208,12 @@ instance {avar bvar : Type u} [CheckedType F c avar] [CheckedType F c bvar] :
 instance {var : Type u} [CheckedType F c var] {n : Nat} :
     CheckedType F c (Vector var n) where
   check v := v.toList.forM (CheckedType.check (c := c))
+
+/-- The checks of `var`, run on an isomorphic `var'` — the leaf a nominal structure
+declares through its field-product equivalence. -/
+@[reducible] def CheckedType.ofEquiv {var var' : Type u} [CheckedType F c var]
+    (er : var' ≃ var) : CheckedType F c var' :=
+  ⟨fun r => CheckedType.check (c := c) (er r)⟩
 
 /-! ## The typed combinators -/
 

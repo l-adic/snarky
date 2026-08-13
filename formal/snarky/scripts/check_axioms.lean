@@ -126,7 +126,12 @@ def roots : List Name :=
     `Snarky.instWitnessReadsBool,
     `Snarky.instWitnessReadsUnChecked,
     `Snarky.instWitnessReadsProd,
-    `Snarky.instWitnessReadsVector ]
+    `Snarky.instWitnessReadsVector,
+    `Snarky.CircuitType.ofEquiv,
+    `Snarky.LawfulCircuitType.ofEquiv,
+    `Snarky.CheckedType.ofEquiv,
+    `Snarky.LawfulCheckedType.ofEquiv,
+    `Snarky.WitnessReads.ofEquiv ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

@@ -78,6 +78,11 @@ Snarky.instWitnessReadsBool
 Snarky.instWitnessReadsUnChecked
 Snarky.instWitnessReadsProd
 Snarky.instWitnessReadsVector
+Snarky.CircuitType.ofEquiv
+Snarky.LawfulCircuitType.ofEquiv
+Snarky.CheckedType.ofEquiv
+Snarky.LawfulCheckedType.ofEquiv
+Snarky.WitnessReads.ofEquiv
 Snarky.instLawfulCircuitTypeProd
 Snarky.instLawfulCircuitTypeVector
 Snarky.instLawfulCheckedTypeProd

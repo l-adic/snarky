@@ -1,4 +1,5 @@
 import Snarky.Circuit.CVar
+import Mathlib.Logic.Equiv.Defs
 
 /-!
 # Circuit types
@@ -199,6 +200,19 @@ instance instCircuitTypeVector {val var : Type u} [A : CircuitType F val var]
     A.fieldsToVar (Vector.ofFn fun j =>
       fs[i.1 * A.size + j.1]'(mul_add_lt i.isLt j.isLt))
 
+/-- The encoding of `val`, worn by an isomorphic `val'` — the leaf a nominal
+structure declares through its field-product equivalence instead of by hand.
+Reducible, so instance resolution and definitional unfolding see through the
+transport. -/
+@[reducible] def CircuitType.ofEquiv {val var val' var' : Type u}
+    (A : CircuitType F val var) (ev : val' ≃ val) (er : var' ≃ var) :
+    CircuitType F val' var' where
+  size := A.size
+  valueToFields v := A.valueToFields (ev v)
+  fieldsToValue fs := ev.symm (A.fieldsToValue fs)
+  varToFields r := A.varToFields (er r)
+  fieldsToVar fs := er.symm (A.fieldsToVar fs)
+
 /-! ## Round-trip laws
 
 The PS suite checks these by QuickCheck over a table of types; for the base instances
@@ -342,5 +356,23 @@ instance instLawfulCircuitTypeVector {val var : Type} [A : CircuitType F val var
     simp only [LawfulCircuitType.vars_roundTrip (val := val), Vector.getElem_ofFn]
     congr 1
     exact Nat.div_add_mod' i A.size
+
+/-- Lawfulness transports across the equivalences: both round trips factor through
+the base instance's. Built with `letI` — a `where` literal at the ascribed instance
+re-synthesizes the class's instance arguments instead of using it. -/
+theorem LawfulCircuitType.ofEquiv {val var val' var' : Type}
+    [A : CircuitType F val var] [LawfulCircuitType F val var]
+    (ev : val' ≃ val) (er : var' ≃ var) :
+    @LawfulCircuitType F val' var' (A.ofEquiv ev er) :=
+  letI : CircuitType F val' var' := A.ofEquiv ev er
+  { value_roundTrip := fun v => by
+      show ev.symm (CircuitType.fieldsToValue (CircuitType.valueToFields (ev v))) = v
+      rw [LawfulCircuitType.value_roundTrip (F := F) (var := var),
+        Equiv.symm_apply_apply]
+    vars_roundTrip := fun cvs => by
+      show CircuitType.varToFields (F := F) (val := val)
+          (er (er.symm (CircuitType.fieldsToVar (F := F) (val := val) cvs))) = cvs
+      rw [Equiv.apply_symm_apply,
+        LawfulCircuitType.vars_roundTrip (F := F) (val := val)] }
 
 end Snarky
