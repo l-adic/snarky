@@ -49,32 +49,48 @@ def cFunc (x : F) : F := if x = 2 then -1 else if x = 3 then 1 else 0
 prover runs. -/
 def dFunc (x : F) : F := if x = 0 then -1 else if x = 1 then 1 else 0
 
-/-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
-private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
-    (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : cPoly x = cFunc x := by
-  obtain ⟨c0, c1, c2, c3⟩ := cPoly_table h2 h3
+/-- The `a`-table's value at each crumb; the characteristic hypotheses separate the
+four crumb values. -/
+theorem cFunc_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
+    cFunc (0 : F) = 0 ∧ cFunc (1 : F) = 0 ∧ cFunc (2 : F) = -1 ∧ cFunc (3 : F) = 1 := by
   have e02 : (0 : F) ≠ 2 := fun h => h2 h.symm
   have e03 : (0 : F) ≠ 3 := fun h => h3 h.symm
   have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
   have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
   have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
+  exact ⟨by rw [cFunc, if_neg e02, if_neg e03], by rw [cFunc, if_neg e12, if_neg e13],
+    by rw [cFunc, if_pos rfl], by rw [cFunc, if_neg e32, if_pos rfl]⟩
+
+/-- The `b`-table's value at each crumb. -/
+theorem dFunc_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
+    dFunc (0 : F) = -1 ∧ dFunc (1 : F) = 1 ∧ dFunc (2 : F) = 0 ∧ dFunc (3 : F) = 0 := by
+  have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
+  have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
+  exact ⟨by rw [dFunc, if_pos rfl],
+    by rw [dFunc, if_neg ((one_ne_zero : (1 : F) ≠ 0)), if_pos rfl],
+    by rw [dFunc, if_neg h2, if_neg e21], by rw [dFunc, if_neg h3, if_neg e31]⟩
+
+/-- On a valid crumb the interpolating cubic `cPoly` equals the bare table `cFunc`. -/
+private theorem cPoly_eq_cFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
+    (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : cPoly x = cFunc x := by
+  obtain ⟨c0, c1, c2, c3⟩ := cPoly_table h2 h3
+  obtain ⟨f0, f1, f2, f3⟩ := cFunc_table h2 h3
   rcases hx with rfl | rfl | rfl | rfl
-  · rw [c0, cFunc, if_neg e02, if_neg e03]
-  · rw [c1, cFunc, if_neg e12, if_neg e13]
-  · rw [c2, cFunc, if_pos rfl]
-  · rw [c3, cFunc, if_neg e32, if_pos rfl]
+  · rw [c0, f0]
+  · rw [c1, f1]
+  · rw [c2, f2]
+  · rw [c3, f3]
 
 /-- On a valid crumb the interpolating cubic `dPoly` equals the bare table `dFunc`. -/
 private theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
     (hx : x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) : dPoly x = dFunc x := by
   obtain ⟨d0, d1, d2, d3⟩ := dPoly_table h2 h3
-  have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-  have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
+  obtain ⟨g0, g1, g2, g3⟩ := dFunc_table h2 h3
   rcases hx with rfl | rfl | rfl | rfl
-  · rw [d0, dFunc, if_pos rfl]
-  · rw [d1, dFunc, if_neg ((one_ne_zero : (1 : F) ≠ 0)), if_pos rfl]
-  · rw [d2, dFunc, if_neg h2, if_neg e21]
-  · rw [d3, dFunc, if_neg h3, if_neg e31]
+  · rw [d0, g0]
+  · rw [d1, g1]
+  · rw [d2, g2]
+  · rw [d3, g3]
 
 /-- The satisfying row built with the bare `cFunc`/`dFunc` tables in place of the
     interpolating cubics — the row every deployed prover actually fills. On valid crumbs
@@ -370,13 +386,13 @@ private theorem chainCrumbs_chainBuild (rows : ℕ → List F) (m : ℕ) :
     recurse on `k / 4`. High crumbs are padded with `0`, and whatever of `k` sits at or above
     `4 ^ c` is discarded. Mathlib's `Nat.digits` will not do here: it is least-significant-first
     and unpadded, so pinning the width back to `c` costs more than this peel. -/
-private def crumbsOf : ℕ → ℕ → List F
+def crumbsOf : ℕ → ℕ → List F
   | 0, _ => []
   | c + 1, k => crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)]
 
 /-- `crumbsOf` has exactly the width asked for, which is what lets it fill whole
     `EndoScalar` rows. -/
-private theorem crumbsOf_length (c k : ℕ) : (crumbsOf (F := F) c k).length = c := by
+theorem crumbsOf_length (c k : ℕ) : (crumbsOf (F := F) c k).length = c := by
   induction c generalizing k with
   | zero => rfl
   | succ c ih =>
@@ -386,7 +402,7 @@ private theorem crumbsOf_length (c k : ℕ) : (crumbsOf (F := F) c k).length = c
 
 /-- Every entry of `crumbsOf` is a 2-bit crumb, the tail one because `k % 4 < 4`. This is
     `complete`'s precondition, so the expansion feeds `build` directly. -/
-private theorem crumbsOf_valid (c k : ℕ) :
+theorem crumbsOf_valid (c k : ℕ) :
     ∀ x ∈ crumbsOf (F := F) c k, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
   induction c generalizing k with
   | zero => intro x hx; simp only [crumbsOf, List.not_mem_nil] at hx
@@ -402,7 +418,7 @@ private theorem crumbsOf_valid (c k : ℕ) :
 /-- The expansion inverts the register fold: reconstructing `crumbsOf c k` recovers `k` modulo the
     width budget `4 ^ c`, hence `k` itself below the budget. The Horner step is core's
     `Nat.mod_mul` at `a = 4`, `b = 4 ^ c`, carried into `F` by `nReconstruct_append`. -/
-private theorem nReconstruct_crumbsOf (c k : ℕ) :
+theorem nReconstruct_crumbsOf (c k : ℕ) :
     nReconstruct (crumbsOf (F := F) c k) = ((k % 4 ^ c : ℕ) : F) := by
   induction c generalizing k with
   | zero => simp only [crumbsOf, nReconstruct, pow_zero, Nat.mod_one, List.foldl_nil,

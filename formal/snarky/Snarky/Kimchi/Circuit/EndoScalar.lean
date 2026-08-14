@@ -42,11 +42,6 @@ private def crumbOfNat (count j k : ℕ) : ℕ :=
   2 * (if k.testBit (2 * (count - j) - 1) then 1 else 0)
     + (if k.testBit (2 * (count - j) - 2) then 1 else 0)
 
-/-- The scalar's crumbs, MSB-first (PS `chunks @2` of the reversed bits) — the honest
-crumb list the completeness laws read the gate model at. -/
-def crumbsOfNat [NatCast F] (count k : ℕ) : List F :=
-  (List.range count).map fun j => (crumbOfNat count j k : F)
-
 /-- The crumb table the bulk witness writes: row `r`'s entry `j` is crumb `8r + j`. -/
 private def crumbVals [NatCast F] (rows k : ℕ) : Vector (Vector F 8) rows :=
   Vector.ofFn fun r => Vector.ofFn fun j =>
@@ -290,11 +285,12 @@ theorem toField_spec [Field F] [DecidableEq F] [ToNat F]
 /-! ## Completeness
 
 The honest prover run accepts, and the results read as the gate model at the
-scalar's own crumbs (`crumbsOfNat`). The emitter needs only a readable scalar; the
-checked decomposition's `n = scalar` pin adds the boundary conditions of the
-representative — faithfulness and the `4 ^ (8·rows)` range. The crumb lemmas below
-are ℕ-side positional arithmetic; the loop's invariant carries the accumulator
-reads and the collected rounds' checks across table growth. -/
+scalar's own crumbs (`Kimchi.Gate.EndoScalar.crumbsOf`). The emitter needs only a
+readable scalar; the checked decomposition's `n = scalar` pin adds the boundary
+conditions of the representative — faithfulness and the `4 ^ (8·rows)` range. The
+witness's testBit crumbs meet the gate model's expansion at
+`map_crumbOfNat_eq_crumbsOf`; the loop's invariant carries the accumulator reads
+and the collected rounds' checks across table growth. -/
 
 /-- Every crumb is a valid 2-bit value. -/
 private theorem crumbOfNat_cast_valid [Field F] (count j k : ℕ) :
@@ -303,15 +299,6 @@ private theorem crumbOfNat_cast_valid [Field F] (count j k : ℕ) :
   unfold crumbOfNat
   by_cases h1 : k.testBit (2 * (count - j) - 1) <;>
     by_cases h0 : k.testBit (2 * (count - j) - 2) <;> simp [h1, h0]
-
-/-- Every extracted crumb is a valid 2-bit value — what the gate's completeness
-consumes. -/
-private theorem crumbsOfNat_valid [Field F] (count k : ℕ) :
-    ∀ x ∈ crumbsOfNat (F := F) count k, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
-  intro x hx
-  simp only [crumbsOfNat, List.mem_map, List.mem_range] at hx
-  obtain ⟨j, -, rfl⟩ := hx
-  exact crumbOfNat_cast_valid count j k
 
 /-- A crumb is a base-4 digit read from the top: crumb `j` of a `count`-crumb
 challenge is digit `count−1−j` of its value. -/
@@ -330,17 +317,19 @@ private theorem crumbOfNat_eq_digit (count j k : ℕ) (hj : j < count) :
     rcases Nat.mod_two_eq_zero_or_one q with h0 | h0 <;>
       simp [h1, h0] <;> omega
 
-/-- The Horner reconstruction at `ℕ`: the MSB-first crumbs fold back to the value
-modulo `4^count`. -/
-private theorem crumbsOfNat_foldl_nat (count k : ℕ) :
-    ((List.range count).map fun j => crumbOfNat count j k).foldl
-      (fun n x => 4 * n + x) 0 = k % 4 ^ count := by
+/-- The witness's testBit crumbs are the gate model's expansion: mapping `crumbOfNat`
+over the index range is `crumbsOf`. -/
+private theorem map_crumbOfNat_eq_crumbsOf [Field F] (count k : ℕ) :
+    ((List.range count).map fun j => ((crumbOfNat count j k : ℕ) : F))
+      = Kimchi.Gate.EndoScalar.crumbsOf count k := by
   induction count generalizing k with
-  | zero => simp [Nat.mod_one]
+  | zero => rfl
   | succ c ih =>
-    rw [List.range_succ, List.map_append, List.foldl_append]
-    have hmap : (List.range c).map (fun j => crumbOfNat (c + 1) j k)
-        = (List.range c).map (fun j => crumbOfNat c j (k / 4)) := by
+    rw [show Kimchi.Gate.EndoScalar.crumbsOf (F := F) (c + 1) k
+        = Kimchi.Gate.EndoScalar.crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)] from rfl,
+      List.range_succ, List.map_append]
+    congr 1
+    · rw [← ih (k / 4)]
       apply List.map_congr_left
       intro j hj
       rw [List.mem_range] at hj
@@ -348,41 +337,9 @@ private theorem crumbsOfNat_foldl_nat (count k : ℕ) :
         crumbOfNat_eq_digit c j (k / 4) hj,
         show c + 1 - 1 - j = (c - 1 - j) + 1 by omega, pow_succ,
         mul_comm ((4 : ℕ) ^ (c - 1 - j)) 4, ← Nat.div_div_eq_div_mul]
-    have hlast : crumbOfNat (c + 1) c k = k % 4 := by
+    · simp only [List.map_cons, List.map_nil]
       rw [crumbOfNat_eq_digit (c + 1) c k (by omega)]
       simp
-    rw [hmap, ih]
-    simp only [List.map_cons, List.map_nil, List.foldl_cons, List.foldl_nil]
-    rw [hlast]
-    have hM : (0 : ℕ) < 4 ^ c := pow_pos (by norm_num) c
-    have hkdecomp : k = 4 * (k / 4 % 4 ^ c) + k % 4 + 4 ^ (c + 1) * (k / 4 / 4 ^ c) := by
-      have h1 := Nat.div_add_mod k 4
-      have h2 := Nat.div_add_mod (k / 4) (4 ^ c)
-      calc k = 4 * (k / 4) + k % 4 := h1.symm
-        _ = 4 * (4 ^ c * (k / 4 / 4 ^ c) + k / 4 % 4 ^ c) + k % 4 := by rw [h2]
-        _ = 4 * (k / 4 % 4 ^ c) + k % 4 + 4 ^ (c + 1) * (k / 4 / 4 ^ c) := by ring
-    have hlt : 4 * (k / 4 % 4 ^ c) + k % 4 < 4 ^ (c + 1) := by
-      have hr := Nat.mod_lt (k / 4) hM
-      have hs := Nat.mod_lt k (show 0 < 4 by norm_num)
-      have h41 : (4 : ℕ) ^ (c + 1) = 4 * 4 ^ c := by ring
-      omega
-    conv_rhs => rw [hkdecomp]
-    rw [Nat.add_mul_mod_self_left]
-    exact (Nat.mod_eq_of_lt hlt).symm
-
-/-- The register reconstruction recovers the challenge: the gate's `n` fold over the
-extracted crumbs is the value itself, for values in range — what `toField`'s
-`n = scalar` pin consumes. -/
-private theorem crumbsOfNat_reconstruct [Field F] (count k : ℕ) (hk : k < 4 ^ count) :
-    Kimchi.Gate.EndoScalar.nReconstruct (crumbsOfNat (F := F) count k) = (k : F) := by
-  unfold Kimchi.Gate.EndoScalar.nReconstruct crumbsOfNat
-  rw [show ((List.range count).map fun j => ((crumbOfNat count j k : ℕ) : F))
-      = ((List.range count).map fun j => crumbOfNat count j k).map Nat.cast by
-    rw [List.map_map]; rfl]
-  rw [List.foldl_map, show (0 : F) = ((0 : ℕ) : F) by norm_num,
-    List.foldl_hom (g₁ := fun n x => 4 * n + x) (Nat.cast (R := F))
-      (fun x y => by push_cast; ring),
-    crumbsOfNat_foldl_nat, Nat.mod_eq_of_lt hk]
 
 /-- Flattening the row-chunked table recovers the flat MSB-first stream. -/
 private theorem flatten_ofFn_rows {F : Type} (g : ℕ → F) :
@@ -398,11 +355,11 @@ private theorem flatten_ofFn_rows {F : Type} (g : ℕ → F) :
     congr 1
 
 /-- The bulk witness's table, flattened, is the crumb stream. -/
-private theorem crumbVals_flatten [NatCast F] (rows k : ℕ) :
+private theorem crumbVals_flatten [Field F] (rows k : ℕ) :
     ((crumbVals (F := F) rows k).toList.map Vector.toList).flatten
-      = crumbsOfNat (8 * rows) k := by
+      = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k := by
   show ((Vector.ofFn _).toList.map Vector.toList).flatten = _
-  rw [Vector.toList_ofFn, List.map_ofFn]
+  rw [Vector.toList_ofFn, List.map_ofFn, ← map_crumbOfNat_eq_crumbsOf]
   exact flatten_ofFn_rows (fun i => (crumbOfNat (8 * rows) i k : F)) rows
 
 /-- The value-level row step: the three accumulator folds of one row. -/
@@ -551,11 +508,11 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
     ⦃Complete (fun env => (scalar.eval env).isOk)
         (fun env r env' => ∀ vv, scalar.eval env = .ok vv →
           r.1.eval env' = .ok (Kimchi.Gate.EndoScalar.decomposeA
-            (crumbsOfNat (8 * rows) (ToNat.toNat vv))) ∧
+            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv))) ∧
           r.2.1.eval env' = .ok (Kimchi.Gate.EndoScalar.decomposeB
-            (crumbsOfNat (8 * rows) (ToNat.toNat vv))) ∧
+            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv))) ∧
           r.2.2.eval env' = .ok (Kimchi.Gate.EndoScalar.nReconstruct
-            (crumbsOfNat (8 * rows) (ToNat.toNat vv)))) Q⦄
+            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv)))) Q⦄
     (toFieldChecked' (c := KimchiProverC F) rows scalar)
     ⦃Q⦄ := by
   simp only [toFieldChecked', mapAccumM]
@@ -645,7 +602,7 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
     rw [hv] at hv'
     injection hv' with hv'
     subst hv'
-    have hvalid := crumbsOfNat_valid (F := F) (8 * rows) (ToNat.toNat vv)
+    have hvalid := Kimchi.Gate.EndoScalar.crumbsOf_valid (F := F) (8 * rows) (ToNat.toNat vv)
     refine ⟨?_, ?_, ?_⟩
     · rw [Kimchi.Gate.EndoScalar.decomposeA_eq_table h2 h3 hvalid]
       exact CVar.eval_le hle₂ hA
@@ -669,7 +626,7 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
         (fun env r env' => ∀ vv ev, scalar.eval env = .ok vv →
           endo.eval env = .ok ev →
           r.eval env' = .ok (Kimchi.Gate.EndoScalar.toField
-            (crumbsOfNat (8 * rows) (ToNat.toNat vv)) ev)) Q⦄
+            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv)) ev)) Q⦄
     (toField (c := KimchiProverC F) rows scalar endo)
     ⦃Q⦄ := by
   simp only [toField]
@@ -690,7 +647,7 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
     rw [CVar.eval_le hle₁ hv] at hsv
     injection hsv with hsv
     subst hnv hsv
-    rw [crumbsOfNat_reconstruct (8 * rows) (ToNat.toNat vv) hlt, hfaith]
+    rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt, hfaith]
   · split
     · rename_i e
       simp only [wp, PredTrans.apply, prove]
@@ -742,8 +699,8 @@ theorem toFieldPure_eq_toField [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : F) :
     toFieldPure rows scalar endo
       = Kimchi.Gate.EndoScalar.toField
-          (crumbsOfNat (8 * rows) (ToNat.toNat scalar)) endo := by
-  have hvalid := crumbsOfNat_valid (F := F) (8 * rows) (ToNat.toNat scalar)
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat scalar)) endo := by
+  have hvalid := Kimchi.Gate.EndoScalar.crumbsOf_valid (F := F) (8 * rows) (ToNat.toNat scalar)
   have hstep : (fun (st : F × F) (i : ℕ) =>
         let s : F :=
           if (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) then 1 else -1
@@ -755,21 +712,15 @@ theorem toFieldPure_eq_toField [Field F] [DecidableEq F] [ToNat F]
           ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F),
          2 * st.2 + Kimchi.Gate.EndoScalar.dFunc
           ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F)) := by
+    obtain ⟨c0, c1, c2, c3⟩ := Kimchi.Gate.EndoScalar.cFunc_table (F := F) h2 h3
+    obtain ⟨d0, d1, d2, d3⟩ := Kimchi.Gate.EndoScalar.dFunc_table (F := F) h2 h3
     funext st i
     have hb1 : 2 * (8 * rows - i) - 1 = 16 * rows - 1 - 2 * i := by omega
     have hb2 : 2 * (8 * rows - i) - 2 = 16 * rows - 2 - 2 * i := by omega
-    have e02 : (0 : F) ≠ 2 := fun h => h2 h.symm
-    have e03 : (0 : F) ≠ 3 := fun h => h3 h.symm
-    have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
-    have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
-    have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-    have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
-    have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
     simp only [crumbOfNat, hb1, hb2]
     rcases hhi : (ToNat.toNat scalar).testBit (16 * rows - 1 - 2 * i) <;>
       rcases hlo : (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) <;>
-        simp [Kimchi.Gate.EndoScalar.cFunc, Kimchi.Gate.EndoScalar.dFunc,
-          e02, e03, e12, e13, e32, e21, e31, h2, h3]
+        simp [c0, c1, c2, c3, d0, d1, d2, d3]
   have hpair := List.foldl_hom₂ (List.range (8 * rows)) Prod.mk
     (fun a i => 2 * a + Kimchi.Gate.EndoScalar.cFunc
       ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
@@ -783,8 +734,7 @@ theorem toFieldPure_eq_toField [Field F] [DecidableEq F] [ToNat F]
     2 2 (fun _ _ _ => rfl)
   dsimp only [toFieldPure, Kimchi.Gate.EndoScalar.toField]
   rw [Kimchi.Gate.EndoScalar.decomposeA_eq_table h2 h3 hvalid,
-    Kimchi.Gate.EndoScalar.decomposeB_eq_table h2 h3 hvalid]
-  unfold crumbsOfNat
-  rw [List.foldl_map, List.foldl_map, hstep, hpair]
+    Kimchi.Gate.EndoScalar.decomposeB_eq_table h2 h3 hvalid,
+    ← map_crumbOfNat_eq_crumbsOf, List.foldl_map, List.foldl_map, hstep, hpair]
 
 end Snarky.Kimchi.EndoScalar
