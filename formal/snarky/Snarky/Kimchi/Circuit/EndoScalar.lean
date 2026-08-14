@@ -767,3 +767,62 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
       simp only [CVar.eval, hB3, hpv, Except.ok.injEq,
         Kimchi.Gate.EndoScalar.toField]
       ring
+
+/-! ## The pure model is the gate model -/
+
+/-- A pair fold with componentwise steps splits into its component folds. -/
+private theorem foldl_pair {α : Type} (f g : F → α → F) :
+    ∀ (l : List α) (a b : F),
+      l.foldl (fun (st : F × F) x => (f st.1 x, g st.2 x)) (a, b)
+        = (l.foldl f a, l.foldl g b)
+  | [], _, _ => rfl
+  | x :: xs, a, b => foldl_pair f g xs (f a x) (g b x)
+
+/-- PS parity: `toFieldPure` computes the gate model's `toField` at the scalar's
+crumbs — the bit-pair `±1` fold is the `cFunc`/`dFunc` table fold, crumb by
+crumb. -/
+theorem toFieldPure_eq_toField [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : F) :
+    toFieldPure rows scalar endo
+      = Kimchi.Gate.EndoScalar.toField
+          (crumbsOfNat (8 * rows) (ToNat.toNat scalar)) endo := by
+  have hvalid := crumbsOfNat_valid (F := F) (8 * rows) (ToNat.toNat scalar)
+  have hstep : (fun (st : F × F) (i : ℕ) =>
+        let s : F :=
+          if (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) then 1 else -1
+        if (ToNat.toNat scalar).testBit (16 * rows - 1 - 2 * i) then
+          (2 * st.1 + s, 2 * st.2)
+        else (2 * st.1, 2 * st.2 + s))
+      = fun st i =>
+        (2 * st.1 + Kimchi.Gate.EndoScalar.cFunc
+          ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F),
+         2 * st.2 + Kimchi.Gate.EndoScalar.dFunc
+          ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F)) := by
+    funext st i
+    have hb1 : 2 * (8 * rows - i) - 1 = 16 * rows - 1 - 2 * i := by omega
+    have hb2 : 2 * (8 * rows - i) - 2 = 16 * rows - 2 - 2 * i := by omega
+    have e02 : (0 : F) ≠ 2 := fun h => h2 h.symm
+    have e03 : (0 : F) ≠ 3 := fun h => h3 h.symm
+    have e12 : (1 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination -h)
+    have e13 : (1 : F) ≠ 3 := fun h => h2 (by linear_combination -h)
+    have e32 : (3 : F) ≠ 2 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
+    have e21 : (2 : F) ≠ 1 := fun h => (one_ne_zero : (1 : F) ≠ 0) (by linear_combination h)
+    have e31 : (3 : F) ≠ 1 := fun h => h2 (by linear_combination h)
+    simp only [crumbOfNat, hb1, hb2]
+    rcases hhi : (ToNat.toNat scalar).testBit (16 * rows - 1 - 2 * i) <;>
+      rcases hlo : (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) <;>
+        simp [Kimchi.Gate.EndoScalar.cFunc, Kimchi.Gate.EndoScalar.dFunc,
+          e02, e03, e12, e13, e32, e21, e31, h2, h3]
+  have hpair := foldl_pair (F := F)
+    (fun a i => 2 * a + Kimchi.Gate.EndoScalar.cFunc
+      ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
+    (fun b i => 2 * b + Kimchi.Gate.EndoScalar.dFunc
+      ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
+    (List.range (8 * rows)) 2 2
+  dsimp only [toFieldPure, Kimchi.Gate.EndoScalar.toField]
+  rw [Kimchi.Gate.EndoScalar.decomposeA_eq_table h2 h3 hvalid,
+    Kimchi.Gate.EndoScalar.decomposeB_eq_table h2 h3 hvalid]
+  unfold crumbsOfNat
+  rw [List.foldl_map, List.foldl_map, hstep, hpair]
+
+end Snarky.Kimchi.EndoScalar

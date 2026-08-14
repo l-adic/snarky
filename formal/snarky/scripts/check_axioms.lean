@@ -90,6 +90,7 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoScalar.toField_spec,
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec,
     `Snarky.Kimchi.EndoScalar.toField_complete_spec,
+    `Snarky.Kimchi.EndoScalar.toFieldPure_eq_toField,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
