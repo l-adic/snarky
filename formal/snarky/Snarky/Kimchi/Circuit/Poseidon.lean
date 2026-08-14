@@ -206,8 +206,8 @@ private theorem chainOk_iff [Field F] [DecidableEq F]
       Kimchi.Gate.Poseidon.ok_iff, chainOk_iff (k + 1) (s5 :: rest)]
 
 /-- A list whose successive entries are the gate's round images satisfies the chain
-reading: each window's fifteen constraint expressions vanish by the adjacency
-equations alone. -/
+reading: each window is the gate's canonical `build` at its head state, so the gate's
+`complete` applies window by window. -/
 private theorem chainHolds_of_succ [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
     {rc : List (F × F × F)} :
     ∀ (k : ℕ) (l : List (F × F × F)),
@@ -224,11 +224,11 @@ private theorem chainHolds_of_succ [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
       have e3 := hsucc 3 (by simp) (by simp)
       have e4 := hsucc 4 (by simp) (by simp)
       simp only [List.getElem_cons_zero, List.getElem_cons_succ] at e0 e1 e2 e3 e4
-      intro e he
-      simp only [Kimchi.Gate.Poseidon.constraints, rcRow, List.mem_cons,
-        List.not_mem_nil, or_false] at he
-      rcases he with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-        (subst h; simp [e0, e1, e2, e3, e4])
+      have hwin : (⟨s0, s1, s2, s3, s4, s5⟩ : Kimchi.Gate.Poseidon.Witness F)
+          = Kimchi.Gate.Poseidon.build M s0 (rcRow rc k) := by
+        simp [Kimchi.Gate.Poseidon.build, rcRow, e0, e1, e2, e3, e4]
+      rw [hwin]
+      exact Kimchi.Gate.Poseidon.complete M s0 (rcRow rc k)
     · refine chainHolds_of_succ (k + 1) (s5 :: rest) ?_
       intro j hj1 hj0
       have hs := hsucc (j + 5) (by simp at hj1 ⊢; omega) (by simp at hj1 ⊢; omega)
