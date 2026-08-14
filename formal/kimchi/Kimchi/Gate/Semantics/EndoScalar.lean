@@ -76,6 +76,33 @@ private theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
   · rw [d2, dFunc, if_neg h2, if_neg e21]
   · rw [d3, dFunc, if_neg h3, if_neg e31]
 
+/-- The satisfying row built with the bare `cFunc`/`dFunc` tables in place of the
+    interpolating cubics — the row every deployed prover actually fills. On valid crumbs
+    it is `build` itself (`buildTable_eq_build`). -/
+def buildTable (a0 b0 n0 : F) (crumbs : List F) : Witness F :=
+  { a0, b0, n0
+  , n8 := crumbs.foldl (fun acc x => 4 * acc + x) n0
+  , a8 := crumbs.foldl (fun acc x => 2 * acc + cFunc x) a0
+  , b8 := crumbs.foldl (fun acc x => 2 * acc + dFunc x) b0
+  , crumbs }
+
+/-- On valid crumbs the bare-table row is the canonical build: the tables agree with the
+    cubics crumb by crumb. -/
+theorem buildTable_eq_build (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (a0 b0 n0 : F)
+    (crumbs : List F) (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    buildTable a0 b0 n0 crumbs = build a0 b0 n0 crumbs := by
+  unfold buildTable build
+  rw [foldl_table crumbs a0 (fun x hx => (cPoly_eq_cFunc h2 h3 (hvalid x hx)).symm),
+    foldl_table crumbs b0 (fun x hx => (dPoly_eq_dFunc h2 h3 (hvalid x hx)).symm)]
+
+/-- **Completeness at the deployed tables**: the bare-table row satisfies the gate — the
+    row the deployed provers fill. -/
+theorem complete_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (a0 b0 n0 : F)
+    (crumbs : List F) (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    Holds (buildTable a0 b0 n0 crumbs) := by
+  rw [buildTable_eq_build h2 h3 a0 b0 n0 crumbs hvalid]
+  exact complete a0 b0 n0 crumbs hvalid
+
 /-- **Soundness.** A satisfying row genuinely runs Halo's Algorithm 2: the crumbs are valid 2-bit
     values, and the `a`/`b`/`n` accumulators are the Algorithm-2 folds — with the `a`/`b` folds
     using the *literal* `c_func`/`d_func` lookup tables (the cubics in `Holds` interpolate them, so
