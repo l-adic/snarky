@@ -77,7 +77,7 @@ open Std.Do
 /-- Window `i` of a satisfied chain, read off the list by index: `chainHolds` from
 position `k0` puts the gate's `Holds` on every five-apart window, at the constant
 table's row `k0 + i`. -/
-private theorem chainHolds_window [CommRing F] {M : Kimchi.Gate.Poseidon.Mds F}
+private theorem chainHolds_window [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
     {rc : List (F × F × F)} :
     ∀ (i k0 : ℕ) (l : List (F × F × F)), chainHolds M rc k0 l →
       5 * i + 5 < l.length →
@@ -192,7 +192,7 @@ private theorem roundsUpTo_eq_rounds [Field F] (p : Poseidon.Params F) :
 
 /-- The decidable chain check reflects the chain reading (the gate's `ok_iff`,
 windowed). -/
-private theorem chainOk_iff [CommRing F] [DecidableEq F]
+private theorem chainOk_iff [Field F] [DecidableEq F]
     {M : Kimchi.Gate.Poseidon.Mds F} {rc : List (F × F × F)} :
     ∀ (k : ℕ) (l : List (F × F × F)), chainOk M rc k l = true ↔ chainHolds M rc k l
   | k, [] => by simp [chainOk, chainHolds]
@@ -208,7 +208,7 @@ private theorem chainOk_iff [CommRing F] [DecidableEq F]
 /-- A list whose successive entries are the gate's round images satisfies the chain
 reading: each window's fifteen constraint expressions vanish by the adjacency
 equations alone. -/
-private theorem chainHolds_of_succ [CommRing F] {M : Kimchi.Gate.Poseidon.Mds F}
+private theorem chainHolds_of_succ [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
     {rc : List (F × F × F)} :
     ∀ (k : ℕ) (l : List (F × F × F)),
       (∀ j (hj1 : j + 1 < l.length) (hj0 : j < l.length),
@@ -243,7 +243,7 @@ private theorem chainHolds_of_succ [CommRing F] {M : Kimchi.Gate.Poseidon.Mds F}
   | k, [_, _, _, _, _], _ => by simp [chainHolds]
 
 /-- Element reads assemble into the state-list evaluation. -/
-private theorem evalStates_ok [CommRing F] [DecidableEq F] {env : Assignments F} :
+private theorem evalStates_ok [Field F] [DecidableEq F] {env : Assignments F} :
     ∀ (ts : List (FVar F × FVar F × FVar F)) (vs : List (F × F × F)),
       (∀ j (hj : j < ts.length) (hj' : j < vs.length),
         ts[j].1.eval env = .ok vs[j].1 ∧

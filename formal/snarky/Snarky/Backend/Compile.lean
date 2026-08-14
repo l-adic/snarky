@@ -95,14 +95,6 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
 
 /-! ## The payoff theorem -/
 
-/-- Splitter for successful `Except.bind`s: recover the intermediate value. -/
-private theorem bind_ok {α β : Type u} {x : Except EvalError α}
-    {f : α → Except EvalError β} {r : β} (h : x.bind f = .ok r) :
-    ∃ m, x = .ok m ∧ f m = .ok r := by
-  cases x with
-  | error e => simp only [Except.bind] at h; cases h
-  | ok m => exact ⟨m, rfl, h⟩
-
 /-- `allocRange` is the vector form of `List.range'`. -/
 private theorem allocRange_toList (s k : Nat) :
     (allocRange s k).toList = List.range' s k := by

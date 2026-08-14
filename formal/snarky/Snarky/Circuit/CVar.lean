@@ -54,6 +54,14 @@ inductive EvalError where
   | custom (msg : String)
   deriving Repr
 
+/-- Splitter for successful `Except` binds: recover the intermediate value. -/
+theorem bind_ok {α β : Type u} {x : Except EvalError α}
+    {f : α → Except EvalError β} {r : β} (h : (x >>= f) = .ok r) :
+    ∃ m, x = .ok m ∧ f m = .ok r := by
+  cases x with
+  | error e => simp only [Bind.bind, Except.bind] at h; cases h
+  | ok m => exact ⟨m, rfl, h⟩
+
 /-! ## Affine expressions -/
 
 /-- Affine expressions over circuit variables (PS `CVar`): variables, constants, sums and
