@@ -25,8 +25,9 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   with `16 · rows` bits, and the bit reads go through `[ToNat F]`.
 - PS's record `exists` allocates its fields alphabetically; the per-row witness is
   the ordered triple `(a8, b8, n8)`, the same allocation spelled explicitly.
-- PS's `aF`/`bF` are the gate's own `cFunc`/`dFunc` tables (their throwing branches
-  rendered as the tables' `0`), so the witness folds are stated with them directly.
+- PS's `aF`/`bF` fold the bare tables; the row witness computes the gate's canonical
+  `Kimchi.Gate.EndoScalar.build` instead — the same field values on the honest (valid)
+  crumbs, and the form the gate's completeness certifies.
 - `toFieldPure` is generalized from PS's pinned 128 bits to `16 · rows`.
 -/
 
@@ -53,18 +54,17 @@ private def crumbsWit [Field F] [ToNat F] (rows : ℕ) (scalar : FVar F) :
   let v ← AsProver.readCVar scalar
   pure (crumbVals rows (ToNat.toNat v))
 
-/-- One row's accumulator witness: fold the row's eight crumbs into the three
-accumulators over the gate's bare tables, returned in the allocation order
-`(a8, b8, n8)`. -/
+/-- One row's accumulator witness: read the threaded registers and the row's eight
+crumbs, and take the gate's canonical row's outputs
+(`Kimchi.Gate.EndoScalar.build`), in the allocation order `(a8, b8, n8)`. -/
 private def rowWit [Field F] [DecidableEq F] (xs : Vector (FVar F) 8)
     (st : FVar F × FVar F × FVar F) : AsProver F (F × F × F) := do
   let a0 ← AsProver.readCVar st.1
   let b0 ← AsProver.readCVar st.2.1
   let n0 ← AsProver.readCVar st.2.2
   let vals ← xs.toList.mapM AsProver.readCVar
-  pure (vals.foldl (fun acc x => 2 * acc + Kimchi.Gate.EndoScalar.cFunc x) a0,
-        vals.foldl (fun acc x => 2 * acc + Kimchi.Gate.EndoScalar.dFunc x) b0,
-        vals.foldl (fun acc x => 4 * acc + x) n0)
+  let w := Kimchi.Gate.EndoScalar.build a0 b0 n0 vals
+  pure (w.a8, w.b8, w.n8)
 
 /-- The gate emitter (PS `toFieldChecked'`; OCaml
 `Pickles.Scalar_challenge.to_field_checked'`): the bulk crumb witness, the
@@ -372,8 +372,9 @@ scalar's own crumbs (`Kimchi.Gate.EndoScalar.crumbsOf`). The emitter needs only 
 readable scalar; the checked decomposition's `n = scalar` pin adds the boundary
 conditions of the representative — faithfulness and the `4 ^ (8·rows)` range. The
 witness's testBit crumbs meet the gate model's expansion at
-`map_crumbOfNat_eq_crumbsOf`; the loop's invariant carries the accumulator reads
-and the collected rounds' checks across table growth. -/
+`map_crumbOfNat_eq_crumbsOf`; the loop's invariant identifies the run with the
+gate's canonical chain (`chainBuild`), whose acceptance and reading are the gate's
+own `chain_complete` and `chain_decompose`. -/
 
 /-- Every crumb is a valid 2-bit value. -/
 private theorem crumbOfNat_cast_valid [Field F] (count j k : ℕ) :
@@ -445,24 +446,65 @@ private theorem crumbVals_flatten [Field F] (rows k : ℕ) :
   rw [Vector.toList_ofFn, List.map_ofFn, ← map_crumbOfNat_eq_crumbsOf]
   exact flatten_ofFn_rows (fun i => (crumbOfNat (8 * rows) i k : F)) rows
 
-/-- The value-level row step: the three accumulator folds of one row. -/
-private def accStep [Field F] [DecidableEq F] (st : F × F × F) (xs : List F) :
-    F × F × F :=
-  (xs.foldl (fun a x => 2 * a + Kimchi.Gate.EndoScalar.cFunc x) st.1,
-   xs.foldl (fun b x => 2 * b + Kimchi.Gate.EndoScalar.dFunc x) st.2.1,
-   xs.foldl (fun n x => 4 * n + x) st.2.2)
+/-- Every entry of one witness row is a valid crumb. -/
+private theorem crumbVals_row_valid [Field F] (rows n k : ℕ) (hk : k < rows) :
+    ∀ x ∈ ((crumbVals (F := F) rows n)[k]'hk).toList,
+      x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
+  intro x hx
+  simp only [crumbVals, Vector.getElem_ofFn, Vector.toList_ofFn, List.mem_ofFn] at hx
+  obtain ⟨j, rfl⟩ := hx
+  exact crumbOfNat_cast_valid _ _ _
 
-/-- Row-stepping is folding the concatenated crumbs. -/
-private theorem accStep_foldl [Field F] [DecidableEq F] :
-    ∀ (rs : List (List F)) (st : F × F × F),
-      rs.foldl accStep st
-        = (rs.flatten.foldl (fun a x => 2 * a + Kimchi.Gate.EndoScalar.cFunc x) st.1,
-           rs.flatten.foldl (fun b x => 2 * b + Kimchi.Gate.EndoScalar.dFunc x) st.2.1,
-           rs.flatten.foldl (fun n x => 4 * n + x) st.2.2)
-  | [], st => rfl
-  | r :: rs, st => by
-    simp only [List.foldl_cons, List.flatten_cons, List.foldl_append]
-    exact accStep_foldl rs _
+/-- The scalar's crumb rows as a total chain index (empty rows off the end) — the
+`rows` argument the gate's `chainBuild` threads. -/
+private def crumbRows [NatCast F] (rows k : ℕ) : ℕ → List F := fun i =>
+  ((crumbVals (F := F) rows k).toList.map Vector.toList).getD i []
+
+/-- In range, a chain row is the witness table's row. -/
+private theorem crumbRows_getElem [NatCast F] (rows k i : ℕ) (hi : i < rows) :
+    crumbRows (F := F) rows k i = ((crumbVals (F := F) rows k)[i]'hi).toList := by
+  simp only [crumbRows]
+  rw [List.getD_eq_getElem _ _ (by simp [hi])]
+  simp
+
+/-- Every chain row is valid crumbs (vacuously off the end). -/
+private theorem crumbRows_valid [Field F] (rows k : ℕ) :
+    ∀ i, ∀ x ∈ crumbRows (F := F) rows k i, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
+  intro i x hx
+  by_cases hi : i < rows
+  · rw [crumbRows_getElem rows k i hi] at hx
+    exact crumbVals_row_valid rows k i hi x hx
+  · rw [show crumbRows (F := F) rows k i = [] from by
+      simp only [crumbRows]
+      exact List.getD_eq_default _ _ (by simp; omega)] at hx
+    cases hx
+
+/-- Flattening over a row list's range through its total index is the flatten. -/
+private theorem flatMap_range_getD {α : Type} :
+    ∀ l : List (List α),
+      (List.range l.length).flatMap (fun i => l.getD i []) = l.flatten
+  | [] => rfl
+  | r :: rs => by
+    rw [List.length_cons, List.range_succ_eq_map, List.flatMap_cons, List.flatMap_map]
+    simp only [List.getD_cons_zero]
+    rw [show (fun i => (r :: rs).getD (i + 1) []) = (fun i => rs.getD i []) from
+        funext fun i => List.getD_cons_succ ..,
+      flatMap_range_getD rs, List.flatten_cons]
+
+/-- Rebuilding a chain row from its own registers is the row: `build` stores its
+arguments, so the chain step reads off the previous row's fields. -/
+private theorem build_fields [Field F] (rows' : ℕ → List F) (i : ℕ) :
+    Kimchi.Gate.EndoScalar.build
+        (Kimchi.Gate.EndoScalar.chainBuild rows' i).a0
+        (Kimchi.Gate.EndoScalar.chainBuild rows' i).b0
+        (Kimchi.Gate.EndoScalar.chainBuild rows' i).n0 (rows' i)
+      = Kimchi.Gate.EndoScalar.chainBuild rows' i := by
+  cases i <;> rfl
+
+/-- A chain row carries its own crumbs. -/
+private theorem chainBuild_crumbs [Field F] (rows' : ℕ → List F) (i : ℕ) :
+    (Kimchi.Gate.EndoScalar.chainBuild rows' i).crumbs = rows' i := by
+  cases i <;> rfl
 
 /-- Element reads assemble into the list read. -/
 private theorem mapM_eval_ok [Add F] [Mul F] {env : Assignments F} :
@@ -551,32 +593,16 @@ private theorem check_rounds_le [Field F] [DecidableEq F] {env env' : Assignment
     rw [round_eval_le hle he]
     exact hh
 
-/-- One more element folds onto the prefix. -/
-private theorem take_succ_foldl {α β : Type} (f : β → α → β) {l : List α} {k : ℕ}
-    (hk : k < l.length) (init : β) :
-    (l.take (k + 1)).foldl f init = f ((l.take k).foldl f init) l[k] := by
-  rw [List.take_add, List.take_one_drop_eq_of_lt_length hk]
-  simp only [List.foldl_append, List.foldl_cons, List.foldl_nil, List.get_eq_getElem]
-
-/-- Every entry of one witness row is a valid crumb. -/
-private theorem crumbVals_row_valid [Field F] (rows n k : ℕ) (hk : k < rows) :
-    ∀ x ∈ ((crumbVals (F := F) rows n)[k]'hk).toList,
-      x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
-  intro x hx
-  simp only [crumbVals, Vector.getElem_ofFn, Vector.toList_ofFn, List.mem_ofFn] at hx
-  obtain ⟨j, rfl⟩ := hx
-  exact crumbOfNat_cast_valid _ _ _
-
-/-- One row's accumulator witness computes the row step. -/
+/-- One row's accumulator witness computes the gate's canonical row's outputs. -/
 private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
     {xs : Vector (FVar F) 8} {st : FVar F × FVar F × FVar F} {a b n : F} {vs : List F}
     (ha : st.1.eval env = .ok a) (hb : st.2.1.eval env = .ok b)
     (hn : st.2.2.eval env = .ok n)
     (hxs : xs.toList.mapM (CVar.eval · env) = .ok vs) :
     rowWit xs st env
-      = .ok (vs.foldl (fun acc x => 2 * acc + Kimchi.Gate.EndoScalar.cFunc x) a,
-             vs.foldl (fun acc x => 2 * acc + Kimchi.Gate.EndoScalar.dFunc x) b,
-             vs.foldl (fun acc x => 4 * acc + x) n) := by
+      = .ok ((Kimchi.Gate.EndoScalar.build a b n vs).a8,
+             (Kimchi.Gate.EndoScalar.build a b n vs).b8,
+             (Kimchi.Gate.EndoScalar.build a b n vs).n8) := by
   simp [rowWit, AsProver.readCVar, ha, hb, hn, readAll_ok hxs, Bind.bind, ReaderT.bind,
     Except.bind, Pure.pure, ReaderT.pure, Except.pure]
 
@@ -585,7 +611,7 @@ open Std.Do in
 scalar — no range condition — and the returned accumulators read as the gate model's
 decompositions of the scalar's crumbs. -/
 theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F)
+    (rows : ℕ) (scalar : FVar F)
     (Q : PostCond (FVar F × FVar F × FVar F)
       (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete (fun env => (scalar.eval env).isOk)
@@ -612,11 +638,11 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
   mvcgen
   case inv1 =>
     exact ⇓ p s' => ⌜st₁.env.Le s'.env ∧
-      (let stv := (((crumbVals (F := F) rows (ToNat.toNat vv)).toList.map
-          Vector.toList).take p.1.prefix.length).foldl accStep (2, 2, 0)
-       p.2.fst.1.eval s'.env = .ok stv.1 ∧
-       p.2.fst.2.1.eval s'.env = .ok stv.2.1 ∧
-       p.2.fst.2.2.eval s'.env = .ok stv.2.2) ∧
+      (let w := Kimchi.Gate.EndoScalar.chainBuild
+          (crumbRows (F := F) rows (ToNat.toNat vv)) p.1.prefix.length
+       p.2.fst.1.eval s'.env = .ok w.a0 ∧
+       p.2.fst.2.1.eval s'.env = .ok w.b0 ∧
+       p.2.fst.2.2.eval s'.env = .ok w.n0) ∧
       KimchiConstraint.check (.endoScalar p.2.snd) s'.env = true⌝
   case vc1.step =>
     rename_i pref cur suff hsplit b s' hinv
@@ -635,27 +661,29 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
       rw [← h1, Vector.getElem_toList]
     subst hcur
     have hxs : (crumbVars[pref.length]'hkrows).toList.mapM (CVar.eval · s'.env)
-        = .ok ((crumbVals (F := F) rows (ToNat.toNat vv))[pref.length]'hkrows).toList := by
+        = .ok (crumbRows (F := F) rows (ToNat.toNat vv) pref.length) := by
+      rw [crumbRows_getElem rows (ToNat.toNat vv) pref.length hkrows]
       refine mapM_eval_ok (by simp) ?_
       intro j hj hj'
       simp only [Vector.length_toList] at hj
       simp only [Vector.getElem_toList]
       exact CVar.eval_le hLe (hread pref.length hkrows j hj)
     have hrow := rowWit_ok (env := s'.env) hA hB hN hxs
+    rw [build_fields] at hrow
     refine ⟨by rw [hrow]; rfl, fun r st' hgrant' hle' => ?_⟩
     have hw := hgrant' _ hrow
     have heval : EndoScalarRound.eval st'.env
         { n0 := b.fst.2.2, n8 := r.2.2, a0 := b.fst.1, a8 := r.1,
           b0 := b.fst.2.1, b8 := r.2.1, xs := crumbVars[pref.length]'hkrows }
-        = .ok (Kimchi.Gate.EndoScalar.buildTable _ _ _
-            ((crumbVals (F := F) rows (ToNat.toNat vv))[pref.length]'hkrows).toList) :=
+        = .ok (Kimchi.Gate.EndoScalar.chainBuild
+            (crumbRows (F := F) rows (ToNat.toNat vv)) pref.length) :=
       round_eval_ok_iff.mpr ⟨CVar.eval_le hle' hA, CVar.eval_le hle' hB,
-        CVar.eval_le hle' hN, hw.1, hw.2.1, hw.2.2, mapM_eval_le hle' hxs⟩
+        CVar.eval_le hle' hN, hw.1, hw.2.1, hw.2.2, by
+          rw [chainBuild_crumbs]
+          exact mapM_eval_le hle' hxs⟩
     mvcgen
     refine ⟨hLe.trans hle', ?_, ?_⟩
     · simp only [List.length_append, List.length_cons, List.length_nil]
-      rw [take_succ_foldl accStep (by simp [hkrows]) (2, 2, 0)]
-      simp only [List.getElem_map, Vector.getElem_toList]
       exact ⟨hw.1, hw.2.1, hw.2.2⟩
     · simp only [KimchiConstraint.check, List.all_append, List.all_cons, List.all_nil,
         Bool.and_eq_true, and_true]
@@ -663,18 +691,19 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
       · simpa only [KimchiConstraint.check] using check_rounds_le hle' hcheck
       · simp only [heval]
         exact (Kimchi.Gate.EndoScalar.ok_iff _).mpr
-          (Kimchi.Gate.EndoScalar.complete_table h2 h3 _ _ _ _
-            (crumbVals_row_valid rows (ToNat.toNat vv) pref.length hkrows))
+          ((Kimchi.Gate.EndoScalar.chain_complete pref.length _
+            (fun i _ => crumbRows_valid rows (ToNat.toNat vv) i)).1 pref.length
+            (Nat.le_refl _))
   case vc2.vc1.pre =>
     refine ⟨Assignments.Le.refl st₁.env, ⟨?_, ?_, ?_⟩,
         by simp [KimchiConstraint.check]⟩ <;>
-      simp [CVar.eval]
+      simp [CVar.eval, Kimchi.Gate.EndoScalar.chainBuild,
+        Kimchi.Gate.EndoScalar.build]
   case vc3.vc1.post.success =>
     rename_i fin s' hinv
     obtain ⟨hLe, hacc, hcheck⟩ := hinv
     obtain ⟨hA, hB, hN⟩ := hacc
-    rw [List.take_of_length_le (by simp)] at hA hB hN
-    rw [accStep_foldl, crumbVals_flatten] at hA hB hN
+    simp only [Vector.length_toList] at hA hB hN
     refine addConstraint_complete_spec (c := KimchiConstraint F)
       (KimchiSystem.endoScalar fin.snd) (fun a => wp⟦pure fin.fst⟧ Q, Q.2) s'
       ⟨hcheck, fun u st₂ _ hle₂ => ?_⟩
@@ -685,13 +714,51 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
     rw [hv] at hv'
     injection hv' with hv'
     subst hv'
-    have hvalid := Kimchi.Gate.EndoScalar.crumbsOf_valid (F := F) (8 * rows) (ToNat.toNat vv)
-    refine ⟨?_, ?_, ?_⟩
-    · rw [Kimchi.Gate.EndoScalar.decomposeA_eq_table h2 h3 hvalid]
-      exact CVar.eval_le hle₂ hA
-    · rw [Kimchi.Gate.EndoScalar.decomposeB_eq_table h2 h3 hvalid]
-      exact CVar.eval_le hle₂ hB
-    · exact CVar.eval_le hle₂ hN
+    cases rows with
+    | zero =>
+      refine ⟨?_, ?_, ?_⟩ <;>
+        · refine CVar.eval_le hle₂ ?_
+          first
+            | (rw [show Kimchi.Gate.EndoScalar.decomposeA
+                    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
+                      (ToNat.toNat vv)) = 2 from by
+                  simp [Kimchi.Gate.EndoScalar.crumbsOf,
+                    Kimchi.Gate.EndoScalar.decomposeA]]
+               exact hA)
+            | (rw [show Kimchi.Gate.EndoScalar.decomposeB
+                    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
+                      (ToNat.toNat vv)) = 2 from by
+                  simp [Kimchi.Gate.EndoScalar.crumbsOf,
+                    Kimchi.Gate.EndoScalar.decomposeB]]
+               exact hB)
+            | (rw [show Kimchi.Gate.EndoScalar.nReconstruct
+                    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
+                      (ToNat.toNat vv)) = 0 from by
+                  simp [Kimchi.Gate.EndoScalar.crumbsOf,
+                    Kimchi.Gate.EndoScalar.nReconstruct]]
+               exact hN)
+    | succ m =>
+      obtain ⟨hH, c1, c2, c3, s1, s2, s3, -⟩ :=
+        Kimchi.Gate.EndoScalar.chain_complete m
+          (crumbRows (F := F) (m + 1) (ToNat.toNat vv))
+          (fun i _ => crumbRows_valid (m + 1) (ToNat.toNat vv) i)
+      obtain ⟨dA, dB, dN⟩ := Kimchi.Gate.EndoScalar.chain_decompose m
+        (Kimchi.Gate.EndoScalar.chainBuild
+          (crumbRows (F := F) (m + 1) (ToNat.toNat vv)))
+        hH c1 c2 c3 s1 s2 s3
+      have hstream := flatMap_range_getD
+        (((crumbVals (F := F) (m + 1) (ToNat.toNat vv)).toList.map Vector.toList))
+      rw [show (((crumbVals (F := F) (m + 1) (ToNat.toNat vv)).toList.map
+          Vector.toList)).length = m + 1 from by simp,
+        crumbVals_flatten] at hstream
+      have hstream' : (List.range (m + 1)).flatMap
+            (crumbRows (F := F) (m + 1) (ToNat.toNat vv))
+          = Kimchi.Gate.EndoScalar.crumbsOf (8 * (m + 1)) (ToNat.toNat vv) := hstream
+      rw [Kimchi.Gate.EndoScalar.chainCrumbs_chainBuild, hstream'] at dA dB dN
+      refine ⟨?_, ?_, ?_⟩
+      · exact CVar.eval_le hle₂ (by rw [← dA]; exact hA)
+      · exact CVar.eval_le hle₂ (by rw [← dB]; exact hB)
+      · exact CVar.eval_le hle₂ (by rw [← dN]; exact hN)
   case vc4.vc1.post.except =>
     exact ExceptConds.entails_false
 
@@ -700,7 +767,7 @@ open Std.Do in
 readable scalar whose representative is faithful and fits the crumb budget, and the
 result reads as the gate model's `toField` at the scalar's crumbs. -/
 theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F)
+    (rows : ℕ) (scalar endo : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => (scalar.eval env).isOk ∧ (endo.eval env).isOk ∧
@@ -719,7 +786,7 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
   obtain ⟨vv, hv⟩ := CVar.evalOk hoks
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
   obtain ⟨hfaith, hlt⟩ := hbound vv hv
-  refine toFieldChecked'_complete_spec h2 h3 rows scalar _ _
+  refine toFieldChecked'_complete_spec rows scalar _ _
     ⟨hoks, fun abn st₁ hpost₁ hle₁ => ?_⟩
   obtain ⟨hA, hB, hN⟩ := hpost₁ vv hv
   mvcgen
