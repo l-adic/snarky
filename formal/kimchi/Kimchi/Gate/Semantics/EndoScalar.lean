@@ -288,7 +288,7 @@ private theorem nReconstruct_append_pos (xs ys : List F) :
           rw [hsnoc, hcons, List.length_cons, pow_succ]; ring
 
 /-- The crumbs of the first `m` rows of a run, concatenated MSB-first. -/
-private def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
+def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap (fun i => (w i).crumbs)
 
 omit [Field F] in
@@ -306,7 +306,7 @@ omit [Field F] in
     `c * m` crumbs. This is what converts the stream-level budget `valNat_lt` into the deployed
     `4 ^ (c · #rows)` bound of the range check — at the deployed shape, eight rows of eight
     crumbs give `4 ^ 64 = 2 ^ 128`. -/
-private theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
+theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
     ∀ m, (∀ i, i < m → (w i).crumbs.length = c) → (chainCrumbs w m).length = c * m := by
   intro m
   induction m with
@@ -323,7 +323,7 @@ private theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
     Algorithm-2 decomposition of its whole concatenated crumb stream — exactly as a one-row
     `Holds` over `chainCrumbs w (m + 1)` would. The multi-row layout adds nothing to the
     arithmetic, as for `varBaseMul`'s `gateLadder` over its rows. -/
-private theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
+theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
     (hHolds : ∀ i, i ≤ m → Holds (w i))
     (ha0 : (w 0).a0 = 2) (hb0 : (w 0).b0 = 2) (hn0 : (w 0).n0 = 0)
     (haStep : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8)
