@@ -330,17 +330,6 @@ private theorem crumbOfNat_eq_digit (count j k : ℕ) (hj : j < count) :
     rcases Nat.mod_two_eq_zero_or_one q with h0 | h0 <;>
       simp [h1, h0] <;> omega
 
-/-- Casting a base-4 Horner fold out of `ℕ`. -/
-private theorem foldl_horner_cast [Semiring F] :
-    ∀ (l : List ℕ) (a : ℕ),
-      (l.map (Nat.cast (R := F))).foldl (fun n x => 4 * n + x) (a : F)
-        = ((l.foldl (fun n x => 4 * n + x) a : ℕ) : F)
-  | [], _ => rfl
-  | x :: xs, a => by
-    simp only [List.map_cons, List.foldl_cons]
-    rw [show ((4 : F) * a + x) = ((4 * a + x : ℕ) : F) by push_cast; ring_nf]
-    exact foldl_horner_cast xs (4 * a + x)
-
 /-- The Horner reconstruction at `ℕ`: the MSB-first crumbs fold back to the value
 modulo `4^count`. -/
 private theorem crumbsOfNat_foldl_nat (count k : ℕ) :
@@ -390,7 +379,9 @@ private theorem crumbsOfNat_reconstruct [Field F] (count k : ℕ) (hk : k < 4 ^ 
   rw [show ((List.range count).map fun j => ((crumbOfNat count j k : ℕ) : F))
       = ((List.range count).map fun j => crumbOfNat count j k).map Nat.cast by
     rw [List.map_map]; rfl]
-  rw [show (0 : F) = ((0 : ℕ) : F) by norm_num, foldl_horner_cast,
+  rw [List.foldl_map, show (0 : F) = ((0 : ℕ) : F) by norm_num,
+    List.foldl_hom (g₁ := fun n x => 4 * n + x) (Nat.cast (R := F))
+      (fun x y => by push_cast; ring),
     crumbsOfNat_foldl_nat, Nat.mod_eq_of_lt hk]
 
 /-- Flattening the row-chunked table recovers the flat MSB-first stream. -/
@@ -450,24 +441,6 @@ private theorem mapM_eval_ok [Add F] [Mul F] {env : Assignments F} :
         simpa only [List.getElem_cons_succ] using this)
     simp [List.mapM_cons, h0, ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
-/-- List reads survive table extension. -/
-private theorem mapM_eval_le [Add F] [Mul F] {env env' : Assignments F}
-    (hle : env.Le env') :
-    ∀ {xs : List (FVar F)} {vs : List F},
-      xs.mapM (CVar.eval · env) = .ok vs → xs.mapM (CVar.eval · env') = .ok vs
-  | [], _, h => h
-  | x :: xs, vs, h => by
-    cases he : x.eval env with
-    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
-    | ok y =>
-      cases hr : xs.mapM (CVar.eval · env) with
-      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
-      | ok ys =>
-        simp only [List.mapM_cons, he, hr, Bind.bind, Except.bind, Pure.pure,
-          Except.pure] at h
-        simp [List.mapM_cons, CVar.eval_le hle he, mapM_eval_le hle hr, Bind.bind,
-          Except.bind, Pure.pure, Except.pure, h]
-
 /-- The prover-side list read is the elementwise read. -/
 private theorem readAll_ok [Add F] [Mul F] {env : Assignments F} :
     ∀ {xs : List (FVar F)} {vs : List F},
@@ -485,14 +458,6 @@ private theorem readAll_ok [Add F] [Mul F] {env : Assignments F} :
           Except.pure] at h
         simp [List.mapM_cons, AsProver.readCVar, he, readAll_ok hr, Bind.bind,
           ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure, h]
-
-/-- Invert one `Except` bind of a successful run. -/
-private theorem bind_ok {α β : Type} {x : Except EvalError α}
-    {f : α → Except EvalError β} {b : β} (h : (x >>= f) = .ok b) :
-    ∃ a, x = .ok a ∧ f a = .ok b := by
-  cases x with
-  | error e => simp [Bind.bind, Except.bind] at h
-  | ok a => exact ⟨a, rfl, by simpa [Bind.bind, Except.bind] using h⟩
 
 /-- A round evaluates to a witness exactly when each register and the crumb list
 read as its fields. -/
@@ -770,14 +735,6 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
 
 /-! ## The pure model is the gate model -/
 
-/-- A pair fold with componentwise steps splits into its component folds. -/
-private theorem foldl_pair {α : Type} (f g : F → α → F) :
-    ∀ (l : List α) (a b : F),
-      l.foldl (fun (st : F × F) x => (f st.1 x, g st.2 x)) (a, b)
-        = (l.foldl f a, l.foldl g b)
-  | [], _, _ => rfl
-  | x :: xs, a, b => foldl_pair f g xs (f a x) (g b x)
-
 /-- PS parity: `toFieldPure` computes the gate model's `toField` at the scalar's
 crumbs — the bit-pair `±1` fold is the `cFunc`/`dFunc` table fold, crumb by
 crumb. -/
@@ -813,12 +770,17 @@ theorem toFieldPure_eq_toField [Field F] [DecidableEq F] [ToNat F]
       rcases hlo : (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) <;>
         simp [Kimchi.Gate.EndoScalar.cFunc, Kimchi.Gate.EndoScalar.dFunc,
           e02, e03, e12, e13, e32, e21, e31, h2, h3]
-  have hpair := foldl_pair (F := F)
+  have hpair := List.foldl_hom₂ (List.range (8 * rows)) Prod.mk
     (fun a i => 2 * a + Kimchi.Gate.EndoScalar.cFunc
       ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
     (fun b i => 2 * b + Kimchi.Gate.EndoScalar.dFunc
       ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
-    (List.range (8 * rows)) 2 2
+    (fun st i =>
+      (2 * st.1 + Kimchi.Gate.EndoScalar.cFunc
+        ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F),
+       2 * st.2 + Kimchi.Gate.EndoScalar.dFunc
+        ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F)))
+    2 2 (fun _ _ _ => rfl)
   dsimp only [toFieldPure, Kimchi.Gate.EndoScalar.toField]
   rw [Kimchi.Gate.EndoScalar.decomposeA_eq_table h2 h3 hvalid,
     Kimchi.Gate.EndoScalar.decomposeB_eq_table h2 h3 hvalid]

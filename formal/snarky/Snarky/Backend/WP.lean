@@ -725,7 +725,7 @@ shape). -/
   exact WitnessReads.reads_of_grant (hvars st'.env hle')
 
 /-- Reads survive table extension, listwise. -/
-private theorem mapM_eval_le {F : Type} [Add F] [Mul F] {env env' : Assignments F}
+theorem mapM_eval_le {F : Type} [Add F] [Mul F] {env env' : Assignments F}
     (hle : env.Le env') :
     ∀ {xs : List (CVar F)} {vs : List F},
       xs.mapM (CVar.eval · env) = .ok vs → xs.mapM (CVar.eval · env') = .ok vs
