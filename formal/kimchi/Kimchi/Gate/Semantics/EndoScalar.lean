@@ -88,7 +88,7 @@ def buildTable (a0 b0 n0 : F) (crumbs : List F) : Witness F :=
 
 /-- On valid crumbs the bare-table row is the canonical build: the tables agree with the
     cubics crumb by crumb. -/
-theorem buildTable_eq_build (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (a0 b0 n0 : F)
+private theorem buildTable_eq_build (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (a0 b0 n0 : F)
     (crumbs : List F) (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
     buildTable a0 b0 n0 crumbs = build a0 b0 n0 crumbs := by
   unfold buildTable build
