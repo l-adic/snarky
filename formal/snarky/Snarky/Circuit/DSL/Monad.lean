@@ -243,29 +243,6 @@ def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver 
     else
       .error (.custom "readVar: size mismatch")
 
-/-- Successful `mapM`-evaluation is stable under assignment extension — the list form
-of `CVar.eval_le`. -/
-private theorem mapM_eval_le [Add F] [Mul F] {env env' : Assignments F} (hle : env.Le env') :
-    ∀ {l : List (CVar F)} {res : List F},
-      l.mapM (CVar.eval · env) = .ok res → l.mapM (CVar.eval · env') = .ok res := by
-  intro l
-  induction l with
-  | nil => intro res h; exact h
-  | cons x l ih =>
-    intro res h
-    rw [List.mapM_cons] at h ⊢
-    cases hx : CVar.eval x env with
-    | error e => rw [hx] at h; cases h
-    | ok v =>
-      rw [hx] at h
-      rw [CVar.eval_le hle hx]
-      cases hrest : l.mapM (CVar.eval · env) with
-      | error e => rw [hrest] at h; cases h
-      | ok vs =>
-        rw [hrest] at h
-        rw [ih hrest]
-        exact h
-
 /-- Successful `readVar`s are stable under assignment extension — the bundle form of
 `CVar.eval_le`. -/
 theorem readVar_le [Add F] [Mul F] [inst : CircuitType F val var] {v : var}

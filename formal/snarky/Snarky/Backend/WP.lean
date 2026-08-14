@@ -724,24 +724,6 @@ shape). -/
   subst hv'
   exact WitnessReads.reads_of_grant (hvars st'.env hle')
 
-/-- Reads survive table extension, listwise. -/
-theorem mapM_eval_le {F : Type} [Add F] [Mul F] {env env' : Assignments F}
-    (hle : env.Le env') :
-    ∀ {xs : List (CVar F)} {vs : List F},
-      xs.mapM (CVar.eval · env) = .ok vs → xs.mapM (CVar.eval · env') = .ok vs
-  | [], _, h => h
-  | x :: xs, vs, h => by
-    cases he : x.eval env with
-    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
-    | ok y =>
-      cases hr : xs.mapM (CVar.eval · env) with
-      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
-      | ok ys =>
-        simp only [List.mapM_cons, he, hr, Bind.bind, Except.bind, Pure.pure,
-          Except.pure] at h
-        simp [List.mapM_cons, CVar.eval_le hle he, mapM_eval_le hle hr, Bind.bind,
-          Except.bind, Pure.pure, Except.pure, h]
-
 /-- Split a successful read at the append boundary. -/
 private theorem mapM_eval_append_ok {F : Type} [Add F] [Mul F] {env : Assignments F} :
     ∀ {l₁ : List (CVar F)} {e₁ : List F} {l₂ : List (CVar F)} {e₂ : List F},
