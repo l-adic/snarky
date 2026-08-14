@@ -98,7 +98,9 @@ def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
     pure (CVar.add_ b p)
 
 /-- The pure model (PS `toFieldPure`): the same MSB-first bit-pair fold on values,
-from the accumulator seeds `(2, 2)`. -/
+from the accumulator seeds `(2, 2)`. The definition transcribes the PS fold;
+`toFieldPure_eq_toField` reads it as the gate model's `toField` at the scalar's
+crumbs. -/
 def toFieldPure [Field F] [ToNat F] (rows : ℕ) (scalar endo : F) : F :=
   let n := ToNat.toNat scalar
   let acc := (List.range (8 * rows)).foldl
