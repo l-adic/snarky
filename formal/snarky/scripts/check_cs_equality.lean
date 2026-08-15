@@ -11,11 +11,21 @@ ids pin the shared counter's numbering.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
-`Basic` gadget vocabulary, plus the landed gate gadgets (poseidon,
-endo_scalar, endo_mul). The export also carries a witness dump for the remaining
-gate circuit (var_base_mul); it is DELIBERATELY not in the corpus — it joins with
-its gadget slice, so the VarBaseMul reducer is uncovered by this oracle until
-then.
+`Basic` gadget vocabulary, the landed gate gadgets (poseidon, endo_scalar,
+endo_mul), and the gadget-complete pickles sub-circuits (pow2_pow, b_correct — the
+first composition fixtures; their dumps are witness-less, so the checks are CS-side
+only). Deferred, with the blocker each waits on:
+- var_base_mul + scale_fast2_128, ftcomm_*, xhat_* (and everything downstream: ivp,
+  verify, wrap/step mains) — the VarBaseMul gadget slice;
+- bullet_reduce_one_step, bullet_reduce_step — the `endoInv` consumer of EndoMul
+  (gadget-complete otherwise);
+- hash_messages_*, finalize_other_proof_*, schnorr_verify — the sponge circuit layer
+  (packages/random-oracle; FOP additionally the OptSponge variant);
+- group_map_step — activatable now (Basic-only), transcription pending a
+  Tonelli–Shanks sqrt witness helper;
+- group_map_wrap, combine_poly_wrap — gadget-complete but Fq-side: this corpus is
+  Fp-typed throughout, so the wrap column needs an Fq mirror of the plumbing;
+- app_circuit_chunks2 — Basic-only but a 39MB dump (~2^16 rows): ingestion cost.
 
 The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
@@ -188,6 +198,68 @@ def endoMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   endoMul Pasta.pallasEndo 32 input.1 input.2
 
+/-! ## Pickles sub-circuits
+
+Composition circuits from `packages/pickles`, transcribed against their dumps the
+same way the gadget circuits are — these are the first fixtures exercising the
+gadgets IN COMPOSITION. Their dumps are witness-less (`exactMatchEff`
+registrations), so the comparison checks the constraint-system side only: gate
+types, coefficients, wires, per-cell variable ids, public size. -/
+
+/-- `pow2_pow_step_circuit` (`Pickles.Util.Pow2.pow2PowSquare` at 16 squarings —
+sixteen `square` rows chained). -/
+def pow2PowCircuit (input : Vector (FVar Fp) 1) : CircuitM Fp C PUnit := do
+  let _ ← (List.range 16).foldlM (fun acc _ => square acc) input[0]
+  pure PUnit.unit
+
+/-- The Type1 shifted-scalar unshift constant `2^255 + 1` (PS `Shifted.shift1` at the
+255-bit step field): `fromShiftedType1Circuit t = 2·t + c`, constraint-free. -/
+def shift1c : Fp := 2 ^ 255 + 1
+
+/-- The challenge polynomial `∏ᵢ (1 + cᵢ·pt^(2^(k-1-i)))` (PS `IPA.bPolyCircuit`):
+`k−1` squarings (as generic `mul` rows, matching OCaml's `Field.( * )`), then the
+`k`-term product folded left, allocation order verbatim. -/
+def bPolyCircuit (chals : List (FVar Fp)) (pt : FVar Fp) :
+    CircuitM Fp C (FVar Fp) := do
+  let (squares, _) ← mapAccumM
+    (fun (prev : FVar Fp) (_ : Unit) => do
+      let sq ← mul prev prev
+      pure (sq, sq))
+    pt (List.replicate (chals.length - 1) ())
+  let powTwoPows := pt :: squares
+  match chals.zip powTwoPows.reverse with
+  | [] => pure (.const 1)
+  | (c0, pw0) :: rest => do
+    let cp0 ← mul c0 pw0
+    let init := CVar.add_ (.const 1) cp0
+    rest.foldlM
+      (fun acc (cpw : FVar Fp × FVar Fp) => do
+        let cp ← mul cpw.1 cpw.2
+        let term := CVar.add_ (.const 1) cp
+        mul term acc)
+      init
+
+/-- `b_correct_step_circuit` (PS `bCorrectStepCircuit` over `IPA.bCorrectCircuit`):
+16 raw 128-bit challenges expanded through `EndoScalar.toField` at 8 rows — in
+REVERSE order, OCaml's right-to-left evaluation — then
+`b(ζ) + evalscale·b(ζω)` compared against the Type1-unshifted claimed `b`.
+Input layout: challenges 0–15, `ζ` 16, `ζω` 17, `evalscale` 18, claimed `b` 19. -/
+def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
+  let inl := input.toList
+  let endoVar : FVar Fp := .const endoVestaLam
+  let expandedRev ← ((inl.take 16).reverse).mapM
+    (fun c => EndoScalar.toField 8 c endoVar)
+  let expanded := expandedRev.reverse
+  let zero : FVar Fp := .const 0
+  let expectedB : FVar Fp :=
+    CVar.add_ (CVar.scale_ 2 (inl.getD 19 zero)) (.const shift1c)
+  let bZetaOmega ← bPolyCircuit expanded (inl.getD 17 zero)
+  let scaledB ← mul (inl.getD 18 zero) bZetaOmega
+  let bZeta ← bPolyCircuit expanded (inl.getD 16 zero)
+  let computedB := CVar.add_ bZeta scaledB
+  let _ ← equals expectedB computedB
+  pure PUnit.unit
+
 /-! ## The comparison -/
 
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
@@ -281,7 +353,10 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("endo_scalar_step_circuit",
       compareWith (a := Fp) (b := Fp) endoScalarCircuit),
     ("endo_mul_step_circuit",
-      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit) ]
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit),
+    ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
+    ("b_correct_step_circuit",
+      compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
@@ -289,7 +364,7 @@ def main : IO Unit := do
   for (name, compare) in targets do
     let path := dir / s!"{name}.json"
     let raw ← IO.FS.readFile path
-    match Json.parse raw >>= parseComparison? with
+    match Json.parse raw >>= parseComparisonCs? with
     | .error e =>
       failures := failures + 1
       IO.println s!"✗ {name}: parse error: {e}"

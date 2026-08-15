@@ -115,26 +115,53 @@ private def parseVarId (j : Json) : Except String (Option ℕ) := do
   let i ← j.getInt?
   return if i < 0 then none else some i.toNat
 
-/-- The PureScript side of a comparison JSON; `none` when the JSON is not a comparison
-or carries no witness. -/
-def parseComparison? (j : Json) : Except String (Option Raw) := do
-  let .ok ps := j.getObjVal? "purescript" | return none
-  let .ok w := ps.getObjVal? "witness" | return none
-  if w.isNull then return none
+/-- The gate table of a comparison JSON's PureScript side — the shared parse under
+both entry points below. -/
+private def parseGates (ps : Json) : Except String Raw := do
   let gatesJ ← (← ps.getObjVal? "gates").getArr?
   let typs ← gatesJ.mapM fun g => do parseGateKind (← (← g.getObjVal? "kind").getStr?)
   let coeffs ← gatesJ.mapM fun g => do
     parseArrOf parseSignedDecimal (← g.getObjVal? "coeffs")
   let wires ← gatesJ.mapM fun g => do parseArrOf parseWire (← g.getObjVal? "wires")
   let vars ← gatesJ.mapM fun g => do parseArrOf parseVarId (← g.getObjVal? "variables")
+  return {
+    publicInputSize := ← (← ps.getObjVal? "publicInputSize").getNat?
+    typs := typs
+    coeffs := coeffs
+    wires := wires
+    vars := vars
+    witness := #[]
+    pub := #[] }
+
+/-- The PureScript side of a comparison JSON; `none` when the JSON is not a comparison
+or carries no witness. -/
+def parseComparison? (j : Json) : Except String (Option Raw) := do
+  let .ok ps := j.getObjVal? "purescript" | return none
+  let .ok w := ps.getObjVal? "witness" | return none
+  if w.isNull then return none
+  let raw ← parseGates ps
   return some
-    { publicInputSize := ← (← ps.getObjVal? "publicInputSize").getNat?
-      typs := typs
-      coeffs := coeffs
-      wires := wires
-      vars := vars
+    { raw with
       witness := ← parseArrOf (parseArrOf parseHexLE) (← w.getObjVal? "witness")
       pub := ← parseArrOf parseHexLE (← w.getObjVal? "publicInputs") }
+
+/-- Like `parseComparison?`, but a comparison without a witness parses too (empty
+`witness`/`pub`): the constraint-system side — gate types, coefficients, wires,
+per-cell variable ids, public size — is present in every dump, witness-carrying or
+not. The CS-equality corpus reads through this entry so witness-less circuits still
+prove constraint equivalence; `parseComparison?` keeps its witness-only contract for
+the witness checker, which globs the results directory and skips on `none`. -/
+def parseComparisonCs? (j : Json) : Except String (Option Raw) := do
+  let .ok ps := j.getObjVal? "purescript" | return none
+  let raw ← parseGates ps
+  match ps.getObjVal? "witness" with
+  | .error _ => return some raw
+  | .ok w =>
+    if w.isNull then return some raw
+    return some
+      { raw with
+        witness := ← parseArrOf (parseArrOf parseHexLE) (← w.getObjVal? "witness")
+        pub := ← parseArrOf parseHexLE (← w.getObjVal? "publicInputs") }
 
 /-! ## Domain synthesis -/
 

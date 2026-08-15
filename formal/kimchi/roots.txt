@@ -121,6 +121,7 @@ Kimchi.Fixture.parseComm
 Kimchi.Fixture.PS.Instance
 Kimchi.Fixture.PS.build
 Kimchi.Fixture.PS.parseComparison?
+Kimchi.Fixture.PS.parseComparisonCs?
 Kimchi.Index.build?
 Kimchi.Index.instDecidableSatisfies -- synthesis: decide (Satisfies ..) in check_ps_witness.lean
 Kimchi.Permutation.primitiveRootCertificate
