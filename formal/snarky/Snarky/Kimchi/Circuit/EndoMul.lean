@@ -41,12 +41,13 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   eigenvalue, and every curve fact the law pair consumes, with the deployed
   dictionaries `HasEndo.pallas`/`HasEndo.vesta`.
 
-The law pair reads the emitted constraints through the semantic layer, each generic
-over the curve dictionary with deployed Pasta instantiations:
-`EndoMul.endoMul_spec` with `endoMul_spec_pallas`/`endoMul_spec_vesta`
-(`§ Soundness` below), and `EndoMul.endoMul_complete_spec` with
-`endoMul_complete_spec_pallas`/`endoMul_complete_spec_vesta` (`§ Completeness
-plumbing` below) — both directions decode the scalar through one crumb list.
+The law pair reads the emitted constraints through the semantic layer, generic over
+the curve dictionary `HasEndo`: `EndoMul.endoMul_spec` (`§ Soundness` below) and
+`EndoMul.endoMul_complete_spec` (`§ Completeness plumbing` below) — both directions
+decode the scalar through one crumb list. There are no per-curve law statements: the
+laws are concretized only inside a larger circuit's instantiation, and the deployed
+dictionaries `HasEndo.pallas`/`HasEndo.vesta` are the discharge (and the exhibit
+that the dictionary is satisfiable at Pasta).
 -/
 
 namespace Snarky.Kimchi
@@ -500,8 +501,9 @@ on-curve together with its endomorphism image, the result reads as `[s]·T` wher
 `(s : F) = EndoScalar.toField crumbs λ` for a valid crumb list of length `2·rounds`
 whose reconstruction is the scalar — EndoMul multiplies by exactly the scalar
 EndoScalar decodes. The curve facts arrive bundled as the dictionary `d : HasEndo F`,
-so the law composes with other generic circuit laws over an abstract field; the
-deployed corollaries instantiate at `HasEndo.pallas`/`HasEndo.vesta`. -/
+so the law composes with other generic circuit laws over an abstract field, and is
+concretized only inside a larger circuit's instantiation, at the deployed
+dictionaries `HasEndo.pallas`/`HasEndo.vesta`. -/
 theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
     (t : AffinePoint (FVar F)) (scalar : FVar F)
@@ -578,49 +580,6 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
         (heig hT hφT) hP0ns hP0
     exact ⟨crumbs, hvalid, by simpa using hlen, heq.symm.trans hreg,
       hfin, sc, hseq, hsval⟩
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- `endoMul_spec` at the deployed Pallas instantiation: the eigenvalue from
-`pallas_eigen`, the off-targets fact from `pallas_combo_off_targets`, the field and
-order facts from `Pasta`. -/
-theorem endoMul_spec_pallas [ToNat Fp] (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar Fp)) (scalar : FVar Fp)
-    (Q : PostCond (AffinePoint (FVar Fp)) (.arg (BuilderState Fp) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar Fp)) =>
-        ∀ (hT : Pallas.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V)),
-          Pallas.curve.toAffine.Nonsingular (pallasEndo * t.x.val V) (t.y.val V) →
-          ∃ crumbs : List Fp,
-            (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-            crumbs.length = 2 * rounds ∧
-            scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
-            ∃ (hfin : Pallas.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V))
-              (s : ℤ),
-              Point.some _ _ hfin = s • Point.some _ _ hT ∧
-              (s : Fp) = Kimchi.Gate.EndoScalar.toField crumbs (pallasLam : Fp)) Q⦄
-    (endoMul (c := KimchiConstraint Fp) pallasEndo rounds t scalar)
-    ⦃Q⦄ := by
-  exact endoMul_spec HasEndo.pallas rounds hbits t scalar Q
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- `endoMul_spec` at the deployed Vesta instantiation — the other half of the
-2-cycle, identical modulo `vesta_*`. -/
-theorem endoMul_spec_vesta [ToNat Fq] (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar Fq)) (scalar : FVar Fq)
-    (Q : PostCond (AffinePoint (FVar Fq)) (.arg (BuilderState Fq) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar Fq)) =>
-        ∀ (hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V)),
-          Vesta.curve.toAffine.Nonsingular (vestaEndo * t.x.val V) (t.y.val V) →
-          ∃ crumbs : List Fq,
-            (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-            crumbs.length = 2 * rounds ∧
-            scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
-            ∃ (hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V))
-              (s : ℤ),
-              Point.some _ _ hfin = s • Point.some _ _ hT ∧
-              (s : Fq) = Kimchi.Gate.EndoScalar.toField crumbs (vestaLam : Fq)) Q⦄
-    (endoMul (c := KimchiConstraint Fq) vestaEndo rounds t scalar)
-    ⦃Q⦄ := by
-  exact endoMul_spec HasEndo.vesta rounds hbits t scalar Q
 
 /-! ## Completeness plumbing
 
@@ -816,8 +775,9 @@ The curve facts arrive bundled as the dictionary `d : HasEndo F` — hypotheses,
 instantiations — so this law composes with OTHER generic circuit completeness laws
 the way the PS circuits compose over an abstract field: a composite gadget's law
 takes the same dictionary and threads it here (as this walk itself threads `d.W` and
-its facts into `addFast_complete_spec`), and everything is discharged once at the
-deployed instantiation (`endoMul_complete_spec_pallas`/`_vesta` below).
+its facts into `addFast_complete_spec`), and everything is discharged once, inside
+the larger circuit's instantiation, at the deployed dictionaries
+`HasEndo.pallas`/`HasEndo.vesta`.
 
 The loop invariant identifies the run with the honest walk `chainBuild`; the
 per-round check is the produce chain's (`chain_complete` through `off`), the init
@@ -1152,64 +1112,6 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
         hsval⟩
   case vc4.vc1.vc1.vc1.vc1.refine_2.refine_2.post.except =>
     exact ExceptConds.entails_false
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The gadget is complete at the deployed Pallas instantiation: the honest prover run
-accepts on a readable in-range faithful scalar and a readable on-curve base, and the
-returned point reads as `[s]·T` with `(s : Fp) = EndoScalar.toField` at the scalar's
-canonical crumbs — the honest side of the defining equation. -/
-theorem endoMul_complete_spec_pallas [ToNat Fp] (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar Fp)) (scalar : FVar Fp)
-    (Q : PostCond (AffinePoint (FVar Fp))
-      (.arg (ProverState Fp) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.eval env = .ok v →
-            ToNat.toNat v < 4 ^ (2 * rounds) ∧ ((ToNat.toNat v : Fp) = v)) ∧
-          (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y →
-            Pallas.curve.toAffine.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
-          t.x.eval env = .ok xv → t.y.eval env = .ok yv →
-          ∀ hT : Pallas.curve.toAffine.Nonsingular xv yv,
-          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ (hfin : Pallas.curve.toAffine.Nonsingular xS yS) (s : ℤ),
-              Point.some _ _ hfin = s • Point.some _ _ hT ∧
-              (s : Fp) = Kimchi.Gate.EndoScalar.toField
-                (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v))
-                (pallasLam : Fp))
-        Q⦄
-    (endoMul (c := KimchiProverC Fp) pallasEndo rounds t scalar)
-    ⦃Q⦄ := by
-  exact endoMul_complete_spec HasEndo.pallas rounds hbits t scalar Q
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The gadget is complete at the deployed Vesta instantiation — the other half of the
-2-cycle, identical modulo `vesta_*`. -/
-theorem endoMul_complete_spec_vesta [ToNat Fq] (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar Fq)) (scalar : FVar Fq)
-    (Q : PostCond (AffinePoint (FVar Fq))
-      (.arg (ProverState Fq) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.eval env = .ok v →
-            ToNat.toNat v < 4 ^ (2 * rounds) ∧ ((ToNat.toNat v : Fq) = v)) ∧
-          (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y →
-            Vesta.curve.toAffine.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
-          t.x.eval env = .ok xv → t.y.eval env = .ok yv →
-          ∀ hT : Vesta.curve.toAffine.Nonsingular xv yv,
-          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ (hfin : Vesta.curve.toAffine.Nonsingular xS yS) (s : ℤ),
-              Point.some _ _ hfin = s • Point.some _ _ hT ∧
-              (s : Fq) = Kimchi.Gate.EndoScalar.toField
-                (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v))
-                (vestaLam : Fq))
-        Q⦄
-    (endoMul (c := KimchiProverC Fq) vestaEndo rounds t scalar)
-    ⦃Q⦄ := by
-  exact endoMul_complete_spec HasEndo.vesta rounds hbits t scalar Q
 
 end EndoMul
 
