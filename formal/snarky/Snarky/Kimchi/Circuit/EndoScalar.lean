@@ -150,55 +150,53 @@ private theorem Threaded.snoc :
     subst hr
     exact ⟨w', tail ++ [_], rfl, hrest.snoc xs w⟩
 
-/-- The structural facts of a threading, indexed: the round count, the seed wiring
-of round `0`, the shared accumulator variables between adjacent rounds, and the
-final triple's wiring — everything the gate tower's `chain_decompose` consumes,
-extracted without touching a valuation. -/
+/-- An empty threading traversed no chunks: the final triple is the start. -/
+private theorem Threaded.nil :
+    ∀ {st fin : FVar F × FVar F × FVar F} {pref : List (Vector (FVar F) 8)},
+      Threaded st pref [] fin → pref = [] ∧ fin = st
+  | _, _, [], h => ⟨rfl, h.2⟩
+  | _, _, _ :: _, h => by
+    obtain ⟨w, tail, heq, -⟩ := h
+    exact nomatch heq
+
+/-- The structural facts of a nonempty threading: the round count, round `0`'s seed
+wiring, the shared accumulator variables between adjacent rounds, and the final
+triple's wiring — everything the gate's `chain_decompose` consumes, extracted
+without touching a valuation. -/
 private theorem threaded_chain :
     ∀ {pref : List (Vector (FVar F) 8)} {st fin : FVar F × FVar F × FVar F}
-      {rounds : List (EndoScalarRound F)},
-      Threaded st pref rounds fin →
-      rounds.length = pref.length ∧
-      (∀ _ : 0 < rounds.length,
-        rounds[0].a0 = st.1 ∧ rounds[0].b0 = st.2.1 ∧ rounds[0].n0 = st.2.2) ∧
-      (∀ i (hi : i + 1 < rounds.length),
-        rounds[i + 1].a0 = rounds[i].a8 ∧ rounds[i + 1].b0 = rounds[i].b8 ∧
-        rounds[i + 1].n0 = rounds[i].n8) ∧
-      (∀ _ : 0 < rounds.length,
-        fin.1 = rounds[rounds.length - 1].a8 ∧
-        fin.2.1 = rounds[rounds.length - 1].b8 ∧
-        fin.2.2 = rounds[rounds.length - 1].n8) ∧
-      (rounds = [] → fin = st)
-  | [], st, fin, rounds, h => by
-    obtain ⟨hr, hfin⟩ := h
-    subst hr hfin
-    exact ⟨rfl, fun hi => absurd hi (by simp), fun i hi => absurd hi (by simp),
-      fun hi => absurd hi (by simp), fun _ => rfl⟩
-  | x :: rest, st, fin, rounds, h => by
-    obtain ⟨w, tail, hr, hrest⟩ := h
-    subst hr
-    obtain ⟨ihlen, ihhead, ihstep, ihlast, ihnil⟩ := threaded_chain hrest
-    refine ⟨by simpa using ihlen, fun _ => ⟨rfl, rfl, rfl⟩, ?_, ?_,
-      fun hcons => by cases hcons⟩
-    · intro i hi
-      cases i with
-      | zero =>
-        have htail : 0 < tail.length := by simpa using hi
-        obtain ⟨h1, h2, h3⟩ := ihhead htail
-        simpa only [List.getElem_cons_succ, List.getElem_cons_zero]
-          using ⟨h1, h2, h3⟩
-      | succ j =>
-        have hj : j + 1 < tail.length := by simpa using hi
-        simpa only [List.getElem_cons_succ] using ihstep j hj
-    · intro _
-      cases tail with
-      | nil =>
-        obtain rfl := ihnil rfl
-        exact ⟨rfl, rfl, rfl⟩
-      | cons t ts =>
-        obtain ⟨h1, h2, h3⟩ := ihlast (by simp)
-        simpa only [List.length_cons, Nat.add_sub_cancel, List.getElem_cons_succ]
-          using ⟨h1, h2, h3⟩
+      {r₀ : EndoScalarRound F} {rs : List (EndoScalarRound F)},
+      Threaded st pref (r₀ :: rs) fin →
+      (r₀ :: rs).length = pref.length ∧
+      (r₀.a0 = st.1 ∧ r₀.b0 = st.2.1 ∧ r₀.n0 = st.2.2) ∧
+      (∀ i (hi : i + 1 < (r₀ :: rs).length),
+        (r₀ :: rs)[i + 1].a0 = (r₀ :: rs)[i].a8 ∧
+        (r₀ :: rs)[i + 1].b0 = (r₀ :: rs)[i].b8 ∧
+        (r₀ :: rs)[i + 1].n0 = (r₀ :: rs)[i].n8) ∧
+      (fin.1 = (r₀ :: rs)[rs.length].a8 ∧
+       fin.2.1 = (r₀ :: rs)[rs.length].b8 ∧
+       fin.2.2 = (r₀ :: rs)[rs.length].n8)
+  | x :: rest, st, fin, r₀, rs, h => by
+    obtain ⟨w, tail, heq, hrest⟩ := h
+    injection heq with h1 h2
+    subst h1 h2
+    cases rs with
+    | nil =>
+      obtain ⟨rfl, rfl⟩ := Threaded.nil hrest
+      exact ⟨rfl, ⟨rfl, rfl, rfl⟩, fun i hi => by simp at hi, ⟨rfl, rfl, rfl⟩⟩
+    | cons r₁ ts =>
+      obtain ⟨ihlen, ⟨e1, e2, e3⟩, ihstep, ihlast⟩ := threaded_chain hrest
+      refine ⟨by simpa using ihlen, ⟨rfl, rfl, rfl⟩, ?_, ?_⟩
+      · intro i hi
+        cases i with
+        | zero =>
+          simpa only [List.getElem_cons_succ, List.getElem_cons_zero]
+            using ⟨e1, e2, e3⟩
+        | succ j =>
+          have hj : j + 1 < (r₁ :: ts).length := by simpa using hi
+          simpa only [List.getElem_cons_succ] using ihstep j hj
+      · obtain ⟨f1, f2, f3⟩ := ihlast
+        simpa only [List.length_cons, List.getElem_cons_succ] using ⟨f1, f2, f3⟩
 
 /-- A satisfied threading from the seeds computes the gate tower's chain: the
 structural wiring (`threaded_chain`) instantiates `chain_decompose`'s indexed run
@@ -217,15 +215,15 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       fin.1.val V = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
       fin.2.1.val V = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
       fin.2.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs := by
-  obtain ⟨hlen, hhead, hstep, hlast, hnil⟩ := threaded_chain hthr
   match hround : rounds, hthr with
-  | [], _ =>
-    obtain rfl := hnil rfl
-    refine ⟨[], by simp, by simp [← hlen], ?_, ?_, ?_⟩ <;>
+  | [], hthr' =>
+    obtain ⟨rfl, rfl⟩ := Threaded.nil hthr'
+    refine ⟨[], by simp, by simp, ?_, ?_, ?_⟩ <;>
       simp [Kimchi.Gate.EndoScalar.decomposeA, Kimchi.Gate.EndoScalar.decomposeB,
         Kimchi.Gate.EndoScalar.nReconstruct, CVar.val]
-  | r₀ :: rs, _ =>
+  | r₀ :: rs, hthr' =>
     subst hround
+    obtain ⟨hlen, ⟨h01, h02, h03⟩, hstep, hf1, hf2, hf3⟩ := threaded_chain hthr'
     set w : ℕ → Kimchi.Gate.EndoScalar.Witness F :=
       fun i => EndoScalarRound.read V ((r₀ :: rs).getD i r₀) with hw
     have hwi : ∀ i (hi : i ≤ rs.length),
@@ -238,28 +236,25 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       intro i hi
       rw [hwi i hi]
       exact hHolds _ (List.getElem_mem _)
-    obtain ⟨h01, h02, h03⟩ := hhead (by simp)
-    simp only [List.getElem_cons_zero] at h01 h02 h03
     obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose rs.length w hHolds'
       (by rw [hwi 0 (by omega)]; simp [EndoScalarRound.read, h01, CVar.val])
       (by rw [hwi 0 (by omega)]; simp [EndoScalarRound.read, h02, CVar.val])
       (by rw [hwi 0 (by omega)]; simp [EndoScalarRound.read, h03, CVar.val])
       (fun i hi => by
-        obtain ⟨e, -, -⟩ := hstep i (by simpa using hi)
+        obtain ⟨e, -, -⟩ := hstep i (by simp; omega)
         simp only [List.getElem_cons_succ] at e
         rw [hwi (i + 1) (by omega), hwi i (by omega)]
         simp [EndoScalarRound.read, e])
       (fun i hi => by
-        obtain ⟨-, e, -⟩ := hstep i (by simpa using hi)
+        obtain ⟨-, e, -⟩ := hstep i (by simp; omega)
         simp only [List.getElem_cons_succ] at e
         rw [hwi (i + 1) (by omega), hwi i (by omega)]
         simp [EndoScalarRound.read, e])
       (fun i hi => by
-        obtain ⟨-, -, e⟩ := hstep i (by simpa using hi)
+        obtain ⟨-, -, e⟩ := hstep i (by simp; omega)
         simp only [List.getElem_cons_succ] at e
         rw [hwi (i + 1) (by omega), hwi i (by omega)]
         simp [EndoScalarRound.read, e])
-    obtain ⟨hf1, hf2, hf3⟩ := hlast (by simp)
     refine ⟨Kimchi.Gate.EndoScalar.chainCrumbs w (rs.length + 1), ?_, ?_, ?_, ?_, ?_⟩
     · intro x hx
       simp only [Kimchi.Gate.EndoScalar.chainCrumbs, List.mem_flatMap,
@@ -270,13 +265,10 @@ private theorem threaded_sound [Field F] [DecidableEq F]
         (fun i _ => by simp [hw, EndoScalarRound.read]), ← hlen]
       simp
     · rw [← hA, hwi rs.length (by omega)]
-      simp only [List.length_cons, Nat.add_sub_cancel] at hf1
       simp [EndoScalarRound.read, hf1]
     · rw [← hB, hwi rs.length (by omega)]
-      simp only [List.length_cons, Nat.add_sub_cancel] at hf2
       simp [EndoScalarRound.read, hf2]
     · rw [← hN, hwi rs.length (by omega)]
-      simp only [List.length_cons, Nat.add_sub_cancel] at hf3
       simp [EndoScalarRound.read, hf3]
 
 open Std.Do in
