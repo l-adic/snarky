@@ -62,6 +62,8 @@ def roots : List Name :=
     `Kimchi.Gate.EndoMul.sound, `Kimchi.Gate.EndoMul.complete,
     `Kimchi.Gate.EndoMul.endoMul,
     `Kimchi.Gate.EndoMul.pallas_endoMul, `Kimchi.Gate.EndoMul.vesta_endoMul,
+    `Kimchi.Gate.EndoMul.chain_complete,
+    `Kimchi.Gate.EndoMul.pallas_chain_complete, `Kimchi.Gate.EndoMul.vesta_chain_complete,
     `Kimchi.zH_dvd_iff,
     `Kimchi.dvd_separation,
     `Kimchi.Gate.Poseidon.sound, `Kimchi.Gate.Poseidon.complete,
