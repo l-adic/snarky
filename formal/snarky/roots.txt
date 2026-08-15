@@ -372,6 +372,7 @@ Snarky.sealVar_spec
 Snarky.sealVar_complete_spec
 Snarky.Kimchi.addFast
 Snarky.Kimchi.AddFast.addFast_spec
+Snarky.Kimchi.AddFast.addFast_checkFinite_spec
 Snarky.Kimchi.AddFast.addFast_complete_spec
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.poseidon
@@ -385,6 +386,9 @@ Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec
 Snarky.Kimchi.EndoScalar.toField_complete_spec
 Snarky.Kimchi.Poseidon.poseidon_spec
 Snarky.Kimchi.Poseidon.poseidon_complete_spec
+Snarky.Kimchi.EndoMul.endoMul_spec
+Snarky.Kimchi.EndoMul.endoMul_spec_pallas
+Snarky.Kimchi.EndoMul.endoMul_spec_vesta
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 

@@ -478,8 +478,9 @@ private def bDigit (g : ℕ → Witness F) (j : ℕ) : F :=
 
 /-- The `2m`-crumb list the rows feed to `EndoScalar`: row `i` contributes its two
     windows `[b₂+2·b₁, b₄+2·b₃]` in order, so `crumbList[2i] = aDigit/bDigit`'s crumb
-    `2i` and `crumbList[2i+1]` crumb `2i+1`. -/
-private def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
+    `2i` and `crumbList[2i+1]` crumb `2i+1`. Public: the `endoMul` conclusions decode
+    the run's scalar as `EndoScalar.toField` of this list, so consumers name it. -/
+def crumbList (g : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap fun i => [(g i).b2 + 2 * (g i).b1, (g i).b4 + 2 * (g i).b3]
 
 omit [DecidableEq F] in
@@ -488,6 +489,38 @@ private theorem crumbList_succ (g : ℕ → Witness F) (m : ℕ) :
     crumbList g (m + 1)
       = crumbList g m ++ [(g m).b2 + 2 * (g m).b1, (g m).b4 + 2 * (g m).b3] := by
   simp [crumbList, List.range_succ, List.flatMap_append]
+
+omit [DecidableEq F] in
+/-- The crumb list has two crumbs per row. -/
+theorem crumbList_length (g : ℕ → Witness F) (m : ℕ) :
+    (crumbList g m).length = 2 * m := by
+  induction m with
+  | zero => rfl
+  | succ m ih =>
+    rw [crumbList_succ, List.length_append, ih]
+    simp only [List.length_cons, List.length_nil]
+    omega
+
+omit [DecidableEq F] in
+/-- Every crumb of a satisfying run is 2-bit: the bits are boolean by the gate's own
+    booleanity constraints, so each window crumb `b_even + 2·b_odd` is `0`, `1`, `2`,
+    or `3` — the validity `EndoScalar`'s decode lemmas precondition on. -/
+theorem crumbList_valid (endo : F) (m : ℕ) (g : ℕ → Witness F)
+    (hholds : ∀ i, i < m → Holds endo (g i)) :
+    ∀ x ∈ crumbList g m, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 := by
+  intro x hx
+  simp only [crumbList, List.mem_flatMap, List.mem_range] at hx
+  obtain ⟨i, hi, hxi⟩ := hx
+  obtain ⟨-, -, -, -, -, -, -, hb1c, hb2c, hb3c, hb4c, -⟩ :=
+    (holds_iff endo (g i)).mp (hholds i hi)
+  have hb1 := bool_of_mul hb1c
+  have hb2 := bool_of_mul hb2c
+  have hb3 := bool_of_mul hb3c
+  have hb4 := bool_of_mul hb4c
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hxi
+  rcases hxi with rfl | rfl
+  · rcases hb1 with h1 | h1 <;> rcases hb2 with h2 | h2 <;> rw [h1, h2] <;> norm_num
+  · rcases hb3 with h3 | h3 <;> rcases hb4 with h4 | h4 <;> rw [h3, h4] <;> norm_num
 
 omit [DecidableEq F] in
 /-- The init bridge: `EndoScalar`'s `decomposeA`/`decomposeB` over the crumb
@@ -643,6 +676,42 @@ def accX (g : ℕ → Witness F) : ℕ → F
 def accY (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).yP
   | k + 1 => (g k).yS
+
+/-- The scalar-register companion of `accX`/`accY`: row 0's input register `n` when
+    `k = 0`, else row `(k-1)`'s output `nPrime`. -/
+def accN (g : ℕ → Witness F) : ℕ → F
+  | 0 => (g 0).n
+  | k + 1 => (g k).nPrime
+
+omit [DecidableEq F] in
+/-- **The register chain.** Across a register-threaded run the scalar register folds the
+    crumb list: the final register is `EndoScalar.nReconstruct` of the run's crumbs over
+    the shifted initial register. Row `i`'s decomposition
+    `n' = 16·n + 8·b₁ + 4·b₂ + 2·b₃ + b₄` is two base-4 fold steps on its crumbs
+    `[b₂+2·b₁, b₄+2·b₃]`; only that conjunct of `Holds` is read. -/
+theorem chain_nAcc (endo : F) (m : ℕ) (g : ℕ → Witness F)
+    (hholds : ∀ i, i < m → Holds endo (g i))
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime) :
+    accN g m = accN g 0 * 4 ^ (2 * m) + Kimchi.Gate.EndoScalar.nReconstruct (crumbList g m) := by
+  induction m with
+  | zero => simp [accN, crumbList, Kimchi.Gate.EndoScalar.nReconstruct]
+  | succ m ih =>
+    have hn : (g m).n = accN g m := by
+      cases m with
+      | zero => rfl
+      | succ j => exact hthread j (by omega)
+    have hdec := ((holds_iff endo (g m)).mp (hholds m (by omega))).2.2.2.2.2.2.2.2.2.2.2
+    have ihm := ih (fun i hi => hholds i (by omega)) (fun i hi => hthread i (by omega))
+    have happ : Kimchi.Gate.EndoScalar.nReconstruct (crumbList g (m + 1))
+        = 16 * Kimchi.Gate.EndoScalar.nReconstruct (crumbList g m)
+            + 4 * ((g m).b2 + 2 * (g m).b1) + ((g m).b4 + 2 * (g m).b3) := by
+      rw [crumbList_succ]
+      simp only [Kimchi.Gate.EndoScalar.nReconstruct, List.foldl_append, List.foldl_cons,
+        List.foldl_nil]
+      ring
+    show (g m).nPrime = _
+    rw [hdec, hn, ihm, happ, show 2 * (m + 1) = 2 * m + 2 by ring, pow_add]
+    ring
 
 /-- **Producing variant of `Gate.EndoMul.block_sound`.** Same `(P+Q)+P` window algebra, but the
     output accumulator's nonsingularity (`hR`) is *produced* (existential) via `secant_add`,
@@ -1136,6 +1205,37 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
       hARlo2 hARlt hBRlo2 hBRlt (Ne.symm hxRxS) htne2 hs3 hc2_3 hc3_3
   exact ⟨hxne1, hxne2⟩
 
+/-- **EndoMul, generic over the off-targets fact.** The capstone `endoMul` with its per-row
+    first-addition non-degeneracy discharged from the GLV accumulator bound
+    (`accumulator_chain`): a threaded run of valid rows from `P₀ = 2(T + φT)` computes the
+    final accumulator `= [s]·T` with `s = EndoScalar.toField (crumbList g m) λ`. The
+    curve-specific inputs are exactly `off` — a bounded nonzero two-base accumulator
+    `[a]·T + [b]·φT` avoids `±T`, `±φT` (`{pallas,vesta}_combo_off_targets`) — and the
+    eigenvalue `heig`; the deployed `{pallas,vesta}_endoMul` are its instantiations. -/
+theorem endoMul_off (W : WeierstrassCurve.Affine F)
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
+    (T φT : W.Point)
+    (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
+      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
+        ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT)
+    (m : ℕ) (hbits : 4 * m ≤ 244) (g : ℕ → Witness F)
+    (hholds : ∀ i, i < m → Holds endo (g i))
+    (hTns : W.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
+    (hφTns : W.Nonsingular (endo * (g 0).xT) (g 0).yT) (hφTeq : φT = Point.some _ _ hφTns)
+    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
+    (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT)
+    (lam : ℤ) (heig : φT = lam • T) :
+    ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (s : ℤ),
+      Point.some _ _ hfin = s • T
+        ∧ (s : F) = Kimchi.Gate.EndoScalar.toField (crumbList g m) (lam : F) := by
+  have hxne := accumulator_chain W h2 hodd endo T φT off m hbits g hholds hTns hTeq
+    hφTns hφTeq hbase hthread hP0ns hP0
+  exact endoMul W Fact.out h2 h3 hodd endo m g hholds T φT hTns hTeq hφTns hφTeq
+    hbase hthread hP0ns hP0 hxne lam heig
+
 end Kimchi.Gate.EndoMul
 
 /-!
@@ -1148,13 +1248,14 @@ generic capstone `Kimchi.Gate.EndoMul.endoMul` and its supporting development �
 fold, the `EndoMul ∘ EndoScalar` recoding kernel, and the non-degeneracy lemmas — are
 `§ Supporting development` above.
 
-This module exposes the deployed entry points at each concrete curve. The prover supplies only the
-gate constraint `Holds` per row, the base nonsingularity (row 0 — genuinely external), the column
-threading, and the initial accumulator `P₀ = 2(T + φT)`. Every intermediate accumulator's
-nonsingularity is *derived* (`endoMul`), and the per-row first-addition non-degeneracy `hxne` is
-*derived* — not assumed — from the GLV short-basis bound. The prime-order / `hodd` / short-shape
-facts come from `Pasta`, and the eigenvalue `φT = [λ]·T` is discharged by the proved
-`Pasta.{pallas,vesta}_eigen`.
+This module exposes the deployed entry points at each concrete curve, both instantiations of
+`endoMul_off` — the capstone with `hxne` pre-discharged, generic over the off-targets fact. The
+prover supplies only the gate constraint `Holds` per row, the base nonsingularity (row 0 —
+genuinely external), the column threading, and the initial accumulator `P₀ = 2(T + φT)`. Every
+intermediate accumulator's nonsingularity is *derived* (`endoMul`), and the per-row
+first-addition non-degeneracy `hxne` is *derived* — not assumed — from the GLV short-basis
+bound. The prime-order / `hodd` / short-shape facts come from `Pasta`, and the eigenvalue
+`φT = [λ]·T` is discharged by the proved `Pasta.{pallas,vesta}_eigen`.
 
 ### Main results
 
@@ -1221,10 +1322,10 @@ computes `[s]·T`. The per-row `hxne` is discharged internally from the GLV boun
     `s = EndoScalar.toField (crumbList g m) λ`. The prover supplies only the gate constraint
     `Holds` per row, the base nonsingularity `hT`/`hφT` (row 0 — genuinely external), the column
     threading, the initial `P₀`, and the bit bound `4·m ≤ 244` (the deployed 128-bit challenge is
-    `m = 32`, far under). Every intermediate accumulator's nonsingularity is *derived*
-    (`endoMul`), the per-row `hxne` from the GLV short-basis bound (`accumulator_chain`,
-    `off := pallas_combo_off_targets`), the eigenvalue from `pallas_eigen`, and the
-    odd-prime-order conditions from `Pasta`. -/
+    `m = 32`, far under). `endoMul_off` at `off := pallas_combo_off_targets`: every
+    intermediate accumulator's nonsingularity is *derived*, the per-row `hxne` from the GLV
+    short-basis bound, the eigenvalue from `pallas_eigen`, and the odd-prime-order
+    conditions from `Pasta`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
     (g : ℕ → Witness Fp)
     (hholds : ∀ i, i < m → Holds pallasEndo (g i))
@@ -1240,23 +1341,14 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
       Point.some _ _ hfin = s • T
         ∧ (s : Fp)
             = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallasLam : Fp) := by
-  have ha : Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-      ∧ Pallas.curve.toAffine.a₃ = 0 := ⟨rfl, rfl, rfl⟩
   haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-      ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨ha⟩
-  have h2 : (2 : Fp) ≠ 0 := by decide
-  have h3 : (3 : Fp) ≠ 0 := by decide
+      ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have heig : φT = pallasLam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns
-  have off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
-      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
-        ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
-    fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig
-  have hxne := accumulator_chain Pallas.curve.toAffine h2 hodd pallasEndo T φT off m hbits
-    g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
-  exact endoMul Pallas.curve.toAffine ha h2 h3 hodd pallasEndo m g hholds T φT
-    hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne pallasLam heig
+  exact endoMul_off Pallas.curve.toAffine (by decide) (by decide) hodd pallasEndo T φT
+    (fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig)
+    m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 pallasLam heig
 
 /-- **EndoMul at Vesta** — the other half of the 2-cycle, identical modulo `vesta_*`. -/
 theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
@@ -1274,22 +1366,13 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
       Point.some _ _ hfin = s • T
         ∧ (s : Fq)
             = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vestaLam : Fq) := by
-  have ha : Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0 := ⟨rfl, rfl, rfl⟩
   haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨ha⟩
-  have h2 : (2 : Fq) ≠ 0 := by decide
-  have h3 : (3 : Fq) ≠ 0 := by decide
+      ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have heig : φT = vestaLam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns
-  have off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
-      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
-        ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
-    fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig
-  have hxne := accumulator_chain Vesta.curve.toAffine h2 hodd vestaEndo T φT off m hbits
-    g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0
-  exact endoMul Vesta.curve.toAffine ha h2 h3 hodd vestaEndo m g hholds T φT
-    hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 hxne vestaLam heig
+  exact endoMul_off Vesta.curve.toAffine (by decide) (by decide) hodd vestaEndo T φT
+    (fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig)
+    m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 vestaLam heig
 
 end Kimchi.Gate.EndoMul
