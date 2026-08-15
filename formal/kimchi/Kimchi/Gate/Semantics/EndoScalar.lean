@@ -92,33 +92,6 @@ private theorem dPoly_eq_dFunc (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {x : F}
   · rw [d2, g2]
   · rw [d3, g3]
 
-/-- The satisfying row built with the bare `cFunc`/`dFunc` tables in place of the
-    interpolating cubics — the row every deployed prover actually fills. On valid crumbs
-    it is `build` itself (`buildTable_eq_build`). -/
-def buildTable (a0 b0 n0 : F) (crumbs : List F) : Witness F :=
-  { a0, b0, n0
-  , n8 := crumbs.foldl (fun acc x => 4 * acc + x) n0
-  , a8 := crumbs.foldl (fun acc x => 2 * acc + cFunc x) a0
-  , b8 := crumbs.foldl (fun acc x => 2 * acc + dFunc x) b0
-  , crumbs }
-
-/-- On valid crumbs the bare-table row is the canonical build: the tables agree with the
-    cubics crumb by crumb. -/
-private theorem buildTable_eq_build (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (a0 b0 n0 : F)
-    (crumbs : List F) (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    buildTable a0 b0 n0 crumbs = build a0 b0 n0 crumbs := by
-  unfold buildTable build
-  rw [foldl_table crumbs a0 (fun x hx => (cPoly_eq_cFunc h2 h3 (hvalid x hx)).symm),
-    foldl_table crumbs b0 (fun x hx => (dPoly_eq_dFunc h2 h3 (hvalid x hx)).symm)]
-
-/-- **Completeness at the deployed tables**: the bare-table row satisfies the gate — the
-    row the deployed provers fill. -/
-theorem complete_table (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (a0 b0 n0 : F)
-    (crumbs : List F) (hvalid : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    Holds (buildTable a0 b0 n0 crumbs) := by
-  rw [buildTable_eq_build h2 h3 a0 b0 n0 crumbs hvalid]
-  exact complete a0 b0 n0 crumbs hvalid
-
 /-- **Soundness.** A satisfying row genuinely runs Halo's Algorithm 2: the crumbs are valid 2-bit
     values, and the `a`/`b`/`n` accumulators are the Algorithm-2 folds — with the `a`/`b` folds
     using the *literal* `c_func`/`d_func` lookup tables (the cubics in `Holds` interpolate them, so
@@ -159,8 +132,6 @@ arithmetic.
 
 * `decomposeA`, `decomposeB`, `nReconstruct`, `toField` — the Algorithm-2 accumulators and the
   effective scalar, as field-valued folds over the crumb stream.
-* `decomposeA_eq_table`, `decomposeB_eq_table` — on valid crumbs the interpolating folds are the
-  bare `cFunc`/`dFunc` table folds.
 * `decomposeA_append`, `decomposeB_append`, `nReconstruct_append` — each fold resumes across a
   row boundary from the partial value of the earlier rows.
 * `nReconstruct_append_pos` — the same boundary read *positionally* instead: the earlier rows'
@@ -231,19 +202,6 @@ def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
 def toField (crumbs : List F) (lam : F) : F :=
   decomposeA crumbs * lam + decomposeB crumbs
 
-/-- On valid crumbs the `a`-accumulator is the bare-table fold: `cPoly` agrees with
-    `cFunc` there, so the interpolating fold and the table fold coincide. -/
-theorem decomposeA_eq_table [DecidableEq F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    {crumbs : List F} (hv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    decomposeA crumbs = crumbs.foldl (fun a x => 2 * a + cFunc x) 2 :=
-  foldl_table crumbs 2 fun x hx => cPoly_eq_cFunc h2 h3 (hv x hx)
-
-/-- The `b`-accumulator's bare-table fold, likewise. -/
-theorem decomposeB_eq_table [DecidableEq F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    {crumbs : List F} (hv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    decomposeB crumbs = crumbs.foldl (fun b x => 2 * b + dFunc x) 2 :=
-  foldl_table crumbs 2 fun x hx => dPoly_eq_dFunc h2 h3 (hv x hx)
-
 /-! ## Multi-row composition: threading rows is folding the concatenated crumbs.
 
     A challenge wider than one row's eight crumbs is laid out over several `EndoScalar` rows,
@@ -288,7 +246,7 @@ private theorem nReconstruct_append_pos (xs ys : List F) :
           rw [hsnoc, hcons, List.length_cons, pow_succ]; ring
 
 /-- The crumbs of the first `m` rows of a run, concatenated MSB-first. -/
-private def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
+def chainCrumbs (w : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap (fun i => (w i).crumbs)
 
 omit [Field F] in
@@ -306,7 +264,7 @@ omit [Field F] in
     `c * m` crumbs. This is what converts the stream-level budget `valNat_lt` into the deployed
     `4 ^ (c · #rows)` bound of the range check — at the deployed shape, eight rows of eight
     crumbs give `4 ^ 64 = 2 ^ 128`. -/
-private theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
+theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
     ∀ m, (∀ i, i < m → (w i).crumbs.length = c) → (chainCrumbs w m).length = c * m := by
   intro m
   induction m with
@@ -323,7 +281,7 @@ private theorem chainCrumbs_length (c : ℕ) (w : ℕ → Witness F) :
     Algorithm-2 decomposition of its whole concatenated crumb stream — exactly as a one-row
     `Holds` over `chainCrumbs w (m + 1)` would. The multi-row layout adds nothing to the
     arithmetic, as for `varBaseMul`'s `gateLadder` over its rows. -/
-private theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
+theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
     (hHolds : ∀ i, i ≤ m → Holds (w i))
     (ha0 : (w 0).a0 = 2) (hb0 : (w 0).b0 = 2) (hn0 : (w 0).n0 = 0)
     (haStep : ∀ i, i < m → (w (i + 1)).a0 = (w i).a8)
@@ -361,7 +319,7 @@ private theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
 
 /-- The honest multi-row witness: thread the gate's `build` from the canonical `(2, 2, 0)`,
     each row started from the previous row's output accumulators. -/
-private def chainBuild (rows : ℕ → List F) : ℕ → Witness F
+def chainBuild (rows : ℕ → List F) : ℕ → Witness F
   | 0 => build 2 2 0 (rows 0)
   | i + 1 =>
     let prev := chainBuild rows i
@@ -371,7 +329,7 @@ private def chainBuild (rows : ℕ → List F) : ℕ → Witness F
     the concatenation of the given rows. Threading changes the accumulators, never the crumbs
     (`build`'s `crumbs` field is its argument), which is what lets a chunking of the value be read
     back off the chain as one crumb list. -/
-private theorem chainCrumbs_chainBuild (rows : ℕ → List F) (m : ℕ) :
+theorem chainCrumbs_chainBuild (rows : ℕ → List F) (m : ℕ) :
     chainCrumbs (chainBuild rows) m = (List.range m).flatMap rows :=
   List.flatMap_congr fun i _ => by cases i <;> rfl
 

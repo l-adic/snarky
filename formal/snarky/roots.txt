@@ -378,12 +378,10 @@ Snarky.Kimchi.poseidon
 Snarky.Kimchi.mapAccumM
 Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toFieldChecked'
-Snarky.Kimchi.EndoScalar.toFieldPure
 Snarky.Kimchi.EndoScalar.toFieldChecked'_spec
 Snarky.Kimchi.EndoScalar.toField_spec
 Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec
 Snarky.Kimchi.EndoScalar.toField_complete_spec
-Snarky.Kimchi.EndoScalar.toFieldPure_eq_toField
 Snarky.Kimchi.Poseidon.poseidon_spec
 Snarky.Kimchi.Poseidon.poseidon_complete_spec
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
