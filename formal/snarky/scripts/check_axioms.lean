@@ -98,6 +98,8 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoMul.endoMul_spec,
     `Snarky.Kimchi.EndoMul.endoMul_spec_pallas,
     `Snarky.Kimchi.EndoMul.endoMul_spec_vesta,
+    `Snarky.Kimchi.EndoMul.endoMul_complete_spec_pallas,
+    `Snarky.Kimchi.EndoMul.endoMul_complete_spec_vesta,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
@@ -156,7 +158,9 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
     Every root outside this list stays pure core Lean. -/
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.EndoMul.endoMul_spec_pallas,
-    `Snarky.Kimchi.EndoMul.endoMul_spec_vesta ]
+    `Snarky.Kimchi.EndoMul.endoMul_spec_vesta,
+    `Snarky.Kimchi.EndoMul.endoMul_complete_spec_pallas,
+    `Snarky.Kimchi.EndoMul.endoMul_complete_spec_vesta ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

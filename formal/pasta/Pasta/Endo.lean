@@ -241,7 +241,7 @@ private theorem vesta_endoHom_eq_lam_smul (P : SWPoint Vesta.curve) :
 
 /-- `φ` maps curve points to curve points — the `Point.some` obligation of
     `pallas_eigen`'s conclusion. -/
-private theorem pallas_endo_nonsingular {x y : Fp}
+theorem pallas_endo_nonsingular {x y : Fp}
     (h : Pallas.curve.toAffine.Nonsingular x y) :
     Pallas.curve.toAffine.Nonsingular (pallasEndo * x) y := by
   have honc : OnCurve Pallas.curve.A Pallas.curve.B (x, y) := equation_toW.mp h.1
@@ -277,7 +277,7 @@ theorem pallas_eigen {x y : Fp}
 
 /-- `φ` maps curve points to curve points — the Vesta twin of
     `pallas_endo_nonsingular`. -/
-private theorem vesta_endo_nonsingular {x y : Fq}
+theorem vesta_endo_nonsingular {x y : Fq}
     (h : Vesta.curve.toAffine.Nonsingular x y) :
     Vesta.curve.toAffine.Nonsingular (vestaEndo * x) y := by
   have honc : OnCurve Vesta.curve.A Vesta.curve.B (x, y) := equation_toW.mp h.1

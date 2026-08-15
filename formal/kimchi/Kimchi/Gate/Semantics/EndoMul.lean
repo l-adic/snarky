@@ -523,6 +523,83 @@ theorem crumbList_valid (endo : F) (m : ℕ) (g : ℕ → Witness F)
   · rcases hb3 with h3 | h3 <;> rcases hb4 with h4 | h4 <;> rw [h3, h4] <;> norm_num
 
 omit [DecidableEq F] in
+/-- A natural's low base-4 digit, cast to the field, as its two bits — the shape a
+    window's second crumb `b₄ + 2·b₃` takes at bit values. -/
+private theorem cast_mod_four (k : ℕ) :
+    ((k % 4 : ℕ) : F)
+      = (if k.testBit 0 then (1 : F) else 0) + 2 * (if k.testBit 1 then 1 else 0) := by
+  have h0 : k.testBit 0 = decide (k % 2 = 1) := Nat.testBit_zero k
+  have h1 : k.testBit 1 = decide (k / 2 % 2 = 1) := by
+    rw [show (1 : ℕ) = Nat.succ 0 from rfl, Nat.testBit_succ, Nat.testBit_zero]
+  rcases Nat.mod_two_eq_zero_or_one k with he | he <;>
+    rcases Nat.mod_two_eq_zero_or_one (k / 2) with he' | he' <;>
+    rw [show k % 4 = k % 2 + 2 * (k / 2 % 2) from by omega] <;>
+    simp [h0, h1, he, he'] <;> norm_num
+
+omit [DecidableEq F] in
+/-- **The bit-to-crumb bridge.** When each row's four bits are the scalar's bits
+    MSB-first — row `r` holding bits `4m−1−4r` down to `4m−4−4r`, the prover's bulk
+    bit witness — the run's crumb list is exactly the width-`2m` base-4 expansion
+    `EndoScalar.crumbsOf` of the scalar. This is what turns the register chain
+    (`chain_nAcc`) into the scalar reconstruction and the decoded scalar
+    (`endoMul_off`'s `toField`) into `toField` at the canonical crumbs. -/
+theorem crumbList_ofBits (m n : ℕ) (g : ℕ → Witness F)
+    (hb : ∀ r, r < m →
+      (g r).b1 = (if n.testBit (4 * m - 1 - 4 * r) then (1 : F) else 0)
+      ∧ (g r).b2 = (if n.testBit (4 * m - 1 - (4 * r + 1)) then (1 : F) else 0)
+      ∧ (g r).b3 = (if n.testBit (4 * m - 1 - (4 * r + 2)) then (1 : F) else 0)
+      ∧ (g r).b4 = (if n.testBit (4 * m - 1 - (4 * r + 3)) then (1 : F) else 0)) :
+    crumbList g m = Kimchi.Gate.EndoScalar.crumbsOf (2 * m) n := by
+  induction m generalizing n with
+  | zero => rfl
+  | succ m ih =>
+    have hdiv : ∀ p, (n / 16).testBit p = n.testBit (4 + p) := by
+      intro p
+      rw [show n / 16 = n >>> 4 from by rw [Nat.shiftRight_eq_div_pow], Nat.testBit_shiftRight]
+    have hpref : crumbList g m = Kimchi.Gate.EndoScalar.crumbsOf (2 * m) (n / 16) := by
+      refine ih (n / 16) (fun r hr => ?_)
+      obtain ⟨h1, h2, h3, h4⟩ := hb r (by omega)
+      refine ⟨?_, ?_, ?_, ?_⟩
+      · rw [h1, show 4 * (m + 1) - 1 - 4 * r = 4 + (4 * m - 1 - 4 * r) from by omega,
+          ← hdiv (4 * m - 1 - 4 * r)]
+      · rw [h2, show 4 * (m + 1) - 1 - (4 * r + 1) = 4 + (4 * m - 1 - (4 * r + 1))
+            from by omega,
+          ← hdiv (4 * m - 1 - (4 * r + 1))]
+      · rw [h3, show 4 * (m + 1) - 1 - (4 * r + 2) = 4 + (4 * m - 1 - (4 * r + 2))
+            from by omega,
+          ← hdiv (4 * m - 1 - (4 * r + 2))]
+      · rw [h4, show 4 * (m + 1) - 1 - (4 * r + 3) = 4 + (4 * m - 1 - (4 * r + 3))
+            from by omega,
+          ← hdiv (4 * m - 1 - (4 * r + 3))]
+    obtain ⟨h1, h2, h3, h4⟩ := hb m (by omega)
+    have e1 : 4 * (m + 1) - 1 - 4 * m = 3 := by omega
+    have e2 : 4 * (m + 1) - 1 - (4 * m + 1) = 2 := by omega
+    have e3 : 4 * (m + 1) - 1 - (4 * m + 2) = 1 := by omega
+    have e4 : 4 * (m + 1) - 1 - (4 * m + 3) = 0 := by omega
+    rw [e1] at h1; rw [e2] at h2; rw [e3] at h3; rw [e4] at h4
+    have hc1 : (g m).b2 + 2 * (g m).b1 = (((n / 4) % 4 : ℕ) : F) := by
+      rw [h1, h2, cast_mod_four]
+      have b0 : (n / 4).testBit 0 = n.testBit 2 := by
+        rw [show n / 4 = n >>> 2 from by rw [Nat.shiftRight_eq_div_pow],
+          Nat.testBit_shiftRight]
+      have b1 : (n / 4).testBit 1 = n.testBit 3 := by
+        rw [show n / 4 = n >>> 2 from by rw [Nat.shiftRight_eq_div_pow],
+          Nat.testBit_shiftRight]
+      rw [b0, b1]
+    have hc2 : (g m).b4 + 2 * (g m).b3 = ((n % 4 : ℕ) : F) := by
+      rw [h3, h4, cast_mod_four]
+    rw [crumbList_succ, hpref, hc1, hc2,
+      show 2 * (m + 1) = 2 * m + 1 + 1 from by ring,
+      show Kimchi.Gate.EndoScalar.crumbsOf (2 * m + 1 + 1) n
+          = Kimchi.Gate.EndoScalar.crumbsOf (2 * m + 1) (n / 4) ++ [((n % 4 : ℕ) : F)]
+        from rfl,
+      show Kimchi.Gate.EndoScalar.crumbsOf (2 * m + 1) (n / 4)
+          = Kimchi.Gate.EndoScalar.crumbsOf (2 * m) (n / 4 / 4) ++ [((n / 4 % 4 : ℕ) : F)]
+        from rfl,
+      Nat.div_div_eq_div_mul, show (4 : ℕ) * 4 = 16 from by norm_num]
+    simp [List.append_assoc]
+
+omit [DecidableEq F] in
 /-- The init bridge: `EndoScalar`'s `decomposeA`/`decomposeB` over the crumb
     list (folded from the `a = b = 2` init) is its `2·4^m` carry plus the
     Algorithm-2 digit sums — exactly `endoMul_ab`'s `(k₂:F)` / `(k₁:F)`. By induction
@@ -1506,8 +1583,9 @@ def chainBuild (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F) : ℕ
 
 omit [DecidableEq F] in
 /-- Every row of the walk is the canonical row at its own threaded inputs — the
-    rebuild identity `row_produce` consumes. -/
-private theorem chainBuild_eta (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F)
+    rebuild identity that identifies a prover's per-row `build` calls with the
+    walk. -/
+theorem chainBuild_eta (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F)
     (i : ℕ) :
     chainBuild endo xT yT xP0 yP0 n0 bs i
       = build endo xT yT (chainBuild endo xT yT xP0 yP0 n0 bs i).xP
