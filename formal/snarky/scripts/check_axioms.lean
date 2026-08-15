@@ -96,6 +96,7 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec,
     `Snarky.Kimchi.EndoScalar.toField_complete_spec,
     `Snarky.Kimchi.EndoMul.endoMul_spec,
+    `Snarky.Kimchi.EndoMul.endoMul_complete_spec,
     `Snarky.Kimchi.EndoMul.endoMul_spec_pallas,
     `Snarky.Kimchi.EndoMul.endoMul_spec_vesta,
     `Snarky.Kimchi.EndoMul.endoMul_complete_spec_pallas,

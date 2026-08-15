@@ -38,10 +38,10 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS reads the endo coefficient off the ambient `HasEndo` class; the deep embedding
   passes it as the `eb` parameter (the Poseidon parameter-data deviation).
 
-The law pair reads the emitted constraints through the semantic layer:
-`EndoMul.endoMul_spec` with its deployed instantiations
-`endoMul_spec_pallas`/`endoMul_spec_vesta` (`§ Soundness` below), and the
-deployed-only completeness pair
+The law pair reads the emitted constraints through the semantic layer, each generic
+over the curve dictionary with deployed Pasta instantiations:
+`EndoMul.endoMul_spec` with `endoMul_spec_pallas`/`endoMul_spec_vesta`
+(`§ Soundness` below), and `EndoMul.endoMul_complete_spec` with
 `endoMul_complete_spec_pallas`/`endoMul_complete_spec_vesta` (`§ Completeness
 plumbing` below) — both directions decode the scalar through one crumb list.
 -/
@@ -736,16 +736,25 @@ private theorem chainBuild_fields [Field F] [DecidableEq F]
 
 open Kimchi.Gate.EndoMul in
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
-/-- The completeness walk, generic over the curve facts the deployed wrappers
-discharge: the honest prover run accepts on a readable in-range faithful scalar and
-a readable on-curve base, and the returned point reads as `[s]·T` with
+/-- The gadget is complete, generic over the curve dictionary: the honest prover run
+accepts on a readable in-range faithful scalar and a readable on-curve base, and the
+returned point reads as `[s]·T` with
 `(s : F) = EndoScalar.toField (crumbsOf (2·rounds) n) λ` — the honest side of the
-defining equation, at the canonical crumbs of the scalar. The loop invariant
-identifies the run with the honest walk `chainBuild`; the per-round check is the
-produce chain's (`chain_complete` through `off`), the init chain is the two pinned
-additions (`addFast_complete_spec`), and the register pin is `chain_nAcc` through
-the bit-to-crumb bridge (`crumbList_ofBits`). -/
-private theorem endoMul_complete_core [Field F] [DecidableEq F] [ToNat F]
+defining equation, at the canonical crumbs of the scalar.
+
+The curve facts are hypotheses, not instantiations — the eigenvalue `heig`, the
+endomorphism's curve-stability `hφns`, the GLV off-targets fact `hoff`, and the
+nonzero `(1+λ)`-multiple `hlam1` — so this law composes with OTHER generic circuit
+completeness laws the way the PS circuits compose over an abstract field: a composite
+gadget's law takes the same dictionary and threads it here (as this walk itself
+threads `W` and its facts into `addFast_complete_spec`), and everything is discharged
+once at the deployed instantiation (`endoMul_complete_spec_pallas`/`_vesta` below).
+
+The loop invariant identifies the run with the honest walk `chainBuild`; the
+per-round check is the produce chain's (`chain_complete` through `off`), the init
+chain is the two pinned additions (`addFast_complete_spec`), and the register pin is
+`chain_nAcc` through the bit-to-crumb bridge (`crumbList_ofBits`). -/
+theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F]
     (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2)
@@ -1115,7 +1124,7 @@ theorem endoMul_complete_spec_pallas [ToNat Fp] (rounds : ℕ) (hbits : 4 * roun
     ⦃Q⦄ := by
   haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
       ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-  refine endoMul_complete_core Pallas.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
+  refine endoMul_complete_spec Pallas.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
     (by decide) (by decide) (by rw [pallas_card]; decide) pallasEndo pallasLam
     (fun hT _ => pallas_eigen hT)
     (fun hT => pallas_endo_nonsingular hT)
@@ -1154,7 +1163,7 @@ theorem endoMul_complete_spec_vesta [ToNat Fq] (rounds : ℕ) (hbits : 4 * round
     ⦃Q⦄ := by
   haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
       ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-  refine endoMul_complete_core Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
+  refine endoMul_complete_spec Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
     (by decide) (by decide) (by rw [vesta_card]; decide) vestaEndo vestaLam
     (fun hT _ => vesta_eigen hT)
     (fun hT => vesta_endo_nonsingular hT)
