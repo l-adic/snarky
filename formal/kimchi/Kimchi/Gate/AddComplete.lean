@@ -29,9 +29,10 @@ carries the constraint model; the theorems below are proved in
   sum `(x₁,y₁) + (x₂,y₂)` is the group element the gate encodes — `0` when `inf = 1`,
   else the affine output `(x₃, y₃)` — using that `inf` is boolean (`inf_boolean`). It
   splits into the per-case `sound_point_noninf` / `sound_point_inf`.
-* `complete` — COMPLETENESS, both cases in one statement: for on-curve inputs (`y₁ ≠ 0`),
-  an honest prover can fill a satisfying witness, casing internally on whether the sum is
-  finite or `∞`. Splits into the per-case `complete_noninf` / `complete_inf`.
+* `build` / `complete_build` — COMPLETENESS, constructive: the canonical row the honest
+  prover fills, and the theorem that it satisfies the gate for on-curve inputs
+  (`y₁ ≠ 0`), casing internally on whether the sum is finite or `∞`. `complete` is the
+  existential corollary.
 -/
 
 namespace Kimchi.Gate.AddComplete

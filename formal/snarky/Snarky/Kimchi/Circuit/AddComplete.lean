@@ -358,82 +358,7 @@ end AddFast
 
 namespace AddFast
 
-/-- The value all seven witness computations jointly produce, as one pure function of
-the (sealed) operand coordinates: the row the honest prover fills. `checkFinite` pins
-`inf` to `0`; otherwise `inf` is the inverse-pair test. -/
-private def valueWitness [Field F] [DecidableEq F] (checkFinite : Bool)
-    (x1 y1 x2 y2 : F) : Kimchi.Gate.AddComplete.Witness F :=
-  let s : F := if x1 = x2 then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)
-  let x3 : F := s * s - (x1 + x2)
-  { x1 := x1, y1 := y1, x2 := x2, y2 := y2
-    x3 := x3
-    y3 := s * (x1 - x3) - y1
-    inf := if checkFinite then 0 else bit (decide (x1 = x2) && !decide (y1 = y2))
-    sameX := bit (decide (x1 = x2))
-    s := s
-    infZ := if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0
-    x21Inv := if x1 = x2 then 0 else (x2 - x1)⁻¹ }
-
-/-- The honest witness satisfies the verified gate: for on-curve operands on a
-short-shape curve — `checkFinite` mode adding the finite-sum precondition — the row
-`addFast` computes meets `Kimchi.Gate.AddComplete.Holds`. The proof replays the
-algebra of the gate's `complete_noninf`/`complete_inf` at the gadget's computed
-values (those theorems pin an existential witness, not this one). -/
-private theorem valueWitness_holds [Field F] [DecidableEq F]
-    (W : WeierstrassCurve.Affine F)
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    {checkFinite : Bool} {x1 y1 x2 y2 : F}
-    (hon1 : W.Equation x1 y1) (hon2 : W.Equation x2 y2)
-    (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0)
-    (hfin : checkFinite = true → ¬(x1 = x2 ∧ y1 = W.negY x2 y2)) :
-    Kimchi.Gate.AddComplete.Holds (valueWitness checkFinite x1 y1 x2 y2) := by
-  obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
-  have hcancel := mul_inv_cancel₀ (mul_ne_zero h2 hy1)
-  rw [Kimchi.Gate.AddComplete.holds_iff]
-  by_cases hx : x1 = x2
-  · -- Equal x-coordinates: on-curve, the y-coordinates agree or are opposite.
-    have hyy : (y1 - y2) * (y1 + y2) = 0 := by
-      rw [WeierstrassCurve.Affine.equation_iff] at hon1 hon2
-      rw [ha1, ha2, ha3, ha4] at hon1 hon2
-      rw [hx] at hon1
-      linear_combination hon1 - hon2
-    by_cases hy : y1 = y2
-    · -- Doubling: `inf = 0` in both modes, `infZ = 0`.
-      simp only [valueWitness, if_pos hx, if_pos hy, decide_eq_true hx,
-        decide_eq_true hy, Bool.not_true, Bool.and_false, bit, Bool.false_eq_true,
-        if_false, if_true, ite_self]
-      refine ⟨by ring, by linear_combination -hx, ?_, by ring, by ring, ?_, by ring⟩
-      · linear_combination (3 * x1 * x1) * hcancel
-      · linear_combination -hy
-    · -- Inverse pair: `y₂ = −y₁`; excluded under `checkFinite`, else `inf = 1`.
-      have hy2 : y2 = -y1 := by
-        rcases mul_eq_zero.mp hyy with h | h
-        · exact absurd (by linear_combination h) hy
-        · linear_combination h
-      have hne : y2 - y1 ≠ 0 := by
-        rw [hy2]
-        intro h
-        rcases mul_eq_zero.mp (show y1 * 2 = 0 by linear_combination -h) with h' | h'
-        · exact hy1 h'
-        · exact h2 h'
-      cases checkFinite with
-      | true =>
-        exact absurd ⟨hx, by rw [WeierstrassCurve.Affine.negY, ha1, ha3, hy2]; ring⟩
-          (hfin rfl)
-      | false =>
-        simp only [valueWitness, if_pos hx, if_neg hy, decide_eq_true hx,
-          decide_eq_false hy, Bool.not_false, Bool.and_true, bit,
-          Bool.false_eq_true, if_false, if_true]
-        refine ⟨by ring, by linear_combination -hx, ?_, by ring, by ring, by ring, ?_⟩
-        · linear_combination (3 * x1 * x1) * hcancel
-        · linear_combination mul_inv_cancel₀ hne
-  · -- Distinct x-coordinates: the secant row; `inf = 0` in both modes.
-    have hne : x2 - x1 ≠ 0 := fun h => hx (by linear_combination -h)
-    simp only [valueWitness, if_neg hx, decide_eq_false hx, Bool.false_and, bit,
-      Bool.false_eq_true, if_false, ite_self]
-    refine ⟨?_, by ring, ?_, by ring, by ring, by ring, by ring⟩
-    · linear_combination mul_inv_cancel₀ hne
-    · linear_combination (y2 - y1) * mul_inv_cancel₀ hne
+open WeierstrassCurve.Affine
 
 /-- Reading a bit variable back through the `Bool` decode: an encoded bit decodes to
 itself (the field is nontrivial). -/
@@ -454,14 +379,14 @@ private theorem readVar_bool_of_eval [Field F] [DecidableEq F]
 open Std.Do in
 /-- The tail's honest run, from pinned operand reads: with the sealed coordinates,
 `sameX`, and `inf` reading the row's operand values, and the row those values fill
-satisfying the verified gate, every check accepts; the outputs read on the final
-table. Applied manually per mode — its value arguments are not inferable from a call
-site. -/
+satisfying the verified gate, every check accepts; the outputs read the honest
+row's values on the final table. Applied manually per mode — its value arguments
+are not inferable from a call site. -/
 private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
     (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F)
     (x1v y1v x2v y2v : F) (ib : Bool)
     (hHolds : Kimchi.Gate.AddComplete.Holds
-      { valueWitness true x1v y1v x2v y2v with inf := bit ib })
+      { Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v with inf := bit ib })
     (Q : PostCond (AddResult F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env =>
@@ -470,8 +395,9 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
           (↑sameX : CVar F).eval env = .ok (bit (decide (x1v = x2v))) ∧
           (↑inf : CVar F).eval env = .ok (bit ib))
         (fun _ (r : AddResult F) env' =>
-          (r.p.x.eval env').isOk ∧ (r.p.y.eval env').isOk ∧
-          ((↑r.isInfinity : CVar F).eval env').isOk)
+          r.p.x.eval env' = .ok (Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v).x3 ∧
+          r.p.y.eval env' = .ok (Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v).y3 ∧
+          (↑r.isInfinity : CVar F).eval env' = .ok (bit ib))
         Q⦄
     addFastTail (c := KimchiProverC F) p1 p2 sameX inf
     ⦃Q⦄ := by
@@ -542,8 +468,8 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
   · show KimchiConstraint.check (.addComplete _) st₅.env = true
     have heval : AddComplete.eval st₅.env
         ⟨p1, p2, ⟨x3, y3⟩, inf.toCVar, sameX.toCVar, s, infZ, x21Inv⟩
-        = .ok { valueWitness true x1v y1v x2v y2v with inf := bit ib } := by
-      simp [AddComplete.eval, valueWitness,
+        = .ok { Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v with inf := bit ib } := by
+      simp [AddComplete.eval, Kimchi.Gate.AddComplete.build, bit,
         CVar.eval_le hle05 hp1x, CVar.eval_le hle05 hp1y,
         CVar.eval_le hle05 hp2x, CVar.eval_le hle05 hp2y,
         CVar.eval_le hle₅ hx3, hy3, CVar.eval_le (hle₄.trans hle₅) hs,
@@ -554,16 +480,19 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
     exact (Kimchi.Gate.AddComplete.ok_iff _).mpr hHolds
   · mvcgen
     refine hk _ st₆ ?_ ?_ ?_ (hle05.trans hle₆)
-    · rw [CVar.eval_le (hle₅.trans hle₆) hx3]; rfl
-    · rw [CVar.eval_le hle₆ hy3]; rfl
-    · rw [CVar.eval_le (hle05.trans hle₆) hinf]; rfl
+    · exact CVar.eval_le (hle₅.trans hle₆) hx3
+    · exact CVar.eval_le hle₆ hy3
+    · exact CVar.eval_le (hle05.trans hle₆) hinf
 
 /-- `addFast`'s honest run succeeds at the prover carrier: with the four operand
 coordinates readable, the operands on-curve (short shape), the first finite
 (`y ≠ 0`), and — under `checkFinite` — the sum finite, the checking interpreter at
-`KimchiProverC` accepts every row the gadget emits. The grant is the outputs reading
-on the final table. The executable seam (`kimchiSolve` at `kimchiOps`) is outside
-this statement: its ops-coherence lockstep is the open obligation
+`KimchiProverC` accepts every row the gadget emits, and the outputs read as the sum
+in Mathlib's group — *either* the infinity flag reads `1` and the sum is `0`, *or*
+it reads `0` and the output coordinates are a nonsingular point equal to the sum
+(the accepted row satisfies the verified gate, so its `sound` characterizes what
+was computed). The executable seam (`kimchiSolve` at `kimchiOps`) is outside this
+statement: its ops-coherence lockstep is the open obligation
 `Snarky.Kimchi.Constraint` records. -/
 theorem addFast_complete_spec [Field F] [DecidableEq F]
     (fin : Finiteness) (W : WeierstrassCurve.Affine F)
@@ -578,9 +507,16 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
             p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
             W.Equation x1 y1 ∧ W.Equation x2 y2 ∧ y1 ≠ 0 ∧
               (fin = .checkFinite → ¬(x1 = x2 ∧ y1 = W.negY x2 y2))))
-        (fun _ (r : AddResult F) env' =>
-          (r.p.x.eval env').isOk ∧ (r.p.y.eval env').isOk ∧
-          ((↑r.isInfinity : CVar F).eval env').isOk)
+        (fun env (r : AddResult F) env' =>
+          ∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
+            p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
+            ∀ (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2),
+              ((↑r.isInfinity : CVar F).eval env' = .ok 1 ∧
+                Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+              (∃ x3 y3, r.p.x.eval env' = .ok x3 ∧ r.p.y.eval env' = .ok y3 ∧
+                (↑r.isInfinity : CVar F).eval env' = .ok 0 ∧
+                ∃ h3 : W.Nonsingular x3 y3,
+                  Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))
         Q⦄
     addFast (c := KimchiProverC F) fin p1' p2'
     ⦃Q⦄ := by
@@ -610,13 +546,23 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
   cases fin with
   | checkFinite =>
     mvcgen
+    have hHolds := Kimchi.Gate.AddComplete.complete_build (checkFinite := true) W ha
+      hon1 hon2 hy1ne htwo (fun _ => hfin)
     refine addFastTail_complete_spec p1 p2 sameXU.val false_ x1v y1v x2v y2v false
-      (valueWitness_holds (checkFinite := true) W ha hon1 hon2 hy1ne htwo
-        (fun _ => hfin)) Q st₃
+      hHolds Q st₃
       ⟨⟨CVar.eval_le (hle₂.trans hle₃) hp1x, CVar.eval_le (hle₂.trans hle₃) hp1y,
         CVar.eval_le hle₃ hp2x, CVar.eval_le hle₃ hp2y, hsx, rfl⟩,
-      fun r st' hpost hle => hk r st' hpost.1 hpost.2.1 hpost.2.2
+      fun r st' hpost hle => hk r st' ?_
         ((hle₁.trans (hle₂.trans hle₃)).trans hle)⟩
+    intro a1 b1 a2 b2 ha1 hb1 ha2 hb2 h1 h2
+    rw [hx1] at ha1; rw [hy1] at hb1; rw [hx2] at ha2; rw [hy2] at hb2
+    injection ha1 with ha1; injection hb1 with hb1
+    injection ha2 with ha2; injection hb2 with hb2
+    subst ha1 hb1 ha2 hb2
+    rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hHolds hy1ne htwo with
+      ⟨hinf1, _⟩ | ⟨_, h3, hsum⟩
+    · exact absurd (hinf1 : (0 : F) = 1) zero_ne_one
+    · exact Or.inr ⟨_, _, hpost.1, hpost.2.1, hpost.2.2, h3, hsum⟩
   | dontCheckFinite =>
     mvcgen
     have hiw : (UnChecked.mk <$> infWit p1 p2 sameXU.val) st₃.env
@@ -628,16 +574,26 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
     refine ⟨by rw [hiw]; rfl, fun infU st₄ hinfr hle₄ => ?_⟩
     have hinfb : _ = _ := hinfr _ hiw
     mvcgen
+    have hHolds := Kimchi.Gate.AddComplete.complete_build (checkFinite := false) W ha
+      hon1 hon2 hy1ne htwo (fun h => Bool.noConfusion h)
     refine addFastTail_complete_spec p1 p2 sameXU.val infU.val x1v y1v x2v y2v
       (decide (x1v = x2v) && !decide (y1v = y2v))
-      (valueWitness_holds (checkFinite := false) W ha hon1 hon2 hy1ne htwo
-        (fun h => Bool.noConfusion h)) Q st₄
+      hHolds Q st₄
       ⟨⟨CVar.eval_le (hle₂.trans (hle₃.trans hle₄)) hp1x,
         CVar.eval_le (hle₂.trans (hle₃.trans hle₄)) hp1y,
         CVar.eval_le (hle₃.trans hle₄) hp2x, CVar.eval_le (hle₃.trans hle₄) hp2y,
         CVar.eval_le hle₄ hsx, hinfb⟩,
-      fun r st' hpost hle => hk r st' hpost.1 hpost.2.1 hpost.2.2
+      fun r st' hpost hle => hk r st' ?_
         ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hle)⟩
+    intro a1 b1 a2 b2 ha1 hb1 ha2 hb2 h1 h2
+    rw [hx1] at ha1; rw [hy1] at hb1; rw [hx2] at ha2; rw [hy2] at hb2
+    injection ha1 with ha1; injection hb1 with hb1
+    injection ha2 with ha2; injection hb2 with hb2
+    subst ha1 hb1 ha2 hb2
+    rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hHolds hy1ne htwo with
+      ⟨hinf1, hsum⟩ | ⟨hinf0, h3, hsum⟩
+    · exact Or.inl ⟨hinf1 ▸ hpost.2.2, hsum⟩
+    · exact Or.inr ⟨_, _, hpost.1, hpost.2.1, hinf0 ▸ hpost.2.2, h3, hsum⟩
 
 end AddFast
 

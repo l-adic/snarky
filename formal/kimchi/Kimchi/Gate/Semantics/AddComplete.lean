@@ -73,122 +73,93 @@ theorem sound_noninf
       WeierstrassCurve.Affine.negAddY, WeierstrassCurve.Affine.addX, ha1, ha2, ha3]
     linear_combination -c5 - w.s * c4
 
-/-- COMPLETENESS: the honest prover can always fill in the witness. For on-curve
-    inputs whose sum is finite, there exists a satisfying witness, and its output
-    is the Mathlib affine sum. -/
-theorem complete_noninf
+/-- The canonical satisfying row: the slope, sum coordinates, and the three auxiliary
+    witnesses, as one pure function of the operand values — the row the honest prover
+    fills. `checkFinite` pins `inf` to `0`; otherwise `inf` is the inverse-pair test. -/
+def build (checkFinite : Bool) (x1 y1 x2 y2 : F) : Witness F :=
+  let s : F := if x1 = x2 then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)
+  let x3 : F := s * s - (x1 + x2)
+  { x1 := x1, y1 := y1, x2 := x2, y2 := y2
+    x3 := x3
+    y3 := s * (x1 - x3) - y1
+    inf := if checkFinite then 0
+      else if decide (x1 = x2) && !decide (y1 = y2) then 1 else 0
+    sameX := if decide (x1 = x2) then 1 else 0
+    s := s
+    infZ := if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0
+    x21Inv := if x1 = x2 then 0 else (x2 - x1)⁻¹ }
+
+/-- COMPLETENESS, constructive: the canonical row satisfies the gate. For on-curve
+    operands with `y₁ ≠ 0` — `checkFinite` adding the finite-sum precondition —
+    `build`'s row meets every constraint. The consumable form for a deployed prover,
+    which is fixed code: an existential witness cannot certify the row it actually
+    fills. `complete` below is the existential corollary. -/
+theorem complete_build
     (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    (x1 y1 x2 y2 : F)
+    {checkFinite : Bool} {x1 y1 x2 y2 : F}
     (hon1 : W.Equation x1 y1) (hon2 : W.Equation x2 y2)
-    (hfin : ¬ (x1 = x2 ∧ y1 = W.negY x2 y2))
-    (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
-    ∃ w : Witness F,
-      w.x1 = x1 ∧ w.y1 = y1 ∧ w.x2 = x2 ∧ w.y2 = y2 ∧ w.inf = 0
-      ∧ Holds w
-      ∧ w.x3 = W.addX x1 x2 (W.slope x1 x2 y1 y2)
-      ∧ w.y3 = W.addY x1 x2 y1 (W.slope x1 x2 y1 y2) := by
+    (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0)
+    (hfin : checkFinite = true → ¬(x1 = x2 ∧ y1 = W.negY x2 y2)) :
+    Holds (build checkFinite x1 y1 x2 y2) := by
   obtain ⟨ha1, ha2, ha3, ha4⟩ := ha
-  by_cases hx : x1 = x2
-  · -- doubling branch: sameX = 1, x21Inv = 0
-    have hy : y1 ≠ W.negY x2 y2 := fun h => hfin ⟨hx, h⟩
-    have hnegYx1 : W.negY x1 y1 = -y1 := by simp [WeierstrassCurve.Affine.negY, ha1, ha3]
-    have hyy : y1 + y1 ≠ 0 := by rw [← two_mul]; exact mul_ne_zero h2 hy1
-    have hyeq : y1 = y2 := WeierstrassCurve.Affine.Y_eq_of_Y_ne hon1 hon2 hx hy
-    refine ⟨{ x1 := x1, y1 := y1, x2 := x2, y2 := y2
-            , x3 := W.addX x1 x2 (W.slope x1 x2 y1 y2)
-            , y3 := W.addY x1 x2 y1 (W.slope x1 x2 y1 y2)
-            , inf := 0, sameX := 1, s := W.slope x1 x2 y1 y2
-            , infZ := 0, x21Inv := 0 },
-          rfl, rfl, rfl, rfl, rfl, ?_, rfl, rfl⟩
-    rw [holds_iff]
-    refine ⟨by ring, by rw [hx]; ring, ?_, ?_, ?_, by rw [← hyeq]; ring, by ring⟩
-    · -- c3: 2·s·y₁ = 3x₁²  (via slope = 3x₁²/(2y₁), cleared with eq_div_iff)
-      have hs : W.slope x1 x2 y1 y2 = 3 * x1 ^ 2 / (y1 + y1) := by
-        rw [WeierstrassCurve.Affine.slope_of_Y_ne hx hy, hnegYx1, sub_neg_eq_add]
-        simp only [ha1, ha2, ha4]; ring
-      have key : W.slope x1 x2 y1 y2 * (y1 + y1) = 3 * x1 ^ 2 := (eq_div_iff hyy).mp hs
-      linear_combination key
-    · simp only [WeierstrassCurve.Affine.addX, ha1, ha2]; ring
-    · simp only [WeierstrassCurve.Affine.addY, WeierstrassCurve.Affine.negY,
-        WeierstrassCurve.Affine.negAddY, WeierstrassCurve.Affine.addX, ha1, ha2, ha3]; ring
-  · -- addition branch: sameX = 0, x21Inv = (x₂−x₁)⁻¹
-    have hx21 : x2 - x1 ≠ 0 := sub_ne_zero.mpr (Ne.symm hx)
-    refine ⟨{ x1 := x1, y1 := y1, x2 := x2, y2 := y2
-            , x3 := W.addX x1 x2 (W.slope x1 x2 y1 y2)
-            , y3 := W.addY x1 x2 y1 (W.slope x1 x2 y1 y2)
-            , inf := 0, sameX := 0, s := W.slope x1 x2 y1 y2
-            , infZ := 0, x21Inv := (x2 - x1)⁻¹ },
-          rfl, rfl, rfl, rfl, rfl, ?_, rfl, rfl⟩
-    rw [holds_iff]
-    refine ⟨?_, by ring, ?_, ?_, ?_, by ring, by ring⟩
-    · -- c1: (x₂−x₁)⁻¹·(x₂−x₁) − 1 = 0
-      rw [inv_mul_cancel₀ hx21]; ring
-    · -- c3: (x₂−x₁)·s = y₂−y₁  (slope identity in multiplied-out form)
-      have hx12 : x1 - x2 ≠ 0 := sub_ne_zero.mpr hx
-      have key : W.slope x1 x2 y1 y2 * (x1 - x2) = y1 - y2 := by
-        rw [WeierstrassCurve.Affine.slope_of_X_ne hx]; field_simp
-      linear_combination -key
-    · simp only [WeierstrassCurve.Affine.addX, ha1, ha2]; ring
-    · simp only [WeierstrassCurve.Affine.addY, WeierstrassCurve.Affine.negY,
-        WeierstrassCurve.Affine.negAddY, WeierstrassCurve.Affine.addX, ha1, ha2, ha3]; ring
-
-omit [DecidableEq F] in
-/-- COMPLETENESS, infinity case. When the inputs sum to `∞` — `x₁ = x₂` and
-    `y₁ = negY x₂ y₂`, i.e. `P₂ = -P₁` — the honest prover can fill a satisfying witness
-    with `inf = 1`. The output columns carry the (unused) doubling slope `s = 3x₁²/(2y₁)`
-    so the `sameX = 1` slope constraint still holds; `infZ = 1/(y₂−y₁)` witnesses `inf`.
-    The companion to `complete_noninf`, closing completeness over both cases. -/
-theorem complete_inf
-    (W : WeierstrassCurve.Affine F)
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    (x1 y1 x2 y2 : F)
-    (_hon1 : W.Equation x1 y1) (_hon2 : W.Equation x2 y2)
-    (hinf : x1 = x2 ∧ y1 = W.negY x2 y2)
-    (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
-    ∃ w : Witness F,
-      w.x1 = x1 ∧ w.y1 = y1 ∧ w.x2 = x2 ∧ w.y2 = y2 ∧ w.inf = 1 ∧ Holds w := by
-  obtain ⟨ha1, -, ha3, -⟩ := ha
-  obtain ⟨hxe, hye⟩ := hinf
-  have hnegY2 : W.negY x2 y2 = -y2 := by simp [WeierstrassCurve.Affine.negY, ha1, ha3]
-  rw [hnegY2] at hye
-  have hy2 : y2 = -y1 := by linear_combination hye
-  have hden : (2 : F) * y1 ≠ 0 := mul_ne_zero h2 hy1
-  have hy21ne : y2 - y1 ≠ 0 := by
-    rw [hy2]; intro h; exact hden (by linear_combination -h)
-  set s : F := 3 * x1 ^ 2 / (2 * y1) with hsdef
-  refine ⟨{ x1 := x1, y1 := y1, x2 := x2, y2 := y2, x3 := s ^ 2 - x1 - x2,
-            y3 := s * (x1 - (s ^ 2 - x1 - x2)) - y1, inf := 1, sameX := 1, s := s,
-            infZ := 1 / (y2 - y1), x21Inv := 0 }, rfl, rfl, rfl, rfl, rfl, ?_⟩
+  have hcancel := mul_inv_cancel₀ (mul_ne_zero h2 hy1)
   rw [holds_iff]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · ring
-  · rw [hxe]; ring
-  · rw [hsdef]; field_simp; ring
-  · ring
-  · ring
-  · ring
-  · rw [mul_one_div, div_self hy21ne, sub_self]
+  by_cases hx : x1 = x2
+  · -- Equal x-coordinates: on-curve, the y-coordinates agree or are opposite.
+    have hyy : (y1 - y2) * (y1 + y2) = 0 := by
+      rw [WeierstrassCurve.Affine.equation_iff] at hon1 hon2
+      rw [ha1, ha2, ha3, ha4] at hon1 hon2
+      rw [hx] at hon1
+      linear_combination hon1 - hon2
+    by_cases hy : y1 = y2
+    · -- Doubling: `inf = 0` in both modes, `infZ = 0`.
+      simp only [build, if_pos hx, if_pos hy, decide_eq_true hx, decide_eq_true hy,
+        Bool.not_true, Bool.and_false, Bool.false_eq_true, if_false, if_true, ite_self]
+      refine ⟨by ring, by linear_combination -hx, ?_, by ring, by ring, ?_, by ring⟩
+      · linear_combination (3 * x1 * x1) * hcancel
+      · linear_combination -hy
+    · -- Inverse pair: `y₂ = −y₁`; excluded under `checkFinite`, else `inf = 1`.
+      have hy2 : y2 = -y1 := by
+        rcases mul_eq_zero.mp hyy with h | h
+        · exact absurd (by linear_combination h) hy
+        · linear_combination h
+      have hne : y2 - y1 ≠ 0 := by
+        rw [hy2]
+        intro h
+        rcases mul_eq_zero.mp (show y1 * 2 = 0 by linear_combination -h) with h' | h'
+        · exact hy1 h'
+        · exact h2 h'
+      cases checkFinite with
+      | true =>
+        exact absurd ⟨hx, by rw [WeierstrassCurve.Affine.negY, ha1, ha3, hy2]; ring⟩
+          (hfin rfl)
+      | false =>
+        simp only [build, if_pos hx, if_neg hy, decide_eq_true hx, decide_eq_false hy,
+          Bool.not_false, Bool.and_true, Bool.false_eq_true, if_false, if_true]
+        refine ⟨by ring, by linear_combination -hx, ?_, by ring, by ring, by ring, ?_⟩
+        · linear_combination (3 * x1 * x1) * hcancel
+        · linear_combination mul_inv_cancel₀ hne
+  · -- Distinct x-coordinates: the secant row; `inf = 0` in both modes.
+    have hne : x2 - x1 ≠ 0 := fun h => hx (by linear_combination -h)
+    simp only [build, if_neg hx, decide_eq_false hx, Bool.false_and,
+      Bool.false_eq_true, if_false, ite_self]
+    refine ⟨?_, by ring, ?_, by ring, by ring, by ring, by ring⟩
+    · linear_combination mul_inv_cancel₀ hne
+    · linear_combination (y2 - y1) * mul_inv_cancel₀ hne
 
-/-- COMPLETENESS, both cases in one statement. For any on-curve inputs with `y₁ ≠ 0`, an
-    honest prover can fill a satisfying witness — casing internally on whether the sum is
-    `∞` (`x₁=x₂ ∧ y₁ = negY x₂ y₂` → `complete_inf`, `inf=1`) or finite (`complete_noninf`,
-    `inf=0`). The single-theorem companion to `sound`. (`y₁ ≠ 0` excludes 2-torsion,
-    which the prime-order kimchi curves don't have — so it is no real restriction there.) -/
+/-- COMPLETENESS, existential: for any on-curve inputs with `y₁ ≠ 0` a satisfying
+    witness exists — `build`'s row. (`y₁ ≠ 0` excludes 2-torsion, which the
+    prime-order kimchi curves don't have — so it is no real restriction there.) -/
 theorem complete
     (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (x1 y1 x2 y2 : F)
     (hon1 : W.Equation x1 y1) (hon2 : W.Equation x2 y2)
     (hy1 : y1 ≠ 0) (h2 : (2 : F) ≠ 0) :
-    ∃ w : Witness F, w.x1 = x1 ∧ w.y1 = y1 ∧ w.x2 = x2 ∧ w.y2 = y2 ∧ Holds w := by
-  by_cases hd : x1 = x2 ∧ y1 = W.negY x2 y2
-  · obtain ⟨w, e1, e2, e3, e4, _, hcons⟩ :=
-      complete_inf W ha x1 y1 x2 y2 hon1 hon2 hd hy1 h2
-    exact ⟨w, e1, e2, e3, e4, hcons⟩
-  · obtain ⟨w, e1, e2, e3, e4, _, hcons, _, _⟩ :=
-      complete_noninf W ha x1 y1 x2 y2 hon1 hon2 hd hy1 h2
-    exact ⟨w, e1, e2, e3, e4, hcons⟩
+    ∃ w : Witness F, w.x1 = x1 ∧ w.y1 = y1 ∧ w.x2 = x2 ∧ w.y2 = y2 ∧ Holds w :=
+  ⟨build false x1 y1 x2 y2, rfl, rfl, rfl, rfl,
+    complete_build W ha hon1 hon2 hy1 h2 (fun h => Bool.noConfusion h)⟩
 
 end Faithfulness
 
