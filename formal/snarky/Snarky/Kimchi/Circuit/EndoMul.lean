@@ -36,7 +36,10 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   same eight-variable allocation per round in the PS record's alphabetical order
   `(inv, nAccNext, r, s, s1, s3)`.
 - PS reads the endo coefficient off the ambient `HasEndo` class; the deep embedding
-  passes it as the `eb` parameter (the Poseidon parameter-data deviation).
+  passes it as the `eb` parameter (the Poseidon parameter-data deviation). The law
+  layer renders the class as the explicit `HasEndo` structure — the coefficient, the
+  eigenvalue, and every curve fact the law pair consumes, with the deployed
+  dictionaries `HasEndo.pallas`/`HasEndo.vesta`.
 
 The law pair reads the emitted constraints through the semantic layer, each generic
 over the curve dictionary with deployed Pasta instantiations:
@@ -120,6 +123,91 @@ the row threading definitional: a round's output cells and its successor's input
 cells are the same variables. -/
 
 open Std.Do WeierstrassCurve.Affine
+
+/-- The endomorphism dictionary (PS `HasEndo` together with the ambient curve facts):
+the curve, the endomorphism coefficient and its scalar eigenvalue, and every
+curve-level fact the `endoMul` law pair consumes. This is the deep embedding's
+rendering of the PS typeclass dictionary — a structure passed explicitly, not a
+class, since the formal tree threads theorem content by argument. Generic circuit
+laws take one `HasEndo F` and compose over an abstract field the way the PS pickles
+circuits do; the deployed `HasEndo.pallas`/`HasEndo.vesta` discharge it, mirroring
+the instantiation at wrap/step main. -/
+structure HasEndo (F : Type) [Field F] [DecidableEq F] where
+  /-- The curve the base point and accumulators live on. -/
+  W : WeierstrassCurve.Affine F
+  /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
+  endo : F
+  /-- The scalar eigenvalue `λ` of the endomorphism: `φ(T) = [λ]·T`. -/
+  lam : ℤ
+  /-- The Pasta short-Weierstrass shape. -/
+  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
+  /-- The group order is prime. -/
+  prime : Nat.Prime W.order
+  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
+  odd : W.order ≠ 2
+  /-- The field does not have characteristic `2`. -/
+  two_ne : (2 : F) ≠ 0
+  /-- The field does not have characteristic `3`. -/
+  three_ne : (3 : F) ≠ 0
+  /-- The eigenvalue relation `φ(T) = [λ]·T` at every on-curve point. -/
+  eigen : ∀ {x y : F} (hT : W.Nonsingular x y) (hφT : W.Nonsingular (endo * x) y),
+    Point.some _ _ hφT = lam • Point.some _ _ hT
+  /-- The endomorphism maps the curve to itself. -/
+  endo_nonsingular : ∀ {x y : F}, W.Nonsingular x y → W.Nonsingular (endo * x) y
+  /-- The GLV off-targets fact: a bounded nonzero two-base combination avoids `±T`,
+  `±φT` (`Kimchi.Gate.EndoMul.{pallas,vesta}_combo_off_targets`'s shape). -/
+  off_targets : ∀ {a b : ℤ}, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
+    ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
+      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
+      a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
+  /-- `[1 + λ]` does not kill a nonzero point — the init sum `T + φT` is finite. -/
+  lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
+
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
+/-- The dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts from
+`Pasta` (`pallas_eigen`, `pallas_endo_nonsingular`, `pallas_card`) and the GLV
+off-targets fact from the kimchi gate semantics. -/
+def HasEndo.pallas : HasEndo Fp where
+  W := Pallas.curve.toAffine
+  endo := pallasEndo
+  lam := pallasLam
+  short := ⟨rfl, rfl, rfl, rfl⟩
+  prime := Fact.out
+  odd := by rw [pallas_card]; decide
+  two_ne := by decide
+  three_ne := by decide
+  eigen := fun hT _ => pallas_eigen hT
+  endo_nonsingular := fun h => pallas_endo_nonsingular h
+  off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
+    Kimchi.Gate.EndoMul.pallas_combo_off_targets ha hb hba hbb hTne heig
+  lam_succ_smul := fun T hTne => by
+    haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
+        ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
+    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
+      (by norm_num [pallasLam])
+      (by rw [pallas_card]; norm_num [pallasLam])
+
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
+/-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
+def HasEndo.vesta : HasEndo Fq where
+  W := Vesta.curve.toAffine
+  endo := vestaEndo
+  lam := vestaLam
+  short := ⟨rfl, rfl, rfl, rfl⟩
+  prime := Fact.out
+  odd := by rw [vesta_card]; decide
+  two_ne := by decide
+  three_ne := by decide
+  eigen := fun hT _ => vesta_eigen hT
+  endo_nonsingular := fun h => vesta_endo_nonsingular h
+  off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
+    Kimchi.Gate.EndoMul.vesta_combo_off_targets ha hb hba hbb hTne heig
+  lam_succ_smul := fun T hTne => by
+    haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
+        ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
+    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
+      (by norm_num [vestaLam])
+      (by rw [vesta_card]; norm_num [vestaLam])
 
 namespace EndoMul
 
@@ -411,35 +499,27 @@ open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 on-curve together with its endomorphism image, the result reads as `[s]·T` where
 `(s : F) = EndoScalar.toField crumbs λ` for a valid crumb list of length `2·rounds`
 whose reconstruction is the scalar — EndoMul multiplies by exactly the scalar
-EndoScalar decodes. The curve-specific hypotheses are the eigenvalue relation `heig`
-and the GLV off-targets fact `hoff` (`{pallas,vesta}_combo_off_targets`'s shape);
-the deployed corollaries instantiate them. -/
-theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F]
-    (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2)
-    (eb : F) (lam : ℤ)
-    (heig : ∀ {x y : F} (hT : W.Nonsingular x y) (hφT : W.Nonsingular (eb * x) y),
-      Point.some _ _ hφT = lam • Point.some _ _ hT)
-    (hoff : ∀ {a b : ℤ}, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
-      ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
-        a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
-        a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT)
+EndoScalar decodes. The curve facts arrive bundled as the dictionary `d : HasEndo F`,
+so the law composes with other generic circuit laws over an abstract field; the
+deployed corollaries instantiate at `HasEndo.pallas`/`HasEndo.vesta`. -/
+theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
     (t : AffinePoint (FVar F)) (scalar : FVar F)
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        ∀ (hT : W.Nonsingular (t.x.val V) (t.y.val V)),
-          W.Nonsingular (eb * t.x.val V) (t.y.val V) →
+        ∀ (hT : d.W.Nonsingular (t.x.val V) (t.y.val V)),
+          d.W.Nonsingular (d.endo * t.x.val V) (t.y.val V) →
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 2 * rounds ∧
             scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
-            ∃ (hfin : W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
+            ∃ (hfin : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
-              (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (lam : F)) Q⦄
-    (endoMul (c := KimchiConstraint F) eb rounds t scalar)
+              (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
+    (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
     ⦃Q⦄ := by
+  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, -, hoff, -⟩ := d
+  haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
   mvcgen
@@ -519,12 +599,7 @@ theorem endoMul_spec_pallas [ToNat Fp] (rounds : ℕ) (hbits : 4 * rounds ≤ 24
               (s : Fp) = Kimchi.Gate.EndoScalar.toField crumbs (pallasLam : Fp)) Q⦄
     (endoMul (c := KimchiConstraint Fp) pallasEndo rounds t scalar)
     ⦃Q⦄ := by
-  refine endoMul_spec Pallas.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩ (by decide) (by decide)
-    (by rw [pallas_card]; decide) pallasEndo pallasLam
-    (fun hT _ => pallas_eigen hT)
-    (fun {a b} ha hb hba hbb {T φT} hTne heig =>
-      Kimchi.Gate.EndoMul.pallas_combo_off_targets ha hb hba hbb hTne heig)
-    rounds hbits t scalar Q
+  exact endoMul_spec HasEndo.pallas rounds hbits t scalar Q
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- `endoMul_spec` at the deployed Vesta instantiation — the other half of the
@@ -545,12 +620,7 @@ theorem endoMul_spec_vesta [ToNat Fq] (rounds : ℕ) (hbits : 4 * rounds ≤ 244
               (s : Fq) = Kimchi.Gate.EndoScalar.toField crumbs (vestaLam : Fq)) Q⦄
     (endoMul (c := KimchiConstraint Fq) vestaEndo rounds t scalar)
     ⦃Q⦄ := by
-  refine endoMul_spec Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩ (by decide) (by decide)
-    (by rw [vesta_card]; decide) vestaEndo vestaLam
-    (fun hT _ => vesta_eigen hT)
-    (fun {a b} ha hb hba hbb {T φT} hTne heig =>
-      Kimchi.Gate.EndoMul.vesta_combo_off_targets ha hb hba hbb hTne heig)
-    rounds hbits t scalar Q
+  exact endoMul_spec HasEndo.vesta rounds hbits t scalar Q
 
 /-! ## Completeness plumbing
 
@@ -742,31 +812,18 @@ returned point reads as `[s]·T` with
 `(s : F) = EndoScalar.toField (crumbsOf (2·rounds) n) λ` — the honest side of the
 defining equation, at the canonical crumbs of the scalar.
 
-The curve facts are hypotheses, not instantiations — the eigenvalue `heig`, the
-endomorphism's curve-stability `hφns`, the GLV off-targets fact `hoff`, and the
-nonzero `(1+λ)`-multiple `hlam1` — so this law composes with OTHER generic circuit
-completeness laws the way the PS circuits compose over an abstract field: a composite
-gadget's law takes the same dictionary and threads it here (as this walk itself
-threads `W` and its facts into `addFast_complete_spec`), and everything is discharged
-once at the deployed instantiation (`endoMul_complete_spec_pallas`/`_vesta` below).
+The curve facts arrive bundled as the dictionary `d : HasEndo F` — hypotheses, not
+instantiations — so this law composes with OTHER generic circuit completeness laws
+the way the PS circuits compose over an abstract field: a composite gadget's law
+takes the same dictionary and threads it here (as this walk itself threads `d.W` and
+its facts into `addFast_complete_spec`), and everything is discharged once at the
+deployed instantiation (`endoMul_complete_spec_pallas`/`_vesta` below).
 
 The loop invariant identifies the run with the honest walk `chainBuild`; the
 per-round check is the produce chain's (`chain_complete` through `off`), the init
 chain is the two pinned additions (`addFast_complete_spec`), and the register pin is
 `chain_nAcc` through the bit-to-crumb bridge (`crumbList_ofBits`). -/
-theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F]
-    (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2)
-    (eb : F) (lam : ℤ)
-    (heig : ∀ {x y : F} (hT : W.Nonsingular x y) (hφT : W.Nonsingular (eb * x) y),
-      Point.some _ _ hφT = lam • Point.some _ _ hT)
-    (hφns : ∀ {x y : F}, W.Nonsingular x y → W.Nonsingular (eb * x) y)
-    (hoff : ∀ {a b : ℤ}, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
-      ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
-        a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
-        a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT)
-    (hlam1 : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0)
+theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
     (t : AffinePoint (FVar F)) (scalar : FVar F)
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -775,19 +832,21 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F]
           (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
           (∀ v, scalar.eval env = .ok v →
             ToNat.toNat v < 4 ^ (2 * rounds) ∧ ((ToNat.toNat v : F) = v)) ∧
-          (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → W.Nonsingular x y))
+          (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
         (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →
-          ∀ hT : W.Nonsingular xv yv,
+          ∀ hT : d.W.Nonsingular xv yv,
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ (hfin : W.Nonsingular xS yS) (s : ℤ),
+            ∃ (hfin : d.W.Nonsingular xS yS) (s : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField
                 (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v))
-                (lam : F))
+                (d.lam : F))
         Q⦄
-    (endoMul (c := KimchiProverC F) eb rounds t scalar)
+    (endoMul (c := KimchiProverC F) d.endo rounds t scalar)
     ⦃Q⦄ := by
+  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1⟩ := d
+  haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
   mvcgen
@@ -1122,18 +1181,7 @@ theorem endoMul_complete_spec_pallas [ToNat Fp] (rounds : ℕ) (hbits : 4 * roun
         Q⦄
     (endoMul (c := KimchiProverC Fp) pallasEndo rounds t scalar)
     ⦃Q⦄ := by
-  haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-      ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-  refine endoMul_complete_spec Pallas.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
-    (by decide) (by decide) (by rw [pallas_card]; decide) pallasEndo pallasLam
-    (fun hT _ => pallas_eigen hT)
-    (fun hT => pallas_endo_nonsingular hT)
-    (fun {a b} ha hb hba hbb {T φT} hTne heig =>
-      Kimchi.Gate.EndoMul.pallas_combo_off_targets ha hb hba hbb hTne heig)
-    (fun T hTne => Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
-      (by norm_num [pallasLam])
-      (by rw [pallas_card]; norm_num [pallasLam]))
-    rounds hbits t scalar Q
+  exact endoMul_complete_spec HasEndo.pallas rounds hbits t scalar Q
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The gadget is complete at the deployed Vesta instantiation — the other half of the
@@ -1161,18 +1209,7 @@ theorem endoMul_complete_spec_vesta [ToNat Fq] (rounds : ℕ) (hbits : 4 * round
         Q⦄
     (endoMul (c := KimchiProverC Fq) vestaEndo rounds t scalar)
     ⦃Q⦄ := by
-  haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-      ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-  refine endoMul_complete_spec Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
-    (by decide) (by decide) (by rw [vesta_card]; decide) vestaEndo vestaLam
-    (fun hT _ => vesta_eigen hT)
-    (fun hT => vesta_endo_nonsingular hT)
-    (fun {a b} ha hb hba hbb {T φT} hTne heig =>
-      Kimchi.Gate.EndoMul.vesta_combo_off_targets ha hb hba hbb hTne heig)
-    (fun T hTne => Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
-      (by norm_num [vestaLam])
-      (by rw [vesta_card]; norm_num [vestaLam]))
-    rounds hbits t scalar Q
+  exact endoMul_complete_spec HasEndo.vesta rounds hbits t scalar Q
 
 end EndoMul
 
