@@ -131,6 +131,7 @@ Kimchi.Permutation.sigmaSideRow
 -- permutation certificate bridges (a passing certificate implies the specification Prop).
 -- The `ok` checkers themselves are live through their `ok_iff` statements.
 Kimchi.Gate.AddComplete.ok_iff
+Kimchi.Gate.EndoMul.ok_iff
 Kimchi.Gate.EndoScalar.ok_iff
 Kimchi.Gate.Poseidon.ok_iff
 Kimchi.Gate.VarBaseMul.ok_iff

@@ -96,7 +96,7 @@ def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
             (s, w.2.1)))
     (p2.p, .const 0) bits.toList
   assertEqual fin.2 scalar
-  addConstraint (KimchiSystem.endoMul { state, s := fin.1, nAcc := fin.2 })
+  addConstraint (KimchiSystem.endoMul { state, s := fin.1, nAcc := fin.2, endo := eb })
   pure fin.1
 
 end Snarky.Kimchi
