@@ -497,7 +497,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- The gadget is sound: under any satisfying valuation, for a base point reading
-on-curve together with its endomorphism image, the result reads as `[s]·T` where
+on-curve, the result reads as `[s]·T` where
 `(s : F) = EndoScalar.toField crumbs λ` for a valid crumb list of length `2·rounds`
 whose reconstruction is the scalar — EndoMul multiplies by exactly the scalar
 EndoScalar decodes. The curve facts arrive bundled as the dictionary `d : HasEndo F`,
@@ -509,8 +509,7 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (t : AffinePoint (FVar F)) (scalar : FVar F)
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        ∀ (hT : d.W.Nonsingular (t.x.val V) (t.y.val V)),
-          d.W.Nonsingular (d.endo * t.x.val V) (t.y.val V) →
+        ∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 2 * rounds ∧
@@ -520,7 +519,7 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
     (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, -, hoff, -⟩ := d
+  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, hφns, hoff, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -557,7 +556,8 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     rw [hV]
     mvcgen
     refine hpre finp.fst.1 _ ?_
-    intro hT hφT
+    intro hT
+    have hφT : W.Nonsingular (eb * t.x.val s.V) (t.y.val s.V) := hφns hT
     -- the init chain: `[2](T + φT)` from the seal and the two pinned additions
     have hy : t.y.val s.V ≠ 0 := y_ne_zero_of_odd_order W hodd hT
     have hφTp : W.Nonsingular (phix.val s.V) (t.y.val s.V) := by
