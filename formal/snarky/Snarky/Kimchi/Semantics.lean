@@ -3,6 +3,7 @@ import Snarky.Backend.WP
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.Poseidon
 import Kimchi.Gate.EndoScalar
+import Kimchi.Gate.EndoMul
 
 /-!
 # The kimchi constraint semantics
@@ -16,11 +17,13 @@ base gadget law, sound and complete, to this backend — and the landed gate pay
 read as the verified gates' own predicates/`ok` at the payload's operand values: one
 witness record for `.addComplete` (`read`/`eval`, one field per gate column), a chain
 of five-round windows over the state list for `.poseidon` (`chainHolds`/`chainOk` at
-the payload's parameter data), one witness record per round for `.endoScalar`; a
-value missing from the table rejects. `.pad` reads
-vacuously (a padding row asserts nothing), as do the gate payloads with no landed
-gadget: the reading is deliberately per-constructor, and a vacuous case marks a
-constructor outside the landed gadget surface.
+the payload's parameter data), one witness record per round for `.endoScalar`, a
+successor chain over the round list for `.endoMul` (each round's output cells read
+from the NEXT round's `p`/`nAcc`, the last from the payload finals — the two-row
+gate's next-row read, value-level); a value missing from the table rejects. `.pad`
+reads vacuously (a padding row asserts nothing), as do the gate payloads with no
+landed gadget: the reading is deliberately per-constructor, and a vacuous case marks
+a constructor outside the landed gadget surface.
 -/
 
 namespace Snarky.Kimchi
@@ -90,6 +93,44 @@ def EndoScalarRound.read (V : Valuation F) (r : EndoScalarRound F) :
   n8 := r.n8.val V
   crumbs := r.xs.toList.map (·.val V)
 
+/-- The payload round's operand values under a valuation, as the verified gate's
+witness record — one field per gate cell, with the output cells `xS`/`yS`/`nPrime`
+supplied by the caller: the gate is two-row, and a round's outputs live in its
+successor's cells (the next round's `p`/`nAcc`, or the payload finals). -/
+def EndoMulRound.readWith (V : Valuation F) (r : EndoMulRound F) (xS yS nPrime : F) :
+    Kimchi.Gate.EndoMul.Witness F where
+  xT := r.t.x.val V
+  yT := r.t.y.val V
+  xP := r.p.x.val V
+  yP := r.p.y.val V
+  n := r.nAcc.val V
+  nPrime := nPrime
+  b1 := r.bit0.val V
+  b2 := r.bit1.val V
+  b3 := r.bit2.val V
+  b4 := r.bit3.val V
+  s1 := r.s1.val V
+  xR := r.r.x.val V
+  yR := r.r.y.val V
+  s3 := r.s3.val V
+  xS := xS
+  yS := yS
+  inv := r.inv.val V
+
+/-- The successor-chain reading of the round list: the gate per round at the
+payload's endo coefficient, each round's output cells read from the NEXT round's
+`p`/`nAcc` values and the last round's from the finals `fin` — the wire layout's
+next-row read, value-level, so the chain's links are shared round fields. -/
+def EndoMul.chainHolds (V : Valuation F) (endo : F) (fin : F × F × F) :
+    List (EndoMulRound F) → Prop
+  | [] => True
+  | [r] =>
+    Kimchi.Gate.EndoMul.Holds endo (EndoMulRound.readWith V r fin.1 fin.2.1 fin.2.2)
+  | r :: r' :: rest =>
+    Kimchi.Gate.EndoMul.Holds endo
+      (EndoMulRound.readWith V r (r'.p.x.val V) (r'.p.y.val V) (r'.nAcc.val V)) ∧
+      chainHolds V endo fin (r' :: rest)
+
 /-- The constraint-level semantics: `.basic` is the reference reading, the landed gate
 payloads the verified gates' predicates at the operand values, and the rest vacuous
 (module docstring). -/
@@ -99,7 +140,8 @@ def KimchiConstraint.Holds (V : Valuation F) : KimchiConstraint F → Prop
   | .poseidon c => Poseidon.chainHolds (Poseidon.mdsOf c.mds) c.rc 0 (Poseidon.read V c)
   | .endoScalar rounds => ∀ r ∈ rounds, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read V r)
   | .varBaseMul _ => True
-  | .endoMul _ => True
+  | .endoMul c =>
+    EndoMul.chainHolds V c.endo (c.s.x.val V, c.s.y.val V, c.nAcc.val V) c.state
   | .pad _ => True
 
 /-- The semantic reading, packaged for the triple machinery. -/
@@ -169,6 +211,46 @@ def EndoScalarRound.eval (env : Assignments F) (r : EndoScalarRound F) :
   let crumbs ← r.xs.toList.mapM (·.eval env)
   return { a0, b0, n0, a8, b8, n8, crumbs }
 
+/-- The payload round's operand values on the prover's partial table, with the
+output cells `xS`/`yS`/`nPrime` supplied by the caller (`readWith` at an
+`Assignments`); failing where a value is missing. -/
+def EndoMulRound.evalWith (env : Assignments F) (r : EndoMulRound F)
+    (xS yS nPrime : F) : Except EvalError (Kimchi.Gate.EndoMul.Witness F) := do
+  let xT ← r.t.x.eval env
+  let yT ← r.t.y.eval env
+  let xP ← r.p.x.eval env
+  let yP ← r.p.y.eval env
+  let n ← r.nAcc.eval env
+  let b1 ← r.bit0.eval env
+  let b2 ← r.bit1.eval env
+  let b3 ← r.bit2.eval env
+  let b4 ← r.bit3.eval env
+  let s1 ← r.s1.eval env
+  let xR ← r.r.x.eval env
+  let yR ← r.r.y.eval env
+  let s3 ← r.s3.eval env
+  let inv ← r.inv.eval env
+  return { xT, yT, xP, yP, n, nPrime, b1, b2, b3, b4, s1, xR, yR, s3, xS, yS, inv }
+
+/-- The decidable mirror of `chainHolds`: the gate's `ok` per round on the evaluated
+values, the successor reads evaluated on the same table; a value missing from the
+table rejects. -/
+def EndoMul.chainOk (env : Assignments F) (endo : F) (fin : F × F × F) :
+    List (EndoMulRound F) → Bool
+  | [] => true
+  | [r] =>
+    match EndoMulRound.evalWith env r fin.1 fin.2.1 fin.2.2 with
+    | .ok w => Kimchi.Gate.EndoMul.ok endo w
+    | .error _ => false
+  | r :: r' :: rest =>
+    (match r'.p.x.eval env, r'.p.y.eval env, r'.nAcc.eval env with
+      | .ok xS, .ok yS, .ok nPrime =>
+        match EndoMulRound.evalWith env r xS yS nPrime with
+        | .ok w => Kimchi.Gate.EndoMul.ok endo w
+        | .error _ => false
+      | _, _, _ => false) &&
+    chainOk env endo fin (r' :: rest)
+
 /-- The prover-side check: `.basic` is the reference check, the landed gate payloads
 the gates' `ok` at the evaluated values, and the rest vacuous (module docstring). -/
 def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bool :=
@@ -188,7 +270,10 @@ def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bo
       | .ok w => Kimchi.Gate.EndoScalar.ok w
       | .error _ => false
   | .varBaseMul _ => true
-  | .endoMul _ => true
+  | .endoMul c =>
+    match c.s.x.eval env, c.s.y.eval env, c.nAcc.eval env with
+    | .ok xs, .ok ys, .ok n => EndoMul.chainOk env c.endo (xs, ys, n) c.state
+    | _, _, _ => false
   | .pad _ => true
 
 /-- The prover-side check, packaged for the completeness machinery. -/
@@ -224,8 +309,11 @@ class KimchiSystem (F c : Type) where
   poseidon : PoseidonConstraint F → c
   /-- Embed a challenge-decomposition payload. -/
   endoScalar : EndoScalar F → c
+  /-- Embed an endomorphism-multiplication payload. -/
+  endoMul : EndoMul F → c
 
-instance : KimchiSystem F (KimchiConstraint F) := ⟨.addComplete, .poseidon, .endoScalar⟩
+instance : KimchiSystem F (KimchiConstraint F) :=
+  ⟨.addComplete, .poseidon, .endoScalar, .endoMul⟩
 
 instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 

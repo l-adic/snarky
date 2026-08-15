@@ -1130,13 +1130,37 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
     simp_all +decide [WeierstrassCurve.Affine.equation_iff]
   exact mul_left_cancel₀ (sub_ne_zero_of_ne hne) (by linear_combination h_eq)
 
+/-- **No 2-torsion.** On a short-Weierstrass curve of odd prime `order`, every
+    nonsingular affine point has `y ≠ 0`: a point with `y = 0` equals its own negation,
+    hence is 2-torsion, and a group of odd prime order has none (`smul_ne_zero_of_lt`
+    at `k = 2`). -/
+lemma y_ne_zero_of_odd_order (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] (hodd : c.order ≠ 2)
+    {x y : F} (hI : c.Nonsingular x y) : y ≠ 0 := by
+  intro hy
+  -- with `y = 0` (and short shape `a₁ = a₃ = 0`), `negY = y`, so `P = -P`
+  obtain ⟨ha1, -, ha3⟩ := (Fact.out : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)
+  have hneg : negY c x y = y := by
+    simp [WeierstrassCurve.Affine.negY, ha1, ha3, hy]
+  have hPselfneg : -(Point.some _ _ hI) = Point.some _ _ hI := by
+    rw [Point.neg_some]; congr 1
+  -- `P = -P` gives `2 • P = P + (-P) = 0`
+  have hPne : Point.some _ _ hI ≠ 0 := Point.some_ne_zero hI
+  have h2P : (2 : ℤ) • Point.some _ _ hI = 0 := by
+    rw [two_zsmul]; nth_rewrite 2 [← hPselfneg]; rw [add_neg_cancel]
+  -- `0 < 2 < order` (prime, `≠ 2`) contradicts `2 • P = 0` for `P ≠ 0`
+  have hlt : (2 : ℤ) < (c.order : ℤ) := by
+    have : 3 ≤ c.order := by have := (Fact.out : Nat.Prime c.order).two_le; omega
+    exact_mod_cast this
+  exact smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
+
 /-- **t-condition self-enforcement.** The gate constraints together with prime order
     already force `t ≠ 0` — the forbidden check is *not* needed for the second-addition
     non-degeneracy. If `t = 2·xi + xb − s1² = 0`, then the `xo` constraint
     `u² − t²·(…) = 0` collapses to `u² = 0`, i.e. `u = 2·yi − t·s1 = 2·yi = 0`, so
-    `yi = 0`. But a nonsingular affine point with `yi = 0` equals its own negation
-    (short Weierstrass), hence is 2-torsion; on a group of odd prime `order` there is no
-    such point. Contradiction.
+    `yi = 0` — and an odd-prime-order curve has no such point
+    (`y_ne_zero_of_odd_order`). Contradiction.
 
     The hypothesis `c.order ≠ 2` (equivalently, the prime `order` is odd) is genuinely
     required, not a convenience: the degenerate branch is real whenever the input point is
@@ -1155,7 +1179,7 @@ private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
     (hh : singleBitHolds b xb yb s1 xi yi xo yo) :
     2 * xi + xb - s1 * s1 ≠ 0 := by
   intro ht
-  -- Step 1: the `xo` constraint collapses (with `t = 0`) to `4·yi² = 0`, so `yi = 0`.
+  -- the `xo` constraint collapses (with `t = 0`) to `4·yi² = 0`, so `yi = 0`
   have hyi : yi = 0 := by
     rw [singleBitHolds_iff] at hh
     obtain ⟨_, _, h3, _⟩ := hh
@@ -1168,21 +1192,7 @@ private lemma tne_of_holds (c : WeierstrassCurve.Affine F)
         rw [h44]; exact mul_ne_zero h2 h2
       exact (mul_eq_zero.mp hfour).resolve_left h4ne
     exact mul_self_eq_zero.mp hy2
-  -- Step 2: with `yi = 0` (and short shape `a₁ = a₃ = 0`), `negY = yi`, so `P = -P`.
-  obtain ⟨ha1, -, ha3⟩ := (Fact.out : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)
-  have hneg : negY c xi yi = yi := by
-    simp [WeierstrassCurve.Affine.negY, ha1, ha3, hyi]
-  have hPselfneg : -(Point.some _ _ hI) = Point.some _ _ hI := by
-    rw [Point.neg_some]; congr 1
-  -- Step 3: `P = -P` gives `2 • P = P + (-P) = 0`.
-  have hPne : Point.some _ _ hI ≠ 0 := Point.some_ne_zero hI
-  have h2P : (2 : ℤ) • Point.some _ _ hI = 0 := by
-    rw [two_zsmul]; nth_rewrite 2 [← hPselfneg]; rw [add_neg_cancel]
-  -- Step 4: `0 < 2 < order` (prime, `≠ 2`) contradicts `2 • P = 0` for `P ≠ 0`.
-  have hlt : (2 : ℤ) < (c.order : ℤ) := by
-    have : 3 ≤ c.order := by have := (Fact.out : Nat.Prime c.order).two_le; omega
-    exact_mod_cast this
-  exact smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
+  exact y_ne_zero_of_odd_order c hodd hI hyi
 
 /-! ## Soundness: avoiding `±T` makes every row non-degenerate
 

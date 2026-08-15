@@ -170,6 +170,14 @@ instance [DecidableEq F] (endo : F) (w : Witness F) : Decidable (Holds endo w) :
   unfold Holds
   infer_instance
 
+/-- EXECUTABLE checker — runnable on a concrete witness. -/
+def ok (endo : F) (w : Witness F) : Bool :=
+  (constraints endo w).all (· == 0)
+
+/-- Reflection: the checker faithfully decides the relational constraints. -/
+theorem ok_iff (endo : F) (w : Witness F) : ok endo w = true ↔ Holds endo w := by
+  simp only [ok, Holds, List.all_eq_true, beq_iff_eq]
+
 omit [DecidableEq F] in
 /-- `Holds` as the readable 12-conjunction (what the soundness proofs destructure). -/
 theorem holds_iff (endo : F) (w : Witness F) :

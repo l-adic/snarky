@@ -27,6 +27,10 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS `NonEmptyArray` renders as the plain list (a nonempty invariant carried by the
   emitters, not the type); the width-4 bit vector as named fields `bit0 … bit3`
   (the step-6 budget lesson); the `traverse` as the structural fold.
+- The payload carries the endomorphism coefficient `endo` (in PS it is ambient, a
+  curve constant the verifier knows): the Poseidon payload-data deviation, so the
+  semantics can read the gate at it. `reduce` ignores the field — the row has no
+  coefficient cells — so the corpus is untouched.
 -/
 
 namespace Snarky.Kimchi
@@ -67,8 +71,9 @@ structure EndoMulRound (F : Type u) where
   inv : FVar F
   deriving Repr, DecidableEq
 
-/-- An endomorphism-optimized scalar multiplication (PS `EndoMul`): the rounds, and
-the final accumulator and scalar the trailing `zero` row carries. -/
+/-- An endomorphism-optimized scalar multiplication (PS `EndoMul`): the rounds, the
+final accumulator and scalar the trailing `zero` row carries, and the endomorphism
+coefficient (the payload-data deviation in the module docstring). -/
 structure EndoMul (F : Type u) where
   /-- The rounds, in row order. -/
   state : List (EndoMulRound F)
@@ -76,6 +81,10 @@ structure EndoMul (F : Type u) where
   s : AffinePoint (FVar F)
   /-- The final scalar register. -/
   nAcc : FVar F
+  /-- The endomorphism coefficient `β`: parameter data, not a wire — `reduce`
+  ignores it (the row has no coefficient cells), and the semantics reads the gate
+  at it. -/
+  endo : F
   deriving Repr, DecidableEq
 
 variable {F : Type} {m : Type → Type}

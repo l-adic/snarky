@@ -1,7 +1,10 @@
 /-
 Axiom-closure gate for the Snarky DSL library: the interpreter laws must be proved from
 the standard logical axioms alone — the deep embedding is pure core Lean, so nothing else
-(no `sorryAx`, no `native_decide`, no curve axioms) may appear in their closures.
+(no `sorryAx`, no `native_decide`, no curve axioms) may appear in their closures. The sole
+exception is the deployed endo dictionaries (`deployedRoots`): their fields may carry the
+certified `native_decide` witnesses of the Pasta trust base, so every law theorem stays
+pure core Lean and the deployed trust is localized in exactly those values.
 
 The root list is a deletion guard as well as an axiom guard: a name absent from the environment
 fails with `axiom-check root not in environment`, so removing a listed declaration — even
@@ -13,6 +16,7 @@ import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
+import Snarky.Kimchi.Circuit.EndoMul
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -83,6 +87,7 @@ def roots : List Name :=
     `Snarky.sealVar_spec,
     `Snarky.sealVar_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_spec,
+    `Snarky.Kimchi.AddFast.addFast_checkFinite_spec,
     `Snarky.Kimchi.Poseidon.poseidon_spec,
     `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
@@ -90,6 +95,10 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoScalar.toField_spec,
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec,
     `Snarky.Kimchi.EndoScalar.toField_complete_spec,
+    `Snarky.Kimchi.EndoMul.endoMul_spec,
+    `Snarky.Kimchi.EndoMul.endoMul_complete_spec,
+    `Snarky.Kimchi.HasEndo.pallas,
+    `Snarky.Kimchi.HasEndo.vesta,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
@@ -141,6 +150,27 @@ def roots : List Name :=
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 
+/-- The deployed dictionaries — the only roots whose closures may additionally
+    contain the certified `native_decide` witnesses (`isTrustedNativeDecide`): their
+    fields discharge the curve facts at the concrete Pasta curves, whose trust base
+    (the certified orders and eigenvalue anchors) carries those certificates. Every
+    LAW stays pure core Lean — the whole native_decide trust of this package is
+    localized in these two values. -/
+def deployedRoots : List Name :=
+  [ `Snarky.Kimchi.HasEndo.pallas,
+    `Snarky.Kimchi.HasEndo.vesta ]
+
+/-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
+    by name prefix (the kimchi gate's convention: the name is forgeable from inside a
+    `namespace CompElliptic` block, the defining module is not): an upstream
+    CompElliptic module, or `Pasta/Endo.lean` — the one tree file declared to hold the
+    two GLV eigenvalue anchors. -/
+def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
+  (ax.toString.splitOn "native_decide").length > 1 &&
+    match env.getModuleFor? ax with
+    | some m => (`CompElliptic).isPrefixOf m || m == `Pasta.Endo
+    | none => false
+
 end Snarky.CheckAxioms
 
 run_cmd do
@@ -150,11 +180,13 @@ run_cmd do
     unless env.contains root do
       throwError "axiom-check root not in environment: {root}"
     for ax in (← liftCoreM <| Lean.collectAxioms root) do
-      unless Snarky.CheckAxioms.allowed.contains ax do
+      unless Snarky.CheckAxioms.allowed.contains ax ||
+          (Snarky.CheckAxioms.deployedRoots.contains root &&
+            Snarky.CheckAxioms.isTrustedNativeDecide env ax) do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Snarky.CheckAxioms.roots.length} Snarky roots reduce to \
-      {Snarky.CheckAxioms.allowed}"
+      {Snarky.CheckAxioms.allowed} (deployed dictionaries + certified native_decide)"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"

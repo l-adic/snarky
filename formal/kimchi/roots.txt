@@ -77,6 +77,10 @@ Kimchi.Gate.EndoMul.complete
 -- field-generic circuit capstone `endoMul` is live through both.
 Kimchi.Gate.EndoMul.pallas_endoMul
 Kimchi.Gate.EndoMul.vesta_endoMul
+-- The produce chain: the honest walk's conditional completeness, generic and deployed.
+Kimchi.Gate.EndoMul.chain_complete
+Kimchi.Gate.EndoMul.pallas_chain_complete
+Kimchi.Gate.EndoMul.vesta_chain_complete
 
 -- Poseidon gate: a satisfying row computes the 5-round permutation.
 Kimchi.Gate.Poseidon.sound
@@ -131,6 +135,7 @@ Kimchi.Permutation.sigmaSideRow
 -- permutation certificate bridges (a passing certificate implies the specification Prop).
 -- The `ok` checkers themselves are live through their `ok_iff` statements.
 Kimchi.Gate.AddComplete.ok_iff
+Kimchi.Gate.EndoMul.ok_iff
 Kimchi.Gate.EndoScalar.ok_iff
 Kimchi.Gate.Poseidon.ok_iff
 Kimchi.Gate.VarBaseMul.ok_iff

@@ -32,7 +32,9 @@ The law pair reads the one emitted constraint through the semantic layer:
 `AddFast.addFast_spec` (any satisfying valuation reads the output as the EC group
 sum, via the verified gate's `sound`) and `AddFast.addFast_complete_spec` (the
 honest `KimchiProverC` run accepts on-curve operands — the witness computations fill
-the row the gate's completeness algebra certifies).
+the row the gate's completeness algebra certifies). `addFast_checkFinite_spec` is
+the pinned-mode soundness form: the flag is the constant `0`, so the sum reads as
+the finite branch with no disjunction.
 -/
 
 namespace Snarky.Kimchi
@@ -244,15 +246,17 @@ namespace AddFast
 open WeierstrassCurve.Affine
 
 /-- The tail's soundness, at the sealed operands: any satisfying valuation reads the
-result as the group sum, via the verified gate's `sound`. Applied manually per mode —
-the curve parameters appear only in the promise, so a registry application could not
-infer them. -/
+result as the group sum, via the verified gate's `sound`; the returned flag is the
+`inf` argument itself (structural — how the `checkFinite` mode pins the finite
+branch). Applied manually per mode — the curve parameters appear only in the promise,
+so a registry application could not infer them. -/
 private theorem addFastTail_spec [Field F] [DecidableEq F]
     (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
     (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F)
     (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AddResult F) =>
+        r.isInfinity = inf ∧
         ∀ (h1 : W.Nonsingular (p1.x.val V) (p1.y.val V))
           (h2 : W.Nonsingular (p2.x.val V) (p2.y.val V)),
           p1.y.val V ≠ 0 →
@@ -278,7 +282,7 @@ private theorem addFastTail_spec [Field F] [DecidableEq F]
   mvcgen
   intro u _ hpay
   intro _
-  refine hpre _ _ ?_
+  refine hpre _ _ rfl ?_
   intro h1 h2 hy1ne
   rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hpay hy1ne htwo with
     ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
@@ -345,12 +349,58 @@ theorem addFast_spec [Field F] [DecidableEq F]
   cases fin with
   | checkFinite =>
     mvcgen
-    exact addFastTail_spec W ha htwo p1 p2 sameXU.val false_ Q _ hglue
+    exact addFastTail_spec W ha htwo p1 p2 sameXU.val false_ Q _
+      (fun r nv' hp => hglue r nv' hp.2)
   | dontCheckFinite =>
     mvcgen
     intro infU _
     mvcgen
-    exact addFastTail_spec W ha htwo p1 p2 sameXU.val infU.val Q _ hglue
+    exact addFastTail_spec W ha htwo p1 p2 sameXU.val infU.val Q _
+      (fun r nv' hp => hglue r nv' hp.2)
+
+/-- `addFast` in `checkFinite` mode is sound with the infinity branch refuted: the
+returned flag is the pinned constant `0` (it reads `0`, never `1`), so under any
+satisfying valuation, for nonsingular operand points with the first finite (`y ≠ 0`),
+the result reads as the finite EC group sum. The pinned-mode consumers (the `endoMul`
+init chain) apply this form. -/
+theorem addFast_checkFinite_spec [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
+    (p1' p2' : AffinePoint (FVar F))
+    (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : AddResult F) =>
+        ∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+          (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)),
+          p1'.y.val V ≠ 0 →
+          ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
+            Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) Q⦄
+    addFast (c := KimchiConstraint F) .checkFinite p1' p2'
+    ⦃Q⦄ := by
+  simp only [addFast]
+  mvcgen
+  rename_i s hpre
+  intro p1 _ hp1x hp1y
+  mvcgen
+  intro p2 _ hp2x hp2y
+  mvcgen
+  intro sameXU _
+  mvcgen
+  refine addFastTail_spec W ha htwo p1 p2 sameXU.val false_ Q _ ?_
+  intro r nv' hrp
+  obtain ⟨hrinf, hp⟩ := hrp
+  refine hpre r nv' ?_
+  intro h1 h2 hy1ne
+  have h1' := h1
+  rw [← hp1x, ← hp1y] at h1'
+  have h2' := h2
+  rw [← hp2x, ← hp2y] at h2'
+  have hy1ne' := hy1ne
+  rw [← hp1y] at hy1ne'
+  rcases hp h1' h2' hy1ne' with ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+  · rw [hrinf] at hinf
+    exact absurd hinf (by simp [false_, BoolVar.toCVar_unchecked, CVar.val])
+  · simp only [hp1x, hp1y, hp2x, hp2y] at hsum
+    exact ⟨h3, hsum⟩
 
 end AddFast
 

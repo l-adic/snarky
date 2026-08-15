@@ -12,10 +12,10 @@ ids pin the shared counter's numbering.
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
 `Basic` gadget vocabulary, plus the landed gate gadgets (poseidon,
-endo_scalar). The export also carries witness dumps for the remaining gate circuits
-(endo_mul, var_base_mul); those are DELIBERATELY not in the corpus — each joins with
-its gadget slice, so the EndoMul and VarBaseMul reducers are uncovered by this
-oracle until then.
+endo_scalar, endo_mul). The export also carries a witness dump for the remaining
+gate circuit (var_base_mul); it is DELIBERATELY not in the corpus — it joins with
+its gadget slice, so the VarBaseMul reducer is uncovered by this oracle until
+then.
 
 The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
@@ -30,6 +30,7 @@ import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
+import Snarky.Kimchi.Circuit.EndoMul
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -181,6 +182,12 @@ at 8 rows and the constant Vesta eigenvalue). -/
 def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
   EndoScalar.toField 8 scalar (.const endoVestaLam)
 
+/-- `endo_mul_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.EndoMul.endo` at
+128 bits / 32 rounds and the Pallas endo coefficient). -/
+def endoMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  endoMul Pasta.pallasEndo 32 input.1 input.2
+
 /-! ## The comparison -/
 
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
@@ -272,7 +279,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("poseidon_step_circuit",
       compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit),
     ("endo_scalar_step_circuit",
-      compareWith (a := Fp) (b := Fp) endoScalarCircuit) ]
+      compareWith (a := Fp) (b := Fp) endoScalarCircuit),
+    ("endo_mul_step_circuit",
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
