@@ -132,8 +132,6 @@ arithmetic.
 
 * `decomposeA`, `decomposeB`, `nReconstruct`, `toField` — the Algorithm-2 accumulators and the
   effective scalar, as field-valued folds over the crumb stream.
-* `decomposeA_eq_table`, `decomposeB_eq_table` — on valid crumbs the interpolating folds are the
-  bare `cFunc`/`dFunc` table folds.
 * `decomposeA_append`, `decomposeB_append`, `nReconstruct_append` — each fold resumes across a
   row boundary from the partial value of the earlier rows.
 * `nReconstruct_append_pos` — the same boundary read *positionally* instead: the earlier rows'
@@ -203,19 +201,6 @@ def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
     eigenvalue). This is the pure `to_field` of the challenge. -/
 def toField (crumbs : List F) (lam : F) : F :=
   decomposeA crumbs * lam + decomposeB crumbs
-
-/-- On valid crumbs the `a`-accumulator is the bare-table fold: `cPoly` agrees with
-    `cFunc` there, so the interpolating fold and the table fold coincide. -/
-theorem decomposeA_eq_table [DecidableEq F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    {crumbs : List F} (hv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    decomposeA crumbs = crumbs.foldl (fun a x => 2 * a + cFunc x) 2 :=
-  foldl_table crumbs 2 fun x hx => cPoly_eq_cFunc h2 h3 (hv x hx)
-
-/-- The `b`-accumulator's bare-table fold, likewise. -/
-theorem decomposeB_eq_table [DecidableEq F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    {crumbs : List F} (hv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    decomposeB crumbs = crumbs.foldl (fun b x => 2 * b + dFunc x) 2 :=
-  foldl_table crumbs 2 fun x hx => dPoly_eq_dFunc h2 h3 (hv x hx)
 
 /-! ## Multi-row composition: threading rows is folding the concatenated crumbs.
 

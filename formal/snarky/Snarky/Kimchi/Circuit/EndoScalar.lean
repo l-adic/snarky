@@ -28,7 +28,6 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS's `aF`/`bF` fold the bare tables; the row witness computes the gate's canonical
   `Kimchi.Gate.EndoScalar.build` instead — the same field values on the honest (valid)
   crumbs, and the form the gate's completeness certifies.
-- `toFieldPure` is generalized from PS's pinned 128 bits to `16 · rows`.
 -/
 
 namespace Snarky.Kimchi.EndoScalar
@@ -96,20 +95,6 @@ def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
   | _ => do
     let p ← mul a endo
     pure (CVar.add_ b p)
-
-/-- The pure model (PS `toFieldPure`): the same MSB-first bit-pair fold on values,
-from the accumulator seeds `(2, 2)`. The definition transcribes the PS fold;
-`toFieldPure_eq_toField` reads it as the gate model's `toField` at the scalar's
-crumbs. -/
-def toFieldPure [Field F] [ToNat F] (rows : ℕ) (scalar endo : F) : F :=
-  let n := ToNat.toNat scalar
-  let acc := (List.range (8 * rows)).foldl
-    (fun (st : F × F) i =>
-      let s : F := if n.testBit (16 * rows - 2 - 2 * i) then 1 else -1
-      if n.testBit (16 * rows - 1 - 2 * i) then (2 * st.1 + s, 2 * st.2)
-      else (2 * st.1, 2 * st.2 + s))
-    (2, 2)
-  acc.1 * endo + acc.2
 
 /-! ## Soundness
 
@@ -831,52 +816,5 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
       simp only [CVar.eval, hB3, hpv, Except.ok.injEq,
         Kimchi.Gate.EndoScalar.toField]
       ring
-
-/-! ## The pure model is the gate model -/
-
-/-- PS parity: `toFieldPure` computes the gate model's `toField` at the scalar's
-crumbs — the bit-pair `±1` fold is the `cFunc`/`dFunc` table fold, crumb by
-crumb. -/
-theorem toFieldPure_eq_toField [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : F) :
-    toFieldPure rows scalar endo
-      = Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat scalar)) endo := by
-  have hvalid := Kimchi.Gate.EndoScalar.crumbsOf_valid (F := F) (8 * rows) (ToNat.toNat scalar)
-  have hstep : (fun (st : F × F) (i : ℕ) =>
-        let s : F :=
-          if (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) then 1 else -1
-        if (ToNat.toNat scalar).testBit (16 * rows - 1 - 2 * i) then
-          (2 * st.1 + s, 2 * st.2)
-        else (2 * st.1, 2 * st.2 + s))
-      = fun st i =>
-        (2 * st.1 + Kimchi.Gate.EndoScalar.cFunc
-          ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F),
-         2 * st.2 + Kimchi.Gate.EndoScalar.dFunc
-          ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F)) := by
-    obtain ⟨c0, c1, c2, c3⟩ := Kimchi.Gate.EndoScalar.cFunc_table (F := F) h2 h3
-    obtain ⟨d0, d1, d2, d3⟩ := Kimchi.Gate.EndoScalar.dFunc_table (F := F) h2 h3
-    funext st i
-    have hb1 : 2 * (8 * rows - i) - 1 = 16 * rows - 1 - 2 * i := by omega
-    have hb2 : 2 * (8 * rows - i) - 2 = 16 * rows - 2 - 2 * i := by omega
-    simp only [crumbOfNat, hb1, hb2]
-    rcases hhi : (ToNat.toNat scalar).testBit (16 * rows - 1 - 2 * i) <;>
-      rcases hlo : (ToNat.toNat scalar).testBit (16 * rows - 2 - 2 * i) <;>
-        simp [c0, c1, c2, c3, d0, d1, d2, d3]
-  have hpair := List.foldl_hom₂ (List.range (8 * rows)) Prod.mk
-    (fun a i => 2 * a + Kimchi.Gate.EndoScalar.cFunc
-      ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
-    (fun b i => 2 * b + Kimchi.Gate.EndoScalar.dFunc
-      ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F))
-    (fun st i =>
-      (2 * st.1 + Kimchi.Gate.EndoScalar.cFunc
-        ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F),
-       2 * st.2 + Kimchi.Gate.EndoScalar.dFunc
-        ((crumbOfNat (8 * rows) i (ToNat.toNat scalar) : ℕ) : F)))
-    2 2 (fun _ _ _ => rfl)
-  dsimp only [toFieldPure, Kimchi.Gate.EndoScalar.toField]
-  rw [Kimchi.Gate.EndoScalar.decomposeA_eq_table h2 h3 hvalid,
-    Kimchi.Gate.EndoScalar.decomposeB_eq_table h2 h3 hvalid,
-    ← map_crumbOfNat_eq_crumbsOf, List.foldl_map, List.foldl_map, hstep, hpair]
 
 end Snarky.Kimchi.EndoScalar
