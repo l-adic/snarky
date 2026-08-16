@@ -1859,6 +1859,33 @@ theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
     simp only [List.foldl_cons, List.foldl_nil]
     ring
 
+/-- Every bit of a held run is boolean: each bit block's first constraint is
+`b·b − b = 0`. -/
+theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
+    (hholds : ∀ i, i < m → Holds (g i)) :
+    ∀ b ∈ runBits g m, b = 0 ∨ b = 1 := by
+  induction m with
+  | zero => simp [runBits]
+  | succ k ih =>
+    intro b hb
+    rw [runBits_succ, List.mem_append] at hb
+    rcases hb with hb | hb
+    · exact ih (fun i hi => hholds i (by omega)) b hb
+    · have h := (holds_iff (g k)).mp (hholds k (by omega))
+      have hbool : ∀ x : F, x * x - x = 0 → x = 0 ∨ x = 1 := by
+        intro x hx
+        rcases mul_eq_zero.mp (show x * (x - 1) = 0 by linear_combination hx) with
+          h0 | h1
+        · exact Or.inl h0
+        · exact Or.inr (by linear_combination h1)
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
+      rcases hb with rfl | rfl | rfl | rfl | rfl
+      · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.1).1
+      · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.1).1
+      · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.1).1
+      · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.1).1
+      · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.2).1
+
 end RunBits
 
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
