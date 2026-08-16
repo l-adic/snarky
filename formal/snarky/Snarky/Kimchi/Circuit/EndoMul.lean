@@ -886,8 +886,14 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →
           ∀ hT : d.W.Nonsingular xv yv,
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ (hfin : d.W.Nonsingular xS yS) (s : ℤ),
+            ∃ (hfin : d.W.Nonsingular xS yS) (s A B : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
+              s = B + A * d.lam ∧
+              |A| ≤ 3 * 4 ^ rounds ∧ |B| ≤ 3 * 4 ^ rounds ∧
+              (A : F) = Kimchi.Gate.EndoScalar.decomposeA
+                (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v)) ∧
+              (B : F) = Kimchi.Gate.EndoScalar.decomposeB
+                (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v)) ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField
                 (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v))
                 (d.lam : F))
@@ -1185,7 +1191,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
             exact ⟨rfl, rfl⟩)
           (fun i _ => ⟨rfl, rfl⟩)
           hP0ns hP0 lam (heig hT hφT)
-      rw [hcl] at hsval
+      rw [hcl] at hAval hBval hsval
       have hax := accX_chainBuild eb xv yv x0v y0v 0 bsv rounds
       have hay := accY_chainBuild eb xv yv x0v y0v 0 bsv rounds
       have hfin : W.Nonsingular
@@ -1196,9 +1202,9 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
       exact ⟨(Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv rounds).xP,
         (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv rounds).yP,
         CVar.eval_le (hle₅.trans hle₆) hxP, CVar.eval_le (hle₅.trans hle₆) hyP,
-        hfin, s,
+        hfin, s, A, B,
         (Kimchi.Gate.EndoMul.some_congr W hfin hfin' hax.symm hay.symm).trans hseq,
-        hsval⟩
+        hsab, hAle, hBle, hAval, hBval, hsval⟩
   case vc4.vc1.vc1.vc1.vc1.refine_2.refine_2.post.except =>
     exact ExceptConds.entails_false
 
