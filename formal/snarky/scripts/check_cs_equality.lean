@@ -12,13 +12,12 @@ ids pin the shared counter's numbering.
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
 `Basic` gadget vocabulary, the landed gate gadgets (poseidon, endo_scalar,
-endo_mul), and the gadget-complete pickles sub-circuits (pow2_pow, b_correct — the
-first composition fixtures; their dumps are witness-less, so the checks are CS-side
-only). Deferred, with the blocker each waits on:
+endo_mul), and the gadget-complete pickles sub-circuits (pow2_pow, b_correct,
+bullet_reduce_one_step, bullet_reduce_step — composition fixtures, the bullet pair
+composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
+checks are CS-side only). Deferred, with the blocker each waits on:
 - var_base_mul + scale_fast2_128, ftcomm_*, xhat_* (and everything downstream: ivp,
   verify, wrap/step mains) — the VarBaseMul gadget slice;
-- bullet_reduce_one_step, bullet_reduce_step — the `endoInv` consumer of EndoMul
-  (gadget-complete otherwise);
 - hash_messages_*, finalize_other_proof_*, schnorr_verify — the sponge circuit layer
   (packages/random-oracle; FOP additionally the OptSponge variant);
 - group_map_step — activatable now (Basic-only), transcription pending a
@@ -260,6 +259,46 @@ def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
   let _ ← equals expectedB computedB
   pure PUnit.unit
 
+/-- The step-side `endoInv` scalar-field data: the Pallas group order is prime
+(`pallas_card` carries the `Fact` over to the numeral). -/
+def pallasOrderPrime : Nat.Prime PALLAS_SCALAR_CARD :=
+  Pasta.pallas_card ▸ (Fact.out : Nat.Prime CompElliptic.Curves.Pasta.Pallas.curve.toAffine.order)
+
+/-- One IPA fold step (`bullet_reduce_one_step_circuit`, the PS wrapper's inline body):
+`endoInv(L, u) + endo(R, u)` — the first fixture composing endoInv, endoMul, and
+addComplete. Input layout: `L` 0–1, `R` 2–3, the 128-bit challenge 4. -/
+def bulletReduceOneCircuit (input : Vector (FVar Fp) 5) : CircuitM Fp C PUnit := do
+  let l : AffinePoint (FVar Fp) := ⟨input[0], input[1]⟩
+  let r : AffinePoint (FVar Fp) := ⟨input[2], input[3]⟩
+  let lScaled ← endoInv Pasta.pallasEndo CompElliptic.Curves.Pasta.Pallas.curve.toAffine
+    PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
+    l input[4]
+  let rScaled ← endoMul Pasta.pallasEndo 32 r input[4]
+  let _ ← addComplete lScaled rScaled
+  pure PUnit.unit
+
+/-- The IPA `lr_prod` fold (`bullet_reduce_step_circuit`, PS `IPA.bulletReduceCircuit`
+at 15 pairs): per pair `endoInv(Lᵢ, uᵢ) + endo(Rᵢ, uᵢ)`, then the running
+`addComplete` sum. Input layout: pair `j`'s points at `4j…4j+3`, challenges 60–74. -/
+def bulletReduceCircuit (input : Vector (FVar Fp) 75) : CircuitM Fp C PUnit := do
+  let inl := input.toList
+  let zero : FVar Fp := .const 0
+  let pt := fun i => inl.getD i zero
+  let terms ← (List.range 15).mapM (fun j => do
+    let l : AffinePoint (FVar Fp) := ⟨pt (4 * j), pt (4 * j + 1)⟩
+    let r : AffinePoint (FVar Fp) := ⟨pt (4 * j + 2), pt (4 * j + 3)⟩
+    let u := pt (60 + j)
+    let lScaled ← endoInv Pasta.pallasEndo CompElliptic.Curves.Pasta.Pallas.curve.toAffine
+      PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
+      l u
+    let rScaled ← endoMul Pasta.pallasEndo 32 r u
+    addComplete lScaled rScaled)
+  match terms with
+  | [] => pure PUnit.unit
+  | head :: tail => do
+    let _ ← tail.foldlM (fun acc q => (·.p) <$> addComplete acc q.p) head.p
+    pure PUnit.unit
+
 /-! ## The comparison -/
 
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
@@ -356,7 +395,11 @@ def targets : List (String × (Raw → List (String × Bool))) :=
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit),
     ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
     ("b_correct_step_circuit",
-      compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit) ]
+      compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
+    ("bullet_reduce_one_step_circuit",
+      compareWith (a := Vector Fp 5) (b := PUnit) bulletReduceOneCircuit),
+    ("bullet_reduce_step_circuit",
+      compareWith (a := Vector Fp 75) (b := PUnit) bulletReduceCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
