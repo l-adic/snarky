@@ -970,7 +970,8 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
     ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (k1 k2 : ℤ),
       Point.some _ _ hfin = (4 : ℤ) ^ m • Point.some _ _ hP0ns + k1 • T + k2 • φT
         ∧ (k2 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * aDigit g j
-        ∧ (k1 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j := by
+        ∧ (k1 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j
+        ∧ |k1| ≤ 4 ^ m - 1 ∧ |k2| ≤ 4 ^ m - 1 := by
   -- coordinate threading: row `i`'s input column equals the accumulator at step `i`
   have haccP : ∀ k, k < m → (g k).xP = accX g k ∧ (g k).yP = accY g k := by
     intro k hk
@@ -1003,7 +1004,8 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
   have hrow : ∀ i, i < m → ∃ c1 c2 : ℤ,
       P (i + 1) = (4 : ℤ) • P i + c1 • T + c2 • φT
         ∧ (c1 : F) = 2 * dPoly ((g i).b2 + 2 * (g i).b1) + dPoly ((g i).b4 + 2 * (g i).b3)
-        ∧ (c2 : F) = 2 * cPoly ((g i).b2 + 2 * (g i).b1) + cPoly ((g i).b4 + 2 * (g i).b3) := by
+        ∧ (c2 : F) = 2 * cPoly ((g i).b2 + 2 * (g i).b1) + cPoly ((g i).b4 + 2 * (g i).b3)
+        ∧ |c1| ≤ 3 ∧ |c2| ≤ 3 := by
     intro i hi
     obtain ⟨hxP, hyP⟩ := haccP i hi
     have hPi : W.Nonsingular (g i).xP (g i).yP := by rw [hxP, hyP]; exact key i (le_of_lt hi)
@@ -1012,9 +1014,9 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
     have hφTi : W.Nonsingular (endo * (g i).xT) (g i).yT := by
       obtain ⟨hx, hy⟩ := hbase i hi; rw [hx, hy]; exact hφTns
     obtain ⟨hxn1, hxn2⟩ := hxne i hi
-    obtain ⟨hS, c1, c2, hrel, hd1, hd2, -, -⟩ :=
+    obtain ⟨hS, c1, c2, hrel, hd1, hd2, hc1b, hc2b⟩ :=
       gate_advance W ha h2 h3 hodd endo (g i) (hholds i hi) hTi hφTi hPi hxn1 hxn2
-    refine ⟨c1, c2, ?_, hd1, hd2⟩
+    refine ⟨c1, c2, ?_, hd1, hd2, hc1b, hc2b⟩
     rw [hPval (i + 1) hi, hPval i (le_of_lt hi),
       some_congr W (key (i + 1) hi) hS rfl rfl,
       some_congr W (key i (le_of_lt hi)) hPi hxP.symm hyP.symm, hTeq,
@@ -1038,7 +1040,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
     have e4 : (2 * i + 1) / 2 = i := by omega
     have haE : aDigit g (2 * i) = cPoly ((g i).b2 + 2 * (g i).b1) := by simp [aDigit, e1, e2]
     have haO : aDigit g (2 * i + 1) = cPoly ((g i).b4 + 2 * (g i).b3) := by simp [aDigit, e3, e4]
-    rw [haE, haO, ← (hc i hi').2.2]
+    rw [haE, haO, ← (hc i hi').2.2.1]
   have hk1 : (k1 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j := by
     rw [hk1def, ← sum_reindex m (bDigit g)]; push_cast
     refine Finset.sum_congr rfl fun i hi => ?_
@@ -1050,7 +1052,33 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
     have hbE : bDigit g (2 * i) = dPoly ((g i).b2 + 2 * (g i).b1) := by simp [bDigit, e1, e2]
     have hbO : bDigit g (2 * i + 1) = dPoly ((g i).b4 + 2 * (g i).b3) := by simp [bDigit, e3, e4]
     rw [hbE, hbO, ← (hc i hi').2.1]
-  refine ⟨key m (le_refl m), k1, k2, ?_, hk2, hk1⟩
+  have hsum : ∀ n : ℕ, ∑ i ∈ Finset.range n, (4 : ℤ) ^ (n - 1 - i) * 3 = 4 ^ n - 1 := by
+    intro n
+    induction n with
+    | zero => simp
+    | succ k ih =>
+      rw [Finset.sum_range_succ,
+        Finset.sum_congr rfl (fun i hi => show (4 : ℤ) ^ (k + 1 - 1 - i) * 3
+          = 4 * ((4 : ℤ) ^ (k - 1 - i) * 3) from by
+            rw [show k + 1 - 1 - i = (k - 1 - i) + 1 from by
+              have := Finset.mem_range.mp hi; omega, pow_succ]; ring),
+        ← Finset.mul_sum, ih]
+      simp [pow_succ]; ring
+  have hbnd : ∀ c : ℕ → ℤ, (∀ i, i < m → |c i| ≤ 3) →
+      |∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c i| ≤ 4 ^ m - 1 := by
+    intro c hc3
+    calc |∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * c i|
+        ≤ ∑ i ∈ Finset.range m, |(4 : ℤ) ^ (m - 1 - i) * c i| :=
+          Finset.abs_sum_le_sum_abs _ _
+      _ ≤ ∑ i ∈ Finset.range m, (4 : ℤ) ^ (m - 1 - i) * 3 := by
+          refine Finset.sum_le_sum fun i hi => ?_
+          rw [abs_mul, abs_pow, show |(4 : ℤ)| = 4 from rfl]
+          exact mul_le_mul_of_nonneg_left (hc3 i (Finset.mem_range.mp hi)) (by positivity)
+      _ = 4 ^ m - 1 := hsum m
+  refine ⟨key m (le_refl m), k1, k2, ?_,
+    hk2, hk1,
+    hk1def ▸ hbnd c1 (fun i hi => (hc i hi).2.2.2.1),
+    hk2def ▸ hbnd c2 (fun i hi => (hc i hi).2.2.2.2)⟩
   rw [← hPval m (le_refl m), hPm, hPval 0 (Nat.zero_le m),
     some_congr W (key 0 (Nat.zero_le m)) hP0ns rfl rfl]
 
@@ -1074,13 +1102,24 @@ theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (hxne : ∀ i, i < m → (g i).xP ≠ (1 + (endo - 1) * (g i).b1) * (g i).xT
                         ∧ (g i).xR ≠ (1 + (endo - 1) * (g i).b3) * (g i).xT)
     (lam : ℤ) (heig : φT = lam • T) :
-    ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (s : ℤ),
+    ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (s A B : ℤ),
       Point.some _ _ hfin = s • T
+        ∧ s = B + A * lam
+        ∧ |A| ≤ 3 * 4 ^ m ∧ |B| ≤ 3 * 4 ^ m
+        ∧ (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbList g m)
+        ∧ (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbList g m)
         ∧ (s : F) = Kimchi.Gate.EndoScalar.toField (crumbList g m) (lam : F) := by
-  obtain ⟨hfin, k1, k2, hPm, hk2, hk1⟩ :=
+  obtain ⟨hfin, k1, k2, hPm, hk2, hk1, hb1, hb2⟩ :=
     endoMul_ab W ha h2 h3 hodd endo m g hholds T φT hTns hTeq hφTns hφTeq hbase hthread hP0ns hxne
-  refine ⟨hfin, 2 * 4 ^ m + k1 + (2 * 4 ^ m + k2) * lam, ?_, ?_⟩
+  have h4 : (0 : ℤ) < 4 ^ m := by positivity
+  refine ⟨hfin, 2 * 4 ^ m + k1 + (2 * 4 ^ m + k2) * lam, 2 * 4 ^ m + k2, 2 * 4 ^ m + k1,
+    ?_, by ring,
+    (abs_add_le _ _).trans (by rw [abs_of_nonneg (by positivity : (0:ℤ) ≤ 2 * 4 ^ m)]; omega),
+    (abs_add_le _ _).trans (by rw [abs_of_nonneg (by positivity : (0:ℤ) ≤ 2 * 4 ^ m)]; omega),
+    ?_, ?_, ?_⟩
   · rw [hPm, hP0, heig]; module
+  · rw [(decompose_crumbList g m).1]; push_cast [hk2]; ring
+  · rw [(decompose_crumbList g m).2]; push_cast [hk1]; ring
   · simp +decide [EndoScalar.toField, hk1, hk2]
     rw [decompose_crumbList g m |>.1, decompose_crumbList g m |>.2]; ring
 
@@ -1305,8 +1344,12 @@ theorem endoMul_off (W : WeierstrassCurve.Affine F)
     (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT)
     (lam : ℤ) (heig : φT = lam • T) :
-    ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (s : ℤ),
+    ∃ (hfin : W.Nonsingular (accX g m) (accY g m)) (s A B : ℤ),
       Point.some _ _ hfin = s • T
+        ∧ s = B + A * lam
+        ∧ |A| ≤ 3 * 4 ^ m ∧ |B| ≤ 3 * 4 ^ m
+        ∧ (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbList g m)
+        ∧ (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbList g m)
         ∧ (s : F) = Kimchi.Gate.EndoScalar.toField (crumbList g m) (lam : F) := by
   have hxne := accumulator_chain W h2 hodd endo T φT off m hbits g hholds hTns hTeq
     hφTns hφTeq hbase hthread hP0ns hP0
@@ -1777,9 +1820,11 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have heig : φT = pallasLam • T := by rw [hφTeq, hTeq]; exact pallas_eigen hTns
-  exact endoMul_off Pallas.curve.toAffine (by decide) (by decide) hodd pallasEndo T φT
-    (fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig)
-    m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 pallasLam heig
+  obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
+    endoMul_off Pallas.curve.toAffine (by decide) (by decide) hodd pallasEndo T φT
+      (fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig)
+      m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 pallasLam heig
+  exact ⟨hfin, s, hpt, hcast⟩
 
 /-- **EndoMul at Vesta** — the other half of the 2-cycle, identical modulo `vesta_*`. -/
 theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
@@ -1802,9 +1847,11 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
   have hTne : T ≠ 0 := by rw [hTeq]; exact Point.some_ne_zero _
   have heig : φT = vestaLam • T := by rw [hφTeq, hTeq]; exact vesta_eigen hTns
-  exact endoMul_off Vesta.curve.toAffine (by decide) (by decide) hodd vestaEndo T φT
-    (fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig)
-    m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 vestaLam heig
+  obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
+    endoMul_off Vesta.curve.toAffine (by decide) (by decide) hodd vestaEndo T φT
+      (fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig)
+      m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 vestaLam heig
+  exact ⟨hfin, s, hpt, hcast⟩
 
 /-! ## The produce chain at the curves
 

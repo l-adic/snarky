@@ -519,7 +519,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
     -- the run count is the traversed prefix's
     have hm : rs.length + 1 = pref.length := by simpa using hlen
     -- the point chain: `endoMul_off` at the extracted run
-    obtain ⟨hfin', s, hseq, hsval⟩ :=
+    obtain ⟨hfin', s, A, B, hseq, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
       endoMul_off W h2 h3 hodd eb (Point.some _ _ hT) (Point.some _ _ hφT) hoff
         (rs.length + 1) (by omega) g hHolds hTns hTeq hφTns hφTeq
         (fun i hi =>
@@ -1152,7 +1152,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
       injection hyv' with hyv'
       subst hv' hxv' hyv'
       -- the point chain: `endoMul_off` at the honest walk
-      obtain ⟨hfin', s, hseq, hsval⟩ :=
+      obtain ⟨hfin', s, A, B, hseq, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
         Kimchi.Gate.EndoMul.endoMul_off W h2 h3 hodd eb
           (Point.some _ _ hT) (Point.some _ _ hφT)
           (fun a b ha' hb' hba hbb => hoff ha' hb' hba hbb hTne (heig hT hφT))
