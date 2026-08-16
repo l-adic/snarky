@@ -476,7 +476,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
     · rw [hP0, heig]; module
     · push_cast
       simp [Kimchi.Gate.EndoScalar.toField, Kimchi.Gate.EndoScalar.decomposeA,
-        Kimchi.Gate.EndoScalar.decomposeB]
+        Kimchi.Gate.EndoScalar.decomposeB, Kimchi.Gate.EndoScalar.decomposeFold]
       ring
   | r₀ :: rs, hthr' =>
     subst hround

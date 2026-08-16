@@ -185,12 +185,18 @@ open Kimchi.Gate.EndoScalar
 
 variable {F : Type*} [Field F]
 
-/-- The `a`-accumulator of the Algorithm-2 decomposition (`a := 2a + cPoly x`),
-    from the canonical init `2`. -/
-def decomposeA (crumbs : List F) : F := crumbs.foldl (fun a x => 2 * a + cPoly x) 2
+/-- The Algorithm-2 accumulator fold, once: double and add the step's contribution,
+    from the canonical init `2`. All decompose accumulators are instances — at `F`
+    with `cPoly`/`dPoly` (the gate's registers), at `ZMod order` (the decoded
+    challenge), and at ℤ with the digit tables (the shadow, `decomposeAInt` below). -/
+def decomposeFold {α R : Type*} [Semiring R] (step : α → R) (xs : List α) : R :=
+  xs.foldl (fun a x => 2 * a + step x) 2
 
-/-- The `b`-accumulator (`b := 2b + dPoly x`), from init `2`. -/
-def decomposeB (crumbs : List F) : F := crumbs.foldl (fun b x => 2 * b + dPoly x) 2
+/-- The `a`-accumulator of the Algorithm-2 decomposition (`a := 2a + cPoly x`). -/
+def decomposeA (crumbs : List F) : F := decomposeFold (fun x => cPoly x) crumbs
+
+/-- The `b`-accumulator (`b := 2b + dPoly x`). -/
+def decomposeB (crumbs : List F) : F := decomposeFold (fun x => dPoly x) crumbs
 
 /-- The raw challenge reconstructed from its base-4 crumbs (`n := 4n + x`), the
     gate's `n` register — public, as the reconstruction the wrapper pins to the
@@ -223,11 +229,12 @@ def dInt : ℕ → ℤ
   | 1 => 1
   | _ => 0
 
-/-- The ℤ-shadow of `decomposeA`, over the pre-cast digits. -/
-def decomposeAInt (ds : List ℕ) : ℤ := ds.foldl (fun a d => 2 * a + cInt d) 2
+/-- The ℤ-shadow of `decomposeA`, over the pre-cast digits: the same fold at the
+    initial ring, where the polynomial's digit values are the integer table. -/
+def decomposeAInt (ds : List ℕ) : ℤ := decomposeFold cInt ds
 
 /-- The ℤ-shadow of `decomposeB`. -/
-def decomposeBInt (ds : List ℕ) : ℤ := ds.foldl (fun b d => 2 * b + dInt d) 2
+def decomposeBInt (ds : List ℕ) : ℤ := decomposeFold dInt ds
 
 /-- The ℤ-shadow of `toField`: the effective scalar as an integer. -/
 def toIntZ (ds : List ℕ) (lam : ℤ) : ℤ := decomposeAInt ds * lam + decomposeBInt ds
@@ -265,7 +272,7 @@ theorem decomposeA_digits (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     decomposeA (ds.map (Nat.cast : ℕ → F)) = ((decomposeAInt ds : ℤ) : F) := by
   have := fold_digits (p := fun x => cPoly x) (pz := cInt)
     (fun d hd => cPoly_digit h2 h3 hd) ds h 2
-  simpa [decomposeA, decomposeAInt] using this
+  simpa [decomposeA, decomposeAInt, decomposeFold] using this
 
 /-- `decomposeB` over cast digits is the cast of `decomposeBInt`. -/
 theorem decomposeB_digits (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
@@ -273,7 +280,7 @@ theorem decomposeB_digits (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     decomposeB (ds.map (Nat.cast : ℕ → F)) = ((decomposeBInt ds : ℤ) : F) := by
   have := fold_digits (p := fun x => dPoly x) (pz := dInt)
     (fun d hd => dPoly_digit h2 h3 hd) ds h 2
-  simpa [decomposeB, decomposeBInt] using this
+  simpa [decomposeB, decomposeBInt, decomposeFold] using this
 
 /-- `toField` over cast digits at a cast eigenvalue is the cast of `toIntZ` — the two-field
     bridge: one integer scalar, read in any field with `2, 3` invertible. -/
@@ -315,14 +322,14 @@ private theorem foldInt_bounds {cz : ℕ → ℤ} (hc : ∀ d, |cz d| ≤ 1) (ds
 theorem decomposeAInt_bounds (ds : List ℕ) :
     2 ^ ds.length + 1 ≤ decomposeAInt ds ∧ decomposeAInt ds ≤ 3 * 2 ^ ds.length - 1 := by
   obtain ⟨hlo, hhi⟩ := foldInt_bounds cInt_abs_le ds 2 (by norm_num)
-  unfold decomposeAInt
+  unfold decomposeAInt decomposeFold
   constructor <;> omega
 
 /-- `decomposeBInt`'s half of the window. -/
 theorem decomposeBInt_bounds (ds : List ℕ) :
     2 ^ ds.length + 1 ≤ decomposeBInt ds ∧ decomposeBInt ds ≤ 3 * 2 ^ ds.length - 1 := by
   obtain ⟨hlo, hhi⟩ := foldInt_bounds dInt_abs_le ds 2 (by norm_num)
-  unfold decomposeBInt
+  unfold decomposeBInt decomposeFold
   constructor <;> omega
 
 /-! ## Multi-row composition: threading rows is folding the concatenated crumbs.
@@ -335,12 +342,12 @@ theorem decomposeBInt_bounds (ds : List ℕ) :
     single decomposition from `decomposeA xs`. -/
 theorem decomposeA_append (xs ys : List F) :
     decomposeA (xs ++ ys) = ys.foldl (fun a x => 2 * a + cPoly x) (decomposeA xs) := by
-  simp only [decomposeA, List.foldl_append]
+  simp only [decomposeA, decomposeFold, List.foldl_append]
 
 /-- Resuming the `b`-fold across a row boundary from `decomposeB xs`. -/
 theorem decomposeB_append (xs ys : List F) :
     decomposeB (xs ++ ys) = ys.foldl (fun b x => 2 * b + dPoly x) (decomposeB xs) := by
-  simp only [decomposeB, List.foldl_append]
+  simp only [decomposeB, decomposeFold, List.foldl_append]
 
 /-- Resuming the `n`-fold across a row boundary from `nReconstruct xs`. -/
 private theorem nReconstruct_append (xs ys : List F) :
@@ -418,8 +425,8 @@ theorem chain_decompose (m : ℕ) (w : ℕ → Witness F)
     obtain ⟨hn, ha, hb, _⟩ := (holds_iff _).mp (hHolds 0 (le_refl 0))
     rw [chainCrumbs_succ, chainCrumbs_zero, List.nil_append]
     refine ⟨?_, ?_, ?_⟩
-    · rw [ha, ha0, decomposeA]
-    · rw [hb, hb0, decomposeB]
+    · rw [ha, ha0, decomposeA, decomposeFold]
+    · rw [hb, hb0, decomposeB, decomposeFold]
     · rw [hn, hn0, nReconstruct]
   | succ k ih =>
     obtain ⟨ihA, ihB, ihN⟩ := ih (fun i hi => hHolds i (by omega))
