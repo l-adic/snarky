@@ -58,7 +58,7 @@ instance : CheckedType F c (AffinePoint (FVar F)) where
 
 /-- Seal a point coordinatewise, `y` before `x` — OCaml's `seal` maps over the tuple
 right to left (PS `sealPoint` preserves the order; emission order is fixture bytes). -/
-private def sealPoint [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
+def sealPoint [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSystem F c]
     (p : AffinePoint (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
   let y ← sealVar p.y
   let x ← sealVar p.x
