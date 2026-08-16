@@ -16,8 +16,9 @@ endo_mul), and the gadget-complete pickles sub-circuits (pow2_pow, b_correct,
 bullet_reduce_one_step, bullet_reduce_step — composition fixtures, the bullet pair
 composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
 checks are CS-side only). Deferred, with the blocker each waits on:
-- var_base_mul + scale_fast2_128, ftcomm_*, xhat_* (and everything downstream: ivp,
-  verify, wrap/step mains) — the VarBaseMul gadget slice;
+- ftcomm_*, xhat_* (and everything downstream: ivp, verify, wrap/step mains) — the
+  pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
+  the VarBaseMul gadget's own oracle checks);
 - hash_messages_*, finalize_other_proof_*, schnorr_verify — the sponge circuit layer
   (packages/random-oracle; FOP additionally the OptSponge variant);
 - group_map_step — activatable now (Basic-only), transcription pending a
@@ -40,6 +41,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
+import Snarky.Kimchi.Circuit.VarBaseMul
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -196,6 +198,20 @@ def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
 def endoMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   endoMul Pasta.pallasEndo 32 input.1 ⟨input.2⟩
+
+/-- `var_base_mul_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.VarBaseMul.scaleFast1` at 51 chunks — the full 255-bit
+ladder). -/
+def varBaseMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  scaleFast1 255 51 input.1 ⟨input.2⟩
+
+/-- `scale_fast2_128_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.VarBaseMul.scaleFast2'` at 26 chunks / 127 `sDiv2` bits — the
+128-bit split-scalar path, exercising `splitFieldVar` and `scaleFast2`). -/
+def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  scaleFast2' 255 26 127 input.1 input.2
 
 /-! ## Pickles sub-circuits
 
@@ -393,6 +409,10 @@ def targets : List (String × (Raw → List (String × Bool))) :=
       compareWith (a := Fp) (b := Fp) endoScalarCircuit),
     ("endo_mul_step_circuit",
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit),
+    ("var_base_mul_step_circuit",
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) varBaseMulCircuit),
+    ("scale_fast2_128_step_circuit",
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
     ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
     ("b_correct_step_circuit",
       compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),

@@ -311,9 +311,11 @@ class KimchiSystem (F c : Type) where
   endoScalar : EndoScalar F → c
   /-- Embed an endomorphism-multiplication payload. -/
   endoMul : EndoMul F → c
+  /-- Embed a variable-base scalar-multiplication payload. -/
+  varBaseMul : VarBaseMul F → c
 
 instance : KimchiSystem F (KimchiConstraint F) :=
-  ⟨.addComplete, .poseidon, .endoScalar, .endoMul⟩
+  ⟨.addComplete, .poseidon, .endoScalar, .endoMul, .varBaseMul⟩
 
 instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 

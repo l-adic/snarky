@@ -378,6 +378,12 @@ Snarky.Kimchi.addComplete
 Snarky.Kimchi.poseidon
 Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
+Snarky.Kimchi.varBaseMul
+Snarky.Kimchi.scaleFast1
+Snarky.Kimchi.scaleFast2
+Snarky.Kimchi.scaleFast2'
+Snarky.Kimchi.splitFieldVar
+Snarky.Kimchi.joinField
 Snarky.Kimchi.mapAccumM
 Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toFieldChecked'
