@@ -98,6 +98,7 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoMul.endoMul_spec,
     `Snarky.Kimchi.EndoMul.endoMul_complete_spec,
     `Snarky.Kimchi.EndoMul.endoInv_spec,
+    `Snarky.Kimchi.EndoMul.endoInv_complete_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
     `Snarky.post_of_prove,

@@ -1285,6 +1285,279 @@ theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
   exact ⟨crumbs, hval, by omega, hn, hres, sZ, hcast, hs0, hgeq,
     eq_inv_smul_of_smul_eq d.W hs0 hgeq⟩
 
+open Kimchi.Gate.EndoScalar in
+/-- The scalar side of `endoInv`'s completeness, packaged away from the walk: at any
+on-curve point, the endo-decoded challenge is a unit mod the order (its ℤ-shadow is a
+positive bounded GLV combo, priced by `combo_ne_zero`), and any integer with the
+decomposition shape `endoMul` hands back is congruent to it (the char window
+`d.char_big` reads the bounded decomposition integers exactly). The digit-shadow
+recursion (`digitsOf`) stays inside this proof — the walk's context never carries it,
+which keeps the walk's elaboration off the 64-deep symbolic unfolding. -/
+private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
+    [Fact (Nat.Prime d.W.order)] {xv yv : F} (hg : d.W.Nonsingular xv yv) (n : ℕ) :
+    Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) ≠ 0 ∧
+    ∀ s A B : ℤ, s = B + A * d.lam → |A| ≤ 3 * 4 ^ 32 → |B| ≤ 3 * 4 ^ 32 →
+      (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf (2 * 32) n) →
+      (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf (2 * 32) n) →
+      ((s : ℤ) : ZMod d.W.order)
+        = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) := by
+  haveI : NeZero d.W.order := ⟨d.prime.ne_zero⟩
+  -- the residues of 2 and 3 are units: the order is prime and avoids both
+  have h2q : (2 : ZMod d.W.order) ≠ 0 := by
+    have h : ((2 : ℤ) : ZMod d.W.order) ≠ 0 := by
+      rw [Ne, ZMod.intCast_zmod_eq_zero_iff_dvd]
+      intro hdvd
+      have h2 : d.W.order ∣ 2 := by exact_mod_cast hdvd
+      exact d.odd ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_two).mp h2)
+    exact_mod_cast h
+  have h3q : (3 : ZMod d.W.order) ≠ 0 := by
+    have h : ((3 : ℤ) : ZMod d.W.order) ≠ 0 := by
+      rw [Ne, ZMod.intCast_zmod_eq_zero_iff_dvd]
+      intro hdvd
+      have h3 : d.W.order ∣ 3 := by exact_mod_cast hdvd
+      exact d.order_ne_three ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_three).mp h3)
+    exact_mod_cast h
+  obtain ⟨hAlo, hAhi⟩ := decomposeAInt_bounds (digitsOf 64 n)
+  obtain ⟨hBlo, hBhi⟩ := decomposeBInt_bounds (digitsOf 64 n)
+  rw [digitsOf_length] at hAlo hAhi hBlo hBhi
+  have h64 : (0 : ℤ) < 2 ^ 64 := by positivity
+  have heffz : Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order))
+      = ((toIntZ (digitsOf 64 n) d.lam : ℤ) : ZMod d.W.order) := by
+    rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
+  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf (2 * 32) n)
+      = ((decomposeAInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [show (2 * 32 : ℕ) = 64 from rfl, crumbsOf_eq_map,
+      decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf (2 * 32) n)
+      = ((decomposeBInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [show (2 * 32 : ℕ) = 64 from rfl, crumbsOf_eq_map,
+      decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  constructor
+  · -- the decoded challenge is a unit: its shadow is a positive bounded GLV combo
+    rw [heffz]
+    intro h0
+    obtain ⟨mm, hm⟩ := (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mp h0
+    have hkill : (toIntZ (digitsOf 64 n) d.lam) • (Point.some _ _ hg : d.W.Point) = 0 := by
+      have horder : (d.W.order : ℤ) • (Point.some _ _ hg : d.W.Point) = 0 := by
+        rw [natCast_zsmul]; exact card_nsmul_eq_zero'
+      rw [hm, mul_comm, mul_smul, horder, smul_zero]
+    have hexp : (toIntZ (digitsOf 64 n) d.lam) • (Point.some _ _ hg : d.W.Point)
+        = decomposeBInt (digitsOf 64 n) • (Point.some _ _ hg : d.W.Point)
+          + decomposeAInt (digitsOf 64 n)
+            • (d.lam • (Point.some _ _ hg : d.W.Point)) := by
+      rw [toIntZ]; module
+    exact Kimchi.Gate.EndoMul.combo_ne_zero
+      (fun a b ha hb hba hbb =>
+        d.off_targets ha hb hba hbb (Point.some_ne_zero hg) rfl)
+      (by linarith) (by linarith) (by norm_num at hBhi ⊢; linarith)
+      (by norm_num at hAhi ⊢; linarith)
+      (hexp ▸ hkill)
+  · -- the char window reads the decomposition exactly, then residues agree
+    intro s A B hsab hAle hBle hAval hBval
+    have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 4 ^ 32 →
+        2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
+      intro X XZ hXle hXZlo hXZhi hcast
+      have habs : |X - XZ| < 2 ^ 127 := by
+        rw [abs_lt]
+        obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
+        rw [show (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 from by norm_num] at hX1 hX2
+        have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
+        constructor <;> linarith
+      have := d.char_big _ habs hcast
+      omega
+    have hAeq : A = decomposeAInt (digitsOf 64 n) :=
+      hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
+    have hBeq : B = decomposeBInt (digitsOf 64 n) :=
+      hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
+    rw [heffz, hsab, hAeq, hBeq, toIntZ]
+    push_cast
+    ring
+
+open Kimchi.Gate.EndoScalar in
+open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
+/-- The division gadget is complete at the honest advice: instantiated in its own
+scalar field (`q := W.order`, `λ' := λ mod q`), the prover's run succeeds whenever the
+input point reads on-curve and the challenge is faithful and in range, and the result
+reads as `[eff⁻¹]·g` for `eff` the endo-decoded challenge — the PS witness's defining
+equation. The run never errors because `eff` is a unit mod the order (`combo_ne_zero`
+at the ℤ-shadow's window), the advice point is a genuine Mathlib point (so the
+on-curve rows pass), and `endoMul` returns `[s]·[eff⁻¹]·g = g` — `s ≡ eff (mod q)` by
+reading the decomposition integers through the char window (`char_big`), so the final
+pins close by residue action. Stepped through in the body. -/
+theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+    [Fact (Nat.Prime d.W.order)]
+    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
+          (∀ v, scalar.eval env = .ok v →
+            ToNat.toNat v < 4 ^ 64 ∧ ((ToNat.toNat v : F) = v)) ∧
+          (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
+        (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
+          t.x.eval env = .ok xv → t.y.eval env = .ok yv →
+          ∀ hg : d.W.Nonsingular xv yv,
+          ∃ xr yr, r.x.eval env' = .ok xr ∧ r.y.eval env' = .ok yr ∧
+            ∃ hres : d.W.Nonsingular xr yr,
+              Point.some _ _ hres
+                = ((Kimchi.Gate.EndoScalar.toField
+                    (Kimchi.Gate.EndoScalar.crumbsOf 64 (ToNat.toNat v))
+                    ((d.lam : ZMod d.W.order)))⁻¹.val : ℕ)
+                  • Point.some _ _ hg)
+        Q⦄
+    (endoInv (c := KimchiProverC F) d.endo d.W d.W.order d.prime
+      ((d.lam : ZMod d.W.order)) t scalar)
+    ⦃Q⦄ := by
+  haveI : NeZero d.W.order := ⟨d.prime.ne_zero⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  simp only [endoInv]
+  mvcgen
+  rename_i st₀ hpre
+  obtain ⟨⟨hsok, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
+  obtain ⟨v, hv⟩ := CVar.evalOk hsok
+  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
+  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
+  obtain ⟨hrange, hfaith⟩ := hsc v hv
+  have hg : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
+  -- the scalar facts, packaged: unit challenge + residue agreement
+  obtain ⟨heffne', hkey⟩ := endoInv_scalar_facts d hg (ToNat.toNat v)
+  obtain ⟨eff, heff⟩ : ∃ eff : ZMod d.W.order,
+      eff = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 (ToNat.toNat v))
+        ((d.lam : ZMod d.W.order)) := ⟨_, rfl⟩
+  have heffne : eff ≠ 0 := heff ▸ heffne'
+  -- the input point
+  obtain ⟨G, hG⟩ : ∃ G : d.W.Point, G = Point.some _ _ hg := ⟨_, rfl⟩
+  have hGne : G ≠ 0 := by rw [hG]; exact Point.some_ne_zero hg
+  -- the advice scalar and point
+  obtain ⟨k, hkdef⟩ : ∃ k : ℕ, k = eff⁻¹.val := ⟨_, rfl⟩
+  have hinv_ne : eff⁻¹ ≠ 0 := inv_ne_zero heffne
+  have hkne : k ≠ 0 := by rw [hkdef, Ne, ZMod.val_eq_zero]; exact hinv_ne
+  have hklt : k < d.W.order := by rw [hkdef]; exact ZMod.val_lt _
+  have hsmul_ne : (k : ℤ) • G ≠ 0 := fun h0 =>
+    smul_ne_zero_of_lt d.W hGne
+      (by exact_mod_cast Nat.pos_of_ne_zero hkne) (by exact_mod_cast hklt) h0
+  obtain ⟨px, py, hpns, hpteq⟩ :
+      ∃ px py, ∃ hpns : d.W.Nonsingular px py, (k : ℕ) • G = Point.some _ _ hpns := by
+    rw [natCast_zsmul] at hsmul_ne
+    cases hp : (k : ℕ) • G with
+    | zero => exact absurd hp hsmul_ne
+    | some px py hpns => exact ⟨px, py, hpns, rfl⟩
+  -- the honest witness computes exactly the advice pair
+  have hread : endoInvWit d.W d.W.order d.prime ((d.lam : ZMod d.W.order)) t scalar st₀.env
+      = .ok (px, py) := by
+    simp only [endoInvWit, AsProver.readCVar, hv, hxv, hyv, Bind.bind, ReaderT.bind,
+      Except.bind, Pure.pure]
+    rw [dif_pos hg, ← heff, ← hkdef, hG.symm, hpteq]
+    rfl
+  refine ⟨by rw [hread]; rfl, fun rp st₁ hgrantW hle₁ => ?_⟩
+  obtain ⟨hrpx, hrpy⟩ := hgrantW _ hread
+  mvcgen
+  -- x² row
+  refine ⟨by rw [hrpx]; rfl, fun x2 st₂ hgr2 hle₂ => ?_⟩
+  have hx2 : x2.eval st₂.env = .ok (px * px) := hgr2 _ hrpx
+  have hrpx₂ := CVar.eval_le hle₂ hrpx
+  mvcgen
+  -- x³ row
+  refine ⟨⟨by rw [hx2]; rfl, by rw [hrpx₂]; rfl⟩, fun x3 st₃ hgr3 hle₃ => ?_⟩
+  have hx3 : x3.eval st₃.env = .ok (px * px * px) := hgr3 _ _ hx2 hrpx₂
+  have hrpx₃ := CVar.eval_le hle₃ hrpx₂
+  have hrpy₃ := CVar.eval_le (hle₂.trans hle₃) hrpy
+  -- the on-curve row: the advice point satisfies the curve equation
+  have hEq : py * py = px * px * px + d.W.a₄ * px + d.W.a₆ := by
+    have h := (d.W.equation_iff px py).mp hpns.1
+    rw [d.short.1, d.short.2.1, d.short.2.2.1] at h
+    linear_combination h
+  have hrhs : (CVar.add_ (CVar.add_ x3 (CVar.scale_ d.W.a₄ rp.1)) (CVar.const d.W.a₆)).eval
+      st₃.env = .ok (px * px * px + d.W.a₄ * px + d.W.a₆) := by
+    rw [CVar.eval_add_]
+    simp only [CVar.eval, CVar.eval_add_, hx3, CVar.eval_scale_ hrpx₃ d.W.a₄]
+  mvcgen
+  refine ⟨⟨by rw [hrpy₃]; rfl, by rw [hrhs]; rfl, ?_⟩, fun u₄ st₄ hle₄ => ?_⟩
+  · intro yv' rhv' hyv' hrhv'
+    rw [hrpy₃] at hyv'
+    injection hyv' with hyv'
+    rw [hrhs] at hrhv'
+    injection hrhv' with hrhv'
+    rw [← hyv', ← hrhv']
+    exact hEq
+  mvcgen
+  -- the endoMul sub-run at the advice point
+  have hle₁₄ := hle₁.trans (hle₂.trans (hle₃.trans hle₄))
+  have hv₄ := CVar.eval_le hle₁₄ hv
+  have hrpx₄ := CVar.eval_le hle₄ hrpx₃
+  have hrpy₄ := CVar.eval_le hle₄ hrpy₃
+  refine endoMul_complete_spec d 32 (by norm_num) ⟨rp.1, rp.2⟩ scalar _ _
+    ⟨⟨by rw [hv₄]; rfl, by rw [hrpx₄]; rfl, by rw [hrpy₄]; rfl, ?_, ?_⟩,
+      fun computed st₅ hgr5 hle₅ => ?_⟩
+  · intro v' hv'
+    rw [hv₄] at hv'
+    injection hv' with hv'
+    subst hv'
+    exact ⟨by norm_num; exact hrange, hfaith⟩
+  · intro x' y' hx' hy'
+    rw [hrpx₄] at hx'
+    injection hx' with hx'
+    rw [hrpy₄] at hy'
+    injection hy' with hy'
+    rw [← hx', ← hy']
+    exact hpns
+  obtain ⟨xS, yS, hxS, hyS, hfin, s, A, B, hpt, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
+    hgr5 v px py hv₄ hrpx₄ hrpy₄ hpns
+  -- the scalar's residue is the decoded challenge (the packaged key fact)
+  have hsmod : ((s : ℤ) : ZMod d.W.order) = eff := by
+    rw [heff]
+    exact hkey s A B hsab hAle hBle hAval hBval
+  have hsk : ((s * (k : ℤ) : ℤ) : ZMod d.W.order) = ((1 : ℤ) : ZMod d.W.order) := by
+    push_cast
+    rw [hsmod, hkdef, ZMod.natCast_val, ZMod.cast_id]
+    exact mul_inv_cancel₀ heffne
+  -- the computed point returns to the input
+  have hchain : Point.some _ _ hfin = Point.some _ _ hg := by
+    rw [hpt, ← hpteq, ← natCast_zsmul, smul_smul, smul_eq_smul_of_zmod_eq d.W hsk,
+      one_smul]
+    exact hG
+  have hxyeq : xS = xv ∧ yS = yv := by
+    injection hchain with h1 h2
+    exact ⟨h1, h2⟩
+  mvcgen
+  -- the two pins
+  have hxv₅ := CVar.eval_le (hle₁₄.trans hle₅) hxv
+  have hyv₅ := CVar.eval_le (hle₁₄.trans hle₅) hyv
+  refine ⟨⟨by rw [hxS]; rfl, by rw [hxv₅]; rfl, ?_⟩, fun u₆ st₆ hle₆ => ?_⟩
+  · intro a' b' ha' hb'
+    rw [hxS] at ha'
+    injection ha' with ha'
+    rw [hxv₅] at hb'
+    injection hb' with hb'
+    rw [← ha', ← hb']
+    exact hxyeq.1
+  mvcgen
+  refine ⟨⟨by rw [CVar.eval_le hle₆ hyS]; rfl, by rw [CVar.eval_le hle₆ hyv₅]; rfl, ?_⟩,
+    fun u₇ st₇ hle₇ => ?_⟩
+  · intro a' b' ha' hb'
+    rw [CVar.eval_le hle₆ hyS] at ha'
+    injection ha' with ha'
+    rw [CVar.eval_le hle₆ hyv₅] at hb'
+    injection hb' with hb'
+    rw [← ha', ← hb']
+    exact hxyeq.2
+  mvcgen
+  -- the return value carries the defining equation
+  refine hk ⟨rp.1, rp.2⟩ st₇ (fun v' xv' yv' hv' hxv' hyv' hg' => ?_)
+    (hle₁₄.trans (hle₅.trans (hle₆.trans hle₇)))
+  rw [hv] at hv'
+  injection hv' with hv'
+  rw [hxv] at hxv'
+  injection hxv' with hxv'
+  rw [hyv] at hyv'
+  injection hyv' with hyv'
+  subst hv' hxv' hyv'
+  have hleTail := hle₂.trans (hle₃.trans (hle₄.trans (hle₅.trans (hle₆.trans hle₇))))
+  refine ⟨px, py, CVar.eval_le hleTail hrpx, CVar.eval_le hleTail hrpy, hpns, ?_⟩
+  rw [← heff, ← hkdef]
+  exact (hG ▸ hpteq).symm
+
 end EndoMul
 
 end Snarky.Kimchi
