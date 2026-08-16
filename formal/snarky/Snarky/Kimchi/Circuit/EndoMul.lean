@@ -22,9 +22,10 @@ scalar register to the scalar, and emits the `endoMul` constraint.
 
 Name map: PS `endo` becomes `endoMul`, the gate's own name — `endo` names the
 coefficient family here (`endoBase`, `Pasta.pallasEndo`); the coefficient
-parameter is `eb` after the PS binding. `endoInv` is a higher-level consumer
-(cross-field scalar-multiplication witnesses over an on-curve checked point) and
-is not ported, like `EndoScalar.expandToEndoScalar`.
+parameter is `eb` after the PS binding. `endoInv` keeps its name: it witnesses
+`[s⁻¹]·g` (the inverse of the scalar EndoScalar decodes, computed in the OTHER
+field) over an on-curve checked point, then verifies with `endoMul` and pins to
+the input — the cross-field division gadget.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS's type-level `SizedF k` sizing renders as the explicit `rounds` parameter with
@@ -40,6 +41,16 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   layer renders the class as the explicit `HasEndo` structure — the coefficient, the
   eigenvalue, and every curve fact the law pair consumes, with the deployed
   dictionaries `HasEndo.pallas`/`HasEndo.vesta`.
+- `endoInv`'s checked point witness (PS `WeierstrassAffinePoint`, whose `CheckedType`
+  instance asserts on-curve) renders as the plain pair witness plus the inline
+  on-curve rows — same allocation, same three rows (`square`, `mul`,
+  `assertSquare`); the curve `W` and the scalar-field data `(q, lam')` for the
+  witness are parameters, like `eb`. Its advice computes in the OTHER field through
+  the kimchi gate model itself (`EndoScalar.toField` at `crumbsOf`, in `ZMod q`)
+  and scalar-multiplies in Mathlib's `W.Point` group, where PS calls the `curves`
+  package's Rust FFI (`Snarky.Curves.Class.scalarMul`); PS's partial `toAffine`
+  (`fromJust`) renders as a `(0, 0)` default on the off-curve/infinity paths —
+  unreachable for honest inputs, and advice-only either way.
 
 The law pair reads the emitted constraints through the semantic layer, generic over
 the curve dictionary `HasEndo`: `EndoMul.endoMul_spec` (`§ Soundness` below) and
@@ -111,6 +122,63 @@ def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
   assertEqual fin.2 scalar
   addConstraint (KimchiSystem.endoMul { state, s := fin.1, nAcc := fin.2, endo := eb })
   pure fin.1
+
+/-! ### The cross-field division witness
+
+`endoInv`'s advice scalar-multiplies in Mathlib's proven group — the same
+`WeierstrassCurve.Affine.Point` the gadget laws are stated over (`nsmulBinRec`
+underneath, so a 255-bit multiple is a binary ladder) — where PS calls the
+`curves` package's Rust FFI (`Snarky.Curves.Class.scalarMul`). Advice-only: the
+emitted circuit never depends on these values holding anything; the on-curve and
+`endoMul`-verification rows are the contract. -/
+
+/-- `endoInv`'s result witness: read the point and the 128-bit challenge, decode the
+effective scalar in the scalar field `ZMod q` — the kimchi gate model itself,
+`EndoScalar.toField` at the challenge's canonical crumbs and the scalar-field
+eigenvalue `lam'` — and hand back `[s⁻¹]·g` computed in `W.Point`. Off-curve reads
+and the point at infinity fall back to `(0, 0)` (PS's partial `toAffine`/`fromJust`
+path) — unreachable for honest inputs. -/
+private def endoInvWit [Field F] [DecidableEq F] [ToNat F]
+    (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
+    (g : AffinePoint (FVar F)) (scalar : FVar F) :
+    AsProver F (F × F) :=
+  letI : Fact q.Prime := ⟨hq⟩
+  do
+  let gx ← AsProver.readCVar g.x
+  let gy ← AsProver.readCVar g.y
+  let s ← AsProver.readCVar scalar
+  let eff : ZMod q := Kimchi.Gate.EndoScalar.toField
+    (Kimchi.Gate.EndoScalar.crumbsOf 64 (ToNat.toNat s)) lam'
+  letI : Decidable (W.Equation gx gy) :=
+    decidable_of_iff _ (W.equation_iff gx gy).symm
+  letI : Decidable (W.Nonsingular gx gy) :=
+    decidable_of_iff _ (W.nonsingular_iff gx gy).symm
+  if h : W.Nonsingular gx gy then
+    match eff⁻¹.val • (WeierstrassCurve.Affine.Point.some gx gy h : W.Point) with
+    | .zero => pure (0, 0)
+    | .some x y _ => pure (x, y)
+  else pure (0, 0)
+
+/-- Cross-field division by the decoded challenge (PS `endoInv`; OCaml
+`Pickles.Step_verifier`'s `Scalar_challenge.endo_inv`): witness `[s⁻¹]·g` on-curve
+— the pair witness plus the inline on-curve rows, PS's checked
+`WeierstrassAffinePoint` exists — verify `endoMul result scalar = g`, and return
+the witnessed point. `W` is the (short-Weierstrass) curve, whose `a₄`/`a₆` are the
+check's coefficients — PS's `curveParams`; `(q, lam')` are the scalar-field order
+and eigenvalue the advice decodes through. -/
+def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+    (eb : F) (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
+    (g : AffinePoint (FVar F)) (scalar : FVar F) :
+    CircuitM F c (AffinePoint (FVar F)) := do
+  let result ← witness (val := F × F) (endoInvWit W q hq lam' g scalar)
+  let rp : AffinePoint (FVar F) := ⟨result.1, result.2⟩
+  let x2 ← square rp.x
+  let x3 ← mul x2 rp.x
+  assertSquare rp.y (CVar.add_ (CVar.add_ x3 (CVar.scale_ W.a₄ rp.x)) (.const W.a₆))
+  let computed ← endoMul eb 32 rp scalar
+  assertEqual computed.x g.x
+  assertEqual computed.y g.y
+  pure rp
 
 /-! ## Soundness
 
