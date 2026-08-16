@@ -234,6 +234,12 @@ structure HasEndo (F : Type) [Field F] [DecidableEq F] where
       a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
   /-- `[1 + λ]` does not kill a nonzero point — the init sum `T + φT` is finite. -/
   lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
+  /-- The order is not `3` either: with `odd`, both `2` and `3` are units in
+  `ZMod order`, which lets the decompose tables be read in the scalar field. -/
+  order_ne_three : W.order ≠ 3
+  /-- The char window: integers below `2^127` in magnitude embed injectively in `F`,
+  so bounded fold values with equal `F`-images are equal integers. -/
+  char_big : ∀ z : ℤ, |z| < 2 ^ 127 → (z : F) = 0 → z = 0
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts from
@@ -259,6 +265,11 @@ def HasEndo.pallas : HasEndo Fp where
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
       (by norm_num [pallasLam])
       (by rw [pallas_card]; norm_num [pallasLam])
+  order_ne_three := by rw [pallas_card]; decide
+  char_big := fun z hz h0 => by
+    have hdvd : ((PALLAS_BASE_CARD : ℕ) : ℤ) ∣ z :=
+      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
+    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
@@ -282,6 +293,11 @@ def HasEndo.vesta : HasEndo Fq where
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
       (by norm_num [vestaLam])
       (by rw [vesta_card]; norm_num [vestaLam])
+  order_ne_three := by rw [vesta_card]; decide
+  char_big := fun z hz h0 => by
+    have hdvd : ((PALLAS_SCALAR_CARD : ℕ) : ℤ) ∣ z :=
+      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
+    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 namespace EndoMul
 
@@ -592,7 +608,7 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
     (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, -⟩ := d
+  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, -, -, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -878,7 +894,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
         Q⦄
     (endoMul (c := KimchiProverC F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1⟩ := d
+  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1, -, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
