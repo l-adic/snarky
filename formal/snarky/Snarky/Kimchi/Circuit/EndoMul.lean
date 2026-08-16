@@ -1300,13 +1300,18 @@ positive bounded GLV combo, priced by `combo_ne_zero`), and any integer with the
 decomposition shape `endoMul` hands back is congruent to it (the char window
 `d.char_big` reads the bounded decomposition integers exactly). The digit-shadow
 recursion (`digitsOf`) stays inside this proof — the walk's context never carries it,
-which keeps the walk's elaboration off the 64-deep symbolic unfolding. -/
+which keeps the walk's elaboration off the 64-deep symbolic unfolding.
+
+Numeral convention: everything here is spelled at the 128-bit challenge's literals —
+`64` crumbs (crumbs are 2-bit, `64 = 128 / 2`) and `2 ^ 64` bound magnitudes. The
+caller bridges `endoMul`'s rounds-arithmetic spellings (`2 * 32`, `4 ^ 32` at
+`rounds = 32`) once, at the application. -/
 private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
     [Fact (Nat.Prime d.W.order)] {xv yv : F} (hg : d.W.Nonsingular xv yv) (n : ℕ) :
     Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) ≠ 0 ∧
-    ∀ s A B : ℤ, s = B + A * d.lam → |A| ≤ 3 * 4 ^ 32 → |B| ≤ 3 * 4 ^ 32 →
-      (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf (2 * 32) n) →
-      (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf (2 * 32) n) →
+    ∀ s A B : ℤ, s = B + A * d.lam → |A| ≤ 3 * 2 ^ 64 → |B| ≤ 3 * 2 ^ 64 →
+      (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n) →
+      (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n) →
       ((s : ℤ) : ZMod d.W.order)
         = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) := by
   haveI : NeZero d.W.order := ⟨d.prime.ne_zero⟩
@@ -1332,14 +1337,12 @@ private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
   have heffz : Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order))
       = ((toIntZ (digitsOf 64 n) d.lam : ℤ) : ZMod d.W.order) := by
     rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
-  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf (2 * 32) n)
+  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n)
       = ((decomposeAInt (digitsOf 64 n) : ℤ) : F) := by
-    rw [show (2 * 32 : ℕ) = 64 from rfl, crumbsOf_eq_map,
-      decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
-  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf (2 * 32) n)
+    rw [crumbsOf_eq_map, decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)
       = ((decomposeBInt (digitsOf 64 n) : ℤ) : F) := by
-    rw [show (2 * 32 : ℕ) = 64 from rfl, crumbsOf_eq_map,
-      decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+    rw [crumbsOf_eq_map, decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
   constructor
   · -- the decoded challenge is a unit: its shadow is a positive bounded GLV combo
     rw [heffz]
@@ -1362,13 +1365,12 @@ private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
       (hexp ▸ hkill)
   · -- the char window reads the decomposition exactly, then residues agree
     intro s A B hsab hAle hBle hAval hBval
-    have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 4 ^ 32 →
+    have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 2 ^ 64 →
         2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
       intro X XZ hXle hXZlo hXZhi hcast
       have habs : |X - XZ| < 2 ^ 127 := by
         rw [abs_lt]
         obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
-        rw [show (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 from by norm_num] at hX1 hX2
         have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
         constructor <;> linarith
       have := d.char_big _ habs hcast
@@ -1515,7 +1517,9 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   -- the scalar's residue is the decoded challenge (the packaged key fact)
   have hsmod : ((s : ℤ) : ZMod d.W.order) = eff := by
     rw [heff]
-    exact hkey s A B hsab hAle hBle hAval hBval
+    -- endoMul's rounds-arithmetic spellings bridge to the 128-bit literals here, once
+    exact hkey s A B hsab (by norm_num at hAle ⊢; exact hAle)
+      (by norm_num at hBle ⊢; exact hBle) hAval hBval
   have hsk : ((s * (k : ℤ) : ℤ) : ZMod d.W.order) = ((1 : ℤ) : ZMod d.W.order) := by
     push_cast
     rw [hsmod, hkdef, ZMod.natCast_val, ZMod.cast_id]
