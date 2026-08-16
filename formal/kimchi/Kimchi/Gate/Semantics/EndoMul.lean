@@ -1369,7 +1369,7 @@ off an accepted run. -/
 
 /-- A positively-weighted bounded two-base combination is nonzero: were
     `[a]·T + [b]·φT = 0`, then `[a+1]·T + [b]·φT = T`, which `off` forbids. -/
-private theorem combo_ne_zero {W : WeierstrassCurve.Affine F} {T φT : W.Point}
+theorem combo_ne_zero {W : WeierstrassCurve.Affine F} {T φT : W.Point}
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT)

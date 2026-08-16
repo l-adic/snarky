@@ -283,6 +283,48 @@ theorem toField_digits (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   rw [toField, toIntZ, decomposeA_digits h2 h3 ds h, decomposeB_digits h2 h3 ds h]
   push_cast; ring
 
+theorem cInt_abs_le (d : ℕ) : |cInt d| ≤ 1 := by
+  unfold cInt; split <;> decide
+
+theorem dInt_abs_le (d : ℕ) : |dInt d| ≤ 1 := by
+  unfold dInt; split <;> decide
+
+private theorem foldInt_bounds {cz : ℕ → ℤ} (hc : ∀ d, |cz d| ≤ 1) (ds : List ℕ) :
+    ∀ z : ℤ, 1 ≤ z →
+      2 ^ ds.length * z - (2 ^ ds.length - 1)
+          ≤ ds.foldl (fun a d => 2 * a + cz d) z
+        ∧ ds.foldl (fun a d => 2 * a + cz d) z
+          ≤ 2 ^ ds.length * z + (2 ^ ds.length - 1) := by
+  induction ds with
+  | nil => intro z hz; simp
+  | cons d ds ih =>
+    intro z hz
+    have hcd := hc d
+    have habs : -1 ≤ cz d ∧ cz d ≤ 1 := abs_le.mp hcd
+    have hz' : 1 ≤ 2 * z + cz d := by omega
+    obtain ⟨hlo, hhi⟩ := ih (2 * z + cz d) hz'
+    have hpow : (0 : ℤ) < 2 ^ ds.length := by positivity
+    simp only [List.foldl_cons, List.length_cons, pow_succ]
+    constructor
+    · nlinarith [hlo, habs.1, hpow]
+    · nlinarith [hhi, habs.2, hpow]
+
+/-- The `a`-shadow's window: from the init `2`, the fold lands in
+    `[2^n + 1, 3·2^n − 1]` (`n` the digit count) — positive and, for the deployed
+    64 digits, far under the off-targets box. -/
+theorem decomposeAInt_bounds (ds : List ℕ) :
+    2 ^ ds.length + 1 ≤ decomposeAInt ds ∧ decomposeAInt ds ≤ 3 * 2 ^ ds.length - 1 := by
+  obtain ⟨hlo, hhi⟩ := foldInt_bounds cInt_abs_le ds 2 (by norm_num)
+  unfold decomposeAInt
+  constructor <;> omega
+
+/-- `decomposeBInt`'s half of the window. -/
+theorem decomposeBInt_bounds (ds : List ℕ) :
+    2 ^ ds.length + 1 ≤ decomposeBInt ds ∧ decomposeBInt ds ≤ 3 * 2 ^ ds.length - 1 := by
+  obtain ⟨hlo, hhi⟩ := foldInt_bounds dInt_abs_le ds 2 (by norm_num)
+  unfold decomposeBInt
+  constructor <;> omega
+
 /-! ## Multi-row composition: threading rows is folding the concatenated crumbs.
 
     A challenge wider than one row's eight crumbs is laid out over several `EndoScalar` rows,
@@ -459,6 +501,11 @@ theorem crumbsOf_eq_map (c k : ℕ) :
   induction c generalizing k with
   | zero => rfl
   | succ c ih => rw [crumbsOf, digitsOf, List.map_append, ih]; rfl
+
+theorem digitsOf_length (c k : ℕ) : (digitsOf c k).length = c := by
+  induction c generalizing k with
+  | zero => rfl
+  | succ c ih => simp [digitsOf, ih]
 
 /-- Every entry of `crumbsOf` is a 2-bit crumb, the tail one because `k % 4 < 4`. This is
     `complete`'s precondition, so the expansion feeds `build` directly. -/
