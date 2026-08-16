@@ -33,6 +33,13 @@ Kimchi.Gate.AddComplete.sound
 -- entry points (the gate soundness is live through `varBaseMul_scaleFast2`)
 Kimchi.Gate.VarBaseMul.complete
 Kimchi.Gate.VarBaseMul.varBaseMul_off
+Kimchi.Gate.VarBaseMul.runBits
+Kimchi.Gate.VarBaseMul.runBits_length
+Kimchi.Gate.VarBaseMul.bitsRegister
+Kimchi.Gate.VarBaseMul.bitsVal
+Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal
+Kimchi.Gate.VarBaseMul.accN
+Kimchi.Gate.VarBaseMul.chain_accN
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 

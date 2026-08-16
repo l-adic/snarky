@@ -1753,6 +1753,114 @@ namespace Kimchi.Gate.VarBaseMul
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
 open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Pasta.Shifted Pasta
 
+/-! ## The run's bits as a list: the gadget-facing decode vocabulary
+
+The circuit layer's law statements expose the wired bits as a LIST and speak about
+its two folds: `bitsRegister` (the field-side scalar register the gadget pins) and
+`bitsVal` (the exact ℤ-decode the forbidden-band condition prices through the Type1
+unshift). The bridges identify them with the run-level `gateRegister` and the
+register chain, so `varBaseMul_off`'s conclusion lands on list vocabulary. -/
+
+section RunBits
+
+variable {F : Type*} [Field F] [DecidableEq F]
+
+/-- The run's bits, MSB-first: gate `i`'s five bits at positions `5i…5i+4`. -/
+def runBits (g : ℕ → Witness F) (m : ℕ) : List F :=
+  (List.range m).flatMap fun i => [(g i).b0, (g i).b1, (g i).b2, (g i).b3, (g i).b4]
+
+/-- The base-2 field fold of a bit list, MSB-first — the scalar register the gadget
+pins (`n' = 2·n + b` per bit). -/
+def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
+
+/-- The exact ℤ-decode of a bit list (a bit counts iff it is `1`) — the shadow
+`bitsRegister` casts on genuine bits, and what the forbidden-band condition speaks
+about through the Type1 unshift. -/
+def bitsVal (bs : List F) : ℤ := bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
+
+theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
+    runBits g (m + 1) = runBits g m
+      ++ [(g m).b0, (g m).b1, (g m).b2, (g m).b3, (g m).b4] := by
+  unfold runBits
+  rw [List.range_succ, List.flatMap_append]
+  simp
+
+theorem runBits_length (g : ℕ → Witness F) (m : ℕ) : (runBits g m).length = 5 * m := by
+  induction m with
+  | zero => rfl
+  | succ k ih =>
+    rw [runBits_succ, List.length_append, ih]
+    simp
+    omega
+
+/-- The ladder's unsigned register is the ℤ-decode of the run's bits. -/
+theorem gateRegister_eq_bitsVal (g : ℕ → Witness F) (m : ℕ) :
+    gateRegister g (5 * m) = bitsVal (runBits g m) := by
+  induction m with
+  | zero => rfl
+  | succ k ih =>
+    have h0 : ubit g (5 * k) = (if (g k).b0 = 1 then (1 : ℤ) else 0) := by
+      unfold ubit gateBit
+      rw [show (5 * k) % 5 = 0 from by omega, show (5 * k) / 5 = k from by omega]
+    have h1 : ubit g (5 * k + 1) = (if (g k).b1 = 1 then (1 : ℤ) else 0) := by
+      unfold ubit gateBit
+      rw [show (5 * k + 1) % 5 = 1 from by omega,
+        show (5 * k + 1) / 5 = k from by omega]
+    have h2 : ubit g (5 * k + 1 + 1) = (if (g k).b2 = 1 then (1 : ℤ) else 0) := by
+      unfold ubit gateBit
+      rw [show (5 * k + 1 + 1) % 5 = 2 from by omega,
+        show (5 * k + 1 + 1) / 5 = k from by omega]
+    have h3 : ubit g (5 * k + 1 + 1 + 1) = (if (g k).b3 = 1 then (1 : ℤ) else 0) := by
+      unfold ubit gateBit
+      rw [show (5 * k + 1 + 1 + 1) % 5 = 3 from by omega,
+        show (5 * k + 1 + 1 + 1) / 5 = k from by omega]
+    have h4 : ubit g (5 * k + 1 + 1 + 1 + 1)
+        = (if (g k).b4 = 1 then (1 : ℤ) else 0) := by
+      unfold ubit gateBit
+      rw [show (5 * k + 1 + 1 + 1 + 1) % 5 = 4 from by omega,
+        show (5 * k + 1 + 1 + 1 + 1) / 5 = k from by omega]
+    rw [show 5 * (k + 1) = 5 * k + 1 + 1 + 1 + 1 + 1 from by ring]
+    rw [gateRegister_succ, gateRegister_succ, gateRegister_succ, gateRegister_succ,
+      gateRegister_succ, ih, runBits_succ]
+    unfold bitsVal
+    rw [List.foldl_append, h0, h1, h2, h3, h4]
+    simp only [List.foldl_cons, List.foldl_nil]
+
+/-- The register accumulator over a run: the seed, then each gate's output register. -/
+def accN (g : ℕ → Witness F) : ℕ → F
+  | 0 => (g 0).n
+  | i + 1 => (g i).nPrime
+
+/-- **The register chain.** Threading the register through `m` held gates reads the
+final register as the seed shifted up `5m` bits plus the base-2 fold of the run's
+bits — the gadget's scalar pin, at the zero seed. -/
+theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime) :
+    accN g m = 32 ^ m * accN g 0 + bitsRegister (runBits g m) := by
+  induction m with
+  | zero => simp [bitsRegister, runBits]
+  | succ k ih =>
+    have hreg : (g k).nPrime
+        = (g k).b4 + 2 * ((g k).b3 + 2 * ((g k).b2 + 2 * ((g k).b1
+            + 2 * ((g k).b0 + 2 * (g k).n)))) := by
+      have hd := ((holds_iff (g k)).mp (hholds k (by omega))).1
+      unfold decompHolds decompCons at hd
+      linear_combination hd
+    have hn : (g k).n = accN g k := by
+      cases k with
+      | zero => rfl
+      | succ j => exact hthread j (by omega)
+    have ihk := ih (fun i hi => hholds i (by omega)) (fun i hi => hthread i (by omega))
+    show (g k).nPrime = _
+    rw [hreg, hn, ihk, runBits_succ]
+    unfold bitsRegister
+    rw [List.foldl_append]
+    simp only [List.foldl_cons, List.foldl_nil]
+    ring
+
+end RunBits
+
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
     `varBaseMul_forbidden_correct` behind one regime dichotomy, for generic (dictionary)
     callers: EITHER the whole ladder fits below the order (`3·2^(5m) ≤ order`, no
