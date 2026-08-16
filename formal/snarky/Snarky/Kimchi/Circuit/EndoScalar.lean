@@ -205,6 +205,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
     obtain ⟨rfl, rfl⟩ := Threaded.nil hthr'
     refine ⟨[], by simp, by simp, ?_, ?_, ?_⟩ <;>
       simp [Kimchi.Gate.EndoScalar.decomposeA, Kimchi.Gate.EndoScalar.decomposeB,
+        Kimchi.Gate.EndoScalar.decomposeFold,
         Kimchi.Gate.EndoScalar.nReconstruct, CVar.val]
   | r₀ :: rs, hthr' =>
     subst hround
@@ -700,13 +701,15 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
                     (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
                       (ToNat.toNat vv)) = 2 from by
                   simp [Kimchi.Gate.EndoScalar.crumbsOf,
-                    Kimchi.Gate.EndoScalar.decomposeA]]
+                    Kimchi.Gate.EndoScalar.decomposeA,
+                    Kimchi.Gate.EndoScalar.decomposeFold]]
                exact hA)
             | (rw [show Kimchi.Gate.EndoScalar.decomposeB
                     (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
                       (ToNat.toNat vv)) = 2 from by
                   simp [Kimchi.Gate.EndoScalar.crumbsOf,
-                    Kimchi.Gate.EndoScalar.decomposeB]]
+                    Kimchi.Gate.EndoScalar.decomposeB,
+                    Kimchi.Gate.EndoScalar.decomposeFold]]
                exact hB)
             | (rw [show Kimchi.Gate.EndoScalar.nReconstruct
                     (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)

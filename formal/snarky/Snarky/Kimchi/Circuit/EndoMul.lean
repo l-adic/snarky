@@ -1,4 +1,5 @@
 import Snarky.Circuit.DSL.Field
+import Snarky.Circuit.DSL.SizedF
 import Kimchi.Gate.Semantics.EndoMul
 import Kimchi.Gate.Semantics.VarBaseMul
 import Pasta.Endo
@@ -102,9 +103,10 @@ build `acc = [2](g + φ(g))` with two `addFast`s, run the `rounds` window rounds
 threading `(acc, nAcc)`, pin the scalar fold, emit one `endoMul` constraint, and
 return the final accumulator. -/
 def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
-    (eb : F) (rounds : ℕ) (g : AffinePoint (FVar F)) (scalar : FVar F) :
+    (eb : F) (rounds : ℕ) (g : AffinePoint (FVar F))
+    (scalar : SizedF (4 * rounds) (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
-  let bits ← witness (val := Vector (Vector F 4) rounds) (bitsWit rounds scalar)
+  let bits ← witness (val := Vector (Vector F 4) rounds) (bitsWit rounds scalar.val)
   let phix ← sealVar (CVar.scale_ eb g.x)
   let p1 ← addFast .checkFinite g ⟨phix, g.y⟩
   let p2 ← addFast .checkFinite p1.p p1.p
@@ -119,7 +121,7 @@ def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
                inv := w.1 } : EndoMulRound F),
             (s, w.2.1)))
     (p2.p, .const 0) bits.toList
-  assertEqual fin.2 scalar
+  assertEqual fin.2 scalar.val
   addConstraint (KimchiSystem.endoMul { state, s := fin.1, nAcc := fin.2, endo := eb })
   pure fin.1
 
@@ -168,9 +170,9 @@ check's coefficients — PS's `curveParams`; `(q, lam')` are the scalar-field or
 and eigenvalue the advice decodes through. -/
 def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (eb : F) (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
-    (g : AffinePoint (FVar F)) (scalar : FVar F) :
+    (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
-  let result ← witness (val := F × F) (endoInvWit W q hq lam' g scalar)
+  let result ← witness (val := F × F) (endoInvWit W q hq lam' g scalar.val)
   let rp : AffinePoint (FVar F) := ⟨result.1, result.2⟩
   let x2 ← square rp.x
   let x3 ← mul x2 rp.x
@@ -210,6 +212,9 @@ structure HasEndo (F : Type) [Field F] [DecidableEq F] where
   lam : ℤ
   /-- The Pasta short-Weierstrass shape. -/
   short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
+  /-- The curve is smooth, so an on-curve point is nonsingular
+  (`equation_iff_nonsingular_of_Δ_ne_zero`). -/
+  delta_ne : W.Δ ≠ 0
   /-- The group order is prime. -/
   prime : Nat.Prime W.order
   /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
@@ -231,6 +236,12 @@ structure HasEndo (F : Type) [Field F] [DecidableEq F] where
       a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
   /-- `[1 + λ]` does not kill a nonzero point — the init sum `T + φT` is finite. -/
   lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
+  /-- The order is not `3` either: with `odd`, both `2` and `3` are units in
+  `ZMod order`, which lets the decompose tables be read in the scalar field. -/
+  order_ne_three : W.order ≠ 3
+  /-- The char window: integers below `2^127` in magnitude embed injectively in `F`,
+  so bounded fold values with equal `F`-images are equal integers. -/
+  char_big : ∀ z : ℤ, |z| < 2 ^ 127 → (z : F) = 0 → z = 0
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts from
@@ -241,6 +252,7 @@ def HasEndo.pallas : HasEndo Fp where
   endo := pallasEndo
   lam := pallasLam
   short := ⟨rfl, rfl, rfl, rfl⟩
+  delta_ne := by decide
   prime := Fact.out
   odd := by rw [pallas_card]; decide
   two_ne := by decide
@@ -255,6 +267,11 @@ def HasEndo.pallas : HasEndo Fp where
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
       (by norm_num [pallasLam])
       (by rw [pallas_card]; norm_num [pallasLam])
+  order_ne_three := by rw [pallas_card]; decide
+  char_big := fun z hz h0 => by
+    have hdvd : ((PALLAS_BASE_CARD : ℕ) : ℤ) ∣ z :=
+      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
+    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
@@ -263,6 +280,7 @@ def HasEndo.vesta : HasEndo Fq where
   endo := vestaEndo
   lam := vestaLam
   short := ⟨rfl, rfl, rfl, rfl⟩
+  delta_ne := by decide
   prime := Fact.out
   odd := by rw [vesta_card]; decide
   two_ne := by decide
@@ -277,6 +295,11 @@ def HasEndo.vesta : HasEndo Fq where
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
       (by norm_num [vestaLam])
       (by rw [vesta_card]; norm_num [vestaLam])
+  order_ne_three := by rw [vesta_card]; decide
+  char_big := fun z hz h0 => by
+    have hdvd : ((PALLAS_SCALAR_CARD : ℕ) : ℤ) ∣ z :=
+      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
+    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 namespace EndoMul
 
@@ -453,7 +476,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
     · rw [hP0, heig]; module
     · push_cast
       simp [Kimchi.Gate.EndoScalar.toField, Kimchi.Gate.EndoScalar.decomposeA,
-        Kimchi.Gate.EndoScalar.decomposeB]
+        Kimchi.Gate.EndoScalar.decomposeB, Kimchi.Gate.EndoScalar.decomposeFold]
       ring
   | r₀ :: rs, hthr' =>
     subst hround
@@ -514,7 +537,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
     -- the run count is the traversed prefix's
     have hm : rs.length + 1 = pref.length := by simpa using hlen
     -- the point chain: `endoMul_off` at the extracted run
-    obtain ⟨hfin', s, hseq, hsval⟩ :=
+    obtain ⟨hfin', s, A, B, hseq, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
       endoMul_off W h2 h3 hodd eb (Point.some _ _ hT) (Point.some _ _ hφT) hoff
         (rs.length + 1) (by omega) g hHolds hTns hTeq hφTns hφTeq
         (fun i hi =>
@@ -574,20 +597,20 @@ concretized only inside a larger circuit's instantiation, at the deployed
 dictionaries `HasEndo.pallas`/`HasEndo.vesta`. -/
 theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
         ∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 2 * rounds ∧
-            scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
+            scalar.val.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
             ∃ (hfin : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
     (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, hφns, hoff, -⟩ := d
+  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, -, -, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -853,27 +876,32 @@ chain is the two pinned additions (`addFast_complete_spec`), and the register pi
 `chain_nAcc` through the bit-to-crumb bridge (`crumbList_ofBits`). -/
 theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env =>
-          (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.eval env = .ok v →
-            ToNat.toNat v < 4 ^ (2 * rounds) ∧ ((ToNat.toNat v : F) = v)) ∧
+          (scalar.val.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
+          scalar.Fits env ∧
           (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
+        (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →
           ∀ hT : d.W.Nonsingular xv yv,
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ (hfin : d.W.Nonsingular xS yS) (s : ℤ),
+            ∃ (hfin : d.W.Nonsingular xS yS) (s A B : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
+              s = B + A * d.lam ∧
+              |A| ≤ 3 * 4 ^ rounds ∧ |B| ≤ 3 * 4 ^ rounds ∧
+              (A : F) = Kimchi.Gate.EndoScalar.decomposeA
+                (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v)) ∧
+              (B : F) = Kimchi.Gate.EndoScalar.decomposeB
+                (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v)) ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField
                 (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v))
                 (d.lam : F))
         Q⦄
     (endoMul (c := KimchiProverC F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1⟩ := d
+  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1, -, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -884,11 +912,18 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
   obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
   obtain ⟨hrange, hfaith⟩ := hsc v hv
+  have hrange : ToNat.toNat v < 4 ^ (2 * rounds) := by
+    have hpow : (4 : ℕ) ^ (2 * rounds) = 2 ^ (4 * rounds) := by
+      rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]
+      congr 1
+      ring
+    rw [hpow]
+    exact hrange
   have hT : W.Nonsingular xv yv := hcurve _ _ hxv hyv
   have hφT : W.Nonsingular (eb * xv) yv := hφns hT
   have hyne : yv ≠ 0 := y_ne_zero_of_odd_order W hodd hT
   -- the bulk bit witness
-  have hwit : bitsWit rounds scalar st₀.env
+  have hwit : bitsWit rounds scalar.val st₀.env
       = .ok (Vector.ofFn fun r => Vector.ofFn fun j =>
           if (ToNat.toNat v).testBit (4 * rounds - 1 - (4 * r.1 + j.1))
           then 1 else 0) := by
@@ -1113,7 +1148,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
       rw [zero_mul, zero_add, hndef]
       exact hfaith
     -- the pin, the payload check, and the final grant
-    have hsv' : scalar.eval s'.env = .ok v :=
+    have hsv' : scalar.val.eval s'.env = .ok v :=
       CVar.eval_le ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe) hv
     refine ⟨⟨by rw [hnP]; rfl, by rw [hsv']; rfl, fun rv sv hrv hsv => ?_⟩,
       fun u st₅ hle₅ => ?_⟩
@@ -1147,7 +1182,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
       injection hyv' with hyv'
       subst hv' hxv' hyv'
       -- the point chain: `endoMul_off` at the honest walk
-      obtain ⟨hfin', s, hseq, hsval⟩ :=
+      obtain ⟨hfin', s, A, B, hseq, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
         Kimchi.Gate.EndoMul.endoMul_off W h2 h3 hodd eb
           (Point.some _ _ hT) (Point.some _ _ hφT)
           (fun a b ha' hb' hba hbb => hoff ha' hb' hba hbb hTne (heig hT hφT))
@@ -1164,7 +1199,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
             exact ⟨rfl, rfl⟩)
           (fun i _ => ⟨rfl, rfl⟩)
           hP0ns hP0 lam (heig hT hφT)
-      rw [hcl] at hsval
+      rw [hcl] at hAval hBval hsval
       have hax := accX_chainBuild eb xv yv x0v y0v 0 bsv rounds
       have hay := accY_chainBuild eb xv yv x0v y0v 0 bsv rounds
       have hfin : W.Nonsingular
@@ -1175,11 +1210,365 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
       exact ⟨(Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv rounds).xP,
         (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv rounds).yP,
         CVar.eval_le (hle₅.trans hle₆) hxP, CVar.eval_le (hle₅.trans hle₆) hyP,
-        hfin, s,
+        hfin, s, A, B,
         (Kimchi.Gate.EndoMul.some_congr W hfin hfin' hax.symm hay.symm).trans hseq,
-        hsval⟩
+        hsab, hAle, hBle, hAval, hBval, hsval⟩
   case vc4.vc1.vc1.vc1.vc1.refine_2.refine_2.post.except =>
     exact ExceptConds.entails_false
+
+open Kimchi.Gate.VarBaseMul (eq_inv_smul_of_smul_eq) in
+/-- The division gadget is sound: under any satisfying valuation, for an input point
+reading on-curve, some `[s]` with `(s : F) = EndoScalar.toField crumbs (d.lam)` and
+`scalar` reading as the crumbs' reconstruction maps the RESULT to the INPUT — and,
+`s` being a unit mod the prime order (free: the input is affine, hence nonzero), the
+result is `[s⁻¹]·g`, the PS defining equation
+`endoInv g a ~ scalarMul (recip (toFieldPure a endoScalar)) g`.
+The on-curve rows discharge `endoMul_spec`'s promise hypothesis at the WITNESSED
+point — the gadget's design point — with smoothness (`d.delta_ne`) upgrading their
+equation to nonsingularity. The advice parameters `(q, hq, lam')` are universally
+quantified: soundness never consults the witness. -/
+theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+    (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
+    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
+    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
+        ∀ hg : d.W.Nonsingular (t.x.val V) (t.y.val V),
+          ∃ crumbs : List F,
+            (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
+            crumbs.length = 64 ∧
+            scalar.val.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
+            ∃ (hres : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
+              (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F) ∧
+              (s : ZMod d.W.order) ≠ 0 ∧
+              Point.some _ _ hg = s • Point.some _ _ hres ∧
+              Point.some _ _ hres
+                = ((s : ZMod d.W.order)⁻¹.val : ℕ) • Point.some _ _ hg) Q⦄
+    (endoInv (c := KimchiConstraint F) d.endo d.W q hq lam' t scalar)
+    ⦃Q⦄ := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  simp only [endoInv]
+  mvcgen
+  rename_i s hpre
+  intro result _
+  mvcgen
+  intro x2 _ hx2
+  mvcgen
+  intro x3 _ hx3
+  mvcgen
+  intro _ _ hsq
+  mvcgen
+  refine endoMul_spec d 32 (by norm_num) ⟨result.1, result.2⟩ scalar _ _ ?_
+  intro computed nvc hcomp
+  mvcgen
+  intro _ _ heqx
+  mvcgen
+  intro _ _ heqy
+  mvcgen
+  refine hpre ⟨result.1, result.2⟩ _ ?_
+  intro hg
+  -- the on-curve rows read as the curve equation at the witnessed point
+  have hEq : d.W.Equation (result.1.val s.V) (result.2.val s.V) := by
+    rw [d.W.equation_iff, d.short.1, d.short.2.1, d.short.2.2.1]
+    simp only [CVar.val_add_, CVar.val_scale_, CVar.val] at hsq
+    rw [hx3, hx2] at hsq
+    linear_combination hsq
+  have hres : d.W.Nonsingular (result.1.val s.V) (result.2.val s.V) :=
+    (d.W.equation_iff_nonsingular_of_Δ_ne_zero d.delta_ne).mp hEq
+  -- `endoMul`'s promise at the witnessed point
+  obtain ⟨crumbs, hval, hlen, hn, hfin, sZ, hseq, hcast⟩ := hcomp hres
+  -- the pins carry the computed point to the input
+  have hgeq : Point.some _ _ hg = sZ • Point.some _ _ hres :=
+    (Kimchi.Gate.EndoMul.some_congr d.W hg hfin heqx.symm heqy.symm).trans hseq
+  -- the scalar is a unit mod the order: the input is affine, hence nonzero
+  have hs0 : (sZ : ZMod d.W.order) ≠ 0 := by
+    intro h0
+    obtain ⟨m, hm⟩ := (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mp h0
+    refine Point.some_ne_zero hg (hgeq.trans ?_)
+    have hkill : (d.W.order : ℤ) • Point.some _ _ hres = 0 := by
+      rw [natCast_zsmul]
+      exact card_nsmul_eq_zero'
+    rw [hm, mul_comm, mul_smul, hkill, smul_zero]
+  exact ⟨crumbs, hval, by omega, hn, hres, sZ, hcast, hs0, hgeq,
+    eq_inv_smul_of_smul_eq d.W hs0 hgeq⟩
+
+open Kimchi.Gate.EndoScalar in
+/-- The scalar side of `endoInv`'s completeness, packaged away from the walk: at any
+on-curve point, the endo-decoded challenge is a unit mod the order (its ℤ-shadow is a
+positive bounded GLV combo, priced by `combo_ne_zero`), and any integer with the
+decomposition shape `endoMul` hands back is congruent to it (the char window
+`d.char_big` reads the bounded decomposition integers exactly). The digit-shadow
+recursion (`digitsOf`) stays inside this proof — the walk's context never carries it,
+which keeps the walk's elaboration off the 64-deep symbolic unfolding.
+
+Numeral convention: everything here is spelled at the 128-bit challenge's literals —
+`64` crumbs (crumbs are 2-bit, `64 = 128 / 2`) and `2 ^ 64` bound magnitudes. The
+caller bridges `endoMul`'s rounds-arithmetic spellings (`2 * 32`, `4 ^ 32` at
+`rounds = 32`) once, at the application. -/
+private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
+    [Fact (Nat.Prime d.W.order)] {xv yv : F} (hg : d.W.Nonsingular xv yv) (n : ℕ) :
+    Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) ≠ 0 ∧
+    ∀ s A B : ℤ, s = B + A * d.lam → |A| ≤ 3 * 2 ^ 64 → |B| ≤ 3 * 2 ^ 64 →
+      (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n) →
+      (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n) →
+      ((s : ℤ) : ZMod d.W.order)
+        = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) := by
+  haveI : NeZero d.W.order := ⟨d.prime.ne_zero⟩
+  -- the residues of 2 and 3 are units: the order is prime and avoids both
+  have h2q : (2 : ZMod d.W.order) ≠ 0 := by
+    have h : ((2 : ℤ) : ZMod d.W.order) ≠ 0 := by
+      rw [Ne, ZMod.intCast_zmod_eq_zero_iff_dvd]
+      intro hdvd
+      have h2 : d.W.order ∣ 2 := by exact_mod_cast hdvd
+      exact d.odd ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_two).mp h2)
+    exact_mod_cast h
+  have h3q : (3 : ZMod d.W.order) ≠ 0 := by
+    have h : ((3 : ℤ) : ZMod d.W.order) ≠ 0 := by
+      rw [Ne, ZMod.intCast_zmod_eq_zero_iff_dvd]
+      intro hdvd
+      have h3 : d.W.order ∣ 3 := by exact_mod_cast hdvd
+      exact d.order_ne_three ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_three).mp h3)
+    exact_mod_cast h
+  obtain ⟨hAlo, hAhi⟩ := decomposeAInt_bounds (digitsOf 64 n)
+  obtain ⟨hBlo, hBhi⟩ := decomposeBInt_bounds (digitsOf 64 n)
+  rw [digitsOf_length] at hAlo hAhi hBlo hBhi
+  have h64 : (0 : ℤ) < 2 ^ 64 := by positivity
+  have heffz : Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order))
+      = ((toIntZ (digitsOf 64 n) d.lam : ℤ) : ZMod d.W.order) := by
+    rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
+  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n)
+      = ((decomposeAInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [crumbsOf_eq_map, decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)
+      = ((decomposeBInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [crumbsOf_eq_map, decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  constructor
+  · -- the decoded challenge is a unit: its shadow is a positive bounded GLV combo
+    rw [heffz]
+    intro h0
+    obtain ⟨mm, hm⟩ := (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mp h0
+    have hkill : (toIntZ (digitsOf 64 n) d.lam) • (Point.some _ _ hg : d.W.Point) = 0 := by
+      have horder : (d.W.order : ℤ) • (Point.some _ _ hg : d.W.Point) = 0 := by
+        rw [natCast_zsmul]; exact card_nsmul_eq_zero'
+      rw [hm, mul_comm, mul_smul, horder, smul_zero]
+    have hexp : (toIntZ (digitsOf 64 n) d.lam) • (Point.some _ _ hg : d.W.Point)
+        = decomposeBInt (digitsOf 64 n) • (Point.some _ _ hg : d.W.Point)
+          + decomposeAInt (digitsOf 64 n)
+            • (d.lam • (Point.some _ _ hg : d.W.Point)) := by
+      rw [toIntZ]; module
+    exact Kimchi.Gate.EndoMul.combo_ne_zero
+      (fun a b ha hb hba hbb =>
+        d.off_targets ha hb hba hbb (Point.some_ne_zero hg) rfl)
+      (by linarith) (by linarith) (by norm_num at hBhi ⊢; linarith)
+      (by norm_num at hAhi ⊢; linarith)
+      (hexp ▸ hkill)
+  · -- the char window reads the decomposition exactly, then residues agree
+    intro s A B hsab hAle hBle hAval hBval
+    have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 2 ^ 64 →
+        2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
+      intro X XZ hXle hXZlo hXZhi hcast
+      have habs : |X - XZ| < 2 ^ 127 := by
+        rw [abs_lt]
+        obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
+        have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
+        constructor <;> linarith
+      have := d.char_big _ habs hcast
+      omega
+    have hAeq : A = decomposeAInt (digitsOf 64 n) :=
+      hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
+    have hBeq : B = decomposeBInt (digitsOf 64 n) :=
+      hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
+    rw [heffz, hsab, hAeq, hBeq, toIntZ]
+    push_cast
+    ring
+
+open Kimchi.Gate.EndoScalar in
+open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
+/-- The division gadget is complete at the honest advice: instantiated in its own
+scalar field (`q := W.order`, `λ' := λ mod q`), the prover's run succeeds whenever the
+input point reads on-curve and the challenge is faithful and in range, and the result
+reads as `[eff⁻¹]·g` for `eff` the endo-decoded challenge — the PS witness's defining
+equation. The run never errors because `eff` is a unit mod the order (`combo_ne_zero`
+at the ℤ-shadow's window), the advice point is a genuine Mathlib point (so the
+on-curve rows pass), and `endoMul` returns `[s]·[eff⁻¹]·g = g` — `s ≡ eff (mod q)` by
+reading the decomposition integers through the char window (`char_big`), so the final
+pins close by residue action. Stepped through in the body. -/
+theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+    [Fact (Nat.Prime d.W.order)]
+    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
+    (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (scalar.val.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
+          scalar.Fits env ∧
+          (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
+        (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
+          t.x.eval env = .ok xv → t.y.eval env = .ok yv →
+          ∀ hg : d.W.Nonsingular xv yv,
+          ∃ xr yr, r.x.eval env' = .ok xr ∧ r.y.eval env' = .ok yr ∧
+            ∃ hres : d.W.Nonsingular xr yr,
+              Point.some _ _ hres
+                = ((Kimchi.Gate.EndoScalar.toField
+                    (Kimchi.Gate.EndoScalar.crumbsOf 64 (ToNat.toNat v))
+                    ((d.lam : ZMod d.W.order)))⁻¹.val : ℕ)
+                  • Point.some _ _ hg)
+        Q⦄
+    (endoInv (c := KimchiProverC F) d.endo d.W d.W.order d.prime
+      ((d.lam : ZMod d.W.order)) t scalar)
+    ⦃Q⦄ := by
+  haveI : NeZero d.W.order := ⟨d.prime.ne_zero⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  simp only [endoInv]
+  mvcgen
+  rename_i st₀ hpre
+  obtain ⟨⟨hsok, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
+  obtain ⟨v, hv⟩ := CVar.evalOk hsok
+  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
+  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
+  obtain ⟨hrange, hfaith⟩ := hsc v hv
+  have hg : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
+  -- the scalar facts, packaged: unit challenge + residue agreement
+  obtain ⟨heffne', hkey⟩ := endoInv_scalar_facts d hg (ToNat.toNat v)
+  obtain ⟨eff, heff⟩ : ∃ eff : ZMod d.W.order,
+      eff = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 (ToNat.toNat v))
+        ((d.lam : ZMod d.W.order)) := ⟨_, rfl⟩
+  have heffne : eff ≠ 0 := heff ▸ heffne'
+  -- the input point
+  obtain ⟨G, hG⟩ : ∃ G : d.W.Point, G = Point.some _ _ hg := ⟨_, rfl⟩
+  have hGne : G ≠ 0 := by rw [hG]; exact Point.some_ne_zero hg
+  -- the advice scalar and point
+  obtain ⟨k, hkdef⟩ : ∃ k : ℕ, k = eff⁻¹.val := ⟨_, rfl⟩
+  have hinv_ne : eff⁻¹ ≠ 0 := inv_ne_zero heffne
+  have hkne : k ≠ 0 := by rw [hkdef, Ne, ZMod.val_eq_zero]; exact hinv_ne
+  have hklt : k < d.W.order := by rw [hkdef]; exact ZMod.val_lt _
+  have hsmul_ne : (k : ℤ) • G ≠ 0 := fun h0 =>
+    smul_ne_zero_of_lt d.W hGne
+      (by exact_mod_cast Nat.pos_of_ne_zero hkne) (by exact_mod_cast hklt) h0
+  obtain ⟨px, py, hpns, hpteq⟩ :
+      ∃ px py, ∃ hpns : d.W.Nonsingular px py, (k : ℕ) • G = Point.some _ _ hpns := by
+    rw [natCast_zsmul] at hsmul_ne
+    cases hp : (k : ℕ) • G with
+    | zero => exact absurd hp hsmul_ne
+    | some px py hpns => exact ⟨px, py, hpns, rfl⟩
+  -- the honest witness computes exactly the advice pair
+  have hread : endoInvWit d.W d.W.order d.prime ((d.lam : ZMod d.W.order)) t scalar.val
+      st₀.env
+      = .ok (px, py) := by
+    simp only [endoInvWit, AsProver.readCVar, hv, hxv, hyv, Bind.bind, ReaderT.bind,
+      Except.bind, Pure.pure]
+    rw [dif_pos hg, ← heff, ← hkdef, hG.symm, hpteq]
+    rfl
+  refine ⟨by rw [hread]; rfl, fun rp st₁ hgrantW hle₁ => ?_⟩
+  obtain ⟨hrpx, hrpy⟩ := hgrantW _ hread
+  mvcgen
+  -- x² row
+  refine ⟨by rw [hrpx]; rfl, fun x2 st₂ hgr2 hle₂ => ?_⟩
+  have hx2 : x2.eval st₂.env = .ok (px * px) := hgr2 _ hrpx
+  have hrpx₂ := CVar.eval_le hle₂ hrpx
+  mvcgen
+  -- x³ row
+  refine ⟨⟨by rw [hx2]; rfl, by rw [hrpx₂]; rfl⟩, fun x3 st₃ hgr3 hle₃ => ?_⟩
+  have hx3 : x3.eval st₃.env = .ok (px * px * px) := hgr3 _ _ hx2 hrpx₂
+  have hrpx₃ := CVar.eval_le hle₃ hrpx₂
+  have hrpy₃ := CVar.eval_le (hle₂.trans hle₃) hrpy
+  -- the on-curve row: the advice point satisfies the curve equation
+  have hEq : py * py = px * px * px + d.W.a₄ * px + d.W.a₆ := by
+    have h := (d.W.equation_iff px py).mp hpns.1
+    rw [d.short.1, d.short.2.1, d.short.2.2.1] at h
+    linear_combination h
+  have hrhs : (CVar.add_ (CVar.add_ x3 (CVar.scale_ d.W.a₄ rp.1)) (CVar.const d.W.a₆)).eval
+      st₃.env = .ok (px * px * px + d.W.a₄ * px + d.W.a₆) := by
+    rw [CVar.eval_add_]
+    simp only [CVar.eval, CVar.eval_add_, hx3, CVar.eval_scale_ hrpx₃ d.W.a₄]
+  mvcgen
+  refine ⟨⟨by rw [hrpy₃]; rfl, by rw [hrhs]; rfl, ?_⟩, fun u₄ st₄ hle₄ => ?_⟩
+  · intro yv' rhv' hyv' hrhv'
+    rw [hrpy₃] at hyv'
+    injection hyv' with hyv'
+    rw [hrhs] at hrhv'
+    injection hrhv' with hrhv'
+    rw [← hyv', ← hrhv']
+    exact hEq
+  mvcgen
+  -- the endoMul sub-run at the advice point
+  have hle₁₄ := hle₁.trans (hle₂.trans (hle₃.trans hle₄))
+  have hv₄ := CVar.eval_le hle₁₄ hv
+  have hrpx₄ := CVar.eval_le hle₄ hrpx₃
+  have hrpy₄ := CVar.eval_le hle₄ hrpy₃
+  mvcgen [endoMul_complete_spec]
+  refine ⟨⟨by rw [hv₄]; rfl, by rw [hrpx₄]; rfl, by rw [hrpy₄]; rfl, ?_, ?_⟩,
+    fun computed st₅ hgr5 hle₅ => ?_⟩
+  · intro v' hv'
+    rw [hv₄] at hv'
+    injection hv' with hv'
+    subst hv'
+    exact ⟨by norm_num; exact hrange, hfaith⟩
+  · intro x' y' hx' hy'
+    rw [hrpx₄] at hx'
+    injection hx' with hx'
+    rw [hrpy₄] at hy'
+    injection hy' with hy'
+    rw [← hx', ← hy']
+    exact hpns
+  obtain ⟨xS, yS, hxS, hyS, hfin, s, A, B, hpt, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
+    hgr5 v px py hv₄ hrpx₄ hrpy₄ hpns
+  -- the scalar's residue is the decoded challenge (the packaged key fact)
+  have hsmod : ((s : ℤ) : ZMod d.W.order) = eff := by
+    rw [heff]
+    -- endoMul's rounds-arithmetic spellings bridge to the 128-bit literals here, once
+    exact hkey s A B hsab (by norm_num at hAle ⊢; exact hAle)
+      (by norm_num at hBle ⊢; exact hBle) hAval hBval
+  have hsk : ((s * (k : ℤ) : ℤ) : ZMod d.W.order) = ((1 : ℤ) : ZMod d.W.order) := by
+    push_cast
+    rw [hsmod, hkdef, ZMod.natCast_val, ZMod.cast_id]
+    exact mul_inv_cancel₀ heffne
+  -- the computed point returns to the input
+  have hchain : Point.some _ _ hfin = Point.some _ _ hg := by
+    rw [hpt, ← hpteq, ← natCast_zsmul, smul_smul, smul_eq_smul_of_zmod_eq d.W hsk,
+      one_smul]
+    exact hG
+  have hxyeq : xS = xv ∧ yS = yv := by
+    injection hchain with h1 h2
+    exact ⟨h1, h2⟩
+  mvcgen
+  -- the two pins
+  have hxv₅ := CVar.eval_le (hle₁₄.trans hle₅) hxv
+  have hyv₅ := CVar.eval_le (hle₁₄.trans hle₅) hyv
+  refine ⟨⟨by rw [hxS]; rfl, by rw [hxv₅]; rfl, ?_⟩, fun u₆ st₆ hle₆ => ?_⟩
+  · intro a' b' ha' hb'
+    rw [hxS] at ha'
+    injection ha' with ha'
+    rw [hxv₅] at hb'
+    injection hb' with hb'
+    rw [← ha', ← hb']
+    exact hxyeq.1
+  mvcgen
+  refine ⟨⟨by rw [CVar.eval_le hle₆ hyS]; rfl, by rw [CVar.eval_le hle₆ hyv₅]; rfl, ?_⟩,
+    fun u₇ st₇ hle₇ => ?_⟩
+  · intro a' b' ha' hb'
+    rw [CVar.eval_le hle₆ hyS] at ha'
+    injection ha' with ha'
+    rw [CVar.eval_le hle₆ hyv₅] at hb'
+    injection hb' with hb'
+    rw [← ha', ← hb']
+    exact hxyeq.2
+  mvcgen
+  -- the return value carries the defining equation
+  refine hk ⟨rp.1, rp.2⟩ st₇ (fun v' xv' yv' hv' hxv' hyv' hg' => ?_)
+    (hle₁₄.trans (hle₅.trans (hle₆.trans hle₇)))
+  rw [hv] at hv'
+  injection hv' with hv'
+  rw [hxv] at hxv'
+  injection hxv' with hxv'
+  rw [hyv] at hyv'
+  injection hyv' with hyv'
+  subst hv' hxv' hyv'
+  have hleTail := hle₂.trans (hle₃.trans (hle₄.trans (hle₅.trans (hle₆.trans hle₇))))
+  refine ⟨px, py, CVar.eval_le hleTail hrpx, CVar.eval_le hleTail hrpy, hpns, ?_⟩
+  rw [← heff, ← hkdef]
+  exact (hG ▸ hpteq).symm
 
 end EndoMul
 

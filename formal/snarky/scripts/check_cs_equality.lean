@@ -195,7 +195,7 @@ def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
 128 bits / 32 rounds and the Pallas endo coefficient). -/
 def endoMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
-  endoMul Pasta.pallasEndo 32 input.1 input.2
+  endoMul Pasta.pallasEndo 32 input.1 ⟨input.2⟩
 
 /-! ## Pickles sub-circuits
 
@@ -272,8 +272,8 @@ def bulletReduceOneCircuit (input : Vector (FVar Fp) 5) : CircuitM Fp C PUnit :=
   let r : AffinePoint (FVar Fp) := ⟨input[2], input[3]⟩
   let lScaled ← endoInv Pasta.pallasEndo CompElliptic.Curves.Pasta.Pallas.curve.toAffine
     PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
-    l input[4]
-  let rScaled ← endoMul Pasta.pallasEndo 32 r input[4]
+    l ⟨input[4]⟩
+  let rScaled ← endoMul Pasta.pallasEndo 32 r ⟨input[4]⟩
   let _ ← addComplete lScaled rScaled
   pure PUnit.unit
 
@@ -290,8 +290,8 @@ def bulletReduceCircuit (input : Vector (FVar Fp) 75) : CircuitM Fp C PUnit := d
     let u := pt (60 + j)
     let lScaled ← endoInv Pasta.pallasEndo CompElliptic.Curves.Pasta.Pallas.curve.toAffine
       PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
-      l u
-    let rScaled ← endoMul Pasta.pallasEndo 32 r u
+      l ⟨u⟩
+    let rScaled ← endoMul Pasta.pallasEndo 32 r ⟨u⟩
     addComplete lScaled rScaled)
   match terms with
   | [] => pure PUnit.unit
