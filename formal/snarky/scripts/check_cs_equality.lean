@@ -196,7 +196,7 @@ def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
 128 bits / 32 rounds and the Pallas endo coefficient). -/
 def endoMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
-  endoMul Pasta.pallasEndo 32 input.1 input.2
+  endoMul Pasta.pallasEndo 32 input.1 ⟨input.2⟩
 
 /-! ## Pickles sub-circuits
 

@@ -1,4 +1,5 @@
 import Snarky.Circuit.DSL.Field
+import Snarky.Circuit.DSL.SizedF
 import Kimchi.Gate.Semantics.EndoMul
 import Kimchi.Gate.Semantics.VarBaseMul
 import Pasta.Endo
@@ -102,9 +103,10 @@ build `acc = [2](g + φ(g))` with two `addFast`s, run the `rounds` window rounds
 threading `(acc, nAcc)`, pin the scalar fold, emit one `endoMul` constraint, and
 return the final accumulator. -/
 def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
-    (eb : F) (rounds : ℕ) (g : AffinePoint (FVar F)) (scalar : FVar F) :
+    (eb : F) (rounds : ℕ) (g : AffinePoint (FVar F))
+    (scalar : SizedF (4 * rounds) (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
-  let bits ← witness (val := Vector (Vector F 4) rounds) (bitsWit rounds scalar)
+  let bits ← witness (val := Vector (Vector F 4) rounds) (bitsWit rounds scalar.val)
   let phix ← sealVar (CVar.scale_ eb g.x)
   let p1 ← addFast .checkFinite g ⟨phix, g.y⟩
   let p2 ← addFast .checkFinite p1.p p1.p
@@ -119,7 +121,7 @@ def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
                inv := w.1 } : EndoMulRound F),
             (s, w.2.1)))
     (p2.p, .const 0) bits.toList
-  assertEqual fin.2 scalar
+  assertEqual fin.2 scalar.val
   addConstraint (KimchiSystem.endoMul { state, s := fin.1, nAcc := fin.2, endo := eb })
   pure fin.1
 
@@ -168,9 +170,9 @@ check's coefficients — PS's `curveParams`; `(q, lam')` are the scalar-field or
 and eigenvalue the advice decodes through. -/
 def endoInv [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (eb : F) (W : WeierstrassCurve.Affine F) (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
-    (g : AffinePoint (FVar F)) (scalar : FVar F) :
+    (g : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
     CircuitM F c (AffinePoint (FVar F)) := do
-  let result ← witness (val := F × F) (endoInvWit W q hq lam' g scalar)
+  let result ← witness (val := F × F) (endoInvWit W q hq lam' g scalar.val)
   let rp : AffinePoint (FVar F) := ⟨result.1, result.2⟩
   let x2 ← square rp.x
   let x3 ← mul x2 rp.x
@@ -595,14 +597,14 @@ concretized only inside a larger circuit's instantiation, at the deployed
 dictionaries `HasEndo.pallas`/`HasEndo.vesta`. -/
 theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
         ∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 2 * rounds ∧
-            scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
+            scalar.val.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
             ∃ (hfin : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
@@ -874,15 +876,15 @@ chain is the two pinned additions (`addFast_complete_spec`), and the register pi
 `chain_nAcc` through the bit-to-crumb bridge (`crumbList_ofBits`). -/
 theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env =>
-          (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.eval env = .ok v →
+          (scalar.val.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
+          (∀ v, scalar.val.eval env = .ok v →
             ToNat.toNat v < 4 ^ (2 * rounds) ∧ ((ToNat.toNat v : F) = v)) ∧
           (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
+        (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →
           ∀ hT : d.W.Nonsingular xv yv,
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
@@ -915,7 +917,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   have hφT : W.Nonsingular (eb * xv) yv := hφns hT
   have hyne : yv ≠ 0 := y_ne_zero_of_odd_order W hodd hT
   -- the bulk bit witness
-  have hwit : bitsWit rounds scalar st₀.env
+  have hwit : bitsWit rounds scalar.val st₀.env
       = .ok (Vector.ofFn fun r => Vector.ofFn fun j =>
           if (ToNat.toNat v).testBit (4 * rounds - 1 - (4 * r.1 + j.1))
           then 1 else 0) := by
@@ -1140,7 +1142,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
       rw [zero_mul, zero_add, hndef]
       exact hfaith
     -- the pin, the payload check, and the final grant
-    have hsv' : scalar.eval s'.env = .ok v :=
+    have hsv' : scalar.val.eval s'.env = .ok v :=
       CVar.eval_le ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe) hv
     refine ⟨⟨by rw [hnP]; rfl, by rw [hsv']; rfl, fun rv sv hrv hsv => ?_⟩,
       fun u st₅ hle₅ => ?_⟩
@@ -1221,14 +1223,14 @@ equation to nonsingularity. The advice parameters `(q, hq, lam')` are universall
 quantified: soundness never consults the witness. -/
 theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
-    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
         ∀ hg : d.W.Nonsingular (t.x.val V) (t.y.val V),
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 64 ∧
-            scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
+            scalar.val.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
             ∃ (hres : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F) ∧
               (s : ZMod d.W.order) ≠ 0 ∧
@@ -1386,15 +1388,15 @@ reading the decomposition integers through the char window (`char_big`), so the 
 pins close by residue action. Stepped through in the body. -/
 theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     [Fact (Nat.Prime d.W.order)]
-    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env =>
-          (scalar.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.eval env = .ok v →
+          (scalar.val.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
+          (∀ v, scalar.val.eval env = .ok v →
             ToNat.toNat v < 4 ^ 64 ∧ ((ToNat.toNat v : F) = v)) ∧
           (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, scalar.eval env = .ok v →
+        (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →
           ∀ hg : d.W.Nonsingular xv yv,
           ∃ xr yr, r.x.eval env' = .ok xr ∧ r.y.eval env' = .ok yr ∧
@@ -1444,7 +1446,8 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     | zero => exact absurd hp hsmul_ne
     | some px py hpns => exact ⟨px, py, hpns, rfl⟩
   -- the honest witness computes exactly the advice pair
-  have hread : endoInvWit d.W d.W.order d.prime ((d.lam : ZMod d.W.order)) t scalar st₀.env
+  have hread : endoInvWit d.W d.W.order d.prime ((d.lam : ZMod d.W.order)) t scalar.val
+      st₀.env
       = .ok (px, py) := by
     simp only [endoInvWit, AsProver.readCVar, hv, hxv, hyv, Bind.bind, ReaderT.bind,
       Except.bind, Pure.pure]
