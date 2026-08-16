@@ -1487,9 +1487,9 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   have hv₄ := CVar.eval_le hle₁₄ hv
   have hrpx₄ := CVar.eval_le hle₄ hrpx₃
   have hrpy₄ := CVar.eval_le hle₄ hrpy₃
-  refine endoMul_complete_spec d 32 (by norm_num) ⟨rp.1, rp.2⟩ scalar _ _
-    ⟨⟨by rw [hv₄]; rfl, by rw [hrpx₄]; rfl, by rw [hrpy₄]; rfl, ?_, ?_⟩,
-      fun computed st₅ hgr5 hle₅ => ?_⟩
+  mvcgen [endoMul_complete_spec]
+  refine ⟨⟨by rw [hv₄]; rfl, by rw [hrpx₄]; rfl, by rw [hrpy₄]; rfl, ?_, ?_⟩,
+    fun computed st₅ hgr5 hle₅ => ?_⟩
   · intro v' hv'
     rw [hv₄] at hv'
     injection hv' with hv'
