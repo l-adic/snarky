@@ -377,6 +377,7 @@ Snarky.Kimchi.AddFast.addFast_complete_spec
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.poseidon
 Snarky.Kimchi.endoMul
+Snarky.Kimchi.endoInv
 Snarky.Kimchi.mapAccumM
 Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toFieldChecked'
