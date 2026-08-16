@@ -32,6 +32,7 @@ Kimchi.Gate.AddComplete.sound
 -- Variable-base scalar multiplication: the gate completeness and the two deployed circuit
 -- entry points (the gate soundness is live through `varBaseMul_scaleFast2`)
 Kimchi.Gate.VarBaseMul.complete
+Kimchi.Gate.VarBaseMul.varBaseMul_off
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 

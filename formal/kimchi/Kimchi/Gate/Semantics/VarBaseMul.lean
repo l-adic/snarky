@@ -1243,7 +1243,7 @@ conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the 
     degenerate residues `forbiddenResidues = {0, ±1, ±2, ±3, 5, 7, 9, 11}`. Sound for any
     prime `order ≡ 1 (mod 4)` (the actual degenerate set is `⊆` these), and exactly tight
     for the Pasta primes. -/
-private def forbiddenValues (order : ℕ) : Set ℤ :=
+def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
 /-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
@@ -1276,7 +1276,7 @@ private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
 private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
 
 /-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
-private def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
+def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 2
   | j + 1 => 2 * gateLadder g j + gateBitSign g j
 
@@ -1298,7 +1298,7 @@ private lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
   unfold gateBitSign ubit; split <;> ring
 
 /-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
-private def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
+def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
   | 0 => 0
   | j + 1 => 2 * gateRegister g j + ubit g j
 
@@ -1310,7 +1310,7 @@ private lemma gateRegister_succ (g : ℕ → Witness F) (j : ℕ) :
     the signed digits are `2·ubit − 1`): `gateLadder g L = 2·gateRegister g L + 2^L + 1`. This links
     the non-degeneracy path (`gateLadder`) to the scalar-register path: a range-check
     `gateRegister < 2^k` directly bounds the ladder top, hence the deployed `hkL`. -/
-private lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
+lemma gateLadder_eq_register (g : ℕ → Witness F) (L : ℕ) :
     gateLadder g L = 2 * gateRegister g L + 2 ^ L + 1 := by
   induction L with
   | zero => norm_num [gateLadder, gateRegister]
@@ -1752,6 +1752,34 @@ namespace Kimchi.Gate.VarBaseMul
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta CompElliptic.CurveForms.ShortWeierstrass
 open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Pasta.Shifted Pasta
+
+/-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
+    `varBaseMul_forbidden_correct` behind one regime dichotomy, for generic (dictionary)
+    callers: EITHER the whole ladder fits below the order (`3·2^(5m) ≤ order`, no
+    condition on the scalar), OR the one-wrap band holds and the scalar's ladder decode
+    avoids the forbidden residues. The deployed `varBaseMul_scaleFast{1,2}` below stay
+    the per-curve certificates. -/
+theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
+    (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hTns : c.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
+    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
+    (hP0ns : c.Nonsingular (g 0).x0 (g 0).y0) (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    (hs : s = gateLadder g (5 * m))
+    (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
+      (2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧ c.order % 4 = 1 ∧
+        s ∉ forbiddenValues c.order)) :
+    ∃ hfin : c.Nonsingular (accX g m) (accY g m),
+      Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
+  · exact varBaseMul_subwrap_correct c m g T s hTne hholds hTns hTeq hbase hthread
+      hP0ns hP0 h2 hodd hsub hs
+  · exact varBaseMul_forbidden_correct c m g T s hTne hholds hTns hTeq hbase hthread
+      hP0ns hP0 h2 hodd hr1 hr2 hq4 hs hnf
 
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 
