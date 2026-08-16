@@ -210,6 +210,9 @@ structure HasEndo (F : Type) [Field F] [DecidableEq F] where
   lam : ℤ
   /-- The Pasta short-Weierstrass shape. -/
   short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
+  /-- The curve is smooth, so an on-curve point is nonsingular
+  (`equation_iff_nonsingular_of_Δ_ne_zero`). -/
+  delta_ne : W.Δ ≠ 0
   /-- The group order is prime. -/
   prime : Nat.Prime W.order
   /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
@@ -241,6 +244,7 @@ def HasEndo.pallas : HasEndo Fp where
   endo := pallasEndo
   lam := pallasLam
   short := ⟨rfl, rfl, rfl, rfl⟩
+  delta_ne := by decide
   prime := Fact.out
   odd := by rw [pallas_card]; decide
   two_ne := by decide
@@ -263,6 +267,7 @@ def HasEndo.vesta : HasEndo Fq where
   endo := vestaEndo
   lam := vestaLam
   short := ⟨rfl, rfl, rfl, rfl⟩
+  delta_ne := by decide
   prime := Fact.out
   odd := by rw [vesta_card]; decide
   two_ne := by decide
@@ -587,7 +592,7 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
     (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, hφns, hoff, -⟩ := d
+  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -873,7 +878,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
         Q⦄
     (endoMul (c := KimchiProverC F) d.endo rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1⟩ := d
+  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -1180,6 +1185,83 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
         hsval⟩
   case vc4.vc1.vc1.vc1.vc1.refine_2.refine_2.post.except =>
     exact ExceptConds.entails_false
+
+open Kimchi.Gate.VarBaseMul (eq_inv_smul_of_smul_eq) in
+/-- The division gadget is sound: under any satisfying valuation, for an input point
+reading on-curve, some `[s]` with `(s : F) = EndoScalar.toField crumbs (d.lam)` and
+`scalar` reading as the crumbs' reconstruction maps the RESULT to the INPUT — and,
+`s` being a unit mod the prime order (free: the input is affine, hence nonzero), the
+result is `[s⁻¹]·g`, the PS defining equation
+`endoInv g a ~ scalarMul (recip (toFieldPure a endoScalar)) g`.
+The on-curve rows discharge `endoMul_spec`'s promise hypothesis at the WITNESSED
+point — the gadget's design point — with smoothness (`d.delta_ne`) upgrading their
+equation to nonsingularity. The advice parameters `(q, hq, lam')` are universally
+quantified: soundness never consults the witness. -/
+theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+    (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
+    (t : AffinePoint (FVar F)) (scalar : FVar F)
+    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
+        ∀ hg : d.W.Nonsingular (t.x.val V) (t.y.val V),
+          ∃ crumbs : List F,
+            (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
+            crumbs.length = 64 ∧
+            scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
+            ∃ (hres : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
+              (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F) ∧
+              (s : ZMod d.W.order) ≠ 0 ∧
+              Point.some _ _ hg = s • Point.some _ _ hres ∧
+              Point.some _ _ hres
+                = ((s : ZMod d.W.order)⁻¹.val : ℕ) • Point.some _ _ hg) Q⦄
+    (endoInv (c := KimchiConstraint F) d.endo d.W q hq lam' t scalar)
+    ⦃Q⦄ := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  simp only [endoInv]
+  mvcgen
+  rename_i s hpre
+  intro result _
+  mvcgen
+  intro x2 _ hx2
+  mvcgen
+  intro x3 _ hx3
+  mvcgen
+  intro _ _ hsq
+  mvcgen
+  refine endoMul_spec d 32 (by norm_num) ⟨result.1, result.2⟩ scalar _ _ ?_
+  intro computed nvc hcomp
+  mvcgen
+  intro _ _ heqx
+  mvcgen
+  intro _ _ heqy
+  mvcgen
+  refine hpre ⟨result.1, result.2⟩ _ ?_
+  intro hg
+  -- the on-curve rows read as the curve equation at the witnessed point
+  have hEq : d.W.Equation (result.1.val s.V) (result.2.val s.V) := by
+    rw [d.W.equation_iff, d.short.1, d.short.2.1, d.short.2.2.1]
+    simp only [CVar.val_add_, CVar.val_scale_, CVar.val] at hsq
+    rw [hx3, hx2] at hsq
+    linear_combination hsq
+  have hres : d.W.Nonsingular (result.1.val s.V) (result.2.val s.V) :=
+    (d.W.equation_iff_nonsingular_of_Δ_ne_zero d.delta_ne).mp hEq
+  -- `endoMul`'s promise at the witnessed point
+  obtain ⟨crumbs, hval, hlen, hn, hfin, sZ, hseq, hcast⟩ := hcomp hres
+  -- the pins carry the computed point to the input
+  have hgeq : Point.some _ _ hg = sZ • Point.some _ _ hres :=
+    (Kimchi.Gate.EndoMul.some_congr d.W hg hfin heqx.symm heqy.symm).trans hseq
+  -- the scalar is a unit mod the order: the input is affine, hence nonzero
+  have hs0 : (sZ : ZMod d.W.order) ≠ 0 := by
+    intro h0
+    obtain ⟨m, hm⟩ := (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mp h0
+    refine Point.some_ne_zero hg (hgeq.trans ?_)
+    have hkill : (d.W.order : ℤ) • Point.some _ _ hres = 0 := by
+      rw [natCast_zsmul]
+      exact card_nsmul_eq_zero'
+    rw [hm, mul_comm, mul_smul, hkill, smul_zero]
+  exact ⟨crumbs, hval, by omega, hn, hres, sZ, hcast, hs0, hgeq,
+    eq_inv_smul_of_smul_eq d.W hs0 hgeq⟩
 
 end EndoMul
 

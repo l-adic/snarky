@@ -1130,6 +1130,26 @@ lemma x_ne_xT_of_ne_base (c : WeierstrassCurve.Affine F)
     simp_all +decide [WeierstrassCurve.Affine.equation_iff]
   exact mul_left_cancel₀ (sub_ne_zero_of_ne hne) (by linear_combination h_eq)
 
+/-- **Prime-order inversion.** If `Q = [s]·P` with `s` a unit mod the (prime) order,
+    then `P = [s⁻¹]·Q` — the `recip` reading of a scalar multiple: `s⁻¹·s = 1 + m·order`
+    and the order kills every point. -/
+lemma eq_inv_smul_of_smul_eq (c : WeierstrassCurve.Affine F)
+    [Fact (Nat.Prime c.order)]
+    {P Q : c.Point} {s : ℤ} (hs : (s : ZMod c.order) ≠ 0) (h : Q = s • P) :
+    P = ((s : ZMod c.order)⁻¹.val : ℕ) • Q := by
+  haveI : NeZero c.order := ⟨(Fact.out : Nat.Prime c.order).ne_zero⟩
+  set k : ℕ := ((s : ZMod c.order)⁻¹).val with hk
+  have hks : ((k * s - 1 : ℤ) : ZMod c.order) = 0 := by
+    push_cast
+    rw [hk, ZMod.natCast_val, ZMod.cast_id, inv_mul_cancel₀ hs]
+    ring
+  obtain ⟨m, hm⟩ := (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mp hks
+  have hkill : (c.order : ℤ) • P = 0 := by rw [natCast_zsmul]; exact card_nsmul_eq_zero'
+  have hint : (k : ℤ) • Q = P := by
+    rw [h, smul_smul, show (k : ℤ) * s = 1 + c.order * m from by linarith,
+      add_smul, one_smul, mul_comm (c.order : ℤ) m, mul_smul, hkill, smul_zero, add_zero]
+  rw [← hint, natCast_zsmul]
+
 /-- **No 2-torsion.** On a short-Weierstrass curve of odd prime `order`, every
     nonsingular affine point has `y ≠ 0`: a point with `y = 0` equals its own negation,
     hence is 2-torsion, and a group of odd prime order has none (`smul_ne_zero_of_lt`
