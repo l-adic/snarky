@@ -881,8 +881,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     ⦃Complete
         (fun env =>
           (scalar.val.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.val.eval env = .ok v →
-            ToNat.toNat v < 4 ^ (2 * rounds) ∧ ((ToNat.toNat v : F) = v)) ∧
+          scalar.Fits env ∧
           (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
         (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →
@@ -913,6 +912,13 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
   obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
   obtain ⟨hrange, hfaith⟩ := hsc v hv
+  have hrange : ToNat.toNat v < 4 ^ (2 * rounds) := by
+    have hpow : (4 : ℕ) ^ (2 * rounds) = 2 ^ (4 * rounds) := by
+      rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]
+      congr 1
+      ring
+    rw [hpow]
+    exact hrange
   have hT : W.Nonsingular xv yv := hcurve _ _ hxv hyv
   have hφT : W.Nonsingular (eb * xv) yv := hφns hT
   have hyne : yv ≠ 0 := y_ne_zero_of_odd_order W hodd hT
@@ -1393,8 +1399,7 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     ⦃Complete
         (fun env =>
           (scalar.val.eval env).isOk ∧ (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
-          (∀ v, scalar.val.eval env = .ok v →
-            ToNat.toNat v < 4 ^ 64 ∧ ((ToNat.toNat v : F) = v)) ∧
+          scalar.Fits env ∧
           (∀ x y, t.x.eval env = .ok x → t.y.eval env = .ok y → d.W.Nonsingular x y))
         (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
           t.x.eval env = .ok xv → t.y.eval env = .ok yv →

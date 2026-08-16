@@ -1,17 +1,22 @@
+import Snarky.Circuit.DSL.Bits
+import Snarky.Backend.Assignments
+
 /-!
 # Sized field elements
 
 Port of `Snarky.Circuit.DSL.SizedF`
 (packages/snarky/src/Snarky/Circuit/DSL/SizedF.purs): a value tagged with a
 type-level bit width. The tag is a contract, not an invariant: the wrapped value is
-promised to fit in `n` bits, and the laws consuming a `SizedF` state that promise as
-an explicit hypothesis (`ToNat.toNat v < 2 ^ n`-shaped, at the consumer).
+promised to fit in `n` bits, and the laws consuming a `SizedF` take that promise as
+their `SizedF.Fits` hypothesis.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- Only the newtype is ported. PS's bit combinators (`fromBits`, `toBits`,
-  `coerceViaBits`, `fromField`) and the `CheckedType` instance (the high-bits-zero
-  range check emitted when a `SizedF` is witnessed) arrive with their consumers — no
-  ported circuit consumes them yet.
+- The newtype and its contract (`SizedF.Fits`) are ported. PS's bit combinators
+  (`fromBits`, `toBits`, `coerceViaBits`, `fromField`) and the `CheckedType` instance
+  (the high-bits-zero range check emitted when a `SizedF` is witnessed) arrive with
+  their consumers — no ported circuit consumes them yet. Once the check instance
+  lands, its soundness law concludes `Fits` from the emitted constraints, and
+  composition discharges the gadget laws' `Fits` hypotheses instead of assuming them.
 -/
 
 namespace Snarky
@@ -21,5 +26,14 @@ is promised to fit in `n` bits. Phantom: `n` never influences the data. -/
 structure SizedF (n : ℕ) (α : Type u) where
   /-- The wrapped value. -/
   val : α
+
+/-- The `SizedF` contract at an environment: the wrapped variable reads to a value
+that fits the tagged width, faithfully lifted (`ToNat` is a section of the cast at
+it). Gadget completeness laws take this as their scalar hypothesis; the future
+`CheckedType` port's soundness law concludes it (see the module docstring). -/
+def SizedF.Fits {F : Type} [Add F] [Mul F] [NatCast F] [ToNat F] {n : ℕ}
+    (s : SizedF n (FVar F)) (env : Assignments F) : Prop :=
+  ∀ v, s.val.eval env = .ok v →
+    ToNat.toNat v < 2 ^ n ∧ ((ToNat.toNat v : F) = v)
 
 end Snarky
