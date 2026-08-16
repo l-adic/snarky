@@ -1859,6 +1859,75 @@ theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
     simp only [List.foldl_cons, List.foldl_nil]
     ring
 
+/-- The ℤ-decode of a boolean bit list is nonnegative and bounded by its width. -/
+theorem bitsVal_lt (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
+    bitsVal l < 2 ^ l.length ∧ 0 ≤ bitsVal l := by
+  suffices h : ∀ z : ℤ, 0 ≤ z →
+      l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z
+        < 2 ^ l.length * (z + 1) ∧
+      z ≤ l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z by
+    obtain ⟨h1, h2⟩ := h 0 le_rfl
+    exact ⟨by simpa [bitsVal] using h1, by simpa [bitsVal] using h2⟩
+  induction l with
+  | nil => intro z hz; simp
+  | cons b t ih =>
+    intro z hz
+    have hbit : (if b = 1 then (1 : ℤ) else 0) ≤ 1
+        ∧ 0 ≤ (if b = 1 then (1 : ℤ) else 0) := by
+      split <;> norm_num
+    have hz' : 0 ≤ 2 * z + if b = 1 then (1 : ℤ) else 0 := by omega
+    obtain ⟨ih1, ih2⟩ := ih (fun x hx => hb x (List.mem_cons_of_mem _ hx))
+      (2 * z + if b = 1 then 1 else 0) hz'
+    simp only [List.foldl_cons, List.length_cons]
+    constructor
+    · calc List.foldl _ (2 * z + if b = 1 then 1 else 0) t
+          < 2 ^ t.length * ((2 * z + if b = 1 then 1 else 0) + 1) := ih1
+        _ ≤ 2 ^ (t.length + 1) * (z + 1) := by
+            rw [pow_succ]
+            nlinarith [hbit.1, hbit.2,
+              pow_pos (show (0 : ℤ) < 2 by norm_num) t.length]
+    · omega
+
+/-- A zero prefix contributes nothing to the ℤ-decode. -/
+theorem bitsVal_drop_of_zeros (l : List F) (k : ℕ)
+    (hz : ∀ b ∈ l.take k, b = 0) : bitsVal l = bitsVal (l.drop k) := by
+  induction k generalizing l with
+  | zero => simp
+  | succ j ih =>
+    cases l with
+    | nil => simp
+    | cons b t =>
+      have hb0 : b = 0 := hz b (by simp)
+      have hrest : ∀ x ∈ t.take j, x = 0 := fun x hx =>
+        hz x (by
+          rw [List.take_succ_cons]
+          exact List.mem_cons_of_mem _ hx)
+      rw [List.drop_succ_cons, ← ih t hrest]
+      subst hb0
+      simp [bitsVal]
+
+/-- On boolean bits the field fold is the cast of the ℤ-decode. -/
+theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
+    bitsRegister l = ((bitsVal l : ℤ) : F) := by
+  suffices h : ∀ z : ℤ,
+      l.foldl (fun a b => 2 * a + b) ((z : ℤ) : F)
+        = ((l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z : ℤ) : F) by
+    simpa [bitsRegister, bitsVal] using h 0
+  induction l with
+  | nil => intro z; simp
+  | cons b t ih =>
+    intro z
+    have hb' : b = 0 ∨ b = 1 := hb b List.mem_cons_self
+    simp only [List.foldl_cons]
+    have hcast : 2 * ((z : ℤ) : F) + b
+        = (((2 * z + if b = 1 then 1 else 0 : ℤ)) : F) := by
+      rcases hb' with rfl | rfl
+      · norm_num
+      · push_cast
+        norm_num
+    rw [hcast]
+    exact ih (fun x hx => hb x (List.mem_cons_of_mem _ hx)) _
+
 /-- Every bit of a held run is boolean: each bit block's first constraint is
 `b·b − b = 0`. -/
 theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)

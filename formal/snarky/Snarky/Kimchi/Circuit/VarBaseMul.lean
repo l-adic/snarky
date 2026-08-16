@@ -545,4 +545,69 @@ def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let (sDiv2, sOdd) ← splitFieldVar s
   scaleFast2 n chunks sDiv2Bits base sDiv2 sOdd
 
+open Std.Do in
+/-- The checked pair witness `(F, Bool)`: the `boolean` row emitted on the second
+component makes it a bit — `splitFieldVar`'s leaf, the pair analog of
+`witnessBool_spec`. -/
+private theorem witnessFBool_spec [Field F] [DecidableEq F] {c : Type}
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (w : AsProver F (F × Bool))
+    (Q : PostCond (FVar F × BoolVar F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : FVar F × BoolVar F) =>
+        (↑r.2 : CVar F).val V = 0 ∨ (↑r.2 : CVar F).val V = 1) Q⦄
+    (witness (val := F × Bool) w : CircuitM F c (FVar F × BoolVar F))
+    ⦃Q⦄ := by
+  intro s hpre hsat
+  exact hpre _ _
+    (LawfulBasicSystem.holds_boolean s.V _ (hsat _ (List.mem_cons_self ..)))
+
+/-- `splitFieldVar` is sound: the operand reads as the parity recombination
+`2·sDiv2 + sOdd` of the returned pair, with the parity a genuine bit (its witness's
+`boolean` row). -/
+theorem splitFieldVar_spec [Field F] [DecidableEq F] [ToNat F]
+    (s : FVar F) (Q : PostCond (FVar F × BoolVar F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : FVar F × BoolVar F) =>
+        s.val V = 2 * r.1.val V + (↑r.2 : CVar F).val V ∧
+        ((↑r.2 : CVar F).val V = 0 ∨ (↑r.2 : CVar F).val V = 1)) Q⦄
+    (splitFieldVar (c := KimchiConstraint F) s)
+    ⦃Q⦄ := by
+  simp only [splitFieldVar]
+  mvcgen [witnessFBool_spec, -witness_spec]
+  rename_i st hpre
+  intro r _ hbool
+  mvcgen
+  intro _ _ heq
+  mvcgen
+  refine hpre r _ ?_ hbool
+  rw [heq]
+  simp [CVar.val_add_, CVar.val_scale_]
+
+open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
+/-- `scaleFast1` is sound — the `Type1` defining equation
+`scaleFast1 g (Type1 t) ~ [2·t + 2^(5·chunks) + 1]·g`: exactly `varBaseMul`'s
+promise, re-exposed at the returned point. -/
+theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+    (n chunks : ℕ) (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
+    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
+        ∀ hT : d.W.Nonsingular (p.x.val V) (p.y.val V),
+          ∃ bits : List F,
+            (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
+            t.val.val V = bitsRegister bits ∧
+            ∀ _ : d.LadderRegime (5 * chunks)
+                (2 * bitsVal bits + 2 ^ (5 * chunks) + 1),
+              ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
+                Point.some _ _ hfin
+                  = (2 * bitsVal bits + 2 ^ (5 * chunks) + 1)
+                      • Point.some _ _ hT) Q⦄
+    (scaleFast1 (c := KimchiConstraint F) n chunks p t)
+    ⦃Q⦄ := by
+  simp only [scaleFast1]
+  mvcgen
+  refine varBaseMul_spec d n chunks p t _ _ ?_
+  intro r nv hr
+  mvcgen
+  rename_i st hpre
+  exact hpre r.g _ hr
+
 end Snarky.Kimchi
