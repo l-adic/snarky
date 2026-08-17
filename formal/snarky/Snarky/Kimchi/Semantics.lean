@@ -17,13 +17,14 @@ base gadget law, sound and complete, to this backend — and the landed gate pay
 read as the verified gates' own predicates/`ok` at the payload's operand values: one
 witness record for `.addComplete` (`read`/`eval`, one field per gate column), a chain
 of five-round windows over the state list for `.poseidon` (`chainHolds`/`chainOk` at
-the payload's parameter data), one witness record per round for `.endoScalar`, a
-successor chain over the round list for `.endoMul` (each round's output cells read
-from the NEXT round's `p`/`nAcc`, the last from the payload finals — the two-row
-gate's next-row read, value-level); a value missing from the table rejects. `.pad`
-reads vacuously (a padding row asserts nothing), as do the gate payloads with no
-landed gadget: the reading is deliberately per-constructor, and a vacuous case marks
-a constructor outside the landed gadget surface.
+the payload's parameter data), one witness record per round for `.endoScalar` and for
+`.varBaseMul` (the scale round carries all 26 gate cells itself, output accumulator
+and register included, so no successor read is needed), a successor chain over the
+round list for `.endoMul` (each round's output cells read from the NEXT round's
+`p`/`nAcc`, the last from the payload finals — the two-row gate's next-row read,
+value-level); a value missing from the table rejects. `.pad` reads vacuously (a
+padding row asserts nothing): the reading is deliberately per-constructor, and a
+vacuous case marks a constructor outside the landed gadget surface.
 -/
 
 namespace Snarky.Kimchi
@@ -93,6 +94,38 @@ def EndoScalarRound.read (V : Valuation F) (r : EndoScalarRound F) :
   n8 := r.n8.val V
   crumbs := r.xs.toList.map (·.val V)
 
+/-- The scale round's operand values under a valuation, as the verified gate's
+witness record — one field per gate cell; the round carries its own output
+accumulator and register, so the reading is self-contained. -/
+def ScaleRound.read (V : Valuation F) (r : ScaleRound F) :
+    Kimchi.Gate.VarBaseMul.Witness F where
+  xT := r.base.x.val V
+  yT := r.base.y.val V
+  x0 := r.acc0.x.val V
+  y0 := r.acc0.y.val V
+  x1 := r.acc1.x.val V
+  y1 := r.acc1.y.val V
+  x2 := r.acc2.x.val V
+  y2 := r.acc2.y.val V
+  x3 := r.acc3.x.val V
+  y3 := r.acc3.y.val V
+  x4 := r.acc4.x.val V
+  y4 := r.acc4.y.val V
+  x5 := r.acc5.x.val V
+  y5 := r.acc5.y.val V
+  n := r.nPrev.val V
+  nPrime := r.nNext.val V
+  b0 := r.bit0.val V
+  b1 := r.bit1.val V
+  b2 := r.bit2.val V
+  b3 := r.bit3.val V
+  b4 := r.bit4.val V
+  s0 := r.slope0.val V
+  s1 := r.slope1.val V
+  s2 := r.slope2.val V
+  s3 := r.slope3.val V
+  s4 := r.slope4.val V
+
 /-- The payload round's operand values under a valuation, as the verified gate's
 witness record — one field per gate cell, with the output cells `xS`/`yS`/`nPrime`
 supplied by the caller: the gate is two-row, and a round's outputs live in its
@@ -139,7 +172,8 @@ def KimchiConstraint.Holds (V : Valuation F) : KimchiConstraint F → Prop
   | .addComplete c => Kimchi.Gate.AddComplete.Holds (AddComplete.read V c)
   | .poseidon c => Poseidon.chainHolds (Poseidon.mdsOf c.mds) c.rc 0 (Poseidon.read V c)
   | .endoScalar rounds => ∀ r ∈ rounds, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read V r)
-  | .varBaseMul _ => True
+  | .varBaseMul rounds =>
+    ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r)
   | .endoMul c =>
     EndoMul.chainHolds V c.endo (c.s.x.val V, c.s.y.val V, c.nAcc.val V) c.state
   | .pad _ => True
@@ -211,6 +245,39 @@ def EndoScalarRound.eval (env : Assignments F) (r : EndoScalarRound F) :
   let crumbs ← r.xs.toList.mapM (·.eval env)
   return { a0, b0, n0, a8, b8, n8, crumbs }
 
+/-- The scale round's operand values on the prover's partial table, failing where
+a value is missing. -/
+def ScaleRound.eval (env : Assignments F) (r : ScaleRound F) :
+    Except EvalError (Kimchi.Gate.VarBaseMul.Witness F) := do
+  let xT ← r.base.x.eval env
+  let yT ← r.base.y.eval env
+  let x0 ← r.acc0.x.eval env
+  let y0 ← r.acc0.y.eval env
+  let x1 ← r.acc1.x.eval env
+  let y1 ← r.acc1.y.eval env
+  let x2 ← r.acc2.x.eval env
+  let y2 ← r.acc2.y.eval env
+  let x3 ← r.acc3.x.eval env
+  let y3 ← r.acc3.y.eval env
+  let x4 ← r.acc4.x.eval env
+  let y4 ← r.acc4.y.eval env
+  let x5 ← r.acc5.x.eval env
+  let y5 ← r.acc5.y.eval env
+  let n ← r.nPrev.eval env
+  let nPrime ← r.nNext.eval env
+  let b0 ← r.bit0.eval env
+  let b1 ← r.bit1.eval env
+  let b2 ← r.bit2.eval env
+  let b3 ← r.bit3.eval env
+  let b4 ← r.bit4.eval env
+  let s0 ← r.slope0.eval env
+  let s1 ← r.slope1.eval env
+  let s2 ← r.slope2.eval env
+  let s3 ← r.slope3.eval env
+  let s4 ← r.slope4.eval env
+  return { xT, yT, x0, y0, x1, y1, x2, y2, x3, y3, x4, y4, x5, y5,
+           n, nPrime, b0, b1, b2, b3, b4, s0, s1, s2, s3, s4 }
+
 /-- The payload round's operand values on the prover's partial table, with the
 output cells `xS`/`yS`/`nPrime` supplied by the caller (`readWith` at an
 `Assignments`); failing where a value is missing. -/
@@ -269,7 +336,11 @@ def KimchiConstraint.check (con : KimchiConstraint F) (env : Assignments F) : Bo
       match EndoScalarRound.eval env r with
       | .ok w => Kimchi.Gate.EndoScalar.ok w
       | .error _ => false
-  | .varBaseMul _ => true
+  | .varBaseMul rounds =>
+    rounds.all fun r =>
+      match ScaleRound.eval env r with
+      | .ok w => Kimchi.Gate.VarBaseMul.ok w
+      | .error _ => false
   | .endoMul c =>
     match c.s.x.eval env, c.s.y.eval env, c.nAcc.eval env with
     | .ok xs, .ok ys, .ok n => EndoMul.chainOk env c.endo (xs, ys, n) c.state

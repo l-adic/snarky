@@ -17,6 +17,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
+import Snarky.Kimchi.Circuit.VarBaseMul
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -99,6 +100,11 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoMul.endoMul_complete_spec,
     `Snarky.Kimchi.EndoMul.endoInv_spec,
     `Snarky.Kimchi.EndoMul.endoInv_complete_spec,
+    `Snarky.Kimchi.varBaseMul_spec,
+    `Snarky.Kimchi.scaleFast1_spec,
+    `Snarky.Kimchi.splitFieldVar_spec,
+    `Snarky.Kimchi.scaleFast2_spec,
+    `Snarky.Kimchi.scaleFast2'_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
     `Snarky.post_of_prove,
