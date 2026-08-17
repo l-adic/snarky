@@ -1964,6 +1964,59 @@ theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.1).1
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.2).1
 
+/-- The five-bit windows tile the flat stream: a `runBits`-shaped flatMap over rows
+reads the same list as the plain range read. -/
+theorem flatMap_range_window (bs : ℕ → F) (m : ℕ) :
+    (List.range m).flatMap
+        (fun i => [bs (5 * i), bs (5 * i + 1), bs (5 * i + 2), bs (5 * i + 3),
+          bs (5 * i + 4)])
+      = (List.range (5 * m)).map bs := by
+  induction m with
+  | zero => rfl
+  | succ m ih =>
+    rw [List.range_succ, List.flatMap_append, ih,
+      show 5 * (m + 1) = 5 * m + 5 from by ring, List.range_add, List.map_append,
+      List.flatMap_cons, List.flatMap_nil]
+    simp [show List.range 5 = [0, 1, 2, 3, 4] from by decide]
+
+/-- The ℤ-decode reconstructs a bounded scalar from its MSB-first bit reads: position
+`j` of the list carries `testBit (L − 1 − j)`. How the honest witness's register fold
+recovers the scalar it unpacked. -/
+theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
+    bitsVal ((List.range L).map fun j => if x.testBit (L - 1 - j) then (1 : F) else 0)
+      = (x : ℤ) := by
+  induction L generalizing x with
+  | zero =>
+    have hx0 : x = 0 := by simpa using hx
+    subst hx0
+    rfl
+  | succ L ih =>
+    have hsplit : ((List.range (L + 1)).map
+          fun j => if x.testBit (L + 1 - 1 - j) then (1 : F) else 0)
+        = ((List.range L).map
+            fun j => if (x / 2).testBit (L - 1 - j) then (1 : F) else 0)
+          ++ [if x.testBit 0 then (1 : F) else 0] := by
+      rw [List.range_succ, List.map_append]
+      congr 1
+      · apply List.map_congr_left
+        intro j hj
+        have hj' : j < L := List.mem_range.mp hj
+        rw [show L + 1 - 1 - j = (L - 1 - j) + 1 from by omega, Nat.testBit_add_one]
+      · simp
+    have hfold : ∀ (l : List F) (b : F),
+        bitsVal (l ++ [b]) = 2 * bitsVal l + (if b = 1 then 1 else 0) := by
+      intro l b
+      simp [bitsVal, List.foldl_append]
+    rw [hsplit, hfold, ih (x / 2) (by omega)]
+    have hbit0 : x.testBit 0 = decide (x % 2 = 1) := Nat.testBit_zero x
+    rcases Nat.mod_two_eq_zero_or_one x with h | h
+    · rw [show (if x.testBit 0 then (1 : F) else 0) = 0 from by rw [hbit0, h]; simp,
+        if_neg (zero_ne_one (α := F))]
+      omega
+    · rw [show (if x.testBit 0 then (1 : F) else 0) = 1 from by rw [hbit0, h]; simp,
+        if_pos rfl]
+      omega
+
 end RunBits
 
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
@@ -2039,6 +2092,145 @@ theorem chainBuild_eta (xT yT x0 y0 n0 : F) (bs : ℕ → F) (i : ℕ) :
           (bs (5 * i)) (bs (5 * i + 1)) (bs (5 * i + 2)) (bs (5 * i + 3))
           (bs (5 * i + 4)) := by
   cases i <;> rfl
+
+/-! The per-field equations of a walk row, each at the row's own threaded cells — the
+vocabulary a prover-side identification consumes so it never has to normalize
+`build`'s five-step let chain itself. -/
+
+section ChainFields
+
+variable (xT yT x0 y0 n0 : F) (bs : ℕ → F)
+
+omit [DecidableEq F] in
+theorem chainBuild_succ_x0 (i : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs (i + 1)).x0 = (chainBuild xT yT x0 y0 n0 bs i).x5 :=
+  rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_succ_y0 (i : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs (i + 1)).y0 = (chainBuild xT yT x0 y0 n0 bs i).y5 :=
+  rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_succ_n (i : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs (i + 1)).n
+      = (chainBuild xT yT x0 y0 n0 bs i).nPrime :=
+  rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_s0 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).s0
+      = (stepBit (bs (5 * m)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x0
+          (chainBuild xT yT x0 y0 n0 bs m).y0).1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_x1 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).x1
+      = (stepBit (bs (5 * m)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x0
+          (chainBuild xT yT x0 y0 n0 bs m).y0).2.1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_y1 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).y1
+      = (stepBit (bs (5 * m)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x0
+          (chainBuild xT yT x0 y0 n0 bs m).y0).2.2 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_s1 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).s1
+      = (stepBit (bs (5 * m + 1)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x1
+          (chainBuild xT yT x0 y0 n0 bs m).y1).1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_x2 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).x2
+      = (stepBit (bs (5 * m + 1)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x1
+          (chainBuild xT yT x0 y0 n0 bs m).y1).2.1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_y2 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).y2
+      = (stepBit (bs (5 * m + 1)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x1
+          (chainBuild xT yT x0 y0 n0 bs m).y1).2.2 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_s2 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).s2
+      = (stepBit (bs (5 * m + 2)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x2
+          (chainBuild xT yT x0 y0 n0 bs m).y2).1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_x3 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).x3
+      = (stepBit (bs (5 * m + 2)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x2
+          (chainBuild xT yT x0 y0 n0 bs m).y2).2.1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_y3 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).y3
+      = (stepBit (bs (5 * m + 2)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x2
+          (chainBuild xT yT x0 y0 n0 bs m).y2).2.2 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_s3 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).s3
+      = (stepBit (bs (5 * m + 3)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x3
+          (chainBuild xT yT x0 y0 n0 bs m).y3).1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_x4 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).x4
+      = (stepBit (bs (5 * m + 3)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x3
+          (chainBuild xT yT x0 y0 n0 bs m).y3).2.1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_y4 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).y4
+      = (stepBit (bs (5 * m + 3)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x3
+          (chainBuild xT yT x0 y0 n0 bs m).y3).2.2 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_s4 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).s4
+      = (stepBit (bs (5 * m + 4)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x4
+          (chainBuild xT yT x0 y0 n0 bs m).y4).1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_x5 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).x5
+      = (stepBit (bs (5 * m + 4)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x4
+          (chainBuild xT yT x0 y0 n0 bs m).y4).2.1 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_y5 (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).y5
+      = (stepBit (bs (5 * m + 4)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x4
+          (chainBuild xT yT x0 y0 n0 bs m).y4).2.2 := by
+  cases m <;> rfl
+
+omit [DecidableEq F] in
+theorem chainBuild_nPrime (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).nPrime
+      = bs (5 * m + 4) + 2 * (bs (5 * m + 3) + 2 * (bs (5 * m + 2)
+          + 2 * (bs (5 * m + 1) + 2 * (bs (5 * m)
+          + 2 * (chainBuild xT yT x0 y0 n0 bs m).n)))) := by
+  cases m <;> rfl
+
+end ChainFields
 
 /-- One honest bit step: at an accumulator `[k]·T` whose four degeneracy residues the
 regime has priced away, the generated `stepBit` values satisfy the bit block and the

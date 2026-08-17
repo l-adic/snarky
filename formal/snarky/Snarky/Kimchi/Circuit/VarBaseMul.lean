@@ -893,4 +893,733 @@ theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     rw [hsum, hvv, h1]
     simp [bit]
 
+/-! ## Completeness plumbing
+
+The prover-side reading of a scale round: `evalScale_ok_iff` splits the 26-cell read,
+the read survives table extension, and the advice computations read the threaded
+cells and compute the gate's canonical row — `nAccWit` its register update, `bitWit`
+its bit-step quintet from the gate model's `stepBit`. -/
+
+open Std.Do in
+/-- A round evaluates to a witness exactly when each cell reads as its field. -/
+private theorem evalScale_ok_iff [Field F] [DecidableEq F] {env : Assignments F}
+    {r : ScaleRound F} {w : Kimchi.Gate.VarBaseMul.Witness F} :
+    ScaleRound.eval env r = .ok w ↔
+      r.base.x.eval env = .ok w.xT ∧ r.base.y.eval env = .ok w.yT ∧
+      r.acc0.x.eval env = .ok w.x0 ∧ r.acc0.y.eval env = .ok w.y0 ∧
+      r.acc1.x.eval env = .ok w.x1 ∧ r.acc1.y.eval env = .ok w.y1 ∧
+      r.acc2.x.eval env = .ok w.x2 ∧ r.acc2.y.eval env = .ok w.y2 ∧
+      r.acc3.x.eval env = .ok w.x3 ∧ r.acc3.y.eval env = .ok w.y3 ∧
+      r.acc4.x.eval env = .ok w.x4 ∧ r.acc4.y.eval env = .ok w.y4 ∧
+      r.acc5.x.eval env = .ok w.x5 ∧ r.acc5.y.eval env = .ok w.y5 ∧
+      r.nPrev.eval env = .ok w.n ∧ r.nNext.eval env = .ok w.nPrime ∧
+      r.bit0.eval env = .ok w.b0 ∧ r.bit1.eval env = .ok w.b1 ∧
+      r.bit2.eval env = .ok w.b2 ∧ r.bit3.eval env = .ok w.b3 ∧
+      r.bit4.eval env = .ok w.b4 ∧
+      r.slope0.eval env = .ok w.s0 ∧ r.slope1.eval env = .ok w.s1 ∧
+      r.slope2.eval env = .ok w.s2 ∧ r.slope3.eval env = .ok w.s3 ∧
+      r.slope4.eval env = .ok w.s4 := by
+  constructor
+  · intro h
+    unfold ScaleRound.eval at h
+    obtain ⟨xT, hxT, h⟩ := bind_ok h
+    obtain ⟨yT, hyT, h⟩ := bind_ok h
+    obtain ⟨x0, hx0, h⟩ := bind_ok h
+    obtain ⟨y0, hy0, h⟩ := bind_ok h
+    obtain ⟨x1, hx1, h⟩ := bind_ok h
+    obtain ⟨y1, hy1, h⟩ := bind_ok h
+    obtain ⟨x2, hx2, h⟩ := bind_ok h
+    obtain ⟨y2, hy2, h⟩ := bind_ok h
+    obtain ⟨x3, hx3, h⟩ := bind_ok h
+    obtain ⟨y3, hy3, h⟩ := bind_ok h
+    obtain ⟨x4, hx4, h⟩ := bind_ok h
+    obtain ⟨y4, hy4, h⟩ := bind_ok h
+    obtain ⟨x5, hx5, h⟩ := bind_ok h
+    obtain ⟨y5, hy5, h⟩ := bind_ok h
+    obtain ⟨nv, hnv, h⟩ := bind_ok h
+    obtain ⟨nP, hnP, h⟩ := bind_ok h
+    obtain ⟨b0, hb0, h⟩ := bind_ok h
+    obtain ⟨b1, hb1, h⟩ := bind_ok h
+    obtain ⟨b2, hb2, h⟩ := bind_ok h
+    obtain ⟨b3, hb3, h⟩ := bind_ok h
+    obtain ⟨b4, hb4, h⟩ := bind_ok h
+    obtain ⟨s0, hs0, h⟩ := bind_ok h
+    obtain ⟨s1, hs1, h⟩ := bind_ok h
+    obtain ⟨s2, hs2, h⟩ := bind_ok h
+    obtain ⟨s3, hs3, h⟩ := bind_ok h
+    obtain ⟨s4, hs4, h⟩ := bind_ok h
+    simp only [Pure.pure, Except.pure, Except.ok.injEq] at h
+    subst h
+    exact ⟨hxT, hyT, hx0, hy0, hx1, hy1, hx2, hy2, hx3, hy3, hx4, hy4, hx5, hy5,
+      hnv, hnP, hb0, hb1, hb2, hb3, hb4, hs0, hs1, hs2, hs3, hs4⟩
+  · intro ⟨hxT, hyT, hx0, hy0, hx1, hy1, hx2, hy2, hx3, hy3, hx4, hy4, hx5, hy5,
+      hnv, hnP, hb0, hb1, hb2, hb3, hb4, hs0, hs1, hs2, hs3, hs4⟩
+    unfold ScaleRound.eval
+    rw [hxT, hyT, hx0, hy0, hx1, hy1, hx2, hy2, hx3, hy3, hx4, hy4, hx5, hy5,
+      hnv, hnP, hb0, hb1, hb2, hb3, hb4, hs0, hs1, hs2, hs3, hs4]
+    simp [Bind.bind, Except.bind, Pure.pure, Except.pure]
+
+/-- A round's read survives table extension. -/
+private theorem evalScale_le [Field F] [DecidableEq F] {env env' : Assignments F}
+    (hle : env.Le env') {r : ScaleRound F} {w : Kimchi.Gate.VarBaseMul.Witness F}
+    (h : ScaleRound.eval env r = .ok w) : ScaleRound.eval env' r = .ok w := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16,
+    h17, h18, h19, h20, h21, h22, h23, h24, h25, h26⟩ := evalScale_ok_iff.mp h
+  exact evalScale_ok_iff.mpr ⟨CVar.eval_le hle h1, CVar.eval_le hle h2,
+    CVar.eval_le hle h3, CVar.eval_le hle h4, CVar.eval_le hle h5,
+    CVar.eval_le hle h6, CVar.eval_le hle h7, CVar.eval_le hle h8,
+    CVar.eval_le hle h9, CVar.eval_le hle h10, CVar.eval_le hle h11,
+    CVar.eval_le hle h12, CVar.eval_le hle h13, CVar.eval_le hle h14,
+    CVar.eval_le hle h15, CVar.eval_le hle h16, CVar.eval_le hle h17,
+    CVar.eval_le hle h18, CVar.eval_le hle h19, CVar.eval_le hle h20,
+    CVar.eval_le hle h21, CVar.eval_le hle h22, CVar.eval_le hle h23,
+    CVar.eval_le hle h24, CVar.eval_le hle h25, CVar.eval_le hle h26⟩
+
+/-- The register advice reads the threaded cells and computes the gate's
+`nPrime` fold. -/
+private theorem nAccWit_ok [Field F] [DecidableEq F] {env : Assignments F}
+    {nPrev : FVar F} {bs : Vector (FVar F) 5} {nv b0 b1 b2 b3 b4 : F}
+    (hnv : nPrev.eval env = .ok nv)
+    (hb0 : bs[0].eval env = .ok b0) (hb1 : bs[1].eval env = .ok b1)
+    (hb2 : bs[2].eval env = .ok b2) (hb3 : bs[3].eval env = .ok b3)
+    (hb4 : bs[4].eval env = .ok b4) :
+    nAccWit nPrev bs env
+      = .ok (b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * nv))))) := by
+  simp [nAccWit, AsProver.readCVar, hnv, hb0, hb1, hb2, hb3, hb4,
+    Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+
+/-- The bit-step advice reads the threaded cells and computes the gate model's
+`stepBit` quintet. -/
+private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
+    {t : AffinePoint (FVar F)} {b : FVar F} {acc : AffinePoint (FVar F)}
+    {xb yb xi yi bv : F}
+    (hxb : t.x.eval env = .ok xb) (hyb : t.y.eval env = .ok yb)
+    (hxi : acc.x.eval env = .ok xi) (hyi : acc.y.eval env = .ok yi)
+    (hb : b.eval env = .ok bv) :
+    bitWit t b acc env
+      = .ok ((Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
+        (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1
+          * (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
+        2 * yi / (2 * xi + xb - (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1
+          * (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1)
+          - (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
+        (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.1,
+        (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.2) := by
+  simp [bitWit, AsProver.readCVar, hxb, hyb, hxi, hyi, hb,
+    Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+
+/-- The walk's base and bit cells are the arguments, at every row. -/
+private theorem chainBuildV_fields [Field F] [DecidableEq F]
+    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
+    (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).xT = xT
+    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).yT = yT
+    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b0 = bs (5 * m)
+    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b1 = bs (5 * m + 1)
+    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b2 = bs (5 * m + 2)
+    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b3 = bs (5 * m + 3)
+    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b4 = bs (5 * m + 4) := by
+  cases m <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- `accX`/`accY`/`accN` at the walk are the next row's input cells. -/
+private theorem accX_chainBuildV [Field F] [DecidableEq F]
+    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
+    Kimchi.Gate.VarBaseMul.accX
+        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs i) m
+      = (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).x0 := by
+  cases m <;> rfl
+
+private theorem accY_chainBuildV [Field F] [DecidableEq F]
+    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
+    Kimchi.Gate.VarBaseMul.accY
+        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs i) m
+      = (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).y0 := by
+  cases m <;> rfl
+
+private theorem accN_chainBuildV [Field F] [DecidableEq F]
+    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
+    Kimchi.Gate.VarBaseMul.accN
+        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs i) m
+      = (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).n := by
+  cases m <;> rfl
+
+/-- The `F`-leaf reading is the eval equation — the coercion the grant consumers
+apply (unification alone cannot unfold the instance projection against a
+metavariable-headed expected type). -/
+private theorem reads_fvar {F : Type} [Field F] {r : FVar F} {env : Assignments F}
+    {x : F} (h : WitnessReads.Reads (F := F) r env x) : r.eval env = .ok x := h
+
+open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
+/-- The gadget is complete, generic over the curve dictionary: the honest prover run
+accepts on a readable on-curve base and a readable in-range faithful scalar whose
+`Type1` decode satisfies the ladder regime, and the returned point reads as the
+defining equation's honest side — `[fromShifted t]·g` at the scalar's canonical
+value. The regime precondition is per-scalar, exactly the fact the soundness law
+conditions on; at the deployed widths the subwrap arm discharges it for every chunk
+count below full width, and at full width it is the `Type1` forbidden-band check's
+contract. The loop invariant identifies the run with the honest walk `chainBuild`;
+the per-round check is the produce chain's (`chain_complete`), the init is the
+doubling `addFast` (`addFast_complete_spec`), and the register pin closes by the
+fold identity (`chain_accN` through `bitsVal_testBit`). -/
+theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n)
+    (base' : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
+    (Q : PostCond (VarBaseMulResult n F)
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (scalar.val.eval env).isOk ∧ (base'.x.eval env).isOk ∧
+          (base'.y.eval env).isOk ∧
+          (∀ v, scalar.val.eval env = .ok v →
+            ToNat.toNat v < 2 ^ (5 * chunks) ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
+            d.LadderRegime (5 * chunks)
+              (Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
+          (∀ x y, base'.x.eval env = .ok x → base'.y.eval env = .ok y →
+            d.W.Nonsingular x y))
+        (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
+          base'.x.eval env = .ok xv → base'.y.eval env = .ok yv →
+          ∀ hT : d.W.Nonsingular xv yv,
+          ∃ xS yS, r.g.x.eval env' = .ok xS ∧ r.g.y.eval env' = .ok yS ∧
+            ∃ hfin : d.W.Nonsingular xS yS,
+              Point.some _ _ hfin
+                = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+                    • Point.some _ _ hT)
+        Q⦄
+    (varBaseMul (c := KimchiProverC F) n chunks base' scalar)
+    ⦃Q⦄ := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  simp only [varBaseMul, mapAccumM]
+  mvcgen
+  rename_i st₀ hpre
+  obtain ⟨⟨hsok, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
+  obtain ⟨v, hv⟩ := CVar.evalOk hsok
+  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
+  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
+  obtain ⟨hrange, hfaith, hregpre⟩ := hsc v hv
+  have hT : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
+  have hyne : yv ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
+  -- the sealed base
+  refine ⟨⟨hxok, hyok⟩, fun base st₁ hseal hle₁ => ?_⟩
+  obtain ⟨hsx, hsy⟩ := hseal xv yv hxv hyv
+  mvcgen
+  -- the scalar's bits, in one witness
+  set nn := ToNat.toNat v with hndef
+  have hwit : lsbBitsWit n scalar.val st₁.env
+      = .ok (Vector.ofFn fun i => if nn.testBit i.1 then (1 : F) else 0) := by
+    simp [lsbBitsWit, AsProver.readCVar, CVar.eval_le hle₁ hv,
+      Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+    rw [hndef]
+  refine ⟨by rw [hwit]; rfl, fun bits st₂ hgrant hle₂ => ?_⟩
+  have hread := hgrant _ hwit
+  mvcgen
+  -- the doubled init `P₀ = [2]·T`
+  have hsx₂ : base.x.eval st₂.env = .ok xv := CVar.eval_le hle₂ hsx
+  have hsy₂ : base.y.eval st₂.env = .ok yv := CVar.eval_le hle₂ hsy
+  refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne base base _ _
+    ⟨⟨by rw [hsx₂]; rfl, by rw [hsy₂]; rfl, by rw [hsx₂]; rfl, by rw [hsy₂]; rfl,
+      fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
+     fun p st₃ hp hle₃ => ?_⟩
+  · rw [hsx₂] at he1; rw [hsy₂] at he2; rw [hsx₂] at he3; rw [hsy₂] at he4
+    injection he1 with he1; injection he2 with he2
+    injection he3 with he3; injection he4 with he4
+    subst he1 he2 he3 he4
+    refine ⟨hT.1, hT.1, hyne, fun _ => ?_⟩
+    rintro ⟨-, hyeq⟩
+    rw [show d.W.negY xv yv = -yv from by
+      simp [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]] at hyeq
+    refine hyne ?_
+    have h2y : (2 : F) * yv = 0 := by linear_combination hyeq
+    exact (mul_eq_zero.mp h2y).resolve_left d.two_ne
+  obtain ⟨x0v, y0v, hx0e, hy0e, -, hP0ns, hsum⟩ :=
+    (hp xv yv xv yv hsx₂ hsy₂ hsx₂ hsy₂ hT hT).resolve_left (by
+      rintro ⟨-, hzero⟩
+      have h2P : (2 : ℤ) • Point.some _ _ hT = 0 := by rw [two_zsmul, hzero]
+      have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
+        have h2le := d.prime.two_le
+        have hne2 := d.odd
+        have h3' : 3 ≤ d.W.order := by omega
+        exact_mod_cast h3'
+      exact smul_ne_zero_of_lt d.W (Point.some_ne_zero hT) (by norm_num) hlt h2P)
+  have hP0eq : Point.some _ _ hP0ns = (2 : ℤ) • Point.some _ _ hT := by
+    rw [← hsum]
+    module
+  -- the honest stream, its regime, and the produce chain's acceptance
+  set bsF : ℕ → F := fun j => if nn.testBit (5 * chunks - 1 - j) then (1 : F) else 0
+    with hbsF
+  have hbsb : ∀ j, j < 5 * chunks → bsF j = 0 ∨ bsF j = 1 := by
+    intro j _
+    rw [hbsF]
+    dsimp only
+    split
+    · exact Or.inr rfl
+    · exact Or.inl rfl
+  have hladder : Kimchi.Gate.VarBaseMul.ladderK bsF (5 * chunks)
+      = 2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1 := by
+    rw [Kimchi.Gate.VarBaseMul.ladderK_eq_bitsVal bsF (5 * chunks) hbsb, hbsF,
+      Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange]
+  have hregime' : 3 * 2 ^ (5 * chunks) ≤ d.W.order ∨
+      (2 ^ (5 * chunks - 1) < d.W.order ∧ d.W.order < 2 ^ (5 * chunks) ∧
+        d.W.order % 4 = 1 ∧
+        Kimchi.Gate.VarBaseMul.ladderK bsF (5 * chunks)
+          ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order) := by
+    simp only [HasCurve.LadderRegime, Type1.fromShifted] at hregpre
+    rcases hregpre with h | ⟨h1, h2', h3, h4⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨h1, h2', h3, by rw [hladder]; exact h4⟩
+  have hHolds : ∀ i, i < chunks →
+      Kimchi.Gate.VarBaseMul.Holds
+        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) :=
+    Kimchi.Gate.VarBaseMul.chain_complete d.W d.two_ne d.odd chunks hT bsF hbsb 0
+      hP0ns hP0eq hregime'
+  mvcgen
+  case inv1 =>
+    exact ⇓ p s' => ⌜st₃.env.Le s'.env ∧
+      (p.2.fst.1.x.eval s'.env
+          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              p.1.prefix.length).x0 ∧
+        p.2.fst.1.y.eval s'.env
+          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              p.1.prefix.length).y0 ∧
+        p.2.fst.2.eval s'.env
+          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              p.1.prefix.length).n) ∧
+      ∀ r ∈ p.2.snd, ∃ w, ScaleRound.eval s'.env r = .ok w ∧
+        Kimchi.Gate.VarBaseMul.Holds w⌝
+  case vc1.step =>
+    rename_i pref cur suff hsplit b s' hinv
+    obtain ⟨hLe, ⟨hxI, hyI, hnI⟩, hrounds⟩ := hinv
+    have hkrows : pref.length < chunks := by
+      have hlen := congrArg List.length hsplit
+      simp only [List.length_map, List.length_range, List.length_append,
+        List.length_cons] at hlen
+      omega
+    have hcur : cur = Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)) := by
+      have h1 : ((List.range chunks).map (fun i => Vector.ofFn (fun j : Fin 5 =>
+          ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
+            (.const 0))))[pref.length]'(by
+            simp only [List.length_map, List.length_range]
+            exact hkrows) = cur := by
+        simp only [hsplit]
+        rw [List.getElem_append_right (Nat.le_refl _)]
+        simp
+      rw [← h1, List.getElem_map, List.getElem_range]
+    subst hcur
+    -- the window's bits read as the honest stream
+    have hbit : ∀ j, j < 5 →
+        (((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j)
+            (.const 0) : FVar F).eval s'.env
+          = .ok (bsF (5 * pref.length + j)) := by
+      intro j hj
+      have hlen5 : (bits.toList.take (5 * chunks)).length = 5 * chunks := by
+        simp only [List.length_take, Vector.length_toList]
+        omega
+      have hgd : ((bits.toList.take (5 * chunks)).reverse).getD
+          (5 * pref.length + j) (.const 0)
+          = bits[5 * chunks - 1 - (5 * pref.length + j)]'(by omega) := by
+        rw [List.getD_eq_getElem?_getD, List.getElem?_reverse (by rw [hlen5]; omega),
+          hlen5, List.getElem?_take_of_lt (by omega),
+          List.getElem?_eq_getElem (by simp only [Vector.length_toList]; omega)]
+        simp [Vector.getElem_toList]
+      rw [hgd]
+      have hr := hread (5 * chunks - 1 - (5 * pref.length + j)) (by omega)
+      simp only [Vector.getElem_ofFn] at hr
+      rw [hbsF]
+      exact CVar.eval_le (hle₃.trans hLe) hr
+    have hcurj : ∀ (j : ℕ) (hj : j < 5),
+        ((Vector.ofFn (fun j : Fin 5 =>
+            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+              (.const 0)))[j]'hj).eval s'.env
+          = .ok (bsF (5 * pref.length + j)) := by
+      intro j hj
+      simp only [Vector.getElem_ofFn]
+      exact hbit j hj
+    -- shorthands for the row
+    have hxT' : base.x.eval s'.env = .ok xv :=
+      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsx
+    have hyT' : base.y.eval s'.env = .ok yv :=
+      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsy
+    have hcurj0 : ((Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)))[0]'(by omega)).eval s'.env
+        = .ok (bsF (5 * pref.length)) := hcurj 0 (by omega)
+    -- the register witness
+    have hnOk : nAccWit b.fst.2 (Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0))) s'.env
+        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+            pref.length).nPrime) := by
+      rw [nAccWit_ok hnI hcurj0 (hcurj 1 (by omega))
+        (hcurj 2 (by omega)) (hcurj 3 (by omega)) (hcurj 4 (by omega)),
+        Kimchi.Gate.VarBaseMul.chainBuild_nPrime]
+    refine ⟨by rw [hnOk]; rfl, fun nAcc st₄ hgN hle₄ => ?_⟩
+    have hnA : nAcc.eval st₄.env = .ok ((Kimchi.Gate.VarBaseMul.chainBuild
+        xv yv x0v y0v 0 bsF pref.length).nPrime) := hgN _ hnOk
+    mvcgen
+    -- the five bit steps: each quintet reads the previous accumulator and
+    -- computes `stepBit`, i.e. the walk's next fields
+    have hw0Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)))[0]'(by omega)) b.fst.1 st₄.env
+        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s0,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s0
+              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s0,
+            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).y0
+              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                  pref.length).x0 + xv
+                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s0
+                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s0)
+              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s0,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).x1,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).y1) := by
+      rw [bitWit_ok (CVar.eval_le hle₄ hxT') (CVar.eval_le hle₄ hyT')
+        (CVar.eval_le hle₄ hxI) (CVar.eval_le hle₄ hyI)
+        (CVar.eval_le hle₄ hcurj0),
+        Kimchi.Gate.VarBaseMul.chainBuild_s0, Kimchi.Gate.VarBaseMul.chainBuild_x1,
+        Kimchi.Gate.VarBaseMul.chainBuild_y1]
+    refine ⟨by rw [hw0Ok]; rfl, fun w0 st₅ hg0 hle₅ => ?_⟩
+    obtain ⟨hs0e', -, -, hx1e', hy1e'⟩ := hg0 _ hw0Ok
+    have hs0e := reads_fvar hs0e'
+    have hx1e := reads_fvar hx1e'
+    have hy1e := reads_fvar hy1e'
+    mvcgen
+    have hw1Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)))[1]'(by omega)) ⟨w0.2.2.2.1, w0.2.2.2.2⟩ st₅.env
+        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s1,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s1
+              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s1,
+            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).y1
+              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                  pref.length).x1 + xv
+                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s1
+                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s1)
+              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s1,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).x2,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).y2) := by
+      rw [bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
+        (CVar.eval_le (hle₄.trans hle₅) hxT')
+        (CVar.eval_le (hle₄.trans hle₅) hyT') hx1e hy1e
+        (CVar.eval_le (hle₄.trans hle₅) (hcurj 1 (by omega))),
+        Kimchi.Gate.VarBaseMul.chainBuild_s1, Kimchi.Gate.VarBaseMul.chainBuild_x2,
+        Kimchi.Gate.VarBaseMul.chainBuild_y2]
+    refine ⟨by rw [hw1Ok]; rfl, fun w1 st₆ hg1 hle₆ => ?_⟩
+    obtain ⟨hs1e', -, -, hx2e', hy2e'⟩ := hg1 _ hw1Ok
+    have hs1e := reads_fvar hs1e'
+    have hx2e := reads_fvar hx2e'
+    have hy2e := reads_fvar hy2e'
+    mvcgen
+    have hw2Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)))[2]'(by omega)) ⟨w1.2.2.2.1, w1.2.2.2.2⟩ st₆.env
+        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s2,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s2
+              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s2,
+            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).y2
+              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                  pref.length).x2 + xv
+                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s2
+                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s2)
+              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s2,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).x3,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).y3) := by
+      rw [bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
+        (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hxT')
+        (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hyT')
+        hx2e hy2e
+        (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) (hcurj 2 (by omega))),
+        Kimchi.Gate.VarBaseMul.chainBuild_s2, Kimchi.Gate.VarBaseMul.chainBuild_x3,
+        Kimchi.Gate.VarBaseMul.chainBuild_y3]
+    refine ⟨by rw [hw2Ok]; rfl, fun w2 st₇ hg2 hle₇ => ?_⟩
+    obtain ⟨hs2e', -, -, hx3e', hy3e'⟩ := hg2 _ hw2Ok
+    have hs2e := reads_fvar hs2e'
+    have hx3e := reads_fvar hx3e'
+    have hy3e := reads_fvar hy3e'
+    mvcgen
+    have hw3Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)))[3]'(by omega)) ⟨w2.2.2.2.1, w2.2.2.2.2⟩ st₇.env
+        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s3,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s3
+              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s3,
+            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).y3
+              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                  pref.length).x3 + xv
+                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s3
+                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s3)
+              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s3,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).x4,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).y4) := by
+      rw [bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
+        (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hxT')
+        (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hyT')
+        hx3e hy3e
+        (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇)
+          (hcurj 3 (by omega))),
+        Kimchi.Gate.VarBaseMul.chainBuild_s3, Kimchi.Gate.VarBaseMul.chainBuild_x4,
+        Kimchi.Gate.VarBaseMul.chainBuild_y4]
+    refine ⟨by rw [hw3Ok]; rfl, fun w3 st₈ hg3 hle₈ => ?_⟩
+    obtain ⟨hs3e', -, -, hx4e', hy4e'⟩ := hg3 _ hw3Ok
+    have hs3e := reads_fvar hs3e'
+    have hx4e := reads_fvar hx4e'
+    have hy4e := reads_fvar hy4e'
+    mvcgen
+    have hw4Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+          (.const 0)))[4]'(by omega)) ⟨w3.2.2.2.1, w3.2.2.2.2⟩ st₈.env
+        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s4,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).s4
+              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s4,
+            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).y4
+              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                  pref.length).x4 + xv
+                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s4
+                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                    pref.length).s4)
+              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+                pref.length).s4,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).x5,
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+              pref.length).y5) := by
+      rw [bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
+        (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hxT')
+        (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hyT')
+        hx4e hy4e
+        (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈)
+          (hcurj 4 (by omega))),
+        Kimchi.Gate.VarBaseMul.chainBuild_s4, Kimchi.Gate.VarBaseMul.chainBuild_x5,
+        Kimchi.Gate.VarBaseMul.chainBuild_y5]
+    refine ⟨by rw [hw4Ok]; rfl, fun w4 st₉ hg4 hle₉ => ?_⟩
+    obtain ⟨hs4e', -, -, hx5e', hy5e'⟩ := hg4 _ hw4Ok
+    have hs4e := reads_fvar hs4e'
+    have hx5e := reads_fvar hx5e'
+    have hy5e := reads_fvar hy5e'
+    mvcgen
+    -- the collected round reads as the walk's row
+    have hleB : st₄.env.Le st₉.env :=
+      (((hle₅.trans hle₆).trans hle₇).trans hle₈).trans hle₉
+    have hleA : s'.env.Le st₉.env := hle₄.trans hleB
+    have hround : ScaleRound.eval st₉.env
+        { acc0 := b.fst.1,
+          acc1 := ⟨w0.2.2.2.1, w0.2.2.2.2⟩, acc2 := ⟨w1.2.2.2.1, w1.2.2.2.2⟩,
+          acc3 := ⟨w2.2.2.2.1, w2.2.2.2.2⟩, acc4 := ⟨w3.2.2.2.1, w3.2.2.2.2⟩,
+          acc5 := ⟨w4.2.2.2.1, w4.2.2.2.2⟩,
+          bit0 := (Vector.ofFn (fun j : Fin 5 =>
+            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+              (.const 0)))[0],
+          bit1 := (Vector.ofFn (fun j : Fin 5 =>
+            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+              (.const 0)))[1],
+          bit2 := (Vector.ofFn (fun j : Fin 5 =>
+            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+              (.const 0)))[2],
+          bit3 := (Vector.ofFn (fun j : Fin 5 =>
+            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+              (.const 0)))[3],
+          bit4 := (Vector.ofFn (fun j : Fin 5 =>
+            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
+              (.const 0)))[4],
+          slope0 := w0.1, slope1 := w1.1, slope2 := w2.1, slope3 := w3.1,
+          slope4 := w4.1,
+          nPrev := b.fst.2, nNext := nAcc, base := base }
+        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
+            pref.length) := by
+      obtain ⟨hfxT, hfyT, hfb0, hfb1, hfb2, hfb3, hfb4⟩ :=
+        chainBuildV_fields xv yv x0v y0v 0 bsF pref.length
+      refine evalScale_ok_iff.mpr
+        ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+          ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · rw [hfxT]
+        exact CVar.eval_le hleA hxT'
+      · rw [hfyT]
+        exact CVar.eval_le hleA hyT'
+      · exact CVar.eval_le hleA hxI
+      · exact CVar.eval_le hleA hyI
+      · exact CVar.eval_le ((((hle₆.trans hle₇).trans hle₈).trans hle₉)) hx1e
+      · exact CVar.eval_le ((((hle₆.trans hle₇).trans hle₈).trans hle₉)) hy1e
+      · exact CVar.eval_le (((hle₇.trans hle₈).trans hle₉)) hx2e
+      · exact CVar.eval_le (((hle₇.trans hle₈).trans hle₉)) hy2e
+      · exact CVar.eval_le ((hle₈.trans hle₉)) hx3e
+      · exact CVar.eval_le ((hle₈.trans hle₉)) hy3e
+      · exact CVar.eval_le hle₉ hx4e
+      · exact CVar.eval_le hle₉ hy4e
+      · exact hx5e
+      · exact hy5e
+      · exact CVar.eval_le hleA hnI
+      · exact CVar.eval_le hleB hnA
+      · rw [hfb0]
+        exact CVar.eval_le hleA hcurj0
+      · rw [hfb1]
+        exact CVar.eval_le hleA (hcurj 1 (by omega))
+      · rw [hfb2]
+        exact CVar.eval_le hleA (hcurj 2 (by omega))
+      · rw [hfb3]
+        exact CVar.eval_le hleA (hcurj 3 (by omega))
+      · rw [hfb4]
+        exact CVar.eval_le hleA (hcurj 4 (by omega))
+      · exact CVar.eval_le ((((hle₆.trans hle₇).trans hle₈).trans hle₉)) hs0e
+      · exact CVar.eval_le (((hle₇.trans hle₈).trans hle₉)) hs1e
+      · exact CVar.eval_le ((hle₈.trans hle₉)) hs2e
+      · exact CVar.eval_le hle₉ hs3e
+      · exact hs4e
+    -- restore the invariant at the extended prefix
+    refine ⟨hLe.trans hleA, ⟨?_, ?_, ?_⟩, ?_⟩
+    · simp only [List.length_append, List.length_cons, List.length_nil]
+      rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_x0]
+      exact hx5e
+    · simp only [List.length_append, List.length_cons, List.length_nil]
+      rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_y0]
+      exact hy5e
+    · simp only [List.length_append, List.length_cons, List.length_nil]
+      rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_n]
+      exact CVar.eval_le hleB hnA
+    · intro r hr
+      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hr
+      rcases hr with hr | rfl
+      · obtain ⟨w, hev, hHw⟩ := hrounds r hr
+        exact ⟨w, evalScale_le hleA hev, hHw⟩
+      · exact ⟨_, hround, hHolds pref.length hkrows⟩
+  case vc2.vc1.vc1.vc1.refine_2.pre =>
+    refine ⟨Assignments.Le.refl st₃.env, ⟨hx0e, hy0e, rfl⟩, fun r hr => ?_⟩
+    exact absurd hr List.not_mem_nil
+  case vc3.vc1.vc1.vc1.refine_2.post.success =>
+    rename_i finp s' hinv
+    obtain ⟨hLe, ⟨hxP, hyP, hnP⟩, hrounds⟩ := hinv
+    simp only [List.length_map, List.length_range] at hxP hyP hnP hrounds
+    -- the register pin: the final register reads as the scalar
+    have hrun : Kimchi.Gate.VarBaseMul.runBits
+        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) chunks
+        = (List.range (5 * chunks)).map bsF := by
+      unfold Kimchi.Gate.VarBaseMul.runBits
+      rw [List.flatMap_congr (fun i _ => by
+        obtain ⟨-, -, hb0, hb1, hb2, hb3, hb4⟩ :=
+          chainBuildV_fields xv yv x0v y0v 0 bsF i
+        rw [hb0, hb1, hb2, hb3, hb4]),
+        Kimchi.Gate.VarBaseMul.flatMap_range_window]
+    have hreg : (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).n
+        = v := by
+      have hchain := Kimchi.Gate.VarBaseMul.chain_accN chunks
+        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
+        hHolds (fun i _ => rfl)
+      rw [accN_chainBuildV, accN_chainBuildV, hrun,
+        show (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF 0).n = 0
+          from rfl, mul_zero, zero_add,
+        Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast _ (fun x hx => by
+          obtain ⟨j, hjmem, rfl⟩ := List.mem_map.mp hx
+          exact hbsb j (List.mem_range.mp hjmem)),
+        hbsF, Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange]
+        at hchain
+      rw [hchain]
+      push_cast
+      exact hfaith
+    have hsv' : scalar.val.eval s'.env = .ok v :=
+      CVar.eval_le ((hle₁.trans (hle₂.trans hle₃)).trans hLe) hv
+    -- the constraint: every collected round's read row holds
+    refine addConstraint_complete_spec (c := KimchiConstraint F)
+      (KimchiSystem.varBaseMul finp.snd) _ s' ⟨?_, fun u st₄ _ hle₄ => ?_⟩
+    · show KimchiConstraint.check (.varBaseMul finp.snd) s'.env = true
+      simp only [KimchiConstraint.check]
+      rw [List.all_eq_true]
+      intro r hr
+      obtain ⟨w, hev, hHw⟩ := hrounds r hr
+      rw [hev]
+      exact (Kimchi.Gate.VarBaseMul.ok_iff w).mpr hHw
+    mvcgen
+    -- the pin
+    refine ⟨⟨by rw [CVar.eval_le hle₄ hnP]; rfl, by rw [CVar.eval_le hle₄ hsv']; rfl,
+      fun rv sv hrv hsv => ?_⟩, fun u' st₅ hle₅ => ?_⟩
+    · rw [CVar.eval_le hle₄ hnP] at hrv
+      injection hrv with hrv
+      rw [CVar.eval_le hle₄ hsv'] at hsv
+      injection hsv with hsv
+      subst hrv hsv
+      exact hreg
+    simp only [wp, PredTrans.apply, prove]
+    intro hf
+    refine hk ⟨finp.fst.1, bits⟩ ⟨st₅.nv, st₅.env, hf⟩
+      (fun v' xv' yv' hv' hxv' hyv' hT' => ?_)
+      ((hle₁.trans (hle₂.trans hle₃)).trans (hLe.trans (hle₄.trans hle₅)))
+    rw [hv] at hv'
+    injection hv' with hv'
+    rw [hxv] at hxv'
+    injection hxv' with hxv'
+    rw [hyv] at hyv'
+    injection hyv' with hyv'
+    subst hv' hxv' hyv'
+    -- the point chain: `varBaseMul_off` at the honest walk
+    obtain ⟨hfin', hpt, -⟩ := Kimchi.Gate.VarBaseMul.varBaseMul_off d.W chunks
+      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
+      (Point.some _ _ hT) (2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1)
+      (Point.some_ne_zero hT) hHolds hT rfl
+      (fun i _ => by
+        obtain ⟨hx1, hy1, -, -, -, -, -⟩ := chainBuildV_fields xv yv x0v y0v 0 bsF i
+        obtain ⟨hx0', hy0', -, -, -, -, -⟩ :=
+          chainBuildV_fields xv yv x0v y0v 0 bsF 0
+        rw [hx1, hy1, hx0', hy0']
+        exact ⟨rfl, rfl⟩)
+      (fun i _ => ⟨rfl, rfl⟩) hP0ns hP0eq d.two_ne d.odd
+      (by
+        rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
+          Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hrun, hbsF,
+          Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange])
+      (by rw [← hladder]; exact hregime')
+    have hax := accX_chainBuildV xv yv x0v y0v 0 bsF chunks
+    have hay := accY_chainBuildV xv yv x0v y0v 0 bsF chunks
+    have hfin : d.W.Nonsingular
+        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).x0
+        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).y0 := by
+      rw [← hax, ← hay]
+      exact hfin'
+    exact ⟨(Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).x0,
+      (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).y0,
+      CVar.eval_le (hle₄.trans hle₅) hxP, CVar.eval_le (hle₄.trans hle₅) hyP,
+      hfin,
+      (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hax.symm hay.symm).trans hpt⟩
+  case vc4.vc1.vc1.vc1.refine_2.post.except =>
+    exact ExceptConds.entails_false
+
 end Snarky.Kimchi
