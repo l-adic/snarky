@@ -1859,6 +1859,15 @@ theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
     simp only [List.foldl_cons, List.foldl_nil]
     ring
 
+/-- `runBits` only reads the run below `m`. -/
+theorem runBits_congr (g g' : ℕ → Witness F) (m : ℕ)
+    (h : ∀ i, i < m → g i = g' i) : runBits g m = runBits g' m := by
+  induction m with
+  | zero => rfl
+  | succ k ih =>
+    rw [runBits_succ, runBits_succ, ih (fun i hi => h i (by omega)),
+      h k (by omega)]
+
 /-- The ℤ-decode of a boolean bit list is nonnegative and bounded by its width. -/
 theorem bitsVal_lt (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
     bitsVal l < 2 ^ l.length ∧ 0 ≤ bitsVal l := by
