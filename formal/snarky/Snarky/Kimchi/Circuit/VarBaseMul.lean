@@ -676,9 +676,12 @@ theorem splitFieldVar_spec [Field F] [DecidableEq F] [ToNat F]
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsRegister_eq_cast) in
 /-- `scaleFast1` is sound — the PS defining equation
 `scaleFast1 g a ~ scalarMul (fromShifted a) g`: the result reads as `[s]·g` for the
-`Type1` unshift `s = fromShifted t`, pinned in `F` and bounded by the width (what
-lets a two-field consumer read `s` exactly). The wired bits are `varBaseMul_spec`'s
-business; this statement is decode-only. -/
+`Type1` unshift `s = fromShifted t`, pinned in `F` and bounded by the width. The
+bounds feed the wrap analysis: the F-pin fixes `s` only mod the characteristic (at
+full width the wire genuinely cannot distinguish `t` from `t + p` — the ambiguity
+the forbidden band exists to police), and the structural range is what the regime's
+mod-order reasoning consumes; below the characteristic they determine `s` exactly.
+The wired bits are `varBaseMul_spec`'s business; this statement is decode-only. -/
 theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
