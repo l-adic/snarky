@@ -676,9 +676,9 @@ theorem splitFieldVar_spec [Field F] [DecidableEq F] [ToNat F]
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsRegister_eq_cast) in
 /-- `scaleFast1` is sound — the PS defining equation
 `scaleFast1 g a ~ scalarMul (fromShifted a) g`: the result reads as `[s]·g` for the
-`Type1` unshift `s`, pinned in `F` as `2·t + 2^(5·chunks) + 1` and bounded by the
-width (what lets a two-field consumer read `s` exactly). The wired bits are
-`varBaseMul_spec`'s business; this statement is decode-only. -/
+`Type1` unshift `s = fromShifted t`, pinned in `F` and bounded by the width (what
+lets a two-field consumer read `s` exactly). The wired bits are `varBaseMul_spec`'s
+business; this statement is decode-only. -/
 theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
@@ -687,7 +687,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (p.x.val V) (p.y.val V),
           ∃ s : ℤ,
             2 ^ (5 * chunks) < s ∧ s < 3 * 2 ^ (5 * chunks) ∧
-            (s : F) = 2 * t.val.val V + 2 ^ (5 * chunks) + 1 ∧
+            (s : F) = Type1.fromShifted (5 * chunks) (t.val.val V) ∧
             ∀ _ : d.LadderRegime (5 * chunks) s,
               ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hfin = s • Point.some _ _ hT) Q⦄
@@ -706,6 +706,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   refine ⟨2 * bitsVal bl + 2 ^ (5 * chunks) + 1, by omega, by omega, ?_,
     fun hregime => hpt hregime⟩
   rw [hreg, bitsRegister_eq_cast bl hb]
+  unfold Type1.fromShifted
   push_cast
   ring
 

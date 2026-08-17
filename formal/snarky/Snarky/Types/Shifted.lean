@@ -1,3 +1,5 @@
+import Mathlib.Algebra.Ring.Defs
+
 /-!
 # Shifted scalar types
 
@@ -23,5 +25,14 @@ namespace Snarky
 structure Type1 (α : Type u) where
   /-- The shifted representative. -/
   val : α
+
+/-- The `Type1` decode at width `n` (PS `shift1`'s inverse reading: the shift
+constant is `2^n + 1`, the scale `1/2`, so the representative `t` stands for
+`2·t + 2^n + 1`). `varBaseMul` is an optimization that computes exactly the image
+of this operator — its ladder's structural output — and the laws state its results
+through it, over whichever ring the consumer reads in (`F` for the wire pin, `ℤ`
+for the group scalar). -/
+def Type1.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : R) : R :=
+  2 * t + 2 ^ n + 1
 
 end Snarky
