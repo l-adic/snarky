@@ -529,10 +529,10 @@ open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- The gadget is sound: under any satisfying valuation, for a base point reading
 on-curve, the wired bits are boolean, the scalar reads as their base-2 fold, and —
-whenever the ladder's regime fact holds at the bits' Type1 decode
-`2·(bits value) + 2^(5·chunks) + 1` — the result reads as exactly that multiple of
-the base: `varBaseMul g (Type1 t) ~ [2·t + 2^bits + 1]·g`, the `fromShifted`
-decode. The curve facts arrive bundled as the dictionary `d : HasCurve F`; the
+whenever the ladder's regime fact holds at the bits' `Type1.fromShifted` decode —
+the result reads as exactly that multiple of the base:
+`varBaseMul g (Type1 t) ~ [2·t + 2^bits + 1]·g`, the `fromShifted` decode.
+The curve facts arrive bundled as the dictionary `d : HasCurve F`; the
 regime fact (`HasCurve.LadderRegime`) is the ladder's analog of `endoMul`'s
 off-targets promise — per-scalar, because the one-wrap band's forbidden residues
 depend on the decoded value. -/
@@ -547,10 +547,10 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
             bits = ((r.lsbBits.toList.take (5 * chunks)).reverse).map (·.val V) ∧
             scalar.val.val V = bitsRegister bits ∧
             ∀ _ : d.LadderRegime (5 * chunks)
-                (2 * bitsVal bits + 2 ^ (5 * chunks) + 1),
+                (Type1.fromShifted (5 * chunks) ⟨bitsVal bits⟩),
               ∃ hfin : d.W.Nonsingular (r.g.x.val V) (r.g.y.val V),
                 Point.some _ _ hfin
-                  = (2 * bitsVal bits + 2 ^ (5 * chunks) + 1)
+                  = Type1.fromShifted (5 * chunks) ⟨bitsVal bits⟩
                       • Point.some _ _ hT) Q⦄
     (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
     ⦃Q⦄ := by
@@ -626,8 +626,8 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
           omega)]
     refine ⟨bl, hbool, by simpa using hblen, hsrc',
       heq.symm.trans hregpin, fun hregime => ?_⟩
-    obtain ⟨hfin, hpt⟩ := hpoint (by simpa using hregime)
-    exact ⟨hfin, by rw [← hTeq]; simpa using hpt⟩
+    obtain ⟨hfin, hpt⟩ := hpoint (by simpa [Type1.fromShifted] using hregime)
+    exact ⟨hfin, by rw [← hTeq]; simpa [Type1.fromShifted] using hpt⟩
 
 /-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. -/
 def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
@@ -690,7 +690,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (p.x.val V) (p.y.val V),
           ∃ s : ℤ,
             2 ^ (5 * chunks) < s ∧ s < 3 * 2 ^ (5 * chunks) ∧
-            (s : F) = Type1.fromShifted (5 * chunks) (t.val.val V) ∧
+            (s : F) = Type1.fromShifted (5 * chunks) ⟨t.val.val V⟩ ∧
             ∀ _ : d.LadderRegime (5 * chunks) s,
               ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hfin = s • Point.some _ _ hT) Q⦄
@@ -709,7 +709,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   refine ⟨2 * bitsVal bl + 2 ^ (5 * chunks) + 1, by omega, by omega, ?_,
     fun hregime => hpt hregime⟩
   rw [hreg, bitsRegister_eq_cast bl hb]
-  unfold Type1.fromShifted
+  simp only [Type1.fromShifted]
   push_cast
   ring
 
@@ -743,12 +743,13 @@ private theorem forM_pinZero_spec [Field F] [DecidableEq F]
 
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsVal_drop_of_zeros
   bitsRegister_eq_cast y_ne_zero_of_odd_order) in
-/-- `scaleFast2` is sound — the Type2 defining equation
-`scaleFast2 g (sDiv2, sOdd) ~ [2·sDiv2 + sOdd + 2^(5·chunks)]·g`: the inner ladder
-computes `[2·v + 2^(5·chunks) + 1]·g` at the register's decode `v`, the high-bit pins
-force `v < 2^sDiv2Bits`, and the parity correction folds `sOdd` in by conditionally
-subtracting the base. The parity's booleanity is the caller's promise (the
-`select_spec` shape); `splitFieldVar` supplies it in `scaleFast2'`. -/
+/-- `scaleFast2` is sound — the PS defining equation
+`scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`, the `SplitField`
+decode `2·sDiv2 + sOdd + 2^(5·chunks)`: the inner ladder computes the register's
+`Type1.fromShifted` multiple, the high-bit pins force `v < 2^sDiv2Bits`, and the
+parity correction folds `sOdd` in by conditionally subtracting the base. The
+parity's booleanity is the caller's promise (the `select_spec` shape);
+`splitFieldVar` supplies it in `scaleFast2'`. -/
 theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
@@ -757,10 +758,10 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (base.x.val V) (base.y.val V),
         ∀ bb : Bool, (↑sOdd : CVar F).val V = bit bb →
           ∃ v : ℤ, 0 ≤ v ∧ v < 2 ^ sDiv2Bits ∧ sDiv2.val V = ((v : ℤ) : F) ∧
-            ∀ _ : d.LadderRegime (5 * chunks) (2 * v + 2 ^ (5 * chunks) + 1),
+            ∀ _ : d.LadderRegime (5 * chunks) (Type1.fromShifted (5 * chunks) ⟨v⟩),
               ∃ hres : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hres
-                  = (2 * v + (if bb then 1 else 0) + 2 ^ (5 * chunks))
+                  = SplitField.fromShifted (5 * chunks) ⟨v, bb⟩
                       • Point.some _ _ hT) Q⦄
     (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
     ⦃Q⦄ := by
@@ -810,6 +811,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   refine ⟨bitsVal bl, hvlt.2, hvlt.1, ?_, fun hregime => ?_⟩
   · rw [hregF, bitsRegister_eq_cast bl hbool]
   · obtain ⟨hg, hgpt⟩ := hpfn hregime
+    simp only [Type1.fromShifted] at hgpt
     have hnegv : (CVar.negate_ base.y).val s.V = -(base.y.val s.V) := by
       simp [CVar.negate_, CVar.val_scale_]
     have hnegT : d.W.Nonsingular (base.x.val s.V) ((CVar.negate_ base.y).val s.V) := by
@@ -836,8 +838,9 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         rw [hxv, hyv]
         simpa [selectPure] using hqns
       refine ⟨hres, ?_⟩
-      rw [show (2 * bitsVal bl + (if false then (1:ℤ) else 0) + 2 ^ (5 * chunks))
-          = 2 * bitsVal bl + 2 ^ (5 * chunks) from by norm_num]
+      rw [show SplitField.fromShifted (5 * chunks) (⟨bitsVal bl, false⟩ : SplitField ℤ Bool)
+          = 2 * bitsVal bl + 2 ^ (5 * chunks) from by
+        simp [SplitField.fromShifted]]
       refine (Kimchi.Gate.EndoMul.some_congr d.W hres hqns ?_ ?_).trans hqpt
       · rw [hxv]; simp [selectPure]
       · rw [hyv]; simp [selectPure]
@@ -845,8 +848,9 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         rw [hxv, hyv]
         simpa [selectPure] using hg
       refine ⟨hres, ?_⟩
-      rw [show (2 * bitsVal bl + (if true then (1:ℤ) else 0) + 2 ^ (5 * chunks))
-          = 2 * bitsVal bl + 2 ^ (5 * chunks) + 1 from by norm_num; ring]
+      rw [show SplitField.fromShifted (5 * chunks) (⟨bitsVal bl, true⟩ : SplitField ℤ Bool)
+          = 2 * bitsVal bl + 2 ^ (5 * chunks) + 1 from by
+        simp [SplitField.fromShifted]; ring]
       refine (Kimchi.Gate.EndoMul.some_congr d.W hres hg ?_ ?_).trans hgpt
       · rw [hxv]; simp [selectPure]
       · rw [hyv]; simp [selectPure]
@@ -854,7 +858,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
 /-- `scaleFast2'` is sound — `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read
 through its parity split: the split's recombination `s = 2·v + sOdd` composes with
-`scaleFast2`'s Type2 decode. -/
+`scaleFast2`'s `SplitField.fromShifted` decode. -/
 theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sc : FVar F)
@@ -863,10 +867,10 @@ theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (base.x.val V) (base.y.val V),
           ∃ (v : ℤ) (bb : Bool), 0 ≤ v ∧ v < 2 ^ sDiv2Bits ∧
             sc.val V = 2 * ((v : ℤ) : F) + bit bb ∧
-            ∀ _ : d.LadderRegime (5 * chunks) (2 * v + 2 ^ (5 * chunks) + 1),
+            ∀ _ : d.LadderRegime (5 * chunks) (Type1.fromShifted (5 * chunks) ⟨v⟩),
               ∃ hres : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hres
-                  = (2 * v + (if bb then 1 else 0) + 2 ^ (5 * chunks))
+                  = SplitField.fromShifted (5 * chunks) ⟨v, bb⟩
                       • Point.some _ _ hT) Q⦄
     (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base sc)
     ⦃Q⦄ := by
