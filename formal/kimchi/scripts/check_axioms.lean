@@ -38,6 +38,8 @@ def roots : List Name :=
     `Kimchi.Gate.VarBaseMul.varBaseMul_forbidden_correct,
     `Kimchi.Gate.VarBaseMul.varBaseMul_subwrap_correct,
     `Kimchi.Gate.VarBaseMul.varBaseMul_off,
+    `Kimchi.Gate.VarBaseMul.chain_complete,
+    `Kimchi.Gate.VarBaseMul.ladderK_eq_bitsVal,
     `Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1,
     `Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2,
     `Kimchi.Gate.EndoScalar.sound, `Kimchi.Gate.EndoScalar.complete,

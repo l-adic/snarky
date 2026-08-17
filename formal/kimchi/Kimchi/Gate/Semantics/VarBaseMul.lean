@@ -1994,6 +1994,267 @@ theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
   · exact varBaseMul_forbidden_correct c m g T s hTne hholds hTns hTeq hbase hthread
       hP0ns hP0 h2 hodd hr1 hr2 hq4 hs hnf
 
+/-! ## The produce chain
+
+The honest walk: `chainBuild` threads the gate's canonical row (`build`) from the doubled
+init accumulator through a flat bit stream, five bits per row. `chain_complete` is its
+conditional completeness — under either ladder regime, every generated row satisfies the
+gate. The non-degeneracy is PRODUCED forward, not read off an accepted run: the
+accumulator entering bit step `j` is the ladder multiple `[ladderK bs j]·T`, the regime
+prices all four degeneracy residues at every step (`ladder_subwrap_nondegen` /
+`ladder_nondegen_tight`), and each generated step's two secant denominators are derived
+from those residues before the step is certified (`step_produce`). -/
+
+variable {F : Type*} [Field F] [DecidableEq F]
+
+/-- The ±1 sign a bit value selects: `+1` for `b = 1`, `−1` otherwise — the honest ℤ
+reading of the gate's `2·b − 1`. -/
+def bitSign (b : F) : ℤ := if b = 1 then 1 else -1
+
+/-- The honest ladder value after `j` bit steps of the stream `bs`, from the doubled
+init: `k 0 = 2`, `k (j+1) = 2·k j + bitSign (bs j)`. On a boolean stream this is the
+signed double-and-add ladder the pricing kernel prices; on the stream of a scalar's
+bits it decodes to `Type1`'s `2·s + 2^L + 1` (`ladderK_eq_bitsVal`). -/
+def ladderK (bs : ℕ → F) : ℕ → ℤ
+  | 0 => 2
+  | j + 1 => 2 * ladderK bs j + bitSign (bs j)
+
+/-- The honest rows: row `i` is `build` at the threaded accumulator and register,
+consuming bits `5i … 5i+4` of the stream. -/
+def chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) : ℕ → Witness F
+  | 0 => build xT yT x0 y0 n0 (bs 0) (bs 1) (bs 2) (bs 3) (bs 4)
+  | i + 1 =>
+    build xT yT (chainBuild xT yT x0 y0 n0 bs i).x5 (chainBuild xT yT x0 y0 n0 bs i).y5
+      (chainBuild xT yT x0 y0 n0 bs i).nPrime
+      (bs (5 * (i + 1))) (bs (5 * (i + 1) + 1)) (bs (5 * (i + 1) + 2))
+      (bs (5 * (i + 1) + 3)) (bs (5 * (i + 1) + 4))
+
+omit [DecidableEq F] in
+/-- Every `chainBuild` row is `build` at its own threaded fields — the uniform
+re-expression the produce induction rewrites with. -/
+theorem chainBuild_eta (xT yT x0 y0 n0 : F) (bs : ℕ → F) (i : ℕ) :
+    chainBuild xT yT x0 y0 n0 bs i
+      = build xT yT (chainBuild xT yT x0 y0 n0 bs i).x0
+          (chainBuild xT yT x0 y0 n0 bs i).y0 (chainBuild xT yT x0 y0 n0 bs i).n
+          (bs (5 * i)) (bs (5 * i + 1)) (bs (5 * i + 2)) (bs (5 * i + 3))
+          (bs (5 * i + 4)) := by
+  cases i <;> rfl
+
+/-- One honest bit step: at an accumulator `[k]·T` whose four degeneracy residues the
+regime has priced away, the generated `stepBit` values satisfy the bit block and the
+output is the nonsingular `[2k + bitSign b]·T`. The two secant denominators are derived,
+not assumed: `xi ≠ xT` from `k ≢ ±1`, and the second denominator from the intermediate
+`I + Q ≠ ±I`, i.e. `2k ≢ ∓1` (stepped through in the body). -/
+private lemma step_produce (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {xT yT b xi yi : F}
+    (hTns : c.Nonsingular xT yT) (hTne : Point.some _ _ hTns ≠ 0)
+    (hI : c.Nonsingular xi yi) (hbit : b = 0 ∨ b = 1)
+    {k : ℤ} (hIk : Point.some _ _ hI = k • Point.some _ _ hTns)
+    (hq1 : ¬((c.order : ℤ) ∣ (k - 1))) (hq2 : ¬((c.order : ℤ) ∣ (k + 1)))
+    (hq3 : ¬((c.order : ℤ) ∣ (2 * k - 1))) (hq4 : ¬((c.order : ℤ) ∣ (2 * k + 1))) :
+    singleBitHolds b xT yT (stepBit b xT yT xi yi).1 xi yi
+        (stepBit b xT yT xi yi).2.1 (stepBit b xT yT xi yi).2.2
+    ∧ ∃ hO : c.Nonsingular (stepBit b xT yT xi yi).2.1 (stepBit b xT yT xi yi).2.2,
+        Point.some _ _ hO = (2 * k + bitSign b) • Point.some _ _ hTns := by
+  have hshort : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0 := Fact.out
+  -- the sign-selected target `Q = ±T` and its scalar
+  have hQ : c.Nonsingular xT ((2 * b - 1) * yT) := signed_target_nonsingular c hshort hTns hbit
+  obtain ⟨e, heQ, -, hepm⟩ := signed_target c hshort hTns hQ hbit
+  -- first denominator: `xi ≠ xT` from `k ≢ ±1`
+  have hxne : xi ≠ xT := by
+    apply x_ne_xT_of_ne_base c hI hTns
+    · contrapose! hq1
+      have hd : (k - 1) • Point.some _ _ hTns = 0 := by
+        rw [sub_smul, one_smul, ← hIk, hq1, sub_self]
+      exact (zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
+    · contrapose! hq2
+      rw [← zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hq2,
+        neg_add_cancel]
+  -- the generated values, named
+  set s1 : F := (yi - (2 * b - 1) * yT) / (xi - xT) with hs1
+  set t : F := 2 * xi + xT - s1 * s1 with htdef
+  have e1 : (stepBit b xT yT xi yi).1 = s1 := rfl
+  -- the intermediate `M = I + Q = [k + e]·T` at the generated first slope
+  obtain ⟨hM, hMadd⟩ := secant_add c hshort hI hQ hxne hs1
+    (x3 := s1 * s1 - xi - xT) (y3 := s1 * (xi - (s1 * s1 - xi - xT)) - yi) rfl rfl
+  have hMk : Point.some _ _ hM = (k + e) • Point.some _ _ hTns := by
+    rw [← hMadd, hIk, heQ]; module
+  -- second denominator: `M ≠ ±I` from `2k ≢ ∓1`, so `x_M ≠ xi` and `t = xi − x_M ≠ 0`
+  have hMneI : Point.some _ _ hM ≠ Point.some _ _ hI := by
+    intro h
+    have he0 : e • Point.some _ _ hTns = 0 := by
+      have h' : ((k + e) - k) • Point.some _ _ hTns = 0 := by
+        rw [sub_smul, ← hMk, h, hIk, sub_self]
+      simpa using h'
+    rcases hepm with rfl | rfl
+    · rw [one_zsmul] at he0; exact hTne he0
+    · rw [neg_one_zsmul, neg_eq_zero] at he0; exact hTne he0
+  have hMnegI : Point.some _ _ hM ≠ -Point.some _ _ hI := by
+    intro h
+    have hz : (2 * k + e) • Point.some _ _ hTns = 0 := by
+      have h' : (k + e) • Point.some _ _ hTns + k • Point.some _ _ hTns = 0 := by
+        rw [← hMk, ← hIk, h, neg_add_cancel]
+      calc (2 * k + e) • Point.some _ _ hTns
+          = (k + e) • Point.some _ _ hTns + k • Point.some _ _ hTns := by module
+        _ = 0 := h'
+    have hdvd := (zsmul_eq_zero_iff_order_dvd c hTne _).1 hz
+    rcases hepm with rfl | rfl
+    · exact hq4 hdvd
+    · exact hq3 (by rwa [show 2 * k + (-1 : ℤ) = 2 * k - 1 from by ring] at hdvd)
+  have hxMne : s1 * s1 - xi - xT ≠ xi := x_ne_xT_of_ne_base c hM hI hMneI hMnegI
+  have htne : t ≠ 0 := by
+    rw [htdef]
+    intro h0
+    exact hxMne (by linear_combination -h0)
+  -- the generated block holds, and the sound step reads its output back
+  have hbb : b * b - b = 0 := by rcases hbit with rfl | rfl <;> ring
+  have hh := stepBit_holds b xT yT xi yi hbb (sub_ne_zero_of_ne hxne)
+    (by rw [e1, ← htdef]; exact htne)
+  obtain ⟨-, -, hO, e', hepm', heF', hOeq⟩ :=
+    gate_step_advance' c h2 hodd hTns hI hQ hbit hTne k hIk hq1 hq2 hh
+  have he' : e' = bitSign b := by
+    rcases hbit with rfl | rfl
+    · rcases hepm' with rfl | rfl
+      · exact absurd (by linear_combination heF' : (2 : F) = 0) h2
+      · simp [bitSign]
+    · rcases hepm' with rfl | rfl
+      · simp [bitSign]
+      · exact absurd (by linear_combination -heF' : (2 : F) = 0) h2
+  exact ⟨hh, hO, by rw [hOeq, he']⟩
+
+/-- One honest row: five `step_produce` steps threaded through `build`. The row's
+constraints hold and the output accumulator is the nonsingular five-fold advance
+`[k (j+5)]·T`, for any scalar sequence `k` satisfying the ladder recurrence on the
+row's bits whose window `[j, j+5)` the regime has priced. -/
+private lemma row_produce (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {xT yT : F} (hTns : c.Nonsingular xT yT) (hTne : Point.some _ _ hTns ≠ 0)
+    {b0 b1 b2 b3 b4 x0 y0 : F} (n : F)
+    (hb0 : b0 = 0 ∨ b0 = 1) (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1)
+    (hb3 : b3 = 0 ∨ b3 = 1) (hb4 : b4 = 0 ∨ b4 = 1)
+    (hI : c.Nonsingular x0 y0)
+    {k : ℕ → ℤ} {j : ℕ}
+    (hIk : Point.some _ _ hI = k j • Point.some _ _ hTns)
+    (hk1 : k (j + 1) = 2 * k j + bitSign b0)
+    (hk2 : k (j + 2) = 2 * k (j + 1) + bitSign b1)
+    (hk3 : k (j + 3) = 2 * k (j + 2) + bitSign b2)
+    (hk4 : k (j + 4) = 2 * k (j + 3) + bitSign b3)
+    (hk5 : k (j + 5) = 2 * k (j + 4) + bitSign b4)
+    (hq : ∀ l, j ≤ l → l < j + 5 →
+      ¬((c.order : ℤ) ∣ (k l - 1)) ∧ ¬((c.order : ℤ) ∣ (k l + 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * k l - 1)) ∧ ¬((c.order : ℤ) ∣ (2 * k l + 1))) :
+    Holds (build xT yT x0 y0 n b0 b1 b2 b3 b4)
+    ∧ ∃ h5 : c.Nonsingular (build xT yT x0 y0 n b0 b1 b2 b3 b4).x5
+        (build xT yT x0 y0 n b0 b1 b2 b3 b4).y5,
+        Point.some _ _ h5 = k (j + 5) • Point.some _ _ hTns := by
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq j le_rfl (by omega)
+  obtain ⟨hh0, hO1, hP1⟩ := step_produce c h2 hodd hTns hTne hI hb0 hIk hd1 hd2 hd3 hd4
+  rw [← hk1] at hP1
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 1) (by omega) (by omega)
+  obtain ⟨hh1, hO2, hP2⟩ := step_produce c h2 hodd hTns hTne hO1 hb1 hP1 hd1 hd2 hd3 hd4
+  rw [← hk2] at hP2
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 2) (by omega) (by omega)
+  obtain ⟨hh2, hO3, hP3⟩ := step_produce c h2 hodd hTns hTne hO2 hb2 hP2 hd1 hd2 hd3 hd4
+  rw [← hk3] at hP3
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 3) (by omega) (by omega)
+  obtain ⟨hh3, hO4, hP4⟩ := step_produce c h2 hodd hTns hTne hO3 hb3 hP3 hd1 hd2 hd3 hd4
+  rw [← hk4] at hP4
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 4) (by omega) (by omega)
+  obtain ⟨hh4, hO5, hP5⟩ := step_produce c h2 hodd hTns hTne hO4 hb4 hP4 hd1 hd2 hd3 hd4
+  rw [← hk5] at hP5
+  exact ⟨(holds_iff _).mpr
+    ⟨by simp only [decompHolds, decompCons, build]; ring, hh0, hh1, hh2, hh3, hh4⟩,
+    hO5, hP5⟩
+
+/-- **Completeness of the honest ladder.** From the doubled init `P₀ = [2]·T`, under
+either ladder regime — subwrap (`3·2^(5m) ≤ order`, no condition on the bits) or the
+one-wrap band with the stream's ladder value `ladderK bs (5m)` avoiding the forbidden
+residues — every generated row satisfies the gate. The regime dichotomy is
+`varBaseMul_off`'s, at the honest values. -/
+theorem chain_complete (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2) (m : ℕ)
+    {xT yT : F} (hTns : c.Nonsingular xT yT)
+    (bs : ℕ → F) (hbs : ∀ j, j < 5 * m → bs j = 0 ∨ bs j = 1)
+    {x0 y0 : F} (n0 : F) (hP0 : c.Nonsingular x0 y0)
+    (hP0eq : Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hTns)
+    (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
+      (2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧ c.order % 4 = 1 ∧
+        ladderK bs (5 * m) ∉ forbiddenValues c.order)) :
+    ∀ i, i < m → Holds (chainBuild xT yT x0 y0 n0 bs i) := by
+  have hTne : Point.some _ _ hTns ≠ 0 := Point.some_ne_zero hTns
+  have hε : ∀ j, j < 5 * m → bitSign (bs j) = 1 ∨ bitSign (bs j) = -1 := by
+    intro j _
+    unfold bitSign
+    split <;> simp
+  -- the regime prices all four degeneracy residues at every bit step
+  have hquad : ∀ j, j < 5 * m →
+      ¬((c.order : ℤ) ∣ (ladderK bs j - 1)) ∧ ¬((c.order : ℤ) ∣ (ladderK bs j + 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * ladderK bs j - 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * ladderK bs j + 1)) := by
+    rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
+    · exact Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub (ladderK bs)
+        (fun j => bitSign (bs j)) rfl hε (fun j _ => rfl)
+    · refine Ladder.ladder_nondegen_tight c.order (5 * m)
+        (Fact.out : Nat.Prime c.order) hq4 hr1 hr2 (ladderK bs)
+        (fun j => bitSign (bs j)) rfl hε (fun j _ => rfl) ?_
+      intro t ht hdvd
+      exact hnf ⟨t, ht, hdvd⟩
+  -- rows hold and the accumulator threads as the ladder multiple
+  have main : ∀ i, i ≤ m →
+      (∀ i', i' < i → Holds (chainBuild xT yT x0 y0 n0 bs i'))
+      ∧ ∃ hIi : c.Nonsingular (chainBuild xT yT x0 y0 n0 bs i).x0
+          (chainBuild xT yT x0 y0 n0 bs i).y0,
+          Point.some _ _ hIi = ladderK bs (5 * i) • Point.some _ _ hTns := by
+    intro i
+    induction i with
+    | zero =>
+      intro _
+      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0, by simpa using hP0eq⟩
+    | succ i ih =>
+      intro hi
+      obtain ⟨hrows, hIi, hIeq⟩ := ih (by omega)
+      obtain ⟨hrow, h5, h5eq⟩ := row_produce c h2 hodd hTns hTne
+        (chainBuild xT yT x0 y0 n0 bs i).n
+        (hbs (5 * i) (by omega)) (hbs (5 * i + 1) (by omega)) (hbs (5 * i + 2) (by omega))
+        (hbs (5 * i + 3) (by omega)) (hbs (5 * i + 4) (by omega)) hIi
+        (k := ladderK bs) (j := 5 * i) hIeq rfl rfl rfl rfl rfl
+        (fun l hl hl' => hquad l (by omega))
+      refine ⟨fun i' hi' => ?_, ?_⟩
+      · rcases Nat.lt_or_ge i' i with h | h
+        · exact hrows i' h
+        · have : i' = i := by omega
+          subst this
+          rw [chainBuild_eta]
+          exact hrow
+      · show ∃ hIi : c.Nonsingular (chainBuild xT yT x0 y0 n0 bs i).x5
+            (chainBuild xT yT x0 y0 n0 bs i).y5,
+            Point.some _ _ hIi = ladderK bs (5 * (i + 1)) • Point.some _ _ hTns
+        rw [chainBuild_eta xT yT x0 y0 n0 bs i,
+          show (5 : ℕ) * (i + 1) = 5 * i + 5 from by ring]
+        exact ⟨h5, h5eq⟩
+  exact (main m le_rfl).1
+
+/-- On a boolean stream the ladder decodes as `Type1`'s unshift of the base-2 value:
+`ladderK bs L = 2·bitsVal(bits) + 2^L + 1` — how a caller discharges
+`chain_complete`'s forbidden-band condition from the scalar it actually fed. -/
+theorem ladderK_eq_bitsVal (bs : ℕ → F) (L : ℕ)
+    (hb : ∀ j, j < L → bs j = 0 ∨ bs j = 1) :
+    ladderK bs L = 2 * bitsVal ((List.range L).map bs) + 2 ^ L + 1 := by
+  induction L with
+  | zero => simp [ladderK, bitsVal]
+  | succ L ih =>
+    have hsnoc : bitsVal ((List.range (L + 1)).map bs)
+        = 2 * bitsVal ((List.range L).map bs) + (if bs L = 1 then 1 else 0) := by
+      rw [List.range_succ, List.map_append]
+      simp [bitsVal, List.foldl_append]
+    rw [show ladderK bs (L + 1) = 2 * ladderK bs L + bitSign (bs L) from rfl,
+      ih (fun j hj => hb j (by omega)), hsnoc]
+    rcases hb L (by omega) with h | h <;> simp [bitSign, h] <;> ring
+
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 
 `scaleFast2` (the Pallas direction, below) range-checks the register, so its soundness is the
