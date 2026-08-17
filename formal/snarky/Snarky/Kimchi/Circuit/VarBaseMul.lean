@@ -673,25 +673,24 @@ theorem splitFieldVar_spec [Field F] [DecidableEq F] [ToNat F]
   rw [heq]
   simp [CVar.val_add_, CVar.val_scale_]
 
-open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
-/-- `scaleFast1` is sound — the `Type1` defining equation
-`scaleFast1 g (Type1 t) ~ [2·t + 2^(5·chunks) + 1]·g`: exactly `varBaseMul`'s
-promise, re-exposed at the returned point. -/
+open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsRegister_eq_cast) in
+/-- `scaleFast1` is sound — the PS defining equation
+`scaleFast1 g a ~ scalarMul (fromShifted a) g`: the result reads as `[s]·g` for the
+`Type1` unshift `s`, pinned in `F` as `2·t + 2^(5·chunks) + 1` and bounded by the
+width (what lets a two-field consumer read `s` exactly). The wired bits are
+`varBaseMul_spec`'s business; this statement is decode-only. -/
 theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
         ∀ hT : d.W.Nonsingular (p.x.val V) (p.y.val V),
-          ∃ bits : List F,
-            (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
-            t.val.val V = bitsRegister bits ∧
-            ∀ _ : d.LadderRegime (5 * chunks)
-                (2 * bitsVal bits + 2 ^ (5 * chunks) + 1),
+          ∃ s : ℤ,
+            2 ^ (5 * chunks) < s ∧ s < 3 * 2 ^ (5 * chunks) ∧
+            (s : F) = 2 * t.val.val V + 2 ^ (5 * chunks) + 1 ∧
+            ∀ _ : d.LadderRegime (5 * chunks) s,
               ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
-                Point.some _ _ hfin
-                  = (2 * bitsVal bits + 2 ^ (5 * chunks) + 1)
-                      • Point.some _ _ hT) Q⦄
+                Point.some _ _ hfin = s • Point.some _ _ hT) Q⦄
     (scaleFast1 (c := KimchiConstraint F) n chunks p t)
     ⦃Q⦄ := by
   simp only [scaleFast1]
@@ -702,7 +701,13 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   rename_i st hpre
   refine hpre r.g _ (fun hT => ?_)
   obtain ⟨bl, hb, hl, -, hreg, hpt⟩ := hr hT
-  exact ⟨bl, hb, hl, hreg, hpt⟩
+  obtain ⟨hlt, hnn⟩ := bitsVal_lt bl hb
+  rw [hl] at hlt
+  refine ⟨2 * bitsVal bl + 2 ^ (5 * chunks) + 1, by omega, by omega, ?_,
+    fun hregime => hpt hregime⟩
+  rw [hreg, bitsRegister_eq_cast bl hb]
+  push_cast
+  ring
 
 open Std.Do in
 /-- Pinning a list of variables to the zero constant reads them all as zero —
