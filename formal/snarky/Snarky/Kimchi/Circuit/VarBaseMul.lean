@@ -1052,7 +1052,7 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
       = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime := by
     rw [nAccWit_ok hnv hb0 hb1 hb2 hb3 hb4, build_nPrime]
   refine ⟨by rw [hnOk]; rfl, fun nAcc st₁ hgN hle₁ => ?_⟩
-  have hnA := reads_fvar (hgN _ hnOk)
+  have hnA := (hgN _ hnOk)
   mvcgen
   -- the five bit steps, each reading the previous accumulator
   have hw0Ok := bitWit_ok (CVar.eval_le hle₁ hxT) (CVar.eval_le hle₁ hyT)
@@ -1065,9 +1065,9 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
   rw [← es0] at hs0'
   rw [← ex0] at hx1'
   rw [← ey0] at hy1'
-  have hs0 := reads_fvar hs0'
-  have hx1 := reads_fvar hx1'
-  have hy1 := reads_fvar hy1'
+  have hs0 := hs0'
+  have hx1 := hx1'
+  have hy1 := hy1'
   mvcgen
   have hw1Ok := bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
     (CVar.eval_le (hle₁.trans hle₂) hxT) (CVar.eval_le (hle₁.trans hle₂) hyT)
@@ -1078,9 +1078,9 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
   rw [← es1] at hs1'
   rw [← ex1] at hx2'
   rw [← ey1] at hy2'
-  have hs1 := reads_fvar hs1'
-  have hx2 := reads_fvar hx2'
-  have hy2 := reads_fvar hy2'
+  have hs1 := hs1'
+  have hx2 := hx2'
+  have hy2 := hy2'
   mvcgen
   have hw2Ok := bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
     (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hxT)
@@ -1092,9 +1092,9 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
   rw [← es2] at hs2'
   rw [← ex2] at hx3'
   rw [← ey2] at hy3'
-  have hs2 := reads_fvar hs2'
-  have hx3 := reads_fvar hx3'
-  have hy3 := reads_fvar hy3'
+  have hs2 := hs2'
+  have hx3 := hx3'
+  have hy3 := hy3'
   mvcgen
   have hw3Ok := bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
     (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hxT)
@@ -1106,9 +1106,9 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
   rw [← es3] at hs3'
   rw [← ex3] at hx4'
   rw [← ey3] at hy4'
-  have hs3 := reads_fvar hs3'
-  have hx4 := reads_fvar hx4'
-  have hy4 := reads_fvar hy4'
+  have hs3 := hs3'
+  have hx4 := hx4'
+  have hy4 := hy4'
   mvcgen
   have hw4Ok := bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
     (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hxT)
@@ -1121,9 +1121,9 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
   rw [← es4] at hs4'
   rw [← ex4] at hx5'
   rw [← ey4] at hy5'
-  have hs4 := reads_fvar hs4'
-  have hx5 := reads_fvar hx5'
-  have hy5 := reads_fvar hy5'
+  have hs4 := hs4'
+  have hx5 := hx5'
+  have hy5 := hy5'
   mvcgen
   have hleA : st₀.env.Le st₆.env :=
     hle₁.trans ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆)
