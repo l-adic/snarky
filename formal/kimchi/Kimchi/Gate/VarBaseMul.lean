@@ -277,6 +277,101 @@ def build [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F) : Witness F :=
   , n, nPrime := b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * n))))
   , b0, b1, b2, b3, b4, s0, s1, s2, s3, s4 }
 
+/-! ## The canonical row's fields
+
+`build`'s five-step `let` chain, read one field at a time. A consumer identifying a
+prover's cells with the canonical row rewrites with these instead of normalising the
+chain itself. -/
+
+section BuildFields
+
+variable [Field F] (xb yb x0 y0 n b0 b1 b2 b3 b4 : F)
+
+/-- The row's fixed cells are the arguments. -/
+theorem build_fields :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).xT = xb
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).yT = yb
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).x0 = x0
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).y0 = y0
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).n = n
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).b0 = b0
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).b1 = b1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).b2 = b2
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).b3 = b3
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).b4 = b4 :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- The register update. -/
+theorem build_nPrime :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).nPrime
+      = b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * n)))) := rfl
+
+/-- Bit step 0: the slope and the output accumulator are `stepBit` at the step's own
+input cells. -/
+theorem build_step0 :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).s0 = (stepBit b0 xb yb x0 y0).1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).x1 = (stepBit b0 xb yb x0 y0).2.1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).y1 = (stepBit b0 xb yb x0 y0).2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- Bit step 1: the slope and the output accumulator are `stepBit` at the step's own
+input cells. -/
+theorem build_step1 :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).s1
+      = (stepBit b1 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x1
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y1).1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).x2
+      = (stepBit b1 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x1
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y1).2.1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).y2
+      = (stepBit b1 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x1
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y1).2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- Bit step 2: the slope and the output accumulator are `stepBit` at the step's own
+input cells. -/
+theorem build_step2 :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).s2
+      = (stepBit b2 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x2
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y2).1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).x3
+      = (stepBit b2 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x2
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y2).2.1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).y3
+      = (stepBit b2 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x2
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y2).2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- Bit step 3: the slope and the output accumulator are `stepBit` at the step's own
+input cells. -/
+theorem build_step3 :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).s3
+      = (stepBit b3 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x3
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y3).1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).x4
+      = (stepBit b3 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x3
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y3).2.1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).y4
+      = (stepBit b3 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x3
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y3).2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- Bit step 4: the slope and the output accumulator are `stepBit` at the step's own
+input cells. -/
+theorem build_step4 :
+    (build xb yb x0 y0 n b0 b1 b2 b3 b4).s4
+      = (stepBit b4 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x4
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y4).1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).x5
+      = (stepBit b4 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x4
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y4).2.1
+    ∧ (build xb yb x0 y0 n b0 b1 b2 b3 b4).y5
+      = (stepBit b4 xb yb (build xb yb x0 y0 n b0 b1 b2 b3 b4).x4
+          (build xb yb x0 y0 n b0 b1 b2 b3 b4).y4).2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+end BuildFields
+
 instance : Fact (Nat.Prime 97) := ⟨by norm_num⟩
 
 /-- A concrete 5-bit step over `ZMod 97`: target `T = (3, 5)`, input acc `(10, 20)`,

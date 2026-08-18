@@ -90,6 +90,32 @@ private def bitWit [Field F] [DecidableEq F] (t : AffinePoint (FVar F))
   let s2 := 2 * yi / (2 * xi + xb - s1Sq) - s1
   pure (s1, s1Sq, s2, xo, yo)
 
+/-- One 5-bit round (PS's `mapAccumM` body): the register advice, then five bit-step
+quintets threaded through the accumulator, collected as the gate's `ScaleRound`
+record and the next `(acc, register)` pair. Named so it carries its own law per
+reading — the caller's loop then walks one registered spec per round. -/
+def scaleRound [Field F] [DecidableEq F] [BasicSystem F c]
+    (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 5) :
+    CircuitM F c (ScaleRound F × (AffinePoint (FVar F) × FVar F)) := do
+  let nAcc ← witness (val := F) (nAccWit st.2 bs)
+  let w0 ← witness (val := F × F × F × F × F) (bitWit base bs[0] st.1)
+  let a1 : AffinePoint (FVar F) := ⟨w0.2.2.2.1, w0.2.2.2.2⟩
+  let w1 ← witness (val := F × F × F × F × F) (bitWit base bs[1] a1)
+  let a2 : AffinePoint (FVar F) := ⟨w1.2.2.2.1, w1.2.2.2.2⟩
+  let w2 ← witness (val := F × F × F × F × F) (bitWit base bs[2] a2)
+  let a3 : AffinePoint (FVar F) := ⟨w2.2.2.2.1, w2.2.2.2.2⟩
+  let w3 ← witness (val := F × F × F × F × F) (bitWit base bs[3] a3)
+  let a4 : AffinePoint (FVar F) := ⟨w3.2.2.2.1, w3.2.2.2.2⟩
+  let w4 ← witness (val := F × F × F × F × F) (bitWit base bs[4] a4)
+  let a5 : AffinePoint (FVar F) := ⟨w4.2.2.2.1, w4.2.2.2.2⟩
+  pure (({ acc0 := st.1, acc1 := a1, acc2 := a2, acc3 := a3, acc4 := a4, acc5 := a5,
+           bit0 := bs[0], bit1 := bs[1], bit2 := bs[2], bit3 := bs[3], bit4 := bs[4],
+           slope0 := w0.1, slope1 := w1.1, slope2 := w2.1, slope3 := w3.1,
+           slope4 := w4.1,
+           nPrev := st.2, nNext := nAcc, base } : ScaleRound F),
+         (a5, nAcc))
+
 /-- What `varBaseMul` hands back (PS's `{ g, lsbBits }` record): the scalar multiple
 and the scalar's full bit decomposition, which `scaleFast2` pins. -/
 structure VarBaseMulResult (n : ℕ) (F : Type) where
@@ -112,27 +138,7 @@ def varBaseMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let msb : List (FVar F) := (lsbBits.toList.take (5 * chunks)).reverse
   let window : ℕ → Vector (FVar F) 5 := fun i =>
     Vector.ofFn fun j => msb.getD (5 * i + j.1) (.const 0)
-  let (rounds, fin) ← mapAccumM
-    (fun (st : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) => do
-      let nAcc ← witness (val := F) (nAccWit st.2 bs)
-      let w0 ← witness (val := F × F × F × F × F) (bitWit base bs[0] st.1)
-      let a1 : AffinePoint (FVar F) := ⟨w0.2.2.2.1, w0.2.2.2.2⟩
-      let w1 ← witness (val := F × F × F × F × F) (bitWit base bs[1] a1)
-      let a2 : AffinePoint (FVar F) := ⟨w1.2.2.2.1, w1.2.2.2.2⟩
-      let w2 ← witness (val := F × F × F × F × F) (bitWit base bs[2] a2)
-      let a3 : AffinePoint (FVar F) := ⟨w2.2.2.2.1, w2.2.2.2.2⟩
-      let w3 ← witness (val := F × F × F × F × F) (bitWit base bs[3] a3)
-      let a4 : AffinePoint (FVar F) := ⟨w3.2.2.2.1, w3.2.2.2.2⟩
-      let w4 ← witness (val := F × F × F × F × F) (bitWit base bs[4] a4)
-      let a5 : AffinePoint (FVar F) := ⟨w4.2.2.2.1, w4.2.2.2.2⟩
-      pure (({ acc0 := st.1, acc1 := a1, acc2 := a2, acc3 := a3, acc4 := a4,
-               acc5 := a5,
-               bit0 := bs[0], bit1 := bs[1], bit2 := bs[2], bit3 := bs[3],
-               bit4 := bs[4],
-               slope0 := w0.1, slope1 := w1.1, slope2 := w2.1, slope3 := w3.1,
-               slope4 := w4.1,
-               nPrev := st.2, nNext := nAcc, base } : ScaleRound F),
-            (a5, nAcc)))
+  let (rounds, fin) ← mapAccumM (scaleRound base)
     (p.p, .const 0) ((List.range chunks).map window)
   addConstraint (KimchiSystem.varBaseMul rounds)
   assertEqual fin.2 scalar.val
@@ -540,7 +546,7 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  simp only [varBaseMul, mapAccumM]
+  simp only [varBaseMul, scaleRound, mapAccumM]
   mvcgen
   rename_i s hpre
   intro sbase _ hsx hsy
@@ -991,6 +997,180 @@ private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
   simp [bitWit, AsProver.readCVar, hxb, hyb, hxi, hyi, hb,
     Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
 
+open Std.Do in
+open Kimchi.Gate.VarBaseMul (build_fields build_nPrime
+  build_step0 build_step1 build_step2 build_step3 build_step4) in
+/-- **One round is the gate's canonical row.** On readable base, accumulator and
+register cells and five readable bits, the honest round accepts and its collected
+`ScaleRound` reads as `build` at exactly those values — the returned accumulator and
+register being that row's `x5`/`y5`/`nPrime`. Stated over the gate model's row rather
+than any particular walk, so the caller's loop supplies only the reads and gets the
+row back; registered, so `mvcgen` applies it once per iteration. -/
+@[spec] theorem scaleRound_complete_spec [Field F] [DecidableEq F]
+    (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 5)
+    (Q : PostCond (ScaleRound F × (AffinePoint (FVar F) × FVar F))
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env => (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
+          (st.1.x.eval env).isOk ∧ (st.1.y.eval env).isOk ∧ (st.2.eval env).isOk ∧
+          ∀ (j : ℕ) (hj : j < 5), ((bs[j]'hj).eval env).isOk)
+        (fun env r env' => ∀ xT yT x0 y0 nv b0 b1 b2 b3 b4,
+          base.x.eval env = .ok xT → base.y.eval env = .ok yT →
+          st.1.x.eval env = .ok x0 → st.1.y.eval env = .ok y0 →
+          st.2.eval env = .ok nv →
+          bs[0].eval env = .ok b0 → bs[1].eval env = .ok b1 →
+          bs[2].eval env = .ok b2 → bs[3].eval env = .ok b3 →
+          bs[4].eval env = .ok b4 →
+          ScaleRound.eval env' r.1
+              = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4)
+            ∧ r.2.1.x.eval env'
+                = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x5
+            ∧ r.2.1.y.eval env'
+                = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y5
+            ∧ r.2.2.eval env'
+                = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime)
+        Q⦄
+    (scaleRound (c := KimchiProverC F) base st bs)
+    ⦃Q⦄ := by
+  simp only [scaleRound]
+  mvcgen
+  rename_i st₀ hpre
+  obtain ⟨⟨hbxk, hbyk, haxk, hayk, hank, hbk⟩, hk⟩ := hpre
+  obtain ⟨xT, hxT⟩ := CVar.evalOk hbxk
+  obtain ⟨yT, hyT⟩ := CVar.evalOk hbyk
+  obtain ⟨x0, hx0⟩ := CVar.evalOk haxk
+  obtain ⟨y0, hy0⟩ := CVar.evalOk hayk
+  obtain ⟨nv, hnv⟩ := CVar.evalOk hank
+  obtain ⟨b0, hb0⟩ := CVar.evalOk (hbk 0 (by omega))
+  obtain ⟨b1, hb1⟩ := CVar.evalOk (hbk 1 (by omega))
+  obtain ⟨b2, hb2⟩ := CVar.evalOk (hbk 2 (by omega))
+  obtain ⟨b3, hb3⟩ := CVar.evalOk (hbk 3 (by omega))
+  obtain ⟨b4, hb4⟩ := CVar.evalOk (hbk 4 (by omega))
+  -- the register advice computes the row's `nPrime`
+  have hnOk : nAccWit st.2 bs st₀.env
+      = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime := by
+    rw [nAccWit_ok hnv hb0 hb1 hb2 hb3 hb4, build_nPrime]
+  refine ⟨by rw [hnOk]; rfl, fun nAcc st₁ hgN hle₁ => ?_⟩
+  have hnA := reads_fvar (hgN _ hnOk)
+  mvcgen
+  -- the five bit steps, each reading the previous accumulator
+  have hw0Ok := bitWit_ok (CVar.eval_le hle₁ hxT) (CVar.eval_le hle₁ hyT)
+    (CVar.eval_le hle₁ hx0) (CVar.eval_le hle₁ hy0) (CVar.eval_le hle₁ hb0)
+  refine ⟨by rw [hw0Ok]; rfl, fun w0 st₂ hg0 hle₂ => ?_⟩
+  obtain ⟨hs0', -, -, hx1', hy1'⟩ := hg0 _ hw0Ok
+  obtain ⟨es0, ex0, ey0⟩ := build_step0 xT yT x0 y0 nv b0 b1 b2 b3 b4
+  obtain ⟨-, -, hfx0, hfy0, -, hfb0, hfb1, hfb2, hfb3, hfb4⟩ :=
+    build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4
+  rw [← es0] at hs0'
+  rw [← ex0] at hx1'
+  rw [← ey0] at hy1'
+  have hs0 := reads_fvar hs0'
+  have hx1 := reads_fvar hx1'
+  have hy1 := reads_fvar hy1'
+  mvcgen
+  have hw1Ok := bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
+    (CVar.eval_le (hle₁.trans hle₂) hxT) (CVar.eval_le (hle₁.trans hle₂) hyT)
+    hx1 hy1 (CVar.eval_le (hle₁.trans hle₂) hb1)
+  refine ⟨by rw [hw1Ok]; rfl, fun w1 st₃ hg1 hle₃ => ?_⟩
+  obtain ⟨hs1', -, -, hx2', hy2'⟩ := hg1 _ hw1Ok
+  obtain ⟨es1, ex1, ey1⟩ := build_step1 xT yT x0 y0 nv b0 b1 b2 b3 b4
+  rw [← es1] at hs1'
+  rw [← ex1] at hx2'
+  rw [← ey1] at hy2'
+  have hs1 := reads_fvar hs1'
+  have hx2 := reads_fvar hx2'
+  have hy2 := reads_fvar hy2'
+  mvcgen
+  have hw2Ok := bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
+    (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hxT)
+    (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hyT) hx2 hy2
+    (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hb2)
+  refine ⟨by rw [hw2Ok]; rfl, fun w2 st₄ hg2 hle₄ => ?_⟩
+  obtain ⟨hs2', -, -, hx3', hy3'⟩ := hg2 _ hw2Ok
+  obtain ⟨es2, ex2, ey2⟩ := build_step2 xT yT x0 y0 nv b0 b1 b2 b3 b4
+  rw [← es2] at hs2'
+  rw [← ex2] at hx3'
+  rw [← ey2] at hy3'
+  have hs2 := reads_fvar hs2'
+  have hx3 := reads_fvar hx3'
+  have hy3 := reads_fvar hy3'
+  mvcgen
+  have hw3Ok := bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
+    (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hxT)
+    (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hyT) hx3 hy3
+    (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hb3)
+  refine ⟨by rw [hw3Ok]; rfl, fun w3 st₅ hg3 hle₅ => ?_⟩
+  obtain ⟨hs3', -, -, hx4', hy4'⟩ := hg3 _ hw3Ok
+  obtain ⟨es3, ex3, ey3⟩ := build_step3 xT yT x0 y0 nv b0 b1 b2 b3 b4
+  rw [← es3] at hs3'
+  rw [← ex3] at hx4'
+  rw [← ey3] at hy4'
+  have hs3 := reads_fvar hs3'
+  have hx4 := reads_fvar hx4'
+  have hy4 := reads_fvar hy4'
+  mvcgen
+  have hw4Ok := bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
+    (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hxT)
+    (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hyT)
+    hx4 hy4
+    (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hb4)
+  refine ⟨by rw [hw4Ok]; rfl, fun w4 st₆ hg4 hle₆ => ?_⟩
+  obtain ⟨hs4', -, -, hx5', hy5'⟩ := hg4 _ hw4Ok
+  obtain ⟨es4, ex4, ey4⟩ := build_step4 xT yT x0 y0 nv b0 b1 b2 b3 b4
+  rw [← es4] at hs4'
+  rw [← ex4] at hx5'
+  rw [← ey4] at hy5'
+  have hs4 := reads_fvar hs4'
+  have hx5 := reads_fvar hx5'
+  have hy5 := reads_fvar hy5'
+  mvcgen
+  have hleA : st₀.env.Le st₆.env :=
+    hle₁.trans ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆)
+  refine hk _ st₆ ?_ hleA
+  intro xT' yT' x0' y0' nv' b0' b1' b2' b3' b4'
+    hxT' hyT' hx0' hy0' hnv' hb0' hb1' hb2' hb3' hb4'
+  rw [hxT] at hxT'; injection hxT' with hxT'
+  rw [hyT] at hyT'; injection hyT' with hyT'
+  rw [hx0] at hx0'; injection hx0' with hx0'
+  rw [hy0] at hy0'; injection hy0' with hy0'
+  rw [hnv] at hnv'; injection hnv' with hnv'
+  rw [hb0] at hb0'; injection hb0' with hb0'
+  rw [hb1] at hb1'; injection hb1' with hb1'
+  rw [hb2] at hb2'; injection hb2' with hb2'
+  rw [hb3] at hb3'; injection hb3' with hb3'
+  rw [hb4] at hb4'; injection hb4' with hb4'
+  subst hxT' hyT' hx0' hy0' hnv' hb0' hb1' hb2' hb3' hb4'
+  refine ⟨evalScale_ok_iff.mpr ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, hx5, hy5,
+    CVar.eval_le ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆) hnA⟩
+  · exact CVar.eval_le hleA hxT
+  · exact CVar.eval_le hleA hyT
+  · rw [hfx0]; exact CVar.eval_le hleA hx0
+  · rw [hfy0]; exact CVar.eval_le hleA hy0
+  · exact CVar.eval_le (((hle₃.trans hle₄).trans hle₅).trans hle₆) hx1
+  · exact CVar.eval_le (((hle₃.trans hle₄).trans hle₅).trans hle₆) hy1
+  · exact CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hx2
+  · exact CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hy2
+  · exact CVar.eval_le (hle₅.trans hle₆) hx3
+  · exact CVar.eval_le (hle₅.trans hle₆) hy3
+  · exact CVar.eval_le hle₆ hx4
+  · exact CVar.eval_le hle₆ hy4
+  · exact hx5
+  · exact hy5
+  · exact CVar.eval_le hleA hnv
+  · exact CVar.eval_le ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆) hnA
+  · rw [hfb0]; exact CVar.eval_le hleA hb0
+  · rw [hfb1]; exact CVar.eval_le hleA hb1
+  · rw [hfb2]; exact CVar.eval_le hleA hb2
+  · rw [hfb3]; exact CVar.eval_le hleA hb3
+  · rw [hfb4]; exact CVar.eval_le hleA hb4
+  · exact CVar.eval_le (((hle₃.trans hle₄).trans hle₅).trans hle₆) hs0
+  · exact CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hs1
+  · exact CVar.eval_le (hle₅.trans hle₆) hs2
+  · exact CVar.eval_le hle₆ hs3
+  · exact hs4
+
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
 /-- The gadget is complete, generic over the curve dictionary: the honest prover run
 accepts on a readable on-curve base and a readable in-range faithful scalar whose
@@ -1152,7 +1332,14 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         Kimchi.Gate.VarBaseMul.Holds w⌝
   case vc1.step =>
     rename_i pref cur suff hsplit b s' hinv
-    obtain ⟨hLe, ⟨hxI, hyI, hnI⟩, hrounds⟩ := hinv
+    obtain ⟨hLe, ⟨hxI₀, hyI₀, hnI₀⟩, hrounds⟩ := hinv
+    -- name the walk index the loop cursor carries
+    have hxI : b.fst.1.x.eval s'.env
+        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF pref.length).x0 := hxI₀
+    have hyI : b.fst.1.y.eval s'.env
+        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF pref.length).y0 := hyI₀
+    have hnI : b.fst.2.eval s'.env
+        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF pref.length).n := hnI₀
     have hkrows : pref.length < chunks := by
       have hlen := congrArg List.length hsplit
       simp only [List.length_map, List.length_range, List.length_append,
@@ -1200,189 +1387,40 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       intro j hj
       simp only [Vector.getElem_ofFn]
       exact hbit j hj
-    -- shorthands for the row
-    have hxT' : base.x.eval s'.env = .ok xv :=
-      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsx
-    have hyT' : base.y.eval s'.env = .ok yv :=
-      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsy
     have hcurj0 : ((Vector.ofFn (fun j : Fin 5 =>
         ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
           (.const 0)))[0]'(by omega)).eval s'.env
         = .ok (bsF (5 * pref.length)) := hcurj 0 (by omega)
-    -- the register witness
-    have hnOk : nAccWit b.fst.2 (Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0))) s'.env
-        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-            pref.length).nPrime) := by
-      rw [nAccWit_ok hnI hcurj0 (hcurj 1 (by omega))
-        (hcurj 2 (by omega)) (hcurj 3 (by omega)) (hcurj 4 (by omega)),
-        Kimchi.Gate.VarBaseMul.chainBuild_nPrime]
-    refine ⟨by rw [hnOk]; rfl, fun nAcc st₄ hgN hle₄ => ?_⟩
-    have hnA : nAcc.eval st₄.env = .ok ((Kimchi.Gate.VarBaseMul.chainBuild
-        xv yv x0v y0v 0 bsF pref.length).nPrime) := hgN _ hnOk
-    mvcgen
-    -- the five bit steps: each quintet reads the previous accumulator and
-    -- computes `stepBit`, i.e. the walk's next fields
-    have hw0Ok := bitWit_ok (CVar.eval_le hle₄ hxT') (CVar.eval_le hle₄ hyT')
-      (CVar.eval_le hle₄ hxI) (CVar.eval_le hle₄ hyI) (CVar.eval_le hle₄ hcurj0)
-    refine ⟨by rw [hw0Ok]; rfl, fun w0 st₅ hg0 hle₅ => ?_⟩
-    obtain ⟨hs0e', -, -, hx1e', hy1e'⟩ := hg0 _ hw0Ok
-    obtain ⟨es0, ex0, ey0⟩ :=
-      Kimchi.Gate.VarBaseMul.chainBuild_step0 xv yv x0v y0v 0 bsF pref.length
-    rw [← es0] at hs0e'
-    rw [← ex0] at hx1e'
-    rw [← ey0] at hy1e'
-    have hs0e := reads_fvar hs0e'
-    have hx1e := reads_fvar hx1e'
-    have hy1e := reads_fvar hy1e'
-    mvcgen
-    have hw1Ok := bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
-      (CVar.eval_le (hle₄.trans hle₅) hxT') (CVar.eval_le (hle₄.trans hle₅) hyT')
-      hx1e hy1e (CVar.eval_le (hle₄.trans hle₅) (hcurj 1 (by omega)))
-    refine ⟨by rw [hw1Ok]; rfl, fun w1 st₆ hg1 hle₆ => ?_⟩
-    obtain ⟨hs1e', -, -, hx2e', hy2e'⟩ := hg1 _ hw1Ok
-    obtain ⟨es1, ex1, ey1⟩ :=
-      Kimchi.Gate.VarBaseMul.chainBuild_step1 xv yv x0v y0v 0 bsF pref.length
-    rw [← es1] at hs1e'
-    rw [← ex1] at hx2e'
-    rw [← ey1] at hy2e'
-    have hs1e := reads_fvar hs1e'
-    have hx2e := reads_fvar hx2e'
-    have hy2e := reads_fvar hy2e'
-    mvcgen
-    have hw2Ok := bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
-      (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hxT')
-      (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hyT') hx2e hy2e
-      (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) (hcurj 2 (by omega)))
-    refine ⟨by rw [hw2Ok]; rfl, fun w2 st₇ hg2 hle₇ => ?_⟩
-    obtain ⟨hs2e', -, -, hx3e', hy3e'⟩ := hg2 _ hw2Ok
-    obtain ⟨es2, ex2, ey2⟩ :=
-      Kimchi.Gate.VarBaseMul.chainBuild_step2 xv yv x0v y0v 0 bsF pref.length
-    rw [← es2] at hs2e'
-    rw [← ex2] at hx3e'
-    rw [← ey2] at hy3e'
-    have hs2e := reads_fvar hs2e'
-    have hx3e := reads_fvar hx3e'
-    have hy3e := reads_fvar hy3e'
-    mvcgen
-    have hw3Ok := bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
-      (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hxT')
-      (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hyT') hx3e hy3e
-      (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇)
-        (hcurj 3 (by omega)))
-    refine ⟨by rw [hw3Ok]; rfl, fun w3 st₈ hg3 hle₈ => ?_⟩
-    obtain ⟨hs3e', -, -, hx4e', hy4e'⟩ := hg3 _ hw3Ok
-    obtain ⟨es3, ex3, ey3⟩ :=
-      Kimchi.Gate.VarBaseMul.chainBuild_step3 xv yv x0v y0v 0 bsF pref.length
-    rw [← es3] at hs3e'
-    rw [← ex3] at hx4e'
-    rw [← ey3] at hy4e'
-    have hs3e := reads_fvar hs3e'
-    have hx4e := reads_fvar hx4e'
-    have hy4e := reads_fvar hy4e'
-    mvcgen
-    have hw4Ok := bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
-      (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hxT')
-      (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hyT')
-      hx4e hy4e
-      (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈)
-        (hcurj 4 (by omega)))
-    refine ⟨by rw [hw4Ok]; rfl, fun w4 st₉ hg4 hle₉ => ?_⟩
-    obtain ⟨hs4e', -, -, hx5e', hy5e'⟩ := hg4 _ hw4Ok
-    obtain ⟨es4, ex4, ey4⟩ :=
-      Kimchi.Gate.VarBaseMul.chainBuild_step4 xv yv x0v y0v 0 bsF pref.length
-    rw [← es4] at hs4e'
-    rw [← ex4] at hx5e'
-    rw [← ey4] at hy5e'
-    have hs4e := reads_fvar hs4e'
-    have hx5e := reads_fvar hx5e'
-    have hy5e := reads_fvar hy5e'
-    mvcgen
-    -- the collected round reads as the walk's row
-    have hleB : st₄.env.Le st₉.env :=
-      (((hle₅.trans hle₆).trans hle₇).trans hle₈).trans hle₉
-    have hleA : s'.env.Le st₉.env := hle₄.trans hleB
-    have hround : ScaleRound.eval st₉.env
-        { acc0 := b.fst.1,
-          acc1 := ⟨w0.2.2.2.1, w0.2.2.2.2⟩, acc2 := ⟨w1.2.2.2.1, w1.2.2.2.2⟩,
-          acc3 := ⟨w2.2.2.2.1, w2.2.2.2.2⟩, acc4 := ⟨w3.2.2.2.1, w3.2.2.2.2⟩,
-          acc5 := ⟨w4.2.2.2.1, w4.2.2.2.2⟩,
-          bit0 := (Vector.ofFn (fun j : Fin 5 =>
-            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-              (.const 0)))[0],
-          bit1 := (Vector.ofFn (fun j : Fin 5 =>
-            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-              (.const 0)))[1],
-          bit2 := (Vector.ofFn (fun j : Fin 5 =>
-            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-              (.const 0)))[2],
-          bit3 := (Vector.ofFn (fun j : Fin 5 =>
-            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-              (.const 0)))[3],
-          bit4 := (Vector.ofFn (fun j : Fin 5 =>
-            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-              (.const 0)))[4],
-          slope0 := w0.1, slope1 := w1.1, slope2 := w2.1, slope3 := w3.1,
-          slope4 := w4.1,
-          nPrev := b.fst.2, nNext := nAcc, base := base }
-        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-            pref.length) := by
-      obtain ⟨hfxT, hfyT, hfb0, hfb1, hfb2, hfb3, hfb4⟩ :=
-        Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF pref.length
-      refine evalScale_ok_iff.mpr
-        ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-          ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-      · rw [hfxT]
-        exact CVar.eval_le hleA hxT'
-      · rw [hfyT]
-        exact CVar.eval_le hleA hyT'
-      · exact CVar.eval_le hleA hxI
-      · exact CVar.eval_le hleA hyI
-      · exact CVar.eval_le ((((hle₆.trans hle₇).trans hle₈).trans hle₉)) hx1e
-      · exact CVar.eval_le ((((hle₆.trans hle₇).trans hle₈).trans hle₉)) hy1e
-      · exact CVar.eval_le (((hle₇.trans hle₈).trans hle₉)) hx2e
-      · exact CVar.eval_le (((hle₇.trans hle₈).trans hle₉)) hy2e
-      · exact CVar.eval_le ((hle₈.trans hle₉)) hx3e
-      · exact CVar.eval_le ((hle₈.trans hle₉)) hy3e
-      · exact CVar.eval_le hle₉ hx4e
-      · exact CVar.eval_le hle₉ hy4e
-      · exact hx5e
-      · exact hy5e
-      · exact CVar.eval_le hleA hnI
-      · exact CVar.eval_le hleB hnA
-      · rw [hfb0]
-        exact CVar.eval_le hleA hcurj0
-      · rw [hfb1]
-        exact CVar.eval_le hleA (hcurj 1 (by omega))
-      · rw [hfb2]
-        exact CVar.eval_le hleA (hcurj 2 (by omega))
-      · rw [hfb3]
-        exact CVar.eval_le hleA (hcurj 3 (by omega))
-      · rw [hfb4]
-        exact CVar.eval_le hleA (hcurj 4 (by omega))
-      · exact CVar.eval_le ((((hle₆.trans hle₇).trans hle₈).trans hle₉)) hs0e
-      · exact CVar.eval_le (((hle₇.trans hle₈).trans hle₉)) hs1e
-      · exact CVar.eval_le ((hle₈.trans hle₉)) hs2e
-      · exact CVar.eval_le hle₉ hs3e
-      · exact hs4e
+    have hxT' : base.x.eval s'.env = .ok xv :=
+      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsx
+    have hyT' : base.y.eval s'.env = .ok yv :=
+      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsy
+    -- the round's own law does the rest
+    refine ⟨⟨by rw [hxT']; rfl, by rw [hyT']; rfl, by rw [hxI]; rfl,
+      by rw [hyI]; rfl, by rw [hnI]; rfl,
+      fun j hj => by rw [hcurj j hj]; rfl⟩, fun r st₄ hpost hle₄ => ?_⟩
+    obtain ⟨hrow, hx5, hy5, hn5⟩ := hpost xv yv _ _ _ _ _ _ _ _
+      hxT' hyT' hxI hyI hnI hcurj0 (hcurj 1 (by omega))
+      (hcurj 2 (by omega)) (hcurj 3 (by omega)) (hcurj 4 (by omega))
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_eta xv yv x0v y0v 0 bsF pref.length] at hrow hx5 hy5 hn5
     -- restore the invariant at the extended prefix
-    refine ⟨hLe.trans hleA, ⟨?_, ?_, ?_⟩, ?_⟩
+    intro _
+    refine ⟨hLe.trans hle₄, ⟨?_, ?_, ?_⟩, ?_⟩
     · simp only [List.length_append, List.length_cons, List.length_nil]
       rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_x0]
-      exact hx5e
+      exact hx5
     · simp only [List.length_append, List.length_cons, List.length_nil]
       rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_y0]
-      exact hy5e
+      exact hy5
     · simp only [List.length_append, List.length_cons, List.length_nil]
       rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_n]
-      exact CVar.eval_le hleB hnA
-    · intro r hr
-      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hr
-      rcases hr with hr | rfl
-      · obtain ⟨w, hev, hHw⟩ := hrounds r hr
-        exact ⟨w, evalScale_le hleA hev, hHw⟩
-      · exact ⟨_, hround, hHolds pref.length hkrows⟩
+      exact hn5
+    · intro r' hr'
+      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hr'
+      rcases hr' with hr' | rfl
+      · obtain ⟨w, hev, hHw⟩ := hrounds r' hr'
+        exact ⟨w, evalScale_le hle₄ hev, hHw⟩
+      · exact ⟨_, hrow, hHolds pref.length hkrows⟩
   case vc2.vc1.vc1.vc1.refine_2.pre =>
     refine ⟨Assignments.Le.refl st₃.env, ⟨hx0e, hy0e, rfl⟩, fun r hr => ?_⟩
     exact absurd hr List.not_mem_nil
