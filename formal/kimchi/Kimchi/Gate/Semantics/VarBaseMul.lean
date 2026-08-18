@@ -1246,6 +1246,13 @@ conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the 
 def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
+/-- `1` is a forbidden residue: a scalar `≡ 1 (mod order)` is in the band. The
+membership an off-band caller inverts to keep its final accumulator away from the
+base (`[s]·T = T` forces `order ∣ s − 1`). -/
+theorem mem_forbiddenValues_of_dvd_sub_one (order : ℕ) {s : ℤ}
+    (h : (order : ℤ) ∣ (s - 1)) : s ∈ forbiddenValues order :=
+  ⟨1, by decide, h⟩
+
 /-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
     multiple `m • T` vanishes iff `order ∣ m`. (`order` is prime and `order • T = 0`, so
     `addOrderOf T ∣ order`; nonzero `T` rules out `addOrderOf T = 1`, hence it equals

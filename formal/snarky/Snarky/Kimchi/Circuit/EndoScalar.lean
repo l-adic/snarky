@@ -795,7 +795,7 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
       have hev : ev = e := by
         simp only [CVar.eval] at he
         exact (Except.ok.inj he).symm
-      rw [CVar.eval_add_]
+      rw [CVar.eval_add_fold]
       simp only [CVar.eval, CVar.eval_scale_ hA2 e, hB2, Except.ok.injEq,
         Kimchi.Gate.EndoScalar.toField, hev]
       ring
@@ -815,7 +815,7 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
       injection he' with he'
       subst he'
       have hB3 := CVar.eval_le (hle₂.trans hle₃) hB
-      rw [CVar.eval_add_]
+      rw [CVar.eval_add_fold]
       simp only [CVar.eval, hB3, hpv, Except.ok.injEq,
         Kimchi.Gate.EndoScalar.toField]
       ring

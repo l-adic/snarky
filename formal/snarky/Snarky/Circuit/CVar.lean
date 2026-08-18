@@ -145,9 +145,17 @@ The smart constructors pre-fold constants; these lemmas say the folds cannot cha
 successful evaluation — what connects gadget fast paths to the gadget laws. -/
 
 /-- `add_` evaluates like the raw constructor. -/
-theorem eval_add_ [Add F] [Mul F] (a b : CVar F) (env : Variable → Option F) :
+theorem eval_add_fold [Add F] [Mul F] (a b : CVar F) (env : Variable → Option F) :
     (add_ a b).eval env = (CVar.add a b).eval env := by
   cases a <;> cases b <;> rfl
+
+/-- `add_` evaluates to the sum. -/
+theorem eval_add_ [Add F] [Mul F] {a b : CVar F}
+    {env : Variable → Option F} {av bv : F}
+    (ha : a.eval env = .ok av) (hb : b.eval env = .ok bv) :
+    (add_ a b).eval env = .ok (av + bv) := by
+  rw [eval_add_fold]
+  simp [eval, ha, hb]
 
 /-- `scale_` evaluates to the scalar product. -/
 theorem eval_scale_ [Add F] [MulZeroOneClass F] [DecidableEq F] {x : CVar F}
@@ -169,7 +177,7 @@ theorem eval_sub_ [CommRing F] [DecidableEq F] {a b : CVar F}
   · next c₁ c₂ =>
     simp only [eval, Except.ok.injEq] at ha hb
     subst ha; subst hb; rfl
-  · rw [eval_add_]
+  · rw [eval_add_fold]
     have hs := eval_scale_ hb (-1)
     simp only [eval, ha, hs]
     congr 1

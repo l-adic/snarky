@@ -108,7 +108,7 @@ private theorem packAux_eval {F : Type u} [Semiring F] [DecidableEq F]
       simp only [List.map_cons, List.cons.injEq] at hmap
       obtain ⟨hb, hrest⟩ := hmap
       refine ih bl (i + 1) _ _ hrest ?_
-      rw [CVar.eval_add_]
+      rw [CVar.eval_add_fold]
       have hs := CVar.eval_scale_ hb ((2 : F) ^ i)
       simp only [CVar.eval, hacc, hs]
 
