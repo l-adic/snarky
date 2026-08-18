@@ -238,4 +238,22 @@ theorem mapM_eval_le [Add F] [Mul F] {env env' : Assignments F}
         simp [List.mapM_cons, CVar.eval_le hle he, mapM_eval_le hle hr, Bind.bind,
           Except.bind, Pure.pure, Except.pure, h]
 
+/-- Elementwise reads assemble into a `mapM`-evaluation — the introduction the bulk
+witness grants feed. -/
+theorem mapM_eval_ok [Add F] [Mul F] {env : Assignments F} :
+    ∀ {xs : List (CVar F)} {vs : List F}, xs.length = vs.length →
+      (∀ j (hj : j < xs.length) (hj' : j < vs.length), xs[j].eval env = .ok vs[j]) →
+      xs.mapM (CVar.eval · env) = .ok vs
+  | [], [], _, _ => rfl
+  | [], _ :: _, hlen, _ => by simp at hlen
+  | _ :: _, [], hlen, _ => by simp at hlen
+  | x :: xs, v :: vs, hlen, hj => by
+    have h0 := hj 0 (by simp) (by simp)
+    simp only [List.getElem_cons_zero] at h0
+    have ih := mapM_eval_ok (env := env) (xs := xs) (vs := vs) (by simpa using hlen)
+      (fun j hj1 hj2 => by
+        have := hj (j + 1) (by simpa using hj1) (by simpa using hj2)
+        simpa only [List.getElem_cons_succ] using this)
+    simp [List.mapM_cons, h0, ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
+
 end Snarky

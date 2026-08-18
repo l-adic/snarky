@@ -203,6 +203,13 @@ def decomposeB (crumbs : List F) : F := decomposeFold (fun x => dPoly x) crumbs
     input challenge. -/
 def nReconstruct (crumbs : List F) : F := crumbs.foldl (fun n x => 4 * n + x) 0
 
+/-- Zero crumbs decompose to the inits: the empty fold is its seed. -/
+@[simp] theorem decomposeA_nil : decomposeA (F := F) [] = 2 := rfl
+
+@[simp] theorem decomposeB_nil : decomposeB (F := F) [] = 2 := rfl
+
+@[simp] theorem nReconstruct_nil : nReconstruct (F := F) [] = 0 := rfl
+
 /-- The effective scalar the gate outputs: `a·λ + b` (`λ` the endomorphism
     eigenvalue). This is the pure `to_field` of the challenge. -/
 def toField (crumbs : List F) (lam : F) : F :=
@@ -477,6 +484,8 @@ theorem chainCrumbs_chainBuild (rows : ℕ → List F) (m : ℕ) :
 def crumbsOf : ℕ → ℕ → List F
   | 0, _ => []
   | c + 1, k => crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)]
+
+@[simp] theorem crumbsOf_zero (k : ℕ) : crumbsOf (F := F) 0 k = [] := rfl
 
 /-- `crumbsOf` has exactly the width asked for, which is what lets it fill whole
     `EndoScalar` rows. -/
