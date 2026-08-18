@@ -1019,7 +1019,9 @@ open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
 accepts on a readable on-curve base and a readable in-range faithful scalar whose
 `Type1` decode satisfies the ladder regime, and the returned point reads as the
 defining equation's honest side — `[fromShifted t]·g` at the scalar's canonical
-value. The regime precondition is per-scalar, exactly the fact the soundness law
+value. The returned bits read as the scalar's, LSB-first: `scaleFast2` pins the ones
+above its width to zero, so its own completeness needs them named here.
+The regime precondition is per-scalar, exactly the fact the soundness law
 conditions on; at the deployed widths the subwrap arm discharges it for every chunk
 count below full width, and at full width it is the `Type1` forbidden-band check's
 contract. The loop invariant identifies the run with the honest walk `chainBuild`;
@@ -1041,14 +1043,18 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
               (Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
           (∀ x y, base'.x.eval env = .ok x → base'.y.eval env = .ok y →
             d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, scalar.val.eval env = .ok v →
-          base'.x.eval env = .ok xv → base'.y.eval env = .ok yv →
-          ∀ hT : d.W.Nonsingular xv yv,
-          ∃ xS yS, r.g.x.eval env' = .ok xS ∧ r.g.y.eval env' = .ok yS ∧
-            ∃ hfin : d.W.Nonsingular xS yS,
-              Point.some _ _ hfin
-                = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
-                    • Point.some _ _ hT)
+        (fun env r env' =>
+          (∀ v, scalar.val.eval env = .ok v →
+            ∀ (i : ℕ) (hi : i < n), (r.lsbBits[i]'hi).eval env'
+              = .ok (if (ToNat.toNat v).testBit i then (1 : F) else 0)) ∧
+          (∀ v xv yv, scalar.val.eval env = .ok v →
+            base'.x.eval env = .ok xv → base'.y.eval env = .ok yv →
+            ∀ hT : d.W.Nonsingular xv yv,
+            ∃ xS yS, r.g.x.eval env' = .ok xS ∧ r.g.y.eval env' = .ok yS ∧
+              ∃ hfin : d.W.Nonsingular xS yS,
+                Point.some _ _ hfin
+                  = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+                      • Point.some _ _ hT))
         Q⦄
     (varBaseMul (c := KimchiProverC F) n chunks base' scalar)
     ⦃Q⦄ := by
@@ -1450,8 +1456,15 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     simp only [wp, PredTrans.apply, prove]
     intro hf
     refine hk ⟨finp.fst.1, bits⟩ ⟨st₅.nv, st₅.env, hf⟩
-      (fun v' xv' yv' hv' hxv' hyv' hT' => ?_)
+      (fun v' hv' i hi => ?_) (fun v' xv' yv' hv' hxv' hyv' hT' => ?_)
       ((hle₁.trans (hle₂.trans hle₃)).trans (hLe.trans (hle₄.trans hle₅)))
+    · -- the scalar's bits: the honest witness's reads, transported to the final table
+      rw [hv] at hv'
+      injection hv' with hv'
+      subst hv'
+      have hr := hread i hi
+      simp only [Vector.getElem_ofFn] at hr
+      exact CVar.eval_le (hle₃.trans (hLe.trans (hle₄.trans hle₅))) hr
     rw [hv] at hv'
     injection hv' with hv'
     rw [hxv] at hxv'
