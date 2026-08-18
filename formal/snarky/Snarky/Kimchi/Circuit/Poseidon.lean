@@ -248,6 +248,37 @@ private theorem evalStates_ok [Field F] [DecidableEq F] {env : Assignments F} :
     simp [evalStates, h1, h2, h3, ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
 
 open Std.Do in
+/-- The rounds trajectory checks: a state list whose entries are the round
+function's iterates satisfies the checker's window fold. The fold speaks
+window-indexed `getD` cells; the trajectory speaks the round function — this is the
+honest witness's face of the checker, converted once. -/
+private theorem chainHolds_rounds [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (s0 : F × F × F) :
+    chainHolds (mdsOf p.mds) p.roundConstants.toList 0
+      (s0 :: (List.ofFn fun i : Fin 55 =>
+        rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) s0)) := by
+  refine chainHolds_of_succ 0 _ ?_
+  intro j hj1 hj0
+  have hgetD : ∀ (m : ℕ) (hm : m < 56),
+      (s0 :: (List.ofFn fun i : Fin 55 =>
+          rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) s0))[m]'(by simp; omega)
+        = rounds (mdsOfParams p) (paramsRc p) m s0 := by
+    intro m hm
+    cases m with
+    | zero => rfl
+    | succ i => simp only [List.getElem_cons_succ, List.getElem_ofFn]
+  simp only [List.length_cons, List.length_ofFn] at hj1
+  rw [hgetD (j + 1) (by omega), hgetD j (by omega)]
+  rw [show (5 * 0 + j) = j by omega]
+  have hgd : p.roundConstants.toList.getD j (0, 0, 0)
+      = Kimchi.Gate.Poseidon.paramsRc p j := by
+    simp [Kimchi.Gate.Poseidon.paramsRc, List.getD_eq_getElem?_getD,
+      Array.getD_eq_getD_getElem?]
+  rw [hgd]
+  rfl
+
+
+open Std.Do in
 /-- The gadget is complete: the honest prover run accepts on any readable input
 state — no domain conditions — and the output state reads back as
 `Poseidon.blockCipher` of the input values. -/
@@ -309,31 +340,7 @@ theorem poseidon_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
         have h := helem i (by omega)
         simp only [List.getElem_cons_succ, Vector.getElem_toList, List.getElem_ofFn]
         exact h
-    have hchain : chainHolds (mdsOf p.mds) p.roundConstants.toList 0
-        ((av, bv, cv) ::
-          (List.ofFn fun i : Fin 55 =>
-            rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) (av, bv, cv))) := by
-      refine chainHolds_of_succ 0 _ ?_
-      intro j hj1 hj0
-      have hgetD : ∀ (m : ℕ) (hm : m < 56),
-          ((av, bv, cv) ::
-            (List.ofFn fun i : Fin 55 =>
-              rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) (av, bv, cv)))[m]'(
-              by simp; omega)
-            = rounds (mdsOfParams p) (paramsRc p) m (av, bv, cv) := by
-        intro m hm
-        cases m with
-        | zero => rfl
-        | succ i => simp only [List.getElem_cons_succ, List.getElem_ofFn]
-      simp only [List.length_cons, List.length_ofFn] at hj1
-      rw [hgetD (j + 1) (by omega), hgetD j (by omega)]
-      rw [show (5 * 0 + j) = j by omega]
-      have hgd : p.roundConstants.toList.getD j (0, 0, 0)
-          = Kimchi.Gate.Poseidon.paramsRc p j := by
-        simp [Kimchi.Gate.Poseidon.paramsRc, List.getD_eq_getElem?_getD,
-          Array.getD_eq_getD_getElem?]
-      rw [hgd]
-      rfl
+    have hchain := chainHolds_rounds p (av, bv, cv)
     simp only [KimchiConstraint.check, hstates]
     exact (chainOk_iff 0 _).mpr hchain
   · simp only [wp, PredTrans.apply, prove]
