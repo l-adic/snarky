@@ -872,6 +872,12 @@ instance instWitnessReadsF {F : Type} [Add F] [Mul F] :
   reads_of_grant h := mapM_eval_singleton h
   reads_le hle h := CVar.eval_le hle h
 
+/-- The `F`-leaf reading IS the eval equation — the coercion a grant consumer
+applies, since unification alone cannot unfold the instance projection against a
+metavariable-headed expected type. -/
+theorem reads_fvar {F : Type} [Add F] [Mul F] {r : FVar F} {env : Assignments F}
+    {x : F} (h : WitnessReads.Reads (F := F) r env x) : r.eval env = .ok x := h
+
 instance instWitnessReadsBool {F : Type} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] : WitnessReads F Bool (BoolVar F) where
   Reads r env b := (↑r : CVar F).eval env = .ok (bit b)

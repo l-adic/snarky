@@ -1979,8 +1979,9 @@ theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.2).1
 
 /-- The five-bit windows tile the flat stream: a `runBits`-shaped flatMap over rows
-reads the same list as the plain range read. -/
-theorem flatMap_range_window (bs : ℕ → F) (m : ℕ) :
+reads the same list as the plain range read. Element type is free — the gadget's
+prover-side reading tiles variables, not just field values. -/
+theorem flatMap_range_window {α : Type*} (bs : ℕ → α) (m : ℕ) :
     (List.range m).flatMap
         (fun i => [bs (5 * i), bs (5 * i + 1), bs (5 * i + 2), bs (5 * i + 3),
           bs (5 * i + 4)])

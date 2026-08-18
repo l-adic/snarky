@@ -39,6 +39,10 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS allocates each bit step's five advice values through five separate `exists`;
   the port witnesses the quintet in one call — five fresh variables in the same
   order, so the variable ids agree.
+- PS walks a round's five bits with an inner `mapAccumM`; the port unrolls it into
+  five sequential `witness` calls. Same calls in the same order, so the emitted
+  circuit is untouched — but the loop rules cannot walk it, so each reading's law
+  pays for the five steps separately instead of once against an invariant.
 - `s1Sq` and `s2` are witnessed and never read back — dead allocations kept for
   OCaml variable-id parity, exactly as PS keeps them.
 - PS's type-level width bookkeeping (`FieldSizeInBits`, `Mul 5 nChunks bitsUsed`)
@@ -362,38 +366,17 @@ private theorem read_runBits [Field F] [DecidableEq F] {V : Valuation F} :
         simp]
     simp [roundBits, List.flatMap_append, ScaleRound.read]
 
-/-- Flattening the 5-bit windows of a list of exactly `5·c` entries recovers it. -/
-private theorem flatMap_window {α : Type} (dflt : α) :
-    ∀ (c : ℕ) (l : List α), l.length = 5 * c →
-      (List.range c).flatMap (fun i =>
-        [l.getD (5 * i) dflt, l.getD (5 * i + 1) dflt, l.getD (5 * i + 2) dflt,
-         l.getD (5 * i + 3) dflt, l.getD (5 * i + 4) dflt]) = l
-  | 0, l, hl => by
-    rw [show l = [] from List.eq_nil_of_length_eq_zero (by omega)]
-    rfl
-  | c + 1, a :: b :: d :: e :: f :: rest, hl => by
-    rw [List.range_succ_eq_map, List.flatMap_cons, List.flatMap_map]
-    have hshift : ∀ i, i ∈ List.range c →
-        [( a :: b :: d :: e :: f :: rest).getD (5 * (i + 1)) dflt,
-         (a :: b :: d :: e :: f :: rest).getD (5 * (i + 1) + 1) dflt,
-         (a :: b :: d :: e :: f :: rest).getD (5 * (i + 1) + 2) dflt,
-         (a :: b :: d :: e :: f :: rest).getD (5 * (i + 1) + 3) dflt,
-         (a :: b :: d :: e :: f :: rest).getD (5 * (i + 1) + 4) dflt]
-          = [rest.getD (5 * i) dflt, rest.getD (5 * i + 1) dflt,
-             rest.getD (5 * i + 2) dflt, rest.getD (5 * i + 3) dflt,
-             rest.getD (5 * i + 4) dflt] := by
-      intro i _
-      have h5 : ∀ j, (a :: b :: d :: e :: f :: rest).getD (5 * (i + 1) + j) dflt
-          = rest.getD (5 * i + j) dflt := by
-        intro j
-        rw [show 5 * (i + 1) + j = (5 * i + j) + 1 + 1 + 1 + 1 + 1 from by ring]
-        simp
-      rw [show (5 * (i + 1) : ℕ) = 5 * (i + 1) + 0 from rfl,
-        h5 0, h5 1, h5 2, h5 3, h5 4,
-        show (5 * i + 0 : ℕ) = 5 * i from rfl]
-    rw [List.flatMap_congr hshift,
-      flatMap_window dflt c rest (by simp at hl; omega)]
-    simp [List.getD]
+/-- Flattening the 5-bit windows of a list of exactly `5·c` entries recovers it —
+the gate model's window tiling (`flatMap_range_window`) read through `getD`. -/
+private theorem flatMap_window {α : Type} (dflt : α) (c : ℕ) (l : List α)
+    (hl : l.length = 5 * c) :
+    (List.range c).flatMap (fun i =>
+      [l.getD (5 * i) dflt, l.getD (5 * i + 1) dflt, l.getD (5 * i + 2) dflt,
+       l.getD (5 * i + 3) dflt, l.getD (5 * i + 4) dflt]) = l := by
+  rw [Kimchi.Gate.VarBaseMul.flatMap_range_window (fun i => l.getD i dflt) c]
+  refine List.ext_getElem (by simp [hl]) (fun i h1 h2 => ?_)
+  simp only [List.getElem_map, List.getElem_range]
+  rw [List.getD_eq_getElem _ _ (by simpa [hl] using h1)]
 
 open Kimchi.Gate.VarBaseMul in
 /-- A satisfied threading from the doubled-base init computes the ladder: the
@@ -1007,12 +990,6 @@ private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
         (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.2) := by
   simp [bitWit, AsProver.readCVar, hxb, hyb, hxi, hyi, hb,
     Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
-
-/-- The `F`-leaf reading is the eval equation — the coercion the grant consumers
-apply (unification alone cannot unfold the instance projection against a
-metavariable-headed expected type). -/
-private theorem reads_fvar {F : Type} [Field F] {r : FVar F} {env : Assignments F}
-    {x : F} (h : WitnessReads.Reads (F := F) r env x) : r.eval env = .ok x := h
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
 /-- The gadget is complete, generic over the curve dictionary: the honest prover run
