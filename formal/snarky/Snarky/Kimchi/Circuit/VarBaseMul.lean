@@ -1154,16 +1154,31 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     split
     · exact Or.inr rfl
     · exact Or.inl rfl
-  have hladder : Kimchi.Gate.VarBaseMul.ladderK bsF (5 * chunks)
+  -- the walk's bits ARE the stream, so its run reads back as the stream
+  have hrun : Kimchi.Gate.VarBaseMul.runBits
+      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) chunks
+      = (List.range (5 * chunks)).map bsF := by
+    unfold Kimchi.Gate.VarBaseMul.runBits
+    rw [List.flatMap_congr (fun i _ => by
+      obtain ⟨-, -, hb0, hb1, hb2, hb3, hb4⟩ :=
+        chainBuildV_fields xv yv x0v y0v 0 bsF i
+      rw [hb0, hb1, hb2, hb3, hb4]),
+      Kimchi.Gate.VarBaseMul.flatMap_range_window]
+  -- and the walk's ladder is the scalar's `Type1` unshift, by the sound side's decode
+  have hladder : Kimchi.Gate.VarBaseMul.gateLadder
+        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) (5 * chunks)
       = 2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1 := by
-    rw [Kimchi.Gate.VarBaseMul.ladderK_eq_bitsVal bsF (5 * chunks) hbsb, hbsF,
+    rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
+      Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hrun, hbsF,
       Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange]
+  simp only [HasCurve.LadderRegime, Type1.fromShifted] at hregpre
   have hregime' : 3 * 2 ^ (5 * chunks) ≤ d.W.order ∨
       (2 ^ (5 * chunks - 1) < d.W.order ∧ d.W.order < 2 ^ (5 * chunks) ∧
         d.W.order % 4 = 1 ∧
-        Kimchi.Gate.VarBaseMul.ladderK bsF (5 * chunks)
+        Kimchi.Gate.VarBaseMul.gateLadder
+            (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
+            (5 * chunks)
           ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order) := by
-    simp only [HasCurve.LadderRegime, Type1.fromShifted] at hregpre
     rcases hregpre with h | ⟨h1, h2', h3, h4⟩
     · exact Or.inl h
     · exact Or.inr ⟨h1, h2', h3, by rw [hladder]; exact h4⟩
@@ -1531,15 +1546,6 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     obtain ⟨hLe, ⟨hxP, hyP, hnP⟩, hrounds⟩ := hinv
     simp only [List.length_map, List.length_range] at hxP hyP hnP hrounds
     -- the register pin: the final register reads as the scalar
-    have hrun : Kimchi.Gate.VarBaseMul.runBits
-        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) chunks
-        = (List.range (5 * chunks)).map bsF := by
-      unfold Kimchi.Gate.VarBaseMul.runBits
-      rw [List.flatMap_congr (fun i _ => by
-        obtain ⟨-, -, hb0, hb1, hb2, hb3, hb4⟩ :=
-          chainBuildV_fields xv yv x0v y0v 0 bsF i
-        rw [hb0, hb1, hb2, hb3, hb4]),
-        Kimchi.Gate.VarBaseMul.flatMap_range_window]
     have hreg : (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).n
         = v := by
       have hchain := Kimchi.Gate.VarBaseMul.chain_accN chunks
@@ -1602,11 +1608,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         rw [hx1, hy1, hx0', hy0']
         exact ⟨rfl, rfl⟩)
       (fun i _ => ⟨rfl, rfl⟩) hP0ns hP0eq d.two_ne d.odd
-      (by
-        rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
-          Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hrun, hbsF,
-          Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange])
-      (by rw [← hladder]; exact hregime')
+      hladder.symm hregpre
     have hax := accX_chainBuildV xv yv x0v y0v 0 bsF chunks
     have hay := accY_chainBuildV xv yv x0v y0v 0 bsF chunks
     have hfin : d.W.Nonsingular

@@ -1272,8 +1272,16 @@ private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
   | 3 => (g (j / 5)).b3
   | _ => (g (j / 5)).b4
 
+/-- The `±1` sign a bit value selects: `+1` for `b = 1`, `−1` otherwise — the honest ℤ
+reading of the gate's `2·b − 1`. -/
+def bitSign (b : F) : ℤ := if b = 1 then 1 else -1
+
+/-- Either sign, whatever the value. -/
+lemma bitSign_eq (b : F) : bitSign b = 1 ∨ bitSign b = -1 := by
+  unfold bitSign; split <;> simp
+
 /-- The signed bit `±1` at sub-step `j`. -/
-private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
+private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := bitSign (gateBit g j)
 
 /-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
 def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
@@ -1286,8 +1294,7 @@ private lemma gateLadder_succ (g : ℕ → Witness F) (j : ℕ) :
     gateLadder g (j + 1) = 2 * gateLadder g j + gateBitSign g j := rfl
 
 private lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
-    gateBitSign g j = 1 ∨ gateBitSign g j = -1 := by
-  unfold gateBitSign; split <;> simp
+    gateBitSign g j = 1 ∨ gateBitSign g j = -1 := bitSign_eq _
 
 /-- The unsigned bit at sub-step `j`: `1` if set, else `0` (same `= 1` test as `gateBitSign`). -/
 private def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else 0
@@ -1295,7 +1302,7 @@ private def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 t
 /-- The signed digit is `2·(unsigned bit) − 1`, unconditionally (same `gateBit = 1` test). -/
 private lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
     gateBitSign g j = 2 * ubit g j - 1 := by
-  unfold gateBitSign ubit; split <;> ring
+  unfold gateBitSign bitSign ubit; split <;> ring
 
 /-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
 def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
@@ -1326,15 +1333,22 @@ private lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
   unfold gateBit; simp +decide [ Nat.add_mod ] ;
   norm_num [ Nat.add_div ]
 
-/-- The signed bit `e` produced by `signed_target` matches `gateBitSign`. -/
-private lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
-    (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
-    (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
-  cases hbit <;> simp_all +decide [ gateBitSign ];
+/-- The signed bit `e` produced by `signed_target` is the bit's sign. -/
+private lemma e_eq_bitSign {b : F} (hbit : b = 0 ∨ b = 1) {e : ℤ}
+    (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1) (h2 : (2 : F) ≠ 0) :
+    e = bitSign b := by
+  cases hbit <;> simp_all +decide [ bitSign ];
   · cases he <;> simp_all +decide;
     exact h2 ( by linear_combination' he2 );
   · rcases he with ( rfl | rfl ) <;> norm_num at *;
     grind +extAll
+
+/-- The gate-indexed reading of `e_eq_bitSign`. -/
+private lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
+    (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
+    (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
+  rw [show gateBitSign g j = bitSign b from by unfold gateBitSign; rw [hgb]]
+  exact e_eq_bitSign hbit he2 he h2
 
 /-- Per sub-step advance using *only* the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
     is supplied by `tne_of_holds` (the constraints + prime order), not by `2k ≢ ±1`. -/
@@ -2053,24 +2067,12 @@ The honest walk: `chainBuild` threads the gate's canonical row (`build`) from th
 init accumulator through a flat bit stream, five bits per row. `chain_complete` is its
 conditional completeness — under either ladder regime, every generated row satisfies the
 gate. The non-degeneracy is PRODUCED forward, not read off an accepted run: the
-accumulator entering bit step `j` is the ladder multiple `[ladderK bs j]·T`, the regime
+accumulator entering bit step `j` is the ladder multiple `[gateLadder g j]·T`, the regime
 prices all four degeneracy residues at every step (`ladder_subwrap_nondegen` /
 `ladder_nondegen_tight`), and each generated step's two secant denominators are derived
 from those residues before the step is certified (`step_produce`). -/
 
 variable {F : Type*} [Field F] [DecidableEq F]
-
-/-- The ±1 sign a bit value selects: `+1` for `b = 1`, `−1` otherwise — the honest ℤ
-reading of the gate's `2·b − 1`. -/
-def bitSign (b : F) : ℤ := if b = 1 then 1 else -1
-
-/-- The honest ladder value after `j` bit steps of the stream `bs`, from the doubled
-init: `k 0 = 2`, `k (j+1) = 2·k j + bitSign (bs j)`. On a boolean stream this is the
-signed double-and-add ladder the pricing kernel prices; on the stream of a scalar's
-bits it decodes to `Type1`'s `2·s + 2^L + 1` (`ladderK_eq_bitsVal`). -/
-def ladderK (bs : ℕ → F) : ℕ → ℤ
-  | 0 => 2
-  | j + 1 => 2 * ladderK bs j + bitSign (bs j)
 
 /-- The honest rows: row `i` is `build` at the threaded accumulator and register,
 consuming bits `5i … 5i+4` of the stream. -/
@@ -2081,6 +2083,22 @@ def chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) : ℕ → Witness F
       (chainBuild xT yT x0 y0 n0 bs i).nPrime
       (bs (5 * (i + 1))) (bs (5 * (i + 1) + 1)) (bs (5 * (i + 1) + 2))
       (bs (5 * (i + 1) + 3)) (bs (5 * (i + 1) + 4))
+
+omit [DecidableEq F] in
+/-- The walk's gate bits ARE the stream it was built from: sub-step `j` reads `bs j`.
+What lets the honest walk speak the sound side's ladder vocabulary (`gateLadder`)
+rather than a second copy of it. -/
+private lemma gateBit_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (j : ℕ) :
+    gateBit (chainBuild xT yT x0 y0 n0 bs) j = bs j := by
+  have h : j = 5 * (j / 5) + j % 5 := by omega
+  have h5 : j % 5 < 5 := Nat.mod_lt _ (by omega)
+  unfold gateBit
+  interval_cases hm : (j % 5) <;> (conv_rhs => rw [h]) <;> cases (j / 5) <;> rfl
+
+/-- Hence the walk's signed digit at sub-step `j` is the stream bit's sign. -/
+private lemma gateBitSign_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (j : ℕ) :
+    gateBitSign (chainBuild xT yT x0 y0 n0 bs) j = bitSign (bs j) := by
+  unfold gateBitSign; rw [gateBit_chainBuild]
 
 omit [DecidableEq F] in
 /-- Every `chainBuild` row is `build` at its own threaded fields — the uniform
@@ -2306,15 +2324,7 @@ private lemma step_produce (c : WeierstrassCurve.Affine F)
     (by rw [e1, ← htdef]; exact htne)
   obtain ⟨-, -, hO, e', hepm', heF', hOeq⟩ :=
     gate_step_advance' c h2 hodd hTns hI hQ hbit hTne k hIk hq1 hq2 hh
-  have he' : e' = bitSign b := by
-    rcases hbit with rfl | rfl
-    · rcases hepm' with rfl | rfl
-      · exact absurd (by linear_combination heF' : (2 : F) = 0) h2
-      · simp [bitSign]
-    · rcases hepm' with rfl | rfl
-      · simp [bitSign]
-      · exact absurd (by linear_combination -heF' : (2 : F) = 0) h2
-  exact ⟨hh, hO, by rw [hOeq, he']⟩
+  exact ⟨hh, hO, by rw [hOeq, e_eq_bitSign hbit heF' hepm' h2]⟩
 
 /-- One honest row: five `step_produce` steps threaded through `build`. The row's
 constraints hold and the output accumulator is the nonsingular five-fold advance
@@ -2363,9 +2373,12 @@ private lemma row_produce (c : WeierstrassCurve.Affine F)
 
 /-- **Completeness of the honest ladder.** From the doubled init `P₀ = [2]·T`, under
 either ladder regime — subwrap (`3·2^(5m) ≤ order`, no condition on the bits) or the
-one-wrap band with the stream's ladder value `ladderK bs (5m)` avoiding the forbidden
-residues — every generated row satisfies the gate. The regime dichotomy is
-`varBaseMul_off`'s, at the honest values. -/
+one-wrap band with the walk's ladder value `gateLadder (chainBuild …) (5m)` avoiding
+the forbidden residues — every generated row satisfies the gate. The regime dichotomy
+is `varBaseMul_off`'s, at the honest values, and stated in its vocabulary: the walk's
+gate bits are the stream (`gateBit_chainBuild`), so the sound side's `gateLadder` is
+the honest ladder and `gateLadder_eq_register` is the decode a caller discharges the
+band condition with. -/
 theorem chain_complete (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2) (m : ℕ)
@@ -2375,24 +2388,23 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
     (hP0eq : Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hTns)
     (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
       (2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧ c.order % 4 = 1 ∧
-        ladderK bs (5 * m) ∉ forbiddenValues c.order)) :
+        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) ∉ forbiddenValues c.order)) :
     ∀ i, i < m → Holds (chainBuild xT yT x0 y0 n0 bs i) := by
   have hTne : Point.some _ _ hTns ≠ 0 := Point.some_ne_zero hTns
-  have hε : ∀ j, j < 5 * m → bitSign (bs j) = 1 ∨ bitSign (bs j) = -1 := by
-    intro j _
-    unfold bitSign
-    split <;> simp
+  set g := chainBuild xT yT x0 y0 n0 bs with hg
   -- the regime prices all four degeneracy residues at every bit step
   have hquad : ∀ j, j < 5 * m →
-      ¬((c.order : ℤ) ∣ (ladderK bs j - 1)) ∧ ¬((c.order : ℤ) ∣ (ladderK bs j + 1))
-      ∧ ¬((c.order : ℤ) ∣ (2 * ladderK bs j - 1))
-      ∧ ¬((c.order : ℤ) ∣ (2 * ladderK bs j + 1)) := by
+      ¬((c.order : ℤ) ∣ (gateLadder g j - 1)) ∧ ¬((c.order : ℤ) ∣ (gateLadder g j + 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j - 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j + 1)) := by
     rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
-    · exact Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub (ladderK bs)
-        (fun j => bitSign (bs j)) rfl hε (fun j _ => rfl)
+    · exact Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub (gateLadder g)
+        (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j)
     · refine Ladder.ladder_nondegen_tight c.order (5 * m)
-        (Fact.out : Nat.Prime c.order) hq4 hr1 hr2 (ladderK bs)
-        (fun j => bitSign (bs j)) rfl hε (fun j _ => rfl) ?_
+        (Fact.out : Nat.Prime c.order) hq4 hr1 hr2 (gateLadder g)
+        (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) ?_
       intro t ht hdvd
       exact hnf ⟨t, ht, hdvd⟩
   -- rows hold and the accumulator threads as the ladder multiple
@@ -2400,7 +2412,7 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
       (∀ i', i' < i → Holds (chainBuild xT yT x0 y0 n0 bs i'))
       ∧ ∃ hIi : c.Nonsingular (chainBuild xT yT x0 y0 n0 bs i).x0
           (chainBuild xT yT x0 y0 n0 bs i).y0,
-          Point.some _ _ hIi = ladderK bs (5 * i) • Point.some _ _ hTns := by
+          Point.some _ _ hIi = gateLadder g (5 * i) • Point.some _ _ hTns := by
     intro i
     induction i with
     | zero =>
@@ -2413,7 +2425,12 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
         (chainBuild xT yT x0 y0 n0 bs i).n
         (hbs (5 * i) (by omega)) (hbs (5 * i + 1) (by omega)) (hbs (5 * i + 2) (by omega))
         (hbs (5 * i + 3) (by omega)) (hbs (5 * i + 4) (by omega)) hIi
-        (k := ladderK bs) (j := 5 * i) hIeq rfl rfl rfl rfl rfl
+        (k := gateLadder g) (j := 5 * i) hIeq
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
         (fun l hl hl' => hquad l (by omega))
       refine ⟨fun i' hi' => ?_, ?_⟩
       · rcases Nat.lt_or_ge i' i with h | h
@@ -2424,28 +2441,11 @@ theorem chain_complete (c : WeierstrassCurve.Affine F)
           exact hrow
       · show ∃ hIi : c.Nonsingular (chainBuild xT yT x0 y0 n0 bs i).x5
             (chainBuild xT yT x0 y0 n0 bs i).y5,
-            Point.some _ _ hIi = ladderK bs (5 * (i + 1)) • Point.some _ _ hTns
+            Point.some _ _ hIi = gateLadder g (5 * (i + 1)) • Point.some _ _ hTns
         rw [chainBuild_eta xT yT x0 y0 n0 bs i,
           show (5 : ℕ) * (i + 1) = 5 * i + 5 from by ring]
         exact ⟨h5, h5eq⟩
   exact (main m le_rfl).1
-
-/-- On a boolean stream the ladder decodes as `Type1`'s unshift of the base-2 value:
-`ladderK bs L = 2·bitsVal(bits) + 2^L + 1` — how a caller discharges
-`chain_complete`'s forbidden-band condition from the scalar it actually fed. -/
-theorem ladderK_eq_bitsVal (bs : ℕ → F) (L : ℕ)
-    (hb : ∀ j, j < L → bs j = 0 ∨ bs j = 1) :
-    ladderK bs L = 2 * bitsVal ((List.range L).map bs) + 2 ^ L + 1 := by
-  induction L with
-  | zero => simp [ladderK, bitsVal]
-  | succ L ih =>
-    have hsnoc : bitsVal ((List.range (L + 1)).map bs)
-        = 2 * bitsVal ((List.range L).map bs) + (if bs L = 1 then 1 else 0) := by
-      rw [List.range_succ, List.map_append]
-      simp [bitsVal, List.foldl_append]
-    rw [show ladderK bs (L + 1) = 2 * ladderK bs L + bitSign (bs L) from rfl,
-      ih (fun j hj => hb j (by omega)), hsnoc]
-    rcases hb L (by omega) with h | h <;> simp [bitSign, h] <;> ring
 
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 
