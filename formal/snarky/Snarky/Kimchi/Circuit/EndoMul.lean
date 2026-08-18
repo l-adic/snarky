@@ -942,6 +942,10 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   have hTne : Point.some _ _ hT ≠ 0 := Point.some_ne_zero hT
   have hx02 : t.x.eval st₂.env = .ok xv := CVar.eval_le (hle₁.trans hle₂) hxv
   have hy02 : t.y.eval st₂.env = .ok yv := CVar.eval_le (hle₁.trans hle₂) hyv
+  have hTφne : Point.some _ _ hT + Point.some _ _ hφT ≠ 0 := by
+    intro hzero
+    rw [heig hT hφT] at hzero
+    exact hlam1 (Point.some _ _ hT) hTne (by rw [← hzero]; module)
   refine AddFast.addFast_complete_spec .checkFinite W ha h2 t ⟨phix, t.y⟩ _ _
     ⟨⟨by rw [hx02]; rfl, by rw [hy02]; rfl, by rw [hphix]; rfl, by rw [hy02]; rfl,
       fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
@@ -950,20 +954,22 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     injection he1 with he1; injection he2 with he2
     injection he3 with he3; injection he4 with he4
     subst he1 he2 he3 he4
-    refine ⟨hT.1, hφT.1, hyne, fun _ => ?_⟩
-    rintro ⟨-, hyeq⟩
-    rw [show W.negY (eb * xv) yv = -yv from by
-      simp [WeierstrassCurve.Affine.negY, ha.1, ha.2.2.1]] at hyeq
-    refine hyne ?_
-    have h2y : (2 : F) * yv = 0 := by linear_combination hyeq
-    exact (mul_eq_zero.mp h2y).resolve_left h2
+    exact ⟨hT, hφT, hyne, fun _ => hTφne⟩
   obtain ⟨x1v, y1v, hx1e, hy1e, -, hP1, hsum1⟩ :=
     (hp1 xv yv (eb * xv) yv hx02 hy02 hphix hy02 hT hφT).resolve_left (by
       rintro ⟨-, hzero⟩
-      rw [heig hT hφT] at hzero
-      exact hlam1 (Point.some _ _ hT) hTne (by rw [← hzero]; module))
+      exact hTφne hzero)
   have hy1ne : y1v ≠ 0 := y_ne_zero_of_odd_order W hodd hP1
   mvcgen
+  have h2P1ne : Point.some _ _ hP1 + Point.some _ _ hP1 ≠ 0 := by
+    intro hzero
+    have h2P : (2 : ℤ) • Point.some _ _ hP1 = 0 := by
+      rw [two_zsmul, hzero]
+    have hlt : (2 : ℤ) < (W.order : ℤ) := by
+      have hp2' := (Fact.out : Nat.Prime W.order).two_le
+      have h3' : 3 ≤ W.order := by omega
+      exact_mod_cast h3'
+    exact smul_ne_zero_of_lt W (Point.some_ne_zero hP1) (by norm_num) hlt h2P
   refine AddFast.addFast_complete_spec .checkFinite W ha h2 p1.p p1.p _ _
     ⟨⟨by rw [hx1e]; rfl, by rw [hy1e]; rfl, by rw [hx1e]; rfl, by rw [hy1e]; rfl,
       fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
@@ -972,23 +978,11 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     injection he1 with he1; injection he2 with he2
     injection he3 with he3; injection he4 with he4
     subst he1 he2 he3 he4
-    refine ⟨hP1.1, hP1.1, hy1ne, fun _ => ?_⟩
-    rintro ⟨-, hyeq⟩
-    rw [show W.negY x1v y1v = -y1v from by
-      simp [WeierstrassCurve.Affine.negY, ha.1, ha.2.2.1]] at hyeq
-    refine hy1ne ?_
-    have h2y : (2 : F) * y1v = 0 := by linear_combination hyeq
-    exact (mul_eq_zero.mp h2y).resolve_left h2
+    exact ⟨hP1, hP1, hy1ne, fun _ => h2P1ne⟩
   obtain ⟨x0v, y0v, hx0e, hy0e, -, hP0ns, hsum2⟩ :=
     (hp2 x1v y1v x1v y1v hx1e hy1e hx1e hy1e hP1 hP1).resolve_left (by
       rintro ⟨-, hzero⟩
-      have h2P : (2 : ℤ) • Point.some _ _ hP1 = 0 := by
-        rw [two_zsmul, hzero]
-      have hlt : (2 : ℤ) < (W.order : ℤ) := by
-        have hp2' := (Fact.out : Nat.Prime W.order).two_le
-        have h3' : 3 ≤ W.order := by omega
-        exact_mod_cast h3'
-      exact smul_ne_zero_of_lt W (Point.some_ne_zero hP1) (by norm_num) hlt h2P)
+      exact h2P1ne hzero)
   have hP0 : Point.some _ _ hP0ns
       = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
     rw [← hsum2, ← hsum1]

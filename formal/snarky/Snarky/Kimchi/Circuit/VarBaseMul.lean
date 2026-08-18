@@ -1235,6 +1235,15 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
   -- the doubled init `P₀ = [2]·T`
   have hsx₂ : base.x.eval st₂.env = .ok xv := CVar.eval_le hle₂ hsx
   have hsy₂ : base.y.eval st₂.env = .ok yv := CVar.eval_le hle₂ hsy
+  have h2Tne : Point.some _ _ hT + Point.some _ _ hT ≠ 0 := by
+    intro hzero
+    have h2P : (2 : ℤ) • Point.some _ _ hT = 0 := by rw [two_zsmul, hzero]
+    have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
+      have h2le := d.prime.two_le
+      have hne2 := d.odd
+      have h3' : 3 ≤ d.W.order := by omega
+      exact_mod_cast h3'
+    exact smul_ne_zero_of_lt d.W (Point.some_ne_zero hT) (by norm_num) hlt h2P
   refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne base base _ _
     ⟨⟨by rw [hsx₂]; rfl, by rw [hsy₂]; rfl, by rw [hsx₂]; rfl, by rw [hsy₂]; rfl,
       fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
@@ -1243,23 +1252,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     injection he1 with he1; injection he2 with he2
     injection he3 with he3; injection he4 with he4
     subst he1 he2 he3 he4
-    refine ⟨hT.1, hT.1, hyne, fun _ => ?_⟩
-    rintro ⟨-, hyeq⟩
-    rw [show d.W.negY xv yv = -yv from by
-      simp [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]] at hyeq
-    refine hyne ?_
-    have h2y : (2 : F) * yv = 0 := by linear_combination hyeq
-    exact (mul_eq_zero.mp h2y).resolve_left d.two_ne
+    exact ⟨hT, hT, hyne, fun _ => h2Tne⟩
   obtain ⟨x0v, y0v, hx0e, hy0e, -, hP0ns, hsum⟩ :=
     (hp xv yv xv yv hsx₂ hsy₂ hsx₂ hsy₂ hT hT).resolve_left (by
       rintro ⟨-, hzero⟩
-      have h2P : (2 : ℤ) • Point.some _ _ hT = 0 := by rw [two_zsmul, hzero]
-      have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
-        have h2le := d.prime.two_le
-        have hne2 := d.odd
-        have h3' : 3 ≤ d.W.order := by omega
-        exact_mod_cast h3'
-      exact smul_ne_zero_of_lt d.W (Point.some_ne_zero hT) (by norm_num) hlt h2P)
+      exact h2Tne hzero)
   have hP0eq : Point.some _ _ hP0ns = (2 : ℤ) • Point.some _ _ hT := by
     rw [← hsum]
     module
@@ -1702,7 +1699,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
             module
         _ = 0 := h0
     mvcgen
-    refine AddFast.addFast_complete_point_spec d.W d.short d.two_ne
+    refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne
       r.g ⟨base.x, CVar.negate_ base.y⟩ _ _
       ⟨⟨by rw [hgx']; rfl, by rw [hgy']; rfl, by rw [hbx']; rfl, by rw [hny]; rfl,
         fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
@@ -1711,9 +1708,11 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       injection he1 with he1; injection he2 with he2
       injection he3 with he3; injection he4 with he4
       subst he1 he2 he3 he4
-      exact ⟨hfin, hnegT, hgyne, hsumne⟩
-    obtain ⟨xq, yq, hqx, hqy, hqns, hqsum⟩ :=
-      hq xg yg xv (-yv) hgx' hgy' hbx' hny hfin hnegT
+      exact ⟨hfin, hnegT, hgyne, fun _ => hsumne⟩
+    obtain ⟨xq, yq, hqx, hqy, -, hqns, hqsum⟩ :=
+      (hq xg yg xv (-yv) hgx' hgy' hbx' hny hfin hnegT).resolve_left (by
+        rintro ⟨-, hzero⟩
+        exact hsumne hzero)
     have hqpt : (Point.some _ _ hqns : d.W.Point)
         = (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
       rw [← hqsum, hpt, hnegPt]
