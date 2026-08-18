@@ -725,6 +725,15 @@ private theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   have := gen xs 0 hv
   simpa [nReconstruct, valNat] using this
 
+
+/-- A valid crumb register is the cast of a bounded `ℕ`: the `nReconstruct` fold of
+    `{0,1,2,3}` crumbs is `valNat`'s image, below `4 ^ length` — the range reading
+    the `RangeCheck` gadgets extract from the gate. -/
+theorem nReconstruct_lt (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
+    (hv : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
+    ∃ n : ℕ, n < 4 ^ xs.length ∧ nReconstruct xs = ((n : ℕ) : F) :=
+  ⟨valNat xs, valNat_lt xs, nReconstruct_eq_valNat h2 h3 xs hv⟩
+
 /-- **Base-4 digit recovery.** Same-length valid crumb lists whose reconstruction fits the
     field (`4 ^ len ≤ p`) and that reconstruct to the same challenge are equal — the
     decomposition a satisfying gate exposes is the *unique* one. -/

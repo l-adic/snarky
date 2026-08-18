@@ -51,6 +51,7 @@ Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 -- per-gate `sound`/`complete` are live through `endoScalar_unique`/`chain_complete`.
 Kimchi.Gate.EndoScalar.chain_toField
 Kimchi.Gate.EndoScalar.chain_complete
+Kimchi.Gate.EndoScalar.nReconstruct_lt
 -- zero-crumb decompositions: simp-set surface (consumed by simpa in snarky walks)
 Kimchi.Gate.EndoScalar.crumbsOf_zero
 Kimchi.Gate.EndoScalar.decomposeA_nil

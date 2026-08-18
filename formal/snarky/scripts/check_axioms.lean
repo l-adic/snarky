@@ -15,6 +15,7 @@ Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
+import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
@@ -106,6 +107,9 @@ def roots : List Name :=
     `Snarky.Kimchi.scaleFast2_complete_spec,
     `Snarky.Kimchi.scaleFast2'_complete_spec,
     `Snarky.Kimchi.splitFieldVar_complete_spec,
+    `Snarky.Kimchi.rangeCheck128_spec, `Snarky.Kimchi.rangeCheck128_complete_spec,
+    `Snarky.Kimchi.lowest128Bits'_spec,
+    `Snarky.Kimchi.lowest128Bits'_complete_spec,
     `Snarky.Kimchi.scaleFast1_spec,
     `Snarky.Kimchi.splitFieldVar_spec,
     `Snarky.Kimchi.scaleFast2_spec,
