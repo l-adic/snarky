@@ -1516,4 +1516,41 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
   case vc4.vc1.vc1.vc1.refine_2.post.except =>
     exact ExceptConds.entails_false
 
+/-- `scaleFast1` is complete — the honest side of the defining equation
+`scaleFast1 g a ~ scalarMul (fromShifted a) g`: on the same readable, in-range,
+faithful, regime-satisfying scalar and readable on-curve base, the honest run
+accepts and the returned point is `[fromShifted t]·g` at the scalar's canonical
+value. `varBaseMul_complete_spec`'s point promise at the result, the bits dropped. -/
+theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n)
+    (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
+    (Q : PostCond (AffinePoint (FVar F))
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (t.val.eval env).isOk ∧ (p.x.eval env).isOk ∧ (p.y.eval env).isOk ∧
+          (∀ v, t.val.eval env = .ok v →
+            ToNat.toNat v < 2 ^ (5 * chunks) ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
+            d.LadderRegime (5 * chunks)
+              (Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
+          (∀ x y, p.x.eval env = .ok x → p.y.eval env = .ok y →
+            d.W.Nonsingular x y))
+        (fun env r env' => ∀ v xv yv, t.val.eval env = .ok v →
+          p.x.eval env = .ok xv → p.y.eval env = .ok yv →
+          ∀ hT : d.W.Nonsingular xv yv,
+          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
+            ∃ hfin : d.W.Nonsingular xS yS,
+              Point.some _ _ hfin
+                = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+                    • Point.some _ _ hT)
+        Q⦄
+    (scaleFast1 (c := KimchiProverC F) n chunks p t)
+    ⦃Q⦄ := by
+  simp only [scaleFast1]
+  mvcgen [varBaseMul_complete_spec]
+  rename_i st hpre
+  refine ⟨hpre.1, fun r st' hrbits hrpt hle => ?_⟩
+  mvcgen
+  exact hpre.2 r.g st' hrpt hle
+
 end Snarky.Kimchi

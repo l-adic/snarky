@@ -102,6 +102,7 @@ def roots : List Name :=
     `Snarky.Kimchi.EndoMul.endoInv_complete_spec,
     `Snarky.Kimchi.varBaseMul_spec,
     `Snarky.Kimchi.varBaseMul_complete_spec,
+    `Snarky.Kimchi.scaleFast1_complete_spec,
     `Snarky.Kimchi.scaleFast1_spec,
     `Snarky.Kimchi.splitFieldVar_spec,
     `Snarky.Kimchi.scaleFast2_spec,
