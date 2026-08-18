@@ -63,6 +63,24 @@ namespace AsProver
 def readCVar [Add F] [Mul F] (x : CVar F) : AsProver F F :=
   fun env => x.eval env
 
+/-- The prover-side list read is the elementwise read. -/
+theorem readAll_ok [Add F] [Mul F] {env : Assignments F} :
+    ∀ {xs : List (CVar F)} {vs : List F},
+      xs.mapM (CVar.eval · env) = .ok vs →
+      (xs.mapM readCVar) env = .ok vs
+  | [], vs, h => h
+  | x :: xs, vs, h => by
+    cases he : x.eval env with
+    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
+    | ok y =>
+      cases hr : xs.mapM (CVar.eval · env) with
+      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
+      | ok ys =>
+        simp only [List.mapM_cons, he, hr, Bind.bind, Except.bind, Pure.pure,
+          Except.pure] at h
+        simp [List.mapM_cons, readCVar, he, readAll_ok hr, Bind.bind,
+          ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure, h]
+
 /-- Fail with a message (PS `throwAsProver`). -/
 def throw (msg : String) : AsProver F α :=
   fun _ => .error (.custom msg)

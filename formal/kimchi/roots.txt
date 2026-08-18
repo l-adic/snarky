@@ -51,6 +51,11 @@ Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 -- per-gate `sound`/`complete` are live through `endoScalar_unique`/`chain_complete`.
 Kimchi.Gate.EndoScalar.chain_toField
 Kimchi.Gate.EndoScalar.chain_complete
+-- zero-crumb decompositions: simp-set surface (consumed by simpa in snarky walks)
+Kimchi.Gate.EndoScalar.crumbsOf_zero
+Kimchi.Gate.EndoScalar.decomposeA_nil
+Kimchi.Gate.EndoScalar.decomposeB_nil
+Kimchi.Gate.EndoScalar.nReconstruct_nil
 Kimchi.Gate.EndoScalar.endoScalar_unique
 
 -- The 128-bit range check (`RangeCheck.purs`'s `rangeCheck128 = void ∘ EndoScalar.toField @8`):

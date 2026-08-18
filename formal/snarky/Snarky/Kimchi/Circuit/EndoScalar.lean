@@ -484,41 +484,6 @@ private theorem chainBuild_crumbs [Field F] (rows' : ℕ → List F) (i : ℕ) :
     (Kimchi.Gate.EndoScalar.chainBuild rows' i).crumbs = rows' i := by
   cases i <;> rfl
 
-/-- Element reads assemble into the list read. -/
-private theorem mapM_eval_ok [Add F] [Mul F] {env : Assignments F} :
-    ∀ {xs : List (FVar F)} {vs : List F}, xs.length = vs.length →
-      (∀ j (hj : j < xs.length) (hj' : j < vs.length), xs[j].eval env = .ok vs[j]) →
-      xs.mapM (CVar.eval · env) = .ok vs
-  | [], [], _, _ => rfl
-  | [], _ :: _, hlen, _ => by simp at hlen
-  | _ :: _, [], hlen, _ => by simp at hlen
-  | x :: xs, v :: vs, hlen, hj => by
-    have h0 := hj 0 (by simp) (by simp)
-    simp only [List.getElem_cons_zero] at h0
-    have ih := mapM_eval_ok (env := env) (xs := xs) (vs := vs) (by simpa using hlen)
-      (fun j hj1 hj2 => by
-        have := hj (j + 1) (by simpa using hj1) (by simpa using hj2)
-        simpa only [List.getElem_cons_succ] using this)
-    simp [List.mapM_cons, h0, ih, Bind.bind, Except.bind, Pure.pure, Except.pure]
-
-/-- The prover-side list read is the elementwise read. -/
-private theorem readAll_ok [Add F] [Mul F] {env : Assignments F} :
-    ∀ {xs : List (FVar F)} {vs : List F},
-      xs.mapM (CVar.eval · env) = .ok vs →
-      (xs.mapM AsProver.readCVar) env = .ok vs
-  | [], vs, h => h
-  | x :: xs, vs, h => by
-    cases he : x.eval env with
-    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
-    | ok y =>
-      cases hr : xs.mapM (CVar.eval · env) with
-      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
-      | ok ys =>
-        simp only [List.mapM_cons, he, hr, Bind.bind, Except.bind, Pure.pure,
-          Except.pure] at h
-        simp [List.mapM_cons, AsProver.readCVar, he, readAll_ok hr, Bind.bind,
-          ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure, h]
-
 /-- A round evaluates to a witness exactly when each register and the crumb list
 read as its fields. -/
 private theorem round_eval_ok_iff [Field F] [DecidableEq F] {env : Assignments F}
@@ -581,7 +546,7 @@ private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
       = .ok ((Kimchi.Gate.EndoScalar.build a b n vs).a8,
              (Kimchi.Gate.EndoScalar.build a b n vs).b8,
              (Kimchi.Gate.EndoScalar.build a b n vs).n8) := by
-  simp [rowWit, AsProver.readCVar, ha, hb, hn, readAll_ok hxs, Bind.bind, ReaderT.bind,
+  simp [rowWit, AsProver.readCVar, ha, hb, hn, AsProver.readAll_ok hxs, Bind.bind, ReaderT.bind,
     Except.bind, Pure.pure, ReaderT.pure, Except.pure]
 
 open Std.Do in
@@ -694,29 +659,8 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
     subst hv'
     cases rows with
     | zero =>
-      refine ⟨?_, ?_, ?_⟩ <;>
-        · refine CVar.eval_le hle₂ ?_
-          first
-            | (rw [show Kimchi.Gate.EndoScalar.decomposeA
-                    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
-                      (ToNat.toNat vv)) = 2 from by
-                  simp [Kimchi.Gate.EndoScalar.crumbsOf,
-                    Kimchi.Gate.EndoScalar.decomposeA,
-                    Kimchi.Gate.EndoScalar.decomposeFold]]
-               exact hA)
-            | (rw [show Kimchi.Gate.EndoScalar.decomposeB
-                    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
-                      (ToNat.toNat vv)) = 2 from by
-                  simp [Kimchi.Gate.EndoScalar.crumbsOf,
-                    Kimchi.Gate.EndoScalar.decomposeB,
-                    Kimchi.Gate.EndoScalar.decomposeFold]]
-               exact hB)
-            | (rw [show Kimchi.Gate.EndoScalar.nReconstruct
-                    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * 0)
-                      (ToNat.toNat vv)) = 0 from by
-                  simp [Kimchi.Gate.EndoScalar.crumbsOf,
-                    Kimchi.Gate.EndoScalar.nReconstruct]]
-               exact hN)
+      exact ⟨CVar.eval_le hle₂ (by simpa using hA),
+        CVar.eval_le hle₂ (by simpa using hB), CVar.eval_le hle₂ (by simpa using hN)⟩
     | succ m =>
       obtain ⟨hH, c1, c2, c3, s1, s2, s3, -⟩ :=
         Kimchi.Gate.EndoScalar.chain_complete m
