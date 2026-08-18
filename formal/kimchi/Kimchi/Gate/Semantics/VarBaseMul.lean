@@ -2119,128 +2119,115 @@ section ChainFields
 
 variable (xT yT x0 y0 n0 : F) (bs : ℕ → F)
 
-omit [DecidableEq F] in
+omit [DecidableEq F]
+
 theorem chainBuild_succ_x0 (i : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs (i + 1)).x0 = (chainBuild xT yT x0 y0 n0 bs i).x5 :=
   rfl
 
-omit [DecidableEq F] in
 theorem chainBuild_succ_y0 (i : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs (i + 1)).y0 = (chainBuild xT yT x0 y0 n0 bs i).y5 :=
   rfl
 
-omit [DecidableEq F] in
 theorem chainBuild_succ_n (i : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs (i + 1)).n
       = (chainBuild xT yT x0 y0 n0 bs i).nPrime :=
   rfl
 
-omit [DecidableEq F] in
-theorem chainBuild_s0 (m : ℕ) :
+/-- The row's fixed cells: the base is the argument and the five bits are the
+stream's window `5m … 5m+4`. -/
+theorem chainBuild_fields (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).xT = xT
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).yT = yT
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b0 = bs (5 * m)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b1 = bs (5 * m + 1)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b2 = bs (5 * m + 2)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b3 = bs (5 * m + 3)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b4 = bs (5 * m + 4) := by
+  cases m <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem accX_chainBuild (m : ℕ) :
+    accX (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).x0 := by
+  cases m <;> rfl
+
+theorem accY_chainBuild (m : ℕ) :
+    accY (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).y0 := by
+  cases m <;> rfl
+
+theorem accN_chainBuild (m : ℕ) :
+    accN (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).n := by
+  cases m <;> rfl
+
+/-- Bit step 0 of row `m`: the slope and the output accumulator are the gate
+model's `stepBit` at the step's own input cells. -/
+theorem chainBuild_step0 (m : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs m).s0
       = (stepBit (bs (5 * m)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x0
-          (chainBuild xT yT x0 y0 n0 bs m).y0).1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_x1 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).x1
+          (chainBuild xT yT x0 y0 n0 bs m).y0).1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).x1
       = (stepBit (bs (5 * m)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x0
-          (chainBuild xT yT x0 y0 n0 bs m).y0).2.1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_y1 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).y1
+          (chainBuild xT yT x0 y0 n0 bs m).y0).2.1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).y1
       = (stepBit (bs (5 * m)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x0
           (chainBuild xT yT x0 y0 n0 bs m).y0).2.2 := by
-  cases m <;> rfl
+  cases m <;> exact ⟨rfl, rfl, rfl⟩
 
-omit [DecidableEq F] in
-theorem chainBuild_s1 (m : ℕ) :
+/-- Bit step 1 of row `m`: the slope and the output accumulator are the gate
+model's `stepBit` at the step's own input cells. -/
+theorem chainBuild_step1 (m : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs m).s1
       = (stepBit (bs (5 * m + 1)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x1
-          (chainBuild xT yT x0 y0 n0 bs m).y1).1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_x2 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).x2
+          (chainBuild xT yT x0 y0 n0 bs m).y1).1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).x2
       = (stepBit (bs (5 * m + 1)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x1
-          (chainBuild xT yT x0 y0 n0 bs m).y1).2.1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_y2 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).y2
+          (chainBuild xT yT x0 y0 n0 bs m).y1).2.1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).y2
       = (stepBit (bs (5 * m + 1)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x1
           (chainBuild xT yT x0 y0 n0 bs m).y1).2.2 := by
-  cases m <;> rfl
+  cases m <;> exact ⟨rfl, rfl, rfl⟩
 
-omit [DecidableEq F] in
-theorem chainBuild_s2 (m : ℕ) :
+/-- Bit step 2 of row `m`: the slope and the output accumulator are the gate
+model's `stepBit` at the step's own input cells. -/
+theorem chainBuild_step2 (m : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs m).s2
       = (stepBit (bs (5 * m + 2)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x2
-          (chainBuild xT yT x0 y0 n0 bs m).y2).1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_x3 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).x3
+          (chainBuild xT yT x0 y0 n0 bs m).y2).1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).x3
       = (stepBit (bs (5 * m + 2)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x2
-          (chainBuild xT yT x0 y0 n0 bs m).y2).2.1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_y3 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).y3
+          (chainBuild xT yT x0 y0 n0 bs m).y2).2.1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).y3
       = (stepBit (bs (5 * m + 2)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x2
           (chainBuild xT yT x0 y0 n0 bs m).y2).2.2 := by
-  cases m <;> rfl
+  cases m <;> exact ⟨rfl, rfl, rfl⟩
 
-omit [DecidableEq F] in
-theorem chainBuild_s3 (m : ℕ) :
+/-- Bit step 3 of row `m`: the slope and the output accumulator are the gate
+model's `stepBit` at the step's own input cells. -/
+theorem chainBuild_step3 (m : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs m).s3
       = (stepBit (bs (5 * m + 3)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x3
-          (chainBuild xT yT x0 y0 n0 bs m).y3).1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_x4 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).x4
+          (chainBuild xT yT x0 y0 n0 bs m).y3).1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).x4
       = (stepBit (bs (5 * m + 3)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x3
-          (chainBuild xT yT x0 y0 n0 bs m).y3).2.1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_y4 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).y4
+          (chainBuild xT yT x0 y0 n0 bs m).y3).2.1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).y4
       = (stepBit (bs (5 * m + 3)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x3
           (chainBuild xT yT x0 y0 n0 bs m).y3).2.2 := by
-  cases m <;> rfl
+  cases m <;> exact ⟨rfl, rfl, rfl⟩
 
-omit [DecidableEq F] in
-theorem chainBuild_s4 (m : ℕ) :
+/-- Bit step 4 of row `m`: the slope and the output accumulator are the gate
+model's `stepBit` at the step's own input cells. -/
+theorem chainBuild_step4 (m : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs m).s4
       = (stepBit (bs (5 * m + 4)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x4
-          (chainBuild xT yT x0 y0 n0 bs m).y4).1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_x5 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).x5
+          (chainBuild xT yT x0 y0 n0 bs m).y4).1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).x5
       = (stepBit (bs (5 * m + 4)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x4
-          (chainBuild xT yT x0 y0 n0 bs m).y4).2.1 := by
-  cases m <;> rfl
-
-omit [DecidableEq F] in
-theorem chainBuild_y5 (m : ℕ) :
-    (chainBuild xT yT x0 y0 n0 bs m).y5
+          (chainBuild xT yT x0 y0 n0 bs m).y4).2.1
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).y5
       = (stepBit (bs (5 * m + 4)) xT yT (chainBuild xT yT x0 y0 n0 bs m).x4
           (chainBuild xT yT x0 y0 n0 bs m).y4).2.2 := by
-  cases m <;> rfl
+  cases m <;> exact ⟨rfl, rfl, rfl⟩
 
-omit [DecidableEq F] in
 theorem chainBuild_nPrime (m : ℕ) :
     (chainBuild xT yT x0 y0 n0 bs m).nPrime
       = bs (5 * m + 4) + 2 * (bs (5 * m + 3) + 2 * (bs (5 * m + 2)

@@ -1008,40 +1008,6 @@ private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
   simp [bitWit, AsProver.readCVar, hxb, hyb, hxi, hyi, hb,
     Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
 
-/-- The walk's base and bit cells are the arguments, at every row. -/
-private theorem chainBuildV_fields [Field F] [DecidableEq F]
-    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
-    (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).xT = xT
-    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).yT = yT
-    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b0 = bs (5 * m)
-    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b1 = bs (5 * m + 1)
-    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b2 = bs (5 * m + 2)
-    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b3 = bs (5 * m + 3)
-    ∧ (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).b4 = bs (5 * m + 4) := by
-  cases m <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-/-- `accX`/`accY`/`accN` at the walk are the next row's input cells. -/
-private theorem accX_chainBuildV [Field F] [DecidableEq F]
-    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
-    Kimchi.Gate.VarBaseMul.accX
-        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs i) m
-      = (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).x0 := by
-  cases m <;> rfl
-
-private theorem accY_chainBuildV [Field F] [DecidableEq F]
-    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
-    Kimchi.Gate.VarBaseMul.accY
-        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs i) m
-      = (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).y0 := by
-  cases m <;> rfl
-
-private theorem accN_chainBuildV [Field F] [DecidableEq F]
-    (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
-    Kimchi.Gate.VarBaseMul.accN
-        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs i) m
-      = (Kimchi.Gate.VarBaseMul.chainBuild xT yT x0 y0 n0 bs m).n := by
-  cases m <;> rfl
-
 /-- The `F`-leaf reading is the eval equation — the coercion the grant consumers
 apply (unification alone cannot unfold the instance projection against a
 metavariable-headed expected type). -/
@@ -1161,7 +1127,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     unfold Kimchi.Gate.VarBaseMul.runBits
     rw [List.flatMap_congr (fun i _ => by
       obtain ⟨-, -, hb0, hb1, hb2, hb3, hb4⟩ :=
-        chainBuildV_fields xv yv x0v y0v 0 bsF i
+        Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF i
       rw [hb0, hb1, hb2, hb3, hb4]),
       Kimchi.Gate.VarBaseMul.flatMap_range_window]
   -- and the walk's ladder is the scalar's `Type1` unshift, by the sound side's decode
@@ -1279,9 +1245,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       (CVar.eval_le hle₄ hxI) (CVar.eval_le hle₄ hyI) (CVar.eval_le hle₄ hcurj0)
     refine ⟨by rw [hw0Ok]; rfl, fun w0 st₅ hg0 hle₅ => ?_⟩
     obtain ⟨hs0e', -, -, hx1e', hy1e'⟩ := hg0 _ hw0Ok
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s0] at hs0e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x1] at hx1e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y1] at hy1e'
+    obtain ⟨es0, ex0, ey0⟩ :=
+      Kimchi.Gate.VarBaseMul.chainBuild_step0 xv yv x0v y0v 0 bsF pref.length
+    rw [← es0] at hs0e'
+    rw [← ex0] at hx1e'
+    rw [← ey0] at hy1e'
     have hs0e := reads_fvar hs0e'
     have hx1e := reads_fvar hx1e'
     have hy1e := reads_fvar hy1e'
@@ -1291,9 +1259,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       hx1e hy1e (CVar.eval_le (hle₄.trans hle₅) (hcurj 1 (by omega)))
     refine ⟨by rw [hw1Ok]; rfl, fun w1 st₆ hg1 hle₆ => ?_⟩
     obtain ⟨hs1e', -, -, hx2e', hy2e'⟩ := hg1 _ hw1Ok
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s1] at hs1e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x2] at hx2e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y2] at hy2e'
+    obtain ⟨es1, ex1, ey1⟩ :=
+      Kimchi.Gate.VarBaseMul.chainBuild_step1 xv yv x0v y0v 0 bsF pref.length
+    rw [← es1] at hs1e'
+    rw [← ex1] at hx2e'
+    rw [← ey1] at hy2e'
     have hs1e := reads_fvar hs1e'
     have hx2e := reads_fvar hx2e'
     have hy2e := reads_fvar hy2e'
@@ -1304,9 +1274,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) (hcurj 2 (by omega)))
     refine ⟨by rw [hw2Ok]; rfl, fun w2 st₇ hg2 hle₇ => ?_⟩
     obtain ⟨hs2e', -, -, hx3e', hy3e'⟩ := hg2 _ hw2Ok
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s2] at hs2e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x3] at hx3e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y3] at hy3e'
+    obtain ⟨es2, ex2, ey2⟩ :=
+      Kimchi.Gate.VarBaseMul.chainBuild_step2 xv yv x0v y0v 0 bsF pref.length
+    rw [← es2] at hs2e'
+    rw [← ex2] at hx3e'
+    rw [← ey2] at hy3e'
     have hs2e := reads_fvar hs2e'
     have hx3e := reads_fvar hx3e'
     have hy3e := reads_fvar hy3e'
@@ -1318,9 +1290,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         (hcurj 3 (by omega)))
     refine ⟨by rw [hw3Ok]; rfl, fun w3 st₈ hg3 hle₈ => ?_⟩
     obtain ⟨hs3e', -, -, hx4e', hy4e'⟩ := hg3 _ hw3Ok
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s3] at hs3e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x4] at hx4e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y4] at hy4e'
+    obtain ⟨es3, ex3, ey3⟩ :=
+      Kimchi.Gate.VarBaseMul.chainBuild_step3 xv yv x0v y0v 0 bsF pref.length
+    rw [← es3] at hs3e'
+    rw [← ex3] at hx4e'
+    rw [← ey3] at hy4e'
     have hs3e := reads_fvar hs3e'
     have hx4e := reads_fvar hx4e'
     have hy4e := reads_fvar hy4e'
@@ -1333,9 +1307,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         (hcurj 4 (by omega)))
     refine ⟨by rw [hw4Ok]; rfl, fun w4 st₉ hg4 hle₉ => ?_⟩
     obtain ⟨hs4e', -, -, hx5e', hy5e'⟩ := hg4 _ hw4Ok
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s4] at hs4e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x5] at hx5e'
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y5] at hy5e'
+    obtain ⟨es4, ex4, ey4⟩ :=
+      Kimchi.Gate.VarBaseMul.chainBuild_step4 xv yv x0v y0v 0 bsF pref.length
+    rw [← es4] at hs4e'
+    rw [← ex4] at hx5e'
+    rw [← ey4] at hy5e'
     have hs4e := reads_fvar hs4e'
     have hx5e := reads_fvar hx5e'
     have hy5e := reads_fvar hy5e'
@@ -1370,7 +1346,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
             pref.length) := by
       obtain ⟨hfxT, hfyT, hfb0, hfb1, hfb2, hfb3, hfb4⟩ :=
-        chainBuildV_fields xv yv x0v y0v 0 bsF pref.length
+        Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF pref.length
       refine evalScale_ok_iff.mpr
         ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
           ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -1437,7 +1413,8 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       have hchain := Kimchi.Gate.VarBaseMul.chain_accN chunks
         (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
         hHolds (fun i _ => rfl)
-      rw [accN_chainBuildV, accN_chainBuildV, hrun,
+      rw [Kimchi.Gate.VarBaseMul.accN_chainBuild,
+        Kimchi.Gate.VarBaseMul.accN_chainBuild, hrun,
         show (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF 0).n = 0
           from rfl, mul_zero, zero_add,
         Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast _ (fun x hx => by
@@ -1488,15 +1465,16 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       (Point.some _ _ hT) (2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1)
       (Point.some_ne_zero hT) hHolds hT rfl
       (fun i _ => by
-        obtain ⟨hx1, hy1, -, -, -, -, -⟩ := chainBuildV_fields xv yv x0v y0v 0 bsF i
+        obtain ⟨hx1, hy1, -, -, -, -, -⟩ :=
+          Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF i
         obtain ⟨hx0', hy0', -, -, -, -, -⟩ :=
-          chainBuildV_fields xv yv x0v y0v 0 bsF 0
+          Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF 0
         rw [hx1, hy1, hx0', hy0']
         exact ⟨rfl, rfl⟩)
       (fun i _ => ⟨rfl, rfl⟩) hP0ns hP0eq d.two_ne d.odd
       hladder.symm hregpre
-    have hax := accX_chainBuildV xv yv x0v y0v 0 bsF chunks
-    have hay := accY_chainBuildV xv yv x0v y0v 0 bsF chunks
+    have hax := Kimchi.Gate.VarBaseMul.accX_chainBuild xv yv x0v y0v 0 bsF chunks
+    have hay := Kimchi.Gate.VarBaseMul.accY_chainBuild xv yv x0v y0v 0 bsF chunks
     have hfin : d.W.Nonsingular
         (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).x0
         (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).y0 := by
