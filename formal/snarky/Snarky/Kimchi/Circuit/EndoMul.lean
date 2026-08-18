@@ -97,6 +97,22 @@ private def rowWit [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
   let w := Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4
   pure (w.inv, w.nPrime, w.xR, w.yR, w.xS, w.yS, w.s1, w.s3)
 
+/-- One `endoMul` window round (the loop body, named): witness the row's advice
+octet and assemble the `EndoMulRound` record, returning the round and the advanced
+`(accumulator, register)` state. -/
+def endoMulRound [Field F] [DecidableEq F] [BasicSystem F c]
+    (eb : F) (t : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 4) :
+    CircuitM F c (EndoMulRound F × (AffinePoint (FVar F) × FVar F)) := do
+  let w ← witness (val := F × F × F × F × F × F × F × F) (rowWit eb t bs st)
+  let s : AffinePoint (FVar F) := ⟨w.2.2.2.2.1, w.2.2.2.2.2.1⟩
+  pure (({ t, p := st.1, r := ⟨w.2.2.1, w.2.2.2.1⟩, s,
+           s1 := w.2.2.2.2.2.2.1, s3 := w.2.2.2.2.2.2.2,
+           nAcc := st.2, nAccNext := w.2.1,
+           bit0 := bs[0], bit1 := bs[1], bit2 := bs[2], bit3 := bs[3],
+           inv := w.1 } : EndoMulRound F),
+        (s, w.2.1))
+
 /-- The endomorphism-optimized scalar multiplication (PS `endo`; OCaml
 `Pickles.Step_main_inputs.Ops.endo`): witness the MSB-first bits, seal `β·x` and
 build `acc = [2](g + φ(g))` with two `addFast`s, run the `rounds` window rounds
@@ -110,17 +126,7 @@ def endoMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
   let phix ← sealVar (CVar.scale_ eb g.x)
   let p1 ← addFast .checkFinite g ⟨phix, g.y⟩
   let p2 ← addFast .checkFinite p1.p p1.p
-  let (state, fin) ← mapAccumM
-    (fun (st : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) => do
-      let w ← witness (val := F × F × F × F × F × F × F × F) (rowWit eb g bs st)
-      let s : AffinePoint (FVar F) := ⟨w.2.2.2.2.1, w.2.2.2.2.2.1⟩
-      pure (({ t := g, p := st.1, r := ⟨w.2.2.1, w.2.2.2.1⟩, s,
-               s1 := w.2.2.2.2.2.2.1, s3 := w.2.2.2.2.2.2.2,
-               nAcc := st.2, nAccNext := w.2.1,
-               bit0 := bs[0], bit1 := bs[1], bit2 := bs[2], bit3 := bs[3],
-               inv := w.1 } : EndoMulRound F),
-            (s, w.2.1)))
-    (p2.p, .const 0) bits.toList
+  let (state, fin) ← mapAccumM (endoMulRound eb g) (p2.p, .const 0) bits.toList
   assertEqual fin.2 scalar.val
   addConstraint (KimchiSystem.endoMul { state, s := fin.1, nAcc := fin.2, endo := eb })
   pure fin.1
@@ -613,7 +619,7 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
   obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, -, -, -⟩ := d
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
-  simp only [endoMul, mapAccumM]
+  simp only [endoMul, endoMulRound, mapAccumM]
   mvcgen
   rename_i s hpre
   intro bits _
@@ -820,6 +826,91 @@ private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
              (Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).s3) := by
   simp [rowWit, AsProver.readCVar, hxt, hyt, hxp, hyp, hn, hb1, hb2, hb3, hb4,
     Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+
+open Std.Do in
+/-- **One round is the gate's canonical row.** On readable base, accumulator,
+register, and bit cells, the honest round accepts and its collected `EndoMulRound`
+reads as `build` at exactly those values — with the successor-supplied output cells
+being that row's `xS`/`yS`/`nPrime`, which the returned state also reads as. Stated
+over the gate model's row rather than any particular walk, so the caller's loop
+supplies only the reads and gets the row back; registered, so `mvcgen` applies it
+once per iteration. -/
+@[spec] theorem endoMulRound_complete_spec [Field F] [DecidableEq F]
+    (eb : F) (t : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 4)
+    (Q : PostCond (EndoMulRound F × (AffinePoint (FVar F) × FVar F))
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env => (t.x.eval env).isOk ∧ (t.y.eval env).isOk ∧
+          (st.1.x.eval env).isOk ∧ (st.1.y.eval env).isOk ∧ (st.2.eval env).isOk ∧
+          ∀ (j : ℕ) (hj : j < 4), ((bs[j]'hj).eval env).isOk)
+        (fun env r env' => ∀ xt yt xp yp nv b1 b2 b3 b4,
+          t.x.eval env = .ok xt → t.y.eval env = .ok yt →
+          st.1.x.eval env = .ok xp → st.1.y.eval env = .ok yp →
+          st.2.eval env = .ok nv →
+          bs[0].eval env = .ok b1 → bs[1].eval env = .ok b2 →
+          bs[2].eval env = .ok b3 → bs[3].eval env = .ok b4 →
+          EndoMulRound.evalWith env' r.1
+              (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4).xS
+              (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4).yS
+              (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4).nPrime
+            = .ok (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4)
+          ∧ r.1.p = st.1 ∧ r.1.nAcc = st.2
+          ∧ r.2.1.x.eval env'
+              = .ok (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4).xS
+          ∧ r.2.1.y.eval env'
+              = .ok (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4).yS
+          ∧ r.2.2.eval env'
+              = .ok (Kimchi.Gate.EndoMul.build eb xt yt xp yp nv b1 b2 b3 b4).nPrime)
+        Q⦄
+    (endoMulRound (c := KimchiProverC F) eb t st bs)
+    ⦃Q⦄ := by
+  simp only [endoMulRound]
+  mvcgen
+  rename_i st₀ hpre
+  obtain ⟨⟨htxk, htyk, hpxk, hpyk, hnk, hbk⟩, hk⟩ := hpre
+  obtain ⟨xt, hxt⟩ := CVar.evalOk htxk
+  obtain ⟨yt, hyt⟩ := CVar.evalOk htyk
+  obtain ⟨xp, hxp⟩ := CVar.evalOk hpxk
+  obtain ⟨yp, hyp⟩ := CVar.evalOk hpyk
+  obtain ⟨nv, hnv⟩ := CVar.evalOk hnk
+  obtain ⟨b1, hb1⟩ := CVar.evalOk (hbk 0 (by omega))
+  obtain ⟨b2, hb2⟩ := CVar.evalOk (hbk 1 (by omega))
+  obtain ⟨b3, hb3⟩ := CVar.evalOk (hbk 2 (by omega))
+  obtain ⟨b4, hb4⟩ := CVar.evalOk (hbk 3 (by omega))
+  have hrow := rowWit_ok (eb := eb) hxt hyt hxp hyp hnv hb1 hb2 hb3 hb4
+  refine ⟨by rw [hrow]; rfl, fun w st₁ hgrant hle₁ => ?_⟩
+  have hw := hgrant _ hrow
+  mvcgen
+  refine hk _ st₁ (fun xt' yt' xp' yp' nv' b1' b2' b3' b4'
+      hxt' hyt' hxp' hyp' hnv' hb1' hb2' hb3' hb4' => ?_) hle₁
+  rw [hxt] at hxt'
+  injection hxt' with hxt'
+  rw [hyt] at hyt'
+  injection hyt' with hyt'
+  rw [hxp] at hxp'
+  injection hxp' with hxp'
+  rw [hyp] at hyp'
+  injection hyp' with hyp'
+  rw [hnv] at hnv'
+  injection hnv' with hnv'
+  rw [hb1] at hb1'
+  injection hb1' with hb1'
+  rw [hb2] at hb2'
+  injection hb2' with hb2'
+  rw [hb3] at hb3'
+  injection hb3' with hb3'
+  rw [hb4] at hb4'
+  injection hb4' with hb4'
+  subst hxt' hyt' hxp' hyp' hnv' hb1' hb2' hb3' hb4'
+  refine ⟨?_, rfl, rfl, hw.2.2.2.2.1, hw.2.2.2.2.2.1, hw.2.1⟩
+  exact evalWith_ok_iff.mpr
+    ⟨CVar.eval_le hle₁ hxt, CVar.eval_le hle₁ hyt, CVar.eval_le hle₁ hxp,
+     CVar.eval_le hle₁ hyp, CVar.eval_le hle₁ hnv,
+     CVar.eval_le hle₁ hb1, CVar.eval_le hle₁ hb2,
+     CVar.eval_le hle₁ hb3, CVar.eval_le hle₁ hb4,
+     hw.2.2.2.2.2.2.1, hw.2.2.1, hw.2.2.2.1, hw.2.2.2.2.2.2.2, hw.1,
+     rfl, rfl, rfl⟩
 
 /-- `accX`/`accY`/`accN` at the walk are the next row's input cells. -/
 private theorem accX_chainBuild [Field F] [DecidableEq F]
@@ -1061,66 +1152,27 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
         hread pref.length hkrows j hj
       have hr2 := CVar.eval_le (hle₂.trans (hle₃.trans (hle₄.trans hLe))) hr'
       simpa [Vector.getElem_ofFn] using hr2
-    have hrow := rowWit_ok (eb := eb)
-      (CVar.eval_le ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe) hxv)
-      (CVar.eval_le ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe) hyv)
-      hxP hyP hnP (hbit 0 (by omega)) (hbit 1 (by omega))
+    have htx := CVar.eval_le ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe) hxv
+    have hty := CVar.eval_le ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe) hyv
+    -- the round's own law does the rest
+    refine ⟨⟨by rw [htx]; rfl, by rw [hty]; rfl, by rw [hxP]; rfl,
+      by rw [hyP]; rfl, by rw [hnP]; rfl,
+      fun j hj => by rw [hbit j hj]; rfl⟩, fun r st' hpost hle' => ?_⟩
+    obtain ⟨hev, hpEq, hnEq, hsx, hsy, hsn⟩ := hpost xv yv _ _ _ _ _ _ _
+      htx hty hxP hyP hnP (hbit 0 (by omega)) (hbit 1 (by omega))
       (hbit 2 (by omega)) (hbit 3 (by omega))
-    rw [show Kimchi.Gate.EndoMul.build eb xv yv
-        (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length).xP
-        (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length).yP
-        (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length).n
-        (if n.testBit (4 * rounds - 1 - (4 * pref.length + 0)) then (1 : F) else 0)
-        (if n.testBit (4 * rounds - 1 - (4 * pref.length + 1)) then (1 : F) else 0)
-        (if n.testBit (4 * rounds - 1 - (4 * pref.length + 2)) then (1 : F) else 0)
-        (if n.testBit (4 * rounds - 1 - (4 * pref.length + 3)) then (1 : F) else 0)
-      = Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length from
-        (Kimchi.Gate.EndoMul.chainBuild_eta eb xv yv x0v y0v 0 bsv
-          pref.length).symm] at hrow
-    refine ⟨by rw [hrow]; rfl, fun w st' hgrant' hle' => ?_⟩
-    have hw := hgrant' _ hrow
-    mvcgen
-    have hround : EndoMulRound.evalWith st'.env
-        { t := t, p := b.fst.1, r := ⟨w.2.2.1, w.2.2.2.1⟩,
-          s := ⟨w.2.2.2.2.1, w.2.2.2.2.2.1⟩,
-          s1 := w.2.2.2.2.2.2.1, s3 := w.2.2.2.2.2.2.2,
-          nAcc := b.fst.2, nAccNext := w.2.1,
-          bit0 := (bits[pref.length]'hkrows)[0],
-          bit1 := (bits[pref.length]'hkrows)[1],
-          bit2 := (bits[pref.length]'hkrows)[2],
-          bit3 := (bits[pref.length]'hkrows)[3],
-          inv := w.1 }
-        (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length).xS
-        (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length).yS
-        (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length).nPrime
-        = .ok (Kimchi.Gate.EndoMul.chainBuild eb xv yv x0v y0v 0 bsv pref.length) := by
-      obtain ⟨hxT', hyT', hb1', hb2', hb3', hb4'⟩ :=
-        chainBuild_fields eb xv yv x0v y0v 0 bsv pref.length
-      refine evalWith_ok_iff.mpr
-        ⟨?_, ?_, CVar.eval_le hle' hxP, CVar.eval_le hle' hyP,
-          CVar.eval_le hle' hnP, ?_, ?_, ?_, ?_, hw.2.2.2.2.2.2.1,
-          hw.2.2.1, hw.2.2.2.1, hw.2.2.2.2.2.2.2, hw.1, rfl, rfl, rfl⟩
-      · rw [hxT']
-        exact CVar.eval_le
-          (((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe).trans hle') hxv
-      · rw [hyT']
-        exact CVar.eval_le
-          (((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hLe).trans hle') hyv
-      · rw [hb1']
-        exact CVar.eval_le hle' (hbit 0 (by omega))
-      · rw [hb2']
-        exact CVar.eval_le hle' (hbit 1 (by omega))
-      · rw [hb3']
-        exact CVar.eval_le hle' (hbit 2 (by omega))
-      · rw [hb4']
-        exact CVar.eval_le hle' (hbit 3 (by omega))
+    rw [← Kimchi.Gate.EndoMul.chainBuild_eta eb xv yv x0v y0v 0 bsv pref.length]
+      at hev hsx hsy hsn
+    intro _
     refine ⟨hLe.trans hle', ?_, ?_⟩
     · simp only [List.length_append, List.length_cons, List.length_nil]
-      exact ⟨hw.2.2.2.2.1, hw.2.2.2.2.2.1, hw.2.1⟩
+      exact ⟨hsx, hsy, hsn⟩
     · simp only [List.length_append, List.length_cons, List.length_nil]
       exact chainOk_snoc (chainOk_le hle' hchk)
-        (CVar.eval_le hle' hxP) (CVar.eval_le hle' hyP) (CVar.eval_le hle' hnP)
-        hround ((Kimchi.Gate.EndoMul.ok_iff eb _).mpr (hHolds pref.length hkrows))
+        (by rw [hpEq]; exact CVar.eval_le hle' hxP)
+        (by rw [hpEq]; exact CVar.eval_le hle' hyP)
+        (by rw [hnEq]; exact CVar.eval_le hle' hnP)
+        hev ((Kimchi.Gate.EndoMul.ok_iff eb _).mpr (hHolds pref.length hkrows))
   case vc2.vc1.vc1.vc1.vc1.refine_2.refine_2.pre =>
     exact ⟨Assignments.Le.refl st₄.env, ⟨hx0e, hy0e, rfl⟩, rfl⟩
   case vc3.vc1.vc1.vc1.vc1.refine_2.refine_2.post.success =>
