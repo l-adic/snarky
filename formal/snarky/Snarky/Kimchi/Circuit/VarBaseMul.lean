@@ -159,7 +159,8 @@ def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (sDiv2 : FVar F) (sOdd : BoolVar F) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks base ⟨sDiv2⟩
-  (r.lsbBits.toList.drop sDiv2Bits).forM fun bit => assertEqual bit (.const 0)
+  for bit in r.lsbBits.toList.drop sDiv2Bits do
+    assertEqual bit (.const 0)
   -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation
   let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.negate_ base.y⟩
   let q ← addFast .checkFinite r.g negBase
@@ -702,34 +703,6 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   push_cast
   ring
 
-open Std.Do in
-/-- Pinning a list of variables to the zero constant reads them all as zero —
-`scaleFast2`'s high-bit pins, one `assertEqual` per variable. -/
-private theorem forM_pinZero_spec [Field F] [DecidableEq F]
-    (l : List (FVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => ∀ b ∈ l, b.val V = 0) Q⦄
-    ((l.forM fun bit => assertEqual bit (.const 0)) :
-      CircuitM F (KimchiConstraint F) PUnit)
-    ⦃Q⦄ := by
-  induction l generalizing Q with
-  | nil =>
-    mvcgen
-    intro s hpre
-    simp only [List.forM_eq_forM, List.forM_nil]
-    mvcgen
-    exact hpre ⟨⟩ _ (by simp)
-  | cons b t ih =>
-    mvcgen
-    intro s hpre
-    simp only [List.forM_eq_forM, List.forM_cons]
-    mvcgen
-    intro _ nv hpin
-    exact ih _ _ fun _ nv2 hrest =>
-      hpre ⟨⟩ _ fun x hx => by
-        rcases List.mem_cons.mp hx with rfl | hx
-        · simpa using hpin
-        · exact hrest x hx
-
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsVal_drop_of_zeros
   bitsRegister_eq_cast y_ne_zero_of_odd_order) in
 /-- `scaleFast2` is sound — the PS defining equation
@@ -763,86 +736,103 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   refine varBaseMul_spec d n chunks hn base ⟨sDiv2⟩ _ _ ?_
   intro r nv hr
   mvcgen
-  refine forM_pinZero_spec (r.lsbBits.toList.drop sDiv2Bits) _ _ ?_
-  intro _ nvp hzeros
-  mvcgen
-  refine AddFast.addFast_checkFinite_spec d.W d.short d.two_ne r.g
-    ⟨base.x, CVar.negate_ base.y⟩ _ _ ?_
-  intro q nvq hq
-  mvcgen
-  intro y _ hysel
-  mvcgen
-  intro x _ hxsel
-  mvcgen
-  refine hpre ⟨x, y⟩ _ ?_
-  intro hT bb hbb
-  obtain ⟨bl, hbool, hblen, hsrc, hregF, hpfn⟩ := hr hT
-  -- the pins force the decode's leading window to zero
-  have hzeros' : ∀ b ∈ bl.take (5 * chunks - sDiv2Bits), b = 0 := by
-    intro b hb
-    rw [hsrc, ← List.map_take] at hb
-    obtain ⟨fv, hfv, rfl⟩ := List.mem_map.mp hb
-    apply hzeros
-    rw [List.take_reverse,
-      show (r.lsbBits.toList.take (5 * chunks)).length - (5 * chunks - sDiv2Bits)
-          = sDiv2Bits from by
-        simp only [List.length_take, Vector.length_toList]
-        omega,
-      List.mem_reverse, List.drop_take] at hfv
-    exact List.mem_of_mem_take hfv
-  have hvlt : bitsVal bl < 2 ^ sDiv2Bits ∧ 0 ≤ bitsVal bl := by
-    rw [bitsVal_drop_of_zeros bl (5 * chunks - sDiv2Bits) hzeros']
-    have hb' : ∀ b ∈ bl.drop (5 * chunks - sDiv2Bits), b = 0 ∨ b = 1 :=
-      fun b hb => hbool b (List.mem_of_mem_drop hb)
-    have hlt := bitsVal_lt _ hb'
-    rwa [List.length_drop, hblen,
-      show 5 * chunks - (5 * chunks - sDiv2Bits) = sDiv2Bits from by omega] at hlt
-  refine ⟨bitsVal bl, hvlt.2, hvlt.1, ?_, fun hregime => ?_⟩
-  · rw [hregF, bitsRegister_eq_cast bl hbool]
-  · obtain ⟨hg, hgpt⟩ := hpfn hregime
-    simp only [Type1.fromShifted] at hgpt
-    have hnegv : (CVar.negate_ base.y).val s.V = -(base.y.val s.V) := by
-      simp [CVar.negate_, CVar.val_scale_]
-    have hnegT : d.W.Nonsingular (base.x.val s.V) ((CVar.negate_ base.y).val s.V) := by
-      rw [hnegv]
-      have hneg := (d.W.nonsingular_neg (base.x.val s.V) (base.y.val s.V)).mpr hT
-      rwa [show d.W.negY (base.x.val s.V) (base.y.val s.V) = -(base.y.val s.V) from by
-        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]
-        ring] at hneg
-    have hy : r.g.y.val s.V ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hg
-    obtain ⟨hqns, hqsum⟩ := hq hg hnegT hy
-    have hnegPt : (Point.some _ _ hnegT : d.W.Point) = -Point.some _ _ hT := by
-      rw [WeierstrassCurve.Affine.Point.neg_some]
-      exact Kimchi.Gate.EndoMul.some_congr d.W hnegT _ rfl (by
-        rw [hnegv, WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]
-        ring)
-    have hqpt : (Point.some _ _ hqns : d.W.Point)
-        = (2 * bitsVal bl + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
-      rw [← hqsum, hgpt, hnegPt]
-      module
-    have hxv := hxsel bb hbb
-    have hyv := hysel bb hbb
-    cases bb
-    · have hres : d.W.Nonsingular (x.val s.V) (y.val s.V) := by
-        rw [hxv, hyv]
-        simpa [selectPure] using hqns
-      refine ⟨hres, ?_⟩
-      rw [show SplitField.fromShifted (5 * chunks) (⟨bitsVal bl, false⟩ : SplitField ℤ Bool)
-          = 2 * bitsVal bl + 2 ^ (5 * chunks) from by
-        simp [SplitField.fromShifted]]
-      refine (Kimchi.Gate.EndoMul.some_congr d.W hres hqns ?_ ?_).trans hqpt
-      · rw [hxv]; simp [selectPure]
-      · rw [hyv]; simp [selectPure]
-    · have hres : d.W.Nonsingular (x.val s.V) (y.val s.V) := by
-        rw [hxv, hyv]
-        simpa [selectPure] using hg
-      refine ⟨hres, ?_⟩
-      rw [show SplitField.fromShifted (5 * chunks) (⟨bitsVal bl, true⟩ : SplitField ℤ Bool)
-          = 2 * bitsVal bl + 2 ^ (5 * chunks) + 1 from by
-        simp [SplitField.fromShifted]; ring]
-      refine (Kimchi.Gate.EndoMul.some_congr d.W hres hg ?_ ?_).trans hgpt
-      · rw [hxv]; simp [selectPure]
-      · rw [hyv]; simp [selectPure]
+  case inv1 =>
+    exact ⇓ p s' => ⌜s'.V = s.V ∧ ∀ b ∈ p.1.prefix, b.val s.V = 0⌝
+  case step =>
+    rename_i pref cur suff hsplit u st' hinv
+    intro _ nv hpin
+    mvcgen
+    refine ⟨hinv.1, fun b hb => ?_⟩
+    rcases List.mem_append.mp hb with hb | hb
+    · exact hinv.2 b hb
+    · rw [List.mem_singleton.mp hb, ← hinv.1]
+      simpa using hpin
+  case pre => exact ⟨rfl, by simp⟩
+  case post.success =>
+    rename_i u st' hinv
+    obtain ⟨hV, hzeros⟩ := hinv
+    mvcgen
+    refine AddFast.addFast_checkFinite_spec d.W d.short d.two_ne r.g
+      ⟨base.x, CVar.negate_ base.y⟩ _ _ ?_
+    intro q nvq hq
+    rw [hV] at hq
+    mvcgen
+    intro y _ hysel
+    rw [hV] at hysel
+    mvcgen
+    intro x _ hxsel
+    rw [hV] at hxsel
+    mvcgen
+    rw [hV]
+    refine hpre ⟨x, y⟩ _ ?_
+    intro hT bb hbb
+    obtain ⟨bl, hbool, hblen, hsrc, hregF, hpfn⟩ := hr hT
+    -- the pins force the decode's leading window to zero
+    have hzeros' : ∀ b ∈ bl.take (5 * chunks - sDiv2Bits), b = 0 := by
+      intro b hb
+      rw [hsrc, ← List.map_take] at hb
+      obtain ⟨fv, hfv, rfl⟩ := List.mem_map.mp hb
+      apply hzeros
+      rw [List.take_reverse,
+        show (r.lsbBits.toList.take (5 * chunks)).length - (5 * chunks - sDiv2Bits)
+            = sDiv2Bits from by
+          simp only [List.length_take, Vector.length_toList]
+          omega,
+        List.mem_reverse, List.drop_take] at hfv
+      exact List.mem_of_mem_take hfv
+    have hvlt : bitsVal bl < 2 ^ sDiv2Bits ∧ 0 ≤ bitsVal bl := by
+      rw [bitsVal_drop_of_zeros bl (5 * chunks - sDiv2Bits) hzeros']
+      have hb' : ∀ b ∈ bl.drop (5 * chunks - sDiv2Bits), b = 0 ∨ b = 1 :=
+        fun b hb => hbool b (List.mem_of_mem_drop hb)
+      have hlt := bitsVal_lt _ hb'
+      rwa [List.length_drop, hblen,
+        show 5 * chunks - (5 * chunks - sDiv2Bits) = sDiv2Bits from by omega] at hlt
+    refine ⟨bitsVal bl, hvlt.2, hvlt.1, ?_, fun hregime => ?_⟩
+    · rw [hregF, bitsRegister_eq_cast bl hbool]
+    · obtain ⟨hg, hgpt⟩ := hpfn hregime
+      simp only [Type1.fromShifted] at hgpt
+      have hnegv : (CVar.negate_ base.y).val s.V = -(base.y.val s.V) := by
+        simp [CVar.negate_, CVar.val_scale_]
+      have hnegT : d.W.Nonsingular (base.x.val s.V) ((CVar.negate_ base.y).val s.V) := by
+        rw [hnegv]
+        have hneg := (d.W.nonsingular_neg (base.x.val s.V) (base.y.val s.V)).mpr hT
+        rwa [show d.W.negY (base.x.val s.V) (base.y.val s.V) = -(base.y.val s.V) from by
+          rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]
+          ring] at hneg
+      have hy : r.g.y.val s.V ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hg
+      obtain ⟨hqns, hqsum⟩ := hq hg hnegT hy
+      have hnegPt : (Point.some _ _ hnegT : d.W.Point) = -Point.some _ _ hT := by
+        rw [WeierstrassCurve.Affine.Point.neg_some]
+        exact Kimchi.Gate.EndoMul.some_congr d.W hnegT _ rfl (by
+          rw [hnegv, WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]
+          ring)
+      have hqpt : (Point.some _ _ hqns : d.W.Point)
+          = (2 * bitsVal bl + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
+        rw [← hqsum, hgpt, hnegPt]
+        module
+      have hxv := hxsel bb hbb
+      have hyv := hysel bb hbb
+      cases bb
+      · have hres : d.W.Nonsingular (x.val s.V) (y.val s.V) := by
+          rw [hxv, hyv]
+          simpa [selectPure] using hqns
+        refine ⟨hres, ?_⟩
+        rw [show SplitField.fromShifted (5 * chunks) (⟨bitsVal bl, false⟩ : SplitField ℤ Bool)
+            = 2 * bitsVal bl + 2 ^ (5 * chunks) from by
+          simp [SplitField.fromShifted]]
+        refine (Kimchi.Gate.EndoMul.some_congr d.W hres hqns ?_ ?_).trans hqpt
+        · rw [hxv]; simp [selectPure]
+        · rw [hyv]; simp [selectPure]
+      · have hres : d.W.Nonsingular (x.val s.V) (y.val s.V) := by
+          rw [hxv, hyv]
+          simpa [selectPure] using hg
+        refine ⟨hres, ?_⟩
+        rw [show SplitField.fromShifted (5 * chunks) (⟨bitsVal bl, true⟩ : SplitField ℤ Bool)
+            = 2 * bitsVal bl + 2 ^ (5 * chunks) + 1 from by
+          simp [SplitField.fromShifted]; ring]
+        refine (Kimchi.Gate.EndoMul.some_congr d.W hres hg ?_ ?_).trans hgpt
+        · rw [hxv]; simp [selectPure]
+        · rw [hyv]; simp [selectPure]
 
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
 /-- `scaleFast2'` is sound — `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read
@@ -1552,5 +1542,244 @@ theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
   refine ⟨hpre.1, fun r st' hrbits hrpt hle => ?_⟩
   mvcgen
   exact hpre.2 r.g st' hrpt hle
+
+/-- A bit reading survives table extension. -/
+private theorem readsBit_le [Field F] [DecidableEq F] {x : CVar F}
+    {env env' : Assignments F} (hle : env.Le env') (h : ReadsBit x env) :
+    ReadsBit x env' := by
+  obtain ⟨b, hb⟩ := h.exists_bit
+  refine ⟨by rw [CVar.eval_le hle hb]; rfl, fun w hw => ?_⟩
+  rw [CVar.eval_le hle hb] at hw
+  injection hw with hw
+  subst hw
+  cases b
+  · exact Or.inl rfl
+  · exact Or.inr rfl
+
+/-- The regime keeps the honest decode off the base: `fromShifted t ≢ 1 (mod order)`
+— subwrap by size (the window sits strictly inside `(0, order)`), one-wrap because
+`1` is a forbidden residue. What makes `scaleFast2`'s parity correction — the
+incomplete subtraction of the base — well-defined on the honest run. -/
+private theorem regime_off_base [Field F] [DecidableEq F] (d : HasCurve F)
+    {L : ℕ} {t : ℤ} (ht0 : 0 ≤ t) (htlt : t < 2 ^ L)
+    (hreg : d.LadderRegime L (Type1.fromShifted L ⟨t⟩)) :
+    ¬ ((d.W.order : ℤ) ∣ (2 * t + 2 ^ L)) := by
+  intro hdvd
+  rcases hreg with hsub | ⟨-, -, -, hnf⟩
+  · have hpos : (0 : ℤ) < 2 ^ L := by positivity
+    have hord : (3 : ℤ) * 2 ^ L ≤ (d.W.order : ℤ) := by exact_mod_cast hsub
+    have hle' := Int.le_of_dvd (by linarith) hdvd
+    linarith
+  · refine hnf (Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd_sub_one
+      d.W.order ?_)
+    rw [show Type1.fromShifted L (⟨t⟩ : Type1 ℤ) - 1 = 2 * t + 2 ^ L from by
+      simp [Type1.fromShifted]]
+    exact hdvd
+
+open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order zsmul_eq_zero_iff_order_dvd) in
+/-- `scaleFast2` is complete — the honest side of the PS defining equation
+`scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`: on a readable on-curve
+base, a readable in-range faithful half whose `Type1` decode satisfies the inner
+ladder's regime, and a parity flag reading a genuine bit, the honest run accepts and
+the returned point is the `SplitField` decode's multiple. The regime also keeps the
+ladder result off the base (`s ≢ 1`, subwrap by size, one-wrap because `1` is a
+forbidden residue), which is what makes the parity correction's incomplete
+subtraction well-defined — the completeness-side counterpart of the sound law's
+`tne` self-enforcement. -/
+theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
+    (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
+    (Q : PostCond (AffinePoint (FVar F))
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (sDiv2.eval env).isOk ∧ ReadsBit (↑sOdd : CVar F) env ∧
+          (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
+          (∀ v, sDiv2.eval env = .ok v →
+            ToNat.toNat v < 2 ^ sDiv2Bits ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
+            d.LadderRegime (5 * chunks)
+              (Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
+          (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
+            d.W.Nonsingular x y))
+        (fun env r env' => ∀ v xv yv, sDiv2.eval env = .ok v →
+          base.x.eval env = .ok xv → base.y.eval env = .ok yv →
+          ∀ hT : d.W.Nonsingular xv yv,
+          ∀ bb : Bool, (↑sOdd : CVar F).eval env = .ok (bit bb) →
+          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
+            ∃ hres : d.W.Nonsingular xS yS,
+              Point.some _ _ hres
+                = SplitField.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ), bb⟩
+                    • Point.some _ _ hT)
+        Q⦄
+    (scaleFast2 (c := KimchiProverC F) n chunks sDiv2Bits base sDiv2 sOdd)
+    ⦃Q⦄ := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  simp only [scaleFast2]
+  mvcgen [varBaseMul_complete_spec]
+  rename_i st hpre
+  obtain ⟨⟨hsok, hbit, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
+  obtain ⟨v, hv⟩ := CVar.evalOk hsok
+  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
+  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
+  obtain ⟨hrange, hfaith, hreg⟩ := hsc v hv
+  obtain ⟨bb, hb⟩ := hbit.exists_bit
+  have hT : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
+  have hvlt : (ToNat.toNat v : ℤ) < 2 ^ (5 * chunks) := by
+    exact_mod_cast lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd)
+  have hs1 : ¬ ((d.W.order : ℤ) ∣ (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks))) :=
+    regime_off_base d (Int.natCast_nonneg _) hvlt hreg
+  -- the inner ladder
+  refine ⟨⟨hsok, hxok, hyok, fun v' hv' => ?_, hcurve⟩,
+    fun r st' hrbits hrpt hle => ?_⟩
+  · rw [hv] at hv'
+    injection hv' with hv'
+    subst hv'
+    exact ⟨lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd),
+      hfaith, hreg⟩
+  obtain ⟨xg, yg, hgx, hgy, hfin, hpt⟩ := hrpt v xv yv hv hxv hyv hT
+  have hbits := hrbits v hv
+  -- the high-bit pins: every dropped bit reads zero (the half is below `2^sDiv2Bits`)
+  have hpins : ∀ b ∈ r.lsbBits.toList.drop sDiv2Bits, b.eval st'.env = .ok 0 := by
+    intro bpin hbpin
+    obtain ⟨k, hk', hEq⟩ := List.mem_iff_getElem.mp hbpin
+    have hkn : sDiv2Bits + k < n := by
+      have hlen : (r.lsbBits.toList.drop sDiv2Bits).length = n - sDiv2Bits := by
+        simp [List.length_drop]
+      omega
+    rw [← hEq, List.getElem_drop, Vector.getElem_toList]
+    have hbfalse : (ToNat.toNat v).testBit (sDiv2Bits + k) = false := by
+      apply Nat.testBit_lt_two_pow
+      calc ToNat.toNat v < 2 ^ sDiv2Bits := hrange
+        _ ≤ 2 ^ (sDiv2Bits + k) := Nat.pow_le_pow_right (by norm_num) (by omega)
+    rw [hbits (sDiv2Bits + k) hkn, hbfalse]
+    rfl
+  mvcgen
+  case inv1 =>
+    exact ⇓ p s' => ⌜st'.env.Le s'.env⌝
+  case step =>
+    rename_i pref cur suff hsplit u s' hinv
+    have hcur : cur ∈ r.lsbBits.toList.drop sDiv2Bits := by
+      rw [hsplit]
+      exact List.mem_append_right _ List.mem_cons_self
+    refine ⟨⟨by rw [CVar.eval_le hinv (hpins cur hcur)]; rfl, by rfl,
+      fun xv' yv' hx' hy' => ?_⟩, fun u' s'' hle'' => ?_⟩
+    · rw [CVar.eval_le hinv (hpins cur hcur)] at hx'
+      injection hx' with hx'
+      injection hy' with hy'
+      rw [← hx', ← hy']
+    · mvcgen
+      exact hinv.trans hle''
+  case pre => exact Assignments.Le.refl st'.env
+  case post.success =>
+    rename_i u st'' hle'
+    -- the correction addition: `g − T` via the pure negation
+    have hgx' := CVar.eval_le hle' hgx
+    have hgy' := CVar.eval_le hle' hgy
+    have hbx' : base.x.eval st''.env = .ok xv := CVar.eval_le (hle.trans hle') hxv
+    have hny : (CVar.negate_ base.y).eval st''.env = .ok (-yv) := by
+      rw [show (-yv) = (-1 : F) * yv from by ring]
+      exact CVar.eval_scale_ (CVar.eval_le (hle.trans hle') hyv) (-1)
+    have hgyne : yg ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hfin
+    have hnegT : d.W.Nonsingular xv (-yv) := by
+      have h := (d.W.nonsingular_neg xv yv).mpr hT
+      rwa [show d.W.negY xv yv = -yv from by
+        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]; ring] at h
+    have hnegPt : (Point.some _ _ hnegT : d.W.Point) = -Point.some _ _ hT := by
+      rw [WeierstrassCurve.Affine.Point.neg_some]
+      exact Kimchi.Gate.EndoMul.some_congr d.W hnegT _ rfl (by
+        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]; ring)
+    mvcgen
+    refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne
+      r.g ⟨base.x, CVar.negate_ base.y⟩ _ _
+      ⟨⟨by rw [hgx']; rfl, by rw [hgy']; rfl, by rw [hbx']; rfl, by rw [hny]; rfl,
+        fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
+       fun q st₃ hq hle₃ => ?_⟩
+    · rw [hgx'] at he1; rw [hgy'] at he2; rw [hbx'] at he3; rw [hny] at he4
+      injection he1 with he1; injection he2 with he2
+      injection he3 with he3; injection he4 with he4
+      subst he1 he2 he3 he4
+      refine ⟨hfin.1, hnegT.1, hgyne, fun _ => ?_⟩
+      rintro ⟨hxeq, hyeq⟩
+      rw [show d.W.negY xv (-yv) = yv from by
+        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]; ring] at hyeq
+      have hgT : Point.some _ _ hfin = Point.some _ _ hT :=
+        Kimchi.Gate.EndoMul.some_congr d.W hfin hT hxeq hyeq
+      apply hs1
+      have hsT : Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+          • Point.some _ _ hT = Point.some _ _ hT := hpt.symm.trans hgT
+      have h0 : (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
+          = 0 := by
+        have hexp : (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
+            = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+                • Point.some _ _ hT - Point.some _ _ hT := by
+          simp only [Type1.fromShifted]
+          module
+        rw [hexp, hsT, sub_self]
+      exact (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 h0
+    obtain ⟨xq, yq, hqx, hqy, -, hqns, hqsum⟩ :=
+      (hq xg yg xv (-yv) hgx' hgy' hbx' hny hfin hnegT).resolve_left (by
+        rintro ⟨-, hzero⟩
+        apply hs1
+        have hexp : (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
+            = Point.some _ _ hfin + Point.some _ _ hnegT := by
+          rw [hpt, hnegPt]
+          simp only [Type1.fromShifted]
+          module
+        rw [hzero] at hexp
+        exact (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 hexp)
+    have hqpt : (Point.some _ _ hqns : d.W.Point)
+        = (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
+      rw [← hqsum, hpt, hnegPt]
+      simp only [Type1.fromShifted]
+      module
+    -- the point conditional selects coordinatewise, `y` before `x`
+    mvcgen
+    refine ⟨⟨readsBit_le ((hle.trans hle').trans hle₃) hbit,
+      by rw [CVar.eval_le hle₃ hgy']; rfl, by rw [hqy]; rfl⟩,
+      fun ysel sty hyg hley => ?_⟩
+    have hyv' := hyg bb yg yq
+      (CVar.eval_le ((hle.trans hle').trans hle₃) hb)
+      (CVar.eval_le hle₃ hgy') hqy
+    mvcgen
+    refine ⟨⟨readsBit_le (((hle.trans hle').trans hle₃).trans hley) hbit,
+      by rw [CVar.eval_le (hle₃.trans hley) hgx']; rfl,
+      by rw [CVar.eval_le hley hqx]; rfl⟩,
+      fun xsel stx hxg hlex => ?_⟩
+    have hxv' := hxg bb xg xq
+      (CVar.eval_le (((hle.trans hle').trans hle₃).trans hley) hb)
+      (CVar.eval_le (hle₃.trans hley) hgx') (CVar.eval_le hley hqx)
+    mvcgen
+    refine hk ⟨xsel, ysel⟩ stx
+      (fun v' xv' yv' hv' hxv' hyv' hT' bb' hb' => ?_)
+      ((((hle.trans hle').trans hle₃).trans hley).trans hlex)
+    rw [hv] at hv'
+    injection hv' with hv'
+    rw [hxv] at hxv'
+    injection hxv' with hxv'
+    rw [hyv] at hyv'
+    injection hyv' with hyv'
+    subst hv' hxv' hyv'
+    rw [hb] at hb'
+    injection hb' with hb'
+    obtain rfl := bit_inj one_ne_zero hb'
+    cases bb
+    · refine ⟨xq, yq, by simpa [selectPure] using hxv',
+        by simpa [selectPure] using CVar.eval_le hlex hyv', hqns, ?_⟩
+      rw [show SplitField.fromShifted (5 * chunks)
+          (⟨(ToNat.toNat v : ℤ), false⟩ : SplitField ℤ Bool)
+          = 2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks) from by
+        simp [SplitField.fromShifted]]
+      exact hqpt
+    · refine ⟨xg, yg, by simpa [selectPure] using hxv',
+        by simpa [selectPure] using CVar.eval_le hlex hyv', hfin, ?_⟩
+      rw [show SplitField.fromShifted (5 * chunks)
+          (⟨(ToNat.toNat v : ℤ), true⟩ : SplitField ℤ Bool)
+          = Type1.fromShifted (5 * chunks) (⟨(ToNat.toNat v : ℤ)⟩ : Type1 ℤ) from by
+        simp [SplitField.fromShifted, Type1.fromShifted]; ring]
+      exact hpt
+  case post.except =>
+    exact ExceptConds.entails_false
 
 end Snarky.Kimchi
