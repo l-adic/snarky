@@ -1275,181 +1275,67 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     mvcgen
     -- the five bit steps: each quintet reads the previous accumulator and
     -- computes `stepBit`, i.e. the walk's next fields
-    have hw0Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)))[0]'(by omega)) b.fst.1 st₄.env
-        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s0,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s0
-              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s0,
-            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).y0
-              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                  pref.length).x0 + xv
-                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s0
-                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s0)
-              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s0,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).x1,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).y1) := by
-      rw [bitWit_ok (CVar.eval_le hle₄ hxT') (CVar.eval_le hle₄ hyT')
-        (CVar.eval_le hle₄ hxI) (CVar.eval_le hle₄ hyI)
-        (CVar.eval_le hle₄ hcurj0),
-        Kimchi.Gate.VarBaseMul.chainBuild_s0, Kimchi.Gate.VarBaseMul.chainBuild_x1,
-        Kimchi.Gate.VarBaseMul.chainBuild_y1]
+    have hw0Ok := bitWit_ok (CVar.eval_le hle₄ hxT') (CVar.eval_le hle₄ hyT')
+      (CVar.eval_le hle₄ hxI) (CVar.eval_le hle₄ hyI) (CVar.eval_le hle₄ hcurj0)
     refine ⟨by rw [hw0Ok]; rfl, fun w0 st₅ hg0 hle₅ => ?_⟩
     obtain ⟨hs0e', -, -, hx1e', hy1e'⟩ := hg0 _ hw0Ok
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s0] at hs0e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x1] at hx1e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y1] at hy1e'
     have hs0e := reads_fvar hs0e'
     have hx1e := reads_fvar hx1e'
     have hy1e := reads_fvar hy1e'
     mvcgen
-    have hw1Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)))[1]'(by omega)) ⟨w0.2.2.2.1, w0.2.2.2.2⟩ st₅.env
-        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s1,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s1
-              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s1,
-            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).y1
-              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                  pref.length).x1 + xv
-                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s1
-                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s1)
-              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s1,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).x2,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).y2) := by
-      rw [bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
-        (CVar.eval_le (hle₄.trans hle₅) hxT')
-        (CVar.eval_le (hle₄.trans hle₅) hyT') hx1e hy1e
-        (CVar.eval_le (hle₄.trans hle₅) (hcurj 1 (by omega))),
-        Kimchi.Gate.VarBaseMul.chainBuild_s1, Kimchi.Gate.VarBaseMul.chainBuild_x2,
-        Kimchi.Gate.VarBaseMul.chainBuild_y2]
+    have hw1Ok := bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
+      (CVar.eval_le (hle₄.trans hle₅) hxT') (CVar.eval_le (hle₄.trans hle₅) hyT')
+      hx1e hy1e (CVar.eval_le (hle₄.trans hle₅) (hcurj 1 (by omega)))
     refine ⟨by rw [hw1Ok]; rfl, fun w1 st₆ hg1 hle₆ => ?_⟩
     obtain ⟨hs1e', -, -, hx2e', hy2e'⟩ := hg1 _ hw1Ok
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s1] at hs1e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x2] at hx2e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y2] at hy2e'
     have hs1e := reads_fvar hs1e'
     have hx2e := reads_fvar hx2e'
     have hy2e := reads_fvar hy2e'
     mvcgen
-    have hw2Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)))[2]'(by omega)) ⟨w1.2.2.2.1, w1.2.2.2.2⟩ st₆.env
-        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s2,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s2
-              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s2,
-            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).y2
-              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                  pref.length).x2 + xv
-                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s2
-                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s2)
-              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s2,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).x3,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).y3) := by
-      rw [bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
-        (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hxT')
-        (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hyT')
-        hx2e hy2e
-        (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) (hcurj 2 (by omega))),
-        Kimchi.Gate.VarBaseMul.chainBuild_s2, Kimchi.Gate.VarBaseMul.chainBuild_x3,
-        Kimchi.Gate.VarBaseMul.chainBuild_y3]
+    have hw2Ok := bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
+      (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hxT')
+      (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hyT') hx2e hy2e
+      (CVar.eval_le ((hle₄.trans hle₅).trans hle₆) (hcurj 2 (by omega)))
     refine ⟨by rw [hw2Ok]; rfl, fun w2 st₇ hg2 hle₇ => ?_⟩
     obtain ⟨hs2e', -, -, hx3e', hy3e'⟩ := hg2 _ hw2Ok
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s2] at hs2e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x3] at hx3e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y3] at hy3e'
     have hs2e := reads_fvar hs2e'
     have hx3e := reads_fvar hx3e'
     have hy3e := reads_fvar hy3e'
     mvcgen
-    have hw3Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)))[3]'(by omega)) ⟨w2.2.2.2.1, w2.2.2.2.2⟩ st₇.env
-        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s3,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s3
-              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s3,
-            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).y3
-              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                  pref.length).x3 + xv
-                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s3
-                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s3)
-              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s3,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).x4,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).y4) := by
-      rw [bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
-        (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hxT')
-        (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hyT')
-        hx3e hy3e
-        (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇)
-          (hcurj 3 (by omega))),
-        Kimchi.Gate.VarBaseMul.chainBuild_s3, Kimchi.Gate.VarBaseMul.chainBuild_x4,
-        Kimchi.Gate.VarBaseMul.chainBuild_y4]
+    have hw3Ok := bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
+      (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hxT')
+      (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇) hyT') hx3e hy3e
+      (CVar.eval_le (((hle₄.trans hle₅).trans hle₆).trans hle₇)
+        (hcurj 3 (by omega)))
     refine ⟨by rw [hw3Ok]; rfl, fun w3 st₈ hg3 hle₈ => ?_⟩
     obtain ⟨hs3e', -, -, hx4e', hy4e'⟩ := hg3 _ hw3Ok
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s3] at hs3e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x4] at hx4e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y4] at hy4e'
     have hs3e := reads_fvar hs3e'
     have hx4e := reads_fvar hx4e'
     have hy4e := reads_fvar hy4e'
     mvcgen
-    have hw4Ok : bitWit base ((Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)))[4]'(by omega)) ⟨w3.2.2.2.1, w3.2.2.2.2⟩ st₈.env
-        = .ok ((Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s4,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).s4
-              * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s4,
-            2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).y4
-              / (2 * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                  pref.length).x4 + xv
-                - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s4
-                  * (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                    pref.length).s4)
-              - (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-                pref.length).s4,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).x5,
-            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              pref.length).y5) := by
-      rw [bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
-        (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hxT')
-        (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hyT')
-        hx4e hy4e
-        (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈)
-          (hcurj 4 (by omega))),
-        Kimchi.Gate.VarBaseMul.chainBuild_s4, Kimchi.Gate.VarBaseMul.chainBuild_x5,
-        Kimchi.Gate.VarBaseMul.chainBuild_y5]
+    have hw4Ok := bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
+      (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hxT')
+      (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈) hyT')
+      hx4e hy4e
+      (CVar.eval_le ((((hle₄.trans hle₅).trans hle₆).trans hle₇).trans hle₈)
+        (hcurj 4 (by omega)))
     refine ⟨by rw [hw4Ok]; rfl, fun w4 st₉ hg4 hle₉ => ?_⟩
     obtain ⟨hs4e', -, -, hx5e', hy5e'⟩ := hg4 _ hw4Ok
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_s4] at hs4e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_x5] at hx5e'
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_y5] at hy5e'
     have hs4e := reads_fvar hs4e'
     have hx5e := reads_fvar hx5e'
     have hy5e := reads_fvar hy5e'
