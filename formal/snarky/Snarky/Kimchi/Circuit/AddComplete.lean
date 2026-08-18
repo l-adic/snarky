@@ -645,6 +645,69 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
     · exact Or.inl ⟨hinf1 ▸ hpost.2.2, hsum⟩
     · exact Or.inr ⟨_, _, hpost.1, hpost.2.1, hinf0 ▸ hpost.2.2, h3, hsum⟩
 
+open WeierstrassCurve.Affine in
+/-- The negated operand's reading, on a short curve: `(x, −y)` is nonsingular and is
+the group negation — the face a subtracting caller consumes. -/
+theorem neg_point_reading [Field F] (W : WeierstrassCurve.Affine F)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) {xv yv : F} (hT : W.Nonsingular xv yv) :
+    ∃ hn : W.Nonsingular xv (-yv),
+      (Point.some _ _ hn : W.Point) = -Point.some _ _ hT := by
+  have hy : W.negY xv yv = -yv := by
+    rw [WeierstrassCurve.Affine.negY, ha.1, ha.2.2]
+    ring
+  have hn : W.Nonsingular xv (-yv) := hy ▸ (W.nonsingular_neg xv yv).mpr hT
+  refine ⟨hn, ?_⟩
+  rw [WeierstrassCurve.Affine.Point.neg_some]
+  simp only [hy]
+
+open Std.Do WeierstrassCurve.Affine in
+/-- `addFast`'s completeness at the group level, `checkFinite` mode: nonsingular
+readable operands with `y₁ ≠ 0` whose group sum is nonzero accept, and the result
+reads as the sum — `addFast_complete_spec` with the same-`x` branch analysis done
+once, the face the EC gadget walks consume. -/
+theorem addFast_complete_point_spec [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
+    (p1' p2' : AffinePoint (FVar F))
+    (Q : PostCond (AddResult F) (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (p1'.x.eval env).isOk ∧ (p1'.y.eval env).isOk ∧
+          (p2'.x.eval env).isOk ∧ (p2'.y.eval env).isOk ∧
+          (∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
+            p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
+            ∃ (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2),
+              y1 ≠ 0 ∧ Point.some _ _ h1 + Point.some _ _ h2 ≠ 0))
+        (fun env (r : AddResult F) env' =>
+          ∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
+            p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
+            ∀ (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2),
+              ∃ x3 y3, r.p.x.eval env' = .ok x3 ∧ r.p.y.eval env' = .ok y3 ∧
+                ∃ h3 : W.Nonsingular x3 y3,
+                  Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3)
+        Q⦄
+    addFast (c := KimchiProverC F) .checkFinite p1' p2'
+    ⦃Q⦄ := by
+  intro st hpre
+  refine addFast_complete_spec .checkFinite W ha htwo p1' p2' Q st
+    ⟨⟨hpre.1.1, hpre.1.2.1, hpre.1.2.2.1, hpre.1.2.2.2.1,
+      fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
+     fun r st' hpost hle =>
+       hpre.2 r st' (fun x1 y1 x2 y2 he1 he2 he3 he4 h1 h2 => ?_) hle⟩
+  · obtain ⟨h1, h2, hy1ne, hsum⟩ := hpre.1.2.2.2.2 x1 y1 x2 y2 he1 he2 he3 he4
+    refine ⟨h1.1, h2.1, hy1ne, fun _ => ?_⟩
+    rintro ⟨rfl, hyeq⟩
+    subst hyeq
+    apply hsum
+    rw [show Point.some x1 (W.negY x1 y2) h1 = -Point.some x1 y2 h2 from by
+      rw [WeierstrassCurve.Affine.Point.neg_some]]
+    exact neg_add_cancel _
+  · obtain ⟨h1', h2', -, hsum⟩ := hpre.1.2.2.2.2 x1 y1 x2 y2 he1 he2 he3 he4
+    rcases hpost x1 y1 x2 y2 he1 he2 he3 he4 h1 h2 with
+      ⟨-, hzero⟩ | ⟨x3, y3, hx3, hy3, -, h3, hsum3⟩
+    · exact absurd hzero hsum
+    · exact ⟨x3, y3, hx3, hy3, h3, hsum3⟩
+
 end AddFast
 
 end Snarky.Kimchi

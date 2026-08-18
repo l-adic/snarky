@@ -1556,6 +1556,27 @@ private theorem readsBit_le [Field F] [DecidableEq F] {x : CVar F}
   · exact Or.inl rfl
   · exact Or.inr rfl
 
+/-- The ladder's granted bits above the half's width read zero: `testBit` vanishes
+above a value's width. -/
+private theorem dropped_bits_zero [Field F] [DecidableEq F] {env : Assignments F}
+    {n sDiv2Bits : ℕ} {bits : Vector (FVar F) n} {x : ℕ} (hx : x < 2 ^ sDiv2Bits)
+    (hbits : ∀ (i : ℕ) (hi : i < n),
+      (bits[i]'hi).eval env = .ok (if x.testBit i then (1 : F) else 0)) :
+    ∀ b ∈ bits.toList.drop sDiv2Bits, b.eval env = .ok 0 := by
+  intro bpin hbpin
+  obtain ⟨k, hk', hEq⟩ := List.mem_iff_getElem.mp hbpin
+  have hkn : sDiv2Bits + k < n := by
+    have hlen : (bits.toList.drop sDiv2Bits).length = n - sDiv2Bits := by
+      simp [List.length_drop]
+    omega
+  rw [← hEq, List.getElem_drop, Vector.getElem_toList]
+  have hbfalse : x.testBit (sDiv2Bits + k) = false := by
+    apply Nat.testBit_lt_two_pow
+    calc x < 2 ^ sDiv2Bits := hx
+      _ ≤ 2 ^ (sDiv2Bits + k) := Nat.pow_le_pow_right (by norm_num) (by omega)
+  rw [hbits (sDiv2Bits + k) hkn, hbfalse]
+  rfl
+
 /-- The regime keeps the honest decode off the base: `fromShifted t ≢ 1 (mod order)`
 — subwrap by size (the window sits strictly inside `(0, order)`), one-wrap because
 `1` is a forbidden residue. What makes `scaleFast2`'s parity correction — the
@@ -1639,22 +1660,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     exact ⟨lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd),
       hfaith, hreg⟩
   obtain ⟨xg, yg, hgx, hgy, hfin, hpt⟩ := hrpt v xv yv hv hxv hyv hT
-  have hbits := hrbits v hv
-  -- the high-bit pins: every dropped bit reads zero (the half is below `2^sDiv2Bits`)
-  have hpins : ∀ b ∈ r.lsbBits.toList.drop sDiv2Bits, b.eval st'.env = .ok 0 := by
-    intro bpin hbpin
-    obtain ⟨k, hk', hEq⟩ := List.mem_iff_getElem.mp hbpin
-    have hkn : sDiv2Bits + k < n := by
-      have hlen : (r.lsbBits.toList.drop sDiv2Bits).length = n - sDiv2Bits := by
-        simp [List.length_drop]
-      omega
-    rw [← hEq, List.getElem_drop, Vector.getElem_toList]
-    have hbfalse : (ToNat.toNat v).testBit (sDiv2Bits + k) = false := by
-      apply Nat.testBit_lt_two_pow
-      calc ToNat.toNat v < 2 ^ sDiv2Bits := hrange
-        _ ≤ 2 ^ (sDiv2Bits + k) := Nat.pow_le_pow_right (by norm_num) (by omega)
-    rw [hbits (sDiv2Bits + k) hkn, hbfalse]
-    rfl
+  have hpins := dropped_bits_zero hrange (hrbits v hv)
   mvcgen
   case inv1 =>
     exact ⇓ p s' => ⌜st'.env.Le s'.env⌝
@@ -1682,16 +1688,21 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       rw [show (-yv) = (-1 : F) * yv from by ring]
       exact CVar.eval_scale_ (CVar.eval_le (hle.trans hle') hyv) (-1)
     have hgyne : yg ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hfin
-    have hnegT : d.W.Nonsingular xv (-yv) := by
-      have h := (d.W.nonsingular_neg xv yv).mpr hT
-      rwa [show d.W.negY xv yv = -yv from by
-        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]; ring] at h
-    have hnegPt : (Point.some _ _ hnegT : d.W.Point) = -Point.some _ _ hT := by
-      rw [WeierstrassCurve.Affine.Point.neg_some]
-      exact Kimchi.Gate.EndoMul.some_congr d.W hnegT _ rfl (by
-        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]; ring)
+    obtain ⟨hnegT, hnegPt⟩ := AddFast.neg_point_reading d.W
+      ⟨d.short.1, d.short.2.1, d.short.2.2.1⟩ hT
+    have hsumne : Point.some _ _ hfin + Point.some _ _ hnegT ≠ 0 := by
+      rw [hpt, hnegPt]
+      intro h0
+      apply hs1
+      refine (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 ?_
+      calc (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
+          = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+              • Point.some _ _ hT + -Point.some _ _ hT := by
+            simp only [Type1.fromShifted]
+            module
+        _ = 0 := h0
     mvcgen
-    refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne
+    refine AddFast.addFast_complete_point_spec d.W d.short d.two_ne
       r.g ⟨base.x, CVar.negate_ base.y⟩ _ _
       ⟨⟨by rw [hgx']; rfl, by rw [hgy']; rfl, by rw [hbx']; rfl, by rw [hny]; rfl,
         fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
@@ -1700,35 +1711,9 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       injection he1 with he1; injection he2 with he2
       injection he3 with he3; injection he4 with he4
       subst he1 he2 he3 he4
-      refine ⟨hfin.1, hnegT.1, hgyne, fun _ => ?_⟩
-      rintro ⟨hxeq, hyeq⟩
-      rw [show d.W.negY xv (-yv) = yv from by
-        rw [WeierstrassCurve.Affine.negY, d.short.1, d.short.2.2.1]; ring] at hyeq
-      have hgT : Point.some _ _ hfin = Point.some _ _ hT :=
-        Kimchi.Gate.EndoMul.some_congr d.W hfin hT hxeq hyeq
-      apply hs1
-      have hsT : Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
-          • Point.some _ _ hT = Point.some _ _ hT := hpt.symm.trans hgT
-      have h0 : (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
-          = 0 := by
-        have hexp : (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
-            = Type1.fromShifted (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
-                • Point.some _ _ hT - Point.some _ _ hT := by
-          simp only [Type1.fromShifted]
-          module
-        rw [hexp, hsT, sub_self]
-      exact (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 h0
-    obtain ⟨xq, yq, hqx, hqy, -, hqns, hqsum⟩ :=
-      (hq xg yg xv (-yv) hgx' hgy' hbx' hny hfin hnegT).resolve_left (by
-        rintro ⟨-, hzero⟩
-        apply hs1
-        have hexp : (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
-            = Point.some _ _ hfin + Point.some _ _ hnegT := by
-          rw [hpt, hnegPt]
-          simp only [Type1.fromShifted]
-          module
-        rw [hzero] at hexp
-        exact (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 hexp)
+      exact ⟨hfin, hnegT, hgyne, hsumne⟩
+    obtain ⟨xq, yq, hqx, hqy, hqns, hqsum⟩ :=
+      hq xg yg xv (-yv) hgx' hgy' hbx' hny hfin hnegT
     have hqpt : (Point.some _ _ hqns : d.W.Point)
         = (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
       rw [← hqsum, hpt, hnegPt]
