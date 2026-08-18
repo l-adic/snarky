@@ -346,6 +346,19 @@ reason `Complete` records. -/
 def ReadsBit [Add F] [Mul F] [Zero F] [One F] (x : CVar F) (env : Assignments F) : Prop :=
   (x.eval env).isOk ∧ ∀ v, x.eval env = .ok v → v = 0 ∨ v = 1
 
+/-- The canonical producer fact introduces the reading: an operand that reads as
+`bit b` `ReadsBit` — how one gadget's grant becomes the next gadget's precondition. -/
+theorem ReadsBit.of_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
+    {env : Assignments F} {b : Bool} (h : x.eval env = .ok (bit b)) :
+    ReadsBit x env := by
+  refine ⟨by rw [h]; rfl, fun w hw => ?_⟩
+  rw [h] at hw
+  injection hw with hw
+  subst hw
+  cases b
+  · exact Or.inl rfl
+  · exact Or.inr rfl
+
 /-- Name the bit an operand reads as — the form a proof consumes, recovered inside the
 proof rather than quantified in the statement. -/
 theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
@@ -355,6 +368,13 @@ theorem ReadsBit.exists_bit [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
   rcases hbit v hv with h0 | h1
   · exact ⟨false, by rw [hv, h0]; rfl⟩
   · exact ⟨true, by rw [hv, h1]; rfl⟩
+
+/-- The reading survives table extension. -/
+theorem ReadsBit.mono [Add F] [Mul F] [Zero F] [One F] {x : CVar F}
+    {env env' : Assignments F} (hle : env.Le env') (h : ReadsBit x env) :
+    ReadsBit x env' := by
+  obtain ⟨b, hb⟩ := h.exists_bit
+  exact .of_bit (CVar.eval_le hle hb)
 
 /-! ## Running a schematic spec
 

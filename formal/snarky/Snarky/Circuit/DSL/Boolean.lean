@@ -409,8 +409,7 @@ theorem sum_evalOk {F : Type} [Semiring F] [DecidableEq F] {env : Assignments F}
     obtain ⟨av, ha⟩ := CVar.evalOk hacc
     obtain ⟨bv, hb⟩ := CVar.evalOk (hall b (List.mem_cons_self ..))
     refine ih _ ?_ (fun x hx => hall x (List.mem_cons_of_mem _ hx))
-    rw [CVar.eval_add_]
-    simp only [CVar.eval, ha, hb]
+    rw [CVar.eval_add_ ha hb]
     rfl
 
 /-- Bit-reading operands read as SOME bit list — names the list a `ReadsBit`
@@ -748,12 +747,12 @@ private theorem xorCore_run {F c : Type} [Field F] [DecidableEq F]
     have hb' := CVar.eval_le hle hb
     have haa : (CVar.add_ (a.toCVar) (a.toCVar)).eval (env.extend nv (bit (ab ^^ bb)))
         = .ok ((bit ab : F) + bit ab) := by
-      rw [CVar.eval_add_]; simp [CVar.eval, ha']
+      exact CVar.eval_add_ ha' ha'
     have hvnv : (CVar.var nv).eval (env.extend nv (bit (ab ^^ bb)))
         = .ok (bit (ab ^^ bb)) := by simp [CVar.eval, Assignments.extend]
     have hab : (CVar.add_ (a.toCVar) (b.toCVar)).eval (env.extend nv (bit (ab ^^ bb)))
         = .ok ((bit ab : F) + bit bb) := by
-      rw [CVar.eval_add_]; simp [CVar.eval, ha', hb']
+      exact CVar.eval_add_ ha' hb'
     have hsub := CVar.eval_sub_ hab hvnv
     exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ haa hb' hsub
       (by cases ab <;> cases bb <;> simp [bit])
@@ -1030,7 +1029,7 @@ private theorem select_mux_eval {F : Type} [Field F] [DecidableEq F] {bc : CVar 
   have htv : tv' = tv := by simpa [CVar.eval] using ht
   have hev : ev' = ev := by simpa [CVar.eval] using he
   rw [← htv, ← hev]
-  rw [CVar.eval_add_]
+  rw [CVar.eval_add_fold]
   have h₁ : (CVar.scale tv' bc).eval env = .ok (tv' * bit bb) := by
     simp [CVar.eval, hb]
   have h₂ := CVar.eval_scale_

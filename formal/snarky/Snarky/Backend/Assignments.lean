@@ -192,11 +192,11 @@ theorem val_toValuation [Add F] [Mul F] [Zero F] {env : Assignments F} {x : CVar
   rw [eval_toAssignments] at h'
   injection h'
 
-/-- `add_` reads as the sum — the fold-evaluation lemma `eval_add_`, carried through
+/-- `add_` reads as the sum — the fold-evaluation lemma `eval_add_fold`, carried through
 the bridge to the total reading. -/
 @[circuitVal] theorem val_add_ [Add F] [Mul F] (a b : CVar F) (V : Valuation F) :
     (CVar.add_ a b).val V = a.val V + b.val V := by
-  have h := (CVar.eval_add_ a b V.toAssignments).trans
+  have h := (CVar.eval_add_fold a b V.toAssignments).trans
     (eval_toAssignments (CVar.add a b) V)
   rw [eval_toAssignments] at h
   injection h

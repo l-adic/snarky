@@ -1540,19 +1540,6 @@ theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
   mvcgen
   exact hpre.2 r.g st' hrpt hle
 
-/-- A bit reading survives table extension. -/
-private theorem readsBit_le [Field F] [DecidableEq F] {x : CVar F}
-    {env env' : Assignments F} (hle : env.Le env') (h : ReadsBit x env) :
-    ReadsBit x env' := by
-  obtain ⟨b, hb⟩ := h.exists_bit
-  refine ⟨by rw [CVar.eval_le hle hb]; rfl, fun w hw => ?_⟩
-  rw [CVar.eval_le hle hb] at hw
-  injection hw with hw
-  subst hw
-  cases b
-  · exact Or.inl rfl
-  · exact Or.inr rfl
-
 /-- The ladder's granted bits above the half's width read zero: `testBit` vanishes
 above a value's width. -/
 private theorem dropped_bits_zero [Field F] [DecidableEq F] {env : Assignments F}
@@ -1720,14 +1707,14 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       module
     -- the point conditional selects coordinatewise, `y` before `x`
     mvcgen
-    refine ⟨⟨readsBit_le ((hle.trans hle').trans hle₃) hbit,
+    refine ⟨⟨ReadsBit.mono ((hle.trans hle').trans hle₃) hbit,
       by rw [CVar.eval_le hle₃ hgy']; rfl, by rw [hqy]; rfl⟩,
       fun ysel sty hyg hley => ?_⟩
     have hyv' := hyg bb yg yq
       (CVar.eval_le ((hle.trans hle').trans hle₃) hb)
       (CVar.eval_le hle₃ hgy') hqy
     mvcgen
-    refine ⟨⟨readsBit_le (((hle.trans hle').trans hle₃).trans hley) hbit,
+    refine ⟨⟨ReadsBit.mono (((hle.trans hle').trans hle₃).trans hley) hbit,
       by rw [CVar.eval_le (hle₃.trans hley) hgx']; rfl,
       by rw [CVar.eval_le hley hqx]; rfl⟩,
       fun xsel stx hxg hlex => ?_⟩
@@ -1765,5 +1752,123 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       exact hpt
   case post.except =>
     exact ExceptConds.entails_false
+
+open Std.Do in
+/-- `splitFieldVar`'s honest run: on a readable operand in odd characteristic the
+recombination assert accepts — `2·((s − sOdd)/2) + sOdd = s` needs only `2 ≠ 0`, for
+ANY parity bit — and the returned pair reads as the parity split. -/
+@[spec] theorem splitFieldVar_complete_spec [Field F] [DecidableEq F] [ToNat F]
+    (s : FVar F)
+    (Q : PostCond (FVar F × BoolVar F)
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env => (s.eval env).isOk ∧ (2 : F) ≠ 0)
+        (fun env r env' => ∀ v, s.eval env = .ok v →
+          r.1.eval env' = .ok ((splitField v).1) ∧
+          (↑r.2 : CVar F).eval env' = .ok (bit (splitField v).2))
+        Q⦄
+    (splitFieldVar (c := KimchiProverC F) s)
+    ⦃Q⦄ := by
+  simp only [splitFieldVar]
+  mvcgen
+  rename_i st hpre
+  obtain ⟨⟨hsok, h2⟩, hk⟩ := hpre
+  obtain ⟨v, hv⟩ := CVar.evalOk hsok
+  have hwit : splitFieldWit s st.env = .ok (splitField v) := by
+    simp [splitFieldWit, AsProver.readCVar, hv,
+      Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+  refine ⟨by rw [hwit]; rfl, fun r st₁ hgrant hle₁ => ?_⟩
+  obtain ⟨hhalf', hodd'⟩ := hgrant _ hwit
+  have hhalf : r.1.eval st₁.env = .ok ((splitField v).1) := hhalf'
+  have hodd : (↑r.2 : CVar F).eval st₁.env = .ok (bit (splitField v).2) := hodd'
+  have hsum : (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2).eval st₁.env
+      = .ok (2 * (splitField v).1 + bit (splitField v).2) :=
+    CVar.eval_add_ (CVar.eval_scale_ hhalf 2) hodd
+  mvcgen
+  refine ⟨⟨by rw [CVar.eval_le hle₁ hv]; rfl, by rw [hsum]; rfl,
+    fun xv yv hx hy => ?_⟩, fun u st₂ hle₂ => ?_⟩
+  · rw [CVar.eval_le hle₁ hv] at hx
+    rw [hsum] at hy
+    injection hx with hx
+    injection hy with hy
+    subst hx hy
+    by_cases hoddc : (ToNat.toNat v) % 2 = 1 <;>
+      simp only [splitField, bit, hoddc, if_true, if_false, reduceIte] <;>
+      field_simp <;>
+      simp
+  mvcgen
+  exact hk r st₂ (fun v' hv' => by
+    rw [hv] at hv'
+    injection hv' with hv'
+    subst hv'
+    exact ⟨CVar.eval_le hle₂ hhalf, CVar.eval_le hle₂ hodd⟩) (hle₁.trans hle₂)
+
+/-- `scaleFast2'` is complete — the honest side of the defining equation
+`scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read through its parity split: the
+split's half must be in range, faithful, and regime-satisfying (its `Type1` decode
+feeds the inner ladder), and the returned point is the `SplitField` decode's
+multiple at the honest split. -/
+theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
+    (base : AffinePoint (FVar F)) (sc : FVar F)
+    (Q : PostCond (AffinePoint (FVar F))
+      (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env =>
+          (sc.eval env).isOk ∧ (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
+          (∀ v, sc.eval env = .ok v →
+            ToNat.toNat ((splitField v).1) < 2 ^ sDiv2Bits ∧
+            ((ToNat.toNat ((splitField v).1) : ℕ) : F) = (splitField v).1 ∧
+            d.LadderRegime (5 * chunks)
+              (Type1.fromShifted (5 * chunks)
+                ⟨(ToNat.toNat ((splitField v).1) : ℤ)⟩)) ∧
+          (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
+            d.W.Nonsingular x y))
+        (fun env r env' => ∀ v xv yv, sc.eval env = .ok v →
+          base.x.eval env = .ok xv → base.y.eval env = .ok yv →
+          ∀ hT : d.W.Nonsingular xv yv,
+          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
+            ∃ hres : d.W.Nonsingular xS yS,
+              Point.some _ _ hres
+                = SplitField.fromShifted (5 * chunks)
+                    ⟨(ToNat.toNat ((splitField v).1) : ℤ), (splitField v).2⟩
+                      • Point.some _ _ hT)
+        Q⦄
+    (scaleFast2' (c := KimchiProverC F) n chunks sDiv2Bits base sc)
+    ⦃Q⦄ := by
+  simp only [scaleFast2']
+  mvcgen [scaleFast2_complete_spec, splitFieldVar_complete_spec]
+  rename_i st hpre
+  obtain ⟨⟨hsok, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
+  obtain ⟨v, hv⟩ := CVar.evalOk hsok
+  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
+  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
+  refine ⟨⟨hsok, d.two_ne⟩, fun pr st' hsplit hle => ?_⟩
+  obtain ⟨hhalf, hodd⟩ := hsplit v hv
+  mvcgen [scaleFast2_complete_spec]
+  refine ⟨⟨by rw [hhalf]; rfl, ReadsBit.of_bit hodd,
+    by rw [CVar.eval_le hle hxv]; rfl, by rw [CVar.eval_le hle hyv]; rfl,
+    fun v' hv' => ?_, fun x y hx hy => ?_⟩,
+    fun r st'' hpt hle' => ?_⟩
+  · rw [hhalf] at hv'
+    injection hv' with hv'
+    subst hv'
+    exact hsc v hv
+  · rw [CVar.eval_le hle hxv] at hx
+    rw [CVar.eval_le hle hyv] at hy
+    injection hx with hx
+    injection hy with hy
+    subst hx hy
+    exact hcurve _ _ hxv hyv
+  refine hk r st'' (fun v' xv' yv' hv' hxv' hyv' hT => ?_) (hle.trans hle')
+  rw [hv] at hv'
+  injection hv' with hv'
+  rw [hxv] at hxv'
+  injection hxv' with hxv'
+  rw [hyv] at hyv'
+  injection hyv' with hyv'
+  subst hv' hxv' hyv'
+  exact hpt ((splitField v).1) xv yv hhalf
+    (CVar.eval_le hle hxv) (CVar.eval_le hle hyv) hT ((splitField v).2) hodd
 
 end Snarky.Kimchi

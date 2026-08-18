@@ -1474,8 +1474,8 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     linear_combination h
   have hrhs : (CVar.add_ (CVar.add_ x3 (CVar.scale_ d.W.a₄ rp.1)) (CVar.const d.W.a₆)).eval
       st₃.env = .ok (px * px * px + d.W.a₄ * px + d.W.a₆) := by
-    rw [CVar.eval_add_]
-    simp only [CVar.eval, CVar.eval_add_, hx3, CVar.eval_scale_ hrpx₃ d.W.a₄]
+    rw [CVar.eval_add_fold]
+    simp only [CVar.eval, CVar.eval_add_fold, hx3, CVar.eval_scale_ hrpx₃ d.W.a₄]
   mvcgen
   refine ⟨⟨by rw [hrpy₃]; rfl, by rw [hrhs]; rfl, ?_⟩, fun u₄ st₄ hle₄ => ?_⟩
   · intro yv' rhv' hyv' hrhv'

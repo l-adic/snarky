@@ -204,9 +204,8 @@ private theorem sum_go [AddMonoid F] [Mul F] {env : Assignments F} :
     | cons v vs =>
       simp only [List.map_cons, List.cons.injEq] at hmap
       obtain ⟨hx, hrest⟩ := hmap
-      have hstep : (CVar.add_ acc x).eval env = .ok (a + v) := by
-        rw [CVar.eval_add_]
-        simp only [CVar.eval, hacc, hx]
+      have hstep : (CVar.add_ acc x).eval env = .ok (a + v) :=
+        CVar.eval_add_ hacc hx
       simpa [add_assoc] using ih hrest hstep
 
 /-- `sum` evaluates to the sum of its operands' values: if each `xᵢ` evaluates to `vᵢ`
