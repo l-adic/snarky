@@ -1272,8 +1272,16 @@ private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
   | 3 => (g (j / 5)).b3
   | _ => (g (j / 5)).b4
 
+/-- The `±1` sign a bit value selects: `+1` for `b = 1`, `−1` otherwise — the honest ℤ
+reading of the gate's `2·b − 1`. -/
+def bitSign (b : F) : ℤ := if b = 1 then 1 else -1
+
+/-- Either sign, whatever the value. -/
+lemma bitSign_eq (b : F) : bitSign b = 1 ∨ bitSign b = -1 := by
+  unfold bitSign; split <;> simp
+
 /-- The signed bit `±1` at sub-step `j`. -/
-private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else -1
+private def gateBitSign (g : ℕ → Witness F) (j : ℕ) : ℤ := bitSign (gateBit g j)
 
 /-- The integer double-and-add ladder over the gate bits, with `k 0 = 2`. -/
 def gateLadder (g : ℕ → Witness F) : ℕ → ℤ
@@ -1286,8 +1294,7 @@ private lemma gateLadder_succ (g : ℕ → Witness F) (j : ℕ) :
     gateLadder g (j + 1) = 2 * gateLadder g j + gateBitSign g j := rfl
 
 private lemma gateBitSign_eq (g : ℕ → Witness F) (j : ℕ) :
-    gateBitSign g j = 1 ∨ gateBitSign g j = -1 := by
-  unfold gateBitSign; split <;> simp
+    gateBitSign g j = 1 ∨ gateBitSign g j = -1 := bitSign_eq _
 
 /-- The unsigned bit at sub-step `j`: `1` if set, else `0` (same `= 1` test as `gateBitSign`). -/
 private def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 then 1 else 0
@@ -1295,7 +1302,7 @@ private def ubit (g : ℕ → Witness F) (j : ℕ) : ℤ := if gateBit g j = 1 t
 /-- The signed digit is `2·(unsigned bit) − 1`, unconditionally (same `gateBit = 1` test). -/
 private lemma gateBitSign_eq_ubit (g : ℕ → Witness F) (j : ℕ) :
     gateBitSign g j = 2 * ubit g j - 1 := by
-  unfold gateBitSign ubit; split <;> ring
+  unfold gateBitSign bitSign ubit; split <;> ring
 
 /-- The unsigned scalar register the ladder bits encode (Horner over `ubit`), `r 0 = 0`. -/
 def gateRegister (g : ℕ → Witness F) : ℕ → ℤ
@@ -1326,15 +1333,22 @@ private lemma gateBit_block (g : ℕ → Witness F) (i : ℕ) :
   unfold gateBit; simp +decide [ Nat.add_mod ] ;
   norm_num [ Nat.add_div ]
 
-/-- The signed bit `e` produced by `signed_target` matches `gateBitSign`. -/
-private lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
-    (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
-    (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
-  cases hbit <;> simp_all +decide [ gateBitSign ];
+/-- The signed bit `e` produced by `signed_target` is the bit's sign. -/
+private lemma e_eq_bitSign {b : F} (hbit : b = 0 ∨ b = 1) {e : ℤ}
+    (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1) (h2 : (2 : F) ≠ 0) :
+    e = bitSign b := by
+  cases hbit <;> simp_all +decide [ bitSign ];
   · cases he <;> simp_all +decide;
     exact h2 ( by linear_combination' he2 );
   · rcases he with ( rfl | rfl ) <;> norm_num at *;
     grind +extAll
+
+/-- The gate-indexed reading of `e_eq_bitSign`. -/
+private lemma e_eq_gateBitSign (g : ℕ → Witness F) (j : ℕ) {b : F} (hgb : gateBit g j = b)
+    (hbit : b = 0 ∨ b = 1) {e : ℤ} (he2 : (e : F) = 2 * b - 1) (he : e = 1 ∨ e = -1)
+    (h2 : (2 : F) ≠ 0) : e = gateBitSign g j := by
+  rw [show gateBitSign g j = bitSign b from by unfold gateBitSign; rw [hgb]]
+  exact e_eq_bitSign hbit he2 he h2
 
 /-- Per sub-step advance using *only* the x-condition `k ≢ ±1`; the t-condition `t ≠ 0`
     is supplied by `tne_of_holds` (the constraints + prime order), not by `2k ≢ ±1`. -/
@@ -1964,6 +1978,60 @@ theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.1).1
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.2).1
 
+/-- The five-bit windows tile the flat stream: a `runBits`-shaped flatMap over rows
+reads the same list as the plain range read. Element type is free — the gadget's
+prover-side reading tiles variables, not just field values. -/
+theorem flatMap_range_window {α : Type*} (bs : ℕ → α) (m : ℕ) :
+    (List.range m).flatMap
+        (fun i => [bs (5 * i), bs (5 * i + 1), bs (5 * i + 2), bs (5 * i + 3),
+          bs (5 * i + 4)])
+      = (List.range (5 * m)).map bs := by
+  induction m with
+  | zero => rfl
+  | succ m ih =>
+    rw [List.range_succ, List.flatMap_append, ih,
+      show 5 * (m + 1) = 5 * m + 5 from by ring, List.range_add, List.map_append,
+      List.flatMap_cons, List.flatMap_nil]
+    simp [show List.range 5 = [0, 1, 2, 3, 4] from by decide]
+
+/-- The ℤ-decode reconstructs a bounded scalar from its MSB-first bit reads: position
+`j` of the list carries `testBit (L − 1 − j)`. How the honest witness's register fold
+recovers the scalar it unpacked. -/
+theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
+    bitsVal ((List.range L).map fun j => if x.testBit (L - 1 - j) then (1 : F) else 0)
+      = (x : ℤ) := by
+  induction L generalizing x with
+  | zero =>
+    have hx0 : x = 0 := by simpa using hx
+    subst hx0
+    rfl
+  | succ L ih =>
+    have hsplit : ((List.range (L + 1)).map
+          fun j => if x.testBit (L + 1 - 1 - j) then (1 : F) else 0)
+        = ((List.range L).map
+            fun j => if (x / 2).testBit (L - 1 - j) then (1 : F) else 0)
+          ++ [if x.testBit 0 then (1 : F) else 0] := by
+      rw [List.range_succ, List.map_append]
+      congr 1
+      · apply List.map_congr_left
+        intro j hj
+        have hj' : j < L := List.mem_range.mp hj
+        rw [show L + 1 - 1 - j = (L - 1 - j) + 1 from by omega, Nat.testBit_add_one]
+      · simp
+    have hfold : ∀ (l : List F) (b : F),
+        bitsVal (l ++ [b]) = 2 * bitsVal l + (if b = 1 then 1 else 0) := by
+      intro l b
+      simp [bitsVal, List.foldl_append]
+    rw [hsplit, hfold, ih (x / 2) (by omega)]
+    have hbit0 : x.testBit 0 = decide (x % 2 = 1) := Nat.testBit_zero x
+    rcases Nat.mod_two_eq_zero_or_one x with h | h
+    · rw [show (if x.testBit 0 then (1 : F) else 0) = 0 from by rw [hbit0, h]; simp,
+        if_neg (zero_ne_one (α := F))]
+      omega
+    · rw [show (if x.testBit 0 then (1 : F) else 0) = 1 from by rw [hbit0, h]; simp,
+        if_pos rfl]
+      omega
+
 end RunBits
 
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
@@ -1993,6 +2061,303 @@ theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
       hP0ns hP0 h2 hodd hsub hs
   · exact varBaseMul_forbidden_correct c m g T s hTne hholds hTns hTeq hbase hthread
       hP0ns hP0 h2 hodd hr1 hr2 hq4 hs hnf
+
+/-! ## The produce chain
+
+The honest walk: `chainBuild` threads the gate's canonical row (`build`) from the doubled
+init accumulator through a flat bit stream, five bits per row. `chain_complete` is its
+conditional completeness — under either ladder regime, every generated row satisfies the
+gate. The non-degeneracy is PRODUCED forward, not read off an accepted run: the
+accumulator entering bit step `j` is the ladder multiple `[gateLadder g j]·T`, the regime
+prices all four degeneracy residues at every step (`ladder_subwrap_nondegen` /
+`ladder_nondegen_tight`), and each generated step's two secant denominators are derived
+from those residues before the step is certified (`step_produce`). -/
+
+variable {F : Type*} [Field F] [DecidableEq F]
+
+/-- The honest rows: row `i` is `build` at the threaded accumulator and register,
+consuming bits `5i … 5i+4` of the stream. -/
+def chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) : ℕ → Witness F
+  | 0 => build xT yT x0 y0 n0 (bs 0) (bs 1) (bs 2) (bs 3) (bs 4)
+  | i + 1 =>
+    build xT yT (chainBuild xT yT x0 y0 n0 bs i).x5 (chainBuild xT yT x0 y0 n0 bs i).y5
+      (chainBuild xT yT x0 y0 n0 bs i).nPrime
+      (bs (5 * (i + 1))) (bs (5 * (i + 1) + 1)) (bs (5 * (i + 1) + 2))
+      (bs (5 * (i + 1) + 3)) (bs (5 * (i + 1) + 4))
+
+omit [DecidableEq F] in
+/-- The walk's gate bits ARE the stream it was built from: sub-step `j` reads `bs j`.
+What lets the honest walk speak the sound side's ladder vocabulary (`gateLadder`)
+rather than a second copy of it. -/
+private lemma gateBit_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (j : ℕ) :
+    gateBit (chainBuild xT yT x0 y0 n0 bs) j = bs j := by
+  have h : j = 5 * (j / 5) + j % 5 := by omega
+  have h5 : j % 5 < 5 := Nat.mod_lt _ (by omega)
+  unfold gateBit
+  interval_cases hm : (j % 5) <;> (conv_rhs => rw [h]) <;> cases (j / 5) <;> rfl
+
+/-- Hence the walk's signed digit at sub-step `j` is the stream bit's sign. -/
+private lemma gateBitSign_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (j : ℕ) :
+    gateBitSign (chainBuild xT yT x0 y0 n0 bs) j = bitSign (bs j) := by
+  unfold gateBitSign; rw [gateBit_chainBuild]
+
+omit [DecidableEq F] in
+/-- Every `chainBuild` row is `build` at its own threaded fields — the uniform
+re-expression the produce induction rewrites with. -/
+theorem chainBuild_eta (xT yT x0 y0 n0 : F) (bs : ℕ → F) (i : ℕ) :
+    chainBuild xT yT x0 y0 n0 bs i
+      = build xT yT (chainBuild xT yT x0 y0 n0 bs i).x0
+          (chainBuild xT yT x0 y0 n0 bs i).y0 (chainBuild xT yT x0 y0 n0 bs i).n
+          (bs (5 * i)) (bs (5 * i + 1)) (bs (5 * i + 2)) (bs (5 * i + 3))
+          (bs (5 * i + 4)) := by
+  cases i <;> rfl
+
+/-! The walk's structural equations: how a row's input cells thread from the previous
+row's outputs, and which of its cells are the arguments. The per-field equations of a
+row itself belong to `build` (`Kimchi/Gate/VarBaseMul`), which the walk is built from
+and `chainBuild_eta` re-expresses it as. -/
+
+section ChainFields
+
+variable (xT yT x0 y0 n0 : F) (bs : ℕ → F)
+
+omit [DecidableEq F]
+
+theorem chainBuild_succ_x0 (i : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs (i + 1)).x0 = (chainBuild xT yT x0 y0 n0 bs i).x5 :=
+  rfl
+
+theorem chainBuild_succ_y0 (i : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs (i + 1)).y0 = (chainBuild xT yT x0 y0 n0 bs i).y5 :=
+  rfl
+
+theorem chainBuild_succ_n (i : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs (i + 1)).n
+      = (chainBuild xT yT x0 y0 n0 bs i).nPrime :=
+  rfl
+
+/-- The row's fixed cells: the base is the argument and the five bits are the
+stream's window `5m … 5m+4`. -/
+theorem chainBuild_fields (m : ℕ) :
+    (chainBuild xT yT x0 y0 n0 bs m).xT = xT
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).yT = yT
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b0 = bs (5 * m)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b1 = bs (5 * m + 1)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b2 = bs (5 * m + 2)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b3 = bs (5 * m + 3)
+    ∧ (chainBuild xT yT x0 y0 n0 bs m).b4 = bs (5 * m + 4) := by
+  cases m <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem accX_chainBuild (m : ℕ) :
+    accX (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).x0 := by
+  cases m <;> rfl
+
+theorem accY_chainBuild (m : ℕ) :
+    accY (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).y0 := by
+  cases m <;> rfl
+
+theorem accN_chainBuild (m : ℕ) :
+    accN (chainBuild xT yT x0 y0 n0 bs) m = (chainBuild xT yT x0 y0 n0 bs m).n := by
+  cases m <;> rfl
+
+end ChainFields
+
+/-- One honest bit step: at an accumulator `[k]·T` whose four degeneracy residues the
+regime has priced away, the generated `stepBit` values satisfy the bit block and the
+output is the nonsingular `[2k + bitSign b]·T`. The two secant denominators are derived,
+not assumed: `xi ≠ xT` from `k ≢ ±1`, and the second denominator from the intermediate
+`I + Q ≠ ±I`, i.e. `2k ≢ ∓1` (stepped through in the body). -/
+private lemma step_produce (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {xT yT b xi yi : F}
+    (hTns : c.Nonsingular xT yT) (hTne : Point.some _ _ hTns ≠ 0)
+    (hI : c.Nonsingular xi yi) (hbit : b = 0 ∨ b = 1)
+    {k : ℤ} (hIk : Point.some _ _ hI = k • Point.some _ _ hTns)
+    (hq1 : ¬((c.order : ℤ) ∣ (k - 1))) (hq2 : ¬((c.order : ℤ) ∣ (k + 1)))
+    (hq3 : ¬((c.order : ℤ) ∣ (2 * k - 1))) (hq4 : ¬((c.order : ℤ) ∣ (2 * k + 1))) :
+    singleBitHolds b xT yT (stepBit b xT yT xi yi).1 xi yi
+        (stepBit b xT yT xi yi).2.1 (stepBit b xT yT xi yi).2.2
+    ∧ ∃ hO : c.Nonsingular (stepBit b xT yT xi yi).2.1 (stepBit b xT yT xi yi).2.2,
+        Point.some _ _ hO = (2 * k + bitSign b) • Point.some _ _ hTns := by
+  have hshort : c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0 := Fact.out
+  -- the sign-selected target `Q = ±T` and its scalar
+  have hQ : c.Nonsingular xT ((2 * b - 1) * yT) := signed_target_nonsingular c hshort hTns hbit
+  obtain ⟨e, heQ, -, hepm⟩ := signed_target c hshort hTns hQ hbit
+  -- first denominator: `xi ≠ xT` from `k ≢ ±1`
+  have hxne : xi ≠ xT := by
+    apply x_ne_xT_of_ne_base c hI hTns
+    · contrapose! hq1
+      have hd : (k - 1) • Point.some _ _ hTns = 0 := by
+        rw [sub_smul, one_smul, ← hIk, hq1, sub_self]
+      exact (zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
+    · contrapose! hq2
+      rw [← zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hq2,
+        neg_add_cancel]
+  -- the generated values, named
+  set s1 : F := (yi - (2 * b - 1) * yT) / (xi - xT) with hs1
+  set t : F := 2 * xi + xT - s1 * s1 with htdef
+  have e1 : (stepBit b xT yT xi yi).1 = s1 := rfl
+  -- the intermediate `M = I + Q = [k + e]·T` at the generated first slope
+  obtain ⟨hM, hMadd⟩ := secant_add c hshort hI hQ hxne hs1
+    (x3 := s1 * s1 - xi - xT) (y3 := s1 * (xi - (s1 * s1 - xi - xT)) - yi) rfl rfl
+  have hMk : Point.some _ _ hM = (k + e) • Point.some _ _ hTns := by
+    rw [← hMadd, hIk, heQ]; module
+  -- second denominator: `M ≠ ±I` from `2k ≢ ∓1`, so `x_M ≠ xi` and `t = xi − x_M ≠ 0`
+  have hMneI : Point.some _ _ hM ≠ Point.some _ _ hI := by
+    intro h
+    have he0 : e • Point.some _ _ hTns = 0 := by
+      have h' : ((k + e) - k) • Point.some _ _ hTns = 0 := by
+        rw [sub_smul, ← hMk, h, hIk, sub_self]
+      simpa using h'
+    rcases hepm with rfl | rfl
+    · rw [one_zsmul] at he0; exact hTne he0
+    · rw [neg_one_zsmul, neg_eq_zero] at he0; exact hTne he0
+  have hMnegI : Point.some _ _ hM ≠ -Point.some _ _ hI := by
+    intro h
+    have hz : (2 * k + e) • Point.some _ _ hTns = 0 := by
+      have h' : (k + e) • Point.some _ _ hTns + k • Point.some _ _ hTns = 0 := by
+        rw [← hMk, ← hIk, h, neg_add_cancel]
+      calc (2 * k + e) • Point.some _ _ hTns
+          = (k + e) • Point.some _ _ hTns + k • Point.some _ _ hTns := by module
+        _ = 0 := h'
+    have hdvd := (zsmul_eq_zero_iff_order_dvd c hTne _).1 hz
+    rcases hepm with rfl | rfl
+    · exact hq4 hdvd
+    · exact hq3 (by rwa [show 2 * k + (-1 : ℤ) = 2 * k - 1 from by ring] at hdvd)
+  have hxMne : s1 * s1 - xi - xT ≠ xi := x_ne_xT_of_ne_base c hM hI hMneI hMnegI
+  have htne : t ≠ 0 := by
+    rw [htdef]
+    intro h0
+    exact hxMne (by linear_combination -h0)
+  -- the generated block holds, and the sound step reads its output back
+  have hbb : b * b - b = 0 := by rcases hbit with rfl | rfl <;> ring
+  have hh := stepBit_holds b xT yT xi yi hbb (sub_ne_zero_of_ne hxne)
+    (by rw [e1, ← htdef]; exact htne)
+  obtain ⟨-, -, hO, e', hepm', heF', hOeq⟩ :=
+    gate_step_advance' c h2 hodd hTns hI hQ hbit hTne k hIk hq1 hq2 hh
+  exact ⟨hh, hO, by rw [hOeq, e_eq_bitSign hbit heF' hepm' h2]⟩
+
+/-- One honest row: five `step_produce` steps threaded through `build`. The row's
+constraints hold and the output accumulator is the nonsingular five-fold advance
+`[k (j+5)]·T`, for any scalar sequence `k` satisfying the ladder recurrence on the
+row's bits whose window `[j, j+5)` the regime has priced. -/
+private lemma row_produce (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
+    {xT yT : F} (hTns : c.Nonsingular xT yT) (hTne : Point.some _ _ hTns ≠ 0)
+    {b0 b1 b2 b3 b4 x0 y0 : F} (n : F)
+    (hb0 : b0 = 0 ∨ b0 = 1) (hb1 : b1 = 0 ∨ b1 = 1) (hb2 : b2 = 0 ∨ b2 = 1)
+    (hb3 : b3 = 0 ∨ b3 = 1) (hb4 : b4 = 0 ∨ b4 = 1)
+    (hI : c.Nonsingular x0 y0)
+    {k : ℕ → ℤ} {j : ℕ}
+    (hIk : Point.some _ _ hI = k j • Point.some _ _ hTns)
+    (hk1 : k (j + 1) = 2 * k j + bitSign b0)
+    (hk2 : k (j + 2) = 2 * k (j + 1) + bitSign b1)
+    (hk3 : k (j + 3) = 2 * k (j + 2) + bitSign b2)
+    (hk4 : k (j + 4) = 2 * k (j + 3) + bitSign b3)
+    (hk5 : k (j + 5) = 2 * k (j + 4) + bitSign b4)
+    (hq : ∀ l, j ≤ l → l < j + 5 →
+      ¬((c.order : ℤ) ∣ (k l - 1)) ∧ ¬((c.order : ℤ) ∣ (k l + 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * k l - 1)) ∧ ¬((c.order : ℤ) ∣ (2 * k l + 1))) :
+    Holds (build xT yT x0 y0 n b0 b1 b2 b3 b4)
+    ∧ ∃ h5 : c.Nonsingular (build xT yT x0 y0 n b0 b1 b2 b3 b4).x5
+        (build xT yT x0 y0 n b0 b1 b2 b3 b4).y5,
+        Point.some _ _ h5 = k (j + 5) • Point.some _ _ hTns := by
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq j le_rfl (by omega)
+  obtain ⟨hh0, hO1, hP1⟩ := step_produce c h2 hodd hTns hTne hI hb0 hIk hd1 hd2 hd3 hd4
+  rw [← hk1] at hP1
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 1) (by omega) (by omega)
+  obtain ⟨hh1, hO2, hP2⟩ := step_produce c h2 hodd hTns hTne hO1 hb1 hP1 hd1 hd2 hd3 hd4
+  rw [← hk2] at hP2
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 2) (by omega) (by omega)
+  obtain ⟨hh2, hO3, hP3⟩ := step_produce c h2 hodd hTns hTne hO2 hb2 hP2 hd1 hd2 hd3 hd4
+  rw [← hk3] at hP3
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 3) (by omega) (by omega)
+  obtain ⟨hh3, hO4, hP4⟩ := step_produce c h2 hodd hTns hTne hO3 hb3 hP3 hd1 hd2 hd3 hd4
+  rw [← hk4] at hP4
+  obtain ⟨hd1, hd2, hd3, hd4⟩ := hq (j + 4) (by omega) (by omega)
+  obtain ⟨hh4, hO5, hP5⟩ := step_produce c h2 hodd hTns hTne hO4 hb4 hP4 hd1 hd2 hd3 hd4
+  rw [← hk5] at hP5
+  exact ⟨(holds_iff _).mpr
+    ⟨by simp only [decompHolds, decompCons, build]; ring, hh0, hh1, hh2, hh3, hh4⟩,
+    hO5, hP5⟩
+
+/-- **Completeness of the honest ladder.** From the doubled init `P₀ = [2]·T`, under
+either ladder regime — subwrap (`3·2^(5m) ≤ order`, no condition on the bits) or the
+one-wrap band with the walk's ladder value `gateLadder (chainBuild …) (5m)` avoiding
+the forbidden residues — every generated row satisfies the gate. The regime dichotomy
+is `varBaseMul_off`'s, at the honest values, and stated in its vocabulary: the walk's
+gate bits are the stream (`gateBit_chainBuild`), so the sound side's `gateLadder` is
+the honest ladder and `gateLadder_eq_register` is the decode a caller discharges the
+band condition with. -/
+theorem chain_complete (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2) (m : ℕ)
+    {xT yT : F} (hTns : c.Nonsingular xT yT)
+    (bs : ℕ → F) (hbs : ∀ j, j < 5 * m → bs j = 0 ∨ bs j = 1)
+    {x0 y0 : F} (n0 : F) (hP0 : c.Nonsingular x0 y0)
+    (hP0eq : Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hTns)
+    (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
+      (2 ^ (5 * m - 1) < c.order ∧ c.order < 2 ^ (5 * m) ∧ c.order % 4 = 1 ∧
+        gateLadder (chainBuild xT yT x0 y0 n0 bs) (5 * m) ∉ forbiddenValues c.order)) :
+    ∀ i, i < m → Holds (chainBuild xT yT x0 y0 n0 bs i) := by
+  have hTne : Point.some _ _ hTns ≠ 0 := Point.some_ne_zero hTns
+  set g := chainBuild xT yT x0 y0 n0 bs with hg
+  -- the regime prices all four degeneracy residues at every bit step
+  have hquad : ∀ j, j < 5 * m →
+      ¬((c.order : ℤ) ∣ (gateLadder g j - 1)) ∧ ¬((c.order : ℤ) ∣ (gateLadder g j + 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j - 1))
+      ∧ ¬((c.order : ℤ) ∣ (2 * gateLadder g j + 1)) := by
+    rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
+    · exact Ladder.ladder_subwrap_nondegen c.order (5 * m) hsub (gateLadder g)
+        (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j)
+    · refine Ladder.ladder_nondegen_tight c.order (5 * m)
+        (Fact.out : Nat.Prime c.order) hq4 hr1 hr2 (gateLadder g)
+        (gateBitSign g) (gateLadder_zero g) (fun j _ => gateBitSign_eq g j)
+        (fun j _ => gateLadder_succ g j) ?_
+      intro t ht hdvd
+      exact hnf ⟨t, ht, hdvd⟩
+  -- rows hold and the accumulator threads as the ladder multiple
+  have main : ∀ i, i ≤ m →
+      (∀ i', i' < i → Holds (chainBuild xT yT x0 y0 n0 bs i'))
+      ∧ ∃ hIi : c.Nonsingular (chainBuild xT yT x0 y0 n0 bs i).x0
+          (chainBuild xT yT x0 y0 n0 bs i).y0,
+          Point.some _ _ hIi = gateLadder g (5 * i) • Point.some _ _ hTns := by
+    intro i
+    induction i with
+    | zero =>
+      intro _
+      exact ⟨fun i' hi' => absurd hi' (Nat.not_lt_zero i'), hP0, by simpa using hP0eq⟩
+    | succ i ih =>
+      intro hi
+      obtain ⟨hrows, hIi, hIeq⟩ := ih (by omega)
+      obtain ⟨hrow, h5, h5eq⟩ := row_produce c h2 hodd hTns hTne
+        (chainBuild xT yT x0 y0 n0 bs i).n
+        (hbs (5 * i) (by omega)) (hbs (5 * i + 1) (by omega)) (hbs (5 * i + 2) (by omega))
+        (hbs (5 * i + 3) (by omega)) (hbs (5 * i + 4) (by omega)) hIi
+        (k := gateLadder g) (j := 5 * i) hIeq
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (by rw [gateLadder_succ, gateBitSign_chainBuild])
+        (fun l hl hl' => hquad l (by omega))
+      refine ⟨fun i' hi' => ?_, ?_⟩
+      · rcases Nat.lt_or_ge i' i with h | h
+        · exact hrows i' h
+        · have : i' = i := by omega
+          subst this
+          rw [chainBuild_eta]
+          exact hrow
+      · show ∃ hIi : c.Nonsingular (chainBuild xT yT x0 y0 n0 bs i).x5
+            (chainBuild xT yT x0 y0 n0 bs i).y5,
+            Point.some _ _ hIi = gateLadder g (5 * (i + 1)) • Point.some _ _ hTns
+        rw [chainBuild_eta xT yT x0 y0 n0 bs i,
+          show (5 : ℕ) * (i + 1) = 5 * i + 5 from by ring]
+        exact ⟨h5, h5eq⟩
+  exact (main m le_rfl).1
 
 /-! ## The `scaleFast1` / Type1 direction: soundness via the forbidden band (Vesta)
 

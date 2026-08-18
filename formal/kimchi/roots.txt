@@ -41,6 +41,7 @@ Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal
 Kimchi.Gate.VarBaseMul.accN
 Kimchi.Gate.VarBaseMul.chain_accN
 Kimchi.Gate.VarBaseMul.runBits_bool
+Kimchi.Gate.VarBaseMul.chain_complete
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast1
 Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2
 
