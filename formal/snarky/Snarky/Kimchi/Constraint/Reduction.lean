@@ -455,4 +455,217 @@ private theorem createInternalP_ok [Add F] [Mul F] [Zero F] {e : AffineExpressio
     cases h
     exact ⟨rfl, rfl, Assignments.le_extendPairs hext⟩
 
+/-! ## Seam coherence: the generic algorithms
+
+The paired-run walks: a successful prover run of each reduction algorithm pins the
+builder run from any state at the same counter — same result, same final counter —
+and only extends the prover's table. Result agreement is load-bearing: downstream
+branching consumes returned variables, so the branches agree exactly when the
+counters do. -/
+
+/-- Invert one prover bind: a successful sequenced run factors through a successful
+prefix. -/
+theorem PlonkProver.bind_ok {α β : Type} {x : PlonkProver F α}
+    {f : α → PlonkProver F β} {s s' : ProverReductionState F} {b : β} :
+    (x >>= f) s = .ok (b, s') ↔
+      ∃ a s₁, x s = .ok (a, s₁) ∧ f a s₁ = .ok (b, s') := by
+  constructor
+  · intro h
+    rcases hx : x s with e | ⟨a, s₁⟩ <;>
+      simp only [Bind.bind, StateT.bind, hx, Except.bind] at h
+    · cases h
+    · exact ⟨a, s₁, rfl, h⟩
+  · rintro ⟨a, s₁, hx, hf⟩
+    simp only [Bind.bind, StateT.bind, hx, Except.bind]
+    exact hf
+
+/-- The prover's `pure`, applied. -/
+theorem PlonkProver.pure_apply {α : Type} (a : α) (s : ProverReductionState F) :
+    (pure a : PlonkProver F α) s = .ok (a, s) := rfl
+
+/-- Step one builder bind: the state monad sequences by application. -/
+theorem PlonkBuilder.bind_apply {α β : Type} (x : PlonkBuilder F α)
+    (f : α → PlonkBuilder F β) (s : BuilderReductionState F) :
+    (x >>= f) s = f (x s).1 (x s).2 := rfl
+
+/-- The builder's `pure`, applied. -/
+theorem PlonkBuilder.pure_apply {α : Type} (a : α) (s : BuilderReductionState F) :
+    (pure a : PlonkBuilder F α) s = (a, s) := rfl
+
+/-- The class ops at the builder instance, named (`simp` fodder for the walks). -/
+private theorem createInternal_builder [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    (e : AffineExpression F) :
+    createInternalVariable (m := PlonkBuilder F) e = createInternalB := rfl
+
+private theorem addGeneric_builder [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    (c : GenericPlonkConstraint F) :
+    addGenericPlonkConstraint (m := PlonkBuilder F) c = addGenericB c := rfl
+
+private theorem addEquals_builder [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+    (c : EqualsConstraint F) :
+    addEqualsConstraint (m := PlonkBuilder F) c = addEqualsB c := rfl
+
+/-- The class ops at the prover instance, named: allocation is `createInternalP`, the
+row-emitting ops are inert. -/
+private theorem createInternal_prover [Add F] [Mul F] [Zero F]
+    (e : AffineExpression F) :
+    createInternalVariable (m := PlonkProver F) e = createInternalP e := rfl
+
+private theorem addGeneric_prover [Add F] [Mul F] [Zero F]
+    (c : GenericPlonkConstraint F) :
+    addGenericPlonkConstraint (m := PlonkProver F) c = pure () := rfl
+
+private theorem addEquals_prover [Add F] [Mul F] [Zero F] (c : EqualsConstraint F) :
+    addEqualsConstraint (m := PlonkProver F) c = pure () := rfl
+
+variable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F]
+
+/-- `completelyReduce` in lockstep: same result, same final counter, table only
+grown. -/
+private theorem completelyReduce_lockstep {single : Variable × F}
+    {ts : List (Variable × F)} {sP sP' : ProverReductionState F} {a : Variable × F}
+    (h : completelyReduce (m := PlonkProver F) single ts sP = .ok (a, sP'))
+    (sB : BuilderReductionState F) (hn : sB.nextVariable = sP.nextVariable) :
+    (completelyReduce (m := PlonkBuilder F) single ts sB).1 = a ∧
+    (completelyReduce (m := PlonkBuilder F) single ts sB).2.nextVariable
+      = sP'.nextVariable ∧
+    sP.assignments.Le sP'.assignments ∧ sP.nextVariable ≤ sP'.nextVariable := by
+  induction ts generalizing single sP sB a sP' with
+  | nil =>
+    simp only [completelyReduce, PlonkProver.pure_apply, Except.ok.injEq,
+      Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨rfl, hn, Assignments.Le.refl _, Nat.le_refl _⟩
+  | cons next rest ih =>
+    simp only [completelyReduce] at h ⊢
+    rw [PlonkProver.bind_ok] at h
+    obtain ⟨r, sP₁, h₁, h⟩ := h
+    rw [PlonkProver.bind_ok] at h
+    obtain ⟨vo, sP₂, h₂, h⟩ := h
+    rw [PlonkProver.bind_ok] at h
+    obtain ⟨u, sP₃, h₃, h⟩ := h
+    simp only [addGeneric_prover, PlonkProver.pure_apply, Except.ok.injEq,
+      Prod.mk.injEq] at h₃ h
+    obtain ⟨rfl, rfl⟩ := h
+    obtain ⟨-, rfl⟩ := h₃
+    obtain ⟨-, ihn, ihle, ihmono⟩ := ih h₁ sB hn
+    obtain ⟨rfl, hn₂, hle₂⟩ := createInternalP_ok h₂
+    refine ⟨?_, ?_, ihle.trans hle₂, by rw [hn₂]; exact Nat.le_succ_of_le ihmono⟩
+    · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+        createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply, ihn]
+    · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+        createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply,
+        addGenericB_nextVariable, ihn, hn₂]
+
+/-- `reduceAffineExpression` in lockstep. -/
+private theorem reduceAffineExpression_lockstep {ae : AffineExpression F}
+    {sP sP' : ProverReductionState F} {a : Option Variable × F}
+    (h : reduceAffineExpression (m := PlonkProver F) ae sP = .ok (a, sP'))
+    (sB : BuilderReductionState F) (hn : sB.nextVariable = sP.nextVariable) :
+    (reduceAffineExpression (m := PlonkBuilder F) ae sB).1 = a ∧
+    (reduceAffineExpression (m := PlonkBuilder F) ae sB).2.nextVariable
+      = sP'.nextVariable ∧
+    sP.assignments.Le sP'.assignments ∧ sP.nextVariable ≤ sP'.nextVariable := by
+  rcases hts : ae.terms with _ | ⟨head, _ | ⟨first, rest⟩⟩ <;>
+    simp only [reduceAffineExpression, hts] at h ⊢
+  · simp only [PlonkProver.pure_apply, Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨rfl, hn, Assignments.Le.refl _, Nat.le_refl _⟩
+  · rcases hc : ae.constant with _ | c <;> simp only [hc] at h ⊢
+    · simp only [PlonkProver.pure_apply, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rfl, hn, Assignments.Le.refl _, Nat.le_refl _⟩
+    · by_cases h0 : c = 0
+      · rw [if_pos h0] at h ⊢
+        simp only [PlonkProver.pure_apply, Except.ok.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨rfl, hn, Assignments.Le.refl _, Nat.le_refl _⟩
+      · rw [if_neg h0] at h ⊢
+        rw [PlonkProver.bind_ok] at h
+        obtain ⟨vo, sP₁, h₁, h⟩ := h
+        rw [PlonkProver.bind_ok] at h
+        obtain ⟨u, sP₂, h₂, h⟩ := h
+        simp only [addGeneric_prover, PlonkProver.pure_apply, Except.ok.injEq,
+          Prod.mk.injEq] at h₂ h
+        obtain ⟨rfl, rfl⟩ := h
+        obtain ⟨-, rfl⟩ := h₂
+        obtain ⟨rfl, hn₁, hle₁⟩ := createInternalP_ok h₁
+        refine ⟨?_, ?_, hle₁, by rw [hn₁]; exact Nat.le_succ _⟩
+        · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+            createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply, hn]
+        · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+            createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply,
+            addGenericB_nextVariable, hn, hn₁]
+  · rw [PlonkProver.bind_ok] at h
+    obtain ⟨r, sP₁, h₁, h⟩ := h
+    rw [PlonkProver.bind_ok] at h
+    obtain ⟨vo, sP₂, h₂, h⟩ := h
+    rw [PlonkProver.bind_ok] at h
+    obtain ⟨u, sP₃, h₃, h⟩ := h
+    simp only [addGeneric_prover, PlonkProver.pure_apply, Except.ok.injEq,
+      Prod.mk.injEq] at h₃ h
+    obtain ⟨rfl, rfl⟩ := h
+    obtain ⟨-, rfl⟩ := h₃
+    obtain ⟨-, ihn, ihle, ihmono⟩ := completelyReduce_lockstep h₁ sB hn
+    obtain ⟨rfl, hn₂, hle₂⟩ := createInternalP_ok h₂
+    refine ⟨?_, ?_, ihle.trans hle₂, by rw [hn₂]; exact Nat.le_succ_of_le ihmono⟩
+    · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+        createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply, ihn]
+    · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+        createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply,
+        addGenericB_nextVariable, ihn, hn₂]
+
+/-- `reduceToVariable` in lockstep: the walks' one public boundary — same variable,
+same final counter, table only grown. -/
+theorem reduceToVariable_lockstep {x : CVar F}
+    {sP sP' : ProverReductionState F} {v : Variable}
+    (h : reduceToVariable (m := PlonkProver F) x sP = .ok (v, sP'))
+    (sB : BuilderReductionState F) (hn : sB.nextVariable = sP.nextVariable) :
+    (reduceToVariable (m := PlonkBuilder F) x sB).1 = v ∧
+    (reduceToVariable (m := PlonkBuilder F) x sB).2.nextVariable
+      = sP'.nextVariable ∧
+    sP.assignments.Le sP'.assignments ∧ sP.nextVariable ≤ sP'.nextVariable := by
+  simp only [reduceToVariable] at h ⊢
+  rw [PlonkProver.bind_ok] at h
+  obtain ⟨r, sP₁, h₁, h⟩ := h
+  obtain ⟨ihr, ihn, ihle, ihmono⟩ := reduceAffineExpression_lockstep h₁ sB hn
+  simp only [PlonkBuilder.bind_apply, ihr]
+  rcases hr : r.1 with _ | rv <;> rw [hr] at h <;> dsimp only at h ⊢
+  · rw [PlonkProver.bind_ok] at h
+    obtain ⟨vl, sP₂, h₂, h⟩ := h
+    rw [PlonkProver.bind_ok] at h
+    obtain ⟨u, sP₃, h₃, h⟩ := h
+    simp only [addEquals_prover, PlonkProver.pure_apply, Except.ok.injEq,
+      Prod.mk.injEq] at h₃ h
+    obtain ⟨rfl, rfl⟩ := h
+    obtain ⟨-, rfl⟩ := h₃
+    obtain ⟨rfl, hn₂, hle₂⟩ := createInternalP_ok h₂
+    refine ⟨?_, ?_, ihle.trans hle₂, by rw [hn₂]; exact Nat.le_succ_of_le ihmono⟩
+    · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+        createInternalB_apply, addEquals_builder, PlonkBuilder.pure_apply, ihn]
+    · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+        createInternalB_apply, addEquals_builder, PlonkBuilder.pure_apply,
+        addEqualsB_nextVariable, ihn, hn₂]
+  · by_cases h1 : r.2 = 1
+    · rw [if_pos h1] at h ⊢
+      simp only [PlonkProver.pure_apply, Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨rfl, ihn, ihle, ihmono⟩
+    · rw [if_neg h1] at h ⊢
+      rw [PlonkProver.bind_ok] at h
+      obtain ⟨cv, sP₂, h₂, h⟩ := h
+      rw [PlonkProver.bind_ok] at h
+      obtain ⟨u, sP₃, h₃, h⟩ := h
+      simp only [addGeneric_prover, PlonkProver.pure_apply, Except.ok.injEq,
+        Prod.mk.injEq] at h₃ h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨-, rfl⟩ := h₃
+      obtain ⟨rfl, hn₂, hle₂⟩ := createInternalP_ok h₂
+      refine ⟨?_, ?_, ihle.trans hle₂, by rw [hn₂]; exact Nat.le_succ_of_le ihmono⟩
+      · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+          createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply, ihn]
+      · simp only [PlonkBuilder.bind_apply, createInternal_builder,
+          createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply,
+          addGenericB_nextVariable, ihn, hn₂]
+
 end Snarky.Kimchi
