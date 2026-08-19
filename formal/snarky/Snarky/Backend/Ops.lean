@@ -84,6 +84,12 @@ def finalizeWith (ops : BackendOps F g c σ) (b : BuiltWith g σ α) : BuiltWith
   | (none, s') => { b with aux := s' }
   | (some gate, s') => { b with constraints := b.constraints ++ [gate], aux := s' }
 
+/-- Finalization only flushes queued rows: the counter is untouched. -/
+theorem finalizeWith_nextVar (ops : BackendOps F g c σ) (b : BuiltWith g σ α) :
+    (finalizeWith ops b).nextVar = b.nextVar := by
+  unfold finalizeWith
+  rcases ops.finalize b.aux with ⟨_ | gate, s'⟩ <;> rfl
+
 /-- Interpret a circuit as a prover run through a backend's ops (PS
 `runCircuitProver`): witness handling and the assignment guard mirror `prove`; each
 constraint runs the backend's prover seam against the shared counter and table. -/
