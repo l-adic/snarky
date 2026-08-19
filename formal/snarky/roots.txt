@@ -385,6 +385,11 @@ Snarky.Kimchi.scaleFast2'
 Snarky.Kimchi.splitFieldVar
 Snarky.Kimchi.joinField
 Snarky.Kimchi.mapAccumM
+Snarky.Kimchi.GroupMapParams
+Snarky.Kimchi.potentialXs
+Snarky.Kimchi.ySquared
+Snarky.Kimchi.groupMapPure
+Snarky.Kimchi.groupMapCircuit
 Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toFieldChecked'
 Snarky.Kimchi.EndoScalar.toFieldChecked'_spec
@@ -407,6 +412,8 @@ Snarky.Kimchi.scaleFast1_spec
 Snarky.Kimchi.splitFieldVar_spec
 Snarky.Kimchi.scaleFast2_spec
 Snarky.Kimchi.scaleFast2'_spec
+Snarky.Kimchi.groupMapCircuit_spec
+Snarky.Kimchi.groupMapCircuit_complete_spec
 -- The deployed endo dictionaries: no per-curve law statements exist — the generic laws
 -- are concretized inside a larger circuit's instantiation — so these values are the
 -- discharge artifacts AND the exhibit that the dictionary is satisfiable at Pasta.
