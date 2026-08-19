@@ -38,6 +38,7 @@ import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
+import Snarky.Kimchi.Circuit.Sponge
 import Snarky.Kimchi.Circuit.Utils
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul

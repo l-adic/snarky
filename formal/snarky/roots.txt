@@ -462,3 +462,11 @@ Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem
 Snarky.Kimchi.KimchiConstraint.instChecker
 Snarky.Kimchi.KimchiConstraint.instLawfulChecker
 Snarky.Kimchi.KimchiProverC
+
+-- The in-circuit duplex sponge (Snarky/Kimchi/Circuit/Sponge.lean): the port surface
+-- of PS Snarky.Circuit.RandomOracle.Sponge (absorb / squeeze / initialState /
+-- spongeFromConstants), consumed by downstream Fiat-Shamir transcripts.
+Snarky.Kimchi.SpongeVar.init
+Snarky.Kimchi.SpongeVar.ofConstants
+Snarky.Kimchi.SpongeVar.absorb
+Snarky.Kimchi.SpongeVar.squeeze
