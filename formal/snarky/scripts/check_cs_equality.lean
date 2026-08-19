@@ -42,6 +42,7 @@ import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
+import Snarky.Kimchi.Circuit.GroupMap
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -205,6 +206,31 @@ ladder). -/
 def varBaseMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   scaleFast1 255 51 input.1 ⟨input.2⟩
+
+/-- The Pallas BW19 `setup()` parameters at the step field (PS
+`groupMapParams (Proxy @PallasG)`): the constants are the poseidon package's
+`Poseidon.GroupMapPallas` values; the non-residue is PS's search-from-2 result,
+`5`. The gates carry them as coefficients, so a wrong value fails the byte
+comparison itself. -/
+def groupMapParamsFp : GroupMapParams Fp :=
+  { u := 1
+  , fu := 6
+  , sqrtNeg3U2MinusUOver2 :=
+      8503465768106391777493614032514048814691664078728891710322960303815233784505
+  , sqrtNeg3U2 :=
+      17006931536212783554987228065028097629383328157457783420645920607630467569011
+  , inv3U2 :=
+      19298681539552699237261830834781317975575370987961040477303117842899978420225
+  , b := 5
+  , nonResidue := 5 }
+
+/-- `group_map_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.GroupMap.groupMapCircuit` at the step field and Pallas
+parameters; the advice is inert for the CS build). -/
+def groupMapStepCircuit (input : FVar Fp) :
+    CircuitM Fp (KimchiConstraint Fp) PUnit := do
+  let _ ← groupMapCircuit (fun _ => none) groupMapParamsFp input
+  pure ⟨⟩
 
 /-- `scale_fast2_128_step_circuit` (the PS gadget
 `Snarky.Circuit.Kimchi.VarBaseMul.scaleFast2'` at 26 chunks / 127 `sDiv2` bits — the
@@ -413,6 +439,8 @@ def targets : List (String × (Raw → List (String × Bool))) :=
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) varBaseMulCircuit),
     ("scale_fast2_128_step_circuit",
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
+    ("group_map_step_circuit",
+      compareWith (a := Fp) (b := PUnit) groupMapStepCircuit),
     ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
     ("b_correct_step_circuit",
       compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
