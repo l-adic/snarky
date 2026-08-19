@@ -17,7 +17,8 @@ namespace Schnorr.CheckAxioms
 def roots : List Name :=
   [ `Schnorr.gen,
     `Schnorr.challenge,
-    `Schnorr.verify ]
+    `Schnorr.verify,
+    `Schnorr.verifyCircuit ]
 
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

@@ -9,3 +9,8 @@ Schnorr.gen
 Schnorr.Statement
 Schnorr.challenge
 Schnorr.verify
+
+-- The in-circuit verifier (Schnorr/Circuit.lean): the transcript squeeze and the
+-- whole verifier, stage for stage against `verify`.
+Schnorr.squeezeTranscript
+Schnorr.verifyCircuit
