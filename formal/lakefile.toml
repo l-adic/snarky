@@ -30,7 +30,7 @@ name = "formal"
 lintDriver = "batteries/runLinter"
 lintDriverArgs = [
   "Kimchi", "KimchiFixture", "Snarky", "Pasta", "Poseidon", "FixtureKit",
-  "Bulletproof", "BulletproofFixture"
+  "Bulletproof", "BulletproofFixture", "Schnorr"
 ]
 
 # CompElliptic pinned at the workspace level (git, daira upstream @ a549e455) so this direct
@@ -62,6 +62,10 @@ path = "kimchi"
 [[require]]
 name = "snarky"
 path = "snarky"
+
+[[require]]
+name = "schnorr"
+path = "schnorr"
 
 # Zcash/ironwood: the generic forking / random-oracle / knowledge-error machinery consumed by
 # `kimchi`'s probabilistic soundness layer (`Kimchi/Verifier/Forking/`). Pinned here at the

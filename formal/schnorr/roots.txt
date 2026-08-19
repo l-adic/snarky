@@ -1,0 +1,11 @@
+-- The schnorr exemplar's API manifest: the wire protocol. One name per line;
+-- `--` comments and blanks ignored. The deadcode gate walks reachability from the
+-- union of the packages' manifests.
+
+-- The wire protocol (Schnorr/Wire.lean): the generator, the statement, the
+-- challenge derivation, and the verifier — the specification the circuit-level
+-- laws terminate at.
+Schnorr.gen
+Schnorr.Statement
+Schnorr.challenge
+Schnorr.verify
