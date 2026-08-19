@@ -68,6 +68,9 @@ The builder's batching queues an incoming constraint and packs pairs into
 emitted constraints and the faithfulness of the reduction are deliberately not stated
 in this package.
 
+The seam-coherence section at the end states per-op bookkeeping only: which ops move
+the shared counter, and that the prover's guarded write only extends the table.
+
 The PS package has no QuickCheck rows for this module — its tests exercise the
 circuit layer, and the fixture corpus is the oracle; the byte-equality seam replays
 it against this port.
@@ -96,7 +99,7 @@ structure EqualsConstraint (F : Type u) where
 
 /-- The reduction-op vocabulary (PS `class PlonkReductionM`): allocate an internal
 variable for an affine expression, emit a generic constraint, assert a two-sided
-equality. The builder, the prover, and the law-vehicle trace interpret it below. -/
+equality. The builder and the prover interpret it below. -/
 class PlonkReductionM (F : Type) (m : Type → Type) where
   /-- Allocate a fresh variable standing for the given affine expression (the prover
   assigns it the expression's value; the builder only advances the counter). -/
@@ -376,5 +379,80 @@ the evaluation error out. -/
 def reduceAsProver (s : ProverReductionState F) (x : PlonkProver F α) :
     Except EvalError (α × ProverReductionState F) :=
   x.run s
+
+/-! ## Seam coherence: the op-level facts
+
+Only `createInternalVariable` moves the shared counter — by exactly one, on both
+sides. The other builder ops touch rows, the gate queue, the union-find, and the
+constant cache; the other prover ops are inert. Stated here per op: the builder's
+counter behavior, total, and the prover op's success inversion, whose table extension
+is unconditional because `extendPairs` is guarded — success implies no overwrite. -/
+
+/-- The builder's allocation op, applied: return the current counter, advance it,
+touch the union-find, record the internal variable. -/
+private theorem createInternalB_apply (s : BuilderReductionState F) :
+    createInternalB s
+      = (s.nextVariable,
+          { s with
+            nextVariable := s.nextVariable + 1,
+            aux.wireState.unionFind :=
+              (s.aux.wireState.unionFind.find s.nextVariable).2,
+            aux.wireState.internalVariables :=
+              s.nextVariable :: s.aux.wireState.internalVariables }) := rfl
+
+/-- The builder's generic-constraint op never moves the counter: it queues or packs. -/
+private theorem addGenericB_nextVariable (c : GenericPlonkConstraint F)
+    (s : BuilderReductionState F) :
+    (addGenericB c s).2.nextVariable = s.nextVariable := by
+  rcases hq : s.aux.queuedGenericGate with _ | g <;>
+    simp [addGenericB, handleGateBatching, hq]
+
+/-- The builder's equality op never moves the counter: every branch of the guard
+cascade wires, caches, batches, or no-ops. -/
+private theorem addEqualsB_nextVariable [Zero F] [Neg F] [Sub F] [Div F]
+    [DecidableEq F] (c : EqualsConstraint F) (s : BuilderReductionState F) :
+    (addEqualsB c s).2.nextVariable = s.nextVariable := by
+  rcases c with ⟨cl, vl, cr, vr⟩
+  dsimp only [addEqualsB]
+  split
+  · rfl
+  rcases vl with _ | l <;> rcases vr with _ | r <;> dsimp only
+  · -- constant against constant
+    split
+    · rfl
+    · exact addGenericB_nextVariable ..
+  · -- constant against a variable
+    split
+    · exact addGenericB_nextVariable ..
+    · dsimp only [Bind.bind, StateT.bind, get, getThe, MonadStateOf.get, StateT.get]
+      rcases _hc : s.aux.wireState.cachedConstants.lookup (cl / cr) with _ | cached
+      · exact addGenericB_nextVariable ..
+      · rfl
+  · -- a variable against a constant
+    split
+    · exact addGenericB_nextVariable ..
+    · dsimp only [Bind.bind, StateT.bind, get, getThe, MonadStateOf.get, StateT.get]
+      rcases _hc : s.aux.wireState.cachedConstants.lookup (cr / cl) with _ | cached
+      · exact addGenericB_nextVariable ..
+      · rfl
+  · -- two variables: wire or constrain
+    split
+    · rfl
+    · exact addGenericB_nextVariable ..
+
+/-- The prover's allocation op, inverted at success: it returns the borrowed counter,
+advances it by one, and only extends the table (the guarded write). -/
+private theorem createInternalP_ok [Add F] [Mul F] [Zero F] {e : AffineExpression F}
+    {n : Variable} {env : Assignments F} {a : Variable} {s' : ProverReductionState F}
+    (h : createInternalP e ⟨n, env⟩ = .ok (a, s')) :
+    a = n ∧ s'.nextVariable = n + 1 ∧ env.Le s'.assignments := by
+  unfold createInternalP at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  next env' hext =>
+    cases h
+    exact ⟨rfl, rfl, Assignments.le_extendPairs hext⟩
 
 end Snarky.Kimchi
