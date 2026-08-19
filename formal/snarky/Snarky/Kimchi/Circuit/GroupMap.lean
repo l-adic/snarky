@@ -2,6 +2,7 @@ import Snarky.Circuit.DSL.Field
 import Snarky.Circuit.DSL.Assert
 import Snarky.Circuit.DSL.Boolean
 import Snarky.Kimchi.Semantics
+import Poseidon.GroupMap
 
 /-!
 # The BW19 hash-to-curve gadget
@@ -15,9 +16,11 @@ residuosity flag and a root of either the candidate ordinate square or its
 non-residue twist; at least one flag is asserted set, and the point is the
 first-flagged candidate, selected by mutually exclusive boolean products.
 
-The value level (`potentialXs`, `groupMapPure`) is the same map the poseidon package's
-fixture-validated `Poseidon.GroupMap` computes at the deployed Pasta fields; the
-laws here stay generic and quote the module's own pure model, PS-parity.
+The value level (`potentialXs`, `groupMapPure`) is identified with the wire verifier's
+fixture-validated map: `groupMapPure_toGroup` proves it computes
+`Poseidon.GroupMap.toGroup` — the `U`-base derivation the kimchi verifier runs — at any
+wire `Spec`. The generic laws quote the module's own pure model; the wire section
+restates them with the wire map itself as the spec.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS `groupMapParams` builds the parameter record from the `HasBW19` FFI and a
@@ -649,5 +652,185 @@ theorem groupMapCircuit_complete_spec [Field F] [DecidableEq F] {c : Type}
         + params.b) with _ | w2 <;>
       rcases hc3 : sqrtF (X3 * X3 * X3 + params.b) with _ | w3 <;>
       simp [hc1, hc2, hc3, bit] at hdisj ⊢
+
+/-! ## The wire-protocol spec
+
+`Poseidon.GroupMap.toGroup` is the map the kimchi verifier actually runs: the executable
+IPA wire verifier derives the per-proof `U` base with it (`Bulletproof/Wire.lean`), and
+the knowledge-soundness capstones quote it. This section takes it as the circuit's
+specification, in the canonical `ZMod q` world (`Fact q.Prime`) the deployed Pasta specs
+live in: `GroupMapParams.ofSpec` reads a wire `Spec` as this module's parameter record,
+`groupMapPure_toGroup` identifies the module's pure model with the wire map, and the two
+laws below restate soundness against the wire curve predicate (`OnCurve`) and
+completeness against `toGroup` itself, the advice instantiated with the spec's own
+Tonelli–Shanks root and its coherence hypotheses discharged. -/
+
+section Wire
+
+open CompElliptic.Fields CompElliptic.CurveForms.ShortWeierstrass
+
+variable {q : ℕ} [Fact q.Prime]
+
+/-- This module's parameters, read off a wire `Poseidon.GroupMap.Spec` — plus the
+non-residue the in-circuit flagged-root trick needs, which the wire map has no
+counterpart for (it retries candidates instead of certifying failures). -/
+def GroupMapParams.ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q) :
+    GroupMapParams (ZMod q) where
+  u := spec.u
+  fu := spec.fu
+  sqrtNeg3U2MinusUOver2 := spec.sqrtNegThreeUSquaredMinusUOver2
+  sqrtNeg3U2 := spec.sqrtNegThreeUSquared
+  inv3U2 := spec.invThreeUSquared
+  b := spec.E.B
+  nonResidue := nonResidue
+
+/-- The candidate abscissae agree with the wire map's: `potentialXs` at `ofSpec` is
+`Poseidon.GroupMap.potentialXs`. -/
+theorem potentialXs_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q)
+    (nonResidue t : ZMod q) :
+    potentialXs (.ofSpec spec nonResidue) t
+      = _root_.Poseidon.GroupMap.potentialXs spec t := by
+  have hinv : (1 : ZMod q) / ((t * t + spec.fu) * (t * t))
+      = (t ^ 2 * (t ^ 2 + spec.fu))⁻¹ := by
+    rw [one_div,
+      show (t * t + spec.fu) * (t * t) = t ^ 2 * (t ^ 2 + spec.fu) from by ring]
+  simp only [potentialXs, _root_.Poseidon.GroupMap.potentialXs, GroupMapParams.ofSpec,
+    hinv, Prod.mk.injEq]
+  refine ⟨by ring, by ring, by ring⟩
+
+/-- The candidate test values agree with the wire map's: `ySquared` at `ofSpec` is
+`Poseidon.GroupMap.curveEqn`. -/
+theorem ySquared_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q)
+    (nonResidue x : ZMod q) :
+    ySquared (.ofSpec spec nonResidue) x = _root_.Poseidon.GroupMap.curveEqn spec x := by
+  simp only [ySquared, _root_.Poseidon.GroupMap.curveEqn, GroupMapParams.ofSpec]
+  ring
+
+/-- **The wire identification**: at a wire `Spec`, with the spec's own Tonelli–Shanks
+root as advice, the module's pure model computes the wire map's point — coordinate for
+coordinate, first-flagged candidate for first-flagged candidate. -/
+theorem groupMapPure_toGroup (spec : _root_.Poseidon.GroupMap.Spec q)
+    (nonResidue t : ZMod q) :
+    groupMapPure spec.sqrt.sqrt? (.ofSpec spec nonResidue) t
+      = ((_root_.Poseidon.GroupMap.toGroup spec t).x,
+          (_root_.Poseidon.GroupMap.toGroup spec t).y) := by
+  have hys : ∀ x : ZMod q,
+      spec.sqrt.sqrt? (ySquared (GroupMapParams.ofSpec spec nonResidue) x)
+        = _root_.Poseidon.GroupMap.getY spec x := fun x => by
+    rw [ySquared_ofSpec, _root_.Poseidon.GroupMap.getY]
+  rcases hg : _root_.Poseidon.GroupMap.toGroup spec t with ⟨px, py, hval⟩
+  simp only [_root_.Poseidon.GroupMap.toGroup] at hg
+  split at hg <;> [skip; split at hg <;> [skip; split at hg]] <;>
+    obtain ⟨rfl, rfl⟩ : _ ∧ _ := ⟨congrArg SWPoint.x hg, congrArg SWPoint.y hg⟩ <;>
+    simp [groupMapPure, potentialXs_ofSpec, *]
+
+/-- A rootless value's non-residue twist has a root: two non-squares multiply to a
+square (`FiniteField.pow_dichotomy`), and `sqrt?` is complete on squares. The discharge
+of `groupMapCircuit_complete_spec`'s twist hypothesis at a genuine Tonelli–Shanks
+root. -/
+private theorem sqrt?_twist {F : Type} [Field F] [Fintype F] [DecidableEq F]
+    (d : TonelliShanks F) (hchar : ringChar F ≠ 2)
+    {nr : F} (hnr0 : nr ≠ 0) (hnr : ¬IsSquare nr) :
+    ∀ a, d.sqrt? a = none → (d.sqrt? (nr * a)).isSome := by
+  intro a hnone
+  have ha0 : a ≠ 0 := by
+    rintro rfl
+    simp [TonelliShanks.sqrt?] at hnone
+  have hnsq : ¬IsSquare a := fun hsq => by
+    obtain ⟨r, hr⟩ := d.sqrt?_isSome_of_isSquare hsq
+    rw [hr] at hnone
+    cases hnone
+  have hsq : IsSquare (nr * a) := by
+    have h1 := (FiniteField.pow_dichotomy hchar hnr0).resolve_left
+      fun h => hnr ((FiniteField.isSquare_iff hchar hnr0).mpr h)
+    have h2 := (FiniteField.pow_dichotomy hchar ha0).resolve_left
+      fun h => hnsq ((FiniteField.isSquare_iff hchar ha0).mpr h)
+    refine (FiniteField.isSquare_iff hchar (mul_ne_zero hnr0 ha0)).mpr ?_
+    rw [mul_pow, h1, h2, neg_mul_neg, one_mul]
+  obtain ⟨r, hr⟩ := d.sqrt?_isSome_of_isSquare hsq
+  rw [hr]
+  rfl
+
+open Std.Do in
+/-- Wire-level soundness: any satisfying valuation reads the result as a point of the
+wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the SvdW
+candidate abscissae. The advice is universally quantified: soundness never consults
+it. -/
+theorem groupMapCircuit_onCurve_spec (spec : _root_.Poseidon.GroupMap.Spec q)
+    (nonResidue : ZMod q) (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q))
+    (Q : PostCond (AffinePoint (FVar (ZMod q))) (.arg (BuilderState (ZMod q)) .pure)) :
+    ⦃Sound (fun V (r : AffinePoint (FVar (ZMod q))) =>
+        (r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1
+          ∨ r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.1
+          ∨ r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.2) ∧
+        OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)) Q⦄
+    (groupMapCircuit (c := KimchiConstraint (ZMod q)) sqrtF (.ofSpec spec nonResidue) t)
+    ⦃Q⦄ := by
+  intro s hpre
+  refine groupMapCircuit_spec sqrtF (.ofSpec spec nonResidue) t Q s ?_
+  intro r nv' hP
+  refine hpre r nv' ⟨hP.1, ?_⟩
+  show r.y.val s.V ^ 2 = r.x.val s.V ^ 3 + spec.E.A * r.x.val s.V + spec.E.B
+  rw [spec.hA]
+  have hb := hP.2
+  simp only [GroupMapParams.ofSpec] at hb
+  linear_combination hb
+
+open Std.Do in
+/-- Wire-level completeness: the honest run lands on the wire map itself — the result
+reads `Poseidon.GroupMap.toGroup`, the map the verifier runs to derive the per-proof
+`U` base. `groupMapCircuit_complete_spec` at a wire `Spec`: the advice is the spec's
+own Tonelli–Shanks root, root-genuineness is `sqrt?_mul_self`, twist-totality is
+`sqrt?_twist` at a genuine non-residue, `2 ≠ 0` comes from `q ≠ 2`, and the pure model
+is rewritten by `groupMapPure_toGroup`. The SvdW disjunction (as `IsSquare`) and the
+operand nondegeneracy remain, with `q ≠ 3` pricing the flag-sum assertion. -/
+theorem groupMapCircuit_toGroup_complete_spec {c : Type} [BasicSystem (ZMod q) c]
+    [Checker (ZMod q) c] [LawfulChecker (ZMod q) c]
+    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q) (t : FVar (ZMod q))
+    (hq2 : q ≠ 2) (hq3 : q ≠ 3) (hnr0 : nonResidue ≠ 0) (hnr : ¬IsSquare nonResidue)
+    (Q : PostCond (AffinePoint (FVar (ZMod q)))
+      (.arg (ProverState (ZMod q)) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env => (t.eval env).isOk ∧
+          ∀ tv, t.eval env = .ok tv →
+            (tv * tv + spec.fu) * (tv * tv) ≠ 0 ∧
+            (IsSquare (ySquared (.ofSpec spec nonResidue)
+                (potentialXs (.ofSpec spec nonResidue) tv).1) ∨
+              IsSquare (ySquared (.ofSpec spec nonResidue)
+                (potentialXs (.ofSpec spec nonResidue) tv).2.1) ∨
+              IsSquare (ySquared (.ofSpec spec nonResidue)
+                (potentialXs (.ofSpec spec nonResidue) tv).2.2)))
+        (fun env r env' => ∀ tv, t.eval env = .ok tv →
+          r.x.eval env' = .ok (_root_.Poseidon.GroupMap.toGroup spec tv).x ∧
+          r.y.eval env' = .ok (_root_.Poseidon.GroupMap.toGroup spec tv).y)
+        Q⦄
+    (groupMapCircuit (c := Prover c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t)
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨⟨hok, hcond⟩, hk⟩ := hpre
+  have hchar : ringChar (ZMod q) ≠ 2 := by
+    rw [ZMod.ringChar_zmod_n]
+    exact hq2
+  have hthree : (3 : ZMod q) ≠ 0 := by
+    intro h
+    exact hq3 ((Nat.prime_dvd_prime_iff_eq Fact.out (by norm_num)).mp
+      ((CharP.cast_eq_zero_iff (ZMod q) q 3).mp (by exact_mod_cast h)))
+  have hsome : ∀ v : ZMod q, IsSquare v → (spec.sqrt.sqrt? v).isSome := fun v hv => by
+    obtain ⟨r, hr⟩ := spec.sqrt.sqrt?_isSome_of_isSquare hv
+    rw [hr]
+    rfl
+  refine groupMapCircuit_complete_spec spec.sqrt.sqrt? (.ofSpec spec nonResidue) t
+    (fun a y h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
+    (sqrt?_twist spec.sqrt hchar hnr0 hnr)
+    (Ring.two_ne_zero hchar) hthree Q st
+    ⟨⟨hok, fun tv htv => ?_⟩, fun r st' hpost hle => ?_⟩
+  · obtain ⟨hne, hdisj⟩ := hcond tv htv
+    exact ⟨hne, hdisj.imp (hsome _) (Or.imp (hsome _) (hsome _))⟩
+  · refine hk r st' (fun tv htv => ?_) hle
+    obtain ⟨hx, hy⟩ := hpost tv htv
+    rw [groupMapPure_toGroup] at hx hy
+    exact ⟨hx, hy⟩
+
+end Wire
 
 end Snarky.Kimchi
