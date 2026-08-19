@@ -52,19 +52,70 @@ structure Statement where
   /-- The response `r + c·x`, a Vesta scalar. -/
   z : Fp
 
-/-- The Fiat–Shamir challenge: absorb the generator, the public key, and the
-commitment into the Vesta-side sponge; squeeze one 128-bit prechallenge,
-endo-expanded into the scalar field (the kimchi challenge convention). -/
-def challenge (pk u : SWPoint Vesta.curve) : Fp :=
+/-- The sponge state after the transcript: the generator and the statement's two
+points absorbed, before the challenge squeeze. Factored so the circuit-alignment
+lemma and the two verifiers all name the same object. -/
+def squeezeState (pk u : SWPoint Vesta.curve) :
+    FqSponge.S PALLAS_SCALAR_CARD :=
   let s := FqSponge.init
   let s := FqSponge.absorbG FqVesta.spec s gen
   let s := FqSponge.absorbG FqVesta.spec s pk
-  let s := FqSponge.absorbG FqVesta.spec s u
-  (FqSponge.squeezeChallenge FqVesta.spec s).1
+  FqSponge.absorbG FqVesta.spec s u
 
-/-- The wire verifier: `[z]·G = u + [c]·pk` with `c` the transcript challenge —
-the whole protocol as one executable check, and the exemplar's specification. -/
+/-- The raw squeezed field element (`Fq`), before truncation — what the circuit's
+`squeezeTranscript` reads from the last permutation's first rate slot, and what the
+wire's `challengeNat` takes the low 128 bits of. -/
+def squeezeFieldElement (pk u : SWPoint Vesta.curve) : Fq :=
+  (Poseidon.squeeze FqVesta.spec.params (squeezeState pk u).sponge).1
+
+/-- The wire's canonical 128-bit prechallenge: the low 128 bits of the CANONICAL
+representative of the squeeze. `challengeNat` packs `lowLimbs`, which is exactly this
+(`squeezeFieldElement.val < q < 2^255`) — this is `FqSponge.challengeNat` on
+the transcript state, packed limb for limb. -/
+def preChallenge (pk u : SWPoint Vesta.curve) : ℕ :=
+  (squeezeFieldElement pk u).val % 2 ^ 128
+
+/-- The wire verifier: `[z]·G = u + [c]·pk`, `c` the transcript's endo-expanded
+128-bit challenge — the whole protocol as one executable check. -/
 def verify (st : Statement) : Bool :=
-  decide (st.z.val • gen = st.u + (challenge st.pk st.u).val • st.pk)
+  decide (st.z.val • gen
+    = st.u + (FqSponge.endoExpand FqVesta.spec.lam (preChallenge st.pk st.u)).val • st.pk)
+
+/-- The RELAXED verifier: the challenge is any 128-bit prechallenge that reconstructs
+the squeeze in `Fq` — `c + 2^128·hi = squeeze` with both halves 128-bit — endo-expanded
+and applied. This is what the circuit actually enforces: the range check pins `c` only
+up to the squeeze's integer preimages (`0` has preimages `{0, q, 2q, 3q}` in
+`[0, 2^256)`, each with different low bits), so soundness terminates here.
+`verify` is the special case `c = ⌊squeeze⌋ mod 2^128` (`verify_imp_verifyRelaxed`).
+The honest prover always witnesses that canonical `c`, so completeness targets
+`verify`. -/
+def verifyRelaxed (st : Statement) : Prop :=
+  ∃ c hi : ℕ, c < 2 ^ 128 ∧ hi < 2 ^ 128 ∧
+    (c : Fq) + (2 : Fq) ^ 128 * (hi : Fq) = squeezeFieldElement st.pk st.u ∧
+    st.z.val • gen
+      = st.u + (FqSponge.endoExpand FqVesta.spec.lam c).val • st.pk
+
+/-- The wire verifier's acceptance is the relaxed verifier's canonical witness: the
+free bridge. Soundness will land on `verifyRelaxed`; this closes the gap to `verify`
+in the direction that always holds. -/
+theorem verify_imp_verifyRelaxed (st : Statement) (h : verify st = true) :
+    verifyRelaxed st := by
+  simp only [verify, decide_eq_true_eq] at h
+  refine ⟨preChallenge st.pk st.u, (squeezeFieldElement st.pk st.u).val / 2 ^ 128,
+    Nat.mod_lt _ (by positivity), ?_, ?_, h⟩
+  · have := (squeezeFieldElement st.pk st.u).val_lt
+    have hq : PALLAS_SCALAR_CARD < 2 ^ 128 * 2 ^ 128 := by decide
+    omega
+  · have hrepr : preChallenge st.pk st.u
+        + 2 ^ 128 * ((squeezeFieldElement st.pk st.u).val / 2 ^ 128)
+        = (squeezeFieldElement st.pk st.u).val := by
+      rw [preChallenge, Nat.mod_add_div]
+    calc (preChallenge st.pk st.u : Fq)
+          + (2 : Fq) ^ 128 * (((squeezeFieldElement st.pk st.u).val / 2 ^ 128 : ℕ) : Fq)
+        = ((preChallenge st.pk st.u
+            + 2 ^ 128 * ((squeezeFieldElement st.pk st.u).val / 2 ^ 128) : ℕ) : Fq) := by
+          push_cast; ring
+      _ = ((squeezeFieldElement st.pk st.u).val : Fq) := by rw [hrepr]
+      _ = squeezeFieldElement st.pk st.u := ZMod.natCast_rightInverse _
 
 end Schnorr

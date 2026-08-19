@@ -16,8 +16,11 @@ namespace Schnorr.CheckAxioms
 /-- The exemplar's audited surface. -/
 def roots : List Name :=
   [ `Schnorr.gen,
-    `Schnorr.challenge,
+    `Schnorr.squeezeFieldElement,
+    `Schnorr.preChallenge,
     `Schnorr.verify,
+    `Schnorr.verifyRelaxed,
+    `Schnorr.verify_imp_verifyRelaxed,
     `Schnorr.verifyCircuit ]
 
 /-- The allowed axioms. -/
