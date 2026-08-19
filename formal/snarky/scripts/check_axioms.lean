@@ -18,6 +18,7 @@ import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
+import Snarky.Kimchi.Circuit.GroupMap
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -110,6 +111,11 @@ def roots : List Name :=
     `Snarky.Kimchi.splitFieldVar_spec,
     `Snarky.Kimchi.scaleFast2_spec,
     `Snarky.Kimchi.scaleFast2'_spec,
+    `Snarky.Kimchi.groupMapCircuit_spec,
+    `Snarky.Kimchi.groupMapCircuit_complete_spec,
+    `Snarky.Kimchi.groupMapPure_toGroup,
+    `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
+    `Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
     `Snarky.post_of_prove,

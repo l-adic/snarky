@@ -41,6 +41,7 @@ import Snarky.Kimchi.Circuit.Utils
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
+import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Semantics
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
