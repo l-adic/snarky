@@ -86,30 +86,34 @@ theorem kimchiCompile_solve_nextVar [Add F] [Mul F] [Sub F] [Div F] [Zero F] [On
   rw [finalizeWith_nextVar]
   exact buildWith_proveWith_nextVar kimchiOps_lockstep h initialAuxState
 
-/-- A successful kimchi solve only extends the seeded table: the public-input
-seeding survives into the returned assignments. `proveWith_extends` at
-`kimchiOps_proveExtends`. -/
-theorem kimchiSolve_extends [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
+/-- **The kimchi solve decodes its public slots** — the kimchi counterpart of the
+base `solve_complete`'s slot clause: a successful solve returns a table reading the
+given input at the input slots and the returned output at the output slots. The seed
+survives the run and the output back-fill wrote the slots the wiring ties to the
+circuit's result — `proveWith_compileBody_slots` at `kimchiOps_proveExtends`. -/
+theorem kimchiSolve_publicSlots [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
     [Neg F] [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F (KimchiConstraint F) bvar) (input : a)
-    {out : b} {env env₀ : Assignments F}
-    (hseed : Assignments.empty.extendPairs
-        ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList)
-        = .ok env₀)
-    (h : kimchiSolve (a := a) (b := b) main input = .ok (out, env)) :
-    env₀.Le env := by
+    {outVal : b} {env : Assignments F}
+    (h : kimchiSolve (a := a) (b := b) main input = .ok (outVal, env)) :
+    (∀ i (hi : i < A.size), env i = some ((A.valueToFields input)[i])) ∧
+      ∀ j (hj : j < B.size),
+        env (A.size + j) = some ((B.valueToFields outVal)[j]) := by
   unfold kimchiSolve at h
-  rw [hseed] at h
-  dsimp only at h
-  rcases hp : proveWith kimchiOps (compileBody (a := a) (b := b) main)
-      (A.size + B.size) env₀ with e | p <;> rw [hp] at h
+  rcases hseed : Assignments.empty.extendPairs
+      ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList)
+    with e | env₀ <;> rw [hseed] at h
   · cases h
   · dsimp only at h
-    rcases hr : readVar (val := b) p.result p.assignments with e | outv <;>
-      rw [hr] at h
+    rcases hp : proveWith kimchiOps (compileBody (a := a) (b := b) main)
+        (A.size + B.size) env₀ with e | p <;> rw [hp] at h
     · cases h
-    · cases h
-      exact (proveWith_extends kimchiOps_proveExtends hp).1
+    · dsimp only at h
+      rcases hr : readVar (val := b) p.result p.assignments with e | outv <;>
+        rw [hr] at h
+      · cases h
+      · cases h
+        exact proveWith_compileBody_slots kimchiOps_proveExtends hseed hp hr
 
 end Snarky.Kimchi
