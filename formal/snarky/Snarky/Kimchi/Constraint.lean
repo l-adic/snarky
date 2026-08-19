@@ -43,16 +43,17 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   kimchi constraint emits rows, not a checkable predicate, and validation is the row
   laws plus the fixture seam. This diverges from the base `prove`'s deliberate
   checking strengthening; the closest kimchi analogue of `prove_complete` is the
-  ops-coherence lockstep, undischarged here (closing paragraph).
+  ops-coherence lockstep, discharged below (closing paragraph).
 - Labels are not threaded (the base embedding's `labelOp` is inert).
 
 The composition laws come for free from the generic interpreter
 (`buildWith_bind`/`proveWith_bind`), and the cross-seam laws are stated there as the
 ops-coherence facts `BackendOps.Lockstep`/`BackendOps.ProveExtends` with their
 whole-program consequences (`buildWith_proveWith_nextVar`/`proveWith_extends`).
-They are not discharged for `kimchiOps` here: doing so is per-gate content — both
-instances of `KimchiConstraint.reduce` must branch identically and advance the
-counter identically.
+Both are discharged for `kimchiOps` at the end of this module
+(`kimchiOps_lockstep`/`kimchiOps_proveExtends`): the one shared dispatch runs its two
+seams in lockstep (`KimchiConstraint.reduce_seam`), composed from the per-gate walks
+beside each reducer through the `Seam` vocabulary (`Constraint/Reduction`).
 -/
 
 namespace Snarky.Kimchi
@@ -172,5 +173,64 @@ def kimchiOps [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [Div F]
   finalize aux :=
     ((finalizeGateQueue aux.queuedGenericGate).map .plonk,
      { aux with queuedGenericGate := none })
+
+/-! ## Seam coherence: the dispatch and the ops-record discharge -/
+
+/-- `reducePad` is a seam: seven pinned operands, one row. -/
+private theorem reducePad_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
+    [Neg F] [DecidableEq F] (vs : Vector (FVar F) 7) :
+    Seam (reducePad (m := PlonkBuilder F) vs) (reducePad (m := PlonkProver F) vs) := by
+  unfold reducePad
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
+/-- The one shared dispatch runs its two seams in lockstep: `KimchiConstraint.reduce`
+is a seam, arm by arm from the per-gate walks. -/
+theorem KimchiConstraint.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
+    [Neg F] [DecidableEq F] (con : KimchiConstraint F) :
+    Seam (KimchiConstraint.reduce (m := PlonkBuilder F) con)
+      (KimchiConstraint.reduce (m := PlonkProver F) con) := by
+  rcases con with c | c | c | c | c | c | vs <;> simp only [KimchiConstraint.reduce]
+  · refine Seam.bind (_root_.Snarky.Kimchi.reduce_seam c) fun _ => ?_
+    exact Seam.pure _
+  · exact Seam.map _ (AddComplete.reduce_seam c)
+  · exact Seam.map _ (PoseidonConstraint.reduce_seam c)
+  · exact Seam.map _ (VarBaseMul.reduce_seam c)
+  · exact Seam.map _ (EndoScalar.reduce_seam c)
+  · exact Seam.map _ (EndoMul.reduce_seam c)
+  · exact Seam.map _ (reducePad_seam vs)
+
+/-- The kimchi backend's per-constraint counter lockstep: a successful prover seam
+pins the builder seam's counter, for every auxiliary state — the two instantiations
+of the one dispatch advance the shared counter identically
+(`KimchiConstraint.reduce_seam`). -/
+theorem kimchiOps_lockstep [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] : (kimchiOps (F := F)).Lockstep := by
+  intro con n env n' env' aux h
+  simp only [kimchiOps] at h ⊢
+  rcases hp : reduceAsProver ⟨n, env⟩ (KimchiConstraint.reduce con) with e | ⟨a, sP'⟩ <;>
+    rw [hp] at h
+  · cases h
+  · obtain ⟨rfl, -⟩ : sP'.nextVariable = n' ∧ sP'.assignments = env' := by
+      simpa using h
+    obtain ⟨-, hn, -, -⟩ := KimchiConstraint.reduce_seam con hp ⟨[], n, aux⟩ rfl
+    exact hn
+
+/-- The kimchi backend's per-constraint prover extension: a successful prover seam
+only extends the witness table — the guarded write — and never retreats the
+counter. -/
+theorem kimchiOps_proveExtends [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
+    [Neg F] [DecidableEq F] : (kimchiOps (F := F)).ProveExtends := by
+  intro con n env n' env' h
+  simp only [kimchiOps] at h
+  rcases hp : reduceAsProver ⟨n, env⟩ (KimchiConstraint.reduce con) with e | ⟨a, sP'⟩ <;>
+    rw [hp] at h
+  · cases h
+  · obtain ⟨rfl, rfl⟩ : sP'.nextVariable = n' ∧ sP'.assignments = env' := by
+      simpa using h
+    obtain ⟨-, -, hle, hmono⟩ :=
+      KimchiConstraint.reduce_seam con hp ⟨[], n, initialAuxState⟩ rfl
+    exact ⟨hle, hmono⟩
 
 end Snarky.Kimchi
