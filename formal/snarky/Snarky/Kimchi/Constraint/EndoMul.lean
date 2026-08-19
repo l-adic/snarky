@@ -141,4 +141,42 @@ def EndoMul.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
   let rows ← EndoMul.reduceRounds c.state
   pure (rows ++ [EndoMul.finalZeroRow xs ys nAcc])
 
+/-- The round reducer is a seam: fourteen pinned operands, one row. -/
+private theorem EndoMulRound.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : EndoMulRound F) :
+    Seam (EndoMulRound.reduce (m := PlonkBuilder F) c)
+      (EndoMulRound.reduce (m := PlonkProver F) c) := by
+  unfold EndoMulRound.reduce
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
+/-- `reduceRounds` is a seam: the structural fold composes. -/
+private theorem EndoMul.reduceRounds_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F]
+    (cs : List (EndoMulRound F)) :
+    Seam (EndoMul.reduceRounds (m := PlonkBuilder F) cs)
+      (EndoMul.reduceRounds (m := PlonkProver F) cs) := by
+  induction cs with
+  | nil =>
+    simp only [EndoMul.reduceRounds]
+    exact Seam.pure _
+  | cons c cs ih =>
+    simp only [EndoMul.reduceRounds]
+    refine Seam.bind (EndoMulRound.reduce_seam c) fun _ => ?_
+    refine Seam.bind ih fun _ => ?_
+    exact Seam.pure _
+
+/-- The endomorphism-multiplication reducer is a seam: the final accumulator and
+scalar first, then the rounds, then the trailing row, purely. -/
+theorem EndoMul.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : EndoMul F) :
+    Seam (EndoMul.reduce (m := PlonkBuilder F) c)
+      (EndoMul.reduce (m := PlonkProver F) c) := by
+  unfold EndoMul.reduce
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+    | refine Seam.bind (EndoMul.reduceRounds_seam _) fun _ => ?_
+
 end Snarky.Kimchi

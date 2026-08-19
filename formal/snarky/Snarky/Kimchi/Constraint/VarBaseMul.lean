@@ -146,4 +146,29 @@ def VarBaseMul.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     let rest ← VarBaseMul.reduce cs
     pure (pair :: rest)
 
+/-- The round reducer is a seam: twenty-six pinned operands, one row pair. -/
+private theorem ScaleRound.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : ScaleRound F) :
+    Seam (ScaleRound.reduce (m := PlonkBuilder F) c)
+      (ScaleRound.reduce (m := PlonkProver F) c) := by
+  unfold ScaleRound.reduce
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
+/-- The scalar-multiplication reducer is a seam: the roundwise fold composes. -/
+theorem VarBaseMul.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : VarBaseMul F) :
+    Seam (VarBaseMul.reduce (m := PlonkBuilder F) c)
+      (VarBaseMul.reduce (m := PlonkProver F) c) := by
+  induction c with
+  | nil =>
+    simp only [VarBaseMul.reduce]
+    exact Seam.pure _
+  | cons c cs ih =>
+    simp only [VarBaseMul.reduce]
+    refine Seam.bind (ScaleRound.reduce_seam c) fun _ => ?_
+    refine Seam.bind ih fun _ => ?_
+    exact Seam.pure _
+
 end Snarky.Kimchi

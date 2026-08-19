@@ -518,6 +518,89 @@ private theorem addGeneric_prover [Add F] [Mul F] [Zero F]
 private theorem addEquals_prover [Add F] [Mul F] [Zero F] (c : EqualsConstraint F) :
     addEqualsConstraint (m := PlonkProver F) c = pure () := rfl
 
+/-! ## Seam coherence: the composable pairing
+
+The gate reducers are `reduceToVariable` chains and structural folds, so their walks
+compose rather than re-walk: `Seam` pairs a builder run with a prover run and is
+preserved by `pure`, `bind`, and `map`; the leaves are the reduction algorithms and
+the two row-emitting ops. The per-gate walks live beside their reducers and consume
+this vocabulary. -/
+
+/-- The paired-run property the per-gate walks compose: whenever the prover run
+succeeds, the builder run from any state at the same counter returns the same result
+and lands at the prover's final counter, and the prover's table only grew. -/
+def Seam {α : Type} (xB : PlonkBuilder F α) (xP : PlonkProver F α) : Prop :=
+  ∀ {sP sP' : ProverReductionState F} {a : α}, xP sP = .ok (a, sP') →
+    ∀ sB : BuilderReductionState F, sB.nextVariable = sP.nextVariable →
+      (xB sB).1 = a ∧ (xB sB).2.nextVariable = sP'.nextVariable ∧
+      sP.assignments.Le sP'.assignments ∧ sP.nextVariable ≤ sP'.nextVariable
+
+/-- `pure` is a seam. -/
+protected theorem Seam.pure {α : Type} (a : α) :
+    Seam (pure a : PlonkBuilder F α) (pure a) := by
+  intro sP sP' a' h sB hn
+  simp only [PlonkProver.pure_apply, Except.ok.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  exact ⟨rfl, hn, Assignments.Le.refl _, Nat.le_refl _⟩
+
+/-- Seams compose over `bind`: the prefix's result agreement feeds the
+continuation. -/
+protected theorem Seam.bind {α β : Type} {xB : PlonkBuilder F α}
+    {xP : PlonkProver F α} {fB : α → PlonkBuilder F β} {fP : α → PlonkProver F β}
+    (hx : Seam xB xP) (hf : ∀ a, Seam (fB a) (fP a)) :
+    Seam (xB >>= fB) (xP >>= fP) := by
+  intro sP sP' b h sB hn
+  rw [PlonkProver.bind_ok] at h
+  obtain ⟨a, sP₁, h₁, h₂⟩ := h
+  obtain ⟨ha, hn₁, hle₁, hm₁⟩ := hx h₁ sB hn
+  obtain ⟨hb, hn₂, hle₂, hm₂⟩ := hf a h₂ (xB sB).2 hn₁
+  rw [PlonkBuilder.bind_apply, ha]
+  exact ⟨hb, hn₂, hle₁.trans hle₂, hm₁.trans hm₂⟩
+
+/-- Seams compose over `map`. -/
+protected theorem Seam.map {α β : Type} {xB : PlonkBuilder F α}
+    {xP : PlonkProver F α} (f : α → β) (hx : Seam xB xP) :
+    Seam (f <$> xB) (f <$> xP) := by
+  rw [← bind_pure_comp, ← bind_pure_comp]
+  exact hx.bind fun a => Seam.pure (f a)
+
+/-- Seams compose over a shared conditional. -/
+protected theorem Seam.ite {α : Type} {c : Prop} [Decidable c]
+    {xB yB : PlonkBuilder F α} {xP yP : PlonkProver F α}
+    (hx : c → Seam xB xP) (hy : ¬c → Seam yB yP) :
+    Seam (if c then xB else yB) (if c then xP else yP) := by
+  by_cases h : c
+  · rw [if_pos h, if_pos h]
+    exact hx h
+  · rw [if_neg h, if_neg h]
+    exact hy h
+
+/-- The generic-constraint op is a seam: inert for the prover, counter-inert for the
+builder. -/
+theorem addGeneric_seam [Add F] [Mul F] [Zero F] [Neg F] [Sub F] [Div F]
+    [DecidableEq F] (g : GenericPlonkConstraint F) :
+    Seam (addGenericPlonkConstraint (m := PlonkBuilder F) g)
+      (addGenericPlonkConstraint (m := PlonkProver F) g) := by
+  intro sP sP' u h sB hn
+  simp only [addGeneric_prover, PlonkProver.pure_apply, Except.ok.injEq,
+    Prod.mk.injEq] at h
+  obtain ⟨-, rfl⟩ := h
+  refine ⟨rfl, ?_, Assignments.Le.refl _, Nat.le_refl _⟩
+  rw [addGeneric_builder, addGenericB_nextVariable, hn]
+
+/-- The equality op is a seam: inert for the prover, counter-inert for the
+builder. -/
+theorem addEquals_seam [Add F] [Mul F] [Zero F] [Neg F] [Sub F] [Div F]
+    [DecidableEq F] (e : EqualsConstraint F) :
+    Seam (addEqualsConstraint (m := PlonkBuilder F) e)
+      (addEqualsConstraint (m := PlonkProver F) e) := by
+  intro sP sP' u h sB hn
+  simp only [addEquals_prover, PlonkProver.pure_apply, Except.ok.injEq,
+    Prod.mk.injEq] at h
+  obtain ⟨-, rfl⟩ := h
+  refine ⟨rfl, ?_, Assignments.Le.refl _, Nat.le_refl _⟩
+  rw [addEquals_builder, addEqualsB_nextVariable, hn]
+
 variable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F]
 
 /-- `completelyReduce` in lockstep: same result, same final counter, table only
@@ -667,5 +750,20 @@ theorem reduceToVariable_lockstep {x : CVar F}
       · simp only [PlonkBuilder.bind_apply, createInternal_builder,
           createInternalB_apply, addGeneric_builder, PlonkBuilder.pure_apply,
           addGenericB_nextVariable, ihn, hn₂]
+
+/-- `reduceToVariable` is a seam (`reduceToVariable_lockstep`, repackaged). -/
+theorem reduceToVariable_seam (x : CVar F) :
+    Seam (reduceToVariable (m := PlonkBuilder F) x)
+      (reduceToVariable (m := PlonkProver F) x) := by
+  intro sP sP' a h sB hn
+  exact reduceToVariable_lockstep h sB hn
+
+/-- `reduceAffineExpression` is a seam (`reduceAffineExpression_lockstep`,
+repackaged): the `Basic` reducer branches on its results, which agree. -/
+theorem reduceAffineExpression_seam (ae : AffineExpression F) :
+    Seam (reduceAffineExpression (m := PlonkBuilder F) ae)
+      (reduceAffineExpression (m := PlonkProver F) ae) := by
+  intro sP sP' a h sB hn
+  exact reduceAffineExpression_lockstep h sB hn
 
 end Snarky.Kimchi
