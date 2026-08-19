@@ -390,7 +390,7 @@ is unconditional because `extendPairs` is guarded — success implies no overwri
 
 /-- The builder's allocation op, applied: return the current counter, advance it,
 touch the union-find, record the internal variable. -/
-private theorem createInternalB_apply (s : BuilderReductionState F) :
+theorem createInternalB_apply (s : BuilderReductionState F) :
     createInternalB s
       = (s.nextVariable,
           { s with
@@ -493,7 +493,7 @@ theorem PlonkBuilder.pure_apply {α : Type} (a : α) (s : BuilderReductionState 
     (pure a : PlonkBuilder F α) s = (a, s) := rfl
 
 /-- The class ops at the builder instance, named (`simp` fodder for the walks). -/
-private theorem createInternal_builder [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
+theorem createInternal_builder [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
     (e : AffineExpression F) :
     createInternalVariable (m := PlonkBuilder F) e = createInternalB := rfl
 
@@ -505,17 +505,13 @@ private theorem addEquals_builder [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq 
     (c : EqualsConstraint F) :
     addEqualsConstraint (m := PlonkBuilder F) c = addEqualsB c := rfl
 
-/-- The class ops at the prover instance, named: allocation is `createInternalP`, the
-row-emitting ops are inert. -/
-private theorem createInternal_prover [Add F] [Mul F] [Zero F]
-    (e : AffineExpression F) :
-    createInternalVariable (m := PlonkProver F) e = createInternalP e := rfl
-
-private theorem addGeneric_prover [Add F] [Mul F] [Zero F]
+/-- The row-emitting ops at the prover instance are inert. -/
+theorem addGeneric_prover [Add F] [Mul F] [Zero F]
     (c : GenericPlonkConstraint F) :
     addGenericPlonkConstraint (m := PlonkProver F) c = pure () := rfl
 
-private theorem addEquals_prover [Add F] [Mul F] [Zero F] (c : EqualsConstraint F) :
+/-- The equality op at the prover instance is inert. -/
+theorem addEquals_prover [Add F] [Mul F] [Zero F] (c : EqualsConstraint F) :
     addEqualsConstraint (m := PlonkProver F) c = pure () := rfl
 
 /-! ## Seam coherence: the composable pairing
