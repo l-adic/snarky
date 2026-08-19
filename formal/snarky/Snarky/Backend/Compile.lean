@@ -1,4 +1,5 @@
 import Snarky.Circuit.DSL.Assert
+import Snarky.Backend.Ops
 
 /-!
 # Compiling and solving whole circuits
@@ -143,16 +144,96 @@ private theorem extendPairs_range'_lookup :
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
+omit [Zero F] [One F] in
+/-- The public slots decode at ANY extending backend: a successful `proveWith` run of
+`compileBody` returns a table reading the input at the input slots (the seed
+survives) and the decoded output at the output slots (the back-fill wrote them, and
+the tail only extends). `solve_complete` states the base-`prove` instance alongside
+its constraint clause; backends whose prover seams check nothing (kimchi) consume
+this form. -/
+theorem proveWith_compileBody_slots {g σ : Type u} {ops : BackendOps F g c σ}
+    [BasicSystem F c] [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
+    (hp : ops.ProveExtends)
+    {main : avar → CircuitM F c bvar} {input : a} {outVal : b}
+    {env₀ : Assignments F} {p : Proved F bvar}
+    (hseed : Assignments.empty.extendPairs
+        ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList) = .ok env₀)
+    (hrun : proveWith ops (compileBody (a := a) (b := b) main)
+        (A.size + B.size) env₀ = .ok p)
+    (hread : readVar (val := b) p.result p.assignments = .ok outVal) :
+    (∀ i (hi : i < A.size), p.assignments i = some ((A.valueToFields input)[i])) ∧
+      ∀ j (hj : j < B.size),
+        p.assignments (A.size + j) = some ((B.valueToFields outVal)[j]) := by
+  set L := (A.valueToFields input).toList with hL
+  have hlenL : L.length = A.size := by simp [hL]
+  rw [allocRange_toList, ← hlenL] at hseed
+  have hseedlook := (extendPairs_range'_lookup L 0 hseed).1
+  rw [show p = ⟨p.result, p.nextVar, p.assignments⟩ from rfl] at hrun
+  have hle₀ := (proveWith_extends hp hrun).1
+  simp only [compileBody] at hrun
+  rw [proveWith_bind] at hrun
+  obtain ⟨s₁, hrun₁, hrun⟩ := bind_ok hrun
+  rw [proveWith_bind] at hrun
+  obtain ⟨s₂, hrun₂, hrun⟩ := bind_ok hrun
+  have hslots : (allocRange A.size B.size).toList.find?
+      (s₂.nextVar ≤ ·) = none := by
+    refine List.find?_eq_none.mpr fun v hv => ?_
+    have hlt := (mem_allocRange hv).2
+    have h₁ := (proveWith_extends hp hrun₁).2
+    have h₂ := (proveWith_extends hp hrun₂).2
+    simp only [decide_eq_true_eq]
+    omega
+  rw [proveWith_bind] at hrun
+  obtain ⟨s₃, hassign, hrun⟩ := bind_ok hrun
+  simp only [assignVars, proveWith, outputWit, hslots] at hassign
+  split at hassign
+  · cases hassign
+  next xs hwit =>
+    split at hassign
+    · cases hassign
+    next env₃ hext =>
+      cases hwitread : readVar (val := b) s₂.result s₂.assignments with
+      | error e => rw [hwitread] at hwit; cases hwit
+      | ok ov =>
+        rw [hwitread] at hwit
+        simp only [Except.map, Except.ok.injEq] at hwit
+        subst hwit
+        set M := (B.valueToFields ov).toList with hM
+        have hlenM : M.length = B.size := by simp [hM]
+        rw [allocRange_toList, ← hlenM] at hext
+        have hextlook := (extendPairs_range'_lookup M A.size hext).1
+        simp only [Except.ok.injEq] at hassign
+        subst hassign
+        have hle₃ : env₃.Le p.assignments := (proveWith_extends hp hrun).1
+        have hle₂ : s₂.assignments.Le p.assignments :=
+          (Assignments.le_extendPairs hext).trans hle₃
+        have hres : s₂.result = p.result := by
+          rw [proveWith_bind] at hrun
+          obtain ⟨s₄, -, hpure⟩ := bind_ok hrun
+          simp only [proveWith, Except.ok.injEq, Proved.mk.injEq] at hpure
+          exact hpure.1
+        rw [hres] at hwitread
+        rw [readVar_le hle₂ hwitread] at hread
+        cases hread
+        refine ⟨fun i hi => ?_, fun j hj => ?_⟩
+        · have hlook := hseedlook i (by omega)
+          rw [Nat.zero_add] at hlook
+          have hfin := hle₀ i _ hlook
+          rw [hfin]
+          simp [hL]
+        · have hfin := hle₃ (A.size + j) _ (hextlook j (by omega))
+          rw [hfin]
+          simp [hM]
+
 /-- A successful `solve` produces an assignment that satisfies
 every constraint `compile` emits, holds the input's encoding at the input slots, and
 holds the returned output's encoding at the output slots. Stated over the reference
 `Basic F` backend, whose `holds` is monotone (`Basic.holds_mono`).
 
-Constraint satisfaction is `prove_complete` for the shared program; the slot decodes
-chase the run: the seed fills the input slots and prover runs only extend
-(`prove_assignments_le`), and the back-fill's `extendPairs` fills the output slots with
-the encoding of the value `readVar` sees mid-run — carried to the returned output by
-`readVar_le`. Stepped through in the body. -/
+Constraint satisfaction is `prove_complete` for the shared program — the checking
+prover's own clause, with no backend-generic counterpart; the slot decodes are
+`proveWith_compileBody_slots` at the base ops (`prove` is `proveWith` at
+`checkedOps`, which extends). -/
 theorem solve_complete [A : CircuitType F a avar] [CheckedType F (Basic F) avar]
     [B : CircuitType F b bvar] {main : avar → CircuitM F (Basic F) bvar} {input : a}
     {outVal : b} {env : Assignments F}
@@ -172,75 +253,11 @@ theorem solve_complete [A : CircuitType F a avar] [CheckedType F (Basic F) avar]
       next out' hread =>
         simp only [Except.ok.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
-        -- The seed's slot facts, behind an opaque list so the range' lemma applies.
-        set L := (A.valueToFields input).toList with hL
-        have hlenL : L.length = A.size := by simp [hL]
-        rw [allocRange_toList, ← hlenL] at hseed
-        have hseedlook := (extendPairs_range'_lookup L 0 hseed).1
-        -- The whole-run facts, before the equation is decomposed.
         have hmono : ∀ (con : Basic F) {e e' : Assignments F},
             e.Le e' → con.holds e = true → con.holds e' = true :=
           fun _ => Basic.holds_mono
         rw [show p = ⟨p.result, p.nextVar, p.assignments⟩ from rfl] at hrun
         have hsat := prove_complete hmono hrun
-        have hle₀ := prove_assignments_le hrun
-        -- Decompose the run at the program's binds.
-        simp only [compileBody] at hrun
-        rw [prove_bind] at hrun
-        obtain ⟨s₁, hrun₁, hrun⟩ := bind_ok hrun
-        rw [prove_bind] at hrun
-        obtain ⟨s₂, hrun₂, hrun⟩ := bind_ok hrun
-        -- The back-fill targets the preallocated output slots, and the counter has
-        -- only advanced since they were reserved — so the assign guard is satisfied.
-        have hslots : (allocRange A.size B.size).toList.find?
-            (s₂.nextVar ≤ ·) = none := by
-          refine List.find?_eq_none.mpr fun v hv => ?_
-          have hlt := (mem_allocRange hv).2
-          have h₁ := prove_nextVar_le hrun₁
-          have h₂ := prove_nextVar_le hrun₂
-          simp only [decide_eq_true_eq]
-          omega
-        rw [prove_bind] at hrun
-        obtain ⟨s₃, hassign, hrun⟩ := bind_ok hrun
-        -- The back-fill stage: recover the mid-run output read and the slot fills.
-        simp only [assignVars, prove, outputWit, hslots] at hassign
-        split at hassign
-        · cases hassign
-        next xs hwit =>
-          split at hassign
-          · cases hassign
-          next env₃ hext =>
-            cases hwitread : readVar (val := b) s₂.result s₂.assignments with
-            | error e => rw [hwitread] at hwit; cases hwit
-            | ok ov =>
-              rw [hwitread] at hwit
-              simp only [Except.map, Except.ok.injEq] at hwit
-              subst hwit
-              set M := (B.valueToFields ov).toList with hM
-              have hlenM : M.length = B.size := by simp [hM]
-              rw [allocRange_toList, ← hlenM] at hext
-              have hextlook := (extendPairs_range'_lookup M A.size hext).1
-              -- The tail stages only extend the assignment.
-              simp only [Except.ok.injEq] at hassign
-              subst hassign
-              have hle₃ : env₃.Le p.assignments := prove_assignments_le hrun
-              have hle₂ : s₂.assignments.Le p.assignments :=
-                (Assignments.le_extendPairs hext).trans hle₃
-              -- The mid-run read survives to the end, so `ov` IS the decoded output.
-              have hres : s₂.result = p.result := by
-                rw [prove_bind] at hrun
-                obtain ⟨s₄, -, hpure⟩ := bind_ok hrun
-                simp only [prove, Except.ok.injEq, Proved.mk.injEq] at hpure
-                exact hpure.1
-              rw [hres] at hwitread
-              rw [readVar_le hle₂ hwitread] at hread
-              cases hread
-              refine ⟨hsat, fun i hi => ?_, fun j hj => ?_⟩
-              · have := hseedlook i (by omega)
-                rw [Nat.zero_add] at this
-                have := hle₀ i _ this
-                rw [this]
-                simp [hL]
-              · have := hle₃ (A.size + j) _ (hextlook j (by omega))
-                rw [this]
-                simp [hM]
+        rw [← proveWith_checkedOps] at hrun
+        exact ⟨hsat, proveWith_compileBody_slots (checkedOps_proveExtends _)
+          hseed hrun hread⟩

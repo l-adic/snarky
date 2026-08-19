@@ -94,4 +94,26 @@ def AddComplete.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
                      some x21Inv] ++ List.replicate 4 none⟩, by simp⟩,
           coeffs := [] }⟩
 
+/-- `reduceAffinePoint` is a seam. -/
+private theorem reduceAffinePoint_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F]
+    (p : AffinePoint (FVar F)) :
+    Seam (reduceAffinePoint (m := PlonkBuilder F) p)
+      (reduceAffinePoint (m := PlonkProver F) p) := by
+  unfold reduceAffinePoint
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
+/-- The complete-addition reducer is a seam: eleven pinned operands, one row. -/
+theorem AddComplete.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : AddComplete F) :
+    Seam (AddComplete.reduce (m := PlonkBuilder F) c)
+      (AddComplete.reduce (m := PlonkProver F) c) := by
+  unfold AddComplete.reduce
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceAffinePoint_seam _) fun _ => ?_
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
 end Snarky.Kimchi

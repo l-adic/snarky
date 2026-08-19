@@ -94,4 +94,30 @@ def EndoScalar.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F]
     let rest ← EndoScalar.reduce cs
     pure (row :: rest)
 
+/-- The round reducer is a seam: fourteen pinned operands, one row. -/
+private theorem EndoScalarRound.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F]
+    (c : EndoScalarRound F) :
+    Seam (EndoScalarRound.reduce (m := PlonkBuilder F) c)
+      (EndoScalarRound.reduce (m := PlonkProver F) c) := by
+  unfold EndoScalarRound.reduce
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
+/-- The challenge-decomposition reducer is a seam: the roundwise fold composes. -/
+theorem EndoScalar.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : EndoScalar F) :
+    Seam (EndoScalar.reduce (m := PlonkBuilder F) c)
+      (EndoScalar.reduce (m := PlonkProver F) c) := by
+  induction c with
+  | nil =>
+    simp only [EndoScalar.reduce]
+    exact Seam.pure _
+  | cons c cs ih =>
+    simp only [EndoScalar.reduce]
+    refine Seam.bind (EndoScalarRound.reduce_seam c) fun _ => ?_
+    refine Seam.bind ih fun _ => ?_
+    exact Seam.pure _
+
 end Snarky.Kimchi

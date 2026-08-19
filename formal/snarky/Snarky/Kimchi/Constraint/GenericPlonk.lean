@@ -123,4 +123,29 @@ def reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] [Mon
         { cl := -x.2, vl := some v, cr := 0, vr := some v, co := 0, vo := none,
           m := x.2 * x.2, c := 0 }
 
+/-- The `Basic` reducer is a seam: the branches consume reduced results, which agree,
+and every tail is counter-inert. -/
+theorem reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F] (c : Basic F) :
+    Seam (reduce (m := PlonkBuilder F) c) (reduce (m := PlonkProver F) c) := by
+  rcases c with ⟨l, r, o⟩ | ⟨a, b⟩ | ⟨a, b⟩ | v <;> simp only [reduce]
+  · refine Seam.bind (reduceAffineExpression_seam _) fun l' => ?_
+    refine Seam.bind (reduceAffineExpression_seam _) fun r' => ?_
+    refine Seam.bind (reduceAffineExpression_seam _) fun o' => ?_
+    rcases l'.1 with _ | vl <;> rcases r'.1 with _ | vr <;> rcases o'.1 with _ | vo
+    all_goals try exact addGeneric_seam _
+    exact Seam.ite (fun _ => Seam.pure _) fun _ => addGeneric_seam _
+  · refine Seam.bind (reduceAffineExpression_seam _) fun l' => ?_
+    refine Seam.bind (reduceAffineExpression_seam _) fun r' => ?_
+    exact addEquals_seam _
+  · refine Seam.bind (reduceAffineExpression_seam _) fun x => ?_
+    refine Seam.bind (reduceAffineExpression_seam _) fun y => ?_
+    rcases x.1 with _ | x1 <;> rcases y.1 with _ | x2
+    all_goals try exact addGeneric_seam _
+    exact Seam.ite (fun _ => Seam.pure _) fun _ => addGeneric_seam _
+  · refine Seam.bind (reduceAffineExpression_seam _) fun x => ?_
+    rcases x.1 with _ | xv
+    · exact Seam.ite (fun _ => Seam.pure _) fun _ => addGeneric_seam _
+    · exact addGeneric_seam _
+
 end Snarky.Kimchi

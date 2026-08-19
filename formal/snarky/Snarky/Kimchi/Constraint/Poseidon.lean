@@ -121,4 +121,41 @@ def PoseidonConstraint.reduce [Add F] [Mul F] [Zero F] [One F] [Neg F] [Decidabl
   let vs ← reduceStates c.state
   pure (rowsFromStates (fun i => c.rc.getD i (0, 0, 0)) 0 vs)
 
+/-- `reduceState` is a seam. -/
+private theorem reduceState_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F]
+    (t : FVar F × FVar F × FVar F) :
+    Seam (reduceState (m := PlonkBuilder F) t)
+      (reduceState (m := PlonkProver F) t) := by
+  unfold reduceState
+  repeat first
+    | exact Seam.pure _
+    | refine Seam.bind (reduceToVariable_seam _) fun _ => ?_
+
+/-- `reduceStates` is a seam: the structural fold composes. -/
+private theorem reduceStates_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F]
+    (ts : List (FVar F × FVar F × FVar F)) :
+    Seam (reduceStates (m := PlonkBuilder F) ts)
+      (reduceStates (m := PlonkProver F) ts) := by
+  induction ts with
+  | nil =>
+    simp only [reduceStates]
+    exact Seam.pure _
+  | cons t ts ih =>
+    simp only [reduceStates]
+    refine Seam.bind (reduceState_seam t) fun _ => ?_
+    refine Seam.bind ih fun _ => ?_
+    exact Seam.pure _
+
+/-- The Poseidon reducer is a seam: pin the states, then assemble rows purely. -/
+theorem PoseidonConstraint.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
+    [DecidableEq F]
+    (c : PoseidonConstraint F) :
+    Seam (PoseidonConstraint.reduce (m := PlonkBuilder F) c)
+      (PoseidonConstraint.reduce (m := PlonkProver F) c) := by
+  unfold PoseidonConstraint.reduce
+  refine Seam.bind (reduceStates_seam _) fun _ => ?_
+  exact Seam.pure _
+
 end Snarky.Kimchi

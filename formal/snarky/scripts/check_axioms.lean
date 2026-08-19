@@ -20,6 +20,7 @@ import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
+import Snarky.Kimchi.Backend.Compile
 import Lean.Elab.Command
 
 open Lean Lean.Elab.Command
@@ -137,6 +138,11 @@ def roots : List Name :=
     `Snarky.Example.cubic_sound,
     `Snarky.Example.cubic_complete,
     `Snarky.solve_complete,
+    `Snarky.proveWith_compileBody_slots,
+    `Snarky.Kimchi.kimchiOps_lockstep,
+    `Snarky.Kimchi.kimchiOps_proveExtends,
+    `Snarky.Kimchi.kimchiCompile_solve_nextVar,
+    `Snarky.Kimchi.kimchiSolve_publicSlots,
     `Snarky.readVar_le,
     `Snarky.CVar.reduce_eval,
     `Snarky.fvar_value_roundTrip,

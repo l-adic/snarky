@@ -121,6 +121,7 @@ Snarky.buildWith_proveWith_nextVar
 Snarky.proveWith_extends
 Snarky.checkedOps_lockstep
 Snarky.checkedOps_proveExtends
+Snarky.finalizeWith_nextVar
 
 -- The D12 gadget laws (beside their gadgets, Circuit/DSL/{Field,Boolean}.lean): every
 -- assignment satisfying a gadget's
@@ -190,6 +191,7 @@ Snarky.unpack_complete_spec
 Snarky.compile
 Snarky.solve
 Snarky.solve_complete
+Snarky.proveWith_compileBody_slots
 Snarky.readVar_le
 
 -- The DSL primitive surface (Circuit/DSL/Monad.lean): the PS Snarky-monad exports not
@@ -294,6 +296,16 @@ Snarky.Kimchi.ToKimchiRows
 -- The reduction layer (Snarky/Kimchi/Constraint/Reduction.lean): the op vocabulary,
 -- the two reduction algorithms, and the builder/prover instances.
 Snarky.Kimchi.PlonkReductionM
+
+-- Seam-walk simp fodder (Constraint/Reduction.lean): rfl-lemmas the walks consume
+-- through simp, which applies them definitionally — no proof term records them, so
+-- they are rooted as simp-set surface.
+Snarky.Kimchi.PlonkBuilder.pure_apply
+Snarky.Kimchi.PlonkProver.pure_apply
+Snarky.Kimchi.createInternalB_apply
+Snarky.Kimchi.createInternal_builder
+Snarky.Kimchi.addGeneric_prover
+Snarky.Kimchi.addEquals_prover
 Snarky.Kimchi.reduceAffineExpression
 Snarky.Kimchi.reduceToVariable
 Snarky.Kimchi.reduceAsBuilder
@@ -361,6 +373,11 @@ Snarky.Kimchi.instReprAssembledGate
 -- consumer is scripts/check_cs_equality.lean, invisible to any constant walk.
 Snarky.Kimchi.kimchiSolve
 Snarky.Kimchi.kimchiGateData
+Snarky.Kimchi.kimchiCompile
+Snarky.Kimchi.kimchiOps_lockstep
+Snarky.Kimchi.kimchiOps_proveExtends
+Snarky.Kimchi.kimchiCompile_solve_nextVar
+Snarky.Kimchi.kimchiSolve_publicSlots
 -- script-surface:end
 
 -- The complete-addition gadget (Snarky/Kimchi/Circuit/AddComplete.lean) and the
