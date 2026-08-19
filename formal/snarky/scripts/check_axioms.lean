@@ -16,6 +16,7 @@ import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
+import Snarky.Kimchi.Circuit.Sponge
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
@@ -94,6 +95,14 @@ def roots : List Name :=
     `Snarky.Kimchi.AddFast.addFast_checkFinite_spec,
     `Snarky.Kimchi.Poseidon.poseidon_spec,
     `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
+    `Snarky.Kimchi.SpongeVar.absorb_spec,
+    `Snarky.Kimchi.SpongeVar.squeeze_spec,
+    `Snarky.Kimchi.SpongeVar.absorb_complete_spec,
+    `Snarky.Kimchi.SpongeVar.squeeze_complete_spec,
+    `Snarky.Kimchi.SpongeVar.vals_init,
+    `Snarky.Kimchi.SpongeVar.vals_ofConstants,
+    `Snarky.Kimchi.SpongeVar.reads_init,
+    `Snarky.Kimchi.SpongeVar.reads_ofConstants,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
     `Snarky.Kimchi.EndoScalar.toField_spec,

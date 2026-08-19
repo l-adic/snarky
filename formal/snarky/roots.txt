@@ -470,3 +470,14 @@ Snarky.Kimchi.SpongeVar.init
 Snarky.Kimchi.SpongeVar.ofConstants
 Snarky.Kimchi.SpongeVar.absorb
 Snarky.Kimchi.SpongeVar.squeeze
+
+-- The sponge law pair ×2 (sound + complete per op) and the reads-as entry points a
+-- transcript starts from.
+Snarky.Kimchi.SpongeVar.absorb_spec
+Snarky.Kimchi.SpongeVar.squeeze_spec
+Snarky.Kimchi.SpongeVar.absorb_complete_spec
+Snarky.Kimchi.SpongeVar.squeeze_complete_spec
+Snarky.Kimchi.SpongeVar.vals_init
+Snarky.Kimchi.SpongeVar.vals_ofConstants
+Snarky.Kimchi.SpongeVar.reads_init
+Snarky.Kimchi.SpongeVar.reads_ofConstants
