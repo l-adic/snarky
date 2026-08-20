@@ -42,7 +42,7 @@ random-oracle gadget — `transcriptHash` computed over circuit variables, gadge
 definition. -/
 def squeezeTranscript [KimchiSystem Fq c] (pk u : AffinePoint (FVar Fq)) :
     CircuitM Fq c (FVar Fq) :=
-  RandomOracle.hashVec _root_.Poseidon.fqParams
+  RandomOracle.hashVec Poseidon.fqParams
     [.const gen.x, .const gen.y, pk.x, pk.y, u.x, u.y]
 
 /-- The in-circuit verifier: derive the challenge from the transcript, act with it on

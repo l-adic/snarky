@@ -21,8 +21,8 @@ open Std.Do
 /-- The Vesta-side parameter tables have the full 55-round length — the hash laws'
 size hypothesis, discharged once on the generated table. -/
 private theorem fqParams_size :
-    (_root_.Poseidon.fqParams).roundConstants.size = _root_.Poseidon.fullRounds := by
-  show (_root_.Poseidon.FqKimchi.roundConstants.map _).size = _root_.Poseidon.fullRounds
+    Poseidon.fqParams.roundConstants.size = Poseidon.fullRounds := by
+  show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
   rw [Array.size_map]
   decide
 
@@ -32,7 +32,7 @@ point readings, definitionally. -/
 theorem squeezeTranscript_spec (pk u : AffinePoint (FVar Fq))
     (Q : PostCond (FVar Fq) (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (r : FVar Fq) =>
-        r.val V = _root_.Poseidon.RandomOracle.hash _root_.Poseidon.fqParams
+        r.val V = Poseidon.RandomOracle.hash Poseidon.fqParams
           [gen.x, gen.y, pk.x.val V, pk.y.val V, u.x.val V, u.y.val V]) Q⦄
     (squeezeTranscript (c := KimchiConstraint Fq) pk u)
     ⦃Q⦄ := by
@@ -49,14 +49,14 @@ theorem squeezeTranscript_complete_spec (pk u : AffinePoint (FVar Fq))
         (fun env (r : FVar Fq) env' => ∀ px py ux uy,
           pk.x.eval env = .ok px → pk.y.eval env = .ok py →
           u.x.eval env = .ok ux → u.y.eval env = .ok uy →
-          r.eval env' = .ok (_root_.Poseidon.RandomOracle.hash
-            _root_.Poseidon.fqParams [gen.x, gen.y, px, py, ux, uy]))
+          r.eval env' = .ok (Poseidon.RandomOracle.hash
+            Poseidon.fqParams [gen.x, gen.y, px, py, ux, uy]))
         Q⦄
     (squeezeTranscript (c := KimchiProverC Fq) pk u)
     ⦃Q⦄ := by
   simp only [squeezeTranscript]
   have h := RandomOracle.hashVec_complete_spec (F := Fq)
-    _root_.Poseidon.fqParams fqParams_size
+    Poseidon.fqParams fqParams_size
   mvcgen [h]
   rename_i s hpre
   obtain ⟨⟨hpx, hpy, hux, huy⟩, hk⟩ := hpre
