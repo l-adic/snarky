@@ -37,16 +37,11 @@ theorem verifyCircuit_compile_sound
       (s : Fq) = Type1.fromShifted 255 ⟨zv⟩ ∧
       (s ∉ forbiddenValues PALLAS_BASE_CARD →
         verifyRelaxed ⟨pkP, uP, (s : Fp)⟩) := by
-  have hlist : (compile (a := Statement.Raw Fq) (b := PUnit)
-      (verifyCircuit (c := KimchiConstraint Fq))).constraints
-      = (build (verifyCircuit (c := KimchiConstraint Fq)
-          (inputVar (F := Fq) (a := Statement.Raw Fq))) 5).constraints := by
-    rw [compile_punit_constraints]
-    rfl
   have hplain := (sound_spec_iff (verifyCircuit (c := KimchiConstraint Fq)
       (inputVar (F := Fq) (a := Statement.Raw Fq))) _).mp
     (verifyCircuit_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
-  exact hplain V 5 (fun con hcon => hsat con (by rw [hlist]; exact hcon))
+  exact hplain V 5
+    (fun con hcon => hsat con (mem_compile_of_mem_body hcon))
     pkP uP zv hpk0 hu0 hin
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in

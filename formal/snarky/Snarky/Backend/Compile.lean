@@ -100,19 +100,22 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
       | .error e => .error e
       | .ok outVal => .ok (outVal, p.assignments)
 
-/-- A circuit with no public output emits exactly its checked body's constraints:
-the `PUnit` back-fill and output binding contribute nothing. Exports the two
-non-definitional steps — `build_bind`, and the wrapper's pieces being private. -/
-theorem compile_punit_constraints [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
-    [A : CircuitType F a avar] [CheckedType F c avar]
-    (main : avar → CircuitM F c PUnit) :
-    (compile (a := a) (b := PUnit) main).constraints
-      = (build (do CheckedType.check (c := c) (inputVar (F := F) (a := a))
-                   main (inputVar (F := F) (a := a))) A.size).constraints := by
-  show (build (compileBody (a := a) (b := PUnit) main) A.size).constraints = _
-  simp only [compileBody, build_bind]
-  show (_ : List c) ++ ((_ : List c) ++ ([] : List c)) = _
-  rw [List.append_nil]
+/-- The checked body's constraints are among `compile`'s, whatever the output type:
+the output binding only appends. A whole-circuit soundness statement reads its
+body's `Sound` triple through this inclusion. -/
+theorem mem_compile_of_mem_body [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
+    {main : avar → CircuitM F c bvar} {con : c}
+    (h : con ∈ (build (do CheckedType.check (c := c) (inputVar (F := F) (a := a))
+                          main (inputVar (F := F) (a := a)))
+        (A.size + B.size)).constraints) :
+    con ∈ (compile (a := a) (b := b) main).constraints := by
+  show con ∈ (build (compileBody (a := a) (b := b) main) (A.size + B.size)).constraints
+  simp only [build_bind, List.mem_append] at h
+  simp only [compileBody, build_bind, List.mem_append]
+  rcases h with h | h
+  · exact Or.inl h
+  · exact Or.inr (Or.inl h)
 
 /-! ## The payoff theorem -/
 
