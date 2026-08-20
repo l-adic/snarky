@@ -24,9 +24,8 @@ def roots : List Name :=
     `Schnorr.verifyRelaxed,
     `Schnorr.verify_imp_verifyRelaxed,
     `Schnorr.verifyCircuit,
-    `Schnorr.squeezeTranscript_spec,
-    `Schnorr.squeezeTranscript_complete_spec,
-    `Schnorr.verifyCircuit_spec ]
+    `Schnorr.verifyCircuit_spec,
+    `Schnorr.verifyCircuit_complete_spec ]
 
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
@@ -36,7 +35,9 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
     certified `native_decide` witnesses those dictionaries' curve facts rest on —
     the certified orders and eigenvalue anchors. Everything else stays pure core
     Lean. -/
-def deployedRoots : List Name := [ `Schnorr.verifyCircuit_spec ]
+def deployedRoots : List Name :=
+  [ `Schnorr.verifyCircuit_spec,
+    `Schnorr.verifyCircuit_complete_spec ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather
     than by name prefix (the snarky gate's convention): an upstream CompElliptic

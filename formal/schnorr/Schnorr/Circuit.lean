@@ -10,9 +10,9 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 `verifyCircuit` implements the wire `verify` stage for stage, over the circuit field
 `Fq` (the Vesta base field, where the statement's points have native coordinates):
 
-- **the transcript** — `squeezeTranscript` hashes the six coordinates with the
-  block-mode random-oracle gadget (`RandomOracle.hashVec`), computing the wire's
-  `transcriptHash` over circuit variables;
+- **the transcript** — the six coordinates through the block-mode random-oracle
+  gadget (`RandomOracle.hashVec`), the wire's `transcriptHash` over circuit
+  variables;
 - **the challenge** — `lowest128Bits` splits off the squeeze's low 128 bits (the
   `squeeze_challenge` flavor: both halves range-checked), and `endoMul` acts with
   them on the public key: the endomorphism expansion the wire side performs in
@@ -73,21 +73,61 @@ proof decomposes into the per-cell facts the gadget laws consume. -/
       (((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[4]) = _
   simp
 
-/-- The wire transcript hash, in-circuit: the six coordinates through the block-mode
-random-oracle gadget — `transcriptHash` computed over circuit variables, gadget for
-definition. -/
-def squeezeTranscript [KimchiSystem Fq c] (pk u : AffinePoint (FVar Fq)) :
-    CircuitM Fq c (FVar Fq) :=
-  RandomOracle.hashVec Poseidon.fqParams
-    [.const gen.x, .const gen.y, pk.x, pk.y, u.x, u.y]
+/-- The statement bundle is readable iff its five cells evaluate. -/
+theorem readable_statementRaw_iff [Add F] [Mul F] {env : Assignments F}
+    {st : Statement.Raw (FVar F)} :
+    Readable (Statement.Raw F) env st ↔
+      (st.pk.x.eval env).isOk ∧ (st.pk.y.eval env).isOk ∧
+      (st.u.x.eval env).isOk ∧ (st.u.y.eval env).isOk ∧ (st.z.eval env).isOk := by
+  constructor
+  · intro h
+    exact ⟨h 0 (show 0 < 5 by omega), h 1 (show 1 < 5 by omega),
+      h 2 (show 2 < 5 by omega), h 3 (show 3 < 5 by omega), h 4 (show 4 < 5 by omega)⟩
+  · rintro ⟨h0, h1, h2, h3, h4⟩ i hi
+    have hi' : i < 5 := hi
+    match i with
+    | 0 => exact h0
+    | 1 => exact h1
+    | 2 => exact h2
+    | 3 => exact h3
+    | 4 => exact h4
 
-/-- The in-circuit verifier: derive the challenge from the transcript, act with it on
-the public key through the endomorphism, and pin `[z]·G = u + [c]·pk` on the
+/-- The statement bundle's prover-side reading is the pinned evaluation of its five
+cells. -/
+theorem reads_statementRaw_iff [Field F] {env : Assignments F}
+    {st : Statement.Raw (FVar F)} {sv : Statement.Raw F} :
+    Reads env st sv ↔
+      st.pk.x.eval env = .ok sv.pk.x ∧ st.pk.y.eval env = .ok sv.pk.y ∧
+      st.u.x.eval env = .ok sv.u.x ∧ st.u.y.eval env = .ok sv.u.y ∧
+      st.z.eval env = .ok sv.z := by
+  constructor
+  · rintro ⟨hok, hval⟩
+    rw [readable_statementRaw_iff] at hok
+    obtain ⟨w0, h0⟩ := CVar.evalOk hok.1
+    obtain ⟨w1, h1⟩ := CVar.evalOk hok.2.1
+    obtain ⟨w2, h2⟩ := CVar.evalOk hok.2.2.1
+    obtain ⟨w3, h3⟩ := CVar.evalOk hok.2.2.2.1
+    obtain ⟨w4, h4⟩ := CVar.evalOk hok.2.2.2.2
+    rw [readVal_statementRaw, CVar.val_toValuation h0, CVar.val_toValuation h1,
+      CVar.val_toValuation h2, CVar.val_toValuation h3, CVar.val_toValuation h4]
+      at hval
+    rw [h0, h1, h2, h3, h4, ← hval]
+    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+  · rintro ⟨h0, h1, h2, h3, h4⟩
+    refine ⟨readable_statementRaw_iff.mpr
+      ⟨isOk_of_eq h0, isOk_of_eq h1, isOk_of_eq h2, isOk_of_eq h3, isOk_of_eq h4⟩, ?_⟩
+    rw [readVal_statementRaw, CVar.val_toValuation h0, CVar.val_toValuation h1,
+      CVar.val_toValuation h2, CVar.val_toValuation h3, CVar.val_toValuation h4]
+
+/-- The in-circuit verifier: hash the transcript (`transcriptHash` over circuit
+variables, the block-mode gadget for definition), derive the challenge, act with it
+on the public key through the endomorphism, and pin `[z]·G = u + [c]·pk` on the
 coordinates. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
     (st : Statement.Raw (FVar Fq)) :
     CircuitM Fq c PUnit := do
-  let squeezed ← squeezeTranscript st.pk st.u
+  let squeezed ← RandomOracle.hashVec Poseidon.fqParams
+    [.const gen.x, .const gen.y, st.pk.x, st.pk.y, st.u.x, st.u.y]
   let c ← lowest128Bits (.const Pasta.vestaEndo) squeezed
   let cpk ← endoMul Pasta.vestaEndo 32 st.pk c
   let zg ← scaleFast1 255 51 ⟨.const gen.x, .const gen.y⟩ ⟨st.z⟩
