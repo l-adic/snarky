@@ -23,3 +23,8 @@ Schnorr.verifyCircuit
 -- dictionaries.
 Schnorr.verifyCircuit_spec
 Schnorr.verifyCircuit_complete_spec
+
+-- The CS-satisfaction boundary (Schnorr/Boundary.lean): the fragment seam — the
+-- endpoint pair packaged through the whole-circuit compile/solve pipeline.
+Schnorr.verifyCircuit_compile_sound
+Schnorr.verifyCircuit_solve_complete

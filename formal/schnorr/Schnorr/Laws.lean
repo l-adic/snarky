@@ -202,9 +202,13 @@ open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The complete endpoint.** The honest prover run accepts: on a statement the wire
 verifier accepts (`verify`), honestly encoded — the bundle reads the statement's
 coordinates and a faithful in-range response representative whose `Type1` decode is
-the response — the `KimchiProverC` run of `verifyCircuit` succeeds. Nondegeneracy
-hypotheses: nonzero statement points, a nonzero response, and the ladder regime at
-the encoded response (the same forbidden band the sound side carries). -/
+the response — the checking prover's run of `verifyCircuit` succeeds, only extending
+the table. Nondegeneracy hypotheses: nonzero statement points, a nonzero response,
+and the ladder regime at the encoded response (the same forbidden band the sound
+side carries). Exported in the plain run form rather than as a `Complete` triple
+(the triple is internal to the proof, equivalent by `complete_spec_iff`): a
+concrete-field prover triple's type cannot be referenced without evaluating the run
+it matches on. -/
 theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     (stP : Statement) (zv : Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
@@ -213,14 +217,31 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     (hreg : HasCurve.vesta.LadderRegime 255
       (Type1.fromShifted 255 ⟨(ToNat.toNat zv : ℤ)⟩))
     (henc : ((Type1.fromShifted 255 ⟨(ToNat.toNat zv : ℤ)⟩ : ℤ) : Fp) = stP.z)
-    (hacc : verify stP = true)
-    (Q : PostCond PUnit (.arg (ProverState Fq) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => Reads env stv
-          (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq))
-        (fun _ _ _ => True) Q⦄
-    (verifyCircuit (c := KimchiProverC Fq) stv)
-    ⦃Q⦄ := by
+    (hacc : verify stP = true) :
+    ∀ st : ProverState Fq,
+      Reads st.env stv (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩
+        : Statement.Raw Fq) →
+      ∃ out : Proved Fq PUnit,
+        prove (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
+            (verifyCircuit (c := KimchiConstraint Fq) stv) st.nv st.env = .ok out
+          ∧ st.env.Le out.assignments := by
+  have htriple : ∀ Q : PostCond PUnit (.arg (ProverState Fq)
+      (.except EvalError .pure)),
+      ⦃Complete
+          (fun env => Reads env stv
+            (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq))
+          (fun _ _ _ => True) Q⦄
+      (verifyCircuit (c := KimchiProverC Fq) stv)
+      ⦃Q⦄ := ?_
+  · intro st hpre
+    revert htriple
+    rw [show verifyCircuit (c := KimchiConstraint Fq) stv
+        = verifyCircuit (c := KimchiProverC Fq) stv from rfl]
+    generalize verifyCircuit (c := KimchiProverC Fq) stv = g
+    intro htriple
+    obtain ⟨out, hrun, -, hle⟩ := (complete_spec_iff g _ _).mp htriple st hpre
+    exact ⟨out, hrun, hle⟩
+  intro Q
   simp only [verifyCircuit, lowest128Bits]
   have hsq := RandomOracle.hashVec_complete_spec (F := Fq) Poseidon.fqParams
     fqParams_size

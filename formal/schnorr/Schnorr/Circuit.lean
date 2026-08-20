@@ -59,6 +59,13 @@ instance instStatementRawCircuitType :
   varToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]
   fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, fs[4]⟩
 
+/-- The statement's cells carry no well-formedness constraint of their own (the house
+`genericCheck` convention: points and field elements check nothing) — what the
+statement must satisfy is the endpoint laws' business. This is what lets the compile
+pipeline take the statement as the circuit's public input. -/
+instance instStatementRawCheckedType : CheckedType F c (Statement.Raw (FVar F)) where
+  check _ := .pure PUnit.unit
+
 /-- The statement bundle reads componentwise into a `Statement.Raw F` — the reading a
 proof decomposes into the per-cell facts the gadget laws consume. -/
 @[circuitVal] theorem readVal_statementRaw [Add F] [Mul F] (V : Valuation F)
