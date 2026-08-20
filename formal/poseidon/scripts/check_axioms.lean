@@ -35,7 +35,10 @@ def roots : List Name :=
     `Poseidon.FqSponge.challengeFq, `Poseidon.FqSponge.challengeNat,
     `Poseidon.FqSponge.squeezeChallenge, `Poseidon.FqSponge.endoExpand,
     `Poseidon.FqVesta.spec, `Poseidon.FqPallas.spec,
-    `Poseidon.GroupMapVesta.toGroup, `Poseidon.GroupMapPallas.toGroup ]
+    `Poseidon.GroupMapVesta.toGroup, `Poseidon.GroupMapPallas.toGroup,
+    `Poseidon.RandomOracle.initialState, `Poseidon.RandomOracle.update,
+    `Poseidon.RandomOracle.digest, `Poseidon.RandomOracle.hash,
+    `Poseidon.RandomOracle.hash_eq_squeeze ]
 
 /-- The standard logical axioms. (`native_decide` certificates are permitted separately,
     by defining module — see `isTrustedNativeDecide`.) -/

@@ -283,13 +283,13 @@ instance instLawfulCircuitTypeUnChecked {val var : Type} [CircuitType F val var]
   vars_roundTrip cvs := LawfulCircuitType.vars_roundTrip (val := val) cvs
 
 /-- Taking a concatenation's first block gives it back. -/
-private theorem cast_take_append {α : Type u} {m k : Nat} (v : Vector α m)
+theorem cast_take_append {α : Type u} {m k : Nat} (v : Vector α m)
     (w : Vector α k) {h : min m (m + k) = m} : ((v ++ w).take m).cast h = v := by
   ext i hi
   simp [hi]
 
 /-- Dropping a concatenation's first block leaves the second. -/
-private theorem cast_drop_append {α : Type u} {m k : Nat} (v : Vector α m)
+theorem cast_drop_append {α : Type u} {m k : Nat} (v : Vector α m)
     (w : Vector α k) {h : m + k - m = k} : ((v ++ w).drop m).cast h = w := by
   ext i hi
   simp

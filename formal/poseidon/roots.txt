@@ -2,7 +2,10 @@
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). Everything here
 -- is specification (validated against proof-systems vectors by scripts/), not theorems.
 
--- The permutation/duplex automaton and the production parameter tables.
+-- The permutation/duplex automaton and the production parameter tables. Triple is
+-- the width-3 state vocabulary; fullRounds the tables' 55-round length.
+Poseidon.Triple
+Poseidon.fullRounds
 Poseidon.init
 Poseidon.absorb
 Poseidon.squeeze
@@ -17,6 +20,13 @@ Poseidon.FqPallas.spec
 -- The SvdW map-to-curve.
 Poseidon.GroupMapVesta.toGroup
 Poseidon.GroupMapPallas.toGroup
+
+-- The block-mode hash, validated against the duplex automaton by hash_eq_squeeze.
+Poseidon.RandomOracle.initialState
+Poseidon.RandomOracle.update
+Poseidon.RandomOracle.digest
+Poseidon.RandomOracle.hash
+Poseidon.RandomOracle.hash_eq_squeeze
 
 -- The shared fixture kit (JSON decoders + the cases-x-ops trace driver).
 FixtureKit.parseNat

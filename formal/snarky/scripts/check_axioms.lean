@@ -16,6 +16,8 @@ import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
+import Snarky.Kimchi.Circuit.Sponge
+import Snarky.Kimchi.Circuit.RandomOracle
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
@@ -94,6 +96,37 @@ def roots : List Name :=
     `Snarky.Kimchi.AddFast.addFast_checkFinite_spec,
     `Snarky.Kimchi.Poseidon.poseidon_spec,
     `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
+    `Snarky.Kimchi.SpongeVar.absorb_spec,
+    `Snarky.Kimchi.SpongeVar.squeeze_spec,
+    `Snarky.Kimchi.SpongeVar.absorb_complete_spec,
+    `Snarky.Kimchi.SpongeVar.squeeze_complete_spec,
+    `Snarky.Kimchi.SpongeVar.vals_init,
+    `Snarky.Kimchi.SpongeVar.vals_ofConstants,
+    `Snarky.Kimchi.SpongeVar.reads_init,
+    `Snarky.Kimchi.SpongeVar.reads_ofConstants,
+    `Snarky.Kimchi.SpongeVar.Reads.le,
+    `Snarky.Kimchi.RandomOracle.update_spec,
+    `Snarky.Kimchi.RandomOracle.update_complete_spec,
+    `Snarky.Kimchi.RandomOracle.hash2_spec,
+    `Snarky.Kimchi.RandomOracle.hash2_complete_spec,
+    `Snarky.Kimchi.RandomOracle.hashVec_spec,
+    `Snarky.Kimchi.RandomOracle.hashVec_complete_spec,
+    `Snarky.readVal_fvar,
+    `Snarky.readVal_prod,
+    `Snarky.readable_fvar_iff,
+    `Snarky.readable_prod_iff,
+    `Snarky.reads_fvar_iff,
+    `Snarky.reads_prod_iff,
+    `Snarky.Readable.le,
+    `Snarky.Reads.le,
+    `Snarky.ReadsAll.le,
+    `Snarky.Reads.readable,
+    `Snarky.Reads.unique,
+    `Snarky.exists_reads,
+    `Snarky.exists_readsAll,
+    `Snarky.Kimchi.readVal_spongeState,
+    `Snarky.Kimchi.readable_spongeState_iff,
+    `Snarky.Kimchi.reads_spongeState_iff,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
     `Snarky.Kimchi.EndoScalar.toField_spec,

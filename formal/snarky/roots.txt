@@ -91,6 +91,29 @@ Snarky.generateVec_spec
 Snarky.generateVec_complete_spec
 Snarky.CVar.evalOk
 
+-- The generic reading of circuit types (Backend/Read.lean): the builder-side reading
+-- readVal, the prover-side one-predicate precondition Readable and reading relation
+-- Reads with its list lift ReadsAll, the base/pair computation lemmas concrete
+-- bundles decompose through, the table-extension transports, the reading's
+-- functionality, and the witness builders a readable hypothesis feeds.
+Snarky.readVal
+Snarky.Readable
+Snarky.Reads
+Snarky.ReadsAll
+Snarky.readVal_fvar
+Snarky.readVal_prod
+Snarky.readable_fvar_iff
+Snarky.readable_prod_iff
+Snarky.reads_fvar_iff
+Snarky.reads_prod_iff
+Snarky.Readable.le
+Snarky.Reads.le
+Snarky.ReadsAll.le
+Snarky.Reads.readable
+Snarky.Reads.unique
+Snarky.exists_reads
+Snarky.exists_readsAll
+
 -- The concrete Basic constraint model (Snarky/Constraint/Basic.lean).
 Snarky.Basic.holds
 Snarky.Basic.holds_mono
@@ -393,6 +416,8 @@ Snarky.Kimchi.AddFast.addFast_checkFinite_spec
 Snarky.Kimchi.AddFast.addFast_complete_spec
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.poseidon
+Snarky.Kimchi.SpongeState
+Snarky.Kimchi.SpongeState.cells
 Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
 Snarky.Kimchi.varBaseMul
@@ -419,6 +444,10 @@ Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec
 Snarky.Kimchi.EndoScalar.toField_complete_spec
 Snarky.Kimchi.Poseidon.poseidon_spec
 Snarky.Kimchi.Poseidon.poseidon_complete_spec
+Snarky.Kimchi.readVal_spongeState
+Snarky.Kimchi.readable_spongeState_iff
+Snarky.Kimchi.reads_spongeState_iff
+Snarky.Kimchi.instWitnessReadsSpongeState
 Snarky.Kimchi.EndoMul.endoMul_spec
 Snarky.Kimchi.EndoMul.endoMul_complete_spec
 Snarky.Kimchi.EndoMul.endoInv_spec
@@ -462,3 +491,37 @@ Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem
 Snarky.Kimchi.KimchiConstraint.instChecker
 Snarky.Kimchi.KimchiConstraint.instLawfulChecker
 Snarky.Kimchi.KimchiProverC
+
+-- The in-circuit duplex sponge (Snarky/Kimchi/Circuit/Sponge.lean): the port surface
+-- of PS Snarky.Circuit.RandomOracle.Sponge (absorb / squeeze / initialState /
+-- spongeFromConstants), consumed by downstream Fiat-Shamir transcripts.
+Snarky.Kimchi.SpongeVar.init
+Snarky.Kimchi.SpongeVar.ofConstants
+Snarky.Kimchi.SpongeVar.absorb
+Snarky.Kimchi.SpongeVar.squeeze
+
+-- The sponge law pair ×2 (sound + complete per op), the reads-as entry points a
+-- transcript starts from, and the table-extension transport of the prover-side
+-- reading.
+Snarky.Kimchi.SpongeVar.absorb_spec
+Snarky.Kimchi.SpongeVar.squeeze_spec
+Snarky.Kimchi.SpongeVar.absorb_complete_spec
+Snarky.Kimchi.SpongeVar.squeeze_complete_spec
+Snarky.Kimchi.SpongeVar.vals_init
+Snarky.Kimchi.SpongeVar.vals_ofConstants
+Snarky.Kimchi.SpongeVar.reads_init
+Snarky.Kimchi.SpongeVar.reads_ofConstants
+Snarky.Kimchi.SpongeVar.Reads.le
+
+-- The in-circuit block-mode hash (Snarky/Kimchi/Circuit/RandomOracle.lean): the port
+-- surface of PS Snarky.Circuit.RandomOracle (update / hash2 / hashVec) and its law
+-- pair x2 per op; the input readings are the generic Snarky.Reads vocabulary.
+Snarky.Kimchi.RandomOracle.update
+Snarky.Kimchi.RandomOracle.hash2
+Snarky.Kimchi.RandomOracle.hashVec
+Snarky.Kimchi.RandomOracle.update_spec
+Snarky.Kimchi.RandomOracle.update_complete_spec
+Snarky.Kimchi.RandomOracle.hash2_spec
+Snarky.Kimchi.RandomOracle.hash2_complete_spec
+Snarky.Kimchi.RandomOracle.hashVec_spec
+Snarky.Kimchi.RandomOracle.hashVec_complete_spec

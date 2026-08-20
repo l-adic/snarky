@@ -44,7 +44,11 @@ variable {F : Type*} [Field F]
 /-! ## The permutation -/
 
 /-- A width-3 state: the components `(s₀, s₁, s₂)`. -/
-private abbrev Triple (F : Type*) := F × F × F
+abbrev Triple (F : Type*) := F × F × F
+
+/-- The deployed round count: both parameter tables below (`fpKimchi`, `fqKimchi`)
+carry 55 constant triples, one per full round. -/
+abbrev fullRounds : Nat := 55
 
 /-- Poseidon parameters: one constant triple per round, and the MDS matrix as three rows. -/
 structure Params (F : Type*) where
@@ -74,8 +78,10 @@ def blockCipher (p : Params F) (s : Triple F) : Triple F :=
 
 /-- The sponge direction and intra-block position: `absorbed n` after `n` absorptions into
 the current block, `squeezed n` after `n` squeezes from the current block (`n ≤ 2`). -/
-private inductive Mode
+inductive SpongeMode
+  /-- `n` absorptions into the current block. -/
   | absorbed (n : Fin 3)
+  /-- `n` squeezes from the current block. -/
   | squeezed (n : Fin 3)
 
 /-- A sponge in flight: the width-3 state and the mode. -/
@@ -83,7 +89,7 @@ structure State (F : Type*) where
   /-- The width-3 Poseidon state. -/
   state : Triple F
   /-- The automaton direction and intra-block position. -/
-  mode : Mode
+  mode : SpongeMode
 
 /-- Read rate slot `n` (`n < 2`). -/
 def slot (s : Triple F) : Fin 3 → F
@@ -92,7 +98,7 @@ def slot (s : Triple F) : Fin 3 → F
   | _ => s.2.2
 
 /-- Add `x` into rate slot `n` (`n < 2`). -/
-private def addSlot (s : Triple F) (n : Fin 3) (x : F) : Triple F :=
+def addSlot (s : Triple F) (n : Fin 3) (x : F) : Triple F :=
   match n with
   | 0 => (s.1 + x, s.2.1, s.2.2)
   | 1 => (s.1, s.2.1 + x, s.2.2)
@@ -103,7 +109,7 @@ def init : State F := ⟨(0, 0, 0), .absorbed 0⟩
 
 /-- Absorb one field element (`poseidon.rs` `absorb`): add into the next rate slot,
 permuting first when the rate is full; absorbing after a squeeze restarts at slot 0. -/
-private def absorb1 (p : Params F) (sp : State F) (x : F) : State F :=
+def absorb1 (p : Params F) (sp : State F) (x : F) : State F :=
   match sp.mode with
   | .absorbed n =>
     if n.val = 2 then

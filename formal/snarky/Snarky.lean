@@ -10,6 +10,7 @@ import Snarky.Circuit.DSL.Utils
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
 import Snarky.Backend.WP
+import Snarky.Backend.Read
 import Snarky.Backend.Compile
 import Snarky.Vec
 import Snarky.Constraint.Basic
