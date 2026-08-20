@@ -471,15 +471,24 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
       crumbs.length = 2 * pref.length ∧
       fin.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
-      ∃ (hfin : W.Nonsingular (fin.1.x.val V) (fin.1.y.val V)) (s : ℤ),
+      ∃ (hfin : W.Nonsingular (fin.1.x.val V) (fin.1.y.val V)) (s A B : ℤ),
         Point.some _ _ hfin = s • Point.some _ _ hT ∧
+        s = B + A * lam ∧
+        |A| ≤ 3 * 4 ^ pref.length ∧ |B| ≤ 3 * 4 ^ pref.length ∧
+        (A : F) = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
+        (B : F) = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
         (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (lam : F) := by
   match hround : rounds, hthr with
   | [], hthr' =>
     obtain ⟨rfl, rfl⟩ := Threaded.nil hthr'
-    refine ⟨[], by simp, by simp, ?_, hP0ns, 2 + 2 * lam, ?_, ?_⟩
+    refine ⟨[], by simp, by simp, ?_, hP0ns, 2 + 2 * lam, 2, 2, ?_, by ring,
+      by norm_num, by norm_num, ?_, ?_, ?_⟩
     · simp [Kimchi.Gate.EndoScalar.nReconstruct, CVar.val]
     · rw [hP0, heig]; module
+    · push_cast
+      simp [Kimchi.Gate.EndoScalar.decomposeA, Kimchi.Gate.EndoScalar.decomposeFold]
+    · push_cast
+      simp [Kimchi.Gate.EndoScalar.decomposeB, Kimchi.Gate.EndoScalar.decomposeFold]
     · push_cast
       simp [Kimchi.Gate.EndoScalar.toField, Kimchi.Gate.EndoScalar.decomposeA,
         Kimchi.Gate.EndoScalar.decomposeB, Kimchi.Gate.EndoScalar.decomposeFold]
@@ -590,14 +599,18 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       crumbList_valid eb (rs.length + 1) g hHolds,
       by rw [crumbList_length, hm],
       hreg,
-      hfin, s, (some_congr W hfin hfin' hax.symm hay.symm).trans hseq, hsval⟩
+      hfin, s, A, B, (some_congr W hfin hfin' hax.symm hay.symm).trans hseq,
+      hsab, hm ▸ hAle, hm ▸ hBle, hAval, hBval, hsval⟩
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- The gadget is sound: under any satisfying valuation, for a base point reading
-on-curve, the result reads as `[s]·T` where
-`(s : F) = EndoScalar.toField crumbs λ` for a valid crumb list of length `2·rounds`
-whose reconstruction is the scalar — EndoMul multiplies by exactly the scalar
-EndoScalar decodes. The curve facts arrive bundled as the dictionary `d : HasEndo F`,
+on-curve, the result reads as `[s]·T` where `s = B + A·λ` for decomposition
+accumulators bounded by `3·4^rounds` and pinned in `F` to `decomposeA`/`decomposeB`
+of a valid crumb list of length `2·rounds` whose reconstruction is the scalar — so
+`(s : F) = EndoScalar.toField crumbs λ`, and the bounded shape lets a consumer read
+the same integer in a second field (`HasEndo.decomposition_residue`). EndoMul
+multiplies by exactly the scalar EndoScalar decodes. The curve facts arrive bundled
+as the dictionary `d : HasEndo F`,
 so the law composes with other generic circuit laws over an abstract field, and is
 concretized only inside a larger circuit's instantiation, at the deployed
 dictionaries `HasEndo.pallas`/`HasEndo.vesta`. -/
@@ -611,8 +624,12 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 2 * rounds ∧
             scalar.val.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
-            ∃ (hfin : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s : ℤ),
+            ∃ (hfin : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s A B : ℤ),
               Point.some _ _ hfin = s • Point.some _ _ hT ∧
+              s = B + A * d.lam ∧
+              |A| ≤ 3 * 4 ^ rounds ∧ |B| ≤ 3 * 4 ^ rounds ∧
+              (A : F) = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
+              (B : F) = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
     (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
     ⦃Q⦄ := by
@@ -670,13 +687,15 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
       rw [← hsum2, ← hsum1, hφeq]
       module
     -- the extracted run through `threaded_sound`
-    obtain ⟨crumbs, hvalid, hlen, hreg, hfin, sc, hseq, hsval⟩ :=
+    obtain ⟨crumbs, hvalid, hlen, hreg, hfin, sc, A, B, hseq, hsab, hAle, hBle,
+      hAval, hBval, hsval⟩ :=
       threaded_sound W h2 h3 hodd eb lam s.V (by simpa using hbits) hthr hpay hT hφT
         (fun a b ha' hb' hba hbb =>
           hoff ha' hb' hba hbb (Point.some_ne_zero hT) (heig hT hφT))
         (heig hT hφT) hP0ns hP0
     exact ⟨crumbs, hvalid, by simpa using hlen, heq.symm.trans hreg,
-      hfin, sc, hseq, hsval⟩
+      hfin, sc, A, B, hseq, hsab, by simpa using hAle, by simpa using hBle,
+      hAval, hBval, hsval⟩
 
 /-! ## Completeness plumbing
 
@@ -1323,7 +1342,8 @@ theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
   have hres : d.W.Nonsingular (result.1.val s.V) (result.2.val s.V) :=
     (d.W.equation_iff_nonsingular_of_Δ_ne_zero d.delta_ne).mp hEq
   -- `endoMul`'s promise at the witnessed point
-  obtain ⟨crumbs, hval, hlen, hn, hfin, sZ, hseq, hcast⟩ := hcomp hres
+  obtain ⟨crumbs, hval, hlen, hn, hfin, sZ, -, -, hseq, -, -, -, -, -, hcast⟩ :=
+    hcomp hres
   -- the pins carry the computed point to the input
   have hgeq : Point.some _ _ hg = sZ • Point.some _ _ hres :=
     (Kimchi.Gate.EndoMul.some_congr d.W hg hfin heqx.symm heqy.symm).trans hseq
@@ -1338,6 +1358,70 @@ theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     rw [hm, mul_comm, mul_smul, hkill, smul_zero]
   exact ⟨crumbs, hval, by omega, hn, hres, sZ, hcast, hs0, hgeq,
     eq_inv_smul_of_smul_eq d.W hs0 hgeq⟩
+
+open Kimchi.Gate.EndoScalar in
+/-- Reading `endoMul`'s decomposition through the char window: an integer of the
+shape the sound law hands back — `s = B + A·λ` with both accumulators bounded by
+`3·2^64` and pinned in `F` to the decomposition of the canonical 64-crumb list — is,
+mod the group order, the gate's decoded scalar at those crumbs. The window
+`d.char_big` reads the bounded integers exactly, so the residue is a function of the
+challenge alone: the one integer scalar acts in the scalar field while its pins live
+in the circuit field. -/
+theorem _root_.Snarky.Kimchi.HasEndo.decomposition_residue [Field F] [DecidableEq F]
+    (d : HasEndo F)
+    [Fact (Nat.Prime d.W.order)]
+    (n : ℕ) {s A B : ℤ} (hsab : s = B + A * d.lam)
+    (hAle : |A| ≤ 3 * 2 ^ 64) (hBle : |B| ≤ 3 * 2 ^ 64)
+    (hAval : (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n))
+    (hBval : (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)) :
+    ((s : ℤ) : ZMod d.W.order)
+      = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) := by
+  haveI : NeZero d.W.order := ⟨d.prime.ne_zero⟩
+  have h2q : (2 : ZMod d.W.order) ≠ 0 := by
+    have h : ((2 : ℤ) : ZMod d.W.order) ≠ 0 := by
+      rw [Ne, ZMod.intCast_zmod_eq_zero_iff_dvd]
+      intro hdvd
+      have h2 : d.W.order ∣ 2 := by exact_mod_cast hdvd
+      exact d.odd ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_two).mp h2)
+    exact_mod_cast h
+  have h3q : (3 : ZMod d.W.order) ≠ 0 := by
+    have h : ((3 : ℤ) : ZMod d.W.order) ≠ 0 := by
+      rw [Ne, ZMod.intCast_zmod_eq_zero_iff_dvd]
+      intro hdvd
+      have h3 : d.W.order ∣ 3 := by exact_mod_cast hdvd
+      exact d.order_ne_three
+        ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_three).mp h3)
+    exact_mod_cast h
+  obtain ⟨hAlo, hAhi⟩ := decomposeAInt_bounds (digitsOf 64 n)
+  obtain ⟨hBlo, hBhi⟩ := decomposeBInt_bounds (digitsOf 64 n)
+  rw [digitsOf_length] at hAlo hAhi hBlo hBhi
+  have heffz : Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n)
+      ((d.lam : ZMod d.W.order))
+      = ((toIntZ (digitsOf 64 n) d.lam : ℤ) : ZMod d.W.order) := by
+    rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
+  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n)
+      = ((decomposeAInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [crumbsOf_eq_map, decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)
+      = ((decomposeBInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [crumbsOf_eq_map, decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 2 ^ 64 →
+      2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
+    intro X XZ hXle hXZlo hXZhi hcast
+    have habs : |X - XZ| < 2 ^ 127 := by
+      rw [abs_lt]
+      obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
+      have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
+      constructor <;> linarith
+    have := d.char_big _ habs hcast
+    omega
+  have hAeq : A = decomposeAInt (digitsOf 64 n) :=
+    hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
+  have hBeq : B = decomposeBInt (digitsOf 64 n) :=
+    hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
+  rw [heffz, hsab, hAeq, hBeq, toIntZ]
+  push_cast
+  ring
 
 open Kimchi.Gate.EndoScalar in
 /-- The scalar side of `endoInv`'s completeness, packaged away from the walk: at any
@@ -1409,25 +1493,8 @@ private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
       (by linarith) (by linarith) (by norm_num at hBhi ⊢; linarith)
       (by norm_num at hAhi ⊢; linarith)
       (hexp ▸ hkill)
-  · -- the char window reads the decomposition exactly, then residues agree
-    intro s A B hsab hAle hBle hAval hBval
-    have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 2 ^ 64 →
-        2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
-      intro X XZ hXle hXZlo hXZhi hcast
-      have habs : |X - XZ| < 2 ^ 127 := by
-        rw [abs_lt]
-        obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
-        have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
-        constructor <;> linarith
-      have := d.char_big _ habs hcast
-      omega
-    have hAeq : A = decomposeAInt (digitsOf 64 n) :=
-      hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
-    have hBeq : B = decomposeBInt (digitsOf 64 n) :=
-      hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
-    rw [heffz, hsab, hAeq, hBeq, toIntZ]
-    push_cast
-    ring
+  · exact fun s A B hsab hAle hBle hAval hBval =>
+      d.decomposition_residue n hsab hAle hBle hAval hBval
 
 open Kimchi.Gate.EndoScalar in
 open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
