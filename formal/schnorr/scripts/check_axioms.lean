@@ -21,6 +21,7 @@ def roots : List Name :=
     `Schnorr.verify,
     `Schnorr.verifyRelaxed,
     `Schnorr.verify_imp_verifyRelaxed,
+    `Schnorr.squeezeFieldElement_eq,
     `Schnorr.verifyCircuit ]
 
 /-- The allowed axioms. -/
