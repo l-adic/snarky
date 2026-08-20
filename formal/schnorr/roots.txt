@@ -19,6 +19,7 @@ Schnorr.squeezeTranscript
 Schnorr.verifyCircuit
 
 -- The circuit laws (Schnorr/Laws.lean): the transcript pair, in the wire's hash
--- vocabulary.
+-- vocabulary, and the sound endpoint at the deployed Vesta dictionaries.
 Schnorr.squeezeTranscript_spec
 Schnorr.squeezeTranscript_complete_spec
+Schnorr.verifyCircuit_spec

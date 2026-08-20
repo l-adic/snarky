@@ -476,6 +476,8 @@ Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec
 -- discharge artifacts AND the exhibit that the dictionary is satisfiable at Pasta.
 Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta
+Snarky.Kimchi.HasCurve.pallas
+Snarky.Kimchi.HasCurve.vesta
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 

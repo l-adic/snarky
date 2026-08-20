@@ -308,13 +308,50 @@ def HasEndo.vesta : HasEndo Fq where
     exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 open Kimchi.Gate.EndoScalar in
-/-- Reading `endoMul`'s decomposition through the char window: an integer of the
-shape the sound law hands back — `s = B + A·λ` with both accumulators bounded by
-`3·2^64` and pinned in `F` to the decomposition of the canonical 64-crumb list — is,
-mod the group order, the gate's decoded scalar at those crumbs. The window
-`d.char_big` reads the bounded integers exactly, so the residue is a function of the
-challenge alone: the one integer scalar acts in the scalar field while its pins live
-in the circuit field. -/
+/-- Reading `endoMul`'s decomposition pins exactly: an integer of the shape the sound
+law hands back — `s = B + A·λ` with both accumulators bounded by `3·2^64` and pinned
+in `F` to the decomposition of the canonical 64-crumb list — IS the gate's decoded
+integer scalar `toIntZ` at the challenge's digits. The window `d.char_big` reads the
+bounded integers exactly. Modulus-free: consumers cast the one integer into whichever
+scalar field acts (`toField_digits` reads it back per field), so no fact ever crosses
+a `ZMod` boundary. -/
+theorem HasEndo.decomposition_eq_toIntZ [Field F] [DecidableEq F]
+    (d : HasEndo F)
+    (n : ℕ) {s A B : ℤ} (hsab : s = B + A * d.lam)
+    (hAle : |A| ≤ 3 * 2 ^ 64) (hBle : |B| ≤ 3 * 2 ^ 64)
+    (hAval : (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n))
+    (hBval : (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)) :
+    s = toIntZ (digitsOf 64 n) d.lam := by
+  obtain ⟨hAlo, hAhi⟩ := decomposeAInt_bounds (digitsOf 64 n)
+  obtain ⟨hBlo, hBhi⟩ := decomposeBInt_bounds (digitsOf 64 n)
+  rw [digitsOf_length] at hAlo hAhi hBlo hBhi
+  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n)
+      = ((decomposeAInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [crumbsOf_eq_map, decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)
+      = ((decomposeBInt (digitsOf 64 n) : ℤ) : F) := by
+    rw [crumbsOf_eq_map, decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
+  have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 2 ^ 64 →
+      2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
+    intro X XZ hXle hXZlo hXZhi hcast
+    have habs : |X - XZ| < 2 ^ 127 := by
+      rw [abs_lt]
+      obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
+      have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
+      constructor <;> linarith
+    have := d.char_big _ habs hcast
+    omega
+  have hAeq : A = decomposeAInt (digitsOf 64 n) :=
+    hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
+  have hBeq : B = decomposeBInt (digitsOf 64 n) :=
+    hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
+  rw [hsab, hAeq, hBeq, toIntZ]
+  ring
+
+open Kimchi.Gate.EndoScalar in
+/-- Reading `endoMul`'s decomposition through the char window, mod the group order:
+`decomposition_eq_toIntZ`'s one integer scalar, cast into the scalar field and read
+back as the gate's decoded scalar at the canonical crumbs (`toField_digits`). -/
 theorem HasEndo.decomposition_residue [Field F] [DecidableEq F]
     (d : HasEndo F)
     [Fact (Nat.Prime d.W.order)]
@@ -340,36 +377,11 @@ theorem HasEndo.decomposition_residue [Field F] [DecidableEq F]
       exact d.order_ne_three
         ((Nat.prime_dvd_prime_iff_eq d.prime Nat.prime_three).mp h3)
     exact_mod_cast h
-  obtain ⟨hAlo, hAhi⟩ := decomposeAInt_bounds (digitsOf 64 n)
-  obtain ⟨hBlo, hBhi⟩ := decomposeBInt_bounds (digitsOf 64 n)
-  rw [digitsOf_length] at hAlo hAhi hBlo hBhi
   have heffz : Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n)
       ((d.lam : ZMod d.W.order))
       = ((toIntZ (digitsOf 64 n) d.lam : ℤ) : ZMod d.W.order) := by
     rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
-  have hAZF : Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n)
-      = ((decomposeAInt (digitsOf 64 n) : ℤ) : F) := by
-    rw [crumbsOf_eq_map, decomposeA_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
-  have hBZF : Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)
-      = ((decomposeBInt (digitsOf 64 n) : ℤ) : F) := by
-    rw [crumbsOf_eq_map, decomposeB_digits d.two_ne d.three_ne _ (digitsOf_lt 64 _)]
-  have hwindow : ∀ X XZ : ℤ, |X| ≤ 3 * 2 ^ 64 →
-      2 ^ 64 + 1 ≤ XZ → XZ ≤ 3 * 2 ^ 64 - 1 → ((X - XZ : ℤ) : F) = 0 → X = XZ := by
-    intro X XZ hXle hXZlo hXZhi hcast
-    have habs : |X - XZ| < 2 ^ 127 := by
-      rw [abs_lt]
-      obtain ⟨hX1, hX2⟩ := abs_le.mp hXle
-      have hbig : (6 : ℤ) * 2 ^ 64 < 2 ^ 127 := by norm_num
-      constructor <;> linarith
-    have := d.char_big _ habs hcast
-    omega
-  have hAeq : A = decomposeAInt (digitsOf 64 n) :=
-    hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
-  have hBeq : B = decomposeBInt (digitsOf 64 n) :=
-    hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
-  rw [heffz, hsab, hAeq, hBeq, toIntZ]
-  push_cast
-  ring
+  rw [heffz, d.decomposition_eq_toIntZ n hsab hAle hBle hAval hBval]
 
 namespace EndoMul
 

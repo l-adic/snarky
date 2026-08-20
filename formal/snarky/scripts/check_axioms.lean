@@ -156,6 +156,8 @@ def roots : List Name :=
     `Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasCurve.pallas,
+    `Snarky.Kimchi.HasCurve.vesta,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
@@ -220,7 +222,9 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
     localized in these two values. -/
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.HasEndo.pallas,
-    `Snarky.Kimchi.HasEndo.vesta ]
+    `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasCurve.pallas,
+    `Snarky.Kimchi.HasCurve.vesta ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

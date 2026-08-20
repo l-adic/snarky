@@ -738,7 +738,7 @@ theorem nReconstruct_lt (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
 /-- **Base-4 digit recovery.** Same-length valid crumb lists whose reconstruction fits the
     field (`4 ^ len ≤ p`) and that reconstruct to the same challenge are equal — the
     decomposition a satisfying gate exposes is the *unique* one. -/
-private theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
+theorem nReconstruct_inj {p : ℕ} [CharP F p] (xs ys : List F)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hx : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
     (hy : ∀ x ∈ ys, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3)
