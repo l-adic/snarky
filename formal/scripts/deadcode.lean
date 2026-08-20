@@ -33,6 +33,7 @@ pass, and why rooting them liberally would make the gate vacuous for this packag
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
 import Kimchi
+import Poseidon
 import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
