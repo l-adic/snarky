@@ -31,11 +31,47 @@ namespace Schnorr
 
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
-variable {c : Type}
+variable {F c : Type}
 
 /-- The circuit field reads canonical representatives through `ZMod.val` — the same
 instance the CS-equality oracle declares at `Fp`. -/
 instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
+
+/-- The statement's coordinate shape over a carrier: the two points and the
+(`Type1`-shifted) response. At `FVar Fq` this is the in-circuit statement
+`verifyCircuit` consumes; at `Fq` it is that bundle's `CircuitType` reading. The
+wire `Statement` refines a reading — on-curve nonzero points and the scalar-field
+response — which is exactly what the endpoint law recovers. -/
+structure Statement.Raw (α : Type) where
+  /-- The public key's coordinates. -/
+  pk : AffinePoint α
+  /-- The commitment's coordinates. -/
+  u : AffinePoint α
+  /-- The response, one shifted element (`Type1`: `p < q`). -/
+  z : α
+
+/-- The statement encodes as its five field elements, points first, coordinatewise. -/
+instance instStatementRawCircuitType :
+    CircuitType F (Statement.Raw F) (Statement.Raw (FVar F)) where
+  size := 5
+  valueToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]
+  fieldsToValue fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, fs[4]⟩
+  varToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]
+  fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, fs[4]⟩
+
+/-- The statement bundle reads componentwise into a `Statement.Raw F` — the reading a
+proof decomposes into the per-cell facts the gadget laws consume. -/
+@[circuitVal] theorem readVal_statementRaw [Add F] [Mul F] (V : Valuation F)
+    (st : Statement.Raw (FVar F)) :
+    readVal V st = Statement.Raw.mk ⟨st.pk.x.val V, st.pk.y.val V⟩
+      ⟨st.u.x.val V, st.u.y.val V⟩ (st.z.val V) := by
+  show Statement.Raw.mk
+      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[0],
+        ((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[1]⟩
+      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[2],
+        ((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[3]⟩
+      (((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[4]) = _
+  simp
 
 /-- The wire transcript hash, in-circuit: the six coordinates through the block-mode
 random-oracle gadget — `transcriptHash` computed over circuit variables, gadget for
@@ -49,13 +85,13 @@ def squeezeTranscript [KimchiSystem Fq c] (pk u : AffinePoint (FVar Fq)) :
 the public key through the endomorphism, and pin `[z]·G = u + [c]·pk` on the
 coordinates. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
-    (pk u : AffinePoint (FVar Fq)) (z : FVar Fq) :
+    (st : Statement.Raw (FVar Fq)) :
     CircuitM Fq c PUnit := do
-  let squeezed ← squeezeTranscript pk u
+  let squeezed ← squeezeTranscript st.pk st.u
   let c ← lowest128Bits (.const Pasta.vestaEndo) squeezed
-  let cpk ← endoMul Pasta.vestaEndo 32 pk c
-  let zg ← scaleFast1 255 51 ⟨.const gen.x, .const gen.y⟩ ⟨z⟩
-  let rhs ← addFast .checkFinite u cpk
+  let cpk ← endoMul Pasta.vestaEndo 32 st.pk c
+  let zg ← scaleFast1 255 51 ⟨.const gen.x, .const gen.y⟩ ⟨st.z⟩
+  let rhs ← addFast .checkFinite st.u cpk
   assertEqual zg.x rhs.p.x
   assertEqual zg.y rhs.p.y
 

@@ -108,34 +108,34 @@ theorem squeezeTranscript_complete_spec (pk u : AffinePoint (FVar Fq))
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The sound endpoint.** Any satisfying valuation certifies `verifyRelaxed` at the
-read statement: for nonzero wire points matching the point readings, there is one
-integer response `s` — ladder-bounded, pinned in `Fq` to the `Type1` decode of the
-`z` reading — with `verifyRelaxed ⟨pkP, uP, (s : Fp)⟩` off the ladder's forbidden
-band. Both relaxations (the challenge split, the ∃-quantified response) are stated in
-the module docstring; the walk composes the transcript, `lowest128Bits'`, `endoMul`,
-`scaleFast1`, and `addFast` laws at the deployed Vesta dictionaries. -/
-theorem verifyCircuit_spec (pk u : AffinePoint (FVar Fq)) (z : FVar Fq)
+read statement: when the statement bundle reads as nonzero wire points and a response
+representative, there is one integer response `s` — ladder-bounded, pinned in `Fq` to
+the `Type1` decode of the `z` reading — with `verifyRelaxed ⟨pkP, uP, (s : Fp)⟩` off
+the ladder's forbidden band. Both relaxations (the challenge split, the ∃-quantified
+response) are stated in the module docstring; the walk composes the transcript,
+`lowest128Bits'`, `endoMul`, `scaleFast1`, and `addFast` laws at the deployed Vesta
+dictionaries. -/
+theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
-        ∀ pkP uP : SWPoint Vesta.curve, pkP ≠ 0 → uP ≠ 0 →
-          pkP.x = pk.x.val V → pkP.y = pk.y.val V →
-          uP.x = u.x.val V → uP.y = u.y.val V →
+        ∀ (pkP uP : SWPoint Vesta.curve) (zv : Fq), pkP ≠ 0 → uP ≠ 0 →
+          readVal (val := Statement.Raw Fq) V stv = ⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zv⟩ →
           ∃ s : ℤ, 2 ^ 255 < s ∧ s < 3 * 2 ^ 255 ∧
-            (s : Fq) = Type1.fromShifted 255 ⟨z.val V⟩ ∧
+            (s : Fq) = Type1.fromShifted 255 ⟨zv⟩ ∧
             (s ∉ forbiddenValues PALLAS_BASE_CARD →
               verifyRelaxed ⟨pkP, uP, (s : Fp)⟩)) Q⦄
-    (verifyCircuit (c := KimchiConstraint Fq) pk u z)
+    (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit, lowest128Bits]
-  have hsq := squeezeTranscript_spec pk u
+  have hsq := squeezeTranscript_spec stv.pk stv.u
   have hlow := lowest128Bits'_spec (F := Fq) (by decide) (by decide) true
     (.const Pasta.vestaEndo)
-  have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) pk
+  have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) stv.pk
   simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
   have hscale := scaleFast1_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
-    ⟨.const gen.x, .const gen.y⟩ ⟨z⟩
+    ⟨.const gen.x, .const gen.y⟩ ⟨stv.z⟩
   have hadd := AddFast.addFast_checkFinite_spec (F := Fq) Vesta.curve.toAffine
-    ⟨rfl, rfl, rfl, rfl⟩ (by decide) u
+    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
   mvcgen [hsq, hlow, hendo, hscale, hadd]
   rename_i st hpre
   intro squeezed _ hsqv
@@ -152,13 +152,22 @@ theorem verifyCircuit_spec (pk u : AffinePoint (FVar Fq)) (z : FVar Fq)
   mvcgen
   intro _ _ hay
   refine hpre ⟨⟩ _ ?_
-  intro pkP uP hpk0 hu0 hpkx hpky hux huy
+  intro pkP uP zv hpk0 hu0 hread
+  -- one reading equation decomposes into the per-cell facts
+  simp only [readVal_statementRaw, Statement.Raw.mk.injEq, AffinePoint.mk.injEq]
+    at hread
+  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzv⟩ := hread
+  subst hzv
+  replace hpkx := hpkx.symm
+  replace hpky := hpky.symm
+  replace hux := hux.symm
+  replace huy := huy.symm
   -- the wire points and the generator read on-curve
   have hpkC := SWPoint.onCurve_of_ne_zero hpk0
   have huC := SWPoint.onCurve_of_ne_zero hu0
-  have hpkNS : Vesta.curve.toAffine.Nonsingular (pk.x.val st.V) (pk.y.val st.V) := by
+  have hpkNS : Vesta.curve.toAffine.Nonsingular (stv.pk.x.val st.V) (stv.pk.y.val st.V) := by
     rw [← hpkx, ← hpky]; exact nonsingular_toW hpkC
-  have huNS : Vesta.curve.toAffine.Nonsingular (u.x.val st.V) (u.y.val st.V) := by
+  have huNS : Vesta.curve.toAffine.Nonsingular (stv.u.x.val st.V) (stv.u.y.val st.V) := by
     rw [← hux, ← huy]; exact nonsingular_toW huC
   have hgenC : OnCurve Vesta.curve.A Vesta.curve.B (gen.x, gen.y) := by
     rcases gen.onCurve with h | h
@@ -183,7 +192,7 @@ theorem verifyCircuit_spec (pk u : AffinePoint (FVar Fq)) (z : FVar Fq)
     · exact hband
   obtain ⟨hzgNS, hzact⟩ := hsact hreg
   -- u is finite: odd prime order has no 2-torsion
-  have huy0 : u.y.val st.V ≠ 0 :=
+  have huy0 : stv.u.y.val st.V ≠ 0 :=
     Kimchi.Gate.VarBaseMul.y_ne_zero_of_odd_order Vesta.curve.toAffine
       (by rw [Pasta.vesta_card]; decide) huNS
   obtain ⟨hrhsNS, hsum⟩ := hrhsv huNS hfinC huy0
