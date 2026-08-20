@@ -1,5 +1,6 @@
 import Kimchi.Gate.EndoScalar
 import Pasta.CompElliptic
+import Poseidon.FqSponge
 
 /-! # EndoScalar semantics
 
@@ -1153,5 +1154,80 @@ theorem fq_rangeCheck128_sound {v : Fq} {w : ℕ → Witness Fq} (hw : Chain128 
 theorem fq_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness Fq, Chain128 w (k : Fq) :=
   Chain128.exists_of_lt k hk
+
+/-! ## The wire recoding is the gate recoding
+
+`FqSponge.endoExpand` expands a 128-bit prechallenge by folding over its 64 two-bit
+windows; the gate recodes the same challenge from its base-4 crumbs. One recoding: the
+window at position `i` carries exactly the crumb `crumbsOf` places there, so the two
+folds agree step for step (`endoExpand_eq_toField`). This is the seam a
+verifier-faithfulness law crosses when the wire computes its challenge with
+`endoExpand` and the circuit constrains it with the EndoScalar/EndoMul gates. -/
+
+/-- The window fold of `endoExpand` over `c` windows is the paired decompose fold over
+    the challenge's `c` crumbs. -/
+private theorem endoExpand_fold (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
+    ∀ (c k : ℕ) (ab : F × F),
+      (List.range c).reverse.foldl
+        (fun (ab : F × F) i =>
+          let (a, b) := (2 * ab.1, 2 * ab.2)
+          let s : F := if k.testBit (2 * i) then 1 else -1
+          if k.testBit (2 * i + 1) then (a + s, b) else (a, b + s))
+        ab
+      = ((crumbsOf c k).foldl (fun a x => 2 * a + cPoly x) ab.1,
+         (crumbsOf c k).foldl (fun b x => 2 * b + dPoly x) ab.2)
+  | 0, k, ab => rfl
+  | c + 1, k, ab => by
+    have hshift : (fun (ab : F × F) i =>
+        let (a, b) := (2 * ab.1, 2 * ab.2)
+        let s : F := if k.testBit (2 * Nat.succ i) then 1 else -1
+        if k.testBit (2 * Nat.succ i + 1) then (a + s, b) else (a, b + s))
+        = (fun (ab : F × F) i =>
+        let (a, b) := (2 * ab.1, 2 * ab.2)
+        let s : F := if (k / 4).testBit (2 * i) then 1 else -1
+        if (k / 4).testBit (2 * i + 1) then (a + s, b) else (a, b + s)) := by
+      have hdiv : k / 4 = k >>> 2 := by rw [Nat.shiftRight_eq_div_pow]
+      funext ab i
+      have e0 : k.testBit (2 * Nat.succ i) = (k / 4).testBit (2 * i) := by
+        rw [hdiv, Nat.testBit_shiftRight]
+        congr 1
+        omega
+      have e1 : k.testBit (2 * Nat.succ i + 1) = (k / 4).testBit (2 * i + 1) := by
+        rw [hdiv, Nat.testBit_shiftRight]
+        congr 1
+        omega
+      rw [e0, e1]
+    have hb0 : k.testBit 0 = decide (k % 4 % 2 = 1) := by
+      rw [Nat.testBit_zero]
+      simp only [decide_eq_decide]
+      omega
+    have hb1 : k.testBit 1 = decide (k % 4 / 2 = 1) := by
+      rw [show (1 : ℕ) = 0 + 1 from rfl, Nat.testBit_add_one, Nat.testBit_zero]
+      simp only [decide_eq_decide]
+      omega
+    rw [List.range_succ_eq_map, List.reverse_cons, ← List.map_reverse,
+      List.foldl_append, List.foldl_map, hshift, endoExpand_fold h2 h3 c (k / 4) ab,
+      show crumbsOf (F := F) (c + 1) k = crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)]
+        from rfl,
+      List.foldl_append, List.foldl_append]
+    simp only [List.foldl_cons, List.foldl_nil]
+    have hm4 : k % 4 < 4 := by omega
+    have hc := cPoly_digit h2 h3 hm4
+    have hd := dPoly_digit h2 h3 hm4
+    rw [hb0, hb1, hc, hd]
+    have h4 : k % 4 = 0 ∨ k % 4 = 1 ∨ k % 4 = 2 ∨ k % 4 = 3 := by omega
+    rcases h4 with h | h | h | h <;>
+      · rw [h]
+        norm_num [cInt, dInt]
+
+/-- The endomorphism expansion is the gate recoding: `endoExpand` at a challenge is
+    `toField` at its canonical crumb list — the wire's window fold over the
+    challenge's bits and the gate's fold over its base-4 crumbs are one recoding. -/
+theorem endoExpand_eq_toField (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (lam : F) (n : ℕ) :
+    Poseidon.FqSponge.endoExpand lam n = toField (crumbsOf 64 n) lam := by
+  unfold Poseidon.FqSponge.endoExpand
+  rw [endoExpand_fold h2 h3 64 n (2, 2)]
+  rfl
 
 end Kimchi.Gate.EndoScalar
