@@ -7,24 +7,12 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 /-!
 # The in-circuit verifier
 
-`verifyCircuit` implements the wire `verify` stage for stage, over the circuit field
-`Fq` (the Vesta base field, where the statement's points have native coordinates):
-
-- **the transcript** — the six coordinates through the block-mode random-oracle
-  gadget (`RandomOracle.hashVec`), the wire's `transcriptHash` over circuit
-  variables;
-- **the challenge** — `lowest128Bits` splits off the squeeze's low 128 bits (the
-  `squeeze_challenge` flavor: both halves range-checked), and `endoMul` acts with
-  them on the public key: the endomorphism expansion the wire side performs in
-  `FqSponge.squeezeChallenge` is the gate's own recoding;
-- **the response** — `z` enters as one field element (Type1: the Vesta scalar field
-  is the smaller of the pair), and `scaleFast1` computes `[z]·G` at the full 255-bit
-  width on the constant generator;
-- **the check** — one complete addition and two coordinate equalities pin
-  `[z]·G = u + [c]·pk`.
-
-This module is the circuit alone; the laws tying it to `verify` are the package's
-subject and live beside it.
+`verifyCircuit` implements the wire `verify` stage for stage, over `Fq`: the six
+coordinates through the block-mode random-oracle gadget (`RandomOracle.hashVec`),
+`lowest128Bits` for the challenge split (both halves range-checked), `endoMul` for
+`[c]·pk`, `scaleFast1` for `[z]·G` on the constant generator (`z` enters
+`Type1`-shifted), and one complete addition with two coordinate equalities pinning
+`[z]·G = u + [c]·pk`. The laws tying it to `verify` live beside it.
 -/
 
 namespace Schnorr
@@ -33,15 +21,12 @@ open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
 variable {F c : Type}
 
-/-- The circuit field reads canonical representatives through `ZMod.val` — the same
-instance the CS-equality oracle declares at `Fp`. -/
+/-- The circuit field reads canonical representatives through `ZMod.val`. -/
 instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
 
-/-- The statement's coordinate shape over a carrier: the two points and the
-(`Type1`-shifted) response. At `FVar Fq` this is the in-circuit statement
-`verifyCircuit` consumes; at `Fq` it is that bundle's `CircuitType` reading. The
-wire `Statement` refines a reading — on-curve nonzero points and the scalar-field
-response — which is exactly what the endpoint law recovers. -/
+/-- The statement's coordinate shape over a carrier: at `FVar Fq` the in-circuit
+statement, at `Fq` its `CircuitType` reading. The wire `Statement` refines a
+reading with the on-curve proofs and the scalar-field response. -/
 structure Statement.Raw (α : Type) where
   /-- The public key's coordinates. -/
   pk : AffinePoint α
@@ -59,15 +44,12 @@ instance instStatementRawCircuitType :
   varToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]
   fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, fs[4]⟩
 
-/-- The statement's cells carry no well-formedness constraint of their own (the house
-`genericCheck` convention: points and field elements check nothing) — what the
-statement must satisfy is the endpoint laws' business. This is what lets the compile
-pipeline take the statement as the circuit's public input. -/
+/-- The statement's cells carry no check of their own (the `genericCheck`
+convention) — what the statement must satisfy is the endpoint laws' business. -/
 instance instStatementRawCheckedType : CheckedType F c (Statement.Raw (FVar F)) where
   check _ := .pure PUnit.unit
 
-/-- The statement bundle reads componentwise into a `Statement.Raw F` — the reading a
-proof decomposes into the per-cell facts the gadget laws consume. -/
+/-- The statement bundle reads componentwise into a `Statement.Raw F`. -/
 @[circuitVal] theorem readVal_statementRaw [Add F] [Mul F] (V : Valuation F)
     (st : Statement.Raw (FVar F)) :
     readVal V st = Statement.Raw.mk ⟨st.pk.x.val V, st.pk.y.val V⟩
@@ -126,10 +108,8 @@ theorem reads_statementRaw_iff [Field F] {env : Assignments F}
     rw [readVal_statementRaw, CVar.val_toValuation h0, CVar.val_toValuation h1,
       CVar.val_toValuation h2, CVar.val_toValuation h3, CVar.val_toValuation h4]
 
-/-- The in-circuit verifier: hash the transcript (`transcriptHash` over circuit
-variables, the block-mode gadget for definition), derive the challenge, act with it
-on the public key through the endomorphism, and pin `[z]·G = u + [c]·pk` on the
-coordinates. -/
+/-- The in-circuit verifier: hash the transcript, derive the challenge, act on the
+public key through the endomorphism, and pin `[z]·G = u + [c]·pk`. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
     (st : Statement.Raw (FVar Fq)) :
     CircuitM Fq c PUnit := do

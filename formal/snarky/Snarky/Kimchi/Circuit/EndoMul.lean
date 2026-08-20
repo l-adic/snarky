@@ -308,13 +308,11 @@ def HasEndo.vesta : HasEndo Fq where
     exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 open Kimchi.Gate.EndoScalar in
-/-- Reading `endoMul`'s decomposition pins exactly: an integer of the shape the sound
-law hands back — `s = B + A·λ` with both accumulators bounded by `3·2^64` and pinned
-in `F` to the decomposition of the canonical 64-crumb list — IS the gate's decoded
-integer scalar `toIntZ` at the challenge's digits. The window `d.char_big` reads the
-bounded integers exactly. Modulus-free: consumers cast the one integer into whichever
-scalar field acts (`toField_digits` reads it back per field), so no fact ever crosses
-a `ZMod` boundary. -/
+/-- An integer of the shape the sound law hands back — `s = B + A·λ`, bounded by
+`3·2^64`, pinned in `F` to the canonical 64-crumb decomposition (a 128-bit
+challenge is 64 two-bit crumbs; `3·2^64 = 3·4^32` at 32 rounds) — IS the gate's
+decoded integer `toIntZ`, via the `d.char_big` window. Modulus-free: consumers cast
+the one integer into whichever scalar field acts. -/
 theorem HasEndo.decomposition_eq_toIntZ [Field F] [DecidableEq F]
     (d : HasEndo F)
     (n : ℕ) {s A B : ℤ} (hsab : s = B + A * d.lam)
@@ -349,9 +347,8 @@ theorem HasEndo.decomposition_eq_toIntZ [Field F] [DecidableEq F]
   ring
 
 open Kimchi.Gate.EndoScalar in
-/-- Reading `endoMul`'s decomposition through the char window, mod the group order:
-`decomposition_eq_toIntZ`'s one integer scalar, cast into the scalar field and read
-back as the gate's decoded scalar at the canonical crumbs (`toField_digits`). -/
+/-- `decomposition_eq_toIntZ` mod the group order: the one integer scalar, read back
+as the gate's decoded scalar at the canonical crumbs (`toField_digits`). -/
 theorem HasEndo.decomposition_residue [Field F] [DecidableEq F]
     (d : HasEndo F)
     [Fact (Nat.Prime d.W.order)]
@@ -679,17 +676,11 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       hsab, hm ▸ hAle, hm ▸ hBle, hAval, hBval, hsval⟩
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
-/-- The gadget is sound: under any satisfying valuation, for a base point reading
-on-curve, the result reads as `[s]·T` where `s = B + A·λ` for decomposition
-accumulators bounded by `3·4^rounds` and pinned in `F` to `decomposeA`/`decomposeB`
-of a valid crumb list of length `2·rounds` whose reconstruction is the scalar — so
-`(s : F) = EndoScalar.toField crumbs λ`, and the bounded shape lets a consumer read
-the same integer in a second field (`HasEndo.decomposition_residue`). EndoMul
-multiplies by exactly the scalar EndoScalar decodes. The curve facts arrive bundled
-as the dictionary `d : HasEndo F`,
-so the law composes with other generic circuit laws over an abstract field, and is
-concretized only inside a larger circuit's instantiation, at the deployed
-dictionaries `HasEndo.pallas`/`HasEndo.vesta`. -/
+/-- The gadget is sound: for an on-curve base reading, the result reads as `[s]·T`
+with `s = B + A·λ`, the accumulators bounded by `3·4^rounds` and pinned in `F` to
+the decomposition of a valid crumb list reconstructing the scalar. The bounded shape
+lets a consumer read the same integer in a second field
+(`HasEndo.decomposition_residue`); concretized at `HasEndo.pallas`/`vesta`. -/
 theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
     (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))

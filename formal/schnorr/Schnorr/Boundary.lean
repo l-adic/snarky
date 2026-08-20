@@ -4,20 +4,14 @@ import Snarky.Kimchi.Backend.Compile
 /-!
 # The CS-satisfaction boundary — the fragment seam
 
-The endpoint laws packaged through the whole-circuit pipeline, the way the
-verifier-faithfulness architecture's fragments are
+The endpoint laws packaged through the whole-circuit pipeline
 (`formal/docs/circuit-verifier-faithfulness.md`, layer 3): the statement is the
-circuit's public input through its `CircuitType` encoding, and the boundary speaks
-about compiled constraint systems and solver runs, not triples.
+public input through its `CircuitType` encoding.
 
-- `verifyCircuit_compile_sound` — any valuation satisfying every constraint
-  `compile verifyCircuit` emits, with the statement's encoding at the input slots,
-  certifies the relaxed wire verifier (the sound endpoint, cashed out of the
-  weakest-precondition reading by `sound_spec_iff`).
-- `verifyCircuit_solve_complete` — on a statement the wire verifier accepts,
-  honestly encoded, the whole-circuit `solve` at the kimchi checker succeeds and
-  its table reads the statement at the input bundle (the complete endpoint through
-  `complete_spec_iff`, wrapped by `solve_seed`/`solve_punit_ok`).
+- `verifyCircuit_compile_sound` — a valuation satisfying `compile verifyCircuit`'s
+  constraints, reading the statement at `inputVar`, certifies the relaxed verifier.
+- `verifyCircuit_solve_complete` — on a statement `verify` accepts, honestly
+  encoded, `solve` at the kimchi checker succeeds and its table reads the statement.
 -/
 
 namespace Schnorr
@@ -27,12 +21,10 @@ open Std.Do
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
-/-- **The satisfaction boundary.** Any valuation that satisfies every constraint the
-compiled verifier emits, and holds a statement's encoding at the five public-input
-slots, certifies `verifyRelaxed` at that statement — with the response recovered up
-to its reconstruction class, as the sound endpoint states. The constraint reading is
-the kimchi semantic one: each emitted constraint is the verified gate's own
-predicate at the payload's operand values. -/
+/-- **The satisfaction boundary.** A valuation satisfying every compiled constraint
+(each the verified gate's own predicate at the payload's operands), reading a
+statement at the input bundle, certifies `verifyRelaxed` — the response recovered up
+to its reconstruction class. -/
 theorem verifyCircuit_compile_sound
     (pkP uP : SWPoint Vesta.curve) (zv : Fq) (hpk0 : pkP ≠ 0) (hu0 : uP ≠ 0)
     (V : Valuation Fq)
@@ -58,11 +50,10 @@ theorem verifyCircuit_compile_sound
     pkP uP zv hpk0 hu0 hin
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
-/-- **The constructive boundary.** On a statement the wire verifier accepts —
-honestly encoded, nondegenerate, in the ladder regime — the whole-circuit `solve` at
-the kimchi checker succeeds, and the returned table reads the statement at the
-public-input bundle. The run is the complete endpoint's, entered through the seeded
-input slots; the wrapper contributes nothing at output `PUnit`. -/
+/-- **The constructive boundary.** On a statement `verify` accepts — honestly
+encoded, nondegenerate, in the ladder regime — the whole-circuit `solve` at the
+kimchi checker succeeds, and the returned table reads the statement at the input
+bundle. -/
 theorem verifyCircuit_solve_complete
     (stP : Statement) (zv : Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)

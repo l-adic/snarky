@@ -1157,12 +1157,9 @@ theorem fq_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
 
 /-! ## The wire recoding is the gate recoding
 
-`FqSponge.endoExpand` expands a 128-bit prechallenge by folding over its 64 two-bit
-windows; the gate recodes the same challenge from its base-4 crumbs. One recoding: the
-window at position `i` carries exactly the crumb `crumbsOf` places there, so the two
-folds agree step for step (`endoExpand_eq_toField`). This is the seam a
-verifier-faithfulness law crosses when the wire computes its challenge with
-`endoExpand` and the circuit constrains it with the EndoScalar/EndoMul gates. -/
+`FqSponge.endoExpand` folds over a prechallenge's 64 two-bit windows; the gate
+recodes the same challenge from its base-4 crumbs. The window at position `i` is the
+crumb `crumbsOf` places there, so the folds agree (`endoExpand_eq_toField`). -/
 
 /-- The window fold of `endoExpand` over `c` windows is the paired decompose fold over
     the challenge's `c` crumbs. -/
@@ -1220,9 +1217,8 @@ private theorem endoExpand_fold (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
       · rw [h]
         norm_num [cInt, dInt]
 
-/-- The endomorphism expansion is the gate recoding: `endoExpand` at a challenge is
-    `toField` at its canonical crumb list — the wire's window fold over the
-    challenge's bits and the gate's fold over its base-4 crumbs are one recoding. -/
+/-- `endoExpand` at a challenge is `toField` at its canonical crumb list — the two
+    folds are one recoding. -/
 theorem endoExpand_eq_toField (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (lam : F) (n : ℕ) :
     Poseidon.FqSponge.endoExpand lam n = toField (crumbsOf 64 n) lam := by

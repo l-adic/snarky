@@ -3,32 +3,19 @@ import Schnorr.Circuit
 /-!
 # The circuit laws
 
-The endpoint law pair: the circuit is faithful to the wire verifier, sound and
-complete. The transcript needs no laws of its own — `verifyCircuit` calls the
-block-mode hash gadget on the six coordinates directly, its laws (`hashVec_spec` /
-`hashVec_complete_spec`) read the squeeze as `Poseidon.RandomOracle.hash`, and that
-hash is `transcriptHash` at the read points definitionally.
+The endpoint pair: the circuit is faithful to the wire verifier, sound and
+complete. The transcript needs no laws of its own — `verifyCircuit` calls the hash
+gadget directly, and `hashVec`'s laws read the squeeze as `transcriptHash` at the
+read points, definitionally.
 
-## The sound endpoint and its two relaxations
-
-`verifyCircuit_spec` composes the gadget laws into the relaxed wire verifier, at the
-deployed Vesta dictionaries. Both cross-field quantities are certified as
-reconstruction classes, not values, because that is all the constraints pin:
-
-- **the challenge** — the range check fixes the 128-bit split only up to the
-  transcript hash's integer preimages, so `verifyRelaxed` ∃-quantifies the split.
-- **the response** — the `Fq` reading pins the ladder's integer scalar `s` only mod
-  `q`, and the window `(2^255, 3·2^255)` spans several multiples of `q`: the wire
-  genuinely cannot distinguish `z` from `z + q` (`scaleFast1_spec`'s wrap analysis).
-  The statement ∃-quantifies `s`; the group action pins `s` mod `p`, and `(s : Fp)`
-  is the response the certified statement carries. The ladder's forbidden band
-  (`s ∉ forbiddenValues p`) survives as a hypothesis on the action clause.
-
-The challenge leg is one integer read in two fields: the crumbs are determined by the
-no-wrap bound `4^64 = 2^128 < q` (`nReconstruct_inj`), the decomposition is the
-gate's integer scalar exactly (`decomposition_eq_toIntZ`), and the wire's recoding is
-the gate's (`endoExpand_eq_toField`). The `SWPoint` statement points transport to the
-Mathlib group the gate laws speak through pasta's `SWPoint.equivPoint`.
+Soundness certifies both cross-field quantities as reconstruction classes — all the
+constraints pin. The challenge: the range check fixes the 128-bit split only up to
+the hash's integer preimages, so `verifyRelaxed` ∃-quantifies it. The response: the
+`Fq` reading pins the ladder's integer scalar only mod `q` over a window spanning
+several multiples of `q`; the statement ∃-quantifies it, the group action pins it
+mod `p`, and the ladder's forbidden band survives as a hypothesis. The challenge leg
+is one integer read in two fields (`nReconstruct_inj`, `decomposition_eq_toIntZ`,
+`endoExpand_eq_toField`); statement points transport through `SWPoint.equivPoint`.
 -/
 
 namespace Schnorr
@@ -36,8 +23,8 @@ namespace Schnorr
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 open Std.Do
 
-/-- The Vesta-side parameter tables have the full 55-round length — the hash laws'
-size hypothesis, discharged once on the generated table. -/
+/-- The parameter tables have the full 55-round length — the hash laws' size
+hypothesis. -/
 private theorem fqParams_size :
     Poseidon.fqParams.roundConstants.size = Poseidon.fullRounds := by
   show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
@@ -46,14 +33,10 @@ private theorem fqParams_size :
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
-/-- **The sound endpoint.** Any satisfying valuation certifies `verifyRelaxed` at the
-read statement: when the statement bundle reads as nonzero wire points and a response
-representative, there is one integer response `s` — ladder-bounded, pinned in `Fq` to
-the `Type1` decode of the `z` reading — with `verifyRelaxed ⟨pkP, uP, (s : Fp)⟩` off
-the ladder's forbidden band. Both relaxations (the challenge split, the ∃-quantified
-response) are stated in the module docstring; the walk composes the transcript,
-`lowest128Bits'`, `endoMul`, `scaleFast1`, and `addFast` laws at the deployed Vesta
-dictionaries. -/
+/-- **The sound endpoint.** Any satisfying valuation certifies `verifyRelaxed`: when
+the bundle reads as nonzero wire points and a response representative, some
+ladder-bounded integer `s`, pinned in `Fq` to the reading's `Type1` decode, gives
+`verifyRelaxed ⟨pkP, uP, (s : Fp)⟩` off the forbidden band. -/
 theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
@@ -199,16 +182,11 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     exact hmaster
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
-/-- **The complete endpoint.** The honest prover run accepts: on a statement the wire
-verifier accepts (`verify`), honestly encoded — the bundle reads the statement's
-coordinates and a faithful in-range response representative whose `Type1` decode is
-the response — the checking prover's run of `verifyCircuit` succeeds, only extending
-the table. Nondegeneracy hypotheses: nonzero statement points, a nonzero response,
-and the ladder regime at the encoded response (the same forbidden band the sound
-side carries). Exported in the plain run form rather than as a `Complete` triple
-(the triple is internal to the proof, equivalent by `complete_spec_iff`): a
-concrete-field prover triple's type cannot be referenced without evaluating the run
-it matches on. -/
+/-- **The complete endpoint.** The honest checking-prover run accepts a statement
+`verify` accepts, honestly encoded and nondegenerate, only extending the table.
+Exported in plain run form — a concrete-field prover triple's type cannot be
+referenced without evaluating the run it matches on; the triple is internal,
+equivalent by `complete_spec_iff`. -/
 theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     (stP : Statement) (zv : Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)

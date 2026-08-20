@@ -90,9 +90,9 @@ theorem SWPoint.onCurve_of_ne_zero {F : Type*} [Field F] {E : SWCurve F} {P : SW
   · exact hc
   · exact absurd (SWPoint.ext_pair (Q := 0) h0) h
 
-/-- The transport at on-curve coordinates: `equivPoint` lands on `Point.some` at the same
-pair. With `onCurve_of_ne_zero`, this reads any nonzero `SWPoint` into the Mathlib
-vocabulary the gate-semantics theorems are stated in. -/
+/-- At on-curve coordinates `equivPoint` lands on `Point.some` at the same pair —
+with `onCurve_of_ne_zero`, the reading of any nonzero `SWPoint` into the gate
+theorems' vocabulary. -/
 theorem SWPoint.equivPoint_eq_some {F : Type*} [Field F] [DecidableEq F] {E : SWCurve F}
     (P : SWPoint E) (h : OnCurve E.A E.B (P.x, P.y)) :
     SWPoint.equivPoint E P = Point.some P.x P.y (nonsingular_toW h) :=

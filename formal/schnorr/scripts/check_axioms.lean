@@ -32,11 +32,9 @@ def roots : List Name :=
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 
-/-- The endpoint laws concretize the snarky gadget laws at the DEPLOYED Pasta
-    dictionaries (`HasEndo.vesta`, `HasCurve.vesta`), so their closures carry the
-    certified `native_decide` witnesses those dictionaries' curve facts rest on —
-    the certified orders and eigenvalue anchors. Everything else stays pure core
-    Lean. -/
+/-- The endpoint laws concretize at the deployed Pasta dictionaries, so their
+    closures carry the certified `native_decide` witnesses (orders and eigenvalue
+    anchors). Everything else stays pure core Lean. -/
 def deployedRoots : List Name :=
   [ `Schnorr.verifyCircuit_spec,
     `Schnorr.verifyCircuit_complete_spec,

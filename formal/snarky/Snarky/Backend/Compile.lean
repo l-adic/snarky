@@ -50,9 +50,8 @@ private def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
     AsProver F (Vector F B.size) :=
   fun env => (readVar (val := b) out env).map B.valueToFields
 
-/-- The public-input bundle every compiled circuit binds: the declared input type's
-variable bundle over the preallocated slots `0 … A.size−1`. A whole-circuit statement
-reads the input off a valuation or table through this bundle (`readVal`/`Reads`),
+/-- The public-input bundle every compiled circuit binds, over slots `0 … A.size−1`.
+Whole-circuit statements read the input through this bundle (`readVal`/`Reads`),
 never by spelling slots. -/
 def inputVar [A : CircuitType F a avar] : avar :=
   A.fieldsToVar (mapVec CVar.var (allocRange 0 A.size))
@@ -101,13 +100,9 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
       | .error e => .error e
       | .ok outVal => .ok (outVal, p.assignments)
 
-/-- A circuit with no public output emits exactly its checked body's constraints: at
-output `PUnit` the back-fill assigns nothing and the output binding asserts nothing,
-so `compile`'s constraint list is the input check's followed by the body's. The
-whole-circuit soundness statement of a pure knowledge circuit reads its `Sound`
-triple through this identity. The size-0 `CircuitType` instance makes the wrapper
-tail vanish definitionally; what this lemma exports is the rest — `build` over an
-opaque bind is a theorem (`build_bind`), and the wrapper's pieces are private. -/
+/-- A circuit with no public output emits exactly its checked body's constraints:
+the `PUnit` back-fill and output binding contribute nothing. Exports the two
+non-definitional steps — `build_bind`, and the wrapper's pieces being private. -/
 theorem compile_punit_constraints [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar]
     (main : avar → CircuitM F c PUnit) :
@@ -195,10 +190,8 @@ private theorem extendPairs_range'_ok :
     · simp only [List.length_cons] at hv
       omega
 
-/-- The input seeding always succeeds — the public slots are fresh on the empty
-table — and the seeded table holds the input's encoding at the input slots, with
-nothing assigned at or above the input range. The entry facts a whole-circuit
-completeness statement starts from. -/
+/-- The input seeding always succeeds — the slots are fresh on the empty table —
+holding the input's encoding at the input slots and nothing at or above them. -/
 theorem solve_seed [A : CircuitType F a avar] (input : a) :
     ∃ env₀ : Assignments F,
       Assignments.empty.extendPairs
@@ -218,12 +211,9 @@ theorem solve_seed [A : CircuitType F a avar] (input : a) :
   have h := (extendPairs_range'_lookup L 0 hrun).1 i (by omega)
   simpa [hL] using h
 
-/-- A no-output circuit's solve succeeds as soon as its input check and its body run
-honestly: at output `PUnit` the back-fill assigns nothing, the output binding asserts
-nothing, and the size-0 output decode cannot fail — all definitional at the size-0
-`CircuitType` instance. What this lemma exports is the rest: `prove` over an opaque
-bind is a theorem (`prove_bind`), and the wrapper's pieces are private to this file.
-Staged as the check's run then the body's, so a consumer never touches either. -/
+/-- A no-output circuit's solve succeeds once its input check and body run honestly:
+the `PUnit` wrapper cannot fail. Staged as the check's run then the body's, so a
+consumer never touches the wrapper's internals. -/
 theorem solve_punit_ok [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar]
     {holds : c → Assignments F → Bool} {main : avar → CircuitM F c PUnit}
