@@ -11,10 +11,8 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 `Fq` (the Vesta base field, where the statement's points have native coordinates):
 
 - **the transcript** — `squeezeTranscript` hashes the six coordinates with the
-  block-mode random-oracle gadget (`RandomOracle.hashVec`): the transcript is a
-  single squeeze, where block mode and the wire's duplex automaton compute the same
-  element (`Poseidon.RandomOracle.hash_eq_squeeze`), so one hash call is the whole
-  schedule;
+  block-mode random-oracle gadget (`RandomOracle.hashVec`), computing the wire's
+  `transcriptHash` over circuit variables;
 - **the challenge** — `lowest128Bits` splits off the squeeze's low 128 bits (the
   `squeeze_challenge` flavor: both halves range-checked), and `endoMul` acts with
   them on the public key: the endomorphism expansion the wire side performs in
@@ -39,11 +37,9 @@ variable {c : Type}
 instance the CS-equality oracle declares at `Fp`. -/
 instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
 
-/-- The wire sponge's transcript, in-circuit: the six coordinates hashed by the
-block-mode random-oracle gadget. The wire runs the duplex automaton
-(`squeezeState`/`squeezeFieldElement`), but a transcript with a single squeeze is
-exactly where the two schedules coincide (`Poseidon.RandomOracle.hash_eq_squeeze`),
-so the hash gadget — and its ready-made laws — is the whole transcript. -/
+/-- The wire transcript hash, in-circuit: the six coordinates through the block-mode
+random-oracle gadget — `transcriptHash` computed over circuit variables, gadget for
+definition. -/
 def squeezeTranscript [KimchiSystem Fq c] (pk u : AffinePoint (FVar Fq)) :
     CircuitM Fq c (FVar Fq) :=
   RandomOracle.hashVec _root_.Poseidon.fqParams

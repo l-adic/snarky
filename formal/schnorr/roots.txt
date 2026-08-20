@@ -7,13 +7,11 @@
 -- laws terminate at.
 Schnorr.gen
 Schnorr.Statement
-Schnorr.squeezeState
-Schnorr.squeezeFieldElement
+Schnorr.transcriptHash
 Schnorr.preChallenge
 Schnorr.verify
 Schnorr.verifyRelaxed
 Schnorr.verify_imp_verifyRelaxed
-Schnorr.squeezeFieldElement_eq
 
 -- The in-circuit verifier (Schnorr/Circuit.lean): the transcript squeeze and the
 -- whole verifier, stage for stage against `verify`.

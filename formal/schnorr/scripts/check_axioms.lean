@@ -16,12 +16,11 @@ namespace Schnorr.CheckAxioms
 /-- The exemplar's audited surface. -/
 def roots : List Name :=
   [ `Schnorr.gen,
-    `Schnorr.squeezeFieldElement,
+    `Schnorr.transcriptHash,
     `Schnorr.preChallenge,
     `Schnorr.verify,
     `Schnorr.verifyRelaxed,
     `Schnorr.verify_imp_verifyRelaxed,
-    `Schnorr.squeezeFieldElement_eq,
     `Schnorr.verifyCircuit,
     `Schnorr.squeezeTranscript_spec,
     `Schnorr.squeezeTranscript_complete_spec ]

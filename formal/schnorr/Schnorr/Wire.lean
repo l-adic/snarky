@@ -23,13 +23,15 @@ boundary (Type1: `p < q`, one shifted element).
 ## The challenge convention
 
 The challenge is derived the way the kimchi verifier derives its scalar challenges,
-not by zkdocs' `H(g, q, h, u) mod p`: absorb the generator and the statement's points
-into the Vesta-side Fq-sponge, squeeze one 128-bit prechallenge, and let it act
-through the endomorphism expansion (`FqSponge.squeezeChallenge`, the `a·λ + b` map
-into `Fp`). Fixing this convention on the wire makes the in-circuit challenge — a
-Poseidon squeeze, a 128-bit truncation, and the EndoScalar/EndoMul pair — agree with
-the wire by the gadget laws alone. The group order is not absorbed: it is fixed by
-the instantiation.
+not by zkdocs' `H(g, q, h, u) mod p`: hash the generator and the statement's points
+coordinate by coordinate with the Vesta-side random oracle (`transcriptHash` — a
+single squeeze, so the block-mode `Poseidon.RandomOracle.hash` and the duplex
+Fq-sponge's absorb-then-squeeze are the same element, `hash_eq_squeeze`), truncate to
+a 128-bit prechallenge, and let it act through the endomorphism expansion
+(`FqSponge.endoExpand`, the `a·λ + b` map into `Fp`). Fixing this convention on the
+wire makes the in-circuit challenge — the hash gadget, a 128-bit truncation, and the
+EndoScalar/EndoMul pair — agree with the wire by the gadget laws alone. The group
+order is not absorbed: it is fixed by the instantiation.
 -/
 
 namespace Schnorr
@@ -53,40 +55,20 @@ structure Statement where
   /-- The response `r + c·x`, a Vesta scalar. -/
   z : Fp
 
-/-- The sponge state after the transcript: the generator and the statement's two
-points absorbed, before the challenge squeeze. Factored so the circuit-alignment
-lemma and the two verifiers all name the same object. -/
-def squeezeState (pk u : SWPoint Vesta.curve) :
-    FqSponge.S PALLAS_SCALAR_CARD :=
-  let s := FqSponge.init
-  let s := FqSponge.absorbG FqVesta.spec s gen
-  let s := FqSponge.absorbG FqVesta.spec s pk
-  FqSponge.absorbG FqVesta.spec s u
-
-/-- The raw squeezed field element (`Fq`), before truncation — what the circuit's
-`squeezeTranscript` reads from the last permutation's first rate slot, and what the
-wire's `challengeNat` takes the low 128 bits of. -/
-def squeezeFieldElement (pk u : SWPoint Vesta.curve) : Fq :=
-  (Poseidon.squeeze FqVesta.spec.params (squeezeState pk u).sponge).1
-
-/-- The transcript squeeze is the block-mode hash of the six absorbed coordinates:
-absorbing three points is the six-coordinate absorb fold (definitionally), and a
-single squeeze is where the duplex automaton and block mode coincide
-(`hash_eq_squeeze`). This is the shape the in-circuit transcript's laws land on, so
-it is the whole wire-side alignment. -/
-theorem squeezeFieldElement_eq (pk u : SWPoint Vesta.curve) :
-    squeezeFieldElement pk u
-      = Poseidon.RandomOracle.hash Poseidon.fqParams
-          [gen.x, gen.y, pk.x, pk.y, u.x, u.y] :=
-  (Poseidon.RandomOracle.hash_eq_squeeze Poseidon.fqParams
-    [gen.x, gen.y, pk.x, pk.y, u.x, u.y]).symm
+/-- The transcript hash (`Fq`), before truncation: the generator and the statement's
+two points, coordinate by coordinate, through the random oracle. The kimchi wire
+verifier absorbs points into the duplex Fq-sponge and squeezes; a single squeeze is
+the block-mode hash of the absorbed coordinates (`hash_eq_squeeze`), so the hash IS
+that squeeze. -/
+def transcriptHash (pk u : SWPoint Vesta.curve) : Fq :=
+  Poseidon.RandomOracle.hash Poseidon.fqParams [gen.x, gen.y, pk.x, pk.y, u.x, u.y]
 
 /-- The wire's canonical 128-bit prechallenge: the low 128 bits of the CANONICAL
-representative of the squeeze. `challengeNat` packs `lowLimbs`, which is exactly this
-(`squeezeFieldElement.val < q < 2^255`) — this is `FqSponge.challengeNat` on
-the transcript state, packed limb for limb. -/
+representative of the transcript hash. This is the Fq-sponge `challenge` convention:
+`FqSponge.challengeNat` packs a fresh squeeze's two low 64-bit limbs, which is exactly
+this (`(transcriptHash pk u).val < q < 2^255`). -/
 def preChallenge (pk u : SWPoint Vesta.curve) : ℕ :=
-  (squeezeFieldElement pk u).val % 2 ^ 128
+  (transcriptHash pk u).val % 2 ^ 128
 
 /-- The wire verifier: `[z]·G = u + [c]·pk`, `c` the transcript's endo-expanded
 128-bit challenge — the whole protocol as one executable check. -/
@@ -95,16 +77,16 @@ def verify (st : Statement) : Bool :=
     = st.u + (FqSponge.endoExpand FqVesta.spec.lam (preChallenge st.pk st.u)).val • st.pk)
 
 /-- The RELAXED verifier: the challenge is any 128-bit prechallenge that reconstructs
-the squeeze in `Fq` — `c + 2^128·hi = squeeze` with both halves 128-bit — endo-expanded
-and applied. This is what the circuit actually enforces: the range check pins `c` only
-up to the squeeze's integer preimages (`0` has preimages `{0, q, 2q, 3q}` in
-`[0, 2^256)`, each with different low bits), so soundness terminates here.
-`verify` is the special case `c = ⌊squeeze⌋ mod 2^128` (`verify_imp_verifyRelaxed`).
+the transcript hash in `Fq` — `c + 2^128·hi = hash` with both halves 128-bit —
+endo-expanded and applied. This is what the circuit actually enforces: the range check
+pins `c` only up to the hash's integer preimages (`0` has preimages `{0, q, 2q, 3q}`
+in `[0, 2^256)`, each with different low bits), so soundness terminates here.
+`verify` is the special case `c = ⌊hash⌋ mod 2^128` (`verify_imp_verifyRelaxed`).
 The honest prover always witnesses that canonical `c`, so completeness targets
 `verify`. -/
 def verifyRelaxed (st : Statement) : Prop :=
   ∃ c hi : ℕ, c < 2 ^ 128 ∧ hi < 2 ^ 128 ∧
-    (c : Fq) + (2 : Fq) ^ 128 * (hi : Fq) = squeezeFieldElement st.pk st.u ∧
+    (c : Fq) + (2 : Fq) ^ 128 * (hi : Fq) = transcriptHash st.pk st.u ∧
     st.z.val • gen
       = st.u + (FqSponge.endoExpand FqVesta.spec.lam c).val • st.pk
 
@@ -114,21 +96,21 @@ in the direction that always holds. -/
 theorem verify_imp_verifyRelaxed (st : Statement) (h : verify st = true) :
     verifyRelaxed st := by
   simp only [verify, decide_eq_true_eq] at h
-  refine ⟨preChallenge st.pk st.u, (squeezeFieldElement st.pk st.u).val / 2 ^ 128,
+  refine ⟨preChallenge st.pk st.u, (transcriptHash st.pk st.u).val / 2 ^ 128,
     Nat.mod_lt _ (by positivity), ?_, ?_, h⟩
-  · have := (squeezeFieldElement st.pk st.u).val_lt
+  · have := (transcriptHash st.pk st.u).val_lt
     have hq : PALLAS_SCALAR_CARD < 2 ^ 128 * 2 ^ 128 := by decide
     omega
   · have hrepr : preChallenge st.pk st.u
-        + 2 ^ 128 * ((squeezeFieldElement st.pk st.u).val / 2 ^ 128)
-        = (squeezeFieldElement st.pk st.u).val := by
+        + 2 ^ 128 * ((transcriptHash st.pk st.u).val / 2 ^ 128)
+        = (transcriptHash st.pk st.u).val := by
       rw [preChallenge, Nat.mod_add_div]
     calc (preChallenge st.pk st.u : Fq)
-          + (2 : Fq) ^ 128 * (((squeezeFieldElement st.pk st.u).val / 2 ^ 128 : ℕ) : Fq)
+          + (2 : Fq) ^ 128 * (((transcriptHash st.pk st.u).val / 2 ^ 128 : ℕ) : Fq)
         = ((preChallenge st.pk st.u
-            + 2 ^ 128 * ((squeezeFieldElement st.pk st.u).val / 2 ^ 128) : ℕ) : Fq) := by
+            + 2 ^ 128 * ((transcriptHash st.pk st.u).val / 2 ^ 128) : ℕ) : Fq) := by
           push_cast; ring
-      _ = ((squeezeFieldElement st.pk st.u).val : Fq) := by rw [hrepr]
-      _ = squeezeFieldElement st.pk st.u := ZMod.natCast_rightInverse _
+      _ = ((transcriptHash st.pk st.u).val : Fq) := by rw [hrepr]
+      _ = transcriptHash st.pk st.u := ZMod.natCast_rightInverse _
 
 end Schnorr

@@ -6,9 +6,9 @@ import Schnorr.Circuit
 The transcript's law pair, in the wire's vocabulary: any satisfying valuation reads
 `squeezeTranscript`'s result as `Poseidon.RandomOracle.hash` of the six absorbed
 coordinates (`squeezeTranscript_spec`), and the honest prover run accepts on readable
-points and reads it back (`squeezeTranscript_complete_spec`). That hash IS the wire's
-`squeezeFieldElement` (`squeezeFieldElement_eq`), so the transcript needs no further
-alignment. Both laws are the hash gadget's own (`hashVec_spec` /
+points and reads it back (`squeezeTranscript_complete_spec`). That hash is
+`transcriptHash` at the read points, definitionally, so the transcript needs no
+further alignment. Both laws are the hash gadget's own (`hashVec_spec` /
 `hashVec_complete_spec`) at the transcript's coordinate list — nothing here reasons
 about the sponge.
 -/
@@ -27,8 +27,8 @@ private theorem fqParams_size :
   decide
 
 /-- The transcript is sound: any satisfying valuation reads the squeezed variable as
-the block-mode hash of the six absorbed coordinate readings — `squeezeFieldElement`
-at the point readings, through `squeezeFieldElement_eq`. -/
+the block-mode hash of the six absorbed coordinate readings — `transcriptHash` at the
+point readings, definitionally. -/
 theorem squeezeTranscript_spec (pk u : AffinePoint (FVar Fq))
     (Q : PostCond (FVar Fq) (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (r : FVar Fq) =>
