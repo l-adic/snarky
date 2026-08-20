@@ -192,7 +192,7 @@ theorem KimchiConstraint.reduce_seam [Add F] [Mul F] [Sub F] [Div F] [Zero F] [O
     Seam (KimchiConstraint.reduce (m := PlonkBuilder F) con)
       (KimchiConstraint.reduce (m := PlonkProver F) con) := by
   rcases con with c | c | c | c | c | c | vs <;> simp only [KimchiConstraint.reduce]
-  · refine Seam.bind (_root_.Snarky.Kimchi.reduce_seam c) fun _ => ?_
+  · refine Seam.bind (Snarky.Kimchi.reduce_seam c) fun _ => ?_
     exact Seam.pure _
   · exact Seam.map _ (AddComplete.reduce_seam c)
   · exact Seam.map _ (PoseidonConstraint.reduce_seam c)

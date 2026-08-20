@@ -950,7 +950,7 @@ SRS, verifying key, public input and digest, on the proof the adversary emits. M
 `KimchiFamily.claim` just above, one field at a time, with `runClaim` replaced by `warmBase`. -/
 def warmBase (basis : Zcash.Snark.AugmentedIndex (2 ^ k) → C.Point) (O : Coins C nc k) :
     C.Point :=
-  _root_.Kimchi.Verifier.KnowledgeSoundness.warmBase (srsOfBasis k basis) (fam.cvk basis)
+  KnowledgeSoundness.warmBase (srsOfBasis k basis) (fam.cvk basis)
     (fam.pub basis) (fam.digest basis) (fam.proofOf basis O) O
 
 /-- The SRS the opening argument runs against: the sampled basis with the transcript-derived
@@ -3346,7 +3346,7 @@ private theorem KimchiFamily.baseStable_warmBase {n : ℕ} [NeZero n]
       (ipaPrefixes (srsOfBasis k basis) (fam.digest basis) (fam.publicComm basis))
       (fun _ O => fam.warmBase basis O) := by
   intro j O u h
-  exact _root_.Kimchi.Verifier.KnowledgeSoundness.baseStable_warmBase (srsOfBasis k basis)
+  exact KnowledgeSoundness.baseStable_warmBase (srsOfBasis k basis)
     (fam.cvk basis) (fam.pub basis) (fam.digest basis) (fam.adversary basis) j O u h
 
 end WarmBase
