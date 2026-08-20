@@ -120,7 +120,9 @@ The laws relate an in-circuit sponge to the value-level `Poseidon.State` it
 implements: `Vals` under a soundness valuation, `Reads` under a prover table. Both pin
 the three cells and the mode. A transcript threads them from the `vals_init` /
 `reads_init` (or `ofConstants`) entry points through the op laws below — any
-absorb/squeeze schedule lands on the value automaton with no per-transcript lemma. -/
+absorb/squeeze schedule lands on the value automaton with no per-transcript lemma;
+`Reads.le` carries the prover-side reading across the table extensions of any gadgets
+interleaved between sponge ops. -/
 
 open Std.Do
 
@@ -157,6 +159,12 @@ theorem reads_init [Field F] (env : Assignments F) :
 theorem reads_ofConstants [Field F] (env : Assignments F) (s : Poseidon.State F) :
     Reads env (ofConstants s) s :=
   ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The reading survives table extension. -/
+theorem Reads.le [Add F] [Mul F] {env env' : Assignments F} (hle : env.Le env')
+    {sv : SpongeVar F} {s : Poseidon.State F} (h : Reads env sv s) :
+    Reads env' sv s :=
+  ⟨CVar.eval_le hle h.1, CVar.eval_le hle h.2.1, CVar.eval_le hle h.2.2.1, h.2.2.2⟩
 
 /-! ## The slot helpers' laws -/
 

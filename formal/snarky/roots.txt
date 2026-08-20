@@ -471,8 +471,9 @@ Snarky.Kimchi.SpongeVar.ofConstants
 Snarky.Kimchi.SpongeVar.absorb
 Snarky.Kimchi.SpongeVar.squeeze
 
--- The sponge law pair ×2 (sound + complete per op) and the reads-as entry points a
--- transcript starts from.
+-- The sponge law pair ×2 (sound + complete per op), the reads-as entry points a
+-- transcript starts from, and the table-extension transport of the prover-side
+-- reading.
 Snarky.Kimchi.SpongeVar.absorb_spec
 Snarky.Kimchi.SpongeVar.squeeze_spec
 Snarky.Kimchi.SpongeVar.absorb_complete_spec
@@ -481,10 +482,12 @@ Snarky.Kimchi.SpongeVar.vals_init
 Snarky.Kimchi.SpongeVar.vals_ofConstants
 Snarky.Kimchi.SpongeVar.reads_init
 Snarky.Kimchi.SpongeVar.reads_ofConstants
+Snarky.Kimchi.SpongeVar.Reads.le
 
 -- The in-circuit block-mode hash (Snarky/Kimchi/Circuit/RandomOracle.lean): the port
 -- surface of PS Snarky.Circuit.RandomOracle (update / hash2 / hashVec), its law pair
--- x2 per op, and the input-reading vocabulary the complete laws quote.
+-- x2 per op, and the input-reading vocabulary the complete laws quote (its
+-- table-extension transport and the witness builder the isOk preconditions feed).
 Snarky.Kimchi.RandomOracle.update
 Snarky.Kimchi.RandomOracle.hash2
 Snarky.Kimchi.RandomOracle.hashVec
@@ -494,3 +497,5 @@ Snarky.Kimchi.RandomOracle.hash2_spec
 Snarky.Kimchi.RandomOracle.hash2_complete_spec
 Snarky.Kimchi.RandomOracle.hashVec_spec
 Snarky.Kimchi.RandomOracle.hashVec_complete_spec
+Snarky.Kimchi.RandomOracle.ReadsAll.le
+Snarky.Kimchi.RandomOracle.exists_readsAll

@@ -210,32 +210,41 @@ private theorem foldBlocks_spec [Field F] [DecidableEq F]
     simp only [List.map_cons, List.foldl_cons, ← h₁]
     exact h₂
 
-/-- The complete-side reading of an input list: element-wise pinned evaluations, in
-the order given. The vocabulary of `update_complete_spec`/`hashVec_complete_spec`. -/
-inductive ReadsAll [Field F] (env : Assignments F) : List (FVar F) → List F → Prop
-  /-- The empty list reads as the empty list. -/
-  | nil : ReadsAll env [] []
-  /-- A pinned head extends a pinned tail. -/
-  | cons {x : FVar F} {v : F} {xs vs} : x.eval env = .ok v →
-      ReadsAll env xs vs → ReadsAll env (x :: xs) (v :: vs)
+/-- The complete-side reading of an input list — element-wise pinned evaluations, in
+the order given, as `List.Forall₂`. The vocabulary of
+`update_complete_spec`/`hashVec_complete_spec`. -/
+def ReadsAll [Field F] (env : Assignments F) (xs : List (FVar F)) (vs : List F) :
+    Prop :=
+  List.Forall₂ (fun (x : FVar F) v => x.eval env = .ok v) xs vs
 
-/-- The complete-side reading of a block list. -/
-private inductive ReadsBlocks [Field F] (env : Assignments F) :
-    List (FVar F × FVar F) → List (F × F) → Prop
-  /-- The empty block list reads as the empty block list. -/
-  | nil : ReadsBlocks env [] []
-  /-- A pinned head block extends a pinned tail. -/
-  | cons {x y : FVar F} {u v : F} {bs vs} : x.eval env = .ok u →
-      y.eval env = .ok v → ReadsBlocks env bs vs →
-      ReadsBlocks env ((x, y) :: bs) ((u, v) :: vs)
+/-- The reading survives table extension. -/
+theorem ReadsAll.le [Field F] {env env' : Assignments F} (hle : env.Le env')
+    {xs : List (FVar F)} {vs : List F} (h : ReadsAll env xs vs) :
+    ReadsAll env' xs vs :=
+  List.Forall₂.imp (fun _ _ hx => CVar.eval_le hle hx) h
 
-/-- `ReadsBlocks` transports along table extension. -/
+/-- Evaluable inputs read as SOME value list — names the list the complete laws'
+`ReadsAll` hypotheses quantify over, for use inside a proof. -/
+theorem exists_readsAll [Field F] {env : Assignments F} :
+    ∀ {xs : List (FVar F)}, (∀ x ∈ xs, (x.eval env).isOk) → ∃ vs, ReadsAll env xs vs
+  | [], _ => ⟨[], .nil⟩
+  | x :: xs, h => by
+    obtain ⟨v, hv⟩ := CVar.evalOk (h x (by simp))
+    obtain ⟨vs, hvs⟩ := exists_readsAll (xs := xs) fun y hy => h y (by simp [hy])
+    exact ⟨v :: vs, .cons hv hvs⟩
+
+/-- The complete-side reading of a block list — `ReadsAll`'s shape, componentwise on
+the pairs. -/
+private def ReadsBlocks [Field F] (env : Assignments F)
+    (bs : List (FVar F × FVar F)) (vs : List (F × F)) : Prop :=
+  List.Forall₂ (fun (b : FVar F × FVar F) (v : F × F) =>
+    b.1.eval env = .ok v.1 ∧ b.2.eval env = .ok v.2) bs vs
+
+/-- The reading survives table extension. -/
 private theorem ReadsBlocks.le [Field F] {env env' : Assignments F}
     (hle : env.Le env') {bs : List (FVar F × FVar F)} {vs : List (F × F)}
-    (h : ReadsBlocks env bs vs) : ReadsBlocks env' bs vs := by
-  induction h with
-  | nil => exact .nil
-  | cons hx hy _ ih => exact .cons (CVar.eval_le hle hx) (CVar.eval_le hle hy) ih
+    (h : ReadsBlocks env bs vs) : ReadsBlocks env' bs vs :=
+  List.Forall₂.imp (fun _ _ hb => ⟨CVar.eval_le hle hb.1, CVar.eval_le hle hb.2⟩) h
 
 /-- Pinned inputs chunk to pinned blocks (the constant pads read as the value pads). -/
 private theorem readsBlocks_chunkVar [Field F] {env : Assignments F} :
@@ -244,19 +253,19 @@ private theorem readsBlocks_chunkVar [Field F] {env : Assignments F} :
   | [], _, h => by cases h; exact .nil
   | [x], _, h => by
     cases h with
-    | cons hx hrest => cases hrest; exact .cons hx rfl .nil
+    | cons hx hrest => cases hrest; exact .cons ⟨hx, rfl⟩ .nil
   | x :: y :: rest, _, h => by
     cases h with
     | cons hx h2 =>
       cases h2 with
-      | cons hy hrest => exact .cons hx hy (readsBlocks_chunkVar hrest)
+      | cons hy hrest => exact .cons ⟨hx, hy⟩ (readsBlocks_chunkVar hrest)
 
 /-- Pinned inputs decompose to pinned blocks. -/
 private theorem readsBlocks_toBlocksVar [Field F] {env : Assignments F}
     {xs : List (FVar F)} {vs : List F} (h : ReadsAll env xs vs) :
     ReadsBlocks env (toBlocksVar xs) (Poseidon.RandomOracle.toBlocks vs) := by
   cases h with
-  | nil => exact .cons rfl rfl .nil
+  | nil => exact .cons ⟨rfl, rfl⟩ .nil
   | @cons x v xs' vs' hx hrest =>
     show ReadsBlocks env (chunkVar (x :: xs'))
       (Poseidon.RandomOracle.chunk (v :: vs'))
@@ -352,7 +361,8 @@ private theorem foldBlocks_complete_spec [Field F] [DecidableEq F]
       injection h₁' with h₁'; injection h₂' with h₂'; injection h₃' with h₃'
       subst h₁' h₂' h₃'
       cases hr with
-      | cons hv₁ hv₂ hr' =>
+      | cons hv hr' =>
+        obtain ⟨hv₁, hv₂⟩ := hv
         rw [hb₁] at hv₁; rw [hb₂] at hv₂
         injection hv₁ with hv₁; injection hv₂ with hv₂
         subst hv₁ hv₂
