@@ -520,8 +520,9 @@ class LawfulCheckedType (F c val var : Type) [Add F] [Mul F]
     ⦃Q⦄
 
 open Std.Do in
-/-- The triple of a check-free `check`: a `pure` accepts anything. -/
-private theorem check_pure_complete {F c : Type} [Checker F c]
+/-- The triple of a check-free `check`: a `pure` accepts anything — the
+`LawfulCheckedType` witness of every constraint-free leaf encoder. -/
+theorem check_pure_complete {F c : Type} [Checker F c]
     {pre : Assignments F → Prop}
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete pre (fun _ _ _ => True) Q⦄

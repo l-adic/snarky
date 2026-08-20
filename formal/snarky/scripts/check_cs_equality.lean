@@ -180,10 +180,10 @@ def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
 
 /-- `poseidon_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.Poseidon.poseidon`
 at the step field's parameters; the PS `Vector 3` interface renders as the gadget's
-triples at the boundary). -/
+`SpongeState` at the boundary). -/
 def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3) := do
-  let (a, b, c) ← poseidon Poseidon.fpParams (s[0], s[1], s[2])
-  pure #v[a, b, c]
+  let r ← poseidon Poseidon.fpParams ⟨s[0], s[1], s[2]⟩
+  pure #v[r.s0, r.s1, r.s2]
 
 /-- The Vesta endomorphism's scalar eigenvalue at the step field (PS
 `endoScalar @Vesta.BaseField @Fp`; `Pasta.vestaLam`). -/

@@ -17,9 +17,9 @@ module's validation — it inherits the duplex automaton's fixture validation in
 carrying vectors of its own.
 
 Name map: `hash`/`update`/`digest`/`initialState` keep their names; PS's private
-`toBlocks`/`addBlock` are public here as the vocabulary the circuit-level laws quote,
-and its `sponge` helper (a fold parameterized by the permutation) is inlined into
-`update` at `blockCipher`.
+`toBlocks`/`addBlock` are public here, part of the module's op surface, and its
+`sponge` helper (a fold parameterized by the permutation) is inlined into `update` at
+`blockCipher`.
 
 Deviations from the PS original:
 - PS's ambient `PoseidonField` class arrives as the explicit `p : Params F`.
@@ -34,7 +34,7 @@ namespace Poseidon.RandomOracle
 variable {F : Type*} [Field F]
 
 /-- The fresh block-hash state: all zeros (PS `initialState`). -/
-def initialState : F × F × F := (0, 0, 0)
+def initialState : Triple F := (0, 0, 0)
 
 /-- Chunk into rate-2 blocks, zero-padding an odd tail. Empty input is handled by
 `toBlocks`. -/
@@ -50,15 +50,15 @@ def toBlocks : List F → List (F × F)
   | xs => chunk xs
 
 /-- Add a block into the rate slots (PS `addBlock`). -/
-def addBlock (st : F × F × F) (b : F × F) : F × F × F :=
+def addBlock (st : Triple F) (b : F × F) : Triple F :=
   (st.1 + b.1, st.2.1 + b.2, st.2.2)
 
 /-- Fold blocks into the state (PS `update`): add each block, permute after each. -/
-def update (p : Params F) (st : F × F × F) (xs : List F) : F × F × F :=
+def update (p : Params F) (st : Triple F) (xs : List F) : Triple F :=
   (toBlocks xs).foldl (fun s b => blockCipher p (addBlock s b)) st
 
 /-- Read the digest from slot 0 (PS `digest`). -/
-def digest (st : F × F × F) : F := st.1
+def digest (st : Triple F) : F := st.1
 
 /-- The block-mode hash (PS `hash`): update the fresh state, read slot 0. -/
 def hash (p : Params F) (xs : List F) : F :=
@@ -70,7 +70,7 @@ def hash (p : Params F) (xs : List F) : F :=
 the permuted state: the pending permutation this side runs lazily is the one the block
 side has already run. -/
 private theorem absorbed_two_eq (p : Params F) :
-    ∀ (xs : List F) (st : F × F × F),
+    ∀ (xs : List F) (st : Triple F),
       (Poseidon.squeeze p (Poseidon.absorb p ⟨st, .absorbed 2⟩ xs)).1
         = ((chunk xs).foldl (fun s b => blockCipher p (addBlock s b))
             (blockCipher p st)).1
@@ -88,7 +88,7 @@ private theorem absorbed_two_eq (p : Params F) :
 permutation is pending, so the first block is added before any permutation on either
 side. -/
 private theorem absorbed_zero_eq (p : Params F) :
-    ∀ (xs : List F) (st : F × F × F),
+    ∀ (xs : List F) (st : Triple F),
       (Poseidon.squeeze p (Poseidon.absorb p ⟨st, .absorbed 0⟩ xs)).1
         = ((toBlocks xs).foldl (fun s b => blockCipher p (addBlock s b)) st).1
   | [], st => by

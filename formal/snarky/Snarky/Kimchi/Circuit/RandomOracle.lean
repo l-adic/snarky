@@ -17,11 +17,13 @@ nothing else.
 
 Name map: `update`/`hash2`/`hashVec` keep their names; PS `initialState` stays private
 as `initState` (PS does not export it); the private helpers mirror the value module's
-`toBlocks`/`chunk`/`addBlock`.
+`toBlocks`/`chunk`/`addBlock`. The state is the gadget's `SpongeState`, blocks are
+pairs, and the laws quote the generic reading vocabulary (`readVal`, `Snarky.Reads`,
+`Snarky.ReadsAll`).
 
 Deviations from the PS original:
 - PS's ambient `PoseidonField` class arrives as the explicit `p : Poseidon.Params F`.
-- PS's width-3 / width-2 `Vector`s render as the triple and the pair; PS `Array`
+- PS's width-3 / width-2 `Vector`s render as `SpongeState` and the pair; PS `Array`
   inputs render as `List`.
 - The `Digest` newtype with its `CircuitType`/`CheckedType`/`AssertEqual` instances,
   and the `Hashable`/`HashInput` classes with `hashOf`, are not ported: they are PS
@@ -41,8 +43,8 @@ variable {F c : Type}
 namespace RandomOracle
 
 /-- The fresh state (PS `initialState`, unexported there): constant-zero cells. -/
-private def initState [Zero F] : FVar F × FVar F × FVar F :=
-  (.const 0, .const 0, .const 0)
+private def initState [Zero F] : SpongeState F :=
+  ⟨.const 0, .const 0, .const 0⟩
 
 /-- Rate-2 chunks with a constant-zero odd-tail pad — `Poseidon.RandomOracle.chunk`
 over circuit variables. -/
@@ -59,74 +61,77 @@ private def toBlocksVar [Zero F] : List (FVar F) → List (FVar F × FVar F)
 
 /-- Add a block into the rate slots (PS `addBlock`): bare `add_` sums, no seal, no
 constraints. -/
-private def addBlockVar [Add F] (st : FVar F × FVar F × FVar F) (b : FVar F × FVar F) :
-    FVar F × FVar F × FVar F :=
-  (CVar.add_ st.1 b.1, CVar.add_ st.2.1 b.2, st.2.2)
+private def addBlockVar [Add F] (st : SpongeState F) (b : FVar F × FVar F) :
+    SpongeState F :=
+  ⟨CVar.add_ st.s0 b.1, CVar.add_ st.s1 b.2, st.s2⟩
 
 /-- Absorb one block (PS `updateBlock`): add into the rate slots, permute. -/
 private def updateBlock [Field F] [KimchiSystem F c]
-    (p : Poseidon.Params F) (st : FVar F × FVar F × FVar F) (b : FVar F × FVar F) :
-    CircuitM F c (FVar F × FVar F × FVar F) :=
+    (p : Poseidon.Params F) (st : SpongeState F) (b : FVar F × FVar F) :
+    CircuitM F c (SpongeState F) :=
   poseidon p (addBlockVar st b)
 
 /-- Fold the input into the state block by block (PS `update`). -/
 def update [Field F] [KimchiSystem F c] (p : Poseidon.Params F)
-    (st : FVar F × FVar F × FVar F) (xs : List (FVar F)) :
-    CircuitM F c (FVar F × FVar F × FVar F) :=
+    (st : SpongeState F) (xs : List (FVar F)) :
+    CircuitM F c (SpongeState F) :=
   (toBlocksVar xs).foldlM (updateBlock p) st
 
 /-- Hash exactly two elements (PS `hash2`): one block, one permutation. -/
 def hash2 [Field F] [KimchiSystem F c] (p : Poseidon.Params F) (a b : FVar F) :
     CircuitM F c (FVar F) := do
   let st ← updateBlock p initState (a, b)
-  pure st.1
+  pure st.s0
 
 /-- Hash a list of elements (PS `hashVec`): update the fresh state, read slot 0. -/
 def hashVec [Field F] [KimchiSystem F c] (p : Poseidon.Params F)
     (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let st ← update p initState xs
-  pure st.1
+  pure st.s0
 
 /-! ## The laws
 
 Each op reads as its `Poseidon.RandomOracle` value counterpart: `update` as the block
 fold, `hash2`/`hashVec` as `hash`. The block fold is walked once, generalized over the
 block list; the public laws instantiate it at the chunking, bridged by the pure
-chunk-alignment lemmas. -/
+chunk-alignment lemmas. Input lists are read by the generic `Snarky.ReadsAll` — at
+the base instance for the inputs, at the pair instance for the blocks. -/
 
 open Std.Do
 
 /-- The circuit chunking reads as the value chunking. -/
 private theorem chunkVar_map_val [Field F] (V : Valuation F) :
     ∀ xs : List (FVar F),
-      (chunkVar xs).map (fun b => (b.1.val V, b.2.val V))
+      (chunkVar xs).map (readVal V)
         = Poseidon.RandomOracle.chunk (xs.map (fun x => x.val V))
   | [] => rfl
-  | [_] => rfl
+  | [x] => by
+    simp [chunkVar, Poseidon.RandomOracle.chunk, readVal_prod, readVal_fvar,
+      CVar.val]
   | x :: y :: rest => by
     simp only [chunkVar, Poseidon.RandomOracle.chunk, List.map_cons,
-      chunkVar_map_val V rest]
+      chunkVar_map_val V rest, readVal_prod, readVal_fvar]
 
 /-- The circuit block decomposition reads as the value block decomposition. -/
 private theorem toBlocksVar_map_val [Field F] (V : Valuation F) :
     ∀ xs : List (FVar F),
-      (toBlocksVar xs).map (fun b => (b.1.val V, b.2.val V))
+      (toBlocksVar xs).map (readVal V)
         = Poseidon.RandomOracle.toBlocks (xs.map (fun x => x.val V))
-  | [] => rfl
+  | [] => by
+    simp [toBlocksVar, Poseidon.RandomOracle.toBlocks, readVal_prod, readVal_fvar,
+      CVar.val]
   | [x] => chunkVar_map_val V [x]
   | x :: y :: rest => chunkVar_map_val V (x :: y :: rest)
 
-/-- `updateBlock` is sound: the output cells read as one value block step —
-`blockCipher` of `addBlock` at the cell readings. -/
+/-- `updateBlock` is sound: the output state reads as one value block step —
+`blockCipher` of `addBlock` at the state and block readings. -/
 @[spec] private theorem updateBlock_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = 5 * 11)
-    (st : FVar F × FVar F × FVar F) (b : FVar F × FVar F)
-    (Q : PostCond (FVar F × FVar F × FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × FVar F × FVar F) =>
-        (r.1.val V, r.2.1.val V, r.2.2.val V)
-          = Poseidon.blockCipher p
-              (Poseidon.RandomOracle.addBlock
-                (st.1.val V, st.2.1.val V, st.2.2.val V) (b.1.val V, b.2.val V))) Q⦄
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (st : SpongeState F) (b : FVar F × FVar F)
+    (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : SpongeState F) =>
+        readVal V r = Poseidon.blockCipher p
+          (Poseidon.RandomOracle.addBlock (readVal V st) (readVal V b))) Q⦄
     (updateBlock (c := KimchiConstraint F) p st b)
     ⦃Q⦄ := by
   simp only [updateBlock]
@@ -135,61 +140,55 @@ private theorem toBlocksVar_map_val [Field F] (V : Valuation F) :
   intro r nv hpos
   refine hpre _ _ ?_
   exact hpos.trans (by
-    simp [addBlockVar, Poseidon.RandomOracle.addBlock, CVar.val_add_])
+    simp [addBlockVar, readVal_spongeState, readVal_prod, readVal_fvar,
+      Poseidon.RandomOracle.addBlock, CVar.val_add_])
 
-/-- `updateBlock` is complete: the honest run accepts on readable cells and block, and
-the output cells read back as the value block step. -/
+/-- `updateBlock` is complete: the honest run accepts on a readable state and block,
+and the output state reads back as the value block step. -/
 @[spec] private theorem updateBlock_complete_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = 5 * 11)
-    (st : FVar F × FVar F × FVar F) (b : FVar F × FVar F)
-    (Q : PostCond (FVar F × FVar F × FVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (st : SpongeState F) (b : FVar F × FVar F)
+    (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
-        (fun env => (st.1.eval env).isOk ∧ (st.2.1.eval env).isOk ∧
-          (st.2.2.eval env).isOk ∧ (b.1.eval env).isOk ∧ (b.2.eval env).isOk)
-        (fun env (r : FVar F × FVar F × FVar F) env' =>
-          ∀ a₁ a₂ a₃ v₁ v₂, st.1.eval env = .ok a₁ → st.2.1.eval env = .ok a₂ →
-            st.2.2.eval env = .ok a₃ → b.1.eval env = .ok v₁ → b.2.eval env = .ok v₂ →
-            r.1.eval env' = .ok (Poseidon.blockCipher p
-              (Poseidon.RandomOracle.addBlock (a₁, a₂, a₃) (v₁, v₂))).1 ∧
-            r.2.1.eval env' = .ok (Poseidon.blockCipher p
-              (Poseidon.RandomOracle.addBlock (a₁, a₂, a₃) (v₁, v₂))).2.1 ∧
-            r.2.2.eval env' = .ok (Poseidon.blockCipher p
-              (Poseidon.RandomOracle.addBlock (a₁, a₂, a₃) (v₁, v₂))).2.2)
+        (fun env => Readable (Poseidon.Triple F) env st ∧ Readable (F × F) env b)
+        (fun env (r : SpongeState F) env' =>
+          ∀ sv bv, Snarky.Reads env st sv → Snarky.Reads env b bv →
+            Snarky.Reads env' r (Poseidon.blockCipher p
+              (Poseidon.RandomOracle.addBlock sv bv)))
         Q⦄
     (updateBlock (c := KimchiProverC F) p st b)
     ⦃Q⦄ := by
   simp only [updateBlock]
   intro s hpre
-  obtain ⟨⟨h₁, h₂, h₃, h₄, h₅⟩, hk⟩ := hpre
-  obtain ⟨a₁, h₁⟩ := CVar.evalOk h₁
-  obtain ⟨a₂, h₂⟩ := CVar.evalOk h₂
-  obtain ⟨a₃, h₃⟩ := CVar.evalOk h₃
-  obtain ⟨v₁, h₄⟩ := CVar.evalOk h₄
-  obtain ⟨v₂, h₅⟩ := CVar.evalOk h₅
+  obtain ⟨⟨hstok, hbok⟩, hk⟩ := hpre
+  obtain ⟨sv0, hsv0⟩ := exists_reads hstok
+  obtain ⟨bv0, hbv0⟩ := exists_reads hbok
+  have hs := reads_spongeState_iff.mp hsv0
+  have hb := reads_prod_iff.mp hbv0
+  have hb1 := reads_fvar_iff.mp hb.1
+  have hb2 := reads_fvar_iff.mp hb.2
+  have hadd : Snarky.Reads s.env (addBlockVar st b)
+      (Poseidon.RandomOracle.addBlock sv0 bv0) :=
+    reads_spongeState_iff.mpr
+      ⟨CVar.eval_add_ hs.1 hb1, CVar.eval_add_ hs.2.1 hb2, hs.2.2⟩
   refine Poseidon.poseidon_complete_spec p hsize _ Q s
-    ⟨⟨isOk_of_eq (CVar.eval_add_ h₁ h₄), isOk_of_eq (CVar.eval_add_ h₂ h₅),
-      isOk_of_eq h₃⟩, fun r st₁ hpos hle => ?_⟩
-  have hpos := hpos _ _ _ (CVar.eval_add_ h₁ h₄) (CVar.eval_add_ h₂ h₅) h₃
-  refine hk _ _ (fun a₁' a₂' a₃' v₁' v₂' h₁' h₂' h₃' h₄' h₅' => ?_) hle
-  rw [h₁] at h₁'; rw [h₂] at h₂'; rw [h₃] at h₃'; rw [h₄] at h₄'; rw [h₅] at h₅'
-  injection h₁' with h₁'; injection h₂' with h₂'; injection h₃' with h₃'
-  injection h₄' with h₄'; injection h₅' with h₅'
-  subst h₁' h₂' h₃' h₄' h₅'
+    ⟨Snarky.Reads.readable hadd, fun r st₁ hpos hle => ?_⟩
+  have hpos := hpos _ hadd
+  refine hk _ _ (fun sv bv hst hbv => ?_) hle
+  obtain rfl := Snarky.Reads.unique hsv0 hst
+  obtain rfl := Snarky.Reads.unique hbv0 hbv
   exact hpos
 
-/-- The block fold is sound, generalized over the block list: the output cells read as
-the value fold of the block readings. -/
+/-- The block fold is sound, generalized over the block list: the output state reads
+as the value fold of the block readings. -/
 private theorem foldBlocks_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = 5 * 11) :
-    ∀ (bs : List (FVar F × FVar F)) (st : FVar F × FVar F × FVar F)
-      (Q : PostCond (FVar F × FVar F × FVar F) (.arg (BuilderState F) .pure)),
-      ⦃Sound (fun V (r : FVar F × FVar F × FVar F) =>
-          (r.1.val V, r.2.1.val V, r.2.2.val V)
-            = (bs.map fun b => (b.1.val V, b.2.val V)).foldl
-                (fun s b =>
-                  Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-                (st.1.val V, st.2.1.val V, st.2.2.val V)) Q⦄
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) :
+    ∀ (bs : List (FVar F × FVar F)) (st : SpongeState F)
+      (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)),
+      ⦃Sound (fun V (r : SpongeState F) =>
+          readVal V r = (bs.map (readVal V)).foldl
+            (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
+            (readVal V st)) Q⦄
       (bs.foldlM (updateBlock (c := KimchiConstraint F) p) st)
       ⦃Q⦄
   | [], st, Q => by
@@ -210,118 +209,79 @@ private theorem foldBlocks_spec [Field F] [DecidableEq F]
     simp only [List.map_cons, List.foldl_cons, ← h₁]
     exact h₂
 
-/-- The complete-side reading of an input list — element-wise pinned evaluations, in
-the order given, as `List.Forall₂`. The vocabulary of
-`update_complete_spec`/`hashVec_complete_spec`. -/
-def ReadsAll [Field F] (env : Assignments F) (xs : List (FVar F)) (vs : List F) :
-    Prop :=
-  List.Forall₂ (fun (x : FVar F) v => x.eval env = .ok v) xs vs
-
-/-- The reading survives table extension. -/
-theorem ReadsAll.le [Field F] {env env' : Assignments F} (hle : env.Le env')
-    {xs : List (FVar F)} {vs : List F} (h : ReadsAll env xs vs) :
-    ReadsAll env' xs vs :=
-  List.Forall₂.imp (fun _ _ hx => CVar.eval_le hle hx) h
-
-/-- Evaluable inputs read as SOME value list — names the list the complete laws'
-`ReadsAll` hypotheses quantify over, for use inside a proof. -/
-theorem exists_readsAll [Field F] {env : Assignments F} :
-    ∀ {xs : List (FVar F)}, (∀ x ∈ xs, (x.eval env).isOk) → ∃ vs, ReadsAll env xs vs
-  | [], _ => ⟨[], .nil⟩
-  | x :: xs, h => by
-    obtain ⟨v, hv⟩ := CVar.evalOk (h x (by simp))
-    obtain ⟨vs, hvs⟩ := exists_readsAll (xs := xs) fun y hy => h y (by simp [hy])
-    exact ⟨v :: vs, .cons hv hvs⟩
-
-/-- The complete-side reading of a block list — `ReadsAll`'s shape, componentwise on
-the pairs. -/
-private def ReadsBlocks [Field F] (env : Assignments F)
-    (bs : List (FVar F × FVar F)) (vs : List (F × F)) : Prop :=
-  List.Forall₂ (fun (b : FVar F × FVar F) (v : F × F) =>
-    b.1.eval env = .ok v.1 ∧ b.2.eval env = .ok v.2) bs vs
-
-/-- The reading survives table extension. -/
-private theorem ReadsBlocks.le [Field F] {env env' : Assignments F}
-    (hle : env.Le env') {bs : List (FVar F × FVar F)} {vs : List (F × F)}
-    (h : ReadsBlocks env bs vs) : ReadsBlocks env' bs vs :=
-  List.Forall₂.imp (fun _ _ hb => ⟨CVar.eval_le hle hb.1, CVar.eval_le hle hb.2⟩) h
-
 /-- Pinned inputs chunk to pinned blocks (the constant pads read as the value pads). -/
-private theorem readsBlocks_chunkVar [Field F] {env : Assignments F} :
+private theorem readsAll_chunkVar [Field F] {env : Assignments F} :
     ∀ {xs : List (FVar F)} {vs : List F}, ReadsAll env xs vs →
-      ReadsBlocks env (chunkVar xs) (Poseidon.RandomOracle.chunk vs)
+      ReadsAll env (chunkVar xs) (Poseidon.RandomOracle.chunk vs)
   | [], _, h => by cases h; exact .nil
   | [x], _, h => by
     cases h with
-    | cons hx hrest => cases hrest; exact .cons ⟨hx, rfl⟩ .nil
+    | cons hx hrest =>
+      cases hrest
+      exact .cons (reads_prod_iff.mpr ⟨hx, reads_fvar_iff.mpr rfl⟩) .nil
   | x :: y :: rest, _, h => by
     cases h with
     | cons hx h2 =>
       cases h2 with
-      | cons hy hrest => exact .cons ⟨hx, hy⟩ (readsBlocks_chunkVar hrest)
+      | cons hy hrest =>
+        exact .cons (reads_prod_iff.mpr ⟨hx, hy⟩) (readsAll_chunkVar hrest)
 
 /-- Pinned inputs decompose to pinned blocks. -/
-private theorem readsBlocks_toBlocksVar [Field F] {env : Assignments F}
+private theorem readsAll_toBlocksVar [Field F] {env : Assignments F}
     {xs : List (FVar F)} {vs : List F} (h : ReadsAll env xs vs) :
-    ReadsBlocks env (toBlocksVar xs) (Poseidon.RandomOracle.toBlocks vs) := by
+    ReadsAll env (toBlocksVar xs) (Poseidon.RandomOracle.toBlocks vs) := by
   cases h with
-  | nil => exact .cons ⟨rfl, rfl⟩ .nil
+  | nil =>
+    exact .cons (reads_prod_iff.mpr
+      ⟨reads_fvar_iff.mpr rfl, reads_fvar_iff.mpr rfl⟩) .nil
   | @cons x v xs' vs' hx hrest =>
-    show ReadsBlocks env (chunkVar (x :: xs'))
+    show ReadsAll env (chunkVar (x :: xs'))
       (Poseidon.RandomOracle.chunk (v :: vs'))
-    exact readsBlocks_chunkVar (.cons hx hrest)
+    exact readsAll_chunkVar (.cons hx hrest)
 
-/-- Evaluable inputs chunk to evaluable blocks. -/
-private theorem chunkVar_ok [Field F] {env : Assignments F} :
+/-- Evaluable inputs chunk to readable blocks. -/
+private theorem chunkVar_readable [Field F] {env : Assignments F} :
     ∀ xs : List (FVar F), (∀ x ∈ xs, (x.eval env).isOk) →
-      ∀ b ∈ chunkVar xs, (b.1.eval env).isOk ∧ (b.2.eval env).isOk
+      ∀ b ∈ chunkVar xs, Readable (F × F) env b
   | [], _ => by simp [chunkVar]
   | [x], h => by
     simp only [chunkVar, List.mem_singleton, forall_eq]
-    exact ⟨h x (by simp), isOk_of_eq rfl⟩
+    exact readable_prod_iff.mpr
+      ⟨readable_fvar_iff.mpr (h x (by simp)), readable_fvar_iff.mpr (by rfl)⟩
   | x :: y :: rest, h => by
     simp only [chunkVar, List.mem_cons, forall_eq_or_imp]
-    refine ⟨⟨h x (by simp), h y (by simp)⟩, ?_⟩
+    refine ⟨readable_prod_iff.mpr
+      ⟨readable_fvar_iff.mpr (h x (by simp)),
+        readable_fvar_iff.mpr (h y (by simp))⟩, ?_⟩
     exact fun b hb =>
-      chunkVar_ok rest (fun z hz => h z (by simp [hz])) b hb
+      chunkVar_readable rest (fun z hz => h z (by simp [hz])) b hb
 
-/-- Evaluable inputs decompose to evaluable blocks. -/
-private theorem toBlocksVar_ok [Field F] {env : Assignments F} :
+/-- Evaluable inputs decompose to readable blocks. -/
+private theorem toBlocksVar_readable [Field F] {env : Assignments F} :
     ∀ xs : List (FVar F), (∀ x ∈ xs, (x.eval env).isOk) →
-      ∀ b ∈ toBlocksVar xs, (b.1.eval env).isOk ∧ (b.2.eval env).isOk
+      ∀ b ∈ toBlocksVar xs, Readable (F × F) env b
   | [], _ => by
     simp only [toBlocksVar, List.mem_singleton, forall_eq]
-    exact ⟨isOk_of_eq rfl, isOk_of_eq rfl⟩
-  | [x], h => chunkVar_ok [x] h
-  | x :: y :: rest, h => chunkVar_ok (x :: y :: rest) h
+    exact readable_prod_iff.mpr
+      ⟨readable_fvar_iff.mpr (by rfl), readable_fvar_iff.mpr (by rfl)⟩
+  | [x], h => chunkVar_readable [x] h
+  | x :: y :: rest, h => chunkVar_readable (x :: y :: rest) h
 
 /-- The block fold is complete, generalized over the block list: the honest run
-accepts on readable cells and blocks, and the output cells read back as the value
+accepts on a readable state and blocks, and the output state reads back as the value
 fold. -/
 private theorem foldBlocks_complete_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = 5 * 11) :
-    ∀ (bs : List (FVar F × FVar F)) (st : FVar F × FVar F × FVar F)
-      (Q : PostCond (FVar F × FVar F × FVar F)
-        (.arg (ProverState F) (.except EvalError .pure))),
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) :
+    ∀ (bs : List (FVar F × FVar F)) (st : SpongeState F)
+      (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))),
       ⦃Complete
-          (fun env => ((st.1.eval env).isOk ∧ (st.2.1.eval env).isOk ∧
-            (st.2.2.eval env).isOk) ∧
-            ∀ b ∈ bs, (b.1.eval env).isOk ∧ (b.2.eval env).isOk)
-          (fun env (r : FVar F × FVar F × FVar F) env' =>
-            ∀ a₁ a₂ a₃ vs, st.1.eval env = .ok a₁ → st.2.1.eval env = .ok a₂ →
-              st.2.2.eval env = .ok a₃ → ReadsBlocks env bs vs →
-              r.1.eval env' = .ok (vs.foldl
+          (fun env => Readable (Poseidon.Triple F) env st ∧
+            ∀ b ∈ bs, Readable (F × F) env b)
+          (fun env (r : SpongeState F) env' =>
+            ∀ sv vs, Snarky.Reads env st sv → ReadsAll env bs vs →
+              Snarky.Reads env' r (vs.foldl
                 (fun s b =>
-                  Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-                (a₁, a₂, a₃)).1 ∧
-              r.2.1.eval env' = .ok (vs.foldl
-                (fun s b =>
-                  Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-                (a₁, a₂, a₃)).2.1 ∧
-              r.2.2.eval env' = .ok (vs.foldl
-                (fun s b =>
-                  Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-                (a₁, a₂, a₃)).2.2)
+                  Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b)) sv))
           Q⦄
       (bs.foldlM (updateBlock (c := KimchiProverC F) p) st)
       ⦃Q⦄
@@ -329,57 +289,43 @@ private theorem foldBlocks_complete_spec [Field F] [DecidableEq F]
     simp only [List.foldlM_nil]
     mvcgen
     rename_i s hpre
-    obtain ⟨⟨hcells, _⟩, hk⟩ := hpre
-    refine hk _ s (fun a₁ a₂ a₃ vs h₁ h₂ h₃ hr => ?_) (Assignments.Le.refl _)
+    obtain ⟨⟨hstok, _⟩, hk⟩ := hpre
+    refine hk _ s (fun sv vs hst hr => ?_) (Assignments.Le.refl _)
     cases hr
-    exact ⟨h₁, h₂, h₃⟩
+    exact hst
   | b :: bs, st, Q => by
     simp only [List.foldlM_cons]
     have ih := foldBlocks_complete_spec p hsize bs
     intro s hpre
-    obtain ⟨⟨⟨h₁, h₂, h₃⟩, hblocks⟩, hk⟩ := hpre
-    obtain ⟨a₁, h₁⟩ := CVar.evalOk h₁
-    obtain ⟨a₂, h₂⟩ := CVar.evalOk h₂
-    obtain ⟨a₃, h₃⟩ := CVar.evalOk h₃
-    obtain ⟨hb₁, hb₂⟩ := hblocks b (by simp)
-    obtain ⟨v₁, hb₁⟩ := CVar.evalOk hb₁
-    obtain ⟨v₂, hb₂⟩ := CVar.evalOk hb₂
+    obtain ⟨⟨hstok, hblocks⟩, hk⟩ := hpre
+    have hbok := hblocks b (by simp)
+    obtain ⟨sv0, hsv0⟩ := exists_reads hstok
+    obtain ⟨bv0, hbv0⟩ := exists_reads hbok
     simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
     refine updateBlock_complete_spec p hsize st b _ s
-      ⟨⟨isOk_of_eq h₁, isOk_of_eq h₂, isOk_of_eq h₃, isOk_of_eq hb₁,
-        isOk_of_eq hb₂⟩, fun r₁ st₁ hout hle₁ => ?_⟩
-    have houtv := hout _ _ _ _ _ h₁ h₂ h₃ hb₁ hb₂
+      ⟨⟨hstok, hbok⟩, fun r₁ st₁ hout hle₁ => ?_⟩
+    have houtv := hout _ _ hsv0 hbv0
     refine ih r₁ _ st₁
-      ⟨⟨⟨isOk_of_eq houtv.1, isOk_of_eq houtv.2.1, isOk_of_eq houtv.2.2⟩,
-        fun b' hb' => ?_⟩, fun r₂ st₂ hrest hle₂ => ?_⟩
-    · obtain ⟨hx, hy⟩ := hblocks b' (by simp [hb'])
-      obtain ⟨x, hx⟩ := CVar.evalOk hx
-      obtain ⟨y, hy⟩ := CVar.evalOk hy
-      exact ⟨isOk_of_eq (CVar.eval_le hle₁ hx), isOk_of_eq (CVar.eval_le hle₁ hy)⟩
-    · refine hk _ _ (fun a₁' a₂' a₃' vs h₁' h₂' h₃' hr => ?_) (hle₁.trans hle₂)
-      rw [h₁] at h₁'; rw [h₂] at h₂'; rw [h₃] at h₃'
-      injection h₁' with h₁'; injection h₂' with h₂'; injection h₃' with h₃'
-      subst h₁' h₂' h₃'
-      cases hr with
-      | cons hv hr' =>
-        obtain ⟨hv₁, hv₂⟩ := hv
-        rw [hb₁] at hv₁; rw [hb₂] at hv₂
-        injection hv₁ with hv₁; injection hv₂ with hv₂
-        subst hv₁ hv₂
-        simp only [List.foldl_cons]
-        exact hrest _ _ _ _ houtv.1 houtv.2.1 houtv.2.2 (ReadsBlocks.le hle₁ hr')
+      ⟨⟨Snarky.Reads.readable houtv,
+        fun b' hb' => Readable.le hle₁ (hblocks b' (by simp [hb']))⟩,
+      fun r₂ st₂ hrest hle₂ => ?_⟩
+    refine hk _ _ (fun sv vs hst hr => ?_) (hle₁.trans hle₂)
+    obtain rfl := Snarky.Reads.unique hsv0 hst
+    cases hr with
+    | cons hv hr' =>
+      obtain rfl := Snarky.Reads.unique hbv0 hv
+      simp only [List.foldl_cons]
+      exact hrest _ _ houtv (ReadsAll.le hle₁ hr')
 
-/-- `update` is sound: the output cells read as `Poseidon.RandomOracle.update` of the
-cell and input readings. -/
+/-- `update` is sound: the output state reads as `Poseidon.RandomOracle.update` of the
+state and input readings. -/
 @[spec] theorem update_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = 5 * 11) (st : FVar F × FVar F × FVar F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
     (xs : List (FVar F))
-    (Q : PostCond (FVar F × FVar F × FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × FVar F × FVar F) =>
-        (r.1.val V, r.2.1.val V, r.2.2.val V)
-          = Poseidon.RandomOracle.update p
-              (st.1.val V, st.2.1.val V, st.2.2.val V)
-              (xs.map (fun x => x.val V))) Q⦄
+    (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : SpongeState F) =>
+        readVal V r = Poseidon.RandomOracle.update p (readVal V st)
+          (xs.map (fun x => x.val V))) Q⦄
     (update (c := KimchiConstraint F) p st xs)
     ⦃Q⦄ := by
   simp only [update]
@@ -391,39 +337,39 @@ cell and input readings. -/
   rw [← toBlocksVar_map_val]
   exact h
 
-/-- `update` is complete: the honest run accepts on readable cells and inputs, and the
-output cells read back as `Poseidon.RandomOracle.update` of the values. -/
+/-- `update` is complete: the honest run accepts on a readable state and evaluable
+inputs, and the output state reads back as `Poseidon.RandomOracle.update` of the
+values. -/
 @[spec] theorem update_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = 5 * 11) (st : FVar F × FVar F × FVar F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
     (xs : List (FVar F))
-    (Q : PostCond (FVar F × FVar F × FVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
+    (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
-        (fun env => ((st.1.eval env).isOk ∧ (st.2.1.eval env).isOk ∧
-          (st.2.2.eval env).isOk) ∧ ∀ x ∈ xs, (x.eval env).isOk)
-        (fun env (r : FVar F × FVar F × FVar F) env' =>
-          ∀ a₁ a₂ a₃ vs, st.1.eval env = .ok a₁ → st.2.1.eval env = .ok a₂ →
-            st.2.2.eval env = .ok a₃ → ReadsAll env xs vs →
-            r.1.eval env' = .ok (Poseidon.RandomOracle.update p (a₁, a₂, a₃) vs).1 ∧
-            r.2.1.eval env'
-              = .ok (Poseidon.RandomOracle.update p (a₁, a₂, a₃) vs).2.1 ∧
-            r.2.2.eval env'
-              = .ok (Poseidon.RandomOracle.update p (a₁, a₂, a₃) vs).2.2)
+        (fun env => Readable (Poseidon.Triple F) env st ∧
+          ∀ x ∈ xs, (x.eval env).isOk)
+        (fun env (r : SpongeState F) env' =>
+          ∀ sv vs, Snarky.Reads env st sv → ReadsAll env xs vs →
+            Snarky.Reads env' r (Poseidon.RandomOracle.update p sv vs))
         Q⦄
     (update (c := KimchiProverC F) p st xs)
     ⦃Q⦄ := by
   simp only [update]
   intro s hpre
-  obtain ⟨⟨hcells, hxs⟩, hk⟩ := hpre
+  obtain ⟨⟨hstok, hxs⟩, hk⟩ := hpre
   refine foldBlocks_complete_spec p hsize (toBlocksVar xs) st _ s
-    ⟨⟨hcells, toBlocksVar_ok xs hxs⟩, fun r st' hout hle => ?_⟩
-  refine hk _ _ (fun a₁ a₂ a₃ vs h₁ h₂ h₃ hr => ?_) hle
-  exact hout a₁ a₂ a₃ (Poseidon.RandomOracle.toBlocks vs) h₁ h₂ h₃
-    (readsBlocks_toBlocksVar hr)
+    ⟨⟨hstok, toBlocksVar_readable xs hxs⟩, fun r st' hout hle => ?_⟩
+  refine hk _ _ (fun sv vs hst hr => ?_) hle
+  exact hout sv (Poseidon.RandomOracle.toBlocks vs) hst (readsAll_toBlocksVar hr)
+
+/-- The fresh state reads as the value module's fresh state, on any table. -/
+private theorem reads_initState [Field F] (env : Assignments F) :
+    Snarky.Reads env (initState (F := F))
+      (Poseidon.RandomOracle.initialState (F := F)) :=
+  reads_spongeState_iff.mpr ⟨rfl, rfl, rfl⟩
 
 /-- `hash2` is sound: the digest reads as the value `hash` of the two readings. -/
 @[spec] theorem hash2_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = 5 * 11) (a b : FVar F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (a b : FVar F)
     (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : FVar F) =>
         r.val V = Poseidon.RandomOracle.hash p [a.val V, b.val V]) Q⦄
@@ -436,16 +382,17 @@ output cells read back as `Poseidon.RandomOracle.update` of the values. -/
   intro r nv h
   mvcgen
   refine hpre _ _ ?_
+  simp only [readVal_spongeState, readVal_prod, readVal_fvar] at h
   have h1 := congrArg Prod.fst h
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
     Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
     Poseidon.RandomOracle.digest, Poseidon.RandomOracle.initialState,
-    initState] using h1
+    initState, CVar.val] using h1
 
 /-- `hash2` is complete: the honest run accepts on readable operands, and the digest
 reads back as the value `hash` of their values. -/
 @[spec] theorem hash2_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = 5 * 11) (a b : FVar F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (a b : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
@@ -462,22 +409,26 @@ reads back as the value `hash` of their values. -/
   obtain ⟨⟨ha, hb⟩, hk⟩ := hpre
   obtain ⟨av, ha⟩ := CVar.evalOk ha
   obtain ⟨bv, hb⟩ := CVar.evalOk hb
-  refine ⟨⟨isOk_of_eq rfl, isOk_of_eq rfl, isOk_of_eq rfl, isOk_of_eq ha,
-    isOk_of_eq hb⟩, fun r₁ st₁ hout hle₁ => ?_⟩
-  have hout := hout _ _ _ _ _ rfl rfl rfl ha hb
+  refine ⟨⟨Snarky.Reads.readable (reads_initState s.env),
+    readable_prod_iff.mpr ⟨readable_fvar_iff.mpr (isOk_of_eq ha),
+      readable_fvar_iff.mpr (isOk_of_eq hb)⟩⟩, fun r₁ st₁ hout hle₁ => ?_⟩
+  have hab : Snarky.Reads s.env (a, b) ((av, bv) : F × F) :=
+    reads_prod_iff.mpr ⟨reads_fvar_iff.mpr ha, reads_fvar_iff.mpr hb⟩
+  have hout := hout _ _ (reads_initState s.env) hab
   simp only [wp, PredTrans.apply, prove]
   intro hf
   refine hk _ ⟨st₁.nv, st₁.env, hf⟩ (fun av' bv' ha' hb' => ?_) hle₁
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
   subst ha' hb'
+  have h0 := (reads_spongeState_iff.mp hout).1
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
     Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
-    Poseidon.RandomOracle.digest, Poseidon.RandomOracle.initialState] using hout.1
+    Poseidon.RandomOracle.digest] using h0
 
 /-- `hashVec` is sound: the digest reads as the value `hash` of the input readings. -/
 @[spec] theorem hashVec_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = 5 * 11) (xs : List (FVar F))
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (xs : List (FVar F))
     (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : FVar F) =>
         r.val V = Poseidon.RandomOracle.hash p (xs.map (fun x => x.val V))) Q⦄
@@ -490,14 +441,15 @@ reads back as the value `hash` of their values. -/
   intro r nv h
   mvcgen
   refine hpre _ _ ?_
+  simp only [readVal_spongeState] at h
   have h1 := congrArg Prod.fst h
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest,
-    Poseidon.RandomOracle.initialState, initState] using h1
+    Poseidon.RandomOracle.initialState, initState, CVar.val] using h1
 
-/-- `hashVec` is complete: the honest run accepts on readable inputs, and the digest
+/-- `hashVec` is complete: the honest run accepts on evaluable inputs, and the digest
 reads back as the value `hash` of their values. -/
 @[spec] theorem hashVec_complete_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = 5 * 11)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (xs : List (FVar F))
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
@@ -512,14 +464,14 @@ reads back as the value `hash` of their values. -/
   mvcgen [u]
   rename_i s hpre
   obtain ⟨hxs, hk⟩ := hpre
-  refine ⟨⟨⟨isOk_of_eq rfl, isOk_of_eq rfl, isOk_of_eq rfl⟩, hxs⟩,
+  refine ⟨⟨Snarky.Reads.readable (reads_initState s.env), hxs⟩,
     fun r₁ st₁ hout hle₁ => ?_⟩
   simp only [wp, PredTrans.apply, prove]
   intro hf
   refine hk _ ⟨st₁.nv, st₁.env, hf⟩ (fun vs hr => ?_) hle₁
-  have hout := hout 0 0 0 vs rfl rfl rfl hr
-  simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest,
-    Poseidon.RandomOracle.initialState] using hout.1
+  have hout := hout _ vs (reads_initState s.env) hr
+  have h0 := (reads_spongeState_iff.mp hout).1
+  simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest] using h0
 
 end RandomOracle
 

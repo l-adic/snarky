@@ -44,7 +44,11 @@ variable {F : Type*} [Field F]
 /-! ## The permutation -/
 
 /-- A width-3 state: the components `(s₀, s₁, s₂)`. -/
-private abbrev Triple (F : Type*) := F × F × F
+abbrev Triple (F : Type*) := F × F × F
+
+/-- The deployed round count: both parameter tables below (`fpKimchi`, `fqKimchi`)
+carry 55 constant triples, one per full round. -/
+abbrev fullRounds : Nat := 55
 
 /-- Poseidon parameters: one constant triple per round, and the MDS matrix as three rows. -/
 structure Params (F : Type*) where

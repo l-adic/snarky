@@ -2,7 +2,10 @@
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh). Everything here
 -- is specification (validated against proof-systems vectors by scripts/), not theorems.
 
--- The permutation/duplex automaton and the production parameter tables.
+-- The permutation/duplex automaton and the production parameter tables. Triple is
+-- the width-3 state vocabulary; fullRounds the tables' 55-round length.
+Poseidon.Triple
+Poseidon.fullRounds
 Poseidon.init
 Poseidon.absorb
 Poseidon.squeeze
