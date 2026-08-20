@@ -481,3 +481,16 @@ Snarky.Kimchi.SpongeVar.vals_init
 Snarky.Kimchi.SpongeVar.vals_ofConstants
 Snarky.Kimchi.SpongeVar.reads_init
 Snarky.Kimchi.SpongeVar.reads_ofConstants
+
+-- The in-circuit block-mode hash (Snarky/Kimchi/Circuit/RandomOracle.lean): the port
+-- surface of PS Snarky.Circuit.RandomOracle (update / hash2 / hashVec), its law pair
+-- x2 per op, and the input-reading vocabulary the complete laws quote.
+Snarky.Kimchi.RandomOracle.update
+Snarky.Kimchi.RandomOracle.hash2
+Snarky.Kimchi.RandomOracle.hashVec
+Snarky.Kimchi.RandomOracle.update_spec
+Snarky.Kimchi.RandomOracle.update_complete_spec
+Snarky.Kimchi.RandomOracle.hash2_spec
+Snarky.Kimchi.RandomOracle.hash2_complete_spec
+Snarky.Kimchi.RandomOracle.hashVec_spec
+Snarky.Kimchi.RandomOracle.hashVec_complete_spec

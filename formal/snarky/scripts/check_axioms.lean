@@ -17,6 +17,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.Sponge
+import Snarky.Kimchi.Circuit.RandomOracle
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
@@ -103,6 +104,12 @@ def roots : List Name :=
     `Snarky.Kimchi.SpongeVar.vals_ofConstants,
     `Snarky.Kimchi.SpongeVar.reads_init,
     `Snarky.Kimchi.SpongeVar.reads_ofConstants,
+    `Snarky.Kimchi.RandomOracle.update_spec,
+    `Snarky.Kimchi.RandomOracle.update_complete_spec,
+    `Snarky.Kimchi.RandomOracle.hash2_spec,
+    `Snarky.Kimchi.RandomOracle.hash2_complete_spec,
+    `Snarky.Kimchi.RandomOracle.hashVec_spec,
+    `Snarky.Kimchi.RandomOracle.hashVec_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
     `Snarky.Kimchi.EndoScalar.toField_spec,

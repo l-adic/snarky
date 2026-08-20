@@ -202,10 +202,6 @@ cell readings (the seal reads as the sum, in either operand order). -/
     mvcgen
     simp_all [Poseidon.addSlot, CVar.val_add_, add_comm]
 
-/-- A pinned evaluation is a successful one. -/
-private theorem isOk_of_eq {α : Type} {x : Except EvalError α} {v : α}
-    (h : x = .ok v) : x.isOk := by rw [h]; rfl
-
 /-- `addSlotVar` is complete: the honest run accepts on readable cells, and the output
 cells read back as `Poseidon.addSlot` of the input values. -/
 @[spec] private theorem addSlotVar_complete_spec [Field F] [DecidableEq F]

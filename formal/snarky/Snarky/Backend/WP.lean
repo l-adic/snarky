@@ -333,6 +333,12 @@ abbrev Complete {α : Type} (pre : Assignments F → Prop)
     ∀ (r : α) (st' : ProverState F),
       post st.env r st'.env → st.env.Le st'.env → (Q.1 r st').down)
 
+/-- A pinned evaluation is a successful one — the converse direction of
+`CVar.evalOk`, for building `Complete` preconditions from granted equations. -/
+theorem isOk_of_eq {ε α : Type} {x : Except ε α} {v : α} (h : x = .ok v) :
+    x.isOk := by
+  rw [h]; rfl
+
 /-- Extract the value behind a successful-evaluation fact. -/
 theorem CVar.evalOk [Add F] [Mul F] {x : CVar F} {env : Assignments F}
     (h : (x.eval env).isOk = true) : ∃ xv, x.eval env = .ok xv := by
