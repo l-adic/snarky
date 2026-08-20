@@ -105,7 +105,9 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
 output `PUnit` the back-fill assigns nothing and the output binding asserts nothing,
 so `compile`'s constraint list is the input check's followed by the body's. The
 whole-circuit soundness statement of a pure knowledge circuit reads its `Sound`
-triple through this identity. -/
+triple through this identity. The size-0 `CircuitType` instance makes the wrapper
+tail vanish definitionally; what this lemma exports is the rest — `build` over an
+opaque bind is a theorem (`build_bind`), and the wrapper's pieces are private. -/
 theorem compile_punit_constraints [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar]
     (main : avar → CircuitM F c PUnit) :
@@ -218,8 +220,10 @@ theorem solve_seed [A : CircuitType F a avar] (input : a) :
 
 /-- A no-output circuit's solve succeeds as soon as its input check and its body run
 honestly: at output `PUnit` the back-fill assigns nothing, the output binding asserts
-nothing, and the size-0 output decode cannot fail. Staged as the check's run then the
-body's, so a consumer never touches the wrapper's internals. -/
+nothing, and the size-0 output decode cannot fail — all definitional at the size-0
+`CircuitType` instance. What this lemma exports is the rest: `prove` over an opaque
+bind is a theorem (`prove_bind`), and the wrapper's pieces are private to this file.
+Staged as the check's run then the body's, so a consumer never touches either. -/
 theorem solve_punit_ok [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar]
     {holds : c → Assignments F → Bool} {main : avar → CircuitM F c PUnit}
