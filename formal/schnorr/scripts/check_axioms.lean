@@ -22,7 +22,9 @@ def roots : List Name :=
     `Schnorr.verifyRelaxed,
     `Schnorr.verify_imp_verifyRelaxed,
     `Schnorr.squeezeFieldElement_eq,
-    `Schnorr.verifyCircuit ]
+    `Schnorr.verifyCircuit,
+    `Schnorr.squeezeTranscript_spec,
+    `Schnorr.squeezeTranscript_complete_spec ]
 
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

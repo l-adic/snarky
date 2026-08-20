@@ -1,5 +1,5 @@
 import Schnorr.Wire
-import Snarky.Kimchi.Circuit.Sponge
+import Snarky.Kimchi.Circuit.RandomOracle
 import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
@@ -10,10 +10,11 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 `verifyCircuit` implements the wire `verify` stage for stage, over the circuit field
 `Fq` (the Vesta base field, where the statement's points have native coordinates):
 
-- **the transcript** — `squeezeTranscript` absorbs the six coordinates and squeezes
-  once on the in-circuit duplex sponge (`SpongeVar`), the same automaton the wire
-  side runs; the schedule (three permutations, sealed rate additions) is the
-  sponge's own, not this module's;
+- **the transcript** — `squeezeTranscript` hashes the six coordinates with the
+  block-mode random-oracle gadget (`RandomOracle.hashVec`): the transcript is a
+  single squeeze, where block mode and the wire's duplex automaton compute the same
+  element (`Poseidon.RandomOracle.hash_eq_squeeze`), so one hash call is the whole
+  schedule;
 - **the challenge** — `lowest128Bits` splits off the squeeze's low 128 bits (the
   `squeeze_challenge` flavor: both halves range-checked), and `endoMul` acts with
   them on the public key: the endomorphism expansion the wire side performs in
@@ -32,32 +33,28 @@ namespace Schnorr
 
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
+variable {c : Type}
+
 /-- The circuit field reads canonical representatives through `ZMod.val` — the same
 instance the CS-equality oracle declares at `Fp`. -/
 instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
 
-/-- The wire sponge's transcript, in-circuit: the generator and the statement's two
-points absorbed coordinate by coordinate into the duplex sponge, one squeeze — the
-schedule `squeezeState`/`squeezeFieldElement` run on the wire, executed by the same
-automaton over circuit variables. -/
-def squeezeTranscript (pk u : AffinePoint (FVar Fq)) :
-    CircuitM Fq (KimchiConstraint Fq) (FVar Fq) := do
-  let p := _root_.Poseidon.fqParams
-  let sp := SpongeVar.init
-  let sp ← SpongeVar.absorb p sp (.const gen.x)
-  let sp ← SpongeVar.absorb p sp (.const gen.y)
-  let sp ← SpongeVar.absorb p sp pk.x
-  let sp ← SpongeVar.absorb p sp pk.y
-  let sp ← SpongeVar.absorb p sp u.x
-  let sp ← SpongeVar.absorb p sp u.y
-  let (squeezed, _) ← SpongeVar.squeeze p sp
-  pure squeezed
+/-- The wire sponge's transcript, in-circuit: the six coordinates hashed by the
+block-mode random-oracle gadget. The wire runs the duplex automaton
+(`squeezeState`/`squeezeFieldElement`), but a transcript with a single squeeze is
+exactly where the two schedules coincide (`Poseidon.RandomOracle.hash_eq_squeeze`),
+so the hash gadget — and its ready-made laws — is the whole transcript. -/
+def squeezeTranscript [KimchiSystem Fq c] (pk u : AffinePoint (FVar Fq)) :
+    CircuitM Fq c (FVar Fq) :=
+  RandomOracle.hashVec _root_.Poseidon.fqParams
+    [.const gen.x, .const gen.y, pk.x, pk.y, u.x, u.y]
 
 /-- The in-circuit verifier: derive the challenge from the transcript, act with it on
 the public key through the endomorphism, and pin `[z]·G = u + [c]·pk` on the
 coordinates. -/
-def verifyCircuit (pk u : AffinePoint (FVar Fq)) (z : FVar Fq) :
-    CircuitM Fq (KimchiConstraint Fq) PUnit := do
+def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
+    (pk u : AffinePoint (FVar Fq)) (z : FVar Fq) :
+    CircuitM Fq c PUnit := do
   let squeezed ← squeezeTranscript pk u
   let c ← lowest128Bits (.const Pasta.vestaEndo) squeezed
   let cpk ← endoMul Pasta.vestaEndo 32 pk c

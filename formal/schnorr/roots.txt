@@ -19,3 +19,8 @@ Schnorr.squeezeFieldElement_eq
 -- whole verifier, stage for stage against `verify`.
 Schnorr.squeezeTranscript
 Schnorr.verifyCircuit
+
+-- The circuit laws (Schnorr/Laws.lean): the transcript pair, in the wire's hash
+-- vocabulary.
+Schnorr.squeezeTranscript_spec
+Schnorr.squeezeTranscript_complete_spec

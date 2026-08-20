@@ -1,4 +1,5 @@
 import Poseidon.FqSponge
+import Poseidon.RandomOracle
 
 /-!
 # Schnorr identification over Vesta — the wire protocol
@@ -68,15 +69,17 @@ wire's `challengeNat` takes the low 128 bits of. -/
 def squeezeFieldElement (pk u : SWPoint Vesta.curve) : Fq :=
   (Poseidon.squeeze FqVesta.spec.params (squeezeState pk u).sponge).1
 
-/-- The transcript squeeze as one duplex-sponge run: absorbing three points is the
-six-coordinate absorb fold, definitionally. This is the shape the in-circuit sponge's
-laws land on, so it is the whole wire-side alignment of the transcript. -/
+/-- The transcript squeeze is the block-mode hash of the six absorbed coordinates:
+absorbing three points is the six-coordinate absorb fold (definitionally), and a
+single squeeze is where the duplex automaton and block mode coincide
+(`hash_eq_squeeze`). This is the shape the in-circuit transcript's laws land on, so
+it is the whole wire-side alignment. -/
 theorem squeezeFieldElement_eq (pk u : SWPoint Vesta.curve) :
     squeezeFieldElement pk u
-      = (Poseidon.squeeze Poseidon.fqParams
-          (Poseidon.absorb Poseidon.fqParams Poseidon.init
-            [gen.x, gen.y, pk.x, pk.y, u.x, u.y])).1 :=
-  rfl
+      = Poseidon.RandomOracle.hash Poseidon.fqParams
+          [gen.x, gen.y, pk.x, pk.y, u.x, u.y] :=
+  (Poseidon.RandomOracle.hash_eq_squeeze Poseidon.fqParams
+    [gen.x, gen.y, pk.x, pk.y, u.x, u.y]).symm
 
 /-- The wire's canonical 128-bit prechallenge: the low 128 bits of the CANONICAL
 representative of the squeeze. `challengeNat` packs `lowLimbs`, which is exactly this
