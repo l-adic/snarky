@@ -210,9 +210,12 @@ Snarky.unpack_spec
 Snarky.pack_val
 Snarky.unpack_complete_spec
 -- The canonical unpack (Circuit/DSL/UnpackFull.lean): OCaml `unpack_full` /
--- `lt_bitstring_value` — the bits-below-the-modulus lock.
+-- `lt_bitstring_value` — the bits-below-the-modulus lock, packaged as
+-- `assertBitsBelow` for bits a consumer already holds.
 Snarky.ltBitstringValue_spec
 Snarky.ltBitstringValue_complete_spec
+Snarky.assertBitsBelow_spec
+Snarky.assertBitsBelow_complete_spec
 Snarky.unpackFull_spec
 Snarky.unpackFull_complete_spec
 

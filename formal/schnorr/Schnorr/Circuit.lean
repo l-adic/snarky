@@ -179,7 +179,7 @@ theorem decodeCanonical_eq_zero_iff (zt : Type1 Fq) :
 /-- The in-circuit verifier: hash the transcript, unpack it canonically and take the
 low 128 bits as the challenge, act on the public key through the endomorphism, run
 the ladder with its bits locked below the modulus, and pin `[z]·G = u + [c]·pk`.
-The two canonicity locks (`unpackFull`, `ltBitstringValue` on the ladder's bits) are
+The two canonicity locks (`unpackFull`, `assertBitsBelow` on the ladder's bits) are
 what pin the cross-field readings to canonical representatives — without them the
 challenge split and the ladder scalar are fixed only up to reconstruction classes.
 The closing `assertNotEqual` excludes the one carrier whose decode is the zero
@@ -193,10 +193,8 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
   let hbits ← unpackFull PALLAS_SCALAR_CARD 255 squeezed
   let cpk ← endoMul Pasta.vestaEndo 32 st.pk ⟨challengeOf hbits⟩
   let zr ← varBaseMul 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
-  let ltz ← ltBitstringValue
-    (((zr.lsbBits.toList.take (5 * 51)).reverse).map .unchecked)
-    (modBitsMsb PALLAS_SCALAR_CARD 255)
-  Snarky.assert ltz
+  assertBitsBelow PALLAS_SCALAR_CARD 255
+    ((zr.lsbBits.toList.take (5 * 51)).map .unchecked)
   let rhs ← addFast .checkFinite st.u cpk
   assertEqual zr.g.x rhs.p.x
   assertEqual zr.g.y rhs.p.y

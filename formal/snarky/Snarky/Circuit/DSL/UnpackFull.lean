@@ -91,13 +91,21 @@ def ltBitstringValue [Field F] [DecidableEq F] [BasicSystem F c] :
     Snarky.and (Snarky.not x) r
   | _, _ => pure false_
 
+/-- Assert an LSB-first bit list's ℕ value lies strictly below `m` at width `n` — the
+canonicity lock as one gadget (the `lt_bitstring_value …; assert` composition).
+`unpackFull` pays it on fresh bits; a ladder consumer pays it on bits it already
+holds. -/
+def assertBitsBelow [Field F] [DecidableEq F] [BasicSystem F c]
+    (m n : ℕ) (bits : List (BoolVar F)) : CircuitM F c PUnit := do
+  let lt ← ltBitstringValue bits.reverse (modBitsMsb m n)
+  Snarky.assert lt
+
 /-- `unpack_full` (OCaml `Field.Checked.unpack_full`): decompose into `n` LSB-first
 bits with the canonical `< m` lock. -/
 def unpackFull [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     (m n : ℕ) (v : FVar F) : CircuitM F c (Vector (BoolVar F) n) := do
   let bits ← unpack v n
-  let lt ← ltBitstringValue bits.toList.reverse (modBitsMsb m n)
-  Snarky.assert lt
+  assertBitsBelow m n bits.toList
   pure bits
 
 /-! ## The circuit laws -/
@@ -232,6 +240,67 @@ theorem ltBitstringValue_complete_spec [Field F] [DecidableEq F] [BasicSystem F 
         · exact ((h1 _ _ _ rfl rfl)).elim
 
 open Std.Do in
+/-- The lock's rows force the read bits' ℕ value strictly below `m`. -/
+theorem assertBitsBelow_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n)
+    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (_ : PUnit) => ∀ bs : List Bool,
+        List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
+          (↑x : CVar F).val V = bit b) bits bs →
+        natLsbVal bs < m) Q⦄
+    (assertBitsBelow (c := c) m n bits)
+    ⦃Q⦄ := by
+  simp only [assertBitsBelow]
+  mvcgen [ltBitstringValue_spec]
+  rename_i s hpre
+  intro lt nv₁ hlt
+  mvcgen
+  intro _ nv₂ hassert
+  refine hpre ⟨⟩ _ fun bs hfa => ?_
+  have hltv := hlt bs.reverse (List.forall₂_reverse_iff.mpr hfa)
+  rw [hassert] at hltv
+  have hltrue : ltPure bs.reverse (modBitsMsb m n) = true := by
+    by_contra h
+    rw [Bool.not_eq_true] at h
+    rw [h] at hltv
+    simp [bit] at hltv
+  have := (ltPure_iff_lt (by
+    rw [List.length_reverse, modBitsMsb_length, ← hfa.length_eq, hlen])).mp hltrue
+  rwa [msbVal_modBitsMsb hm, msbVal_reverse] at this
+
+open Std.Do in
+/-- The lock's honest run succeeds on bits reading as a value below `m`. -/
+theorem assertBitsBelow_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
+    [Checker F c] [LawfulChecker F c]
+    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n)
+    (bs : List Bool) (hval : natLsbVal bs < m)
+    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
+    ⦃Complete
+        (fun env => List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
+          (↑x : CVar F).eval env = .ok (bit b)) bits bs)
+        (fun _ _ _ => True) Q⦄
+    (assertBitsBelow (c := Prover c) m n bits)
+    ⦃Q⦄ := by
+  intro st hpre
+  obtain ⟨hfa, hk⟩ := hpre
+  simp only [assertBitsBelow, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  refine ltBitstringValue_complete_spec _ _ bs.reverse _ st
+    ⟨List.forall₂_reverse_iff.mpr hfa, fun lt st₁ hlt hle₁ => ?_⟩
+  have hltrue : ltPure bs.reverse (modBitsMsb m n) = true := by
+    refine (ltPure_iff_lt (by
+      rw [List.length_reverse, modBitsMsb_length, ← hfa.length_eq, hlen])).mpr ?_
+    rwa [msbVal_modBitsMsb hm, msbVal_reverse]
+  rw [hltrue] at hlt
+  refine Snarky.assert_complete_spec lt _ st₁
+    ⟨⟨isOk_of_eq hlt, fun bv hbv => ?_⟩, fun _ st₂ _ hle₂ => ?_⟩
+  · rw [hlt] at hbv
+    injection hbv with hbv
+    rw [← hbv]
+    rfl
+  exact hk ⟨⟩ st₂ trivial (hle₁.trans hle₂)
+
+open Std.Do in
 /-- `unpackFull`'s rows force bits whose weighted sum is the operand's reading AND
 whose ℕ value is below `m` — the canonical lock the plain `unpack` lacks. -/
 theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
@@ -243,34 +312,22 @@ theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
         packPure bs = v.val V ∧ natLsbVal bs.toList < m) Q⦄
     (unpackFull (c := c) m n v)
     ⦃Q⦄ := by
+  have hlock := assertBitsBelow_spec (F := F) (c := c) m n hm
   simp only [unpackFull]
-  mvcgen [ltBitstringValue_spec]
+  mvcgen [hlock]
   rename_i s hpre
   intro bits nv₁ hbits
-  mvcgen [ltBitstringValue_spec]
-  intro lt nv₂ hlt
-  mvcgen
-  intro _ nv₃ hassert
+  mvcgen [hlock]
+  case vc1.hlen => simp
+  intro _ nv₂ hlockv
   mvcgen
   obtain ⟨bs, hread, hsum⟩ := hbits
-  refine hpre bits nv₃ ⟨bs, hread, hsum, ?_⟩
-  have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
-      (↑x : CVar F).val s.V = bit b) bits.toList.reverse bs.toList.reverse := by
-    rw [List.forall₂_reverse_iff]
-    rw [List.forall₂_iff_get]
-    refine ⟨by simp, fun i h1 h2 => ?_⟩
-    simp only [List.get_eq_getElem, Vector.getElem_toList]
-    exact hread i (by simpa using h1)
-  have hltv := hlt bs.toList.reverse hfa
-  rw [hassert] at hltv
-  have hltrue : ltPure bs.toList.reverse (modBitsMsb m n) = true := by
-    by_contra h
-    rw [Bool.not_eq_true] at h
-    rw [h] at hltv
-    simp [bit] at hltv
-  have := (ltPure_iff_lt (by simp [modBitsMsb_length])).mp hltrue
-  rw [msbVal_modBitsMsb hm, msbVal_reverse] at this
-  exact this
+  refine hpre bits nv₂ ⟨bs, hread, hsum, ?_⟩
+  refine hlockv bs.toList ?_
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  simp only [List.get_eq_getElem, Vector.getElem_toList]
+  exact hread i (by simpa using h1)
 
 open Std.Do in
 /-- `unpackFull`'s honest run succeeds on a faithful representative that fits the width
@@ -306,32 +363,21 @@ theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F] [BasicSyste
       = .ok (bit ((ToNat.toNat vv).testBit i)) := fun i hi => hbits vv hv i hi
   have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
       (↑x : CVar F).eval st₁.env = .ok (bit b))
-      bits.toList.reverse (unpackPure vv n).toList.reverse := by
-    rw [List.forall₂_reverse_iff]
+      bits.toList (unpackPure vv n).toList := by
     rw [List.forall₂_iff_get]
     refine ⟨by simp, fun i h1 h2 => ?_⟩
     simp only [List.get_eq_getElem, Vector.getElem_toList, unpackPure,
       Vector.getElem_ofFn]
     exact hdig i (by simpa using h1)
-  refine ltBitstringValue_complete_spec _ _ _ _ st₁ ⟨hfa, fun lt st₂ hlt hle₂ => ?_⟩
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  have hltrue : ltPure (unpackPure vv n).toList.reverse (modBitsMsb m n) = true := by
-    refine (ltPure_iff_lt (by simp [modBitsMsb_length])).mpr ?_
-    rw [msbVal_modBitsMsb hm, msbVal_reverse, natLsbVal_unpackPure hfit]
-    exact hbound
-  rw [hltrue] at hlt
-  refine Snarky.assert_complete_spec lt _ st₂
-    ⟨⟨isOk_of_eq hlt, fun bv hbv => ?_⟩, fun _ st₃ _ hle₃ => ?_⟩
-  · rw [hlt] at hbv
-    injection hbv with hbv
-    rw [← hbv]
-    rfl
+  refine assertBitsBelow_complete_spec m n hm bits.toList (by simp)
+    (unpackPure vv n).toList (by rwa [natLsbVal_unpackPure hfit]) _ st₁
+    ⟨hfa, fun _ st₂ _ hle₂ => ?_⟩
   intro _
-  refine hk bits st₃ (fun vv' hv' => ?_) (hle₁.trans (hle₂.trans hle₃))
+  refine hk bits st₂ (fun vv' hv' => ?_) (hle₁.trans hle₂)
   rw [hv] at hv'
   injection hv' with hv'
   subst hv'
   intro i hi
-  exact CVar.eval_le hle₃ (CVar.eval_le hle₂ (hdig i hi))
+  exact CVar.eval_le hle₂ (hdig i hi)
 
 end Snarky

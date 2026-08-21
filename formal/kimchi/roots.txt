@@ -37,6 +37,10 @@ Kimchi.Gate.VarBaseMul.runBits
 Kimchi.Gate.VarBaseMul.runBits_length
 Kimchi.Gate.VarBaseMul.bitsRegister
 Kimchi.Gate.VarBaseMul.bitsVal
+-- the ℤ fold's bounds and zero-window collapse: the fold's own API, kept with it
+-- (their snarky consumers moved to the ℕ `natLsbVal` vocabulary).
+Kimchi.Gate.VarBaseMul.bitsVal_lt
+Kimchi.Gate.VarBaseMul.bitsVal_drop_of_zeros
 Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal
 Kimchi.Gate.VarBaseMul.accN
 Kimchi.Gate.VarBaseMul.chain_accN

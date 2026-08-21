@@ -30,29 +30,6 @@ private theorem fqParams_size :
   rw [Array.size_map]
   decide
 
-open Kimchi.Gate.VarBaseMul (bitsVal) in
-/-- `bitsVal`'s ℤ fold is `msbVal`'s ℕ value on genuine bits. -/
-private theorem bitsVal_eq_msbVal :
-    ∀ {bl : List Fq}, (∀ b ∈ bl, b = 0 ∨ b = 1) →
-      bitsVal bl = (msbVal (bl.map fun v => decide (v = 1)) : ℤ) := by
-  intro bl
-  induction bl using List.reverseRecOn with
-  | nil => intro _; rfl
-  | append_singleton l v ih =>
-    intro hb
-    have hbl : ∀ b ∈ l, b = 0 ∨ b = 1 := fun b hbm => hb b (List.mem_append_left _ hbm)
-    have hv := hb v (List.mem_append_right _ (List.mem_singleton_self v))
-    have h1 : bitsVal (l ++ [v]) = 2 * bitsVal l + if v = 1 then 1 else 0 := by
-      simp [bitsVal, List.foldl_append]
-    rw [h1, List.map_append, List.map_singleton, msbVal_append_singleton, ih hbl]
-    rcases hv with rfl | rfl
-    · rw [if_neg (zero_ne_one (α := Fq)), decide_eq_false (zero_ne_one (α := Fq))]
-      push_cast [Bool.toNat_false]
-      ring
-    · rw [if_pos rfl, decide_eq_true (rfl : (1 : Fq) = 1)]
-      push_cast [Bool.toNat_true]
-      ring
-
 /-- The low slice of a vector, `ofFn`-spelled, is `toList.take`. -/
 private theorem toList_ofFn_slice {α : Type} (v : Vector α 255) :
     (Vector.ofFn fun i : Fin 128 => v[i.val]'(by omega)).toList
@@ -77,7 +54,7 @@ private theorem natLsbVal_ofFn_testBit_low (m : ℕ) :
       rw [List.getElem_ofFn, List.getElem_map, List.getElem_range,
         Nat.testBit_mod_two_pow, decide_eq_true h1, Bool.true_and]
 
-open Kimchi.Gate.VarBaseMul (forbiddenValues bitsVal bitsVal_lt bitsRegister_eq_cast) in
+open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The sound endpoint.** Any satisfying valuation certifies the wire verifier at
 the statement's canonical decode: when the bundle reads as nonzero wire points and a
@@ -105,21 +82,22 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_checkFinite_spec (F := Fq) Vesta.curve.toAffine
     ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
-  mvcgen [hunp, hendo, hvbm, hadd, ltBitstringValue_spec]
+  have hlock := assertBitsBelow_spec (F := Fq) (c := KimchiConstraint Fq)
+    PALLAS_SCALAR_CARD 255 (by decide)
+  mvcgen [hunp, hendo, hvbm, hadd, hlock]
   case vc1.hsize => exact fqParams_size
   rename_i st hpre
   intro squeezed _ hsqv
   simp only [List.map_cons, List.map_nil, CVar.val] at hsqv
-  mvcgen [hunp, hendo, hvbm, hadd, ltBitstringValue_spec]
+  mvcgen [hunp, hendo, hvbm, hadd, hlock]
   intro hbits _ hunpv
-  mvcgen [hendo, hvbm, hadd, ltBitstringValue_spec]
+  mvcgen [hendo, hvbm, hadd, hlock]
   intro cpk _ hcpk
-  mvcgen [hvbm, hadd, ltBitstringValue_spec]
+  mvcgen [hvbm, hadd, hlock]
   intro zr _ hzrv
-  mvcgen [hadd, ltBitstringValue_spec]
-  intro ltz _ hltv
-  mvcgen [hadd]
-  intro _ _ hltassert
+  mvcgen [hadd, hlock]
+  case vc1.hlen => simp
+  intro _ _ hlockv
   mvcgen [hadd]
   intro rhs _ hrhsv
   mvcgen
@@ -209,50 +187,23 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
         (Kimchi.Gate.EndoScalar.digitsOf_lt 64 _) HasEndo.vesta.lam]
   -- the ladder payload
   simp only [CVar.val] at hzrv
-  obtain ⟨bl, hbool, hblen, hsrc, hregpin, hpt⟩ := hzrv hgenNS
+  obtain ⟨bs, hread, hpin, hpt⟩ := hzrv hgenNS
   -- the canonicity lock: the ladder's bits are below the modulus
-  have hxsread : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
+  have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
       (↑x : CVar Fq).val st.V = bit b)
-      (((zr.lsbBits.toList.take (5 * 51)).reverse).map .unchecked)
-      (bl.map fun v => decide (v = 1)) := by
+      ((zr.lsbBits.toList.take (5 * 51)).map .unchecked) bs.toList := by
     rw [List.forall₂_iff_get]
-    constructor
-    · simp only [List.length_map]
-      rw [hsrc, List.length_map]
-    · intro i h1 h2
-      simp only [List.get_eq_getElem, List.getElem_map, BoolVar.toCVar_unchecked]
-      have hbli : bl[i]'(by simpa using h2)
-          = ((zr.lsbBits.toList.take (5 * 51)).reverse[i]'(by simpa using h1)).val st.V := by
-        rw [List.getElem_of_eq hsrc (by simpa using h2), List.getElem_map]
-      rw [← hbli]
-      rcases hbool _ (List.getElem_mem _) with h0 | h1'
-      · rw [h0, decide_eq_false (zero_ne_one (α := Fq))]
-        rfl
-      · rw [h1', decide_eq_true (rfl : (1 : Fq) = 1)]
-        rfl
-  have hltz := hltv (bl.map fun v => decide (v = 1)) hxsread
-  rw [hltassert] at hltz
-  have hltrue : ltPure (bl.map fun v => decide (v = 1))
-      (modBitsMsb PALLAS_SCALAR_CARD 255) = true := by
-    by_contra hcon
-    rw [Bool.not_eq_true] at hcon
-    rw [hcon] at hltz
-    simp [bit] at hltz
-  have hmsb := (ltPure_iff_lt (by
-    simp only [List.length_map, modBitsMsb_length]
-    rw [hsrc, List.length_map]
-    simp)).mp hltrue
-  rw [msbVal_modBitsMsb (by decide)] at hmsb
+    refine ⟨by simp, fun i h1 h2 => ?_⟩
+    simp only [List.get_eq_getElem, List.getElem_map, List.getElem_take,
+      Vector.getElem_toList, BoolVar.toCVar_unchecked]
+    exact hread i (by simpa using h2)
+  have hlt : natLsbVal bs.toList < PALLAS_SCALAR_CARD := hlockv bs.toList hfa
   -- the ladder's integer is the reading's canonical representative
-  obtain ⟨hblt, hbnn⟩ := bitsVal_lt bl hbool
-  have hbv := bitsVal_eq_msbVal hbool
-  have hpin : stv.z.val.val st.V = ((bitsVal bl : ℤ) : Fq) := by
-    rw [hregpin, bitsRegister_eq_cast bl hbool]
-  have hvalId : bitsVal bl = ((stv.z.val.val st.V).val : ℤ) := by
-    rw [hpin, hbv]
-    push_cast
-    rw [ZMod.val_natCast, Nat.mod_eq_of_lt hmsb]
-  set s : ℤ := Type1.fromShifted (5 * 51) ⟨bitsVal bl⟩ with hsdef
+  have hvalId : (stv.z.val.val st.V).val = natLsbVal bs.toList := by
+    have h := congrArg ZMod.val hpin
+    rwa [ZMod.val_natCast, Nat.mod_eq_of_lt hlt] at h
+  set s : ℤ := 2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * 51) + 1 with hsdef
+  clear_value s
   have hsdecode : s = Type1.decodeZ 255 ⟨stv.z.val.val st.V⟩ := by
     simp only [hsdef, Type1.decodeZ, Type1.fromShifted, hvalId]
   -- the ladder regime at the canonical scalar: the one-wrap band off the forbidden set
@@ -476,9 +427,9 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
       (↑x : CVar Fq).eval st₄.env = .ok (bit b))
-      (((zr.lsbBits.toList.take (5 * 51)).reverse).map .unchecked)
-      (((List.range 255).map (ToNat.toNat zt.val).testBit).reverse) := by
-    rw [List.map_reverse, List.forall₂_reverse_iff, List.forall₂_iff_get]
+      ((zr.lsbBits.toList.take (5 * 51)).map .unchecked)
+      ((List.range 255).map (ToNat.toNat zt.val).testBit) := by
+    rw [List.forall₂_iff_get]
     constructor
     · rw [List.length_map, List.length_take, Vector.length_toList,
         List.length_map, List.length_range]
@@ -487,23 +438,14 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       simp only [List.get_eq_getElem, List.getElem_map, List.getElem_take,
         List.getElem_range, BoolVar.toCVar_unchecked, Vector.getElem_toList]
       exact hdigz i (by simpa using h2)
-  refine ltBitstringValue_complete_spec _ _ _ _ st₄ ⟨hfa, fun ltz st₅ hlt hle₅ => ?_⟩
-  have hmsbz : msbVal (((List.range 255).map (ToNat.toNat zt.val).testBit).reverse)
-      = ToNat.toNat zt.val := by
-    rw [msbVal_reverse]
-    exact natLsbVal_testBit_range (lt_of_lt_of_le (ZMod.val_lt _) (by decide))
-  have hltrue : ltPure (((List.range 255).map (ToNat.toNat zt.val).testBit).reverse)
-      (modBitsMsb PALLAS_SCALAR_CARD 255) = true := by
-    refine (ltPure_iff_lt (by
-      rw [List.length_reverse, List.length_map, List.length_range,
-        modBitsMsb_length])).mpr ?_
-    rw [msbVal_modBitsMsb (by decide), hmsbz]
-    exact ZMod.val_lt _
-  rw [hltrue] at hlt
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine Snarky.assert_complete_spec ltz _ st₅
-    ⟨⟨isOk_of_eq hlt, fun bv hbv => ?_⟩, fun _ st₆ _ hle₆ => ?_⟩
-  · exact (Except.ok.inj (hlt.symm.trans hbv)).symm.trans bit_true
+  refine assertBitsBelow_complete_spec PALLAS_SCALAR_CARD 255 (by decide) _
+    (by rw [List.length_map, List.length_take, Vector.length_toList]; decide)
+    ((List.range 255).map (ToNat.toNat zt.val).testBit)
+    (by
+      rw [natLsbVal_testBit_range (m := ToNat.toNat zt.val)
+        (lt_of_lt_of_le (ZMod.val_lt _) (by decide))]
+      exact ZMod.val_lt _)
+    _ st₄ ⟨hfa, fun _ st₅ _ hle₅ => ?_⟩
   -- the wire equation, transported into the Mathlib group at the statement's points
   simp only [verify, decide_eq_true_eq] at hacc
   have haccM : (stP.z.val : ℤ)
@@ -556,14 +498,14 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     simp [ZMod.natCast_val]
   -- the complete addition of u and [c]·pk
   mvcgen -trivial [hadd]
-  have hux₄ := CVar.eval_le hle₆ (CVar.eval_le hle₅ (CVar.eval_le hle₄
-    (CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ hux)))))
-  have huy₄ := CVar.eval_le hle₆ (CVar.eval_le hle₅ (CVar.eval_le hle₄
-    (CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ huy)))))
-  have hcpkx₄ := CVar.eval_le hle₆ (CVar.eval_le hle₅ (CVar.eval_le hle₄ hcpkx))
-  have hcpky₄ := CVar.eval_le hle₆ (CVar.eval_le hle₅ (CVar.eval_le hle₄ hcpky))
+  have hux₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄
+    (CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ hux))))
+  have huy₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄
+    (CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ huy))))
+  have hcpkx₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄ hcpkx)
+  have hcpky₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄ hcpky)
   refine ⟨⟨isOk_of_eq hux₄, isOk_of_eq huy₄, isOk_of_eq hcpkx₄, isOk_of_eq hcpky₄,
-    fun x1 y1 x2 y2 h1e h2e h3e h4e => ?_⟩, fun rhs st₇ hout₇ hle₇ => ?_⟩
+    fun x1 y1 x2 y2 h1e h2e h3e h4e => ?_⟩, fun rhs st₆ hout₆ hle₆ => ?_⟩
   · rw [hux₄] at h1e
     rw [huy₄] at h2e
     rw [hcpkx₄] at h3e
@@ -581,7 +523,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
         (by rw [Pasta.vesta_card]; decide) huNS,
       fun h0 => hgz (hmaster.trans ((congrArg
         (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq).symm.trans h0))⟩
-  obtain hpost := hout₇ _ _ _ _ hux₄ huy₄ hcpkx₄ hcpky₄ huNS hfinC
+  obtain hpost := hout₆ _ _ _ _ hux₄ huy₄ hcpkx₄ hcpky₄ huNS hfinC
   rcases hpost with ⟨-, habs⟩ | ⟨x3, y3, hrx, hry, -, h3, hsum⟩
   · exact absurd (hmaster.trans ((congrArg
       (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq).symm.trans habs)) hgz
@@ -593,33 +535,33 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   injection hfinal with hfx hfy
   -- the coordinate asserts and the closing continuation
   mvcgen -trivial
-  have hzgx₇ := CVar.eval_le hle₇ (CVar.eval_le hle₆ (CVar.eval_le hle₅ hzgx))
-  refine ⟨⟨isOk_of_eq hzgx₇, isOk_of_eq hrx,
-    fun a b ha hb => ?_⟩, fun _ st₈ hle₈ => ?_⟩
-  · exact ((Except.ok.inj (hzgx₇.symm.trans ha)).symm.trans
+  have hzgx₆ := CVar.eval_le hle₆ (CVar.eval_le hle₅ hzgx)
+  refine ⟨⟨isOk_of_eq hzgx₆, isOk_of_eq hrx,
+    fun a b ha hb => ?_⟩, fun _ st₇ hle₇ => ?_⟩
+  · exact ((Except.ok.inj (hzgx₆.symm.trans ha)).symm.trans
       (hfx.trans (Except.ok.inj (hrx.symm.trans hb))))
   mvcgen -trivial
-  have hzgy₈ := CVar.eval_le hle₈ (CVar.eval_le hle₇ (CVar.eval_le hle₆
-    (CVar.eval_le hle₅ hzgy)))
-  refine ⟨⟨isOk_of_eq hzgy₈,
-    isOk_of_eq (CVar.eval_le hle₈ hry), fun a b ha hb => ?_⟩,
-    fun _ st₉ hle₉ => ?_⟩
-  · exact ((Except.ok.inj (hzgy₈.symm.trans ha)).symm.trans
-      (hfy.trans (Except.ok.inj ((CVar.eval_le hle₈ hry).symm.trans hb))))
+  have hzgy₇ := CVar.eval_le hle₇ (CVar.eval_le hle₆
+    (CVar.eval_le hle₅ hzgy))
+  refine ⟨⟨isOk_of_eq hzgy₇,
+    isOk_of_eq (CVar.eval_le hle₇ hry), fun a b ha hb => ?_⟩,
+    fun _ st₈ hle₈ => ?_⟩
+  · exact ((Except.ok.inj (hzgy₇.symm.trans ha)).symm.trans
+      (hfy.trans (Except.ok.inj ((CVar.eval_le hle₇ hry).symm.trans hb))))
   -- the zero-response exclusion at the honest carrier
   mvcgen -trivial
-  have hzz₉ := CVar.eval_le hle₉ (CVar.eval_le hle₈ (CVar.eval_le hle₇ (CVar.eval_le hle₆
+  have hzz₈ := CVar.eval_le hle₈ (CVar.eval_le hle₇ (CVar.eval_le hle₆
     (CVar.eval_le hle₅ (CVar.eval_le hle₄ (CVar.eval_le hle₃ (CVar.eval_le hle₂
-      (CVar.eval_le hle₁ hzz))))))))
-  refine ⟨⟨isOk_of_eq hzz₉, isOk_of_eq rfl, fun a b ha hb => ?_⟩,
-    fun _ st₁₀ hle₁₀ => ?_⟩
-  · rw [hzz₉] at ha
+      (CVar.eval_le hle₁ hzz)))))))
+  refine ⟨⟨isOk_of_eq hzz₈, isOk_of_eq rfl, fun a b ha hb => ?_⟩,
+    fun _ st₉ hle₉ => ?_⟩
+  · rw [hzz₈] at ha
     injection ha with ha
     injection hb with hb
     subst ha
     subst hb
     exact fun hEq => hz0 (henc.symm.trans ((decodeCanonical_eq_zero_iff zt).mpr hEq))
-  exact hk ⟨⟩ st₁₀ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
-    (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans (hle₉.trans hle₁₀)))))))))
+  exact hk ⟨⟩ st₉ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
+    (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans hle₉))))))))
 
 end Schnorr

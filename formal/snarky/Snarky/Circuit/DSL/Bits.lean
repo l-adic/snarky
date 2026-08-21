@@ -242,6 +242,24 @@ theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
       simp only [List.take_succ_cons, List.drop_succ_cons, natLsbVal, ih bs, pow_succ]
       ring
 
+/-- All-false bits carry the value zero. -/
+theorem natLsbVal_eq_zero : ∀ {l : List Bool}, (∀ b ∈ l, b = false) → natLsbVal l = 0 := by
+  intro l
+  induction l with
+  | nil => intro _; rfl
+  | cons b bs ih =>
+    intro h
+    rw [natLsbVal, h b (List.mem_cons_self ..),
+      ih fun x hx => h x (List.mem_cons_of_mem _ hx)]
+    rfl
+
+/-- A value whose bits vanish from position `k` on fits in `k` bits. -/
+theorem natLsbVal_lt_of_drop_false {l : List Bool} {k : Nat}
+    (h : ∀ b ∈ l.drop k, b = false) : natLsbVal l < 2 ^ k := by
+  rw [natLsbVal_take_drop k l, natLsbVal_eq_zero h, Nat.mul_zero, Nat.add_zero]
+  exact lt_of_lt_of_le (natLsbVal_lt _)
+    (Nat.pow_le_pow_right (by omega) (List.length_take_le k l))
+
 /-- A number below `2^n` is the Horner fold of its first `n` bits, range-map form. -/
 theorem natLsbVal_testBit_range {m n : Nat} (h : m < 2 ^ n) :
     natLsbVal ((List.range n).map m.testBit) = m := by

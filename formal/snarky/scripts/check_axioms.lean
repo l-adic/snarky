@@ -93,6 +93,8 @@ def roots : List Name :=
     `Snarky.unpack_complete_spec,
     `Snarky.ltBitstringValue_spec,
     `Snarky.ltBitstringValue_complete_spec,
+    `Snarky.assertBitsBelow_spec,
+    `Snarky.assertBitsBelow_complete_spec,
     `Snarky.unpackFull_spec,
     `Snarky.unpackFull_complete_spec,
     `Snarky.sealVar_spec,
