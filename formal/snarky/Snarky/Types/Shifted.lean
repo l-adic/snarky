@@ -1,4 +1,5 @@
 import Mathlib.Data.ZMod.Basic
+import Mathlib.Tactic.Ring
 
 /-!
 # Shifted scalar types
@@ -14,10 +15,11 @@ consumes it.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - Only the shifted carriers the `varBaseMul` laws speak about are ported: the `Type1`
-  newtype and the `SplitField` pair, each with its `fromShifted` decode. PS's `Type2`
-  newtype (whose decode delegates to `SplitField`'s), the `Shifted` class, the
-  forbidden-values checks, and the shifted circuit ops are consumed only by the
-  pickles modules and arrive with them.
+  newtype with its `fromShifted` decode and `toShifted` encode (`Type1.encode`), and
+  the `SplitField` pair with its decode. PS's `Type2` newtype (whose decode delegates
+  to `SplitField`'s), the `Shifted` class packaging, the forbidden-values checks, and
+  the shifted circuit ops are consumed only by the pickles modules and arrive with
+  them.
 - PS bakes the width `n` into each field's `Shifted` instance (via `FieldSizeInBits`);
   the decodes here are generic, so `n` is an explicit argument.
 -/
@@ -48,6 +50,33 @@ def Type1.decodeZ {q : ℕ} (n : ℕ) (t : Type1 (ZMod q)) : ℤ :=
 input stands for. -/
 def Type1.decodeCanonical {q p : ℕ} (n : ℕ) (t : Type1 (ZMod q)) : ZMod p :=
   (Type1.decodeZ n t : ZMod p)
+
+/-- The `Type1` encode (PS `toShifted`): carry `z` as the canonical representative of
+`(z − 2^n − 1) / 2`, computed in the scalar field — `(p + 1) / 2` is `2`'s inverse at
+odd `p` — and transported across the field boundary (`p ≤ q`). The decode inverts it
+(`decodeCanonical_encode`). -/
+def Type1.encode {p : ℕ} (q n : ℕ) (z : ZMod p) : Type1 (ZMod q) :=
+  ⟨(((z - 2 ^ n - 1) * ((p + 1) / 2 : ℕ) : ZMod p).val : ZMod q)⟩
+
+/-- The round trip: the encode's decode is the encoded scalar. The halving constant's
+defining identity `2 · (p+1)/2 = 1` arrives as a hypothesis, dischargeable by `decide`
+at any odd concrete modulus. -/
+theorem Type1.decodeCanonical_encode {p q : ℕ} [NeZero p] [NeZero q] (n : ℕ)
+    (hpq : p ≤ q) (h2 : (2 : ZMod p) * (((p + 1) / 2 : ℕ) : ZMod p) = 1) (z : ZMod p) :
+    Type1.decodeCanonical n (Type1.encode q n z) = z := by
+  set t : ZMod p := (z - 2 ^ n - 1) * ((p + 1) / 2 : ℕ) with ht
+  have htq : ((t.val : ZMod q)).val = t.val := by
+    rw [ZMod.val_natCast, Nat.mod_eq_of_lt (lt_of_lt_of_le (ZMod.val_lt t) hpq)]
+  have hback : ((t.val : ℕ) : ZMod p) = t := by
+    rw [ZMod.natCast_val, ZMod.cast_id]
+  simp only [Type1.decodeCanonical, Type1.decodeZ, Type1.encode, Type1.fromShifted,
+    ← ht, htq]
+  push_cast
+  rw [hback, ht]
+  have hhalf : (2 : ZMod p) * ((z - 2 ^ n - 1) * ((p + 1) / 2 : ℕ)) = z - 2 ^ n - 1 := by
+    rw [mul_comm (z - 2 ^ n - 1), ← mul_assoc, h2, one_mul]
+  rw [hhalf]
+  ring
 
 /-- A scalar carried as a half and a parity bit (PS `SplitField`), standing shifted
 for `2·sDiv2 + sOdd + 2^n`. Phantom like `Type1`: `scaleFast2`'s ladder realizes the

@@ -215,4 +215,26 @@ theorem verifyCircuit_solve_complete
   exact ⟨out.assignments, solve_punit_ok hseed hq hrun,
     Reads.le (hleC.trans hle) hreads⟩
 
+open Kimchi.Gate.VarBaseMul (forbiddenValues) in
+open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
+/-- The constructive boundary at the canonical encode: for an accepted, nondegenerate
+statement whose response's encode sits off the forbidden band, `solve` succeeds at
+`Type1.encode` — the encoding hypotheses discharged by `encode_ladderRegime`. -/
+theorem verifyCircuit_solve_complete_encode
+    (stP : Statement) (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
+    (hband : Type1.decodeZ 255 (Type1.encode PALLAS_SCALAR_CARD 255 stP.z)
+      ∉ forbiddenValues PALLAS_BASE_CARD)
+    (hacc : verify stP = true) :
+    ∃ env : Assignments Fq,
+      solve (b := PUnit) (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
+          (verifyCircuit (c := KimchiConstraint Fq))
+          (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩,
+            Type1.encode PALLAS_SCALAR_CARD 255 stP.z⟩ : Statement.Raw Fq)
+        = .ok (PUnit.unit, env) ∧
+      Reads env (inputVar (F := Fq) (a := Statement.Raw Fq))
+        (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩,
+          Type1.encode PALLAS_SCALAR_CARD 255 stP.z⟩ : Statement.Raw Fq) := by
+  obtain ⟨henc, hreg⟩ := encode_ladderRegime stP.z hband
+  exact verifyCircuit_solve_complete stP _ hpk0 hu0 hz0 hreg henc hacc
+
 end Schnorr

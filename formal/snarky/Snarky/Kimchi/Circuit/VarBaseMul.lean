@@ -247,6 +247,25 @@ the `ToNat` half of the deployed dictionaries (the Pallas-side twin arrives with
 first consumer). -/
 instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
 
+open CompElliptic.Fields.Pasta in
+open Kimchi.Gate.VarBaseMul (forbiddenValues) in
+/-- `Type1.encode` at the deployed boundary: its decode is the encoded scalar, and
+the vesta ladder accepts it whenever its residue is off the forbidden set — the
+dischargeable form of a completeness endpoint's encoding hypotheses. -/
+theorem encode_ladderRegime (z : Fp)
+    (hband : Type1.decodeZ 255 (Type1.encode PALLAS_SCALAR_CARD 255 z)
+      ∉ forbiddenValues PALLAS_BASE_CARD) :
+    Type1.decodeCanonical 255 (Type1.encode PALLAS_SCALAR_CARD 255 z) = z ∧
+    HasCurve.vesta.LadderRegime 255
+      (Type1.decodeZ 255 (Type1.encode PALLAS_SCALAR_CARD 255 z)) := by
+  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+  refine ⟨Type1.decodeCanonical_encode 255 (by decide) (by decide) z,
+    Or.inr ⟨?_, ?_, ?_, ?_⟩⟩ <;> rw [hOv]
+  · decide
+  · decide
+  · decide
+  · exact hband
+
 namespace VarBaseMul
 
 /-- The loop's structural view: the collected rounds are the chain-threaded records
