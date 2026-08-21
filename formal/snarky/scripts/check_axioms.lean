@@ -22,6 +22,7 @@ import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
+import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Backend.Compile
 import Lean.Elab.Command
 
@@ -154,8 +155,12 @@ def roots : List Name :=
     `Snarky.Kimchi.groupMapPure_toGroup,
     `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
     `Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec,
+    `Snarky.Kimchi.CurvePoint.check_spec,
+    `Snarky.Kimchi.CurvePoint.check_complete_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasCurve.pallas,
+    `Snarky.Kimchi.HasCurve.vesta,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
@@ -220,7 +225,9 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
     localized in these two values. -/
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.HasEndo.pallas,
-    `Snarky.Kimchi.HasEndo.vesta ]
+    `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasCurve.pallas,
+    `Snarky.Kimchi.HasCurve.vesta ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

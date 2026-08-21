@@ -43,6 +43,7 @@ def roots : List Name :=
     `Kimchi.Gate.VarBaseMul.varBaseMul_scaleFast2,
     `Kimchi.Gate.EndoScalar.sound, `Kimchi.Gate.EndoScalar.complete,
     `Kimchi.Gate.EndoScalar.chain_toField,
+    `Kimchi.Gate.EndoScalar.endoExpand_eq_toField,
     `Kimchi.Gate.EndoScalar.chain_complete,
     `Kimchi.Gate.EndoScalar.nReconstruct_lt,
     `Kimchi.Gate.EndoScalar.endoScalar_unique,

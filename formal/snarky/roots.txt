@@ -204,6 +204,8 @@ Snarky.assertExactlyOne_spec
 Snarky.assertExactlyOne_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
+Snarky.packPure_natCast
+Snarky.natLsbVal_lt
 Snarky.unpack_spec
 Snarky.pack_val
 Snarky.unpack_complete_spec
@@ -476,8 +478,19 @@ Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec
 -- discharge artifacts AND the exhibit that the dictionary is satisfiable at Pasta.
 Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta
+Snarky.Kimchi.HasCurve.pallas
+Snarky.Kimchi.HasCurve.vesta
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
+
+-- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the on-curve
+-- CheckedType and its law pair — the checked twin of AffinePoint's checks-free
+-- instances, consumed by schnorr's statement.
+Snarky.Kimchi.CurvePoint
+Snarky.Kimchi.instCurvePointCircuitType
+Snarky.Kimchi.instCurvePointCheckedType
+Snarky.Kimchi.CurvePoint.check_spec
+Snarky.Kimchi.CurvePoint.check_complete_spec
 
 -- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the two readings
 -- gadget laws are stated against — the read/eval records, the per-constructor

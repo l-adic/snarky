@@ -65,20 +65,38 @@ theorem toPt_ofPt {F : Type*} [Field F] [DecidableEq F] {a b : F} (hb : b ≠ 0)
   | zero => exact toPt_zero hb
   | some x y h => exact toPt_some (equation_toW.mp h.left)
 
-/-- `SWPoint E` is equivalent to Mathlib's affine point group `Point (toW E.A E.B)`, via the
-coordinate transport `toPt` / `ofPt`. -/
+/-- `SWPoint E` is additively equivalent to Mathlib's affine point group
+`Point (toW E.A E.B)`, via the coordinate transport `toPt` / `ofPt`; `toPt_add` carries
+the group structure across. -/
 noncomputable def SWPoint.equivPoint {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
-    SWPoint E ≃ Point (toW E.A E.B) :=
+    SWPoint E ≃+ Point (toW E.A E.B) :=
   haveI := instIsElliptic E
   { toFun := fun P => toPt E.A E.B (P.x, P.y)
     invFun := fun Q => ⟨(ofPt Q).1, (ofPt Q).2, valid_ofPt Q⟩
     left_inv := fun P => SWPoint.ext_pair (ofPt_toPt E.B_nonzero P.onCurve)
-    right_inv := fun Q => toPt_ofPt E.B_nonzero Q }
+    right_inv := fun Q => toPt_ofPt E.B_nonzero Q
+    map_add' := fun P Q => toPt_add E.B_nonzero P.onCurve Q.onCurve }
 
 /-- The order counted on `SWPoint E` equals Mathlib's `Nat.card` of the affine point group. -/
 theorem SWPoint.card_eq_point {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
     Nat.card (SWPoint E) = Nat.card (Point (toW E.A E.B)) :=
-  Nat.card_congr (SWPoint.equivPoint E)
+  Nat.card_congr (SWPoint.equivPoint E).toEquiv
+
+/-- A nonzero point's coordinates are on the curve: the `𝒪` sentinel `(0, 0)` is the only
+valid off-curve pair. -/
+theorem SWPoint.onCurve_of_ne_zero {F : Type*} [Field F] {E : SWCurve F} {P : SWPoint E}
+    (h : P ≠ 0) : OnCurve E.A E.B (P.x, P.y) := by
+  rcases P.onCurve with hc | h0
+  · exact hc
+  · exact absurd (SWPoint.ext_pair (Q := 0) h0) h
+
+/-- At on-curve coordinates `equivPoint` lands on `Point.some` at the same pair —
+with `onCurve_of_ne_zero`, the reading of any nonzero `SWPoint` into the gate
+theorems' vocabulary. -/
+theorem SWPoint.equivPoint_eq_some {F : Type*} [Field F] [DecidableEq F] {E : SWCurve F}
+    (P : SWPoint E) (h : OnCurve E.A E.B (P.x, P.y)) :
+    SWPoint.equivPoint E P = Point.some P.x P.y (nonsingular_toW h) :=
+  toPt_some h
 
 end CompElliptic.CurveForms.ShortWeierstrass
 

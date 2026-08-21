@@ -8,6 +8,7 @@ import Snarky.Kimchi.Circuit.Utils
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.Semantics.VarBaseMul
 import Kimchi.Gate.Semantics.EndoMul
+import Pasta.Basic
 
 /-!
 # The VarBaseMul gadget
@@ -221,6 +222,24 @@ def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
   3 * 2 ^ L ≤ d.W.order ∨
     (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
       z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
+
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
+/-- The dictionary at deployed Pallas: the certified order facts from `Pasta`. -/
+def HasCurve.pallas : HasCurve Fp where
+  W := Pallas.curve.toAffine
+  short := ⟨rfl, rfl, rfl, rfl⟩
+  prime := Fact.out
+  odd := by rw [pallas_card]; decide
+  two_ne := by decide
+
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
+/-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
+def HasCurve.vesta : HasCurve Fq where
+  W := Vesta.curve.toAffine
+  short := ⟨rfl, rfl, rfl, rfl⟩
+  prime := Fact.out
+  odd := by rw [vesta_card]; decide
+  two_ne := by decide
 
 namespace VarBaseMul
 

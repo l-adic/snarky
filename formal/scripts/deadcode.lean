@@ -47,6 +47,7 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Semantics
+import Schnorr
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi
@@ -125,6 +126,7 @@ def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
+    || (`Schnorr).isPrefixOf n
 
 /-- Is `n` under the dead-zero contract? Everything traversable — all five packages
     declare their surface. -/
@@ -148,7 +150,7 @@ end Kimchi.DeadCode
 run_cmd do
   let env ← getEnv
   let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
-    "bulletproof-pcs/roots.txt", "snarky/roots.txt"]
+    "bulletproof-pcs/roots.txt", "snarky/roots.txt", "schnorr/roots.txt"]
   -- parse the manifests: one fully-qualified name per line, optional trailing `-- comment`;
   -- `--` lines and blanks are ignored; `script-surface` markers delimit the script surface
   let mut roots : Array Name := #[]

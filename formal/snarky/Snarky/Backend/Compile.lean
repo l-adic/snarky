@@ -50,6 +50,12 @@ private def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
     AsProver F (Vector F B.size) :=
   fun env => (readVar (val := b) out env).map B.valueToFields
 
+/-- The public-input bundle every compiled circuit binds, over slots `0 … A.size−1`.
+Whole-circuit statements read the input through this bundle (`readVal`/`Reads`),
+never by spelling slots. -/
+def inputVar [A : CircuitType F a avar] : avar :=
+  A.fieldsToVar (mapVec CVar.var (allocRange 0 A.size))
+
 /-- The whole-circuit program both interpreters run: bind the input bundle to the
 preallocated input slots, pay its `check`, run `main`, back-fill the output slots from
 the computed output (builder: no-op; prover: the `assignOp` that makes `solve`'s output
@@ -58,7 +64,7 @@ builder program and a solver program; see the module docstring for why Lean shar
 def compileBody [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F c bvar) : CircuitM F c bvar := do
-  let av := A.fieldsToVar (mapVec CVar.var (allocRange 0 A.size))
+  let av := inputVar (F := F) (a := a)
   let bvars := allocRange A.size B.size
   CheckedType.check (c := c) av
   let out ← main av
@@ -93,6 +99,23 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
       match readVar (val := b) p.result p.assignments with
       | .error e => .error e
       | .ok outVal => .ok (outVal, p.assignments)
+
+/-- The checked body's constraints are among `compile`'s, whatever the output type:
+the output binding only appends. A whole-circuit soundness statement reads its
+body's `Sound` triple through this inclusion. -/
+theorem mem_compile_of_mem_body [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
+    {main : avar → CircuitM F c bvar} {con : c}
+    (h : con ∈ (build (do CheckedType.check (c := c) (inputVar (F := F) (a := a))
+                          main (inputVar (F := F) (a := a)))
+        (A.size + B.size)).constraints) :
+    con ∈ (compile (a := a) (b := b) main).constraints := by
+  show con ∈ (build (compileBody (a := a) (b := b) main) (A.size + B.size)).constraints
+  simp only [build_bind, List.mem_append] at h
+  simp only [compileBody, build_bind, List.mem_append]
+  rcases h with h | h
+  · exact Or.inl h
+  · exact Or.inr (Or.inl h)
 
 /-! ## The payoff theorem -/
 
@@ -141,6 +164,96 @@ private theorem extendPairs_range'_lookup :
           simp
       · rw [ihlow w (by omega)]
         simp [Assignments.extend, Nat.ne_of_lt hw]
+
+/-- Batch extension over a contiguous range of fresh slots cannot fail, and leaves
+everything at or above the range's end unassigned. -/
+private theorem extendPairs_range'_ok :
+    ∀ (l : List F) (s : Nat) {env : Assignments F}, env.FreshFrom s →
+      ∃ env' : Assignments F,
+        env.extendPairs ((List.range' s l.length).zip l) = .ok env' ∧
+        env'.FreshFrom (s + l.length) := by
+  intro l
+  induction l with
+  | nil =>
+    intro s env hf
+    exact ⟨env, rfl, by simpa using hf⟩
+  | cons x l ih =>
+    intro s env hf
+    have hfree : env s = none := hf s (Nat.le_refl s)
+    have hf' : (env.extend s x).FreshFrom (s + 1) := by
+      intro v hv
+      have hne : v ≠ s := by omega
+      simp only [Assignments.extend, hne, if_false]
+      exact hf v (by omega)
+    obtain ⟨env', hrun, hfout⟩ := ih (s + 1) hf'
+    refine ⟨env', ?_, fun v hv => hfout v ?_⟩
+    · simp only [List.length_cons, List.range'_succ, List.zip_cons_cons,
+        Assignments.extendPairs, hfree]
+      exact hrun
+    · simp only [List.length_cons] at hv
+      omega
+
+/-- The input seeding always succeeds — the slots are fresh on the empty table —
+holding the input's encoding at the input slots and nothing at or above them. -/
+theorem solve_seed [A : CircuitType F a avar] (input : a) :
+    ∃ env₀ : Assignments F,
+      Assignments.empty.extendPairs
+          ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList)
+        = .ok env₀ ∧
+      (∀ i (hi : i < A.size), env₀ i = some ((A.valueToFields input)[i])) ∧
+      env₀.FreshFrom A.size := by
+  set L := (A.valueToFields input).toList with hL
+  have hlenL : L.length = A.size := by simp [hL]
+  obtain ⟨env₀, hrun, hfout⟩ := extendPairs_range'_ok L 0
+    (env := Assignments.empty) (fun _ _ => rfl)
+  have hrun' : Assignments.empty.extendPairs
+      ((allocRange 0 A.size).toList.zip L) = .ok env₀ := by
+    rw [allocRange_toList, ← hlenL]
+    exact hrun
+  refine ⟨env₀, hrun', fun i hi => ?_, fun v hv => hfout v (by omega)⟩
+  have h := (extendPairs_range'_lookup L 0 hrun).1 i (by omega)
+  simpa [hL] using h
+
+/-- A no-output circuit's solve succeeds once its input check and body run honestly:
+the `PUnit` wrapper cannot fail. Staged as the check's run then the body's, so a
+consumer never touches the wrapper's internals. -/
+theorem solve_punit_ok [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c avar]
+    {holds : c → Assignments F → Bool} {main : avar → CircuitM F c PUnit}
+    {input : a} {env₀ : Assignments F}
+    (hseed : Assignments.empty.extendPairs
+        ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList)
+      = .ok env₀)
+    {nvc : Nat} {envc : Assignments F}
+    (hcheck : prove holds (CheckedType.check (c := c) (inputVar (F := F) (a := a)))
+        A.size env₀ = .ok ⟨PUnit.unit, nvc, envc⟩)
+    {p : Proved F PUnit}
+    (hmain : prove holds (main (inputVar (F := F) (a := a))) nvc envc = .ok p) :
+    solve (b := PUnit) holds main input = .ok (PUnit.unit, p.assignments) := by
+  have hbody : prove holds (compileBody (a := a) (b := PUnit) main)
+      (A.size + CircuitType.size F PUnit) env₀
+      = .ok ⟨p.result, p.nextVar, p.assignments⟩ := by
+    show prove holds
+      (CheckedType.check (c := c) (inputVar (F := F) (a := a)) >>= fun _ =>
+        main (inputVar (F := F) (a := a)) >>= fun out =>
+          assignVars (allocRange A.size (CircuitType.size F PUnit))
+              (outputWit (b := PUnit) out) >>= fun _ =>
+            assertEqPairs (CircuitType.varToFields (val := PUnit) out).toList
+                (allocRange A.size (CircuitType.size F PUnit)).toList >>= fun _ =>
+              pure out)
+      A.size env₀ = _
+    rw [prove_bind, hcheck]
+    dsimp only [Except.bind]
+    rw [prove_bind, hmain]
+    dsimp only [Except.bind]
+    rfl
+  unfold solve
+  rw [hseed]
+  dsimp only
+  rw [hbody]
+  rfl
+
+/-! ## The slot decode -/
 
 variable [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
