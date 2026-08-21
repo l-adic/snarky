@@ -3,6 +3,7 @@ import Schnorr.UnpackFull
 import Snarky.Kimchi.Circuit.RandomOracle
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
+import Snarky.Kimchi.Circuit.CurvePoint
 
 /-!
 # The in-circuit verifier
@@ -46,10 +47,19 @@ instance instStatementRawCircuitType :
   varToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]
   fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, ⟨fs[4]⟩⟩
 
-/-- The statement's cells carry no check of their own (the `genericCheck`
-convention) — what the statement must satisfy is the endpoint laws' business. -/
-instance instStatementRawCheckedType : CheckedType F c (Statement.Raw (FVar F)) where
-  check _ := .pure PUnit.unit
+open CompElliptic.Curves.Pasta in
+/-- The statement's input check: both points on Vesta through the `CurvePoint` gadget
+(`assert_on_curve` at the public coordinates). The response cell carries no check of
+its own — its canonicity is the circuit's business. -/
+def Statement.Raw.check [BasicSystem Fq c] (st : Statement.Raw (FVar Fq)) :
+    CircuitM Fq c PUnit := do
+  CurvePoint.check (a := Vesta.curve.A) (b := Vesta.curve.B) ⟨st.pk⟩
+  CurvePoint.check (a := Vesta.curve.A) (b := Vesta.curve.B) ⟨st.u⟩
+
+/-- The statement pays its points' on-curve checks at the whole-circuit seam. -/
+instance instStatementRawCheckedType [BasicSystem Fq c] :
+    CheckedType Fq c (Statement.Raw (FVar Fq)) where
+  check := Statement.Raw.check
 
 /-- The statement bundle reads componentwise into a `Statement.Raw F`. -/
 @[circuitVal] theorem readVal_statementRaw [Add F] [Mul F] (V : Valuation F)
@@ -116,12 +126,68 @@ affine combination, no constraints of its own. -/
     (bits : Vector (BoolVar F) 255) : FVar F :=
   pack (Vector.ofFn fun i : Fin 128 => bits[i.val]'(by omega))
 
+/-- The zero-response carrier: the unique `t₀ < q` with `2·t₀ + 2^255 + 1 = 3·p` —
+the only odd multiple of the group order in the decode band `[2^255+1, 2^255+2q−1]`,
+so the one `Type1` representative whose decode is the zero scalar. -/
+def zeroCarrier : Fq := ((3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 : ℕ)
+
+/-- The band argument at abstract constants — the deployed literals stay quarantined
+in the caller's `decide` facts, so `omega` works over atoms only. -/
+private theorem dvd_band_iff {P Q v t : ℕ}
+    (hPodd : P % 2 = 1)
+    (h3 : 2 * t + 2 ^ 255 + 1 = 3 * P)
+    (hPC : P < 2 ^ 255 + 1)
+    (hband : 2 * Q + 2 ^ 255 + 1 < P * 4)
+    (hv : v < Q) :
+    P ∣ (2 * v + 2 ^ 255 + 1) ↔ v = t := by
+  constructor
+  · rintro ⟨k, hk⟩
+    have hk4 : k < 4 := by
+      refine Nat.lt_of_mul_lt_mul_left (a := P) ?_
+      rw [← hk]
+      omega
+    have hk1 : 1 < k := by
+      refine Nat.lt_of_mul_lt_mul_left (a := P) ?_
+      rw [← hk]
+      omega
+    have hk23 : k = 2 ∨ k = 3 := by omega
+    rcases hk23 with rfl | rfl
+    · omega
+    · omega
+  · rintro rfl
+    exact ⟨3, by omega⟩
+
+/-- The decode hits zero exactly at `zeroCarrier` — the characterization the
+in-circuit exclusion inverts on both sides of the endpoint laws. -/
+theorem decodeCanonical_eq_zero_iff (zt : Type1 Fq) :
+    (Type1.decodeCanonical 255 zt : Fp) = 0 ↔ zt.val = zeroCarrier := by
+  have ht : zt.val.val < PALLAS_SCALAR_CARD := ZMod.val_lt _
+  have hiff : (Type1.decodeCanonical 255 zt : Fp) = 0
+      ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (zt.val.val : ℤ) + 2 ^ 255 + 1) := by
+    simp only [Type1.decodeCanonical, Type1.decodeZ, Type1.fromShifted]
+    exact ZMod.intCast_zmod_eq_zero_iff_dvd _ _
+  have hval : zt.val = zeroCarrier
+      ↔ zt.val.val = (3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 := by
+    constructor
+    · intro h
+      rw [h, zeroCarrier, ZMod.val_natCast, Nat.mod_eq_of_lt (by decide)]
+    · intro h
+      rw [zeroCarrier, ← h, ZMod.natCast_val, ZMod.cast_id]
+  rw [hiff, hval]
+  have hcast : (2 * (zt.val.val : ℤ) + 2 ^ 255 + 1)
+      = ((2 * zt.val.val + 2 ^ 255 + 1 : ℕ) : ℤ) := by omega
+  rw [hcast, Int.natCast_dvd_natCast]
+  exact dvd_band_iff (by decide) (by decide) (by decide) (by decide) ht
+
 /-- The in-circuit verifier: hash the transcript, unpack it canonically and take the
 low 128 bits as the challenge, act on the public key through the endomorphism, run
 the ladder with its bits locked below the modulus, and pin `[z]·G = u + [c]·pk`.
 The two canonicity locks (`unpackFull`, `ltBitstringValue` on the ladder's bits) are
 what pin the cross-field readings to canonical representatives — without them the
-challenge split and the ladder scalar are fixed only up to reconstruction classes. -/
+challenge split and the ladder scalar are fixed only up to reconstruction classes.
+The closing `assertNotEqual` excludes the one carrier whose decode is the zero
+response (`zeroCarrier`) — the residue-`0` constant of the ladder's forbidden band,
+mirroring the deployed `unshift_nonzero` convention. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
     (st : Statement.Raw (FVar Fq)) :
     CircuitM Fq c PUnit := do
@@ -137,5 +203,6 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
   let rhs ← addFast .checkFinite st.u cpk
   assertEqual zr.g.x rhs.p.x
   assertEqual zr.g.y rhs.p.y
+  assertNotEqual st.z.val (.const zeroCarrier)
 
 end Schnorr

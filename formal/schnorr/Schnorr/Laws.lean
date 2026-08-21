@@ -84,14 +84,16 @@ the statement's canonical decode: when the bundle reads as nonzero wire points a
 `Type1` representative whose decode is off the ladder's forbidden band, `verify`
 accepts `⟨pkP, uP, decodeCanonical zt⟩`. The circuit's two canonicity locks pin both
 cross-field readings exactly, so no reconstruction class survives into the
-statement. -/
+statement; the zero-response exclusion (`assertNotEqual` at `zeroCarrier`) holds
+unconditionally, before the band hypothesis. -/
 theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
         ∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
           readVal (val := Statement.Raw Fq) V stv = ⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ →
-          Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD →
-          verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true) Q⦄
+          Type1.decodeCanonical 255 zt ≠ (0 : Fp) ∧
+          (Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD →
+            verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true)) Q⦄
     (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit]
@@ -124,13 +126,17 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   intro _ _ hax
   mvcgen
   intro _ _ hay
+  mvcgen
+  intro _ _ hzne
   refine hpre ⟨⟩ _ ?_
-  intro pkP uP zt hpk0 hu0 hread hband
+  intro pkP uP zt hpk0 hu0 hread
   -- one reading equation decomposes into the per-cell facts
   simp only [readVal_statementRaw, Statement.Raw.mk.injEq, AffinePoint.mk.injEq]
     at hread
   obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
   subst hzt
+  -- the zero-response exclusion, then the band-conditional wire certificate
+  refine ⟨fun h0 => hzne ((decodeCanonical_eq_zero_iff _).mp h0), fun hband => ?_⟩
   replace hpkx := hpkx.symm
   replace hpky := hpky.symm
   replace hux := hux.symm
@@ -600,7 +606,20 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     fun _ st₉ hle₉ => ?_⟩
   · exact ((Except.ok.inj (hzgy₈.symm.trans ha)).symm.trans
       (hfy.trans (Except.ok.inj ((CVar.eval_le hle₈ hry).symm.trans hb))))
-  exact hk ⟨⟩ st₉ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
-    (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans hle₉))))))))
+  -- the zero-response exclusion at the honest carrier
+  mvcgen -trivial
+  have hzz₉ := CVar.eval_le hle₉ (CVar.eval_le hle₈ (CVar.eval_le hle₇ (CVar.eval_le hle₆
+    (CVar.eval_le hle₅ (CVar.eval_le hle₄ (CVar.eval_le hle₃ (CVar.eval_le hle₂
+      (CVar.eval_le hle₁ hzz))))))))
+  refine ⟨⟨isOk_of_eq hzz₉, isOk_of_eq rfl, fun a b ha hb => ?_⟩,
+    fun _ st₁₀ hle₁₀ => ?_⟩
+  · rw [hzz₉] at ha
+    injection ha with ha
+    injection hb with hb
+    subst ha
+    subst hb
+    exact fun hEq => hz0 (henc.symm.trans ((decodeCanonical_eq_zero_iff zt).mpr hEq))
+  exact hk ⟨⟩ st₁₀ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
+    (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans (hle₉.trans hle₁₀)))))))))
 
 end Schnorr
