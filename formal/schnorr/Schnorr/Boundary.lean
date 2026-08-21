@@ -26,15 +26,15 @@ open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 statement at the input bundle, certifies `verifyRelaxed` — the response recovered up
 to its reconstruction class. -/
 theorem verifyCircuit_compile_sound
-    (pkP uP : SWPoint Vesta.curve) (zv : Fq) (hpk0 : pkP ≠ 0) (hu0 : uP ≠ 0)
+    (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq) (hpk0 : pkP ≠ 0) (hu0 : uP ≠ 0)
     (V : Valuation Fq)
     (hsat : ∀ con ∈ (compile (a := Statement.Raw Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
       ConstraintHolds.Holds V con)
     (hin : readVal V (inputVar (F := Fq) (a := Statement.Raw Fq))
-      = (⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zv⟩ : Statement.Raw Fq)) :
+      = (⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ : Statement.Raw Fq)) :
     ∃ s : ℤ, 2 ^ 255 < s ∧ s < 3 * 2 ^ 255 ∧
-      (s : Fq) = Type1.fromShifted 255 ⟨zv⟩ ∧
+      (s : Fq) = Type1.fromShifted 255 zt ∧
       (s ∉ forbiddenValues PALLAS_BASE_CARD →
         verifyRelaxed ⟨pkP, uP, (s : Fp)⟩) := by
   have hplain := (sound_spec_iff (verifyCircuit (c := KimchiConstraint Fq)
@@ -42,7 +42,7 @@ theorem verifyCircuit_compile_sound
     (verifyCircuit_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
   exact hplain V 5
     (fun con hcon => hsat con (mem_compile_of_mem_body hcon))
-    pkP uP zv hpk0 hu0 hin
+    pkP uP zt hpk0 hu0 hin
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The constructive boundary.** On a statement `verify` accepts — honestly
@@ -50,31 +50,28 @@ encoded, nondegenerate, in the ladder regime — the whole-circuit `solve` at th
 kimchi checker succeeds, and the returned table reads the statement at the input
 bundle. -/
 theorem verifyCircuit_solve_complete
-    (stP : Statement) (zv : Fq)
+    (stP : Statement) (zt : Type1 Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hfit : ToNat.toNat zv < 2 ^ 255)
-    (hfaith : ((ToNat.toNat zv : ℕ) : Fq) = zv)
-    (hreg : HasCurve.vesta.LadderRegime 255
-      (Type1.fromShifted 255 ⟨(ToNat.toNat zv : ℤ)⟩))
-    (henc : ((Type1.fromShifted 255 ⟨(ToNat.toNat zv : ℤ)⟩ : ℤ) : Fp) = stP.z)
+    (hreg : HasCurve.vesta.LadderRegime 255 (Type1.decodeZ 255 zt))
+    (henc : Type1.decodeCanonical 255 zt = stP.z)
     (hacc : verify stP = true) :
     ∃ env : Assignments Fq,
       solve (b := PUnit) (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
           (verifyCircuit (c := KimchiConstraint Fq))
-          (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq)
+          (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq)
         = .ok (PUnit.unit, env) ∧
       Reads env (inputVar (F := Fq) (a := Statement.Raw Fq))
-        (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq) := by
+        (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq) := by
   obtain ⟨env₀, hseed, hlook, hfresh⟩ := solve_seed (F := Fq)
     (a := Statement.Raw Fq)
-    (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq)
+    (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq)
   have h0 : env₀ 0 = some stP.pk.x := hlook 0 (by decide)
   have h1 : env₀ 1 = some stP.pk.y := hlook 1 (by decide)
   have h2 : env₀ 2 = some stP.u.x := hlook 2 (by decide)
   have h3 : env₀ 3 = some stP.u.y := hlook 3 (by decide)
-  have h4 : env₀ 4 = some zv := hlook 4 (by decide)
+  have h4 : env₀ 4 = some zt.val := hlook 4 (by decide)
   have hreads : Reads env₀ (inputVar (F := Fq) (a := Statement.Raw Fq))
-      (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq) := by
+      (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq) := by
     rw [reads_statementRaw_iff]
     refine ⟨?_, ?_, ?_, ?_, ?_⟩
     · show (CVar.var 0).eval env₀ = .ok stP.pk.x
@@ -85,15 +82,15 @@ theorem verifyCircuit_solve_complete
       simp [CVar.eval, h2]
     · show (CVar.var 3).eval env₀ = .ok stP.u.y
       simp [CVar.eval, h3]
-    · show (CVar.var 4).eval env₀ = .ok zv
+    · show (CVar.var 4).eval env₀ = .ok zt.val
       simp [CVar.eval, h4]
   have hcheck : prove (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
       (CheckedType.check (c := KimchiConstraint Fq)
         (inputVar (F := Fq) (a := Statement.Raw Fq))) 5 env₀
       = .ok ⟨PUnit.unit, 5, env₀⟩ := rfl
   obtain ⟨out, hrun, hle⟩ := verifyCircuit_complete_spec
-    (inputVar (F := Fq) (a := Statement.Raw Fq)) stP zv
-    hpk0 hu0 hz0 hfit hfaith hreg henc hacc ⟨5, env₀, hfresh⟩ hreads
+    (inputVar (F := Fq) (a := Statement.Raw Fq)) stP zt
+    hpk0 hu0 hz0 hreg henc hacc ⟨5, env₀, hfresh⟩ hreads
   exact ⟨out.assignments, solve_punit_ok hseed hcheck hrun, Reads.le hle hreads⟩
 
 end Schnorr

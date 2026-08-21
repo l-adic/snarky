@@ -10,8 +10,8 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 `verifyCircuit` implements the wire `verify` stage for stage, over `Fq`: the six
 coordinates through the block-mode random-oracle gadget (`RandomOracle.hashVec`),
 `lowest128Bits` for the challenge split (both halves range-checked), `endoMul` for
-`[c]·pk`, `scaleFast1` for `[z]·G` on the constant generator (`z` enters
-`Type1`-shifted), and one complete addition with two coordinate equalities pinning
+`[c]·pk`, `scaleFast1` for `[z]·G` on the constant generator (the statement carries
+`z` `Type1`-typed), and one complete addition with two coordinate equalities pinning
 `[z]·G = u + [c]·pk`. The laws tying it to `verify` live beside it.
 -/
 
@@ -32,17 +32,18 @@ structure Statement.Raw (α : Type) where
   pk : AffinePoint α
   /-- The commitment's coordinates. -/
   u : AffinePoint α
-  /-- The response, one shifted element (`Type1`: `p < q`). -/
-  z : α
+  /-- The response, `Type1`-carried (`p < q`): the ladder consuming it realizes the
+  shift, and `Type1.decodeCanonical` reads its scalar-field value. -/
+  z : Type1 α
 
 /-- The statement encodes as its five field elements, points first, coordinatewise. -/
 instance instStatementRawCircuitType :
     CircuitType F (Statement.Raw F) (Statement.Raw (FVar F)) where
   size := 5
-  valueToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]
-  fieldsToValue fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, fs[4]⟩
-  varToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]
-  fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, fs[4]⟩
+  valueToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]
+  fieldsToValue fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, ⟨fs[4]⟩⟩
+  varToFields st := #v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]
+  fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩, ⟨fs[2], fs[3]⟩, ⟨fs[4]⟩⟩
 
 /-- The statement's cells carry no check of their own (the `genericCheck`
 convention) — what the statement must satisfy is the endpoint laws' business. -/
@@ -53,13 +54,13 @@ instance instStatementRawCheckedType : CheckedType F c (Statement.Raw (FVar F)) 
 @[circuitVal] theorem readVal_statementRaw [Add F] [Mul F] (V : Valuation F)
     (st : Statement.Raw (FVar F)) :
     readVal V st = Statement.Raw.mk ⟨st.pk.x.val V, st.pk.y.val V⟩
-      ⟨st.u.x.val V, st.u.y.val V⟩ (st.z.val V) := by
+      ⟨st.u.x.val V, st.u.y.val V⟩ ⟨st.z.val.val V⟩ := by
   show Statement.Raw.mk
-      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[0],
-        ((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[1]⟩
-      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[2],
-        ((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[3]⟩
-      (((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z]).map (·.val V))[4]) = _
+      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]).map (·.val V))[0],
+        ((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]).map (·.val V))[1]⟩
+      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]).map (·.val V))[2],
+        ((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]).map (·.val V))[3]⟩
+      ⟨((#v[st.pk.x, st.pk.y, st.u.x, st.u.y, st.z.val]).map (·.val V))[4]⟩ = _
   simp
 
 /-- The statement bundle is readable iff its five cells evaluate. -/
@@ -67,7 +68,7 @@ theorem readable_statementRaw_iff [Add F] [Mul F] {env : Assignments F}
     {st : Statement.Raw (FVar F)} :
     Readable (Statement.Raw F) env st ↔
       (st.pk.x.eval env).isOk ∧ (st.pk.y.eval env).isOk ∧
-      (st.u.x.eval env).isOk ∧ (st.u.y.eval env).isOk ∧ (st.z.eval env).isOk := by
+      (st.u.x.eval env).isOk ∧ (st.u.y.eval env).isOk ∧ (st.z.val.eval env).isOk := by
   constructor
   · intro h
     exact ⟨h 0 (show 0 < 5 by omega), h 1 (show 1 < 5 by omega),
@@ -88,7 +89,7 @@ theorem reads_statementRaw_iff [Field F] {env : Assignments F}
     Reads env st sv ↔
       st.pk.x.eval env = .ok sv.pk.x ∧ st.pk.y.eval env = .ok sv.pk.y ∧
       st.u.x.eval env = .ok sv.u.x ∧ st.u.y.eval env = .ok sv.u.y ∧
-      st.z.eval env = .ok sv.z := by
+      st.z.val.eval env = .ok sv.z.val := by
   constructor
   · rintro ⟨hok, hval⟩
     rw [readable_statementRaw_iff] at hok
@@ -117,7 +118,7 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
     [.const gen.x, .const gen.y, st.pk.x, st.pk.y, st.u.x, st.u.y]
   let c ← lowest128Bits (.const Pasta.vestaEndo) squeezed
   let cpk ← endoMul Pasta.vestaEndo 32 st.pk c
-  let zg ← scaleFast1 255 51 ⟨.const gen.x, .const gen.y⟩ ⟨st.z⟩
+  let zg ← scaleFast1 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
   let rhs ← addFast .checkFinite st.u cpk
   assertEqual zg.x rhs.p.x
   assertEqual zg.y rhs.p.y

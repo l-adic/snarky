@@ -40,10 +40,10 @@ ladder-bounded integer `s`, pinned in `Fq` to the reading's `Type1` decode, give
 theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
-        ∀ (pkP uP : SWPoint Vesta.curve) (zv : Fq), pkP ≠ 0 → uP ≠ 0 →
-          readVal (val := Statement.Raw Fq) V stv = ⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zv⟩ →
+        ∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
+          readVal (val := Statement.Raw Fq) V stv = ⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ →
           ∃ s : ℤ, 2 ^ 255 < s ∧ s < 3 * 2 ^ 255 ∧
-            (s : Fq) = Type1.fromShifted 255 ⟨zv⟩ ∧
+            (s : Fq) = Type1.fromShifted 255 zt ∧
             (s ∉ forbiddenValues PALLAS_BASE_CARD →
               verifyRelaxed ⟨pkP, uP, (s : Fp)⟩)) Q⦄
     (verifyCircuit (c := KimchiConstraint Fq) stv)
@@ -54,7 +54,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) stv.pk
   simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
   have hscale := scaleFast1_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
-    ⟨.const gen.x, .const gen.y⟩ ⟨stv.z⟩
+    ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_checkFinite_spec (F := Fq) Vesta.curve.toAffine
     ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
   mvcgen [hlow, hendo, hscale, hadd]
@@ -75,12 +75,12 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   mvcgen
   intro _ _ hay
   refine hpre ⟨⟩ _ ?_
-  intro pkP uP zv hpk0 hu0 hread
+  intro pkP uP zt hpk0 hu0 hread
   -- one reading equation decomposes into the per-cell facts
   simp only [readVal_statementRaw, Statement.Raw.mk.injEq, AffinePoint.mk.injEq]
     at hread
-  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzv⟩ := hread
-  subst hzv
+  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
+  subst hzt
   replace hpkx := hpkx.symm
   replace hpky := hpky.symm
   replace hux := hux.symm
@@ -188,16 +188,13 @@ Exported in plain run form — a concrete-field prover triple's type cannot be
 referenced without evaluating the run it matches on; the triple is internal,
 equivalent by `complete_spec_iff`. -/
 theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
-    (stP : Statement) (zv : Fq)
+    (stP : Statement) (zt : Type1 Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hfit : ToNat.toNat zv < 2 ^ 255)
-    (hfaith : ((ToNat.toNat zv : ℕ) : Fq) = zv)
-    (hreg : HasCurve.vesta.LadderRegime 255
-      (Type1.fromShifted 255 ⟨(ToNat.toNat zv : ℤ)⟩))
-    (henc : ((Type1.fromShifted 255 ⟨(ToNat.toNat zv : ℤ)⟩ : ℤ) : Fp) = stP.z)
+    (hreg : HasCurve.vesta.LadderRegime 255 (Type1.decodeZ 255 zt))
+    (henc : Type1.decodeCanonical 255 zt = stP.z)
     (hacc : verify stP = true) :
     ∀ st : ProverState Fq,
-      Reads st.env stv (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩
+      Reads st.env stv (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩
         : Statement.Raw Fq) →
       ∃ out : Proved Fq PUnit,
         prove (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
@@ -207,7 +204,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       (.except EvalError .pure)),
       ⦃Complete
           (fun env => Reads env stv
-            (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zv⟩ : Statement.Raw Fq))
+            (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq))
           (fun _ _ _ => True) Q⦄
       (verifyCircuit (c := KimchiProverC Fq) stv)
       ⦃Q⦄ := ?_
@@ -228,7 +225,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     stv.pk
   simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
   have hscale := scaleFast1_complete_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
-    ⟨.const gen.x, .const gen.y⟩ ⟨stv.z⟩
+    ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_complete_spec (F := Fq) .checkFinite Vesta.curve.toAffine
     ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
   mvcgen -trivial [hsq, hlow, hendo, hscale, hadd]
@@ -336,7 +333,12 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   · rw [hzz₃] at hv
     injection hv with hv
     subst hv
-    exact ⟨by simpa using hfit, hfaith, by simpa using hreg⟩
+    -- fit and faithfulness are theorems of the deployed field: the canonical
+    -- representative is below `q < 2^255` and casts back to itself
+    have hfit : ToNat.toNat zt.val < 2 ^ 255 :=
+      lt_of_lt_of_le (ZMod.val_lt zt.val) (by decide)
+    exact ⟨by simpa using hfit, ZMod.natCast_rightInverse _,
+      by simpa [Type1.decodeZ] using hreg⟩
   · injection hx with hx
     injection hy with hy
     subst hx
@@ -417,9 +419,9 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   · exact absurd (hmaster.trans ((congrArg
       (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq).symm.trans habs)) hgz
   -- the two computed points agree: the asserts hold
-  have henc' : ((Type1.fromShifted (5 * 51) ⟨(ToNat.toNat zv : ℤ)⟩ : ℤ) : Fp)
-      = stP.z := by simpa using henc
-  have hzV : ((Type1.fromShifted (5 * 51) ⟨(ToNat.toNat zv : ℤ)⟩ : ℤ)
+  have henc' : ((Type1.fromShifted (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ) : Fp)
+      = stP.z := by simpa [Type1.decodeCanonical, Type1.decodeZ] using henc
+  have hzV : ((Type1.fromShifted (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ)
       : ZMod PALLAS_BASE_CARD) = ((stP.z.val : ℤ) : ZMod PALLAS_BASE_CARD) := by
     rw [henc']
     push_cast

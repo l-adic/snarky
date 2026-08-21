@@ -1,4 +1,4 @@
-import Mathlib.Algebra.Ring.Defs
+import Mathlib.Data.ZMod.Basic
 
 /-!
 # Shifted scalar types
@@ -37,6 +37,17 @@ its results through it, over whichever ring the consumer reads in (`F` for the w
 pin, `ℤ` for the group scalar). -/
 def Type1.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type1 R) : R :=
   2 * t.val + 2 ^ n + 1
+
+/-- The integer a canonically-carried `Type1` representative decodes to:
+`fromShifted` of its canonical representative — the scalar the consuming ladder
+computes with. -/
+def Type1.decodeZ {q : ℕ} (n : ℕ) (t : Type1 (ZMod q)) : ℤ :=
+  Type1.fromShifted n ⟨(t.val.val : ℤ)⟩
+
+/-- `decodeZ` read across a field boundary: the scalar-field value a shifted public
+input stands for. -/
+def Type1.decodeCanonical {q p : ℕ} (n : ℕ) (t : Type1 (ZMod q)) : ZMod p :=
+  (Type1.decodeZ n t : ZMod p)
 
 /-- A scalar carried as a half and a parity bit (PS `SplitField`), standing shifted
 for `2·sDiv2 + sOdd + 2^n`. Phantom like `Type1`: `scaleFast2`'s ladder realizes the
