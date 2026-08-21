@@ -1,5 +1,5 @@
 import Schnorr.Wire
-import Schnorr.UnpackFull
+import Snarky.Circuit.DSL.UnpackFull
 import Snarky.Kimchi.Circuit.RandomOracle
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
@@ -22,9 +22,6 @@ namespace Schnorr
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
 variable {F c : Type}
-
-/-- The circuit field reads canonical representatives through `ZMod.val`. -/
-instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
 
 /-- The statement's coordinate shape over a carrier: at `FVar Fq` the in-circuit
 statement, at `Fq` its `CircuitType` reading. The wire `Statement` refines a

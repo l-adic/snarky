@@ -209,6 +209,12 @@ Snarky.natLsbVal_lt
 Snarky.unpack_spec
 Snarky.pack_val
 Snarky.unpack_complete_spec
+-- The canonical unpack (Circuit/DSL/UnpackFull.lean): OCaml `unpack_full` /
+-- `lt_bitstring_value` — the bits-below-the-modulus lock.
+Snarky.ltBitstringValue_spec
+Snarky.ltBitstringValue_complete_spec
+Snarky.unpackFull_spec
+Snarky.unpackFull_complete_spec
 
 -- Whole-circuit compilation (Snarky/Backend/Compile.lean): the entry points and the
 -- fragment seam — a successful solve satisfies every compiled constraint and decodes the

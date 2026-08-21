@@ -241,6 +241,12 @@ def HasCurve.vesta : HasCurve Fq where
   odd := by rw [vesta_card]; decide
   two_ne := by decide
 
+open CompElliptic.Fields.Pasta in
+/-- The deployed circuit field reads canonical representatives through `ZMod.val` —
+the `ToNat` half of the deployed dictionaries (the Pallas-side twin arrives with its
+first consumer). -/
+instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
+
 namespace VarBaseMul
 
 /-- The loop's structural view: the collected rounds are the chain-threaded records

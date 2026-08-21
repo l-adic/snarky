@@ -5,16 +5,16 @@ import Snarky.Circuit.DSL.Assert
 /-!
 # `unpack_full` — the canonical bit decomposition
 
-Port of PS `Snarky.Circuit.Schnorr.UnpackFull`
-(packages/schnorr/src/Snarky/Circuit/Schnorr/UnpackFull.purs), itself the port of OCaml
-`Field.Checked.unpack_full` / `lt_bitstring_value` (snark0.ml). Plain `unpack` pins the
-bits' weighted sum to the operand only mod the field — any representative's
+Port of OCaml `Field.Checked.unpack_full` / `lt_bitstring_value` (snark0.ml, the
+base-DSL checked runtime), by way of the PS transcription
+`packages/schnorr/src/Snarky/Circuit/Schnorr/UnpackFull.purs`. Plain `unpack` pins
+the bits' weighted sum to the operand only mod the field — any representative's
 decomposition satisfies it. `unpackFull` adds the strict bits-below-the-modulus
 comparison, locking the decomposition to the canonical representative.
 
 `ltBitstringValue` compares an MSB-first bit vector against a constant pattern,
 LSB-outward: at a `1` bit of the pattern the operand may drop below (`or`), at a `0`
-bit it must stay equal (`and`).
+bit it must stay equal (`and`). `ltPure` is its pure mirror over `msbVal`.
 
 Deviations from the PS original (Lean-only consumer; no constraint diffing):
 - PS builds the comparison as a `Binary` tree, regroups runs into N-ary nodes evaluated
@@ -25,47 +25,11 @@ Deviations from the PS original (Lean-only consumer; no constraint diffing):
   instance); the consumer pins it to the field's cardinality.
 -/
 
-namespace Schnorr
-
-open Snarky
+namespace Snarky
 
 variable {F c : Type}
 
 /-! ## The value layer -/
-
-/-- The ℕ value of bits, MSB first — `natLsbVal`'s mirror in the comparison's
-orientation. -/
-def msbVal : List Bool → ℕ
-  | [] => 0
-  | b :: bs => b.toNat * 2 ^ bs.length + msbVal bs
-
-/-- The MSB-first value fits its width. -/
-theorem msbVal_lt : ∀ l : List Bool, msbVal l < 2 ^ l.length := by
-  intro l
-  induction l with
-  | nil => simp [msbVal]
-  | cons b bs ih =>
-    simp only [msbVal, List.length_cons, pow_succ]
-    cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
-
-/-- Appending a bit doubles and adds — the MSB-first Horner step. -/
-theorem msbVal_append_singleton (u : List Bool) (b : Bool) :
-    msbVal (u ++ [b]) = 2 * msbVal u + b.toNat := by
-  induction u with
-  | nil => simp [msbVal]
-  | cons a u ih =>
-    simp only [List.cons_append, msbVal, ih, List.length_append, List.length_cons,
-      List.length_nil]
-    ring
-
-/-- Reversal swaps the two orientations. -/
-theorem msbVal_reverse : ∀ l : List Bool, msbVal l.reverse = natLsbVal l := by
-  intro l
-  induction l with
-  | nil => rfl
-  | cons b bs ih =>
-    rw [List.reverse_cons, msbVal_append_singleton, ih, natLsbVal]
-    omega
 
 /-- The comparison's pure mirror: MSB-first `xs < ys` (`false` on any length
 mismatch). -/
@@ -370,4 +334,4 @@ theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F] [BasicSyste
   intro i hi
   exact CVar.eval_le hle₃ (CVar.eval_le hle₂ (hdig i hi))
 
-end Schnorr
+end Snarky

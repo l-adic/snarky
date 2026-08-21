@@ -141,6 +141,40 @@ theorem natLsbVal_lt : ∀ l : List Bool, natLsbVal l < 2 ^ l.length := by
     simp only [natLsbVal, List.length_cons, pow_succ]
     cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
 
+/-- The ℕ value of bits, MSB first — `natLsbVal`'s mirror in the comparison
+orientation. -/
+def msbVal : List Bool → ℕ
+  | [] => 0
+  | b :: bs => b.toNat * 2 ^ bs.length + msbVal bs
+
+/-- The MSB-first value fits its width. -/
+theorem msbVal_lt : ∀ l : List Bool, msbVal l < 2 ^ l.length := by
+  intro l
+  induction l with
+  | nil => simp [msbVal]
+  | cons b bs ih =>
+    simp only [msbVal, List.length_cons, pow_succ]
+    cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
+
+/-- Appending a bit doubles and adds — the MSB-first Horner step. -/
+theorem msbVal_append_singleton (u : List Bool) (b : Bool) :
+    msbVal (u ++ [b]) = 2 * msbVal u + b.toNat := by
+  induction u with
+  | nil => simp [msbVal]
+  | cons a u ih =>
+    simp only [List.cons_append, msbVal, ih, List.length_append, List.length_cons,
+      List.length_nil]
+    ring
+
+/-- Reversal swaps the two orientations. -/
+theorem msbVal_reverse : ∀ l : List Bool, msbVal l.reverse = natLsbVal l := by
+  intro l
+  induction l with
+  | nil => rfl
+  | cons b bs ih =>
+    rw [List.reverse_cons, msbVal_append_singleton, ih, natLsbVal]
+    omega
+
 /-- The indexed value fold is the shifted Horner form, through the cast. -/
 private theorem packPureAux_horner {F : Type u} [CommSemiring F] :
     ∀ (bl : List Bool) (i : Nat) (accv : F),
