@@ -21,8 +21,6 @@ def roots : List Name :=
     `Schnorr.transcriptHash,
     `Schnorr.preChallenge,
     `Schnorr.verify,
-    `Schnorr.verifyRelaxed,
-    `Schnorr.verify_imp_verifyRelaxed,
     `Schnorr.verifyCircuit,
     `Schnorr.verifyCircuit_spec,
     `Schnorr.verifyCircuit_complete_spec,

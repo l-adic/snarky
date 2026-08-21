@@ -1,6 +1,6 @@
 import Schnorr.Wire
+import Schnorr.UnpackFull
 import Snarky.Kimchi.Circuit.RandomOracle
-import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 
@@ -9,9 +9,10 @@ import Snarky.Kimchi.Circuit.VarBaseMul
 
 `verifyCircuit` implements the wire `verify` stage for stage, over `Fq`: the six
 coordinates through the block-mode random-oracle gadget (`RandomOracle.hashVec`),
-`lowest128Bits` for the challenge split (both halves range-checked), `endoMul` for
-`[c]·pk`, `scaleFast1` for `[z]·G` on the constant generator (the statement carries
-`z` `Type1`-typed), and one complete addition with two coordinate equalities pinning
+`unpackFull` for the canonical challenge bits (low 128 packed by `challengeOf`),
+`endoMul` for `[c]·pk`, `varBaseMul` for `[z]·G` on the constant generator with its
+bits locked below the modulus (`ltBitstringValue`; the statement carries `z`
+`Type1`-typed), and one complete addition with two coordinate equalities pinning
 `[z]·G = u + [c]·pk`. The laws tying it to `verify` live beside it.
 -/
 
@@ -109,18 +110,32 @@ theorem reads_statementRaw_iff [Field F] {env : Assignments F}
     rw [readVal_statementRaw, CVar.val_toValuation h0, CVar.val_toValuation h1,
       CVar.val_toValuation h2, CVar.val_toValuation h3, CVar.val_toValuation h4]
 
-/-- The in-circuit verifier: hash the transcript, derive the challenge, act on the
-public key through the endomorphism, and pin `[z]·G = u + [c]·pk`. -/
+/-- The challenge wire: the packed low 128 bits of a 255-bit canonical unpack — an
+affine combination, no constraints of its own. -/
+@[irreducible] def challengeOf {F : Type} [Semiring F] [DecidableEq F]
+    (bits : Vector (BoolVar F) 255) : FVar F :=
+  pack (Vector.ofFn fun i : Fin 128 => bits[i.val]'(by omega))
+
+/-- The in-circuit verifier: hash the transcript, unpack it canonically and take the
+low 128 bits as the challenge, act on the public key through the endomorphism, run
+the ladder with its bits locked below the modulus, and pin `[z]·G = u + [c]·pk`.
+The two canonicity locks (`unpackFull`, `ltBitstringValue` on the ladder's bits) are
+what pin the cross-field readings to canonical representatives — without them the
+challenge split and the ladder scalar are fixed only up to reconstruction classes. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
     (st : Statement.Raw (FVar Fq)) :
     CircuitM Fq c PUnit := do
   let squeezed ← RandomOracle.hashVec Poseidon.fqParams
     [.const gen.x, .const gen.y, st.pk.x, st.pk.y, st.u.x, st.u.y]
-  let c ← lowest128Bits (.const Pasta.vestaEndo) squeezed
-  let cpk ← endoMul Pasta.vestaEndo 32 st.pk c
-  let zg ← scaleFast1 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
+  let hbits ← unpackFull PALLAS_SCALAR_CARD 255 squeezed
+  let cpk ← endoMul Pasta.vestaEndo 32 st.pk ⟨challengeOf hbits⟩
+  let zr ← varBaseMul 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
+  let ltz ← ltBitstringValue
+    (((zr.lsbBits.toList.take (5 * 51)).reverse).map .unchecked)
+    (modBitsMsb PALLAS_SCALAR_CARD 255)
+  Snarky.assert ltz
   let rhs ← addFast .checkFinite st.u cpk
-  assertEqual zg.x rhs.p.x
-  assertEqual zg.y rhs.p.y
+  assertEqual zr.g.x rhs.p.x
+  assertEqual zr.g.y rhs.p.y
 
 end Schnorr

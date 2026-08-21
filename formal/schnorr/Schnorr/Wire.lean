@@ -57,35 +57,5 @@ def verify (st : Statement) : Bool :=
   decide (st.z.val • gen
     = st.u + (FqSponge.endoExpand FqVesta.spec.lam (preChallenge st.pk st.u)).val • st.pk)
 
-/-- The RELAXED verifier: the challenge is any 128-bit split reconstructing the
-transcript hash in `Fq`, endo-expanded and applied — all the range check pins (`0`
-has preimages `{0, q, 2q, 3q}`, each with different low bits). Soundness terminates
-here; `verify` is the canonical case, and completeness targets it. -/
-def verifyRelaxed (st : Statement) : Prop :=
-  ∃ c hi : ℕ, c < 2 ^ 128 ∧ hi < 2 ^ 128 ∧
-    (c : Fq) + (2 : Fq) ^ 128 * (hi : Fq) = transcriptHash st.pk st.u ∧
-    st.z.val • gen
-      = st.u + (FqSponge.endoExpand FqVesta.spec.lam c).val • st.pk
-
-/-- `verify` supplies the relaxed verifier's canonical witness — the free bridge. -/
-theorem verify_imp_verifyRelaxed (st : Statement) (h : verify st = true) :
-    verifyRelaxed st := by
-  simp only [verify, decide_eq_true_eq] at h
-  refine ⟨preChallenge st.pk st.u, (transcriptHash st.pk st.u).val / 2 ^ 128,
-    Nat.mod_lt _ (by positivity), ?_, ?_, h⟩
-  · have := (transcriptHash st.pk st.u).val_lt
-    have hq : PALLAS_SCALAR_CARD < 2 ^ 128 * 2 ^ 128 := by decide
-    omega
-  · have hrepr : preChallenge st.pk st.u
-        + 2 ^ 128 * ((transcriptHash st.pk st.u).val / 2 ^ 128)
-        = (transcriptHash st.pk st.u).val := by
-      rw [preChallenge, Nat.mod_add_div]
-    calc (preChallenge st.pk st.u : Fq)
-          + (2 : Fq) ^ 128 * (((transcriptHash st.pk st.u).val / 2 ^ 128 : ℕ) : Fq)
-        = ((preChallenge st.pk st.u
-            + 2 ^ 128 * ((transcriptHash st.pk st.u).val / 2 ^ 128) : ℕ) : Fq) := by
-          push_cast; ring
-      _ = ((transcriptHash st.pk st.u).val : Fq) := by rw [hrepr]
-      _ = transcriptHash st.pk st.u := ZMod.natCast_rightInverse _
 
 end Schnorr

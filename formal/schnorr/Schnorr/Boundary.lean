@@ -9,7 +9,8 @@ The endpoint laws packaged through the whole-circuit pipeline
 public input through its `CircuitType` encoding.
 
 - `verifyCircuit_compile_sound` — a valuation satisfying `compile verifyCircuit`'s
-  constraints, reading the statement at `inputVar`, certifies the relaxed verifier.
+  constraints, reading the statement at `inputVar`, certifies `verify` at the
+  statement's canonical decode.
 - `verifyCircuit_solve_complete` — on a statement `verify` accepts, honestly
   encoded, `solve` at the kimchi checker succeeds and its table reads the statement.
 -/
@@ -23,26 +24,24 @@ open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The satisfaction boundary.** A valuation satisfying every compiled constraint
 (each the verified gate's own predicate at the payload's operands), reading a
-statement at the input bundle, certifies `verifyRelaxed` — the response recovered up
-to its reconstruction class. -/
+statement at the input bundle whose decode is off the ladder's forbidden band,
+certifies `verify` at the statement's canonical decode. -/
 theorem verifyCircuit_compile_sound
     (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq) (hpk0 : pkP ≠ 0) (hu0 : uP ≠ 0)
+    (hband : Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD)
     (V : Valuation Fq)
     (hsat : ∀ con ∈ (compile (a := Statement.Raw Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
       ConstraintHolds.Holds V con)
     (hin : readVal V (inputVar (F := Fq) (a := Statement.Raw Fq))
       = (⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ : Statement.Raw Fq)) :
-    ∃ s : ℤ, 2 ^ 255 < s ∧ s < 3 * 2 ^ 255 ∧
-      (s : Fq) = Type1.fromShifted 255 zt ∧
-      (s ∉ forbiddenValues PALLAS_BASE_CARD →
-        verifyRelaxed ⟨pkP, uP, (s : Fp)⟩) := by
+    verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true := by
   have hplain := (sound_spec_iff (verifyCircuit (c := KimchiConstraint Fq)
       (inputVar (F := Fq) (a := Statement.Raw Fq))) _).mp
     (verifyCircuit_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
   exact hplain V 5
     (fun con hcon => hsat con (mem_compile_of_mem_body hcon))
-    pkP uP zt hpk0 hu0 hin
+    pkP uP zt hpk0 hu0 hin hband
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The constructive boundary.** On a statement `verify` accepts — honestly

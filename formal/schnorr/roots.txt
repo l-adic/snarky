@@ -10,14 +10,19 @@ Schnorr.Statement
 Schnorr.transcriptHash
 Schnorr.preChallenge
 Schnorr.verify
-Schnorr.verifyRelaxed
-Schnorr.verify_imp_verifyRelaxed
 
 -- The in-circuit verifier (Schnorr/Circuit.lean): the statement's circuit shape and
 -- its encoding, and the whole verifier, stage for stage against `verify`.
 Schnorr.Statement.Raw
 Schnorr.instStatementRawCircuitType
 Schnorr.verifyCircuit
+
+-- The canonical unpack (Schnorr/UnpackFull.lean): port of OCaml `unpack_full` /
+-- `lt_bitstring_value` — the bits-below-the-modulus lock the endpoint canonicity
+-- rests on.
+Schnorr.unpackFull
+Schnorr.unpackFull_spec
+Schnorr.unpackFull_complete_spec
 
 -- The circuit laws (Schnorr/Laws.lean): the endpoint pair at the deployed Vesta
 -- dictionaries.
