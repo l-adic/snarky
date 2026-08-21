@@ -1,5 +1,7 @@
 import Poseidon.FqSponge
 import Poseidon.RandomOracle
+import Pasta.Basic
+import Kimchi.Gate.Semantics.VarBaseMul
 
 /-!
 # Schnorr identification over Vesta — the wire protocol
@@ -57,5 +59,28 @@ def verify (st : Statement) : Bool :=
   decide (st.z.val • gen
     = st.u + (FqSponge.endoExpand FqVesta.spec.lam (preChallenge st.pk st.u)).val • st.pk)
 
+/-- **Protocol completeness.** The honest prover convinces the verifier: for any key
+`x` and nonce `r`, the statement `⟨[x]·G, [r]·G, r + c·x⟩` — `c` its own challenge —
+passes `verify`, unconditionally. Scalars act through their residues mod the prime
+group order, so the check is `z = r + c·x` in `Fp`. This is also the exhibit that
+`verify` accepts: the circuit laws' acceptance hypotheses are satisfiable. -/
+theorem completeness (x r : Fp) :
+    verify ⟨x.val • gen, r.val • gen,
+      r + FqSponge.endoExpand FqVesta.spec.lam
+        (preChallenge (x.val • gen) (r.val • gen)) * x⟩ = true := by
+  simp only [verify, decide_eq_true_eq]
+  set c : Fp := FqSponge.endoExpand FqVesta.spec.lam
+    (preChallenge (x.val • gen) (r.val • gen)) with hc
+  have hsmul : ∀ a b : ℤ, ((a : ZMod PALLAS_BASE_CARD) = (b : ZMod PALLAS_BASE_CARD)) →
+      ∀ P : Vesta.curve.toAffine.Point, a • P = b • P := fun a b hab P =>
+    Kimchi.Gate.VarBaseMul.smul_eq_smul_of_zmod_eq _ (by
+      rw [ZMod.intCast_eq_intCast_iff] at hab ⊢
+      rwa [Pasta.vesta_card])
+  apply (SWPoint.equivPoint Vesta.curve).injective
+  simp only [map_add, map_nsmul]
+  rw [← mul_nsmul, ← add_nsmul, ← natCast_zsmul, ← natCast_zsmul]
+  refine hsmul _ _ ?_ (SWPoint.equivPoint Vesta.curve gen)
+  push_cast [ZMod.natCast_val, ZMod.cast_id]
+  ring
 
 end Schnorr
