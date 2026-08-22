@@ -176,8 +176,8 @@ def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
   (·.p) <$> addFast .dontCheckFinite p.1 p.2
 
 /-- `poseidon_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.Poseidon.poseidon`
-at the step field's parameters; the PS `Vector 3` interface renders as the gadget's
-`SpongeState` at the boundary). -/
+at the step field's parameters; the PS `Vector 3` interface is the gadget's
+`Poseidon.Triple` at the boundary). -/
 def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3) := do
   let r ← poseidon Poseidon.fpParams ⟨s[0], s[1], s[2]⟩
   pure #v[r.s0, r.s1, r.s2]

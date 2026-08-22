@@ -43,8 +43,20 @@ variable {F : Type*} [Field F]
 
 /-! ## The permutation -/
 
-/-- A width-3 state: the components `(s₀, s₁, s₂)`. -/
+/-- A width-3 state: the components `(s₀, s₁, s₂)` — PS's `Vector 3 f`, the one carrier
+the value sponge uses at `F` and the circuit sponge at `FVar F`. -/
 abbrev Triple (F : Type*) := F × F × F
+
+/-- Rate slot 0, by name. -/
+abbrev Triple.s0 {α : Type*} (t : Triple α) : α := t.1
+
+/-- Rate slot 1, by name. -/
+abbrev Triple.s1 {α : Type*} (t : Triple α) : α := t.2.1
+
+/-- The capacity slot, by name. -/
+abbrev Triple.s2 {α : Type*} (t : Triple α) : α := t.2.2
+
+attribute [simp] Triple.s0 Triple.s1 Triple.s2
 
 /-- The deployed round count: both parameter tables below (`fpKimchi`, `fqKimchi`)
 carry 55 constant triples, one per full round. -/
