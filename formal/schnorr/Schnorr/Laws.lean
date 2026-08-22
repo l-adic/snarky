@@ -62,7 +62,7 @@ the statement's canonical decode: when the bundle reads as nonzero wire points a
 `Type1` representative whose decode is off the ladder's forbidden band, `verify`
 accepts `⟨pkP, uP, fromShifted zt⟩`. The circuit's two canonicity locks pin both
 cross-field readings exactly, so no reconstruction class survives into the
-statement; the zero-response exclusion (`assertNotEqual` at `zeroCarrier`) holds
+statement; the zero-response exclusion (`assertNotEqual` at `Type1.zeroCarrier`) holds
 unconditionally, before the band hypothesis. -/
 theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
@@ -115,7 +115,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
   subst hzt
   -- the zero-response exclusion, then the band-conditional wire certificate
-  refine ⟨fun h0 => hzne ((fromShifted_eq_zero_iff _).mp h0), fun hband => ?_⟩
+  refine ⟨fun h0 => hzne ((Type1.fromShifted_eq_zero_iff _).mp h0), fun hband => ?_⟩
   replace hpkx := hpkx.symm
   replace hpky := hpky.symm
   replace hux := hux.symm
@@ -561,7 +561,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     injection hb with hb
     subst ha
     subst hb
-    exact fun hEq => hz0 (henc.symm.trans ((fromShifted_eq_zero_iff zt).mpr hEq))
+    exact fun hEq => hz0 (henc.symm.trans ((Type1.fromShifted_eq_zero_iff zt).mpr hEq))
   exact hk ⟨⟩ st₉ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
     (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans hle₉))))))))
 

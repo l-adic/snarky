@@ -20,7 +20,6 @@ bits locked below the modulus (`ltBitstringValue`; the statement carries `z`
 namespace Schnorr
 
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
-open Pasta.Shifted (unshiftType1)
 
 variable {F c : Type}
 
@@ -124,59 +123,6 @@ affine combination, no constraints of its own. -/
     (bits : Vector (BoolVar F) 255) : FVar F :=
   pack (Vector.ofFn fun i : Fin 128 => bits[i.val]'(by omega))
 
-/-- The zero-response carrier: the unique `t₀ < q` with `2·t₀ + 2^255 + 1 = 3·p` —
-the only odd multiple of the group order in the decode band `[2^255+1, 2^255+2q−1]`,
-so the one `Type1` representative whose decode is the zero scalar. -/
-def zeroCarrier : Fq := ((3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 : ℕ)
-
-/-- The band argument at abstract constants — the deployed literals stay quarantined
-in the caller's `decide` facts, so `omega` works over atoms only. -/
-private theorem dvd_band_iff {P Q v t : ℕ}
-    (hPodd : P % 2 = 1)
-    (h3 : 2 * t + 2 ^ 255 + 1 = 3 * P)
-    (hPC : P < 2 ^ 255 + 1)
-    (hband : 2 * Q + 2 ^ 255 + 1 < P * 4)
-    (hv : v < Q) :
-    P ∣ (2 * v + 2 ^ 255 + 1) ↔ v = t := by
-  constructor
-  · rintro ⟨k, hk⟩
-    have hk4 : k < 4 := by
-      refine Nat.lt_of_mul_lt_mul_left (a := P) ?_
-      rw [← hk]
-      omega
-    have hk1 : 1 < k := by
-      refine Nat.lt_of_mul_lt_mul_left (a := P) ?_
-      rw [← hk]
-      omega
-    have hk23 : k = 2 ∨ k = 3 := by omega
-    rcases hk23 with rfl | rfl
-    · omega
-    · omega
-  · rintro rfl
-    exact ⟨3, by omega⟩
-
-/-- The decode hits zero exactly at `zeroCarrier` — the characterization the
-in-circuit exclusion inverts on both sides of the endpoint laws. -/
-theorem fromShifted_eq_zero_iff (zt : Type1 Fq) :
-    zt.fromShifted = 0 ↔ zt.val = zeroCarrier := by
-  have ht : zt.val.val < PALLAS_SCALAR_CARD := ZMod.val_lt _
-  have hiff : zt.fromShifted = 0
-      ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (zt.val.val : ℤ) + 2 ^ 255 + 1) := by
-    simp only [Type1.fromShifted, Type1.fromShiftedZ, unshiftType1]
-    exact ZMod.intCast_zmod_eq_zero_iff_dvd _ _
-  have hval : zt.val = zeroCarrier
-      ↔ zt.val.val = (3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 := by
-    constructor
-    · intro h
-      rw [h, zeroCarrier, ZMod.val_natCast, Nat.mod_eq_of_lt (by decide)]
-    · intro h
-      rw [zeroCarrier, ← h, ZMod.natCast_val, ZMod.cast_id]
-  rw [hiff, hval]
-  have hcast : (2 * (zt.val.val : ℤ) + 2 ^ 255 + 1)
-      = ((2 * zt.val.val + 2 ^ 255 + 1 : ℕ) : ℤ) := by omega
-  rw [hcast, Int.natCast_dvd_natCast]
-  exact dvd_band_iff (by decide) (by decide) (by decide) (by decide) ht
-
 /-- The in-circuit verifier: hash the transcript, unpack it canonically and take the
 low 128 bits as the challenge, act on the public key through the endomorphism, run
 the ladder with its bits locked below the modulus, and pin `[z]·G = u + [c]·pk`.
@@ -184,7 +130,7 @@ The two canonicity locks (`unpackFull`, `assertBitsBelow` on the ladder's bits) 
 what pin the cross-field readings to canonical representatives — without them the
 challenge split and the ladder scalar are fixed only up to reconstruction classes.
 The closing `assertNotEqual` excludes the one carrier whose decode is the zero
-response (`zeroCarrier`) — the residue-`0` constant of the ladder's forbidden band,
+response (`Type1.zeroCarrier`) — the residue-`0` constant of the ladder's forbidden band,
 mirroring the deployed `unshift_nonzero` convention. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
     (st : Statement.Raw (FVar Fq)) :
@@ -199,6 +145,6 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
   let rhs ← addFast .checkFinite st.u cpk
   assertEqual zr.g.x rhs.p.x
   assertEqual zr.g.y rhs.p.y
-  assertNotEqual st.z.val (.const zeroCarrier)
+  assertNotEqual st.z.val (.const Type1.zeroCarrier)
 
 end Schnorr
