@@ -66,9 +66,6 @@ def kindType : GateKind → GateType
   | .endoScalar => .endoScalar
   | .zero => .zero
 
-/-- `unpack`'s bit reads go through the canonical representative. -/
-instance : ToNat Fp := ⟨ZMod.val⟩
-
 /-- The kimchi constraint sum at the corpus field, the one instantiation every
 circuit below runs at. -/
 abbrev C := KimchiConstraint Fp

@@ -308,7 +308,6 @@ Snarky.Example.constMul
 Snarky.Example.proverValue
 Snarky.Example.proverOk
 Snarky.Example.instFactPrimeOfNatNat_snarky
-Snarky.Example.instToNatF17
 
 -- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
 -- union-find and the row/state types the reduction emits into. `egUF` is the

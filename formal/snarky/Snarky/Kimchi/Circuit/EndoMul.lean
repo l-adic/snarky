@@ -1034,7 +1034,7 @@ private theorem chainBuild_fields [Field F] [DecidableEq F]
 open Kimchi.Gate.EndoMul in
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
 /-- The gadget is complete, generic over the curve dictionary: the honest prover run
-accepts on a readable in-range faithful scalar and a readable on-curve base, and the
+accepts on a readable in-range scalar and a readable on-curve base, and the
 returned point reads as `[s]·T` with
 `(s : F) = EndoScalar.toField (crumbsOf (2·rounds) n) λ` — the honest side of the
 defining equation, at the canonical crumbs of the scalar.
@@ -1051,7 +1051,8 @@ The loop invariant identifies the run with the honest walk `chainBuild`; the
 per-round check is the produce chain's (`chain_complete` through `off`), the init
 chain is the two pinned additions (`addFast_complete_spec`), and the register pin is
 `chain_nAcc` through the bit-to-crumb bridge (`crumbList_ofBits`). -/
-theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasEndo F)
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
     (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -1088,7 +1089,8 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   obtain ⟨v, hv⟩ := CVar.evalOk hsok
   obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
   obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  obtain ⟨hrange, hfaith⟩ := hsc v hv
+  have hrange := hsc v hv
+  have hfaith := LawfulToNat.cast_toNat v
   have hrange : ToNat.toNat v < 4 ^ (2 * rounds) := by
     have hpow : (4 : ℕ) ^ (2 * rounds) = 2 ^ (4 * rounds) := by
       rw [show (4 : ℕ) = 2 ^ 2 from rfl, ← pow_mul]
@@ -1503,14 +1505,15 @@ open Kimchi.Gate.EndoScalar in
 open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
 /-- The division gadget is complete at the honest advice: instantiated in its own
 scalar field (`q := W.order`, `λ' := λ mod q`), the prover's run succeeds whenever the
-input point reads on-curve and the challenge is faithful and in range, and the result
+input point reads on-curve and the challenge is in range, and the result
 reads as `[eff⁻¹]·g` for `eff` the endo-decoded challenge — the PS witness's defining
 equation. The run never errors because `eff` is a unit mod the order (`combo_ne_zero`
 at the ℤ-shadow's window), the advice point is a genuine Mathlib point (so the
 on-curve rows pass), and `endoMul` returns `[s]·[eff⁻¹]·g = g` — `s ≡ eff (mod q)` by
 reading the decomposition integers through the char window (`char_big`), so the final
 pins close by residue action. Stepped through in the body. -/
-theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasEndo F)
     [Fact (Nat.Prime d.W.order)]
     (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -1543,7 +1546,8 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   obtain ⟨v, hv⟩ := CVar.evalOk hsok
   obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
   obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  obtain ⟨hrange, hfaith⟩ := hsc v hv
+  have hrange := hsc v hv
+  have hfaith := LawfulToNat.cast_toNat v
   have hg : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
   -- the scalar facts, packaged: unit challenge + residue agreement
   obtain ⟨heffne', hkey⟩ := endoInv_scalar_facts d hg (ToNat.toNat v)
@@ -1620,7 +1624,8 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
     rw [hv₄] at hv'
     injection hv' with hv'
     subst hv'
-    exact ⟨by norm_num; exact hrange, hfaith⟩
+    norm_num
+    exact hrange
   · intro x' y' hx' hy'
     rw [hrpx₄] at hx'
     injection hx' with hx'

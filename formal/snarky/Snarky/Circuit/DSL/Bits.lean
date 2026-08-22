@@ -1,5 +1,6 @@
 import Snarky.Circuit.DSL.Field
 import Kimchi.Bits
+import Mathlib.Data.ZMod.Basic
 
 /-!
 # Bit packing and unpacking
@@ -16,8 +17,9 @@ names. The bit width is an explicit `Nat` argument (PS reflects a type-level `n`
 Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
 - PS reads the canonical integer representative through `PrimeField.toBigInt`; the port
   has no curve-class layer, so the one fragment these gadgets need lands here as
-  `Snarky.ToNat`. Its faithfulness (`(toNat x : F) = x`) and width (`toNat x < 2 ^ n`)
-  enter the laws as hypotheses, dischargeable at any concrete prime field (`ZMod.val`).
+  `Snarky.ToNat`, with its laws as `Snarky.LawfulToNat` (the representative casts back,
+  and lies below the field's `card`). Width (`toNat x < 2 ^ n`) stays a per-law
+  hypothesis — it is about the operand, not the reader.
 - The weighted-sum folds carry their index explicitly (`packAux`), mirroring PS's
   `mapWithIndex` fold — same expression tree, LSB first.
 
@@ -39,11 +41,28 @@ variable {F c : Type u}
 /-! ## The canonical representative -/
 
 /-- The canonical `Nat` representative of a field element — the one fragment of PS
-`PrimeField` (`toBigInt`) the bit gadgets need. Faithfulness and width are law-side
-hypotheses, not class laws (see the module docstring). -/
+`PrimeField` (`toBigInt`) the bit gadgets need; `LawfulToNat` carries its laws. -/
 class ToNat (F : Type u) where
   /-- The canonical representative (PS `toBigInt`; `ZMod.val` at concrete fields). -/
   toNat : F → Nat
+
+/-- `ToNat`'s laws at a field of `card` elements: the representative casts back to its
+element, and every representative lies below `card` (`ZMod.val` at a prime field). -/
+class LawfulToNat (F : Type u) [NatCast F] [ToNat F] where
+  /-- The representatives' bound — the field's cardinality. -/
+  card : Nat
+  /-- The representative casts back to its element. -/
+  cast_toNat : ∀ x : F, ((ToNat.toNat x : Nat) : F) = x
+  /-- Every representative lies below `card`. -/
+  toNat_lt : ∀ x : F, ToNat.toNat x < card
+
+/-- The canonical representative at a `ZMod` modulus is `ZMod.val` — every deployed
+field reads through this one instance. -/
+instance instToNatZMod (p : Nat) : ToNat (ZMod p) := ⟨ZMod.val⟩
+
+/-- `ZMod.val` is lawful at every nonzero modulus: it casts back, and lies below `p`. -/
+instance instLawfulToNatZMod (p : Nat) [NeZero p] : LawfulToNat (ZMod p) :=
+  ⟨p, fun x => ZMod.natCast_zmod_val x, fun x => ZMod.val_lt x⟩
 
 /-! ## The gadgets -/
 
@@ -157,14 +176,14 @@ theorem packPure_natCast {F : Type u} [CommSemiring F] {n : Nat} (bs : Vector Bo
   simp
 
 /-- The pure round trip: packing the unpacking is the identity, given the
-representative is faithful (`(toNat x : F) = x`) and fits in `n` bits — the boundary
+representative fits in `n` bits — the boundary
 library's decode-encode law. -/
-theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] {n : Nat} {x : F}
-    (hval : ((ToNat.toNat x : Nat) : F) = x) (hlt : ToNat.toNat x < 2 ^ n) :
+theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] [LawfulToNat F]
+    {n : Nat} {x : F} (hlt : ToNat.toNat x < 2 ^ n) :
     packPure (unpackPure x n) = x := by
   rw [packPure, unpackPure, Vector.toList_ofFn, packPureAux_horner,
     natLsbVal_ofFn_testBit n _ hlt]
-  simpa using hval
+  simpa using LawfulToNat.cast_toNat x
 
 /-- The digits of a fitting representative Horner-fold back to it. -/
 theorem natLsbVal_unpackPure {F : Type u} [ToNat F] {n : Nat} {x : F}
@@ -268,17 +287,17 @@ needs a characteristic hypothesis and is not stated. -/
     simpa [circuitVal] using hrow'
 
 open Std.Do in
-/-- `unpack`'s honest run succeeds on a faithful representative that fits in `n` bits;
+/-- `unpack`'s honest run succeeds on a representative that fits in `n` bits;
 the results are the operand's binary digits. -/
 @[spec] theorem unpack_complete_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
+    [LawfulToNat F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (v : FVar F) (n : Nat)
     (Q : PostCond (Vector (BoolVar F) n)
       (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => (v.eval env).isOk ∧
           ∀ vv, v.eval env = .ok vv →
-            ((ToNat.toNat vv : Nat) : F) = vv ∧ ToNat.toNat vv < 2 ^ n)
+            ToNat.toNat vv < 2 ^ n)
         (fun env r env' => ∀ vv, v.eval env = .ok vv →
           ∀ i (hi : i < n), (r[i]).toCVar.eval env'
             = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
@@ -288,7 +307,7 @@ the results are the operand's binary digits. -/
   intro st hpre
   obtain ⟨⟨hokv, hfaithful⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
-  obtain ⟨hval, hlt⟩ := hfaithful vv hv
+  have hlt := hfaithful vv hv
   simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   -- the component: the checked-bit witness computes the operand's `i`-th digit
   have hcomp : ∀ (i : Fin n)
@@ -334,7 +353,7 @@ the results are the operand's binary digits. -/
     exact hbitEval i hi
   have hch : Checker.holds (F := F) (c := c)
       (BasicSystem.r1cs (c := c) (pack bits) (.const 1) v) st₁.env = true := by
-    rw [packPure_unpackPure hval hlt] at hpack
+    rw [packPure_unpackPure hlt] at hpack
     exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ hpack (by rfl) hv₁ (mul_one vv)
   refine addConstraint_complete_spec (c := c) _ _ st₁ ⟨hch, fun _ st₂ _ hle₂ => ?_⟩
   intro _

@@ -54,7 +54,7 @@ returning later as a `deriving` handler if wanted.
 | `allBools` | `allBools` | |
 | `unpack_`, `pack_` | `unpack`, `pack` | the width is an explicit `Nat` argument |
 | `unpackPure`, `packPure` | same | |
-| `PrimeField.toBigInt` | `ToNat.toNat` | the one curve-class fragment ported (`DSL/Bits`) |
+| `PrimeField.toBigInt` | `ToNat.toNat` | the one curve-class fragment ported; laws: `LawfulToNat` |
 | `Variable` + the `CVar` folds (`add_`, …) | same | folds keep `_` (raw-constructor clash) |
 | `const_` | — | `CVar.const` is first-class |
 | `EvaluationError(..)` | `EvalError` | variants remapped; see `Circuit/CVar` |

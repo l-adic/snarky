@@ -314,8 +314,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   · rw [hsqv] at hvv
     injection hvv with hvv
     subst hvv
-    exact ⟨ZMod.natCast_rightInverse _,
-      lt_of_lt_of_le (ZMod.val_lt _) (by decide), ZMod.val_lt _⟩
+    exact ⟨lt_of_lt_of_le (LawfulToNat.toNat_lt _) (by decide), LawfulToNat.toNat_lt _⟩
   have hdig := hout₂ _ hsqv
   -- the packed low bits read as the wire challenge
   have hcev : (packLow 128 (by omega) hbits).eval st₂.env
@@ -336,11 +335,9 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     subst hveq
     have hpc : preChallenge stP.pk stP.u < 2 ^ 128 :=
       Nat.mod_lt _ (by positivity)
-    constructor
-    · show (((preChallenge stP.pk stP.u : ℕ) : Fq)).val < 2 ^ 128
-      rw [ZMod.val_natCast, Nat.mod_eq_of_lt (lt_of_lt_of_le hpc (by decide))]
-      exact hpc
-    · exact ZMod.natCast_rightInverse _
+    show (((preChallenge stP.pk stP.u : ℕ) : Fq)).val < 2 ^ 128
+    rw [ZMod.val_natCast, Nat.mod_eq_of_lt (lt_of_lt_of_le hpc (by decide))]
+    exact hpc
   · rw [hpkx₂] at hx
     rw [hpky₂] at hy
     injection hx with hx
@@ -377,8 +374,8 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   · rw [hzz₃] at hv
     injection hv with hv
     subst hv
-    refine ⟨lt_of_lt_of_le (ZMod.val_lt _) (by decide),
-      ZMod.natCast_rightInverse _, by simpa [Type1.fromShiftedZ] using hreg⟩
+    refine ⟨lt_of_lt_of_le (LawfulToNat.toNat_lt _) (by decide),
+      by simpa [Type1.fromShiftedZ] using hreg⟩
   · injection hx with hx
     injection hy with hy
     subst hx

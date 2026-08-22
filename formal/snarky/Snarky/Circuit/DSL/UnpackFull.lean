@@ -333,18 +333,17 @@ whose ℕ value is below `m` — the canonical lock the plain `unpack` lacks. -/
   exact hread i (by simpa using h1)
 
 open Std.Do in
-/-- `unpackFull`'s honest run succeeds on a faithful representative that fits the width
-and lies below `m`; the results are the operand's binary digits. -/
-@[spec] theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [Checker F c] [LawfulChecker F c]
+/-- `unpackFull`'s honest run succeeds on a representative that fits the width and
+lies below `m`; the results are the operand's binary digits. -/
+@[spec] theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F]
+    [LawfulToNat F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F)
     (Q : PostCond (Vector (BoolVar F) n)
       (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => (v.eval env).isOk ∧
           ∀ vv, v.eval env = .ok vv →
-            ((ToNat.toNat vv : Nat) : F) = vv ∧ ToNat.toNat vv < 2 ^ n ∧
-              ToNat.toNat vv < m)
+            ToNat.toNat vv < 2 ^ n ∧ ToNat.toNat vv < m)
         (fun env r env' => ∀ vv, v.eval env = .ok vv →
           ∀ i (hi : i < n), (r[i]).toCVar.eval env'
             = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
@@ -353,14 +352,14 @@ and lies below `m`; the results are the operand's binary digits. -/
   intro st hpre
   obtain ⟨⟨hokv, hcond⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
-  obtain ⟨hfaith, hfit, hbound⟩ := hcond vv hv
+  obtain ⟨hfit, hbound⟩ := hcond vv hv
   simp only [unpackFull, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   refine unpack_complete_spec v n _ st
     ⟨⟨hokv, fun vv' hv' => ?_⟩, fun bits st₁ hbits hle₁ => ?_⟩
   · rw [hv] at hv'
     injection hv' with hv'
     subst hv'
-    exact ⟨hfaith, hfit⟩
+    exact hfit
   have hdig : ∀ i (hi : i < n), (bits[i]).toCVar.eval st₁.env
       = .ok (bit ((ToNat.toNat vv).testBit i)) := fun i hi => hbits vv hv i hi
   have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>

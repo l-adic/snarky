@@ -243,12 +243,6 @@ def HasCurve.vesta : HasCurve Fq where
   two_ne := by decide
 
 open CompElliptic.Fields.Pasta in
-/-- The deployed circuit field reads canonical representatives through `ZMod.val` —
-the `ToNat` half of the deployed dictionaries (the Pallas-side twin arrives with its
-first consumer). -/
-instance instToNatFq : ToNat Fq := ⟨ZMod.val⟩
-
-open CompElliptic.Fields.Pasta in
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 /-- `Type1.toShifted` at the deployed boundary: its decode is the encoded scalar, and
 the vesta ladder accepts it whenever its residue is off the forbidden set — the
@@ -1266,7 +1260,7 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
 /-- The gadget is complete, generic over the curve dictionary: the honest prover run
-accepts on a readable on-curve base and a readable in-range faithful scalar whose
+accepts on a readable on-curve base and a readable in-range scalar whose
 `Type1` decode satisfies the ladder regime, and the returned point reads as the
 defining equation's honest side — `[unshift t]·g` at the scalar's canonical
 value. The returned bits read as the scalar's, LSB-first: `scaleFast2` pins the ones
@@ -1278,7 +1272,8 @@ contract. The loop invariant identifies the run with the honest walk `chainBuild
 the per-round check is the produce chain's (`chain_complete`), the init is the
 doubling `addFast` (`addFast_complete_spec`), and the register pin closes by the
 fold identity (`chain_accN` through `natLsbVal_testBit_msbStream`). -/
-theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F)
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base' : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
     (Q : PostCond (VarBaseMulResult n F)
@@ -1288,7 +1283,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           (scalar.val.eval env).isOk ∧ (base'.x.eval env).isOk ∧
           (base'.y.eval env).isOk ∧
           (∀ v, scalar.val.eval env = .ok v →
-            ToNat.toNat v < 2 ^ (5 * chunks) ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
+            ToNat.toNat v < 2 ^ (5 * chunks) ∧
             d.LadderRegime (5 * chunks)
               (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
           (∀ x y, base'.x.eval env = .ok x → base'.y.eval env = .ok y →
@@ -1318,7 +1313,8 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
   obtain ⟨v, hv⟩ := CVar.evalOk hsok
   obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
   obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  obtain ⟨hrange, hfaith, hregpre⟩ := hsc v hv
+  obtain ⟨hrange, hregpre⟩ := hsc v hv
+  have hfaith := LawfulToNat.cast_toNat v
   have hT : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
   have hyne : yv ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
   -- the sealed base
@@ -1606,10 +1602,11 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
 
 /-- `scaleFast1` is complete — the honest side of the defining equation
 `scaleFast1 g a ~ scalarMul (fromShifted a) g`: on the same readable, in-range,
-faithful, regime-satisfying scalar and readable on-curve base, the honest run
+regime-satisfying scalar and readable on-curve base, the honest run
 accepts and the returned point is `[unshift t]·g` at the scalar's canonical
 value. `varBaseMul_complete_spec`'s point promise at the result, the bits dropped. -/
-theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F)
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
     (Q : PostCond (AffinePoint (FVar F))
@@ -1618,7 +1615,7 @@ theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         (fun env =>
           (t.val.eval env).isOk ∧ (p.x.eval env).isOk ∧ (p.y.eval env).isOk ∧
           (∀ v, t.val.eval env = .ok v →
-            ToNat.toNat v < 2 ^ (5 * chunks) ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
+            ToNat.toNat v < 2 ^ (5 * chunks) ∧
             d.LadderRegime (5 * chunks)
               (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
           (∀ x y, p.x.eval env = .ok x → p.y.eval env = .ok y →
@@ -1685,14 +1682,15 @@ private theorem regime_off_base [Field F] [DecidableEq F] (d : HasCurve F)
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order zsmul_eq_zero_iff_order_dvd) in
 /-- `scaleFast2` is complete — the honest side of the PS defining equation
 `scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`: on a readable on-curve
-base, a readable in-range faithful half whose `Type1` decode satisfies the inner
+base, a readable in-range half whose `Type1` decode satisfies the inner
 ladder's regime, and a parity flag reading a genuine bit, the honest run accepts and
 the returned point is the `unshiftType2` decode's multiple. The regime also keeps the
 ladder result off the base (`s ≢ 1`, subwrap by size, one-wrap because `1` is a
 forbidden residue), which is what makes the parity correction's incomplete
 subtraction well-defined — the completeness-side counterpart of the sound law's
 `tne` self-enforcement. -/
-theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F)
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
     (Q : PostCond (AffinePoint (FVar F))
@@ -1702,7 +1700,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           (sDiv2.eval env).isOk ∧ ReadsBit (↑sOdd : CVar F) env ∧
           (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
           (∀ v, sDiv2.eval env = .ok v →
-            ToNat.toNat v < 2 ^ sDiv2Bits ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
+            ToNat.toNat v < 2 ^ sDiv2Bits ∧
             d.LadderRegime (5 * chunks)
               (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
           (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
@@ -1729,7 +1727,8 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
   obtain ⟨v, hv⟩ := CVar.evalOk hsok
   obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
   obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  obtain ⟨hrange, hfaith, hreg⟩ := hsc v hv
+  obtain ⟨hrange, hreg⟩ := hsc v hv
+  have hfaith := LawfulToNat.cast_toNat v
   obtain ⟨bb, hb⟩ := hbit.exists_bit
   have hT : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
   have hvlt : (ToNat.toNat v : ℤ) < 2 ^ (5 * chunks) := by
@@ -1743,7 +1742,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     injection hv' with hv'
     subst hv'
     exact ⟨lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd),
-      hfaith, hreg⟩
+      hreg⟩
   obtain ⟨xg, yg, hgx, hgy, hfin, hpt⟩ := hrpt v xv yv hv hxv hyv hT
   have hpins := dropped_bits_zero hrange (hrbits v hv)
   mvcgen
@@ -1904,10 +1903,11 @@ ANY parity bit — and the returned pair reads as the parity split. -/
 
 /-- `scaleFast2'` is complete — the honest side of the defining equation
 `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read through its parity split: the
-split's half must be in range, faithful, and regime-satisfying (its `Type1` decode
+split's half must be in range and regime-satisfying (its `Type1` decode
 feeds the inner ladder), and the returned point is the `unshiftType2` decode's
 multiple at the honest split. -/
-theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F)
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sc : FVar F)
     (Q : PostCond (AffinePoint (FVar F))
@@ -1917,7 +1917,6 @@ theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCu
           (sc.eval env).isOk ∧ (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
           (∀ v, sc.eval env = .ok v →
             ToNat.toNat ((splitField v).1) < 2 ^ sDiv2Bits ∧
-            ((ToNat.toNat ((splitField v).1) : ℕ) : F) = (splitField v).1 ∧
             d.LadderRegime (5 * chunks)
               (unshiftType1 (5 * chunks)
                 (ToNat.toNat ((splitField v).1) : ℤ))) ∧
