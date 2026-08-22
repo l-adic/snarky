@@ -193,25 +193,9 @@ def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   assertEqual s (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2)
   pure r
 
-/-! ## The curve dictionary and the soundness laws -/
+/-! ## The ladder regime and the soundness laws -/
 
 open Std.Do WeierstrassCurve.Affine
-
-/-- The curve dictionary the VarBaseMul laws close over (the PS ambient
-`WeierstrassCurve` class): the curve, its Pasta short shape, and the group facts the
-ladder's gate-semantics theorems consume. Like `HasEndo`, the laws stay generic over
-it and are concretized only inside a larger circuit's instantiation. -/
-structure HasCurve (F : Type) [Field F] [DecidableEq F] where
-  /-- The curve the base point and accumulators live on. -/
-  W : WeierstrassCurve.Affine F
-  /-- The Pasta short-Weierstrass shape. -/
-  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
-  /-- The group order is prime. -/
-  prime : Nat.Prime W.order
-  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
-  odd : W.order ≠ 2
-  /-- The field does not have characteristic `2`. -/
-  two_ne : (2 : F) ≠ 0
 
 /-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
 dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
@@ -223,24 +207,6 @@ def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
   3 * 2 ^ L ≤ d.W.order ∨
     (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
       z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The dictionary at deployed Pallas: the certified order facts from `Pasta`. -/
-def HasCurve.pallas : HasCurve Fp where
-  W := Pallas.curve.toAffine
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  prime := Fact.out
-  odd := by rw [pallas_card]; decide
-  two_ne := by decide
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
-def HasCurve.vesta : HasCurve Fq where
-  W := Vesta.curve.toAffine
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  prime := Fact.out
-  odd := by rw [vesta_card]; decide
-  two_ne := by decide
 
 open CompElliptic.Fields.Pasta in
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
@@ -610,7 +576,7 @@ ladder's. The curve facts arrive bundled as the dictionary `d : HasCurve F`; the
 regime fact (`HasCurve.LadderRegime`) is the ladder's analog of `endoMul`'s
 off-targets promise — per-scalar, because the one-wrap band's forbidden residues
 depend on the decoded value. -/
-theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+@[spec] theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
     (Q : PostCond (VarBaseMulResult n F) (.arg (BuilderState F) .pure)) :
@@ -638,7 +604,7 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   mvcgen
   intro bits _
   mvcgen
-  refine AddFast.addFast_checkFinite_spec d.W d.short d.two_ne sbase sbase _ _ ?_
+  refine AddFast.addFast_checkFinite_spec sbase sbase _ _ ?_
   intro p nv hp
   mvcgen
   case inv1 =>
@@ -758,7 +724,7 @@ full width the wire genuinely cannot distinguish `t` from `t + p` — the ambigu
 the forbidden band exists to police), and the structural range is what the regime's
 mod-order reasoning consumes; below the characteristic they determine `s` exactly.
 The wired bits are `varBaseMul_spec`'s business; this statement is decode-only. -/
-theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
@@ -774,7 +740,6 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     ⦃Q⦄ := by
   simp only [scaleFast1]
   mvcgen
-  refine varBaseMul_spec d n chunks hn p t _ _ ?_
   intro r nv hr
   mvcgen
   rename_i st hpre
@@ -799,7 +764,7 @@ decode `2·sDiv2 + sOdd + 2^(5·chunks)`: the inner ladder computes the register
 parity correction folds `sOdd` in by conditionally subtracting the base. The
 parity's booleanity is the caller's promise (the `select_spec` shape);
 `splitFieldVar` supplies it in `scaleFast2'`. -/
-theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
@@ -820,7 +785,6 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   simp only [scaleFast2]
   mvcgen
   rename_i s hpre
-  refine varBaseMul_spec d n chunks hn base ⟨sDiv2⟩ _ _ ?_
   intro r nv hr
   mvcgen
   case inv1 =>
@@ -839,7 +803,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     rename_i u st' hinv
     obtain ⟨hV, hzeros⟩ := hinv
     mvcgen
-    refine AddFast.addFast_checkFinite_spec d.W d.short d.two_ne r.g
+    refine AddFast.addFast_checkFinite_spec r.g
       ⟨base.x, CVar.negate_ base.y⟩ _ _ ?_
     intro q nvq hq
     rw [hV] at hq
@@ -933,7 +897,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
 /-- `scaleFast2'` is sound — `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read
 through its parity split: the split's recombination `s = 2·v + sOdd` composes with
 `scaleFast2`'s `unshiftType2` decode. -/
-theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
+theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sc : FVar F)
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
@@ -953,7 +917,7 @@ theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   rename_i s hpre
   intro pr nv hsum hbool
   obtain ⟨sd, so⟩ := pr
-  refine scaleFast2_spec d n chunks sDiv2Bits hn hd base sd so _ _ ?_
+  refine scaleFast2_spec n chunks sDiv2Bits hn hd base sd so _ _ ?_
   intro r nv2 hr
   refine hpre r _ ?_
   intro hT
@@ -1270,8 +1234,8 @@ contract. The loop invariant identifies the run with the honest walk `chainBuild
 the per-round check is the produce chain's (`chain_complete`), the init is the
 doubling `addFast` (`addFast_complete_spec`), and the register pin closes by the
 fold identity (`chain_accN` through `natLsbVal_testBit_msbStream`). -/
-theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (d : HasCurve F)
+@[spec] theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    [d : HasCurve F]
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base' : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
     (Q : PostCond (VarBaseMulResult n F)
@@ -1341,7 +1305,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNa
       have h3' : 3 ≤ d.W.order := by omega
       exact_mod_cast h3'
     exact smul_ne_zero_of_lt d.W (Point.some_ne_zero hT) (by norm_num) hlt h2P
-  refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne base base _ _
+  refine AddFast.addFast_complete_spec .checkFinite base base _ _
     ⟨⟨by rw [hsx₂]; rfl, by rw [hsy₂]; rfl, by rw [hsx₂]; rfl, by rw [hsy₂]; rfl,
       fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
      fun p st₃ hp hle₃ => ?_⟩
@@ -1604,7 +1568,7 @@ regime-satisfying scalar and readable on-curve base, the honest run
 accepts and the returned point is `[unshift t]·g` at the scalar's canonical
 value. `varBaseMul_complete_spec`'s point promise at the result, the bits dropped. -/
 theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (d : HasCurve F)
+    [d : HasCurve F]
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
     (Q : PostCond (AffinePoint (FVar F))
@@ -1661,7 +1625,7 @@ private theorem dropped_bits_zero [Field F] [DecidableEq F] {env : Assignments F
 — subwrap by size (the window sits strictly inside `(0, order)`), one-wrap because
 `1` is a forbidden residue. What makes `scaleFast2`'s parity correction — the
 incomplete subtraction of the base — well-defined on the honest run. -/
-private theorem regime_off_base [Field F] [DecidableEq F] (d : HasCurve F)
+private theorem regime_off_base [Field F] [DecidableEq F] [d : HasCurve F]
     {L : ℕ} {t : ℤ} (ht0 : 0 ≤ t) (htlt : t < 2 ^ L)
     (hreg : d.LadderRegime L (unshiftType1 L t)) :
     ¬ ((d.W.order : ℤ) ∣ (2 * t + 2 ^ L)) := by
@@ -1688,7 +1652,7 @@ forbidden residue), which is what makes the parity correction's incomplete
 subtraction well-defined — the completeness-side counterpart of the sound law's
 `tne` self-enforcement. -/
 theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (d : HasCurve F)
+    [d : HasCurve F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
     (Q : PostCond (AffinePoint (FVar F))
@@ -1732,7 +1696,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNa
   have hvlt : (ToNat.toNat v : ℤ) < 2 ^ (5 * chunks) := by
     exact_mod_cast lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd)
   have hs1 : ¬ ((d.W.order : ℤ) ∣ (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks))) :=
-    regime_off_base d (Int.natCast_nonneg _) hvlt hreg
+    regime_off_base (Int.natCast_nonneg _) hvlt hreg
   -- the inner ladder
   refine ⟨⟨hsok, hxok, hyok, fun v' hv' => ?_, hcurve⟩,
     fun r st' hrbits hrpt hle => ?_⟩
@@ -1784,7 +1748,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNa
             module
         _ = 0 := h0
     mvcgen
-    refine AddFast.addFast_complete_spec .checkFinite d.W d.short d.two_ne
+    refine AddFast.addFast_complete_spec .checkFinite
       r.g ⟨base.x, CVar.negate_ base.y⟩ _ _
       ⟨⟨by rw [hgx']; rfl, by rw [hgy']; rfl, by rw [hbx']; rfl, by rw [hny]; rfl,
         fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
@@ -1905,7 +1869,7 @@ split's half must be in range and regime-satisfying (its `Type1` decode
 feeds the inner ladder), and the returned point is the `unshiftType2` decode's
 multiple at the honest split. -/
 theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (d : HasCurve F)
+    [d : HasCurve F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sc : FVar F)
     (Q : PostCond (AffinePoint (FVar F))

@@ -1,4 +1,5 @@
 import Snarky.Circuit.DSL.Utils
+import Snarky.Kimchi.Circuit.Curve
 import Snarky.Kimchi.Semantics
 import Kimchi.Gate.Semantics.AddComplete
 
@@ -202,8 +203,7 @@ open Std.Do
   rename_i s hpre
   intro y _ hy
   mvcgen
-  intro x _ hx
-  intro _
+  intro x _ hx _
   exact hpre ⟨x, y⟩ _ hx hy
 
 open Std.Do in
@@ -271,8 +271,7 @@ private theorem addFastTail_spec [Field F] [DecidableEq F]
   mvcgen
   intro y3 _
   mvcgen
-  intro u _ hpay
-  intro _
+  intro u _ hpay _
   refine hpre _ _ rfl ?_
   intro h1 h2 hy1ne
   rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hpay hy1ne htwo with
@@ -354,19 +353,18 @@ returned flag is the pinned constant `0` (it reads `0`, never `1`), so under any
 satisfying valuation, for nonsingular operand points with the first finite (`y ≠ 0`),
 the result reads as the finite EC group sum. The pinned-mode consumers (the `endoMul`
 init chain) apply this form. -/
-theorem addFast_checkFinite_spec [Field F] [DecidableEq F]
-    (W : WeierstrassCurve.Affine F)
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
+theorem addFast_checkFinite_spec [Field F] [DecidableEq F] [d : HasCurve F]
     (p1' p2' : AffinePoint (FVar F))
     (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AddResult F) =>
-        ∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
-          (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)),
+        ∀ (h1 : d.W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+          (h2 : d.W.Nonsingular (p2'.x.val V) (p2'.y.val V)),
           p1'.y.val V ≠ 0 →
-          ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
+          ∃ h3 : d.W.Nonsingular (r.p.x.val V) (r.p.y.val V),
             Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) Q⦄
     addFast (c := KimchiConstraint F) .checkFinite p1' p2'
     ⦃Q⦄ := by
+  obtain ⟨W, ha, -, -, htwo⟩ := d
   simp only [addFast]
   mvcgen
   rename_i s hpre
@@ -536,9 +534,8 @@ it reads `0` and the output coordinates are a nonsingular point equal to the sum
 was computed). The executable seam (`kimchiSolve` at `kimchiOps`) is outside this
 statement: its ops-coherence lockstep is the open obligation
 `Snarky.Kimchi.Constraint` records. -/
-theorem addFast_complete_spec [Field F] [DecidableEq F]
-    (fin : Finiteness) (W : WeierstrassCurve.Affine F)
-    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
+theorem addFast_complete_spec [Field F] [DecidableEq F] [d : HasCurve F]
+    (fin : Finiteness)
     (p1' p2' : AffinePoint (FVar F))
     (Q : PostCond (AddResult F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
@@ -547,22 +544,23 @@ theorem addFast_complete_spec [Field F] [DecidableEq F]
           (p2'.x.eval env).isOk ∧ (p2'.y.eval env).isOk ∧
           (∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
             p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
-            ∃ (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2),
+            ∃ (h1 : d.W.Nonsingular x1 y1) (h2 : d.W.Nonsingular x2 y2),
               y1 ≠ 0 ∧ (fin = .checkFinite →
                 Point.some _ _ h1 + Point.some _ _ h2 ≠ 0)))
         (fun env (r : AddResult F) env' =>
           ∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
             p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
-            ∀ (h1 : W.Nonsingular x1 y1) (h2 : W.Nonsingular x2 y2),
+            ∀ (h1 : d.W.Nonsingular x1 y1) (h2 : d.W.Nonsingular x2 y2),
               ((↑r.isInfinity : CVar F).eval env' = .ok 1 ∧
                 Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
               (∃ x3 y3, r.p.x.eval env' = .ok x3 ∧ r.p.y.eval env' = .ok y3 ∧
                 (↑r.isInfinity : CVar F).eval env' = .ok 0 ∧
-                ∃ h3 : W.Nonsingular x3 y3,
+                ∃ h3 : d.W.Nonsingular x3 y3,
                   Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))
         Q⦄
     addFast (c := KimchiProverC F) fin p1' p2'
     ⦃Q⦄ := by
+  obtain ⟨W, ha, -, -, htwo⟩ := d
   simp only [addFast]
   mvcgen
   rename_i st hpre

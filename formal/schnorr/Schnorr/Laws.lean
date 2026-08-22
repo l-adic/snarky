@@ -52,27 +52,21 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
     (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit]
-  have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) stv.pk.point
-  simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
-  have hvbm := varBaseMul_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
-    ⟨.const gen.x, .const gen.y⟩ stv.z
-  have hadd := AddFast.addFast_checkFinite_spec (F := Fq) Vesta.curve.toAffine
-    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u.point
-  mvcgen [hendo, hvbm, hadd]
+  mvcgen
   case vc1.hsize => exact fqParams_size
   rename_i st hpre
   intro squeezed _ hsqv
   simp only [List.map_cons, List.map_nil, CVar.val] at hsqv
-  mvcgen [hendo, hvbm, hadd]
+  mvcgen
   intro hbits _ hunpv
-  mvcgen [hendo, hvbm, hadd]
+  mvcgen
   intro cpk _ hcpk
-  mvcgen [hvbm, hadd]
+  mvcgen
   intro zr _ hzrv
-  mvcgen [hadd]
+  mvcgen
   case vc2.hlen => simp
   intro _ _ hlockv
-  mvcgen [hadd]
+  mvcgen [AddFast.addFast_checkFinite_spec]
   intro rhs _ hrhsv
   mvcgen
   intro _ _ hax
@@ -190,14 +184,7 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
   simp only [verifyCircuit]
   have hsq := RandomOracle.hashVec_complete_spec (F := Fq) Poseidon.fqParams
     fqParams_size
-  have hendo := EndoMul.endoMul_complete_spec (F := Fq) HasEndo.vesta 32 (by norm_num)
-    stv.pk.point
-  simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
-  have hvbmc := varBaseMul_complete_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
-    ⟨.const gen.x, .const gen.y⟩ stv.z
-  have hadd := AddFast.addFast_complete_spec (F := Fq) .checkFinite Vesta.curve.toAffine
-    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u.point
-  mvcgen -trivial [hsq, hendo, hvbmc, hadd]
+  mvcgen -trivial [hsq]
   · exact fqParams_size
   rename_i st₀ hpre
   obtain ⟨hrd, hk⟩ := hpre
@@ -225,7 +212,7 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
         (.cons (reads_fvar_iff.mpr hpkx) (.cons (reads_fvar_iff.mpr hpky)
           (.cons (reads_fvar_iff.mpr hux) (.cons (reads_fvar_iff.mpr huy) .nil))))))
   -- the canonical unpack at the honest hash value
-  mvcgen -trivial [hendo, hvbmc, hadd]
+  mvcgen -trivial
   case hm => decide
   refine ⟨⟨isOk_of_eq hsqv, fun vv hvv => ?_⟩, fun hbits st₂ hout₂ hle₂ => ?_⟩
   · rw [hsqv] at hvv
@@ -242,7 +229,9 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
       (fun i hi => by simp only [unpackPure, Vector.getElem_ofFn]; exact hdig i hi),
       natLsbVal_take_unpackPure (by omega), hpre]
   -- the challenge leg: endoMul at the canonical prechallenge
-  mvcgen -trivial [hendo, hvbmc, hadd]
+  mvcgen -trivial
+  case hbits => norm_num
+  case he => rfl
   have hpkx₂ := CVar.eval_le hle₂ (CVar.eval_le hle₁ hpkx)
   have hpky₂ := CVar.eval_le hle₂ (CVar.eval_le hle₁ hpky)
   refine ⟨⟨isOk_of_eq hcev, isOk_of_eq hpkx₂, isOk_of_eq hpky₂, fun v hv => ?_,
@@ -274,7 +263,8 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
       Poseidon.FqVesta.spec.lam (preChallenge raw.pk raw.u) :=
     HasEndo.vesta_endoExpand hsab hAle hBle hAval hBval
   -- the response leg: the ladder at the honest encoding
-  mvcgen -trivial [hvbmc, hadd]
+  mvcgen -trivial
+  case hn => norm_num
   have hzz₃ := CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ hzz))
   refine ⟨⟨isOk_of_eq hzz₃, isOk_of_eq rfl, isOk_of_eq rfl, fun v hv => ?_,
     fun x y hx hy => ?_⟩, fun zr st₄ hbitread hact hle₄ => ?_⟩
@@ -317,7 +307,7 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
     exact fun h => (smul_eq_zero.mp h).elim hz0
       (WeierstrassCurve.Affine.Point.some_ne_zero gen_nonsingular)
   -- the complete addition of u and [c]·pk
-  mvcgen -trivial [hadd]
+  mvcgen -trivial [AddFast.addFast_complete_spec]
   have hux₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄
     (CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ hux))))
   have huy₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄

@@ -202,31 +202,20 @@ cells are the same variables. -/
 open Std.Do WeierstrassCurve.Affine
 
 /-- The endomorphism dictionary (PS `HasEndo` together with the ambient curve facts):
-the curve, the endomorphism coefficient and its scalar eigenvalue, and every
-curve-level fact the `endoMul` law pair consumes. This is the deep embedding's
-rendering of the PS typeclass dictionary — a structure passed explicitly, not a
-class, since the formal tree threads theorem content by argument. Generic circuit
-laws take one `HasEndo F` and compose over an abstract field the way the PS pickles
-circuits do; the deployed `HasEndo.pallas`/`HasEndo.vesta` discharge it, mirroring
-the instantiation at wrap/step main. -/
-structure HasEndo (F : Type) [Field F] [DecidableEq F] where
-  /-- The curve the base point and accumulators live on. -/
-  W : WeierstrassCurve.Affine F
+the curve dictionary `HasCurve` it extends, the endomorphism coefficient and its
+scalar eigenvalue, and every curve-level fact the `endoMul` law pair consumes — the
+deep embedding's rendering of the PS typeclass, resolved by the field. Generic
+circuit laws close over one `HasEndo F` and compose over an abstract field the way
+the PS pickles circuits do; the deployed instances `HasEndo.pallas`/`HasEndo.vesta`
+discharge it, mirroring the instantiation at wrap/step main. -/
+class HasEndo (F : Type) [Field F] [DecidableEq F] extends HasCurve F where
   /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
   endo : F
   /-- The scalar eigenvalue `λ` of the endomorphism: `φ(T) = [λ]·T`. -/
   lam : ℤ
-  /-- The Pasta short-Weierstrass shape. -/
-  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
   /-- The curve is smooth, so an on-curve point is nonsingular
   (`equation_iff_nonsingular_of_Δ_ne_zero`). -/
   delta_ne : W.Δ ≠ 0
-  /-- The group order is prime. -/
-  prime : Nat.Prime W.order
-  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
-  odd : W.order ≠ 2
-  /-- The field does not have characteristic `2`. -/
-  two_ne : (2 : F) ≠ 0
   /-- The field does not have characteristic `3`. -/
   three_ne : (3 : F) ≠ 0
   /-- The eigenvalue relation `φ(T) = [λ]·T` at every on-curve point. -/
@@ -253,15 +242,11 @@ open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts from
 `Pasta` (`pallas_eigen`, `pallas_endo_nonsingular`, `pallas_card`) and the GLV
 off-targets fact from the kimchi gate semantics. -/
-def HasEndo.pallas : HasEndo Fp where
-  W := Pallas.curve.toAffine
+instance HasEndo.pallas : HasEndo Fp where
+  toHasCurve := HasCurve.pallas
   endo := pallasEndo
   lam := pallasLam
-  short := ⟨rfl, rfl, rfl, rfl⟩
   delta_ne := by decide
-  prime := Fact.out
-  odd := by rw [pallas_card]; decide
-  two_ne := by decide
   three_ne := by decide
   eigen := fun hT _ => pallas_eigen hT
   endo_nonsingular := fun h => pallas_endo_nonsingular h
@@ -273,7 +258,7 @@ def HasEndo.pallas : HasEndo Fp where
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
       (by norm_num [pallasLam])
       (by rw [pallas_card]; norm_num [pallasLam])
-  order_ne_three := by rw [pallas_card]; decide
+  order_ne_three := by show Pallas.curve.toAffine.order ≠ 3; rw [pallas_card]; decide
   char_big := fun z hz h0 => by
     have hdvd : ((PALLAS_BASE_CARD : ℕ) : ℤ) ∣ z :=
       (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
@@ -281,15 +266,11 @@ def HasEndo.pallas : HasEndo Fp where
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
-def HasEndo.vesta : HasEndo Fq where
-  W := Vesta.curve.toAffine
+instance HasEndo.vesta : HasEndo Fq where
+  toHasCurve := HasCurve.vesta
   endo := vestaEndo
   lam := vestaLam
-  short := ⟨rfl, rfl, rfl, rfl⟩
   delta_ne := by decide
-  prime := Fact.out
-  odd := by rw [vesta_card]; decide
-  two_ne := by decide
   three_ne := by decide
   eigen := fun hT _ => vesta_eigen hT
   endo_nonsingular := fun h => vesta_endo_nonsingular h
@@ -301,7 +282,7 @@ def HasEndo.vesta : HasEndo Fq where
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
       (by norm_num [vestaLam])
       (by rw [vesta_card]; norm_num [vestaLam])
-  order_ne_three := by rw [vesta_card]; decide
+  order_ne_three := by show Vesta.curve.toAffine.order ≠ 3; rw [vesta_card]; decide
   char_big := fun z hz h0 => by
     have hdvd : ((PALLAS_SCALAR_CARD : ℕ) : ℤ) ∣ z :=
       (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
@@ -314,7 +295,7 @@ challenge is 64 two-bit crumbs; `3·2^64 = 3·4^32` at 32 rounds) — IS the gat
 decoded integer `toIntZ`, via the `d.char_big` window. Modulus-free: consumers cast
 the one integer into whichever scalar field acts. -/
 theorem HasEndo.decomposition_eq_toIntZ [Field F] [DecidableEq F]
-    (d : HasEndo F)
+    [d : HasEndo F]
     (n : ℕ) {s A B : ℤ} (hsab : s = B + A * d.lam)
     (hAle : |A| ≤ 3 * 2 ^ 64) (hBle : |B| ≤ 3 * 2 ^ 64)
     (hAval : (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n))
@@ -350,7 +331,7 @@ open Kimchi.Gate.EndoScalar in
 /-- `decomposition_eq_toIntZ` mod the group order: the one integer scalar, read back
 as the gate's decoded scalar at the canonical crumbs (`toField_digits`). -/
 theorem HasEndo.decomposition_residue [Field F] [DecidableEq F]
-    (d : HasEndo F)
+    [d : HasEndo F]
     [Fact (Nat.Prime d.W.order)]
     (n : ℕ) {s A B : ℤ} (hsab : s = B + A * d.lam)
     (hAle : |A| ≤ 3 * 2 ^ 64) (hBle : |B| ≤ 3 * 2 ^ 64)
@@ -378,7 +359,7 @@ theorem HasEndo.decomposition_residue [Field F] [DecidableEq F]
       ((d.lam : ZMod d.W.order))
       = ((toIntZ (digitsOf 64 n) d.lam : ℤ) : ZMod d.W.order) := by
     rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
-  rw [heffz, d.decomposition_eq_toIntZ n hsab hAle hBle hAval hBval]
+  rw [heffz, HasEndo.decomposition_eq_toIntZ n hsab hAle hBle hAval hBval]
 
 open CompElliptic.Fields.Pasta Kimchi.Gate.EndoScalar in
 /-- At Vesta, 64 crumbs reconstructing a value below `2^128` are its canonical crumbs:
@@ -403,7 +384,7 @@ theorem HasEndo.vesta_endoExpand {n : ℕ} {s A B : ℤ} (hsab : s = B + A * Has
     (hAval : (A : Fq) = decomposeA (crumbsOf 64 n))
     (hBval : (B : Fq) = decomposeB (crumbsOf 64 n)) :
     ((s : ℤ) : Fp) = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n := by
-  rw [HasEndo.vesta.decomposition_eq_toIntZ n hsab
+  rw [HasEndo.decomposition_eq_toIntZ (d := HasEndo.vesta) n hsab
       (by norm_num at hAle ⊢; exact hAle) (by norm_num at hBle ⊢; exact hBle) hAval hBval,
     endoExpand_eq_toField (by decide) (by decide),
     show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
@@ -711,8 +692,8 @@ with `s = B + A·λ`, the accumulators bounded by `3·4^rounds` and pinned in `F
 the decomposition of a valid crumb list reconstructing the scalar. The bounded shape
 lets a consumer read the same integer in a second field
 (`HasEndo.decomposition_residue`); concretized at `HasEndo.pallas`/`vesta`. -/
-theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
-    (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
+@[spec] theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
+    (rounds : ℕ) (hbits : 4 * rounds ≤ 244) (e : F) (he : e = d.endo)
     (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
@@ -728,9 +709,15 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
               (A : F) = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
               (B : F) = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
               (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
-    (endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
+    (endoMul (c := KimchiConstraint F) e rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, -, -, -⟩ := d
+  subst he
+  obtain ⟨eb, lam, -, h3, heig, hφns, hoff, -, -, -⟩ := d
+  set W := HasCurve.W (F := F)
+  have ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0 := HasCurve.short
+  have hprime : Nat.Prime W.order := HasCurve.prime
+  have hodd : W.order ≠ 2 := HasCurve.odd
+  have h2 : (2 : F) ≠ 0 := HasCurve.two_ne
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, endoMulRound, mapAccumM]
@@ -740,10 +727,10 @@ theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
   mvcgen
   intro phix _ hphix
   mvcgen
-  refine AddFast.addFast_checkFinite_spec W ha h2 t ⟨phix, t.y⟩ _ _ ?_
+  refine AddFast.addFast_checkFinite_spec t ⟨phix, t.y⟩ _ _ ?_
   intro p1 nv1 hp1
   mvcgen
-  refine AddFast.addFast_checkFinite_spec W ha h2 p1.p p1.p _ _ ?_
+  refine AddFast.addFast_checkFinite_spec p1.p p1.p _ _ ?_
   intro p2 nv2 hp2
   mvcgen
   case inv1 =>
@@ -1081,9 +1068,9 @@ The loop invariant identifies the run with the honest walk `chainBuild`; the
 per-round check is the produce chain's (`chain_complete` through `off`), the init
 chain is the two pinned additions (`addFast_complete_spec`), and the register pin is
 `chain_nAcc` through the bit-to-crumb bridge (`crumbList_ofBits`). -/
-theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (d : HasEndo F)
-    (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
+@[spec] theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    [d : HasEndo F]
+    (rounds : ℕ) (hbits : 4 * rounds ≤ 244) (e : F) (he : e = d.endo)
     (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
@@ -1107,9 +1094,15 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
                 (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat v))
                 (d.lam : F))
         Q⦄
-    (endoMul (c := KimchiProverC F) d.endo rounds t scalar)
+    (endoMul (c := KimchiProverC F) e rounds t scalar)
     ⦃Q⦄ := by
-  obtain ⟨W, eb, lam, ha, -, hprime, hodd, h2, h3, heig, hφns, hoff, hlam1, -, -⟩ := d
+  subst he
+  obtain ⟨eb, lam, -, h3, heig, hφns, hoff, hlam1, -, -⟩ := d
+  set W := HasCurve.W (F := F)
+  have ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0 := HasCurve.short
+  have hprime : Nat.Prime W.order := HasCurve.prime
+  have hodd : W.order ≠ 2 := HasCurve.odd
+  have h2 : (2 : F) ≠ 0 := HasCurve.two_ne
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, mapAccumM]
@@ -1155,7 +1148,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
     intro hzero
     rw [heig hT hφT] at hzero
     exact hlam1 (Point.some _ _ hT) hTne (by rw [← hzero]; module)
-  refine AddFast.addFast_complete_spec .checkFinite W ha h2 t ⟨phix, t.y⟩ _ _
+  refine AddFast.addFast_complete_spec .checkFinite t ⟨phix, t.y⟩ _ _
     ⟨⟨by rw [hx02]; rfl, by rw [hy02]; rfl, by rw [hphix]; rfl, by rw [hy02]; rfl,
       fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
      fun p1 st₃ hp1 hle₃ => ?_⟩
@@ -1179,7 +1172,7 @@ theorem endoMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
       have h3' : 3 ≤ W.order := by omega
       exact_mod_cast h3'
     exact smul_ne_zero_of_lt W (Point.some_ne_zero hP1) (by norm_num) hlt h2P
-  refine AddFast.addFast_complete_spec .checkFinite W ha h2 p1.p p1.p _ _
+  refine AddFast.addFast_complete_spec .checkFinite p1.p p1.p _ _
     ⟨⟨by rw [hx1e]; rfl, by rw [hy1e]; rfl, by rw [hx1e]; rfl, by rw [hy1e]; rfl,
       fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
      fun p2 st₄ hp2 hle₄ => ?_⟩
@@ -1391,7 +1384,7 @@ The on-curve rows discharge `endoMul_spec`'s promise hypothesis at the WITNESSED
 point — the gadget's design point — with smoothness (`d.delta_ne`) upgrading their
 equation to nonsingularity. The advice parameters `(q, hq, lam')` are universally
 quantified: soundness never consults the witness. -/
-theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
+theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
     (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
     (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
@@ -1423,7 +1416,6 @@ theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F)
   mvcgen
   intro _ _ hsq
   mvcgen
-  refine endoMul_spec d 32 (by norm_num) ⟨result.1, result.2⟩ scalar _ _ ?_
   intro computed nvc hcomp
   mvcgen
   intro _ _ heqx
@@ -1471,7 +1463,7 @@ Numeral convention: everything here is spelled at the 128-bit challenge's litera
 `64` crumbs (crumbs are 2-bit, `64 = 128 / 2`) and `2 ^ 64` bound magnitudes. The
 caller bridges `endoMul`'s rounds-arithmetic spellings (`2 * 32`, `4 ^ 32` at
 `rounds = 32`) once, at the application. -/
-private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
+private theorem endoInv_scalar_facts [Field F] [DecidableEq F] [d : HasEndo F]
     [Fact (Nat.Prime d.W.order)] {xv yv : F} (hg : d.W.Nonsingular xv yv) (n : ℕ) :
     Kimchi.Gate.EndoScalar.toField (crumbsOf 64 n) ((d.lam : ZMod d.W.order)) ≠ 0 ∧
     ∀ s A B : ℤ, s = B + A * d.lam → |A| ≤ 3 * 2 ^ 64 → |B| ≤ 3 * 2 ^ 64 →
@@ -1529,7 +1521,7 @@ private theorem endoInv_scalar_facts [Field F] [DecidableEq F] (d : HasEndo F)
       (by norm_num at hAhi ⊢; linarith)
       (hexp ▸ hkill)
   · exact fun s A B hsab hAle hBle hAval hBval =>
-      d.decomposition_residue n hsab hAle hBle hAval hBval
+      HasEndo.decomposition_residue n hsab hAle hBle hAval hBval
 
 open Kimchi.Gate.EndoScalar in
 open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
@@ -1543,7 +1535,7 @@ on-curve rows pass), and `endoMul` returns `[s]·[eff⁻¹]·g = g` — `s ≡ e
 reading the decomposition integers through the char window (`char_big`), so the final
 pins close by residue action. Stepped through in the body. -/
 theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (d : HasEndo F)
+    [d : HasEndo F]
     [Fact (Nat.Prime d.W.order)]
     (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
     (Q : PostCond (AffinePoint (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -1580,7 +1572,7 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
   have hfaith := LawfulToNat.cast_toNat v
   have hg : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
   -- the scalar facts, packaged: unit challenge + residue agreement
-  obtain ⟨heffne', hkey⟩ := endoInv_scalar_facts d hg (ToNat.toNat v)
+  obtain ⟨heffne', hkey⟩ := endoInv_scalar_facts hg (ToNat.toNat v)
   obtain ⟨eff, heff⟩ : ∃ eff : ZMod d.W.order,
       eff = Kimchi.Gate.EndoScalar.toField (crumbsOf 64 (ToNat.toNat v))
         ((d.lam : ZMod d.W.order)) := ⟨_, rfl⟩
@@ -1647,7 +1639,6 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
   have hv₄ := CVar.eval_le hle₁₄ hv
   have hrpx₄ := CVar.eval_le hle₄ hrpx₃
   have hrpy₄ := CVar.eval_le hle₄ hrpy₃
-  mvcgen [endoMul_complete_spec]
   refine ⟨⟨by rw [hv₄]; rfl, by rw [hrpx₄]; rfl, by rw [hrpy₄]; rfl, ?_, ?_⟩,
     fun computed st₅ hgr5 hle₅ => ?_⟩
   · intro v' hv'
