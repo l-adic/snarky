@@ -1,4 +1,5 @@
 import Snarky.Circuit.DSL.Field
+import Kimchi.Bits
 
 /-!
 # Bit packing and unpacking
@@ -28,6 +29,9 @@ Both walk the gadget's do-block through the vector loop rules;
 -/
 
 namespace Snarky
+
+export Kimchi (natLsbVal natLsbVal_lt natLsbVal_ofFn_testBit natLsbVal_testBit_range
+  natLsbVal_take_drop natLsbVal_eq_zero natLsbVal_lt_of_drop_false)
 
 variable {F c : Type u}
 
@@ -126,21 +130,6 @@ theorem pack_eval {F : Type u} [Semiring F] [DecidableEq F] {n : Nat}
     exact h i (by simpa using h1)
   simpa [pack, packPure] using packAux_eval bits.toList bs.toList 0 _ _ hmap rfl
 
-/-- The ℕ value of bits, LSB first, in Horner form — the integer reading the
-canonicity laws (`unpackFull`'s bound) compare against. -/
-def natLsbVal : List Bool → Nat
-  | [] => 0
-  | b :: bs => b.toNat + 2 * natLsbVal bs
-
-/-- The bits' value fits their width. -/
-theorem natLsbVal_lt : ∀ l : List Bool, natLsbVal l < 2 ^ l.length := by
-  intro l
-  induction l with
-  | nil => simp [natLsbVal]
-  | cons b bs ih =>
-    simp only [natLsbVal, List.length_cons, pow_succ]
-    cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
-
 /-- The ℕ value of bits, MSB first — `natLsbVal`'s mirror in the comparison
 orientation. -/
 def msbVal : List Bool → ℕ
@@ -193,31 +182,6 @@ theorem packPure_natCast {F : Type u} [CommSemiring F] {n : Nat} (bs : Vector Bo
   rw [packPure, packPureAux_horner]
   simp
 
-/-- The Horner form reconstructs a number from its bits. -/
-private theorem natHorner_testBit :
-    ∀ (n m : Nat), m < 2 ^ n →
-      natLsbVal (List.ofFn fun i : Fin n => m.testBit i.val) = m := by
-  intro n
-  induction n with
-  | zero =>
-    intro m hm
-    have h0 : m = 0 := by omega
-    subst h0
-    rfl
-  | succ n ih =>
-    intro m hm
-    simp only [List.ofFn_succ, Fin.val_zero, Fin.val_succ]
-    have htail : (List.ofFn fun i : Fin n => m.testBit (i.val + 1))
-        = List.ofFn fun i : Fin n => (m / 2).testBit i.val := by
-      congr 1
-      funext i
-      simp [Nat.testBit_add_one]
-    rw [htail, natLsbVal, ih (m / 2) (by rw [pow_succ] at hm; omega)]
-    have hbit := Nat.bit_testBit_zero_shiftRight_one m
-    rw [Nat.shiftRight_one] at hbit
-    cases htb : m.testBit 0 <;> rw [htb] at hbit <;> simp [Nat.bit] at hbit <;>
-      simp <;> omega
-
 /-- The pure round trip: packing the unpacking is the identity, given the
 representative is faithful (`(toNat x : F) = x`) and fits in `n` bits — the boundary
 library's decode-encode law. -/
@@ -225,56 +189,15 @@ theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] {n : Nat} {x
     (hval : ((ToNat.toNat x : Nat) : F) = x) (hlt : ToNat.toNat x < 2 ^ n) :
     packPure (unpackPure x n) = x := by
   rw [packPure, unpackPure, Vector.toList_ofFn, packPureAux_horner,
-    natHorner_testBit n _ hlt]
+    natLsbVal_ofFn_testBit n _ hlt]
   simpa using hval
-
-/-- The Horner value splits at any position: low bits plus the shifted high bits. -/
-theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
-    natLsbVal l = natLsbVal (l.take k) + 2 ^ k * natLsbVal (l.drop k) := by
-  intro k
-  induction k with
-  | zero => intro l; simp [natLsbVal]
-  | succ k ih =>
-    intro l
-    cases l with
-    | nil => simp [natLsbVal]
-    | cons b bs =>
-      simp only [List.take_succ_cons, List.drop_succ_cons, natLsbVal, ih bs, pow_succ]
-      ring
-
-/-- All-false bits carry the value zero. -/
-theorem natLsbVal_eq_zero : ∀ {l : List Bool}, (∀ b ∈ l, b = false) → natLsbVal l = 0 := by
-  intro l
-  induction l with
-  | nil => intro _; rfl
-  | cons b bs ih =>
-    intro h
-    rw [natLsbVal, h b (List.mem_cons_self ..),
-      ih fun x hx => h x (List.mem_cons_of_mem _ hx)]
-    rfl
-
-/-- A value whose bits vanish from position `k` on fits in `k` bits. -/
-theorem natLsbVal_lt_of_drop_false {l : List Bool} {k : Nat}
-    (h : ∀ b ∈ l.drop k, b = false) : natLsbVal l < 2 ^ k := by
-  rw [natLsbVal_take_drop k l, natLsbVal_eq_zero h, Nat.mul_zero, Nat.add_zero]
-  exact lt_of_lt_of_le (natLsbVal_lt _)
-    (Nat.pow_le_pow_right (by omega) (List.length_take_le k l))
-
-/-- A number below `2^n` is the Horner fold of its first `n` bits, range-map form. -/
-theorem natLsbVal_testBit_range {m n : Nat} (h : m < 2 ^ n) :
-    natLsbVal ((List.range n).map m.testBit) = m := by
-  rw [show (List.range n).map m.testBit = List.ofFn fun i : Fin n => m.testBit i.val by
-    apply List.ext_getElem (by simp)
-    intro i h1 h2
-    simp]
-  exact natHorner_testBit n m h
 
 /-- The digits of a fitting representative Horner-fold back to it. -/
 theorem natLsbVal_unpackPure {F : Type u} [ToNat F] {n : Nat} {x : F}
     (hlt : ToNat.toNat x < 2 ^ n) :
     natLsbVal (unpackPure x n).toList = ToNat.toNat x := by
   rw [unpackPure, Vector.toList_ofFn]
-  exact natHorner_testBit n _ hlt
+  exact natLsbVal_ofFn_testBit n _ hlt
 
 /-! ## The circuit laws -/
 

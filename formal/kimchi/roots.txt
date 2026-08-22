@@ -29,6 +29,11 @@ Kimchi.Gate.satisfies_iff
 Kimchi.Gate.AddComplete.complete
 Kimchi.Gate.AddComplete.sound
 
+-- Bit-vector values (Kimchi/Bits.lean): the ℕ value of an LSB-first bit list — the one
+-- representation the gate semantics and the snarky DSL share.
+Kimchi.natLsbVal
+Kimchi.natLsbVal_lt
+
 -- Variable-base scalar multiplication: the gate completeness and the two deployed circuit
 -- entry points (the gate soundness is live through `varBaseMul_scaleFast2`)
 Kimchi.Gate.VarBaseMul.complete

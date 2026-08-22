@@ -205,7 +205,6 @@ Snarky.assertExactlyOne_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
 Snarky.packPure_natCast
-Snarky.natLsbVal_lt
 Snarky.unpack_spec
 Snarky.pack_val
 Snarky.unpack_complete_spec
