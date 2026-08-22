@@ -348,7 +348,7 @@ theorem toField_spec [Field F] [DecidableEq F] [ToNat F]
 The honest prover run accepts, and the results read as the gate model at the
 scalar's own crumbs (`Kimchi.Gate.EndoScalar.crumbsOf`). The emitter needs only a
 readable scalar; the checked decomposition's `n = scalar` pin adds the boundary
-conditions of the representative — faithfulness and the `4 ^ (8·rows)` range. The
+condition of the representative — the `4 ^ (8·rows)` range. The
 witness's testBit crumbs meet the gate model's expansion at
 `map_crumbOfNat_eq_crumbsOf`; the loop's invariant identifies the run with the
 gate's canonical chain (`chainBuild`), whose acceptance and reading are the gate's
@@ -688,15 +688,15 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
 
 open Std.Do in
 /-- The checked decomposition is complete: the honest prover run accepts on a
-readable scalar whose representative is faithful and fits the crumb budget, and the
+readable scalar whose representative fits the crumb budget, and the
 result reads as the gate model's `toField` at the scalar's crumbs. -/
-theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
+theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (rows : ℕ) (scalar endo : FVar F)
     (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => (scalar.eval env).isOk ∧ (endo.eval env).isOk ∧
           ∀ vv, scalar.eval env = .ok vv →
-            ((ToNat.toNat vv : ℕ) : F) = vv ∧ ToNat.toNat vv < 4 ^ (8 * rows))
+            ToNat.toNat vv < 4 ^ (8 * rows))
         (fun env r env' => ∀ vv ev, scalar.eval env = .ok vv →
           endo.eval env = .ok ev →
           r.eval env' = .ok (Kimchi.Gate.EndoScalar.toField
@@ -709,7 +709,8 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
   obtain ⟨⟨hoks, hoke, hbound⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hoks
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
-  obtain ⟨hfaith, hlt⟩ := hbound vv hv
+  have hlt := hbound vv hv
+  have hfaith := LawfulToNat.cast_toNat vv
   refine toFieldChecked'_complete_spec rows scalar _ _
     ⟨hoks, fun abn st₁ hpost₁ hle₁ => ?_⟩
   obtain ⟨hA, hB, hN⟩ := hpost₁ vv hv

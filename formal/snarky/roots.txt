@@ -106,6 +106,9 @@ Snarky.readable_fvar_iff
 Snarky.readable_prod_iff
 Snarky.reads_fvar_iff
 Snarky.reads_prod_iff
+Snarky.readVal_ofEquiv
+Snarky.readable_ofEquiv_iff
+Snarky.reads_ofEquiv_iff
 Snarky.Readable.le
 Snarky.Reads.le
 Snarky.ReadsAll.le
@@ -205,10 +208,24 @@ Snarky.assertExactlyOne_complete_spec
 Snarky.pack_eval
 Snarky.packPure_unpackPure
 Snarky.packPure_natCast
-Snarky.natLsbVal_lt
 Snarky.unpack_spec
 Snarky.pack_val
+Snarky.packLow
+Snarky.packLow_eval
+Snarky.packLow_val
+Snarky.toNat_eq_of_natCast_eq
+Snarky.forall₂_bit_of_reads
+Snarky.forall₂_bit_of_evals
 Snarky.unpack_complete_spec
+-- The canonical unpack (Circuit/DSL/UnpackFull.lean): OCaml `unpack_full` /
+-- `lt_bitstring_value` — the bits-below-the-modulus lock, packaged as
+-- `assertBitsBelow` for bits a consumer already holds.
+Snarky.ltBitstringValue_spec
+Snarky.ltBitstringValue_complete_spec
+Snarky.assertBitsBelow_spec
+Snarky.assertBitsBelow_complete_spec
+Snarky.unpackFull_spec
+Snarky.unpackFull_complete_spec
 
 -- Whole-circuit compilation (Snarky/Backend/Compile.lean): the entry points and the
 -- fragment seam — a successful solve satisfies every compiled constraint and decodes the
@@ -297,7 +314,6 @@ Snarky.Example.constMul
 Snarky.Example.proverValue
 Snarky.Example.proverOk
 Snarky.Example.instFactPrimeOfNatNat_snarky
-Snarky.Example.instToNatF17
 
 -- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
 -- union-find and the row/state types the reduction emits into. `egUF` is the
@@ -418,8 +434,6 @@ Snarky.Kimchi.AddFast.addFast_checkFinite_spec
 Snarky.Kimchi.AddFast.addFast_complete_spec
 Snarky.Kimchi.addComplete
 Snarky.Kimchi.poseidon
-Snarky.Kimchi.SpongeState
-Snarky.Kimchi.SpongeState.cells
 Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
 Snarky.Kimchi.varBaseMul
@@ -446,10 +460,6 @@ Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec
 Snarky.Kimchi.EndoScalar.toField_complete_spec
 Snarky.Kimchi.Poseidon.poseidon_spec
 Snarky.Kimchi.Poseidon.poseidon_complete_spec
-Snarky.Kimchi.readVal_spongeState
-Snarky.Kimchi.readable_spongeState_iff
-Snarky.Kimchi.reads_spongeState_iff
-Snarky.Kimchi.instWitnessReadsSpongeState
 Snarky.Kimchi.EndoMul.endoMul_spec
 Snarky.Kimchi.EndoMul.endoMul_complete_spec
 Snarky.Kimchi.EndoMul.endoInv_spec
@@ -478,9 +488,19 @@ Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec
 -- discharge artifacts AND the exhibit that the dictionary is satisfiable at Pasta.
 Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta
+Snarky.Kimchi.HasEndo.vesta_crumbs_eq
+Snarky.Kimchi.HasEndo.vesta_endoExpand
 Snarky.Kimchi.HasCurve.pallas
 Snarky.Kimchi.HasCurve.vesta
-Snarky.Kimchi.instCircuitTypeAffinePointFVar
+Snarky.Kimchi.vesta_ladderRegime
+
+-- The Type1 codec's encode (Types/Shifted.lean): the wire's encoding direction and its
+-- round trip.
+Snarky.Type1.toShifted
+Snarky.Type1.fromShifted_toShifted
+Snarky.Kimchi.AffinePoint.equivProd_apply
+Snarky.Kimchi.AffinePoint.equivProd_symm_apply
+Snarky.Kimchi.instCircuitTypeAffinePoint
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 
 -- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the on-curve
@@ -488,6 +508,8 @@ Snarky.Kimchi.instCheckedTypeAffinePointFVar
 -- instances, consumed by schnorr's statement.
 Snarky.Kimchi.CurvePoint
 Snarky.Kimchi.instCurvePointCircuitType
+Snarky.Kimchi.CurvePoint.equivPoint_apply
+Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
 Snarky.Kimchi.instCurvePointCheckedType
 Snarky.Kimchi.CurvePoint.check_spec
 Snarky.Kimchi.CurvePoint.check_complete_spec
@@ -538,3 +560,8 @@ Snarky.Kimchi.RandomOracle.hash2_spec
 Snarky.Kimchi.RandomOracle.hash2_complete_spec
 Snarky.Kimchi.RandomOracle.hashVec_spec
 Snarky.Kimchi.RandomOracle.hashVec_complete_spec
+
+-- The shifted carrier's presentation (Types/Shifted.lean).
+Snarky.Type1.equivCarrier_apply
+Snarky.Type1.equivCarrier_symm_apply
+Snarky.instCircuitTypeType1

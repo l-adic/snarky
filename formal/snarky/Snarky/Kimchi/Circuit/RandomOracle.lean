@@ -17,13 +17,13 @@ nothing else.
 
 Name map: `update`/`hash2`/`hashVec` keep their names; PS `initialState` stays private
 as `initState` (PS does not export it); the private helpers mirror the value module's
-`toBlocks`/`chunk`/`addBlock`. The state is the gadget's `SpongeState`, blocks are
+`toBlocks`/`chunk`/`addBlock`. The state is `Poseidon.Triple (FVar F)`, blocks are
 pairs, and the laws quote the generic reading vocabulary (`readVal`, `Snarky.Reads`,
 `Snarky.ReadsAll`).
 
 Deviations from the PS original:
 - PS's ambient `PoseidonField` class arrives as the explicit `p : Poseidon.Params F`.
-- PS's width-3 / width-2 `Vector`s render as `SpongeState` and the pair; PS `Array`
+- PS's width-3 / width-2 `Vector`s render as `Poseidon.Triple` and the pair; PS `Array`
   inputs render as `List`.
 - The `Digest` newtype with its `CircuitType`/`CheckedType`/`AssertEqual` instances,
   and the `Hashable`/`HashInput` classes with `hashOf`, are not ported: they are PS
@@ -43,7 +43,7 @@ variable {F c : Type}
 namespace RandomOracle
 
 /-- The fresh state (PS `initialState`, unexported there): constant-zero cells. -/
-private def initState [Zero F] : SpongeState F :=
+private def initState [Zero F] : Poseidon.Triple (FVar F) :=
   ⟨.const 0, .const 0, .const 0⟩
 
 /-- Rate-2 chunks with a constant-zero odd-tail pad — `Poseidon.RandomOracle.chunk`
@@ -61,20 +61,20 @@ private def toBlocksVar [Zero F] : List (FVar F) → List (FVar F × FVar F)
 
 /-- Add a block into the rate slots (PS `addBlock`): bare `add_` sums, no seal, no
 constraints. -/
-private def addBlockVar [Add F] (st : SpongeState F) (b : FVar F × FVar F) :
-    SpongeState F :=
+private def addBlockVar [Add F] (st : Poseidon.Triple (FVar F)) (b : FVar F × FVar F) :
+    Poseidon.Triple (FVar F) :=
   ⟨CVar.add_ st.s0 b.1, CVar.add_ st.s1 b.2, st.s2⟩
 
 /-- Absorb one block (PS `updateBlock`): add into the rate slots, permute. -/
 private def updateBlock [Field F] [KimchiSystem F c]
-    (p : Poseidon.Params F) (st : SpongeState F) (b : FVar F × FVar F) :
-    CircuitM F c (SpongeState F) :=
+    (p : Poseidon.Params F) (st : Poseidon.Triple (FVar F)) (b : FVar F × FVar F) :
+    CircuitM F c (Poseidon.Triple (FVar F)) :=
   poseidon p (addBlockVar st b)
 
 /-- Fold the input into the state block by block (PS `update`). -/
 def update [Field F] [KimchiSystem F c] (p : Poseidon.Params F)
-    (st : SpongeState F) (xs : List (FVar F)) :
-    CircuitM F c (SpongeState F) :=
+    (st : Poseidon.Triple (FVar F)) (xs : List (FVar F)) :
+    CircuitM F c (Poseidon.Triple (FVar F)) :=
   (toBlocksVar xs).foldlM (updateBlock p) st
 
 /-- Hash exactly two elements (PS `hash2`): one block, one permutation. -/
@@ -127,9 +127,9 @@ private theorem toBlocksVar_map_val [Field F] (V : Valuation F) :
 `blockCipher` of `addBlock` at the state and block readings. -/
 @[spec] private theorem updateBlock_spec [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (st : SpongeState F) (b : FVar F × FVar F)
-    (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : SpongeState F) =>
+    (st : Poseidon.Triple (FVar F)) (b : FVar F × FVar F)
+    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
         readVal V r = Poseidon.blockCipher p
           (Poseidon.RandomOracle.addBlock (readVal V st) (readVal V b))) Q⦄
     (updateBlock (c := KimchiConstraint F) p st b)
@@ -140,18 +140,18 @@ private theorem toBlocksVar_map_val [Field F] (V : Valuation F) :
   intro r nv hpos
   refine hpre _ _ ?_
   exact hpos.trans (by
-    simp [addBlockVar, readVal_spongeState, readVal_prod, readVal_fvar,
+    simp [addBlockVar, readVal_prod, readVal_fvar,
       Poseidon.RandomOracle.addBlock, CVar.val_add_])
 
 /-- `updateBlock` is complete: the honest run accepts on a readable state and block,
 and the output state reads back as the value block step. -/
 @[spec] private theorem updateBlock_complete_spec [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (st : SpongeState F) (b : FVar F × FVar F)
-    (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))) :
+    (st : Poseidon.Triple (FVar F)) (b : FVar F × FVar F)
+    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => Readable (Poseidon.Triple F) env st ∧ Readable (F × F) env b)
-        (fun env (r : SpongeState F) env' =>
+        (fun env (r : Poseidon.Triple (FVar F)) env' =>
           ∀ sv bv, Snarky.Reads env st sv → Snarky.Reads env b bv →
             Snarky.Reads env' r (Poseidon.blockCipher p
               (Poseidon.RandomOracle.addBlock sv bv)))
@@ -163,14 +163,15 @@ and the output state reads back as the value block step. -/
   obtain ⟨⟨hstok, hbok⟩, hk⟩ := hpre
   obtain ⟨sv0, hsv0⟩ := exists_reads hstok
   obtain ⟨bv0, hbv0⟩ := exists_reads hbok
-  have hs := reads_spongeState_iff.mp hsv0
+  have hs := hsv0
+  simp only [reads_prod_iff, reads_fvar_iff] at hs
   have hb := reads_prod_iff.mp hbv0
   have hb1 := reads_fvar_iff.mp hb.1
   have hb2 := reads_fvar_iff.mp hb.2
   have hadd : Snarky.Reads s.env (addBlockVar st b)
       (Poseidon.RandomOracle.addBlock sv0 bv0) :=
-    reads_spongeState_iff.mpr
-      ⟨CVar.eval_add_ hs.1 hb1, CVar.eval_add_ hs.2.1 hb2, hs.2.2⟩
+    by simp only [reads_prod_iff, reads_fvar_iff]
+       exact ⟨CVar.eval_add_ hs.1 hb1, CVar.eval_add_ hs.2.1 hb2, hs.2.2⟩
   refine Poseidon.poseidon_complete_spec p hsize _ Q s
     ⟨Snarky.Reads.readable hadd, fun r st₁ hpos hle => ?_⟩
   have hpos := hpos _ hadd
@@ -183,9 +184,9 @@ and the output state reads back as the value block step. -/
 as the value fold of the block readings. -/
 private theorem foldBlocks_spec [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) :
-    ∀ (bs : List (FVar F × FVar F)) (st : SpongeState F)
-      (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)),
-      ⦃Sound (fun V (r : SpongeState F) =>
+    ∀ (bs : List (FVar F × FVar F)) (st : Poseidon.Triple (FVar F))
+      (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)),
+      ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
           readVal V r = (bs.map (readVal V)).foldl
             (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
             (readVal V st)) Q⦄
@@ -272,12 +273,12 @@ accepts on a readable state and blocks, and the output state reads back as the v
 fold. -/
 private theorem foldBlocks_complete_spec [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) :
-    ∀ (bs : List (FVar F × FVar F)) (st : SpongeState F)
-      (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))),
+    ∀ (bs : List (FVar F × FVar F)) (st : Poseidon.Triple (FVar F))
+      (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (ProverState F) (.except EvalError .pure))),
       ⦃Complete
           (fun env => Readable (Poseidon.Triple F) env st ∧
             ∀ b ∈ bs, Readable (F × F) env b)
-          (fun env (r : SpongeState F) env' =>
+          (fun env (r : Poseidon.Triple (FVar F)) env' =>
             ∀ sv vs, Snarky.Reads env st sv → ReadsAll env bs vs →
               Snarky.Reads env' r (vs.foldl
                 (fun s b =>
@@ -320,10 +321,10 @@ private theorem foldBlocks_complete_spec [Field F] [DecidableEq F]
 /-- `update` is sound: the output state reads as `Poseidon.RandomOracle.update` of the
 state and input readings. -/
 @[spec] theorem update_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : Poseidon.Triple (FVar F))
     (xs : List (FVar F))
-    (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : SpongeState F) =>
+    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
         readVal V r = Poseidon.RandomOracle.update p (readVal V st)
           (xs.map (fun x => x.val V))) Q⦄
     (update (c := KimchiConstraint F) p st xs)
@@ -341,13 +342,13 @@ state and input readings. -/
 inputs, and the output state reads back as `Poseidon.RandomOracle.update` of the
 values. -/
 @[spec] theorem update_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : SpongeState F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : Poseidon.Triple (FVar F))
     (xs : List (FVar F))
-    (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))) :
+    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => Readable (Poseidon.Triple F) env st ∧
           ∀ x ∈ xs, (x.eval env).isOk)
-        (fun env (r : SpongeState F) env' =>
+        (fun env (r : Poseidon.Triple (FVar F)) env' =>
           ∀ sv vs, Snarky.Reads env st sv → ReadsAll env xs vs →
             Snarky.Reads env' r (Poseidon.RandomOracle.update p sv vs))
         Q⦄
@@ -365,7 +366,8 @@ values. -/
 private theorem reads_initState [Field F] (env : Assignments F) :
     Snarky.Reads env (initState (F := F))
       (Poseidon.RandomOracle.initialState (F := F)) :=
-  reads_spongeState_iff.mpr ⟨rfl, rfl, rfl⟩
+  by simp only [reads_prod_iff, reads_fvar_iff]
+     exact ⟨rfl, rfl, rfl⟩
 
 /-- `hash2` is sound: the digest reads as the value `hash` of the two readings. -/
 @[spec] theorem hash2_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
@@ -382,7 +384,7 @@ private theorem reads_initState [Field F] (env : Assignments F) :
   intro r nv h
   mvcgen
   refine hpre _ _ ?_
-  simp only [readVal_spongeState, readVal_prod, readVal_fvar] at h
+  simp only [readVal_prod, readVal_fvar] at h
   have h1 := congrArg Prod.fst h
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
     Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
@@ -421,7 +423,8 @@ reads back as the value `hash` of their values. -/
   rw [ha] at ha'; rw [hb] at hb'
   injection ha' with ha'; injection hb' with hb'
   subst ha' hb'
-  have h0 := (reads_spongeState_iff.mp hout).1
+  simp only [reads_prod_iff, reads_fvar_iff] at hout
+  have h0 := hout.1
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
     Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
     Poseidon.RandomOracle.digest] using h0
@@ -441,7 +444,7 @@ reads back as the value `hash` of their values. -/
   intro r nv h
   mvcgen
   refine hpre _ _ ?_
-  simp only [readVal_spongeState] at h
+  simp only [readVal_prod, readVal_fvar] at h
   have h1 := congrArg Prod.fst h
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest,
     Poseidon.RandomOracle.initialState, initState, CVar.val] using h1
@@ -470,7 +473,8 @@ reads back as the value `hash` of their values. -/
   intro hf
   refine hk _ ⟨st₁.nv, st₁.env, hf⟩ (fun vs hr => ?_) hle₁
   have hout := hout _ vs (reads_initState s.env) hr
-  have h0 := (reads_spongeState_iff.mp hout).1
+  simp only [reads_prod_iff, reads_fvar_iff] at hout
+  have h0 := hout.1
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest] using h0
 
 end RandomOracle

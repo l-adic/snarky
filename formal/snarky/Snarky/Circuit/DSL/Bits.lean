@@ -1,4 +1,6 @@
 import Snarky.Circuit.DSL.Field
+import Kimchi.Bits
+import Mathlib.Data.ZMod.Basic
 
 /-!
 # Bit packing and unpacking
@@ -15,8 +17,9 @@ names. The bit width is an explicit `Nat` argument (PS reflects a type-level `n`
 Deviations from the PS original (ledger: `formal/docs/snarky-ps-alignment.md`):
 - PS reads the canonical integer representative through `PrimeField.toBigInt`; the port
   has no curve-class layer, so the one fragment these gadgets need lands here as
-  `Snarky.ToNat`. Its faithfulness (`(toNat x : F) = x`) and width (`toNat x < 2 ^ n`)
-  enter the laws as hypotheses, dischargeable at any concrete prime field (`ZMod.val`).
+  `Snarky.ToNat`, with its laws as `Snarky.LawfulToNat` (the representative casts back,
+  and lies below the field's `card`). Width (`toNat x < 2 ^ n`) stays a per-law
+  hypothesis — it is about the operand, not the reader.
 - The weighted-sum folds carry their index explicitly (`packAux`), mirroring PS's
   `mapWithIndex` fold — same expression tree, LSB first.
 
@@ -29,16 +32,47 @@ Both walk the gadget's do-block through the vector loop rules;
 
 namespace Snarky
 
+export Kimchi (natLsbVal natLsbVal_lt natLsbVal_append_singleton natLsbVal_ofFn_testBit
+  natLsbVal_testBit_range natLsbVal_take_testBit_range natLsbVal_take_drop natLsbVal_take_eq_mod
+  natLsbVal_eq_zero natLsbVal_lt_of_drop_false ofFn_val_eq_map_range)
+
 variable {F c : Type u}
 
 /-! ## The canonical representative -/
 
 /-- The canonical `Nat` representative of a field element — the one fragment of PS
-`PrimeField` (`toBigInt`) the bit gadgets need. Faithfulness and width are law-side
-hypotheses, not class laws (see the module docstring). -/
+`PrimeField` (`toBigInt`) the bit gadgets need; `LawfulToNat` carries its laws. -/
 class ToNat (F : Type u) where
   /-- The canonical representative (PS `toBigInt`; `ZMod.val` at concrete fields). -/
   toNat : F → Nat
+
+/-- `ToNat`'s laws at a field of `card` elements: the representative casts back to its
+element, and every representative lies below `card` (`ZMod.val` at a prime field). -/
+class LawfulToNat (F : Type u) [NatCast F] [ToNat F] where
+  /-- The representatives' bound — the field's cardinality. -/
+  card : Nat
+  /-- The representative casts back to its element. -/
+  cast_toNat : ∀ x : F, ((ToNat.toNat x : Nat) : F) = x
+  /-- Every representative lies below `card`. -/
+  toNat_lt : ∀ x : F, ToNat.toNat x < card
+  /-- Below `card`, a number is its own cast's representative. -/
+  toNat_natCast : ∀ n : Nat, n < card → ToNat.toNat ((n : Nat) : F) = n
+
+/-- The canonical representative at a `ZMod` modulus is `ZMod.val` — every deployed
+field reads through this one instance. -/
+instance instToNatZMod (p : Nat) : ToNat (ZMod p) := ⟨ZMod.val⟩
+
+/-- `ZMod.val` is lawful at every nonzero modulus: it casts back, and lies below `p`. -/
+instance instLawfulToNatZMod (p : Nat) [NeZero p] : LawfulToNat (ZMod p) :=
+  ⟨p, fun x => ZMod.natCast_zmod_val x, fun x => ZMod.val_lt x, fun n hn => by
+    show ZMod.val ((n : Nat) : ZMod p) = n
+    rw [ZMod.val_natCast, Nat.mod_eq_of_lt hn]⟩
+
+/-- A representative pinned by its cast: below `card` the cast is injective, so the
+element's representative is the pinned number — the canonical reading of a lock. -/
+theorem toNat_eq_of_natCast_eq [NatCast F] [ToNat F] [LawfulToNat F] {n : Nat} {x : F}
+    (h : ((n : Nat) : F) = x) (hn : n < LawfulToNat.card (F := F)) : ToNat.toNat x = n := by
+  rw [← h, LawfulToNat.toNat_natCast n hn]
 
 /-! ## The gadgets -/
 
@@ -60,6 +94,13 @@ private def packAux [Semiring F] [DecidableEq F] : List (BoolVar F) → Nat → 
 (PS `pack_`). -/
 def pack [Semiring F] [DecidableEq F] {n : Nat} (bits : Vector (BoolVar F) n) : FVar F :=
   packAux bits.toList 0 (.const 0)
+
+/-- Pack the low `k` bits of an `n`-bit vector, LSB first — pure, no constraints.
+Irreducible: consumers read it through `packLow_eval`/`packLow_val`, never by opening
+the fold. -/
+@[irreducible] def packLow [Semiring F] [DecidableEq F] {n : Nat} (k : Nat) (hk : k ≤ n)
+    (bits : Vector (BoolVar F) n) : FVar F :=
+  pack (Vector.ofFn fun i : Fin k => bits[i.val]'(lt_of_lt_of_le i.isLt hk))
 
 /-- Decompose a field variable into `n` LSB-first bits (PS `unpack_`): witness each bit
 CHECKED (`witness` at `Bool` pays the `boolean` row), then pin the weighted sum to the
@@ -126,21 +167,6 @@ theorem pack_eval {F : Type u} [Semiring F] [DecidableEq F] {n : Nat}
     exact h i (by simpa using h1)
   simpa [pack, packPure] using packAux_eval bits.toList bs.toList 0 _ _ hmap rfl
 
-/-- The ℕ value of bits, LSB first, in Horner form — the integer reading the
-canonicity laws (`unpackFull`'s bound) compare against. -/
-def natLsbVal : List Bool → Nat
-  | [] => 0
-  | b :: bs => b.toNat + 2 * natLsbVal bs
-
-/-- The bits' value fits their width. -/
-theorem natLsbVal_lt : ∀ l : List Bool, natLsbVal l < 2 ^ l.length := by
-  intro l
-  induction l with
-  | nil => simp [natLsbVal]
-  | cons b bs ih =>
-    simp only [natLsbVal, List.length_cons, pow_succ]
-    cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
-
 /-- The indexed value fold is the shifted Horner form, through the cast. -/
 private theorem packPureAux_horner {F : Type u} [CommSemiring F] :
     ∀ (bl : List Bool) (i : Nat) (accv : F),
@@ -159,70 +185,48 @@ theorem packPure_natCast {F : Type u} [CommSemiring F] {n : Nat} (bs : Vector Bo
   rw [packPure, packPureAux_horner]
   simp
 
-/-- The Horner form reconstructs a number from its bits. -/
-private theorem natHorner_testBit :
-    ∀ (n m : Nat), m < 2 ^ n →
-      natLsbVal (List.ofFn fun i : Fin n => m.testBit i.val) = m := by
-  intro n
-  induction n with
-  | zero =>
-    intro m hm
-    have h0 : m = 0 := by omega
-    subst h0
-    rfl
-  | succ n ih =>
-    intro m hm
-    simp only [List.ofFn_succ, Fin.val_zero, Fin.val_succ]
-    have htail : (List.ofFn fun i : Fin n => m.testBit (i.val + 1))
-        = List.ofFn fun i : Fin n => (m / 2).testBit i.val := by
-      congr 1
-      funext i
-      simp [Nat.testBit_add_one]
-    rw [htail, natLsbVal, ih (m / 2) (by rw [pow_succ] at hm; omega)]
-    have hbit := Nat.bit_testBit_zero_shiftRight_one m
-    rw [Nat.shiftRight_one] at hbit
-    cases htb : m.testBit 0 <;> rw [htb] at hbit <;> simp [Nat.bit] at hbit <;>
-      simp <;> omega
-
 /-- The pure round trip: packing the unpacking is the identity, given the
-representative is faithful (`(toNat x : F) = x`) and fits in `n` bits — the boundary
+representative fits in `n` bits — the boundary
 library's decode-encode law. -/
-theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] {n : Nat} {x : F}
-    (hval : ((ToNat.toNat x : Nat) : F) = x) (hlt : ToNat.toNat x < 2 ^ n) :
+theorem packPure_unpackPure {F : Type u} [CommSemiring F] [ToNat F] [LawfulToNat F]
+    {n : Nat} {x : F} (hlt : ToNat.toNat x < 2 ^ n) :
     packPure (unpackPure x n) = x := by
   rw [packPure, unpackPure, Vector.toList_ofFn, packPureAux_horner,
-    natHorner_testBit n _ hlt]
-  simpa using hval
-
-/-- The Horner value splits at any position: low bits plus the shifted high bits. -/
-theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
-    natLsbVal l = natLsbVal (l.take k) + 2 ^ k * natLsbVal (l.drop k) := by
-  intro k
-  induction k with
-  | zero => intro l; simp [natLsbVal]
-  | succ k ih =>
-    intro l
-    cases l with
-    | nil => simp [natLsbVal]
-    | cons b bs =>
-      simp only [List.take_succ_cons, List.drop_succ_cons, natLsbVal, ih bs, pow_succ]
-      ring
-
-/-- A number below `2^n` is the Horner fold of its first `n` bits, range-map form. -/
-theorem natLsbVal_testBit_range {m n : Nat} (h : m < 2 ^ n) :
-    natLsbVal ((List.range n).map m.testBit) = m := by
-  rw [show (List.range n).map m.testBit = List.ofFn fun i : Fin n => m.testBit i.val by
-    apply List.ext_getElem (by simp)
-    intro i h1 h2
-    simp]
-  exact natHorner_testBit n m h
+    natLsbVal_ofFn_testBit n _ hlt]
+  simpa using LawfulToNat.cast_toNat x
 
 /-- The digits of a fitting representative Horner-fold back to it. -/
 theorem natLsbVal_unpackPure {F : Type u} [ToNat F] {n : Nat} {x : F}
     (hlt : ToNat.toNat x < 2 ^ n) :
     natLsbVal (unpackPure x n).toList = ToNat.toNat x := by
   rw [unpackPure, Vector.toList_ofFn]
-  exact natHorner_testBit n _ hlt
+  exact natLsbVal_ofFn_testBit n _ hlt
+
+/-- The low `k` digits of a representative Horner-fold to its residue mod `2^k`. -/
+theorem natLsbVal_take_unpackPure {F : Type u} [ToNat F] {n k : Nat} (hk : k ≤ n) (x : F) :
+    natLsbVal ((unpackPure x n).toList.take k) = ToNat.toNat x % 2 ^ k := by
+  rw [unpackPure, Vector.toList_ofFn, ofFn_val_eq_map_range, natLsbVal_take_testBit_range _ hk]
+
+/-- The low slice of a vector, `ofFn`-spelled, is `toList.take`. -/
+theorem toList_ofFn_take {α : Type u} {n : Nat} (k : Nat) (hk : k ≤ n) (v : Vector α n) :
+    (Vector.ofFn fun i : Fin k => v[i.val]'(lt_of_lt_of_le i.isLt hk)).toList
+      = v.toList.take k := by
+  rw [Vector.toList_ofFn]
+  apply List.ext_getElem
+  · rw [List.length_ofFn, List.length_take, Vector.length_toList]
+    omega
+  · intro i h1 h2
+    rw [List.getElem_ofFn, List.getElem_take, Vector.getElem_toList]
+
+/-- `packLow` evaluation: the low bits' value, cast. -/
+theorem packLow_eval {F : Type u} [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {env : Assignments F}
+    (h : ∀ i (hi : i < n), (bits[i].toCVar).eval env = .ok (bit bs[i])) :
+    (packLow k hk bits).eval env = .ok ((natLsbVal (bs.toList.take k) : Nat) : F) := by
+  unfold packLow
+  rw [pack_eval (bs := Vector.ofFn fun i : Fin k => bs[i.val]'(lt_of_lt_of_le i.isLt hk))
+    (fun i hi => by simp only [Vector.getElem_ofFn]; exact h i (lt_of_lt_of_le hi hk)),
+    packPure_natCast, toList_ofFn_take k hk]
 
 /-! ## The circuit laws -/
 
@@ -238,6 +242,16 @@ theorem pack_val {F : Type} [Semiring F] [DecidableEq F] {n : Nat}
   have := pack_eval (bits := bits) (bs := bs) (env := V.toAssignments) h'
   rw [CVar.eval_toAssignments] at this
   injection this
+
+/-- `packLow` reads as the cast of the low bits' value. -/
+theorem packLow_val {F : Type} [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {V : Valuation F}
+    (h : ∀ i (hi : i < n), (bits[i].toCVar).val V = bit bs[i]) :
+    (packLow k hk bits).val V = ((natLsbVal (bs.toList.take k) : Nat) : F) := by
+  unfold packLow
+  rw [pack_val (bs := Vector.ofFn fun i : Fin k => bs[i.val]'(lt_of_lt_of_le i.isLt hk))
+    (fun i hi => by simp only [Vector.getElem_ofFn]; exact h i (lt_of_lt_of_le hi hk)),
+    packPure_natCast, toList_ofFn_take k hk]
 
 open Std.Do in
 /-- `unpack`'s emitted rows force the results to be bits whose weighted sum is the
@@ -283,17 +297,17 @@ needs a characteristic hypothesis and is not stated. -/
     simpa [circuitVal] using hrow'
 
 open Std.Do in
-/-- `unpack`'s honest run succeeds on a faithful representative that fits in `n` bits;
+/-- `unpack`'s honest run succeeds on a representative that fits in `n` bits;
 the results are the operand's binary digits. -/
 @[spec] theorem unpack_complete_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
+    [LawfulToNat F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
     (v : FVar F) (n : Nat)
     (Q : PostCond (Vector (BoolVar F) n)
       (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => (v.eval env).isOk ∧
           ∀ vv, v.eval env = .ok vv →
-            ((ToNat.toNat vv : Nat) : F) = vv ∧ ToNat.toNat vv < 2 ^ n)
+            ToNat.toNat vv < 2 ^ n)
         (fun env r env' => ∀ vv, v.eval env = .ok vv →
           ∀ i (hi : i < n), (r[i]).toCVar.eval env'
             = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
@@ -303,7 +317,7 @@ the results are the operand's binary digits. -/
   intro st hpre
   obtain ⟨⟨hokv, hfaithful⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hokv
-  obtain ⟨hval, hlt⟩ := hfaithful vv hv
+  have hlt := hfaithful vv hv
   simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   -- the component: the checked-bit witness computes the operand's `i`-th digit
   have hcomp : ∀ (i : Fin n)
@@ -349,7 +363,7 @@ the results are the operand's binary digits. -/
     exact hbitEval i hi
   have hch : Checker.holds (F := F) (c := c)
       (BasicSystem.r1cs (c := c) (pack bits) (.const 1) v) st₁.env = true := by
-    rw [packPure_unpackPure hval hlt] at hpack
+    rw [packPure_unpackPure hlt] at hpack
     exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ hpack (by rfl) hv₁ (mul_one vv)
   refine addConstraint_complete_spec (c := c) _ _ st₁ ⟨hch, fun _ st₂ _ hle₂ => ?_⟩
   intro _
@@ -359,5 +373,33 @@ the results are the operand's binary digits. -/
   subst hv'
   intro i hi
   exact CVar.eval_le hle₂ (hbitEval i hi)
+
+/-- Per-index bit readings of a vector, as the `Forall₂` a bit-list assertion consumes
+at a valuation. -/
+theorem forall₂_bit_of_reads [Field F] {n : Nat} {V : Valuation F}
+    {v : Vector (FVar F) n} {bs : Vector Bool n}
+    (h : ∀ i (hi : i < n), (v[i]).val V = bit bs[i]) :
+    List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).val V = bit b)
+      (v.toList.map .unchecked) bs.toList := by
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  simp only [List.get_eq_getElem, List.getElem_map, Vector.getElem_toList,
+    BoolVar.toCVar_unchecked]
+  exact h i (by simpa using h2)
+
+/-- Per-index bit evaluations of a vector against a bit function, as the `Forall₂` a
+bit-list assertion's honest run consumes. -/
+theorem forall₂_bit_of_evals [Field F] {n : Nat} {env : Assignments F}
+    {v : Vector (FVar F) n} {f : Nat → Bool}
+    (h : ∀ i (hi : i < n), (v[i]).eval env = .ok (bit (f i))) :
+    List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).eval env = .ok (bit b))
+      (v.toList.map .unchecked) ((List.range n).map f) := by
+  rw [List.forall₂_iff_get]
+  constructor
+  · rw [List.length_map, Vector.length_toList, List.length_map, List.length_range]
+  · intro i h1 h2
+    simp only [List.get_eq_getElem, List.getElem_map, List.getElem_range,
+      BoolVar.toCVar_unchecked, Vector.getElem_toList]
+    exact h i (by simpa using h2)
 
 end Snarky

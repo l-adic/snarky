@@ -1,4 +1,5 @@
 import Pasta.Shifted
+import Kimchi.Bits
 import Kimchi.Gate.Generic
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.VarBaseMul

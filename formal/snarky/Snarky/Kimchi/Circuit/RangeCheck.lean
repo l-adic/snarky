@@ -98,9 +98,8 @@ theorem rangeCheck128_spec [Field F] [DecidableEq F] [ToNat F]
     _ = 2 ^ 128 := by rw [hlen]; norm_num
 
 /-- `rangeCheck128` is complete: the honest run accepts on a readable in-range
-faithful operand (`SizedF.Fits` — the width the tag promises is the width the gate
-checks). -/
-theorem rangeCheck128_complete_spec [Field F] [DecidableEq F] [ToNat F]
+operand (`SizedF.Fits` — the width the tag promises is the width the gate checks). -/
+theorem rangeCheck128_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (endo : FVar F) (v : SizedF 128 (FVar F))
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
@@ -113,8 +112,7 @@ theorem rangeCheck128_complete_spec [Field F] [DecidableEq F] [ToNat F]
   rename_i st hpre
   obtain ⟨⟨hok, hoke, hfits⟩, hk⟩ := hpre
   refine ⟨⟨hok, hoke, fun vv hv => ?_⟩, fun r st' hr hle => ?_⟩
-  · obtain ⟨hlt, hfaith⟩ := hfits vv hv
-    refine ⟨hfaith, ?_⟩
+  · have hlt := hfits vv hv
     calc ToNat.toNat vv < 2 ^ 128 := hlt
       _ = 4 ^ (8 * 8) := by norm_num
   mvcgen
@@ -176,10 +174,10 @@ theorem lowest128Bits'_spec [Field F] [DecidableEq F] [ToNat F]
       fun hcb' => absurd hcb' hcb⟩
 
 /-- `lowest128Bits'` is complete — the honest side of OCaml's `lowest_128_bits`:
-on a readable faithful operand whose split representatives are themselves faithful
+on a readable operand whose split representatives are themselves faithful
 (free at the deployed 255-bit fields), the honest run accepts and the result reads
 as the pure split `lowest128BitsPure`. -/
-theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F]
+theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (constrainLowBits : Bool) (endo x : FVar F)
     (Q : PostCond (SizedF 128 (FVar F))
       (.arg (ProverState F) (.except EvalError .pure))) :
@@ -187,7 +185,6 @@ theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F]
         (fun env =>
           (x.eval env).isOk ∧ (endo.eval env).isOk ∧
           (∀ vv, x.eval env = .ok vv →
-            ((ToNat.toNat vv : ℕ) : F) = vv ∧
             ToNat.toNat vv / 2 ^ 128 < 2 ^ 128 ∧
             ToNat.toNat ((ToNat.toNat vv % 2 ^ 128 : ℕ) : F)
               = ToNat.toNat vv % 2 ^ 128 ∧
@@ -204,7 +201,8 @@ theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F]
   obtain ⟨⟨hok, hoke, hsec⟩, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hok
   obtain ⟨ev, he⟩ := CVar.evalOk hoke
-  obtain ⟨hfaith, hhilt, hlosec, hhisec⟩ := hsec vv hv
+  obtain ⟨hhilt, hlosec, hhisec⟩ := hsec vv hv
+  have hfaith := LawfulToNat.cast_toNat vv
   have hrecomb : ((ToNat.toNat vv % 2 ^ 128 : ℕ) : F)
       + (2 : F) ^ 128 * ((ToNat.toNat vv / 2 ^ 128 : ℕ) : F) = vv := by
     have h1 : (ToNat.toNat vv % 2 ^ 128) + 2 ^ 128 * (ToNat.toNat vv / 2 ^ 128)
@@ -228,7 +226,6 @@ theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F]
   · rw [hhi] at hhv'
     injection hhv' with hhv'
     subst hhv'
-    refine ⟨by rw [hhisec], ?_⟩
     rw [hhisec]
     calc ToNat.toNat vv / 2 ^ 128 < 2 ^ 128 := hhilt
       _ = 4 ^ (8 * 8) := by norm_num
@@ -239,7 +236,6 @@ theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F]
     · rw [CVar.eval_le hle₂ hlo] at hlv
       injection hlv with hlv
       subst hlv
-      refine ⟨by rw [hlosec], ?_⟩
       rw [hlosec]
       calc ToNat.toNat vv % 2 ^ 128 < 2 ^ 128 := Nat.mod_lt _ (by positivity)
         _ = 4 ^ (8 * 8) := by norm_num

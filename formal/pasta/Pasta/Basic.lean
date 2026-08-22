@@ -90,6 +90,18 @@ theorem SWPoint.onCurve_of_ne_zero {F : Type*} [Field F] {E : SWCurve F} {P : SW
   · exact hc
   · exact absurd (SWPoint.ext_pair (Q := 0) h0) h
 
+/-- An on-curve pair is a nonzero point: the `𝒪` sentinel `(0, 0)` is off every curve
+(`B ≠ 0`) — the converse of `onCurve_of_ne_zero`. -/
+theorem SWPoint.mk_ne_zero {F : Type*} [Field F] {E : SWCurve F} {x y : F}
+    (h : OnCurve E.A E.B (x, y)) : (⟨x, y, Or.inl h⟩ : SWPoint E) ≠ 0 := by
+  intro h0
+  have hx : x = 0 := (congrArg SWPoint.x h0).trans rfl
+  have hy : y = 0 := (congrArg SWPoint.y h0).trans rfl
+  subst hx
+  subst hy
+  simp only [OnCurve] at h
+  exact E.B_nonzero (by simpa using h.symm)
+
 /-- At on-curve coordinates `equivPoint` lands on `Point.some` at the same pair —
 with `onCurve_of_ne_zero`, the reading of any nonzero `SWPoint` into the gate
 theorems' vocabulary. -/
@@ -165,6 +177,19 @@ instance pallasPointModule : Module Fq (SWPoint pallasCurve) :=
 executable verifiers compute with. -/
 theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
   rfl
+
+/-- The same action on Mathlib's carrier, where the gate theorems live: `equivPoint`
+transports the module structure. -/
+instance vestaAffineModule : Module Fp vestaCurve.toAffine.Point :=
+  AddCommGroup.zmodModule fun Q => by
+    rw [← (SWPoint.equivPoint vestaCurve).apply_symm_apply Q, ← map_nsmul, ← Vesta.card_eq,
+      card_nsmul_eq_zero', map_zero]
+
+/-- `equivPoint` respects the scalar action: both carriers act by the canonical
+representative. -/
+theorem vesta_equivPoint_smul (z : Fp) (P : SWPoint vestaCurve) :
+    SWPoint.equivPoint vestaCurve (z • P) = z • SWPoint.equivPoint vestaCurve P :=
+  map_nsmul _ _ _
 
 /-- The Pallas twin of `vesta_smul_val`. -/
 theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=

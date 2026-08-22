@@ -1,4 +1,5 @@
 import Kimchi.Gate.VarBaseMul
+import Kimchi.Bits
 import Pasta.Shifted
 import Mathlib
 
@@ -1776,11 +1777,12 @@ open Kimchi.Gate.VarBaseMul WeierstrassCurve.Affine Pasta.Shifted Pasta
 
 /-! ## The run's bits as a list: the gadget-facing decode vocabulary
 
-The circuit layer's law statements expose the wired bits as a LIST and speak about
-its two folds: `bitsRegister` (the field-side scalar register the gadget pins) and
-`bitsVal` (the exact ℤ-decode the forbidden-band condition prices through the Type1
-unshift). The bridges identify them with the run-level `gateRegister` and the
-register chain, so `varBaseMul_off`'s conclusion lands on list vocabulary. -/
+The circuit layer's law statements expose the wired bits as a LIST: `runBits`, the
+cells MSB-first as the rows consume them, and `runBools`, the same bits decided and
+LSB-first — the `natLsbVal` representation every consumer reads a bit value through.
+The bridges land the run-level `gateRegister` and the register chain on
+`natLsbVal (runBools g m)`, so `varBaseMul_off`'s conclusion speaks the one
+vocabulary; the MSB-first folds the rows accumulate by stay private. -/
 
 section RunBits
 
@@ -1790,14 +1792,18 @@ variable {F : Type*} [Field F] [DecidableEq F]
 def runBits (g : ℕ → Witness F) (m : ℕ) : List F :=
   (List.range m).flatMap fun i => [(g i).b0, (g i).b1, (g i).b2, (g i).b3, (g i).b4]
 
-/-- The base-2 field fold of a bit list, MSB-first — the scalar register the gadget
-pins (`n' = 2·n + b` per bit). -/
-def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
+/-- The run's bits as booleans, LSB-first: the cells decided, reversed. -/
+def runBools (g : ℕ → Witness F) (m : ℕ) : List Bool :=
+  ((runBits g m).map fun b => decide (b = 1)).reverse
 
-/-- The exact ℤ-decode of a bit list (a bit counts iff it is `1`) — the shadow
-`bitsRegister` casts on genuine bits, and what the forbidden-band condition speaks
-about through the Type1 unshift. -/
-def bitsVal (bs : List F) : ℤ := bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
+/-- The base-2 field fold of a bit list, MSB-first — how the rows accumulate the
+scalar register (`n' = 2·n + b` per bit). -/
+private def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
+
+/-- The ℤ fold of a bit list, MSB-first (a bit counts iff it is `1`) — the shadow
+`bitsRegister` casts on genuine bits. -/
+private def bitsVal (bs : List F) : ℤ :=
+  bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
 
 theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
     runBits g (m + 1) = runBits g m
@@ -1814,8 +1820,30 @@ theorem runBits_length (g : ℕ → Witness F) (m : ℕ) : (runBits g m).length 
     simp
     omega
 
-/-- The ladder's unsigned register is the ℤ-decode of the run's bits. -/
-theorem gateRegister_eq_bitsVal (g : ℕ → Witness F) (m : ℕ) :
+theorem runBools_length (g : ℕ → Witness F) (m : ℕ) : (runBools g m).length = 5 * m := by
+  simp [runBools, runBits_length]
+
+/-- The MSB-first ℤ fold of the cells is the ℕ value of the decided cells, LSB-first. -/
+private theorem bitsVal_eq_natLsbVal :
+    ∀ l : List F, bitsVal l = (natLsbVal ((l.map fun b => decide (b = 1)).reverse) : ℤ) := by
+  intro l
+  induction l using List.reverseRecOn with
+  | nil => rfl
+  | append_singleton l v ih =>
+    have h1 : bitsVal (l ++ [v]) = 2 * bitsVal l + if v = 1 then 1 else 0 := by
+      simp [bitsVal, List.foldl_append]
+    rw [h1, ih, List.map_append, List.map_singleton, List.reverse_append,
+      List.reverse_singleton, List.singleton_append, natLsbVal]
+    by_cases hv : v = 1
+    · simp only [hv, if_true, decide_true, Bool.toNat_true]
+      push_cast
+      ring
+    · simp only [hv, if_false, decide_false, Bool.toNat_false]
+      push_cast
+      ring
+
+/-- The ladder's unsigned register is the ℤ fold of the run's cells. -/
+private theorem gateRegister_eq_bitsVal (g : ℕ → Witness F) (m : ℕ) :
     gateRegister g (5 * m) = bitsVal (runBits g m) := by
   induction m with
   | zero => rfl
@@ -1852,10 +1880,15 @@ def accN (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).n
   | i + 1 => (g i).nPrime
 
-/-- **The register chain.** Threading the register through `m` held gates reads the
-final register as the seed shifted up `5m` bits plus the base-2 fold of the run's
-bits — the gadget's scalar pin, at the zero seed. -/
-theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
+/-- The ladder's unsigned register is the ℕ value of the run's bits. -/
+theorem gateRegister_eq_natLsbVal (g : ℕ → Witness F) (m : ℕ) :
+    gateRegister g (5 * m) = (natLsbVal (runBools g m) : ℤ) := by
+  rw [gateRegister_eq_bitsVal, bitsVal_eq_natLsbVal]
+  rfl
+
+/-- The register chain at the rows' own fold: the final register is the seed shifted
+up `5m` bits plus the field fold of the run's cells. -/
+private theorem chain_accN_register (m : ℕ) (g : ℕ → Witness F)
     (hholds : ∀ i, i < m → Holds (g i))
     (hthread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime) :
     accN g m = 32 ^ m * accN g 0 + bitsRegister (runBits g m) := by
@@ -1889,55 +1922,8 @@ theorem runBits_congr (g g' : ℕ → Witness F) (m : ℕ)
     rw [runBits_succ, runBits_succ, ih (fun i hi => h i (by omega)),
       h k (by omega)]
 
-/-- The ℤ-decode of a boolean bit list is nonnegative and bounded by its width. -/
-theorem bitsVal_lt (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
-    bitsVal l < 2 ^ l.length ∧ 0 ≤ bitsVal l := by
-  suffices h : ∀ z : ℤ, 0 ≤ z →
-      l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z
-        < 2 ^ l.length * (z + 1) ∧
-      z ≤ l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z by
-    obtain ⟨h1, h2⟩ := h 0 le_rfl
-    exact ⟨by simpa [bitsVal] using h1, by simpa [bitsVal] using h2⟩
-  induction l with
-  | nil => intro z hz; simp
-  | cons b t ih =>
-    intro z hz
-    have hbit : (if b = 1 then (1 : ℤ) else 0) ≤ 1
-        ∧ 0 ≤ (if b = 1 then (1 : ℤ) else 0) := by
-      split <;> norm_num
-    have hz' : 0 ≤ 2 * z + if b = 1 then (1 : ℤ) else 0 := by omega
-    obtain ⟨ih1, ih2⟩ := ih (fun x hx => hb x (List.mem_cons_of_mem _ hx))
-      (2 * z + if b = 1 then 1 else 0) hz'
-    simp only [List.foldl_cons, List.length_cons]
-    constructor
-    · calc List.foldl _ (2 * z + if b = 1 then 1 else 0) t
-          < 2 ^ t.length * ((2 * z + if b = 1 then 1 else 0) + 1) := ih1
-        _ ≤ 2 ^ (t.length + 1) * (z + 1) := by
-            rw [pow_succ]
-            nlinarith [hbit.1, hbit.2,
-              pow_pos (show (0 : ℤ) < 2 by norm_num) t.length]
-    · omega
-
-/-- A zero prefix contributes nothing to the ℤ-decode. -/
-theorem bitsVal_drop_of_zeros (l : List F) (k : ℕ)
-    (hz : ∀ b ∈ l.take k, b = 0) : bitsVal l = bitsVal (l.drop k) := by
-  induction k generalizing l with
-  | zero => simp
-  | succ j ih =>
-    cases l with
-    | nil => simp
-    | cons b t =>
-      have hb0 : b = 0 := hz b (by simp)
-      have hrest : ∀ x ∈ t.take j, x = 0 := fun x hx =>
-        hz x (by
-          rw [List.take_succ_cons]
-          exact List.mem_cons_of_mem _ hx)
-      rw [List.drop_succ_cons, ← ih t hrest]
-      subst hb0
-      simp [bitsVal]
-
-/-- On boolean bits the field fold is the cast of the ℤ-decode. -/
-theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
+/-- On boolean bits the field fold is the cast of the ℤ fold. -/
+private theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
     bitsRegister l = ((bitsVal l : ℤ) : F) := by
   suffices h : ∀ z : ℤ,
       l.foldl (fun a b => 2 * a + b) ((z : ℤ) : F)
@@ -1985,6 +1971,18 @@ theorem runBits_bool (m : ℕ) (g : ℕ → Witness F)
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.1).1
       · exact hbool _ ((singleBitHolds_iff _ _ _ _ _ _ _ _).mp h.2.2.2.2.2).1
 
+/-- **The register chain.** Threading the register through `m` held gates reads the
+final register as the seed shifted up `5m` bits plus the run's bit value — the
+gadget's scalar pin, at the zero seed. -/
+theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
+    (hholds : ∀ i, i < m → Holds (g i))
+    (hthread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime) :
+    accN g m = 32 ^ m * accN g 0 + ((natLsbVal (runBools g m) : ℕ) : F) := by
+  rw [chain_accN_register m g hholds hthread,
+    bitsRegister_eq_cast _ (runBits_bool m g hholds), bitsVal_eq_natLsbVal]
+  push_cast
+  rfl
+
 /-- The five-bit windows tile the flat stream: a `runBits`-shaped flatMap over rows
 reads the same list as the plain range read. Element type is free — the gadget's
 prover-side reading tiles variables, not just field values. -/
@@ -2001,43 +1999,31 @@ theorem flatMap_range_window {α : Type*} (bs : ℕ → α) (m : ℕ) :
       List.flatMap_cons, List.flatMap_nil]
     simp [show List.range 5 = [0, 1, 2, 3, 4] from by decide]
 
-/-- The ℤ-decode reconstructs a bounded scalar from its MSB-first bit reads: position
-`j` of the list carries `testBit (L − 1 − j)`. How the honest witness's register fold
-recovers the scalar it unpacked. -/
-theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
-    bitsVal ((List.range L).map fun j => if x.testBit (L - 1 - j) then (1 : F) else 0)
-      = (x : ℤ) := by
-  induction L generalizing x with
-  | zero =>
-    have hx0 : x = 0 := by simpa using hx
-    subst hx0
-    rfl
-  | succ L ih =>
-    have hsplit : ((List.range (L + 1)).map
-          fun j => if x.testBit (L + 1 - 1 - j) then (1 : F) else 0)
-        = ((List.range L).map
-            fun j => if (x / 2).testBit (L - 1 - j) then (1 : F) else 0)
-          ++ [if x.testBit 0 then (1 : F) else 0] := by
-      rw [List.range_succ, List.map_append]
+/-- The honest witness's bits: an MSB-first stream of `testBit (L − 1 − j)` cells,
+decided and reversed, is the scalar's LSB-first bits — `natLsbVal` recovers it. -/
+theorem natLsbVal_testBit_msbStream (x L : ℕ) (hx : x < 2 ^ L) :
+    natLsbVal ((((List.range L).map fun j => if x.testBit (L - 1 - j) then (1 : F) else 0).map
+      fun b => decide (b = 1)).reverse) = x := by
+  have hdec : ((List.range L).map fun j => if x.testBit (L - 1 - j) then (1 : F) else 0).map
+      (fun b => decide (b = 1)) = (List.range L).map fun j => x.testBit (L - 1 - j) := by
+    rw [List.map_map]
+    apply List.map_congr_left
+    intro j _
+    simp only [Function.comp]
+    by_cases h : x.testBit (L - 1 - j) <;> simp [h]
+  have hrev : ((List.range L).map fun j => x.testBit (L - 1 - j)).reverse
+      = (List.range L).map x.testBit := by
+    apply List.ext_getElem
+    · simp
+    · intro i h1 h2
+      simp only [List.length_reverse, List.length_map, List.length_range] at h1
+      rw [List.getElem_reverse, List.getElem_map, List.getElem_map, List.getElem_range,
+        List.getElem_range]
+      simp only [List.length_map, List.length_range]
       congr 1
-      · apply List.map_congr_left
-        intro j hj
-        have hj' : j < L := List.mem_range.mp hj
-        rw [show L + 1 - 1 - j = (L - 1 - j) + 1 from by omega, Nat.testBit_add_one]
-      · simp
-    have hfold : ∀ (l : List F) (b : F),
-        bitsVal (l ++ [b]) = 2 * bitsVal l + (if b = 1 then 1 else 0) := by
-      intro l b
-      simp [bitsVal, List.foldl_append]
-    rw [hsplit, hfold, ih (x / 2) (by omega)]
-    have hbit0 : x.testBit 0 = decide (x % 2 = 1) := Nat.testBit_zero x
-    rcases Nat.mod_two_eq_zero_or_one x with h | h
-    · rw [show (if x.testBit 0 then (1 : F) else 0) = 0 from by rw [hbit0, h]; simp,
-        if_neg (zero_ne_one (α := F))]
       omega
-    · rw [show (if x.testBit 0 then (1 : F) else 0) = 1 from by rw [hbit0, h]; simp,
-        if_pos rfl]
-      omega
+  rw [hdec, hrev]
+  exact natLsbVal_testBit_range hx
 
 end RunBits
 

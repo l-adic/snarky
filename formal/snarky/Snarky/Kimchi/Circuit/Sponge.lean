@@ -19,8 +19,8 @@ Name map: `absorb`/`squeeze` keep their names on `SpongeVar`; PS `initialState` 
 helpers mirror `Poseidon.slot`/`Poseidon.addSlot`.
 
 Deviations from the PS original:
-- PS's width-3 `Vector` state renders as the gadget's `SpongeState`, reading as the
-  value sponge's `Poseidon.Triple` through its `CircuitType` instance.
+- PS's width-3 `Vector` state is `Poseidon.Triple (FVar F)` — the value sponge's carrier
+  at circuit variables; its reading is the product instance's.
 - PS's ambient `PoseidonField` class arrives as the explicit `p : Poseidon.Params F`
   (the Poseidon gadget's deviation, inherited).
 - The rate-boundary tests are spelled `n.val = 2` as in `Poseidon.absorb1`/`squeeze`
@@ -42,7 +42,7 @@ variable {F c : Type}
 variables, plus the direction/position mode shared with the value sponge. -/
 structure SpongeVar (F : Type) where
   /-- The width-3 Poseidon state, as circuit variables. -/
-  state : SpongeState F
+  state : Poseidon.Triple (FVar F)
   /-- The automaton direction and intra-block position — metadata, not circuit data. -/
   mode : Poseidon.SpongeMode
 
@@ -58,7 +58,7 @@ def ofConstants (s : Poseidon.State F) : SpongeVar F :=
   ⟨⟨.const s.state.1, .const s.state.2.1, .const s.state.2.2⟩, s.mode⟩
 
 /-- Read rate slot `n` — `Poseidon.slot` over circuit variables. Emits nothing. -/
-private def slotVar (s : SpongeState F) : Fin 3 → FVar F
+private def slotVar (s : Poseidon.Triple (FVar F)) : Fin 3 → FVar F
   | 0 => s.s0
   | 1 => s.s1
   | _ => s.s2
@@ -66,8 +66,8 @@ private def slotVar (s : SpongeState F) : Fin 3 → FVar F
 /-- Seal `x` into rate slot `n` — `Poseidon.addSlot` over circuit variables, the PS
 operand order (`seal (add_ x state[i])`) kept. -/
 private def addSlotVar [Field F] [DecidableEq F] [BasicSystem F c]
-    (s : SpongeState F) (n : Fin 3) (x : FVar F) :
-    CircuitM F c (SpongeState F) :=
+    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F) :
+    CircuitM F c (Poseidon.Triple (FVar F)) :=
   match n with
   | 0 => do
     let cell ← sealVar (CVar.add_ x s.s0)
@@ -142,28 +142,28 @@ def Reads [Add F] [Mul F] [Zero F] (env : Assignments F) (sv : SpongeVar F)
 theorem vals_init [Field F] (V : Valuation F) :
     Vals V (init (F := F)) Poseidon.init := by
   refine ⟨?_, rfl⟩
-  simp only [init, readVal_spongeState]
+  simp only [init, readVal_prod, readVal_fvar]
   rfl
 
 /-- A constant-seeded sponge reads as the state it was seeded from. -/
 theorem vals_ofConstants [Field F] (V : Valuation F) (s : Poseidon.State F) :
     Vals V (ofConstants s) s := by
   refine ⟨?_, rfl⟩
-  simp only [ofConstants, readVal_spongeState]
+  simp only [ofConstants, readVal_prod, readVal_fvar]
   rfl
 
 /-- The fresh circuit sponge reads as the fresh value sponge, prover side. -/
 theorem reads_init [Field F] (env : Assignments F) :
     Reads env (init (F := F)) Poseidon.init := by
   refine ⟨?_, rfl⟩
-  simp only [init, reads_spongeState_iff]
+  simp only [init, reads_prod_iff, reads_fvar_iff]
   exact ⟨rfl, rfl, rfl⟩
 
 /-- A constant-seeded sponge reads as the state it was seeded from, prover side. -/
 theorem reads_ofConstants [Field F] (env : Assignments F) (s : Poseidon.State F) :
     Reads env (ofConstants s) s := by
   refine ⟨?_, rfl⟩
-  simp only [ofConstants, reads_spongeState_iff]
+  simp only [ofConstants, reads_prod_iff, reads_fvar_iff]
   exact ⟨rfl, rfl, rfl⟩
 
 /-- The reading survives table extension. -/
@@ -175,21 +175,21 @@ theorem Reads.le [Add F] [Mul F] [Zero F] {env env' : Assignments F}
 /-! ## The slot helpers' laws -/
 
 /-- `slotVar` reads as `Poseidon.slot` of the state reading. -/
-private theorem slotVar_val [Add F] [Mul F] (s : SpongeState F) (V : Valuation F) :
+private theorem slotVar_val [Add F] [Mul F] (s : Poseidon.Triple (FVar F)) (V : Valuation F) :
     ∀ n : Fin 3, (slotVar s n).val V = Poseidon.slot (readVal V s) n := by
   intro n
-  simp only [readVal_spongeState]
+  simp only [readVal_prod, readVal_fvar]
   match n with
   | 0 => rfl
   | 1 => rfl
   | 2 => rfl
 
 /-- `slotVar` evaluates to `Poseidon.slot` of the state reading, prover side. -/
-private theorem slotVar_eval [Field F] {env : Assignments F} {s : SpongeState F}
+private theorem slotVar_eval [Field F] {env : Assignments F} {s : Poseidon.Triple (FVar F)}
     {sv : Poseidon.Triple F} (h : Snarky.Reads env s sv) :
     ∀ n : Fin 3, (slotVar s n).eval env = .ok (Poseidon.slot sv n) := by
   intro n
-  simp only [reads_spongeState_iff] at h
+  simp only [reads_prod_iff, reads_fvar_iff] at h
   obtain ⟨h1, h2, h3⟩ := h
   match n with
   | 0 => exact h1
@@ -199,9 +199,9 @@ private theorem slotVar_eval [Field F] {env : Assignments F} {s : SpongeState F}
 /-- `addSlotVar` is sound: the output state reads as `Poseidon.addSlot` of the input
 state's reading (the seal reads as the sum, in either operand order). -/
 @[spec] private theorem addSlotVar_spec [Field F] [DecidableEq F]
-    (s : SpongeState F) (n : Fin 3) (x : FVar F)
-    (Q : PostCond (SpongeState F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : SpongeState F) =>
+    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F)
+    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
+    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
         readVal V r = Poseidon.addSlot (readVal V s) n (x.val V)) Q⦄
     (addSlotVar (c := KimchiConstraint F) s n x)
     ⦃Q⦄ := by
@@ -209,24 +209,24 @@ state's reading (the seal reads as the sum, in either operand order). -/
   | 0 =>
     simp only [addSlotVar]
     mvcgen
-    simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_spongeState]
+    simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_prod, readVal_fvar]
   | 1 =>
     simp only [addSlotVar]
     mvcgen
-    simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_spongeState]
+    simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_prod, readVal_fvar]
   | 2 =>
     simp only [addSlotVar]
     mvcgen
-    simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_spongeState]
+    simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_prod, readVal_fvar]
 
 /-- `addSlotVar` is complete: the honest run accepts on a readable state and element,
 and the output state reads back as `Poseidon.addSlot` of the input values. -/
 @[spec] private theorem addSlotVar_complete_spec [Field F] [DecidableEq F]
-    (s : SpongeState F) (n : Fin 3) (x : FVar F)
-    (Q : PostCond (SpongeState F) (.arg (ProverState F) (.except EvalError .pure))) :
+    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F)
+    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
     ⦃Complete
         (fun env => Readable (Poseidon.Triple F) env s ∧ (x.eval env).isOk)
-        (fun env (r : SpongeState F) env' =>
+        (fun env (r : Poseidon.Triple (FVar F)) env' =>
           ∀ sv xv, Snarky.Reads env s sv → x.eval env = .ok xv →
             Snarky.Reads env' r (Poseidon.addSlot sv n xv))
         Q⦄
@@ -238,7 +238,7 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
     mvcgen
     rename_i st hpre
     obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    simp only [readable_spongeState_iff] at hsok
+    simp only [readable_prod_iff, readable_fvar_iff] at hsok
     obtain ⟨av, ha⟩ := CVar.evalOk hsok.1
     obtain ⟨bv, hb⟩ := CVar.evalOk hsok.2.1
     obtain ⟨cv, hc⟩ := CVar.evalOk hsok.2.2
@@ -248,13 +248,13 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
     intro hf
     refine hk _ ⟨st'.nv, st'.env, hf⟩ (fun sv xv' hsv hx' => ?_) hle
     obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_spongeState_iff] at hsv
+    simp only [reads_prod_iff, reads_fvar_iff] at hsv
     obtain ⟨ha', hb', hc'⟩ := hsv
     rw [ha] at ha'; rw [hb] at hb'; rw [hc] at hc'; rw [hx] at hx'
     injection ha' with ha'; injection hb' with hb'
     injection hc' with hc'; injection hx' with hx'
     subst ha' hb' hc' hx'
-    simp only [reads_spongeState_iff]
+    simp only [reads_prod_iff, reads_fvar_iff]
     refine ⟨?_, CVar.eval_le hle hb, CVar.eval_le hle hc⟩
     simpa [Poseidon.addSlot, add_comm] using hr _ (CVar.eval_add_ hx ha)
   | 1 =>
@@ -262,7 +262,7 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
     mvcgen
     rename_i st hpre
     obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    simp only [readable_spongeState_iff] at hsok
+    simp only [readable_prod_iff, readable_fvar_iff] at hsok
     obtain ⟨av, ha⟩ := CVar.evalOk hsok.1
     obtain ⟨bv, hb⟩ := CVar.evalOk hsok.2.1
     obtain ⟨cv, hc⟩ := CVar.evalOk hsok.2.2
@@ -272,13 +272,13 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
     intro hf
     refine hk _ ⟨st'.nv, st'.env, hf⟩ (fun sv xv' hsv hx' => ?_) hle
     obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_spongeState_iff] at hsv
+    simp only [reads_prod_iff, reads_fvar_iff] at hsv
     obtain ⟨ha', hb', hc'⟩ := hsv
     rw [ha] at ha'; rw [hb] at hb'; rw [hc] at hc'; rw [hx] at hx'
     injection ha' with ha'; injection hb' with hb'
     injection hc' with hc'; injection hx' with hx'
     subst ha' hb' hc' hx'
-    simp only [reads_spongeState_iff]
+    simp only [reads_prod_iff, reads_fvar_iff]
     refine ⟨CVar.eval_le hle ha, ?_, CVar.eval_le hle hc⟩
     simpa [Poseidon.addSlot, add_comm] using hr _ (CVar.eval_add_ hx hb)
   | 2 =>
@@ -286,7 +286,7 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
     mvcgen
     rename_i st hpre
     obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    simp only [readable_spongeState_iff] at hsok
+    simp only [readable_prod_iff, readable_fvar_iff] at hsok
     obtain ⟨av, ha⟩ := CVar.evalOk hsok.1
     obtain ⟨bv, hb⟩ := CVar.evalOk hsok.2.1
     obtain ⟨cv, hc⟩ := CVar.evalOk hsok.2.2
@@ -296,13 +296,13 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
     intro hf
     refine hk _ ⟨st'.nv, st'.env, hf⟩ (fun sv xv' hsv hx' => ?_) hle
     obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_spongeState_iff] at hsv
+    simp only [reads_prod_iff, reads_fvar_iff] at hsv
     obtain ⟨ha', hb', hc'⟩ := hsv
     rw [ha] at ha'; rw [hb] at hb'; rw [hc] at hc'; rw [hx] at hx'
     injection ha' with ha'; injection hb' with hb'
     injection hc' with hc'; injection hx' with hx'
     subst ha' hb' hc' hx'
-    simp only [reads_spongeState_iff]
+    simp only [reads_prod_iff, reads_fvar_iff]
     refine ⟨CVar.eval_le hle ha, CVar.eval_le hle hb, ?_⟩
     simpa [Poseidon.addSlot, add_comm] using hr _ (CVar.eval_add_ hx hc)
 

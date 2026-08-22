@@ -28,12 +28,11 @@ structure SizedF (n : ℕ) (α : Type u) where
   val : α
 
 /-- The `SizedF` contract at an environment: the wrapped variable reads to a value
-that fits the tagged width, faithfully lifted (`ToNat` is a section of the cast at
-it). Gadget completeness laws take this as their scalar hypothesis; the future
+that fits the tagged width (the reader's faithfulness is `LawfulToNat`'s). Gadget
+completeness laws take this as their scalar hypothesis; the future
 `CheckedType` port's soundness law concludes it (see the module docstring). -/
-def SizedF.Fits {F : Type} [Add F] [Mul F] [NatCast F] [ToNat F] {n : ℕ}
+def SizedF.Fits {F : Type} [Add F] [Mul F] [ToNat F] {n : ℕ}
     (s : SizedF n (FVar F)) (env : Assignments F) : Prop :=
-  ∀ v, s.val.eval env = .ok v →
-    ToNat.toNat v < 2 ^ n ∧ ((ToNat.toNat v : F) = v)
+  ∀ v, s.val.eval env = .ok v → ToNat.toNat v < 2 ^ n
 
 end Snarky

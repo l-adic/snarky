@@ -10,13 +10,11 @@ public input through its `CircuitType` encoding, and its `CheckedType` pays the 
 on-curve checks at the seam.
 
 - `verifyCircuit_compile_sound` — a valuation satisfying `compile verifyCircuit`'s
-  constraints, reading any five cells at `inputVar`, certifies genuine nonzero wire
-  points at the read coordinates, a nonzero response decode, and — off the ladder's
-  forbidden band — `verify` at the statement's canonical decode. On-curve-ness is
-  forced by the input check's rows, not hypothesized.
-- `verifyCircuit_solve_complete` — on a statement `verify` accepts, honestly
-  encoded, `solve` at the kimchi checker succeeds (the input check's honest run
-  through `CurvePoint.check_complete_spec`) and its table reads the statement.
+  constraints reads, at `inputVar`, a statement `verify` accepts (off the ladder's
+  forbidden band). What `verify`'s guard demands — both points on-curve, the response
+  decode nonzero — is forced by the input check's rows, not hypothesized.
+- `complete` — on a statement `verify` accepts, `solve` at the kimchi checker succeeds
+  (the guard supplies what the input check's honest run needs) and its table reads it.
 -/
 
 namespace Schnorr
@@ -27,114 +25,78 @@ open Std.Do
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- The seam program — the statement's check, then the verifier — under one Sound
-triple: the check's rows force both point readings on-curve; the body carries the
-endpoint's certificate. -/
-private theorem checkedBody_spec (stv : Statement.Raw (FVar Fq))
+triple: the check's rows force both point readings on-curve, which is what the body's
+certificate needs to land at `verify`. -/
+private theorem checkedBody_spec (stv : Statement (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
-        OnCurve Vesta.curve.A Vesta.curve.B (stv.pk.x.val V, stv.pk.y.val V) ∧
-        OnCurve Vesta.curve.A Vesta.curve.B (stv.u.x.val V, stv.u.y.val V) ∧
-        (∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
-          readVal (val := Statement.Raw Fq) V stv
-            = (⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ : Statement.Raw Fq) →
-          Type1.decodeCanonical 255 zt ≠ (0 : Fp) ∧
-          (Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD →
-            verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true))) Q⦄
+        (readVal (val := Statement Fq) V stv).z.fromShiftedZ
+          ∉ forbiddenValues PALLAS_BASE_CARD →
+        verify (readVal (val := Statement Fq) V stv) = true) Q⦄
     (do CheckedType.check (c := KimchiConstraint Fq) stv
         verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
-  have hpk := CurvePoint.check_spec (F := Fq) (c := KimchiConstraint Fq)
-    (⟨stv.pk⟩ : CurvePoint Vesta.curve.A Vesta.curve.B (FVar Fq))
-  have hu := CurvePoint.check_spec (F := Fq) (c := KimchiConstraint Fq)
-    (⟨stv.u⟩ : CurvePoint Vesta.curve.A Vesta.curve.B (FVar Fq))
   have hbody := verifyCircuit_spec stv
-  simp only [show CheckedType.check (c := KimchiConstraint Fq) stv
-      = Statement.Raw.check stv from rfl, Statement.Raw.check]
-  mvcgen [hpk, hu, hbody]
+  have hprog : CheckedType.check (c := KimchiConstraint Fq) stv
+      = (do CurvePoint.check (c := KimchiConstraint Fq) stv.pk
+            CurvePoint.check (c := KimchiConstraint Fq) stv.u
+            pure PUnit.unit) := rfl
+  simp only [hprog]
+  mvcgen [hbody]
   rename_i s hpre
   intro _ _ hpkC
-  mvcgen [hu, hbody]
+  mvcgen [hbody]
   intro _ _ huC
   mvcgen [hbody]
   intro r nv hmain
-  exact hpre r nv hpkC huC hmain
+  refine hpre r nv fun hband => ?_
+  -- the reading is the cells, projectionwise
+  have hin : readVal (val := Statement Fq) s.V stv
+      = (⟨⟨⟨stv.pk.point.x.val s.V, stv.pk.point.y.val s.V⟩⟩,
+          ⟨⟨stv.u.point.x.val s.V, stv.u.point.y.val s.V⟩⟩,
+          ⟨stv.z.val.val s.V⟩⟩ : Statement Fq) := by
+    simp only [circuitVal]
+  rw [hin] at hband ⊢
+  exact (hmain _ hin hpkC huC).2 hband
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
-open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The satisfaction boundary.** A valuation satisfying every compiled constraint
-(each the verified gate's own predicate at the payload's operands), reading ANY five
-cells at the input bundle, certifies: the point readings are genuine nonzero wire
-points — the input check's rows force them on-curve, and the `(0, 0)` sentinel is
-off-curve — the response decode is nonzero, and, off the ladder's forbidden band,
-`verify` accepts at the statement's canonical decode. No curve-membership hypothesis
-survives. -/
-theorem verifyCircuit_compile_sound
-    (px py ux uy : Fq) (zt : Type1 Fq)
-    (hband : Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD)
-    (V : Valuation Fq)
-    (hsat : ∀ con ∈ (compile (a := Statement.Raw Fq) (b := PUnit)
+(each the verified gate's own predicate at the payload's operands) reads, at the input
+bundle, a statement the wire verifier accepts — off the ladder's forbidden band. What
+`verify`'s guard demands is exactly what the input check's rows force: both points
+on-curve, the response decode nonzero. No curve-membership hypothesis survives. -/
+theorem verifyCircuit_compile_sound (V : Valuation Fq)
+    (hsat : ∀ con ∈ (compile (a := Statement Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
       ConstraintHolds.Holds V con)
-    (hin : readVal V (inputVar (F := Fq) (a := Statement.Raw Fq))
-      = (⟨⟨px, py⟩, ⟨ux, uy⟩, zt⟩ : Statement.Raw Fq)) :
-    ∃ (pkP uP : SWPoint Vesta.curve),
-      pkP.x = px ∧ pkP.y = py ∧ uP.x = ux ∧ uP.y = uy ∧ pkP ≠ 0 ∧ uP ≠ 0 ∧
-      Type1.decodeCanonical 255 zt ≠ (0 : Fp) ∧
-      verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true := by
-  have hplain := (sound_spec_iff _ _).mp
-    (checkedBody_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
-  obtain ⟨hpkC, huC, hmain⟩ := hplain V 5
-    (fun con hcon => hsat con (mem_compile_of_mem_body hcon))
-  rw [readVal_statementRaw] at hin
-  -- the reading pins the cells to the given coordinates, projectionwise
-  have hpx : (inputVar (F := Fq) (a := Statement.Raw Fq)).pk.x.val V = px :=
-    congrArg (fun s => s.pk.x) hin
-  have hpy : (inputVar (F := Fq) (a := Statement.Raw Fq)).pk.y.val V = py :=
-    congrArg (fun s => s.pk.y) hin
-  have hux : (inputVar (F := Fq) (a := Statement.Raw Fq)).u.x.val V = ux :=
-    congrArg (fun s => s.u.x) hin
-  have huy : (inputVar (F := Fq) (a := Statement.Raw Fq)).u.y.val V = uy :=
-    congrArg (fun s => s.u.y) hin
-  have hpkC' : OnCurve Vesta.curve.A Vesta.curve.B (px, py) := by
-    rw [← hpx, ← hpy]; exact hpkC
-  have huC' : OnCurve Vesta.curve.A Vesta.curve.B (ux, uy) := by
-    rw [← hux, ← huy]; exact huC
-  -- an on-curve pair is a nonzero wire point: the sentinel (0, 0) is off-curve
-  have hne : ∀ (x y : Fq) (h : OnCurve Vesta.curve.A Vesta.curve.B (x, y)),
-      (⟨x, y, Or.inl h⟩ : SWPoint Vesta.curve) ≠ 0 := by
-    intro x y h h0
-    have hx : x = 0 := (congrArg SWPoint.x h0).trans rfl
-    have hy : y = 0 := (congrArg SWPoint.y h0).trans rfl
-    subst hx
-    subst hy
-    exact absurd h (by decide)
-  obtain ⟨hnz, himp⟩ := hmain ⟨px, py, Or.inl hpkC'⟩ ⟨ux, uy, Or.inl huC'⟩ zt
-    (hne _ _ hpkC') (hne _ _ huC') (by rw [readVal_statementRaw]; exact hin)
-  exact ⟨⟨px, py, Or.inl hpkC'⟩, ⟨ux, uy, Or.inl huC'⟩, rfl, rfl, rfl, rfl,
-    hne _ _ hpkC', hne _ _ huC', hnz, himp hband⟩
+    (hband : (readVal (val := Statement Fq) V
+        (inputVar (F := Fq) (a := Statement Fq))).z.fromShiftedZ
+      ∉ forbiddenValues PALLAS_BASE_CARD) :
+    verify (readVal (val := Statement Fq) V (inputVar (F := Fq) (a := Statement Fq))) = true :=
+  (sound_spec_iff _ _).mp (checkedBody_spec (inputVar (F := Fq) (a := Statement Fq))) V 5
+    (fun con hcon => hsat con (mem_compile_of_mem_body hcon)) hband
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- The statement check's honest prover run: it succeeds on any table reading the
 statement as on-curve coordinate pairs — the two `CurvePoint` completeness laws in
 sequence. Generic in the statement bundle so consumers instantiate without deep
 unfolding. -/
-private theorem check_complete (stv : Statement.Raw (FVar Fq))
-    (pkx pky uxv uyv : Fq) (zv : Type1 Fq)
-    (hpkOC : OnCurve Vesta.curve.A Vesta.curve.B (pkx, pky))
-    (huOC : OnCurve Vesta.curve.A Vesta.curve.B (uxv, uyv))
+private theorem check_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
+    (hpkOC : OnCurve Vesta.curve.A Vesta.curve.B (raw.pk.point.x, raw.pk.point.y))
+    (huOC : OnCurve Vesta.curve.A Vesta.curve.B (raw.u.point.x, raw.u.point.y))
     (Q : PostCond PUnit (.arg (ProverState Fq) (.except EvalError .pure))) :
-    ⦃Complete (fun env => Reads env stv
-        (⟨⟨pkx, pky⟩, ⟨uxv, uyv⟩, zv⟩ : Statement.Raw Fq))
-      (fun _ _ _ => True) Q⦄
+    ⦃Complete (fun env => Reads env stv raw) (fun _ _ _ => True) Q⦄
     (CheckedType.check (F := Fq) (c := KimchiProverC Fq) stv)
     ⦃Q⦄ := by
   intro st hpre
   obtain ⟨hrd, hk⟩ := hpre
-  rw [reads_statementRaw_iff] at hrd
-  obtain ⟨hpkx, hpky, hux, huy, -⟩ := hrd
-  simp only [show CheckedType.check (F := Fq) (c := KimchiProverC Fq) stv
-      = Statement.Raw.check stv from rfl,
-    Statement.Raw.check, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  simp only [reads_ofEquiv_iff, reads_prod_iff, reads_fvar_iff, circuitVal] at hrd
+  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, -⟩ := hrd
+  have hprog : CheckedType.check (F := Fq) (c := KimchiProverC Fq) stv
+      = (do CurvePoint.check (c := KimchiProverC Fq) stv.pk
+            CurvePoint.check (c := KimchiProverC Fq) stv.u
+            pure PUnit.unit) := rfl
+  simp only [hprog, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   refine CurvePoint.check_complete_spec _ _ st
     ⟨⟨isOk_of_eq hpkx, isOk_of_eq hpky, fun xv yv hx hy => ?_⟩,
       fun _ st₁ _ hle₁ => ?_⟩
@@ -157,61 +119,54 @@ private theorem check_complete (stv : Statement.Raw (FVar Fq))
     subst hx
     subst hy
     exact huOC
-  exact hk ⟨⟩ st₂ trivial (hle₁.trans hle₂)
+  simp only [wp, PredTrans.apply, prove]
+  intro hf
+  exact hk PUnit.unit ⟨st₂.nv, st₂.env, hf⟩ trivial (hle₁.trans hle₂)
 
+open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
-/-- **The constructive boundary.** On a statement `verify` accepts — honestly
-encoded, nondegenerate, in the ladder regime — the whole-circuit `solve` at the
-kimchi checker succeeds, and the returned table reads the statement at the input
-bundle. The input check's honest run succeeds because the wire points are on-curve. -/
-theorem verifyCircuit_solve_complete
-    (stP : Statement) (zt : Type1 Fq)
-    (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hreg : HasCurve.vesta.LadderRegime 255 (Type1.decodeZ 255 zt))
-    (henc : Type1.decodeCanonical 255 zt = stP.z)
-    (hacc : verify stP = true) :
+/-- **The constructive boundary.** On a statement the wire verifier accepts — its
+response decode off the ladder's forbidden band — the whole-circuit `solve` at the
+kimchi checker succeeds and the returned table reads it at the input bundle: the
+guard's on-curve facts are what the input check's honest run needs
+(`CurvePoint.check_complete_spec`), its nonzero response what the exclusion row needs. -/
+theorem complete (raw : Statement Fq)
+    (hband : raw.z.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD)
+    (hacc : verify raw = true) :
     ∃ env : Assignments Fq,
       solve (b := PUnit) (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
-          (verifyCircuit (c := KimchiConstraint Fq))
-          (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq)
-        = .ok (PUnit.unit, env) ∧
-      Reads env (inputVar (F := Fq) (a := Statement.Raw Fq))
-        (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq) := by
-  obtain ⟨env₀, hseed, hlook, hfresh⟩ := solve_seed (F := Fq)
-    (a := Statement.Raw Fq)
-    (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq)
-  have h0 : env₀ 0 = some stP.pk.x := hlook 0 (by decide)
-  have h1 : env₀ 1 = some stP.pk.y := hlook 1 (by decide)
-  have h2 : env₀ 2 = some stP.u.x := hlook 2 (by decide)
-  have h3 : env₀ 3 = some stP.u.y := hlook 3 (by decide)
-  have h4 : env₀ 4 = some zt.val := hlook 4 (by decide)
-  have hreads : Reads env₀ (inputVar (F := Fq) (a := Statement.Raw Fq))
-      (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq) := by
-    rw [reads_statementRaw_iff]
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
-    · show (CVar.var 0).eval env₀ = .ok stP.pk.x
+          (verifyCircuit (c := KimchiConstraint Fq)) raw = .ok (PUnit.unit, env) ∧
+      Reads env (inputVar (F := Fq) (a := Statement Fq)) raw := by
+  obtain ⟨hpkC, huC, -, -⟩ := (verify_iff raw).mp hacc
+  obtain ⟨env₀, hseed, hlook, hfresh⟩ := solve_seed (F := Fq) (a := Statement Fq) raw
+  have h0 : env₀ 0 = some raw.pk.point.x := hlook 0 (by decide)
+  have h1 : env₀ 1 = some raw.pk.point.y := hlook 1 (by decide)
+  have h2 : env₀ 2 = some raw.u.point.x := hlook 2 (by decide)
+  have h3 : env₀ 3 = some raw.u.point.y := hlook 3 (by decide)
+  have h4 : env₀ 4 = some raw.z.val := hlook 4 (by decide)
+  have hreads : Reads env₀ (inputVar (F := Fq) (a := Statement Fq)) raw := by
+    simp only [reads_ofEquiv_iff, reads_prod_iff, reads_fvar_iff, circuitVal]
+    refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩
+    · show (CVar.var 0).eval env₀ = .ok raw.pk.point.x
       simp [CVar.eval, h0]
-    · show (CVar.var 1).eval env₀ = .ok stP.pk.y
+    · show (CVar.var 1).eval env₀ = .ok raw.pk.point.y
       simp [CVar.eval, h1]
-    · show (CVar.var 2).eval env₀ = .ok stP.u.x
+    · show (CVar.var 2).eval env₀ = .ok raw.u.point.x
       simp [CVar.eval, h2]
-    · show (CVar.var 3).eval env₀ = .ok stP.u.y
+    · show (CVar.var 3).eval env₀ = .ok raw.u.point.y
       simp [CVar.eval, h3]
-    · show (CVar.var 4).eval env₀ = .ok zt.val
+    · show (CVar.var 4).eval env₀ = .ok raw.z.val
       simp [CVar.eval, h4]
   -- the input check's honest run: both wire points are on-curve
   obtain ⟨q, hq, -, hleC⟩ := (complete_spec_iff
       (CheckedType.check (F := Fq) (c := KimchiProverC Fq)
-        (inputVar (F := Fq) (a := Statement.Raw Fq))) _ _).mp
-    (check_complete (inputVar (F := Fq) (a := Statement.Raw Fq))
-      stP.pk.x stP.pk.y stP.u.x stP.u.y zt
-      (SWPoint.onCurve_of_ne_zero hpk0) (SWPoint.onCurve_of_ne_zero hu0))
+        (inputVar (F := Fq) (a := Statement Fq))) _ _).mp
+    (check_complete (inputVar (F := Fq) (a := Statement Fq)) raw hpkC huC)
     ⟨5, env₀, hfresh⟩ hreads
   have hfresh₁ : q.assignments.FreshFrom q.nextVar := prove_freshFrom hfresh hq
   obtain ⟨out, hrun, hle⟩ := verifyCircuit_complete_spec
-    (inputVar (F := Fq) (a := Statement.Raw Fq)) stP zt
-    hpk0 hu0 hz0 hreg henc hacc ⟨q.nextVar, q.assignments, hfresh₁⟩
-    (Reads.le hleC hreads)
+    (inputVar (F := Fq) (a := Statement Fq)) raw (vesta_ladderRegime raw.z hband) hacc
+    ⟨q.nextVar, q.assignments, hfresh₁⟩ (Reads.le hleC hreads)
   exact ⟨out.assignments, solve_punit_ok hseed hq hrun,
     Reads.le (hleC.trans hle) hreads⟩
 

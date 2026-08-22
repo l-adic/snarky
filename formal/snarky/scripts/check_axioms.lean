@@ -91,6 +91,12 @@ def roots : List Name :=
     `Snarky.packPure_unpackPure,
     `Snarky.unpack_spec,
     `Snarky.unpack_complete_spec,
+    `Snarky.ltBitstringValue_spec,
+    `Snarky.ltBitstringValue_complete_spec,
+    `Snarky.assertBitsBelow_spec,
+    `Snarky.assertBitsBelow_complete_spec,
+    `Snarky.unpackFull_spec,
+    `Snarky.unpackFull_complete_spec,
     `Snarky.sealVar_spec,
     `Snarky.sealVar_complete_spec,
     `Snarky.Kimchi.AddFast.addFast_spec,
@@ -125,9 +131,6 @@ def roots : List Name :=
     `Snarky.Reads.unique,
     `Snarky.exists_reads,
     `Snarky.exists_readsAll,
-    `Snarky.Kimchi.readVal_spongeState,
-    `Snarky.Kimchi.readable_spongeState_iff,
-    `Snarky.Kimchi.reads_spongeState_iff,
     `Snarky.Kimchi.AddFast.addFast_complete_spec,
     `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
     `Snarky.Kimchi.EndoScalar.toField_spec,
@@ -159,8 +162,11 @@ def roots : List Name :=
     `Snarky.Kimchi.CurvePoint.check_complete_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasEndo.vesta_crumbs_eq,
+    `Snarky.Kimchi.HasEndo.vesta_endoExpand,
     `Snarky.Kimchi.HasCurve.pallas,
     `Snarky.Kimchi.HasCurve.vesta,
+    `Snarky.Kimchi.vesta_ladderRegime,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
@@ -226,8 +232,11 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasEndo.vesta_crumbs_eq,
+    `Snarky.Kimchi.HasEndo.vesta_endoExpand,
     `Snarky.Kimchi.HasCurve.pallas,
-    `Snarky.Kimchi.HasCurve.vesta ]
+    `Snarky.Kimchi.HasCurve.vesta,
+    `Snarky.Kimchi.vesta_ladderRegime ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

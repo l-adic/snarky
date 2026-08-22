@@ -29,6 +29,7 @@ namespace Snarky.Kimchi
 
 open Snarky
 open CompElliptic.CurveForms.ShortWeierstrass
+open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
 variable {F c : Type}
 
@@ -48,14 +49,25 @@ def CurvePoint.check [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSyst
   let x3 ← mul x2 p.point.x
   assertSquare p.point.y (CVar.add_ (CVar.add_ x3 (CVar.scale_ a p.point.x)) (.const b))
 
+/-- The tag is phantom: a tagged point is its point. -/
+@[simps apply symm_apply] def CurvePoint.equivPoint {a b : F} {α : Type} :
+    CurvePoint a b α ≃ AffinePoint α where
+  toFun p := p.point
+  invFun p := ⟨p⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+attribute [circuitVal] CurvePoint.equivPoint_apply CurvePoint.equivPoint_symm_apply
+
+open CompElliptic.Curves.Pasta in
+/-- A point tagged with Vesta's coefficients — what an `Fq`-circuit's public points are. -/
+abbrev VestaPoint := CurvePoint (a := Vesta.curve.A) (b := Vesta.curve.B)
+
 /-- The tagged point encodes exactly as its coordinates, `[x, y]`. -/
 instance instCurvePointCircuitType {a b : F} :
-    CircuitType F (CurvePoint a b F) (CurvePoint a b (FVar F)) where
-  size := 2
-  valueToFields p := #v[p.point.x, p.point.y]
-  fieldsToValue fs := ⟨⟨fs[0], fs[1]⟩⟩
-  varToFields p := #v[p.point.x, p.point.y]
-  fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩⟩
+    CircuitType F (CurvePoint a b F) (CurvePoint a b (FVar F)) :=
+  CircuitType.ofEquiv (inferInstance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)))
+    CurvePoint.equivPoint CurvePoint.equivPoint
 
 /-- A tagged point pays its on-curve constraint (PS `WeierstrassAffinePoint`'s
 `CheckedType`). -/
@@ -67,7 +79,7 @@ instance instCurvePointCheckedType {a b : F}
 open Std.Do in
 /-- The check's rows force the reading on-curve: any satisfying valuation reads the
 coordinates onto `y² = x³ + a·x + b`. -/
-theorem CurvePoint.check_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem CurvePoint.check_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] {a b : F}
     (p : CurvePoint a b (FVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (_ : PUnit) => OnCurve a b (p.point.x.val V, p.point.y.val V)) Q⦄
@@ -92,7 +104,7 @@ theorem CurvePoint.check_spec [Field F] [DecidableEq F] [BasicSystem F c]
 open Std.Do in
 /-- The check's honest run succeeds on a reading satisfying the on-curve equation,
 only extending the table (the `x³` row witnesses its product). -/
-theorem CurvePoint.check_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem CurvePoint.check_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [Checker F c] [LawfulChecker F c] {a b : F}
     (p : CurvePoint a b (FVar F))
     (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :

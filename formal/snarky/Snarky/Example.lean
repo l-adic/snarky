@@ -222,10 +222,6 @@ example : proverOk (do
     let c ← witness (val := Bool) (pure false)
     assertExactlyOne [a, b, c]) = false := by decide
 
-/-- The canonical representative at the concrete field: `ZMod.val` — the instance
-that discharges the bit laws' `ToNat` hypotheses. -/
-instance : ToNat F17 := ⟨ZMod.val⟩
-
 /-- Too few bits: the packing row rejects the honest run (`13` does not fit in two
 bits). -/
 example : (prove Basic.holds
