@@ -164,7 +164,7 @@ open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 encoded, nondegenerate, in the ladder regime — the whole-circuit `solve` at the
 kimchi checker succeeds, and the returned table reads the statement at the input
 bundle. The input check's honest run succeeds because the wire points are on-curve. -/
-theorem verifyCircuit_solve_complete
+private theorem verifyCircuit_solve_complete
     (stP : Statement) (zt : Type1 Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
     (hreg : HasCurve.vesta.LadderRegime 255 (zt.fromShiftedZ))
@@ -220,7 +220,7 @@ open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- The constructive boundary at the canonical encode: for an accepted, nondegenerate
 statement whose response's encode sits off the forbidden band, `solve` succeeds at
 `Type1.toShifted` — the encoding hypotheses discharged by `toShifted_ladderRegime`. -/
-theorem verifyCircuit_solve_complete_encode
+theorem complete
     (stP : Statement) (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
     (hband : (Type1.toShifted stP.z).fromShiftedZ
       ∉ forbiddenValues PALLAS_BASE_CARD)
