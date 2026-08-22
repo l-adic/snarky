@@ -31,7 +31,8 @@ Both walk the gadget's do-block through the vector loop rules;
 namespace Snarky
 
 export Kimchi (natLsbVal natLsbVal_lt natLsbVal_append_singleton natLsbVal_ofFn_testBit
-  natLsbVal_testBit_range natLsbVal_take_drop natLsbVal_eq_zero natLsbVal_lt_of_drop_false)
+  natLsbVal_testBit_range natLsbVal_take_testBit_range natLsbVal_take_drop natLsbVal_eq_zero
+  natLsbVal_lt_of_drop_false ofFn_val_eq_map_range)
 
 variable {F c : Type u}
 
@@ -64,6 +65,13 @@ private def packAux [Semiring F] [DecidableEq F] : List (BoolVar F) → Nat → 
 (PS `pack_`). -/
 def pack [Semiring F] [DecidableEq F] {n : Nat} (bits : Vector (BoolVar F) n) : FVar F :=
   packAux bits.toList 0 (.const 0)
+
+/-- Pack the low `k` bits of an `n`-bit vector, LSB first — pure, no constraints.
+Irreducible: consumers read it through `packLow_eval`/`packLow_val`, never by opening
+the fold. -/
+@[irreducible] def packLow [Semiring F] [DecidableEq F] {n : Nat} (k : Nat) (hk : k ≤ n)
+    (bits : Vector (BoolVar F) n) : FVar F :=
+  pack (Vector.ofFn fun i : Fin k => bits[i.val]'(lt_of_lt_of_le i.isLt hk))
 
 /-- Decompose a field variable into `n` LSB-first bits (PS `unpack_`): witness each bit
 CHECKED (`witness` at `Bool` pays the `boolean` row), then pin the weighted sum to the
@@ -165,6 +173,32 @@ theorem natLsbVal_unpackPure {F : Type u} [ToNat F] {n : Nat} {x : F}
   rw [unpackPure, Vector.toList_ofFn]
   exact natLsbVal_ofFn_testBit n _ hlt
 
+/-- The low `k` digits of a representative Horner-fold to its residue mod `2^k`. -/
+theorem natLsbVal_take_unpackPure {F : Type u} [ToNat F] {n k : Nat} (hk : k ≤ n) (x : F) :
+    natLsbVal ((unpackPure x n).toList.take k) = ToNat.toNat x % 2 ^ k := by
+  rw [unpackPure, Vector.toList_ofFn, ofFn_val_eq_map_range, natLsbVal_take_testBit_range _ hk]
+
+/-- The low slice of a vector, `ofFn`-spelled, is `toList.take`. -/
+theorem toList_ofFn_take {α : Type u} {n : Nat} (k : Nat) (hk : k ≤ n) (v : Vector α n) :
+    (Vector.ofFn fun i : Fin k => v[i.val]'(lt_of_lt_of_le i.isLt hk)).toList
+      = v.toList.take k := by
+  rw [Vector.toList_ofFn]
+  apply List.ext_getElem
+  · rw [List.length_ofFn, List.length_take, Vector.length_toList]
+    omega
+  · intro i h1 h2
+    rw [List.getElem_ofFn, List.getElem_take, Vector.getElem_toList]
+
+/-- `packLow` evaluation: the low bits' value, cast. -/
+theorem packLow_eval {F : Type u} [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {env : Assignments F}
+    (h : ∀ i (hi : i < n), (bits[i].toCVar).eval env = .ok (bit bs[i])) :
+    (packLow k hk bits).eval env = .ok ((natLsbVal (bs.toList.take k) : Nat) : F) := by
+  unfold packLow
+  rw [pack_eval (bs := Vector.ofFn fun i : Fin k => bs[i.val]'(lt_of_lt_of_le i.isLt hk))
+    (fun i hi => by simp only [Vector.getElem_ofFn]; exact h i (lt_of_lt_of_le hi hk)),
+    packPure_natCast, toList_ofFn_take k hk]
+
 /-! ## The circuit laws -/
 
 /-- `pack` reads as the pure packing — `pack_eval` carried across the bridge to the
@@ -179,6 +213,16 @@ theorem pack_val {F : Type} [Semiring F] [DecidableEq F] {n : Nat}
   have := pack_eval (bits := bits) (bs := bs) (env := V.toAssignments) h'
   rw [CVar.eval_toAssignments] at this
   injection this
+
+/-- `packLow` reads as the cast of the low bits' value. -/
+theorem packLow_val {F : Type} [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {V : Valuation F}
+    (h : ∀ i (hi : i < n), (bits[i].toCVar).val V = bit bs[i]) :
+    (packLow k hk bits).val V = ((natLsbVal (bs.toList.take k) : Nat) : F) := by
+  unfold packLow
+  rw [pack_val (bs := Vector.ofFn fun i : Fin k => bs[i.val]'(lt_of_lt_of_le i.isLt hk))
+    (fun i hi => by simp only [Vector.getElem_ofFn]; exact h i (lt_of_lt_of_le hi hk)),
+    packPure_natCast, toList_ofFn_take k hk]
 
 open Std.Do in
 /-- `unpack`'s emitted rows force the results to be bits whose weighted sum is the

@@ -207,6 +207,9 @@ Snarky.packPure_unpackPure
 Snarky.packPure_natCast
 Snarky.unpack_spec
 Snarky.pack_val
+Snarky.packLow
+Snarky.packLow_eval
+Snarky.packLow_val
 Snarky.unpack_complete_spec
 -- The canonical unpack (Circuit/DSL/UnpackFull.lean): OCaml `unpack_full` /
 -- `lt_bitstring_value` — the bits-below-the-modulus lock, packaged as

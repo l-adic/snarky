@@ -31,30 +31,6 @@ private theorem fqParams_size :
   rw [Array.size_map]
   decide
 
-/-- The low slice of a vector, `ofFn`-spelled, is `toList.take`. -/
-private theorem toList_ofFn_slice {α : Type} (v : Vector α 255) :
-    (Vector.ofFn fun i : Fin 128 => v[i.val]'(by omega)).toList
-      = v.toList.take 128 := by
-  rw [Vector.toList_ofFn]
-  apply List.ext_getElem
-  · rw [List.length_ofFn, List.length_take, Vector.length_toList]
-    omega
-  · intro i h1 h2
-    rw [List.getElem_ofFn, List.getElem_take, Vector.getElem_toList]
-
-/-- The Horner value of the low 128 test-bits is the value mod `2^128`. -/
-private theorem natLsbVal_ofFn_testBit_low (m : ℕ) :
-    natLsbVal (List.ofFn fun i : Fin 128 => m.testBit i.val) = m % 2 ^ 128 := by
-  rw [show (List.ofFn fun i : Fin 128 => m.testBit i.val)
-      = (List.range 128).map (m % 2 ^ 128).testBit from ?_]
-  · exact natLsbVal_testBit_range (Nat.mod_lt _ (by positivity))
-  · apply List.ext_getElem
-    · rw [List.length_ofFn, List.length_map, List.length_range]
-    · intro i h1 h2
-      rw [List.length_ofFn] at h1
-      rw [List.getElem_ofFn, List.getElem_map, List.getElem_range,
-        Nat.testBit_mod_two_pow, decide_eq_true h1, Bool.true_and]
-
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The sound endpoint.** Any satisfying valuation certifies the wire verifier at
@@ -145,14 +121,8 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     have hlt := natLsbVal_lt (hbs.toList.take 128)
     have hlen : (hbs.toList.take 128).length = 128 := by simp
     rwa [hlen] at hlt
-  have hcval : (challengeOf hbits).val st.V = ((nL : ℕ) : Fq) := by
-    unfold challengeOf
-    refine Eq.trans (pack_val
-      (bs := Vector.ofFn fun i : Fin 128 => hbs[i.val]'(by omega)) ?_) ?_
-    · intro i hi
-      simp only [Vector.getElem_ofFn]
-      exact hbread _ (by omega)
-    · rw [packPure_natCast, toList_ofFn_slice]
+  have hcval : (packLow 128 (by omega) hbits).val st.V = ((nL : ℕ) : Fq) :=
+    packLow_val (by omega) hbread
   have hnLpre : nL = preChallenge pkP uP := by
     have hsplit := natLsbVal_take_drop 128 hbs.toList
     have hmod : (transcriptHash pkP uP).val % 2 ^ 128 = nL := by
@@ -348,17 +318,13 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       lt_of_lt_of_le (ZMod.val_lt _) (by decide), ZMod.val_lt _⟩
   have hdig := hout₂ _ hsqv
   -- the packed low bits read as the wire challenge
-  have hcev : (challengeOf hbits).eval st₂.env
+  have hcev : (packLow 128 (by omega) hbits).eval st₂.env
       = .ok ((preChallenge stP.pk stP.u : ℕ) : Fq) := by
-    unfold challengeOf
-    refine Eq.trans (pack_eval
-      (bs := Vector.ofFn fun i : Fin 128 =>
-        (ToNat.toNat (transcriptHash stP.pk stP.u)).testBit i.val) ?_) ?_
-    · intro i hi
-      simp only [Vector.getElem_ofFn]
-      exact hdig _ (by omega)
-    · rw [packPure_natCast, Vector.toList_ofFn, natLsbVal_ofFn_testBit_low]
-      rfl
+    have hpre : preChallenge stP.pk stP.u
+        = ToNat.toNat (transcriptHash stP.pk stP.u) % 2 ^ 128 := rfl
+    rw [packLow_eval (by omega) (bs := unpackPure (transcriptHash stP.pk stP.u) 255)
+      (fun i hi => by simp only [unpackPure, Vector.getElem_ofFn]; exact hdig i hi),
+      natLsbVal_take_unpackPure (by omega), hpre]
   -- the challenge leg: endoMul at the canonical prechallenge
   mvcgen -trivial [hendo, hvbmc, hadd]
   have hpkx₂ := CVar.eval_le hle₂ (CVar.eval_le hle₁ hpkx)

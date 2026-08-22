@@ -60,14 +60,27 @@ theorem natLsbVal_append_singleton (l : List Bool) (b : Bool) :
     simp only [List.cons_append, natLsbVal, ih, List.length_cons, pow_succ]
     ring
 
+/-- An `ofFn` over `Fin n` reading a function of the index is the range map. -/
+theorem ofFn_val_eq_map_range {α : Type*} (g : Nat → α) (n : Nat) :
+    (List.ofFn fun i : Fin n => g i.val) = (List.range n).map g := by
+  apply List.ext_getElem (by simp)
+  intro i h1 h2
+  simp
+
 /-- A number below `2^n` is the Horner fold of its first `n` bits, range-map form. -/
 theorem natLsbVal_testBit_range {m n : Nat} (h : m < 2 ^ n) :
     natLsbVal ((List.range n).map m.testBit) = m := by
-  rw [show (List.range n).map m.testBit = List.ofFn fun i : Fin n => m.testBit i.val by
-    apply List.ext_getElem (by simp)
-    intro i h1 h2
-    simp]
+  rw [← ofFn_val_eq_map_range]
   exact natLsbVal_ofFn_testBit n m h
+
+/-- The low `k` bits of a number's `n`-bit range map spell its residue mod `2^k`. -/
+theorem natLsbVal_take_testBit_range (m : Nat) {n k : Nat} (hk : k ≤ n) :
+    natLsbVal (((List.range n).map m.testBit).take k) = m % 2 ^ k := by
+  rw [← List.map_take, List.take_range, Nat.min_eq_left hk]
+  rw [show (List.range k).map m.testBit = (List.range k).map (m % 2 ^ k).testBit from
+    List.map_congr_left fun i hi => by
+      rw [Nat.testBit_mod_two_pow, decide_eq_true (List.mem_range.mp hi), Bool.true_and]]
+  exact natLsbVal_testBit_range (Nat.mod_lt _ (Nat.two_pow_pos k))
 
 /-- The Horner value splits at any position: low bits plus the shifted high bits. -/
 theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
