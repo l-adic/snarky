@@ -14,7 +14,9 @@ coordinates through the block-mode random-oracle gadget (`RandomOracle.hashVec`)
 `endoMul` for `[c]·pk`, `varBaseMul` for `[z]·G` on the constant generator with its
 bits locked below the modulus (`ltBitstringValue`; the statement carries `z`
 `Type1`-typed), and one complete addition with two coordinate equalities pinning
-`[z]·G = u + [c]·pk`. The laws tying it to `verify` live beside it.
+`[z]·G = u + [c]·pk`. The statement's encoding (`Statement.Raw`) and the wire
+verifier at it (`verifyRaw`) live in `Wire`; here the encoding's check is derived from
+its fields. The laws tying the circuit to the wire live beside it.
 -/
 
 namespace Schnorr
@@ -22,38 +24,6 @@ namespace Schnorr
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
 
 variable {F c : Type}
-
-/-- The statement's shape over a carrier: at `FVar Fq` the in-circuit statement, at
-`Fq` its `CircuitType` reading. The points are Vesta-tagged, so the statement's
-derived `CheckedType` pays their on-curve checks; the wire `Statement` refines a
-reading with the on-curve proofs and the scalar-field response. -/
-structure Statement.Raw (α : Type) where
-  /-- The public key. -/
-  pk : VestaPoint α
-  /-- The commitment. -/
-  u : VestaPoint α
-  /-- The response, `Type1`-carried (`p < q`): the ladder consuming it realizes the
-  shift, and `Type1.fromShifted` reads its scalar-field value. -/
-  z : Type1 α
-
-/-- The statement is its three fields. -/
-@[simps apply symm_apply] def Statement.Raw.equivProd {α : Type} :
-    Statement.Raw α ≃ VestaPoint α × VestaPoint α × Type1 α where
-  toFun st := (st.pk, st.u, st.z)
-  invFun p := ⟨p.1, p.2.1, p.2.2⟩
-  left_inv _ := rfl
-  right_inv _ := rfl
-
-attribute [circuitVal] Statement.Raw.equivProd_apply Statement.Raw.equivProd_symm_apply
-
-/-- The statement encodes as its five field elements, points first, coordinatewise —
-the product presentation. -/
-instance instStatementRawCircuitType :
-    CircuitType Fq (Statement.Raw Fq) (Statement.Raw (FVar Fq)) :=
-  CircuitType.ofEquiv
-    (inferInstance : CircuitType Fq (VestaPoint Fq × VestaPoint Fq × Type1 Fq)
-      (VestaPoint (FVar Fq) × VestaPoint (FVar Fq) × Type1 (FVar Fq)))
-    Statement.Raw.equivProd Statement.Raw.equivProd
 
 /-- The statement's check is its fields': both Vesta points pay their on-curve rows
 (`CurvePoint.check`), the response cell nothing — derived through the product. -/

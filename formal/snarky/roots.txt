@@ -487,7 +487,12 @@ Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta
 Snarky.Kimchi.HasCurve.pallas
 Snarky.Kimchi.HasCurve.vesta
-Snarky.Kimchi.toShifted_ladderRegime
+Snarky.Kimchi.vesta_ladderRegime
+
+-- The Type1 codec's encode (Types/Shifted.lean): the wire's encoding direction and its
+-- round trip.
+Snarky.Type1.toShifted
+Snarky.Type1.fromShifted_toShifted
 Snarky.Kimchi.AffinePoint.equivProd_apply
 Snarky.Kimchi.AffinePoint.equivProd_symm_apply
 Snarky.Kimchi.instCircuitTypeAffinePoint

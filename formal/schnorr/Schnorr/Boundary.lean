@@ -10,13 +10,12 @@ public input through its `CircuitType` encoding, and its `CheckedType` pays the 
 on-curve checks at the seam.
 
 - `verifyCircuit_compile_sound` — a valuation satisfying `compile verifyCircuit`'s
-  constraints, reading any five cells at `inputVar`, certifies genuine nonzero wire
-  points at the read coordinates, a nonzero response decode, and — off the ladder's
-  forbidden band — `verify` at the statement's canonical decode. On-curve-ness is
-  forced by the input check's rows, not hypothesized.
-- `verifyCircuit_solve_complete` — on a statement `verify` accepts, honestly
-  encoded, `solve` at the kimchi checker succeeds (the input check's honest run
-  through `CurvePoint.check_complete_spec`) and its table reads the statement.
+  constraints reads, at `inputVar`, a raw statement `verifyRaw` accepts (off the
+  ladder's forbidden band). The guard's facts — both points on-curve, the response
+  decode nonzero — are forced by the input check's rows, not hypothesized.
+- `complete` — on a raw statement `verifyRaw` accepts, `solve` at the kimchi checker
+  succeeds (the guard supplies what the input check's honest run needs) and its table
+  reads it.
 -/
 
 namespace Schnorr
@@ -61,56 +60,35 @@ private theorem checkedBody_spec (stv : Statement.Raw (FVar Fq))
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The satisfaction boundary.** A valuation satisfying every compiled constraint
-(each the verified gate's own predicate at the payload's operands), reading ANY five
-cells at the input bundle, certifies: the point readings are genuine nonzero wire
-points — the input check's rows force them on-curve, and the `(0, 0)` sentinel is
-off-curve — the response decode is nonzero, and, off the ladder's forbidden band,
-`verify` accepts at the statement's canonical decode. No curve-membership hypothesis
-survives. -/
-theorem verifyCircuit_compile_sound
-    (px py ux uy : Fq) (zt : Type1 Fq)
-    (hband : zt.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD)
-    (V : Valuation Fq)
+(each the verified gate's own predicate at the payload's operands) reads, at the input
+bundle, a raw statement the wire verifier accepts — off the ladder's forbidden band.
+`verifyRaw`'s guard is exactly what the input check's rows force: both points on-curve,
+the response decode nonzero. No curve-membership hypothesis survives. -/
+theorem verifyCircuit_compile_sound (V : Valuation Fq)
     (hsat : ∀ con ∈ (compile (a := Statement.Raw Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
       ConstraintHolds.Holds V con)
-    (hin : readVal V (inputVar (F := Fq) (a := Statement.Raw Fq))
-      = (⟨⟨⟨px, py⟩⟩, ⟨⟨ux, uy⟩⟩, zt⟩ : Statement.Raw Fq)) :
-    ∃ (pkP uP : SWPoint Vesta.curve),
-      pkP.x = px ∧ pkP.y = py ∧ uP.x = ux ∧ uP.y = uy ∧ pkP ≠ 0 ∧ uP ≠ 0 ∧
-      zt.fromShifted ≠ (0 : Fp) ∧
-      verify ⟨pkP, uP, zt.fromShifted⟩ = true := by
+    (hband : (readVal (val := Statement.Raw Fq) V
+        (inputVar (F := Fq) (a := Statement.Raw Fq))).z.fromShiftedZ
+      ∉ forbiddenValues PALLAS_BASE_CARD) :
+    verifyRaw (readVal (val := Statement.Raw Fq) V
+      (inputVar (F := Fq) (a := Statement.Raw Fq))) = true := by
   have hplain := (sound_spec_iff _ _).mp
     (checkedBody_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
   obtain ⟨hpkC, huC, hmain⟩ := hplain V 5
     (fun con hcon => hsat con (mem_compile_of_mem_body hcon))
-  simp only [circuitVal] at hin
-  -- the reading pins the cells to the given coordinates, projectionwise
-  have hpx : (inputVar (F := Fq) (a := Statement.Raw Fq)).pk.point.x.val V = px :=
-    congrArg (fun s => s.pk.point.x) hin
-  have hpy : (inputVar (F := Fq) (a := Statement.Raw Fq)).pk.point.y.val V = py :=
-    congrArg (fun s => s.pk.point.y) hin
-  have hux : (inputVar (F := Fq) (a := Statement.Raw Fq)).u.point.x.val V = ux :=
-    congrArg (fun s => s.u.point.x) hin
-  have huy : (inputVar (F := Fq) (a := Statement.Raw Fq)).u.point.y.val V = uy :=
-    congrArg (fun s => s.u.point.y) hin
-  have hpkC' : OnCurve Vesta.curve.A Vesta.curve.B (px, py) := by
-    rw [← hpx, ← hpy]; exact hpkC
-  have huC' : OnCurve Vesta.curve.A Vesta.curve.B (ux, uy) := by
-    rw [← hux, ← huy]; exact huC
-  -- an on-curve pair is a nonzero wire point: the sentinel (0, 0) is off-curve
-  have hne : ∀ (x y : Fq) (h : OnCurve Vesta.curve.A Vesta.curve.B (x, y)),
-      (⟨x, y, Or.inl h⟩ : SWPoint Vesta.curve) ≠ 0 := by
-    intro x y h h0
-    have hx : x = 0 := (congrArg SWPoint.x h0).trans rfl
-    have hy : y = 0 := (congrArg SWPoint.y h0).trans rfl
-    subst hx
-    subst hy
-    exact absurd h (by decide)
-  obtain ⟨hnz, himp⟩ := hmain ⟨px, py, Or.inl hpkC'⟩ ⟨ux, uy, Or.inl huC'⟩ zt
-    (hne _ _ hpkC') (hne _ _ huC') (by simpa only [circuitVal] using hin)
-  exact ⟨⟨px, py, Or.inl hpkC'⟩, ⟨ux, uy, Or.inl huC'⟩, rfl, rfl, rfl, rfl,
-    hne _ _ hpkC', hne _ _ huC', hnz, himp hband⟩
+  -- the reading is the input cells' values, projectionwise
+  have hin : readVal (val := Statement.Raw Fq) V (inputVar (F := Fq) (a := Statement.Raw Fq))
+      = (⟨⟨⟨(inputVar (F := Fq) (a := Statement.Raw Fq)).pk.point.x.val V,
+            (inputVar (F := Fq) (a := Statement.Raw Fq)).pk.point.y.val V⟩⟩,
+         ⟨⟨(inputVar (F := Fq) (a := Statement.Raw Fq)).u.point.x.val V,
+            (inputVar (F := Fq) (a := Statement.Raw Fq)).u.point.y.val V⟩⟩,
+         ⟨(inputVar (F := Fq) (a := Statement.Raw Fq)).z.val.val V⟩⟩ : Statement.Raw Fq) := by
+    simp only [circuitVal]
+  rw [hin] at hband ⊢
+  obtain ⟨hnz, himp⟩ :=
+    hmain _ _ _ (SWPoint.mk_ne_zero hpkC) (SWPoint.mk_ne_zero huC) hin
+  exact (verifyRaw_iff _).mpr ⟨hpkC, huC, hnz, himp hband⟩
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- The statement check's honest prover run: it succeeds on any table reading the
@@ -220,24 +198,22 @@ private theorem verifyCircuit_solve_complete
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
-/-- The constructive boundary at the canonical encode: for an accepted, nondegenerate
-statement whose response's encode sits off the forbidden band, `solve` succeeds at
-`Type1.toShifted` — the encoding hypotheses discharged by `toShifted_ladderRegime`. -/
-theorem complete
-    (stP : Statement) (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hband : (Type1.toShifted stP.z).fromShiftedZ
-      ∉ forbiddenValues PALLAS_BASE_CARD)
-    (hacc : verify stP = true) :
+/-- **The constructive boundary.** On a raw statement the wire verifier accepts — its
+response decode off the ladder's forbidden band — the whole-circuit `solve` at the
+kimchi checker succeeds and the returned table reads it at the input bundle: the
+guard's on-curve facts are what the input check's honest run needs, its nonzero
+response what the exclusion row needs. -/
+theorem complete (raw : Statement.Raw Fq)
+    (hband : raw.z.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD)
+    (hacc : verifyRaw raw = true) :
     ∃ env : Assignments Fq,
       solve (b := PUnit) (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
-          (verifyCircuit (c := KimchiConstraint Fq))
-          (⟨⟨⟨stP.pk.x, stP.pk.y⟩⟩, ⟨⟨stP.u.x, stP.u.y⟩⟩,
-            Type1.toShifted stP.z⟩ : Statement.Raw Fq)
-        = .ok (PUnit.unit, env) ∧
-      Reads env (inputVar (F := Fq) (a := Statement.Raw Fq))
-        (⟨⟨⟨stP.pk.x, stP.pk.y⟩⟩, ⟨⟨stP.u.x, stP.u.y⟩⟩,
-          Type1.toShifted stP.z⟩ : Statement.Raw Fq) := by
-  obtain ⟨henc, hreg⟩ := toShifted_ladderRegime stP.z hband
-  exact verifyCircuit_solve_complete stP _ hpk0 hu0 hz0 hreg henc hacc
+          (verifyCircuit (c := KimchiConstraint Fq)) raw = .ok (PUnit.unit, env) ∧
+      Reads env (inputVar (F := Fq) (a := Statement.Raw Fq)) raw := by
+  obtain ⟨hpk, hu, hz, hv⟩ := (verifyRaw_iff raw).mp hacc
+  exact verifyCircuit_solve_complete
+    ⟨⟨_, _, Or.inl hpk⟩, ⟨_, _, Or.inl hu⟩, raw.z.fromShifted⟩ raw.z
+    (SWPoint.mk_ne_zero hpk) (SWPoint.mk_ne_zero hu) hz (vesta_ladderRegime raw.z hband)
+    rfl hv
 
 end Schnorr

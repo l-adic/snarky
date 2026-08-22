@@ -244,15 +244,13 @@ def HasCurve.vesta : HasCurve Fq where
 
 open CompElliptic.Fields.Pasta in
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
-/-- `Type1.toShifted` at the deployed boundary: its decode is the encoded scalar, and
-the vesta ladder accepts it whenever its residue is off the forbidden set — the
-dischargeable form of a completeness endpoint's encoding hypotheses. -/
-theorem toShifted_ladderRegime (z : Fp)
-    (hband : (Type1.toShifted z).fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD) :
-    (Type1.toShifted z).fromShifted = z ∧
-    HasCurve.vesta.LadderRegime 255 (Type1.toShifted z).fromShiftedZ := by
+/-- The deployed ladder accepts any `Type1` carrier whose decode is off the forbidden
+set: Vesta sits in the one-wrap band at 255 bits. -/
+theorem vesta_ladderRegime (t : Type1 Fq)
+    (hband : t.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    HasCurve.vesta.LadderRegime 255 t.fromShiftedZ := by
   have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
-  refine ⟨Type1.fromShifted_toShifted z, Or.inr ⟨?_, ?_, ?_, ?_⟩⟩ <;> rw [hOv]
+  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
   · decide
   · decide
   · decide

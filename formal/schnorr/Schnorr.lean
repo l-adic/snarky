@@ -11,7 +11,8 @@ Schnorr identification verifier over Vesta (`Wire`), its in-circuit implementati
 on the deployed kimchi gadget stack (`Circuit`), and the proofs that the circuit is
 faithful to the wire — the endpoint pair (`Laws`) and the whole-circuit compile/solve
 seam (`Boundary`), consuming the canonical bit-decomposition lock from the snarky
-DSL (`Snarky.unpackFull`).
+DSL (`Snarky.unpackFull`). The seam is stated at `verifyRaw`, the wire verifier at the
+statement's encoding — deserialization included, as a deployed verifier's is.
 
 **What this package is NOT.** It does not model `packages/schnorr` — the deployed
 PureScript port of Mina's production Schnorr *signature* verifier. That protocol runs

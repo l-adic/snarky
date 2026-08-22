@@ -10,6 +10,8 @@ Schnorr.Statement
 Schnorr.transcriptHash
 Schnorr.preChallenge
 Schnorr.verify
+Schnorr.verifyRaw
+Schnorr.verifyRaw_iff
 Schnorr.completeness
 
 -- The in-circuit verifier (Schnorr/Circuit.lean): the statement's circuit shape and
