@@ -658,10 +658,10 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
               (r.lsbBits[i]'(lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
             scalar.val.val V = ((natLsbVal bs.toList : ℕ) : F) ∧
             ∀ _ : d.LadderRegime (5 * chunks)
-                (2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * chunks) + 1),
+                (unshiftType1 (5 * chunks) (natLsbVal bs.toList : ℤ)),
               ∃ hfin : d.W.Nonsingular (r.g.x.val V) (r.g.y.val V),
                 Point.some _ _ hfin
-                  = (2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * chunks) + 1)
+                  = (unshiftType1 (5 * chunks) (natLsbVal bs.toList : ℤ))
                       • Point.some _ _ hT) Q⦄
     (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
     ⦃Q⦄ := by
@@ -942,6 +942,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
       have hqpt : (Point.some _ _ hqns : d.W.Point)
           = (2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
         rw [← hqsum, hgpt, hnegPt]
+        simp only [unshiftType1]
         module
       have hxv := hxsel bb hbb
       have hyv := hysel bb hbb

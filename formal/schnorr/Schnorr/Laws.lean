@@ -199,10 +199,10 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   have hvalId : (stv.z.val.val st.V).val = natLsbVal bs.toList := by
     have h := congrArg ZMod.val hpin
     rwa [ZMod.val_natCast, Nat.mod_eq_of_lt hlt] at h
-  set s : ℤ := 2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * 51) + 1 with hsdef
+  set s : ℤ := unshiftType1 (5 * 51) (natLsbVal bs.toList : ℤ) with hsdef
   clear_value s
   have hsdecode : s = Type1.fromShiftedZ ⟨stv.z.val.val st.V⟩ := by
-    simp only [hsdef, Type1.fromShiftedZ, unshiftType1, hvalId]
+    simp only [hsdef, Type1.fromShiftedZ, hvalId]
   -- the ladder regime at the canonical scalar: the one-wrap band off the forbidden set
   have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
   have hregime : HasCurve.vesta.LadderRegime (5 * 51) s := by
