@@ -162,6 +162,8 @@ def roots : List Name :=
     `Snarky.Kimchi.CurvePoint.check_complete_spec,
     `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasEndo.vesta_crumbs_eq,
+    `Snarky.Kimchi.HasEndo.vesta_endoExpand,
     `Snarky.Kimchi.HasCurve.pallas,
     `Snarky.Kimchi.HasCurve.vesta,
     `Snarky.Kimchi.vesta_ladderRegime,
@@ -230,6 +232,8 @@ def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 def deployedRoots : List Name :=
   [ `Snarky.Kimchi.HasEndo.pallas,
     `Snarky.Kimchi.HasEndo.vesta,
+    `Snarky.Kimchi.HasEndo.vesta_crumbs_eq,
+    `Snarky.Kimchi.HasEndo.vesta_endoExpand,
     `Snarky.Kimchi.HasCurve.pallas,
     `Snarky.Kimchi.HasCurve.vesta,
     `Snarky.Kimchi.vesta_ladderRegime ]

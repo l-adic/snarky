@@ -380,6 +380,36 @@ theorem HasEndo.decomposition_residue [Field F] [DecidableEq F]
     rw [crumbsOf_eq_map, toField_digits h2q h3q _ (digitsOf_lt 64 _) d.lam]
   rw [heffz, d.decomposition_eq_toIntZ n hsab hAle hBle hAval hBval]
 
+open CompElliptic.Fields.Pasta Kimchi.Gate.EndoScalar in
+/-- At Vesta, 64 crumbs reconstructing a value below `2^128` are its canonical crumbs:
+`nReconstruct` is injective on valid 64-crumb lists in `Fq`. -/
+theorem HasEndo.vesta_crumbs_eq {n : ℕ} (hn : n < 2 ^ 128) {crumbs : List Fq}
+    (hcrv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) (hclen : crumbs.length = 2 * 32)
+    (hcrec : ((n : ℕ) : Fq) = nReconstruct crumbs) : crumbs = crumbsOf 64 n := by
+  refine nReconstruct_inj (p := PALLAS_SCALAR_CARD) crumbs _ (by decide) (by decide) hcrv
+    (crumbsOf_valid 64 n) ?_ ?_ ?_
+  · rw [hclen, crumbsOf_length]
+  · rw [hclen]; decide
+  · rw [← hcrec, nReconstruct_crumbsOf]
+    exact congrArg (Nat.cast (R := Fq))
+      (Nat.mod_eq_of_lt (lt_of_lt_of_le hn (by decide))).symm
+
+open CompElliptic.Fields.Pasta Kimchi.Gate.EndoScalar in
+/-- The deployed challenge: the scalar `endoMul_spec` hands back at Vesta, at the
+canonical crumbs of a prechallenge `n`, reads in `Fp` as the Fq-sponge's
+endo-expansion of `n` — the in-circuit `[c]·pk` acts by the wire's challenge. -/
+theorem HasEndo.vesta_endoExpand {n : ℕ} {s A B : ℤ} (hsab : s = B + A * HasEndo.vesta.lam)
+    (hAle : |A| ≤ 3 * 4 ^ 32) (hBle : |B| ≤ 3 * 4 ^ 32)
+    (hAval : (A : Fq) = decomposeA (crumbsOf 64 n))
+    (hBval : (B : Fq) = decomposeB (crumbsOf 64 n)) :
+    ((s : ℤ) : Fp) = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n := by
+  rw [HasEndo.vesta.decomposition_eq_toIntZ n hsab
+      (by norm_num at hAle ⊢; exact hAle) (by norm_num at hBle ⊢; exact hBle) hAval hBval,
+    endoExpand_eq_toField (by decide) (by decide),
+    show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
+    crumbsOf_eq_map,
+    toField_digits (by decide) (by decide) _ (digitsOf_lt 64 _) HasEndo.vesta.lam]
+
 namespace EndoMul
 
 /-- The loop's structural view: the collected rounds are the chain-threaded records

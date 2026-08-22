@@ -115,30 +115,13 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
     have hmod : (transcriptHash pkR uR).val % 2 ^ 128 = nL := by
       rw [← hNfull, hsplit, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hnL]
     rw [preChallenge, ← hmod]
-  -- the endoMul crumbs are the canonical decomposition of the challenge
+  -- the endoMul crumbs are the challenge's; its scalar reads in Fp as the wire challenge
   obtain ⟨crumbs, hcrv, hclen, hcrec, hfinC, sc, A, B, hseq, hsab, hAle, hBle,
     hAval, hBval, -⟩ := hcpk hpkNS
-  have hcrums : crumbs = Kimchi.Gate.EndoScalar.crumbsOf 64 nL := by
-    refine Kimchi.Gate.EndoScalar.nReconstruct_inj (p := PALLAS_SCALAR_CARD) crumbs _
-      (by decide) (by decide) hcrv (Kimchi.Gate.EndoScalar.crumbsOf_valid 64 nL) ?_ ?_ ?_
-    · rw [hclen, Kimchi.Gate.EndoScalar.crumbsOf_length]
-    · rw [hclen]; decide
-    · rw [← hcrec, hcval, Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf]
-      exact congrArg (Nat.cast (R := Fq))
-        (Nat.mod_eq_of_lt (lt_of_lt_of_le hnL (by decide))).symm
-  -- the endoMul scalar is one integer; read it in Fp as the wire challenge
-  have hsInt : sc = Kimchi.Gate.EndoScalar.toIntZ (Kimchi.Gate.EndoScalar.digitsOf 64 nL)
-      HasEndo.vesta.lam :=
-    HasEndo.vesta.decomposition_eq_toIntZ nL hsab
-      (by norm_num at hAle ⊢; exact hAle) (by norm_num at hBle ⊢; exact hBle)
-      (hcrums ▸ hAval) (hcrums ▸ hBval)
+  have hcrums := HasEndo.vesta_crumbs_eq hnL hcrv hclen (hcval.symm.trans hcrec)
   have hchal : ((sc : ℤ) : Fp)
-      = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam nL := by
-    rw [hsInt, Kimchi.Gate.EndoScalar.endoExpand_eq_toField (by decide) (by decide),
-      show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-      Kimchi.Gate.EndoScalar.crumbsOf_eq_map,
-      Kimchi.Gate.EndoScalar.toField_digits (by decide) (by decide) _
-        (Kimchi.Gate.EndoScalar.digitsOf_lt 64 _) HasEndo.vesta.lam]
+      = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam nL :=
+    HasEndo.vesta_endoExpand hsab hAle hBle (hcrums ▸ hAval) (hcrums ▸ hBval)
   -- the ladder payload
   simp only [CVar.val] at hzrv
   obtain ⟨bs, hread, hpin, hpt⟩ := hzrv gen_nonsingular
@@ -310,19 +293,9 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
     rw [ZMod.val_natCast]
     exact Nat.mod_eq_of_lt (lt_of_lt_of_le (Nat.mod_lt _ (by positivity)) (by decide))
   rw [hpcval, show (2 * 32 : ℕ) = 64 from by norm_num] at hAval hBval
-  have hsInt : sc = Kimchi.Gate.EndoScalar.toIntZ
-      (Kimchi.Gate.EndoScalar.digitsOf 64 (preChallenge raw.pk raw.u))
-      HasEndo.vesta.lam :=
-    HasEndo.vesta.decomposition_eq_toIntZ (preChallenge raw.pk raw.u) hsab
-      (by norm_num at hAle ⊢; exact hAle) (by norm_num at hBle ⊢; exact hBle)
-      hAval hBval
   have hchal : ((sc : ℤ) : Fp) = Poseidon.FqSponge.endoExpand
-      Poseidon.FqVesta.spec.lam (preChallenge raw.pk raw.u) := by
-    rw [hsInt, Kimchi.Gate.EndoScalar.endoExpand_eq_toField (by decide) (by decide),
-      show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-      Kimchi.Gate.EndoScalar.crumbsOf_eq_map,
-      Kimchi.Gate.EndoScalar.toField_digits (by decide) (by decide) _
-        (Kimchi.Gate.EndoScalar.digitsOf_lt 64 _) HasEndo.vesta.lam]
+      Poseidon.FqVesta.spec.lam (preChallenge raw.pk raw.u) :=
+    HasEndo.vesta_endoExpand hsab hAle hBle hAval hBval
   -- the response leg: the ladder at the honest encoding
   mvcgen -trivial [hvbmc, hadd]
   have hzz₃ := CVar.eval_le hle₃ (CVar.eval_le hle₂ (CVar.eval_le hle₁ hzz))
