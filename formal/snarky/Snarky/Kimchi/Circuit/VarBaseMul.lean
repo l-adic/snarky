@@ -559,7 +559,7 @@ end VarBaseMul
 
 open Kimchi.Gate.VarBaseMul (bitsVal) in
 /-- The gate layer's ℤ bit fold is the ℕ `msbVal` of the decided bits. -/
-theorem bitsVal_eq_msbVal [Field F] [DecidableEq F] :
+private theorem bitsVal_eq_msbVal [Field F] [DecidableEq F] :
     ∀ {bl : List F}, (∀ b ∈ bl, b = 0 ∨ b = 1) →
       bitsVal bl = (msbVal (bl.map fun v => decide (v = 1)) : ℤ) := by
   intro bl
@@ -585,7 +585,7 @@ open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsRegister_eq_cast) in
 read off a wire slice has an LSB-first boolean view — per-index readings of the
 wires, and both gate-layer folds at the view's one integer. Stated once; the ladder
 laws compose through it and no other proof converts representations. -/
-theorem exists_lsbView [Field F] [DecidableEq F] {V : Valuation F}
+private theorem exists_lsbView [Field F] [DecidableEq F] {V : Valuation F}
     {n k : ℕ} (hn : k ≤ n) (v : Vector (FVar F) n) (bl : List F)
     (hbool : ∀ b ∈ bl, b = 0 ∨ b = 1)
     (hsrc : bl = ((v.toList.take k).reverse).map (·.val V)) :
