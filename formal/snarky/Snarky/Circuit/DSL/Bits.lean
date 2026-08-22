@@ -33,8 +33,8 @@ Both walk the gadget's do-block through the vector loop rules;
 namespace Snarky
 
 export Kimchi (natLsbVal natLsbVal_lt natLsbVal_append_singleton natLsbVal_ofFn_testBit
-  natLsbVal_testBit_range natLsbVal_take_testBit_range natLsbVal_take_drop natLsbVal_eq_zero
-  natLsbVal_lt_of_drop_false ofFn_val_eq_map_range)
+  natLsbVal_testBit_range natLsbVal_take_testBit_range natLsbVal_take_drop natLsbVal_take_eq_mod
+  natLsbVal_eq_zero natLsbVal_lt_of_drop_false ofFn_val_eq_map_range)
 
 variable {F c : Type u}
 
@@ -55,6 +55,8 @@ class LawfulToNat (F : Type u) [NatCast F] [ToNat F] where
   cast_toNat : ∀ x : F, ((ToNat.toNat x : Nat) : F) = x
   /-- Every representative lies below `card`. -/
   toNat_lt : ∀ x : F, ToNat.toNat x < card
+  /-- Below `card`, a number is its own cast's representative. -/
+  toNat_natCast : ∀ n : Nat, n < card → ToNat.toNat ((n : Nat) : F) = n
 
 /-- The canonical representative at a `ZMod` modulus is `ZMod.val` — every deployed
 field reads through this one instance. -/
@@ -62,7 +64,15 @@ instance instToNatZMod (p : Nat) : ToNat (ZMod p) := ⟨ZMod.val⟩
 
 /-- `ZMod.val` is lawful at every nonzero modulus: it casts back, and lies below `p`. -/
 instance instLawfulToNatZMod (p : Nat) [NeZero p] : LawfulToNat (ZMod p) :=
-  ⟨p, fun x => ZMod.natCast_zmod_val x, fun x => ZMod.val_lt x⟩
+  ⟨p, fun x => ZMod.natCast_zmod_val x, fun x => ZMod.val_lt x, fun n hn => by
+    show ZMod.val ((n : Nat) : ZMod p) = n
+    rw [ZMod.val_natCast, Nat.mod_eq_of_lt hn]⟩
+
+/-- A representative pinned by its cast: below `card` the cast is injective, so the
+element's representative is the pinned number — the canonical reading of a lock. -/
+theorem toNat_eq_of_natCast_eq [NatCast F] [ToNat F] [LawfulToNat F] {n : Nat} {x : F}
+    (h : ((n : Nat) : F) = x) (hn : n < LawfulToNat.card (F := F)) : ToNat.toNat x = n := by
+  rw [← h, LawfulToNat.toNat_natCast n hn]
 
 /-! ## The gadgets -/
 
@@ -363,5 +373,33 @@ the results are the operand's binary digits. -/
   subst hv'
   intro i hi
   exact CVar.eval_le hle₂ (hbitEval i hi)
+
+/-- Per-index bit readings of a vector, as the `Forall₂` a bit-list assertion consumes
+at a valuation. -/
+theorem forall₂_bit_of_reads [Field F] {n : Nat} {V : Valuation F}
+    {v : Vector (FVar F) n} {bs : Vector Bool n}
+    (h : ∀ i (hi : i < n), (v[i]).val V = bit bs[i]) :
+    List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).val V = bit b)
+      (v.toList.map .unchecked) bs.toList := by
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  simp only [List.get_eq_getElem, List.getElem_map, Vector.getElem_toList,
+    BoolVar.toCVar_unchecked]
+  exact h i (by simpa using h2)
+
+/-- Per-index bit evaluations of a vector against a bit function, as the `Forall₂` a
+bit-list assertion's honest run consumes. -/
+theorem forall₂_bit_of_evals [Field F] {n : Nat} {env : Assignments F}
+    {v : Vector (FVar F) n} {f : Nat → Bool}
+    (h : ∀ i (hi : i < n), (v[i]).eval env = .ok (bit (f i))) :
+    List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).eval env = .ok (bit b))
+      (v.toList.map .unchecked) ((List.range n).map f) := by
+  rw [List.forall₂_iff_get]
+  constructor
+  · rw [List.length_map, Vector.length_toList, List.length_map, List.length_range]
+  · intro i h1 h2
+    simp only [List.get_eq_getElem, List.getElem_map, List.getElem_range,
+      BoolVar.toCVar_unchecked, Vector.getElem_toList]
+    exact h i (by simpa using h2)
 
 end Snarky

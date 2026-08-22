@@ -305,15 +305,16 @@ open Std.Do in
   exact hk ⟨⟩ st₂ trivial (hle₁.trans hle₂)
 
 open Std.Do in
-/-- `unpackFull`'s rows force bits whose weighted sum is the operand's reading AND
-whose ℕ value is below `m` — the canonical lock the plain `unpack` lacks. -/
+/-- `unpackFull`'s rows force bits whose ℕ value casts to the operand's reading AND
+lies below `m` — the canonical lock the plain `unpack` lacks: at `m` the reader's
+`card`, the value IS the reading's representative (`toNat_eq_of_natCast_eq`). -/
 @[spec] theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
     (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F)
     (Q : PostCond (Vector (BoolVar F) n) (.arg (BuilderState F) .pure)) :
     ⦃Sound (fun V (r : Vector (BoolVar F) n) => ∃ bs : Vector Bool n,
         (∀ i (hi : i < n), (r[i].toCVar).val V = bit bs[i]) ∧
-        packPure bs = v.val V ∧ natLsbVal bs.toList < m) Q⦄
+        ((natLsbVal bs.toList : Nat) : F) = v.val V ∧ natLsbVal bs.toList < m) Q⦄
     (unpackFull (c := c) m n v)
     ⦃Q⦄ := by
   simp only [unpackFull]
@@ -325,7 +326,7 @@ whose ℕ value is below `m` — the canonical lock the plain `unpack` lacks. -/
   intro _ nv₂ hlockv
   mvcgen
   obtain ⟨bs, hread, hsum⟩ := hbits
-  refine hpre bits nv₂ ⟨bs, hread, hsum, ?_⟩
+  refine hpre bits nv₂ ⟨bs, hread, by rw [← packPure_natCast]; exact hsum, ?_⟩
   refine hlockv bs.toList ?_
   rw [List.forall₂_iff_get]
   refine ⟨by simp, fun i h1 h2 => ?_⟩

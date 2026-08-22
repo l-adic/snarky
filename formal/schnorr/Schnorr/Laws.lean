@@ -94,27 +94,18 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
   refine ⟨fun h0 => hzne ((Type1.fromShifted_eq_zero_iff _).mp h0), fun hband => ?_⟩
   set pkR : VestaPoint Fq := ⟨⟨stv.pk.point.x.val st.V, stv.pk.point.y.val st.V⟩⟩ with hpkR
   set uR : VestaPoint Fq := ⟨⟨stv.u.point.x.val st.V, stv.u.point.y.val st.V⟩⟩ with huR
-  -- the canonical unpack: the full value is the hash's canonical representative
+  -- the canonical unpack: the bits' value is the hash's representative
   obtain ⟨hbs, hbread, hbsum, hbslt⟩ := hunpv
-  have hH : squeezed.val st.V = transcriptHash pkR uR := hsqv
-  have hNfull : natLsbVal hbs.toList = (transcriptHash pkR uR).val := by
-    have hcast : ((natLsbVal hbs.toList : ℕ) : Fq) = transcriptHash pkR uR := by
-      rw [← packPure_natCast, hbsum, hH]
-    have hval := congrArg ZMod.val hcast
-    rwa [ZMod.val_natCast, Nat.mod_eq_of_lt hbslt] at hval
+  have hNfull : natLsbVal hbs.toList = (transcriptHash pkR uR).val :=
+    (toNat_eq_of_natCast_eq (hbsum.trans hsqv) hbslt).symm
   -- the low 128 bits are the wire challenge
   set nL := natLsbVal (hbs.toList.take 128) with hnLdef
+  have hnLpre : nL = preChallenge pkR uR := by
+    rw [hnLdef, natLsbVal_take_eq_mod, hNfull]; rfl
   have hnL : nL < 2 ^ 128 := by
-    have hlt := natLsbVal_lt (hbs.toList.take 128)
-    have hlen : (hbs.toList.take 128).length = 128 := by simp
-    rwa [hlen] at hlt
+    rw [hnLpre]; exact Nat.mod_lt _ (by positivity)
   have hcval : (packLow 128 (by omega) hbits).val st.V = ((nL : ℕ) : Fq) :=
     packLow_val (by omega) hbread
-  have hnLpre : nL = preChallenge pkR uR := by
-    have hsplit := natLsbVal_take_drop 128 hbs.toList
-    have hmod : (transcriptHash pkR uR).val % 2 ^ 128 = nL := by
-      rw [← hNfull, hsplit, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hnL]
-    rw [preChallenge, ← hmod]
   -- the endoMul crumbs are the challenge's; its scalar reads in Fp as the wire challenge
   obtain ⟨crumbs, hcrv, hclen, hcrec, hfinC, sc, A, B, hseq, hsab, hAle, hBle,
     hAval, hBval, -⟩ := hcpk hpkNS
@@ -125,33 +116,19 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
   -- the ladder payload
   simp only [CVar.val] at hzrv
   obtain ⟨bs, hread, hpin, hpt⟩ := hzrv gen_nonsingular
-  -- the canonicity lock: the ladder's bits are below the modulus
-  have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
-      (↑x : CVar Fq).val st.V = bit b)
-      (zr.lsbBits.toList.map .unchecked) bs.toList := by
-    rw [List.forall₂_iff_get]
-    refine ⟨by simp, fun i h1 h2 => ?_⟩
-    simp only [List.get_eq_getElem, List.getElem_map, Vector.getElem_toList,
-      BoolVar.toCVar_unchecked]
-    exact hread i (by simpa using h2)
-  have hlt : natLsbVal bs.toList < PALLAS_SCALAR_CARD := hlockv bs.toList hfa
-  -- the ladder's integer is the reading's canonical representative
-  have hvalId : (stv.z.val.val st.V).val = natLsbVal bs.toList := by
-    have h := congrArg ZMod.val hpin
-    rwa [ZMod.val_natCast, Nat.mod_eq_of_lt hlt] at h
+  -- the canonicity lock: the ladder's bits are below the modulus, so its integer is
+  -- the reading's representative
+  have hlt : natLsbVal bs.toList < PALLAS_SCALAR_CARD :=
+    hlockv bs.toList (forall₂_bit_of_reads hread)
+  have hvalId : (stv.z.val.val st.V).val = natLsbVal bs.toList :=
+    toNat_eq_of_natCast_eq hpin.symm hlt
   set s : ℤ := unshiftType1 (5 * 51) (natLsbVal bs.toList : ℤ) with hsdef
   clear_value s
   have hsdecode : s = Type1.fromShiftedZ ⟨stv.z.val.val st.V⟩ := by
     simp only [hsdef, Type1.fromShiftedZ, hvalId]
-  -- the ladder regime at the canonical scalar: the one-wrap band off the forbidden set
-  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+  -- the ladder regime at the canonical scalar
   have hregime : HasCurve.vesta.LadderRegime (5 * 51) s := by
-    refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
-    · decide
-    · decide
-    · decide
-    · rw [hsdecode]
-      exact hband
+    rw [hsdecode]; exact vesta_ladderRegime _ hband
   obtain ⟨hzgNS, hzact⟩ := hpt hregime
   -- u is finite: odd prime order has no 2-torsion
   have huy0 : stv.u.point.y.val st.V ≠ 0 :=
@@ -315,17 +292,6 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
   have hdigz := hbitread _ hzz₃
   -- the canonicity lock at the honest bits
   simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
-      (↑x : CVar Fq).eval st₄.env = .ok (bit b))
-      (zr.lsbBits.toList.map .unchecked)
-      ((List.range 255).map (ToNat.toNat raw.z.val).testBit) := by
-    rw [List.forall₂_iff_get]
-    constructor
-    · rw [List.length_map, Vector.length_toList, List.length_map, List.length_range]
-    · intro i h1 h2
-      simp only [List.get_eq_getElem, List.getElem_map, List.getElem_range,
-        BoolVar.toCVar_unchecked, Vector.getElem_toList]
-      exact hdigz i (by simpa using h2)
   refine assertBitsBelow_complete_spec PALLAS_SCALAR_CARD 255 (by decide) _
     (by rw [List.length_map, Vector.length_toList])
     ((List.range 255).map (ToNat.toNat raw.z.val).testBit)
@@ -333,7 +299,7 @@ theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement
       rw [natLsbVal_testBit_range (m := ToNat.toNat raw.z.val)
         (lt_of_lt_of_le (ZMod.val_lt _) (by decide))]
       exact ZMod.val_lt _)
-    _ st₄ ⟨hfa, fun _ st₅ _ hle₅ => ?_⟩
+    _ st₄ ⟨forall₂_bit_of_evals hdigz, fun _ st₅ _ hle₅ => ?_⟩
   -- the wire equation at the ladder's integer: scalars act through the module
   have hzF : ((unshiftType1 (5 * 51) (ToNat.toNat raw.z.val : ℤ) : ℤ) : Fp)
       = raw.z.fromShifted := rfl

@@ -96,6 +96,13 @@ theorem natLsbVal_take_drop : ∀ (k : Nat) (l : List Bool),
       simp only [List.take_succ_cons, List.drop_succ_cons, natLsbVal, ih bs, pow_succ]
       ring
 
+/-- The low `k` bits' value is the residue mod `2^k`. -/
+theorem natLsbVal_take_eq_mod (k : Nat) (l : List Bool) :
+    natLsbVal (l.take k) = natLsbVal l % 2 ^ k := by
+  rw [natLsbVal_take_drop k l, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt]
+  exact lt_of_lt_of_le (natLsbVal_lt _)
+    (Nat.pow_le_pow_right (by norm_num) (List.length_take_le k l))
+
 /-- All-false bits carry the value zero. -/
 theorem natLsbVal_eq_zero : ∀ {l : List Bool}, (∀ b ∈ l, b = false) → natLsbVal l = 0 := by
   intro l

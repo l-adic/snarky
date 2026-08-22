@@ -213,6 +213,9 @@ Snarky.pack_val
 Snarky.packLow
 Snarky.packLow_eval
 Snarky.packLow_val
+Snarky.toNat_eq_of_natCast_eq
+Snarky.forall₂_bit_of_reads
+Snarky.forall₂_bit_of_evals
 Snarky.unpack_complete_spec
 -- The canonical unpack (Circuit/DSL/UnpackFull.lean): OCaml `unpack_full` /
 -- `lt_bitstring_value` — the bits-below-the-modulus lock, packaged as
