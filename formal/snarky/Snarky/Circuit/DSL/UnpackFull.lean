@@ -14,7 +14,8 @@ comparison, locking the decomposition to the canonical representative.
 
 `ltBitstringValue` compares an MSB-first bit vector against a constant pattern,
 LSB-outward: at a `1` bit of the pattern the operand may drop below (`or`), at a `0`
-bit it must stay equal (`and`). `ltPure` is its pure mirror over `msbVal`.
+bit it must stay equal (`and`). `ltPure` is its pure mirror: the MSB-first lists
+compare as `natLsbVal` of their reversals.
 
 Deviations from the PS original (Lean-only consumer; no constraint diffing):
 - PS builds the comparison as a `Binary` tree, regroups runs into N-ary nodes evaluated
@@ -40,26 +41,28 @@ def ltPure : List Bool → List Bool → Bool
 
 /-- `ltPure` decides the value comparison on equal lengths. -/
 theorem ltPure_iff_lt : ∀ {xs ys : List Bool}, xs.length = ys.length →
-    (ltPure xs ys = true ↔ msbVal xs < msbVal ys) := by
+    (ltPure xs ys = true ↔ natLsbVal xs.reverse < natLsbVal ys.reverse) := by
   intro xs
   induction xs with
   | nil =>
     intro ys hlen
     rw [List.length_nil] at hlen
     rw [(List.length_eq_zero_iff).mp hlen.symm]
-    simp [ltPure, msbVal]
+    simp [ltPure, natLsbVal]
   | cons x xs ih =>
     intro ys hlen
     cases ys with
     | nil => simp at hlen
     | cons y ys =>
       simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
-      have hx := msbVal_lt xs
-      have hy := msbVal_lt ys
+      have hx := natLsbVal_lt xs.reverse
+      have hy := natLsbVal_lt ys.reverse
+      rw [List.length_reverse] at hx hy
       rw [hlen] at hx
       have hih := ih hlen
       cases x <;> cases y <;>
-        simp only [ltPure, msbVal, hlen, Bool.toNat_false, Bool.toNat_true,
+        simp only [ltPure, List.reverse_cons, natLsbVal_append_singleton,
+          List.length_reverse, hlen, Bool.toNat_false, Bool.toNat_true,
           Bool.not_false, Bool.not_true, Bool.true_or, Bool.false_or, Bool.true_and,
           Bool.false_and, hih, false_iff, true_iff, Bool.false_eq_true] <;>
         omega
@@ -73,8 +76,9 @@ theorem modBitsMsb_length (m n : ℕ) : (modBitsMsb m n).length = n := by
   simp [modBitsMsb]
 
 /-- The modulus pattern's value is the modulus. -/
-theorem msbVal_modBitsMsb {m n : ℕ} (h : m < 2 ^ n) : msbVal (modBitsMsb m n) = m := by
-  rw [modBitsMsb, msbVal_reverse, natLsbVal_testBit_range h]
+theorem natLsbVal_reverse_modBitsMsb {m n : ℕ} (h : m < 2 ^ n) :
+    natLsbVal (modBitsMsb m n).reverse = m := by
+  rw [modBitsMsb, List.reverse_reverse, natLsbVal_testBit_range h]
 
 /-! ## The gadgets -/
 
@@ -267,7 +271,7 @@ open Std.Do in
     simp [bit] at hltv
   have := (ltPure_iff_lt (by
     rw [List.length_reverse, modBitsMsb_length, ← hfa.length_eq, hlen])).mp hltrue
-  rwa [msbVal_modBitsMsb hm, msbVal_reverse] at this
+  rwa [natLsbVal_reverse_modBitsMsb hm, List.reverse_reverse] at this
 
 open Std.Do in
 /-- The lock's honest run succeeds on bits reading as a value below `m`. -/
@@ -290,7 +294,7 @@ open Std.Do in
   have hltrue : ltPure bs.reverse (modBitsMsb m n) = true := by
     refine (ltPure_iff_lt (by
       rw [List.length_reverse, modBitsMsb_length, ← hfa.length_eq, hlen])).mpr ?_
-    rwa [msbVal_modBitsMsb hm, msbVal_reverse]
+    rwa [natLsbVal_reverse_modBitsMsb hm, List.reverse_reverse]
   rw [hltrue] at hlt
   refine Snarky.assert_complete_spec lt _ st₁
     ⟨⟨isOk_of_eq hlt, fun bv hbv => ?_⟩, fun _ st₂ _ hle₂ => ?_⟩

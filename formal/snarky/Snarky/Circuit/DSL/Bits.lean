@@ -30,8 +30,8 @@ Both walk the gadget's do-block through the vector loop rules;
 
 namespace Snarky
 
-export Kimchi (natLsbVal natLsbVal_lt natLsbVal_ofFn_testBit natLsbVal_testBit_range
-  natLsbVal_take_drop natLsbVal_eq_zero natLsbVal_lt_of_drop_false)
+export Kimchi (natLsbVal natLsbVal_lt natLsbVal_append_singleton natLsbVal_ofFn_testBit
+  natLsbVal_testBit_range natLsbVal_take_drop natLsbVal_eq_zero natLsbVal_lt_of_drop_false)
 
 variable {F c : Type u}
 
@@ -129,40 +129,6 @@ theorem pack_eval {F : Type u} [Semiring F] [DecidableEq F] {n : Nat}
     simp only [List.getElem_map, Vector.getElem_toList]
     exact h i (by simpa using h1)
   simpa [pack, packPure] using packAux_eval bits.toList bs.toList 0 _ _ hmap rfl
-
-/-- The ℕ value of bits, MSB first — `natLsbVal`'s mirror in the comparison
-orientation. -/
-def msbVal : List Bool → ℕ
-  | [] => 0
-  | b :: bs => b.toNat * 2 ^ bs.length + msbVal bs
-
-/-- The MSB-first value fits its width. -/
-theorem msbVal_lt : ∀ l : List Bool, msbVal l < 2 ^ l.length := by
-  intro l
-  induction l with
-  | nil => simp [msbVal]
-  | cons b bs ih =>
-    simp only [msbVal, List.length_cons, pow_succ]
-    cases b <;> simp only [Bool.toNat_false, Bool.toNat_true] <;> omega
-
-/-- Appending a bit doubles and adds — the MSB-first Horner step. -/
-theorem msbVal_append_singleton (u : List Bool) (b : Bool) :
-    msbVal (u ++ [b]) = 2 * msbVal u + b.toNat := by
-  induction u with
-  | nil => simp [msbVal]
-  | cons a u ih =>
-    simp only [List.cons_append, msbVal, ih, List.length_append, List.length_cons,
-      List.length_nil]
-    ring
-
-/-- Reversal swaps the two orientations. -/
-theorem msbVal_reverse : ∀ l : List Bool, msbVal l.reverse = natLsbVal l := by
-  intro l
-  induction l with
-  | nil => rfl
-  | cons b bs ih =>
-    rw [List.reverse_cons, msbVal_append_singleton, ih, natLsbVal]
-    omega
 
 /-- The indexed value fold is the shifted Horner form, through the cast. -/
 private theorem packPureAux_horner {F : Type u} [CommSemiring F] :

@@ -51,6 +51,15 @@ theorem natLsbVal_ofFn_testBit :
     cases htb : m.testBit 0 <;> rw [htb] at hbit <;> simp [Nat.bit] at hbit <;>
       simp <;> omega
 
+/-- Appending a bit adds it at the top weight. -/
+theorem natLsbVal_append_singleton (l : List Bool) (b : Bool) :
+    natLsbVal (l ++ [b]) = natLsbVal l + b.toNat * 2 ^ l.length := by
+  induction l with
+  | nil => simp [natLsbVal]
+  | cons a l ih =>
+    simp only [List.cons_append, natLsbVal, ih, List.length_cons, pow_succ]
+    ring
+
 /-- A number below `2^n` is the Horner fold of its first `n` bits, range-map form. -/
 theorem natLsbVal_testBit_range {m n : Nat} (h : m < 2 ^ n) :
     natLsbVal ((List.range n).map m.testBit) = m := by
