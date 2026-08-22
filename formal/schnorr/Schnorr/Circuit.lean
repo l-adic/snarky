@@ -140,8 +140,7 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
   let hbits ← unpackFull PALLAS_SCALAR_CARD 255 squeezed
   let cpk ← endoMul Pasta.vestaEndo 32 st.pk ⟨challengeOf hbits⟩
   let zr ← varBaseMul 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
-  assertBitsBelow PALLAS_SCALAR_CARD 255
-    ((zr.lsbBits.toList.take (5 * 51)).map .unchecked)
+  assertBitsBelow PALLAS_SCALAR_CARD 255 (zr.lsbBits.toList.map .unchecked)
   let rhs ← addFast .checkFinite st.u cpk
   assertEqual zr.g.x rhs.p.x
   assertEqual zr.g.y rhs.p.y

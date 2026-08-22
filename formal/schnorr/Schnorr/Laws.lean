@@ -188,11 +188,11 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   -- the canonicity lock: the ladder's bits are below the modulus
   have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
       (↑x : CVar Fq).val st.V = bit b)
-      ((zr.lsbBits.toList.take (5 * 51)).map .unchecked) bs.toList := by
+      (zr.lsbBits.toList.map .unchecked) bs.toList := by
     rw [List.forall₂_iff_get]
     refine ⟨by simp, fun i h1 h2 => ?_⟩
-    simp only [List.get_eq_getElem, List.getElem_map, List.getElem_take,
-      Vector.getElem_toList, BoolVar.toCVar_unchecked]
+    simp only [List.get_eq_getElem, List.getElem_map, Vector.getElem_toList,
+      BoolVar.toCVar_unchecked]
     exact hread i (by simpa using h2)
   have hlt : natLsbVal bs.toList < PALLAS_SCALAR_CARD := hlockv bs.toList hfa
   -- the ladder's integer is the reading's canonical representative
@@ -424,19 +424,17 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
       (↑x : CVar Fq).eval st₄.env = .ok (bit b))
-      ((zr.lsbBits.toList.take (5 * 51)).map .unchecked)
+      (zr.lsbBits.toList.map .unchecked)
       ((List.range 255).map (ToNat.toNat zt.val).testBit) := by
     rw [List.forall₂_iff_get]
     constructor
-    · rw [List.length_map, List.length_take, Vector.length_toList,
-        List.length_map, List.length_range]
-      decide
+    · rw [List.length_map, Vector.length_toList, List.length_map, List.length_range]
     · intro i h1 h2
-      simp only [List.get_eq_getElem, List.getElem_map, List.getElem_take,
-        List.getElem_range, BoolVar.toCVar_unchecked, Vector.getElem_toList]
+      simp only [List.get_eq_getElem, List.getElem_map, List.getElem_range,
+        BoolVar.toCVar_unchecked, Vector.getElem_toList]
       exact hdigz i (by simpa using h2)
   refine assertBitsBelow_complete_spec PALLAS_SCALAR_CARD 255 (by decide) _
-    (by rw [List.length_map, List.length_take, Vector.length_toList]; decide)
+    (by rw [List.length_map, Vector.length_toList])
     ((List.range 255).map (ToNat.toNat zt.val).testBit)
     (by
       rw [natLsbVal_testBit_range (m := ToNat.toNat zt.val)
