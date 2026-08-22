@@ -44,19 +44,19 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
         ∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
-          readVal (val := Statement.Raw Fq) V stv = ⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ →
+          readVal (val := Statement.Raw Fq) V stv = ⟨⟨⟨pkP.x, pkP.y⟩⟩, ⟨⟨uP.x, uP.y⟩⟩, zt⟩ →
           zt.fromShifted ≠ (0 : Fp) ∧
           (zt.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD →
             verify ⟨pkP, uP, zt.fromShifted⟩ = true)) Q⦄
     (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit]
-  have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) stv.pk
+  have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) stv.pk.point
   simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
   have hvbm := varBaseMul_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
     ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_checkFinite_spec (F := Fq) Vesta.curve.toAffine
-    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
+    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u.point
   mvcgen [hendo, hvbm, hadd]
   case vc1.hsize => exact fqParams_size
   rename_i st hpre
@@ -82,7 +82,8 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   refine hpre ⟨⟩ _ ?_
   intro pkP uP zt hpk0 hu0 hread
   -- one reading equation decomposes into the per-cell facts
-  simp only [circuitVal, Statement.Raw.mk.injEq, AffinePoint.mk.injEq] at hread
+  simp only [circuitVal, Statement.Raw.mk.injEq, CurvePoint.mk.injEq, AffinePoint.mk.injEq]
+    at hread
   obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
   subst hzt
   -- the zero-response exclusion, then the band-conditional wire certificate
@@ -94,9 +95,11 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   -- the wire points and the generator read on-curve
   have hpkC := SWPoint.onCurve_of_ne_zero hpk0
   have huC := SWPoint.onCurve_of_ne_zero hu0
-  have hpkNS : Vesta.curve.toAffine.Nonsingular (stv.pk.x.val st.V) (stv.pk.y.val st.V) := by
+  have hpkNS : Vesta.curve.toAffine.Nonsingular
+      (stv.pk.point.x.val st.V) (stv.pk.point.y.val st.V) := by
     rw [← hpkx, ← hpky]; exact nonsingular_toW hpkC
-  have huNS : Vesta.curve.toAffine.Nonsingular (stv.u.x.val st.V) (stv.u.y.val st.V) := by
+  have huNS : Vesta.curve.toAffine.Nonsingular
+      (stv.u.point.x.val st.V) (stv.u.point.y.val st.V) := by
     rw [← hux, ← huy]; exact nonsingular_toW huC
   have hgenC : OnCurve Vesta.curve.A Vesta.curve.B (gen.x, gen.y) := by
     rcases gen.onCurve with h | h
@@ -183,7 +186,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
       exact hband
   obtain ⟨hzgNS, hzact⟩ := hpt hregime
   -- u is finite: odd prime order has no 2-torsion
-  have huy0 : stv.u.y.val st.V ≠ 0 :=
+  have huy0 : stv.u.point.y.val st.V ≠ 0 :=
     Kimchi.Gate.VarBaseMul.y_ne_zero_of_odd_order Vesta.curve.toAffine
       (by rw [Pasta.vesta_card]; decide) huNS
   obtain ⟨hrhsNS, hsum⟩ := hrhsv huNS hfinC huy0
@@ -242,7 +245,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     (henc : zt.fromShifted = stP.z)
     (hacc : verify stP = true) :
     ∀ st : ProverState Fq,
-      Reads st.env stv (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩
+      Reads st.env stv (⟨⟨⟨stP.pk.x, stP.pk.y⟩⟩, ⟨⟨stP.u.x, stP.u.y⟩⟩, zt⟩
         : Statement.Raw Fq) →
       ∃ out : Proved Fq PUnit,
         prove (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
@@ -252,7 +255,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       (.except EvalError .pure)),
       ⦃Complete
           (fun env => Reads env stv
-            (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq))
+            (⟨⟨⟨stP.pk.x, stP.pk.y⟩⟩, ⟨⟨stP.u.x, stP.u.y⟩⟩, zt⟩ : Statement.Raw Fq))
           (fun _ _ _ => True) Q⦄
       (verifyCircuit (c := KimchiProverC Fq) stv)
       ⦃Q⦄ := ?_
@@ -269,12 +272,12 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   have hsq := RandomOracle.hashVec_complete_spec (F := Fq) Poseidon.fqParams
     fqParams_size
   have hendo := EndoMul.endoMul_complete_spec (F := Fq) HasEndo.vesta 32 (by norm_num)
-    stv.pk
+    stv.pk.point
   simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
   have hvbmc := varBaseMul_complete_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
     ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_complete_spec (F := Fq) .checkFinite Vesta.curve.toAffine
-    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
+    ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u.point
   mvcgen -trivial [hsq, hendo, hvbmc, hadd]
   · exact fqParams_size
   rename_i st₀ hpre
