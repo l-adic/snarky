@@ -447,25 +447,25 @@ private theorem threaded_sound [Field F] [DecidableEq F]
     (hT : W.Nonsingular (base.x.val V) (base.y.val V))
     (hP0ns : W.Nonsingular (P0.x.val V) (P0.y.val V))
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • Point.some _ _ hT) :
-    ∃ bits : List F,
-      (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * pref.length ∧
-      bits = (roundBits rounds).map (·.val V) ∧
-      fin.2.val V = bitsRegister bits ∧
+    ∃ (bl : List F) (bs : List Bool),
+      (∀ b ∈ bl, b = 0 ∨ b = 1) ∧ bl = (roundBits rounds).map (·.val V) ∧
+      bs = (bl.map fun b => decide (b = 1)).reverse ∧
+      fin.2.val V = ((natLsbVal bs : ℕ) : F) ∧
       ∀ _ : (3 : ℕ) * 2 ^ (5 * pref.length) ≤ W.order ∨
           (2 ^ (5 * pref.length - 1) < W.order ∧ W.order < 2 ^ (5 * pref.length) ∧
             W.order % 4 = 1 ∧
-            (2 * bitsVal bits + 2 ^ (5 * pref.length) + 1) ∉ forbiddenValues W.order),
+            unshiftType1 (5 * pref.length) (natLsbVal bs : ℤ) ∉ forbiddenValues W.order),
         ∃ hfin : W.Nonsingular (fin.1.x.val V) (fin.1.y.val V),
           Point.some _ _ hfin
-            = (2 * bitsVal bits + 2 ^ (5 * pref.length) + 1) • Point.some _ _ hT := by
+            = unshiftType1 (5 * pref.length) (natLsbVal bs : ℤ) • Point.some _ _ hT := by
   match hround : rounds, hthr with
   | [], hthr' =>
     obtain ⟨rfl, rfl⟩ := Threaded.nil hthr'
-    refine ⟨[], by simp, by simp, by simp [roundBits],
-      by simp [bitsRegister, CVar.val], fun _ => ?_⟩
+    refine ⟨[], [], by simp, by simp [roundBits], by simp,
+      by simp [natLsbVal, CVar.val], fun _ => ?_⟩
     refine ⟨hP0ns, ?_⟩
     rw [hP0]
-    norm_num [bitsVal]
+    norm_num [unshiftType1, natLsbVal]
   | r₀ :: rs, hthr' =>
     subst hround
     obtain ⟨hlen, hbase, ⟨hp0, hn0⟩, hstep, hf1, hf2⟩ := threaded_chain hthr'
@@ -501,10 +501,10 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       exact Kimchi.Gate.EndoMul.some_congr W hP0ns' hP0ns
         (by simp [hg, ScaleRound.read, hR0p]) (by simp [hg, ScaleRound.read, hR0p])
     have hm : rs.length + 1 = pref.length := by simpa using hlen
-    refine ⟨runBits g (rs.length + 1),
+    refine ⟨runBits g (rs.length + 1), runBools g (rs.length + 1),
       runBits_bool (rs.length + 1) g hHolds,
-      by rw [runBits_length, hm],
       read_runBits (r₀ :: rs) r₀,
+      rfl,
       ?_, ?_⟩
     · -- the register chain from the zero seed
       have hthreadN : ∀ i, i + 1 < rs.length + 1 → (g (i + 1)).n = (g i).nPrime := by
@@ -525,7 +525,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       rw [hm] at hregime
       obtain ⟨hfin', hpt, -⟩ :=
         varBaseMul_off W (rs.length + 1) g (Point.some _ _ hT)
-          (2 * bitsVal (runBits g (rs.length + 1)) + 2 ^ (5 * (rs.length + 1)) + 1)
+          (unshiftType1 (5 * (rs.length + 1)) (natLsbVal (runBools g (rs.length + 1)) : ℤ))
           (Point.some_ne_zero hT) hHolds hTns hTeq
           (fun i hi =>
             ⟨by simp only [hg, ScaleRound.read]
@@ -538,7 +538,7 @@ private theorem threaded_sound [Field F] [DecidableEq F]
               (simp only [hg, ScaleRound.read]
                rw [hRi (i + 1) (by omega), hRi i (by omega), ep]))
           hP0ns' hP0' h2 hodd
-          (by rw [gateLadder_eq_register, gateRegister_eq_bitsVal])
+          (by simp only [gateLadder_eq_register, gateRegister_eq_natLsbVal, unshiftType1])
           (by rw [← hm] at hregime; exact hregime)
       have hax : accX g (rs.length + 1) = fin.1.x.val V := by
         show (g rs.length).x5 = _
@@ -557,33 +557,9 @@ private theorem threaded_sound [Field F] [DecidableEq F]
 
 end VarBaseMul
 
-open Kimchi.Gate.VarBaseMul (bitsVal) in
-/-- The gate layer's ℤ bit fold is the ℕ `msbVal` of the decided bits. -/
-private theorem bitsVal_eq_msbVal [Field F] [DecidableEq F] :
-    ∀ {bl : List F}, (∀ b ∈ bl, b = 0 ∨ b = 1) →
-      bitsVal bl = (msbVal (bl.map fun v => decide (v = 1)) : ℤ) := by
-  intro bl
-  induction bl using List.reverseRecOn with
-  | nil => intro _; rfl
-  | append_singleton l v ih =>
-    intro hb
-    have hbl : ∀ b ∈ l, b = 0 ∨ b = 1 := fun b hbm => hb b (List.mem_append_left _ hbm)
-    have hv := hb v (List.mem_append_right _ (List.mem_singleton_self v))
-    have h1 : bitsVal (l ++ [v]) = 2 * bitsVal l + if v = 1 then 1 else 0 := by
-      simp [bitsVal, List.foldl_append]
-    rw [h1, List.map_append, List.map_singleton, msbVal_append_singleton, ih hbl]
-    rcases hv with rfl | rfl
-    · rw [if_neg (zero_ne_one (α := F)), decide_eq_false (zero_ne_one (α := F))]
-      push_cast [Bool.toNat_false]
-      ring
-    · rw [if_pos rfl, decide_eq_true (rfl : (1 : F) = 1)]
-      push_cast [Bool.toNat_true]
-      ring
-
-open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsRegister_eq_cast) in
 /-- The gate seam's one representation bridge: a boolean MSB-first field-bit list
 read off a wire slice has an LSB-first boolean view — per-index readings of the
-wires, and both gate-layer folds at the view's one integer. Stated once; the ladder
+wires, and the list the gate layer's `runBools` decides to. Stated once; the ladder
 laws compose through it and no other proof converts representations. -/
 private theorem exists_lsbView [Field F] [DecidableEq F] {V : Valuation F}
     {n k : ℕ} (hn : k ≤ n) (v : Vector (FVar F) n) (bl : List F)
@@ -591,8 +567,7 @@ private theorem exists_lsbView [Field F] [DecidableEq F] {V : Valuation F}
     (hsrc : bl = ((v.toList.take k).reverse).map (·.val V)) :
     ∃ bs : Vector Bool k,
       (∀ i (hi : i < k), (v[i]'(lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
-      bitsRegister bl = ((natLsbVal bs.toList : ℕ) : F) ∧
-      bitsVal bl = (natLsbVal bs.toList : ℤ) := by
+      bs.toList = (bl.map fun b => decide (b = 1)).reverse := by
   have hblen : bl.length = k := by
     rw [hsrc]
     simp only [List.length_map, List.length_reverse, List.length_take,
@@ -617,7 +592,7 @@ private theorem exists_lsbView [Field F] [DecidableEq F] {V : Valuation F}
       simp only [Vector.getElem_toList, Vector.getElem_ofFn, Vector.length_toList]
       rw [hblget j (by simpa [hblen] using h1)]
   refine ⟨Vector.ofFn fun i : Fin k =>
-    decide ((v[i.val]'(lt_of_lt_of_le i.isLt hn)).val V = 1), ?_, ?_, ?_⟩
+    decide ((v[i.val]'(lt_of_lt_of_le i.isLt hn)).val V = 1), ?_, ?_⟩
   · intro i hi
     simp only [Vector.getElem_ofFn]
     have hvi : (v[i]'(lt_of_lt_of_le hi hn)).val V = bl[k - 1 - i]'(by omega) := by
@@ -629,12 +604,8 @@ private theorem exists_lsbView [Field F] [DecidableEq F] {V : Valuation F}
       rfl
     · rw [hvi, h1, decide_eq_true (rfl : (1 : F) = 1)]
       rfl
-  · rw [bitsRegister_eq_cast bl hbool, bitsVal_eq_msbVal hbool, hlist, msbVal_reverse]
-    push_cast
-    ring
-  · rw [bitsVal_eq_msbVal hbool, hlist, msbVal_reverse]
+  · rw [hlist, List.reverse_reverse]
 
-open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsRegister_eq_cast) in
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- The gadget is sound: under any satisfying valuation, for a base point reading
 on-curve, the consumed bit wires read as booleans — LSB first, per index — the
@@ -719,7 +690,7 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     have hP0 : Point.some _ _ hP0ns = (2 : ℤ) • Point.some _ _ hT' := by
       rw [← hsum]
       module
-    obtain ⟨bl, hbool, hblen, hsrc, hregpin, hpoint⟩ :=
+    obtain ⟨bl, bsL, hbool, hsrc, hbsL, hregpin, hpoint⟩ :=
       VarBaseMul.threaded_sound d.W d.two_ne d.odd s.V hthr hpay hT' hP0ns hP0
     have hTeq : Point.some _ _ hT' = Point.some _ _ hT :=
       Kimchi.Gate.EndoMul.some_congr d.W hT' hT hsx hsy
@@ -735,12 +706,13 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         VarBaseMul.flatMap_window ((.const 0 : FVar F)) chunks _ (by
           simp only [List.length_reverse, List.length_take, Vector.length_toList]
           omega)]
-    obtain ⟨bs, hread, hregv, hint⟩ := exists_lsbView hn bits bl hbool hsrc'
-    refine ⟨bs, hread, (heq.symm.trans hregpin).trans hregv, fun hregime => ?_⟩
-    obtain ⟨hfin, hpt⟩ := hpoint (by simpa [unshiftType1, hint] using hregime)
+    obtain ⟨bs, hread, hbs⟩ := exists_lsbView hn bits bl hbool hsrc'
+    have hint : bsL = bs.toList := hbsL.trans hbs.symm
+    refine ⟨bs, hread, (heq.symm.trans hregpin).trans (by rw [hint]), fun hregime => ?_⟩
+    obtain ⟨hfin, hpt⟩ := hpoint (by simpa [hint] using hregime)
     refine ⟨hfin, ?_⟩
     rw [← hTeq]
-    simpa [unshiftType1, hint] using hpt
+    simpa [hint] using hpt
 
 /-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. -/
 def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
@@ -786,7 +758,6 @@ theorem splitFieldVar_spec [Field F] [DecidableEq F] [ToNat F]
   rw [heq]
   simp [CVar.val_add_, CVar.val_scale_]
 
-open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsRegister_eq_cast) in
 /-- `scaleFast1` is sound — the PS defining equation
 `scaleFast1 g a ~ scalarMul (fromShifted a) g`: the result reads as `[s]·g` for the
 `Type1` decode `s = unshift t`, pinned in `F` and bounded by the width. The
@@ -828,8 +799,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   push_cast
   ring
 
-open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsVal_drop_of_zeros
-  bitsRegister_eq_cast y_ne_zero_of_odd_order) in
+open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- `scaleFast2` is sound — the PS defining equation
 `scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`, the `unshiftType2`
 decode `2·sDiv2 + sOdd + 2^(5·chunks)`: the inner ladder computes the register's
@@ -968,7 +938,6 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         · rw [hxv]; simp [selectPure]
         · rw [hyv]; simp [selectPure]
 
-open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
 /-- `scaleFast2'` is sound — `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read
 through its parity split: the split's recombination `s = 2·v + sOdd` composes with
 `scaleFast2`'s `unshiftType2` decode. -/
@@ -1308,7 +1277,7 @@ count below full width, and at full width it is the `Type1` forbidden-band check
 contract. The loop invariant identifies the run with the honest walk `chainBuild`;
 the per-round check is the produce chain's (`chain_complete`), the init is the
 doubling `addFast` (`addFast_complete_spec`), and the register pin closes by the
-fold identity (`chain_accN` through `bitsVal_testBit`). -/
+fold identity (`chain_accN` through `natLsbVal_testBit_msbStream`). -/
 theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base' : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
@@ -1414,13 +1383,17 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF i
       rw [hb0, hb1, hb2, hb3, hb4]),
       Kimchi.Gate.VarBaseMul.flatMap_range_window]
+  -- the walk's bits read back as the scalar
+  have hnat : natLsbVal (Kimchi.Gate.VarBaseMul.runBools
+      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) chunks) = nn := by
+    rw [Kimchi.Gate.VarBaseMul.runBools, hrun, hbsF]
+    exact Kimchi.Gate.VarBaseMul.natLsbVal_testBit_msbStream nn (5 * chunks) hrange
   -- and the walk's ladder is the scalar's `Type1` unshift, by the sound side's decode
   have hladder : Kimchi.Gate.VarBaseMul.gateLadder
         (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) (5 * chunks)
       = 2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1 := by
     rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
-      Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hrun, hbsF,
-      Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange]
+      Kimchi.Gate.VarBaseMul.gateRegister_eq_natLsbVal, hnat]
   simp only [HasCurve.LadderRegime, unshiftType1] at hregpre
   have hregime' : 3 * 2 ^ (5 * chunks) ≤ d.W.order ∨
       (2 ^ (5 * chunks - 1) < d.W.order ∧ d.W.order < 2 ^ (5 * chunks) ∧
@@ -1556,16 +1529,10 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
         (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
         hHolds (fun i _ => rfl)
       rw [Kimchi.Gate.VarBaseMul.accN_chainBuild,
-        Kimchi.Gate.VarBaseMul.accN_chainBuild, hrun,
+        Kimchi.Gate.VarBaseMul.accN_chainBuild, hnat,
         show (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF 0).n = 0
-          from rfl, mul_zero, zero_add,
-        Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast _ (fun x hx => by
-          obtain ⟨j, hjmem, rfl⟩ := List.mem_map.mp hx
-          exact hbsb j (List.mem_range.mp hjmem)),
-        hbsF, Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange]
-        at hchain
+          from rfl, mul_zero, zero_add] at hchain
       rw [hchain]
-      push_cast
       exact hfaith
     have hsv' : scalar.val.eval s'.env = .ok v :=
       CVar.eval_le ((hle₁.trans (hle₂.trans hle₃)).trans hLe) hv
