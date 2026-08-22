@@ -118,7 +118,7 @@ private theorem not_val [Field F] [DecidableEq F] {x : BoolVar F}
 
 open Std.Do in
 /-- The comparison reads as `ltPure` of the read bits against the pattern. -/
-theorem ltBitstringValue_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem ltBitstringValue_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
     (xs : List (BoolVar F)) (ys : List Bool)
     (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
@@ -173,7 +173,7 @@ theorem ltBitstringValue_spec [Field F] [DecidableEq F] [BasicSystem F c]
 open Std.Do in
 /-- The comparison's honest run: on operands reading as the bits `bs`, it succeeds and
 the result reads as `ltPure bs ys`. -/
-theorem ltBitstringValue_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem ltBitstringValue_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [Checker F c] [LawfulChecker F c]
     (xs : List (BoolVar F)) (ys : List Bool) (bs : List Bool)
     (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
@@ -241,7 +241,7 @@ theorem ltBitstringValue_complete_spec [Field F] [DecidableEq F] [BasicSystem F 
 
 open Std.Do in
 /-- The lock's rows force the read bits' ℕ value strictly below `m`. -/
-theorem assertBitsBelow_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem assertBitsBelow_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
     (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n)
     (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
@@ -271,7 +271,7 @@ theorem assertBitsBelow_spec [Field F] [DecidableEq F] [BasicSystem F c]
 
 open Std.Do in
 /-- The lock's honest run succeeds on bits reading as a value below `m`. -/
-theorem assertBitsBelow_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem assertBitsBelow_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
     [Checker F c] [LawfulChecker F c]
     (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n)
     (bs : List Bool) (hval : natLsbVal bs < m)
@@ -303,7 +303,7 @@ theorem assertBitsBelow_complete_spec [Field F] [DecidableEq F] [BasicSystem F c
 open Std.Do in
 /-- `unpackFull`'s rows force bits whose weighted sum is the operand's reading AND
 whose ℕ value is below `m` — the canonical lock the plain `unpack` lacks. -/
-theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+@[spec] theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
     (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F)
     (Q : PostCond (Vector (BoolVar F) n) (.arg (BuilderState F) .pure)) :
@@ -312,13 +312,12 @@ theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
         packPure bs = v.val V ∧ natLsbVal bs.toList < m) Q⦄
     (unpackFull (c := c) m n v)
     ⦃Q⦄ := by
-  have hlock := assertBitsBelow_spec (F := F) (c := c) m n hm
   simp only [unpackFull]
-  mvcgen [hlock]
+  mvcgen
   rename_i s hpre
   intro bits nv₁ hbits
-  mvcgen [hlock]
-  case vc1.hlen => simp
+  mvcgen
+  case vc2.hlen => simp
   intro _ nv₂ hlockv
   mvcgen
   obtain ⟨bs, hread, hsum⟩ := hbits
@@ -332,7 +331,7 @@ theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
 open Std.Do in
 /-- `unpackFull`'s honest run succeeds on a faithful representative that fits the width
 and lies below `m`; the results are the operand's binary digits. -/
-theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+@[spec] theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [Checker F c] [LawfulChecker F c]
     (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F)
     (Q : PostCond (Vector (BoolVar F) n)
@@ -358,7 +357,6 @@ theorem unpackFull_complete_spec [Field F] [DecidableEq F] [ToNat F] [BasicSyste
     injection hv' with hv'
     subst hv'
     exact ⟨hfaith, hfit⟩
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   have hdig : ∀ i (hi : i < n), (bits[i]).toCVar.eval st₁.env
       = .ok (bit ((ToNat.toNat vv).testBit i)) := fun i hi => hbits vv hv i hi
   have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>

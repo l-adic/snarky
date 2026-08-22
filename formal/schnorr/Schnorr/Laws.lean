@@ -75,29 +75,25 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit]
-  have hunp := unpackFull_spec (F := Fq) (c := KimchiConstraint Fq)
-    PALLAS_SCALAR_CARD 255 (by decide)
   have hendo := EndoMul.endoMul_spec (F := Fq) HasEndo.vesta 32 (by norm_num) stv.pk
   simp only [show HasEndo.vesta.endo = Pasta.vestaEndo from rfl] at hendo
   have hvbm := varBaseMul_spec (F := Fq) HasCurve.vesta 255 51 (by norm_num)
     ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_checkFinite_spec (F := Fq) Vesta.curve.toAffine
     ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
-  have hlock := assertBitsBelow_spec (F := Fq) (c := KimchiConstraint Fq)
-    PALLAS_SCALAR_CARD 255 (by decide)
-  mvcgen [hunp, hendo, hvbm, hadd, hlock]
+  mvcgen [hendo, hvbm, hadd]
   case vc1.hsize => exact fqParams_size
   rename_i st hpre
   intro squeezed _ hsqv
   simp only [List.map_cons, List.map_nil, CVar.val] at hsqv
-  mvcgen [hunp, hendo, hvbm, hadd, hlock]
+  mvcgen [hendo, hvbm, hadd]
   intro hbits _ hunpv
-  mvcgen [hendo, hvbm, hadd, hlock]
+  mvcgen [hendo, hvbm, hadd]
   intro cpk _ hcpk
-  mvcgen [hvbm, hadd, hlock]
+  mvcgen [hvbm, hadd]
   intro zr _ hzrv
-  mvcgen [hadd, hlock]
-  case vc1.hlen => simp
+  mvcgen [hadd]
+  case vc2.hlen => simp
   intro _ _ hlockv
   mvcgen [hadd]
   intro rhs _ hrhsv
@@ -310,7 +306,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     ⟨.const gen.x, .const gen.y⟩ stv.z
   have hadd := AddFast.addFast_complete_spec (F := Fq) .checkFinite Vesta.curve.toAffine
     ⟨rfl, rfl, rfl, rfl⟩ (by decide) stv.u
-  mvcgen -trivial [hsq, unpackFull_complete_spec, hendo, hvbmc, hadd]
+  mvcgen -trivial [hsq, hendo, hvbmc, hadd]
   · exact fqParams_size
   rename_i st₀ hpre
   obtain ⟨hrd, hk⟩ := hpre
@@ -342,7 +338,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
         (.cons (reads_fvar_iff.mpr hpkx) (.cons (reads_fvar_iff.mpr hpky)
           (.cons (reads_fvar_iff.mpr hux) (.cons (reads_fvar_iff.mpr huy) .nil))))))
   -- the canonical unpack at the honest hash value
-  mvcgen -trivial [unpackFull_complete_spec, hendo, hvbmc, hadd]
+  mvcgen -trivial [hendo, hvbmc, hadd]
   case hm => decide
   refine ⟨⟨isOk_of_eq hsqv, fun vv hvv => ?_⟩, fun hbits st₂ hout₂ hle₂ => ?_⟩
   · rw [hsqv] at hvv
