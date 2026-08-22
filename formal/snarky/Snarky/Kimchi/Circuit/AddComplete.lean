@@ -191,20 +191,13 @@ open Std.Do
 
 /-- `sealPoint`'s promise: both sealed coordinates read as the operand point —
 `sealVar_spec` walked over the two seals. -/
-@[spec] private theorem sealPoint_spec [Field F] [DecidableEq F]
-    (q : AffinePoint (FVar F))
-    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V) Q⦄
-    sealPoint (c := KimchiConstraint F) q
-    ⦃Q⦄ := by
+@[spec] private theorem sealPoint_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (q : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄
+    sealPoint (c := Builder V (KimchiConstraint F)) q
+    ⦃⇓ r _ => ⌜r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V⌝⦄ := by
   simp only [sealPoint]
   mvcgen
-  rename_i s hpre
-  intro y _ hy
-  mvcgen
-  intro x _ hx _
-  exact hpre ⟨x, y⟩ _ hx hy
 
 open Std.Do in
 /-- `sealPoint`'s honest run: readable coordinates seal, and the sealed point reads
@@ -241,13 +234,13 @@ result as the group sum, via the verified gate's `sound`; the returned flag is t
 `inf` argument itself (structural — how the `checkFinite` mode pins the finite
 branch). Applied manually per mode — the curve parameters appear only in the promise,
 so a registry application could not infer them. -/
-private theorem addFastTail_spec [Field F] [DecidableEq F]
+private theorem addFastTail_spec {V : Valuation F} [Field F] [DecidableEq F]
     (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
-    (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F)
-    (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AddResult F) =>
-        r.isInfinity = inf ∧
+    (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F) :
+    ⦃⌜True⌝⦄
+    addFastTail (c := Builder V (KimchiConstraint F)) p1 p2 sameX inf
+    ⦃⇓ r _ => ⌜r.isInfinity = inf ∧
         ∀ (h1 : W.Nonsingular (p1.x.val V) (p1.y.val V))
           (h2 : W.Nonsingular (p2.x.val V) (p2.y.val V)),
           p1.y.val V ≠ 0 →
@@ -255,25 +248,11 @@ private theorem addFastTail_spec [Field F] [DecidableEq F]
              Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
            (r.isInfinity.toCVar.val V = 0 ∧
              ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
-               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))) Q⦄
-    addFastTail (c := KimchiConstraint F) p1 p2 sameX inf
-    ⦃Q⦄ := by
+               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))⌝⦄ := by
   simp only [addFastTail]
   mvcgen
-  rename_i s hpre
-  intro infZ _
-  mvcgen
-  intro x21Inv _
-  mvcgen
-  intro sv _
-  mvcgen
-  intro x3 _
-  mvcgen
-  intro y3 _
-  mvcgen
-  intro u _ hpay _
-  refine hpre _ _ rfl ?_
-  intro h1 h2 hy1ne
+  rename_i hpay
+  refine ⟨by first | rfl | trivial, fun h1 h2 hy1ne => ?_⟩
   rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hpay hy1ne htwo with
     ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
   · simp only [AddComplete.read] at hsum
@@ -288,43 +267,40 @@ reads `1`. The nonsingularity binders sit inside the promise because they are
 valuation-dependent; proof irrelevance makes any instances agree. The walk shares
 the mode-independent parts: seals and glue before the mode split, the tail behind
 `addFastTail_spec`. -/
-theorem addFast_spec [Field F] [DecidableEq F]
+theorem addFast_spec {V : Valuation F} [Field F] [DecidableEq F]
     (fin : Finiteness) (W : WeierstrassCurve.Affine F)
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
-    (p1' p2' : AffinePoint (FVar F))
-    (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AddResult F) =>
-        ∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+    (p1' p2' : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄
+    addFast (c := Builder V (KimchiConstraint F)) fin p1' p2'
+    ⦃⇓ r _ => ⌜∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
           (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)),
           p1'.y.val V ≠ 0 →
           ((r.isInfinity.toCVar.val V = 1 ∧
              Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
            (r.isInfinity.toCVar.val V = 0 ∧
              ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
-               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))) Q⦄
-    addFast (c := KimchiConstraint F) fin p1' p2'
-    ⦃Q⦄ := by
-  simp only [addFast]
-  mvcgen
-  rename_i s hpre
-  intro p1 _ hp1x hp1y
-  mvcgen
-  intro p2 _ hp2x hp2y
-  mvcgen
-  intro sameXU _
-  have hglue : ∀ (r : AddResult F) (nv' : Nat),
-      (∀ (h1 : W.Nonsingular (p1.x.val s.V) (p1.y.val s.V))
-         (h2 : W.Nonsingular (p2.x.val s.V) (p2.y.val s.V)),
-         p1.y.val s.V ≠ 0 →
-         ((r.isInfinity.toCVar.val s.V = 1 ∧
+               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))⌝⦄ := by
+  have hglue : ∀ (p1 p2 : AffinePoint (FVar F)) (r : AddResult F),
+      p1.x.val V = p1'.x.val V → p1.y.val V = p1'.y.val V →
+      p2.x.val V = p2'.x.val V → p2.y.val V = p2'.y.val V →
+      (∀ (h1 : W.Nonsingular (p1.x.val V) (p1.y.val V))
+         (h2 : W.Nonsingular (p2.x.val V) (p2.y.val V)),
+         p1.y.val V ≠ 0 →
+         ((r.isInfinity.toCVar.val V = 1 ∧
             Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
-          (r.isInfinity.toCVar.val s.V = 0 ∧
-            ∃ h3 : W.Nonsingular (r.p.x.val s.V) (r.p.y.val s.V),
+          (r.isInfinity.toCVar.val V = 0 ∧
+            ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))) →
-      (Q.1 r ⟨s.V, nv'⟩).down := by
-    intro r nv' hp
-    refine hpre r nv' ?_
-    intro h1 h2 hy1ne
+      ∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+        (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)),
+        p1'.y.val V ≠ 0 →
+        ((r.isInfinity.toCVar.val V = 1 ∧
+           Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+         (r.isInfinity.toCVar.val V = 0 ∧
+           ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
+             Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3)) := by
+    intro p1 p2 r hp1x hp1y hp2x hp2y hp h1 h2 hy1ne
     have h1' := h1
     rw [← hp1x, ← hp1y] at h1'
     have h2' := h2
@@ -336,49 +312,41 @@ theorem addFast_spec [Field F] [DecidableEq F]
       exact Or.inl ⟨hinf, hsum⟩
     · simp only [hp1x, hp1y, hp2x, hp2y] at hsum
       exact Or.inr ⟨hinf, h3, hsum⟩
+  have htail := addFastTail_spec (V := V) W ha htwo
   cases fin with
   | checkFinite =>
-    mvcgen
-    exact addFastTail_spec W ha htwo p1 p2 sameXU.val false_ Q _
-      (fun r nv' hp => hglue r nv' hp.2)
+    simp only [addFast]
+    mvcgen [htail]
+    rename_i p1 _ hp1 p2 _ hp2 _ _ _ r _
+    exact fun _ hp => hglue p1 p2 r hp1.1 hp1.2 hp2.1 hp2.2 hp
   | dontCheckFinite =>
-    mvcgen
-    intro infU _
-    mvcgen
-    exact addFastTail_spec W ha htwo p1 p2 sameXU.val infU.val Q _
-      (fun r nv' hp => hglue r nv' hp.2)
+    simp only [addFast]
+    mvcgen [htail]
+    rename_i p1 _ hp1 p2 _ hp2 _ _ _ _ _ _ r _
+    exact fun _ hp => hglue p1 p2 r hp1.1 hp1.2 hp2.1 hp2.2 hp
 
 /-- `addFast` in `checkFinite` mode is sound with the infinity branch refuted: the
 returned flag is the pinned constant `0` (it reads `0`, never `1`), so under any
 satisfying valuation, for nonsingular operand points with the first finite (`y ≠ 0`),
 the result reads as the finite EC group sum. The pinned-mode consumers (the `endoMul`
 init chain) apply this form. -/
-theorem addFast_checkFinite_spec [Field F] [DecidableEq F] [d : HasCurve F]
-    (p1' p2' : AffinePoint (FVar F))
-    (Q : PostCond (AddResult F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AddResult F) =>
-        ∀ (h1 : d.W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+theorem addFast_checkFinite_spec {V : Valuation F} [Field F] [DecidableEq F] [d : HasCurve F]
+    (p1' p2' : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄
+    addFast (c := Builder V (KimchiConstraint F)) .checkFinite p1' p2'
+    ⦃⇓ r _ => ⌜∀ (h1 : d.W.Nonsingular (p1'.x.val V) (p1'.y.val V))
           (h2 : d.W.Nonsingular (p2'.x.val V) (p2'.y.val V)),
           p1'.y.val V ≠ 0 →
           ∃ h3 : d.W.Nonsingular (r.p.x.val V) (r.p.y.val V),
-            Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) Q⦄
-    addFast (c := KimchiConstraint F) .checkFinite p1' p2'
-    ⦃Q⦄ := by
+            Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3⌝⦄ := by
   obtain ⟨W, ha, -, -, htwo⟩ := d
+  have htail := addFastTail_spec (V := V) W ha htwo
   simp only [addFast]
-  mvcgen
-  rename_i s hpre
-  intro p1 _ hp1x hp1y
-  mvcgen
-  intro p2 _ hp2x hp2y
-  mvcgen
-  intro sameXU _
-  mvcgen
-  refine addFastTail_spec W ha htwo p1 p2 sameXU.val false_ Q _ ?_
-  intro r nv' hrp
-  obtain ⟨hrinf, hp⟩ := hrp
-  refine hpre r nv' ?_
-  intro h1 h2 hy1ne
+  mvcgen [htail]
+  rename_i p1 _ hp1 p2 _ hp2 _ _ _ r _
+  obtain ⟨hp1x, hp1y⟩ := hp1
+  obtain ⟨hp2x, hp2y⟩ := hp2
+  intro hrinf hp h1 h2 hy1ne
   have h1' := h1
   rw [← hp1x, ← hp1y] at h1'
   have h2' := h2

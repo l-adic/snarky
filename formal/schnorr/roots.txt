@@ -10,6 +10,7 @@ Schnorr.Statement
 Schnorr.Statement.equivProd_apply
 Schnorr.Statement.equivProd_symm_apply
 Schnorr.instStatementCircuitType
+Schnorr.instStatementSoundCheckedType
 Schnorr.transcriptHash
 Schnorr.preChallenge
 Schnorr.challenge

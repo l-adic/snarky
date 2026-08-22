@@ -31,6 +31,13 @@ instance instStatementCheckedType [BasicSystem Fq c] :
     CheckedType Fq c (Statement (FVar Fq)) :=
   CheckedType.ofEquiv (c := c) Statement.equivProd
 
+/-- The statement's contract is its fields': both points on-curve, nothing for the
+response cell. -/
+instance instStatementSoundCheckedType [BasicSystem Fq c] [ConstraintHolds Fq c]
+    [LawfulBasicSystem Fq c] {V : Valuation Fq} :
+    SoundCheckedType Fq c V (Statement (FVar Fq)) :=
+  SoundCheckedType.ofEquiv Statement.equivProd
+
 /-- The in-circuit verifier: hash the transcript, unpack it canonically and take the
 low 128 bits as the challenge, act on the public key through the endomorphism, run
 the ladder with its bits locked below the modulus, and pin `[z]·G = u + [c]·pk`.

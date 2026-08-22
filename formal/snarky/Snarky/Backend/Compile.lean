@@ -102,7 +102,7 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
 
 /-- The checked body's constraints are among `compile`'s, whatever the output type:
 the output binding only appends. A whole-circuit soundness statement reads its
-body's `Sound` triple through this inclusion. -/
+body's soundness triple through this inclusion. -/
 theorem mem_compile_of_mem_body [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     [A : CircuitType F a avar] [CheckedType F c avar] [B : CircuitType F b bvar]
     {main : avar → CircuitM F c bvar} {con : c}

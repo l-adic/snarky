@@ -79,27 +79,35 @@ instance instCurvePointCheckedType {a b : F}
 open Std.Do in
 /-- The check's rows force the reading on-curve: any satisfying valuation reads the
 coordinates onto `y² = x³ + a·x + b`. -/
-@[spec] theorem CurvePoint.check_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem CurvePoint.check_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] {a b : F}
-    (p : CurvePoint a b (FVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => OnCurve a b (p.point.x.val V, p.point.y.val V)) Q⦄
-    (CurvePoint.check (c := c) p)
-    ⦃Q⦄ := by
+    (p : CurvePoint a b (FVar F)) :
+    ⦃⌜True⌝⦄
+    (CurvePoint.check (c := Builder V c) p)
+    ⦃⇓ _ _ => ⌜OnCurve a b (p.point.x.val V, p.point.y.val V)⌝⦄ := by
   simp only [CurvePoint.check]
   mvcgen
-  rename_i s hpre
-  intro x2 _ hx2
-  mvcgen
-  intro x3 _ hx3
-  mvcgen
-  intro u _ hsq
-  refine hpre u _ ?_
+  rename_i x2 _ hx2 x3 _ hx3 _ _
+  intro hsq
   rw [CVar.val_add_, CVar.val_add_, CVar.val_scale_, hx3, hx2] at hsq
-  show p.point.y.val s.V ^ 2
-      = p.point.x.val s.V ^ 3 + a * p.point.x.val s.V + b
-  have hb : (CVar.const b).val s.V = b := rfl
+  show p.point.y.val V ^ 2
+      = p.point.x.val V ^ 3 + a * p.point.x.val V + b
+  have hb : (CVar.const b).val V = b := rfl
   rw [hb] at hsq
   linear_combination hsq
+
+/-- The contract a curve point's check grants: its coordinates are on the curve. -/
+instance instSoundCheckedTypeCurvePoint {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] {a b : F} :
+    SoundCheckedType F c V (CurvePoint a b (FVar F)) where
+  post p := OnCurve a b (p.point.x.val V, p.point.y.val V)
+  check_sound p := CurvePoint.check_spec (V := V) p
+
+@[circuitVal, simp] theorem SoundCheckedType.post_curvePoint {V : Valuation F} [Field F]
+    [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] {a b : F}
+    (p : CurvePoint a b (FVar F)) :
+    SoundCheckedType.post (F := F) (c := c) (V := V) p
+      = OnCurve a b (p.point.x.val V, p.point.y.val V) := rfl
 
 open Std.Do in
 /-- The check's honest run succeeds on a reading satisfying the on-curve equation,

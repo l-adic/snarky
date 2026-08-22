@@ -692,12 +692,12 @@ with `s = B + A·λ`, the accumulators bounded by `3·4^rounds` and pinned in `F
 the decomposition of a valid crumb list reconstructing the scalar. The bounded shape
 lets a consumer read the same integer in a second field
 (`HasEndo.decomposition_residue`); concretized at `HasEndo.pallas`/`vesta`. -/
-@[spec] theorem endoMul_spec [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
+@[spec] theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
     (rounds : ℕ) (hbits : 4 * rounds ≤ 244) (e : F) (he : e = d.endo)
-    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
-    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        ∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
+    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F)) :
+    ⦃⌜True⌝⦄
+    (endoMul (c := Builder V (KimchiConstraint F)) e rounds t scalar)
+    ⦃⇓ r _ => ⌜∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 2 * rounds ∧
@@ -708,9 +708,7 @@ lets a consumer read the same integer in a second field
               |A| ≤ 3 * 4 ^ rounds ∧ |B| ≤ 3 * 4 ^ rounds ∧
               (A : F) = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
               (B : F) = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
-              (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)) Q⦄
-    (endoMul (c := KimchiConstraint F) e rounds t scalar)
-    ⦃Q⦄ := by
+              (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)⌝⦄ := by
   subst he
   obtain ⟨eb, lam, -, h3, heig, hφns, hoff, -, -, -⟩ := d
   set W := HasCurve.W (F := F)
@@ -721,48 +719,25 @@ lets a consumer read the same integer in a second field
   haveI : Fact (Nat.Prime W.order) := ⟨hprime⟩
   haveI : Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0) := ⟨⟨ha.1, ha.2.1, ha.2.2.1⟩⟩
   simp only [endoMul, endoMulRound, mapAccumM]
-  mvcgen
-  rename_i s hpre
-  intro bits _
-  mvcgen
-  intro phix _ hphix
-  mvcgen
-  refine AddFast.addFast_checkFinite_spec t ⟨phix, t.y⟩ _ _ ?_
-  intro p1 nv1 hp1
-  mvcgen
-  refine AddFast.addFast_checkFinite_spec p1.p p1.p _ _ ?_
-  intro p2 nv2 hp2
-  mvcgen
-  case inv1 =>
-    exact ⇓ p s' => ⌜s'.V = s.V ∧
-      Threaded t (p2.p, .const 0) p.1.prefix p.2.snd p.2.fst⌝
-  case vc2.vc1.vc1.vc1.vc1.pre =>
-    exact ⟨rfl, rfl, rfl⟩
-  case vc1.step =>
-    rename_i pref cur suff hsplit b st' hinv
-    intro w nv'
-    mvcgen
-    obtain ⟨hV, hthr⟩ := hinv
-    exact ⟨hV, hthr.snoc cur w⟩
-  case vc3.vc1.vc1.vc1.vc1.post.success =>
-    rename_i finp st' hinv
-    obtain ⟨hV, hthr⟩ := hinv
-    intro _ nv3 heq
-    mvcgen
-    intro _ nv4 hpay
-    rw [hV] at heq hpay
-    rw [hV]
-    mvcgen
-    refine hpre finp.fst.1 _ ?_
+  have hadd := AddFast.addFast_checkFinite_spec (V := V) (d := ⟨W, ha, hprime, hodd, h2⟩)
+  mvcgen [hadd]
+  · rename_i _ _ _ _ _ _ _ _ p2 _ _ _
+    exact ⇓ p _ => ⌜Threaded t (p2.p, .const 0) p.1.prefix p.2.snd p.2.fst⌝
+  · rename_i pref cur suff _ b _ hinv w _ _
+    simp at hinv ⊢
+    exact hinv.snoc cur w
+  · exact ⟨rfl, rfl⟩
+  · rename_i bits _ _ phix _ hphix p1 _ hp1 p2 _ hp2 finp _ hinv _ _ heq _ _ hpay
+    simp at hinv
     intro hT
-    have hφT : W.Nonsingular (eb * t.x.val s.V) (t.y.val s.V) := hφns hT
+    have hφT : W.Nonsingular (eb * t.x.val V) (t.y.val V) := hφns hT
     -- the init chain: `[2](T + φT)` from the seal and the two pinned additions
-    have hy : t.y.val s.V ≠ 0 := y_ne_zero_of_odd_order W hodd hT
-    have hφTp : W.Nonsingular (phix.val s.V) (t.y.val s.V) := by
+    have hy : t.y.val V ≠ 0 := y_ne_zero_of_odd_order W hodd hT
+    have hφTp : W.Nonsingular (phix.val V) (t.y.val V) := by
       rw [hphix, CVar.val_scale_]
       exact hφT
     obtain ⟨hP1, hsum1⟩ := hp1 hT hφTp hy
-    have hy1 : p1.p.y.val s.V ≠ 0 := y_ne_zero_of_odd_order W hodd hP1
+    have hy1 : p1.p.y.val V ≠ 0 := y_ne_zero_of_odd_order W hodd hP1
     obtain ⟨hP0ns, hsum2⟩ := hp2 hP1 hP1 hy1
     have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=
       Kimchi.Gate.EndoMul.some_congr W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
@@ -773,7 +748,7 @@ lets a consumer read the same integer in a second field
     -- the extracted run through `threaded_sound`
     obtain ⟨crumbs, hvalid, hlen, hreg, hfin, sc, A, B, hseq, hsab, hAle, hBle,
       hAval, hBval, hsval⟩ :=
-      threaded_sound W h2 h3 hodd eb lam s.V (by simpa using hbits) hthr hpay hT hφT
+      threaded_sound W h2 h3 hodd eb lam V (by simpa using hbits) hinv hpay hT hφT
         (fun a b ha' hb' hba hbb =>
           hoff ha' hb' hba hbb (Point.some_ne_zero hT) (heig hT hφT))
         (heig hT hφT) hP0ns hP0
@@ -1384,12 +1359,12 @@ The on-curve rows discharge `endoMul_spec`'s promise hypothesis at the WITNESSED
 point — the gadget's design point — with smoothness (`d.delta_ne`) upgrading their
 equation to nonsingularity. The advice parameters `(q, hq, lam')` are universally
 quantified: soundness never consults the witness. -/
-theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
+theorem endoInv_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
     (q : ℕ) (hq : q.Prime) (lam' : ZMod q)
-    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
-    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        ∀ hg : d.W.Nonsingular (t.x.val V) (t.y.val V),
+    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
+    ⦃⌜True⌝⦄
+    (endoInv (c := Builder V (KimchiConstraint F)) d.endo d.W q hq lam' t scalar)
+    ⦃⇓ r _ => ⌜∀ hg : d.W.Nonsingular (t.x.val V) (t.y.val V),
           ∃ crumbs : List F,
             (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
             crumbs.length = 64 ∧
@@ -1399,38 +1374,21 @@ theorem endoInv_spec [Field F] [DecidableEq F] [ToNat F] [d : HasEndo F]
               (s : ZMod d.W.order) ≠ 0 ∧
               Point.some _ _ hg = s • Point.some _ _ hres ∧
               Point.some _ _ hres
-                = ((s : ZMod d.W.order)⁻¹.val : ℕ) • Point.some _ _ hg) Q⦄
-    (endoInv (c := KimchiConstraint F) d.endo d.W q hq lam' t scalar)
-    ⦃Q⦄ := by
+                = ((s : ZMod d.W.order)⁻¹.val : ℕ) • Point.some _ _ hg⌝⦄ := by
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   simp only [endoInv]
   mvcgen
-  rename_i s hpre
-  intro result _
-  mvcgen
-  intro x2 _ hx2
-  mvcgen
-  intro x3 _ hx3
-  mvcgen
-  intro _ _ hsq
-  mvcgen
-  intro computed nvc hcomp
-  mvcgen
-  intro _ _ heqx
-  mvcgen
-  intro _ _ heqy
-  mvcgen
-  refine hpre ⟨result.1, result.2⟩ _ ?_
+  rename_i result _ _ x2 _ hx2 x3 _ hx3 _ _ hsq computed _ _ _ heqx _ _ heqy hcomp
   intro hg
   -- the on-curve rows read as the curve equation at the witnessed point
-  have hEq : d.W.Equation (result.1.val s.V) (result.2.val s.V) := by
+  have hEq : d.W.Equation (result.1.val V) (result.2.val V) := by
     rw [d.W.equation_iff, d.short.1, d.short.2.1, d.short.2.2.1]
     simp only [CVar.val_add_, CVar.val_scale_, CVar.val] at hsq
     rw [hx3, hx2] at hsq
     linear_combination hsq
-  have hres : d.W.Nonsingular (result.1.val s.V) (result.2.val s.V) :=
+  have hres : d.W.Nonsingular (result.1.val V) (result.2.val V) :=
     (d.W.equation_iff_nonsingular_of_Δ_ne_zero d.delta_ne).mp hEq
   -- `endoMul`'s promise at the witnessed point
   obtain ⟨crumbs, hval, hlen, hn, hfin, sZ, -, -, hseq, -, -, -, -, -, hcast⟩ :=

@@ -55,15 +55,18 @@ Snarky.post_of_prove
 -- the soundness reading, generic over the backend's semantic reading of one
 -- constraint value.
 Snarky.ConstraintHolds
-Snarky.CircuitM.instWP
-Snarky.CircuitM.instWPMonad
+Snarky.Builder
+Snarky.Builder.instWP
+Snarky.Builder.instWPMonad
 Snarky.LawfulBasicSystem
 Snarky.Basic.instConstraintHolds
 Snarky.Basic.instLawfulBasicSystem
 Snarky.ProverC
 Snarky.Prover.instWP
 Snarky.Prover.instWPMonad
-Snarky.sound_spec_iff
+Snarky.builder_spec_iff
+Snarky.idiom_down_nil
+Snarky.idiom_down_cons
 Snarky.complete_spec_iff
 
 -- The primitive specs and the vector loop rules (Backend/WP.lean): triple laws for the
@@ -71,7 +74,20 @@ Snarky.complete_spec_iff
 -- in.
 Snarky.addConstraint_spec
 Snarky.addConstraint_complete_spec
-Snarky.witnessBool_spec
+Snarky.witness_spec
+Snarky.SoundCheckedType
+Snarky.SoundCheckedType.ofEquiv
+Snarky.instSoundCheckedTypeF
+Snarky.instSoundCheckedTypeUnChecked
+Snarky.instSoundCheckedTypeBool
+Snarky.instSoundCheckedTypeProd
+Snarky.instSoundCheckedTypeVector
+Snarky.SoundCheckedType.post_fvar
+Snarky.SoundCheckedType.post_unChecked
+Snarky.SoundCheckedType.post_bool
+Snarky.SoundCheckedType.post_prod
+Snarky.SoundCheckedType.post_ofEquiv
+Snarky.SoundCheckedType.post_vector
 Snarky.witness_complete_spec
 Snarky.instWitnessReadsF
 Snarky.instWitnessReadsBool
@@ -512,6 +528,8 @@ Snarky.Kimchi.CurvePoint.equivPoint_apply
 Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
 Snarky.Kimchi.instCurvePointCheckedType
 Snarky.Kimchi.CurvePoint.check_spec
+Snarky.Kimchi.instSoundCheckedTypeCurvePoint
+Snarky.Kimchi.SoundCheckedType.post_curvePoint
 Snarky.Kimchi.CurvePoint.check_complete_spec
 
 -- The kimchi constraint semantics (Snarky/Kimchi/Semantics.lean): the two readings
@@ -565,3 +583,4 @@ Snarky.Kimchi.RandomOracle.hashVec_complete_spec
 Snarky.Type1.equivCarrier_apply
 Snarky.Type1.equivCarrier_symm_apply
 Snarky.instCircuitTypeType1
+Snarky.instSoundCheckedTypeType1

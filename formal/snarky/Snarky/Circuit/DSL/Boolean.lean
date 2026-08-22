@@ -203,19 +203,19 @@ The boolean laws speak through `Snarky.bit`, the `CircuitType Bool` encoding. -/
 
 open Std.Do in
 /-- `and`: on bit operands the result reads as the conjunction bit. -/
-@[spec] theorem and_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+@[spec] theorem and_spec {F c : Type} {V : Valuation F} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
+    (a b : BoolVar F) :
+    ⦃⌜True⌝⦄
+    Snarky.and (c := Builder V c) a b
+    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab && bb)) Q⦄
-    Snarky.and (c := c) a b
-    ⦃Q⦄ := by
+          (↑r : CVar F).val V = bit (ab && bb)⌝⦄ := by
   simp only [Snarky.and]
   mvcgen
-  rename_i hpre
-  intro r _nv' hr _
-  refine hpre (.unchecked r) _ fun ab bb ha hb => ?_
+  rename_i r _ hr
+  intro ab bb ha hb
   simp only [circuitVal, hr, ha, hb]
 
 open Std.Do in
@@ -249,14 +249,14 @@ records). -/
 open Std.Do in
 /-- `or`: on bit operands the result reads as the disjunction bit — `and` on the
 negated bits, by De Morgan. -/
-@[spec] theorem or_spec {F c : Type} [CommRing F] [DecidableEq F]
+@[spec] theorem or_spec {F c : Type} {V : Valuation F} [CommRing F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
+    (a b : BoolVar F) :
+    ⦃⌜True⌝⦄
+    Snarky.or (c := Builder V c) a b
+    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab || bb)) Q⦄
-    Snarky.or (c := c) a b
-    ⦃Q⦄ := by
+          (↑r : CVar F).val V = bit (ab || bb)⌝⦄ := by
   have hnot : ∀ (x : BoolVar F) (xb : Bool) (V : Valuation F),
       (↑x : CVar F).val V = bit xb →
         (↑(Snarky.not x) : CVar F).val V = bit (!xb) := by
@@ -264,9 +264,8 @@ negated bits, by De Morgan. -/
     cases xb <;> simp [Snarky.not, circuitVal, hx]
   simp only [Snarky.or]
   mvcgen
-  rename_i hpre
-  intro r _nv' hr _
-  refine hpre (Snarky.not r) _ fun ab bb ha hb => ?_
+  rename_i r _ hr
+  intro ab bb ha hb
   have hr' := hr (!ab) (!bb) (hnot a ab _ ha) (hnot b bb _ hb)
   cases ab <;> cases bb <;> simp_all [Snarky.not, circuitVal]
 
@@ -431,33 +430,30 @@ open Std.Do in
 /-- `any`: on bit operands the result reads as the list's disjunction, given
 cast-injectivity up to the length — a sum of bits detects zero only below the
 characteristic. -/
-@[spec] theorem any_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem any_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (xs : List (BoolVar F))
-    (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ bl : List Bool, ReadBits V xs bl →
-        (↑r : CVar F).val V = bit (bl.any id)) Q⦄
-    Snarky.any (c := c) xs
-    ⦃Q⦄ := by
+    (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k) :
+    ⦃⌜True⌝⦄
+    Snarky.any (c := Builder V c) xs
+    ⦃⇓ r _ => ⌜∀ bl : List Bool, ReadBits V xs bl →
+        (↑r : CVar F).val V = bit (bl.any id)⌝⦄ := by
   match xs, hchar with
   | [], _ =>
     simp only [Snarky.any]
-    intro s hpre _
-    refine hpre false_ s.nv (fun bl hbl => ?_)
+    intro nv _ _ bl hbl
     cases hbl
     rfl
   | [a], _ =>
     simp only [Snarky.any]
-    intro s hpre _
-    refine hpre a s.nv (fun bl hbl => ?_)
+    intro nv _ _ bl hbl
     obtain - | ⟨hb, hnil⟩ := hbl
     cases hnil
     simpa using hb
   | [a, b], _ =>
     simp only [Snarky.any]
-    refine fun s hpre => or_spec a b Q s (fun r nv' hr => ?_)
-    refine hpre r nv' (fun bl hbl => ?_)
+    mvcgen
+    intro hr bl hbl
     obtain - | ⟨ha', htl⟩ := hbl
     obtain - | ⟨hb', hnil⟩ := htl
     cases hnil
@@ -465,16 +461,16 @@ characteristic. -/
   | x₁ :: x₂ :: x₃ :: t, hchar =>
     simp only [Snarky.any]
     set xs := x₁ :: x₂ :: x₃ :: t with hxs
-    refine fun s hpre => neq_spec _ _ Q s (fun r nv' hr => ?_)
-    refine hpre r nv' (fun bl hbl => ?_)
-    have hsum := sum_bits_val (V := s.V) hbl
+    mvcgen
+    intro hr bl hbl
+    have hsum := sum_bits_val (V := V) hbl
     have hlen := forall₂_length hbl
     have hcount : bl.count true ≤ xs.length + 1 := by
       have := List.count_le_length (a := true) (l := bl)
       omega
     rw [hr, hsum]
     simp only [neqPure]
-    show (if (bl.count true : F) = (CVar.const 0).val s.V then 0 else 1) = _
+    show (if (bl.count true : F) = (CVar.const 0).val V then 0 else 1) = _
     by_cases hz : bl.any id = false
     · rw [hz]
       have h0 : bl.count true = 0 := count_true_eq_zero.mpr hz
@@ -566,33 +562,30 @@ open Std.Do in
 /-- `all`: on bit operands the result reads as the list's conjunction, given
 cast-injectivity up to the length — the full count is detected only below the
 characteristic. -/
-@[spec] theorem all_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem all_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (xs : List (BoolVar F))
-    (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ bl : List Bool, ReadBits V xs bl →
-        (↑r : CVar F).val V = bit (bl.all id)) Q⦄
-    Snarky.all (c := c) xs
-    ⦃Q⦄ := by
+    (hchar : ∀ j k : Nat, j ≤ xs.length + 1 → k ≤ xs.length + 1 → (j : F) = k → j = k) :
+    ⦃⌜True⌝⦄
+    Snarky.all (c := Builder V c) xs
+    ⦃⇓ r _ => ⌜∀ bl : List Bool, ReadBits V xs bl →
+        (↑r : CVar F).val V = bit (bl.all id)⌝⦄ := by
   match xs, hchar with
   | [], _ =>
     simp only [Snarky.all]
-    intro s hpre _
-    refine hpre true_ s.nv (fun bl hbl => ?_)
+    intro nv _ _ bl hbl
     cases hbl
     rfl
   | [a], _ =>
     simp only [Snarky.all]
-    intro s hpre _
-    refine hpre a s.nv (fun bl hbl => ?_)
+    intro nv _ _ bl hbl
     obtain - | ⟨hb, hnil⟩ := hbl
     cases hnil
     simpa using hb
   | [a, b], _ =>
     simp only [Snarky.all]
-    refine fun s hpre => and_spec a b Q s (fun r nv' hr => ?_)
-    refine hpre r nv' (fun bl hbl => ?_)
+    mvcgen
+    intro hr bl hbl
     obtain - | ⟨ha', htl⟩ := hbl
     obtain - | ⟨hb', hnil⟩ := htl
     cases hnil
@@ -600,16 +593,16 @@ characteristic. -/
   | x₁ :: x₂ :: x₃ :: t, hchar =>
     simp only [Snarky.all]
     set xs := x₁ :: x₂ :: x₃ :: t with hxs
-    refine fun s hpre => equals_spec _ _ Q s (fun r nv' hr => ?_)
-    refine hpre r nv' (fun bl hbl => ?_)
-    have hsum := sum_bits_val (V := s.V) hbl
+    mvcgen
+    intro hr bl hbl
+    have hsum := sum_bits_val (V := V) hbl
     have hlen := forall₂_length hbl
     have hcount : bl.count true ≤ xs.length + 1 := by
       have := List.count_le_length (a := true) (l := bl)
       omega
     rw [hr, hsum]
     simp only [equalsPure]
-    show (if (CVar.const (xs.length : F)).val s.V = (bl.count true : F) then 1 else 0) = _
+    show (if (CVar.const (xs.length : F)).val V = (bl.count true : F) then 1 else 0) = _
     by_cases hall : bl.all id = true
     · rw [hall]
       have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
@@ -837,88 +830,83 @@ private theorem xor_complete_constB {F c : Type} [Field F] [DecidableEq F]
 open Std.Do in
 /-- `xor`: on bit operands the result reads as the xor bit — the constant branches fold
 through the guards, the core row pins via `xor_pin`. -/
-@[spec] theorem xor_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem xor_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : BoolVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ ab bb : Bool,
+    (a b : BoolVar F) :
+    ⦃⌜True⌝⦄
+    Snarky.xor (c := Builder V c) a b
+    ⦃⇓ r _ => ⌜∀ ab bb : Bool,
         (↑a : CVar F).val V = bit ab → (↑b : CVar F).val V = bit bb →
-          (↑r : CVar F).val V = bit (ab ^^ bb)) Q⦄
-    Snarky.xor (c := c) a b
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+          (↑r : CVar F).val V = bit (ab ^^ bb)⌝⦄ := by
+  intro nv _
   cases hA : (↑a : CVar F) <;> cases hB : (↑b : CVar F) <;>
     simp only [Snarky.xor, hA, hB]
   case const.const av bv =>
-    intro _
-    refine hpre _ nv fun ab bb ha hb => ?_
-    rw [hA] at ha
-    rw [hB] at hb
+    intro _ ab bb ha hb
     replace ha : av = bit ab := ha
     replace hb : bv = bit bb := hb
     subst ha; subst hb
     cases ab <;> cases bb <;> simp [circuitVal, bit]
   case const.var av v | const.add av x y | const.scale av k x =>
     split_ifs with h0 h1
-    · intro _
-      refine hpre b nv fun ab bb ha hb => ?_
-      rw [hA] at ha
+    · intro _ ab bb ha hb
       replace ha : av = bit ab := ha
       have hab : ab = false := by
         cases ab
         · rfl
         · exact absurd (ha.symm.trans h0) (by simp [bit])
       subst hab
+      rw [← hB] at hb
       simpa using hb
-    · intro _
-      refine hpre (Snarky.not b) nv fun ab bb ha hb => ?_
-      rw [hA] at ha
+    · intro _ ab bb ha hb
       replace ha : av = bit ab := ha
       have hab : ab = true := by
         cases ab
         · exact absurd (ha ▸ h1) (by simp [bit])
         · rfl
       subst hab
+      rw [← hB] at hb
       cases bb <;> simp [Snarky.not, circuitVal, hb]
-    · intro hsat
-      refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
+    · intro hsat ab bb ha hb
       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
       simp only [circuitVal] at h
+      rw [← hA] at ha
+      rw [← hB] at hb
       rw [ha, hb] at h
       exact xor_pin h
   case var.const v bv | add.const x y bv | scale.const k x bv =>
     split_ifs with h0 h1
-    · intro _
-      refine hpre a nv fun ab bb ha hb => ?_
-      rw [hB] at hb
+    · intro _ ab bb ha hb
       replace hb : bv = bit bb := hb
       have hbb : bb = false := by
         cases bb
         · rfl
         · exact absurd (hb.symm.trans h0) (by simp [bit])
       subst hbb
+      rw [← hA] at ha
       simpa using ha
-    · intro _
-      refine hpre (Snarky.not a) nv fun ab bb ha hb => ?_
-      rw [hB] at hb
+    · intro _ ab bb ha hb
       replace hb : bv = bit bb := hb
       have hbb : bb = true := by
         cases bb
         · exact absurd (hb ▸ h1) (by simp [bit])
         · rfl
       subst hbb
+      rw [← hA] at ha
       cases ab <;> simp [Snarky.not, circuitVal, ha]
-    · intro hsat
-      refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
+    · intro hsat ab bb ha hb
       have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
       simp only [circuitVal] at h
+      rw [← hA] at ha
+      rw [← hB] at hb
       rw [ha, hb] at h
       exact xor_pin h
   all_goals
-    (intro hsat
-     refine hpre (.unchecked (.var nv)) _ fun ab bb ha hb => ?_
+    (intro hsat ab bb ha hb
      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
      simp only [circuitVal] at h
+     rw [← hA] at ha
+     rw [← hB] at hb
      rw [ha, hb] at h
      exact xor_pin h)
 
@@ -1070,17 +1058,14 @@ open Std.Do in
 /-- `select`: on a bit selector the result reads as the chosen branch — a constant
 selector folds to a branch, two constant branches fold to the affine mux, and otherwise
 the `r1cs` row pins the choice. -/
-@[spec] theorem select_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem select_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (b : BoolVar F) (t e : FVar F)
-    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => ∀ bb : Bool,
-        (↑b : CVar F).val V = bit bb → r.val V = selectPure bb (t.val V) (e.val V)) Q⦄
-    select (c := c) b t e
-    ⦃Q⦄ := by
-  intro s hpre hsat
-  obtain ⟨V, nv⟩ := s
-  refine hpre _ _ fun bb hb => ?_
+    (b : BoolVar F) (t e : FVar F) :
+    ⦃⌜True⌝⦄
+    select (c := Builder V c) b t e
+    ⦃⇓ r _ => ⌜∀ bb : Bool,
+        (↑b : CVar F).val V = bit bb → r.val V = selectPure bb (t.val V) (e.val V)⌝⦄ := by
+  intro nv _ hsat bb hb
   show (build (match (↑b : CVar F) with
     | .const bv => pure (if bv = 1 then t else e)
     | _ => match t, e with

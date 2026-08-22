@@ -262,82 +262,58 @@ open Std.Do in
 returned `(a, b, n)` as its gate-model decompositions — the emitter's seeds
 `(2, 2, 0)` are theirs. The characteristic hypotheses are the gate's own (`sound`
 interpolates the tables from the cubics). -/
-theorem toFieldChecked'_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F)
-    (Q : PostCond (FVar F × FVar F × FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × FVar F × FVar F) =>
-        ∃ crumbs : List F,
+theorem toFieldChecked'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) :
+    ⦃⌜True⌝⦄
+    (toFieldChecked' (c := Builder V (KimchiConstraint F)) rows scalar)
+    ⦃⇓ r _ => ⌜∃ crumbs : List F,
           (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
           crumbs.length = 8 * rows ∧
           r.1.val V = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
           r.2.1.val V = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
-          r.2.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs) Q⦄
-    (toFieldChecked' (c := KimchiConstraint F) rows scalar)
-    ⦃Q⦄ := by
+          r.2.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs⌝⦄ := by
   simp only [toFieldChecked', mapAccumM]
   mvcgen
-  rename_i s hpre
-  intro crumbVars _
-  mvcgen
   case inv1 =>
-    exact ⇓ p s' => ⌜s'.V = s.V ∧
-      Threaded (.const 2, .const 2, .const 0) p.1.prefix p.2.snd p.2.fst⌝
-  case vc2.vc1.pre =>
-    exact ⟨rfl, rfl, rfl⟩
-  case vc1.step =>
-    rename_i pref cur suff hsplit b st' hinv
-    intro r nv'
-    mvcgen
-    obtain ⟨hV, hthr⟩ := hinv
-    exact ⟨hV, hthr.snoc cur r⟩
-  case vc3.vc1.post.success =>
-    rename_i fin st' hinv
-    obtain ⟨hV, hthr⟩ := hinv
-    intro _ nv' hpay _
-    rw [hV]
-    refine hpre fin.fst nv' ?_
+    exact ⇓ p _ => ⌜Threaded (.const 2, .const 2, .const 0) p.1.prefix p.2.snd p.2.fst⌝
+  case vc2.post.success.pre =>
+    exact ⟨rfl, rfl⟩
+  case vc1.step.post.success =>
+    rename_i pref cur suff _ b _ hinv r _ _
+    simp at hinv ⊢
+    exact hinv.snoc cur r
+  case vc3.post.success.post.success.post.success =>
+    rename_i fin _ hinv _ _ hpay
+    simp at hinv
     have hHolds : ∀ r ∈ fin.snd,
-        Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read s.V r) := by
-      have h := hpay
-      rw [hV] at h
-      exact h
-    obtain ⟨crumbs, hvalid, hlen, ha, hb, hn⟩ := threaded_sound h2 h3 s.V hthr hHolds
+        Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read V r) := hpay
+    obtain ⟨crumbs, hvalid, hlen, ha, hb, hn⟩ := threaded_sound h2 h3 V hinv hHolds
     exact ⟨crumbs, hvalid, by simpa using hlen, ha, hb, hn⟩
 
 open Std.Do in
 /-- The checked decomposition is sound: the result reads as the gate model's
 `toField` — `a·endo + b` — over some valid crumb list of length `8·rows` whose
 `nReconstruct` is the scalar. -/
-theorem toField_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F)
-    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F) =>
-        ∃ crumbs : List F,
+theorem toField_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) :
+    ⦃⌜True⌝⦄
+    (toField (c := Builder V (KimchiConstraint F)) rows scalar endo)
+    ⦃⇓ r _ => ⌜∃ crumbs : List F,
           (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
           crumbs.length = 8 * rows ∧
           r.val V = Kimchi.Gate.EndoScalar.toField crumbs (endo.val V) ∧
-          scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs) Q⦄
-    (toField (c := KimchiConstraint F) rows scalar endo)
-    ⦃Q⦄ := by
+          scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs⌝⦄ := by
   simp only [toField]
-  mvcgen
-  rename_i s hpre
-  refine toFieldChecked'_spec h2 h3 rows scalar _ _ ?_
-  intro abn nv1 ⟨crumbs, hvalid, hlen, ha, hb, hn⟩
-  mvcgen
-  intro _ nv2 heq
-  split
-  · rename_i e
-    mvcgen
-    refine hpre _ _ ?_
+  have hc := toFieldChecked'_spec (V := V) h2 h3 rows scalar
+  mvcgen [hc]
+  · rename_i abn _ habn _ e _ _ heq
+    obtain ⟨crumbs, hvalid, hlen, ha, hb, hn⟩ := habn
     refine ⟨crumbs, hvalid, hlen, ?_, by rw [← heq, hn]⟩
     simp only [Kimchi.Gate.EndoScalar.toField, CVar.val_add_, CVar.val_scale_,
       ha, hb, CVar.val]
     ring
-  · mvcgen
-    intro p nv3 hp
-    mvcgen
-    refine hpre _ _ ?_
+  · rename_i abn _ habn _ _ _ _ _ heq p _ hp
+    obtain ⟨crumbs, hvalid, hlen, ha, hb, hn⟩ := habn
     refine ⟨crumbs, hvalid, hlen, ?_, by rw [← heq, hn]⟩
     simp only [Kimchi.Gate.EndoScalar.toField]
     rw [CVar.val_add_, hp, ha, hb]

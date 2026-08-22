@@ -341,20 +341,17 @@ open Std.Do in
 /-- `equals a b` returns a bit reading `1` exactly when the operands read equal — the
 constant difference folds, the witnessing pair is pinned by its two rows (which also
 force the bit boolean, so the witness may skip the `boolean` check). -/
-@[spec] theorem equals_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem equals_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) =>
-        (↑r : CVar F).val V = equalsPure (a.val V) (b.val V)) Q⦄
-    equals (c := c) a b
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (a b : FVar F) :
+    ⦃⌜True⌝⦄
+    equals (c := Builder V c) a b
+    ⦃⇓ r _ => ⌜(↑r : CVar F).val V = equalsPure (a.val V) (b.val V)⌝⦄ := by
+  intro nv _
   have hz : (CVar.sub_ a b).val V = a.val V - b.val V := CVar.val_sub_ a b V
   cases hZ : CVar.sub_ a b <;> simp only [equals, hZ]
   case const f =>
     intro _
-    refine hpre _ _ ?_
     rw [hZ] at hz
     simp only [circuitVal, show (f : F) = a.val V - b.val V from hz, sub_eq_zero]
   all_goals
@@ -366,7 +363,6 @@ force the bit boolean, so the witness may skip the `boolean` check). -/
      have e₂ := LawfulBasicSystem.holds_r1cs V _ _ _ h₂
      rw [← hZ, hz] at e₁ e₂
      rw [CVar.val_sub_] at e₂
-     refine hpre _ _ ?_
      show V nv = _
      have hpin : V nv = if a.val V - b.val V = 0 then 1 else 0 := equals_pin e₁ e₂
      rw [hpin]
@@ -427,18 +423,15 @@ answer bit in the final table. -/
 
 open Std.Do in
 /-- The result bit is the negated equality answer. -/
-@[spec] theorem neq_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem neq_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (a b : FVar F) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) =>
-        (↑r : CVar F).val V = neqPure (a.val V) (b.val V)) Q⦄
-    neq (c := c) a b
-    ⦃Q⦄ := by
+    (a b : FVar F) :
+    ⦃⌜True⌝⦄
+    neq (c := Builder V c) a b
+    ⦃⇓ r _ => ⌜(↑r : CVar F).val V = neqPure (a.val V) (b.val V)⌝⦄ := by
   simp only [neq]
   mvcgen
-  rename_i s hpre
-  intro r _s' hr _
-  refine hpre _ _ ?_
+  rename_i r _ hr
   simp only [circuitVal, hr]
   split_ifs <;> ring
 
@@ -531,35 +524,33 @@ private theorem invCore_run {F c : Type} [Field F] [DecidableEq F]
 open Std.Do in
 /-- The witnessing row pins the product `x · r = 1` — more than `inv`'s inverse
 reading, whose `0⁻¹ = 0` erases the nonzero fact. -/
-@[spec] theorem invCore_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem invCore_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => x.val V * r.val V = 1) Q⦄
-    invCore (c := c) x
-    ⦃Q⦄ := by
-  intro s hpre hsat
-  exact hpre (.var s.nv) _
-    (LawfulBasicSystem.holds_r1cs s.V _ _ _ (hsat _ (List.mem_cons_self ..)))
+    (x : FVar F) :
+    ⦃⌜True⌝⦄
+    invCore (c := Builder V c) x
+    ⦃⇓ r _ => ⌜x.val V * r.val V = 1⌝⦄ := by
+  intro nv _ hsat
+  exact LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
 
 open Std.Do in
 /-- `inv x` computes the operand's field inverse — the witnessing row forces it; the
 constant branch is total via `0⁻¹ = 0`. -/
-@[spec] theorem inv_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem inv_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => r.val V = (x.val V)⁻¹) Q⦄
-    inv (c := c) x
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (x : FVar F) :
+    ⦃⌜True⌝⦄
+    inv (c := Builder V c) x
+    ⦃⇓ r _ => ⌜r.val V = (x.val V)⁻¹⌝⦄ := by
+  intro nv _
   cases x <;> simp only [inv]
   case const a =>
     intro _
-    exact hpre (.const a⁻¹) _ rfl
+    exact rfl
   all_goals
     (intro hsat
      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
-     exact hpre (.var nv) _ (inv_eq_of_mul_eq_one_right (by simpa using h)).symm)
+     exact (inv_eq_of_mul_eq_one_right (by simpa using h)).symm)
 
 open Std.Do in
 /-- `inv`'s honest run succeeds on a nonzero operand; the result reads as the inverse
@@ -601,29 +592,27 @@ in the final table. -/
 open Std.Do in
 /-- `mul x y` computes the product — constants fold, otherwise the `r1cs` row forces
 it. -/
-@[spec] theorem mul_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+@[spec] theorem mul_spec {F c : Type} {V : Valuation F} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => r.val V = x.val V * y.val V) Q⦄
-    mul (c := c) x y
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (x y : FVar F) :
+    ⦃⌜True⌝⦄
+    mul (c := Builder V c) x y
+    ⦃⇓ r _ => ⌜r.val V = x.val V * y.val V⌝⦄ := by
+  intro nv _
   cases x <;> cases y <;> simp only [mul]
   case const.const a b =>
     intro _
-    exact hpre (.const (a * b)) _ rfl
+    exact rfl
   all_goals
     first
     | (intro _
-       refine hpre _ _ ?_
        exact CVar.val_scale_ _ _ _)
     | (intro _
-       refine hpre _ _ ?_
        exact (CVar.val_scale_ _ _ _).trans (mul_comm _ _))
     | (intro hsat
        have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
-       exact hpre (.var nv) _ h.symm)
+       exact h.symm)
 
 open Std.Do in
 /-- `mul`'s honest run succeeds on evaluable operands; the result reads as the product
@@ -699,18 +688,17 @@ private theorem squareCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
 
 open Std.Do in
 /-- `div x y` computes the quotient — `x · y⁻¹`, total via `0⁻¹ = 0`. -/
-@[spec] theorem div_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem div_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => r.val V = x.val V / y.val V) Q⦄
-    div (c := c) x y
-    ⦃Q⦄ := by
+    (x y : FVar F) :
+    ⦃⌜True⌝⦄
+    div (c := Builder V c) x y
+    ⦃⇓ r _ => ⌜r.val V = x.val V / y.val V⌝⦄ := by
   simp only [div]
   mvcgen
-  rename_i s hpre
-  intro r _s' hr
-  refine mul_spec (c := c) x r _ _ fun r' s'' hr' => ?_
-  exact hpre r' s'' (hr'.trans (by rw [hr]; exact (div_eq_mul_inv _ _).symm))
+  rename_i r _ hr r' _
+  intro hr'
+  rw [hr', hr, div_eq_mul_inv]
 
 open Std.Do in
 /-- A nonzero divisor makes the run succeed with the quotient. -/
@@ -746,22 +734,21 @@ open Std.Do in
 open Std.Do in
 /-- `square x` computes `x · x` through the dedicated `square` row; a constant
 folds. -/
-@[spec] theorem square_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+@[spec] theorem square_spec {F c : Type} {V : Valuation F} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => r.val V = x.val V * x.val V) Q⦄
-    square (c := c) x
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (x : FVar F) :
+    ⦃⌜True⌝⦄
+    square (c := Builder V c) x
+    ⦃⇓ r _ => ⌜r.val V = x.val V * x.val V⌝⦄ := by
+  intro nv _
   cases x <;> simp only [square]
   case const f =>
     intro _
-    exact hpre (.const (f * f)) _ rfl
+    exact rfl
   all_goals
     (intro hsat
      have h := LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..))
-     exact hpre (.var nv) _ h.symm)
+     exact h.symm)
 
 open Std.Do in
 /-- `square`'s honest run succeeds on an evaluable operand; the result reads as the
@@ -804,56 +791,48 @@ square in the final table. -/
 open Std.Do in
 /-- `powGo` soundness as a triple, by induction on the fuel: with the fuel adequate
 for the exponent, the result reads as the power. -/
-@[spec] private theorem powGo_spec {F c : Type} [Add F] [CommMonoidWithZero F]
+@[spec] private theorem powGo_spec {F c : Type} {V : Valuation F} [Add F] [CommMonoidWithZero F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] :
     ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
-      ∀ (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)),
-        ⦃Sound (fun V r => r.val V = x.val V ^ n) Q⦄
-        powGo (c := c) fuel x n
-        ⦃Q⦄ := by
+        ⦃⌜True⌝⦄
+        powGo (c := Builder V c) fuel x n
+        ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ := by
   intro fuel
   induction fuel with
   | zero =>
-    intro x n hfuel Q
+    intro x n hfuel
     match n, hfuel with
-    | 0, _ => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
-    | 1, _ => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
+    | 0, _ => exact fun nv _ _ => by simp [powGo, circuitVal]
+    | 1, _ => exact fun nv _ _ => by simp [powGo, circuitVal]
   | succ fuel ih =>
-    intro x n hfuel Q
+    intro x n hfuel
     match n with
-    | 0 => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
-    | 1 => exact fun s hpre _ => hpre _ _ (by simp [powGo, circuitVal])
+    | 0 => exact fun nv _ _ => by simp [powGo, circuitVal]
+    | 1 => exact fun nv _ _ => by simp [powGo, circuitVal]
     | m + 2 =>
       simp only [powGo]
-      mvcgen
-      rename_i s hpre
-      intro sq _nv₁ hsq
-      simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-      refine ih sq ((m + 2) / 2) (by omega) _ _ fun y _s₂ hy => ?_
-      by_cases hpar : (m + 2) % 2 = 0
-      · simp only [eq_true hpar, if_true]
-        intro _
-        refine hpre y _ ?_
+      mvcgen [ih]
+      · omega
+      · rename_i sq _ hsq y hpar _ hy
         rw [hy, hsq, ← pow_two, ← pow_mul]
         congr 1
         omega
-      · simp only [eq_false hpar, if_false]
-        refine mul_spec (c := c) x y _ _ fun r _s₃ hr => ?_
-        refine hpre r _ ?_
+      · rename_i sq _ hsq y hpar _ hy r _
+        intro hr
         rw [hr, hy, hsq, ← pow_two, ← pow_mul, mul_comm, ← pow_succ]
         congr 1
         omega
 
 open Std.Do in
 /-- `pow x n`'s result reads as the operand's `n`-th power. -/
-@[spec] theorem pow_spec {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+@[spec] theorem pow_spec {F c : Type} {V : Valuation F} [Add F] [CommMonoidWithZero F]
+    [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x : FVar F) (n : Nat)
-    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V r => r.val V = x.val V ^ n) Q⦄
-    pow (c := c) x n
-    ⦃Q⦄ :=
-  powGo_spec n x n (Nat.le_succ n) Q
+    (x : FVar F) (n : Nat) :
+    ⦃⌜True⌝⦄
+    pow (c := Builder V c) x n
+    ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ :=
+  powGo_spec n x n (Nat.le_succ n)
 
 open Std.Do in
 /-- `powGo` completeness as a triple, by induction on the fuel: with the fuel adequate

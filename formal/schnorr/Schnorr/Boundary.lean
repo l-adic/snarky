@@ -27,37 +27,24 @@ open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- The seam program — the statement's check, then the verifier — under one Sound
 triple: the check's rows force both point readings on-curve, which is what the body's
 certificate needs to land at `verify`. -/
-private theorem checkedBody_spec (stv : Statement (FVar Fq))
-    (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) =>
-        (readVal (val := Statement Fq) V stv).z.fromShiftedZ
+private theorem checkedBody_spec (V : Valuation Fq) (stv : Statement (FVar Fq)) :
+    ⦃⌜True⌝⦄
+    (do CheckedType.check (c := Builder V (KimchiConstraint Fq)) stv
+        verifyCircuit (c := Builder V (KimchiConstraint Fq)) stv)
+    ⦃⇓ _ _ => ⌜(readVal (val := Statement Fq) V stv).z.fromShiftedZ
           ∉ forbiddenValues PALLAS_BASE_CARD →
-        verify (readVal (val := Statement Fq) V stv) = true) Q⦄
-    (do CheckedType.check (c := KimchiConstraint Fq) stv
-        verifyCircuit (c := KimchiConstraint Fq) stv)
-    ⦃Q⦄ := by
-  have hbody := verifyCircuit_spec stv
-  have hprog : CheckedType.check (c := KimchiConstraint Fq) stv
-      = (do CurvePoint.check (c := KimchiConstraint Fq) stv.pk
-            CurvePoint.check (c := KimchiConstraint Fq) stv.u
-            pure PUnit.unit) := rfl
-  simp only [hprog]
-  mvcgen [hbody]
-  rename_i s hpre
-  intro _ _ hpkC
-  mvcgen [hbody]
-  intro _ _ huC
-  mvcgen [hbody]
-  intro r nv hmain
-  refine hpre r nv fun hband => ?_
+        verify (readVal (val := Statement Fq) V stv) = true⌝⦄ := by
+  mvcgen
+  rename_i _ _ hchk _ _
+  intro hmain hband
   -- the reading is the cells, projectionwise
-  have hin : readVal (val := Statement Fq) s.V stv
-      = (⟨⟨⟨stv.pk.point.x.val s.V, stv.pk.point.y.val s.V⟩⟩,
-          ⟨⟨stv.u.point.x.val s.V, stv.u.point.y.val s.V⟩⟩,
-          ⟨stv.z.val.val s.V⟩⟩ : Statement Fq) := by
+  have hin : readVal (val := Statement Fq) V stv
+      = (⟨⟨⟨stv.pk.point.x.val V, stv.pk.point.y.val V⟩⟩,
+          ⟨⟨stv.u.point.x.val V, stv.u.point.y.val V⟩⟩,
+          ⟨stv.z.val.val V⟩⟩ : Statement Fq) := by
     simp only [circuitVal]
   rw [hin] at hband ⊢
-  exact (hmain _ hin hpkC huC).2 hband
+  exact (hmain _ hin hchk.1 hchk.2.1).2 hband
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 /-- **The satisfaction boundary.** A valuation satisfying every compiled constraint
@@ -73,7 +60,7 @@ theorem verifyCircuit_compile_sound (V : Valuation Fq)
         (inputVar (F := Fq) (a := Statement Fq))).z.fromShiftedZ
       ∉ forbiddenValues PALLAS_BASE_CARD) :
     verify (readVal (val := Statement Fq) V (inputVar (F := Fq) (a := Statement Fq))) = true :=
-  (sound_spec_iff _ _).mp (checkedBody_spec (inputVar (F := Fq) (a := Statement Fq))) V 5
+  (builder_spec_iff _ _).mp (checkedBody_spec V (inputVar (F := Fq) (a := Statement Fq))) 5
     (fun con hcon => hsat con (mem_compile_of_mem_body hcon)) hband
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in

@@ -82,14 +82,13 @@ open Std.Do
 
 /-- Sealing pins the result to the operand: the pass-through branches carry the value
 by the affine-form reading, the witnessing branch by its `equal` row. -/
-@[spec] theorem sealVar_spec {F c : Type} [CommSemiring F] [DecidableEq F]
+@[spec] theorem sealVar_spec {F c : Type} {V : Valuation F} [CommSemiring F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x : FVar F) (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F) => r.val V = x.val V) Q⦄
-    sealVar (c := c) x
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (x : FVar F) :
+    ⦃⌜True⌝⦄
+    sealVar (c := Builder V c) x
+    ⦃⇓ r _ => ⌜r.val V = x.val V⌝⦄ := by
+  intro nv _
   have hred := CVar.reduce_eval (CVar.eval_toAssignments x V)
   simp only [sealVar]
   split
@@ -100,7 +99,6 @@ by the affine-form reading, the witnessing branch by its `equal` row. -/
       obtain ⟨a, σ, henv, hnil, hval⟩ := AffineExpression.eval_none_cons.mp hred
       cases (AffineExpression.eval_nil (env := V.toAssignments)).symm.trans hnil
       intro _
-      refine hpre (.var v) _ ?_
       injection henv with ha
       show V v = x.val V
       rw [hval, ← ha]
@@ -109,18 +107,17 @@ by the affine-form reading, the witnessing branch by its `equal` row. -/
       rw [build_sealCore] at hsat ⊢
       have h := LawfulBasicSystem.holds_equal V x (.var nv)
         (hsat _ (List.mem_cons_self ..))
-      exact hpre (.var nv) _ h.symm
+      exact h.symm
   · next k heq =>
     rw [heq, AffineExpression.eval_nil] at hred
     injection hred with hk
     intro _
-    refine hpre (.const k) _ ?_
     simpa using hk
   · intro hsat
     rw [build_sealCore] at hsat ⊢
     have h := LawfulBasicSystem.holds_equal V x (.var nv)
       (hsat _ (List.mem_cons_self ..))
-    exact hpre (.var nv) _ h.symm
+    exact h.symm
 
 /-- The honest run succeeds on an evaluable operand; the sealed result reads as the
 operand's value in the final table. -/

@@ -7,10 +7,11 @@ import Snarky.Backend.Prover
 
 The soundness reading of a circuit, packaged for Lean core's `Std.Do` program-logic
 framework: a circuit is a program whose only effect is to ASSUME facts about an ambient
-adversarial witness — each emitted constraint is an assumption on the valuation — so
-`wp⟦x⟧ Q` at `(V, nv)` is "if every constraint `build x nv` emits holds under `V`, then
-`Q` holds of the built result at the advanced counter". The counter is the program's
-state; the valuation is read-only state, passed through unchanged.
+adversarial witness — each emitted constraint is an assumption on the valuation. The
+valuation indexes the reading: `Builder V c` tags the constraint type with it, so
+`wp⟦x⟧ Q` at `nv` is "if every constraint `build x nv` emits holds under `V`, then `Q`
+holds of the built result at the advanced counter". The counter is the program's only
+state.
 
 The interpretation is generic over the backend through `ConstraintHolds`, the semantic
 reading of one constraint VALUE under a total valuation — the reference `Basic` backend
@@ -49,26 +50,30 @@ class ConstraintHolds (F c : Type) where
   /-- The constraint value is satisfied under the valuation. -/
   Holds : Valuation F → c → Prop
 
-/-- The builder state a soundness triple runs over: the adversary's valuation and the
-allocation counter, as ONE object — the prover reading's `ProverState` without an
-invariant to carry, since a valuation is total and allocation position never affects
-soundness. Bundling keeps the two readings the same shape and leaves room for the
-builder's state to grow (labels, public-input slots) without changing every
-statement. -/
-structure BuilderState (F : Type u) where
-  /-- The adversary's witness — total, fixed for the whole run. -/
-  V : Valuation F
-  /-- The next-variable counter the run allocates from. -/
-  nv : Nat
+/-- The soundness tag: the constraint type indexed by the adversary's valuation. A
+program enters the soundness reading by naming the tag — `g (c := Builder V c)` — and
+every sub-call of its body elaborates at the same `V`, so no valuation is threaded
+through any statement: a spec quantifies `V` once, and a call site fixes it by unifying
+the program's type. `Builder V c` is `c` under a name instance search will not unfold,
+so the reading has its own `WP` shape while the body keeps the generic `Monad`
+instance; the resulting term is definitionally a `CircuitM F c` program, so the
+interpreter lemmas apply through a `rfl` retag. Classes with generic instances
+(`CheckedType`) are bound at the tag, never forwarded: a forwarder would give a second
+derivation the non-reducible tag keeps from unifying with the generic one. The
+valuation is a phantom index (Mathlib's `WithLp` shape), hence the linter exemption. -/
+@[nolint unusedArguments] def Builder (_ : Valuation F) (c : Type) := c
 
-/-- The soundness reading of `build`: emitted constraints become assumptions on the
-valuation. -/
-instance CircuitM.instWP [ConstraintHolds F c] :
-    WP (CircuitM F c) (.arg (BuilderState F) .pure) where
+instance [inst : BasicSystem F c] : BasicSystem F (Builder V c) := inst
+instance [inst : ConstraintHolds F c] : ConstraintHolds F (Builder V c) := inst
+
+/-- The soundness reading of `build` at `V`: emitted constraints become assumptions on
+the valuation; the state is the allocation counter. -/
+instance Builder.instWP {V : Valuation F} [ConstraintHolds F c] :
+    WP (CircuitM F (Builder V c)) (.arg Nat .pure) where
   wp x := {
-    trans := fun Q s =>
-      .up ((∀ con ∈ (build x s.nv).constraints, ConstraintHolds.Holds s.V con) →
-        (Q.1 (build x s.nv).result ⟨s.V, (build x s.nv).nextVar⟩).down)
+    trans := fun Q nv =>
+      .up ((∀ con ∈ (build x nv).constraints, ConstraintHolds.Holds V con) →
+        (Q.1 (build x nv).result (build x nv).nextVar).down)
     conjunctiveRaw := by
       intro Q₁ Q₂
       apply SPred.bientails.of_eq
@@ -78,8 +83,8 @@ instance CircuitM.instWP [ConstraintHolds F c] :
 
 /-- `wp` is a monad morphism: `pure` emits nothing, and a sequence's constraints
 concatenate (`build_bind`), the satisfaction hypothesis currying across the split. -/
-instance CircuitM.instWPMonad [ConstraintHolds F c] :
-    WPMonad (CircuitM F c) (.arg (BuilderState F) .pure) where
+instance Builder.instWPMonad {V : Valuation F} [ConstraintHolds F c] :
+    WPMonad (CircuitM F (Builder V c)) (.arg Nat .pure) where
   wp_pure a := by
     ext Q s
     simp [wp, PredTrans.apply, build]
@@ -158,35 +163,35 @@ instance Basic.instLawfulBasicSystem [Add F] [Mul F] [Zero F] [One F] [Decidable
     rw [hv]
     exact hb
 
+instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [ConstraintHolds F c]
+    [inst : LawfulBasicSystem F c] : LawfulBasicSystem F (Builder V c) := inst
+
+/-- A pure assertion's content, for the `circuitVal` closers: what a leaf proof is left
+with after the satisfaction hypothesis is introduced. -/
+@[circuitVal, simp] theorem idiom_down_nil (P : Prop) : (⌜P⌝ : SPred []).down = P := rfl
+
+/-- The same, one state layer down. -/
+@[circuitVal, simp] theorem idiom_down_cons (P : Prop) (n : Nat) :
+    ((⌜P⌝ : SPred [Nat]) n).down = P := rfl
+
 /-! ## Spec shapes
 
-The framework's recommended spec form is schematic — the postcondition is a parameter,
-so `mvcgen` instantiates it exactly at each call site — but written raw it buries a
-program's contract in encoding. The shapes are named here once, so each spec reads as
-its contract alone.
+A soundness spec is the framework's native triple at the tag,
+`⦃⌜pre⌝⦄ g (c := Builder V c) ⦃⇓ r _ => ⌜post r⌝⦄`: `pre` the operand facts the
+caller holds at the call (`⌜True⌝` when there are none — building never fails), `post`
+the fact the constraints force about the result at `V`. `post` speaks about the
+result itself, not a reading of it — each spec supplies the reading its result type
+has (`r.val V` for an `FVar`, `(↑r : CVar F).val V` for a `BoolVar`, componentwise for
+a bundle), which keeps one shape serving every return type. A caller never learns how
+many variables were allocated. Facts established only later in a run (a regime of a
+decoded scalar, a computed coordinate's nonvanishing) stay implications inside `post`.
 
-A proof over these shapes runs: `simp only` with the program's definition to unfold
-the body, then `mvcgen` to apply one registered spec, then `simp [circuitVal]` (the
-simp set registered in `Circuit/CVar`) to reduce what is left to a field identity,
-closed by `grind`/`ring`. Two rewrites must be avoided: `mvcgen [f]` unfolds `f`
-instead of consulting the `@[spec]` registry, and plain `simp` rewrites `>>=` past
-`wp_bind`. -/
-
-/-- The soundness spec shape, polymorphic in the result: under any consumer `Q`, a
-program granting `post` about its result satisfies the caller's obligation —
-`⦃Sound post Q⦄ g ⦃Q⦄` reads "`g` guarantees `post` of its result".
-
-Only the counter is quantified in the conclusion: the valuation is read-only, and the
-pinned `⟨s.V, nv'⟩` is what lets the caller apply the granted fact at its own
-valuation. `post` speaks about the result itself, not a reading of it — each spec
-supplies the reading its result type has (`r.val V` for an `FVar`,
-`(↑r : CVar F).val V` for a `BoolVar`, componentwise for a bundle), which keeps one
-shape serving every return type. A caller never learns how many variables were
-allocated. -/
-abbrev Sound {α : Type} (post : Valuation F → α → Prop)
-    (Q : PostCond α (.arg (BuilderState F) .pure)) :
-    Assertion (.arg (BuilderState F) .pure) :=
-  fun s => .up (∀ (r : α) (nv' : Nat), post s.V r → (Q.1 r ⟨s.V, nv'⟩).down)
+A proof over this shape runs: `simp only` with the program's definition to unfold
+the body, then ONE `mvcgen`, which applies the registered spec of every step and
+leaves each granted fact as a hypothesis, then `simp [circuitVal]` (the simp set
+registered in `Circuit/CVar`) to reduce what is left to a field identity, closed by
+`grind`/`ring`. Two rewrites must be avoided: `mvcgen [f]` unfolds `f` instead of
+consulting the `@[spec]` registry, and plain `simp` rewrites `>>=` past `wp_bind`. -/
 
 /-! ## The prover reading and its carrier
 
@@ -391,19 +396,18 @@ because each shape's conclusion pins what its reading keeps fixed. The two
 equivalences below state this per shape. -/
 
 open Std.Do in
-/-- The schematic soundness triple, quantified over `Q`, is the plain interpreter
-law: every satisfying assignment pins the built result. -/
-theorem sound_spec_iff [ConstraintHolds F c] {α : Type}
-    (g : CircuitM F c α) (post : Valuation F → α → Prop) :
-    (∀ Q : PostCond α (.arg (BuilderState F) .pure), ⦃Sound post Q⦄ g ⦃Q⦄)
-      ↔ ∀ (V : Valuation F) (nv : Nat),
-          (∀ con ∈ (build g nv).constraints, ConstraintHolds.Holds V con) →
-          post V (build g nv).result := by
+/-- The soundness triple at the tag is the plain interpreter law: every satisfying
+assignment pins the built result. -/
+theorem builder_spec_iff {V : Valuation F} [ConstraintHolds F c] {α : Type}
+    (g : CircuitM F (Builder V c) α) (post : α → Prop) :
+    (⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜post r⌝⦄) ↔
+      ∀ nv : Nat, (∀ con ∈ (build g nv).constraints, ConstraintHolds.Holds V con) →
+        post (build g nv).result := by
   constructor
-  · intro h V nv hsat
-    exact h (PostCond.noThrow fun r s => ⌜post s.V r⌝) ⟨V, nv⟩ (fun r _ hp => hp) hsat
-  · intro h Q s hpre hsat
-    exact hpre (build g s.nv).result (build g s.nv).nextVar (h s.V s.nv hsat)
+  · intro h nv hsat
+    exact h nv trivial hsat
+  · intro h nv _ hsat
+    exact h nv hsat
 
 open Std.Do in
 /-- The schematic completeness triple, quantified over `Q`, is the honest-run
@@ -444,13 +448,13 @@ covers its witness through its private run lemma. -/
 
 open Std.Do in
 /-- Emitting a row assumes it. -/
-@[spec] theorem addConstraint_spec [ConstraintHolds F c]
-    (con : c) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => ConstraintHolds.Holds V con) Q⦄
-    addConstraint (F := F) (c := c) con
-    ⦃Q⦄ := by
-  intro s hpre hsat
-  exact hpre PUnit.unit _ (hsat con (List.mem_cons_self ..))
+@[spec] theorem addConstraint_spec {V : Valuation F} [ConstraintHolds F c]
+    (con : Builder V c) :
+    ⦃⌜True⌝⦄
+    addConstraint (F := F) (c := Builder V c) con
+    ⦃⇓ _ _ => ⌜ConstraintHolds.Holds V con⌝⦄ := by
+  intro nv _ hsat
+  exact hsat con (List.mem_cons_self ..)
 
 open Std.Do in
 /-- The row's own check is the precondition; the state is unchanged. -/
@@ -465,31 +469,147 @@ open Std.Do in
   simp only [wp, PredTrans.apply, addConstraint, prove, hch, if_true]
   exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
 
-open Std.Do in
-/-- A witness promises nothing on the soundness side — uniformly sound for every
-`CheckedType`, since a caller who learns nothing learns nothing falsely. The leaf that
-lets a walk glide over any `witness` whose content arrives through a later
-constraint. -/
-@[spec] theorem witness_spec {val var : Type} [CircuitType F val var]
-    [BasicSystem F c] [ConstraintHolds F c] [CheckedType F c var] (w : AsProver F val)
-    (Q : PostCond var (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun _ (_ : var) => True) Q⦄
-    (witness (val := val) w : CircuitM F c var)
-    ⦃Q⦄ := by
-  intro s hpre hsat
-  exact hpre _ _ trivial
+/-! ## The checked-witness contract
+
+What `witness` grants on the soundness side is whatever its bundle's `check` rows
+force — nothing for a field element, a bit for a boolean, the curve equation for a
+curve point, componentwise for a bundle. `SoundCheckedType` names that fact per type
+and carries the one law, so `witness_spec` is a single leaf over every checked type;
+it is the soundness-side companion of `LawfulCheckedType`. Bound at the tag like the
+check instance it reads: `CheckedType` has generic instances, so a forwarder would give
+a second derivation the tag keeps from unifying. -/
+
+/-- The soundness contract of a `CheckedType` at the tag: `post` is what a bundle's
+`check` rows force about it under the valuation, and `check_sound` that they do. -/
+class SoundCheckedType (F c : Type) (V : Valuation F) (var : Type) [ConstraintHolds F c]
+    [CheckedType F (Builder V c) var] where
+  /-- What the check's rows force about the bundle. -/
+  post : var → Prop
+  /-- The rows force it. -/
+  check_sound : ∀ bundle : var,
+    ⦃⌜True⌝⦄ (CheckedType.check (F := F) (c := Builder V c) bundle) ⦃⇓ _ _ => ⌜post bundle⌝⦄
+
+attribute [spec] SoundCheckedType.check_sound
+
+section SoundCheckedTypeInstances
+
+variable {V : Valuation F} [ConstraintHolds F c]
+
+/-- A field element's check is empty. -/
+instance instSoundCheckedTypeF : SoundCheckedType F c V (FVar F) where
+  post _ := True
+  check_sound _ := by
+    intro nv _ _
+    trivial
+
+/-- An `UnChecked` bundle's check is empty. -/
+instance instSoundCheckedTypeUnChecked {var : Type} :
+    SoundCheckedType F c V (UnChecked var) where
+  post _ := True
+  check_sound _ := by
+    intro nv _ _
+    trivial
+
+/-- The `boolean` row makes a witnessed boolean a bit. -/
+instance instSoundCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [LawfulBasicSystem F c] : SoundCheckedType F c V (BoolVar F) where
+  post r := (↑r : CVar F).val V = 0 ∨ (↑r : CVar F).val V = 1
+  check_sound b := by
+    intro nv _ hsat
+    exact LawfulBasicSystem.holds_boolean V _ (hsat _ (List.mem_cons_self ..))
+
+/-- A pair's rows force both components' facts. -/
+instance instSoundCheckedTypeProd {avar bvar : Type} [CheckedType F (Builder V c) avar]
+    [CheckedType F (Builder V c) bvar] [SA : SoundCheckedType F c V avar]
+    [SB : SoundCheckedType F c V bvar] : SoundCheckedType F c V (avar × bvar) where
+  post p := SA.post p.1 ∧ SB.post p.2
+  check_sound p := by
+    show ⦃⌜True⌝⦄ (do CheckedType.check (F := F) (c := Builder V c) p.1
+                      CheckedType.check (F := F) (c := Builder V c) p.2) ⦃_⦄
+    mvcgen
+    rename_i h1 _ _
+    intro h2
+    exact ⟨h1, h2⟩
+
+/-- A list of checks forces every element's fact — the vector instance's spine. -/
+private theorem forM_check_sound {var : Type} [CheckedType F (Builder V c) var]
+    [S : SoundCheckedType F c V var] :
+    ∀ l : List var,
+      ⦃⌜True⌝⦄ (l.forM (CheckedType.check (F := F) (c := Builder V c)))
+      ⦃⇓ _ _ => ⌜∀ x ∈ l, S.post x⌝⦄
+  | [] => by
+    show ⦃⌜True⌝⦄ (pure PUnit.unit : CircuitM F (Builder V c) PUnit) ⦃_⦄
+    mvcgen
+    simp
+  | x :: l => by
+    show ⦃⌜True⌝⦄ (do CheckedType.check (F := F) (c := Builder V c) x
+                      l.forM (CheckedType.check (F := F) (c := Builder V c))) ⦃_⦄
+    have ih := forM_check_sound l
+    mvcgen [ih]
+    rename_i hx _ _
+    intro hl y hy
+    rcases List.mem_cons.mp hy with rfl | hy
+    · exact hx
+    · exact hl y hy
+
+/-- A vector's rows force every component's fact. -/
+instance instSoundCheckedTypeVector {var : Type} [CheckedType F (Builder V c) var]
+    [S : SoundCheckedType F c V var] {n : Nat} : SoundCheckedType F c V (Vector var n) where
+  post v := ∀ x ∈ v.toList, S.post x
+  check_sound v := forM_check_sound v.toList
+
+end SoundCheckedTypeInstances
+
+/-- The contract of `var`, read on an isomorphic `var'` — the companion of
+`CheckedType.ofEquiv`. -/
+@[reducible] def SoundCheckedType.ofEquiv {V : Valuation F} [ConstraintHolds F c] {var var' : Type}
+    [CheckedType F (Builder V c) var] [S : SoundCheckedType F c V var] (er : var' ≃ var) :
+    @SoundCheckedType F c V var' _ (CheckedType.ofEquiv (F := F) (c := Builder V c) er) :=
+  @SoundCheckedType.mk F c V var' _ (CheckedType.ofEquiv (F := F) (c := Builder V c) er)
+    (fun r => S.post (er r)) (fun r => S.check_sound (er r))
 
 open Std.Do in
-/-- The checked witness's `boolean` row makes the result a bit. -/
-@[spec] theorem witnessBool_spec [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (w : AsProver F Bool) (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => (↑r : CVar F).val V = 0 ∨ (↑r : CVar F).val V = 1) Q⦄
-    (witness (val := Bool) w : CircuitM F c (BoolVar F))
-    ⦃Q⦄ := by
-  intro s hpre hsat
-  exact hpre (.unchecked (.var s.nv)) _
-    (LawfulBasicSystem.holds_boolean s.V _ (hsat _ (List.mem_cons_self ..)))
+/-- A witness grants its type's contract: the leaf every `witness` step walks through,
+whatever the bundle. -/
+@[spec] theorem witness_spec {V : Valuation F} {val var : Type} [CircuitType F val var]
+    [BasicSystem F c] [ConstraintHolds F c] [CheckedType F (Builder V c) var]
+    [S : SoundCheckedType F c V var] (w : AsProver F val) :
+    ⦃⌜True⌝⦄
+    (witness (val := val) w : CircuitM F (Builder V c) var)
+    ⦃⇓ r _ => ⌜S.post r⌝⦄ := by
+  intro nv _ hsat
+  simp only [witness, build, build_bind, List.append_nil] at hsat ⊢
+  exact (builder_spec_iff _ _).mp (S.check_sound _) _ hsat
+
+/-- The contracts, for the `circuitVal` closers and `mvcgen`'s own simplifier. -/
+@[circuitVal, simp] theorem SoundCheckedType.post_fvar {V : Valuation F} [ConstraintHolds F c]
+    (r : FVar F) : SoundCheckedType.post (F := F) (c := c) (V := V) r = True := rfl
+
+@[circuitVal, simp] theorem SoundCheckedType.post_unChecked {V : Valuation F}
+    [ConstraintHolds F c] {var : Type} (r : UnChecked var) :
+    SoundCheckedType.post (F := F) (c := c) (V := V) r = True := rfl
+
+@[circuitVal, simp] theorem SoundCheckedType.post_bool {V : Valuation F} [Add F] [Mul F]
+    [Zero F] [One F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (r : BoolVar F) :
+    SoundCheckedType.post (F := F) (c := c) (V := V) r
+      = ((↑r : CVar F).val V = 0 ∨ (↑r : CVar F).val V = 1) := rfl
+
+@[circuitVal, simp] theorem SoundCheckedType.post_prod {V : Valuation F} [ConstraintHolds F c]
+    {avar bvar : Type} [CheckedType F (Builder V c) avar] [CheckedType F (Builder V c) bvar]
+    [SA : SoundCheckedType F c V avar] [SB : SoundCheckedType F c V bvar] (p : avar × bvar) :
+    SoundCheckedType.post (F := F) (c := c) (V := V) p = (SA.post p.1 ∧ SB.post p.2) := rfl
+
+@[circuitVal, simp] theorem SoundCheckedType.post_ofEquiv {V : Valuation F} [ConstraintHolds F c]
+    {var var' : Type} [CheckedType F (Builder V c) var] [S : SoundCheckedType F c V var]
+    (er : var' ≃ var) (r : var') :
+    @SoundCheckedType.post F c V var' _ (CheckedType.ofEquiv (F := F) (c := Builder V c) er)
+      (SoundCheckedType.ofEquiv er) r = S.post (er r) := rfl
+
+@[circuitVal, simp] theorem SoundCheckedType.post_vector {V : Valuation F} [ConstraintHolds F c]
+    {var : Type} [CheckedType F (Builder V c) var] [S : SoundCheckedType F c V var] {n : Nat}
+    (v : Vector var n) :
+    SoundCheckedType.post (F := F) (c := c) (V := V) v = ∀ x ∈ v.toList, S.post x := rfl
 
 /-! ## The witness leaf
 
@@ -962,38 +1082,34 @@ instance instWitnessReadsVector {F val var : Type} [Add F] [Mul F]
 
 /-! ## The vector loop rule
 
-The `Sound` and `Complete` laws of `generateVec`, given a spec for each component —
+The soundness and `Complete` laws of `generateVec`, given a spec for each component —
 the analogue of the framework's `Spec.forIn_list`. They cannot be `@[spec]`: the
 componentwise hypothesis is the caller's to supply. -/
 
 open Std.Do in
 /-- Componentwise guarantees aggregate componentwise. No invariant beyond the
-components' own facts: the valuation is read-only, so nothing threads. -/
-theorem generateVec_spec {α : Type} [ConstraintHolds F c] :
-    ∀ (n : Nat) (f : Fin n → CircuitM F c α) (post : Fin n → Valuation F → α → Prop),
-      (∀ (i : Fin n) (Q : PostCond α (.arg (BuilderState F) .pure)),
-        ⦃Sound (post i) Q⦄ f i ⦃Q⦄) →
-      ∀ (Q : PostCond (Vector α n) (.arg (BuilderState F) .pure)),
-        ⦃Sound (fun V (rs : Vector α n) => ∀ i : Fin n, post i V rs[i]) Q⦄
-        generateVec n f
-        ⦃Q⦄ := by
+components' own facts: nothing threads. -/
+theorem generateVec_spec {V : Valuation F} {α : Type} [ConstraintHolds F c] :
+    ∀ (n : Nat) (f : Fin n → CircuitM F (Builder V c) α) (post : Fin n → α → Prop),
+      (∀ i : Fin n, ⦃⌜True⌝⦄ f i ⦃⇓ r _ => ⌜post i r⌝⦄) →
+      ⦃⌜True⌝⦄ generateVec n f ⦃⇓ rs _ => ⌜∀ i : Fin n, post i rs[i]⌝⦄ := by
   intro n
   induction n with
   | zero =>
-    intro f post hf Q s hpre _
-    exact hpre #v[] s.nv (fun i => i.elim0)
+    intro f post hf nv _ _
+    exact fun i => i.elim0
   | succ n ih =>
-    intro f post hf Q s hpre
-    show (wp⟦(generateVec n fun i => f i.castSucc) >>= fun init =>
-        f (Fin.last n) >>= fun last => pure (init.push last)⟧ Q s).down
-    simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-    refine ih _ _ (fun i Q => hf i.castSucc Q) _ s (fun init nv₁ hinit => ?_)
-    refine hf (Fin.last n) _ ⟨s.V, nv₁⟩ (fun last nv₂ hlast => ?_)
-    intro _
-    refine hpre (init.push last) nv₂ (fun i => ?_)
+    intro f post hf
+    show ⦃⌜True⌝⦄ ((generateVec n fun i => f i.castSucc) >>= fun init =>
+        f (Fin.last n) >>= fun last => pure (init.push last)) ⦃_⦄
+    have hinit := ih (fun i => f i.castSucc) (fun i => post i.castSucc) (fun i => hf i.castSucc)
+    have hlast := hf (Fin.last n)
+    mvcgen [hinit, hlast]
+    rename_i init _ hinit' last _ hlast'
+    intro i
     refine Fin.lastCases ?_ (fun j => ?_) i
-    · simpa using hlast
-    · simpa using hinit j
+    · simpa using hlast'
+    · simpa using hinit' j
 
 open Std.Do in
 /-- Componentwise runs chain, given that each component's `pre` and `post` transport
@@ -1046,12 +1162,13 @@ soundness relation the program carries, read at the completion of the final tabl
 (`Assignments.toValuation`). -/
 
 open Std.Do in
-/-- Apply a program's `Sound` triple at the completed final table: the satisfaction
+/-- Apply a program's soundness triple at the completed final table: the satisfaction
 hypothesis is what `prove_complete` establishes, and `prove_build_agrees` identifies
 the two interpreters' results. -/
 theorem post_of_prove {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     {α : Type} {post : Valuation F → α → Prop} {g : CircuitM F (Basic F) α}
-    (hspec : ∀ Q, ⦃Sound post Q⦄ g ⦃Q⦄)
+    (hspec : ∀ V : Valuation F,
+      ⦃⌜True⌝⦄ (show CircuitM F (Builder V (Basic F)) α from g) ⦃⇓ r _ => ⌜post V r⌝⦄)
     {nv : Nat} {env env' : Assignments F} {nv' : Nat} {x : α}
     (hrun : prove Basic.holds g nv env = .ok ⟨x, nv', env'⟩) :
     post env'.toValuation x := by
@@ -1062,8 +1179,8 @@ theorem post_of_prove {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F
       prove_complete (holds := Basic.holds)
         (fun _con _ _ hle hh => Basic.holds_mono hle hh) hrun con hcon
     exact Basic.holds_mono (Assignments.le_toValuation env') h1
-  have h2 := hspec (PostCond.noThrow fun r s => ⌜post s.V r⌝)
-    ⟨env'.toValuation, nv⟩ (fun r _ h => h) hsat
+  have h2 : post env'.toValuation (build g nv).result :=
+    hspec env'.toValuation nv trivial hsat
   have h3 := prove_build_agrees hrun
   rw [h3.1] at h2
   exact h2

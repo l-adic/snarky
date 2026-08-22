@@ -29,13 +29,15 @@ beside their subjects.
 
 ## The proof architecture
 
-Every gadget carries one law per reading, stated as a `Std.Do` triple in a schematic
-shape (`Sound` for the builder reading, `Complete` for the prover reading — both in
-`Backend/WP`) and registered with `@[spec]`. A composed circuit's proof walks its
-do-block: `simp only` with the circuit's definition, then `mvcgen` — which applies each
-callee's registered law — then `simp [circuitVal]` (the value-reading simp set
-registered in `Circuit/CVar`), leaving arithmetic for `grind`/`ring`. The prover
-reading is selected by the constraint tag `ProverC`; `sound_spec_iff` and
+Every gadget carries one law per reading, stated as a `Std.Do` triple: the builder
+reading at the valuation-tagged constraint type `Builder V c` —
+`⦃⌜pre⌝⦄ g ⦃⇓ r _ => ⌜post⌝⦄`, the valuation an index of the program's type, so
+nothing threads — and the schematic `Complete` shape for the prover reading at
+`ProverC` (both in `Backend/WP`), registered with `@[spec]`. A composed circuit's
+proof walks its do-block: `simp only` with the circuit's definition, then ONE `mvcgen`,
+which applies every callee's registered law and leaves each granted fact as a
+hypothesis, then `simp [circuitVal]` (the value-reading simp set registered in
+`Circuit/CVar`), leaving arithmetic for `grind`/`ring`. `builder_spec_iff` and
 `complete_spec_iff` convert either law to its interpreter-level statement, and
 `post_of_prove` ties an honest run to the soundness relation; `Example` runs the
 whole recipe on one circuit.

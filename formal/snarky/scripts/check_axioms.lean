@@ -171,11 +171,11 @@ def roots : List Name :=
 
     `Snarky.addConstraint_spec,
     `Snarky.addConstraint_complete_spec,
-    `Snarky.witnessBool_spec,
+    `Snarky.witness_spec,
     `Snarky.witness_complete_spec,
     `Snarky.generateVec_spec,
     `Snarky.generateVec_complete_spec,
-    `Snarky.sound_spec_iff,
+    `Snarky.builder_spec_iff,
     `Snarky.complete_spec_iff,
     `Snarky.Example.cubic_spec,
     `Snarky.Example.cubic_complete_spec,

@@ -257,39 +257,36 @@ open Std.Do in
 /-- `unpack`'s emitted rows force the results to be bits whose weighted sum is the
 operand's reading. Their canonicity — that they are the binary digits — additionally
 needs a characteristic hypothesis and is not stated. -/
-@[spec] theorem unpack_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
+@[spec] theorem unpack_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (v : FVar F) (n : Nat)
-    (Q : PostCond (Vector (BoolVar F) n) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : Vector (BoolVar F) n) => ∃ bs : Vector Bool n,
+    (v : FVar F) (n : Nat) :
+    ⦃⌜True⌝⦄
+    unpack (c := Builder V c) v n
+    ⦃⇓ r _ => ⌜∃ bs : Vector Bool n,
         (∀ i (hi : i < n), (r[i].toCVar).val V = bit bs[i]) ∧
-          packPure bs = v.val V) Q⦄
-    unpack (c := c) v n
-    ⦃Q⦄ := by
+          packPure bs = v.val V⌝⦄ := by
   simp only [unpack]
-  intro s hpre
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine generateVec_spec n _ _ (fun i Q => witnessBool_spec (unpackWit v i.val) Q) _ s
-    (fun bits nv₁ hbitness => ?_)
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine addConstraint_spec _ _ ⟨s.V, nv₁⟩ (fun _ nv₂ hrow => ?_)
-  intro _
-  have hbits : ∀ i (hi : i < n), (bits[i].toCVar).val s.V
-      = bit (decide ((bits[i].toCVar).val s.V = 1)) := by
+  have hgen := generateVec_spec (V := V) n (fun i => witness (val := Bool) (unpackWit v i.val))
+    (fun _ (r : BoolVar F) => (↑r : CVar F).val V = 0 ∨ (↑r : CVar F).val V = 1)
+    (fun i => witness_spec (c := c) (unpackWit v i.val))
+  mvcgen [hgen]
+  rename_i bits _ hbitness _ _ hrow
+  have hbits : ∀ i (hi : i < n), (bits[i].toCVar).val V
+      = bit (decide ((bits[i].toCVar).val V = 1)) := by
     intro i hi
     have h := hbitness ⟨i, hi⟩
     simp only [Fin.getElem_fin] at h
     rcases h with h0 | h1
     · rw [h0]; simp [bit, zero_ne_one]
     · rw [h1]; simp [bit]
-  refine hpre bits nv₂ ⟨Vector.ofFn fun i : Fin n =>
-    decide ((bits[i].toCVar).val s.V = 1), fun i hi => ?_, ?_⟩
+  refine ⟨Vector.ofFn fun i : Fin n =>
+    decide ((bits[i].toCVar).val V = 1), fun i hi => ?_, ?_⟩
   · simp only [Vector.getElem_ofFn]
     exact hbits i hi
-  · have hrow' := LawfulBasicSystem.holds_r1cs (c := c) s.V _ _ _ hrow
-    have hpack : (pack bits).val s.V
+  · have hrow' := LawfulBasicSystem.holds_r1cs (c := c) V _ _ _ hrow
+    have hpack : (pack bits).val V
         = packPure (Vector.ofFn fun i : Fin n =>
-          decide ((bits[i].toCVar).val s.V = 1)) := by
+          decide ((bits[i].toCVar).val V = 1)) := by
       refine pack_val fun i hi => ?_
       simp only [Vector.getElem_ofFn]
       exact hbits i hi

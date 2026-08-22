@@ -125,20 +125,17 @@ private theorem toBlocksVar_map_val [Field F] (V : Valuation F) :
 
 /-- `updateBlock` is sound: the output state reads as one value block step —
 `blockCipher` of `addBlock` at the state and block readings. -/
-@[spec] private theorem updateBlock_spec [Field F] [DecidableEq F]
+@[spec] private theorem updateBlock_spec {V : Valuation F} [Field F] [DecidableEq F]
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (st : Poseidon.Triple (FVar F)) (b : FVar F × FVar F)
-    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
-        readVal V r = Poseidon.blockCipher p
-          (Poseidon.RandomOracle.addBlock (readVal V st) (readVal V b))) Q⦄
-    (updateBlock (c := KimchiConstraint F) p st b)
-    ⦃Q⦄ := by
+    (st : Poseidon.Triple (FVar F)) (b : FVar F × FVar F) :
+    ⦃⌜True⌝⦄
+    (updateBlock (c := Builder V (KimchiConstraint F)) p st b)
+    ⦃⇓ r _ => ⌜readVal V r = Poseidon.blockCipher p
+          (Poseidon.RandomOracle.addBlock (readVal V st) (readVal V b))⌝⦄ := by
   simp only [updateBlock]
-  intro s hpre
-  refine Poseidon.poseidon_spec p hsize _ Q s ?_
-  intro r nv hpos
-  refine hpre _ _ ?_
+  have pspec := Poseidon.poseidon_spec (V := V) p hsize
+  mvcgen [pspec]
+  intro hpos
   exact hpos.trans (by
     simp [addBlockVar, readVal_prod, readVal_fvar,
       Poseidon.RandomOracle.addBlock, CVar.val_add_])
@@ -182,33 +179,31 @@ and the output state reads back as the value block step. -/
 
 /-- The block fold is sound, generalized over the block list: the output state reads
 as the value fold of the block readings. -/
-private theorem foldBlocks_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) :
-    ∀ (bs : List (FVar F × FVar F)) (st : Poseidon.Triple (FVar F))
-      (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)),
-      ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
-          readVal V r = (bs.map (readVal V)).foldl
-            (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
-            (readVal V st)) Q⦄
-      (bs.foldlM (updateBlock (c := KimchiConstraint F) p) st)
-      ⦃Q⦄
-  | [], st, Q => by
-    simp only [List.foldlM_nil]
-    mvcgen
-    rename_i s hpre
-    exact hpre _ _ (by simp)
-  | b :: bs, st, Q => by
-    simp only [List.foldlM_cons]
-    have ih := foldBlocks_spec p hsize bs
-    intro s hpre
-    simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-    refine updateBlock_spec p hsize st b _ s ?_
-    intro r₁ nv₁ h₁
-    refine ih r₁ _ ⟨s.V, nv₁⟩ ?_
-    intro r₂ nv₂ h₂
-    refine hpre _ _ ?_
-    simp only [List.map_cons, List.foldl_cons, ← h₁]
-    exact h₂
+private theorem foldBlocks_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (bs : List (FVar F × FVar F)) (st : Poseidon.Triple (FVar F)) :
+    ⦃⌜True⌝⦄
+    (bs.foldlM (updateBlock (c := Builder V (KimchiConstraint F)) p) st)
+    ⦃⇓ r _ => ⌜readVal V r = (bs.map (readVal V)).foldl
+        (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
+        (readVal V st)⌝⦄ := by
+  mvcgen
+  case inv1 =>
+    exact ⇓ c _ => ⌜readVal V c.2 = (c.1.prefix.map (readVal V)).foldl
+      (fun s b => Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock s b))
+      (readVal V st)⌝
+  case vc1.pre => simp
+  case vc2.post.success =>
+    intro h
+    simpa using h
+  case vc3.post.success =>
+    rename_i hinv r
+    intro _ hr
+    simp at hinv ⊢
+    rw [hr, hinv]
+  case vc4 =>
+    intro _ _
+    exact hsize
 
 /-- Pinned inputs chunk to pinned blocks (the constant pads read as the value pads). -/
 private theorem readsAll_chunkVar [Field F] {env : Assignments F} :
@@ -320,23 +315,15 @@ private theorem foldBlocks_complete_spec [Field F] [DecidableEq F]
 
 /-- `update` is sound: the output state reads as `Poseidon.RandomOracle.update` of the
 state and input readings. -/
-@[spec] theorem update_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
+@[spec] theorem update_spec {V : Valuation F} [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : Poseidon.Triple (FVar F))
-    (xs : List (FVar F))
-    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
-        readVal V r = Poseidon.RandomOracle.update p (readVal V st)
-          (xs.map (fun x => x.val V))) Q⦄
-    (update (c := KimchiConstraint F) p st xs)
-    ⦃Q⦄ := by
-  simp only [update]
-  intro s hpre
-  refine foldBlocks_spec p hsize (toBlocksVar xs) st _ s ?_
-  intro r nv h
-  refine hpre _ _ ?_
-  simp only [Poseidon.RandomOracle.update]
-  rw [← toBlocksVar_map_val]
-  exact h
+    (xs : List (FVar F)) :
+    ⦃⌜True⌝⦄
+    (update (c := Builder V (KimchiConstraint F)) p st xs)
+    ⦃⇓ r _ => ⌜readVal V r = Poseidon.RandomOracle.update p (readVal V st)
+          (xs.map (fun x => x.val V))⌝⦄ := by
+  simp only [update, Poseidon.RandomOracle.update, ← toBlocksVar_map_val]
+  exact foldBlocks_spec p hsize (toBlocksVar xs) st
 
 /-- `update` is complete: the honest run accepts on a readable state and evaluable
 inputs, and the output state reads back as `Poseidon.RandomOracle.update` of the
@@ -370,20 +357,15 @@ private theorem reads_initState [Field F] (env : Assignments F) :
      exact ⟨rfl, rfl, rfl⟩
 
 /-- `hash2` is sound: the digest reads as the value `hash` of the two readings. -/
-@[spec] theorem hash2_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (a b : FVar F)
-    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F) =>
-        r.val V = Poseidon.RandomOracle.hash p [a.val V, b.val V]) Q⦄
-    (hash2 (c := KimchiConstraint F) p a b)
-    ⦃Q⦄ := by
+@[spec] theorem hash2_spec {V : Valuation F} [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (a b : FVar F) :
+    ⦃⌜True⌝⦄
+    (hash2 (c := Builder V (KimchiConstraint F)) p a b)
+    ⦃⇓ r _ => ⌜r.val V = Poseidon.RandomOracle.hash p [a.val V, b.val V]⌝⦄ := by
   simp only [hash2]
-  have u := updateBlock_spec p hsize
+  have u := updateBlock_spec (V := V) p hsize
   mvcgen [u]
-  rename_i s hpre
-  intro r nv h
-  mvcgen
-  refine hpre _ _ ?_
+  rename_i r _ h
   simp only [readVal_prod, readVal_fvar] at h
   have h1 := congrArg Prod.fst h
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
@@ -430,20 +412,15 @@ reads back as the value `hash` of their values. -/
     Poseidon.RandomOracle.digest] using h0
 
 /-- `hashVec` is sound: the digest reads as the value `hash` of the input readings. -/
-@[spec] theorem hashVec_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (xs : List (FVar F))
-    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F) =>
-        r.val V = Poseidon.RandomOracle.hash p (xs.map (fun x => x.val V))) Q⦄
-    (hashVec (c := KimchiConstraint F) p xs)
-    ⦃Q⦄ := by
+@[spec] theorem hashVec_spec {V : Valuation F} [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (xs : List (FVar F)) :
+    ⦃⌜True⌝⦄
+    (hashVec (c := Builder V (KimchiConstraint F)) p xs)
+    ⦃⇓ r _ => ⌜r.val V = Poseidon.RandomOracle.hash p (xs.map (fun x => x.val V))⌝⦄ := by
   simp only [hashVec]
-  have u := update_spec p hsize
+  have u := update_spec (V := V) p hsize
   mvcgen [u]
-  rename_i s hpre
-  intro r nv h
-  mvcgen
-  refine hpre _ _ ?_
+  rename_i r _ h
   simp only [readVal_prod, readVal_fvar] at h
   have h1 := congrArg Prod.fst h
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest,

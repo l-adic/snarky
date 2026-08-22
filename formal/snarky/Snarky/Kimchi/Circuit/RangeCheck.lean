@@ -77,20 +77,15 @@ constraint content. Completeness is `toField`'s at the honest decomposition. -/
 open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
 /-- `rangeCheck128` is sound: any satisfying valuation reads the operand as a
 natural below `2^128` — the val-level `SizedF` contract. -/
-theorem rangeCheck128_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F))
-    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) =>
-        ∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)) Q⦄
-    (rangeCheck128 (c := KimchiConstraint F) endo v)
-    ⦃Q⦄ := by
+theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F)) :
+    ⦃⌜True⌝⦄
+    (rangeCheck128 (c := Builder V (KimchiConstraint F)) endo v)
+    ⦃⇓ _ _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)⌝⦄ := by
   simp only [rangeCheck128]
-  mvcgen
-  rename_i s hpre
-  refine EndoScalar.toField_spec h2 h3 8 v.val endo _ _ ?_
-  intro r nv hr
-  mvcgen
-  refine hpre ⟨⟩ _ ?_
+  have ht := EndoScalar.toField_spec (V := V) h2 h3 8 v.val endo
+  mvcgen [ht]
+  rename_i r _ hr
   obtain ⟨crumbs, hvalid, hlen, -, hval⟩ := hr
   obtain ⟨n, hlt, hcast⟩ := nReconstruct_lt h2 h3 crumbs hvalid
   refine ⟨n, ?_, by rw [hval, hcast]⟩
@@ -123,36 +118,24 @@ open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
 low half and SOME high half below `2^128`; the low half is below `2^128` exactly
 when `constrainLowBits` asked for it — OCaml's `squeeze_challenge` /
 `squeeze_scalar` split. -/
-theorem lowest128Bits'_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo x : FVar F)
-    (Q : PostCond (SizedF 128 (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : SizedF 128 (FVar F)) =>
-        ∃ hi : F,
+theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo x : FVar F) :
+    ⦃⌜True⌝⦄
+    (lowest128Bits' (c := Builder V (KimchiConstraint F)) constrainLowBits endo x)
+    ⦃⇓ r _ => ⌜∃ hi : F,
           x.val V = r.val.val V + 2 ^ 128 * hi ∧
           (∃ n : ℕ, n < 2 ^ 128 ∧ hi = (n : F)) ∧
           (constrainLowBits = true →
-            ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))) Q⦄
-    (lowest128Bits' (c := KimchiConstraint F) constrainLowBits endo x)
-    ⦃Q⦄ := by
+            ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⌝⦄ := by
   simp only [lowest128Bits']
-  mvcgen
-  rename_i s hpre
-  intro lohi _
-  mvcgen
-  refine EndoScalar.toField_spec h2 h3 8 lohi.val.2 endo _ _ ?_
-  intro rhi nv2 hrhi
-  mvcgen
-  · refine EndoScalar.toField_spec h2 h3 8 lohi.val.1 endo _ _ ?_
-    intro rlo nv3 hrlo
-    mvcgen
-    intro _ nv4 heq
-    mvcgen
-    refine hpre ⟨lohi.val.1⟩ _ ?_
+  have ht := EndoScalar.toField_spec (V := V) h2 h3 8
+  mvcgen [ht]
+  · rename_i lohi _ _ rhi _ _ hrhi rlo _ hrlo _ _ heq
     obtain ⟨cH, hHv, hHl, -, hHval⟩ := hrhi
     obtain ⟨nH, hnHlt, hnHcast⟩ := nReconstruct_lt h2 h3 cH hHv
     obtain ⟨cL, hLv, hLl, -, hLval⟩ := hrlo
     obtain ⟨nL, hnLlt, hnLcast⟩ := nReconstruct_lt h2 h3 cL hLv
-    refine ⟨(lohi.val.2 : FVar F).val s.V,
+    refine ⟨(lohi.val.2 : FVar F).val V,
       by rw [heq]; simp [CVar.val_add_, CVar.val_scale_],
       ⟨nH, by calc nH < 4 ^ cH.length := hnHlt
           _ = 2 ^ 128 := by rw [hHl]; norm_num,
@@ -160,13 +143,10 @@ theorem lowest128Bits'_spec [Field F] [DecidableEq F] [ToNat F]
       fun _ => ⟨nL, by calc nL < 4 ^ cL.length := hnLlt
           _ = 2 ^ 128 := by rw [hLl]; norm_num,
         by rw [hLval, hnLcast]⟩⟩
-  · rename_i hcb
-    intro _ nv4 heq
-    mvcgen
-    refine hpre ⟨lohi.val.1⟩ _ ?_
+  · rename_i lohi _ _ rhi hcb _ hrhi _ _ heq
     obtain ⟨cH, hHv, hHl, -, hHval⟩ := hrhi
     obtain ⟨nH, hnHlt, hnHcast⟩ := nReconstruct_lt h2 h3 cH hHv
-    refine ⟨(lohi.val.2 : FVar F).val s.V,
+    refine ⟨(lohi.val.2 : FVar F).val V,
       by rw [heq]; simp [CVar.val_add_, CVar.val_scale_],
       ⟨nH, by calc nH < 4 ^ cH.length := hnHlt
           _ = 2 ^ 128 := by rw [hHl]; norm_num,

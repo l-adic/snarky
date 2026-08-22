@@ -152,26 +152,23 @@ instance {F c : Type} {a b : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq
 open Std.Do in
 /-- `assertEqual x y` asserts that any satisfying valuation reads the operands equal —
 through the fold, the unsatisfiable-constants row, and the general row. -/
-@[spec] theorem assertEqual_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+@[spec] theorem assertEqual_spec {F c : Type} {V : Valuation F} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => x.val V = y.val V) Q⦄
-    assertEqual (c := c) x y
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (x y : FVar F) :
+    ⦃⌜True⌝⦄
+    assertEqual (c := Builder V c) x y
+    ⦃⇓ _ _ => ⌜x.val V = y.val V⌝⦄ := by
+  intro nv _
   cases x <;> cases y <;> simp only [assertEqual] <;>
     first
     | (rename_i f g
        split_ifs with hfg
        · intro _
-         exact hpre PUnit.unit _ hfg
+         exact hfg
        · intro hsat
-         exact hpre PUnit.unit _
-           (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
+         exact (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
     | (intro hsat
-       exact hpre PUnit.unit _
-         (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
+       exact (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
 
 open Std.Do in
 /-- `assertEqual`'s honest run cannot fail on operands reading equal — it changes
@@ -213,14 +210,15 @@ variable {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
 
 /-- A two-step chain: equality is transitive through composition. -/
 example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y z : FVar F) :
+    (V : Valuation F) (x y z : FVar F) :
     ⦃⌜True⌝⦄
-    (do assertEqual (c := c) x y
-        assertEqual (c := c) y z : CircuitM F c PUnit)
-    ⦃⇓ _ s => ⌜x.val s.V = z.val s.V⌝⦄ := by
+    (do assertEqual (c := Builder V c) x y
+        assertEqual (c := Builder V c) y z : CircuitM F (Builder V c) PUnit)
+    ⦃⇓ _ _ => ⌜x.val V = z.val V⌝⦄ := by
   mvcgen
-  intro _ _nv' hxy
-  exact assertEqual_spec (c := c) y z _ _ fun _ _ hyz => hxy.trans hyz
+  rename_i hxy _ _
+  intro hyz
+  exact hxy.trans hyz
 
 /-- The same chain in the prover reading: on agreeing values the honest run cannot
 fail. The two `@[spec]` lemmas for one head symbol coexist across the two readings;
@@ -259,16 +257,16 @@ variable {F c : Type} [Field F] [DecidableEq F]
 /-- A compute–assert chain with a mathematical postcondition: pinning `w` to the
 witnessed inverse forces `w` to read as `v`'s field inverse. -/
 example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (v w : FVar F) :
+    (V : Valuation F) (v w : FVar F) :
     ⦃⌜True⌝⦄
-    (do let r ← inv (c := c) v
-        assertEqual (c := c) r w : CircuitM F c PUnit)
-    ⦃⇓ _ s => ⌜w.val s.V = (v.val s.V)⁻¹⌝⦄ := by
+    (do let r ← inv (c := Builder V c) v
+        assertEqual (c := Builder V c) r w : CircuitM F (Builder V c) PUnit)
+    ⦃⇓ _ _ => ⌜w.val V = (v.val V)⁻¹⌝⦄ := by
   mvcgen
-  intro r _nv' hr
-  refine assertEqual_spec (c := c) r w _ _ fun _ _ heq => ?_
-  show w.val _ = _
-  exact heq ▸ hr
+  rename_i r _ hr _ _
+  intro heq
+  rw [← heq]
+  exact hr
 
 end MvcgenDemosField
 
@@ -277,14 +275,13 @@ end MvcgenDemosField
 open Std.Do in
 /-- `assertNonZero` asserts the operand reads nonzero — the zero-constant branch
 carries an unsatisfiable row, the witnessing branch the inverse's product row. -/
-@[spec] theorem assertNonZero_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem assertNonZero_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (v : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => v.val V ≠ 0) Q⦄
-    assertNonZero (c := c) v
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
+    (v : FVar F) :
+    ⦃⌜True⌝⦄
+    assertNonZero (c := Builder V c) v
+    ⦃⇓ _ _ => ⌜v.val V ≠ 0⌝⦄ := by
+  intro nv _
   cases v <;> simp only [assertNonZero]
   case const f =>
     split_ifs with h0
@@ -293,12 +290,12 @@ carries an unsatisfiable row, the witnessing branch the inverse's product row. -
         (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..)))
         zero_ne_one
     · intro _
-      exact hpre PUnit.unit _ h0
+      exact h0
   all_goals
     (simp only [inv]
      mvcgen
-     intro r _nv' hr _
-     exact hpre PUnit.unit _ (left_ne_zero_of_mul_eq_one hr))
+     rename_i r _ hr
+     exact left_ne_zero_of_mul_eq_one hr)
 
 open Std.Do in
 /-- `assertNonZero`'s honest run succeeds on a nonzero value, extending the table with
@@ -332,17 +329,16 @@ the witnessed inverse. -/
 open Std.Do in
 /-- `assertNotEqual` asserts the operands read unequal — delegated to `assertNonZero`
 on the difference. -/
-@[spec] theorem assertNotEqual_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem assertNotEqual_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => x.val V ≠ y.val V) Q⦄
-    assertNotEqual (c := c) x y
-    ⦃Q⦄ := by
-  intro s hpre
-  obtain ⟨V, nv⟩ := s
-  refine assertNonZero_spec (c := c) _ Q ⟨V, nv⟩ ?_
-  intro _ _ hne
-  exact hpre PUnit.unit _ (by rwa [CVar.val_sub_, sub_ne_zero] at hne)
+    (x y : FVar F) :
+    ⦃⌜True⌝⦄
+    assertNotEqual (c := Builder V c) x y
+    ⦃⇓ _ _ => ⌜x.val V ≠ y.val V⌝⦄ := by
+  simp only [assertNotEqual]
+  mvcgen
+  intro hne
+  rwa [CVar.val_sub_, sub_ne_zero] at hne
 
 open Std.Do in
 /-- `assertNotEqual`'s honest run succeeds on operands reading unequal —
@@ -368,16 +364,14 @@ open Std.Do in
 
 open Std.Do in
 /-- `assertSquare x y` asserts `x · x = y` on the operands' readings. -/
-@[spec] theorem assertSquare_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+@[spec] theorem assertSquare_spec {F c : Type} {V : Valuation F} [Add F] [Mul F] [Zero F] [One F]
     [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (x y : FVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => x.val V * x.val V = y.val V) Q⦄
-    assertSquare (c := c) x y
-    ⦃Q⦄ := by
-  intro s hpre hsat
-  obtain ⟨V, nv⟩ := s
-  exact hpre PUnit.unit _
-    (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
+    (x y : FVar F) :
+    ⦃⌜True⌝⦄
+    assertSquare (c := Builder V c) x y
+    ⦃⇓ _ _ => ⌜x.val V * x.val V = y.val V⌝⦄ := by
+  intro nv _ hsat
+  exact (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
 
 open Std.Do in
 /-- `assertSquare`'s honest run succeeds on a true square, changing nothing. -/
@@ -404,14 +398,14 @@ open Std.Do in
 
 open Std.Do in
 /-- `assert v` asserts the bit reads `1`. -/
-@[spec] theorem assert_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem assert_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (v : BoolVar F) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => (↑v : CVar F).val V = 1) Q⦄
-    assert (c := c) v
-    ⦃Q⦄ := by
+    (v : BoolVar F) :
+    ⦃⌜True⌝⦄
+    assert (c := Builder V c) v
+    ⦃⇓ _ _ => ⌜(↑v : CVar F).val V = 1⌝⦄ := by
   simp only [assert]
-  exact assertEqual_spec (c := c) ↑v (.const 1) Q
+  mvcgen
 
 open Std.Do in
 /-- `assert`'s honest run succeeds on a bit reading `1`. -/
@@ -445,33 +439,30 @@ casts to zero in any semiring). -/
 open Std.Do in
 /-- `allBools`: on bit operands the result reads as the list's conjunction, under
 cast-injectivity up to the length. -/
-@[spec] theorem allBools_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem allBools_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F))
-    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ bl : List Bool, ReadBits V bs bl →
-        (↑r : CVar F).val V = bit (bl.all id)) Q⦄
-    allBools (c := c) bs
-    ⦃Q⦄ := by
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k) :
+    ⦃⌜True⌝⦄
+    allBools (c := Builder V c) bs
+    ⦃⇓ r _ => ⌜∀ bl : List Bool, ReadBits V bs bl →
+        (↑r : CVar F).val V = bit (bl.all id)⌝⦄ := by
   match bs, hchar with
   | [], _ =>
     simp only [allBools]
-    intro s hpre _
-    refine hpre true_ s.nv (fun bl hbl => ?_)
+    intro nv _ _ bl hbl
     cases hbl
     rfl
   | [a], _ =>
     simp only [allBools]
-    intro s hpre _
-    refine hpre a s.nv (fun bl hbl => ?_)
+    intro nv _ _ bl hbl
     obtain - | ⟨hb, hnil⟩ := hbl
     cases hnil
     simpa using hb
   | [a, b], _ =>
     simp only [allBools]
-    refine fun s hpre => and_spec a b Q s (fun r nv' hr => ?_)
-    refine hpre r nv' (fun bl hbl => ?_)
+    mvcgen
+    intro hr bl hbl
     obtain - | ⟨ha', htl⟩ := hbl
     obtain - | ⟨hb', hnil⟩ := htl
     cases hnil
@@ -479,16 +470,16 @@ cast-injectivity up to the length. -/
   | x₁ :: x₂ :: x₃ :: t, hchar =>
     simp only [allBools]
     set bs := x₁ :: x₂ :: x₃ :: t with hbs
-    refine fun s hpre => equals_spec _ _ Q s (fun r nv' hr => ?_)
-    refine hpre r nv' (fun bl hbl => ?_)
-    have hsum := sum_bits_val (V := s.V) hbl
+    mvcgen
+    intro hr bl hbl
+    have hsum := sum_bits_val (V := V) hbl
     have hlen := forall₂_length hbl
     have hcount : bl.count true ≤ bs.length + 1 := by
       have := List.count_le_length (a := true) (l := bl)
       omega
     rw [hr, hsum]
     simp only [equalsPure]
-    show (if (CVar.const (bs.length : F)).val s.V = (bl.count true : F) then 1 else 0) = _
+    show (if (CVar.const (bs.length : F)).val V = (bl.count true : F) then 1 else 0) = _
     by_cases hall : bl.all id = true
     · rw [hall]
       have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
@@ -578,18 +569,17 @@ result is the conjunction bit. -/
 open Std.Do in
 /-- `assertAny` asserts some bit is set — no characteristic hypothesis: a zero count
 casts to zero in any semiring. -/
-@[spec] theorem assertAny_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem assertAny_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (bs : List (BoolVar F)) (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
-        bl.any id = true) Q⦄
-    assertAny (c := c) bs
-    ⦃Q⦄ := by
+    (bs : List (BoolVar F)) :
+    ⦃⌜True⌝⦄
+    assertAny (c := Builder V c) bs
+    ⦃⇓ _ _ => ⌜∀ bl : List Bool, ReadBits V bs bl →
+        bl.any id = true⌝⦄ := by
   simp only [assertAny]
-  refine fun s hpre => assertNonZero_spec _ Q s (fun u nv' hne => ?_)
-  dsimp only at hne
-  refine hpre u nv' (fun bl hbl => ?_)
-  have hsum := sum_bits_val (V := s.V) hbl
+  mvcgen
+  intro hne bl hbl
+  have hsum := sum_bits_val (V := V) hbl
   rw [hsum] at hne
   by_contra hany
   have hany' : bl.any id = false := by revert hany; cases bl.any id <;> simp
@@ -633,26 +623,24 @@ cast-injectivity makes the nonzero count a nonzero sum. -/
 
 open Std.Do in
 /-- `assertAll` asserts every bit is set, under cast-injectivity up to the length. -/
-@[spec] theorem assertAll_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem assertAll_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F))
-    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
-        bl.all id = true) Q⦄
-    assertAll (c := c) bs
-    ⦃Q⦄ := by
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k) :
+    ⦃⌜True⌝⦄
+    assertAll (c := Builder V c) bs
+    ⦃⇓ _ _ => ⌜∀ bl : List Bool, ReadBits V bs bl →
+        bl.all id = true⌝⦄ := by
   simp only [assertAll]
-  refine fun s hpre => assertEqual_spec _ _ Q s (fun u nv' heq => ?_)
-  dsimp only at heq
-  refine hpre u nv' (fun bl hbl => ?_)
-  have hsum := sum_bits_val (V := s.V) hbl
+  mvcgen
+  intro heq bl hbl
+  have hsum := sum_bits_val (V := V) hbl
   have hlen := forall₂_length hbl
   have hcount : bl.count true ≤ bs.length + 1 := by
     have := List.count_le_length (a := true) (l := bl)
     omega
   rw [hsum] at heq
-  have hconst : (CVar.const (bs.length : F)).val s.V = ((bs.length : Nat) : F) := rfl
+  have hconst : (CVar.const (bs.length : F)).val V = ((bs.length : Nat) : F) := rfl
   rw [hconst] at heq
   have := hchar _ _ hcount (by omega) heq
   exact count_true_eq_length.mp (by omega)
@@ -688,26 +676,24 @@ hypothesis: the full count casts to the length in any semiring. -/
 open Std.Do in
 /-- `assertExactlyOne` asserts a one-hot list — the count is one, under
 cast-injectivity up to the length plus one. -/
-@[spec] theorem assertExactlyOne_spec {F c : Type} [Field F] [DecidableEq F]
+@[spec] theorem assertExactlyOne_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (bs : List (BoolVar F))
-    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => ∀ bl : List Bool, ReadBits V bs bl →
-        bl.count true = 1) Q⦄
-    assertExactlyOne (c := c) bs
-    ⦃Q⦄ := by
+    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k) :
+    ⦃⌜True⌝⦄
+    assertExactlyOne (c := Builder V c) bs
+    ⦃⇓ _ _ => ⌜∀ bl : List Bool, ReadBits V bs bl →
+        bl.count true = 1⌝⦄ := by
   simp only [assertExactlyOne]
-  refine fun s hpre => assertEqual_spec _ _ Q s (fun u nv' heq => ?_)
-  dsimp only at heq
-  refine hpre u nv' (fun bl hbl => ?_)
-  have hsum := sum_bits_val (V := s.V) hbl
+  mvcgen
+  intro heq bl hbl
+  have hsum := sum_bits_val (V := V) hbl
   have hlen := forall₂_length hbl
   have hcount : bl.count true ≤ bs.length + 1 := by
     have := List.count_le_length (a := true) (l := bl)
     omega
   rw [hsum] at heq
-  have hconst : (CVar.const (1 : F)).val s.V = ((1 : Nat) : F) := by
+  have hconst : (CVar.const (1 : F)).val V = ((1 : Nat) : F) := by
     simp [CVar.val]
   rw [hconst] at heq
   exact hchar _ _ hcount (by omega) heq

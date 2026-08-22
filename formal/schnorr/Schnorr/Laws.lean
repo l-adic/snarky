@@ -41,53 +41,35 @@ forbidden band `verify` accepts the reading. The circuit's two canonicity locks 
 both cross-field readings exactly, so no reconstruction class survives into the
 statement; the zero-response exclusion (`assertNotEqual` at `Type1.zeroCarrier`) holds
 unconditionally, before the band hypothesis. -/
-theorem verifyCircuit_spec (stv : Statement (FVar Fq))
-    (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) =>
-        ∀ raw : Statement Fq, readVal (val := Statement Fq) V stv = raw →
-          OnCurve Vesta.curve.A Vesta.curve.B (raw.pk.point.x, raw.pk.point.y) →
-          OnCurve Vesta.curve.A Vesta.curve.B (raw.u.point.x, raw.u.point.y) →
-          raw.z.fromShifted ≠ (0 : Fp) ∧
-          (raw.z.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true)) Q⦄
-    (verifyCircuit (c := KimchiConstraint Fq) stv)
-    ⦃Q⦄ := by
+@[spec] theorem verifyCircuit_spec (V : Valuation Fq) (stv : Statement (FVar Fq)) :
+    ⦃⌜True⌝⦄
+    (verifyCircuit (c := Builder V (KimchiConstraint Fq)) stv)
+    ⦃⇓ _ _ => ⌜∀ raw : Statement Fq, readVal (val := Statement Fq) V stv = raw →
+        OnCurve Vesta.curve.A Vesta.curve.B (raw.pk.point.x, raw.pk.point.y) →
+        OnCurve Vesta.curve.A Vesta.curve.B (raw.u.point.x, raw.u.point.y) →
+        raw.z.fromShifted ≠ (0 : Fp) ∧
+        (raw.z.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true)⌝⦄ := by
   simp only [verifyCircuit]
-  mvcgen
-  case vc1.hsize => exact fqParams_size
-  rename_i st hpre
-  intro squeezed _ hsqv
+  have hadd := AddFast.addFast_checkFinite_spec (F := Fq) (V := V)
+  mvcgen [hadd]
+  case hsize => exact fqParams_size
+  case hlen => simp
+  rename_i squeezed _ hsqv hbits _ hunpv cpk _ hcpk zr _ _ _ hlockv rhs _ hrhsv _ _ hax _ _ hay
+    _ _ hzrv
   simp only [List.map_cons, List.map_nil, CVar.val] at hsqv
-  mvcgen
-  intro hbits _ hunpv
-  mvcgen
-  intro cpk _ hcpk
-  mvcgen
-  intro zr _ hzrv
-  mvcgen
-  case vc2.hlen => simp
-  intro _ _ hlockv
-  mvcgen [AddFast.addFast_checkFinite_spec]
-  intro rhs _ hrhsv
-  mvcgen
-  intro _ _ hax
-  mvcgen
-  intro _ _ hay
-  mvcgen
-  intro _ _ hzne
-  refine hpre ⟨⟩ _ ?_
-  intro raw hread hpkC huC
+  intro hzne raw hread hpkC huC
   -- the reading is the cells, projectionwise
   simp only [circuitVal] at hread
   subst hread
   dsimp only at hpkC huC ⊢
   have hpkNS : Vesta.curve.toAffine.Nonsingular
-      (stv.pk.point.x.val st.V) (stv.pk.point.y.val st.V) := nonsingular_toW hpkC
+      (stv.pk.point.x.val V) (stv.pk.point.y.val V) := nonsingular_toW hpkC
   have huNS : Vesta.curve.toAffine.Nonsingular
-      (stv.u.point.x.val st.V) (stv.u.point.y.val st.V) := nonsingular_toW huC
+      (stv.u.point.x.val V) (stv.u.point.y.val V) := nonsingular_toW huC
   -- the zero-response exclusion, then the band-conditional wire certificate
   refine ⟨fun h0 => hzne ((Type1.fromShifted_eq_zero_iff _).mp h0), fun hband => ?_⟩
-  set pkR : VestaPoint Fq := ⟨⟨stv.pk.point.x.val st.V, stv.pk.point.y.val st.V⟩⟩ with hpkR
-  set uR : VestaPoint Fq := ⟨⟨stv.u.point.x.val st.V, stv.u.point.y.val st.V⟩⟩ with huR
+  set pkR : VestaPoint Fq := ⟨⟨stv.pk.point.x.val V, stv.pk.point.y.val V⟩⟩ with hpkR
+  set uR : VestaPoint Fq := ⟨⟨stv.u.point.x.val V, stv.u.point.y.val V⟩⟩ with huR
   -- the canonical unpack: the bits' value is the hash's representative
   obtain ⟨hbs, hbread, hbsum, hbslt⟩ := hunpv
   have hNfull : natLsbVal hbs.toList = (transcriptHash pkR uR).val :=
@@ -98,7 +80,7 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
     rw [hnLdef, natLsbVal_take_eq_mod, hNfull]; rfl
   have hnL : nL < 2 ^ 128 := by
     rw [hnLpre]; exact Nat.mod_lt _ (by positivity)
-  have hcval : (packLow 128 (by omega) hbits).val st.V = ((nL : ℕ) : Fq) :=
+  have hcval : (packLow 128 (by omega) hbits).val V = ((nL : ℕ) : Fq) :=
     packLow_val (by omega) hbread
   -- the endoMul crumbs are the challenge's; its scalar reads in Fp as the wire challenge
   obtain ⟨crumbs, hcrv, hclen, hcrec, hfinC, sc, A, B, hseq, hsab, hAle, hBle,
@@ -114,24 +96,24 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
   -- the reading's representative
   have hlt : natLsbVal bs.toList < PALLAS_SCALAR_CARD :=
     hlockv bs.toList (forall₂_bit_of_reads hread)
-  have hvalId : (stv.z.val.val st.V).val = natLsbVal bs.toList :=
+  have hvalId : (stv.z.val.val V).val = natLsbVal bs.toList :=
     toNat_eq_of_natCast_eq hpin.symm hlt
   set s : ℤ := unshiftType1 (5 * 51) (natLsbVal bs.toList : ℤ) with hsdef
   clear_value s
-  have hsdecode : s = Type1.fromShiftedZ ⟨stv.z.val.val st.V⟩ := by
+  have hsdecode : s = Type1.fromShiftedZ ⟨stv.z.val.val V⟩ := by
     simp only [hsdef, Type1.fromShiftedZ, hvalId]
   -- the ladder regime at the canonical scalar
   have hregime : HasCurve.vesta.LadderRegime (5 * 51) s := by
     rw [hsdecode]; exact vesta_ladderRegime _ hband
   obtain ⟨hzgNS, hzact⟩ := hpt hregime
   -- u is finite: odd prime order has no 2-torsion
-  have huy0 : stv.u.point.y.val st.V ≠ 0 :=
+  have huy0 : stv.u.point.y.val V ≠ 0 :=
     Kimchi.Gate.VarBaseMul.y_ne_zero_of_odd_order Vesta.curve.toAffine
       (by rw [Pasta.vesta_card]; decide) huNS
   obtain ⟨hrhsNS, hsum⟩ := hrhsv huNS hfinC huy0
   -- the asserts glue the two computed points; the master identity at the readings
   have hglue := Kimchi.Gate.EndoMul.some_congr Vesta.curve.toAffine hzgNS hrhsNS hax hay
-  have hfinC' : Vesta.curve.toAffine.Nonsingular (cpk.x.val st.V) (cpk.y.val st.V) := hfinC
+  have hfinC' : Vesta.curve.toAffine.Nonsingular (cpk.x.val V) (cpk.y.val V) := hfinC
   have hseq' : WeierstrassCurve.Affine.Point.some _ _ hfinC'
       = sc • WeierstrassCurve.Affine.Point.some _ _ hpkNS := hseq
   have hmaster : s • WeierstrassCurve.Affine.Point.some gen.x gen.y gen_nonsingular
@@ -140,7 +122,7 @@ theorem verifyCircuit_spec (stv : Statement (FVar Fq))
     (hzact.symm.trans (hglue.trans hsum.symm)).trans
       (congrArg (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq')
   -- the wire equation, in Mathlib's group at the reading
-  have hz1 : ((s : ℤ) : Fp) = Type1.fromShifted ⟨stv.z.val.val st.V⟩ := by
+  have hz1 : ((s : ℤ) : Fp) = Type1.fromShifted ⟨stv.z.val.val V⟩ := by
     rw [hsdecode]; rfl
   have hc : ((sc : ℤ) : Fp) = challenge pkR uR := by
     rw [challenge, ← hnLpre]; exact hchal

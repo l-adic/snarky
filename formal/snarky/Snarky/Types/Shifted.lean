@@ -4,6 +4,7 @@ import Pasta.CompElliptic
 import Pasta.Shifted
 import Snarky.Circuit.Types
 import Snarky.Circuit.DSL.Monad
+import Snarky.Backend.WP
 
 /-!
 # Shifted scalar types
@@ -61,6 +62,11 @@ instance instCircuitTypeType1 {F : Type} : CircuitType F (Type1 F) (Type1 (FVar 
 /-- A `Type1` cell carries no check of its own — its carrier's, which is none. -/
 instance instCheckedTypeType1 {F c : Type} : CheckedType F c (Type1 (FVar F)) :=
   CheckedType.ofEquiv (c := c) Type1.equivCarrier
+
+/-- The carrier's contract — empty. -/
+instance instSoundCheckedTypeType1 {F c : Type} {V : Valuation F} [ConstraintHolds F c] :
+    SoundCheckedType F c V (Type1 (FVar F)) :=
+  SoundCheckedType.ofEquiv Type1.equivCarrier
 
 /-- The deployed encode (PS `toShifted` at `Fp → Type1 Fq`): shift in the scalar
 field — `(s − 2^255 − 1) / 2` — and carry the canonical representative across the

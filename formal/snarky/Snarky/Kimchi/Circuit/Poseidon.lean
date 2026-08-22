@@ -112,27 +112,20 @@ private theorem chainHolds_window [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
 /-- The gadget is sound: under any satisfying valuation, at a full-size constant
 table, the returned state's values are `Poseidon.blockCipher` of the input state's
 values. -/
-theorem poseidon_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (s : Poseidon.Triple (FVar F))
-    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
-        readVal V r = Poseidon.blockCipher p (readVal V s)) Q⦄
-    (poseidon (c := KimchiConstraint F) p s)
-    ⦃Q⦄ := by
+theorem poseidon_spec {V : Valuation F} [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (s : Poseidon.Triple (FVar F)) :
+    ⦃⌜True⌝⦄
+    (poseidon (c := Builder V (KimchiConstraint F)) p s)
+    ⦃⇓ r _ => ⌜readVal V r = Poseidon.blockCipher p (readVal V s)⌝⦄ := by
   simp only [poseidon]
   mvcgen
-  rename_i st hpre
-  intro outs _
-  mvcgen
-  intro u _ hpay
-  mvcgen
-  refine hpre _ _ ?_
+  rename_i outs _ _ _ _ hpay
   simp only [readVal_prod, readVal_fvar]
   have hchain : chainHolds (mdsOf p.mds) p.roundConstants.toList 0
-      (read st.V ⟨p.mds, p.roundConstants.toList,
+      (read V ⟨p.mds, p.roundConstants.toList,
         s :: outs.toList⟩) := hpay
   let vs : List (F × F × F) :=
-    read st.V ⟨p.mds, p.roundConstants.toList,
+    read V ⟨p.mds, p.roundConstants.toList,
       s :: outs.toList⟩
   have hlen : vs.length = 56 := by
     simp [vs, read]
@@ -153,9 +146,9 @@ theorem poseidon_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
       Array.getD_eq_getD_getElem?]
   have hbc := Kimchi.Gate.Poseidon.chain_blockCipher p
     (fun i => p.roundConstants.toList.getD i (0, 0, 0)) w 11 hch (by omega) hsize hrc
-  have h0 : (w 0).s0 = (s.s0.val st.V, s.s1.val st.V, s.s2.val st.V) := rfl
+  have h0 : (w 0).s0 = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
   have h55 : (w 10).s5
-      = (outs[54].1.val st.V, outs[54].2.1.val st.V, outs[54].2.2.val st.V) := by
+      = (outs[54].1.val V, outs[54].2.1.val V, outs[54].2.2.val V) := by
     show vs.getD 55 (0, 0, 0) = _
     rw [List.getD_eq_getElem vs (0, 0, 0) (by omega)]
     simp [vs, read, Vector.getElem_toList]

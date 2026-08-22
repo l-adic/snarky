@@ -122,25 +122,21 @@ private theorem not_val [Field F] [DecidableEq F] {x : BoolVar F}
 
 open Std.Do in
 /-- The comparison reads as `ltPure` of the read bits against the pattern. -/
-@[spec] theorem ltBitstringValue_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem ltBitstringValue_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (xs : List (BoolVar F)) (ys : List Bool)
-    (Q : PostCond (BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : BoolVar F) => ∀ bs : List Bool,
+    (xs : List (BoolVar F)) (ys : List Bool) :
+    ⦃⌜True⌝⦄
+    (ltBitstringValue (c := Builder V c) xs ys)
+    ⦃⇓ r _ => ⌜∀ bs : List Bool,
         List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
           (↑x : CVar F).val V = bit b) xs bs →
-        (↑r : CVar F).val V = bit (ltPure bs ys)) Q⦄
-    (ltBitstringValue (c := c) xs ys)
-    ⦃Q⦄ := by
-  induction xs, ys using ltBitstringValue.induct generalizing Q with
+        (↑r : CVar F).val V = bit (ltPure bs ys)⌝⦄ := by
+  induction xs, ys using ltBitstringValue.induct with
   | case1 x xs ys ih =>
     simp only [ltBitstringValue]
     mvcgen [ih]
-    rename_i hpre
-    intro r nv hr
-    mvcgen
-    intro out nv' hout
-    refine hpre out nv' fun bs hbs => ?_
+    rename_i r _ hr _ _
+    intro hout bs hbs
     cases hbs with
     | cons hx htl =>
       rename_i b bs'
@@ -149,11 +145,8 @@ open Std.Do in
   | case2 x xs ys ih =>
     simp only [ltBitstringValue]
     mvcgen [ih]
-    rename_i hpre
-    intro r nv hr
-    mvcgen
-    intro out nv' hout
-    refine hpre out nv' fun bs hbs => ?_
+    rename_i r _ hr _ _
+    intro hout bs hbs
     cases hbs with
     | cons hx htl =>
       rename_i b bs'
@@ -162,8 +155,7 @@ open Std.Do in
   | case3 xs ys h1 h2 =>
     simp only [ltBitstringValue]
     mvcgen
-    rename_i hpre
-    refine hpre false_ _ fun bs hbs => ?_
+    intro bs hbs
     cases hbs with
     | nil => cases ys <;> simp [ltPure, false_, circuitVal, bit]
     | cons hx htl =>
@@ -245,23 +237,19 @@ the result reads as `ltPure bs ys`. -/
 
 open Std.Do in
 /-- The lock's rows force the read bits' ℕ value strictly below `m`. -/
-@[spec] theorem assertBitsBelow_spec [Field F] [DecidableEq F] [BasicSystem F c]
+@[spec] theorem assertBitsBelow_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n)
-    (Q : PostCond PUnit (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (_ : PUnit) => ∀ bs : List Bool,
+    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n) :
+    ⦃⌜True⌝⦄
+    (assertBitsBelow (c := Builder V c) m n bits)
+    ⦃⇓ _ _ => ⌜∀ bs : List Bool,
         List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
           (↑x : CVar F).val V = bit b) bits bs →
-        natLsbVal bs < m) Q⦄
-    (assertBitsBelow (c := c) m n bits)
-    ⦃Q⦄ := by
+        natLsbVal bs < m⌝⦄ := by
   simp only [assertBitsBelow]
-  mvcgen [ltBitstringValue_spec]
-  rename_i s hpre
-  intro lt nv₁ hlt
   mvcgen
-  intro _ nv₂ hassert
-  refine hpre ⟨⟩ _ fun bs hfa => ?_
+  rename_i lt _ hlt _ _
+  intro hassert bs hfa
   have hltv := hlt bs.reverse (List.forall₂_reverse_iff.mpr hfa)
   rw [hassert] at hltv
   have hltrue : ltPure bs.reverse (modBitsMsb m n) = true := by
@@ -308,25 +296,21 @@ open Std.Do in
 /-- `unpackFull`'s rows force bits whose ℕ value casts to the operand's reading AND
 lies below `m` — the canonical lock the plain `unpack` lacks: at `m` the reader's
 `card`, the value IS the reading's representative (`toNat_eq_of_natCast_eq`). -/
-@[spec] theorem unpackFull_spec [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+@[spec] theorem unpackFull_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F)
-    (Q : PostCond (Vector (BoolVar F) n) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : Vector (BoolVar F) n) => ∃ bs : Vector Bool n,
+    (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F) :
+    ⦃⌜True⌝⦄
+    (unpackFull (c := Builder V c) m n v)
+    ⦃⇓ r _ => ⌜∃ bs : Vector Bool n,
         (∀ i (hi : i < n), (r[i].toCVar).val V = bit bs[i]) ∧
-        ((natLsbVal bs.toList : Nat) : F) = v.val V ∧ natLsbVal bs.toList < m) Q⦄
-    (unpackFull (c := c) m n v)
-    ⦃Q⦄ := by
+        ((natLsbVal bs.toList : Nat) : F) = v.val V ∧ natLsbVal bs.toList < m⌝⦄ := by
   simp only [unpackFull]
   mvcgen
-  rename_i s hpre
-  intro bits nv₁ hbits
-  mvcgen
-  case vc2.hlen => simp
-  intro _ nv₂ hlockv
-  mvcgen
+  case hlen => simp
+  rename_i bits _ hbits _ _ hlockv
   obtain ⟨bs, hread, hsum⟩ := hbits
-  refine hpre bits nv₂ ⟨bs, hread, by rw [← packPure_natCast]; exact hsum, ?_⟩
+  refine ⟨bs, hread, by rw [← packPure_natCast]; exact hsum, ?_⟩
   refine hlockv bs.toList ?_
   rw [List.forall₂_iff_get]
   refine ⟨by simp, fun i h1 h2 => ?_⟩

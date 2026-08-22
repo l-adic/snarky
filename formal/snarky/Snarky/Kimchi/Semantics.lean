@@ -390,4 +390,6 @@ instance : KimchiSystem F (KimchiConstraint F) :=
 
 instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
 
+instance [inst : KimchiSystem F c] : KimchiSystem F (Builder V c) := inst
+
 end Snarky.Kimchi

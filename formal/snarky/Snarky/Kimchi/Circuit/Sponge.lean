@@ -198,13 +198,11 @@ private theorem slotVar_eval [Field F] {env : Assignments F} {s : Poseidon.Tripl
 
 /-- `addSlotVar` is sound: the output state reads as `Poseidon.addSlot` of the input
 state's reading (the seal reads as the sum, in either operand order). -/
-@[spec] private theorem addSlotVar_spec [Field F] [DecidableEq F]
-    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F)
-    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : Poseidon.Triple (FVar F)) =>
-        readVal V r = Poseidon.addSlot (readVal V s) n (x.val V)) Q⦄
-    (addSlotVar (c := KimchiConstraint F) s n x)
-    ⦃Q⦄ := by
+@[spec] private theorem addSlotVar_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F) :
+    ⦃⌜True⌝⦄
+    (addSlotVar (c := Builder V (KimchiConstraint F)) s n x)
+    ⦃⇓ r _ => ⌜readVal V r = Poseidon.addSlot (readVal V s) n (x.val V)⌝⦄ := by
   match n with
   | 0 =>
     simp only [addSlotVar]
@@ -310,26 +308,21 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
 
 /-- `absorb` is sound: the output sponge reads as the value single-element absorb
 `Poseidon.absorb1` of whatever state the input sponge reads as. -/
-@[spec] theorem absorb_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
+@[spec] theorem absorb_spec {V : Valuation F} [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
-    (x : FVar F) (Q : PostCond (SpongeVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : SpongeVar F) => ∀ s, Vals V sv s →
-        Vals V r (Poseidon.absorb1 p s (x.val V))) Q⦄
-    (absorb (c := KimchiConstraint F) p sv x)
-    ⦃Q⦄ := by
+    (x : FVar F) :
+    ⦃⌜True⌝⦄
+    (absorb (c := Builder V (KimchiConstraint F)) p sv x)
+    ⦃⇓ r _ => ⌜∀ s, Vals V sv s →
+        Vals V r (Poseidon.absorb1 p s (x.val V))⌝⦄ := by
   obtain ⟨stv, mode⟩ := sv
-  have pspec := Poseidon.poseidon_spec (F := F) p hsize
+  have pspec := Poseidon.poseidon_spec (F := F) (V := V) p hsize
   cases mode with
   | absorbed n =>
     by_cases hn : n.val = 2
     · simp only [absorb, if_pos hn]
       mvcgen [pspec]
-      rename_i st hpre
-      intro r₁ nv₁ hpos
-      mvcgen
-      intro r₂ nv₂ hslot
-      mvcgen
-      refine hpre _ _ ?_
+      rename_i r₁ _ hpos r₂ _ hslot
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
@@ -339,10 +332,7 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
       exact ⟨hslot, rfl⟩
     · simp only [absorb, if_neg hn]
       mvcgen
-      rename_i st hpre
-      intro r₂ nv₂ hslot
-      mvcgen
-      refine hpre _ _ ?_
+      rename_i r₂ _ hslot
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
@@ -352,10 +342,7 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
   | squeezed n =>
     simp only [absorb]
     mvcgen
-    rename_i st hpre
-    intro r₂ nv₂ hslot
-    mvcgen
-    refine hpre _ _ ?_
+    rename_i r₂ _ hslot
     rintro ⟨sst, smode⟩ ⟨hst, hm⟩
     simp only at hm
     subst hm
@@ -365,53 +352,44 @@ and the output state reads back as `Poseidon.addSlot` of the input values. -/
 
 /-- `squeeze` is sound: the returned element reads as the value squeeze's element, and
 the output sponge as its state, at whatever state the input sponge reads as. -/
-@[spec] theorem squeeze_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
-    (Q : PostCond (FVar F × SpongeVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × SpongeVar F) => ∀ s, Vals V sv s →
+@[spec] theorem squeeze_spec {V : Valuation F} [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F) :
+    ⦃⌜True⌝⦄
+    (squeeze (c := Builder V (KimchiConstraint F)) p sv)
+    ⦃⇓ r _ => ⌜∀ s, Vals V sv s →
         r.1.val V = (Poseidon.squeeze p s).1 ∧
-          Vals V r.2 (Poseidon.squeeze p s).2) Q⦄
-    (squeeze (c := KimchiConstraint F) p sv)
-    ⦃Q⦄ := by
+          Vals V r.2 (Poseidon.squeeze p s).2⌝⦄ := by
   obtain ⟨stv, mode⟩ := sv
-  have pspec := Poseidon.poseidon_spec (F := F) p hsize
+  have pspec := Poseidon.poseidon_spec (F := F) (V := V) p hsize
   cases mode with
   | squeezed n =>
     by_cases hn : n.val = 2
     · simp only [squeeze, if_pos hn]
       mvcgen [pspec]
-      rename_i st hpre
-      intro r₁ nv₁ hpos
-      mvcgen
-      refine hpre _ _ ?_
+      rename_i r₁ _ hpos
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
       rw [hst] at hpos
       simp only [Poseidon.squeeze, if_pos hn]
-      exact ⟨(slotVar_val r₁ st.V 0).trans (by rw [hpos]), hpos, rfl⟩
+      exact ⟨(slotVar_val r₁ V 0).trans (by rw [hpos]), hpos, rfl⟩
     · simp only [squeeze, if_neg hn]
       mvcgen
-      rename_i st hpre
-      refine hpre _ _ ?_
       rintro ⟨sst, smode⟩ ⟨hst, hm⟩
       simp only at hm
       subst hm
       simp only [Poseidon.squeeze, if_neg hn]
-      exact ⟨(slotVar_val stv st.V n).trans (by rw [hst]), hst, rfl⟩
+      exact ⟨(slotVar_val stv V n).trans (by rw [hst]), hst, rfl⟩
   | absorbed n =>
     simp only [squeeze]
     mvcgen [pspec]
-    rename_i st hpre
-    intro r₁ nv₁ hpos
-    mvcgen
-    refine hpre _ _ ?_
+    rename_i r₁ _ hpos
     rintro ⟨sst, smode⟩ ⟨hst, hm⟩
     simp only at hm
     subst hm
     rw [hst] at hpos
     simp only [Poseidon.squeeze]
-    exact ⟨(slotVar_val r₁ st.V 0).trans (by rw [hpos]), hpos, rfl⟩
+    exact ⟨(slotVar_val r₁ V 0).trans (by rw [hpos]), hpos, rfl⟩
 
 /-- `absorb` is complete: the honest run accepts on a readable state and element, and
 the output sponge reads back as `Poseidon.absorb1` of whatever state the input sponge

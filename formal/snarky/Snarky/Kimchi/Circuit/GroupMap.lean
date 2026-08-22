@@ -180,32 +180,22 @@ under the advice coherence the honest run needs. -/
 open Std.Do in
 /-- `sqrtFlagged` is sound: the flag reads as a genuine bit and the returned value
 squares to the flag-selected operand — `y² = if isQR then x else nonResidue·x`. -/
-@[spec] private theorem sqrtFlagged_spec [Field F] [DecidableEq F] {c : Type}
+@[spec] private theorem sqrtFlagged_spec {V : Valuation F} [Field F] [DecidableEq F] {c : Type}
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (sqrtF : F → Option F) (nonResidue : F) (x : FVar F)
-    (Q : PostCond (FVar F × BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × BoolVar F) =>
-        ∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
+    (sqrtF : F → Option F) (nonResidue : F) (x : FVar F) :
+    ⦃⌜True⌝⦄
+    (sqrtFlagged (c := Builder V c) sqrtF nonResidue x)
+    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
           r.1.val V * r.1.val V
-            = (if bb then x.val V else nonResidue * x.val V)) Q⦄
-    (sqrtFlagged (c := c) sqrtF nonResidue x)
-    ⦃Q⦄ := by
+            = (if bb then x.val V else nonResidue * x.val V)⌝⦄ := by
   simp only [sqrtFlagged]
-  mvcgen [witnessBool_spec, -witness_spec]
-  rename_i s hpre
-  intro isQR _ hbool
   mvcgen
-  intro xOrMx _ hsel
-  mvcgen
-  intro sqrtVal _
-  mvcgen
-  intro _ _ hsq
-  mvcgen
+  rename_i isQR _ hbool xOrMx _ hsel sqrtVal _ _ _ _ hsq
   rcases hbool with h0 | h1
-  · refine hpre (sqrtVal, isQR) _ ⟨false, by simpa [bit] using h0, ?_⟩
+  · refine ⟨false, by simpa [bit] using h0, ?_⟩
     rw [hsq, hsel false (by simpa [bit] using h0)]
     simp [selectPure, CVar.val_scale_]
-  · refine hpre (sqrtVal, isQR) _ ⟨true, by simpa [bit] using h1, ?_⟩
+  · refine ⟨true, by simpa [bit] using h1, ?_⟩
     rw [hsq, hsel true (by simpa [bit] using h1)]
     simp [selectPure]
 
@@ -291,100 +281,44 @@ candidates at the operand — the constraints force a set flag, the first-flag
 selectors are mutually exclusive boolean products, and the selected branch's
 `sqrtFlagged` root is the ordinate. The advice `sqrtF` is universally quantified:
 soundness never consults it. -/
-theorem groupMapCircuit_spec [Field F] [DecidableEq F]
-    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F)
-    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        (r.x.val V = (potentialXs params (t.val V)).1
+theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
+    ⦃⌜True⌝⦄
+    (groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF params t)
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs params (t.val V)).1
           ∨ r.x.val V = (potentialXs params (t.val V)).2.1
           ∨ r.x.val V = (potentialXs params (t.val V)).2.2) ∧
         r.y.val V * r.y.val V
-          = r.x.val V * r.x.val V * r.x.val V + params.b) Q⦄
-    (groupMapCircuit (c := KimchiConstraint F) sqrtF params t)
-    ⦃Q⦄ := by
+          = r.x.val V * r.x.val V * r.x.val V + params.b⌝⦄ := by
   simp only [groupMapCircuit]
   mvcgen
-  rename_i s hpre
-  intro t2 _ ht2
-  mvcgen
-  intro alphaInv _ halphaInv
-  mvcgen
-  intro alpha _ halpha
-  mvcgen
-  intro t4 _ ht4
-  mvcgen
-  intro t4Alpha _ ht4Alpha
-  mvcgen
-  intro temp1 _ htemp1
-  mvcgen
-  intro t2Inv _ ht2Inv
-  mvcgen
-  intro t2PlusFuSq _ ht2PlusFuSq
-  mvcgen
-  intro temp2a _ htemp2a
-  mvcgen
-  intro temp2 _ htemp2
-  mvcgen
-  intro xSq1 _ hxSq1
-  mvcgen
-  intro xCu1 _ hxCu1
-  mvcgen
-  intro sf1 _ hsf1
-  mvcgen
-  intro xSq2 _ hxSq2
-  mvcgen
-  intro xCu2 _ hxCu2
-  mvcgen
-  intro sf2 _ hsf2
-  mvcgen
-  intro xSq3 _ hxSq3
-  mvcgen
-  intro xCu3 _ hxCu3
-  mvcgen
-  intro sf3 _ hsf3
-  mvcgen
-  intro _ _ hnz
-  mvcgen
-  intro x2First _ hx2First
-  mvcgen
-  intro nb2AndB3 _ hnb2AndB3
-  mvcgen
-  intro x3First _ hx3First
-  mvcgen
-  intro t3y _ ht3y
-  mvcgen
-  intro t2y _ ht2y
-  mvcgen
-  intro t1y _ ht1y
-  mvcgen
-  intro t3x _ ht3x
-  mvcgen
-  intro t2x _ ht2x
-  mvcgen
-  intro t1x _ ht1x
-  mvcgen
+  rename_i t2 _ ht2 alphaInv _ halphaInv alpha _ halpha t4 _ ht4 t4Alpha _ ht4Alpha temp1 _
+    htemp1 t2Inv _ ht2Inv t2PlusFuSq _ ht2PlusFuSq temp2a _ htemp2a temp2 _ htemp2 xSq1 _ hxSq1
+    xCu1 _ hxCu1 sf1 _ hsf1 xSq2 _ hxSq2 xCu2 _ hxCu2 sf2 _ hsf2 xSq3 _ hxSq3 xCu3 _ hxCu3 sf3 _
+    hsf3 _ _ hnz x2First _ hx2First nb2AndB3 _ hnb2AndB3 x3First _ hx3First t3y _ ht3y t2y _
+    ht2y t1y _ ht1y t3x _ ht3x t2x _ ht2x t1x _ ht1x
   obtain ⟨bb1, hb1, hy1⟩ := hsf1
   obtain ⟨bb2, hb2, hy2⟩ := hsf2
   obtain ⟨bb3, hb3, hy3⟩ := hsf3
   -- the candidate values, from the arithmetic grants
-  have hval : ∀ (a : F), (CVar.const a : CVar F).val s.V = a := fun _ => rfl
-  have hx1v : (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1).val s.V
-      = (potentialXs params (t.val s.V)).1 := by
+  have hval : ∀ (a : F), (CVar.const a : CVar F).val V = a := fun _ => rfl
+  have hx1v : (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1).val V
+      = (potentialXs params (t.val V)).1 := by
     simp only [potentialXs, CVar.val_sub_, hval, htemp1, ht4Alpha, ht4, halpha,
       halphaInv, ht2, CVar.val_add_]
   have hx2v : (CVar.sub_ (.const (-params.u))
-        (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1)).val s.V
-      = (potentialXs params (t.val s.V)).2.1 := by
+        (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1)).val V
+      = (potentialXs params (t.val V)).2.1 := by
     simp only [potentialXs, CVar.val_sub_, hval, htemp1, ht4Alpha, ht4, halpha,
       halphaInv, ht2, CVar.val_add_]
-  have hx3v : (CVar.sub_ (.const params.u) temp2).val s.V
-      = (potentialXs params (t.val s.V)).2.2 := by
+  have hx3v : (CVar.sub_ (.const params.u) temp2).val V
+      = (potentialXs params (t.val V)).2.2 := by
     simp only [potentialXs, CVar.val_sub_, hval, htemp2, htemp2a, ht2PlusFuSq,
       ht2Inv, halpha, halphaInv, ht2, CVar.val_add_]
   -- the flag bits force exactly one first-flag selector
-  have hnb1 : (↑(Snarky.not sf1.2) : CVar F).val s.V = bit (!bb1) := by
+  have hnb1 : (↑(Snarky.not sf1.2) : CVar F).val V = bit (!bb1) := by
     rcases bb1 <;> simp [Snarky.not, circuitVal, CVar.val, hb1, bit]
-  have hnb2 : (↑(Snarky.not sf2.2) : CVar F).val s.V = bit (!bb2) := by
+  have hnb2 : (↑(Snarky.not sf2.2) : CVar F).val V = bit (!bb2) := by
     rcases bb2 <;> simp [Snarky.not, circuitVal, CVar.val, hb2, bit]
   have hs2 := hx2First (!bb1) bb2 hnb1 hb2
   have hs3 := hx3First (!bb1) (!bb2 && bb3) hnb1 (hnb2AndB3 (!bb2) bb3 hnb2 hb3)
@@ -395,19 +329,19 @@ theorem groupMapCircuit_spec [Field F] [DecidableEq F]
       · -- all flags clear: the asserted flag sum is zero
         exact absurd (by simp [circuitVal, hb1, hb2, hb3, bit]) hnz
       · -- third candidate
-        refine hpre _ _ (Or.inr (Or.inr ?_)) ?_
+        refine ⟨Or.inr (Or.inr ?_), ?_⟩
         · rw [← hx3v]
           simp [circuitVal, CVar.val, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
         · simpa [circuitVal, CVar.val, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
             hs2, hs3, bit, hxCu3, hxSq3] using hy3
     · -- second candidate
-      refine hpre _ _ (Or.inr (Or.inl ?_)) ?_
+      refine ⟨Or.inr (Or.inl ?_), ?_⟩
       · rw [← hx2v]
         simp [circuitVal, CVar.val, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
       · simpa [circuitVal, CVar.val, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
           hs2, hs3, bit, hxCu2, hxSq2] using hy2
   · -- first candidate, whatever the later flags
-    refine hpre _ _ (Or.inl ?_) ?_
+    refine ⟨Or.inl ?_, ?_⟩
     · rw [← hx1v]
       simp [circuitVal, CVar.val, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
     · simpa [circuitVal, CVar.val, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
@@ -756,23 +690,22 @@ open Std.Do in
 wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the SvdW
 candidate abscissae. The advice is universally quantified: soundness never consults
 it. -/
-theorem groupMapCircuit_onCurve_spec (spec : Poseidon.GroupMap.Spec q)
-    (nonResidue : ZMod q) (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q))
-    (Q : PostCond (AffinePoint (FVar (ZMod q))) (.arg (BuilderState (ZMod q)) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar (ZMod q))) =>
-        (r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1
+theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} (spec : Poseidon.GroupMap.Spec q)
+    (nonResidue : ZMod q) (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
+    ⦃⌜True⌝⦄
+    (groupMapCircuit (c := Builder V (KimchiConstraint (ZMod q))) sqrtF (.ofSpec spec nonResidue) t)
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1
           ∨ r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.1
           ∨ r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.2) ∧
-        OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)) Q⦄
-    (groupMapCircuit (c := KimchiConstraint (ZMod q)) sqrtF (.ofSpec spec nonResidue) t)
-    ⦃Q⦄ := by
-  intro s hpre
-  refine groupMapCircuit_spec sqrtF (.ofSpec spec nonResidue) t Q s ?_
-  intro r nv' hP
-  refine hpre r nv' ⟨hP.1, ?_⟩
-  show r.y.val s.V ^ 2 = r.x.val s.V ^ 3 + spec.E.A * r.x.val s.V + spec.E.B
+        OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)⌝⦄ := by
+  have hg := groupMapCircuit_spec (V := V) sqrtF (.ofSpec spec nonResidue) t
+  mvcgen [hg]
+  rename_i r _
+  intro h1 h2
+  refine ⟨h1, ?_⟩
+  show r.y.val V ^ 2 = r.x.val V ^ 3 + spec.E.A * r.x.val V + spec.E.B
   rw [spec.hA]
-  have hb := hP.2
+  have hb := h2
   simp only [GroupMapParams.ofSpec] at hb
   linear_combination hb
 
