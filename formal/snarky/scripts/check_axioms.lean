@@ -167,7 +167,7 @@ def roots : List Name :=
     `Snarky.Kimchi.HasEndo.vesta,
     `Snarky.Kimchi.HasCurve.pallas,
     `Snarky.Kimchi.HasCurve.vesta,
-    `Snarky.Kimchi.encode_ladderRegime,
+    `Snarky.Kimchi.toShifted_ladderRegime,
     `Snarky.post_of_prove,
 
     `Snarky.addConstraint_spec,
@@ -235,7 +235,7 @@ def deployedRoots : List Name :=
     `Snarky.Kimchi.HasEndo.vesta,
     `Snarky.Kimchi.HasCurve.pallas,
     `Snarky.Kimchi.HasCurve.vesta,
-    `Snarky.Kimchi.encode_ladderRegime ]
+    `Snarky.Kimchi.toShifted_ladderRegime ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather than
     by name prefix (the kimchi gate's convention: the name is forgeable from inside a

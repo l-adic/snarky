@@ -11,7 +11,7 @@ read points, definitionally.
 Both cross-field quantities are pinned to canonical representatives by the circuit's
 two canonicity locks (`unpackFull` on the transcript hash, `ltBitstringValue` on the
 ladder's bits), so soundness lands on the wire `verify` at the statement's named
-decode `Type1.decodeCanonical` — no reconstruction classes remain. The ladder's
+decode `Type1.fromShifted` — no reconstruction classes remain. The ladder's
 forbidden band survives as a decidable hypothesis on the decode. The challenge leg
 is one integer read in two fields (`nReconstruct_inj`, `decomposition_eq_toIntZ`,
 `endoExpand_eq_toField`); statement points transport through `SWPoint.equivPoint`.
@@ -59,7 +59,7 @@ open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The sound endpoint.** Any satisfying valuation certifies the wire verifier at
 the statement's canonical decode: when the bundle reads as nonzero wire points and a
 `Type1` representative whose decode is off the ladder's forbidden band, `verify`
-accepts `⟨pkP, uP, decodeCanonical zt⟩`. The circuit's two canonicity locks pin both
+accepts `⟨pkP, uP, fromShifted zt⟩`. The circuit's two canonicity locks pin both
 cross-field readings exactly, so no reconstruction class survives into the
 statement; the zero-response exclusion (`assertNotEqual` at `zeroCarrier`) holds
 unconditionally, before the band hypothesis. -/
@@ -68,9 +68,9 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     ⦃Sound (fun V (_ : PUnit) =>
         ∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
           readVal (val := Statement.Raw Fq) V stv = ⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ →
-          Type1.decodeCanonical 255 zt ≠ (0 : Fp) ∧
-          (Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD →
-            verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true)) Q⦄
+          zt.fromShifted ≠ (0 : Fp) ∧
+          (zt.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD →
+            verify ⟨pkP, uP, zt.fromShifted⟩ = true)) Q⦄
     (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit]
@@ -114,7 +114,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
   subst hzt
   -- the zero-response exclusion, then the band-conditional wire certificate
-  refine ⟨fun h0 => hzne ((decodeCanonical_eq_zero_iff _).mp h0), fun hband => ?_⟩
+  refine ⟨fun h0 => hzne ((fromShifted_eq_zero_iff _).mp h0), fun hband => ?_⟩
   replace hpkx := hpkx.symm
   replace hpky := hpky.symm
   replace hux := hux.symm
@@ -204,8 +204,8 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     rwa [ZMod.val_natCast, Nat.mod_eq_of_lt hlt] at h
   set s : ℤ := 2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * 51) + 1 with hsdef
   clear_value s
-  have hsdecode : s = Type1.decodeZ 255 ⟨stv.z.val.val st.V⟩ := by
-    simp only [hsdef, Type1.decodeZ, Type1.fromShifted, hvalId]
+  have hsdecode : s = Type1.fromShiftedZ ⟨stv.z.val.val st.V⟩ := by
+    simp only [hsdef, Type1.fromShiftedZ, Type1.unshift, hvalId]
   -- the ladder regime at the canonical scalar: the one-wrap band off the forbidden set
   have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
   have hregime : HasCurve.vesta.LadderRegime (5 * 51) s := by
@@ -233,7 +233,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
       (congrArg (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq')
   -- the wire equation, transported into the Mathlib group at the statement's points
   simp only [verify, decide_eq_true_eq]
-  show ((Type1.decodeCanonical 255 ⟨stv.z.val.val st.V⟩ : Fp)).val • gen
+  show ((Type1.fromShifted ⟨stv.z.val.val st.V⟩ : Fp)).val • gen
       = uP + (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
           (preChallenge pkP uP)).val • pkP
   have hsmul : ∀ a b : ℤ, ((a : ZMod PALLAS_BASE_CARD) = (b : ZMod PALLAS_BASE_CARD)) →
@@ -241,9 +241,9 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     Kimchi.Gate.VarBaseMul.smul_eq_smul_of_zmod_eq _ (by
       rw [ZMod.intCast_eq_intCast_iff] at hab ⊢
       rwa [Pasta.vesta_card])
-  have hz1 : ((((Type1.decodeCanonical 255 ⟨stv.z.val.val st.V⟩ : Fp)).val : ℤ)
+  have hz1 : ((((Type1.fromShifted ⟨stv.z.val.val st.V⟩ : Fp)).val : ℤ)
       : ZMod PALLAS_BASE_CARD) = ((s : ℤ) : ZMod PALLAS_BASE_CARD) := by
-    rw [show (Type1.decodeCanonical 255 ⟨stv.z.val.val st.V⟩ : Fp)
+    rw [show (Type1.fromShifted ⟨stv.z.val.val st.V⟩ : Fp)
         = ((s : ℤ) : Fp) from by rw [hsdecode]; rfl]
     push_cast
     simp [ZMod.natCast_val]
@@ -272,8 +272,8 @@ equivalent by `complete_spec_iff`. -/
 theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     (stP : Statement) (zt : Type1 Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hreg : HasCurve.vesta.LadderRegime 255 (Type1.decodeZ 255 zt))
-    (henc : Type1.decodeCanonical 255 zt = stP.z)
+    (hreg : HasCurve.vesta.LadderRegime 255 (zt.fromShiftedZ))
+    (henc : zt.fromShifted = stP.z)
     (hacc : verify stP = true) :
     ∀ st : ProverState Fq,
       Reads st.env stv (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩
@@ -415,7 +415,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     injection hv with hv
     subst hv
     refine ⟨lt_of_lt_of_le (ZMod.val_lt _) (by decide),
-      ZMod.natCast_rightInverse _, by simpa [Type1.decodeZ] using hreg⟩
+      ZMod.natCast_rightInverse _, by simpa [Type1.fromShiftedZ] using hreg⟩
   · injection hx with hx
     injection hy with hy
     subst hx
@@ -489,9 +489,9 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       (WeierstrassCurve.Affine.Point.some_ne_zero hgenNS) hzpos
       (by rw [Pasta.vesta_card]; exact_mod_cast ZMod.val_lt _)
   -- the honest encoding: the ladder's scalar is the wire response mod the order
-  have henc' : ((Type1.fromShifted (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ) : Fp)
-      = stP.z := by simpa [Type1.decodeCanonical, Type1.decodeZ] using henc
-  have hzV : ((Type1.fromShifted (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ)
+  have henc' : ((Type1.unshift (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ) : Fp)
+      = stP.z := by simpa [Type1.fromShifted, Type1.fromShiftedZ] using henc
+  have hzV : ((Type1.unshift (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ)
       : ZMod PALLAS_BASE_CARD) = ((stP.z.val : ℤ) : ZMod PALLAS_BASE_CARD) := by
     rw [henc']
     push_cast
@@ -560,7 +560,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     injection hb with hb
     subst ha
     subst hb
-    exact fun hEq => hz0 (henc.symm.trans ((decodeCanonical_eq_zero_iff zt).mpr hEq))
+    exact fun hEq => hz0 (henc.symm.trans ((fromShifted_eq_zero_iff zt).mpr hEq))
   exact hk ⟨⟩ st₉ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
     (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans hle₉))))))))
 

@@ -32,7 +32,7 @@ structure Statement.Raw (α : Type) where
   /-- The commitment's coordinates. -/
   u : AffinePoint α
   /-- The response, `Type1`-carried (`p < q`): the ladder consuming it realizes the
-  shift, and `Type1.decodeCanonical` reads its scalar-field value. -/
+  shift, and `Type1.fromShifted` reads its scalar-field value. -/
   z : Type1 α
 
 /-- The statement encodes as its five field elements, points first, coordinatewise. -/
@@ -156,12 +156,12 @@ private theorem dvd_band_iff {P Q v t : ℕ}
 
 /-- The decode hits zero exactly at `zeroCarrier` — the characterization the
 in-circuit exclusion inverts on both sides of the endpoint laws. -/
-theorem decodeCanonical_eq_zero_iff (zt : Type1 Fq) :
-    (Type1.decodeCanonical 255 zt : Fp) = 0 ↔ zt.val = zeroCarrier := by
+theorem fromShifted_eq_zero_iff (zt : Type1 Fq) :
+    zt.fromShifted = 0 ↔ zt.val = zeroCarrier := by
   have ht : zt.val.val < PALLAS_SCALAR_CARD := ZMod.val_lt _
-  have hiff : (Type1.decodeCanonical 255 zt : Fp) = 0
+  have hiff : zt.fromShifted = 0
       ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (zt.val.val : ℤ) + 2 ^ 255 + 1) := by
-    simp only [Type1.decodeCanonical, Type1.decodeZ, Type1.fromShifted]
+    simp only [Type1.fromShifted, Type1.fromShiftedZ, Type1.unshift]
     exact ZMod.intCast_zmod_eq_zero_iff_dvd _ _
   have hval : zt.val = zeroCarrier
       ↔ zt.val.val = (3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 := by

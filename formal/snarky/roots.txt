@@ -489,7 +489,7 @@ Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta
 Snarky.Kimchi.HasCurve.pallas
 Snarky.Kimchi.HasCurve.vesta
-Snarky.Kimchi.encode_ladderRegime
+Snarky.Kimchi.toShifted_ladderRegime
 Snarky.Kimchi.instCircuitTypeAffinePointFVar
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 

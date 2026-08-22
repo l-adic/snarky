@@ -37,9 +37,9 @@ private theorem checkedBody_spec (stv : Statement.Raw (FVar Fq))
         (∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
           readVal (val := Statement.Raw Fq) V stv
             = (⟨⟨pkP.x, pkP.y⟩, ⟨uP.x, uP.y⟩, zt⟩ : Statement.Raw Fq) →
-          Type1.decodeCanonical 255 zt ≠ (0 : Fp) ∧
-          (Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD →
-            verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true))) Q⦄
+          zt.fromShifted ≠ (0 : Fp) ∧
+          (zt.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD →
+            verify ⟨pkP, uP, zt.fromShifted⟩ = true))) Q⦄
     (do CheckedType.check (c := KimchiConstraint Fq) stv
         verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
@@ -70,7 +70,7 @@ off-curve — the response decode is nonzero, and, off the ladder's forbidden ba
 survives. -/
 theorem verifyCircuit_compile_sound
     (px py ux uy : Fq) (zt : Type1 Fq)
-    (hband : Type1.decodeZ 255 zt ∉ forbiddenValues PALLAS_BASE_CARD)
+    (hband : zt.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD)
     (V : Valuation Fq)
     (hsat : ∀ con ∈ (compile (a := Statement.Raw Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
@@ -79,8 +79,8 @@ theorem verifyCircuit_compile_sound
       = (⟨⟨px, py⟩, ⟨ux, uy⟩, zt⟩ : Statement.Raw Fq)) :
     ∃ (pkP uP : SWPoint Vesta.curve),
       pkP.x = px ∧ pkP.y = py ∧ uP.x = ux ∧ uP.y = uy ∧ pkP ≠ 0 ∧ uP ≠ 0 ∧
-      Type1.decodeCanonical 255 zt ≠ (0 : Fp) ∧
-      verify ⟨pkP, uP, Type1.decodeCanonical 255 zt⟩ = true := by
+      zt.fromShifted ≠ (0 : Fp) ∧
+      verify ⟨pkP, uP, zt.fromShifted⟩ = true := by
   have hplain := (sound_spec_iff _ _).mp
     (checkedBody_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
   obtain ⟨hpkC, huC, hmain⟩ := hplain V 5
@@ -167,8 +167,8 @@ bundle. The input check's honest run succeeds because the wire points are on-cur
 theorem verifyCircuit_solve_complete
     (stP : Statement) (zt : Type1 Fq)
     (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hreg : HasCurve.vesta.LadderRegime 255 (Type1.decodeZ 255 zt))
-    (henc : Type1.decodeCanonical 255 zt = stP.z)
+    (hreg : HasCurve.vesta.LadderRegime 255 (zt.fromShiftedZ))
+    (henc : zt.fromShifted = stP.z)
     (hacc : verify stP = true) :
     ∃ env : Assignments Fq,
       solve (b := PUnit) (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
@@ -219,22 +219,22 @@ open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- The constructive boundary at the canonical encode: for an accepted, nondegenerate
 statement whose response's encode sits off the forbidden band, `solve` succeeds at
-`Type1.encode` — the encoding hypotheses discharged by `encode_ladderRegime`. -/
+`Type1.toShifted` — the encoding hypotheses discharged by `toShifted_ladderRegime`. -/
 theorem verifyCircuit_solve_complete_encode
     (stP : Statement) (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hband : Type1.decodeZ 255 (Type1.encode PALLAS_SCALAR_CARD 255 stP.z)
+    (hband : (Type1.toShifted stP.z).fromShiftedZ
       ∉ forbiddenValues PALLAS_BASE_CARD)
     (hacc : verify stP = true) :
     ∃ env : Assignments Fq,
       solve (b := PUnit) (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
           (verifyCircuit (c := KimchiConstraint Fq))
           (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩,
-            Type1.encode PALLAS_SCALAR_CARD 255 stP.z⟩ : Statement.Raw Fq)
+            Type1.toShifted stP.z⟩ : Statement.Raw Fq)
         = .ok (PUnit.unit, env) ∧
       Reads env (inputVar (F := Fq) (a := Statement.Raw Fq))
         (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩,
-          Type1.encode PALLAS_SCALAR_CARD 255 stP.z⟩ : Statement.Raw Fq) := by
-  obtain ⟨henc, hreg⟩ := encode_ladderRegime stP.z hband
+          Type1.toShifted stP.z⟩ : Statement.Raw Fq) := by
+  obtain ⟨henc, hreg⟩ := toShifted_ladderRegime stP.z hband
   exact verifyCircuit_solve_complete stP _ hpk0 hu0 hz0 hreg henc hacc
 
 end Schnorr
