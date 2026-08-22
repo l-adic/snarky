@@ -106,6 +106,9 @@ Snarky.readable_fvar_iff
 Snarky.readable_prod_iff
 Snarky.reads_fvar_iff
 Snarky.reads_prod_iff
+Snarky.readVal_ofEquiv
+Snarky.readable_ofEquiv_iff
+Snarky.reads_ofEquiv_iff
 Snarky.Readable.le
 Snarky.Reads.le
 Snarky.ReadsAll.le
@@ -491,7 +494,9 @@ Snarky.Kimchi.HasEndo.vesta
 Snarky.Kimchi.HasCurve.pallas
 Snarky.Kimchi.HasCurve.vesta
 Snarky.Kimchi.toShifted_ladderRegime
-Snarky.Kimchi.instCircuitTypeAffinePointFVar
+Snarky.Kimchi.AffinePoint.equivProd_apply
+Snarky.Kimchi.AffinePoint.equivProd_symm_apply
+Snarky.Kimchi.instCircuitTypeAffinePoint
 Snarky.Kimchi.instCheckedTypeAffinePointFVar
 
 -- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the on-curve
@@ -499,6 +504,8 @@ Snarky.Kimchi.instCheckedTypeAffinePointFVar
 -- instances, consumed by schnorr's statement.
 Snarky.Kimchi.CurvePoint
 Snarky.Kimchi.instCurvePointCircuitType
+Snarky.Kimchi.CurvePoint.equivPoint_apply
+Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
 Snarky.Kimchi.instCurvePointCheckedType
 Snarky.Kimchi.CurvePoint.check_spec
 Snarky.Kimchi.CurvePoint.check_complete_spec
@@ -549,3 +556,8 @@ Snarky.Kimchi.RandomOracle.hash2_spec
 Snarky.Kimchi.RandomOracle.hash2_complete_spec
 Snarky.Kimchi.RandomOracle.hashVec_spec
 Snarky.Kimchi.RandomOracle.hashVec_complete_spec
+
+-- The shifted carrier's presentation (Types/Shifted.lean).
+Snarky.Type1.equivCarrier_apply
+Snarky.Type1.equivCarrier_symm_apply
+Snarky.instCircuitTypeType1

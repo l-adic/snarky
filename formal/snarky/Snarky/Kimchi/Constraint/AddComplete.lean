@@ -41,6 +41,22 @@ structure AffinePoint (α : Type u) where
   y : α
   deriving Repr, DecidableEq
 
+/-- A point is its coordinate pair. -/
+@[simps apply symm_apply] def AffinePoint.equivProd {α : Type} : AffinePoint α ≃ α × α where
+  toFun p := (p.x, p.y)
+  invFun q := ⟨q.1, q.2⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+attribute [circuitVal] AffinePoint.equivProd_apply AffinePoint.equivProd_symm_apply
+
+/-- Point bundles encode coordinatewise, `[x, y]` (the PS generic instance in
+`Snarky.Data.EllipticCurve`; see the module docstring). -/
+instance instCircuitTypeAffinePoint {F : Type} :
+    CircuitType F (AffinePoint F) (AffinePoint (FVar F)) :=
+  CircuitType.ofEquiv (inferInstance : CircuitType F (F × F) (FVar F × FVar F))
+    AffinePoint.equivProd AffinePoint.equivProd
+
 /-- The complete-addition constraint payload (PS `AddComplete`): `p1 + p2 = p3` with
 the auxiliary columns the gate's constraints consume. The field roles mirror
 `Kimchi.Gate.AddComplete.Witness`, column for column. -/

@@ -85,7 +85,7 @@ theorem verifyCircuit_compile_sound
     (checkedBody_spec (inputVar (F := Fq) (a := Statement.Raw Fq)))
   obtain ⟨hpkC, huC, hmain⟩ := hplain V 5
     (fun con hcon => hsat con (mem_compile_of_mem_body hcon))
-  rw [readVal_statementRaw] at hin
+  simp only [circuitVal] at hin
   -- the reading pins the cells to the given coordinates, projectionwise
   have hpx : (inputVar (F := Fq) (a := Statement.Raw Fq)).pk.x.val V = px :=
     congrArg (fun s => s.pk.x) hin
@@ -109,7 +109,7 @@ theorem verifyCircuit_compile_sound
     subst hy
     exact absurd h (by decide)
   obtain ⟨hnz, himp⟩ := hmain ⟨px, py, Or.inl hpkC'⟩ ⟨ux, uy, Or.inl huC'⟩ zt
-    (hne _ _ hpkC') (hne _ _ huC') (by rw [readVal_statementRaw]; exact hin)
+    (hne _ _ hpkC') (hne _ _ huC') (by simpa only [circuitVal] using hin)
   exact ⟨⟨px, py, Or.inl hpkC'⟩, ⟨ux, uy, Or.inl huC'⟩, rfl, rfl, rfl, rfl,
     hne _ _ hpkC', hne _ _ huC', hnz, himp hband⟩
 
@@ -130,8 +130,8 @@ private theorem check_complete (stv : Statement.Raw (FVar Fq))
     ⦃Q⦄ := by
   intro st hpre
   obtain ⟨hrd, hk⟩ := hpre
-  rw [reads_statementRaw_iff] at hrd
-  obtain ⟨hpkx, hpky, hux, huy, -⟩ := hrd
+  simp only [reads_ofEquiv_iff, reads_prod_iff, reads_fvar_iff, circuitVal] at hrd
+  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, -⟩ := hrd
   simp only [show CheckedType.check (F := Fq) (c := KimchiProverC Fq) stv
       = Statement.Raw.check stv from rfl,
     Statement.Raw.check, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
@@ -187,8 +187,8 @@ private theorem verifyCircuit_solve_complete
   have h4 : env₀ 4 = some zt.val := hlook 4 (by decide)
   have hreads : Reads env₀ (inputVar (F := Fq) (a := Statement.Raw Fq))
       (⟨⟨stP.pk.x, stP.pk.y⟩, ⟨stP.u.x, stP.u.y⟩, zt⟩ : Statement.Raw Fq) := by
-    rw [reads_statementRaw_iff]
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    simp only [reads_ofEquiv_iff, reads_prod_iff, reads_fvar_iff, circuitVal]
+    refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, ?_⟩
     · show (CVar.var 0).eval env₀ = .ok stP.pk.x
       simp [CVar.eval, h0]
     · show (CVar.var 1).eval env₀ = .ok stP.pk.y

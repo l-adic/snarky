@@ -48,14 +48,21 @@ def CurvePoint.check [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [BasicSyst
   let x3 ← mul x2 p.point.x
   assertSquare p.point.y (CVar.add_ (CVar.add_ x3 (CVar.scale_ a p.point.x)) (.const b))
 
+/-- The tag is phantom: a tagged point is its point. -/
+@[simps apply symm_apply] def CurvePoint.equivPoint {a b : F} {α : Type} :
+    CurvePoint a b α ≃ AffinePoint α where
+  toFun p := p.point
+  invFun p := ⟨p⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+attribute [circuitVal] CurvePoint.equivPoint_apply CurvePoint.equivPoint_symm_apply
+
 /-- The tagged point encodes exactly as its coordinates, `[x, y]`. -/
 instance instCurvePointCircuitType {a b : F} :
-    CircuitType F (CurvePoint a b F) (CurvePoint a b (FVar F)) where
-  size := 2
-  valueToFields p := #v[p.point.x, p.point.y]
-  fieldsToValue fs := ⟨⟨fs[0], fs[1]⟩⟩
-  varToFields p := #v[p.point.x, p.point.y]
-  fieldsToVar fs := ⟨⟨fs[0], fs[1]⟩⟩
+    CircuitType F (CurvePoint a b F) (CurvePoint a b (FVar F)) :=
+  CircuitType.ofEquiv (inferInstance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)))
+    CurvePoint.equivPoint CurvePoint.equivPoint
 
 /-- A tagged point pays its on-curve constraint (PS `WeierstrassAffinePoint`'s
 `CheckedType`). -/

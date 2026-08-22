@@ -165,6 +165,30 @@ theorem reads_prod_iff [Add F] [Mul F] [Zero F] [CircuitType F a av]
 
 end Prod
 
+/-! ## Computing the vocabulary at a presented instance -/
+
+section OfEquiv
+
+variable {rep repVar : Type} (R : CircuitType F rep repVar) (e : val ≃ rep) (ev : var ≃ repVar)
+
+/-- A presented bundle reads as its representation's reading, carried back. -/
+@[circuitVal] theorem readVal_ofEquiv [Add F] [Mul F] (V : Valuation F) (cv : var) :
+    @readVal F val var _ _ (R.ofEquiv e ev) V cv = e.symm (readVal V (ev cv)) := rfl
+
+/-- A presented bundle is readable iff its representation is. -/
+theorem readable_ofEquiv_iff [Add F] [Mul F] {env : Assignments F} {cv : var} :
+    @Readable F var val _ _ (R.ofEquiv e ev) env cv ↔ Readable rep env (ev cv) :=
+  Iff.rfl
+
+/-- A presented bundle's prover-side reading is its representation's, at the carried
+value. -/
+theorem reads_ofEquiv_iff [Add F] [Mul F] [Zero F] {env : Assignments F} {cv : var}
+    {v : val} :
+    @Reads F val var _ _ _ (R.ofEquiv e ev) env cv v ↔ Reads env (ev cv) (e v) := by
+  simp only [Reads, readable_ofEquiv_iff, readVal_ofEquiv, Equiv.symm_apply_eq]
+
+end OfEquiv
+
 /-! ## Transport along table extension -/
 
 /-- The readability survives table extension. -/

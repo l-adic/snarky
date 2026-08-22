@@ -82,8 +82,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   refine hpre ⟨⟩ _ ?_
   intro pkP uP zt hpk0 hu0 hread
   -- one reading equation decomposes into the per-cell facts
-  simp only [readVal_statementRaw, Statement.Raw.mk.injEq, AffinePoint.mk.injEq]
-    at hread
+  simp only [circuitVal, Statement.Raw.mk.injEq, AffinePoint.mk.injEq] at hread
   obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
   subst hzt
   -- the zero-response exclusion, then the band-conditional wire certificate
@@ -280,8 +279,8 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   · exact fqParams_size
   rename_i st₀ hpre
   obtain ⟨hrd, hk⟩ := hpre
-  rw [reads_statementRaw_iff] at hrd
-  obtain ⟨hpkx, hpky, hux, huy, hzz⟩ := hrd
+  simp only [reads_ofEquiv_iff, reads_prod_iff, reads_fvar_iff, circuitVal] at hrd
+  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzz⟩ := hrd
   -- the wire points and the generator are on-curve
   have hpkC := SWPoint.onCurve_of_ne_zero hpk0
   have huC := SWPoint.onCurve_of_ne_zero hu0

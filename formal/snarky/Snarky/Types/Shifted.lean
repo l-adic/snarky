@@ -2,6 +2,7 @@ import Mathlib.Data.ZMod.Basic
 import Mathlib.Tactic.Ring
 import Pasta.CompElliptic
 import Pasta.Shifted
+import Snarky.Circuit.Types
 
 /-!
 # Shifted scalar types
@@ -41,6 +42,20 @@ shift. -/
 structure Type1 (α : Type u) where
   /-- The shifted representative. -/
   val : α
+
+/-- The carrier is phantom: a `Type1` is its representative. -/
+@[simps apply symm_apply] def Type1.equivCarrier {α : Type} : Type1 α ≃ α where
+  toFun t := t.val
+  invFun v := ⟨v⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+attribute [circuitVal] Type1.equivCarrier_apply Type1.equivCarrier_symm_apply
+
+/-- A `Type1` encodes as its one cell (PS's generic instance). -/
+instance instCircuitTypeType1 {F : Type} : CircuitType F (Type1 F) (Type1 (FVar F)) :=
+  CircuitType.ofEquiv (inferInstance : CircuitType F F (FVar F))
+    Type1.equivCarrier Type1.equivCarrier
 
 /-- The deployed encode (PS `toShifted` at `Fp → Type1 Fq`): shift in the scalar
 field — `(s − 2^255 − 1) / 2` — and carry the canonical representative across the

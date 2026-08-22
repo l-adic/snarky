@@ -43,15 +43,6 @@ open Snarky
 
 variable {F c : Type}
 
-/-- Point bundles encode coordinatewise, `[x, y]` (the PS generic instance in
-`Snarky.Data.EllipticCurve`; see the module docstring). -/
-instance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)) where
-  size := 2
-  valueToFields p := #v[p.x, p.y]
-  fieldsToValue fs := ⟨fs[0], fs[1]⟩
-  varToFields p := #v[p.x, p.y]
-  fieldsToVar fs := ⟨fs[0], fs[1]⟩
-
 /-- A point's coordinates carry no check of their own (PS `genericCheck`). -/
 instance : CheckedType F c (AffinePoint (FVar F)) where
   check _ := .pure PUnit.unit
