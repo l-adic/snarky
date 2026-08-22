@@ -14,9 +14,9 @@ coordinates through the block-mode random-oracle gadget (`RandomOracle.hashVec`)
 `endoMul` for `[c]·pk`, `varBaseMul` for `[z]·G` on the constant generator with its
 bits locked below the modulus (`ltBitstringValue`; the statement carries `z`
 `Type1`-typed), and one complete addition with two coordinate equalities pinning
-`[z]·G = u + [c]·pk`. The statement's encoding (`Statement.Raw`) and the wire
-verifier at it (`verifyRaw`) live in `Wire`; here the encoding's check is derived from
-its fields. The laws tying the circuit to the wire live beside it.
+`[z]·G = u + [c]·pk`. The statement is `Wire`'s `Statement` at the carrier `FVar Fq`;
+here its check is derived from its fields. The laws tying the circuit to the wire live
+beside it.
 -/
 
 namespace Schnorr
@@ -27,9 +27,9 @@ variable {F c : Type}
 
 /-- The statement's check is its fields': both Vesta points pay their on-curve rows
 (`CurvePoint.check`), the response cell nothing — derived through the product. -/
-instance instStatementRawCheckedType [BasicSystem Fq c] :
-    CheckedType Fq c (Statement.Raw (FVar Fq)) :=
-  CheckedType.ofEquiv (c := c) Statement.Raw.equivProd
+instance instStatementCheckedType [BasicSystem Fq c] :
+    CheckedType Fq c (Statement (FVar Fq)) :=
+  CheckedType.ofEquiv (c := c) Statement.equivProd
 
 /-- The in-circuit verifier: hash the transcript, unpack it canonically and take the
 low 128 bits as the challenge, act on the public key through the endomorphism, run
@@ -41,7 +41,7 @@ The closing `assertNotEqual` excludes the one carrier whose decode is the zero
 response (`Type1.zeroCarrier`) — the residue-`0` constant of the ladder's forbidden band,
 mirroring the deployed `unshift_nonzero` convention. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c]
-    (st : Statement.Raw (FVar Fq)) :
+    (st : Statement (FVar Fq)) :
     CircuitM Fq c PUnit := do
   let squeezed ← RandomOracle.hashVec Poseidon.fqParams
     [.const gen.x, .const gen.y, st.pk.point.x, st.pk.point.y, st.u.point.x, st.u.point.y]

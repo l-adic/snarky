@@ -21,8 +21,8 @@ def roots : List Name :=
     `Schnorr.transcriptHash,
     `Schnorr.preChallenge,
     `Schnorr.verify,
-    `Schnorr.verifyRaw,
-    `Schnorr.verifyRaw_iff,
+    `Schnorr.challenge,
+    `Schnorr.verify_iff,
     `Schnorr.completeness,
     `Schnorr.verifyCircuit,
     `Schnorr.verifyCircuit_spec,
@@ -33,12 +33,14 @@ def roots : List Name :=
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
 
-/-- The endpoint laws concretize at the deployed Pasta dictionaries, and the
-    honest-prover exhibit reduces scalars mod the certified Vesta order, so their
-    closures carry the certified `native_decide` witnesses (orders and eigenvalue
-    anchors). Everything else stays pure core Lean. -/
+/-- The verifier acts by `Fp`-scalars through the point group's module structure,
+    which rests on the certified Vesta order; the endpoint laws concretize at the
+    deployed Pasta dictionaries. Their closures carry the certified `native_decide`
+    witnesses (orders and eigenvalue anchors). Everything else stays pure core Lean. -/
 def deployedRoots : List Name :=
-  [ `Schnorr.completeness,
+  [ `Schnorr.verify,
+    `Schnorr.verify_iff,
+    `Schnorr.completeness,
     `Schnorr.verifyCircuit_spec,
     `Schnorr.verifyCircuit_complete_spec,
     `Schnorr.verifyCircuit_compile_sound,

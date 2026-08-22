@@ -14,7 +14,8 @@ ladder's bits), so soundness lands on the wire `verify` at the statement's named
 decode `Type1.fromShifted` — no reconstruction classes remain. The ladder's
 forbidden band survives as a decidable hypothesis on the decode. The challenge leg
 is one integer read in two fields (`nReconstruct_inj`, `decomposition_eq_toIntZ`,
-`endoExpand_eq_toField`); statement points transport through `SWPoint.equivPoint`.
+`endoExpand_eq_toField`); the wire equation is read in Mathlib's group through
+`verify_iff`, scalars acting through the point group's `Fp`-module structure.
 -/
 
 namespace Schnorr
@@ -34,20 +35,20 @@ private theorem fqParams_size :
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The sound endpoint.** Any satisfying valuation certifies the wire verifier at
-the statement's canonical decode: when the bundle reads as nonzero wire points and a
-`Type1` representative whose decode is off the ladder's forbidden band, `verify`
-accepts `⟨pkP, uP, fromShifted zt⟩`. The circuit's two canonicity locks pin both
-cross-field readings exactly, so no reconstruction class survives into the
+the bundle's reading: when the read points are on-curve — the statement check's
+contribution at the seam — the response decode is nonzero, and off the ladder's
+forbidden band `verify` accepts the reading. The circuit's two canonicity locks pin
+both cross-field readings exactly, so no reconstruction class survives into the
 statement; the zero-response exclusion (`assertNotEqual` at `Type1.zeroCarrier`) holds
 unconditionally, before the band hypothesis. -/
-theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
+theorem verifyCircuit_spec (stv : Statement (FVar Fq))
     (Q : PostCond PUnit (.arg (BuilderState Fq) .pure)) :
     ⦃Sound (fun V (_ : PUnit) =>
-        ∀ (pkP uP : SWPoint Vesta.curve) (zt : Type1 Fq), pkP ≠ 0 → uP ≠ 0 →
-          readVal (val := Statement.Raw Fq) V stv = ⟨⟨⟨pkP.x, pkP.y⟩⟩, ⟨⟨uP.x, uP.y⟩⟩, zt⟩ →
-          zt.fromShifted ≠ (0 : Fp) ∧
-          (zt.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD →
-            verify ⟨pkP, uP, zt.fromShifted⟩ = true)) Q⦄
+        ∀ raw : Statement Fq, readVal (val := Statement Fq) V stv = raw →
+          OnCurve Vesta.curve.A Vesta.curve.B (raw.pk.point.x, raw.pk.point.y) →
+          OnCurve Vesta.curve.A Vesta.curve.B (raw.u.point.x, raw.u.point.y) →
+          raw.z.fromShifted ≠ (0 : Fp) ∧
+          (raw.z.fromShiftedZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true)) Q⦄
     (verifyCircuit (c := KimchiConstraint Fq) stv)
     ⦃Q⦄ := by
   simp only [verifyCircuit]
@@ -80,40 +81,24 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   mvcgen
   intro _ _ hzne
   refine hpre ⟨⟩ _ ?_
-  intro pkP uP zt hpk0 hu0 hread
-  -- one reading equation decomposes into the per-cell facts
-  simp only [circuitVal, Statement.Raw.mk.injEq, CurvePoint.mk.injEq, AffinePoint.mk.injEq]
-    at hread
-  obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzt⟩ := hread
-  subst hzt
+  intro raw hread hpkC huC
+  -- the reading is the cells, projectionwise
+  simp only [circuitVal] at hread
+  subst hread
+  dsimp only at hpkC huC ⊢
+  have hpkNS : Vesta.curve.toAffine.Nonsingular
+      (stv.pk.point.x.val st.V) (stv.pk.point.y.val st.V) := nonsingular_toW hpkC
+  have huNS : Vesta.curve.toAffine.Nonsingular
+      (stv.u.point.x.val st.V) (stv.u.point.y.val st.V) := nonsingular_toW huC
   -- the zero-response exclusion, then the band-conditional wire certificate
   refine ⟨fun h0 => hzne ((Type1.fromShifted_eq_zero_iff _).mp h0), fun hband => ?_⟩
-  replace hpkx := hpkx.symm
-  replace hpky := hpky.symm
-  replace hux := hux.symm
-  replace huy := huy.symm
-  -- the wire points and the generator read on-curve
-  have hpkC := SWPoint.onCurve_of_ne_zero hpk0
-  have huC := SWPoint.onCurve_of_ne_zero hu0
-  have hpkNS : Vesta.curve.toAffine.Nonsingular
-      (stv.pk.point.x.val st.V) (stv.pk.point.y.val st.V) := by
-    rw [← hpkx, ← hpky]; exact nonsingular_toW hpkC
-  have huNS : Vesta.curve.toAffine.Nonsingular
-      (stv.u.point.x.val st.V) (stv.u.point.y.val st.V) := by
-    rw [← hux, ← huy]; exact nonsingular_toW huC
-  have hgenC : OnCurve Vesta.curve.A Vesta.curve.B (gen.x, gen.y) := by
-    rcases gen.onCurve with h | h
-    · exact h
-    · exact absurd h (by decide)
-  have hgenNS : Vesta.curve.toAffine.Nonsingular gen.x gen.y := nonsingular_toW hgenC
+  set pkR : VestaPoint Fq := ⟨⟨stv.pk.point.x.val st.V, stv.pk.point.y.val st.V⟩⟩ with hpkR
+  set uR : VestaPoint Fq := ⟨⟨stv.u.point.x.val st.V, stv.u.point.y.val st.V⟩⟩ with huR
   -- the canonical unpack: the full value is the hash's canonical representative
   obtain ⟨hbs, hbread, hbsum, hbslt⟩ := hunpv
-  have hH : squeezed.val st.V = transcriptHash pkP uP := by
-    rw [hsqv]
-    simp only [transcriptHash]
-    rw [hpkx, hpky, hux, huy]
-  have hNfull : natLsbVal hbs.toList = (transcriptHash pkP uP).val := by
-    have hcast : ((natLsbVal hbs.toList : ℕ) : Fq) = transcriptHash pkP uP := by
+  have hH : squeezed.val st.V = transcriptHash pkR uR := hsqv
+  have hNfull : natLsbVal hbs.toList = (transcriptHash pkR uR).val := by
+    have hcast : ((natLsbVal hbs.toList : ℕ) : Fq) = transcriptHash pkR uR := by
       rw [← packPure_natCast, hbsum, hH]
     have hval := congrArg ZMod.val hcast
     rwa [ZMod.val_natCast, Nat.mod_eq_of_lt hbslt] at hval
@@ -125,9 +110,9 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
     rwa [hlen] at hlt
   have hcval : (packLow 128 (by omega) hbits).val st.V = ((nL : ℕ) : Fq) :=
     packLow_val (by omega) hbread
-  have hnLpre : nL = preChallenge pkP uP := by
+  have hnLpre : nL = preChallenge pkR uR := by
     have hsplit := natLsbVal_take_drop 128 hbs.toList
-    have hmod : (transcriptHash pkP uP).val % 2 ^ 128 = nL := by
+    have hmod : (transcriptHash pkR uR).val % 2 ^ 128 = nL := by
       rw [← hNfull, hsplit, Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hnL]
     rw [preChallenge, ← hmod]
   -- the endoMul crumbs are the canonical decomposition of the challenge
@@ -156,7 +141,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
         (Kimchi.Gate.EndoScalar.digitsOf_lt 64 _) HasEndo.vesta.lam]
   -- the ladder payload
   simp only [CVar.val] at hzrv
-  obtain ⟨bs, hread, hpin, hpt⟩ := hzrv hgenNS
+  obtain ⟨bs, hread, hpin, hpt⟩ := hzrv gen_nonsingular
   -- the canonicity lock: the ladder's bits are below the modulus
   have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
       (↑x : CVar Fq).val st.V = bit b)
@@ -195,58 +180,33 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   have hfinC' : Vesta.curve.toAffine.Nonsingular (cpk.x.val st.V) (cpk.y.val st.V) := hfinC
   have hseq' : WeierstrassCurve.Affine.Point.some _ _ hfinC'
       = sc • WeierstrassCurve.Affine.Point.some _ _ hpkNS := hseq
-  have hmaster : s • WeierstrassCurve.Affine.Point.some gen.x gen.y hgenNS
+  have hmaster : s • WeierstrassCurve.Affine.Point.some gen.x gen.y gen_nonsingular
       = WeierstrassCurve.Affine.Point.some _ _ huNS
         + sc • WeierstrassCurve.Affine.Point.some _ _ hpkNS :=
     (hzact.symm.trans (hglue.trans hsum.symm)).trans
       (congrArg (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq')
-  -- the wire equation, transported into the Mathlib group at the statement's points
-  simp only [verify, decide_eq_true_eq]
-  show ((Type1.fromShifted ⟨stv.z.val.val st.V⟩ : Fp)).val • gen
-      = uP + (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-          (preChallenge pkP uP)).val • pkP
-  have hsmul : ∀ a b : ℤ, ((a : ZMod PALLAS_BASE_CARD) = (b : ZMod PALLAS_BASE_CARD)) →
-      ∀ P : Vesta.curve.toAffine.Point, a • P = b • P := fun a b hab P =>
-    Kimchi.Gate.VarBaseMul.smul_eq_smul_of_zmod_eq _ (by
-      rw [ZMod.intCast_eq_intCast_iff] at hab ⊢
-      rwa [Pasta.vesta_card])
-  have hz1 : ((((Type1.fromShifted ⟨stv.z.val.val st.V⟩ : Fp)).val : ℤ)
-      : ZMod PALLAS_BASE_CARD) = ((s : ℤ) : ZMod PALLAS_BASE_CARD) := by
-    rw [show (Type1.fromShifted ⟨stv.z.val.val st.V⟩ : Fp)
-        = ((s : ℤ) : Fp) from by rw [hsdecode]; rfl]
-    push_cast
-    simp [ZMod.natCast_val]
-  have hz2 : (((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-      (preChallenge pkP uP)).val : ℤ)
-      : ZMod PALLAS_BASE_CARD) = ((sc : ℤ) : ZMod PALLAS_BASE_CARD) := by
-    push_cast
-    rw [← hnLpre, ← hchal]
-    simp [ZMod.natCast_val]
-  apply (SWPoint.equivPoint Vesta.curve).injective
-  rw [map_add, map_nsmul, map_nsmul,
-    SWPoint.equivPoint_eq_some gen hgenC,
-    SWPoint.equivPoint_eq_some pkP hpkC,
-    SWPoint.equivPoint_eq_some uP huC,
-    Kimchi.Gate.EndoMul.some_congr _ (nonsingular_toW hpkC) hpkNS hpkx hpky,
-    Kimchi.Gate.EndoMul.some_congr _ (nonsingular_toW huC) huNS hux huy,
-    ← natCast_zsmul, ← natCast_zsmul, hsmul _ _ hz1, hsmul _ _ hz2]
+  -- the wire equation, in Mathlib's group at the reading
+  have hz1 : ((s : ℤ) : Fp) = Type1.fromShifted ⟨stv.z.val.val st.V⟩ := by
+    rw [hsdecode]; rfl
+  have hc : ((sc : ℤ) : Fp) = challenge pkR uR := by
+    rw [challenge, ← hnLpre]; exact hchal
+  rw [verify_iff]
+  refine ⟨hpkC, huC, fun h0 => hzne ((Type1.fromShifted_eq_zero_iff _).mp h0), ?_⟩
+  dsimp only
+  rw [← hz1, ← hc, Int.cast_smul_eq_zsmul, Int.cast_smul_eq_zsmul]
   exact hmaster
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass in
 /-- **The complete endpoint.** The honest checking-prover run accepts a statement
-`verify` accepts, honestly encoded and nondegenerate, only extending the table.
-Exported in plain run form — a concrete-field prover triple's type cannot be
-referenced without evaluating the run it matches on; the triple is internal,
-equivalent by `complete_spec_iff`. -/
-theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
-    (stP : Statement) (zt : Type1 Fq)
-    (hpk0 : stP.pk ≠ 0) (hu0 : stP.u ≠ 0) (hz0 : stP.z ≠ 0)
-    (hreg : HasCurve.vesta.LadderRegime 255 (zt.fromShiftedZ))
-    (henc : zt.fromShifted = stP.z)
-    (hacc : verify stP = true) :
+`verify` accepts, in the ladder regime, only extending the table — the guard's
+on-curve and nonzero facts are what the honest runs need. Exported in plain run
+form — a concrete-field prover triple's type cannot be referenced without evaluating
+the run it matches on; the triple is internal, equivalent by `complete_spec_iff`. -/
+theorem verifyCircuit_complete_spec (stv : Statement (FVar Fq)) (raw : Statement Fq)
+    (hreg : HasCurve.vesta.LadderRegime 255 raw.z.fromShiftedZ)
+    (hacc : verify raw = true) :
     ∀ st : ProverState Fq,
-      Reads st.env stv (⟨⟨⟨stP.pk.x, stP.pk.y⟩⟩, ⟨⟨stP.u.x, stP.u.y⟩⟩, zt⟩
-        : Statement.Raw Fq) →
+      Reads st.env stv raw →
       ∃ out : Proved Fq PUnit,
         prove (Checker.holds (F := Fq) (c := KimchiConstraint Fq))
             (verifyCircuit (c := KimchiConstraint Fq) stv) st.nv st.env = .ok out
@@ -254,8 +214,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   have htriple : ∀ Q : PostCond PUnit (.arg (ProverState Fq)
       (.except EvalError .pure)),
       ⦃Complete
-          (fun env => Reads env stv
-            (⟨⟨⟨stP.pk.x, stP.pk.y⟩⟩, ⟨⟨stP.u.x, stP.u.y⟩⟩, zt⟩ : Statement.Raw Fq))
+          (fun env => Reads env stv raw)
           (fun _ _ _ => True) Q⦄
       (verifyCircuit (c := KimchiProverC Fq) stv)
       ⦃Q⦄ := ?_
@@ -284,16 +243,12 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   obtain ⟨hrd, hk⟩ := hpre
   simp only [reads_ofEquiv_iff, reads_prod_iff, reads_fvar_iff, circuitVal] at hrd
   obtain ⟨⟨hpkx, hpky⟩, ⟨hux, huy⟩, hzz⟩ := hrd
-  -- the wire points and the generator are on-curve
-  have hpkC := SWPoint.onCurve_of_ne_zero hpk0
-  have huC := SWPoint.onCurve_of_ne_zero hu0
-  have hgenC : OnCurve Vesta.curve.A Vesta.curve.B (gen.x, gen.y) := by
-    rcases gen.onCurve with h | h
-    · exact h
-    · exact absurd h (by decide)
-  have hpkNS : Vesta.curve.toAffine.Nonsingular stP.pk.x stP.pk.y := nonsingular_toW hpkC
-  have huNS : Vesta.curve.toAffine.Nonsingular stP.u.x stP.u.y := nonsingular_toW huC
-  have hgenNS : Vesta.curve.toAffine.Nonsingular gen.x gen.y := nonsingular_toW hgenC
+  -- the wire's guard: both points on-curve, the response nonzero, and the equation
+  obtain ⟨hpkC, huC, hz0, heq⟩ := (verify_iff raw).mp hacc
+  have hpkNS : Vesta.curve.toAffine.Nonsingular raw.pk.point.x raw.pk.point.y :=
+    nonsingular_toW hpkC
+  have huNS : Vesta.curve.toAffine.Nonsingular raw.u.point.x raw.u.point.y :=
+    nonsingular_toW huC
   -- the transcript leg
   refine ⟨fun x hx => ?_, fun squeezed st₁ hout₁ hle₁ => ?_⟩
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
@@ -304,8 +259,8 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     · exact isOk_of_eq hpky
     · exact isOk_of_eq hux
     · exact isOk_of_eq huy
-  have hsqv : squeezed.eval st₁.env = .ok (transcriptHash stP.pk stP.u) :=
-    hout₁ [gen.x, gen.y, stP.pk.x, stP.pk.y, stP.u.x, stP.u.y]
+  have hsqv : squeezed.eval st₁.env = .ok (transcriptHash raw.pk raw.u) :=
+    hout₁ [gen.x, gen.y, raw.pk.point.x, raw.pk.point.y, raw.u.point.x, raw.u.point.y]
       (.cons (reads_fvar_iff.mpr rfl) (.cons (reads_fvar_iff.mpr rfl)
         (.cons (reads_fvar_iff.mpr hpkx) (.cons (reads_fvar_iff.mpr hpky)
           (.cons (reads_fvar_iff.mpr hux) (.cons (reads_fvar_iff.mpr huy) .nil))))))
@@ -320,10 +275,10 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   have hdig := hout₂ _ hsqv
   -- the packed low bits read as the wire challenge
   have hcev : (packLow 128 (by omega) hbits).eval st₂.env
-      = .ok ((preChallenge stP.pk stP.u : ℕ) : Fq) := by
-    have hpre : preChallenge stP.pk stP.u
-        = ToNat.toNat (transcriptHash stP.pk stP.u) % 2 ^ 128 := rfl
-    rw [packLow_eval (by omega) (bs := unpackPure (transcriptHash stP.pk stP.u) 255)
+      = .ok ((preChallenge raw.pk raw.u : ℕ) : Fq) := by
+    have hpre : preChallenge raw.pk raw.u
+        = ToNat.toNat (transcriptHash raw.pk raw.u) % 2 ^ 128 := rfl
+    rw [packLow_eval (by omega) (bs := unpackPure (transcriptHash raw.pk raw.u) 255)
       (fun i hi => by simp only [unpackPure, Vector.getElem_ofFn]; exact hdig i hi),
       natLsbVal_take_unpackPure (by omega), hpre]
   -- the challenge leg: endoMul at the canonical prechallenge
@@ -335,9 +290,9 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   · have hveq := hcev.symm.trans hv
     injection hveq with hveq
     subst hveq
-    have hpc : preChallenge stP.pk stP.u < 2 ^ 128 :=
+    have hpc : preChallenge raw.pk raw.u < 2 ^ 128 :=
       Nat.mod_lt _ (by positivity)
-    show (((preChallenge stP.pk stP.u : ℕ) : Fq)).val < 2 ^ 128
+    show (((preChallenge raw.pk raw.u : ℕ) : Fq)).val < 2 ^ 128
     rw [ZMod.val_natCast, Nat.mod_eq_of_lt (lt_of_lt_of_le hpc (by decide))]
     exact hpc
   · rw [hpkx₂] at hx
@@ -349,20 +304,20 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     exact hpkNS
   obtain ⟨xC, yC, hcpkx, hcpky, hfinC, sc, A, B, hseq, hsab, hAle, hBle,
     hAval, hBval, -⟩ := hout₃ _ _ _ hcev hpkx₂ hpky₂ hpkNS
-  have hpcval : ToNat.toNat ((preChallenge stP.pk stP.u : ℕ) : Fq)
-      = preChallenge stP.pk stP.u := by
-    show (((preChallenge stP.pk stP.u : ℕ) : Fq)).val = _
+  have hpcval : ToNat.toNat ((preChallenge raw.pk raw.u : ℕ) : Fq)
+      = preChallenge raw.pk raw.u := by
+    show (((preChallenge raw.pk raw.u : ℕ) : Fq)).val = _
     rw [ZMod.val_natCast]
     exact Nat.mod_eq_of_lt (lt_of_lt_of_le (Nat.mod_lt _ (by positivity)) (by decide))
   rw [hpcval, show (2 * 32 : ℕ) = 64 from by norm_num] at hAval hBval
   have hsInt : sc = Kimchi.Gate.EndoScalar.toIntZ
-      (Kimchi.Gate.EndoScalar.digitsOf 64 (preChallenge stP.pk stP.u))
+      (Kimchi.Gate.EndoScalar.digitsOf 64 (preChallenge raw.pk raw.u))
       HasEndo.vesta.lam :=
-    HasEndo.vesta.decomposition_eq_toIntZ (preChallenge stP.pk stP.u) hsab
+    HasEndo.vesta.decomposition_eq_toIntZ (preChallenge raw.pk raw.u) hsab
       (by norm_num at hAle ⊢; exact hAle) (by norm_num at hBle ⊢; exact hBle)
       hAval hBval
   have hchal : ((sc : ℤ) : Fp) = Poseidon.FqSponge.endoExpand
-      Poseidon.FqVesta.spec.lam (preChallenge stP.pk stP.u) := by
+      Poseidon.FqVesta.spec.lam (preChallenge raw.pk raw.u) := by
     rw [hsInt, Kimchi.Gate.EndoScalar.endoExpand_eq_toField (by decide) (by decide),
       show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
       Kimchi.Gate.EndoScalar.crumbsOf_eq_map,
@@ -382,15 +337,15 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     injection hy with hy
     subst hx
     subst hy
-    exact hgenNS
-  obtain ⟨xZ, yZ, hzgx, hzgy, hzgNS, hzact⟩ := hact _ _ _ hzz₃ rfl rfl hgenNS
+    exact gen_nonsingular
+  obtain ⟨xZ, yZ, hzgx, hzgy, hzgNS, hzact⟩ := hact _ _ _ hzz₃ rfl rfl gen_nonsingular
   have hdigz := hbitread _ hzz₃
   -- the canonicity lock at the honest bits
   simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
   have hfa : List.Forall₂ (fun (x : BoolVar Fq) (b : Bool) =>
       (↑x : CVar Fq).eval st₄.env = .ok (bit b))
       (zr.lsbBits.toList.map .unchecked)
-      ((List.range 255).map (ToNat.toNat zt.val).testBit) := by
+      ((List.range 255).map (ToNat.toNat raw.z.val).testBit) := by
     rw [List.forall₂_iff_get]
     constructor
     · rw [List.length_map, Vector.length_toList, List.length_map, List.length_range]
@@ -400,62 +355,28 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       exact hdigz i (by simpa using h2)
   refine assertBitsBelow_complete_spec PALLAS_SCALAR_CARD 255 (by decide) _
     (by rw [List.length_map, Vector.length_toList])
-    ((List.range 255).map (ToNat.toNat zt.val).testBit)
+    ((List.range 255).map (ToNat.toNat raw.z.val).testBit)
     (by
-      rw [natLsbVal_testBit_range (m := ToNat.toNat zt.val)
+      rw [natLsbVal_testBit_range (m := ToNat.toNat raw.z.val)
         (lt_of_lt_of_le (ZMod.val_lt _) (by decide))]
       exact ZMod.val_lt _)
     _ st₄ ⟨hfa, fun _ st₅ _ hle₅ => ?_⟩
-  -- the wire equation, transported into the Mathlib group at the statement's points
-  simp only [verify, decide_eq_true_eq] at hacc
-  have haccM : (stP.z.val : ℤ)
-      • WeierstrassCurve.Affine.Point.some gen.x gen.y hgenNS
-      = WeierstrassCurve.Affine.Point.some _ _ huNS
-        + (((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-            (preChallenge stP.pk stP.u)).val : ℤ)
-          • WeierstrassCurve.Affine.Point.some _ _ hpkNS) := by
-    have h := congrArg (SWPoint.equivPoint Vesta.curve) hacc
-    rw [map_nsmul, map_add, map_nsmul,
-      SWPoint.equivPoint_eq_some gen hgenC,
-      SWPoint.equivPoint_eq_some stP.pk hpkC,
-      SWPoint.equivPoint_eq_some stP.u huC] at h
-    rw [← natCast_zsmul, ← natCast_zsmul] at h
-    exact h
-  -- scalars act through their residues mod the order
-  have hsmul : ∀ a b : ℤ, ((a : ZMod PALLAS_BASE_CARD) = (b : ZMod PALLAS_BASE_CARD)) →
-      ∀ P : Vesta.curve.toAffine.Point, a • P = b • P := fun a b hab P =>
-    Kimchi.Gate.VarBaseMul.smul_eq_smul_of_zmod_eq _ (by
-      rw [ZMod.intCast_eq_intCast_iff] at hab ⊢
-      rwa [Pasta.vesta_card])
-  have hchalV : ((((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-      (preChallenge stP.pk stP.u)).val : ℕ) : ℤ) : ZMod PALLAS_BASE_CARD)
-      = ((sc : ℤ) : ZMod PALLAS_BASE_CARD) := by
-    push_cast
-    rw [← hchal]
-    simp [ZMod.natCast_val]
-  have hmaster : (stP.z.val : ℤ)
-      • WeierstrassCurve.Affine.Point.some gen.x gen.y hgenNS
+  -- the wire equation at the ladder's integer: scalars act through the module
+  have hzF : ((unshiftType1 (5 * 51) (ToNat.toNat raw.z.val : ℤ) : ℤ) : Fp)
+      = raw.z.fromShifted := rfl
+  have hc : ((sc : ℤ) : Fp) = challenge raw.pk raw.u := hchal
+  have hmaster : (unshiftType1 (5 * 51) (ToNat.toNat raw.z.val : ℤ) : ℤ)
+      • WeierstrassCurve.Affine.Point.some gen.x gen.y gen_nonsingular
       = WeierstrassCurve.Affine.Point.some _ _ huNS
         + sc • WeierstrassCurve.Affine.Point.some _ _ hpkNS := by
-    rw [haccM, hsmul _ _ hchalV]
+    rw [← Int.cast_smul_eq_zsmul (R := Fp), ← Int.cast_smul_eq_zsmul (R := Fp), hzF, hc]
+    exact heq
   -- the sum is the nonzero [z]·G
-  have hzpos : (0 : ℤ) < (stP.z.val : ℤ) := by
-    rcases Nat.eq_zero_or_pos stP.z.val with h | h
-    · exact absurd ((ZMod.val_eq_zero _).mp h) hz0
-    · exact_mod_cast h
-  have hgz : (stP.z.val : ℤ)
-      • WeierstrassCurve.Affine.Point.some gen.x gen.y hgenNS ≠ 0 :=
-    Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine
-      (WeierstrassCurve.Affine.Point.some_ne_zero hgenNS) hzpos
-      (by rw [Pasta.vesta_card]; exact_mod_cast ZMod.val_lt _)
-  -- the honest encoding: the ladder's scalar is the wire response mod the order
-  have henc' : ((unshiftType1 (5 * 51) (ToNat.toNat zt.val : ℤ) : ℤ) : Fp)
-      = stP.z := by simpa [Type1.fromShifted, Type1.fromShiftedZ] using henc
-  have hzV : ((unshiftType1 (5 * 51) (ToNat.toNat zt.val : ℤ) : ℤ)
-      : ZMod PALLAS_BASE_CARD) = ((stP.z.val : ℤ) : ZMod PALLAS_BASE_CARD) := by
-    rw [henc']
-    push_cast
-    simp [ZMod.natCast_val]
+  have hgz : (unshiftType1 (5 * 51) (ToNat.toNat raw.z.val : ℤ) : ℤ)
+      • WeierstrassCurve.Affine.Point.some gen.x gen.y gen_nonsingular ≠ 0 := by
+    rw [← Int.cast_smul_eq_zsmul (R := Fp), hzF]
+    exact fun h => (smul_eq_zero.mp h).elim hz0
+      (WeierstrassCurve.Affine.Point.some_ne_zero gen_nonsingular)
   -- the complete addition of u and [c]·pk
   mvcgen -trivial [hadd]
   have hux₄ := CVar.eval_le hle₅ (CVar.eval_le hle₄
@@ -490,8 +411,8 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
   -- the two computed points agree: the asserts hold
   have hfinal : WeierstrassCurve.Affine.Point.some xZ yZ hzgNS
       = WeierstrassCurve.Affine.Point.some x3 y3 h3 :=
-    hzact.trans ((hsmul _ _ hzV _).trans (hmaster.trans ((congrArg
-      (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq).symm.trans hsum)))
+    hzact.trans (hmaster.trans ((congrArg
+      (WeierstrassCurve.Affine.Point.some _ _ huNS + ·) hseq).symm.trans hsum))
   injection hfinal with hfx hfy
   -- the coordinate asserts and the closing continuation
   mvcgen -trivial
@@ -520,7 +441,7 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
     injection hb with hb
     subst ha
     subst hb
-    exact fun hEq => hz0 (henc.symm.trans ((Type1.fromShifted_eq_zero_iff zt).mpr hEq))
+    exact fun hEq => hz0 ((Type1.fromShifted_eq_zero_iff raw.z).mpr hEq)
   exact hk ⟨⟩ st₉ (hle₁.trans (hle₂.trans (hle₃.trans (hle₄.trans
     (hle₅.trans (hle₆.trans (hle₇.trans (hle₈.trans hle₉))))))))
 
