@@ -20,6 +20,7 @@ bits locked below the modulus (`ltBitstringValue`; the statement carries `z`
 namespace Schnorr
 
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
+open Pasta.Shifted (unshiftType1)
 
 variable {F c : Type}
 
@@ -161,7 +162,7 @@ theorem fromShifted_eq_zero_iff (zt : Type1 Fq) :
   have ht : zt.val.val < PALLAS_SCALAR_CARD := ZMod.val_lt _
   have hiff : zt.fromShifted = 0
       ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (zt.val.val : ℤ) + 2 ^ 255 + 1) := by
-    simp only [Type1.fromShifted, Type1.fromShiftedZ, Type1.unshift]
+    simp only [Type1.fromShifted, Type1.fromShiftedZ, unshiftType1]
     exact ZMod.intCast_zmod_eq_zero_iff_dvd _ _
   have hval : zt.val = zeroCarrier
       ↔ zt.val.val = (3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 := by

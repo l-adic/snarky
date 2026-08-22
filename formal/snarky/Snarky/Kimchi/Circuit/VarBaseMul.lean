@@ -54,6 +54,7 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 namespace Snarky.Kimchi
 
 open Snarky
+open Pasta.Shifted (unshiftType1 unshiftType2)
 
 variable {F c : Type}
 
@@ -638,7 +639,7 @@ open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- The gadget is sound: under any satisfying valuation, for a base point reading
 on-curve, the consumed bit wires read as booleans — LSB first, per index — the
 scalar reads as the cast of their ℕ value, and, whenever the ladder's regime fact
-holds at the one integer `2·natLsbVal + 2^bits + 1` (the `Type1.unshift` decode
+holds at the one integer `2·natLsbVal + 2^bits + 1` (the `unshiftType1` decode
 of the bits), the result reads as exactly that multiple of the base. The cast pin is
 the gadget's whole truth: the wire fixes the bits' value only mod the
 characteristic — canonicity is a lock's business (`assertBitsBelow`), not the
@@ -736,10 +737,10 @@ theorem varBaseMul_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
           omega)]
     obtain ⟨bs, hread, hregv, hint⟩ := exists_lsbView hn bits bl hbool hsrc'
     refine ⟨bs, hread, (heq.symm.trans hregpin).trans hregv, fun hregime => ?_⟩
-    obtain ⟨hfin, hpt⟩ := hpoint (by simpa [Type1.unshift, hint] using hregime)
+    obtain ⟨hfin, hpt⟩ := hpoint (by simpa [unshiftType1, hint] using hregime)
     refine ⟨hfin, ?_⟩
     rw [← hTeq]
-    simpa [Type1.unshift, hint] using hpt
+    simpa [unshiftType1, hint] using hpt
 
 /-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. -/
 def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
@@ -802,7 +803,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (p.x.val V) (p.y.val V),
           ∃ s : ℤ,
             2 ^ (5 * chunks) < s ∧ s < 3 * 2 ^ (5 * chunks) ∧
-            (s : F) = Type1.unshift (5 * chunks) ⟨t.val.val V⟩ ∧
+            (s : F) = unshiftType1 (5 * chunks) (t.val.val V) ∧
             ∀ _ : d.LadderRegime (5 * chunks) s,
               ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hfin = s • Point.some _ _ hT) Q⦄
@@ -822,7 +823,7 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
   have hmlt' : (natLsbVal bs.toList : ℤ) < 2 ^ (5 * chunks) := by exact_mod_cast hmlt
   refine ⟨2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * chunks) + 1, by omega, by omega, ?_,
     fun hregime => hpt hregime⟩
-  simp only [Type1.unshift]
+  simp only [unshiftType1]
   rw [hpin]
   push_cast
   ring
@@ -830,9 +831,9 @@ theorem scaleFast1_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal bitsVal_lt bitsVal_drop_of_zeros
   bitsRegister_eq_cast y_ne_zero_of_odd_order) in
 /-- `scaleFast2` is sound — the PS defining equation
-`scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`, the `SplitField`
+`scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`, the `unshiftType2`
 decode `2·sDiv2 + sOdd + 2^(5·chunks)`: the inner ladder computes the register's
-`Type1.unshift` multiple, the high-bit pins force `v < 2^sDiv2Bits`, and the
+`unshiftType1` multiple, the high-bit pins force `v < 2^sDiv2Bits`, and the
 parity correction folds `sOdd` in by conditionally subtracting the base. The
 parity's booleanity is the caller's promise (the `select_spec` shape);
 `splitFieldVar` supplies it in `scaleFast2'`. -/
@@ -844,10 +845,10 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (base.x.val V) (base.y.val V),
         ∀ bb : Bool, (↑sOdd : CVar F).val V = bit bb →
           ∃ v : ℤ, 0 ≤ v ∧ v < 2 ^ sDiv2Bits ∧ sDiv2.val V = ((v : ℤ) : F) ∧
-            ∀ _ : d.LadderRegime (5 * chunks) (Type1.unshift (5 * chunks) ⟨v⟩),
+            ∀ _ : d.LadderRegime (5 * chunks) (unshiftType1 (5 * chunks) v),
               ∃ hres : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hres
-                  = SplitField.unshift (5 * chunks) ⟨v, bb⟩
+                  = unshiftType2 (5 * chunks) v (bit bb)
                       • Point.some _ _ hT) Q⦄
     (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
     ⦃Q⦄ := by
@@ -922,7 +923,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     · rw [hpin]
       push_cast
       ring
-    · obtain ⟨hg, hgpt⟩ := hpfn (by simpa [Type1.unshift] using hregime)
+    · obtain ⟨hg, hgpt⟩ := hpfn (by simpa [unshiftType1] using hregime)
       have hnegv : (CVar.negate_ base.y).val s.V = -(base.y.val s.V) := by
         simp [CVar.negate_, CVar.val_scale_]
       have hnegT : d.W.Nonsingular (base.x.val s.V) ((CVar.negate_ base.y).val s.V) := by
@@ -949,10 +950,9 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
           rw [hxv, hyv]
           simpa [selectPure] using hqns
         refine ⟨hres, ?_⟩
-        rw [show SplitField.unshift (5 * chunks)
-              (⟨(natLsbVal bs.toList : ℤ), false⟩ : SplitField ℤ Bool)
+        rw [show unshiftType2 (5 * chunks) (natLsbVal bs.toList : ℤ) (bit false)
             = 2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * chunks) from by
-          simp [SplitField.unshift]]
+          simp [unshiftType2, bit]]
         refine (Kimchi.Gate.EndoMul.some_congr d.W hres hqns ?_ ?_).trans hqpt
         · rw [hxv]; simp [selectPure]
         · rw [hyv]; simp [selectPure]
@@ -960,10 +960,9 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
           rw [hxv, hyv]
           simpa [selectPure] using hg
         refine ⟨hres, ?_⟩
-        rw [show SplitField.unshift (5 * chunks)
-              (⟨(natLsbVal bs.toList : ℤ), true⟩ : SplitField ℤ Bool)
+        rw [show unshiftType2 (5 * chunks) (natLsbVal bs.toList : ℤ) (bit true)
             = 2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * chunks) + 1 from by
-          simp [SplitField.unshift]; ring]
+          simp [unshiftType2, bit]; ring]
         refine (Kimchi.Gate.EndoMul.some_congr d.W hres hg ?_ ?_).trans hgpt
         · rw [hxv]; simp [selectPure]
         · rw [hyv]; simp [selectPure]
@@ -971,7 +970,7 @@ theorem scaleFast2_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
 open Kimchi.Gate.VarBaseMul (bitsRegister bitsVal) in
 /-- `scaleFast2'` is sound — `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read
 through its parity split: the split's recombination `s = 2·v + sOdd` composes with
-`scaleFast2`'s `SplitField.unshift` decode. -/
+`scaleFast2`'s `unshiftType2` decode. -/
 theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
     (base : AffinePoint (FVar F)) (sc : FVar F)
@@ -980,10 +979,10 @@ theorem scaleFast2'_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
         ∀ hT : d.W.Nonsingular (base.x.val V) (base.y.val V),
           ∃ (v : ℤ) (bb : Bool), 0 ≤ v ∧ v < 2 ^ sDiv2Bits ∧
             sc.val V = 2 * ((v : ℤ) : F) + bit bb ∧
-            ∀ _ : d.LadderRegime (5 * chunks) (Type1.unshift (5 * chunks) ⟨v⟩),
+            ∀ _ : d.LadderRegime (5 * chunks) (unshiftType1 (5 * chunks) v),
               ∃ hres : d.W.Nonsingular (r.x.val V) (r.y.val V),
                 Point.some _ _ hres
-                  = SplitField.unshift (5 * chunks) ⟨v, bb⟩
+                  = unshiftType2 (5 * chunks) v (bit bb)
                       • Point.some _ _ hT) Q⦄
     (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base sc)
     ⦃Q⦄ := by
@@ -1321,7 +1320,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           (∀ v, scalar.val.eval env = .ok v →
             ToNat.toNat v < 2 ^ (5 * chunks) ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
             d.LadderRegime (5 * chunks)
-              (Type1.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
+              (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
           (∀ x y, base'.x.eval env = .ok x → base'.y.eval env = .ok y →
             d.W.Nonsingular x y))
         (fun env r env' =>
@@ -1334,7 +1333,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
             ∃ xS yS, r.g.x.eval env' = .ok xS ∧ r.g.y.eval env' = .ok yS ∧
               ∃ hfin : d.W.Nonsingular xS yS,
                 Point.some _ _ hfin
-                  = Type1.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+                  = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ)
                       • Point.some _ _ hT))
         Q⦄
     (varBaseMul (c := KimchiProverC F) n chunks base' scalar)
@@ -1421,7 +1420,7 @@ theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
       Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hrun, hbsF,
       Kimchi.Gate.VarBaseMul.bitsVal_testBit nn (5 * chunks) hrange]
-  simp only [HasCurve.LadderRegime, Type1.unshift] at hregpre
+  simp only [HasCurve.LadderRegime, unshiftType1] at hregpre
   have hregime' : 3 * 2 ^ (5 * chunks) ≤ d.W.order ∨
       (2 ^ (5 * chunks - 1) < d.W.order ∧ d.W.order < 2 ^ (5 * chunks) ∧
         d.W.order % 4 = 1 ∧
@@ -1653,7 +1652,7 @@ theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           (∀ v, t.val.eval env = .ok v →
             ToNat.toNat v < 2 ^ (5 * chunks) ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
             d.LadderRegime (5 * chunks)
-              (Type1.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
+              (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
           (∀ x y, p.x.eval env = .ok x → p.y.eval env = .ok y →
             d.W.Nonsingular x y))
         (fun env r env' => ∀ v xv yv, t.val.eval env = .ok v →
@@ -1662,7 +1661,7 @@ theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
             ∃ hfin : d.W.Nonsingular xS yS,
               Point.some _ _ hfin
-                = Type1.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+                = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ)
                     • Point.some _ _ hT)
         Q⦄
     (scaleFast1 (c := KimchiProverC F) n chunks p t)
@@ -1701,7 +1700,7 @@ private theorem dropped_bits_zero [Field F] [DecidableEq F] {env : Assignments F
 incomplete subtraction of the base — well-defined on the honest run. -/
 private theorem regime_off_base [Field F] [DecidableEq F] (d : HasCurve F)
     {L : ℕ} {t : ℤ} (ht0 : 0 ≤ t) (htlt : t < 2 ^ L)
-    (hreg : d.LadderRegime L (Type1.unshift L ⟨t⟩)) :
+    (hreg : d.LadderRegime L (unshiftType1 L t)) :
     ¬ ((d.W.order : ℤ) ∣ (2 * t + 2 ^ L)) := by
   intro hdvd
   rcases hreg with hsub | ⟨-, -, -, hnf⟩
@@ -1711,8 +1710,8 @@ private theorem regime_off_base [Field F] [DecidableEq F] (d : HasCurve F)
     linarith
   · refine hnf (Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd_sub_one
       d.W.order ?_)
-    rw [show Type1.unshift L (⟨t⟩ : Type1 ℤ) - 1 = 2 * t + 2 ^ L from by
-      simp [Type1.unshift]]
+    rw [show unshiftType1 L t - 1 = 2 * t + 2 ^ L from by
+      simp [unshiftType1]]
     exact hdvd
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order zsmul_eq_zero_iff_order_dvd) in
@@ -1720,7 +1719,7 @@ open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order zsmul_eq_zero_iff_order_dvd)
 `scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`: on a readable on-curve
 base, a readable in-range faithful half whose `Type1` decode satisfies the inner
 ladder's regime, and a parity flag reading a genuine bit, the honest run accepts and
-the returned point is the `SplitField` decode's multiple. The regime also keeps the
+the returned point is the `unshiftType2` decode's multiple. The regime also keeps the
 ladder result off the base (`s ≢ 1`, subwrap by size, one-wrap because `1` is a
 forbidden residue), which is what makes the parity correction's incomplete
 subtraction well-defined — the completeness-side counterpart of the sound law's
@@ -1737,7 +1736,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           (∀ v, sDiv2.eval env = .ok v →
             ToNat.toNat v < 2 ^ sDiv2Bits ∧ ((ToNat.toNat v : ℕ) : F) = v ∧
             d.LadderRegime (5 * chunks)
-              (Type1.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩)) ∧
+              (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
           (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
             d.W.Nonsingular x y))
         (fun env r env' => ∀ v xv yv, sDiv2.eval env = .ok v →
@@ -1747,7 +1746,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
             ∃ hres : d.W.Nonsingular xS yS,
               Point.some _ _ hres
-                = SplitField.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ), bb⟩
+                = unshiftType2 (5 * chunks) (ToNat.toNat v : ℤ) (bit bb)
                     • Point.some _ _ hT)
         Q⦄
     (scaleFast2 (c := KimchiProverC F) n chunks sDiv2Bits base sDiv2 sOdd)
@@ -1814,9 +1813,9 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
       apply hs1
       refine (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 ?_
       calc (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
-          = Type1.unshift (5 * chunks) ⟨(ToNat.toNat v : ℤ)⟩
+          = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ)
               • Point.some _ _ hT + -Point.some _ _ hT := by
-            simp only [Type1.unshift]
+            simp only [unshiftType1]
             module
         _ = 0 := h0
     mvcgen
@@ -1837,7 +1836,7 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     have hqpt : (Point.some _ _ hqns : d.W.Point)
         = (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
       rw [← hqsum, hpt, hnegPt]
-      simp only [Type1.unshift]
+      simp only [unshiftType1]
       module
     -- the point conditional selects coordinatewise, `y` before `x`
     mvcgen
@@ -1872,17 +1871,15 @@ theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCur
     cases bb
     · refine ⟨xq, yq, by simpa [selectPure] using hxv',
         by simpa [selectPure] using CVar.eval_le hlex hyv', hqns, ?_⟩
-      rw [show SplitField.unshift (5 * chunks)
-          (⟨(ToNat.toNat v : ℤ), false⟩ : SplitField ℤ Bool)
+      rw [show unshiftType2 (5 * chunks) (ToNat.toNat v : ℤ) (bit false)
           = 2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks) from by
-        simp [SplitField.unshift]]
+        simp [unshiftType2, bit]]
       exact hqpt
     · refine ⟨xg, yg, by simpa [selectPure] using hxv',
         by simpa [selectPure] using CVar.eval_le hlex hyv', hfin, ?_⟩
-      rw [show SplitField.unshift (5 * chunks)
-          (⟨(ToNat.toNat v : ℤ), true⟩ : SplitField ℤ Bool)
-          = Type1.unshift (5 * chunks) (⟨(ToNat.toNat v : ℤ)⟩ : Type1 ℤ) from by
-        simp [SplitField.unshift, Type1.unshift]; ring]
+      rw [show unshiftType2 (5 * chunks) (ToNat.toNat v : ℤ) (bit true)
+          = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ) from by
+        simp [unshiftType2, unshiftType1, bit]; ring]
       exact hpt
   case post.except =>
     exact ExceptConds.entails_false
@@ -1940,7 +1937,7 @@ ANY parity bit — and the returned pair reads as the parity split. -/
 /-- `scaleFast2'` is complete — the honest side of the defining equation
 `scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read through its parity split: the
 split's half must be in range, faithful, and regime-satisfying (its `Type1` decode
-feeds the inner ladder), and the returned point is the `SplitField` decode's
+feeds the inner ladder), and the returned point is the `unshiftType2` decode's
 multiple at the honest split. -/
 theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCurve F)
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
@@ -1954,8 +1951,8 @@ theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCu
             ToNat.toNat ((splitField v).1) < 2 ^ sDiv2Bits ∧
             ((ToNat.toNat ((splitField v).1) : ℕ) : F) = (splitField v).1 ∧
             d.LadderRegime (5 * chunks)
-              (Type1.unshift (5 * chunks)
-                ⟨(ToNat.toNat ((splitField v).1) : ℤ)⟩)) ∧
+              (unshiftType1 (5 * chunks)
+                (ToNat.toNat ((splitField v).1) : ℤ))) ∧
           (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
             d.W.Nonsingular x y))
         (fun env r env' => ∀ v xv yv, sc.eval env = .ok v →
@@ -1964,8 +1961,8 @@ theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasCu
           ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
             ∃ hres : d.W.Nonsingular xS yS,
               Point.some _ _ hres
-                = SplitField.unshift (5 * chunks)
-                    ⟨(ToNat.toNat ((splitField v).1) : ℤ), (splitField v).2⟩
+                = unshiftType2 (5 * chunks)
+                    (ToNat.toNat ((splitField v).1) : ℤ) (bit (splitField v).2)
                       • Point.some _ _ hT)
         Q⦄
     (scaleFast2' (c := KimchiProverC F) n chunks sDiv2Bits base sc)

@@ -20,6 +20,7 @@ is one integer read in two fields (`nReconstruct_inj`, `decomposition_eq_toIntZ`
 namespace Schnorr
 
 open Snarky Snarky.Kimchi CompElliptic.Fields.Pasta
+open Pasta.Shifted (unshiftType1)
 open Std.Do
 
 /-- The parameter tables have the full 55-round length — the hash laws' size
@@ -205,7 +206,7 @@ theorem verifyCircuit_spec (stv : Statement.Raw (FVar Fq))
   set s : ℤ := 2 * (natLsbVal bs.toList : ℤ) + 2 ^ (5 * 51) + 1 with hsdef
   clear_value s
   have hsdecode : s = Type1.fromShiftedZ ⟨stv.z.val.val st.V⟩ := by
-    simp only [hsdef, Type1.fromShiftedZ, Type1.unshift, hvalId]
+    simp only [hsdef, Type1.fromShiftedZ, unshiftType1, hvalId]
   -- the ladder regime at the canonical scalar: the one-wrap band off the forbidden set
   have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
   have hregime : HasCurve.vesta.LadderRegime (5 * 51) s := by
@@ -489,9 +490,9 @@ theorem verifyCircuit_complete_spec (stv : Statement.Raw (FVar Fq))
       (WeierstrassCurve.Affine.Point.some_ne_zero hgenNS) hzpos
       (by rw [Pasta.vesta_card]; exact_mod_cast ZMod.val_lt _)
   -- the honest encoding: the ladder's scalar is the wire response mod the order
-  have henc' : ((Type1.unshift (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ) : Fp)
+  have henc' : ((unshiftType1 (5 * 51) (ToNat.toNat zt.val : ℤ) : ℤ) : Fp)
       = stP.z := by simpa [Type1.fromShifted, Type1.fromShiftedZ] using henc
-  have hzV : ((Type1.unshift (5 * 51) ⟨(ToNat.toNat zt.val : ℤ)⟩ : ℤ)
+  have hzV : ((unshiftType1 (5 * 51) (ToNat.toNat zt.val : ℤ) : ℤ)
       : ZMod PALLAS_BASE_CARD) = ((stP.z.val : ℤ) : ZMod PALLAS_BASE_CARD) := by
     rw [henc']
     push_cast
