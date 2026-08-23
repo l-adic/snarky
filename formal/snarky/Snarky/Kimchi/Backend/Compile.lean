@@ -46,7 +46,7 @@ def kimchiSolve [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F]
         (A.size + B.size) env₀ with
     | .error e => .error e
     | .ok p =>
-      match readVar (val := b) p.result p.assignments with
+      match (readVar (val := b) p.result).run p.assignments with
       | .error e => .error e
       | .ok outVal => .ok (outVal, p.assignments)
 
@@ -110,7 +110,7 @@ theorem kimchiSolve_publicSlots [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
         (A.size + B.size) env₀ with e | p <;> rw [hp] at h
     · cases h
     · dsimp only at h
-      rcases hr : readVar (val := b) p.result p.assignments with e | outv <;>
+      rcases hr : (readVar (val := b) p.result).run p.assignments with e | outv <;>
         rw [hr] at h
       · cases h
       · cases h

@@ -45,6 +45,21 @@ Snarky.equalsPure
 Snarky.neqPure
 Snarky.selectPure
 
+-- The witness-block normal forms and run equations (Circuit/DSL/Monad.lean): a
+-- do-block over `AsProver` normalises to its constructors and `run` computes on them,
+-- consumed by simp — rooted as simp-set surface.
+Snarky.AsProver.pure_eq
+Snarky.AsProver.bind_eq
+Snarky.AsProver.map_eq
+Snarky.AsProver.bind_pure
+Snarky.AsProver.bind_read
+Snarky.AsProver.bind_fail
+Snarky.AsProver.run_pure
+Snarky.AsProver.run_read
+Snarky.AsProver.run_fail
+Snarky.AsProver.run_bind
+Snarky.AsProver.run_readCVar
+
 -- The alignment bridge: complete a run's table to a valuation, and tie an honest run
 -- to the soundness relation (Backend/{Assignments,WP}.lean).
 Snarky.Assignments.toValuation

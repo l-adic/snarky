@@ -719,12 +719,11 @@ private theorem xorCore_run {F c : Type} [Field F] [DecidableEq F]
     split
     · next h => rw [h, hnv] at hv; cases hv
     · exact hv
-  have hwit : (xorWit a b env).map
-      (CircuitType.valueToFields (F := F) (val := UnChecked Bool))
+  have hwit : (CircuitType.valueToFields (F := F) (val := UnChecked Bool) <$> xorWit a b).run env
       = .ok ⟨#[bit (ab ^^ bb)], rfl⟩ := by
     cases hab : ab <;> cases hbb : bb <;>
-      simp [xorWit, AsProver.readCVar, ha, hb, hab, hbb, Bind.bind, ReaderT.bind,
-        Except.bind, Pure.pure, ReaderT.pure, Except.pure, Except.map,
+      simp [xorWit, ha, hb, hab, hbb, Bind.bind,
+        Except.bind, Pure.pure,
         CircuitType.valueToFields, bit, one_ne_zero]
   have hext : env.extendPairs
       ((allocRange nv 1).toList.zip
@@ -750,7 +749,7 @@ private theorem xorCore_run {F c : Type} [Field F] [DecidableEq F]
     exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ haa hb' hsub
       (by cases ab <;> cases bb <;> simp [bit])
   show prove (Checker.holds (F := F) (c := c))
-    (.existsOp 1 (fun e => (xorWit a b e).map _) _) nv env = _
+    (.existsOp 1 (_ <$> xorWit a b) _) nv env = _
   simp only [prove, hwit, hext]
   show prove (Checker.holds (F := F) (c := c))
     (.addConstraintOp (BasicSystem.r1cs (c := c) (CVar.add_ a.toCVar a.toCVar) b.toCVar
@@ -987,9 +986,9 @@ private theorem selectCore_run {F c : Type} [Field F] [DecidableEq F]
     split
     · next h => rw [h, hnv] at hv; cases hv
     · exact hv
-  have hw : selectWit b t e env = .ok (if bb then tv else ev) := by
+  have hw : (selectWit b t e).run env = .ok (if bb then tv else ev) := by
     cases bb <;>
-      simp [selectWit, AsProver.readCVar, hb, ht, he, Bind.bind, ReaderT.bind,
+      simp [selectWit, hb, ht, he, Bind.bind,
         Except.bind, bit]
   have hch : Checker.holds (F := F) (c := c)
       (BasicSystem.r1cs b.toCVar (CVar.sub_ t e) (CVar.sub_ (.var nv) e))

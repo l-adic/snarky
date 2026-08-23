@@ -68,8 +68,8 @@ private theorem sealCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     split
     · next h => rw [h, hnv] at hv; cases hv
     · exact hv
-  have hw : AsProver.readCVar x env = .ok xv := by
-    simpa [AsProver.readCVar] using hx
+  have hw : (AsProver.readCVar x).run env = .ok xv := by
+    simpa using hx
   have hch : Checker.holds (F := F) (c := c) (BasicSystem.equal x (.var nv))
       (env.extend nv xv) = true :=
     LawfulChecker.check_equal _ _ _ _ (CVar.eval_le hle hx)

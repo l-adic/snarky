@@ -104,9 +104,9 @@ def eraseWitness : CircuitM F c α → CircuitM F c α
   | .freshOp k => .freshOp fun v => eraseWitness (k v)
   | .addConstraintOp con k => .addConstraintOp con (eraseWitness k)
   | .existsOp n _ k =>
-    .existsOp n (fun _ => .error (.custom "erased")) fun vs => eraseWitness (k vs)
+    .existsOp n (AsProver.throw "erased") fun vs => eraseWitness (k vs)
   | .assignOp vs _ k =>
-    .assignOp vs (fun _ => .error (.custom "erased")) (eraseWitness k)
+    .assignOp vs (AsProver.throw "erased") (eraseWitness k)
   | .labelOp s k => .labelOp s (eraseWitness k)
 
 /-- Witness-independence of the builder: `build` factors through `eraseWitness` —

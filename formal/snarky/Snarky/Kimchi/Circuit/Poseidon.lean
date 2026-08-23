@@ -299,10 +299,10 @@ theorem poseidon_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
   obtain ⟨av, ha⟩ := CVar.evalOk haok
   obtain ⟨bv, hb⟩ := CVar.evalOk hbok
   obtain ⟨cv, hc⟩ := CVar.evalOk hcok
-  have hwit : roundOutputsWit p s st.env
+  have hwit : (roundOutputsWit p s).run st.env
       = .ok (Vector.ofFn fun i => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) (av, bv, cv)) := by
-    simp [roundOutputsWit, AsProver.readCVar, ha, hb, hc, Bind.bind, ReaderT.bind,
-      Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+    simp [roundOutputsWit, ha, hb, hc, Bind.bind,
+      Except.bind, Pure.pure]
   refine ⟨by rw [hwit]; rfl, fun outs st₁ hgrant hle₁ => ?_⟩
   have hread := hgrant _ hwit
   have helem : ∀ (i : ℕ) (hi : i < 55),

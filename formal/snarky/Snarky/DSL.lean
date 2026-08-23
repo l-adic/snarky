@@ -33,7 +33,7 @@ returning later as a `deriving` handler if wanted.
 | --- | --- | --- |
 | `Snarky(..)` | `CircuitM` | the deep embedding — THE sanctioned deviation (`DSL/Monad`) |
 | `CircuitOps(..)` | `CircuitM` constructors | one constructor per ops-record field |
-| `AsProver(..)` | `AsProver` | reader-except stack; advice row dropped |
+| `AsProver(..)` | `AsProver` | syntax (`pure`/`read`/`fail`), evaluated by `run`; no advice row |
 | `AsProverCtx(..)`, `liftAdvice`, `runAdvice` | — | the advice row, dropped |
 | `liftEffectSnarky`, `mkWitnessTable` | — | `Effect` machinery, no pure-embedding analogue |
 | `runAsProver` | `AsProver.run` | |

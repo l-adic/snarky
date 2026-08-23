@@ -102,7 +102,7 @@ def proveWith (ops : BackendOps F g c σ) :
     | .error e => .error e
     | .ok (nv', env') => proveWith ops k nv' env'
   | .existsOp n wit k, nv, env =>
-    match wit env with
+    match wit.run env with
     | .error e => .error e
     | .ok xs =>
       match env.extendPairs ((allocRange nv n).toList.zip xs.toList) with
@@ -112,7 +112,7 @@ def proveWith (ops : BackendOps F g c σ) :
     match vs.toList.find? (nv ≤ ·) with
     | some v => .error (.conflict v)
     | none =>
-      match wit env with
+      match wit.run env with
       | .error e => .error e
       | .ok xs =>
         match env.extendPairs (vs.toList.zip xs.toList) with
@@ -162,7 +162,7 @@ theorem proveWith_checkedOps (holds : c → Assignments F → Bool)
     · simp only [if_neg h]
   | existsOp n wit k ih =>
     simp only [proveWith, prove]
-    cases hw : wit env with
+    cases hw : wit.run env with
     | error e => rfl
     | ok xs =>
       simp only []
@@ -175,7 +175,7 @@ theorem proveWith_checkedOps (holds : c → Assignments F → Bool)
     | some v => rfl
     | none =>
       simp only []
-      cases hw : wit env with
+      cases hw : wit.run env with
       | error e => rfl
       | ok xs =>
         simp only []

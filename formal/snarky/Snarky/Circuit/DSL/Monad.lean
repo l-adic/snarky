@@ -51,43 +51,156 @@ namespace Snarky
 
 /-! ## Witness (prover-side) computations -/
 
-/-- A prover-only witness computation: read the current assignments, produce a value or
-fail (PS `AsProver f r a`, minus the advice row). `ReaderT`/`Except` supply the `Monad` and
-`LawfulMonad` instances. -/
-abbrev AsProver (F : Type u) : Type u → Type u :=
-  ReaderT (Assignments F) (Except EvalError)
+/-- A prover-only witness computation, as syntax (PS `AsProver f r a`, minus the advice
+row): return a value, read a variable from the current assignments and continue with
+its value, or fail. A computation can read the table and nothing else — there is no
+instruction that observes a failed read and carries on — which is PS's surface
+(`readCVar`, `throwAsProver`, the monad) and nothing more. `run` is its evaluation
+against a table. -/
+inductive AsProver (F : Type u) : Type u → Type u where
+  /-- Return `a`. -/
+  | pure {α : Type u} (a : α) : AsProver F α
+  /-- Read variable `v`'s value, then run `k` on it. -/
+  | read {α : Type u} (v : Variable) (k : F → AsProver F α) : AsProver F α
+  /-- Fail with `e`. -/
+  | fail {α : Type u} (e : EvalError) : AsProver F α
 
 namespace AsProver
 
-/-- Read the value of an affine expression from the current assignments (PS `readCVar`). -/
-def readCVar [Add F] [Mul F] (x : CVar F) : AsProver F F :=
-  fun env => x.eval env
+variable {F : Type u} {α β : Type u}
 
-/-- The prover-side list read is the elementwise read. -/
-theorem readAll_ok [Add F] [Mul F] {env : Assignments F} :
-    ∀ {xs : List (CVar F)} {vs : List F},
-      xs.mapM (CVar.eval · env) = .ok vs →
-      (xs.mapM readCVar) env = .ok vs
-  | [], vs, h => h
-  | x :: xs, vs, h => by
-    cases he : x.eval env with
-    | error e => simp [List.mapM_cons, he, Bind.bind, Except.bind] at h
-    | ok y =>
-      cases hr : xs.mapM (CVar.eval · env) with
-      | error e => simp [List.mapM_cons, he, hr, Bind.bind, Except.bind] at h
-      | ok ys =>
-        simp only [List.mapM_cons, he, hr, Bind.bind, Except.bind, Pure.pure,
-          Except.pure] at h
-        simp [List.mapM_cons, readCVar, he, readAll_ok hr, Bind.bind,
-          ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure, h]
+/-- Sequencing: run the first computation, then `f` on its result. -/
+protected def bind : AsProver F α → (α → AsProver F β) → AsProver F β
+  | .pure a, f => f a
+  | .read v k, f => .read v fun x => AsProver.bind (k x) f
+  | .fail e, _ => .fail e
+
+instance : Monad (AsProver F) where
+  pure := .pure
+  bind := AsProver.bind
+
+/-- A `do`-block over `AsProver` normalises to its constructors: these equations push
+`pure`, `>>=` and `<$>` through to `.pure`, `.read` and `.fail`, so that anything
+defined on the constructors computes on a block written with `do`. -/
+@[simp] theorem pure_eq (a : α) : (Pure.pure a : AsProver F α) = .pure a := rfl
+
+@[simp] theorem bind_eq (x : AsProver F α) (f : α → AsProver F β) :
+    x >>= f = AsProver.bind x f := rfl
+
+@[simp] theorem map_eq (f : α → β) (x : AsProver F α) :
+    f <$> x = AsProver.bind x fun a => .pure (f a) := rfl
+
+@[simp] theorem bind_pure (a : α) (f : α → AsProver F β) :
+    AsProver.bind (.pure a) f = f a := rfl
+
+@[simp] theorem bind_read (v : Variable) (k : F → AsProver F α) (f : α → AsProver F β) :
+    AsProver.bind (.read v k) f = .read v fun x => AsProver.bind (k x) f := rfl
+
+@[simp] theorem bind_fail (e : EvalError) (f : α → AsProver F β) :
+    AsProver.bind (.fail e : AsProver F α) f = .fail e := rfl
+
+private theorem bind_pure' (x : AsProver F α) : AsProver.bind x .pure = x := by
+  induction x with
+  | pure a => rfl
+  | read v k ih => simp only [AsProver.bind]; exact congrArg _ (funext ih)
+  | fail e => rfl
+
+private theorem bind_assoc' (x : AsProver F α) (f : α → AsProver F β)
+    (g : β → AsProver F γ) :
+    AsProver.bind (AsProver.bind x f) g = AsProver.bind x fun a => AsProver.bind (f a) g := by
+  induction x with
+  | pure a => rfl
+  | read v k ih => simp only [AsProver.bind]; exact congrArg _ (funext ih)
+  | fail e => rfl
+
+instance : LawfulMonad (AsProver F) :=
+  LawfulMonad.mk' _ (id_map := bind_pure') (pure_bind := fun _ _ => rfl)
+    (bind_assoc := bind_assoc')
+
+/-- Read the value of an affine expression from the current assignments (PS
+`readCVar`): read its variables and combine — the prover's evaluation of the term. -/
+def readCVar [Add F] [Mul F] : CVar F → AsProver F F
+  | .var v => .read v .pure
+  | .const k => .pure k
+  | .add a b => do
+    let x ← readCVar a
+    let y ← readCVar b
+    pure (x + y)
+  | .scale k y => do
+    let x ← readCVar y
+    pure (k * x)
 
 /-- Fail with a message (PS `throwAsProver`). -/
-def throw (msg : String) : AsProver F α :=
-  fun _ => .error (.custom msg)
+def throw (msg : String) : AsProver F α := .fail (.custom msg)
 
-/-- Run a witness computation against an assignment (PS `runAsProver`, minus `Effect`). -/
-def run (p : AsProver F α) (env : Assignments F) : Except EvalError α :=
-  p env
+/-- Run a witness computation against an assignment (PS `runAsProver`, minus `Effect`):
+a read of an assigned variable continues with its value; one of an unassigned
+variable, or a `fail`, ends the run. -/
+def run : AsProver F α → Assignments F → Except EvalError α
+  | .pure a, _ => .ok a
+  | .read v k, env =>
+    match env v with
+    | some x => (k x).run env
+    | none => .error (.unassigned v)
+  | .fail e, _ => .error e
+
+/-- `run` computes by its three equations and the sequencing law; a `do`-block reaches
+them through the normal forms above. -/
+@[simp] theorem run_pure (a : α) (env : Assignments F) :
+    (AsProver.pure a : AsProver F α).run env = .ok a := rfl
+
+@[simp] theorem run_read (v : Variable) (k : F → AsProver F α) (env : Assignments F) :
+    (AsProver.read v k).run env = match env v with
+      | some x => (k x).run env
+      | none => .error (.unassigned v) := by
+  rcases h : env v with _ | x <;> simp [run, h]
+
+@[simp] theorem run_fail (e : EvalError) (env : Assignments F) :
+    (AsProver.fail e : AsProver F α).run env = .error e := rfl
+
+@[simp] theorem run_bind (x : AsProver F α) (f : α → AsProver F β) (env : Assignments F) :
+    (AsProver.bind x f).run env = (x.run env).bind fun a => (f a).run env := by
+  induction x with
+  | pure a => rfl
+  | read v k ih =>
+    simp only [AsProver.bind, run]
+    cases env v with
+    | none => rfl
+    | some x => exact ih x
+  | fail e => rfl
+
+/-- Reading an affine expression is evaluating it. -/
+@[simp] theorem run_readCVar [Add F] [Mul F] (x : CVar F) (env : Assignments F) :
+    (readCVar x).run env = x.eval env := by
+  induction x with
+  | var v =>
+    simp only [readCVar, run_read, run_pure, CVar.eval]
+    rcases env v with _ | x <;> rfl
+  | const k => rfl
+  | add a b iha ihb =>
+    simp only [readCVar, bind_eq, run_bind, iha, ihb, run_pure, CVar.eval]
+    rcases a.eval env with e | x
+    · rfl
+    · rcases b.eval env with e | y <;> rfl
+  | scale k y ih =>
+    simp only [readCVar, bind_eq, run_bind, ih, run_pure, CVar.eval]
+    rcases y.eval env with e | x <;> rfl
+
+/-- The prover-side list read is the elementwise read. -/
+theorem run_mapM_readCVar [Add F] [Mul F] (env : Assignments F) :
+    ∀ xs : List (CVar F), (xs.mapM readCVar).run env = xs.mapM (CVar.eval · env)
+  | [] => rfl
+  | x :: xs => by
+    simp only [List.mapM_cons, bind_eq, pure_eq, run_bind, run_readCVar, run_pure,
+      run_mapM_readCVar env xs]
+    rcases x.eval env with e | v
+    · rfl
+    · rcases xs.mapM (CVar.eval · env) with e | vs <;> rfl
+
+/-- A successful elementwise read is a successful list read. -/
+theorem readAll_ok [Add F] [Mul F] {env : Assignments F} {xs : List (CVar F)} {vs : List F}
+    (h : xs.mapM (CVar.eval · env) = .ok vs) : (xs.mapM readCVar).run env = .ok vs := by
+  rw [run_mapM_readCVar]; exact h
 
 end AsProver
 
@@ -245,7 +358,7 @@ execute `compute`, whose output is — in the NP sense — the witness justifyin
 existential. Renamed because `exists` is Lean's `∃` keyword. -/
 def witness [inst : CircuitType F val var] [CheckedType F c var]
     (compute : AsProver F val) : CircuitM F c var :=
-  .existsOp inst.size (fun env => (compute env).map inst.valueToFields) fun vs => do
+  .existsOp inst.size (inst.valueToFields <$> compute) fun vs => do
     let v := inst.fieldsToVar (mapVec CVar.var vs)
     CheckedType.check (c := c) v
     pure v
@@ -253,25 +366,25 @@ def witness [inst : CircuitType F val var] [CheckedType F c var]
 /-- Read a typed variable bundle back to its value during a prover run (PS `read`). The
 length check is dynamic (it always succeeds) to keep the definition kernel-reducible
 without a `mapM`-length lemma. -/
-def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver F val :=
-  fun env => do
-    let fields ← (inst.varToFields v).toList.mapM (CVar.eval · env)
-    if h : fields.length = inst.size then
-      pure (inst.fieldsToValue ⟨⟨fields⟩, by simpa using h⟩)
-    else
-      .error (.custom "readVar: size mismatch")
+def readVar [Add F] [Mul F] [inst : CircuitType F val var] (v : var) : AsProver F val := do
+  let fields ← (inst.varToFields v).toList.mapM AsProver.readCVar
+  if h : fields.length = inst.size then
+    pure (inst.fieldsToValue ⟨⟨fields⟩, by simpa using h⟩)
+  else
+    AsProver.throw "readVar: size mismatch"
 
 /-- Successful `readVar`s are stable under assignment extension — the bundle form of
 `CVar.eval_le`. -/
 theorem readVar_le [Add F] [Mul F] [inst : CircuitType F val var] {v : var}
     {env env' : Assignments F} (hle : env.Le env') {x : val}
-    (h : readVar (F := F) v env = .ok x) : readVar (F := F) v env' = .ok x := by
-  unfold readVar at h ⊢
+    (h : (readVar (F := F) v).run env = .ok x) : (readVar (F := F) v).run env' = .ok x := by
+  simp only [readVar, AsProver.bind_eq, AsProver.run_bind, AsProver.run_mapM_readCVar] at h ⊢
   cases hm : (inst.varToFields v).toList.mapM (CVar.eval · env) with
   | error e => rw [hm] at h; cases h
   | ok fields =>
     rw [hm] at h
     rw [mapM_eval_le hle hm]
-    exact h
+    simp only [Except.bind] at h ⊢
+    split at h <;> split <;> simp_all [AsProver.throw]
 
 end Snarky
