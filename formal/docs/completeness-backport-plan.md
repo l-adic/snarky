@@ -5,11 +5,9 @@ course built and measured, on a five-gadget toy, the formulation of completeness
 this plan carries into the codebase. File and line references are at `sound-native`
 (`1ffa348e`), which stacks on PRs #313 and #314; the backport starts after those land,
 and keeps the soundness half `sound-native` introduced (`Builder V`, `SoundCheckedType`,
-`witness_spec`) untouched. Every step below names the course commit it
-inherits from, the codebase files it touches, the numbers it is judged by, and the
-decision it needs, if any. Steps are ordered by dependency; each is one PR off `main`,
-green on every gate, with no `2×` surviving the PR except the transitional items S6
-marks and S7 removes.
+`witness_spec`) untouched. Every step names the course commit it inherits from and the
+codebase files it touches. Steps are ordered by dependency; each is one PR off `main`,
+green on every gate, with no `2×` surviving a PR.
 
 ## 0. Where the codebase stands, and where it ends up
 
@@ -35,16 +33,15 @@ state, `prove holds (g …) st.nv st.env = .ok ((gRun st …).out r)`, composed 
 set; no proof mentions that names are numbers. Witness blocks are syntax
 (`AsProver` as an inductive) with an evaluation `eval` and `run_eq_eval`. There is one
 reading, `readVal`, at two valuations — arbitrary `V` for soundness,
-`env.toValuation` for completeness. The prover `WP` instance, `Complete`, and every
-CPS completeness law are gone (or, per the S7 decision, the forward calculus stays as
-rooted certificates). `solve_complete` and the Schnorr boundary consume run equations
-directly.
+`env.toValuation` for completeness. The prover `WP` instance, `Complete`, the bridge,
+and every CPS completeness law are gone. `solve_complete` and the Schnorr boundary
+consume run equations directly.
 
 **The course's verdict this rests on** (Ch8 §8.9, Ch9 §9.5): forward proofs are
 shorter than backward ones on every gadget (`double` 4/10, `select` 7/17, `isZero`
-21/47), the difference is not text per call but what had to be invented (continuation,
-`Le` conjunct, pinning, `Stable`, frame), and the backward side *grew* when values
-left the statements because a promise stated at the exit must be moved by `get_of_le`
+21/47); the difference is not text per call but what had to be invented (continuation,
+`Le` conjunct, pinning, `Stable`, frame); and the backward side *grew* when values
+left the statements, because a promise stated at the exit must be moved by `get_of_le`
 per reading per state, which no search removes. §9.6: keep deployed statements as
 corollaries; change the working form.
 
@@ -67,8 +64,10 @@ corollaries; change the working form.
 | `prove_witnessVar` | `prove_witness` (+ `LawfulCheckedType.check_run`) | the leaf allocates a bundle and runs its check |
 | `prove_dom`, `prove_le` | `prove_dom` (from `prove_freshFrom`), `prove_assignments_le` (exists) | |
 | `sumRun`, `prove_sumAll_loop` | `prove_mapAccumM`, `prove_generateVec` | state function a parameter; induction on the list |
-| `Runs`, `ok`, `wlp`, `sp`, `Runs.eq`, `Runs.le`, `triple_iff_ok_and_wlp`, `proverSpec_iff` | `Backend/Forward.lean` (new) | transitional tooling; certificates per S7 |
-| `ProverM.read`, `ProverSpec`, `Stable`, frame, `recall` | not ported | the backward route; the course keeps it as the argument |
+| `Runs`, `Runs.eq`, `Runs.le` | beside `prove_bind` in `Backend/Prover.lean` | the exactness and growth laws; no `WP` needed |
+| `ProverSpec` (unary), `proverSpec_iff` (`ok ∧ wlp`) | `Complete` (unary), `complete_spec_iff` (`ok ∧ wlp`), `WP.lean` prover section | the only CPS form between S4 and S5; deleted in S5 |
+| `sp`, `gc_sp_wlp`, `sp_exact`, `sp_bind`, `triple_iff_ok_and_wlp` | not ported | no consumer; the argument lives in the course |
+| `ProverM.read`, `Stable`, frame, `recall` | not ported | the backward route; the course keeps it as the argument |
 | `readVal_fvar/prod/ofEquiv` | exist (`Read.lean`, `@[circuitVal]`) | become the only decomposition family |
 
 ## 2. Steps
@@ -85,14 +84,14 @@ inductive AsProver (F : Type) : Type → Type
   | throw : EvalError → AsProver F α
 ```
 
-with `bind` by structural recursion, `Monad`/`LawfulMonad` as for `CircuitM`, the four
-`@[simp]` normal forms (`pure_eq`, `bind_eq`, `bind_pure`, `bind_read`, plus
-`bind_throw`), `readCVar x := .read x .pure`, `throw`, and `run : AsProver F α →
-Assignments F → Except EvalError α` with its three structural `@[simp]` equations.
-PS's `AsProver f r a = AsProverCtx → Effect a` admits interception through the raw
-constructor and `MonadEffect`, but no witness block does it and no catch is exported;
-the sanctioned surface is `pure`/`bind`/`readCVar`/`throwAsProver`, which is the
-inductive. Same move the port already made for `Snarky(..)` → `CircuitM`.
+with `bind` by structural recursion, `Monad`/`LawfulMonad` as for `CircuitM`, the
+`@[simp]` normal forms (`pure_eq`, `bind_eq`, `bind_pure`, `bind_read`, `bind_throw`),
+`readCVar x := .read x .pure`, `throw`, and `run : AsProver F α → Assignments F →
+Except EvalError α` with its three structural `@[simp]` equations. PS's `AsProver f r
+a = AsProverCtx → Effect a` admits interception through the raw constructor and
+`MonadEffect`, but no witness block does it and no catch is exported; the sanctioned
+surface is `pure`/`bind`/`readCVar`/`throwAsProver`, which is the inductive. Same move
+the port already made for `Snarky(..)` → `CircuitM`.
 
 Touch set: `prove` (`Prover.lean:82,93`: `wit.run env`), `prove_witnessCore`, `witness`
 (`Monad.lean:246`: `compute.map valueToFields` is functorial — unchanged text), the typed
@@ -107,9 +106,9 @@ bare `pure` in its statement is the *constructor*; state the `Pure.pure` form
 explicitly or normalise first.
 
 Accept: build; `snarky/scripts/check_axioms.sh` unchanged roots; deadcode; `lake
-lint` (docBlame on the new constructors); shake; `check-style.sh`. No measurement.
+lint` (docBlame on the new constructors); shake; `check-style.sh`.
 
-### S2 — the fragment: `freshOp` / `assignOp`
+### S2 — drop `freshOp` and `assignOp` from the fragment
 
 `Dom` (S3) is an invariant of every run only if nothing allocates without a value.
 `CircuitM.freshOp` does, and `assignOp` fills later. No gadget emits either: nothing
@@ -119,18 +118,15 @@ every allocation is `witness = existsOp`, which computes before it allocates (PS
 (`snarky`, `snarky-kimchi`, `poseidon`, `random-oracle`, `schnorr`) never call PS
 `fresh`/`assignVars` either.
 
-**Decision.** (a) Remove `freshOp`, `assignOp`, `fresh`, `assignVars` from the modeled
-fragment — recommended: the ops record keeps them in PS, the port documents the two
-rows as outside the fragment (`DSL.lean` parity table, `Snarky.lean` preamble,
-`docs/snarky-ps-alignment.md`), and `Dom` is an interpreter invariant. (b) Keep them and
-add `CircuitM.NoFresh` (one lemma per combinator, `forIn`/`mapAccumM` included) as a
-hypothesis of `prove_dom`. (a) deletes ~80 lines and two cases from every interpreter
-induction; (b) adds a predicate that every law must carry.
+Decided: remove `freshOp`, `assignOp`, `fresh`, `assignVars` from the modeled
+fragment. The ops record keeps them in PS; the port documents the two rows as outside
+the fragment (`DSL.lean` parity table, `Snarky.lean` preamble,
+`docs/snarky-ps-alignment.md`).
 
-Touch set under (a): `CircuitM`, `CircuitM.bind`, `build`, `prove`, `prove_bind`,
+Touch set: `CircuitM`, `CircuitM.bind`, `build`, `prove`, `prove_bind`,
 `prove_freshFrom`, `prove_assignments_le`, `prove_nextVar_le`, `prove_build_agrees`,
-`prove_complete`, `build_eraseWitness`, the three doc sites. `check_cs_equality` is
-unaffected (gadget programs never contained the ops).
+`prove_complete`, `build_eraseWitness` (two cases fewer in each induction), the three
+doc sites. `check_cs_equality` is unaffected (gadget programs never contained the ops).
 
 Accept: build + all gates; parity table updated in the same commit.
 
@@ -157,7 +153,7 @@ theorem get_extendMany_of_mem (hv : v ∈ st) : (st.extendMany xs).env.toValuati
 theorem get_of_le (hle) (hv : v ∈ st) : st'.env.toValuation v = st.env.toValuation v
 ```
 
-— `prove_dom` (rewrite of `prove_freshFrom` for the iff), `domOut`. `prove_le` is
+— `prove_dom` (rewrite of `prove_freshFrom` for the iff), `domOut`; `prove_le` is
 `prove_assignments_le`. The `iff` form of `mem_extendMany` is deliberate: `simp`'s
 default discharge depth is 2, so a conditional `mem_extend` lemma fails on towers
 deeper than two allocations; the `iff` rewrites without discharging (course `ada2466`).
@@ -188,132 +184,109 @@ EvalError α`, `run_eq_eval : w.Scoped st → w.run st.env = w.eval st.env.toVal
 `eval_congr`.
 
 Accept: build + gates; `solve_complete`'s statement unchanged. `Reads`/`WitnessReads`
-still exist at the end of S3 (deleted in S6 as their consumers convert).
+still exist at the end of S3; S4 deletes them.
 
-### S4 — the run-equation primitives (course `a8568c2` Ch7 §7.3–7.4)
+### S4 — the conversion (course `a8568c2`, `50cd590`, `866f2e6`, `6b68f69`)
 
-`Backend/Prover.lean`, beside `prove_bind`:
+One PR. Its commits are by layer — backend, `Circuit/DSL`, `Kimchi/Circuit`,
+`schnorr` — for review, not for separate landing. The diff is reported afterwards
+(§S6); nothing in it is gated on a per-gadget number.
 
-- `prove_addConstraint : holds con st.env = true → prove holds (addConstraint con)
-  st.nv st.env = .ok (st.out ())`; `prove_label`.
-- `prove_witness`: for `w : AsProver F val`, `hs : w.Scoped st`, `hv :
-  w.eval st.env.toValuation = .ok v` (a `simp` fact on throw-free blocks), the leaf's
-  run is the check's run at the extended state:
-  `prove holds (witness w) st.nv st.env = (prove holds (check (fieldsToVar …)) (st.nv +
-  size) (st.extendMany (valueToFields v).toList).env).map …` — stated so that
-  `LawfulCheckedType.check_run` closes it.
-- `LawfulCheckedType.check_complete` (`WP.lean:627`) restated as `check_run :
-  cv.Scoped st → readVal st.env.toValuation cv = v → prove holds (check cv) st.nv st.env
-  = .ok (st.out ())`, with whatever value hypotheses the instance carries today; 8
-  instances.
-- `LawfulChecker` (`WP.lean:284`) fields restated at the total reading: `check_r1cs :
-  l.Scoped st → r.Scoped st → o.Scoped st → l.val V * r.val V = o.val V → holds (r1cs l
-  r o) st.env = true` at `V := st.env.toValuation`; the `Basic` instance and
-  `KimchiConstraint.instLawfulChecker` (`Kimchi/Semantics.lean:356`).
-- `prove_mapAccumM` beside `mapAccumM` (`Kimchi/Circuit/Utils.lean:25`) and
-  `prove_generateVec` beside `generateVec` (`Vec.lean:32`): induction on the list with
-  the state function a parameter, the course's `prove_sumAll_loop` shape. These replace
-  `generateVec_complete_spec` (`WP.lean:1118`) once its consumers convert.
+**Backend, `Prover.lean`.** Beside `prove_bind`: `prove_addConstraint : holds con
+st.env = true → prove holds (addConstraint con) st.nv st.env = .ok (st.out ())`;
+`prove_label`; `prove_witness` — for `w : AsProver F val`, `hs : w.Scoped st`, `hv :
+w.eval st.env.toValuation = .ok v` (a `simp` fact on throw-free blocks), the leaf's run
+is the check's run at the extended state, stated so that `check_run` closes it;
+`Runs g st a st' := prove holds g st.nv st.env = .ok (st'.out a)`, `Runs.eq`
+(exactness: `Runs g st a st' → prove … = .ok (T.out a') → a = a' ∧ st' = T`, by
+`ProverState.ext`), `Runs.le` (`prove_assignments_le` on the graph).
+`prove_mapAccumM` beside `mapAccumM` (`Kimchi/Circuit/Utils.lean:25`) and
+`prove_generateVec` beside `generateVec` (`Vec.lean:32`): induction on the list with
+the state function a parameter, the course's `prove_sumAll_loop` shape.
 
-Accept: build + gates. The primitives have no consumer yet; root them in
-`check_axioms.lean` (`prove_witness`, `prove_addConstraint`, `prove_mapAccumM`,
-`prove_generateVec`) so the deadcode gate passes, as interpreter laws are rooted today.
+**Backend, `WP.lean`, prover section.** `LawfulChecker` (`:284`) fields restated at
+the total reading — `check_r1cs : l.Scoped st → r.Scoped st → o.Scoped st → l.val V *
+r.val V = o.val V → holds (r1cs l r o) st.env = true` at `V := st.env.toValuation` —
+and the `Basic` instance and `KimchiConstraint.instLawfulChecker`
+(`Kimchi/Semantics.lean:356`) with it. `LawfulCheckedType.check_complete` (`:627`)
+becomes `check_run : cv.Scoped st → readVal st.env.toValuation cv = v → prove holds
+(check cv) st.nv st.env = .ok (st.out ())`, with whatever value hypotheses the instance
+carries today; 8 instances. `Complete` becomes the course's unary shape —
 
-### S5 — the bridge tooling (course `866f2e6`, `6b68f69`)
+```lean
+abbrev Complete (pre : ProverState F → Prop) (post : α → ProverState F → Prop) Q :=
+  fun st => .up (pre st ∧ ∀ r st', post r st' → st.env.Le st'.env → (Q.1 r st').down)
+```
 
-`Backend/Forward.lean` (new, imports `WP.lean`): `Runs g st a st' := prove holds g
-st.nv st.env = .ok (st'.out a)`, `Runs.eq` (exactness: `Runs g st a st' → prove … =
-.ok (T.out a') → a = a' ∧ st' = T`, by `ProverState.ext`), `Runs.le`
-(`prove_assignments_le` on the graph). `complete_spec_iff` keeps its statement
-(binary `Complete`, `post st.env r st'.env ∧ Le`) — restating `Complete` unary would
-touch all 58 CPS specs that S6 deletes, for nothing. With `Runs.eq` and `Runs.le`, a
-run equation yields a CPS corollary in the course's five lines
-(`select_complete_spec_forward`): `complete_spec_iff.mpr`, `⟨_, h⟩` for non-failure,
-`hr.eq h` to land at the written-out state, the promise read off it, `hr.le`.
+— and `complete_spec_iff` reads `∀ st, pre st → ok g st ∧ wlp g post st`, with `ok` and
+`wlp` as in the course (Ch9 §9.1). This is the only CPS form that may exist in the
+tree from here on: a two-table promise `post env r env'` is never written again, and
+any CPS statement S4 leaves behind is a five-line corollary of a run equation through
+`complete_spec_iff`, `Runs.eq` and `Runs.le` (the course's
+`select_complete_spec_forward`). The expected number of such statements after S4 is
+zero; S5 is what that licenses.
 
-This is transitional tooling for S6. Whether `ok`, `wlp`, `sp`, `triple_iff_ok_and_wlp`,
-`gc_sp_wlp`, `sp_exact`, `sp_bind` join it is the S7 decision.
+**Every gadget, in its own file.** `g_run` beside `g_spec` (its soundness law):
+scope hypotheses (`x.Scoped st`, `cv.Scoped st`), readings as `x.val
+st.env.toValuation` / `readVal st.env.toValuation cv`, the state after as a term — the
+explicit `extendMany` tower for short gadgets, a `def gRun (st …) : ProverState F`
+mirroring the body for long ones (`scaleRound` allocates 26 cells; the `Reflect.lean`
+run functions are the precedent). Composition is `simp only [g, prove_bind]`, one `rw`
+per call, side goals `simp [hx]`, values closed terms of `st`. Loops (`varBaseMul`,
+`endoMul`, the sponge's `foldBlocks`, `unpack`) by `prove_mapAccumM`/`prove_generateVec`
+with their existing gate-side chains (`chainBuild`, …) as the state function and the
+existing gate theorems (`chain_complete`, …) at the constraint checks. `g_complete_spec`
+is deleted in the same commit. The 58 laws are in: `Circuit/DSL/{Field, Boolean,
+Assert, Bits, UnpackFull, Utils}`, `Kimchi/Circuit/{AddComplete, CurvePoint, EndoMul,
+EndoScalar, GroupMap, Poseidon, RandomOracle, RangeCheck, Sponge, VarBaseMul}`,
+`Schnorr/Laws.lean`, `Example.lean`. `verifyCircuit_complete_spec` is already exported
+in run form; only its internal `mvcgen` walk is replaced by a `verifyRun` state
+function. `Boundary.complete` consumes `CurvePoint`'s `check_run` and `verifyCircuit`'s
+run directly; its 13-line `hreads` block is one `simp [readVal_ofEquiv, readVal_prod,
+readVal_fvar, h0, …]`.
 
-### S6 — gadget run equations, bottom-up
+**The readings.** `Read.lean`'s `Readable`, `Reads`, `ReadsAll`, `readable_*_iff`,
+`reads_*_iff`, the three `.le`s, `exists_reads*`, `Reads.readable`, `Reads.unique`;
+`WP.lean`'s `WitnessReads`, `ofEquiv`, six instances, `mapM_eval_*` helpers,
+`ReadsBit` and its three lemmas; `Sponge.Reads`, `reads_init`, `reads_ofConstants`,
+`Sponge.Reads.le` (the sponge reads as `Vals env.toValuation`); the Schnorr `Reads`
+— all deleted. `readVal` and its `@[circuitVal]` lemmas are the reading.
 
-Per gadget `g`: a theorem `g_run` beside `g_spec` (its soundness law — family
-placement), stated with scope hypotheses (`x.Scoped st`, `cv.Scoped st`), readings as
-`x.val st.env.toValuation` / `readVal st.env.toValuation cv`, and the state after as a
-term — the explicit `extendMany` tower for short gadgets, a `def gRun (st …) :
-ProverState F` mirroring the body for long ones (`scaleRound` allocates 26 cells; the
-`Reflect.lean` run functions are the precedent: let-mirror the body). Composition is
-`simp only [g, prove_bind]` then one `rw` per call, side goals `simp [hx]`, values
-closed terms of `st` (no `(v := …)` pinning). The gadget's `g_complete_spec` is deleted
-in the same commit when no CPS consumer remains; otherwise it becomes the five-line
-corollary of S5 until its last consumer converts, and is deleted then. `Reads`,
-`WitnessReads`, `ReadsBit`, `Sponge.Reads`, the Schnorr `Reads`, `Read.lean`'s
-`readable_*_iff`/`reads_*_iff`/`.le`/`exists_reads*`/`Reads.unique`, and
-`WP.lean`'s `mapM_eval_*` helpers are deleted as their last consumers convert.
+**Manifests.** `snarky/roots.txt` (586 entries) and `snarky/scripts/check_axioms.lean`
+(191 root names): `*_complete_spec` → `*_run`; `Snarky.Reads.le`,
+`Snarky.WitnessReads.ofEquiv`, `Snarky.SpongeVar.Reads.le` removed; `prove_witness`,
+`prove_addConstraint`, `prove_mapAccumM`, `prove_generateVec`, `Runs.eq`, `Runs.le`
+added as interpreter laws.
 
-Order, with each law's current length as its baseline:
+Accept: build + all gates; the report of §S6 in the PR description.
 
-1. DSL leaves, `Circuit/DSL/` — Field (`mul` 34, `inv` 24, `div` 17, `square` 23,
-   `equals` 33, `neq` 20, `pow` 1, `powGo` 70), Boolean (`and` 10, `or` 20, `xor` 41,
-   `select` 36, `all` 56, `any` 55), Assert (9 laws, 4–21), Utils `sealVar` 47, Bits
-   `unpack` 60, UnpackFull (31, 54, 17). Expect most to be one `simp`.
-2. `Kimchi/Circuit/` leaves — AddComplete (`sealPoint` 12, `addFastTail` 82, `addFast`
-   85), `CurvePoint.check` (the `LawfulCheckedType` instance), EndoScalar `toField` 61,
-   RangeCheck 10.
-3. The ladders — VarBaseMul `splitFieldVar` 33, **`scaleRound` 137 → predict ≤ 45,
-   refute > 90 or any `Le` in the proof**; **`varBaseMul` 296 → the loop by
-   `prove_mapAccumM` with `chainBuild` as the state function and `chain_complete` at
-   the constraint check; predict 100–120, refute > 200**; `scaleFast1` 6, `scaleFast2`
-   133, `scaleFast2'`; EndoMul (`endoInv` 153, `endoMulRound` 46, `endoMul` 276);
-   GroupMap (`sqrtFlagged` 52, `groupMapCircuit` 212, `toGroup` 24). **Go/no-go here**:
-   if `scaleRound` or `varBaseMul` exceeds its threshold, stop, report, and leave the
-   remaining CPS laws in place — S7 does not happen.
-4. The sponge tower — Poseidon 72, Sponge (`addSlotVar` 73, `absorb` 73, `squeeze` 51),
-   RandomOracle (`update` 7, `updateBlock` 21, `foldBlocks`, `hash2` 24, `hashVec` 14).
-   `Sponge.Reads` collapses to `Vals env.toValuation`; `reads_init`/`reads_ofConstants`
-   become `vals_init`/`vals_ofConstants` at the completed table.
-5. Schnorr — `verifyCircuit` (208; predict ≈ the soundness twin, 82): a `verifyRun`
-   state function; the exported statement (`Laws.lean:141`) is already run-form, so its
-   text does not change. `Boundary.complete` consumes `CurvePoint`'s `check_run` and
-   `verifyCircuit`'s run directly; its 13-line `hreads` block is one `simp
-   [readVal_ofEquiv, readVal_prod, readVal_fvar, h0, …]`.
-6. `Example.lean` (`cubic` 28).
+### S5 — delete the prover `WP` apparatus
 
-Expected end of S6: every reading is `readVal`/`val` at `toValuation`; the 1066-token
-tax is zero by construction (no `Le` in any gadget proof; `Le` appears only in
-`Runs.le`, `get_of_le`, `readVal_of_le`); the per-file `Reads` vocabulary counts
-(VarBaseMul 60, Field 42, Boolean 38, RandomOracle 35, Sponge 33, EndoMul 33, …) go to
-zero.
+Decided. With no CPS consumer left after S4: `Prover` (`WP.lean:219`),
+`Prover.instWP`/`instWPMonad`, `Complete`, `complete_spec_iff`, `ok`, `wlp`,
+`KimchiProverC` (`Semantics.lean:368`), `witness_complete_spec`, `check_pure_complete`,
+`generateVec_complete_spec`, `post_of_prove` (`WP.lean:1168`, once its consumers are
+gone) are deleted; `roots.txt` (`Snarky.ProverC`, `Snarky.Prover.instWP`) and
+`check_axioms.lean` with them. `WP.lean` keeps the soundness half (`Builder`,
+`Builder.instWP`, `SoundCheckedType`, `witness_spec`, `builder_spec_iff`). The
+`formal/CLAUDE.md` sentence on completeness laws stays true ("a successful prover run
+satisfies every built constraint, plus the bind-composition laws");
+`docs/snarky-ps-alignment.md` is updated where it names the deleted declarations.
 
-### S7 — delete the prover `WP` apparatus, or root it
+This is the last commit of the S4 PR if the S4 tree already has no CPS consumer, and
+its own PR otherwise.
 
-With no CPS consumer left, `Prover` (`WP.lean:219`), `Prover.instWP`/`instWPMonad`,
-`Complete`, `complete_spec_iff`, `KimchiProverC` (`Semantics.lean:368`),
-`witness_complete_spec`, `check_pure_complete`, `generateVec_complete_spec`,
-`post_of_prove` (`WP.lean:1168`, if its consumers are gone), and the transitional
-`Forward.lean` tooling are dead. `WP.lean` keeps the soundness half (`Builder`,
-`Builder.instWP`, `SoundCheckedType`, `witness_spec`, `builder_spec_iff`).
+### S6 — the report
 
-**Decision.** (a) Delete all of it — recommended under dead = 0 and no 2×; the argument
-lives in the course. (b) Keep `Forward.lean` as rooted certificates: `ok`, `wlp`, `sp`,
-`triple_iff_ok_and_wlp`, `sp_exact`, `Runs.eq`, and `complete_spec_iff` in `ok ∧ wlp`
-form — the codebase's own statement that its completeness laws are `sp` laws and that
-a CPS triple is their corollary. (b) costs ~120 lines and a `Prover.instWP` that
-nothing else uses.
-
-Touch set: `snarky/roots.txt` (586 entries; `Snarky.ProverC`, `Snarky.Prover.instWP`,
-`Snarky.Reads.le`, `Snarky.WitnessReads.ofEquiv`, every `*_complete_spec` →
-`*_run`), `snarky/scripts/check_axioms.lean` (191 root names, same renames),
-`docs/snarky-ps-alignment.md`, the `formal/CLAUDE.md` sentence on completeness laws
-(still true: "a successful prover run satisfies every built constraint, plus the
-bind-composition laws").
-
-### S8 — measure and record
-
-Re-run the census on the final tree; the PR description carries before/after per
-gadget and the four twins (`varBaseMul` 296 → ?, `endoMul` 276 → ?, `groupMapCircuit`
-212 → ?, `verifyCircuit` 208 → ?). **Decision**: commit the census script
-(`formal/scripts/proof-lines.py`, lines after `:= by` per theorem, by name pattern)
-so the number is reproducible, or keep it out of the tree.
+In the S4 PR description: per law, CPS lines before → run-equation lines after; the
+totals against the baseline (58 / 3101 / 1066); the four twins (`varBaseMul` 296 → ?,
+`endoMul` 276 → ?, `groupMapCircuit` 212 → ?, `verifyCircuit` 208 → ?) beside their
+soundness laws (52 / 46 / 56 / 82); and the per-file `Reads` vocabulary counts
+(VarBaseMul 60, Field 42, Boolean 38, RandomOracle 35, Sponge 33, EndoMul 33, …), which
+should be zero. The tax-token count should be zero by construction — `Le` occurs only
+in `Runs.le`, `get_of_le`, `readVal_of_le`. Any law whose run equation came out longer
+than its CPS law is listed as such. Decision, small: commit the census script
+(`formal/scripts/proof-lines.py`) so the number is reproducible, or keep it out.
 
 ## 3. Risks, with the fallback for each
 
@@ -327,8 +300,8 @@ so the number is reproducible, or keep it out of the tree.
   the left side to `.ok _`; on `inv` the hypothesis is the `x ≠ 0` the law already has.
 - **Checker side conditions.** `holds con st.env = true` at a tower is the gate model's
   `ok` on cells read at `toValuation`; this is where `chain_complete` and friends are
-  applied, exactly as today. The `LawfulChecker` restatement (S4) is what makes the
-  reads total there.
+  applied, exactly as today. The `LawfulChecker` restatement is what makes the reads
+  total there.
 - **`rw` and delayed tactic blocks.** A `rw [prove_g _ (by simp [hx])]` elaborates the
   block after unification, so side goals at the current state work; a `have h :=
   prove_g _ (by …)` does not (course gotcha). Values need no pinning now, so the `(v
@@ -338,10 +311,6 @@ so the number is reproducible, or keep it out of the tree.
   `Prop`. Nothing on the executable path changes shape.
 - **`Membership` is one element type per collection.** `v ∈ st` is for `Variable`
   only; `CVar.Scoped st`, `CircuitType.Scoped st`, `AsProver.Scoped st` are predicates.
-- **Mixing during S6.** A CPS consumer that receives a converted gadget's law through
-  the bridge sees an exact run, so no `Le` is reintroduced on that edge; the consumer's
-  *own* proof keeps its `Le` until it converts. Convert bottom-up and the mixing is
-  bounded to one layer at a time.
 - **The ghost-entry failure is not revisited.** The course established (Ch8 §8.4, by
   experiment) that `mvcgen` mis-assigns an entry-state ghost; nothing here puts a
   two-state promise back into a native triple.
@@ -353,6 +322,4 @@ step. Per commit: `lake build Snarky` (from `formal/`, the one build — iterate
 per-file LSP diagnostics, not by rebuilding), `snarky/scripts/check_axioms.sh`, the
 deadcode gate, `lake lint`, `lake exe shake` with an absolute `--cfg`,
 `scripts/check-style.sh`. Names change only with `roots.txt` and `check_axioms.lean` in
-the same commit. The course's measurement discipline applies: every converted gadget's
-PR quotes the before/after line count beside the statement, and the S6 go/no-go is
-the stated threshold, not a judgement call.
+the same commit.
