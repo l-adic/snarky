@@ -9,7 +9,7 @@ import Snarky.Vec
 
 Port of `Snarky.Circuit.DSL.Monad` (packages/snarky/src/Snarky/Circuit/DSL/Monad.purs):
 the witness monad `AsProver`, the circuit monad `CircuitM`, the core operations
-(`fresh`, `addConstraint`, `existsVars`/`witness`, `assignVars`, `label`, `readVar`),
+(`addConstraint`, `existsVars`/`witness`, `assignVars`, `label`, `readVar`),
 and the `CheckedType` class with its base instances.
 
 ## The one deliberate architectural deviation
@@ -208,12 +208,11 @@ end AsProver
 
 /-- A circuit computation over field `F` and constraint type `c`, returning `α` — the
 deep-embedded counterpart of PS `Snarky f c r a`. Constructors mirror the `CircuitOps`
-record fields. -/
+record fields that library code reaches; `freshOp` (allocate without a value) is
+outside the fragment, since every allocation is an `exists`. -/
 inductive CircuitM (F c : Type u) (α : Type v) : Type (max u v) where
   /-- Return a value (the monad's `pure`). -/
   | pure (a : α)
-  /-- Allocate a fresh variable (PS `freshOp`). -/
-  | freshOp (k : Variable → CircuitM F c α)
   /-- Emit a constraint (PS `addConstraintOp`). -/
   | addConstraintOp (con : c) (k : CircuitM F c α)
   /-- Allocate `n` fresh variables, to be assigned by the witness computation `wit` during
@@ -234,7 +233,6 @@ variable {F c : Type u}
 it is a structural recursion, which is what makes the interpreter proofs inductions. -/
 protected def bind : CircuitM F c α → (α → CircuitM F c β) → CircuitM F c β
   | .pure a, f => f a
-  | .freshOp k, f => .freshOp fun v => (k v).bind f
   | .addConstraintOp con k, f => .addConstraintOp con (k.bind f)
   | .existsOp n wit k, f => .existsOp n wit fun vs => (k vs).bind f
   | .assignOp vs wit k, f => .assignOp vs wit (k.bind f)
@@ -249,7 +247,6 @@ instance : Monad (CircuitM F c) where
 protected theorem bind_pure (m : CircuitM F c α) : m.bind CircuitM.pure = m := by
   induction m with
   | pure a => rfl
-  | freshOp k ih => simp only [CircuitM.bind]; exact congrArg _ (funext ih)
   | addConstraintOp con k ih => simp only [CircuitM.bind]; exact congrArg _ ih
   | existsOp n wit k ih => simp only [CircuitM.bind]; exact congrArg _ (funext ih)
   | assignOp vs wit k ih => simp only [CircuitM.bind]; exact congrArg _ ih
@@ -260,7 +257,6 @@ protected theorem bind_assoc (m : CircuitM F c α) (f : α → CircuitM F c β)
     (m.bind f).bind g = m.bind fun a => (f a).bind g := by
   induction m with
   | pure a => rfl
-  | freshOp k ih => simp only [CircuitM.bind]; exact congrArg _ (funext ih)
   | addConstraintOp con k ih => simp only [CircuitM.bind]; exact congrArg _ ih
   | existsOp n wit k ih => simp only [CircuitM.bind]; exact congrArg _ (funext ih)
   | assignOp vs wit k ih => simp only [CircuitM.bind]; exact congrArg _ ih
@@ -277,10 +273,6 @@ end CircuitM
 /-! ## The core operations -/
 
 variable {F c : Type u}
-
-/-- Allocate one fresh variable (PS `fresh`). -/
-def fresh : CircuitM F c Variable :=
-  .freshOp .pure
 
 /-- Emit one constraint (PS `addConstraint`). Returns `PUnit` rather than `Unit` so it can
 sit in `do`-blocks at any universe. -/

@@ -75,7 +75,6 @@ when added. -/
 def prove (holds : c → Assignments F → Bool) :
     CircuitM F c α → Nat → Assignments F → Except EvalError (Proved F α)
   | .pure a, nv, env => .ok ⟨a, nv, env⟩
-  | .freshOp k, nv, env => prove holds (k nv) (nv + 1) env
   | .addConstraintOp con k, nv, env =>
     if holds con env then prove holds k nv env
     else .error .unsatisfiedConstraint
@@ -114,7 +113,6 @@ theorem prove_bind (holds : c → Assignments F → Bool) (m : CircuitM F c α)
   show prove holds (CircuitM.bind m f) nv env = _
   induction m generalizing nv env with
   | pure a => rfl
-  | freshOp k ih => exact ih ..
   | addConstraintOp con k ih =>
     simp only [CircuitM.bind, prove]
     split
@@ -178,9 +176,6 @@ theorem prove_assignments_le {holds : c → Assignments F → Bool} {m : Circuit
     simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
     obtain ⟨-, -, rfl⟩ := h
     exact Assignments.Le.refl _
-  | freshOp k ih =>
-    simp only [prove] at h
-    exact ih _ h
   | addConstraintOp con k ih =>
     simp only [prove] at h
     split at h
@@ -216,7 +211,6 @@ theorem prove_nextVar_le {holds : c → Assignments F → Bool} {m : CircuitM F 
   | pure a =>
     simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
     omega
-  | freshOp k ih => exact Nat.le_of_succ_le (ih _ h)
   | addConstraintOp con k ih =>
     simp only [prove] at h
     split at h
@@ -253,7 +247,6 @@ theorem prove_freshFrom {holds : c → Assignments F → Bool} {m : CircuitM F c
     simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
     obtain ⟨-, hnv, henv⟩ := h
     exact hnv ▸ henv ▸ hfresh
-  | freshOp k ih => exact ih _ (fun v hv => hfresh v (by omega)) h
   | addConstraintOp con k ih =>
     simp only [prove] at h
     split at h
@@ -332,10 +325,6 @@ theorem prove_build_agrees {holds : c → Assignments F → Bool} {m : CircuitM 
     simp only [prove, Except.ok.injEq, Proved.mk.injEq] at h
     obtain ⟨rfl, rfl, -⟩ := h
     exact ⟨rfl, rfl⟩
-  | freshOp k ih =>
-    simp only [prove] at h
-    simp only [build]
-    exact ih _ h
   | addConstraintOp con k ih =>
     simp only [prove] at h
     simp only [build]
@@ -382,10 +371,6 @@ theorem prove_complete {holds : c → Assignments F → Bool}
   | pure a =>
     intro con hcon
     simp [build] at hcon
-  | freshOp k ih =>
-    simp only [prove] at h
-    simp only [build]
-    exact ih _ h
   | addConstraintOp con' k ih =>
     simp only [prove] at h
     split at h

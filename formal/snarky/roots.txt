@@ -270,7 +270,6 @@ Snarky.readVar_le
 -- The DSL primitive surface (Circuit/DSL/Monad.lean): the PS Snarky-monad exports not
 -- already pulled in by the laws above, and the Lean-only monad laws
 -- (`bind_assoc`/`bind_pure` ride along inside the instance).
-Snarky.fresh
 Snarky.existsVars
 Snarky.label
 Snarky.AsProver.run
