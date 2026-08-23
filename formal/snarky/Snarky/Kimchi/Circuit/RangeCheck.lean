@@ -193,11 +193,10 @@ theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F] [Lawful
             : F) := by push_cast; ring
       _ = ((ToNat.toNat vv : ℕ) : F) := by rw [h1]
       _ = vv := hfaith
-  have hwit : (UnChecked.mk <$> lowestWit x) st.env
+  have hwit : (UnChecked.mk <$> lowestWit x).run st.env
       = .ok ⟨(((ToNat.toNat vv % 2 ^ 128 : ℕ) : F),
           ((ToNat.toNat vv / 2 ^ 128 : ℕ) : F))⟩ := by
-    simp [lowestWit, AsProver.readCVar, hv, Functor.map, Bind.bind, ReaderT.bind,
-      Except.bind, Except.map, Pure.pure, ReaderT.pure, Except.pure]
+    simp [lowestWit, hv, Functor.map, Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hwit]; rfl, fun lohi st₁ hgrant hle₁ => ?_⟩
   obtain ⟨hlo, hhi⟩ := hgrant _ hwit
   mvcgen [EndoScalar.toField_complete_spec]

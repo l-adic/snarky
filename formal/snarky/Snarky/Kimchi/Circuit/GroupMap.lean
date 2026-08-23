@@ -226,10 +226,8 @@ private theorem sqrtFlagged_complete_spec [Field F] [DecidableEq F] {c : Type}
   rename_i st hpre
   obtain ⟨⟨hokx, htw⟩, hk⟩ := hpre
   obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  have hw₁ : isQRWit sqrtF x st.env = .ok (sqrtF xv).isSome := by
-    rw [show isQRWit sqrtF x st.env
-        = (fun v => (sqrtF v).isSome) <$> CVar.eval x st.env from rfl, hx]
-    rfl
+  have hw₁ : (isQRWit sqrtF x).run st.env = .ok (sqrtF xv).isSome := by
+    simp [isQRWit, hx, Except.bind]
   refine ⟨by rw [hw₁]; rfl, fun isQR st₁ hrd₁ hle₁ => ?_⟩
   have hb₁ : (↑isQR : CVar F).eval st₁.env = .ok (bit (sqrtF xv).isSome) := hrd₁ _ hw₁
   have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
@@ -239,11 +237,9 @@ private theorem sqrtFlagged_complete_spec [Field F] [DecidableEq F] {c : Type}
   have hsel : xOrMx.eval st₂.env
       = .ok (if (sqrtF xv).isSome then xv else nonResidue * xv) := by
     simpa [selectPure] using hrd₂ _ _ _ hb₁ hx₁ (CVar.eval_scale_ hx₁ nonResidue)
-  have hw₂ : sqrtWit sqrtF xOrMx st₂.env
+  have hw₂ : (sqrtWit sqrtF xOrMx).run st₂.env
       = .ok ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0) := by
-    rw [show sqrtWit sqrtF xOrMx st₂.env
-        = (fun v => (sqrtF v).getD 0) <$> CVar.eval xOrMx st₂.env from rfl, hsel]
-    rfl
+    simp [sqrtWit, hsel, Except.bind]
   mvcgen
   refine ⟨by rw [hw₂]; rfl, fun sqrtVal st₃ hrd₃ hle₃ => ?_⟩
   have hy₃ : sqrtVal.eval st₃.env

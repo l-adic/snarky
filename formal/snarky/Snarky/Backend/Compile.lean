@@ -48,7 +48,7 @@ private def assertEqPairs [DecidableEq F] [BasicSystem F c] :
 field elements — PS `map valueToFields (read out)`. -/
 private def outputWit [Add F] [Mul F] [B : CircuitType F b bvar] (out : bvar) :
     AsProver F (Vector F B.size) :=
-  fun env => (readVar (val := b) out env).map B.valueToFields
+  B.valueToFields <$> readVar (val := b) out
 
 /-- The public-input bundle every compiled circuit binds, over slots `0 … A.size−1`.
 Whole-circuit statements read the input through this bundle (`readVal`/`Reads`),
@@ -96,7 +96,7 @@ def solve [Add F] [Mul F] [DecidableEq F] [BasicSystem F c]
     match prove holds (compileBody (a := a) (b := b) main) (A.size + B.size) env₀ with
     | .error e => .error e
     | .ok p =>
-      match readVar (val := b) p.result p.assignments with
+      match (readVar (val := b) p.result).run p.assignments with
       | .error e => .error e
       | .ok outVal => .ok (outVal, p.assignments)
 
@@ -273,7 +273,7 @@ theorem proveWith_compileBody_slots {g σ : Type u} {ops : BackendOps F g c σ}
         ((allocRange 0 A.size).toList.zip (A.valueToFields input).toList) = .ok env₀)
     (hrun : proveWith ops (compileBody (a := a) (b := b) main)
         (A.size + B.size) env₀ = .ok p)
-    (hread : readVar (val := b) p.result p.assignments = .ok outVal) :
+    (hread : (readVar (val := b) p.result).run p.assignments = .ok outVal) :
     (∀ i (hi : i < A.size), p.assignments i = some ((A.valueToFields input)[i])) ∧
       ∀ j (hj : j < B.size),
         p.assignments (A.size + j) = some ((B.valueToFields outVal)[j]) := by
@@ -298,18 +298,19 @@ theorem proveWith_compileBody_slots {g σ : Type u} {ops : BackendOps F g c σ}
     omega
   rw [proveWith_bind] at hrun
   obtain ⟨s₃, hassign, hrun⟩ := bind_ok hrun
-  simp only [assignVars, proveWith, outputWit, hslots] at hassign
+  simp only [assignVars, proveWith, outputWit, hslots, AsProver.map_eq, AsProver.run_bind]
+    at hassign
   split at hassign
   · cases hassign
   next xs hwit =>
     split at hassign
     · cases hassign
     next env₃ hext =>
-      cases hwitread : readVar (val := b) s₂.result s₂.assignments with
+      cases hwitread : (readVar (val := b) s₂.result).run s₂.assignments with
       | error e => rw [hwitread] at hwit; cases hwit
       | ok ov =>
         rw [hwitread] at hwit
-        simp only [Except.map, Except.ok.injEq] at hwit
+        simp only [Except.bind, AsProver.run_pure, Except.ok.injEq] at hwit
         subst hwit
         set M := (B.valueToFields ov).toList with hM
         have hlenM : M.length = B.size := by simp [hM]

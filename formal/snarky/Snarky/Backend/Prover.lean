@@ -80,7 +80,7 @@ def prove (holds : c → Assignments F → Bool) :
     if holds con env then prove holds k nv env
     else .error .unsatisfiedConstraint
   | .existsOp n wit k, nv, env =>
-    match wit env with
+    match wit.run env with
     | .error e => .error e
     | .ok xs =>
       match env.extendPairs ((allocRange nv n).toList.zip xs.toList) with
@@ -90,7 +90,7 @@ def prove (holds : c → Assignments F → Bool) :
     match vs.toList.find? (nv ≤ ·) with
     | some v => .error (.conflict v)
     | none =>
-      match wit env with
+      match wit.run env with
       | .error e => .error e
       | .ok xs =>
         match env.extendPairs (vs.toList.zip xs.toList) with
@@ -143,7 +143,7 @@ one constraint, return it: the run succeeds and assigns the witnessed value at `
 whenever the witness computation succeeds and the constraint accepts the result. -/
 theorem prove_witnessCore {holds : c → Assignments F → Bool} {w : AsProver F F}
     {mk : CVar F → c} {nv : Nat} {env : Assignments F} {v : F}
-    (hw : w env = .ok v) (hfresh : env.FreshFrom nv)
+    (hw : w.run env = .ok v) (hfresh : env.FreshFrom nv)
     (hch : holds (mk (.var nv)) (env.extend nv v) = true) :
     prove holds (do
         let z ← witness (val := F) w
@@ -151,14 +151,16 @@ theorem prove_witnessCore {holds : c → Assignments F → Bool} {w : AsProver F
         pure z) nv env
       = .ok ⟨.var nv, nv + 1, env.extend nv v⟩ := by
   have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hwit : (w env).map (CircuitType.valueToFields (F := F) (val := F))
-      = .ok ⟨#[v], rfl⟩ := by rw [hw]; rfl
+  have hwit : (CircuitType.valueToFields (F := F) (val := F) <$> w).run env
+      = .ok ⟨#[v], rfl⟩ := by
+    simp only [AsProver.map_eq, AsProver.run_bind, hw, Except.bind]
+    rfl
   have hext : env.extendPairs
       ((allocRange nv 1).toList.zip (⟨#[v], rfl⟩ : Vector F 1).toList)
       = .ok (env.extend nv v) := by
     show env.extendPairs [(nv, v)] = .ok _
     simp [Assignments.extendPairs, hnv]
-  show prove holds (.existsOp 1 (fun e => (w e).map _) _) nv env = _
+  show prove holds (.existsOp 1 (_ <$> w) _) nv env = _
   simp only [prove, hwit, hext]
   show prove holds (.addConstraintOp (mk (.var nv)) (.pure (CVar.var nv))) (nv + 1)
     (env.extend nv v) = _

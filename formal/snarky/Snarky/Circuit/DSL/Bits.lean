@@ -327,11 +327,11 @@ the results are the operand's binary digits. -/
     intro i Q st' hpre'
     obtain ⟨hok', hk'⟩ := hpre'
     obtain ⟨vv', hv'⟩ := CVar.evalOk hok'
-    have hw : unpackWit v i.val st'.env = .ok ((ToNat.toNat vv').testBit i.val) := by
-      simp [unpackWit, AsProver.readCVar, hv', Bind.bind, ReaderT.bind, Except.bind,
-        Pure.pure, ReaderT.pure, Except.pure]
+    have hw : (unpackWit v i.val).run st'.env = .ok ((ToNat.toNat vv').testBit i.val) := by
+      simp [unpackWit, hv', Bind.bind, Except.bind,
+        Pure.pure]
     refine witness_complete_spec (val := Bool) _ _ st'
-      ⟨show (unpackWit v i.val st'.env).isOk = true by rw [hw]; rfl,
+      ⟨show ((unpackWit v i.val).run st'.env).isOk = true by rw [hw]; rfl,
         fun r st'' hr hle => ?_⟩
     refine hk' r st'' (fun vv'' hv'' => ?_) hle
     rw [hv'] at hv''
@@ -347,7 +347,7 @@ the results are the operand's binary digits. -/
       CVar.eval_le h23 (hpost vv' (CVar.eval_le h01 hv₀))) _ st
     ⟨fun _ => hokv, fun bits st₁ hbits hle₁ => ?_⟩
   -- after the loop: the packing row accepts, and the caller reads the digits
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
+  dsimp only
   have hv₁ : v.eval st₁.env = .ok vv := CVar.eval_le hle₁ hv
   have hbitEval : ∀ i (hi : i < n), (bits[i].toCVar).eval st₁.env
       = .ok (bit ((ToNat.toNat vv).testBit i)) := by

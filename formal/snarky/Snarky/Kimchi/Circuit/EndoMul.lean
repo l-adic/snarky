@@ -893,7 +893,7 @@ private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
     (hn : st.2.eval env = .ok n)
     (hb1 : bs[0].eval env = .ok b1) (hb2 : bs[1].eval env = .ok b2)
     (hb3 : bs[2].eval env = .ok b3) (hb4 : bs[3].eval env = .ok b4) :
-    rowWit eb t bs st env
+    (rowWit eb t bs st).run env
       = .ok ((Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).inv,
              (Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).nPrime,
              (Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).xR,
@@ -902,8 +902,8 @@ private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
              (Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).yS,
              (Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).s1,
              (Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4).s3) := by
-  simp [rowWit, AsProver.readCVar, hxt, hyt, hxp, hyp, hn, hb1, hb2, hb3, hb4,
-    Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+  simp [rowWit, hxt, hyt, hxp, hyp, hn, hb1, hb2, hb3, hb4,
+    Bind.bind, Except.bind, Pure.pure]
 
 open Std.Do in
 /-- **One round is the gate's canonical row.** On readable base, accumulator,
@@ -1100,12 +1100,12 @@ chain is the two pinned additions (`addFast_complete_spec`), and the register pi
   have hφT : W.Nonsingular (eb * xv) yv := hφns hT
   have hyne : yv ≠ 0 := y_ne_zero_of_odd_order W hodd hT
   -- the bulk bit witness
-  have hwit : bitsWit rounds scalar.val st₀.env
+  have hwit : (bitsWit rounds scalar.val).run st₀.env
       = .ok (Vector.ofFn fun r => Vector.ofFn fun j =>
           if (ToNat.toNat v).testBit (4 * rounds - 1 - (4 * r.1 + j.1))
           then 1 else 0) := by
-    simp [bitsWit, AsProver.readCVar, hv, Bind.bind, ReaderT.bind, Except.bind,
-      Pure.pure, ReaderT.pure, Except.pure]
+    simp [bitsWit, hv, Bind.bind, Except.bind,
+      Pure.pure]
   refine ⟨by rw [hwit]; rfl, fun bits st₁ hgrant hle₁ => ?_⟩
   have hread := hgrant _ hwit
   mvcgen
@@ -1553,11 +1553,11 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F
     | zero => exact absurd hp hsmul_ne
     | some px py hpns => exact ⟨px, py, hpns, rfl⟩
   -- the honest witness computes exactly the advice pair
-  have hread : endoInvWit d.W d.W.order d.prime ((d.lam : ZMod d.W.order)) t scalar.val
-      st₀.env
+  have hread : (endoInvWit d.W d.W.order d.prime ((d.lam : ZMod d.W.order)) t
+      scalar.val).run st₀.env
       = .ok (px, py) := by
-    simp only [endoInvWit, AsProver.readCVar, hv, hxv, hyv, Bind.bind, ReaderT.bind,
-      Except.bind, Pure.pure]
+    simp only [endoInvWit, hv, hxv, hyv, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.run_readCVar, AsProver.pure_eq, Except.bind]
     rw [dif_pos hg, ← heff, ← hkdef, hG.symm, hpteq]
     rfl
   refine ⟨by rw [hread]; rfl, fun rp st₁ hgrantW hle₁ => ?_⟩

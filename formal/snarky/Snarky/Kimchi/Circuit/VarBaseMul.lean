@@ -944,10 +944,10 @@ private theorem nAccWit_ok [Field F] [DecidableEq F] {env : Assignments F}
     (hb0 : bs[0].eval env = .ok b0) (hb1 : bs[1].eval env = .ok b1)
     (hb2 : bs[2].eval env = .ok b2) (hb3 : bs[3].eval env = .ok b3)
     (hb4 : bs[4].eval env = .ok b4) :
-    nAccWit nPrev bs env
+    (nAccWit nPrev bs).run env
       = .ok (b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * nv))))) := by
-  simp [nAccWit, AsProver.readCVar, hnv, hb0, hb1, hb2, hb3, hb4,
-    Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+  simp [nAccWit, hnv, hb0, hb1, hb2, hb3, hb4,
+    Bind.bind, Except.bind, Pure.pure]
 
 /-- The bit-step advice reads the threaded cells and computes the gate model's
 `stepBit` quintet. -/
@@ -957,7 +957,7 @@ private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
     (hxb : t.x.eval env = .ok xb) (hyb : t.y.eval env = .ok yb)
     (hxi : acc.x.eval env = .ok xi) (hyi : acc.y.eval env = .ok yi)
     (hb : b.eval env = .ok bv) :
-    bitWit t b acc env
+    (bitWit t b acc).run env
       = .ok ((Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
         (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1
           * (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
@@ -966,8 +966,8 @@ private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
           - (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
         (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.1,
         (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.2) := by
-  simp [bitWit, AsProver.readCVar, hxb, hyb, hxi, hyi, hb,
-    Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+  simp [bitWit, hxb, hyb, hxi, hyi, hb,
+    Bind.bind, Except.bind, Pure.pure]
 
 open Std.Do in
 open Kimchi.Gate.VarBaseMul (build_fields build_nPrime
@@ -1020,7 +1020,7 @@ row back; registered, so `mvcgen` applies it once per iteration. -/
   obtain ⟨b3, hb3⟩ := CVar.evalOk (hbk 3 (by omega))
   obtain ⟨b4, hb4⟩ := CVar.evalOk (hbk 4 (by omega))
   -- the register advice computes the row's `nPrime`
-  have hnOk : nAccWit st.2 bs st₀.env
+  have hnOk : (nAccWit st.2 bs).run st₀.env
       = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime := by
     rw [nAccWit_ok hnv hb0 hb1 hb2 hb3 hb4, build_nPrime]
   refine ⟨by rw [hnOk]; rfl, fun nAcc st₁ hgN hle₁ => ?_⟩
@@ -1208,10 +1208,10 @@ fold identity (`chain_accN` through `natLsbVal_testBit_msbStream`). -/
   mvcgen
   -- the scalar's bits, in one witness
   set nn := ToNat.toNat v with hndef
-  have hwit : lsbBitsWit n scalar.val st₁.env
+  have hwit : (lsbBitsWit n scalar.val).run st₁.env
       = .ok (Vector.ofFn fun i => if nn.testBit i.1 then (1 : F) else 0) := by
-    simp [lsbBitsWit, AsProver.readCVar, CVar.eval_le hle₁ hv,
-      Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+    simp [lsbBitsWit, CVar.eval_le hle₁ hv,
+      Bind.bind, Except.bind, Pure.pure]
     rw [hndef]
   refine ⟨by rw [hwit]; rfl, fun bits st₂ hgrant hle₂ => ?_⟩
   have hread := hgrant _ hwit
@@ -1757,9 +1757,9 @@ ANY parity bit — and the returned pair reads as the parity split. -/
   rename_i st hpre
   obtain ⟨⟨hsok, h2⟩, hk⟩ := hpre
   obtain ⟨v, hv⟩ := CVar.evalOk hsok
-  have hwit : splitFieldWit s st.env = .ok (splitField v) := by
-    simp [splitFieldWit, AsProver.readCVar, hv,
-      Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+  have hwit : (splitFieldWit s).run st.env = .ok (splitField v) := by
+    simp [splitFieldWit, hv,
+      Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hwit]; rfl, fun r st₁ hgrant hle₁ => ?_⟩
   obtain ⟨hhalf', hodd'⟩ := hgrant _ hwit
   have hhalf : r.1.eval st₁.env = .ok ((splitField v).1) := hhalf'
@@ -1776,7 +1776,7 @@ ANY parity bit — and the returned pair reads as the parity split. -/
     injection hy with hy
     subst hx hy
     by_cases hoddc : (ToNat.toNat v) % 2 = 1 <;>
-      simp only [splitField, bit, hoddc, if_true, if_false, reduceIte] <;>
+      simp only [splitField, bit, hoddc, if_true, if_false] <;>
       field_simp <;>
       simp
   mvcgen

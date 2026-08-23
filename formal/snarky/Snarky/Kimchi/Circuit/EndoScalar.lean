@@ -518,12 +518,12 @@ private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
     (ha : st.1.eval env = .ok a) (hb : st.2.1.eval env = .ok b)
     (hn : st.2.2.eval env = .ok n)
     (hxs : xs.toList.mapM (CVar.eval · env) = .ok vs) :
-    rowWit xs st env
+    (rowWit xs st).run env
       = .ok ((Kimchi.Gate.EndoScalar.build a b n vs).a8,
              (Kimchi.Gate.EndoScalar.build a b n vs).b8,
              (Kimchi.Gate.EndoScalar.build a b n vs).n8) := by
-  simp [rowWit, AsProver.readCVar, ha, hb, hn, AsProver.readAll_ok hxs, Bind.bind, ReaderT.bind,
-    Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+  simp [rowWit, ha, hb, hn, AsProver.readAll_ok hxs, Bind.bind,
+    Except.bind, Pure.pure]
 
 open Std.Do in
 /-- The gate emitter is complete: the honest prover run accepts on any readable
@@ -548,10 +548,10 @@ theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
   rename_i st₀ hpre
   obtain ⟨hoks, hk⟩ := hpre
   obtain ⟨vv, hv⟩ := CVar.evalOk hoks
-  have hwit : crumbsWit rows scalar st₀.env
+  have hwit : (crumbsWit rows scalar).run st₀.env
       = .ok (crumbVals rows (ToNat.toNat vv)) := by
-    simp [crumbsWit, AsProver.readCVar, hv, Bind.bind, ReaderT.bind, Except.bind,
-      Pure.pure, ReaderT.pure, Except.pure]
+    simp [crumbsWit, hv, Bind.bind, Except.bind,
+      Pure.pure]
   refine ⟨by rw [hwit]; rfl, fun crumbVars st₁ hgrant hle₁ => ?_⟩
   have hread := hgrant _ hwit
   mvcgen

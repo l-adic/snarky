@@ -806,19 +806,20 @@ shape). -/
     [CheckedType F (Prover c) var] [Checker F c] [LawfulCheckedType F c val var]
     [WitnessReads F val var] (w : AsProver F val)
     (Q : PostCond var (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (w env).isOk)
-        (fun env (r : var) env' => ∀ v, w env = .ok v →
+    ⦃Complete (fun env => (w.run env).isOk)
+        (fun env (r : var) env' => ∀ v, w.run env = .ok v →
           WitnessReads.Reads (F := F) r env' v) Q⦄
     (witness (val := val) w : CircuitM F (Prover c) var)
     ⦃Q⦄ := by
   intro st hpre
   obtain ⟨hok, hk⟩ := hpre
-  obtain ⟨v, hw⟩ : ∃ v, w st.env = .ok v := by
-    cases hwe : w st.env with
+  obtain ⟨v, hw⟩ : ∃ v, w.run st.env = .ok v := by
+    cases hwe : w.run st.env with
     | error e => rw [hwe] at hok; cases hok
     | ok v => exact ⟨v, rfl⟩
-  have hwit : (w st.env).map (CircuitType.valueToFields (F := F) (val := val))
-      = .ok (CircuitType.valueToFields (F := F) (var := var) v) := by rw [hw]; rfl
+  have hwit : (CircuitType.valueToFields (F := F) (val := val) <$> w).run st.env
+      = .ok (CircuitType.valueToFields (F := F) (var := var) v) := by
+    simp [hw, Except.bind]
   obtain ⟨env₁, hext, hle₁, hfr₁, hread⟩ :=
     extendPairs_consecutive
       (CircuitType.valueToFields (F := F) (var := var) v).toList st.nv st.env st.fresh
@@ -846,7 +847,7 @@ shape). -/
     exact mapM_eval_range' hle'' _ st.nv hread
   rw [show (witness (val := val) w : CircuitM F (Prover c) var)
       = ((CircuitM.existsOp (CircuitType.size F val)
-            (fun e => (w e).map (CircuitType.valueToFields (F := F) (val := val)))
+            (CircuitType.valueToFields (F := F) (val := val) <$> w)
             (fun vs => CircuitM.pure vs) : CircuitM F (Prover c) _) >>=
           fun vs =>
             (CheckedType.check (c := Prover c)

@@ -372,15 +372,15 @@ itself (the field is nontrivial). -/
 private theorem readVar_bool_of_eval [Field F] [DecidableEq F]
     {v : BoolVar F} {env : Assignments F} {b : Bool}
     (h : (↑v : CVar F).eval env = .ok (bit b)) :
-    readVar (val := Bool) v env = .ok b := by
+    (readVar (val := Bool) v).run env = .ok b := by
   cases b with
   | false =>
     simp [readVar, h, Bind.bind, Except.bind, bit, CircuitType.fieldsToValue,
-      CircuitType.varToFields, Pure.pure, Except.pure]
+      CircuitType.varToFields, Pure.pure]
     rfl
   | true =>
     simp [readVar, h, Bind.bind, Except.bind, bit, CircuitType.fieldsToValue,
-      CircuitType.varToFields, Pure.pure, Except.pure, one_ne_zero]
+      CircuitType.varToFields, Pure.pure, one_ne_zero]
     rfl
 
 open Std.Do in
@@ -412,49 +412,49 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
   mvcgen
   rename_i st hpre
   obtain ⟨⟨hp1x, hp1y, hp2x, hp2y, hsx, hinf⟩, hk⟩ := hpre
-  have hinfZw : infZWit p1 p2 sameX st.env
+  have hinfZw : (infZWit p1 p2 sameX).run st.env
       = .ok (if y1v = y2v then 0 else if x1v = x2v then (y2v - y1v)⁻¹ else 0) := by
     by_cases hy : y1v = y2v <;> by_cases hx : x1v = x2v <;>
-      simp [infZWit, AsProver.readCVar, hp1y, hp2y, readVar_bool_of_eval hsx, hy, hx,
-        Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+      simp [infZWit, hp1y, hp2y, readVar_bool_of_eval hsx, hy, hx,
+        Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hinfZw]; rfl, fun infZ st₁ hr₁ hle₁ => ?_⟩
   have hinfZ : _ = _ := hr₁ _ hinfZw
   mvcgen
-  have hx21w : x21InvWit p1 p2 sameX st₁.env
+  have hx21w : (x21InvWit p1 p2 sameX).run st₁.env
       = .ok (if x1v = x2v then 0 else (x2v - x1v)⁻¹) := by
     by_cases hx : x1v = x2v <;>
-      simp [x21InvWit, AsProver.readCVar, CVar.eval_le hle₁ hp1x,
+      simp [x21InvWit, CVar.eval_le hle₁ hp1x,
         CVar.eval_le hle₁ hp2x, readVar_bool_of_eval (CVar.eval_le hle₁ hsx), hx,
-        Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+        Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hx21w]; rfl, fun x21Inv st₂ hr₂ hle₂ => ?_⟩
   have hx21 : _ = _ := hr₂ _ hx21w
   have hle02 := hle₁.trans hle₂
   mvcgen
-  have hsw : slopeWit p1 p2 sameX st₂.env
+  have hsw : (slopeWit p1 p2 sameX).run st₂.env
       = .ok (if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
           else (y2v - y1v) / (x2v - x1v)) := by
     by_cases hx : x1v = x2v <;>
-      simp [slopeWit, AsProver.readCVar, CVar.eval_le hle02 hp1x,
+      simp [slopeWit, CVar.eval_le hle02 hp1x,
         CVar.eval_le hle02 hp1y, CVar.eval_le hle02 hp2x, CVar.eval_le hle02 hp2y,
         readVar_bool_of_eval (CVar.eval_le hle02 hsx), hx,
-        Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+        Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hsw]; rfl, fun s st₃ hr₃ hle₃ => ?_⟩
   have hs : _ = _ := hr₃ _ hsw
   have hle03 := hle02.trans hle₃
   mvcgen
-  have hx3w : x3Wit p1 p2 s st₃.env
+  have hx3w : (x3Wit p1 p2 s).run st₃.env
       = .ok ((if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
             else (y2v - y1v) / (x2v - x1v)) *
           (if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
             else (y2v - y1v) / (x2v - x1v)) - (x1v + x2v)) := by
-    simp [x3Wit, AsProver.readCVar, hs, CVar.eval_le hle03 hp1x,
+    simp [x3Wit, hs, CVar.eval_le hle03 hp1x,
       CVar.eval_le hle03 hp2x,
-      Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+      Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hx3w]; rfl, fun x3 st₄ hr₄ hle₄ => ?_⟩
   have hx3 : _ = _ := hr₄ _ hx3w
   have hle04 := hle03.trans hle₄
   mvcgen
-  have hy3w : y3Wit p1 s x3 st₄.env
+  have hy3w : (y3Wit p1 s x3).run st₄.env
       = .ok ((if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
             else (y2v - y1v) / (x2v - x1v)) *
           (x1v -
@@ -462,9 +462,9 @@ private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
               else (y2v - y1v) / (x2v - x1v)) *
             (if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
               else (y2v - y1v) / (x2v - x1v)) - (x1v + x2v))) - y1v) := by
-    simp [y3Wit, AsProver.readCVar, CVar.eval_le hle₄ hs, hx3,
+    simp [y3Wit, CVar.eval_le hle₄ hs, hx3,
       CVar.eval_le hle04 hp1x, CVar.eval_le hle04 hp1y,
-      Bind.bind, ReaderT.bind, Except.bind, Pure.pure, ReaderT.pure, Except.pure]
+      Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hy3w]; rfl, fun y3 st₅ hr₅ hle₅ => ?_⟩
   have hy3 : _ = _ := hr₅ _ hy3w
   have hle05 := hle04.trans hle₅
@@ -555,11 +555,10 @@ theorem addFast_complete_spec [Field F] [DecidableEq F] [d : HasCurve F]
     fun p2 st₂ hp2 hle₂ => ?_⟩
   obtain ⟨hp2x, hp2y⟩ := hp2 _ _ (CVar.eval_le hle₁ hx2) (CVar.eval_le hle₁ hy2)
   mvcgen
-  have hsw : (UnChecked.mk <$> sameXWit p1 p2) st₂.env
+  have hsw : (UnChecked.mk <$> sameXWit p1 p2).run st₂.env
       = .ok ⟨decide (x1v = x2v)⟩ := by
-    simp [sameXWit, AsProver.readCVar, CVar.eval_le hle₂ hp1x, hp2x,
-      Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
-      Pure.pure, ReaderT.pure, Except.pure]
+    simp [sameXWit, CVar.eval_le hle₂ hp1x, hp2x,
+      Functor.map, Bind.bind, Except.bind, Pure.pure]
   refine ⟨by rw [hsw]; rfl, fun sameXU st₃ hsxr hle₃ => ?_⟩
   have hsx : _ = _ := hsxr _ hsw
   cases fin with
@@ -584,12 +583,11 @@ theorem addFast_complete_spec [Field F] [DecidableEq F] [d : HasCurve F]
     · exact Or.inr ⟨_, _, hpost.1, hpost.2.1, hpost.2.2, h3, hsum⟩
   | dontCheckFinite =>
     mvcgen
-    have hiw : (UnChecked.mk <$> infWit p1 p2 sameXU.val) st₃.env
+    have hiw : (UnChecked.mk <$> infWit p1 p2 sameXU.val).run st₃.env
         = .ok ⟨decide (x1v = x2v) && !decide (y1v = y2v)⟩ := by
-      simp [infWit, AsProver.readCVar, readVar_bool_of_eval hsx,
+      simp [infWit, readVar_bool_of_eval hsx,
         CVar.eval_le (hle₂.trans hle₃) hp1y, CVar.eval_le hle₃ hp2y,
-        Functor.map, Bind.bind, ReaderT.bind, Except.bind, Except.map,
-        Pure.pure, ReaderT.pure, Except.pure]
+        Functor.map, Bind.bind, Except.bind, Pure.pure]
     refine ⟨by rw [hiw]; rfl, fun infU st₄ hinfr hle₄ => ?_⟩
     have hinfb : _ = _ := hinfr _ hiw
     mvcgen

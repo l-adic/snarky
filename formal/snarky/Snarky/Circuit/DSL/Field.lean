@@ -253,9 +253,8 @@ private theorem equalsCore_run {F c : Type} [Field F] [DecidableEq F]
     [BasicSystem F c] [Checker F c] [LawfulChecker F c] {z : CVar F}
     {nv : Nat} {env : Assignments F} {zv v₁ v₂ : F} (hz : z.eval env = .ok zv)
     (hfresh : env.FreshFrom nv)
-    (hwit : (equalsWit z env).map
-        (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
-      = .ok ⟨#[v₁, v₂], rfl⟩)
+    (hwit : (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F) <$> equalsWit z).run
+        env = .ok ⟨#[v₁, v₂], rfl⟩)
     (hc₁ : v₁ * zv = 0) (hc₂ : v₂ * zv = 1 - v₁) :
     prove (Checker.holds (F := F) (c := c)) (equalsCore (c := c) z) nv env
       = .ok ⟨.unchecked (.var nv), nv + 2, (env.extend nv v₁).extend (nv + 1) v₂⟩ := by
@@ -293,7 +292,7 @@ private theorem equalsCore_run {F c : Type} [Field F] [DecidableEq F]
     exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ (by simp [CVar.eval, henv₂nv1])
       hzeval₂ hsub hc₂
   show prove (Checker.holds (F := F) (c := c))
-    (.existsOp 2 (fun e => (equalsWit z e).map _) _) nv env = _
+    (.existsOp 2 (_ <$> equalsWit z) _) nv env = _
   simp only [prove, hwit, hext]
   show prove (Checker.holds (F := F) (c := c))
     (.addConstraintOp (BasicSystem.r1cs (c := c) (.var nv) z (.const 0))
@@ -313,12 +312,11 @@ private theorem equalsCore_complete {F c : Type} [Field F] [DecidableEq F]
       out.result.toCVar.eval out.assignments = .ok (if zv = 0 then 1 else 0) ∧
       out.assignments.FreshFrom out.nextVar := by
   obtain ⟨hc₁, hc₂⟩ := equals_checks (F := F) zv
-  have hwit : (equalsWit z env).map
-      (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F))
-      = .ok ⟨#[if zv = 0 then 1 else 0, if zv = 0 then 0 else zv⁻¹], rfl⟩ := by
+  have hwit : (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F) <$> equalsWit z).run
+      env = .ok ⟨#[if zv = 0 then 1 else 0, if zv = 0 then 0 else zv⁻¹], rfl⟩ := by
     by_cases hzv : zv = 0 <;>
-      simp [equalsWit, AsProver.readCVar, hz, hzv, Bind.bind, ReaderT.bind, Except.bind,
-        Pure.pure, ReaderT.pure, Except.pure, Except.map, CircuitType.valueToFields, bit]
+      simp [equalsWit, hz, hzv, Bind.bind, Except.bind,
+        Pure.pure, CircuitType.valueToFields, bit]
   refine ⟨_, equalsCore_run hz hfresh hwit hc₁ hc₂, ?_, ?_⟩
   · show (CVar.var nv).eval _ = _
     simp [CVar.eval, Assignments.extend]
@@ -487,9 +485,9 @@ private theorem mulCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [Decid
     split
     · next h => rw [h, hnv] at hv; cases hv
     · exact hv
-  have hw : mulWit x y env = .ok (xv * yv) := by
-    simp [mulWit, AsProver.readCVar, hx, hy, Bind.bind, ReaderT.bind, Except.bind,
-      Pure.pure, ReaderT.pure, Except.pure]
+  have hw : (mulWit x y).run env = .ok (xv * yv) := by
+    simp [mulWit, hx, hy, Bind.bind, Except.bind,
+      Pure.pure]
   have hch : Checker.holds (F := F) (c := c) (BasicSystem.r1cs x y (.var nv))
       (env.extend nv (xv * yv)) = true :=
     LawfulChecker.check_r1cs _ _ _ _ _ _ _ (CVar.eval_le hle hx) (CVar.eval_le hle hy)
@@ -512,9 +510,9 @@ private theorem invCore_run {F c : Type} [Field F] [DecidableEq F]
     split
     · next h => rw [h, hnv] at hv; cases hv
     · exact hv
-  have hw : invWit x env = .ok xv⁻¹ := by
-    simp [invWit, AsProver.readCVar, hx, hxv, Bind.bind, ReaderT.bind, Except.bind,
-      Pure.pure, ReaderT.pure, Except.pure]
+  have hw : (invWit x).run env = .ok xv⁻¹ := by
+    simp [invWit, hx, hxv, Bind.bind, Except.bind,
+      Pure.pure]
   have hch : Checker.holds (F := F) (c := c) (BasicSystem.r1cs x (.var nv) (.const 1))
       (env.extend nv xv⁻¹) = true :=
     LawfulChecker.check_r1cs _ _ _ _ _ _ _ (CVar.eval_le hle hx)
@@ -677,9 +675,9 @@ private theorem squareCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
     split
     · next h => rw [h, hnv] at hv; cases hv
     · exact hv
-  have hw : squareWit x env = .ok (xv * xv) := by
-    simp [squareWit, AsProver.readCVar, hx, Bind.bind, ReaderT.bind, Except.bind,
-      Pure.pure, ReaderT.pure, Except.pure]
+  have hw : (squareWit x).run env = .ok (xv * xv) := by
+    simp [squareWit, hx, Bind.bind, Except.bind,
+      Pure.pure]
   have hch : Checker.holds (F := F) (c := c) (BasicSystem.square x (.var nv))
       (env.extend nv (xv * xv)) = true :=
     LawfulChecker.check_square _ _ _ _ _ (CVar.eval_le hle hx)
