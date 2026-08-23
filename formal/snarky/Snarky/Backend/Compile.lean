@@ -119,14 +119,6 @@ theorem mem_compile_of_mem_body [Add F] [Mul F] [DecidableEq F] [BasicSystem F c
 
 /-! ## The payoff theorem -/
 
-/-- `allocRange` is the vector form of `List.range'`. -/
-private theorem allocRange_toList (s k : Nat) :
-    (allocRange s k).toList = List.range' s k := by
-  apply List.ext_getElem
-  · simp [allocRange]
-  · intro i h1 h2
-    simp [allocRange, List.getElem_range']
-
 /-- What a successful batch extension over a contiguous range establishes: every slot in
 the range holds its paired value, and everything below the range is untouched. Serves
 both `solve`'s input seeding and the output back-fill. -/

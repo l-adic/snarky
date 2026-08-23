@@ -1,6 +1,7 @@
 import Std.Do
 import Snarky.Backend.Builder
 import Snarky.Backend.Prover
+import Snarky.Backend.Read
 
 /-!
 # The weakest-precondition interpretation of `build`
@@ -700,19 +701,126 @@ theorem LawfulCheckedType.ofEquiv {F c : Type} [Add F] [Mul F] [Checker F c]
   { check_complete := fun bundle v Q =>
       LawfulCheckedType.check_complete (c := c) (val := val) (er bundle) (ev v) Q }
 
-/-- `allocRange`'s underlying list is the consecutive range. -/
-private theorem allocRange_toList : ∀ (n nv : Nat),
-    (allocRange nv n).toList = List.range' nv n
-  | 0, _ => rfl
-  | n + 1, nv => by
-    have ih := allocRange_toList n (nv + 1)
-    simp only [allocRange, Vector.toList_ofFn] at ih ⊢
-    rw [List.ofFn_succ, show List.range' nv (n + 1) = nv :: List.range' (nv + 1) n
-      from rfl, ← ih]
-    congr 1
-    refine congrArg List.ofFn (funext fun i => ?_)
-    simp only [Fin.val_succ]
-    omega
+/-! ## The run-form check contract
+
+`LawfulCheckedType` in run form, at the base backend: on a state where the bundle is
+in scope and its cells encode a value, the check's run returns the state unchanged.
+Every leaf encoder's `check` allocates nothing — a field element and an `UnChecked`
+bundle check nothing, a boolean pays one row, composites run their components' checks
+— so the state after is the state before. (`RunCheckedType` is the transitional name;
+it replaces `LawfulCheckedType` once the continuation-passing leaf is gone.) -/
+
+/-- The run form of a `CheckedType`'s completeness contract: an honest encoding, in
+scope, passes its own check and leaves the state unchanged. -/
+class RunCheckedType (F c val var : Type) [Add F] [Mul F] [Zero F]
+    [CircuitType F val var] [CheckedType F c var] [Checker F c] : Prop where
+  /-- On an in-scope bundle encoding `v`, the check's honest run accepts without
+  touching the state. -/
+  check_run : ∀ (st : ProverState F) (bundle : var) (v : val),
+    CircuitType.Scoped val st bundle →
+    CircuitType.Encodes val st.env.toValuation bundle v →
+    prove (Checker.holds (F := F) (c := c)) (CheckedType.check (c := c) bundle) st.nv st.env
+      = .ok (st.out ())
+
+instance instRunCheckedTypeF {F c : Type} [Add F] [Mul F] [Zero F] [Checker F c] :
+    RunCheckedType F c F (FVar F) :=
+  ⟨fun _ _ _ _ _ => rfl⟩
+
+instance instRunCheckedTypeUnChecked {F c : Type} [Add F] [Mul F] [Zero F]
+    {val var : Type} [CircuitType F val var] [Checker F c] :
+    RunCheckedType F c (UnChecked val) (UnChecked var) :=
+  ⟨fun _ _ _ _ _ => rfl⟩
+
+instance instRunCheckedTypeBool {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c] :
+    RunCheckedType F c Bool (BoolVar F) where
+  check_run st b v hs henc := by
+    have hs' := scoped_bool_iff.mp hs
+    have henc' := encodes_bool_iff.mp henc
+    refine prove_addConstraint st ?_
+    refine LawfulChecker.check_boolean _ _ _ (CVar.eval_eq_val hs') ?_
+    rw [henc']
+    cases v <;> simp [bit]
+
+instance instRunCheckedTypeProd {F c : Type} [Add F] [Mul F] [Zero F] {a b av bv : Type}
+    [A : CircuitType F a av] [B : CircuitType F b bv] [CheckedType F c av]
+    [CheckedType F c bv] [Checker F c] [RunCheckedType F c a av] [RunCheckedType F c b bv] :
+    RunCheckedType F c (a × b) (av × bv) where
+  check_run st p v hs henc := by
+    obtain ⟨hs1, hs2⟩ := scoped_prod_iff.mp hs
+    obtain ⟨he1, he2⟩ := encodes_prod_iff.mp henc
+    rw [show (CheckedType.check (c := c) p : CircuitM F c PUnit)
+        = (CheckedType.check (c := c) p.1 >>= fun _ => CheckedType.check (c := c) p.2)
+        from rfl, prove_bind, RunCheckedType.check_run st p.1 v.1 hs1 he1]
+    exact RunCheckedType.check_run st p.2 v.2 hs2 he2
+
+/-- The element checks of a list, run in order: each accepts, so the state is
+returned unchanged. -/
+private theorem forM_check_run {F c val var : Type} [Add F] [Mul F] [Zero F]
+    [CircuitType F val var] [CheckedType F c var] [Checker F c] [RunCheckedType F c val var]
+    (st : ProverState F) :
+    ∀ (bs : List var) (vs : List val), bs.length = vs.length →
+      (∀ i (hi : i < bs.length) (hi' : i < vs.length),
+        CircuitType.Scoped val st bs[i] ∧
+          CircuitType.Encodes val st.env.toValuation bs[i] vs[i]) →
+      prove (Checker.holds (F := F) (c := c)) (bs.forM (CheckedType.check (c := c))) st.nv st.env
+        = .ok (st.out ())
+  | [], _, _, _ => rfl
+  | b :: bs, [], hlen, _ => by simp at hlen
+  | b :: bs, v :: vs, hlen, h => by
+    rw [show ((b :: bs).forM (CheckedType.check (c := c)) : CircuitM F c PUnit)
+        = (CheckedType.check (c := c) b >>= fun _ => bs.forM (CheckedType.check (c := c)))
+        from rfl, prove_bind]
+    obtain ⟨hs, he⟩ := h 0 (by simp) (by simp)
+    rw [RunCheckedType.check_run st b v hs he]
+    exact forM_check_run st bs vs (by simpa using hlen) fun i hi hi' => by
+      simpa using h (i + 1) (by simpa using hi) (by simpa using hi')
+
+instance instRunCheckedTypeVector {F c : Type} [Add F] [Mul F] [Zero F] {val var : Type}
+    [A : CircuitType F val var] [CheckedType F c var] [Checker F c]
+    [RunCheckedType F c val var] {n : Nat} :
+    RunCheckedType F c (Vector val n) (Vector var n) where
+  check_run st bs vs hs henc := by
+    have hs' := scoped_vector_iff.mp hs
+    have he' := encodes_vector_iff.mp henc
+    show prove _ (bs.toList.forM (CheckedType.check (c := c))) st.nv st.env = _
+    refine forM_check_run st bs.toList vs.toList (by simp) fun i hi hi' => ?_
+    have hi'' : i < n := by simpa using hi
+    simp only [Vector.getElem_toList]
+    exact ⟨hs' i hi'', he' i hi''⟩
+
+/-- The run-form contract transports across the equivalences: the transported run is
+the base run at the mapped bundle and value, definitionally. -/
+theorem RunCheckedType.ofEquiv {F c : Type} [Add F] [Mul F] [Zero F] [Checker F c]
+    {val var val' var' : Type} [A : CircuitType F val var] [CheckedType F c var]
+    [RunCheckedType F c val var] (ev : val' ≃ val) (er : var' ≃ var) :
+    @RunCheckedType F c val' var' _ _ _ (A.ofEquiv ev er) (CheckedType.ofEquiv (c := c) er) _ :=
+  letI : CircuitType F val' var' := A.ofEquiv ev er
+  letI : CheckedType F c var' := CheckedType.ofEquiv (c := c) er
+  { check_run := fun st bundle v hs henc =>
+      RunCheckedType.check_run (c := c) (val := val) st (er bundle) (ev v) hs henc }
+
+/-- The witness leaf, closed: a scoped block computing `v` allocates `v`'s encoding
+at the counter, the bundle's check accepts it there, and the leaf returns the bundle
+at the extended state. -/
+theorem prove_witness_run {F c : Type} [Add F] [Mul F] [Zero F] [Checker F c]
+    {val var : Type} [inst : CircuitType F val var] [LawfulCircuitType F val var]
+    [CheckedType F c var] [RunCheckedType F c val var] {w : AsProver F val}
+    (st : ProverState F) (hs : w.Scoped st) {v : val}
+    (hv : w.eval st.env.toValuation = .ok v) :
+    prove (Checker.holds (F := F) (c := c)) (witness (val := val) w) st.nv st.env
+      = .ok ((st.extendMany (inst.valueToFields v).toList).out
+          (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)))) := by
+  have hscope : CircuitType.Scoped val (st.extendMany (inst.valueToFields v).toList)
+      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) := by
+    intro i hi
+    rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
+    simp only [getElem_mapVec, allocRange, Vector.getElem_ofFn, CVar.scoped_var]
+    exact st.new_mem_extendMany (by simpa using hi)
+  rw [prove_witness st hs hv,
+    RunCheckedType.check_run (st.extendMany (inst.valueToFields v).toList) _ v hscope
+      (encodes_extendMany_new st v)]
+  rfl
 
 /-- Fresh consecutive slots batch-extend successfully; the table only grows, stays
 fresh past the batch, and each slot holds its value. -/

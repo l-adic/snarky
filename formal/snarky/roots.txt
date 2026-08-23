@@ -119,6 +119,38 @@ Snarky.CircuitType.Scoped.of_le
 Snarky.readVal_of_le
 Snarky.readVal_extendMany_new
 
+-- Run equations (Backend/{Builder,Prover,Read,WP}.lean): the primitives a gadget's
+-- equation rewrites with, the graph and its exactness and growth, encodings, and the
+-- run-form check contract with the closed witness leaf.
+Snarky.allocRange_toList
+Snarky.ProverState.out
+Snarky.prove_addConstraint
+Snarky.prove_label
+Snarky.prove_existsOp
+Snarky.prove_witness
+Snarky.Runs
+Snarky.Runs.eq
+Snarky.Runs.le
+Snarky.CVar.Scoped.of_eval
+Snarky.CircuitType.Encodes
+Snarky.encodes_fvar_iff
+Snarky.scoped_bool_iff
+Snarky.encodes_bool_iff
+Snarky.encodes_prod_iff
+Snarky.scoped_vector_iff
+Snarky.encodes_vector_iff
+Snarky.encodes_ofEquiv_iff
+Snarky.readVal_of_encodes
+Snarky.encodes_extendMany_new
+Snarky.RunCheckedType
+Snarky.instRunCheckedTypeF
+Snarky.instRunCheckedTypeUnChecked
+Snarky.instRunCheckedTypeBool
+Snarky.instRunCheckedTypeProd
+Snarky.instRunCheckedTypeVector
+Snarky.RunCheckedType.ofEquiv
+Snarky.prove_witness_run
+
 -- The alignment bridge: complete a run's table to a valuation, and tie an honest run
 -- to the soundness relation (Backend/{Assignments,WP}.lean).
 Snarky.Assignments.toValuation

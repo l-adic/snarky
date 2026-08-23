@@ -34,6 +34,19 @@ pure rendering of PS `allocVars`'s threaded `CircuitBuilderState`. -/
 def allocRange (start n : Nat) : Vector Variable n :=
   Vector.ofFn fun i => start + i.val
 
+/-- `allocRange`'s underlying list is the consecutive range. -/
+theorem allocRange_toList : ∀ (n nv : Nat), (allocRange nv n).toList = List.range' nv n
+  | 0, _ => rfl
+  | n + 1, nv => by
+    have ih := allocRange_toList n (nv + 1)
+    simp only [allocRange, Vector.toList_ofFn] at ih ⊢
+    rw [List.ofFn_succ, show List.range' nv (n + 1) = nv :: List.range' (nv + 1) n
+      from rfl, ← ih]
+    congr 1
+    refine congrArg List.ofFn (funext fun i => ?_)
+    simp only [Fin.val_succ]
+    omega
+
 /-- Every variable the range allocates lies inside it. -/
 theorem mem_allocRange {start n v : Nat} (h : v ∈ (allocRange start n).toList) :
     start ≤ v ∧ v < start + n := by

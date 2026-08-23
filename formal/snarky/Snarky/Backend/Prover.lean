@@ -311,6 +311,10 @@ theorem ProverState.freshOut {holds : c → Assignments F → Bool} {m : Circuit
     out.assignments.FreshFrom out.nextVar :=
   prove_freshFrom st.fresh h
 
+/-- What a run returns, read off a state: the result, and the state's counter and
+table. -/
+abbrev ProverState.out (st : ProverState F) (a : α) : Proved F α := ⟨a, st.nv, st.env⟩
+
 /-! ## Scope
 
 What a completeness law assumes about a variable is that it is *in scope*: `v ∈ st`.
@@ -469,6 +473,93 @@ theorem AsProver.eval_congr {w : AsProver F α} {st : ProverState F} (hs : w.Sco
     simp only [AsProver.eval, hg v hv]
     exact ih _ (hk _)
   | fail e => rfl
+
+/-! ## Run equations: the primitives
+
+A completeness law is an equation `prove holds g st.nv st.env = .ok (st'.out r)` —
+the run's exact output, the state after as a term. These are the equations of the
+monad's own operations, which a gadget's equation rewrites with, one per call, after
+`prove_bind`. A constraint costs its check; an allocation is `extendMany` and hands
+its bundle to the bundle's check; a label is nothing. -/
+
+/-- Emitting a row that holds changes nothing. -/
+theorem prove_addConstraint {holds : c → Assignments F → Bool} (st : ProverState F)
+    {con : c} (h : holds con st.env = true) :
+    prove holds (addConstraint con) st.nv st.env = .ok (st.out ()) := by
+  simp [addConstraint, prove, h]
+
+/-- A label is invisible to the run. -/
+theorem prove_label {holds : c → Assignments F → Bool} (st : ProverState F) (s : String)
+    (m : CircuitM F c α) : prove holds (label s m) st.nv st.env = prove holds m st.nv st.env :=
+  rfl
+
+/-- An allocation whose block computes `xs` continues at the state extended by `xs`,
+with the allocated names. -/
+theorem prove_existsOp {holds : c → Assignments F → Bool} {n : Nat}
+    {wit : AsProver F (Vector F n)} {k : Vector Variable n → CircuitM F c α}
+    (st : ProverState F) {xs : Vector F n} (hw : wit.run st.env = .ok xs) :
+    prove holds (.existsOp n wit k) st.nv st.env
+      = prove holds (k (allocRange st.nv n)) (st.extendMany xs.toList).nv
+          (st.extendMany xs.toList).env := by
+  simp only [prove, hw]
+  rw [show (allocRange st.nv n).toList.zip xs.toList
+      = (List.range' st.nv xs.toList.length).zip xs.toList by simp [allocRange_toList]]
+  rw [Assignments.extendPairs_extendList st.fresh]
+  simp [ProverState.extendMany_nv, ProverState.extendMany_env]
+
+/-- The witness leaf: a scoped block that computes `v` allocates `v`'s encoding at the
+counter and runs the bundle's check there; the leaf's result is the bundle. -/
+theorem prove_witness {holds : c → Assignments F → Bool} [Zero F] {val var : Type u}
+    [inst : CircuitType F val var] [CheckedType F c var] {w : AsProver F val}
+    (st : ProverState F) (hs : w.Scoped st) {v : val}
+    (hv : w.eval st.env.toValuation = .ok v) :
+    prove holds (witness (val := val) w) st.nv st.env
+      = (prove holds
+            (CheckedType.check (c := c)
+              (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
+            (st.extendMany (inst.valueToFields v).toList).nv
+            (st.extendMany (inst.valueToFields v).toList).env).bind
+          fun o => .ok ⟨inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)),
+            o.nextVar, o.assignments⟩ := by
+  have hw : (inst.valueToFields <$> w).run st.env = .ok (inst.valueToFields v) := by
+    simp [AsProver.run_eq_eval hs, hv, Except.bind]
+  rw [witness, prove_existsOp st hw]
+  rw [show (do
+        let v := inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))
+        CheckedType.check (c := c) v
+        pure v : CircuitM F c var)
+      = (CheckedType.check (c := c)
+            (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)))
+          >>= fun _ => pure (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
+      from rfl, prove_bind]
+  rfl
+
+/-! ## The graph
+
+`Runs` is the prover's graph at invariant-carrying states. It is deterministic, so its
+fibre over a state is a point (`Runs.eq`: a run lands where the run equation says),
+and every run grows the table (`Runs.le`) — the two facts a continuation-passing law
+is derived from, once, in the bridge. -/
+
+/-- From `st`, `m` runs to the result `a` at `st'`. -/
+def Runs (holds : c → Assignments F → Bool) (m : CircuitM F c α) (st : ProverState F)
+    (a : α) (st' : ProverState F) : Prop :=
+  prove holds m st.nv st.env = .ok (st'.out a)
+
+/-- Exactness: a run lands where the run equation says it does. -/
+theorem Runs.eq {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {st st' T : ProverState F} {a a' : α} (hr : Runs holds m st a st')
+    (h : prove holds m st.nv st.env = .ok (T.out a')) : a = a' ∧ st' = T := by
+  rw [Runs, h] at hr
+  injection hr with hr
+  simp only [ProverState.out, Proved.mk.injEq] at hr
+  obtain ⟨rfl, hnv, henv⟩ := hr
+  exact ⟨rfl, ProverState.ext hnv.symm henv.symm⟩
+
+/-- Every run grows the table. -/
+theorem Runs.le {holds : c → Assignments F → Bool} {m : CircuitM F c α}
+    {st st' : ProverState F} {a : α} (hr : Runs holds m st a st') : st.env.Le st'.env :=
+  prove_assignments_le hr
 
 /-! ## Interpreter agreement -/
 

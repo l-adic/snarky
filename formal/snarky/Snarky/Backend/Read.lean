@@ -395,25 +395,207 @@ theorem readVal_of_le [Add F] [Mul F] [Zero F] [CircuitType F val var]
   simp only [Vector.getElem_map]
   exact CVar.val_of_le hle (hs i hi)
 
-/-- What a witness leaf grants: the bundle allocated at the counter reads, on the
-extended table, as the value whose encoding was written — `vars_roundTrip` to the
-cells, the batch's slots, `value_roundTrip` back. -/
+/-- An expression that evaluates is in scope. -/
+theorem CVar.Scoped.of_eval [Add F] [Mul F] {st : ProverState F} :
+    ∀ {x : CVar F} {v : F}, x.eval st.env = .ok v → x.Scoped st
+  | .var w, v, h => by
+    simp only [CVar.eval] at h
+    split at h
+    · next y hy => exact ProverState.mem_of_assigned hy
+    · cases h
+  | .const _, _, _ => trivial
+  | .add a b, v, h => by
+    simp only [CVar.eval] at h
+    split at h
+    · cases h
+    · next xa hxa =>
+      split at h
+      · cases h
+      · next xb hxb => exact ⟨CVar.Scoped.of_eval hxa, CVar.Scoped.of_eval hxb⟩
+  | .scale _ y, v, h => by
+    simp only [CVar.eval] at h
+    split at h
+    · cases h
+    · next z hz => exact CVar.Scoped.of_eval (x := y) hz
+
+/-! ## Encodings
+
+What a witness leaf grants is stronger than a reading: the allocated cells *are* the
+value's encoding. `Encodes` says so at a valuation; it computes at the base, boolean,
+pair and vector instances as the readings do, decodes to `readVal` by the round trip,
+and holds at the state an allocation lands on. -/
+
+/-- The bundle's cells, read at `V`, are `v`'s encoding. -/
+def CircuitType.Encodes (val : Type) [Add F] [Mul F] [CircuitType F val var]
+    (V : Valuation F) (cv : var) (v : val) : Prop :=
+  (CircuitType.varToFields (val := val) cv).map (·.val V)
+    = CircuitType.valueToFields (var := var) v
+
+/-- A single field variable encodes `k` iff it reads as `k`. -/
+theorem encodes_fvar_iff [Add F] [Mul F] {V : Valuation F} {x : FVar F} {k : F} :
+    CircuitType.Encodes F V x k ↔ x.val V = k := by
+  constructor
+  · intro h
+    have := congrArg (fun w : Vector F 1 => w[0]) h
+    simpa using this
+  · intro h
+    ext i hi
+    have hi' : i < 1 := hi
+    have h0 : i = 0 := by omega
+    subst h0
+    simpa [CircuitType.varToFields, CircuitType.valueToFields] using h
+
+/-- A boolean variable is in scope iff its expression is. -/
+theorem scoped_bool_iff [Zero F] [One F] [DecidableEq F] {st : ProverState F} {b : BoolVar F} :
+    CircuitType.Scoped Bool st b ↔ (b.toCVar).Scoped st := by
+  constructor
+  · intro h
+    exact h 0 Nat.zero_lt_one
+  · intro h i hi
+    have hi' : i < 1 := hi
+    have h0 : i = 0 := by omega
+    subst h0
+    exact h
+
+/-- A boolean variable encodes `v` iff its expression reads as `bit v`. -/
+theorem encodes_bool_iff [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] {V : Valuation F}
+    {b : BoolVar F} {v : Bool} :
+    CircuitType.Encodes Bool V b v ↔ b.toCVar.val V = bit v := by
+  constructor
+  · intro h
+    have := congrArg (fun w : Vector F 1 => w[0]) h
+    simpa using this
+  · intro h
+    ext i hi
+    have hi' : i < 1 := hi
+    have h0 : i = 0 := by omega
+    subst h0
+    simpa [CircuitType.varToFields, CircuitType.valueToFields] using h
+
+section EncodesProd
+
+variable {a b av bv : Type}
+
+/-- A pair encodes a pair iff its components encode the components. -/
+theorem encodes_prod_iff [Add F] [Mul F] [A : CircuitType F a av] [B : CircuitType F b bv]
+    {V : Valuation F} {p : av × bv} {v : a × b} :
+    CircuitType.Encodes (a × b) V p v ↔
+      CircuitType.Encodes a V p.1 v.1 ∧ CircuitType.Encodes b V p.2 v.2 := by
+  show (A.varToFields p.1 ++ B.varToFields p.2).map (·.val V)
+      = A.valueToFields v.1 ++ B.valueToFields v.2 ↔ _
+  rw [Vector.map_append]
+  exact ⟨fun h => Vector.append_inj h, fun ⟨h1, h2⟩ => by rw [h1, h2]⟩
+
+end EncodesProd
+
+section EncodesVector
+
+/-- Block `i`, cell `l` of a flattening sits at `l + i * k`. -/
+private theorem block_lt {i l k n : Nat} (hi : i < n) (hl : l < k) : l + i * k < n * k :=
+  calc l + i * k < k + i * k := Nat.add_lt_add_right hl _
+    _ = (i + 1) * k := by rw [Nat.succ_mul, Nat.add_comm]
+    _ ≤ n * k := Nat.mul_le_mul_right k hi
+
+/-- A property of corresponding flattened cells is a property of corresponding cells
+of corresponding blocks. -/
+private theorem block_iff {β γ : Type} {k n : Nat} (P : β → γ → Prop)
+    (xss : Vector (Vector β k) n) (yss : Vector (Vector γ k) n) :
+    (∀ j (hj : j < n * k), P xss.flatten[j] yss.flatten[j]) ↔
+      ∀ i (hi : i < n), ∀ l (hl : l < k), P xss[i][l] yss[i][l] := by
+  constructor
+  · intro h i hi l hl
+    have := h (l + i * k) (block_lt hi hl)
+    simp only [Vector.getElem_flatten] at this
+    have hd : (l + i * k) / k = i := by
+      rw [Nat.add_mul_div_right _ _ (Nat.lt_of_le_of_lt (Nat.zero_le _) hl),
+        Nat.div_eq_of_lt hl, Nat.zero_add]
+    have hm : (l + i * k) % k = l := by
+      rw [Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hl]
+    simp only [hd, hm] at this
+    exact this
+  · intro h j hj
+    have hk : 0 < k := by
+      rcases Nat.eq_zero_or_pos k with hk | hk
+      · subst hk; simp at hj
+      · exact hk
+    simp only [Vector.getElem_flatten]
+    exact h (j / k) (Nat.div_lt_of_lt_mul (by rwa [Nat.mul_comm] at hj)) (j % k)
+      (Nat.mod_lt _ hk)
+
+/-- A vector is in scope iff its elements are. -/
+theorem scoped_vector_iff [A : CircuitType F val var] {st : ProverState F} {n : Nat}
+    {bs : Vector var n} :
+    CircuitType.Scoped (Vector val n) st bs ↔
+      ∀ i (hi : i < n), CircuitType.Scoped val st bs[i] := by
+  show (∀ j (hj : j < n * A.size), ((bs.map A.varToFields).flatten[j]).Scoped st) ↔ _
+  rw [block_iff (fun x (_ : CVar F) => x.Scoped st) (bs.map A.varToFields)
+    (bs.map A.varToFields)]
+  simp only [Vector.getElem_map]
+  rfl
+
+/-- A vector encodes a vector iff its elements encode the elements. -/
+theorem encodes_vector_iff [Add F] [Mul F] [A : CircuitType F val var] {V : Valuation F}
+    {n : Nat} {bs : Vector var n} {vs : Vector val n} :
+    CircuitType.Encodes (Vector val n) V bs vs ↔
+      ∀ i (hi : i < n), CircuitType.Encodes val V bs[i] vs[i] := by
+  show ((bs.map A.varToFields).flatten).map (·.val V) = (vs.map A.valueToFields).flatten ↔ _
+  have hpt : ∀ {m : Nat} (u w : Vector F m), u = w ↔ ∀ j (hj : j < m), u[j] = w[j] :=
+    fun u w => ⟨fun h j hj => by rw [h], fun h => Vector.ext h⟩
+  rw [hpt]
+  simp only [Vector.getElem_map]
+  rw [block_iff (fun x y => x.val V = y) (bs.map A.varToFields) (vs.map A.valueToFields)]
+  simp only [Vector.getElem_map]
+  constructor
+  · intro h i hi
+    exact Vector.ext fun l hl => by simpa using h i hi l hl
+  · intro h i hi l hl
+    have := congrArg (fun w : Vector F A.size => w[l]) (h i hi)
+    simpa using this
+
+end EncodesVector
+
+section EncodesOfEquiv
+
+variable {rep repVar : Type} (R : CircuitType F rep repVar) (e : val ≃ rep) (ev : var ≃ repVar)
+
+/-- A presented bundle encodes a value iff its representation encodes the mapped value. -/
+theorem encodes_ofEquiv_iff [Add F] [Mul F] {V : Valuation F} {cv : var} {v : val} :
+    @CircuitType.Encodes F var val _ _ (R.ofEquiv e ev) V cv v ↔
+      CircuitType.Encodes rep V (ev cv) (e v) :=
+  Iff.rfl
+
+end EncodesOfEquiv
+
+/-- An encoding decodes to its value. -/
+theorem readVal_of_encodes [Add F] [Mul F] [CircuitType F val var] [LawfulCircuitType F val var]
+    {V : Valuation F} {cv : var} {v : val} (h : CircuitType.Encodes val V cv v) :
+    readVal (val := val) V cv = v := by
+  unfold readVal
+  rw [h, LawfulCircuitType.value_roundTrip]
+
+/-- What a witness leaf grants: the bundle allocated at the counter encodes, on the
+extended table, the value whose encoding was written — `vars_roundTrip` to the cells,
+then the batch's slots. -/
+theorem encodes_extendMany_new [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    [LawfulCircuitType F val var] (st : ProverState F) (v : val) :
+    CircuitType.Encodes val
+      (st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList).env.toValuation
+      (CircuitType.fieldsToVar (F := F) (val := val)
+        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) v := by
+  unfold CircuitType.Encodes
+  rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
+  ext i hi
+  simp only [Vector.getElem_map, getElem_mapVec, allocRange, Vector.getElem_ofFn, CVar.val]
+  rw [ProverState.get_extendMany_new st (by simpa using hi)]
+  simp
+
+/-- The allocated bundle reads as the value whose encoding was written. -/
 theorem readVal_extendMany_new [Add F] [Mul F] [Zero F] [CircuitType F val var]
     [LawfulCircuitType F val var] (st : ProverState F) (v : val) :
     readVal (val := val)
       (st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList).env.toValuation
       (CircuitType.fieldsToVar (F := F) (val := val)
-        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) = v := by
-  unfold readVal
-  rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
-  set st' := st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList with hst'
-  have hcells : (mapVec CVar.var (allocRange st.nv (CircuitType.size F val))).map
-      (·.val st'.env.toValuation)
-      = CircuitType.valueToFields (F := F) (var := var) v := by
-    ext i hi
-    simp only [Vector.getElem_map, getElem_mapVec, allocRange, Vector.getElem_ofFn, CVar.val]
-    rw [ProverState.get_extendMany_new st (by simpa using hi)]
-    simp
-  rw [hcells, LawfulCircuitType.value_roundTrip]
+        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) = v :=
+  readVal_of_encodes (encodes_extendMany_new st v)
 
 end Snarky
