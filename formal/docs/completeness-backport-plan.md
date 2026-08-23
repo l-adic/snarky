@@ -27,10 +27,10 @@ EvalError)`, a function of the table. The reading of a bundle exists three times
 
 **After.** A gadget's completeness law is a run equation at an invariant-carrying
 state, `prove holds (g …) st.nv st.env = .ok ((gRun st …).out r)`, composed by
-`prove_bind` and loop inductions with a state function. The invariant is the domain
-(`Dom`: defined exactly below the counter), so an in-scope read is total
-(`toValuation`) and a scoped witness block cannot fail. Scope is `x ∈ st` with a law
-set; no proof mentions that names are numbers. Witness blocks are syntax
+`prove_bind` and loop inductions with a state function. Scope is `x ∈ st` — the slot
+is assigned — with a law set; an in-scope read is total (`toValuation`), a scoped
+witness block cannot fail, and no proof mentions that names are numbers. The state's
+invariant stays `FreshFrom`. Witness blocks are syntax
 (`AsProver` as an inductive) with an evaluation `eval` and `run_eq_eval`. There is one
 reading, `readVal`, at two valuations — arbitrary `V` for soundness,
 `env.toValuation` for completeness. The prover `WP` instance, `Complete`, the bridge,
@@ -53,10 +53,11 @@ corollaries; change the working form.
 | `Wit.run`, `Wit.pure_eq/bind_eq/bind_pure/bind_read` | `AsProver.run`, same four `@[simp]` normal forms | do-blocks normalise to constructors |
 | `readVar (v : Var)` | `AsProver.readCVar (x : CVar F) := .read x .pure` | typed `readVar` rebuilt by structural recursion over `varToFields` |
 | `Assignments.get` | `Assignments.toValuation` (exists, `Assignments.lean:47`) | default `0` |
-| `Assignments.Dom` | `Assignments.Dom` (new), replaces `FreshFrom` | `∀ v, (a v).isSome ↔ v < nv` |
-| `ProverState.dom`, `@[ext]` | same | `freshOut` → `domOut` |
+| `Assignments.Dom` (invariant) | — | not ported: the seam reserves the output slots below the counter (`compileBody`), so "defined exactly below the counter" is false there; `FreshFrom` stays the invariant |
+| `x ∈ st := x < st.nv` | `v ∈ st := (st.env v).isSome` | the course's Option B: in scope *means* assigned; the same seven laws |
+| `ProverState.dom`, `@[ext]` | `ProverState.fresh` (exists), `@[ext]` | |
 | `ProverState.extend x` | `ProverState.extendMany (xs : List F)` | `existsOp n` allocates `n` slots; `extendPairs_consecutive` made functional |
-| `x ∈ st` (`Membership Var`) | `v ∈ st` (`Membership Variable`) | `Membership`'s element type is an out-param: one element type per collection |
+| `Membership Var (ProverState F)` | `Membership Variable (ProverState F)` | `Membership`'s element type is an out-param: one element type per collection |
 | — | `CVar.Scoped st x`, `CircuitType.Scoped st cv` | structural; computed per leaf encoder like `readVal` |
 | `new_mem_extend`, `mem_extend_iff`, `mem_of_le`, `get_eq`, `get_extend_new`, `get_extend_of_mem`, `get_of_le` | same names at `extendMany` / `toValuation` | the seven laws; arithmetic lives only in their proofs |
 | `Wit.Scoped st`, `Wit.eval g`, `run_eq_eval`, `eval_congr` | `AsProver.Scoped st`, `AsProver.eval V : Except EvalError α`, same two theorems | `eval` is `Except` because of `throw`; `simp` reduces it to `.ok _` on throw-free blocks |
@@ -108,41 +109,39 @@ explicitly or normalise first.
 Accept: build; `snarky/scripts/check_axioms.sh` unchanged roots; deadcode; `lake
 lint` (docBlame on the new constructors); shake; `check-style.sh`.
 
-### S2 — drop `freshOp` and `assignOp` from the fragment
+### S2 — `freshOp` leaves the fragment (done: #316)
 
-`Dom` (S3) is an invariant of every run only if nothing allocates without a value.
-`CircuitM.freshOp` does, and `assignOp` fills later. No gadget emits either: nothing
-outside `Backend/` and `DSL/Monad.lean` mentions `fresh`, `assignVars`, `existsVars`;
-every allocation is `witness = existsOp`, which computes before it allocates (PS
-`exists`, `Monad.purs:321`, is the same single op). The PS gadget libraries in scope
-(`snarky`, `snarky-kimchi`, `poseidon`, `random-oracle`, `schnorr`) never call PS
-`fresh`/`assignVars` either.
+`CircuitM.freshOp` allocated a variable without a value. No gadget, seam or script
+ever emitted it, and the PS DSL's `fresh` has no caller in any gadget library:
+allocation is `exists`, which computes before it allocates. The functionality is
+subsumed, so parity with the ops record carries no weight: the constructor, `fresh`,
+and one case per interpreter induction are gone; the parity table records the row as
+outside the fragment.
 
-Decided: remove `freshOp`, `assignOp`, `fresh`, `assignVars` from the modeled
-fragment. The ops record keeps them in PS; the port documents the two rows as outside
-the fragment (`DSL.lean` parity table, `Snarky.lean` preamble,
-`docs/snarky-ps-alignment.md`).
+`assignOp` stays. It is not unused: `compileBody`'s output back-fill writes the
+reserved public output slots with `assignVars` after `main` has run. This is also
+why S3 cannot carry the course's `Dom`: between the seed and the back-fill, the
+output slots are unassigned *below* the counter, by the wire layout, not by any op.
 
-Touch set: `CircuitM`, `CircuitM.bind`, `build`, `prove`, `prove_bind`,
-`prove_freshFrom`, `prove_assignments_le`, `prove_nextVar_le`, `prove_build_agrees`,
-`prove_complete`, `build_eraseWitness` (two cases fewer in each induction), the three
-doc sites. `check_cs_equality` is unaffected (gadget programs never contained the ops).
+### S3 — the total reading and scope (course `d868cbb`, `ada2466`, on Option B)
 
-Accept: build + all gates; parity table updated in the same commit.
+The course defined scope as "below the counter" and carried `Dom` (the table is
+defined exactly below the counter). The codebase cannot: the seam leaves the reserved
+output slots unassigned below the counter while `main` runs. The course's other
+reading — §8.4's Option B — is what the contract actually needs: *in scope means
+assigned*. So scope is assignment, the invariant stays `FreshFrom`, and every law
+below holds with the same statement; `run_eq_eval`'s one need, `v ∈ st → st.env v =
+some (st.env.toValuation v)`, is the definition.
 
-### S3 — the domain invariant, the total reading, scope (course `d868cbb`, `ada2466`)
+`Backend/Assignments.lean`: `Assignments.extendList a nv xs` (the functional form of
+`extendPairs_consecutive`, `WP.lean:719`) with `FreshFrom.extendList` and
+`FreshFrom.le_extendList`; `toValuation_eq : (a v).isSome → a v = some (a.toValuation
+v)`.
 
-`Backend/Assignments.lean`: `protected def Assignments.Dom (a) (nv) : Prop := ∀ v, (a
-v).isSome ↔ v < nv`; `Dom.lt_of_assigned`; `Dom.toValuation_eq : a.Dom nv → v < nv → a
-v = some (a.toValuation v)` (the course's `get_eq`); `Assignments.extendList a nv xs`
-(the functional form of `extendPairs_consecutive`, `WP.lean:719`) with
-`Dom.extendList : a.Dom nv → (a.extendList nv xs).Dom (nv + xs.length)` and
-`Dom.le_extendList`. `FreshFrom` is replaced, not kept beside: `Compile.lean:171–204`
-(`solve_seed`) produces `Dom A.size`, which the seed satisfies by construction.
-
-`Backend/Prover.lean`: `ProverState` gets `dom : env.Dom nv` in place of `fresh`, and
-`@[ext]`; `ProverState.extendMany (xs : List F)`; `instance : Membership Variable
-(ProverState F) := ⟨fun st v => v < st.nv⟩`, the one place `<` appears; the laws —
+`Backend/Prover.lean`: `ProverState` keeps `fresh`, gains `@[ext]`;
+`ProverState.extendMany (xs : List F)`; `instance : Membership Variable (ProverState F)
+:= ⟨fun st v => (st.env v).isSome⟩`; `mem_lt : v ∈ st → v < st.nv` (from freshness,
+used only in the laws' proofs); the laws —
 
 ```lean
 theorem mem_extendMany_iff : v ∈ st.extendMany xs ↔ v ∈ st ∨ ∃ i < xs.length, v = st.nv + i   -- @[simp]
@@ -153,12 +152,12 @@ theorem get_extendMany_of_mem (hv : v ∈ st) : (st.extendMany xs).env.toValuati
 theorem get_of_le (hle) (hv : v ∈ st) : st'.env.toValuation v = st.env.toValuation v
 ```
 
-— `prove_dom` (rewrite of `prove_freshFrom` for the iff), `domOut`; `prove_le` is
-`prove_assignments_le`. The `iff` form of `mem_extendMany` is deliberate: `simp`'s
-default discharge depth is 2, so a conditional `mem_extend` lemma fails on towers
-deeper than two allocations; the `iff` rewrites without discharging (course `ada2466`).
-`ProverState.extendMany`'s projections are *not* simp lemmas: the `toValuation` laws
-match `(st.extendMany xs).env` and must see it.
+— `prove_freshFrom` and `freshOut` as they are; `prove_le` is `prove_assignments_le`.
+The `iff` form of `mem_extendMany` is deliberate: `simp`'s default discharge depth is
+2, so a conditional `mem_extend` lemma fails on towers deeper than two allocations; the
+`iff` rewrites without discharging (course `ada2466`). `ProverState.extendMany`'s
+projections are *not* simp lemmas: the `toValuation` laws match `(st.extendMany
+xs).env` and must see it.
 
 `Backend/Read.lean` becomes the scope module (it sits above `Prover.lean` and
 `Types.lean`): `CVar.Scoped st : CVar F → Prop` (structural: `var v ↦ v ∈ st`, `const ↦
@@ -183,8 +182,8 @@ v).Scoped st`, `throw ↦ True`), `AsProver.eval (V : Valuation F) : AsProver F 
 EvalError α`, `run_eq_eval : w.Scoped st → w.run st.env = w.eval st.env.toValuation`,
 `eval_congr`.
 
-Accept: build + gates; `solve_complete`'s statement unchanged. `Reads`/`WitnessReads`
-still exist at the end of S3; S4 deletes them.
+Accept: build + gates; `solve_complete`'s statement and the seam unchanged.
+`Reads`/`WitnessReads` still exist at the end of S3; S4 deletes them.
 
 ### S4 — the conversion (course `a8568c2`, `50cd590`, `866f2e6`, `6b68f69`)
 
