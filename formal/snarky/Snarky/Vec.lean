@@ -18,6 +18,10 @@ opaque to the kernel; `List.map` is structural, so this version reduces under `d
 def mapVec (f : α → β) (v : Vector α n) : Vector β n :=
   ⟨⟨v.toList.map f⟩, by simp⟩
 
+@[simp] theorem getElem_mapVec (f : α → β) (v : Vector α n) (i : Nat) (hi : i < n) :
+    (mapVec f v)[i] = f v[i] := by
+  simp [mapVec]
+
 /-- A flattening reads as the flattening of the element lists (the `toList` bridge core
 provides for `map` but not `flatten`). -/
 theorem toList_flatten {α : Type u} {m n : Nat} (xss : Vector (Vector α m) n) :

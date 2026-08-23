@@ -293,8 +293,9 @@ it, and `prove_freshFrom` supplies it for every successor state, so the statemen
 downstream never mention freshness again. -/
 
 /-- A prover state: the allocation counter, the table, and the invariant relating
-them. -/
-structure ProverState (F : Type u) where
+them. Two states with the same counter and table are equal (`ProverState.ext`): the
+invariant is not data. -/
+@[ext] structure ProverState (F : Type u) where
   /-- The next-variable counter. -/
   nv : Nat
   /-- The witness table filled so far. -/
@@ -309,6 +310,165 @@ theorem ProverState.freshOut {holds : c → Assignments F → Bool} {m : Circuit
     (h : prove holds m st.nv st.env = .ok out) :
     out.assignments.FreshFrom out.nextVar :=
   prove_freshFrom st.fresh h
+
+/-! ## Scope
+
+What a completeness law assumes about a variable is that it is *in scope*: `v ∈ st`.
+Scope is assignment — the slot has a value — not a bound on the counter: the seam
+(`compileBody`) reserves the public output slots below the counter and fills them
+after the body has run, so "below the counter" would let a law read a hole. In scope
+means readable, and the reading is total: `st.env.toValuation v`. The laws below are
+everything a proof uses of scope — it survives extension (`mem_of_le`), an allocation
+puts its slots in scope and disturbs no other (`mem_extendMany_iff`), and a reading is
+stable across both (`get_of_le`, `get_extendMany_of_mem`). That names are numbers and
+the counter bounds them appears only inside these proofs. -/
+
+/-- `v ∈ st`: the variable is in scope — it has a value. -/
+instance : Membership Variable (ProverState F) := ⟨fun st v => (st.env v).isSome⟩
+
+theorem ProverState.mem_def {st : ProverState F} {v : Variable} :
+    v ∈ st ↔ (st.env v).isSome := Iff.rfl
+
+/-- An assigned variable is in scope. -/
+theorem ProverState.mem_of_assigned {st : ProverState F} {v : Variable} {x : F}
+    (hv : st.env v = some x) : v ∈ st := by
+  rw [ProverState.mem_def, hv]; rfl
+
+/-- In scope is below the counter — used only to prove the laws below. -/
+theorem ProverState.mem_lt {st : ProverState F} {v : Variable} (hv : v ∈ st) : v < st.nv := by
+  by_contra h
+  rw [ProverState.mem_def, st.fresh v (Nat.le_of_not_lt h)] at hv
+  cases hv
+
+/-- Scope survives any extension of the table. -/
+theorem ProverState.mem_of_le {st st' : ProverState F} (hle : st.env.Le st'.env)
+    {v : Variable} (hv : v ∈ st) : v ∈ st' := by
+  obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hv
+  exact ProverState.mem_of_assigned (hle v x hx)
+
+/-- In scope means assigned, and the slot holds its completed reading. -/
+theorem ProverState.get_eq [Zero F] (st : ProverState F) {v : Variable} (hv : v ∈ st) :
+    st.env v = some (st.env.toValuation v) :=
+  Assignments.toValuation_eq hv
+
+/-- An in-scope reading survives any extension of the table. -/
+theorem ProverState.get_of_le [Zero F] {st st' : ProverState F} (hle : st.env.Le st'.env)
+    {v : Variable} (hv : v ∈ st) : st'.env.toValuation v = st.env.toValuation v := by
+  have h := hle v _ (st.get_eq hv)
+  simp [Assignments.toValuation, h]
+
+/-- Allocate `xs` at the counter: the state after an `existsOp`. The only way a run
+makes a new state, and the invariant comes with it. -/
+def ProverState.extendMany (st : ProverState F) (xs : List F) : ProverState F :=
+  ⟨st.nv + xs.length, st.env.extendList st.nv xs, st.fresh.extendList xs⟩
+
+theorem ProverState.extendMany_nv (st : ProverState F) (xs : List F) :
+    (st.extendMany xs).nv = st.nv + xs.length := rfl
+
+theorem ProverState.extendMany_env (st : ProverState F) (xs : List F) :
+    (st.extendMany xs).env = st.env.extendList st.nv xs := rfl
+
+/-- Allocation only grows the table. -/
+theorem ProverState.le_extendMany (st : ProverState F) (xs : List F) :
+    st.env.Le (st.extendMany xs).env :=
+  st.fresh.le_extendList xs
+
+/-- Scope survives allocation. -/
+theorem ProverState.mem_extendMany {st : ProverState F} {v : Variable} (hv : v ∈ st)
+    (xs : List F) : v ∈ st.extendMany xs :=
+  ProverState.mem_of_le (st.le_extendMany xs) hv
+
+/-- The allocated names are in scope. -/
+theorem ProverState.new_mem_extendMany (st : ProverState F) {xs : List F} {i : Nat}
+    (hi : i < xs.length) : st.nv + i ∈ st.extendMany xs := by
+  rw [ProverState.mem_def, ProverState.extendMany_env, Assignments.extendList_get hi]
+  rfl
+
+/-- The scope after an allocation: the scope before, and the allocated names. The form
+`simp` uses, so that a name's scope at a grown state reduces to its scope at the
+start, however many allocations deep. -/
+@[simp] theorem ProverState.mem_extendMany_iff {st : ProverState F} {xs : List F}
+    {v : Variable} :
+    v ∈ st.extendMany xs ↔ v ∈ st ∨ ∃ i, i < xs.length ∧ v = st.nv + i := by
+  constructor
+  · intro h
+    by_cases hlt : v < st.nv
+    · left
+      rw [ProverState.mem_def, ProverState.extendMany_env,
+        Assignments.extendList_below hlt] at h
+      exact h
+    · right
+      by_cases hge : st.nv + xs.length ≤ v
+      · exfalso
+        rw [ProverState.mem_def, ProverState.extendMany_env,
+          Assignments.extendList_above hge, st.fresh v (by omega)] at h
+        cases h
+      · exact ⟨v - st.nv, Nat.sub_lt_left_of_lt_add (Nat.le_of_not_lt hlt) (Nat.lt_of_not_le hge),
+          (Nat.add_sub_cancel' (Nat.le_of_not_lt hlt)).symm⟩
+  · rintro (h | ⟨i, hi, rfl⟩)
+    · exact ProverState.mem_extendMany h xs
+    · exact st.new_mem_extendMany hi
+
+/-- An allocated slot reads as what was written. -/
+@[simp] theorem ProverState.get_extendMany_new [Zero F] (st : ProverState F) {xs : List F}
+    {i : Nat} (hi : i < xs.length) :
+    (st.extendMany xs).env.toValuation (st.nv + i) = xs[i] := by
+  show ((st.extendMany xs).env (st.nv + i)).getD 0 = _
+  rw [ProverState.extendMany_env, Assignments.extendList_get hi]
+  rfl
+
+/-- An in-scope name reads the same through an allocation. -/
+@[simp] theorem ProverState.get_extendMany_of_mem [Zero F] (st : ProverState F)
+    {v : Variable} (hv : v ∈ st) (xs : List F) :
+    (st.extendMany xs).env.toValuation v = st.env.toValuation v := by
+  show ((st.extendMany xs).env v).getD 0 = (st.env v).getD 0
+  rw [ProverState.extendMany_env, Assignments.extendList_below (ProverState.mem_lt hv)]
+
+/-! ## Scoped witness blocks
+
+`w.Scoped st`: every variable the block can read is in scope. A scoped block cannot
+fail on a lookup — its run is its evaluation at the completed table
+(`run_eq_eval`) — so the value a law mentions is `w.eval st.env.toValuation`, a
+function of the state with nothing to name and nothing to case on. -/
+
+/-- Every variable the block can read is in scope at `st`. -/
+def AsProver.Scoped (st : ProverState F) : AsProver F α → Prop
+  | .pure _ => True
+  | .read v k => v ∈ st ∧ ∀ x, (k x).Scoped st
+  | .fail _ => True
+
+@[simp] theorem AsProver.scoped_pure (st : ProverState F) (a : α) :
+    (AsProver.pure a : AsProver F α).Scoped st := trivial
+
+@[simp] theorem AsProver.scoped_read (st : ProverState F) (v : Variable)
+    (k : F → AsProver F α) :
+    (AsProver.read v k).Scoped st ↔ v ∈ st ∧ ∀ x, (k x).Scoped st := Iff.rfl
+
+@[simp] theorem AsProver.scoped_fail (st : ProverState F) (e : EvalError) :
+    (AsProver.fail e : AsProver F α).Scoped st := trivial
+
+/-- A scoped block's run is its evaluation at the completed table: no lookup fails. -/
+theorem AsProver.run_eq_eval [Zero F] {w : AsProver F α} {st : ProverState F}
+    (hs : w.Scoped st) : w.run st.env = w.eval st.env.toValuation := by
+  induction w with
+  | pure a => rfl
+  | read v k ih =>
+    obtain ⟨hv, hk⟩ := hs
+    simp only [AsProver.run, AsProver.eval, st.get_eq hv]
+    exact ih _ (hk _)
+  | fail e => rfl
+
+/-- A scoped block reads only in scope, so two readings that agree there evaluate it
+alike. -/
+theorem AsProver.eval_congr {w : AsProver F α} {st : ProverState F} (hs : w.Scoped st)
+    {V V' : Valuation F} (hg : ∀ v, v ∈ st → V v = V' v) : w.eval V = w.eval V' := by
+  induction w with
+  | pure a => rfl
+  | read v k ih =>
+    obtain ⟨hv, hk⟩ := hs
+    simp only [AsProver.eval, hg v hv]
+    exact ih _ (hk _)
+  | fail e => rfl
 
 /-! ## Interpreter agreement -/
 
