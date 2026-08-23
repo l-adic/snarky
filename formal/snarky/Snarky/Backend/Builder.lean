@@ -29,7 +29,7 @@ variable {F c : Type u}
 
 /-- The `n` variables `start, start+1, …, start+n-1` — sequential allocation.
 Interpreter plumbing, not a DSL allocation interface: circuits allocate via
-`fresh`/`existsVars`/`witness` and never see a counter. The explicit `start` is the
+`existsVars`/`witness` and never see a counter. The explicit `start` is the
 pure rendering of PS `allocVars`'s threaded `CircuitBuilderState`. -/
 def allocRange (start n : Nat) : Vector Variable n :=
   Vector.ofFn fun i => start + i.val
@@ -57,7 +57,6 @@ the result, the final counter, and the constraints in emission order. Witness pa
 never inspected — see `build_eq_of_eraseWitness` below. -/
 def build : CircuitM F c α → Nat → Built c α
   | .pure a, n => ⟨a, n, []⟩
-  | .freshOp k, n => build (k n) (n + 1)
   | .addConstraintOp con k, n =>
     let r := build k n
     ⟨r.result, r.nextVar, con :: r.constraints⟩
@@ -86,7 +85,6 @@ theorem build_bind (m : CircuitM F c α) (f : α → CircuitM F c β) (nv : Nat)
   show build (CircuitM.bind m f) nv = _
   induction m generalizing nv with
   | pure a => rfl
-  | freshOp k ih => exact ih ..
   | addConstraintOp con k ih =>
     simp only [CircuitM.bind, build, ih, List.cons_append]
   | existsOp n wit k ih => exact ih ..
@@ -101,7 +99,6 @@ failing one. Two circuits differ only in their witness code exactly when their e
 are equal — for literal circuit terms that equality is `rfl`. -/
 def eraseWitness : CircuitM F c α → CircuitM F c α
   | .pure a => .pure a
-  | .freshOp k => .freshOp fun v => eraseWitness (k v)
   | .addConstraintOp con k => .addConstraintOp con (eraseWitness k)
   | .existsOp n _ k =>
     .existsOp n (AsProver.throw "erased") fun vs => eraseWitness (k vs)
@@ -116,7 +113,6 @@ nodes. -/
 theorem build_eraseWitness (m : CircuitM F c α) : ∀ n, build (eraseWitness m) n = build m n := by
   induction m with
   | pure a => intro n; rfl
-  | freshOp k ih => intro n; simp only [eraseWitness, build]; exact ih n (n + 1)
   | addConstraintOp con k ih => intro n; simp only [eraseWitness, build, ih n]
   | existsOp k wit K ih => intro n; simp only [eraseWitness, build]; exact ih _ (n + k)
   | assignOp vs wit k ih => intro n; simp only [eraseWitness, build]; exact ih n

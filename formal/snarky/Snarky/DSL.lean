@@ -41,7 +41,8 @@ returning later as a `deriving` handler if wanted.
 | `read` | `readVar` | `read` is core's `MonadReader` primitive |
 | `readCVar` | `AsProver.readCVar` | |
 | `exists` | `witness` | `exists` is a Lean keyword |
-| `fresh`, `addConstraint`, `assignVars`, `label` | same | |
+| `addConstraint`, `assignVars`, `label` | same | |
+| `fresh` | — | outside the fragment: nothing allocates without a value (allocation is `exists`) |
 | `check` (class `CheckedType`) | `CheckedType.check` | |
 | `mul_`, `inv_`, `div_` | `mul`, `inv`, `div` | in `DSL/Field` (PS parks them in Monad) |
 | `not_`, `and_`, `or_` | `not`, `and`, `or` | shadow core's Bool functions; types resolve |

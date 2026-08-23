@@ -68,7 +68,6 @@ builder seam against the shared counter and state. -/
 def buildWith (ops : BackendOps F g c σ) :
     CircuitM F c α → Nat → σ → BuiltWith g σ α
   | .pure a, n, s => ⟨a, n, [], s⟩
-  | .freshOp k, n, s => buildWith ops (k n) (n + 1) s
   | .addConstraintOp con k, n, s =>
     let red := ops.appendConstraint con n s
     let r := buildWith ops k red.2.1 red.2.2
@@ -96,7 +95,6 @@ constraint runs the backend's prover seam against the shared counter and table. 
 def proveWith (ops : BackendOps F g c σ) :
     CircuitM F c α → Nat → Assignments F → Except EvalError (Proved F α)
   | .pure a, nv, env => .ok ⟨a, nv, env⟩
-  | .freshOp k, nv, env => proveWith ops (k nv) (nv + 1) env
   | .addConstraintOp con k, nv, env =>
     match ops.proveConstraint con nv env with
     | .error e => .error e
@@ -137,7 +135,6 @@ theorem buildWith_checkedOps (holds : c → Assignments F → Bool)
       ⟨(build m n).result, (build m n).nextVar, (build m n).constraints, ⟨⟩⟩ := by
   induction m generalizing n with
   | pure a => rfl
-  | freshOp k ih => exact ih ..
   | addConstraintOp con k ih =>
     have h1 : (checkedOps (F := F) holds).appendConstraint con n PUnit.unit =
         ([con], n, PUnit.unit) := rfl
@@ -152,7 +149,6 @@ theorem proveWith_checkedOps (holds : c → Assignments F → Bool)
     proveWith (checkedOps holds) m nv env = prove holds m nv env := by
   induction m generalizing nv env with
   | pure a => rfl
-  | freshOp k ih => exact ih ..
   | addConstraintOp con k ih =>
     have h1 : (checkedOps (F := F) holds).proveConstraint con nv env =
         if holds con env then .ok (nv, env) else .error .unsatisfiedConstraint := rfl
@@ -217,7 +213,6 @@ theorem buildWith_proveWith_nextVar {ops : BackendOps F g c σ} (hl : ops.Lockst
     (buildWith ops m nv s).nextVar = p.nextVar := by
   induction m generalizing nv env s with
   | pure a => cases h; rfl
-  | freshOp k ih => exact ih _ h s
   | addConstraintOp con k ih =>
     simp only [proveWith] at h
     split at h
@@ -255,9 +250,6 @@ theorem proveWith_extends {ops : BackendOps F g c σ} (hp : ops.ProveExtends)
   | pure a =>
     cases h
     exact ⟨Assignments.Le.refl _, Nat.le_refl _⟩
-  | freshOp k ih =>
-    obtain ⟨hle, hn⟩ := ih _ h
-    exact ⟨hle, Nat.le_of_succ_le hn⟩
   | addConstraintOp con k ih =>
     simp only [proveWith] at h
     split at h
@@ -327,7 +319,6 @@ theorem buildWith_bind (ops : BackendOps F g c σ) (m : CircuitM F c α)
   show buildWith ops (CircuitM.bind m f) nv s = _
   induction m generalizing nv s with
   | pure a => rfl
-  | freshOp k ih => exact ih ..
   | addConstraintOp con k ih =>
     simp only [CircuitM.bind, buildWith, ih, List.append_assoc]
   | existsOp n wit k ih => exact ih ..
@@ -344,7 +335,6 @@ theorem proveWith_bind (ops : BackendOps F g c σ) (m : CircuitM F c α)
   show proveWith ops (CircuitM.bind m f) nv env = _
   induction m generalizing nv env with
   | pure a => rfl
-  | freshOp k ih => exact ih ..
   | addConstraintOp con k ih =>
     simp only [CircuitM.bind, proveWith]
     split
