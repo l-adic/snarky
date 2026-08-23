@@ -18,6 +18,9 @@ opaque to the kernel; `List.map` is structural, so this version reduces under `d
 def mapVec (f : α → β) (v : Vector α n) : Vector β n :=
   ⟨⟨v.toList.map f⟩, by simp⟩
 
+@[simp] theorem toList_mapVec (f : α → β) (v : Vector α n) :
+    (mapVec f v).toList = v.toList.map f := rfl
+
 @[simp] theorem getElem_mapVec (f : α → β) (v : Vector α n) (i : Nat) (hi : i < n) :
     (mapVec f v)[i] = f v[i] := by
   simp [mapVec]

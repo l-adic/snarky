@@ -13,7 +13,7 @@ set_option mvcgen.warning false
 Port of `Snarky.Circuit.DSL.Field` (packages/snarky/src/Snarky/Circuit/DSL/Field.purs):
 the field arithmetic and comparison gadgets — `mul`, `inv`, `div`, `square`, `pow`, the
 pure `sum`, and the equality tests `equals`/`neq` via the inverse-or-zero trick. Each
-gadget carries its two laws (`*_spec`, `*_complete_spec`) beside it; laws are stated
+gadget carries its two laws (`*_spec`, `*_run`) beside it; laws are stated
 against the interpreters, which is why this module imports the backend — a deliberate
 deviation from the PS import graph, adjacency over layering.
 
@@ -73,7 +73,7 @@ private def invWit [Field F] [DecidableEq F] (x : FVar F) : AsProver F F := do
 out so the gadget laws below quantify over it uniformly. Public, unlike the other cores:
 its product-row triple `invCore_spec` is rooted (`assertNonZero`'s soundness needs
 `x · r = 1`, which `inv`'s `0⁻¹ = 0` reading erases), and a rooted statement needs a
-public subject. Soundness-only — the completeness path runs through `inv_complete_spec`. -/
+public subject. Soundness-only — the completeness path runs through `inv_run`. -/
 def invCore [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) :
     CircuitM F c (FVar F) := do
   let xInv ← witness (val := F) (invWit x)
@@ -216,6 +216,20 @@ theorem sum_eval [AddMonoid F] [Mul F] {env : Assignments F} {xs : List (CVar F)
   have h0 : (CVar.const (0 : F)).eval env = .ok 0 := rfl
   simpa [sum] using sum_go h h0
 
+/-- A sum of in-scope expressions is in scope. -/
+theorem CVar.Scoped.sum {F : Type} [Add F] [Zero F] {st : ProverState F} {xs : List (CVar F)}
+    (h : ∀ x ∈ xs, x.Scoped st) : (Snarky.sum xs).Scoped st := by
+  unfold Snarky.sum
+  suffices hf : ∀ (l : List (CVar F)) (acc : CVar F), acc.Scoped st → (∀ x ∈ l, x.Scoped st) →
+      (l.foldl CVar.add_ acc).Scoped st from hf xs _ trivial h
+  intro l
+  induction l with
+  | nil => exact fun _ hacc _ => hacc
+  | cons x t ih =>
+    intro acc hacc hl
+    exact ih _ (hacc.add_ (hl x (List.mem_cons_self ..)))
+      (fun y hy => hl y (List.mem_cons_of_mem _ hy))
+
 /-! ## The gadget laws
 
 Soundness quantifies over every satisfying assignment; completeness runs the honest
@@ -237,95 +251,6 @@ private theorem equals_pin {F : Type} [Field F] [DecidableEq F] {r zInv z : F}
     rcases mul_eq_zero.mp h₁ with hr | h0
     · exact hr
     · exact absurd h0 hz
-
-/-- The field engine of `equals` completeness: the honest witness values satisfy both
-constraints. -/
-private theorem equals_checks {F : Type} [Field F] [DecidableEq F] (zv : F) :
-    (if zv = 0 then (1 : F) else 0) * zv = 0 ∧
-    (if zv = 0 then (0 : F) else zv⁻¹) * zv = 1 - (if zv = 0 then (1 : F) else 0) := by
-  by_cases hz : zv = 0
-  · simp [hz]
-  · simp [hz]
-
-/-- The honest `equalsCore` run, from any witness values satisfying the two constraint
-identities: the prover succeeds, assigning `r` at `nv` and `zInv` at `nv + 1`. -/
-private theorem equalsCore_run {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {z : CVar F}
-    {nv : Nat} {env : Assignments F} {zv v₁ v₂ : F} (hz : z.eval env = .ok zv)
-    (hfresh : env.FreshFrom nv)
-    (hwit : (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F) <$> equalsWit z).run
-        env = .ok ⟨#[v₁, v₂], rfl⟩)
-    (hc₁ : v₁ * zv = 0) (hc₂ : v₂ * zv = 1 - v₁) :
-    prove (Checker.holds (F := F) (c := c)) (equalsCore (c := c) z) nv env
-      = .ok ⟨.unchecked (.var nv), nv + 2, (env.extend nv v₁).extend (nv + 1) v₂⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hnv1 : (env.extend nv v₁) (nv + 1) = none := by
-    simp [Assignments.extend, hfresh (nv + 1) (Nat.le_succ nv)]
-  set env₂ : Assignments F := (env.extend nv v₁).extend (nv + 1) v₂ with henv₂
-  have henv₂nv : env₂ nv = some v₁ := by
-    simp [henv₂, Assignments.extend]
-  have henv₂nv1 : env₂ (nv + 1) = some v₂ := by
-    simp [henv₂, Assignments.extend]
-  have hle : env.Le env₂ := by
-    intro v x hv
-    simp only [henv₂, Assignments.extend]
-    split
-    · next h => rw [h, hfresh (nv + 1) (Nat.le_succ nv)] at hv; cases hv
-    · split
-      · next h => rw [h, hnv] at hv; cases hv
-      · exact hv
-  have hzeval₂ : z.eval env₂ = .ok zv := CVar.eval_le hle hz
-  have hext : env.extendPairs
-      ((allocRange nv 2).toList.zip (⟨#[v₁, v₂], rfl⟩ : Vector F 2).toList)
-      = .ok env₂ := by
-    show env.extendPairs [(nv, v₁), (nv + 1, v₂)] = .ok env₂
-    simp [Assignments.extendPairs, hnv, hnv1, henv₂]
-  have hch₁ : Checker.holds (F := F) (c := c) (BasicSystem.r1cs (.var nv) z (.const 0))
-      env₂ = true :=
-    LawfulChecker.check_r1cs _ _ _ _ _ _ _ (by simp [CVar.eval, henv₂nv]) hzeval₂
-      rfl hc₁
-  have hch₂ : Checker.holds (F := F) (c := c)
-      (BasicSystem.r1cs (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv)))
-      env₂ = true := by
-    have hsub : (CVar.sub_ (.const 1) (.var nv)).eval env₂ = .ok (1 - v₁) :=
-      CVar.eval_sub_ rfl (by simp [CVar.eval, henv₂nv])
-    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ (by simp [CVar.eval, henv₂nv1])
-      hzeval₂ hsub hc₂
-  show prove (Checker.holds (F := F) (c := c))
-    (.existsOp 2 (_ <$> equalsWit z) _) nv env = _
-  simp only [prove, hwit, hext]
-  show prove (Checker.holds (F := F) (c := c))
-    (.addConstraintOp (BasicSystem.r1cs (c := c) (.var nv) z (.const 0))
-      (.addConstraintOp
-        (BasicSystem.r1cs (c := c) (.var (nv + 1)) z (CVar.sub_ (.const 1) (.var nv)))
-        (.pure (BoolVar.unchecked (.var nv))))) (nv + 2) env₂ = _
-  simp only [prove, hch₁, hch₂, if_true]
-
-/-- On a fresh-from-`nv` assignment that evaluates `z`, the
-honest prover run succeeds and the answer bit is correct. -/
-private theorem equalsCore_complete {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {z : CVar F}
-    {nv : Nat} {env : Assignments F} {zv : F} (hz : z.eval env = .ok zv)
-    (hfresh : env.FreshFrom nv) :
-    ∃ out, prove (Checker.holds (F := F) (c := c)) (equalsCore (c := c) z) nv env
-        = .ok out ∧
-      out.result.toCVar.eval out.assignments = .ok (if zv = 0 then 1 else 0) ∧
-      out.assignments.FreshFrom out.nextVar := by
-  obtain ⟨hc₁, hc₂⟩ := equals_checks (F := F) zv
-  have hwit : (CircuitType.valueToFields (F := F) (val := UnChecked Bool × F) <$> equalsWit z).run
-      env = .ok ⟨#[if zv = 0 then 1 else 0, if zv = 0 then 0 else zv⁻¹], rfl⟩ := by
-    by_cases hzv : zv = 0 <;>
-      simp [equalsWit, hz, hzv, Bind.bind, Except.bind,
-        Pure.pure, CircuitType.valueToFields, bit]
-  refine ⟨_, equalsCore_run hz hfresh hwit hc₁ hc₂, ?_, ?_⟩
-  · show (CVar.var nv).eval _ = _
-    simp [CVar.eval, Assignments.extend]
-  · intro v hv
-    replace hv : nv + 2 ≤ v := hv
-    have h1 : v ≠ nv + 1 := by omega
-    have h0 : v ≠ nv := by omega
-    show ((env.extend nv _).extend (nv + 1) _) v = none
-    simp [Assignments.extend, h1, h0, hfresh v (by omega)]
 
 /-- What `equalsCore` builds at any backend: two fresh variables, two `r1cs` rows. -/
 private theorem build_equalsCore' {F c : Type} [Field F] [DecidableEq F]
@@ -369,53 +294,90 @@ force the bit boolean, so the witness may skip the `boolean` check). -/
      · rw [if_pos (sub_eq_zero.mpr h), if_pos h]
      · rw [if_neg (sub_ne_zero.mpr h), if_neg h])
 
-open Std.Do in
-/-- `equals`'s honest run succeeds on evaluable operands; the result reads as the
-answer bit in the final table. -/
-@[spec] theorem equals_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (a b : FVar F)
-    (Q : PostCond (BoolVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
-        (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
-          (↑r : CVar F).eval env' = .ok (equalsPure av bv)) Q⦄
-    equals (c := Prover c) a b
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (equals (c := Prover c) a b : CircuitM F (Prover c) _)
-      = (equals (c := c) a b : CircuitM F c _) from rfl]
-  obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
-  obtain ⟨av, ha⟩ := CVar.evalOk hoka
-  obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  have hval : ∀ {r : BoolVar F} {env' : Assignments F},
-      (↑r : CVar F).eval env' = .ok (equalsPure av bv) →
-      ∀ a' b', a.eval st.env = .ok a' → b.eval st.env = .ok b' →
-        (↑r : CVar F).eval env' = .ok (equalsPure a' b') := by
-    intro r env' heval a' b' ha' hb'
-    rw [ha] at ha'; rw [hb] at hb'
-    injection ha' with ha'; injection hb' with hb'
-    exact ha' ▸ hb' ▸ heval
-  have hz : (CVar.sub_ a b).eval st.env = .ok (av - bv) := CVar.eval_sub_ ha hb
-  have hiff : ((av - bv = 0) : Prop) = (av = bv) := propext sub_eq_zero
-  simp only [wp, PredTrans.apply, equals]
-  cases hcase : CVar.sub_ a b with
-  | const f =>
-    rw [hcase] at hz
-    have hf : f = av - bv := by simpa [CVar.eval] using hz
-    subst hf
-    intro hf'
-    refine hk _ ⟨_, _, hf'⟩ (hval ?_) (Assignments.Le.refl st.env)
-    show Except.ok _ = _
-    simp [equalsPure, sub_eq_zero]
-  | var v | add x y | scale k x =>
-    rw [hcase] at hz
-    obtain ⟨o, hrun, heval, -⟩ := equalsCore_complete (c := c) hz st.fresh
-    rw [hrun]
-    intro hf'
-    refine hk _ ⟨_, _, hf'⟩ (hval ?_) (prove_assignments_le hrun)
-    simpa only [hiff, equalsPure] using heval
+/-- The state and result of `equals`'s honest run — its `match` on the difference,
+read at the table: a constant difference folds to the constant bit; otherwise the bit
+and the inverse-or-zero (`zv⁻¹`, total via `0⁻¹ = 0`) are allocated. -/
+def equalsRun {F : Type} [Field F] [DecidableEq F] (st : ProverState F) (a b : FVar F) :
+    ProverState F × BoolVar F :=
+  match CVar.sub_ a b with
+  | .const f => (st, .unchecked (.const (if f = 0 then 1 else 0)))
+  | z => (st.extendMany [if z.val st.env.toValuation = 0 then 1 else 0,
+      (z.val st.env.toValuation)⁻¹], .unchecked (.var st.nv))
+
+/-- The field engine of `equals` completeness: the honest values satisfy both rows. -/
+private theorem equals_checks {F : Type} [Field F] [DecidableEq F] (zv : F) :
+    (if zv = 0 then (1 : F) else 0) * zv = 0 ∧
+    zv⁻¹ * zv = 1 - (if zv = 0 then (1 : F) else 0) := by
+  by_cases hz : zv = 0 <;> simp [hz]
+
+/-- `equalsCore`'s honest run: the bit at the counter, the inverse-or-zero after it,
+both rows accepted. -/
+private theorem equalsCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {z : CVar F}
+    (st : ProverState F) (hz : z.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (equalsCore (c := c) z) st.nv st.env
+      = .ok ((st.extendMany [if z.val st.env.toValuation = 0 then 1 else 0,
+          (z.val st.env.toValuation)⁻¹]).out (.unchecked (.var st.nv))) := by
+  have hvz := CVar.val_of_le (st.le_extendMany [if z.val st.env.toValuation = 0 then 1 else 0,
+    (z.val st.env.toValuation)⁻¹]) hz
+  have hle := st.le_extendMany [if z.val st.env.toValuation = 0 then 1 else 0,
+    (z.val st.env.toValuation)⁻¹]
+  generalize hzv : z.val st.env.toValuation = zv at hvz hle ⊢
+  obtain ⟨hc₁, hc₂⟩ := equals_checks zv
+  simp only [equalsCore, prove_bind]
+  rw [prove_witness_run (w := equalsWit z) st (.bind (.readCVar hz) fun _ => trivial)
+    (v := (⟨decide (zv = 0)⟩, zv⁻¹)) (by
+      simp [equalsWit, Except.bind, hzv]
+      by_cases h : zv = 0 <;> simp [h])]
+  have hvals : (CircuitType.valueToFields (F := F) (var := UnChecked (BoolVar F) × FVar F)
+      ((⟨decide (zv = 0)⟩, zv⁻¹) : UnChecked Bool × F)).toList
+      = [if zv = 0 then 1 else 0, zv⁻¹] := by
+    show [bit (decide (zv = 0)), zv⁻¹] = _
+    by_cases h : zv = 0 <;> simp [h, bit]
+  have hvars : CircuitType.fieldsToVar (F := F) (val := UnChecked Bool × F)
+      (mapVec CVar.var (allocRange st.nv (CircuitType.size F (UnChecked Bool × F))))
+      = (⟨.unchecked (.var st.nv)⟩, .var (st.nv + 1)) := rfl
+  simp only [hvals, hvars, Except.bind, BoolVar.toCVar_unchecked]
+  rw [prove_addConstraint _ (LawfulChecker.holds_r1cs (by simp) (hz.of_le hle)
+    (CVar.scoped_const _ _) (by simp [CVar.val, hvz, hc₁]))]
+  simp only []
+  rw [prove_addConstraint _ (LawfulChecker.holds_r1cs
+    (by exact st.new_mem_extendMany (i := 1) (by simp))
+    (hz.of_le hle) (CVar.Scoped.sub_ (CVar.scoped_const _ _) (by simp))
+    (by simp [CVar.val, CVar.val_sub_, hvz, hc₂]))]
+  rfl
+
+/-- `equals`'s honest run lands at `equalsRun`. -/
+theorem equals_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {a b : FVar F}
+    (st : ProverState F) (ha : a.Scoped st) (hb : b.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (equals (c := c) a b) st.nv st.env
+      = .ok ((equalsRun st a b).1.out (equalsRun st a b).2) := by
+  have hz : (CVar.sub_ a b).Scoped st := ha.sub_ hb
+  unfold equals equalsRun
+  cases h : CVar.sub_ a b
+  case const => rfl
+  all_goals exact equalsCore_run st (h ▸ hz)
+
+/-- `equalsRun` reads, through the bit's expression, as the equality bit. -/
+theorem equalsRun_grants {F : Type} [Field F] [DecidableEq F] {st : ProverState F}
+    {a b : FVar F} (ha : a.Scoped st) (hb : b.Scoped st) :
+    Grants F st ((equalsRun st a b).1, ↑(equalsRun st a b).2)
+      (equalsPure (a.val st.env.toValuation) (b.val st.env.toValuation)) := by
+  have hz : (CVar.sub_ a b).Scoped st := ha.sub_ hb
+  have hv : (CVar.sub_ a b).val st.env.toValuation
+      = a.val st.env.toValuation - b.val st.env.toValuation := CVar.val_sub_ ..
+  unfold equalsRun
+  cases h : CVar.sub_ a b <;> dsimp only <;> rw [h] at hv hz
+  case const =>
+    simp only [CVar.val] at hv
+    exact Grants.fvar (Assignments.Le.refl _) trivial
+      (by simp [CVar.val, BoolVar.toCVar_unchecked, equalsPure, hv, sub_eq_zero])
+  all_goals
+    rw [hv]
+    refine Grants.fvar (st.le_extendMany _) (by simp [BoolVar.toCVar_unchecked]) ?_
+    rw [BoolVar.toCVar_unchecked]
+    simp [CVar.val, equalsPure, sub_eq_zero]
 
 /-! ### `neq` — composed from `equals` -/
 
@@ -433,91 +395,34 @@ open Std.Do in
   simp only [circuitVal, hr]
   split_ifs <;> ring
 
-open Std.Do in
-/-- `neq`'s honest run succeeds on evaluable operands; the result reads as the negated
-answer bit in the final table. -/
-@[spec] theorem neq_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (a b : FVar F)
-    (Q : PostCond (BoolVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (a.eval env).isOk ∧ (b.eval env).isOk)
-        (fun env (r : BoolVar F) env' => ∀ av bv, a.eval env = .ok av → b.eval env = .ok bv →
-          (↑r : CVar F).eval env' = .ok (neqPure av bv)) Q⦄
-    neq (c := Prover c) a b
-    ⦃Q⦄ := by
-  simp only [neq]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hoka, hokb⟩, hk⟩ := hpre
-  obtain ⟨av, ha⟩ := CVar.evalOk hoka
-  obtain ⟨bv, hb⟩ := CVar.evalOk hokb
-  refine ⟨⟨hoka, hokb⟩, fun r st' hr hle => ?_⟩
-  simp only [wp, PredTrans.apply]
-  intro hf
-  refine hk (.unchecked (CVar.sub_ (.const 1) ↑r)) ⟨st'.nv, st'.env, hf⟩
-    (fun a' b' ha' hb' => ?_) hle
-  rw [ha] at ha'; rw [hb] at hb'
-  injection ha' with ha'; injection hb' with hb'
-  subst ha'; subst hb'
-  show (CVar.sub_ ((.const 1 : CVar F)) ↑r).eval st'.env = _
-  rw [CVar.eval_sub_ rfl (hr av bv ha hb)]
-  simp only [equalsPure, neqPure]
-  by_cases h : av = bv
-  · rw [if_pos h, if_pos h]; norm_num
-  · rw [if_neg h, if_neg h]; norm_num
+/-- The state and result of `neq`'s honest run: `equals`, the bit negated. -/
+def neqRun {F : Type} [Field F] [DecidableEq F] (st : ProverState F) (a b : FVar F) :
+    ProverState F × BoolVar F :=
+  let r := equalsRun st a b
+  (r.1, .unchecked (CVar.sub_ (.const 1) ↑r.2))
 
-/-! ### `mul` -/
+/-- `neq`'s honest run lands at `neqRun`. -/
+theorem neq_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {a b : FVar F}
+    (st : ProverState F) (ha : a.Scoped st) (hb : b.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (neq (c := c) a b) st.nv st.env
+      = .ok ((neqRun st a b).1.out (neqRun st a b).2) := by
+  simp only [neq, prove_bind, equals_run st ha hb, Except.bind, neqRun]
+  rfl
 
-/-- The honest `mulCore` run: the prover succeeds, assigning the product at `nv`. -/
-private theorem mulCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    {x y : FVar F} {nv : Nat} {env : Assignments F} {xv yv : F}
-    (hx : x.eval env = .ok xv) (hy : y.eval env = .ok yv)
-    (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c)) (mulCore (c := c) x y) nv env
-      = .ok ⟨.var nv, nv + 1, env.extend nv (xv * yv)⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hle : env.Le (env.extend nv (xv * yv)) := by
-    intro v w hv
-    simp only [Assignments.extend]
-    split
-    · next h => rw [h, hnv] at hv; cases hv
-    · exact hv
-  have hw : (mulWit x y).run env = .ok (xv * yv) := by
-    simp [mulWit, hx, hy, Bind.bind, Except.bind,
-      Pure.pure]
-  have hch : Checker.holds (F := F) (c := c) (BasicSystem.r1cs x y (.var nv))
-      (env.extend nv (xv * yv)) = true :=
-    LawfulChecker.check_r1cs _ _ _ _ _ _ _ (CVar.eval_le hle hx) (CVar.eval_le hle hy)
-      (Assignments.eval_var_extend _ _ _) rfl
-  exact prove_witnessCore hw hfresh hch
+/-- `neqRun` reads, through the bit's expression, as the negated equality bit. -/
+theorem neqRun_grants {F : Type} [Field F] [DecidableEq F] {st : ProverState F}
+    {a b : FVar F} (ha : a.Scoped st) (hb : b.Scoped st) :
+    Grants F st ((neqRun st a b).1, ↑(neqRun st a b).2)
+      (neqPure (a.val st.env.toValuation) (b.val st.env.toValuation)) := by
+  have h := equalsRun_grants ha hb
+  refine Grants.fvar h.le (CVar.Scoped.sub_ trivial h.fvar_scoped) ?_
+  simp only [neqRun]
+  rw [BoolVar.toCVar_unchecked, CVar.val_sub_, h.fvar_val]
+  simp only [CVar.val, equalsPure, neqPure]
+  split_ifs <;> norm_num
 
 /-! ### `inv` -/
-
-/-- The honest `invCore` run on a nonzero operand. -/
-private theorem invCore_run {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hx : x.eval env = .ok xv) (hxv : xv ≠ 0) (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c)) (invCore (c := c) x) nv env
-      = .ok ⟨.var nv, nv + 1, env.extend nv xv⁻¹⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hle : env.Le (env.extend nv xv⁻¹) := by
-    intro v w hv
-    simp only [Assignments.extend]
-    split
-    · next h => rw [h, hnv] at hv; cases hv
-    · exact hv
-  have hw : (invWit x).run env = .ok xv⁻¹ := by
-    simp [invWit, hx, hxv, Bind.bind, Except.bind,
-      Pure.pure]
-  have hch : Checker.holds (F := F) (c := c) (BasicSystem.r1cs x (.var nv) (.const 1))
-      (env.extend nv xv⁻¹) = true :=
-    LawfulChecker.check_r1cs _ _ _ _ _ _ _ (CVar.eval_le hle hx)
-      (Assignments.eval_var_extend _ _ _) rfl (mul_inv_cancel₀ hxv)
-  exact prove_witnessCore hw hfresh hch
 
 open Std.Do in
 /-- The witnessing row pins the product `x · r = 1` — more than `inv`'s inverse
@@ -550,42 +455,48 @@ constant branch is total via `0⁻¹ = 0`. -/
      have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
      exact (inv_eq_of_mul_eq_one_right (by simpa using h)).symm)
 
-open Std.Do in
-/-- `inv`'s honest run succeeds on a nonzero operand; the result reads as the inverse
-in the final table. -/
-@[spec] theorem inv_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (x : FVar F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk ∧
-          ∀ xv, x.eval env = .ok xv → xv ≠ 0)
-        (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv⁻¹) Q⦄
-    inv (c := Prover c) x
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (inv (c := Prover c) x : CircuitM F (Prover c) _)
-      = (inv (c := c) x : CircuitM F c _) from rfl]
-  obtain ⟨⟨hokx, hne⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  have hxv := hne xv hx
-  have hval : ∀ {r : FVar F} {env' : Assignments F}, r.eval env' = .ok xv⁻¹ →
-      ∀ x', x.eval st.env = .ok x' → r.eval env' = .ok x'⁻¹ := by
-    intro r env' heval x' hx'
-    rw [hx] at hx'
-    injection hx' with hx'
-    exact hx' ▸ heval
-  simp only [wp, PredTrans.apply, inv]
-  cases x <;>
+/-- The state and result of `inv`'s honest run: a constant folds; otherwise the
+inverse is allocated. -/
+def invRun [Field F] [DecidableEq F] (st : ProverState F) (x : FVar F) :
+    ProverState F × FVar F :=
+  match x with
+  | .const a => (st, .const a⁻¹)
+  | x => (st.extendMany [(x.val st.env.toValuation)⁻¹], .var st.nv)
+
+/-- `invCore`'s honest run on a nonzero operand: one slot, the inverse, its `r1cs` row
+accepted. -/
+private theorem invCore_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hne : x.val st.env.toValuation ≠ 0) :
+    prove (Checker.holds (F := F) (c := c)) (invCore (c := c) x) st.nv st.env
+      = .ok ((st.extendMany [(x.val st.env.toValuation)⁻¹]).out (.var st.nv)) := by
+  have hle := st.le_extendMany [(x.val st.env.toValuation)⁻¹]
+  simp only [invCore, prove_bind]
+  rw [prove_witness_run (w := invWit x) st
+    (.bind (.readCVar hx) fun _ => by split <;> trivial)
+    (v := (x.val st.env.toValuation)⁻¹) (by simp [invWit, hne, AsProver.throw, Except.bind])]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind]
+  rw [prove_addConstraint _ (LawfulChecker.holds_r1cs (hx.of_le hle) (by simp)
+    (CVar.scoped_const _ _) (by simp [CVar.val, CVar.val_of_le hle hx, hne]))]
+  rfl
+
+/-- `inv`'s honest run on a nonzero operand lands at `invRun`. -/
+theorem inv_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hne : x.val st.env.toValuation ≠ 0) :
+    prove (Checker.holds (F := F) (c := c)) (inv (c := c) x) st.nv st.env
+      = .ok ((invRun st x).1.out (invRun st x).2) := by
+  cases x <;> simp only [inv, invRun, prove_pure] <;> exact invCore_run st hx hne
+
+/-- `invRun` reads as the inverse. -/
+theorem invRun_grants {F : Type} [Field F] [DecidableEq F] {st : ProverState F} {x : FVar F}
+    (hx : x.Scoped st) : Grants F st (invRun st x) (x.val st.env.toValuation)⁻¹ := by
+  cases x <;> simp only [invRun] <;>
     first
-    | (intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-       simp only [CVar.eval, Except.ok.injEq] at hx
-       subst hx; rfl)
-    | (rw [invCore_run hx hxv st.fresh]
-       intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-       show (CVar.var st.nv).eval _ = _
-       simp [circuitVal])
+    | exact Grants.fvar (st.le_extendMany _) (by simp) (by simp [CVar.val])
+    | exact Grants.fvar (Assignments.Le.refl _) trivial (by simp [CVar.val])
+
+/-! ### `mul` -/
 
 open Std.Do in
 /-- `mul x y` computes the product — constants fold, otherwise the `r1cs` row forces
@@ -612,77 +523,54 @@ it. -/
        have h := LawfulBasicSystem.holds_r1cs V _ _ _ (hsat _ (List.mem_cons_self ..))
        exact h.symm)
 
-open Std.Do in
-/-- `mul`'s honest run succeeds on evaluable operands; the result reads as the product
-in the final table. -/
-@[spec] theorem mul_complete_spec {F c : Type} [Add F] [CommMonoidWithZero F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    [DecidableEq F] (x y : FVar F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk)
-        (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
-          r.eval env' = .ok (xv * yv)) Q⦄
-    mul (c := Prover c) x y
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (mul (c := Prover c) x y : CircuitM F (Prover c) _)
-      = (mul (c := c) x y : CircuitM F c _) from rfl]
-  obtain ⟨⟨hokx, hoky⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  have hval : ∀ {r : FVar F} {env' : Assignments F},
-      r.eval env' = .ok (xv * yv) →
-      ∀ x' y', x.eval st.env = .ok x' → y.eval st.env = .ok y' →
-        r.eval env' = .ok (x' * y') := by
-    intro r env' heval x' y' hx' hy'
-    rw [hx] at hx'; rw [hy] at hy'
-    injection hx' with hx'; injection hy' with hy'
-    exact hx' ▸ hy' ▸ heval
-  simp only [wp, PredTrans.apply, mul]
-  cases x <;> cases y <;>
+/-- The state and result of `mul`'s honest run — its `match` on constants, read at the
+table: the folded shapes allocate nothing, the witnessed one allocates the product. -/
+def mulRun [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] (st : ProverState F)
+    (x y : FVar F) : ProverState F × FVar F :=
+  match x, y with
+  | .const a, .const b => (st, .const (a * b))
+  | .const a, y => (st, CVar.scale_ a y)
+  | x, .const b => (st, CVar.scale_ b x)
+  | x, y => (st.extendMany [x.val st.env.toValuation * y.val st.env.toValuation], .var st.nv)
+
+/-- `mulCore`'s honest run: one slot, the product, its `r1cs` row accepted. -/
+private theorem mulCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (mulCore (c := c) x y) st.nv st.env
+      = .ok ((st.extendMany [x.val st.env.toValuation * y.val st.env.toValuation]).out
+          (.var st.nv)) := by
+  have hle := st.le_extendMany [x.val st.env.toValuation * y.val st.env.toValuation]
+  simp only [mulCore, prove_bind]
+  rw [prove_witness_run (w := mulWit x y) st
+    (.bind (.readCVar hx) fun _ => .bind (.readCVar hy) fun _ => trivial)
+    (v := x.val st.env.toValuation * y.val st.env.toValuation) (by simp [mulWit, Except.bind])]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind]
+  rw [prove_addConstraint _ (LawfulChecker.holds_r1cs (hx.of_le hle) (hy.of_le hle) (by simp)
+    (by simp [CVar.val, CVar.val_of_le hle hx, CVar.val_of_le hle hy]))]
+  rfl
+
+/-- `mul`'s honest run lands at `mulRun`. -/
+theorem mul_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (mul (c := c) x y) st.nv st.env
+      = .ok ((mulRun st x y).1.out (mulRun st x y).2) := by
+  cases x <;> cases y <;> simp only [mul, mulRun, prove_pure] <;> exact mulCore_run st hx hy
+
+/-- `mulRun` reads as the product. -/
+theorem mulRun_grants {F : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F] {st : ProverState F}
+    {x y : FVar F} (hx : x.Scoped st) (hy : y.Scoped st) :
+    Grants F st (mulRun st x y) (x.val st.env.toValuation * y.val st.env.toValuation) := by
+  cases x <;> cases y <;> simp only [mulRun] <;>
     first
-    | (intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-       simp only [CVar.eval, Except.ok.injEq] at hx hy
-       subst hx; subst hy; rfl)
-    | (intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-       simp only [CVar.eval, Except.ok.injEq] at hx
-       subst hx; exact CVar.eval_scale_ hy _)
-    | (intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-       simp only [CVar.eval, Except.ok.injEq] at hy
-       subst hy; simpa [mul_comm] using CVar.eval_scale_ hx _)
-    | (rw [mulCore_run hx hy st.fresh]
-       intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-       show (CVar.var st.nv).eval _ = _
-       simp [circuitVal])
+    | exact Grants.fvar (st.le_extendMany _) (by simp) (by simp [CVar.val])
+    | exact Grants.fvar (Assignments.Le.refl _) (hy.scale_ _) (by simp [CVar.val, CVar.val_scale_])
+    | exact Grants.fvar (Assignments.Le.refl _) (hx.scale_ _)
+        (by simp [CVar.val, CVar.val_scale_, mul_comm])
+    | exact Grants.fvar (Assignments.Le.refl _) trivial (by simp [CVar.val])
 
-/-! ### `square` -/
-
-/-- The honest `squareCore` run. -/
-private theorem squareCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hx : x.eval env = .ok xv) (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c)) (squareCore (c := c) x) nv env
-      = .ok ⟨.var nv, nv + 1, env.extend nv (xv * xv)⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hle : env.Le (env.extend nv (xv * xv)) := by
-    intro v w hv
-    simp only [Assignments.extend]
-    split
-    · next h => rw [h, hnv] at hv; cases hv
-    · exact hv
-  have hw : (squareWit x).run env = .ok (xv * xv) := by
-    simp [squareWit, hx, Bind.bind, Except.bind,
-      Pure.pure]
-  have hch : Checker.holds (F := F) (c := c) (BasicSystem.square x (.var nv))
-      (env.extend nv (xv * xv)) = true :=
-    LawfulChecker.check_square _ _ _ _ _ (CVar.eval_le hle hx)
-      (Assignments.eval_var_extend _ _ _) rfl
-  exact prove_witnessCore hw hfresh hch
+/-! ### `div` -/
 
 open Std.Do in
 /-- `div x y` computes the quotient — `x · y⁻¹`, total via `0⁻¹ = 0`. -/
@@ -698,36 +586,33 @@ open Std.Do in
   intro hr'
   rw [hr', hr, div_eq_mul_inv]
 
-open Std.Do in
-/-- A nonzero divisor makes the run succeed with the quotient. -/
-@[spec] theorem div_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (x y : FVar F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-          ∀ yv, y.eval env = .ok yv → yv ≠ 0)
-        (fun env r env' => ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv →
-          r.eval env' = .ok (xv / yv)) Q⦄
-    div (c := Prover c) x y
-    ⦃Q⦄ := by
-  simp only [div]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hokx, hoky, hyne⟩, hk⟩ := hpre
-  refine ⟨⟨hoky, hyne⟩, fun r st' hr hle => ?_⟩
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  have hx' : x.eval st'.env = .ok xv := CVar.eval_le hle hx
-  have hr' : r.eval st'.env = .ok yv⁻¹ := hr yv hy
-  mvcgen
-  refine ⟨⟨by rw [hx']; rfl, by rw [hr']; rfl⟩, fun res st'' hres hle' => ?_⟩
-  refine hk res st'' (fun a b ha hb => ?_) (hle.trans hle')
-  rw [hx] at ha; rw [hy] at hb
-  injection ha with ha; injection hb with hb
-  subst ha; subst hb
-  rw [div_eq_mul_inv]
-  exact hres xv yv⁻¹ hx' hr'
+/-- The state and result of `div`'s honest run: `inv`, then `mul`. -/
+def divRun [Field F] [DecidableEq F] (st : ProverState F) (x y : FVar F) :
+    ProverState F × FVar F :=
+  let r := invRun st y
+  mulRun r.1 x r.2
+
+/-- `div`'s honest run on a nonzero divisor lands at `divRun`. -/
+theorem div_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st)
+    (hne : y.val st.env.toValuation ≠ 0) :
+    prove (Checker.holds (F := F) (c := c)) (div (c := c) x y) st.nv st.env
+      = .ok ((divRun st x y).1.out (divRun st x y).2) := by
+  simp only [div, prove_bind, inv_run st hy hne, Except.bind, divRun]
+  exact mul_run _ (hx.of_le (invRun_grants hy).le) (invRun_grants hy).fvar_scoped
+
+/-- `divRun` reads as the quotient. -/
+theorem divRun_grants {F : Type} [Field F] [DecidableEq F] {st : ProverState F} {x y : FVar F}
+    (hx : x.Scoped st) (hy : y.Scoped st) :
+    Grants F st (divRun st x y) (x.val st.env.toValuation / y.val st.env.toValuation) := by
+  have hi := invRun_grants (st := st) hy
+  have hm := mulRun_grants (hx.of_le hi.le) hi.fvar_scoped
+  refine ⟨hi.le.trans hm.le, hm.scope, ?_⟩
+  simp only [divRun]
+  rw [hm.read, CVar.val_of_le hi.le hx, hi.fvar_val, div_eq_mul_inv]
+
+/-! ### `square` -/
 
 open Std.Do in
 /-- `square x` computes `x · x` through the dedicated `square` row; a constant
@@ -748,41 +633,46 @@ folds. -/
      have h := LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..))
      exact h.symm)
 
-open Std.Do in
-/-- `square`'s honest run succeeds on an evaluable operand; the result reads as the
-square in the final table. -/
-@[spec] theorem square_complete_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    [DecidableEq F] (x : FVar F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk)
-        (fun env r env' => ∀ xv, x.eval env = .ok xv →
-          r.eval env' = .ok (xv * xv)) Q⦄
-    square (c := Prover c) x
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (square (c := Prover c) x : CircuitM F (Prover c) _)
-      = (square (c := c) x : CircuitM F c _) from rfl]
-  obtain ⟨hokx, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  have hval : ∀ {r : FVar F} {env' : Assignments F}, r.eval env' = .ok (xv * xv) →
-      ∀ x', x.eval st.env = .ok x' → r.eval env' = .ok (x' * x') := by
-    intro r env' heval x' hx'
-    rw [hx] at hx'
-    injection hx' with hx'
-    exact hx' ▸ heval
-  simp only [wp, PredTrans.apply, square]
-  cases x <;>
+/-- The state and result of `square`'s honest run: a constant folds; otherwise the
+square is allocated. -/
+def squareRun [Add F] [Mul F] [Zero F] (st : ProverState F) (x : FVar F) :
+    ProverState F × FVar F :=
+  match x with
+  | .const f => (st, .const (f * f))
+  | x => (st.extendMany [x.val st.env.toValuation * x.val st.env.toValuation], .var st.nv)
+
+/-- `squareCore`'s honest run: one slot, the square, its `square` row accepted. -/
+private theorem squareCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (squareCore (c := c) x) st.nv st.env
+      = .ok ((st.extendMany [x.val st.env.toValuation * x.val st.env.toValuation]).out
+          (.var st.nv)) := by
+  have hle := st.le_extendMany [x.val st.env.toValuation * x.val st.env.toValuation]
+  simp only [squareCore, prove_bind]
+  rw [prove_witness_run (w := squareWit x) st (.bind (.readCVar hx) fun _ => trivial)
+    (v := x.val st.env.toValuation * x.val st.env.toValuation) (by simp [squareWit, Except.bind])]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind]
+  rw [prove_addConstraint _ (LawfulChecker.holds_square (hx.of_le hle) (by simp)
+    (by simp [CVar.val, CVar.val_of_le hle hx]))]
+  rfl
+
+/-- `square`'s honest run lands at `squareRun`. -/
+theorem square_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (square (c := c) x) st.nv st.env
+      = .ok ((squareRun st x).1.out (squareRun st x).2) := by
+  cases x <;> simp only [square, squareRun, prove_pure] <;> exact squareCore_run st hx
+
+/-- `squareRun` reads as the square. -/
+theorem squareRun_grants {F : Type} [Add F] [Mul F] [Zero F] {st : ProverState F} {x : FVar F}
+    (hx : x.Scoped st) :
+    Grants F st (squareRun st x) (x.val st.env.toValuation * x.val st.env.toValuation) := by
+  cases x <;> simp only [squareRun] <;>
     first
-    | (intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-       simp only [CVar.eval, Except.ok.injEq] at hx
-       subst hx; rfl)
-    | (rw [squareCore_run hx st.fresh]
-       intro hf
-       refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-       show (CVar.var st.nv).eval _ = _
-       simp [circuitVal])
+    | exact Grants.fvar (st.le_extendMany _) (by simp) (by simp [CVar.val])
+    | exact Grants.fvar (Assignments.Le.refl _) trivial (by simp [CVar.val])
 
 /-! ### `pow` -/
 
@@ -832,102 +722,97 @@ open Std.Do in
     ⦃⇓ r _ => ⌜r.val V = x.val V ^ n⌝⦄ :=
   powGo_spec n x n (Nat.le_succ n)
 
-open Std.Do in
-/-- `powGo` completeness as a triple, by induction on the fuel: with the fuel adequate
-for the exponent, the honest run succeeds and the result reads as the power. -/
-@[spec] private theorem powGo_complete_spec {F c : Type} [Add F] [CommMonoidWithZero F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    [DecidableEq F] :
-    ∀ (fuel : Nat) (x : FVar F) (n : Nat), n ≤ fuel + 1 →
-      ∀ (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))),
-        ⦃Complete (fun env => (x.eval env).isOk)
-            (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok (xv ^ n))
-            Q⦄
-        powGo (c := Prover c) fuel x n
-        ⦃Q⦄ := by
+/-- The state and result of `powGo`'s honest run: its recursion, over `mulRun`. -/
+private def powGoRun [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] :
+    Nat → ProverState F → FVar F → Nat → ProverState F × FVar F
+  | _, st, _, 0 => (st, .const 1)
+  | _, st, x, 1 => (st, x)
+  | 0, st, x, _ => (st, x)
+  | fuel + 1, st, x, n =>
+    let sq := mulRun st x x
+    let y := powGoRun fuel sq.1 sq.2 (n / 2)
+    if n % 2 = 0 then y else mulRun y.1 x y.2
+
+/-- The state and result of `pow`'s honest run. -/
+def powRun [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] (st : ProverState F) (x : FVar F)
+    (n : Nat) : ProverState F × FVar F :=
+  powGoRun n st x n
+
+/-- `powGoRun` reads as the power, with the fuel adequate for the exponent. -/
+private theorem powGoRun_grants {F : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F] :
+    ∀ (fuel : Nat) {st : ProverState F} {x : FVar F} (n : Nat), n ≤ fuel + 1 →
+      x.Scoped st → Grants F st (powGoRun fuel st x n) (x.val st.env.toValuation ^ n) := by
   intro fuel
   induction fuel with
   | zero =>
-    intro x n hfuel Q st hpre
-    obtain ⟨hokx, hk⟩ := hpre
-    obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+    intro st x n hfuel hx
     match n, hfuel with
-    | 0, _ =>
-      simp only [powGo, wp, PredTrans.apply, prove]
-      intro hf
-      exact hk (.const 1) ⟨st.nv, st.env, hf⟩ (fun _ _ => by rw [pow_zero]; rfl)
-        (Assignments.Le.refl st.env)
-    | 1, _ =>
-      simp only [powGo, wp, PredTrans.apply, prove]
-      intro hf
-      refine hk x ⟨st.nv, st.env, hf⟩ (fun x' hx' => ?_) (Assignments.Le.refl st.env)
-      rw [pow_one]
-      exact hx'
+    | 0, _ => exact Grants.fvar (Assignments.Le.refl _) trivial (by simp [CVar.val])
+    | 1, _ => exact Grants.fvar (Assignments.Le.refl _) hx (by simp)
   | succ fuel ih =>
-    intro x n hfuel Q st hpre
-    obtain ⟨hokx, hk⟩ := hpre
-    obtain ⟨xv, hx⟩ := CVar.evalOk hokx
+    intro st x n hfuel hx
     match n with
-    | 0 =>
-      simp only [powGo, wp, PredTrans.apply, prove]
-      intro hf
-      exact hk (.const 1) ⟨st.nv, st.env, hf⟩ (fun _ _ => by rw [pow_zero]; rfl)
-        (Assignments.Le.refl st.env)
-    | 1 =>
-      simp only [powGo, wp, PredTrans.apply, prove]
-      intro hf
-      refine hk x ⟨st.nv, st.env, hf⟩ (fun x' hx' => ?_) (Assignments.Le.refl st.env)
-      rw [pow_one]
-      exact hx'
+    | 0 => exact Grants.fvar (Assignments.Le.refl _) trivial (by simp [CVar.val])
+    | 1 => exact Grants.fvar (Assignments.Le.refl _) hx (by simp)
     | m + 2 =>
-      have hdef : powGo (c := Prover c) (fuel + 1) x (m + 2)
-          = (do let sq ← mul x x
-                let y ← powGo (c := Prover c) fuel sq ((m + 2) / 2)
-                if (m + 2) % 2 = 0 then pure y else mul x y) := rfl
-      rw [hdef]
-      mvcgen
-      refine ⟨⟨by rw [hx]; rfl, by rw [hx]; rfl⟩, fun sq st₁ hsq hle₁ => ?_⟩
-      simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-      have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
-      have hsq' : sq.eval st₁.env = .ok (xv * xv) := hsq xv xv hx hx
-      have hsqok : (sq.eval st₁.env).isOk = true := by rw [hsq']; rfl
-      refine ih sq ((m + 2) / 2) (by omega) _ st₁ ⟨hsqok,
-        fun y st₂ hy hle₂ => ?_⟩
-      have hy' : y.eval st₂.env = .ok ((xv * xv) ^ ((m + 2) / 2)) := hy _ hsq'
-      have hx₂ : x.eval st₂.env = .ok xv := CVar.eval_le hle₂ hx₁
+      have hsq := mulRun_grants hx hx
+      have hy := ih ((m + 2) / 2) (by omega) hsq.fvar_scoped
+      simp only [powGoRun]
       by_cases hpar : (m + 2) % 2 = 0
-      · simp only [eq_true hpar, if_true, wp, PredTrans.apply, prove]
-        intro hf
-        refine hk y ⟨st₂.nv, st₂.env, hf⟩ (fun x' hx' => ?_) (hle₁.trans hle₂)
-        rw [hx] at hx'
-        injection hx' with hx'
-        subst hx'
-        rw [hy', ← pow_two, ← pow_mul]
-        congr 2
+      · rw [if_pos hpar]
+        refine ⟨hsq.le.trans hy.le, hy.scope, ?_⟩
+        rw [hy.read, hsq.fvar_val, ← pow_two, ← pow_mul]
+        congr 1
         omega
-      · simp only [eq_false hpar, if_false]
-        refine mul_complete_spec x y _ st₂ ⟨⟨by rw [hx₂]; rfl, by rw [hy']; rfl⟩,
-          fun r st₃ hr hle₃ => ?_⟩
-        refine hk r st₃ (fun x' hx' => ?_) ((hle₁.trans hle₂).trans hle₃)
-        rw [hx] at hx'
-        injection hx' with hx'
-        subst hx'
-        rw [hr _ _ hx₂ hy', ← pow_two, ← pow_mul, mul_comm, ← pow_succ]
-        congr 2
+      · rw [if_neg hpar]
+        have hm := mulRun_grants (hx.of_le (hsq.le.trans hy.le)) hy.fvar_scoped
+        refine ⟨(hsq.le.trans hy.le).trans hm.le, hm.scope, ?_⟩
+        rw [hm.read, CVar.val_of_le (hsq.le.trans hy.le) hx, hy.fvar_val, hsq.fvar_val,
+          ← pow_two, ← pow_mul, mul_comm, ← pow_succ]
+        congr 1
         omega
 
-open Std.Do in
-/-- `pow`'s honest run succeeds on an evaluable operand; the result reads as the
-operand's power. -/
-@[spec] theorem pow_complete_spec {F c : Type} [Add F] [CommMonoidWithZero F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    [DecidableEq F] (x : FVar F) (n : Nat)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk)
-        (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok (xv ^ n))
-        Q⦄
-    pow (c := Prover c) x n
-    ⦃Q⦄ :=
-  powGo_complete_spec n x n (Nat.le_succ n) Q
+/-- `powGo`'s honest run lands at `powGoRun`, with the fuel adequate for the exponent. -/
+private theorem powGo_run {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] :
+    ∀ (fuel : Nat) {st : ProverState F} {x : FVar F} (n : Nat), n ≤ fuel + 1 → x.Scoped st →
+      prove (Checker.holds (F := F) (c := c)) (powGo (c := c) fuel x n) st.nv st.env
+        = .ok ((powGoRun fuel st x n).1.out (powGoRun fuel st x n).2) := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro st x n hfuel hx
+    match n, hfuel with
+    | 0, _ => rfl
+    | 1, _ => rfl
+  | succ fuel ih =>
+    intro st x n hfuel hx
+    match n with
+    | 0 => rfl
+    | 1 => rfl
+    | m + 2 =>
+      have hsq := mulRun_grants hx hx
+      have hy := powGoRun_grants fuel ((m + 2) / 2) (by omega) hsq.fvar_scoped
+      simp only [powGo, powGoRun, prove_bind, mul_run st hx hx, Except.bind,
+        ih ((m + 2) / 2) (by omega) hsq.fvar_scoped]
+      by_cases hpar : (m + 2) % 2 = 0
+      · rw [if_pos hpar, if_pos hpar]
+        rfl
+      · rw [if_neg hpar, if_neg hpar]
+        exact mul_run _ (hx.of_le (hsq.le.trans hy.le)) hy.fvar_scoped
+
+/-- `pow`'s honest run lands at `powRun`. -/
+theorem pow_run {F c : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (n : Nat) :
+    prove (Checker.holds (F := F) (c := c)) (pow (c := c) x n) st.nv st.env
+      = .ok ((powRun st x n).1.out (powRun st x n).2) :=
+  powGo_run n n (Nat.le_succ n) hx
+
+/-- `powRun` reads as the power. -/
+theorem powRun_grants {F : Type} [Add F] [CommMonoidWithZero F] [DecidableEq F] {st : ProverState F}
+    {x : FVar F} (hx : x.Scoped st) (n : Nat) :
+    Grants F st (powRun st x n) (x.val st.env.toValuation ^ n) :=
+  powGoRun_grants n n (Nat.le_succ n) hx
 
 end Snarky

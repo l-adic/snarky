@@ -295,6 +295,32 @@ theorem CVar.Scoped.of_le {st st' : ProverState F} (hle : st.env.Le st'.env) :
   | .add _ _, ⟨ha, hb⟩ => ⟨ha.of_le hle, hb.of_le hle⟩
   | .scale _ y, h => CVar.Scoped.of_le hle (x := y) h
 
+/-- Reading an in-scope expression is a scoped block. -/
+theorem AsProver.Scoped.readCVar [Add F] [Mul F] {st : ProverState F} :
+    ∀ {x : CVar F}, x.Scoped st → (readCVar x).Scoped st
+  | .var _, hv => ⟨hv, fun _ => trivial⟩
+  | .const _, _ => trivial
+  | .add _ _, ⟨ha, hb⟩ =>
+    AsProver.Scoped.bind (readCVar ha) fun _ => AsProver.Scoped.bind (readCVar hb) fun _ => trivial
+  | .scale _ y, hy => AsProver.Scoped.bind (readCVar (x := y) hy) fun _ => trivial
+
+/-- Scope passes through `add_`. -/
+theorem CVar.Scoped.add_ [Add F] {st : ProverState F} {a b : CVar F} (ha : a.Scoped st)
+    (hb : b.Scoped st) : (CVar.add_ a b).Scoped st := by
+  cases a <;> cases b <;> trivial
+
+/-- Scope passes through `scale_`. -/
+theorem CVar.Scoped.scale_ [Zero F] [One F] [DecidableEq F] {st : ProverState F} {x : CVar F}
+    (k : F) (hx : x.Scoped st) : (CVar.scale_ k x).Scoped st := by
+  unfold CVar.scale_
+  split_ifs <;> trivial
+
+/-- Scope passes through `sub_`. -/
+theorem CVar.Scoped.sub_ [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
+    {st : ProverState F} {a b : CVar F} (ha : a.Scoped st) (hb : b.Scoped st) :
+    (CVar.sub_ a b).Scoped st := by
+  cases a <;> cases b <;> first | trivial | exact ha.add_ (hb.scale_ _)
+
 /-- An in-scope expression evaluates, to its total reading at the completed table. -/
 theorem CVar.eval_eq_val [Add F] [Mul F] [Zero F] {st : ProverState F} :
     ∀ {x : CVar F}, x.Scoped st → x.eval st.env = .ok (x.val st.env.toValuation)
@@ -310,6 +336,34 @@ theorem CVar.val_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
   have h := CVar.eval_le hle (CVar.eval_eq_val hs)
   rw [CVar.eval_eq_val (hs.of_le hle)] at h
   injection h
+
+/-- A one-cell allocation, read back: the field variable at the counter. -/
+@[simp] theorem fieldsToVar_fvar_alloc (nv : Nat) :
+    CircuitType.fieldsToVar (F := F) (val := F)
+      (mapVec CVar.var (allocRange nv (CircuitType.size F F))) = .var nv := by
+  show (mapVec CVar.var (allocRange nv 1))[0] = _
+  simp [allocRange]
+
+/-- A field value's encoding, as the list an allocation writes. -/
+@[simp] theorem valueToFields_fvar_toList (v : F) :
+    (CircuitType.valueToFields (F := F) (var := FVar F) v).toList = [v] := rfl
+
+/-- A boolean variable reads as whether its expression is nonzero. -/
+@[circuitVal] theorem readVal_bool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    (V : Valuation F) (b : BoolVar F) : readVal V b = decide (b.toCVar.val V ≠ 0) := by
+  show decide (((#v[b.toCVar]).map (·.val V))[0] ≠ 0) = _
+  simp
+
+/-- A one-cell boolean allocation, read back: the bit at the counter. -/
+@[simp] theorem fieldsToVar_bool_alloc [Zero F] [One F] [DecidableEq F] (nv : Nat) :
+    CircuitType.fieldsToVar (F := F) (val := Bool)
+      (mapVec CVar.var (allocRange nv (CircuitType.size F Bool))) = .unchecked (.var nv) := by
+  show BoolVar.unchecked (mapVec CVar.var (allocRange nv 1))[0] = _
+  simp [allocRange]
+
+/-- A bit's encoding, as the list an allocation writes. -/
+@[simp] theorem valueToFields_bool_toList [Zero F] [One F] [DecidableEq F] (b : Bool) :
+    (CircuitType.valueToFields (F := F) (var := BoolVar F) b).toList = [bit b] := rfl
 
 /-- A bundle is in scope when every cell of its flattening is. -/
 def CircuitType.Scoped (val : Type) [CircuitType F val var] (st : ProverState F)
@@ -377,6 +431,51 @@ theorem scoped_ofEquiv_iff {st : ProverState F} {cv : var} :
   Iff.rfl
 
 end ScopeOfEquiv
+
+/-! ## What a run grants
+
+A run equation names the state after as a term (`mulRun st x y`); `Grants` is that
+term's reading, for a consumer composing the run: the table grew, the result is in
+scope at the state after, and it reads there as `v`. -/
+
+/-- The reading of a run's result: the table grew, the result is in scope at the state
+after, and it reads there as `v`. -/
+structure Grants (val : Type) [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    (st : ProverState F) (p : ProverState F × var) (v : val) : Prop where
+  /-- The table grew. -/
+  le : st.env.Le p.1.env
+  /-- The result is in scope at the state after. -/
+  scope : CircuitType.Scoped val p.1 p.2
+  /-- The result reads as `v` at the state after. -/
+  read : readVal (val := val) p.1.env.toValuation p.2 = v
+
+/-- A field result: in scope, reading as `v`. -/
+theorem Grants.fvar [Add F] [Mul F] [Zero F] {st st' : ProverState F} {x : FVar F} {v : F}
+    (hle : st.env.Le st'.env) (hs : x.Scoped st') (hv : x.val st'.env.toValuation = v) :
+    Grants F st (st', x) v :=
+  ⟨hle, scoped_fvar_iff.mpr hs, by rw [readVal_fvar]; exact hv⟩
+
+/-- A field result is in scope at the state after. -/
+theorem Grants.fvar_scoped [Add F] [Mul F] [Zero F] {st : ProverState F}
+    {p : ProverState F × FVar F} {v : F} (h : Grants F st p v) : p.2.Scoped p.1 :=
+  scoped_fvar_iff.mp h.scope
+
+/-- A field result reads as `v` at the state after. -/
+theorem Grants.fvar_val [Add F] [Mul F] [Zero F] {st : ProverState F}
+    {p : ProverState F × FVar F} {v : F} (h : Grants F st p v) :
+    p.2.val p.1.env.toValuation = v := by
+  rw [← readVal_fvar]
+  exact h.read
+
+/-- A boolean result, read through its expression: in scope at the state after. -/
+theorem Grants.bool_scoped [Add F] [Mul F] [Zero F] {st st' : ProverState F} {b : BoolVar F}
+    {v : F} (h : Grants F st (st', (↑b : CVar F)) v) : (↑b : CVar F).Scoped st' :=
+  h.fvar_scoped
+
+/-- A boolean result, read through its expression: reads as `v` at the state after. -/
+theorem Grants.bool_val [Add F] [Mul F] [Zero F] {st st' : ProverState F} {b : BoolVar F}
+    {v : F} (h : Grants F st (st', (↑b : CVar F)) v) : (↑b : CVar F).val st'.env.toValuation = v :=
+  h.fvar_val
 
 /-- Scope survives table extension. -/
 theorem CircuitType.Scoped.of_le [CircuitType F val var] {st st' : ProverState F}

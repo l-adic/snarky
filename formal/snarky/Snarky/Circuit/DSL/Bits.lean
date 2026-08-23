@@ -293,83 +293,115 @@ needs a characteristic hypothesis and is not stated. -/
     rw [hpack] at hrow'
     simpa [circuitVal] using hrow'
 
-open Std.Do in
-/-- `unpack`'s honest run succeeds on a representative that fits in `n` bits;
-the results are the operand's binary digits. -/
-@[spec] theorem unpack_complete_spec {F c : Type} [Field F] [DecidableEq F] [ToNat F]
-    [LawfulToNat F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (v : FVar F) (n : Nat)
-    (Q : PostCond (Vector (BoolVar F) n)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (v.eval env).isOk ∧
-          ∀ vv, v.eval env = .ok vv →
-            ToNat.toNat vv < 2 ^ n)
-        (fun env r env' => ∀ vv, v.eval env = .ok vv →
-          ∀ i (hi : i < n), (r[i]).toCVar.eval env'
-            = .ok (bit ((ToNat.toNat vv).testBit i))) Q⦄
-    unpack (c := Prover c) v n
-    ⦃Q⦄ := by
-  simp only [unpack]
-  intro st hpre
-  obtain ⟨⟨hokv, hfaithful⟩, hk⟩ := hpre
-  obtain ⟨vv, hv⟩ := CVar.evalOk hokv
-  have hlt := hfaithful vv hv
-  simp only [WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  -- the component: the checked-bit witness computes the operand's `i`-th digit
-  have hcomp : ∀ (i : Fin n)
-      (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))),
-      ⦃Complete (fun env => (v.eval env).isOk)
-        (fun env (r : BoolVar F) env' => ∀ vv', v.eval env = .ok vv' →
-          (↑r : CVar F).eval env' = .ok (bit ((ToNat.toNat vv').testBit i.val))) Q⦄
-      (witness (val := Bool) (unpackWit v i.val) : CircuitM F (Prover c) (BoolVar F))
-      ⦃Q⦄ := by
-    intro i Q st' hpre'
-    obtain ⟨hok', hk'⟩ := hpre'
-    obtain ⟨vv', hv'⟩ := CVar.evalOk hok'
-    have hw : (unpackWit v i.val).run st'.env = .ok ((ToNat.toNat vv').testBit i.val) := by
-      simp [unpackWit, hv', Bind.bind, Except.bind,
-        Pure.pure]
-    refine witness_complete_spec (val := Bool) _ _ st'
-      ⟨show ((unpackWit v i.val).run st'.env).isOk = true by rw [hw]; rfl,
-        fun r st'' hr hle => ?_⟩
-    refine hk' r st'' (fun vv'' hv'' => ?_) hle
-    rw [hv'] at hv''
-    injection hv'' with hv''
-    subst hv''
-    exact hr _ hw
-  refine generateVec_complete_spec n _ _ _ hcomp
-    (fun i env env' hle hok => by
-      obtain ⟨vv', hv'⟩ := CVar.evalOk hok
-      rw [CVar.eval_le hle hv']
-      rfl)
-    (fun i e₀ e₁ r e₂ e₃ h01 h23 hpost vv' hv₀ =>
-      CVar.eval_le h23 (hpost vv' (CVar.eval_le h01 hv₀))) _ st
-    ⟨fun _ => hokv, fun bits st₁ hbits hle₁ => ?_⟩
-  -- after the loop: the packing row accepts, and the caller reads the digits
-  dsimp only
-  have hv₁ : v.eval st₁.env = .ok vv := CVar.eval_le hle₁ hv
-  have hbitEval : ∀ i (hi : i < n), (bits[i].toCVar).eval st₁.env
-      = .ok (bit ((ToNat.toNat vv).testBit i)) := by
-    intro i hi
-    have h := hbits ⟨i, hi⟩ vv hv
-    simpa only [Fin.getElem_fin] using h
-  have hpack : (pack bits).eval st₁.env = .ok (packPure (unpackPure vv n)) := by
-    refine pack_eval fun i hi => ?_
-    simp only [unpackPure, Vector.getElem_ofFn]
-    exact hbitEval i hi
-  have hch : Checker.holds (F := F) (c := c)
-      (BasicSystem.r1cs (c := c) (pack bits) (.const 1) v) st₁.env = true := by
-    rw [packPure_unpackPure hlt] at hpack
-    exact LawfulChecker.check_r1cs _ _ _ _ _ _ _ hpack (by rfl) hv₁ (mul_one vv)
-  refine addConstraint_complete_spec (c := c) _ _ st₁ ⟨hch, fun _ st₂ _ hle₂ => ?_⟩
-  intro _
-  refine hk bits st₂ (fun vv' hv' => ?_) (hle₁.trans hle₂)
-  rw [hv] at hv'
-  injection hv' with hv'
-  subst hv'
-  intro i hi
-  exact CVar.eval_le hle₂ (hbitEval i hi)
+/-- The state and result of `unpack`'s honest run: the operand's `n` binary digits,
+LSB first, allocated in order at the counter. -/
+def unpackRun {F : Type} [Add F] [Mul F] [Zero F] [One F] [ToNat F] (st : ProverState F)
+    (v : FVar F) (n : Nat) : ProverState F × Vector (BoolVar F) n :=
+  (st.extendMany (List.ofFn fun i : Fin n =>
+      bit ((ToNat.toNat (v.val st.env.toValuation)).testBit i.val)),
+    mapVec (fun j => BoolVar.unchecked (.var j)) (allocRange st.nv n))
+
+/-- The table after `unpackRun` extends the table before. -/
+theorem unpackRun_le {F : Type} [Add F] [Mul F] [Zero F] [One F] [ToNat F] (st : ProverState F)
+    (v : FVar F) (n : Nat) : st.env.Le (unpackRun st v n).1.env :=
+  st.le_extendMany _
+
+/-- Each bit is in scope at the state after. -/
+theorem unpackRun_scoped {F : Type} [Add F] [Mul F] [Zero F] [One F] [ToNat F]
+    (st : ProverState F) (v : FVar F) (n : Nat) (i : Nat) (hi : i < n) :
+    (↑(unpackRun st v n).2[i] : CVar F).Scoped (unpackRun st v n).1 := by
+  simp only [unpackRun, getElem_mapVec, allocRange, Vector.getElem_ofFn,
+    BoolVar.toCVar_unchecked, CVar.scoped_var]
+  exact st.new_mem_extendMany (by simpa using hi)
+
+/-- Each bit reads as the operand's digit at the state after. -/
+theorem unpackRun_bit {F : Type} [Add F] [Mul F] [Zero F] [One F] [ToNat F]
+    (st : ProverState F) (v : FVar F) (n : Nat) (i : Nat) (hi : i < n) :
+    (↑(unpackRun st v n).2[i] : CVar F).val (unpackRun st v n).1.env.toValuation
+      = bit ((ToNat.toNat (v.val st.env.toValuation)).testBit i) := by
+  simp only [unpackRun, getElem_mapVec, allocRange, Vector.getElem_ofFn,
+    BoolVar.toCVar_unchecked, CVar.val]
+  rw [ProverState.get_extendMany_new st (by simpa using hi)]
+  simp
+
+/-- The bit loop's fold in closed form: the written values in order, the bits at the
+counter. -/
+private theorem generateVecRun_bits {F : Type} [Zero F] (st : ProverState F) :
+    ∀ (n : Nat) (g : Fin n → F),
+      generateVecRun n
+        (fun st' i => (st'.extendMany [g i], (BoolVar.unchecked (.var st'.nv) : BoolVar F))) st
+        = (st.extendMany (List.ofFn g),
+            mapVec (fun j => (BoolVar.unchecked (.var j) : BoolVar F)) (allocRange st.nv n)) := by
+  intro n
+  induction n with
+  | zero =>
+    intro g
+    refine Prod.ext ?_ ?_
+    · rfl
+    · rw [← Vector.toList_inj]
+      simp [allocRange_toList]
+  | succ n ih =>
+    intro g
+    simp only [generateVecRun]
+    rw [ih (fun i => g i.castSucc)]
+    refine Prod.ext ?_ ?_
+    · show (st.extendMany (List.ofFn fun i => g i.castSucc)).extendMany [g (Fin.last n)] = _
+      rw [ProverState.extendMany_append, List.ofFn_succ', List.concat_eq_append]
+    · show (mapVec _ (allocRange st.nv n)).push
+        (BoolVar.unchecked (.var (st.extendMany (List.ofFn fun i => g i.castSucc)).nv)) = _
+      rw [← Vector.toList_inj]
+      simp [Vector.toList_push, allocRange_toList, List.range'_concat, ProverState.extendMany_nv]
+
+/-- The weighted fold is in scope when its bits and accumulator are. -/
+private theorem packAux_scoped {F : Type} [Semiring F] [DecidableEq F] {st : ProverState F} :
+    ∀ (l : List (BoolVar F)) (i : Nat) (acc : FVar F), (∀ b ∈ l, (↑b : CVar F).Scoped st) →
+      acc.Scoped st → (packAux l i acc).Scoped st
+  | [], _, _, _, hacc => hacc
+  | b :: bs, i, _, hl, hacc =>
+    packAux_scoped bs (i + 1) _ (fun x hx => hl x (List.mem_cons_of_mem _ hx))
+      (hacc.add_ (CVar.Scoped.scale_ _ (hl b (List.mem_cons_self ..))))
+
+/-- `pack` is in scope when its bits are. -/
+theorem pack_scoped {F : Type} [Semiring F] [DecidableEq F] {st : ProverState F} {n : Nat}
+    {bits : Vector (BoolVar F) n} (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).Scoped st) :
+    (pack bits).Scoped st :=
+  packAux_scoped bits.toList 0 (.const 0) (fun b hb => by
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
+    rw [Vector.getElem_toList]
+    exact h i (by simpa using hi)) trivial
+
+/-- `unpack`'s honest run on a representative fitting in `n` bits lands at
+`unpackRun`: the bit loop, then the packing row accepted. -/
+theorem unpack_run {F c : Type} [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {v : FVar F} {n : Nat}
+    (st : ProverState F) (hv : v.Scoped st)
+    (hlt : ToNat.toNat (v.val st.env.toValuation) < 2 ^ n) :
+    prove (Checker.holds (F := F) (c := c)) (unpack (c := c) v n) st.nv st.env
+      = .ok ((unpackRun st v n).1.out (unpackRun st v n).2) := by
+  simp only [unpack, prove_bind]
+  rw [prove_generateVec (fun st' => st.env.Le st'.env) n _
+    (fun st' i => (st'.extendMany [bit ((ToNat.toNat (v.val st.env.toValuation)).testBit i.val)],
+      BoolVar.unchecked (.var st'.nv)))
+    (fun st' i hle => by
+      rw [prove_witness_run (w := unpackWit v i.val) st'
+        (.bind (.readCVar (hv.of_le hle)) fun _ => trivial)
+        (v := (ToNat.toNat (v.val st.env.toValuation)).testBit i.val)
+        (by simp [unpackWit, Except.bind, CVar.val_of_le hle hv])]
+      simp only [valueToFields_bool_toList, fieldsToVar_bool_alloc])
+    (fun st' _ hle => hle.trans (st'.le_extendMany _)) st (Assignments.Le.refl _)]
+  rw [show generateVecRun n (fun st' i =>
+      (st'.extendMany [bit ((ToNat.toNat (v.val st.env.toValuation)).testBit i.val)],
+        (BoolVar.unchecked (.var st'.nv) : BoolVar F))) st = unpackRun st v n from
+    generateVecRun_bits st n _]
+  simp only [Except.bind]
+  have hle := unpackRun_le st v n
+  rw [prove_addConstraint _ (LawfulChecker.holds_r1cs (pack_scoped (unpackRun_scoped st v n))
+    (CVar.scoped_const _ _) (hv.of_le hle) (by
+      rw [pack_val (bs := unpackPure (v.val st.env.toValuation) n)
+        (fun i hi => by rw [unpackRun_bit st v n i hi]; simp [unpackPure]),
+        packPure_unpackPure hlt, CVar.val_of_le hle hv]
+      simp [CVar.val]))]
+  rfl
 
 /-- Per-index bit readings of a vector, as the `Forall₂` a bit-list assertion consumes
 at a valuation. -/

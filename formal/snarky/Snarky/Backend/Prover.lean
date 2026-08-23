@@ -377,6 +377,14 @@ theorem ProverState.le_extendMany (st : ProverState F) (xs : List F) :
     st.env.Le (st.extendMany xs).env :=
   st.fresh.le_extendList xs
 
+/-- Allocating twice is allocating the concatenation. -/
+theorem ProverState.extendMany_append (st : ProverState F) (xs ys : List F) :
+    (st.extendMany xs).extendMany ys = st.extendMany (xs ++ ys) := by
+  apply ProverState.ext
+  · simp [ProverState.extendMany_nv, Nat.add_assoc]
+  · simp only [ProverState.extendMany_env, ProverState.extendMany_nv]
+    exact (Assignments.extendList_append ..).symm
+
 /-- Scope survives allocation. -/
 theorem ProverState.mem_extendMany {st : ProverState F} {v : Variable} (hv : v ∈ st)
     (xs : List F) : v ∈ st.extendMany xs :=
@@ -413,6 +421,11 @@ start, however many allocations deep. -/
     · exact ProverState.mem_extendMany h xs
     · exact st.new_mem_extendMany hi
 
+/-- The counter is in scope after a non-empty allocation. -/
+@[simp] theorem ProverState.mem_extendMany_head (st : ProverState F) (x : F) (xs : List F) :
+    st.nv ∈ st.extendMany (x :: xs) :=
+  st.new_mem_extendMany (xs := x :: xs) (i := 0) (by simp)
+
 /-- An allocated slot reads as what was written. -/
 @[simp] theorem ProverState.get_extendMany_new [Zero F] (st : ProverState F) {xs : List F}
     {i : Nat} (hi : i < xs.length) :
@@ -420,6 +433,11 @@ start, however many allocations deep. -/
   show ((st.extendMany xs).env (st.nv + i)).getD 0 = _
   rw [ProverState.extendMany_env, Assignments.extendList_get hi]
   rfl
+
+/-- The first allocated slot reads as the first value written. -/
+@[simp] theorem ProverState.get_extendMany_head [Zero F] (st : ProverState F) (x : F)
+    (xs : List F) : (st.extendMany (x :: xs)).env.toValuation st.nv = x :=
+  st.get_extendMany_new (xs := x :: xs) (i := 0) (by simp)
 
 /-- An in-scope name reads the same through an allocation. -/
 @[simp] theorem ProverState.get_extendMany_of_mem [Zero F] (st : ProverState F)
@@ -450,6 +468,16 @@ def AsProver.Scoped (st : ProverState F) : AsProver F α → Prop
 
 @[simp] theorem AsProver.scoped_fail (st : ProverState F) (e : EvalError) :
     (AsProver.fail e : AsProver F α).Scoped st := trivial
+
+/-- A sequence is scoped when its head is and every continuation is. -/
+theorem AsProver.Scoped.bind {st : ProverState F} {w : AsProver F α} {k : α → AsProver F β}
+    (hw : w.Scoped st) (hk : ∀ a, (k a).Scoped st) : (AsProver.bind w k).Scoped st := by
+  induction w with
+  | pure a => exact hk a
+  | read v k' ih =>
+    obtain ⟨hv, hk'⟩ := hw
+    exact ⟨hv, fun x => ih x (hk' x)⟩
+  | fail e => trivial
 
 /-- A scoped block's run is its evaluation at the completed table: no lookup fails. -/
 theorem AsProver.run_eq_eval [Zero F] {w : AsProver F α} {st : ProverState F}
@@ -533,6 +561,55 @@ theorem prove_witness {holds : c → Assignments F → Bool} [Zero F] {val var :
           >>= fun _ => pure (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
       from rfl, prove_bind]
   rfl
+
+/-- The state function of a `generateVec` run: `step` folded in index order, the
+results collected. -/
+def generateVecRun {α : Type u} :
+    (n : Nat) → (ProverState F → Fin n → ProverState F × α) → ProverState F →
+      ProverState F × Vector α n
+  | 0, _, st => (st, #v[])
+  | n + 1, step, st =>
+    let init := generateVecRun n (fun st i => step st i.castSucc) st
+    let last := step init.1 (Fin.last n)
+    (last.1, init.2.push last.2)
+
+/-- A property every step preserves holds at every state the fold reaches. -/
+theorem generateVecRun_inv {α : Type u} (P : ProverState F → Prop) :
+    ∀ (n : Nat) (step : ProverState F → Fin n → ProverState F × α),
+      (∀ st i, P st → P (step st i).1) → ∀ st, P st → P (generateVecRun n step st).1 := by
+  intro n
+  induction n with
+  | zero => exact fun _ _ _ h => h
+  | succ n ih =>
+    intro step hP st h
+    exact hP _ _ (ih _ (fun st i h => hP st _ h) st h)
+
+/-- `generateVec`'s honest run, from a per-index run equation at every state a
+step-preserved property admits: the fold of the steps. -/
+theorem prove_generateVec {holds : c → Assignments F → Bool} {α : Type u}
+    (P : ProverState F → Prop) :
+    ∀ (n : Nat) (f : Fin n → CircuitM F c α) (step : ProverState F → Fin n → ProverState F × α),
+      (∀ st i, P st →
+        prove holds (f i) st.nv st.env = .ok ((step st i).1.out (step st i).2)) →
+      (∀ st i, P st → P (step st i).1) →
+      ∀ st, P st →
+        prove holds (generateVec n f) st.nv st.env
+          = .ok ((generateVecRun n step st).1.out (generateVecRun n step st).2) := by
+  intro n
+  induction n with
+  | zero => exact fun _ _ _ _ _ _ => rfl
+  | succ n ih =>
+    intro f step hstep hP st hst
+    have hinit := ih (fun i => f i.castSucc) (fun st i => step st i.castSucc)
+      (fun st i h => hstep st _ h) (fun st i h => hP st _ h) st hst
+    have hPinit := generateVecRun_inv P n (fun st i => step st i.castSucc)
+      (fun st i h => hP st _ h) st hst
+    show prove holds ((generateVec n fun i => f i.castSucc) >>= fun init =>
+      f (Fin.last n) >>= fun last => pure (init.push last)) st.nv st.env = _
+    rw [prove_bind, hinit]
+    simp only [Except.bind]
+    rw [prove_bind, hstep _ (Fin.last n) hPinit]
+    rfl
 
 /-! ## The graph
 

@@ -9,12 +9,13 @@ set_option mvcgen.warning false
 /-!
 # The framework showcase: a walked circuit
 
-`cubic` constrains `y = x³ + x + 5` from three gadget calls. Its two laws are proved by
-walking the do-block — unfold, `mvcgen` (the registry supplies each callee's spec),
-close the arithmetic — and then run down to interpreter-level statements through
-`builder_spec_iff`/`complete_spec_iff`. The laws are deliberately not `@[spec]`: `cubic`
-is an endpoint, not a gadget other circuits compose with. Two `decide` examples execute
-both directions in the kernel.
+`cubic` constrains `y = x³ + x + 5` from three gadget calls. Its soundness law is proved
+by walking the do-block — unfold, `mvcgen` (the registry supplies each callee's spec),
+close the arithmetic — and run down to an interpreter-level statement through
+`builder_spec_iff`; its completeness law is the run equation, one rewrite per callee's
+run equation, with the existential read off it through `Runs.le`. The soundness law is
+deliberately not `@[spec]`: `cubic` is an endpoint, not a gadget other circuits compose
+with. Two `decide` examples execute both directions in the kernel.
 
 The second half holds the executable edges no triple states: rejection (completeness
 proves acceptance on good inputs; refusal on bad ones is stated nowhere else), emission
@@ -56,44 +57,29 @@ theorem cubic_spec {F c : Type} {V : Valuation F} [Field F] [DecidableEq F]
   rw [← heq, hx3, hx2]
   ring
 
-/-- On operands satisfying the equation the honest run cannot fail. The extra lines
-relative to the soundness proof thread evaluation facts along `Assignments.Le` as the
-table grows. -/
-theorem cubic_complete_spec {F : Type} [Field F] [DecidableEq F]
-    (x y : FVar F)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ^ 3 + xv + 5 = yv)
-      (fun _ _ _ => True) Q⦄
-    cubic (c := ProverC F) x y
-    ⦃Q⦄ := by
-  simp only [cubic]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hokx, hoky, heq⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  refine ⟨hokx, fun x2 st₁ hx2 hle₁ => ?_⟩
-  mvcgen
-  have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
-  have hx2' : x2.eval st₁.env = .ok (xv * xv) := hx2 xv hx
-  refine ⟨⟨by rw [hx2']; rfl, by rw [hx₁]; rfl⟩, fun x3 st₂ hx3 hle₂ => ?_⟩
-  mvcgen
-  have hx₂ : x.eval st₂.env = .ok xv := CVar.eval_le hle₂ hx₁
-  have hy₂ : y.eval st₂.env = .ok yv := CVar.eval_le (hle₁.trans hle₂) hy
-  have hx3' : x3.eval st₂.env = .ok (xv * xv * xv) := hx3 (xv * xv) xv hx2' hx₁
-  have hsum : (sum [x3, x, .const 5]).eval st₂.env
-      = .ok ([xv * xv * xv, xv, 5].sum) := by
-    refine sum_eval ?_
-    simp [hx3', hx₂, CVar.eval]
-  refine ⟨⟨by rw [hsum]; rfl, by rw [hy₂]; rfl, fun av bv hav hbv => ?_⟩,
-    fun u st₃ hle₃ => hk u st₃ ((hle₁.trans hle₂).trans hle₃)⟩
-  rw [hsum] at hav
-  rw [hy₂] at hbv
-  injection hav with hav
-  injection hbv with hbv
-  rw [← hav, ← hbv, ← heq xv yv hx hy]
-  simp [List.sum]
+/-- On operands satisfying the equation the honest run lands at the two gadgets' states
+— `square`'s, then `mul`'s; the assertion allocates nothing. The extra lines relative to
+the soundness proof carry the readings along the two states. -/
+theorem cubic_run {F : Type} [Field F] [DecidableEq F] {x y : FVar F} (st : ProverState F)
+    (hx : x.Scoped st) (hy : y.Scoped st)
+    (hcurve : x.val st.env.toValuation ^ 3 + x.val st.env.toValuation + 5
+      = y.val st.env.toValuation) :
+    prove (Checker.holds (F := F) (c := Basic F)) (cubic (c := Basic F) x y) st.nv st.env
+      = .ok ((mulRun (squareRun st x).1 (squareRun st x).2 x).1.out ()) := by
+  have hsq := squareRun_grants (st := st) hx
+  have hm := mulRun_grants hsq.fvar_scoped (hx.of_le hsq.le)
+  have hle := hsq.le.trans hm.le
+  have hx3 : (mulRun (squareRun st x).1 (squareRun st x).2 x).2.val
+      (mulRun (squareRun st x).1 (squareRun st x).2 x).1.env.toValuation
+      = x.val st.env.toValuation * x.val st.env.toValuation * x.val st.env.toValuation := by
+    rw [hm.fvar_val, hsq.fvar_val, CVar.val_of_le hsq.le hx]
+  simp only [cubic, prove_bind, square_run st hx, Except.bind,
+    mul_run _ hsq.fvar_scoped (hx.of_le hsq.le)]
+  refine assertEqual_run _ (CVar.Scoped.sum (by simp [hm.fvar_scoped, hx.of_le hle]))
+    (hy.of_le hle) ?_
+  simp only [sum, List.foldl, CVar.val_add_, CVar.val, hx3, CVar.val_of_le hle hx,
+    CVar.val_of_le hle hy]
+  rw [← hcurve]
   ring
 
 /-- `cubic_spec` run through `builder_spec_iff`: any assignment satisfying the built
@@ -106,19 +92,16 @@ theorem cubic_sound {F c : Type} [Field F] [DecidableEq F]
     x.val V ^ 3 + x.val V + 5 = y.val V :=
   (builder_spec_iff _ _).mp (cubic_spec (V := V) x y) nv hsat
 
-/-- `cubic_complete_spec` run through `complete_spec_iff`: from any table where the
+/-- `cubic_run` read as an existential through `Runs.le`: from any table where the
 readings of `(x, y)` form a point of the curve, the honest run succeeds, extending the
 table. -/
-theorem cubic_complete {F : Type} [Field F] [DecidableEq F]
-    (x y : FVar F) (st : ProverState F)
-    (hx : (x.eval st.env).isOk) (hy : (y.eval st.env).isOk)
-    (hcurve : ∀ xv yv, x.eval st.env = .ok xv → y.eval st.env = .ok yv →
-      xv ^ 3 + xv + 5 = yv) :
-    ∃ out, prove Basic.holds (cubic (c := ProverC F) x y) st.nv st.env = .ok out ∧
-      st.env.Le out.assignments :=
-  let ⟨out, hrun, _, hle⟩ := (complete_spec_iff _ _ _).mp
-    (fun Q => cubic_complete_spec x y Q) st ⟨hx, hy, hcurve⟩
-  ⟨out, hrun, hle⟩
+theorem cubic_complete {F : Type} [Field F] [DecidableEq F] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st)
+    (hcurve : x.val st.env.toValuation ^ 3 + x.val st.env.toValuation + 5
+      = y.val st.env.toValuation) :
+    ∃ out, prove (Checker.holds (F := F) (c := Basic F)) (cubic (c := Basic F) x y)
+        st.nv st.env = .ok out ∧ st.env.Le out.assignments :=
+  ⟨_, cubic_run st hx hy hcurve, Runs.le (cubic_run st hx hy hcurve)⟩
 
 /-- The laws, exercised in the kernel: the honest run accepts `x = 3, y = 35`
 (`27 + 3 + 5`)… -/
@@ -236,6 +219,5 @@ example : proverValue BoolVar.toCVar
         let b₂ ← witness (val := Bool) (pure true)
         isEqual (x, b₁) (y, b₂))
     = some 1 := by decide
-
 
 end Snarky.Example

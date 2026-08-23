@@ -318,6 +318,43 @@ instance Basic.instLawfulChecker [Add F] [Mul F] [Zero F] [One F] [DecidableEq F
     simp only [Basic.holds, ha]
     rcases hb with h | h <;> simp [h]
 
+/-! The checks at the total reading — what a run equation's constraint step discharges:
+scope and a value identity, in place of four evaluations. -/
+
+/-- Equal readings pass the `equal` check. -/
+theorem LawfulChecker.holds_equal {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {st : ProverState F} {a b : CVar F}
+    (ha : a.Scoped st) (hb : b.Scoped st)
+    (h : a.val st.env.toValuation = b.val st.env.toValuation) :
+    Checker.holds (BasicSystem.equal (c := c) a b) st.env = true := by
+  refine LawfulChecker.check_equal st.env a b _ (CVar.eval_eq_val ha) ?_
+  rw [h]
+  exact CVar.eval_eq_val hb
+
+/-- A product identity passes the `r1cs` check. -/
+theorem LawfulChecker.holds_r1cs {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {st : ProverState F} {l r o : CVar F}
+    (hl : l.Scoped st) (hr : r.Scoped st) (ho : o.Scoped st)
+    (h : l.val st.env.toValuation * r.val st.env.toValuation = o.val st.env.toValuation) :
+    Checker.holds (BasicSystem.r1cs (c := c) l r o) st.env = true :=
+  LawfulChecker.check_r1cs st.env l r o _ _ _ (CVar.eval_eq_val hl) (CVar.eval_eq_val hr)
+    (CVar.eval_eq_val ho) h
+
+/-- A square identity passes the `square` check. -/
+theorem LawfulChecker.holds_square {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {st : ProverState F} {a sq : CVar F}
+    (ha : a.Scoped st) (hsq : sq.Scoped st)
+    (h : a.val st.env.toValuation * a.val st.env.toValuation = sq.val st.env.toValuation) :
+    Checker.holds (BasicSystem.square (c := c) a sq) st.env = true :=
+  LawfulChecker.check_square st.env a sq _ _ (CVar.eval_eq_val ha) (CVar.eval_eq_val hsq) h
+
+/-- A bit passes the `boolean` check. -/
+theorem LawfulChecker.holds_boolean {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {st : ProverState F} {a : CVar F}
+    (ha : a.Scoped st) (h : a.val st.env.toValuation = 0 ∨ a.val st.env.toValuation = 1) :
+    Checker.holds (BasicSystem.boolean (c := c) a) st.env = true :=
+  LawfulChecker.check_boolean st.env a _ (CVar.eval_eq_val ha) h
+
 /-- The completeness spec shape, polymorphic in what the gadget returns: given
 `pre` about the incoming table, the run cannot fail, and the caller continues at a
 state whose table extends the incoming one — old facts transport along

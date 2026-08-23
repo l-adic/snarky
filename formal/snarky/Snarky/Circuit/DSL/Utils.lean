@@ -16,8 +16,8 @@ branch stays the named helper `sealCore` (the `mulCore`/`invCore` manner).
 
 The laws are the spec pair: any satisfying assignment pins the sealed result to the
 operand's value (the pass-through branches by the affine-form reading, the witnessing
-branch by its `equal` row through the lawful backend), and the honest run succeeds
-with the sealed result reading as the operand's value.
+branch by its `equal` row through the lawful backend), and the honest run lands at
+`sealRun`, whose result reads as the operand's value.
 -/
 
 namespace Snarky
@@ -53,30 +53,6 @@ private theorem build_sealCore [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     build (sealCore (c := c) x) nv =
       ⟨.var nv, nv + 1, [BasicSystem.equal (c := c) x (.var nv)]⟩ := by
   cases x <;> rfl
-
-/-- The honest `sealCore` run: the prover succeeds, assigning the value at `nv`. -/
-private theorem sealCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    {x : FVar F} {nv : Nat} {env : Assignments F} {xv : F}
-    (hx : x.eval env = .ok xv) (hfresh : env.FreshFrom nv) :
-    prove (Checker.holds (F := F) (c := c)) (sealCore (c := c) x) nv env
-      = .ok ⟨.var nv, nv + 1, env.extend nv xv⟩ := by
-  have hnv : env nv = none := hfresh nv (Nat.le_refl nv)
-  have hle : env.Le (env.extend nv xv) := by
-    intro v w hv
-    simp only [Assignments.extend]
-    split
-    · next h => rw [h, hnv] at hv; cases hv
-    · exact hv
-  have hw : (AsProver.readCVar x).run env = .ok xv := by
-    simpa using hx
-  have hch : Checker.holds (F := F) (c := c) (BasicSystem.equal x (.var nv))
-      (env.extend nv xv) = true :=
-    LawfulChecker.check_equal _ _ _ _ (CVar.eval_le hle hx)
-      (Assignments.eval_var_extend _ _ _)
-  have hcore := prove_witnessCore (mk := fun z => BasicSystem.equal (c := c) x z)
-    hw hfresh hch
-  cases x <;> exact hcore
 
 open Std.Do
 
@@ -119,61 +95,65 @@ by the affine-form reading, the witnessing branch by its `equal` row. -/
       (hsat _ (List.mem_cons_self ..))
     exact h.symm
 
-/-- The honest run succeeds on an evaluable operand; the sealed result reads as the
-operand's value in the final table. -/
-@[spec] theorem sealVar_complete_spec {F c : Type} [CommSemiring F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c] (x : FVar F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk)
-        (fun env r env' => ∀ xv, x.eval env = .ok xv → r.eval env' = .ok xv) Q⦄
-    sealVar (c := Prover c) x
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (sealVar (c := Prover c) x : CircuitM F (Prover c) _)
-      = (sealVar (c := c) x : CircuitM F c _) from rfl]
-  obtain ⟨hokx, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  have hred := CVar.reduce_eval hx
-  have hval : ∀ {r : FVar F} {env' : Assignments F}, r.eval env' = .ok xv →
-      ∀ x', x.eval st.env = .ok x' → r.eval env' = .ok x' := by
-    intro r env' heval x' hx'
-    rw [hx] at hx'
-    injection hx' with hx'
-    exact hx' ▸ heval
-  simp only [sealVar]
-  split
-  · next v k heq =>
-    rw [heq] at hred
+/-- The state and result of `sealVar`'s honest run — its `match` on the affine form:
+the pass-through shapes allocate nothing; otherwise the operand's value is allocated. -/
+def sealRun {F : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] (st : ProverState F)
+    (x : FVar F) : ProverState F × FVar F :=
+  match x.reduceToAffineExpression with
+  | ⟨none, [(v, k)]⟩ =>
+    if k = 1 then (st, .var v) else (st.extendMany [x.val st.env.toValuation], .var st.nv)
+  | ⟨some k, []⟩ => (st, .const k)
+  | _ => (st.extendMany [x.val st.env.toValuation], .var st.nv)
+
+/-- `sealCore`'s honest run: one slot, the operand's value, its `equal` row accepted. -/
+private theorem sealCore_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (sealCore (c := c) x) st.nv st.env
+      = .ok ((st.extendMany [x.val st.env.toValuation]).out (.var st.nv)) := by
+  have hle := st.le_extendMany [x.val st.env.toValuation]
+  simp only [sealCore, prove_bind]
+  rw [prove_witness_run (w := AsProver.readCVar x) st (.readCVar hx)
+    (v := x.val st.env.toValuation) (by simp)]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind]
+  rw [assertEqual_run _ (hx.of_le hle) (by simp) (by simp [CVar.val, CVar.val_of_le hle hx])]
+  rfl
+
+/-- `sealVar`'s honest run lands at `sealRun`. -/
+theorem sealVar_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (sealVar (c := c) x) st.nv st.env
+      = .ok ((sealRun st x).1.out (sealRun st x).2) := by
+  unfold sealVar sealRun
+  rcases hr : x.reduceToAffineExpression with ⟨_ | k, _ | ⟨⟨v, k'⟩, _ | ⟨p, rest⟩⟩⟩ <;>
+    (try dsimp only) <;> (try split_ifs) <;> first | rfl | exact sealCore_run st hx
+
+/-- `sealRun` reads as the operand. -/
+theorem sealRun_grants {F : Type} [CommSemiring F] [DecidableEq F] {st : ProverState F}
+    {x : FVar F} (hx : x.Scoped st) : Grants F st (sealRun st x) (x.val st.env.toValuation) := by
+  have hred := CVar.reduce_eval (CVar.eval_eq_val hx)
+  have hcore : Grants F st (st.extendMany [x.val st.env.toValuation], .var st.nv)
+      (x.val st.env.toValuation) :=
+    Grants.fvar (st.le_extendMany _) (by simp) (by simp [CVar.val])
+  unfold sealRun
+  rcases hr : x.reduceToAffineExpression with ⟨_ | k, _ | ⟨⟨v, k'⟩, _ | ⟨p, rest⟩⟩⟩ <;>
+    (try dsimp only) <;> rw [hr] at hred
+  case none.cons.nil =>
     split_ifs with h1
     · subst h1
-      obtain ⟨a, σ, henv, hnil, hval'⟩ := AffineExpression.eval_none_cons.mp hred
+      obtain ⟨a, σ, henv, hnil, hval⟩ := AffineExpression.eval_none_cons.mp hred
       cases (AffineExpression.eval_nil (env := st.env)).symm.trans hnil
-      simp only [wp, PredTrans.apply, prove]
-      intro hf
-      refine hk (.var v) ⟨st.nv, st.env, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-      show (CVar.var v).eval st.env = _
-      simp only [CVar.eval, henv, hval']
-      norm_num
-    · simp only [wp, PredTrans.apply]
-      rw [sealCore_run hx st.fresh]
-      intro hf
-      refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-      show (CVar.var st.nv).eval _ = _
-      simp [circuitVal]
-  · next k heq =>
-    rw [heq, AffineExpression.eval_nil] at hred
-    injection hred with hk'
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk (.const k) ⟨st.nv, st.env, hf⟩ (hval ?_) (Assignments.Le.refl st.env)
-    show Except.ok k = _
-    rw [← hk']
-    simp
-  · simp only [wp, PredTrans.apply]
-    rw [sealCore_run hx st.fresh]
-    intro hf
-    refine hk _ ⟨_, _, hf⟩ (hval ?_) (Assignments.le_extend_self st.fresh _)
-    show (CVar.var st.nv).eval _ = _
-    simp [circuitVal]
+      refine Grants.fvar (Assignments.Le.refl _) (ProverState.mem_of_assigned henv) ?_
+      show st.env.toValuation v = _
+      simp only [Assignments.toValuation, henv, Option.getD_some]
+      rw [hval]
+      simp
+    · exact hcore
+  case some.nil =>
+    rw [AffineExpression.eval_nil] at hred
+    injection hred with hk
+    exact Grants.fvar (Assignments.Le.refl _) trivial (by simpa [CVar.val] using hk)
+  all_goals exact hcore
 
 end Snarky

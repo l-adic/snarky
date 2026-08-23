@@ -159,6 +159,18 @@ theorem extendList_get :
     rw [show nv + (i + 1) = (nv + 1) + i by omega]
     simpa using extendList_get (xs := xs) (a := a.extend nv x) (nv := nv + 1) (by simpa using hi)
 
+/-- Extending by a concatenation is extending twice, the second batch after the first. -/
+theorem extendList_append (a : Assignments F) (nv : Nat) (xs ys : List F) :
+    a.extendList nv (xs ++ ys) = (a.extendList nv xs).extendList (nv + xs.length) ys := by
+  induction xs generalizing a nv with
+  | nil => rfl
+  | cons x xs ih =>
+    show ((a.extend nv x).extendList (nv + 1) (xs ++ ys))
+      = ((a.extend nv x).extendList (nv + 1) xs).extendList (nv + (xs.length + 1)) ys
+    rw [ih]
+    congr 1
+    omega
+
 /-- The table stays fresh past the batch. -/
 theorem FreshFrom.extendList {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) (xs : List F) :
     (a.extendList nv xs).FreshFrom (nv + xs.length) := by

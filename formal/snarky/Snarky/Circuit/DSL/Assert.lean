@@ -170,37 +170,21 @@ through the fold, the unsatisfiable-constants row, and the general row. -/
     | (intro hsat
        exact (LawfulBasicSystem.holds_equal V _ _ (hsat _ (List.mem_cons_self ..))))
 
-open Std.Do in
-/-- `assertEqual`'s honest run cannot fail on operands reading equal — it changes
-nothing, so the postcondition is claimed at the incoming state. -/
-@[spec] theorem assertEqual_complete_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c] (x y : FVar F)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-          ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv = yv) (fun _ _ _ => True) Q⦄
-    assertEqual (c := Prover c) x y
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (assertEqual (c := Prover c) x y : CircuitM F (Prover c) _)
-      = (assertEqual (c := c) x y : CircuitM F c _) from rfl]
-  obtain ⟨⟨hokx, hoky, heq⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  have hxy := heq xv yv hx hy
-  have hQ := hk PUnit.unit st trivial (Assignments.Le.refl st.env)
-  have hch : Checker.holds (F := F) (c := c)
-      (BasicSystem.equal (c := c) x y) st.env = true :=
-    LawfulChecker.check_equal _ _ _ _ hx (hxy ▸ hy)
+/-- `assertEqual`'s honest run on operands reading equal: the row accepted, nothing
+allocated. -/
+theorem assertEqual_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st)
+    (h : x.val st.env.toValuation = y.val st.env.toValuation) :
+    prove (Checker.holds (F := F) (c := c)) (assertEqual (c := c) x y) st.nv st.env
+      = .ok (st.out ()) := by
+  have hrow := prove_addConstraint st (LawfulChecker.holds_equal (c := c) hx hy h)
   cases x <;> cases y <;> simp only [assertEqual] <;>
     first
-    | (rename_i f g
-       split_ifs with hfg
-       · exact fun _ => hQ
-       · simp only [addConstraint, wp, PredTrans.apply, prove, hch, if_true]
-         exact fun _ => hQ)
-    | (simp only [addConstraint, wp, PredTrans.apply, prove, hch, if_true]
-       exact fun _ => hQ)
+    | (split_ifs with hfg
+       · rfl
+       · exact absurd (by simpa [CVar.val] using h) hfg)
+    | exact hrow
 
 section MvcgenDemos
 
@@ -220,31 +204,17 @@ example [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
   intro hyz
   exact hxy.trans hyz
 
-/-- The same chain in the prover reading: on agreeing values the honest run cannot
-fail. The two `@[spec]` lemmas for one head symbol coexist across the two readings;
-`mvcgen` selects by the ambient monad. -/
-example (x y z : FVar F) (xv yv zv : F) :
-    ⦃fun st => ⌜x.eval st.env = Except.ok xv ∧ y.eval st.env = Except.ok yv ∧
-        z.eval st.env = Except.ok zv ∧ xv = yv ∧ yv = zv⌝⦄
-    (do assertEqual (c := ProverC F) x y
-        assertEqual (c := ProverC F) y z)
-    ⦃PostCond.noThrow fun _ _st => ⌜True⌝⦄ := by
-  mvcgen
-  rename_i h
-  obtain ⟨hx, hy, hz, hxy, hyz⟩ := h
-  subst hxy
-  subst hyz
-  refine ⟨⟨by rw [hx]; rfl, by rw [hy]; rfl, fun a b ha hb => ?_⟩,
-    fun _ st' hle => ?_⟩
-  · rw [hx] at ha; rw [hy] at hb
-    injection ha with ha; injection hb with hb
-    rw [← ha, ← hb]
-  · refine assertEqual_complete_spec y z _ st'
-      ⟨⟨by rw [CVar.eval_le hle hy]; rfl, by rw [CVar.eval_le hle hz]; rfl,
-        fun a b ha hb => ?_⟩, fun _ _ _ _ => trivial⟩
-    rw [CVar.eval_le hle hy] at ha; rw [CVar.eval_le hle hz] at hb
-    injection ha with ha; injection hb with hb
-    rw [← ha, ← hb]
+/-- The same chain in the prover reading: on agreeing values the honest run lands at
+the incoming state — one run equation per call. -/
+example [BasicSystem F c] [Checker F c] [LawfulChecker F c] (st : ProverState F)
+    (x y z : FVar F) (hx : x.Scoped st) (hy : y.Scoped st) (hz : z.Scoped st)
+    (hxy : x.val st.env.toValuation = y.val st.env.toValuation)
+    (hyz : y.val st.env.toValuation = z.val st.env.toValuation) :
+    prove (Checker.holds (F := F) (c := c))
+      (do assertEqual (c := c) x y
+          assertEqual (c := c) y z : CircuitM F c PUnit) st.nv st.env = .ok (st.out ()) := by
+  simp only [prove_bind, assertEqual_run st hx hy hxy, Except.bind]
+  exact assertEqual_run st hy hz hyz
 
 end MvcgenDemos
 
@@ -297,34 +267,19 @@ carries an unsatisfiable row, the witnessing branch the inverse's product row. -
      rename_i r _ hr
      exact left_ne_zero_of_mul_eq_one hr)
 
-open Std.Do in
-/-- `assertNonZero`'s honest run succeeds on a nonzero value, extending the table with
-the witnessed inverse. -/
-@[spec] theorem assertNonZero_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (v : FVar F)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (v.eval env).isOk ∧
-        ∀ vv, v.eval env = .ok vv → vv ≠ 0)
-        (fun _ _ _ => True) Q⦄
-    assertNonZero (c := Prover c) v
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨⟨hokv, hne⟩, hk⟩ := hpre
-  obtain ⟨vv, hv⟩ := CVar.evalOk hokv
-  have hvv := hne vv hv
+/-- `assertNonZero`'s honest run on a nonzero operand: `inv`'s run, result dropped. -/
+theorem assertNonZero_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {v : FVar F}
+    (st : ProverState F) (hv : v.Scoped st) (hne : v.val st.env.toValuation ≠ 0) :
+    prove (Checker.holds (F := F) (c := c)) (assertNonZero (c := c) v) st.nv st.env
+      = .ok ((invRun st v).1.out ()) := by
   cases v <;> simp only [assertNonZero]
   case const f =>
-    have hf : f = vv := by simpa [CVar.eval] using hv
-    rw [if_neg (by rw [hf]; exact hvv)]
-    exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
+    rw [if_neg (by simpa [CVar.val] using hne)]
+    rfl
   all_goals
-    (mvcgen
-     refine ⟨⟨by rw [hv]; rfl, fun _ h => ?_⟩, fun _ st' _ hle => ?_⟩
-     · rw [hv] at h
-       injection h with h
-       exact h ▸ hvv
-     · exact fun _ => hk PUnit.unit st' hle)
+    simp only [prove_bind, inv_run st hv hne, Except.bind]
+    rfl
 
 open Std.Do in
 /-- `assertNotEqual` asserts the operands read unequal — delegated to `assertNonZero`
@@ -340,27 +295,15 @@ on the difference. -/
   intro hne
   rwa [CVar.val_sub_, sub_ne_zero] at hne
 
-open Std.Do in
-/-- `assertNotEqual`'s honest run succeeds on operands reading unequal —
-`assertNonZero`'s law applied at the difference. -/
-@[spec] theorem assertNotEqual_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (x y : FVar F)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv ≠ yv)
-        (fun _ _ _ => True) Q⦄
-    assertNotEqual (c := Prover c) x y
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨⟨hokx, hoky, hne⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  refine assertNonZero_complete_spec (CVar.sub_ x y) Q st
-    ⟨⟨by rw [CVar.eval_sub_ hx hy]; rfl, fun d hd => ?_⟩, hk⟩
-  rw [CVar.eval_sub_ hx hy] at hd
-  injection hd with hd
-  exact hd ▸ sub_ne_zero.mpr (hne xv yv hx hy)
+/-- `assertNotEqual`'s honest run on operands reading apart: `assertNonZero`'s on the
+difference. -/
+theorem assertNotEqual_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st)
+    (hne : x.val st.env.toValuation ≠ y.val st.env.toValuation) :
+    prove (Checker.holds (F := F) (c := c)) (assertNotEqual (c := c) x y) st.nv st.env
+      = .ok ((invRun st (CVar.sub_ x y)).1.out ()) :=
+  assertNonZero_run st (hx.sub_ hy) (by rw [CVar.val_sub_]; exact sub_ne_zero.mpr hne)
 
 open Std.Do in
 /-- `assertSquare x y` asserts `x · x = y` on the operands' readings. -/
@@ -373,28 +316,14 @@ open Std.Do in
   intro nv _ hsat
   exact (LawfulBasicSystem.holds_square V _ _ (hsat _ (List.mem_cons_self ..)))
 
-open Std.Do in
-/-- `assertSquare`'s honest run succeeds on a true square, changing nothing. -/
-@[spec] theorem assertSquare_complete_spec {F c : Type} [Add F] [Mul F] [Zero F] [One F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c] (x y : FVar F)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (x.eval env).isOk ∧ (y.eval env).isOk ∧
-        ∀ xv yv, x.eval env = .ok xv → y.eval env = .ok yv → xv * xv = yv)
-        (fun _ _ _ => True) Q⦄
-    assertSquare (c := Prover c) x y
-    ⦃Q⦄ := by
-  intro st hpre
-  rw [show (assertSquare (c := Prover c) x y : CircuitM F (Prover c) _)
-      = (assertSquare (c := c) x y : CircuitM F c _) from rfl]
-  obtain ⟨⟨hokx, hoky, hsq'⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  have hsq := hsq' xv yv hx hy
-  have hch : Checker.holds (F := F) (c := c)
-      (BasicSystem.square (c := c) x y) st.env = true :=
-    LawfulChecker.check_square _ _ _ _ _ hx hy hsq
-  simp [assertSquare, addConstraint, wp, PredTrans.apply, prove, hch]
-  exact fun _ => hk PUnit.unit st trivial (Assignments.Le.refl st.env)
+/-- `assertSquare`'s honest run on operands satisfying the identity: the row accepted. -/
+theorem assertSquare_run {F c : Type} [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {x y : FVar F}
+    (st : ProverState F) (hx : x.Scoped st) (hy : y.Scoped st)
+    (h : x.val st.env.toValuation * x.val st.env.toValuation = y.val st.env.toValuation) :
+    prove (Checker.holds (F := F) (c := c)) (assertSquare (c := c) x y) st.nv st.env
+      = .ok (st.out ()) :=
+  prove_addConstraint st (LawfulChecker.holds_square hx hy h)
 
 open Std.Do in
 /-- `assert v` asserts the bit reads `1`. -/
@@ -407,27 +336,14 @@ open Std.Do in
   simp only [assert]
   mvcgen
 
-open Std.Do in
-/-- `assert`'s honest run succeeds on a bit reading `1`. -/
-@[spec] theorem assert_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (v : BoolVar F)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => ((↑v : CVar F).eval env).isOk ∧
-        ∀ bv, (↑v : CVar F).eval env = .ok bv → bv = 1)
-        (fun _ _ _ => True) Q⦄
-    assert (c := Prover c) v
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨⟨hokv, hone⟩, hk⟩ := hpre
-  obtain ⟨bv, hv⟩ := CVar.evalOk hokv
-  refine assertEqual_complete_spec (c := c) ↑v (.const 1) Q st
-    ⟨⟨by rw [hv]; rfl, by rfl, fun a b ha hb => ?_⟩, hk⟩
-  rw [hv] at ha
-  injection ha with ha
-  injection hb with hb
-  rw [← ha, ← hb]
-  exact hone bv hv
+/-- `assert`'s honest run on a set bit: `assertEqual`'s. -/
+theorem assert_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {v : BoolVar F}
+    (st : ProverState F) (hv : (↑v : CVar F).Scoped st)
+    (h : (↑v : CVar F).val st.env.toValuation = 1) :
+    prove (Checker.holds (F := F) (c := c)) (assert (c := c) v) st.nv st.env
+      = .ok (st.out ()) :=
+  assertEqual_run st hv (CVar.scoped_const _ _) (by simpa [CVar.val] using h)
 
 /-! ## The sum-based combinators (`allBools`, `assertAny`, `assertAll`,
 `assertExactlyOne`)
@@ -496,75 +412,18 @@ cast-injectivity up to the length. -/
       simp only [CVar.val]
       rw [if_neg hne, bit_false]
 
-open Std.Do in
-/-- `allBools`'s honest run succeeds on evaluable operands; where they read as bits the
-result is the conjunction bit. -/
-@[spec] theorem allBools_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (bs : List (BoolVar F))
-    (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond (BoolVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => ∀ b ∈ bs, (((b : BoolVar F) : CVar F).eval env).isOk)
-        (fun env (r : BoolVar F) env' => ∀ bl : List Bool, EvalBits env bs bl →
-          (↑r : CVar F).eval env' = .ok (bit (bl.all id))) Q⦄
-    allBools (c := Prover c) bs
-    ⦃Q⦄ := by
-  match bs, hchar with
-  | [], _ =>
-    simp only [allBools]
-    intro st hpre
-    obtain ⟨-, hk⟩ := hpre
-    exact fun _ => hk true_ st (fun bl hbl => by cases hbl; rfl)
-      (Assignments.Le.refl st.env)
-  | [a], _ =>
-    simp only [allBools]
-    intro st hpre
-    obtain ⟨-, hk⟩ := hpre
-    refine fun _ => hk a st (fun bl hbl => ?_) (Assignments.Le.refl st.env)
-    obtain - | ⟨hb, hnil⟩ := hbl
-    cases hnil
-    simpa using hb
-  | [a, b], _ =>
-    simp only [allBools]
-    intro st hpre
-    obtain ⟨hok, hk⟩ := hpre
-    refine and_complete_spec a b Q st
-      ⟨⟨hok a (by simp), hok b (by simp)⟩, fun r st' hr hle => ?_⟩
-    refine hk r st' (fun bl hbl => ?_) hle
-    obtain - | ⟨ha', htl⟩ := hbl
-    obtain - | ⟨hb', hnil⟩ := htl
-    cases hnil
-    simpa using hr _ _ ha' hb'
-  | x₁ :: x₂ :: x₃ :: t, hchar =>
-    simp only [allBools]
-    set bs := x₁ :: x₂ :: x₃ :: t with hbs
-    intro st hpre
-    obtain ⟨hok, hk⟩ := hpre
-    refine equals_complete_spec _ _ Q st
-      ⟨⟨by rfl, sum_evalOk hok⟩, fun r st' hr hle => ?_⟩
-    refine hk r st' (fun bl hbl => ?_) hle
-    have hsum := sum_bits_eval hbl
-    have hlen := forall₂_length hbl
-    have hcount : bl.count true ≤ bs.length + 1 := by
-      have := List.count_le_length (a := true) (l := bl)
-      omega
-    have hr' := hr _ _ (by rfl : (CVar.const (bs.length : F)).eval st.env
-      = .ok (bs.length : F)) hsum
-    rw [hr']
-    simp only [equalsPure]
-    by_cases hall : bl.all id = true
-    · rw [hall]
-      have hc : bl.count true = bl.length := count_true_eq_length.mpr hall
-      rw [if_pos (by rw [hc, hlen]), bit_true]
-    · have hall' : bl.all id = false := by revert hall; cases bl.all id <;> simp
-      rw [hall']
-      have hc : bl.count true ≠ bl.length := fun hcc =>
-        absurd (count_true_eq_length.mp hcc) (by rw [hall']; simp)
-      have hne : ¬((bs.length : F) = (bl.count true : F)) := by
-        intro hcast
-        have := hchar _ _ (by omega) hcount hcast
-        omega
-      rw [if_neg hne, bit_false]
+/-- `allBools`'s honest run lands at `allRun` — `allBools` is `all`'s definition. -/
+theorem allBools_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {bs : List (BoolVar F)}
+    (st : ProverState F) (hbs : ∀ b ∈ bs, (↑b : CVar F).Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (allBools (c := c) bs) st.nv st.env
+      = .ok ((allRun st bs).1.out (allRun st bs).2) := by
+  match bs with
+  | [] => rfl
+  | [a] => rfl
+  | [a, b] => exact and_run st (hbs a (by simp)) (hbs b (by simp))
+  | _ :: _ :: _ :: _ =>
+    exact equals_run st (CVar.scoped_const _ _) (CVar.Scoped.sum (List.forall_mem_map.mpr hbs))
 
 open Std.Do in
 /-- `assertAny` asserts some bit is set — no characteristic hypothesis: a zero count
@@ -586,40 +445,25 @@ casts to zero in any semiring. -/
   rw [count_true_eq_zero.mpr hany'] at hne
   exact hne (by simp)
 
-open Std.Do in
-/-- `assertAny`'s honest run succeeds on bit operands with some bit set —
-cast-injectivity makes the nonzero count a nonzero sum. -/
-@[spec] theorem assertAny_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (bs : List (BoolVar F))
+/-- `assertAny`'s honest run on bit operands with some bit set: `assertNonZero`'s on
+the bit-sum, under the cast injectivity that makes the count nonzero. -/
+theorem assertAny_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {bs : List (BoolVar F)}
     (hchar : ∀ j k : Nat, j ≤ bs.length + 1 → k ≤ bs.length + 1 → (j : F) = k → j = k)
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
-        ∀ bl : List Bool, EvalBits env bs bl → bl.any id = true)
-        (fun _ _ _ => True) Q⦄
-    assertAny (c := Prover c) bs
-    ⦃Q⦄ := by
-  simp only [assertAny]
-  intro st hpre
-  obtain ⟨⟨hbits, hany⟩, hk⟩ := hpre
-  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
-  have hsum := sum_bits_eval hbl
+    (st : ProverState F) (hbs : ∀ b ∈ bs, (↑b : CVar F).Scoped st)
+    {bl : List Bool} (hbl : ReadBits st.env.toValuation bs bl) (hany : bl.any id = true) :
+    prove (Checker.holds (F := F) (c := c)) (assertAny (c := c) bs) st.nv st.env
+      = .ok ((invRun st (sum (bs.map BoolVar.toCVar))).1.out ()) := by
+  refine assertNonZero_run st (CVar.Scoped.sum (List.forall_mem_map.mpr hbs)) ?_
+  rw [sum_bits_val hbl]
   have hlen := forall₂_length hbl
   have hcount : bl.count true ≤ bs.length + 1 := by
     have := List.count_le_length (a := true) (l := bl)
     omega
-  have hne : bl.count true ≠ 0 := by
-    intro h0
-    have := hany bl hbl
-    rw [count_true_eq_zero.mp h0] at this
-    cases this
-  refine assertNonZero_complete_spec _ Q st
-    ⟨⟨by rw [hsum]; rfl, fun sv hsv => ?_⟩, hk⟩
-  rw [hsum] at hsv
-  injection hsv with hsv
-  subst hsv
   intro hcast
-  exact hne (hchar _ 0 hcount (by omega) (by simpa using hcast))
+  have h0 : bl.count true = 0 := hchar _ 0 hcount (by omega) (by simpa using hcast)
+  rw [count_true_eq_zero.mp h0] at hany
+  cases hany
 
 open Std.Do in
 /-- `assertAll` asserts every bit is set, under cast-injectivity up to the length. -/
@@ -645,33 +489,17 @@ open Std.Do in
   have := hchar _ _ hcount (by omega) heq
   exact count_true_eq_length.mp (by omega)
 
-open Std.Do in
-/-- `assertAll`'s honest run succeeds on bit operands all set — no characteristic
-hypothesis: the full count casts to the length in any semiring. -/
-@[spec] theorem assertAll_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (bs : List (BoolVar F))
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
-        ∀ bl : List Bool, EvalBits env bs bl → bl.all id = true)
-        (fun _ _ _ => True) Q⦄
-    assertAll (c := Prover c) bs
-    ⦃Q⦄ := by
-  simp only [assertAll]
-  intro st hpre
-  obtain ⟨⟨hbits, hall⟩, hk⟩ := hpre
-  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
-  have hsum := sum_bits_eval hbl
-  have hlen := forall₂_length hbl
-  have hc : bl.count true = bl.length := count_true_eq_length.mpr (hall bl hbl)
-  refine assertEqual_complete_spec _ _ Q st
-    ⟨⟨by rw [hsum]; rfl, by rfl, fun xv yv hx hy => ?_⟩, hk⟩
-  rw [hsum] at hx
-  injection hx with hx
-  injection hy with hy
-  subst hx
-  subst hy
-  rw [hc, hlen]
+/-- `assertAll`'s honest run on bit operands all set: `assertEqual`'s on the bit-sum. -/
+theorem assertAll_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {bs : List (BoolVar F)}
+    (st : ProverState F) (hbs : ∀ b ∈ bs, (↑b : CVar F).Scoped st)
+    {bl : List Bool} (hbl : ReadBits st.env.toValuation bs bl) (hall : bl.all id = true) :
+    prove (Checker.holds (F := F) (c := c)) (assertAll (c := c) bs) st.nv st.env
+      = .ok (st.out ()) := by
+  refine assertEqual_run st (CVar.Scoped.sum (List.forall_mem_map.mpr hbs))
+    (CVar.scoped_const _ _) ?_
+  rw [sum_bits_val hbl, count_true_eq_length.mpr hall, forall₂_length hbl]
+  rfl
 
 open Std.Do in
 /-- `assertExactlyOne` asserts a one-hot list — the count is one, under
@@ -698,32 +526,17 @@ cast-injectivity up to the length plus one. -/
   rw [hconst] at heq
   exact hchar _ _ hcount (by omega) heq
 
-open Std.Do in
-/-- `assertExactlyOne`'s honest run succeeds on a one-hot bit list — the unit count
-casts to one in any semiring. -/
-@[spec] theorem assertExactlyOne_complete_spec {F c : Type} [Field F] [DecidableEq F]
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (bs : List (BoolVar F))
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (∀ b ∈ bs, ReadsBit ((b : BoolVar F) : CVar F) env) ∧
-        ∀ bl : List Bool, EvalBits env bs bl → bl.count true = 1)
-        (fun _ _ _ => True) Q⦄
-    assertExactlyOne (c := Prover c) bs
-    ⦃Q⦄ := by
-  simp only [assertExactlyOne]
-  intro st hpre
-  obtain ⟨⟨hbits, hone⟩, hk⟩ := hpre
-  obtain ⟨bl, hbl⟩ := exists_evalBits hbits
-  have hsum := sum_bits_eval hbl
-  have hc : bl.count true = 1 := hone bl hbl
-  refine assertEqual_complete_spec _ _ Q st
-    ⟨⟨by rw [hsum]; rfl, by rfl, fun xv yv hx hy => ?_⟩, hk⟩
-  rw [hsum] at hx
-  injection hx with hx
-  injection hy with hy
-  subst hx
-  subst hy
-  rw [hc]
-  simp
+/-- `assertExactlyOne`'s honest run on a one-hot bit list: `assertEqual`'s on the
+bit-sum. -/
+theorem assertExactlyOne_run {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [Checker F c] [LawfulChecker F c] {bs : List (BoolVar F)}
+    (st : ProverState F) (hbs : ∀ b ∈ bs, (↑b : CVar F).Scoped st)
+    {bl : List Bool} (hbl : ReadBits st.env.toValuation bs bl) (hone : bl.count true = 1) :
+    prove (Checker.holds (F := F) (c := c)) (assertExactlyOne (c := c) bs) st.nv st.env
+      = .ok (st.out ()) := by
+  refine assertEqual_run st (CVar.Scoped.sum (List.forall_mem_map.mpr hbs))
+    (CVar.scoped_const _ _) ?_
+  rw [sum_bits_val hbl, hone]
+  simp [CVar.val]
 
 end Snarky
