@@ -186,6 +186,38 @@ them through the normal forms above. -/
     simp only [readCVar, bind_eq, run_bind, ih, run_pure, CVar.eval]
     rcases y.eval env with e | x <;> rfl
 
+/-- Evaluate against a total reading of the table: every read succeeds, only `fail`
+fails. The value a scoped block's run computes (`run_eq_eval`, beside `ProverState`). -/
+def eval (V : Valuation F) : AsProver F α → Except EvalError α
+  | .pure a => .ok a
+  | .read v k => (k (V v)).eval V
+  | .fail e => .error e
+
+@[simp] theorem eval_pure (V : Valuation F) (a : α) :
+    (AsProver.pure a : AsProver F α).eval V = .ok a := rfl
+
+@[simp] theorem eval_read (V : Valuation F) (v : Variable) (k : F → AsProver F α) :
+    (AsProver.read v k).eval V = (k (V v)).eval V := rfl
+
+@[simp] theorem eval_fail (V : Valuation F) (e : EvalError) :
+    (AsProver.fail e : AsProver F α).eval V = .error e := rfl
+
+@[simp] theorem eval_bind (V : Valuation F) (x : AsProver F α) (f : α → AsProver F β) :
+    (AsProver.bind x f).eval V = (x.eval V).bind fun a => (f a).eval V := by
+  induction x with
+  | pure a => rfl
+  | read v k ih => exact ih _
+  | fail e => rfl
+
+/-- Reading an affine expression at a total reading is its value there. -/
+@[simp] theorem eval_readCVar [Add F] [Mul F] (x : CVar F) (V : Valuation F) :
+    (readCVar x).eval V = .ok (x.val V) := by
+  induction x with
+  | var v => rfl
+  | const k => rfl
+  | add a b iha ihb => simp [readCVar, iha, ihb, CVar.val, Except.bind]
+  | scale k y ih => simp [readCVar, ih, CVar.val, Except.bind]
+
 /-- The prover-side list read is the elementwise read. -/
 theorem run_mapM_readCVar [Add F] [Mul F] (env : Assignments F) :
     ∀ xs : List (CVar F), (xs.mapM readCVar).run env = xs.mapM (CVar.eval · env)

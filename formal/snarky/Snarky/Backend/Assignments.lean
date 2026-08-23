@@ -106,6 +106,93 @@ theorem le_extend_self {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) (x : 
     a.Le (a.extend nv x) :=
   le_extend (h nv (Nat.le_refl nv)) x
 
+/-- Writing at the counter and advancing it keeps the table fresh. -/
+theorem FreshFrom.extend {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) (x : F) :
+    (a.extend nv x).FreshFrom (nv + 1) := by
+  intro v hv
+  simp only [Assignments.extend]
+  rw [if_neg (show v ≠ nv by omega)]
+  exact h v (by omega)
+
+/-! ## Consecutive allocation
+
+An `existsOp` writes its values at consecutive slots from the counter. `extendList` is
+that write as a function — the table after, not an `Except` — and the laws below are
+what a run equation reads off it: the batch's slots hold their values, every other
+slot is as before, the table stays fresh past the batch and only grew. -/
+
+/-- Write `xs` at the slots `nv, nv + 1, …`. -/
+def extendList (a : Assignments F) (nv : Nat) : List F → Assignments F
+  | [] => a
+  | x :: xs => (a.extend nv x).extendList (nv + 1) xs
+
+/-- Below the batch, nothing changes. -/
+theorem extendList_below :
+    ∀ {xs : List F} {a : Assignments F} {nv v : Nat}, v < nv → a.extendList nv xs v = a v
+  | [], _, _, _, _ => rfl
+  | x :: xs, a, nv, v, hv => by
+    simp only [extendList]
+    rw [extendList_below (by omega)]
+    simp [Assignments.extend, Nat.ne_of_lt hv]
+
+/-- At or past the batch's end, nothing changes. -/
+theorem extendList_above :
+    ∀ {xs : List F} {a : Assignments F} {nv v : Nat}, nv + xs.length ≤ v →
+      a.extendList nv xs v = a v
+  | [], _, _, _, _ => rfl
+  | x :: xs, a, nv, v, hv => by
+    simp only [extendList, List.length_cons] at hv ⊢
+    rw [extendList_above (by omega)]
+    simp [Assignments.extend, show v ≠ nv by omega]
+
+/-- Slot `i` of the batch holds its value. -/
+theorem extendList_get :
+    ∀ {xs : List F} {a : Assignments F} {nv i : Nat} (hi : i < xs.length),
+      a.extendList nv xs (nv + i) = some xs[i]
+  | [], _, _, _, hi => absurd hi (Nat.not_lt_zero _)
+  | x :: xs, a, nv, 0, _ => by
+    simp only [extendList]
+    rw [extendList_below (by omega)]
+    simp [Assignments.extend]
+  | x :: xs, a, nv, i + 1, hi => by
+    simp only [extendList]
+    rw [show nv + (i + 1) = (nv + 1) + i by omega]
+    simpa using extendList_get (xs := xs) (a := a.extend nv x) (nv := nv + 1) (by simpa using hi)
+
+/-- The table stays fresh past the batch. -/
+theorem FreshFrom.extendList {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv) (xs : List F) :
+    (a.extendList nv xs).FreshFrom (nv + xs.length) := by
+  intro v hv
+  rw [extendList_above hv]
+  exact h v (by omega)
+
+/-- A fresh batch only grows the table. -/
+theorem FreshFrom.le_extendList {a : Assignments F} {nv : Nat} (h : a.FreshFrom nv)
+    (xs : List F) : a.Le (a.extendList nv xs) := by
+  intro v x hv
+  have hlt : v < nv := by
+    by_contra hge
+    rw [h v (Nat.le_of_not_lt hge)] at hv
+    cases hv
+  rw [extendList_below hlt]
+  exact hv
+
+/-- The guarded batch write at fresh consecutive slots is the functional one. -/
+theorem extendPairs_extendList :
+    ∀ {xs : List F} {a : Assignments F} {nv : Nat}, a.FreshFrom nv →
+      a.extendPairs ((List.range' nv xs.length).zip xs) = .ok (a.extendList nv xs)
+  | [], _, _, _ => rfl
+  | x :: xs, a, nv, h => by
+    simp only [List.length_cons, List.range'_succ, List.zip_cons_cons, extendPairs, extendList]
+    rw [h nv (Nat.le_refl nv)]
+    exact extendPairs_extendList (h.extend x)
+
+/-- An assigned slot holds its completed reading. -/
+theorem toValuation_eq [Zero F] {a : Assignments F} {v : Variable} (h : (a v).isSome) :
+    a v = some (a.toValuation v) := by
+  obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp h
+  simp [Assignments.toValuation, hx]
+
 theorem le_extendPairs {a a' : Assignments F} :
     ∀ {l : List (Variable × F)}, a.extendPairs l = .ok a' → a.Le a' := by
   intro l

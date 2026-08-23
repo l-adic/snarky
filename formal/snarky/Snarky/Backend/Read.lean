@@ -1,5 +1,6 @@
 import Snarky.Circuit.Types
 import Snarky.Backend.Assignments
+import Snarky.Backend.Prover
 
 /-!
 # Reading circuit types off a table
@@ -255,5 +256,164 @@ theorem exists_readsAll [Add F] [Mul F] [Zero F] [CircuitType F val var]
     obtain ⟨v, hv⟩ := exists_reads (h x (by simp))
     obtain ⟨vs, hvs⟩ := exists_readsAll (xs := xs) fun y hy => h y (by simp [hy])
     exact ⟨v :: vs, .cons hv hvs⟩
+
+/-! ## Scope
+
+The prover-side precondition of a gadget law is that its operands are in scope
+(`ProverState`'s `∈`, lifted to expressions and bundles): then every read is total,
+and the law's values are `val`/`readVal` at the completed table, `st.env.toValuation`.
+`eval_eq_val` is the one bridge from the partial `eval` to the total reading; the
+`_fvar`/`_prod`/`_ofEquiv` lemmas compute scope at the base, pair and presented
+instances, as the `readVal_*` lemmas compute the reading; and `readVal_extendMany_new`
+is what a witness leaf grants — the allocated bundle reads as the value the block
+computed, by the round trips. -/
+
+/-- `x.Scoped st`: every variable of the expression is in scope. -/
+def CVar.Scoped (st : ProverState F) : CVar F → Prop
+  | .var v => v ∈ st
+  | .const _ => True
+  | .add a b => a.Scoped st ∧ b.Scoped st
+  | .scale _ y => y.Scoped st
+
+@[simp] theorem CVar.scoped_var (st : ProverState F) (v : Variable) :
+    (CVar.var v : CVar F).Scoped st ↔ v ∈ st := Iff.rfl
+
+@[simp] theorem CVar.scoped_const (st : ProverState F) (k : F) :
+    (CVar.const k).Scoped st := trivial
+
+@[simp] theorem CVar.scoped_add (st : ProverState F) (a b : CVar F) :
+    (CVar.add a b).Scoped st ↔ a.Scoped st ∧ b.Scoped st := Iff.rfl
+
+@[simp] theorem CVar.scoped_scale (st : ProverState F) (k : F) (y : CVar F) :
+    (CVar.scale k y).Scoped st ↔ y.Scoped st := Iff.rfl
+
+/-- Scope survives table extension. -/
+theorem CVar.Scoped.of_le {st st' : ProverState F} (hle : st.env.Le st'.env) :
+    ∀ {x : CVar F}, x.Scoped st → x.Scoped st'
+  | .var _, h => ProverState.mem_of_le hle h
+  | .const _, _ => trivial
+  | .add _ _, ⟨ha, hb⟩ => ⟨ha.of_le hle, hb.of_le hle⟩
+  | .scale _ y, h => CVar.Scoped.of_le hle (x := y) h
+
+/-- An in-scope expression evaluates, to its total reading at the completed table. -/
+theorem CVar.eval_eq_val [Add F] [Mul F] [Zero F] {st : ProverState F} :
+    ∀ {x : CVar F}, x.Scoped st → x.eval st.env = .ok (x.val st.env.toValuation)
+  | .var v, hv => by simp [CVar.eval, CVar.val, st.get_eq hv]
+  | .const _, _ => rfl
+  | .add a b, ⟨ha, hb⟩ => by simp [CVar.eval, CVar.val, eval_eq_val ha, eval_eq_val hb]
+  | .scale _ y, hy => by simp [CVar.eval, CVar.val, eval_eq_val (x := y) hy]
+
+/-- An in-scope reading survives table extension. -/
+theorem CVar.val_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
+    (hle : st.env.Le st'.env) {x : CVar F} (hs : x.Scoped st) :
+    x.val st'.env.toValuation = x.val st.env.toValuation := by
+  have h := CVar.eval_le hle (CVar.eval_eq_val hs)
+  rw [CVar.eval_eq_val (hs.of_le hle)] at h
+  injection h
+
+/-- A bundle is in scope when every cell of its flattening is. -/
+def CircuitType.Scoped (val : Type) [CircuitType F val var] (st : ProverState F)
+    (cv : var) : Prop :=
+  ∀ i (hi : i < CircuitType.size F val), ((CircuitType.varToFields (val := val) cv)[i]).Scoped st
+
+/-- A single field variable is in scope iff its expression is. -/
+theorem scoped_fvar_iff {st : ProverState F} {x : FVar F} :
+    CircuitType.Scoped F st x ↔ x.Scoped st := by
+  constructor
+  · intro h
+    exact h 0 Nat.zero_lt_one
+  · intro h i hi
+    have hi' : i < 1 := hi
+    have h0 : i = 0 := by omega
+    subst h0
+    exact h
+
+section ScopeProd
+
+variable {a b av bv : Type}
+
+/-- A pair is in scope iff its components are. -/
+theorem scoped_prod_iff [A : CircuitType F a av] [B : CircuitType F b bv]
+    {st : ProverState F} {p : av × bv} :
+    CircuitType.Scoped (a × b) st p ↔
+      CircuitType.Scoped a st p.1 ∧ CircuitType.Scoped b st p.2 := by
+  constructor
+  · intro h
+    constructor
+    · intro i hi
+      have h' := h i (by show i < A.size + B.size; omega)
+      rwa [show (CircuitType.varToFields (val := a × b) p)[i]'(by
+            show i < A.size + B.size; omega)
+          = (A.varToFields p.1)[i]
+        from Vector.getElem_append_left hi] at h'
+    · intro i hi
+      have h' := h (A.size + i) (by show A.size + i < A.size + B.size; omega)
+      have heq : (CircuitType.varToFields (val := a × b) p)[A.size + i]'(by
+            show A.size + i < A.size + B.size; omega)
+          = (B.varToFields p.2)[i] := by
+        show (A.varToFields p.1 ++ B.varToFields p.2)[A.size + i]'(by omega)
+          = (B.varToFields p.2)[i]
+        rw [Vector.getElem_append_right (by omega) (by omega)]
+        simp
+      rwa [heq] at h'
+  · rintro ⟨ha, hb⟩ i hi
+    have hi' : i < A.size + B.size := hi
+    show ((A.varToFields p.1 ++ B.varToFields p.2))[i].Scoped st
+    by_cases hia : i < A.size
+    · rw [Vector.getElem_append_left hia]
+      exact ha i hia
+    · rw [Vector.getElem_append_right (by omega) (by omega)]
+      exact hb (i - A.size) (by omega)
+
+end ScopeProd
+
+section ScopeOfEquiv
+
+variable {rep repVar : Type} (R : CircuitType F rep repVar) (e : val ≃ rep) (ev : var ≃ repVar)
+
+/-- A presented bundle is in scope iff its representation is. -/
+theorem scoped_ofEquiv_iff {st : ProverState F} {cv : var} :
+    @CircuitType.Scoped F var val (R.ofEquiv e ev) st cv ↔ CircuitType.Scoped rep st (ev cv) :=
+  Iff.rfl
+
+end ScopeOfEquiv
+
+/-- Scope survives table extension. -/
+theorem CircuitType.Scoped.of_le [CircuitType F val var] {st st' : ProverState F}
+    (hle : st.env.Le st'.env) {cv : var} (h : CircuitType.Scoped val st cv) :
+    CircuitType.Scoped val st' cv :=
+  fun i hi => (h i hi).of_le hle
+
+/-- An in-scope bundle's reading survives table extension. -/
+theorem readVal_of_le [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    {st st' : ProverState F} (hle : st.env.Le st'.env) {cv : var}
+    (hs : CircuitType.Scoped val st cv) :
+    readVal (val := val) st'.env.toValuation cv = readVal (val := val) st.env.toValuation cv := by
+  unfold readVal
+  congr 1
+  ext i hi
+  simp only [Vector.getElem_map]
+  exact CVar.val_of_le hle (hs i hi)
+
+/-- What a witness leaf grants: the bundle allocated at the counter reads, on the
+extended table, as the value whose encoding was written — `vars_roundTrip` to the
+cells, the batch's slots, `value_roundTrip` back. -/
+theorem readVal_extendMany_new [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    [LawfulCircuitType F val var] (st : ProverState F) (v : val) :
+    readVal (val := val)
+      (st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList).env.toValuation
+      (CircuitType.fieldsToVar (F := F) (val := val)
+        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) = v := by
+  unfold readVal
+  rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
+  set st' := st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList with hst'
+  have hcells : (mapVec CVar.var (allocRange st.nv (CircuitType.size F val))).map
+      (·.val st'.env.toValuation)
+      = CircuitType.valueToFields (F := F) (var := var) v := by
+    ext i hi
+    simp only [Vector.getElem_map, getElem_mapVec, allocRange, Vector.getElem_ofFn, CVar.val]
+    rw [ProverState.get_extendMany_new st (by simpa using hi)]
+    simp
+  rw [hcells, LawfulCircuitType.value_roundTrip]
 
 end Snarky

@@ -60,6 +60,65 @@ Snarky.AsProver.run_fail
 Snarky.AsProver.run_bind
 Snarky.AsProver.run_readCVar
 
+-- Scope, the prover-side reading (Backend/{Assignments,Prover,Read}.lean,
+-- Circuit/DSL/Monad.lean, Vec.lean): consecutive allocation as a function of the
+-- table, `v ∈ st` as assignment with its laws, scoped witness blocks and their
+-- evaluation, and scope lifted to expressions and bundles — the vocabulary the run
+-- equations are stated in. Simp-set surface where marked `@[simp]`.
+Snarky.Assignments.FreshFrom.extend
+Snarky.Assignments.extendList
+Snarky.Assignments.extendList_below
+Snarky.Assignments.extendList_above
+Snarky.Assignments.extendList_get
+Snarky.Assignments.FreshFrom.extendList
+Snarky.Assignments.FreshFrom.le_extendList
+Snarky.Assignments.extendPairs_extendList
+Snarky.Assignments.toValuation_eq
+Snarky.getElem_mapVec
+Snarky.AsProver.eval
+Snarky.AsProver.eval_pure
+Snarky.AsProver.eval_read
+Snarky.AsProver.eval_fail
+Snarky.AsProver.eval_bind
+Snarky.AsProver.eval_readCVar
+Snarky.instMembershipVariableProverState
+Snarky.ProverState.mem_def
+Snarky.ProverState.mem_of_assigned
+Snarky.ProverState.mem_lt
+Snarky.ProverState.mem_of_le
+Snarky.ProverState.get_eq
+Snarky.ProverState.get_of_le
+Snarky.ProverState.extendMany
+Snarky.ProverState.extendMany_nv
+Snarky.ProverState.extendMany_env
+Snarky.ProverState.le_extendMany
+Snarky.ProverState.mem_extendMany
+Snarky.ProverState.new_mem_extendMany
+Snarky.ProverState.mem_extendMany_iff
+Snarky.ProverState.get_extendMany_new
+Snarky.ProverState.get_extendMany_of_mem
+Snarky.AsProver.Scoped
+Snarky.AsProver.scoped_pure
+Snarky.AsProver.scoped_read
+Snarky.AsProver.scoped_fail
+Snarky.AsProver.run_eq_eval
+Snarky.AsProver.eval_congr
+Snarky.CVar.Scoped
+Snarky.CVar.scoped_var
+Snarky.CVar.scoped_const
+Snarky.CVar.scoped_add
+Snarky.CVar.scoped_scale
+Snarky.CVar.Scoped.of_le
+Snarky.CVar.eval_eq_val
+Snarky.CVar.val_of_le
+Snarky.CircuitType.Scoped
+Snarky.scoped_fvar_iff
+Snarky.scoped_prod_iff
+Snarky.scoped_ofEquiv_iff
+Snarky.CircuitType.Scoped.of_le
+Snarky.readVal_of_le
+Snarky.readVal_extendMany_new
+
 -- The alignment bridge: complete a run's table to a valuation, and tie an honest run
 -- to the soundness relation (Backend/{Assignments,WP}.lean).
 Snarky.Assignments.toValuation
