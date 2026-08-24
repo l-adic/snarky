@@ -1,4 +1,4 @@
-import Snarky.Circuit.Types
+import Snarky.Encoding
 import Snarky.Kimchi.Constraint.Reduction
 
 /-!

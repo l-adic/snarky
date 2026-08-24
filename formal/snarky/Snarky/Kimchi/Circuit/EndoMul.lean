@@ -1,10 +1,10 @@
-import Snarky.Circuit.DSL.Field
-import Snarky.Circuit.DSL.SizedF
+import Snarky.DSL.Field
+import Snarky.DSL.SizedF
 import Kimchi.Gate.Semantics.EndoMul
 import Kimchi.Gate.Semantics.VarBaseMul
 import Pasta.Endo
-import Snarky.Circuit.DSL.Assert
-import Snarky.Circuit.DSL.Bits
+import Snarky.DSL.Assert
+import Snarky.DSL.Bits
 import Snarky.Kimchi.Semantics
 import Snarky.Kimchi.Circuit.Utils
 import Snarky.Kimchi.Circuit.AddComplete

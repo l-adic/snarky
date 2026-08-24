@@ -1,5 +1,5 @@
-import Snarky.Circuit.DSL.Monad
-import Snarky.Backend.Read
+import Snarky.Witness
+import Snarky.Prover
 import Snarky.Kimchi.Semantics
 import Poseidon.Basic
 import Kimchi.Gate.Semantics.Poseidon

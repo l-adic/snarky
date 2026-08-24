@@ -1,4 +1,4 @@
-import Snarky.Circuit.CVar
+import Snarky.CVar
 import Snarky.Kimchi.UnionFind
 
 /-!

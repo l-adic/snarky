@@ -1,4 +1,4 @@
-import Snarky.Backend.Compile
+import Snarky.Compile
 import Snarky.Kimchi.Backend.Assemble
 
 /-!

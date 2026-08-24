@@ -1,4 +1,4 @@
-import Snarky.Circuit.DSL.Utils
+import Snarky.DSL.Utils
 import Snarky.Kimchi.Circuit.Poseidon
 
 /-!

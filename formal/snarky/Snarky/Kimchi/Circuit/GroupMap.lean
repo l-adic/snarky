@@ -1,6 +1,6 @@
-import Snarky.Circuit.DSL.Field
-import Snarky.Circuit.DSL.Assert
-import Snarky.Circuit.DSL.Boolean
+import Snarky.DSL.Field
+import Snarky.DSL.Assert
+import Snarky.DSL.Boolean
 import Snarky.Kimchi.Semantics
 import Poseidon.GroupMap
 

@@ -1,5 +1,5 @@
 import Snarky.Kimchi.Circuit.EndoScalar
-import Snarky.Circuit.DSL.SizedF
+import Snarky.DSL.SizedF
 
 /-!
 # Range checks built on the EndoScalar gate

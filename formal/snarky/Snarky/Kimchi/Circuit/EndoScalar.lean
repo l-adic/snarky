@@ -1,7 +1,7 @@
-import Snarky.Circuit.DSL.Field
+import Snarky.DSL.Field
 import Kimchi.Gate.Semantics.EndoScalar
-import Snarky.Circuit.DSL.Assert
-import Snarky.Circuit.DSL.Bits
+import Snarky.DSL.Assert
+import Snarky.DSL.Bits
 import Snarky.Kimchi.Semantics
 import Snarky.Kimchi.Circuit.Utils
 

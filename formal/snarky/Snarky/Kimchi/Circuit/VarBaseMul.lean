@@ -1,7 +1,7 @@
-import Snarky.Circuit.DSL.Field
-import Snarky.Circuit.DSL.Assert
-import Snarky.Circuit.DSL.Bits
-import Snarky.Circuit.DSL.Boolean
+import Snarky.DSL.Field
+import Snarky.DSL.Assert
+import Snarky.DSL.Bits
+import Snarky.DSL.Boolean
 import Snarky.Types.Shifted
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Utils
