@@ -117,12 +117,12 @@ def squeeze [Field F] [KimchiSystem F c] (p : Poseidon.Params F) (sv : SpongeVar
 /-! ## The reads-as relations
 
 The laws relate an in-circuit sponge to the value-level `Poseidon.State` it
-implements: the generic state reading (`readVal` under a soundness valuation,
-`Snarky.Reads` under a prover table) plus mode agreement. A transcript threads them
-from the `vals_init` / `reads_init` (or `ofConstants`) entry points through the op
-laws below — any absorb/squeeze schedule lands on the value automaton with no
-per-transcript lemma; `Reads.le` carries the prover-side reading across the table
-extensions of any gadgets interleaved between sponge ops. -/
+implements: the generic state reading `readVal` at a valuation plus mode agreement —
+one relation, read at a soundness valuation or at the prover table's total reading. A
+transcript threads it from the `vals_init` (or `ofConstants`) entry point through the
+op laws below — any absorb/squeeze schedule lands on the value automaton with no
+per-transcript lemma; an op's `Grants` carries the reading across the table extension
+of the op, and `readVal_of_le` across any gadgets interleaved between sponge ops. -/
 
 open Std.Do
 
@@ -131,12 +131,6 @@ modes agree. -/
 def Vals [Add F] [Mul F] (V : Valuation F) (sv : SpongeVar F)
     (s : Poseidon.State F) : Prop :=
   readVal V sv.state = s.state ∧ sv.mode = s.mode
-
-/-- Complete-side reads-as: the state reads on the prover table as the value sponge's
-state, and the modes agree. -/
-def Reads [Add F] [Mul F] [Zero F] (env : Assignments F) (sv : SpongeVar F)
-    (s : Poseidon.State F) : Prop :=
-  Snarky.Reads env sv.state s.state ∧ sv.mode = s.mode
 
 /-- The fresh circuit sponge reads as the fresh value sponge. -/
 theorem vals_init [Field F] (V : Valuation F) :
@@ -152,25 +146,12 @@ theorem vals_ofConstants [Field F] (V : Valuation F) (s : Poseidon.State F) :
   simp only [ofConstants, readVal_prod, readVal_fvar]
   rfl
 
-/-- The fresh circuit sponge reads as the fresh value sponge, prover side. -/
-theorem reads_init [Field F] (env : Assignments F) :
-    Reads env (init (F := F)) Poseidon.init := by
-  refine ⟨?_, rfl⟩
-  simp only [init, reads_prod_iff, reads_fvar_iff]
-  exact ⟨rfl, rfl, rfl⟩
-
-/-- A constant-seeded sponge reads as the state it was seeded from, prover side. -/
-theorem reads_ofConstants [Field F] (env : Assignments F) (s : Poseidon.State F) :
-    Reads env (ofConstants s) s := by
-  refine ⟨?_, rfl⟩
-  simp only [ofConstants, reads_prod_iff, reads_fvar_iff]
-  exact ⟨rfl, rfl, rfl⟩
-
-/-- The reading survives table extension. -/
-theorem Reads.le [Add F] [Mul F] [Zero F] {env env' : Assignments F}
-    (hle : env.Le env') {sv : SpongeVar F} {s : Poseidon.State F}
-    (h : Reads env sv s) : Reads env' sv s :=
-  ⟨Snarky.Reads.le hle h.1, h.2⟩
+/-- What a sponge op's run grants: the table grew, the output state is in scope there,
+and the sponge reads there as the value sponge. -/
+def Grants [Field F] (st : ProverState F) (r : ProverState F × SpongeVar F)
+    (s : Poseidon.State F) : Prop :=
+  st.env.Le r.1.env ∧ CircuitType.Scoped (Poseidon.Triple F) r.1 r.2.state ∧
+    Vals r.1.env.toValuation r.2 s
 
 /-! ## The slot helpers' laws -/
 
@@ -184,12 +165,11 @@ private theorem slotVar_val [Add F] [Mul F] (s : Poseidon.Triple (FVar F)) (V : 
   | 1 => rfl
   | 2 => rfl
 
-/-- `slotVar` evaluates to `Poseidon.slot` of the state reading, prover side. -/
-private theorem slotVar_eval [Field F] {env : Assignments F} {s : Poseidon.Triple (FVar F)}
-    {sv : Poseidon.Triple F} (h : Snarky.Reads env s sv) :
-    ∀ n : Fin 3, (slotVar s n).eval env = .ok (Poseidon.slot sv n) := by
+/-- `slotVar` is in scope when the state is. -/
+private theorem slotVar_scoped {st : ProverState F} {s : Poseidon.Triple (FVar F)}
+    (h : CircuitType.Scoped (Poseidon.Triple F) st s) : ∀ n : Fin 3, (slotVar s n).Scoped st := by
   intro n
-  simp only [reads_prod_iff, reads_fvar_iff] at h
+  simp only [scoped_prod_iff, scoped_fvar_iff] at h
   obtain ⟨h1, h2, h3⟩ := h
   match n with
   | 0 => exact h1
@@ -217,92 +197,65 @@ state's reading (the seal reads as the sum, in either operand order). -/
     mvcgen
     simp_all [Poseidon.addSlot, CVar.val_add_, add_comm, readVal_prod, readVal_fvar]
 
-/-- `addSlotVar` is complete: the honest run accepts on a readable state and element,
-and the output state reads back as `Poseidon.addSlot` of the input values. -/
-@[spec] private theorem addSlotVar_complete_spec [Field F] [DecidableEq F]
-    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F)
-    (Q : PostCond (Poseidon.Triple (FVar F)) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => Readable (Poseidon.Triple F) env s ∧ (x.eval env).isOk)
-        (fun env (r : Poseidon.Triple (FVar F)) env' =>
-          ∀ sv xv, Snarky.Reads env s sv → x.eval env = .ok xv →
-            Snarky.Reads env' r (Poseidon.addSlot sv n xv))
-        Q⦄
-    (addSlotVar (c := KimchiProverC F) s n x)
-    ⦃Q⦄ := by
+/-- The state and result of `addSlotVar`'s honest run: the slot sum's seal. -/
+private def addSlotRun [Field F] [DecidableEq F] (st : ProverState F)
+    (s : Poseidon.Triple (FVar F)) (n : Fin 3) (x : FVar F) :
+    ProverState F × Poseidon.Triple (FVar F) :=
+  match n with
+  | 0 => let r := sealRun st (CVar.add_ x s.s0); (r.1, (r.2, s.s1, s.s2))
+  | 1 => let r := sealRun st (CVar.add_ x s.s1); (r.1, (s.s0, r.2, s.s2))
+  | _ => let r := sealRun st (CVar.add_ x s.s2); (r.1, (s.s0, s.s1, r.2))
+
+/-- `addSlotVar`'s honest run on an in-scope state and element lands at `addSlotRun`. -/
+private theorem addSlotVar_run [Field F] [DecidableEq F] {s : Poseidon.Triple (FVar F)}
+    (n : Fin 3) {x : FVar F} (st : ProverState F)
+    (hs : CircuitType.Scoped (Poseidon.Triple F) st s) (hx : x.Scoped st) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (addSlotVar (c := KimchiConstraint F) s n x) st.nv st.env
+      = .ok ((addSlotRun st s n x).1.out (addSlotRun st s n x).2) := by
+  simp only [scoped_prod_iff, scoped_fvar_iff] at hs
+  obtain ⟨h0, h1, h2⟩ := hs
   match n with
   | 0 =>
-    simp only [addSlotVar]
-    mvcgen
-    rename_i st hpre
-    obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    simp only [readable_prod_iff, readable_fvar_iff] at hsok
-    obtain ⟨av, ha⟩ := CVar.evalOk hsok.1
-    obtain ⟨bv, hb⟩ := CVar.evalOk hsok.2.1
-    obtain ⟨cv, hc⟩ := CVar.evalOk hsok.2.2
-    obtain ⟨xv, hx⟩ := CVar.evalOk hxok
-    refine ⟨isOk_of_eq (CVar.eval_add_ hx ha), fun r st' hr hle => ?_⟩
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk _ ⟨st'.nv, st'.env, hf⟩ (fun sv xv' hsv hx' => ?_) hle
-    obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_prod_iff, reads_fvar_iff] at hsv
-    obtain ⟨ha', hb', hc'⟩ := hsv
-    rw [ha] at ha'; rw [hb] at hb'; rw [hc] at hc'; rw [hx] at hx'
-    injection ha' with ha'; injection hb' with hb'
-    injection hc' with hc'; injection hx' with hx'
-    subst ha' hb' hc' hx'
-    simp only [reads_prod_iff, reads_fvar_iff]
-    refine ⟨?_, CVar.eval_le hle hb, CVar.eval_le hle hc⟩
-    simpa [Poseidon.addSlot, add_comm] using hr _ (CVar.eval_add_ hx ha)
+    simp only [addSlotVar, addSlotRun, prove_bind, sealVar_run st (hx.add_ h0), Except.bind]
+    rfl
   | 1 =>
-    simp only [addSlotVar]
-    mvcgen
-    rename_i st hpre
-    obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    simp only [readable_prod_iff, readable_fvar_iff] at hsok
-    obtain ⟨av, ha⟩ := CVar.evalOk hsok.1
-    obtain ⟨bv, hb⟩ := CVar.evalOk hsok.2.1
-    obtain ⟨cv, hc⟩ := CVar.evalOk hsok.2.2
-    obtain ⟨xv, hx⟩ := CVar.evalOk hxok
-    refine ⟨isOk_of_eq (CVar.eval_add_ hx hb), fun r st' hr hle => ?_⟩
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk _ ⟨st'.nv, st'.env, hf⟩ (fun sv xv' hsv hx' => ?_) hle
-    obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_prod_iff, reads_fvar_iff] at hsv
-    obtain ⟨ha', hb', hc'⟩ := hsv
-    rw [ha] at ha'; rw [hb] at hb'; rw [hc] at hc'; rw [hx] at hx'
-    injection ha' with ha'; injection hb' with hb'
-    injection hc' with hc'; injection hx' with hx'
-    subst ha' hb' hc' hx'
-    simp only [reads_prod_iff, reads_fvar_iff]
-    refine ⟨CVar.eval_le hle ha, ?_, CVar.eval_le hle hc⟩
-    simpa [Poseidon.addSlot, add_comm] using hr _ (CVar.eval_add_ hx hb)
+    simp only [addSlotVar, addSlotRun, prove_bind, sealVar_run st (hx.add_ h1), Except.bind]
+    rfl
   | 2 =>
-    simp only [addSlotVar]
-    mvcgen
-    rename_i st hpre
-    obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    simp only [readable_prod_iff, readable_fvar_iff] at hsok
-    obtain ⟨av, ha⟩ := CVar.evalOk hsok.1
-    obtain ⟨bv, hb⟩ := CVar.evalOk hsok.2.1
-    obtain ⟨cv, hc⟩ := CVar.evalOk hsok.2.2
-    obtain ⟨xv, hx⟩ := CVar.evalOk hxok
-    refine ⟨isOk_of_eq (CVar.eval_add_ hx hc), fun r st' hr hle => ?_⟩
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk _ ⟨st'.nv, st'.env, hf⟩ (fun sv xv' hsv hx' => ?_) hle
-    obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_prod_iff, reads_fvar_iff] at hsv
-    obtain ⟨ha', hb', hc'⟩ := hsv
-    rw [ha] at ha'; rw [hb] at hb'; rw [hc] at hc'; rw [hx] at hx'
-    injection ha' with ha'; injection hb' with hb'
-    injection hc' with hc'; injection hx' with hx'
-    subst ha' hb' hc' hx'
-    simp only [reads_prod_iff, reads_fvar_iff]
-    refine ⟨CVar.eval_le hle ha, CVar.eval_le hle hb, ?_⟩
-    simpa [Poseidon.addSlot, add_comm] using hr _ (CVar.eval_add_ hx hc)
+    simp only [addSlotVar, addSlotRun, prove_bind, sealVar_run st (hx.add_ h2), Except.bind]
+    rfl
+
+/-- `addSlotRun` reads as `Poseidon.addSlot` of the input readings. -/
+private theorem addSlotRun_grants [Field F] [DecidableEq F] {st : ProverState F}
+    {s : Poseidon.Triple (FVar F)} (n : Fin 3) {x : FVar F}
+    (hs : CircuitType.Scoped (Poseidon.Triple F) st s) (hx : x.Scoped st) :
+    Snarky.Grants (Poseidon.Triple F) st (addSlotRun st s n x)
+      (Poseidon.addSlot (readVal st.env.toValuation s) n (x.val st.env.toValuation)) := by
+  simp only [scoped_prod_iff, scoped_fvar_iff] at hs
+  obtain ⟨h0, h1, h2⟩ := hs
+  match n with
+  | 0 =>
+    have h := sealRun_grants (st := st) (hx.add_ h0)
+    refine ⟨h.le, ?_, ?_⟩
+    · simp only [addSlotRun, scoped_prod_iff, scoped_fvar_iff]
+      exact ⟨h.fvar_scoped, h1.of_le h.le, h2.of_le h.le⟩
+    · simp only [addSlotRun, readVal_prod, readVal_fvar, Poseidon.addSlot]
+      rw [h.fvar_val, CVar.val_add_, CVar.val_of_le h.le h1, CVar.val_of_le h.le h2, add_comm]
+  | 1 =>
+    have h := sealRun_grants (st := st) (hx.add_ h1)
+    refine ⟨h.le, ?_, ?_⟩
+    · simp only [addSlotRun, scoped_prod_iff, scoped_fvar_iff]
+      exact ⟨h0.of_le h.le, h.fvar_scoped, h2.of_le h.le⟩
+    · simp only [addSlotRun, readVal_prod, readVal_fvar, Poseidon.addSlot]
+      rw [h.fvar_val, CVar.val_add_, CVar.val_of_le h.le h0, CVar.val_of_le h.le h2, add_comm]
+  | 2 =>
+    have h := sealRun_grants (st := st) (hx.add_ h2)
+    refine ⟨h.le, ?_, ?_⟩
+    · simp only [addSlotRun, scoped_prod_iff, scoped_fvar_iff]
+      exact ⟨h0.of_le h.le, h1.of_le h.le, h.fvar_scoped⟩
+    · simp only [addSlotRun, readVal_prod, readVal_fvar, Poseidon.addSlot]
+      rw [h.fvar_val, CVar.val_add_, CVar.val_of_le h.le h0, CVar.val_of_le h.le h1, add_comm]
 
 /-! ## The op laws -/
 
@@ -391,161 +344,143 @@ the output sponge as its state, at whatever state the input sponge reads as. -/
     simp only [Poseidon.squeeze]
     exact ⟨(slotVar_val r₁ V 0).trans (by rw [hpos]), hpos, rfl⟩
 
-/-- `absorb` is complete: the honest run accepts on a readable state and element, and
-the output sponge reads back as `Poseidon.absorb1` of whatever state the input sponge
-reads as. -/
-@[spec] theorem absorb_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
-    (x : FVar F)
-    (Q : PostCond (SpongeVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => Readable (Poseidon.Triple F) env sv.state ∧ (x.eval env).isOk)
-        (fun env (r : SpongeVar F) env' => ∀ s xv, Reads env sv s →
-          x.eval env = .ok xv → Reads env' r (Poseidon.absorb1 p s xv))
-        Q⦄
-    (absorb (c := KimchiProverC F) p sv x)
-    ⦃Q⦄ := by
-  obtain ⟨stv, mode⟩ := sv
-  have pspec := Poseidon.poseidon_complete_spec (F := F) p hsize
-  cases mode with
-  | absorbed n =>
-    by_cases hn : n.val = 2
-    · simp only [absorb, if_pos hn]
-      mvcgen [pspec]
-      rename_i st hpre
-      obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-      obtain ⟨xv, hx⟩ := CVar.evalOk hxok
-      obtain ⟨sv0, hsv0⟩ := exists_reads hsok
-      refine ⟨hsok, fun r₁ st₁ hpos hle₁ => ?_⟩
-      have hpos := hpos sv0 hsv0
-      mvcgen
-      refine ⟨⟨Snarky.Reads.readable hpos, isOk_of_eq (CVar.eval_le hle₁ hx)⟩,
-        fun r₂ st₂ hslot hle₂ => ?_⟩
-      have hslot := hslot _ _ hpos (CVar.eval_le hle₁ hx)
-      simp only [wp, PredTrans.apply, prove]
-      intro hf
-      refine hk _ ⟨st₂.nv, st₂.env, hf⟩ (fun s xv' hs hx' => ?_) (hle₁.trans hle₂)
-      obtain ⟨sst, smode⟩ := s
-      obtain ⟨hst, hm⟩ := hs
-      simp only at hm
-      subst hm
-      obtain rfl := Snarky.Reads.unique hsv0 hst
-      rw [hx] at hx'
-      injection hx' with hx'
-      subst hx'
-      simp only [Poseidon.absorb1, if_pos hn]
-      exact ⟨hslot, rfl⟩
-    · simp only [absorb, if_neg hn]
-      mvcgen
-      rename_i st hpre
-      obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-      obtain ⟨xv, hx⟩ := CVar.evalOk hxok
-      obtain ⟨sv0, hsv0⟩ := exists_reads hsok
-      refine ⟨⟨hsok, hxok⟩, fun r₂ st₂ hslot hle₂ => ?_⟩
-      have hslot := hslot _ _ hsv0 hx
-      simp only [wp, PredTrans.apply, prove]
-      intro hf
-      refine hk _ ⟨st₂.nv, st₂.env, hf⟩ (fun s xv' hs hx' => ?_) hle₂
-      obtain ⟨sst, smode⟩ := s
-      obtain ⟨hst, hm⟩ := hs
-      simp only at hm
-      subst hm
-      obtain rfl := Snarky.Reads.unique hsv0 hst
-      rw [hx] at hx'
-      injection hx' with hx'
-      subst hx'
-      simp only [Poseidon.absorb1, if_neg hn]
-      exact ⟨hslot, rfl⟩
-  | squeezed n =>
-    simp only [absorb]
-    mvcgen
-    rename_i st hpre
-    obtain ⟨⟨hsok, hxok⟩, hk⟩ := hpre
-    obtain ⟨xv, hx⟩ := CVar.evalOk hxok
-    obtain ⟨sv0, hsv0⟩ := exists_reads hsok
-    refine ⟨⟨hsok, hxok⟩, fun r₂ st₂ hslot hle₂ => ?_⟩
-    have hslot := hslot _ _ hsv0 hx
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk _ ⟨st₂.nv, st₂.env, hf⟩ (fun s xv' hs hx' => ?_) hle₂
-    obtain ⟨sst, smode⟩ := s
-    obtain ⟨hst, hm⟩ := hs
-    simp only at hm
-    subst hm
-    obtain rfl := Snarky.Reads.unique hsv0 hst
-    rw [hx] at hx'
-    injection hx' with hx'
-    subst hx'
-    simp only [Poseidon.absorb1]
-    exact ⟨hslot, rfl⟩
+/-- The state and result of `absorb`'s honest run: `absorb`'s branches over
+`poseidonRun` and `addSlotRun`. -/
+def absorbRun [Field F] [DecidableEq F] (p : Poseidon.Params F) (st : ProverState F)
+    (sv : SpongeVar F) (x : FVar F) : ProverState F × SpongeVar F :=
+  match sv.mode with
+  | .absorbed n =>
+    if n.val = 2 then
+      let r := Poseidon.poseidonRun p st sv.state
+      let r' := addSlotRun r.1 r.2 0 x
+      (r'.1, ⟨r'.2, .absorbed 1⟩)
+    else
+      let r' := addSlotRun st sv.state n x
+      (r'.1, ⟨r'.2, .absorbed (n + 1)⟩)
+  | .squeezed _ =>
+    let r' := addSlotRun st sv.state 0 x
+    (r'.1, ⟨r'.2, .absorbed 1⟩)
 
-/-- `squeeze` is complete: the honest run accepts on a readable state; the returned
-element reads back as the value squeeze's element and the output sponge as its
-state. -/
-@[spec] theorem squeeze_complete_spec [Field F] [DecidableEq F]
-    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (sv : SpongeVar F)
-    (Q : PostCond (FVar F × SpongeVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => Readable (Poseidon.Triple F) env sv.state)
-        (fun env (r : FVar F × SpongeVar F) env' => ∀ s, Reads env sv s →
-          r.1.eval env' = .ok (Poseidon.squeeze p s).1 ∧
-            Reads env' r.2 (Poseidon.squeeze p s).2)
-        Q⦄
-    (squeeze (c := KimchiProverC F) p sv)
-    ⦃Q⦄ := by
+/-- `absorb`'s honest run on an in-scope sponge and element lands at `absorbRun`. -/
+theorem absorb_run [Field F] [DecidableEq F] (p : Poseidon.Params F) {sv : SpongeVar F}
+    {x : FVar F} (st : ProverState F) (hsv : CircuitType.Scoped (Poseidon.Triple F) st sv.state)
+    (hx : x.Scoped st) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (absorb (c := KimchiConstraint F) p sv x) st.nv st.env
+      = .ok ((absorbRun p st sv x).1.out (absorbRun p st sv x).2) := by
   obtain ⟨stv, mode⟩ := sv
-  have pspec := Poseidon.poseidon_complete_spec (F := F) p hsize
+  cases mode with
+  | absorbed n =>
+    by_cases hn : n.val = 2
+    · have hp := Poseidon.poseidonRun_scope p st stv
+      simp only [absorb, absorbRun, if_pos hn, prove_bind, Poseidon.poseidon_run p st hsv,
+        Except.bind, addSlotVar_run 0 _ hp.2 (hx.of_le hp.1)]
+      rfl
+    · simp only [absorb, absorbRun, if_neg hn, prove_bind, addSlotVar_run n st hsv hx,
+        Except.bind]
+      rfl
+  | squeezed n =>
+    simp only [absorb, absorbRun, prove_bind, addSlotVar_run 0 st hsv hx, Except.bind]
+    rfl
+
+/-- `absorbRun` reads as `Poseidon.absorb1` of the input readings. -/
+theorem absorbRun_grants [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) {st : ProverState F}
+    {sv : SpongeVar F} {x : FVar F} (hsv : CircuitType.Scoped (Poseidon.Triple F) st sv.state)
+    (hx : x.Scoped st) {s : Poseidon.State F} (hvals : Vals st.env.toValuation sv s) :
+    Grants st (absorbRun p st sv x) (Poseidon.absorb1 p s (x.val st.env.toValuation)) := by
+  obtain ⟨stv, mode⟩ := sv
+  obtain ⟨sst, smode⟩ := s
+  obtain ⟨hst, hm⟩ := hvals
+  simp only at hm hst
+  subst hm
+  cases mode with
+  | absorbed n =>
+    by_cases hn : n.val = 2
+    · have hp := Poseidon.poseidonRun_grants p hsize st stv
+      simp only [absorbRun, if_pos hn, Poseidon.absorb1]
+      generalize Poseidon.poseidonRun p st stv = r at hp ⊢
+      have ha := addSlotRun_grants 0 hp.scope (hx.of_le hp.le)
+      refine ⟨hp.le.trans ha.le, ha.scope, ?_, rfl⟩
+      rw [ha.read, hp.read, CVar.val_of_le hp.le hx, hst]
+    · have ha := addSlotRun_grants n hsv hx
+      simp only [absorbRun, if_neg hn, Poseidon.absorb1]
+      refine ⟨ha.le, ha.scope, ?_, rfl⟩
+      rw [ha.read, hst]
+  | squeezed n =>
+    have ha := addSlotRun_grants 0 hsv hx
+    simp only [absorbRun, Poseidon.absorb1]
+    refine ⟨ha.le, ha.scope, ?_, rfl⟩
+    rw [ha.read, hst]
+
+/-- The state and result of `squeeze`'s honest run: `squeeze`'s branches over
+`poseidonRun`; the reads allocate nothing. -/
+def squeezeRun [Field F] (p : Poseidon.Params F) (st : ProverState F) (sv : SpongeVar F) :
+    ProverState F × (FVar F × SpongeVar F) :=
+  match sv.mode with
+  | .squeezed n =>
+    if n.val = 2 then
+      let r := Poseidon.poseidonRun p st sv.state
+      (r.1, (slotVar r.2 0, ⟨r.2, .squeezed 1⟩))
+    else
+      (st, (slotVar sv.state n, ⟨sv.state, .squeezed (n + 1)⟩))
+  | .absorbed _ =>
+    let r := Poseidon.poseidonRun p st sv.state
+    (r.1, (slotVar r.2 0, ⟨r.2, .squeezed 1⟩))
+
+/-- `squeeze`'s honest run on an in-scope sponge lands at `squeezeRun`. -/
+theorem squeeze_run [Field F] [DecidableEq F] (p : Poseidon.Params F) {sv : SpongeVar F}
+    (st : ProverState F) (hsv : CircuitType.Scoped (Poseidon.Triple F) st sv.state) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (squeeze (c := KimchiConstraint F) p sv) st.nv st.env
+      = .ok ((squeezeRun p st sv).1.out (squeezeRun p st sv).2) := by
+  obtain ⟨stv, mode⟩ := sv
   cases mode with
   | squeezed n =>
     by_cases hn : n.val = 2
-    · simp only [squeeze, if_pos hn]
-      mvcgen [pspec]
-      rename_i st hpre
-      obtain ⟨hsok, hk⟩ := hpre
-      obtain ⟨sv0, hsv0⟩ := exists_reads hsok
-      refine ⟨hsok, fun r₁ st₁ hpos hle₁ => ?_⟩
-      have hpos := hpos sv0 hsv0
-      simp only [wp, PredTrans.apply, prove]
-      intro hf
-      refine hk _ ⟨st₁.nv, st₁.env, hf⟩ (fun s hs => ?_) hle₁
-      obtain ⟨sst, smode⟩ := s
-      obtain ⟨hst, hm⟩ := hs
-      simp only at hm
-      subst hm
-      obtain rfl := Snarky.Reads.unique hsv0 hst
-      simp only [Poseidon.squeeze, if_pos hn]
-      exact ⟨slotVar_eval hpos 0, hpos, rfl⟩
-    · simp only [squeeze, if_neg hn]
-      mvcgen
-      rename_i st hpre
-      obtain ⟨hsok, hk⟩ := hpre
-      refine hk _ st (fun s hs => ?_) (Assignments.Le.refl _)
-      obtain ⟨sst, smode⟩ := s
-      obtain ⟨hst, hm⟩ := hs
-      simp only at hm
-      subst hm
-      simp only [Poseidon.squeeze, if_neg hn]
-      exact ⟨slotVar_eval hst n, hst, rfl⟩
+    · simp only [squeeze, squeezeRun, if_pos hn, prove_bind, Poseidon.poseidon_run p st hsv,
+        Except.bind]
+      rfl
+    · simp only [squeeze, squeezeRun, if_neg hn]
+      rfl
   | absorbed n =>
-    simp only [squeeze]
-    mvcgen [pspec]
-    rename_i st hpre
-    obtain ⟨hsok, hk⟩ := hpre
-    obtain ⟨sv0, hsv0⟩ := exists_reads hsok
-    refine ⟨hsok, fun r₁ st₁ hpos hle₁ => ?_⟩
-    have hpos := hpos sv0 hsv0
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk _ ⟨st₁.nv, st₁.env, hf⟩ (fun s hs => ?_) hle₁
-    obtain ⟨sst, smode⟩ := s
-    obtain ⟨hst, hm⟩ := hs
-    simp only at hm
-    subst hm
-    obtain rfl := Snarky.Reads.unique hsv0 hst
-    simp only [Poseidon.squeeze]
-    exact ⟨slotVar_eval hpos 0, hpos, rfl⟩
+    simp only [squeeze, squeezeRun, prove_bind, Poseidon.poseidon_run p st hsv, Except.bind]
+    rfl
+
+/-- `squeezeRun` reads as `Poseidon.squeeze` of the input reading: the element, and
+the sponge. -/
+theorem squeezeRun_grants [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) {st : ProverState F}
+    {sv : SpongeVar F} (hsv : CircuitType.Scoped (Poseidon.Triple F) st sv.state)
+    {s : Poseidon.State F} (hvals : Vals st.env.toValuation sv s) :
+    Snarky.Grants F st ((squeezeRun p st sv).1, (squeezeRun p st sv).2.1)
+        (Poseidon.squeeze p s).1 ∧
+      Grants st ((squeezeRun p st sv).1, (squeezeRun p st sv).2.2) (Poseidon.squeeze p s).2 := by
+  obtain ⟨stv, mode⟩ := sv
+  obtain ⟨sst, smode⟩ := s
+  obtain ⟨hst, hm⟩ := hvals
+  simp only at hm hst
+  subst hm
+  cases mode with
+  | squeezed n =>
+    by_cases hn : n.val = 2
+    · have hp := Poseidon.poseidonRun_grants p hsize st stv
+      simp only [squeezeRun, if_pos hn, Poseidon.squeeze]
+      generalize Poseidon.poseidonRun p st stv = r at hp ⊢
+      refine ⟨Snarky.Grants.fvar hp.le (slotVar_scoped hp.scope 0) ?_, hp.le, hp.scope, ?_, rfl⟩
+      · rw [slotVar_val, hp.read, hst]
+      · rw [hp.read, hst]
+    · simp only [squeezeRun, if_neg hn, Poseidon.squeeze]
+      refine ⟨Snarky.Grants.fvar (Assignments.Le.refl _) (slotVar_scoped hsv n) ?_,
+        Assignments.Le.refl _, hsv, hst, rfl⟩
+      rw [slotVar_val, hst]
+  | absorbed n =>
+    have hp := Poseidon.poseidonRun_grants p hsize st stv
+    simp only [squeezeRun, Poseidon.squeeze]
+    generalize Poseidon.poseidonRun p st stv = r at hp ⊢
+    refine ⟨Snarky.Grants.fvar hp.le (slotVar_scoped hp.scope 0) ?_, hp.le, hp.scope, ?_, rfl⟩
+    · rw [slotVar_val, hp.read, hst]
+    · rw [hp.read, hst]
 
 end SpongeVar
 

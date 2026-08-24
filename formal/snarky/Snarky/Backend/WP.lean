@@ -848,12 +848,7 @@ theorem prove_witness_run {F c : Type} [Add F] [Mul F] [Zero F] [Checker F c]
     prove (Checker.holds (F := F) (c := c)) (witness (val := val) w) st.nv st.env
       = .ok ((st.extendMany (inst.valueToFields v).toList).out
           (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)))) := by
-  have hscope : CircuitType.Scoped val (st.extendMany (inst.valueToFields v).toList)
-      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) := by
-    intro i hi
-    rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
-    simp only [getElem_mapVec, allocRange, Vector.getElem_ofFn, CVar.scoped_var]
-    exact st.new_mem_extendMany (by simpa using hi)
+  have hscope := scoped_extendMany_new (var := var) st v
   rw [prove_witness st hs hv,
     RunCheckedType.check_run (st.extendMany (inst.valueToFields v).toList) _ v hscope
       (encodes_extendMany_new st v)]

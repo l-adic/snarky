@@ -58,15 +58,22 @@ open Pasta.Shifted (unshiftType1 unshiftType2)
 
 variable {F c : Type}
 
-/-- The scalar's `n` bits LSB-first as field values, in ONE witness (PS `unpackPure`
-under a single `exists`). -/
+/-- The scalar's `n` bits LSB-first as field values. -/
+private def lsbVals [Zero F] [One F] (n k : ℕ) : Vector F n :=
+  Vector.ofFn fun i => if k.testBit i.1 then 1 else 0
+
+/-- The scalar's `n` bits, in ONE witness (PS `unpackPure` under a single `exists`). -/
 private def lsbBitsWit [Field F] [ToNat F] (n : ℕ) (scalar : FVar F) :
     AsProver F (Vector F n) := do
   let v ← AsProver.readCVar scalar
-  pure (Vector.ofFn fun i => if (ToNat.toNat v).testBit i.1 then 1 else 0)
+  pure (lsbVals n (ToNat.toNat v))
 
-/-- Per-chunk scalar-register advice: fold `2a + b` over the chunk's five bits from
-the previous register (PS's `foldl (\\a b -> double a + b)`). -/
+/-- The register update at a chunk's five bits: `2a + b` folded from the previous
+register (PS's `foldl (\a b -> double a + b)`). -/
+private def nAccVal [Field F] (a b0 b1 b2 b3 b4 : F) : F :=
+  b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * a))))
+
+/-- Per-chunk scalar-register advice: `nAccVal` at the cells' readings. -/
 private def nAccWit [Field F] (nPrev : FVar F) (bs : Vector (FVar F) 5) :
     AsProver F F := do
   let a ← AsProver.readCVar nPrev
@@ -75,10 +82,16 @@ private def nAccWit [Field F] (nPrev : FVar F) (bs : Vector (FVar F) 5) :
   let b2 ← AsProver.readCVar bs[2]
   let b3 ← AsProver.readCVar bs[3]
   let b4 ← AsProver.readCVar bs[4]
-  pure (b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * a)))))
+  pure (nAccVal a b0 b1 b2 b3 b4)
 
-/-- One bit step's advice quintet `(s1, s1Sq, s2, xRes, yRes)`: the wired slope and
-result from the gate model's `stepBit`, plus the two dead registers. -/
+/-- One bit step's advice quintet `(s1, s1Sq, s2, xRes, yRes)` at a bit and the base
+and accumulator readings: the wired slope and result from the gate model's `stepBit`,
+plus the two dead registers. -/
+private def stepQuint [Field F] (bv xb yb xi yi : F) : F × F × F × F × F :=
+  let q := Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi
+  (q.1, q.1 * q.1, 2 * yi / (2 * xi + xb - q.1 * q.1) - q.1, q.2.1, q.2.2)
+
+/-- One bit step's advice: `stepQuint` at the cells' readings. -/
 private def bitWit [Field F] [DecidableEq F] (t : AffinePoint (FVar F))
     (b : FVar F) (acc : AffinePoint (FVar F)) :
     AsProver F (F × F × F × F × F) := do
@@ -87,10 +100,7 @@ private def bitWit [Field F] [DecidableEq F] (t : AffinePoint (FVar F))
   let xi ← AsProver.readCVar acc.x
   let yi ← AsProver.readCVar acc.y
   let bv ← AsProver.readCVar b
-  let (s1, xo, yo) := Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi
-  let s1Sq := s1 * s1
-  let s2 := 2 * yi / (2 * xi + xb - s1Sq) - s1
-  pure (s1, s1Sq, s2, xo, yo)
+  pure (stepQuint bv xb yb xi yi)
 
 /-- One 5-bit round (PS's `mapAccumM` body): the register advice, then five bit-step
 quintets threaded through the accumulator, collected as the gate's `ScaleRound`
@@ -854,14 +864,16 @@ theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F] [
     rw [hsum, hvv, h1]
     simp [bit]
 
-/-! ## Completeness plumbing
+/-! ## The honest run
 
-The prover-side reading of a scale round: `evalScale_ok_iff` splits the 26-cell read,
-the read survives table extension, and the advice computations read the threaded
-cells and compute the gate's canonical row — `nAccWit` its register update, `bitWit`
-its bit-step quintet from the gate model's `stepBit`. -/
+The run functions and their laws. A round's run allocates the register advice and the
+five bit-step quintets at the counter (`roundRun`); the gadget's run seals the base,
+writes the bit table, doubles, and folds the rounds (`varBaseMulRun`). `round_run`/
+`varBaseMul_run` land the prover at them; `varBaseMulRun_grants` reads the result as
+`[unshift t]·g` through the gate model's honest walk `chainBuild`, whose rows the
+collected rounds evaluate to (`roundsRun_inv`). The wrappers `scaleFast1`, `scaleFast2`,
+`splitFieldVar` and `scaleFast2'` follow, each with its run and grants. -/
 
-open Std.Do in
 /-- A round evaluates to a witness exactly when each cell reads as its field. -/
 private theorem evalScale_ok_iff [Field F] [DecidableEq F] {env : Assignments F}
     {r : ScaleRound F} {w : Kimchi.Gate.VarBaseMul.Witness F} :
@@ -936,613 +948,1069 @@ private theorem evalScale_le [Field F] [DecidableEq F] {env env' : Assignments F
     CVar.eval_le hle h21, CVar.eval_le hle h22, CVar.eval_le hle h23,
     CVar.eval_le hle h24, CVar.eval_le hle h25, CVar.eval_le hle h26⟩
 
-/-- The register advice reads the threaded cells and computes the gate's
-`nPrime` fold. -/
-private theorem nAccWit_ok [Field F] [DecidableEq F] {env : Assignments F}
-    {nPrev : FVar F} {bs : Vector (FVar F) 5} {nv b0 b1 b2 b3 b4 : F}
-    (hnv : nPrev.eval env = .ok nv)
-    (hb0 : bs[0].eval env = .ok b0) (hb1 : bs[1].eval env = .ok b1)
-    (hb2 : bs[2].eval env = .ok b2) (hb3 : bs[3].eval env = .ok b3)
-    (hb4 : bs[4].eval env = .ok b4) :
-    (nAccWit nPrev bs).run env
-      = .ok (b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * nv))))) := by
-  simp [nAccWit, hnv, hb0, hb1, hb2, hb3, hb4,
-    Bind.bind, Except.bind, Pure.pure]
+/-- A quintet's cells, as the list an allocation writes. -/
+private abbrev quintCells (q : F × F × F × F × F) : List F :=
+  [q.1, q.2.1, q.2.2.1, q.2.2.2.1, q.2.2.2.2]
 
-/-- The bit-step advice reads the threaded cells and computes the gate model's
-`stepBit` quintet. -/
-private theorem bitWit_ok [Field F] [DecidableEq F] {env : Assignments F}
-    {t : AffinePoint (FVar F)} {b : FVar F} {acc : AffinePoint (FVar F)}
-    {xb yb xi yi bv : F}
-    (hxb : t.x.eval env = .ok xb) (hyb : t.y.eval env = .ok yb)
-    (hxi : acc.x.eval env = .ok xi) (hyi : acc.y.eval env = .ok yi)
-    (hb : b.eval env = .ok bv) :
-    (bitWit t b acc).run env
-      = .ok ((Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
-        (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1
-          * (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
-        2 * yi / (2 * xi + xb - (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1
-          * (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1)
-          - (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1,
-        (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.1,
-        (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.2) := by
-  simp [bitWit, hxb, hyb, hxi, hyi, hb,
-    Bind.bind, Except.bind, Pure.pure]
+/-- A variable reads its slot. -/
+private theorem val_var [Add F] [Mul F] (n : Variable) (V : Valuation F) :
+    (CVar.var n).val V = V n := rfl
 
-open Std.Do in
-open Kimchi.Gate.VarBaseMul (build_fields build_nPrime
-  build_step0 build_step1 build_step2 build_step3 build_step4) in
-/-- **One round is the gate's canonical row.** On readable base, accumulator and
-register cells and five readable bits, the honest round accepts and its collected
-`ScaleRound` reads as `build` at exactly those values — the returned accumulator and
-register being that row's `x5`/`y5`/`nPrime`. Stated over the gate model's row rather
-than any particular walk, so the caller's loop supplies only the reads and gets the
-row back; registered, so `mvcgen` applies it once per iteration. -/
-@[spec] theorem scaleRound_complete_spec [Field F] [DecidableEq F]
-    (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
-    (bs : Vector (FVar F) 5)
-    (Q : PostCond (ScaleRound F × (AffinePoint (FVar F) × FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
-          (st.1.x.eval env).isOk ∧ (st.1.y.eval env).isOk ∧ (st.2.eval env).isOk ∧
-          ∀ (j : ℕ) (hj : j < 5), ((bs[j]'hj).eval env).isOk)
-        (fun env r env' => ∀ xT yT x0 y0 nv b0 b1 b2 b3 b4,
-          base.x.eval env = .ok xT → base.y.eval env = .ok yT →
-          st.1.x.eval env = .ok x0 → st.1.y.eval env = .ok y0 →
-          st.2.eval env = .ok nv →
-          bs[0].eval env = .ok b0 → bs[1].eval env = .ok b1 →
-          bs[2].eval env = .ok b2 → bs[3].eval env = .ok b3 →
-          bs[4].eval env = .ok b4 →
-          ScaleRound.eval env' r.1
-              = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4)
-            ∧ r.2.1.x.eval env'
-                = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x5
-            ∧ r.2.1.y.eval env'
-                = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y5
-            ∧ r.2.2.eval env'
-                = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime)
-        Q⦄
-    (scaleRound (c := KimchiProverC F) base st bs)
-    ⦃Q⦄ := by
-  simp only [scaleRound]
-  mvcgen
-  rename_i st₀ hpre
-  obtain ⟨⟨hbxk, hbyk, haxk, hayk, hank, hbk⟩, hk⟩ := hpre
-  obtain ⟨xT, hxT⟩ := CVar.evalOk hbxk
-  obtain ⟨yT, hyT⟩ := CVar.evalOk hbyk
-  obtain ⟨x0, hx0⟩ := CVar.evalOk haxk
-  obtain ⟨y0, hy0⟩ := CVar.evalOk hayk
-  obtain ⟨nv, hnv⟩ := CVar.evalOk hank
-  obtain ⟨b0, hb0⟩ := CVar.evalOk (hbk 0 (by omega))
-  obtain ⟨b1, hb1⟩ := CVar.evalOk (hbk 1 (by omega))
-  obtain ⟨b2, hb2⟩ := CVar.evalOk (hbk 2 (by omega))
-  obtain ⟨b3, hb3⟩ := CVar.evalOk (hbk 3 (by omega))
-  obtain ⟨b4, hb4⟩ := CVar.evalOk (hbk 4 (by omega))
-  -- the register advice computes the row's `nPrime`
-  have hnOk : (nAccWit st.2 bs).run st₀.env
-      = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime := by
-    rw [nAccWit_ok hnv hb0 hb1 hb2 hb3 hb4, build_nPrime]
-  refine ⟨by rw [hnOk]; rfl, fun nAcc st₁ hgN hle₁ => ?_⟩
-  have hnA := (hgN _ hnOk)
-  mvcgen
-  -- the five bit steps, each reading the previous accumulator
-  have hw0Ok := bitWit_ok (CVar.eval_le hle₁ hxT) (CVar.eval_le hle₁ hyT)
-    (CVar.eval_le hle₁ hx0) (CVar.eval_le hle₁ hy0) (CVar.eval_le hle₁ hb0)
-  refine ⟨by rw [hw0Ok]; rfl, fun w0 st₂ hg0 hle₂ => ?_⟩
-  obtain ⟨hs0', -, -, hx1', hy1'⟩ := hg0 _ hw0Ok
-  obtain ⟨es0, ex0, ey0⟩ := build_step0 xT yT x0 y0 nv b0 b1 b2 b3 b4
-  obtain ⟨-, -, hfx0, hfy0, -, hfb0, hfb1, hfb2, hfb3, hfb4⟩ :=
-    build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4
-  rw [← es0] at hs0'
-  rw [← ex0] at hx1'
-  rw [← ey0] at hy1'
-  have hs0 := hs0'
-  have hx1 := hx1'
-  have hy1 := hy1'
-  mvcgen
-  have hw1Ok := bitWit_ok (acc := ⟨w0.2.2.2.1, w0.2.2.2.2⟩)
-    (CVar.eval_le (hle₁.trans hle₂) hxT) (CVar.eval_le (hle₁.trans hle₂) hyT)
-    hx1 hy1 (CVar.eval_le (hle₁.trans hle₂) hb1)
-  refine ⟨by rw [hw1Ok]; rfl, fun w1 st₃ hg1 hle₃ => ?_⟩
-  obtain ⟨hs1', -, -, hx2', hy2'⟩ := hg1 _ hw1Ok
-  obtain ⟨es1, ex1, ey1⟩ := build_step1 xT yT x0 y0 nv b0 b1 b2 b3 b4
-  rw [← es1] at hs1'
-  rw [← ex1] at hx2'
-  rw [← ey1] at hy2'
-  have hs1 := hs1'
-  have hx2 := hx2'
-  have hy2 := hy2'
-  mvcgen
-  have hw2Ok := bitWit_ok (acc := ⟨w1.2.2.2.1, w1.2.2.2.2⟩)
-    (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hxT)
-    (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hyT) hx2 hy2
-    (CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hb2)
-  refine ⟨by rw [hw2Ok]; rfl, fun w2 st₄ hg2 hle₄ => ?_⟩
-  obtain ⟨hs2', -, -, hx3', hy3'⟩ := hg2 _ hw2Ok
-  obtain ⟨es2, ex2, ey2⟩ := build_step2 xT yT x0 y0 nv b0 b1 b2 b3 b4
-  rw [← es2] at hs2'
-  rw [← ex2] at hx3'
-  rw [← ey2] at hy3'
-  have hs2 := hs2'
-  have hx3 := hx3'
-  have hy3 := hy3'
-  mvcgen
-  have hw3Ok := bitWit_ok (acc := ⟨w2.2.2.2.1, w2.2.2.2.2⟩)
-    (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hxT)
-    (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hyT) hx3 hy3
-    (CVar.eval_le (((hle₁.trans hle₂).trans hle₃).trans hle₄) hb3)
-  refine ⟨by rw [hw3Ok]; rfl, fun w3 st₅ hg3 hle₅ => ?_⟩
-  obtain ⟨hs3', -, -, hx4', hy4'⟩ := hg3 _ hw3Ok
-  obtain ⟨es3, ex3, ey3⟩ := build_step3 xT yT x0 y0 nv b0 b1 b2 b3 b4
-  rw [← es3] at hs3'
-  rw [← ex3] at hx4'
-  rw [← ey3] at hy4'
-  have hs3 := hs3'
-  have hx4 := hx4'
-  have hy4 := hy4'
-  mvcgen
-  have hw4Ok := bitWit_ok (acc := ⟨w3.2.2.2.1, w3.2.2.2.2⟩)
-    (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hxT)
-    (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hyT)
-    hx4 hy4
-    (CVar.eval_le ((((hle₁.trans hle₂).trans hle₃).trans hle₄).trans hle₅) hb4)
-  refine ⟨by rw [hw4Ok]; rfl, fun w4 st₆ hg4 hle₆ => ?_⟩
-  obtain ⟨hs4', -, -, hx5', hy5'⟩ := hg4 _ hw4Ok
-  obtain ⟨es4, ex4, ey4⟩ := build_step4 xT yT x0 y0 nv b0 b1 b2 b3 b4
-  rw [← es4] at hs4'
-  rw [← ex4] at hx5'
-  rw [← ey4] at hy5'
-  have hs4 := hs4'
-  have hx5 := hx5'
-  have hy5 := hy5'
-  mvcgen
-  have hleA : st₀.env.Le st₆.env :=
-    hle₁.trans ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆)
-  refine hk _ st₆ ?_ hleA
-  intro xT' yT' x0' y0' nv' b0' b1' b2' b3' b4'
-    hxT' hyT' hx0' hy0' hnv' hb0' hb1' hb2' hb3' hb4'
-  rw [hxT] at hxT'; injection hxT' with hxT'
-  rw [hyT] at hyT'; injection hyT' with hyT'
-  rw [hx0] at hx0'; injection hx0' with hx0'
-  rw [hy0] at hy0'; injection hy0' with hy0'
-  rw [hnv] at hnv'; injection hnv' with hnv'
-  rw [hb0] at hb0'; injection hb0' with hb0'
-  rw [hb1] at hb1'; injection hb1' with hb1'
-  rw [hb2] at hb2'; injection hb2' with hb2'
-  rw [hb3] at hb3'; injection hb3' with hb3'
-  rw [hb4] at hb4'; injection hb4' with hb4'
-  subst hxT' hyT' hx0' hy0' hnv' hb0' hb1' hb2' hb3' hb4'
-  refine ⟨evalScale_ok_iff.mpr ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, hx5, hy5,
-    CVar.eval_le ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆) hnA⟩
-  · exact CVar.eval_le hleA hxT
-  · exact CVar.eval_le hleA hyT
-  · rw [hfx0]; exact CVar.eval_le hleA hx0
-  · rw [hfy0]; exact CVar.eval_le hleA hy0
-  · exact CVar.eval_le (((hle₃.trans hle₄).trans hle₅).trans hle₆) hx1
-  · exact CVar.eval_le (((hle₃.trans hle₄).trans hle₅).trans hle₆) hy1
-  · exact CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hx2
-  · exact CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hy2
-  · exact CVar.eval_le (hle₅.trans hle₆) hx3
-  · exact CVar.eval_le (hle₅.trans hle₆) hy3
-  · exact CVar.eval_le hle₆ hx4
-  · exact CVar.eval_le hle₆ hy4
-  · exact hx5
-  · exact hy5
-  · exact CVar.eval_le hleA hnv
-  · exact CVar.eval_le ((((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₆) hnA
-  · rw [hfb0]; exact CVar.eval_le hleA hb0
-  · rw [hfb1]; exact CVar.eval_le hleA hb1
-  · rw [hfb2]; exact CVar.eval_le hleA hb2
-  · rw [hfb3]; exact CVar.eval_le hleA hb3
-  · rw [hfb4]; exact CVar.eval_le hleA hb4
-  · exact CVar.eval_le (((hle₃.trans hle₄).trans hle₅).trans hle₆) hs0
-  · exact CVar.eval_le ((hle₄.trans hle₅).trans hle₆) hs1
-  · exact CVar.eval_le (hle₅.trans hle₆) hs2
-  · exact CVar.eval_le hle₆ hs3
-  · exact hs4
+/-- The cells a bit step writes: the slope, then the output point at offsets `3`, `4`. -/
+private theorem quintCells_getElem (q : F × F × F × F × F) :
+    (quintCells q)[0] = q.1 ∧ (quintCells q)[3] = q.2.2.2.1 ∧ (quintCells q)[4] = q.2.2.2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- A bit step's quintet, read: the slope and the output point are `stepBit`'s. -/
+private theorem stepQuint_fields [Field F] (bv xb yb xi yi : F) :
+    (stepQuint bv xb yb xi yi).1 = (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).1 ∧
+    (stepQuint bv xb yb xi yi).2.2.2.1 = (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.1 ∧
+    (stepQuint bv xb yb xi yi).2.2.2.2 = (Kimchi.Gate.VarBaseMul.stepBit bv xb yb xi yi).2.2 :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- A bit step's witness at a state whose cells read `(xT, yT, xi, yi, bv)`: the quintet
+at the counter, the five fresh variables returned. -/
+private theorem bitStep_run [Field F] [DecidableEq F] {st : ProverState F}
+    {base : AffinePoint (FVar F)} {b : FVar F} {acc : AffinePoint (FVar F)}
+    (hbx : base.x.Scoped st) (hby : base.y.Scoped st) (hax : acc.x.Scoped st)
+    (hay : acc.y.Scoped st) (hb : b.Scoped st) {xT yT xi yi bv : F}
+    (hxT : base.x.val st.env.toValuation = xT) (hyT : base.y.val st.env.toValuation = yT)
+    (hxi : acc.x.val st.env.toValuation = xi) (hyi : acc.y.val st.env.toValuation = yi)
+    (hbv : b.val st.env.toValuation = bv) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (witness (val := F × F × F × F × F) (bitWit base b acc)) st.nv st.env
+      = .ok ((st.extendMany (quintCells (stepQuint bv xT yT xi yi))).out
+          (.var st.nv, .var (st.nv + 1), .var (st.nv + 2), .var (st.nv + 3),
+            .var (st.nv + 4))) := by
+  rw [prove_witness_run (w := bitWit base b acc) st
+    (.bind (.readCVar hbx) fun _ => .bind (.readCVar hby) fun _ => .bind (.readCVar hax) fun _ =>
+      .bind (.readCVar hay) fun _ => .bind (.readCVar hb) fun _ => trivial)
+    (v := stepQuint bv xT yT xi yi) (by simp [bitWit, Except.bind, hxT, hyT, hxi, hyi, hbv])]
+  simp only [valueToFields_prod_toList, valueToFields_fvar_toList, List.cons_append,
+    List.nil_append, fieldsToVar_prod_alloc, fieldsToVar_fvar_alloc]
+  simp only [size_fvar, Nat.add_assoc, Nat.reduceAdd]
+
+/-- A round's run: the register advice at the counter, then the five bit-step quintets,
+each at the counter it finds, the accumulator threaded through the fresh `(x, y)` cells;
+the record over those variables and the advanced `(accumulator, register)` state. -/
+private def roundRun [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
+    (st : ProverState F) (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) :
+    ProverState F × (ScaleRound F × (AffinePoint (FVar F) × FVar F)) :=
+  let st₁ := st.extendMany [nAccVal (acc.2.val st.env.toValuation) (bs[0].val st.env.toValuation)
+    (bs[1].val st.env.toValuation) (bs[2].val st.env.toValuation) (bs[3].val st.env.toValuation)
+    (bs[4].val st.env.toValuation)]
+  let st₂ := st₁.extendMany (quintCells (stepQuint (bs[0].val st₁.env.toValuation)
+    (base.x.val st₁.env.toValuation) (base.y.val st₁.env.toValuation)
+    (acc.1.x.val st₁.env.toValuation) (acc.1.y.val st₁.env.toValuation)))
+  let a1 : AffinePoint (FVar F) := ⟨.var (st₁.nv + 3), .var (st₁.nv + 4)⟩
+  let st₃ := st₂.extendMany (quintCells (stepQuint (bs[1].val st₂.env.toValuation)
+    (base.x.val st₂.env.toValuation) (base.y.val st₂.env.toValuation)
+    (a1.x.val st₂.env.toValuation) (a1.y.val st₂.env.toValuation)))
+  let a2 : AffinePoint (FVar F) := ⟨.var (st₂.nv + 3), .var (st₂.nv + 4)⟩
+  let st₄ := st₃.extendMany (quintCells (stepQuint (bs[2].val st₃.env.toValuation)
+    (base.x.val st₃.env.toValuation) (base.y.val st₃.env.toValuation)
+    (a2.x.val st₃.env.toValuation) (a2.y.val st₃.env.toValuation)))
+  let a3 : AffinePoint (FVar F) := ⟨.var (st₃.nv + 3), .var (st₃.nv + 4)⟩
+  let st₅ := st₄.extendMany (quintCells (stepQuint (bs[3].val st₄.env.toValuation)
+    (base.x.val st₄.env.toValuation) (base.y.val st₄.env.toValuation)
+    (a3.x.val st₄.env.toValuation) (a3.y.val st₄.env.toValuation)))
+  let a4 : AffinePoint (FVar F) := ⟨.var (st₄.nv + 3), .var (st₄.nv + 4)⟩
+  let st₆ := st₅.extendMany (quintCells (stepQuint (bs[4].val st₅.env.toValuation)
+    (base.x.val st₅.env.toValuation) (base.y.val st₅.env.toValuation)
+    (a4.x.val st₅.env.toValuation) (a4.y.val st₅.env.toValuation)))
+  (st₆, (({ acc0 := acc.1, acc1 := a1, acc2 := a2, acc3 := a3, acc4 := a4,
+            acc5 := ⟨.var (st₅.nv + 3), .var (st₅.nv + 4)⟩,
+            bit0 := bs[0], bit1 := bs[1], bit2 := bs[2], bit3 := bs[3], bit4 := bs[4],
+            slope0 := .var st₁.nv, slope1 := .var st₂.nv, slope2 := .var st₃.nv,
+            slope3 := .var st₄.nv, slope4 := .var st₅.nv,
+            nPrev := acc.2, nNext := .var st.nv, base } : ScaleRound F),
+         (⟨.var (st₅.nv + 3), .var (st₅.nv + 4)⟩, .var st.nv)))
+
+/-- A round's run grows the table, its state in scope. -/
+private theorem roundRun_scopes [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
+    (st : ProverState F) (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) :
+    st.env.Le (roundRun base st acc bs).1.env ∧
+      (roundRun base st acc bs).2.2.1.x.Scoped (roundRun base st acc bs).1 ∧
+      (roundRun base st acc bs).2.2.1.y.Scoped (roundRun base st acc bs).1 ∧
+      (roundRun base st acc bs).2.2.2.Scoped (roundRun base st acc bs).1 := by
+  dsimp only [roundRun]
+  refine ⟨(ProverState.le_extendMany _ _).trans ((ProverState.le_extendMany _ _).trans
+      ((ProverState.le_extendMany _ _).trans ((ProverState.le_extendMany _ _).trans
+      ((ProverState.le_extendMany _ _).trans (ProverState.le_extendMany _ _))))),
+    ProverState.new_mem_extendMany _ (i := 3) (by simp [quintCells]),
+    ProverState.new_mem_extendMany _ (i := 4) (by simp [quintCells]),
+    CVar.Scoped.of_le ((ProverState.le_extendMany _ _).trans
+      ((ProverState.le_extendMany _ _).trans ((ProverState.le_extendMany _ _).trans
+      ((ProverState.le_extendMany _ _).trans (ProverState.le_extendMany _ _)))))
+      (ProverState.mem_extendMany_head ..)⟩
+
+/-- One round's honest run, at any state where the base, the state and the bits are in
+scope. -/
+private theorem round_run [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
+    {st : ProverState F} {acc : AffinePoint (FVar F) × FVar F} {bs : Vector (FVar F) 5}
+    (hbx : base.x.Scoped st) (hby : base.y.Scoped st) (hax : acc.1.x.Scoped st)
+    (hay : acc.1.y.Scoped st) (han : acc.2.Scoped st)
+    (hbs : ∀ k (hk : k < 5), (bs[k]).Scoped st) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (scaleRound (c := KimchiConstraint F) base acc bs) st.nv st.env
+      = .ok ((roundRun base st acc bs).1.out (roundRun base st acc bs).2) := by
+  simp only [scaleRound, prove_bind]
+  rw [prove_witness_run (w := nAccWit acc.2 bs) st
+    (.bind (.readCVar han) fun _ => .bind (.readCVar (hbs 0 (by omega))) fun _ =>
+      .bind (.readCVar (hbs 1 (by omega))) fun _ => .bind (.readCVar (hbs 2 (by omega))) fun _ =>
+      .bind (.readCVar (hbs 3 (by omega))) fun _ => .bind (.readCVar (hbs 4 (by omega))) fun _ =>
+      trivial)
+    (v := nAccVal (acc.2.val st.env.toValuation) (bs[0].val st.env.toValuation) (bs[1].val st.env.toValuation) (bs[2].val st.env.toValuation) (bs[3].val st.env.toValuation) (bs[4].val st.env.toValuation))
+    (by simp [nAccWit, Except.bind])]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind]
+  generalize hS1 : st.extendMany [nAccVal (acc.2.val st.env.toValuation) (bs[0].val st.env.toValuation) (bs[1].val st.env.toValuation) (bs[2].val st.env.toValuation) (bs[3].val st.env.toValuation) (bs[4].val st.env.toValuation)] = S1
+  have hl₁ : st.env.Le S1.env := by rw [← hS1]; exact st.le_extendMany _
+  rw [bitStep_run (hbx.of_le hl₁) (hby.of_le hl₁) (hax.of_le hl₁) (hay.of_le hl₁)
+    ((hbs 0 (by omega)).of_le hl₁) rfl rfl rfl rfl rfl]
+  simp only [ProverState.out]
+  generalize hS2 : S1.extendMany (quintCells (stepQuint (bs[0].val S1.env.toValuation) (base.x.val S1.env.toValuation)
+    (base.y.val S1.env.toValuation) (acc.1.x.val S1.env.toValuation) (acc.1.y.val S1.env.toValuation))) = S2
+  have hl2 : S1.env.Le S2.env := by rw [← hS2]; exact S1.le_extendMany _
+  have hL2 : st.env.Le S2.env := hl₁.trans hl2
+  have ha1x : (CVar.var (S1.nv + 3)).Scoped S2 := by
+    rw [← hS2]; exact S1.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha1y : (CVar.var (S1.nv + 4)).Scoped S2 := by
+    rw [← hS2]; exact S1.new_mem_extendMany (i := 4) (by simp [quintCells])
+  rw [bitStep_run (acc := ⟨.var (S1.nv + 3), .var (S1.nv + 4)⟩) (hbx.of_le hL2) (hby.of_le hL2) ha1x ha1y
+    ((hbs 1 (by omega)).of_le hL2) rfl rfl rfl rfl rfl]
+  simp only []
+  generalize hS3 : S2.extendMany (quintCells (stepQuint (bs[1].val S2.env.toValuation) (base.x.val S2.env.toValuation)
+    (base.y.val S2.env.toValuation) ((CVar.var (S1.nv + 3)).val S2.env.toValuation) ((CVar.var (S1.nv + 4)).val S2.env.toValuation))) = S3
+  have hl3 : S2.env.Le S3.env := by rw [← hS3]; exact S2.le_extendMany _
+  have hL3 : st.env.Le S3.env := hL2.trans hl3
+  have ha2x : (CVar.var (S2.nv + 3)).Scoped S3 := by
+    rw [← hS3]; exact S2.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha2y : (CVar.var (S2.nv + 4)).Scoped S3 := by
+    rw [← hS3]; exact S2.new_mem_extendMany (i := 4) (by simp [quintCells])
+  rw [bitStep_run (acc := ⟨.var (S2.nv + 3), .var (S2.nv + 4)⟩) (hbx.of_le hL3) (hby.of_le hL3) ha2x ha2y
+    ((hbs 2 (by omega)).of_le hL3) rfl rfl rfl rfl rfl]
+  simp only []
+  generalize hS4 : S3.extendMany (quintCells (stepQuint (bs[2].val S3.env.toValuation) (base.x.val S3.env.toValuation)
+    (base.y.val S3.env.toValuation) ((CVar.var (S2.nv + 3)).val S3.env.toValuation) ((CVar.var (S2.nv + 4)).val S3.env.toValuation))) = S4
+  have hl4 : S3.env.Le S4.env := by rw [← hS4]; exact S3.le_extendMany _
+  have hL4 : st.env.Le S4.env := hL3.trans hl4
+  have ha3x : (CVar.var (S3.nv + 3)).Scoped S4 := by
+    rw [← hS4]; exact S3.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha3y : (CVar.var (S3.nv + 4)).Scoped S4 := by
+    rw [← hS4]; exact S3.new_mem_extendMany (i := 4) (by simp [quintCells])
+  rw [bitStep_run (acc := ⟨.var (S3.nv + 3), .var (S3.nv + 4)⟩) (hbx.of_le hL4) (hby.of_le hL4) ha3x ha3y
+    ((hbs 3 (by omega)).of_le hL4) rfl rfl rfl rfl rfl]
+  simp only []
+  generalize hS5 : S4.extendMany (quintCells (stepQuint (bs[3].val S4.env.toValuation) (base.x.val S4.env.toValuation)
+    (base.y.val S4.env.toValuation) ((CVar.var (S3.nv + 3)).val S4.env.toValuation) ((CVar.var (S3.nv + 4)).val S4.env.toValuation))) = S5
+  have hl5 : S4.env.Le S5.env := by rw [← hS5]; exact S4.le_extendMany _
+  have hL5 : st.env.Le S5.env := hL4.trans hl5
+  have ha4x : (CVar.var (S4.nv + 3)).Scoped S5 := by
+    rw [← hS5]; exact S4.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha4y : (CVar.var (S4.nv + 4)).Scoped S5 := by
+    rw [← hS5]; exact S4.new_mem_extendMany (i := 4) (by simp [quintCells])
+  rw [bitStep_run (acc := ⟨.var (S4.nv + 3), .var (S4.nv + 4)⟩) (hbx.of_le hL5) (hby.of_le hL5) ha4x ha4y
+    ((hbs 4 (by omega)).of_le hL5) rfl rfl rfl rfl rfl]
+  simp only []
+  generalize hS6 : S5.extendMany (quintCells (stepQuint (bs[4].val S5.env.toValuation) (base.x.val S5.env.toValuation)
+    (base.y.val S5.env.toValuation) ((CVar.var (S4.nv + 3)).val S5.env.toValuation) ((CVar.var (S4.nv + 4)).val S5.env.toValuation))) = S6
+  subst hS6 hS5 hS4 hS3 hS2 hS1
+  simp only [roundRun, prove_pure]
+
+/-- A round's run, its six states named: the run is the record over them, each state
+extends the last, and every fresh cell is in scope at its state reading the canonical row's
+field — at cells reading `(xT, yT, x0, y0, nv, b0, …, b4)`. -/
+private theorem roundRun_facts [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
+    {st : ProverState F} {acc : AffinePoint (FVar F) × FVar F} {bs : Vector (FVar F) 5}
+    (hbx : base.x.Scoped st) (hby : base.y.Scoped st) (hax : acc.1.x.Scoped st)
+    (hay : acc.1.y.Scoped st)
+    (hbs : ∀ k (hk : k < 5), (bs[k]).Scoped st) {xT yT x0 y0 nv b0 b1 b2 b3 b4 : F}
+    (hxT : base.x.val st.env.toValuation = xT) (hyT : base.y.val st.env.toValuation = yT)
+    (hx0 : acc.1.x.val st.env.toValuation = x0) (hy0 : acc.1.y.val st.env.toValuation = y0)
+    (hnv : acc.2.val st.env.toValuation = nv)
+    (hb0 : bs[0].val st.env.toValuation = b0) (hb1 : bs[1].val st.env.toValuation = b1)
+    (hb2 : bs[2].val st.env.toValuation = b2) (hb3 : bs[3].val st.env.toValuation = b3)
+    (hb4 : bs[4].val st.env.toValuation = b4) :
+    ∃ S1 S2 S3 S4 S5 S6 : ProverState F,
+      roundRun base st acc bs = (S6, (({
+          acc0 := acc.1, acc1 := ⟨.var (S1.nv + 3), .var (S1.nv + 4)⟩,
+          acc2 := ⟨.var (S2.nv + 3), .var (S2.nv + 4)⟩, acc3 := ⟨.var (S3.nv + 3), .var (S3.nv + 4)⟩,
+          acc4 := ⟨.var (S4.nv + 3), .var (S4.nv + 4)⟩, acc5 := ⟨.var (S5.nv + 3), .var (S5.nv + 4)⟩,
+          bit0 := bs[0], bit1 := bs[1], bit2 := bs[2], bit3 := bs[3], bit4 := bs[4],
+          slope0 := .var S1.nv, slope1 := .var S2.nv, slope2 := .var S3.nv, slope3 := .var S4.nv,
+          slope4 := .var S5.nv, nPrev := acc.2, nNext := .var st.nv, base } : ScaleRound F), (⟨.var (S5.nv + 3), .var (S5.nv + 4)⟩, .var st.nv))) ∧
+      st.env.Le S1.env ∧
+      S1.env.Le S2.env ∧
+      S2.env.Le S3.env ∧
+      S3.env.Le S4.env ∧
+      S4.env.Le S5.env ∧
+      S5.env.Le S6.env ∧
+      (CVar.var st.nv).Scoped S1 ∧
+      (CVar.var st.nv).val S1.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime ∧
+      (CVar.var S1.nv).Scoped S2 ∧
+      (CVar.var S1.nv).val S2.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s0 ∧
+      (CVar.var (S1.nv + 3)).Scoped S2 ∧
+      (CVar.var (S1.nv + 4)).Scoped S2 ∧
+      (CVar.var (S1.nv + 3)).val S2.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x1 ∧
+      (CVar.var (S1.nv + 4)).val S2.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y1 ∧
+      (CVar.var S2.nv).Scoped S3 ∧
+      (CVar.var S2.nv).val S3.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s1 ∧
+      (CVar.var (S2.nv + 3)).Scoped S3 ∧
+      (CVar.var (S2.nv + 4)).Scoped S3 ∧
+      (CVar.var (S2.nv + 3)).val S3.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x2 ∧
+      (CVar.var (S2.nv + 4)).val S3.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y2 ∧
+      (CVar.var S3.nv).Scoped S4 ∧
+      (CVar.var S3.nv).val S4.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s2 ∧
+      (CVar.var (S3.nv + 3)).Scoped S4 ∧
+      (CVar.var (S3.nv + 4)).Scoped S4 ∧
+      (CVar.var (S3.nv + 3)).val S4.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x3 ∧
+      (CVar.var (S3.nv + 4)).val S4.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y3 ∧
+      (CVar.var S4.nv).Scoped S5 ∧
+      (CVar.var S4.nv).val S5.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s3 ∧
+      (CVar.var (S4.nv + 3)).Scoped S5 ∧
+      (CVar.var (S4.nv + 4)).Scoped S5 ∧
+      (CVar.var (S4.nv + 3)).val S5.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x4 ∧
+      (CVar.var (S4.nv + 4)).val S5.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y4 ∧
+      (CVar.var S5.nv).Scoped S6 ∧
+      (CVar.var S5.nv).val S6.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s4 ∧
+      (CVar.var (S5.nv + 3)).Scoped S6 ∧
+      (CVar.var (S5.nv + 4)).Scoped S6 ∧
+      (CVar.var (S5.nv + 3)).val S6.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x5 ∧
+      (CVar.var (S5.nv + 4)).val S6.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y5 := by
+  have hnAv0 : nAccVal (acc.2.val st.env.toValuation) (bs[0].val st.env.toValuation)
+      (bs[1].val st.env.toValuation) (bs[2].val st.env.toValuation) (bs[3].val st.env.toValuation)
+      (bs[4].val st.env.toValuation) = nAccVal nv b0 b1 b2 b3 b4 := by
+    rw [hnv, hb0, hb1, hb2, hb3, hb4]
+  obtain ⟨S1, hS1⟩ : ∃ S, st.extendMany [nAccVal (acc.2.val st.env.toValuation) (bs[0].val st.env.toValuation) (bs[1].val st.env.toValuation) (bs[2].val st.env.toValuation) (bs[3].val st.env.toValuation) (bs[4].val st.env.toValuation)] = S := ⟨_, rfl⟩
+  obtain ⟨S2, hS2⟩ : ∃ S, S1.extendMany (quintCells (stepQuint (bs[0].val S1.env.toValuation) (base.x.val S1.env.toValuation)
+      (base.y.val S1.env.toValuation) (acc.1.x.val S1.env.toValuation) (acc.1.y.val S1.env.toValuation))) = S := ⟨_, rfl⟩
+  obtain ⟨S3, hS3⟩ : ∃ S, S2.extendMany (quintCells (stepQuint (bs[1].val S2.env.toValuation) (base.x.val S2.env.toValuation)
+      (base.y.val S2.env.toValuation) ((CVar.var (S1.nv + 3)).val S2.env.toValuation) ((CVar.var (S1.nv + 4)).val S2.env.toValuation))) = S := ⟨_, rfl⟩
+  obtain ⟨S4, hS4⟩ : ∃ S, S3.extendMany (quintCells (stepQuint (bs[2].val S3.env.toValuation) (base.x.val S3.env.toValuation)
+      (base.y.val S3.env.toValuation) ((CVar.var (S2.nv + 3)).val S3.env.toValuation) ((CVar.var (S2.nv + 4)).val S3.env.toValuation))) = S := ⟨_, rfl⟩
+  obtain ⟨S5, hS5⟩ : ∃ S, S4.extendMany (quintCells (stepQuint (bs[3].val S4.env.toValuation) (base.x.val S4.env.toValuation)
+      (base.y.val S4.env.toValuation) ((CVar.var (S3.nv + 3)).val S4.env.toValuation) ((CVar.var (S3.nv + 4)).val S4.env.toValuation))) = S := ⟨_, rfl⟩
+  obtain ⟨S6, hS6⟩ : ∃ S, S5.extendMany (quintCells (stepQuint (bs[4].val S5.env.toValuation) (base.x.val S5.env.toValuation)
+      (base.y.val S5.env.toValuation) ((CVar.var (S4.nv + 3)).val S5.env.toValuation) ((CVar.var (S4.nv + 4)).val S5.env.toValuation))) = S := ⟨_, rfl⟩
+  have hl₁ : st.env.Le S1.env := by rw [← hS1]; exact st.le_extendMany _
+  have hl2 : S1.env.Le S2.env := by rw [← hS2]; exact S1.le_extendMany _
+  have hl3 : S2.env.Le S3.env := by rw [← hS3]; exact S2.le_extendMany _
+  have hl4 : S3.env.Le S4.env := by rw [← hS4]; exact S3.le_extendMany _
+  have hl5 : S4.env.Le S5.env := by rw [← hS5]; exact S4.le_extendMany _
+  have hl6 : S5.env.Le S6.env := by rw [← hS6]; exact S5.le_extendMany _
+  have hnA : (CVar.var st.nv).Scoped S1 := by rw [← hS1]; exact ProverState.mem_extendMany_head ..
+  have hnAv : (CVar.var st.nv).val S1.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime := by
+    rw [val_var, ← hS1, ProverState.get_extendMany_head, hnAv0]
+    exact (Kimchi.Gate.VarBaseMul.build_nPrime xT yT x0 y0 nv b0 b1 b2 b3 b4).symm
+  have hL2 : st.env.Le S2.env := hl₁.trans hl2
+  have hs0 : (CVar.var S1.nv).Scoped S2 := by
+    rw [← hS2]; exact ProverState.mem_extendMany_head ..
+  have hsv0 : (CVar.var S1.nv).val S2.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s0 := by
+    rw [val_var, ← hS2, ProverState.get_extendMany_head, (stepQuint_fields _ _ _ _ _).1,
+      CVar.val_of_le hl₁ hbx, CVar.val_of_le hl₁ hby, CVar.val_of_le hl₁ (hbs 0 (by omega)),
+      hxT, hyT, hb0, CVar.val_of_le hl₁ hax, CVar.val_of_le hl₁ hay, hx0, hy0]
+    exact (Kimchi.Gate.VarBaseMul.build_step0 xT yT x0 y0 nv b0 b1 b2 b3 b4).1.symm
+  have ha1x : (CVar.var (S1.nv + 3)).Scoped S2 := by
+    rw [← hS2]; exact S1.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha1y : (CVar.var (S1.nv + 4)).Scoped S2 := by
+    rw [← hS2]; exact S1.new_mem_extendMany (i := 4) (by simp [quintCells])
+  have hv1x : (CVar.var (S1.nv + 3)).val S2.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x1 := by
+    rw [val_var, ← hS2, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.1, (stepQuint_fields _ _ _ _ _).2.1,
+      CVar.val_of_le hl₁ hbx, CVar.val_of_le hl₁ hby, CVar.val_of_le hl₁ (hbs 0 (by omega)),
+      hxT, hyT, hb0, CVar.val_of_le hl₁ hax, CVar.val_of_le hl₁ hay, hx0, hy0]
+    exact (Kimchi.Gate.VarBaseMul.build_step0 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.1.symm
+  have hv1y : (CVar.var (S1.nv + 4)).val S2.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y1 := by
+    rw [val_var, ← hS2, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.2, (stepQuint_fields _ _ _ _ _).2.2,
+      CVar.val_of_le hl₁ hbx, CVar.val_of_le hl₁ hby, CVar.val_of_le hl₁ (hbs 0 (by omega)),
+      hxT, hyT, hb0, CVar.val_of_le hl₁ hax, CVar.val_of_le hl₁ hay, hx0, hy0]
+    exact (Kimchi.Gate.VarBaseMul.build_step0 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.symm
+  have hL3 : st.env.Le S3.env := hL2.trans hl3
+  have hs1 : (CVar.var S2.nv).Scoped S3 := by
+    rw [← hS3]; exact ProverState.mem_extendMany_head ..
+  have hsv1 : (CVar.var S2.nv).val S3.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s1 := by
+    rw [val_var, ← hS3, ProverState.get_extendMany_head, (stepQuint_fields _ _ _ _ _).1,
+      CVar.val_of_le hL2 hbx, CVar.val_of_le hL2 hby, CVar.val_of_le hL2 (hbs 1 (by omega)),
+      hxT, hyT, hb1, hv1x, hv1y]
+    exact (Kimchi.Gate.VarBaseMul.build_step1 xT yT x0 y0 nv b0 b1 b2 b3 b4).1.symm
+  have ha2x : (CVar.var (S2.nv + 3)).Scoped S3 := by
+    rw [← hS3]; exact S2.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha2y : (CVar.var (S2.nv + 4)).Scoped S3 := by
+    rw [← hS3]; exact S2.new_mem_extendMany (i := 4) (by simp [quintCells])
+  have hv2x : (CVar.var (S2.nv + 3)).val S3.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x2 := by
+    rw [val_var, ← hS3, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.1, (stepQuint_fields _ _ _ _ _).2.1,
+      CVar.val_of_le hL2 hbx, CVar.val_of_le hL2 hby, CVar.val_of_le hL2 (hbs 1 (by omega)),
+      hxT, hyT, hb1, hv1x, hv1y]
+    exact (Kimchi.Gate.VarBaseMul.build_step1 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.1.symm
+  have hv2y : (CVar.var (S2.nv + 4)).val S3.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y2 := by
+    rw [val_var, ← hS3, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.2, (stepQuint_fields _ _ _ _ _).2.2,
+      CVar.val_of_le hL2 hbx, CVar.val_of_le hL2 hby, CVar.val_of_le hL2 (hbs 1 (by omega)),
+      hxT, hyT, hb1, hv1x, hv1y]
+    exact (Kimchi.Gate.VarBaseMul.build_step1 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.symm
+  have hL4 : st.env.Le S4.env := hL3.trans hl4
+  have hs2 : (CVar.var S3.nv).Scoped S4 := by
+    rw [← hS4]; exact ProverState.mem_extendMany_head ..
+  have hsv2 : (CVar.var S3.nv).val S4.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s2 := by
+    rw [val_var, ← hS4, ProverState.get_extendMany_head, (stepQuint_fields _ _ _ _ _).1,
+      CVar.val_of_le hL3 hbx, CVar.val_of_le hL3 hby, CVar.val_of_le hL3 (hbs 2 (by omega)),
+      hxT, hyT, hb2, hv2x, hv2y]
+    exact (Kimchi.Gate.VarBaseMul.build_step2 xT yT x0 y0 nv b0 b1 b2 b3 b4).1.symm
+  have ha3x : (CVar.var (S3.nv + 3)).Scoped S4 := by
+    rw [← hS4]; exact S3.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha3y : (CVar.var (S3.nv + 4)).Scoped S4 := by
+    rw [← hS4]; exact S3.new_mem_extendMany (i := 4) (by simp [quintCells])
+  have hv3x : (CVar.var (S3.nv + 3)).val S4.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x3 := by
+    rw [val_var, ← hS4, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.1, (stepQuint_fields _ _ _ _ _).2.1,
+      CVar.val_of_le hL3 hbx, CVar.val_of_le hL3 hby, CVar.val_of_le hL3 (hbs 2 (by omega)),
+      hxT, hyT, hb2, hv2x, hv2y]
+    exact (Kimchi.Gate.VarBaseMul.build_step2 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.1.symm
+  have hv3y : (CVar.var (S3.nv + 4)).val S4.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y3 := by
+    rw [val_var, ← hS4, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.2, (stepQuint_fields _ _ _ _ _).2.2,
+      CVar.val_of_le hL3 hbx, CVar.val_of_le hL3 hby, CVar.val_of_le hL3 (hbs 2 (by omega)),
+      hxT, hyT, hb2, hv2x, hv2y]
+    exact (Kimchi.Gate.VarBaseMul.build_step2 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.symm
+  have hL5 : st.env.Le S5.env := hL4.trans hl5
+  have hs3 : (CVar.var S4.nv).Scoped S5 := by
+    rw [← hS5]; exact ProverState.mem_extendMany_head ..
+  have hsv3 : (CVar.var S4.nv).val S5.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s3 := by
+    rw [val_var, ← hS5, ProverState.get_extendMany_head, (stepQuint_fields _ _ _ _ _).1,
+      CVar.val_of_le hL4 hbx, CVar.val_of_le hL4 hby, CVar.val_of_le hL4 (hbs 3 (by omega)),
+      hxT, hyT, hb3, hv3x, hv3y]
+    exact (Kimchi.Gate.VarBaseMul.build_step3 xT yT x0 y0 nv b0 b1 b2 b3 b4).1.symm
+  have ha4x : (CVar.var (S4.nv + 3)).Scoped S5 := by
+    rw [← hS5]; exact S4.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha4y : (CVar.var (S4.nv + 4)).Scoped S5 := by
+    rw [← hS5]; exact S4.new_mem_extendMany (i := 4) (by simp [quintCells])
+  have hv4x : (CVar.var (S4.nv + 3)).val S5.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x4 := by
+    rw [val_var, ← hS5, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.1, (stepQuint_fields _ _ _ _ _).2.1,
+      CVar.val_of_le hL4 hbx, CVar.val_of_le hL4 hby, CVar.val_of_le hL4 (hbs 3 (by omega)),
+      hxT, hyT, hb3, hv3x, hv3y]
+    exact (Kimchi.Gate.VarBaseMul.build_step3 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.1.symm
+  have hv4y : (CVar.var (S4.nv + 4)).val S5.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y4 := by
+    rw [val_var, ← hS5, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.2, (stepQuint_fields _ _ _ _ _).2.2,
+      CVar.val_of_le hL4 hbx, CVar.val_of_le hL4 hby, CVar.val_of_le hL4 (hbs 3 (by omega)),
+      hxT, hyT, hb3, hv3x, hv3y]
+    exact (Kimchi.Gate.VarBaseMul.build_step3 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.symm
+  have hL6 : st.env.Le S6.env := hL5.trans hl6
+  have hs4 : (CVar.var S5.nv).Scoped S6 := by
+    rw [← hS6]; exact ProverState.mem_extendMany_head ..
+  have hsv4 : (CVar.var S5.nv).val S6.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).s4 := by
+    rw [val_var, ← hS6, ProverState.get_extendMany_head, (stepQuint_fields _ _ _ _ _).1,
+      CVar.val_of_le hL5 hbx, CVar.val_of_le hL5 hby, CVar.val_of_le hL5 (hbs 4 (by omega)),
+      hxT, hyT, hb4, hv4x, hv4y]
+    exact (Kimchi.Gate.VarBaseMul.build_step4 xT yT x0 y0 nv b0 b1 b2 b3 b4).1.symm
+  have ha5x : (CVar.var (S5.nv + 3)).Scoped S6 := by
+    rw [← hS6]; exact S5.new_mem_extendMany (i := 3) (by simp [quintCells])
+  have ha5y : (CVar.var (S5.nv + 4)).Scoped S6 := by
+    rw [← hS6]; exact S5.new_mem_extendMany (i := 4) (by simp [quintCells])
+  have hv5x : (CVar.var (S5.nv + 3)).val S6.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x5 := by
+    rw [val_var, ← hS6, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.1, (stepQuint_fields _ _ _ _ _).2.1,
+      CVar.val_of_le hL5 hbx, CVar.val_of_le hL5 hby, CVar.val_of_le hL5 (hbs 4 (by omega)),
+      hxT, hyT, hb4, hv4x, hv4y]
+    exact (Kimchi.Gate.VarBaseMul.build_step4 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.1.symm
+  have hv5y : (CVar.var (S5.nv + 4)).val S6.env.toValuation = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y5 := by
+    rw [val_var, ← hS6, ProverState.get_extendMany_new _ (by simp [quintCells]),
+      (quintCells_getElem _).2.2, (stepQuint_fields _ _ _ _ _).2.2,
+      CVar.val_of_le hL5 hbx, CVar.val_of_le hL5 hby, CVar.val_of_le hL5 (hbs 4 (by omega)),
+      hxT, hyT, hb4, hv4x, hv4y]
+    exact (Kimchi.Gate.VarBaseMul.build_step4 xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.symm
+  refine ⟨S1, S2, S3, S4, S5, S6, ?_, hl₁, hl2, hl3, hl4, hl5, hl6, hnA, hnAv, hs0, hsv0, ha1x, ha1y, hv1x, hv1y, hs1, hsv1, ha2x, ha2y, hv2x, hv2y, hs2, hsv2, ha3x, ha3y, hv3x, hv3y, hs3, hsv3, ha4x, ha4y, hv4x, hv4y, hs4, hsv4, ha5x, ha5y, hv5x, hv5y⟩
+  rw [← hS6, ← hS5, ← hS4, ← hS3, ← hS2, ← hS1]
+  dsimp only [roundRun]
+
+/-- What a round's run reads, at cells reading `(xT, yT, x0, y0, nv, b0, …, b4)`: the
+table grew, the advanced state is in scope and reads the canonical row's
+`(x5, y5, nPrime)`, and the collected record evaluates to the canonical row
+`build xT yT x0 y0 nv b0 b1 b2 b3 b4`. -/
+private theorem roundRun_reads [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
+    {st : ProverState F} {acc : AffinePoint (FVar F) × FVar F} {bs : Vector (FVar F) 5}
+    (hbx : base.x.Scoped st) (hby : base.y.Scoped st) (hax : acc.1.x.Scoped st)
+    (hay : acc.1.y.Scoped st) (han : acc.2.Scoped st)
+    (hbs : ∀ k (hk : k < 5), (bs[k]).Scoped st) {xT yT x0 y0 nv b0 b1 b2 b3 b4 : F}
+    (hxT : base.x.val st.env.toValuation = xT) (hyT : base.y.val st.env.toValuation = yT)
+    (hx0 : acc.1.x.val st.env.toValuation = x0) (hy0 : acc.1.y.val st.env.toValuation = y0)
+    (hnv : acc.2.val st.env.toValuation = nv)
+    (hb0 : bs[0].val st.env.toValuation = b0) (hb1 : bs[1].val st.env.toValuation = b1)
+    (hb2 : bs[2].val st.env.toValuation = b2) (hb3 : bs[3].val st.env.toValuation = b3)
+    (hb4 : bs[4].val st.env.toValuation = b4) :
+    st.env.Le (roundRun base st acc bs).1.env ∧
+      ((roundRun base st acc bs).2.2.1.x.Scoped (roundRun base st acc bs).1 ∧
+        (roundRun base st acc bs).2.2.1.y.Scoped (roundRun base st acc bs).1 ∧
+        (roundRun base st acc bs).2.2.2.Scoped (roundRun base st acc bs).1) ∧
+      ((roundRun base st acc bs).2.2.1.x.val (roundRun base st acc bs).1.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).x5 ∧
+        (roundRun base st acc bs).2.2.1.y.val (roundRun base st acc bs).1.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).y5 ∧
+        (roundRun base st acc bs).2.2.2.val (roundRun base st acc bs).1.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4).nPrime) ∧
+      ScaleRound.eval (roundRun base st acc bs).1.env (roundRun base st acc bs).2.1
+        = .ok (Kimchi.Gate.VarBaseMul.build xT yT x0 y0 nv b0 b1 b2 b3 b4) := by
+  obtain ⟨S1, S2, S3, S4, S5, S6, hR, hl₁, hl2, hl3, hl4, hl5, hl6, hnA, hnAv, hs0, hsv0, ha1x, ha1y, hv1x, hv1y, hs1, hsv1, ha2x, ha2y, hv2x, hv2y, hs2, hsv2, ha3x, ha3y, hv3x, hv3y, hs3, hsv3, ha4x, ha4y, hv4x, hv4y, hs4, hsv4, ha5x, ha5y, hv5x, hv5y⟩ :=
+    roundRun_facts base hbx hby hax hay hbs hxT hyT hx0 hy0 hnv hb0 hb1 hb2 hb3 hb4
+  rw [hR]
+  dsimp only
+  have hl₂₆ := hl3.trans (hl4.trans (hl5.trans hl6))
+  have hl₃₆ := hl4.trans (hl5.trans hl6)
+  have hl₄₆ := hl5.trans hl6
+  have hl₁₆ := hl2.trans hl₂₆
+  have hL₆ := hl₁.trans hl₁₆
+  refine ⟨hL₆, ⟨ha5x, ha5y, hnA.of_le hl₁₆⟩,
+    ⟨hv5x, hv5y, by rw [CVar.val_of_le hl₁₆ hnA, hnAv]⟩, ?_⟩
+  refine evalScale_ok_iff.mpr ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [CVar.eval_eq_val (hbx.of_le hL₆), CVar.val_of_le hL₆ hbx, hxT, (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).1]
+  · rw [CVar.eval_eq_val (hby.of_le hL₆), CVar.val_of_le hL₆ hby, hyT, (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.1]
+  · rw [CVar.eval_eq_val (hax.of_le hL₆), CVar.val_of_le hL₆ hax, hx0, (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.1]
+  · rw [CVar.eval_eq_val (hay.of_le hL₆), CVar.val_of_le hL₆ hay, hy0, (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.1]
+  · rw [CVar.eval_eq_val (ha1x.of_le hl₂₆), CVar.val_of_le hl₂₆ ha1x, hv1x]
+  · rw [CVar.eval_eq_val (ha1y.of_le hl₂₆), CVar.val_of_le hl₂₆ ha1y, hv1y]
+  · rw [CVar.eval_eq_val (ha2x.of_le hl₃₆), CVar.val_of_le hl₃₆ ha2x, hv2x]
+  · rw [CVar.eval_eq_val (ha2y.of_le hl₃₆), CVar.val_of_le hl₃₆ ha2y, hv2y]
+  · rw [CVar.eval_eq_val (ha3x.of_le hl₄₆), CVar.val_of_le hl₄₆ ha3x, hv3x]
+  · rw [CVar.eval_eq_val (ha3y.of_le hl₄₆), CVar.val_of_le hl₄₆ ha3y, hv3y]
+  · rw [CVar.eval_eq_val (ha4x.of_le hl6), CVar.val_of_le hl6 ha4x, hv4x]
+  · rw [CVar.eval_eq_val (ha4y.of_le hl6), CVar.val_of_le hl6 ha4y, hv4y]
+  · rw [CVar.eval_eq_val ha5x, hv5x]
+  · rw [CVar.eval_eq_val ha5y, hv5y]
+  · rw [CVar.eval_eq_val (han.of_le hL₆), CVar.val_of_le hL₆ han, hnv, (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.2.1]
+  · rw [CVar.eval_eq_val (hnA.of_le hl₁₆), CVar.val_of_le hl₁₆ hnA, hnAv]
+  · rw [CVar.eval_eq_val ((hbs 0 (by omega)).of_le hL₆), CVar.val_of_le hL₆ (hbs 0 (by omega)), hb0,
+      (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.2.2.1]
+  · rw [CVar.eval_eq_val ((hbs 1 (by omega)).of_le hL₆), CVar.val_of_le hL₆ (hbs 1 (by omega)), hb1,
+      (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.2.2.2.1]
+  · rw [CVar.eval_eq_val ((hbs 2 (by omega)).of_le hL₆), CVar.val_of_le hL₆ (hbs 2 (by omega)), hb2,
+      (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.2.2.2.2.1]
+  · rw [CVar.eval_eq_val ((hbs 3 (by omega)).of_le hL₆), CVar.val_of_le hL₆ (hbs 3 (by omega)), hb3,
+      (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.2.2.2.2.2.1]
+  · rw [CVar.eval_eq_val ((hbs 4 (by omega)).of_le hL₆), CVar.val_of_le hL₆ (hbs 4 (by omega)), hb4,
+      (Kimchi.Gate.VarBaseMul.build_fields xT yT x0 y0 nv b0 b1 b2 b3 b4).2.2.2.2.2.2.2.2.2]
+  · rw [CVar.eval_eq_val (hs0.of_le hl₂₆), CVar.val_of_le hl₂₆ hs0, hsv0]
+  · rw [CVar.eval_eq_val (hs1.of_le hl₃₆), CVar.val_of_le hl₃₆ hs1, hsv1]
+  · rw [CVar.eval_eq_val (hs2.of_le hl₄₆), CVar.val_of_le hl₄₆ hs2, hsv2]
+  · rw [CVar.eval_eq_val (hs3.of_le hl6), CVar.val_of_le hl6 hs3, hsv3]
+  · rw [CVar.eval_eq_val hs4, hsv4]
+
+/-- The bit table's variables: the bulk allocation at the counter. -/
+private def lsbVarsOf (st : ProverState F) (n : ℕ) : Vector (FVar F) n :=
+  CircuitType.fieldsToVar (F := F) (val := Vector F n)
+    (mapVec CVar.var (allocRange st.nv (CircuitType.size F (Vector F n))))
+
+/-- The state after the bulk witness: the scalar's bit table written. -/
+private def lsbState [Field F] [ToNat F] (st : ProverState F) (n : ℕ) (scalar : FVar F) :
+    ProverState F :=
+  st.extendMany (CircuitType.valueToFields (F := F) (var := Vector (FVar F) n)
+    (lsbVals (F := F) n (ToNat.toNat (scalar.val st.env.toValuation)))).toList
+
+/-- The bit state extends the state. -/
+private theorem lsbState_le [Field F] [ToNat F] (st : ProverState F) (n : ℕ) (scalar : FVar F) :
+    st.env.Le (lsbState st n scalar).env := by
+  unfold lsbState
+  exact st.le_extendMany _
+
+/-- Every bit variable is in scope at the bit state. -/
+private theorem lsbVarsOf_scoped [Field F] [ToNat F] (st : ProverState F) (n : ℕ)
+    (scalar : FVar F) (i : ℕ) (hi : i < n) : ((lsbVarsOf st n)[i]).Scoped (lsbState st n scalar) :=
+  scoped_fvar_iff.mp (scoped_vector_iff.mp (scoped_extendMany_new (var := Vector (FVar F) n) st
+    (lsbVals (F := F) n (ToNat.toNat (scalar.val st.env.toValuation)))) i hi)
+
+/-- A bit variable reads, at the bit state, as the scalar's bit. -/
+private theorem lsbVarsOf_val [Field F] [ToNat F] (st : ProverState F) (n : ℕ)
+    (scalar : FVar F) (i : ℕ) (hi : i < n) :
+    ((lsbVarsOf st n)[i]).val (lsbState st n scalar).env.toValuation
+      = if (ToNat.toNat (scalar.val st.env.toValuation)).testBit i then 1 else 0 := by
+  refine (encodes_fvar_iff.mp (encodes_vector_iff.mp (encodes_extendMany_new
+    (var := Vector (FVar F) n) st
+    (lsbVals (F := F) n (ToNat.toNat (scalar.val st.env.toValuation)))) i hi)).trans ?_
+  simp [lsbVals]
+
+/-- The honest stream: the `L`-bit scalar `k`'s bits MSB-first, as `chainBuild` consumes
+them. -/
+private def bitStream [Zero F] [One F] (L k j : ℕ) : F :=
+  if k.testBit (L - 1 - j) then 1 else 0
+
+/-- A window's cell is the bit table's cell at the mirrored index. -/
+private theorem window_getElem [Field F] {n chunks : ℕ} (hn : 5 * chunks ≤ n)
+    (bits : Vector (FVar F) n)
+    (j k : ℕ) (hj : j < chunks) (hk : k < 5) :
+    (((bits.toList.take (5 * chunks)).reverse).getD (5 * j + k) (.const 0) : FVar F)
+      = bits[5 * chunks - 1 - (5 * j + k)]'(by omega) := by
+  have hlen5 : (bits.toList.take (5 * chunks)).length = 5 * chunks := by
+    simp only [List.length_take, Vector.length_toList]
+    omega
+  rw [List.getD_eq_getElem?_getD, List.getElem?_reverse (by rw [hlen5]; omega), hlen5,
+    List.getElem?_take_of_lt (by omega),
+    List.getElem?_eq_getElem (by simp only [Vector.length_toList]; omega)]
+  simp [Vector.getElem_toList]
+
+/-- The rounds' fold, read: from a state reading the chain's row-`i` inputs, over rows
+reading the chain's bits, the fold grows the table, its state reads the chain's
+row-`(i + l.length)` inputs, and every collected round evaluates at the final table to
+its chain row. -/
+private theorem roundsRun_inv [Field F] [DecidableEq F] (xT yT xP0 yP0 n0 : F) (bsF : ℕ → F)
+    (base : AffinePoint (FVar F)) :
+    ∀ (l : List (Vector (FVar F) 5)) (i : ℕ) (st : ProverState F)
+      (acc : AffinePoint (FVar F) × FVar F),
+      base.x.Scoped st → base.y.Scoped st →
+      base.x.val st.env.toValuation = xT → base.y.val st.env.toValuation = yT →
+      (∀ j (hj : j < l.length) (k : ℕ) (hk : k < 5), (l[j][k]).Scoped st) →
+      (∀ j (hj : j < l.length),
+        ((l[j][0]).val st.env.toValuation, (l[j][1]).val st.env.toValuation,
+          (l[j][2]).val st.env.toValuation, (l[j][3]).val st.env.toValuation,
+          (l[j][4]).val st.env.toValuation)
+        = (bsF (5 * (i + j)), bsF (5 * (i + j) + 1), bsF (5 * (i + j) + 2),
+            bsF (5 * (i + j) + 3), bsF (5 * (i + j) + 4))) →
+      acc.1.x.Scoped st → acc.1.y.Scoped st → acc.2.Scoped st →
+      acc.1.x.val st.env.toValuation
+        = (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF i).x0 →
+      acc.1.y.val st.env.toValuation
+        = (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF i).y0 →
+      acc.2.val st.env.toValuation
+        = (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF i).n →
+      st.env.Le (mapAccumRun (roundRun base) st acc l).1.env ∧
+      ((mapAccumRun (roundRun base) st acc l).2.2.1.x.Scoped
+          (mapAccumRun (roundRun base) st acc l).1 ∧
+        (mapAccumRun (roundRun base) st acc l).2.2.1.y.Scoped
+          (mapAccumRun (roundRun base) st acc l).1 ∧
+        (mapAccumRun (roundRun base) st acc l).2.2.2.Scoped
+          (mapAccumRun (roundRun base) st acc l).1) ∧
+      ((mapAccumRun (roundRun base) st acc l).2.2.1.x.val
+          (mapAccumRun (roundRun base) st acc l).1.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF (i + l.length)).x0 ∧
+        (mapAccumRun (roundRun base) st acc l).2.2.1.y.val
+          (mapAccumRun (roundRun base) st acc l).1.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF (i + l.length)).y0 ∧
+        (mapAccumRun (roundRun base) st acc l).2.2.2.val
+          (mapAccumRun (roundRun base) st acc l).1.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF (i + l.length)).n) ∧
+      ∀ j (hj : j < (mapAccumRun (roundRun base) st acc l).2.1.length),
+        ScaleRound.eval (mapAccumRun (roundRun base) st acc l).1.env
+          (mapAccumRun (roundRun base) st acc l).2.1[j]
+          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xT yT xP0 yP0 n0 bsF (i + j))
+  | [], i, st, acc, _, _, _, _, _, _, hax, hay, han, hva, hvb, hvn => by
+    refine ⟨Assignments.Le.refl _, ⟨hax, hay, han⟩, ?_, fun j hj => by simp [mapAccumRun] at hj⟩
+    simp only [mapAccumRun, List.length_nil, Nat.add_zero]
+    exact ⟨hva, hvb, hvn⟩
+  | x :: l, i, st, acc, hbx, hby, hbxv, hbyv, hbs, hbv, hax, hay, han, hva, hvb, hvn => by
+    have hb := hbv 0 (by simp)
+    simp only [List.getElem_cons_zero, Nat.add_zero] at hb
+    have hb0v := congrArg Prod.fst hb
+    have hb1v := congrArg (fun p : F × F × F × F × F => p.2.1) hb
+    have hb2v := congrArg (fun p : F × F × F × F × F => p.2.2.1) hb
+    have hb3v := congrArg (fun p : F × F × F × F × F => p.2.2.2.1) hb
+    have hb4v := congrArg (fun p : F × F × F × F × F => p.2.2.2.2) hb
+    simp only [] at hb0v hb1v hb2v hb3v hb4v
+    have hbs0 : ∀ k (hk : k < 5), (x[k]).Scoped st := fun k hk => by
+      simpa using hbs 0 (by simp) k hk
+    have hr := roundRun_reads base hbx hby hax hay han hbs0 hbxv hbyv hva hvb hvn hb0v hb1v hb2v
+      hb3v hb4v
+    rw [← Kimchi.Gate.VarBaseMul.chainBuild_eta xT yT xP0 yP0 n0 bsF i] at hr
+    obtain ⟨hle₁, ⟨hs₁, hs₂, hs₃⟩, ⟨hv₁, hv₂, hv₃⟩, hev⟩ := hr
+    have hbsl : ∀ j (hj : j < l.length) (k : ℕ) (hk : k < 5), (l[j][k]).Scoped st :=
+      fun j hj k hk => by simpa using hbs (j + 1) (by simpa using hj) k hk
+    have ih := roundsRun_inv xT yT xP0 yP0 n0 bsF base l (i + 1) (roundRun base st acc x).1
+      (roundRun base st acc x).2.2 (hbx.of_le hle₁) (hby.of_le hle₁)
+      (by rw [CVar.val_of_le hle₁ hbx, hbxv]) (by rw [CVar.val_of_le hle₁ hby, hbyv])
+      (fun j hj k hk => (hbsl j hj k hk).of_le hle₁)
+      (fun j hj => by
+        have h := hbv (j + 1) (by simpa using hj)
+        simp only [List.getElem_cons_succ] at h
+        rw [show i + 1 + j = i + (j + 1) by omega, ← h,
+          CVar.val_of_le hle₁ (hbsl j hj 0 (by omega)), CVar.val_of_le hle₁ (hbsl j hj 1 (by omega)),
+          CVar.val_of_le hle₁ (hbsl j hj 2 (by omega)), CVar.val_of_le hle₁ (hbsl j hj 3 (by omega)),
+          CVar.val_of_le hle₁ (hbsl j hj 4 (by omega))])
+      hs₁ hs₂ hs₃ (by rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_x0]; exact hv₁)
+      (by rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_y0]; exact hv₂)
+      (by rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_n]; exact hv₃)
+    simp only [mapAccumRun, List.length_cons]
+    refine ⟨hle₁.trans ih.1, ih.2.1, ?_, ?_⟩
+    · simpa only [List.length_cons, Nat.add_assoc, Nat.add_comm 1] using ih.2.2.1
+    · intro j hj
+      cases j with
+      | zero =>
+        simp only [List.getElem_cons_zero, Nat.add_zero]
+        exact evalScale_le ih.1 hev
+      | succ j =>
+        simp only [List.getElem_cons_succ]
+        rw [show i + (j + 1) = i + 1 + j by omega]
+        exact ih.2.2.2 j (by simpa using hj)
+
+/-- The state and result of `varBaseMul`'s honest run: the sealed base, the bit table,
+the doubled init, the rounds; the result's point is the fold's accumulator and its bits
+the table. -/
+def varBaseMulRun [Field F] [DecidableEq F] [ToNat F] (n chunks : ℕ) (st : ProverState F)
+    (base' : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
+    ProverState F × VarBaseMulResult n F :=
+  let r₁ := sealPointRun st base'
+  let st₂ := lsbState r₁.1 n scalar.val
+  let lsbBits := lsbVarsOf r₁.1 n
+  let r₃ := AddFast.addFastRun st₂ .checkFinite r₁.2 r₁.2
+  let msb : List (FVar F) := (lsbBits.toList.take (5 * chunks)).reverse
+  let window : ℕ → Vector (FVar F) 5 := fun i =>
+    Vector.ofFn fun j => msb.getD (5 * i + j.1) (.const 0)
+  let r := mapAccumRun (roundRun r₁.2) r₃.1 (r₃.2.p, .const 0) ((List.range chunks).map window)
+  (r.1, ⟨r.2.2.1, lsbBits⟩)
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order smul_ne_zero_of_lt) in
-/-- The gadget is complete, generic over the curve dictionary: the honest prover run
-accepts on a readable on-curve base and a readable in-range scalar whose
-`Type1` decode satisfies the ladder regime, and the returned point reads as the
-defining equation's honest side — `[unshift t]·g` at the scalar's canonical
-value. The returned bits read as the scalar's, LSB-first: `scaleFast2` pins the ones
-above its width to zero, so its own completeness needs them named here.
-The regime precondition is per-scalar, exactly the fact the soundness law
-conditions on; at the deployed widths the subwrap arm discharges it for every chunk
-count below full width, and at full width it is the `Type1` forbidden-band check's
-contract. The loop invariant identifies the run with the honest walk `chainBuild`;
-the per-round check is the produce chain's (`chain_complete`), the init is the
-doubling `addFast` (`addFast_complete_spec`), and the register pin closes by the
-fold identity (`chain_accN` through `natLsbVal_testBit_msbStream`). -/
-@[spec] theorem varBaseMul_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    [d : HasCurve F]
-    (n chunks : ℕ) (hn : 5 * chunks ≤ n)
-    (base' : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
-    (Q : PostCond (VarBaseMulResult n F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (scalar.val.eval env).isOk ∧ (base'.x.eval env).isOk ∧
-          (base'.y.eval env).isOk ∧
-          (∀ v, scalar.val.eval env = .ok v →
-            ToNat.toNat v < 2 ^ (5 * chunks) ∧
-            d.LadderRegime (5 * chunks)
-              (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
-          (∀ x y, base'.x.eval env = .ok x → base'.y.eval env = .ok y →
-            d.W.Nonsingular x y))
-        (fun env r env' =>
-          (∀ v, scalar.val.eval env = .ok v →
-            ∀ (i : ℕ) (hi : i < n), (r.lsbBits[i]'hi).eval env'
-              = .ok (if (ToNat.toNat v).testBit i then (1 : F) else 0)) ∧
-          (∀ v xv yv, scalar.val.eval env = .ok v →
-            base'.x.eval env = .ok xv → base'.y.eval env = .ok yv →
-            ∀ hT : d.W.Nonsingular xv yv,
-            ∃ xS yS, r.g.x.eval env' = .ok xS ∧ r.g.y.eval env' = .ok yS ∧
-              ∃ hfin : d.W.Nonsingular xS yS,
-                Point.some _ _ hfin
-                  = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ)
-                      • Point.some _ _ hT))
-        Q⦄
-    (varBaseMul (c := KimchiProverC F) n chunks base' scalar)
-    ⦃Q⦄ := by
+/-- The init segment at an on-curve base: the doubling's operand condition holds at the
+sealed base, and the state and point it lands at (named) extend the table, keep the
+sealed base in scope reading as the base, keep `P₀` in scope, and read it on-curve as
+`[2]·T`. -/
+private theorem init_facts [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F] (n : ℕ)
+    (st : ProverState F) {base' : AffinePoint (FVar F)} (scalar : FVar F)
+    (hx : base'.x.Scoped st) (hy : base'.y.Scoped st)
+    (hT : d.W.Nonsingular (base'.x.val st.env.toValuation) (base'.y.val st.env.toValuation)) :
+    ∃ (st₃ : ProverState F) (P0 : AddResult F),
+      AddFast.addFastRun (lsbState (sealPointRun st base').1 n scalar) .checkFinite
+          (sealPointRun st base').2 (sealPointRun st base').2 = (st₃, P0) ∧
+      AddFast.Operands d .checkFinite
+        ((sealPointRun st base').2.x.val
+          (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+        ((sealPointRun st base').2.y.val
+          (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+        ((sealPointRun st base').2.x.val
+          (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+        ((sealPointRun st base').2.y.val
+          (lsbState (sealPointRun st base').1 n scalar).env.toValuation) ∧
+      (sealPointRun st base').2.x.Scoped (lsbState (sealPointRun st base').1 n scalar) ∧
+      (sealPointRun st base').2.y.Scoped (lsbState (sealPointRun st base').1 n scalar) ∧
+      (lsbState (sealPointRun st base').1 n scalar).env.Le st₃.env ∧
+      st.env.Le st₃.env ∧
+      (sealPointRun st base').2.x.Scoped st₃ ∧ (sealPointRun st base').2.y.Scoped st₃ ∧
+      (sealPointRun st base').2.x.val st₃.env.toValuation = base'.x.val st.env.toValuation ∧
+      (sealPointRun st base').2.y.val st₃.env.toValuation = base'.y.val st.env.toValuation ∧
+      P0.p.x.Scoped st₃ ∧ P0.p.y.Scoped st₃ ∧
+      ∃ hP0 : d.W.Nonsingular (P0.p.x.val st₃.env.toValuation) (P0.p.y.val st₃.env.toValuation),
+        Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hT := by
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  simp only [varBaseMul, mapAccumM]
-  mvcgen
-  rename_i st₀ hpre
-  obtain ⟨⟨hsok, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
-  obtain ⟨v, hv⟩ := CVar.evalOk hsok
-  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
-  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  obtain ⟨hrange, hregpre⟩ := hsc v hv
-  have hfaith := LawfulToNat.cast_toNat v
-  have hT : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
-  have hyne : yv ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
-  -- the sealed base
-  refine ⟨⟨hxok, hyok⟩, fun base st₁ hseal hle₁ => ?_⟩
-  obtain ⟨hsx, hsy⟩ := hseal xv yv hxv hyv
-  mvcgen
-  -- the scalar's bits, in one witness
-  set nn := ToNat.toNat v with hndef
-  have hwit : (lsbBitsWit n scalar.val).run st₁.env
-      = .ok (Vector.ofFn fun i => if nn.testBit i.1 then (1 : F) else 0) := by
-    simp [lsbBitsWit, CVar.eval_le hle₁ hv,
-      Bind.bind, Except.bind, Pure.pure]
-    rw [hndef]
-  refine ⟨by rw [hwit]; rfl, fun bits st₂ hgrant hle₂ => ?_⟩
-  have hread := hgrant _ hwit
-  mvcgen
-  -- the doubled init `P₀ = [2]·T`
-  have hsx₂ : base.x.eval st₂.env = .ok xv := CVar.eval_le hle₂ hsx
-  have hsy₂ : base.y.eval st₂.env = .ok yv := CVar.eval_le hle₂ hsy
-  have h2Tne : Point.some _ _ hT + Point.some _ _ hT ≠ 0 := by
+  have hg₁ := sealPointRun_grants (st := st) hx hy
+  have hle₁ := hg₁.1.le
+  have hle₂ := lsbState_le (sealPointRun st base').1 n scalar
+  have hsx₂ := hg₁.1.fvar_scoped.of_le hle₂
+  have hsy₂ := hg₁.2.fvar_scoped.of_le hle₂
+  have hbx₂ : (sealPointRun st base').2.x.val
+      (lsbState (sealPointRun st base').1 n scalar).env.toValuation
+      = base'.x.val st.env.toValuation := by
+    rw [CVar.val_of_le hle₂ hg₁.1.fvar_scoped, hg₁.1.fvar_val]
+  have hby₂ : (sealPointRun st base').2.y.val
+      (lsbState (sealPointRun st base').1 n scalar).env.toValuation
+      = base'.y.val st.env.toValuation := by
+    rw [CVar.val_of_le hle₂ hg₁.2.fvar_scoped, hg₁.2.fvar_val]
+  have hT₂ : d.W.Nonsingular ((sealPointRun st base').2.x.val
+      (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+      ((sealPointRun st base').2.y.val
+        (lsbState (sealPointRun st base').1 n scalar).env.toValuation) := by
+    rw [hbx₂, hby₂]; exact hT
+  have hT₂eq : Point.some _ _ hT₂ = Point.some _ _ hT :=
+    Kimchi.Gate.EndoMul.some_congr d.W hT₂ hT hbx₂ hby₂
+  have hyne := y_ne_zero_of_odd_order d.W d.odd hT₂
+  have h2Tne : Point.some _ _ hT₂ + Point.some _ _ hT₂ ≠ 0 := by
     intro hzero
-    have h2P : (2 : ℤ) • Point.some _ _ hT = 0 := by rw [two_zsmul, hzero]
+    have h2P : (2 : ℤ) • Point.some _ _ hT₂ = 0 := by rw [two_zsmul, hzero]
     have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
       have h2le := d.prime.two_le
       have hne2 := d.odd
       have h3' : 3 ≤ d.W.order := by omega
       exact_mod_cast h3'
-    exact smul_ne_zero_of_lt d.W (Point.some_ne_zero hT) (by norm_num) hlt h2P
-  refine AddFast.addFast_complete_spec .checkFinite base base _ _
-    ⟨⟨by rw [hsx₂]; rfl, by rw [hsy₂]; rfl, by rw [hsx₂]; rfl, by rw [hsy₂]; rfl,
-      fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
-     fun p st₃ hp hle₃ => ?_⟩
-  · rw [hsx₂] at he1; rw [hsy₂] at he2; rw [hsx₂] at he3; rw [hsy₂] at he4
-    injection he1 with he1; injection he2 with he2
-    injection he3 with he3; injection he4 with he4
-    subst he1 he2 he3 he4
-    exact ⟨hT, hT, hyne, fun _ => h2Tne⟩
-  obtain ⟨x0v, y0v, hx0e, hy0e, -, hP0ns, hsum⟩ :=
-    (hp xv yv xv yv hsx₂ hsy₂ hsx₂ hsy₂ hT hT).resolve_left (by
-      rintro ⟨-, hzero⟩
-      exact h2Tne hzero)
-  have hP0eq : Point.some _ _ hP0ns = (2 : ℤ) • Point.some _ _ hT := by
-    rw [← hsum]
-    module
-  -- the honest stream, its regime, and the produce chain's acceptance
-  set bsF : ℕ → F := fun j => if nn.testBit (5 * chunks - 1 - j) then (1 : F) else 0
-    with hbsF
-  have hbsb : ∀ j, j < 5 * chunks → bsF j = 0 ∨ bsF j = 1 := by
+    exact smul_ne_zero_of_lt d.W (Point.some_ne_zero hT₂) (by norm_num) hlt h2P
+  have hops : AddFast.Operands d .checkFinite
+      ((sealPointRun st base').2.x.val
+        (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+      ((sealPointRun st base').2.y.val
+        (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+      ((sealPointRun st base').2.x.val
+        (lsbState (sealPointRun st base').1 n scalar).env.toValuation)
+      ((sealPointRun st base').2.y.val
+        (lsbState (sealPointRun st base').1 n scalar).env.toValuation) :=
+    ⟨hT₂, hT₂, hyne, fun _ => h2Tne⟩
+  have hg₃ := AddFast.addFastRun_grants .checkFinite _ hsx₂ hsy₂ hsx₂ hsy₂ hops
+  obtain ⟨hle₃, hs3x, hs3y, -, hsum₃⟩ := hg₃
+  obtain ⟨hP0, -, hP0eq⟩ := (hsum₃ hT₂ hT₂).resolve_left (by
+    rintro ⟨-, hzero⟩
+    exact h2Tne hzero)
+  refine ⟨_, _, Prod.mk.eta.symm, hops, hsx₂, hsy₂, hle₃, hle₁.trans (hle₂.trans hle₃),
+    hsx₂.of_le hle₃, hsy₂.of_le hle₃, by rw [CVar.val_of_le hle₃ hsx₂, hbx₂],
+    by rw [CVar.val_of_le hle₃ hsy₂, hby₂], hs3x, hs3y, hP0, ?_⟩
+  rw [← hP0eq, hT₂eq]
+  module
+
+/-- The honest walk from the doubled init: every row holds, its ladder is the scalar's
+`Type1` decode, and the final register reconstructs the scalar. -/
+private theorem chain_facts [Field F] [DecidableEq F] [d : HasCurve F] (chunks : ℕ)
+    {xv yv x0v y0v : F} (hT : d.W.Nonsingular xv yv) (hP0 : d.W.Nonsingular x0v y0v)
+    (hP0eq : Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hT) (nn : ℕ)
+    (hrange : nn < 2 ^ (5 * chunks))
+    (hreg : d.LadderRegime (5 * chunks) (unshiftType1 (5 * chunks) (nn : ℤ))) :
+    (∀ i, i < chunks → Kimchi.Gate.VarBaseMul.Holds
+      (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn) i)) ∧
+    Kimchi.Gate.VarBaseMul.gateLadder
+        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn))
+        (5 * chunks)
+      = 2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1 ∧
+    (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn) chunks).n
+      = (nn : F) := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  have hbsb : ∀ j, j < 5 * chunks →
+      bitStream (F := F) (5 * chunks) nn j = 0 ∨ bitStream (F := F) (5 * chunks) nn j = 1 := by
     intro j _
-    rw [hbsF]
-    dsimp only
+    unfold bitStream
     split
     · exact Or.inr rfl
     · exact Or.inl rfl
-  -- the walk's bits ARE the stream, so its run reads back as the stream
   have hrun : Kimchi.Gate.VarBaseMul.runBits
-      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) chunks
-      = (List.range (5 * chunks)).map bsF := by
+      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn) i)
+      chunks
+      = (List.range (5 * chunks)).map (bitStream (5 * chunks) nn) := by
     unfold Kimchi.Gate.VarBaseMul.runBits
     rw [List.flatMap_congr (fun i _ => by
       obtain ⟨-, -, hb0, hb1, hb2, hb3, hb4⟩ :=
-        Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF i
+        Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 (bitStream (5 * chunks) nn) i
       rw [hb0, hb1, hb2, hb3, hb4]),
       Kimchi.Gate.VarBaseMul.flatMap_range_window]
-  -- the walk's bits read back as the scalar
   have hnat : natLsbVal (Kimchi.Gate.VarBaseMul.runBools
-      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) chunks) = nn := by
-    rw [Kimchi.Gate.VarBaseMul.runBools, hrun, hbsF]
+      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn) i)
+      chunks) = nn := by
+    rw [Kimchi.Gate.VarBaseMul.runBools, hrun]
     exact Kimchi.Gate.VarBaseMul.natLsbVal_testBit_msbStream nn (5 * chunks) hrange
-  -- and the walk's ladder is the scalar's `Type1` unshift, by the sound side's decode
   have hladder : Kimchi.Gate.VarBaseMul.gateLadder
-        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) (5 * chunks)
+        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn))
+        (5 * chunks)
       = 2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1 := by
     rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
       Kimchi.Gate.VarBaseMul.gateRegister_eq_natLsbVal, hnat]
-  simp only [HasCurve.LadderRegime, unshiftType1] at hregpre
+  simp only [HasCurve.LadderRegime, unshiftType1] at hreg
   have hregime' : 3 * 2 ^ (5 * chunks) ≤ d.W.order ∨
       (2 ^ (5 * chunks - 1) < d.W.order ∧ d.W.order < 2 ^ (5 * chunks) ∧
         d.W.order % 4 = 1 ∧
         Kimchi.Gate.VarBaseMul.gateLadder
-            (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
+            (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn))
             (5 * chunks)
           ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order) := by
-    rcases hregpre with h | ⟨h1, h2', h3, h4⟩
+    rcases hreg with h | ⟨h1, h2', h3, h4⟩
     · exact Or.inl h
     · exact Or.inr ⟨h1, h2', h3, by rw [hladder]; exact h4⟩
-  have hHolds : ∀ i, i < chunks →
-      Kimchi.Gate.VarBaseMul.Holds
-        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i) :=
-    Kimchi.Gate.VarBaseMul.chain_complete d.W d.two_ne d.odd chunks hT bsF hbsb 0
-      hP0ns hP0eq hregime'
-  mvcgen
-  case inv1 =>
-    exact ⇓ p s' => ⌜st₃.env.Le s'.env ∧
-      (p.2.fst.1.x.eval s'.env
-          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              p.1.prefix.length).x0 ∧
-        p.2.fst.1.y.eval s'.env
-          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              p.1.prefix.length).y0 ∧
-        p.2.fst.2.eval s'.env
-          = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF
-              p.1.prefix.length).n) ∧
-      ∀ r ∈ p.2.snd, ∃ w, ScaleRound.eval s'.env r = .ok w ∧
-        Kimchi.Gate.VarBaseMul.Holds w⌝
-  case vc1.step =>
-    rename_i pref cur suff hsplit b s' hinv
-    obtain ⟨hLe, ⟨hxI₀, hyI₀, hnI₀⟩, hrounds⟩ := hinv
-    -- name the walk index the loop cursor carries
-    have hxI : b.fst.1.x.eval s'.env
-        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF pref.length).x0 := hxI₀
-    have hyI : b.fst.1.y.eval s'.env
-        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF pref.length).y0 := hyI₀
-    have hnI : b.fst.2.eval s'.env
-        = .ok (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF pref.length).n := hnI₀
-    have hkrows : pref.length < chunks := by
-      have hlen := congrArg List.length hsplit
-      simp only [List.length_map, List.length_range, List.length_append,
-        List.length_cons] at hlen
-      omega
-    have hcur : cur = Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)) := by
-      have h1 : ((List.range chunks).map (fun i => Vector.ofFn (fun j : Fin 5 =>
-          ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
-            (.const 0))))[pref.length]'(by
-            simp only [List.length_map, List.length_range]
-            exact hkrows) = cur := by
-        simp only [hsplit]
-        rw [List.getElem_append_right (Nat.le_refl _)]
-        simp
-      rw [← h1, List.getElem_map, List.getElem_range]
-    subst hcur
-    -- the window's bits read as the honest stream
-    have hbit : ∀ j, j < 5 →
-        (((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j)
-            (.const 0) : FVar F).eval s'.env
-          = .ok (bsF (5 * pref.length + j)) := by
-      intro j hj
-      have hlen5 : (bits.toList.take (5 * chunks)).length = 5 * chunks := by
-        simp only [List.length_take, Vector.length_toList]
-        omega
-      have hgd : ((bits.toList.take (5 * chunks)).reverse).getD
-          (5 * pref.length + j) (.const 0)
-          = bits[5 * chunks - 1 - (5 * pref.length + j)]'(by omega) := by
-        rw [List.getD_eq_getElem?_getD, List.getElem?_reverse (by rw [hlen5]; omega),
-          hlen5, List.getElem?_take_of_lt (by omega),
-          List.getElem?_eq_getElem (by simp only [Vector.length_toList]; omega)]
-        simp [Vector.getElem_toList]
-      rw [hgd]
-      have hr := hread (5 * chunks - 1 - (5 * pref.length + j)) (by omega)
-      simp only [Vector.getElem_ofFn] at hr
-      rw [hbsF]
-      exact CVar.eval_le (hle₃.trans hLe) hr
-    have hcurj : ∀ (j : ℕ) (hj : j < 5),
-        ((Vector.ofFn (fun j : Fin 5 =>
-            ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-              (.const 0)))[j]'hj).eval s'.env
-          = .ok (bsF (5 * pref.length + j)) := by
-      intro j hj
-      simp only [Vector.getElem_ofFn]
-      exact hbit j hj
-    have hcurj0 : ((Vector.ofFn (fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * pref.length + j.1)
-          (.const 0)))[0]'(by omega)).eval s'.env
-        = .ok (bsF (5 * pref.length)) := hcurj 0 (by omega)
-    have hxT' : base.x.eval s'.env = .ok xv :=
-      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsx
-    have hyT' : base.y.eval s'.env = .ok yv :=
-      CVar.eval_le ((hle₂.trans hle₃).trans hLe) hsy
-    -- the round's own law does the rest
-    refine ⟨⟨by rw [hxT']; rfl, by rw [hyT']; rfl, by rw [hxI]; rfl,
-      by rw [hyI]; rfl, by rw [hnI]; rfl,
-      fun j hj => by rw [hcurj j hj]; rfl⟩, fun r st₄ hpost hle₄ => ?_⟩
-    obtain ⟨hrow, hx5, hy5, hn5⟩ := hpost xv yv _ _ _ _ _ _ _ _
-      hxT' hyT' hxI hyI hnI hcurj0 (hcurj 1 (by omega))
-      (hcurj 2 (by omega)) (hcurj 3 (by omega)) (hcurj 4 (by omega))
-    rw [← Kimchi.Gate.VarBaseMul.chainBuild_eta xv yv x0v y0v 0 bsF pref.length] at hrow hx5 hy5 hn5
-    -- restore the invariant at the extended prefix
-    intro _
-    refine ⟨hLe.trans hle₄, ⟨?_, ?_, ?_⟩, ?_⟩
-    · simp only [List.length_append, List.length_cons, List.length_nil]
-      rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_x0]
-      exact hx5
-    · simp only [List.length_append, List.length_cons, List.length_nil]
-      rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_y0]
-      exact hy5
-    · simp only [List.length_append, List.length_cons, List.length_nil]
-      rw [Kimchi.Gate.VarBaseMul.chainBuild_succ_n]
-      exact hn5
-    · intro r' hr'
-      simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hr'
-      rcases hr' with hr' | rfl
-      · obtain ⟨w, hev, hHw⟩ := hrounds r' hr'
-        exact ⟨w, evalScale_le hle₄ hev, hHw⟩
-      · exact ⟨_, hrow, hHolds pref.length hkrows⟩
-  case vc2.vc1.vc1.vc1.refine_2.pre =>
-    refine ⟨Assignments.Le.refl st₃.env, ⟨hx0e, hy0e, rfl⟩, fun r hr => ?_⟩
-    exact absurd hr List.not_mem_nil
-  case vc3.vc1.vc1.vc1.refine_2.post.success =>
-    rename_i finp s' hinv
-    obtain ⟨hLe, ⟨hxP, hyP, hnP⟩, hrounds⟩ := hinv
-    simp only [List.length_map, List.length_range] at hxP hyP hnP hrounds
-    -- the register pin: the final register reads as the scalar
-    have hreg : (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).n
-        = v := by
-      have hchain := Kimchi.Gate.VarBaseMul.chain_accN chunks
-        (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
-        hHolds (fun i _ => rfl)
-      rw [Kimchi.Gate.VarBaseMul.accN_chainBuild,
-        Kimchi.Gate.VarBaseMul.accN_chainBuild, hnat,
-        show (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF 0).n = 0
-          from rfl, mul_zero, zero_add] at hchain
-      rw [hchain]
-      exact hfaith
-    have hsv' : scalar.val.eval s'.env = .ok v :=
-      CVar.eval_le ((hle₁.trans (hle₂.trans hle₃)).trans hLe) hv
-    -- the constraint: every collected round's read row holds
-    refine addConstraint_complete_spec (c := KimchiConstraint F)
-      (KimchiSystem.varBaseMul finp.snd) _ s' ⟨?_, fun u st₄ _ hle₄ => ?_⟩
-    · show KimchiConstraint.check (.varBaseMul finp.snd) s'.env = true
-      simp only [KimchiConstraint.check]
-      rw [List.all_eq_true]
-      intro r hr
-      obtain ⟨w, hev, hHw⟩ := hrounds r hr
-      rw [hev]
-      exact (Kimchi.Gate.VarBaseMul.ok_iff w).mpr hHw
-    mvcgen
-    -- the pin
-    refine ⟨⟨by rw [CVar.eval_le hle₄ hnP]; rfl, by rw [CVar.eval_le hle₄ hsv']; rfl,
-      fun rv sv hrv hsv => ?_⟩, fun u' st₅ hle₅ => ?_⟩
-    · rw [CVar.eval_le hle₄ hnP] at hrv
-      injection hrv with hrv
-      rw [CVar.eval_le hle₄ hsv'] at hsv
-      injection hsv with hsv
-      subst hrv hsv
-      exact hreg
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk ⟨finp.fst.1, bits⟩ ⟨st₅.nv, st₅.env, hf⟩
-      (fun v' hv' i hi => ?_) (fun v' xv' yv' hv' hxv' hyv' hT' => ?_)
-      ((hle₁.trans (hle₂.trans hle₃)).trans (hLe.trans (hle₄.trans hle₅)))
-    · -- the scalar's bits: the honest witness's reads, transported to the final table
-      rw [hv] at hv'
-      injection hv' with hv'
-      subst hv'
-      have hr := hread i hi
-      simp only [Vector.getElem_ofFn] at hr
-      exact CVar.eval_le (hle₃.trans (hLe.trans (hle₄.trans hle₅))) hr
-    rw [hv] at hv'
-    injection hv' with hv'
-    rw [hxv] at hxv'
-    injection hxv' with hxv'
-    rw [hyv] at hyv'
-    injection hyv' with hyv'
-    subst hv' hxv' hyv'
-    -- the point chain: `varBaseMul_off` at the honest walk
-    obtain ⟨hfin', hpt, -⟩ := Kimchi.Gate.VarBaseMul.varBaseMul_off d.W chunks
-      (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF i)
-      (Point.some _ _ hT) (2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1)
-      (Point.some_ne_zero hT) hHolds hT rfl
-      (fun i _ => by
-        obtain ⟨hx1, hy1, -, -, -, -, -⟩ :=
-          Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF i
-        obtain ⟨hx0', hy0', -, -, -, -, -⟩ :=
-          Kimchi.Gate.VarBaseMul.chainBuild_fields xv yv x0v y0v 0 bsF 0
-        rw [hx1, hy1, hx0', hy0']
-        exact ⟨rfl, rfl⟩)
-      (fun i _ => ⟨rfl, rfl⟩) hP0ns hP0eq d.two_ne d.odd
-      hladder.symm hregpre
-    have hax := Kimchi.Gate.VarBaseMul.accX_chainBuild xv yv x0v y0v 0 bsF chunks
-    have hay := Kimchi.Gate.VarBaseMul.accY_chainBuild xv yv x0v y0v 0 bsF chunks
-    have hfin : d.W.Nonsingular
-        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).x0
-        (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).y0 := by
-      rw [← hax, ← hay]
-      exact hfin'
-    exact ⟨(Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).x0,
-      (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 bsF chunks).y0,
-      CVar.eval_le (hle₄.trans hle₅) hxP, CVar.eval_le (hle₄.trans hle₅) hyP,
-      hfin,
-      (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hax.symm hay.symm).trans hpt⟩
-  case vc4.vc1.vc1.vc1.refine_2.post.except =>
-    exact ExceptConds.entails_false
+  have hH := Kimchi.Gate.VarBaseMul.chain_complete d.W d.two_ne d.odd chunks hT
+    (bitStream (5 * chunks) nn) hbsb 0 hP0 hP0eq hregime'
+  refine ⟨hH, hladder, ?_⟩
+  have hchain := Kimchi.Gate.VarBaseMul.chain_accN chunks
+    (fun i => Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn) i)
+    hH (fun i _ => rfl)
+  rw [Kimchi.Gate.VarBaseMul.accN_chainBuild, Kimchi.Gate.VarBaseMul.accN_chainBuild, hnat,
+    show (Kimchi.Gate.VarBaseMul.chainBuild xv yv x0v y0v 0 (bitStream (5 * chunks) nn) 0).n = 0
+      from rfl, mul_zero, zero_add] at hchain
+  exact hchain
 
-/-- `scaleFast1` is complete — the honest side of the defining equation
-`scaleFast1 g a ~ scalarMul (fromShifted a) g`: on the same readable, in-range,
-regime-satisfying scalar and readable on-curve base, the honest run
-accepts and the returned point is `[unshift t]·g` at the scalar's canonical
-value. `varBaseMul_complete_spec`'s point promise at the result, the bits dropped. -/
-theorem scaleFast1_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    [d : HasCurve F]
-    (n chunks : ℕ) (hn : 5 * chunks ≤ n)
-    (p : AffinePoint (FVar F)) (t : Type1 (FVar F))
-    (Q : PostCond (AffinePoint (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (t.val.eval env).isOk ∧ (p.x.eval env).isOk ∧ (p.y.eval env).isOk ∧
-          (∀ v, t.val.eval env = .ok v →
-            ToNat.toNat v < 2 ^ (5 * chunks) ∧
-            d.LadderRegime (5 * chunks)
-              (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
-          (∀ x y, p.x.eval env = .ok x → p.y.eval env = .ok y →
-            d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, t.val.eval env = .ok v →
-          p.x.eval env = .ok xv → p.y.eval env = .ok yv →
-          ∀ hT : d.W.Nonsingular xv yv,
-          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ hfin : d.W.Nonsingular xS yS,
-              Point.some _ _ hfin
-                = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ)
-                    • Point.some _ _ hT)
-        Q⦄
-    (scaleFast1 (c := KimchiProverC F) n chunks p t)
-    ⦃Q⦄ := by
-  simp only [scaleFast1]
-  mvcgen [varBaseMul_complete_spec]
-  rename_i st hpre
-  refine ⟨hpre.1, fun r st' hrbits hrpt hle => ?_⟩
-  mvcgen
-  exact hpre.2 r.g st' hrpt hle
+/-- The rounds' run at the honest init: the sealed base and the init point (named) read
+on-curve as the base and `[2]·T`, the walk from the init holds row by row with the
+scalar's bits, and the rounds' fold lands at a state (named) reading the chain's finals,
+every collected round evaluating to its chain row there; the bit table reads as the
+scalar's bits throughout. -/
+private theorem walk_facts [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n) (st : ProverState F) {base' : AffinePoint (FVar F)}
+    {scalar : Type1 (FVar F)} (hs : scalar.val.Scoped st) (hx : base'.x.Scoped st)
+    (hy : base'.y.Scoped st)
+    (hrange : ToNat.toNat (scalar.val.val st.env.toValuation) < 2 ^ (5 * chunks))
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (base'.x.val st.env.toValuation) (base'.y.val st.env.toValuation)) :
+    ∃ (st₃ : ProverState F) (P0 : AddResult F) (stR : ProverState F)
+      (w : List (ScaleRound F) × (AffinePoint (FVar F) × FVar F)) (nn : ℕ) (xP0 yP0 : F)
+      (hP0 : d.W.Nonsingular xP0 yP0),
+      AddFast.addFastRun (lsbState (sealPointRun st base').1 n scalar.val) .checkFinite
+          (sealPointRun st base').2 (sealPointRun st base').2 = (st₃, P0) ∧
+      mapAccumRun (roundRun (sealPointRun st base').2) st₃ (P0.p, .const 0)
+          ((List.range chunks).map fun i => Vector.ofFn fun j =>
+            (((lsbVarsOf (sealPointRun st base').1 n).toList.take (5 * chunks)).reverse).getD
+              (5 * i + j.1) (.const 0))
+        = (stR, w) ∧
+      nn = ToNat.toNat (scalar.val.val st.env.toValuation) ∧
+      P0.p.x.val st₃.env.toValuation = xP0 ∧ P0.p.y.val st₃.env.toValuation = yP0 ∧
+      st.env.Le st₃.env ∧ st₃.env.Le stR.env ∧
+      (∀ i, i < chunks → Kimchi.Gate.VarBaseMul.Holds
+        (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+          (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn) i)) ∧
+      Kimchi.Gate.VarBaseMul.gateLadder
+          (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+            (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn))
+          (5 * chunks)
+        = 2 * (nn : ℤ) + 2 ^ (5 * chunks) + 1 ∧
+      (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+        (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn) chunks).n
+        = (nn : F) ∧
+      (w.2.1.x.Scoped stR ∧ w.2.1.y.Scoped stR ∧ w.2.2.Scoped stR) ∧
+      (w.2.1.x.val stR.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+            (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn) chunks).x0 ∧
+        w.2.1.y.val stR.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+            (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn) chunks).y0 ∧
+        w.2.2.val stR.env.toValuation
+          = (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+            (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn) chunks).n) ∧
+      w.1.length = chunks ∧
+      (∀ j (hj : j < w.1.length), ScaleRound.eval stR.env w.1[j]
+        = .ok (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+            (base'.y.val st.env.toValuation) xP0 yP0 0 (bitStream (5 * chunks) nn) j)) ∧
+      (∀ i (hi : i < n), ((lsbVarsOf (sealPointRun st base').1 n)[i]).Scoped stR ∧
+        ((lsbVarsOf (sealPointRun st base').1 n)[i]).val stR.env.toValuation
+          = if nn.testBit i then 1 else 0) ∧
+      Point.some _ _ hP0 = (2 : ℤ) • Point.some _ _ hT := by
+  obtain ⟨st₃, P0, heq₃, -, -, -, hle₂₃, hle₀, hsbx, hsby, hbx₃, hby₃, hs3x, hs3y, hP0, hP0eq⟩ :=
+    init_facts n st scalar.val hx hy hT
+  have hg₁ := sealPointRun_grants (st := st) hx hy
+  have hsv₁ : scalar.val.val (sealPointRun st base').1.env.toValuation
+      = scalar.val.val st.env.toValuation := CVar.val_of_le hg₁.1.le hs
+  obtain ⟨hH, hladder, hreg'⟩ := chain_facts chunks hT hP0 hP0eq _ hrange hreg
+  have hbit : ∀ i (hi : i < n), ((lsbVarsOf (sealPointRun st base').1 n)[i]).Scoped st₃ ∧
+      ((lsbVarsOf (sealPointRun st base').1 n)[i]).val st₃.env.toValuation
+        = if (ToNat.toNat (scalar.val.val st.env.toValuation)).testBit i then 1 else 0 :=
+    fun i hi => ⟨(lsbVarsOf_scoped _ n scalar.val i hi).of_le hle₂₃, by
+      rw [CVar.val_of_le hle₂₃ (lsbVarsOf_scoped _ n scalar.val i hi),
+        lsbVarsOf_val _ n scalar.val i hi, hsv₁]⟩
+  have hinv := roundsRun_inv (base'.x.val st.env.toValuation) (base'.y.val st.env.toValuation)
+    (P0.p.x.val st₃.env.toValuation) (P0.p.y.val st₃.env.toValuation) 0
+    (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation)))
+    (sealPointRun st base').2
+    ((List.range chunks).map fun i => Vector.ofFn fun j =>
+      (((lsbVarsOf (sealPointRun st base').1 n).toList.take (5 * chunks)).reverse).getD
+        (5 * i + j.1) (.const 0))
+    0 st₃ (P0.p, .const 0) hsbx hsby hbx₃ hby₃
+    (fun j hj k hk => by
+      have hj' : j < chunks := by simpa using hj
+      simp only [List.getElem_map, List.getElem_range, Vector.getElem_ofFn]
+      rw [window_getElem hn _ j k hj' hk]
+      exact (hbit _ (by omega)).1)
+    (fun j hj => by
+      have hj' : j < chunks := by simpa using hj
+      simp only [List.getElem_map, List.getElem_range, Vector.getElem_ofFn, Nat.zero_add]
+      rw [window_getElem hn _ j 0 hj' (by omega), window_getElem hn _ j 1 hj' (by omega),
+        window_getElem hn _ j 2 hj' (by omega), window_getElem hn _ j 3 hj' (by omega),
+        window_getElem hn _ j 4 hj' (by omega), (hbit _ (by omega)).2, (hbit _ (by omega)).2,
+        (hbit _ (by omega)).2, (hbit _ (by omega)).2, (hbit _ (by omega)).2]
+      rfl)
+    hs3x hs3y (CVar.scoped_const _ _) rfl rfl
+    (by simp [CVar.val, Kimchi.Gate.VarBaseMul.chainBuild, Kimchi.Gate.VarBaseMul.build])
+  obtain ⟨hleR, hsc, hrd, hev⟩ := hinv
+  simp only [List.length_map, List.length_range, Nat.zero_add] at hrd hev
+  refine ⟨st₃, P0, _, _, _, _, _, hP0, heq₃, Prod.mk.eta.symm, rfl, rfl, rfl, hle₀, hleR, hH,
+    hladder, hreg', hsc, hrd, ?_, hev, fun i hi => ⟨(hbit i hi).1.of_le hleR, ?_⟩, hP0eq⟩
+  · rw [mapAccumRun_length]
+    simp
+  · rw [CVar.val_of_le hleR (hbit i hi).1]
+    exact (hbit i hi).2
 
-/-- The ladder's granted bits above the half's width read zero: `testBit` vanishes
-above a value's width. -/
-private theorem dropped_bits_zero [Field F] [DecidableEq F] {env : Assignments F}
-    {n sDiv2Bits : ℕ} {bits : Vector (FVar F) n} {x : ℕ} (hx : x < 2 ^ sDiv2Bits)
-    (hbits : ∀ (i : ℕ) (hi : i < n),
-      (bits[i]'hi).eval env = .ok (if x.testBit i then (1 : F) else 0)) :
-    ∀ b ∈ bits.toList.drop sDiv2Bits, b.eval env = .ok 0 := by
-  intro bpin hbpin
-  obtain ⟨k, hk', hEq⟩ := List.mem_iff_getElem.mp hbpin
-  have hkn : sDiv2Bits + k < n := by
-    have hlen : (bits.toList.drop sDiv2Bits).length = n - sDiv2Bits := by
-      simp [List.length_drop]
-    omega
-  rw [← hEq, List.getElem_drop, Vector.getElem_toList]
-  have hbfalse : x.testBit (sDiv2Bits + k) = false := by
-    apply Nat.testBit_lt_two_pow
-    calc x < 2 ^ sDiv2Bits := hx
-      _ ≤ 2 ^ (sDiv2Bits + k) := Nat.pow_le_pow_right (by norm_num) (by omega)
-  rw [hbits (sDiv2Bits + k) hkn, hbfalse]
+/-- The honest run of `varBaseMul`, generic over the curve dictionary: on an in-scope
+on-curve base and an in-scope in-range scalar whose `Type1` decode satisfies the ladder
+regime, the prover lands at `varBaseMulRun` — the sealed base, the bit witness, the
+doubling (`addFast_run` at `init_facts`' operand condition), the rounds
+(`prove_mapAccumM` over `round_run`), the constraint accepted on the collected rounds
+(`walk_facts`), and the register pin (the chain's final register is the scalar). -/
+theorem varBaseMul_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [d : HasCurve F]
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n) (st : ProverState F) {base' : AffinePoint (FVar F)}
+    {scalar : Type1 (FVar F)} (hs : scalar.val.Scoped st) (hx : base'.x.Scoped st)
+    (hy : base'.y.Scoped st)
+    (hrange : ToNat.toNat (scalar.val.val st.env.toValuation) < 2 ^ (5 * chunks))
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (base'.x.val st.env.toValuation) (base'.y.val st.env.toValuation)) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (varBaseMul (c := KimchiConstraint F) n chunks base' scalar) st.nv st.env
+      = .ok ((varBaseMulRun n chunks st base' scalar).1.out
+          (varBaseMulRun n chunks st base' scalar).2) := by
+  obtain ⟨st₃, P0, stR, w, nn, xP0, yP0, -, heq₃, heqR, hnn, -, -, hle₀, hleR, hH, -, hreg',
+    ⟨hsx, hsy, hsn⟩, ⟨-, -, hrn⟩, hlen, hev, -, -⟩ :=
+    walk_facts n chunks hn st hs hx hy hrange hreg hT
+  subst hnn
+  obtain ⟨st₃', P0', heq₃', hops, hsx₂, hsy₂, hle₂₃, -, hs3x', hs3y', -, -, hs3x, hs3y, -⟩ :=
+    init_facts n st scalar.val hx hy hT
+  rw [heq₃] at heq₃'
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj heq₃'
+  have hg₁ := sealPointRun_grants (st := st) hx hy
+  simp only [varBaseMul, varBaseMulRun, prove_bind]
+  rw [sealPoint_run st hx hy]
+  simp only [Except.bind]
+  rw [prove_witness_run (w := lsbBitsWit n scalar.val) _
+    (.bind (.readCVar (hs.of_le hg₁.1.le)) fun _ => trivial)
+    (v := lsbVals (F := F) n
+      (ToNat.toNat (scalar.val.val (sealPointRun st base').1.env.toValuation)))
+    (by simp [lsbBitsWit, Except.bind])]
+  rw [show CircuitType.fieldsToVar (F := F) (val := Vector F n)
+      (mapVec CVar.var (allocRange (sealPointRun st base').1.nv
+        (CircuitType.size F (Vector F n))))
+      = lsbVarsOf (sealPointRun st base').1 n from rfl,
+    show (sealPointRun st base').1.extendMany (CircuitType.valueToFields (F := F)
+      (var := Vector (FVar F) n) (lsbVals (F := F) n
+        (ToNat.toNat (scalar.val.val (sealPointRun st base').1.env.toValuation)))).toList
+      = lsbState (sealPointRun st base').1 n scalar.val from rfl]
+  simp only []
+  rw [AddFast.addFast_run .checkFinite _ hsx₂ hsy₂ hsx₂ hsy₂ hops]
+  simp only [heq₃]
+  rw [prove_mapAccumM (fun st' (acc : AffinePoint (FVar F) × FVar F) =>
+      (lsbState (sealPointRun st base').1 n scalar.val).env.Le st'.env ∧
+      acc.1.x.Scoped st' ∧ acc.1.y.Scoped st' ∧ acc.2.Scoped st')
+    _ (roundRun (sealPointRun st base').2) _
+    (fun st' acc bs hbs ⟨hle, hax, hay, han⟩ =>
+      round_run _ (hsx₂.of_le hle) (hsy₂.of_le hle) hax hay han (fun k hk => by
+        obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hbs
+        have hj' : j < chunks := by simpa using hj
+        simp only [List.getElem_map, List.getElem_range, Vector.getElem_ofFn]
+        rw [window_getElem hn _ j k hj' hk]
+        exact (lsbVarsOf_scoped _ n scalar.val _ (by omega)).of_le hle))
+    (fun st' acc bs _ ⟨hle, _, _, _⟩ =>
+      ⟨hle.trans (roundRun_scopes _ st' acc bs).1, (roundRun_scopes _ st' acc bs).2.1,
+        (roundRun_scopes _ st' acc bs).2.2.1, (roundRun_scopes _ st' acc bs).2.2.2⟩)
+    (P0.p, .const 0) st₃ ⟨hle₂₃, hs3x, hs3y, CVar.scoped_const _ _⟩]
+  simp only [heqR]
+  rw [prove_addConstraint _ (by
+    show KimchiConstraint.check (.varBaseMul w.1) _ = true
+    simp only [KimchiConstraint.check, List.all_eq_true]
+    intro r hr
+    obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hr
+    rw [hev j hj]
+    exact (Kimchi.Gate.VarBaseMul.ok_iff _).mpr (hH j (by omega)))]
+  simp only []
+  rw [assertEqual_run _ hsn (hs.of_le (hle₀.trans hleR)) (by
+    rw [hrn, hreg', CVar.val_of_le (hle₀.trans hleR) hs]
+    exact LawfulToNat.cast_toNat _)]
   rfl
+
+/-- What `varBaseMulRun` grants, generic over the curve dictionary: the table grew, the
+result's point and bits are in scope, the bits read as the scalar's LSB-first, and the
+point reads as `[unshift t]·g` at the scalar's canonical value (`varBaseMul_off` at the
+honest walk). The regime precondition is per-scalar, exactly the fact the soundness law
+conditions on. -/
+theorem varBaseMulRun_grants [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n) (st : ProverState F) {base' : AffinePoint (FVar F)}
+    {scalar : Type1 (FVar F)} (hs : scalar.val.Scoped st) (hx : base'.x.Scoped st)
+    (hy : base'.y.Scoped st)
+    (hrange : ToNat.toNat (scalar.val.val st.env.toValuation) < 2 ^ (5 * chunks))
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (base'.x.val st.env.toValuation) (base'.y.val st.env.toValuation)) :
+    st.env.Le (varBaseMulRun n chunks st base' scalar).1.env ∧
+      (varBaseMulRun n chunks st base' scalar).2.g.x.Scoped
+        (varBaseMulRun n chunks st base' scalar).1 ∧
+      (varBaseMulRun n chunks st base' scalar).2.g.y.Scoped
+        (varBaseMulRun n chunks st base' scalar).1 ∧
+      (∀ i (hi : i < n),
+        ((varBaseMulRun n chunks st base' scalar).2.lsbBits[i]).Scoped
+          (varBaseMulRun n chunks st base' scalar).1 ∧
+        ((varBaseMulRun n chunks st base' scalar).2.lsbBits[i]).val
+            (varBaseMulRun n chunks st base' scalar).1.env.toValuation
+          = if (ToNat.toNat (scalar.val.val st.env.toValuation)).testBit i then 1 else 0) ∧
+      ∃ hfin : d.W.Nonsingular
+          ((varBaseMulRun n chunks st base' scalar).2.g.x.val
+            (varBaseMulRun n chunks st base' scalar).1.env.toValuation)
+          ((varBaseMulRun n chunks st base' scalar).2.g.y.val
+            (varBaseMulRun n chunks st base' scalar).1.env.toValuation),
+        Point.some _ _ hfin
+          = unshiftType1 (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation) : ℤ)
+              • Point.some _ _ hT := by
+  obtain ⟨st₃, P0, stR, w, nn, xP0, yP0, hP0, heq₃, heqR, hnn, -, -, hle₀, hleR, hH, hladder, -,
+    ⟨hsx, hsy, -⟩, ⟨hrx, hry, -⟩, -, -, hbits, hP0eq⟩ :=
+    walk_facts n chunks hn st hs hx hy hrange hreg hT
+  subst hnn
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  have hregpre := hreg
+  simp only [HasCurve.LadderRegime, unshiftType1] at hregpre
+  obtain ⟨hfin', hpt, -⟩ := Kimchi.Gate.VarBaseMul.varBaseMul_off d.W chunks
+    (fun i => Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+      (base'.y.val st.env.toValuation) xP0 yP0 0
+      (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) i)
+    (Point.some _ _ hT)
+    (2 * (ToNat.toNat (scalar.val.val st.env.toValuation) : ℤ) + 2 ^ (5 * chunks) + 1)
+    (Point.some_ne_zero hT) hH hT rfl
+    (fun i _ => by
+      obtain ⟨hx1, hy1, -, -, -, -, -⟩ :=
+        Kimchi.Gate.VarBaseMul.chainBuild_fields (base'.x.val st.env.toValuation)
+          (base'.y.val st.env.toValuation) xP0 yP0 0
+          (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) i
+      obtain ⟨hx0', hy0', -, -, -, -, -⟩ :=
+        Kimchi.Gate.VarBaseMul.chainBuild_fields (base'.x.val st.env.toValuation)
+          (base'.y.val st.env.toValuation) xP0 yP0 0
+          (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) 0
+      rw [hx1, hy1, hx0', hy0']
+      exact ⟨rfl, rfl⟩)
+    (fun i _ => ⟨rfl, rfl⟩) hP0 hP0eq d.two_ne d.odd hladder.symm hregpre
+  have hax := Kimchi.Gate.VarBaseMul.accX_chainBuild (base'.x.val st.env.toValuation)
+    (base'.y.val st.env.toValuation) xP0 yP0 0
+    (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) chunks
+  have hay := Kimchi.Gate.VarBaseMul.accY_chainBuild (base'.x.val st.env.toValuation)
+    (base'.y.val st.env.toValuation) xP0 yP0 0
+    (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) chunks
+  have hfin : d.W.Nonsingular
+      (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+        (base'.y.val st.env.toValuation) xP0 yP0 0
+        (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) chunks).x0
+      (Kimchi.Gate.VarBaseMul.chainBuild (base'.x.val st.env.toValuation)
+        (base'.y.val st.env.toValuation) xP0 yP0 0
+        (bitStream (5 * chunks) (ToNat.toNat (scalar.val.val st.env.toValuation))) chunks).y0 := by
+    rw [← hax, ← hay]
+    exact hfin'
+  dsimp only [varBaseMulRun]
+  rw [heq₃]
+  dsimp only
+  rw [heqR]
+  dsimp only
+  refine ⟨hle₀.trans hleR, hsx, hsy, hbits, ?_⟩
+  rw [hrx, hry]
+  refine ⟨hfin, (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hax.symm hay.symm).trans
+    (hpt.trans ?_)⟩
+  simp only [unshiftType1]
+
+/-- The state and result of `scaleFast1`'s honest run: `varBaseMul`'s, the bits dropped. -/
+def scaleFast1Run [Field F] [DecidableEq F] [ToNat F] (n chunks : ℕ) (st : ProverState F)
+    (p : AffinePoint (FVar F)) (t : Type1 (FVar F)) : ProverState F × AffinePoint (FVar F) :=
+  ((varBaseMulRun n chunks st p t).1, (varBaseMulRun n chunks st p t).2.g)
+
+/-- The honest run of `scaleFast1`: `varBaseMul_run`, the bits dropped. -/
+theorem scaleFast1_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [d : HasCurve F]
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n) (st : ProverState F) {p : AffinePoint (FVar F)}
+    {t : Type1 (FVar F)} (hs : t.val.Scoped st) (hx : p.x.Scoped st) (hy : p.y.Scoped st)
+    (hrange : ToNat.toNat (t.val.val st.env.toValuation) < 2 ^ (5 * chunks))
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (t.val.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (p.x.val st.env.toValuation) (p.y.val st.env.toValuation)) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (scaleFast1 (c := KimchiConstraint F) n chunks p t) st.nv st.env
+      = .ok ((scaleFast1Run n chunks st p t).1.out (scaleFast1Run n chunks st p t).2) := by
+  simp only [scaleFast1, scaleFast1Run, prove_bind]
+  rw [varBaseMul_run n chunks hn st hs hx hy hrange hreg hT]
+  rfl
+
+/-- What `scaleFast1Run` grants — the honest side of the defining equation
+`scaleFast1 g a ~ scalarMul (fromShifted a) g`: `varBaseMulRun_grants`' point promise. -/
+theorem scaleFast1Run_grants [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
+    (n chunks : ℕ) (hn : 5 * chunks ≤ n) (st : ProverState F) {p : AffinePoint (FVar F)}
+    {t : Type1 (FVar F)} (hs : t.val.Scoped st) (hx : p.x.Scoped st) (hy : p.y.Scoped st)
+    (hrange : ToNat.toNat (t.val.val st.env.toValuation) < 2 ^ (5 * chunks))
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (t.val.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (p.x.val st.env.toValuation) (p.y.val st.env.toValuation)) :
+    st.env.Le (scaleFast1Run n chunks st p t).1.env ∧
+      (scaleFast1Run n chunks st p t).2.x.Scoped (scaleFast1Run n chunks st p t).1 ∧
+      (scaleFast1Run n chunks st p t).2.y.Scoped (scaleFast1Run n chunks st p t).1 ∧
+      ∃ hfin : d.W.Nonsingular
+          ((scaleFast1Run n chunks st p t).2.x.val (scaleFast1Run n chunks st p t).1.env.toValuation)
+          ((scaleFast1Run n chunks st p t).2.y.val (scaleFast1Run n chunks st p t).1.env.toValuation),
+        Point.some _ _ hfin
+          = unshiftType1 (5 * chunks) (ToNat.toNat (t.val.val st.env.toValuation) : ℤ)
+              • Point.some _ _ hT := by
+  obtain ⟨hle, hgx, hgy, -, hfin, hpt⟩ := varBaseMulRun_grants n chunks hn st hs hx hy hrange hreg hT
+  exact ⟨hle, hgx, hgy, hfin, hpt⟩
 
 /-- The regime keeps the honest decode off the base: `unshift t ≢ 1 (mod order)`
 — subwrap by size (the window sits strictly inside `(0, order)`), one-wrap because
@@ -1564,294 +2032,359 @@ private theorem regime_off_base [Field F] [DecidableEq F] [d : HasCurve F]
       simp [unshiftType1]]
     exact hdvd
 
+/-- The state and result of `scaleFast2`'s honest run: the ladder on the half, the pins
+(nothing allocated), the correction `g − base`, then the coordinatewise selection, `y`
+before `x`. -/
+def scaleFast2Run [Field F] [DecidableEq F] [ToNat F] (n chunks : ℕ) (st : ProverState F)
+    (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F) :
+    ProverState F × AffinePoint (FVar F) :=
+  let r := varBaseMulRun n chunks st base ⟨sDiv2⟩
+  let q := AddFast.addFastRun r.1 .checkFinite r.2.g ⟨base.x, CVar.negate_ base.y⟩
+  let ry := selectRun q.1 sOdd r.2.g.y q.2.p.y
+  let rx := selectRun ry.1 sOdd r.2.g.x q.2.p.x
+  (rx.1, ⟨rx.2, ry.2⟩)
+
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order zsmul_eq_zero_iff_order_dvd) in
-/-- `scaleFast2` is complete — the honest side of the PS defining equation
-`scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`: on a readable on-curve
-base, a readable in-range half whose `Type1` decode satisfies the inner
-ladder's regime, and a parity flag reading a genuine bit, the honest run accepts and
-the returned point is the `unshiftType2` decode's multiple. The regime also keeps the
-ladder result off the base (`s ≢ 1`, subwrap by size, one-wrap because `1` is a
-forbidden residue), which is what makes the parity correction's incomplete
-subtraction well-defined — the completeness-side counterpart of the sound law's
-`tne` self-enforcement. -/
-theorem scaleFast2_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    [d : HasCurve F]
+/-- The correction's facts at the honest ladder: the negated base is a genuine point in
+scope reading `−T`, the ladder's point is finite, and the correction's sum is nonzero —
+the regime keeps the ladder off the base (`s ≢ 1`, subwrap by size, one-wrap because `1`
+is a forbidden residue), the completeness-side counterpart of the sound law's `tne`
+self-enforcement. -/
+private theorem correction_facts [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
-    (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
-    (Q : PostCond (AffinePoint (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (sDiv2.eval env).isOk ∧ ReadsBit (↑sOdd : CVar F) env ∧
-          (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
-          (∀ v, sDiv2.eval env = .ok v →
-            ToNat.toNat v < 2 ^ sDiv2Bits ∧
-            d.LadderRegime (5 * chunks)
-              (unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ))) ∧
-          (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
-            d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, sDiv2.eval env = .ok v →
-          base.x.eval env = .ok xv → base.y.eval env = .ok yv →
-          ∀ hT : d.W.Nonsingular xv yv,
-          ∀ bb : Bool, (↑sOdd : CVar F).eval env = .ok (bit bb) →
-          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ hres : d.W.Nonsingular xS yS,
-              Point.some _ _ hres
-                = unshiftType2 (5 * chunks) (ToNat.toNat v : ℤ) (bit bb)
-                    • Point.some _ _ hT)
-        Q⦄
-    (scaleFast2 (c := KimchiProverC F) n chunks sDiv2Bits base sDiv2 sOdd)
-    ⦃Q⦄ := by
+    (st : ProverState F) {base : AffinePoint (FVar F)} {sDiv2 : FVar F}
+    (hs : sDiv2.Scoped st) (hx : base.x.Scoped st) (hy : base.y.Scoped st)
+    (hrange : ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ sDiv2Bits)
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (base.x.val st.env.toValuation) (base.y.val st.env.toValuation)) :
+    (CVar.negate_ base.y).Scoped (varBaseMulRun n chunks st base ⟨sDiv2⟩).1 ∧
+    AddFast.Operands d .checkFinite
+      ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.g.x.val
+        (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+      ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.g.y.val
+        (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+      (base.x.val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+      ((CVar.negate_ base.y).val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation) ∧
+    ∀ (hfin : d.W.Nonsingular
+        ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.g.x.val
+          (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+        ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.g.y.val
+          (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation))
+      (hnegT : d.W.Nonsingular
+        (base.x.val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+        ((CVar.negate_ base.y).val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)),
+      Point.some _ _ hfin + Point.some _ _ hnegT
+        = (2 * (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) + 2 ^ (5 * chunks))
+            • Point.some _ _ hT := by
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  simp only [scaleFast2]
-  mvcgen [varBaseMul_complete_spec]
-  rename_i st hpre
-  obtain ⟨⟨hsok, hbit, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
-  obtain ⟨v, hv⟩ := CVar.evalOk hsok
-  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
-  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  obtain ⟨hrange, hreg⟩ := hsc v hv
-  have hfaith := LawfulToNat.cast_toNat v
-  obtain ⟨bb, hb⟩ := hbit.exists_bit
-  have hT : d.W.Nonsingular xv yv := hcurve _ _ hxv hyv
-  have hvlt : (ToNat.toNat v : ℤ) < 2 ^ (5 * chunks) := by
-    exact_mod_cast lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd)
-  have hs1 : ¬ ((d.W.order : ℤ) ∣ (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks))) :=
-    regime_off_base (Int.natCast_nonneg _) hvlt hreg
-  -- the inner ladder
-  refine ⟨⟨hsok, hxok, hyok, fun v' hv' => ?_, hcurve⟩,
-    fun r st' hrbits hrpt hle => ?_⟩
-  · rw [hv] at hv'
-    injection hv' with hv'
-    subst hv'
-    exact ⟨lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd),
-      hreg⟩
-  obtain ⟨xg, yg, hgx, hgy, hfin, hpt⟩ := hrpt v xv yv hv hxv hyv hT
-  have hpins := dropped_bits_zero hrange (hrbits v hv)
-  mvcgen
-  case inv1 =>
-    exact ⇓ p s' => ⌜st'.env.Le s'.env⌝
-  case step =>
-    rename_i pref cur suff hsplit u s' hinv
-    have hcur : cur ∈ r.lsbBits.toList.drop sDiv2Bits := by
-      rw [hsplit]
-      exact List.mem_append_right _ List.mem_cons_self
-    refine ⟨⟨by rw [CVar.eval_le hinv (hpins cur hcur)]; rfl, by rfl,
-      fun xv' yv' hx' hy' => ?_⟩, fun u' s'' hle'' => ?_⟩
-    · rw [CVar.eval_le hinv (hpins cur hcur)] at hx'
-      injection hx' with hx'
-      injection hy' with hy'
-      rw [← hx', ← hy']
-    · mvcgen
-      exact hinv.trans hle''
-  case pre => exact Assignments.Le.refl st'.env
-  case post.success =>
-    rename_i u st'' hle'
-    -- the correction addition: `g − T` via the pure negation
-    have hgx' := CVar.eval_le hle' hgx
-    have hgy' := CVar.eval_le hle' hgy
-    have hbx' : base.x.eval st''.env = .ok xv := CVar.eval_le (hle.trans hle') hxv
-    have hny : (CVar.negate_ base.y).eval st''.env = .ok (-yv) := by
-      rw [show (-yv) = (-1 : F) * yv from by ring]
-      exact CVar.eval_scale_ (CVar.eval_le (hle.trans hle') hyv) (-1)
-    have hgyne : yg ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hfin
-    obtain ⟨hnegT, hnegPt⟩ := AddFast.neg_point_reading d.W
-      ⟨d.short.1, d.short.2.1, d.short.2.2.1⟩ hT
-    have hsumne : Point.some _ _ hfin + Point.some _ _ hnegT ≠ 0 := by
-      rw [hpt, hnegPt]
-      intro h0
-      apply hs1
-      refine (zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 ?_
-      calc (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT
-          = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ)
-              • Point.some _ _ hT + -Point.some _ _ hT := by
-            simp only [unshiftType1]
-            module
-        _ = 0 := h0
-    mvcgen
-    refine AddFast.addFast_complete_spec .checkFinite
-      r.g ⟨base.x, CVar.negate_ base.y⟩ _ _
-      ⟨⟨by rw [hgx']; rfl, by rw [hgy']; rfl, by rw [hbx']; rfl, by rw [hny]; rfl,
-        fun x1 y1 x2 y2 he1 he2 he3 he4 => ?_⟩,
-       fun q st₃ hq hle₃ => ?_⟩
-    · rw [hgx'] at he1; rw [hgy'] at he2; rw [hbx'] at he3; rw [hny] at he4
-      injection he1 with he1; injection he2 with he2
-      injection he3 with he3; injection he4 with he4
-      subst he1 he2 he3 he4
-      exact ⟨hfin, hnegT, hgyne, fun _ => hsumne⟩
-    obtain ⟨xq, yq, hqx, hqy, -, hqns, hqsum⟩ :=
-      (hq xg yg xv (-yv) hgx' hgy' hbx' hny hfin hnegT).resolve_left (by
-        rintro ⟨-, hzero⟩
-        exact hsumne hzero)
-    have hqpt : (Point.some _ _ hqns : d.W.Point)
-        = (2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT := by
-      rw [← hqsum, hpt, hnegPt]
-      simp only [unshiftType1]
-      module
-    -- the point conditional selects coordinatewise, `y` before `x`
-    mvcgen
-    refine ⟨⟨ReadsBit.mono ((hle.trans hle').trans hle₃) hbit,
-      by rw [CVar.eval_le hle₃ hgy']; rfl, by rw [hqy]; rfl⟩,
-      fun ysel sty hyg hley => ?_⟩
-    have hyv' := hyg bb yg yq
-      (CVar.eval_le ((hle.trans hle').trans hle₃) hb)
-      (CVar.eval_le hle₃ hgy') hqy
-    mvcgen
-    refine ⟨⟨ReadsBit.mono (((hle.trans hle').trans hle₃).trans hley) hbit,
-      by rw [CVar.eval_le (hle₃.trans hley) hgx']; rfl,
-      by rw [CVar.eval_le hley hqx]; rfl⟩,
-      fun xsel stx hxg hlex => ?_⟩
-    have hxv' := hxg bb xg xq
-      (CVar.eval_le (((hle.trans hle').trans hle₃).trans hley) hb)
-      (CVar.eval_le (hle₃.trans hley) hgx') (CVar.eval_le hley hqx)
-    mvcgen
-    refine hk ⟨xsel, ysel⟩ stx
-      (fun v' xv' yv' hv' hxv' hyv' hT' bb' hb' => ?_)
-      ((((hle.trans hle').trans hle₃).trans hley).trans hlex)
-    rw [hv] at hv'
-    injection hv' with hv'
-    rw [hxv] at hxv'
-    injection hxv' with hxv'
-    rw [hyv] at hyv'
-    injection hyv' with hyv'
-    subst hv' hxv' hyv'
-    rw [hb] at hb'
-    injection hb' with hb'
-    obtain rfl := bit_inj one_ne_zero hb'
-    cases bb
-    · refine ⟨xq, yq, by simpa [selectPure] using hxv',
-        by simpa [selectPure] using CVar.eval_le hlex hyv', hqns, ?_⟩
-      rw [show unshiftType2 (5 * chunks) (ToNat.toNat v : ℤ) (bit false)
-          = 2 * (ToNat.toNat v : ℤ) + 2 ^ (5 * chunks) from by
-        simp [unshiftType2, bit]]
-      exact hqpt
-    · refine ⟨xg, yg, by simpa [selectPure] using hxv',
-        by simpa [selectPure] using CVar.eval_le hlex hyv', hfin, ?_⟩
-      rw [show unshiftType2 (5 * chunks) (ToNat.toNat v : ℤ) (bit true)
-          = unshiftType1 (5 * chunks) (ToNat.toNat v : ℤ) from by
-        simp [unshiftType2, unshiftType1, bit]; ring]
-      exact hpt
-  case post.except =>
-    exact ExceptConds.entails_false
+  have hrange' : ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ (5 * chunks) :=
+    lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd)
+  obtain ⟨hle, hgx, hgy, -, hfin, hpt⟩ :=
+    varBaseMulRun_grants n chunks hn st (scalar := ⟨sDiv2⟩) hs hx hy hrange' hreg hT
+  have hvlt : (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) < 2 ^ (5 * chunks) := by
+    exact_mod_cast hrange'
+  have hs1 := regime_off_base (Int.natCast_nonneg _) hvlt hreg
+  have hbx' := CVar.val_of_le hle hx
+  have hny : (CVar.negate_ base.y).val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation
+      = -(base.y.val st.env.toValuation) := by
+    show (CVar.scale_ (-1) base.y).val _ = _
+    rw [CVar.val_scale_, CVar.val_of_le hle hy, neg_one_mul]
+  have hgyne := y_ne_zero_of_odd_order d.W d.odd hfin
+  obtain ⟨hnegT, hnegPt⟩ := AddFast.neg_point_reading d.W
+    ⟨d.short.1, d.short.2.1, d.short.2.2.1⟩ hT
+  have hnegT' : d.W.Nonsingular
+      (base.x.val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+      ((CVar.negate_ base.y).val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation) := by
+    rw [hbx', hny]; exact hnegT
+  have hsum : ∀ (hfin' : d.W.Nonsingular
+        ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.g.x.val
+          (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+        ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.g.y.val
+          (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation))
+      (hnegT'' : d.W.Nonsingular
+        (base.x.val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)
+        ((CVar.negate_ base.y).val (varBaseMulRun n chunks st base ⟨sDiv2⟩).1.env.toValuation)),
+      Point.some _ _ hfin' + Point.some _ _ hnegT''
+        = (2 * (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) + 2 ^ (5 * chunks))
+            • Point.some _ _ hT := by
+    intro hfin' hnegT''
+    rw [Kimchi.Gate.EndoMul.some_congr d.W hfin' hfin rfl rfl,
+      Kimchi.Gate.EndoMul.some_congr d.W hnegT'' hnegT hbx' hny, hpt, hnegPt]
+    simp only [unshiftType1]
+    module
+  refine ⟨CVar.Scoped.scale_ _ (hy.of_le hle), ⟨hfin, hnegT', hgyne, fun _ => ?_⟩, hsum⟩
+  rw [hsum hfin hnegT']
+  intro h0
+  exact hs1 ((zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 h0)
 
-open Std.Do in
-/-- `splitFieldVar`'s honest run: on a readable operand in odd characteristic the
-recombination assert accepts — `2·((s − sOdd)/2) + sOdd = s` needs only `2 ≠ 0`, for
-ANY parity bit — and the returned pair reads as the parity split. -/
-@[spec] theorem splitFieldVar_complete_spec [Field F] [DecidableEq F] [ToNat F]
-    (s : FVar F)
-    (Q : PostCond (FVar F × BoolVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (s.eval env).isOk ∧ (2 : F) ≠ 0)
-        (fun env r env' => ∀ v, s.eval env = .ok v →
-          r.1.eval env' = .ok ((splitField v).1) ∧
-          (↑r.2 : CVar F).eval env' = .ok (bit (splitField v).2))
-        Q⦄
-    (splitFieldVar (c := KimchiProverC F) s)
-    ⦃Q⦄ := by
-  simp only [splitFieldVar]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hsok, h2⟩, hk⟩ := hpre
-  obtain ⟨v, hv⟩ := CVar.evalOk hsok
-  have hwit : (splitFieldWit s).run st.env = .ok (splitField v) := by
-    simp [splitFieldWit, hv,
-      Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hwit]; rfl, fun r st₁ hgrant hle₁ => ?_⟩
-  obtain ⟨hhalf', hodd'⟩ := hgrant _ hwit
-  have hhalf : r.1.eval st₁.env = .ok ((splitField v).1) := hhalf'
-  have hodd : (↑r.2 : CVar F).eval st₁.env = .ok (bit (splitField v).2) := hodd'
-  have hsum : (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2).eval st₁.env
-      = .ok (2 * (splitField v).1 + bit (splitField v).2) :=
-    CVar.eval_add_ (CVar.eval_scale_ hhalf 2) hodd
-  mvcgen
-  refine ⟨⟨by rw [CVar.eval_le hle₁ hv]; rfl, by rw [hsum]; rfl,
-    fun xv yv hx hy => ?_⟩, fun u st₂ hle₂ => ?_⟩
-  · rw [CVar.eval_le hle₁ hv] at hx
-    rw [hsum] at hy
-    injection hx with hx
-    injection hy with hy
-    subst hx hy
-    by_cases hoddc : (ToNat.toNat v) % 2 = 1 <;>
-      simp only [splitField, bit, hoddc, if_true, if_false] <;>
-      field_simp <;>
-      simp
-  mvcgen
-  exact hk r st₂ (fun v' hv' => by
-    rw [hv] at hv'
-    injection hv' with hv'
-    subst hv'
-    exact ⟨CVar.eval_le hle₂ hhalf, CVar.eval_le hle₂ hodd⟩) (hle₁.trans hle₂)
-
-/-- `scaleFast2'` is complete — the honest side of the defining equation
-`scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read through its parity split: the
-split's half must be in range and regime-satisfying (its `Type1` decode
-feeds the inner ladder), and the returned point is the `unshiftType2` decode's
-multiple at the honest split. -/
-theorem scaleFast2'_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    [d : HasCurve F]
+/-- The honest run of `scaleFast2`, generic over the curve dictionary: on an in-scope
+on-curve base, an in-scope in-range half whose `Type1` decode satisfies the inner
+ladder's regime, and a parity flag reading a genuine bit, the prover lands at
+`scaleFast2Run` — the inner ladder (`varBaseMul_run`), the pins of the bits above the
+half's width (zero, `testBit` vanishes above a value's width), the correction
+(`addFast_run` at `correction_facts`), and the two selections. -/
+theorem scaleFast2_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [d : HasCurve F]
     (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
-    (base : AffinePoint (FVar F)) (sc : FVar F)
-    (Q : PostCond (AffinePoint (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (sc.eval env).isOk ∧ (base.x.eval env).isOk ∧ (base.y.eval env).isOk ∧
-          (∀ v, sc.eval env = .ok v →
-            ToNat.toNat ((splitField v).1) < 2 ^ sDiv2Bits ∧
-            d.LadderRegime (5 * chunks)
-              (unshiftType1 (5 * chunks)
-                (ToNat.toNat ((splitField v).1) : ℤ))) ∧
-          (∀ x y, base.x.eval env = .ok x → base.y.eval env = .ok y →
-            d.W.Nonsingular x y))
-        (fun env r env' => ∀ v xv yv, sc.eval env = .ok v →
-          base.x.eval env = .ok xv → base.y.eval env = .ok yv →
-          ∀ hT : d.W.Nonsingular xv yv,
-          ∃ xS yS, r.x.eval env' = .ok xS ∧ r.y.eval env' = .ok yS ∧
-            ∃ hres : d.W.Nonsingular xS yS,
-              Point.some _ _ hres
-                = unshiftType2 (5 * chunks)
-                    (ToNat.toNat ((splitField v).1) : ℤ) (bit (splitField v).2)
-                      • Point.some _ _ hT)
-        Q⦄
-    (scaleFast2' (c := KimchiProverC F) n chunks sDiv2Bits base sc)
-    ⦃Q⦄ := by
-  simp only [scaleFast2']
-  mvcgen [scaleFast2_complete_spec, splitFieldVar_complete_spec]
-  rename_i st hpre
-  obtain ⟨⟨hsok, hxok, hyok, hsc, hcurve⟩, hk⟩ := hpre
-  obtain ⟨v, hv⟩ := CVar.evalOk hsok
-  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
-  obtain ⟨yv, hyv⟩ := CVar.evalOk hyok
-  refine ⟨⟨hsok, d.two_ne⟩, fun pr st' hsplit hle => ?_⟩
-  obtain ⟨hhalf, hodd⟩ := hsplit v hv
-  mvcgen [scaleFast2_complete_spec]
-  refine ⟨⟨by rw [hhalf]; rfl, ReadsBit.of_bit hodd,
-    by rw [CVar.eval_le hle hxv]; rfl, by rw [CVar.eval_le hle hyv]; rfl,
-    fun v' hv' => ?_, fun x y hx hy => ?_⟩,
-    fun r st'' hpt hle' => ?_⟩
-  · rw [hhalf] at hv'
-    injection hv' with hv'
-    subst hv'
-    exact hsc v hv
-  · rw [CVar.eval_le hle hxv] at hx
-    rw [CVar.eval_le hle hyv] at hy
-    injection hx with hx
-    injection hy with hy
-    subst hx hy
-    exact hcurve _ _ hxv hyv
-  refine hk r st'' (fun v' xv' yv' hv' hxv' hyv' hT => ?_) (hle.trans hle')
-  rw [hv] at hv'
-  injection hv' with hv'
-  rw [hxv] at hxv'
-  injection hxv' with hxv'
-  rw [hyv] at hyv'
-  injection hyv' with hyv'
-  subst hv' hxv' hyv'
-  exact hpt ((splitField v).1) xv yv hhalf
-    (CVar.eval_le hle hxv) (CVar.eval_le hle hyv) hT ((splitField v).2) hodd
+    (st : ProverState F) {base : AffinePoint (FVar F)} {sDiv2 : FVar F} {sOdd : BoolVar F}
+    {bb : Bool} (hs : sDiv2.Scoped st) (hb : (↑sOdd : CVar F).Scoped st)
+    (hbv : (↑sOdd : CVar F).val st.env.toValuation = bit bb)
+    (hx : base.x.Scoped st) (hy : base.y.Scoped st)
+    (hrange : ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ sDiv2Bits)
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (base.x.val st.env.toValuation) (base.y.val st.env.toValuation)) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd) st.nv st.env
+      = .ok ((scaleFast2Run n chunks st base sDiv2 sOdd).1.out
+          (scaleFast2Run n chunks st base sDiv2 sOdd).2) := by
+  have hrange' : ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ (5 * chunks) :=
+    lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd)
+  obtain ⟨hle, hgx, hgy, hbits, -, -⟩ :=
+    varBaseMulRun_grants n chunks hn st (scalar := ⟨sDiv2⟩) hs hx hy hrange' hreg hT
+  obtain ⟨hsneg, hops, -⟩ := correction_facts n chunks sDiv2Bits hn hd st hs hx hy hrange hreg hT
+  simp only [scaleFast2, scaleFast2Run, prove_bind]
+  rw [varBaseMul_run n chunks hn st (scalar := ⟨sDiv2⟩) hs hx hy hrange' hreg hT]
+  simp only [Except.bind]
+  rw [prove_forIn_unit _ _ _ (fun bpin hbpin => ?_)]
+  · simp only []
+    rw [AddFast.addFast_run (p2' := ⟨base.x, CVar.negate_ base.y⟩) .checkFinite _ hgx hgy
+      (hx.of_le hle) hsneg hops]
+    simp only []
+    have hg₂ := AddFast.addFastRun_grants (p2' := ⟨base.x, CVar.negate_ base.y⟩) .checkFinite _
+      hgx hgy (hx.of_le hle) hsneg hops
+    obtain ⟨hle₂, hqx, hqy, -, -⟩ := hg₂
+    have hb₂ := hb.of_le (hle.trans hle₂)
+    have hbv₂ := (CVar.val_of_le (hle.trans hle₂) hb).trans hbv
+    rw [select_run _ hb₂ (hgy.of_le hle₂) hqy hbv₂]
+    simp only []
+    have hgy' := selectRun_grants hb₂ (hgy.of_le hle₂) hqy hbv₂
+    rw [select_run _ (hb₂.of_le hgy'.le) (hgx.of_le (hle₂.trans hgy'.le)) (hqx.of_le hgy'.le)
+      (by rw [CVar.val_of_le hgy'.le hb₂, hbv₂])]
+    rfl
+  · -- a dropped bit reads zero: `testBit` vanishes above the half's width
+    obtain ⟨k, hk', hEq⟩ := List.mem_iff_getElem.mp hbpin
+    have hkn : sDiv2Bits + k < n := by
+      have hlen : ((varBaseMulRun n chunks st base ⟨sDiv2⟩).2.lsbBits.toList.drop
+          sDiv2Bits).length = n - sDiv2Bits := by
+        simp [List.length_drop]
+      omega
+    rw [← hEq, List.getElem_drop, Vector.getElem_toList]
+    have hbfalse : (ToNat.toNat (sDiv2.val st.env.toValuation)).testBit (sDiv2Bits + k) = false := by
+      apply Nat.testBit_lt_two_pow
+      calc ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ sDiv2Bits := hrange
+        _ ≤ 2 ^ (sDiv2Bits + k) := Nat.pow_le_pow_right (by norm_num) (by omega)
+    simp only [prove_bind]
+    rw [assertEqual_run _ (hbits _ hkn).1 (CVar.scoped_const _ _) (by
+      rw [(hbits _ hkn).2, hbfalse]
+      rfl)]
+    rfl
+
+/-- What `scaleFast2Run` grants — the honest side of the PS defining equation
+`scaleFast2 g (sDiv2, sOdd) ~ [fromShifted (sDiv2, sOdd)]·g`: the table grew, the result
+is in scope, and it reads as the `unshiftType2` decode's multiple at the parity bit. -/
+theorem scaleFast2Run_grants [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
+    (st : ProverState F) {base : AffinePoint (FVar F)} {sDiv2 : FVar F} {sOdd : BoolVar F}
+    {bb : Bool} (hs : sDiv2.Scoped st) (hb : (↑sOdd : CVar F).Scoped st)
+    (hbv : (↑sOdd : CVar F).val st.env.toValuation = bit bb)
+    (hx : base.x.Scoped st) (hy : base.y.Scoped st)
+    (hrange : ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ sDiv2Bits)
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ)))
+    (hT : d.W.Nonsingular (base.x.val st.env.toValuation) (base.y.val st.env.toValuation)) :
+    st.env.Le (scaleFast2Run n chunks st base sDiv2 sOdd).1.env ∧
+      (scaleFast2Run n chunks st base sDiv2 sOdd).2.x.Scoped
+        (scaleFast2Run n chunks st base sDiv2 sOdd).1 ∧
+      (scaleFast2Run n chunks st base sDiv2 sOdd).2.y.Scoped
+        (scaleFast2Run n chunks st base sDiv2 sOdd).1 ∧
+      ∃ hres : d.W.Nonsingular
+          ((scaleFast2Run n chunks st base sDiv2 sOdd).2.x.val
+            (scaleFast2Run n chunks st base sDiv2 sOdd).1.env.toValuation)
+          ((scaleFast2Run n chunks st base sDiv2 sOdd).2.y.val
+            (scaleFast2Run n chunks st base sDiv2 sOdd).1.env.toValuation),
+        Point.some _ _ hres
+          = unshiftType2 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) (bit bb)
+              • Point.some _ _ hT := by
+  have hrange' : ToNat.toNat (sDiv2.val st.env.toValuation) < 2 ^ (5 * chunks) :=
+    lt_of_lt_of_le hrange (Nat.pow_le_pow_right (by norm_num) hd)
+  obtain ⟨hle, hgx, hgy, -, hfin, hpt⟩ :=
+    varBaseMulRun_grants n chunks hn st (scalar := ⟨sDiv2⟩) hs hx hy hrange' hreg hT
+  obtain ⟨hsneg, hops, hsum⟩ := correction_facts n chunks sDiv2Bits hn hd st hs hx hy hrange hreg hT
+  have hg₂ := AddFast.addFastRun_grants (p2' := ⟨base.x, CVar.negate_ base.y⟩) .checkFinite _
+    hgx hgy (hx.of_le hle) hsneg hops
+  obtain ⟨hfinT, hnegT, -, -⟩ := hops
+  obtain ⟨hle₂, hqx, hqy, -, hsumq⟩ := hg₂
+  obtain ⟨hqns, -, hqsum⟩ := (hsumq hfinT hnegT).resolve_left (by
+    rintro ⟨-, hzero⟩
+    rw [hsum hfinT hnegT] at hzero
+    haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+    haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+      ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+    have hvlt : (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) < 2 ^ (5 * chunks) := by
+      exact_mod_cast hrange'
+    exact regime_off_base (Int.natCast_nonneg _) hvlt hreg
+      ((Kimchi.Gate.VarBaseMul.zsmul_eq_zero_iff_order_dvd d.W (Point.some_ne_zero hT) _).1 hzero))
+  have hqpt : Point.some _ _ hqns
+      = (2 * (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) + 2 ^ (5 * chunks))
+          • Point.some _ _ hT := by
+    rw [← hqsum, hsum hfinT hnegT]
+  have hb₂ := hb.of_le (hle.trans hle₂)
+  have hbv₂ := (CVar.val_of_le (hle.trans hle₂) hb).trans hbv
+  have hgy' := selectRun_grants hb₂ (hgy.of_le hle₂) hqy hbv₂
+  have hgx' := selectRun_grants (hb₂.of_le hgy'.le) (hgx.of_le (hle₂.trans hgy'.le))
+    (hqx.of_le hgy'.le) (by rw [CVar.val_of_le hgy'.le hb₂, hbv₂])
+  dsimp only [scaleFast2Run]
+  refine ⟨hle.trans (hle₂.trans (hgy'.le.trans hgx'.le)), hgx'.fvar_scoped,
+    hgy'.fvar_scoped.of_le hgx'.le, ?_⟩
+  rw [hgx'.fvar_val, CVar.val_of_le hgx'.le hgy'.fvar_scoped, hgy'.fvar_val,
+    CVar.val_of_le hgy'.le (hgx.of_le hle₂), CVar.val_of_le hgy'.le hqx, CVar.val_of_le hle₂ hgx,
+    CVar.val_of_le hle₂ hgy]
+  cases bb
+  · dsimp only [selectPure]
+    refine ⟨hqns, ?_⟩
+    rw [show unshiftType2 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) (bit false)
+        = 2 * (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) + 2 ^ (5 * chunks) from by
+      simp [unshiftType2, bit]]
+    exact hqpt
+  · dsimp only [selectPure]
+    refine ⟨hfin, ?_⟩
+    rw [show unshiftType2 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) (bit true)
+        = unshiftType1 (5 * chunks) (ToNat.toNat (sDiv2.val st.env.toValuation) : ℤ) from by
+      simp [unshiftType2, unshiftType1, bit]; ring]
+    exact hpt
+
+/-- The state and result of `splitFieldVar`'s honest run: the parity split at the
+counter, the half and the bit as the two fresh variables. -/
+def splitFieldVarRun [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (s : FVar F) :
+    ProverState F × (FVar F × BoolVar F) :=
+  (st.extendMany [(splitField (s.val st.env.toValuation)).1,
+      bit (splitField (s.val st.env.toValuation)).2],
+    (.var st.nv, .unchecked (.var (st.nv + 1))))
+
+/-- The honest run of `splitFieldVar`: on an in-scope operand in odd characteristic the
+recombination assert accepts — `2·((s − sOdd)/2) + sOdd = s` needs only `2 ≠ 0`, for ANY
+parity bit — and the prover lands at `splitFieldVarRun`. -/
+theorem splitFieldVar_run [Field F] [DecidableEq F] [ToNat F] {s : FVar F} (st : ProverState F)
+    (hs : s.Scoped st) (h2 : (2 : F) ≠ 0) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (splitFieldVar (c := KimchiConstraint F) s) st.nv st.env
+      = .ok ((splitFieldVarRun st s).1.out (splitFieldVarRun st s).2) := by
+  simp only [splitFieldVar, splitFieldVarRun, prove_bind]
+  rw [prove_witness_run (w := splitFieldWit s) st (.bind (.readCVar hs) fun _ => trivial)
+    (v := splitField (s.val st.env.toValuation)) (by simp [splitFieldWit, Except.bind])]
+  simp only [valueToFields_prod_toList, valueToFields_fvar_toList, valueToFields_bool_toList,
+    List.cons_append, List.nil_append, fieldsToVar_prod_alloc, fieldsToVar_fvar_alloc,
+    fieldsToVar_bool_alloc, Except.bind]
+  simp only [size_fvar]
+  have hle := st.le_extendMany [(splitField (s.val st.env.toValuation)).1,
+    bit (splitField (s.val st.env.toValuation)).2]
+  have hh : (CVar.var st.nv).Scoped (st.extendMany [(splitField (s.val st.env.toValuation)).1,
+      bit (splitField (s.val st.env.toValuation)).2]) := ProverState.mem_extendMany_head ..
+  have ho : (CVar.var (st.nv + 1)).Scoped (st.extendMany
+      [(splitField (s.val st.env.toValuation)).1, bit (splitField (s.val st.env.toValuation)).2]) :=
+    st.new_mem_extendMany (i := 1) (by simp)
+  have hhv : (CVar.var st.nv).val (st.extendMany [(splitField (s.val st.env.toValuation)).1,
+      bit (splitField (s.val st.env.toValuation)).2]).env.toValuation
+      = (splitField (s.val st.env.toValuation)).1 := ProverState.get_extendMany_head ..
+  have hov : (CVar.var (st.nv + 1)).val (st.extendMany [(splitField (s.val st.env.toValuation)).1,
+      bit (splitField (s.val st.env.toValuation)).2]).env.toValuation
+      = bit (splitField (s.val st.env.toValuation)).2 := by
+    show (st.extendMany _).env.toValuation (st.nv + 1) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+  rw [assertEqual_run _ (hs.of_le hle)
+    (CVar.Scoped.add_ (CVar.Scoped.scale_ _ hh) (by rw [BoolVar.toCVar_unchecked]; exact ho)) (by
+      rw [CVar.val_add_, CVar.val_scale_, BoolVar.toCVar_unchecked, hhv, hov,
+        CVar.val_of_le hle hs]
+      by_cases hoddc : (ToNat.toNat (s.val st.env.toValuation)) % 2 = 1 <;>
+        simp only [splitField, bit, hoddc, if_true, if_false] <;>
+        field_simp <;>
+        simp)]
+  rfl
+
+/-- What `splitFieldVarRun` grants: the table grew, the pair is in scope, and it reads
+as the parity split. -/
+theorem splitFieldVarRun_grants [Field F] [DecidableEq F] [ToNat F] {s : FVar F}
+    (st : ProverState F) :
+    st.env.Le (splitFieldVarRun st s).1.env ∧
+      (splitFieldVarRun st s).2.1.Scoped (splitFieldVarRun st s).1 ∧
+      (↑(splitFieldVarRun st s).2.2 : CVar F).Scoped (splitFieldVarRun st s).1 ∧
+      (splitFieldVarRun st s).2.1.val (splitFieldVarRun st s).1.env.toValuation
+        = (splitField (s.val st.env.toValuation)).1 ∧
+      (↑(splitFieldVarRun st s).2.2 : CVar F).val (splitFieldVarRun st s).1.env.toValuation
+        = bit (splitField (s.val st.env.toValuation)).2 := by
+  refine ⟨st.le_extendMany _, ProverState.mem_extendMany_head .., ?_,
+    ProverState.get_extendMany_head .., ?_⟩
+  · show (CVar.var (st.nv + 1)).Scoped _
+    exact st.new_mem_extendMany (i := 1) (by simp)
+  · show (st.extendMany _).env.toValuation (st.nv + 1) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+
+/-- The state and result of `scaleFast2'`'s honest run: the split, then `scaleFast2`. -/
+def scaleFast2'Run [Field F] [DecidableEq F] [ToNat F] (n chunks : ℕ) (st : ProverState F)
+    (base : AffinePoint (FVar F)) (s : FVar F) : ProverState F × AffinePoint (FVar F) :=
+  scaleFast2Run n chunks (splitFieldVarRun st s).1 base (splitFieldVarRun st s).2.1
+    (splitFieldVarRun st s).2.2
+
+/-- The honest run of `scaleFast2'`: `splitFieldVar_run`, then `scaleFast2_run` at the
+split's readings — the split's half must be in range and regime-satisfying (its `Type1`
+decode feeds the inner ladder). -/
+theorem scaleFast2'_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [d : HasCurve F]
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
+    (st : ProverState F) {base : AffinePoint (FVar F)} {sc : FVar F} (hs : sc.Scoped st)
+    (hx : base.x.Scoped st) (hy : base.y.Scoped st)
+    (hrange : ToNat.toNat (splitField (sc.val st.env.toValuation)).1 < 2 ^ sDiv2Bits)
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (splitField (sc.val st.env.toValuation)).1 : ℤ)))
+    (hT : d.W.Nonsingular (base.x.val st.env.toValuation) (base.y.val st.env.toValuation)) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base sc) st.nv st.env
+      = .ok ((scaleFast2'Run n chunks st base sc).1.out (scaleFast2'Run n chunks st base sc).2) := by
+  obtain ⟨hle, hsh, hso, hhv, hov⟩ := splitFieldVarRun_grants (s := sc) st
+  simp only [scaleFast2', scaleFast2'Run, prove_bind]
+  rw [splitFieldVar_run st hs d.two_ne]
+  simp only [Except.bind]
+  rw [scaleFast2_run n chunks sDiv2Bits hn hd _ (bb := (splitField (sc.val st.env.toValuation)).2)
+    hsh hso hov (hx.of_le hle) (hy.of_le hle) (by rw [hhv]; exact hrange) (by rw [hhv]; exact hreg)
+    (by rw [CVar.val_of_le hle hx, CVar.val_of_le hle hy]; exact hT)]
+
+/-- What `scaleFast2'Run` grants — the honest side of the defining equation
+`scaleFast2' g s ~ [s + 2^(5·chunks)]·g`, `s` read through its parity split: the
+`unshiftType2` decode's multiple at the honest split. -/
+theorem scaleFast2'Run_grants [Field F] [DecidableEq F] [ToNat F] [d : HasCurve F]
+    (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n) (hd : sDiv2Bits ≤ 5 * chunks)
+    (st : ProverState F) {base : AffinePoint (FVar F)} {sc : FVar F} (hs : sc.Scoped st)
+    (hx : base.x.Scoped st) (hy : base.y.Scoped st)
+    (hrange : ToNat.toNat (splitField (sc.val st.env.toValuation)).1 < 2 ^ sDiv2Bits)
+    (hreg : d.LadderRegime (5 * chunks)
+      (unshiftType1 (5 * chunks) (ToNat.toNat (splitField (sc.val st.env.toValuation)).1 : ℤ)))
+    (hT : d.W.Nonsingular (base.x.val st.env.toValuation) (base.y.val st.env.toValuation)) :
+    st.env.Le (scaleFast2'Run n chunks st base sc).1.env ∧
+      (scaleFast2'Run n chunks st base sc).2.x.Scoped (scaleFast2'Run n chunks st base sc).1 ∧
+      (scaleFast2'Run n chunks st base sc).2.y.Scoped (scaleFast2'Run n chunks st base sc).1 ∧
+      ∃ hres : d.W.Nonsingular
+          ((scaleFast2'Run n chunks st base sc).2.x.val
+            (scaleFast2'Run n chunks st base sc).1.env.toValuation)
+          ((scaleFast2'Run n chunks st base sc).2.y.val
+            (scaleFast2'Run n chunks st base sc).1.env.toValuation),
+        Point.some _ _ hres
+          = unshiftType2 (5 * chunks) (ToNat.toNat (splitField (sc.val st.env.toValuation)).1 : ℤ)
+              (bit (splitField (sc.val st.env.toValuation)).2) • Point.some _ _ hT := by
+  have _ := hs
+  obtain ⟨hle, hsh, hso, hhv, hov⟩ := splitFieldVarRun_grants (s := sc) st
+  have hT' : d.W.Nonsingular (base.x.val (splitFieldVarRun st sc).1.env.toValuation)
+      (base.y.val (splitFieldVarRun st sc).1.env.toValuation) := by
+    rw [CVar.val_of_le hle hx, CVar.val_of_le hle hy]; exact hT
+  obtain ⟨hle', hgx, hgy, hres, hpt⟩ := scaleFast2Run_grants n chunks sDiv2Bits hn hd _
+    (bb := (splitField (sc.val st.env.toValuation)).2) hsh hso hov (hx.of_le hle) (hy.of_le hle)
+    (by rw [hhv]; exact hrange) (by rw [hhv]; exact hreg) hT'
+  dsimp only [scaleFast2'Run]
+  refine ⟨hle.trans hle', hgx, hgy, hres, ?_⟩
+  rw [hpt, hhv, Kimchi.Gate.EndoMul.some_congr d.W hT' hT (CVar.val_of_le hle hx)
+    (CVar.val_of_le hle hy)]
 
 end Snarky.Kimchi

@@ -487,258 +487,375 @@ private theorem round_eval_ok_iff [Field F] [DecidableEq F] {env : Assignments F
     rw [ha0, hb0, hn0, ha8, hb8, hn8, hxs]
     simp [Bind.bind, Except.bind, Pure.pure, Except.pure]
 
-/-- A round's read survives table extension. -/
-private theorem round_eval_le [Field F] [DecidableEq F] {env env' : Assignments F}
-    (hle : env.Le env') {r : EndoScalarRound F} {w : Kimchi.Gate.EndoScalar.Witness F}
-    (h : EndoScalarRound.eval env r = .ok w) :
-    EndoScalarRound.eval env' r = .ok w := by
-  obtain ⟨ha0, hb0, hn0, ha8, hb8, hn8, hxs⟩ := round_eval_ok_iff.mp h
-  exact round_eval_ok_iff.mpr ⟨CVar.eval_le hle ha0, CVar.eval_le hle hb0,
-    CVar.eval_le hle hn0, CVar.eval_le hle ha8, CVar.eval_le hle hb8,
-    CVar.eval_le hle hn8, mapM_eval_le hle hxs⟩
+/-- One accumulator round's step of the honest run: the three register outputs
+allocated, the round record and the new registers returned. -/
+private def roundStep [Field F] [DecidableEq F] (st : ProverState F)
+    (acc : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8) :
+    ProverState F × (EndoScalarRound F × (FVar F × FVar F × FVar F)) :=
+  let w := Kimchi.Gate.EndoScalar.build (acc.1.val st.env.toValuation)
+    (acc.2.1.val st.env.toValuation) (acc.2.2.val st.env.toValuation)
+    (xs.toList.map (·.val st.env.toValuation))
+  (st.extendMany [w.a8, w.b8, w.n8],
+    ({ n0 := acc.2.2, n8 := .var (st.nv + 2), a0 := acc.1, a8 := .var st.nv,
+       b0 := acc.2.1, b8 := .var (st.nv + 1), xs },
+     (.var st.nv, .var (st.nv + 1), .var (st.nv + 2))))
 
-/-- The collected rounds' check survives table extension. -/
-private theorem check_rounds_le [Field F] [DecidableEq F] {env env' : Assignments F}
-    (hle : env.Le env') {rounds : List (EndoScalarRound F)}
-    (h : KimchiConstraint.check (.endoScalar rounds) env = true) :
-    KimchiConstraint.check (.endoScalar rounds) env' = true := by
-  simp only [KimchiConstraint.check, List.all_eq_true] at h ⊢
-  intro r hr
-  have hh := h r hr
-  cases he : EndoScalarRound.eval env r with
-  | error e => rw [he] at hh; simp at hh
-  | ok w =>
-    rw [he] at hh
-    rw [round_eval_le hle he]
-    exact hh
+/-- The crumb table's variables: the bulk allocation at the counter. -/
+private def crumbVarsOf (st : ProverState F) (rows : ℕ) : Vector (Vector (FVar F) 8) rows :=
+  CircuitType.fieldsToVar (F := F) (val := Vector (Vector F 8) rows)
+    (mapVec CVar.var (allocRange st.nv (CircuitType.size F (Vector (Vector F 8) rows))))
 
-/-- One row's accumulator witness computes the gate's canonical row's outputs. -/
-private theorem rowWit_ok [Field F] [DecidableEq F] {env : Assignments F}
-    {xs : Vector (FVar F) 8} {st : FVar F × FVar F × FVar F} {a b n : F} {vs : List F}
-    (ha : st.1.eval env = .ok a) (hb : st.2.1.eval env = .ok b)
-    (hn : st.2.2.eval env = .ok n)
-    (hxs : xs.toList.mapM (CVar.eval · env) = .ok vs) :
-    (rowWit xs st).run env
-      = .ok ((Kimchi.Gate.EndoScalar.build a b n vs).a8,
-             (Kimchi.Gate.EndoScalar.build a b n vs).b8,
-             (Kimchi.Gate.EndoScalar.build a b n vs).n8) := by
-  simp [rowWit, ha, hb, hn, AsProver.readAll_ok hxs, Bind.bind,
-    Except.bind, Pure.pure]
+/-- The state after the bulk witness: the scalar's crumb table written. -/
+private def crumbState [Field F] [ToNat F] (st : ProverState F) (rows : ℕ) (scalar : FVar F) :
+    ProverState F :=
+  st.extendMany (CircuitType.valueToFields (F := F) (var := Vector (Vector (FVar F) 8) rows)
+    (crumbVals (F := F) rows (ToNat.toNat (scalar.val st.env.toValuation)))).toList
 
-open Std.Do in
-/-- The gate emitter is complete: the honest prover run accepts on any readable
-scalar — no range condition — and the returned accumulators read as the gate model's
-decompositions of the scalar's crumbs. -/
-theorem toFieldChecked'_complete_spec [Field F] [DecidableEq F] [ToNat F]
-    (rows : ℕ) (scalar : FVar F)
-    (Q : PostCond (FVar F × FVar F × FVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (scalar.eval env).isOk)
-        (fun env r env' => ∀ vv, scalar.eval env = .ok vv →
-          r.1.eval env' = .ok (Kimchi.Gate.EndoScalar.decomposeA
-            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv))) ∧
-          r.2.1.eval env' = .ok (Kimchi.Gate.EndoScalar.decomposeB
-            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv))) ∧
-          r.2.2.eval env' = .ok (Kimchi.Gate.EndoScalar.nReconstruct
-            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv)))) Q⦄
-    (toFieldChecked' (c := KimchiProverC F) rows scalar)
-    ⦃Q⦄ := by
-  simp only [toFieldChecked', mapAccumM]
-  mvcgen
-  rename_i st₀ hpre
-  obtain ⟨hoks, hk⟩ := hpre
-  obtain ⟨vv, hv⟩ := CVar.evalOk hoks
-  have hwit : (crumbsWit rows scalar).run st₀.env
-      = .ok (crumbVals rows (ToNat.toNat vv)) := by
-    simp [crumbsWit, hv, Bind.bind, Except.bind,
-      Pure.pure]
-  refine ⟨by rw [hwit]; rfl, fun crumbVars st₁ hgrant hle₁ => ?_⟩
-  have hread := hgrant _ hwit
-  mvcgen
-  case inv1 =>
-    exact ⇓ p s' => ⌜st₁.env.Le s'.env ∧
-      (let w := Kimchi.Gate.EndoScalar.chainBuild
-          (crumbRows (F := F) rows (ToNat.toNat vv)) p.1.prefix.length
-       p.2.fst.1.eval s'.env = .ok w.a0 ∧
-       p.2.fst.2.1.eval s'.env = .ok w.b0 ∧
-       p.2.fst.2.2.eval s'.env = .ok w.n0) ∧
-      KimchiConstraint.check (.endoScalar p.2.snd) s'.env = true⌝
-  case vc1.step =>
-    rename_i pref cur suff hsplit b s' hinv
-    obtain ⟨hLe, hacc, hcheck⟩ := hinv
-    obtain ⟨hA, hB, hN⟩ := hacc
-    have hkrows : pref.length < rows := by
-      have hlen := congrArg List.length hsplit
-      simp only [Vector.length_toList, List.length_append, List.length_cons] at hlen
-      omega
-    have hcur : cur = crumbVars[pref.length]'hkrows := by
-      have h1 : crumbVars.toList[pref.length]'(by
-          simp only [Vector.length_toList]; omega) = cur := by
-        simp only [hsplit]
-        rw [List.getElem_append_right (Nat.le_refl _)]
-        simp
-      rw [← h1, Vector.getElem_toList]
-    subst hcur
-    have hxs : (crumbVars[pref.length]'hkrows).toList.mapM (CVar.eval · s'.env)
-        = .ok (crumbRows (F := F) rows (ToNat.toNat vv) pref.length) := by
-      rw [crumbRows_getElem rows (ToNat.toNat vv) pref.length hkrows]
-      refine mapM_eval_ok (by simp) ?_
-      intro j hj hj'
-      simp only [Vector.length_toList] at hj
-      simp only [Vector.getElem_toList]
-      exact CVar.eval_le hLe (hread pref.length hkrows j hj)
-    have hrow := rowWit_ok (env := s'.env) hA hB hN hxs
-    rw [build_fields] at hrow
-    refine ⟨by rw [hrow]; rfl, fun r st' hgrant' hle' => ?_⟩
-    have hw := hgrant' _ hrow
-    have heval : EndoScalarRound.eval st'.env
-        { n0 := b.fst.2.2, n8 := r.2.2, a0 := b.fst.1, a8 := r.1,
-          b0 := b.fst.2.1, b8 := r.2.1, xs := crumbVars[pref.length]'hkrows }
-        = .ok (Kimchi.Gate.EndoScalar.chainBuild
-            (crumbRows (F := F) rows (ToNat.toNat vv)) pref.length) :=
-      round_eval_ok_iff.mpr ⟨CVar.eval_le hle' hA, CVar.eval_le hle' hB,
-        CVar.eval_le hle' hN, hw.1, hw.2.1, hw.2.2, by
-          rw [chainBuild_crumbs]
-          exact mapM_eval_le hle' hxs⟩
-    mvcgen
-    refine ⟨hLe.trans hle', ?_, ?_⟩
-    · simp only [List.length_append, List.length_cons, List.length_nil]
-      exact ⟨hw.1, hw.2.1, hw.2.2⟩
-    · simp only [KimchiConstraint.check, List.all_append, List.all_cons, List.all_nil,
-        Bool.and_eq_true, and_true]
-      refine ⟨?_, ?_⟩
-      · simpa only [KimchiConstraint.check] using check_rounds_le hle' hcheck
-      · simp only [heval]
-        exact (Kimchi.Gate.EndoScalar.ok_iff _).mpr
-          ((Kimchi.Gate.EndoScalar.chain_complete pref.length _
-            (fun i _ => crumbRows_valid rows (ToNat.toNat vv) i)).1 pref.length
-            (Nat.le_refl _))
-  case vc2.vc1.pre =>
-    refine ⟨Assignments.Le.refl st₁.env, ⟨?_, ?_, ?_⟩,
-        by simp [KimchiConstraint.check]⟩ <;>
-      simp [CVar.eval, Kimchi.Gate.EndoScalar.chainBuild,
-        Kimchi.Gate.EndoScalar.build]
-  case vc3.vc1.post.success =>
-    rename_i fin s' hinv
-    obtain ⟨hLe, hacc, hcheck⟩ := hinv
-    obtain ⟨hA, hB, hN⟩ := hacc
-    simp only [Vector.length_toList] at hA hB hN
-    refine addConstraint_complete_spec (c := KimchiConstraint F)
-      (KimchiSystem.endoScalar fin.snd) (fun a => wp⟦pure fin.fst⟧ Q, Q.2) s'
-      ⟨hcheck, fun u st₂ _ hle₂ => ?_⟩
-    simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk fin.fst ⟨st₂.nv, st₂.env, hf⟩ (fun vv' hv' => ?_)
-      (hle₁.trans (hLe.trans hle₂))
-    rw [hv] at hv'
-    injection hv' with hv'
-    subst hv'
-    cases rows with
-    | zero =>
-      exact ⟨CVar.eval_le hle₂ (by simpa using hA),
-        CVar.eval_le hle₂ (by simpa using hB), CVar.eval_le hle₂ (by simpa using hN)⟩
-    | succ m =>
-      obtain ⟨hH, c1, c2, c3, s1, s2, s3, -⟩ :=
-        Kimchi.Gate.EndoScalar.chain_complete m
-          (crumbRows (F := F) (m + 1) (ToNat.toNat vv))
-          (fun i _ => crumbRows_valid (m + 1) (ToNat.toNat vv) i)
-      obtain ⟨dA, dB, dN⟩ := Kimchi.Gate.EndoScalar.chain_decompose m
-        (Kimchi.Gate.EndoScalar.chainBuild
-          (crumbRows (F := F) (m + 1) (ToNat.toNat vv)))
-        hH c1 c2 c3 s1 s2 s3
-      have hstream := flatMap_range_getD
-        (((crumbVals (F := F) (m + 1) (ToNat.toNat vv)).toList.map Vector.toList))
-      rw [show (((crumbVals (F := F) (m + 1) (ToNat.toNat vv)).toList.map
-          Vector.toList)).length = m + 1 from by simp,
-        crumbVals_flatten] at hstream
-      have hstream' : (List.range (m + 1)).flatMap
-            (crumbRows (F := F) (m + 1) (ToNat.toNat vv))
-          = Kimchi.Gate.EndoScalar.crumbsOf (8 * (m + 1)) (ToNat.toNat vv) := hstream
-      rw [Kimchi.Gate.EndoScalar.chainCrumbs_chainBuild, hstream'] at dA dB dN
-      refine ⟨?_, ?_, ?_⟩
-      · exact CVar.eval_le hle₂ (by rw [← dA]; exact hA)
-      · exact CVar.eval_le hle₂ (by rw [← dB]; exact hB)
-      · exact CVar.eval_le hle₂ (by rw [← dN]; exact hN)
-  case vc4.vc1.post.except =>
-    exact ExceptConds.entails_false
+/-- The state and result of `toFieldChecked'`'s honest run: the crumb table, then the
+accumulator rounds. -/
+def toFieldChecked'Run [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (rows : ℕ)
+    (scalar : FVar F) : ProverState F × (FVar F × FVar F × FVar F) :=
+  let r := mapAccumRun roundStep (crumbState st rows scalar) (.const 2, .const 2, .const 0)
+    (crumbVarsOf st rows).toList
+  (r.1, r.2.2)
 
-open Std.Do in
-/-- The checked decomposition is complete: the honest prover run accepts on a
-readable scalar whose representative fits the crumb budget, and the
-result reads as the gate model's `toField` at the scalar's crumbs. -/
-theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (rows : ℕ) (scalar endo : FVar F)
-    (Q : PostCond (FVar F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (scalar.eval env).isOk ∧ (endo.eval env).isOk ∧
-          ∀ vv, scalar.eval env = .ok vv →
-            ToNat.toNat vv < 4 ^ (8 * rows))
-        (fun env r env' => ∀ vv ev, scalar.eval env = .ok vv →
-          endo.eval env = .ok ev →
-          r.eval env' = .ok (Kimchi.Gate.EndoScalar.toField
-            (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat vv)) ev)) Q⦄
-    (toField (c := KimchiProverC F) rows scalar endo)
-    ⦃Q⦄ := by
-  simp only [toField]
-  mvcgen
-  rename_i st₀ hpre
-  obtain ⟨⟨hoks, hoke, hbound⟩, hk⟩ := hpre
-  obtain ⟨vv, hv⟩ := CVar.evalOk hoks
-  obtain ⟨ev, he⟩ := CVar.evalOk hoke
-  have hlt := hbound vv hv
-  have hfaith := LawfulToNat.cast_toNat vv
-  refine toFieldChecked'_complete_spec rows scalar _ _
-    ⟨hoks, fun abn st₁ hpost₁ hle₁ => ?_⟩
-  obtain ⟨hA, hB, hN⟩ := hpost₁ vv hv
-  mvcgen
-  refine ⟨⟨by rw [hN]; rfl, by rw [CVar.eval_le hle₁ hv]; rfl,
-      fun nv sv hnv hsv => ?_⟩, fun u st₂ hle₂ => ?_⟩
-  · rw [hN] at hnv
-    injection hnv with hnv
-    rw [CVar.eval_le hle₁ hv] at hsv
-    injection hsv with hsv
-    subst hnv hsv
-    rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt, hfaith]
-  · split
-    · rename_i e
-      simp only [wp, PredTrans.apply, prove]
-      intro hf
-      refine hk _ ⟨st₂.nv, st₂.env, hf⟩ (fun vv' ev' hv' he' => ?_)
-        (hle₁.trans hle₂)
-      rw [hv] at hv'
-      injection hv' with hv'
-      subst hv'
-      rw [he] at he'
-      injection he' with he'
-      subst he'
-      have hA2 := CVar.eval_le hle₂ hA
-      have hB2 := CVar.eval_le hle₂ hB
-      have hev : ev = e := by
-        simp only [CVar.eval] at he
-        exact (Except.ok.inj he).symm
-      rw [CVar.eval_add_fold]
-      simp only [CVar.eval, CVar.eval_scale_ hA2 e, hB2, Except.ok.injEq,
-        Kimchi.Gate.EndoScalar.toField, hev]
-      ring
-    · mvcgen
-      refine ⟨⟨by rw [CVar.eval_le hle₂ hA]; rfl,
-          by rw [CVar.eval_le (hle₁.trans hle₂) he]; rfl⟩,
-        fun p st₃ hp hle₃ => ?_⟩
-      have hpv := hp _ _ (CVar.eval_le hle₂ hA) (CVar.eval_le (hle₁.trans hle₂) he)
-      simp only [wp, PredTrans.apply, prove]
-      intro hf
-      refine hk _ ⟨st₃.nv, st₃.env, hf⟩ (fun vv' ev' hv' he' => ?_)
-        (hle₁.trans (hle₂.trans hle₃))
-      rw [hv] at hv'
-      injection hv' with hv'
-      subst hv'
-      rw [he] at he'
-      injection he' with he'
-      subst he'
-      have hB3 := CVar.eval_le (hle₂.trans hle₃) hB
-      rw [CVar.eval_add_fold]
-      simp only [CVar.eval, hB3, hpv, Except.ok.injEq,
-        Kimchi.Gate.EndoScalar.toField]
-      ring
+/-- Every crumb variable is in scope at the crumb state. -/
+private theorem crumbVarsOf_scoped [Field F] [ToNat F] (st : ProverState F) (rows : ℕ)
+    (scalar : FVar F) :
+    ∀ xs ∈ (crumbVarsOf st rows).toList, ∀ x ∈ xs.toList, x.Scoped (crumbState st rows scalar) := by
+  intro xs hxs x hx
+  obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hxs
+  obtain ⟨l, hl, rfl⟩ := List.mem_iff_getElem.mp hx
+  simp only [Vector.getElem_toList]
+  have h := scoped_vector_iff.mp (scoped_extendMany_new (var := Vector (Vector (FVar F) 8) rows)
+    st (crumbVals (F := F) rows (ToNat.toNat (scalar.val st.env.toValuation)))) j
+    (by simpa using hj)
+  exact scoped_fvar_iff.mp (scoped_vector_iff.mp h l (by simpa using hl))
+
+/-- A crumb row reads, at the crumb state, as the scalar's chain row. -/
+private theorem crumbVarsOf_val [Field F] [ToNat F] (st : ProverState F) (rows : ℕ)
+    (scalar : FVar F) (j : ℕ) (hj : j < rows) :
+    ((crumbVarsOf st rows)[j]).toList.map (·.val (crumbState st rows scalar).env.toValuation)
+      = crumbRows (F := F) rows (ToNat.toNat (scalar.val st.env.toValuation)) j := by
+  rw [crumbRows_getElem _ _ j hj]
+  have h := encodes_vector_iff.mp (encodes_extendMany_new (var := Vector (Vector (FVar F) 8) rows)
+    st (crumbVals (F := F) rows (ToNat.toNat (scalar.val st.env.toValuation)))) j hj
+  apply List.ext_getElem (by simp)
+  intro l hl1 hl2
+  simp only [List.getElem_map, Vector.getElem_toList]
+  exact encodes_fvar_iff.mp (encodes_vector_iff.mp h l (by simpa using hl2))
+
+/-- One accumulator round's honest run, at any state where the registers and the row's
+crumbs are in scope. -/
+private theorem round_run [Field F] [DecidableEq F] {st : ProverState F}
+    {acc : FVar F × FVar F × FVar F} {xs : Vector (FVar F) 8}
+    (ha : acc.1.Scoped st) (hb : acc.2.1.Scoped st) (hn : acc.2.2.Scoped st)
+    (hxs : ∀ x ∈ xs.toList, x.Scoped st) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (do
+        let w ← witness (val := F × F × F) (rowWit xs acc)
+        pure (({ n0 := acc.2.2, n8 := w.2.2, a0 := acc.1, a8 := w.1,
+                 b0 := acc.2.1, b8 := w.2.1, xs } : EndoScalarRound F),
+              (w.1, w.2.1, w.2.2)) : CircuitM F (KimchiConstraint F) _) st.nv st.env
+      = .ok ((roundStep st acc xs).1.out (roundStep st acc xs).2) := by
+  simp only [prove_bind]
+  rw [prove_witness_run (w := rowWit xs acc) st
+    (.bind (.readCVar ha) fun _ => .bind (.readCVar hb) fun _ => .bind (.readCVar hn) fun _ =>
+      .bind (.mapM_readCVar hxs) fun _ => trivial)
+    (v := ((Kimchi.Gate.EndoScalar.build (acc.1.val st.env.toValuation)
+        (acc.2.1.val st.env.toValuation) (acc.2.2.val st.env.toValuation)
+        (xs.toList.map (·.val st.env.toValuation))).a8,
+      (Kimchi.Gate.EndoScalar.build (acc.1.val st.env.toValuation)
+        (acc.2.1.val st.env.toValuation) (acc.2.2.val st.env.toValuation)
+        (xs.toList.map (·.val st.env.toValuation))).b8,
+      (Kimchi.Gate.EndoScalar.build (acc.1.val st.env.toValuation)
+        (acc.2.1.val st.env.toValuation) (acc.2.2.val st.env.toValuation)
+        (xs.toList.map (·.val st.env.toValuation))).n8))
+    (by simp [rowWit, Except.bind])]
+  simp only [valueToFields_triple_toList, fieldsToVar_triple_alloc, Except.bind, roundStep]
+  rfl
+
+/-- The accumulator fold, read: from registers reading the chain's row-`i` inputs, over
+rows reading the chain's crumbs, the fold grows the table, its registers read the
+chain's row-`(i + l.length)` inputs, and every collected round evaluates at the final
+table to its chain row. -/
+private theorem roundsRun_inv [Field F] [DecidableEq F] (rows' : ℕ → List F) :
+    ∀ (l : List (Vector (FVar F) 8)) (i : ℕ) (st : ProverState F)
+      (acc : FVar F × FVar F × FVar F),
+      (∀ j (hj : j < l.length), (∀ x ∈ l[j].toList, x.Scoped st) ∧
+        l[j].toList.map (·.val st.env.toValuation) = rows' (i + j)) →
+      acc.1.Scoped st → acc.2.1.Scoped st → acc.2.2.Scoped st →
+      acc.1.val st.env.toValuation = (Kimchi.Gate.EndoScalar.chainBuild rows' i).a0 →
+      acc.2.1.val st.env.toValuation = (Kimchi.Gate.EndoScalar.chainBuild rows' i).b0 →
+      acc.2.2.val st.env.toValuation = (Kimchi.Gate.EndoScalar.chainBuild rows' i).n0 →
+      st.env.Le (mapAccumRun roundStep st acc l).1.env ∧
+      ((mapAccumRun roundStep st acc l).2.2.1.Scoped (mapAccumRun roundStep st acc l).1 ∧
+        (mapAccumRun roundStep st acc l).2.2.2.1.Scoped (mapAccumRun roundStep st acc l).1 ∧
+        (mapAccumRun roundStep st acc l).2.2.2.2.Scoped (mapAccumRun roundStep st acc l).1) ∧
+      ((mapAccumRun roundStep st acc l).2.2.1.val
+          (mapAccumRun roundStep st acc l).1.env.toValuation
+          = (Kimchi.Gate.EndoScalar.chainBuild rows' (i + l.length)).a0 ∧
+        (mapAccumRun roundStep st acc l).2.2.2.1.val
+          (mapAccumRun roundStep st acc l).1.env.toValuation
+          = (Kimchi.Gate.EndoScalar.chainBuild rows' (i + l.length)).b0 ∧
+        (mapAccumRun roundStep st acc l).2.2.2.2.val
+          (mapAccumRun roundStep st acc l).1.env.toValuation
+          = (Kimchi.Gate.EndoScalar.chainBuild rows' (i + l.length)).n0) ∧
+      ∀ j (hj : j < (mapAccumRun roundStep st acc l).2.1.length),
+        EndoScalarRound.eval (mapAccumRun roundStep st acc l).1.env
+          (mapAccumRun roundStep st acc l).2.1[j]
+          = .ok (Kimchi.Gate.EndoScalar.chainBuild rows' (i + j))
+  | [], i, st, acc, _, ha, hb, hn, hva, hvb, hvn => by
+    refine ⟨Assignments.Le.refl _, ⟨ha, hb, hn⟩, ?_, fun j hj => by simp [mapAccumRun] at hj⟩
+    simp only [mapAccumRun, List.length_nil, Nat.add_zero]
+    exact ⟨hva, hvb, hvn⟩
+  | x :: l, i, st, acc, hl, ha, hb, hn, hva, hvb, hvn => by
+    obtain ⟨hxs, hxv⟩ := hl 0 (by simp)
+    simp only [List.getElem_cons_zero, Nat.add_zero] at hxs hxv
+    have hw : Kimchi.Gate.EndoScalar.build (acc.1.val st.env.toValuation)
+        (acc.2.1.val st.env.toValuation) (acc.2.2.val st.env.toValuation)
+        (x.toList.map (·.val st.env.toValuation)) = Kimchi.Gate.EndoScalar.chainBuild rows' i := by
+      rw [hva, hvb, hvn, hxv, build_fields]
+    have hle₁ : st.env.Le (roundStep st acc x).1.env := st.le_extendMany _
+    have hs₁ : (roundStep st acc x).2.2.1.Scoped (roundStep st acc x).1 :=
+      ProverState.mem_extendMany_head ..
+    have hs₂ : (roundStep st acc x).2.2.2.1.Scoped (roundStep st acc x).1 :=
+      st.new_mem_extendMany (i := 1) (by simp)
+    have hs₃ : (roundStep st acc x).2.2.2.2.Scoped (roundStep st acc x).1 :=
+      st.new_mem_extendMany (i := 2) (by simp)
+    have hv₁ : (roundStep st acc x).2.2.1.val (roundStep st acc x).1.env.toValuation
+        = (Kimchi.Gate.EndoScalar.chainBuild rows' i).a8 := by
+      show (roundStep st acc x).1.env.toValuation st.nv = _
+      simp only [roundStep, ProverState.get_extendMany_head, hw]
+    have hv₂ : (roundStep st acc x).2.2.2.1.val (roundStep st acc x).1.env.toValuation
+        = (Kimchi.Gate.EndoScalar.chainBuild rows' i).b8 := by
+      show (roundStep st acc x).1.env.toValuation (st.nv + 1) = _
+      simp only [roundStep]
+      rw [ProverState.get_extendMany_new st (by simp), hw]
+      rfl
+    have hv₃ : (roundStep st acc x).2.2.2.2.val (roundStep st acc x).1.env.toValuation
+        = (Kimchi.Gate.EndoScalar.chainBuild rows' i).n8 := by
+      show (roundStep st acc x).1.env.toValuation (st.nv + 2) = _
+      simp only [roundStep]
+      rw [ProverState.get_extendMany_new st (by simp), hw]
+      rfl
+    have ih := roundsRun_inv rows' l (i + 1) (roundStep st acc x).1 (roundStep st acc x).2.2
+      (fun j hj => by
+        obtain ⟨hsj, hvj⟩ := hl (j + 1) (by simpa using hj)
+        simp only [List.getElem_cons_succ] at hsj hvj
+        refine ⟨fun y hy => (hsj y hy).of_le hle₁, ?_⟩
+        rw [show i + 1 + j = i + (j + 1) by omega, ← hvj]
+        exact List.map_congr_left fun y hy => CVar.val_of_le hle₁ (hsj y hy))
+      hs₁ hs₂ hs₃ hv₁ hv₂ hv₃
+    simp only [mapAccumRun]
+    refine ⟨hle₁.trans ih.1, ih.2.1, ?_, ?_⟩
+    · simpa only [List.length_cons, Nat.add_assoc, Nat.add_comm 1] using ih.2.2.1
+    · intro j hj
+      cases j with
+      | zero =>
+        simp only [List.getElem_cons_zero, Nat.add_zero]
+        have hle := hle₁.trans ih.1
+        refine round_eval_ok_iff.mpr ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        · show acc.1.eval _ = _
+          rw [CVar.eval_eq_val (ha.of_le hle), CVar.val_of_le hle ha, hva]
+        · show acc.2.1.eval _ = _
+          rw [CVar.eval_eq_val (hb.of_le hle), CVar.val_of_le hle hb, hvb]
+        · show acc.2.2.eval _ = _
+          rw [CVar.eval_eq_val (hn.of_le hle), CVar.val_of_le hle hn, hvn]
+        · show (roundStep st acc x).2.2.1.eval _ = _
+          rw [CVar.eval_eq_val (hs₁.of_le ih.1), CVar.val_of_le ih.1 hs₁, hv₁]
+        · show (roundStep st acc x).2.2.2.1.eval _ = _
+          rw [CVar.eval_eq_val (hs₂.of_le ih.1), CVar.val_of_le ih.1 hs₂, hv₂]
+        · show (roundStep st acc x).2.2.2.2.eval _ = _
+          rw [CVar.eval_eq_val (hs₃.of_le ih.1), CVar.val_of_le ih.1 hs₃, hv₃]
+        · show x.toList.mapM (CVar.eval · _) = _
+          rw [CVar.mapM_eval_eq_val (fun y hy => (hxs y hy).of_le hle), chainBuild_crumbs, ← hxv]
+          exact congrArg Except.ok
+            (List.map_congr_left fun y hy => CVar.val_of_le hle (hxs y hy))
+      | succ j =>
+        simp only [List.getElem_cons_succ]
+        rw [show i + (j + 1) = i + 1 + j by omega]
+        exact ih.2.2.2 j (by simpa using hj)
+
+/-- The emitter's honest run on an in-scope scalar lands at `toFieldChecked'Run`: the
+crumb table, the accumulator rounds, and the chain constraint accepted on the gate's
+canonical chain. -/
+theorem toFieldChecked'_run [Field F] [DecidableEq F] [ToNat F] (rows : ℕ) {scalar : FVar F}
+    (st : ProverState F) (hs : scalar.Scoped st) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (toFieldChecked' (c := KimchiConstraint F) rows scalar) st.nv st.env
+      = .ok ((toFieldChecked'Run st rows scalar).1.out (toFieldChecked'Run st rows scalar).2) := by
+  simp only [toFieldChecked', prove_bind]
+  rw [prove_witness_run (w := crumbsWit rows scalar) st (.bind (.readCVar hs) fun _ => trivial)
+    (v := crumbVals (F := F) rows (ToNat.toNat (scalar.val st.env.toValuation)))
+    (by simp [crumbsWit, Except.bind])]
+  rw [show CircuitType.fieldsToVar (F := F) (val := Vector (Vector F 8) rows)
+      (mapVec CVar.var (allocRange st.nv (CircuitType.size F (Vector (Vector F 8) rows))))
+      = crumbVarsOf st rows from rfl,
+    show st.extendMany (CircuitType.valueToFields (F := F)
+      (var := Vector (Vector (FVar F) 8) rows)
+      (crumbVals (F := F) rows (ToNat.toNat (scalar.val st.env.toValuation)))).toList
+      = crumbState st rows scalar from rfl]
+  simp only [Except.bind]
+  have hinv := roundsRun_inv (crumbRows rows (ToNat.toNat (scalar.val st.env.toValuation)))
+    (crumbVarsOf st rows).toList 0 (crumbState st rows scalar) (.const 2, .const 2, .const 0)
+    (fun j hj => ⟨fun x hx => crumbVarsOf_scoped st rows scalar _ (List.getElem_mem hj) x hx, by
+      rw [Vector.getElem_toList, crumbVarsOf_val st rows scalar j (by simpa using hj),
+        Nat.zero_add]⟩)
+    trivial trivial trivial
+    (by simp [CVar.val, Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build])
+    (by simp [CVar.val, Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build])
+    (by simp [CVar.val, Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build])
+  rw [prove_mapAccumM (fun st' acc => (crumbState st rows scalar).env.Le st'.env ∧
+      acc.1.Scoped st' ∧ acc.2.1.Scoped st' ∧ acc.2.2.Scoped st') _ roundStep _
+    (fun st' acc xs hx ⟨hle, ha, hb, hn⟩ =>
+      round_run ha hb hn fun x hxx => (crumbVarsOf_scoped st rows scalar xs hx x hxx).of_le hle)
+    (fun st' acc xs _ ⟨hle, _, _, _⟩ => ⟨hle.trans (st'.le_extendMany _),
+      ProverState.mem_extendMany_head .., st'.new_mem_extendMany (i := 1) (by simp),
+      st'.new_mem_extendMany (i := 2) (by simp)⟩)
+    (.const 2, .const 2, .const 0) (crumbState st rows scalar)
+    ⟨Assignments.Le.refl _, trivial, trivial, trivial⟩]
+  simp only []
+  rw [prove_addConstraint _ (by
+    show KimchiConstraint.check (.endoScalar _) _ = true
+    simp only [KimchiConstraint.check, List.all_eq_true]
+    intro r hr
+    obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hr
+    rw [hinv.2.2.2 j hj, Nat.zero_add]
+    exact (Kimchi.Gate.EndoScalar.ok_iff _).mpr
+      ((Kimchi.Gate.EndoScalar.chain_complete j _
+        (fun i _ => crumbRows_valid rows (ToNat.toNat (scalar.val st.env.toValuation)) i)).1
+        j (Nat.le_refl _)))]
+  rfl
+
+/-- `toFieldChecked'Run` reads as the gate model's decompositions of the scalar's
+crumbs. -/
+theorem toFieldChecked'Run_grants [Field F] [DecidableEq F] [ToNat F] (rows : ℕ)
+    {scalar : FVar F} (st : ProverState F) (hs : scalar.Scoped st) :
+    Grants (F × F × F) st (toFieldChecked'Run st rows scalar)
+      (Kimchi.Gate.EndoScalar.decomposeA
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (scalar.val st.env.toValuation))),
+        Kimchi.Gate.EndoScalar.decomposeB
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (scalar.val st.env.toValuation))),
+        Kimchi.Gate.EndoScalar.nReconstruct
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows)
+            (ToNat.toNat (scalar.val st.env.toValuation)))) := by
+  have _ := hs
+  have hinv := roundsRun_inv (crumbRows rows (ToNat.toNat (scalar.val st.env.toValuation)))
+    (crumbVarsOf st rows).toList 0 (crumbState st rows scalar) (.const 2, .const 2, .const 0)
+    (fun j hj => ⟨fun x hx => crumbVarsOf_scoped st rows scalar _ (List.getElem_mem hj) x hx, by
+      rw [Vector.getElem_toList, crumbVarsOf_val st rows scalar j (by simpa using hj),
+        Nat.zero_add]⟩)
+    trivial trivial trivial
+    (by simp [CVar.val, Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build])
+    (by simp [CVar.val, Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build])
+    (by simp [CVar.val, Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build])
+  obtain ⟨hle, ⟨hsa, hsb, hsn⟩, ⟨hva, hvb, hvn⟩, -⟩ := hinv
+  simp only [Vector.length_toList, Nat.zero_add] at hva hvb hvn
+  have hle0 : st.env.Le (crumbState st rows scalar).env := st.le_extendMany _
+  refine ⟨hle0.trans hle,
+    scoped_prod_iff.mpr ⟨scoped_fvar_iff.mpr hsa,
+      scoped_prod_iff.mpr ⟨scoped_fvar_iff.mpr hsb, scoped_fvar_iff.mpr hsn⟩⟩, ?_⟩
+  simp only [readVal_prod, readVal_fvar, toFieldChecked'Run]
+  rw [hva, hvb, hvn]
+  cases rows with
+  | zero =>
+    simp [Kimchi.Gate.EndoScalar.chainBuild, Kimchi.Gate.EndoScalar.build,
+      Kimchi.Gate.EndoScalar.nReconstruct]
+  | succ m =>
+    obtain ⟨hH, c1, c2, c3, s1, s2, s3, -⟩ :=
+      Kimchi.Gate.EndoScalar.chain_complete m
+        (crumbRows (F := F) (m + 1) (ToNat.toNat (scalar.val st.env.toValuation)))
+        (fun i _ => crumbRows_valid (m + 1) (ToNat.toNat (scalar.val st.env.toValuation)) i)
+    obtain ⟨dA, dB, dN⟩ := Kimchi.Gate.EndoScalar.chain_decompose m
+      (Kimchi.Gate.EndoScalar.chainBuild
+        (crumbRows (F := F) (m + 1) (ToNat.toNat (scalar.val st.env.toValuation))))
+      hH c1 c2 c3 s1 s2 s3
+    have hstream := flatMap_range_getD
+      (((crumbVals (F := F) (m + 1) (ToNat.toNat (scalar.val st.env.toValuation))).toList.map
+        Vector.toList))
+    rw [show (((crumbVals (F := F) (m + 1) (ToNat.toNat (scalar.val st.env.toValuation))).toList.map
+        Vector.toList)).length = m + 1 from by simp,
+      crumbVals_flatten] at hstream
+    have hstream' : (List.range (m + 1)).flatMap
+          (crumbRows (F := F) (m + 1) (ToNat.toNat (scalar.val st.env.toValuation)))
+        = Kimchi.Gate.EndoScalar.crumbsOf (8 * (m + 1))
+            (ToNat.toNat (scalar.val st.env.toValuation)) := hstream
+    rw [Kimchi.Gate.EndoScalar.chainCrumbs_chainBuild, hstream'] at dA dB dN
+    show ((Kimchi.Gate.EndoScalar.chainBuild _ m).a8, (Kimchi.Gate.EndoScalar.chainBuild _ m).b8,
+      (Kimchi.Gate.EndoScalar.chainBuild _ m).n8) = _
+    rw [dA, dB, dN]
+
+/-- The state and result of `toField`'s honest run: the emitter, the pin (nothing
+allocated), the affine reconstruction — `mul`'s run unless the endo coefficient is a
+constant. -/
+def toFieldRun [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (rows : ℕ)
+    (scalar endo : FVar F) : ProverState F × FVar F :=
+  let r := toFieldChecked'Run st rows scalar
+  match endo with
+  | .const e => (r.1, CVar.add_ (CVar.scale_ e r.2.1) r.2.2.1)
+  | _ =>
+    let m := mulRun r.1 r.2.1 endo
+    (m.1, CVar.add_ r.2.2.1 m.2)
+
+/-- The checked decomposition's honest run, on an in-scope scalar whose representative
+fits the crumb budget and an in-scope endo coefficient, lands at `toFieldRun`. -/
+theorem toField_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] (rows : ℕ)
+    {scalar endo : FVar F} (st : ProverState F) (hs : scalar.Scoped st) (he : endo.Scoped st)
+    (hlt : ToNat.toNat (scalar.val st.env.toValuation) < 4 ^ (8 * rows)) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (toField (c := KimchiConstraint F) rows scalar endo) st.nv st.env
+      = .ok ((toFieldRun st rows scalar endo).1.out (toFieldRun st rows scalar endo).2) := by
+  have hg := toFieldChecked'Run_grants rows st hs
+  have hsc := scoped_prod_iff.mp hg.scope
+  have hsc2 := scoped_prod_iff.mp hsc.2
+  have hrd := hg.read
+  simp only [readVal_prod, readVal_fvar, Prod.ext_iff] at hrd
+  simp only [toField, prove_bind, toFieldChecked'_run rows st hs, Except.bind]
+  rw [assertEqual_run _ (scoped_fvar_iff.mp hsc2.2) (hs.of_le hg.le) (by
+    rw [hrd.2.2, CVar.val_of_le hg.le hs, Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf,
+      Nat.mod_eq_of_lt hlt, LawfulToNat.cast_toNat])]
+  cases endo with
+  | const e => rfl
+  | var v =>
+    simp only [toFieldRun, prove_bind, mul_run _ (scoped_fvar_iff.mp hsc.1) (he.of_le hg.le),
+      Except.bind]
+    rfl
+  | add a b =>
+    simp only [toFieldRun, prove_bind, mul_run _ (scoped_fvar_iff.mp hsc.1) (he.of_le hg.le),
+      Except.bind]
+    rfl
+  | scale k y =>
+    simp only [toFieldRun, prove_bind, mul_run _ (scoped_fvar_iff.mp hsc.1) (he.of_le hg.le),
+      Except.bind]
+    rfl
+
+/-- `toFieldRun` reads as the gate model's `toField` at the scalar's crumbs and the
+endo coefficient's reading. -/
+theorem toFieldRun_grants [Field F] [DecidableEq F] [ToNat F] (rows : ℕ) {scalar endo : FVar F}
+    (st : ProverState F) (hs : scalar.Scoped st) (he : endo.Scoped st) :
+    Grants F st (toFieldRun st rows scalar endo)
+      (Kimchi.Gate.EndoScalar.toField
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat (scalar.val st.env.toValuation)))
+        (endo.val st.env.toValuation)) := by
+  have hg := toFieldChecked'Run_grants rows st hs
+  have hsc := scoped_prod_iff.mp hg.scope
+  have hsc2 := scoped_prod_iff.mp hsc.2
+  have hrd := hg.read
+  simp only [readVal_prod, readVal_fvar, Prod.ext_iff] at hrd
+  have hA := scoped_fvar_iff.mp hsc.1
+  have hB := scoped_fvar_iff.mp hsc2.1
+  cases endo
+  case const e =>
+    refine Grants.fvar hg.le (CVar.Scoped.add_ (CVar.Scoped.scale_ _ hA) hB) ?_
+    simp only [CVar.val_add_, CVar.val_scale_, hrd.1, hrd.2.1, CVar.val,
+      Kimchi.Gate.EndoScalar.toField]
+    ring
+  all_goals
+    have hm := mulRun_grants hA (he.of_le hg.le)
+    refine Grants.fvar (hg.le.trans hm.le) (CVar.Scoped.add_ (hB.of_le hm.le) hm.fvar_scoped) ?_
+    simp only [CVar.val_add_, hm.fvar_val, CVar.val_of_le hm.le hB, hrd.1, hrd.2.1,
+      CVar.val_of_le hg.le he, Kimchi.Gate.EndoScalar.toField]
+    ring
 
 end Snarky.Kimchi.EndoScalar

@@ -109,45 +109,45 @@ instance instSoundCheckedTypeCurvePoint {V : Valuation F} [Field F] [DecidableEq
     SoundCheckedType.post (F := F) (c := c) (V := V) p
       = OnCurve a b (p.point.x.val V, p.point.y.val V) := rfl
 
-open Std.Do in
-/-- The check's honest run succeeds on a reading satisfying the on-curve equation,
-only extending the table (the `x³` row witnesses its product). -/
-@[spec] theorem CurvePoint.check_complete_spec [Field F] [DecidableEq F] [BasicSystem F c]
-    [Checker F c] [LawfulChecker F c] {a b : F}
-    (p : CurvePoint a b (FVar F))
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (p.point.x.eval env).isOk ∧ (p.point.y.eval env).isOk ∧
-        ∀ xv yv, p.point.x.eval env = .ok xv → p.point.y.eval env = .ok yv →
-          OnCurve a b (xv, yv))
-        (fun _ _ _ => True) Q⦄
-    (CurvePoint.check (c := Prover c) p)
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨⟨hokx, hoky, hoc⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  obtain ⟨yv, hy⟩ := CVar.evalOk hoky
-  have hcurve : yv ^ 2 = xv ^ 3 + a * xv + b := hoc xv yv hx hy
-  simp only [CurvePoint.check, WPMonad.wp_bind, PredTrans.apply_Bind_bind]
-  refine square_complete_spec p.point.x _ st ⟨isOk_of_eq hx, fun x2 st₁ hx2 hle₁ => ?_⟩
-  have hx2v := hx2 xv hx
-  have hx₁ := CVar.eval_le hle₁ hx
-  refine mul_complete_spec x2 p.point.x _ st₁
-    ⟨⟨isOk_of_eq hx2v, isOk_of_eq hx₁⟩, fun x3 st₂ hx3 hle₂ => ?_⟩
-  have hx3v := hx3 (xv * xv) xv hx2v hx₁
-  have hx₂ := CVar.eval_le hle₂ hx₁
-  have hy₂ := CVar.eval_le hle₂ (CVar.eval_le hle₁ hy)
-  have hrhs : (CVar.add_ (CVar.add_ x3 (CVar.scale_ a p.point.x))
-      (.const b)).eval st₂.env = .ok (xv * xv * xv + a * xv + b) :=
-    CVar.eval_add_ (CVar.eval_add_ hx3v (CVar.eval_scale_ hx₂ a)) rfl
-  refine assertSquare_complete_spec p.point.y _ _ st₂
-    ⟨⟨isOk_of_eq hy₂, isOk_of_eq hrhs, fun av bv ha hb => ?_⟩,
-      fun _ st₃ _ hle₃ => hk PUnit.unit st₃ trivial (hle₁.trans (hle₂.trans hle₃))⟩
-  rw [hy₂] at ha
-  rw [hrhs] at hb
-  injection ha with ha
-  injection hb with hb
-  subst ha
-  subst hb
-  linear_combination hcurve
+/-- The state after the check's honest run: `square`'s, then `mul`'s (the assertion
+allocates nothing). -/
+def CurvePoint.checkRun [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] {a b : F}
+    (st : ProverState F) (p : CurvePoint a b (FVar F)) : ProverState F :=
+  let sq := squareRun st p.point.x
+  (mulRun sq.1 sq.2 p.point.x).1
+
+/-- The check's run grows the table. -/
+theorem CurvePoint.checkRun_le [Field F] [DecidableEq F] {a b : F} (st : ProverState F)
+    {p : CurvePoint a b (FVar F)} (hx : p.point.x.Scoped st) :
+    st.env.Le (CurvePoint.checkRun st p).env :=
+  (squareRun_grants (st := st) hx).le.trans
+    (mulRun_grants (squareRun_grants hx).fvar_scoped (hx.of_le (squareRun_grants hx).le)).le
+
+/-- The check's honest run on a reading satisfying the on-curve equation lands at
+`checkRun`. -/
+theorem CurvePoint.check_run [Field F] [DecidableEq F] [BasicSystem F c] [Checker F c]
+    [LawfulChecker F c] {a b : F} {p : CurvePoint a b (FVar F)} (st : ProverState F)
+    (hx : p.point.x.Scoped st) (hy : p.point.y.Scoped st)
+    (hoc : OnCurve a b (p.point.x.val st.env.toValuation, p.point.y.val st.env.toValuation)) :
+    prove (Checker.holds (F := F) (c := c)) (CurvePoint.check (c := c) p) st.nv st.env
+      = .ok ((CurvePoint.checkRun st p).out ()) := by
+  have hsq := squareRun_grants (st := st) hx
+  have hm := mulRun_grants hsq.fvar_scoped (hx.of_le hsq.le)
+  have hle := hsq.le.trans hm.le
+  have hx3 : (mulRun (squareRun st p.point.x).1 (squareRun st p.point.x).2 p.point.x).2.val
+      (mulRun (squareRun st p.point.x).1 (squareRun st p.point.x).2 p.point.x).1.env.toValuation
+      = p.point.x.val st.env.toValuation * p.point.x.val st.env.toValuation
+        * p.point.x.val st.env.toValuation := by
+    rw [hm.fvar_val, hsq.fvar_val, CVar.val_of_le hsq.le hx]
+  simp only [CurvePoint.check, CurvePoint.checkRun, prove_bind, square_run st hx, Except.bind,
+    mul_run _ hsq.fvar_scoped (hx.of_le hsq.le)]
+  refine assertSquare_run _ (hy.of_le hle)
+    (CVar.Scoped.add_ (CVar.Scoped.add_ hm.fvar_scoped (CVar.Scoped.scale_ _ (hx.of_le hle)))
+      (CVar.scoped_const _ _)) ?_
+  simp only [CVar.val_add_, CVar.val_scale_, CVar.val, hx3, CVar.val_of_le hle hx,
+    CVar.val_of_le hle hy]
+  have h : p.point.y.val st.env.toValuation ^ 2
+      = p.point.x.val st.env.toValuation ^ 3 + a * p.point.x.val st.env.toValuation + b := hoc
+  linear_combination h
 
 end Snarky.Kimchi

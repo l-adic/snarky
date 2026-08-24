@@ -370,6 +370,16 @@ theorem pack_scoped {F : Type} [Semiring F] [DecidableEq F] {st : ProverState F}
     rw [Vector.getElem_toList]
     exact h i (by simpa using hi)) trivial
 
+/-- `packLow` is in scope when its bits are. -/
+theorem packLow_scoped {F : Type} [Semiring F] [DecidableEq F] {st : ProverState F} {n k : Nat}
+    (hk : k ≤ n) {bits : Vector (BoolVar F) n}
+    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).Scoped st) :
+    (packLow k hk bits).Scoped st := by
+  unfold packLow
+  exact pack_scoped fun i hi => by
+    simp only [Vector.getElem_ofFn]
+    exact h i (lt_of_lt_of_le hi hk)
+
 /-- `unpack`'s honest run on a representative fitting in `n` bits lands at
 `unpackRun`: the bit loop, then the packing row accepted. -/
 theorem unpack_run {F c : Type} [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]

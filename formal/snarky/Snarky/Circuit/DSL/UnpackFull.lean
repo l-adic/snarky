@@ -322,6 +322,15 @@ def unpackFullRun {F : Type} [Field F] [DecidableEq F] [ToNat F] (st : ProverSta
   let u := unpackRun st v n
   ((ltRun u.1 u.2.toList.reverse (modBitsMsb m n)).1, u.2)
 
+/-- Each of `unpackRun`'s bits, listed, is in scope at its state. -/
+private theorem unpackRun_mem_scoped [Field F] [DecidableEq F] [ToNat F] (st : ProverState F)
+    (v : FVar F) (n : ℕ) :
+    ∀ x ∈ (unpackRun st v n).2.toList, (↑x : CVar F).Scoped (unpackRun st v n).1 := by
+  intro x hx
+  obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hx
+  rw [Vector.getElem_toList]
+  exact unpackRun_scoped st v n i (by simpa using hi)
+
 /-- `unpackFull`'s honest run on a representative that fits the width and lies below
 `m` lands at `unpackFullRun`. -/
 theorem unpackFull_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [BasicSystem F c]
@@ -331,11 +340,7 @@ theorem unpackFull_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [Basi
     (hbelow : ToNat.toNat (v.val st.env.toValuation) < m) :
     prove (Checker.holds (F := F) (c := c)) (unpackFull (c := c) m n v) st.nv st.env
       = .ok ((unpackFullRun st m n v).1.out (unpackFullRun st m n v).2) := by
-  have hscope : ∀ x ∈ (unpackRun st v n).2.toList, (↑x : CVar F).Scoped (unpackRun st v n).1 := by
-    intro x hx
-    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hx
-    rw [Vector.getElem_toList]
-    exact unpackRun_scoped st v n i (by simpa using hi)
+  have hscope := unpackRun_mem_scoped st v n
   have hbs : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
       (↑x : CVar F).val (unpackRun st v n).1.env.toValuation = bit b)
       (unpackRun st v n).2.toList (unpackPure (v.val st.env.toValuation) n).toList := by
@@ -348,5 +353,32 @@ theorem unpackFull_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [Basi
   rw [assertBitsBelow_run m n hm (by simp) _ hscope hbs
     (by rw [natLsbVal_unpackPure hlt]; exact hbelow)]
   rfl
+
+/-- The lock's run only grows the table: the bits stay in scope at the state after. -/
+private theorem unpackFullRun_lock_le [Field F] [DecidableEq F] [ToNat F] (st : ProverState F)
+    (m n : ℕ) (v : FVar F) :
+    (unpackRun st v n).1.env.Le (unpackFullRun st m n v).1.env :=
+  (ltRun_scope _ (modBitsMsb m n)
+    fun x hx => unpackRun_mem_scoped st v n x (List.mem_reverse.mp hx)).1
+
+/-- `unpackFullRun` grows the table. -/
+theorem unpackFullRun_le [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (m n : ℕ)
+    (v : FVar F) : st.env.Le (unpackFullRun st m n v).1.env :=
+  (unpackRun_le st v n).trans (unpackFullRun_lock_le st m n v)
+
+/-- Each bit is in scope at the state after. -/
+theorem unpackFullRun_scoped [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (m n : ℕ)
+    (v : FVar F) (i : ℕ) (hi : i < n) :
+    (↑(unpackFullRun st m n v).2[i] : CVar F).Scoped (unpackFullRun st m n v).1 :=
+  (unpackRun_scoped st v n i hi).of_le (unpackFullRun_lock_le st m n v)
+
+/-- Each bit reads as the operand's digit at the state after. -/
+theorem unpackFullRun_bit [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (m n : ℕ)
+    (v : FVar F) (i : ℕ) (hi : i < n) :
+    (↑(unpackFullRun st m n v).2[i] : CVar F).val (unpackFullRun st m n v).1.env.toValuation
+      = bit ((ToNat.toNat (v.val st.env.toValuation)).testBit i) := by
+  rw [show (unpackFullRun st m n v).2 = (unpackRun st v n).2 from rfl,
+    CVar.val_of_le (unpackFullRun_lock_le st m n v) (unpackRun_scoped st v n i hi)]
+  exact unpackRun_bit st v n i hi
 
 end Snarky

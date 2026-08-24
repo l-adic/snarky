@@ -92,26 +92,24 @@ theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   calc n < 4 ^ crumbs.length := hlt
     _ = 2 ^ 128 := by rw [hlen]; norm_num
 
-/-- `rangeCheck128` is complete: the honest run accepts on a readable in-range
-operand (`SizedF.Fits` — the width the tag promises is the width the gate checks). -/
-theorem rangeCheck128_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (endo : FVar F) (v : SizedF 128 (FVar F))
-    (Q : PostCond PUnit (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (v.val.eval env).isOk ∧ (endo.eval env).isOk ∧ v.Fits env)
-        (fun _ _ _ => True) Q⦄
-    (rangeCheck128 (c := KimchiProverC F) endo v)
-    ⦃Q⦄ := by
-  simp only [rangeCheck128]
-  mvcgen [EndoScalar.toField_complete_spec]
-  rename_i st hpre
-  obtain ⟨⟨hok, hoke, hfits⟩, hk⟩ := hpre
-  refine ⟨⟨hok, hoke, fun vv hv => ?_⟩, fun r st' hr hle => ?_⟩
-  · have hlt := hfits vv hv
-    calc ToNat.toNat vv < 2 ^ 128 := hlt
+/-- The state after `rangeCheck128`'s honest run: `toField`'s, the result dropped. -/
+def rangeCheck128Run [Field F] [DecidableEq F] [ToNat F] (st : ProverState F) (endo : FVar F)
+    (v : SizedF 128 (FVar F)) : ProverState F :=
+  (EndoScalar.toFieldRun st 8 v.val endo).1
+
+/-- `rangeCheck128`'s honest run on an in-range operand (`SizedF.Fits` — the width the
+tag promises is the width the gate checks) lands at `rangeCheck128Run`. -/
+theorem rangeCheck128_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] {endo : FVar F}
+    {v : SizedF 128 (FVar F)} (st : ProverState F) (hv : v.val.Scoped st) (he : endo.Scoped st)
+    (hfits : v.Fits st.env.toValuation) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (rangeCheck128 (c := KimchiConstraint F) endo v) st.nv st.env
+      = .ok ((rangeCheck128Run st endo v).out ⟨⟩) := by
+  have hlt : ToNat.toNat (v.val.val st.env.toValuation) < 4 ^ (8 * 8) :=
+    calc ToNat.toNat (v.val.val st.env.toValuation) < 2 ^ 128 := hfits
       _ = 4 ^ (8 * 8) := by norm_num
-  mvcgen
-  exact hk ⟨⟩ st' hle
+  simp only [rangeCheck128, prove_bind, EndoScalar.toField_run 8 st hv he hlt, Except.bind]
+  rfl
 
 open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
 /-- `lowest128Bits'` is sound: the operand reads as `lo + 2^128·hi` for the returned
@@ -153,105 +151,148 @@ theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F
         by rw [hHval, hnHcast]⟩,
       fun hcb' => absurd hcb' hcb⟩
 
-/-- `lowest128Bits'` is complete — the honest side of OCaml's `lowest_128_bits`:
-on a readable operand whose split representatives are themselves faithful
-(free at the deployed 255-bit fields), the honest run accepts and the result reads
-as the pure split `lowest128BitsPure`. -/
-theorem lowest128Bits'_complete_spec [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (constrainLowBits : Bool) (endo x : FVar F)
-    (Q : PostCond (SizedF 128 (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (x.eval env).isOk ∧ (endo.eval env).isOk ∧
-          (∀ vv, x.eval env = .ok vv →
-            ToNat.toNat vv / 2 ^ 128 < 2 ^ 128 ∧
-            ToNat.toNat ((ToNat.toNat vv % 2 ^ 128 : ℕ) : F)
-              = ToNat.toNat vv % 2 ^ 128 ∧
-            ToNat.toNat ((ToNat.toNat vv / 2 ^ 128 : ℕ) : F)
-              = ToNat.toNat vv / 2 ^ 128))
-        (fun env r env' => ∀ vv, x.eval env = .ok vv →
-          r.val.eval env' = .ok (lowest128BitsPure vv).val)
-        Q⦄
-    (lowest128Bits' (c := KimchiProverC F) constrainLowBits endo x)
-    ⦃Q⦄ := by
-  simp only [lowest128Bits']
-  mvcgen [EndoScalar.toField_complete_spec]
-  rename_i st hpre
-  obtain ⟨⟨hok, hoke, hsec⟩, hk⟩ := hpre
-  obtain ⟨vv, hv⟩ := CVar.evalOk hok
-  obtain ⟨ev, he⟩ := CVar.evalOk hoke
-  obtain ⟨hhilt, hlosec, hhisec⟩ := hsec vv hv
-  have hfaith := LawfulToNat.cast_toNat vv
-  have hrecomb : ((ToNat.toNat vv % 2 ^ 128 : ℕ) : F)
-      + (2 : F) ^ 128 * ((ToNat.toNat vv / 2 ^ 128 : ℕ) : F) = vv := by
-    have h1 : (ToNat.toNat vv % 2 ^ 128) + 2 ^ 128 * (ToNat.toNat vv / 2 ^ 128)
-        = ToNat.toNat vv := Nat.mod_add_div _ _
-    calc ((ToNat.toNat vv % 2 ^ 128 : ℕ) : F)
-        + (2 : F) ^ 128 * ((ToNat.toNat vv / 2 ^ 128 : ℕ) : F)
-        = ((ToNat.toNat vv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat vv / 2 ^ 128) : ℕ)
-            : F) := by push_cast; ring
-      _ = ((ToNat.toNat vv : ℕ) : F) := by rw [h1]
-      _ = vv := hfaith
-  have hwit : (UnChecked.mk <$> lowestWit x).run st.env
-      = .ok ⟨(((ToNat.toNat vv % 2 ^ 128 : ℕ) : F),
-          ((ToNat.toNat vv / 2 ^ 128 : ℕ) : F))⟩ := by
-    simp [lowestWit, hv, Functor.map, Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hwit]; rfl, fun lohi st₁ hgrant hle₁ => ?_⟩
-  obtain ⟨hlo, hhi⟩ := hgrant _ hwit
-  mvcgen [EndoScalar.toField_complete_spec]
-  refine ⟨⟨by rw [hhi]; rfl, by rw [CVar.eval_le hle₁ he]; rfl,
-    fun hv' hhv' => ?_⟩, fun rhi st₂ hrhi hle₂ => ?_⟩
-  · rw [hhi] at hhv'
-    injection hhv' with hhv'
-    subst hhv'
+/-- The state and result of `lowest128Bits'`'s honest run: the split allocated, the
+high half's range check, the low half's when asked, the recombination pin (nothing
+allocated), the low half returned. -/
+def lowest128Bits'Run [Field F] [DecidableEq F] [ToNat F] (st : ProverState F)
+    (constrainLowBits : Bool) (endo x : FVar F) : ProverState F × SizedF 128 (FVar F) :=
+  let st₁ := st.extendMany [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+    ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]
+  let st₂ := (EndoScalar.toFieldRun st₁ 8 (.var (st.nv + 1)) endo).1
+  let st₃ := if constrainLowBits then (EndoScalar.toFieldRun st₂ 8 (.var st.nv) endo).1 else st₂
+  (st₃, ⟨.var st.nv⟩)
+
+/-- `lowest128Bits'`'s honest run — the honest side of OCaml's `lowest_128_bits`: on an
+in-scope operand whose split representatives are themselves faithful (free at the
+deployed 255-bit fields), it lands at `lowest128Bits'Run`. -/
+theorem lowest128Bits'_run [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (constrainLowBits : Bool) {endo x : FVar F} (st : ProverState F) (hx : x.Scoped st)
+    (he : endo.Scoped st)
+    (hhilt : ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 < 2 ^ 128)
+    (hlosec : ToNat.toNat ((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F)
+      = ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128)
+    (hhisec : ToNat.toNat ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)
+      = ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (lowest128Bits' (c := KimchiConstraint F) constrainLowBits endo x) st.nv st.env
+      = .ok ((lowest128Bits'Run st constrainLowBits endo x).1.out
+          (lowest128Bits'Run st constrainLowBits endo x).2) := by
+  generalize hxv : x.val st.env.toValuation = xv at hhilt hlosec hhisec ⊢
+  have hrecomb : ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F)
+      + (2 : F) ^ 128 * ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) = xv := by
+    have h1 : (ToNat.toNat xv % 2 ^ 128) + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128)
+        = ToNat.toNat xv := Nat.mod_add_div _ _
+    calc ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) + (2 : F) ^ 128 * ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)
+        = ((ToNat.toNat xv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128) : ℕ) : F) := by
+          push_cast; ring
+      _ = ((ToNat.toNat xv : ℕ) : F) := by rw [h1]
+      _ = xv := LawfulToNat.cast_toNat xv
+  have hle₁ := st.le_extendMany [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+    ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]
+  have hlo : (CVar.var st.nv).Scoped (st.extendMany [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+      ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]) := ProverState.mem_extendMany_head ..
+  have hhi : (CVar.var (st.nv + 1)).Scoped (st.extendMany [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+      ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]) := st.new_mem_extendMany (i := 1) (by simp)
+  have hlov : (CVar.var st.nv).val (st.extendMany [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+      ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]).env.toValuation
+      = ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) := by
+    show (st.extendMany _).env.toValuation st.nv = _
+    simp
+  have hhiv : (CVar.var (st.nv + 1)).val (st.extendMany [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+      ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]).env.toValuation
+      = ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
+    show (st.extendMany _).env.toValuation (st.nv + 1) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+  have hlt4 : ToNat.toNat ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) < 4 ^ (8 * 8) := by
     rw [hhisec]
-    calc ToNat.toNat vv / 2 ^ 128 < 2 ^ 128 := hhilt
+    calc ToNat.toNat xv / 2 ^ 128 < 2 ^ 128 := hhilt
       _ = 4 ^ (8 * 8) := by norm_num
-  mvcgen [EndoScalar.toField_complete_spec]
-  · refine ⟨⟨by rw [CVar.eval_le hle₂ hlo]; rfl,
-      by rw [CVar.eval_le (hle₁.trans hle₂) he]; rfl, fun lv hlv => ?_⟩,
-      fun rlo st₃ hrlo hle₃ => ?_⟩
-    · rw [CVar.eval_le hle₂ hlo] at hlv
-      injection hlv with hlv
-      subst hlv
-      rw [hlosec]
-      calc ToNat.toNat vv % 2 ^ 128 < 2 ^ 128 := Nat.mod_lt _ (by positivity)
-        _ = 4 ^ (8 * 8) := by norm_num
-    mvcgen
-    have hsum := CVar.eval_add_ (CVar.eval_le (hle₂.trans hle₃) hlo)
-      (CVar.eval_scale_ (CVar.eval_le (hle₂.trans hle₃) hhi) ((2 : F) ^ 128))
-    refine ⟨⟨by rw [CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hv]; rfl,
-      by rw [hsum]; rfl, fun xv sv hxv hsv => ?_⟩, fun u st₄ hle₄ => ?_⟩
-    · rw [CVar.eval_le ((hle₁.trans hle₂).trans hle₃) hv] at hxv
-      injection hxv with hxv
-      rw [hsum] at hsv
-      injection hsv with hsv
-      subst hxv hsv
-      exact hrecomb.symm
-    mvcgen
-    refine hk ⟨lohi.val.1⟩ st₄ (fun vv' hv' => ?_)
-      (((hle₁.trans hle₂).trans hle₃).trans hle₄)
-    rw [hv] at hv'
-    injection hv' with hv'
-    subst hv'
-    exact CVar.eval_le ((hle₂.trans hle₃).trans hle₄) hlo
-  · have hsum := CVar.eval_add_ (CVar.eval_le hle₂ hlo)
-      (CVar.eval_scale_ (CVar.eval_le hle₂ hhi) ((2 : F) ^ 128))
-    refine ⟨⟨by rw [CVar.eval_le (hle₁.trans hle₂) hv]; rfl,
-      by rw [hsum]; rfl, fun xv sv hxv hsv => ?_⟩, fun u st₄ hle₄ => ?_⟩
-    · rw [CVar.eval_le (hle₁.trans hle₂) hv] at hxv
-      injection hxv with hxv
-      rw [hsum] at hsv
-      injection hsv with hsv
-      subst hxv hsv
-      exact hrecomb.symm
-    mvcgen
-    refine hk ⟨lohi.val.1⟩ st₄ (fun vv' hv' => ?_)
-      ((hle₁.trans hle₂).trans hle₄)
-    rw [hv] at hv'
-    injection hv' with hv'
-    subst hv'
-    exact CVar.eval_le (hle₂.trans hle₄) hlo
+  have hlt4' : ToNat.toNat ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) < 4 ^ (8 * 8) := by
+    rw [hlosec]
+    calc ToNat.toNat xv % 2 ^ 128 < 2 ^ 128 := Nat.mod_lt _ (by positivity)
+      _ = 4 ^ (8 * 8) := by norm_num
+  have hg := EndoScalar.toFieldRun_grants 8 (st := st.extendMany
+    [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]) hhi (he.of_le hle₁)
+  simp only [lowest128Bits', prove_bind]
+  rw [prove_witness_run (w := UnChecked.mk <$> lowestWit x) st
+    (.bind (.bind (.readCVar hx) fun _ => trivial) fun _ => trivial)
+    (v := ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩)
+    (by simp [lowestWit, Except.bind, hxv])]
+  rw [show (CircuitType.valueToFields (F := F) (var := UnChecked (FVar F × FVar F))
+      (⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩ :
+        UnChecked (F × F))).toList
+      = [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)] from rfl,
+    show CircuitType.fieldsToVar (F := F) (val := UnChecked (F × F))
+      (mapVec CVar.var (allocRange st.nv (CircuitType.size F (UnChecked (F × F)))))
+      = ⟨(.var st.nv, .var (st.nv + 1))⟩ from rfl]
+  simp only [Except.bind]
+  rw [EndoScalar.toField_run 8 _ hhi (he.of_le hle₁) (by rw [hhiv]; exact hlt4)]
+  simp only [lowest128Bits'Run]
+  rw [hxv]
+  cases constrainLowBits with
+  | true =>
+    simp only [↓reduceIte, prove_bind]
+    rw [EndoScalar.toField_run 8 _ (hlo.of_le hg.le) (he.of_le (hle₁.trans hg.le))
+      (by rw [CVar.val_of_le hg.le hlo, hlov]; exact hlt4')]
+    simp only [Except.bind, prove_pure]
+    have hg' := EndoScalar.toFieldRun_grants 8 (st := (EndoScalar.toFieldRun (st.extendMany
+      [((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F)]) 8
+      (.var (st.nv + 1)) endo).1) (hlo.of_le hg.le) (he.of_le (hle₁.trans hg.le))
+    have hle := hle₁.trans (hg.le.trans hg'.le)
+    rw [assertEqual_run _ (hx.of_le hle)
+      (CVar.Scoped.add_ (hlo.of_le (hg.le.trans hg'.le))
+        (CVar.Scoped.scale_ _ (hhi.of_le (hg.le.trans hg'.le))))
+      (by
+        rw [CVar.val_of_le hle hx, hxv, CVar.val_add_, CVar.val_scale_,
+          CVar.val_of_le (hg.le.trans hg'.le) hlo, CVar.val_of_le (hg.le.trans hg'.le) hhi,
+          hlov, hhiv, hrecomb])]
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, prove_bind, prove_pure, Except.bind]
+    rw [assertEqual_run _ (hx.of_le (hle₁.trans hg.le))
+      (CVar.Scoped.add_ (hlo.of_le hg.le) (CVar.Scoped.scale_ _ (hhi.of_le hg.le)))
+      (by
+        rw [CVar.val_of_le (hle₁.trans hg.le) hx, hxv, CVar.val_add_, CVar.val_scale_,
+          CVar.val_of_le hg.le hlo, CVar.val_of_le hg.le hhi, hlov, hhiv, hrecomb])]
+
+/-- `lowest128Bits'Run`'s low half reads as the pure split. -/
+theorem lowest128Bits'Run_grants [Field F] [DecidableEq F] [ToNat F] (constrainLowBits : Bool)
+    {endo x : FVar F} (st : ProverState F) (he : endo.Scoped st) :
+    Grants F st ((lowest128Bits'Run st constrainLowBits endo x).1,
+      (lowest128Bits'Run st constrainLowBits endo x).2.val)
+      (lowest128BitsPure (x.val st.env.toValuation)).val := by
+  have hle₁ := st.le_extendMany [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+    ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]
+  have hlo : (CVar.var st.nv).Scoped (st.extendMany
+      [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+        ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]) :=
+    ProverState.mem_extendMany_head ..
+  have hhi : (CVar.var (st.nv + 1)).Scoped (st.extendMany
+      [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+        ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]) :=
+    st.new_mem_extendMany (i := 1) (by simp)
+  have hlov : (CVar.var st.nv).val (st.extendMany
+      [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+        ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]).env.toValuation
+      = ((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F) := by
+    show (st.extendMany _).env.toValuation st.nv = _
+    simp
+  have hg := EndoScalar.toFieldRun_grants 8 (st := st.extendMany
+    [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+      ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]) hhi (he.of_le hle₁)
+  simp only [lowest128Bits'Run]
+  cases constrainLowBits with
+  | true =>
+    simp only [↓reduceIte]
+    have hg' := EndoScalar.toFieldRun_grants 8 (st := (EndoScalar.toFieldRun (st.extendMany
+      [((ToNat.toNat (x.val st.env.toValuation) % 2 ^ 128 : ℕ) : F),
+        ((ToNat.toNat (x.val st.env.toValuation) / 2 ^ 128 : ℕ) : F)]) 8
+      (.var (st.nv + 1)) endo).1) (hlo.of_le hg.le) (he.of_le (hle₁.trans hg.le))
+    exact Grants.fvar (hle₁.trans (hg.le.trans hg'.le)) (hlo.of_le (hg.le.trans hg'.le))
+      (by rw [CVar.val_of_le (hg.le.trans hg'.le) hlo, hlov]; rfl)
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    exact Grants.fvar (hle₁.trans hg.le) (hlo.of_le hg.le)
+      (by rw [CVar.val_of_le hg.le hlo, hlov]; rfl)
 
 end Snarky.Kimchi

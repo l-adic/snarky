@@ -32,7 +32,7 @@ that fits the tagged width (the reader's faithfulness is `LawfulToNat`'s). Gadge
 completeness laws take this as their scalar hypothesis; the future
 `CheckedType` port's soundness law concludes it (see the module docstring). -/
 def SizedF.Fits {F : Type} [Add F] [Mul F] [ToNat F] {n : ℕ}
-    (s : SizedF n (FVar F)) (env : Assignments F) : Prop :=
-  ∀ v, s.val.eval env = .ok v → ToNat.toNat v < 2 ^ n
+    (s : SizedF n (FVar F)) (V : Valuation F) : Prop :=
+  ToNat.toNat (s.val.val V) < 2 ^ n
 
 end Snarky

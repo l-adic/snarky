@@ -218,6 +218,14 @@ def eval (V : Valuation F) : AsProver F α → Except EvalError α
   | add a b iha ihb => simp [readCVar, iha, ihb, CVar.val, Except.bind]
   | scale k y ih => simp [readCVar, ih, CVar.val, Except.bind]
 
+/-- Reading a list of expressions evaluates to their total readings. -/
+@[simp] theorem eval_mapM_readCVar [Add F] [Mul F] (V : Valuation F) :
+    ∀ xs : List (CVar F), (xs.mapM readCVar).eval V = .ok (xs.map (·.val V))
+  | [] => rfl
+  | x :: xs => by
+    simp only [List.mapM_cons, bind_eq, eval_bind, eval_readCVar, Except.bind, List.map_cons,
+      eval_mapM_readCVar V xs, pure_eq, eval_pure]
+
 /-- The prover-side list read is the elementwise read. -/
 theorem run_mapM_readCVar [Add F] [Mul F] (env : Assignments F) :
     ∀ xs : List (CVar F), (xs.mapM readCVar).run env = xs.mapM (CVar.eval · env)

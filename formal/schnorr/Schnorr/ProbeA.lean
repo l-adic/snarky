@@ -255,10 +255,9 @@ private theorem run_facts (stv : Statement (FVar Fq)) (raw : Statement Fq)
     rw [ZMod.val_natCast]
     exact Nat.mod_eq_of_lt (lt_of_lt_of_le hpc (by decide))
   -- the challenge leg: endoMul at the canonical prechallenge
-  have hsc : (packLow 128 (by omega) u.2).Scoped u.1 := by
-    refine packLow_scoped _ fun i hi => ?_
-    have := unpackFullRun_scoped h.1 PALLAS_SCALAR_CARD 255 h.2 i hi
-    rwa [hu] at this
+  have t1 := unpackFullRun_bit h.1 PALLAS_SCALAR_CARD 255 h.2 0 (by norm_num)
+  have t2 := unpackFullRun_scoped h.1 PALLAS_SCALAR_CARD 255 h.2 0 (by norm_num)
+  sorry
   have hfits : (⟨packLow 128 (by omega) u.2⟩ : SizedF (4 * 32) (FVar Fq)).Fits
       u.1.env.toValuation := by
     show ToNat.toNat ((packLow 128 (by omega) u.2).val u.1.env.toValuation) < 2 ^ (4 * 32)

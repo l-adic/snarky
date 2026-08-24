@@ -159,11 +159,11 @@ end Poseidon
 
 /-! ## Completeness
 
-`Poseidon.poseidon_complete_spec`: the honest `KimchiProverC` run accepts on any
-readable input state — no domain conditions — and the output reads back as
-`Poseidon.blockCipher` of the inputs. The witness values are the gate's canonical
-iterate (`Kimchi.Gate.Poseidon.rounds`), so each window's satisfaction is the
-gate's `complete` at its head state, and the output characterization is
+`Poseidon.poseidon_run`: the honest run on any in-scope input state — no domain
+conditions — lands at `poseidonRun`, whose result reads as `Poseidon.blockCipher` of
+the input reading. The witness values are the gate's canonical iterate
+(`Kimchi.Gate.Poseidon.rounds`), so each window's satisfaction is the gate's
+`complete` at its head state, and the output characterization is
 `blockCipher_eq_rounds`. -/
 
 namespace Poseidon
@@ -274,94 +274,111 @@ private theorem chainHolds_rounds [Field F] [DecidableEq F] (p : Poseidon.Params
   rw [hgd]
   rfl
 
+/-- The round outputs the gadget witnesses, of an input reading. -/
+private def roundOutputs [Field F] (p : Poseidon.Params F) (sv : Poseidon.Triple F) :
+    Vector (Poseidon.Triple F) 55 :=
+  Vector.ofFn fun i => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) sv
 
-open Std.Do in
-/-- The gadget is complete: the honest prover run accepts on any readable input
-state — no domain conditions — and the output state reads back as
-`Poseidon.blockCipher` of the input values. -/
-theorem poseidon_complete_spec [Field F] [DecidableEq F] (p : Poseidon.Params F)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (s : Poseidon.Triple (FVar F))
-    (Q : PostCond (Poseidon.Triple (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => Readable (Poseidon.Triple F) env s)
-        (fun env (r : Poseidon.Triple (FVar F)) env' => ∀ sv, Reads env s sv →
-          Reads env' r (Poseidon.blockCipher p sv))
-        Q⦄
-    (poseidon (c := KimchiProverC F) p s)
-    ⦃Q⦄ := by
-  simp only [poseidon]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨hsok, hk⟩ := hpre
-  simp only [readable_prod_iff, readable_fvar_iff] at hsok
-  obtain ⟨haok, hbok, hcok⟩ := hsok
-  obtain ⟨av, ha⟩ := CVar.evalOk haok
-  obtain ⟨bv, hb⟩ := CVar.evalOk hbok
-  obtain ⟨cv, hc⟩ := CVar.evalOk hcok
-  have hwit : (roundOutputsWit p s).run st.env
-      = .ok (Vector.ofFn fun i => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) (av, bv, cv)) := by
-    simp [roundOutputsWit, ha, hb, hc, Bind.bind,
-      Except.bind, Pure.pure]
-  refine ⟨by rw [hwit]; rfl, fun outs st₁ hgrant hle₁ => ?_⟩
-  have hread := hgrant _ hwit
-  have helem : ∀ (i : ℕ) (hi : i < 55),
-      outs[i].1.eval st₁.env
-        = .ok (rounds (mdsOfParams p) (paramsRc p) (i + 1) (av, bv, cv)).1 ∧
-      outs[i].2.1.eval st₁.env
-        = .ok (rounds (mdsOfParams p) (paramsRc p) (i + 1) (av, bv, cv)).2.1 ∧
-      outs[i].2.2.eval st₁.env
-        = .ok (rounds (mdsOfParams p) (paramsRc p) (i + 1) (av, bv, cv)).2.2 := by
-    intro i hi
-    have h := hread i hi
-    simpa only [Vector.getElem_ofFn] using h
-  mvcgen
-  refine addConstraint_complete_spec (c := KimchiConstraint F)
-    (KimchiSystem.poseidon ⟨p.mds, p.roundConstants.toList,
-      s :: outs.toList⟩)
-    (fun a => wp⟦pure outs[54]⟧ Q, Q.2) st₁ ⟨?_, fun u st₂ _ hle₂ => ?_⟩
-  · show KimchiConstraint.check
-      (.poseidon ⟨p.mds, p.roundConstants.toList,
-        s :: outs.toList⟩) st₁.env = true
+/-- The state and result of `poseidon`'s honest run: the 55 round outputs of the
+input reading, allocated in order; the last returned. -/
+def poseidonRun [Field F] (p : Poseidon.Params F) (st : ProverState F)
+    (s : Poseidon.Triple (FVar F)) : ProverState F × Poseidon.Triple (FVar F) :=
+  (st.extendMany (CircuitType.valueToFields (F := F) (var := Vector (Poseidon.Triple (FVar F)) 55)
+      (roundOutputs p (readVal st.env.toValuation s))).toList,
+    (CircuitType.fieldsToVar (F := F) (val := Vector (Poseidon.Triple F) 55)
+      (mapVec CVar.var (allocRange st.nv (CircuitType.size F (Vector (Poseidon.Triple F) 55)))))[54])
+
+/-- The gadget's honest run on an in-scope state lands at `poseidonRun`: the bulk
+witness, then the chain constraint accepted on the honest trajectory. -/
+theorem poseidon_run [Field F] [DecidableEq F] (p : Poseidon.Params F)
+    {s : Poseidon.Triple (FVar F)} (st : ProverState F)
+    (hs : CircuitType.Scoped (Poseidon.Triple F) st s) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (poseidon (c := KimchiConstraint F) p s) st.nv st.env
+      = .ok ((poseidonRun p st s).1.out (poseidonRun p st s).2) := by
+  have h0 : s.1.Scoped st := scoped_fvar_iff.mp (scoped_prod_iff.mp hs).1
+  have h1 : s.2.1.Scoped st :=
+    scoped_fvar_iff.mp (scoped_prod_iff.mp (scoped_prod_iff.mp hs).2).1
+  have h2 : s.2.2.Scoped st :=
+    scoped_fvar_iff.mp (scoped_prod_iff.mp (scoped_prod_iff.mp hs).2).2
+  have hsv : readVal st.env.toValuation s
+      = (s.1.val st.env.toValuation, s.2.1.val st.env.toValuation,
+          s.2.2.val st.env.toValuation) := by
+    simp only [readVal_prod, readVal_fvar]
+  simp only [poseidon, prove_bind]
+  rw [prove_witness_run (w := roundOutputsWit p s) st
+    (.bind (.readCVar h0) fun _ => .bind (.readCVar h1) fun _ => .bind (.readCVar h2) fun _ =>
+      trivial)
+    (v := roundOutputs p (readVal st.env.toValuation s))
+    (by simp [roundOutputsWit, roundOutputs, Except.bind, hsv])]
+  have hg := fun i hi => Grants.alloc_vector_get (F := F) (var := Poseidon.Triple (FVar F)) st
+    (roundOutputs p (readVal st.env.toValuation s)) i hi
+  generalize houts : (CircuitType.fieldsToVar (F := F) (val := Vector (Poseidon.Triple F) 55)
+    (mapVec CVar.var (allocRange st.nv (CircuitType.size F (Vector (Poseidon.Triple F) 55)))))
+    = outs at hg ⊢
+  generalize hst₁ : st.extendMany (CircuitType.valueToFields (F := F)
+    (var := Vector (Poseidon.Triple (FVar F)) 55)
+    (roundOutputs p (readVal st.env.toValuation s))).toList = st₁ at hg ⊢
+  have hle : st.env.Le st₁.env := (hg 0 (by decide)).le
+  simp only [Except.bind]
+  have hcheck : Checker.holds (F := F) (c := KimchiConstraint F)
+      (KimchiSystem.poseidon ⟨p.mds, p.roundConstants.toList, s :: outs.toList⟩) st₁.env
+      = true := by
+    show KimchiConstraint.check (.poseidon ⟨p.mds, p.roundConstants.toList, _⟩) _ = true
     have hstates : evalStates st₁.env (s :: outs.toList)
-        = .ok ((av, bv, cv) ::
-            (List.ofFn fun i : Fin 55 =>
-              rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) (av, bv, cv))) := by
+        = .ok (readVal st.env.toValuation s :: (List.ofFn fun i : Fin 55 =>
+            rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) (readVal st.env.toValuation s))) := by
       refine evalStates_ok _ _ ?_ (by simp)
       intro j hj hj'
       cases j with
       | zero =>
-        exact ⟨CVar.eval_le hle₁ ha, CVar.eval_le hle₁ hb, CVar.eval_le hle₁ hc⟩
+        simp only [List.getElem_cons_zero, hsv]
+        exact ⟨by rw [CVar.eval_eq_val (h0.of_le hle), CVar.val_of_le hle h0],
+          by rw [CVar.eval_eq_val (h1.of_le hle), CVar.val_of_le hle h1],
+          by rw [CVar.eval_eq_val (h2.of_le hle), CVar.val_of_le hle h2]⟩
       | succ i =>
         simp only [List.length_cons, Vector.length_toList] at hj
-        have h := helem i (by omega)
+        have hgi := hg i (by omega)
+        have hsc := scoped_prod_iff.mp hgi.scope
+        have hsc2 := scoped_prod_iff.mp hsc.2
+        have hrd := hgi.read
+        simp only [readVal_prod, readVal_fvar, roundOutputs, Vector.getElem_ofFn,
+          Prod.ext_iff] at hrd
         simp only [List.getElem_cons_succ, Vector.getElem_toList, List.getElem_ofFn]
-        exact h
-    have hchain := chainHolds_rounds p (av, bv, cv)
+        rw [hsv, CVar.eval_eq_val (scoped_fvar_iff.mp hsc.1),
+          CVar.eval_eq_val (scoped_fvar_iff.mp hsc2.1),
+          CVar.eval_eq_val (scoped_fvar_iff.mp hsc2.2), hrd.1, hrd.2.1, hrd.2.2]
+        exact ⟨rfl, rfl, rfl⟩
     simp only [KimchiConstraint.check, hstates]
-    exact (chainOk_iff 0 _).mpr hchain
-  · simp only [wp, PredTrans.apply, prove]
-    intro hf
-    refine hk _ ⟨st₂.nv, st₂.env, hf⟩ (fun sv hsv => ?_) (hle₁.trans hle₂)
-    obtain ⟨sva, svb, svc⟩ := sv
-    simp only [reads_prod_iff, reads_fvar_iff] at hsv
-    obtain ⟨ha', hb', hc'⟩ := hsv
-    rw [ha] at ha'
-    rw [hb] at hb'
-    rw [hc] at hc'
-    injection ha' with ha'
-    injection hb' with hb'
-    injection hc' with hc'
-    subst ha' hb' hc'
-    simp only [reads_prod_iff, reads_fvar_iff]
-    have h54 := helem 54 (by omega)
-    have hbc : Poseidon.blockCipher p (av, bv, cv)
-        = rounds (mdsOfParams p) (paramsRc p) 55 (av, bv, cv) := by
-      rw [show (55 : ℕ) = p.roundConstants.size by rw [hsize]]
-      exact Kimchi.Gate.Poseidon.blockCipher_eq_rounds p (av, bv, cv)
-    rw [hbc]
-    exact ⟨CVar.eval_le hle₂ h54.1, CVar.eval_le hle₂ h54.2.1,
-      CVar.eval_le hle₂ h54.2.2⟩
+    exact (chainOk_iff 0 _).mpr (chainHolds_rounds p _)
+  rw [prove_addConstraint st₁ hcheck]
+  subst hst₁ houts
+  rfl
+
+/-- The permutation's run grows the table, with its result in scope — whatever the
+parameters. -/
+theorem poseidonRun_scope [Field F] (p : Poseidon.Params F) (st : ProverState F)
+    (s : Poseidon.Triple (FVar F)) :
+    st.env.Le (poseidonRun p st s).1.env ∧
+      CircuitType.Scoped (Poseidon.Triple F) (poseidonRun p st s).1 (poseidonRun p st s).2 :=
+  let h := Grants.alloc_vector_get (F := F) (var := Poseidon.Triple (FVar F)) st
+    (roundOutputs p (readVal st.env.toValuation s)) 54 (by decide)
+  ⟨h.le, h.scope⟩
+
+/-- `poseidonRun` reads as the block cipher of the input reading. -/
+theorem poseidonRun_grants [Field F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (st : ProverState F)
+    (s : Poseidon.Triple (FVar F)) :
+    Grants (Poseidon.Triple F) st (poseidonRun p st s)
+      (Poseidon.blockCipher p (readVal st.env.toValuation s)) := by
+  have h := Grants.alloc_vector_get (F := F) (var := Poseidon.Triple (FVar F)) st
+    (roundOutputs p (readVal st.env.toValuation s)) 54 (by decide)
+  have hr := h.read
+  dsimp only at hr
+  refine ⟨h.le, h.scope, hr.trans ?_⟩
+  simp only [roundOutputs, Vector.getElem_ofFn]
+  rw [show (54 + 1 : ℕ) = p.roundConstants.size by rw [hsize]]
+  exact (Kimchi.Gate.Poseidon.blockCipher_eq_rounds p _).symm
 
 end Poseidon
 

@@ -199,31 +199,37 @@ open Std.Do
   simp only [sealPoint]
   mvcgen
 
-open Std.Do in
-/-- `sealPoint`'s honest run: readable coordinates seal, and the sealed point reads
-as the operand — `sealVar_complete_spec` walked over the two seals. -/
-@[spec] private theorem sealPoint_complete_spec {F c : Type} [CommSemiring F]
-    [DecidableEq F] [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (q : AffinePoint (FVar F))
-    (Q : PostCond (AffinePoint (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete (fun env => (q.x.eval env).isOk ∧ (q.y.eval env).isOk)
-        (fun env r env' => ∀ xv yv, q.x.eval env = .ok xv → q.y.eval env = .ok yv →
-          r.x.eval env' = .ok xv ∧ r.y.eval env' = .ok yv) Q⦄
-    sealPoint (c := Prover c) q
-    ⦃Q⦄ := by
-  simp only [sealPoint]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hxok, hyok⟩, hk⟩ := hpre
-  obtain ⟨xv, hxv⟩ := CVar.evalOk hxok
-  refine ⟨hyok, fun ry sty hry hley => ?_⟩
-  mvcgen
-  refine ⟨by rw [CVar.eval_le hley hxv]; rfl, fun rx stx hrx hlex => ?_⟩
-  mvcgen
-  refine hk ⟨rx, ry⟩ stx (fun xv' yv' hx' hy' => ⟨?_, ?_⟩) (hley.trans hlex)
-  · exact hrx xv' (CVar.eval_le hley hx')
-  · exact CVar.eval_le hlex (hry yv' hy')
+/-- The state and result of `sealPoint`'s honest run: `y`'s seal, then `x`'s. -/
+def sealPointRun [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] (st : ProverState F)
+    (p : AffinePoint (FVar F)) : ProverState F × AffinePoint (FVar F) :=
+  let ry := sealRun st p.y
+  let rx := sealRun ry.1 p.x
+  (rx.1, ⟨rx.2, ry.2⟩)
+
+/-- `sealPoint`'s honest run on an in-scope point lands at `sealPointRun`. -/
+theorem sealPoint_run [CommSemiring F] [DecidableEq F] [BasicSystem F c] [Checker F c]
+    [LawfulChecker F c] {p : AffinePoint (FVar F)} (st : ProverState F) (hx : p.x.Scoped st)
+    (hy : p.y.Scoped st) :
+    prove (Checker.holds (F := F) (c := c)) (sealPoint (c := c) p) st.nv st.env
+      = .ok ((sealPointRun st p).1.out (sealPointRun st p).2) := by
+  have hg := sealRun_grants (st := st) hy
+  simp only [sealPoint, sealPointRun, prove_bind, sealVar_run st hy, Except.bind,
+    sealVar_run _ (hx.of_le hg.le)]
+  rfl
+
+/-- `sealPointRun` reads as the point, coordinate by coordinate. -/
+theorem sealPointRun_grants [CommSemiring F] [DecidableEq F] {st : ProverState F}
+    {p : AffinePoint (FVar F)} (hx : p.x.Scoped st) (hy : p.y.Scoped st) :
+    Grants F st ((sealPointRun st p).1, (sealPointRun st p).2.x) (p.x.val st.env.toValuation) ∧
+      Grants F st ((sealPointRun st p).1, (sealPointRun st p).2.y)
+        (p.y.val st.env.toValuation) := by
+  have hgy := sealRun_grants (st := st) hy
+  have hgx := sealRun_grants (st := (sealRun st p.y).1) (hx.of_le hgy.le)
+  simp only [sealPointRun]
+  exact ⟨Grants.fvar (hgy.le.trans hgx.le) hgx.fvar_scoped
+      (by rw [hgx.fvar_val, CVar.val_of_le hgy.le hx]),
+    Grants.fvar (hgy.le.trans hgx.le) (hgy.fvar_scoped.of_le hgx.le)
+      (by rw [CVar.val_of_le hgx.le hgy.fvar_scoped, hgy.fvar_val])⟩
 
 namespace AddFast
 
@@ -361,256 +367,567 @@ theorem addFast_checkFinite_spec {V : Valuation F} [Field F] [DecidableEq F] [d 
 
 end AddFast
 
-/-! ## Completeness: the honest run accepts -/
+/-! ## Completeness: the honest run -/
 
 namespace AddFast
 
 open WeierstrassCurve.Affine
 
-/-- Reading a bit variable back through the `Bool` decode: an encoded bit decodes to
-itself (the field is nontrivial). -/
-private theorem readVar_bool_of_eval [Field F] [DecidableEq F]
-    {v : BoolVar F} {env : Assignments F} {b : Bool}
-    (h : (↑v : CVar F).eval env = .ok (bit b)) :
-    (readVar (val := Bool) v).run env = .ok b := by
-  cases b with
-  | false =>
-    simp [readVar, h, Bind.bind, Except.bind, bit, CircuitType.fieldsToValue,
-      CircuitType.varToFields, Pure.pure]
-    rfl
-  | true =>
-    simp [readVar, h, Bind.bind, Except.bind, bit, CircuitType.fieldsToValue,
-      CircuitType.varToFields, Pure.pure, one_ne_zero]
-    rfl
+/-- The `sameX` flag's typed read decodes to the coordinate comparison wherever the
+flag reads as that comparison's bit. -/
+private theorem sameX_decode [Field F] [DecidableEq F] {V : Valuation F} {sameX : BoolVar F}
+    {x1 x2 : F} (h : (↑sameX : CVar F).val V = bit (decide (x1 = x2))) :
+    (readVar (val := Bool) sameX).eval V = .ok (decide (x1 = x2)) := by
+  rw [AsProver.eval_readVar_bool, h]
+  cases decide (x1 = x2) <;> simp [bit]
 
-open Std.Do in
-/-- The tail's honest run, from pinned operand reads: with the sealed coordinates,
-`sameX`, and `inf` reading the row's operand values, and the row those values fill
-satisfying the verified gate, every check accepts; the outputs read the honest
-row's values on the final table. Applied manually per mode — its value arguments
-are not inferable from a call site. -/
-private theorem addFastTail_complete_spec [Field F] [DecidableEq F]
-    (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F)
-    (x1v y1v x2v y2v : F) (ib : Bool)
+/-- `infZWit` computes the canonical row's `infZ`. -/
+private theorem infZWit_eval [Field F] [DecidableEq F] {V : Valuation F}
+    {p1 p2 : AffinePoint (FVar F)} {sameX : BoolVar F} {x1 y1 x2 y2 : F}
+    (hy1 : p1.y.val V = y1) (hy2 : p2.y.val V = y2)
+    (hsx : (readVar (val := Bool) sameX).eval V = .ok (decide (x1 = x2))) :
+    (infZWit p1 p2 sameX).eval V = .ok (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).infZ := by
+  simp only [infZWit, AsProver.bind_eq, AsProver.eval_bind, AsProver.eval_readCVar, Except.bind,
+    hy1, hy2]
+  by_cases hy : y1 = y2
+  · simp [hy, Kimchi.Gate.AddComplete.build]
+  · simp only [hy, if_false, AsProver.eval_bind, hsx, Except.bind]
+    by_cases hx : x1 = x2 <;> simp [hy, hx, Kimchi.Gate.AddComplete.build]
+
+/-- `x21InvWit` computes the canonical row's `x21Inv`. -/
+private theorem x21InvWit_eval [Field F] [DecidableEq F] {V : Valuation F}
+    {p1 p2 : AffinePoint (FVar F)} {sameX : BoolVar F} {x1 y1 x2 y2 : F}
+    (hx1 : p1.x.val V = x1) (hx2 : p2.x.val V = x2)
+    (hsx : (readVar (val := Bool) sameX).eval V = .ok (decide (x1 = x2))) :
+    (x21InvWit p1 p2 sameX).eval V
+      = .ok (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).x21Inv := by
+  simp only [x21InvWit, AsProver.bind_eq, AsProver.eval_bind, hsx, Except.bind]
+  by_cases hx : x1 = x2 <;> simp [hx, AsProver.eval_readCVar, hx1, hx2, Except.bind,
+    Kimchi.Gate.AddComplete.build]
+
+/-- `slopeWit` computes the canonical row's slope. -/
+private theorem slopeWit_eval [Field F] [DecidableEq F] {V : Valuation F}
+    {p1 p2 : AffinePoint (FVar F)} {sameX : BoolVar F} {x1 y1 x2 y2 : F}
+    (hx1 : p1.x.val V = x1) (hy1 : p1.y.val V = y1) (hx2 : p2.x.val V = x2)
+    (hy2 : p2.y.val V = y2)
+    (hsx : (readVar (val := Bool) sameX).eval V = .ok (decide (x1 = x2))) :
+    (slopeWit p1 p2 sameX).eval V = .ok (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).s := by
+  simp only [slopeWit, AsProver.bind_eq, AsProver.eval_bind, hsx, Except.bind]
+  by_cases hx : x1 = x2 <;> simp [hx, AsProver.eval_readCVar, hx1, hy1, hx2, hy2, Except.bind,
+    Kimchi.Gate.AddComplete.build]
+
+/-- `x3Wit` computes the canonical row's `x3`, from its slope. -/
+private theorem x3Wit_eval [Field F] [DecidableEq F] {V : Valuation F}
+    {p1 p2 : AffinePoint (FVar F)} {s : FVar F} {x1 y1 x2 y2 : F}
+    (hs : s.val V = (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).s)
+    (hx1 : p1.x.val V = x1) (hx2 : p2.x.val V = x2) :
+    (x3Wit p1 p2 s).eval V = .ok (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).x3 := by
+  simp only [x3Wit, AsProver.bind_eq, AsProver.eval_bind, AsProver.eval_readCVar, Except.bind,
+    hs, hx1, hx2, AsProver.pure_eq, AsProver.eval_pure]
+  rfl
+
+/-- `y3Wit` computes the canonical row's `y3`, from its slope and `x3`. -/
+private theorem y3Wit_eval [Field F] [DecidableEq F] {V : Valuation F}
+    {p1 : AffinePoint (FVar F)} {s x3 : FVar F} {x1 y1 x2 y2 : F}
+    (hs : s.val V = (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).s)
+    (hx3 : x3.val V = (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).x3)
+    (hx1 : p1.x.val V = x1) (hy1 : p1.y.val V = y1) :
+    (y3Wit p1 s x3).eval V = .ok (Kimchi.Gate.AddComplete.build true x1 y1 x2 y2).y3 := by
+  simp only [y3Wit, AsProver.bind_eq, AsProver.eval_bind, AsProver.eval_readCVar, Except.bind,
+    hs, hx3, hx1, hy1, AsProver.pure_eq, AsProver.eval_pure]
+  rfl
+
+/-- The state and result of `addFastTail`'s honest run: the five auxiliary columns
+allocated in order — the verified gate's canonical row at the operand readings — and
+the `addComplete` row (nothing allocated). -/
+def addFastTailRun [Field F] [DecidableEq F] (st : ProverState F) (p1 p2 : AffinePoint (FVar F))
+    (inf : BoolVar F) : ProverState F × AddResult F :=
+  let w := Kimchi.Gate.AddComplete.build true (p1.x.val st.env.toValuation)
+    (p1.y.val st.env.toValuation) (p2.x.val st.env.toValuation) (p2.y.val st.env.toValuation)
+  (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3],
+    ⟨⟨.var (st.nv + 3), .var (st.nv + 4)⟩, inf⟩)
+
+/-- The tail's honest run, from in-scope operands whose `sameX` and `inf` read the
+row's flags, the row they fill satisfying the verified gate: lands at
+`addFastTailRun`. -/
+private theorem addFastTail_run [Field F] [DecidableEq F] {p1 p2 : AffinePoint (FVar F)}
+    {sameX inf : BoolVar F} {ib : Bool} (st : ProverState F)
+    (h1x : p1.x.Scoped st) (h1y : p1.y.Scoped st) (h2x : p2.x.Scoped st) (h2y : p2.y.Scoped st)
+    (hsx : (↑sameX : CVar F).Scoped st) (hinf : (↑inf : CVar F).Scoped st)
+    (hsxv : (↑sameX : CVar F).val st.env.toValuation
+      = bit (decide (p1.x.val st.env.toValuation = p2.x.val st.env.toValuation)))
+    (hinfv : (↑inf : CVar F).val st.env.toValuation = bit ib)
     (hHolds : Kimchi.Gate.AddComplete.Holds
-      { Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v with inf := bit ib })
-    (Q : PostCond (AddResult F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          p1.x.eval env = .ok x1v ∧ p1.y.eval env = .ok y1v ∧
-          p2.x.eval env = .ok x2v ∧ p2.y.eval env = .ok y2v ∧
-          (↑sameX : CVar F).eval env = .ok (bit (decide (x1v = x2v))) ∧
-          (↑inf : CVar F).eval env = .ok (bit ib))
-        (fun _ (r : AddResult F) env' =>
-          r.p.x.eval env' = .ok (Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v).x3 ∧
-          r.p.y.eval env' = .ok (Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v).y3 ∧
-          (↑r.isInfinity : CVar F).eval env' = .ok (bit ib))
-        Q⦄
-    addFastTail (c := KimchiProverC F) p1 p2 sameX inf
-    ⦃Q⦄ := by
-  simp only [addFastTail]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hp1x, hp1y, hp2x, hp2y, hsx, hinf⟩, hk⟩ := hpre
-  have hinfZw : (infZWit p1 p2 sameX).run st.env
-      = .ok (if y1v = y2v then 0 else if x1v = x2v then (y2v - y1v)⁻¹ else 0) := by
-    by_cases hy : y1v = y2v <;> by_cases hx : x1v = x2v <;>
-      simp [infZWit, hp1y, hp2y, readVar_bool_of_eval hsx, hy, hx,
-        Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hinfZw]; rfl, fun infZ st₁ hr₁ hle₁ => ?_⟩
-  have hinfZ : _ = _ := hr₁ _ hinfZw
-  mvcgen
-  have hx21w : (x21InvWit p1 p2 sameX).run st₁.env
-      = .ok (if x1v = x2v then 0 else (x2v - x1v)⁻¹) := by
-    by_cases hx : x1v = x2v <;>
-      simp [x21InvWit, CVar.eval_le hle₁ hp1x,
-        CVar.eval_le hle₁ hp2x, readVar_bool_of_eval (CVar.eval_le hle₁ hsx), hx,
-        Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hx21w]; rfl, fun x21Inv st₂ hr₂ hle₂ => ?_⟩
-  have hx21 : _ = _ := hr₂ _ hx21w
-  have hle02 := hle₁.trans hle₂
-  mvcgen
-  have hsw : (slopeWit p1 p2 sameX).run st₂.env
-      = .ok (if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
-          else (y2v - y1v) / (x2v - x1v)) := by
-    by_cases hx : x1v = x2v <;>
-      simp [slopeWit, CVar.eval_le hle02 hp1x,
-        CVar.eval_le hle02 hp1y, CVar.eval_le hle02 hp2x, CVar.eval_le hle02 hp2y,
-        readVar_bool_of_eval (CVar.eval_le hle02 hsx), hx,
-        Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hsw]; rfl, fun s st₃ hr₃ hle₃ => ?_⟩
-  have hs : _ = _ := hr₃ _ hsw
-  have hle03 := hle02.trans hle₃
-  mvcgen
-  have hx3w : (x3Wit p1 p2 s).run st₃.env
-      = .ok ((if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
-            else (y2v - y1v) / (x2v - x1v)) *
-          (if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
-            else (y2v - y1v) / (x2v - x1v)) - (x1v + x2v)) := by
-    simp [x3Wit, hs, CVar.eval_le hle03 hp1x,
-      CVar.eval_le hle03 hp2x,
-      Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hx3w]; rfl, fun x3 st₄ hr₄ hle₄ => ?_⟩
-  have hx3 : _ = _ := hr₄ _ hx3w
-  have hle04 := hle03.trans hle₄
-  mvcgen
-  have hy3w : (y3Wit p1 s x3).run st₄.env
-      = .ok ((if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
-            else (y2v - y1v) / (x2v - x1v)) *
-          (x1v -
-            ((if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
-              else (y2v - y1v) / (x2v - x1v)) *
-            (if x1v = x2v then 3 * x1v * x1v / (2 * y1v)
-              else (y2v - y1v) / (x2v - x1v)) - (x1v + x2v))) - y1v) := by
-    simp [y3Wit, CVar.eval_le hle₄ hs, hx3,
-      CVar.eval_le hle04 hp1x, CVar.eval_le hle04 hp1y,
-      Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hy3w]; rfl, fun y3 st₅ hr₅ hle₅ => ?_⟩
-  have hy3 : _ = _ := hr₅ _ hy3w
-  have hle05 := hle04.trans hle₅
-  have hle25 := hle₃.trans (hle₄.trans hle₅)
-  mvcgen
-  refine addConstraint_complete_spec (c := KimchiConstraint F) _ _ st₅
-    ⟨?_, fun u st₆ _ hle₆ => ?_⟩
-  · show KimchiConstraint.check (.addComplete _) st₅.env = true
-    have heval : AddComplete.eval st₅.env
-        ⟨p1, p2, ⟨x3, y3⟩, inf.toCVar, sameX.toCVar, s, infZ, x21Inv⟩
-        = .ok { Kimchi.Gate.AddComplete.build true x1v y1v x2v y2v with inf := bit ib } := by
-      simp [AddComplete.eval, Kimchi.Gate.AddComplete.build, bit,
-        CVar.eval_le hle05 hp1x, CVar.eval_le hle05 hp1y,
-        CVar.eval_le hle05 hp2x, CVar.eval_le hle05 hp2y,
-        CVar.eval_le hle₅ hx3, hy3, CVar.eval_le (hle₄.trans hle₅) hs,
-        CVar.eval_le (hle₂.trans hle25) hinfZ, CVar.eval_le hle25 hx21,
-        CVar.eval_le hle05 hinf, CVar.eval_le hle05 hsx,
-        Bind.bind, Except.bind, Pure.pure, Except.pure]
+      { Kimchi.Gate.AddComplete.build true (p1.x.val st.env.toValuation)
+          (p1.y.val st.env.toValuation) (p2.x.val st.env.toValuation)
+          (p2.y.val st.env.toValuation) with inf := bit ib }) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (addFastTail (c := KimchiConstraint F) p1 p2 sameX inf) st.nv st.env
+      = .ok ((addFastTailRun st p1 p2 inf).1.out (addFastTailRun st p1 p2 inf).2) := by
+  simp only [addFastTailRun]
+  generalize hx1 : p1.x.val st.env.toValuation = x1 at hsxv hHolds ⊢
+  generalize hy1 : p1.y.val st.env.toValuation = y1 at hHolds ⊢
+  generalize hx2 : p2.x.val st.env.toValuation = x2 at hsxv hHolds ⊢
+  generalize hy2 : p2.y.val st.env.toValuation = y2 at hHolds ⊢
+  set w := Kimchi.Gate.AddComplete.build true x1 y1 x2 y2 with hw
+  -- the states along the tail, and the operands' readings there
+  have hle₁ := st.le_extendMany [w.infZ]
+  have hle₂ := st.le_extendMany [w.infZ, w.x21Inv]
+  have hle₃ := st.le_extendMany [w.infZ, w.x21Inv, w.s]
+  have hle₄ := st.le_extendMany [w.infZ, w.x21Inv, w.s, w.x3]
+  have hle₅ := st.le_extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3]
+  have hsxd : ∀ st' : ProverState F, st.env.Le st'.env →
+      (readVar (val := Bool) sameX).eval st'.env.toValuation = .ok (decide (x1 = x2)) :=
+    fun st' hle => sameX_decode (by rw [CVar.val_of_le hle hsx, hsxv])
+  -- the allocated names
+  set v0 : FVar F := .var st.nv with hv0
+  set v1 : FVar F := .var (st.extendMany [w.infZ]).nv with hv1
+  set v2 : FVar F := .var (st.extendMany [w.infZ, w.x21Inv]).nv with hv2
+  set v3 : FVar F := .var (st.extendMany [w.infZ, w.x21Inv, w.s]).nv with hv3
+  set v4 : FVar F := .var (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3]).nv with hv4
+  have hs2₃ : v2.Scoped (st.extendMany [w.infZ, w.x21Inv, w.s]) :=
+    st.new_mem_extendMany (i := 2) (by simp)
+  have hs2₄ : v2.Scoped (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3]) :=
+    st.new_mem_extendMany (i := 2) (by simp)
+  have hs3₄ : v3.Scoped (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3]) :=
+    st.new_mem_extendMany (i := 3) (by simp)
+  have hv2₃ : v2.val (st.extendMany [w.infZ, w.x21Inv, w.s]).env.toValuation = w.s := by
+    show (st.extendMany _).env.toValuation (st.nv + 2) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+  have hv2₄ : v2.val (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3]).env.toValuation = w.s := by
+    show (st.extendMany _).env.toValuation (st.nv + 2) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+  have hv3₄ : v3.val (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3]).env.toValuation = w.x3 := by
+    show (st.extendMany _).env.toValuation (st.nv + 3) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+  simp only [addFastTail, prove_bind]
+  rw [prove_witness_run (w := infZWit p1 p2 sameX) st
+    (.bind (.readCVar h1y) fun _ => .bind (.readCVar h2y) fun _ => by
+      split
+      · trivial
+      · exact .bind (.readVar_bool hsx) fun _ => by split <;> trivial)
+    (v := w.infZ) (infZWit_eval hy1 hy2 (hsxd st (Assignments.Le.refl _)))]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind]
+  rw [prove_witness_run (w := x21InvWit p1 p2 sameX) (st.extendMany [w.infZ])
+    (.bind (.readVar_bool (hsx.of_le hle₁)) fun _ => by
+      split
+      · trivial
+      · exact .bind (.readCVar (h1x.of_le hle₁)) fun _ => .bind (.readCVar (h2x.of_le hle₁))
+          fun _ => trivial)
+    (v := w.x21Inv) (x21InvWit_eval (y1 := y1) (y2 := y2)
+      (by rw [CVar.val_of_le hle₁ h1x, hx1]) (by rw [CVar.val_of_le hle₁ h2x, hx2]) (hsxd _ hle₁))]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind,
+    ProverState.extendMany_append, List.cons_append, List.nil_append]
+  rw [prove_witness_run (w := slopeWit p1 p2 sameX) (st.extendMany [w.infZ, w.x21Inv])
+    (.bind (.readVar_bool (hsx.of_le hle₂)) fun _ => by
+      split
+      · exact .bind (.readCVar (h1x.of_le hle₂)) fun _ => .bind (.readCVar (h1y.of_le hle₂))
+          fun _ => trivial
+      · exact .bind (.readCVar (h1y.of_le hle₂)) fun _ => .bind (.readCVar (h2y.of_le hle₂))
+          fun _ => .bind (.readCVar (h1x.of_le hle₂)) fun _ => .bind (.readCVar (h2x.of_le hle₂))
+          fun _ => trivial)
+    (v := w.s) (slopeWit_eval (by rw [CVar.val_of_le hle₂ h1x, hx1])
+      (by rw [CVar.val_of_le hle₂ h1y, hy1]) (by rw [CVar.val_of_le hle₂ h2x, hx2])
+      (by rw [CVar.val_of_le hle₂ h2y, hy2]) (hsxd _ hle₂))]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind,
+    ProverState.extendMany_append, List.cons_append, List.nil_append]
+  rw [prove_witness_run (w := x3Wit p1 p2 v2) (st.extendMany [w.infZ, w.x21Inv, w.s])
+    (.bind (.readCVar hs2₃) fun _ => .bind (.readCVar (h1x.of_le hle₃)) fun _ =>
+      .bind (.readCVar (h2x.of_le hle₃)) fun _ => trivial)
+    (v := w.x3) (x3Wit_eval (y1 := y1) (y2 := y2) hv2₃
+      (by rw [CVar.val_of_le hle₃ h1x, hx1]) (by rw [CVar.val_of_le hle₃ h2x, hx2]))]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind,
+    ProverState.extendMany_append, List.cons_append, List.nil_append]
+  rw [prove_witness_run (w := y3Wit p1 v2 v3) (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3])
+    (.bind (.readCVar hs2₄) fun _ => .bind (.readCVar (h1x.of_le hle₄)) fun _ =>
+      .bind (.readCVar hs3₄) fun _ => .bind (.readCVar (h1y.of_le hle₄)) fun _ => trivial)
+    (v := w.y3) (y3Wit_eval (x2 := x2) (y2 := y2) hv2₄ hv3₄
+      (by rw [CVar.val_of_le hle₄ h1x, hx1]) (by rw [CVar.val_of_le hle₄ h1y, hy1]))]
+  simp only [valueToFields_fvar_toList, fieldsToVar_fvar_alloc, Except.bind,
+    ProverState.extendMany_append, List.cons_append, List.nil_append]
+  -- the row
+  have hget : ∀ (i : ℕ) (hi : i < 5), (CVar.var (st.nv + i)).val
+      (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3]).env.toValuation
+      = [w.infZ, w.x21Inv, w.s, w.x3, w.y3][i] := by
+    intro i hi
+    show (st.extendMany _).env.toValuation (st.nv + i) = _
+    rw [ProverState.get_extendMany_new st (by simpa using hi)]
+  have hmem : ∀ (i : ℕ), i < 5 →
+      (CVar.var (st.nv + i)).Scoped (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3]) :=
+    fun i hi => st.new_mem_extendMany (by simpa using hi)
+  have hcheck : Checker.holds (F := F) (c := KimchiConstraint F)
+      (KimchiSystem.addComplete ⟨p1, p2, ⟨v3, v4⟩, inf.toCVar, sameX.toCVar, v2, v0, v1⟩)
+      (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3]).env = true := by
+    show KimchiConstraint.check (.addComplete _) _ = true
+    have heval : AddComplete.eval (st.extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3]).env
+        ⟨p1, p2, ⟨v3, v4⟩, inf.toCVar, sameX.toCVar, v2, v0, v1⟩ = .ok { w with inf := bit ib } := by
+      have e0 := CVar.eval_eq_val (hmem 0 (by omega))
+      have e1 := CVar.eval_eq_val (hmem 1 (by omega))
+      have e2 := CVar.eval_eq_val (hmem 2 (by omega))
+      have e3 := CVar.eval_eq_val (hmem 3 (by omega))
+      have e4 := CVar.eval_eq_val (hmem 4 (by omega))
+      rw [hget 0 (by omega)] at e0
+      rw [hget 1 (by omega)] at e1
+      rw [hget 2 (by omega)] at e2
+      rw [hget 3 (by omega)] at e3
+      rw [hget 4 (by omega)] at e4
+      simp only [List.getElem_cons_zero, List.getElem_cons_succ] at e0 e1 e2 e3 e4
+      simp only [AddComplete.eval, Bind.bind, Except.bind,
+        CVar.eval_eq_val (h1x.of_le hle₅), CVar.eval_eq_val (h1y.of_le hle₅),
+        CVar.eval_eq_val (h2x.of_le hle₅), CVar.eval_eq_val (h2y.of_le hle₅),
+        CVar.eval_eq_val (hinf.of_le hle₅), CVar.eval_eq_val (hsx.of_le hle₅),
+        CVar.val_of_le hle₅ h1x, CVar.val_of_le hle₅ h1y, CVar.val_of_le hle₅ h2x,
+        CVar.val_of_le hle₅ h2y, CVar.val_of_le hle₅ hinf, CVar.val_of_le hle₅ hsx,
+        hx1, hy1, hx2, hy2, hinfv, hsxv, Pure.pure, Except.pure]
+      rw [show v3 = CVar.var (st.nv + 3) from rfl, show v4 = CVar.var (st.nv + 4) from rfl,
+        show v2 = CVar.var (st.nv + 2) from rfl, show v0 = CVar.var (st.nv + 0) from rfl,
+        show v1 = CVar.var (st.nv + 1) from rfl, e0, e1, e2, e3, e4]
+      simp only [Except.bind, Except.ok.injEq, hw, Kimchi.Gate.AddComplete.build, bit]
     simp only [KimchiConstraint.check, heval]
     exact (Kimchi.Gate.AddComplete.ok_iff _).mpr hHolds
-  · mvcgen
-    refine hk _ st₆ ?_ ?_ ?_ (hle05.trans hle₆)
-    · exact CVar.eval_le (hle₅.trans hle₆) hx3
-    · exact CVar.eval_le hle₆ hy3
-    · exact CVar.eval_le (hle05.trans hle₆) hinf
+  rw [prove_addConstraint _ hcheck]
+  rfl
 
-/-- `addFast`'s honest run succeeds at the prover carrier: with the four operand
-coordinates readable, the operands nonsingular (short shape), the first finite
-(`y ≠ 0`), and — under `checkFinite` — the group sum nonzero, the checking
-interpreter at `KimchiProverC` accepts every row the gadget emits, and the outputs
-read as the sum
-in Mathlib's group — *either* the infinity flag reads `1` and the sum is `0`, *or*
-it reads `0` and the output coordinates are a nonsingular point equal to the sum
-(the accepted row satisfies the verified gate, so its `sound` characterizes what
-was computed). The executable seam (`kimchiSolve` at `kimchiOps`) is outside this
-statement: its ops-coherence lockstep is the open obligation
-`Snarky.Kimchi.Constraint` records. -/
-theorem addFast_complete_spec [Field F] [DecidableEq F] [d : HasCurve F]
-    (fin : Finiteness)
-    (p1' p2' : AffinePoint (FVar F))
-    (Q : PostCond (AddResult F) (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env =>
-          (p1'.x.eval env).isOk ∧ (p1'.y.eval env).isOk ∧
-          (p2'.x.eval env).isOk ∧ (p2'.y.eval env).isOk ∧
-          (∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
-            p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
-            ∃ (h1 : d.W.Nonsingular x1 y1) (h2 : d.W.Nonsingular x2 y2),
-              y1 ≠ 0 ∧ (fin = .checkFinite →
-                Point.some _ _ h1 + Point.some _ _ h2 ≠ 0)))
-        (fun env (r : AddResult F) env' =>
-          ∀ x1 y1 x2 y2, p1'.x.eval env = .ok x1 → p1'.y.eval env = .ok y1 →
-            p2'.x.eval env = .ok x2 → p2'.y.eval env = .ok y2 →
-            ∀ (h1 : d.W.Nonsingular x1 y1) (h2 : d.W.Nonsingular x2 y2),
-              ((↑r.isInfinity : CVar F).eval env' = .ok 1 ∧
-                Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
-              (∃ x3 y3, r.p.x.eval env' = .ok x3 ∧ r.p.y.eval env' = .ok y3 ∧
-                (↑r.isInfinity : CVar F).eval env' = .ok 0 ∧
-                ∃ h3 : d.W.Nonsingular x3 y3,
-                  Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3))
-        Q⦄
-    addFast (c := KimchiProverC F) fin p1' p2'
-    ⦃Q⦄ := by
+/-- The state and result of `addFast`'s honest run: the seals, the `sameX` bit, the
+mode's `inf` (the constant `false` under `checkFinite`, a witnessed bit otherwise), the
+tail. -/
+def addFastCoreRun [Field F] [DecidableEq F] (st₂ : ProverState F) (fin : Finiteness)
+    (q1 q2 : AffinePoint (FVar F)) : ProverState F × AddResult F :=
+  let st₃ := st₂.extendMany
+    [bit (decide (q1.x.val st₂.env.toValuation = q2.x.val st₂.env.toValuation))]
+  match fin with
+  | .checkFinite => addFastTailRun st₃ q1 q2 false_
+  | .dontCheckFinite =>
+    let st₄ := st₃.extendMany
+      [bit (decide (q1.x.val st₃.env.toValuation = q2.x.val st₃.env.toValuation)
+        && !decide (q1.y.val st₃.env.toValuation = q2.y.val st₃.env.toValuation))]
+    addFastTailRun st₄ q1 q2 (BoolVar.unchecked (.var st₃.nv))
+
+/-- `addFast`'s run: both operands sealed, then `addFastCoreRun` at the sealed points. -/
+def addFastRun [Field F] [DecidableEq F] (st : ProverState F) (fin : Finiteness)
+    (p1' p2' : AffinePoint (FVar F)) : ProverState F × AddResult F :=
+  let r1 := sealPointRun st p1'
+  let r2 := sealPointRun r1.1 p2'
+  addFastCoreRun r2.1 fin r1.2 r2.2
+
+/-- The operand conditions of the honest `addFast` run: both operands nonsingular on
+the curve, the first finite (`y ≠ 0`), and — under `checkFinite` — the group sum
+nonzero. -/
+def Operands [Field F] [DecidableEq F] (d : HasCurve F) (fin : Finiteness)
+    (x1 y1 x2 y2 : F) : Prop :=
+  ∃ (h1 : d.W.Nonsingular x1 y1) (h2 : d.W.Nonsingular x2 y2),
+    y1 ≠ 0 ∧ (fin = .checkFinite → Point.some _ _ h1 + Point.some _ _ h2 ≠ 0)
+
+/-- `addFast`'s honest run on in-scope operands satisfying `Operands` lands at
+`addFastRun`: the checking interpreter accepts every row the gadget emits. -/
+theorem addFast_run [Field F] [DecidableEq F] [d : HasCurve F] (fin : Finiteness)
+    {p1' p2' : AffinePoint (FVar F)} (st : ProverState F)
+    (h1x : p1'.x.Scoped st) (h1y : p1'.y.Scoped st) (h2x : p2'.x.Scoped st) (h2y : p2'.y.Scoped st)
+    (hops : Operands d fin (p1'.x.val st.env.toValuation) (p1'.y.val st.env.toValuation)
+      (p2'.x.val st.env.toValuation) (p2'.y.val st.env.toValuation)) :
+    prove (Checker.holds (F := F) (c := KimchiConstraint F))
+      (addFast (c := KimchiConstraint F) fin p1' p2') st.nv st.env
+      = .ok ((addFastRun st fin p1' p2').1.out (addFastRun st fin p1' p2').2) := by
+  revert hops
   obtain ⟨W, ha, -, -, htwo⟩ := d
-  simp only [addFast]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hx1ok, hy1ok, hx2ok, hy2ok, hcond⟩, hk⟩ := hpre
-  obtain ⟨x1v, hx1⟩ := CVar.evalOk hx1ok
-  obtain ⟨y1v, hy1⟩ := CVar.evalOk hy1ok
-  obtain ⟨x2v, hx2⟩ := CVar.evalOk hx2ok
-  obtain ⟨y2v, hy2⟩ := CVar.evalOk hy2ok
-  obtain ⟨h1n, h2n, hy1ne, hsumne⟩ := hcond _ _ _ _ hx1 hy1 hx2 hy2
+  intro hops
+  unfold Operands at hops
+  dsimp only at hops
+  obtain ⟨h1n, h2n, hy1ne, hsumne⟩ := hops
   have hon1 := h1n.1
   have hon2 := h2n.1
-  have hfin : fin = .checkFinite → ¬(x1v = x2v ∧ y1v = W.negY x2v y2v) := by
+  have hfin : fin = .checkFinite → ¬(p1'.x.val st.env.toValuation = p2'.x.val st.env.toValuation
+      ∧ p1'.y.val st.env.toValuation
+        = W.negY (p2'.x.val st.env.toValuation) (p2'.y.val st.env.toValuation)) := by
     intro hf
-    rintro ⟨rfl, hyeq⟩
-    subst hyeq
+    rintro ⟨hxeq, hyeq⟩
     apply hsumne hf
-    rw [show Point.some x1v (W.negY x1v y2v) h1n = -Point.some x1v y2v h2n from by
+    generalize p1'.x.val st.env.toValuation = x1v at h1n hxeq ⊢
+    generalize p1'.y.val st.env.toValuation = y1v at h1n hyeq ⊢
+    subst hxeq hyeq
+    rw [show Point.some (p2'.x.val st.env.toValuation)
+        (W.negY (p2'.x.val st.env.toValuation) (p2'.y.val st.env.toValuation)) h1n
+        = -Point.some (p2'.x.val st.env.toValuation) (p2'.y.val st.env.toValuation) h2n from by
       rw [WeierstrassCurve.Affine.Point.neg_some]]
     exact neg_add_cancel _
-  refine ⟨⟨hx1ok, hy1ok⟩, fun p1 st₁ hp1 hle₁ => ?_⟩
-  obtain ⟨hp1x, hp1y⟩ := hp1 _ _ hx1 hy1
-  mvcgen
-  refine ⟨⟨by rw [CVar.eval_le hle₁ hx2]; rfl, by rw [CVar.eval_le hle₁ hy2]; rfl⟩,
-    fun p2 st₂ hp2 hle₂ => ?_⟩
-  obtain ⟨hp2x, hp2y⟩ := hp2 _ _ (CVar.eval_le hle₁ hx2) (CVar.eval_le hle₁ hy2)
-  mvcgen
-  have hsw : (UnChecked.mk <$> sameXWit p1 p2).run st₂.env
-      = .ok ⟨decide (x1v = x2v)⟩ := by
-    simp [sameXWit, CVar.eval_le hle₂ hp1x, hp2x,
-      Functor.map, Bind.bind, Except.bind, Pure.pure]
-  refine ⟨by rw [hsw]; rfl, fun sameXU st₃ hsxr hle₃ => ?_⟩
-  have hsx : _ = _ := hsxr _ hsw
+  have hg1 := sealPointRun_grants (st := st) h1x h1y
+  have hg2 := sealPointRun_grants (st := (sealPointRun st p1').1) (h2x.of_le hg1.1.le)
+    (h2y.of_le hg1.1.le)
+  simp only [addFast, addFastRun, addFastCoreRun, prove_bind, sealPoint_run st h1x h1y,
+    Except.bind,
+    sealPoint_run _ (h2x.of_le hg1.1.le) (h2y.of_le hg1.1.le)]
+  generalize hr1 : sealPointRun st p1' = r1 at hg1 hg2 ⊢
+  generalize hr2 : sealPointRun r1.1 p2' = r2 at hg2 ⊢
+  have hr1x : r1.2.x.val r2.1.env.toValuation = p1'.x.val st.env.toValuation := by
+    rw [CVar.val_of_le hg2.1.le hg1.1.fvar_scoped, hg1.1.fvar_val]
+  have hr1y : r1.2.y.val r2.1.env.toValuation = p1'.y.val st.env.toValuation := by
+    rw [CVar.val_of_le hg2.1.le hg1.2.fvar_scoped, hg1.2.fvar_val]
+  have hr2x : r2.2.x.val r2.1.env.toValuation = p2'.x.val st.env.toValuation := by
+    rw [hg2.1.fvar_val, CVar.val_of_le hg1.1.le h2x]
+  have hr2y : r2.2.y.val r2.1.env.toValuation = p2'.y.val st.env.toValuation := by
+    rw [hg2.2.fvar_val, CVar.val_of_le hg1.1.le h2y]
+  have hs1x : r1.2.x.Scoped r2.1 := hg1.1.fvar_scoped.of_le hg2.1.le
+  have hs1y : r1.2.y.Scoped r2.1 := hg1.2.fvar_scoped.of_le hg2.1.le
+  have hs2x : r2.2.x.Scoped r2.1 := hg2.1.fvar_scoped
+  have hs2y : r2.2.y.Scoped r2.1 := hg2.2.fvar_scoped
+  rw [prove_witness_run (w := UnChecked.mk <$> sameXWit r1.2 r2.2) r2.1
+    (.bind (.bind (.readCVar hs1x) fun _ => .bind (.readCVar hs2x) fun _ => trivial) fun _ =>
+      trivial)
+    (v := ⟨decide (r1.2.x.val r2.1.env.toValuation = r2.2.x.val r2.1.env.toValuation)⟩)
+    (by simp [sameXWit, Except.bind])]
+  simp only [valueToFields_uncheckedBool_toList, fieldsToVar_uncheckedBool_alloc, Except.bind]
+  generalize hb : decide (r1.2.x.val r2.1.env.toValuation = r2.2.x.val r2.1.env.toValuation) = sb
+  have hle₃ := r2.1.le_extendMany [bit sb]
+  have hsx₃ : (CVar.var r2.1.nv).val (r2.1.extendMany [bit sb]).env.toValuation = bit sb :=
+    ProverState.get_extendMany_head ..
+  have hsxv₃ : (CVar.var r2.1.nv).val (r2.1.extendMany [bit sb]).env.toValuation
+      = bit (decide (r1.2.x.val (r2.1.extendMany [bit sb]).env.toValuation
+        = r2.2.x.val (r2.1.extendMany [bit sb]).env.toValuation)) := by
+    rw [hsx₃, CVar.val_of_le hle₃ hs1x, CVar.val_of_le hle₃ hs2x, hb]
   cases fin with
   | checkFinite =>
-    mvcgen
+    dsimp only
+    simp only [prove_bind, prove_pure, Except.bind]
     have hHolds := Kimchi.Gate.AddComplete.complete_build (checkFinite := true) W ha
-      hon1 hon2 hy1ne htwo (fun _ => hfin)
-    refine addFastTail_complete_spec p1 p2 sameXU.val false_ x1v y1v x2v y2v false
-      hHolds Q st₃
-      ⟨⟨CVar.eval_le (hle₂.trans hle₃) hp1x, CVar.eval_le (hle₂.trans hle₃) hp1y,
-        CVar.eval_le hle₃ hp2x, CVar.eval_le hle₃ hp2y, hsx, rfl⟩,
-      fun r st' hpost hle => hk r st' ?_
-        ((hle₁.trans (hle₂.trans hle₃)).trans hle)⟩
-    intro a1 b1 a2 b2 ha1 hb1 ha2 hb2 h1 h2
-    rw [hx1] at ha1; rw [hy1] at hb1; rw [hx2] at ha2; rw [hy2] at hb2
-    injection ha1 with ha1; injection hb1 with hb1
-    injection ha2 with ha2; injection hb2 with hb2
-    subst ha1 hb1 ha2 hb2
+      hon1 hon2 hy1ne htwo (fun _ => hfin rfl)
+    rw [addFastTail_run (sameX := BoolVar.unchecked (.var r2.1.nv)) (inf := false_) _
+      (hs1x.of_le hle₃) (hs1y.of_le hle₃) (hs2x.of_le hle₃) (hs2y.of_le hle₃)
+      (ProverState.mem_extendMany_head ..) trivial
+      (by rw [BoolVar.toCVar_unchecked]; exact hsxv₃) (ib := false) rfl
+      (by rw [CVar.val_of_le hle₃ hs1x, CVar.val_of_le hle₃ hs1y, CVar.val_of_le hle₃ hs2x,
+        CVar.val_of_le hle₃ hs2y, hr1x, hr1y, hr2x, hr2y]; exact hHolds)]
+  | dontCheckFinite =>
+    dsimp only
+    simp only [prove_bind, prove_pure, Except.bind]
+    have hHolds := Kimchi.Gate.AddComplete.complete_build (checkFinite := false) W ha
+      hon1 hon2 hy1ne htwo (fun h => Bool.noConfusion h)
+    rw [prove_witness_run (w := UnChecked.mk <$> infWit r1.2 r2.2 (BoolVar.unchecked (.var r2.1.nv)))
+      (r2.1.extendMany [bit sb])
+      (.bind (.bind (.readVar_bool (ProverState.mem_extendMany_head ..)) fun _ =>
+        .bind (.readCVar (hs1y.of_le hle₃)) fun _ => .bind (.readCVar (hs2y.of_le hle₃)) fun _ =>
+          trivial) fun _ => trivial)
+      (v := ⟨sb && !decide (r1.2.y.val (r2.1.extendMany [bit sb]).env.toValuation
+        = r2.2.y.val (r2.1.extendMany [bit sb]).env.toValuation)⟩)
+      (by
+        simp only [infWit, AsProver.map_eq, AsProver.bind_eq, AsProver.eval_bind,
+          AsProver.eval_readVar_bool, AsProver.eval_readCVar, Except.bind, AsProver.pure_eq,
+          AsProver.eval_pure, BoolVar.toCVar_unchecked, hsx₃]
+        cases sb <;> simp [bit])]
+    simp only [valueToFields_uncheckedBool_toList, fieldsToVar_uncheckedBool_alloc, Except.bind]
+    rw [CVar.val_of_le hle₃ hs1x, CVar.val_of_le hle₃ hs2x, hb]
+    generalize hib : (sb && !decide (r1.2.y.val (r2.1.extendMany [bit sb]).env.toValuation
+      = r2.2.y.val (r2.1.extendMany [bit sb]).env.toValuation)) = ib
+    have hle₄ := (r2.1.extendMany [bit sb]).le_extendMany [bit ib]
+    have hsx₃s : (CVar.var r2.1.nv).Scoped (r2.1.extendMany [bit sb]) :=
+      ProverState.mem_extendMany_head ..
+    have hinf₄ : (CVar.var (r2.1.extendMany [bit sb]).nv).Scoped
+        ((r2.1.extendMany [bit sb]).extendMany [bit ib]) :=
+      ProverState.mem_extendMany_head ..
+    rw [addFastTail_run (sameX := BoolVar.unchecked (.var r2.1.nv))
+      (inf := BoolVar.unchecked (.var (r2.1.extendMany [bit sb]).nv)) _
+      (hs1x.of_le (hle₃.trans hle₄)) (hs1y.of_le (hle₃.trans hle₄))
+      (hs2x.of_le (hle₃.trans hle₄)) (hs2y.of_le (hle₃.trans hle₄)) (hsx₃s.of_le hle₄) hinf₄
+      (by rw [BoolVar.toCVar_unchecked, CVar.val_of_le hle₄ hsx₃s, hsxv₃,
+        CVar.val_of_le hle₄ (hs1x.of_le hle₃), CVar.val_of_le hle₄ (hs2x.of_le hle₃)])
+      (ib := ib) (by rw [BoolVar.toCVar_unchecked]; exact ProverState.get_extendMany_head ..)
+      (by
+        rw [CVar.val_of_le (hle₃.trans hle₄) hs1x, CVar.val_of_le (hle₃.trans hle₄) hs1y,
+          CVar.val_of_le (hle₃.trans hle₄) hs2x, CVar.val_of_le (hle₃.trans hle₄) hs2y,
+          hr1x, hr1y, hr2x, hr2y]
+        rw [← hib, CVar.val_of_le hle₃ hs1y, CVar.val_of_le hle₃ hs2y, ← hb, hr1x, hr1y, hr2x,
+          hr2y]
+        exact hHolds)]
+
+/-- What `addFastTailRun` grants: the table grew, the output point and flag are in
+scope, the point reads as the canonical row's output at the operand readings and the
+flag as it read before. -/
+private theorem addFastTailRun_scope [Field F] [DecidableEq F] (st : ProverState F)
+    (p1 p2 : AffinePoint (FVar F)) {inf : BoolVar F} (hinf : (↑inf : CVar F).Scoped st) :
+    st.env.Le (addFastTailRun st p1 p2 inf).1.env ∧
+      (addFastTailRun st p1 p2 inf).2.p.x.Scoped (addFastTailRun st p1 p2 inf).1 ∧
+      (addFastTailRun st p1 p2 inf).2.p.y.Scoped (addFastTailRun st p1 p2 inf).1 ∧
+      (↑(addFastTailRun st p1 p2 inf).2.isInfinity : CVar F).Scoped (addFastTailRun st p1 p2 inf).1 ∧
+      (addFastTailRun st p1 p2 inf).2.p.x.val (addFastTailRun st p1 p2 inf).1.env.toValuation
+        = (Kimchi.Gate.AddComplete.build true (p1.x.val st.env.toValuation)
+          (p1.y.val st.env.toValuation) (p2.x.val st.env.toValuation)
+          (p2.y.val st.env.toValuation)).x3 ∧
+      (addFastTailRun st p1 p2 inf).2.p.y.val (addFastTailRun st p1 p2 inf).1.env.toValuation
+        = (Kimchi.Gate.AddComplete.build true (p1.x.val st.env.toValuation)
+          (p1.y.val st.env.toValuation) (p2.x.val st.env.toValuation)
+          (p2.y.val st.env.toValuation)).y3 ∧
+      (↑(addFastTailRun st p1 p2 inf).2.isInfinity : CVar F).val
+          (addFastTailRun st p1 p2 inf).1.env.toValuation
+        = (↑inf : CVar F).val st.env.toValuation := by
+  simp only [addFastTailRun]
+  set w := Kimchi.Gate.AddComplete.build true (p1.x.val st.env.toValuation)
+    (p1.y.val st.env.toValuation) (p2.x.val st.env.toValuation) (p2.y.val st.env.toValuation)
+    with hw
+  have hle := st.le_extendMany [w.infZ, w.x21Inv, w.s, w.x3, w.y3]
+  refine ⟨hle, st.new_mem_extendMany (i := 3) (by simp), st.new_mem_extendMany (i := 4) (by simp),
+    hinf.of_le hle, ?_, ?_, CVar.val_of_le hle hinf⟩
+  · show (st.extendMany _).env.toValuation (st.nv + 3) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+  · show (st.extendMany _).env.toValuation (st.nv + 4) = _
+    rw [ProverState.get_extendMany_new st (by simp)]
+    rfl
+
+/-- What `addFastCoreRun` grants at sealed operands in scope: the table grew, the output
+point and flag are in scope, and at nonsingular operands they read as the group sum —
+either the flag reads `1` and the sum is zero, or it reads `0` and the coordinates are a
+nonsingular point equal to the sum (the filled row is the gate's canonical one, whose
+`sound` characterizes what it computed). -/
+private theorem addFastCoreRun_grants [Field F] [DecidableEq F] [d : HasCurve F]
+    (fin : Finiteness) {q1 q2 : AffinePoint (FVar F)} (st₂ : ProverState F)
+    (hs1x : q1.x.Scoped st₂) (hs1y : q1.y.Scoped st₂) (hs2x : q2.x.Scoped st₂)
+    (hs2y : q2.y.Scoped st₂)
+    (hops : Operands d fin (q1.x.val st₂.env.toValuation) (q1.y.val st₂.env.toValuation)
+      (q2.x.val st₂.env.toValuation) (q2.y.val st₂.env.toValuation)) :
+    st₂.env.Le (addFastCoreRun st₂ fin q1 q2).1.env ∧
+      (addFastCoreRun st₂ fin q1 q2).2.p.x.Scoped (addFastCoreRun st₂ fin q1 q2).1 ∧
+      (addFastCoreRun st₂ fin q1 q2).2.p.y.Scoped (addFastCoreRun st₂ fin q1 q2).1 ∧
+      (↑(addFastCoreRun st₂ fin q1 q2).2.isInfinity : CVar F).Scoped
+        (addFastCoreRun st₂ fin q1 q2).1 ∧
+      ∀ (h1 : d.W.Nonsingular (q1.x.val st₂.env.toValuation) (q1.y.val st₂.env.toValuation))
+        (h2 : d.W.Nonsingular (q2.x.val st₂.env.toValuation) (q2.y.val st₂.env.toValuation)),
+        ((↑(addFastCoreRun st₂ fin q1 q2).2.isInfinity : CVar F).val
+            (addFastCoreRun st₂ fin q1 q2).1.env.toValuation = 1 ∧
+          Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+        (∃ h3 : d.W.Nonsingular
+            ((addFastCoreRun st₂ fin q1 q2).2.p.x.val
+              (addFastCoreRun st₂ fin q1 q2).1.env.toValuation)
+            ((addFastCoreRun st₂ fin q1 q2).2.p.y.val
+              (addFastCoreRun st₂ fin q1 q2).1.env.toValuation),
+          (↑(addFastCoreRun st₂ fin q1 q2).2.isInfinity : CVar F).val
+              (addFastCoreRun st₂ fin q1 q2).1.env.toValuation = 0 ∧
+            Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) := by
+  revert hops
+  obtain ⟨W, ha, -, -, htwo⟩ := d
+  intro hops
+  unfold Operands at hops
+  dsimp only at hops
+  obtain ⟨h1n, h2n, hy1ne, hsumne⟩ := hops
+  have hon1 := h1n.1
+  have hon2 := h2n.1
+  have hfin : fin = .checkFinite → ¬(q1.x.val st₂.env.toValuation = q2.x.val st₂.env.toValuation
+      ∧ q1.y.val st₂.env.toValuation
+        = W.negY (q2.x.val st₂.env.toValuation) (q2.y.val st₂.env.toValuation)) := by
+    intro hf
+    rintro ⟨hxeq, hyeq⟩
+    apply hsumne hf
+    generalize q1.x.val st₂.env.toValuation = x1v at h1n hxeq ⊢
+    generalize q1.y.val st₂.env.toValuation = y1v at h1n hyeq ⊢
+    subst hxeq hyeq
+    rw [show Point.some (q2.x.val st₂.env.toValuation)
+        (W.negY (q2.x.val st₂.env.toValuation) (q2.y.val st₂.env.toValuation)) h1n
+        = -Point.some (q2.x.val st₂.env.toValuation) (q2.y.val st₂.env.toValuation) h2n from by
+      rw [WeierstrassCurve.Affine.Point.neg_some]]
+    exact neg_add_cancel _
+  cases fin with
+  | checkFinite =>
+    set sb := decide (q1.x.val st₂.env.toValuation = q2.x.val st₂.env.toValuation) with hb
+    rw [show addFastCoreRun st₂ .checkFinite q1 q2
+      = addFastTailRun (st₂.extendMany [bit sb]) q1 q2 false_ from rfl]
+    have hle₃ := st₂.le_extendMany [bit sb]
+    have hHolds := Kimchi.Gate.AddComplete.complete_build (checkFinite := true) W ha
+      hon1 hon2 hy1ne htwo (fun _ => hfin rfl)
+    have ht := addFastTailRun_scope (st₂.extendMany [bit sb]) q1 q2 (inf := false_) trivial
+    rw [CVar.val_of_le hle₃ hs1x, CVar.val_of_le hle₃ hs1y, CVar.val_of_le hle₃ hs2x,
+      CVar.val_of_le hle₃ hs2y] at ht
+    obtain ⟨htle, hsx3, hsy3, hsinf, hx3, hy3, hinfv⟩ := ht
+    refine ⟨hle₃.trans htle, hsx3, hsy3, hsinf, fun h1 h2 => ?_⟩
+    rw [hx3, hy3, hinfv]
     rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hHolds hy1ne htwo with
       ⟨hinf1, _⟩ | ⟨_, h3, hsum⟩
     · exact absurd (hinf1 : (0 : F) = 1) zero_ne_one
-    · exact Or.inr ⟨_, _, hpost.1, hpost.2.1, hpost.2.2, h3, hsum⟩
+    · exact Or.inr ⟨h3, rfl, hsum⟩
   | dontCheckFinite =>
-    mvcgen
-    have hiw : (UnChecked.mk <$> infWit p1 p2 sameXU.val).run st₃.env
-        = .ok ⟨decide (x1v = x2v) && !decide (y1v = y2v)⟩ := by
-      simp [infWit, readVar_bool_of_eval hsx,
-        CVar.eval_le (hle₂.trans hle₃) hp1y, CVar.eval_le hle₃ hp2y,
-        Functor.map, Bind.bind, Except.bind, Pure.pure]
-    refine ⟨by rw [hiw]; rfl, fun infU st₄ hinfr hle₄ => ?_⟩
-    have hinfb : _ = _ := hinfr _ hiw
-    mvcgen
+    set sb := decide (q1.x.val st₂.env.toValuation = q2.x.val st₂.env.toValuation) with hb
+    rw [show addFastCoreRun st₂ .dontCheckFinite q1 q2 = addFastTailRun
+        ((st₂.extendMany [bit sb]).extendMany
+          [bit (decide (q1.x.val (st₂.extendMany [bit sb]).env.toValuation
+              = q2.x.val (st₂.extendMany [bit sb]).env.toValuation)
+            && !decide (q1.y.val (st₂.extendMany [bit sb]).env.toValuation
+              = q2.y.val (st₂.extendMany [bit sb]).env.toValuation))])
+        q1 q2 (BoolVar.unchecked (.var (st₂.extendMany [bit sb]).nv)) from rfl]
+    have hle₃ := st₂.le_extendMany [bit sb]
+    rw [CVar.val_of_le hle₃ hs1x, CVar.val_of_le hle₃ hs2x, ← hb]
+    set ib := (sb && !decide (q1.y.val (st₂.extendMany [bit sb]).env.toValuation
+      = q2.y.val (st₂.extendMany [bit sb]).env.toValuation)) with hib
+    have hle₄ := (st₂.extendMany [bit sb]).le_extendMany [bit ib]
     have hHolds := Kimchi.Gate.AddComplete.complete_build (checkFinite := false) W ha
       hon1 hon2 hy1ne htwo (fun h => Bool.noConfusion h)
-    refine addFastTail_complete_spec p1 p2 sameXU.val infU.val x1v y1v x2v y2v
-      (decide (x1v = x2v) && !decide (y1v = y2v))
-      hHolds Q st₄
-      ⟨⟨CVar.eval_le (hle₂.trans (hle₃.trans hle₄)) hp1x,
-        CVar.eval_le (hle₂.trans (hle₃.trans hle₄)) hp1y,
-        CVar.eval_le (hle₃.trans hle₄) hp2x, CVar.eval_le (hle₃.trans hle₄) hp2y,
-        CVar.eval_le hle₄ hsx, hinfb⟩,
-      fun r st' hpost hle => hk r st' ?_
-        ((hle₁.trans (hle₂.trans (hle₃.trans hle₄))).trans hle)⟩
-    intro a1 b1 a2 b2 ha1 hb1 ha2 hb2 h1 h2
-    rw [hx1] at ha1; rw [hy1] at hb1; rw [hx2] at ha2; rw [hy2] at hb2
-    injection ha1 with ha1; injection hb1 with hb1
-    injection ha2 with ha2; injection hb2 with hb2
-    subst ha1 hb1 ha2 hb2
-    rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hHolds hy1ne htwo with
+    have hinf₄ : (CVar.var (st₂.extendMany [bit sb]).nv).Scoped
+        ((st₂.extendMany [bit sb]).extendMany [bit ib]) :=
+      ProverState.mem_extendMany_head ..
+    have ht := addFastTailRun_scope ((st₂.extendMany [bit sb]).extendMany [bit ib]) q1 q2
+      (inf := BoolVar.unchecked (.var (st₂.extendMany [bit sb]).nv)) hinf₄
+    rw [CVar.val_of_le (hle₃.trans hle₄) hs1x, CVar.val_of_le (hle₃.trans hle₄) hs1y,
+      CVar.val_of_le (hle₃.trans hle₄) hs2x, CVar.val_of_le (hle₃.trans hle₄) hs2y,
+      BoolVar.toCVar_unchecked,
+      show (CVar.var (st₂.extendMany [bit sb]).nv).val
+          ((st₂.extendMany [bit sb]).extendMany [bit ib]).env.toValuation = bit ib from
+        ProverState.get_extendMany_head ..] at ht
+    obtain ⟨htle, hsx3, hsy3, hsinf, hx3, hy3, hinfv⟩ := ht
+    refine ⟨hle₃.trans (hle₄.trans htle), hsx3, hsy3, hsinf, fun h1 h2 => ?_⟩
+    rw [hx3, hy3, hinfv]
+    have hHolds' : Kimchi.Gate.AddComplete.Holds
+        ({ Kimchi.Gate.AddComplete.build true (q1.x.val st₂.env.toValuation)
+          (q1.y.val st₂.env.toValuation) (q2.x.val st₂.env.toValuation)
+          (q2.y.val st₂.env.toValuation) with inf := bit ib } :
+            Kimchi.Gate.AddComplete.Witness F) := by
+      rw [hib, CVar.val_of_le hle₃ hs1y, CVar.val_of_le hle₃ hs2y, hb]
+      exact hHolds
+    rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hHolds' hy1ne htwo with
       ⟨hinf1, hsum⟩ | ⟨hinf0, h3, hsum⟩
-    · exact Or.inl ⟨hinf1 ▸ hpost.2.2, hsum⟩
-    · exact Or.inr ⟨_, _, hpost.1, hpost.2.1, hinf0 ▸ hpost.2.2, h3, hsum⟩
+    · exact Or.inl ⟨hinf1, hsum⟩
+    · exact Or.inr ⟨h3, hinf0, hsum⟩
+
+/-- What `addFastRun` grants: `addFastCoreRun_grants` at the sealed operands, whose
+readings are the operands'. -/
+theorem addFastRun_grants [Field F] [DecidableEq F] [d : HasCurve F] (fin : Finiteness)
+    {p1' p2' : AffinePoint (FVar F)} (st : ProverState F)
+    (h1x : p1'.x.Scoped st) (h1y : p1'.y.Scoped st) (h2x : p2'.x.Scoped st) (h2y : p2'.y.Scoped st)
+    (hops : Operands d fin (p1'.x.val st.env.toValuation) (p1'.y.val st.env.toValuation)
+      (p2'.x.val st.env.toValuation) (p2'.y.val st.env.toValuation)) :
+    st.env.Le (addFastRun st fin p1' p2').1.env ∧
+      (addFastRun st fin p1' p2').2.p.x.Scoped (addFastRun st fin p1' p2').1 ∧
+      (addFastRun st fin p1' p2').2.p.y.Scoped (addFastRun st fin p1' p2').1 ∧
+      (↑(addFastRun st fin p1' p2').2.isInfinity : CVar F).Scoped (addFastRun st fin p1' p2').1 ∧
+      ∀ (h1 : d.W.Nonsingular (p1'.x.val st.env.toValuation) (p1'.y.val st.env.toValuation))
+        (h2 : d.W.Nonsingular (p2'.x.val st.env.toValuation) (p2'.y.val st.env.toValuation)),
+        ((↑(addFastRun st fin p1' p2').2.isInfinity : CVar F).val
+            (addFastRun st fin p1' p2').1.env.toValuation = 1 ∧
+          Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+        (∃ h3 : d.W.Nonsingular
+            ((addFastRun st fin p1' p2').2.p.x.val (addFastRun st fin p1' p2').1.env.toValuation)
+            ((addFastRun st fin p1' p2').2.p.y.val (addFastRun st fin p1' p2').1.env.toValuation),
+          (↑(addFastRun st fin p1' p2').2.isInfinity : CVar F).val
+              (addFastRun st fin p1' p2').1.env.toValuation = 0 ∧
+            Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3) := by
+  have hg1 := sealPointRun_grants (st := st) h1x h1y
+  have hg2 := sealPointRun_grants (st := (sealPointRun st p1').1) (h2x.of_le hg1.1.le)
+    (h2y.of_le hg1.1.le)
+  have hr1x : (sealPointRun st p1').2.x.val
+      (sealPointRun (sealPointRun st p1').1 p2').1.env.toValuation = p1'.x.val st.env.toValuation := by
+    rw [CVar.val_of_le hg2.1.le hg1.1.fvar_scoped, hg1.1.fvar_val]
+  have hr1y : (sealPointRun st p1').2.y.val
+      (sealPointRun (sealPointRun st p1').1 p2').1.env.toValuation = p1'.y.val st.env.toValuation := by
+    rw [CVar.val_of_le hg2.1.le hg1.2.fvar_scoped, hg1.2.fvar_val]
+  have hr2x : (sealPointRun (sealPointRun st p1').1 p2').2.x.val
+      (sealPointRun (sealPointRun st p1').1 p2').1.env.toValuation = p2'.x.val st.env.toValuation := by
+    rw [hg2.1.fvar_val, CVar.val_of_le hg1.1.le h2x]
+  have hr2y : (sealPointRun (sealPointRun st p1').1 p2').2.y.val
+      (sealPointRun (sealPointRun st p1').1 p2').1.env.toValuation = p2'.y.val st.env.toValuation := by
+    rw [hg2.2.fvar_val, CVar.val_of_le hg1.1.le h2y]
+  have hcore := addFastCoreRun_grants fin (sealPointRun (sealPointRun st p1').1 p2').1
+    (hg1.1.fvar_scoped.of_le hg2.1.le) (hg1.2.fvar_scoped.of_le hg2.1.le) hg2.1.fvar_scoped
+    hg2.2.fvar_scoped (by rw [hr1x, hr1y, hr2x, hr2y]; exact hops)
+  rw [hr1x, hr1y, hr2x, hr2y] at hcore
+  exact ⟨hg1.1.le.trans (hg2.1.le.trans hcore.1), hcore.2⟩
 
 open WeierstrassCurve.Affine in
 /-- The negated operand's reading, on a short curve: `(x, −y)` is nonsingular and is

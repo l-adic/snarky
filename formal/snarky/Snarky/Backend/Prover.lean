@@ -611,6 +611,19 @@ theorem prove_generateVec {holds : c → Assignments F → Bool} {α : Type u}
     rw [prove_bind, hstep _ (Fin.last n) hPinit]
     rfl
 
+/-- A `for` loop whose body leaves the table unchanged: from a per-element run
+equation at the loop's state, the loop runs to that state. -/
+theorem prove_forIn_unit {holds : c → Assignments F → Bool} {α : Type}
+    (g : α → PUnit → CircuitM F c (ForInStep PUnit)) (st : ProverState F) :
+    ∀ (xs : List α),
+      (∀ x ∈ xs, prove holds (g x PUnit.unit) st.nv st.env = .ok (st.out (.yield PUnit.unit))) →
+      prove holds (forIn xs PUnit.unit g) st.nv st.env = .ok (st.out PUnit.unit)
+  | [], _ => by simp only [List.forIn_nil, prove_pure]
+  | x :: xs, h => by
+    rw [List.forIn_cons, prove_bind, h x (List.mem_cons_self ..)]
+    simp only [Except.bind]
+    exact prove_forIn_unit g st xs fun y hy => h y (List.mem_cons_of_mem _ hy)
+
 /-! ## The graph
 
 `Runs` is the prover's graph at invariant-carrying states. It is deterministic, so its

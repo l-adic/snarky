@@ -321,6 +321,39 @@ theorem CVar.Scoped.sub_ [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F
     (CVar.sub_ a b).Scoped st := by
   cases a <;> cases b <;> first | trivial | exact ha.add_ (hb.scale_ _)
 
+/-- `List.mapM`'s loop over in-scope expressions is a scoped block. -/
+private theorem AsProver.Scoped.mapM_loop [Add F] [Mul F] {st : ProverState F} :
+    ∀ (xs : List (CVar F)) (acc : List F), (∀ x ∈ xs, x.Scoped st) →
+      (List.mapM.loop AsProver.readCVar xs acc).Scoped st
+  | [], _, _ => trivial
+  | x :: xs, acc, h =>
+    AsProver.Scoped.bind (readCVar (h x (List.mem_cons_self ..))) fun v =>
+      mapM_loop xs (v :: acc) fun y hy => h y (List.mem_cons_of_mem _ hy)
+
+/-- Reading a list of in-scope expressions is a scoped block. -/
+theorem AsProver.Scoped.mapM_readCVar [Add F] [Mul F] {st : ProverState F} {xs : List (CVar F)}
+    (h : ∀ x ∈ xs, x.Scoped st) : (xs.mapM AsProver.readCVar).Scoped st :=
+  mapM_loop xs [] h
+
+/-- The typed read of a boolean variable is a scoped block when its expression is. -/
+theorem AsProver.Scoped.readVar_bool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    {st : ProverState F} {b : BoolVar F} (hb : b.toCVar.Scoped st) :
+    (readVar (val := Bool) b).Scoped st :=
+  AsProver.Scoped.bind (AsProver.Scoped.mapM_readCVar fun x hx => by
+    have hx' : x ∈ [b.toCVar] := hx
+    rw [List.mem_singleton.mp hx']
+    exact hb) fun _ => by
+    split <;> trivial
+
+/-- The typed read of a boolean variable evaluates to whether its expression is
+nonzero. -/
+theorem AsProver.eval_readVar_bool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    (V : Valuation F) (b : BoolVar F) :
+    (readVar (val := Bool) b).eval V = .ok (decide (b.toCVar.val V ≠ 0)) := by
+  simp [readVar, Except.bind]
+  show decide (b.toCVar.val V ≠ 0) = _
+  exact decide_not
+
 /-- An in-scope expression evaluates, to its total reading at the completed table. -/
 theorem CVar.eval_eq_val [Add F] [Mul F] [Zero F] {st : ProverState F} :
     ∀ {x : CVar F}, x.Scoped st → x.eval st.env = .ok (x.val st.env.toValuation)
@@ -328,6 +361,16 @@ theorem CVar.eval_eq_val [Add F] [Mul F] [Zero F] {st : ProverState F} :
   | .const _, _ => rfl
   | .add a b, ⟨ha, hb⟩ => by simp [CVar.eval, CVar.val, eval_eq_val ha, eval_eq_val hb]
   | .scale _ y, hy => by simp [CVar.eval, CVar.val, eval_eq_val (x := y) hy]
+
+/-- In-scope expressions evaluate, elementwise, to their total readings. -/
+theorem CVar.mapM_eval_eq_val [Add F] [Mul F] [Zero F] {st : ProverState F} :
+    ∀ {xs : List (CVar F)}, (∀ x ∈ xs, x.Scoped st) →
+      xs.mapM (CVar.eval · st.env) = .ok (xs.map (·.val st.env.toValuation))
+  | [], _ => rfl
+  | x :: xs, h => by
+    rw [List.mapM_cons, CVar.eval_eq_val (h x (List.mem_cons_self ..)),
+      CVar.mapM_eval_eq_val fun y hy => h y (List.mem_cons_of_mem _ hy)]
+    rfl
 
 /-- An in-scope reading survives table extension. -/
 theorem CVar.val_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
@@ -364,6 +407,70 @@ theorem CVar.val_of_le [Add F] [Mul F] [Zero F] {st st' : ProverState F}
 /-- A bit's encoding, as the list an allocation writes. -/
 @[simp] theorem valueToFields_bool_toList [Zero F] [One F] [DecidableEq F] (b : Bool) :
     (CircuitType.valueToFields (F := F) (var := BoolVar F) b).toList = [bit b] := rfl
+
+/-- A three-cell allocation, read back: the three variables at the counter. -/
+@[simp] theorem fieldsToVar_triple_alloc (nv : Nat) :
+    CircuitType.fieldsToVar (F := F) (val := F × F × F)
+      (mapVec CVar.var (allocRange nv (CircuitType.size F (F × F × F))))
+      = (.var nv, .var (nv + 1), .var (nv + 2)) := rfl
+
+/-- A triple's encoding, as the list an allocation writes. -/
+@[simp] theorem valueToFields_triple_toList (a b c : F) :
+    (CircuitType.valueToFields (F := F) (var := FVar F × FVar F × FVar F) (a, b, c)).toList
+      = [a, b, c] := rfl
+
+/-- The base instance's dimension. -/
+@[simp] theorem size_fvar : CircuitType.size F F (var := FVar F) = 1 := rfl
+
+/-- An allocation's prefix is the shorter allocation at the same counter. -/
+private theorem take_alloc (nv m k : Nat) :
+    ((mapVec (CVar.var (F := F)) (allocRange nv (m + k))).take m).cast (by omega)
+      = mapVec CVar.var (allocRange nv m) :=
+  Vector.ext fun i hi => by
+    rw [Vector.getElem_cast, Vector.take_eq_extract, Vector.getElem_extract (by omega)]
+    simp [allocRange]
+
+/-- An allocation's suffix is the allocation at the advanced counter. -/
+private theorem drop_alloc (nv m k : Nat) :
+    ((mapVec (CVar.var (F := F)) (allocRange nv (m + k))).drop m).cast (by omega)
+      = mapVec CVar.var (allocRange (nv + m) k) :=
+  Vector.ext fun i hi => by simp [allocRange, Nat.add_assoc]
+
+/-- A pair's allocation is its components' allocations, the second at the counter
+advanced past the first. -/
+@[simp] theorem fieldsToVar_prod_alloc {a b av bv : Type} [A : CircuitType F a av]
+    [B : CircuitType F b bv] (nv : Nat) :
+    CircuitType.fieldsToVar (F := F) (val := a × b)
+        (mapVec CVar.var (allocRange nv (CircuitType.size F (a × b) (var := av × bv))))
+      = (CircuitType.fieldsToVar (F := F) (val := a)
+            (mapVec CVar.var (allocRange nv (CircuitType.size F a (var := av)))),
+         CircuitType.fieldsToVar (F := F) (val := b)
+            (mapVec CVar.var (allocRange (nv + CircuitType.size F a (var := av))
+              (CircuitType.size F b (var := bv))))) := by
+  show (A.fieldsToVar (((mapVec CVar.var (allocRange nv (A.size + B.size))).take A.size).cast _),
+      B.fieldsToVar (((mapVec CVar.var (allocRange nv (A.size + B.size))).drop A.size).cast _))
+    = _
+  rw [take_alloc, drop_alloc]
+
+/-- A pair's encoding is its components' encodings, first component first. -/
+@[simp] theorem valueToFields_prod_toList {a b av bv : Type} [A : CircuitType F a av]
+    [B : CircuitType F b bv] (p : a × b) :
+    (CircuitType.valueToFields (F := F) (var := av × bv) p).toList
+      = (CircuitType.valueToFields (F := F) (var := av) p.1).toList
+        ++ (CircuitType.valueToFields (F := F) (var := bv) p.2).toList := by
+  show (A.valueToFields p.1 ++ B.valueToFields p.2).toList = _
+  simp
+
+/-- An unchecked-bit allocation, read back: the retagged variable at the counter. -/
+@[simp] theorem fieldsToVar_uncheckedBool_alloc [Zero F] [One F] [DecidableEq F] (nv : Nat) :
+    CircuitType.fieldsToVar (F := F) (val := UnChecked Bool)
+      (mapVec CVar.var (allocRange nv (CircuitType.size F (UnChecked Bool))))
+      = ⟨.unchecked (.var nv)⟩ := rfl
+
+/-- An unchecked bit's encoding, as the list an allocation writes. -/
+@[simp] theorem valueToFields_uncheckedBool_toList [Zero F] [One F] [DecidableEq F] (b : Bool) :
+    (CircuitType.valueToFields (F := F) (var := UnChecked (BoolVar F))
+      (⟨b⟩ : UnChecked Bool)).toList = [bit b] := rfl
 
 /-- A bundle is in scope when every cell of its flattening is. -/
 def CircuitType.Scoped (val : Type) [CircuitType F val var] (st : ProverState F)
@@ -696,5 +803,38 @@ theorem readVal_extendMany_new [Add F] [Mul F] [Zero F] [CircuitType F val var]
       (CircuitType.fieldsToVar (F := F) (val := val)
         (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) = v :=
   readVal_of_encodes (encodes_extendMany_new st v)
+
+/-- What a witness leaf allocates is in scope at the extended state. -/
+theorem scoped_extendMany_new [CircuitType F val var] [LawfulCircuitType F val var]
+    (st : ProverState F) (v : val) :
+    CircuitType.Scoped val
+      (st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList)
+      (CircuitType.fieldsToVar (F := F) (val := val)
+        (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) := by
+  intro i hi
+  rw [LawfulCircuitType.vars_roundTrip (F := F) (val := val)]
+  simp only [getElem_mapVec, allocRange, Vector.getElem_ofFn, CVar.scoped_var]
+  exact st.new_mem_extendMany (by simpa using hi)
+
+/-- The witness leaf's grant: the bundle allocated at the counter reads as the value
+whose encoding was written. -/
+theorem Grants.alloc [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    [LawfulCircuitType F val var] (st : ProverState F) (v : val) :
+    Grants val st
+      (st.extendMany (CircuitType.valueToFields (F := F) (var := var) v).toList,
+        CircuitType.fieldsToVar (F := F) (val := val)
+          (mapVec CVar.var (allocRange st.nv (CircuitType.size F val)))) v :=
+  ⟨st.le_extendMany _, scoped_extendMany_new st v, readVal_extendMany_new st v⟩
+
+/-- An element of an allocated vector reads as the element written. -/
+theorem Grants.alloc_vector_get [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    [LawfulCircuitType F val var] {n : Nat} (st : ProverState F) (xs : Vector val n)
+    (i : Nat) (hi : i < n) :
+    Grants val st
+      (st.extendMany (CircuitType.valueToFields (F := F) (var := Vector var n) xs).toList,
+        (CircuitType.fieldsToVar (F := F) (val := Vector val n)
+          (mapVec CVar.var (allocRange st.nv (CircuitType.size F (Vector val n)))))[i]) xs[i] :=
+  ⟨st.le_extendMany _, scoped_vector_iff.mp (scoped_extendMany_new st xs) i hi,
+    readVal_of_encodes (encodes_vector_iff.mp (encodes_extendMany_new st xs) i hi)⟩
 
 end Snarky
