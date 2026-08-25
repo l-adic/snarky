@@ -161,8 +161,8 @@ def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let r ← varBaseMul n chunks base ⟨sDiv2⟩
   for bit in r.lsbBits.toList.drop sDiv2Bits do
     assertEqual bit (.const 0)
-  -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation `(-1)·y`
-  let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.scale_ (-1) base.y⟩
+  -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation
+  let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.negate_ base.y⟩
   let q ← addFast .checkFinite r.g negBase
   -- the point conditional selects coordinatewise, `y` BEFORE `x`: PS's record `if_`
   -- builds right-to-left (the fixture pins the emission order)

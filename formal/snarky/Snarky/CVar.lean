@@ -31,6 +31,10 @@ def CVar.scale_ [Zero F] [One F] [DecidableEq F] (k : F) (x : CVar F) : CVar F :
   else if k = 1 then x
   else .scale k x
 
+/-- Negation (PS `negate_`): scaling by `-1`. -/
+def CVar.negate_ [Zero F] [One F] [Neg F] [DecidableEq F] (x : CVar F) : CVar F :=
+  scale_ (-1) x
+
 /-- Subtraction, folding `const - const`; otherwise `a + (-1)·b`. -/
 def CVar.sub_ [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F] :
     CVar F → CVar F → CVar F
@@ -73,6 +77,10 @@ attribute [simp] CVar.val
   · split
     · next h => simp [h]
     · rfl
+
+@[simp] theorem CVar.val_negate_ [Ring F] [DecidableEq F] (x : CVar F) (V : Variable → F) :
+    (CVar.negate_ x).val V = -x.val V := by
+  rw [CVar.negate_, CVar.val_scale_, neg_one_mul]
 
 @[simp] theorem CVar.val_sub_ [Ring F] [DecidableEq F] (a b : CVar F) (V : Variable → F) :
     (CVar.sub_ a b).val V = a.val V - b.val V := by
