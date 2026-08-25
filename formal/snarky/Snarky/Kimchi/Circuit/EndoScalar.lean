@@ -44,14 +44,6 @@ bulk witness writes. -/
 private def crumbsVec [Field F] (c k : ℕ) : Vector F c :=
   Vector.ofFn fun i => (Kimchi.Gate.EndoScalar.crumbsOf (F := F) c k).getD i.1 0
 
-private theorem crumbsVec_toList [Field F] (c k : ℕ) :
-    (crumbsVec (F := F) c k).toList = Kimchi.Gate.EndoScalar.crumbsOf c k := by
-  rw [crumbsVec, Vector.toList_ofFn]
-  refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length])
-    fun i _ h2 => ?_
-  simp only [List.getElem_ofFn]
-  exact List.getD_eq_getElem _ _ h2
-
 /-- The scalar's MSB-first 2-bit crumbs, eight to a row. -/
 private def crumbsWit [Field F] [ToNat F] (rows : ℕ) (scalar : FVar F) :
     AsProver F (Vector F (rows * 8)) := do
@@ -130,22 +122,19 @@ private theorem chain_rows :
     obtain ⟨r, tail, _, rfl, ⟨-, -, rfl⟩, hrest⟩ := h
     rw [List.map_cons, chain_rows hrest]
 
-/-- A threaded trace, indexed: the round count, round `0`'s seed wiring, the shared
-accumulator variables between adjacent rounds, and the last round's outputs —
-everything `chain_decompose` consumes, extracted without touching a valuation. -/
-private theorem chain_wiring :
+/-- A threaded trace, as a list: adjacent rounds share their accumulator variables, the
+first opens at the seed accumulators, and the last closes at the final ones — the three
+conditions `Kimchi.Gate.EndoScalar.Chain.ofList` asks for, extracted without touching a
+valuation. -/
+private theorem threads_wiring :
     ∀ {pref : List (Vector (FVar F) 8)} {st fin : FVar F × FVar F × FVar F}
       {r₀ : EndoScalarRound F} {rs : List (EndoScalarRound F)},
       Chain Threads st pref (r₀ :: rs) fin →
-      (r₀ :: rs).length = pref.length ∧
-      (r₀.a0 = st.1 ∧ r₀.b0 = st.2.1 ∧ r₀.n0 = st.2.2) ∧
-      (∀ i (_ : i + 1 < (r₀ :: rs).length),
-        (r₀ :: rs)[i + 1].a0 = (r₀ :: rs)[i].a8 ∧
-        (r₀ :: rs)[i + 1].b0 = (r₀ :: rs)[i].b8 ∧
-        (r₀ :: rs)[i + 1].n0 = (r₀ :: rs)[i].n8) ∧
-      (fin.1 = (r₀ :: rs)[rs.length].a8 ∧
-       fin.2.1 = (r₀ :: rs)[rs.length].b8 ∧
-       fin.2.2 = (r₀ :: rs)[rs.length].n8)
+      (r₀ :: rs).IsChain (fun a b => b.a0 = a.a8 ∧ b.b0 = a.b8 ∧ b.n0 = a.n8) ∧
+        (r₀.a0 = st.1 ∧ r₀.b0 = st.2.1 ∧ r₀.n0 = st.2.2) ∧
+        ((r₀ :: rs).getLast (by simp)).a8 = fin.1 ∧
+        ((r₀ :: rs).getLast (by simp)).b8 = fin.2.1 ∧
+        ((r₀ :: rs).getLast (by simp)).n8 = fin.2.2
   | [], _, _, _, _, h => absurd h.1 (by simp)
   | _ :: rest, st, fin, r₀, rs, h => by
     obtain ⟨r, tail, mid, heq, ⟨⟨e1, e2, e3⟩, ⟨d1, d2, d3⟩, -⟩, hrest⟩ := h
@@ -154,22 +143,12 @@ private theorem chain_wiring :
     cases rs with
     | nil =>
       obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hrest
-      exact ⟨rfl, ⟨e1, e2, e3⟩, fun i hi => by simp at hi,
-        ⟨d1.symm, d2.symm, d3.symm⟩⟩
+      exact ⟨List.isChain_singleton _, ⟨e1, e2, e3⟩, d1, d2, d3⟩
     | cons r₁ ts =>
-      obtain ⟨ihlen, ⟨f1, f2, f3⟩, ihstep, ihlast⟩ := chain_wiring hrest
-      refine ⟨by simpa using ihlen, ⟨e1, e2, e3⟩, ?_, ?_⟩
-      · intro i hi
-        cases i with
-        | zero =>
-          refine ⟨?_, ?_, ?_⟩ <;>
-            simp only [List.getElem_cons_succ, List.getElem_cons_zero] <;>
-            simp [f1, f2, f3, d1, d2, d3]
-        | succ j =>
-          have hj : j + 1 < (r₁ :: ts).length := by simpa using hi
-          simpa only [List.getElem_cons_succ] using ihstep j hj
-      · obtain ⟨g1, g2, g3⟩ := ihlast
-        simpa only [List.length_cons, List.getElem_cons_succ] using ⟨g1, g2, g3⟩
+      obtain ⟨ihlink, ⟨f1, f2, f3⟩, ihlast⟩ := threads_wiring hrest
+      refine ⟨ihlink.cons (by simp [f1, f2, f3, d1, d2, d3]), ⟨e1, e2, e3⟩, ?_⟩
+      rw [List.getLast_cons (by simp)]
+      exact ihlast
 
 /-- A satisfied trace from the canonical seeds computes the gate tower's chain: the
 wiring instantiates `chain_decompose`'s indexed run at the rounds' readings, so the
@@ -195,64 +174,44 @@ private theorem chain_sound [Field F] [DecidableEq F]
         Kimchi.Gate.EndoScalar.nReconstruct, CVar.val]
   | r₀ :: rs, hthr' =>
     subst hround
-    obtain ⟨hlen, ⟨h01, h02, h03⟩, hstep, hf1, hf2, hf3⟩ := chain_wiring hthr'
-    set w : ℕ → Kimchi.Gate.EndoScalar.Witness F :=
-      fun i => EndoScalarRound.read V ((r₀ :: rs).getD i r₀) with hw
-    have hwi : ∀ i (_ : i ≤ rs.length),
-        w i = EndoScalarRound.read V ((r₀ :: rs)[i]'(by simp; omega)) := by
-      intro i hi
-      simp only [hw]
-      congr 1
-      exact List.getD_eq_getElem _ _ (by simp; omega)
-    have hHolds' : ∀ i, i ≤ rs.length → Kimchi.Gate.EndoScalar.Holds (w i) := by
-      intro i hi
-      rw [hwi i hi]
-      exact hHolds _ (List.getElem_mem _)
-    obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose rs.length w hHolds'
-      (by rw [hwi 0 (by omega)]; simp [EndoScalarRound.read, h01, CVar.val])
-      (by rw [hwi 0 (by omega)]; simp [EndoScalarRound.read, h02, CVar.val])
-      (by rw [hwi 0 (by omega)]; simp [EndoScalarRound.read, h03, CVar.val])
-      (fun i hi => by
-        obtain ⟨e, -, -⟩ := hstep i (by simp; omega)
-        simp only [List.getElem_cons_succ] at e
-        rw [hwi (i + 1) (by omega), hwi i (by omega)]
-        simp [EndoScalarRound.read, e])
-      (fun i hi => by
-        obtain ⟨-, e, -⟩ := hstep i (by simp; omega)
-        simp only [List.getElem_cons_succ] at e
-        rw [hwi (i + 1) (by omega), hwi i (by omega)]
-        simp [EndoScalarRound.read, e])
-      (fun i hi => by
-        obtain ⟨-, -, e⟩ := hstep i (by simp; omega)
-        simp only [List.getElem_cons_succ] at e
-        rw [hwi (i + 1) (by omega), hwi i (by omega)]
-        simp [EndoScalarRound.read, e])
-    have hcc : Kimchi.Gate.EndoScalar.chainCrumbs w (rs.length + 1)
+    obtain ⟨hlink, ⟨h01, h02, h03⟩, hf1, hf2, hf3⟩ := threads_wiring hthr'
+    have hne : (r₀ :: rs).map (EndoScalarRound.read V) ≠ [] := by simp
+    have hholds : ∀ w ∈ (r₀ :: rs).map (EndoScalarRound.read V),
+        Kimchi.Gate.EndoScalar.Holds w := by
+      intro w hw
+      obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hw
+      exact hHolds r hr
+    obtain ⟨hA, hB, hN⟩ := Kimchi.Gate.EndoScalar.chain_decompose _ _
+      (Kimchi.Gate.EndoScalar.Chain.ofList _ hne hholds
+        ((List.isChain_map _).mpr
+          (hlink.imp fun a b hab =>
+            ⟨congrArg (·.val V) hab.1, congrArg (·.val V) hab.2.1,
+              congrArg (·.val V) hab.2.2⟩))
+        (by simp [EndoScalarRound.read, h01, CVar.val])
+        (by simp [EndoScalarRound.read, h02, CVar.val])
+        (by simp [EndoScalarRound.read, h03, CVar.val]))
+    rw [Nat.sub_add_cancel (by simp), Kimchi.Gate.EndoScalar.chainCrumbs_getD,
+      Kimchi.Gate.EndoScalar.getD_length_sub_one _ hne, List.getLast_map] at hA hB hN
+    have hstream : ((r₀ :: rs).map (EndoScalarRound.read V)).flatMap (·.crumbs)
         = roundCrumbs V (r₀ :: rs) := by
-      show (List.range (r₀ :: rs).length).flatMap
-        (fun i => (EndoScalarRound.read V ((r₀ :: rs).getD i r₀)).crumbs) = _
-      rw [List.flatMap_def, roundCrumbs, List.flatMap_def]
-      congr 1
-      refine List.ext_getElem (by simp) fun i _ h2 => ?_
-      simp only [List.getElem_map, List.getElem_range]
-      rw [List.getD_eq_getElem _ _ (by simpa using h2)]
+      rw [roundCrumbs, List.flatMap_map]
       rfl
-    rw [← hcc]
+    rw [hstream] at hA hB hN
     refine ⟨?_, ?_, ?_, ?_, ?_⟩
     · intro x hx
-      simp only [Kimchi.Gate.EndoScalar.chainCrumbs, List.mem_flatMap,
-        List.mem_range] at hx
-      obtain ⟨i, hi, hxi⟩ := hx
-      exact (Kimchi.Gate.EndoScalar.sound h2 h3 _ (hHolds' i (by omega))).1 x hxi
-    · rw [Kimchi.Gate.EndoScalar.chainCrumbs_length 8 w (rs.length + 1)
-        (fun i _ => by simp [hw, EndoScalarRound.read]), ← hlen]
+      simp only [roundCrumbs, List.mem_flatMap] at hx
+      obtain ⟨r, hr, hxr⟩ := hx
+      obtain ⟨cv, -, rfl⟩ := List.mem_map.mp hxr
+      exact (Kimchi.Gate.EndoScalar.sound h2 h3 _ (hHolds r hr)).1 _ hxr
+    · have hrows := chain_rows hthr'
+      have hlen : (r₀ :: rs).length = pref.length := by
+        rw [← hrows, List.length_map]
+      simp only [roundCrumbs, List.length_flatMap, ← hlen]
       simp
-    · rw [← hA, hwi rs.length (by omega)]
-      simp [EndoScalarRound.read, hf1]
-    · rw [← hB, hwi rs.length (by omega)]
-      simp [EndoScalarRound.read, hf2]
-    · rw [← hN, hwi rs.length (by omega)]
-      simp [EndoScalarRound.read, hf3]
+      omega
+    · exact (congrArg (fun cv : CVar F => cv.val V) hf1).symm.trans hA
+    · exact (congrArg (fun cv : CVar F => cv.val V) hf2).symm.trans hB
+    · exact (congrArg (fun cv : CVar F => cv.val V) hf3).symm.trans hN
 
 open Std.Do in
 /-- The step's spec: the round it emits is wired to the accumulators either side. -/
