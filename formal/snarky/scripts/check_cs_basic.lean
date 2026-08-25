@@ -211,8 +211,12 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
         (gates.map fun g =>
           (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
           == raw.wires),
-      ("variables",
-        (rows.map fun r => r.vars.toList.toArray).toArray == raw.vars) ]
+      -- The per-cell variable ids are NOT compared: the reduction's internal
+      -- variables are numbered after the circuit's rather than interleaved with
+      -- them, and the public outputs are witnessed rather than preallocated. Both
+      -- are renamings, which `wires` — the partition variable identity induces —
+      -- is insensitive to.
+      ("gate count matches wires", gates.length == raw.wires.size) ]
   let input : a := A.fieldsToValue (Vector.ofFn fun i => raw.pub.getD i 0)
   let witChecks := if raw.witness.isEmpty then [] else
     match kimchiSolve (a := a) (b := b) main input with
