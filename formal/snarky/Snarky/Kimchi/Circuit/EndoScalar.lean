@@ -508,8 +508,10 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F]
     rw [hN, CVar.val_of_le hrun₁.le hsc, hrd,
       Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt, hfaith]
   obtain ⟨u, st₂, hrun₂, hsat₂, -⟩ :=
-    assertEqual_complete (c := KimchiConstraint F) abn.2.2 scalar st₁
-      ⟨hscN, hsc.mono hrun₁.nv_le, hpin⟩
+    assertEqual_complete (c := KimchiConstraint F) abn.2.2 scalar
+      (scalar.val st₁.env.get) st₁
+      ⟨⟨CircuitType.scoped_fvar.mpr hscN, CircuitType.reads_fvar.mpr hpin⟩,
+        ⟨CircuitType.scoped_fvar.mpr (hsc.mono hrun₁.nv_le), CircuitType.reads_fvar.mpr rfl⟩⟩
   have hA₂ : abn.1.val st₂.env.get
       = Kimchi.Gate.EndoScalar.decomposeA
         (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) := by
@@ -529,11 +531,17 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F]
     simp only [CVar.val_add_, CVar.val_scale_, hA₂, hB₂, hev,
       Kimchi.Gate.EndoScalar.toField]
     ring
-  · obtain ⟨pr, st₃, hrun₃, hsat₃, hscP, hvalP⟩ :=
-      Complete.post (g := mul (c := KimchiConstraint F) abn.1 endo)
-        (fun V => mul_spec (V := V) abn.1 endo)
-        (mul_complete (c := KimchiConstraint F) abn.1 endo) st₂
-        ⟨hscA.mono hrun₂.nv_le, hsce.mono (hrun₁.nv_le.trans hrun₂.nv_le)⟩
+  · obtain ⟨pr, st₃, hrun₃, hsat₃, hpr⟩ :=
+      mul_complete (c := KimchiConstraint F) abn.1 endo
+        (Kimchi.Gate.EndoScalar.decomposeA
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv))) ev st₂
+        ⟨⟨CircuitType.scoped_fvar.mpr (hscA.mono hrun₂.nv_le),
+            CircuitType.reads_fvar.mpr hA₂⟩,
+          ⟨CircuitType.scoped_fvar.mpr (hsce.mono (hrun₁.nv_le.trans hrun₂.nv_le)),
+            CircuitType.reads_fvar.mpr (by
+              rw [CVar.val_of_le (hrun₁.le.trans hrun₂.le) hsce, hrde])⟩⟩
+    have hscP : pr.Scoped st₃ := CircuitType.scoped_fvar.mp hpr.1
+    have hvalP := CircuitType.reads_fvar.mp hpr.2
     refine ⟨_, st₃, hrun₁.bind (hrun₂.bind (hrun₃.bind rfl)),
       fun hnv hle => Sat.bind hrun₁
         (hsat₁ ((hrun₂.nv_le.trans hrun₃.nv_le).trans hnv)
@@ -542,8 +550,6 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F]
           (Sat.bind hrun₃ (hsat₃ hnv hle) Sat.pure)),
       CVar.Scoped.add_ (hscB.mono (hrun₂.nv_le.trans hrun₃.nv_le)) hscP, ?_⟩
     rw [CVar.val_add_, hvalP, CVar.val_of_le hrun₃.le (hscB.mono hrun₂.nv_le), hB₂,
-      CVar.val_of_le hrun₃.le (hscA.mono hrun₂.nv_le), hA₂,
-      CVar.val_of_le (hrun₁.le.trans (hrun₂.le.trans hrun₃.le)) hsce, hrde,
       Kimchi.Gate.EndoScalar.toField]
     ring
 

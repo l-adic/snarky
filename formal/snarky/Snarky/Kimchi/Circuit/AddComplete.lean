@@ -349,17 +349,24 @@ theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
         r.x.val st'.env.get = p.x.val st'.env.get ∧
         r.y.val st'.env.get = p.y.val st'.env.get) := by
   rintro st ⟨hx, hy⟩
-  obtain ⟨ry, st₁, hrunY, hsatY, hscopeY, hreadY⟩ :=
-    Complete.post (fun V => sealVar_spec (c := c) (V := V) p.y) (sealVar_complete p.y) st hy
-  obtain ⟨rx, st₂, hrunX, hsatX, hscopeX, hreadX⟩ :=
-    Complete.post (fun V => sealVar_spec (c := c) (V := V) p.x) (sealVar_complete p.x) st₁
-      (hx.mono hrunY.nv_le)
+  obtain ⟨ry, st₁, hrunY, hsatY, hry⟩ :=
+    sealVar_complete (c := c) p.y (p.y.val st.env.get) st
+      ⟨CircuitType.scoped_fvar.mpr hy, rfl⟩
+  obtain ⟨rx, st₂, hrunX, hsatX, hrx⟩ :=
+    sealVar_complete (c := c) p.x (p.x.val st.env.get) st₁
+      ⟨CircuitType.scoped_fvar.mpr (hx.mono hrunY.nv_le),
+        CircuitType.reads_fvar.mpr (CVar.val_of_le hrunY.le hx)⟩
+  have hscopeY : ry.Scoped st₁ := CircuitType.scoped_fvar.mp hry.1
+  have hreadY : ry.val st₁.env.get = p.y.val st.env.get := CircuitType.reads_fvar.mp hry.2
+  have hscopeX : rx.Scoped st₂ := CircuitType.scoped_fvar.mp hrx.1
+  have hreadX : rx.val st₂.env.get = p.x.val st.env.get := CircuitType.reads_fvar.mp hrx.2
   refine ⟨⟨rx, ry⟩, st₂, hrunY.bind (hrunX.bind rfl), fun hnv hle =>
     Sat.bind hrunY (hsatY (Nat.le_trans hrunX.nv_le hnv) (hrunX.le.trans hle))
       (Sat.bind hrunX (hsatX hnv hle) Sat.pure),
-    hscopeX, hscopeY.mono hrunX.nv_le, hreadX, ?_⟩
-  rw [CVar.val_of_le hrunX.le hscopeY,
-    CVar.val_of_le hrunX.le (hy.mono hrunY.nv_le), hreadY]
+    hscopeX, hscopeY.mono hrunX.nv_le, ?_, ?_⟩
+  · rw [hreadX, CVar.val_of_le (hrunY.le.trans hrunX.le) hx]
+  · rw [CVar.val_of_le hrunX.le hscopeY, hreadY,
+      CVar.val_of_le (hrunY.le.trans hrunX.le) hy]
 
 open WeierstrassCurve.Affine in
 /-- **`addFast`'s completeness.** From scoped operands lying on the curve, with

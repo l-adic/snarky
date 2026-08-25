@@ -600,8 +600,9 @@ variable {F c : Type} {α : Type}
 abbrev atBuilder (V : Valuation F) (g : CircuitM F c α) : CircuitM F (Builder V c) α := g
 
 /-- A soundness law at every valuation, read at the table a run built and satisfied, is
-a fact about the run's result. -/
-private theorem runs_post [Zero F] [ConstraintHolds F c]
+a fact about the run's result. What lets a completeness law state its result's reading
+without re-deriving it: the value comes from the operation's own spec. -/
+theorem runs_post [Zero F] [ConstraintHolds F c]
     {g : CircuitM F c α} {post : Valuation F → α → Prop}
     (hspec : ∀ V : Valuation F, ⦃⌜True⌝⦄ atBuilder V g ⦃⇓ r _ => ⌜post V r⌝⦄)
     {st st' : ProverState F} {a : α} (h : Runs g st a st') (hsat : Sat g st st') :

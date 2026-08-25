@@ -40,10 +40,15 @@ open Std.Do in
 /-- `assertEqual`'s completeness law: where the operands read equal the run succeeds and
 its row is satisfied — the unequal-constant arm is unreachable. -/
 theorem assertEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    Complete (fun st => x.Scoped st ∧ y.Scoped st ∧ x.val st.env.get = y.val st.env.get)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (v : F) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x v ∧ CircuitType.ReadsAs (val := F) st y v)
       (assertEqual (c := c) x y) (fun _ _ => True) := by
-  rintro st ⟨hx, hy, hxy⟩
+  rintro st ⟨hx, hy⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hx hy
+  obtain ⟨hx, hvx⟩ := hx
+  obtain ⟨hy, hvy⟩ := hy
+  have hxy : x.val st.env.get = y.val st.env.get := by rw [hvx, hvy]
   simp only [assertEqual]
   split
   · split
@@ -86,16 +91,22 @@ open Std.Do in
 /-- `assertNonZero`'s completeness law: where the operand reads nonzero the run succeeds —
 `inv`'s — and its row is satisfied; the constant-zero arm is unreachable. -/
 theorem assertNonZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) :
-    Complete (fun st => v.Scoped st ∧ v.val st.env.get ≠ 0) (assertNonZero (c := c) v)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (hvne : vv ≠ 0) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st v vv) (assertNonZero (c := c) v)
       (fun _ _ => True) := by
-  rintro st ⟨hv, hne⟩
+  intro st hv
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hv
+  obtain ⟨hv, hvv⟩ := hv
+  subst hvv
+  have hne := hvne
   simp only [assertNonZero]
   split
   · simp only [CVar.val] at hne
     exact ⟨PUnit.unit, st, by rw [Runs, if_neg hne]; rfl, by simp [Sat, build, if_neg hne],
       trivial⟩
-  · obtain ⟨r, st₁, hrun, hsat, _⟩ := inv_complete (c := c) v st ⟨hv, hne⟩
+  · obtain ⟨r, st₁, hrun, hsat, _⟩ :=
+      inv_complete (c := c) v (v.val st.env.get) hne st
+        ⟨CircuitType.scoped_fvar.mpr hv, rfl⟩
     exact ⟨PUnit.unit, st₁, hrun.bind rfl, fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure,
       trivial⟩
 
@@ -122,11 +133,18 @@ open Std.Do in
 
 /-- `assertNotEqual`'s completeness law: `assertNonZero`'s, at the difference. -/
 theorem assertNotEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    Complete (fun st => x.Scoped st ∧ y.Scoped st ∧ x.val st.env.get ≠ y.val st.env.get)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
+    (hne : xv ≠ yv) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st y yv)
       (assertNotEqual (c := c) x y) (fun _ _ => True) := by
-  rintro st ⟨hx, hy, hne⟩
-  exact assertNonZero_complete (c := c) _ st ⟨CVar.Scoped.sub_ hx hy, by simpa [sub_eq_zero] using hne⟩
+  rintro st ⟨hx, hy⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hx hy
+  obtain ⟨hx, hvx⟩ := hx
+  obtain ⟨hy, hvy⟩ := hy
+  refine assertNonZero_complete (c := c) _ (xv - yv) (sub_ne_zero_of_ne hne) st ?_
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+  exact ⟨CVar.Scoped.sub_ hx hy, by rw [CVar.val_sub_, hvx, hvy]⟩
 
 attribute [irreducible] assertNotEqual
 
@@ -150,11 +168,17 @@ open Std.Do in
 
 /-- `assertSquare`'s completeness law: where the identity reads, the row is satisfied. -/
 theorem assertSquare_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
-    Complete (fun st => x.Scoped st ∧ y.Scoped st ∧
-        x.val st.env.get * x.val st.env.get = y.val st.env.get)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
+    (hxy : xv * xv = yv) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st y yv)
       (assertSquare (c := c) x y) (fun _ _ => True) := by
-  rintro st ⟨hx, hy, hsq⟩
+  rintro st ⟨hx, hy⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hx hy
+  obtain ⟨hx, hvx⟩ := hx
+  obtain ⟨hy, hvy⟩ := hy
+  have hsq : x.val st.env.get * x.val st.env.get = y.val st.env.get := by
+    rw [hvx, hvy]; exact hxy
   exact ⟨PUnit.unit, st, Runs.addConstraint, fun hnv hle =>
     Sat.addConstraint ((LawfulBasicSystem.holds_square _ _ _).mpr
       (by rw [CVar.val_of_le hle hx, CVar.val_of_le hle hy]; exact hsq)), trivial⟩
@@ -180,10 +204,15 @@ open Std.Do in
 /-- `assert`'s completeness law: `assertEqual`'s, against the constant `1`. -/
 theorem assert_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (v : BoolVar F) :
-    Complete (fun st => (↑v : CVar F).Scoped st ∧ (↑v : CVar F).val st.env.get = 1)
-      (assert (c := c) v) (fun _ _ => True) := by
-  rintro st ⟨hv, h1⟩
-  exact assertEqual_complete (c := c) _ _ st ⟨hv, trivial, by simpa using h1⟩
+    Complete (fun st => CircuitType.ReadsAs (val := Bool) st v true) (assert (c := c) v)
+      (fun _ _ => True) := by
+  intro st hv
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar,
+    CircuitType.reads_boolVar] at hv
+  obtain ⟨hv, h1⟩ := hv
+  refine assertEqual_complete (c := c) _ _ 1 st ?_
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+  exact ⟨⟨hv, by simpa [bit] using h1⟩, ⟨trivial, rfl⟩⟩
 
 attribute [irreducible] assert
 
@@ -232,9 +261,14 @@ theorem assertAny_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (assertAny (c := c) bs) (fun _ _ => True) := by
   rintro st ⟨h, b₁, hb₁, hv₁⟩
   simp only [assertAny]
-  refine assertNonZero_complete (c := c) _ st ⟨CVar.Scoped.sum fun x hx => ?_, ?_⟩
-  · obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
-    exact (h b hb).1
+  have hsc : (sum (bs.map BoolVar.toCVar)).Scoped st :=
+    CVar.Scoped.sum fun x hx => by
+      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
+      exact (h b hb).1
+  refine assertNonZero_complete (c := c) _ ((sum (bs.map BoolVar.toCVar)).val st.env.get)
+    ?_ st (by
+      simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+      exact ⟨hsc, trivial⟩)
   · have hbits' : ∀ x ∈ (bs.map BoolVar.toCVar).map (·.val st.env.get), x = 0 ∨ x = 1 := by
       intro x hx
       simp only [List.map_map, List.mem_map, Function.comp] at hx
@@ -298,10 +332,13 @@ theorem assertExactlyOne_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (assertExactlyOne (c := c) bs) (fun _ _ => True) := by
   rintro st ⟨h, hone⟩
   simp only [assertExactlyOne]
-  refine assertEqual_complete (c := c) _ _ st ⟨CVar.Scoped.sum fun x hx => ?_, trivial, ?_⟩
-  · obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
-    exact (h b hb).1
-  · have hbits' : ∀ x ∈ bs.map (fun (b : BoolVar F) => (↑b : CVar F).val st.env.get), x = 0 ∨ x = 1 := by
+  have hsc : (sum (bs.map BoolVar.toCVar)).Scoped st :=
+    CVar.Scoped.sum fun x hx => by
+      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
+      exact (h b hb).1
+  have hval : (sum (bs.map BoolVar.toCVar)).val st.env.get = 1 := by
+    have hbits' : ∀ x ∈ bs.map (fun (b : BoolVar F) => (↑b : CVar F).val st.env.get),
+        x = 0 ∨ x = 1 := by
       intro x hx
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
       obtain ⟨bb, hbb⟩ := (h b hb).2
@@ -311,6 +348,9 @@ theorem assertExactlyOne_complete [Field F] [DecidableEq F] [BasicSystem F c]
     simp only [CVar.val, Function.comp_def]
     rw [sum_of_bits _ hbits', hone]
     simp
+  exact assertEqual_complete (c := c) _ _ 1 st
+    ⟨⟨CircuitType.scoped_fvar.mpr hsc, CircuitType.reads_fvar.mpr hval⟩,
+      ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩⟩
 
 attribute [irreducible] assertExactlyOne
 
@@ -361,10 +401,12 @@ theorem assertAll_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (assertAll (c := c) bs) (fun _ _ => True) := by
   rintro st ⟨h, hall⟩
   simp only [assertAll]
-  refine assertEqual_complete (c := c) _ _ st ⟨CVar.Scoped.sum fun x hx => ?_, trivial, ?_⟩
-  · obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
-    exact (h b hb).1
-  · have hbits' : ∀ x ∈ bs.map (fun (b : BoolVar F) => (↑b : CVar F).val st.env.get),
+  have hsc : (sum (bs.map BoolVar.toCVar)).Scoped st :=
+    CVar.Scoped.sum fun x hx => by
+      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
+      exact (h b hb).1
+  have hval : (sum (bs.map BoolVar.toCVar)).val st.env.get = (bs.length : F) := by
+    have hbits' : ∀ x ∈ bs.map (fun (b : BoolVar F) => (↑b : CVar F).val st.env.get),
         x = 0 ∨ x = 1 := by
       intro x hx
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
@@ -378,6 +420,9 @@ theorem assertAll_complete [Field F] [DecidableEq F] [BasicSystem F c]
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
       exact (hall b hb).symm)]
     simp
+  exact assertEqual_complete (c := c) _ _ (bs.length : F) st
+    ⟨⟨CircuitType.scoped_fvar.mpr hsc, CircuitType.reads_fvar.mpr hval⟩,
+      ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩⟩
 
 attribute [irreducible] assertAll
 
@@ -441,11 +486,15 @@ theorem assertEq_complete [Field F] [DecidableEq F] [BasicSystem F c] [Constrain
         CircuitType.Scoped.mono hnv h.2.1, h.2.2.1.of_le h.1 hle, h.2.2.2.of_le h.2.1 hle⟩)
       (fun _ {_ _ _} _ _ _ => trivial)
       (fun i st' h => by
-        refine assertEqual_complete (c := c) _ _ st' ⟨h.1 _ (by simp), h.2.1 _ (by simp), ?_⟩
         have h₁ := congrArg (fun v : Vector F (CircuitType.size F val) => v[i.val]) h.2.2.1
         have h₂ := congrArg (fun v : Vector F (CircuitType.size F val) => v[i.val]) h.2.2.2
         simp only [getElem_mapVec] at h₁ h₂
-        exact h₁.trans h₂.symm)
+        exact assertEqual_complete (c := c) _ _
+          ((CircuitType.valueToFields (F := F) a)[i.val]) st'
+          ⟨⟨CircuitType.scoped_fvar.mpr (h.1 _ (by simp)),
+              CircuitType.reads_fvar.mpr h₁⟩,
+            ⟨CircuitType.scoped_fvar.mpr (h.2.1 _ (by simp)),
+              CircuitType.reads_fvar.mpr h₂⟩⟩)
       st hst
   exact ⟨PUnit.unit, st₁, hrun.bind rfl, fun hnv hle =>
     Sat.bind hrun (hsat hnv hle) Sat.pure, trivial⟩

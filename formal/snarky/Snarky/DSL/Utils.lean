@@ -65,36 +65,58 @@ the witnessing arm by its `equal` row. -/
 /-- `sealVar.core`'s completeness law: the witnessed value reads as the operand, so its
 `equal` row is satisfied at every extension of the final table; the result is scoped. -/
 private theorem sealVar.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) :
-    Complete (fun st => x.Scoped st) (sealVar.core (c := c) x) (fun a st' => a.Scoped st') := by
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar.core (c := c) x)
+      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv) := by
   intro st hx
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx ⊢
+  obtain ⟨hx, hvx⟩ := hx
+  subst hvx
   simp only [sealVar.core]
   obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
     witness_complete (c := c) (readVar (val := F) x) (st := st) (v := x.val st.env.get)
       (by simp [hx])
   have hr : r.Scoped st₁ := CircuitType.scoped_fvar.mp hscope
   have hval : r.val st₁.env.get = x.val st.env.get := (CircuitType.reads_iff.mp hreads).2
-  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ := assertEqual_complete (c := c) x r st₁
-    ⟨hx.mono hnv, hr, by rw [CVar.val_of_le hle hx, hval]⟩
+  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ :=
+    assertEqual_complete (c := c) x r (x.val st.env.get) st₁
+      ⟨⟨CircuitType.scoped_fvar.mpr (hx.mono hnv),
+          CircuitType.reads_fvar.mpr (CVar.val_of_le hle hx)⟩,
+        ⟨CircuitType.scoped_fvar.mpr hr, CircuitType.reads_fvar.mpr hval⟩⟩
   exact ⟨r, st₂, hrun.bind (hrun₂.bind rfl), fun hnv' hle' =>
     Sat.bind hrun (hsat (hrun₂.nv_le.trans hnv') (hrun₂.le.trans hle'))
-      (Sat.bind hrun₂ (hsat₂ hnv' hle') Sat.pure), hr.mono hrun₂.nv_le⟩
+      (Sat.bind hrun₂ (hsat₂ hnv' hle') Sat.pure), hr.mono hrun₂.nv_le,
+    by rw [CVar.val_of_le hrun₂.le hr, hval]⟩
 
 /-- `sealVar`'s completeness law: the pass-through arms allocate nothing and stay within
 the operand's variables; the witnessing arm is `sealVar.core`'s. -/
 theorem sealVar_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (x : FVar F) :
-    Complete (fun st => x.Scoped st) (sealVar (c := c) x) (fun a st' => a.Scoped st') := by
+    [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar (c := c) x)
+      (fun a st' => CircuitType.ReadsAs (val := F) st' a xv) := by
   intro st hx
+  have hx' := hx
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx'
+  obtain ⟨hxs, hvx⟩ := hx'
+  subst hvx
+  have hred := CVar.reduce_val x st.env.get
   simp only [sealVar]
   split
   · next v k heq =>
+    rw [heq] at hred
     split
-    · have hv := CVar.ScopedBy.reduce hx (v, k) (by rw [heq]; exact List.mem_singleton_self _)
-      exact ⟨_, st, rfl, by simp [Sat, build], (CVar.scoped_var ..).mpr hv⟩
-    · exact sealVar.core_complete x st hx
-  · exact ⟨_, st, rfl, by simp [Sat, build], trivial⟩
-  · exact sealVar.core_complete x st hx
+    · subst ‹k = 1›
+      have hv := CVar.ScopedBy.reduce hxs (v, 1) (by rw [heq]; exact List.mem_singleton_self _)
+      refine ⟨_, st, rfl, by simp [Sat, build], ?_⟩
+      simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+      exact ⟨(CVar.scoped_var ..).mpr hv, by simpa [AffineExpression.val] using hred⟩
+    · exact sealVar.core_complete x _ st hx
+  · next k heq =>
+    rw [heq] at hred
+    refine ⟨_, st, rfl, by simp [Sat, build], ?_⟩
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    exact ⟨trivial, by simpa [AffineExpression.val] using hred⟩
+  · exact sealVar.core_complete x _ st hx
 
 attribute [irreducible] sealVar sealVar.core
 
