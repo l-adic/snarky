@@ -301,6 +301,26 @@ private theorem threads_link {base : AffinePoint (FVar F)} :
       simp only [List.head?_cons, Option.mem_def, Option.some.injEq, forall_eq']
       exact ⟨by rw [hp, hgrant.2.2.1.1], by rw [hn, hgrant.2.2.1.2]⟩
 
+/-- A trace closes at its last round's outputs. -/
+private theorem threads_last {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
+      Chain (Threads base) st pref (r₀ :: rs) fin →
+      ((r₀ :: rs).getLast (by simp)).acc5 = fin.1
+        ∧ ((r₀ :: rs).getLast (by simp)).nNext = fin.2
+  | _, _, [], _, _, h => absurd h.1 (by simp)
+  | _, _, _ :: _, r₀, rs, h => by
+    obtain ⟨r, tail, mid, heq, hgrant, hrest⟩ := h
+    injection heq with hr ht
+    subst hr ht
+    cases rs with
+    | nil =>
+      obtain ⟨-, rfl⟩ := Chain.of_nil_out hrest
+      exact hgrant.2.2.1
+    | cons r₁ ts =>
+      rw [List.getLast_cons (by simp)]
+      exact threads_last hrest
+
 /-- A trace's rounds are as many as the rows it traversed. -/
 private theorem threads_length {base : AffinePoint (FVar F)} :
     ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
@@ -310,6 +330,132 @@ private theorem threads_length {base : AffinePoint (FVar F)} :
   | _, _, _ :: _, _, h => by
     obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
     rw [List.length_cons, List.length_cons, threads_length hrest]
+
+/-- The bit stream a round list carries, MSB-first: the rounds' five bits, read and
+concatenated. -/
+private def roundBits [Field F] (V : Valuation F) (rounds : List (ScaleRound F)) : List F :=
+  rounds.flatMap fun r =>
+    [r.bit0.val V, r.bit1.val V, r.bit2.val V, r.bit3.val V, r.bit4.val V]
+
+open Kimchi.Gate.VarBaseMul (Run runBits bitsRegister bitsVal accX accY accN gateLadder) in
+/-- A satisfied trace from the doubled seed is one of the model's runs: `Run.ofList`
+takes the trace's readings, `varBaseMul_off` reads the ladder off it under the regime,
+and `chain_accN` reads the register. -/
+private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuation F)
+    {base P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 5)}
+    {rounds : List (ScaleRound F)} {fin : AffinePoint (FVar F) × FVar F}
+    (T : d.W.Point)
+    (hthr : Chain (Threads base) (P0, .const 0) pref rounds fin)
+    (hpay : ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r))
+    (hT : OnCurveAt d.W V base T)
+    (hP0 : OnCurveAt d.W V P0 ((2 : ℤ) • T)) :
+    (∀ b ∈ roundBits V rounds, b = 0 ∨ b = 1) ∧
+      (roundBits V rounds).length = 5 * pref.length ∧
+      fin.2.val V = bitsRegister (roundBits V rounds) ∧
+      ∀ _ : d.LadderRegime (5 * pref.length)
+          (2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1),
+        OnCurveAt d.W V fin.1
+          ((2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1) • T) := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  match hround : rounds, hthr with
+  | [], hthr' =>
+    obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
+    refine ⟨by simp [roundBits], by simp [roundBits], by simp [roundBits, bitsRegister, CVar.val],
+      fun _ => ?_⟩
+    simpa [roundBits, bitsVal] using hP0
+  | r₀ :: rs, hthr' =>
+    subst hround
+    set l := (r₀ :: rs).map (ScaleRound.read V) with hl
+    set dflt := ScaleRound.read V r₀ with hdflt
+    set g : ℕ → Kimchi.Gate.VarBaseMul.Witness F := fun i => l.getD i dflt with hg
+    have hlen : l.length = pref.length := by
+      rw [hl, List.length_map]
+      exact VarBaseMul.threads_length hthr'
+    have hbaseAll : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint d.W w.xT w.yT T := by
+      intro w hw
+      have hmem : ∃ r ∈ (r₀ :: rs), w = ScaleRound.read V r := by
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact ⟨r₀, by simp, rfl⟩
+        · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
+          exact ⟨r, hr, rfl⟩
+      obtain ⟨r, hr, rfl⟩ := hmem
+      show Kimchi.Gate.AddComplete.IsPoint d.W (r.base.x.val V) (r.base.y.val V) T
+      rw [VarBaseMul.threads_base hthr' r hr]
+      exact hT
+    have hrun : Run d.W T g l.length :=
+      Kimchi.Gate.VarBaseMul.Run.ofList d.W T l dflt
+        (fun w hw => by
+          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
+          exact hpay r hr)
+        hbaseAll
+        (by
+          rw [hl]
+          refine (List.isChain_map _).mpr ?_
+          refine (VarBaseMul.threads_link hthr').imp fun a b hab => ?_
+          exact ⟨⟨congrArg (·.val V) (congrArg AffinePoint.x hab.1),
+            congrArg (·.val V) (congrArg AffinePoint.y hab.1)⟩,
+            congrArg (·.val V) hab.2⟩)
+        (by
+          obtain ⟨hp0, -⟩ := VarBaseMul.threads_head hthr'
+          show Kimchi.Gate.AddComplete.IsPoint d.W (r₀.acc0.x.val V) (r₀.acc0.y.val V) _
+          rw [hp0]
+          exact hP0)
+    -- the run's bit stream is the rounds'
+    have hbits : runBits g l.length = roundBits V (r₀ :: rs) := by
+      rw [hg, Kimchi.Gate.VarBaseMul.runBits_getD, hl, roundBits, List.flatMap_map]
+      rfl
+    -- the run closes where the trace does
+    obtain ⟨hax, hay, han⟩ :=
+      Kimchi.Gate.VarBaseMul.acc_getD_length l (by simp [hl]) dflt
+    obtain ⟨hlast5, hlastN⟩ := VarBaseMul.threads_last hthr'
+    have hlastl : l.getLast (by simp [hl])
+        = ScaleRound.read V ((r₀ :: rs).getLast (by simp)) := List.getLast_map _
+    have hfinx : accX g l.length = fin.1.x.val V := by
+      rw [hg, hax, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).acc5.x.val V = _
+      rw [hlast5]
+    have hfiny : accY g l.length = fin.1.y.val V := by
+      rw [hg, hay, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).acc5.y.val V = _
+      rw [hlast5]
+    have hfinn : accN g l.length = fin.2.val V := by
+      rw [hg, han, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).nNext.val V = _
+      rw [hlastN]
+    -- the register, from the run's own fold
+    have hzero : accN g 0 = 0 := by
+      obtain ⟨-, hn0⟩ := VarBaseMul.threads_head hthr'
+      show (l.getD 0 dflt).n = 0
+      rw [hl]
+      show r₀.nPrev.val V = 0
+      rw [hn0]
+      simp [CVar.val]
+    have hreg : fin.2.val V = bitsRegister (roundBits V (r₀ :: rs)) := by
+      rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hrun, hzero, mul_zero,
+        zero_add, hbits]
+    refine ⟨?_, ?_, hreg, fun hregime => ?_⟩
+    · rw [← hbits]
+      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hrun.holds
+    · rw [← VarBaseMul.threads_length hthr', roundBits, List.length_flatMap]
+      simp
+      omega
+    · rw [← hlen] at hregime ⊢
+      simp only [HasCurve.LadderRegime] at hregime
+      have hs : gateLadder g (5 * l.length)
+          = 2 * bitsVal (roundBits V (r₀ :: rs)) + 2 ^ (5 * l.length) + 1 := by
+        rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
+          Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
+      obtain ⟨hfin', hpt, -⟩ :=
+        Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
+          (gateLadder g (5 * l.length)) hrun d.two_ne d.odd rfl (by rw [hs]; exact hregime)
+      have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
+        rw [← hfinx, ← hfiny]
+        exact hfin'
+      refine ⟨hns, ?_⟩
+      rw [← hs, ← hpt]
+      congr 1
 
 end VarBaseMul
 
