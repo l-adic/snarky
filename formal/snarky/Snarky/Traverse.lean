@@ -172,24 +172,25 @@ survives the table's growth compose into the whole ladder's. The caller writes t
 and gets the loop — including every step's grant at the final table, which is where the
 emitted row is judged. -/
 theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
-    (f : s → α → CircuitM F c (β × s)) (inv : s → ProverState F → Prop)
+    (f : s → α → CircuitM F c (β × s)) (P : α → Prop) (inv : s → ProverState F → Prop)
     (out : s → α → β → s → ProverState F → Prop)
     (hinv : ∀ (acc : s) {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env →
       inv acc st → inv acc st')
     (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
       st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
-    (hstep : ∀ (acc : s) (x : α),
+    (hstep : ∀ (acc : s) (x : α), P x →
       Complete (inv acc) (f acc x) (fun p st' => inv p.2 st' ∧ out acc x p.1 p.2 st')) :
-    ∀ (init : s) (xs : List α),
+    ∀ (init : s) (xs : List α), (∀ x ∈ xs, P x) →
       Complete (inv init) (mapAccumM f init xs)
         (fun p st' => inv p.2 st' ∧ ChainAt out st' init xs p.1 p.2)
-  | init, [] => fun st hst =>
+  | init, [], _ => fun st hst =>
     ⟨([], init), st, rfl, fun _ _ => by simp [Sat, build, mapAccumM], hst, rfl, rfl⟩
-  | init, x :: xs => by
+  | init, x :: xs, hP => by
     intro st hst
-    obtain ⟨p, st₁, hrun₁, hsat₁, hinv₁, hout₁⟩ := hstep init x st hst
+    obtain ⟨p, st₁, hrun₁, hsat₁, hinv₁, hout₁⟩ := hstep init x (hP x (by simp)) st hst
     obtain ⟨q, st₂, hrun₂, hsat₂, hinv₂, hchain⟩ :=
-      mapAccumM_complete f inv out hinv hout hstep p.2 xs st₁ hinv₁
+      mapAccumM_complete f P inv out hinv hout hstep p.2 xs
+        (fun y hy => hP y (by simp [hy])) st₁ hinv₁
     refine ⟨(p.1 :: q.1, q.2), st₂, ?_, ?_, hinv₂,
       ⟨p.1, q.1, p.2, rfl, hout _ _ _ _ hrun₂.nv_le hrun₂.le hout₁, hchain⟩⟩
     · exact hrun₁.bind (hrun₂.bind rfl)

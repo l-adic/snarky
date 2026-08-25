@@ -267,7 +267,7 @@ open Std.Do in
 /-! ## The leaves -/
 
 /-- Reading scoped expressions is reading them totally. -/
-private theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
+theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
     ∀ {l : List (CVar F)}, (∀ cv ∈ l, cv.Scoped st) →
       (l.mapM AsProver.readCVar).run st.env = .ok (l.map (·.val st.env.get))
   | [], _ => rfl
