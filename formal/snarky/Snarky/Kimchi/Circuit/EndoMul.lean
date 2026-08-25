@@ -309,6 +309,13 @@ def HasEndo.vesta : HasEndo Fq where
 
 namespace EndoMul
 
+/- PORT: the gadget's laws are OFF.
+
+Soundness is the loop law instantiated at the round threading, landed on the gate
+model's chain; completeness is written fresh against `Complete`. The text below is
+the old ghost-state version, kept as a record of the argument.
+
+
 /-- The loop's structural view: the collected rounds are the chain-threaded records
 over the traversed chunks — each round's `(p, nAcc)` are the previous round's output
 variables, from `st` to `fin`, and every round shares the base `t`. Valuation-free:
@@ -1615,6 +1622,8 @@ theorem endoInv_complete_spec [Field F] [DecidableEq F] [ToNat F] (d : HasEndo F
   refine ⟨px, py, CVar.eval_le hleTail hrpx, CVar.eval_le hleTail hrpy, hpns, ?_⟩
   rw [← heff, ← hkdef]
   exact (hG ▸ hpteq).symm
+
+-/
 
 end EndoMul
 
