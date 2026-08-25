@@ -249,6 +249,26 @@ structure HasEndo (F : Type) [Field F] [DecidableEq F] where
   so bounded fold values with equal `F`-images are equal integers. -/
   char_big : ∀ z : ℤ, |z| < 2 ^ 127 → (z : F) = 0 → z = 0
 
+open WeierstrassCurve.Affine in
+/-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
+zero. This is what the addition gadget asks of its first operand, and it holds of every
+point the dictionary describes. -/
+theorem HasEndo.two_torsion_free [Field F] [DecidableEq F] (d : HasEndo F)
+    (P : d.W.Point) (hne : P ≠ 0) : P + P ≠ 0 := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
+    have h2 := (Fact.out : Nat.Prime d.W.order).two_le
+    have h3 : 3 ≤ d.W.order := by
+      rcases Nat.lt_or_ge d.W.order 3 with h | h
+      · exact absurd (by omega : d.W.order = 2) d.odd
+      · exact h
+    exact_mod_cast h3
+  intro hzero
+  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
+    (by rw [two_zsmul, hzero])
+
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts from
 `Pasta` (`pallas_eigen`, `pallas_endo_nonsingular`, `pallas_card`) and the GLV
@@ -958,7 +978,6 @@ private def bitsOf [Field F] (rounds k i : ℕ) : F × F × F × F :=
     (if k.testBit (4 * rounds - 1 - (4 * i + 2)) then 1 else 0),
     (if k.testBit (4 * rounds - 1 - (4 * i + 3)) then 1 else 0))
 
-open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 /-- **Completeness.** From a readable on-curve base and a scalar inside the width, the
 honest run succeeds, its rows hold at every extension, and the result reads as the base
 multiplied by the effective scalar of the scalar's own crumbs. -/
@@ -1009,7 +1028,6 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [CVar.val_of_le (hle₁.trans hle₂) hty, hry]
   have hvp₂ : phix.val st₂.env.get = d.endo * xv := by
     rw [hvalP, CVar.val_scale_, hvx₂]
-  have hyne : yv ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
   -- the base and its image, read as curve points
   have hTread : OnCurve d.W st₂ t (Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, ?_⟩
@@ -1035,31 +1053,19 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (addFast_complete .checkFinite d.W
         ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩
         (Point.some _ _ hT) (Point.some _ _ hφT)) st₂
-      ⟨hTread, hφTread, by rw [hvy₂]; exact hyne, fun _ => hTφ⟩
+      ⟨hTread, hφTread, d.two_torsion_free _ (Point.some_ne_zero hT), fun _ => hTφ⟩
   have hle₃ := hrun₃.le
   have hnv₃ := hrun₃.nv_le
   have hP1read : OnCurve d.W st₃ p1.p
       (Point.some _ _ hT + Point.some _ _ hφT) := by
     refine ⟨hscP1, ?_⟩
     rcases hadd1.2 _ _ (hTread.mono hnv₃ hle₃).2 (hφTread.mono hnv₃ hle₃).2
-      (by rw [CVar.val_of_le hle₃ hty₂, hvy₂]; exact hyne) with ⟨hinf, -⟩ | ⟨-, h3⟩
+      (d.two_torsion_free _ (Point.some_ne_zero hT)) with ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd ((hadd1.1 rfl).symm.trans hinf) (by norm_num)
     · exact h3
   obtain ⟨hP1, hsum1⟩ := hP1read.2
-  have hy1ne : p1.p.y.val st₃.env.get ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hP1
   have h2P1 : Point.some _ _ hT + Point.some _ _ hφT
-      + (Point.some _ _ hT + Point.some _ _ hφT) ≠ 0 := by
-    rw [hsum1]
-    intro hzero
-    have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
-      have := (Fact.out : Nat.Prime d.W.order).two_le
-      have h3' : 3 ≤ d.W.order := by
-        rcases Nat.lt_or_ge d.W.order 3 with h | h
-        · exact absurd (by omega : d.W.order = 2) d.odd
-        · exact h
-      exact_mod_cast h3'
-    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W (Point.some_ne_zero hP1)
-      (by norm_num) hlt (by rw [two_zsmul, hzero])
+      + (Point.some _ _ hT + Point.some _ _ hφT) ≠ 0 := d.two_torsion_free _ hTφ
   -- the second addition
   obtain ⟨p2, st₄, hrun₄, hsat₄, ⟨hscP2, hscI2⟩, hadd2⟩ :=
     Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite p1.p p1.p)
@@ -1069,15 +1075,14 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p
         (Point.some _ _ hT + Point.some _ _ hφT)
         (Point.some _ _ hT + Point.some _ _ hφT)) st₃
-      ⟨hP1read, hP1read, hy1ne, fun _ => h2P1⟩
+      ⟨hP1read, hP1read, h2P1, fun _ => h2P1⟩
   have hle₄ := hrun₄.le
   have hnv₄ := hrun₄.nv_le
   have hP0read : OnCurve d.W st₄ p2.p
       (Point.some _ _ hT + Point.some _ _ hφT
         + (Point.some _ _ hT + Point.some _ _ hφT)) := by
     refine ⟨hscP2, ?_⟩
-    rcases hadd2.2 _ _ (hP1read.mono hnv₄ hle₄).2 (hP1read.mono hnv₄ hle₄).2
-      (by rw [CVar.val_of_le hle₄ (scoped_affinePoint.mp hscP1).2]; exact hy1ne) with
+    rcases hadd2.2 _ _ (hP1read.mono hnv₄ hle₄).2 (hP1read.mono hnv₄ hle₄).2 h2P1 with
       ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd ((hadd2.1 rfl).symm.trans hinf) (by norm_num)
     · exact h3
@@ -1256,7 +1261,6 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       intro r _
       cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
 
-open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
 the effective scalar of some valid crumb list of the run's width, whose reconstruction
@@ -1291,21 +1295,19 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   intro hT
   have hφT := d.endo_nonsingular hT
-  have hy : t.y.val V ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
   have hφTp : d.W.Nonsingular (phix.val V) (t.y.val V) := by
     rw [hphix, CVar.val_scale_]
     exact hφT
   obtain ⟨hP1, hsum1⟩ : ∃ h3 : d.W.Nonsingular (p1.p.x.val V) (p1.p.y.val V),
       Point.some _ _ hT + Point.some _ _ hφTp = Point.some _ _ h3 := by
-    rcases hp1.2 (Point.some _ _ hT) (Point.some _ _ hφTp) ⟨hT, rfl⟩ ⟨hφTp, rfl⟩ hy with
-      ⟨hinf, -⟩ | ⟨-, h3⟩
+    rcases hp1.2 (Point.some _ _ hT) (Point.some _ _ hφTp) ⟨hT, rfl⟩ ⟨hφTp, rfl⟩
+      (d.two_torsion_free _ (Point.some_ne_zero hT)) with ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd ((hp1.1 rfl).symm.trans hinf) (by norm_num)
     · exact h3
-  have hy1 : p1.p.y.val V ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hP1
   obtain ⟨hP0ns, hsum2⟩ : ∃ h3 : d.W.Nonsingular (p2.p.x.val V) (p2.p.y.val V),
       Point.some _ _ hP1 + Point.some _ _ hP1 = Point.some _ _ h3 := by
-    rcases hp2.2 (Point.some _ _ hP1) (Point.some _ _ hP1) ⟨hP1, rfl⟩ ⟨hP1, rfl⟩ hy1 with
-      ⟨hinf, -⟩ | ⟨-, h3⟩
+    rcases hp2.2 (Point.some _ _ hP1) (Point.some _ _ hP1) ⟨hP1, rfl⟩ ⟨hP1, rfl⟩
+      (d.two_torsion_free _ (Point.some_ne_zero hP1)) with ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd (hp2.1.symm.trans hinf) (by norm_num)
     · exact h3
   have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=

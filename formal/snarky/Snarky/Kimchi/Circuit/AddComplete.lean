@@ -258,6 +258,21 @@ theorem OnCurve.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     · rw [CVar.val_of_le hle hsc.1]
     · rw [CVar.val_of_le hle hsc.2]
 
+open WeierstrassCurve.Affine in
+/-- On a short curve an operand whose `y` vanishes is its own negation, hence 2-torsion.
+The gate's slope divides by `2y₁`; this is that side condition's point-currency form,
+and the two laws below take it that way so no caller of the addition handles a
+coordinate. -/
+theorem two_torsion_of_y_eq_zero [Field F] [DecidableEq F]
+    {W : WeierstrassCurve.Affine F} (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
+    {V : Valuation F} {p : AffinePoint (FVar F)} {P : W.Point}
+    (h : OnCurveAt W V p P) (hy : p.y.val V = 0) : P + P = 0 := by
+  obtain ⟨n, rfl⟩ := h
+  rw [add_eq_zero_iff_eq_neg, Point.neg_some]
+  congr 1
+  rw [WeierstrassCurve.Affine.negY, ha.1, ha.2.2.1, hy]
+  ring
+
 open Std.Do in
 /-- The infinity column grants nothing where the flag is witnessed — what it reads is
 pinned by the gate's row, not by how it was produced — but under `checkFinite` it is the
@@ -285,14 +300,15 @@ preserve them — and the witnessed columns are whatever the row constrains them
     ⦃⌜True⌝⦄
     addFast (c := Builder V (KimchiConstraint F)) fin p1' p2'
     ⦃⇓ r _ => ⌜(fin = .checkFinite → (↑r.isInfinity : CVar F).val V = 0) ∧
-        ∀ P Q : W.Point, OnCurveAt W V p1' P → OnCurveAt W V p2' Q → p1'.y.val V ≠ 0 →
+        ∀ P Q : W.Point, OnCurveAt W V p1' P → OnCurveAt W V p2' Q → P + P ≠ 0 →
           ((↑r.isInfinity : CVar F).val V = 1 ∧ P + Q = 0) ∨
             ((↑r.isInfinity : CVar F).val V = 0 ∧ OnCurveAt W V r.p (P + Q))⌝⦄ := by
   simp only [addFast]
   mvcgen
   rename_i _ q1 _ hs1 q2 _ hs2 _ _ _ inf _ hinf aux _ _ p3 _ _ _ _ hgate
   refine ⟨hinf, ?_⟩
-  intro P Q hP hQ hy1ne
+  intro P Q hP hQ hPP
+  have hy1ne : p1'.y.val V ≠ 0 := fun hy => hPP (two_torsion_of_y_eq_zero ha hP hy)
   simp only [OnCurveAt, ← hs1.1, ← hs1.2, ← hs2.1, ← hs2.2] at hP hQ
   rw [← hs1.2] at hy1ne
   obtain ⟨h1, rfl⟩ := hP
@@ -340,11 +356,14 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (P Q : W.Point) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => OnCurve W st p1' P ∧ OnCurve W st p2' Q ∧
-        p1'.y.val st.env.get ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
+        P + P ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
       (addFast (c := KimchiConstraint F) fin p1' p2')
       (fun r st' => CircuitType.Scoped (val := AffinePoint F) st' r.p ∧
         (↑r.isInfinity : CVar F).Scoped st') := by
-  rintro st ⟨⟨hs1, n1, rfl⟩, ⟨hs2, n2, rfl⟩, hy1ne, hfinP⟩
+  rintro st ⟨⟨hs1, hP⟩, ⟨hs2, n2, rfl⟩, hPP, hfinP⟩
+  have hy1ne : p1'.y.val st.env.get ≠ 0 :=
+    fun hy => hPP (two_torsion_of_y_eq_zero ha hP hy)
+  obtain ⟨n1, rfl⟩ := hP
   have hon1 : W.Equation (p1'.x.val st.env.get) (p1'.y.val st.env.get) := n1.left
   have hon2 : W.Equation (p2'.x.val st.env.get) (p2'.y.val st.env.get) := n2.left
   have hfin : fin = .checkFinite → ¬(p1'.x.val st.env.get = p2'.x.val st.env.get ∧
