@@ -231,16 +231,18 @@ open Std.Do in
   mvcgen
 
 open Std.Do in
-/-- The infinity column grants nothing on its own: what the flag reads is pinned by the
-gate's row, not by how it was produced. A spec so the mode's `match` is walked over
-rather than split. -/
+/-- The infinity column grants nothing where the flag is witnessed — what it reads is
+pinned by the gate's row, not by how it was produced — but under `checkFinite` it is the
+constant `false`, which is what rules the infinite branch out. -/
 @[spec] theorem infColumn_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
     ⦃⌜True⌝⦄
     addFast.infColumn (c := Builder V c) fin p1 p2 sameX
-    ⦃⇓ _ _ => ⌜True⌝⦄ := by
+    ⦃⇓ b _ => ⌜fin = .checkFinite → (↑b : CVar F).val V = 0⌝⦄ := by
   cases fin <;> simp only [addFast.infColumn] <;> mvcgen
+  · simp [false_, CVar.val]
+  · simp
 
 open Std.Do WeierstrassCurve.Affine in
 /-- **`addFast`'s soundness.** Any valuation satisfying the emitted row reads the
@@ -254,7 +256,8 @@ preserve them — and the witnessed columns are whatever the row constrains them
     (p1' p2' : AffinePoint (FVar F)) :
     ⦃⌜True⌝⦄
     addFast (c := Builder V (KimchiConstraint F)) fin p1' p2'
-    ⦃⇓ r _ => ⌜∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+    ⦃⇓ r _ => ⌜(fin = .checkFinite → (↑r.isInfinity : CVar F).val V = 0) ∧
+        ∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
         (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)), p1'.y.val V ≠ 0 →
         ((↑r.isInfinity : CVar F).val V = 1 ∧
             Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
@@ -263,7 +266,8 @@ preserve them — and the witnessed columns are whatever the row constrains them
               Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3)⌝⦄ := by
   simp only [addFast]
   mvcgen
-  rename_i q1 _ hs1 q2 _ hs2 _ _ _ inf _ aux _ _ p3 _ _ _ _ hgate
+  rename_i _ q1 _ hs1 q2 _ hs2 _ _ _ inf _ hinf aux _ _ p3 _ _ _ _ hgate
+  refine ⟨hinf, ?_⟩
   rw [← hs1.1, ← hs1.2, ← hs2.1, ← hs2.2]
   intro h1 h2 hy1ne
   rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hgate hy1ne htwo with
