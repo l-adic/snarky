@@ -21,4 +21,5 @@ path = "../kimchi"
 name = "Snarky"
 # Layering the swapped core back in: the glob names exactly what is switched on.
 globs = ["Snarky", "Snarky.Kimchi.UnionFind", "Snarky.Kimchi.Constraint",
-  "Snarky.Kimchi.Constraint.+", "Snarky.Kimchi.Semantics"]
+  "Snarky.Kimchi.Constraint.+", "Snarky.Kimchi.Semantics",
+  "Snarky.Kimchi.Backend.+"]
