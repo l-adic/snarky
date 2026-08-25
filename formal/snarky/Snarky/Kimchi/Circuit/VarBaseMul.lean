@@ -26,6 +26,11 @@ The byte contract (allocation order, row shapes) is oracle-checked by the corpus
 downstream VarBaseMul-consuming fixtures (`ftcomm`, `xhat`, the mains) stay deferred
 to the pickles buildout.
 
+One section per circuit: the definition, its soundness spec, its completeness law, and
+then the definition is sealed `irreducible`. Nothing below a section reasons about that
+circuit's body — the round reaches the ladder as `scaleRound_spec`/`scaleRound_complete`,
+the ladder reaches the wrappers as `varBaseMul_spec`/`varBaseMul_complete`.
+
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS batches the whole witness chain through `mkWitnessTable`/`computeVbmChain`
   (`doubleAddChain`'s projective walk with Montgomery batch inversion); the port
@@ -55,6 +60,65 @@ namespace Snarky.Kimchi
 open Snarky
 
 variable {F c : Type}
+
+open Std.Do WeierstrassCurve.Affine
+
+/-! ## The curve dictionary
+
+What every law below closes over. -/
+
+/-- The curve dictionary the VarBaseMul laws close over (the PS ambient
+`WeierstrassCurve` class): the curve, its Pasta short shape, and the group facts the
+ladder's gate-semantics theorems consume. Like `HasEndo`, the laws stay generic over
+it and are concretized only inside a larger circuit's instantiation. -/
+structure HasCurve (F : Type) [Field F] [DecidableEq F] where
+  /-- The curve the base point and accumulators live on. -/
+  W : WeierstrassCurve.Affine F
+  /-- The Pasta short-Weierstrass shape. -/
+  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
+  /-- The group order is prime. -/
+  prime : Nat.Prime W.order
+  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
+  odd : W.order ≠ 2
+  /-- The field does not have characteristic `2`. -/
+  two_ne : (2 : F) ≠ 0
+
+/-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
+dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
+condition on the scalar), OR the one-wrap band holds and the scalar's Type1 decode
+`z` avoids the forbidden residues. `varBaseMul_off`'s dichotomy, at the law's
+list-level decode. -/
+def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
+    (z : ℤ) : Prop :=
+  3 * 2 ^ L ≤ d.W.order ∨
+    (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
+      z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
+
+open WeierstrassCurve.Affine in
+/-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
+zero. What the addition gadget asks of the base it doubles. -/
+theorem HasCurve.two_torsion_free [Field F] [DecidableEq F] (d : HasCurve F)
+    (P : d.W.Point) (hne : P ≠ 0) : P + P ≠ 0 := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
+    have h2 := (Fact.out : Nat.Prime d.W.order).two_le
+    have h3 : 3 ≤ d.W.order := by
+      rcases Nat.lt_or_ge d.W.order 3 with h | h
+      · exact absurd (by omega : d.W.order = 2) d.odd
+      · exact h
+    exact_mod_cast h3
+  intro hzero
+  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
+    (by rw [two_zsmul, hzero])
+
+/-! ## The round
+
+One 5-bit row: the register advice, then five bit-step quintets threaded through the
+accumulator. Its laws are the wiring a trace threads (`Threads`) and, for the honest run,
+the grant that the round's cells are in scope and its reading is the gate's canonical row.
+Sealed after them — the ladder reasons about a round through its laws, never its body. -/
 
 /-- The scalar's `n` bits LSB-first as field values, in ONE witness (PS `unpackPure`
 under a single `exists`). -/
@@ -116,144 +180,6 @@ def scaleRound [Field F] [DecidableEq F] [BasicSystem F c]
            nPrev := st.2, nNext := nAcc, base } : ScaleRound F),
          (a5, nAcc))
 
-/-- What `varBaseMul` hands back (PS's `{ g, lsbBits }` record): the scalar multiple
-and the scalar's full bit decomposition, which `scaleFast2` pins. -/
-structure VarBaseMulResult (n : ℕ) (F : Type) where
-  /-- The computed multiple. -/
-  g : AffinePoint (FVar F)
-  /-- The scalar's `n` witnessed bits, LSB-first. -/
-  lsbBits : Vector (FVar F) n
-
-/-- The variable-base scalar multiplication (PS `varBaseMul`; OCaml
-`scale_fast_unpack`): seal the base, witness the scalar's `n` LSB bits, build
-`acc = [2]·T` with one `addFast`, walk the top `5 * chunks` bits MSB-first in 5-bit
-rows — per row the register witness then five bit-step quintets — pin the final
-register to the scalar, and emit one `varBaseMul` constraint. -/
-def varBaseMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [KimchiSystem F c] (n chunks : ℕ) (base' : AffinePoint (FVar F))
-    (scalar : Type1 (FVar F)) : CircuitM F c (VarBaseMulResult n F) := do
-  let base ← sealPoint base'
-  let lsbBits ← witness (val := Vector F n) (lsbBitsWit n scalar.val)
-  let p ← addFast .checkFinite base base
-  let msb : List (FVar F) := (lsbBits.toList.take (5 * chunks)).reverse
-  let window : ℕ → Vector (FVar F) 5 := fun i =>
-    Vector.ofFn fun j => msb.getD (5 * i + j.1) (.const 0)
-  let (rounds, fin) ← mapAccumM (scaleRound base)
-    (p.p, .const 0) ((List.range chunks).map window)
-  addConstraint (KimchiSystem.varBaseMul rounds)
-  assertEqual fin.2 scalar.val
-  pure ⟨fin.1, lsbBits⟩
-
-/-- `scaleFast1 g a ~ [fromShifted a]·g` (PS docstring) — the `Type1` path, for a
-scalar field no larger than the circuit field. Drops the bits. -/
-def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [KimchiSystem F c] (n chunks : ℕ) (p : AffinePoint (FVar F))
-    (t : Type1 (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
-  let r ← varBaseMul n chunks p t
-  pure r.g
-
-/-- `scaleFast2 g (sDiv2, sOdd) ~ [2·sDiv2 + sOdd + 2^n]·g` — the split path, for a
-scalar field larger than the circuit field: run the ladder on `sDiv2`, pin its high
-bits to zero, and fold the parity in by conditionally subtracting the base. -/
-def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
-    (sDiv2 : FVar F) (sOdd : BoolVar F) : CircuitM F c (AffinePoint (FVar F)) := do
-  let r ← varBaseMul n chunks base ⟨sDiv2⟩
-  (r.lsbBits.toList.drop sDiv2Bits).forM fun bit => assertEqual bit (.const 0)
-  -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation
-  let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.negate_ base.y⟩
-  let q ← addFast .checkFinite r.g negBase
-  -- the point conditional selects coordinatewise, `y` BEFORE `x`: PS's record `if_`
-  -- builds right-to-left (the fixture pins the emission order)
-  let y ← select sOdd r.g.y q.p.y
-  let x ← select sOdd r.g.x q.p.x
-  pure ⟨x, y⟩
-
-/-- The parity split of a field value (PS `splitField`): `s = 2·sDiv2 + sOdd`. -/
-def splitField [Field F] [ToNat F] (s : F) : F × Bool :=
-  let odd := (ToNat.toNat s) % 2 = 1
-  ((if odd then s - 1 else s) / 2, odd)
-
-/-- The joined value of a parity split (PS `joinField`). -/
-def joinField [Field F] (sDiv2 : F) (sOdd : Bool) : F :=
-  2 * sDiv2 + (if sOdd then 1 else 0)
-
-private def splitFieldWit [Field F] [ToNat F] (s : FVar F) : AsProver F (F × Bool) := do
-  let v ← AsProver.readCVar s
-  pure (splitField v)
-
-/-- Witness a parity split and constrain it (PS `splitFieldVar`):
-`s = 2·sDiv2 + sOdd`, one linear assert. -/
-def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    (s : FVar F) : CircuitM F c (FVar F × BoolVar F) := do
-  let r ← witness (val := F × Bool) (splitFieldWit s)
-  assertEqual s (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2)
-  pure r
-
-/-! ## The curve dictionary and the soundness laws -/
-
-open Std.Do WeierstrassCurve.Affine
-
-/-- The curve dictionary the VarBaseMul laws close over (the PS ambient
-`WeierstrassCurve` class): the curve, its Pasta short shape, and the group facts the
-ladder's gate-semantics theorems consume. Like `HasEndo`, the laws stay generic over
-it and are concretized only inside a larger circuit's instantiation. -/
-structure HasCurve (F : Type) [Field F] [DecidableEq F] where
-  /-- The curve the base point and accumulators live on. -/
-  W : WeierstrassCurve.Affine F
-  /-- The Pasta short-Weierstrass shape. -/
-  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
-  /-- The group order is prime. -/
-  prime : Nat.Prime W.order
-  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
-  odd : W.order ≠ 2
-  /-- The field does not have characteristic `2`. -/
-  two_ne : (2 : F) ≠ 0
-
-/-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
-dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
-condition on the scalar), OR the one-wrap band holds and the scalar's Type1 decode
-`z` avoids the forbidden residues. `varBaseMul_off`'s dichotomy, at the law's
-list-level decode. -/
-def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
-    (z : ℤ) : Prop :=
-  3 * 2 ^ L ≤ d.W.order ∨
-    (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
-      z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
-
-open WeierstrassCurve.Affine in
-/-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
-zero. What the addition gadget asks of the base it doubles. -/
-theorem HasCurve.two_torsion_free [Field F] [DecidableEq F] (d : HasCurve F)
-    (P : d.W.Point) (hne : P ≠ 0) : P + P ≠ 0 := by
-  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
-  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
-    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
-    have h2 := (Fact.out : Nat.Prime d.W.order).two_le
-    have h3 : 3 ≤ d.W.order := by
-      rcases Nat.lt_or_ge d.W.order 3 with h | h
-      · exact absurd (by omega : d.W.order = 2) d.odd
-      · exact h
-    exact_mod_cast h3
-  intro hzero
-  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
-    (by rw [two_zsmul, hzero])
-
-/-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. -/
-def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
-    (s : FVar F) : CircuitM F c (AffinePoint (FVar F)) := do
-  let (sDiv2, sOdd) ← splitFieldVar s
-  scaleFast2 n chunks sDiv2Bits base sDiv2 sOdd
-
-/-! ## Soundness
-
-The payload reads each round on its own — a `ScaleRound` carries all 26 cells, its
-outputs included — so the trace's job is only to say that every round shares the base,
-opens where the previous one closed, and starts at the doubled seed. That is what
-`Kimchi.Gate.VarBaseMul.Run` asks for. -/
-
 namespace VarBaseMul
 
 variable {F c : Type}
@@ -277,249 +203,6 @@ side, and the row's bits. -/
     ⦃⇓ p _ => ⌜Threads base st bs p.1 p.2⌝⦄ := by
   simp only [scaleRound, Threads]
   mvcgen
-
-/-- Every round of a trace reads the same base. -/
-private theorem threads_base {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin → ∀ r ∈ rounds, r.base = base
-  | _, _, [], _, h, r, hr => by rw [h.1] at hr; simp at hr
-  | _, _, _ :: _, _, h, r, hr => by
-    obtain ⟨r', tail, mid, rfl, hgrant, hrest⟩ := h
-    rcases List.mem_cons.mp hr with rfl | hr
-    · exact hgrant.1
-    · exact threads_base hrest r hr
-
-/-- A trace's first round opens at the seed accumulators. -/
-private theorem threads_head {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
-      Chain (Threads base) st pref (r₀ :: rs) fin → r₀.acc0 = st.1 ∧ r₀.nPrev = st.2
-  | _, _, [], _, _, h => absurd h.1 (by simp)
-  | _, _, _ :: _, _, _, h => by
-    obtain ⟨r', tail, mid, heq, hgrant, -⟩ := h
-    injection heq with hr _
-    subst hr
-    exact hgrant.2.1
-
-/-- A trace's rounds link: each opens where the previous closed. -/
-private theorem threads_link {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin →
-      rounds.IsChain fun a b => b.acc0 = a.acc5 ∧ b.nPrev = a.nNext
-  | _, _, [], _, h => by rw [h.1]; simp
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    refine (threads_link hrest).cons ?_
-    cases tail with
-    | nil => simp
-    | cons r' ts =>
-      obtain ⟨hp, hn⟩ := threads_head hrest
-      simp only [List.head?_cons, Option.mem_def, Option.some.injEq, forall_eq']
-      exact ⟨by rw [hp, hgrant.2.2.1.1], by rw [hn, hgrant.2.2.1.2]⟩
-
-/-- A trace closes at its last round's outputs. -/
-private theorem threads_last {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
-      Chain (Threads base) st pref (r₀ :: rs) fin →
-      ((r₀ :: rs).getLast (by simp)).acc5 = fin.1
-        ∧ ((r₀ :: rs).getLast (by simp)).nNext = fin.2
-  | _, _, [], _, _, h => absurd h.1 (by simp)
-  | _, _, _ :: _, r₀, rs, h => by
-    obtain ⟨r, tail, mid, heq, hgrant, hrest⟩ := h
-    injection heq with hr ht
-    subst hr ht
-    cases rs with
-    | nil =>
-      obtain ⟨-, rfl⟩ := Chain.of_nil_out hrest
-      exact hgrant.2.2.1
-    | cons r₁ ts =>
-      rw [List.getLast_cons (by simp)]
-      exact threads_last hrest
-
-/-- A trace's rounds are as many as the rows it traversed. -/
-private theorem threads_length {base : AffinePoint (FVar F)} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin → rounds.length = pref.length
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
-    rw [List.length_cons, List.length_cons, threads_length hrest]
-
-/-- Flattening a list's five-wide windows recovers the list. -/
-private theorem flatMap_window {α : Type} (dflt : α) (c : ℕ) (l : List α)
-    (hl : l.length = 5 * c) :
-    (List.range c).flatMap (fun i =>
-      [l.getD (5 * i) dflt, l.getD (5 * i + 1) dflt, l.getD (5 * i + 2) dflt,
-       l.getD (5 * i + 3) dflt, l.getD (5 * i + 4) dflt]) = l := by
-  rw [Kimchi.Gate.VarBaseMul.flatMap_range_window (fun i => l.getD i dflt) c]
-  refine List.ext_getElem (by simp [hl]) (fun i h1 h2 => ?_)
-  simp only [List.getElem_map, List.getElem_range]
-  rw [List.getD_eq_getElem _ _ (by simpa [hl] using h1)]
-
-/-- The bit stream a round list carries, MSB-first: the rounds' five bits, read and
-concatenated. -/
-private def roundBits [Field F] (V : Valuation F) (rounds : List (ScaleRound F)) : List F :=
-  rounds.flatMap fun r =>
-    [r.bit0.val V, r.bit1.val V, r.bit2.val V, r.bit3.val V, r.bit4.val V]
-
-/-- Flattening a list's five-wide windows, read entrywise, recovers the readings. -/
-private theorem flatMap_window_map {α β : Type} (f : α → β) (dflt : α) (c : ℕ)
-    (l : List α) (hl : l.length = 5 * c) :
-    (List.range c).flatMap (fun i =>
-      [f (l.getD (5 * i) dflt), f (l.getD (5 * i + 1) dflt), f (l.getD (5 * i + 2) dflt),
-       f (l.getD (5 * i + 3) dflt), f (l.getD (5 * i + 4) dflt)]) = l.map f := by
-  rw [show (fun i => [f (l.getD (5 * i) dflt), f (l.getD (5 * i + 1) dflt),
-        f (l.getD (5 * i + 2) dflt), f (l.getD (5 * i + 3) dflt),
-        f (l.getD (5 * i + 4) dflt)])
-      = (fun i => ([l.getD (5 * i) dflt, l.getD (5 * i + 1) dflt, l.getD (5 * i + 2) dflt,
-        l.getD (5 * i + 3) dflt, l.getD (5 * i + 4) dflt]).map f) from rfl,
-    ← List.map_flatMap, flatMap_window dflt c l hl]
-
-/-- A trace's rounds carry the bits of the rows it traversed. -/
-private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuation F} :
-    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
-      {rounds : List (ScaleRound F)},
-      Chain (Threads base) st pref rounds fin →
-      roundBits V rounds
-        = pref.flatMap fun w =>
-            [w[0].val V, w[1].val V, w[2].val V, w[3].val V, w[4].val V]
-  | _, _, [], _, h => by rw [h.1]; rfl
-  | _, _, _ :: _, _, h => by
-    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
-    obtain ⟨-, -, -, hb0, hb1, hb2, hb3, hb4⟩ := hgrant
-    rw [roundBits, List.flatMap_cons, ← roundBits, threads_rows hrest,
-      List.flatMap_cons, hb0, hb1, hb2, hb3, hb4]
-
-open Kimchi.Gate.VarBaseMul (Run runBits bitsRegister bitsVal accX accY accN gateLadder) in
-/-- A satisfied trace from the doubled seed is one of the model's runs: `Run.ofList`
-takes the trace's readings, `varBaseMul_off` reads the ladder off it under the regime,
-and `chain_accN` reads the register. -/
-private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuation F)
-    {base P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 5)}
-    {rounds : List (ScaleRound F)} {fin : AffinePoint (FVar F) × FVar F}
-    (T : d.W.Point)
-    (hthr : Chain (Threads base) (P0, .const 0) pref rounds fin)
-    (hpay : ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r))
-    (hT : OnCurveAt d.W V base T)
-    (hP0 : OnCurveAt d.W V P0 ((2 : ℤ) • T)) :
-    (∀ b ∈ roundBits V rounds, b = 0 ∨ b = 1) ∧
-      (roundBits V rounds).length = 5 * pref.length ∧
-      fin.2.val V = bitsRegister (roundBits V rounds) ∧
-      ∀ _ : d.LadderRegime (5 * pref.length)
-          (2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1),
-        OnCurveAt d.W V fin.1
-          ((2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1) • T) := by
-  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
-  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
-    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  match hround : rounds, hthr with
-  | [], hthr' =>
-    obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
-    refine ⟨by simp [roundBits], by simp [roundBits], by simp [roundBits, bitsRegister, CVar.val],
-      fun _ => ?_⟩
-    simpa [roundBits, bitsVal] using hP0
-  | r₀ :: rs, hthr' =>
-    subst hround
-    set l := (r₀ :: rs).map (ScaleRound.read V) with hl
-    set dflt := ScaleRound.read V r₀ with hdflt
-    set g : ℕ → Kimchi.Gate.VarBaseMul.Witness F := fun i => l.getD i dflt with hg
-    have hlen : l.length = pref.length := by
-      rw [hl, List.length_map]
-      exact VarBaseMul.threads_length hthr'
-    have hbaseAll : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint d.W w.xT w.yT T := by
-      intro w hw
-      have hmem : ∃ r ∈ (r₀ :: rs), w = ScaleRound.read V r := by
-        rcases List.mem_cons.mp hw with rfl | hw
-        · exact ⟨r₀, by simp, rfl⟩
-        · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
-          exact ⟨r, hr, rfl⟩
-      obtain ⟨r, hr, rfl⟩ := hmem
-      show Kimchi.Gate.AddComplete.IsPoint d.W (r.base.x.val V) (r.base.y.val V) T
-      rw [VarBaseMul.threads_base hthr' r hr]
-      exact hT
-    have hrun : Run d.W T g l.length :=
-      Kimchi.Gate.VarBaseMul.Run.ofList d.W T l dflt
-        (fun w hw => by
-          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
-          exact hpay r hr)
-        hbaseAll
-        (by
-          rw [hl]
-          refine (List.isChain_map _).mpr ?_
-          refine (VarBaseMul.threads_link hthr').imp fun a b hab => ?_
-          exact ⟨⟨congrArg (·.val V) (congrArg AffinePoint.x hab.1),
-            congrArg (·.val V) (congrArg AffinePoint.y hab.1)⟩,
-            congrArg (·.val V) hab.2⟩)
-        (by
-          obtain ⟨hp0, -⟩ := VarBaseMul.threads_head hthr'
-          show Kimchi.Gate.AddComplete.IsPoint d.W (r₀.acc0.x.val V) (r₀.acc0.y.val V) _
-          rw [hp0]
-          exact hP0)
-    -- the run's bit stream is the rounds'
-    have hbits : runBits g l.length = roundBits V (r₀ :: rs) := by
-      rw [hg, Kimchi.Gate.VarBaseMul.runBits_getD, hl, roundBits, List.flatMap_map]
-      rfl
-    -- the run closes where the trace does
-    obtain ⟨hax, hay, han⟩ :=
-      Kimchi.Gate.VarBaseMul.acc_getD_length l (by simp [hl]) dflt
-    obtain ⟨hlast5, hlastN⟩ := VarBaseMul.threads_last hthr'
-    have hlastl : l.getLast (by simp [hl])
-        = ScaleRound.read V ((r₀ :: rs).getLast (by simp)) := List.getLast_map _
-    have hfinx : accX g l.length = fin.1.x.val V := by
-      rw [hg, hax, hlastl]
-      show ((r₀ :: rs).getLast (by simp)).acc5.x.val V = _
-      rw [hlast5]
-    have hfiny : accY g l.length = fin.1.y.val V := by
-      rw [hg, hay, hlastl]
-      show ((r₀ :: rs).getLast (by simp)).acc5.y.val V = _
-      rw [hlast5]
-    have hfinn : accN g l.length = fin.2.val V := by
-      rw [hg, han, hlastl]
-      show ((r₀ :: rs).getLast (by simp)).nNext.val V = _
-      rw [hlastN]
-    -- the register, from the run's own fold
-    have hzero : accN g 0 = 0 := by
-      obtain ⟨-, hn0⟩ := VarBaseMul.threads_head hthr'
-      show (l.getD 0 dflt).n = 0
-      rw [hl]
-      show r₀.nPrev.val V = 0
-      rw [hn0]
-      simp [CVar.val]
-    have hreg : fin.2.val V = bitsRegister (roundBits V (r₀ :: rs)) := by
-      rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hrun, hzero, mul_zero,
-        zero_add, hbits]
-    refine ⟨?_, ?_, hreg, fun hregime => ?_⟩
-    · rw [← hbits]
-      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hrun.holds
-    · rw [← VarBaseMul.threads_length hthr', roundBits, List.length_flatMap]
-      simp
-      omega
-    · rw [← hlen] at hregime ⊢
-      simp only [HasCurve.LadderRegime] at hregime
-      have hs : gateLadder g (5 * l.length)
-          = 2 * bitsVal (roundBits V (r₀ :: rs)) + 2 ^ (5 * l.length) + 1 := by
-        rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
-          Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
-      obtain ⟨hfin', hpt, -⟩ :=
-        Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
-          (gateLadder g (5 * l.length)) hrun d.two_ne d.odd rfl (by rw [hs]; exact hregime)
-      have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
-        rw [← hfinx, ← hfiny]
-        exact hfin'
-      refine ⟨hns, ?_⟩
-      rw [← hs, ← hpt]
-      congr 1
-
-/-! ## Completeness
-
-The loop emits no row of its own — a round only witnesses its advice — so the ladder's
-steps owe nothing but readability, and every row is judged at the one `varBaseMul`
-constraint after the loop. What discharges it is the model's `chain_complete` on the
-honest walk, which the run's readings are shown to be. -/
 
 /-- The rows the ladder is handed: five bit variables in scope. -/
 private def BitRow [Field F] (st₁ : ProverState F) (bs : Vector (FVar F) 5) : Prop :=
@@ -811,6 +494,290 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
     rw [hW]
     rfl
 
+end VarBaseMul
+
+attribute [irreducible] nAccWit bitWit scaleRound
+
+/-! ## The ladder
+
+The payload reads each round on its own — a `ScaleRound` carries all 26 cells, its outputs
+included — so the trace's job is only to say that every round shares the base, opens where
+the previous one closed, and starts at the doubled seed. That is what
+`Kimchi.Gate.VarBaseMul.Run` asks for.
+
+The loop emits no row of its own, so the ladder's steps owe nothing but readability, and
+every row is judged at the one `varBaseMul` constraint after the loop. What discharges it
+is the model's `chain_complete` on the honest walk, which the run's readings are shown to
+be. -/
+
+/-- What `varBaseMul` hands back (PS's `{ g, lsbBits }` record): the scalar multiple
+and the scalar's full bit decomposition, which `scaleFast2` pins. -/
+structure VarBaseMulResult (n : ℕ) (F : Type) where
+  /-- The computed multiple. -/
+  g : AffinePoint (FVar F)
+  /-- The scalar's `n` witnessed bits, LSB-first. -/
+  lsbBits : Vector (FVar F) n
+
+/-- The variable-base scalar multiplication (PS `varBaseMul`; OCaml
+`scale_fast_unpack`): seal the base, witness the scalar's `n` LSB bits, build
+`acc = [2]·T` with one `addFast`, walk the top `5 * chunks` bits MSB-first in 5-bit
+rows — per row the register witness then five bit-step quintets — pin the final
+register to the scalar, and emit one `varBaseMul` constraint. -/
+def varBaseMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [KimchiSystem F c] (n chunks : ℕ) (base' : AffinePoint (FVar F))
+    (scalar : Type1 (FVar F)) : CircuitM F c (VarBaseMulResult n F) := do
+  let base ← sealPoint base'
+  let lsbBits ← witness (val := Vector F n) (lsbBitsWit n scalar.val)
+  let p ← addFast .checkFinite base base
+  let msb : List (FVar F) := (lsbBits.toList.take (5 * chunks)).reverse
+  let window : ℕ → Vector (FVar F) 5 := fun i =>
+    Vector.ofFn fun j => msb.getD (5 * i + j.1) (.const 0)
+  let (rounds, fin) ← mapAccumM (scaleRound base)
+    (p.p, .const 0) ((List.range chunks).map window)
+  addConstraint (KimchiSystem.varBaseMul rounds)
+  assertEqual fin.2 scalar.val
+  pure ⟨fin.1, lsbBits⟩
+
+namespace VarBaseMul
+
+variable {F c : Type}
+
+/-- Every round of a trace reads the same base. -/
+private theorem threads_base {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin → ∀ r ∈ rounds, r.base = base
+  | _, _, [], _, h, r, hr => by rw [h.1] at hr; simp at hr
+  | _, _, _ :: _, _, h, r, hr => by
+    obtain ⟨r', tail, mid, rfl, hgrant, hrest⟩ := h
+    rcases List.mem_cons.mp hr with rfl | hr
+    · exact hgrant.1
+    · exact threads_base hrest r hr
+
+/-- A trace's first round opens at the seed accumulators. -/
+private theorem threads_head {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
+      Chain (Threads base) st pref (r₀ :: rs) fin → r₀.acc0 = st.1 ∧ r₀.nPrev = st.2
+  | _, _, [], _, _, h => absurd h.1 (by simp)
+  | _, _, _ :: _, _, _, h => by
+    obtain ⟨r', tail, mid, heq, hgrant, -⟩ := h
+    injection heq with hr _
+    subst hr
+    exact hgrant.2.1
+
+/-- A trace's rounds link: each opens where the previous closed. -/
+private theorem threads_link {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin →
+      rounds.IsChain fun a b => b.acc0 = a.acc5 ∧ b.nPrev = a.nNext
+  | _, _, [], _, h => by rw [h.1]; simp
+  | _, _, _ :: _, _, h => by
+    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
+    refine (threads_link hrest).cons ?_
+    cases tail with
+    | nil => simp
+    | cons r' ts =>
+      obtain ⟨hp, hn⟩ := threads_head hrest
+      simp only [List.head?_cons, Option.mem_def, Option.some.injEq, forall_eq']
+      exact ⟨by rw [hp, hgrant.2.2.1.1], by rw [hn, hgrant.2.2.1.2]⟩
+
+/-- A trace closes at its last round's outputs. -/
+private theorem threads_last {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
+      Chain (Threads base) st pref (r₀ :: rs) fin →
+      ((r₀ :: rs).getLast (by simp)).acc5 = fin.1
+        ∧ ((r₀ :: rs).getLast (by simp)).nNext = fin.2
+  | _, _, [], _, _, h => absurd h.1 (by simp)
+  | _, _, _ :: _, r₀, rs, h => by
+    obtain ⟨r, tail, mid, heq, hgrant, hrest⟩ := h
+    injection heq with hr ht
+    subst hr ht
+    cases rs with
+    | nil =>
+      obtain ⟨-, rfl⟩ := Chain.of_nil_out hrest
+      exact hgrant.2.2.1
+    | cons r₁ ts =>
+      rw [List.getLast_cons (by simp)]
+      exact threads_last hrest
+
+/-- A trace's rounds are as many as the rows it traversed. -/
+private theorem threads_length {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin → rounds.length = pref.length
+  | _, _, [], _, h => by rw [h.1]; rfl
+  | _, _, _ :: _, _, h => by
+    obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
+    rw [List.length_cons, List.length_cons, threads_length hrest]
+
+/-- Flattening a list's five-wide windows recovers the list. -/
+private theorem flatMap_window {α : Type} (dflt : α) (c : ℕ) (l : List α)
+    (hl : l.length = 5 * c) :
+    (List.range c).flatMap (fun i =>
+      [l.getD (5 * i) dflt, l.getD (5 * i + 1) dflt, l.getD (5 * i + 2) dflt,
+       l.getD (5 * i + 3) dflt, l.getD (5 * i + 4) dflt]) = l := by
+  rw [Kimchi.Gate.VarBaseMul.flatMap_range_window (fun i => l.getD i dflt) c]
+  refine List.ext_getElem (by simp [hl]) (fun i h1 h2 => ?_)
+  simp only [List.getElem_map, List.getElem_range]
+  rw [List.getD_eq_getElem _ _ (by simpa [hl] using h1)]
+
+/-- The bit stream a round list carries, MSB-first: the rounds' five bits, read and
+concatenated. -/
+private def roundBits [Field F] (V : Valuation F) (rounds : List (ScaleRound F)) : List F :=
+  rounds.flatMap fun r =>
+    [r.bit0.val V, r.bit1.val V, r.bit2.val V, r.bit3.val V, r.bit4.val V]
+
+/-- Flattening a list's five-wide windows, read entrywise, recovers the readings. -/
+private theorem flatMap_window_map {α β : Type} (f : α → β) (dflt : α) (c : ℕ)
+    (l : List α) (hl : l.length = 5 * c) :
+    (List.range c).flatMap (fun i =>
+      [f (l.getD (5 * i) dflt), f (l.getD (5 * i + 1) dflt), f (l.getD (5 * i + 2) dflt),
+       f (l.getD (5 * i + 3) dflt), f (l.getD (5 * i + 4) dflt)]) = l.map f := by
+  rw [show (fun i => [f (l.getD (5 * i) dflt), f (l.getD (5 * i + 1) dflt),
+        f (l.getD (5 * i + 2) dflt), f (l.getD (5 * i + 3) dflt),
+        f (l.getD (5 * i + 4) dflt)])
+      = (fun i => ([l.getD (5 * i) dflt, l.getD (5 * i + 1) dflt, l.getD (5 * i + 2) dflt,
+        l.getD (5 * i + 3) dflt, l.getD (5 * i + 4) dflt]).map f) from rfl,
+    ← List.map_flatMap, flatMap_window dflt c l hl]
+
+/-- A trace's rounds carry the bits of the rows it traversed. -/
+private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuation F} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin →
+      roundBits V rounds
+        = pref.flatMap fun w =>
+            [w[0].val V, w[1].val V, w[2].val V, w[3].val V, w[4].val V]
+  | _, _, [], _, h => by rw [h.1]; rfl
+  | _, _, _ :: _, _, h => by
+    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
+    obtain ⟨-, -, -, hb0, hb1, hb2, hb3, hb4⟩ := hgrant
+    rw [roundBits, List.flatMap_cons, ← roundBits, threads_rows hrest,
+      List.flatMap_cons, hb0, hb1, hb2, hb3, hb4]
+
+open Kimchi.Gate.VarBaseMul (Run runBits bitsRegister bitsVal accX accY accN gateLadder) in
+/-- A satisfied trace from the doubled seed is one of the model's runs: `Run.ofList`
+takes the trace's readings, `varBaseMul_off` reads the ladder off it under the regime,
+and `chain_accN` reads the register. -/
+private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuation F)
+    {base P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 5)}
+    {rounds : List (ScaleRound F)} {fin : AffinePoint (FVar F) × FVar F}
+    (T : d.W.Point)
+    (hthr : Chain (Threads base) (P0, .const 0) pref rounds fin)
+    (hpay : ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read V r))
+    (hT : OnCurveAt d.W V base T)
+    (hP0 : OnCurveAt d.W V P0 ((2 : ℤ) • T)) :
+    (∀ b ∈ roundBits V rounds, b = 0 ∨ b = 1) ∧
+      (roundBits V rounds).length = 5 * pref.length ∧
+      fin.2.val V = bitsRegister (roundBits V rounds) ∧
+      ∀ _ : d.LadderRegime (5 * pref.length)
+          (2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1),
+        OnCurveAt d.W V fin.1
+          ((2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1) • T) := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  match hround : rounds, hthr with
+  | [], hthr' =>
+    obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
+    refine ⟨by simp [roundBits], by simp [roundBits], by simp [roundBits, bitsRegister, CVar.val],
+      fun _ => ?_⟩
+    simpa [roundBits, bitsVal] using hP0
+  | r₀ :: rs, hthr' =>
+    subst hround
+    set l := (r₀ :: rs).map (ScaleRound.read V) with hl
+    set dflt := ScaleRound.read V r₀ with hdflt
+    set g : ℕ → Kimchi.Gate.VarBaseMul.Witness F := fun i => l.getD i dflt with hg
+    have hlen : l.length = pref.length := by
+      rw [hl, List.length_map]
+      exact VarBaseMul.threads_length hthr'
+    have hbaseAll : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint d.W w.xT w.yT T := by
+      intro w hw
+      have hmem : ∃ r ∈ (r₀ :: rs), w = ScaleRound.read V r := by
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact ⟨r₀, by simp, rfl⟩
+        · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
+          exact ⟨r, hr, rfl⟩
+      obtain ⟨r, hr, rfl⟩ := hmem
+      show Kimchi.Gate.AddComplete.IsPoint d.W (r.base.x.val V) (r.base.y.val V) T
+      rw [VarBaseMul.threads_base hthr' r hr]
+      exact hT
+    have hrun : Run d.W T g l.length :=
+      Kimchi.Gate.VarBaseMul.Run.ofList d.W T l dflt
+        (fun w hw => by
+          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (hl ▸ hw)
+          exact hpay r hr)
+        hbaseAll
+        (by
+          rw [hl]
+          refine (List.isChain_map _).mpr ?_
+          refine (VarBaseMul.threads_link hthr').imp fun a b hab => ?_
+          exact ⟨⟨congrArg (·.val V) (congrArg AffinePoint.x hab.1),
+            congrArg (·.val V) (congrArg AffinePoint.y hab.1)⟩,
+            congrArg (·.val V) hab.2⟩)
+        (by
+          obtain ⟨hp0, -⟩ := VarBaseMul.threads_head hthr'
+          show Kimchi.Gate.AddComplete.IsPoint d.W (r₀.acc0.x.val V) (r₀.acc0.y.val V) _
+          rw [hp0]
+          exact hP0)
+    -- the run's bit stream is the rounds'
+    have hbits : runBits g l.length = roundBits V (r₀ :: rs) := by
+      rw [hg, Kimchi.Gate.VarBaseMul.runBits_getD, hl, roundBits, List.flatMap_map]
+      rfl
+    -- the run closes where the trace does
+    obtain ⟨hax, hay, han⟩ :=
+      Kimchi.Gate.VarBaseMul.acc_getD_length l (by simp [hl]) dflt
+    obtain ⟨hlast5, hlastN⟩ := VarBaseMul.threads_last hthr'
+    have hlastl : l.getLast (by simp [hl])
+        = ScaleRound.read V ((r₀ :: rs).getLast (by simp)) := List.getLast_map _
+    have hfinx : accX g l.length = fin.1.x.val V := by
+      rw [hg, hax, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).acc5.x.val V = _
+      rw [hlast5]
+    have hfiny : accY g l.length = fin.1.y.val V := by
+      rw [hg, hay, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).acc5.y.val V = _
+      rw [hlast5]
+    have hfinn : accN g l.length = fin.2.val V := by
+      rw [hg, han, hlastl]
+      show ((r₀ :: rs).getLast (by simp)).nNext.val V = _
+      rw [hlastN]
+    -- the register, from the run's own fold
+    have hzero : accN g 0 = 0 := by
+      obtain ⟨-, hn0⟩ := VarBaseMul.threads_head hthr'
+      show (l.getD 0 dflt).n = 0
+      rw [hl]
+      show r₀.nPrev.val V = 0
+      rw [hn0]
+      simp [CVar.val]
+    have hreg : fin.2.val V = bitsRegister (roundBits V (r₀ :: rs)) := by
+      rw [← hfinn, Kimchi.Gate.VarBaseMul.chain_accN l.length g hrun, hzero, mul_zero,
+        zero_add, hbits]
+    refine ⟨?_, ?_, hreg, fun hregime => ?_⟩
+    · rw [← hbits]
+      exact Kimchi.Gate.VarBaseMul.runBits_bool l.length g hrun.holds
+    · rw [← VarBaseMul.threads_length hthr', roundBits, List.length_flatMap]
+      simp
+      omega
+    · rw [← hlen] at hregime ⊢
+      simp only [HasCurve.LadderRegime] at hregime
+      have hs : gateLadder g (5 * l.length)
+          = 2 * bitsVal (roundBits V (r₀ :: rs)) + 2 ^ (5 * l.length) + 1 := by
+        rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
+          Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
+      obtain ⟨hfin', hpt, -⟩ :=
+        Kimchi.Gate.VarBaseMul.varBaseMul_off d.W l.length g T
+          (gateLadder g (5 * l.length)) hrun d.two_ne d.odd rfl (by rw [hs]; exact hregime)
+      have hns : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
+        rw [← hfinx, ← hfiny]
+        exact hfin'
+      refine ⟨hns, ?_⟩
+      rw [← hs, ← hpt]
+      congr 1
+
 /-- The trace's readings are the model's honest walk: round `i` reads as `chainBuild`'s
 row `i`, from the accumulator the trace opened on and the bits it was handed. -/
 private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
@@ -890,6 +857,67 @@ private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (F
     exact ⟨r, tail, mid, rfl, hg.1, ChainAt.threads hrest⟩
 
 end VarBaseMul
+
+open Std.Do WeierstrassCurve.Affine in
+/-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
+the Type1 decode of the scalar's own bits — under the ladder's regime, which is what
+prices the ladder's non-degeneracy. -/
+theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
+    (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
+    ⦃⌜True⌝⦄
+    varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
+    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
+      ∃ bits : List F,
+        (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
+        bits = ((r.lsbBits.toList.take (5 * chunks)).reverse).map (·.val V) ∧
+        scalar.val.val V = Kimchi.Gate.VarBaseMul.bitsRegister bits ∧
+        ∀ _ : d.LadderRegime (5 * chunks)
+            (2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1),
+          OnCurveAt d.W V r.g
+            ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)⌝⦄ := by
+  have hloop := fun (b : AffinePoint (FVar F)) =>
+    mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
+      (fun st bs => VarBaseMul.scaleRound_spec b st bs)
+  unfold varBaseMul
+  mvcgen [hloop]
+  case vc1.W => exact d.W
+  case vc2.ha => exact d.short
+  case vc3.htwo => exact d.two_ne
+  rename_i _ sealed _ hseal bits _ _ p _ loop _ hchain _ _ hpay _ _ hpin hadd
+  intro T hT
+  obtain ⟨hTns, hTeq⟩ := hT
+  have hTs : OnCurveAt d.W V sealed T := by
+    show ∃ h : d.W.Nonsingular (sealed.x.val V) (sealed.y.val V), _
+    rw [hseal.1, hseal.2]
+    exact ⟨hTns, hTeq⟩
+  have h2T : T + T ≠ 0 :=
+    d.two_torsion_free T (by rw [hTeq]; exact Point.some_ne_zero _)
+  have hP0 : OnCurveAt d.W V p.p ((2 : ℤ) • T) := by
+    rw [two_zsmul]
+    rcases hadd.2 T T hTs hTs h2T with ⟨hinf, -⟩ | ⟨-, h3⟩
+    · exact absurd (hadd.1.symm.trans hinf) (by norm_num)
+    · exact h3
+  obtain ⟨hbool, hlen, hreg, hpoint⟩ := VarBaseMul.run_sound d V T hchain hpay hTs hP0
+  -- the rounds' bits are the windows', and the windows flatten to the reversed prefix
+  have hmsb : ((bits.toList.take (5 * chunks)).reverse).length = 5 * chunks := by
+    simp only [List.length_reverse, List.length_take, Vector.length_toList]
+    omega
+  have hbits : VarBaseMul.roundBits V loop.1
+      = (((bits.toList.take (5 * chunks)).reverse).map (·.val V)) := by
+    rw [VarBaseMul.threads_rows hchain, List.flatMap_map]
+    exact VarBaseMul.flatMap_window_map (·.val V) (CVar.const 0) chunks _ hmsb
+
+  have hpreflen : ((List.range chunks).map fun i =>
+      (Vector.ofFn fun j : Fin 5 =>
+        ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
+          (CVar.const 0))).length = chunks := by simp
+  refine ⟨VarBaseMul.roundBits V loop.1, hbool, ?_, hbits, ?_, ?_⟩
+  · rw [hlen, hpreflen]
+  · rw [← hpin, hreg]
+  · intro hregime
+    rw [hpreflen] at hpoint
+    exact hpoint hregime
 
 open WeierstrassCurve.Affine in
 /-- **Completeness.** From a readable on-curve base and a scalar inside the ladder's
@@ -1156,67 +1184,17 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     exact ⟨scoped_affinePoint.mpr ⟨hinv₄.2.1.mono hnv₅, hinv₄.2.2.1.mono hnv₅⟩,
       hpoint hregime⟩
 
+attribute [irreducible] lsbBitsWit varBaseMul
 
-open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
-the Type1 decode of the scalar's own bits — under the ladder's regime, which is what
-prices the ladder's non-degeneracy. -/
-theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
-    (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
-    ⦃⌜True⌝⦄
-    varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
-    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
-      ∃ bits : List F,
-        (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
-        bits = ((r.lsbBits.toList.take (5 * chunks)).reverse).map (·.val V) ∧
-        scalar.val.val V = Kimchi.Gate.VarBaseMul.bitsRegister bits ∧
-        ∀ _ : d.LadderRegime (5 * chunks)
-            (2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1),
-          OnCurveAt d.W V r.g
-            ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)⌝⦄ := by
-  have hloop := fun (b : AffinePoint (FVar F)) =>
-    mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
-      (fun st bs => VarBaseMul.scaleRound_spec b st bs)
-  unfold varBaseMul
-  mvcgen [hloop]
-  case vc1.W => exact d.W
-  case vc2.ha => exact d.short
-  case vc3.htwo => exact d.two_ne
-  rename_i _ sealed _ hseal bits _ _ p _ loop _ hchain _ _ hpay _ _ hpin hadd
-  intro T hT
-  obtain ⟨hTns, hTeq⟩ := hT
-  have hTs : OnCurveAt d.W V sealed T := by
-    show ∃ h : d.W.Nonsingular (sealed.x.val V) (sealed.y.val V), _
-    rw [hseal.1, hseal.2]
-    exact ⟨hTns, hTeq⟩
-  have h2T : T + T ≠ 0 :=
-    d.two_torsion_free T (by rw [hTeq]; exact Point.some_ne_zero _)
-  have hP0 : OnCurveAt d.W V p.p ((2 : ℤ) • T) := by
-    rw [two_zsmul]
-    rcases hadd.2 T T hTs hTs h2T with ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd (hadd.1.symm.trans hinf) (by norm_num)
-    · exact h3
-  obtain ⟨hbool, hlen, hreg, hpoint⟩ := VarBaseMul.run_sound d V T hchain hpay hTs hP0
-  -- the rounds' bits are the windows', and the windows flatten to the reversed prefix
-  have hmsb : ((bits.toList.take (5 * chunks)).reverse).length = 5 * chunks := by
-    simp only [List.length_reverse, List.length_take, Vector.length_toList]
-    omega
-  have hbits : VarBaseMul.roundBits V loop.1
-      = (((bits.toList.take (5 * chunks)).reverse).map (·.val V)) := by
-    rw [VarBaseMul.threads_rows hchain, List.flatMap_map]
-    exact VarBaseMul.flatMap_window_map (·.val V) (CVar.const 0) chunks _ hmsb
+/-! ## `scaleFast1` -/
 
-  have hpreflen : ((List.range chunks).map fun i =>
-      (Vector.ofFn fun j : Fin 5 =>
-        ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
-          (CVar.const 0))).length = chunks := by simp
-  refine ⟨VarBaseMul.roundBits V loop.1, hbool, ?_, hbits, ?_, ?_⟩
-  · rw [hlen, hpreflen]
-  · rw [← hpin, hreg]
-  · intro hregime
-    rw [hpreflen] at hpoint
-    exact hpoint hregime
+/-- `scaleFast1 g a ~ [fromShifted a]·g` (PS docstring) — the `Type1` path, for a
+scalar field no larger than the circuit field. Drops the bits. -/
+def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [KimchiSystem F c] (n chunks : ℕ) (p : AffinePoint (FVar F))
+    (t : Type1 (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
+  let r ← varBaseMul n chunks p t
+  pure r.g
 
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast1`). The ladder's statement in scalar currency: the result
@@ -1261,6 +1239,27 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   obtain ⟨r, st₁, hrun, hsat, -, hpt⟩ :=
     varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime st hst
   exact ⟨r.g, st₁, hrun.bind rfl, fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure, hpt⟩
+
+attribute [irreducible] scaleFast1
+
+/-! ## `scaleFast2` -/
+
+/-- `scaleFast2 g (sDiv2, sOdd) ~ [2·sDiv2 + sOdd + 2^n]·g` — the split path, for a
+scalar field larger than the circuit field: run the ladder on `sDiv2`, pin its high
+bits to zero, and fold the parity in by conditionally subtracting the base. -/
+def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
+    (sDiv2 : FVar F) (sOdd : BoolVar F) : CircuitM F c (AffinePoint (FVar F)) := do
+  let r ← varBaseMul n chunks base ⟨sDiv2⟩
+  (r.lsbBits.toList.drop sDiv2Bits).forM fun bit => assertEqual bit (.const 0)
+  -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation
+  let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.negate_ base.y⟩
+  let q ← addFast .checkFinite r.g negBase
+  -- the point conditional selects coordinatewise, `y` BEFORE `x`: PS's record `if_`
+  -- builds right-to-left (the fixture pins the emission order)
+  let y ← select sOdd r.g.y q.p.y
+  let x ← select sOdd r.g.x q.p.x
+  pure ⟨x, y⟩
 
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2`). -/
@@ -1547,6 +1546,31 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       exact ((hG₂.mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))
         ((hle₃.trans hle₄).trans hle₅)).2)
 
+attribute [irreducible] scaleFast2
+
+/-! ## The parity split -/
+
+/-- The parity split of a field value (PS `splitField`): `s = 2·sDiv2 + sOdd`. -/
+def splitField [Field F] [ToNat F] (s : F) : F × Bool :=
+  let odd := (ToNat.toNat s) % 2 = 1
+  ((if odd then s - 1 else s) / 2, odd)
+
+/-- The joined value of a parity split (PS `joinField`). -/
+def joinField [Field F] (sDiv2 : F) (sOdd : Bool) : F :=
+  2 * sDiv2 + (if sOdd then 1 else 0)
+
+private def splitFieldWit [Field F] [ToNat F] (s : FVar F) : AsProver F (F × Bool) := do
+  let v ← AsProver.readCVar s
+  pure (splitField v)
+
+/-- Witness a parity split and constrain it (PS `splitFieldVar`):
+`s = 2·sDiv2 + sOdd`, one linear assert. -/
+def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    (s : FVar F) : CircuitM F c (FVar F × BoolVar F) := do
+  let r ← witness (val := F × Bool) (splitFieldWit s)
+  assertEqual s (CVar.add_ (CVar.scale_ 2 r.1) ↑r.2)
+  pure r
+
 open Std.Do in
 /-- **Soundness** (`splitFieldVar`). The witnessed pair is a parity split of the
 scalar: a bit, and a half the one linear row pins. -/
@@ -1603,6 +1627,17 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
     hscW.1.mono hnv₂, hscW.2.mono hnv₂,
     by rw [CVar.val_of_le hle₂ hscW.1, hrdW.1],
     by rw [CVar.val_of_le hle₂ hscW.2, hbb]⟩
+
+attribute [irreducible] splitFieldWit splitFieldVar
+
+/-! ## `scaleFast2'` -/
+
+/-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. -/
+def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
+    (s : FVar F) : CircuitM F c (AffinePoint (FVar F)) := do
+  let (sDiv2, sOdd) ← splitFieldVar s
+  scaleFast2 n chunks sDiv2Bits base sDiv2 sOdd
 
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2'`). The split path at a raw scalar: the ladder's half,
@@ -1667,5 +1702,7 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   exact ⟨g, st₂, hrun₁.bind hrun₂, fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
       (hsat₂ hnv hle), hpt⟩
+
+attribute [irreducible] scaleFast2'
 
 end Snarky.Kimchi
