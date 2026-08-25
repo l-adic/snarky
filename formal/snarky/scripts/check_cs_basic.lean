@@ -41,6 +41,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
+import Snarky.Kimchi.Circuit.VarBaseMul
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -219,6 +220,20 @@ def endoMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   endoMul Pasta.pallasEndo 32 input.1 ⟨input.2⟩
 
+/-- `var_base_mul_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.VarBaseMul.scaleFast1` at 51 chunks — the full 255-bit
+ladder). -/
+def varBaseMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  scaleFast1 255 51 input.1 ⟨input.2⟩
+
+/-- `scale_fast2_128_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.VarBaseMul.scaleFast2'` at 26 chunks / 127 `sDiv2` bits — the
+128-bit split-scalar path, exercising `splitFieldVar` and `scaleFast2`). -/
+def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  scaleFast2' 255 26 127 input.1 input.2
+
 /-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
 def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
@@ -294,7 +309,11 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("endo_scalar_step_circuit",
       compareWith (a := Fp) (b := Fp) endoScalarCircuit),
     ("endo_mul_step_circuit",
-      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit) ]
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit),
+    ("var_base_mul_step_circuit",
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) varBaseMulCircuit),
+    ("scale_fast2_128_step_circuit",
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
