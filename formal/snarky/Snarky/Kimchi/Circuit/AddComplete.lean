@@ -90,114 +90,81 @@ structure AddResult (F : Type) where
   /-- The infinity flag: constant `false` under `checkFinite`, else witnessed. -/
   isInfinity : BoolVar F
 
-namespace AddFast
-
-/-- `sameX`'s witness: whether the operand x-coordinates coincide. Public only for
-the gadget laws. -/
-private def sameXWit [Add F] [Mul F] [DecidableEq F] (p1 p2 : AffinePoint (FVar F)) :
-    AsProver F Bool := do
-  let x1 ← AsProver.readCVar p1.x
-  let x2 ← AsProver.readCVar p2.x
-  pure (decide (x1 = x2))
-
-/-- `inf`'s witness (`dontCheckFinite` mode): same x-coordinates with different
-y-coordinates — the inverse-pair test. Public only for the gadget laws. -/
-private def infWit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)]
-    (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F Bool := do
-  let sx ← readVar (val := Bool) sameX
-  let y1 ← AsProver.readCVar p1.y
-  let y2 ← AsProver.readCVar p2.y
-  pure (sx && !(decide (y1 = y2)))
-
-/-- `infZ`'s witness: `0` on equal y-coordinates, else the inverse of `y₂ − y₁` when
-the x-coordinates coincide (pinning the infinity flag), else `0`. Public only for the
-gadget laws. -/
-private def infZWit [Field F] [DecidableEq F] (p1 p2 : AffinePoint (FVar F))
-    (sameX : BoolVar F) : AsProver F F := do
-  let y1 ← AsProver.readCVar p1.y
-  let y2 ← AsProver.readCVar p2.y
-  if y1 = y2 then pure 0
-  else do
-    let sx ← readVar (val := Bool) sameX
-    if sx then pure (y2 - y1)⁻¹ else pure 0
-
-/-- `x21Inv`'s witness: the inverse of `x₂ − x₁` when the x-coordinates differ
-(pinning `sameX`), else `0`. Public only for the gadget laws. -/
-private def x21InvWit [Field F] [DecidableEq F] (p1 p2 : AffinePoint (FVar F))
-    (sameX : BoolVar F) : AsProver F F := do
-  let sx ← readVar (val := Bool) sameX
-  if sx then pure 0
-  else do
-    let x1 ← AsProver.readCVar p1.x
-    let x2 ← AsProver.readCVar p2.x
-    pure (x2 - x1)⁻¹
-
-/-- The slope's witness: tangent `3x₁²/(2y₁)` in the equal-x case, else the secant
-`(y₂−y₁)/(x₂−x₁)`. Public only for the gadget laws. -/
-private def slopeWit [Field F] [DecidableEq F] (p1 p2 : AffinePoint (FVar F))
-    (sameX : BoolVar F) : AsProver F F := do
-  let sx ← readVar (val := Bool) sameX
-  if sx then do
-    let x1 ← AsProver.readCVar p1.x
-    let y1 ← AsProver.readCVar p1.y
-    pure (3 * x1 * x1 / (2 * y1))
-  else do
-    let y1 ← AsProver.readCVar p1.y
-    let y2 ← AsProver.readCVar p2.y
-    let x1 ← AsProver.readCVar p1.x
-    let x2 ← AsProver.readCVar p2.x
-    pure ((y2 - y1) / (x2 - x1))
-
-/-- `x3`'s witness: `s² − (x₁ + x₂)`. Public only for the gadget laws. -/
-private def x3Wit [Add F] [Mul F] [Sub F] (p1 p2 : AffinePoint (FVar F)) (s : FVar F) :
-    AsProver F F := do
-  let sv ← AsProver.readCVar s
-  let x1 ← AsProver.readCVar p1.x
-  let x2 ← AsProver.readCVar p2.x
-  pure (sv * sv - (x1 + x2))
-
-/-- `y3`'s witness: `s·(x₁ − x₃) − y₁`. Public only for the gadget laws. -/
-private def y3Wit [Add F] [Mul F] [Sub F] (p1 : AffinePoint (FVar F)) (s x3 : FVar F) :
-    AsProver F F := do
-  let sv ← AsProver.readCVar s
-  let x1 ← AsProver.readCVar p1.x
-  let x3v ← AsProver.readCVar x3
-  let y1 ← AsProver.readCVar p1.y
-  pure (sv * (x1 - x3v) - y1)
-
-end AddFast
-
-/-- The mode-independent suffix of `addFast`: witness the five auxiliary columns and
-emit the one `addComplete` constraint. -/
-def addFastTail [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
-    (p1 p2 : AffinePoint (FVar F)) (sameX inf : BoolVar F) :
-    CircuitM F c (AddResult F) := do
-  let infZ ← witness (val := F) (AddFast.infZWit p1 p2 sameX)
-  let x21Inv ← witness (val := F) (AddFast.x21InvWit p1 p2 sameX)
-  let s ← witness (val := F) (AddFast.slopeWit p1 p2 sameX)
-  let x3 ← witness (val := F) (AddFast.x3Wit p1 p2 s)
-  let y3 ← witness (val := F) (AddFast.y3Wit p1 s x3)
-  addConstraint (KimchiSystem.addComplete
-    { p1 := p1, p2 := p2, p3 := ⟨x3, y3⟩, inf := inf.toCVar,
-      sameX := sameX.toCVar, s := s, infZ := infZ, x21Inv := x21Inv })
-  pure ⟨⟨x3, y3⟩, inf⟩
-
 /-- Complete addition with explicit finiteness control (OCaml
 `add_fast ~check_finite`): seal both points, witness the gate's auxiliary columns in
-allocation order, emit one `addComplete` constraint. -/
+allocation order — `sameX`, the mode-dependent `inf`, `infZ`, `x21Inv`, the slope,
+then the output point — and emit one `addComplete` constraint. -/
 def addFast [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
     (finiteness : Finiteness) (p1' p2' : AffinePoint (FVar F)) :
     CircuitM F c (AddResult F) := do
   let p1 ← sealPoint p1'
   let p2 ← sealPoint p2'
-  let sameXU ← witness (val := UnChecked Bool) (.mk <$> AddFast.sameXWit p1 p2)
+  let sameXU ← witness (val := UnChecked Bool) (sameXAdvice p1 p2)
   let sameX := sameXU.val
   let inf ← match finiteness with
     | .checkFinite => pure false_
     | .dontCheckFinite => do
-      let r ← witness (val := UnChecked Bool) (.mk <$> AddFast.infWit p1 p2 sameX)
+      let r ← witness (val := UnChecked Bool) (infAdvice p1 p2 sameX)
       pure r.val
-  addFastTail p1 p2 sameX inf
+  let infZ ← witness (val := F) (infZAdvice p1 p2 sameX)
+  let x21Inv ← witness (val := F) (x21InvAdvice p1 p2 sameX)
+  let s ← witness (val := F) (slopeAdvice p1 p2 sameX)
+  let p3 ← witness (val := AffinePoint F) (sumAdvice p1 p2 s)
+  addConstraint (KimchiSystem.addComplete
+    { p1 := p1, p2 := p2, p3 := p3, inf := inf.toCVar,
+      sameX := sameX.toCVar, s := s, infZ := infZ, x21Inv := x21Inv })
+  pure ⟨p3, inf⟩
+where
+  /-- Whether the operand x-coordinates coincide. -/
+  sameXAdvice (p1 p2 : AffinePoint (FVar F)) : AsProver F (UnChecked Bool) := do
+    let x1 ← AsProver.readCVar p1.x
+    let x2 ← AsProver.readCVar p2.x
+    pure ⟨decide (x1 = x2)⟩
+  /-- The infinity flag: same x-coordinates, different y-coordinates. -/
+  infAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
+      AsProver F (UnChecked Bool) := do
+    let sx ← readVar (val := Bool) sameX
+    let y1 ← AsProver.readCVar p1.y
+    let y2 ← AsProver.readCVar p2.y
+    pure ⟨sx && !(decide (y1 = y2))⟩
+  /-- `0` on equal y-coordinates, else the inverse of `y₂ − y₁` where the
+  x-coordinates coincide — the value pinning the infinity flag. -/
+  infZAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F F := do
+    let y1 ← AsProver.readCVar p1.y
+    let y2 ← AsProver.readCVar p2.y
+    if y1 = y2 then pure 0
+    else do
+      let sx ← readVar (val := Bool) sameX
+      if sx then pure (y2 - y1)⁻¹ else pure 0
+  /-- The inverse of `x₂ − x₁` where the x-coordinates differ — the value pinning
+  `sameX`. -/
+  x21InvAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F F := do
+    let sx ← readVar (val := Bool) sameX
+    if sx then pure 0
+    else do
+      let x1 ← AsProver.readCVar p1.x
+      let x2 ← AsProver.readCVar p2.x
+      pure (x2 - x1)⁻¹
+  /-- The slope: the tangent `3x₁²/(2y₁)` where the x-coordinates coincide, else the
+  secant `(y₂−y₁)/(x₂−x₁)`. -/
+  slopeAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F F := do
+    let sx ← readVar (val := Bool) sameX
+    let x1 ← AsProver.readCVar p1.x
+    let y1 ← AsProver.readCVar p1.y
+    if sx then pure (3 * x1 * x1 / (2 * y1))
+    else do
+      let x2 ← AsProver.readCVar p2.x
+      let y2 ← AsProver.readCVar p2.y
+      pure ((y2 - y1) / (x2 - x1))
+  /-- The sum: `x₃ = s² − (x₁ + x₂)` and `y₃ = s·(x₁ − x₃) − y₁`, witnessed as the
+  one point the gate's last two columns hold. -/
+  sumAdvice (p1 p2 : AffinePoint (FVar F)) (s : FVar F) : AsProver F (AffinePoint F) := do
+    let sv ← AsProver.readCVar s
+    let x1 ← AsProver.readCVar p1.x
+    let x2 ← AsProver.readCVar p2.x
+    let y1 ← AsProver.readCVar p1.y
+    let x3 := sv * sv - (x1 + x2)
+    pure ⟨x3, sv * (x1 - x3) - y1⟩
 
 /-- Complete addition assuming finite inputs (OCaml `add_fast`'s default mode). -/
 def addComplete [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
