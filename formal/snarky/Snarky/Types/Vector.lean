@@ -79,9 +79,33 @@ def chunkVec {s n : Nat} (v : Vector α (n * s)) : Vector (Vector α s) n :=
   have hs : 0 < s := Nat.lt_of_le_of_lt (Nat.zero_le j) hj
   simp [chunkVec, Nat.add_mul_div_left _ _ hs, Nat.div_eq_of_lt hj, Nat.mod_eq_of_lt hj]
 
+/-- A chunk's entry is the flat vector's, at the flattened index. -/
+@[simp] theorem getElem_chunkVec {s n : Nat} (v : Vector α (n * s)) (r j : Nat)
+    (hr : r < n) (hj : j < s) :
+    ((chunkVec v)[r]'hr)[j]'hj = v[j + s * r]'(by
+      have h := Nat.mul_le_mul_left s hr
+      rw [Nat.mul_succ] at h
+      rw [Nat.mul_comm n s]
+      omega) := by
+  simp [chunkVec]
+
 @[simp] theorem flatten_chunkVec {s n : Nat} (v : Vector α (n * s)) :
     (chunkVec v).flatten = v := by
   ext k hk
   simp [chunkVec, Nat.mod_add_div]
+
+/-- A vector's flattening, as a list: the pieces' lists concatenated. -/
+theorem toList_flatten {s n : Nat} (vs : Vector (Vector α s) n) :
+    vs.flatten.toList = (vs.toList.map Vector.toList).flatten := by
+  simp [Vector.flatten, Array.toList_flatten, List.map_map, Function.comp_def]
+  rfl
+
+/-- The pieces' entrywise images, concatenated, are the flat vector's: chunking is a
+regrouping, so anything read off it entrywise reads off the flat vector. -/
+theorem flatten_map_chunkVec {β : Type v} {s n : Nat} (v : Vector α (n * s)) (g : α → β) :
+    ((chunkVec v).toList.map fun row => row.toList.map g).flatten = v.toList.map g := by
+  rw [show (fun row : Vector α s => row.toList.map g)
+      = (fun l : List α => l.map g) ∘ Vector.toList from rfl,
+    ← List.map_map, ← List.map_flatten, ← toList_flatten, flatten_chunkVec]
 
 end Snarky

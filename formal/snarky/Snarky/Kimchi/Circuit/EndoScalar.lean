@@ -39,18 +39,24 @@ open Snarky
 
 variable {F c : Type}
 
-/-- The crumb table the bulk witness writes: the gate model's MSB-first base-4
-expansion of the scalar, laid out eight crumbs to a row — row `r`'s entry `j` is
-crumb `8r + j`. -/
-private def crumbVals [Field F] (rows k : ℕ) : Vector (Vector F 8) rows :=
-  Vector.ofFn fun r => Vector.ofFn fun j =>
-    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) k).getD (8 * r.1 + j.1) 0
+/-- The gate model's MSB-first base-4 expansion, as a vector — the crumb stream the
+bulk witness writes. -/
+private def crumbsVec [Field F] (c k : ℕ) : Vector F c :=
+  Vector.ofFn fun i => (Kimchi.Gate.EndoScalar.crumbsOf (F := F) c k).getD i.1 0
 
-/-- The scalar's MSB-first 2-bit crumbs, eight per row. -/
+private theorem crumbsVec_toList [Field F] (c k : ℕ) :
+    (crumbsVec (F := F) c k).toList = Kimchi.Gate.EndoScalar.crumbsOf c k := by
+  rw [crumbsVec, Vector.toList_ofFn]
+  refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length])
+    fun i _ h2 => ?_
+  simp only [List.getElem_ofFn]
+  exact List.getD_eq_getElem _ _ h2
+
+/-- The scalar's MSB-first 2-bit crumbs, eight to a row. -/
 private def crumbsWit [Field F] [ToNat F] (rows : ℕ) (scalar : FVar F) :
-    AsProver F (Vector (Vector F 8) rows) := do
+    AsProver F (Vector F (rows * 8)) := do
   let v ← AsProver.readCVar scalar
-  pure (crumbVals rows (ToNat.toNat v))
+  pure (crumbsVec (rows * 8) (ToNat.toNat v))
 
 /-- One row's accumulator witness: read the threaded registers and the row's eight
 crumbs, and take the gate's canonical row's outputs
@@ -71,8 +77,8 @@ accumulators with no wrapper constraints. -/
 def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (rows : ℕ) (scalar : FVar F) :
     CircuitM F c (FVar F × FVar F × FVar F) := do
-  let crumbs ← witness (val := Vector (Vector F 8) rows) (crumbsWit rows scalar)
-  let (rounds, fin) ← mapAccumM row (.const 2, .const 2, .const 0) crumbs.toList
+  let crumbs ← witness (val := Vector F (rows * 8)) (crumbsWit rows scalar)
+  let (rounds, fin) ← mapAccumM row (.const 2, .const 2, .const 0) (chunkVec crumbs).toList
   addConstraint (KimchiSystem.endoScalar rounds)
   pure fin
 where
@@ -316,32 +322,6 @@ The honest run's rows are the gate's canonical ones — each accumulator witness
 `complete` on valid crumbs, and the trace reads as the decomposition of the scalar's
 crumb stream. The loop is `mapAccumM_complete`'s. -/
 
-/-- Flattening the row-chunked table recovers the flat MSB-first stream. -/
-private theorem flatten_ofFn_rows {F : Type} (g : ℕ → F) :
-    ∀ m : ℕ,
-      (List.ofFn fun r : Fin m => List.ofFn fun j : Fin 8 => g (8 * r.1 + j.1)).flatten
-        = (List.range (8 * m)).map g
-  | 0 => by simp
-  | m + 1 => by
-    rw [List.ofFn_succ', List.concat_eq_append, List.flatten_append]
-    simp only [Fin.val_castSucc]
-    rw [flatten_ofFn_rows g m, show 8 * (m + 1) = 8 * m + 8 by ring, List.range_add,
-      List.map_append, List.map_map]
-    congr 1
-
-/-- The bulk witness's table, flattened, is the crumb stream. -/
-private theorem crumbVals_flatten [Field F] (rows k : ℕ) :
-    ((crumbVals (F := F) rows k).toList.map Vector.toList).flatten
-      = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k := by
-  show ((Vector.ofFn _).toList.map Vector.toList).flatten = _
-  rw [Vector.toList_ofFn, List.map_ofFn]
-  refine Eq.trans (flatten_ofFn_rows
-    (fun i => (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) k).getD i 0) rows) ?_
-  refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length])
-    fun i _ h2 => ?_
-  simp only [List.getElem_map, List.getElem_range]
-  exact List.getD_eq_getElem _ _ h2
-
 /-- The rows the loop is handed: crumb variables in scope, reading as valid 2-bit
 values. -/
 private def CrumbRow [Field F] (st₁ : ProverState F) (xs : Vector (FVar F) 8) : Prop :=
@@ -484,38 +464,36 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
           (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv))) := by
   rintro st ⟨hsc, hrd⟩
   obtain ⟨cvars, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscC, hrdC⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := Vector (Vector F 8) rows)
-      (crumbsWit rows scalar) (st := st) (v := crumbVals rows (ToNat.toNat sv))
+    witness_complete (c := KimchiConstraint F) (val := Vector F (rows * 8))
+      (crumbsWit rows scalar) (st := st) (v := crumbsVec (rows * 8) (ToNat.toNat sv))
       (by
         simp only [crumbsWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hsc, hrd, Except.bind]
         rfl)
   rw [CircuitType.scoped_vector] at hscC
   rw [CircuitType.reads_vector] at hrdC
-  have hentry : ∀ (i : ℕ) (hi : i < rows) (j : ℕ) (hj : j < 8),
-      ((cvars[i]'hi)[j]'hj).Scoped st₁ ∧
-        ((cvars[i]'hi)[j]'hj).val st₁.env.get
-          = ((crumbVals (F := F) rows (ToNat.toNat sv))[i]'hi)[j]'hj :=
-    fun i hi j hj =>
-      ⟨CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp (hscC i hi) j hj),
-        CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp (hrdC i hi) j hj)⟩
-  have hP : ∀ x ∈ cvars.toList, CrumbRow st₁ x := by
+  have hentry : ∀ (i : ℕ) (hi : i < rows * 8),
+      (cvars[i]'hi).Scoped st₁ ∧
+        (cvars[i]'hi).val st₁.env.get
+          = (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (rows * 8)
+              (ToNat.toNat sv)).getD i 0 :=
+    fun i hi =>
+      ⟨CircuitType.scoped_fvar.mp (hscC i hi),
+        by simpa [crumbsVec] using CircuitType.reads_fvar.mp (hrdC i hi)⟩
+  have hP : ∀ x ∈ (chunkVec cvars).toList, CrumbRow st₁ x := by
     intro x hx cv hcv
-    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
+    obtain ⟨r, hr, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
     obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hcv)
-    refine ⟨(hentry i hi j hj).1, ?_⟩
-    have hval : ((crumbVals (F := F) rows (ToNat.toNat sv))[i]'hi)[j]'hj
-        = (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows)
-            (ToNat.toNat sv)).getD (8 * i + j) 0 := by
-      simp [crumbVals]
-    rw [(hentry i hi j hj).2, hval,
+    rw [getElem_chunkVec]
+    refine ⟨(hentry _ _).1, ?_⟩
+    rw [(hentry _ _).2,
       List.getD_eq_getElem _ _ (by rw [Kimchi.Gate.EndoScalar.crumbsOf_length]; omega)]
     exact Kimchi.Gate.EndoScalar.crumbsOf_valid _ _ _ (List.getElem_mem _)
   obtain ⟨p, st₂, hrun₂, hsat₂, hinv₂, hchainAt⟩ :=
     mapAccumM_complete (F := F) (c := KimchiConstraint F) toFieldChecked'.row
       (CrumbRow st₁) (AccInv st₁) RowGrant
       (AccInv.mono (st₁ := st₁)) RowGrant.mono (row_complete st₁)
-      (.const 2, .const 2, .const 0) cvars.toList hP st₁
+      (.const 2, .const 2, .const 0) (chunkVec cvars).toList hP st₁
       ⟨⟨Nat.le_refl _, Assignments.Le.refl _⟩, trivial, trivial, trivial⟩
   refine ⟨p.2, st₂, hrun₁.bind (hrun₂.bind (Runs.addConstraint.bind rfl)), ?_, ?_⟩
   · intro stf hnvF hleF
@@ -530,17 +508,21 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
         = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv) := by
       have hrows := chain_rows hchain
       have hflat : roundCrumbs st₂.env.get p.1
-          = (cvars.toList.map fun row => row.toList.map (·.val st₂.env.get)).flatten := by
-        rw [roundCrumbs, List.flatMap_def, ← hrows, List.map_map]
-        rfl
-      rw [hflat, ← crumbVals_flatten rows (ToNat.toNat sv)]
-      refine congrArg List.flatten (List.ext_getElem (by simp) fun i h1 h2 => ?_)
-      have hi : i < rows := by simpa using h1
+          = cvars.toList.map (·.val st₂.env.get) := by
+        rw [roundCrumbs, List.flatMap_def,
+          show (fun r : EndoScalarRound F => r.xs.toList.map (·.val st₂.env.get))
+            = (fun row : Vector (FVar F) 8 => row.toList.map (·.val st₂.env.get)) ∘ (·.xs)
+            from rfl,
+          ← List.map_map, hrows]
+        exact flatten_map_chunkVec cvars _
+      rw [hflat, Nat.mul_comm 8 rows]
+      refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length])
+        fun i _ h2 => ?_
+      have hi : i < rows * 8 := by
+        simpa [Kimchi.Gate.EndoScalar.crumbsOf_length] using h2
       simp only [List.getElem_map, Vector.getElem_toList]
-      refine List.ext_getElem (by simp) fun j hj1 hj2 => ?_
-      have hj : j < 8 := by simpa using hj2
-      simp only [List.getElem_map, Vector.getElem_toList]
-      rw [CVar.val_of_le hinv₂.1.2 (hentry i hi j hj).1, (hentry i hi j hj).2]
+      rw [CVar.val_of_le hinv₂.1.2 (hentry i hi).1, (hentry i hi).2]
+      exact List.getD_eq_getElem _ _ h2
     rw [← hcrumbs]
     exact ⟨⟨hinv₂.2.1, hinv₂.2.2.1, hinv₂.2.2.2⟩, hA, hB, hN⟩
 
