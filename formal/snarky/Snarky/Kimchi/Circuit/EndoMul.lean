@@ -1010,6 +1010,17 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hvp₂ : phix.val st₂.env.get = d.endo * xv := by
     rw [hvalP, CVar.val_scale_, hvx₂]
   have hyne : yv ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
+  -- the base and its image, read as curve points
+  have hTread : OnCurve d.W st₂ t (Point.some _ _ hT) := by
+    refine ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, ?_⟩
+    show ∃ h : d.W.Nonsingular (t.x.val st₂.env.get) (t.y.val st₂.env.get), _
+    rw [hvx₂, hvy₂]
+    exact ⟨hT, rfl⟩
+  have hφTread : OnCurve d.W st₂ ⟨phix, t.y⟩ (Point.some _ _ hφT) := by
+    refine ⟨scoped_affinePoint.mpr ⟨hscP, hty₂⟩, ?_⟩
+    show ∃ h : d.W.Nonsingular (phix.val st₂.env.get) (t.y.val st₂.env.get), _
+    rw [hvp₂, hvy₂]
+    exact ⟨hφT, rfl⟩
   -- `T + φT` is finite: `[1 + λ]` does not kill `T`
   have hTφ : Point.some _ _ hT + Point.some _ _ hφT ≠ 0 := by
     intro hzero
@@ -1017,50 +1028,28 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     exact d.lam_succ_smul (Point.some _ _ hT) (Point.some_ne_zero hT)
       (by rw [← hzero]; module)
   -- the first addition
-  have hEq1 : d.W.Equation (t.x.val st₂.env.get) (t.y.val st₂.env.get) := by
-    rw [hvx₂, hvy₂]
-    exact hT.left
-  have hEq2 : d.W.Equation (phix.val st₂.env.get) (t.y.val st₂.env.get) := by
-    rw [hvp₂, hvy₂]
-    exact hφT.left
-  have hyne₂ : t.y.val st₂.env.get ≠ 0 := by rw [hvy₂]; exact hyne
-  have hfin1 : ¬(t.x.val st₂.env.get = phix.val st₂.env.get ∧
-      t.y.val st₂.env.get = d.W.negY (phix.val st₂.env.get) (t.y.val st₂.env.get)) := by
-    rintro ⟨h1, h2⟩
-    apply hTφ
-    rw [add_eq_zero_iff_eq_neg, Point.neg_some]
-    refine Kimchi.Gate.EndoMul.some_congr d.W hT _ ?_ ?_
-    · calc xv = t.x.val st₂.env.get := hvx₂.symm
-        _ = phix.val st₂.env.get := h1
-        _ = d.endo * xv := hvp₂
-    · calc yv = t.y.val st₂.env.get := hvy₂.symm
-        _ = d.W.negY (phix.val st₂.env.get) (t.y.val st₂.env.get) := h2
-        _ = d.W.negY (d.endo * xv) yv := by rw [hvp₂, hvy₂]
   obtain ⟨p1, st₃, hrun₃, hsat₃, ⟨hscP1, hscI1⟩, hadd1⟩ :=
     Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite t ⟨phix, t.y⟩)
       (fun V => addFast_spec (V := V) .checkFinite d.W
         ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩)
       (addFast_complete .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩) st₂
-      ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, scoped_affinePoint.mpr ⟨hscP, hty₂⟩,
-        hEq1, hEq2, hyne₂, fun _ => hfin1⟩
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩
+        (Point.some _ _ hT) (Point.some _ _ hφT)) st₂
+      ⟨hTread, hφTread, by rw [hvy₂]; exact hyne, fun _ => hTφ⟩
   have hle₃ := hrun₃.le
   have hnv₃ := hrun₃.nv_le
-  have hvx₃ : t.x.val st₃.env.get = xv := by rw [CVar.val_of_le hle₃ htx₂, hvx₂]
-  have hvy₃ : t.y.val st₃.env.get = yv := by rw [CVar.val_of_le hle₃ hty₂, hvy₂]
-  have hvp₃ : phix.val st₃.env.get = d.endo * xv := by rw [CVar.val_of_le hle₃ hscP, hvp₂]
-  have hT₃ : d.W.Nonsingular (t.x.val st₃.env.get) (t.y.val st₃.env.get) := by
-    rw [hvx₃, hvy₃]; exact hT
-  have hφT₃ : d.W.Nonsingular (phix.val st₃.env.get) (t.y.val st₃.env.get) := by
-    rw [hvp₃, hvy₃]; exact hφT
-  obtain ⟨hP1, hsum1⟩ :
-      ∃ h3 : d.W.Nonsingular (p1.p.x.val st₃.env.get) (p1.p.y.val st₃.env.get),
-        Point.some _ _ hT₃ + Point.some _ _ hφT₃ = Point.some _ _ h3 := by
-    rcases hadd1.2 hT₃ hφT₃ (by rw [hvy₃]; exact hyne) with ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+  have hP1read : OnCurve d.W st₃ p1.p
+      (Point.some _ _ hT + Point.some _ _ hφT) := by
+    refine ⟨hscP1, ?_⟩
+    rcases hadd1.2 _ _ (hTread.mono hnv₃ hle₃).2 (hφTread.mono hnv₃ hle₃).2
+      (by rw [CVar.val_of_le hle₃ hty₂, hvy₂]; exact hyne) with ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd ((hadd1.1 rfl).symm.trans hinf) (by norm_num)
-    · exact ⟨h3, hsum⟩
+    · exact h3
+  obtain ⟨hP1, hsum1⟩ := hP1read.2
   have hy1ne : p1.p.y.val st₃.env.get ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hP1
-  have h2P1 : Point.some _ _ hP1 + Point.some _ _ hP1 ≠ 0 := by
+  have h2P1 : Point.some _ _ hT + Point.some _ _ hφT
+      + (Point.some _ _ hT + Point.some _ _ hφT) ≠ 0 := by
+    rw [hsum1]
     intro hzero
     have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
       have := (Fact.out : Nat.Prime d.W.order).two_le
@@ -1072,31 +1061,28 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W (Point.some_ne_zero hP1)
       (by norm_num) hlt (by rw [two_zsmul, hzero])
   -- the second addition
-  have hfin2 : ¬(p1.p.x.val st₃.env.get = p1.p.x.val st₃.env.get ∧
-      p1.p.y.val st₃.env.get = d.W.negY (p1.p.x.val st₃.env.get) (p1.p.y.val st₃.env.get)) := by
-    rintro ⟨-, h2⟩
-    apply h2P1
-    rw [add_eq_zero_iff_eq_neg, Point.neg_some]
-    exact Kimchi.Gate.EndoMul.some_congr d.W hP1 _ rfl h2
   obtain ⟨p2, st₄, hrun₄, hsat₄, ⟨hscP2, hscI2⟩, hadd2⟩ :=
     Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite p1.p p1.p)
       (fun V => addFast_spec (V := V) .checkFinite d.W
         ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p)
       (addFast_complete .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p) st₃
-      ⟨hscP1, hscP1, hP1.left, hP1.left, hy1ne, fun _ => hfin2⟩
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p
+        (Point.some _ _ hT + Point.some _ _ hφT)
+        (Point.some _ _ hT + Point.some _ _ hφT)) st₃
+      ⟨hP1read, hP1read, hy1ne, fun _ => h2P1⟩
   have hle₄ := hrun₄.le
   have hnv₄ := hrun₄.nv_le
-  rw [scoped_affinePoint] at hscP1 hscP2
-  have hP1₄ : d.W.Nonsingular (p1.p.x.val st₄.env.get) (p1.p.y.val st₄.env.get) := by
-    rw [CVar.val_of_le hle₄ hscP1.1, CVar.val_of_le hle₄ hscP1.2]; exact hP1
-  obtain ⟨hP0ns, hsum2⟩ :
-      ∃ h3 : d.W.Nonsingular (p2.p.x.val st₄.env.get) (p2.p.y.val st₄.env.get),
-        Point.some _ _ hP1₄ + Point.some _ _ hP1₄ = Point.some _ _ h3 := by
-    rcases hadd2.2 hP1₄ hP1₄ (by rw [CVar.val_of_le hle₄ hscP1.2]; exact hy1ne) with
-      ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+  have hP0read : OnCurve d.W st₄ p2.p
+      (Point.some _ _ hT + Point.some _ _ hφT
+        + (Point.some _ _ hT + Point.some _ _ hφT)) := by
+    refine ⟨hscP2, ?_⟩
+    rcases hadd2.2 _ _ (hP1read.mono hnv₄ hle₄).2 (hP1read.mono hnv₄ hle₄).2
+      (by rw [CVar.val_of_le hle₄ (scoped_affinePoint.mp hscP1).2]; exact hy1ne) with
+      ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd ((hadd2.1 rfl).symm.trans hinf) (by norm_num)
-    · exact ⟨h3, hsum⟩
+    · exact h3
+  obtain ⟨hP0ns, hsum2⟩ := hP0read.2
+  rw [scoped_affinePoint] at hscP1 hscP2
   -- the ladder
   rw [CircuitType.scoped_vector] at hscB
   rw [CircuitType.reads_vector] at hrdB
@@ -1140,14 +1126,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     refine ⟨?_, ?_, ?_, ?_⟩ <;> simp only [bitsOf] <;> split <;> simp
   have hP0eq : Point.some _ _ hP0ns
       = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
-    have hc : Point.some _ _ hP1₄ = Point.some _ _ hP1 :=
-      Kimchi.Gate.EndoMul.some_congr d.W hP1₄ hP1 (CVar.val_of_le hle₄ hscP1.1)
-        (CVar.val_of_le hle₄ hscP1.2)
-    have hTc : Point.some _ _ hT₃ = Point.some _ _ hT :=
-      Kimchi.Gate.EndoMul.some_congr d.W hT₃ hT hvx₃ hvy₃
-    have hφTc : Point.some _ _ hφT₃ = Point.some _ _ hφT :=
-      Kimchi.Gate.EndoMul.some_congr d.W hφT₃ hφT hvp₃ hvy₃
-    rw [← hsum2, hc, ← hsum1, hTc, hφTc]
+    rw [← hsum2]
     module
   have hwalkHolds : ∀ i, i < rounds → Kimchi.Gate.EndoMul.Holds d.endo (W i) :=
     Kimchi.Gate.EndoMul.chain_complete d.W (Point.some _ _ hT) (Point.some _ _ hφT)
@@ -1318,15 +1297,17 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     exact hφT
   obtain ⟨hP1, hsum1⟩ : ∃ h3 : d.W.Nonsingular (p1.p.x.val V) (p1.p.y.val V),
       Point.some _ _ hT + Point.some _ _ hφTp = Point.some _ _ h3 := by
-    rcases hp1.2 hT hφTp hy with ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+    rcases hp1.2 (Point.some _ _ hT) (Point.some _ _ hφTp) ⟨hT, rfl⟩ ⟨hφTp, rfl⟩ hy with
+      ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd ((hp1.1 rfl).symm.trans hinf) (by norm_num)
-    · exact ⟨h3, hsum⟩
+    · exact h3
   have hy1 : p1.p.y.val V ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hP1
   obtain ⟨hP0ns, hsum2⟩ : ∃ h3 : d.W.Nonsingular (p2.p.x.val V) (p2.p.y.val V),
       Point.some _ _ hP1 + Point.some _ _ hP1 = Point.some _ _ h3 := by
-    rcases hp2.2 hP1 hP1 hy1 with ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+    rcases hp2.2 (Point.some _ _ hP1) (Point.some _ _ hP1) ⟨hP1, rfl⟩ ⟨hP1, rfl⟩ hy1 with
+      ⟨hinf, -⟩ | ⟨-, h3⟩
     · exact absurd (hp2.1.symm.trans hinf) (by norm_num)
-    · exact ⟨h3, hsum⟩
+    · exact h3
   have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=
     Kimchi.Gate.EndoMul.some_congr d.W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
   have hP0 : Point.some _ _ hP0ns

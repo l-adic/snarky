@@ -319,6 +319,13 @@ def CircuitType.Reads [Add F] [Mul F] [Zero F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) (a : val) : Prop :=
   mapVec (·.val V) (inst.varToFields v) = inst.valueToFields a
 
+/-- A bundle read: in scope, and reading as this value. The two travel as one — at any
+later table the same bundle reads the same value — which is what a multi-stage
+completeness proof carries from stage to stage. -/
+def CircuitType.ReadsAs [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    (st : ProverState F) (r : var) (v : val) : Prop :=
+  CircuitType.Scoped (val := val) st r ∧ CircuitType.Reads st.env.get r v
+
 /-- A scoped bundle's reading survives any extension of the table. -/
 theorem CircuitType.Reads.of_le [Add F] [Mul F] [Zero F] [CircuitType F val var]
     {st st' : ProverState F} {r : var} {v : val}
@@ -357,6 +364,13 @@ theorem CircuitType.reads_iff [Add F] [Mul F] [Zero F] [inst : CircuitType F val
   · rintro ⟨⟨a', h'⟩, hv⟩
     rw [← hv, hval h']
     exact h'
+
+/-- A read survives the table's growth: scope carries the value with it. -/
+theorem CircuitType.ReadsAs.mono [Add F] [Mul F] [Zero F] [CircuitType F val var]
+    {st st' : ProverState F} {r : var} {v : val} (hnv : st.nv ≤ st'.nv)
+    (hle : st.env.Le st'.env) (h : CircuitType.ReadsAs st r v) :
+    CircuitType.ReadsAs st' r v :=
+  ⟨CircuitType.Scoped.mono hnv h.1, CircuitType.Reads.of_le h.2 h.1 hle⟩
 
 @[simp] theorem CircuitType.scoped_fvar {st : ProverState F} {x : FVar F} :
     CircuitType.Scoped (val := F) st x ↔ x.Scoped st := by

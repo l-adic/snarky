@@ -230,6 +230,34 @@ open Std.Do in
   simp only [sealPoint]
   mvcgen
 
+open WeierstrassCurve.Affine in
+/-- A circuit point reads as a curve point: its coordinates read as a nonsingular pair,
+and the point they name is this one. Value-level, for the specs. -/
+def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Valuation F)
+    (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
+  ∃ h : W.Nonsingular (p.x.val V) (p.y.val V), P = Point.some _ _ h
+
+open WeierstrassCurve.Affine in
+/-- …and in scope, so the same curve point is read at every later table. Carrying the
+pair is what keeps a multi-stage proof from rebuilding the point at each stage. -/
+def OnCurve [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
+    (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
+  CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
+
+/-- A curve read survives the table's growth — with the same curve point. -/
+theorem OnCurve.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {st st' : ProverState F} {p : AffinePoint (FVar F)} {P : W.Point}
+    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurve W st p P) :
+    OnCurve W st' p P := by
+  obtain ⟨hsc, n, rfl⟩ := h
+  rw [scoped_affinePoint] at hsc
+  refine ⟨scoped_affinePoint.mpr ⟨hsc.1.mono hnv, hsc.2.mono hnv⟩, ?_, ?_⟩
+  · rw [CVar.val_of_le hle hsc.1, CVar.val_of_le hle hsc.2]
+    exact n
+  · congr 1
+    · rw [CVar.val_of_le hle hsc.1]
+    · rw [CVar.val_of_le hle hsc.2]
+
 open Std.Do in
 /-- The infinity column grants nothing where the flag is witnessed — what it reads is
 pinned by the gate's row, not by how it was produced — but under `checkFinite` it is the
@@ -257,19 +285,18 @@ preserve them — and the witnessed columns are whatever the row constrains them
     ⦃⌜True⌝⦄
     addFast (c := Builder V (KimchiConstraint F)) fin p1' p2'
     ⦃⇓ r _ => ⌜(fin = .checkFinite → (↑r.isInfinity : CVar F).val V = 0) ∧
-        ∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
-        (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)), p1'.y.val V ≠ 0 →
-        ((↑r.isInfinity : CVar F).val V = 1 ∧
-            Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
-          ((↑r.isInfinity : CVar F).val V = 0 ∧
-            ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
-              Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3)⌝⦄ := by
+        ∀ P Q : W.Point, OnCurveAt W V p1' P → OnCurveAt W V p2' Q → p1'.y.val V ≠ 0 →
+          ((↑r.isInfinity : CVar F).val V = 1 ∧ P + Q = 0) ∨
+            ((↑r.isInfinity : CVar F).val V = 0 ∧ OnCurveAt W V r.p (P + Q))⌝⦄ := by
   simp only [addFast]
   mvcgen
   rename_i _ q1 _ hs1 q2 _ hs2 _ _ _ inf _ hinf aux _ _ p3 _ _ _ _ hgate
   refine ⟨hinf, ?_⟩
-  rw [← hs1.1, ← hs1.2, ← hs2.1, ← hs2.2]
-  intro h1 h2 hy1ne
+  intro P Q hP hQ hy1ne
+  simp only [OnCurveAt, ← hs1.1, ← hs1.2, ← hs2.1, ← hs2.2] at hP hQ
+  rw [← hs1.2] at hy1ne
+  obtain ⟨h1, rfl⟩ := hP
+  obtain ⟨h2, rfl⟩ := hQ
   rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hgate hy1ne htwo with
     ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
   · exact Or.inl ⟨hinf, hsum⟩
@@ -300,6 +327,7 @@ theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
   rw [CVar.val_of_le hrunX.le hscopeY,
     CVar.val_of_le hrunX.le (hy.mono hrunY.nv_le), hreadY]
 
+open WeierstrassCurve.Affine in
 /-- **`addFast`'s completeness.** From scoped operands lying on the curve, with
 `y₁ ≠ 0` and — in the `checkFinite` mode — a finite sum, the run succeeds, the row it
 emits is satisfied at every extension of the final table, and the result is scoped.
@@ -309,19 +337,22 @@ exactly `Kimchi.Gate.AddComplete.build`'s canonical row, so the reading of
 the emitted payload IS that row and `complete_build` discharges it. -/
 theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
-    (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) :
+    (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (P Q : W.Point) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.Scoped (val := AffinePoint F) st p1' ∧
-        CircuitType.Scoped (val := AffinePoint F) st p2' ∧
-        W.Equation (p1'.x.val st.env.get) (p1'.y.val st.env.get) ∧
-        W.Equation (p2'.x.val st.env.get) (p2'.y.val st.env.get) ∧
-        p1'.y.val st.env.get ≠ 0 ∧
-        (fin = .checkFinite → ¬(p1'.x.val st.env.get = p2'.x.val st.env.get ∧
-          p1'.y.val st.env.get = W.negY (p2'.x.val st.env.get) (p2'.y.val st.env.get))))
+      (fun st => OnCurve W st p1' P ∧ OnCurve W st p2' Q ∧
+        p1'.y.val st.env.get ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
       (addFast (c := KimchiConstraint F) fin p1' p2')
       (fun r st' => CircuitType.Scoped (val := AffinePoint F) st' r.p ∧
         (↑r.isInfinity : CVar F).Scoped st') := by
-  rintro st ⟨hs1, hs2, hon1, hon2, hy1ne, hfin⟩
+  rintro st ⟨⟨hs1, n1, rfl⟩, ⟨hs2, n2, rfl⟩, hy1ne, hfinP⟩
+  have hon1 : W.Equation (p1'.x.val st.env.get) (p1'.y.val st.env.get) := n1.left
+  have hon2 : W.Equation (p2'.x.val st.env.get) (p2'.y.val st.env.get) := n2.left
+  have hfin : fin = .checkFinite → ¬(p1'.x.val st.env.get = p2'.x.val st.env.get ∧
+      p1'.y.val st.env.get = W.negY (p2'.x.val st.env.get) (p2'.y.val st.env.get)) := by
+    rintro hf ⟨hx, hy⟩
+    refine hfinP hf ?_
+    rw [add_eq_zero_iff_eq_neg, Point.neg_some]
+    congr 1
   rw [scoped_affinePoint] at hs1 hs2
   obtain ⟨x1, hvx1⟩ : ∃ v, p1'.x.val st.env.get = v := ⟨_, rfl⟩
   obtain ⟨y1, hvy1⟩ : ∃ v, p1'.y.val st.env.get = v := ⟨_, rfl⟩
