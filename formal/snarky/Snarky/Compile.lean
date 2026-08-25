@@ -160,4 +160,6 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
   · rw [← hres]
     exact hreadsP'.of_le hscopeP' hle₃
 
+attribute [irreducible] inputVar compileBody compile solve
+
 end Snarky
