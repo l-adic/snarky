@@ -3,12 +3,15 @@ import Snarky.Prover
 /-!
 # Traversing a vector in the circuit monad
 
-`zipWithVecM` runs a circuit at every index of two equal-length vectors and collects the
-results; `mapAccumM` walks a list threading an accumulator. Entries are visited in index order, which is the order their rows are emitted in.
+Two loops. `zipWithVecM` runs a circuit at every index of two equal-length vectors and
+collects the results; `mapAccumM` walks a list threading an accumulator. Both visit their
+entries in order, which is the order the rows are emitted in.
 
-The laws are the loop's: a per-index soundness spec, and a per-index completeness law
-whose two monotonicity hypotheses stand in for a loop invariant, since the prover's table
-grows under each entry.
+Each carries its laws, so a gadget that loops writes the step and inherits the loop: a
+soundness spec carrying a per-step relation along the whole trace, and a completeness law
+whose monotonicity hypotheses stand in for a loop invariant — and which delivers every
+step's grant AT THE FINAL TABLE, where the row a ladder emits after its loop is judged.
+That transport is the loop's, done once, rather than each ladder's.
 -/
 
 namespace Snarky
@@ -144,6 +147,47 @@ theorem mapAccumM_spec {V : Valuation F} {s α β : Type} [ConstraintHolds F c]
     mvcgen [hx, hrest]
     rename_i p _ hp q _ hq
     exact ⟨p.1, q.1, p.2, rfl, hp, hq⟩
+
+/-- The trace, read at one table: every step's grant evaluated at the same state,
+rather than at the state that step ended in. This is what a ladder's caller needs —
+the row it emits after the loop is judged at the end, so the loop's facts must arrive
+there. `mapAccumM_complete` does that transport once. -/
+def ChainAt {s α β : Type} (out : s → α → β → s → ProverState F → Prop)
+    (stf : ProverState F) : s → List α → List β → s → Prop
+  | init, [], ys, fin => ys = [] ∧ init = fin
+  | init, x :: xs, ys, fin =>
+    ∃ (y : β) (ys' : List β) (mid : s),
+      ys = y :: ys' ∧ out init x y mid stf ∧ ChainAt out stf mid xs ys' fin
+
+/-- `mapAccumM`'s completeness: a step's law, an accumulator invariant and a grant that
+survives the table's growth compose into the whole ladder's. The caller writes the step
+and gets the loop — including every step's grant at the final table, which is where the
+emitted row is judged. -/
+theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
+    (f : s → α → CircuitM F c (β × s)) (inv : s → ProverState F → Prop)
+    (out : s → α → β → s → ProverState F → Prop)
+    (hinv : ∀ (acc : s) {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env →
+      inv acc st → inv acc st')
+    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
+      st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
+    (hstep : ∀ (acc : s) (x : α),
+      Complete (inv acc) (f acc x) (fun p st' => inv p.2 st' ∧ out acc x p.1 p.2 st')) :
+    ∀ (init : s) (xs : List α),
+      Complete (inv init) (mapAccumM f init xs)
+        (fun p st' => inv p.2 st' ∧ ChainAt out st' init xs p.1 p.2)
+  | init, [] => fun st hst =>
+    ⟨([], init), st, rfl, fun _ _ => by simp [Sat, build, mapAccumM], hst, rfl, rfl⟩
+  | init, x :: xs => by
+    intro st hst
+    obtain ⟨p, st₁, hrun₁, hsat₁, hinv₁, hout₁⟩ := hstep init x st hst
+    obtain ⟨q, st₂, hrun₂, hsat₂, hinv₂, hchain⟩ :=
+      mapAccumM_complete f inv out hinv hout hstep p.2 xs st₁ hinv₁
+    refine ⟨(p.1 :: q.1, q.2), st₂, ?_, ?_, hinv₂,
+      ⟨p.1, q.1, p.2, rfl, hout _ _ _ _ hrun₂.nv_le hrun₂.le hout₁, hchain⟩⟩
+    · exact hrun₁.bind (hrun₂.bind rfl)
+    · intro stf hnv hle
+      exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+        (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure)
 
 attribute [irreducible] zipWithVecM
 
