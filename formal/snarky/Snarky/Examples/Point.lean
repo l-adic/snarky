@@ -55,13 +55,15 @@ example [Add F] [Mul F] [Zero F] (st : ProverState F) (p : Point (FVar F)) :
 /-! The inherited gadgets: a point selects and asserts equal, with the laws of both. -/
 
 example [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
-    [LawfulBasicSystem F c] (b : BoolVar F) (t e : Point (FVar F)) :
-    Complete (F := F) (c := c) (fun st => CircuitType.Scoped (val := Point F) st t ∧
-        CircuitType.Scoped (val := Point F) st e ∧ (↑b : CVar F).Scoped st ∧
-        CircuitType.WellFormed (val := Bool) st.env.get b)
+    [LawfulBasicSystem F c] (b : BoolVar F) (t e : Point (FVar F)) (bb : Bool)
+    (tv ev : Point F) :
+    Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
+        CircuitType.ReadsAs (val := Point F) st t tv ∧
+        CircuitType.ReadsAs (val := Point F) st e ev)
       (select (c := c) b t e)
-      (fun a st' => CircuitType.Scoped (val := Point F) st' a) :=
-  LawfulIfThenElse.select_complete b t e
+      (fun a st' => CircuitType.ReadsAs (val := Point F) st' a (if bb then tv else ev)) :=
+  LawfulIfThenElse.select_complete b t e bb tv ev
 
 example [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] (t e : Point (FVar F)) (a : Point F) :
@@ -73,13 +75,15 @@ example [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
 
 /-! The laws are not vacuous: they hold at the reference constraint system. -/
 
-example [Field F] [DecidableEq F] (b : BoolVar F) (t e : Point (FVar F)) :
-    Complete (F := F) (c := Basic F) (fun st => CircuitType.Scoped (val := Point F) st t ∧
-        CircuitType.Scoped (val := Point F) st e ∧ (↑b : CVar F).Scoped st ∧
-        CircuitType.WellFormed (val := Bool) st.env.get b)
+example [Field F] [DecidableEq F] (b : BoolVar F) (t e : Point (FVar F)) (bb : Bool)
+    (tv ev : Point F) :
+    Complete (F := F) (c := Basic F)
+      (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
+        CircuitType.ReadsAs (val := Point F) st t tv ∧
+        CircuitType.ReadsAs (val := Point F) st e ev)
       (select (c := Basic F) b t e)
-      (fun a st' => CircuitType.Scoped (val := Point F) st' a) :=
-  LawfulIfThenElse.select_complete b t e
+      (fun a st' => CircuitType.ReadsAs (val := Point F) st' a (if bb then tv else ev)) :=
+  LawfulIfThenElse.select_complete b t e bb tv ev
 
 /-- The rows a point's selection emits at the reference system: its `y` before its `x`. -/
 example [Field F] [DecidableEq F] (vb x₁ y₁ x₂ y₂ : Variable) (nv : Nat) :

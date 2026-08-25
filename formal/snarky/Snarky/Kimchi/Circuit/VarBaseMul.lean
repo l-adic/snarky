@@ -946,14 +946,16 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   -- the sealed base
-  obtain ⟨sealed, st₁, hrun₁, hsat₁, hsx, hsy, hvsx, hvsy⟩ :=
-    sealPoint_complete (c := KimchiConstraint F) base st ⟨hbx, hby⟩
+  obtain ⟨sealed, st₁, hrun₁, hsat₁, hRx, hRy⟩ :=
+    sealPoint_complete (c := KimchiConstraint F) base xv yv st
+      ⟨⟨CircuitType.scoped_fvar.mpr hbx, CircuitType.reads_fvar.mpr hrx⟩,
+        ⟨CircuitType.scoped_fvar.mpr hby, CircuitType.reads_fvar.mpr hry⟩⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
-  have hsxv : sealed.x.val st₁.env.get = xv := by
-    rw [hvsx, CVar.val_of_le hle₁ hbx, hrx]
-  have hsyv : sealed.y.val st₁.env.get = yv := by
-    rw [hvsy, CVar.val_of_le hle₁ hby, hry]
+  have hsx : sealed.x.Scoped st₁ := CircuitType.scoped_fvar.mp hRx.1
+  have hsy : sealed.y.Scoped st₁ := CircuitType.scoped_fvar.mp hRy.1
+  have hsxv : sealed.x.val st₁.env.get = xv := CircuitType.reads_fvar.mp hRx.2
+  have hsyv : sealed.y.val st₁.env.get = yv := CircuitType.reads_fvar.mp hRy.2
   -- the scalar's bits, in one witness
   obtain ⟨bits, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscB, hrdB⟩ :=
     witness_complete (c := KimchiConstraint F) (val := Vector F n)
@@ -1143,8 +1145,10 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [hreg₄, hroundBits st₄ (hle₃.trans hle₄), hregSv,
       CVar.val_of_le ((hle₁.trans hle₂).trans (hle₃.trans hle₄)) hscS, hrs]
   obtain ⟨u, st₅, hrun₅, hsat₅, -⟩ :=
-    assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val st₄
-      ⟨hinv₄.2.2.2, hscS₄, hpin⟩
+    assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val
+      (scalar.val.val st₄.env.get) st₄
+      ⟨⟨CircuitType.scoped_fvar.mpr hinv₄.2.2.2, CircuitType.reads_fvar.mpr hpin⟩,
+        ⟨CircuitType.scoped_fvar.mpr hscS₄, CircuitType.reads_fvar.mpr rfl⟩⟩
   have hle₅ := hrun₅.le
   have hnv₅ := hrun₅.nv_le
   refine ⟨⟨fin.1, bits⟩, st₅,
@@ -1416,8 +1420,10 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun b _ hb => by
         intro stc hstc
         obtain ⟨w, stc', hrunc, hsatc, -⟩ :=
-          assertEqual_complete (c := KimchiConstraint F) b (CVar.const 0) stc
-            ⟨(hstc b hb).1, trivial, by rw [(hstc b hb).2]; simp [CVar.val]⟩
+          assertEqual_complete (c := KimchiConstraint F) b (CVar.const 0) 0 stc
+            ⟨⟨CircuitType.scoped_fvar.mpr (hstc b hb).1,
+                CircuitType.reads_fvar.mpr (hstc b hb).2⟩,
+              ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩⟩
         exact ⟨w, stc', hrunc, hsatc, fun x hx =>
           ⟨(hstc x hx).1.mono hrunc.nv_le,
             by rw [CVar.val_of_le hrunc.le (hstc x hx).1]; exact (hstc x hx).2⟩⟩)
@@ -1484,21 +1490,32 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     hso.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂ hnv₃))
   have hbb₃ : (↑sOdd : CVar F).val st₃.env.get = bit bb := by
     rw [CVar.val_of_le ((hle₁.trans hle₂).trans hle₃) hso, hrb]
-  obtain ⟨yr, st₄, hrun₄, hsat₄, hscY, hvalY⟩ :=
-    Complete.post (g := selectField (c := KimchiConstraint F) sOdd r.g.y q.p.y)
-      (fun V => selectField_spec (V := V) sOdd r.g.y q.p.y)
-      (selectField_complete (c := KimchiConstraint F) sOdd r.g.y q.p.y) st₃
-      ⟨hsoS, hscG.2.mono hnv₃, hscQ'.2, hwf⟩
+  obtain ⟨yr, st₄, hrun₄, hsat₄, hRY⟩ :=
+    selectField_complete (c := KimchiConstraint F) sOdd r.g.y q.p.y bb
+      (r.g.y.val st₃.env.get) (q.p.y.val st₃.env.get) st₃
+      ⟨⟨CircuitType.scoped_boolVar.mpr hsoS, CircuitType.reads_boolVar.mpr hbb₃⟩,
+        ⟨CircuitType.scoped_fvar.mpr (hscG.2.mono hnv₃), CircuitType.reads_fvar.mpr rfl⟩,
+        ⟨CircuitType.scoped_fvar.mpr hscQ'.2, CircuitType.reads_fvar.mpr rfl⟩⟩
+  have hscY : yr.Scoped st₄ := CircuitType.scoped_fvar.mp hRY.1
+  have hvalY : yr.val st₄.env.get
+      = if bb then r.g.y.val st₃.env.get else q.p.y.val st₃.env.get :=
+    CircuitType.reads_fvar.mp hRY.2
   have hle₄ := hrun₄.le
   have hnv₄ := hrun₄.nv_le
   have hbb₄ : (↑sOdd : CVar F).val st₄.env.get = bit bb := by
     rw [CVar.val_of_le hle₄ hsoS, hbb₃]
-  obtain ⟨xr, st₅, hrun₅, hsat₅, hscX, hvalX⟩ :=
-    Complete.post (g := selectField (c := KimchiConstraint F) sOdd r.g.x q.p.x)
-      (fun V => selectField_spec (V := V) sOdd r.g.x q.p.x)
-      (selectField_complete (c := KimchiConstraint F) sOdd r.g.x q.p.x) st₄
-      ⟨hsoS.mono hnv₄, (hscG.1.mono hnv₃).mono hnv₄, hscQ'.1.mono hnv₄,
-        ⟨bb, CircuitType.reads_boolVar.mpr hbb₄⟩⟩
+  obtain ⟨xr, st₅, hrun₅, hsat₅, hRX⟩ :=
+    selectField_complete (c := KimchiConstraint F) sOdd r.g.x q.p.x bb
+      (r.g.x.val st₄.env.get) (q.p.x.val st₄.env.get) st₄
+      ⟨⟨CircuitType.scoped_boolVar.mpr (hsoS.mono hnv₄),
+          CircuitType.reads_boolVar.mpr hbb₄⟩,
+        ⟨CircuitType.scoped_fvar.mpr ((hscG.1.mono hnv₃).mono hnv₄),
+          CircuitType.reads_fvar.mpr rfl⟩,
+        ⟨CircuitType.scoped_fvar.mpr (hscQ'.1.mono hnv₄), CircuitType.reads_fvar.mpr rfl⟩⟩
+  have hscX : xr.Scoped st₅ := CircuitType.scoped_fvar.mp hRX.1
+  have hvalX : xr.val st₅.env.get
+      = if bb then r.g.x.val st₄.env.get else q.p.x.val st₄.env.get :=
+    CircuitType.reads_fvar.mp hRX.2
   have hle₅ := hrun₅.le
   have hnv₅ := hrun₅.nv_le
   have hbb₅ : (↑sOdd : CVar F).val st₅.env.get = bit bb := by
@@ -1521,12 +1538,13 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   · refine ⟨scoped_affinePoint.mpr ⟨hscX, hscY.mono hnv₅⟩, ?_⟩
     have hy : yr.val st₅.env.get
         = if bb then r.g.y.val st₅.env.get else q.p.y.val st₅.env.get := by
-      rw [CVar.val_of_le hle₅ hscY, hvalY bb hbb₄,
-        CVar.val_of_le hle₅ ((hscG.2.mono hnv₃).mono hnv₄),
-        CVar.val_of_le hle₅ (hscQ'.2.mono hnv₄)]
+      rw [CVar.val_of_le hle₅ hscY, hvalY,
+        CVar.val_of_le (hle₄.trans hle₅) (hscG.2.mono hnv₃),
+        CVar.val_of_le (hle₄.trans hle₅) hscQ'.2]
     have hx : xr.val st₅.env.get
-        = if bb then r.g.x.val st₅.env.get else q.p.x.val st₅.env.get :=
-      hvalX bb hbb₅
+        = if bb then r.g.x.val st₅.env.get else q.p.x.val st₅.env.get := by
+      rw [hvalX, CVar.val_of_le hle₅ ((hscG.1.mono hnv₃).mono hnv₄),
+        CVar.val_of_le hle₅ (hscQ'.1.mono hnv₄)]
     cases bb with
     | false =>
       show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st₅.env.get) (yr.val st₅.env.get)
@@ -1617,8 +1635,12 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
     simp only [splitField, bit, decide_eq_true_eq]
     split <;> field_simp <;> ring
   obtain ⟨u, st₂, hrun₂, hsat₂, -⟩ :=
-    assertEqual_complete (c := c) s (CVar.add_ (CVar.scale_ 2 wD) ↑wO) st₁
-      ⟨hsc.mono hnv₁, CVar.Scoped.add_ (CVar.Scoped.scale_ hscW.1) hscW.2, hpin⟩
+    assertEqual_complete (c := c) s (CVar.add_ (CVar.scale_ 2 wD) ↑wO)
+      (s.val st₁.env.get) st₁
+      ⟨⟨CircuitType.scoped_fvar.mpr (hsc.mono hnv₁), CircuitType.reads_fvar.mpr rfl⟩,
+        ⟨CircuitType.scoped_fvar.mpr
+            (CVar.Scoped.add_ (CVar.Scoped.scale_ hscW.1) hscW.2),
+          CircuitType.reads_fvar.mpr hpin.symm⟩⟩
   have hle₂ := hrun₂.le
   have hnv₂ := hrun₂.nv_le
   exact ⟨(wD, wO), st₂, hrun₁.bind (hrun₂.bind rfl), fun hnv hle =>

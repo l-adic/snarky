@@ -1003,11 +1003,14 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           AsProver.readCVar_run hscS, hrs, Except.bind]
         rfl)
   -- the sealed `β·x`
-  obtain ⟨phix, st₂, hrun₂, hsat₂, hscP, hvalP⟩ :=
-    Complete.post (g := sealVar (c := KimchiConstraint F) (CVar.scale_ d.endo t.x))
-      (fun V => sealVar_spec (V := V) (CVar.scale_ d.endo t.x))
-      (sealVar_complete (c := KimchiConstraint F) (CVar.scale_ d.endo t.x)) st₁
-      (CVar.Scoped.scale_ (htx.mono hnv₁))
+  obtain ⟨phix, st₂, hrun₂, hsat₂, hR₂⟩ :=
+    sealVar_complete (c := KimchiConstraint F) (CVar.scale_ d.endo t.x)
+      (d.endo * t.x.val st₁.env.get) st₁
+      ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (htx.mono hnv₁)),
+        CircuitType.reads_fvar.mpr (CVar.val_scale_ ..)⟩
+  have hscP : phix.Scoped st₂ := CircuitType.scoped_fvar.mp hR₂.1
+  have hvalP : phix.val st₂.env.get = d.endo * t.x.val st₁.env.get :=
+    CircuitType.reads_fvar.mp hR₂.2
   have hle₂ := hrun₂.le
   have hnv₂ := hrun₂.nv_le
   have htx₂ : t.x.Scoped st₂ := htx.mono (Nat.le_trans hnv₁ hnv₂)
@@ -1017,7 +1020,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hvy₂ : t.y.val st₂.env.get = yv := by
     rw [CVar.val_of_le (hle₁.trans hle₂) hty, hry]
   have hvp₂ : phix.val st₂.env.get = d.endo * xv := by
-    rw [hvalP, CVar.val_scale_, hvx₂]
+    rw [hvalP, CVar.val_of_le hle₁ htx, hrx]
   -- the base and its image, read as curve points
   have hTread : OnCurve d.W st₂ t (Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, ?_⟩
@@ -1196,8 +1199,10 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     hscS.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂
       (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))))
   obtain ⟨u, st₆, hrun₆, hsat₆, -⟩ :=
-    assertEqual_complete (c := KimchiConstraint F) loop.2.2 scalar.val st₅
-      ⟨hscL.2.2, hscS₅, hpin⟩
+    assertEqual_complete (c := KimchiConstraint F) loop.2.2 scalar.val
+      (scalar.val.val st₅.env.get) st₅
+      ⟨⟨CircuitType.scoped_fvar.mpr hscL.2.2, CircuitType.reads_fvar.mpr hpin⟩,
+        ⟨CircuitType.scoped_fvar.mpr hscS₅, CircuitType.reads_fvar.mpr rfl⟩⟩
   have hle₆ := hrun₆.le
   have hnv₆ := hrun₆.nv_le
   have hlenR : loop.1.length = rounds := by rw [ChainAt.length hchainAt, hlenB]

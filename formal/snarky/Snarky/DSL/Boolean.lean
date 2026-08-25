@@ -233,13 +233,15 @@ class LawfulIfThenElse (F c val var : Type) [Field F] [DecidableEq F] [BasicSyst
     ⦃⌜True⌝⦄
     atBuilder V (select (c := c) b t e)
     ⦃⇓ r _ => ⌜CircuitType.Reads V r (if bb then tv else ev)⌝⦄
-  /-- From scoped operands and a well-formed selector the run succeeds, its rows hold at
-  every extension of the final table, and the result is a scoped bundle. -/
+  /-- From operands that read `tv` and `ev` and a selector that reads `bb`, the run
+  succeeds, its rows hold at every extension of the final table, and the result reads the
+  branch the selector picks. -/
   select_complete : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F)
-    (t e : var), Complete (fun st => CircuitType.Scoped (val := val) st t ∧
-        CircuitType.Scoped (val := val) st e ∧ (↑b : CVar F).Scoped st ∧
-        CircuitType.WellFormed (val := Bool) st.env.get b)
-      (select (c := c) b t e) (fun a st' => CircuitType.Scoped (val := val) st' a)
+    (t e : var) (bb : Bool) (tv ev : val),
+    Complete (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
+        CircuitType.ReadsAs (val := val) st t tv ∧ CircuitType.ReadsAs (val := val) st e ev)
+      (select (c := c) b t e)
+      (fun a st' => CircuitType.ReadsAs (val := val) st' a (if bb then tv else ev))
 
 section Lawful
 
@@ -253,12 +255,7 @@ instance instLawfulIfThenElseFVar : LawfulIfThenElse F c F (FVar F) where
     show CircuitType.Reads V _ _
     rw [CircuitType.reads_fvar, ← CircuitType.reads_fvar.mp ht, ← CircuitType.reads_fvar.mp he]
     exact selectField_spec (c := c) (V := V) b t e nv trivial hsat bb hb
-  select_complete b t e := by
-    rintro st ⟨ht, he, hb, bb, hbb⟩
-    obtain ⟨r, st₁, hrun, hsat, hscope⟩ :=
-      selectField_complete (c := c) b t e bb (t.val st.env.get) (e.val st.env.get) st
-        ⟨⟨CircuitType.scoped_boolVar.mpr hb, hbb⟩, ⟨ht, rfl⟩, ⟨he, rfl⟩⟩
-    exact ⟨r, st₁, hrun, hsat, hscope.1⟩
+  select_complete b t e bb tv ev := selectField_complete (c := c) b t e bb tv ev
 
 instance instLawfulIfThenElseBoolVar : LawfulIfThenElse F c Bool (BoolVar F) where
   select_sound V b t e tv ev bb ht he hb := by
@@ -270,24 +267,29 @@ instance instLawfulIfThenElseBoolVar : LawfulIfThenElse F c Bool (BoolVar F) whe
     rw [CircuitType.reads_boolVar, BoolVar.coe_unchecked, hr bb hb,
       CircuitType.reads_boolVar.mp ht, CircuitType.reads_boolVar.mp he]
     cases bb <;> simp
-  select_complete b t e := by
-    rintro st ⟨ht, he, hb, bb, hbb⟩
-    obtain ⟨r, st₁, hrun, hsat, hscope⟩ :=
-      selectField_complete (c := c) b ↑t ↑e bb ((↑t : CVar F).val st.env.get)
-        ((↑e : CVar F).val st.env.get) st
-        ⟨⟨CircuitType.scoped_boolVar.mpr hb, hbb⟩,
-          ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp ht), rfl⟩,
-          ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp he), rfl⟩⟩
-    exact ⟨.unchecked r, st₁, hrun.bind rfl, fun hnv hle =>
+  select_complete b t e bb tv ev := by
+    rintro st ⟨hb, ht, he⟩
+    obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
+      selectField_complete (c := c) b ↑t ↑e bb (bit tv) (bit ev) st
+        ⟨hb,
+          ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp ht.1),
+            CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp ht.2)⟩,
+          ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp he.1),
+            CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp he.2)⟩⟩
+    refine ⟨.unchecked r, st₁, hrun.bind rfl, fun hnv hle =>
       Sat.bind hrun (hsat hnv hle) Sat.pure,
-      CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp hscope.1)⟩
+      CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp hr.1),
+      CircuitType.reads_boolVar.mpr ?_⟩
+    rw [BoolVar.coe_unchecked, CircuitType.reads_fvar.mp hr.2]
+    cases bb <;> simp
 
 instance instLawfulIfThenElseUnit : LawfulIfThenElse F c Unit Unit where
   select_sound V b t e tv ev bb _ _ _ := by
     intro _ _ _
     exact CircuitType.reads_unit
-  select_complete _ _ _ := fun st _ =>
-    ⟨(), st, rfl, fun _ _ => by simp [Sat, build], CircuitType.scoped_unit⟩
+  select_complete _ _ _ _ _ _ := fun st _ =>
+    ⟨(), st, rfl, fun _ _ => by simp [Sat, build],
+      CircuitType.scoped_unit, CircuitType.reads_unit⟩
 
 variable {a va b vb : Type}
 
@@ -316,20 +318,26 @@ instance instLawfulIfThenElseProd [CircuitType F a va] [CircuitType F b vb] [IfT
       (List.mem_append_right _ (List.mem_append_left _ hcon))
     cases bb <;>
       exact CircuitType.reads_prod.mpr ⟨h₁ _ hrows₁, h₂ nv hrows₂⟩
-  select_complete s t e := by
-    rintro st ⟨ht, he, hb, hw⟩
-    rw [CircuitType.scoped_prod] at ht he
-    obtain ⟨r₂, st₁, hrun₂, hsat₂, hscope₂⟩ :=
-      B.select_complete (c := c) s t.2 e.2 st ⟨ht.2, he.2, hb, hw⟩
-    obtain ⟨r₁, st₂, hrun₁, hsat₁, hscope₁⟩ :=
-      A.select_complete (c := c) s t.1 e.1 st₁
-        ⟨CircuitType.Scoped.mono hrun₂.nv_le ht.1, CircuitType.Scoped.mono hrun₂.nv_le he.1,
-          CVar.Scoped.mono hrun₂.nv_le hb, ⟨hw.choose, hw.choose_spec.of_le
-            (CircuitType.scoped_fvar.mpr hb) hrun₂.le⟩⟩
-    exact ⟨(r₁, r₂), st₂, hrun₂.bind (hrun₁.bind rfl), fun hnv hle =>
+  select_complete s t e bb tv ev := by
+    rintro st ⟨hb, ht, he⟩
+    obtain ⟨tv₁, tv₂⟩ := tv
+    obtain ⟨ev₁, ev₂⟩ := ev
+    rw [CircuitType.ReadsAs, CircuitType.scoped_prod, CircuitType.reads_prod] at ht he
+    obtain ⟨r₂, st₁, hrun₂, hsat₂, hr₂⟩ :=
+      B.select_complete (c := c) s t.2 e.2 bb tv₂ ev₂ st
+        ⟨hb, ⟨ht.1.2, ht.2.2⟩, ⟨he.1.2, he.2.2⟩⟩
+    obtain ⟨r₁, st₂, hrun₁, hsat₁, hr₁⟩ :=
+      A.select_complete (c := c) s t.1 e.1 bb tv₁ ev₁ st₁
+        ⟨hb.mono hrun₂.nv_le hrun₂.le,
+          CircuitType.ReadsAs.mono hrun₂.nv_le hrun₂.le ⟨ht.1.1, ht.2.1⟩,
+          CircuitType.ReadsAs.mono hrun₂.nv_le hrun₂.le ⟨he.1.1, he.2.1⟩⟩
+    refine ⟨(r₁, r₂), st₂, hrun₂.bind (hrun₁.bind rfl), fun hnv hle =>
       Sat.bind hrun₂ (hsat₂ (Nat.le_trans hrun₁.nv_le hnv) (hrun₁.le.trans hle))
-        (Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure),
-      CircuitType.scoped_prod.mpr ⟨hscope₁, CircuitType.Scoped.mono hrun₁.nv_le hscope₂⟩⟩
+        (Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure), ?_⟩
+    have hr₂' := CircuitType.ReadsAs.mono hrun₁.nv_le hrun₁.le hr₂
+    refine ⟨CircuitType.scoped_prod.mpr ⟨hr₁.1, hr₂'.1⟩,
+      CircuitType.reads_prod.mpr ?_⟩
+    cases bb <;> exact ⟨hr₁.2, hr₂'.2⟩
 
 instance instLawfulIfThenElseVector [CircuitType F a va] [IfThenElse F c va]
     [S : LawfulIfThenElse F c a va] {n : Nat} :
@@ -347,24 +355,30 @@ instance instLawfulIfThenElseVector [CircuitType F a va] [IfThenElse F c va]
     have hi' := h ⟨i, hi⟩
     simp only [Fin.getElem_fin] at hi'
     cases bb <;> exact hi'
-  select_complete s t e := by
-    rintro st ⟨ht, he, hb, hw⟩
+  select_complete s t e bb tv ev := by
+    rintro st ⟨hb, ht, he⟩
     obtain ⟨rs, st₁, hrun, hsat, hrs⟩ :=
       zipWithVecM_complete (c := c) (IfThenElse.select s) t e
-        (fun st => CircuitType.Scoped (val := Vector a n) st t ∧
-          CircuitType.Scoped (val := Vector a n) st e ∧ (↑s : CVar F).Scoped st ∧
-          CircuitType.WellFormed (val := Bool) st.env.get s)
-        (fun _ r st' => CircuitType.Scoped (val := a) st' r)
-        (fun {_ _} hnv hle h => ⟨CircuitType.Scoped.mono hnv h.1,
-          CircuitType.Scoped.mono hnv h.2.1, CVar.Scoped.mono hnv h.2.2.1,
-          ⟨h.2.2.2.choose, h.2.2.2.choose_spec.of_le
-            (CircuitType.scoped_fvar.mpr h.2.2.1) hle⟩⟩)
-        (fun _ {_ _ _} hnv _ h => CircuitType.Scoped.mono hnv h)
-        (fun i st' h => S.select_complete (c := c) s t[i.val] e[i.val] st'
-          ⟨CircuitType.scoped_vector.mp h.1 i.val i.isLt,
-            CircuitType.scoped_vector.mp h.2.1 i.val i.isLt, h.2.2.1, h.2.2.2⟩)
-        st ⟨ht, he, hb, hw⟩
-    exact ⟨rs, st₁, hrun, hsat, CircuitType.scoped_vector.mpr fun i hi => hrs ⟨i, hi⟩⟩
+        (fun st => CircuitType.ReadsAs (val := Bool) st s bb ∧
+          CircuitType.ReadsAs (val := Vector a n) st t tv ∧
+          CircuitType.ReadsAs (val := Vector a n) st e ev)
+        (fun i r st' => CircuitType.ReadsAs (val := a) st' r
+          (if bb then tv[i.val] else ev[i.val]))
+        (fun {_ _} hnv hle h => ⟨h.1.mono hnv hle,
+          CircuitType.ReadsAs.mono hnv hle h.2.1, CircuitType.ReadsAs.mono hnv hle h.2.2⟩)
+        (fun _ {_ _ _} hnv hle h => CircuitType.ReadsAs.mono hnv hle h)
+        (fun i st' h => S.select_complete (c := c) s t[i.val] e[i.val] bb tv[i.val]
+          ev[i.val] st'
+          ⟨h.1,
+            ⟨CircuitType.scoped_vector.mp h.2.1.1 i.val i.isLt,
+              CircuitType.reads_vector.mp h.2.1.2 i.val i.isLt⟩,
+            ⟨CircuitType.scoped_vector.mp h.2.2.1 i.val i.isLt,
+              CircuitType.reads_vector.mp h.2.2.2 i.val i.isLt⟩⟩)
+        st ⟨hb, ht, he⟩
+    refine ⟨rs, st₁, hrun, hsat, CircuitType.scoped_vector.mpr fun i hi => (hrs ⟨i, hi⟩).1,
+      CircuitType.reads_vector.mpr fun i hi => ?_⟩
+    have h := (hrs ⟨i, hi⟩).2
+    cases bb <;> exact h
 
 /-- A bundle isomorphic to one whose selection is lawful, selects lawfully through the
 isomorphism. -/
@@ -384,14 +398,17 @@ isomorphism. -/
         (pure (ew.symm r) : CircuitM F c vb)) nv).result) (ev (if bb then tv else ev'))
       simp only [build_bind, build, List.append_nil, Equiv.apply_symm_apply] at hsat ⊢
       cases bb <;> simpa using h nv hsat
-    select_complete := fun s t e => by
+    select_complete := fun s t e bb tv ev' => by
       intro st hst
-      obtain ⟨r, st₁, hrun, hsat, hscope⟩ := S.select_complete (c := c) s (ew t) (ew e) st hst
+      obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
+        S.select_complete (c := c) s (ew t) (ew e) bb (ev tv) (ev ev') st hst
       refine ⟨ew.symm r, st₁, hrun.bind rfl, fun hnv hle =>
         Sat.bind hrun (hsat hnv hle) Sat.pure, ?_⟩
-      show CircuitType.Scoped (val := a) st₁ (ew (ew.symm r))
+      show CircuitType.Scoped (val := a) st₁ (ew (ew.symm r)) ∧
+        CircuitType.Reads st₁.env.get (ew (ew.symm r)) (ev (if bb then tv else ev'))
       rw [Equiv.apply_symm_apply]
-      exact hscope }
+      refine ⟨hr.1, ?_⟩
+      cases bb <;> exact hr.2 }
 
 /-- A shape selects through its decomposition, laws and all. -/
 @[reducible] def IfThenElse.ofShape {S T : Type → Type} {var : Type}
