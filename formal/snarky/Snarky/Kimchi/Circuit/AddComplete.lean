@@ -217,6 +217,60 @@ where
     let x3 := sv * sv - (x1 + x2)
     pure ⟨x3, sv * (x1 - x3) - y1⟩
 
+/-! ## Soundness -/
+
+open Std.Do in
+/-- Sealing a point preserves both coordinates' readings — `sealVar_spec` at each. -/
+@[spec] theorem sealPoint_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (q : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄
+    sealPoint (c := Builder V c) q
+    ⦃⇓ r _ => ⌜r.x.val V = q.x.val V ∧ r.y.val V = q.y.val V⌝⦄ := by
+  simp only [sealPoint]
+  mvcgen
+
+open Std.Do in
+/-- The infinity column grants nothing on its own: what the flag reads is pinned by the
+gate's row, not by how it was produced. A spec so the mode's `match` is walked over
+rather than split. -/
+@[spec] theorem infColumn_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
+    (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) :
+    ⦃⌜True⌝⦄
+    addFast.infColumn (c := Builder V c) fin p1 p2 sameX
+    ⦃⇓ _ _ => ⌜True⌝⦄ := by
+  cases fin <;> simp only [addFast.infColumn] <;> mvcgen
+
+open Std.Do WeierstrassCurve.Affine in
+/-- **`addFast`'s soundness.** Any valuation satisfying the emitted row reads the
+result as the group sum: either the flag is set and the sum is the point at infinity,
+or the flag is clear and the output point is the sum. The gate's own `sound` does the
+work; the gadget's part is that the payload's reading is the operands' — the seals
+preserve them — and the witnessed columns are whatever the row constrains them to be. -/
+@[spec] theorem addFast_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (fin : Finiteness) (W : WeierstrassCurve.Affine F)
+    (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0) (htwo : (2 : F) ≠ 0)
+    (p1' p2' : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄
+    addFast (c := Builder V (KimchiConstraint F)) fin p1' p2'
+    ⦃⇓ r _ => ⌜∀ (h1 : W.Nonsingular (p1'.x.val V) (p1'.y.val V))
+        (h2 : W.Nonsingular (p2'.x.val V) (p2'.y.val V)), p1'.y.val V ≠ 0 →
+        ((↑r.isInfinity : CVar F).val V = 1 ∧
+            Point.some _ _ h1 + Point.some _ _ h2 = 0) ∨
+          ((↑r.isInfinity : CVar F).val V = 0 ∧
+            ∃ h3 : W.Nonsingular (r.p.x.val V) (r.p.y.val V),
+              Point.some _ _ h1 + Point.some _ _ h2 = Point.some _ _ h3)⌝⦄ := by
+  simp only [addFast]
+  mvcgen
+  rename_i q1 _ hs1 q2 _ hs2 _ _ _ inf _ aux _ _ p3 _ _ _ _ hgate
+  rw [← hs1.1, ← hs1.2, ← hs2.1, ← hs2.2]
+  intro h1 h2 hy1ne
+  rcases Kimchi.Gate.AddComplete.sound W ha _ h1 h2 hgate hy1ne htwo with
+    ⟨hinf, hsum⟩ | ⟨hinf, h3, hsum⟩
+  · exact Or.inl ⟨hinf, hsum⟩
+  · exact Or.inr ⟨hinf, h3, hsum⟩
+
 /-! ## Completeness -/
 
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
