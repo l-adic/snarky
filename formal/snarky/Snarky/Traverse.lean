@@ -116,6 +116,35 @@ def mapAccumM {m : Type u → Type v} [Monad m] {s α β : Type u} (f : s → α
     let (ys, acc') ← mapAccumM f acc xs
     pure (y :: ys, acc')
 
+/-- The trace of an accumulating traversal: each output is related to the input it came
+from and to the states either side of it, and the states thread from the initial one to
+the final. This is what a loop's caller learns — the per-step relation, chained. -/
+def Chain {s α β : Type} (R : s → α → β → s → Prop) : s → List α → List β → s → Prop
+  | init, [], ys, fin => ys = [] ∧ init = fin
+  | init, x :: xs, ys, fin =>
+    ∃ (y : β) (ys' : List β) (mid : s),
+      ys = y :: ys' ∧ R init x y mid ∧ Chain R mid xs ys' fin
+
+open Std.Do in
+/-- `mapAccumM`'s soundness: a per-step relation, established by the step's own spec,
+holds along the whole trace. The caller supplies `R` and gets the chain — no bespoke
+loop invariant per gadget. -/
+theorem mapAccumM_spec {V : Valuation F} {s α β : Type} [ConstraintHolds F c]
+    (f : s → α → CircuitM F (Builder V c) (β × s)) (R : s → α → β → s → Prop)
+    (hstep : ∀ (st : s) (x : α), ⦃⌜True⌝⦄ f st x ⦃⇓ p _ => ⌜R st x p.1 p.2⌝⦄) :
+    ∀ (init : s) (xs : List α),
+      ⦃⌜True⌝⦄ mapAccumM f init xs ⦃⇓ p _ => ⌜Chain R init xs p.1 p.2⌝⦄
+  | init, [] => by
+    intro nv _ _
+    exact ⟨rfl, rfl⟩
+  | init, x :: xs => by
+    have hx := hstep init x
+    have hrest := fun (acc : s) => mapAccumM_spec f R hstep acc xs
+    simp only [mapAccumM]
+    mvcgen [hx, hrest]
+    rename_i p _ hp q _ hq
+    exact ⟨p.1, q.1, p.2, rfl, hp, hq⟩
+
 attribute [irreducible] zipWithVecM
 
 end Snarky
