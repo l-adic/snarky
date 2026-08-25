@@ -128,6 +128,14 @@ def Chain {s α β : Type} (R : s → α → β → s → Prop) : s → List α 
     ∃ (y : β) (ys' : List β) (mid : s),
       ys = y :: ys' ∧ R init x y mid ∧ Chain R mid xs ys' fin
 
+/-- A trace with no outputs traversed no inputs: the loop ran zero steps. -/
+theorem Chain.of_nil_out {s α β : Type} {R : s → α → β → s → Prop} :
+    ∀ {init fin : s} {xs : List α}, Chain R init xs [] fin → xs = [] ∧ init = fin
+  | _, _, [], h => ⟨rfl, h.2⟩
+  | _, _, _ :: _, h => by
+    obtain ⟨y, ys', -, heq, -, -⟩ := h
+    exact nomatch heq
+
 open Std.Do in
 /-- `mapAccumM`'s soundness: a per-step relation, established by the step's own spec,
 holds along the whole trace. The caller supplies `R` and gets the chain — no bespoke

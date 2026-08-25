@@ -73,15 +73,17 @@ def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kimch
     (rows : ℕ) (scalar : FVar F) :
     CircuitM F c (FVar F × FVar F × FVar F) := do
   let crumbs ← witness (val := Vector (Vector F 8) rows) (crumbsWit rows scalar)
-  let (rounds, fin) ← mapAccumM
-    (fun (st : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8) => do
-      let w ← witness (val := F × F × F) (rowWit xs st)
-      pure (({ n0 := st.2.2, n8 := w.2.2, a0 := st.1, a8 := w.1,
-               b0 := st.2.1, b8 := w.2.1, xs } : EndoScalarRound F),
-            (w.1, w.2.1, w.2.2)))
-    (.const 2, .const 2, .const 0) crumbs.toList
+  let (rounds, fin) ← mapAccumM row (.const 2, .const 2, .const 0) crumbs.toList
   addConstraint (KimchiSystem.endoScalar rounds)
   pure fin
+where
+  /-- One row: witness the outgoing accumulators, and pair the round they close with
+  the accumulators the next row opens on. -/
+  row (st : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8) :
+      CircuitM F c (EndoScalarRound F × (FVar F × FVar F × FVar F)) := do
+    let w ← witness (val := F × F × F) (rowWit xs st)
+    pure ({ n0 := st.2.2, n8 := w.2.2, a0 := st.1, a8 := w.1,
+            b0 := st.2.1, b8 := w.2.1, xs }, (w.1, w.2.1, w.2.2))
 
 /-- The checked decomposition (PS `toField`; OCaml `to_field_checked`): the gate,
 the pin `n = scalar`, and the affine reconstruction `a·endo + b` — folded
@@ -96,110 +98,69 @@ def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
     let p ← mul a endo
     pure (CVar.add_ b p)
 
-attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toField
-
-/- PORT: the gadget's laws are OFF.
-
-Soundness threads the loop's structural invariant into the gate model's
-decompositions; completeness is written fresh against `Complete`. Neither is done.
-
 /-! ## Soundness
 
-`toFieldChecked'_spec`: any satisfying valuation exhibits a valid crumb list whose
-gate-model decompositions (`Kimchi.Gate.EndoScalar.decomposeA`/`decomposeB`/
-`nReconstruct` — the emitter's seeds `(2, 2, 0)` are theirs) carry the three
-returned accumulators. The loop's invariant is structural only — the witnesses
-promise nothing; the content arrives at the constraint after the loop. -/
+The loop's content is `mapAccumM_spec`'s: the step's grant, chained. What is left to
+the gadget is wiring — reading the chain off as the indexed run the gate model's
+`chain_decompose` consumes, which owns the fold arithmetic. -/
 
-/-- The loop's structural view: the collected rounds are the chain-threaded records
-over the traversed chunks — each round's inputs are the previous round's output
-variables, from `st` to `fin`. Valuation-free: the soundness invariant carries shape
-only; the values arrive with the constraint after the loop. -/
-private def Threaded : (FVar F × FVar F × FVar F) → List (Vector (FVar F) 8) →
-    List (EndoScalarRound F) → (FVar F × FVar F × FVar F) → Prop
-  | st, [], rounds, fin => rounds = [] ∧ fin = st
-  | st, xs :: rest, rounds, fin =>
-    ∃ w tail,
-      rounds = ({ n0 := st.2.2, n8 := w.2.2, a0 := st.1, a8 := w.1,
-                  b0 := st.2.1, b8 := w.2.1, xs } : EndoScalarRound F) :: tail ∧
-      Threaded w rest tail fin
+/-- The step's grant: the round is built from the accumulators either side of it.
+Structural — no valuation appears. -/
+private def Threads (st : FVar F × FVar F × FVar F) (_xs : Vector (FVar F) 8)
+    (r : EndoScalarRound F) (st' : FVar F × FVar F × FVar F) : Prop :=
+  (r.a0 = st.1 ∧ r.b0 = st.2.1 ∧ r.n0 = st.2.2) ∧
+    (r.a8 = st'.1 ∧ r.b8 = st'.2.1 ∧ r.n8 = st'.2.2)
 
-/-- One more chunk extends a threading at the tail. -/
-private theorem Threaded.snoc :
-    ∀ {st fin : FVar F × FVar F × FVar F} {pref : List (Vector (FVar F) 8)}
-      {rounds : List (EndoScalarRound F)},
-      Threaded st pref rounds fin →
-      ∀ (xs : Vector (FVar F) 8) (w : FVar F × FVar F × FVar F),
-      Threaded st (pref ++ [xs])
-        (rounds ++ [{ n0 := fin.2.2, n8 := w.2.2, a0 := fin.1, a8 := w.1,
-                      b0 := fin.2.1, b8 := w.2.1, xs }]) w
-  | st, fin, [], rounds, h, xs, w => by
-    obtain ⟨hr, hfin⟩ := h
-    subst hr hfin
-    exact ⟨w, [], rfl, rfl, rfl⟩
-  | st, fin, chunk :: rest, rounds, h, xs, w => by
-    obtain ⟨w', tail, hr, hrest⟩ := h
-    subst hr
-    exact ⟨w', tail ++ [_], rfl, hrest.snoc xs w⟩
-
-/-- An empty threading traversed no chunks: the final triple is the start. -/
-private theorem Threaded.nil :
-    ∀ {st fin : FVar F × FVar F × FVar F} {pref : List (Vector (FVar F) 8)},
-      Threaded st pref [] fin → pref = [] ∧ fin = st
-  | _, _, [], h => ⟨rfl, h.2⟩
-  | _, _, _ :: _, h => by
-    obtain ⟨w, tail, heq, -⟩ := h
-    exact nomatch heq
-
-/-- The structural facts of a nonempty threading: the round count, round `0`'s seed
-wiring, the shared accumulator variables between adjacent rounds, and the final
-triple's wiring — everything the gate's `chain_decompose` consumes, extracted
-without touching a valuation. -/
-private theorem threaded_chain :
+/-- A threaded trace, indexed: the round count, round `0`'s seed wiring, the shared
+accumulator variables between adjacent rounds, and the last round's outputs —
+everything `chain_decompose` consumes, extracted without touching a valuation. -/
+private theorem chain_wiring :
     ∀ {pref : List (Vector (FVar F) 8)} {st fin : FVar F × FVar F × FVar F}
       {r₀ : EndoScalarRound F} {rs : List (EndoScalarRound F)},
-      Threaded st pref (r₀ :: rs) fin →
+      Chain Threads st pref (r₀ :: rs) fin →
       (r₀ :: rs).length = pref.length ∧
       (r₀.a0 = st.1 ∧ r₀.b0 = st.2.1 ∧ r₀.n0 = st.2.2) ∧
-      (∀ i (hi : i + 1 < (r₀ :: rs).length),
+      (∀ i (_ : i + 1 < (r₀ :: rs).length),
         (r₀ :: rs)[i + 1].a0 = (r₀ :: rs)[i].a8 ∧
         (r₀ :: rs)[i + 1].b0 = (r₀ :: rs)[i].b8 ∧
         (r₀ :: rs)[i + 1].n0 = (r₀ :: rs)[i].n8) ∧
       (fin.1 = (r₀ :: rs)[rs.length].a8 ∧
        fin.2.1 = (r₀ :: rs)[rs.length].b8 ∧
        fin.2.2 = (r₀ :: rs)[rs.length].n8)
-  | x :: rest, st, fin, r₀, rs, h => by
-    obtain ⟨w, tail, heq, hrest⟩ := h
-    injection heq with h1 h2
-    subst h1 h2
+  | [], _, _, _, _, h => absurd h.1 (by simp)
+  | _ :: rest, st, fin, r₀, rs, h => by
+    obtain ⟨r, tail, mid, heq, ⟨⟨e1, e2, e3⟩, d1, d2, d3⟩, hrest⟩ := h
+    injection heq with hr ht
+    subst hr ht
     cases rs with
     | nil =>
-      obtain ⟨rfl, rfl⟩ := Threaded.nil hrest
-      exact ⟨rfl, ⟨rfl, rfl, rfl⟩, fun i hi => by simp at hi, ⟨rfl, rfl, rfl⟩⟩
+      obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hrest
+      exact ⟨rfl, ⟨e1, e2, e3⟩, fun i hi => by simp at hi,
+        ⟨d1.symm, d2.symm, d3.symm⟩⟩
     | cons r₁ ts =>
-      obtain ⟨ihlen, ⟨e1, e2, e3⟩, ihstep, ihlast⟩ := threaded_chain hrest
-      refine ⟨by simpa using ihlen, ⟨rfl, rfl, rfl⟩, ?_, ?_⟩
+      obtain ⟨ihlen, ⟨f1, f2, f3⟩, ihstep, ihlast⟩ := chain_wiring hrest
+      refine ⟨by simpa using ihlen, ⟨e1, e2, e3⟩, ?_, ?_⟩
       · intro i hi
         cases i with
         | zero =>
-          simpa only [List.getElem_cons_succ, List.getElem_cons_zero]
-            using ⟨e1, e2, e3⟩
+          refine ⟨?_, ?_, ?_⟩ <;>
+            simp only [List.getElem_cons_succ, List.getElem_cons_zero] <;>
+            simp [f1, f2, f3, d1, d2, d3]
         | succ j =>
           have hj : j + 1 < (r₁ :: ts).length := by simpa using hi
           simpa only [List.getElem_cons_succ] using ihstep j hj
-      · obtain ⟨f1, f2, f3⟩ := ihlast
-        simpa only [List.length_cons, List.getElem_cons_succ] using ⟨f1, f2, f3⟩
+      · obtain ⟨g1, g2, g3⟩ := ihlast
+        simpa only [List.length_cons, List.getElem_cons_succ] using ⟨g1, g2, g3⟩
 
-/-- A satisfied threading from the seeds computes the gate tower's chain: the
-structural wiring (`threaded_chain`) instantiates `chain_decompose`'s indexed run
-at the payload reads, so `fin` reads as the decompositions of the concatenated
-crumb stream. The gadget layer contributes wiring only; the fold arithmetic is the
-tower's. -/
-private theorem threaded_sound [Field F] [DecidableEq F]
+/-- A satisfied trace from the canonical seeds computes the gate tower's chain: the
+wiring instantiates `chain_decompose`'s indexed run at the rounds' readings, so the
+final accumulators read as the decompositions of the concatenated crumb stream. The
+gadget contributes wiring; the fold arithmetic is the tower's. -/
+private theorem chain_sound [Field F] [DecidableEq F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (V : Valuation F)
     {pref : List (Vector (FVar F) 8)} {fin : FVar F × FVar F × FVar F}
     {rounds : List (EndoScalarRound F)}
-    (hthr : Threaded (.const 2, .const 2, .const 0) pref rounds fin)
+    (hthr : Chain Threads (.const 2, .const 2, .const 0) pref rounds fin)
     (hHolds : ∀ r ∈ rounds, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read V r)) :
     ∃ crumbs : List F,
       (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
@@ -209,17 +170,17 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       fin.2.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs := by
   match hround : rounds, hthr with
   | [], hthr' =>
-    obtain ⟨rfl, rfl⟩ := Threaded.nil hthr'
+    obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
     refine ⟨[], by simp, by simp, ?_, ?_, ?_⟩ <;>
       simp [Kimchi.Gate.EndoScalar.decomposeA, Kimchi.Gate.EndoScalar.decomposeB,
         Kimchi.Gate.EndoScalar.decomposeFold,
         Kimchi.Gate.EndoScalar.nReconstruct, CVar.val]
   | r₀ :: rs, hthr' =>
     subst hround
-    obtain ⟨hlen, ⟨h01, h02, h03⟩, hstep, hf1, hf2, hf3⟩ := threaded_chain hthr'
+    obtain ⟨hlen, ⟨h01, h02, h03⟩, hstep, hf1, hf2, hf3⟩ := chain_wiring hthr'
     set w : ℕ → Kimchi.Gate.EndoScalar.Witness F :=
       fun i => EndoScalarRound.read V ((r₀ :: rs).getD i r₀) with hw
-    have hwi : ∀ i (hi : i ≤ rs.length),
+    have hwi : ∀ i (_ : i ≤ rs.length),
         w i = EndoScalarRound.read V ((r₀ :: rs)[i]'(by simp; omega)) := by
       intro i hi
       simp only [hw]
@@ -265,90 +226,73 @@ private theorem threaded_sound [Field F] [DecidableEq F]
       simp [EndoScalarRound.read, hf3]
 
 open Std.Do in
-/-- The gate emitter is sound: some valid crumb list of length `8·rows` carries the
-returned `(a, b, n)` as its gate-model decompositions — the emitter's seeds
-`(2, 2, 0)` are theirs. The characteristic hypotheses are the gate's own (`sound`
-interpolates the tables from the cubics). -/
-theorem toFieldChecked'_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F)
-    (Q : PostCond (FVar F × FVar F × FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × FVar F × FVar F) =>
-        ∃ crumbs : List F,
-          (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-          crumbs.length = 8 * rows ∧
-          r.1.val V = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
-          r.2.1.val V = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
-          r.2.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs) Q⦄
-    (toFieldChecked' (c := KimchiConstraint F) rows scalar)
-    ⦃Q⦄ := by
-  simp only [toFieldChecked', mapAccumM]
+/-- The step's spec: the round it emits is wired to the accumulators either side. -/
+@[spec] private theorem row_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (st : FVar F × FVar F × FVar F) (xs : Vector (FVar F) 8) :
+    ⦃⌜True⌝⦄
+    toFieldChecked'.row (F := F) (c := Builder V (KimchiConstraint F)) st xs
+    ⦃⇓ p _ => ⌜Threads st xs p.1 p.2⌝⦄ := by
+  simp only [toFieldChecked'.row, Threads]
   mvcgen
-  rename_i s hpre
-  intro crumbVars _
-  mvcgen
-  case inv1 =>
-    exact ⇓ p s' => ⌜s'.V = s.V ∧
-      Threaded (.const 2, .const 2, .const 0) p.1.prefix p.2.snd p.2.fst⌝
-  case vc2.vc1.pre =>
-    exact ⟨rfl, rfl, rfl⟩
-  case vc1.step =>
-    rename_i pref cur suff hsplit b st' hinv
-    intro r nv'
-    mvcgen
-    obtain ⟨hV, hthr⟩ := hinv
-    exact ⟨hV, hthr.snoc cur r⟩
-  case vc3.vc1.post.success =>
-    rename_i fin st' hinv
-    obtain ⟨hV, hthr⟩ := hinv
-    intro _ nv' hpay _
-    rw [hV]
-    refine hpre fin.fst nv' ?_
-    have hHolds : ∀ r ∈ fin.snd,
-        Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read s.V r) := by
-      have h := hpay
-      rw [hV] at h
-      exact h
-    obtain ⟨crumbs, hvalid, hlen, ha, hb, hn⟩ := threaded_sound h2 h3 s.V hthr hHolds
-    exact ⟨crumbs, hvalid, by simpa using hlen, ha, hb, hn⟩
 
 open Std.Do in
-/-- The checked decomposition is sound: the result reads as the gate model's
-`toField` — `a·endo + b` — over some valid crumb list of length `8·rows` whose
-`nReconstruct` is the scalar. -/
-theorem toField_spec [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F)
-    (Q : PostCond (FVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F) =>
-        ∃ crumbs : List F,
-          (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-          crumbs.length = 8 * rows ∧
-          r.val V = Kimchi.Gate.EndoScalar.toField crumbs (endo.val V) ∧
-          scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs) Q⦄
-    (toField (c := KimchiConstraint F) rows scalar endo)
-    ⦃Q⦄ := by
+/-- **Soundness.** Any satisfying valuation exhibits a valid crumb list of the row
+width whose Algorithm-2 decompositions are the three accumulators returned. -/
+@[spec] theorem toFieldChecked'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) :
+    ⦃⌜True⌝⦄
+    toFieldChecked' (c := Builder V (KimchiConstraint F)) rows scalar
+    ⦃⇓ r _ => ⌜∃ crumbs : List F,
+      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
+      crumbs.length = 8 * rows ∧
+      r.1.val V = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
+      r.2.1.val V = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
+      r.2.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs⌝⦄ := by
+  have hloop := mapAccumM_spec (V := V) (c := KimchiConstraint F)
+    (toFieldChecked'.row (F := F)) Threads row_spec
+  simp only [toFieldChecked']
+  mvcgen [hloop]
+  rename_i _ crumbs _ _ p _ hchain _ _ hpay
+  have hHolds : ∀ r ∈ p.1, Kimchi.Gate.EndoScalar.Holds (EndoScalarRound.read V r) := hpay
+  obtain ⟨cs, hv, hlen, hA, hB, hN⟩ := chain_sound h2 h3 V hchain hHolds
+  exact ⟨cs, hv, by simpa using hlen, hA, hB, hN⟩
+
+open Std.Do in
+/-- **Soundness of the wrapper.** The result reads as the gate model's `toField` —
+`a·endo + b` — over a valid crumb list of the row width whose reconstruction is the
+scalar. -/
+@[spec] theorem toField_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) :
+    ⦃⌜True⌝⦄
+    toField (c := Builder V (KimchiConstraint F)) rows scalar endo
+    ⦃⇓ r _ => ⌜∃ crumbs : List F,
+      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
+      crumbs.length = 8 * rows ∧
+      r.val V = Kimchi.Gate.EndoScalar.toField crumbs (endo.val V) ∧
+      scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs⌝⦄ := by
+  have hchk := toFieldChecked'_spec (V := V) h2 h3 rows scalar
   simp only [toField]
-  mvcgen
-  rename_i s hpre
-  refine toFieldChecked'_spec h2 h3 rows scalar _ _ ?_
-  intro abn nv1 ⟨crumbs, hvalid, hlen, ha, hb, hn⟩
-  mvcgen
-  intro _ nv2 heq
-  split
-  · rename_i e
-    mvcgen
-    refine hpre _ _ ?_
-    refine ⟨crumbs, hvalid, hlen, ?_, by rw [← heq, hn]⟩
+  mvcgen [hchk]
+  case h_1 =>
+    rename_i _ hdec _ e _ _ heq
+    obtain ⟨crumbs, hv, hlen, ha, hb, hn⟩ := hdec
+    refine ⟨crumbs, hv, hlen, ?_, by rw [← heq, hn]⟩
     simp only [Kimchi.Gate.EndoScalar.toField, CVar.val_add_, CVar.val_scale_,
       ha, hb, CVar.val]
     ring
-  · mvcgen
-    intro p nv3 hp
-    mvcgen
-    refine hpre _ _ ?_
-    refine ⟨crumbs, hvalid, hlen, ?_, by rw [← heq, hn]⟩
-    simp only [Kimchi.Gate.EndoScalar.toField]
-    rw [CVar.val_add_, hp, ha, hb]
-    ring
+  rename_i _ hdec _ _ _ _ _ heq _ _ hmul
+  obtain ⟨crumbs, hv, hlen, ha, hb, hn⟩ := hdec
+  refine ⟨crumbs, hv, hlen, ?_, by rw [← heq, hn]⟩
+  simp only [Kimchi.Gate.EndoScalar.toField, CVar.val_add_, hmul, ha, hb]
+  ring
+
+attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toFieldChecked'.row
+  EndoScalar.toField
+
+/- PORT: the gadget's completeness law is OFF.
+
+It is written fresh against `Complete`, on `mapAccumM_complete`; the text below
+is the old ghost-state version, kept only as a record of the argument.
 
 /-! ## Completeness
 
