@@ -37,6 +37,7 @@ Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_equality.lean
 import KimchiFixture.PS
 import Snarky
 import Snarky.Kimchi.Backend.Compile
+import Snarky.Kimchi.Circuit.AddComplete
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -194,6 +195,11 @@ def indexRoundTrip (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp)
     haveI : NeZero inst.n := inst.nz
     decide (Satisfies inst.idx inst.wit.pub inst.wit.tab)
 
+/-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
+def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  (·.p) <$> addFast .dontCheckFinite p.1 p.2
+
 /-- Compare one circuit's assembled system and re-solved witness against its dump:
 the CS data (types, coefficients, wires, public size) is input-independent; the
 witness re-solve seeds the fixture's recorded public inputs. -/
@@ -255,7 +261,10 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("bool_xor_step_circuit", compareWith (a := Bool) (b := Bool) boolXorCircuit),
     ("bool_all_step_circuit", compareWith (a := Bool) (b := Bool) boolAllCircuit),
     ("bool_any_step_circuit", compareWith (a := Bool) (b := Bool) boolAnyCircuit),
-    ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit) ]
+    ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit),
+    ("add_complete_step_circuit",
+      compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
+        addCompleteCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

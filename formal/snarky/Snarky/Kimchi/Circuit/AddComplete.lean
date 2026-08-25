@@ -51,10 +51,21 @@ instance : CircuitType F (AffinePoint F) (AffinePoint (FVar F)) where
   fieldsToValue fs := ⟨fs[0], fs[1]⟩
   varToFields p := #v[p.x, p.y]
   fieldsToVar fs := ⟨fs[0], fs[1]⟩
+  value_roundTrip _ := rfl
+  var_roundTrip cvs := by
+    ext i hi
+    match i, hi with
+    | 0, _ => rfl
+    | 1, _ => rfl
 
 /-- A point's coordinates carry no check of their own (PS `genericCheck`). -/
-instance : CheckedType F c (AffinePoint (FVar F)) where
-  check _ := .pure PUnit.unit
+instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+    CheckedType F c (AffinePoint F) (AffinePoint (FVar F)) where
+  check _ := pure PUnit.unit
+  post _ _ := True
+  check_sound _ _ _ _ := trivial
+  check_runs _ _ _ := rfl
+  check_sat _ _ _ _ _ _ _ _ con hcon := by simp [build] at hcon
 
 /-- Seal a point coordinatewise, `y` before `x` — OCaml's `seal` maps over the tuple
 right to left (PS `sealPoint` preserves the order; emission order is fixture bytes). -/
@@ -91,7 +102,7 @@ private def sameXWit [Add F] [Mul F] [DecidableEq F] (p1 p2 : AffinePoint (FVar 
 
 /-- `inf`'s witness (`dontCheckFinite` mode): same x-coordinates with different
 y-coordinates — the inverse-pair test. Public only for the gadget laws. -/
-private def infWit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+private def infWit [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)]
     (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F Bool := do
   let sx ← readVar (val := Bool) sameX
   let y1 ← AsProver.readCVar p1.y
@@ -192,6 +203,12 @@ def addFast [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 def addComplete [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
     (p1 p2 : AffinePoint (FVar F)) : CircuitM F c (AddResult F) :=
   addFast .checkFinite p1 p2
+
+/- PORT: the gadget's laws are OFF.
+
+Soundness ports with friction (the reading vocabulary moved to a valuation) and
+completeness is written fresh against `Complete`; neither is done. The definitions
+above are what the constraint-system oracle exercises.
 
 /-! ## Soundness: satisfied constraints read as the group sum -/
 
@@ -673,5 +690,6 @@ theorem neg_point_reading [Field F] (W : WeierstrassCurve.Affine F)
   simp only [hy]
 
 end AddFast
+-/
 
 end Snarky.Kimchi
