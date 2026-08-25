@@ -97,6 +97,100 @@ where
       (Kimchi.Gate.Poseidon.mdsOfParams p) (Kimchi.Gate.Poseidon.paramsRc p)
       (i.1 + 1) (s0, s1, s2))
 
+/-! ## Soundness -/
+
+namespace Poseidon
+
+open Std.Do
+
+private theorem chainHolds_window [Field F] {M : Kimchi.Gate.Poseidon.Mds F}
+    {rc : List (F × F × F)} :
+    ∀ (i k0 : ℕ) (l : List (F × F × F)), chainHolds M rc k0 l →
+      5 * i + 5 < l.length →
+      Kimchi.Gate.Poseidon.Holds M (rcRow rc (k0 + i))
+        ⟨l.getD (5 * i) (0, 0, 0), l.getD (5 * i + 1) (0, 0, 0),
+         l.getD (5 * i + 2) (0, 0, 0), l.getD (5 * i + 3) (0, 0, 0),
+         l.getD (5 * i + 4) (0, 0, 0), l.getD (5 * i + 5) (0, 0, 0)⟩
+  | 0, k0, s0 :: s1 :: s2 :: s3 :: s4 :: s5 :: rest, h, _ => by
+    simp only [chainHolds] at h
+    simpa using h.1
+  | i + 1, k0, s0 :: s1 :: s2 :: s3 :: s4 :: s5 :: rest, h, hlen => by
+    simp only [chainHolds] at h
+    have ih := chainHolds_window i (k0 + 1) (s5 :: rest) h.2
+      (by simp at hlen ⊢; omega)
+    rw [show k0 + 1 + i = k0 + (i + 1) by omega] at ih
+    simpa [show ∀ j, 5 * (i + 1) + j = (5 * i + j) + 5 from fun j => by omega,
+      List.getD] using ih
+  | _, _, [], h, hlen => by simp at hlen
+  | _, _, [_], h, hlen => by
+    simp only [List.length_cons, List.length_nil] at hlen
+    omega
+  | _, _, [_, _], h, hlen => by
+    simp only [List.length_cons, List.length_nil] at hlen
+    omega
+  | _, _, [_, _, _], h, hlen => by
+    simp only [List.length_cons, List.length_nil] at hlen
+    omega
+  | _, _, [_, _, _, _], h, hlen => by
+    simp only [List.length_cons, List.length_nil] at hlen
+    omega
+  | _, _, [_, _, _, _, _], h, hlen => by
+    simp only [List.length_cons, List.length_nil] at hlen
+    omega
+
+open Std.Do in
+/-- **The gadget is sound**: under any satisfying valuation, at a full-size constant
+table, the returned state reads as `Poseidon.blockCipher` of the input state's
+reading — the fixture-validated production permutation. The row carries the whole
+chain, so the proof assembles its five-apart windows into the gate tower's `Chain`
+and applies `chain_blockCipher`. -/
+@[spec] theorem poseidon_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (s : SpongeState F) :
+    ⦃⌜True⌝⦄
+    poseidon (c := Builder V (KimchiConstraint F)) p s
+    ⦃⇓ r _ => ⌜CircuitType.readVal (val := Poseidon.Triple F) V r
+        = Poseidon.blockCipher p (CircuitType.readVal (val := Poseidon.Triple F) V s)⌝⦄ := by
+  simp only [poseidon]
+  mvcgen
+  rename_i outs _ _ _ _ hpay
+  show (outs[54].s0.val V, outs[54].s1.val V, outs[54].s2.val V)
+    = Poseidon.blockCipher p (s.s0.val V, s.s1.val V, s.s2.val V)
+  have hchain : chainHolds (mdsOf p.mds) p.roundConstants.toList 0
+      (read V ⟨p.mds, p.roundConstants.toList,
+        s.cells :: (outs.map SpongeState.cells).toList⟩) := hpay
+  let vs : List (F × F × F) :=
+    read V ⟨p.mds, p.roundConstants.toList,
+      s.cells :: (outs.map SpongeState.cells).toList⟩
+  have hlen : vs.length = 56 := by simp [vs, read]
+  let w : ℕ → Kimchi.Gate.Poseidon.Witness F := fun k =>
+    ⟨vs.getD (5 * k) (0, 0, 0), vs.getD (5 * k + 1) (0, 0, 0),
+     vs.getD (5 * k + 2) (0, 0, 0), vs.getD (5 * k + 3) (0, 0, 0),
+     vs.getD (5 * k + 4) (0, 0, 0), vs.getD (5 * k + 5) (0, 0, 0)⟩
+  have hch : Kimchi.Gate.Poseidon.Chain (Kimchi.Gate.Poseidon.mdsOfParams p)
+      (fun i => p.roundConstants.toList.getD i (0, 0, 0)) w 11 := by
+    refine ⟨fun i hi => ?_, fun i _ => rfl⟩
+    have hw := chainHolds_window i 0 vs hchain (by omega)
+    rw [Nat.zero_add] at hw
+    exact hw
+  have hrc : ∀ i < 5 * 11, (fun i => p.roundConstants.toList.getD i (0, 0, 0)) i
+      = Kimchi.Gate.Poseidon.paramsRc p i := by
+    intro i _
+    simp [Kimchi.Gate.Poseidon.paramsRc, List.getD_eq_getElem?_getD,
+      Array.getD_eq_getD_getElem?]
+  have hbc := Kimchi.Gate.Poseidon.chain_blockCipher p
+    (fun i => p.roundConstants.toList.getD i (0, 0, 0)) w 11 hch (by omega) hsize hrc
+  have h0 : (w 0).s0 = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
+  have h55 : (w 10).s5
+      = (outs[54].s0.val V, outs[54].s1.val V, outs[54].s2.val V) := by
+    show vs.getD 55 (0, 0, 0) = _
+    rw [List.getD_eq_getElem vs (0, 0, 0) (by omega)]
+    simp [vs, read, Vector.getElem_toList, SpongeState.cells]
+  rw [h0, h55] at hbc
+  exact hbc
+
+end Poseidon
+
 attribute [irreducible] poseidon
 
 /- PORT: the gadget's laws are OFF.
