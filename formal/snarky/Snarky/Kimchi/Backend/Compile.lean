@@ -101,7 +101,9 @@ def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
     | _ => none
 
 /-- The full pure pipeline: compile, dispatch the gates to rows, and assemble —
-returning the rows (public rows included), the gate table, and the public size.
+returning the rows (public rows included), the gate table, and the public variables —
+the list, not just its length, since the public slots are not a prefix of the
+numbering here.
 
 The public interface is the input slots followed by the output slots, as the source
 has it: `A.size + B.size` public rows in that order. The output slots are the ones
@@ -111,10 +113,11 @@ the wiring. -/
 def kimchiGateData [Field F] [DecidableEq F] [A : CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) a avar] [B : CircuitType F b bvar]
     (main : avar → CircuitM F (KimchiConstraint F) bvar) :
-    List (KimchiRow F) × List (AssembledGate F) × Nat :=
+    List (KimchiRow F) × List (AssembledGate F) × List Variable :=
   let built := kimchiCompile (a := a) (b := b) main
   let rows := built.gates.flatMap (toKimchiRows (F := F))
-  makeGateData ((allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2) rows
-    built.aux.wireState.unionFind
+  let pubVars := (allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2
+  let assembled := makeGateData pubVars rows built.aux.wireState.unionFind
+  (assembled.1, assembled.2.1, pubVars)
 
 end Snarky.Kimchi
