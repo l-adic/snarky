@@ -603,6 +603,160 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
       simp
     · exact (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfinx.symm hfiny.symm).trans hseq
 
+/-! ## Completeness
+
+The loop emits no row of its own — a round only witnesses its advice — so the ladder's
+completeness needs nothing of the accumulator but that it is readable. Every row is
+judged at the one `endoMul` constraint after the loop, and what discharges it is the
+model's `chain_complete` on the honest walk, which the run's readings are shown to be. -/
+
+/-- The rows the ladder is handed: four bit variables in scope. -/
+private def BitRow (st₁ : ProverState F) (bs : Vector (FVar F) 4) : Prop :=
+  ∀ v ∈ bs.toList, v.Scoped st₁
+
+/-- The ladder's accumulator invariant: the table has only grown since the bits were
+witnessed, and the accumulator's three variables are in scope. -/
+private def AccInv (st₁ : ProverState F) (acc : AffinePoint (FVar F) × FVar F)
+    (st : ProverState F) : Prop :=
+  (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+    acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st
+
+/-- A round's cells. -/
+private def cells (r : EndoMulRound F) : List (CVar F) :=
+  [r.t.x, r.t.y, r.p.x, r.p.y, r.nAcc, r.nAccNext, r.r.x, r.r.y, r.s.x, r.s.y,
+    r.s1, r.s3, r.inv, r.bit0, r.bit1, r.bit2, r.bit3]
+
+/-- The step's grant at a table: the round is wired to the base, the accumulators either
+side and the row's bits; its cells are in scope; and its reading is the gate's canonical
+row at its own inputs. -/
+private def RowGrant [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (r : EndoMulRound F)
+    (acc' : AffinePoint (FVar F) × FVar F) (st : ProverState F) : Prop :=
+  Threads t acc bs r acc' ∧ (∀ cv ∈ cells r, cv.Scoped st) ∧
+    EndoMulRound.readWith st.env.get r (r.s.x.val st.env.get) (r.s.y.val st.env.get)
+        (r.nAccNext.val st.env.get)
+      = Kimchi.Gate.EndoMul.build eb (t.x.val st.env.get) (t.y.val st.env.get)
+          (acc.1.x.val st.env.get) (acc.1.y.val st.env.get) (acc.2.val st.env.get)
+          (bs[0].val st.env.get) (bs[1].val st.env.get) (bs[2].val st.env.get)
+          (bs[3].val st.env.get)
+
+/-- Scope and the table's growth survive further growth. -/
+private theorem AccInv.mono [Field F] {st₁ : ProverState F}
+    (acc : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
+    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : AccInv st₁ acc st) :
+    AccInv st₁ acc st' :=
+  ⟨⟨Nat.le_trans h.1.1 hnv, h.1.2.trans hle⟩,
+    h.2.1.mono hnv, h.2.2.1.mono hnv, h.2.2.2.mono hnv⟩
+
+/-- A row's grant survives the table's growth: its cells are in scope, so the reading
+does not move. -/
+private theorem RowGrant.mono [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (r : EndoMulRound F)
+    (acc' : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
+    (ht : t.x.Scoped st ∧ t.y.Scoped st)
+    (hacc : acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
+    (hbs : ∀ v ∈ bs.toList, v.Scoped st)
+    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
+    (h : RowGrant eb t acc bs r acc' st) : RowGrant eb t acc bs r acc' st' := by
+  obtain ⟨hthr, hsc, hread⟩ := h
+  refine ⟨hthr, fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
+  have hcell : ∀ cv ∈ cells r, cv.val st'.env.get = cv.val st.env.get :=
+    fun cv hcv => CVar.val_of_le hle (hsc cv hcv)
+  have hbs' : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).val st'.env.get = (bs[i]'hi).val st.env.get :=
+    fun i hi => CVar.val_of_le hle (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi)))
+  have hread' : EndoMulRound.readWith st'.env.get r (r.s.x.val st'.env.get)
+        (r.s.y.val st'.env.get) (r.nAccNext.val st'.env.get)
+      = EndoMulRound.readWith st.env.get r (r.s.x.val st.env.get)
+        (r.s.y.val st.env.get) (r.nAccNext.val st.env.get) := by
+    simp only [EndoMulRound.readWith,
+      hcell r.t.x (by simp [cells]),
+      hcell r.t.y (by simp [cells]),
+      hcell r.p.x (by simp [cells]),
+      hcell r.p.y (by simp [cells]),
+      hcell r.nAcc (by simp [cells]),
+      hcell r.nAccNext (by simp [cells]),
+      hcell r.r.x (by simp [cells]),
+      hcell r.r.y (by simp [cells]),
+      hcell r.s.x (by simp [cells]),
+      hcell r.s.y (by simp [cells]),
+      hcell r.s1 (by simp [cells]),
+      hcell r.s3 (by simp [cells]),
+      hcell r.inv (by simp [cells]),
+      hcell r.bit0 (by simp [cells]),
+      hcell r.bit1 (by simp [cells]),
+      hcell r.bit2 (by simp [cells]),
+      hcell r.bit3 (by simp [cells])]
+  rw [hread', hread, CVar.val_of_le hle ht.1, CVar.val_of_le hle ht.2,
+    CVar.val_of_le hle hacc.1, CVar.val_of_le hle hacc.2.1, CVar.val_of_le hle hacc.2.2,
+    hbs' 0 (by omega), hbs' 1 (by omega), hbs' 2 (by omega), hbs' 3 (by omega)]
+
+/-- The step's completeness: the round's advice is the gate's canonical row at the
+accumulators it was handed, so the run succeeds and its reading is that row. -/
+private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
+    (eb : F) (t : AffinePoint (FVar F)) (ht : t.x.Scoped st₁ ∧ t.y.Scoped st₁)
+    (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (hbs : BitRow st₁ bs) :
+    Complete (F := F) (c := KimchiConstraint F) (AccInv st₁ acc)
+      (Snarky.Kimchi.endoMulRound (c := KimchiConstraint F) eb t acc bs)
+      (fun p st' => AccInv st₁ p.2 st' ∧ RowGrant eb t acc bs p.1 p.2 st') := by
+  rintro st ⟨⟨hnv, hle⟩, hax, hay, han⟩
+  have htx : t.x.Scoped st := ht.1.mono hnv
+  have hty : t.y.Scoped st := ht.2.mono hnv
+  have hb : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).Scoped st :=
+    fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono hnv
+  set W := Kimchi.Gate.EndoMul.build eb (t.x.val st.env.get) (t.y.val st.env.get)
+    (acc.1.x.val st.env.get) (acc.1.y.val st.env.get) (acc.2.val st.env.get)
+    ((bs[0]'(by omega)).val st.env.get) ((bs[1]'(by omega)).val st.env.get)
+    ((bs[2]'(by omega)).val st.env.get) ((bs[3]'(by omega)).val st.env.get) with hW
+  obtain ⟨w, st', hrun, hsat, hnv', hle', hscW, hrdW⟩ :=
+    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F × F × F × F)
+      (rowWit eb t bs acc) (st := st)
+      (v := (W.inv, W.nPrime, W.xR, W.yR, W.xS, W.yS, W.s1, W.s3))
+      (by
+        simp only [rowWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run htx,
+          AsProver.readCVar_run hty, AsProver.readCVar_run hax, AsProver.readCVar_run hay,
+          AsProver.readCVar_run han, AsProver.readCVar_run (hb 0 (by omega)),
+          AsProver.readCVar_run (hb 1 (by omega)), AsProver.readCVar_run (hb 2 (by omega)),
+          AsProver.readCVar_run (hb 3 (by omega)), Except.bind]
+        rfl)
+  obtain ⟨inv, nPrime, xR, yR, xS, yS, s1, s3⟩ := w
+  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hscW
+  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
+  refine ⟨(⟨t, acc.1, ⟨xR, yR⟩, ⟨xS, yS⟩, s1, s3, acc.2, nPrime,
+      bs[0], bs[1], bs[2], bs[3], inv⟩, (⟨xS, yS⟩, nPrime)), st', hrun.bind rfl,
+    fun hnvF hleF => Sat.bind hrun (hsat hnvF hleF) Sat.pure,
+    ⟨⟨Nat.le_trans hnv hnv', hle.trans hle'⟩, hscW.2.2.2.2.1, hscW.2.2.2.2.2.1,
+      hscW.2.1⟩,
+    ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
+  · intro cv hcv
+    simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
+    rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+      rfl | rfl | rfl | rfl | rfl
+    · exact htx.mono hnv'
+    · exact hty.mono hnv'
+    · exact hax.mono hnv'
+    · exact hay.mono hnv'
+    · exact han.mono hnv'
+    · exact hscW.2.1
+    · exact hscW.2.2.1
+    · exact hscW.2.2.2.1
+    · exact hscW.2.2.2.2.1
+    · exact hscW.2.2.2.2.2.1
+    · exact hscW.2.2.2.2.2.2.1
+    · exact hscW.2.2.2.2.2.2.2
+    · exact hscW.1
+    · exact (hb 0 (by omega)).mono hnv'
+    · exact (hb 1 (by omega)).mono hnv'
+    · exact (hb 2 (by omega)).mono hnv'
+    · exact (hb 3 (by omega)).mono hnv'
+  · simp only [EndoMulRound.readWith, hrdW.1, hrdW.2.1, hrdW.2.2.1, hrdW.2.2.2.1,
+      hrdW.2.2.2.2.1, hrdW.2.2.2.2.2.1, hrdW.2.2.2.2.2.2.1, hrdW.2.2.2.2.2.2.2,
+      CVar.val_of_le hle' htx, CVar.val_of_le hle' hty, CVar.val_of_le hle' hax,
+      CVar.val_of_le hle' hay, CVar.val_of_le hle' han,
+      CVar.val_of_le hle' (hb 0 (by omega)), CVar.val_of_le hle' (hb 1 (by omega)),
+      CVar.val_of_le hle' (hb 2 (by omega)), CVar.val_of_le hle' (hb 3 (by omega))]
+    rw [hW]
+    rfl
+
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by

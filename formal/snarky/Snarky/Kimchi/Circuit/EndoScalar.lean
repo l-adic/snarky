@@ -450,8 +450,9 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
     exact Kimchi.Gate.EndoScalar.crumbsOf_valid _ _ _ (List.getElem_mem _)
   obtain ⟨p, st₂, hrun₂, hsat₂, hinv₂, hchainAt⟩ :=
     mapAccumM_complete (F := F) (c := KimchiConstraint F) toFieldChecked'.row
-      (CrumbRow st₁) (AccInv st₁) RowGrant
-      (AccInv.mono (st₁ := st₁)) RowGrant.mono (row_complete st₁)
+      (CrumbRow st₁) (fun _ => AccInv st₁) RowGrant
+      (fun _ => AccInv.mono (st₁ := st₁)) RowGrant.mono
+      (fun acc x _ hx => row_complete st₁ acc x hx)
       (.const 2, .const 2, .const 0) (chunkVec cvars).toList hP st₁
       ⟨⟨Nat.le_refl _, Assignments.Le.refl _⟩, trivial, trivial, trivial⟩
   refine ⟨p.2, st₂, hrun₁.bind (hrun₂.bind (Runs.addConstraint.bind rfl)), ?_, ?_⟩
