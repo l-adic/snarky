@@ -101,6 +101,51 @@ inductive Finiteness where
   | dontCheckFinite
   deriving DecidableEq
 
+/-- The gate's three auxiliary scalar columns. Witnessed together because they are one
+row's worth of advice, computed from the same four operand readings. -/
+structure AddAux (a : Type) where
+  /-- The value pinning the infinity flag. -/
+  infZ : a
+  /-- The inverse pinning `sameX`. -/
+  x21Inv : a
+  /-- The addition slope. -/
+  s : a
+
+/-- The auxiliary columns, as a triple — the encoding lays them out in gate order. -/
+def AddAux.equiv (a : Type) : AddAux a ≃ a × a × a where
+  toFun c := (c.infZ, c.x21Inv, c.s)
+  invFun c := ⟨c.1, c.2.1, c.2.2⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+instance instCircuitTypeAddAux : CircuitType F (AddAux F) (AddAux (FVar F)) :=
+  CircuitType.ofShape AddAux.equiv
+
+instance instCheckedTypeAddAux [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
+    CheckedType F c (AddAux F) (AddAux (FVar F)) :=
+  CheckedType.ofShape AddAux.equiv
+
+/-- An auxiliary bundle is in scope when its three columns are. -/
+@[simp] theorem scoped_addAux {st : ProverState F} {a : AddAux (FVar F)} :
+    CircuitType.Scoped (val := AddAux F) st a ↔
+      a.infZ.Scoped st ∧ a.x21Inv.Scoped st ∧ a.s.Scoped st := by
+  show (∀ cv ∈ [a.infZ, a.x21Inv, a.s], cv.Scoped st) ↔ _
+  simp
+
+/-- An auxiliary bundle reads columnwise. -/
+@[simp] theorem reads_addAux [Add F] [Mul F] [Zero F] {V : Valuation F}
+    {a : AddAux (FVar F)} {v : AddAux F} :
+    CircuitType.Reads V a v ↔
+      a.infZ.val V = v.infZ ∧ a.x21Inv.val V = v.x21Inv ∧ a.s.val V = v.s := by
+  constructor
+  · intro h
+    exact ⟨congrArg (fun w : Vector F 3 => w[0]) h, congrArg (fun w : Vector F 3 => w[1]) h,
+      congrArg (fun w : Vector F 3 => w[2]) h⟩
+  · rintro ⟨h1, h2, h3⟩
+    show (#v[a.infZ.val V, a.x21Inv.val V, a.s.val V] : Vector F 3)
+      = #v[v.infZ, v.x21Inv, v.s]
+    rw [h1, h2, h3]
+
 /-- `addFast`'s result: the output point and the (mode-dependent) infinity flag. -/
 structure AddResult (F : Type) where
   /-- The output sum. -/
@@ -120,13 +165,11 @@ def addFast [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
   let sameXU ← witness (val := UnChecked Bool) (sameXAdvice p1 p2)
   let sameX := sameXU.val
   let inf ← infColumn finiteness p1 p2 sameX
-  let infZ ← witness (val := F) (infZAdvice p1 p2 sameX)
-  let x21Inv ← witness (val := F) (x21InvAdvice p1 p2 sameX)
-  let s ← witness (val := F) (slopeAdvice p1 p2 sameX)
-  let p3 ← witness (val := AffinePoint F) (sumAdvice p1 p2 s)
+  let aux ← witness (val := AddAux F) (auxAdvice p1 p2 sameX)
+  let p3 ← witness (val := AffinePoint F) (sumAdvice p1 p2 aux.s)
   addConstraint (KimchiSystem.addComplete
     { p1 := p1, p2 := p2, p3 := p3, inf := inf.toCVar,
-      sameX := sameX.toCVar, s := s, infZ := infZ, x21Inv := x21Inv })
+      sameX := sameX.toCVar, s := aux.s, infZ := aux.infZ, x21Inv := aux.x21Inv })
   pure ⟨p3, inf⟩
 where
   /-- The infinity column: the constant `false` where the sum is asserted finite,
@@ -151,35 +194,19 @@ where
     let y1 ← AsProver.readCVar p1.y
     let y2 ← AsProver.readCVar p2.y
     pure ⟨sx && !(decide (y1 = y2))⟩
-  /-- `0` on equal y-coordinates, else the inverse of `y₂ − y₁` where the
-  x-coordinates coincide — the value pinning the infinity flag. -/
-  infZAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F F := do
-    let y1 ← AsProver.readCVar p1.y
-    let y2 ← AsProver.readCVar p2.y
-    if y1 = y2 then pure 0
-    else do
-      let sx ← readVar (val := Bool) sameX
-      if sx then pure (y2 - y1)⁻¹ else pure 0
-  /-- The inverse of `x₂ − x₁` where the x-coordinates differ — the value pinning
-  `sameX`. -/
-  x21InvAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F F := do
-    let sx ← readVar (val := Bool) sameX
-    if sx then pure 0
-    else do
-      let x1 ← AsProver.readCVar p1.x
-      let x2 ← AsProver.readCVar p2.x
-      pure (x2 - x1)⁻¹
-  /-- The slope: the tangent `3x₁²/(2y₁)` where the x-coordinates coincide, else the
-  secant `(y₂−y₁)/(x₂−x₁)`. -/
-  slopeAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F F := do
+  /-- The three auxiliary columns, from one reading of the operands: the value pinning
+  the infinity flag (`0` on equal y-coordinates, else the inverse of `y₂ − y₁` where the
+  x-coordinates coincide), the inverse pinning `sameX`, and the slope — tangent where the
+  x-coordinates coincide, secant otherwise. -/
+  auxAdvice (p1 p2 : AffinePoint (FVar F)) (sameX : BoolVar F) : AsProver F (AddAux F) := do
     let sx ← readVar (val := Bool) sameX
     let x1 ← AsProver.readCVar p1.x
     let y1 ← AsProver.readCVar p1.y
-    if sx then pure (3 * x1 * x1 / (2 * y1))
-    else do
-      let x2 ← AsProver.readCVar p2.x
-      let y2 ← AsProver.readCVar p2.y
-      pure ((y2 - y1) / (x2 - x1))
+    let x2 ← AsProver.readCVar p2.x
+    let y2 ← AsProver.readCVar p2.y
+    pure ⟨if y1 = y2 then 0 else if sx then (y2 - y1)⁻¹ else 0,
+          if sx then 0 else (x2 - x1)⁻¹,
+          if sx then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)⟩
   /-- The sum: `x₃ = s² − (x₁ + x₂)` and `y₃ = s·(x₁ − x₃) − y₁`, witnessed as the
   one point the gate's last two columns hold. -/
   sumAdvice (p1 p2 : AffinePoint (FVar F)) (s : FVar F) : AsProver F (AffinePoint F) := do
@@ -331,113 +358,69 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
   have hvalSX₄ : CircuitType.readVal (val := Bool) st₄.env.get sameXU.val
       = decide (x1 = x2) :=
     (CircuitType.reads_iff.mp ((hrdSX.of_le hscSX hleI))).2
-  -- `infZ`
-  obtain ⟨infZ, st₅, hrunZ, hsatZ, hnvZ, hleZ, hscZ, hrdZ⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F)
-      (addFast.infZAdvice q1 q2 sameXU.val) (st := st₄)
-      (v := if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0)
+  -- the three auxiliary columns, in one witness
+  obtain ⟨aux, st₅, hrunA, hsatA, hnvA, hleA, hscA, hrdA⟩ :=
+    witness_complete (c := KimchiConstraint F) (val := AddAux F)
+      (addFast.auxAdvice q1 q2 sameXU.val) (st := st₄)
+      (v := ⟨if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0,
+             if x1 = x2 then 0 else (x2 - x1)⁻¹,
+             if x1 = x2 then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)⟩)
       (by
         by_cases h : y1 = y2 <;> by_cases h2 : x1 = x2 <;>
-          simp [addFast.infZAdvice, AsProver.readCVar_run hq1y₄,
-            AsProver.readCVar_run hq2y₄, e1y₄, e2y₄, readVar_run hscSX₄, hvalSX₄, h, h2])
-  have e1x₅ : q1.x.val st₅.env.get = x1 := by rw [CVar.val_of_le hleZ hq1x₄, e1x₄]
-  have e1y₅ : q1.y.val st₅.env.get = y1 := by rw [CVar.val_of_le hleZ hq1y₄, e1y₄]
-  have e2x₅ : q2.x.val st₅.env.get = x2 := by rw [CVar.val_of_le hleZ hq2x₄, e2x₄]
-  have e2y₅ : q2.y.val st₅.env.get = y2 := by rw [CVar.val_of_le hleZ hq2y₄, e2y₄]
-  have hq1x₅ : q1.x.Scoped st₅ := hq1x₄.mono hnvZ
-  have hq1y₅ : q1.y.Scoped st₅ := hq1y₄.mono hnvZ
-  have hq2x₅ : q2.x.Scoped st₅ := hq2x₄.mono hnvZ
-  have hq2y₅ : q2.y.Scoped st₅ := hq2y₄.mono hnvZ
-  have hscSX₅ : CircuitType.Scoped (val := Bool) st₅ sameXU.val := hscSX₄.mono hnvZ
-  have hvalSX₅ : CircuitType.readVal (val := Bool) st₅.env.get sameXU.val
-      = decide (x1 = x2) :=
-    (CircuitType.reads_iff.mp ((hrdSX.of_le hscSX (hleI.trans hleZ)))).2
-  -- `x21Inv`
-  obtain ⟨x21Inv, st₆, hrunV, hsatV, hnvV, hleV, hscV, hrdV⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F)
-      (addFast.x21InvAdvice q1 q2 sameXU.val) (st := st₅)
-      (v := if x1 = x2 then 0 else (x2 - x1)⁻¹)
-      (by
-        by_cases h2 : x1 = x2 <;>
-          simp [addFast.x21InvAdvice, AsProver.readCVar_run hq1x₅,
-            AsProver.readCVar_run hq2x₅, e1x₅, e2x₅, readVar_run hscSX₅, hvalSX₅, h2])
-  have e1x₆ : q1.x.val st₆.env.get = x1 := by rw [CVar.val_of_le hleV hq1x₅, e1x₅]
-  have e1y₆ : q1.y.val st₆.env.get = y1 := by rw [CVar.val_of_le hleV hq1y₅, e1y₅]
-  have e2x₆ : q2.x.val st₆.env.get = x2 := by rw [CVar.val_of_le hleV hq2x₅, e2x₅]
-  have e2y₆ : q2.y.val st₆.env.get = y2 := by rw [CVar.val_of_le hleV hq2y₅, e2y₅]
-  have hq1x₆ : q1.x.Scoped st₆ := hq1x₅.mono hnvV
-  have hq1y₆ : q1.y.Scoped st₆ := hq1y₅.mono hnvV
-  have hq2x₆ : q2.x.Scoped st₆ := hq2x₅.mono hnvV
-  have hq2y₆ : q2.y.Scoped st₆ := hq2y₅.mono hnvV
-  have hscSX₆ : CircuitType.Scoped (val := Bool) st₆ sameXU.val := hscSX₅.mono hnvV
-  have hvalSX₆ : CircuitType.readVal (val := Bool) st₆.env.get sameXU.val
-      = decide (x1 = x2) :=
-    (CircuitType.reads_iff.mp ((hrdSX.of_le hscSX ((hleI.trans hleZ).trans hleV)))).2
-  -- the slope
-  obtain ⟨sl, st₇, hrunL, hsatL, hnvL, hleL, hscL, hrdL⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F)
-      (addFast.slopeAdvice q1 q2 sameXU.val) (st := st₆)
-      (v := if x1 = x2 then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1))
-      (by
-        by_cases h2 : x1 = x2 <;>
-          simp [addFast.slopeAdvice, AsProver.readCVar_run hq1x₆,
-            AsProver.readCVar_run hq1y₆, AsProver.readCVar_run hq2x₆,
-            AsProver.readCVar_run hq2y₆, e1x₆, e1y₆, e2x₆, e2y₆,
-            readVar_run hscSX₆, hvalSX₆, h2])
+          simp [addFast.auxAdvice, readVar_run hscSX₄, hvalSX₄,
+            AsProver.readCVar_run hq1x₄, AsProver.readCVar_run hq1y₄,
+            AsProver.readCVar_run hq2x₄, AsProver.readCVar_run hq2y₄,
+            e1x₄, e1y₄, e2x₄, e2y₄, h, h2])
+  rw [scoped_addAux] at hscA
+  rw [reads_addAux] at hrdA
   obtain ⟨sv, hsv⟩ : ∃ v, (if x1 = x2 then 3 * x1 * x1 / (2 * y1)
       else (y2 - y1) / (x2 - x1)) = v := ⟨_, rfl⟩
-  rw [hsv] at hrdL
-  have hslSc : sl.Scoped st₇ := CircuitType.scoped_fvar.mp hscL
-  have hslRd : sl.val st₇.env.get = sv := CircuitType.reads_fvar.mp hrdL
-  have e1x₇ : q1.x.val st₇.env.get = x1 := by rw [CVar.val_of_le hleL hq1x₆, e1x₆]
-  have e1y₇ : q1.y.val st₇.env.get = y1 := by rw [CVar.val_of_le hleL hq1y₆, e1y₆]
-  have e2x₇ : q2.x.val st₇.env.get = x2 := by rw [CVar.val_of_le hleL hq2x₆, e2x₆]
-  have hq1x₇ : q1.x.Scoped st₇ := hq1x₆.mono hnvL
-  have hq1y₇ : q1.y.Scoped st₇ := hq1y₆.mono hnvL
-  have hq2x₇ : q2.x.Scoped st₇ := hq2x₆.mono hnvL
+  rw [hsv] at hrdA
+  have e1x₅ : q1.x.val st₅.env.get = x1 := by rw [CVar.val_of_le hleA hq1x₄, e1x₄]
+  have e1y₅ : q1.y.val st₅.env.get = y1 := by rw [CVar.val_of_le hleA hq1y₄, e1y₄]
+  have e2x₅ : q2.x.val st₅.env.get = x2 := by rw [CVar.val_of_le hleA hq2x₄, e2x₄]
+  have hq1x₅ : q1.x.Scoped st₅ := hq1x₄.mono hnvA
+  have hq1y₅ : q1.y.Scoped st₅ := hq1y₄.mono hnvA
+  have hq2x₅ : q2.x.Scoped st₅ := hq2x₄.mono hnvA
   -- the sum, witnessed as one point
-  obtain ⟨p3, st₈, hrunP, hsatP, hnvP, hleP, hscP, hrdP⟩ :=
+  obtain ⟨p3, st₆, hrunP, hsatP, hnvP, hleP, hscP, hrdP⟩ :=
     witness_complete (c := KimchiConstraint F) (val := AffinePoint F)
-      (addFast.sumAdvice q1 q2 sl) (st := st₇)
+      (addFast.sumAdvice q1 q2 aux.s) (st := st₅)
       (v := ⟨sv * sv - (x1 + x2), sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩)
       (by
-        simp [addFast.sumAdvice, AsProver.readCVar_run hslSc, AsProver.readCVar_run hq1x₇,
-          AsProver.readCVar_run hq2x₇, AsProver.readCVar_run hq1y₇, hslRd, e1x₇, e2x₇, e1y₇])
+        simp [addFast.sumAdvice, AsProver.readCVar_run hscA.2.2,
+          AsProver.readCVar_run hq1x₅, AsProver.readCVar_run hq2x₅,
+          AsProver.readCVar_run hq1y₅, hrdA.2.2, e1x₅, e2x₅, e1y₅])
   rw [reads_affinePoint] at hrdP
   rw [scoped_affinePoint] at hscP
-  refine ⟨⟨p3, inf⟩, st₈, ?_, ?_, ?_⟩
-  · refine hrunS1.bind (hrunS2.bind (hrunX.bind (hrunI.bind (hrunZ.bind (hrunV.bind
-      (hrunL.bind (hrunP.bind ?_)))))))
+  refine ⟨⟨p3, inf⟩, st₆, ?_, ?_, ?_⟩
+  · refine hrunS1.bind (hrunS2.bind (hrunX.bind (hrunI.bind (hrunA.bind
+      (hrunP.bind ?_)))))
     exact Runs.addConstraint.bind rfl
   · intro stf hnvF hleF
-    have L8 : st₈.env.Le stf.env := hleF
-    have L7 : st₇.env.Le stf.env := hleP.trans L8
-    have L6 : st₆.env.Le stf.env := hleL.trans L7
-    have L5 : st₅.env.Le stf.env := hleV.trans L6
-    have L4 : st₄.env.Le stf.env := hleZ.trans L5
+    have L6 : st₆.env.Le stf.env := hleF
+    have L5 : st₅.env.Le stf.env := hleP.trans L6
+    have L4 : st₄.env.Le stf.env := hleA.trans L5
     have L3 : st₃.env.Le stf.env := hleI.trans L4
     have L2 : st₂.env.Le stf.env := hleX.trans L3
-    have N8 : st₈.nv ≤ stf.nv := hnvF
-    have N7 : st₇.nv ≤ stf.nv := Nat.le_trans hnvP N8
-    have N6 : st₆.nv ≤ stf.nv := Nat.le_trans hnvL N7
-    have N5 : st₅.nv ≤ stf.nv := Nat.le_trans hnvV N6
-    have N4 : st₄.nv ≤ stf.nv := Nat.le_trans hnvZ N5
+    have N6 : st₆.nv ≤ stf.nv := hnvF
+    have N5 : st₅.nv ≤ stf.nv := Nat.le_trans hnvP N6
+    have N4 : st₄.nv ≤ stf.nv := Nat.le_trans hnvA N5
     have N3 : st₃.nv ≤ stf.nv := Nat.le_trans hnvI N4
     have N2 : st₂.nv ≤ stf.nv := Nat.le_trans hnvX N3
     refine Sat.bind hrunS1 (hsatS1 (Nat.le_trans hrunS2.nv_le N2) (hrunS2.le.trans L2))
       (Sat.bind hrunS2 (hsatS2 N2 L2)
         (Sat.bind hrunX (hsatX N3 L3)
           (Sat.bind hrunI (hsatI N4 L4)
-            (Sat.bind hrunZ (hsatZ N5 L5)
-              (Sat.bind hrunV (hsatV N6 L6)
-                (Sat.bind hrunL (hsatL N7 L7)
-                  (Sat.bind hrunP (hsatP N8 L8)
-                    (Sat.bind Runs.addConstraint (Sat.addConstraint ?_) Sat.pure))))))))
+            (Sat.bind hrunA (hsatA N5 L5)
+              (Sat.bind hrunP (hsatP N6 L6)
+                (Sat.bind Runs.addConstraint (Sat.addConstraint ?_) Sat.pure))))))
     -- the emitted row reads as the gate's canonical one
     show Kimchi.Gate.AddComplete.Holds (AddComplete.read stf.env.get _)
     have hread : AddComplete.read (F := F) stf.env.get
         { p1 := q1, p2 := q2, p3 := p3, inf := (↑inf : CVar F),
-          sameX := (↑sameXU.val : CVar F), s := sl, infZ := infZ, x21Inv := x21Inv }
+          sameX := (↑sameXU.val : CVar F), s := aux.s, infZ := aux.infZ,
+          x21Inv := aux.x21Inv }
         = Kimchi.Gate.AddComplete.build (decide (fin = .checkFinite)) x1 y1 x2 y2 := by
       have r1x : q1.x.val stf.env.get = x1 := by rw [CVar.val_of_le L2 hq1x₂, e1x]
       have r1y : q1.y.val stf.env.get = y1 := by rw [CVar.val_of_le L2 hq1y₂, e1y]
@@ -446,28 +429,27 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
       have rsx : (↑sameXU.val : CVar F).val stf.env.get = bit (decide (x1 = x2)) := by
         rw [CVar.val_of_le L3 (CircuitType.scoped_fvar.mp hscSX), hbitSX]
       have rinf : (↑inf : CVar F).val stf.env.get
-          = (if fin = .checkFinite then 0 else bit (decide (x1 = x2) && !decide (y1 = y2))) := by
+          = (if fin = .checkFinite then 0
+             else bit (decide (x1 = x2) && !decide (y1 = y2))) := by
         rw [CVar.val_of_le L4 hscI, hrdI]
-      have rz : infZ.val stf.env.get
+      have rz : aux.infZ.val stf.env.get
           = (if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0) := by
-        rw [CVar.val_of_le L5 (CircuitType.scoped_fvar.mp hscZ),
-          CircuitType.reads_fvar.mp hrdZ]
-      have rv : x21Inv.val stf.env.get = (if x1 = x2 then 0 else (x2 - x1)⁻¹) := by
-        rw [CVar.val_of_le L6 (CircuitType.scoped_fvar.mp hscV),
-          CircuitType.reads_fvar.mp hrdV]
-      have rl : sl.val stf.env.get = sv := by rw [CVar.val_of_le L7 hslSc, hslRd]
+        rw [CVar.val_of_le L5 hscA.1, hrdA.1]
+      have rv : aux.x21Inv.val stf.env.get = (if x1 = x2 then 0 else (x2 - x1)⁻¹) := by
+        rw [CVar.val_of_le L5 hscA.2.1, hrdA.2.1]
+      have rl : aux.s.val stf.env.get = sv := by
+        rw [CVar.val_of_le L5 hscA.2.2, hrdA.2.2]
       have r3x : p3.x.val stf.env.get = sv * sv - (x1 + x2) := by
-        rw [CVar.val_of_le L8 hscP.1, hrdP.1]
+        rw [CVar.val_of_le L6 hscP.1, hrdP.1]
       have r3y : p3.y.val stf.env.get = sv * (x1 - (sv * sv - (x1 + x2))) - y1 := by
-        rw [CVar.val_of_le L8 hscP.2, hrdP.2]
+        rw [CVar.val_of_le L6 hscP.2, hrdP.2]
       simp only [AddComplete.read, Kimchi.Gate.AddComplete.build, r1x, r1y, r2x, r2y,
         rsx, rinf, rz, rv, rl, r3x, r3y, ← hsv]
       cases fin <;> simp [bit]
     rw [hread]
     exact Kimchi.Gate.AddComplete.complete_build W ha hon1 hon2 hy1ne htwo
       (fun h => hfin (of_decide_eq_true h))
-  · exact ⟨scoped_affinePoint.mpr ⟨hscP.1, hscP.2⟩,
-      hscI.mono (Nat.le_trans hnvZ (Nat.le_trans hnvV (Nat.le_trans hnvL hnvP)))⟩
+  · exact ⟨scoped_affinePoint.mpr ⟨hscP.1, hscP.2⟩, hscI.mono (Nat.le_trans hnvA hnvP)⟩
 
 /- PORT: the gadget's laws are OFF.
 
