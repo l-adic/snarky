@@ -309,6 +309,291 @@ def HasEndo.vesta : HasEndo Fq where
 
 namespace EndoMul
 
+/-! ## Soundness
+
+The payload reads each row's output cells off the NEXT round — the two-row gate's
+convention — so `readChain` lays the round list out as the model's witness list, and
+three of the four conditions a run needs hold by construction: the links are the shared
+cells, and the closing accumulators are the payload's finals. What the trace has to
+supply is the base and the seeds. -/
+
+namespace EndoMul
+
+/-- The round list as the model's witness list: each row's output cells come from the
+next round's input cells, the last row's from the finals. -/
+private def readChain [Field F] (V : Valuation F) (fin : F × F × F) :
+    List (EndoMulRound F) → List (Kimchi.Gate.EndoMul.Witness F)
+  | [] => []
+  | [r] => [EndoMulRound.readWith V r fin.1 fin.2.1 fin.2.2]
+  | r :: r' :: rest =>
+    EndoMulRound.readWith V r (r'.p.x.val V) (r'.p.y.val V) (r'.nAcc.val V)
+      :: readChain V fin (r' :: rest)
+
+private theorem readChain_length [Field F] (V : Valuation F) (fin : F × F × F) :
+    ∀ rounds : List (EndoMulRound F), (readChain V fin rounds).length = rounds.length
+  | [] => rfl
+  | [_] => rfl
+  | r :: r' :: rest => by
+    show (readChain V fin (r' :: rest)).length + 1 = _
+    rw [readChain_length V fin (r' :: rest)]
+    rfl
+
+/-- The payload is exactly the gate at every row of the reading. -/
+private theorem readChain_holds [Field F] [DecidableEq F] {V : Valuation F} {endo : F}
+    {fin : F × F × F} :
+    ∀ {rounds : List (EndoMulRound F)}, EndoMul.chainHolds V endo fin rounds →
+      ∀ w ∈ readChain V fin rounds, Kimchi.Gate.EndoMul.Holds endo w
+  | [], _, _, hw => by simp [readChain] at hw
+  | [_], h, w, hw => by
+    simp only [readChain, List.mem_singleton] at hw
+    exact hw ▸ h
+  | _ :: r' :: rest, h, w, hw => by
+    rw [readChain, List.mem_cons] at hw
+    rcases hw with rfl | hw
+    · exact h.1
+    · exact readChain_holds h.2 w hw
+
+/-- The reading's first row is the first round's: its base, accumulator and register
+cells are that round's. -/
+private theorem readChain_head [Field F] (V : Valuation F) (fin : F × F × F)
+    (d : Kimchi.Gate.EndoMul.Witness F) (r₀ : EndoMulRound F) :
+    ∀ rs : List (EndoMulRound F),
+      ((readChain V fin (r₀ :: rs)).getD 0 d).xT = r₀.t.x.val V
+        ∧ ((readChain V fin (r₀ :: rs)).getD 0 d).yT = r₀.t.y.val V
+        ∧ ((readChain V fin (r₀ :: rs)).getD 0 d).xP = r₀.p.x.val V
+        ∧ ((readChain V fin (r₀ :: rs)).getD 0 d).yP = r₀.p.y.val V
+        ∧ ((readChain V fin (r₀ :: rs)).getD 0 d).n = r₀.nAcc.val V
+  | [] => ⟨rfl, rfl, rfl, rfl, rfl⟩
+  | _ :: _ => ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Every row of the reading is some round's, so it reads that round's base. -/
+private theorem readChain_mem [Field F] (V : Valuation F) (fin : F × F × F) :
+    ∀ {rounds : List (EndoMulRound F)} {w : Kimchi.Gate.EndoMul.Witness F},
+      w ∈ readChain V fin rounds → ∃ r ∈ rounds, w.xT = r.t.x.val V ∧ w.yT = r.t.y.val V
+  | [], _, hw => by simp [readChain] at hw
+  | [r], _, hw => by
+    simp only [readChain, List.mem_singleton] at hw
+    exact ⟨r, by simp, by rw [hw]; exact ⟨rfl, rfl⟩⟩
+  | r :: r' :: rest, w, hw => by
+    have hcons : readChain V fin (r :: r' :: rest)
+        = EndoMulRound.readWith V r (r'.p.x.val V) (r'.p.y.val V) (r'.nAcc.val V)
+          :: readChain V fin (r' :: rest) := rfl
+    rw [hcons, List.mem_cons] at hw
+    rcases hw with rfl | hw
+    · exact ⟨r, by simp, rfl, rfl⟩
+    · obtain ⟨r'', hr'', hx, hy⟩ := readChain_mem V fin hw
+      exact ⟨r'', List.mem_cons_of_mem _ hr'', hx, hy⟩
+
+/-- Adjacent rows of the reading link on both accumulators: they share the cells. -/
+private theorem readChain_link [Field F] (V : Valuation F) (fin : F × F × F) :
+    ∀ rounds : List (EndoMulRound F),
+      (readChain V fin rounds).IsChain
+        fun a b => (b.xP = a.xS ∧ b.yP = a.yS) ∧ b.n = a.nPrime
+  | [] => by simp [readChain]
+  | [_] => by simp [readChain]
+  | r :: r' :: rest => by
+    show (EndoMulRound.readWith V r (r'.p.x.val V) (r'.p.y.val V) (r'.nAcc.val V)
+      :: readChain V fin (r' :: rest)).IsChain _
+    exact (readChain_link V fin (r' :: rest)).cons (by
+      cases rest <;> simp [readChain, EndoMulRound.readWith])
+
+/-- The reading closes at the payload's finals. -/
+private theorem readChain_getLast [Field F] (V : Valuation F) (fin : F × F × F) :
+    ∀ (rounds : List (EndoMulRound F)) (hne : readChain V fin rounds ≠ []),
+      ((readChain V fin rounds).getLast hne).xS = fin.1
+        ∧ ((readChain V fin rounds).getLast hne).yS = fin.2.1
+        ∧ ((readChain V fin rounds).getLast hne).nPrime = fin.2.2
+  | [], hne => by simp [readChain] at hne
+  | [_], _ => ⟨rfl, rfl, rfl⟩
+  | r :: r' :: rest, _ => by
+    have hne' : readChain V fin (r' :: rest) ≠ [] := by cases rest <;> simp [readChain]
+    have hcons : readChain V fin (r :: r' :: rest)
+        = EndoMulRound.readWith V r (r'.p.x.val V) (r'.p.y.val V) (r'.nAcc.val V)
+          :: readChain V fin (r' :: rest) := rfl
+    obtain ⟨h1, h2, h3⟩ := readChain_getLast V fin (r' :: rest) hne'
+    refine ⟨?_, ?_, ?_⟩ <;> simp only [hcons, List.getLast_cons hne']
+    · exact h1
+    · exact h2
+    · exact h3
+
+/-- The step's grant: the round is built from the base, the accumulators either side of
+it, and the row's bits. Structural — no valuation appears. -/
+private def Threads (t : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 4) (r : EndoMulRound F)
+    (st' : AffinePoint (FVar F) × FVar F) : Prop :=
+  r.t = t ∧ (r.p = st.1 ∧ r.nAcc = st.2) ∧ (r.s = st'.1 ∧ r.nAccNext = st'.2) ∧
+    (r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3])
+
+/-- Every round of a trace reads the same base. -/
+private theorem threads_base {t : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+      {rounds : List (EndoMulRound F)},
+      Chain (Threads t) st pref rounds fin → ∀ r ∈ rounds, r.t = t
+  | _, _, [], _, h, r, hr => by rw [h.1] at hr; simp at hr
+  | _, _, _ :: _, _, h, r, hr => by
+    obtain ⟨r', tail, mid, rfl, hgrant, hrest⟩ := h
+    rcases List.mem_cons.mp hr with rfl | hr
+    · exact hgrant.1
+    · exact threads_base hrest r hr
+
+/-- A trace's first round opens at the seed accumulators. -/
+private theorem threads_head {t : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+      {r₀ : EndoMulRound F} {rs : List (EndoMulRound F)},
+      Chain (Threads t) st pref (r₀ :: rs) fin → r₀.p = st.1 ∧ r₀.nAcc = st.2
+  | _, _, [], _, _, h => by exact absurd h.1 (by simp)
+  | _, _, _ :: _, _, _, h => by
+    obtain ⟨r', tail, mid, heq, hgrant, -⟩ := h
+    injection heq with hr _
+    subst hr
+    exact hgrant.2.1
+
+/-- A trace's rounds are as many as the rows it traversed. -/
+private theorem threads_length {t : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+      {rounds : List (EndoMulRound F)},
+      Chain (Threads t) st pref rounds fin → rounds.length = pref.length
+  | _, _, [], _, h => by rw [h.1]; rfl
+  | _, _, _ :: _, _, h => by
+    obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
+    rw [List.length_cons, List.length_cons, threads_length hrest]
+
+/-- A satisfied trace from the doubled seed computes the gate tower's chain: the reading
+is a run (`Chain.ofList`), so `endoMul_off` gives the final accumulator as a multiple of
+the base and `chain_nAcc` gives the register as the run's crumb reconstruction. -/
+private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valuation F)
+    {t P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 4)}
+    {rounds : List (EndoMulRound F)} {fin : AffinePoint (FVar F) × FVar F}
+    (hbits : 4 * pref.length ≤ 244)
+    (hthr : Chain (Threads t) (P0, .const 0) pref rounds fin)
+    (hpay : EndoMul.chainHolds V d.endo
+      (fin.1.x.val V, fin.1.y.val V, fin.2.val V) rounds)
+    (hT : d.W.Nonsingular (t.x.val V) (t.y.val V))
+    (hP0ns : d.W.Nonsingular (P0.x.val V) (P0.y.val V))
+    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • Point.some _ _ hT
+      + (2 : ℤ) • Point.some _ _ (d.endo_nonsingular hT)) :
+    ∃ crumbs : List F,
+      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
+      crumbs.length = 2 * pref.length ∧
+      fin.2.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
+      ∃ (hfin : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V)) (s : ℤ),
+        Point.some _ _ hfin = s • Point.some _ _ hT ∧
+        (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F) := by
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  have hφT := d.endo_nonsingular hT
+  match hround : rounds, hthr with
+  | [], hthr' =>
+    obtain ⟨rfl, rfl⟩ := Chain.of_nil_out hthr'
+    refine ⟨[], by simp, by simp, ?_, hP0ns, 2 + 2 * d.lam, ?_, ?_⟩
+    · simp [Kimchi.Gate.EndoScalar.nReconstruct, CVar.val]
+    · rw [hP0, d.eigen hT hφT, smul_smul, add_smul]
+    · simp [Kimchi.Gate.EndoScalar.toField, Kimchi.Gate.EndoScalar.decomposeA,
+        Kimchi.Gate.EndoScalar.decomposeB, Kimchi.Gate.EndoScalar.decomposeFold]
+      push_cast
+      ring
+  | r₀ :: rs, hthr' =>
+    subst hround
+    set finV : F × F × F := (fin.1.x.val V, fin.1.y.val V, fin.2.val V) with hfinV
+    set l := EndoMul.readChain V finV (r₀ :: rs) with hl
+    have hne : l ≠ [] := by
+      simp only [hl, EndoMul.readChain]
+      cases rs <;> simp [EndoMul.readChain]
+    set g : ℕ → Kimchi.Gate.EndoMul.Witness F := fun i => l.getD i (l.head hne) with hg
+    have hlen : l.length = rs.length + 1 := by
+      rw [hl, EndoMul.readChain_length]
+      simp
+    -- every row reads the same base, so the run's `base` holds
+    have hbaseAll : ∀ w ∈ l, w.xT = t.x.val V ∧ w.yT = t.y.val V := by
+      intro w hw
+      obtain ⟨r, hr, hx, hy⟩ := EndoMul.readChain_mem V finV hw
+      rw [hx, hy, EndoMul.threads_base hthr' r hr]
+      exact ⟨rfl, rfl⟩
+    have hhead := hbaseAll _ (List.getElem_mem (by omega) : l[0]'(by omega) ∈ l)
+    have hget0 : l.getD 0 (l.head hne) = l[0]'(by omega) :=
+      List.getD_eq_getElem _ _ (by omega)
+    have hchain : Kimchi.Gate.EndoMul.Chain d.endo g l.length :=
+      Kimchi.Gate.EndoMul.Chain.ofList d.endo l (l.head hne)
+        (fun w hw => EndoMul.readChain_holds hpay w hw)
+        (fun w hw => by
+          rw [(hbaseAll w hw).1, (hbaseAll w hw).2, hget0, hhead.1, hhead.2]
+          exact ⟨rfl, rfl⟩)
+        (EndoMul.readChain_link V finV (r₀ :: rs))
+    -- the run's first row is round `r₀`, so its base and seed cells are the trace's
+    obtain ⟨h0xT, h0yT, h0xP, h0yP, h0n⟩ :=
+      EndoMul.readChain_head V finV (l.head hne) r₀ rs
+    obtain ⟨hp0, hn0⟩ := EndoMul.threads_head hthr'
+    have hbase0x : (g 0).xT = t.x.val V := by
+      show (l.getD 0 (l.head hne)).xT = _
+      rw [hl] at *
+      rw [h0xT, EndoMul.threads_base hthr' r₀ (by simp)]
+    have hbase0y : (g 0).yT = t.y.val V := by
+      show (l.getD 0 (l.head hne)).yT = _
+      rw [hl] at *
+      rw [h0yT, EndoMul.threads_base hthr' r₀ (by simp)]
+    have hbase0P : (g 0).xP = P0.x.val V ∧ (g 0).yP = P0.y.val V := by
+      constructor
+      · show (l.getD 0 (l.head hne)).xP = _
+        rw [hl] at *
+        rw [h0xP, hp0]
+      · show (l.getD 0 (l.head hne)).yP = _
+        rw [hl] at *
+        rw [h0yP, hp0]
+    have hTns : d.W.Nonsingular (g 0).xT (g 0).yT := by
+      rw [hbase0x, hbase0y]; exact hT
+    have hφTns : d.W.Nonsingular (d.endo * (g 0).xT) (g 0).yT := by
+      rw [hbase0x, hbase0y]; exact hφT
+    have hP0ns' : d.W.Nonsingular (g 0).xP (g 0).yP := by
+      rw [hbase0P.1, hbase0P.2]; exact hP0ns
+    obtain ⟨hfin', sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
+      Kimchi.Gate.EndoMul.endoMul_off d.W d.two_ne d.three_ne d.odd d.endo
+        (Point.some _ _ hT) (Point.some _ _ hφT)
+        (fun a b ha hb hba hbb =>
+          d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
+        l.length (by
+          have hl' := EndoMul.threads_length hthr'
+          simp only [List.length_cons] at hl'
+          omega) g hchain hTns
+        (Kimchi.Gate.EndoMul.some_congr d.W hT hTns hbase0x.symm hbase0y.symm)
+        hφTns
+        (Kimchi.Gate.EndoMul.some_congr d.W hφT hφTns
+          (by rw [hbase0x]) hbase0y.symm)
+        hP0ns'
+        ((Kimchi.Gate.EndoMul.some_congr d.W hP0ns' hP0ns
+          hbase0P.1 hbase0P.2).trans hP0)
+        d.lam (d.eigen hT hφT)
+    -- the run closes at the payload's finals
+    obtain ⟨hax, hay, han⟩ :=
+      Kimchi.Gate.EndoMul.acc_getD_length l hne (l.head hne)
+    obtain ⟨hlx, hly, hln⟩ := EndoMul.readChain_getLast V finV (r₀ :: rs) hne
+    have hfinx : Kimchi.Gate.EndoMul.accX g l.length = fin.1.x.val V := by
+      rw [hg, hax, hlx]
+    have hfiny : Kimchi.Gate.EndoMul.accY g l.length = fin.1.y.val V := by
+      rw [hg, hay, hly]
+    have hfinn : Kimchi.Gate.EndoMul.accN g l.length = fin.2.val V := by
+      rw [hg, han, hln]
+    have hfin : d.W.Nonsingular (fin.1.x.val V) (fin.1.y.val V) := by
+      rw [← hfinx, ← hfiny]; exact hfin'
+    -- the register chain
+    have hreg : fin.2.val V
+        = Kimchi.Gate.EndoScalar.nReconstruct (Kimchi.Gate.EndoMul.crumbList g l.length) := by
+      have hzero : Kimchi.Gate.EndoMul.accN g 0 = 0 := by
+        show (l.getD 0 (l.head hne)).n = 0
+        rw [hl] at *
+        rw [h0n, hn0]
+        simp [CVar.val]
+      rw [← hfinn, Kimchi.Gate.EndoMul.chain_nAcc d.endo l.length g hchain, hzero,
+        zero_mul, zero_add]
+    refine ⟨Kimchi.Gate.EndoMul.crumbList g l.length,
+      Kimchi.Gate.EndoMul.crumbList_valid d.endo l.length g hchain.holds,
+      ?_, hreg, hfin, sc, ?_, hsval⟩
+    · rw [Kimchi.Gate.EndoMul.crumbList_length, hlen, ← EndoMul.threads_length hthr']
+      simp
+    · exact (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfinx.symm hfiny.symm).trans hseq
+
+end EndoMul
+
 /- PORT: the gadget's laws are OFF.
 
 Soundness is the loop law instantiated at the round threading, landed on the gate
