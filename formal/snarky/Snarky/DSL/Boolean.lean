@@ -795,41 +795,75 @@ some operand reads `1`. -/
 /-- `any`'s completeness law: the cases' own — the constants', an operand's, `or`'s, or
 `neq`'s over the scoped bit-sum. -/
 theorem any_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F)) :
-    Complete (fun st => ∀ b ∈ xs,
-        (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
+    (f : BoolVar F → Bool) (hchar : ∀ k : Nat, k ≤ xs.length → (k : F) = 0 → k = 0) :
+    Complete (fun st => ∀ b ∈ xs, CircuitType.ReadsAs (val := Bool) st b (f b))
+      (Snarky.any (c := c) xs)
+      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (xs.any f)) := by
+  have hbase : Complete (fun st => ∀ b ∈ xs,
+      (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b)
       (Snarky.any (c := c) xs)
       (fun r st' => (↑r : CVar F).Scoped st' ∧
         CircuitType.WellFormed (val := Bool) st'.env.get r) := by
-  intro st h
-  match xs with
-  | [] =>
-    simp only [Snarky.any]
-    exact ⟨false_, st, rfl, by simp [Sat, build], false_scoped st, false,
-      CircuitType.reads_boolVar.mpr (by simp [bit])⟩
-  | [a] =>
-    simp only [Snarky.any]
-    exact ⟨a, st, rfl, by simp [Sat, build], h a (List.mem_cons_self ..)⟩
-  | [a, b] =>
-    simp only [Snarky.any]
-    obtain ⟨ab, hab⟩ := (h a (by simp)).2
-    obtain ⟨bb, hbb⟩ := (h b (by simp)).2
-    obtain ⟨r, st₁, hrun, hsat, hr⟩ := or_complete (c := c) a b ab bb st
-      ⟨⟨CircuitType.scoped_boolVar.mpr (h a (by simp)).1, hab⟩,
-        ⟨CircuitType.scoped_boolVar.mpr (h b (by simp)).1, hbb⟩⟩
-    exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, ab || bb, hr.2⟩
-  | x₁ :: x₂ :: x₃ :: t =>
-    simp only [Snarky.any]
-    have hsc : (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar)).Scoped st :=
-      CVar.Scoped.sum fun x hx => by
-        obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
-        exact (h b hb).1
-    obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
-      neq_complete (c := c) (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar))
-        (CVar.const 0) _ 0 st
-        ⟨⟨CircuitType.scoped_fvar.mpr hsc, rfl⟩,
-          ⟨CircuitType.scoped_fvar.mpr trivial, rfl⟩⟩
-    exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, _, hr.2⟩
+    intro st h
+    match xs with
+    | [] =>
+      simp only [Snarky.any]
+      exact ⟨false_, st, rfl, by simp [Sat, build], false_scoped st, false,
+        CircuitType.reads_boolVar.mpr (by simp [bit])⟩
+    | [a] =>
+      simp only [Snarky.any]
+      exact ⟨a, st, rfl, by simp [Sat, build], h a (List.mem_cons_self ..)⟩
+    | [a, b] =>
+      simp only [Snarky.any]
+      obtain ⟨ab, hab⟩ := (h a (by simp)).2
+      obtain ⟨bb, hbb⟩ := (h b (by simp)).2
+      obtain ⟨r, st₁, hrun, hsat, hr⟩ := or_complete (c := c) a b ab bb st
+        ⟨⟨CircuitType.scoped_boolVar.mpr (h a (by simp)).1, hab⟩,
+          ⟨CircuitType.scoped_boolVar.mpr (h b (by simp)).1, hbb⟩⟩
+      exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, ab || bb, hr.2⟩
+    | x₁ :: x₂ :: x₃ :: t =>
+      simp only [Snarky.any]
+      have hsc : (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar)).Scoped st :=
+        CVar.Scoped.sum fun x hx => by
+          obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
+          exact (h b hb).1
+      obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
+        neq_complete (c := c) (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar))
+          (CVar.const 0) _ 0 st
+          ⟨⟨CircuitType.scoped_fvar.mpr hsc, rfl⟩,
+            ⟨CircuitType.scoped_fvar.mpr trivial, rfl⟩⟩
+      exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, _, hr.2⟩
+  intro st hF
+  obtain ⟨r, st₁, hrun, hsat, hsc, -⟩ :=
+    hbase st (fun b hb => ⟨CircuitType.scoped_boolVar.mp (hF b hb).1, ⟨f b, (hF b hb).2⟩⟩)
+  refine ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mpr hsc,
+    CircuitType.reads_boolVar.mpr ?_⟩
+  have hval := runs_post (fun V => any_spec (c := c) (V := V) xs hchar) hrun
+    (hsat (Nat.le_refl _) (Assignments.Le.refl _))
+  have hread : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = bit (f b) := fun b hb =>
+    CircuitType.reads_boolVar.mp
+      (CircuitType.ReadsAs.mono hrun.nv_le hrun.le (hF b hb)).2
+  have hbits : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = 0 ∨
+      (↑b : CVar F).val st₁.env.get = 1 := by
+    intro b hb
+    rw [hread b hb]
+    cases f b <;> simp [bit]
+  rw [hval hbits]
+  have hone : ∀ b ∈ xs, ((↑b : CVar F).val st₁.env.get = 1 ↔ f b = true) := by
+    intro b hb
+    rw [hread b hb]
+    cases f b <;> simp [bit]
+  by_cases h : xs.any f = true
+  · obtain ⟨b, hb, hfb⟩ := List.any_eq_true.mp h
+    rw [if_pos ⟨b, hb, (hone b hb).mpr hfb⟩, h]
+    rfl
+  · simp only [Bool.not_eq_true, List.any_eq_false] at h
+    rw [if_neg (fun hc => by
+      obtain ⟨b, hb, hv⟩ := hc
+      exact absurd ((hone b hb).mp hv) (by simpa using h b hb))]
+    rw [show xs.any f = false from List.any_eq_false.mpr (fun b hb => by simp [h b hb])]
+    rfl
 
 attribute [irreducible] Snarky.any
 
@@ -905,41 +939,73 @@ every operand reads `1`. -/
 /-- `all`'s completeness law: the cases' own — the constants', an operand's, `and`'s, or
 `equals`'s over the scoped bit-sum. -/
 theorem all_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F)) :
-    Complete (fun st => ∀ b ∈ xs,
-        (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
+    (f : BoolVar F → Bool) (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k → j = k) :
+    Complete (fun st => ∀ b ∈ xs, CircuitType.ReadsAs (val := Bool) st b (f b))
+      (Snarky.all (c := c) xs)
+      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (xs.all f)) := by
+  have hbase : Complete (fun st => ∀ b ∈ xs,
+      (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b)
       (Snarky.all (c := c) xs)
       (fun r st' => (↑r : CVar F).Scoped st' ∧
         CircuitType.WellFormed (val := Bool) st'.env.get r) := by
-  intro st h
-  match xs with
-  | [] =>
-    simp only [Snarky.all]
-    exact ⟨true_, st, rfl, by simp [Sat, build], true_scoped st, true,
-      CircuitType.reads_boolVar.mpr (by simp [bit])⟩
-  | [a] =>
-    simp only [Snarky.all]
-    exact ⟨a, st, rfl, by simp [Sat, build], h a (List.mem_cons_self ..)⟩
-  | [a, b] =>
-    simp only [Snarky.all]
-    obtain ⟨ab, hab⟩ := (h a (by simp)).2
-    obtain ⟨bb, hbb⟩ := (h b (by simp)).2
-    obtain ⟨r, st₁, hrun, hsat, hr⟩ := and_complete (c := c) a b ab bb st
-      ⟨⟨CircuitType.scoped_boolVar.mpr (h a (by simp)).1, hab⟩,
-        ⟨CircuitType.scoped_boolVar.mpr (h b (by simp)).1, hbb⟩⟩
-    exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, ab && bb, hr.2⟩
-  | x₁ :: x₂ :: x₃ :: t =>
-    simp only [Snarky.all]
-    have hsc : (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar)).Scoped st :=
-      CVar.Scoped.sum fun x hx => by
-        obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
-        exact (h b hb).1
-    obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
-      equals_complete (c := c) (CVar.const ((x₁ :: x₂ :: x₃ :: t).length : F))
-        (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar)) _ _ st
-        ⟨⟨CircuitType.scoped_fvar.mpr trivial, rfl⟩,
-          ⟨CircuitType.scoped_fvar.mpr hsc, rfl⟩⟩
-    exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, _, hr.2⟩
+    intro st h
+    match xs with
+    | [] =>
+      simp only [Snarky.all]
+      exact ⟨true_, st, rfl, by simp [Sat, build], true_scoped st, true,
+        CircuitType.reads_boolVar.mpr (by simp [bit])⟩
+    | [a] =>
+      simp only [Snarky.all]
+      exact ⟨a, st, rfl, by simp [Sat, build], h a (List.mem_cons_self ..)⟩
+    | [a, b] =>
+      simp only [Snarky.all]
+      obtain ⟨ab, hab⟩ := (h a (by simp)).2
+      obtain ⟨bb, hbb⟩ := (h b (by simp)).2
+      obtain ⟨r, st₁, hrun, hsat, hr⟩ := and_complete (c := c) a b ab bb st
+        ⟨⟨CircuitType.scoped_boolVar.mpr (h a (by simp)).1, hab⟩,
+          ⟨CircuitType.scoped_boolVar.mpr (h b (by simp)).1, hbb⟩⟩
+      exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, ab && bb, hr.2⟩
+    | x₁ :: x₂ :: x₃ :: t =>
+      simp only [Snarky.all]
+      have hsc : (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar)).Scoped st :=
+        CVar.Scoped.sum fun x hx => by
+          obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx
+          exact (h b hb).1
+      obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
+        equals_complete (c := c) (CVar.const ((x₁ :: x₂ :: x₃ :: t).length : F))
+          (sum ((x₁ :: x₂ :: x₃ :: t).map BoolVar.toCVar)) _ _ st
+          ⟨⟨CircuitType.scoped_fvar.mpr trivial, rfl⟩,
+            ⟨CircuitType.scoped_fvar.mpr hsc, rfl⟩⟩
+      exact ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mp hr.1, _, hr.2⟩
+  intro st hF
+  obtain ⟨r, st₁, hrun, hsat, hsc, -⟩ :=
+    hbase st (fun b hb => ⟨CircuitType.scoped_boolVar.mp (hF b hb).1, ⟨f b, (hF b hb).2⟩⟩)
+  refine ⟨r, st₁, hrun, hsat, CircuitType.scoped_boolVar.mpr hsc,
+    CircuitType.reads_boolVar.mpr ?_⟩
+  have hval := runs_post (fun V => all_spec (c := c) (V := V) xs hchar) hrun
+    (hsat (Nat.le_refl _) (Assignments.Le.refl _))
+  have hread : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = bit (f b) := fun b hb =>
+    CircuitType.reads_boolVar.mp
+      (CircuitType.ReadsAs.mono hrun.nv_le hrun.le (hF b hb)).2
+  have hbits : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = 0 ∨
+      (↑b : CVar F).val st₁.env.get = 1 := by
+    intro b hb
+    rw [hread b hb]
+    cases f b <;> simp [bit]
+  rw [hval hbits]
+  have hone : ∀ b ∈ xs, ((↑b : CVar F).val st₁.env.get = 1 ↔ f b = true) := by
+    intro b hb
+    rw [hread b hb]
+    cases f b <;> simp [bit]
+  by_cases h : xs.all f = true
+  · rw [if_pos (fun b hb => (hone b hb).mpr (List.all_eq_true.mp h b hb)), h]
+    rfl
+  · simp only [Bool.not_eq_true, List.all_eq_false] at h
+    obtain ⟨b, hb, hfb⟩ := h
+    rw [if_neg (fun hc => absurd ((hone b hb).mp (hc b hb)) (by simpa using hfb)),
+      show xs.all f = false from List.all_eq_false.mpr ⟨b, hb, by simp [hfb]⟩]
+    rfl
 
 attribute [irreducible] Snarky.all
 

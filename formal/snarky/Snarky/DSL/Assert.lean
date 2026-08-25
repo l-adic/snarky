@@ -254,12 +254,18 @@ open Std.Do in
 characteristic, the bit-sum reads nonzero and `assertNonZero`'s law applies. -/
 theorem assertAny_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
+    (f : BoolVar F → Bool)
     (hchar : ∀ k : Nat, k ≤ bs.length → (k : F) = 0 → k = 0) :
-    Complete (fun st =>
-        (∀ b ∈ bs, (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b) ∧
-        ∃ b ∈ bs, (↑b : CVar F).val st.env.get = 1)
+    Complete (fun st => (∀ b ∈ bs, CircuitType.ReadsAs (val := Bool) st b (f b)) ∧ bs.any f = true)
       (assertAny (c := c) bs) (fun _ _ => True) := by
-  rintro st ⟨h, b₁, hb₁, hv₁⟩
+  rintro st ⟨hR, hany⟩
+  obtain ⟨b₁, hb₁, hf₁⟩ := List.any_eq_true.mp hany
+  have h : ∀ b ∈ bs, (↑b : CVar F).Scoped st ∧
+      CircuitType.WellFormed (val := Bool) st.env.get b := fun b hb =>
+    ⟨CircuitType.scoped_boolVar.mp (hR b hb).1, ⟨f b, (hR b hb).2⟩⟩
+  have hv₁ : (↑b₁ : CVar F).val st.env.get = 1 := by
+    rw [CircuitType.reads_boolVar.mp (hR b₁ hb₁).2, hf₁]
+    rfl
   simp only [assertAny]
   have hsc : (sum (bs.map BoolVar.toCVar)).Scoped st :=
     CVar.Scoped.sum fun x hx => by
@@ -325,12 +331,22 @@ operand to read `1`. -/
 /-- `assertExactlyOne`'s completeness law: where exactly one scoped bit operand reads `1`,
 the bit-sum reads `1` and `assertEqual`'s law applies. -/
 theorem assertExactlyOne_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) :
-    Complete (fun st =>
-        (∀ b ∈ bs, (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b) ∧
-        (bs.map fun (b : BoolVar F) => (↑b : CVar F).val st.env.get).count 1 = 1)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
+    (f : BoolVar F → Bool) :
+    Complete (fun st => (∀ b ∈ bs, CircuitType.ReadsAs (val := Bool) st b (f b)) ∧
+        (bs.map f).count true = 1)
       (assertExactlyOne (c := c) bs) (fun _ _ => True) := by
-  rintro st ⟨h, hone⟩
+  rintro st ⟨hR, hcount⟩
+  have h : ∀ b ∈ bs, (↑b : CVar F).Scoped st ∧
+      CircuitType.WellFormed (val := Bool) st.env.get b := fun b hb =>
+    ⟨CircuitType.scoped_boolVar.mp (hR b hb).1, ⟨f b, (hR b hb).2⟩⟩
+  have hone : (bs.map fun (b : BoolVar F) => (↑b : CVar F).val st.env.get).count 1 = 1 := by
+    rw [← hcount]
+    simp only [List.count, List.countP_map]
+    refine List.countP_congr fun b hb => ?_
+    simp only [Function.comp_apply, beq_iff_eq,
+      CircuitType.reads_boolVar.mp (hR b hb).2]
+    cases f b <;> simp [bit]
   simp only [assertExactlyOne]
   have hsc : (sum (bs.map BoolVar.toCVar)).Scoped st :=
     CVar.Scoped.sum fun x hx => by
@@ -394,12 +410,17 @@ read `1`. -/
 /-- `assertAll`'s completeness law: where every scoped bit operand reads `1`, the bit-sum
 reads the length and `assertEqual`'s law applies. -/
 theorem assertAll_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F)) :
-    Complete (fun st =>
-        (∀ b ∈ bs, (↑b : CVar F).Scoped st ∧ CircuitType.WellFormed (val := Bool) st.env.get b) ∧
-        ∀ b ∈ bs, (↑b : CVar F).val st.env.get = 1)
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
+    (f : BoolVar F → Bool) :
+    Complete (fun st => (∀ b ∈ bs, CircuitType.ReadsAs (val := Bool) st b (f b)) ∧ ∀ b ∈ bs, f b = true)
       (assertAll (c := c) bs) (fun _ _ => True) := by
-  rintro st ⟨h, hall⟩
+  rintro st ⟨hR, hft⟩
+  have h : ∀ b ∈ bs, (↑b : CVar F).Scoped st ∧
+      CircuitType.WellFormed (val := Bool) st.env.get b := fun b hb =>
+    ⟨CircuitType.scoped_boolVar.mp (hR b hb).1, ⟨f b, (hR b hb).2⟩⟩
+  have hall : ∀ b ∈ bs, (↑b : CVar F).val st.env.get = 1 := fun b hb => by
+    rw [CircuitType.reads_boolVar.mp (hR b hb).2, hft b hb]
+    rfl
   simp only [assertAll]
   have hsc : (sum (bs.map BoolVar.toCVar)).Scoped st :=
     CVar.Scoped.sum fun x hx => by
