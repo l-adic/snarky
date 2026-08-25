@@ -1689,6 +1689,20 @@ def chainBuild (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F) : ℕ
       (bs (i + 1)).1 (bs (i + 1)).2.1 (bs (i + 1)).2.2.1 (bs (i + 1)).2.2.2
 
 omit [DecidableEq F] in
+/-- The walk from row `1` on is the walk from row `0`'s outputs at the shifted bits — what
+    a caller reading the run off one round at a time needs to step its induction. -/
+theorem chainBuild_shift (endo xT yT xP0 yP0 n0 : F) (bs : ℕ → F × F × F × F) :
+    ∀ j : ℕ, chainBuild endo xT yT xP0 yP0 n0 bs (j + 1)
+      = chainBuild endo xT yT (chainBuild endo xT yT xP0 yP0 n0 bs 0).xS
+          (chainBuild endo xT yT xP0 yP0 n0 bs 0).yS
+          (chainBuild endo xT yT xP0 yP0 n0 bs 0).nPrime (fun n => bs (n + 1)) j
+  | 0 => rfl
+  | j + 1 => by
+    show build endo xT yT (chainBuild endo xT yT xP0 yP0 n0 bs (j + 1)).xS _ _ _ _ _ _ = _
+    rw [chainBuild_shift endo xT yT xP0 yP0 n0 bs j]
+    rfl
+
+omit [DecidableEq F] in
 /-- Every row of the walk is the canonical row at its own threaded inputs — the
     rebuild identity that identifies a prover's per-row `build` calls with the
     walk. -/

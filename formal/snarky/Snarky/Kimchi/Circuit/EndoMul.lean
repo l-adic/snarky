@@ -757,6 +757,133 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
     rw [hW]
     rfl
 
+/-- A trace with no rounds traversed no rows. -/
+private theorem ChainAt.of_nil_out [Field F] [DecidableEq F] {eb : F}
+    {t : AffinePoint (FVar F)} {stf : ProverState F} :
+    ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)},
+      ChainAt (RowGrant eb t) stf acc pref [] fin → pref = [] ∧ acc = fin
+  | _, _, [], h => ⟨rfl, h.2⟩
+  | _, _, _ :: _, h => by
+    obtain ⟨y, ys', -, heq, -, -⟩ := h
+    exact nomatch heq
+
+/-- A trace's first round opens at the accumulators it was given. -/
+private theorem chainAt_head [Field F] [DecidableEq F] {eb : F} {t : AffinePoint (FVar F)}
+    {stf : ProverState F} :
+    ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+      {r₀ : EndoMulRound F} {rs : List (EndoMulRound F)},
+      ChainAt (RowGrant eb t) stf acc pref (r₀ :: rs) fin →
+      r₀.p = acc.1 ∧ r₀.nAcc = acc.2
+  | _, _, [], _, _, h => absurd h.1 (by simp)
+  | _, _, _ :: _, _, _, h => by
+    obtain ⟨r, tail, mid, heq, hgrant, -⟩ := h
+    injection heq with hr _
+    subst hr
+    exact hgrant.1.2.1
+
+/-- The trace's readings are the model's honest walk: round `i` reads as `chainBuild`'s
+row `i`, from the accumulator the trace opened on and the bits it was handed. -/
+private theorem grants_walk [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
+    (stf : ProverState F) :
+    ∀ {bs : ℕ → F × F × F × F} {acc fin : AffinePoint (FVar F) × FVar F}
+      {pref : List (Vector (FVar F) 4)} {rounds : List (EndoMulRound F)},
+      ChainAt (RowGrant eb t) stf acc pref rounds fin →
+      (∀ i (hi : i < pref.length),
+        (((pref[i]'hi)[0]'(by omega)).val stf.env.get,
+          ((pref[i]'hi)[1]'(by omega)).val stf.env.get,
+          ((pref[i]'hi)[2]'(by omega)).val stf.env.get,
+          ((pref[i]'hi)[3]'(by omega)).val stf.env.get) = bs i) →
+      ∀ i (hi : i < rounds.length),
+        EndoMulRound.readWith stf.env.get (rounds[i]'hi)
+            ((rounds[i]'hi).s.x.val stf.env.get) ((rounds[i]'hi).s.y.val stf.env.get)
+            ((rounds[i]'hi).nAccNext.val stf.env.get)
+          = Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
+              (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs i
+  | _, _, _, [], _, h, _, i, hi => by
+    obtain ⟨rfl, -⟩ := h
+    simp at hi
+  | bs, acc, fin, x :: rest, rounds, h, hbits, i, hi => by
+    obtain ⟨r, tail, mid, rfl, ⟨⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, hb0, hb1, hb2, hb3⟩, -, hread⟩,
+      hrest⟩ := h
+    have hrow : EndoMulRound.readWith stf.env.get r (r.s.x.val stf.env.get)
+        (r.s.y.val stf.env.get) (r.nAccNext.val stf.env.get)
+        = Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
+            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs 0 := by
+      rw [hread]
+      show _ = Kimchi.Gate.EndoMul.build _ _ _ _ _ _ (bs 0).1 (bs 0).2.1 (bs 0).2.2.1 (bs 0).2.2.2
+      rw [← hbits 0 (by simp)]
+      rfl
+    cases i with
+    | zero => exact hrow
+    | succ j =>
+      have hj : j < tail.length := by simpa using hi
+      have hshift := grants_walk eb t stf hrest
+        (fun k hk => hbits (k + 1) (by simpa using hk)) j hj
+      have hxS : (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get)
+            (t.y.val stf.env.get) (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get)
+            (acc.2.val stf.env.get) bs 0).xS = mid.1.x.val stf.env.get := by
+        rw [← hrow]
+        show r.s.x.val stf.env.get = _
+        rw [hrs]
+      have hyS : (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get)
+            (t.y.val stf.env.get) (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get)
+            (acc.2.val stf.env.get) bs 0).yS = mid.1.y.val stf.env.get := by
+        rw [← hrow]
+        show r.s.y.val stf.env.get = _
+        rw [hrs]
+      have hnP : (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get)
+            (t.y.val stf.env.get) (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get)
+            (acc.2.val stf.env.get) bs 0).nPrime = mid.2.val stf.env.get := by
+        rw [← hrow]
+        show r.nAccNext.val stf.env.get = _
+        rw [hrnn]
+      rw [show ((r :: tail)[j + 1]'hi) = tail[j]'hj from rfl, hshift,
+        Kimchi.Gate.EndoMul.chainBuild_shift, hxS, hyS, hnP]
+
+/-- The payload holds: the constraint reads each row's outputs off the next round, the
+trace's threading says those are the row's own, and every row of the walk holds. -/
+private theorem chainHolds_of_walk [Field F] [DecidableEq F] (eb : F)
+    (t : AffinePoint (FVar F)) (stf : ProverState F) (W : ℕ → Kimchi.Gate.EndoMul.Witness F) :
+    ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 4)}
+      {rounds : List (EndoMulRound F)},
+      ChainAt (RowGrant eb t) stf acc pref rounds fin →
+      (∀ i (hi : i < rounds.length),
+        EndoMulRound.readWith stf.env.get (rounds[i]'hi)
+            ((rounds[i]'hi).s.x.val stf.env.get) ((rounds[i]'hi).s.y.val stf.env.get)
+            ((rounds[i]'hi).nAccNext.val stf.env.get) = W i) →
+      (∀ i, i < rounds.length → Kimchi.Gate.EndoMul.Holds eb (W i)) →
+      EndoMul.chainHolds stf.env.get eb
+        (fin.1.x.val stf.env.get, fin.1.y.val stf.env.get, fin.2.val stf.env.get) rounds
+  | _, _, [], _, h, _, _ => by
+    obtain ⟨rfl, -⟩ := h
+    trivial
+  | acc, fin, x :: rest, rounds, h, hwalk, hholds => by
+    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
+    obtain ⟨hrt, ⟨hrp, hrn⟩, ⟨hrs, hrnn⟩, -⟩ := hgrant.1
+    match tail, hrest with
+    | [], hrest' =>
+      obtain ⟨-, hmid⟩ := ChainAt.of_nil_out hrest'
+      have h0 := hwalk 0 (by simp)
+      simp only [List.getElem_cons_zero] at h0
+      show Kimchi.Gate.EndoMul.Holds eb _
+      rw [← hmid, show (mid.1.x.val stf.env.get) = r.s.x.val stf.env.get by rw [hrs],
+        show (mid.1.y.val stf.env.get) = r.s.y.val stf.env.get by rw [hrs],
+        show (mid.2.val stf.env.get) = r.nAccNext.val stf.env.get by rw [hrnn], h0]
+      exact hholds 0 (by simp)
+    | r' :: ts, hrest' =>
+      obtain ⟨hr'p, hr'n⟩ := chainAt_head hrest'
+      have h0 := hwalk 0 (by simp)
+      simp only [List.getElem_cons_zero] at h0
+      refine ⟨?_, ?_⟩
+      · show Kimchi.Gate.EndoMul.Holds eb _
+        rw [show (r'.p.x.val stf.env.get) = r.s.x.val stf.env.get by rw [hr'p, hrs],
+          show (r'.p.y.val stf.env.get) = r.s.y.val stf.env.get by rw [hr'p, hrs],
+          show (r'.nAcc.val stf.env.get) = r.nAccNext.val stf.env.get by rw [hr'n, hrnn], h0]
+        exact hholds 0 (by simp)
+      · exact chainHolds_of_walk eb t stf (fun i => W (i + 1)) hrest'
+          (fun i hi => hwalk (i + 1) (by simpa using hi))
+          (fun i hi => hholds (i + 1) (by simpa using hi))
+
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
