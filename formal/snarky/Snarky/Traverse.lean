@@ -167,6 +167,29 @@ def ChainAt {s α β : Type} (out : s → α → β → s → ProverState F → 
     ∃ (y : β) (ys' : List β) (mid : s),
       ys = y :: ys' ∧ out init x y mid stf ∧ ChainAt out stf mid xs ys' fin
 
+/-- A trace has as many outputs as it had inputs. -/
+theorem ChainAt.length {s α β : Type} {out : s → α → β → s → ProverState F → Prop}
+    {st : ProverState F} :
+    ∀ {init fin : s} {xs : List α} {ys : List β},
+      ChainAt out st init xs ys fin → ys.length = xs.length
+  | _, _, [], _, h => by rw [h.1]; rfl
+  | _, _, _ :: _, _, h => by
+    obtain ⟨y, ys', _, rfl, -, hrest⟩ := h
+    rw [List.length_cons, List.length_cons, ChainAt.length hrest]
+
+/-- A trace transports to a later table when its grants do — what a ladder needs to
+judge the row it emits after the loop. -/
+theorem ChainAt.mono {s α β : Type} {out : s → α → β → s → ProverState F → Prop}
+    (hout : ∀ (acc : s) (x : α) (y : β) (acc' : s) {st st' : ProverState F},
+      st.nv ≤ st'.nv → st.env.Le st'.env → out acc x y acc' st → out acc x y acc' st')
+    {st st' : ProverState F} (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) :
+    ∀ {init fin : s} {xs : List α} {ys : List β},
+      ChainAt out st init xs ys fin → ChainAt out st' init xs ys fin
+  | _, _, [], _, h => h
+  | _, _, _ :: _, _, h => by
+    obtain ⟨y, ys', mid, rfl, hgrant, hrest⟩ := h
+    exact ⟨y, ys', mid, rfl, hout _ _ _ _ hnv hle hgrant, ChainAt.mono hout hnv hle hrest⟩
+
 /-- `mapAccumM`'s completeness: a step's law, an accumulator invariant and a grant that
 survives the table's growth compose into the whole ladder's. The caller writes the step
 and gets the loop — including every step's grant at the final table, which is where the

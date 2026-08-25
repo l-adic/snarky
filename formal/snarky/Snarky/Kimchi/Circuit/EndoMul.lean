@@ -648,22 +648,19 @@ private theorem AccInv.mono [Field F] {st₁ : ProverState F}
   ⟨⟨Nat.le_trans h.1.1 hnv, h.1.2.trans hle⟩,
     h.2.1.mono hnv, h.2.2.1.mono hnv, h.2.2.2.mono hnv⟩
 
-/-- A row's grant survives the table's growth: its cells are in scope, so the reading
-does not move. -/
+/-- A row's grant survives the table's growth: the wiring says the operands are the
+round's own cells, and those are in scope, so nothing in the reading moves. -/
 private theorem RowGrant.mono [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (FVar F))
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 4) (r : EndoMulRound F)
     (acc' : AffinePoint (FVar F) × FVar F) {st st' : ProverState F}
-    (ht : t.x.Scoped st ∧ t.y.Scoped st)
-    (hacc : acc.1.x.Scoped st ∧ acc.1.y.Scoped st ∧ acc.2.Scoped st)
-    (hbs : ∀ v ∈ bs.toList, v.Scoped st)
     (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env)
     (h : RowGrant eb t acc bs r acc' st) : RowGrant eb t acc bs r acc' st' := by
   obtain ⟨hthr, hsc, hread⟩ := h
-  refine ⟨hthr, fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
+  obtain ⟨hrt, ⟨hrp, hrn⟩, hout, hb0, hb1, hb2, hb3⟩ := hthr
+  refine ⟨⟨hrt, ⟨hrp, hrn⟩, hout, hb0, hb1, hb2, hb3⟩,
+    fun cv hcv => (hsc cv hcv).mono hnv, ?_⟩
   have hcell : ∀ cv ∈ cells r, cv.val st'.env.get = cv.val st.env.get :=
     fun cv hcv => CVar.val_of_le hle (hsc cv hcv)
-  have hbs' : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).val st'.env.get = (bs[i]'hi).val st.env.get :=
-    fun i hi => CVar.val_of_le hle (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi)))
   have hread' : EndoMulRound.readWith st'.env.get r (r.s.x.val st'.env.get)
         (r.s.y.val st'.env.get) (r.nAccNext.val st'.env.get)
       = EndoMulRound.readWith st.env.get r (r.s.x.val st.env.get)
@@ -686,9 +683,12 @@ private theorem RowGrant.mono [Field F] [DecidableEq F] (eb : F) (t : AffinePoin
       hcell r.bit1 (by simp [cells]),
       hcell r.bit2 (by simp [cells]),
       hcell r.bit3 (by simp [cells])]
-  rw [hread', hread, CVar.val_of_le hle ht.1, CVar.val_of_le hle ht.2,
-    CVar.val_of_le hle hacc.1, CVar.val_of_le hle hacc.2.1, CVar.val_of_le hle hacc.2.2,
-    hbs' 0 (by omega), hbs' 1 (by omega), hbs' 2 (by omega), hbs' 3 (by omega)]
+  rw [hread', hread, ← hrt, ← hrp, ← hrn, ← hb0, ← hb1, ← hb2, ← hb3,
+    hcell r.t.x (by simp [cells]), hcell r.t.y (by simp [cells]),
+    hcell r.p.x (by simp [cells]), hcell r.p.y (by simp [cells]),
+    hcell r.nAcc (by simp [cells]), hcell r.bit0 (by simp [cells]),
+    hcell r.bit1 (by simp [cells]), hcell r.bit2 (by simp [cells]),
+    hcell r.bit3 (by simp [cells])]
 
 /-- The step's completeness: the round's advice is the gate's canonical row at the
 accumulators it was handed, so the run succeeds and its reading is that row. -/
@@ -993,7 +993,289 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         simp only [bitsWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hscS, hrs, Except.bind]
         rfl)
-  sorry
+  -- the sealed `β·x`
+  obtain ⟨phix, st₂, hrun₂, hsat₂, hscP, hvalP⟩ :=
+    Complete.post (g := sealVar (c := KimchiConstraint F) (CVar.scale_ d.endo t.x))
+      (fun V => sealVar_spec (V := V) (CVar.scale_ d.endo t.x))
+      (sealVar_complete (c := KimchiConstraint F) (CVar.scale_ d.endo t.x)) st₁
+      (CVar.Scoped.scale_ (htx.mono hnv₁))
+  have hle₂ := hrun₂.le
+  have hnv₂ := hrun₂.nv_le
+  have htx₂ : t.x.Scoped st₂ := htx.mono (Nat.le_trans hnv₁ hnv₂)
+  have hty₂ : t.y.Scoped st₂ := hty.mono (Nat.le_trans hnv₁ hnv₂)
+  have hvx₂ : t.x.val st₂.env.get = xv := by
+    rw [CVar.val_of_le (hle₁.trans hle₂) htx, hrx]
+  have hvy₂ : t.y.val st₂.env.get = yv := by
+    rw [CVar.val_of_le (hle₁.trans hle₂) hty, hry]
+  have hvp₂ : phix.val st₂.env.get = d.endo * xv := by
+    rw [hvalP, CVar.val_scale_, hvx₂]
+  have hyne : yv ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hT
+  -- `T + φT` is finite: `[1 + λ]` does not kill `T`
+  have hTφ : Point.some _ _ hT + Point.some _ _ hφT ≠ 0 := by
+    intro hzero
+    rw [d.eigen hT hφT] at hzero
+    exact d.lam_succ_smul (Point.some _ _ hT) (Point.some_ne_zero hT)
+      (by rw [← hzero]; module)
+  -- the first addition
+  have hEq1 : d.W.Equation (t.x.val st₂.env.get) (t.y.val st₂.env.get) := by
+    rw [hvx₂, hvy₂]
+    exact hT.left
+  have hEq2 : d.W.Equation (phix.val st₂.env.get) (t.y.val st₂.env.get) := by
+    rw [hvp₂, hvy₂]
+    exact hφT.left
+  have hyne₂ : t.y.val st₂.env.get ≠ 0 := by rw [hvy₂]; exact hyne
+  have hfin1 : ¬(t.x.val st₂.env.get = phix.val st₂.env.get ∧
+      t.y.val st₂.env.get = d.W.negY (phix.val st₂.env.get) (t.y.val st₂.env.get)) := by
+    rintro ⟨h1, h2⟩
+    apply hTφ
+    rw [add_eq_zero_iff_eq_neg, Point.neg_some]
+    refine Kimchi.Gate.EndoMul.some_congr d.W hT _ ?_ ?_
+    · calc xv = t.x.val st₂.env.get := hvx₂.symm
+        _ = phix.val st₂.env.get := h1
+        _ = d.endo * xv := hvp₂
+    · calc yv = t.y.val st₂.env.get := hvy₂.symm
+        _ = d.W.negY (phix.val st₂.env.get) (t.y.val st₂.env.get) := h2
+        _ = d.W.negY (d.endo * xv) yv := by rw [hvp₂, hvy₂]
+  obtain ⟨p1, st₃, hrun₃, hsat₃, ⟨hscP1, hscI1⟩, hadd1⟩ :=
+    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite t ⟨phix, t.y⟩)
+      (fun V => addFast_spec (V := V) .checkFinite d.W
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩)
+      (addFast_complete .checkFinite d.W
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩) st₂
+      ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, scoped_affinePoint.mpr ⟨hscP, hty₂⟩,
+        hEq1, hEq2, hyne₂, fun _ => hfin1⟩
+  have hle₃ := hrun₃.le
+  have hnv₃ := hrun₃.nv_le
+  have hvx₃ : t.x.val st₃.env.get = xv := by rw [CVar.val_of_le hle₃ htx₂, hvx₂]
+  have hvy₃ : t.y.val st₃.env.get = yv := by rw [CVar.val_of_le hle₃ hty₂, hvy₂]
+  have hvp₃ : phix.val st₃.env.get = d.endo * xv := by rw [CVar.val_of_le hle₃ hscP, hvp₂]
+  have hT₃ : d.W.Nonsingular (t.x.val st₃.env.get) (t.y.val st₃.env.get) := by
+    rw [hvx₃, hvy₃]; exact hT
+  have hφT₃ : d.W.Nonsingular (phix.val st₃.env.get) (t.y.val st₃.env.get) := by
+    rw [hvp₃, hvy₃]; exact hφT
+  obtain ⟨hP1, hsum1⟩ :
+      ∃ h3 : d.W.Nonsingular (p1.p.x.val st₃.env.get) (p1.p.y.val st₃.env.get),
+        Point.some _ _ hT₃ + Point.some _ _ hφT₃ = Point.some _ _ h3 := by
+    rcases hadd1.2 hT₃ hφT₃ (by rw [hvy₃]; exact hyne) with ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+    · exact absurd ((hadd1.1 rfl).symm.trans hinf) (by norm_num)
+    · exact ⟨h3, hsum⟩
+  have hy1ne : p1.p.y.val st₃.env.get ≠ 0 := y_ne_zero_of_odd_order d.W d.odd hP1
+  have h2P1 : Point.some _ _ hP1 + Point.some _ _ hP1 ≠ 0 := by
+    intro hzero
+    have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
+      have := (Fact.out : Nat.Prime d.W.order).two_le
+      have h3' : 3 ≤ d.W.order := by
+        rcases Nat.lt_or_ge d.W.order 3 with h | h
+        · exact absurd (by omega : d.W.order = 2) d.odd
+        · exact h
+      exact_mod_cast h3'
+    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W (Point.some_ne_zero hP1)
+      (by norm_num) hlt (by rw [two_zsmul, hzero])
+  -- the second addition
+  have hfin2 : ¬(p1.p.x.val st₃.env.get = p1.p.x.val st₃.env.get ∧
+      p1.p.y.val st₃.env.get = d.W.negY (p1.p.x.val st₃.env.get) (p1.p.y.val st₃.env.get)) := by
+    rintro ⟨-, h2⟩
+    apply h2P1
+    rw [add_eq_zero_iff_eq_neg, Point.neg_some]
+    exact Kimchi.Gate.EndoMul.some_congr d.W hP1 _ rfl h2
+  obtain ⟨p2, st₄, hrun₄, hsat₄, ⟨hscP2, hscI2⟩, hadd2⟩ :=
+    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite p1.p p1.p)
+      (fun V => addFast_spec (V := V) .checkFinite d.W
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p)
+      (addFast_complete .checkFinite d.W
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p) st₃
+      ⟨hscP1, hscP1, hP1.left, hP1.left, hy1ne, fun _ => hfin2⟩
+  have hle₄ := hrun₄.le
+  have hnv₄ := hrun₄.nv_le
+  rw [scoped_affinePoint] at hscP1 hscP2
+  have hP1₄ : d.W.Nonsingular (p1.p.x.val st₄.env.get) (p1.p.y.val st₄.env.get) := by
+    rw [CVar.val_of_le hle₄ hscP1.1, CVar.val_of_le hle₄ hscP1.2]; exact hP1
+  obtain ⟨hP0ns, hsum2⟩ :
+      ∃ h3 : d.W.Nonsingular (p2.p.x.val st₄.env.get) (p2.p.y.val st₄.env.get),
+        Point.some _ _ hP1₄ + Point.some _ _ hP1₄ = Point.some _ _ h3 := by
+    rcases hadd2.2 hP1₄ hP1₄ (by rw [CVar.val_of_le hle₄ hscP1.2]; exact hy1ne) with
+      ⟨hinf, -⟩ | ⟨-, h3, hsum⟩
+    · exact absurd ((hadd2.1 rfl).symm.trans hinf) (by norm_num)
+    · exact ⟨h3, hsum⟩
+  -- the ladder
+  rw [CircuitType.scoped_vector] at hscB
+  rw [CircuitType.reads_vector] at hrdB
+  have hP : ∀ x ∈ bits.toList, BitRow st₁ x := by
+    intro x hx v hv
+    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
+    obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
+    exact CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp (hscB i hi) j hj)
+  obtain ⟨loop, st₅, hrun₅, hsat₅, hinv₅, hchainAt⟩ :=
+    mapAccumM_complete (F := F) (c := KimchiConstraint F)
+      (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁) (fun _ => AccInv st₁)
+      (RowGrant d.endo t) (fun _ => AccInv.mono)
+      (RowGrant.mono d.endo t)
+      (fun acc x _ hx =>
+        endoMulRound_complete st₁ d.endo t ⟨htx.mono hnv₁, hty.mono hnv₁⟩ acc x hx)
+      (p2.p, .const 0) bits.toList hP st₄
+      ⟨⟨Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hnv₄), (hle₂.trans hle₃).trans hle₄⟩,
+        hscP2.1, hscP2.2, trivial⟩
+  have hle₅ := hrun₅.le
+  have hnv₅ := hrun₅.nv_le
+  -- the walk the honest run is
+  have hx0 : ∀ (stf : ProverState F), st₄.env.Le stf.env →
+      p2.p.x.val stf.env.get = p2.p.x.val st₄.env.get :=
+    fun stf hlef => CVar.val_of_le hlef hscP2.1
+  have hy0 : ∀ (stf : ProverState F), st₄.env.Le stf.env →
+      p2.p.y.val stf.env.get = p2.p.y.val st₄.env.get :=
+    fun stf hlef => CVar.val_of_le hlef hscP2.2
+  set W : ℕ → Kimchi.Gate.EndoMul.Witness F :=
+    Kimchi.Gate.EndoMul.chainBuild d.endo xv yv (p2.p.x.val st₄.env.get)
+      (p2.p.y.val st₄.env.get) 0 (bitsOf (F := F) rounds (ToNat.toNat sv)) with hWdef
+  -- every row of the walk holds
+  have hbsval : ∀ i, ((bitsOf (F := F) rounds (ToNat.toNat sv) i).1 = 0 ∨
+        (bitsOf (F := F) rounds (ToNat.toNat sv) i).1 = 1) ∧
+      ((bitsOf (F := F) rounds (ToNat.toNat sv) i).2.1 = 0 ∨
+        (bitsOf (F := F) rounds (ToNat.toNat sv) i).2.1 = 1) ∧
+      ((bitsOf (F := F) rounds (ToNat.toNat sv) i).2.2.1 = 0 ∨
+        (bitsOf (F := F) rounds (ToNat.toNat sv) i).2.2.1 = 1) ∧
+      ((bitsOf (F := F) rounds (ToNat.toNat sv) i).2.2.2 = 0 ∨
+        (bitsOf (F := F) rounds (ToNat.toNat sv) i).2.2.2 = 1) := by
+    intro i
+    refine ⟨?_, ?_, ?_, ?_⟩ <;> simp only [bitsOf] <;> split <;> simp
+  have hP0eq : Point.some _ _ hP0ns
+      = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
+    have hc : Point.some _ _ hP1₄ = Point.some _ _ hP1 :=
+      Kimchi.Gate.EndoMul.some_congr d.W hP1₄ hP1 (CVar.val_of_le hle₄ hscP1.1)
+        (CVar.val_of_le hle₄ hscP1.2)
+    have hTc : Point.some _ _ hT₃ = Point.some _ _ hT :=
+      Kimchi.Gate.EndoMul.some_congr d.W hT₃ hT hvx₃ hvy₃
+    have hφTc : Point.some _ _ hφT₃ = Point.some _ _ hφT :=
+      Kimchi.Gate.EndoMul.some_congr d.W hφT₃ hφT hvp₃ hvy₃
+    rw [← hsum2, hc, ← hsum1, hTc, hφTc]
+    module
+  have hwalkHolds : ∀ i, i < rounds → Kimchi.Gate.EndoMul.Holds d.endo (W i) :=
+    Kimchi.Gate.EndoMul.chain_complete d.W (Point.some _ _ hT) (Point.some _ _ hφT)
+      (fun a b ha hb hba hbb =>
+        d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
+      rounds hbits hT hφT rfl rfl (bitsOf (F := F) rounds (ToNat.toNat sv)) hbsval 0 hP0ns hP0eq
+  -- the rows' bits, at any table past the witness
+  have hbitsRead : ∀ (stf : ProverState F), st₁.env.Le stf.env →
+      ∀ i (hi : i < bits.toList.length),
+        (((bits.toList[i]'hi)[0]'(by omega)).val stf.env.get,
+          ((bits.toList[i]'hi)[1]'(by omega)).val stf.env.get,
+          ((bits.toList[i]'hi)[2]'(by omega)).val stf.env.get,
+          ((bits.toList[i]'hi)[3]'(by omega)).val stf.env.get)
+          = bitsOf (F := F) rounds (ToNat.toNat sv) i := by
+    intro stf hlef i hi
+    have hi' : i < rounds := by simpa using hi
+    have hentry : ∀ (j : ℕ) (hj : j < 4),
+        ((bits[i]'hi')[j]'hj).val stf.env.get
+          = (if (ToNat.toNat sv).testBit (4 * rounds - 1 - (4 * i + j)) then 1 else 0) := by
+      intro j hj
+      rw [CVar.val_of_le hlef
+          (CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp (hscB i hi') j hj)),
+        CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp (hrdB i hi') j hj)]
+      simp
+    simp only [Vector.getElem_toList, bitsOf]
+    rw [hentry 0 (by omega), hentry 1 (by omega), hentry 2 (by omega), hentry 3 (by omega)]
+    simp
+  -- the trace's rows and finals are the walk's, at any table past the ladder
+  have hst₁₅ : st₁.env.Le st₅.env := ((hle₂.trans hle₃).trans hle₄).trans hle₅
+  have hWat : ∀ (stf : ProverState F), st₅.env.Le stf.env →
+      Kimchi.Gate.EndoMul.chainBuild d.endo (t.x.val stf.env.get) (t.y.val stf.env.get)
+          ((p2.p, (CVar.const 0 : FVar F)).1.x.val stf.env.get)
+          ((p2.p, (CVar.const 0 : FVar F)).1.y.val stf.env.get)
+          ((p2.p, (CVar.const 0 : FVar F)).2.val stf.env.get)
+          (bitsOf (F := F) rounds (ToNat.toNat sv)) = W := by
+    intro stf hlef
+    have h1 : t.x.val stf.env.get = xv := by
+      rw [CVar.val_of_le (hle₅.trans hlef) (htx₂.mono (Nat.le_trans hnv₃ hnv₄)),
+        CVar.val_of_le (hle₃.trans hle₄) htx₂, hvx₂]
+    have h2 : t.y.val stf.env.get = yv := by
+      rw [CVar.val_of_le (hle₅.trans hlef) (hty₂.mono (Nat.le_trans hnv₃ hnv₄)),
+        CVar.val_of_le (hle₃.trans hle₄) hty₂, hvy₂]
+    show Kimchi.Gate.EndoMul.chainBuild d.endo (t.x.val stf.env.get) (t.y.val stf.env.get)
+        (p2.p.x.val stf.env.get) (p2.p.y.val stf.env.get)
+        ((CVar.const 0 : FVar F).val stf.env.get) _ = _
+    rw [h1, h2, hx0 stf (hle₅.trans hlef), hy0 stf (hle₅.trans hlef), hWdef]
+    rfl
+  -- the walk, as a run
+  have hchainW : Kimchi.Gate.EndoMul.Chain d.endo W rounds := by
+    refine ⟨hwalkHolds, fun i _ => ?_, fun i _ => ⟨rfl, rfl⟩, fun i _ => rfl⟩
+    cases i <;> exact ⟨rfl, rfl⟩
+  have hlenB : bits.toList.length = rounds := by simp
+  -- the register the ladder ends on is the scalar
+  have hreg : Kimchi.Gate.EndoMul.accN W rounds = sv := by
+    rw [Kimchi.Gate.EndoMul.chain_nAcc d.endo rounds W hchainW,
+      show Kimchi.Gate.EndoMul.accN W 0 = 0 from rfl, zero_mul, zero_add,
+      Kimchi.Gate.EndoMul.crumbList_ofBits rounds (ToNat.toNat sv) W ?_,
+      Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hfits,
+      LawfulToNat.cast_toNat]
+    intro r _
+    cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
+  obtain ⟨hfx₅, hfy₅, hfn₅⟩ := grants_fin d.endo t st₅ hchainAt (hbitsRead st₅ hst₁₅)
+  rw [hWat st₅ (Assignments.Le.refl _), hlenB] at hfx₅ hfy₅ hfn₅
+  -- the register pin
+  have hscL := hinv₅.2
+  have hpin : loop.2.2.val st₅.env.get = scalar.val.val st₅.env.get := by
+    rw [hfn₅, hreg, CVar.val_of_le hst₁₅ (hscS.mono hnv₁), CVar.val_of_le hle₁ hscS, hrs]
+  have hscS₅ : scalar.val.Scoped st₅ :=
+    hscS.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂
+      (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))))
+  obtain ⟨u, st₆, hrun₆, hsat₆, -⟩ :=
+    assertEqual_complete (c := KimchiConstraint F) loop.2.2 scalar.val st₅
+      ⟨hscL.2.2, hscS₅, hpin⟩
+  have hle₆ := hrun₆.le
+  have hnv₆ := hrun₆.nv_le
+  have hlenR : loop.1.length = rounds := by rw [ChainAt.length hchainAt, hlenB]
+  refine ⟨loop.2.1, st₆, hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind
+      (hrun₅.bind (hrun₆.bind (Runs.addConstraint.bind rfl)))))), ?_, ?_, ?_, ?_⟩
+  · intro stf hnvF hleF
+    have hle₅f : st₅.env.Le stf.env := hle₆.trans hleF
+    have hnv₅f : st₅.nv ≤ stf.nv := Nat.le_trans hnv₆ hnvF
+    have hpay : EndoMul.chainHolds stf.env.get d.endo
+        (loop.2.1.x.val stf.env.get, loop.2.1.y.val stf.env.get,
+          loop.2.2.val stf.env.get) loop.1 := by
+      refine chainHolds_of_walk d.endo t stf W
+        (ChainAt.mono (RowGrant.mono d.endo t) hnv₅f hle₅f hchainAt) ?_ ?_
+      · intro i hi
+        have := grants_walk d.endo t stf
+          (ChainAt.mono (RowGrant.mono d.endo t) hnv₅f hle₅f hchainAt)
+          (hbitsRead stf (hst₁₅.trans hle₅f)) i hi
+        rwa [hWat stf hle₅f] at this
+      · intro i hi
+        exact hwalkHolds i (by rw [← hlenR]; exact hi)
+    refine Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
+      (Sat.bind hrun₃ (hsat₃ ?_ ?_) (Sat.bind hrun₄ (hsat₄ ?_ ?_)
+        (Sat.bind hrun₅ (hsat₅ hnv₅f hle₅f) (Sat.bind hrun₆ (hsat₆ hnvF hleF)
+          (Sat.bind Runs.addConstraint (Sat.addConstraint hpay) Sat.pure))))))
+    · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))) hnv₅f
+    · exact (((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₅f
+    · exact Nat.le_trans (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)) hnv₅f
+    · exact ((hle₃.trans hle₄).trans hle₅).trans hle₅f
+    · exact Nat.le_trans (Nat.le_trans hnv₄ hnv₅) hnv₅f
+    · exact (hle₄.trans hle₅).trans hle₅f
+    · exact Nat.le_trans hnv₅ hnv₅f
+    · exact hle₅.trans hle₅f
+  · exact hscL.1.mono hnv₆
+  · exact hscL.2.1.mono hnv₆
+  · -- the point conclusion, off the model's own chain theorem
+    obtain ⟨hfx₆, hfy₆, -⟩ := grants_fin d.endo t st₆
+      (ChainAt.mono (RowGrant.mono d.endo t) hnv₆ hle₆ hchainAt)
+      (hbitsRead st₆ (hst₁₅.trans hle₆))
+    rw [hWat st₆ hle₆, hlenB] at hfx₆ hfy₆
+    obtain ⟨hfin', sc, A, B, hseq, -, -, -, -, -, hsval⟩ :=
+      Kimchi.Gate.EndoMul.endoMul_off d.W d.two_ne d.three_ne d.odd d.endo
+        (Point.some _ _ hT) (Point.some _ _ hφT)
+        (fun a b ha hb hba hbb =>
+          d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
+        rounds hbits W hchainW hT rfl hφT rfl hP0ns hP0eq d.lam (d.eigen hT hφT)
+    have hfin : d.W.Nonsingular (loop.2.1.x.val st₆.env.get) (loop.2.1.y.val st₆.env.get) := by
+      rw [hfx₆, hfy₆]
+      exact hfin'
+    refine ⟨hfin, sc, ?_, ?_⟩
+    · exact (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq
+    · rw [hsval]
+      congr 1
+      rw [Kimchi.Gate.EndoMul.crumbList_ofBits rounds (ToNat.toNat sv) W ?_]
+      intro r _
+      cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
 
 open Kimchi.Gate.VarBaseMul (y_ne_zero_of_odd_order) in
 open Std.Do WeierstrassCurve.Affine in
