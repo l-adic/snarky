@@ -39,6 +39,7 @@ import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Poseidon
+import Snarky.Kimchi.Circuit.EndoScalar
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -203,6 +204,14 @@ def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3
   let r ← poseidon Poseidon.fpParams ⟨s[0], s[1], s[2]⟩
   pure #v[r.s0, r.s1, r.s2]
 
+/-- Vesta's GLV eigenvalue, as a scalar-field element. -/
+def endoVestaLam : Fp := (Pasta.vestaLam : ℤ)
+
+/-- `endo_scalar_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.EndoScalar.toField`
+at 8 rows and the constant Vesta eigenvalue). -/
+def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
+  EndoScalar.toField 8 scalar (.const endoVestaLam)
+
 /-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
 def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
@@ -274,7 +283,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
       compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
         addCompleteCircuit),
     ("poseidon_step_circuit",
-      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit) ]
+      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit),
+    ("endo_scalar_step_circuit",
+      compareWith (a := Fp) (b := Fp) endoScalarCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

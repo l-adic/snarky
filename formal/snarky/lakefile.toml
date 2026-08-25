@@ -23,4 +23,5 @@ name = "Snarky"
 globs = ["Snarky", "Snarky.Kimchi.UnionFind", "Snarky.Kimchi.Constraint",
   "Snarky.Kimchi.Constraint.+", "Snarky.Kimchi.Semantics",
   "Snarky.Kimchi.Backend.+", "Snarky.Kimchi.Circuit.AddComplete",
-  "Snarky.Kimchi.Circuit.Poseidon"]
+  "Snarky.Kimchi.Circuit.Poseidon",
+  "Snarky.Kimchi.Circuit.EndoScalar"]

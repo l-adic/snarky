@@ -69,7 +69,7 @@ private def rowWit [Field F] [DecidableEq F] (xs : Vector (FVar F) 8)
 `Pickles.Scalar_challenge.to_field_checked'`): the bulk crumb witness, the
 accumulator rounds, one `endoScalar` constraint — returning the raw `(a, b, n)`
 accumulators with no wrapper constraints. -/
-def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [KimchiSystem F c]
+def toFieldChecked' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
     (rows : ℕ) (scalar : FVar F) :
     CircuitM F c (FVar F × FVar F × FVar F) := do
   let crumbs ← witness (val := Vector (Vector F 8) rows) (crumbsWit rows scalar)
@@ -95,6 +95,13 @@ def toField [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem 
   | _ => do
     let p ← mul a endo
     pure (CVar.add_ b p)
+
+attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toField
+
+/- PORT: the gadget's laws are OFF.
+
+Soundness threads the loop's structural invariant into the gate model's
+decompositions; completeness is written fresh against `Complete`. Neither is done.
 
 /-! ## Soundness
 
@@ -763,5 +770,7 @@ theorem toField_complete_spec [Field F] [DecidableEq F] [ToNat F]
       simp only [CVar.eval, hB3, hpv, Except.ok.injEq,
         Kimchi.Gate.EndoScalar.toField]
       ring
+
+-/
 
 end Snarky.Kimchi.EndoScalar
