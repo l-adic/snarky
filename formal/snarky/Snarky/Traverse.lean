@@ -4,7 +4,7 @@ import Snarky.Prover
 # Traversing a vector in the circuit monad
 
 `zipWithVecM` runs a circuit at every index of two equal-length vectors and collects the
-results. Entries are visited in index order, which is the order their rows are emitted in.
+results; `mapAccumM` walks a list threading an accumulator. Entries are visited in index order, which is the order their rows are emitted in.
 
 The laws are the loop's: a per-index soundness spec, and a per-index completeness law
 whose two monotonicity hypotheses stand in for a loop invariant, since the prover's table
@@ -102,6 +102,19 @@ theorem zipWithVecM_complete {n : Nat} (f : α → β → CircuitM F c γ) (xs :
   zipGo_complete f pre hpre n _ _ post hpost hf
 
 end Complete
+
+/-! ## Accumulating -/
+
+/-- Map with an accumulator, in list order: each element is run against the state the
+previous one left, and the outputs are collected in order. Generic in the monad —
+the reduction's two carriers use it as well as the circuit monad. -/
+def mapAccumM {m : Type u → Type v} [Monad m] {s α β : Type u} (f : s → α → m (β × s))
+    (init : s) : List α → m (List β × s)
+  | [] => pure ([], init)
+  | x :: xs => do
+    let (y, acc) ← f init x
+    let (ys, acc') ← mapAccumM f acc xs
+    pure (y :: ys, acc')
 
 attribute [irreducible] zipWithVecM
 
