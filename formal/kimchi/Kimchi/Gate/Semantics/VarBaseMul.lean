@@ -1,4 +1,5 @@
 import Kimchi.Gate.VarBaseMul
+import Kimchi.Gate.Semantics.AddComplete
 import Pasta.Shifted
 import Mathlib
 
@@ -2045,6 +2046,27 @@ theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
 
 end RunBits
 
+/-- A run of `m` `varBaseMul` rows over the base `T`: every row satisfies the gate, every
+    row reads `T`, the accumulator threads from row to row, and the run opens at `2·T` —
+    what the gadget's doubled seed produces. The base is stated at `i ≤ m` so an empty run
+    still names its base, which is where `T ≠ 0` comes from. -/
+structure Run {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+    (T : c.Point) (g : ℕ → Witness F) (m : ℕ) : Prop where
+  /-- Every row of the run satisfies the gate. -/
+  holds : ∀ i, i < m → Holds (g i)
+  /-- Every row reads the base point. -/
+  base : ∀ i, i ≤ m → Kimchi.Gate.AddComplete.IsPoint c (g i).xT (g i).yT T
+  /-- Each row's output accumulator is the next row's input. -/
+  thread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5
+  /-- The run opens at the doubled base. -/
+  init : Kimchi.Gate.AddComplete.IsPoint c (g 0).x0 (g 0).y0 ((2 : ℤ) • T)
+
+/-- The base is nonzero: row `0` names it. -/
+theorem Run.base_ne {F : Type*} [Field F] [DecidableEq F] {c : WeierstrassCurve.Affine F}
+    {T : c.Point} {g : ℕ → Witness F} {m : ℕ} (h : Run c T g m) : T ≠ 0 := by
+  obtain ⟨n, rfl⟩ := h.base 0 (Nat.zero_le m)
+  exact Point.some_ne_zero _
+
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
     `varBaseMul_forbidden_correct` behind one regime dichotomy, for generic (dictionary)
     callers: EITHER the whole ladder fits below the order (`3·2^(5m) ≤ order`, no
@@ -2054,12 +2076,7 @@ end RunBits
 theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
     (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
-    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : c.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : c.Nonsingular (g 0).x0 (g 0).y0) (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hrun : Run c T g m)
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
     (hs : s = gateLadder g (5 * m))
     (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
@@ -2067,11 +2084,19 @@ theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
         s ∉ forbiddenValues c.order)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  obtain ⟨hTns, hTeq⟩ := hrun.base 0 (Nat.zero_le m)
+  obtain ⟨hP0ns, hP0⟩ := hrun.init
+  have hTne := hrun.base_ne
+  have hholds := hrun.holds
+  have hthread := hrun.thread
+  have hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
+    Kimchi.Gate.AddComplete.IsPoint.coords_eq (hrun.base i (le_of_lt hi))
+      (hrun.base 0 (Nat.zero_le m))
   rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
   · exact varBaseMul_subwrap_correct c m g T s hTne hholds hTns hTeq hbase hthread
-      hP0ns hP0 h2 hodd hsub hs
+      hP0ns hP0.symm h2 hodd hsub hs
   · exact varBaseMul_forbidden_correct c m g T s hTne hholds hTns hTeq hbase hthread
-      hP0ns hP0 h2 hodd hr1 hr2 hq4 hs hnf
+      hP0ns hP0.symm h2 hodd hr1 hr2 hq4 hs hnf
 
 /-! ## The produce chain
 
@@ -2396,18 +2421,21 @@ incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding 
     faithfulness caveat. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness Fq)
-    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : Vesta.curve.toAffine.Nonsingular (g 0).x0 (g 0).y0)
-    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hrun : Run Vesta.curve.toAffine T g m)
     (hbits : 5 * m ≤ pastaFieldBits)
     (hs : s = gateLadder g (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  obtain ⟨hTns, hTeq⟩ := hrun.base 0 (Nat.zero_le m)
+  obtain ⟨hP0ns, hP0'⟩ := hrun.init
+  have hP0 := hP0'.symm
+  have hTne := hrun.base_ne
+  have hholds := hrun.holds
+  have hthread := hrun.thread
+  have hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
+    Kimchi.Gate.AddComplete.IsPoint.coords_eq (hrun.base i (le_of_lt hi))
+      (hrun.base 0 (Nat.zero_le m))
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [Pasta.vesta_card]; decide
   rcases Nat.lt_or_ge (5 * m) pastaFieldBits with hlt | hge
   · -- sub-wrap: `5m` below `pastaFieldBits` with `5 ∣ 5m` ⟹ `5m ≤ pastaFieldBits - 5` ⟹ safe.
@@ -2453,13 +2481,8 @@ never a deployed entry point on its own. The split itself is modeled by `scalarM
     correction — matching the PureScript `scaleFast2` exactly. -/
 theorem varBaseMul_scaleFast2
     (m : ℕ) (hm : 0 < m) (g : ℕ → Witness Fp)
-    (T : Pallas.curve.toAffine.Point) (N : ℕ → Fp) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : Pallas.curve.toAffine.Nonsingular (g 0).x0 (g 0).y0)
-    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (T : Pallas.curve.toAffine.Point) (N : ℕ → Fp)
+    (hrun : Run Pallas.curve.toAffine T g m)
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
     (hN0 : N 0 = 0)
@@ -2470,6 +2493,15 @@ theorem varBaseMul_scaleFast2
       (n : Fp) = unshiftType2 (5 * m) (N m) sOdd
         ∧ ((sOdd = 1 ∧ Point.some _ _ hfin = n • T)
             ∨ (sOdd = 0 ∧ Point.some _ _ hfin - T = n • T)) := by
+  obtain ⟨hTns, hTeq⟩ := hrun.base 0 (Nat.zero_le m)
+  obtain ⟨hP0ns, hP0'⟩ := hrun.init
+  have hP0 := hP0'.symm
+  have hTne := hrun.base_ne
+  have hholds := hrun.holds
+  have hthread := hrun.thread
+  have hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
+    Kimchi.Gate.AddComplete.IsPoint.coords_eq (hrun.base i (le_of_lt hi))
+      (hrun.base 0 (Nat.zero_le m))
   obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : m ≠ 0)
   have h2 : (2 : Fp) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Pasta.pallas_card]; decide

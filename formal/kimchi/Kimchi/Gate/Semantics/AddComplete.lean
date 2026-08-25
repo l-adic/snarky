@@ -17,6 +17,14 @@ variable {F : Type u} [Field F]
 def IsPoint (W : WeierstrassCurve.Affine F) (x y : F) (P : W.Point) : Prop :=
   ∃ h : W.Nonsingular x y, P = WeierstrassCurve.Affine.Point.some _ _ h
 
+/-- Two coordinate pairs naming the same point are the same pair. -/
+theorem IsPoint.coords_eq {W : WeierstrassCurve.Affine F} {x y x' y' : F} {P : W.Point}
+    (h : IsPoint W x y P) (h' : IsPoint W x' y' P) : x = x' ∧ y = y' := by
+  obtain ⟨n, rfl⟩ := h
+  obtain ⟨n', heq⟩ := h'
+  simp only [WeierstrassCurve.Affine.Point.some.injEq] at heq
+  exact heq
+
 variable {F : Type*}
 
 section Faithfulness
