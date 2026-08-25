@@ -2211,6 +2211,27 @@ theorem chainBuild_eta (xT yT x0 y0 n0 : F) (bs : ℕ → F) (i : ℕ) :
           (bs (5 * i + 4)) := by
   cases i <;> rfl
 
+omit [DecidableEq F] in
+/-- The walk from row `1` on is the walk from row `0`'s outputs at the stream shifted
+past row `0`'s five bits — what a caller reading the run off one round at a time needs
+to step its induction. -/
+theorem chainBuild_shift (xT yT x0 y0 n0 : F) (bs : ℕ → F) :
+    ∀ j : ℕ, chainBuild xT yT x0 y0 n0 bs (j + 1)
+      = chainBuild xT yT (chainBuild xT yT x0 y0 n0 bs 0).x5
+          (chainBuild xT yT x0 y0 n0 bs 0).y5
+          (chainBuild xT yT x0 y0 n0 bs 0).nPrime (fun n => bs (n + 5)) j
+  | 0 => by
+    show build xT yT _ _ _ (bs (5 * 1)) (bs (5 * 1 + 1)) (bs (5 * 1 + 2)) (bs (5 * 1 + 3))
+      (bs (5 * 1 + 4)) = build xT yT _ _ _ (bs (0 + 5)) (bs (1 + 5)) (bs (2 + 5))
+      (bs (3 + 5)) (bs (4 + 5))
+    norm_num
+  | j + 1 => by
+    show build xT yT (chainBuild xT yT x0 y0 n0 bs (j + 1)).x5
+      (chainBuild xT yT x0 y0 n0 bs (j + 1)).y5
+      (chainBuild xT yT x0 y0 n0 bs (j + 1)).nPrime _ _ _ _ _ = _
+    rw [chainBuild_shift xT yT x0 y0 n0 bs j]
+    congr 1
+
 /-! The walk's structural equations: how a row's input cells thread from the previous
 row's outputs, and which of its cells are the arguments. The per-field equations of a
 row itself belong to `build` (`Kimchi/Gate/VarBaseMul`), which the walk is built from
@@ -2260,6 +2281,16 @@ theorem accN_chainBuild (m : ℕ) :
   cases m <;> rfl
 
 end ChainFields
+
+omit [DecidableEq F] in
+/-- The walk's bit stream is the stream it was built from: row `i` carries `bs 5i … bs 5i+4`. -/
+theorem runBits_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
+    runBits (chainBuild xT yT x0 y0 n0 bs) m = (List.range (5 * m)).map bs := by
+  rw [← flatMap_range_window bs m, runBits]
+  congr 1
+  funext i
+  obtain ⟨-, -, h0, h1, h2, h3, h4⟩ := chainBuild_fields xT yT x0 y0 n0 bs i
+  rw [h0, h1, h2, h3, h4]
 
 /-- One honest bit step: at an accumulator `[k]·T` whose four degeneracy residues the
 regime has priced away, the generated `stepBit` values satisfy the bit block and the
