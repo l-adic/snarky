@@ -3,7 +3,7 @@ import Kimchi.Gate.Semantics.EndoScalar
 import Snarky.DSL.Assert
 import Snarky.DSL.Bits
 import Snarky.Kimchi.Semantics
-import Snarky.Kimchi.Circuit.Utils
+import Snarky.Traverse
 
 /-!
 # The EndoScalar gadget

@@ -4,7 +4,7 @@ import Snarky.DSL.Bits
 import Snarky.DSL.Boolean
 import Snarky.Types.Shifted
 import Snarky.Kimchi.Circuit.AddComplete
-import Snarky.Kimchi.Circuit.Utils
+import Snarky.Traverse
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.Semantics.VarBaseMul
 import Kimchi.Gate.Semantics.EndoMul

@@ -6,7 +6,7 @@ import Pasta.Endo
 import Snarky.DSL.Assert
 import Snarky.DSL.Bits
 import Snarky.Kimchi.Semantics
-import Snarky.Kimchi.Circuit.Utils
+import Snarky.Traverse
 import Snarky.Kimchi.Circuit.AddComplete
 
 /-!

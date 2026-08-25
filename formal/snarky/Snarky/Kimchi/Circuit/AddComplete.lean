@@ -9,11 +9,11 @@ Port of `Snarky.Circuit.Kimchi.AddComplete`
 (packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/AddComplete.purs): `addFast` seals
 the two operand points, witnesses the gate's seven auxiliary columns in allocation
 order (`sameX`, the mode-dependent `inf`, `infZ`, `x21Inv`, `s`, `x3`, `y3` — fixture
-bytes), and emits one `KimchiConstraint.addComplete`. `addComplete` is the
-`checkFinite` specialization (OCaml `add_fast` with its default).
+bytes), and emits one `KimchiConstraint.addComplete`. The finite mode is `addFast .checkFinite`; OCaml spells it as that
+function's default argument.
 
-Name map: `sealPoint`, `Finiteness` (constructors lowerCamel), `addFast`,
-`addComplete` keep their names; the result record is `AddResult`; the witness
+Name map: `sealPoint`, `Finiteness` (constructors lowerCamel) and `addFast` keep
+their names; the result record is `AddResult`; the witness
 computations are named (`AddFast.sameXWit`, …) in the manner of the base `Field`
 gadgets.
 
@@ -165,11 +165,6 @@ where
     let y1 ← AsProver.readCVar p1.y
     let x3 := sv * sv - (x1 + x2)
     pure ⟨x3, sv * (x1 - x3) - y1⟩
-
-/-- Complete addition assuming finite inputs (OCaml `add_fast`'s default mode). -/
-def addComplete [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
-    (p1 p2 : AffinePoint (FVar F)) : CircuitM F c (AddResult F) :=
-  addFast .checkFinite p1 p2
 
 /- PORT: the gadget's laws are OFF.
 
