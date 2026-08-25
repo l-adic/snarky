@@ -38,6 +38,7 @@ import KimchiFixture.PS
 import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
@@ -234,6 +235,30 @@ def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   scaleFast2' 255 26 127 input.1 input.2
 
+/-- The Pallas BW19 `setup()` parameters at the step field (PS
+`groupMapParams (Proxy @PallasG)`): the constants are the poseidon package's
+`Poseidon.GroupMapPallas` values; the non-residue is PS's search-from-2 result,
+`5`. The gates carry them as coefficients, so a wrong value fails the byte
+comparison itself. -/
+def groupMapParamsFp : GroupMapParams Fp :=
+  { u := 1
+  , fu := 6
+  , sqrtNeg3U2MinusUOver2 :=
+      8503465768106391777493614032514048814691664078728891710322960303815233784505
+  , sqrtNeg3U2 :=
+      17006931536212783554987228065028097629383328157457783420645920607630467569011
+  , inv3U2 :=
+      19298681539552699237261830834781317975575370987961040477303117842899978420225
+  , b := 5
+  , nonResidue := 5 }
+
+/-- `group_map_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.GroupMap.groupMapCircuit` at the step field and Pallas
+parameters; the dump carries no witness, so the advice is inert here). -/
+def groupMapCircuitFp (input : FVar Fp) : CircuitM Fp C PUnit := do
+  let _ ← groupMapCircuit (fun _ => none) groupMapParamsFp input
+  pure ⟨⟩
+
 /-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
 def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
@@ -313,7 +338,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("var_base_mul_step_circuit",
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) varBaseMulCircuit),
     ("scale_fast2_128_step_circuit",
-      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit) ]
+      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
+    ("group_map_step_circuit",
+      compareWith (a := Fp) (b := PUnit) groupMapCircuitFp) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
