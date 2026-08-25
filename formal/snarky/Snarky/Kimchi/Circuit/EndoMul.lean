@@ -541,28 +541,26 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
       obtain ⟨r, hr, hx, hy⟩ := EndoMul.readChain_mem V finV hw
       rw [hx, hy, EndoMul.threads_base hthr' r hr]
       exact ⟨rfl, rfl⟩
-    have hhead := hbaseAll _ (List.getElem_mem (by omega) : l[0]'(by omega) ∈ l)
-    have hget0 : l.getD 0 (l.head hne) = l[0]'(by omega) :=
-      List.getD_eq_getElem _ _ (by omega)
-    have hchain : Kimchi.Gate.EndoMul.Chain d.endo g l.length :=
-      Kimchi.Gate.EndoMul.Chain.ofList d.endo l (l.head hne)
+    have hbaseD : ∀ w ∈ l.head hne :: l, w.xT = t.x.val V ∧ w.yT = t.y.val V := by
+      intro w hw
+      rcases List.mem_cons.mp hw with rfl | hw
+      · exact hbaseAll _ (List.head_mem hne)
+      · exact hbaseAll w hw
+    have hchain : Kimchi.Gate.EndoMul.Chain d.W d.endo
+        (Point.some _ _ hT) (Point.some _ _ hφT) g l.length :=
+      Kimchi.Gate.EndoMul.Chain.ofList d.W d.endo _ _ l (l.head hne)
         (fun w hw => EndoMul.readChain_holds hpay w hw)
         (fun w hw => by
-          rw [(hbaseAll w hw).1, (hbaseAll w hw).2, hget0, hhead.1, hhead.2]
-          exact ⟨rfl, rfl⟩)
+          rw [(hbaseD w hw).1, (hbaseD w hw).2]
+          exact ⟨hT, rfl⟩)
+        (fun w hw => by
+          rw [(hbaseD w hw).1, (hbaseD w hw).2]
+          exact ⟨hφT, rfl⟩)
         (EndoMul.readChain_link V finV (r₀ :: rs))
-    -- the run's first row is round `r₀`, so its base and seed cells are the trace's
+    -- the run's first row is round `r₀`, so its seed cells are the trace's
     obtain ⟨h0xT, h0yT, h0xP, h0yP, h0n⟩ :=
       EndoMul.readChain_head V finV (l.head hne) r₀ rs
     obtain ⟨hp0, hn0⟩ := EndoMul.threads_head hthr'
-    have hbase0x : (g 0).xT = t.x.val V := by
-      show (l.getD 0 (l.head hne)).xT = _
-      rw [hl] at *
-      rw [h0xT, EndoMul.threads_base hthr' r₀ (by simp)]
-    have hbase0y : (g 0).yT = t.y.val V := by
-      show (l.getD 0 (l.head hne)).yT = _
-      rw [hl] at *
-      rw [h0yT, EndoMul.threads_base hthr' r₀ (by simp)]
     have hbase0P : (g 0).xP = P0.x.val V ∧ (g 0).yP = P0.y.val V := by
       constructor
       · show (l.getD 0 (l.head hne)).xP = _
@@ -571,10 +569,6 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
       · show (l.getD 0 (l.head hne)).yP = _
         rw [hl] at *
         rw [h0yP, hp0]
-    have hTns : d.W.Nonsingular (g 0).xT (g 0).yT := by
-      rw [hbase0x, hbase0y]; exact hT
-    have hφTns : d.W.Nonsingular (d.endo * (g 0).xT) (g 0).yT := by
-      rw [hbase0x, hbase0y]; exact hφT
     have hP0ns' : d.W.Nonsingular (g 0).xP (g 0).yP := by
       rw [hbase0P.1, hbase0P.2]; exact hP0ns
     obtain ⟨hfin', sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, hsval⟩ :=
@@ -585,11 +579,7 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
         l.length (by
           have hl' := EndoMul.threads_length hthr'
           simp only [List.length_cons] at hl'
-          omega) g hchain hTns
-        (Kimchi.Gate.EndoMul.some_congr d.W hT hTns hbase0x.symm hbase0y.symm)
-        hφTns
-        (Kimchi.Gate.EndoMul.some_congr d.W hφT hφTns
-          (by rw [hbase0x]) hbase0y.symm)
+          omega) g hchain
         hP0ns'
         ((Kimchi.Gate.EndoMul.some_congr d.W hP0ns' hP0ns
           hbase0P.1 hbase0P.2).trans hP0)
@@ -614,7 +604,7 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
         rw [hl] at *
         rw [h0n, hn0]
         simp [CVar.val]
-      rw [← hfinn, Kimchi.Gate.EndoMul.chain_nAcc d.endo l.length g hchain, hzero,
+      rw [← hfinn, Kimchi.Gate.EndoMul.chain_nAcc d.W d.endo _ _ l.length g hchain, hzero,
         zero_mul, zero_add]
     refine ⟨Kimchi.Gate.EndoMul.crumbList g l.length,
       Kimchi.Gate.EndoMul.crumbList_valid d.endo l.length g hchain.holds,
@@ -1180,13 +1170,16 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [h1, h2, hx0 stf (hle₅.trans hlef), hy0 stf (hle₅.trans hlef), hWdef]
     rfl
   -- the walk, as a run
-  have hchainW : Kimchi.Gate.EndoMul.Chain d.endo W rounds := by
-    refine ⟨hwalkHolds, fun i _ => ?_, fun i _ => ⟨rfl, rfl⟩, fun i _ => rfl⟩
-    cases i <;> exact ⟨rfl, rfl⟩
+  have hchainW : Kimchi.Gate.EndoMul.Chain d.W d.endo (Point.some _ _ hT)
+      (Point.some _ _ hφT) W rounds := by
+    refine ⟨hwalkHolds, fun i _ => ?_, fun i _ => ?_, fun i _ => ⟨rfl, rfl⟩,
+      fun i _ => rfl⟩
+    · cases i <;> exact ⟨hT, rfl⟩
+    · cases i <;> exact ⟨hφT, rfl⟩
   have hlenB : bits.toList.length = rounds := by simp
   -- the register the ladder ends on is the scalar
   have hreg : Kimchi.Gate.EndoMul.accN W rounds = sv := by
-    rw [Kimchi.Gate.EndoMul.chain_nAcc d.endo rounds W hchainW,
+    rw [Kimchi.Gate.EndoMul.chain_nAcc d.W d.endo _ _ rounds W hchainW,
       show Kimchi.Gate.EndoMul.accN W 0 = 0 from rfl, zero_mul, zero_add,
       Kimchi.Gate.EndoMul.crumbList_ofBits rounds (ToNat.toNat sv) W ?_,
       Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hfits,
@@ -1249,7 +1242,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (Point.some _ _ hT) (Point.some _ _ hφT)
         (fun a b ha hb hba hbb =>
           d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
-        rounds hbits W hchainW hT rfl hφT rfl hP0ns hP0eq d.lam (d.eigen hT hφT)
+        rounds hbits W hchainW hP0ns hP0eq d.lam (d.eigen hT hφT)
     have hfin : d.W.Nonsingular (loop.2.1.x.val st₆.env.get) (loop.2.1.y.val st₆.env.get) := by
       rw [hfx₆, hfy₆]
       exact hfin'

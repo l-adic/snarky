@@ -235,7 +235,7 @@ open WeierstrassCurve.Affine in
 and the point they name is this one. Value-level, for the specs. -/
 def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Valuation F)
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
-  ∃ h : W.Nonsingular (p.x.val V) (p.y.val V), P = Point.some _ _ h
+  Kimchi.Gate.AddComplete.IsPoint W (p.x.val V) (p.y.val V) P
 
 open WeierstrassCurve.Affine in
 /-- …and in scope, so the same curve point is read at every later table. Carrying the

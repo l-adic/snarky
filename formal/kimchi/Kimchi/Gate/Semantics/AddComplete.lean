@@ -9,6 +9,14 @@ import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
 
 namespace Kimchi.Gate.AddComplete
 
+variable {F : Type u} [Field F]
+
+/-- These coordinates name that point: the pair is nonsingular and the point it gives is
+    `P`. What a caller holding coordinates and a caller holding a point agree on — the
+    gate layer states it so the circuit layer can read its own points through it. -/
+def IsPoint (W : WeierstrassCurve.Affine F) (x y : F) (P : W.Point) : Prop :=
+  ∃ h : W.Nonsingular x y, P = WeierstrassCurve.Affine.Point.some _ _ h
+
 variable {F : Type*}
 
 section Faithfulness
