@@ -934,6 +934,26 @@ private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Pro
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
+/-- A run of `m` `varBaseMul` rows realizing the point sequence `P` and the register
+    sequence `N`: every row is a gate step, every row reads the base `T`, and each row's
+    input/output accumulators are `P i` / `P (i + 1)` with registers `N i` / `N (i + 1)`.
+    Unlike `EndoScalar`'s chain the linkage is stated against those sequences rather than
+    between adjacent rows — the ladder's induction is over them. -/
+private structure Chain (W : WeierstrassCurve.Affine F) (g : ℕ → Witness F) (m : ℕ)
+    (T : W.Point) (P : ℕ → W.Point) (N : ℕ → F) : Prop where
+  /-- Every row of the run is a gate step. -/
+  steps : ∀ i, i < m → GateStep W (g i)
+  /-- Every row reads the base point. -/
+  base : ∀ i (hi : i < m), T = Point.some _ _ (steps i hi).hT
+  /-- Row `i` opens at `P i`. -/
+  inPt : ∀ i (hi : i < m), P i = Point.some _ _ (steps i hi).a0
+  /-- Row `i` closes at `P (i + 1)`. -/
+  outPt : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (steps i hi).a5
+  /-- Row `i` opens at register `N i`. -/
+  regIn : ∀ i, i < m → N i = (g i).n
+  /-- Row `i` closes at register `N (i + 1)`. -/
+  regOut : ∀ i, i < m → N (i + 1) = (g i).nPrime
+
 /-- The computation the circuit provides. `m` chained `VarBaseMul` gates over a
     shared target `T`, threading BOTH the accumulator points `P` (gate `i`'s input
     `P i`, output `P (i+1)`) AND the scalar register `N` (input `N i = (g i).n`,
@@ -948,16 +968,12 @@ private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Pro
     `sound`. -/
 private theorem scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (P : ℕ → W.Point) (T : W.Point) (N : ℕ → F)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime) :
+    (m : ℕ) (g : ℕ → Witness F)
+    (P : ℕ → W.Point) (T : W.Point) (N : ℕ → F) (hrun : Chain W g m T P N) :
     ∃ k : ℤ, P m = (32 : ℤ) ^ m • P 0 + k • T
            ∧ (k : F) = 2 * N m - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
            ∧ k.natAbs ≤ 32 ^ m - 1 := by
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
   obtain ⟨c, hc₁, hc₂, hc₃⟩ :
       ∃ c : ℕ → ℤ, (∀ i < m, P (i + 1) = (32 : ℤ) • P i + c i • T)
         ∧ (∀ i < m, (c i : F) = 2 * N (i + 1) - 64 * N i - 31)
@@ -987,19 +1003,15 @@ private theorem scalarMul
     register (`N 0 → N m`), in signed-digit form. -/
 private theorem scalarMul_baseMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (T : W.Point) (N : ℕ → F) (a : ℤ) (P : ℕ → W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (a : ℤ) (P : ℕ → W.Point) (hrun : Chain W g m T P N)
     (hP0 : P 0 = a • T) :
     ∃ n : ℤ, P m = n • T
            ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * N m
                         - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
            ∧ n.natAbs ≤ 32 ^ m * a.natAbs + (32 ^ m - 1) := by
-  obtain ⟨k, hk, hkf, hkb⟩ := scalarMul W ha m g gs P T N hT hin hout hregIn hregOut
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
+  obtain ⟨k, hk, hkf, hkb⟩ := scalarMul W ha m g P T N hrun
   refine ⟨(32 : ℤ) ^ m * a + k, ?_, ?_, ?_⟩
   · rw [hk, hP0, smul_smul, ← add_smul]
   · push_cast; rw [hkf]; ring
@@ -1027,18 +1039,14 @@ private theorem scalarMul_baseMul
     pickles `Shifted_value` contract. -/
 private theorem scalarMul_shifted
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (hrun : Chain W g m T P N)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0) :
     ∃ n : ℤ, P m = n • T ∧ (n : F) = unshiftType1 (5 * m) (N m)
            ∧ n.natAbs ≤ 3 * 32 ^ m := by
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
   obtain ⟨n, hn, hnf, hnb⟩ :=
-    scalarMul_baseMul W ha m g gs T N 2 P hT hin hout hregIn hregOut hP0
+    scalarMul_baseMul W ha m g T N 2 P hrun hP0
   refine ⟨n, hn, ?_, ?_⟩
   · have h32 : (2 : F) ^ (5 * m) = (32 : F) ^ m := by rw [pow_mul]; norm_num
     rw [hnf, hN0, unshiftType1, h32]
@@ -1060,19 +1068,15 @@ private theorem scalarMul_shifted
     prover-supplied output point or correction relation). -/
 private theorem scalarMul_type2
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (hrun : Chain W g m T P N)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
     (sOdd : F) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
     ∃ n : ℤ, (n : F) = unshiftType2 (5 * m) (N m) sOdd
       ∧ ((sOdd = 1 ∧ P m = n • T) ∨ (sOdd = 0 ∧ P m - T = n • T)) := by
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
   obtain ⟨n, hn, hnf, _⟩ :=
-    scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
+    scalarMul_shifted W ha m g T N P hrun hP0 hN0
   rcases hsOdd with ho | ho
   · refine ⟨n - 1, ?_, Or.inr ⟨ho, ?_⟩⟩
     · push_cast; rw [hnf, ho, unshiftType1, unshiftType2]; ring
@@ -2492,8 +2496,8 @@ theorem varBaseMul_scaleFast2
   have hfin : Pallas.curve.toAffine.Nonsingular (accX g (k + 1)) (accY g (k + 1)) :=
     (gs k (by omega)).a5
   have hPm : P (k + 1) = Point.some _ _ hfin := hout k (by omega)
-  obtain ⟨n, hnf, hcase⟩ := scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ (k + 1) g gs T N P
-    hTP hin hout hregIn hregOut hP0P hN0 sOdd hsOdd
+  obtain ⟨n, hnf, hcase⟩ := scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ (k + 1) g T N P
+    ⟨gs, hTP, hin, hout, hregIn, hregOut⟩ hP0P hN0 sOdd hsOdd
   refine ⟨hfin, n, hnf, ?_⟩
   rcases hcase with ⟨ho, hr⟩ | ⟨ho, hr⟩
   · exact Or.inl ⟨ho, by rw [← hPm]; exact hr⟩

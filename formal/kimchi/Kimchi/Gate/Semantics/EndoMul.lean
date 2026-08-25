@@ -950,6 +950,17 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
     · rcases he1pm with rfl | rfl <;> rcases he2pm with rfl | rfl <;> decide
     · rcases he1pm with rfl | rfl <;> rcases he2pm with rfl | rfl <;> decide
 
+/-- A run of `m` `EndoMul` rows: every row satisfies the gate, every row reads the same base
+    point, and each row's output accumulator is the next row's input. The gate's two-row
+    convention puts the output in the NEXT row's `P` columns, which is what `link` says. -/
+structure Chain (endo : F) (g : ℕ → Witness F) (m : ℕ) : Prop where
+  /-- Every row of the run satisfies the gate. -/
+  holds : ∀ i, i < m → Holds endo (g i)
+  /-- Every row reads the base point of row `0`. -/
+  base : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT
+  /-- Each row's accumulator output is the next row's input. -/
+  link : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS
+
 /-- **The GLV-recoding chain.** `m` `EndoMul` rows over `Holds` (with base + threading + initial +
     the per-row `hxne`) compute the final accumulator `= 4^m·P₀ + k₁·T + k₂·φT`; the field casts of
     the GLV coefficients `(k₂, k₁)` are exactly `EndoScalar`'s Algorithm-2 `a`, `b` digit-sums over
@@ -958,12 +969,10 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
 private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
-    (m : ℕ) (g : ℕ → Witness F) (hholds : ∀ i, i < m → Holds endo (g i))
+    (m : ℕ) (g : ℕ → Witness F) (hchain : Chain endo g m)
     (T φT : W.Point)
     (hTns : W.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hφTns : W.Nonsingular (endo * (g 0).xT) (g 0).yT) (hφTeq : φT = Point.some _ _ hφTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
     (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
     (hxne : ∀ i, i < m → (g i).xP ≠ (1 + (endo - 1) * (g i).b1) * (g i).xT
                         ∧ (g i).xR ≠ (1 + (endo - 1) * (g i).b3) * (g i).xT) :
@@ -972,6 +981,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
         ∧ (k2 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * aDigit g j
         ∧ (k1 : F) = ∑ j ∈ Finset.range (2 * m), (2 : F) ^ (2 * m - 1 - j) * bDigit g j
         ∧ |k1| ≤ 4 ^ m - 1 ∧ |k2| ≤ 4 ^ m - 1 := by
+  have ⟨hholds, hbase, hthread⟩ := hchain
   -- coordinate threading: row `i`'s input column equals the accumulator at step `i`
   have haccP : ∀ k, k < m → (g k).xP = accX g k ∧ (g k).yP = accY g k := by
     intro k hk
@@ -1091,12 +1101,10 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
 theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
     (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hodd : W.order ≠ 2) (endo : F)
-    (m : ℕ) (g : ℕ → Witness F) (hholds : ∀ i, i < m → Holds endo (g i))
+    (m : ℕ) (g : ℕ → Witness F) (hchain : Chain endo g m)
     (T φT : W.Point)
     (hTns : W.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hφTns : W.Nonsingular (endo * (g 0).xT) (g 0).yT) (hφTeq : φT = Point.some _ _ hφTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
     (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT)
     (hxne : ∀ i, i < m → (g i).xP ≠ (1 + (endo - 1) * (g i).b1) * (g i).xT
@@ -1109,8 +1117,9 @@ theorem endoMul (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.order)]
         ∧ (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbList g m)
         ∧ (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbList g m)
         ∧ (s : F) = Kimchi.Gate.EndoScalar.toField (crumbList g m) (lam : F) := by
+  have ⟨hholds, hbase, hthread⟩ := hchain
   obtain ⟨hfin, k1, k2, hPm, hk2, hk1, hb1, hb2⟩ :=
-    endoMul_ab W ha h2 h3 hodd endo m g hholds T φT hTns hTeq hφTns hφTeq hbase hthread hP0ns hxne
+    endoMul_ab W ha h2 h3 hodd endo m g hchain T φT hTns hTeq hφTns hφTeq hP0ns hxne
   have h4 : (0 : ℤ) < 4 ^ m := by positivity
   refine ⟨hfin, 2 * 4 ^ m + k1 + (2 * 4 ^ m + k2) * lam, 2 * 4 ^ m + k2, 2 * 4 ^ m + k1,
     ?_, by ring,
@@ -1189,16 +1198,14 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT)
-    (m : ℕ) (hbits : 4 * m ≤ 244) (g : ℕ → Witness F)
-    (hholds : ∀ i, i < m → Holds endo (g i))
+    (m : ℕ) (hbits : 4 * m ≤ 244) (g : ℕ → Witness F) (hchain : Chain endo g m)
     (hTns : W.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hφTns : W.Nonsingular (endo * (g 0).xT) (g 0).yT) (hφTeq : φT = Point.some _ _ hφTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
     (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
     ∀ i, i < m → (g i).xP ≠ (1 + (endo - 1) * (g i).b1) * (g i).xT
                 ∧ (g i).xR ≠ (1 + (endo - 1) * (g i).b3) * (g i).xT := by
+  have ⟨hholds, hbase, hthread⟩ := hchain
   have ha' : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 := Fact.out
   -- coordinate threading: row `i`'s input column equals the accumulator at step `i`
   have haccP : ∀ k, k < m → (g k).xP = accX g k ∧ (g k).yP = accY g k := by
@@ -1335,12 +1342,9 @@ theorem endoMul_off (W : WeierstrassCurve.Affine F)
     (off : ∀ a b : ℤ, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
         ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT)
-    (m : ℕ) (hbits : 4 * m ≤ 244) (g : ℕ → Witness F)
-    (hholds : ∀ i, i < m → Holds endo (g i))
+    (m : ℕ) (hbits : 4 * m ≤ 244) (g : ℕ → Witness F) (hchain : Chain endo g m)
     (hTns : W.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hφTns : W.Nonsingular (endo * (g 0).xT) (g 0).yT) (hφTeq : φT = Point.some _ _ hφTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
     (hP0ns : W.Nonsingular (g 0).xP (g 0).yP)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT)
     (lam : ℤ) (heig : φT = lam • T) :
@@ -1351,10 +1355,11 @@ theorem endoMul_off (W : WeierstrassCurve.Affine F)
         ∧ (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbList g m)
         ∧ (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbList g m)
         ∧ (s : F) = Kimchi.Gate.EndoScalar.toField (crumbList g m) (lam : F) := by
-  have hxne := accumulator_chain W h2 hodd endo T φT off m hbits g hholds hTns hTeq
-    hφTns hφTeq hbase hthread hP0ns hP0
-  exact endoMul W Fact.out h2 h3 hodd endo m g hholds T φT hTns hTeq hφTns hφTeq
-    hbase hthread hP0ns hP0 hxne lam heig
+  have ⟨hholds, hbase, hthread⟩ := hchain
+  have hxne := accumulator_chain W h2 hodd endo T φT off m hbits g hchain hTns hTeq
+    hφTns hφTeq hP0ns hP0
+  exact endoMul W Fact.out h2 h3 hodd endo m g hchain T φT hTns hTeq hφTns hφTeq
+    hP0ns hP0 hxne lam heig
 
 /-! ## The produce chain
 
@@ -1801,20 +1806,18 @@ computes `[s]·T`. The per-row `hxne` is discharged internally from the GLV boun
     short-basis bound, the eigenvalue from `pallas_eigen`, and the odd-prime-order
     conditions from `Pasta`. -/
 theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
-    (g : ℕ → Witness Fp)
-    (hholds : ∀ i, i < m → Holds pallasEndo (g i))
+    (g : ℕ → Witness Fp) (hchain : Chain pallasEndo g m)
     (T φT : Pallas.curve.toAffine.Point)
     (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hφTns : Pallas.curve.toAffine.Nonsingular (pallasEndo * (g 0).xT) (g 0).yT)
     (hφTeq : φT = Point.some _ _ hφTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
     (hP0ns : Pallas.curve.toAffine.Nonsingular (g 0).xP (g 0).yP)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
     ∃ (hfin : Pallas.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : Fp)
             = Kimchi.Gate.EndoScalar.toField (crumbList g m) (pallasLam : Fp) := by
+  have ⟨hholds, hbase, hthread⟩ := hchain
   haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
       ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [pallas_card]; decide
@@ -1823,25 +1826,23 @@ theorem pallas_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
     endoMul_off Pallas.curve.toAffine (by decide) (by decide) hodd pallasEndo T φT
       (fun a b ha' hb hba hbb => pallas_combo_off_targets ha' hb hba hbb hTne heig)
-      m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 pallasLam heig
+      m hbits g hchain hTns hTeq hφTns hφTeq hP0ns hP0 pallasLam heig
   exact ⟨hfin, s, hpt, hcast⟩
 
 /-- **EndoMul at Vesta** — the other half of the 2-cycle, identical modulo `vesta_*`. -/
 theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
-    (g : ℕ → Witness Fq)
-    (hholds : ∀ i, i < m → Holds vestaEndo (g i))
+    (g : ℕ → Witness Fq) (hchain : Chain vestaEndo g m)
     (T φT : Vesta.curve.toAffine.Point)
     (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
     (hφTns : Vesta.curve.toAffine.Nonsingular (vestaEndo * (g 0).xT) (g 0).yT)
     (hφTeq : φT = Point.some _ _ hφTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).xP = (g i).xS ∧ (g (i + 1)).yP = (g i).yS)
     (hP0ns : Vesta.curve.toAffine.Nonsingular (g 0).xP (g 0).yP)
     (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T + (2 : ℤ) • φT) :
     ∃ (hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m)) (s : ℤ),
       Point.some _ _ hfin = s • T
         ∧ (s : Fq)
             = Kimchi.Gate.EndoScalar.toField (crumbList g m) (vestaLam : Fq) := by
+  have ⟨hholds, hbase, hthread⟩ := hchain
   haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
       ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [vesta_card]; decide
@@ -1850,7 +1851,7 @@ theorem vesta_endoMul (m : ℕ) (hbits : 4 * m ≤ 244)
   obtain ⟨hfin, s, -, -, hpt, -, -, -, -, -, hcast⟩ :=
     endoMul_off Vesta.curve.toAffine (by decide) (by decide) hodd vestaEndo T φT
       (fun a b ha' hb hba hbb => vesta_combo_off_targets ha' hb hba hbb hTne heig)
-      m hbits g hholds hTns hTeq hφTns hφTeq hbase hthread hP0ns hP0 vestaLam heig
+      m hbits g hchain hTns hTeq hφTns hφTeq hP0ns hP0 vestaLam heig
   exact ⟨hfin, s, hpt, hcast⟩
 
 /-! ## The produce chain at the curves
