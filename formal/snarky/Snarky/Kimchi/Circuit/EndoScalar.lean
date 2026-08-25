@@ -25,6 +25,9 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   with `16 · rows` bits, and the bit reads go through `[ToNat F]`.
 - PS's record `exists` allocates its fields alphabetically; the per-row witness is
   the ordered triple `(a8, b8, n8)`, the same allocation spelled explicitly.
+- PS spells a crumb as a pair of `toBits` bits; the witness writes the gate model's own
+  base-4 expansion (`Kimchi.Gate.EndoScalar.crumbsOf`) — the same values, in the form
+  the gate's completeness and reconstruction laws are stated over.
 - PS's `aF`/`bF` fold the bare tables; the row witness computes the gate's canonical
   `Kimchi.Gate.EndoScalar.build` instead — the same field values on the honest (valid)
   crumbs, and the form the gate's completeness certifies.
@@ -36,16 +39,12 @@ open Snarky
 
 variable {F c : Type}
 
-/-- Crumb `j` (MSB-first) of a `2·count`-bit natural: bits `2(count−j)−1` (high) and
-`2(count−j)−2` (low) — the PS `toBits` reversed and paired. -/
-private def crumbOfNat (count j k : ℕ) : ℕ :=
-  2 * (if k.testBit (2 * (count - j) - 1) then 1 else 0)
-    + (if k.testBit (2 * (count - j) - 2) then 1 else 0)
-
-/-- The crumb table the bulk witness writes: row `r`'s entry `j` is crumb `8r + j`. -/
-private def crumbVals [NatCast F] (rows k : ℕ) : Vector (Vector F 8) rows :=
+/-- The crumb table the bulk witness writes: the gate model's MSB-first base-4
+expansion of the scalar, laid out eight crumbs to a row — row `r`'s entry `j` is
+crumb `8r + j`. -/
+private def crumbVals [Field F] (rows k : ℕ) : Vector (Vector F 8) rows :=
   Vector.ofFn fun r => Vector.ofFn fun j =>
-    (crumbOfNat (8 * rows) (8 * r.1 + j.1) k : F)
+    (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) k).getD (8 * r.1 + j.1) 0
 
 /-- The scalar's MSB-first 2-bit crumbs, eight per row. -/
 private def crumbsWit [Field F] [ToNat F] (rows : ℕ) (scalar : FVar F) :
@@ -317,55 +316,6 @@ The honest run's rows are the gate's canonical ones — each accumulator witness
 `complete` on valid crumbs, and the trace reads as the decomposition of the scalar's
 crumb stream. The loop is `mapAccumM_complete`'s. -/
 
-/-- Every crumb is a valid 2-bit value. -/
-private theorem crumbOfNat_cast_valid [Field F] (count j k : ℕ) :
-    ((crumbOfNat count j k : ℕ) : F) = 0 ∨ ((crumbOfNat count j k : ℕ) : F) = 1
-      ∨ ((crumbOfNat count j k : ℕ) : F) = 2 ∨ ((crumbOfNat count j k : ℕ) : F) = 3 := by
-  unfold crumbOfNat
-  by_cases h1 : k.testBit (2 * (count - j) - 1) <;>
-    by_cases h0 : k.testBit (2 * (count - j) - 2) <;> simp [h1, h0]
-
-/-- A crumb is a base-4 digit read from the top: crumb `j` of a `count`-crumb
-challenge is digit `count−1−j` of its value. -/
-private theorem crumbOfNat_eq_digit (count j k : ℕ) (hj : j < count) :
-    crumbOfNat count j k = k / 4 ^ (count - 1 - j) % 4 := by
-  have hm1 : 2 * (count - j) - 1 = 1 + 2 * (count - 1 - j) := by omega
-  have hm2 : 2 * (count - j) - 2 = 0 + 2 * (count - 1 - j) := by omega
-  rw [crumbOfNat, hm1, hm2]
-  set m := count - 1 - j
-  have h4 : (4 : ℕ) ^ m = 2 ^ (2 * m) := by
-    rw [show (4 : ℕ) = 2 ^ 2 by norm_num, ← pow_mul]
-  rw [h4, ← Nat.testBit_div_two_pow, ← Nat.testBit_div_two_pow,
-    Nat.testBit_add_one, Nat.testBit_zero, Nat.testBit_zero]
-  set q := k / 2 ^ (2 * m)
-  rcases Nat.mod_two_eq_zero_or_one (q / 2) with h1 | h1 <;>
-    rcases Nat.mod_two_eq_zero_or_one q with h0 | h0 <;>
-      simp [h1, h0] <;> omega
-
-/-- The witness's testBit crumbs are the gate model's expansion: mapping `crumbOfNat`
-over the index range is `crumbsOf`. -/
-private theorem map_crumbOfNat_eq_crumbsOf [Field F] (count k : ℕ) :
-    ((List.range count).map fun j => ((crumbOfNat count j k : ℕ) : F))
-      = Kimchi.Gate.EndoScalar.crumbsOf count k := by
-  induction count generalizing k with
-  | zero => rfl
-  | succ c ih =>
-    rw [show Kimchi.Gate.EndoScalar.crumbsOf (F := F) (c + 1) k
-        = Kimchi.Gate.EndoScalar.crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)] from rfl,
-      List.range_succ, List.map_append]
-    congr 1
-    · rw [← ih (k / 4)]
-      apply List.map_congr_left
-      intro j hj
-      rw [List.mem_range] at hj
-      rw [crumbOfNat_eq_digit (c + 1) j k (by omega),
-        crumbOfNat_eq_digit c j (k / 4) hj,
-        show c + 1 - 1 - j = (c - 1 - j) + 1 by omega, pow_succ,
-        mul_comm ((4 : ℕ) ^ (c - 1 - j)) 4, ← Nat.div_div_eq_div_mul]
-    · simp only [List.map_cons, List.map_nil]
-      rw [crumbOfNat_eq_digit (c + 1) c k (by omega)]
-      simp
-
 /-- Flattening the row-chunked table recovers the flat MSB-first stream. -/
 private theorem flatten_ofFn_rows {F : Type} (g : ℕ → F) :
     ∀ m : ℕ,
@@ -384,8 +334,13 @@ private theorem crumbVals_flatten [Field F] (rows k : ℕ) :
     ((crumbVals (F := F) rows k).toList.map Vector.toList).flatten
       = Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) k := by
   show ((Vector.ofFn _).toList.map Vector.toList).flatten = _
-  rw [Vector.toList_ofFn, List.map_ofFn, ← map_crumbOfNat_eq_crumbsOf]
-  exact flatten_ofFn_rows (fun i => (crumbOfNat (8 * rows) i k : F)) rows
+  rw [Vector.toList_ofFn, List.map_ofFn]
+  refine Eq.trans (flatten_ofFn_rows
+    (fun i => (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows) k).getD i 0) rows) ?_
+  refine List.ext_getElem (by simp [Kimchi.Gate.EndoScalar.crumbsOf_length])
+    fun i _ h2 => ?_
+  simp only [List.getElem_map, List.getElem_range]
+  exact List.getD_eq_getElem _ _ h2
 
 /-- The rows the loop is handed: crumb variables in scope, reading as valid 2-bit
 values. -/
@@ -550,10 +505,12 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
     obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hcv)
     refine ⟨(hentry i hi j hj).1, ?_⟩
     have hval : ((crumbVals (F := F) rows (ToNat.toNat sv))[i]'hi)[j]'hj
-        = ((crumbOfNat (8 * rows) (8 * i + j) (ToNat.toNat sv) : ℕ) : F) := by
+        = (Kimchi.Gate.EndoScalar.crumbsOf (F := F) (8 * rows)
+            (ToNat.toNat sv)).getD (8 * i + j) 0 := by
       simp [crumbVals]
-    rw [(hentry i hi j hj).2, hval]
-    exact crumbOfNat_cast_valid _ _ _
+    rw [(hentry i hi j hj).2, hval,
+      List.getD_eq_getElem _ _ (by rw [Kimchi.Gate.EndoScalar.crumbsOf_length]; omega)]
+    exact Kimchi.Gate.EndoScalar.crumbsOf_valid _ _ _ (List.getElem_mem _)
   obtain ⟨p, st₂, hrun₂, hsat₂, hinv₂, hchainAt⟩ :=
     mapAccumM_complete (F := F) (c := KimchiConstraint F) toFieldChecked'.row
       (CrumbRow st₁) (AccInv st₁) RowGrant
