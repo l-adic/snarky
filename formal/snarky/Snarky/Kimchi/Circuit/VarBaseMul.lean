@@ -229,4 +229,88 @@ def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let (sDiv2, sOdd) ← splitFieldVar s
   scaleFast2 n chunks sDiv2Bits base sDiv2 sOdd
 
+/-! ## Soundness
+
+The payload reads each round on its own — a `ScaleRound` carries all 26 cells, its
+outputs included — so the trace's job is only to say that every round shares the base,
+opens where the previous one closed, and starts at the doubled seed. That is what
+`Kimchi.Gate.VarBaseMul.Run` asks for. -/
+
+namespace VarBaseMul
+
+variable {F c : Type}
+
+/-- The step's grant: the round is built from the base, the accumulators either side of
+it, and the row's five bits. Structural — no valuation appears. -/
+private def Threads (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 5) (r : ScaleRound F)
+    (st' : AffinePoint (FVar F) × FVar F) : Prop :=
+  r.base = base ∧ (r.acc0 = st.1 ∧ r.nPrev = st.2) ∧ (r.acc5 = st'.1 ∧ r.nNext = st'.2) ∧
+    (r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3] ∧ r.bit4 = bs[4])
+
+open Std.Do in
+/-- The step's spec: the round it emits is wired to the base, the accumulators either
+side, and the row's bits. -/
+@[spec] private theorem scaleRound_spec {V : Valuation F} [Field F] [DecidableEq F]
+    (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
+    (bs : Vector (FVar F) 5) :
+    ⦃⌜True⌝⦄
+    scaleRound (c := Builder V (KimchiConstraint F)) base st bs
+    ⦃⇓ p _ => ⌜Threads base st bs p.1 p.2⌝⦄ := by
+  simp only [scaleRound, Threads]
+  mvcgen
+
+/-- Every round of a trace reads the same base. -/
+private theorem threads_base {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin → ∀ r ∈ rounds, r.base = base
+  | _, _, [], _, h, r, hr => by rw [h.1] at hr; simp at hr
+  | _, _, _ :: _, _, h, r, hr => by
+    obtain ⟨r', tail, mid, rfl, hgrant, hrest⟩ := h
+    rcases List.mem_cons.mp hr with rfl | hr
+    · exact hgrant.1
+    · exact threads_base hrest r hr
+
+/-- A trace's first round opens at the seed accumulators. -/
+private theorem threads_head {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {r₀ : ScaleRound F} {rs : List (ScaleRound F)},
+      Chain (Threads base) st pref (r₀ :: rs) fin → r₀.acc0 = st.1 ∧ r₀.nPrev = st.2
+  | _, _, [], _, _, h => absurd h.1 (by simp)
+  | _, _, _ :: _, _, _, h => by
+    obtain ⟨r', tail, mid, heq, hgrant, -⟩ := h
+    injection heq with hr _
+    subst hr
+    exact hgrant.2.1
+
+/-- A trace's rounds link: each opens where the previous closed. -/
+private theorem threads_link {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin →
+      rounds.IsChain fun a b => b.acc0 = a.acc5 ∧ b.nPrev = a.nNext
+  | _, _, [], _, h => by rw [h.1]; simp
+  | _, _, _ :: _, _, h => by
+    obtain ⟨r, tail, mid, rfl, hgrant, hrest⟩ := h
+    refine (threads_link hrest).cons ?_
+    cases tail with
+    | nil => simp
+    | cons r' ts =>
+      obtain ⟨hp, hn⟩ := threads_head hrest
+      simp only [List.head?_cons, Option.mem_def, Option.some.injEq, forall_eq']
+      exact ⟨by rw [hp, hgrant.2.2.1.1], by rw [hn, hgrant.2.2.1.2]⟩
+
+/-- A trace's rounds are as many as the rows it traversed. -/
+private theorem threads_length {base : AffinePoint (FVar F)} :
+    ∀ {st fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
+      {rounds : List (ScaleRound F)},
+      Chain (Threads base) st pref rounds fin → rounds.length = pref.length
+  | _, _, [], _, h => by rw [h.1]; rfl
+  | _, _, _ :: _, _, h => by
+    obtain ⟨r', tail, mid, rfl, -, hrest⟩ := h
+    rw [List.length_cons, List.length_cons, threads_length hrest]
+
+end VarBaseMul
+
 end Snarky.Kimchi

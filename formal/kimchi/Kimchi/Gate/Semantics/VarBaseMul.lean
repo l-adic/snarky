@@ -1857,13 +1857,36 @@ def accN (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).n
   | i + 1 => (g i).nPrime
 
+/-- A run of `m` `varBaseMul` rows over the base `T`: every row satisfies the gate, every
+    row reads `T`, the accumulator threads from row to row, and the run opens at `2·T` —
+    what the gadget's doubled seed produces. The base is stated at `i ≤ m` so an empty run
+    still names its base, which is where `T ≠ 0` comes from. -/
+structure Run {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+    (T : c.Point) (g : ℕ → Witness F) (m : ℕ) : Prop where
+  /-- Every row of the run satisfies the gate. -/
+  holds : ∀ i, i < m → Holds (g i)
+  /-- Every row reads the base point. -/
+  base : ∀ i, i ≤ m → Kimchi.Gate.AddComplete.IsPoint c (g i).xT (g i).yT T
+  /-- Each row's output accumulator is the next row's input. -/
+  thread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5
+  /-- Each row's output register is the next row's input. -/
+  regThread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime
+  /-- The run opens at the doubled base. -/
+  init : Kimchi.Gate.AddComplete.IsPoint c (g 0).x0 (g 0).y0 ((2 : ℤ) • T)
+
+/-- The base is nonzero: row `0` names it. -/
+theorem Run.base_ne {F : Type*} [Field F] [DecidableEq F] {c : WeierstrassCurve.Affine F}
+    {T : c.Point} {g : ℕ → Witness F} {m : ℕ} (h : Run c T g m) : T ≠ 0 := by
+  obtain ⟨n, rfl⟩ := h.base 0 (Nat.zero_le m)
+  exact Point.some_ne_zero _
+
 /-- **The register chain.** Threading the register through `m` held gates reads the
 final register as the seed shifted up `5m` bits plus the base-2 fold of the run's
 bits — the gadget's scalar pin, at the zero seed. -/
-theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime) :
+theorem chain_accN {c : WeierstrassCurve.Affine F} {T : c.Point} (m : ℕ)
+    (g : ℕ → Witness F) (hrun : Run c T g m) :
     accN g m = 32 ^ m * accN g 0 + bitsRegister (runBits g m) := by
+  obtain ⟨hholds, -, -, hthread, -⟩ := hrun
   induction m with
   | zero => simp [bitsRegister, runBits]
   | succ k ih =>
@@ -2046,26 +2069,66 @@ theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
 
 end RunBits
 
-/-- A run of `m` `varBaseMul` rows over the base `T`: every row satisfies the gate, every
-    row reads `T`, the accumulator threads from row to row, and the run opens at `2·T` —
-    what the gadget's doubled seed produces. The base is stated at `i ≤ m` so an empty run
-    still names its base, which is where `T ≠ 0` comes from. -/
-structure Run {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
-    (T : c.Point) (g : ℕ → Witness F) (m : ℕ) : Prop where
-  /-- Every row of the run satisfies the gate. -/
-  holds : ∀ i, i < m → Holds (g i)
-  /-- Every row reads the base point. -/
-  base : ∀ i, i ≤ m → Kimchi.Gate.AddComplete.IsPoint c (g i).xT (g i).yT T
-  /-- Each row's output accumulator is the next row's input. -/
-  thread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5
-  /-- The run opens at the doubled base. -/
-  init : Kimchi.Gate.AddComplete.IsPoint c (g 0).x0 (g 0).y0 ((2 : ℤ) • T)
+/-! ### A run given as a list
 
-/-- The base is nonzero: row `0` names it. -/
-theorem Run.base_ne {F : Type*} [Field F] [DecidableEq F] {c : WeierstrassCurve.Affine F}
-    {T : c.Point} {g : ℕ → Witness F} {m : ℕ} (h : Run c T g m) : T ≠ 0 := by
-  obtain ⟨n, rfl⟩ := h.base 0 (Nat.zero_le m)
-  exact Point.some_ne_zero _
+    A circuit builds its rows as a finite list, not as a function on `ℕ`; `Run.ofList` is
+    that caller's constructor, and the identities below say what the run's bit stream and
+    closing accumulators read as there. -/
+
+/-- The run a caller holding a finite list of rows builds. -/
+theorem Run.ofList {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+    (T : c.Point) (l : List (Witness F)) (dflt : Witness F)
+    (hholds : ∀ w ∈ l, Holds w)
+    (hbase : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint c w.xT w.yT T)
+    (hthread : l.IsChain fun a b => (b.x0 = a.x5 ∧ b.y0 = a.y5) ∧ b.n = a.nPrime)
+    (hinit : Kimchi.Gate.AddComplete.IsPoint c (l.getD 0 dflt).x0 (l.getD 0 dflt).y0
+      ((2 : ℤ) • T)) :
+    Run c T (fun i => l.getD i dflt) l.length := by
+  have hget : ∀ i (hi : i < l.length), l.getD i dflt = l[i] :=
+    fun i hi => List.getD_eq_getElem _ _ hi
+  refine ⟨fun i hi => ?_, fun i hi => ?_, fun i hi => ?_, fun i hi => ?_, hinit⟩
+  · rw [hget i hi]
+    exact hholds _ (List.getElem_mem _)
+  · rcases Nat.lt_or_ge i l.length with h | h
+    · rw [hget i h]
+      exact hbase _ (List.mem_cons_of_mem _ (List.getElem_mem _))
+    · rw [List.getD_eq_default _ _ h]
+      exact hbase _ (List.mem_cons_self ..)
+  · rw [hget (i + 1) hi, hget i (by omega)]
+    exact (hthread.getElem i hi).1
+  · rw [hget (i + 1) hi, hget i (by omega)]
+    exact (hthread.getElem i hi).2
+
+/-- The bit stream of a run given as a list: its rows' five bits, concatenated. -/
+theorem runBits_getD {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+    (dflt : Witness F) :
+    runBits (fun i => l.getD i dflt) l.length
+      = l.flatMap fun w => [w.b0, w.b1, w.b2, w.b3, w.b4] := by
+  rw [runBits, List.flatMap_def, List.flatMap_def]
+  congr 1
+  refine List.ext_getElem (by simp) fun i _ h2 => ?_
+  simp only [List.getElem_map, List.getElem_range]
+  rw [List.getD_eq_getElem _ _ (by simpa using h2)]
+
+/-- A run given as a list closes at its last row's outputs. -/
+theorem acc_getD_length {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+    (hne : l ≠ []) (dflt : Witness F) :
+    accX (fun i => l.getD i dflt) l.length = (l.getLast hne).x5
+      ∧ accY (fun i => l.getD i dflt) l.length = (l.getLast hne).y5
+      ∧ accN (fun i => l.getD i dflt) l.length = (l.getLast hne).nPrime := by
+  obtain ⟨k, hk⟩ : ∃ k, l.length = k + 1 :=
+    ⟨l.length - 1, by have := List.length_pos_iff.mpr hne; omega⟩
+  have hlast : l.getD k dflt = l.getLast hne := by
+    rw [List.getD_eq_getElem _ _ (by omega), List.getLast_eq_getElem]
+    congr 1
+    omega
+  refine ⟨?_, ?_, ?_⟩ <;> rw [hk]
+  · show (l.getD k dflt).x5 = _
+    rw [hlast]
+  · show (l.getD k dflt).y5 = _
+    rw [hlast]
+  · show (l.getD k dflt).nPrime = _
+    rw [hlast]
 
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
     `varBaseMul_forbidden_correct` behind one regime dichotomy, for generic (dictionary)
