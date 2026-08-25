@@ -38,6 +38,7 @@ import KimchiFixture.PS
 import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.Poseidon
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -195,6 +196,13 @@ def indexRoundTrip (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp)
     haveI : NeZero inst.n := inst.nz
     decide (Satisfies inst.idx inst.wit.pub inst.wit.tab)
 
+/-- `poseidon_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.Poseidon.poseidon`
+at the step field's parameters; the PS `Vector 3` interface renders as the gadget's
+`SpongeState` at the boundary). -/
+def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3) := do
+  let r ← poseidon Poseidon.fpParams ⟨s[0], s[1], s[2]⟩
+  pure #v[r.s0, r.s1, r.s2]
+
 /-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
 def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
@@ -264,7 +272,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit),
     ("add_complete_step_circuit",
       compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
-        addCompleteCircuit) ]
+        addCompleteCircuit),
+    ("poseidon_step_circuit",
+      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
