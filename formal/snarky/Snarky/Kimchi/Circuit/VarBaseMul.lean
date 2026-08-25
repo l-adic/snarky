@@ -931,17 +931,20 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ scalar.val.Scoped st ∧
-        base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv ∧
-        scalar.val.val st.env.get = sv)
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+        CircuitType.ReadsAs (val := F) st scalar.val sv)
       (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' =>
-        (∀ (i : ℕ) (hi : i < n), (r.lsbBits[i]'hi).Scoped st' ∧
-          (r.lsbBits[i]'hi).val st'.env.get
-            = if (ToNat.toNat sv).testBit i then 1 else 0) ∧
+        (∀ (i : ℕ) (hi : i < n), CircuitType.ReadsAs (val := F) st' (r.lsbBits[i]'hi)
+          (if (ToNat.toNat sv).testBit i then 1 else 0)) ∧
         OnCurve d.W st' r.g
           ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
-  rintro st ⟨hbx, hby, hscS, hrx, hry, hrs⟩
+  rintro st ⟨hRbx, hRby, hRs⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hRbx hRby hRs
+  obtain ⟨hbx, hrx⟩ := hRbx
+  obtain ⟨hby, hry⟩ := hRby
+  obtain ⟨hscS, hrs⟩ := hRs
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
@@ -1169,8 +1172,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     · exact hle₄.trans hle₄f
   · -- the bits read as the scalar's own
     intro i hi
-    refine ⟨CircuitType.scoped_fvar.mp ((hscB i hi).mono (Nat.le_trans hnv₃
-      (Nat.le_trans hnv₄ hnv₅))), ?_⟩
+    refine ⟨(hscB i hi).mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)),
+      CircuitType.reads_fvar.mpr ?_⟩
     rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
       (CircuitType.scoped_fvar.mp (hscB i hi)),
       CircuitType.reads_fvar.mp (hrdB i hi)]
@@ -1233,9 +1236,8 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ scalar.val.Scoped st ∧
-        base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv ∧
-        scalar.val.val st.env.get = sv)
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+        CircuitType.ReadsAs (val := F) st scalar.val sv)
       (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' => OnCurve d.W st' r
         ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
@@ -1377,15 +1379,19 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ sDiv2.Scoped st ∧
-        (↑sOdd : CVar F).Scoped st ∧ base.x.val st.env.get = xv ∧
-        base.y.val st.env.get = yv ∧ sDiv2.val st.env.get = sv ∧
-        (↑sOdd : CVar F).val st.env.get = bit bb)
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+        CircuitType.ReadsAs (val := F) st sDiv2 sv ∧ CircuitType.ReadsAs (val := Bool) st sOdd bb)
       (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
       (fun r st' => OnCurve d.W st' r
         ((2 * (ToNat.toNat sv : ℤ) + (if bb then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hbx, hby, hsd, hso, hrx, hry, hrs, hrb⟩
+  rintro st ⟨hRbx, hRby, hRsd, hRso⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
+    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hRbx hRby hRsd hRso
+  obtain ⟨hbx, hrx⟩ := hRbx
+  obtain ⟨hby, hry⟩ := hRby
+  obtain ⟨hsd, hrs⟩ := hRsd
+  obtain ⟨hso, hrb⟩ := hRso
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
@@ -1394,7 +1400,9 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the ladder
   obtain ⟨r, st₁, hrun₁, hsat₁, hbits, hG⟩ :=
     varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime st
-      ⟨hbx, hby, hsd, hrx, hry, hrs⟩
+      ⟨⟨CircuitType.scoped_fvar.mpr hbx, CircuitType.reads_fvar.mpr hrx⟩,
+        ⟨CircuitType.scoped_fvar.mpr hby, CircuitType.reads_fvar.mpr hry⟩,
+        ⟨CircuitType.scoped_fvar.mpr hsd, CircuitType.reads_fvar.mpr hrs⟩⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
   -- the high bits the honest scalar leaves clear
@@ -1410,7 +1418,8 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (lt_of_lt_of_le hfits (Nat.pow_le_pow_right (by norm_num) (by omega)))
     obtain ⟨hsc, hval⟩ := hbits (sDiv2Bits + i) hi'
     simp only [List.getElem_drop, Vector.getElem_toList]
-    exact ⟨hsc, by rw [hval, hbit]; simp⟩
+    exact ⟨CircuitType.scoped_fvar.mp hsc,
+      by rw [CircuitType.reads_fvar.mp hval, hbit]; simp⟩
   obtain ⟨u, st₂, hrun₂, hsat₂, hpin₂⟩ :=
     forM_complete (F := F) (c := KimchiConstraint F)
       (fun b : FVar F => assertEqual b (CVar.const 0))
@@ -1610,12 +1619,12 @@ as: the row it pins is the split's own equation. -/
 theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (h2 : (2 : F) ≠ 0) (s : FVar F)
     (sval : F) :
-    Complete (F := F) (c := c) (fun st => s.Scoped st ∧ s.val st.env.get = sval)
+    Complete (F := F) (c := c) (fun st => CircuitType.ReadsAs (val := F) st s sval)
       (splitFieldVar (c := c) s)
-      (fun r st' => r.1.Scoped st' ∧ (↑r.2 : CVar F).Scoped st' ∧
-        r.1.val st'.env.get = (splitField sval).1 ∧
-        (↑r.2 : CVar F).val st'.env.get = bit (splitField sval).2) := by
+      (fun r st' => CircuitType.ReadsAs (val := F) st' r.1 (splitField sval).1 ∧
+        CircuitType.ReadsAs (val := Bool) st' r.2 (splitField sval).2) := by
   rintro st ⟨hsc, hval⟩
+  simp only [CircuitType.scoped_fvar, CircuitType.reads_fvar] at hsc hval
   obtain ⟨w, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscW, hrdW⟩ :=
     witness_complete (c := c) (val := F × Bool) (splitFieldWit s) (st := st)
       (v := ((splitField sval).1, (splitField sval).2))
@@ -1646,9 +1655,10 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
   exact ⟨(wD, wO), st₂, hrun₁.bind (hrun₂.bind rfl), fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hnv) (hle₂.trans hle))
       (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure),
-    hscW.1.mono hnv₂, hscW.2.mono hnv₂,
-    by rw [CVar.val_of_le hle₂ hscW.1, hrdW.1],
-    by rw [CVar.val_of_le hle₂ hscW.2, hbb]⟩
+    ⟨CircuitType.scoped_fvar.mpr (hscW.1.mono hnv₂),
+      CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₂ hscW.1, hrdW.1])⟩,
+    ⟨CircuitType.scoped_boolVar.mpr (hscW.2.mono hnv₂),
+      CircuitType.reads_boolVar.mpr (by rw [CVar.val_of_le hle₂ hscW.2, hbb])⟩⟩
 
 attribute [irreducible] splitFieldWit splitFieldVar
 
@@ -1702,25 +1712,32 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat (splitField sval).1 : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ s.Scoped st ∧
-        base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv ∧
-        s.val st.env.get = sval)
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+        CircuitType.ReadsAs (val := F) st s sval)
       (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base s)
       (fun r st' => OnCurve d.W st' r
         ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
             + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hbx, hby, hs, hrx, hry, hrs⟩
-  obtain ⟨w, st₁, hrun₁, hsat₁, hscD, hscO, hvalD, hvalO⟩ :=
-    splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval st ⟨hs, hrs⟩
+  rintro st ⟨hRbx, hRby, hRs⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hRbx hRby hRs
+  obtain ⟨hbx, hrx⟩ := hRbx
+  obtain ⟨hby, hry⟩ := hRby
+  obtain ⟨hs, hrs⟩ := hRs
+  obtain ⟨w, st₁, hrun₁, hsat₁, hRD, hRO⟩ :=
+    splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval st
+      ⟨CircuitType.scoped_fvar.mpr hs, CircuitType.reads_fvar.mpr hrs⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
   obtain ⟨g, st₂, hrun₂, hsat₂, hpt⟩ :=
     scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
       (splitField sval).1 (splitField sval).2 hT hfits hregime st₁
-      ⟨hbx.mono hnv₁, hby.mono hnv₁, hscD, hscO,
-        by rw [CVar.val_of_le hle₁ hbx, hrx], by rw [CVar.val_of_le hle₁ hby, hry],
-        hvalD, hvalO⟩
+      ⟨⟨CircuitType.scoped_fvar.mpr (hbx.mono hnv₁),
+          CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₁ hbx, hrx])⟩,
+        ⟨CircuitType.scoped_fvar.mpr (hby.mono hnv₁),
+          CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₁ hby, hry])⟩,
+        hRD, hRO⟩
   exact ⟨g, st₂, hrun₁.bind hrun₂, fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
       (hsat₂ hnv hle), hpt⟩

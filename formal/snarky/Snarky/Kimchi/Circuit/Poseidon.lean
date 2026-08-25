@@ -271,11 +271,10 @@ theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (s : SpongeState F) (sv : Poseidon.Triple F) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.Scoped (val := Poseidon.Triple F) st s ∧
-        CircuitType.Reads st.env.get s sv)
+      (fun st => CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv)
       (poseidon (c := KimchiConstraint F) p s)
-      (fun r st' => CircuitType.Scoped (val := Poseidon.Triple F) st' r ∧
-        CircuitType.Reads st'.env.get r (Poseidon.blockCipher p sv)) := by
+      (fun r st' => CircuitType.ReadsAs (val := Poseidon.Triple F) st' r
+        (Poseidon.blockCipher p sv)) := by
   rintro st ⟨hsc, hrd⟩
   have hs0 : s.s0.val st.env.get = sv.1 :=
     congrArg (fun w : Vector F 3 => w[0]'(by omega)) hrd

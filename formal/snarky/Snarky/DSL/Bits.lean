@@ -174,15 +174,20 @@ needs a characteristic hypothesis and is not stated. -/
 run succeeds, its rows are satisfied at every extension of the final table, and the bits
 are scoped. -/
 theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (n : Nat) :
-    Complete (fun st => v.Scoped st ∧ ToNat.toNat (v.val st.env.get) < 2 ^ n)
-      (unpack (c := c) v n) (fun a st' => CircuitType.Scoped (val := Vector Bool n) st' a) := by
-  rintro st ⟨hv, hlt⟩
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (n : Nat)
+    (hlt : ToNat.toNat vv < 2 ^ n) :
+    Complete (fun st => CircuitType.ReadsAs (val := F) st v vv)
+      (unpack (c := c) v n)
+      (fun a st' => CircuitType.ReadsAs (val := Vector Bool n) st' a (unpackPure vv n)) := by
+  intro st hv'
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hv'
+  obtain ⟨hv, hvv⟩ := hv'
+  subst hvv
   simp only [unpack]
   obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
     witness_complete (c := c) (unpack.advice v n) (st := st)
       (v := unpackPure (v.val st.env.get) n) (by simp [unpack.advice, hv])
-  refine ⟨r, st₁, hrun.bind rfl, ?_, hscope⟩
+  refine ⟨r, st₁, hrun.bind rfl, ?_, hscope, hreads⟩
   intro stf hnv' hle'
   refine Sat.bind hrun (hsat hnv' hle')
     (Sat.bind Runs.addConstraint (Sat.addConstraint ?_) Sat.pure)

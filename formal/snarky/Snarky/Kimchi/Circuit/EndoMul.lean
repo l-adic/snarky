@@ -977,9 +977,8 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat sv < 4 ^ (2 * rounds)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => t.x.Scoped st ∧ t.y.Scoped st ∧ scalar.val.Scoped st ∧
-        t.x.val st.env.get = xv ∧ t.y.val st.env.get = yv ∧
-        scalar.val.val st.env.get = sv)
+      (fun st => CircuitType.ReadsAs (val := F) st t.x xv ∧ CircuitType.ReadsAs (val := F) st t.y yv ∧
+        CircuitType.ReadsAs (val := F) st scalar.val sv)
       (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
       (fun r st' => r.x.Scoped st' ∧ r.y.Scoped st' ∧
         ∃ (hfin : d.W.Nonsingular (r.x.val st'.env.get) (r.y.val st'.env.get)) (s : ℤ),
@@ -987,7 +986,12 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           (s : F) = Kimchi.Gate.EndoScalar.toField
             (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv))
             (d.lam : F)) := by
-  rintro st ⟨htx, hty, hscS, hrx, hry, hrs⟩
+  rintro st ⟨hRtx, hRty, hRs⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hRtx hRty hRs
+  obtain ⟨htx, hrx⟩ := hRtx
+  obtain ⟨hty, hry⟩ := hRty
+  obtain ⟨hscS, hrs⟩ := hRs
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩

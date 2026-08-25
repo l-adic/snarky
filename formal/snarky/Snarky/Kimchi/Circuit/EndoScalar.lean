@@ -411,7 +411,7 @@ the scalar's own crumb stream. -/
 theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) (sv : F) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => scalar.Scoped st ∧ scalar.val st.env.get = sv)
+      (fun st => CircuitType.ReadsAs (val := F) st scalar sv)
       (toFieldChecked' (c := KimchiConstraint F) rows scalar)
       (fun r st' =>
         (r.1.Scoped st' ∧ r.2.1.Scoped st' ∧ r.2.2.Scoped st') ∧
@@ -421,7 +421,9 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
           (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) ∧
         r.2.2.val st'.env.get = Kimchi.Gate.EndoScalar.nReconstruct
           (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv))) := by
-  rintro st ⟨hsc, hrd⟩
+  rintro st hR
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hR
+  obtain ⟨hsc, hrd⟩ := hR
   obtain ⟨cvars, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscC, hrdC⟩ :=
     witness_complete (c := KimchiConstraint F) (val := Vector F (rows * 8))
       (crumbsWit rows scalar) (st := st) (v := crumbsVec (rows * 8) (ToNat.toNat sv))
@@ -494,24 +496,30 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F]
     (hfaith : ((ToNat.toNat sv : ℕ) : F) = sv)
     (hlt : ToNat.toNat sv < 4 ^ (8 * rows)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => scalar.Scoped st ∧ scalar.val st.env.get = sv ∧
-        endo.Scoped st ∧ endo.val st.env.get = ev)
+      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧ CircuitType.ReadsAs (val := F) st endo ev)
       (toField (c := KimchiConstraint F) rows scalar endo)
       (fun r st' => r.Scoped st' ∧
         r.val st'.env.get = Kimchi.Gate.EndoScalar.toField
           (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) ev) := by
-  rintro st ⟨hsc, hrd, hsce, hrde⟩
+  rintro st ⟨hRs, hRe⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+    at hRs hRe
+  obtain ⟨hsc', hrd⟩ := hRs
+  obtain ⟨hsce, hrde⟩ := hRe
+  have hsc : CircuitType.ReadsAs (val := F) st scalar sv :=
+    ⟨CircuitType.scoped_fvar.mpr hsc', CircuitType.reads_fvar.mpr hrd⟩
   simp only [toField]
   obtain ⟨abn, st₁, hrun₁, hsat₁, ⟨hscA, hscB, hscN⟩, hA, hB, hN⟩ :=
-    toFieldChecked'_complete h2 h3 rows scalar sv st ⟨hsc, hrd⟩
+    toFieldChecked'_complete h2 h3 rows scalar sv st hsc
   have hpin : abn.2.2.val st₁.env.get = scalar.val st₁.env.get := by
-    rw [hN, CVar.val_of_le hrun₁.le hsc, hrd,
+    rw [hN, CVar.val_of_le hrun₁.le hsc', hrd,
       Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt, hfaith]
   obtain ⟨u, st₂, hrun₂, hsat₂, -⟩ :=
     assertEqual_complete (c := KimchiConstraint F) abn.2.2 scalar
       (scalar.val st₁.env.get) st₁
       ⟨⟨CircuitType.scoped_fvar.mpr hscN, CircuitType.reads_fvar.mpr hpin⟩,
-        ⟨CircuitType.scoped_fvar.mpr (hsc.mono hrun₁.nv_le), CircuitType.reads_fvar.mpr rfl⟩⟩
+        ⟨CircuitType.scoped_fvar.mpr (hsc'.mono hrun₁.nv_le),
+          CircuitType.reads_fvar.mpr rfl⟩⟩
   have hA₂ : abn.1.val st₂.env.get
       = Kimchi.Gate.EndoScalar.decomposeA
         (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) := by
