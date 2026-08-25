@@ -190,6 +190,20 @@ def div [Field F] [DecidableEq F] [BasicSystem F c] (x y : FVar F) :
   let yInv ← inv y
   mul x yInv
 
+open Std.Do in
+/-- `div`'s soundness: the result reads as the quotient. `inv`'s row forces a nonzero
+divisor, so the field's total division is the honest reading with no side condition. -/
+@[spec] theorem div_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) :
+    ⦃⌜True⌝⦄
+    div (c := Builder V c) x y
+    ⦃⇓ r _ => ⌜r.val V = x.val V / y.val V⌝⦄ := by
+  simp only [div]
+  mvcgen
+  rename_i _ yInv _ hinv _ _
+  intro hmul
+  rw [hmul, div_eq_mul_inv, inv_eq_of_mul_eq_one_right hinv]
+
 /-- `div`'s completeness law: where the divisor reads nonzero the run succeeds, the rows
 its calls built are satisfied at every extension of the final table, and the result is
 scoped — `inv`'s and `mul`'s laws composed, neither reopened. -/

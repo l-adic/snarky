@@ -124,6 +124,23 @@ private def sqrtFlagged [Field F] [DecidableEq F] [BasicSystem F c]
   assertSquare sqrtVal xOrMx
   pure (sqrtVal, isQR)
 
+open Std.Do in
+/-- The flagged root's contract: the flag is a bit, and the root squares to the operand
+where the flag is set, to its non-residue twist where it is clear. -/
+@[spec] private theorem sqrtFlagged_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (sqrtF : F → Option F) (nonResidue : F) (x : FVar F) :
+    ⦃⌜True⌝⦄
+    sqrtFlagged (c := Builder V c) sqrtF nonResidue x
+    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
+      r.1.val V * r.1.val V = if bb then x.val V else nonResidue * x.val V⌝⦄ := by
+  simp only [sqrtFlagged, select_fvar]
+  mvcgen
+  rename_i _ isQR _ hbool _ _ hsel _ _ _ _ _ hsq
+  obtain ⟨bb, hbb⟩ := hbool
+  refine ⟨bb, hbb, ?_⟩
+  rw [hsq, hsel bb hbb, CVar.val_scale_]
+
 /-- The in-circuit BW19 map (PS `groupMapCircuit`): the candidate abscissae from
 seven `mul`s and one `div`, a flagged root per candidate, at least one flag
 asserted set, and the first-flagged candidate selected by mutually exclusive
@@ -169,6 +186,71 @@ def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c]
   let t1x ← mul (↑b1) x1
   let xResult := CVar.add_ (CVar.add_ t1x t2x) t3x
   pure ⟨xResult, yResult⟩
+
+open Std.Do in
+/-- **Soundness.** Any satisfying valuation reads the result as an on-curve pair
+(`y² = x³ + b`) whose abscissa is one of the three `potentialXs` candidates at the
+operand: the constraints force a set flag, the first-flag selectors are mutually
+exclusive boolean products, and the selected branch's `sqrtFlagged` root is the
+ordinate. The advice is universally quantified — soundness never consults it. -/
+theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V c) sqrtF params t
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs params (t.val V)).1 ∨
+        r.x.val V = (potentialXs params (t.val V)).2.1 ∨
+        r.x.val V = (potentialXs params (t.val V)).2.2) ∧
+      r.y.val V * r.y.val V = ySquared params (r.x.val V)⌝⦄ := by
+  simp only [groupMapCircuit]
+  mvcgen
+  rename_i _ t2 _ ht2 alphaInv _ halphaInv alpha _ halpha t4 _ ht4 t4Alpha _ ht4Alpha temp1 _
+    htemp1 t2Inv _ ht2Inv t2PlusFuSq _ ht2PlusFuSq temp2a _ htemp2a temp2 _ htemp2 xSq1 _ hxSq1
+    xCu1 _ hxCu1 sf1 _ hsf1 xSq2 _ hxSq2 xCu2 _ hxCu2 sf2 _ hsf2 xSq3 _ hxSq3 xCu3 _ hxCu3 sf3 _
+    hsf3 _ _ hnz x2First _ hx2First nb2AndB3 _ hnb2AndB3 x3First _ hx3First t3y _ ht3y t2y _
+    ht2y t1y _ ht1y t3x _ ht3x t2x _ ht2x t1x _ ht1x
+  obtain ⟨bb1, hb1, hy1⟩ := hsf1
+  obtain ⟨bb2, hb2, hy2⟩ := hsf2
+  obtain ⟨bb3, hb3, hy3⟩ := hsf3
+  have hval : ∀ a : F, (CVar.const a : CVar F).val V = a := fun _ => rfl
+  -- the three candidates, read off the arithmetic grants
+  have hx1v : ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1).val V
+      = (potentialXs params (t.val V)).1 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp1, ht4Alpha, ht4,
+      halpha, halphaInv, ht2]
+  have hx2v : ((CVar.const (-params.u)).sub_
+        ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)).val V
+      = (potentialXs params (t.val V)).2.1 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp1, ht4Alpha, ht4,
+      halpha, halphaInv, ht2]
+  have hx3v : ((CVar.const params.u).sub_ temp2).val V
+      = (potentialXs params (t.val V)).2.2 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp2, htemp2a,
+      ht2PlusFuSq, ht2Inv, halpha, halphaInv, ht2]
+  -- the flags force exactly one first-flag selector
+  have hs2 := hx2First (!bb1) bb2 (not_val hb1) hb2
+  have hs3 := hx3First (!bb1) (!bb2 && bb3) (not_val hb1)
+    (hnb2AndB3 (!bb2) bb3 (not_val hb2) hb3)
+  rcases bb1 with _ | _
+  · rcases bb2 with _ | _
+    · rcases bb3 with _ | _
+      · -- every flag clear: the asserted flag sum is zero
+        exact absurd (by simp [CVar.val_add_, hb1, hb2, hb3, bit]) hnz
+      · refine ⟨Or.inr (Or.inr ?_), ?_⟩
+        · rw [← hx3v]
+          simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+        · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+            hs2, hs3, bit, hxCu3, hxSq3] using hy3
+    · refine ⟨Or.inr (Or.inl ?_), ?_⟩
+      · rw [← hx2v]
+        simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+      · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+          hs2, hs3, bit, hxCu2, hxSq2] using hy2
+  · refine ⟨Or.inl ?_, ?_⟩
+    · rw [← hx1v]
+      simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+    · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+        hs2, hs3, bit, hxCu1, hxSq1] using hy1
 
 /-! ## The wire-protocol spec
 
