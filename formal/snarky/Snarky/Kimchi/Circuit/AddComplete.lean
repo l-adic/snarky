@@ -244,6 +244,24 @@ def OnCurve [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : Prov
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
   CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
 
+open WeierstrassCurve.Affine in
+/-- Negating the `y` coordinate reads as the negated curve point: under the short shape
+`negY x y = −y`, which is what the pure `CVar.negate_` computes. -/
+theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    (ha : W.a₁ = 0 ∧ W.a₃ = 0) {V : Valuation F} {p : AffinePoint (FVar F)} {P : W.Point}
+    (h : OnCurveAt W V p P) :
+    OnCurveAt W V ⟨p.x, CVar.negate_ p.y⟩ (-P) := by
+  obtain ⟨hns, rfl⟩ := h
+  have hneg : W.negY (p.x.val V) (p.y.val V) = -(p.y.val V) := by
+    simp [WeierstrassCurve.Affine.negY, ha.1, ha.2]
+  refine ⟨?_, ?_⟩
+  · show W.Nonsingular (p.x.val V) ((CVar.negate_ p.y).val V)
+    rw [CVar.val_negate_, ← hneg]
+    exact (nonsingular_neg ..).mpr hns
+  · rw [Point.neg_some]
+    simp only [Point.some.injEq]
+    exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
+
 /-- A curve read survives the table's growth — with the same curve point. -/
 theorem OnCurve.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {st st' : ProverState F} {p : AffinePoint (FVar F)} {P : W.Point}

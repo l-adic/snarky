@@ -1275,6 +1275,27 @@ lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
     · exact h1
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
 
+
+/-- **Off the base.** Under either ladder regime the run's scalar does not fix the base:
+`[2z + 2^L]·T ≠ 0`, i.e. `[2z + 2^L + 1]·T ≠ T`. Subwrap prices it by size, the one-wrap
+band by the forbidden residue `1`. What the parity fold's finite subtraction asks. -/
+theorem ladder_off_base (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    {T : c.Point} (hT : T ≠ 0) (L : ℕ) (z : ℤ) (h0 : 0 ≤ z) (hlt : z < 2 ^ L)
+    (hregime : 3 * 2 ^ L ≤ c.order ∨
+      (2 ^ (L - 1) < c.order ∧ c.order < 2 ^ L ∧ c.order % 4 = 1 ∧
+        (2 * z + 2 ^ L + 1) ∉ forbiddenValues c.order)) :
+    (2 * z + 2 ^ L) • T ≠ 0 := by
+  have hpow : (0 : ℤ) < 2 ^ L := by positivity
+  rcases hregime with hsub | ⟨-, -, -, hnf⟩
+  · refine smul_ne_zero_of_lt c hT (by omega) ?_
+    have h3 : (3 : ℤ) * 2 ^ L ≤ (c.order : ℤ) := by exact_mod_cast hsub
+    have : (2 : ℤ) ^ L = 2 ^ L := rfl
+    omega
+  · intro h
+    exact hnf (mem_forbiddenValues_of_dvd_sub_one c.order
+      (by simpa using (zsmul_eq_zero_iff_order_dvd c hT _).mp h))
+
 /-- The raw bit processed at sub-step `j`: bit `j % 5` of gate `j / 5`. -/
 private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
   match j % 5 with

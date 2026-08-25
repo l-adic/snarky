@@ -163,6 +163,11 @@ instance instIfThenElseFVar [Field F] [DecidableEq F] [BasicSystem F c] :
     IfThenElse F c (FVar F) :=
   ⟨selectField⟩
 
+/-- Selection at a field variable IS the arithmetic mux — the instance's defining
+equation, for a caller whose program says `select` and whose law says `selectField`. -/
+@[simp] theorem select_fvar [Field F] [DecidableEq F] [BasicSystem F c] (b : BoolVar F)
+    (t e : FVar F) : select (c := c) b t e = selectField b t e := rfl
+
 /-- Boolean variables select through the field mux, retagged: the mux of two bits is a
 bit. -/
 instance instIfThenElseBoolVar [Field F] [DecidableEq F] [BasicSystem F c] :

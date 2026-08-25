@@ -392,6 +392,13 @@ theorem CircuitType.ReadsAs.mono [Add F] [Mul F] [Zero F] [CircuitType F val var
     show (#v[x.val V] : Vector F 1) = #v[a]
     rw [h]
 
+/-- A boolean bundle is in scope when its variable is. -/
+@[simp] theorem CircuitType.scoped_boolVar [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
+    [NeZero (1 : F)] {st : ProverState F} {b : BoolVar F} :
+    CircuitType.Scoped (val := Bool) st b ↔ (↑b : CVar F).Scoped st := by
+  show (∀ cv ∈ [(↑b : CVar F)], cv.Scoped st) ↔ _
+  simp
+
 /-- A boolean bundle reads as a bit. -/
 @[simp] theorem CircuitType.reads_boolVar [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     [NeZero (1 : F)]

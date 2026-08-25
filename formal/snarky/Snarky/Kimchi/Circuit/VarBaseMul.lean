@@ -159,8 +159,7 @@ def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (sDiv2 : FVar F) (sOdd : BoolVar F) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks base ⟨sDiv2⟩
-  for bit in r.lsbBits.toList.drop sDiv2Bits do
-    assertEqual bit (.const 0)
+  (r.lsbBits.toList.drop sDiv2Bits).forM fun bit => assertEqual bit (.const 0)
   -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation
   let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.negate_ base.y⟩
   let q ← addFast .checkFinite r.g negBase
@@ -1218,5 +1217,455 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   · intro hregime
     rw [hpreflen] at hpoint
     exact hpoint hregime
+
+open Std.Do WeierstrassCurve.Affine in
+/-- **Soundness** (`scaleFast1`). The ladder's statement in scalar currency: the result
+is the base multiplied by the Type1 unshift of an integer in the ladder's range that
+the scalar reads as. The bit list `varBaseMul` returns is what pins that integer; the
+wrapper drops it, so its law speaks of the integer alone. -/
+theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
+    (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
+    ⦃⌜True⌝⦄
+    scaleFast1 (c := Builder V (KimchiConstraint F)) n chunks base scalar
+    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
+      ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ (5 * chunks) ∧ (z : F) = scalar.val.val V ∧
+        ∀ _ : d.LadderRegime (5 * chunks) (2 * z + 2 ^ (5 * chunks) + 1),
+          OnCurveAt d.W V r ((2 * z + 2 ^ (5 * chunks) + 1) • T)⌝⦄ := by
+  have hvbm := fun (V : Valuation F) => varBaseMul_spec (V := V) d n chunks hn base scalar
+  unfold scaleFast1
+  mvcgen [hvbm]
+  rename_i r _ hr
+  intro T hT
+  obtain ⟨bits, hbool, hlen, -, hreg, hpoint⟩ := hr T hT
+  obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
+  refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, by rw [← hlen]; exact hlt, ?_, hpoint⟩
+  rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
+
+open WeierstrassCurve.Affine in
+/-- **Completeness** (`scaleFast1`). `varBaseMul`'s honest run, with the bits dropped. -/
+theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
+    (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) (xv yv sv : F)
+    (hT : d.W.Nonsingular xv yv) (hfits : ToNat.toNat sv < 2 ^ (5 * chunks))
+    (hregime : d.LadderRegime (5 * chunks)
+      (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ scalar.val.Scoped st ∧
+        base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv ∧
+        scalar.val.val st.env.get = sv)
+      (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
+      (fun r st' => OnCurve d.W st' r
+        ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
+  intro st hst
+  obtain ⟨r, st₁, hrun, hsat, -, hpt⟩ :=
+    varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime st hst
+  exact ⟨r.g, st₁, hrun.bind rfl, fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure, hpt⟩
+
+open Std.Do WeierstrassCurve.Affine in
+/-- **Soundness** (`scaleFast2`). -/
+theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
+    (hsplit : sDiv2Bits ≤ 5 * chunks)
+    (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F) :
+    ⦃⌜True⌝⦄
+    scaleFast2 (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base sDiv2 sOdd
+    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T → ∀ bb : Bool,
+      (↑sOdd : CVar F).val V = bit bb →
+      ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (z : F) = sDiv2.val V ∧
+        ∀ _ : d.LadderRegime (5 * chunks) (2 * z + 2 ^ (5 * chunks) + 1),
+          OnCurveAt d.W V r
+            ((2 * z + (if bb then 1 else 0) + 2 ^ (5 * chunks)) • T)⌝⦄ := by
+  have hvbm := fun (V : Valuation F) =>
+    varBaseMul_spec (V := V) d n chunks hn base ⟨sDiv2⟩
+  have hpin := forM_spec (V := V) (c := KimchiConstraint F)
+    (fun b : FVar F => assertEqual (c := Builder V (KimchiConstraint F)) b (CVar.const 0))
+    (fun b : FVar F => b.val V = (CVar.const 0 : FVar F).val V)
+    (fun b => assertEqual_spec (V := V) b (CVar.const 0))
+  have hsel := fun (t e : FVar F) =>
+    selectField_spec (V := V) (c := KimchiConstraint F) sOdd t e
+  simp only [scaleFast2, select_fvar]
+  mvcgen [hvbm, hpin, hsel]
+  case vc1.W => exact d.W
+  case vc2.ha => exact d.short
+  case vc3.htwo => exact d.two_ne
+  rename_i _ rvb _ hvb _ _ hpin0 q _ yr _ hyr xr _ hxr hadd
+  intro T hT bb hbb
+  obtain ⟨bits, hbool, hlen, hbitsEq, hreg, hpoint⟩ := hvb T hT
+  obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
+  -- the pinned high bits: the ladder's integer fits the split's width
+  have hzeros : ∀ b ∈ bits.take (5 * chunks - sDiv2Bits), b = 0 := by
+    intro b hb
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
+    have hik : i < 5 * chunks - sDiv2Bits := by
+      simp only [List.length_take, hlen] at hi
+      omega
+    have hilen : i < bits.length := by rw [hlen]; omega
+    simp only [List.getElem_take]
+    have hidx : 5 * chunks - 1 - i < n := by omega
+    have hge : sDiv2Bits ≤ 5 * chunks - 1 - i := by omega
+    have hmem : rvb.lsbBits.toList[5 * chunks - 1 - i]'(by simpa using hidx)
+        ∈ rvb.lsbBits.toList.drop sDiv2Bits := by
+      have hlend : sDiv2Bits + (5 * chunks - 1 - i - sDiv2Bits) = 5 * chunks - 1 - i := by omega
+      have heq : (rvb.lsbBits.toList.drop sDiv2Bits)[5 * chunks - 1 - i - sDiv2Bits]'(by
+          simp only [List.length_drop, Vector.length_toList]; omega)
+          = rvb.lsbBits.toList[5 * chunks - 1 - i]'(by simpa using hidx) := by
+        rw [List.getElem_drop]
+        congr 1
+      rw [← heq]
+      exact List.getElem_mem _
+    simp only [hbitsEq, List.getElem_map, List.getElem_reverse, List.length_reverse, List.length_take,
+      Vector.length_toList, List.getElem_take]
+    simp only [show min (5 * chunks) n = 5 * chunks from by omega]
+    rw [hpin0 _ hmem]
+    simp [CVar.val]
+  have hdroplen : (bits.drop (5 * chunks - sDiv2Bits)).length = sDiv2Bits := by
+    rw [List.length_drop, hlen]
+    omega
+  have hltSplit : Kimchi.Gate.VarBaseMul.bitsVal bits < 2 ^ sDiv2Bits := by
+    have h := (Kimchi.Gate.VarBaseMul.bitsVal_lt (bits.drop (5 * chunks - sDiv2Bits))
+      (fun b hb => hbool b (List.mem_of_mem_drop hb))).1
+    rw [hdroplen] at h
+    rw [Kimchi.Gate.VarBaseMul.bitsVal_drop_of_zeros bits _ hzeros]
+    exact h
+  refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, hltSplit, ?_, ?_⟩
+  · rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
+  · intro hregime
+    have hG := hpoint hregime
+    obtain ⟨hGns, hGeq⟩ := hG
+    have hPne : ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)
+        ≠ 0 := by
+      rw [hGeq]
+      exact Point.some_ne_zero hGns
+    have hnegT : OnCurveAt d.W V ⟨base.x, CVar.negate_ base.y⟩ (-T) :=
+      OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ hT
+    rcases hadd.2 _ _ ⟨hGns, hGeq⟩ hnegT (d.two_torsion_free _ hPne) with
+      ⟨hinf, -⟩ | ⟨-, hq⟩
+    · exact absurd (hadd.1.symm.trans hinf) (by norm_num)
+    · cases bb with
+      | false =>
+        show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
+          ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 0 + 2 ^ (5 * chunks)) • T)
+        rw [hxr false hbb, hyr false hbb,
+          show ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 0 + 2 ^ (5 * chunks)) • T)
+            = ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T + -T)
+            from by module]
+        exact hq
+      | true =>
+        show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
+          ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 1 + 2 ^ (5 * chunks)) • T)
+        rw [hxr true hbb, hyr true hbb,
+          show ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 1 + 2 ^ (5 * chunks)) • T)
+            = ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)
+            from by module]
+        exact ⟨hGns, hGeq⟩
+
+open WeierstrassCurve.Affine in
+/-- **Completeness** (`scaleFast2`). The honest run of the split path: the ladder on
+`sDiv2`, whose high bits vanish because the scalar fits the split's width, then the
+parity fold — whose finite subtraction is priced by the same regime, through the
+model's `ladder_off_base`. -/
+theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
+    (hsplit : sDiv2Bits ≤ 5 * chunks)
+    (base : AffinePoint (FVar F)) (sDiv2 : FVar F) (sOdd : BoolVar F)
+    (xv yv sv : F) (bb : Bool) (hT : d.W.Nonsingular xv yv)
+    (hfits : ToNat.toNat sv < 2 ^ sDiv2Bits)
+    (hregime : d.LadderRegime (5 * chunks)
+      (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ sDiv2.Scoped st ∧
+        (↑sOdd : CVar F).Scoped st ∧ base.x.val st.env.get = xv ∧
+        base.y.val st.env.get = yv ∧ sDiv2.val st.env.get = sv ∧
+        (↑sOdd : CVar F).val st.env.get = bit bb)
+      (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
+      (fun r st' => OnCurve d.W st' r
+        ((2 * (ToNat.toNat sv : ℤ) + (if bb then 1 else 0) + 2 ^ (5 * chunks))
+          • Point.some _ _ hT)) := by
+  rintro st ⟨hbx, hby, hsd, hso, hrx, hry, hrs, hrb⟩
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  have hfits' : ToNat.toNat sv < 2 ^ (5 * chunks) :=
+    lt_of_lt_of_le hfits (Nat.pow_le_pow_right (by norm_num) hsplit)
+  -- the ladder
+  obtain ⟨r, st₁, hrun₁, hsat₁, hbits, hG⟩ :=
+    varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime st
+      ⟨hbx, hby, hsd, hrx, hry, hrs⟩
+  have hle₁ := hrun₁.le
+  have hnv₁ := hrun₁.nv_le
+  -- the high bits the honest scalar leaves clear
+  have hpinval : ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
+      x.Scoped st₁ ∧ x.val st₁.env.get = 0 := by
+    intro x hx
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hx
+    have hi' : sDiv2Bits + i < n := by
+      simp only [List.length_drop, Vector.length_toList] at hi
+      omega
+    have hbit : (ToNat.toNat sv).testBit (sDiv2Bits + i) = false :=
+      Nat.testBit_lt_two_pow
+        (lt_of_lt_of_le hfits (Nat.pow_le_pow_right (by norm_num) (by omega)))
+    obtain ⟨hsc, hval⟩ := hbits (sDiv2Bits + i) hi'
+    simp only [List.getElem_drop, Vector.getElem_toList]
+    exact ⟨hsc, by rw [hval, hbit]; simp⟩
+  obtain ⟨u, st₂, hrun₂, hsat₂, hpin₂⟩ :=
+    forM_complete (F := F) (c := KimchiConstraint F)
+      (fun b : FVar F => assertEqual b (CVar.const 0))
+      (fun b => b ∈ r.lsbBits.toList.drop sDiv2Bits)
+      (fun _ st => ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
+        x.Scoped st ∧ x.val st.env.get = 0)
+      (fun b _ hb => by
+        intro stc hstc
+        obtain ⟨w, stc', hrunc, hsatc, -⟩ :=
+          assertEqual_complete (c := KimchiConstraint F) b (CVar.const 0) stc
+            ⟨(hstc b hb).1, trivial, by rw [(hstc b hb).2]; simp [CVar.val]⟩
+        exact ⟨w, stc', hrunc, hsatc, fun x hx =>
+          ⟨(hstc x hx).1.mono hrunc.nv_le,
+            by rw [CVar.val_of_le hrunc.le (hstc x hx).1]; exact (hstc x hx).2⟩⟩)
+      (r.lsbBits.toList.drop sDiv2Bits) (fun x hx => hx) st₁ hpinval
+  have hle₂ := hrun₂.le
+  have hnv₂ := hrun₂.nv_le
+  -- the ladder's point, and the base's negation
+  have hG₂ : OnCurve d.W st₂ r.g
+      ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT) :=
+    hG.mono hnv₂ hle₂
+  obtain ⟨hGns, hGeq⟩ := hG₂.2
+  have hGne : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
+      ≠ 0 := by rw [hGeq]; exact Point.some_ne_zero hGns
+  have hnegT : OnCurve d.W st₂ ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
+    refine ⟨scoped_affinePoint.mpr ⟨hbx.mono (Nat.le_trans hnv₁ hnv₂),
+      CVar.Scoped.scale_ (hby.mono (Nat.le_trans hnv₁ hnv₂))⟩, ?_⟩
+    refine OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ ?_
+    show Kimchi.Gate.AddComplete.IsPoint d.W (base.x.val st₂.env.get)
+      (base.y.val st₂.env.get) _
+    rw [CVar.val_of_le (hle₁.trans hle₂) hbx, CVar.val_of_le (hle₁.trans hle₂) hby,
+      hrx, hry]
+    exact ⟨hT, rfl⟩
+  -- the difference is finite: the regime keeps the result off the base
+  have hoff : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) ≠ 0 :=
+    Kimchi.Gate.VarBaseMul.ladder_off_base d.W (Point.some_ne_zero hT) (5 * chunks)
+      (ToNat.toNat sv) (by positivity) (by exact_mod_cast hfits') hregime
+  have hsum : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+      + -Point.some _ _ hT) ≠ 0 := by
+    rw [show ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+        + -Point.some _ _ hT)
+      = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) from by module]
+    exact hoff
+  obtain ⟨q, st₃, hrun₃, hsat₃, ⟨hscQ, hscI⟩, hadd⟩ :=
+    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite r.g
+        ⟨base.x, CVar.negate_ base.y⟩)
+      (fun V => addFast_spec (V := V) .checkFinite d.W
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
+        ⟨base.x, CVar.negate_ base.y⟩)
+      (addFast_complete .checkFinite d.W
+        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
+        ⟨base.x, CVar.negate_ base.y⟩
+        ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
+        (-Point.some _ _ hT)) st₂
+      ⟨hG₂, hnegT, d.two_torsion_free _ hGne, fun _ => hsum⟩
+  have hle₃ := hrun₃.le
+  have hnv₃ := hrun₃.nv_le
+  have hscQ' : q.p.x.Scoped st₃ ∧ q.p.y.Scoped st₃ := scoped_affinePoint.mp hscQ
+  have hscG : r.g.x.Scoped st₂ ∧ r.g.y.Scoped st₂ := scoped_affinePoint.mp hG₂.1
+  have hQ : OnCurveAt d.W st₃.env.get q.p
+      ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+        + -Point.some _ _ hT) := by
+    rcases hadd.2 _ _ (hG₂.mono hnv₃ hle₃).2 (hnegT.mono hnv₃ hle₃).2
+      (d.two_torsion_free _ hGne) with ⟨hinf, hzero⟩ | ⟨-, h3⟩
+    · exact absurd hzero hsum
+    · exact h3
+  have hQpt : OnCurve d.W st₃ q.p
+      ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+        + -Point.some _ _ hT) := ⟨hscQ, hQ⟩
+  -- the parity fold: the point conditional, `y` before `x`
+  have hwf : CircuitType.WellFormed (val := Bool) st₃.env.get sOdd := by
+    refine ⟨bb, CircuitType.reads_boolVar.mpr ?_⟩
+    rw [CVar.val_of_le ((hle₁.trans hle₂).trans hle₃) hso, hrb]
+  have hsoS : (↑sOdd : CVar F).Scoped st₃ :=
+    hso.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂ hnv₃))
+  have hbb₃ : (↑sOdd : CVar F).val st₃.env.get = bit bb := by
+    rw [CVar.val_of_le ((hle₁.trans hle₂).trans hle₃) hso, hrb]
+  obtain ⟨yr, st₄, hrun₄, hsat₄, hscY, hvalY⟩ :=
+    Complete.post (g := selectField (c := KimchiConstraint F) sOdd r.g.y q.p.y)
+      (fun V => selectField_spec (V := V) sOdd r.g.y q.p.y)
+      (selectField_complete (c := KimchiConstraint F) sOdd r.g.y q.p.y) st₃
+      ⟨hsoS, hscG.2.mono hnv₃, hscQ'.2, hwf⟩
+  have hle₄ := hrun₄.le
+  have hnv₄ := hrun₄.nv_le
+  have hbb₄ : (↑sOdd : CVar F).val st₄.env.get = bit bb := by
+    rw [CVar.val_of_le hle₄ hsoS, hbb₃]
+  obtain ⟨xr, st₅, hrun₅, hsat₅, hscX, hvalX⟩ :=
+    Complete.post (g := selectField (c := KimchiConstraint F) sOdd r.g.x q.p.x)
+      (fun V => selectField_spec (V := V) sOdd r.g.x q.p.x)
+      (selectField_complete (c := KimchiConstraint F) sOdd r.g.x q.p.x) st₄
+      ⟨hsoS.mono hnv₄, (hscG.1.mono hnv₃).mono hnv₄, hscQ'.1.mono hnv₄,
+        ⟨bb, CircuitType.reads_boolVar.mpr hbb₄⟩⟩
+  have hle₅ := hrun₅.le
+  have hnv₅ := hrun₅.nv_le
+  have hbb₅ : (↑sOdd : CVar F).val st₅.env.get = bit bb := by
+    rw [CVar.val_of_le hle₅ (hsoS.mono hnv₄), hbb₄]
+  refine ⟨⟨xr, yr⟩, st₅,
+    hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind (hrun₅.bind rfl)))), ?_, ?_⟩
+  · intro stf hnvF hleF
+    refine Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
+      (Sat.bind hrun₃ (hsat₃ ?_ ?_) (Sat.bind hrun₄ (hsat₄ ?_ ?_)
+        (Sat.bind hrun₅ (hsat₅ hnvF hleF) Sat.pure))))
+    · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)))
+        hnvF
+    · exact (((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hleF
+    · exact Nat.le_trans (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)) hnvF
+    · exact ((hle₃.trans hle₄).trans hle₅).trans hleF
+    · exact Nat.le_trans (Nat.le_trans hnv₄ hnv₅) hnvF
+    · exact (hle₄.trans hle₅).trans hleF
+    · exact Nat.le_trans hnv₅ hnvF
+    · exact hle₅.trans hleF
+  · refine ⟨scoped_affinePoint.mpr ⟨hscX, hscY.mono hnv₅⟩, ?_⟩
+    have hy : yr.val st₅.env.get
+        = if bb then r.g.y.val st₅.env.get else q.p.y.val st₅.env.get := by
+      rw [CVar.val_of_le hle₅ hscY, hvalY bb hbb₄,
+        CVar.val_of_le hle₅ ((hscG.2.mono hnv₃).mono hnv₄),
+        CVar.val_of_le hle₅ (hscQ'.2.mono hnv₄)]
+    have hx : xr.val st₅.env.get
+        = if bb then r.g.x.val st₅.env.get else q.p.x.val st₅.env.get :=
+      hvalX bb hbb₅
+    cases bb with
+    | false =>
+      show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st₅.env.get) (yr.val st₅.env.get)
+        ((2 * (ToNat.toNat sv : ℤ) + 0 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
+      rw [hx, hy, if_neg Bool.false_ne_true, if_neg Bool.false_ne_true,
+        show ((2 * (ToNat.toNat sv : ℤ) + 0 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
+          = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+            + -Point.some _ _ hT) from by module]
+      exact (hQpt.mono (Nat.le_trans hnv₄ hnv₅) (hle₄.trans hle₅)).2
+    | true =>
+      show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st₅.env.get) (yr.val st₅.env.get)
+        ((2 * (ToNat.toNat sv : ℤ) + 1 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
+      rw [hx, hy, if_pos rfl, if_pos rfl,
+        show ((2 * (ToNat.toNat sv : ℤ) + 1 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
+          = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
+          from by module]
+      exact ((hG₂.mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))
+        ((hle₃.trans hle₄).trans hle₅)).2)
+
+open Std.Do in
+/-- **Soundness** (`splitFieldVar`). The witnessed pair is a parity split of the
+scalar: a bit, and a half the one linear row pins. -/
+theorem splitFieldVar_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (s : FVar F) :
+    ⦃⌜True⌝⦄
+    splitFieldVar (c := Builder V c) s
+    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
+      s.val V = 2 * r.1.val V + bit bb⌝⦄ := by
+  unfold splitFieldVar
+  mvcgen
+  rename_i r _ hpost _ _ hrow
+  obtain ⟨-, bb, hbb⟩ := hpost
+  refine ⟨bb, hbb, ?_⟩
+  rw [hrow, CVar.val_add_, CVar.val_scale_, hbb]
+
+/-- **Completeness** (`splitFieldVar`). The honest split of the value the scalar reads
+as: the row it pins is the split's own equation. -/
+theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (h2 : (2 : F) ≠ 0) (s : FVar F)
+    (sval : F) :
+    Complete (F := F) (c := c) (fun st => s.Scoped st ∧ s.val st.env.get = sval)
+      (splitFieldVar (c := c) s)
+      (fun r st' => r.1.Scoped st' ∧ (↑r.2 : CVar F).Scoped st' ∧
+        r.1.val st'.env.get = (splitField sval).1 ∧
+        (↑r.2 : CVar F).val st'.env.get = bit (splitField sval).2) := by
+  rintro st ⟨hsc, hval⟩
+  obtain ⟨w, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscW, hrdW⟩ :=
+    witness_complete (c := c) (val := F × Bool) (splitFieldWit s) (st := st)
+      (v := ((splitField sval).1, (splitField sval).2))
+      (by
+        simp only [splitFieldWit, AsProver.bind_eq, AsProver.run_bind,
+          AsProver.readCVar_run hsc, hval, Except.bind]
+        rfl)
+  obtain ⟨wD, wO⟩ := w
+  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar,
+    CircuitType.scoped_boolVar] at hscW
+  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
+  have hbb : (↑wO : CVar F).val st₁.env.get = bit (splitField sval).2 :=
+    CircuitType.reads_boolVar.mp hrdW.2
+  have hpin : s.val st₁.env.get
+      = (CVar.add_ (CVar.scale_ 2 wD) ↑wO).val st₁.env.get := by
+    rw [CVar.val_add_, CVar.val_scale_, hrdW.1, hbb, CVar.val_of_le hle₁ hsc, hval]
+    simp only [splitField, bit, decide_eq_true_eq]
+    split <;> field_simp <;> ring
+  obtain ⟨u, st₂, hrun₂, hsat₂, -⟩ :=
+    assertEqual_complete (c := c) s (CVar.add_ (CVar.scale_ 2 wD) ↑wO) st₁
+      ⟨hsc.mono hnv₁, CVar.Scoped.add_ (CVar.Scoped.scale_ hscW.1) hscW.2, hpin⟩
+  have hle₂ := hrun₂.le
+  have hnv₂ := hrun₂.nv_le
+  exact ⟨(wD, wO), st₂, hrun₁.bind (hrun₂.bind rfl), fun hnv hle =>
+    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hnv) (hle₂.trans hle))
+      (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure),
+    hscW.1.mono hnv₂, hscW.2.mono hnv₂,
+    by rw [CVar.val_of_le hle₂ hscW.1, hrdW.1],
+    by rw [CVar.val_of_le hle₂ hscW.2, hbb]⟩
+
+open Std.Do WeierstrassCurve.Affine in
+/-- **Soundness** (`scaleFast2'`). The split path at a raw scalar: the ladder's half,
+the parity bit, and the multiple they name — with the scalar pinned to the split. -/
+theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
+    (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F) :
+    ⦃⌜True⌝⦄
+    scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
+    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
+      ∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
+        ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V ∧
+        ∀ _ : d.LadderRegime (5 * chunks) (2 * z + 2 ^ (5 * chunks) + 1),
+          OnCurveAt d.W V r
+            ((2 * z + (if bb then 1 else 0) + 2 ^ (5 * chunks)) • T)⌝⦄ := by
+  have hsplitV := fun (V : Valuation F) =>
+    splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
+  have hsf2 := fun (V : Valuation F) (sDiv2 : FVar F) (sOdd : BoolVar F) =>
+    scaleFast2_spec (V := V) d n chunks sDiv2Bits hn hsplit base sDiv2 sOdd
+  simp only [scaleFast2']
+  mvcgen [hsplitV, hsf2]
+  rename_i hsp _ _
+  intro hq T hT
+  obtain ⟨bb, hbit, hpin⟩ := hsp
+  obtain ⟨z, h0, hlt, hzval, hpoint⟩ := hq T hT bb hbit
+  refine ⟨z, bb, h0, hlt, ?_, hpoint⟩
+  push_cast
+  rw [hpin, hzval]
+  cases bb <;> simp [bit]
+
+
+open WeierstrassCurve.Affine in
+/-- **Completeness** (`scaleFast2'`). The honest split of the scalar, then the split
+path's honest run. -/
+theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
+    (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F)
+    (xv yv sval : F) (hT : d.W.Nonsingular xv yv)
+    (hfits : ToNat.toNat (splitField sval).1 < 2 ^ sDiv2Bits)
+    (hregime : d.LadderRegime (5 * chunks)
+      (2 * (ToNat.toNat (splitField sval).1 : ℤ) + 2 ^ (5 * chunks) + 1)) :
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => base.x.Scoped st ∧ base.y.Scoped st ∧ s.Scoped st ∧
+        base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv ∧
+        s.val st.env.get = sval)
+      (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base s)
+      (fun r st' => OnCurve d.W st' r
+        ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
+            + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
+          • Point.some _ _ hT)) := by
+  rintro st ⟨hbx, hby, hs, hrx, hry, hrs⟩
+  obtain ⟨w, st₁, hrun₁, hsat₁, hscD, hscO, hvalD, hvalO⟩ :=
+    splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval st ⟨hs, hrs⟩
+  have hle₁ := hrun₁.le
+  have hnv₁ := hrun₁.nv_le
+  obtain ⟨g, st₂, hrun₂, hsat₂, hpt⟩ :=
+    scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
+      (splitField sval).1 (splitField sval).2 hT hfits hregime st₁
+      ⟨hbx.mono hnv₁, hby.mono hnv₁, hscD, hscO,
+        by rw [CVar.val_of_le hle₁ hbx, hrx], by rw [CVar.val_of_le hle₁ hby, hry],
+        hvalD, hvalO⟩
+  exact ⟨g, st₂, hrun₁.bind hrun₂, fun hnv hle =>
+    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+      (hsat₂ hnv hle), hpt⟩
 
 end Snarky.Kimchi

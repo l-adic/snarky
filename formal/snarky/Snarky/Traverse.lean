@@ -228,6 +228,47 @@ theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
       exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
         (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure)
 
+open Std.Do in
+/-- `List.forM`'s soundness: a per-entry postcondition, established by the entry's own
+spec, holds of every entry the loop visited. -/
+theorem forM_spec {V : Valuation F} {α : Type} [ConstraintHolds F c]
+    (f : α → CircuitM F (Builder V c) PUnit) (R : α → Prop)
+    (hstep : ∀ x : α, ⦃⌜True⌝⦄ f x ⦃⇓ _ _ => ⌜R x⌝⦄) :
+    ∀ l : List α, ⦃⌜True⌝⦄ l.forM f ⦃⇓ _ _ => ⌜∀ x ∈ l, R x⌝⦄
+  | [] => by
+    intro nv _ _ x hx
+    simp at hx
+  | x :: l => by
+    have hx := hstep x
+    have hrest := forM_spec f R hstep l
+    rw [show (x :: l).forM f = (do f x; l.forM f) from rfl]
+    mvcgen [hx, hrest]
+    rename_i _ _ _ hR _ _
+    intro hrest' y hy
+    rcases List.mem_cons.mp hy with rfl | hy'
+    · exact hR
+    · exact hrest' y hy'
+
+/-- `List.forM`'s completeness: an entry's law and an invariant indexed by what is left
+to visit compose into the whole loop's. A loop that only asserts carries a
+position-free invariant and ignores the argument. -/
+theorem forM_complete [Zero F] [ConstraintHolds F c] {α : Type}
+    (f : α → CircuitM F c PUnit) (P : α → Prop) (inv : List α → ProverState F → Prop)
+    (hstep : ∀ (x : α) (xs : List α), P x →
+      Complete (inv (x :: xs)) (f x) (fun _ st' => inv xs st')) :
+    ∀ l : List α, (∀ x ∈ l, P x) →
+      Complete (inv l) (l.forM f) (fun _ st' => inv [] st')
+  | [], _ => fun st hst =>
+    ⟨PUnit.unit, st, rfl, fun _ _ => by simp [Sat, build], hst⟩
+  | x :: l, hP => by
+    intro st hst
+    obtain ⟨u₁, st₁, hrun₁, hsat₁, hinv₁⟩ := hstep x l (hP x (by simp)) st hst
+    obtain ⟨u₂, st₂, hrun₂, hsat₂, hinv₂⟩ :=
+      forM_complete f P inv hstep l (fun y hy => hP y (by simp [hy])) st₁ hinv₁
+    exact ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, fun hnv hle =>
+      Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+        (hsat₂ hnv hle), hinv₂⟩
+
 attribute [irreducible] zipWithVecM
 
 end Snarky
