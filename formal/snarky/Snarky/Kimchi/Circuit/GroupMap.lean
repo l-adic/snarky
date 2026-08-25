@@ -904,6 +904,79 @@ private theorem sqrt?_twist {F : Type} [Field F] [Fintype F] [DecidableEq F]
   rw [hr]
   rfl
 
+open Std.Do in
+/-- **Wire-level soundness**: any satisfying valuation reads the result as a point of the
+wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the SvdW candidate
+abscissae. The advice is universally quantified: soundness never consults it. -/
+theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
+    [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
+    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q)
+    (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec nonResidue) t
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1 ∨
+        r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.1 ∨
+        r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.2) ∧
+      OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)⌝⦄ := by
+  intro nv h hsat
+  obtain ⟨hx, hy⟩ := groupMapCircuit_spec (c := c) (V := V) sqrtF
+    (.ofSpec spec nonResidue) t nv h hsat
+  refine ⟨hx, ?_⟩
+  show _ ^ 2 = _ ^ 3 + spec.E.A * _ + spec.E.B
+  rw [spec.hA]
+  simp only [ySquared] at hy
+  rw [show ((GroupMapParams.ofSpec spec nonResidue).b : ZMod q) = spec.E.B from rfl] at hy
+  linear_combination hy
+
+open WeierstrassCurve.Affine in
+/-- **Wire-level completeness**: the honest run lands on the wire map itself — the result
+reads `Poseidon.GroupMap.toGroup`, the map the verifier runs to derive the per-proof `U`
+base. `groupMapCircuit_complete` at a wire `Spec`: the advice is the spec's own
+Tonelli–Shanks root, root-genuineness is `sqrt?_mul_self`, twist-totality is `sqrt?_twist`
+at a genuine non-residue, `2 ≠ 0` comes from `q ≠ 2`, and the pure model is rewritten by
+`groupMapPure_toGroup`. The SvdW disjunction (as `IsSquare`) and the operand's
+nondegeneracy remain, with `q ≠ 3` pricing the flag-sum assertion. -/
+theorem groupMapCircuit_toGroup_complete {c : Type} [BasicSystem (ZMod q) c]
+    [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
+    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q) (t : FVar (ZMod q))
+    (tv : ZMod q) (hq2 : q ≠ 2) (hq3 : q ≠ 3) (hnr0 : nonResidue ≠ 0)
+    (hnr : ¬IsSquare nonResidue)
+    (hne : (tv * tv + spec.fu) * (tv * tv) ≠ 0)
+    (hsq : IsSquare (ySquared (.ofSpec spec nonResidue)
+          (potentialXs (.ofSpec spec nonResidue) tv).1) ∨
+        IsSquare (ySquared (.ofSpec spec nonResidue)
+          (potentialXs (.ofSpec spec nonResidue) tv).2.1) ∨
+        IsSquare (ySquared (.ofSpec spec nonResidue)
+          (potentialXs (.ofSpec spec nonResidue) tv).2.2)) :
+    Complete (F := ZMod q) (c := c)
+      (fun st => CircuitType.ReadsAs (val := ZMod q) st t tv)
+      (groupMapCircuit (c := c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t)
+      (fun r st' =>
+        CircuitType.ReadsAs (val := ZMod q) st' r.x
+          (_root_.Poseidon.GroupMap.toGroup spec tv).x ∧
+        CircuitType.ReadsAs (val := ZMod q) st' r.y
+          (_root_.Poseidon.GroupMap.toGroup spec tv).y) := by
+  have hchar : ringChar (ZMod q) ≠ 2 := by
+    rw [ZMod.ringChar_zmod_n]
+    exact hq2
+  have hthree : (3 : ZMod q) ≠ 0 := by
+    intro h
+    exact hq3 ((Nat.prime_dvd_prime_iff_eq Fact.out (by norm_num)).mp
+      ((CharP.cast_eq_zero_iff (ZMod q) q 3).mp (by exact_mod_cast h)))
+  have hsome : ∀ v : ZMod q, IsSquare v → (spec.sqrt.sqrt? v).isSome = true := fun v hv => by
+    obtain ⟨r, hr⟩ := spec.sqrt.sqrt?_isSome_of_isSquare hv
+    rw [hr]
+    rfl
+  intro st ht
+  obtain ⟨r, st', hrun, hsat, hx, hy⟩ :=
+    groupMapCircuit_complete (c := c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t tv
+      (Ring.two_ne_zero hchar) hthree hne
+      (fun a y h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
+      (sqrt?_twist spec.sqrt hchar hnr0 hnr)
+      (hsq.imp (hsome _) (Or.imp (hsome _) (hsome _))) st ht
+  rw [groupMapPure_toGroup] at hx hy
+  exact ⟨r, st', hrun, hsat, hx, hy⟩
+
 end Wire
 
 end Snarky.Kimchi
