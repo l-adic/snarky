@@ -144,7 +144,7 @@ attribute [irreducible] mul
 
 /-- Square a field variable: a constant folds to its square, otherwise the square is
 witnessed and pinned with one `square` row. -/
-def square [Field F] [DecidableEq F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
+def square [Field F] [BasicSystem F c] (x : FVar F) : CircuitM F c (FVar F) :=
   match x with
   | .const a => pure (.const (a * a))
   | x => do

@@ -459,7 +459,7 @@ order the source walks a product, a record and a vector alike, so one traversal 
 encoding's fields serves every shape. -/
 
 /-- Constrain two bundles to read equal: one `assertEqual` per field, in order. -/
-def assertEq [Field F] [DecidableEq F] [BasicSystem F c] {val var : Type}
+def assertEq [DecidableEq F] [BasicSystem F c] {val var : Type}
     [CircuitType F val var] (t e : var) : CircuitM F c PUnit := do
   let _ ← zipWithVecM assertEqual (CircuitType.varToFields (val := val) t)
     (CircuitType.varToFields (val := val) e)

@@ -2,8 +2,10 @@ namespace Snarky
 
 universe u v
 
+/-- A circuit variable: an index into the prover's assignment table. -/
 abbrev Variable := Nat
 
+/-- Why a witness computation ended without a value. -/
 inductive EvalError where
   /-- A variable was read before being assigned. -/
   | unassigned (v : Variable)
@@ -11,6 +13,8 @@ inductive EvalError where
   | custom (msg : String)
   deriving Repr
 
+/-- The prover's advice language, reified: read an assigned variable, or fail. Pure syntax —
+running it needs a table (`AsProver.run`). -/
 inductive AsProver (F : Type u) : Type u → Type u where
   /-- Return `a`. -/
   | pure {α : Type u} (a : α) : AsProver F α
@@ -19,6 +23,9 @@ inductive AsProver (F : Type u) : Type u → Type u where
   /-- Fail with `e`. -/
   | fail {α : Type u} (e : EvalError) : AsProver F α
 
+/-- The circuit monad, reified: a tree whose only effects are emitting a constraint and
+allocating variables against a witness computation. The constraint type `c` is a parameter,
+so the tree is backend-agnostic; the two interpreters are `build` and `prove`. -/
 inductive CircuitM (F c : Type u) (α : Type v) : Type (max u v) where
   /-- Return a value (the monad's `pure`). -/
   | pure (a : α)

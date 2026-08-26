@@ -50,7 +50,7 @@ def compile [Field F] [DecidableEq F] [BasicSystem F c] [A : CircuitType F a ava
   build (compileBody (a := a) (b := b) main) A.size
 
 /-- The state a solve starts from: the input's encoding at the input slots. -/
-def seed [Add F] [Mul F] [Zero F] [A : CircuitType F a avar] (input : a) : ProverState F :=
+def seed [A : CircuitType F a avar] (input : a) : ProverState F :=
   ⟨A.size, Assignments.empty.extendList 0 (A.valueToFields input).toList, by
     simpa using Assignments.empty_dom.extendList (A.valueToFields input).toList⟩
 

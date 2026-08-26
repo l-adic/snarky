@@ -383,7 +383,7 @@ instance instLawfulIfThenElseVector [CircuitType F a va] [IfThenElse F c va]
 
 /-- A bundle isomorphic to one whose selection is lawful, selects lawfully through the
 isomorphism. -/
-@[reducible] def LawfulIfThenElse.ofEquiv [CircuitType F a va] [IfThenElse F c va]
+theorem LawfulIfThenElse.ofEquiv [CircuitType F a va] [IfThenElse F c va]
     [S : LawfulIfThenElse F c a va] (ev : b ≃ a) (ew : vb ≃ va) :
     @LawfulIfThenElse F c b vb _ _ _ (CircuitType.ofEquiv ev ew) (IfThenElse.ofEquiv ew) :=
   letI : CircuitType F b vb := CircuitType.ofEquiv ev ew
@@ -417,7 +417,7 @@ isomorphism. -/
   IfThenElse.ofEquiv (e var)
 
 /-- A shape's selection laws, through its decomposition. -/
-@[reducible] def LawfulIfThenElse.ofShape {S T : Type → Type} {val var : Type}
+theorem LawfulIfThenElse.ofShape {S T : Type → Type} {val var : Type}
     [CircuitType F (T val) (T var)] [IfThenElse F c (T var)]
     [LawfulIfThenElse F c (T val) (T var)] (e : ∀ a, S a ≃ T a) :
     @LawfulIfThenElse F c (S val) (S var) _ _ _ (CircuitType.ofShape e) (IfThenElse.ofShape e) :=

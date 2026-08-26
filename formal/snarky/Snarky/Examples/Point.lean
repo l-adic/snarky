@@ -16,7 +16,9 @@ variable {F c : Type}
 
 /-- A point over `a`: the value at `a := F`, the bundle at `a := FVar F`. -/
 structure Point (a : Type) where
+  /-- The abscissa. -/
   x : a
+  /-- The ordinate. -/
   y : a
 
 /-- A point, as a product. -/

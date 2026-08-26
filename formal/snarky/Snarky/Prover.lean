@@ -315,7 +315,7 @@ theorem CircuitType.Scoped.mono [CircuitType F val var] {st st' : ProverState F}
 /-- The bundle's fields read as the encoding of `a` on the table — the operand
 contract: vacuous information at `FVar` (every field element encodes), booleanity at
 `BoolVar`. Producers establish it; consumers assume it. -/
-def CircuitType.Reads [Add F] [Mul F] [Zero F] [inst : CircuitType F val var]
+def CircuitType.Reads [Add F] [Mul F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) (a : val) : Prop :=
   mapVec (·.val V) (inst.varToFields v) = inst.valueToFields a
 
@@ -338,12 +338,12 @@ theorem CircuitType.Reads.of_le [Add F] [Mul F] [Zero F] [CircuitType F val var]
   exact CVar.val_of_le hle (hs _ (by simp))
 
 /-- The bundle's reading under the table's total reading. -/
-def CircuitType.readVal [Add F] [Mul F] [Zero F] [inst : CircuitType F val var]
+def CircuitType.readVal [Add F] [Mul F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) : val :=
   inst.fieldsToValue (mapVec (·.val V) (inst.varToFields v))
 
 /-- The bundle's readings lie in the encoding's image. -/
-def CircuitType.WellFormed [Add F] [Mul F] [Zero F] [CircuitType F val var]
+def CircuitType.WellFormed [Add F] [Mul F] [CircuitType F val var]
     (V : Valuation F) (v : var) : Prop :=
   ∃ a, CircuitType.Reads (val := val) V v a
 
@@ -432,7 +432,7 @@ variable {a va b vb : Type}
     CircuitType.Scoped (val := Unit) st () := by
   simp [CircuitType.Scoped]
 
-@[simp] theorem CircuitType.reads_unit [Add F] [Mul F] [Zero F] {V : Valuation F} :
+theorem CircuitType.reads_unit [Add F] [Mul F] {V : Valuation F} :
     CircuitType.Reads V () () := rfl
 
 @[simp] theorem CircuitType.scoped_prod [CircuitType F a va] [CircuitType F b vb]
@@ -494,12 +494,12 @@ theorem CircuitType.scoped_ofEquiv [inst : CircuitType F a va] (ev : b ≃ a) (e
 
 theorem CircuitType.reads_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F a va]
     (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} {x : b} :
-    @CircuitType.Reads F b vb _ _ _ (CircuitType.ofEquiv ev ew) V v x ↔
+    @CircuitType.Reads F b vb _ _ (CircuitType.ofEquiv ev ew) V v x ↔
       CircuitType.Reads V (ew v) (ev x) := Iff.rfl
 
 theorem CircuitType.readVal_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType F a va]
     (ev : b ≃ a) (ew : vb ≃ va) {V : Valuation F} {v : vb} :
-    @CircuitType.readVal F b vb _ _ _ (CircuitType.ofEquiv ev ew) V v
+    @CircuitType.readVal F b vb _ _ (CircuitType.ofEquiv ev ew) V v
       = ev.symm (CircuitType.readVal V (ew v)) := rfl
 
 end Formers
