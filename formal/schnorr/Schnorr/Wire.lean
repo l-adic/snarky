@@ -55,7 +55,7 @@ theorem gen_nonsingular : Vesta.curve.toAffine.Nonsingular gen.x gen.y :=
 the in-circuit statement. The points are Vesta-tagged — `verify` deserializes them,
 and the circuit's derived `CheckedType` pays their on-curve rows — and the response is
 `Type1`-carried (`p < q`): the ladder consuming it realizes the shift, and
-`Type1.fromShifted` reads its scalar-field value. -/
+`Type1.toScalar` reads its scalar-field value. -/
 structure Statement (α : Type) where
   /-- The public key `[x]·G`. -/
   pk : VestaPoint α
@@ -72,16 +72,11 @@ structure Statement (α : Type) where
   left_inv _ := rfl
   right_inv _ := rfl
 
-attribute [circuitVal] Statement.equivProd_apply Statement.equivProd_symm_apply
-
 /-- The statement encodes as its five field elements, points first, coordinatewise —
 the product presentation. -/
 instance instStatementCircuitType :
     CircuitType Fq (Statement Fq) (Statement (FVar Fq)) :=
-  CircuitType.ofEquiv
-    (inferInstance : CircuitType Fq (VestaPoint Fq × VestaPoint Fq × Type1 Fq)
-      (VestaPoint (FVar Fq) × VestaPoint (FVar Fq) × Type1 (FVar Fq)))
-    Statement.equivProd Statement.equivProd
+  CircuitType.ofEquiv Statement.equivProd Statement.equivProd
 
 /-- A point's serialization: its coordinates. -/
 def encodePoint (P : SWPoint Vesta.curve) : VestaPoint Fq := ⟨⟨P.x, P.y⟩⟩
@@ -114,8 +109,8 @@ as a deployed verifier rejects them at parsing. -/
 def verify (st : Statement Fq) : Bool :=
   if h : OnCurve Vesta.curve.A Vesta.curve.B (st.pk.point.x, st.pk.point.y) ∧
       OnCurve Vesta.curve.A Vesta.curve.B (st.u.point.x, st.u.point.y) ∧
-      st.z.fromShifted ≠ (0 : Fp) then
-    decide (st.z.fromShifted • gen
+      st.z.toScalar ≠ (0 : Fp) then
+    decide (st.z.toScalar • gen
       = (⟨st.u.point.x, st.u.point.y, Or.inl h.2.1⟩ : SWPoint Vesta.curve)
         + challenge st.pk st.u
           • (⟨st.pk.point.x, st.pk.point.y, Or.inl h.1⟩ : SWPoint Vesta.curve))
@@ -129,8 +124,8 @@ theorem verify_iff (st : Statement Fq) :
     verify st = true ↔
       ∃ (hpk : OnCurve Vesta.curve.A Vesta.curve.B (st.pk.point.x, st.pk.point.y))
         (hu : OnCurve Vesta.curve.A Vesta.curve.B (st.u.point.x, st.u.point.y)),
-        st.z.fromShifted ≠ (0 : Fp) ∧
-        st.z.fromShifted • Point.some gen.x gen.y gen_nonsingular
+        st.z.toScalar ≠ (0 : Fp) ∧
+        st.z.toScalar • Point.some gen.x gen.y gen_nonsingular
           = Point.some st.u.point.x st.u.point.y (nonsingular_toW hu)
             + challenge st.pk st.u
               • Point.some st.pk.point.x st.pk.point.y (nonsingular_toW hpk) := by
@@ -164,8 +159,8 @@ theorem completeness (x r : Fp) (hx : x • gen ≠ 0) (hr : r • gen ≠ 0)
   have huC := SWPoint.onCurve_of_ne_zero hr
   rw [verify_iff]
   refine ⟨hpkC, huC, ?_, ?_⟩
-  · simpa [Statement.encode, Type1.fromShifted_toShifted] using hz
-  · simp only [Statement.encode, encodePoint, Type1.fromShifted_toShifted]
+  · simpa [Statement.encode, Type1.toScalar_toShifted] using hz
+  · simp only [Statement.encode, encodePoint, Type1.toScalar_toShifted]
     rw [← SWPoint.equivPoint_eq_some gen gen_onCurve,
       ← SWPoint.equivPoint_eq_some (r • gen) huC, ← SWPoint.equivPoint_eq_some (x • gen) hpkC,
       ← Pasta.vesta_equivPoint_smul, ← Pasta.vesta_equivPoint_smul, ← map_add, add_smul,

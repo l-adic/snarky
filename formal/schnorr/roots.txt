@@ -16,17 +16,3 @@ Schnorr.challenge
 Schnorr.verify
 Schnorr.verify_iff
 Schnorr.completeness
-
--- The in-circuit verifier (Schnorr/Circuit.lean): the statement's derived check and
--- the whole verifier, stage for stage against `verify`.
-Schnorr.verifyCircuit
-
--- The circuit laws (Schnorr/Laws.lean): the endpoint pair at the deployed Vesta
--- dictionaries.
-Schnorr.verifyCircuit_spec
-Schnorr.verifyCircuit_complete_spec
-
--- The CS-satisfaction boundary (Schnorr/Boundary.lean): the fragment seam — the
--- endpoint pair packaged through the whole-circuit compile/solve pipeline.
-Schnorr.verifyCircuit_compile_sound
-Schnorr.complete
