@@ -1319,7 +1319,7 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
         congr 1
       rw [← heq]
       exact List.getElem_mem _
-    simp only [hbitsEq, List.getElem_map, List.getElem_reverse, List.length_reverse, List.length_take,
+    simp only [hbitsEq, List.getElem_map, List.getElem_reverse, List.length_take,
       Vector.length_toList, List.getElem_take]
     simp only [show min (5 * chunks) n = 5 * chunks from by omega]
     rw [hpin0 _ hmem]

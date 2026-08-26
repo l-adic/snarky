@@ -522,14 +522,13 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
     · rw [hP0, d.eigen hT hφT, smul_smul, add_smul]
     · simp [Kimchi.Gate.EndoScalar.toField, Kimchi.Gate.EndoScalar.decomposeA,
         Kimchi.Gate.EndoScalar.decomposeB, Kimchi.Gate.EndoScalar.decomposeFold]
-      push_cast
       ring
   | r₀ :: rs, hthr' =>
     subst hround
     set finV : F × F × F := (fin.1.x.val V, fin.1.y.val V, fin.2.val V) with hfinV
     set l := EndoMul.readChain V finV (r₀ :: rs) with hl
     have hne : l ≠ [] := by
-      simp only [hl, EndoMul.readChain]
+      simp only [hl]
       cases rs <;> simp [EndoMul.readChain]
     set g : ℕ → Kimchi.Gate.EndoMul.Witness F := fun i => l.getD i (l.head hne) with hg
     have hlen : l.length = rs.length + 1 := by

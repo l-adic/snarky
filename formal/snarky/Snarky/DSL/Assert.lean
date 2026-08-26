@@ -361,7 +361,7 @@ theorem assertExactlyOne_complete [Field F] [DecidableEq F] [BasicSystem F c]
       rw [CircuitType.reads_boolVar.mp hbb]
       cases bb <;> simp [bit]
     rw [sum_eval, List.map_map]
-    simp only [CVar.val, Function.comp_def]
+    simp only [Function.comp_def]
     rw [sum_of_bits _ hbits', hone]
     simp
   exact assertEqual_complete (c := c) _ _ 1 st
@@ -435,7 +435,7 @@ theorem assertAll_complete [Field F] [DecidableEq F] [BasicSystem F c]
       rw [CircuitType.reads_boolVar.mp hbb]
       cases bb <;> simp [bit]
     rw [sum_eval, List.map_map]
-    simp only [CVar.val, Function.comp_def]
+    simp only [Function.comp_def]
     rw [sum_of_bits _ hbits', List.count_eq_length.mpr (by
       intro x hx
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hx

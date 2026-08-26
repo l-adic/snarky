@@ -457,8 +457,7 @@ theorem and_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (Snarky.and (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab && bb)) := by
   rintro st ⟨ha, hb⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at ha hb ⊢
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at ha hb ⊢
   obtain ⟨ha, hva⟩ := ha
   obtain ⟨hb, hvb⟩ := hb
   simp only [Snarky.and]
@@ -507,8 +506,7 @@ theorem or_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (Snarky.or (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab || bb)) := by
   rintro st ⟨ha, hb⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at ha hb ⊢
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at ha hb ⊢
   obtain ⟨ha, hva⟩ := ha
   obtain ⟨hb, hvb⟩ := hb
   simp only [Snarky.or]
@@ -518,8 +516,7 @@ theorem or_complete [Field F] [DecidableEq F] [BasicSystem F c]
           CircuitType.reads_boolVar.mpr (not_val hva)⟩,
         ⟨CircuitType.scoped_boolVar.mpr (not_scoped hb),
           CircuitType.reads_boolVar.mpr (not_val hvb)⟩⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hr
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hr
   refine ⟨Snarky.not r, st₁, hrun.bind rfl, ?_, not_scoped hr.1, ?_⟩
   · intro stf hnv hle
     exact Sat.bind hrun (hsat hnv hle) Sat.pure
