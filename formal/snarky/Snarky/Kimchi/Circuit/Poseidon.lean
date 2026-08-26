@@ -66,6 +66,33 @@ instance instCircuitTypeSpongeState :
     | 1, _ => rfl
     | 2, _ => rfl
 
+/-- The state's reading, one cell at a time — the instance's defining equation. -/
+@[simp] theorem readVal_spongeState [Add F] [Mul F] [Zero F] (V : Valuation F)
+    (s : SpongeState F) :
+    CircuitType.readVal (val := Poseidon.Triple F) V s
+      = (s.s0.val V, s.s1.val V, s.s2.val V) := rfl
+
+/-- The state is in scope when its three cells are. -/
+@[simp] theorem scoped_spongeState [Add F] [Mul F] [Zero F] {st : ProverState F}
+    {s : SpongeState F} :
+    CircuitType.Scoped (val := Poseidon.Triple F) st s ↔
+      s.s0.Scoped st ∧ s.s1.Scoped st ∧ s.s2.Scoped st := by
+  show (∀ cv ∈ [s.s0, s.s1, s.s2], cv.Scoped st) ↔ _
+  simp
+
+/-- The state reads a triple exactly when its cells read the components. -/
+@[simp] theorem reads_spongeState [Add F] [Mul F] [Zero F] {V : Valuation F}
+    {s : SpongeState F} {v : Poseidon.Triple F} :
+    CircuitType.Reads V s v ↔
+      s.s0.val V = v.1 ∧ s.s1.val V = v.2.1 ∧ s.s2.val V = v.2.2 := by
+  constructor
+  · intro h
+    refine ⟨congrArg (fun w : Vector F 3 => w[0]) h, congrArg (fun w : Vector F 3 => w[1]) h,
+      congrArg (fun w : Vector F 3 => w[2]) h⟩
+  · rintro ⟨h0, h1, h2⟩
+    show (#v[s.s0.val V, s.s1.val V, s.s2.val V] : Vector F 3) = #v[v.1, v.2.1, v.2.2]
+    rw [h0, h1, h2]
+
 /-- The state cells carry no well-formedness constraint (plain field variables). -/
 instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     CheckedType F c (Poseidon.Triple F) (SpongeState F) where
@@ -313,8 +340,7 @@ theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
       · rw [CVar.val_of_le (hle.trans hleF) hsc0, CVar.val_of_le (hle.trans hleF) hsc1,
           CVar.val_of_le (hle.trans hleF) hsc2, hs0, hs1, hs2]
       · refine List.ext_getElem (by simp) fun i h1 h2 => ?_
-        simp only [List.getElem_map, Vector.getElem_toList, List.getElem_ofFn,
-          SpongeState.cells]
+        simp only [List.getElem_map, Vector.getElem_toList, List.getElem_ofFn]
         have hi : i < 55 := by simpa using h2
         have hread := (hrdO i hi).of_le (hscO i hi) hleF
         have h0 : outs[i].s0.val stf.env.get = (rounds (mdsOfParams p) (paramsRc p)
