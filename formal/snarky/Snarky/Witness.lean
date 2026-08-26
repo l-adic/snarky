@@ -26,15 +26,20 @@ class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSy
   check_sound : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (V : Valuation F) (v : var)
     (nv : Nat),
     (∀ con ∈ (build (check v) nv).constraints, ConstraintHolds.Holds V con) → post V v
-  /-- The check is passive at the prover: it allocates nothing and throws nothing. -/
-  check_runs : ∀ (nv : Nat) (env : Assignments F) (v : var),
-    prove (check v) nv env = .ok ⟨PUnit.unit, nv, env⟩
+  /-- The check runs at the prover from any state: it never fails. It MAY allocate
+  auxiliaries of its own — the on-curve check witnesses `x²` and `x³` — and, since every
+  run only extends the table (`Runs.le`), what was allocated before the check still reads
+  the same after it. -/
+  check_runs : ∀ (st : ProverState F) (v : var), ∃ st', Runs (check v) st PUnit.unit st'
   /-- A scoped bundle that reads as the encoding of a value satisfies its check's rows,
-  at the total reading of any extension of the table. -/
-  check_sat : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (st st' : ProverState F)
-    (nv : Nat) (v : var) (a : val), st.env.Le st'.env →
+  at the total reading of any extension of the state the check itself runs to. The run is
+  a hypothesis because a check that allocates constrains variables that only its own run
+  assigns. -/
+  check_sat : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] {st st' stf : ProverState F}
+    (v : var) (a : val), Runs (check v) st PUnit.unit st' →
+    st'.nv ≤ stf.nv → st'.env.Le stf.env →
     CircuitType.Scoped (val := val) st v → CircuitType.Reads st.env.get v a →
-    ∀ con ∈ (build (check v) nv).constraints, ConstraintHolds.Holds st'.env.get con
+    Sat (check v) st stf
 
 section Instances
 
@@ -47,8 +52,8 @@ instance instCheckedTypeFVar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
   check _ := .pure PUnit.unit
   post _ _ := True
   check_sound := by intros; trivial
-  check_runs := by intros; rfl
-  check_sat := by simp [build]
+  check_runs st _ := ⟨st, rfl⟩
+  check_sat _ _ _ _ _ _ _ := Sat.pure
 
 /-- A freshly witnessed boolean must be constrained to `{0, 1}`: one `boolean` row, whose
 reading is the booleanity every consumer of the bundle assumes. -/
@@ -61,8 +66,11 @@ instance instCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
         (hsat (BasicSystem.boolean b.toCVar) (by simp [Snarky.addConstraint, build])) with h | h
     · exact ⟨false, by simpa [bit] using h⟩
     · exact ⟨true, by simpa [bit] using h⟩
-  check_runs _ _ _ := rfl
-  check_sat st st' _ b a hle hs hr := by
+  check_runs st _ := ⟨st, Runs.addConstraint⟩
+  check_sat := by
+    intro _ _ st _ _ b a hrun _ hle'
+    intro hs hr
+    have hle := hrun.le.trans hle'
     intro con hcon
     simp [Snarky.addConstraint, build] at hcon
     subst hcon
@@ -79,8 +87,8 @@ instance instCheckedTypeUnit [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
   check _ := .pure PUnit.unit
   post _ _ := True
   check_sound := by intros; trivial
-  check_runs := by intros; rfl
-  check_sat := by simp [build]
+  check_runs st _ := ⟨st, rfl⟩
+  check_sat _ _ _ _ _ _ _ := Sat.pure
 
 section Product
 
@@ -99,19 +107,21 @@ instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     simp only [build_bind] at hsat
     exact ⟨CheckedType.check_sound V p.1 nv fun con h => hsat con (List.mem_append_left _ h),
       CheckedType.check_sound V p.2 _ fun con h => hsat con (List.mem_append_right _ h)⟩
-  check_runs nv env p := by
-    rw [prove_bind, CheckedType.check_runs]
-    exact CheckedType.check_runs nv env p.2
-  check_sat st st' nv p x hle hs hr := by
+  check_runs st p := by
+    obtain ⟨st₁, h₁⟩ := CheckedType.check_runs (c := c) (val := a) st p.1
+    obtain ⟨st₂, h₂⟩ := CheckedType.check_runs (c := c) (val := b) st₁ p.2
+    exact ⟨st₂, h₁.bind h₂⟩
+  check_sat p x hrun hnv hle hs hr := by
     obtain ⟨v, w⟩ := p
     obtain ⟨x, y⟩ := x
     rw [CircuitType.scoped_prod] at hs
     rw [CircuitType.reads_prod] at hr
-    intro con hcon
-    simp only [build_bind] at hcon
-    rcases List.mem_append.mp hcon with h | h
-    · exact CheckedType.check_sat st st' nv v x hle hs.1 hr.1 con h
-    · exact CheckedType.check_sat st st' _ w y hle hs.2 hr.2 con h
+    obtain ⟨_, st₁, hrun₁, hrun₂⟩ := hrun.bind_inv
+    exact Sat.bind hrun₁
+      (CheckedType.check_sat v x hrun₁ (Nat.le_trans hrun₂.nv_le hnv)
+        (hrun₂.le.trans hle) hs.1 hr.1)
+      (CheckedType.check_sat w y hrun₂ hnv hle (hs.2.mono hrun₁.nv_le)
+        (hr.2.of_le hs.2 hrun₁.le))
 
 end Product
 
@@ -144,27 +154,29 @@ private theorem checkAll_sound [ConstraintHolds F c] [LawfulBasicSystem F c] (V 
     · exact CheckedType.check_sound V w nv fun con h => hsat con (List.mem_append_left _ h)
     · exact checkAll_sound V l _ (fun con h => hsat con (List.mem_append_right _ h)) w hw
 
-private theorem checkAll_runs : ∀ (l : List va) (nv : Nat) (env : Assignments F),
-    prove (checkAll (F := F) (c := c) (a := a) l) nv env = .ok ⟨PUnit.unit, nv, env⟩
-  | [], _, _ => rfl
-  | v :: l, nv, env => by
-    simp only [checkAll]
-    rw [prove_bind, CheckedType.check_runs]
-    exact checkAll_runs l nv env
+private theorem checkAll_runs : ∀ (l : List va) (st : ProverState F),
+    ∃ st', Runs (checkAll (F := F) (c := c) (a := a) l) st PUnit.unit st'
+  | [], st => ⟨st, rfl⟩
+  | v :: l, st => by
+    obtain ⟨st₁, h₁⟩ := CheckedType.check_runs (c := c) (val := a) st v
+    obtain ⟨st₂, h₂⟩ := checkAll_runs l st₁
+    exact ⟨st₂, h₁.bind h₂⟩
 
-private theorem checkAll_sat [ConstraintHolds F c] [LawfulBasicSystem F c]
-    {st st' : ProverState F} (hle : st.env.Le st'.env) :
-    ∀ (l : List va) (nv : Nat),
+private theorem checkAll_sat [ConstraintHolds F c] [LawfulBasicSystem F c] :
+    ∀ (l : List va) {st st' stf : ProverState F},
+      Runs (checkAll (F := F) (c := c) (a := a) l) st PUnit.unit st' →
+      st'.nv ≤ stf.nv → st'.env.Le stf.env →
       (∀ v ∈ l, CircuitType.Scoped (val := a) st v ∧ ∃ x : a, CircuitType.Reads st.env.get v x) →
-      ∀ con ∈ (build (checkAll (F := F) (c := c) (a := a) l) nv).constraints,
-        ConstraintHolds.Holds st'.env.get con
-  | [], _, _, _, h => by simp [checkAll, build] at h
-  | v :: l, nv, hall, con, hcon => by
-    simp only [checkAll, build_bind] at hcon
-    rcases List.mem_append.mp hcon with h | h
-    · obtain ⟨hs, x, hr⟩ := hall v (List.mem_cons_self ..)
-      exact CheckedType.check_sat st st' nv v x hle hs hr con h
-    · exact checkAll_sat hle l _ (fun w hw => hall w (List.mem_cons_of_mem _ hw)) con h
+      Sat (checkAll (F := F) (c := c) (a := a) l) st stf
+  | [], _, _, _, _, _, _, _ => Sat.pure
+  | v :: l, st, _, stf, hrun, hnv, hle, hall => by
+    obtain ⟨_, st₁, hrun₁, hrun₂⟩ := hrun.bind_inv
+    obtain ⟨hs, x, hr⟩ := hall v (List.mem_cons_self ..)
+    refine Sat.bind hrun₁
+      (CheckedType.check_sat v x hrun₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle) hs hr)
+      (checkAll_sat l hrun₂ hnv hle fun w hw => ?_)
+    obtain ⟨hsw, y, hrw⟩ := hall w (List.mem_cons_of_mem _ hw)
+    exact ⟨hsw.mono hrun₁.nv_le, y, hrw.of_le hsw hrun₁.le⟩
 
 end Laws
 
@@ -175,11 +187,11 @@ instance instCheckedTypeVector [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c
   check vs := checkAll (F := F) (c := c) (a := a) vs.toList
   post V vs := ∀ v ∈ vs.toList, CheckedType.post (c := c) (val := a) V v
   check_sound V vs nv hsat := checkAll_sound V vs.toList nv hsat
-  check_runs nv env vs := checkAll_runs vs.toList nv env
-  check_sat st st' nv vs xs hle hs hr := by
+  check_runs st vs := checkAll_runs vs.toList st
+  check_sat vs xs hrun hnv hle hs hr := by
     rw [CircuitType.scoped_vector] at hs
     rw [CircuitType.reads_vector] at hr
-    refine checkAll_sat hle vs.toList nv fun v hv => ?_
+    refine checkAll_sat vs.toList hrun hnv hle fun v hv => ?_
     obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
     exact ⟨hs i hi, xs[i], hr i hi⟩
 
@@ -196,8 +208,8 @@ instance instCheckedTypeUnChecked [Add F] [Mul F] [Zero F] [One F] [BasicSystem 
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs _ _ _ := rfl
-  check_sat _ _ _ _ _ _ _ _ con hcon := by simp [build] at hcon
+  check_runs st _ := ⟨st, rfl⟩
+  check_sat _ _ _ _ _ _ _ := Sat.pure
 
 end UnChecked
 
@@ -213,8 +225,8 @@ variable {a va b vb : Type}
   { check := fun v => S.check (ew v)
     post := fun V v => S.post V (ew v)
     check_sound := fun V v nv h => S.check_sound V (ew v) nv h
-    check_runs := fun nv env v => S.check_runs nv env (ew v)
-    check_sat := fun st st' nv v x hle hs hr => S.check_sat st st' nv (ew v) (ev x) hle hs hr }
+    check_runs := fun st v => S.check_runs st (ew v)
+    check_sat := fun v x hrun hnv hle hs hr => S.check_sat (ew v) (ev x) hrun hnv hle hs hr }
 
 /-- A shape's check, through its decomposition at the value and at the bundle. -/
 @[reducible] def CheckedType.ofShape [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
@@ -287,22 +299,26 @@ theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
   rw [dif_pos (by simp)]
   rfl
 
-/-- The honest run of a witness: a failing computation fails the run; otherwise the
-bundle is allocated at the counter with the value's encoding, and its check — of a
-fresh, honest allocation — passes. Unconditional, so a completeness proof computes
-through it. -/
-private theorem prove_witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+/-- The honest run of a witness: the computation runs, the bundle is allocated at the
+counter with the value's encoding, and the run closes wherever the type's check — of a
+fresh, honest allocation — closes. The check may allocate, so its landing state is a
+hypothesis rather than a computation. -/
+private theorem runs_witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [inst : CircuitType F val var] [CheckedType F c val var]
-    (compute : AsProver F val) (st : ProverState F) :
-    prove (witness (c := c) (val := val) compute) st.nv st.env
-      = (compute.run st.env).bind fun a =>
-          .ok ((st.alloc (inst.valueToFields a)).out
-            (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)))) := by
-  rcases h : compute.run st.env with e | a
-  · simp only [witness, prove, AsProver.map_eq, AsProver.run_bind, h, Except.bind]
-  · simp only [witness, prove, AsProver.map_eq, AsProver.run_bind, h, Except.bind,
-      AsProver.run_pure, prove_bind, CheckedType.check_runs]
-    rfl
+    (compute : AsProver F val) {st st' : ProverState F} {v : val}
+    (h : compute.run st.env = .ok v)
+    (hcheck : Runs (CheckedType.check (c := c) (val := val)
+        (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
+      (st.alloc (inst.valueToFields v)) PUnit.unit st') :
+    Runs (witness (c := c) (val := val) compute) st
+      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) st' := by
+  show prove _ st.nv st.env = _
+  simp only [witness, prove, AsProver.map_eq, AsProver.run_bind, h, Except.bind,
+    AsProver.run_pure, prove_bind]
+  rw [show prove (CheckedType.check (c := c) (val := val)
+      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
+      (st.nv + inst.size) (st.env.extendList st.nv (inst.valueToFields v).toList)
+      = .ok (st'.out PUnit.unit) from hcheck]
 
 /-- The witness leaf's completeness law — the one place the representation stack is
 crossed. A witness computation that runs to a value yields a run to the allocated
@@ -332,12 +348,15 @@ theorem witness_complete [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     simp only [getElem_mapVec, getElem_allocRange, CVar.val, ProverState.get_alloc]
     simp [Assignments.get, Assignments.extendList_get
       (show i < (inst.valueToFields v).toList.length by simpa using hi)]
-  refine ⟨_, st.alloc (inst.valueToFields v), by rw [Runs, prove_witness, h]; rfl, ?_,
-    Nat.le_add_right .., st.le_alloc _, hscope, hreads⟩
+  obtain ⟨st', hcheck⟩ :=
+    CheckedType.check_runs (c := c) (val := val) (st.alloc (inst.valueToFields v))
+      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)))
+  have hrun := runs_witness compute h hcheck
+  refine ⟨_, st', hrun, ?_, hrun.nv_le, hrun.le,
+    hscope.mono hcheck.nv_le, hreads.of_le hscope hcheck.le⟩
   intro stf hnv' hle' con hcon
   simp only [witness, build, build_bind, List.append_nil] at hcon
-  exact CheckedType.check_sat (st.alloc (inst.valueToFields v)) stf _ _ v hle' hscope hreads
-    con hcon
+  exact CheckedType.check_sat _ v hcheck hnv' hle' hscope hreads con hcon
 
 end Combinators
 

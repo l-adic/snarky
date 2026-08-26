@@ -99,8 +99,8 @@ instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSyste
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs _ _ _ := rfl
-  check_sat _ _ _ _ _ _ _ _ con hcon := by simp [build] at hcon
+  check_runs st _ := ⟨st, rfl⟩
+  check_sat _ _ _ _ _ _ _ := Sat.pure
 
 /-- The Poseidon permutation gadget (PS `poseidon`): one bulk witness of the round
 outputs, one block constraint over the 56 chained states at `p`'s data, the last

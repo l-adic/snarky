@@ -571,6 +571,20 @@ theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : CircuitM F c 
 theorem Runs.addConstraint {con : c} {st : ProverState F} :
     Runs (Snarky.addConstraint con) st PUnit.unit st := rfl
 
+/-- A sequence's run splits at the bind: the head reaches some intermediate state and
+the tail runs from there — the inverse of `Runs.bind`. A caller holding only the whole
+run recovers the pieces, which is what a check that allocates its own auxiliaries needs
+of its factors. -/
+theorem Runs.bind_inv {β : Type v} {g : CircuitM F c α} {k : α → CircuitM F c β}
+    {st st₂ : ProverState F} {b : β} (h : Runs (g >>= k) st b st₂) :
+    ∃ (a : α) (st₁ : ProverState F), Runs g st a st₁ ∧ Runs (k a) st₁ b st₂ := by
+  rw [Runs, prove_bind] at h
+  rcases hg : prove g st.nv st.env with e | p
+  · rw [hg] at h
+    exact absurd h (by simp [Except.bind])
+  · rw [hg] at h
+    exact ⟨p.result, ⟨p.nextVar, p.assignments, prove_dom st.dom hg⟩, hg, h⟩
+
 /-- `pure` emits no rows. -/
 theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F} :
     Sat (pure a : CircuitM F c α) st stf := by

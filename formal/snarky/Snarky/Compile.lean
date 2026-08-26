@@ -112,8 +112,13 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       Reads env.get (compile (a := a) (b := b) main).result.2 outVal := by
   have hav := scoped_inputVar (F := F) (avar := avar) input
   have hrv := reads_inputVar (F := F) (avar := avar) input
-  -- the body
-  obtain ⟨out, st₁, hrun₁, hsat₁, hscope₁, v, hreads₁⟩ := hmain _ ⟨hav, hrv⟩
+  -- the input bundle's check, which may allocate auxiliaries of its own
+  obtain ⟨st₀, hcheck⟩ :=
+    CheckedType.check_runs (c := c) (val := a) (seed (F := F) (avar := avar) input)
+      (inputVar (F := F) (a := a))
+  -- the body, from where the check left off
+  obtain ⟨out, st₁, hrun₁, hsat₁, hscope₁, v, hreads₁⟩ :=
+    hmain st₀ ⟨hav.mono hcheck.nv_le, hrv.of_le hav hcheck.le⟩
   -- the public bundle
   obtain ⟨pub, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscopeP, hreadsP⟩ :=
     witness_complete (c := c) (val := UnChecked b)
@@ -130,9 +135,6 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     assertEq_complete (c := c) (val := b) out pub.val v st₂
       ⟨Scoped.mono hnv₂ hscope₁, hscopeP', hreads₁.of_le hscope₁ hle₂, hreadsP'⟩
   -- the whole run
-  have hcheck : Runs (CheckedType.check (c := c) (val := a) (inputVar (F := F) (a := a)))
-      (seed (F := F) (avar := avar) input) PUnit.unit (seed (F := F) (avar := avar) input) :=
-    CheckedType.check_runs _ _ _
   have hrun : Runs (compileBody (a := a) (b := b) main)
       (seed (F := F) (avar := avar) input) (out, pub.val) st₃ :=
     hcheck.bind (hrun₁.bind (hrun₂.bind (hrun₃.bind rfl)))
@@ -151,7 +153,9 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     rw [readVar_run hout,
       (reads_iff.mp ((hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃)).2]
   · exact Sat.bind hcheck
-      (fun con hcon => CheckedType.check_sat _ _ _ _ input hrun.le hav hrv con hcon)
+      (CheckedType.check_sat _ input hcheck
+        (hrun₁.nv_le.trans (hnv₂.trans hrun₃.nv_le))
+        (hrun₁.le.trans (hle₂.trans hle₃)) hav hrv)
       (Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hle₃))
         (Sat.bind hrun₂ (hsat₂ hrun₃.nv_le hle₃)
           (Sat.bind hrun₃ (hsat₃ (Nat.le_refl _) (Assignments.Le.refl _)) Sat.pure)))

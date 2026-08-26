@@ -64,8 +64,8 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs _ _ _ := rfl
-  check_sat _ _ _ _ _ _ _ _ con hcon := by simp [build] at hcon
+  check_runs st _ := ⟨st, rfl⟩
+  check_sat _ _ _ _ _ _ _ := Sat.pure
 
 /-- A point bundle is in scope when its coordinates are. -/
 @[simp] theorem scoped_affinePoint {st : ProverState F} {p : AffinePoint (FVar F)} :
