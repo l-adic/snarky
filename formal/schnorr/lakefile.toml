@@ -1,0 +1,27 @@
+name = "schnorr"
+# Share the aggregator workspace's dependency checkouts (one Mathlib for every
+# package workspace — the editor opens files with the package as the root).
+packagesDir = "../.lake/packages"
+defaultTargets = ["Schnorr"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's root.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Schnorr"]
+
+# The verifier-faithfulness exemplar: a wire-protocol verifier (Schnorr identification
+# over Vesta, Poseidon endo-challenges) and its in-circuit implementation at the snarky
+# kimchi backend, with the sound/complete laws tying the two — the pickles endgame
+# rehearsed at the smallest statement that exercises every seam. Deliberately NOT a PS
+# port: this package is about the proof architecture, and carries no byte-parity
+# obligation.
+
+[[require]]
+name = "snarky"
+path = "../snarky"
+
+[[require]]
+name = "poseidon"
+path = "../poseidon"
+
+[[lean_lib]]
+name = "Schnorr"
+globs = ["Schnorr", "Schnorr.+"]

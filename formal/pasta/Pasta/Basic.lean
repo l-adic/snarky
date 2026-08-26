@@ -65,20 +65,50 @@ theorem toPt_ofPt {F : Type*} [Field F] [DecidableEq F] {a b : F} (hb : b ≠ 0)
   | zero => exact toPt_zero hb
   | some x y h => exact toPt_some (equation_toW.mp h.left)
 
-/-- `SWPoint E` is equivalent to Mathlib's affine point group `Point (toW E.A E.B)`, via the
-coordinate transport `toPt` / `ofPt`. -/
+/-- `SWPoint E` is additively equivalent to Mathlib's affine point group
+`Point (toW E.A E.B)`, via the coordinate transport `toPt` / `ofPt`; `toPt_add` carries
+the group structure across. -/
 noncomputable def SWPoint.equivPoint {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
-    SWPoint E ≃ Point (toW E.A E.B) :=
+    SWPoint E ≃+ Point (toW E.A E.B) :=
   haveI := instIsElliptic E
   { toFun := fun P => toPt E.A E.B (P.x, P.y)
     invFun := fun Q => ⟨(ofPt Q).1, (ofPt Q).2, valid_ofPt Q⟩
     left_inv := fun P => SWPoint.ext_pair (ofPt_toPt E.B_nonzero P.onCurve)
-    right_inv := fun Q => toPt_ofPt E.B_nonzero Q }
+    right_inv := fun Q => toPt_ofPt E.B_nonzero Q
+    map_add' := fun P Q => toPt_add E.B_nonzero P.onCurve Q.onCurve }
 
 /-- The order counted on `SWPoint E` equals Mathlib's `Nat.card` of the affine point group. -/
 theorem SWPoint.card_eq_point {F : Type*} [Field F] [DecidableEq F] (E : SWCurve F) :
     Nat.card (SWPoint E) = Nat.card (Point (toW E.A E.B)) :=
-  Nat.card_congr (SWPoint.equivPoint E)
+  Nat.card_congr (SWPoint.equivPoint E).toEquiv
+
+/-- A nonzero point's coordinates are on the curve: the `𝒪` sentinel `(0, 0)` is the only
+valid off-curve pair. -/
+theorem SWPoint.onCurve_of_ne_zero {F : Type*} [Field F] {E : SWCurve F} {P : SWPoint E}
+    (h : P ≠ 0) : OnCurve E.A E.B (P.x, P.y) := by
+  rcases P.onCurve with hc | h0
+  · exact hc
+  · exact absurd (SWPoint.ext_pair (Q := 0) h0) h
+
+/-- An on-curve pair is a nonzero point: the `𝒪` sentinel `(0, 0)` is off every curve
+(`B ≠ 0`) — the converse of `onCurve_of_ne_zero`. -/
+theorem SWPoint.mk_ne_zero {F : Type*} [Field F] {E : SWCurve F} {x y : F}
+    (h : OnCurve E.A E.B (x, y)) : (⟨x, y, Or.inl h⟩ : SWPoint E) ≠ 0 := by
+  intro h0
+  have hx : x = 0 := (congrArg SWPoint.x h0).trans rfl
+  have hy : y = 0 := (congrArg SWPoint.y h0).trans rfl
+  subst hx
+  subst hy
+  simp only [OnCurve] at h
+  exact E.B_nonzero (by simpa using h.symm)
+
+/-- At on-curve coordinates `equivPoint` lands on `Point.some` at the same pair —
+with `onCurve_of_ne_zero`, the reading of any nonzero `SWPoint` into the gate
+theorems' vocabulary. -/
+theorem SWPoint.equivPoint_eq_some {F : Type*} [Field F] [DecidableEq F] {E : SWCurve F}
+    (P : SWPoint E) (h : OnCurve E.A E.B (P.x, P.y)) :
+    SWPoint.equivPoint E P = Point.some P.x P.y (nonsingular_toW h) :=
+  toPt_some h
 
 end CompElliptic.CurveForms.ShortWeierstrass
 
@@ -147,6 +177,19 @@ instance pallasPointModule : Module Fq (SWPoint pallasCurve) :=
 executable verifiers compute with. -/
 theorem vesta_smul_val (z : Fp) (P : SWPoint vestaCurve) : z • P = z.val • P :=
   rfl
+
+/-- The same action on Mathlib's carrier, where the gate theorems live: `equivPoint`
+transports the module structure. -/
+instance vestaAffineModule : Module Fp vestaCurve.toAffine.Point :=
+  AddCommGroup.zmodModule fun Q => by
+    rw [← (SWPoint.equivPoint vestaCurve).apply_symm_apply Q, ← map_nsmul, ← Vesta.card_eq,
+      card_nsmul_eq_zero', map_zero]
+
+/-- `equivPoint` respects the scalar action: both carriers act by the canonical
+representative. -/
+theorem vesta_equivPoint_smul (z : Fp) (P : SWPoint vestaCurve) :
+    SWPoint.equivPoint vestaCurve (z • P) = z • SWPoint.equivPoint vestaCurve P :=
+  map_nsmul _ _ _
 
 /-- The Pallas twin of `vesta_smul_val`. -/
 theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=

@@ -1,0 +1,32 @@
+-- The schnorr exemplar's API manifest: the wire protocol. One name per line;
+-- `--` comments and blanks ignored. The deadcode gate walks reachability from the
+-- union of the packages' manifests.
+
+-- The wire protocol (Schnorr/Wire.lean): the generator, the statement, the
+-- challenge derivation, and the verifier — the specification the circuit-level
+-- laws terminate at.
+Schnorr.gen
+Schnorr.Statement
+Schnorr.Statement.equivProd_apply
+Schnorr.Statement.equivProd_symm_apply
+Schnorr.instStatementCircuitType
+Schnorr.transcriptHash
+Schnorr.preChallenge
+Schnorr.challenge
+Schnorr.verify
+Schnorr.verify_iff
+Schnorr.completeness
+
+-- The in-circuit verifier (Schnorr/Circuit.lean): the statement's derived check and
+-- the whole verifier, stage for stage against `verify`.
+Schnorr.verifyCircuit
+
+-- The circuit laws (Schnorr/Laws.lean): the endpoint pair at the deployed Vesta
+-- dictionaries.
+Schnorr.verifyCircuit_spec
+Schnorr.verifyCircuit_complete_spec
+
+-- The CS-satisfaction boundary (Schnorr/Boundary.lean): the fragment seam — the
+-- endpoint pair packaged through the whole-circuit compile/solve pipeline.
+Schnorr.verifyCircuit_compile_sound
+Schnorr.complete
