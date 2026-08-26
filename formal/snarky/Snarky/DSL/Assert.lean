@@ -41,7 +41,8 @@ open Std.Do in
 its row is satisfied — the unequal-constant arm is unreachable. -/
 theorem assertEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (v : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x v ∧ CircuitType.ReadsAs (val := F) st y v)
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x v ∧
+      CircuitType.ReadsAs (val := F) st y v)
       (assertEqual (c := c) x y) (fun _ _ => True) := by
   rintro st ⟨hx, hy⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
@@ -135,7 +136,8 @@ open Std.Do in
 theorem assertNotEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
     (hne : xv ≠ yv) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st y yv)
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
+      CircuitType.ReadsAs (val := F) st y yv)
       (assertNotEqual (c := c) x y) (fun _ _ => True) := by
   rintro st ⟨hx, hy⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
@@ -170,7 +172,8 @@ open Std.Do in
 theorem assertSquare_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
     (hxy : xv * xv = yv) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st y yv)
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
+      CircuitType.ReadsAs (val := F) st y yv)
       (assertSquare (c := c) x y) (fun _ _ => True) := by
   rintro st ⟨hx, hy⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
@@ -323,7 +326,8 @@ operand to read `1`. -/
   simp only [CVar.val, Function.comp_def] at h
   rw [sum_of_bits _ hbits'] at h
   have hle : (bs.map fun (b : BoolVar F) => (↑b : CVar F).val V).count 1 ≤ bs.length + 1 := by
-    have := List.count_le_length (a := (1 : F)) (l := bs.map fun (b : BoolVar F) => (↑b : CVar F).val V)
+    have := List.count_le_length (a := (1 : F))
+      (l := bs.map fun (b : BoolVar F) => (↑b : CVar F).val V)
     simp only [List.length_map] at this
     omega
   exact hchar _ 1 hle (by omega) (by simpa using h)
@@ -412,7 +416,8 @@ reads the length and `assertEqual`'s law applies. -/
 theorem assertAll_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (bs : List (BoolVar F))
     (f : BoolVar F → Bool) :
-    Complete (fun st => (∀ b ∈ bs, CircuitType.ReadsAs (val := Bool) st b (f b)) ∧ ∀ b ∈ bs, f b = true)
+    Complete (fun st => (∀ b ∈ bs, CircuitType.ReadsAs (val := Bool) st b (f b)) ∧
+      ∀ b ∈ bs, f b = true)
       (assertAll (c := c) bs) (fun _ _ => True) := by
   rintro st ⟨hR, hft⟩
   have h : ∀ b ∈ bs, (↑b : CVar F).Scoped st ∧

@@ -889,19 +889,22 @@ private theorem grants_fin [Field F] [DecidableEq F] (eb : F) (t : AffinePoint (
       rfl
     have hmx : mid.1.x.val stf.env.get
         = (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
-            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs 0).xS := by
+            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get)
+              bs 0).xS := by
       rw [← hrow]
       show _ = r.s.x.val stf.env.get
       rw [hrs]
     have hmy : mid.1.y.val stf.env.get
         = (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
-            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs 0).yS := by
+            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get)
+              bs 0).yS := by
       rw [← hrow]
       show _ = r.s.y.val stf.env.get
       rw [hrs]
     have hmn : mid.2.val stf.env.get
         = (Kimchi.Gate.EndoMul.chainBuild eb (t.x.val stf.env.get) (t.y.val stf.env.get)
-            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get) bs 0).nPrime := by
+            (acc.1.x.val stf.env.get) (acc.1.y.val stf.env.get) (acc.2.val stf.env.get)
+              bs 0).nPrime := by
       rw [← hrow]
       show _ = r.nAccNext.val stf.env.get
       rw [hrnn]
@@ -976,7 +979,8 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat sv < 4 ^ (2 * rounds)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st t.x xv ∧ CircuitType.ReadsAs (val := F) st t.y yv ∧
+      (fun st => CircuitType.ReadsAs (val := F) st t.x xv ∧
+        CircuitType.ReadsAs (val := F) st t.y yv ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
       (fun r st' => r.x.Scoped st' ∧ r.y.Scoped st' ∧

@@ -457,9 +457,12 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
       st5 ⟨hT4Alpha, RC _ _⟩
   have hT2Fu := hT2Fu.mono hrun6.nv_le hrun6.le
   have hAlpha := hAlpha.mono hrun6.nv_le hrun6.le
-  have hX1 : CircuitType.ReadsAs (val := F) st6 ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1) (potentialXs params tv).1 := by
+  have hX1 : CircuitType.ReadsAs (val := F)
+    st6 ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1) (potentialXs params tv).1 := by
     simpa [potentialXs] using RS hTemp1 (a := params.sqrtNeg3U2MinusUOver2)
-  have hX2 : CircuitType.ReadsAs (val := F) st6 ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)) (potentialXs params tv).2.1 := by
+  have hX2 : CircuitType.ReadsAs (val := F)
+    st6 ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
+      (potentialXs params tv).2.1 := by
     simpa [potentialXs] using RS hX1 (a := -params.u)
   obtain ⟨t2Inv, st7, hrun7, hsat7, hT2Inv⟩ :=
     mul_complete (c := c) alpha (t2.add_ (CVar.const params.fu))
@@ -483,11 +486,13 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hX2 := hX2.mono hrun9.nv_le hrun9.le
   obtain ⟨temp2, st10, hrun10, hsat10, hTemp2⟩ :=
     mul_complete (c := c) temp2a (CVar.const params.inv3U2)
-      (((tv * tv + params.fu) * (tv * tv + params.fu)) * ((1 / ((tv * tv + params.fu) * (tv * tv))) * (tv * tv + params.fu))) params.inv3U2
+      (((tv * tv + params.fu) * (tv * tv + params.fu)) * ((1 / ((tv * tv + params.fu) * (tv * tv)))
+        * (tv * tv + params.fu))) params.inv3U2
       st9 ⟨hTemp2a, RC _ _⟩
   have hX1 := hX1.mono hrun10.nv_le hrun10.le
   have hX2 := hX2.mono hrun10.nv_le hrun10.le
-  have hX3 : CircuitType.ReadsAs (val := F) st10 ((CVar.const params.u).sub_ temp2) (potentialXs params tv).2.2 := by
+  have hX3 : CircuitType.ReadsAs (val := F) st10 ((CVar.const params.u).sub_ temp2)
+    (potentialXs params tv).2.2 := by
     simpa [potentialXs] using RS hTemp2 (a := params.u)
   obtain ⟨y1Sq, st11, hrun11, hsat11, hY1Sq⟩ :=
     ySquared_complete (c := c) params ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)
@@ -506,7 +511,8 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   obtain ⟨y1, b1⟩ := sf1
   obtain ⟨hB1, hRoot1⟩ := hSf1
   obtain ⟨y2Sq, st13, hrun13, hsat13, hY2Sq⟩ :=
-    ySquared_complete (c := c) params ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
+    ySquared_complete (c := c)
+      params ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
       (potentialXs params tv).2.1
       st12 hX2
   have hX1 := hX1.mono hrun13.nv_le hrun13.le
@@ -552,7 +558,9 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   obtain ⟨u17, st17, hrun17, hsat17, -⟩ :=
     assertNonZero_complete (c := c)
       (((↑b1 : CVar F).add_ (↑b2 : CVar F)).add_ (↑b3 : CVar F))
-      (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome + bit (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome + bit (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)
+      (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome + bit (sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome + bit (sqrtF (ySquared params (potentialXs params
+          tv).2.2)).isSome)
       (flagSum h2 h3 _ _ _ hsome) st16
       (RB (RB (RCoe hB1) (RCoe hB2)) (RCoe hB3))
   have hX1 := hX1.mono hrun17.nv_le hrun17.le
@@ -567,7 +575,8 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hNB1 := RNot hB1
   have hNB2 := RNot hB2
   obtain ⟨x2First, st18, hrun18, hsat18, hX2First⟩ :=
-    and_complete (c := c) (Snarky.not b1) b2 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
+    and_complete (c := c) (Snarky.not b1)
+      b2 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
       ((sqrtF (ySquared params (potentialXs params tv).2.1)).isSome)
       st17 ⟨hNB1, hB2⟩
   have hX1 := hX1.mono hrun18.nv_le hrun18.le
@@ -582,7 +591,8 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hNB1 := hNB1.mono hrun18.nv_le hrun18.le
   have hNB2 := hNB2.mono hrun18.nv_le hrun18.le
   obtain ⟨nb2AndB3, st19, hrun19, hsat19, hNB2AndB3⟩ :=
-    and_complete (c := c) (Snarky.not b2) b3 (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome)
+    and_complete (c := c) (Snarky.not b2)
+      b3 (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome)
       ((sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)
       st18 ⟨hNB2, hB3⟩
   have hX1 := hX1.mono hrun19.nv_le hrun19.le
@@ -595,8 +605,10 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hNB1 := hNB1.mono hrun19.nv_le hrun19.le
   have hX2First := hX2First.mono hrun19.nv_le hrun19.le
   obtain ⟨x3First, st20, hrun20, hsat20, hX3First⟩ :=
-    and_complete (c := c) (Snarky.not b1) nb2AndB3 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
-      (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)
+    and_complete (c := c) (Snarky.not b1)
+      nb2AndB3 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
+      (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params
+        (potentialXs params tv).2.2)).isSome)
       st19 ⟨hNB1, hNB2AndB3⟩
   have hX1 := hX1.mono hrun20.nv_le hrun20.le
   have hX2 := hX2.mono hrun20.nv_le hrun20.le
@@ -608,8 +620,11 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hX2First := hX2First.mono hrun20.nv_le hrun20.le
   obtain ⟨t3y, st21, hrun21, hsat21, hT3y⟩ :=
     mul_complete (c := c) (↑x3First : CVar F) y3
-      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)))
-      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome then ySquared params (potentialXs params tv).2.2
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (!(sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params
+          tv).2.2)).isSome)))
+      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome then ySquared params
+        (potentialXs params tv).2.2
         else params.nonResidue * ySquared params (potentialXs params tv).2.2)).getD 0)
       st20 ⟨RCoe hX3First, hRoot3⟩
   have hX1 := hX1.mono hrun21.nv_le hrun21.le
@@ -623,8 +638,10 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hX3First := hX3First.mono hrun21.nv_le hrun21.le
   obtain ⟨t2y, st22, hrun22, hsat22, hT2y⟩ :=
     mul_complete (c := c) (↑x2First : CVar F) y2
-      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome))
-      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome then ySquared params (potentialXs params tv).2.1
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome))
+      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome then ySquared params
+        (potentialXs params tv).2.1
         else params.nonResidue * ySquared params (potentialXs params tv).2.1)).getD 0)
       st21 ⟨RCoe hX2First, hRoot2⟩
   have hX1 := hX1.mono hrun22.nv_le hrun22.le
@@ -640,7 +657,8 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   obtain ⟨t1y, st23, hrun23, hsat23, hT1y⟩ :=
     mul_complete (c := c) (↑b1 : CVar F) y1
       (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome)
-      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).1)).isSome then ySquared params (potentialXs params tv).1
+      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).1)).isSome then ySquared params
+        (potentialXs params tv).1
         else params.nonResidue * ySquared params (potentialXs params tv).1)).getD 0)
       st22 ⟨RCoe hB1, hRoot1⟩
   have hX1 := hX1.mono hrun23.nv_le hrun23.le
@@ -656,7 +674,9 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hT2y := hT2y.mono hrun23.nv_le hrun23.le
   obtain ⟨t3x, st24, hrun24, hsat24, hT3x⟩ :=
     mul_complete (c := c) (↑x3First : CVar F) ((CVar.const params.u).sub_ temp2)
-      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)))
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (!(sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params
+          tv).2.2)).isSome)))
       (potentialXs params tv).2.2
       st23 ⟨RCoe hX3First, hX3⟩
   have hX1 := hX1.mono hrun24.nv_le hrun24.le
@@ -672,8 +692,10 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hT2y := hT2y.mono hrun24.nv_le hrun24.le
   have hT1y := hT1y.mono hrun24.nv_le hrun24.le
   obtain ⟨t2x, st25, hrun25, hsat25, hT2x⟩ :=
-    mul_complete (c := c) (↑x2First : CVar F) ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
-      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome))
+    mul_complete (c := c) (↑x2First : CVar F)
+      ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome))
       (potentialXs params tv).2.1
       st24 ⟨RCoe hX2First, hX2⟩
   have hX1 := hX1.mono hrun25.nv_le hrun25.le
@@ -760,7 +782,11 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have N1 : st1.nv ≤ st26.nv := Nat.le_trans hrun2.nv_le N2
   have L1 : st1.env.Le st26.env := hrun2.le.trans L2
   refine ⟨⟨(t1x.add_ t2x).add_ t3x, (t1y.add_ t2y).add_ t3y⟩, st26, ?_, ?_, ?_, ?_⟩
-  · exact hrun1.bind (hrun2.bind (hrun3.bind (hrun4.bind (hrun5.bind (hrun6.bind (hrun7.bind (hrun8.bind (hrun9.bind (hrun10.bind (hrun11.bind (hrun12.bind (hrun13.bind (hrun14.bind (hrun15.bind (hrun16.bind (hrun17.bind (hrun18.bind (hrun19.bind (hrun20.bind (hrun21.bind (hrun22.bind (hrun23.bind (hrun24.bind (hrun25.bind (hrun26.bind rfl)))))))))))))))))))))))))
+  · exact hrun1.bind (hrun2.bind (hrun3.bind (hrun4.bind (hrun5.bind (hrun6.bind
+      (hrun7.bind (hrun8.bind (hrun9.bind (hrun10.bind (hrun11.bind (hrun12.bind
+      (hrun13.bind (hrun14.bind (hrun15.bind (hrun16.bind (hrun17.bind (hrun18.bind
+      (hrun19.bind (hrun20.bind (hrun21.bind (hrun22.bind (hrun23.bind (hrun24.bind
+      (hrun25.bind (hrun26.bind rfl)))))))))))))))))))))))))
   · intro stf hnv hle
     exact
       Sat.bind hrun1 (hsat1 (Nat.le_trans N1 hnv) (L1.trans hle)) (

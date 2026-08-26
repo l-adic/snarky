@@ -115,7 +115,8 @@ final table, and the result is scoped. -/
 theorem selectField_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : FVar F)
     (bb : Bool) (tv ev : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧ CircuitType.ReadsAs (val := F) st t tv ∧
+    Complete (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
+      CircuitType.ReadsAs (val := F) st t tv ∧
         CircuitType.ReadsAs (val := F) st e ev)
       (selectField (c := c) b t e)
       (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) := by
@@ -453,7 +454,8 @@ open Std.Do in
 result's booleanity. -/
 theorem and_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (ab bb : Bool) :
-    Complete (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧ CircuitType.ReadsAs (val := Bool) st b bb)
+    Complete (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧
+      CircuitType.ReadsAs (val := Bool) st b bb)
       (Snarky.and (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab && bb)) := by
   rintro st ⟨ha, hb⟩
@@ -502,7 +504,8 @@ open Std.Do in
 /-- `or`'s completeness law: `and`'s, on the negated operands, the result negated. -/
 theorem or_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (ab bb : Bool) :
-    Complete (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧ CircuitType.ReadsAs (val := Bool) st b bb)
+    Complete (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧
+      CircuitType.ReadsAs (val := Bool) st b bb)
       (Snarky.or (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab || bb)) := by
   rintro st ⟨ha, hb⟩
@@ -937,7 +940,8 @@ every operand reads `1`. -/
 `equals`'s over the scoped bit-sum. -/
 theorem all_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (xs : List (BoolVar F))
-    (f : BoolVar F → Bool) (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k → j = k) :
+    (f : BoolVar F → Bool) (hchar : ∀ j k : Nat, j ≤ xs.length → k ≤ xs.length → (j : F) = k →
+      j = k) :
     Complete (fun st => ∀ b ∈ xs, CircuitType.ReadsAs (val := Bool) st b (f b))
       (Snarky.all (c := c) xs)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (xs.all f)) := by

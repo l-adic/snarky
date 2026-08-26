@@ -343,9 +343,11 @@ table, and the sealed point is scoped and reads as the operand. -/
 theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) (xv yv : F) :
     Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := F) st p.x xv ∧ CircuitType.ReadsAs (val := F) st p.y yv)
+      (fun st => CircuitType.ReadsAs (val := F) st p.x xv ∧
+        CircuitType.ReadsAs (val := F) st p.y yv)
       (sealPoint (c := c) p)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r.x xv ∧ CircuitType.ReadsAs (val := F) st' r.y yv) := by
+      (fun r st' => CircuitType.ReadsAs (val := F) st' r.x xv ∧
+        CircuitType.ReadsAs (val := F) st' r.y yv) := by
   rintro st ⟨hx, hy⟩
   obtain ⟨ry, st₁, hrunY, hsatY, hry⟩ := sealVar_complete (c := c) p.y yv st hy
   obtain ⟨rx, st₂, hrunX, hsatX, hrx⟩ :=

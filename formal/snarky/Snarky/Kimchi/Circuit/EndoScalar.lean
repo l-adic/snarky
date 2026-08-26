@@ -496,7 +496,8 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) (sv ev : F)
     (hlt : ToNat.toNat sv < 4 ^ (8 * rows)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧ CircuitType.ReadsAs (val := F) st endo ev)
+      (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧
+        CircuitType.ReadsAs (val := F) st endo ev)
       (toField (c := KimchiConstraint F) rows scalar endo)
       (fun r st' => CircuitType.ReadsAs (val := F) st' r (Kimchi.Gate.EndoScalar.toField
           (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) ev)) := by

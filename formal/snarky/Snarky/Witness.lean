@@ -93,7 +93,8 @@ instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
   check p := do
     CheckedType.check (c := c) (val := a) p.1
     CheckedType.check (c := c) (val := b) p.2
-  post V p := CheckedType.post (c := c) (val := a) V p.1 ∧ CheckedType.post (c := c) (val := b) V p.2
+  post V p := CheckedType.post (c := c) (val := a) V p.1 ∧
+    CheckedType.post (c := c) (val := b) V p.2
   check_sound V p nv hsat := by
     simp only [build_bind] at hsat
     exact ⟨CheckedType.check_sound V p.1 nv fun con h => hsat con (List.mem_append_left _ h),
@@ -133,7 +134,8 @@ variable [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] [CircuitType F a va]
 
 private theorem checkAll_sound [ConstraintHolds F c] [LawfulBasicSystem F c] (V : Valuation F) :
     ∀ (l : List va) (nv : Nat),
-      (∀ con ∈ (build (checkAll (F := F) (c := c) (a := a) l) nv).constraints, ConstraintHolds.Holds V con) →
+      (∀ con ∈ (build (checkAll (F := F) (c := c) (a := a) l) nv).constraints,
+        ConstraintHolds.Holds V con) →
       ∀ v ∈ l, CheckedType.post (c := c) (val := a) V v
   | [], _, _, _, h => nomatch h
   | v :: l, nv, hsat, w, hw => by

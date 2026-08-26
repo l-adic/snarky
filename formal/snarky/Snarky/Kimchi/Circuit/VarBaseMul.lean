@@ -931,7 +931,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
+        CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' =>
@@ -1236,7 +1237,8 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
+        CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' => OnCurve d.W st' r
@@ -1379,7 +1381,8 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
+        CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st sDiv2 sv ∧ CircuitType.ReadsAs (val := Bool) st sOdd bb)
       (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
       (fun r st' => OnCurve d.W st' r
@@ -1712,7 +1715,8 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat (splitField sval).1 : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧ CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
+        CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st s sval)
       (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base s)
       (fun r st' => OnCurve d.W st' r

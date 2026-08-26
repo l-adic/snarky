@@ -228,7 +228,8 @@ scoped — `inv`'s and `mul`'s laws composed, neither reopened. -/
 theorem div_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
     (hne : yv ≠ 0) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st y yv)
+    Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
+      CircuitType.ReadsAs (val := F) st y yv)
       (div (c := c) x y) (fun a st' => CircuitType.ReadsAs (val := F) st' a (xv / yv)) := by
   rintro st ⟨hx, hy⟩
   simp only [div]
@@ -364,7 +365,8 @@ open Std.Do in
 /-- `equals`'s completeness law: `isZero`'s, at the difference. -/
 theorem equals_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (av bv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧ CircuitType.ReadsAs (val := F) st b bv)
+    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧
+      CircuitType.ReadsAs (val := F) st b bv)
       (equals (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (decide (av = bv))) := by
   rintro st ⟨ha, hb⟩
@@ -416,7 +418,8 @@ open Std.Do in
 /-- `neq`'s completeness law: `equals`'s run, its bit negated. -/
 theorem neq_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : FVar F) (av bv : F) :
-    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧ CircuitType.ReadsAs (val := F) st b bv)
+    Complete (fun st => CircuitType.ReadsAs (val := F) st a av ∧
+      CircuitType.ReadsAs (val := F) st b bv)
       (neq (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (!decide (av = bv))) := by
   rintro st ⟨ha, hb⟩

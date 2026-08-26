@@ -66,7 +66,8 @@ theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat 
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F))
     (vv ev : F) (hfits : ToNat.toNat vv < 2 ^ 128) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st v.val vv ∧ CircuitType.ReadsAs (val := F) st endo ev)
+      (fun st => CircuitType.ReadsAs (val := F) st v.val vv ∧
+        CircuitType.ReadsAs (val := F) st endo ev)
       (rangeCheck128 (c := KimchiConstraint F) endo v)
       (fun _ _ => True) := by
   intro st hpre
@@ -163,7 +164,8 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
   have hRx' := hRx
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRx'
   obtain ⟨hscx, hvx⟩ := hRx'
-  have hsplit : xv = ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) + 2 ^ 128 * ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
+  have hsplit : xv =
+      ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) + 2 ^ 128 * ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
     have hmd := Nat.mod_add_div (ToNat.toNat xv) (2 ^ 128)
     calc xv = ((ToNat.toNat xv : ℕ) : F) := (LawfulToNat.cast_toNat xv).symm
       _ = ((ToNat.toNat xv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128) : ℕ) : F) := by
@@ -181,7 +183,8 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
   simp only [lowest128Bits']
   obtain ⟨lohi, st₁, hrun₁, hsat₁, hnv₁, hle₁, hsc₁, hrd₁⟩ :=
     witness_complete (c := KimchiConstraint F) (val := UnChecked (F × F))
-      (UnChecked.mk <$> lowestWit x) (st := st) (v := ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩)
+      (UnChecked.mk <$> lowestWit x) (st := st)
+      (v := ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩)
       (by
         simp only [lowestWit, AsProver.map_eq, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hscx, hvx, Except.bind]

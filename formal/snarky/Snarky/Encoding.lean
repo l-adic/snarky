@@ -132,7 +132,8 @@ instance instCircuitTypeProd [CircuitType F a va] [CircuitType F b vb] :
     (CircuitType.fieldsToValue (splitVec f).1, CircuitType.fieldsToValue (splitVec f).2)
   varToFields p := CircuitType.varToFields (val := a) p.1 ++ CircuitType.varToFields (val := b) p.2
   fieldsToVar f :=
-    (CircuitType.fieldsToVar (val := a) (splitVec f).1, CircuitType.fieldsToVar (val := b) (splitVec f).2)
+    (CircuitType.fieldsToVar (val := a) (splitVec f).1, CircuitType.fieldsToVar (val := b)
+      (splitVec f).2)
   value_roundTrip p := by
     obtain ⟨x, y⟩ := p
     show (CircuitType.fieldsToValue (splitVec (CircuitType.valueToFields (F := F) x
