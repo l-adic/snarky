@@ -431,11 +431,32 @@ Snarky.instIfThenElsePoint
 Snarky.instLawfulIfThenElsePoint
 
 -- The shifted scalar carriers (Types/Shifted.lean): the wrappers the varBaseMul ladders
--- consume, with their decodes.
+-- consume, with their decodes, plus the deployed Pasta codec — an `Fp` scalar carried
+-- `Type1` in `Fq`, encoded by field arithmetic and decoded through the same `fromShifted`
+-- operator read over the integers. The `simps` projections are simp-set surface: simp
+-- applies them definitionally, so no proof term records them.
 Snarky.Type1
 Snarky.Type1.fromShifted
+Snarky.Type1.equivCarrier
+Snarky.Type1.equivCarrier_apply
+Snarky.Type1.equivCarrier_symm_apply
+Snarky.instCircuitTypeType1
+Snarky.Type1.toShifted
+Snarky.Type1.toScalarZ
+Snarky.Type1.toScalar
+Snarky.Type1.toScalar_toShifted
 Snarky.SplitField
 Snarky.SplitField.fromShifted
+
+-- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the phantom tag a
+-- statement carries where its wire refinement is a genuine curve point, with the Vesta
+-- instantiation and the encoding. The on-curve check is a gadget and is not here yet.
+Snarky.Kimchi.CurvePoint
+Snarky.Kimchi.CurvePoint.equivPoint
+Snarky.Kimchi.CurvePoint.equivPoint_apply
+Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
+Snarky.Kimchi.VestaPoint
+Snarky.Kimchi.instCurvePointCircuitType
 
 -- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
 -- union-find and the row/state types the reduction emits into. `egUF` is the
