@@ -13,6 +13,10 @@ range-checks the high half and — under `constrainLowBits` — the low one (OCa
 `squeeze_challenge` vs `squeeze_scalar`), pins the recombination, and returns the
 low half.
 
+One section per gadget: the definition, its soundness spec, its completeness law, and
+then the definition is sealed `irreducible`. The pure split stays transparent — the
+statements speak about it.
+
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS's type-level `FieldSizeInBits f 255` constraint renders as no hypothesis: the
   gadget emits the same ops at any field, and the laws carry the width facts they
@@ -28,6 +32,8 @@ open Snarky Std.Do
 
 variable {F c : Type}
 
+/-! ## The 128-bit range check -/
+
 /-- 128-bit range assert (PS `rangeCheck128`): the `toField` decomposition at 8 rows
 IS the check; the reconstruction result is discarded. -/
 def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
@@ -35,6 +41,53 @@ def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     CircuitM F c PUnit := do
   let _ ← EndoScalar.toField (c := c) 8 v.val endo
   pure ⟨⟩
+
+open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
+/-- **Soundness** (`rangeCheck128`): any satisfying valuation reads the operand as a
+natural below `2^128` — the value-level `SizedF` contract. -/
+theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F)) :
+    ⦃⌜True⌝⦄
+    rangeCheck128 (c := Builder V (KimchiConstraint F)) endo v
+    ⦃⇓ _ _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)⌝⦄ := by
+  have htf := EndoScalar.toField_spec (V := V) h2 h3 8 v.val endo
+  simp only [rangeCheck128]
+  mvcgen [htf]
+  rename_i _ _ hr
+  obtain ⟨crumbs, hvalid, hlen, -, hval⟩ := hr
+  obtain ⟨n, hlt, hcast⟩ := nReconstruct_lt h2 h3 crumbs hvalid
+  refine ⟨n, ?_, by rw [hval, hcast]⟩
+  calc n < 4 ^ crumbs.length := hlt
+    _ = 2 ^ 128 := by rw [hlen]; norm_num
+
+/-- **Completeness** (`rangeCheck128`): the honest run accepts on an operand that reads a
+value inside the tagged width. -/
+theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F))
+    (vv ev : F) (hfits : ToNat.toNat vv < 2 ^ 128) :
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => CircuitType.ReadsAs (val := F) st v.val vv ∧ CircuitType.ReadsAs (val := F) st endo ev)
+      (rangeCheck128 (c := KimchiConstraint F) endo v)
+      (fun _ _ => True) := by
+  intro st hpre
+  obtain ⟨r, st₁, hrun, hsat, -⟩ :=
+    EndoScalar.toField_complete h2 h3 8 v.val endo vv ev (by norm_num at hfits ⊢; exact hfits)
+      st hpre
+  exact ⟨⟨⟩, st₁, hrun.bind rfl, fun hnv hle =>
+    Sat.bind hrun (hsat hnv hle) Sat.pure, trivial⟩
+
+attribute [irreducible] rangeCheck128
+
+/-! ## The split
+
+The low half of a field element, with the high half range-checked and — under
+`constrainLowBits` — the low one too. `lowest128BitsPure` is the value the honest run
+lands on, so it stays transparent. -/
+
+/-- The pure split (PS `lowest128BitsPure`): the low half of the canonical
+representative. -/
+def lowest128BitsPure [Field F] [ToNat F] (x : F) : SizedF 128 F :=
+  ⟨((ToNat.toNat x % 2 ^ 128 : ℕ) : F)⟩
 
 /-- The split advice (PS's `exists` body): the value's canonical representative,
 split at `2^128` — low half first, matching OCaml's `Typ.(field * field)`. -/
@@ -56,40 +109,6 @@ def lowest128Bits' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     pure ⟨⟩
   assertEqual x (CVar.add_ lohi.val.1 (CVar.scale_ ((2 : F) ^ 128) lohi.val.2))
   pure ⟨lohi.val.1⟩
-
-/-- OCaml `squeeze_challenge`'s flavor: both halves checked (PS `lowest128Bits`). -/
-def lowest128Bits [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
-    [KimchiSystem F c] (endo x : FVar F) : CircuitM F c (SizedF 128 (FVar F)) :=
-  lowest128Bits' true endo x
-
-/-- The pure split (PS `lowest128BitsPure`): the low half of the canonical
-representative. -/
-def lowest128BitsPure [Field F] [ToNat F] (x : F) : SizedF 128 F :=
-  ⟨((ToNat.toNat x % 2 ^ 128 : ℕ) : F)⟩
-
-/-! ## Soundness
-
-The `EndoScalar` gate's register is the base-4 fold of 64 checked crumbs, so a satisfying
-valuation reads the operand as the cast of a natural below `4^64 = 2^128`
-(`nReconstruct_lt`) — the range fact, extracted with no fresh constraint content. -/
-
-open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
-/-- **Soundness** (`rangeCheck128`): any satisfying valuation reads the operand as a
-natural below `2^128` — the value-level `SizedF` contract. -/
-theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F)) :
-    ⦃⌜True⌝⦄
-    rangeCheck128 (c := Builder V (KimchiConstraint F)) endo v
-    ⦃⇓ _ _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)⌝⦄ := by
-  have htf := EndoScalar.toField_spec (V := V) h2 h3 8 v.val endo
-  simp only [rangeCheck128]
-  mvcgen [htf]
-  rename_i _ _ hr
-  obtain ⟨crumbs, hvalid, hlen, -, hval⟩ := hr
-  obtain ⟨n, hlt, hcast⟩ := nReconstruct_lt h2 h3 crumbs hvalid
-  refine ⟨n, ?_, by rw [hval, hcast]⟩
-  calc n < 4 ^ crumbs.length := hlt
-    _ = 2 ^ 128 := by rw [hlen]; norm_num
 
 open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
 /-- **Soundness** (`lowest128Bits'`): the operand reads as `lo + 2^128·hi` for the
@@ -127,29 +146,6 @@ theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F
     obtain ⟨ch, hvh, hlh, -, hnh⟩ := hhi
     exact ⟨lohi.val.2.val V, by rw [heq, CVar.val_add_, CVar.val_scale_],
       hrange _ ch hvh hlh hnh, fun hc => absurd hc hfalse⟩
-
-/-! ## Completeness
-
-`toField`'s honest run at the decomposition the value's own representative gives, once
-per half. What the caller owes is the width — the `SizedF` tag's promise — and, for the
-split, that the halves' representatives survive the cast (the round-trip `ToNat` alone
-does not give). -/
-
-/-- **Completeness** (`rangeCheck128`): the honest run accepts on an operand that reads a
-value inside the tagged width. -/
-theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo : FVar F) (v : SizedF 128 (FVar F))
-    (vv ev : F) (hfits : ToNat.toNat vv < 2 ^ 128) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st v.val vv ∧ CircuitType.ReadsAs (val := F) st endo ev)
-      (rangeCheck128 (c := KimchiConstraint F) endo v)
-      (fun _ _ => True) := by
-  intro st hpre
-  obtain ⟨r, st₁, hrun, hsat, -⟩ :=
-    EndoScalar.toField_complete h2 h3 8 v.val endo vv ev (by norm_num at hfits ⊢; exact hfits)
-      st hpre
-  exact ⟨⟨⟩, st₁, hrun.bind rfl, fun hnv hle =>
-    Sat.bind hrun (hsat hnv hle) Sat.pure, trivial⟩
 
 /-- **Completeness** (`lowest128Bits'`): the honest run accepts and the result reads the
 pure split's low half. The high half fits by hypothesis, and both halves' representatives
@@ -270,5 +266,19 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
     · exact Nat.le_trans hrun₃.nv_le hnv
     · exact hrun₃.le.trans hle
     · exact hRlo.mono (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hrun₃.le)
+
+attribute [irreducible] lowestWit lowest128Bits'
+
+/-! ## `lowest128Bits`
+
+OCaml's `squeeze_challenge` flavour: `lowest128Bits'` with the low half checked, so its
+laws are the section above's at `constrainLowBits := true`. -/
+
+/-- OCaml `squeeze_challenge`'s flavor: both halves checked (PS `lowest128Bits`). -/
+def lowest128Bits [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    [KimchiSystem F c] (endo x : FVar F) : CircuitM F c (SizedF 128 (FVar F)) :=
+  lowest128Bits' true endo x
+
+attribute [irreducible] lowest128Bits
 
 end Snarky.Kimchi
