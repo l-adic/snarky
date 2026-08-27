@@ -73,6 +73,17 @@ def takeVec {n : Nat} (k : Nat) (hk : k ≤ n) (v : Vector α n) : Vector α k :
     (hi : i < k) : (takeVec k hk v)[i] = v[i]'(Nat.lt_of_lt_of_le hi hk) := by
   simp [takeVec]
 
+@[simp] theorem toList_takeVec {n k : Nat} (hk : k ≤ n) (v : Vector α n) :
+    (takeVec k hk v).toList = v.toList.take k := by
+  apply List.ext_getElem
+  · simp [takeVec]
+    omega
+  · intro i h1 h2
+    simp only [List.getElem_take]
+    rw [show (takeVec k hk v).toList[i] = (takeVec k hk v)[i]'(by simpa using h1) from rfl,
+      getElem_takeVec]
+    simp
+
 /-- The inverse of `Vector.flatten`: cut an `n * s` vector into `n` pieces of `s`. -/
 def chunkVec {s n : Nat} (v : Vector α (n * s)) : Vector (Vector α s) n :=
   Vector.ofFn fun i => Vector.ofFn fun j => v[j.1 + s * i.1]'(by

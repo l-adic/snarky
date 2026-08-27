@@ -896,6 +896,8 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       ∃ bits : List F,
         (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
         bits = ((r.lsbBits.toList.take (5 * chunks)).reverse).map (·.val V) ∧
+        (∀ i (hi : i < 5 * chunks), (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 0 ∨
+          (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 1) ∧
         scalar.val.val V = Kimchi.Gate.VarBaseMul.bitsRegister bits ∧
         ∀ _ : d.LadderRegime (5 * chunks)
             (2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1),
@@ -937,8 +939,17 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       (Vector.ofFn fun j : Fin 5 =>
         ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
           (CVar.const 0))).length = chunks := by simp
-  refine ⟨VarBaseMul.roundBits V loop.1, hbool, ?_, hbits, ?_, ?_⟩
+  refine ⟨VarBaseMul.roundBits V loop.1, hbool, ?_, hbits, ?_, ?_, ?_⟩
   · rw [hlen, hpreflen]
+  · intro i hi
+    refine hbool _ ?_
+    rw [hbits]
+    refine List.mem_map.mpr ⟨bits[i]'(Nat.lt_of_lt_of_le hi hn), ?_, rfl⟩
+    rw [List.mem_reverse]
+    have hidx : (bits.toList.take (5 * chunks))[i]'(by simp; omega)
+        = bits[i]'(Nat.lt_of_lt_of_le hi hn) := by
+      simp [List.getElem_take]
+    exact hidx ▸ List.getElem_mem _
   · rw [← hpin, hreg]
   · intro hregime
     rw [hpreflen] at hpoint
@@ -1249,7 +1260,7 @@ theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   mvcgen [hvbm]
   rename_i r _ hr
   intro T hT
-  obtain ⟨bits, hbool, hlen, -, hreg, hpoint⟩ := hr T hT
+  obtain ⟨bits, hbool, hlen, -, -, hreg, hpoint⟩ := hr T hT
   obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
   refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, by rw [← hlen]; exact hlt, ?_, hpoint⟩
   rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
@@ -1324,7 +1335,7 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   case vc3.htwo => exact d.two_ne
   rename_i _ rvb _ hvb _ _ hpin0 q _ yr _ hyr xr _ hxr hadd
   intro T hT bb hbb
-  obtain ⟨bits, hbool, hlen, hbitsEq, hreg, hpoint⟩ := hvb T hT
+  obtain ⟨bits, hbool, hlen, hbitsEq, -, hreg, hpoint⟩ := hvb T hT
   obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
   -- the pinned high bits: the ladder's integer fits the split's width
   have hzeros : ∀ b ∈ bits.take (5 * chunks - sDiv2Bits), b = 0 := by
@@ -1795,18 +1806,31 @@ theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
       ∃ bits : List Fq,
         (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * 51 ∧
         bits = ((r.lsbBits.toList.take (5 * 51)).reverse).map (·.val V) ∧
+        (∀ i (hi : i < 5 * 51), (r.lsbBits[i]'(by omega)).val V = 0 ∨
+          (r.lsbBits[i]'(by omega)).val V = 1) ∧
         sv.val.val V = bitsRegister bits ∧
         ∀ _ : HasCurve.vesta.LadderRegime (5 * 51)
             (2 * bitsVal bits + 2 ^ (5 * 51) + 1),
           OnCurveAt HasCurve.vesta.W V r.g
             ((2 * bitsVal bits + 2 ^ (5 * 51) + 1) • T)) :
-    ∀ T : HasCurve.vesta.W.Point, OnCurveAt HasCurve.vesta.W V base T →
-      ∀ bs : Vector Bool 255,
-        (∀ i (hi : i < 255), (r.lsbBits[i]).val V = bit bs[i]) →
-        Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD →
-        OnCurveAt HasCurve.vesta.W V r.g (Z.toScalarZ • T) := by
-  intro T hT bs hbs hlt
-  obtain ⟨bits, hbval, hblen, hbeq, hpin, hact⟩ := h T hT
+    ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V base T →
+      (∀ bs : Vector Bool 255,
+        (∀ i (hi : i < 255), ((mapVec BoolVar.unchecked r.lsbBits)[i]).toCVar.val V
+          = bit bs[i]) → Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD) →
+      OnCurveAt Vesta.curve.toAffine V r.g (Z.toScalarZ • T) := by
+  intro T hT hlock
+  obtain ⟨bits, hbval, hblen, hbeq, hcell, hpin, hact⟩ := h T hT
+  -- the cells, decided as bits: the gate's rows make each one `0` or `1`
+  set bs : Vector Bool 255 :=
+    mapVec (fun cv : FVar Fq => decide (cv.val V = 1)) r.lsbBits with hbsdef
+  have hbs : ∀ i (hi : i < 255), (r.lsbBits[i]).val V = bit bs[i] := by
+    intro i hi
+    simp only [hbsdef, getElem_mapVec]
+    rcases hcell i (by omega) with h0 | h1
+    · simp [h0, bit]
+    · simp [h1, bit]
+  have hlt : Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD :=
+    hlock bs (fun i hi => by simpa using hbs i hi)
   -- the ladder's integer is the carrier's canonical representative
   have hdec : (bits.map fun b => decide (b = 1)).reverse = bs.toList := by
     rw [hbeq, List.map_map, ← List.map_reverse, List.reverse_reverse]
