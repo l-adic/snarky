@@ -1,4 +1,5 @@
--- The schnorr exemplar's API manifest: the wire protocol. One name per line;
+-- The schnorr exemplar's API manifest: the wire protocol and the canonical bit
+-- decomposition it derives its challenge through. One name per line;
 -- `--` comments and blanks ignored. The deadcode gate walks reachability from the
 -- union of the packages' manifests.
 
@@ -16,3 +17,19 @@ Schnorr.challenge
 Schnorr.verify
 Schnorr.verify_iff
 Schnorr.completeness
+
+-- The canonical unpack (Schnorr/UnpackFull.lean): OCaml `unpack_full` /
+-- `lt_bitstring_value` — the bits-below-the-modulus lock. The modulus as a bit pattern,
+-- the comparison against it with its law pair and value-level mirror, and the lock that
+-- packages the comparison with its assertion.
+Schnorr.modBitsMsb
+Schnorr.modBitsMsb_length
+Schnorr.ltPure
+Schnorr.ltPure_iff_lt
+Schnorr.natVal_reverse_modBitsMsb
+Schnorr.ltBitstringValue
+Schnorr.ltBitstringValue_spec
+Schnorr.ltBitstringValue_complete
+Schnorr.assertBitsBelow
+Schnorr.assertBitsBelow_spec
+Schnorr.assertBitsBelow_complete

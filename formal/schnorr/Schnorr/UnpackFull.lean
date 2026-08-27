@@ -7,10 +7,10 @@ import Snarky.DSL.Boolean
 # The canonical bit decomposition
 
 Port of OCaml `Field.Checked.unpack_full` / `lt_bitstring_value` (snark0.ml, the base-DSL
-checked runtime). Plain `unpack` (DSL/Bits.lean) pins the bits' weighted sum to the
-operand only modulo the field, so any representative's decomposition satisfies its rows;
-locking the decomposition to the canonical representative takes a further comparison
-against the modulus.
+checked runtime). Plain `unpack` (snarky's `Snarky/DSL/Bits.lean`) pins the bits' weighted
+sum to the operand only modulo the field, so any representative's decomposition satisfies
+its rows; locking the decomposition to the canonical representative takes a further
+comparison against the modulus.
 
 `modBitsMsb` is the modulus as an MSB-first bit pattern; `ltBitstringValue` compares an
 MSB-first bit vector against it, descending to the least significant bit and combining on
@@ -27,7 +27,9 @@ short-circuits the last one and two bits. This is the uniform binary recursion â
 value, more rows.
 -/
 
-namespace Snarky
+namespace Schnorr
+
+open Snarky
 
 variable {F c : Type}
 
@@ -273,4 +275,4 @@ theorem assertBitsBelow_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 attribute [irreducible] assertBitsBelow
 
-end Snarky
+end Schnorr

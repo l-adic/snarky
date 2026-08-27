@@ -15,7 +15,8 @@ open Lean Lean.Elab.Command
 
 namespace Schnorr.CheckAxioms
 
-/-- The exemplar's audited surface. -/
+/-- The exemplar's audited surface: the wire protocol, and the canonical decomposition's
+law pairs. -/
 def roots : List Name :=
   [ `Schnorr.gen,
     `Schnorr.transcriptHash,
@@ -23,7 +24,11 @@ def roots : List Name :=
     `Schnorr.verify,
     `Schnorr.challenge,
     `Schnorr.verify_iff,
-    `Schnorr.completeness ]
+    `Schnorr.completeness,
+    `Schnorr.ltBitstringValue_spec,
+    `Schnorr.ltBitstringValue_complete,
+    `Schnorr.assertBitsBelow_spec,
+    `Schnorr.assertBitsBelow_complete ]
 
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

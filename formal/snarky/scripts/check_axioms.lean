@@ -14,7 +14,6 @@ together with its `roots.txt` line — cannot pass silently.
 Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 -/
 import Snarky
-import Snarky.DSL.UnpackFull
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Circuit.Poseidon
@@ -105,8 +104,6 @@ def roots : List Name :=
     -- The DSL: bit decomposition and the seal.
     `Snarky.unpack_spec, `Snarky.unpack_complete,
     `Snarky.sealVar_spec, `Snarky.sealVar_complete,
-    `Snarky.ltBitstringValue_spec, `Snarky.ltBitstringValue_complete,
-    `Snarky.assertBitsBelow_spec, `Snarky.assertBitsBelow_complete,
 
     -- The whole-circuit layer: the public interface's reading, and the payoff.
     `Snarky.scoped_inputVar,

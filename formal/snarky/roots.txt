@@ -417,22 +417,6 @@ Snarky.sealVar
 Snarky.sealVar_spec
 Snarky.sealVar_complete
 
--- The canonical unpack (DSL/UnpackFull.lean): OCaml `unpack_full` /
--- `lt_bitstring_value` — the bits-below-the-modulus lock. The modulus as a bit pattern,
--- the comparison against it with its law pair and value-level mirror, and the lock that
--- packages the comparison with its assertion.
-Snarky.modBitsMsb
-Snarky.modBitsMsb_length
-Snarky.ltPure
-Snarky.ltPure_iff_lt
-Snarky.natVal_reverse_modBitsMsb
-Snarky.ltBitstringValue
-Snarky.ltBitstringValue_spec
-Snarky.ltBitstringValue_complete
-Snarky.assertBitsBelow
-Snarky.assertBitsBelow_spec
-Snarky.assertBitsBelow_complete
-
 -- Whole-circuit compilation (Compile.lean): the entry points, the public input bundle with
 -- its reading, and the seam law — a body that is complete solves, and the table it produces
 -- satisfies every compiled row and reads the input and output at the public slots.

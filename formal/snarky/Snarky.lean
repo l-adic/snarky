@@ -16,6 +16,5 @@ import Snarky.DSL.Assert
 import Snarky.DSL.SizedF
 import Snarky.DSL.Utils
 import Snarky.DSL.Bits
-import Snarky.DSL.UnpackFull
 import Snarky.Compile
 import Snarky.Examples.Point
