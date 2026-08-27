@@ -293,3 +293,4 @@ Kimchi.natLsbVal_lt_of_drop_false
 -- sponge's endo-expansion with the gate's recoding. Both consumed from snarky.
 Kimchi.Gate.EndoScalar.nReconstruct_inj
 Kimchi.Gate.EndoScalar.endoExpand_eq_toField
+Kimchi.Gate.VarBaseMul.bitsVal_eq_natLsbVal

@@ -1,3 +1,4 @@
+import Kimchi.Bits
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.Semantics.AddComplete
 import Pasta.Shifted
@@ -1824,6 +1825,27 @@ def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
 `bitsRegister` casts on genuine bits, and what the forbidden-band condition speaks
 about through the Type1 unshift. -/
 def bitsVal (bs : List F) : ℤ := bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
+
+/-- The MSB-first ℤ fold of the cells is the ℕ value of the decided cells, LSB-first —
+the one place the ladder's register orientation meets the bit vocabulary a canonicity
+lock speaks in. -/
+theorem bitsVal_eq_natLsbVal :
+    ∀ l : List F, bitsVal l = (natLsbVal ((l.map fun b => decide (b = 1)).reverse) : ℤ) := by
+  intro l
+  induction l using List.reverseRecOn with
+  | nil => rfl
+  | append_singleton l v ih =>
+    have h1 : bitsVal (l ++ [v]) = 2 * bitsVal l + if v = 1 then 1 else 0 := by
+      simp [bitsVal, List.foldl_append]
+    rw [h1, ih, List.map_append, List.map_singleton, List.reverse_append,
+      List.reverse_singleton, List.singleton_append, natLsbVal]
+    by_cases hv : v = 1
+    · simp only [hv, if_true, decide_true, Bool.toNat_true]
+      push_cast
+      ring
+    · simp only [hv, if_false, decide_false, Bool.toNat_false]
+      push_cast
+      ring
 
 theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
     runBits g (m + 1) = runBits g m
