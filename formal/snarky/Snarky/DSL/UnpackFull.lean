@@ -132,9 +132,13 @@ theorem ltBitstringValue_complete [Field F] [DecidableEq F] [BasicSystem F c]
     | cons hx htl =>
       rename_i b bs'
       obtain ⟨r, st₁, hrun₁, hsat₁, hr⟩ := ih bs' st htl
+      have hx₁ := hx.mono hrun₁.nv_le hrun₁.le
       obtain ⟨out, st₂, hrun₂, hsat₂, hout⟩ :=
         Snarky.or_complete (c := c) (Snarky.not x) r (!b) (ltPure bs' ys) st₁
-          ⟨not_readsAs (hx.mono hrun₁.nv_le hrun₁.le), hr⟩
+          ⟨⟨CircuitType.scoped_boolVar.mpr
+              (not_scoped (CircuitType.scoped_boolVar.mp hx₁.1)),
+            CircuitType.reads_boolVar.mpr
+              (not_val (CircuitType.reads_boolVar.mp hx₁.2))⟩, hr⟩
       refine ⟨out, st₂, hrun₁.bind hrun₂, ?_, ?_⟩
       · intro stf hnv hle
         exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
@@ -147,9 +151,13 @@ theorem ltBitstringValue_complete [Field F] [DecidableEq F] [BasicSystem F c]
     | cons hx htl =>
       rename_i b bs'
       obtain ⟨r, st₁, hrun₁, hsat₁, hr⟩ := ih bs' st htl
+      have hx₁ := hx.mono hrun₁.nv_le hrun₁.le
       obtain ⟨out, st₂, hrun₂, hsat₂, hout⟩ :=
         Snarky.and_complete (c := c) (Snarky.not x) r (!b) (ltPure bs' ys) st₁
-          ⟨not_readsAs (hx.mono hrun₁.nv_le hrun₁.le), hr⟩
+          ⟨⟨CircuitType.scoped_boolVar.mpr
+              (not_scoped (CircuitType.scoped_boolVar.mp hx₁.1)),
+            CircuitType.reads_boolVar.mpr
+              (not_val (CircuitType.reads_boolVar.mp hx₁.2))⟩, hr⟩
       refine ⟨out, st₂, hrun₁.bind hrun₂, ?_, ?_⟩
       · intro stf hnv hle
         exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
