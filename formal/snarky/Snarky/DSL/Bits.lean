@@ -135,6 +135,22 @@ theorem CVar.Scoped.pack [Semiring F] [DecidableEq F] {st : ProverState F} {n : 
 
 attribute [irreducible] pack
 
+/-- Pack the low `k` bits of an `n`-bit vector, LSB first — pure, no rows. Irreducible:
+consumers read it through `packLow_val`, never by opening the fold. -/
+@[irreducible] def packLow [Semiring F] [DecidableEq F] {n : Nat} (k : Nat) (hk : k ≤ n)
+    (bits : Vector (BoolVar F) n) : FVar F :=
+  pack (takeVec k hk bits)
+
+/-- `packLow` reads as the value-level packing of the low bits. -/
+theorem packLow_val [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n} {V : Valuation F}
+    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).val V = bit bs[i]) :
+    (packLow k hk bits).val V = packPure (takeVec k hk bs) := by
+  unfold packLow
+  refine pack_val fun i hi => ?_
+  rw [getElem_takeVec, getElem_takeVec]
+  exact h i (Nat.lt_of_lt_of_le hi hk)
+
 /-! ## Unpacking -/
 
 /-- Decompose a field variable into `n` LSB-first bits: witness them checked — each pays

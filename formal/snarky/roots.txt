@@ -232,10 +232,11 @@ Snarky.witness
 Snarky.witness_spec
 Snarky.witness_complete
 
--- Sized vectors (Types/Vector.lean): the kernel-reducible map and the split/chunk algebra
--- the bit gadgets index through.
+-- Sized vectors (Types/Vector.lean): the kernel-reducible map, the prefix at a definite
+-- length, and the split/chunk algebra the bit gadgets index through.
 Snarky.mapVec
 Snarky.splitVec
+Snarky.takeVec
 Snarky.chunkVec
 Snarky.getElem_mapVec
 Snarky.toList_mapVec
@@ -243,6 +244,7 @@ Snarky.mapVec_append
 Snarky.splitVec_append
 Snarky.append_splitVec
 Snarky.append_inj_iff
+Snarky.getElem_takeVec
 Snarky.getElem_chunkVec
 Snarky.chunkVec_flatten
 Snarky.flatten_chunkVec
@@ -395,6 +397,8 @@ Snarky.assertExactlyOne_complete
 Snarky.pack
 Snarky.pack_val
 Snarky.CVar.Scoped.pack
+Snarky.packLow
+Snarky.packLow_val
 Snarky.packPure
 Snarky.unpackPure
 Snarky.packPure_unpackPure

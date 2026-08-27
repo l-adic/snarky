@@ -2,8 +2,8 @@
 # Vector helpers
 
 List-backed operations on `Vector` and their equations: a structural `map`, splitting
-and appending, and chunking as the inverse of `flatten`. Nothing here knows about
-circuits.
+and appending, a prefix at a definite length, and chunking as the inverse of `flatten`.
+Nothing here knows about circuits.
 -/
 
 namespace Snarky
@@ -63,6 +63,15 @@ theorem mapVec_append {β : Type v} {n m : Nat} (f : α → β) (v : Vector α n
   rcases Nat.lt_or_ge i n with h | h
   · simp [h]
   · simp [Vector.getElem_append_right hi h]
+
+/-- The first `k` entries, at a definite length — `Vector.take` lands at `min k n`, which
+would need a cast wherever the bound is a hypothesis rather than a literal. -/
+def takeVec {n : Nat} (k : Nat) (hk : k ≤ n) (v : Vector α n) : Vector α k :=
+  Vector.ofFn fun i : Fin k => v[i.val]'(Nat.lt_of_lt_of_le i.isLt hk)
+
+@[simp] theorem getElem_takeVec {n k : Nat} (hk : k ≤ n) (v : Vector α n) (i : Nat)
+    (hi : i < k) : (takeVec k hk v)[i] = v[i]'(Nat.lt_of_lt_of_le hi hk) := by
+  simp [takeVec]
 
 /-- The inverse of `Vector.flatten`: cut an `n * s` vector into `n` pieces of `s`. -/
 def chunkVec {s n : Nat} (v : Vector α (n * s)) : Vector (Vector α s) n :=
