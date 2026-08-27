@@ -41,3 +41,6 @@ Schnorr.unpackFull_complete
 -- the circuit implementing `verify` stage for stage.
 Schnorr.instStatementCheckedType
 Schnorr.verifyCircuit
+
+-- The circuit laws (Schnorr/Laws.lean): the sound endpoint.
+Schnorr.verifyCircuit_spec
