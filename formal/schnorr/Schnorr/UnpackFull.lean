@@ -275,4 +275,68 @@ theorem assertBitsBelow_complete [Field F] [DecidableEq F] [BasicSystem F c]
 
 attribute [irreducible] assertBitsBelow
 
+/-! ## The canonical unpack -/
+
+/-- `unpack_full` (OCaml `Field.Checked.unpack_full`): decompose into `n` LSB-first bits
+with the canonical `< m` lock. -/
+def unpackFull [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
+    (m n : ℕ) (v : FVar F) : CircuitM F c (Vector (BoolVar F) n) := do
+  let bits ← unpack v n
+  assertBitsBelow m n bits.toList
+  pure bits
+
+open Std.Do in
+/-- `unpackFull`'s rows force bits whose ℕ value casts to the operand's reading AND lies
+below `m` — the canonicity plain `unpack` lacks: at `m` the reader's `card`, the value IS
+the reading's representative. -/
+@[spec] theorem unpackFull_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F) :
+    ⦃⌜True⌝⦄
+    unpackFull (c := Builder V c) m n v
+    ⦃⇓ r _ => ⌜∃ bs : Vector Bool n,
+        (∀ i (hi : i < n), (↑r[i] : CVar F).val V = bit bs[i]) ∧
+        ((natVal bs.toList : ℕ) : F) = v.val V ∧ natVal bs.toList < m⌝⦄ := by
+  simp only [unpackFull]
+  mvcgen
+  case vc2.hlen => simp
+  rename_i _ _ _ hbits _ _ hlock
+  obtain ⟨bs, hread, hsum⟩ := hbits
+  refine ⟨bs, hread, by rw [← packPure_natVal]; exact hsum, hlock bs.toList ?_⟩
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  simp only [List.get_eq_getElem, Vector.getElem_toList]
+  exact hread i (by simpa using h1)
+
+/-- `unpackFull`'s completeness law: on a representative that fits the width and lies
+below `m` the run succeeds, and the bits are the operand's binary digits. -/
+theorem unpackFull_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F) (vv : F)
+    (hfit : ToNat.toNat vv < 2 ^ n) (hbound : ToNat.toNat vv < m) :
+    Complete (F := F) (c := c) (fun st => CircuitType.ReadsAs (val := F) st v vv)
+      (unpackFull (c := c) m n v)
+      (fun r st' => CircuitType.ReadsAs (val := Vector Bool n) st' r (unpackPure vv n)) := by
+  intro st hv
+  simp only [unpackFull]
+  obtain ⟨bits, st₁, hrun₁, hsat₁, hbits⟩ := unpack_complete (c := c) v vv n hfit st hv
+  have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
+      CircuitType.ReadsAs (val := Bool) st₁ x b) bits.toList (unpackPure vv n).toList := by
+    obtain ⟨hsc, hrd⟩ := hbits
+    rw [CircuitType.scoped_vector] at hsc
+    rw [CircuitType.reads_vector] at hrd
+    rw [List.forall₂_iff_get]
+    refine ⟨by simp, fun i h1 h2 => ?_⟩
+    simp only [List.get_eq_getElem, Vector.getElem_toList]
+    exact ⟨hsc i (by simpa using h1), hrd i (by simpa using h1)⟩
+  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ :=
+    assertBitsBelow_complete (c := c) m n hm bits.toList (unpackPure vv n).toList (by simp)
+      (by rwa [natVal_unpackPure hfit]) st₁ hfa
+  refine ⟨bits, st₂, hrun₁.bind (hrun₂.bind rfl), ?_, hbits.mono hrun₂.nv_le hrun₂.le⟩
+  intro stf hnv hle
+  exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+    (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure)
+
+attribute [irreducible] unpackFull
+
 end Schnorr

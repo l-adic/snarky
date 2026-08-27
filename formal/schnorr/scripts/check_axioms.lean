@@ -28,7 +28,9 @@ def roots : List Name :=
     `Schnorr.ltBitstringValue_spec,
     `Schnorr.ltBitstringValue_complete,
     `Schnorr.assertBitsBelow_spec,
-    `Schnorr.assertBitsBelow_complete ]
+    `Schnorr.assertBitsBelow_complete,
+    `Schnorr.unpackFull_spec,
+    `Schnorr.unpackFull_complete ]
 
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]

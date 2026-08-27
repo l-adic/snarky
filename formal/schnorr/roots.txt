@@ -21,7 +21,7 @@ Schnorr.completeness
 -- The canonical unpack (Schnorr/UnpackFull.lean): OCaml `unpack_full` /
 -- `lt_bitstring_value` — the bits-below-the-modulus lock. The modulus as a bit pattern,
 -- the comparison against it with its law pair and value-level mirror, and the lock that
--- packages the comparison with its assertion.
+-- packages the comparison with its assertion, and the canonical decomposition itself.
 Schnorr.modBitsMsb
 Schnorr.modBitsMsb_length
 Schnorr.ltPure
@@ -33,3 +33,6 @@ Schnorr.ltBitstringValue_complete
 Schnorr.assertBitsBelow
 Schnorr.assertBitsBelow_spec
 Schnorr.assertBitsBelow_complete
+Schnorr.unpackFull
+Schnorr.unpackFull_spec
+Schnorr.unpackFull_complete
