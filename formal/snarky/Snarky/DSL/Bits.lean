@@ -93,6 +93,18 @@ theorem packPure_unpackPure [CommSemiring F] [ToNat F] [LawfulToNat F] {n : Nat}
     natVal_testBit n _ hlt]
   simpa using LawfulToNat.cast_toNat x
 
+/-- The two value-level readings agree: the field packing is the ℕ value, cast. -/
+theorem packPure_natVal [CommSemiring F] {n : Nat} (bs : Vector Bool n) :
+    packPure bs = ((natVal bs.toList : Nat) : F) := by
+  rw [packPure, packPureAux_horner]
+  simp
+
+/-- The unpacking's ℕ value is the representative it was cut from. -/
+theorem natVal_unpackPure [ToNat F] {n : Nat} {x : F} (hlt : ToNat.toNat x < 2 ^ n) :
+    natVal (unpackPure x n).toList = ToNat.toNat x := by
+  rw [unpackPure, Vector.toList_ofFn]
+  exact natVal_testBit n _ hlt
+
 attribute [irreducible] packPure unpackPure
 
 /-! ## Packing -/
