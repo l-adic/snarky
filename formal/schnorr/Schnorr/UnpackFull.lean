@@ -16,7 +16,7 @@ comparison against the modulus.
 MSB-first bit vector against it, descending to the least significant bit and combining on
 the way back out: at a `1` bit of the pattern the operand may drop below (`or`), at a `0`
 bit it must stay equal (`and`). `ltPure` is the comparison's value-level mirror, and
-`ltPure_iff_lt` is where the comparison becomes an inequality on `natVal`.
+`ltPure_iff_lt` is where the comparison becomes an inequality on `Kimchi.natLsbVal`.
 `assertBitsBelow` packages the comparison with its assertion — the lock itself, payable
 on fresh bits or on bits a consumer already holds.
 
@@ -45,10 +45,10 @@ theorem modBitsMsb_length (m n : ℕ) : (modBitsMsb m n).length = n := by
   simp [modBitsMsb]
 
 /-- The pattern's value is the modulus it was cut from. -/
-theorem natVal_reverse_modBitsMsb {m n : ℕ} (h : m < 2 ^ n) :
-    natVal (modBitsMsb m n).reverse = m := by
+theorem natLsbVal_reverse_modBitsMsb {m n : ℕ} (h : m < 2 ^ n) :
+    Kimchi.natLsbVal (modBitsMsb m n).reverse = m := by
   rw [modBitsMsb, List.reverse_reverse]
-  exact natVal_testBit n m h
+  exact Kimchi.natLsbVal_ofFn_testBit n m h
 
 /-- The comparison's value-level mirror: MSB-first `xs < ys`, `false` on any length
 mismatch. -/
@@ -59,27 +59,27 @@ def ltPure : List Bool → List Bool → Bool
 
 /-- `ltPure` decides the value comparison on equal lengths. -/
 theorem ltPure_iff_lt : ∀ {xs ys : List Bool}, xs.length = ys.length →
-    (ltPure xs ys = true ↔ natVal xs.reverse < natVal ys.reverse) := by
+    (ltPure xs ys = true ↔ Kimchi.natLsbVal xs.reverse < Kimchi.natLsbVal ys.reverse) := by
   intro xs
   induction xs with
   | nil =>
     intro ys hlen
     rw [List.length_nil] at hlen
     rw [List.length_eq_zero_iff.mp hlen.symm]
-    simp [ltPure, natVal]
+    simp [ltPure, Kimchi.natLsbVal]
   | cons x xs ih =>
     intro ys hlen
     cases ys with
     | nil => simp at hlen
     | cons y ys =>
       simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
-      have hx := natVal_lt xs.reverse
-      have hy := natVal_lt ys.reverse
+      have hx := Kimchi.natLsbVal_lt xs.reverse
+      have hy := Kimchi.natLsbVal_lt ys.reverse
       rw [List.length_reverse] at hx hy
       rw [hlen] at hx
       have hih := ih hlen
       cases x <;> cases y <;>
-        simp only [ltPure, List.reverse_cons, natVal_append_singleton,
+        simp only [ltPure, List.reverse_cons, Kimchi.natLsbVal_append_singleton,
           List.length_reverse, hlen, Bool.toNat_false, Bool.toNat_true,
           Bool.not_false, Bool.not_true, Bool.true_or, Bool.false_or, Bool.true_and,
           Bool.false_and, hih, false_iff, true_iff, Bool.false_eq_true] <;>
@@ -216,56 +216,78 @@ attribute [irreducible] ltBitstringValue
 
 /-! ## The lock -/
 
-/-- Assert an LSB-first bit list's ℕ value lies strictly below `m` at width `n` — the
-canonicity lock as one gadget (the `lt_bitstring_value …; assert` composition).
-`unpackFull` pays it on fresh bits; a consumer holding bits already pays it on those. -/
+/-- Assert an LSB-first bit vector's ℕ value lies strictly below `m` — the canonicity
+lock as one gadget (the `lt_bitstring_value …; assert` composition). `unpackFull` pays it
+on fresh bits; a consumer holding bits already pays it on those. The operand is a vector
+because every consumer holds one, and its length is the width the pattern is cut at. -/
 def assertBitsBelow [Field F] [DecidableEq F] [BasicSystem F c]
-    (m n : ℕ) (bits : List (BoolVar F)) : CircuitM F c PUnit := do
-  let lt ← ltBitstringValue bits.reverse (modBitsMsb m n)
+    (m : ℕ) {n : ℕ} (bits : Vector (BoolVar F) n) : CircuitM F c PUnit := do
+  let lt ← ltBitstringValue bits.toList.reverse (modBitsMsb m n)
   Snarky.assert lt
+
+/-- The comparison's operand contract, from the indexed reading its producers hand back:
+`ltBitstringValue` recurses on two lists, so its hypothesis is a `Forall₂`; every gadget
+that produces bits reports them by index. The conversion belongs here, once. -/
+private theorem forall₂_bit {V : Valuation F} [Field F] [DecidableEq F] {n : ℕ}
+    {bits : Vector (BoolVar F) n} {bs : Vector Bool n}
+    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).val V = bit bs[i]) :
+    List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).val V = bit b)
+      bits.toList bs.toList := by
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  simp only [List.get_eq_getElem, Vector.getElem_toList]
+  exact h i (by simpa using h1)
 
 open Std.Do in
 /-- The lock's rows force the operands' bits to a value strictly below `m`. -/
 @[spec] theorem assertBitsBelow_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n) :
+    (m : ℕ) {n : ℕ} (hm : m < 2 ^ n) (bits : Vector (BoolVar F) n) :
     ⦃⌜True⌝⦄
-    assertBitsBelow (c := Builder V c) m n bits
-    ⦃⇓ _ _ => ⌜∀ bs : List Bool,
-        List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).val V = bit b) bits bs →
-        natVal bs < m⌝⦄ := by
+    assertBitsBelow (c := Builder V c) m bits
+    ⦃⇓ _ _ => ⌜∀ bs : Vector Bool n,
+        (∀ i (hi : i < n), (↑bits[i] : CVar F).val V = bit bs[i]) →
+        Kimchi.natLsbVal bs.toList < m⌝⦄ := by
   simp only [assertBitsBelow]
   mvcgen
   rename_i _ hlt _ _
-  intro hassert bs hfa
-  have hltv := hlt bs.reverse (List.forall₂_reverse_iff.mpr hfa)
+  intro hassert bs hread
+  have hltv := hlt bs.toList.reverse (List.forall₂_reverse_iff.mpr (forall₂_bit hread))
   rw [hassert] at hltv
-  have hltrue : ltPure bs.reverse (modBitsMsb m n) = true := by
+  have hltrue : ltPure bs.toList.reverse (modBitsMsb m n) = true := by
     by_contra h
     rw [Bool.not_eq_true] at h
     rw [h] at hltv
     simp [bit] at hltv
   have hcmp := (ltPure_iff_lt (by
-    rw [List.length_reverse, modBitsMsb_length, ← hfa.length_eq, hlen])).mp hltrue
-  rwa [natVal_reverse_modBitsMsb hm, List.reverse_reverse] at hcmp
+    rw [List.length_reverse, modBitsMsb_length, Vector.length_toList])).mp hltrue
+  rwa [natLsbVal_reverse_modBitsMsb hm, List.reverse_reverse] at hcmp
 
 /-- The lock's completeness law: bits reading as a value below `m` satisfy its rows. -/
 theorem assertBitsBelow_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F))
-    (bs : List Bool) (hbs : bs.length = n) (hval : natVal bs < m) :
+    (m : ℕ) {n : ℕ} (hm : m < 2 ^ n) (bits : Vector (BoolVar F) n) (bs : Vector Bool n)
+    (hval : Kimchi.natLsbVal bs.toList < m) :
     Complete (F := F) (c := c)
-      (fun st => List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
-        CircuitType.ReadsAs (val := Bool) st x b) bits bs)
-      (assertBitsBelow (c := c) m n bits) (fun _ _ => True) := by
-  intro st hfa
+      (fun st => CircuitType.ReadsAs (val := Vector Bool n) st bits bs)
+      (assertBitsBelow (c := c) m bits) (fun _ _ => True) := by
+  intro st hb
   simp only [assertBitsBelow]
+  obtain ⟨hsc, hrd⟩ := hb
+  rw [CircuitType.scoped_vector] at hsc
+  rw [CircuitType.reads_vector] at hrd
+  have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
+      CircuitType.ReadsAs (val := Bool) st x b) bits.toList bs.toList := by
+    rw [List.forall₂_iff_get]
+    refine ⟨by simp, fun i h1 h2 => ?_⟩
+    simp only [List.get_eq_getElem, Vector.getElem_toList]
+    exact ⟨hsc i (by simpa using h1), hrd i (by simpa using h1)⟩
   obtain ⟨lt, st₁, hrun₁, hsat₁, hlt⟩ :=
-    ltBitstringValue_complete (c := c) bits.reverse (modBitsMsb m n) bs.reverse st
-      (List.forall₂_reverse_iff.mpr hfa)
-  have hltrue : ltPure bs.reverse (modBitsMsb m n) = true :=
-    (ltPure_iff_lt (by rw [List.length_reverse, modBitsMsb_length, hbs])).mpr
-      (by rwa [natVal_reverse_modBitsMsb hm, List.reverse_reverse])
+    ltBitstringValue_complete (c := c) bits.toList.reverse (modBitsMsb m n) bs.toList.reverse
+      st (List.forall₂_reverse_iff.mpr hfa)
+  have hltrue : ltPure bs.toList.reverse (modBitsMsb m n) = true :=
+    (ltPure_iff_lt (by rw [List.length_reverse, modBitsMsb_length, Vector.length_toList])).mpr
+      (by rwa [natLsbVal_reverse_modBitsMsb hm, List.reverse_reverse])
   rw [hltrue] at hlt
   obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ := Snarky.assert_complete (c := c) lt st₁ hlt
   refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
@@ -282,7 +304,7 @@ with the canonical `< m` lock. -/
 def unpackFull [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     (m n : ℕ) (v : FVar F) : CircuitM F c (Vector (BoolVar F) n) := do
   let bits ← unpack v n
-  assertBitsBelow m n bits.toList
+  assertBitsBelow m bits
   pure bits
 
 open Std.Do in
@@ -296,17 +318,12 @@ the reading's representative. -/
     unpackFull (c := Builder V c) m n v
     ⦃⇓ r _ => ⌜∃ bs : Vector Bool n,
         (∀ i (hi : i < n), (↑r[i] : CVar F).val V = bit bs[i]) ∧
-        ((natVal bs.toList : ℕ) : F) = v.val V ∧ natVal bs.toList < m⌝⦄ := by
+        ((Kimchi.natLsbVal bs.toList : ℕ) : F) = v.val V ∧ Kimchi.natLsbVal bs.toList < m⌝⦄ := by
   simp only [unpackFull]
   mvcgen
-  case vc2.hlen => simp
   rename_i _ _ _ hbits _ _ hlock
   obtain ⟨bs, hread, hsum⟩ := hbits
-  refine ⟨bs, hread, by rw [← packPure_natVal]; exact hsum, hlock bs.toList ?_⟩
-  rw [List.forall₂_iff_get]
-  refine ⟨by simp, fun i h1 h2 => ?_⟩
-  simp only [List.get_eq_getElem, Vector.getElem_toList]
-  exact hread i (by simpa using h1)
+  exact ⟨bs, hread, by rw [← packPure_natLsbVal]; exact hsum, hlock bs hread⟩
 
 /-- `unpackFull`'s completeness law: on a representative that fits the width and lies
 below `m` the run succeeds, and the bits are the operand's binary digits. -/
@@ -320,18 +337,9 @@ theorem unpackFull_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   intro st hv
   simp only [unpackFull]
   obtain ⟨bits, st₁, hrun₁, hsat₁, hbits⟩ := unpack_complete (c := c) v vv n hfit st hv
-  have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
-      CircuitType.ReadsAs (val := Bool) st₁ x b) bits.toList (unpackPure vv n).toList := by
-    obtain ⟨hsc, hrd⟩ := hbits
-    rw [CircuitType.scoped_vector] at hsc
-    rw [CircuitType.reads_vector] at hrd
-    rw [List.forall₂_iff_get]
-    refine ⟨by simp, fun i h1 h2 => ?_⟩
-    simp only [List.get_eq_getElem, Vector.getElem_toList]
-    exact ⟨hsc i (by simpa using h1), hrd i (by simpa using h1)⟩
   obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ :=
-    assertBitsBelow_complete (c := c) m n hm bits.toList (unpackPure vv n).toList (by simp)
-      (by rwa [natVal_unpackPure hfit]) st₁ hfa
+    assertBitsBelow_complete (c := c) m hm bits (unpackPure vv n)
+      (by rwa [natLsbVal_unpackPure hfit]) st₁ hbits
   refine ⟨bits, st₂, hrun₁.bind (hrun₂.bind rfl), ?_, hbits.mono hrun₂.nv_le hrun₂.le⟩
   intro stf hnv hle
   exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))

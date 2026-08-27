@@ -44,7 +44,7 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c] (st : Statement (FVar F
   let hbits ← unpackFull PALLAS_SCALAR_CARD 255 squeezed
   let cpk ← endoMul Pasta.vestaEndo 32 st.pk.point ⟨packLow 128 (by omega) hbits⟩
   let zr ← varBaseMul 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
-  assertBitsBelow PALLAS_SCALAR_CARD 255 (zr.lsbBits.toList.map .unchecked)
+  assertBitsBelow PALLAS_SCALAR_CARD (mapVec BoolVar.unchecked zr.lsbBits)
   let rhs ← addFast .checkFinite st.u.point cpk
   assertEqual zr.g.x rhs.p.x
   assertEqual zr.g.y rhs.p.y
