@@ -106,6 +106,7 @@ def roots : List Name :=
     `Snarky.unpack_spec, `Snarky.unpack_complete,
     `Snarky.sealVar_spec, `Snarky.sealVar_complete,
     `Snarky.ltBitstringValue_spec, `Snarky.ltBitstringValue_complete,
+    `Snarky.assertBitsBelow_spec, `Snarky.assertBitsBelow_complete,
 
     -- The whole-circuit layer: the public interface's reading, and the payoff.
     `Snarky.scoped_inputVar,

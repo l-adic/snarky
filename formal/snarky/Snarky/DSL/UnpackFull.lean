@@ -1,4 +1,5 @@
 import Mathlib.Data.List.Forall2
+import Snarky.DSL.Assert
 import Snarky.DSL.Bits
 import Snarky.DSL.Boolean
 
@@ -14,7 +15,10 @@ against the modulus.
 `modBitsMsb` is the modulus as an MSB-first bit pattern; `ltBitstringValue` compares an
 MSB-first bit vector against it, descending to the least significant bit and combining on
 the way back out: at a `1` bit of the pattern the operand may drop below (`or`), at a `0`
-bit it must stay equal (`and`). `ltPure` is the comparison's value-level mirror.
+bit it must stay equal (`and`). `ltPure` is the comparison's value-level mirror, and
+`ltPure_iff_lt` is where the comparison becomes an inequality on `natVal`.
+`assertBitsBelow` packages the comparison with its assertion — the lock itself, payable
+on fresh bits or on bits a consumer already holds.
 
 Deviation from the PS original (`packages/schnorr/src/Snarky/Circuit/Schnorr/
 UnpackFull.purs`): PS builds the comparison as a `Binary` tree, regroups runs into N-ary
@@ -29,13 +33,20 @@ variable {F c : Type}
 
 /-! ## The value layer -/
 
-/-- MSB-first bit decomposition of `m` at width `n` (PS `modulusBitsMsb`). -/
+/-- MSB-first bit decomposition of `m` at width `n` (PS `modulusBitsMsb`) — the reversal
+of `unpackPure`'s digits, at a natural rather than a field element. -/
 def modBitsMsb (m n : ℕ) : List Bool :=
-  ((List.range n).map m.testBit).reverse
+  (List.ofFn fun i : Fin n => m.testBit i.val).reverse
 
 /-- The pattern has the requested width. -/
 theorem modBitsMsb_length (m n : ℕ) : (modBitsMsb m n).length = n := by
   simp [modBitsMsb]
+
+/-- The pattern's value is the modulus it was cut from. -/
+theorem natVal_reverse_modBitsMsb {m n : ℕ} (h : m < 2 ^ n) :
+    natVal (modBitsMsb m n).reverse = m := by
+  rw [modBitsMsb, List.reverse_reverse]
+  exact natVal_testBit n m h
 
 /-- The comparison's value-level mirror: MSB-first `xs < ys`, `false` on any length
 mismatch. -/
@@ -43,6 +54,34 @@ def ltPure : List Bool → List Bool → Bool
   | x :: xs, true :: ys => !x || ltPure xs ys
   | x :: xs, false :: ys => !x && ltPure xs ys
   | _, _ => false
+
+/-- `ltPure` decides the value comparison on equal lengths. -/
+theorem ltPure_iff_lt : ∀ {xs ys : List Bool}, xs.length = ys.length →
+    (ltPure xs ys = true ↔ natVal xs.reverse < natVal ys.reverse) := by
+  intro xs
+  induction xs with
+  | nil =>
+    intro ys hlen
+    rw [List.length_nil] at hlen
+    rw [List.length_eq_zero_iff.mp hlen.symm]
+    simp [ltPure, natVal]
+  | cons x xs ih =>
+    intro ys hlen
+    cases ys with
+    | nil => simp at hlen
+    | cons y ys =>
+      simp only [List.length_cons, Nat.add_right_cancel_iff] at hlen
+      have hx := natVal_lt xs.reverse
+      have hy := natVal_lt ys.reverse
+      rw [List.length_reverse] at hx hy
+      rw [hlen] at hx
+      have hih := ih hlen
+      cases x <;> cases y <;>
+        simp only [ltPure, List.reverse_cons, natVal_append_singleton,
+          List.length_reverse, hlen, Bool.toNat_false, Bool.toNat_true,
+          Bool.not_false, Bool.not_true, Bool.true_or, Bool.false_or, Bool.true_and,
+          Bool.false_and, hih, false_iff, true_iff, Bool.false_eq_true] <;>
+        omega
 
 /-! ## The comparison -/
 
@@ -172,5 +211,66 @@ theorem ltBitstringValue_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.reads_boolVar.mpr (by simp [bit])⟩
 
 attribute [irreducible] ltBitstringValue
+
+/-! ## The lock -/
+
+/-- Assert an LSB-first bit list's ℕ value lies strictly below `m` at width `n` — the
+canonicity lock as one gadget (the `lt_bitstring_value …; assert` composition).
+`unpackFull` pays it on fresh bits; a consumer holding bits already pays it on those. -/
+def assertBitsBelow [Field F] [DecidableEq F] [BasicSystem F c]
+    (m n : ℕ) (bits : List (BoolVar F)) : CircuitM F c PUnit := do
+  let lt ← ltBitstringValue bits.reverse (modBitsMsb m n)
+  Snarky.assert lt
+
+open Std.Do in
+/-- The lock's rows force the operands' bits to a value strictly below `m`. -/
+@[spec] theorem assertBitsBelow_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F)) (hlen : bits.length = n) :
+    ⦃⌜True⌝⦄
+    assertBitsBelow (c := Builder V c) m n bits
+    ⦃⇓ _ _ => ⌜∀ bs : List Bool,
+        List.Forall₂ (fun (x : BoolVar F) (b : Bool) => (↑x : CVar F).val V = bit b) bits bs →
+        natVal bs < m⌝⦄ := by
+  simp only [assertBitsBelow]
+  mvcgen
+  rename_i _ hlt _ _
+  intro hassert bs hfa
+  have hltv := hlt bs.reverse (List.forall₂_reverse_iff.mpr hfa)
+  rw [hassert] at hltv
+  have hltrue : ltPure bs.reverse (modBitsMsb m n) = true := by
+    by_contra h
+    rw [Bool.not_eq_true] at h
+    rw [h] at hltv
+    simp [bit] at hltv
+  have hcmp := (ltPure_iff_lt (by
+    rw [List.length_reverse, modBitsMsb_length, ← hfa.length_eq, hlen])).mp hltrue
+  rwa [natVal_reverse_modBitsMsb hm, List.reverse_reverse] at hcmp
+
+/-- The lock's completeness law: bits reading as a value below `m` satisfy its rows. -/
+theorem assertBitsBelow_complete [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (m n : ℕ) (hm : m < 2 ^ n) (bits : List (BoolVar F))
+    (bs : List Bool) (hbs : bs.length = n) (hval : natVal bs < m) :
+    Complete (F := F) (c := c)
+      (fun st => List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
+        CircuitType.ReadsAs (val := Bool) st x b) bits bs)
+      (assertBitsBelow (c := c) m n bits) (fun _ _ => True) := by
+  intro st hfa
+  simp only [assertBitsBelow]
+  obtain ⟨lt, st₁, hrun₁, hsat₁, hlt⟩ :=
+    ltBitstringValue_complete (c := c) bits.reverse (modBitsMsb m n) bs.reverse st
+      (List.forall₂_reverse_iff.mpr hfa)
+  have hltrue : ltPure bs.reverse (modBitsMsb m n) = true :=
+    (ltPure_iff_lt (by rw [List.length_reverse, modBitsMsb_length, hbs])).mpr
+      (by rwa [natVal_reverse_modBitsMsb hm, List.reverse_reverse])
+  rw [hltrue] at hlt
+  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ := Snarky.assert_complete (c := c) lt st₁ hlt
+  refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
+  intro stf hnv hle
+  exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+    (hsat₂ hnv hle)
+
+attribute [irreducible] assertBitsBelow
 
 end Snarky

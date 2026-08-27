@@ -24,10 +24,30 @@ class LawfulToNat (F : Type) [NatCast F] [ToNat F] where
 
 /-! ## The value level -/
 
-/-- The LSB-first value of a bit list. -/
-private def natVal : List Bool → Nat
+/-- The LSB-first value of a bit list. The ℕ-level reading of a decomposition, which
+`packPure` casts into the field; a comparison against the modulus lives here, where it
+has a meaning the field cannot express. -/
+def natVal : List Bool → Nat
   | [] => 0
   | b :: bs => b.toNat + 2 * natVal bs
+
+/-- A bit list's value fits in its length. -/
+theorem natVal_lt : ∀ l : List Bool, natVal l < 2 ^ l.length
+  | [] => by simp [natVal]
+  | b :: l => by
+    have := natVal_lt l
+    have hb : b.toNat ≤ 1 := by cases b <;> simp
+    simp only [natVal, List.length_cons, pow_succ]
+    omega
+
+/-- Appending a bit at the top adds it at the list's own weight. -/
+theorem natVal_append_singleton : ∀ (l : List Bool) (b : Bool),
+    natVal (l ++ [b]) = natVal l + b.toNat * 2 ^ l.length
+  | [], b => by simp [natVal]
+  | x :: l, b => by
+    rw [List.cons_append, natVal, natVal_append_singleton l b, natVal, List.length_cons,
+      pow_succ]
+    ring
 
 /-- The value-level indexed fold under `packPure`. -/
 private def packPureAux [Semiring F] : List Bool → Nat → F → F
@@ -55,7 +75,7 @@ private theorem packPureAux_horner [CommSemiring F] :
     ring
 
 /-- The low digits of a fitting number Horner-fold back to it. -/
-private theorem natVal_testBit :
+theorem natVal_testBit :
     ∀ (n m : Nat), m < 2 ^ n → natVal (List.ofFn fun i : Fin n => m.testBit i.val) = m
   | 0, m, hm => by simp only [List.ofFn_zero, natVal]; omega
   | n + 1, m, hm => by
