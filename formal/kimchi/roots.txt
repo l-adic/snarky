@@ -287,3 +287,9 @@ Kimchi.natLsbVal_take_drop
 Kimchi.natLsbVal_take_eq_mod
 Kimchi.natLsbVal_eq_zero
 Kimchi.natLsbVal_lt_of_drop_false
+
+-- The EndoScalar recoding, for the circuit layer: base-4 digit recovery (the
+-- decomposition a satisfying gate exposes is unique) and the identity of the wire
+-- sponge's endo-expansion with the gate's recoding. Both consumed from snarky.
+Kimchi.Gate.EndoScalar.nReconstruct_inj
+Kimchi.Gate.EndoScalar.endoExpand_eq_toField
