@@ -671,6 +671,7 @@ Snarky.Kimchi.endoMulRound
 Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
 Snarky.Kimchi.EndoMul.endoMul_spec
+Snarky.Kimchi.EndoMul.vesta_endoMul_spec
 Snarky.Kimchi.EndoMul.endoMul_complete
 Snarky.Kimchi.HasEndo
 Snarky.Kimchi.HasEndo.pallas
@@ -681,6 +682,7 @@ Snarky.Kimchi.HasEndo.vesta
 -- carriers they split through, each with its law pair, and the curve dictionary the laws
 -- take.
 Snarky.Kimchi.HasCurve
+Snarky.Kimchi.HasCurve.vesta
 Snarky.Kimchi.scaleRound
 Snarky.Kimchi.VarBaseMulResult
 Snarky.Kimchi.varBaseMul

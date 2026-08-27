@@ -83,6 +83,16 @@ structure HasCurve (F : Type) [Field F] [DecidableEq F] where
   /-- The field does not have characteristic `2`. -/
   two_ne : (2 : F) ≠ 0
 
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
+/-- The dictionary at deployed Vesta — the curve the Schnorr statement's points live on
+and the ladder's base group. -/
+def HasCurve.vesta : HasCurve Fq where
+  W := Vesta.curve.toAffine
+  short := ⟨rfl, rfl, rfl, rfl⟩
+  prime := Fact.out
+  odd := by rw [vesta_card]; decide
+  two_ne := by decide
+
 /-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
 dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
 condition on the scalar), OR the one-wrap band holds and the scalar's Type1 decode
