@@ -5,17 +5,17 @@ import Snarky.Prover
 
 `CheckedType` pairs an encoding with the constraint circuit enforcing its
 well-formedness; `witness` allocates a bundle, runs the prover's advice, and emits the
-check. Its laws — the soundness contract, the run equation, and the completeness law —
-are the leaf interface every gadget builds on.
+check. Its laws — the soundness contract and the completeness law, the two directions of
+one statement about the same rows — are the leaf interface every gadget builds on.
 -/
 
 namespace Snarky
 
 /-- Variable bundles whose well-formedness is enforced by constraints: `check` is
-emitted by `witness` under both interpreters, with what its rows force about the
-bundle (`post`, `check_sound`), that the check is passive at the prover
-(`check_runs`), and that an honest encoding satisfies its rows (`check_sat`). The
-value type is a parameter because the laws speak of the encoding. -/
+emitted by `witness` under both interpreters, with what its rows force about the bundle
+(`post`, `check_sound`) and that a bundle whose reading already satisfies them can be
+completed to a run that does (`check_complete`). The value type is a parameter because
+the laws speak of the encoding. -/
 class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [CircuitType F val var] where
   /-- The circuit that constrains the bundle to well-formed values (PS `check`). -/
@@ -26,20 +26,24 @@ class CheckedType (F c val var : Type) [Add F] [Mul F] [Zero F] [One F] [BasicSy
   check_sound : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (V : Valuation F) (v : var)
     (nv : Nat),
     (∀ con ∈ (build (check v) nv).constraints, ConstraintHolds.Holds V con) → post V v
-  /-- The check runs at the prover from any state: it never fails. It MAY allocate
-  auxiliaries of its own — the on-curve check witnesses `x²` and `x³` — and, since every
-  run only extends the table (`Runs.le`), what was allocated before the check still reads
-  the same after it. -/
-  check_runs : ∀ (st : ProverState F) (v : var), ∃ st', Runs (check v) st PUnit.unit st'
-  /-- A scoped bundle that reads as the encoding of a value satisfies its check's rows,
-  at the total reading of any extension of the state the check itself runs to. The run is
-  a hypothesis because a check that allocates constrains variables that only its own run
-  assigns. -/
-  check_sat : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] {st st' stf : ProverState F}
-    (v : var) (a : val), Runs (check v) st PUnit.unit st' →
-    st'.nv ≤ stf.nv → st'.env.Le stf.env →
-    CircuitType.Scoped (val := val) st v → CircuitType.Reads st.env.get v a →
-    Sat (check v) st stf
+  /-- The prover's law: from a scoped bundle reading as an admissible value — one whose
+  every reading already satisfies `post`, the hypothesis spelled out because the class
+  cannot name `CheckedType.Valid` from inside itself — the check runs, and its rows are
+  satisfied at every extension of the state it runs to. The check MAY allocate
+  auxiliaries of its own, which is why its landing state is part of the conclusion. -/
+  check_complete : ∀ [ConstraintHolds F c] [LawfulBasicSystem F c] (v : var) (a : val),
+    (∀ (V : Valuation F) (w : var), CircuitType.Reads V w a → post V w) →
+    Complete (F := F) (c := c) (fun st => CircuitType.ReadsAs (val := val) st v a)
+      (check v) fun _ _ => True
+
+/-- The values a check admits: those whose every bundle reading satisfies what the rows
+force. Not a field but a definition — `post` pulled back along the reading — so a type's
+admissible values can never be fewer than its own constraints allow, and no completeness
+law can rest on anything a verifier does not itself check. -/
+def CheckedType.Valid {F c val var : Type} [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [CircuitType F val var] [CheckedType F c val var] (a : val) : Prop :=
+  ∀ (V : Valuation F) (w : var), CircuitType.Reads V w a →
+    CheckedType.post (c := c) (val := val) V w
 
 section Instances
 
@@ -52,8 +56,7 @@ instance instCheckedTypeFVar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
   check _ := .pure PUnit.unit
   post _ _ := True
   check_sound := by intros; trivial
-  check_runs st _ := ⟨st, rfl⟩
-  check_sat _ _ _ _ _ _ _ := Sat.pure
+  check_complete _ _ _ := Complete.pure
 
 /-- A freshly witnessed boolean must be constrained to `{0, 1}`: one `boolean` row, whose
 reading is the booleanity every consumer of the bundle assumes. -/
@@ -66,15 +69,11 @@ instance instCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
         (hsat (BasicSystem.boolean b.toCVar) (by simp [Snarky.addConstraint, build])) with h | h
     · exact ⟨false, by simpa [bit] using h⟩
     · exact ⟨true, by simpa [bit] using h⟩
-  check_runs st _ := ⟨st, Runs.addConstraint⟩
-  check_sat := by
-    intro _ _ st _ _ b a hrun _ hle'
-    intro hs hr
-    have hle := hrun.le.trans hle'
-    intro con hcon
-    simp [Snarky.addConstraint, build] at hcon
-    subst hcon
-    refine (LawfulBasicSystem.holds_boolean _ _).mpr ?_
+  check_complete := by
+    intro _ _ b a _ st ⟨hs, hr⟩
+    refine ⟨PUnit.unit, st, Runs.addConstraint, ?_, trivial⟩
+    intro stf _ hle
+    refine Sat.addConstraint ((LawfulBasicSystem.holds_boolean _ _).mpr ?_)
     have hv : (↑b : CVar F).val st.env.get = bit a :=
       congrArg (fun v : Vector F (CircuitType.size F Bool) =>
         v[0]'(show 0 < CircuitType.size F Bool from Nat.one_pos)) hr
@@ -87,8 +86,7 @@ instance instCheckedTypeUnit [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] 
   check _ := .pure PUnit.unit
   post _ _ := True
   check_sound := by intros; trivial
-  check_runs st _ := ⟨st, rfl⟩
-  check_sat _ _ _ _ _ _ _ := Sat.pure
+  check_complete _ _ _ := Complete.pure
 
 section Product
 
@@ -107,21 +105,27 @@ instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     simp only [build_bind] at hsat
     exact ⟨CheckedType.check_sound V p.1 nv fun con h => hsat con (List.mem_append_left _ h),
       CheckedType.check_sound V p.2 _ fun con h => hsat con (List.mem_append_right _ h)⟩
-  check_runs st p := by
-    obtain ⟨st₁, h₁⟩ := CheckedType.check_runs (c := c) (val := a) st p.1
-    obtain ⟨st₂, h₂⟩ := CheckedType.check_runs (c := c) (val := b) st₁ p.2
-    exact ⟨st₂, h₁.bind h₂⟩
-  check_sat p x hrun hnv hle hs hr := by
-    obtain ⟨v, w⟩ := p
-    obtain ⟨x, y⟩ := x
+  check_complete := by
+    rintro _ _ ⟨v, w⟩ ⟨x, y⟩ hv st ⟨hs, hr⟩
+    have hx : ∀ (V : Valuation F) (u : va), CircuitType.Reads V u x →
+        CheckedType.post (c := c) (val := a) V u := fun V u hu =>
+      (hv V (u, CircuitType.constVar y) (CircuitType.reads_prod.mpr
+        ⟨hu, CircuitType.reads_constVar V y⟩)).1
+    have hy : ∀ (V : Valuation F) (u : vb), CircuitType.Reads V u y →
+        CheckedType.post (c := c) (val := b) V u := fun V u hu =>
+      (hv V (CircuitType.constVar x, u) (CircuitType.reads_prod.mpr
+        ⟨CircuitType.reads_constVar V x, hu⟩)).2
     rw [CircuitType.scoped_prod] at hs
     rw [CircuitType.reads_prod] at hr
-    obtain ⟨_, st₁, hrun₁, hrun₂⟩ := hrun.bind_inv
-    exact Sat.bind hrun₁
-      (CheckedType.check_sat v x hrun₁ (Nat.le_trans hrun₂.nv_le hnv)
-        (hrun₂.le.trans hle) hs.1 hr.1)
-      (CheckedType.check_sat w y hrun₂ hnv hle (hs.2.mono hrun₁.nv_le)
-        (hr.2.of_le hs.2 hrun₁.le))
+    obtain ⟨_, st₁, hrun₁, hsat₁, _⟩ :=
+      CheckedType.check_complete (c := c) (val := a) v x hx st ⟨hs.1, hr.1⟩
+    obtain ⟨_, st₂, hrun₂, hsat₂, _⟩ :=
+      CheckedType.check_complete (c := c) (val := b) w y hy st₁
+        ⟨hs.2.mono hrun₁.nv_le, hr.2.of_le hs.2 hrun₁.le⟩
+    refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
+    intro stf hnv hle
+    exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+      (hsat₂ hnv hle)
 
 end Product
 
@@ -154,29 +158,41 @@ private theorem checkAll_sound [ConstraintHolds F c] [LawfulBasicSystem F c] (V 
     · exact CheckedType.check_sound V w nv fun con h => hsat con (List.mem_append_left _ h)
     · exact checkAll_sound V l _ (fun con h => hsat con (List.mem_append_right _ h)) w hw
 
-private theorem checkAll_runs : ∀ (l : List va) (st : ProverState F),
-    ∃ st', Runs (checkAll (F := F) (c := c) (a := a) l) st PUnit.unit st'
-  | [], st => ⟨st, rfl⟩
-  | v :: l, st => by
-    obtain ⟨st₁, h₁⟩ := CheckedType.check_runs (c := c) (val := a) st v
-    obtain ⟨st₂, h₂⟩ := checkAll_runs l st₁
-    exact ⟨st₂, h₁.bind h₂⟩
+/-- Admissibility of a vector is admissibility of its entries: a bundle reading as one
+entry sits in a vector of constant bundles reading as the whole. -/
+private theorem valid_getElem {n : Nat} {xs : Vector a n}
+    (hv : ∀ (V : Valuation F) (ws : Vector va n), CircuitType.Reads V ws xs →
+      ∀ w ∈ ws.toList, CheckedType.post (c := c) (val := a) V w)
+    {i : Nat} (hi : i < n) : CheckedType.Valid (F := F) (c := c) (var := va) xs[i] := by
+  intro V w hw
+  have hwsi : (Vector.ofFn fun j : Fin n =>
+      if (j : Nat) = i then w else CircuitType.constVar (F := F) (var := va) xs[j])[i] = w := by
+    simp
+  refine hv V _ ?_ w (Vector.mem_toList_iff.mpr (hwsi ▸ Vector.getElem_mem hi))
+  rw [CircuitType.reads_vector]
+  intro k hk
+  rcases eq_or_ne k i with rfl | hne
+  · simpa using hw
+  · simpa [hne] using CircuitType.reads_constVar (F := F) (var := va) V xs[k]
 
-private theorem checkAll_sat [ConstraintHolds F c] [LawfulBasicSystem F c] :
-    ∀ (l : List va) {st st' stf : ProverState F},
-      Runs (checkAll (F := F) (c := c) (a := a) l) st PUnit.unit st' →
-      st'.nv ≤ stf.nv → st'.env.Le stf.env →
-      (∀ v ∈ l, CircuitType.Scoped (val := a) st v ∧ ∃ x : a, CircuitType.Reads st.env.get v x) →
-      Sat (checkAll (F := F) (c := c) (a := a) l) st stf
-  | [], _, _, _, _, _, _, _ => Sat.pure
-  | v :: l, st, _, stf, hrun, hnv, hle, hall => by
-    obtain ⟨_, st₁, hrun₁, hrun₂⟩ := hrun.bind_inv
-    obtain ⟨hs, x, hr⟩ := hall v (List.mem_cons_self ..)
-    refine Sat.bind hrun₁
-      (CheckedType.check_sat v x hrun₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle) hs hr)
-      (checkAll_sat l hrun₂ hnv hle fun w hw => ?_)
-    obtain ⟨hsw, y, hrw⟩ := hall w (List.mem_cons_of_mem _ hw)
-    exact ⟨hsw.mono hrun₁.nv_le, y, hrw.of_le hsw hrun₁.le⟩
+private theorem checkAll_complete [ConstraintHolds F c] [LawfulBasicSystem F c] :
+    ∀ l : List va, Complete (F := F) (c := c)
+      (fun st => ∀ v ∈ l, ∃ x : a, CheckedType.Valid (F := F) (c := c) (var := va) x ∧
+        CircuitType.ReadsAs (val := a) st v x)
+      (checkAll (F := F) (c := c) (a := a) l) fun _ _ => True
+  | [] => Complete.pure
+  | v :: l => by
+    intro st hall
+    obtain ⟨x, hx, hs, hr⟩ := hall v (List.mem_cons_self ..)
+    obtain ⟨_, st₁, hrun₁, hsat₁, _⟩ :=
+      CheckedType.check_complete (c := c) (val := a) v x hx st ⟨hs, hr⟩
+    obtain ⟨_, st₂, hrun₂, hsat₂, _⟩ := checkAll_complete l st₁ fun w hw => by
+      obtain ⟨y, hy, hsw, hrw⟩ := hall w (List.mem_cons_of_mem _ hw)
+      exact ⟨y, hy, hsw.mono hrun₁.nv_le, hrw.of_le hsw hrun₁.le⟩
+    refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
+    intro stf hnv hle
+    exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+      (hsat₂ hnv hle)
 
 end Laws
 
@@ -187,13 +203,13 @@ instance instCheckedTypeVector [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c
   check vs := checkAll (F := F) (c := c) (a := a) vs.toList
   post V vs := ∀ v ∈ vs.toList, CheckedType.post (c := c) (val := a) V v
   check_sound V vs nv hsat := checkAll_sound V vs.toList nv hsat
-  check_runs st vs := checkAll_runs vs.toList st
-  check_sat vs xs hrun hnv hle hs hr := by
+  check_complete vs xs hv := by
+    intro st ⟨hs, hr⟩
     rw [CircuitType.scoped_vector] at hs
     rw [CircuitType.reads_vector] at hr
-    refine checkAll_sat vs.toList hrun hnv hle fun v hv => ?_
-    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
-    exact ⟨hs i hi, xs[i], hr i hi⟩
+    refine checkAll_complete vs.toList st fun v hv' => ?_
+    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv')
+    exact ⟨xs[i], valid_getElem hv hi, hs i hi, hr i hi⟩
 
 end VectorFormer
 
@@ -208,8 +224,7 @@ instance instCheckedTypeUnChecked [Add F] [Mul F] [Zero F] [One F] [BasicSystem 
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs st _ := ⟨st, rfl⟩
-  check_sat _ _ _ _ _ _ _ := Sat.pure
+  check_complete _ _ _ := Complete.pure
 
 end UnChecked
 
@@ -225,8 +240,12 @@ variable {a va b vb : Type}
   { check := fun v => S.check (ew v)
     post := fun V v => S.post V (ew v)
     check_sound := fun V v nv h => S.check_sound V (ew v) nv h
-    check_runs := fun st v => S.check_runs st (ew v)
-    check_sat := fun v x hrun hnv hle hs hr => S.check_sat (ew v) (ev x) hrun hnv hle hs hr }
+    check_complete := fun v x hx st hpre =>
+      S.check_complete (ew v) (ev x)
+        (fun V w hw => by
+          have h := hx V (ew.symm w)
+            (by rwa [CircuitType.reads_ofEquiv, Equiv.apply_symm_apply])
+          rwa [Equiv.apply_symm_apply] at h) st hpre }
 
 /-- A shape's check, through its decomposition at the value and at the bundle. -/
 @[reducible] def CheckedType.ofShape [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
@@ -238,6 +257,75 @@ variable {a va b vb : Type}
 end Equiv
 
 end Instances
+
+/-! ## Admissibility, at the concrete types and the formers
+
+Every type below admits every value — their checks force nothing about the decoded
+value, only that the wires lie in the encoding's image. A type whose rows do constrain
+the value (a curve point's on-curve rows) proves its own characterization instead. -/
+
+section Valid
+
+variable {F c : Type}
+
+@[simp] theorem valid_fvar [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] {x : F} :
+    CheckedType.Valid (F := F) (c := c) (var := FVar F) x := fun _ _ _ => trivial
+
+@[simp] theorem valid_bool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F] [NeZero (1 : F)]
+    [BasicSystem F c] {b : Bool} :
+    CheckedType.Valid (F := F) (c := c) (var := BoolVar F) b :=
+  fun _ _ h => ⟨b, CircuitType.reads_boolVar.mp h⟩
+
+@[simp] theorem valid_unchecked {val var : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [CircuitType F val var] {x : UnChecked val} :
+    CheckedType.Valid (F := F) (c := c) (var := UnChecked var) x := fun _ _ _ => trivial
+
+variable {a va b vb : Type}
+
+@[simp] theorem valid_prod [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [CircuitType F a va] [CircuitType F b vb] [CheckedType F c a va] [CheckedType F c b vb]
+    {p : a × b} :
+    CheckedType.Valid (F := F) (c := c) (var := va × vb) p ↔
+      CheckedType.Valid (F := F) (c := c) (var := va) p.1 ∧
+        CheckedType.Valid (F := F) (c := c) (var := vb) p.2 := by
+  constructor
+  · intro h
+    exact ⟨fun V u hu => (h V (u, CircuitType.constVar (F := F) (var := vb) p.2)
+        (CircuitType.reads_prod.mpr ⟨hu, CircuitType.reads_constVar V p.2⟩)).1,
+      fun V u hu => (h V (CircuitType.constVar (F := F) (var := va) p.1, u)
+        (CircuitType.reads_prod.mpr ⟨CircuitType.reads_constVar V p.1, hu⟩)).2⟩
+  · rintro ⟨hx, hy⟩ V ⟨u, w⟩ hu
+    rw [CircuitType.reads_prod] at hu
+    exact ⟨hx V u hu.1, hy V w hu.2⟩
+
+@[simp] theorem valid_vector [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [CircuitType F a va] [CheckedType F c a va] {n : Nat} {xs : Vector a n} :
+    CheckedType.Valid (F := F) (c := c) (var := Vector va n) xs ↔
+      ∀ (i : Nat) (hi : i < n), CheckedType.Valid (F := F) (c := c) (var := va) xs[i] := by
+  constructor
+  · exact fun h _ hi => valid_getElem h hi
+  · rintro h V ws hws w hw
+    rw [CircuitType.reads_vector] at hws
+    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hw)
+    exact h i hi V ws[i] (hws i hi)
+
+/-- Admissibility travels through a decomposition. -/
+@[simp] theorem valid_ofEquiv [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [CircuitType F a va] [S : CheckedType F c a va] (ev : b ≃ a) (ew : vb ≃ va) {x : b} :
+    @CheckedType.Valid F c b vb _ _ _ _ _ (CircuitType.ofEquiv ev ew)
+        (CheckedType.ofEquiv ev ew) x ↔
+      CheckedType.Valid (F := F) (c := c) (var := va) (ev x) := by
+  constructor
+  · intro h V u hu
+    have hx : @CircuitType.Reads F b vb _ _ (CircuitType.ofEquiv ev ew) V (ew.symm u) x := by
+      rw [CircuitType.reads_ofEquiv, Equiv.apply_symm_apply]
+      exact hu
+    have h2 : CheckedType.post (c := c) (val := a) V (ew (ew.symm u)) := h V (ew.symm u) hx
+    rwa [Equiv.apply_symm_apply] at h2
+  · intro h V w hw
+    exact h V (ew w) ((CircuitType.reads_ofEquiv ev ew).mp hw)
+
+end Valid
 
 section Combinators
 
@@ -321,12 +409,15 @@ private theorem runs_witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
       = .ok (st'.out PUnit.unit) from hcheck]
 
 /-- The witness leaf's completeness law — the one place the representation stack is
-crossed. A witness computation that runs to a value yields a run to the allocated
-state whose fresh bundle is scoped and reads as that value, whose rows are the type's
-check rows, satisfied at any extension, and which only grows the table. -/
+crossed. A witness computation that runs to an admissible value yields a run to the
+allocated state whose fresh bundle is scoped and reads as that value, whose rows are the
+type's check rows, satisfied at any extension, and which only grows the table.
+Admissibility is what the type's own rows force (`CheckedType.Valid`), so the hypothesis
+restricts the honest prover's domain to exactly what the circuit accepts. -/
 theorem witness_complete [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] [inst : CircuitType F val var]
     [CheckedType F c val var] (compute : AsProver F val) {st : ProverState F} {v : val}
+    (hv : CheckedType.Valid (F := F) (c := c) (var := var) v)
     (h : compute.run st.env = .ok v) :
     ∃ (r : var) (st' : ProverState F), Runs (witness (c := c) (val := val) compute) st r st' ∧
       (∀ {stf : ProverState F}, st'.nv ≤ stf.nv → st'.env.Le stf.env →
@@ -348,15 +439,16 @@ theorem witness_complete [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     simp only [getElem_mapVec, getElem_allocRange, CVar.val, ProverState.get_alloc]
     simp [Assignments.get, Assignments.extendList_get
       (show i < (inst.valueToFields v).toList.length by simpa using hi)]
-  obtain ⟨st', hcheck⟩ :=
-    CheckedType.check_runs (c := c) (val := val) (st.alloc (inst.valueToFields v))
-      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)))
+  obtain ⟨_, st', hcheck, hsat, _⟩ :=
+    CheckedType.check_complete (c := c) (val := val)
+      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) v hv
+      (st.alloc (inst.valueToFields v)) ⟨hscope, hreads⟩
   have hrun := runs_witness compute h hcheck
   refine ⟨_, st', hrun, ?_, hrun.nv_le, hrun.le,
     hscope.mono hcheck.nv_le, hreads.of_le hscope hcheck.le⟩
   intro stf hnv' hle' con hcon
   simp only [witness, build, build_bind, List.append_nil] at hcon
-  exact CheckedType.check_sat _ v hcheck hnv' hle' hscope hreads con hcon
+  exact hsat hnv' hle' con hcon
 
 end Combinators
 

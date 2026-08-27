@@ -93,12 +93,16 @@ theorem reads_inputVar [Add F] [Mul F] [Zero F] [A : CircuitType F a avar] (inpu
 /-! ## The seam -/
 
 open CircuitType in
-/-- A circuit whose body is complete solves: the run succeeds, the table it produces
-satisfies every compiled row, and the compiled system's two bundles — the body's output
-and the public one — both read as the value the solve returned. -/
+/-- A circuit whose body is complete solves at an admissible public input: the run
+succeeds, the table it produces satisfies every compiled row, and the compiled system's
+two bundles — the body's output and the public one — both read as the value the solve
+returned. Admissibility (`CheckedType.Valid`) is the input type's own rows read at the
+value, so the statement covers exactly the inputs the compiled system accepts and
+assumes nothing else about the prover. -/
 theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F c a avar]
     [B : CircuitType F b bvar] {main : avar → CircuitM F c bvar} (input : a)
+    (hinput : CheckedType.Valid (F := F) (c := c) (var := avar) input)
     (hmain : Complete (F := F) (c := c)
       (fun st => Scoped (val := a) st (inputVar (F := F) (a := a)) ∧
         Reads st.env.get (inputVar (F := F) (a := a)) input)
@@ -113,9 +117,9 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
   have hav := scoped_inputVar (F := F) (avar := avar) input
   have hrv := reads_inputVar (F := F) (avar := avar) input
   -- the input bundle's check, which may allocate auxiliaries of its own
-  obtain ⟨st₀, hcheck⟩ :=
-    CheckedType.check_runs (c := c) (val := a) (seed (F := F) (avar := avar) input)
-      (inputVar (F := F) (a := a))
+  obtain ⟨_, st₀, hcheck, hsat₀, _⟩ :=
+    CheckedType.check_complete (c := c) (val := a) (inputVar (F := F) (a := a)) input hinput
+      (seed (F := F) (avar := avar) input) ⟨hav, hrv⟩
   -- the body, from where the check left off
   obtain ⟨out, st₁, hrun₁, hsat₁, hscope₁, v, hreads₁⟩ :=
     hmain st₀ ⟨hav.mono hcheck.nv_le, hrv.of_le hav hcheck.le⟩
@@ -123,7 +127,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
   obtain ⟨pub, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscopeP, hreadsP⟩ :=
     witness_complete (c := c) (val := UnChecked b)
       (do let x ← readVar (val := b) out; pure (UnChecked.mk x)) (st := st₁)
-      (v := UnChecked.mk v)
+      (v := UnChecked.mk v) (by simp)
       (by
         simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run hscope₁,
           (reads_iff.mp hreads₁).2]
@@ -153,9 +157,8 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     rw [readVar_run hout,
       (reads_iff.mp ((hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃)).2]
   · exact Sat.bind hcheck
-      (CheckedType.check_sat _ input hcheck
-        (hrun₁.nv_le.trans (hnv₂.trans hrun₃.nv_le))
-        (hrun₁.le.trans (hle₂.trans hle₃)) hav hrv)
+      (hsat₀ (hrun₁.nv_le.trans (hnv₂.trans hrun₃.nv_le))
+        (hrun₁.le.trans (hle₂.trans hle₃)))
       (Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hle₃))
         (Sat.bind hrun₂ (hsat₂ hrun₃.nv_le hle₃)
           (Sat.bind hrun₃ (hsat₃ (Nat.le_refl _) (Assignments.Le.refl _)) Sat.pure)))

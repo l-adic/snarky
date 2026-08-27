@@ -57,7 +57,8 @@ theorem inv_complete [Field F] [DecidableEq F] [BasicSystem F c]
       by simp [Sat, build, if_neg hne], trivial, rfl⟩
   · obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
       witness_complete (c := c) (inv.advice x)
-        (st := st) (v := (x.val st.env.get)⁻¹) (by simp [inv.advice, hx, hne])
+        (st := st) (v := (x.val st.env.get)⁻¹)
+        (by simp) (by simp [inv.advice, hx, hne])
     refine ⟨r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope,
       (CircuitType.reads_iff.mp hreads).2⟩
     intro stf hnv' hle'
@@ -129,6 +130,7 @@ theorem mul_complete [Field F] [DecidableEq F] [BasicSystem F c]
   · obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
       witness_complete (c := c) (mul.advice x y)
         (st := st) (v := x.val st.env.get * y.val st.env.get)
+        (by simp)
         (by simp [mul.advice, hx, hy])
     refine ⟨r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope,
       (CircuitType.reads_iff.mp hreads).2⟩
@@ -188,7 +190,8 @@ theorem square_complete [Field F] [DecidableEq F] [BasicSystem F c]
   · exact ⟨_, st, rfl, by simp [Sat, build], trivial, rfl⟩
   · obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
       witness_complete (c := c) (square.advice x)
-        (st := st) (v := x.val st.env.get * x.val st.env.get) (by simp [square.advice, hx])
+        (st := st) (v := x.val st.env.get * x.val st.env.get)
+        (by simp) (by simp [square.advice, hx])
     refine ⟨r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope,
       (CircuitType.reads_iff.mp hreads).2⟩
     intro stf hnv' hle'
@@ -311,10 +314,12 @@ theorem isZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
   · obtain ⟨r, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscope₁, hreads₁⟩ :=
       witness_complete (c := c) (isZero.bitAdvice x)
         (st := st) (v := if x.val st.env.get = 0 then 1 else 0)
+        (by simp)
         (by simp [isZero.bitAdvice, hx])
     obtain ⟨rInv, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscope₂, hreads₂⟩ :=
       witness_complete (c := c) (isZero.invAdvice x)
         (st := st₁) (v := if x.val st.env.get = 0 then 0 else (x.val st.env.get)⁻¹)
+        (by simp)
         (by simp [isZero.invAdvice, hx.mono hnv₁, CVar.val_of_le hle₁ hx])
     refine ⟨BoolVar.unchecked r, st₂, hrun₁.bind (hrun₂.bind rfl), ?_,
       (CircuitType.scoped_fvar.mp hscope₁).mono hnv₂,

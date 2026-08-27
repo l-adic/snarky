@@ -720,6 +720,7 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F × F × F × F)
       (rowWit eb t bs acc) (st := st)
       (v := (W.inv, W.nPrime, W.xR, W.yR, W.xS, W.yS, W.s1, W.s3))
+      (by simp)
       (by
         simp only [rowWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run htx,
           AsProver.readCVar_run hty, AsProver.readCVar_run hax, AsProver.readCVar_run hay,
@@ -1005,6 +1006,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (bitsWit rounds scalar.val) (st := st)
       (v := Vector.ofFn fun r => Vector.ofFn fun j =>
         if (ToNat.toNat sv).testBit (4 * rounds - 1 - (4 * r.1 + j.1)) then 1 else 0)
+      (by simp)
       (by
         simp only [bitsWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hscS, hrs, Except.bind]

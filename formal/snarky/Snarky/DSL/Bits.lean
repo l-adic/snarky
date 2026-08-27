@@ -186,7 +186,8 @@ theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [Bas
   simp only [unpack]
   obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
     witness_complete (c := c) (unpack.advice v n) (st := st)
-      (v := unpackPure (v.val st.env.get) n) (by simp [unpack.advice, hv])
+      (v := unpackPure (v.val st.env.get) n)
+      (by simp) (by simp [unpack.advice, hv])
   refine ⟨r, st₁, hrun.bind rfl, ?_, hscope, hreads⟩
   intro stf hnv' hle'
   refine Sat.bind hrun (hsat hnv' hle')

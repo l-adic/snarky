@@ -185,6 +185,7 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
     witness_complete (c := KimchiConstraint F) (val := UnChecked (F × F))
       (UnChecked.mk <$> lowestWit x) (st := st)
       (v := ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩)
+      (by simp)
       (by
         simp only [lowestWit, AsProver.map_eq, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hscx, hvx, Except.bind]

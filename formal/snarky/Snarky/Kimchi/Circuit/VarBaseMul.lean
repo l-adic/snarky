@@ -313,6 +313,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   obtain ⟨nAcc, t0, R0, S0, N0, E0, C0, D0⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F) (nAccWit acc.2 bs) (st := st)
       (v := W.nPrime)
+      (by simp)
       (by
         simp only [nAccWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run han,
           AsProver.readCVar_run (hb 0 (by omega)), AsProver.readCVar_run (hb 1 (by omega)),
@@ -327,7 +328,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 0
   obtain ⟨w0, t1, R1, S1, N1, E1, C1, D1⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[0]'(by omega)) ⟨acc.1.x, acc.1.y⟩) (st := t0)
+      (bitWit base (bs[0]'(by omega)) ⟨acc.1.x, acc.1.y⟩) (st := t0) (by simp)
       (v := (W.s0, W.s0 * W.s0,
         2 * W.y0 / (2 * W.x0 + W.xT - W.s0 * W.s0) - W.s0, W.x1, W.y1))
       (by
@@ -347,7 +348,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 1
   obtain ⟨w1, t2, R2, S2, N2, E2, C2, D2⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩) (st := t1)
+      (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩) (st := t1) (by simp)
       (v := (W.s1, W.s1 * W.s1,
         2 * W.y1 / (2 * W.x1 + W.xT - W.s1 * W.s1) - W.s1, W.x2, W.y2))
       (by
@@ -367,7 +368,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 2
   obtain ⟨w2, t3, R3, S3, N3, E3, C3, D3⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩) (st := t2)
+      (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩) (st := t2) (by simp)
       (v := (W.s2, W.s2 * W.s2,
         2 * W.y2 / (2 * W.x2 + W.xT - W.s2 * W.s2) - W.s2, W.x3, W.y3))
       (by
@@ -387,7 +388,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 3
   obtain ⟨w3, t4, R4, S4, N4, E4, C4, D4⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩) (st := t3)
+      (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩) (st := t3) (by simp)
       (v := (W.s3, W.s3 * W.s3,
         2 * W.y3 / (2 * W.x3 + W.xT - W.s3 * W.s3) - W.s3, W.x4, W.y4))
       (by
@@ -407,7 +408,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 4
   obtain ⟨w4, t5, R5, S5, N5, E5, C5, D5⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩) (st := t4)
+      (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩) (st := t4) (by simp)
       (v := (W.s4, W.s4 * W.s4,
         2 * W.y4 / (2 * W.x4 + W.xT - W.s4 * W.s4) - W.s4, W.x5, W.y5))
       (by
@@ -965,6 +966,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     witness_complete (c := KimchiConstraint F) (val := Vector F n)
       (lsbBitsWit n scalar.val) (st := st₁)
       (v := Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
+      (by simp)
       (by
         simp only [lsbBitsWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run (hscS.mono hnv₁), CVar.val_of_le hle₁ hscS, hrs, Except.bind]
@@ -1631,6 +1633,7 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
   obtain ⟨w, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscW, hrdW⟩ :=
     witness_complete (c := c) (val := F × Bool) (splitFieldWit s) (st := st)
       (v := ((splitField sval).1, (splitField sval).2))
+      (by simp)
       (by
         simp only [splitFieldWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hsc, hval, Except.bind]

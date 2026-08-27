@@ -319,6 +319,22 @@ def CircuitType.Reads [Add F] [Mul F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) (a : val) : Prop :=
   mapVec (·.val V) (inst.varToFields v) = inst.valueToFields a
 
+/-- A value's constant bundle: its encoding, materialized as constant expressions. Every
+value has one, and it reads as that value at every table — which is what makes
+admissibility (`CheckedType.Valid`) readable off a former factor by factor. -/
+def CircuitType.constVar [inst : CircuitType F val var] (a : val) : var :=
+  inst.fieldsToVar (mapVec CVar.const (inst.valueToFields a))
+
+/-- The constant bundle reads as its value. -/
+theorem CircuitType.reads_constVar [Add F] [Mul F] [inst : CircuitType F val var]
+    (V : Valuation F) (a : val) :
+    CircuitType.Reads V (CircuitType.constVar (F := F) (var := var) a) a := by
+  unfold CircuitType.Reads CircuitType.constVar
+  rw [inst.var_roundTrip]
+  ext i hi
+  simp only [getElem_mapVec]
+  rfl
+
 /-- A bundle read: in scope, and reading as this value. The two travel as one — at any
 later table the same bundle reads the same value — which is what a multi-stage
 completeness proof carries from stage to stage. -/
@@ -571,25 +587,16 @@ theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : CircuitM F c 
 theorem Runs.addConstraint {con : c} {st : ProverState F} :
     Runs (Snarky.addConstraint con) st PUnit.unit st := rfl
 
-/-- A sequence's run splits at the bind: the head reaches some intermediate state and
-the tail runs from there — the inverse of `Runs.bind`. A caller holding only the whole
-run recovers the pieces, which is what a check that allocates its own auxiliaries needs
-of its factors. -/
-theorem Runs.bind_inv {β : Type v} {g : CircuitM F c α} {k : α → CircuitM F c β}
-    {st st₂ : ProverState F} {b : β} (h : Runs (g >>= k) st b st₂) :
-    ∃ (a : α) (st₁ : ProverState F), Runs g st a st₁ ∧ Runs (k a) st₁ b st₂ := by
-  rw [Runs, prove_bind] at h
-  rcases hg : prove g st.nv st.env with e | p
-  · rw [hg] at h
-    exact absurd h (by simp [Except.bind])
-  · rw [hg] at h
-    exact ⟨p.result, ⟨p.nextVar, p.assignments, prove_dom st.dom hg⟩, hg, h⟩
-
 /-- `pure` emits no rows. -/
 theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F} :
     Sat (pure a : CircuitM F c α) st stf := by
   intro con hcon
   simp [build] at hcon
+
+/-- A program that emits no rows and allocates nothing is complete from every state. -/
+theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop} {a : α} :
+    Complete pre (pure a : CircuitM F c α) fun _ _ => True :=
+  fun st _ => ⟨a, st, rfl, fun _ _ => Sat.pure, trivial⟩
 
 /-- `addConstraint`'s one row is satisfied exactly by its identity — the row obligation
 is the caller's contribution. -/

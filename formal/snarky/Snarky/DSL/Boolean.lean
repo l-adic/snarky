@@ -141,6 +141,7 @@ theorem selectField_complete [Field F] [DecidableEq F] [BasicSystem F c]
   · obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
       witness_complete (c := c) (selectField.advice b' t e)
         (st := st) (v := if b'.val st.env.get = 1 then t.val st.env.get else e.val st.env.get)
+        (by simp)
         (by by_cases hb1 : b'.val st.env.get = 1 <;> simp [selectField.advice, hb, ht, he, hb1])
     refine ⟨r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope, ?_⟩
     on_goal 2 =>
@@ -657,6 +658,7 @@ private theorem xor.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
   simp only [Snarky.xor.core]
   obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
     witness_complete (c := c) (Snarky.xor.advice a b) (st := st) (v := bit (ab ^^ bb))
+      (by simp)
       (by cases ab <;> cases bb <;> simp [Snarky.xor.advice, ha, hb, hva, hvb, bit])
   have hr : r.val st₁.env.get = bit (ab ^^ bb) := (CircuitType.reads_iff.mp hreads).2
   refine ⟨.unchecked r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope, ab ^^ bb,

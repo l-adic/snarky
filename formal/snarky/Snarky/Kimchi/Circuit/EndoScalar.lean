@@ -352,6 +352,7 @@ private theorem row_complete [Field F] [DecidableEq F] [ToNat F] (st₁ : Prover
       (st := st) (v := ((Kimchi.Gate.EndoScalar.build a0 b0 n0 crumbs).a8,
         (Kimchi.Gate.EndoScalar.build a0 b0 n0 crumbs).b8,
         (Kimchi.Gate.EndoScalar.build a0 b0 n0 crumbs).n8))
+      (by simp)
       (by
         simp only [rowWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run ha,
           AsProver.readCVar_run hb, AsProver.readCVar_run hn, run_mapM_readCVar hxsc,
@@ -426,6 +427,7 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
   obtain ⟨cvars, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscC, hrdC⟩ :=
     witness_complete (c := KimchiConstraint F) (val := Vector F (rows * 8))
       (crumbsWit rows scalar) (st := st) (v := crumbsVec (rows * 8) (ToNat.toNat sv))
+      (by simp)
       (by
         simp only [crumbsWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hsc, hrd, Except.bind]

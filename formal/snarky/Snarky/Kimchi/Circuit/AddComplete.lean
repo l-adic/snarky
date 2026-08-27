@@ -64,8 +64,12 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs st _ := ⟨st, rfl⟩
-  check_sat _ _ _ _ _ _ _ := Sat.pure
+  check_complete _ _ _ := Complete.pure
+
+/-- A point's coordinates carry no admissibility condition. -/
+@[simp] theorem valid_affinePoint [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    {p : AffinePoint F} :
+    CheckedType.Valid (F := F) (c := c) (var := AffinePoint (FVar F)) p := fun _ _ _ => trivial
 
 /-- A point bundle is in scope when its coordinates are. -/
 @[simp] theorem scoped_affinePoint {st : ProverState F} {p : AffinePoint (FVar F)} :
@@ -432,6 +436,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     obtain ⟨sameXU, st₃, hrunX, hsatX, hnvX, hleX, hscX, hrdX⟩ :=
       witness_complete (c := KimchiConstraint F) (val := UnChecked Bool)
         (addFast.sameXAdvice q1 q2) (st := st₂) (v := ⟨decide (x1 = x2)⟩)
+        (by simp)
         (by simp [addFast.sameXAdvice, AsProver.readCVar_run hq1x₂,
           AsProver.readCVar_run hq2x, e1x, e2x])
     have hrdSX : CircuitType.Reads (val := Bool) st₃.env.get sameXU.val (decide (x1 = x2)) :=
@@ -475,6 +480,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
           witness_complete (c := KimchiConstraint F) (val := UnChecked Bool)
             (addFast.infAdvice q1 q2 sameXU.val) (st := st₃)
             (v := ⟨decide (x1 = x2) && !decide (y1 = y2)⟩)
+            (by simp)
             (by simp [addFast.infAdvice, readVar_run hscSX, hvalSX,
               AsProver.readCVar_run hq1y₃, AsProver.readCVar_run hq2y₃, e1y₃, e2y₃])
         exact ⟨r.val, st₄, hrun.bind rfl, fun hnv' hle' =>
@@ -501,6 +507,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
         (v := ⟨if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0,
                if x1 = x2 then 0 else (x2 - x1)⁻¹,
                if x1 = x2 then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)⟩)
+        (by simp)
         (by
           by_cases h : y1 = y2 <;> by_cases h2 : x1 = x2 <;>
             simp [addFast.auxAdvice, readVar_run hscSX₄, hvalSX₄,
@@ -523,6 +530,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
       witness_complete (c := KimchiConstraint F) (val := AffinePoint F)
         (addFast.sumAdvice q1 q2 aux.s) (st := st₅)
         (v := ⟨sv * sv - (x1 + x2), sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩)
+        (by simp)
         (by
           simp [addFast.sumAdvice, AsProver.readCVar_run hscA.2.2,
             AsProver.readCVar_run hq1x₅, AsProver.readCVar_run hq2x₅,
