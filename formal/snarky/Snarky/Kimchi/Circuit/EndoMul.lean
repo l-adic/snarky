@@ -1418,31 +1418,40 @@ private theorem vesta_endoExpand {n : ℕ} {s A B : ℤ}
     crumbsOf_eq_map,
     toField_digits (by decide) (by decide) _ (digitsOf_lt 64 _) HasEndo.vesta.lam]
 
-open Std.Do CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
   WeierstrassCurve.Affine in
-/-- **The deployed challenge leg.** At Vesta, on a scalar cell reading as a prechallenge
-`n < 2^128`, the gadget's result is the base point scaled by the wire's challenge — the
-Fq-sponge's endo-expansion of `n`, acting through the point group's `Fp`-module
-structure.
+/-- **The deployed challenge leg.** At Vesta, the generic law's output on a scalar cell
+reading as a prechallenge `n < 2^128` says the result is the base point scaled by the
+wire's challenge — the Fq-sponge's endo-expansion of `n`, acting through the point
+group's `Fp`-module structure.
 
-The generic law hands back a crumb list only up to reconstruction and a scalar pinned
-only in `Fq`; the bound closes the first (`nReconstruct` is injective at 64 crumbs below
-`|Fq|`) and the accumulator bounds close the second (the decomposition IS the gate's
-decoded integer). Neither is visible here: a consumer supplies a reading and a bound, and
-receives the scalar action it needs. -/
-theorem vesta_endoMul_spec {V : Valuation Fq} (t : AffinePoint (FVar Fq))
-    (cv : FVar Fq) (n : ℕ) (hn : n < 2 ^ 128) (hread : cv.val V = ((n : ℕ) : Fq)) :
-    ⦃⌜True⌝⦄
-    Snarky.Kimchi.endoMul (c := Builder V (KimchiConstraint Fq))
-      HasEndo.vesta.endo 32 t ⟨cv⟩
-    ⦃⇓ r _ => ⌜∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
+The generic post names a crumb list only up to reconstruction and a scalar pinned only in
+`Fq`; the bound closes the first (`nReconstruct` is injective at 64 crumbs below `|Fq|`)
+and the accumulator bounds close the second (the decomposition IS the gate's decoded
+integer). Neither is visible here: a consumer supplies a reading and a bound, and receives
+the scalar action it needs.
+
+Stated on the generic law's OUTPUT rather than as a triple, because a consumer reaches it
+holding that output — its own program walk has already passed the call. -/
+theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
+    {cv : FVar Fq} {n : ℕ} (hn : n < 2 ^ 128) (hread : cv.val V = ((n : ℕ) : Fq))
+    (h : ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
+      ∃ crumbs : List Fq,
+        (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
+        crumbs.length = 2 * 32 ∧
+        cv.val V = nReconstruct crumbs ∧
+        ∃ (hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V)) (s A B : ℤ),
+          Point.some _ _ hfin = s • Point.some _ _ hT ∧
+          s = B + A * HasEndo.vesta.lam ∧
+          |A| ≤ 3 * 4 ^ 32 ∧ |B| ≤ 3 * 4 ^ 32 ∧
+          (A : Fq) = decomposeA crumbs ∧ (B : Fq) = decomposeB crumbs ∧
+          (s : Fq) = toField crumbs (HasEndo.vesta.lam : Fq)) :
+    ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
       ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
         Point.some _ _ hfin
           = (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
-              • Point.some _ _ hT⌝⦄ := by
-  have hgen := endoMul_spec (V := V) HasEndo.vesta 32 (by norm_num) t ⟨cv⟩
-  mvcgen [hgen]
-  intro h hT
+              • Point.some _ _ hT := by
+  intro hT
   obtain ⟨crumbs, hcrv, hclen, hcrec, hfin, sc, A, B, hseq, hsab, hAle, hBle,
     hAval, hBval, -⟩ := h hT
   have hcr : crumbs = crumbsOf 64 n := vesta_crumbs_eq hn hcrv hclen (hread ▸ hcrec)

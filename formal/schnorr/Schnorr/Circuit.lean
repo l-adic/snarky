@@ -42,7 +42,7 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c] (st : Statement (FVar F
   let squeezed ← RandomOracle.hashVec Poseidon.fqParams
     [.const gen.x, .const gen.y, st.pk.point.x, st.pk.point.y, st.u.point.x, st.u.point.y]
   let hbits ← unpackFull PALLAS_SCALAR_CARD 255 squeezed
-  let cpk ← endoMul Pasta.vestaEndo 32 st.pk.point ⟨packLow 128 (by omega) hbits⟩
+  let cpk ← endoMul HasEndo.vesta.endo 32 st.pk.point ⟨packLow 128 (by omega) hbits⟩
   let zr ← varBaseMul 255 51 ⟨.const gen.x, .const gen.y⟩ st.z
   assertBitsBelow PALLAS_SCALAR_CARD (mapVec BoolVar.unchecked zr.lsbBits)
   let rhs ← addFast .checkFinite st.u.point cpk

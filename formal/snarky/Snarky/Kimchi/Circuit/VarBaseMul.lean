@@ -1775,30 +1775,37 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
 
 attribute [irreducible] scaleFast2'
 
-open Std.Do CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
-  Kimchi.Gate.VarBaseMul in
-/-- **The deployed ladder leg.** At Vesta, on a `Type1` carrier off the ladder's
-forbidden band whose 255 witnessed bits read as a value below the scalar order, the
-gadget's result is the base point scaled by the carrier's decode.
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul in
+/-- **The deployed ladder leg.** At Vesta, the generic law's output on a `Type1` carrier
+off the ladder's forbidden band, whose 255 witnessed bits read as a value below the
+scalar order, says the result is the base point scaled by the carrier's decode.
 
-The generic law pins the ladder's integer only through `bitsVal` of its own cell list and
+The generic post pins the ladder's integer only through `bitsVal` of its own cell list and
 guards its conclusion on an abstract `LadderRegime`; the bit bound identifies that integer
-with the carrier's canonical representative, and the deployed order discharges the regime.
-Neither is visible here. -/
-theorem vesta_varBaseMul_spec {V : Valuation Fq} (base : AffinePoint (FVar Fq))
-    (sv : Type1 (FVar Fq)) (Z : Type1 Fq) (hread : sv.val.val V = Z.val)
-    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
-    ⦃⌜True⌝⦄
-    varBaseMul (c := Builder V (KimchiConstraint Fq)) 255 51 base sv
-    ⦃⇓ r _ => ⌜∀ T : Vesta.curve.toAffine.Point,
-        OnCurveAt Vesta.curve.toAffine V base T →
-        ∀ bs : Vector Bool 255,
-          (∀ i (hi : i < 255), (r.lsbBits[i]).val V = bit bs[i]) →
-          Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD →
-          OnCurveAt Vesta.curve.toAffine V r.g (Z.toScalarZ • T)⌝⦄ := by
-  have hgen := varBaseMul_spec (V := V) HasCurve.vesta 255 51 (by norm_num) base sv
-  mvcgen [hgen]
-  intro h T hT bs hbs hlt
+with the carrier's canonical representative, and the deployed order discharges the guard.
+Neither is visible here.
+
+Stated on the generic law's OUTPUT rather than as a triple, for the same reason as
+`vesta_endoMul_read`: a consumer reaches it holding that output. -/
+theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
+    {sv : Type1 (FVar Fq)} {r : VarBaseMulResult 255 Fq} {Z : Type1 Fq}
+    (hread : sv.val.val V = Z.val)
+    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD)
+    (h : ∀ T : HasCurve.vesta.W.Point, OnCurveAt HasCurve.vesta.W V base T →
+      ∃ bits : List Fq,
+        (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * 51 ∧
+        bits = ((r.lsbBits.toList.take (5 * 51)).reverse).map (·.val V) ∧
+        sv.val.val V = bitsRegister bits ∧
+        ∀ _ : HasCurve.vesta.LadderRegime (5 * 51)
+            (2 * bitsVal bits + 2 ^ (5 * 51) + 1),
+          OnCurveAt HasCurve.vesta.W V r.g
+            ((2 * bitsVal bits + 2 ^ (5 * 51) + 1) • T)) :
+    ∀ T : HasCurve.vesta.W.Point, OnCurveAt HasCurve.vesta.W V base T →
+      ∀ bs : Vector Bool 255,
+        (∀ i (hi : i < 255), (r.lsbBits[i]).val V = bit bs[i]) →
+        Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD →
+        OnCurveAt HasCurve.vesta.W V r.g (Z.toScalarZ • T) := by
+  intro T hT bs hbs hlt
   obtain ⟨bits, hbval, hblen, hbeq, hpin, hact⟩ := h T hT
   -- the ladder's integer is the carrier's canonical representative
   have hdec : (bits.map fun b => decide (b = 1)).reverse = bs.toList := by
