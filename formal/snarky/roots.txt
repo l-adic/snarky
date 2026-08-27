@@ -399,13 +399,9 @@ Snarky.pack_val
 Snarky.CVar.Scoped.pack
 Snarky.packLow
 Snarky.packLow_val
-Snarky.natVal
-Snarky.natVal_lt
-Snarky.natVal_append_singleton
-Snarky.natVal_testBit
-Snarky.natVal_unpackPure
+Snarky.natLsbVal_unpackPure
 Snarky.packPure
-Snarky.packPure_natVal
+Snarky.packPure_natLsbVal
 Snarky.unpackPure
 Snarky.packPure_unpackPure
 Snarky.unpack

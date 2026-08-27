@@ -1,4 +1,4 @@
-import Mathlib.Tactic.Ring
+import Kimchi.Bits
 import Snarky.DSL.SizedF
 
 namespace Snarky
@@ -24,31 +24,6 @@ class LawfulToNat (F : Type) [NatCast F] [ToNat F] where
 
 /-! ## The value level -/
 
-/-- The LSB-first value of a bit list. The ℕ-level reading of a decomposition, which
-`packPure` casts into the field; a comparison against the modulus lives here, where it
-has a meaning the field cannot express. -/
-def natVal : List Bool → Nat
-  | [] => 0
-  | b :: bs => b.toNat + 2 * natVal bs
-
-/-- A bit list's value fits in its length. -/
-theorem natVal_lt : ∀ l : List Bool, natVal l < 2 ^ l.length
-  | [] => by simp [natVal]
-  | b :: l => by
-    have := natVal_lt l
-    have hb : b.toNat ≤ 1 := by cases b <;> simp
-    simp only [natVal, List.length_cons, pow_succ]
-    omega
-
-/-- Appending a bit at the top adds it at the list's own weight. -/
-theorem natVal_append_singleton : ∀ (l : List Bool) (b : Bool),
-    natVal (l ++ [b]) = natVal l + b.toNat * 2 ^ l.length
-  | [], b => by simp [natVal]
-  | x :: l, b => by
-    rw [List.cons_append, natVal, natVal_append_singleton l b, natVal, List.length_cons,
-      pow_succ]
-    ring
-
 /-- The value-level indexed fold under `packPure`. -/
 private def packPureAux [Semiring F] : List Bool → Nat → F → F
   | [], _, acc => acc
@@ -65,45 +40,34 @@ def unpackPure [ToNat F] (x : F) (n : Nat) : Vector Bool n :=
 /-- The indexed fold in Horner form, through the cast. -/
 private theorem packPureAux_horner [CommSemiring F] :
     ∀ (bl : List Bool) (i : Nat) (acc : F),
-      packPureAux bl i acc = acc + (2 : F) ^ i * (natVal bl : F)
-  | [], i, acc => by simp [packPureAux, natVal]
+      packPureAux bl i acc = acc + (2 : F) ^ i * (Kimchi.natLsbVal bl : F)
+  | [], i, acc => by simp [packPureAux, Kimchi.natLsbVal]
   | b :: bs, i, acc => by
-    rw [packPureAux, packPureAux_horner bs (i + 1), natVal]
+    rw [packPureAux, packPureAux_horner bs (i + 1), Kimchi.natLsbVal]
     have hb : ((b.toNat : Nat) : F) = bit b := by cases b <;> simp [bit]
     push_cast
     rw [hb]
     ring
-
-/-- The low digits of a fitting number Horner-fold back to it. -/
-theorem natVal_testBit :
-    ∀ (n m : Nat), m < 2 ^ n → natVal (List.ofFn fun i : Fin n => m.testBit i.val) = m
-  | 0, m, hm => by simp only [List.ofFn_zero, natVal]; omega
-  | n + 1, m, hm => by
-    rw [List.ofFn_succ]
-    simp only [natVal, Fin.val_zero, Fin.val_succ, Nat.testBit_succ, Nat.testBit_zero]
-    rw [natVal_testBit n (m / 2)
-      (Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; simpa [pow_succ] using hm))]
-    rcases Nat.mod_two_eq_zero_or_one m with h | h <;> simp [h] <;> omega
 
 /-- The round trip: packing the unpacking is the identity on a representative fitting in
 `n` bits. -/
 theorem packPure_unpackPure [CommSemiring F] [ToNat F] [LawfulToNat F] {n : Nat} {x : F}
     (hlt : ToNat.toNat x < 2 ^ n) : packPure (unpackPure x n) = x := by
   rw [packPure, unpackPure, Vector.toList_ofFn, packPureAux_horner,
-    natVal_testBit n _ hlt]
+    Kimchi.natLsbVal_ofFn_testBit n _ hlt]
   simpa using LawfulToNat.cast_toNat x
 
 /-- The two value-level readings agree: the field packing is the ℕ value, cast. -/
-theorem packPure_natVal [CommSemiring F] {n : Nat} (bs : Vector Bool n) :
-    packPure bs = ((natVal bs.toList : Nat) : F) := by
+theorem packPure_natLsbVal [CommSemiring F] {n : Nat} (bs : Vector Bool n) :
+    packPure bs = ((Kimchi.natLsbVal bs.toList : Nat) : F) := by
   rw [packPure, packPureAux_horner]
   simp
 
 /-- The unpacking's ℕ value is the representative it was cut from. -/
-theorem natVal_unpackPure [ToNat F] {n : Nat} {x : F} (hlt : ToNat.toNat x < 2 ^ n) :
-    natVal (unpackPure x n).toList = ToNat.toNat x := by
+theorem natLsbVal_unpackPure [ToNat F] {n : Nat} {x : F} (hlt : ToNat.toNat x < 2 ^ n) :
+    Kimchi.natLsbVal (unpackPure x n).toList = ToNat.toNat x := by
   rw [unpackPure, Vector.toList_ofFn]
-  exact natVal_testBit n _ hlt
+  exact Kimchi.natLsbVal_ofFn_testBit n _ hlt
 
 attribute [irreducible] packPure unpackPure
 

@@ -272,3 +272,18 @@ Kimchi.Gate.AddComplete.egDouble
 Kimchi.Gate.Poseidon.egMds
 Kimchi.Gate.Poseidon.egPoseidon
 Kimchi.Gate.VarBaseMul.egVBM
+
+-- Bit-vector values (Kimchi/Bits.lean): the one ℕ reading of an LSB-first bit list,
+-- shared by the gate semantics and the circuit DSL's canonicity locks. The consumer is
+-- the snarky package, so the walk inside kimchi cannot see it.
+Kimchi.natLsbVal
+Kimchi.natLsbVal_lt
+Kimchi.natLsbVal_ofFn_testBit
+Kimchi.natLsbVal_append_singleton
+Kimchi.ofFn_val_eq_map_range
+Kimchi.natLsbVal_testBit_range
+Kimchi.natLsbVal_take_testBit_range
+Kimchi.natLsbVal_take_drop
+Kimchi.natLsbVal_take_eq_mod
+Kimchi.natLsbVal_eq_zero
+Kimchi.natLsbVal_lt_of_drop_false
