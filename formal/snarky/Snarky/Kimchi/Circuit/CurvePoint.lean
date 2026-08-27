@@ -132,7 +132,7 @@ theorem CurvePoint.check_complete [ConstraintHolds F c] [LawfulBasicSystem F c]
 /-- The tagged point's well-formedness: the on-curve rows. This is the one checked type
 whose rows constrain the decoded value, so its admissible values are exactly the curve's
 points — `valid_curvePoint`. -/
-instance instCurvePointCheckedType [ConstraintHolds F c] [LawfulBasicSystem F c] :
+instance instCurvePointCheckedType :
     CheckedType F c (CurvePoint a b F) (CurvePoint a b (FVar F)) where
   check := CurvePoint.check
   post V p := CompElliptic.CurveForms.ShortWeierstrass.OnCurve a b
@@ -146,8 +146,7 @@ instance instCurvePointCheckedType [ConstraintHolds F c] [LawfulBasicSystem F c]
 /-- A tagged point is admissible exactly when it is on the curve — the one place where a
 checked type's rows pin the value, and the reason the whole-circuit completeness law is
 stated over the curve's points rather than over all coordinate pairs. -/
-@[simp] theorem valid_curvePoint [ConstraintHolds F c] [LawfulBasicSystem F c]
-    {P : CurvePoint a b F} :
+@[simp] theorem valid_curvePoint {P : CurvePoint a b F} :
     CheckedType.Valid (F := F) (c := c) (var := CurvePoint a b (FVar F)) P ↔
       CompElliptic.CurveForms.ShortWeierstrass.OnCurve a b (P.point.x, P.point.y) := by
   constructor

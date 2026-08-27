@@ -1,3 +1,4 @@
+import Mathlib.Data.ZMod.Basic
 import Snarky.DSL.Field
 
 /-!
@@ -18,6 +19,10 @@ field. Its laws arrive with the bit decomposition that needs them. -/
 class ToNat (F : Type u) where
   /-- The canonical representative. -/
   toNat : F → Nat
+
+/-- The canonical representative at a `ZMod` modulus is `ZMod.val` — every deployed
+field reads through this one instance. -/
+instance instToNatZMod (p : Nat) : ToNat (ZMod p) := ⟨ZMod.val⟩
 
 /-- A value tagged with a type-level bit width: the wrapped value is promised to fit in
 `n` bits. Phantom — `n` never influences the data. -/

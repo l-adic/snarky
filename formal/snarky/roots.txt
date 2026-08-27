@@ -412,6 +412,7 @@ Snarky.unpack
 Snarky.unpack_spec
 Snarky.unpack_complete
 Snarky.ToNat
+Snarky.instToNatZMod
 Snarky.LawfulToNat
 Snarky.SizedF
 Snarky.SizedF.Fits
@@ -455,6 +456,7 @@ Snarky.Type1.toShifted
 Snarky.Type1.toScalarZ
 Snarky.Type1.toScalar
 Snarky.Type1.toScalar_toShifted
+Snarky.instCheckedTypeType1
 Snarky.Type1.zeroCarrier
 Snarky.Type1.toScalar_eq_zero_iff
 Snarky.SplitField

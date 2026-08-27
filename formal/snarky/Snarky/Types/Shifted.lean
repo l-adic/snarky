@@ -1,7 +1,7 @@
 import Mathlib.Algebra.Ring.Defs
 import Mathlib.Data.ZMod.Basic
 import Pasta.CompElliptic
-import Snarky.Encoding
+import Snarky.Witness
 
 /-!
 # Shifted scalar types
@@ -76,6 +76,12 @@ scalar field, transport across the boundary by canonical representative (PS
 /-- A `Type1` encodes as its one cell (PS's generic instance). -/
 instance instCircuitTypeType1 {F : Type} : CircuitType F (Type1 F) (Type1 (FVar F)) :=
   CircuitType.ofEquiv Type1.equivCarrier Type1.equivCarrier
+
+/-- A carried scalar's cell carries no well-formedness constraint of its own: the ladder
+consuming it is what pins its reading. -/
+instance instCheckedTypeType1 {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] : CheckedType F c (Type1 F) (Type1 (FVar F)) :=
+  CheckedType.ofEquiv Type1.equivCarrier Type1.equivCarrier
 
 /-- The deployed encode (PS `toShifted` at `Fp → Type1 Fq`): shift in the scalar
 field — `(s − 2^255 − 1) / 2` — and carry the canonical representative across the
