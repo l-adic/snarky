@@ -52,6 +52,17 @@ theorem not_scoped [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
     (↑(Snarky.not b) : CVar F).Scoped st :=
   CVar.Scoped.sub_ trivial hb
 
+/-- `not`'s bundle reading: in scope and reading the negated bit together — the currency
+a completeness law passes to its next operand. -/
+theorem not_readsAs [Field F] [DecidableEq F] {st : ProverState F} {b : BoolVar F}
+    {bb : Bool} (h : CircuitType.ReadsAs (val := Bool) st b bb) :
+    CircuitType.ReadsAs (val := Bool) st (Snarky.not b) (!bb) := by
+  obtain ⟨hs, hv⟩ := h
+  rw [CircuitType.scoped_boolVar] at hs
+  rw [CircuitType.reads_boolVar] at hv
+  exact ⟨CircuitType.scoped_boolVar.mpr (not_scoped hs),
+    CircuitType.reads_boolVar.mpr (not_val hv)⟩
+
 attribute [irreducible] Snarky.not
 
 /-! ## Selection -/
