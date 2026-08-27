@@ -17,10 +17,31 @@ value-level mirrors.
 
 /-! ## The representative's law -/
 
-/-- `ToNat`'s law: the representative casts back to its element. -/
+/-- `ToNat`'s laws at a field of `card` elements: the representative casts back to its
+element, every representative lies below `card`, and below `card` a number is its own
+cast's representative (`ZMod.val` at a prime field). -/
 class LawfulToNat (F : Type) [NatCast F] [ToNat F] where
+  /-- The representatives' bound — the field's cardinality. -/
+  card : Nat
   /-- The representative casts back to its element. -/
   cast_toNat : ∀ x : F, ((ToNat.toNat x : Nat) : F) = x
+  /-- Every representative lies below `card`. -/
+  toNat_lt : ∀ x : F, ToNat.toNat x < card
+  /-- Below `card`, a number is its own cast's representative. -/
+  toNat_natCast : ∀ n : Nat, n < card → ToNat.toNat ((n : Nat) : F) = n
+
+/-- `ZMod.val` is lawful at every nonzero modulus: it casts back, and lies below `p`. -/
+instance instLawfulToNatZMod (p : Nat) [NeZero p] : LawfulToNat (ZMod p) :=
+  ⟨p, fun x => ZMod.natCast_zmod_val x, fun x => ZMod.val_lt x, fun n hn => by
+    show ZMod.val ((n : Nat) : ZMod p) = n
+    rw [ZMod.val_natCast, Nat.mod_eq_of_lt hn]⟩
+
+/-- A representative pinned by its cast: below `card` the cast is injective, so the
+element's representative is the pinned number — the canonical reading of a lock. -/
+theorem toNat_eq_of_natCast_eq {F : Type} [NatCast F] [ToNat F] [LawfulToNat F]
+    {n : Nat} {x : F} (h : ((n : Nat) : F) = x)
+    (hn : n < LawfulToNat.card (F := F)) : ToNat.toNat x = n := by
+  rw [← h, LawfulToNat.toNat_natCast n hn]
 
 /-! ## The value level -/
 

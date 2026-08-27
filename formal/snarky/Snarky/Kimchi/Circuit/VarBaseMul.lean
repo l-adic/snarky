@@ -104,6 +104,19 @@ def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
     (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
       z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
 
+open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
+/-- At Vesta, a `Type1` carrier off the ladder's forbidden band is in the one-wrap
+regime: the deployed order sits in the band and is `1 mod 4`. -/
+private theorem vesta_ladderRegime (t : Type1 Fq)
+    (hband : t.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    HasCurve.vesta.LadderRegime 255 t.toScalarZ := by
+  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
+  · decide
+  · decide
+  · decide
+  · exact hband
+
 open WeierstrassCurve.Affine in
 /-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
 zero. What the addition gadget asks of the base it doubles. -/
@@ -866,6 +879,7 @@ private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (F
   | _, _, _ :: _, _, h => by
     obtain ⟨r, tail, mid, rfl, hg, hrest⟩ := h
     exact ⟨r, tail, mid, rfl, hg.1, ChainAt.threads hrest⟩
+
 
 end VarBaseMul
 
@@ -1760,5 +1774,53 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (hsat₂ hnv hle), hpt⟩
 
 attribute [irreducible] scaleFast2'
+
+open Std.Do CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
+  Kimchi.Gate.VarBaseMul in
+/-- **The deployed ladder leg.** At Vesta, on a `Type1` carrier off the ladder's
+forbidden band whose 255 witnessed bits read as a value below the scalar order, the
+gadget's result is the base point scaled by the carrier's decode.
+
+The generic law pins the ladder's integer only through `bitsVal` of its own cell list and
+guards its conclusion on an abstract `LadderRegime`; the bit bound identifies that integer
+with the carrier's canonical representative, and the deployed order discharges the regime.
+Neither is visible here. -/
+theorem vesta_varBaseMul_spec {V : Valuation Fq} (base : AffinePoint (FVar Fq))
+    (sv : Type1 (FVar Fq)) (Z : Type1 Fq) (hread : sv.val.val V = Z.val)
+    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    ⦃⌜True⌝⦄
+    varBaseMul (c := Builder V (KimchiConstraint Fq)) 255 51 base sv
+    ⦃⇓ r _ => ⌜∀ T : Vesta.curve.toAffine.Point,
+        OnCurveAt Vesta.curve.toAffine V base T →
+        ∀ bs : Vector Bool 255,
+          (∀ i (hi : i < 255), (r.lsbBits[i]).val V = bit bs[i]) →
+          Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD →
+          OnCurveAt Vesta.curve.toAffine V r.g (Z.toScalarZ • T)⌝⦄ := by
+  have hgen := varBaseMul_spec (V := V) HasCurve.vesta 255 51 (by norm_num) base sv
+  mvcgen [hgen]
+  intro h T hT bs hbs hlt
+  obtain ⟨bits, hbval, hblen, hbeq, hpin, hact⟩ := h T hT
+  -- the ladder's integer is the carrier's canonical representative
+  have hdec : (bits.map fun b => decide (b = 1)).reverse = bs.toList := by
+    rw [hbeq, List.map_map, ← List.map_reverse, List.reverse_reverse]
+    apply List.ext_getElem
+    · simp
+    · intro i h1 h2
+      have hi : i < 255 := by simpa using h1
+      simp only [List.getElem_map, List.getElem_take, Vector.getElem_toList, Function.comp_apply]
+      rw [hbs i hi]
+      cases bs[i] <;> simp [bit]
+  have hbn : bitsVal bits = (Kimchi.natLsbVal bs.toList : ℤ) := by
+    rw [bitsVal_eq_natLsbVal, hdec]
+  have hval : Z.val.val = Kimchi.natLsbVal bs.toList := by
+    refine toNat_eq_of_natCast_eq (F := Fq) ?_ ?_
+    · rw [← hread, hpin, bitsRegister_eq_cast bits hbval, hbn]
+      push_cast
+      ring
+    · exact hlt
+  have hZ : Z.toScalarZ = 2 * bitsVal bits + 2 ^ (5 * 51) + 1 := by
+    rw [Type1.toScalarZ, Type1.fromShifted, hbn, hval]
+  rw [hZ]
+  exact hact (hZ ▸ vesta_ladderRegime Z hband)
 
 end Snarky.Kimchi
