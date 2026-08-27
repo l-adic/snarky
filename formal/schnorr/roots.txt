@@ -36,3 +36,8 @@ Schnorr.assertBitsBelow_complete
 Schnorr.unpackFull
 Schnorr.unpackFull_spec
 Schnorr.unpackFull_complete
+
+-- The in-circuit verifier (Schnorr/Circuit.lean): the statement's derived check and
+-- the circuit implementing `verify` stage for stage.
+Schnorr.instStatementCheckedType
+Schnorr.verifyCircuit

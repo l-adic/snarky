@@ -1,3 +1,4 @@
+import Schnorr.Circuit
 import Schnorr.UnpackFull
 import Schnorr.Wire
 
@@ -13,6 +14,9 @@ of this.
 `UnpackFull` is the canonical bit decomposition the challenge derivation needs: OCaml
 `unpack_full`, which locks a decomposition to the representative below the modulus. It
 lives here rather than in snarky's DSL because this package is its only consumer.
+
+`Circuit` is the in-circuit verifier: `verify` stage for stage over `Fq`, on the kimchi
+gadget stack. The laws tying the two arrive on top of it.
 
 **What this package is NOT.** It does not model `packages/schnorr` — the deployed
 PureScript port of Mina's production Schnorr *signature* verifier. That protocol runs
