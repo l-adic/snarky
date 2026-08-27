@@ -413,6 +413,12 @@ Snarky.sealVar
 Snarky.sealVar_spec
 Snarky.sealVar_complete
 
+-- The canonical unpack (DSL/UnpackFull.lean): OCaml `unpack_full` /
+-- `lt_bitstring_value` — the bits-below-the-modulus lock. The constant pattern the
+-- comparison runs against.
+Snarky.modBitsMsb
+Snarky.modBitsMsb_length
+
 -- Whole-circuit compilation (Compile.lean): the entry points, the public input bundle with
 -- its reading, and the seam law — a body that is complete solves, and the table it produces
 -- satisfies every compiled row and reads the input and output at the public slots.
