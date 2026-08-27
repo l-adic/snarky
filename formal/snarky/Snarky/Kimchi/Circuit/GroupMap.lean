@@ -419,11 +419,6 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.ReadsAs (val := F) s (↑b : CVar F) (bit bb) := fun h =>
     ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp h.1),
       CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp h.2)⟩
-  have RNot : ∀ {s : ProverState F} {b : BoolVar F} {bb : Bool},
-      CircuitType.ReadsAs (val := Bool) s b bb →
-      CircuitType.ReadsAs (val := Bool) s (Snarky.not b) (!bb) := fun h =>
-    ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
-      CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
   simp only [groupMapCircuit]
   intro st ht
   obtain ⟨t2, st1, hrun1, hsat1, hT2⟩ :=
@@ -574,8 +569,8 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   have hRoot2 := hRoot2.mono hrun17.nv_le hrun17.le
   have hB3 := hB3.mono hrun17.nv_le hrun17.le
   have hRoot3 := hRoot3.mono hrun17.nv_le hrun17.le
-  have hNB1 := RNot hB1
-  have hNB2 := RNot hB2
+  have hNB1 := not_readsAs hB1
+  have hNB2 := not_readsAs hB2
   obtain ⟨x2First, st18, hrun18, hsat18, hX2First⟩ :=
     and_complete (c := c) (Snarky.not b1)
       b2 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
