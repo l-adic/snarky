@@ -249,6 +249,28 @@ def OnCurveAs [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : Pr
   CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
 
 open WeierstrassCurve.Affine in
+/-- Introduction: cells reading as coordinates known on the curve read as that point.
+This is how a consumer holding a `CheckedType`'s on-curve grant enters the curve
+vocabulary, without ever naming `Point.some` at the cells' own coordinates. -/
+theorem OnCurveAt.of_reads [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {V : Valuation F} {p : AffinePoint (FVar F)} {x y : F}
+    (hx : p.x.val V = x) (hy : p.y.val V = y) (h : W.Nonsingular x y) :
+    OnCurveAt W V p (Point.some x y h) := by
+  subst hx; subst hy; exact ⟨h, rfl⟩
+
+open WeierstrassCurve.Affine in
+/-- The curve point a reading names is unique, up to the cells' readings: two curve reads
+whose coordinates agree name the same point. This is the elimination a consumer wants
+where a circuit's `assertEqual` rows pin two results together. -/
+theorem OnCurveAt.eq [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {V : Valuation F} {p q : AffinePoint (FVar F)} {P Q : W.Point}
+    (h : OnCurveAt W V p P) (h' : OnCurveAt W V q Q)
+    (hx : p.x.val V = q.x.val V) (hy : p.y.val V = q.y.val V) : P = Q := by
+  obtain ⟨n, rfl⟩ := h
+  obtain ⟨n', rfl⟩ := h'
+  exact Kimchi.Gate.AddComplete.some_congr W n n' hx hy
+
+open WeierstrassCurve.Affine in
 /-- Negating the `y` coordinate reads as the negated curve point: under the short shape
 `negY x y = −y`, which is what the pure `CVar.negate_` computes. -/
 theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}

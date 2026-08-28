@@ -1584,10 +1584,6 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     (hs : s = gateLadder g (5 * m)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
-  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
-      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
-    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
   -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
   have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
     intro k hk
@@ -1613,12 +1609,12 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
       obtain ⟨hbx, hby⟩ := hbase j hj'
       have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
       have hTeq_j : T = Point.some _ _ hTns_j := by
-        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+        rw [hTeq]; exact AddComplete.some_congr c hTns hTns_j hbx.symm hby.symm
       -- transport the threaded input accumulator to row `j`'s input column
       obtain ⟨hx0, hy0⟩ := haccP j hj'
       have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
       have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
-        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+        rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨hNDj, ha5ns, ha5eq⟩ :=
         gate_block_produce c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
           (fun ℓ _ => ⟨(hND (5 * j + ℓ) (by omega)).1, (hND (5 * j + ℓ) (by omega)).2.1⟩)
@@ -1654,10 +1650,6 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
         ∧ (∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
         ∧ (∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
         ∧ P 0 = (2 : ℤ) • T := by
-  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
-  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
-      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
-    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
   -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
   have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
     intro k hk
@@ -1683,12 +1675,12 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
       obtain ⟨hbx, hby⟩ := hbase j hj'
       have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
       have hTeq_j : T = Point.some _ _ hTns_j := by
-        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+        rw [hTeq]; exact AddComplete.some_congr c hTns hTns_j hbx.symm hby.symm
       -- transport the threaded input accumulator to row `j`'s input column
       obtain ⟨hx0, hy0⟩ := haccP j hj'
       have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
       have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
-        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+        rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨nd, a1, a2, a3, a4, a5, ha5eq⟩ :=
         gate_block_full c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
           (fun ℓ _ => hND (5 * j + ℓ) (by omega))
@@ -1709,13 +1701,15 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
   have gs := (hkf m le_rfl).2
   refine ⟨gs, fun k => if hk : k ≤ m then Point.some _ _ (kf k hk) else 0, ?_, ?_, ?_, ?_⟩
   · intro i hi
-    exact hTeq.trans (some_congr hTns (gs i hi).hT (hbase i hi).1.symm (hbase i hi).2.symm)
+    exact hTeq.trans (AddComplete.some_congr c hTns (gs i hi).hT
+      (hbase i hi).1.symm (hbase i hi).2.symm)
   · intro i hi
     simp only [dif_pos (le_of_lt hi)]
-    exact some_congr (kf i (le_of_lt hi)) (gs i hi).a0 (haccP i hi).1.symm (haccP i hi).2.symm
+    exact AddComplete.some_congr c (kf i (le_of_lt hi)) (gs i hi).a0
+      (haccP i hi).1.symm (haccP i hi).2.symm
   · intro i hi
     simp only [dif_pos (Nat.succ_le_of_lt hi)]
-    exact some_congr (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
+    exact AddComplete.some_congr c (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
   · simp only [dif_pos (Nat.zero_le m)]
     rw [(hkf 0 (Nat.zero_le m)).1]; simp only [Nat.mul_zero, gateLadder_zero]
 

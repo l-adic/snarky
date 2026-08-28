@@ -28,6 +28,7 @@ private theorem fqParams_size :
   decide
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
+open WeierstrassCurve.Affine in
 /-- **The sound endpoint.** -/
 theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
     ⦃⌜True⌝⦄
@@ -56,17 +57,25 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
   rw [CircuitType.reads_ofEquiv, CircuitType.reads_fvar] at hzR
   rw [CircuitType.reads_ofEquiv, reads_affinePoint] at hpkR huR
   simp only [Statement.equivProd_apply, CurvePoint.equivPoint_apply] at hpkR huR
-  refine ⟨fun h0 => hzne ?_, fun hband => ?_⟩
-  · rw [show (CVar.const Type1.zeroCarrier).val V = Type1.zeroCarrier from rfl,
+  -- the response's decode is nonzero: the circuit's `assertNotEqual` row, at the carrier
+  have hz0 : raw.z.toScalar ≠ (0 : Fp) := fun h0 => hzne (by
+    rw [show (CVar.const Type1.zeroCarrier).val V = Type1.zeroCarrier from rfl,
       ← (Type1.toScalar_eq_zero_iff _).mp h0]
-    exact hzR
-  · -- the read points, as Mathlib points
+    exact hzR)
+  refine ⟨hz0, fun hband => ?_⟩
+  · -- the read points, in the curve vocabulary the gadget laws speak
     set pkR : VestaPoint Fq := ⟨⟨raw.pk.point.x, raw.pk.point.y⟩⟩ with hpkRdef
     set uR : VestaPoint Fq := ⟨⟨raw.u.point.x, raw.u.point.y⟩⟩ with huRdef
-    have hpkNS : Vesta.curve.toAffine.Nonsingular raw.pk.point.x raw.pk.point.y :=
-      nonsingular_toW hpkC
-    have huNS : Vesta.curve.toAffine.Nonsingular raw.u.point.x raw.u.point.y :=
-      nonsingular_toW huC
+    have hpkAt : OnCurveAt Vesta.curve.toAffine V stv.pk.point
+        (Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC)) :=
+      OnCurveAt.of_reads hpkR.1 hpkR.2 _
+    have huAt : OnCurveAt Vesta.curve.toAffine V stv.u.point
+        (Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC)) :=
+      OnCurveAt.of_reads huR.1 huR.2 _
+    have hgenAt : OnCurveAt Vesta.curve.toAffine V
+        (⟨CVar.const gen.x, CVar.const gen.y⟩ : AffinePoint (FVar Fq))
+        (Point.some gen.x gen.y gen_nonsingular) :=
+      ⟨gen_nonsingular, rfl⟩
     -- the low 128 bits are the wire challenge
     have hNfull : Kimchi.natLsbVal bs.toList = (transcriptHash pkR uR).val := by
       have hsq : ((Kimchi.natLsbVal bs.toList : ℕ) : Fq) = transcriptHash pkR uR := by
@@ -82,55 +91,23 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
         rw [packLow_val (n := 255) (k := 128) (by norm_num) hbread, toList_takeVec,
           Kimchi.natLsbVal_take_eq_mod, hNfull]
         rfl)
-      ‹∀ hT : Vesta.curve.toAffine.Nonsingular _ _, _›
-    -- the ladder leg, at the carrier's decode
-    have hzr := vesta_varBaseMul_read (Z := raw.z) hzR hband
-      ‹∀ T : HasCurve.vesta.W.Point, _›
+      ‹∀ T : Vesta.curve.toAffine.Point, _› _ hpkAt
+    -- the ladder leg, at the carrier's decode and the constant generator
+    have hzact := vesta_varBaseMul_read (Z := raw.z) hzR hband
+      ‹∀ T : HasCurve.vesta.W.Point, _› _ hgenAt ‹∀ bs : Vector Bool 255, _ → _›
     rw [verify_iff]
-    refine ⟨hpkC, huC, fun h0 => hzne ?_, ?_⟩
-    · rw [show (CVar.const Type1.zeroCarrier).val V = Type1.zeroCarrier from rfl,
-        ← (Type1.toScalar_eq_zero_iff _).mp h0]
-      exact hzR
-    -- the ladder's point, at the constant generator
-    have hgenAt : OnCurveAt Vesta.curve.toAffine V
-        (⟨CVar.const gen.x, CVar.const gen.y⟩ : AffinePoint (FVar Fq))
-        (WeierstrassCurve.Affine.Point.some gen.x gen.y gen_nonsingular) :=
-      ⟨gen_nonsingular, rfl⟩
-    have hzact := hzr _ hgenAt ‹∀ bs : Vector Bool 255, _ → _›
-    obtain ⟨hfinC, hseq⟩ := hcpk (hpkR.1 ▸ hpkR.2 ▸ hpkNS)
-    -- `u` is finite: an odd prime order has no 2-torsion
-    have huy0 : raw.u.point.y ≠ 0 :=
-      Kimchi.Gate.VarBaseMul.y_ne_zero_of_odd_order Vesta.curve.toAffine
-        (by rw [Pasta.vesta_card]; decide) huNS
+    refine ⟨hpkC, huC, hz0, ?_⟩
+    -- `u + [c]·pk` is finite: an odd prime order has no 2-torsion
     obtain ⟨hinf0, hsum⟩ :=
       ‹CVar.val _ V = 0 ∧
         ∀ P Q : Vesta.curve.toAffine.Point, _ → _ → _ → _ ∨ _›
-    have huNS' : Vesta.curve.toAffine.Nonsingular (stv.u.point.x.val V) (stv.u.point.y.val V) := by
-      rw [huR.1, huR.2]; exact huNS
-    have huAt : OnCurveAt Vesta.curve.toAffine V stv.u.point
-        (WeierstrassCurve.Affine.Point.some _ _ huNS') := ⟨huNS', rfl⟩
-    have hPP : WeierstrassCurve.Affine.Point.some _ _ huNS'
-        + WeierstrassCurve.Affine.Point.some _ _ huNS' ≠ 0 :=
-      HasCurve.two_torsion_free HasCurve.vesta _
-        (WeierstrassCurve.Affine.Point.some_ne_zero huNS')
-    rcases hsum _ (WeierstrassCurve.Affine.Point.some _ _ hfinC) huAt ⟨hfinC, rfl⟩ hPP with
+    rcases hsum _ _ huAt hcpk
+      (HasCurve.two_torsion_free HasCurve.vesta _ (Point.some_ne_zero _)) with
       ⟨hinf1, -⟩ | ⟨-, hfin⟩
     · exact absurd hinf1 (by rw [hinf0]; decide)
-    · obtain ⟨hzg, hzeq⟩ := hzact
-      obtain ⟨hrp, hreq⟩ := hfin
-      have hglue : WeierstrassCurve.Affine.Point.some _ _ hzg
-          = WeierstrassCurve.Affine.Point.some _ _ hrp :=
-        Kimchi.Gate.EndoMul.some_congr Vesta.curve.toAffine hzg hrp
-          ‹CVar.val _ V = CVar.val _ V› ‹CVar.val _ V = CVar.val _ V›
-      have hpkP : WeierstrassCurve.Affine.Point.some (stv.pk.point.x.val V)
-            (stv.pk.point.y.val V) (hpkR.1 ▸ hpkR.2 ▸ hpkNS)
-          = WeierstrassCurve.Affine.Point.some raw.pk.point.x raw.pk.point.y hpkNS :=
-        Kimchi.Gate.EndoMul.some_congr Vesta.curve.toAffine _ _ hpkR.1 hpkR.2
-      have huP : WeierstrassCurve.Affine.Point.some _ _ huNS'
-          = WeierstrassCurve.Affine.Point.some raw.u.point.x raw.u.point.y huNS :=
-        Kimchi.Gate.EndoMul.some_congr Vesta.curve.toAffine _ _ huR.1 huR.2
-      show ((raw.z.toScalarZ : ℤ) : Fp) • _ = _
-      rw [Int.cast_smul_eq_zsmul, hzeq, hglue, ← hreq, hseq, hpkP, huP]
-      rfl
+    · show ((raw.z.toScalarZ : ℤ) : Fp) • _ = _
+      rw [Int.cast_smul_eq_zsmul]
+      exact OnCurveAt.eq hzact hfin
+        ‹CVar.val _ V = CVar.val _ V› ‹CVar.val _ V = CVar.val _ V›
 
 end Schnorr

@@ -587,7 +587,7 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
           simp only [List.length_cons] at hl'
           omega) g hchain
         hP0ns'
-        ((Kimchi.Gate.EndoMul.some_congr d.W hP0ns' hP0ns
+        ((Kimchi.Gate.AddComplete.some_congr d.W hP0ns' hP0ns
           hbase0P.1 hbase0P.2).trans hP0)
         d.lam (d.eigen hT hφT)
     -- the run closes at the payload's finals
@@ -627,7 +627,7 @@ private theorem chain_sound [Field F] [DecidableEq F] (d : HasEndo F) (V : Valua
       rw [hpl]; exact hBle
     · rw [Kimchi.Gate.EndoMul.crumbList_length, hlen, ← EndoMul.threads_length hthr']
       simp
-    · exact (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfinx.symm hfiny.symm).trans hseq
+    · exact (Kimchi.Gate.AddComplete.some_congr d.W hfin hfin' hfinx.symm hfiny.symm).trans hseq
 
 /-! ## Completeness
 
@@ -1326,7 +1326,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [← decomposition_eq_endoExpandZ d (ToNat.toNat sv) hsab (h4 ▸ hAle) (h4 ▸ hBle)
       (hcl ▸ hAval) (hcl ▸ hBval)]
     exact ⟨scoped_affinePoint.mpr ⟨hscL.1.mono hnv₆, hscL.2.1.mono hnv₆⟩, hfin,
-      ((Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq).symm⟩
+      ((Kimchi.Gate.AddComplete.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq).symm⟩
 
 open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 /-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
@@ -1341,10 +1341,9 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasEndo F) (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
     ⦃⌜True⌝⦄
     Snarky.Kimchi.endoMul (c := Builder V (KimchiConstraint F)) d.endo 32 t scalar
-    ⦃⇓ r _ => ⌜∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
+    ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V t T →
       ∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val.val V = ((n : ℕ) : F) ∧
-        ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
-          Point.some _ _ hfin = endoExpandZ d.lam n • Point.some _ _ hT⌝⦄ := by
+        OnCurveAt d.W V r (endoExpandZ d.lam n • T)⌝⦄ := by
   have hbits : 4 * 32 ≤ 244 := by norm_num
   have hloop := mapAccumM_spec (V := V) (c := KimchiConstraint F)
     (Snarky.Kimchi.endoMulRound d.endo t) (Threads t)
@@ -1361,7 +1360,7 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  intro hT
+  rintro T ⟨hT, rfl⟩
   have hφT := d.endo_nonsingular hT
   have hφTp : d.W.Nonsingular (phix.val V) (t.y.val V) := by
     rw [hphix, CVar.val_scale_]
@@ -1379,7 +1378,7 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     · exact absurd (hp2.1.symm.trans hinf) (by norm_num)
     · exact h3
   have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=
-    Kimchi.Gate.EndoMul.some_congr d.W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
+    Kimchi.Gate.AddComplete.some_congr d.W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
   have hP0 : Point.some _ _ hP0ns
       = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
     rw [← hsum2, ← hsum1, hφeq]
@@ -1396,7 +1395,7 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   · rw [heqScalar.symm.trans hreg, hcr, nReconstruct_crumbsOf, Nat.mod_eq_of_lt hnlt]
   · rw [← decomposition_eq_endoExpandZ d n hsab (h4 ▸ by simpa using hAle)
       (h4 ▸ by simpa using hBle) (hcr ▸ hAval) (hcr ▸ hBval)]
-    exact hseq
+    exact hseq.symm
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
   WeierstrassCurve.Affine in
@@ -1414,25 +1413,20 @@ Stated on the generic law's OUTPUT rather than as a triple, because a consumer r
 holding that output — its own program walk has already passed the call. -/
 theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
     {cv : FVar Fq} {n : ℕ} (hn : n < 2 ^ 128) (hread : cv.val V = ((n : ℕ) : Fq))
-    (h : ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
+    (h : ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V t T →
       ∃ m : ℕ, m < 2 ^ 128 ∧ cv.val V = ((m : ℕ) : Fq) ∧
-        ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
-          Point.some _ _ hfin
-            = endoExpandZ HasEndo.vesta.lam m • Point.some _ _ hT) :
-    ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
-      ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
-        Point.some _ _ hfin
-          = (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
-              • Point.some _ _ hT := by
-  intro hT
-  obtain ⟨m, hm, hmread, hfin, hseq⟩ := h hT
+        OnCurveAt Vesta.curve.toAffine V r (endoExpandZ HasEndo.vesta.lam m • T)) :
+    ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V t T →
+      OnCurveAt Vesta.curve.toAffine V r
+        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp) • T) := by
+  intro T hT
+  obtain ⟨m, hm, hmread, hseq⟩ := h T hT
   have hmn : m = n :=
     CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
       (Set.mem_Iio.mpr (lt_of_lt_of_le hm (by decide)))
       (Set.mem_Iio.mpr (lt_of_lt_of_le hn (by decide)))
       (by rw [← hmread, hread])
   subst hmn
-  refine ⟨hfin, ?_⟩
   rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
     ← endoExpandZ_cast (by decide) (by decide), Int.cast_smul_eq_zsmul]
   exact hseq
