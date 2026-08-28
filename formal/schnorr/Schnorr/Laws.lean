@@ -228,25 +228,10 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
   have hzlock : Kimchi.natLsbVal (unpackPure raw.z.val 255).toList < PALLAS_SCALAR_CARD := by
     rw [natLsbVal_unpackPure hzfit]
     exact ZMod.val_lt _
-  have hbitsAs : ∀ st : ProverState Fq,
-      (∀ (i : ℕ) (hi : i < 255), CircuitType.ReadsAs (val := Fq) st (zr.lsbBits[i]'hi)
-        (bit (unpackPure raw.z.val 255)[i])) →
-      CircuitType.ReadsAs (val := Vector Bool 255) st
-        (mapVec BoolVar.unchecked zr.lsbBits) (unpackPure raw.z.val 255) := by
-    intro st h
-    refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
-      CircuitType.reads_vector.mpr fun i hi => ?_⟩
-    · rw [getElem_mapVec]
-      exact CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp (h i hi).1)
-    · rw [getElem_mapVec]
-      exact CircuitType.reads_boolVar.mpr (CircuitType.reads_fvar.mp (h i hi).2)
-  have mbits : Mono (F := Fq) fun st => ∀ (i : ℕ) (hi : i < 255),
-      CircuitType.ReadsAs (val := Fq) st (zr.lsbBits[i]'hi)
-        (bit (unpackPure raw.z.val 255)[i]) :=
-    fun _ _ hnv hle h i hi => (h i hi).mono hnv hle
-  have m₅ := m₄.and (mbits.and
+  have m₅ := m₄.and ((Mono.readsAs (val := Vector Bool 255)
+      (v := mapVec BoolVar.unchecked zr.lsbBits) (a := unpackPure raw.z.val 255)).and
     (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := zr.g) (P := ZG)))
-  refine Complete.seq m₅ (Complete.imp (fun st h => hbitsAs st h.2.1) (fun _ _ h => h)
+  refine Complete.seq m₅ (Complete.imp (fun _ h => h.2.1) (fun _ _ h => h)
     (assertBitsBelow_complete PALLAS_SCALAR_CARD (by decide)
       (mapVec BoolVar.unchecked zr.lsbBits) (unpackPure raw.z.val 255) hzlock)) fun _ => ?_
   -- the wire's check, in the ladder's currency: the sum IS the ladder's point

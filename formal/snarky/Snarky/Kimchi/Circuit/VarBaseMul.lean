@@ -1002,8 +1002,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' =>
-        (∀ (i : ℕ) (hi : i < n), CircuitType.ReadsAs (val := F) st' (r.lsbBits[i]'hi)
-          (bit (unpackPure sv n)[i])) ∧
+        CircuitType.ReadsAs (val := Vector Bool n) st'
+          (mapVec BoolVar.unchecked r.lsbBits) (unpackPure sv n) ∧
         OnCurveAs d.W st' r.g
           ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
             • Point.some _ _ hT)) := by
@@ -1239,14 +1239,19 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     · exact (hle₃.trans hle₄).trans hle₄f
     · exact Nat.le_trans hnv₄ hnv₄f
     · exact hle₄.trans hle₄f
-  · -- the bits read as the scalar's own
-    intro i hi
-    refine ⟨(hscB i hi).mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)),
-      CircuitType.reads_fvar.mpr ?_⟩
-    rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
-      (CircuitType.scoped_fvar.mp (hscB i hi)),
-      CircuitType.reads_fvar.mp (hrdB i hi)]
-    simp [bit]
+  · -- the bits read as the scalar's own, as one bundle
+    refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
+      CircuitType.reads_vector.mpr fun i hi => ?_⟩
+    · rw [getElem_mapVec]
+      exact CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp
+        ((hscB i hi).mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))))
+    · rw [getElem_mapVec]
+      refine CircuitType.reads_boolVar.mpr ?_
+      show (bits[i]'hi).val st₅.env.get = _
+      rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
+        (CircuitType.scoped_fvar.mp (hscB i hi)),
+        CircuitType.reads_fvar.mp (hrdB i hi)]
+      simp [bit]
   · -- the point conclusion, off the sound side's own reading of the trace
     obtain ⟨-, -, -, hpoint⟩ :=
       VarBaseMul.run_sound d st₅.env.get (Point.some _ _ hT) hchain
@@ -1475,6 +1480,8 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
   -- the high bits the honest scalar leaves clear
+  have hbitsSc := CircuitType.scoped_vector.mp hbits.1
+  have hbitsRd := CircuitType.reads_vector.mp hbits.2
   have hpinval : ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
       x.Scoped st₁ ∧ x.val st₁.env.get = 0 := by
     intro x hx
@@ -1485,10 +1492,14 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     have hbit : (ToNat.toNat sv).testBit (sDiv2Bits + i) = false :=
       Nat.testBit_lt_two_pow
         (lt_of_lt_of_le hfits (Nat.pow_le_pow_right (by norm_num) (by omega)))
-    obtain ⟨hsc, hval⟩ := hbits (sDiv2Bits + i) hi'
+    have hsc := hbitsSc (sDiv2Bits + i) hi'
+    have hval := hbitsRd (sDiv2Bits + i) hi'
+    rw [getElem_mapVec] at hsc hval
     simp only [List.getElem_drop, Vector.getElem_toList]
-    exact ⟨CircuitType.scoped_fvar.mp hsc,
-      by rw [CircuitType.reads_fvar.mp hval]; simp [hbit, bit]⟩
+    refine ⟨CircuitType.scoped_boolVar.mp hsc, ?_⟩
+    show (BoolVar.unchecked (r.lsbBits[sDiv2Bits + i]'hi')).toCVar.val st₁.env.get = 0
+    rw [CircuitType.reads_boolVar.mp hval]
+    simp [hbit, bit]
   obtain ⟨u, st₂, hrun₂, hsat₂, hpin₂⟩ :=
     forM_complete (F := F) (c := KimchiConstraint F)
       (fun b : FVar F => assertEqual b (CVar.const 0))
@@ -1831,8 +1842,8 @@ theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FV
         CircuitType.ReadsAs (val := Fq) st sv.val Z.val)
       (varBaseMul (c := KimchiConstraint Fq) 255 51 base sv)
       (fun r st' =>
-        (∀ (i : ℕ) (hi : i < 255), CircuitType.ReadsAs (val := Fq) st' (r.lsbBits[i]'hi)
-          (bit (unpackPure Z.val 255)[i])) ∧
+        CircuitType.ReadsAs (val := Vector Bool 255) st'
+          (mapVec BoolVar.unchecked r.lsbBits) (unpackPure Z.val 255) ∧
         OnCurveAs Vesta.curve.toAffine st' r.g (Z.toScalarZ • Point.some _ _ hT)) := by
   have hval : ToNat.toNat Z.val = Z.val.val := rfl
   have hdec : Pasta.Shifted.unshiftType1 (5 * 51) (ToNat.toNat Z.val : ℤ) = Z.toScalarZ := by
