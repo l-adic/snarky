@@ -1304,71 +1304,6 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 _ _]
   exact endoMul_complete_crumbs d 32 (by norm_num) t scalar xv yv sv hT (by norm_num; omega)
 
-open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
-the effective scalar of some valid crumb list of the run's width, whose reconstruction
-is the scalar the wrapper pinned. -/
-theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (d : HasEndo F) (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
-    (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F)) :
-    ⦃⌜True⌝⦄
-    Snarky.Kimchi.endoMul (c := Builder V (KimchiConstraint F)) d.endo rounds t scalar
-    ⦃⇓ r _ => ⌜∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
-      ∃ crumbs : List F,
-        (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-        crumbs.length = 2 * rounds ∧
-        scalar.val.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs ∧
-        ∃ (hfin : d.W.Nonsingular (r.x.val V) (r.y.val V)) (s A B : ℤ),
-          Point.some _ _ hfin = s • Point.some _ _ hT ∧
-          s = B + A * d.lam ∧
-          |A| ≤ 3 * 4 ^ rounds ∧ |B| ≤ 3 * 4 ^ rounds ∧
-          (A : F) = Kimchi.Gate.EndoScalar.decomposeA crumbs ∧
-          (B : F) = Kimchi.Gate.EndoScalar.decomposeB crumbs ∧
-          (s : F) = Kimchi.Gate.EndoScalar.toField crumbs (d.lam : F)⌝⦄ := by
-  have hloop := mapAccumM_spec (V := V) (c := KimchiConstraint F)
-    (Snarky.Kimchi.endoMulRound d.endo t) (Threads t)
-    (fun st bs => endoMulRound_spec d.endo t st bs)
-  unfold Snarky.Kimchi.endoMul
-  mvcgen [hloop]
-  case vc1.W => exact d.W
-  case vc2.ha => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
-  case vc3.htwo => exact d.two_ne
-  case vc4.W => exact d.W
-  case vc5.ha => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
-  case vc6.htwo => exact d.two_ne
-  rename_i _ bits _ _ phix _ hphix p1 _ hp1 p2 _ loop _ hchainT _ _ heqScalar _ _ hpay hp2
-  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
-  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
-    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  intro hT
-  have hφT := d.endo_nonsingular hT
-  have hφTp : d.W.Nonsingular (phix.val V) (t.y.val V) := by
-    rw [hphix, CVar.val_scale_]
-    exact hφT
-  obtain ⟨hP1, hsum1⟩ : ∃ h3 : d.W.Nonsingular (p1.p.x.val V) (p1.p.y.val V),
-      Point.some _ _ hT + Point.some _ _ hφTp = Point.some _ _ h3 := by
-    rcases hp1.2 (Point.some _ _ hT) (Point.some _ _ hφTp) ⟨hT, rfl⟩ ⟨hφTp, rfl⟩
-      (d.two_torsion_free _ (Point.some_ne_zero hT)) with ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd ((hp1.1 rfl).symm.trans hinf) (by norm_num)
-    · exact h3
-  obtain ⟨hP0ns, hsum2⟩ : ∃ h3 : d.W.Nonsingular (p2.p.x.val V) (p2.p.y.val V),
-      Point.some _ _ hP1 + Point.some _ _ hP1 = Point.some _ _ h3 := by
-    rcases hp2.2 (Point.some _ _ hP1) (Point.some _ _ hP1) ⟨hP1, rfl⟩ ⟨hP1, rfl⟩
-      (d.two_torsion_free _ (Point.some_ne_zero hP1)) with ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd (hp2.1.symm.trans hinf) (by norm_num)
-    · exact h3
-  have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=
-    Kimchi.Gate.EndoMul.some_congr d.W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
-  have hP0 : Point.some _ _ hP0ns
-      = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
-    rw [← hsum2, ← hsum1, hφeq]
-    module
-  obtain ⟨crumbs, hvalid, hlen, hreg, hfin, sc, A, B, hseq, hsab, hAle, hBle,
-    hAval, hBval, hsval⟩ :=
-    chain_sound d V (by simpa using hbits) hchainT hpay hT hP0ns hP0
-  exact ⟨crumbs, hvalid, by simpa using hlen, heqScalar.symm.trans hreg, hfin, sc, A, B,
-    hseq, hsab, by simpa using hAle, by simpa using hBle, hAval, hBval, hsval⟩
-
 open Kimchi.Gate.EndoScalar in
 /-- An integer of the shape the sound law hands back — `s = B + A·λ`, bounded by
 `3·2^64`, pinned in `F` to the canonical 64-crumb decomposition (a 128-bit
@@ -1408,31 +1343,83 @@ private theorem decomposition_eq_toIntZ [Field F] [DecidableEq F]
   rw [hsab, hAeq, hBeq, toIntZ]
   ring
 
-open CompElliptic.Fields.Pasta Kimchi.Gate.EndoScalar in
-/-- At Vesta, 64 crumbs reconstructing a value below `2^128` are its canonical crumbs:
-`nReconstruct` is injective on valid 64-crumb lists in `Fq`. -/
-private theorem vesta_crumbs_eq {n : ℕ} (hn : n < 2 ^ 128) {crumbs : List Fq}
-    (hcrv : ∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) (hclen : crumbs.length = 2 * 32)
-    (hcrec : ((n : ℕ) : Fq) = nReconstruct crumbs) : crumbs = crumbsOf 64 n := by
-  refine nReconstruct_inj (p := PALLAS_SCALAR_CARD) crumbs _ (by decide) (by decide) hcrv
-    (crumbsOf_valid 64 n) ?_ ?_ ?_
-  · rw [hclen, crumbsOf_length]
-  · rw [hclen]; decide
-  · rw [← hcrec, nReconstruct_crumbsOf]
-    exact congrArg (Nat.cast (R := Fq))
-      (Nat.mod_eq_of_lt (lt_of_lt_of_le hn (by decide))).symm
+open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
+/-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
+challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. Any satisfying
+valuation reads the scalar as a prechallenge below that width, and the result as the base
+multiplied by that prechallenge's decoded integer.
+
+The integer is modulus-free: the crumbs the gate exposes are pinned to their own base-4
+value, and the accumulator bounds identify the decomposition with its ℤ shadow through
+`d.char_big`, so a consumer casts the one integer into whichever scalar field acts. -/
+theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (d : HasEndo F) (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F)) :
+    ⦃⌜True⌝⦄
+    Snarky.Kimchi.endoMul (c := Builder V (KimchiConstraint F)) d.endo 32 t scalar
+    ⦃⇓ r _ => ⌜∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
+      ∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val.val V = ((n : ℕ) : F) ∧
+        ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
+          Point.some _ _ hfin = toIntZ (digitsOf 64 n) d.lam • Point.some _ _ hT⌝⦄ := by
+  have hbits : 4 * 32 ≤ 244 := by norm_num
+  have hloop := mapAccumM_spec (V := V) (c := KimchiConstraint F)
+    (Snarky.Kimchi.endoMulRound d.endo t) (Threads t)
+    (fun st bs => endoMulRound_spec d.endo t st bs)
+  unfold Snarky.Kimchi.endoMul
+  mvcgen [hloop]
+  case vc1.W => exact d.W
+  case vc2.ha => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
+  case vc3.htwo => exact d.two_ne
+  case vc4.W => exact d.W
+  case vc5.ha => exact ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩
+  case vc6.htwo => exact d.two_ne
+  rename_i _ bits _ _ phix _ hphix p1 _ hp1 p2 _ loop _ hchainT _ _ heqScalar _ _ hpay hp2
+  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
+  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
+    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
+  intro hT
+  have hφT := d.endo_nonsingular hT
+  have hφTp : d.W.Nonsingular (phix.val V) (t.y.val V) := by
+    rw [hphix, CVar.val_scale_]
+    exact hφT
+  obtain ⟨hP1, hsum1⟩ : ∃ h3 : d.W.Nonsingular (p1.p.x.val V) (p1.p.y.val V),
+      Point.some _ _ hT + Point.some _ _ hφTp = Point.some _ _ h3 := by
+    rcases hp1.2 (Point.some _ _ hT) (Point.some _ _ hφTp) ⟨hT, rfl⟩ ⟨hφTp, rfl⟩
+      (d.two_torsion_free _ (Point.some_ne_zero hT)) with ⟨hinf, -⟩ | ⟨-, h3⟩
+    · exact absurd ((hp1.1 rfl).symm.trans hinf) (by norm_num)
+    · exact h3
+  obtain ⟨hP0ns, hsum2⟩ : ∃ h3 : d.W.Nonsingular (p2.p.x.val V) (p2.p.y.val V),
+      Point.some _ _ hP1 + Point.some _ _ hP1 = Point.some _ _ h3 := by
+    rcases hp2.2 (Point.some _ _ hP1) (Point.some _ _ hP1) ⟨hP1, rfl⟩ ⟨hP1, rfl⟩
+      (d.two_torsion_free _ (Point.some_ne_zero hP1)) with ⟨hinf, -⟩ | ⟨-, h3⟩
+    · exact absurd (hp2.1.symm.trans hinf) (by norm_num)
+    · exact h3
+  have hφeq : Point.some _ _ hφTp = Point.some _ _ hφT :=
+    Kimchi.Gate.EndoMul.some_congr d.W hφTp hφT (by rw [hphix, CVar.val_scale_]) rfl
+  have hP0 : Point.some _ _ hP0ns
+      = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
+    rw [← hsum2, ← hsum1, hφeq]
+    module
+  obtain ⟨crumbs, hvalid, hlen, hreg, hfin, sc, A, B, hseq, hsab, hAle, hBle,
+    hAval, hBval, -⟩ :=
+    chain_sound d V (by simp) hchainT hpay hT hP0ns hP0
+  -- the crumbs the gate exposed are the canonical expansion of the value they spell
+  have hlen' : crumbs.length = 64 := by simpa using hlen
+  obtain ⟨n, hnlt, hcr⟩ := eq_crumbsOf d.two_ne d.three_ne crumbs hvalid
+  rw [hlen'] at hnlt hcr
+  have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
+  refine ⟨n, by rw [show (2 : ℕ) ^ 128 = 4 ^ 64 from by norm_num]; exact hnlt, ?_, hfin, ?_⟩
+  · rw [heqScalar.symm.trans hreg, hcr, nReconstruct_crumbsOf, Nat.mod_eq_of_lt hnlt]
+  · rw [← decomposition_eq_toIntZ d n hsab (h4 ▸ by simpa using hAle)
+      (h4 ▸ by simpa using hBle) (hcr ▸ hAval) (hcr ▸ hBval)]
+    exact hseq
 
 open CompElliptic.Fields.Pasta Kimchi.Gate.EndoScalar in
-/-- The scalar `endoMul_spec` hands back at Vesta, on the canonical crumbs of a
-prechallenge `n`, reads in `Fp` as the Fq-sponge's endo-expansion of `n`. -/
-private theorem vesta_endoExpand {n : ℕ} {s A B : ℤ}
-    (hsab : s = B + A * HasEndo.vesta.lam)
-    (hAle : |A| ≤ 3 * 2 ^ 64) (hBle : |B| ≤ 3 * 2 ^ 64)
-    (hAval : (A : Fq) = decomposeA (crumbsOf 64 n))
-    (hBval : (B : Fq) = decomposeB (crumbsOf 64 n)) :
-    ((s : ℤ) : Fp) = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n := by
-  rw [decomposition_eq_toIntZ HasEndo.vesta n hsab hAle hBle hAval hBval,
-    endoExpand_eq_toField (by decide) (by decide),
+/-- The integer `endoMul_spec` hands back at Vesta, on a prechallenge `n`, reads in `Fp`
+as the Fq-sponge's endo-expansion of `n`. -/
+private theorem vesta_endoExpand (n : ℕ) :
+    ((toIntZ (digitsOf 64 n) HasEndo.vesta.lam : ℤ) : Fp)
+      = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n := by
+  rw [endoExpand_eq_toField (by decide) (by decide),
     show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
     crumbsOf_eq_map,
     toField_digits (by decide) (by decide) _ (digitsOf_lt 64 _) HasEndo.vesta.lam]
@@ -1444,42 +1431,35 @@ reading as a prechallenge `n < 2^128` says the result is the base point scaled b
 wire's challenge — the Fq-sponge's endo-expansion of `n`, acting through the point
 group's `Fp`-module structure.
 
-The generic post names a crumb list only up to reconstruction and a scalar pinned only in
-`Fq`; the bound closes the first (`nReconstruct` is injective at 64 crumbs below `|Fq|`)
-and the accumulator bounds close the second (the decomposition IS the gate's decoded
-integer). Neither is visible here: a consumer supplies a reading and a bound, and receives
-the scalar action it needs.
+The generic post names its own prechallenge, pinned only through the scalar's reading in
+`Fq`; below `|Fq|` that reading determines it, and the decoded integer is then the
+expansion the sponge computes. Neither step is visible here: a consumer supplies a
+reading and a bound, and receives the scalar action it needs.
 
 Stated on the generic law's OUTPUT rather than as a triple, because a consumer reaches it
 holding that output — its own program walk has already passed the call. -/
 theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
     {cv : FVar Fq} {n : ℕ} (hn : n < 2 ^ 128) (hread : cv.val V = ((n : ℕ) : Fq))
     (h : ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
-      ∃ crumbs : List Fq,
-        (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-        crumbs.length = 2 * 32 ∧
-        cv.val V = nReconstruct crumbs ∧
-        ∃ (hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V)) (s A B : ℤ),
-          Point.some _ _ hfin = s • Point.some _ _ hT ∧
-          s = B + A * HasEndo.vesta.lam ∧
-          |A| ≤ 3 * 4 ^ 32 ∧ |B| ≤ 3 * 4 ^ 32 ∧
-          (A : Fq) = decomposeA crumbs ∧ (B : Fq) = decomposeB crumbs ∧
-          (s : Fq) = toField crumbs (HasEndo.vesta.lam : Fq)) :
+      ∃ m : ℕ, m < 2 ^ 128 ∧ cv.val V = ((m : ℕ) : Fq) ∧
+        ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
+          Point.some _ _ hfin
+            = toIntZ (digitsOf 64 m) HasEndo.vesta.lam • Point.some _ _ hT) :
     ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
       ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
         Point.some _ _ hfin
           = (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
               • Point.some _ _ hT := by
   intro hT
-  obtain ⟨crumbs, hcrv, hclen, hcrec, hfin, sc, A, B, hseq, hsab, hAle, hBle,
-    hAval, hBval, -⟩ := h hT
-  have hcr : crumbs = crumbsOf 64 n := vesta_crumbs_eq hn hcrv hclen (hread ▸ hcrec)
-  have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
-  have hchal : ((sc : ℤ) : Fp)
-      = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n :=
-    vesta_endoExpand hsab (h4 ▸ hAle) (h4 ▸ hBle) (hcr ▸ hAval) (hcr ▸ hBval)
+  obtain ⟨m, hm, hmread, hfin, hseq⟩ := h hT
+  have hmn : m = n :=
+    CharP.natCast_injOn_Iio Fq PALLAS_SCALAR_CARD
+      (Set.mem_Iio.mpr (lt_of_lt_of_le hm (by decide)))
+      (Set.mem_Iio.mpr (lt_of_lt_of_le hn (by decide)))
+      (by rw [← hmread, hread])
+  subst hmn
   refine ⟨hfin, ?_⟩
-  rw [← hchal, Int.cast_smul_eq_zsmul]
+  rw [← vesta_endoExpand m, Int.cast_smul_eq_zsmul]
   exact hseq
 
 end EndoMul

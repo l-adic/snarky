@@ -38,8 +38,8 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
         raw.z.toScalar ≠ (0 : Fp) ∧
         (raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true)⌝⦄ := by
   simp only [verifyCircuit]
-  have hendo := fun (sc : SizedF (4 * 32) (FVar Fq)) =>
-    EndoMul.endoMul_spec (V := V) HasEndo.vesta 32 (by norm_num) stv.pk.point sc
+  have hendo := fun (sc : SizedF 128 (FVar Fq)) =>
+    EndoMul.endoMul_spec (V := V) HasEndo.vesta stv.pk.point sc
   have hvbm := fun (b : AffinePoint (FVar Fq)) (sc : Type1 (FVar Fq)) =>
     varBaseMul_spec (V := V) HasCurve.vesta 255 51 (by norm_num) b sc
   mvcgen [hendo, hvbm]
