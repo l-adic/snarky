@@ -593,18 +593,35 @@ theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F
   intro con hcon
   simp [build] at hcon
 
-/-- Completeness composes: run the head from the precondition, the tail from whatever the
-head establishes. The head's rows are satisfied past the tail's run because its own law
-holds at every extension — which is why `Complete` carries that quantifier rather than a
-bare `Sat` at the state it lands in. -/
-theorem Complete.bind [Zero F] [ConstraintHolds F c] {β : Type v}
+/-- A state predicate that survives the table's growth. The ambient context of a
+multi-stage completeness proof is one of these, built up conjunct by conjunct. -/
+def Mono [Zero F] (P : ProverState F → Prop) : Prop :=
+  ∀ st st' : ProverState F, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st'
+
+/-- Conjunction of monotone facts is monotone — how a context accumulates. -/
+theorem Mono.and [Zero F] {P Q : ProverState F → Prop} (hP : Mono (F := F) P)
+    (hQ : Mono (F := F) Q) : Mono (F := F) fun st => P st ∧ Q st :=
+  fun _ _ hnv hle h => ⟨hP _ _ hnv hle h.1, hQ _ _ hnv hle h.2⟩
+
+/-- A reading is monotone. -/
+theorem Mono.readsAs [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F val var]
+    {v : var} {a : val} : Mono (F := F) fun st => CircuitType.ReadsAs st v a :=
+  fun _ _ hnv hle h => h.mono hnv hle
+
+/-- Sequencing that keeps what it had. The tail runs from everything the head established
+AND everything the head's own precondition already guaranteed — so a multi-stage proof
+never names its context: the context IS the precondition, and it accumulates one conjunct
+per stage. The monotone hypothesis is what lets the precondition cross the head's run. -/
+theorem Complete.seq [Zero F] [ConstraintHolds F c] {β : Type v}
     {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
     {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
-    (hg : Complete pre g mid) (hk : ∀ a, Complete (mid a) (k a) post) :
+    (hpre : Mono (F := F) pre) (hg : Complete pre g mid)
+    (hk : ∀ a, Complete (fun st => pre st ∧ mid a st) (k a) post) :
     Complete pre (g >>= k) post := by
-  intro st hpre
-  obtain ⟨a, st₁, hrun₁, hsat₁, hmid⟩ := hg st hpre
-  obtain ⟨b, st₂, hrun₂, hsat₂, hpost⟩ := hk a st₁ hmid
+  intro st hpre₀
+  obtain ⟨a, st₁, hrun₁, hsat₁, hmid⟩ := hg st hpre₀
+  obtain ⟨b, st₂, hrun₂, hsat₂, hpost⟩ :=
+    hk a st₁ ⟨hpre _ _ hrun₁.nv_le hrun₁.le hpre₀, hmid⟩
   exact ⟨b, st₂, hrun₁.bind hrun₂, fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
       (hsat₂ hnv hle), hpost⟩
@@ -617,19 +634,6 @@ theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F �
   intro st hst
   obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st (hpre st hst)
   exact ⟨a, st₁, hrun, hsat, hpost a st₁ hp⟩
-
-/-- The frame rule: a fact that holds at entry and survives the table's growth is still
-there when the fragment lands. Stated as a POSTcondition gain rather than a pre/post pair,
-because the fact a multi-stage proof carries forward is normally one its precondition
-already gives it — splitting the precondition would only have to be reassembled. -/
-theorem Complete.frame [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
-    {g : CircuitM F c α} {mid : α → ProverState F → Prop} {P : ProverState F → Prop}
-    (hP : ∀ {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st')
-    (hsub : ∀ st, pre st → P st) (hg : Complete pre g mid) :
-    Complete pre g (fun a st' => mid a st' ∧ P st') := by
-  intro st hpre
-  obtain ⟨a, st₁, hrun, hsat, hmid⟩ := hg st hpre
-  exact ⟨a, st₁, hrun, hsat, hmid, hP hrun.nv_le hrun.le (hsub st hpre)⟩
 
 /-- `pure` at a postcondition the entry state already satisfies — the tail of a `bind`
 chain, where the value is in hand and nothing more is emitted. -/

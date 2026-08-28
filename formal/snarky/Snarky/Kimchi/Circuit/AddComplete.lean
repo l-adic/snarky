@@ -364,6 +364,12 @@ preserve them — and the witnessed columns are whatever the row constrains them
 
 /-! ## Completeness -/
 
+/-- A curve read is monotone — the `Mono` form, for a context that carries points. -/
+theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {p : AffinePoint (FVar F)} {P : W.Point} :
+    Snarky.Mono (F := F) fun st => OnCurveAs W st p P :=
+  fun _ _ hnv hle h => OnCurveAs.mono hnv hle h
+
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
 table, and the sealed point is scoped and reads as the operand. -/
 theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]

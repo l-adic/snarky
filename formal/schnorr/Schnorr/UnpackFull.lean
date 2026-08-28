@@ -335,11 +335,12 @@ theorem unpackFull_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (unpackFull (c := c) m n v)
       (fun r st' => CircuitType.ReadsAs (val := Vector Bool n) st' r (unpackPure vv n)) := by
   simp only [unpackFull]
-  refine Complete.bind (unpack_complete (c := c) v vv n hfit) fun bits => ?_
-  refine Complete.bind (Complete.frame (fun hnv hle h => h.mono hnv hle) (fun _ h => h)
-    (assertBitsBelow_complete (c := c) m hm bits (unpackPure vv n)
-      (by rwa [natLsbVal_unpackPure hfit]))) fun _ => ?_
-  exact Complete.pure_of fun _ h => h.2
+  refine Complete.seq Mono.readsAs (unpack_complete (c := c) v vv n hfit) fun bits => ?_
+  refine Complete.seq (Mono.readsAs.and Mono.readsAs)
+    (Complete.imp (fun _ h => h.2) (fun _ _ h => h)
+      (assertBitsBelow_complete (c := c) m hm bits (unpackPure vv n)
+        (by rwa [natLsbVal_unpackPure hfit]))) fun _ => ?_
+  exact Complete.pure_of fun _ h => h.1.2
 
 attribute [irreducible] unpackFull
 

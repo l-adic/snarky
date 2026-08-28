@@ -426,8 +426,10 @@ Snarky.scoped_inputVar
 Snarky.reads_inputVar
 Snarky.solve_complete
 Snarky.Complete.imp
-Snarky.Complete.frame
-Snarky.Complete.bind
+Snarky.Complete.seq
+Snarky.Mono
+Snarky.Mono.and
+Snarky.Mono.readsAs
 Snarky.Complete.pure_of
 
 -- The exhibits (Examples/Point.lean): a two-field bundle carried through the whole
@@ -605,6 +607,7 @@ Snarky.Kimchi.reads_addAux
 Snarky.Kimchi.OnCurveAs
 Snarky.Kimchi.OnCurveAt
 Snarky.Kimchi.OnCurveAs.mono
+Snarky.Kimchi.Mono.onCurveAs
 Snarky.Kimchi.OnCurveAt.neg
 Snarky.Kimchi.OnCurveAt.congr_simp
 Snarky.Kimchi.Finiteness

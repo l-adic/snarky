@@ -129,6 +129,16 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
   obtain ⟨hpkC, huC, hz0, hcheck⟩ := hv
   unfold challenge at hcheck
   simp only [verifyCircuit]
+  -- the wire's three points, and the sum its check relates them by
+  set PK : Vesta.curve.toAffine.Point :=
+    Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC) with hPKdef
+  set UU : Vesta.curve.toAffine.Point :=
+    Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC) with hUUdef
+  set GG : Vesta.curve.toAffine.Point := Point.some gen.x gen.y gen_nonsingular with hGGdef
+  set CC : Vesta.curve.toAffine.Point :=
+    (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
+      (preChallenge raw.pk raw.u) : Fp) • PK with hCCdef
+  set ZG : Vesta.curve.toAffine.Point := raw.z.toScalarZ • GG with hZGdef
   -- a cell reading, packed
   have hk : ∀ (st : ProverState Fq) (x : FVar Fq) (v : Fq), CVar.Scoped st x →
       x.val st.env.get = v → CircuitType.ReadsAs (val := Fq) st x v :=
@@ -148,15 +158,13 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
       (.cons (hk _ _ _ hsc.2.1.1 hrd.2.1.1) (.cons (hk _ _ _ hsc.2.1.2 hrd.2.1.2) .nil)))))
   -- the statement's points, in the curve vocabulary the gadget laws speak
   have hpkAs : ∀ st : ProverState Fq, CircuitType.ReadsAs (val := Statement Fq) st stv raw →
-      OnCurveAs Vesta.curve.toAffine st stv.pk.point
-        (Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC)) := by
+      OnCurveAs Vesta.curve.toAffine st stv.pk.point PK := by
     rintro st ⟨hsc, hrd⟩
     rw [scoped_statement] at hsc
     rw [reads_statement] at hrd
     exact ⟨scoped_affinePoint.mpr hsc.1, OnCurveAt.of_reads hrd.1.1 hrd.1.2 _⟩
   have huAs : ∀ st : ProverState Fq, CircuitType.ReadsAs (val := Statement Fq) st stv raw →
-      OnCurveAs Vesta.curve.toAffine st stv.u.point
-        (Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC)) := by
+      OnCurveAs Vesta.curve.toAffine st stv.u.point UU := by
     rintro st ⟨hsc, hrd⟩
     rw [scoped_statement] at hsc
     rw [reads_statement] at hrd
@@ -170,26 +178,24 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
   have hgenAs : ∀ st : ProverState Fq,
       OnCurveAs Vesta.curve.toAffine st
         (⟨CVar.const gen.x, CVar.const gen.y⟩ : AffinePoint (FVar Fq))
-        (Point.some gen.x gen.y gen_nonsingular) :=
+        GG :=
     fun _ => ⟨scoped_affinePoint.mpr ⟨CVar.scoped_const _ _, CVar.scoped_const _ _⟩,
       gen_nonsingular, rfl⟩
+  -- the ambient context: the statement's reading, and everything the stages add to it
+  have m₁ : Mono (F := Fq) fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw :=
+    Mono.readsAs
   -- the transcript hash
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw)
-    (fun hnv hle h => h.mono hnv hle) (fun _ h => h)
-    (Complete.imp habs (fun _ _ h => h)
-      (RandomOracle.hashVec_complete Poseidon.fqParams fqParams_size _ _))) fun sq => ?_
-  -- the transcript hash's canonical bits: a representative is below the field's order
+  refine Complete.seq m₁ (Complete.imp habs (fun _ _ h => h)
+    (RandomOracle.hashVec_complete Poseidon.fqParams fqParams_size _ _)) fun sq => ?_
+  -- its canonical bits: a representative is below the field's order
   have hbound : ToNat.toNat (transcriptHash raw.pk raw.u) < PALLAS_SCALAR_CARD :=
     ZMod.val_lt _
   have hfit : ToNat.toNat (transcriptHash raw.pk raw.u) < 2 ^ 255 :=
     lt_of_lt_of_le hbound (by decide)
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw)
-    (fun hnv hle h => h.mono hnv hle) (fun _ h => h.2)
-    (Complete.imp (fun _ h => h.1) (fun _ _ h => h)
-      (unpackFull_complete PALLAS_SCALAR_CARD 255 (by decide) sq
-        (transcriptHash raw.pk raw.u) hfit hbound))) fun hbits => ?_
+  have m₂ := m₁.and (Mono.readsAs (v := sq) (a := transcriptHash raw.pk raw.u))
+  refine Complete.seq m₂ (Complete.imp (fun _ h => h.2) (fun _ _ h => h)
+    (unpackFull_complete PALLAS_SCALAR_CARD 255 (by decide) sq
+      (transcriptHash raw.pk raw.u) hfit hbound)) fun hbits => ?_
   -- the challenge leg, on the low 128 bits
   have hnL : preChallenge raw.pk raw.u < 2 ^ 128 := Nat.mod_lt _ (by positivity)
   have hlow : ∀ st : ProverState Fq,
@@ -206,22 +212,16 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
         (fun i hi => CircuitType.reads_boolVar.mp (hrd i hi)),
       toList_takeVec, Kimchi.natLsbVal_take_eq_mod, natLsbVal_unpackPure hfit]
     rfl
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw)
-    (fun hnv hle h => h.mono hnv hle) (fun _ h => h.2)
-    (Complete.imp (fun st h => ⟨hpkAs st h.2, hlow st h.1⟩) (fun _ _ h => h)
-      (EndoMul.vesta_endoMul_complete (nonsingular_toW hpkC) hnL))) fun cpk => ?_
+  have m₃ := m₂.and (Mono.readsAs (v := hbits)
+    (a := unpackPure (transcriptHash raw.pk raw.u) 255))
+  refine Complete.seq m₃
+    (Complete.imp (fun st h => ⟨hpkAs st h.1.1, hlow st h.2⟩) (fun _ _ h => h)
+      (EndoMul.vesta_endoMul_complete (nonsingular_toW hpkC) hnL)) fun cpk => ?_
   -- the ladder leg, on the constant generator
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw ∧
-      OnCurveAs Vesta.curve.toAffine st cpk
-        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-            (preChallenge raw.pk raw.u) : Fp)
-          • Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC)))
-    (fun hnv hle h => ⟨h.1.mono hnv hle, OnCurveAs.mono hnv hle h.2⟩)
-    (fun _ h => ⟨h.2, h.1⟩)
-    (Complete.imp (fun st h => ⟨hgenAs st, hzAs st h.2⟩) (fun _ _ h => h)
-      (vesta_varBaseMul_complete gen_nonsingular hband))) fun zr => ?_
+  have m₄ := m₃.and (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := cpk) (P := CC))
+  refine Complete.seq m₄
+    (Complete.imp (fun st h => ⟨hgenAs st, hzAs st h.1.1.1⟩) (fun _ _ h => h)
+      (vesta_varBaseMul_complete gen_nonsingular hband)) fun zr => ?_
   -- the ladder's bits, locked below the scalar order
   have hzfit : ToNat.toNat raw.z.val < 2 ^ 255 :=
     lt_of_lt_of_le (ZMod.val_lt _) (by decide)
@@ -240,51 +240,22 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
       exact CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp (h i hi).1)
     · rw [getElem_mapVec]
       exact CircuitType.reads_boolVar.mpr (CircuitType.reads_fvar.mp (h i hi).2)
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw ∧
-      OnCurveAs Vesta.curve.toAffine st cpk
-        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-            (preChallenge raw.pk raw.u) : Fp)
-          • Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC)) ∧
-      OnCurveAs Vesta.curve.toAffine st zr.g
-        (raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular))
-    (fun hnv hle h => ⟨h.1.mono hnv hle, OnCurveAs.mono hnv hle h.2.1,
-      OnCurveAs.mono hnv hle h.2.2⟩)
-    (fun _ h => ⟨h.2.1, h.2.2, h.1.2⟩)
-    (Complete.imp (fun st h => hbitsAs st h.1.1) (fun _ _ h => h)
-      (assertBitsBelow_complete PALLAS_SCALAR_CARD (by decide)
-        (mapVec BoolVar.unchecked zr.lsbBits) (unpackPure raw.z.val 255) hzlock)))
-    fun _ => ?_
+  have mbits : Mono (F := Fq) fun st => ∀ (i : ℕ) (hi : i < 255),
+      CircuitType.ReadsAs (val := Fq) st (zr.lsbBits[i]'hi)
+        (bit (unpackPure raw.z.val 255)[i]) :=
+    fun _ _ hnv hle h i hi => (h i hi).mono hnv hle
+  have m₅ := m₄.and (mbits.and
+    (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := zr.g) (P := ZG)))
+  refine Complete.seq m₅ (Complete.imp (fun st h => hbitsAs st h.2.1) (fun _ _ h => h)
+    (assertBitsBelow_complete PALLAS_SCALAR_CARD (by decide)
+      (mapVec BoolVar.unchecked zr.lsbBits) (unpackPure raw.z.val 255) hzlock)) fun _ => ?_
   -- the wire's check, in the ladder's currency: the sum IS the ladder's point
-  have hne : ∀ (st : ProverState Fq) (p : AffinePoint (FVar Fq))
-      (Q : Vesta.curve.toAffine.Point), OnCurveAs Vesta.curve.toAffine st p Q → Q ≠ 0 := by
-    rintro st p Q ⟨-, hns, rfl⟩
-    exact Point.some_ne_zero hns
-  have hsum : Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC)
-      + (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
-          (preChallenge raw.pk raw.u) : Fp)
-        • Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC)
-      = raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular := by
-    rw [show (raw.z.toScalarZ : ℤ) • Point.some gen.x gen.y gen_nonsingular
-      = ((raw.z.toScalarZ : ℤ) : Fp) • Point.some gen.x gen.y gen_nonsingular from
-        (Int.cast_smul_eq_zsmul ..).symm]
+  have hsum : UU + CC = ZG := by
+    rw [hZGdef, show (raw.z.toScalarZ : ℤ) • GG = ((raw.z.toScalarZ : ℤ) : Fp) • GG from
+      (Int.cast_smul_eq_zsmul ..).symm]
     exact hcheck.symm
-  have hUU : Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC)
-      + Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC) ≠ 0 :=
-    HasCurve.two_torsion_free HasCurve.vesta _ (Point.some_ne_zero _)
-  -- the complete addition
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw ∧
-      OnCurveAs Vesta.curve.toAffine st zr.g
-        (raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular))
-    (fun hnv hle h => ⟨h.1.mono hnv hle, OnCurveAs.mono hnv hle h.2⟩)
-    (fun _ h => ⟨h.2.1, h.2.2.2⟩)
-    (Complete.imp (fun st h => ⟨huAs st h.2.1, h.2.2.1, hUU,
-        fun _ h0 => hne st zr.g _ h.2.2.2 (hsum ▸ h0)⟩) (fun _ _ h => h)
-      (addFast_complete Finiteness.checkFinite Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
-        (by decide) stv.u.point cpk _ _))) fun rhs => ?_
-  -- the ladder's point is finite, so both operands' cells read as its coordinates
-  have hZne : raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular ≠ 0 := by
+  -- the ladder's point is finite: its scalar is not a multiple of the group's order
+  have hZne : ZG ≠ 0 := by
     haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
         ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
     haveI : Fact (Nat.Prime Vesta.curve.toAffine.order) := ⟨HasCurve.vesta.prime⟩
@@ -294,43 +265,43 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
       (Point.some_ne_zero gen_nonsingular) _).mp h0
     rw [Pasta.vesta_card] at hdvd
     exact (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mpr hdvd
+  have hUC : UU + CC ≠ 0 := fun h0 => hZne (hsum ▸ h0)
+  have hUUne : UU + UU ≠ 0 :=
+    HasCurve.two_torsion_free HasCurve.vesta _ (hUUdef ▸ Point.some_ne_zero _)
   obtain ⟨zx, zy, hzns, hZeq⟩ :
       ∃ (zx : Fq) (zy : Fq) (h : Vesta.curve.toAffine.Nonsingular zx zy),
-        raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular = Point.some zx zy h := by
-    rcases hZG : raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular with _ | ⟨x, y, h⟩
+        ZG = Point.some zx zy h := by
+    rcases hZG : ZG with _ | ⟨x, y, h⟩
     · exact absurd hZG hZne
     · exact ⟨x, y, h, rfl⟩
   have hcx : ∀ (st : ProverState Fq) (p : AffinePoint (FVar Fq)),
-      OnCurveAs Vesta.curve.toAffine st p
-        (raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular) →
+      OnCurveAs Vesta.curve.toAffine st p ZG →
       CircuitType.ReadsAs (val := Fq) st p.x zx ∧
         CircuitType.ReadsAs (val := Fq) st p.y zy := by
     rintro st p ⟨hsc, hip⟩
     obtain ⟨hx, hy⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq hip ⟨hzns, hZeq⟩
     exact ⟨hk st p.x zx (scoped_affinePoint.mp hsc).1 hx,
       hk st p.y zy (scoped_affinePoint.mp hsc).2 hy⟩
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw ∧
-      OnCurveAs Vesta.curve.toAffine st zr.g
-        (raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular) ∧
-      OnCurveAs Vesta.curve.toAffine st rhs.p
-        (raw.z.toScalarZ • Point.some gen.x gen.y gen_nonsingular))
-    (fun hnv hle h => ⟨h.1.mono hnv hle, OnCurveAs.mono hnv hle h.2.1,
-      OnCurveAs.mono hnv hle h.2.2⟩)
-    (fun st h => ⟨h.2.1, h.2.2,
-      hsum ▸ h.1.2.2 fun h0 => hne st zr.g _ h.2.2 (hsum ▸ h0)⟩)
-    (Complete.imp (fun st h => ⟨(hcx st zr.g h.2.2).1,
-        (hcx st rhs.p (hsum ▸ h.1.2.2 fun h0 => hne st zr.g _ h.2.2 (hsum ▸ h0))).1⟩)
-      (fun _ _ h => h) (assertEqual_complete zr.g.x rhs.p.x zx))) fun _ => ?_
-  refine Complete.bind (Complete.frame
-    (P := fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw)
-    (fun hnv hle h => h.mono hnv hle) (fun _ h => h.2.1)
-    (Complete.imp (fun st h => ⟨(hcx st zr.g h.2.2.1).2, (hcx st rhs.p h.2.2.2).2⟩)
-      (fun _ _ h => h) (assertEqual_complete zr.g.y rhs.p.y zy))) fun _ => ?_
+  -- the complete addition, its result already read as the ladder's point
+  have m₆ := m₅.and (fun _ _ _ _ _ => trivial : Mono (F := Fq) fun _ => True)
+  refine Complete.seq m₆
+    (Complete.imp (fun st h => ⟨huAs st h.1.1.1.1.1, h.1.1.2, hUUne, fun _ => hUC⟩)
+      (fun _ _ h => hsum ▸ h.2.2 hUC)
+      (addFast_complete Finiteness.checkFinite Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
+        (by decide) stv.u.point cpk _ _)) fun rhs => ?_
+  -- the two coordinate pins
+  have m₇ := m₆.and (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := rhs.p) (P := ZG))
+  refine Complete.seq m₇
+    (Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.2.2).1, (hcx st rhs.p h.2).1⟩)
+      (fun _ _ h => h) (assertEqual_complete zr.g.x rhs.p.x zx)) fun _ => ?_
+  have m₈ := m₇.and (fun _ _ _ _ _ => trivial : Mono (F := Fq) fun _ => True)
+  refine Complete.seq m₈
+    (Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.1.2.2).2, (hcx st rhs.p h.1.2).2⟩)
+      (fun _ _ h => h) (assertEqual_complete zr.g.y rhs.p.y zy)) fun _ => ?_
   -- the response's decode is nonzero
   have hz0' : raw.z.val ≠ Type1.zeroCarrier :=
     fun h => hz0 ((Type1.toScalar_eq_zero_iff _).mpr h)
-  exact Complete.imp (fun st h => ⟨hzAs st h.2,
+  exact Complete.imp (fun st h => ⟨hzAs st h.1.1.1.1.1.1.1.1,
       hk st (CVar.const Type1.zeroCarrier) _ (CVar.scoped_const _ _) rfl⟩)
     (fun _ _ _ => trivial)
     (assertNotEqual_complete stv.z.val (CVar.const Type1.zeroCarrier) raw.z.val
