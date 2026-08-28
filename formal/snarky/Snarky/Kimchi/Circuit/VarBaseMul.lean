@@ -886,26 +886,24 @@ private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (F
 end VarBaseMul
 
 open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
-the Type1 decode of the scalar's own bits — under the ladder's regime, which is what
-prices the ladder's non-degeneracy. -/
+/-- **Soundness.** Any satisfying valuation reads the result's cells as bits whose LSB-first
+value the scalar reads as, and the result as the base multiplied by that value's Type1
+decode — under the ladder's regime, which is what prices the ladder's non-degeneracy. -/
 theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
     ⦃⌜True⌝⦄
     varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
-      ∃ bits : List F,
-        (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
-        bits = ((r.lsbBits.toList.take (5 * chunks)).reverse).map (·.val V) ∧
-        (∀ i (hi : i < 5 * chunks), (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 0 ∨
-          (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 1) ∧
-        scalar.val.val V = Kimchi.Gate.VarBaseMul.bitsRegister bits ∧
+      ∃ bs : Vector Bool (5 * chunks),
+        (∀ i (hi : i < 5 * chunks),
+          (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
+        scalar.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : F) ∧
         ∀ _ : d.LadderRegime (5 * chunks)
-            (Pasta.Shifted.unshiftType1 (5 * chunks) (Kimchi.Gate.VarBaseMul.bitsVal bits)),
+            (Pasta.Shifted.unshiftType1 (5 * chunks) (Kimchi.natLsbVal bs.toList : ℤ)),
           OnCurveAt d.W V r.g
             ((Pasta.Shifted.unshiftType1 (5 * chunks)
-              (Kimchi.Gate.VarBaseMul.bitsVal bits)) • T)⌝⦄ := by
+              (Kimchi.natLsbVal bs.toList : ℤ)) • T)⌝⦄ := by
   have hloop := fun (b : AffinePoint (FVar F)) =>
     mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
       (fun st bs => VarBaseMul.scaleRound_spec b st bs)
@@ -942,9 +940,11 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       (Vector.ofFn fun j : Fin 5 =>
         ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
           (CVar.const 0))).length = chunks := by simp
-  refine ⟨VarBaseMul.roundBits V loop.1, hbool, ?_, hbits, ?_, ?_, ?_⟩
-  · rw [hlen, hpreflen]
-  · intro i hi
+  -- the cells, decided as bits: the gate's rows make each one `0` or `1`
+  have hcell : ∀ i (hi : i < 5 * chunks),
+      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 0 ∨
+        (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 1 := by
+    intro i hi
     refine hbool _ ?_
     rw [hbits]
     refine List.mem_map.mpr ⟨bits[i]'(Nat.lt_of_lt_of_le hi hn), ?_, rfl⟩
@@ -953,10 +953,38 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
         = bits[i]'(Nat.lt_of_lt_of_le hi hn) := by
       simp [List.getElem_take]
     exact hidx ▸ List.getElem_mem _
-  · rw [← hpin, hreg]
-  · intro hregime
-    rw [hpreflen] at hpoint
-    exact hpoint hregime
+  set bs : Vector Bool (5 * chunks) :=
+    Vector.ofFn fun i : Fin (5 * chunks) =>
+      decide ((bits[i.1]'(Nat.lt_of_lt_of_le i.isLt hn)).val V = 1) with hbsdef
+  have hread : ∀ i (hi : i < 5 * chunks),
+      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i] := by
+    intro i hi
+    simp only [hbsdef, Vector.getElem_ofFn]
+    rcases hcell i hi with h0 | h1
+    · simp [h0, bit]
+    · simp [h1, bit]
+  have hdec : ((VarBaseMul.roundBits V loop.1).map fun b => decide (b = 1)).reverse
+      = bs.toList := by
+    rw [hbits, List.map_map, ← List.map_reverse, List.reverse_reverse]
+    apply List.ext_getElem
+    · simp only [List.length_map, List.length_take, Vector.length_toList, hbsdef,
+        Vector.length_toList]
+      omega
+    · intro i h1 _
+      have hi : i < 5 * chunks := by simp only [List.length_map, List.length_take,
+        Vector.length_toList, lt_min_iff] at h1; omega
+      simp only [hbsdef, Vector.getElem_toList, Vector.getElem_ofFn, List.getElem_map,
+        List.getElem_take, Function.comp_apply, Vector.getElem_toList]
+  have hbn : Kimchi.Gate.VarBaseMul.bitsVal (VarBaseMul.roundBits V loop.1)
+      = (Kimchi.natLsbVal bs.toList : ℤ) := by
+    rw [Kimchi.Gate.VarBaseMul.bitsVal_eq_natLsbVal, hdec]
+  refine ⟨bs, hread, ?_, ?_⟩
+  · rw [← hpin, hreg,
+      Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast (VarBaseMul.roundBits V loop.1) hbool, hbn]
+    push_cast
+    ring
+  · rw [hpreflen, hbn] at hpoint
+    exact hpoint
 
 open WeierstrassCurve.Affine in
 /-- **Completeness.** From a readable on-curve base and a scalar inside the ladder's
@@ -1263,10 +1291,13 @@ theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   mvcgen [hvbm]
   rename_i r _ hr
   intro T hT
-  obtain ⟨bits, hbool, hlen, -, -, hreg, hpoint⟩ := hr T hT
-  obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
-  refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, by rw [← hlen]; exact hlt, ?_, hpoint⟩
-  rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
+  obtain ⟨bs, -, hreg, hpoint⟩ := hr T hT
+  refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, ?_, ?_, hpoint⟩
+  · exact_mod_cast (by simpa using Kimchi.natLsbVal_lt bs.toList :
+      Kimchi.natLsbVal bs.toList < 2 ^ (5 * chunks))
+  · rw [hreg]
+    push_cast
+    ring
 
 open WeierstrassCurve.Affine in
 /-- **Completeness** (`scaleFast1`). `varBaseMul`'s honest run, with the bits dropped. -/
@@ -1337,50 +1368,43 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   case vc3.htwo => exact d.two_ne
   rename_i _ rvb _ hvb _ _ hpin0 q _ yr _ hyr xr _ hxr hadd
   intro T hT bb hbb
-  obtain ⟨bits, hbool, hlen, hbitsEq, -, hreg, hpoint⟩ := hvb T hT
-  obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
+  obtain ⟨bs, hread, hreg, hpoint⟩ := hvb T hT
   -- the pinned high bits: the ladder's integer fits the split's width
-  have hzeros : ∀ b ∈ bits.take (5 * chunks - sDiv2Bits), b = 0 := by
+  have hzeros : ∀ b ∈ bs.toList.drop sDiv2Bits, b = false := by
     intro b hb
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
-    have hik : i < 5 * chunks - sDiv2Bits := by
-      simp only [List.length_take, hlen] at hi
+    have hi' : sDiv2Bits + i < 5 * chunks := by
+      simp only [List.length_drop, Vector.length_toList] at hi
       omega
-    have hilen : i < bits.length := by rw [hlen]; omega
-    simp only [List.getElem_take]
-    have hidx : 5 * chunks - 1 - i < n := by omega
-    have hge : sDiv2Bits ≤ 5 * chunks - 1 - i := by omega
-    have hmem : rvb.lsbBits.toList[5 * chunks - 1 - i]'(by simpa using hidx)
+    have hidx : sDiv2Bits + i < n := Nat.lt_of_lt_of_le hi' hn
+    have hmem : rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx)
         ∈ rvb.lsbBits.toList.drop sDiv2Bits := by
-      have hlend : sDiv2Bits + (5 * chunks - 1 - i - sDiv2Bits) = 5 * chunks - 1 - i := by omega
-      have heq : (rvb.lsbBits.toList.drop sDiv2Bits)[5 * chunks - 1 - i - sDiv2Bits]'(by
+      have heq : (rvb.lsbBits.toList.drop sDiv2Bits)[i]'(by
           simp only [List.length_drop, Vector.length_toList]; omega)
-          = rvb.lsbBits.toList[5 * chunks - 1 - i]'(by simpa using hidx) := by
-        rw [List.getElem_drop]
-        congr 1
+          = rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) := List.getElem_drop ..
       rw [← heq]
       exact List.getElem_mem _
-    simp only [hbitsEq, List.getElem_map, List.getElem_reverse, List.length_take,
-      Vector.length_toList, List.getElem_take]
-    simp only [show min (5 * chunks) n = 5 * chunks from by omega]
-    rw [hpin0 _ hmem]
-    simp [CVar.val]
-  have hdroplen : (bits.drop (5 * chunks - sDiv2Bits)).length = sDiv2Bits := by
-    rw [List.length_drop, hlen]
-    omega
-  have hltSplit : Kimchi.Gate.VarBaseMul.bitsVal bits < 2 ^ sDiv2Bits := by
-    have h := (Kimchi.Gate.VarBaseMul.bitsVal_lt (bits.drop (5 * chunks - sDiv2Bits))
-      (fun b hb => hbool b (List.mem_of_mem_drop hb))).1
-    rw [hdroplen] at h
-    rw [Kimchi.Gate.VarBaseMul.bitsVal_drop_of_zeros bits _ hzeros]
-    exact h
-  refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, hltSplit, ?_, ?_⟩
-  · rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
+    have hb0 : bit bs[sDiv2Bits + i] = (0 : F) := by
+      rw [← hread (sDiv2Bits + i) hi',
+        show rvb.lsbBits[sDiv2Bits + i]'hidx
+          = rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) from rfl,
+        hpin0 _ hmem]
+      simp [CVar.val]
+    rw [List.getElem_drop, Vector.getElem_toList]
+    cases hbb : bs[sDiv2Bits + i] with
+    | false => rfl
+    | true => rw [hbb] at hb0; simp [bit] at hb0
+  have hltSplit : (Kimchi.natLsbVal bs.toList : ℤ) < 2 ^ sDiv2Bits := by
+    exact_mod_cast Kimchi.natLsbVal_lt_of_drop_false hzeros
+  refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, hltSplit, ?_, ?_⟩
+  · rw [hreg]
+    push_cast
+    ring
   · intro hregime
     have hG := hpoint hregime
     obtain ⟨hGns, hGeq⟩ := hG
     have hPne : ((Pasta.Shifted.unshiftType1 (5 * chunks)
-        (Kimchi.Gate.VarBaseMul.bitsVal bits)) • T) ≠ 0 := by
+        ((Kimchi.natLsbVal bs.toList : ℤ))) • T) ≠ 0 := by
       rw [hGeq]
       exact Point.some_ne_zero hGns
     have hnegT : OnCurveAt d.W V ⟨base.x, CVar.negate_ base.y⟩ (-T) :=
@@ -1391,19 +1415,19 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     · cases bb with
       | false =>
         show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
-          ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 0 + 2 ^ (5 * chunks)) • T)
+          ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 0 + 2 ^ (5 * chunks)) • T)
         rw [hxr false hbb, hyr false hbb,
-          show ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 0 + 2 ^ (5 * chunks)) • T)
-            = ((Pasta.Shifted.unshiftType1 (5 * chunks) (Kimchi.Gate.VarBaseMul.bitsVal bits))
+          show ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 0 + 2 ^ (5 * chunks)) • T)
+            = ((Pasta.Shifted.unshiftType1 (5 * chunks) ((Kimchi.natLsbVal bs.toList : ℤ)))
                 • T + -T)
             from by rw [Pasta.Shifted.unshiftType1]; module]
         exact hq
       | true =>
         show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
-          ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 1 + 2 ^ (5 * chunks)) • T)
+          ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 1 + 2 ^ (5 * chunks)) • T)
         rw [hxr true hbb, hyr true hbb,
-          show ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 1 + 2 ^ (5 * chunks)) • T)
-            = ((Pasta.Shifted.unshiftType1 (5 * chunks) (Kimchi.Gate.VarBaseMul.bitsVal bits)) • T)
+          show ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 1 + 2 ^ (5 * chunks)) • T)
+            = ((Pasta.Shifted.unshiftType1 (5 * chunks) ((Kimchi.natLsbVal bs.toList : ℤ))) • T)
             from by rw [Pasta.Shifted.unshiftType1]; module]
         exact ⟨hGns, hGeq⟩
 
@@ -1797,10 +1821,10 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul 
 off the ladder's forbidden band, whose 255 witnessed bits read as a value below the
 scalar order, says the result is the base point scaled by the carrier's decode.
 
-The generic post pins the ladder's integer only through `bitsVal` of its own cell list and
-guards its conclusion on an abstract `LadderRegime`; the bit bound identifies that integer
-with the carrier's canonical representative, and the deployed order discharges the guard.
-Neither is visible here.
+The generic post pins the ladder's integer only through the LSB-first value of its own
+bits and guards its conclusion on an abstract `LadderRegime`; the bit bound identifies
+that integer with the carrier's canonical representative, and the deployed order
+discharges the guard. Neither is visible here.
 
 Stated on the generic law's OUTPUT rather than as a triple, for the same reason as
 `vesta_endoMul_read`: a consumer reaches it holding that output. -/
@@ -1809,54 +1833,29 @@ theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
     (hread : sv.val.val V = Z.val)
     (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD)
     (h : ∀ T : HasCurve.vesta.W.Point, OnCurveAt HasCurve.vesta.W V base T →
-      ∃ bits : List Fq,
-        (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * 51 ∧
-        bits = ((r.lsbBits.toList.take (5 * 51)).reverse).map (·.val V) ∧
-        (∀ i (hi : i < 5 * 51), (r.lsbBits[i]'(by omega)).val V = 0 ∨
-          (r.lsbBits[i]'(by omega)).val V = 1) ∧
-        sv.val.val V = bitsRegister bits ∧
+      ∃ bs : Vector Bool (5 * 51),
+        (∀ i (hi : i < 5 * 51), (r.lsbBits[i]'(by omega)).val V = bit bs[i]) ∧
+        sv.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : Fq) ∧
         ∀ _ : HasCurve.vesta.LadderRegime (5 * 51)
-            (Pasta.Shifted.unshiftType1 (5 * 51) (bitsVal bits)),
+            (Pasta.Shifted.unshiftType1 (5 * 51) (Kimchi.natLsbVal bs.toList : ℤ)),
           OnCurveAt HasCurve.vesta.W V r.g
-            ((Pasta.Shifted.unshiftType1 (5 * 51) (bitsVal bits)) • T)) :
+            ((Pasta.Shifted.unshiftType1 (5 * 51)
+              (Kimchi.natLsbVal bs.toList : ℤ)) • T)) :
     ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V base T →
       (∀ bs : Vector Bool 255,
         (∀ i (hi : i < 255), ((mapVec BoolVar.unchecked r.lsbBits)[i]).toCVar.val V
           = bit bs[i]) → Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD) →
       OnCurveAt Vesta.curve.toAffine V r.g (Z.toScalarZ • T) := by
   intro T hT hlock
-  obtain ⟨bits, hbval, hblen, hbeq, hcell, hpin, hact⟩ := h T hT
-  -- the cells, decided as bits: the gate's rows make each one `0` or `1`
-  set bs : Vector Bool 255 :=
-    mapVec (fun cv : FVar Fq => decide (cv.val V = 1)) r.lsbBits with hbsdef
-  have hbs : ∀ i (hi : i < 255), (r.lsbBits[i]).val V = bit bs[i] := by
-    intro i hi
-    simp only [hbsdef, getElem_mapVec]
-    rcases hcell i (by omega) with h0 | h1
-    · simp [h0, bit]
-    · simp [h1, bit]
+  obtain ⟨bs, hbs, hpin, hact⟩ := h T hT
   have hlt : Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD :=
     hlock bs (fun i hi => by simpa using hbs i hi)
   -- the ladder's integer is the carrier's canonical representative
-  have hdec : (bits.map fun b => decide (b = 1)).reverse = bs.toList := by
-    rw [hbeq, List.map_map, ← List.map_reverse, List.reverse_reverse]
-    apply List.ext_getElem
-    · simp
-    · intro i h1 h2
-      have hi : i < 255 := by simpa using h1
-      simp only [List.getElem_map, List.getElem_take, Vector.getElem_toList, Function.comp_apply]
-      rw [hbs i hi]
-      cases bs[i] <;> simp [bit]
-  have hbn : bitsVal bits = (Kimchi.natLsbVal bs.toList : ℤ) := by
-    rw [bitsVal_eq_natLsbVal, hdec]
-  have hval : Z.val.val = Kimchi.natLsbVal bs.toList := by
-    refine toNat_eq_of_natCast_eq (F := Fq) ?_ ?_
-    · rw [← hread, hpin, bitsRegister_eq_cast bits hbval, hbn]
-      push_cast
-      ring
-    · exact hlt
-  have hZ : Z.toScalarZ = Pasta.Shifted.unshiftType1 (5 * 51) (bitsVal bits) := by
-    simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1, hbn, hval]
+  have hval : Z.val.val = Kimchi.natLsbVal bs.toList :=
+    toNat_eq_of_natCast_eq (F := Fq) (by rw [← hread, hpin]) hlt
+  have hZ : Z.toScalarZ
+      = Pasta.Shifted.unshiftType1 (5 * 51) (Kimchi.natLsbVal bs.toList : ℤ) := by
+    simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1, hval]
   rw [hZ]
   exact hact (hZ ▸ vesta_ladderRegime Z hband)
 
