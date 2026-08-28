@@ -72,8 +72,7 @@ theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat 
       (fun _ _ => True) := by
   intro st hpre
   obtain ⟨r, st₁, hrun, hsat, -⟩ :=
-    EndoScalar.toField_complete h2 h3 8 v.val endo vv ev (by norm_num at hfits ⊢; exact hfits)
-      st hpre
+    EndoScalar.toField_complete h2 h3 v.val endo vv ev hfits st hpre
   exact ⟨⟨⟩, st₁, hrun.bind rfl, fun hnv hle =>
     Sat.bind hrun (hsat hnv hle) Sat.pure, trivial⟩
 
@@ -171,14 +170,11 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
       _ = ((ToNat.toNat xv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128) : ℕ) : F) := by
             rw [hmd]
       _ = _ := by push_cast; ring
-  have hlolt : ToNat.toNat ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) < 4 ^ (8 * 8) := by
+  have hlolt : ToNat.toNat ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) < 2 ^ 128 := by
     rw [hlo']
-    have hm : ToNat.toNat xv % 2 ^ 128 < 2 ^ 128 := Nat.mod_lt _ (by positivity)
-    norm_num at hm ⊢
-    exact hm
-  have hhilt : ToNat.toNat ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) < 4 ^ (8 * 8) := by
+    exact Nat.mod_lt _ (by positivity)
+  have hhilt : ToNat.toNat ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) < 2 ^ 128 := by
     rw [hhi']
-    norm_num at hhi ⊢
     exact hhi
   simp only [lowest128Bits']
   obtain ⟨lohi, st₁, hrun₁, hsat₁, hnv₁, hle₁, hsc₁, hrd₁⟩ :=
@@ -200,7 +196,7 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
   have hRhi : CircuitType.ReadsAs (val := F) st₁ hi ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) :=
     ⟨CircuitType.scoped_fvar.mpr hsc₁.2, CircuitType.reads_fvar.mpr hrd₁.2⟩
   obtain ⟨rhi, st₂, hrun₂, hsat₂, -⟩ :=
-    EndoScalar.toField_complete h2 h3 8 hi endo ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) ev hhilt st₁
+    EndoScalar.toField_complete h2 h3 hi endo ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) ev hhilt st₁
       ⟨hRhi, hRe.mono hnv₁ hle₁⟩
   have hle₂ := hrun₂.le
   have hnv₂ := hrun₂.nv_le
@@ -217,7 +213,7 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
   by_cases hc : constrainLowBits = true
   · simp only [hc, if_true]
     obtain ⟨rlo, st₃, hrun₃, hsat₃, -⟩ :=
-      EndoScalar.toField_complete h2 h3 8 lo endo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) ev hlolt st₂
+      EndoScalar.toField_complete h2 h3 lo endo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) ev hlolt st₂
         ⟨hRlo.mono hnv₂ hle₂, hRe.mono (Nat.le_trans hnv₁ hnv₂) (hle₁.trans hle₂)⟩
     have hle₃ := hrun₃.le
     have hnv₃ := hrun₃.nv_le

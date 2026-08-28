@@ -409,7 +409,7 @@ private theorem chainAt_facts [Field F] [DecidableEq F] {st₂ stf : ProverState
 /-- **Completeness.** From a readable scalar the honest run succeeds, its rows hold at
 every extension, and the three accumulators read as the Algorithm-2 decompositions of
 the scalar's own crumb stream. -/
-theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
+private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) (sv : F) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => CircuitType.ReadsAs (val := F) st scalar sv)
@@ -491,18 +491,24 @@ theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
       ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.1, CircuitType.reads_fvar.mpr hB⟩,
       ⟨CircuitType.scoped_fvar.mpr hinv₂.2.2.2, CircuitType.reads_fvar.mpr hN⟩⟩
 
-/-- **Completeness of the wrapper.** With the scalar faithful to its representative and
-inside the row width's range, the honest run succeeds and the result reads as the gate
-model's `toField` at the scalar's crumbs. -/
+/-- **Completeness of the wrapper**, at the deployed eight rows — the sixty-four crumbs
+of a 128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand.
+On a scalar faithful to a representative of that width the honest run succeeds and the
+result reads as the sponge's endo-expansion of it. -/
 theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) (sv ev : F)
-    (hlt : ToNat.toNat sv < 4 ^ (8 * rows)) :
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (sv ev : F)
+    (hlt : ToNat.toNat sv < 2 ^ 128) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => CircuitType.ReadsAs (val := F) st scalar sv ∧
         CircuitType.ReadsAs (val := F) st endo ev)
-      (toField (c := KimchiConstraint F) rows scalar endo)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r (Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) ev)) := by
+      (toField (c := KimchiConstraint F) 8 scalar endo)
+      (fun r st' => CircuitType.ReadsAs (val := F) st' r
+        (Poseidon.FqSponge.endoExpand ev (ToNat.toNat sv))) := by
+  rw [show Poseidon.FqSponge.endoExpand ev (ToNat.toNat sv)
+      = Kimchi.Gate.EndoScalar.toField
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv)) ev from
+    Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 ev _]
+  replace hlt : ToNat.toNat sv < 4 ^ (8 * 8) := by norm_num; omega
   rintro st ⟨hRs, hRe⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
     at hRs hRe
@@ -512,7 +518,7 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     ⟨CircuitType.scoped_fvar.mpr hsc', CircuitType.reads_fvar.mpr hrd⟩
   simp only [toField]
   obtain ⟨abn, st₁, hrun₁, hsat₁, hRA, hRB, hRN⟩ :=
-    toFieldChecked'_complete h2 h3 rows scalar sv st hsc
+    toFieldChecked'_complete h2 h3 8 scalar sv st hsc
   have hscA : abn.1.Scoped st₁ := CircuitType.scoped_fvar.mp hRA.1
   have hscB : abn.2.1.Scoped st₁ := CircuitType.scoped_fvar.mp hRB.1
   have hscN : abn.2.2.Scoped st₁ := CircuitType.scoped_fvar.mp hRN.1
@@ -531,11 +537,11 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           CircuitType.reads_fvar.mpr rfl⟩⟩
   have hA₂ : abn.1.val st₂.env.get
       = Kimchi.Gate.EndoScalar.decomposeA
-        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) := by
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv)) := by
     rw [CVar.val_of_le hrun₂.le hscA, hA]
   have hB₂ : abn.2.1.val st₂.env.get
       = Kimchi.Gate.EndoScalar.decomposeB
-        (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv)) := by
+        (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv)) := by
     rw [CVar.val_of_le hrun₂.le hscB, hB]
   split
   · rename_i _ e
@@ -552,7 +558,7 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   · obtain ⟨pr, st₃, hrun₃, hsat₃, hpr⟩ :=
       mul_complete (c := KimchiConstraint F) abn.1 endo
         (Kimchi.Gate.EndoScalar.decomposeA
-          (Kimchi.Gate.EndoScalar.crumbsOf (8 * rows) (ToNat.toNat sv))) ev st₂
+          (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv))) ev st₂
         ⟨⟨CircuitType.scoped_fvar.mpr (hscA.mono hrun₂.nv_le),
             CircuitType.reads_fvar.mpr hA₂⟩,
           ⟨CircuitType.scoped_fvar.mpr (hsce.mono (hrun₁.nv_le.trans hrun₂.nv_le)),
