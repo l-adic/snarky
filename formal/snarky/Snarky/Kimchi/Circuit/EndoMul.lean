@@ -1000,12 +1000,10 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun st => OnCurveAs d.W st t (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
-      (fun r st' => r.x.Scoped st' ∧ r.y.Scoped st' ∧
-        ∃ (hfin : d.W.Nonsingular (r.x.val st'.env.get) (r.y.val st'.env.get)) (s : ℤ),
-          Point.some _ _ hfin = s • Point.some _ _ hT ∧
-          (s : F) = Kimchi.Gate.EndoScalar.toField
-            (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv))
-            (d.lam : F)) := by
+      (fun r st' => ∃ s : ℤ, OnCurveAs d.W st' r (s • Point.some _ _ hT) ∧
+        (s : F) = Kimchi.Gate.EndoScalar.toField
+          (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv))
+          (d.lam : F)) := by
   rintro st ⟨hBase, hRs⟩
   obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
   rw [scoped_affinePoint] at hbase
@@ -1235,7 +1233,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hnv₆ := hrun₆.nv_le
   have hlenR : loop.1.length = rounds := by rw [ChainAt.length hchainAt, hlenB]
   refine ⟨loop.2.1, st₆, hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind
-      (hrun₅.bind (hrun₆.bind (Runs.addConstraint.bind rfl)))))), ?_, ?_, ?_, ?_⟩
+      (hrun₅.bind (hrun₆.bind (Runs.addConstraint.bind rfl)))))), ?_, ?_⟩
   · intro stf hnvF hleF
     have hle₅f : st₅.env.Le stf.env := hle₆.trans hleF
     have hnv₅f : st₅.nv ≤ stf.nv := Nat.le_trans hnv₆ hnvF
@@ -1263,8 +1261,6 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     · exact (hle₄.trans hle₅).trans hle₅f
     · exact Nat.le_trans hnv₅ hnv₅f
     · exact hle₅.trans hle₅f
-  · exact hscL.1.mono hnv₆
-  · exact hscL.2.1.mono hnv₆
   · -- the point conclusion, off the model's own chain theorem
     obtain ⟨hfx₆, hfy₆, -⟩ := grants_fin d.endo t st₆
       (ChainAt.mono (RowGrant.mono d.endo t) hnv₆ hle₆ hchainAt)
@@ -1279,8 +1275,8 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     have hfin : d.W.Nonsingular (loop.2.1.x.val st₆.env.get) (loop.2.1.y.val st₆.env.get) := by
       rw [hfx₆, hfy₆]
       exact hfin'
-    refine ⟨hfin, sc, ?_, ?_⟩
-    · exact (Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq
+    refine ⟨sc, ⟨scoped_affinePoint.mpr ⟨hscL.1.mono hnv₆, hscL.2.1.mono hnv₆⟩, hfin, ?_⟩, ?_⟩
+    · exact ((Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq).symm
     · rw [hsval]
       congr 1
       rw [Kimchi.Gate.EndoMul.crumbList_ofBits rounds (ToNat.toNat sv) W ?_]
