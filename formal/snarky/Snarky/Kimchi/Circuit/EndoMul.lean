@@ -990,7 +990,8 @@ private def bitsOf [Field F] (rounds k i : ℕ) : F × F × F × F :=
 
 /-- **Completeness.** From a readable on-curve base and a scalar inside the width, the
 honest run succeeds, its rows hold at every extension, and the result reads as the base
-multiplied by the effective scalar of the scalar's own crumbs. -/
+multiplied by a decomposition of the scalar's own crumbs — handed back as the gate's two
+accumulators under their bounds, so a consumer can pin the multiplier in ℤ. -/
 private theorem endoMul_complete_crumbs [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasEndo F) (rounds : ℕ) (hbits : 4 * rounds ≤ 244)
     (t : AffinePoint (FVar F)) (scalar : SizedF (4 * rounds) (FVar F))
@@ -1000,10 +1001,13 @@ private theorem endoMul_complete_crumbs [Field F] [DecidableEq F] [ToNat F] [Law
       (fun st => OnCurveAs d.W st t (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo rounds t scalar)
-      (fun r st' => ∃ s : ℤ, OnCurveAs d.W st' r (s • Point.some _ _ hT) ∧
-        (s : F) = Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv))
-          (d.lam : F)) := by
+      (fun r st' => ∃ s A B : ℤ, OnCurveAs d.W st' r (s • Point.some _ _ hT) ∧
+        s = B + A * d.lam ∧
+        |A| ≤ 3 * 4 ^ rounds ∧ |B| ≤ 3 * 4 ^ rounds ∧
+        (A : F) = Kimchi.Gate.EndoScalar.decomposeA
+          (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv)) ∧
+        (B : F) = Kimchi.Gate.EndoScalar.decomposeB
+          (Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv))) := by
   rintro st ⟨hBase, hRs⟩
   obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
   rw [scoped_affinePoint] at hbase
@@ -1266,7 +1270,7 @@ private theorem endoMul_complete_crumbs [Field F] [DecidableEq F] [ToNat F] [Law
       (ChainAt.mono (RowGrant.mono d.endo t) hnv₆ hle₆ hchainAt)
       (hbitsRead st₆ (hst₁₅.trans hle₆))
     rw [hWat st₆ hle₆, hlenB] at hfx₆ hfy₆
-    obtain ⟨hfin', sc, A, B, hseq, -, -, -, -, -, hsval⟩ :=
+    obtain ⟨hfin', sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, -⟩ :=
       Kimchi.Gate.EndoMul.endoMul_off d.W d.two_ne d.three_ne d.odd d.endo
         (Point.some _ _ hT) (Point.some _ _ hφT)
         (fun a b ha hb hba hbb =>
@@ -1275,34 +1279,15 @@ private theorem endoMul_complete_crumbs [Field F] [DecidableEq F] [ToNat F] [Law
     have hfin : d.W.Nonsingular (loop.2.1.x.val st₆.env.get) (loop.2.1.y.val st₆.env.get) := by
       rw [hfx₆, hfy₆]
       exact hfin'
-    refine ⟨sc, ⟨scoped_affinePoint.mpr ⟨hscL.1.mono hnv₆, hscL.2.1.mono hnv₆⟩, hfin, ?_⟩, ?_⟩
-    · exact ((Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq).symm
-    · rw [hsval]
-      congr 1
+    have hcl : Kimchi.Gate.EndoMul.crumbList W rounds
+        = Kimchi.Gate.EndoScalar.crumbsOf (2 * rounds) (ToNat.toNat sv) := by
       rw [Kimchi.Gate.EndoMul.crumbList_ofBits rounds (ToNat.toNat sv) W ?_]
       intro r _
       cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
-
-/-- **Completeness**, at the deployed thirty-two rounds — the sixty-four crumbs of a
-128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. On a
-base on the curve and a scalar faithful to a representative of that width the honest run
-succeeds, and the result is the base multiplied by the sponge's endo-expansion of it. -/
-theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (d : HasEndo F)
-    (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
-    (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
-    (hfits : ToNat.toNat sv < 2 ^ 128) :
-    Complete (F := F) (c := KimchiConstraint F)
-      (fun st => OnCurveAs d.W st t (Point.some _ _ hT) ∧
-        CircuitType.ReadsAs (val := F) st scalar.val sv)
-      (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo 32 t scalar)
-      (fun r st' => ∃ s : ℤ, OnCurveAs d.W st' r (s • Point.some _ _ hT) ∧
-        (s : F) = Poseidon.FqSponge.endoExpand (d.lam : F) (ToNat.toNat sv)) := by
-  rw [show Poseidon.FqSponge.endoExpand (d.lam : F) (ToNat.toNat sv)
-      = Kimchi.Gate.EndoScalar.toField
-          (Kimchi.Gate.EndoScalar.crumbsOf (2 * 32) (ToNat.toNat sv)) (d.lam : F) from
-    Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3 _ _]
-  exact endoMul_complete_crumbs d 32 (by norm_num) t scalar xv yv sv hT (by norm_num; omega)
+    exact ⟨sc, A, B,
+      ⟨scoped_affinePoint.mpr ⟨hscL.1.mono hnv₆, hscL.2.1.mono hnv₆⟩, hfin,
+        ((Kimchi.Gate.EndoMul.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq).symm⟩,
+      hsab, hAle, hBle, hcl ▸ hAval, hcl ▸ hBval⟩
 
 open Kimchi.Gate.EndoScalar in
 /-- An integer of the shape the sound law hands back — `s = B + A·λ`, bounded by
@@ -1342,6 +1327,30 @@ private theorem decomposition_eq_toIntZ [Field F] [DecidableEq F]
     hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
   rw [hsab, hAeq, hBeq, toIntZ]
   ring
+
+open Kimchi.Gate.EndoScalar in
+/-- **Completeness**, at the deployed thirty-two rounds — the sixty-four crumbs of a
+128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. On a
+base on the curve and a scalar faithful to a representative of that width the honest run
+succeeds, and the result is the base multiplied by that representative's decoded integer —
+the multiplier `endoMul_spec` names, in the same modulus-free currency. -/
+theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
+    (d : HasEndo F) (t : AffinePoint (FVar F)) (scalar : SizedF 128 (FVar F))
+    (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
+    (hfits : ToNat.toNat sv < 2 ^ 128) :
+    Complete (F := F) (c := KimchiConstraint F)
+      (fun st => OnCurveAs d.W st t (Point.some _ _ hT) ∧
+        CircuitType.ReadsAs (val := F) st scalar.val sv)
+      (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo 32 t scalar)
+      (fun r st' => OnCurveAs d.W st' r
+        (toIntZ (digitsOf 64 (ToNat.toNat sv)) d.lam • Point.some _ _ hT)) := by
+  intro st hst
+  obtain ⟨r, st', hrun, hsat, s, A, B, hpt, hsab, hAle, hBle, hAval, hBval⟩ :=
+    endoMul_complete_crumbs d 32 (by norm_num) t scalar xv yv sv hT
+      (by norm_num; omega) st hst
+  have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
+  exact ⟨r, st', hrun, hsat,
+    decomposition_eq_toIntZ d _ hsab (h4 ▸ hAle) (h4 ▸ hBle) hAval hBval ▸ hpt⟩
 
 open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 /-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
