@@ -594,9 +594,9 @@ Snarky.Kimchi.instCircuitTypeAddAux
 Snarky.Kimchi.instCheckedTypeAddAux
 Snarky.Kimchi.scoped_addAux
 Snarky.Kimchi.reads_addAux
-Snarky.Kimchi.OnCurve
+Snarky.Kimchi.OnCurveAs
 Snarky.Kimchi.OnCurveAt
-Snarky.Kimchi.OnCurve.mono
+Snarky.Kimchi.OnCurveAs.mono
 Snarky.Kimchi.OnCurveAt.neg
 Snarky.Kimchi.OnCurveAt.congr_simp
 Snarky.Kimchi.Finiteness

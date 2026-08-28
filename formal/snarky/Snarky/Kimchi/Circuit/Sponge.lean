@@ -66,7 +66,7 @@ def ofConstants (s : Poseidon.State F) : SpongeVar F :=
 A circuit sponge implements a value sponge when its cells read that sponge's cells and
 the modes agree — the mode is metadata, so it must match on the nose. `ReadsAt` is the
 soundness side (a valuation), `Reads` the completeness side (scope and reading together,
-transported by `Reads.mono`); the pair mirrors `OnCurveAt`/`OnCurve`. -/
+transported by `Reads.mono`); the pair mirrors `OnCurveAt`/`OnCurveAs`. -/
 
 /-- The sponge's reading under a valuation: cells and mode. -/
 def ReadsAt [Add F] [Mul F] [Zero F] (V : Valuation F) (sv : SpongeVar F)

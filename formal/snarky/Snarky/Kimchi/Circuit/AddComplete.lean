@@ -244,7 +244,7 @@ def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Val
 open WeierstrassCurve.Affine in
 /-- …and in scope, so the same curve point is read at every later table. Carrying the
 pair is what keeps a multi-stage proof from rebuilding the point at each stage. -/
-def OnCurve [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
+def OnCurveAs [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
   CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
 
@@ -267,10 +267,10 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
 
 /-- A curve read survives the table's growth — with the same curve point. -/
-theorem OnCurve.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+theorem OnCurveAs.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {st st' : ProverState F} {p : AffinePoint (FVar F)} {P : W.Point}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurve W st p P) :
-    OnCurve W st' p P := by
+    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurveAs W st p P) :
+    OnCurveAs W st' p P := by
   obtain ⟨hsc, n, rfl⟩ := h
   rw [scoped_affinePoint] at hsc
   refine ⟨scoped_affinePoint.mpr ⟨hsc.1.mono hnv, hsc.2.mono hnv⟩, ?_, ?_⟩
@@ -375,14 +375,14 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (P Q : W.Point) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => OnCurve W st p1' P ∧ OnCurve W st p2' Q ∧
+      (fun st => OnCurveAs W st p1' P ∧ OnCurveAs W st p2' Q ∧
         P + P ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
       (addFast (c := KimchiConstraint F) fin p1' p2')
       (fun r st' => CircuitType.Scoped (val := AffinePoint F) st' r.p ∧
         (↑r.isInfinity : CVar F).Scoped st' ∧
-        (P + Q ≠ 0 → OnCurve W st' r.p (P + Q))) := by
+        (P + Q ≠ 0 → OnCurveAs W st' r.p (P + Q))) := by
   have hbase : Complete (F := F) (c := KimchiConstraint F)
-      (fun st => OnCurve W st p1' P ∧ OnCurve W st p2' Q ∧
+      (fun st => OnCurveAs W st p1' P ∧ OnCurveAs W st p2' Q ∧
         P + P ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
       (addFast (c := KimchiConstraint F) fin p1' p2')
       (fun r st' => CircuitType.Scoped (val := AffinePoint F) st' r.p ∧

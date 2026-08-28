@@ -301,7 +301,7 @@ def HasEndo.pallas : HasEndo Fp where
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
-def HasEndo.vesta : HasEndo Fq where
+@[reducible] def HasEndo.vesta : HasEndo Fq where
   W := Vesta.curve.toAffine
   endo := vestaEndo
   lam := vestaLam
@@ -1048,12 +1048,12 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hvp₂ : phix.val st₂.env.get = d.endo * xv := by
     rw [hvalP, CVar.val_of_le hle₁ htx, hrx]
   -- the base and its image, read as curve points
-  have hTread : OnCurve d.W st₂ t (Point.some _ _ hT) := by
+  have hTread : OnCurveAs d.W st₂ t (Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, ?_⟩
     show ∃ h : d.W.Nonsingular (t.x.val st₂.env.get) (t.y.val st₂.env.get), _
     rw [hvx₂, hvy₂]
     exact ⟨hT, rfl⟩
-  have hφTread : OnCurve d.W st₂ ⟨phix, t.y⟩ (Point.some _ _ hφT) := by
+  have hφTread : OnCurveAs d.W st₂ ⟨phix, t.y⟩ (Point.some _ _ hφT) := by
     refine ⟨scoped_affinePoint.mpr ⟨hscP, hty₂⟩, ?_⟩
     show ∃ h : d.W.Nonsingular (phix.val st₂.env.get) (t.y.val st₂.env.get), _
     rw [hvp₂, hvy₂]
@@ -1075,7 +1075,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       ⟨hTread, hφTread, d.two_torsion_free _ (Point.some_ne_zero hT), fun _ => hTφ⟩
   have hle₃ := hrun₃.le
   have hnv₃ := hrun₃.nv_le
-  have hP1read : OnCurve d.W st₃ p1.p
+  have hP1read : OnCurveAs d.W st₃ p1.p
       (Point.some _ _ hT + Point.some _ _ hφT) := by
     refine ⟨hscP1, ?_⟩
     rcases hadd1.2 _ _ (hTread.mono hnv₃ hle₃).2 (hφTread.mono hnv₃ hle₃).2
@@ -1097,7 +1097,7 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       ⟨hP1read, hP1read, h2P1, fun _ => h2P1⟩
   have hle₄ := hrun₄.le
   have hnv₄ := hrun₄.nv_le
-  have hP0read : OnCurve d.W st₄ p2.p
+  have hP0read : OnCurveAs d.W st₄ p2.p
       (Point.some _ _ hT + Point.some _ _ hφT
         + (Point.some _ _ hT + Point.some _ _ hφT)) := by
     refine ⟨hscP2, ?_⟩

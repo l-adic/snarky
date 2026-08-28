@@ -1,6 +1,7 @@
 import Mathlib.Algebra.Ring.Defs
 import Mathlib.Data.ZMod.Basic
 import Pasta.CompElliptic
+import Pasta.Shifted
 import Snarky.Witness
 
 /-!
@@ -41,7 +42,7 @@ an optimization that computes exactly the image of this operator, and the laws s
 its results through it, over whichever ring the consumer reads in (`F` for the wire
 pin, `ℤ` for the group scalar). -/
 def Type1.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type1 R) : R :=
-  2 * t.val + 2 ^ n + 1
+  Pasta.Shifted.unshiftType1 n t.val
 
 /-- A scalar carried as a half and a parity bit (PS `SplitField`), standing shifted
 for `2·sDiv2 + sOdd + 2^n`. Phantom like `Type1`: `scaleFast2`'s ladder realizes the
@@ -56,7 +57,7 @@ structure SplitField (α : Type u) (β : Type v) where
 pair stands for `2·sDiv2 + sOdd + 2^n`. `scaleFast2` computes exactly its image, and
 its law states the result through it. -/
 def SplitField.fromShifted {R : Type u} [Semiring R] (n : ℕ) (s : SplitField R Bool) : R :=
-  2 * s.sDiv2 + (if s.sOdd then 1 else 0) + 2 ^ n
+  Pasta.Shifted.unshiftType2 n s.sDiv2 (if s.sOdd then 1 else 0)
 
 /-! ## The deployed Pasta codec
 
@@ -109,7 +110,7 @@ theorem Type1.toScalar_toShifted (z : Fp) : (Type1.toShifted z).toScalar = z := 
   have hback : ((t.val : ℕ) : Fp) = t := by
     rw [ZMod.natCast_val, ZMod.cast_id]
   simp only [Type1.toScalar, Type1.toScalarZ, Type1.toShifted, Type1.fromShifted,
-    ← ht, htq]
+    Pasta.Shifted.unshiftType1, ← ht, htq]
   push_cast
   rw [hback, ht]
   have hhalf : (2 : Fp) * ((z - 2 ^ 255 - 1) / 2) = z - 2 ^ 255 - 1 := by

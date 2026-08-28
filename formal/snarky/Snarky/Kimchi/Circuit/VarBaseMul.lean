@@ -86,7 +86,7 @@ structure HasCurve (F : Type) [Field F] [DecidableEq F] where
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The dictionary at deployed Vesta — the curve the Schnorr statement's points live on
 and the ladder's base group. -/
-def HasCurve.vesta : HasCurve Fq where
+@[reducible] def HasCurve.vesta : HasCurve Fq where
   W := Vesta.curve.toAffine
   short := ⟨rfl, rfl, rfl, rfl⟩
   prime := Fact.out
@@ -974,7 +974,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun r st' =>
         (∀ (i : ℕ) (hi : i < n), CircuitType.ReadsAs (val := F) st' (r.lsbBits[i]'hi)
           (if (ToNat.toNat sv).testBit i then 1 else 0)) ∧
-        OnCurve d.W st' r.g
+        OnCurveAs d.W st' r.g
           ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
   rintro st ⟨hRbx, hRby, hRs⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
@@ -1009,7 +1009,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   rw [CircuitType.scoped_vector] at hscB
   rw [CircuitType.reads_vector] at hrdB
   -- the doubled seed
-  have hTread : OnCurve d.W st₂ sealed (Point.some _ _ hT) := by
+  have hTread : OnCurveAs d.W st₂ sealed (Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨hsx.mono hnv₂, hsy.mono hnv₂⟩, ?_⟩
     show ∃ h : d.W.Nonsingular (sealed.x.val st₂.env.get) (sealed.y.val st₂.env.get), _
     rw [CVar.val_of_le hle₂ hsx, CVar.val_of_le hle₂ hsy, hsxv, hsyv]
@@ -1026,7 +1026,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       ⟨hTread, hTread, h2T, fun _ => h2T⟩
   have hle₃ := hrun₃.le
   have hnv₃ := hrun₃.nv_le
-  have hP0read : OnCurve d.W st₃ p.p ((2 : ℤ) • Point.some _ _ hT) := by
+  have hP0read : OnCurveAs d.W st₃ p.p ((2 : ℤ) • Point.some _ _ hT) := by
     refine ⟨hscP, ?_⟩
     rw [two_zsmul]
     rcases hadd.2 _ _ (hTread.mono hnv₃ hle₃).2 (hTread.mono hnv₃ hle₃).2 h2T with
@@ -1278,7 +1278,7 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
-      (fun r st' => OnCurve d.W st' r
+      (fun r st' => OnCurveAs d.W st' r
         ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
   intro st hst
   obtain ⟨r, st₁, hrun, hsat, -, hpt⟩ :=
@@ -1422,7 +1422,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st sDiv2 sv ∧ CircuitType.ReadsAs (val := Bool) st sOdd bb)
       (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
-      (fun r st' => OnCurve d.W st' r
+      (fun r st' => OnCurveAs d.W st' r
         ((2 * (ToNat.toNat sv : ℤ) + (if bb then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
   rintro st ⟨hRbx, hRby, hRsd, hRso⟩
@@ -1480,13 +1480,13 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hle₂ := hrun₂.le
   have hnv₂ := hrun₂.nv_le
   -- the ladder's point, and the base's negation
-  have hG₂ : OnCurve d.W st₂ r.g
+  have hG₂ : OnCurveAs d.W st₂ r.g
       ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT) :=
     hG.mono hnv₂ hle₂
   obtain ⟨hGns, hGeq⟩ := hG₂.2
   have hGne : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
       ≠ 0 := by rw [hGeq]; exact Point.some_ne_zero hGns
-  have hnegT : OnCurve d.W st₂ ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
+  have hnegT : OnCurveAs d.W st₂ ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨hbx.mono (Nat.le_trans hnv₁ hnv₂),
       CVar.Scoped.scale_ (hby.mono (Nat.le_trans hnv₁ hnv₂))⟩, ?_⟩
     refine OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ ?_
@@ -1528,7 +1528,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (d.two_torsion_free _ hGne) with ⟨hinf, hzero⟩ | ⟨-, h3⟩
     · exact absurd hzero hsum
     · exact h3
-  have hQpt : OnCurve d.W st₃ q.p
+  have hQpt : OnCurveAs d.W st₃ q.p
       ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
         + -Point.some _ _ hT) := ⟨hscQ, hQ⟩
   -- the parity fold: the point conditional, `y` before `x`
@@ -1757,7 +1757,7 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.ReadsAs (val := F) st base.y yv ∧
         CircuitType.ReadsAs (val := F) st s sval)
       (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base s)
-      (fun r st' => OnCurve d.W st' r
+      (fun r st' => OnCurveAs d.W st' r
         ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
             + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
@@ -1850,7 +1850,7 @@ theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
       ring
     · exact hlt
   have hZ : Z.toScalarZ = 2 * bitsVal bits + 2 ^ (5 * 51) + 1 := by
-    rw [Type1.toScalarZ, Type1.fromShifted, hbn, hval]
+    rw [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1, hbn, hval]
   rw [hZ]
   exact hact (hZ ▸ vesta_ladderRegime Z hband)
 
