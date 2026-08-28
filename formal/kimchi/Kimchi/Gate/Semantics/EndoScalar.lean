@@ -1254,6 +1254,12 @@ private theorem endoExpand_fold (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
       · rw [h]
         norm_num [cInt, dInt]
 
+/-- The ℤ-shadow of the sponge's endo expansion: the effective scalar of a 128-bit
+    prechallenge before any modulus, `a·λ + b` over its sixty-four base-4 digits. This is
+    the currency the `EndoMul` laws hand back — the point's multiplier is an integer, and
+    at Pasta the field it is read in is not the field its crumbs live in. -/
+def endoExpandZ (lam : ℤ) (chal : ℕ) : ℤ := toIntZ (digitsOf 64 chal) lam
+
 /-- `endoExpand` at a challenge is `toField` at its canonical crumb list — the two
     folds are one recoding. -/
 theorem endoExpand_eq_toField (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
@@ -1262,5 +1268,13 @@ theorem endoExpand_eq_toField (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   unfold Poseidon.FqSponge.endoExpand
   rw [endoExpand_fold h2 h3 64 n (2, 2)]
   rfl
+
+/-- The shadow casts to the expansion: in any field where the digit tables are honest,
+    `endoExpandZ`'s image is `endoExpand` at the cast eigenvalue. -/
+theorem endoExpandZ_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (lam : ℤ) (chal : ℕ) :
+    ((endoExpandZ lam chal : ℤ) : F)
+      = Poseidon.FqSponge.endoExpand ((lam : ℤ) : F) chal := by
+  rw [endoExpand_eq_toField h2 h3, crumbsOf_eq_map,
+    toField_digits h2 h3 _ (digitsOf_lt 64 _) lam, endoExpandZ]
 
 end Kimchi.Gate.EndoScalar

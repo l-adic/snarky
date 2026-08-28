@@ -1292,16 +1292,16 @@ private theorem endoMul_complete_crumbs [Field F] [DecidableEq F] [ToNat F] [Law
 open Kimchi.Gate.EndoScalar in
 /-- An integer of the shape the sound law hands back — `s = B + A·λ`, bounded by
 `3·2^64`, pinned in `F` to the canonical 64-crumb decomposition (a 128-bit
-challenge is 64 two-bit crumbs; `3·2^64 = 3·4^32` at 32 rounds) — IS the gate's
-decoded integer `toIntZ`, via the `d.char_big` window. Modulus-free: consumers cast
-the one integer into whichever scalar field acts. -/
-private theorem decomposition_eq_toIntZ [Field F] [DecidableEq F]
+challenge is 64 two-bit crumbs; `3·2^64 = 3·4^32` at 32 rounds) — IS the prechallenge's
+`endoExpandZ`, via the `d.char_big` window. Modulus-free: consumers cast the one integer
+into whichever scalar field acts. -/
+private theorem decomposition_eq_endoExpandZ [Field F] [DecidableEq F]
     (d : HasEndo F)
     (n : ℕ) {s A B : ℤ} (hsab : s = B + A * d.lam)
     (hAle : |A| ≤ 3 * 2 ^ 64) (hBle : |B| ≤ 3 * 2 ^ 64)
     (hAval : (A : F) = Kimchi.Gate.EndoScalar.decomposeA (crumbsOf 64 n))
     (hBval : (B : F) = Kimchi.Gate.EndoScalar.decomposeB (crumbsOf 64 n)) :
-    s = toIntZ (digitsOf 64 n) d.lam := by
+    s = endoExpandZ d.lam n := by
   obtain ⟨hAlo, hAhi⟩ := decomposeAInt_bounds (digitsOf 64 n)
   obtain ⟨hBlo, hBhi⟩ := decomposeBInt_bounds (digitsOf 64 n)
   rw [digitsOf_length] at hAlo hAhi hBlo hBhi
@@ -1325,7 +1325,7 @@ private theorem decomposition_eq_toIntZ [Field F] [DecidableEq F]
     hwindow _ _ hAle hAlo hAhi (by push_cast; rw [hAval, hAZF]; ring)
   have hBeq : B = decomposeBInt (digitsOf 64 n) :=
     hwindow _ _ hBle hBlo hBhi (by push_cast; rw [hBval, hBZF]; ring)
-  rw [hsab, hAeq, hBeq, toIntZ]
+  rw [hsab, hAeq, hBeq, endoExpandZ, toIntZ]
   ring
 
 open Kimchi.Gate.EndoScalar in
@@ -1343,14 +1343,14 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (Snarky.Kimchi.endoMul (c := KimchiConstraint F) d.endo 32 t scalar)
       (fun r st' => OnCurveAs d.W st' r
-        (toIntZ (digitsOf 64 (ToNat.toNat sv)) d.lam • Point.some _ _ hT)) := by
+        (endoExpandZ d.lam (ToNat.toNat sv) • Point.some _ _ hT)) := by
   intro st hst
   obtain ⟨r, st', hrun, hsat, s, A, B, hpt, hsab, hAle, hBle, hAval, hBval⟩ :=
     endoMul_complete_crumbs d 32 (by norm_num) t scalar xv yv sv hT
       (by norm_num; omega) st hst
   have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
   exact ⟨r, st', hrun, hsat,
-    decomposition_eq_toIntZ d _ hsab (h4 ▸ hAle) (h4 ▸ hBle) hAval hBval ▸ hpt⟩
+    decomposition_eq_endoExpandZ d _ hsab (h4 ▸ hAle) (h4 ▸ hBle) hAval hBval ▸ hpt⟩
 
 open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 /-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
@@ -1368,7 +1368,7 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     ⦃⇓ r _ => ⌜∀ hT : d.W.Nonsingular (t.x.val V) (t.y.val V),
       ∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val.val V = ((n : ℕ) : F) ∧
         ∃ hfin : d.W.Nonsingular (r.x.val V) (r.y.val V),
-          Point.some _ _ hfin = toIntZ (digitsOf 64 n) d.lam • Point.some _ _ hT⌝⦄ := by
+          Point.some _ _ hfin = endoExpandZ d.lam n • Point.some _ _ hT⌝⦄ := by
   have hbits : 4 * 32 ≤ 244 := by norm_num
   have hloop := mapAccumM_spec (V := V) (c := KimchiConstraint F)
     (Snarky.Kimchi.endoMulRound d.endo t) (Threads t)
@@ -1418,20 +1418,9 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
   refine ⟨n, by rw [show (2 : ℕ) ^ 128 = 4 ^ 64 from by norm_num]; exact hnlt, ?_, hfin, ?_⟩
   · rw [heqScalar.symm.trans hreg, hcr, nReconstruct_crumbsOf, Nat.mod_eq_of_lt hnlt]
-  · rw [← decomposition_eq_toIntZ d n hsab (h4 ▸ by simpa using hAle)
+  · rw [← decomposition_eq_endoExpandZ d n hsab (h4 ▸ by simpa using hAle)
       (h4 ▸ by simpa using hBle) (hcr ▸ hAval) (hcr ▸ hBval)]
     exact hseq
-
-open CompElliptic.Fields.Pasta Kimchi.Gate.EndoScalar in
-/-- The integer `endoMul_spec` hands back at Vesta, on a prechallenge `n`, reads in `Fp`
-as the Fq-sponge's endo-expansion of `n`. -/
-private theorem vesta_endoExpand (n : ℕ) :
-    ((toIntZ (digitsOf 64 n) HasEndo.vesta.lam : ℤ) : Fp)
-      = Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n := by
-  rw [endoExpand_eq_toField (by decide) (by decide),
-    show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-    crumbsOf_eq_map,
-    toField_digits (by decide) (by decide) _ (digitsOf_lt 64 _) HasEndo.vesta.lam]
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
   WeierstrassCurve.Affine in
@@ -1453,7 +1442,7 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
       ∃ m : ℕ, m < 2 ^ 128 ∧ cv.val V = ((m : ℕ) : Fq) ∧
         ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
           Point.some _ _ hfin
-            = toIntZ (digitsOf 64 m) HasEndo.vesta.lam • Point.some _ _ hT) :
+            = endoExpandZ HasEndo.vesta.lam m • Point.some _ _ hT) :
     ∀ hT : Vesta.curve.toAffine.Nonsingular (t.x.val V) (t.y.val V),
       ∃ hfin : Vesta.curve.toAffine.Nonsingular (r.x.val V) (r.y.val V),
         Point.some _ _ hfin
@@ -1468,7 +1457,8 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
       (by rw [← hmread, hread])
   subst hmn
   refine ⟨hfin, ?_⟩
-  rw [← vesta_endoExpand m, Int.cast_smul_eq_zsmul]
+  rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
+    ← endoExpandZ_cast (by decide) (by decide), Int.cast_smul_eq_zsmul]
   exact hseq
 
 end EndoMul
