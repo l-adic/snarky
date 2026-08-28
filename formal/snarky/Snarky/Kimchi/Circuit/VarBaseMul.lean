@@ -1816,6 +1816,33 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
 
 attribute [irreducible] scaleFast2'
 
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul
+  WeierstrassCurve.Affine in
+/-- **The deployed ladder leg's honest run.** At Vesta, on a base on the curve and a
+`Type1` carrier off the ladder's forbidden band, the run succeeds and the result is the
+base scaled by the carrier's decode. The width fits and the regime holds for free here:
+a carrier's representative is below `|Fq| < 2^255`, and the band exclusion IS the
+regime. -/
+theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FVar Fq)}
+    {xv yv : Fq} {Z : Type1 Fq} (hT : Vesta.curve.toAffine.Nonsingular xv yv)
+    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    Complete (F := Fq) (c := KimchiConstraint Fq)
+      (fun st => OnCurveAs Vesta.curve.toAffine st base (Point.some _ _ hT) ∧
+        CircuitType.ReadsAs (val := Fq) st sv.val Z.val)
+      (varBaseMul (c := KimchiConstraint Fq) 255 51 base sv)
+      (fun r st' =>
+        (∀ (i : ℕ) (hi : i < 255), CircuitType.ReadsAs (val := Fq) st' (r.lsbBits[i]'hi)
+          (bit (unpackPure Z.val 255)[i])) ∧
+        OnCurveAs Vesta.curve.toAffine st' r.g (Z.toScalarZ • Point.some _ _ hT)) := by
+  have hval : ToNat.toNat Z.val = Z.val.val := rfl
+  have hdec : Pasta.Shifted.unshiftType1 (5 * 51) (ToNat.toNat Z.val : ℤ) = Z.toScalarZ := by
+    simp only [hval, Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1]
+  have hfits : ToNat.toNat Z.val < 2 ^ (5 * 51) := by
+    rw [hval]
+    exact lt_of_lt_of_le (ZMod.val_lt _) (by decide)
+  exact hdec ▸ varBaseMul_complete HasCurve.vesta 255 51 (by norm_num) base sv xv yv Z.val hT
+    hfits (hdec ▸ vesta_ladderRegime Z hband)
+
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul in
 /-- **The deployed ladder leg.** At Vesta, the generic law's output on a `Type1` carrier
 off the ladder's forbidden band, whose 255 witnessed bits read as a value below the

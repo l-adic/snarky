@@ -1399,6 +1399,37 @@ theorem endoMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
   WeierstrassCurve.Affine in
+/-- **The deployed challenge leg's honest run.** At Vesta, on a base on the curve and a
+scalar cell reading as a prechallenge `n < 2^128`, the run succeeds and the result is the
+base scaled by the wire's challenge — the Fq-sponge's endo-expansion of `n`, acting
+through the point group's `Fp`-module structure. -/
+theorem vesta_endoMul_complete {t : AffinePoint (FVar Fq)} {cv : FVar Fq} {xv yv : Fq}
+    {n : ℕ} (hT : HasEndo.vesta.W.Nonsingular xv yv) (hn : n < 2 ^ 128) :
+    Complete (F := Fq) (c := KimchiConstraint Fq)
+      (fun st => OnCurveAs HasEndo.vesta.W st t (Point.some _ _ hT) ∧
+        CircuitType.ReadsAs (val := Fq) st cv ((n : ℕ) : Fq))
+      (Snarky.Kimchi.endoMul (c := KimchiConstraint Fq) HasEndo.vesta.endo 32 t ⟨cv⟩)
+      (fun r st' => OnCurveAs HasEndo.vesta.W st' r
+        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
+          • Point.some _ _ hT)) := by
+  have hcard : n < LawfulToNat.card (F := Fq) := by
+    show n < PALLAS_SCALAR_CARD
+    exact lt_of_lt_of_le hn (by decide)
+  have hrep : ToNat.toNat ((n : ℕ) : Fq) = n := LawfulToNat.toNat_natCast n hcard
+  have hfits : ToNat.toNat ((n : ℕ) : Fq) < 2 ^ 128 := by rw [hrep]; exact hn
+  have hexp : (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
+      = ((endoExpandZ HasEndo.vesta.lam n : ℤ) : Fp) := by
+    rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
+      endoExpandZ_cast (by decide) (by decide)]
+  have hgen := endoMul_complete HasEndo.vesta t ⟨cv⟩ xv yv ((n : ℕ) : Fq) hT hfits
+  intro st hst
+  obtain ⟨r, st', hrun, hsat, hpt⟩ := hgen st hst
+  refine ⟨r, st', hrun, hsat, ?_⟩
+  rw [hexp, Int.cast_smul_eq_zsmul]
+  exact hrep ▸ hpt
+
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
+  WeierstrassCurve.Affine in
 /-- **The deployed challenge leg.** At Vesta, the generic law's output on a scalar cell
 reading as a prechallenge `n < 2^128` says the result is the base point scaled by the
 wire's challenge — the Fq-sponge's endo-expansion of `n`, acting through the point

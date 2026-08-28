@@ -424,6 +424,9 @@ Snarky.inputVar
 Snarky.scoped_inputVar
 Snarky.reads_inputVar
 Snarky.solve_complete
+Snarky.Complete.imp
+Snarky.Complete.frame
+Snarky.Complete.bind
 
 -- The exhibits (Examples/Point.lean): a two-field bundle carried through the whole
 -- interface — encoding, check, and mux — as the worked instance of `ofEquiv`.
@@ -673,6 +676,7 @@ Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
 Snarky.Kimchi.EndoMul.endoMul_spec
 Snarky.Kimchi.EndoMul.vesta_endoMul_read
+Snarky.Kimchi.EndoMul.vesta_endoMul_complete
 Snarky.Kimchi.EndoMul.endoMul_complete
 Snarky.Kimchi.HasEndo
 Snarky.Kimchi.HasEndo.pallas
@@ -689,6 +693,7 @@ Snarky.Kimchi.VarBaseMulResult
 Snarky.Kimchi.varBaseMul
 Snarky.Kimchi.varBaseMul_spec
 Snarky.Kimchi.vesta_varBaseMul_read
+Snarky.Kimchi.vesta_varBaseMul_complete
 Snarky.Kimchi.varBaseMul_complete
 Snarky.Kimchi.splitField
 Snarky.Kimchi.joinField

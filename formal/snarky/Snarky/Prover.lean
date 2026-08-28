@@ -593,6 +593,43 @@ theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F
   intro con hcon
   simp [build] at hcon
 
+/-- Completeness composes: run the head from the precondition, the tail from whatever the
+head establishes. The head's rows are satisfied past the tail's run because its own law
+holds at every extension — which is why `Complete` carries that quantifier rather than a
+bare `Sat` at the state it lands in. -/
+theorem Complete.bind [Zero F] [ConstraintHolds F c] {β : Type v}
+    {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
+    {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
+    (hg : Complete pre g mid) (hk : ∀ a, Complete (mid a) (k a) post) :
+    Complete pre (g >>= k) post := by
+  intro st hpre
+  obtain ⟨a, st₁, hrun₁, hsat₁, hmid⟩ := hg st hpre
+  obtain ⟨b, st₂, hrun₂, hsat₂, hpost⟩ := hk a st₁ hmid
+  exact ⟨b, st₂, hrun₁.bind hrun₂, fun hnv hle =>
+    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+      (hsat₂ hnv hle), hpost⟩
+
+/-- The rule of consequence: strengthen the precondition, weaken the postcondition. -/
+theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F → Prop}
+    {g : CircuitM F c α} {post post' : α → ProverState F → Prop}
+    (hpre : ∀ st, pre' st → pre st) (hpost : ∀ a st, post a st → post' a st)
+    (h : Complete pre g post) : Complete pre' g post' := by
+  intro st hst
+  obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st (hpre st hst)
+  exact ⟨a, st₁, hrun, hsat, hpost a st₁ hp⟩
+
+/-- The frame rule: a fact that survives the table's growth survives a fragment's honest
+run. What lets a multi-stage completeness proof carry its earlier readings forward without
+re-deriving them stage by stage. -/
+theorem Complete.frame [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
+    {g : CircuitM F c α} {mid : α → ProverState F → Prop} {P : ProverState F → Prop}
+    (hP : ∀ {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st')
+    (hg : Complete pre g mid) :
+    Complete (fun st => pre st ∧ P st) g (fun a st' => mid a st' ∧ P st') := by
+  rintro st ⟨hpre, hp⟩
+  obtain ⟨a, st₁, hrun, hsat, hmid⟩ := hg st hpre
+  exact ⟨a, st₁, hrun, hsat, hmid, hP hrun.nv_le hrun.le hp⟩
+
 /-- A program that emits no rows and allocates nothing is complete from every state. -/
 theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop} {a : α} :
     Complete pre (pure a : CircuitM F c α) fun _ _ => True :=
