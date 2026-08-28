@@ -618,17 +618,25 @@ theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F �
   obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st (hpre st hst)
   exact ⟨a, st₁, hrun, hsat, hpost a st₁ hp⟩
 
-/-- The frame rule: a fact that survives the table's growth survives a fragment's honest
-run. What lets a multi-stage completeness proof carry its earlier readings forward without
-re-deriving them stage by stage. -/
+/-- The frame rule: a fact that holds at entry and survives the table's growth is still
+there when the fragment lands. Stated as a POSTcondition gain rather than a pre/post pair,
+because the fact a multi-stage proof carries forward is normally one its precondition
+already gives it — splitting the precondition would only have to be reassembled. -/
 theorem Complete.frame [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
     {g : CircuitM F c α} {mid : α → ProverState F → Prop} {P : ProverState F → Prop}
     (hP : ∀ {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st')
-    (hg : Complete pre g mid) :
-    Complete (fun st => pre st ∧ P st) g (fun a st' => mid a st' ∧ P st') := by
-  rintro st ⟨hpre, hp⟩
+    (hsub : ∀ st, pre st → P st) (hg : Complete pre g mid) :
+    Complete pre g (fun a st' => mid a st' ∧ P st') := by
+  intro st hpre
   obtain ⟨a, st₁, hrun, hsat, hmid⟩ := hg st hpre
-  exact ⟨a, st₁, hrun, hsat, hmid, hP hrun.nv_le hrun.le hp⟩
+  exact ⟨a, st₁, hrun, hsat, hmid, hP hrun.nv_le hrun.le (hsub st hpre)⟩
+
+/-- `pure` at a postcondition the entry state already satisfies — the tail of a `bind`
+chain, where the value is in hand and nothing more is emitted. -/
+theorem Complete.pure_of [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
+    {a : α} {post : α → ProverState F → Prop} (h : ∀ st, pre st → post a st) :
+    Complete pre (pure a : CircuitM F c α) post :=
+  fun st hst => ⟨a, st, rfl, fun _ _ => Sat.pure, h st hst⟩
 
 /-- A program that emits no rows and allocates nothing is complete from every state. -/
 theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop} {a : α} :

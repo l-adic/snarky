@@ -334,16 +334,12 @@ theorem unpackFull_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     Complete (F := F) (c := c) (fun st => CircuitType.ReadsAs (val := F) st v vv)
       (unpackFull (c := c) m n v)
       (fun r st' => CircuitType.ReadsAs (val := Vector Bool n) st' r (unpackPure vv n)) := by
-  intro st hv
   simp only [unpackFull]
-  obtain ⟨bits, st₁, hrun₁, hsat₁, hbits⟩ := unpack_complete (c := c) v vv n hfit st hv
-  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ :=
-    assertBitsBelow_complete (c := c) m hm bits (unpackPure vv n)
-      (by rwa [natLsbVal_unpackPure hfit]) st₁ hbits
-  refine ⟨bits, st₂, hrun₁.bind (hrun₂.bind rfl), ?_, hbits.mono hrun₂.nv_le hrun₂.le⟩
-  intro stf hnv hle
-  exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-    (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure)
+  refine Complete.bind (unpack_complete (c := c) v vv n hfit) fun bits => ?_
+  refine Complete.bind (Complete.frame (fun hnv hle h => h.mono hnv hle) (fun _ h => h)
+    (assertBitsBelow_complete (c := c) m hm bits (unpackPure vv n)
+      (by rwa [natLsbVal_unpackPure hfit]))) fun _ => ?_
+  exact Complete.pure_of fun _ h => h.2
 
 attribute [irreducible] unpackFull
 

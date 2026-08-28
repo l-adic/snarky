@@ -427,6 +427,7 @@ Snarky.solve_complete
 Snarky.Complete.imp
 Snarky.Complete.frame
 Snarky.Complete.bind
+Snarky.Complete.pure_of
 
 -- The exhibits (Examples/Point.lean): a two-field bundle carried through the whole
 -- interface — encoding, check, and mux — as the worked instance of `ofEquiv`.
