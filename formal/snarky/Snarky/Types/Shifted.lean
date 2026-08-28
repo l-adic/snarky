@@ -78,6 +78,17 @@ scalar field, transport across the boundary by canonical representative (PS
 instance instCircuitTypeType1 {F : Type} : CircuitType F (Type1 F) (Type1 (FVar F)) :=
   CircuitType.ofEquiv Type1.equivCarrier Type1.equivCarrier
 
+/-- A `Type1` is in scope when its cell is. -/
+@[simp] theorem scoped_type1 {F : Type} {st : Snarky.ProverState F} {t : Type1 (FVar F)} :
+    CircuitType.Scoped (val := Type1 F) st t ↔ t.val.Scoped st :=
+  (CircuitType.scoped_ofEquiv _ _).trans CircuitType.scoped_fvar
+
+/-- A `Type1` reads as its cell's reading. -/
+@[simp] theorem reads_type1 {F : Type} [Add F] [Mul F] [Zero F] {V : Snarky.Valuation F}
+    {t : Type1 (FVar F)} {a : Type1 F} :
+    CircuitType.Reads V t a ↔ t.val.val V = a.val :=
+  (CircuitType.reads_ofEquiv _ _).trans CircuitType.reads_fvar
+
 /-- A carried scalar's cell carries no well-formedness constraint of its own: the ladder
 consuming it is what pins its reading. -/
 instance instCheckedTypeType1 {F c : Type} [Add F] [Mul F] [Zero F] [One F]

@@ -49,6 +49,20 @@ instance instCurvePointCircuitType {a b : F} :
     CircuitType F (CurvePoint a b F) (CurvePoint a b (FVar F)) :=
   CircuitType.ofEquiv CurvePoint.equivPoint CurvePoint.equivPoint
 
+/-- A tagged point is in scope when its coordinates are. -/
+@[simp] theorem scoped_curvePoint {a b : F} {st : ProverState F}
+    {p : CurvePoint a b (FVar F)} :
+    CircuitType.Scoped (val := CurvePoint a b F) st p ↔
+      p.point.x.Scoped st ∧ p.point.y.Scoped st :=
+  (CircuitType.scoped_ofEquiv _ _).trans scoped_affinePoint
+
+/-- A tagged point reads coordinatewise — the tag is phantom on the reading. -/
+@[simp] theorem reads_curvePoint [Add F] [Mul F] [Zero F] {a b : F} {V : Valuation F}
+    {p : CurvePoint a b (FVar F)} {P : CurvePoint a b F} :
+    CircuitType.Reads V p P ↔
+      p.point.x.val V = P.point.x ∧ p.point.y.val V = P.point.y :=
+  (CircuitType.reads_ofEquiv _ _).trans reads_affinePoint
+
 
 /-! ## The on-curve check -/
 

@@ -51,12 +51,8 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
   obtain ⟨bs, hbread, hbsum, hbslt⟩ :=
     ‹∃ bs : Vector Bool 255, _ ∧ _ ∧ _›
   -- the reading is the cells, projectionwise
-  rw [show CircuitType.Reads V stv raw ↔ _ from CircuitType.reads_ofEquiv _ _,
-    CircuitType.reads_prod, CircuitType.reads_prod] at hread
+  rw [reads_statement] at hread
   obtain ⟨hpkR, huR, hzR⟩ := hread
-  rw [CircuitType.reads_ofEquiv, CircuitType.reads_fvar] at hzR
-  rw [CircuitType.reads_ofEquiv, reads_affinePoint] at hpkR huR
-  simp only [Statement.equivProd_apply, CurvePoint.equivPoint_apply] at hpkR huR
   -- the response's decode is nonzero: the circuit's `assertNotEqual` row, at the carrier
   have hz0 : raw.z.toScalar ≠ (0 : Fp) := fun h0 => hzne (by
     rw [show (CVar.const Type1.zeroCarrier).val V = Type1.zeroCarrier from rfl,

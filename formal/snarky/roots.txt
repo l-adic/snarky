@@ -430,6 +430,8 @@ Snarky.solve_complete
 Snarky.Point
 Snarky.Point.equiv
 Snarky.instCircuitTypePoint
+Snarky.scoped_point
+Snarky.reads_point
 Snarky.instCheckedTypePoint
 Snarky.instIfThenElsePoint
 Snarky.instLawfulIfThenElsePoint
@@ -445,6 +447,8 @@ Snarky.Type1.equivCarrier
 Snarky.Type1.equivCarrier_apply
 Snarky.Type1.equivCarrier_symm_apply
 Snarky.instCircuitTypeType1
+Snarky.scoped_type1
+Snarky.reads_type1
 Snarky.Type1.toShifted
 Snarky.Type1.toScalarZ
 Snarky.Type1.toScalar
@@ -464,6 +468,8 @@ Snarky.Kimchi.CurvePoint.equivPoint_apply
 Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
 Snarky.Kimchi.VestaPoint
 Snarky.Kimchi.instCurvePointCircuitType
+Snarky.Kimchi.scoped_curvePoint
+Snarky.Kimchi.reads_curvePoint
 Snarky.Kimchi.CurvePoint.check
 Snarky.Kimchi.CurvePoint.check_spec
 Snarky.Kimchi.CurvePoint.check_complete

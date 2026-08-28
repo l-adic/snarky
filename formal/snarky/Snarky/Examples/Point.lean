@@ -31,6 +31,20 @@ def Point.equiv (a : Type) : Point a ≃ a × a where
 instance instCircuitTypePoint : CircuitType F (Point F) (Point (FVar F)) :=
   CircuitType.ofShape Point.equiv
 
+/-- A point is in scope when its two cells are — the reading vocabulary the derivation
+does NOT give you: `ofShape` yields the instance, never the characterization. -/
+@[simp] theorem scoped_point {st : ProverState F} {p : Point (FVar F)} :
+    CircuitType.Scoped (val := Point F) st p ↔ p.x.Scoped st ∧ p.y.Scoped st := by
+  rw [CircuitType.scoped_ofEquiv, CircuitType.scoped_prod]
+  simp [Point.equiv]
+
+/-- A point reads coordinatewise. -/
+@[simp] theorem reads_point [Add F] [Mul F] [Zero F] {V : Valuation F}
+    {p : Point (FVar F)} {a : Point F} :
+    CircuitType.Reads V p a ↔ p.x.val V = a.x ∧ p.y.val V = a.y := by
+  rw [CircuitType.reads_ofEquiv, CircuitType.reads_prod]
+  simp [Point.equiv]
+
 instance instCheckedTypePoint [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
     CheckedType F c (Point F) (Point (FVar F)) :=
   CheckedType.ofShape Point.equiv

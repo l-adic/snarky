@@ -11,6 +11,8 @@ Schnorr.Statement
 Schnorr.Statement.equivProd_apply
 Schnorr.Statement.equivProd_symm_apply
 Schnorr.instStatementCircuitType
+Schnorr.scoped_statement
+Schnorr.reads_statement
 Schnorr.transcriptHash
 Schnorr.preChallenge
 Schnorr.challenge

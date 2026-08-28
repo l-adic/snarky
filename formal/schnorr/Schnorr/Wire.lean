@@ -78,6 +78,25 @@ instance instStatementCircuitType :
     CircuitType Fq (Statement Fq) (Statement (FVar Fq)) :=
   CircuitType.ofEquiv Statement.equivProd Statement.equivProd
 
+/-- A statement is in scope when its five cells are. -/
+@[simp] theorem scoped_statement {st : Snarky.ProverState Fq} {stv : Statement (FVar Fq)} :
+    CircuitType.Scoped (val := Statement Fq) st stv ↔
+      (stv.pk.point.x.Scoped st ∧ stv.pk.point.y.Scoped st) ∧
+        (stv.u.point.x.Scoped st ∧ stv.u.point.y.Scoped st) ∧ stv.z.val.Scoped st := by
+  rw [CircuitType.scoped_ofEquiv, CircuitType.scoped_prod, CircuitType.scoped_prod]
+  simp
+
+/-- A statement reads projectionwise: the two points coordinatewise, then the response's
+cell. -/
+@[simp] theorem reads_statement {V : Snarky.Valuation Fq} {stv : Statement (FVar Fq)}
+    {raw : Statement Fq} :
+    CircuitType.Reads V stv raw ↔
+      (stv.pk.point.x.val V = raw.pk.point.x ∧ stv.pk.point.y.val V = raw.pk.point.y) ∧
+        (stv.u.point.x.val V = raw.u.point.x ∧ stv.u.point.y.val V = raw.u.point.y) ∧
+        stv.z.val.val V = raw.z.val := by
+  rw [CircuitType.reads_ofEquiv, CircuitType.reads_prod, CircuitType.reads_prod]
+  simp
+
 /-- A point's serialization: its coordinates. -/
 def encodePoint (P : SWPoint Vesta.curve) : VestaPoint Fq := ⟨⟨P.x, P.y⟩⟩
 

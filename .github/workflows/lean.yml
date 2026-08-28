@@ -194,6 +194,11 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/deadcode.sh
 
+    # GATE: a domain `CircuitType` instance owes the characterization of its `Reads`
+    # and `Scoped` — nothing derives it, and without it every consumer unfolds inline.
+    - name: Check reading lemmas
+      run: bash scripts/check-readings.sh
+
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
     # layer's recombination (fixtures/ipa_{opening,batch,chunked2,chunked3}_*.json,
