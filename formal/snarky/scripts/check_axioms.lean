@@ -126,7 +126,6 @@ def roots : List Name :=
     `Snarky.Kimchi.RandomOracle.update_spec, `Snarky.Kimchi.RandomOracle.update_complete,
     `Snarky.Kimchi.RandomOracle.hash2_spec, `Snarky.Kimchi.RandomOracle.hash2_complete,
     `Snarky.Kimchi.RandomOracle.hashVec_spec, `Snarky.Kimchi.RandomOracle.hashVec_complete,
-    `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
     `Snarky.Kimchi.EndoScalar.toField_spec, `Snarky.Kimchi.EndoScalar.toField_complete,
     `Snarky.Kimchi.EndoMul.endoMul_spec, `Snarky.Kimchi.EndoMul.endoMul_complete,
     `Snarky.Kimchi.varBaseMul_spec, `Snarky.Kimchi.varBaseMul_complete,

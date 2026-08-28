@@ -657,7 +657,6 @@ Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toField_spec
 Snarky.Kimchi.EndoScalar.toField_complete
 Snarky.Kimchi.EndoScalar.toFieldChecked'
-Snarky.Kimchi.EndoScalar.toFieldChecked'_spec
 
 -- The endomul gadget (Snarky/Kimchi/Circuit/EndoMul.lean): the ladder step, the gadget and
 -- its inverse-direction wrapper, the law pair, and the curve dictionary the laws take —

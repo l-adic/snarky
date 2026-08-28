@@ -226,7 +226,7 @@ open Std.Do in
 open Std.Do in
 /-- **Soundness.** Any satisfying valuation exhibits a valid crumb list of the row
 width whose Algorithm-2 decompositions are the three accumulators returned. -/
-@[spec] theorem toFieldChecked'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+@[spec] private theorem toFieldChecked'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) :
     ⦃⌜True⌝⦄
     toFieldChecked' (c := Builder V (KimchiConstraint F)) rows scalar
@@ -246,31 +246,43 @@ width whose Algorithm-2 decompositions are the three accumulators returned. -/
   exact ⟨_, hv, by simpa using hlen, hA, hB, hN⟩
 
 open Std.Do in
-/-- **Soundness of the wrapper.** The result reads as the gate model's `toField` —
-`a·endo + b` — over a valid crumb list of the row width whose reconstruction is the
-scalar. -/
+/-- **Soundness of the wrapper**, at the deployed eight rows — the sixty-four crumbs of a
+128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand. Any
+satisfying valuation reads the scalar as a prechallenge of that width, and the result as
+the sponge's endo-expansion of it. -/
 @[spec] theorem toField_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
-    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar endo : FVar F) :
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) :
     ⦃⌜True⌝⦄
-    toField (c := Builder V (KimchiConstraint F)) rows scalar endo
-    ⦃⇓ r _ => ⌜∃ crumbs : List F,
-      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) ∧
-      crumbs.length = 8 * rows ∧
-      r.val V = Kimchi.Gate.EndoScalar.toField crumbs (endo.val V) ∧
-      scalar.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs⌝⦄ := by
-  have hchk := toFieldChecked'_spec (V := V) h2 h3 rows scalar
+    toField (c := Builder V (KimchiConstraint F)) 8 scalar endo
+    ⦃⇓ r _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ scalar.val V = ((n : ℕ) : F) ∧
+      r.val V = Poseidon.FqSponge.endoExpand (endo.val V) n⌝⦄ := by
+  -- the crumbs a satisfying run exposes are the canonical expansion of the value they spell
+  have hpack : ∀ (crumbs : List F) (rv sv ev : F),
+      (∀ x ∈ crumbs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) → crumbs.length = 8 * 8 →
+      rv = Kimchi.Gate.EndoScalar.toField crumbs ev →
+      sv = Kimchi.Gate.EndoScalar.nReconstruct crumbs →
+      ∃ n : ℕ, n < 2 ^ 128 ∧ sv = ((n : ℕ) : F) ∧
+        rv = Poseidon.FqSponge.endoExpand ev n := by
+    intro crumbs rv sv ev hv hlen hr hs
+    obtain ⟨n, hnlt, hcr⟩ := Kimchi.Gate.EndoScalar.eq_crumbsOf h2 h3 crumbs hv
+    rw [hlen] at hnlt hcr
+    refine ⟨n, by rw [show (2 : ℕ) ^ 128 = 4 ^ (8 * 8) from by norm_num]; exact hnlt, ?_, ?_⟩
+    · rw [hs, hcr, Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hnlt]
+    · rw [hr, hcr, show (8 * 8 : ℕ) = 64 from rfl,
+        ← Kimchi.Gate.EndoScalar.endoExpand_eq_toField h2 h3]
+  have hchk := toFieldChecked'_spec (V := V) h2 h3 8 scalar
   simp only [toField]
   mvcgen [hchk]
   case h_1 =>
     rename_i _ hdec _ e _ _ heq
     obtain ⟨crumbs, hv, hlen, ha, hb, hn⟩ := hdec
-    refine ⟨crumbs, hv, hlen, ?_, by rw [← heq, hn]⟩
+    refine hpack crumbs _ _ _ hv hlen ?_ (by rw [← heq, hn])
     simp only [Kimchi.Gate.EndoScalar.toField, CVar.val_add_, CVar.val_scale_,
       ha, hb, CVar.val]
     ring
   rename_i _ hdec _ _ _ _ _ heq _ _ hmul
   obtain ⟨crumbs, hv, hlen, ha, hb, hn⟩ := hdec
-  refine ⟨crumbs, hv, hlen, ?_, by rw [← heq, hn]⟩
+  refine hpack crumbs _ _ _ hv hlen ?_ (by rw [← heq, hn])
   simp only [Kimchi.Gate.EndoScalar.toField, CVar.val_add_, hmul, ha, hb]
   ring
 

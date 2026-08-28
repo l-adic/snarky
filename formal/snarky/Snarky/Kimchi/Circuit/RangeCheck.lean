@@ -20,7 +20,7 @@ statements speak about it.
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - PS's type-level `FieldSizeInBits f 255` constraint renders as no hypothesis: the
   gadget emits the same ops at any field, and the laws carry the width facts they
-  need (`nReconstruct_lt`'s `4^64 = 2^128` budget, the split's faithfulness).
+  need (`toField_spec`'s `4^64 = 2^128` budget, the split's faithfulness).
 - PS's `SizedF.fromField` advice partiality (`unsafePartial fromJust`) is total
   here: the split representatives are casts of reduced naturals, in range by
   construction.
@@ -42,7 +42,6 @@ def rangeCheck128 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   let _ ← EndoScalar.toField (c := c) 8 v.val endo
   pure ⟨⟩
 
-open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
 /-- **Soundness** (`rangeCheck128`): any satisfying valuation reads the operand as a
 natural below `2^128` — the value-level `SizedF` contract. -/
 theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
@@ -50,15 +49,12 @@ theorem rangeCheck128_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     ⦃⌜True⌝⦄
     rangeCheck128 (c := Builder V (KimchiConstraint F)) endo v
     ⦃⇓ _ _ => ⌜∃ n : ℕ, n < 2 ^ 128 ∧ v.val.val V = (n : F)⌝⦄ := by
-  have htf := EndoScalar.toField_spec (V := V) h2 h3 8 v.val endo
+  have htf := EndoScalar.toField_spec (V := V) h2 h3 v.val endo
   simp only [rangeCheck128]
   mvcgen [htf]
   rename_i _ _ hr
-  obtain ⟨crumbs, hvalid, hlen, -, hval⟩ := hr
-  obtain ⟨n, hlt, hcast⟩ := nReconstruct_lt h2 h3 crumbs hvalid
-  refine ⟨n, ?_, by rw [hval, hcast]⟩
-  calc n < 4 ^ crumbs.length := hlt
-    _ = 2 ^ 128 := by rw [hlen]; norm_num
+  obtain ⟨n, hlt, hval, -⟩ := hr
+  exact ⟨n, hlt, hval⟩
 
 /-- **Completeness** (`rangeCheck128`): the honest run accepts on an operand that reads a
 value inside the tagged width. -/
@@ -110,7 +106,6 @@ def lowest128Bits' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   assertEqual x (CVar.add_ lohi.val.1 (CVar.scale_ ((2 : F) ^ 128) lohi.val.2))
   pure ⟨lohi.val.1⟩
 
-open Kimchi.Gate.EndoScalar (nReconstruct_lt) in
 /-- **Soundness** (`lowest128Bits'`): the operand reads as `lo + 2^128·hi` for the
 returned low half and SOME high half below `2^128`; the low half is below `2^128` exactly
 when `constrainLowBits` asked for it — OCaml's `squeeze_challenge` / `squeeze_scalar`
@@ -124,28 +119,20 @@ theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F
       (∃ n : ℕ, n < 2 ^ 128 ∧ hiv = (n : F)) ∧
       (constrainLowBits = true →
         ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⌝⦄ := by
-  have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 8 y endo
-  have hrange : ∀ (y : FVar F) (crumbs : List F),
-      (∀ z ∈ crumbs, z = 0 ∨ z = 1 ∨ z = 2 ∨ z = 3) → crumbs.length = 8 * 8 →
-      y.val V = Kimchi.Gate.EndoScalar.nReconstruct crumbs →
-      ∃ n : ℕ, n < 2 ^ 128 ∧ y.val V = (n : F) := by
-    intro y crumbs hvalid hlen hval
-    obtain ⟨n, hlt, hcast⟩ := nReconstruct_lt h2 h3 crumbs hvalid
-    exact ⟨n, by calc n < 4 ^ crumbs.length := hlt
-                   _ = 2 ^ 128 := by rw [hlen]; norm_num, by rw [hval, hcast]⟩
+  have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
   simp only [lowest128Bits']
   mvcgen [htf]
   · -- the low half is checked too
     rename_i _ lohi _ _ _ _ _ hhi _ _ hlo _ _ heq
-    obtain ⟨ch, hvh, hlh, -, hnh⟩ := hhi
-    obtain ⟨cl, hvl, hll, -, hnl⟩ := hlo
+    obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
+    obtain ⟨nl, hnllt, hnl, -⟩ := hlo
     exact ⟨lohi.val.2.val V, by rw [heq, CVar.val_add_, CVar.val_scale_],
-      hrange _ ch hvh hlh hnh, fun _ => hrange _ cl hvl hll hnl⟩
+      ⟨nh, hnhlt, hnh⟩, fun _ => ⟨nl, hnllt, hnl⟩⟩
   · -- only the high half is checked
     rename_i _ lohi _ _ _ hfalse _ hhi _ _ heq
-    obtain ⟨ch, hvh, hlh, -, hnh⟩ := hhi
+    obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
     exact ⟨lohi.val.2.val V, by rw [heq, CVar.val_add_, CVar.val_scale_],
-      hrange _ ch hvh hlh hnh, fun hc => absurd hc hfalse⟩
+      ⟨nh, hnhlt, hnh⟩, fun hc => absurd hc hfalse⟩
 
 /-- **Completeness** (`lowest128Bits'`): the honest run accepts and the result reads the
 pure split's low half. The high half fits by hypothesis, and both halves' representatives
