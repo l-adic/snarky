@@ -79,8 +79,7 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
     have hnL : preChallenge pkR uR < 2 ^ 128 := Nat.mod_lt _ (by positivity)
     have hcpk := EndoMul.vesta_endoMul_read (n := preChallenge pkR uR) hnL
       (by
-        rw [packLow_val (n := 255) (k := 128) (by norm_num) hbread, packPure_natLsbVal,
-          toList_takeVec,
+        rw [packLow_val (n := 255) (k := 128) (by norm_num) hbread, toList_takeVec,
           Kimchi.natLsbVal_take_eq_mod, hNfull]
         rfl)
       ‹∀ hT : Vesta.curve.toAffine.Nonsingular _ _, _›

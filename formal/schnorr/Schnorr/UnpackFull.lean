@@ -323,7 +323,7 @@ the reading's representative. -/
   mvcgen
   rename_i _ _ _ hbits _ _ hlock
   obtain ⟨bs, hread, hsum⟩ := hbits
-  exact ⟨bs, hread, by rw [← packPure_natLsbVal]; exact hsum, hlock bs hread⟩
+  exact ⟨bs, hread, hsum, hlock bs hread⟩
 
 /-- `unpackFull`'s completeness law: on a representative that fits the width and lies
 below `m` the run succeeds, and the bits are the operand's binary digits. -/

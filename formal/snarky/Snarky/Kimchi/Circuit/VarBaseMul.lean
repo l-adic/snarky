@@ -975,7 +975,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' =>
         (∀ (i : ℕ) (hi : i < n), CircuitType.ReadsAs (val := F) st' (r.lsbBits[i]'hi)
-          (if (ToNat.toNat sv).testBit i then 1 else 0)) ∧
+          (bit (unpackPure sv n)[i])) ∧
         OnCurveAs d.W st' r.g
           ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
             • Point.some _ _ hT)) := by
@@ -1218,7 +1218,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
       (CircuitType.scoped_fvar.mp (hscB i hi)),
       CircuitType.reads_fvar.mp (hrdB i hi)]
-    simp
+    simp [bit]
   · -- the point conclusion, off the sound side's own reading of the trace
     obtain ⟨-, -, -, hpoint⟩ :=
       VarBaseMul.run_sound d st₅.env.get (Point.some _ _ hT) hchain
@@ -1464,7 +1464,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     obtain ⟨hsc, hval⟩ := hbits (sDiv2Bits + i) hi'
     simp only [List.getElem_drop, Vector.getElem_toList]
     exact ⟨CircuitType.scoped_fvar.mp hsc,
-      by rw [CircuitType.reads_fvar.mp hval, hbit]; simp⟩
+      by rw [CircuitType.reads_fvar.mp hval]; simp [hbit, bit]⟩
   obtain ⟨u, st₂, hrun₂, hsat₂, hpin₂⟩ :=
     forM_complete (F := F) (c := KimchiConstraint F)
       (fun b : FVar F => assertEqual b (CVar.const 0))

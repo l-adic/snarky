@@ -400,10 +400,7 @@ Snarky.CVar.Scoped.pack
 Snarky.packLow
 Snarky.packLow_val
 Snarky.natLsbVal_unpackPure
-Snarky.packPure
-Snarky.packPure_natLsbVal
 Snarky.unpackPure
-Snarky.packPure_unpackPure
 Snarky.unpack
 Snarky.unpack_spec
 Snarky.unpack_complete
