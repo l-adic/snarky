@@ -967,8 +967,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' =>
@@ -976,26 +975,26 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
           (if (ToNat.toNat sv).testBit i then 1 else 0)) ∧
         OnCurveAs d.W st' r.g
           ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
-  rintro st ⟨hRbx, hRby, hRs⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    at hRbx hRby hRs
-  obtain ⟨hbx, hrx⟩ := hRbx
-  obtain ⟨hby, hry⟩ := hRby
+  rintro st ⟨hBase, hRs⟩
+  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
+  rw [scoped_affinePoint] at hbase
+  obtain ⟨hbx, hby⟩ := hbase
+  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
+    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
+    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
   obtain ⟨hscS, hrs⟩ := hRs
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   -- the sealed base
-  obtain ⟨sealed, st₁, hrun₁, hsat₁, hRx, hRy⟩ :=
-    sealPoint_complete (c := KimchiConstraint F) base xv yv st
-      ⟨⟨CircuitType.scoped_fvar.mpr hbx, CircuitType.reads_fvar.mpr hrx⟩,
-        ⟨CircuitType.scoped_fvar.mpr hby, CircuitType.reads_fvar.mpr hry⟩⟩
+  obtain ⟨sealed, st₁, hrun₁, hsat₁, hRp⟩ :=
+    sealPoint_complete (c := KimchiConstraint F) base ⟨xv, yv⟩ st
+      ⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, reads_affinePoint.mpr ⟨hrx, hry⟩⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
-  have hsx : sealed.x.Scoped st₁ := CircuitType.scoped_fvar.mp hRx.1
-  have hsy : sealed.y.Scoped st₁ := CircuitType.scoped_fvar.mp hRy.1
-  have hsxv : sealed.x.val st₁.env.get = xv := CircuitType.reads_fvar.mp hRx.2
-  have hsyv : sealed.y.val st₁.env.get = yv := CircuitType.reads_fvar.mp hRy.2
+  obtain ⟨hsx, hsy⟩ := scoped_affinePoint.mp hRp.1
+  obtain ⟨hsxv, hsyv⟩ := reads_affinePoint.mp hRp.2
   -- the scalar's bits, in one witness
   obtain ⟨bits, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscB, hrdB⟩ :=
     witness_complete (c := KimchiConstraint F) (val := Vector F n)
@@ -1274,8 +1273,7 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' => OnCurveAs d.W st' r
@@ -1418,18 +1416,21 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st sDiv2 sv ∧ CircuitType.ReadsAs (val := Bool) st sOdd bb)
       (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
       (fun r st' => OnCurveAs d.W st' r
         ((2 * (ToNat.toNat sv : ℤ) + (if bb then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hRbx, hRby, hRsd, hRso⟩
+  rintro st ⟨hBase, hRsd, hRso⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hRbx hRby hRsd hRso
-  obtain ⟨hbx, hrx⟩ := hRbx
-  obtain ⟨hby, hry⟩ := hRby
+    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hRsd hRso
+  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
+  rw [scoped_affinePoint] at hbase
+  obtain ⟨hbx, hby⟩ := hbase
+  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
+    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
+    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
   obtain ⟨hsd, hrs⟩ := hRsd
   obtain ⟨hso, hrb⟩ := hRso
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
@@ -1440,8 +1441,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the ladder
   obtain ⟨r, st₁, hrun₁, hsat₁, hbits, hG⟩ :=
     varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime st
-      ⟨⟨CircuitType.scoped_fvar.mpr hbx, CircuitType.reads_fvar.mpr hrx⟩,
-        ⟨CircuitType.scoped_fvar.mpr hby, CircuitType.reads_fvar.mpr hry⟩,
+      ⟨⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, hbaseNS, hbaseEq⟩,
         ⟨CircuitType.scoped_fvar.mpr hsd, CircuitType.reads_fvar.mpr hrs⟩⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
@@ -1753,19 +1753,21 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (hregime : d.LadderRegime (5 * chunks)
       (2 * (ToNat.toNat (splitField sval).1 : ℤ) + 2 ^ (5 * chunks) + 1)) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st s sval)
       (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base s)
       (fun r st' => OnCurveAs d.W st' r
         ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
             + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hRbx, hRby, hRs⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    at hRbx hRby hRs
-  obtain ⟨hbx, hrx⟩ := hRbx
-  obtain ⟨hby, hry⟩ := hRby
+  rintro st ⟨hBase, hRs⟩
+  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
+  rw [scoped_affinePoint] at hbase
+  obtain ⟨hbx, hby⟩ := hbase
+  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
+    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
+    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
   obtain ⟨hs, hrs⟩ := hRs
   obtain ⟨w, st₁, hrun₁, hsat₁, hRD, hRO⟩ :=
     splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval st
@@ -1775,10 +1777,7 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   obtain ⟨g, st₂, hrun₂, hsat₂, hpt⟩ :=
     scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
       (splitField sval).1 (splitField sval).2 hT hfits hregime st₁
-      ⟨⟨CircuitType.scoped_fvar.mpr (hbx.mono hnv₁),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₁ hbx, hrx])⟩,
-        ⟨CircuitType.scoped_fvar.mpr (hby.mono hnv₁),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₁ hby, hry])⟩,
+      ⟨OnCurveAs.mono hnv₁ hle₁ ⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, hbaseNS, hbaseEq⟩,
         hRD, hRO⟩
   exact ⟨g, st₂, hrun₁.bind hrun₂, fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))

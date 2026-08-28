@@ -345,21 +345,31 @@ preserve them — and the witnessed columns are whatever the row constrains them
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
 table, and the sealed point is scoped and reads as the operand. -/
 theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) (xv yv : F) :
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F))
+    (P : AffinePoint F) :
     Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := F) st p.x xv ∧
-        CircuitType.ReadsAs (val := F) st p.y yv)
+      (fun st => CircuitType.ReadsAs (val := AffinePoint F) st p P)
       (sealPoint (c := c) p)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r.x xv ∧
-        CircuitType.ReadsAs (val := F) st' r.y yv) := by
-  rintro st ⟨hx, hy⟩
-  obtain ⟨ry, st₁, hrunY, hsatY, hry⟩ := sealVar_complete (c := c) p.y yv st hy
+      (fun r st' => CircuitType.ReadsAs (val := AffinePoint F) st' r P) := by
+  intro st hP
+  obtain ⟨hsc, hrd⟩ := hP
+  rw [scoped_affinePoint] at hsc
+  rw [reads_affinePoint] at hrd
+  have hx : CircuitType.ReadsAs (val := F) st p.x P.x :=
+    ⟨CircuitType.scoped_fvar.mpr hsc.1, CircuitType.reads_fvar.mpr hrd.1⟩
+  have hy : CircuitType.ReadsAs (val := F) st p.y P.y :=
+    ⟨CircuitType.scoped_fvar.mpr hsc.2, CircuitType.reads_fvar.mpr hrd.2⟩
+  obtain ⟨ry, st₁, hrunY, hsatY, hry⟩ := sealVar_complete (c := c) p.y P.y st hy
   obtain ⟨rx, st₂, hrunX, hsatX, hrx⟩ :=
-    sealVar_complete (c := c) p.x xv st₁ (hx.mono hrunY.nv_le hrunY.le)
-  exact ⟨⟨rx, ry⟩, st₂, hrunY.bind (hrunX.bind rfl), fun hnv hle =>
+    sealVar_complete (c := c) p.x P.x st₁ (hx.mono hrunY.nv_le hrunY.le)
+  refine ⟨⟨rx, ry⟩, st₂, hrunY.bind (hrunX.bind rfl), fun hnv hle =>
     Sat.bind hrunY (hsatY (Nat.le_trans hrunX.nv_le hnv) (hrunX.le.trans hle))
-      (Sat.bind hrunX (hsatX hnv hle) Sat.pure),
-    hrx, hry.mono hrunX.nv_le hrunX.le⟩
+      (Sat.bind hrunX (hsatX hnv hle) Sat.pure), ?_⟩
+  have hry' := hry.mono hrunX.nv_le hrunX.le
+  exact ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp hrx.1,
+      CircuitType.scoped_fvar.mp hry'.1⟩,
+    reads_affinePoint.mpr ⟨CircuitType.reads_fvar.mp hrx.2,
+      CircuitType.reads_fvar.mp hry'.2⟩⟩
 
 open WeierstrassCurve.Affine in
 /-- **`addFast`'s completeness.** From operands lying on the curve, with `y₁ ≠ 0` and —
@@ -409,16 +419,27 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     rw [hvy1] at hy1ne
     rw [hvx1, hvy1, hvx2, hvy2] at hfin
     -- the sealed operands
-    obtain ⟨q1, st₁, hrunS1, hsatS1, hR1x, hR1y⟩ :=
-      sealPoint_complete (c := KimchiConstraint F) p1' x1 y1 st
-        ⟨⟨CircuitType.scoped_fvar.mpr hs1.1, CircuitType.reads_fvar.mpr hvx1⟩,
-          ⟨CircuitType.scoped_fvar.mpr hs1.2, CircuitType.reads_fvar.mpr hvy1⟩⟩
-    obtain ⟨q2, st₂, hrunS2, hsatS2, hR2x, hR2y⟩ :=
-      sealPoint_complete (c := KimchiConstraint F) p2' x2 y2 st₁
-        ⟨⟨CircuitType.scoped_fvar.mpr (hs2.1.mono hrunS1.nv_le),
-            CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hrunS1.le hs2.1, hvx2])⟩,
-          ⟨CircuitType.scoped_fvar.mpr (hs2.2.mono hrunS1.nv_le),
-            CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hrunS1.le hs2.2, hvy2])⟩⟩
+    obtain ⟨q1, st₁, hrunS1, hsatS1, hR1⟩ :=
+      sealPoint_complete (c := KimchiConstraint F) p1' ⟨x1, y1⟩ st
+        ⟨scoped_affinePoint.mpr ⟨hs1.1, hs1.2⟩, reads_affinePoint.mpr ⟨hvx1, hvy1⟩⟩
+    obtain ⟨q2, st₂, hrunS2, hsatS2, hR2⟩ :=
+      sealPoint_complete (c := KimchiConstraint F) p2' ⟨x2, y2⟩ st₁
+        ⟨scoped_affinePoint.mpr ⟨hs2.1.mono hrunS1.nv_le, hs2.2.mono hrunS1.nv_le⟩,
+          reads_affinePoint.mpr
+            ⟨by rw [CVar.val_of_le hrunS1.le hs2.1, hvx2],
+              by rw [CVar.val_of_le hrunS1.le hs2.2, hvy2]⟩⟩
+    have hR1x : CircuitType.ReadsAs (val := F) st₁ q1.x x1 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR1.1).1,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR1.2).1⟩
+    have hR1y : CircuitType.ReadsAs (val := F) st₁ q1.y y1 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR1.1).2,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR1.2).2⟩
+    have hR2x : CircuitType.ReadsAs (val := F) st₂ q2.x x2 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR2.1).1,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR2.2).1⟩
+    have hR2y : CircuitType.ReadsAs (val := F) st₂ q2.y y2 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR2.1).2,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR2.2).2⟩
     have hq1x : q1.x.Scoped st₁ := CircuitType.scoped_fvar.mp hR1x.1
     have hq1y : q1.y.Scoped st₁ := CircuitType.scoped_fvar.mp hR1y.1
     have hq2x : q2.x.Scoped st₂ := CircuitType.scoped_fvar.mp hR2x.1
