@@ -46,3 +46,4 @@ Schnorr.verifyCircuit
 
 -- The circuit laws (Schnorr/Laws.lean): the sound endpoint.
 Schnorr.verifyCircuit_spec
+Schnorr.verifyCircuit_complete

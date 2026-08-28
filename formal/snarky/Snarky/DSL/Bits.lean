@@ -145,6 +145,17 @@ theorem packLow_val [CommSemiring F] [DecidableEq F] {n k : Nat} (hk : k ≤ n)
   rw [getElem_takeVec, getElem_takeVec]
   exact h i (Nat.lt_of_lt_of_le hi hk)
 
+/-- `packLow` is in scope when its bits are — the completeness counterpart of
+`packLow_val`. -/
+theorem CVar.Scoped.packLow [Semiring F] [DecidableEq F] {st : ProverState F} {n k : Nat}
+    {hk : k ≤ n} {bits : Vector (BoolVar F) n}
+    (h : ∀ i (hi : i < n), (↑bits[i] : CVar F).Scoped st) :
+    (Snarky.packLow k hk bits).Scoped st := by
+  unfold Snarky.packLow
+  exact CVar.Scoped.pack fun i hi => by
+    rw [getElem_takeVec]
+    exact h i (Nat.lt_of_lt_of_le hi hk)
+
 /-! ## Unpacking -/
 
 /-- Decompose a field variable into `n` LSB-first bits: witness them checked — each pays
