@@ -677,7 +677,7 @@ Snarky.Kimchi.EndoScalar.toField_complete
 Snarky.Kimchi.EndoScalar.toFieldChecked'
 
 -- The endomul gadget (Snarky/Kimchi/Circuit/EndoMul.lean): the ladder step, the gadget and
--- its inverse-direction wrapper, the law pair, and the curve dictionary the laws take —
+-- its inverse-direction wrapper, a law pair each, and the curve dictionary the laws take —
 -- with the deployed Pasta values, which are the discharge artifacts AND the exhibit that
 -- the dictionary is satisfiable.
 Snarky.Kimchi.endoMulRound
@@ -687,6 +687,8 @@ Snarky.Kimchi.EndoMul.endoMul_spec
 Snarky.Kimchi.EndoMul.vesta_endoMul_read
 Snarky.Kimchi.EndoMul.vesta_endoMul_complete
 Snarky.Kimchi.EndoMul.endoMul_complete
+Snarky.Kimchi.EndoMul.endoInv_spec
+Snarky.Kimchi.EndoMul.endoInv_complete
 Snarky.Kimchi.HasEndo
 Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta

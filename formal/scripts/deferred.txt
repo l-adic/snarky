@@ -72,7 +72,6 @@ Kimchi.Gate.VarBaseMul.chainBuild_succ_n
 Kimchi.Gate.VarBaseMul.chainBuild_succ_x0
 Kimchi.Gate.VarBaseMul.chainBuild_succ_y0
 Kimchi.Gate.VarBaseMul.runBits_congr
-Kimchi.Gate.VarBaseMul.smul_eq_smul_of_zmod_eq
 
 -- The prover interpreter's domain lemma (Snarky/Prover.lean).
 Snarky.prove_dom
