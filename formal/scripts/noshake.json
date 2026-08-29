@@ -29,6 +29,9 @@
   "Kimchi.Gate.Generic": [
    "Mathlib.Tactic"
   ],
+  "Kimchi.Bits": [
+   "Mathlib.Tactic.Ring"
+  ],
   "Kimchi.Gate.EndoMul": [
    "Kimchi.Gate.VarBaseMul"
   ],

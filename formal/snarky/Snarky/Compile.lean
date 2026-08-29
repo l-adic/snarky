@@ -173,7 +173,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
 
 /-- The counter the body starts from: past the input slots, and past whatever the input
 bundle's own check allocated. -/
-def bodyStart [Field F] [DecidableEq F] [BasicSystem F c] [A : CircuitType F a avar]
+def bodyStart [Field F] [BasicSystem F c] [A : CircuitType F a avar]
     [CheckedType F c a avar] : Nat :=
   (build (CheckedType.check (F := F) (c := c) (val := a)
     (inputVar (F := F) (a := a))) A.size).nextVar

@@ -595,7 +595,7 @@ theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F
 
 /-- A state predicate that survives the table's growth. The ambient context of a
 multi-stage completeness proof is one of these, built up conjunct by conjunct. -/
-def Mono [Zero F] (P : ProverState F → Prop) : Prop :=
+def Mono (P : ProverState F → Prop) : Prop :=
   ∀ st st' : ProverState F, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st'
 
 /-- Conjunction of monotone facts is monotone — how a context accumulates. -/

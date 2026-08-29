@@ -1,3 +1,4 @@
+import Mathlib.Tactic.Ring.Basic
 import Kimchi.Bits
 import Snarky.DSL.SizedF
 
