@@ -135,6 +135,12 @@ only odd multiple of the group order in the decode band `[2^255+1, 2^255+2q−1]
 one `Type1` representative whose decode is the zero scalar. -/
 def Type1.zeroCarrier : Fq := ((3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 : ℕ)
 
+/-- The decode hits zero exactly when the scalar field's order divides it — the decode is
+that integer cast, so this is `ZMod`'s zero test. -/
+theorem Type1.toScalar_eq_zero_iff_dvd (t : Type1 Fq) :
+    t.toScalar = 0 ↔ (PALLAS_BASE_CARD : ℤ) ∣ t.toScalarZ :=
+  ZMod.intCast_zmod_eq_zero_iff_dvd _ _
+
 /-- The band argument at abstract constants — the deployed literals stay quarantined in
 the caller's `decide` facts, so `omega` works over atoms only. -/
 private theorem dvd_band_iff {P Q v t : ℕ}
@@ -167,9 +173,8 @@ theorem Type1.toScalar_eq_zero_iff (t : Type1 Fq) :
     t.toScalar = 0 ↔ t.val = Type1.zeroCarrier := by
   have ht : t.val.val < PALLAS_SCALAR_CARD := ZMod.val_lt _
   have hiff : t.toScalar = 0
-      ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (t.val.val : ℤ) + 2 ^ 255 + 1) := by
-    simp only [Type1.toScalar, Type1.toScalarZ, Type1.fromShifted]
-    exact ZMod.intCast_zmod_eq_zero_iff_dvd _ _
+      ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (t.val.val : ℤ) + 2 ^ 255 + 1) :=
+    Type1.toScalar_eq_zero_iff_dvd t
   have hval : t.val = Type1.zeroCarrier
       ↔ t.val.val = (3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 := by
     constructor

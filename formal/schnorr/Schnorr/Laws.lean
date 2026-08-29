@@ -6,7 +6,8 @@ import Schnorr.Circuit
 The endpoint pair. Soundness: any satisfying valuation certifies the wire verifier at the
 bundle's reading. The two on-curve facts are the statement `CheckedType`'s contribution at
 the compile seam, not something `verifyCircuit`'s own rows force; the band exclusion is the
-ladder's non-degeneracy pricing. The zero-response exclusion holds unconditionally.
+ladder's non-degeneracy pricing, and it also carries the zero response — `0` is a forbidden
+residue, so the exclusion `verify` performs at parsing costs the circuit no row of its own.
 
 Both cross-field readings are pinned to canonical representatives by the circuit's two
 canonicity locks (`unpackFull` on the transcript hash, `assertBitsBelow` on the ladder's
@@ -36,8 +37,7 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
     ⦃⇓ _ _ => ⌜∀ raw : Statement Fq, CircuitType.Reads V stv raw →
         OnCurve Vesta.curve.A Vesta.curve.B (raw.pk.point.x, raw.pk.point.y) →
         OnCurve Vesta.curve.A Vesta.curve.B (raw.u.point.x, raw.u.point.y) →
-        raw.z.toScalar ≠ (0 : Fp) ∧
-        (raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true)⌝⦄ := by
+        raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true⌝⦄ := by
   simp only [verifyCircuit]
   have hendo := fun (sc : SizedF 128 (FVar Fq)) =>
     EndoMul.endoMul_spec (V := V) HasEndo.vesta stv.pk.point sc
@@ -47,18 +47,16 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
   case vc1.hsize => exact fqParams_size
   case vc4.W => exact Vesta.curve.toAffine
   case vc5.ha => exact ⟨rfl, rfl, rfl, rfl⟩
-  intro hzne raw hread hpkC huC
+  intro hyEq raw hread hpkC huC hband
   obtain ⟨bs, hbread, hbsum, hbslt⟩ :=
     ‹∃ bs : Vector Bool 255, _ ∧ _ ∧ _›
   -- the reading is the cells, projectionwise
   rw [reads_statement] at hread
   obtain ⟨hpkR, huR, hzR⟩ := hread
-  -- the response's decode is nonzero: the circuit's `assertNotEqual` row, at the carrier
-  have hz0 : raw.z.toScalar ≠ (0 : Fp) := fun h0 => hzne (by
-    rw [show (CVar.const Type1.zeroCarrier).val V = Type1.zeroCarrier from rfl,
-      ← (Type1.toScalar_eq_zero_iff _).mp h0]
-    exact hzR)
-  refine ⟨hz0, fun hband => ?_⟩
+  -- the response's decode is nonzero: `0` is a forbidden residue, so the band excludes it
+  have hz0 : raw.z.toScalar ≠ (0 : Fp) := fun h0 =>
+    hband (Kimchi.Gate.VarBaseMul.mem_forbiddenValues_of_dvd _
+      ((Type1.toScalar_eq_zero_iff_dvd _).mp h0))
   · -- the read points, in the curve vocabulary the gadget laws speak
     set pkR : VestaPoint Fq := ⟨⟨raw.pk.point.x, raw.pk.point.y⟩⟩ with hpkRdef
     set uR : VestaPoint Fq := ⟨⟨raw.u.point.x, raw.u.point.y⟩⟩ with huRdef
@@ -103,8 +101,7 @@ theorem verifyCircuit_spec {V : Valuation Fq} (stv : Statement (FVar Fq)) :
     · exact absurd hinf1 (by rw [hinf0]; decide)
     · show ((raw.z.toScalarZ : ℤ) : Fp) • _ = _
       rw [Int.cast_smul_eq_zsmul]
-      exact OnCurveAt.eq hzact hfin
-        ‹CVar.val _ V = CVar.val _ V› ‹CVar.val _ V = CVar.val _ V›
+      exact OnCurveAt.eq hzact hfin ‹CVar.val _ V = CVar.val _ V› hyEq
 
 open Kimchi.Gate.VarBaseMul (forbiddenValues) in
 open WeierstrassCurve.Affine in
@@ -280,16 +277,7 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
     (Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.2.2).1, (hcx st rhs.p h.2).1⟩)
       (fun _ _ h => h) (assertEqual_complete zr.g.x rhs.p.x zx)) fun _ => ?_
   have m₈ := m₇.and (fun _ _ _ _ _ => trivial : Mono (F := Fq) fun _ => True)
-  refine Complete.seq m₈
-    (Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.1.2.2).2, (hcx st rhs.p h.1.2).2⟩)
-      (fun _ _ h => h) (assertEqual_complete zr.g.y rhs.p.y zy)) fun _ => ?_
-  -- the response's decode is nonzero
-  have hz0' : raw.z.val ≠ Type1.zeroCarrier :=
-    fun h => hz0 ((Type1.toScalar_eq_zero_iff _).mpr h)
-  exact Complete.imp (fun st h => ⟨hzAs st h.1.1.1.1.1.1.1.1,
-      hk st (CVar.const Type1.zeroCarrier) _ (CVar.scoped_const _ _) rfl⟩)
-    (fun _ _ _ => trivial)
-    (assertNotEqual_complete stv.z.val (CVar.const Type1.zeroCarrier) raw.z.val
-      Type1.zeroCarrier hz0')
+  exact Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.1.2.2).2, (hcx st rhs.p h.1.2).2⟩)
+    (fun _ _ _ => trivial) (assertEqual_complete zr.g.y rhs.p.y zy)
 
 end Schnorr

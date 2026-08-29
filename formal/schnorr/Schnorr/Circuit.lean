@@ -34,9 +34,9 @@ instance instStatementCheckedType [BasicSystem Fq c] :
 with its bits locked below the modulus, and pin `[z]·G = u + [c]·pk`. The two canonicity
 locks (`unpackFull`, `assertBitsBelow` on the ladder's bits) are what pin the cross-field
 readings to canonical representatives — without them the challenge split and the ladder
-scalar are fixed only up to reconstruction classes. The closing `assertNotEqual` excludes
-the one carrier whose decode is the zero response (`Type1.zeroCarrier`), mirroring the
-deployed `unshift_nonzero` convention. -/
+scalar are fixed only up to reconstruction classes. The zero response needs no row of its
+own: the ladder's non-degeneracy band already excludes it (`0` is a forbidden residue), so
+the band exclusion soundness charges carries the exclusion `verify` performs at parsing. -/
 def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c] (st : Statement (FVar Fq)) :
     CircuitM Fq c PUnit := do
   let squeezed ← RandomOracle.hashVec Poseidon.fqParams
@@ -48,6 +48,5 @@ def verifyCircuit [BasicSystem Fq c] [KimchiSystem Fq c] (st : Statement (FVar F
   let rhs ← addFast .checkFinite st.u.point cpk
   assertEqual zr.g.x rhs.p.x
   assertEqual zr.g.y rhs.p.y
-  assertNotEqual st.z.val (.const Type1.zeroCarrier)
 
 end Schnorr

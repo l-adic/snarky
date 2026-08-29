@@ -465,6 +465,7 @@ Snarky.Type1.toScalar
 Snarky.Type1.toScalar_toShifted
 Snarky.instCheckedTypeType1
 Snarky.Type1.zeroCarrier
+Snarky.Type1.toScalar_eq_zero_iff_dvd
 Snarky.Type1.toScalar_eq_zero_iff
 Snarky.SplitField
 Snarky.SplitField.fromShifted

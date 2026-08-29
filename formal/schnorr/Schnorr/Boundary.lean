@@ -31,18 +31,17 @@ open CompElliptic.CurveForms.ShortWeierstrass
 open Kimchi.Gate.VarBaseMul (forbiddenValues)
 
 /-- **The sound boundary.** Any valuation that satisfies every row the compiled verifier
-emits, and reads a statement at the public input bundle, certifies the wire verifier at that
-statement: the response decodes nonzero, and outside the ladder's forbidden band `verify`
-accepts. Acceptance needs the statement's points on the curve, which `verifyCircuit`'s own
-rows do not force — they are forced by the statement `CheckedType`'s rows, which the seam
-pays before the body runs and which this valuation therefore also satisfies. -/
+emits, and reads a statement at the public input bundle, certifies the wire verifier at
+that statement: outside the ladder's forbidden band, `verify` accepts. Acceptance needs
+the statement's points on the curve, which `verifyCircuit`'s own rows do not force — they
+are forced by the statement `CheckedType`'s rows, which the seam pays before the body runs
+and which this valuation therefore also satisfies. -/
 theorem verifyCircuit_compile_sound (V : Valuation Fq) (raw : Statement Fq)
     (hsat : ∀ con ∈ (compile (a := Statement Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
       ConstraintHolds.Holds V con)
     (hin : CircuitType.Reads V (inputVar (F := Fq) (a := Statement Fq)) raw) :
-    raw.z.toScalar ≠ (0 : Fp) ∧
-      (raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true) := by
+    raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true := by
   -- the statement's own rows, satisfied here, put its two points on the curve
   have hcheck := CheckedType.check_sound (c := KimchiConstraint Fq) (val := Statement Fq) V
     (inputVar (F := Fq) (a := Statement Fq)) (CircuitType.size Fq (Statement Fq))
