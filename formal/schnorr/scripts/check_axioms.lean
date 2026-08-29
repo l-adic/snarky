@@ -32,7 +32,9 @@ def roots : List Name :=
     `Schnorr.unpackFull_spec,
     `Schnorr.unpackFull_complete,
     `Schnorr.verifyCircuit_spec,
-    `Schnorr.verifyCircuit_complete ]
+    `Schnorr.verifyCircuit_complete,
+    `Schnorr.verifyCircuit_compile_sound,
+    `Schnorr.verifyCircuit_solve_complete ]
 
 /-- The allowed axioms. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
@@ -46,7 +48,9 @@ def deployedRoots : List Name :=
     `Schnorr.verify_iff,
     `Schnorr.completeness,
     `Schnorr.verifyCircuit_spec,
-    `Schnorr.verifyCircuit_complete ]
+    `Schnorr.verifyCircuit_complete,
+    `Schnorr.verifyCircuit_compile_sound,
+    `Schnorr.verifyCircuit_solve_complete ]
 
 /-- A trusted `native_decide` certificate, discriminated by DEFINING MODULE rather
     than by name prefix (the snarky gate's convention): an upstream CompElliptic

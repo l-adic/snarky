@@ -96,9 +96,11 @@ open CircuitType in
 /-- A circuit whose body is complete solves at an admissible public input: the run
 succeeds, the table it produces satisfies every compiled row, and the compiled system's
 two bundles — the body's output and the public one — both read as the value the solve
-returned. Admissibility (`CheckedType.Valid`) is the input type's own rows read at the
-value, so the statement covers exactly the inputs the compiled system accepts and
-assumes nothing else about the prover. -/
+returned, with the input bundle still reading the value the solve was given.
+Admissibility (`CheckedType.Valid`) is the input type's own rows read at the value, so the
+statement covers exactly the inputs the compiled system accepts and assumes nothing else
+about the prover. The input reading is what lets a soundness statement about satisfying
+valuations be applied to the table this produces. -/
 theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F c a avar]
     [B : CircuitType F b bvar] {main : avar → CircuitM F c bvar} (input : a)
@@ -112,6 +114,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       solve (a := a) (b := b) main input = .ok (outVal, env) ∧
       (∀ con ∈ (compile (a := a) (b := b) main).constraints,
         ConstraintHolds.Holds env.get con) ∧
+      Reads env.get (inputVar (F := F) (a := a)) input ∧
       Reads env.get (compile (a := a) (b := b) main).result.1 outVal ∧
       Reads env.get (compile (a := a) (b := b) main).result.2 outVal := by
   have hav := scoped_inputVar (F := F) (avar := avar) input
@@ -145,7 +148,7 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
   have hle₃ : st₂.env.Le st₃.env := hrun₃.le
   have hres : ((out, pub.val) : bvar × bvar) = (compile (a := a) (b := b) main).result :=
     (prove_build_agrees hrun).1
-  refine ⟨v, st₃.env, ?_, ?_, ?_, ?_⟩
+  refine ⟨v, st₃.env, ?_, ?_, ?_, ?_, ?_⟩
   · unfold solve
     rw [show prove (compileBody (a := a) (b := b) main) (seed (F := F) (avar := avar) input).nv
         (seed (F := F) (avar := avar) input).env = .ok (st₃.out (out, pub.val)) from hrun]
@@ -162,10 +165,32 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       (Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hle₃))
         (Sat.bind hrun₂ (hsat₂ hrun₃.nv_le hle₃)
           (Sat.bind hrun₃ (hsat₃ (Nat.le_refl _) (Assignments.Le.refl _)) Sat.pure)))
+  · exact hrv.of_le hav (hcheck.le.trans (hrun₁.le.trans (hle₂.trans hle₃)))
   · rw [← hres]
     exact (hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃
   · rw [← hres]
     exact hreadsP'.of_le hscopeP' hle₃
+
+/-- The counter the body starts from: past the input slots, and past whatever the input
+bundle's own check allocated. -/
+def bodyStart [Field F] [DecidableEq F] [BasicSystem F c] [A : CircuitType F a avar]
+    [CheckedType F c a avar] : Nat :=
+  (build (CheckedType.check (F := F) (c := c) (val := a)
+    (inputVar (F := F) (a := a))) A.size).nextVar
+
+/-- The compiled system's rows contain the body's, built from `bodyStart`: the
+whole-circuit program runs the input check, then the body, then the output binding, and
+`build_bind` concatenates their rows in that order. A valuation satisfying the compiled
+system therefore satisfies the body's own rows — the direction a soundness triple needs. -/
+theorem mem_compile_of_mem_body [Field F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
+    {main : avar → CircuitM F c bvar} {con : c}
+    (h : con ∈ (build (main (inputVar (F := F) (a := a)))
+      (bodyStart (F := F) (c := c) (a := a) (avar := avar))).constraints) :
+    con ∈ (compile (a := a) (b := b) main).constraints := by
+  rw [bodyStart] at h
+  rw [compile, compileBody, build_bind, List.mem_append]
+  exact Or.inr (by rw [build_bind, List.mem_append]; exact Or.inl h)
 
 attribute [irreducible] inputVar compileBody compile solve
 

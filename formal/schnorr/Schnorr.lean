@@ -1,3 +1,4 @@
+import Schnorr.Boundary
 import Schnorr.Circuit
 import Schnorr.Laws
 import Schnorr.UnpackFull
@@ -19,8 +20,11 @@ lives here rather than in snarky's DSL because this package is its only consumer
 `Circuit` is the in-circuit verifier: `verify` stage for stage over `Fq`, on the kimchi
 gadget stack. The laws tying the two arrive on top of it.
 
-`Laws` is the sound endpoint: any satisfying valuation certifies the wire verifier at the
-bundle's reading.
+`Laws` is the endpoint pair: any satisfying valuation certifies the wire verifier at the
+bundle's reading, and an accepted statement's honest run completes.
+
+`Boundary` cashes that pair at the compile seam — the compiled constraint system and the
+solver, rather than the circuit as a program.
 
 **What this package is NOT.** It does not model `packages/schnorr` — the deployed
 PureScript port of Mina's production Schnorr *signature* verifier. That protocol runs
