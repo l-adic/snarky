@@ -425,6 +425,7 @@ Snarky.inputVar
 Snarky.scoped_inputVar
 Snarky.reads_inputVar
 Snarky.bodyStart
+Snarky.mem_compile_of_mem_check
 Snarky.mem_compile_of_mem_body
 Snarky.solve_complete
 Snarky.Complete.imp

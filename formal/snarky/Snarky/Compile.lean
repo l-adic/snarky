@@ -178,6 +178,19 @@ def bodyStart [Field F] [DecidableEq F] [BasicSystem F c] [A : CircuitType F a a
   (build (CheckedType.check (F := F) (c := c) (val := a)
     (inputVar (F := F) (a := a))) A.size).nextVar
 
+/-- The compiled system's rows contain the input check's, built at the input slots: the
+whole-circuit program pays the check first. A valuation satisfying the compiled system
+therefore satisfies the check's rows, and so — through `CheckedType.check_sound` — whatever
+the input type's own rows force about the bundle. -/
+theorem mem_compile_of_mem_check [Field F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
+    {main : avar → CircuitM F c bvar} {con : c}
+    (h : con ∈ (build (CheckedType.check (F := F) (c := c) (val := a)
+      (inputVar (F := F) (a := a))) A.size).constraints) :
+    con ∈ (compile (a := a) (b := b) main).constraints := by
+  rw [compile, compileBody, build_bind, List.mem_append]
+  exact Or.inl h
+
 /-- The compiled system's rows contain the body's, built from `bodyStart`: the
 whole-circuit program runs the input check, then the body, then the output binding, and
 `build_bind` concatenates their rows in that order. A valuation satisfying the compiled

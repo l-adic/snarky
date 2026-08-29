@@ -14,10 +14,11 @@ the public input bundle `inputVar` at slots `0 … 4` — so they compose: the t
 `verifyCircuit_solve_complete` produces satisfies exactly the hypothesis
 `verifyCircuit_compile_sound` assumes.
 
-The statement's on-curve facts are hypotheses of the sound direction and conclusions of the
-wire verifier in the complete direction. They are not forced by `verifyCircuit`'s own rows —
-they are the statement `CheckedType`'s contribution, paid at the seam by `compileBody`
-before the body runs, which is why the sound direction takes them as given.
+The statement's points are on the curve in both directions without being assumed in either:
+`verifyCircuit`'s own rows do not force it, but the statement `CheckedType`'s rows do, and
+`compileBody` pays those before the body runs. The sound direction reads them off the
+valuation through `check_sound`; the complete direction gets them from `verify_iff` and
+spends them discharging the same check's admissibility.
 
 This is the boundary at the constraint layer. Dispatching those constraints to kimchi gate
 rows (`kimchiCompile`, `kimchiGateData`) is a further layer and is not stated here.
@@ -32,23 +33,29 @@ open Kimchi.Gate.VarBaseMul (forbiddenValues)
 /-- **The sound boundary.** Any valuation that satisfies every row the compiled verifier
 emits, and reads a statement at the public input bundle, certifies the wire verifier at that
 statement: the response decodes nonzero, and outside the ladder's forbidden band `verify`
-accepts. The two on-curve hypotheses are what the statement's own check contributes at the
-seam — `verifyCircuit`'s rows do not force them. -/
+accepts. Acceptance needs the statement's points on the curve, which `verifyCircuit`'s own
+rows do not force — they are forced by the statement `CheckedType`'s rows, which the seam
+pays before the body runs and which this valuation therefore also satisfies. -/
 theorem verifyCircuit_compile_sound (V : Valuation Fq) (raw : Statement Fq)
     (hsat : ∀ con ∈ (compile (a := Statement Fq) (b := PUnit)
         (verifyCircuit (c := KimchiConstraint Fq))).constraints,
       ConstraintHolds.Holds V con)
-    (hin : CircuitType.Reads V (inputVar (F := Fq) (a := Statement Fq)) raw)
-    (hpk : OnCurve Vesta.curve.A Vesta.curve.B (raw.pk.point.x, raw.pk.point.y))
-    (hu : OnCurve Vesta.curve.A Vesta.curve.B (raw.u.point.x, raw.u.point.y)) :
+    (hin : CircuitType.Reads V (inputVar (F := Fq) (a := Statement Fq)) raw) :
     raw.z.toScalar ≠ (0 : Fp) ∧
-      (raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true) :=
-  (builder_spec_iff (verifyCircuit (c := Builder V (KimchiConstraint Fq))
+      (raw.z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD → verify raw = true) := by
+  -- the statement's own rows, satisfied here, put its two points on the curve
+  have hcheck := CheckedType.check_sound (c := KimchiConstraint Fq) (val := Statement Fq) V
+    (inputVar (F := Fq) (a := Statement Fq)) (CircuitType.size Fq (Statement Fq))
+    (fun con hcon => hsat con (mem_compile_of_mem_check hcon))
+  obtain ⟨hx, hy⟩ := (reads_statement.mp hin).1
+  obtain ⟨hx', hy'⟩ := (reads_statement.mp hin).2.1
+  exact (builder_spec_iff (verifyCircuit (c := Builder V (KimchiConstraint Fq))
       (inputVar (F := Fq) (a := Statement Fq))) _).mp
     (verifyCircuit_spec (inputVar (F := Fq) (a := Statement Fq)))
     (bodyStart (F := Fq) (c := KimchiConstraint Fq) (a := Statement Fq)
       (avar := Statement (FVar Fq)))
-    (fun con hcon => hsat con (mem_compile_of_mem_body hcon)) raw hin hpk hu
+    (fun con hcon => hsat con (mem_compile_of_mem_body hcon)) raw hin
+    (hx ▸ hy ▸ hcheck.1) (hx' ▸ hy' ▸ hcheck.2.1)
 
 /-- **The constructive boundary.** On a statement the wire verifier accepts, outside the
 ladder's forbidden band, the whole-circuit solve succeeds; the table it returns satisfies
