@@ -1,0 +1,54 @@
+-- The schnorr exemplar's API manifest: the wire protocol and the canonical bit
+-- decomposition it derives its challenge through. One name per line;
+-- `--` comments and blanks ignored. The deadcode gate walks reachability from the
+-- union of the packages' manifests.
+
+-- The wire protocol (Schnorr/Wire.lean): the generator, the statement, the
+-- challenge derivation, and the verifier — the specification the circuit-level
+-- laws terminate at.
+Schnorr.gen
+Schnorr.Statement
+Schnorr.Statement.equivProd_apply
+Schnorr.Statement.equivProd_symm_apply
+Schnorr.instStatementCircuitType
+Schnorr.scoped_statement
+Schnorr.reads_statement
+Schnorr.transcriptHash
+Schnorr.preChallenge
+Schnorr.challenge
+Schnorr.verify
+Schnorr.verify_iff
+Schnorr.completeness
+
+-- The canonical unpack (Schnorr/UnpackFull.lean): OCaml `unpack_full` /
+-- `lt_bitstring_value` — the bits-below-the-modulus lock. The modulus as a bit pattern,
+-- the comparison against it with its law pair and value-level mirror, and the lock that
+-- packages the comparison with its assertion, and the canonical decomposition itself.
+Schnorr.modBitsMsb
+Schnorr.modBitsMsb_length
+Schnorr.ltPure
+Schnorr.ltPure_iff_lt
+Schnorr.natLsbVal_reverse_modBitsMsb
+Schnorr.ltBitstringValue
+Schnorr.ltBitstringValue_spec
+Schnorr.ltBitstringValue_complete
+Schnorr.assertBitsBelow
+Schnorr.assertBitsBelow_spec
+Schnorr.assertBitsBelow_complete
+Schnorr.unpackFull
+Schnorr.unpackFull_spec
+Schnorr.unpackFull_complete
+
+-- The in-circuit verifier (Schnorr/Circuit.lean): the statement's derived check and
+-- the circuit implementing `verify` stage for stage.
+Schnorr.instStatementCheckedType
+Schnorr.verifyCircuit
+
+-- The circuit laws (Schnorr/Laws.lean): the endpoint pair.
+Schnorr.verifyCircuit_spec
+Schnorr.verifyCircuit_complete
+
+-- The compile seam (Schnorr/Boundary.lean): the endpoint pair at the compiled constraint
+-- system and the solver — the form a deployed verifier and prover meet.
+Schnorr.verifyCircuit_compile_sound
+Schnorr.verifyCircuit_solve_complete

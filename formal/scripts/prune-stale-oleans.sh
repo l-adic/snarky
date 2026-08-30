@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 pruned=0
-for pkg in pasta poseidon bulletproof-pcs kimchi snarky .; do
+for pkg in pasta poseidon bulletproof-pcs kimchi snarky schnorr .; do
   lib="$pkg/.lake/build/lib/lean"
   [ -d "$lib" ] || continue
   while IFS= read -r o; do

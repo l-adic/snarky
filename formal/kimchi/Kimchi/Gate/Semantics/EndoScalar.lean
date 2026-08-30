@@ -1,5 +1,6 @@
 import Kimchi.Gate.EndoScalar
 import Pasta.CompElliptic
+import Poseidon.FqSponge
 
 /-! # EndoScalar semantics
 
@@ -793,13 +794,36 @@ private theorem nReconstruct_eq_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   simpa [nReconstruct, valNat] using this
 
 
-/-- A valid crumb register is the cast of a bounded `ℕ`: the `nReconstruct` fold of
-    `{0,1,2,3}` crumbs is `valNat`'s image, below `4 ^ length` — the range reading
-    the `RangeCheck` gadgets extract from the gate. -/
-theorem nReconstruct_lt (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
+/-- The canonical expansion inverts the base-4 value: `crumbsOf` at a valid list's own
+    width and value returns the list. -/
+private theorem crumbsOf_valNat (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
+    ∀ xs : List F, (∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) →
+      crumbsOf xs.length (valNat xs) = xs := by
+  intro xs
+  induction xs using List.reverseRecOn with
+  | nil => intro _; rfl
+  | append_singleton l v ih =>
+    intro hv
+    have hvl : ∀ x ∈ l, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3 :=
+      fun x hx => hv x (List.mem_append_left _ hx)
+    have hval : valNat (l ++ [v]) = 4 * valNat l + digit v := by
+      simp [valNat, List.foldl_append]
+    have hd : digit v < 4 := digit_lt_four v
+    rw [List.length_append, List.length_singleton, hval,
+      show crumbsOf (F := F) (l.length + 1) (4 * valNat l + digit v)
+        = crumbsOf l.length ((4 * valNat l + digit v) / 4)
+          ++ [(((4 * valNat l + digit v) % 4 : ℕ) : F)] from rfl,
+      show (4 * valNat l + digit v) / 4 = valNat l by omega,
+      show (4 * valNat l + digit v) % 4 = digit v by omega,
+      ih hvl, digit_cast h2 h3 (hv v (by simp))]
+
+/-- **Base-4 decoding is onto.** A valid crumb list IS the canonical expansion of a
+    natural below its width's budget — so a consumer holding crumbs the gate exposed may
+    speak of the challenge they spell instead. -/
+theorem eq_crumbsOf (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (xs : List F)
     (hv : ∀ x ∈ xs, x = 0 ∨ x = 1 ∨ x = 2 ∨ x = 3) :
-    ∃ n : ℕ, n < 4 ^ xs.length ∧ nReconstruct xs = ((n : ℕ) : F) :=
-  ⟨valNat xs, valNat_lt xs, nReconstruct_eq_valNat h2 h3 xs hv⟩
+    ∃ n : ℕ, n < 4 ^ xs.length ∧ xs = crumbsOf xs.length n :=
+  ⟨valNat xs, valNat_lt xs, (crumbsOf_valNat h2 h3 xs hv).symm⟩
 
 /-- **Base-4 digit recovery.** Same-length valid crumb lists whose reconstruction fits the
     field (`4 ^ len ≤ p`) and that reconstruct to the same challenge are equal — the
@@ -1167,5 +1191,90 @@ theorem fq_rangeCheck128_sound {v : Fq} {w : ℕ → Witness Fq} (hw : Chain128 
 theorem fq_rangeCheck128_complete (k : ℕ) (hk : k < 2 ^ 128) :
     ∃ w : ℕ → Witness Fq, Chain128 w (k : Fq) :=
   Chain128.exists_of_lt k hk
+
+/-! ## The wire recoding is the gate recoding
+
+`FqSponge.endoExpand` folds over a prechallenge's 64 two-bit windows; the gate
+recodes the same challenge from its base-4 crumbs. The window at position `i` is the
+crumb `crumbsOf` places there, so the folds agree (`endoExpand_eq_toField`). -/
+
+/-- The window fold of `endoExpand` over `c` windows is the paired decompose fold over
+    the challenge's `c` crumbs. -/
+private theorem endoExpand_fold (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
+    ∀ (c k : ℕ) (ab : F × F),
+      (List.range c).reverse.foldl
+        (fun (ab : F × F) i =>
+          let (a, b) := (2 * ab.1, 2 * ab.2)
+          let s : F := if k.testBit (2 * i) then 1 else -1
+          if k.testBit (2 * i + 1) then (a + s, b) else (a, b + s))
+        ab
+      = ((crumbsOf c k).foldl (fun a x => 2 * a + cPoly x) ab.1,
+         (crumbsOf c k).foldl (fun b x => 2 * b + dPoly x) ab.2)
+  | 0, k, ab => rfl
+  | c + 1, k, ab => by
+    have hshift : (fun (ab : F × F) i =>
+        let (a, b) := (2 * ab.1, 2 * ab.2)
+        let s : F := if k.testBit (2 * Nat.succ i) then 1 else -1
+        if k.testBit (2 * Nat.succ i + 1) then (a + s, b) else (a, b + s))
+        = (fun (ab : F × F) i =>
+        let (a, b) := (2 * ab.1, 2 * ab.2)
+        let s : F := if (k / 4).testBit (2 * i) then 1 else -1
+        if (k / 4).testBit (2 * i + 1) then (a + s, b) else (a, b + s)) := by
+      have hdiv : k / 4 = k >>> 2 := by rw [Nat.shiftRight_eq_div_pow]
+      funext ab i
+      have e0 : k.testBit (2 * Nat.succ i) = (k / 4).testBit (2 * i) := by
+        rw [hdiv, Nat.testBit_shiftRight]
+        congr 1
+        omega
+      have e1 : k.testBit (2 * Nat.succ i + 1) = (k / 4).testBit (2 * i + 1) := by
+        rw [hdiv, Nat.testBit_shiftRight]
+        congr 1
+        omega
+      rw [e0, e1]
+    have hb0 : k.testBit 0 = decide (k % 4 % 2 = 1) := by
+      rw [Nat.testBit_zero]
+      simp only [decide_eq_decide]
+      omega
+    have hb1 : k.testBit 1 = decide (k % 4 / 2 = 1) := by
+      rw [show (1 : ℕ) = 0 + 1 from rfl, Nat.testBit_add_one, Nat.testBit_zero]
+      simp only [decide_eq_decide]
+      omega
+    rw [List.range_succ_eq_map, List.reverse_cons, ← List.map_reverse,
+      List.foldl_append, List.foldl_map, hshift, endoExpand_fold h2 h3 c (k / 4) ab,
+      show crumbsOf (F := F) (c + 1) k = crumbsOf c (k / 4) ++ [((k % 4 : ℕ) : F)]
+        from rfl,
+      List.foldl_append, List.foldl_append]
+    simp only [List.foldl_cons, List.foldl_nil]
+    have hm4 : k % 4 < 4 := by omega
+    have hc := cPoly_digit h2 h3 hm4
+    have hd := dPoly_digit h2 h3 hm4
+    rw [hb0, hb1, hc, hd]
+    have h4 : k % 4 = 0 ∨ k % 4 = 1 ∨ k % 4 = 2 ∨ k % 4 = 3 := by omega
+    rcases h4 with h | h | h | h <;>
+      · rw [h]
+        norm_num [cInt, dInt]
+
+/-- The ℤ-shadow of the sponge's endo expansion: the effective scalar of a 128-bit
+    prechallenge before any modulus, `a·λ + b` over its sixty-four base-4 digits. This is
+    the currency the `EndoMul` laws hand back — the point's multiplier is an integer, and
+    at Pasta the field it is read in is not the field its crumbs live in. -/
+def endoExpandZ (lam : ℤ) (chal : ℕ) : ℤ := toIntZ (digitsOf 64 chal) lam
+
+/-- `endoExpand` at a challenge is `toField` at its canonical crumb list — the two
+    folds are one recoding. -/
+theorem endoExpand_eq_toField (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (lam : F) (n : ℕ) :
+    Poseidon.FqSponge.endoExpand lam n = toField (crumbsOf 64 n) lam := by
+  unfold Poseidon.FqSponge.endoExpand
+  rw [endoExpand_fold h2 h3 64 n (2, 2)]
+  rfl
+
+/-- The shadow casts to the expansion: in any field where the digit tables are honest,
+    `endoExpandZ`'s image is `endoExpand` at the cast eigenvalue. -/
+theorem endoExpandZ_cast (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (lam : ℤ) (chal : ℕ) :
+    ((endoExpandZ lam chal : ℤ) : F)
+      = Poseidon.FqSponge.endoExpand ((lam : ℤ) : F) chal := by
+  rw [endoExpand_eq_toField h2 h3, crumbsOf_eq_map,
+    toField_digits h2 h3 _ (digitsOf_lt 64 _) lam, endoExpandZ]
 
 end Kimchi.Gate.EndoScalar

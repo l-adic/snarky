@@ -15,6 +15,7 @@ Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 -/
 import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.Sponge
@@ -115,6 +116,7 @@ def roots : List Name :=
     `Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem,
 
     -- The Kimchi gadgets.
+    `Snarky.Kimchi.CurvePoint.check_spec, `Snarky.Kimchi.CurvePoint.check_complete,
     `Snarky.Kimchi.sealPoint_spec, `Snarky.Kimchi.sealPoint_complete,
     `Snarky.Kimchi.infColumn_spec,
     `Snarky.Kimchi.addFast_spec, `Snarky.Kimchi.addFast_complete,
@@ -124,10 +126,9 @@ def roots : List Name :=
     `Snarky.Kimchi.RandomOracle.update_spec, `Snarky.Kimchi.RandomOracle.update_complete,
     `Snarky.Kimchi.RandomOracle.hash2_spec, `Snarky.Kimchi.RandomOracle.hash2_complete,
     `Snarky.Kimchi.RandomOracle.hashVec_spec, `Snarky.Kimchi.RandomOracle.hashVec_complete,
-    `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
-    `Snarky.Kimchi.EndoScalar.toFieldChecked'_complete,
     `Snarky.Kimchi.EndoScalar.toField_spec, `Snarky.Kimchi.EndoScalar.toField_complete,
     `Snarky.Kimchi.EndoMul.endoMul_spec, `Snarky.Kimchi.EndoMul.endoMul_complete,
+    `Snarky.Kimchi.EndoMul.endoInv_spec, `Snarky.Kimchi.EndoMul.endoInv_complete,
     `Snarky.Kimchi.varBaseMul_spec, `Snarky.Kimchi.varBaseMul_complete,
     `Snarky.Kimchi.scaleFast1_spec, `Snarky.Kimchi.scaleFast1_complete,
     `Snarky.Kimchi.scaleFast2_spec, `Snarky.Kimchi.scaleFast2_complete,

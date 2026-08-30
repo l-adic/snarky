@@ -232,10 +232,11 @@ Snarky.witness
 Snarky.witness_spec
 Snarky.witness_complete
 
--- Sized vectors (Types/Vector.lean): the kernel-reducible map and the split/chunk algebra
--- the bit gadgets index through.
+-- Sized vectors (Types/Vector.lean): the kernel-reducible map, the prefix at a definite
+-- length, and the split/chunk algebra the bit gadgets index through.
 Snarky.mapVec
 Snarky.splitVec
+Snarky.takeVec
 Snarky.chunkVec
 Snarky.getElem_mapVec
 Snarky.toList_mapVec
@@ -243,6 +244,7 @@ Snarky.mapVec_append
 Snarky.splitVec_append
 Snarky.append_splitVec
 Snarky.append_inj_iff
+Snarky.getElem_takeVec
 Snarky.getElem_chunkVec
 Snarky.chunkVec_flatten
 Snarky.flatten_chunkVec
@@ -395,13 +397,16 @@ Snarky.assertExactlyOne_complete
 Snarky.pack
 Snarky.pack_val
 Snarky.CVar.Scoped.pack
-Snarky.packPure
+Snarky.packLow
+Snarky.packLow_val
+Snarky.CVar.Scoped.packLow
+Snarky.natLsbVal_unpackPure
 Snarky.unpackPure
-Snarky.packPure_unpackPure
 Snarky.unpack
 Snarky.unpack_spec
 Snarky.unpack_complete
 Snarky.ToNat
+Snarky.instToNatZMod
 Snarky.LawfulToNat
 Snarky.SizedF
 Snarky.SizedF.Fits
@@ -419,23 +424,68 @@ Snarky.solve
 Snarky.inputVar
 Snarky.scoped_inputVar
 Snarky.reads_inputVar
+Snarky.bodyStart
+Snarky.mem_compile_of_mem_check
+Snarky.mem_compile_of_mem_body
 Snarky.solve_complete
+Snarky.Complete.imp
+Snarky.Complete.seq
+Snarky.Mono
+Snarky.Mono.and
+Snarky.Mono.readsAs
+Snarky.Complete.pure_of
 
 -- The exhibits (Examples/Point.lean): a two-field bundle carried through the whole
 -- interface — encoding, check, and mux — as the worked instance of `ofEquiv`.
 Snarky.Point
 Snarky.Point.equiv
 Snarky.instCircuitTypePoint
+Snarky.scoped_point
+Snarky.reads_point
 Snarky.instCheckedTypePoint
 Snarky.instIfThenElsePoint
 Snarky.instLawfulIfThenElsePoint
 
 -- The shifted scalar carriers (Types/Shifted.lean): the wrappers the varBaseMul ladders
--- consume, with their decodes.
+-- consume, with their decodes, plus the deployed Pasta codec — an `Fp` scalar carried
+-- `Type1` in `Fq`, encoded by field arithmetic and decoded through the same `fromShifted`
+-- operator read over the integers. The `simps` projections are simp-set surface: simp
+-- applies them definitionally, so no proof term records them.
 Snarky.Type1
 Snarky.Type1.fromShifted
+Snarky.Type1.equivCarrier
+Snarky.Type1.equivCarrier_apply
+Snarky.Type1.equivCarrier_symm_apply
+Snarky.instCircuitTypeType1
+Snarky.scoped_type1
+Snarky.reads_type1
+Snarky.Type1.toShifted
+Snarky.Type1.toScalarZ
+Snarky.Type1.toScalar
+Snarky.Type1.toScalar_toShifted
+Snarky.instCheckedTypeType1
+Snarky.Type1.zeroCarrier
+Snarky.Type1.toScalar_eq_zero_iff_dvd
+Snarky.Type1.toScalar_eq_zero_iff
 Snarky.SplitField
 Snarky.SplitField.fromShifted
+
+-- The curve-tagged point (Snarky/Kimchi/Circuit/CurvePoint.lean): the phantom tag a
+-- statement carries where its wire refinement is a genuine curve point, with the Vesta
+-- instantiation, the encoding, and the on-curve check whose rows make the tag real.
+Snarky.Kimchi.CurvePoint
+Snarky.Kimchi.CurvePoint.equivPoint
+Snarky.Kimchi.CurvePoint.equivPoint_apply
+Snarky.Kimchi.CurvePoint.equivPoint_symm_apply
+Snarky.Kimchi.VestaPoint
+Snarky.Kimchi.instCurvePointCircuitType
+Snarky.Kimchi.scoped_curvePoint
+Snarky.Kimchi.reads_curvePoint
+Snarky.Kimchi.CurvePoint.check
+Snarky.Kimchi.CurvePoint.check_spec
+Snarky.Kimchi.CurvePoint.check_complete
+Snarky.Kimchi.instCurvePointCheckedType
+Snarky.Kimchi.valid_curvePoint
 
 -- The kimchi data layer (Snarky/Kimchi/{UnionFind,Constraint/Types}.lean): the pure
 -- union-find and the row/state types the reduction emits into. `egUF` is the
@@ -558,9 +608,10 @@ Snarky.Kimchi.instCircuitTypeAddAux
 Snarky.Kimchi.instCheckedTypeAddAux
 Snarky.Kimchi.scoped_addAux
 Snarky.Kimchi.reads_addAux
-Snarky.Kimchi.OnCurve
+Snarky.Kimchi.OnCurveAs
 Snarky.Kimchi.OnCurveAt
-Snarky.Kimchi.OnCurve.mono
+Snarky.Kimchi.OnCurveAs.mono
+Snarky.Kimchi.Mono.onCurveAs
 Snarky.Kimchi.OnCurveAt.neg
 Snarky.Kimchi.OnCurveAt.congr_simp
 Snarky.Kimchi.Finiteness
@@ -624,18 +675,20 @@ Snarky.Kimchi.EndoScalar.toField
 Snarky.Kimchi.EndoScalar.toField_spec
 Snarky.Kimchi.EndoScalar.toField_complete
 Snarky.Kimchi.EndoScalar.toFieldChecked'
-Snarky.Kimchi.EndoScalar.toFieldChecked'_spec
-Snarky.Kimchi.EndoScalar.toFieldChecked'_complete
 
 -- The endomul gadget (Snarky/Kimchi/Circuit/EndoMul.lean): the ladder step, the gadget and
--- its inverse-direction wrapper, the law pair, and the curve dictionary the laws take —
+-- its inverse-direction wrapper, a law pair each, and the curve dictionary the laws take —
 -- with the deployed Pasta values, which are the discharge artifacts AND the exhibit that
 -- the dictionary is satisfiable.
 Snarky.Kimchi.endoMulRound
 Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
 Snarky.Kimchi.EndoMul.endoMul_spec
+Snarky.Kimchi.EndoMul.vesta_endoMul_read
+Snarky.Kimchi.EndoMul.vesta_endoMul_complete
 Snarky.Kimchi.EndoMul.endoMul_complete
+Snarky.Kimchi.EndoMul.endoInv_spec
+Snarky.Kimchi.EndoMul.endoInv_complete
 Snarky.Kimchi.HasEndo
 Snarky.Kimchi.HasEndo.pallas
 Snarky.Kimchi.HasEndo.vesta
@@ -645,10 +698,13 @@ Snarky.Kimchi.HasEndo.vesta
 -- carriers they split through, each with its law pair, and the curve dictionary the laws
 -- take.
 Snarky.Kimchi.HasCurve
+Snarky.Kimchi.HasCurve.vesta
 Snarky.Kimchi.scaleRound
 Snarky.Kimchi.VarBaseMulResult
 Snarky.Kimchi.varBaseMul
 Snarky.Kimchi.varBaseMul_spec
+Snarky.Kimchi.vesta_varBaseMul_read
+Snarky.Kimchi.vesta_varBaseMul_complete
 Snarky.Kimchi.varBaseMul_complete
 Snarky.Kimchi.splitField
 Snarky.Kimchi.joinField

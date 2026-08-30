@@ -64,8 +64,12 @@ instance [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c] :
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs _ _ _ := rfl
-  check_sat _ _ _ _ _ _ _ _ con hcon := by simp [build] at hcon
+  check_complete _ _ _ := Complete.pure
+
+/-- A point's coordinates carry no admissibility condition. -/
+@[simp] theorem valid_affinePoint [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    {p : AffinePoint F} :
+    CheckedType.Valid (F := F) (c := c) (var := AffinePoint (FVar F)) p := fun _ _ _ => trivial
 
 /-- A point bundle is in scope when its coordinates are. -/
 @[simp] theorem scoped_affinePoint {st : ProverState F} {p : AffinePoint (FVar F)} :
@@ -240,9 +244,31 @@ def OnCurveAt [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (V : Val
 open WeierstrassCurve.Affine in
 /-- …and in scope, so the same curve point is read at every later table. Carrying the
 pair is what keeps a multi-stage proof from rebuilding the point at each stage. -/
-def OnCurve [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
+def OnCurveAs [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) (st : ProverState F)
     (p : AffinePoint (FVar F)) (P : W.Point) : Prop :=
   CircuitType.Scoped (val := AffinePoint F) st p ∧ OnCurveAt W st.env.get p P
+
+open WeierstrassCurve.Affine in
+/-- Introduction: cells reading as coordinates known on the curve read as that point.
+This is how a consumer holding a `CheckedType`'s on-curve grant enters the curve
+vocabulary, without ever naming `Point.some` at the cells' own coordinates. -/
+theorem OnCurveAt.of_reads [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {V : Valuation F} {p : AffinePoint (FVar F)} {x y : F}
+    (hx : p.x.val V = x) (hy : p.y.val V = y) (h : W.Nonsingular x y) :
+    OnCurveAt W V p (Point.some x y h) := by
+  subst hx; subst hy; exact ⟨h, rfl⟩
+
+open WeierstrassCurve.Affine in
+/-- The curve point a reading names is unique, up to the cells' readings: two curve reads
+whose coordinates agree name the same point. This is the elimination a consumer wants
+where a circuit's `assertEqual` rows pin two results together. -/
+theorem OnCurveAt.eq [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {V : Valuation F} {p q : AffinePoint (FVar F)} {P Q : W.Point}
+    (h : OnCurveAt W V p P) (h' : OnCurveAt W V q Q)
+    (hx : p.x.val V = q.x.val V) (hy : p.y.val V = q.y.val V) : P = Q := by
+  obtain ⟨n, rfl⟩ := h
+  obtain ⟨n', rfl⟩ := h'
+  exact Kimchi.Gate.AddComplete.some_congr W n n' hx hy
 
 open WeierstrassCurve.Affine in
 /-- Negating the `y` coordinate reads as the negated curve point: under the short shape
@@ -263,10 +289,10 @@ theorem OnCurveAt.neg [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     exact ⟨trivial, by rw [CVar.val_negate_]; exact hneg⟩
 
 /-- A curve read survives the table's growth — with the same curve point. -/
-theorem OnCurve.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+theorem OnCurveAs.mono [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {st st' : ProverState F} {p : AffinePoint (FVar F)} {P : W.Point}
-    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurve W st p P) :
-    OnCurve W st' p P := by
+    (hnv : st.nv ≤ st'.nv) (hle : st.env.Le st'.env) (h : OnCurveAs W st p P) :
+    OnCurveAs W st' p P := by
   obtain ⟨hsc, n, rfl⟩ := h
   rw [scoped_affinePoint] at hsc
   refine ⟨scoped_affinePoint.mpr ⟨hsc.1.mono hnv, hsc.2.mono hnv⟩, ?_, ?_⟩
@@ -338,24 +364,40 @@ preserve them — and the witnessed columns are whatever the row constrains them
 
 /-! ## Completeness -/
 
+/-- A curve read is monotone — the `Mono` form, for a context that carries points. -/
+theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+    {p : AffinePoint (FVar F)} {P : W.Point} :
+    Snarky.Mono (F := F) fun st => OnCurveAs W st p P :=
+  fun _ _ hnv hle h => OnCurveAs.mono hnv hle h
+
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
 table, and the sealed point is scoped and reads as the operand. -/
 theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F)) (xv yv : F) :
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F))
+    (P : AffinePoint F) :
     Complete (F := F) (c := c)
-      (fun st => CircuitType.ReadsAs (val := F) st p.x xv ∧
-        CircuitType.ReadsAs (val := F) st p.y yv)
+      (fun st => CircuitType.ReadsAs (val := AffinePoint F) st p P)
       (sealPoint (c := c) p)
-      (fun r st' => CircuitType.ReadsAs (val := F) st' r.x xv ∧
-        CircuitType.ReadsAs (val := F) st' r.y yv) := by
-  rintro st ⟨hx, hy⟩
-  obtain ⟨ry, st₁, hrunY, hsatY, hry⟩ := sealVar_complete (c := c) p.y yv st hy
+      (fun r st' => CircuitType.ReadsAs (val := AffinePoint F) st' r P) := by
+  intro st hP
+  obtain ⟨hsc, hrd⟩ := hP
+  rw [scoped_affinePoint] at hsc
+  rw [reads_affinePoint] at hrd
+  have hx : CircuitType.ReadsAs (val := F) st p.x P.x :=
+    ⟨CircuitType.scoped_fvar.mpr hsc.1, CircuitType.reads_fvar.mpr hrd.1⟩
+  have hy : CircuitType.ReadsAs (val := F) st p.y P.y :=
+    ⟨CircuitType.scoped_fvar.mpr hsc.2, CircuitType.reads_fvar.mpr hrd.2⟩
+  obtain ⟨ry, st₁, hrunY, hsatY, hry⟩ := sealVar_complete (c := c) p.y P.y st hy
   obtain ⟨rx, st₂, hrunX, hsatX, hrx⟩ :=
-    sealVar_complete (c := c) p.x xv st₁ (hx.mono hrunY.nv_le hrunY.le)
-  exact ⟨⟨rx, ry⟩, st₂, hrunY.bind (hrunX.bind rfl), fun hnv hle =>
+    sealVar_complete (c := c) p.x P.x st₁ (hx.mono hrunY.nv_le hrunY.le)
+  refine ⟨⟨rx, ry⟩, st₂, hrunY.bind (hrunX.bind rfl), fun hnv hle =>
     Sat.bind hrunY (hsatY (Nat.le_trans hrunX.nv_le hnv) (hrunX.le.trans hle))
-      (Sat.bind hrunX (hsatX hnv hle) Sat.pure),
-    hrx, hry.mono hrunX.nv_le hrunX.le⟩
+      (Sat.bind hrunX (hsatX hnv hle) Sat.pure), ?_⟩
+  have hry' := hry.mono hrunX.nv_le hrunX.le
+  exact ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp hrx.1,
+      CircuitType.scoped_fvar.mp hry'.1⟩,
+    reads_affinePoint.mpr ⟨CircuitType.reads_fvar.mp hrx.2,
+      CircuitType.reads_fvar.mp hry'.2⟩⟩
 
 open WeierstrassCurve.Affine in
 /-- **`addFast`'s completeness.** From operands lying on the curve, with `y₁ ≠ 0` and —
@@ -371,14 +413,14 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (P Q : W.Point) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => OnCurve W st p1' P ∧ OnCurve W st p2' Q ∧
+      (fun st => OnCurveAs W st p1' P ∧ OnCurveAs W st p2' Q ∧
         P + P ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
       (addFast (c := KimchiConstraint F) fin p1' p2')
       (fun r st' => CircuitType.Scoped (val := AffinePoint F) st' r.p ∧
         (↑r.isInfinity : CVar F).Scoped st' ∧
-        (P + Q ≠ 0 → OnCurve W st' r.p (P + Q))) := by
+        (P + Q ≠ 0 → OnCurveAs W st' r.p (P + Q))) := by
   have hbase : Complete (F := F) (c := KimchiConstraint F)
-      (fun st => OnCurve W st p1' P ∧ OnCurve W st p2' Q ∧
+      (fun st => OnCurveAs W st p1' P ∧ OnCurveAs W st p2' Q ∧
         P + P ≠ 0 ∧ (fin = .checkFinite → P + Q ≠ 0))
       (addFast (c := KimchiConstraint F) fin p1' p2')
       (fun r st' => CircuitType.Scoped (val := AffinePoint F) st' r.p ∧
@@ -405,16 +447,27 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     rw [hvy1] at hy1ne
     rw [hvx1, hvy1, hvx2, hvy2] at hfin
     -- the sealed operands
-    obtain ⟨q1, st₁, hrunS1, hsatS1, hR1x, hR1y⟩ :=
-      sealPoint_complete (c := KimchiConstraint F) p1' x1 y1 st
-        ⟨⟨CircuitType.scoped_fvar.mpr hs1.1, CircuitType.reads_fvar.mpr hvx1⟩,
-          ⟨CircuitType.scoped_fvar.mpr hs1.2, CircuitType.reads_fvar.mpr hvy1⟩⟩
-    obtain ⟨q2, st₂, hrunS2, hsatS2, hR2x, hR2y⟩ :=
-      sealPoint_complete (c := KimchiConstraint F) p2' x2 y2 st₁
-        ⟨⟨CircuitType.scoped_fvar.mpr (hs2.1.mono hrunS1.nv_le),
-            CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hrunS1.le hs2.1, hvx2])⟩,
-          ⟨CircuitType.scoped_fvar.mpr (hs2.2.mono hrunS1.nv_le),
-            CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hrunS1.le hs2.2, hvy2])⟩⟩
+    obtain ⟨q1, st₁, hrunS1, hsatS1, hR1⟩ :=
+      sealPoint_complete (c := KimchiConstraint F) p1' ⟨x1, y1⟩ st
+        ⟨scoped_affinePoint.mpr ⟨hs1.1, hs1.2⟩, reads_affinePoint.mpr ⟨hvx1, hvy1⟩⟩
+    obtain ⟨q2, st₂, hrunS2, hsatS2, hR2⟩ :=
+      sealPoint_complete (c := KimchiConstraint F) p2' ⟨x2, y2⟩ st₁
+        ⟨scoped_affinePoint.mpr ⟨hs2.1.mono hrunS1.nv_le, hs2.2.mono hrunS1.nv_le⟩,
+          reads_affinePoint.mpr
+            ⟨by rw [CVar.val_of_le hrunS1.le hs2.1, hvx2],
+              by rw [CVar.val_of_le hrunS1.le hs2.2, hvy2]⟩⟩
+    have hR1x : CircuitType.ReadsAs (val := F) st₁ q1.x x1 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR1.1).1,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR1.2).1⟩
+    have hR1y : CircuitType.ReadsAs (val := F) st₁ q1.y y1 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR1.1).2,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR1.2).2⟩
+    have hR2x : CircuitType.ReadsAs (val := F) st₂ q2.x x2 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR2.1).1,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR2.2).1⟩
+    have hR2y : CircuitType.ReadsAs (val := F) st₂ q2.y y2 :=
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hR2.1).2,
+        CircuitType.reads_fvar.mpr (reads_affinePoint.mp hR2.2).2⟩
     have hq1x : q1.x.Scoped st₁ := CircuitType.scoped_fvar.mp hR1x.1
     have hq1y : q1.y.Scoped st₁ := CircuitType.scoped_fvar.mp hR1y.1
     have hq2x : q2.x.Scoped st₂ := CircuitType.scoped_fvar.mp hR2x.1
@@ -432,6 +485,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     obtain ⟨sameXU, st₃, hrunX, hsatX, hnvX, hleX, hscX, hrdX⟩ :=
       witness_complete (c := KimchiConstraint F) (val := UnChecked Bool)
         (addFast.sameXAdvice q1 q2) (st := st₂) (v := ⟨decide (x1 = x2)⟩)
+        (by simp)
         (by simp [addFast.sameXAdvice, AsProver.readCVar_run hq1x₂,
           AsProver.readCVar_run hq2x, e1x, e2x])
     have hrdSX : CircuitType.Reads (val := Bool) st₃.env.get sameXU.val (decide (x1 = x2)) :=
@@ -475,6 +529,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
           witness_complete (c := KimchiConstraint F) (val := UnChecked Bool)
             (addFast.infAdvice q1 q2 sameXU.val) (st := st₃)
             (v := ⟨decide (x1 = x2) && !decide (y1 = y2)⟩)
+            (by simp)
             (by simp [addFast.infAdvice, readVar_run hscSX, hvalSX,
               AsProver.readCVar_run hq1y₃, AsProver.readCVar_run hq2y₃, e1y₃, e2y₃])
         exact ⟨r.val, st₄, hrun.bind rfl, fun hnv' hle' =>
@@ -501,6 +556,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
         (v := ⟨if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0,
                if x1 = x2 then 0 else (x2 - x1)⁻¹,
                if x1 = x2 then 3 * x1 * x1 / (2 * y1) else (y2 - y1) / (x2 - x1)⟩)
+        (by simp)
         (by
           by_cases h : y1 = y2 <;> by_cases h2 : x1 = x2 <;>
             simp [addFast.auxAdvice, readVar_run hscSX₄, hvalSX₄,
@@ -523,6 +579,7 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
       witness_complete (c := KimchiConstraint F) (val := AffinePoint F)
         (addFast.sumAdvice q1 q2 aux.s) (st := st₅)
         (v := ⟨sv * sv - (x1 + x2), sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩)
+        (by simp)
         (by
           simp [addFast.sumAdvice, AsProver.readCVar_run hscA.2.2,
             AsProver.readCVar_run hq1x₅, AsProver.readCVar_run hq2x₅,

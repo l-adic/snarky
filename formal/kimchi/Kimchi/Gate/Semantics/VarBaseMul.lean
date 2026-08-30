@@ -1,3 +1,4 @@
+import Kimchi.Bits
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.Semantics.AddComplete
 import Pasta.Shifted
@@ -1251,6 +1252,12 @@ conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the 
 def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
+/-- `0` is a forbidden residue: a scalar the order divides is in the band — the
+degenerate final `[s]·T = 0`. -/
+theorem mem_forbiddenValues_of_dvd (order : ℕ) {s : ℤ} (h : (order : ℤ) ∣ s) :
+    s ∈ forbiddenValues order :=
+  ⟨0, by decide, by simpa using h⟩
+
 /-- `1` is a forbidden residue: a scalar `≡ 1 (mod order)` is in the band. The
 membership an off-band caller inverts to keep its final accumulator away from the
 base (`[s]·T = T` forces `order ∣ s − 1`). -/
@@ -1583,10 +1590,6 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     (hs : s = gateLadder g (5 * m)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
-  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
-      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
-    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
   -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
   have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
     intro k hk
@@ -1612,12 +1615,12 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
       obtain ⟨hbx, hby⟩ := hbase j hj'
       have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
       have hTeq_j : T = Point.some _ _ hTns_j := by
-        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+        rw [hTeq]; exact AddComplete.some_congr c hTns hTns_j hbx.symm hby.symm
       -- transport the threaded input accumulator to row `j`'s input column
       obtain ⟨hx0, hy0⟩ := haccP j hj'
       have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
       have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
-        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+        rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨hNDj, ha5ns, ha5eq⟩ :=
         gate_block_produce c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
           (fun ℓ _ => ⟨(hND (5 * j + ℓ) (by omega)).1, (hND (5 * j + ℓ) (by omega)).2.1⟩)
@@ -1653,10 +1656,6 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
         ∧ (∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
         ∧ (∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
         ∧ P 0 = (2 : ℤ) • T := by
-  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
-  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
-      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
-    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
   -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
   have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
     intro k hk
@@ -1682,12 +1681,12 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
       obtain ⟨hbx, hby⟩ := hbase j hj'
       have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
       have hTeq_j : T = Point.some _ _ hTns_j := by
-        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+        rw [hTeq]; exact AddComplete.some_congr c hTns hTns_j hbx.symm hby.symm
       -- transport the threaded input accumulator to row `j`'s input column
       obtain ⟨hx0, hy0⟩ := haccP j hj'
       have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
       have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
-        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+        rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨nd, a1, a2, a3, a4, a5, ha5eq⟩ :=
         gate_block_full c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
           (fun ℓ _ => hND (5 * j + ℓ) (by omega))
@@ -1708,13 +1707,15 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
   have gs := (hkf m le_rfl).2
   refine ⟨gs, fun k => if hk : k ≤ m then Point.some _ _ (kf k hk) else 0, ?_, ?_, ?_, ?_⟩
   · intro i hi
-    exact hTeq.trans (some_congr hTns (gs i hi).hT (hbase i hi).1.symm (hbase i hi).2.symm)
+    exact hTeq.trans (AddComplete.some_congr c hTns (gs i hi).hT
+      (hbase i hi).1.symm (hbase i hi).2.symm)
   · intro i hi
     simp only [dif_pos (le_of_lt hi)]
-    exact some_congr (kf i (le_of_lt hi)) (gs i hi).a0 (haccP i hi).1.symm (haccP i hi).2.symm
+    exact AddComplete.some_congr c (kf i (le_of_lt hi)) (gs i hi).a0
+      (haccP i hi).1.symm (haccP i hi).2.symm
   · intro i hi
     simp only [dif_pos (Nat.succ_le_of_lt hi)]
-    exact some_congr (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
+    exact AddComplete.some_congr c (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
   · simp only [dif_pos (Nat.zero_le m)]
     rw [(hkf 0 (Nat.zero_le m)).1]; simp only [Nat.mul_zero, gateLadder_zero]
 
@@ -1824,6 +1825,27 @@ def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
 `bitsRegister` casts on genuine bits, and what the forbidden-band condition speaks
 about through the Type1 unshift. -/
 def bitsVal (bs : List F) : ℤ := bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
+
+/-- The MSB-first ℤ fold of the cells is the ℕ value of the decided cells, LSB-first —
+the one place the ladder's register orientation meets the bit vocabulary a canonicity
+lock speaks in. -/
+theorem bitsVal_eq_natLsbVal :
+    ∀ l : List F, bitsVal l = (natLsbVal ((l.map fun b => decide (b = 1)).reverse) : ℤ) := by
+  intro l
+  induction l using List.reverseRecOn with
+  | nil => rfl
+  | append_singleton l v ih =>
+    have h1 : bitsVal (l ++ [v]) = 2 * bitsVal l + if v = 1 then 1 else 0 := by
+      simp [bitsVal, List.foldl_append]
+    rw [h1, ih, List.map_append, List.map_singleton, List.reverse_append,
+      List.reverse_singleton, List.singleton_append, natLsbVal]
+    by_cases hv : v = 1
+    · simp only [hv, if_true, decide_true, Bool.toNat_true]
+      push_cast
+      ring
+    · simp only [hv, if_false, decide_false, Bool.toNat_false]
+      push_cast
+      ring
 
 theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
     runBits g (m + 1) = runBits g m
@@ -1937,53 +1959,6 @@ theorem runBits_congr (g g' : ℕ → Witness F) (m : ℕ)
   | succ k ih =>
     rw [runBits_succ, runBits_succ, ih (fun i hi => h i (by omega)),
       h k (by omega)]
-
-/-- The ℤ-decode of a boolean bit list is nonnegative and bounded by its width. -/
-theorem bitsVal_lt (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
-    bitsVal l < 2 ^ l.length ∧ 0 ≤ bitsVal l := by
-  suffices h : ∀ z : ℤ, 0 ≤ z →
-      l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z
-        < 2 ^ l.length * (z + 1) ∧
-      z ≤ l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z by
-    obtain ⟨h1, h2⟩ := h 0 le_rfl
-    exact ⟨by simpa [bitsVal] using h1, by simpa [bitsVal] using h2⟩
-  induction l with
-  | nil => intro z hz; simp
-  | cons b t ih =>
-    intro z hz
-    have hbit : (if b = 1 then (1 : ℤ) else 0) ≤ 1
-        ∧ 0 ≤ (if b = 1 then (1 : ℤ) else 0) := by
-      split <;> norm_num
-    have hz' : 0 ≤ 2 * z + if b = 1 then (1 : ℤ) else 0 := by omega
-    obtain ⟨ih1, ih2⟩ := ih (fun x hx => hb x (List.mem_cons_of_mem _ hx))
-      (2 * z + if b = 1 then 1 else 0) hz'
-    simp only [List.foldl_cons, List.length_cons]
-    constructor
-    · calc List.foldl _ (2 * z + if b = 1 then 1 else 0) t
-          < 2 ^ t.length * ((2 * z + if b = 1 then 1 else 0) + 1) := ih1
-        _ ≤ 2 ^ (t.length + 1) * (z + 1) := by
-            rw [pow_succ]
-            nlinarith [hbit.1, hbit.2,
-              pow_pos (show (0 : ℤ) < 2 by norm_num) t.length]
-    · omega
-
-/-- A zero prefix contributes nothing to the ℤ-decode. -/
-theorem bitsVal_drop_of_zeros (l : List F) (k : ℕ)
-    (hz : ∀ b ∈ l.take k, b = 0) : bitsVal l = bitsVal (l.drop k) := by
-  induction k generalizing l with
-  | zero => simp
-  | succ j ih =>
-    cases l with
-    | nil => simp
-    | cons b t =>
-      have hb0 : b = 0 := hz b (by simp)
-      have hrest : ∀ x ∈ t.take j, x = 0 := fun x hx =>
-        hz x (by
-          rw [List.take_succ_cons]
-          exact List.mem_cons_of_mem _ hx)
-      rw [List.drop_succ_cons, ← ih t hrest]
-      subst hb0
-      simp [bitsVal]
 
 /-- On boolean bits the field fold is the cast of the ℤ-decode. -/
 theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :

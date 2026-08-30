@@ -25,6 +25,14 @@ theorem IsPoint.coords_eq {W : WeierstrassCurve.Affine F} {x y x' y' : F} {P : W
   simp only [WeierstrassCurve.Affine.Point.some.injEq] at heq
   exact heq
 
+/-- `Point.some` congruence over *both* coordinates: equal `x` and `y` values give equal
+    points, the nonsingularity proofs being irrelevant. The one point congruence — every
+    layer above transports along coordinate identities through it. -/
+theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
+    (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
+    WeierstrassCurve.Affine.Point.some _ _ h = WeierstrassCurve.Affine.Point.some _ _ h' := by
+  subst hx; subst hy; rfl
+
 variable {F : Type*}
 
 section Faithfulness

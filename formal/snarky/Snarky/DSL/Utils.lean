@@ -75,6 +75,7 @@ private theorem sealVar.core_complete [Field F] [DecidableEq F] [BasicSystem F c
   simp only [sealVar.core]
   obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
     witness_complete (c := c) (readVar (val := F) x) (st := st) (v := x.val st.env.get)
+      (by simp)
       (by simp [hx])
   have hr : r.Scoped st₁ := CircuitType.scoped_fvar.mp hscope
   have hval : r.val st₁.env.get = x.val st.env.get := (CircuitType.reads_iff.mp hreads).2

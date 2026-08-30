@@ -93,12 +93,18 @@ theorem reads_inputVar [Add F] [Mul F] [Zero F] [A : CircuitType F a avar] (inpu
 /-! ## The seam -/
 
 open CircuitType in
-/-- A circuit whose body is complete solves: the run succeeds, the table it produces
-satisfies every compiled row, and the compiled system's two bundles — the body's output
-and the public one — both read as the value the solve returned. -/
+/-- A circuit whose body is complete solves at an admissible public input: the run
+succeeds, the table it produces satisfies every compiled row, and the compiled system's
+two bundles — the body's output and the public one — both read as the value the solve
+returned, with the input bundle still reading the value the solve was given.
+Admissibility (`CheckedType.Valid`) is the input type's own rows read at the value, so the
+statement covers exactly the inputs the compiled system accepts and assumes nothing else
+about the prover. The input reading is what lets a soundness statement about satisfying
+valuations be applied to the table this produces. -/
 theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] [A : CircuitType F a avar] [CheckedType F c a avar]
     [B : CircuitType F b bvar] {main : avar → CircuitM F c bvar} (input : a)
+    (hinput : CheckedType.Valid (F := F) (c := c) (var := avar) input)
     (hmain : Complete (F := F) (c := c)
       (fun st => Scoped (val := a) st (inputVar (F := F) (a := a)) ∧
         Reads st.env.get (inputVar (F := F) (a := a)) input)
@@ -108,17 +114,23 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       solve (a := a) (b := b) main input = .ok (outVal, env) ∧
       (∀ con ∈ (compile (a := a) (b := b) main).constraints,
         ConstraintHolds.Holds env.get con) ∧
+      Reads env.get (inputVar (F := F) (a := a)) input ∧
       Reads env.get (compile (a := a) (b := b) main).result.1 outVal ∧
       Reads env.get (compile (a := a) (b := b) main).result.2 outVal := by
   have hav := scoped_inputVar (F := F) (avar := avar) input
   have hrv := reads_inputVar (F := F) (avar := avar) input
-  -- the body
-  obtain ⟨out, st₁, hrun₁, hsat₁, hscope₁, v, hreads₁⟩ := hmain _ ⟨hav, hrv⟩
+  -- the input bundle's check, which may allocate auxiliaries of its own
+  obtain ⟨_, st₀, hcheck, hsat₀, _⟩ :=
+    CheckedType.check_complete (c := c) (val := a) (inputVar (F := F) (a := a)) input hinput
+      (seed (F := F) (avar := avar) input) ⟨hav, hrv⟩
+  -- the body, from where the check left off
+  obtain ⟨out, st₁, hrun₁, hsat₁, hscope₁, v, hreads₁⟩ :=
+    hmain st₀ ⟨hav.mono hcheck.nv_le, hrv.of_le hav hcheck.le⟩
   -- the public bundle
   obtain ⟨pub, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscopeP, hreadsP⟩ :=
     witness_complete (c := c) (val := UnChecked b)
       (do let x ← readVar (val := b) out; pure (UnChecked.mk x)) (st := st₁)
-      (v := UnChecked.mk v)
+      (v := UnChecked.mk v) (by simp)
       (by
         simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run hscope₁,
           (reads_iff.mp hreads₁).2]
@@ -130,16 +142,13 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     assertEq_complete (c := c) (val := b) out pub.val v st₂
       ⟨Scoped.mono hnv₂ hscope₁, hscopeP', hreads₁.of_le hscope₁ hle₂, hreadsP'⟩
   -- the whole run
-  have hcheck : Runs (CheckedType.check (c := c) (val := a) (inputVar (F := F) (a := a)))
-      (seed (F := F) (avar := avar) input) PUnit.unit (seed (F := F) (avar := avar) input) :=
-    CheckedType.check_runs _ _ _
   have hrun : Runs (compileBody (a := a) (b := b) main)
       (seed (F := F) (avar := avar) input) (out, pub.val) st₃ :=
     hcheck.bind (hrun₁.bind (hrun₂.bind (hrun₃.bind rfl)))
   have hle₃ : st₂.env.Le st₃.env := hrun₃.le
   have hres : ((out, pub.val) : bvar × bvar) = (compile (a := a) (b := b) main).result :=
     (prove_build_agrees hrun).1
-  refine ⟨v, st₃.env, ?_, ?_, ?_, ?_⟩
+  refine ⟨v, st₃.env, ?_, ?_, ?_, ?_, ?_⟩
   · unfold solve
     rw [show prove (compileBody (a := a) (b := b) main) (seed (F := F) (avar := avar) input).nv
         (seed (F := F) (avar := avar) input).env = .ok (st₃.out (out, pub.val)) from hrun]
@@ -151,14 +160,50 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
     rw [readVar_run hout,
       (reads_iff.mp ((hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃)).2]
   · exact Sat.bind hcheck
-      (fun con hcon => CheckedType.check_sat _ _ _ _ input hrun.le hav hrv con hcon)
+      (hsat₀ (hrun₁.nv_le.trans (hnv₂.trans hrun₃.nv_le))
+        (hrun₁.le.trans (hle₂.trans hle₃)))
       (Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hle₃))
         (Sat.bind hrun₂ (hsat₂ hrun₃.nv_le hle₃)
           (Sat.bind hrun₃ (hsat₃ (Nat.le_refl _) (Assignments.Le.refl _)) Sat.pure)))
+  · exact hrv.of_le hav (hcheck.le.trans (hrun₁.le.trans (hle₂.trans hle₃)))
   · rw [← hres]
     exact (hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃
   · rw [← hres]
     exact hreadsP'.of_le hscopeP' hle₃
+
+/-- The counter the body starts from: past the input slots, and past whatever the input
+bundle's own check allocated. -/
+def bodyStart [Field F] [BasicSystem F c] [A : CircuitType F a avar]
+    [CheckedType F c a avar] : Nat :=
+  (build (CheckedType.check (F := F) (c := c) (val := a)
+    (inputVar (F := F) (a := a))) A.size).nextVar
+
+/-- The compiled system's rows contain the input check's, built at the input slots: the
+whole-circuit program pays the check first. A valuation satisfying the compiled system
+therefore satisfies the check's rows, and so — through `CheckedType.check_sound` — whatever
+the input type's own rows force about the bundle. -/
+theorem mem_compile_of_mem_check [Field F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
+    {main : avar → CircuitM F c bvar} {con : c}
+    (h : con ∈ (build (CheckedType.check (F := F) (c := c) (val := a)
+      (inputVar (F := F) (a := a))) A.size).constraints) :
+    con ∈ (compile (a := a) (b := b) main).constraints := by
+  rw [compile, compileBody, build_bind, List.mem_append]
+  exact Or.inl h
+
+/-- The compiled system's rows contain the body's, built from `bodyStart`: the
+whole-circuit program runs the input check, then the body, then the output binding, and
+`build_bind` concatenates their rows in that order. A valuation satisfying the compiled
+system therefore satisfies the body's own rows — the direction a soundness triple needs. -/
+theorem mem_compile_of_mem_body [Field F] [DecidableEq F] [BasicSystem F c]
+    [A : CircuitType F a avar] [CheckedType F c a avar] [CircuitType F b bvar]
+    {main : avar → CircuitM F c bvar} {con : c}
+    (h : con ∈ (build (main (inputVar (F := F) (a := a)))
+      (bodyStart (F := F) (c := c) (a := a) (avar := avar))).constraints) :
+    con ∈ (compile (a := a) (b := b) main).constraints := by
+  rw [bodyStart] at h
+  rw [compile, compileBody, build_bind, List.mem_append]
+  exact Or.inr (by rw [build_bind, List.mem_append]; exact Or.inl h)
 
 attribute [irreducible] inputVar compileBody compile solve
 

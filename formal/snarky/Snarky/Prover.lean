@@ -319,6 +319,22 @@ def CircuitType.Reads [Add F] [Mul F] [inst : CircuitType F val var]
     (V : Valuation F) (v : var) (a : val) : Prop :=
   mapVec (·.val V) (inst.varToFields v) = inst.valueToFields a
 
+/-- A value's constant bundle: its encoding, materialized as constant expressions. Every
+value has one, and it reads as that value at every table — which is what makes
+admissibility (`CheckedType.Valid`) readable off a former factor by factor. -/
+def CircuitType.constVar [inst : CircuitType F val var] (a : val) : var :=
+  inst.fieldsToVar (mapVec CVar.const (inst.valueToFields a))
+
+/-- The constant bundle reads as its value. -/
+theorem CircuitType.reads_constVar [Add F] [Mul F] [inst : CircuitType F val var]
+    (V : Valuation F) (a : val) :
+    CircuitType.Reads V (CircuitType.constVar (F := F) (var := var) a) a := by
+  unfold CircuitType.Reads CircuitType.constVar
+  rw [inst.var_roundTrip]
+  ext i hi
+  simp only [getElem_mapVec]
+  rfl
+
 /-- A bundle read: in scope, and reading as this value. The two travel as one — at any
 later table the same bundle reads the same value — which is what a multi-stage
 completeness proof carries from stage to stage. -/
@@ -576,6 +592,60 @@ theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F
     Sat (pure a : CircuitM F c α) st stf := by
   intro con hcon
   simp [build] at hcon
+
+/-- A state predicate that survives the table's growth. The ambient context of a
+multi-stage completeness proof is one of these, built up conjunct by conjunct. -/
+def Mono (P : ProverState F → Prop) : Prop :=
+  ∀ st st' : ProverState F, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st'
+
+/-- Conjunction of monotone facts is monotone — how a context accumulates. -/
+theorem Mono.and [Zero F] {P Q : ProverState F → Prop} (hP : Mono (F := F) P)
+    (hQ : Mono (F := F) Q) : Mono (F := F) fun st => P st ∧ Q st :=
+  fun _ _ hnv hle h => ⟨hP _ _ hnv hle h.1, hQ _ _ hnv hle h.2⟩
+
+/-- A reading is monotone. -/
+theorem Mono.readsAs [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F val var]
+    {v : var} {a : val} : Mono (F := F) fun st => CircuitType.ReadsAs st v a :=
+  fun _ _ hnv hle h => h.mono hnv hle
+
+/-- Sequencing that keeps what it had. The tail runs from everything the head established
+AND everything the head's own precondition already guaranteed — so a multi-stage proof
+never names its context: the context IS the precondition, and it accumulates one conjunct
+per stage. The monotone hypothesis is what lets the precondition cross the head's run. -/
+theorem Complete.seq [Zero F] [ConstraintHolds F c] {β : Type v}
+    {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
+    {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
+    (hpre : Mono (F := F) pre) (hg : Complete pre g mid)
+    (hk : ∀ a, Complete (fun st => pre st ∧ mid a st) (k a) post) :
+    Complete pre (g >>= k) post := by
+  intro st hpre₀
+  obtain ⟨a, st₁, hrun₁, hsat₁, hmid⟩ := hg st hpre₀
+  obtain ⟨b, st₂, hrun₂, hsat₂, hpost⟩ :=
+    hk a st₁ ⟨hpre _ _ hrun₁.nv_le hrun₁.le hpre₀, hmid⟩
+  exact ⟨b, st₂, hrun₁.bind hrun₂, fun hnv hle =>
+    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+      (hsat₂ hnv hle), hpost⟩
+
+/-- The rule of consequence: strengthen the precondition, weaken the postcondition. -/
+theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F → Prop}
+    {g : CircuitM F c α} {post post' : α → ProverState F → Prop}
+    (hpre : ∀ st, pre' st → pre st) (hpost : ∀ a st, post a st → post' a st)
+    (h : Complete pre g post) : Complete pre' g post' := by
+  intro st hst
+  obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st (hpre st hst)
+  exact ⟨a, st₁, hrun, hsat, hpost a st₁ hp⟩
+
+/-- `pure` at a postcondition the entry state already satisfies — the tail of a `bind`
+chain, where the value is in hand and nothing more is emitted. -/
+theorem Complete.pure_of [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
+    {a : α} {post : α → ProverState F → Prop} (h : ∀ st, pre st → post a st) :
+    Complete pre (pure a : CircuitM F c α) post :=
+  fun st hst => ⟨a, st, rfl, fun _ _ => Sat.pure, h st hst⟩
+
+/-- A program that emits no rows and allocates nothing is complete from every state. -/
+theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop} {a : α} :
+    Complete pre (pure a : CircuitM F c α) fun _ _ => True :=
+  fun st _ => ⟨a, st, rfl, fun _ _ => Sat.pure, trivial⟩
 
 /-- `addConstraint`'s one row is satisfied exactly by its identity — the row obligation
 is the caller's contribution. -/

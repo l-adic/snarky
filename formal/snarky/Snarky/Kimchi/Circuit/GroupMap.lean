@@ -299,6 +299,7 @@ private theorem sqrtFlagged_complete [Field F] [DecidableEq F] [BasicSystem F c]
   obtain ⟨isQR, st₁, hrun₁, hsat₁, hnv₁, hle₁, hsc₁, hrd₁⟩ :=
     witness_complete (c := c) (val := Bool) (isQRWit sqrtF x) (st := st)
       (v := (sqrtF xv).isSome)
+      (by simp)
       (by
         simp only [isQRWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hscx, hvx, Except.bind]
@@ -331,6 +332,7 @@ private theorem sqrtFlagged_complete [Field F] [DecidableEq F] [BasicSystem F c]
   obtain ⟨sqrtVal, st₃, hrun₃, hsat₃, hnv₃, hle₃, hsc₃, hrd₃⟩ :=
     witness_complete (c := c) (val := F) (sqrtWit sqrtF xOrMx) (st := st₂)
       (v := (sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0)
+      (by simp)
       (by
         simp only [sqrtWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hsel'.1, hsel'.2, Except.bind]

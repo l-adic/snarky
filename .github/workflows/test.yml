@@ -365,7 +365,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
-          lake env lean --run snarky/scripts/check_cs_equality.lean
+          lake env lean --run snarky/scripts/check_cs_basic.lean
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

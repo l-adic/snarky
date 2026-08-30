@@ -83,6 +83,16 @@ structure HasCurve (F : Type) [Field F] [DecidableEq F] where
   /-- The field does not have characteristic `2`. -/
   two_ne : (2 : F) ≠ 0
 
+open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
+/-- The dictionary at deployed Vesta — the curve the Schnorr statement's points live on
+and the ladder's base group. -/
+@[reducible] def HasCurve.vesta : HasCurve Fq where
+  W := Vesta.curve.toAffine
+  short := ⟨rfl, rfl, rfl, rfl⟩
+  prime := Fact.out
+  odd := by rw [vesta_card]; decide
+  two_ne := by decide
+
 /-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
 dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
 condition on the scalar), OR the one-wrap band holds and the scalar's Type1 decode
@@ -93,6 +103,19 @@ def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
   3 * 2 ^ L ≤ d.W.order ∨
     (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
       z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
+
+open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
+/-- At Vesta, a `Type1` carrier off the ladder's forbidden band is in the one-wrap
+regime: the deployed order sits in the band and is `1 mod 4`. -/
+private theorem vesta_ladderRegime (t : Type1 Fq)
+    (hband : t.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    HasCurve.vesta.LadderRegime 255 t.toScalarZ := by
+  have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+  refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
+  · decide
+  · decide
+  · decide
+  · exact hband
 
 open WeierstrassCurve.Affine in
 /-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
@@ -313,6 +336,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   obtain ⟨nAcc, t0, R0, S0, N0, E0, C0, D0⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F) (nAccWit acc.2 bs) (st := st)
       (v := W.nPrime)
+      (by simp)
       (by
         simp only [nAccWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run han,
           AsProver.readCVar_run (hb 0 (by omega)), AsProver.readCVar_run (hb 1 (by omega)),
@@ -327,7 +351,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 0
   obtain ⟨w0, t1, R1, S1, N1, E1, C1, D1⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[0]'(by omega)) ⟨acc.1.x, acc.1.y⟩) (st := t0)
+      (bitWit base (bs[0]'(by omega)) ⟨acc.1.x, acc.1.y⟩) (st := t0) (by simp)
       (v := (W.s0, W.s0 * W.s0,
         2 * W.y0 / (2 * W.x0 + W.xT - W.s0 * W.s0) - W.s0, W.x1, W.y1))
       (by
@@ -347,7 +371,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 1
   obtain ⟨w1, t2, R2, S2, N2, E2, C2, D2⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩) (st := t1)
+      (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩) (st := t1) (by simp)
       (v := (W.s1, W.s1 * W.s1,
         2 * W.y1 / (2 * W.x1 + W.xT - W.s1 * W.s1) - W.s1, W.x2, W.y2))
       (by
@@ -367,7 +391,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 2
   obtain ⟨w2, t3, R3, S3, N3, E3, C3, D3⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩) (st := t2)
+      (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩) (st := t2) (by simp)
       (v := (W.s2, W.s2 * W.s2,
         2 * W.y2 / (2 * W.x2 + W.xT - W.s2 * W.s2) - W.s2, W.x3, W.y3))
       (by
@@ -387,7 +411,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 3
   obtain ⟨w3, t4, R4, S4, N4, E4, C4, D4⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩) (st := t3)
+      (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩) (st := t3) (by simp)
       (v := (W.s3, W.s3 * W.s3,
         2 * W.y3 / (2 * W.x3 + W.xT - W.s3 * W.s3) - W.s3, W.x4, W.y4))
       (by
@@ -407,7 +431,7 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
   -- bit step 4
   obtain ⟨w4, t5, R5, S5, N5, E5, C5, D5⟩ :=
     witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩) (st := t4)
+      (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩) (st := t4) (by simp)
       (v := (W.s4, W.s4 * W.s4,
         2 * W.y4 / (2 * W.x4 + W.xT - W.s4 * W.s4) - W.s4, W.x5, W.y5))
       (by
@@ -674,9 +698,9 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
       (roundBits V rounds).length = 5 * pref.length ∧
       fin.2.val V = bitsRegister (roundBits V rounds) ∧
       ∀ _ : d.LadderRegime (5 * pref.length)
-          (2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1),
+          (Pasta.Shifted.unshiftType1 (5 * pref.length) (bitsVal (roundBits V rounds))),
         OnCurveAt d.W V fin.1
-          ((2 * bitsVal (roundBits V rounds) + 2 ^ (5 * pref.length) + 1) • T) := by
+          ((Pasta.Shifted.unshiftType1 (5 * pref.length) (bitsVal (roundBits V rounds))) • T) := by
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
@@ -765,7 +789,9 @@ private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuat
     · rw [← hlen] at hregime ⊢
       simp only [HasCurve.LadderRegime] at hregime
       have hs : gateLadder g (5 * l.length)
-          = 2 * bitsVal (roundBits V (r₀ :: rs)) + 2 ^ (5 * l.length) + 1 := by
+          = Pasta.Shifted.unshiftType1 (5 * l.length)
+            (bitsVal (roundBits V (r₀ :: rs))) := by
+        rw [Pasta.Shifted.unshiftType1]
         rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
           Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hbits]
       obtain ⟨hfin', hpt, -⟩ :=
@@ -856,26 +882,28 @@ private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (F
     obtain ⟨r, tail, mid, rfl, hg, hrest⟩ := h
     exact ⟨r, tail, mid, rfl, hg.1, ChainAt.threads hrest⟩
 
+
 end VarBaseMul
 
 open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness.** Any satisfying valuation reads the result as the base multiplied by
-the Type1 decode of the scalar's own bits — under the ladder's regime, which is what
-prices the ladder's non-degeneracy. -/
+/-- **Soundness.** Any satisfying valuation reads the result's cells as bits whose LSB-first
+value the scalar reads as, and the result as the base multiplied by that value's Type1
+decode — under the ladder's regime, which is what prices the ladder's non-degeneracy. -/
 theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
     ⦃⌜True⌝⦄
     varBaseMul (c := Builder V (KimchiConstraint F)) n chunks base scalar
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
-      ∃ bits : List F,
-        (∀ b ∈ bits, b = 0 ∨ b = 1) ∧ bits.length = 5 * chunks ∧
-        bits = ((r.lsbBits.toList.take (5 * chunks)).reverse).map (·.val V) ∧
-        scalar.val.val V = Kimchi.Gate.VarBaseMul.bitsRegister bits ∧
+      ∃ bs : Vector Bool (5 * chunks),
+        (∀ i (hi : i < 5 * chunks),
+          (r.lsbBits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i]) ∧
+        scalar.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : F) ∧
         ∀ _ : d.LadderRegime (5 * chunks)
-            (2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1),
+            (Pasta.Shifted.unshiftType1 (5 * chunks) (Kimchi.natLsbVal bs.toList : ℤ)),
           OnCurveAt d.W V r.g
-            ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)⌝⦄ := by
+            ((Pasta.Shifted.unshiftType1 (5 * chunks)
+              (Kimchi.natLsbVal bs.toList : ℤ)) • T)⌝⦄ := by
   have hloop := fun (b : AffinePoint (FVar F)) =>
     mapAccumM_spec (V := V) (c := KimchiConstraint F) (scaleRound b) (VarBaseMul.Threads b)
       (fun st bs => VarBaseMul.scaleRound_spec b st bs)
@@ -912,12 +940,51 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
       (Vector.ofFn fun j : Fin 5 =>
         ((bits.toList.take (5 * chunks)).reverse).getD (5 * i + j.1)
           (CVar.const 0))).length = chunks := by simp
-  refine ⟨VarBaseMul.roundBits V loop.1, hbool, ?_, hbits, ?_, ?_⟩
-  · rw [hlen, hpreflen]
-  · rw [← hpin, hreg]
-  · intro hregime
-    rw [hpreflen] at hpoint
-    exact hpoint hregime
+  -- the cells, decided as bits: the gate's rows make each one `0` or `1`
+  have hcell : ∀ i (hi : i < 5 * chunks),
+      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 0 ∨
+        (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = 1 := by
+    intro i hi
+    refine hbool _ ?_
+    rw [hbits]
+    refine List.mem_map.mpr ⟨bits[i]'(Nat.lt_of_lt_of_le hi hn), ?_, rfl⟩
+    rw [List.mem_reverse]
+    have hidx : (bits.toList.take (5 * chunks))[i]'(by simp; omega)
+        = bits[i]'(Nat.lt_of_lt_of_le hi hn) := by
+      simp [List.getElem_take]
+    exact hidx ▸ List.getElem_mem _
+  set bs : Vector Bool (5 * chunks) :=
+    Vector.ofFn fun i : Fin (5 * chunks) =>
+      decide ((bits[i.1]'(Nat.lt_of_lt_of_le i.isLt hn)).val V = 1) with hbsdef
+  have hread : ∀ i (hi : i < 5 * chunks),
+      (bits[i]'(Nat.lt_of_lt_of_le hi hn)).val V = bit bs[i] := by
+    intro i hi
+    simp only [hbsdef, Vector.getElem_ofFn]
+    rcases hcell i hi with h0 | h1
+    · simp [h0, bit]
+    · simp [h1, bit]
+  have hdec : ((VarBaseMul.roundBits V loop.1).map fun b => decide (b = 1)).reverse
+      = bs.toList := by
+    rw [hbits, List.map_map, ← List.map_reverse, List.reverse_reverse]
+    apply List.ext_getElem
+    · simp only [List.length_map, List.length_take, Vector.length_toList, hbsdef,
+        Vector.length_toList]
+      omega
+    · intro i h1 _
+      have hi : i < 5 * chunks := by simp only [List.length_map, List.length_take,
+        Vector.length_toList, lt_min_iff] at h1; omega
+      simp only [hbsdef, Vector.getElem_toList, Vector.getElem_ofFn, List.getElem_map,
+        List.getElem_take, Function.comp_apply, Vector.getElem_toList]
+  have hbn : Kimchi.Gate.VarBaseMul.bitsVal (VarBaseMul.roundBits V loop.1)
+      = (Kimchi.natLsbVal bs.toList : ℤ) := by
+    rw [Kimchi.Gate.VarBaseMul.bitsVal_eq_natLsbVal, hdec]
+  refine ⟨bs, hread, ?_, ?_⟩
+  · rw [← hpin, hreg,
+      Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast (VarBaseMul.roundBits V loop.1) hbool, hbn]
+    push_cast
+    ring
+  · rw [hpreflen, hbn] at hpoint
+    exact hpoint
 
 open WeierstrassCurve.Affine in
 /-- **Completeness.** From a readable on-curve base and a scalar inside the ladder's
@@ -929,42 +996,43 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (xv yv sv : F) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat sv < 2 ^ (5 * chunks))
     (hregime : d.LadderRegime (5 * chunks)
-      (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
+      (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (varBaseMul (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' =>
-        (∀ (i : ℕ) (hi : i < n), CircuitType.ReadsAs (val := F) st' (r.lsbBits[i]'hi)
-          (if (ToNat.toNat sv).testBit i then 1 else 0)) ∧
-        OnCurve d.W st' r.g
-          ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
-  rintro st ⟨hRbx, hRby, hRs⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    at hRbx hRby hRs
-  obtain ⟨hbx, hrx⟩ := hRbx
-  obtain ⟨hby, hry⟩ := hRby
+        CircuitType.ReadsAs (val := Vector Bool n) st'
+          (mapVec BoolVar.unchecked r.lsbBits) (unpackPure sv n) ∧
+        OnCurveAs d.W st' r.g
+          ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+            • Point.some _ _ hT)) := by
+  rintro st ⟨hBase, hRs⟩
+  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
+  rw [scoped_affinePoint] at hbase
+  obtain ⟨hbx, hby⟩ := hbase
+  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
+    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
+    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
   obtain ⟨hscS, hrs⟩ := hRs
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   -- the sealed base
-  obtain ⟨sealed, st₁, hrun₁, hsat₁, hRx, hRy⟩ :=
-    sealPoint_complete (c := KimchiConstraint F) base xv yv st
-      ⟨⟨CircuitType.scoped_fvar.mpr hbx, CircuitType.reads_fvar.mpr hrx⟩,
-        ⟨CircuitType.scoped_fvar.mpr hby, CircuitType.reads_fvar.mpr hry⟩⟩
+  obtain ⟨sealed, st₁, hrun₁, hsat₁, hRp⟩ :=
+    sealPoint_complete (c := KimchiConstraint F) base ⟨xv, yv⟩ st
+      ⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, reads_affinePoint.mpr ⟨hrx, hry⟩⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
-  have hsx : sealed.x.Scoped st₁ := CircuitType.scoped_fvar.mp hRx.1
-  have hsy : sealed.y.Scoped st₁ := CircuitType.scoped_fvar.mp hRy.1
-  have hsxv : sealed.x.val st₁.env.get = xv := CircuitType.reads_fvar.mp hRx.2
-  have hsyv : sealed.y.val st₁.env.get = yv := CircuitType.reads_fvar.mp hRy.2
+  obtain ⟨hsx, hsy⟩ := scoped_affinePoint.mp hRp.1
+  obtain ⟨hsxv, hsyv⟩ := reads_affinePoint.mp hRp.2
   -- the scalar's bits, in one witness
   obtain ⟨bits, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscB, hrdB⟩ :=
     witness_complete (c := KimchiConstraint F) (val := Vector F n)
       (lsbBitsWit n scalar.val) (st := st₁)
       (v := Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
+      (by simp)
       (by
         simp only [lsbBitsWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run (hscS.mono hnv₁), CVar.val_of_le hle₁ hscS, hrs, Except.bind]
@@ -972,7 +1040,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   rw [CircuitType.scoped_vector] at hscB
   rw [CircuitType.reads_vector] at hrdB
   -- the doubled seed
-  have hTread : OnCurve d.W st₂ sealed (Point.some _ _ hT) := by
+  have hTread : OnCurveAs d.W st₂ sealed (Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨hsx.mono hnv₂, hsy.mono hnv₂⟩, ?_⟩
     show ∃ h : d.W.Nonsingular (sealed.x.val st₂.env.get) (sealed.y.val st₂.env.get), _
     rw [CVar.val_of_le hle₂ hsx, CVar.val_of_le hle₂ hsy, hsxv, hsyv]
@@ -989,7 +1057,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       ⟨hTread, hTread, h2T, fun _ => h2T⟩
   have hle₃ := hrun₃.le
   have hnv₃ := hrun₃.nv_le
-  have hP0read : OnCurve d.W st₃ p.p ((2 : ℤ) • Point.some _ _ hT) := by
+  have hP0read : OnCurveAs d.W st₃ p.p ((2 : ℤ) • Point.some _ _ hT) := by
     refine ⟨hscP, ?_⟩
     rw [two_zsmul]
     rcases hadd.2 _ _ (hTread.mono hnv₃ hle₃).2 (hTread.mono hnv₃ hle₃).2 h2T with
@@ -1078,8 +1146,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     simp only [hbsOf]
     split <;> simp
   have hgl : Kimchi.Gate.VarBaseMul.gateLadder W (5 * chunks)
-      = 2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1 := by
-    rw [Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
+      = Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ) := by
+    rw [Pasta.Shifted.unshiftType1, Kimchi.Gate.VarBaseMul.gateLadder_eq_register,
       Kimchi.Gate.VarBaseMul.gateRegister_eq_bitsVal, hWdef,
       Kimchi.Gate.VarBaseMul.runBits_chainBuild, hbsOf,
       Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
@@ -1171,14 +1239,19 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     · exact (hle₃.trans hle₄).trans hle₄f
     · exact Nat.le_trans hnv₄ hnv₄f
     · exact hle₄.trans hle₄f
-  · -- the bits read as the scalar's own
-    intro i hi
-    refine ⟨(hscB i hi).mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)),
-      CircuitType.reads_fvar.mpr ?_⟩
-    rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
-      (CircuitType.scoped_fvar.mp (hscB i hi)),
-      CircuitType.reads_fvar.mp (hrdB i hi)]
-    simp
+  · -- the bits read as the scalar's own, as one bundle
+    refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
+      CircuitType.reads_vector.mpr fun i hi => ?_⟩
+    · rw [getElem_mapVec]
+      exact CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp
+        ((hscB i hi).mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))))
+    · rw [getElem_mapVec]
+      refine CircuitType.reads_boolVar.mpr ?_
+      show (bits[i]'hi).val st₅.env.get = _
+      rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
+        (CircuitType.scoped_fvar.mp (hscB i hi)),
+        CircuitType.reads_fvar.mp (hrdB i hi)]
+      simp [bit]
   · -- the point conclusion, off the sound side's own reading of the trace
     obtain ⟨-, -, -, hpoint⟩ :=
       VarBaseMul.run_sound d st₅.env.get (Point.some _ _ hT) hchain
@@ -1216,17 +1289,20 @@ theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     scaleFast1 (c := Builder V (KimchiConstraint F)) n chunks base scalar
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
       ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ (5 * chunks) ∧ (z : F) = scalar.val.val V ∧
-        ∀ _ : d.LadderRegime (5 * chunks) (2 * z + 2 ^ (5 * chunks) + 1),
-          OnCurveAt d.W V r ((2 * z + 2 ^ (5 * chunks) + 1) • T)⌝⦄ := by
+        ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
+          OnCurveAt d.W V r ((Pasta.Shifted.unshiftType1 (5 * chunks) z) • T)⌝⦄ := by
   have hvbm := fun (V : Valuation F) => varBaseMul_spec (V := V) d n chunks hn base scalar
   unfold scaleFast1
   mvcgen [hvbm]
   rename_i r _ hr
   intro T hT
-  obtain ⟨bits, hbool, hlen, -, hreg, hpoint⟩ := hr T hT
-  obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
-  refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, by rw [← hlen]; exact hlt, ?_, hpoint⟩
-  rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
+  obtain ⟨bs, -, hreg, hpoint⟩ := hr T hT
+  refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, ?_, ?_, hpoint⟩
+  · exact_mod_cast (by simpa using Kimchi.natLsbVal_lt bs.toList :
+      Kimchi.natLsbVal bs.toList < 2 ^ (5 * chunks))
+  · rw [hreg]
+    push_cast
+    ring
 
 open WeierstrassCurve.Affine in
 /-- **Completeness** (`scaleFast1`). `varBaseMul`'s honest run, with the bits dropped. -/
@@ -1235,14 +1311,13 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) (xv yv sv : F)
     (hT : d.W.Nonsingular xv yv) (hfits : ToNat.toNat sv < 2 ^ (5 * chunks))
     (hregime : d.LadderRegime (5 * chunks)
-      (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
+      (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st scalar.val sv)
       (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
-      (fun r st' => OnCurve d.W st' r
-        ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)) := by
+      (fun r st' => OnCurveAs d.W st' r
+        ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)) := by
   intro st hst
   obtain ⟨r, st₁, hrun, hsat, -, hpt⟩ :=
     varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime st hst
@@ -1280,9 +1355,9 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T → ∀ bb : Bool,
       (↑sOdd : CVar F).val V = bit bb →
       ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧ (z : F) = sDiv2.val V ∧
-        ∀ _ : d.LadderRegime (5 * chunks) (2 * z + 2 ^ (5 * chunks) + 1),
+        ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
-            ((2 * z + (if bb then 1 else 0) + 2 ^ (5 * chunks)) • T)⌝⦄ := by
+            ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
   have hvbm := fun (V : Valuation F) =>
     varBaseMul_spec (V := V) d n chunks hn base ⟨sDiv2⟩
   have hpin := forM_spec (V := V) (c := KimchiConstraint F)
@@ -1298,50 +1373,43 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   case vc3.htwo => exact d.two_ne
   rename_i _ rvb _ hvb _ _ hpin0 q _ yr _ hyr xr _ hxr hadd
   intro T hT bb hbb
-  obtain ⟨bits, hbool, hlen, hbitsEq, hreg, hpoint⟩ := hvb T hT
-  obtain ⟨hlt, hnonneg⟩ := Kimchi.Gate.VarBaseMul.bitsVal_lt bits hbool
+  obtain ⟨bs, hread, hreg, hpoint⟩ := hvb T hT
   -- the pinned high bits: the ladder's integer fits the split's width
-  have hzeros : ∀ b ∈ bits.take (5 * chunks - sDiv2Bits), b = 0 := by
+  have hzeros : ∀ b ∈ bs.toList.drop sDiv2Bits, b = false := by
     intro b hb
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
-    have hik : i < 5 * chunks - sDiv2Bits := by
-      simp only [List.length_take, hlen] at hi
+    have hi' : sDiv2Bits + i < 5 * chunks := by
+      simp only [List.length_drop, Vector.length_toList] at hi
       omega
-    have hilen : i < bits.length := by rw [hlen]; omega
-    simp only [List.getElem_take]
-    have hidx : 5 * chunks - 1 - i < n := by omega
-    have hge : sDiv2Bits ≤ 5 * chunks - 1 - i := by omega
-    have hmem : rvb.lsbBits.toList[5 * chunks - 1 - i]'(by simpa using hidx)
+    have hidx : sDiv2Bits + i < n := Nat.lt_of_lt_of_le hi' hn
+    have hmem : rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx)
         ∈ rvb.lsbBits.toList.drop sDiv2Bits := by
-      have hlend : sDiv2Bits + (5 * chunks - 1 - i - sDiv2Bits) = 5 * chunks - 1 - i := by omega
-      have heq : (rvb.lsbBits.toList.drop sDiv2Bits)[5 * chunks - 1 - i - sDiv2Bits]'(by
+      have heq : (rvb.lsbBits.toList.drop sDiv2Bits)[i]'(by
           simp only [List.length_drop, Vector.length_toList]; omega)
-          = rvb.lsbBits.toList[5 * chunks - 1 - i]'(by simpa using hidx) := by
-        rw [List.getElem_drop]
-        congr 1
+          = rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) := List.getElem_drop ..
       rw [← heq]
       exact List.getElem_mem _
-    simp only [hbitsEq, List.getElem_map, List.getElem_reverse, List.length_take,
-      Vector.length_toList, List.getElem_take]
-    simp only [show min (5 * chunks) n = 5 * chunks from by omega]
-    rw [hpin0 _ hmem]
-    simp [CVar.val]
-  have hdroplen : (bits.drop (5 * chunks - sDiv2Bits)).length = sDiv2Bits := by
-    rw [List.length_drop, hlen]
-    omega
-  have hltSplit : Kimchi.Gate.VarBaseMul.bitsVal bits < 2 ^ sDiv2Bits := by
-    have h := (Kimchi.Gate.VarBaseMul.bitsVal_lt (bits.drop (5 * chunks - sDiv2Bits))
-      (fun b hb => hbool b (List.mem_of_mem_drop hb))).1
-    rw [hdroplen] at h
-    rw [Kimchi.Gate.VarBaseMul.bitsVal_drop_of_zeros bits _ hzeros]
-    exact h
-  refine ⟨Kimchi.Gate.VarBaseMul.bitsVal bits, hnonneg, hltSplit, ?_, ?_⟩
-  · rw [hreg, Kimchi.Gate.VarBaseMul.bitsRegister_eq_cast bits hbool]
+    have hb0 : bit bs[sDiv2Bits + i] = (0 : F) := by
+      rw [← hread (sDiv2Bits + i) hi',
+        show rvb.lsbBits[sDiv2Bits + i]'hidx
+          = rvb.lsbBits.toList[sDiv2Bits + i]'(by simpa using hidx) from rfl,
+        hpin0 _ hmem]
+      simp [CVar.val]
+    rw [List.getElem_drop, Vector.getElem_toList]
+    cases hbb : bs[sDiv2Bits + i] with
+    | false => rfl
+    | true => rw [hbb] at hb0; simp [bit] at hb0
+  have hltSplit : (Kimchi.natLsbVal bs.toList : ℤ) < 2 ^ sDiv2Bits := by
+    exact_mod_cast Kimchi.natLsbVal_lt_of_drop_false hzeros
+  refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, hltSplit, ?_, ?_⟩
+  · rw [hreg]
+    push_cast
+    ring
   · intro hregime
     have hG := hpoint hregime
     obtain ⟨hGns, hGeq⟩ := hG
-    have hPne : ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)
-        ≠ 0 := by
+    have hPne : ((Pasta.Shifted.unshiftType1 (5 * chunks)
+        ((Kimchi.natLsbVal bs.toList : ℤ))) • T) ≠ 0 := by
       rw [hGeq]
       exact Point.some_ne_zero hGns
     have hnegT : OnCurveAt d.W V ⟨base.x, CVar.negate_ base.y⟩ (-T) :=
@@ -1352,19 +1420,20 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     · cases bb with
       | false =>
         show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
-          ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 0 + 2 ^ (5 * chunks)) • T)
+          ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 0 + 2 ^ (5 * chunks)) • T)
         rw [hxr false hbb, hyr false hbb,
-          show ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 0 + 2 ^ (5 * chunks)) • T)
-            = ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T + -T)
-            from by module]
+          show ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 0 + 2 ^ (5 * chunks)) • T)
+            = ((Pasta.Shifted.unshiftType1 (5 * chunks) ((Kimchi.natLsbVal bs.toList : ℤ)))
+                • T + -T)
+            from by rw [Pasta.Shifted.unshiftType1]; module]
         exact hq
       | true =>
         show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val V) (yr.val V)
-          ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 1 + 2 ^ (5 * chunks)) • T)
+          ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 1 + 2 ^ (5 * chunks)) • T)
         rw [hxr true hbb, hyr true hbb,
-          show ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 1 + 2 ^ (5 * chunks)) • T)
-            = ((2 * Kimchi.Gate.VarBaseMul.bitsVal bits + 2 ^ (5 * chunks) + 1) • T)
-            from by module]
+          show ((2 * (Kimchi.natLsbVal bs.toList : ℤ) + 1 + 2 ^ (5 * chunks)) • T)
+            = ((Pasta.Shifted.unshiftType1 (5 * chunks) ((Kimchi.natLsbVal bs.toList : ℤ))) • T)
+            from by rw [Pasta.Shifted.unshiftType1]; module]
         exact ⟨hGns, hGeq⟩
 
 open WeierstrassCurve.Affine in
@@ -1379,20 +1448,23 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (xv yv sv : F) (bb : Bool) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat sv < 2 ^ sDiv2Bits)
     (hregime : d.LadderRegime (5 * chunks)
-      (2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1)) :
+      (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st sDiv2 sv ∧ CircuitType.ReadsAs (val := Bool) st sOdd bb)
       (scaleFast2 (c := KimchiConstraint F) n chunks sDiv2Bits base sDiv2 sOdd)
-      (fun r st' => OnCurve d.W st' r
-        ((2 * (ToNat.toNat sv : ℤ) + (if bb then 1 else 0) + 2 ^ (5 * chunks))
+      (fun r st' => OnCurveAs d.W st' r
+        ((Pasta.Shifted.unshiftType2 (5 * chunks) (ToNat.toNat sv : ℤ) (if bb then 1 else 0))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hRbx, hRby, hRsd, hRso⟩
+  rintro st ⟨hBase, hRsd, hRso⟩
   simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hRbx hRby hRsd hRso
-  obtain ⟨hbx, hrx⟩ := hRbx
-  obtain ⟨hby, hry⟩ := hRby
+    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hRsd hRso
+  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
+  rw [scoped_affinePoint] at hbase
+  obtain ⟨hbx, hby⟩ := hbase
+  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
+    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
+    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
   obtain ⟨hsd, hrs⟩ := hRsd
   obtain ⟨hso, hrb⟩ := hRso
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
@@ -1403,12 +1475,13 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the ladder
   obtain ⟨r, st₁, hrun₁, hsat₁, hbits, hG⟩ :=
     varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime st
-      ⟨⟨CircuitType.scoped_fvar.mpr hbx, CircuitType.reads_fvar.mpr hrx⟩,
-        ⟨CircuitType.scoped_fvar.mpr hby, CircuitType.reads_fvar.mpr hry⟩,
+      ⟨⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, hbaseNS, hbaseEq⟩,
         ⟨CircuitType.scoped_fvar.mpr hsd, CircuitType.reads_fvar.mpr hrs⟩⟩
   have hle₁ := hrun₁.le
   have hnv₁ := hrun₁.nv_le
   -- the high bits the honest scalar leaves clear
+  have hbitsSc := CircuitType.scoped_vector.mp hbits.1
+  have hbitsRd := CircuitType.reads_vector.mp hbits.2
   have hpinval : ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
       x.Scoped st₁ ∧ x.val st₁.env.get = 0 := by
     intro x hx
@@ -1419,10 +1492,14 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     have hbit : (ToNat.toNat sv).testBit (sDiv2Bits + i) = false :=
       Nat.testBit_lt_two_pow
         (lt_of_lt_of_le hfits (Nat.pow_le_pow_right (by norm_num) (by omega)))
-    obtain ⟨hsc, hval⟩ := hbits (sDiv2Bits + i) hi'
+    have hsc := hbitsSc (sDiv2Bits + i) hi'
+    have hval := hbitsRd (sDiv2Bits + i) hi'
+    rw [getElem_mapVec] at hsc hval
     simp only [List.getElem_drop, Vector.getElem_toList]
-    exact ⟨CircuitType.scoped_fvar.mp hsc,
-      by rw [CircuitType.reads_fvar.mp hval, hbit]; simp⟩
+    refine ⟨CircuitType.scoped_boolVar.mp hsc, ?_⟩
+    show (BoolVar.unchecked (r.lsbBits[sDiv2Bits + i]'hi')).toCVar.val st₁.env.get = 0
+    rw [CircuitType.reads_boolVar.mp hval]
+    simp [hbit, bit]
   obtain ⟨u, st₂, hrun₂, hsat₂, hpin₂⟩ :=
     forM_complete (F := F) (c := KimchiConstraint F)
       (fun b : FVar F => assertEqual b (CVar.const 0))
@@ -1443,13 +1520,13 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hle₂ := hrun₂.le
   have hnv₂ := hrun₂.nv_le
   -- the ladder's point, and the base's negation
-  have hG₂ : OnCurve d.W st₂ r.g
-      ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT) :=
+  have hG₂ : OnCurveAs d.W st₂ r.g
+      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT) :=
     hG.mono hnv₂ hle₂
   obtain ⟨hGns, hGeq⟩ := hG₂.2
-  have hGne : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
+  have hGne : ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)
       ≠ 0 := by rw [hGeq]; exact Point.some_ne_zero hGns
-  have hnegT : OnCurve d.W st₂ ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
+  have hnegT : OnCurveAs d.W st₂ ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
     refine ⟨scoped_affinePoint.mpr ⟨hbx.mono (Nat.le_trans hnv₁ hnv₂),
       CVar.Scoped.scale_ (hby.mono (Nat.le_trans hnv₁ hnv₂))⟩, ?_⟩
     refine OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ ?_
@@ -1462,11 +1539,12 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hoff : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) ≠ 0 :=
     Kimchi.Gate.VarBaseMul.ladder_off_base d.W (Point.some_ne_zero hT) (5 * chunks)
       (ToNat.toNat sv) (by positivity) (by exact_mod_cast hfits') hregime
-  have hsum : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+  have hsum : ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
       + -Point.some _ _ hT) ≠ 0 := by
-    rw [show ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+    rw [show ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
         + -Point.some _ _ hT)
-      = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) from by module]
+      = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) from by
+        rw [Pasta.Shifted.unshiftType1]; module]
     exact hoff
   obtain ⟨q, st₃, hrun₃, hsat₃, ⟨hscQ, hscI⟩, hadd⟩ :=
     Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite r.g
@@ -1477,7 +1555,7 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (addFast_complete .checkFinite d.W
         ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
         ⟨base.x, CVar.negate_ base.y⟩
-        ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
+        ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)
         (-Point.some _ _ hT)) st₂
       ⟨hG₂, hnegT, d.two_torsion_free _ hGne, fun _ => hsum⟩
   have hle₃ := hrun₃.le
@@ -1485,14 +1563,14 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hscQ' : q.p.x.Scoped st₃ ∧ q.p.y.Scoped st₃ := scoped_affinePoint.mp hscQ
   have hscG : r.g.x.Scoped st₂ ∧ r.g.y.Scoped st₂ := scoped_affinePoint.mp hG₂.1
   have hQ : OnCurveAt d.W st₃.env.get q.p
-      ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
         + -Point.some _ _ hT) := by
     rcases hadd.2 _ _ (hG₂.mono hnv₃ hle₃).2 (hnegT.mono hnv₃ hle₃).2
       (d.two_torsion_free _ hGne) with ⟨hinf, hzero⟩ | ⟨-, h3⟩
     · exact absurd hzero hsum
     · exact h3
-  have hQpt : OnCurve d.W st₃ q.p
-      ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
+  have hQpt : OnCurveAs d.W st₃ q.p
+      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
         + -Point.some _ _ hT) := ⟨hscQ, hQ⟩
   -- the parity fold: the point conditional, `y` before `x`
   have hwf : CircuitType.WellFormed (val := Bool) st₃.env.get sOdd := by
@@ -1563,16 +1641,17 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ((2 * (ToNat.toNat sv : ℤ) + 0 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
       rw [hx, hy, if_neg Bool.false_ne_true, if_neg Bool.false_ne_true,
         show ((2 * (ToNat.toNat sv : ℤ) + 0 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
-          = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT
-            + -Point.some _ _ hT) from by module]
+          = ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
+            + -Point.some _ _ hT) from by
+          rw [Pasta.Shifted.unshiftType1]; module]
       exact (hQpt.mono (Nat.le_trans hnv₄ hnv₅) (hle₄.trans hle₅)).2
     | true =>
       show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st₅.env.get) (yr.val st₅.env.get)
         ((2 * (ToNat.toNat sv : ℤ) + 1 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
       rw [hx, hy, if_pos rfl, if_pos rfl,
         show ((2 * (ToNat.toNat sv : ℤ) + 1 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
-          = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks) + 1) • Point.some _ _ hT)
-          from by module]
+          = ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)
+          from by rw [Pasta.Shifted.unshiftType1]; module]
       exact ((hG₂.mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))
         ((hle₃.trans hle₄).trans hle₅)).2)
 
@@ -1631,6 +1710,7 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
   obtain ⟨w, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscW, hrdW⟩ :=
     witness_complete (c := c) (val := F × Bool) (splitFieldWit s) (st := st)
       (v := ((splitField sval).1, (splitField sval).2))
+      (by simp)
       (by
         simp only [splitFieldWit, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hsc, hval, Except.bind]
@@ -1685,9 +1765,9 @@ theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
       ∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
         ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V ∧
-        ∀ _ : d.LadderRegime (5 * chunks) (2 * z + 2 ^ (5 * chunks) + 1),
+        ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
-            ((2 * z + (if bb then 1 else 0) + 2 ^ (5 * chunks)) • T)⌝⦄ := by
+            ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
   have hsplitV := fun (V : Valuation F) =>
     splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
   have hsf2 := fun (V : Valuation F) (sDiv2 : FVar F) (sOdd : BoolVar F) =>
@@ -1713,21 +1793,23 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (xv yv sval : F) (hT : d.W.Nonsingular xv yv)
     (hfits : ToNat.toNat (splitField sval).1 < 2 ^ sDiv2Bits)
     (hregime : d.LadderRegime (5 * chunks)
-      (2 * (ToNat.toNat (splitField sval).1 : ℤ) + 2 ^ (5 * chunks) + 1)) :
+      (Pasta.Shifted.unshiftType1 (5 * chunks) ((ToNat.toNat (splitField sval).1 : ℤ)))) :
     Complete (F := F) (c := KimchiConstraint F)
-      (fun st => CircuitType.ReadsAs (val := F) st base.x xv ∧
-        CircuitType.ReadsAs (val := F) st base.y yv ∧
+      (fun st => OnCurveAs d.W st base (Point.some _ _ hT) ∧
         CircuitType.ReadsAs (val := F) st s sval)
       (scaleFast2' (c := KimchiConstraint F) n chunks sDiv2Bits base s)
-      (fun r st' => OnCurve d.W st' r
+      (fun r st' => OnCurveAs d.W st' r
         ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
             + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hRbx, hRby, hRs⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    at hRbx hRby hRs
-  obtain ⟨hbx, hrx⟩ := hRbx
-  obtain ⟨hby, hry⟩ := hRby
+  rintro st ⟨hBase, hRs⟩
+  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
+  rw [scoped_affinePoint] at hbase
+  obtain ⟨hbx, hby⟩ := hbase
+  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
+    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
+    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
   obtain ⟨hs, hrs⟩ := hRs
   obtain ⟨w, st₁, hrun₁, hsat₁, hRD, hRO⟩ :=
     splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval st
@@ -1737,15 +1819,82 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   obtain ⟨g, st₂, hrun₂, hsat₂, hpt⟩ :=
     scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
       (splitField sval).1 (splitField sval).2 hT hfits hregime st₁
-      ⟨⟨CircuitType.scoped_fvar.mpr (hbx.mono hnv₁),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₁ hbx, hrx])⟩,
-        ⟨CircuitType.scoped_fvar.mpr (hby.mono hnv₁),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₁ hby, hry])⟩,
+      ⟨OnCurveAs.mono hnv₁ hle₁ ⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, hbaseNS, hbaseEq⟩,
         hRD, hRO⟩
   exact ⟨g, st₂, hrun₁.bind hrun₂, fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
       (hsat₂ hnv hle), hpt⟩
 
 attribute [irreducible] scaleFast2'
+
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul
+  WeierstrassCurve.Affine in
+/-- **The deployed ladder leg's honest run.** At Vesta, on a base on the curve and a
+`Type1` carrier off the ladder's forbidden band, the run succeeds and the result is the
+base scaled by the carrier's decode. The width fits and the regime holds for free here:
+a carrier's representative is below `|Fq| < 2^255`, and the band exclusion IS the
+regime. -/
+theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FVar Fq)}
+    {xv yv : Fq} {Z : Type1 Fq} (hT : Vesta.curve.toAffine.Nonsingular xv yv)
+    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
+    Complete (F := Fq) (c := KimchiConstraint Fq)
+      (fun st => OnCurveAs Vesta.curve.toAffine st base (Point.some _ _ hT) ∧
+        CircuitType.ReadsAs (val := Fq) st sv.val Z.val)
+      (varBaseMul (c := KimchiConstraint Fq) 255 51 base sv)
+      (fun r st' =>
+        CircuitType.ReadsAs (val := Vector Bool 255) st'
+          (mapVec BoolVar.unchecked r.lsbBits) (unpackPure Z.val 255) ∧
+        OnCurveAs Vesta.curve.toAffine st' r.g (Z.toScalarZ • Point.some _ _ hT)) := by
+  have hval : ToNat.toNat Z.val = Z.val.val := rfl
+  have hdec : Pasta.Shifted.unshiftType1 (5 * 51) (ToNat.toNat Z.val : ℤ) = Z.toScalarZ := by
+    simp only [hval, Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1]
+  have hfits : ToNat.toNat Z.val < 2 ^ (5 * 51) := by
+    rw [hval]
+    exact lt_of_lt_of_le (ZMod.val_lt _) (by decide)
+  exact hdec ▸ varBaseMul_complete HasCurve.vesta 255 51 (by norm_num) base sv xv yv Z.val hT
+    hfits (hdec ▸ vesta_ladderRegime Z hband)
+
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul in
+/-- **The deployed ladder leg.** At Vesta, the generic law's output on a `Type1` carrier
+off the ladder's forbidden band, whose 255 witnessed bits read as a value below the
+scalar order, says the result is the base point scaled by the carrier's decode.
+
+The generic post pins the ladder's integer only through the LSB-first value of its own
+bits and guards its conclusion on an abstract `LadderRegime`; the bit bound identifies
+that integer with the carrier's canonical representative, and the deployed order
+discharges the guard. Neither is visible here.
+
+Stated on the generic law's OUTPUT rather than as a triple, for the same reason as
+`vesta_endoMul_read`: a consumer reaches it holding that output. -/
+theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
+    {sv : Type1 (FVar Fq)} {r : VarBaseMulResult 255 Fq} {Z : Type1 Fq}
+    (hread : sv.val.val V = Z.val)
+    (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD)
+    (h : ∀ T : HasCurve.vesta.W.Point, OnCurveAt HasCurve.vesta.W V base T →
+      ∃ bs : Vector Bool (5 * 51),
+        (∀ i (hi : i < 5 * 51), (r.lsbBits[i]'(by omega)).val V = bit bs[i]) ∧
+        sv.val.val V = ((Kimchi.natLsbVal bs.toList : ℕ) : Fq) ∧
+        ∀ _ : HasCurve.vesta.LadderRegime (5 * 51)
+            (Pasta.Shifted.unshiftType1 (5 * 51) (Kimchi.natLsbVal bs.toList : ℤ)),
+          OnCurveAt HasCurve.vesta.W V r.g
+            ((Pasta.Shifted.unshiftType1 (5 * 51)
+              (Kimchi.natLsbVal bs.toList : ℤ)) • T)) :
+    ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V base T →
+      (∀ bs : Vector Bool 255,
+        (∀ i (hi : i < 255), ((mapVec BoolVar.unchecked r.lsbBits)[i]).toCVar.val V
+          = bit bs[i]) → Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD) →
+      OnCurveAt Vesta.curve.toAffine V r.g (Z.toScalarZ • T) := by
+  intro T hT hlock
+  obtain ⟨bs, hbs, hpin, hact⟩ := h T hT
+  have hlt : Kimchi.natLsbVal bs.toList < PALLAS_SCALAR_CARD :=
+    hlock bs (fun i hi => by simpa using hbs i hi)
+  -- the ladder's integer is the carrier's canonical representative
+  have hval : Z.val.val = Kimchi.natLsbVal bs.toList :=
+    toNat_eq_of_natCast_eq (F := Fq) (by rw [← hread, hpin]) hlt
+  have hZ : Z.toScalarZ
+      = Pasta.Shifted.unshiftType1 (5 * 51) (Kimchi.natLsbVal bs.toList : ℤ) := by
+    simp only [Type1.toScalarZ, Type1.fromShifted, Pasta.Shifted.unshiftType1, hval]
+  rw [hZ]
+  exact hact (hZ ▸ vesta_ladderRegime Z hband)
 
 end Snarky.Kimchi

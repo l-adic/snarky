@@ -32,17 +32,17 @@ affine-reduction theorem; never wholesale `import Mathlib`), keeping builds fast
 backends live in downstream files (see `Snarky/Constraint/Basic.lean` for the concrete
 `Basic` model). Kernel-reducibility matters there: everything is validated by `decide`, so avoid
 core functions compiled by well-founded recursion in executable paths (e.g. `Vector.map`
-— use `Snarky.mapVec` from `Snarky/Vec.lean`). The package is aligned with the
+— use `Snarky.mapVec` from `Snarky/Types/Vector.lean`). The package is aligned with the
 PureScript original module by module; `formal/docs/snarky-ps-alignment.md` records the
 completed sign-off walk.
 
 Build: `make lean-build` (from the parent repo root), which runs
-`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture` in
-`formal/`; CI runs the same list plus `KimchiFixture`. From `formal/` you must name that
+`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr`
+in `formal/`; CI runs the same list plus `KimchiFixture`. From `formal/` you must name that
 target list yourself — **bare `lake build` here is not a build gate**: the root package is a
 pure aggregator that owns no library and declares no `defaultTargets`, so it reports
 `Build completed successfully (0 jobs)` while stale modules sit on disk. Per package,
-`cd formal/<pkg> && lake build` does work — all five declare `defaultTargets`. The toolchain
+`cd formal/<pkg> && lake build` does work — all six declare `defaultTargets`. The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
 (Mathlib + `CompElliptic`, a git require pinned to daira upstream, which transitively pulls
 `CompPoly`; `zcash/ironwood` for the forking machinery, sharing the same CompElliptic pin).
@@ -57,6 +57,7 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the forking development and `ipa{Vesta,Pallas}_knowledge_sound`, IPA fixtures + check script |
 | `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier + capstones); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
+| `schnorr/` | `Schnorr` | the verifier-faithfulness exemplar: a Schnorr identification protocol over Vesta as a wire verifier, and (arriving) its in-circuit implementation with the laws tying the two. Requires snarky + poseidon; own axiom gate. NOT a PS port — no byte-parity obligation |
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
 owns no libraries, only requires). Each package builds standalone from its own directory
@@ -270,7 +271,7 @@ names the identification with the deployed sponge).
 - Introduce NO axioms. A genuinely unprovable fact becomes a *hypothesis* of the statements
   that need it, never an `axiom`.
 - The CI gates (`.github/workflows/lean.yml`) audit every package's surface
-  (`*/scripts/check_axioms.sh` — kimchi, pasta, poseidon, bulletproof-pcs, snarky) and fail
+  (`*/scripts/check_axioms.sh` — kimchi, pasta, poseidon, bulletproof-pcs, snarky, schnorr) and fail
   on `sorryAx` or any stray axiom; the sorry census pins the whole tree.
 - **Avoid `native_decide` in our own proofs** — use `decide` or `reduce_mod_char`. The gates
   trust `native_decide` certificates by DEFINING MODULE (upstream CompElliptic, plus
@@ -289,6 +290,7 @@ kimchi/scripts/check_axioms.sh               # kimchi's headline theorems reduce
 pasta/scripts/check_axioms.sh                # the derived trust base (no eigen)
 bulletproof-pcs/scripts/check_axioms.sh      # the PCS soundness surface over its declared FS axioms
 snarky/scripts/check_axioms.sh               # the DSL interpreter laws (standard axioms only)
+schnorr/scripts/check_axioms.sh              # the exemplar's wire surface (standard axioms only)
 poseidon/scripts/check_sponge_vectors.sh     # Poseidon automaton vs mina_poseidon traces (Fq and Fp)
 poseidon/scripts/check_fq_sponge.sh          # FqSponge op traces + group_map vectors (both curves)
 bulletproof-pcs/scripts/check_ipa_fixture.sh # the executable IPA verifiers accept wire data

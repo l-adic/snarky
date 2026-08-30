@@ -99,8 +99,12 @@ instance instCheckedTypeSpongeState [Add F] [Mul F] [Zero F] [One F] [BasicSyste
   check _ := pure PUnit.unit
   post _ _ := True
   check_sound _ _ _ _ := trivial
-  check_runs _ _ _ := rfl
-  check_sat _ _ _ _ _ _ _ _ con hcon := by simp [build] at hcon
+  check_complete _ _ _ := Complete.pure
+
+/-- A state triple carries no admissibility condition. -/
+@[simp] theorem valid_spongeState [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    {v : Poseidon.Triple F} :
+    CheckedType.Valid (F := F) (c := c) (var := SpongeState F) v := fun _ _ _ => trivial
 
 /-- The Poseidon permutation gadget (PS `poseidon`): one bulk witness of the round
 outputs, one block constraint over the 56 chained states at `p`'s data, the last
@@ -317,6 +321,7 @@ theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     witness_complete (c := KimchiConstraint F) (val := Vector (Poseidon.Triple F) 55)
       (poseidon.advice p s) (st := st)
       (v := Vector.ofFn fun i : Fin 55 => rounds (mdsOfParams p) (paramsRc p) (i.1 + 1) sv)
+      (by simp)
       (by
         simp only [poseidon.advice, AsProver.bind_eq, AsProver.run_bind,
           AsProver.readCVar_run hsc0, AsProver.readCVar_run hsc1,

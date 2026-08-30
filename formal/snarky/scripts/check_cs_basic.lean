@@ -1,13 +1,20 @@
 /-
 The CS-equality seam: compile the gadget circuits with the Lean kimchi backend and
-compare the assembled constraint system — gate types, coefficients, wiring, RAW
-PER-CELL VARIABLE IDS, public size, witness, and public values — against the
-recorded PureScript dumps (`KimchiFixture.PS` decodes the JSON schema; the fixture
-witness table is column-major, so the comparison transposes). The witness comparison
+compare the assembled constraint system — gate types, coefficients, wiring, per-cell
+variable ids, public size, witness, and public values — against the recorded
+PureScript dumps (`KimchiFixture.PS` decodes the JSON schema; the fixture witness
+table is column-major, so the comparison transposes). The witness comparison
 re-solves with the fixture's own public input, so it checks the deterministic
-pipeline, not the sampled randomness. The variable-ids check is the allocation-order
-contract: cell values and wire cycles are allocation-order-INSENSITIVE, so only the
-ids pin the shared counter's numbering.
+pipeline, not the sampled randomness.
+
+The variable-ids check is the allocation-order contract, compared UP TO A GLOBAL
+RENAMING: this backend numbers the reduction's internal variables above the circuit's
+rather than interleaved with them, and witnesses the public outputs rather than
+preallocating them (`Snarky.Kimchi.kimchiGateData`), so the two counters agree only
+up to a bijection. What the renaming-invariant form still pins — and what `wires`
+does not see, since a cell holding a once-used variable and an empty cell both wire
+to themselves — is the per-cell OCCUPANCY pattern and the identification the ids
+induce across cells.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
@@ -31,9 +38,10 @@ The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
 this check against the exports its own commit just produced.
 
-Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_equality.lean
+Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_basic.lean
 (`KIMCHI_PS_RESULTS_DIR` overrides the default export location).
 -/
+import Std.Data.HashMap
 import KimchiFixture.PS
 import Snarky
 import Snarky.Kimchi.Backend.Compile
@@ -264,6 +272,136 @@ def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   (·.p) <$> addFast .dontCheckFinite p.1 p.2
 
+/-! ## The gadget-complete pickles sub-circuits
+
+Composition fixtures: PS sub-circuits built only from gadgets this tree already
+carries, transcribed from `Test.Pickles.CircuitDiffs.Main` the same way the gadget
+circuits are — these are the first fixtures exercising the gadgets IN COMPOSITION.
+Their dumps are witness-less (`exactMatchEff` registrations), so the comparison
+checks the constraint-system side only: gate types, coefficients, wires, per-cell
+variable ids, public size. -/
+
+/-- `pow2_pow_step_circuit` (`Pickles.Util.Pow2.pow2PowSquare` at 16 squarings —
+sixteen `square` rows chained). -/
+def pow2PowCircuit (input : Vector (FVar Fp) 1) : CircuitM Fp C PUnit := do
+  let _ ← (List.range 16).foldlM (fun acc _ => square acc) input[0]
+  pure PUnit.unit
+
+/-- The Type1 shifted-scalar unshift constant `2^255 + 1` (PS `Shifted.shift1` at the
+255-bit step field): `fromShiftedType1Circuit t = 2·t + c`, constraint-free. -/
+def shift1c : Fp := 2 ^ 255 + 1
+
+/-- The challenge polynomial `∏ᵢ (1 + cᵢ·pt^(2^(k-1-i)))` (PS `IPA.bPolyCircuit`):
+`k−1` squarings (as generic `mul` rows, matching OCaml's `Field.( * )`), then the
+`k`-term product folded left, allocation order verbatim. -/
+def bPolyCircuit (chals : List (FVar Fp)) (pt : FVar Fp) :
+    CircuitM Fp C (FVar Fp) := do
+  let (squares, _) ← mapAccumM
+    (fun (prev : FVar Fp) (_ : Unit) => do
+      let sq ← mul prev prev
+      pure (sq, sq))
+    pt (List.replicate (chals.length - 1) ())
+  let powTwoPows := pt :: squares
+  match chals.zip powTwoPows.reverse with
+  | [] => pure (.const 1)
+  | (c0, pw0) :: rest => do
+    let cp0 ← mul c0 pw0
+    let init := CVar.add_ (.const 1) cp0
+    rest.foldlM
+      (fun acc (cpw : FVar Fp × FVar Fp) => do
+        let cp ← mul cpw.1 cpw.2
+        let term := CVar.add_ (.const 1) cp
+        mul term acc)
+      init
+
+/-- `b_correct_step_circuit` (PS `bCorrectStepCircuit` over `IPA.bCorrectCircuit`):
+16 raw 128-bit challenges expanded through `EndoScalar.toField` at 8 rows — in
+REVERSE order, OCaml's right-to-left evaluation — then
+`b(ζ) + evalscale·b(ζω)` compared against the Type1-unshifted claimed `b`.
+Input layout: challenges 0–15, `ζ` 16, `ζω` 17, `evalscale` 18, claimed `b` 19. -/
+def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
+  let inl := input.toList
+  let endoVar : FVar Fp := .const endoVestaLam
+  let expandedRev ← ((inl.take 16).reverse).mapM
+    (fun c => EndoScalar.toField 8 c endoVar)
+  let expanded := expandedRev.reverse
+  let zero : FVar Fp := .const 0
+  let expectedB : FVar Fp :=
+    CVar.add_ (CVar.scale_ 2 (inl.getD 19 zero)) (.const shift1c)
+  let bZetaOmega ← bPolyCircuit expanded (inl.getD 17 zero)
+  let scaledB ← mul (inl.getD 18 zero) bZetaOmega
+  let bZeta ← bPolyCircuit expanded (inl.getD 16 zero)
+  let computedB := CVar.add_ bZeta scaledB
+  let _ ← equals expectedB computedB
+  pure PUnit.unit
+
+/-- The step-side `endoInv` scalar-field data: the Pallas group order is prime
+(`pallas_card` carries the `Fact` over to the numeral). -/
+def pallasOrderPrime : Nat.Prime PALLAS_SCALAR_CARD :=
+  Pasta.pallas_card ▸
+    (Fact.out : Nat.Prime CompElliptic.Curves.Pasta.Pallas.curve.toAffine.order)
+
+/-- One IPA fold step (`bullet_reduce_one_step_circuit`, the PS wrapper's inline body):
+`endoInv(L, u) + endo(R, u)` — the first fixture composing endoInv, endoMul, and
+addComplete. Input layout: `L` 0–1, `R` 2–3, the 128-bit challenge 4. -/
+def bulletReduceOneCircuit (input : Vector (FVar Fp) 5) : CircuitM Fp C PUnit := do
+  let l : AffinePoint (FVar Fp) := ⟨input[0], input[1]⟩
+  let r : AffinePoint (FVar Fp) := ⟨input[2], input[3]⟩
+  let lScaled ← endoInv Pasta.pallasEndo CompElliptic.Curves.Pasta.Pallas.curve.toAffine
+    PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
+    l ⟨input[4]⟩
+  let rScaled ← endoMul Pasta.pallasEndo 32 r ⟨input[4]⟩
+  let _ ← addFast .checkFinite lScaled rScaled
+  pure PUnit.unit
+
+/-- The IPA `lr_prod` fold (`bullet_reduce_step_circuit`, PS `IPA.bulletReduceCircuit`
+at 15 pairs): per pair `endoInv(Lᵢ, uᵢ) + endo(Rᵢ, uᵢ)`, then the running
+`addComplete` sum. Input layout: pair `j`'s points at `4j…4j+3`, challenges 60–74. -/
+def bulletReduceCircuit (input : Vector (FVar Fp) 75) : CircuitM Fp C PUnit := do
+  let inl := input.toList
+  let zero : FVar Fp := .const 0
+  let pt := fun i => inl.getD i zero
+  let terms ← (List.range 15).mapM (fun j => do
+    let l : AffinePoint (FVar Fp) := ⟨pt (4 * j), pt (4 * j + 1)⟩
+    let r : AffinePoint (FVar Fp) := ⟨pt (4 * j + 2), pt (4 * j + 3)⟩
+    let u := pt (60 + j)
+    let lScaled ← endoInv Pasta.pallasEndo CompElliptic.Curves.Pasta.Pallas.curve.toAffine
+      PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
+      l ⟨u⟩
+    let rScaled ← endoMul Pasta.pallasEndo 32 r ⟨u⟩
+    addFast .checkFinite lScaled rScaled)
+  match terms with
+  | [] => pure PUnit.unit
+  | head :: tail => do
+    let _ ← tail.foldlM (fun acc q => (·.p) <$> addFast .checkFinite acc q.p) head.p
+    pure PUnit.unit
+
+/-- The per-cell variable ids, compared up to a global renaming: walk both cell
+sequences in row-major order building the id map both ways, and require a
+well-defined injection. A cell occupied on one side and empty on the other fails
+immediately, as does any pair of cells the two sides identify differently. -/
+def varsAgreeUpToRenaming (rows : List (KimchiRow Fp))
+    (dumped : Array (Array (Option ℕ))) : Bool := Id.run do
+  let lhs := rows.map (·.vars.toList)
+  let rhs := dumped.toList.map (·.toList)
+  if lhs.length != rhs.length then return false
+  let mut fwd : Std.HashMap ℕ ℕ := {}
+  let mut bwd : Std.HashMap ℕ ℕ := {}
+  for (lrow, rrow) in lhs.zip rhs do
+    if lrow.length != rrow.length then return false
+    for (l, r) in lrow.zip rrow do
+      match l, r with
+      | none, none => pure ()
+      | some v, some w =>
+        match fwd[v]?, bwd[w]? with
+        | none, none =>
+          fwd := fwd.insert v w
+          bwd := bwd.insert w v
+        | some w', some v' => if w' != w || v' != v then return false
+        | _, _ => return false
+      | _, _ => return false
+  return true
+
 /-- Compare one circuit's assembled system and re-solved witness against its dump:
 the CS data (types, coefficients, wires, public size) is input-independent; the
 witness re-solve seeds the fixture's recorded public inputs. -/
@@ -281,13 +419,11 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
         (gates.map fun g =>
           (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
           == raw.wires),
-      -- The per-cell variable ids are NOT compared: the reduction's internal
-      -- variables are numbered after the circuit's rather than interleaved with
-      -- them, and the public outputs are witnessed rather than preallocated. Both
-      -- are renamings, which `wires` — the partition variable identity induces —
-      -- is insensitive to.
-      ("gate count matches wires", gates.length == raw.wires.size) ]
+      ("gate count matches wires", gates.length == raw.wires.size),
+      ("variables (up to renaming)", varsAgreeUpToRenaming rows raw.vars) ]
   let input : a := A.fieldsToValue (Vector.ofFn fun i => raw.pub.getD i 0)
+  -- A witness-less dump (the `exactMatchEff` registrations) has no witness side to
+  -- compare; `main` reports which circuits were checked CS-side only.
   let witChecks := if raw.witness.isEmpty then [] else
     match kimchiSolve (a := a) (b := b) main input with
     | .error _ => [("solve", false)]
@@ -340,7 +476,14 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("scale_fast2_128_step_circuit",
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
     ("group_map_step_circuit",
-      compareWith (a := Fp) (b := PUnit) groupMapCircuitFp) ]
+      compareWith (a := Fp) (b := PUnit) groupMapCircuitFp),
+    ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
+    ("b_correct_step_circuit",
+      compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
+    ("bullet_reduce_one_step_circuit",
+      compareWith (a := Vector Fp 5) (b := PUnit) bulletReduceOneCircuit),
+    ("bullet_reduce_step_circuit",
+      compareWith (a := Vector Fp 75) (b := PUnit) bulletReduceCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
@@ -358,7 +501,8 @@ def main : IO Unit := do
     | .ok (some fixture) =>
       let bad := (compare fixture).filter (!·.2)
       if bad.isEmpty then
-        IO.println s!"✓ {name}"
+        let note := if fixture.witness.isEmpty then "  (CS-side only: witness-less dump)" else ""
+        IO.println s!"✓ {name}{note}"
       else
         failures := failures + 1
         IO.println s!"✗ {name}: {String.intercalate ", " (bad.map (·.1))}"

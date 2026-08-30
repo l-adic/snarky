@@ -39,16 +39,6 @@ private theorem distinctPoints (endo : F) (w : Witness F) (h : Holds endo w) :
   · rw [hc, sub_self, zero_mul, zero_mul] at hinv; exact one_ne_zero hinv.symm
   · rw [hc, sub_self, mul_zero, zero_mul] at hinv; exact one_ne_zero hinv.symm
 
-omit [DecidableEq F] in
-/-- `Point.some` congruence over *both* coordinates: equal `x` and `y` values give
-    equal points (the nonsingularity proofs are irrelevant). A small extension of
-    the local `some_eq_some`, used to transport a target point along an `x`-coordinate
-    identity that holds only `by ring`. -/
-theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
-    (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
-    Point.some _ _ h = Point.some _ _ h' := by
-  subst hx; subst hy; rfl
-
 /-- GLV target selection. A window's target
     `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` with `b₁, b₂ ∈ {0,1}` is `±T` (when
     `b₁ = 0`, so `xq = xT`) or `±φ(T)` (when `b₁ = 1`, so `xq = endo·xT`), where
@@ -67,13 +57,13 @@ private theorem selectQ (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W.
     left
     have hx : (1 + (endo - 1) * 0) * xT = xT := by ring
     obtain ⟨e, he, hef, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hx ▸ hQ) hb2
-    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
+    exact ⟨e, (AddComplete.some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
   · -- `b₁ = 1`: the `x`-coordinate `(1 + (endo-1)*1)*xT` collapses to `endo*xT`,
     -- so `Q = ±φ(T)` via `signed_target` with base `φ(T)`.
     right
     have hx : (1 + (endo - 1) * 1) * xT = endo * xT := by ring
     obtain ⟨e, he, hef, _⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hx ▸ hQ) hb2
-    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
+    exact ⟨e, (AddComplete.some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hef⟩
 
 omit [DecidableEq F] in
 /-- A window target `Q = ((1 + (endo−1)·b₁)·xT, (2·b₂−1)·yT)` is nonsingular whenever the base
@@ -651,7 +641,7 @@ private theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.ord
   obtain ⟨ha1, -, ha3⟩ := ha
   have hneg : W.negY xI yI = yI := by simp [WeierstrassCurve.Affine.negY, ha1, ha3, hyI]
   have hself : -(Point.some _ _ hI) = Point.some _ _ hI := by
-    rw [Point.neg_some]; exact some_congr W _ hI rfl hneg
+    rw [Point.neg_some]; exact AddComplete.some_congr W _ hI rfl hneg
   have hPne : Point.some _ _ hI ≠ 0 := Point.some_ne_zero hI
   have h2P : (2 : ℤ) • Point.some _ _ hI = 0 := by
     rw [two_zsmul]; nth_rewrite 2 [← hself]; rw [add_neg_cancel]
@@ -705,11 +695,11 @@ private theorem selectQ' (W : WeierstrassCurve.Affine F) (ha : (W.a₁ = 0 ∧ W
   · left
     have hx : (1 + (endo - 1) * 0) * xT = xT := by ring
     obtain ⟨e, he, _, hpm⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hT (hx ▸ hQ) hb2
-    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hpm⟩
+    exact ⟨e, (AddComplete.some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hpm⟩
   · right
     have hx : (1 + (endo - 1) * 1) * xT = endo * xT := by ring
     obtain ⟨e, he, _, hpm⟩ := Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hx ▸ hQ) hb2
-    exact ⟨e, (some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hpm⟩
+    exact ⟨e, (AddComplete.some_congr W hQ (hx ▸ hQ) hx rfl).trans he, hpm⟩
 
 /-! ## The GLV scalar-multiplication chain -/
 
@@ -972,12 +962,12 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
     obtain ⟨e1, he1, he1f, he1pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc1 ▸ hQ1) hb2
     have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
+      (AddComplete.some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f, he2pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc2 ▸ hQ2) hb4
     have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
+      (AddComplete.some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨2 * e1 + e2, 0, ?_, ?_, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
     · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
@@ -989,12 +979,12 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
     obtain ⟨e1, he1, he1f, he1pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc1 ▸ hQ1) hb2
     have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
+      (AddComplete.some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = endo * w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f, he2pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc2 ▸ hQ2) hb4
     have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hφT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
+      (AddComplete.some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨2 * e1, e2, ?_, ?_, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
     · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
@@ -1006,12 +996,12 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
     obtain ⟨e1, he1, he1f, he1pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc1 ▸ hQ1) hb2
     have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hφT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
+      (AddComplete.some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f, he2pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hT (hxc2 ▸ hQ2) hb4
     have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
+      (AddComplete.some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨e2, 2 * e1, ?_, ?_, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
     · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
@@ -1023,12 +1013,12 @@ private theorem gate_advance (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.
     obtain ⟨e1, he1, he1f, he1pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc1 ▸ hQ1) hb2
     have hQ1e : Point.some _ _ hQ1 = e1 • Point.some _ _ hφT :=
-      (some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
+      (AddComplete.some_congr W hQ1 (hxc1 ▸ hQ1) hxc1 rfl).trans he1
     have hxc2 : (1 + (endo - 1) * w.b3) * w.xT = endo * w.xT := by rw [hb3']; ring
     obtain ⟨e2, he2, he2f, he2pm⟩ :=
       Kimchi.Gate.VarBaseMul.signed_target W ha hφT (hxc2 ▸ hQ2) hb4
     have hQ2e : Point.some _ _ hQ2 = e2 • Point.some _ _ hφT :=
-      (some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
+      (AddComplete.some_congr W hQ2 (hxc2 ▸ hQ2) hxc2 rfl).trans he2
     refine ⟨0, 2 * e1 + e2, ?_, ?_, ?_, ?_, ?_⟩
     · rw [hSeq, hReq, hQ1e, hQ2e]; module
     · rw [hdP1, hdP2]; push_cast [he1f, he2f]; rw [hb1', hb3']; ring
@@ -1096,8 +1086,8 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
       gate_advance W ha h2 h3 hodd endo (g i) (hholds i hi) hTi hφTi hPi hxn1 hxn2
     refine ⟨c1, c2, ?_, hd1, hd2, hc1b, hc2b⟩
     rw [hPval (i + 1) hi, hPval i (le_of_lt hi),
-      some_congr W (key (i + 1) hi) hS rfl rfl,
-      some_congr W (key i (le_of_lt hi)) hPi hxP.symm hyP.symm, hTeqi, hφTeqi]
+      AddComplete.some_congr W (key (i + 1) hi) hS rfl rfl,
+      AddComplete.some_congr W (key i (le_of_lt hi)) hPi hxP.symm hyP.symm, hTeqi, hφTeqi]
     exact hrel
   choose! c1 c2 hc using hrow
   have hstep : ∀ i, i < m → P (i + 1) = (4 : ℤ) • P i + c1 i • T + c2 i • φT :=
@@ -1156,7 +1146,7 @@ private theorem endoMul_ab (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.or
     hk1def ▸ hbnd c1 (fun i hi => (hc i hi).2.2.2.1),
     hk2def ▸ hbnd c2 (fun i hi => (hc i hi).2.2.2.2)⟩
   rw [← hPval m (le_refl m), hPm, hPval 0 (Nat.zero_le m),
-    some_congr W (key 0 (Nat.zero_le m)) hP0ns rfl rfl]
+    AddComplete.some_congr W (key 0 (Nat.zero_le m)) hP0ns rfl rfl]
 
 /-- **EndoMul — the capstone.** At the real init `P₀ = 2(T + φT)` and eigenvalue `φT = [λ]·T`, the
     rows compute the final accumulator `= [s]·T` with `s = EndoScalar.toField (crumbList g m) λ`:
@@ -1306,7 +1296,7 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
       obtain ⟨hxP, hyP⟩ := haccP i hi'
       have hPi : W.Nonsingular (g i).xP (g i).yP := by rw [hxP, hyP]; exact hPi'
       have hIeq : Point.some _ _ hPi = A • T + B • φT :=
-        (some_congr W hPi hPi' hxP hyP).trans hPeq
+        (AddComplete.some_congr W hPi hPi' hxP hyP).trans hPeq
       -- the run says what each row's base is
       obtain ⟨hTi, hTeqi⟩ := hbase i (le_of_lt hi')
       obtain ⟨hφTi, hφTeqi⟩ := hbaseEndo i (le_of_lt hi')
@@ -1350,7 +1340,8 @@ private theorem accumulator_chain (W : WeierstrassCurve.Affine F)
   have hBlt : B < 2 ^ 126 := by omega
   obtain ⟨hxP, hyP⟩ := haccP i hi
   have hPi : W.Nonsingular (g i).xP (g i).yP := by rw [hxP, hyP]; exact hPi'
-  have hIeq : Point.some _ _ hPi = A • T + B • φT := (some_congr W hPi hPi' hxP hyP).trans hPeq
+  have hIeq : Point.some _ _ hPi = A • T + B • φT :=
+    (AddComplete.some_congr W hPi hPi' hxP hyP).trans hPeq
   obtain ⟨hTi, hTeqi⟩ := hbase i (le_of_lt hi)
   obtain ⟨hφTi, hφTeqi⟩ := hbaseEndo i (le_of_lt hi)
   obtain ⟨hxPxR, hxRxS⟩ := distinctPoints endo (g i) (hholds i hi)

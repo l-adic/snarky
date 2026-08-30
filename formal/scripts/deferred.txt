@@ -58,26 +58,6 @@ Snarky.Kimchi.VarBaseMul.reduce_seam
 -- readers, the run congruence, and the EndoScalar decomposition's ℤ-shadow. Reachable
 -- from the OLD Snarky gadget laws only; the new laws take a different route.
 Kimchi.Gate.EndoMul.crumbList_getD
-Kimchi.Gate.EndoScalar.cInt
-Kimchi.Gate.EndoScalar.cInt_abs_le
-Kimchi.Gate.EndoScalar.cPoly_digit
-Kimchi.Gate.EndoScalar.crumbsOf_eq_map
-Kimchi.Gate.EndoScalar.decomposeA_digits
-Kimchi.Gate.EndoScalar.decomposeAInt
-Kimchi.Gate.EndoScalar.decomposeAInt_bounds
-Kimchi.Gate.EndoScalar.decomposeB_digits
-Kimchi.Gate.EndoScalar.decomposeBInt
-Kimchi.Gate.EndoScalar.decomposeBInt_bounds
-Kimchi.Gate.EndoScalar.digitsOf
-Kimchi.Gate.EndoScalar.digitsOf_length
-Kimchi.Gate.EndoScalar.digitsOf_lt
-Kimchi.Gate.EndoScalar.dInt
-Kimchi.Gate.EndoScalar.dInt_abs_le
-Kimchi.Gate.EndoScalar.dPoly_digit
-Kimchi.Gate.EndoScalar.fold_digits
-Kimchi.Gate.EndoScalar.foldInt_bounds
-Kimchi.Gate.EndoScalar.toField_digits
-Kimchi.Gate.EndoScalar.toIntZ
 Kimchi.Gate.VarBaseMul.accN_chainBuild
 Kimchi.Gate.VarBaseMul.accX_chainBuild
 Kimchi.Gate.VarBaseMul.accY_chainBuild
@@ -92,7 +72,6 @@ Kimchi.Gate.VarBaseMul.chainBuild_succ_n
 Kimchi.Gate.VarBaseMul.chainBuild_succ_x0
 Kimchi.Gate.VarBaseMul.chainBuild_succ_y0
 Kimchi.Gate.VarBaseMul.runBits_congr
-Kimchi.Gate.VarBaseMul.smul_eq_smul_of_zmod_eq
 
 -- The prover interpreter's domain lemma (Snarky/Prover.lean).
 Snarky.prove_dom

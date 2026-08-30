@@ -154,6 +154,12 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean snarky/scripts/check_axioms.lean
 
+    # The schnorr exemplar's wire surface (standard axioms only).
+    - name: Gate the schnorr exemplar
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean schnorr/scripts/check_axioms.lean
+
     # Batteries' `@[env_linter]` suite (docBlame, unusedArguments, synTaut, …) over
     # every library root. One runLinter process per module — a single multi-module run
     # accumulates each module's import environment and gets OOM-killed. Keep the list
@@ -163,7 +169,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-                 Bulletproof BulletproofFixture; do
+                 Bulletproof BulletproofFixture Schnorr; do
           lake exe runLinter "$m" || exit 1
         done
 
@@ -178,7 +184,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake exe shake --cfg "$PWD/scripts/noshake.json" \
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-          Bulletproof BulletproofFixture
+          Bulletproof BulletproofFixture Schnorr
 
     # GATE: every authored declaration must be reachable from the union of the packages'
     # roots.txt API manifests, and every script-surface root must appear in a scripts/
@@ -187,6 +193,11 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         bash scripts/deadcode.sh
+
+    # GATE: a domain `CircuitType` instance owes the characterization of its `Reads`
+    # and `Scoped` — nothing derives it, and without it every consumer unfolds inline.
+    - name: Check reading lemmas
+      run: bash scripts/check-readings.sh
 
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
