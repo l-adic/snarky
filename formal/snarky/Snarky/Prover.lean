@@ -1,3 +1,4 @@
+import Mathlib.Data.List.Forall2
 import Snarky.Assignments
 import Snarky.Encoding
 import Snarky.Builder
@@ -608,23 +609,56 @@ theorem Mono.readsAs [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F va
     {v : var} {a : val} : Mono (F := F) fun st => CircuitType.ReadsAs st v a :=
   fun _ _ hnv hle h => h.mono hnv hle
 
-/-- Sequencing that keeps what it had. The tail runs from everything the head established
-AND everything the head's own precondition already guaranteed — so a multi-stage proof
-never names its context: the context IS the precondition, and it accumulates one conjunct
-per stage. The monotone hypothesis is what lets the precondition cross the head's run. -/
-theorem Complete.seq [Zero F] [ConstraintHolds F c] {β : Type v}
+/-- A `Forall₂` of readings is monotone, entrywise. -/
+theorem Mono.forall₂ [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F val var]
+    {xs : List var} {vs : List val} :
+    Mono (F := F) fun st => List.Forall₂ (CircuitType.ReadsAs st) xs vs :=
+  fun _ _ hnv hle h => h.imp fun _ _ hr => hr.mono hnv hle
+
+/-- Sequencing: the tail runs from what the head established. The monadic bind, with no
+side condition — the head's post IS the tail's pre, and it is stated at the head's own
+final state, so nothing has to cross the run. -/
+theorem Complete.bind [Zero F] [ConstraintHolds F c] {β : Type v}
     {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
     {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
-    (hpre : Mono (F := F) pre) (hg : Complete pre g mid)
-    (hk : ∀ a, Complete (fun st => pre st ∧ mid a st) (k a) post) :
+    (hg : Complete pre g mid) (hk : ∀ a, Complete (mid a) (k a) post) :
     Complete pre (g >>= k) post := by
   intro st hpre₀
   obtain ⟨a, st₁, hrun₁, hsat₁, hmid⟩ := hg st hpre₀
-  obtain ⟨b, st₂, hrun₂, hsat₂, hpost⟩ :=
-    hk a st₁ ⟨hpre _ _ hrun₁.nv_le hrun₁.le hpre₀, hmid⟩
+  obtain ⟨b, st₂, hrun₂, hsat₂, hpost⟩ := hk a st₁ hmid
   exact ⟨b, st₂, hrun₁.bind hrun₂, fun hnv hle =>
     Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
       (hsat₂ hnv hle), hpost⟩
+
+/-- A precondition nothing satisfies is complete for any program — what a branch the
+precondition rules out is discharged by. -/
+theorem Complete.of_false [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
+    {g : CircuitM F c α} {post : α → ProverState F → Prop} (h : ∀ st, ¬ pre st) :
+    Complete pre g post := fun st hst => absurd hst (h st)
+
+/-- A precondition that determines a parameter: if every state satisfying it fixes some
+`i`, and the program is complete from each `P i`, it is complete from the precondition.
+The dual of `of_false` — that one handles a precondition no state satisfies, this one a
+precondition whose states carry a value the law is indexed by. -/
+theorem Complete.instantiate [Zero F] [ConstraintHolds F c] {ι : Type}
+    {pre : ProverState F → Prop} {P : ι → ProverState F → Prop} {g : CircuitM F c α}
+    {post : α → ProverState F → Prop} (h : ∀ st, pre st → ∃ i, P i st)
+    (hg : ∀ i, Complete (P i) g post) : Complete pre g post :=
+  fun st hst => let ⟨i, hi⟩ := h st hst; hg i st hi
+
+/-- A cell in scope stays in scope. -/
+theorem Mono.scoped [Zero F] {x : CVar F} : Mono (F := F) fun st => x.Scoped st :=
+  fun _ _ hnv _ h => h.mono hnv
+
+/-- The frame rule: a monotone fact the program does not disturb crosses it. This is the
+only rule that needs monotonicity — sequencing itself does not. -/
+theorem Complete.frame [Zero F] [ConstraintHolds F c] {pre R : ProverState F → Prop}
+    {g : CircuitM F c α} {post : α → ProverState F → Prop}
+    (hR : Mono (F := F) R) (h : Complete pre g post) :
+    Complete (fun st => pre st ∧ R st) g fun a st' => post a st' ∧ R st' := by
+  rintro st ⟨hpre, hr⟩
+  obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st hpre
+  exact ⟨a, st₁, hrun, hsat, hp, hR _ _ hrun.nv_le hrun.le hr⟩
 
 /-- The rule of consequence: strengthen the precondition, weaken the postcondition. -/
 theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F → Prop}
@@ -634,6 +668,21 @@ theorem Complete.imp [Zero F] [ConstraintHolds F c] {pre pre' : ProverState F �
   intro st hst
   obtain ⟨a, st₁, hrun, hsat, hp⟩ := h st (hpre st hst)
   exact ⟨a, st₁, hrun, hsat, hpost a st₁ hp⟩
+
+/-- Sequencing that keeps what it had. The tail runs from everything the head established
+AND everything the head's own precondition already guaranteed — so a multi-stage proof
+never names its context: the context IS the precondition, and it accumulates one conjunct
+per stage. The monotone hypothesis is what lets the precondition cross the head's run. -/
+theorem Complete.seq [Zero F] [ConstraintHolds F c] {β : Type v}
+    {pre : ProverState F → Prop} {g : CircuitM F c α} {mid : α → ProverState F → Prop}
+    {k : α → CircuitM F c β} {post : β → ProverState F → Prop}
+    (hpre : Mono (F := F) pre) (hg : Complete pre g mid)
+    (hk : ∀ a, Complete (fun st => pre st ∧ mid a st) (k a) post) :
+    Complete pre (g >>= k) post :=
+  Complete.bind
+    (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => ⟨h.2, h.1⟩)
+      (Complete.frame hpre hg))
+    hk
 
 /-- `pure` at a postcondition the entry state already satisfies — the tail of a `bind`
 chain, where the value is in hand and nothing more is emitted. -/
@@ -655,6 +704,16 @@ theorem Sat.addConstraint [Zero F] [ConstraintHolds F c] {con : c} {st stf : Pro
   simp [Snarky.addConstraint, build] at hc'
   subst hc'
   exact h
+
+/-- One emitted row: the prover allocates nothing and cannot fail, so the state is
+unchanged and the precondition survives. The row's obligation is the caller's, and it is
+owed at every extension of the table — which is what `Sat`'s quantifier asks for. -/
+theorem Complete.addConstraint [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop}
+    {con : c} (h : ∀ st, pre st → ∀ stf : ProverState F, st.env.Le stf.env →
+      ConstraintHolds.Holds stf.env.get con) :
+    Complete pre (Snarky.addConstraint (F := F) con) fun _ st => pre st :=
+  fun st hst => ⟨PUnit.unit, st, Runs.addConstraint,
+    fun _ hle => Sat.addConstraint (h st hst _ hle), hst⟩
 
 end CompleteDef
 

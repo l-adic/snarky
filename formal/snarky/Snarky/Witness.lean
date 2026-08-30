@@ -450,6 +450,20 @@ theorem witness_complete [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
   simp only [witness, build, build_bind, List.append_nil] at hcon
   exact hsat hnv' hle' con hcon
 
+/-- **The witness rule**, at the completeness abstraction: the computation succeeds at the
+entry table, and the fresh cells read as its value. `witness_complete`'s two order facts
+are what a caller used to transport its own context across the allocation; `Complete.frame`
+does that now, so they are not part of the rule. -/
+theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] [CircuitType F val var]
+    [CheckedType F c val var] (compute : AsProver F val) (v : val)
+    (hv : CheckedType.Valid (F := F) (c := c) (var := var) v) :
+    Complete (F := F) (c := c) (fun st => compute.run st.env = .ok v)
+      (witness (c := c) (val := val) compute)
+      (fun r st' => CircuitType.ReadsAs st' r v) := fun _ h =>
+  let ⟨r, st', hrun, hsat, _, _, hsc, hrd⟩ := witness_complete compute hv h
+  ⟨r, st', hrun, hsat, hsc, hrd⟩
+
 end Combinators
 
 /-- Witnessing an unchecked bundle emits no rows — the wrapper's whole content. -/

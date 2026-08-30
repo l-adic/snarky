@@ -178,14 +178,16 @@ private theorem updateBlock_complete [Field F] [DecidableEq F] (p : Poseidon.Par
         (Poseidon.blockCipher p (Poseidon.RandomOracle.addBlock sv bv))) := by
   obtain ⟨b0, b1⟩ := b
   obtain ⟨bv0, bv1⟩ := bv
-  rintro s ⟨hst, hb⟩
+  refine Complete.imp (fun _ h => ?_) (fun _ _ h => h)
+    (Poseidon.poseidon_complete p hsize (addBlockVar st (b0, b1))
+      (Poseidon.RandomOracle.addBlock sv (bv0, bv1)))
+  obtain ⟨hst, hb⟩ := h
   simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState,
     CircuitType.scoped_prod, CircuitType.reads_prod, CircuitType.scoped_fvar,
     CircuitType.reads_fvar] at hst hb
   obtain ⟨⟨hs0, hs1, hs2⟩, hv0, hv1, hv2⟩ := hst
   obtain ⟨⟨hb0, hb1⟩, hbv0, hbv1⟩ := hb
-  refine Poseidon.poseidon_complete p hsize (addBlockVar st (b0, b1))
-    (Poseidon.RandomOracle.addBlock sv (bv0, bv1)) s ⟨?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · refine scoped_spongeState.mpr ⟨CVar.ScopedBy.add_ hs0 hb0,
       CVar.ScopedBy.add_ hs1 hb1, hs2⟩
   · refine reads_spongeState.mpr ⟨?_, ?_, hv2⟩
@@ -238,23 +240,21 @@ private theorem foldBlocks_complete [Field F] [DecidableEq F] (p : Poseidon.Para
             (Poseidon.RandomOracle.addBlock t b)) sv))
   | [], bvs, st, sv => by
     simp only [List.foldlM_nil]
-    rintro s ⟨hst, hbs⟩
-    cases hbs
-    exact ⟨st, s, rfl, fun _ _ => Sat.pure, hst⟩
+    cases bvs with
+    | nil =>
+      exact Complete.imp (fun _ h => h.1) (fun _ _ h => h) (Complete.pure_of fun _ h => h)
+    | cons _ _ => exact Complete.of_false fun _ h => by simp at h
   | b :: bs, bvs, st, sv => by
     simp only [List.foldlM_cons]
-    rintro s ⟨hst, hbs⟩
-    cases hbs with
-    | cons hb hrest =>
-      obtain ⟨r₁, s₁, hrun₁, hsat₁, hR₁⟩ :=
-        updateBlock_complete p hsize st b sv _ s ⟨hst, hb⟩
-      obtain ⟨r₂, s₂, hrun₂, hsat₂, hR₂⟩ :=
-        foldBlocks_complete p hsize bs _ r₁ _ s₁
-          ⟨hR₁, hrest.imp fun _ _ h => h.mono hrun₁.nv_le hrun₁.le⟩
-      refine ⟨r₂, s₂, hrun₁.bind hrun₂, fun hnv hle =>
-        Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-          (hsat₂ hnv hle), ?_⟩
-      simpa using hR₂
+    cases bvs with
+    | nil => exact Complete.of_false fun _ h => by simp at h
+    | cons bv bvs =>
+      simp only [List.foldl_cons]
+      exact Complete.bind
+        (Complete.imp (fun _ h => ⟨⟨h.1, (List.forall₂_cons.mp h.2).1⟩,
+            (List.forall₂_cons.mp h.2).2⟩) (fun _ _ h => h)
+          (Complete.frame Mono.forall₂ (updateBlock_complete p hsize st b sv bv)))
+        fun r => foldBlocks_complete p hsize bs bvs r _
 
 open Std.Do in
 /-- **Soundness** (`update`): the output state reads as `Poseidon.RandomOracle.update`
@@ -284,9 +284,8 @@ theorem update_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
       (fun r s' => CircuitType.ReadsAs (val := Poseidon.Triple F) s' r
         (Poseidon.RandomOracle.update p sv vs)) := by
   simp only [update, Poseidon.RandomOracle.update]
-  rintro s ⟨hst, hxs⟩
-  exact foldBlocks_complete p hsize (toBlocksVar xs) _ st sv s
-    ⟨hst, toBlocksVar_readsAs hxs⟩
+  exact Complete.imp (fun _ h => ⟨h.1, toBlocksVar_readsAs h.2⟩) (fun _ _ h => h)
+    (foldBlocks_complete p hsize (toBlocksVar xs) _ st sv)
 
 attribute [irreducible] update
 
@@ -327,15 +326,14 @@ theorem hash2_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
       (hash2 (c := KimchiConstraint F) p a b)
       (fun r s' => CircuitType.ReadsAs (val := F) s' r
         (Poseidon.RandomOracle.hash p [av, bv])) := by
-  rintro s ⟨ha, hb⟩
-  obtain ⟨r, s', hrun, hsat, hR⟩ :=
-    updateBlock_complete p hsize initState (a, b) Poseidon.RandomOracle.initialState
-      (av, bv) s ⟨initState_readsAs s,
-        ⟨CircuitType.scoped_prod.mpr ⟨ha.1, hb.1⟩,
-          CircuitType.reads_prod.mpr ⟨ha.2, hb.2⟩⟩⟩
+  refine Complete.bind
+    (Complete.imp (fun s h => ⟨initState_readsAs s,
+        ⟨CircuitType.scoped_prod.mpr ⟨h.1.1, h.2.1⟩,
+          CircuitType.reads_prod.mpr ⟨h.1.2, h.2.2⟩⟩⟩) (fun _ _ h => h)
+      (updateBlock_complete p hsize initState (a, b) Poseidon.RandomOracle.initialState
+        (av, bv)))
+    fun r => Complete.pure_of fun _ hR => ?_
   simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at hR
-  refine ⟨r.s0, s', hrun.bind rfl,
-    fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure, ?_⟩
   refine ⟨CircuitType.scoped_fvar.mpr hR.1.1, CircuitType.reads_fvar.mpr ?_⟩
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.update,
     Poseidon.RandomOracle.toBlocks, Poseidon.RandomOracle.chunk,
@@ -378,13 +376,11 @@ theorem hashVec_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
       (hashVec (c := KimchiConstraint F) p xs)
       (fun r s' => CircuitType.ReadsAs (val := F) s' r
         (Poseidon.RandomOracle.hash p vs)) := by
-  intro s hxs
-  obtain ⟨r, s', hrun, hsat, hR⟩ :=
-    update_complete p hsize initState xs Poseidon.RandomOracle.initialState vs s
-      ⟨initState_readsAs s, hxs⟩
+  refine Complete.bind
+    (Complete.imp (fun s h => ⟨initState_readsAs s, h⟩) (fun _ _ h => h)
+      (update_complete p hsize initState xs Poseidon.RandomOracle.initialState vs))
+    fun r => Complete.pure_of fun _ hR => ?_
   simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState] at hR
-  refine ⟨r.s0, s', hrun.bind rfl,
-    fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure, ?_⟩
   refine ⟨CircuitType.scoped_fvar.mpr hR.1.1, CircuitType.reads_fvar.mpr ?_⟩
   simpa [Poseidon.RandomOracle.hash, Poseidon.RandomOracle.digest] using hR.2.1
 
