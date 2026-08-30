@@ -18,7 +18,7 @@
 #
 # Usage: scripts/kernel-replay.sh          (requires a prior workspace build: `make lean-build`,
 #   or from formal/ the explicit target list
-#   `lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture` — bare
+#   `lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr` — bare
 #   `lake build` there reports 0 jobs, the root package being a pure aggregator, so the oleans
 #   replayed below would be whatever is already on disk)
 #   LEAN4CHECKER_WORKERS=N to override the worker count (default 2 — each worker loads
@@ -47,5 +47,6 @@ scripts/prune-stale-oleans.sh
 # libraries, and the demo is not part of the trust surface.)
 lake env "$dir/.lake/build/bin/lean4checker" \
   "--num-workers=${LEAN4CHECKER_WORKERS:-2}" \
-  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
+  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
+  Schnorr
 echo "✓ kernel replay clean (lean4checker $REV)"

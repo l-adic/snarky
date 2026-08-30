@@ -1,4 +1,8 @@
 import Mathlib.Algebra.Ring.Defs
+import Mathlib.Data.ZMod.Basic
+import Pasta.CompElliptic
+import Pasta.Shifted
+import Snarky.Witness
 
 /-!
 # Shifted scalar types
@@ -24,6 +28,8 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 
 namespace Snarky
 
+open CompElliptic.Fields.Pasta
+
 /-- A scalar carried shifted (PS `Type1`): the wrapped value `t` stands for
 `2·t + 2^n + 1`. Phantom: the ladder consuming it realizes the shift. -/
 structure Type1 (α : Type u) where
@@ -36,7 +42,7 @@ an optimization that computes exactly the image of this operator, and the laws s
 its results through it, over whichever ring the consumer reads in (`F` for the wire
 pin, `ℤ` for the group scalar). -/
 def Type1.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type1 R) : R :=
-  2 * t.val + 2 ^ n + 1
+  Pasta.Shifted.unshiftType1 n t.val
 
 /-- A scalar carried as a half and a parity bit (PS `SplitField`), standing shifted
 for `2·sDiv2 + sOdd + 2^n`. Phantom like `Type1`: `scaleFast2`'s ladder realizes the
@@ -51,6 +57,135 @@ structure SplitField (α : Type u) (β : Type v) where
 pair stands for `2·sDiv2 + sOdd + 2^n`. `scaleFast2` computes exactly its image, and
 its law states the result through it. -/
 def SplitField.fromShifted {R : Type u} [Semiring R] (n : ℕ) (s : SplitField R Bool) : R :=
-  2 * s.sDiv2 + (if s.sOdd then 1 else 0) + 2 ^ n
+  Pasta.Shifted.unshiftType2 n s.sDiv2 (if s.sOdd then 1 else 0)
+
+/-! ## The deployed Pasta codec
+
+PS declares its `Shifted` codec (`toShifted`/`fromShifted`) per concrete field pair,
+never over an abstract modulus pair. The pair the laws speak about is an `Fp` scalar
+carried `Type1` in `Fq` (`p < q`, `n = 255`): shift by genuine field arithmetic in the
+scalar field, transport across the boundary by canonical representative (PS
+`toBigInt`/`fromBigInt`), and decode by the same `fromShifted` operator read over `ℤ`. -/
+
+/-- The carrier is phantom: a `Type1` is its representative. -/
+@[simps apply symm_apply] def Type1.equivCarrier {α : Type} : Type1 α ≃ α where
+  toFun t := t.val
+  invFun v := ⟨v⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+/-- A `Type1` encodes as its one cell (PS's generic instance). -/
+instance instCircuitTypeType1 {F : Type} : CircuitType F (Type1 F) (Type1 (FVar F)) :=
+  CircuitType.ofEquiv Type1.equivCarrier Type1.equivCarrier
+
+/-- A `Type1` is in scope when its cell is. -/
+@[simp] theorem scoped_type1 {F : Type} {st : Snarky.ProverState F} {t : Type1 (FVar F)} :
+    CircuitType.Scoped (val := Type1 F) st t ↔ t.val.Scoped st :=
+  (CircuitType.scoped_ofEquiv _ _).trans CircuitType.scoped_fvar
+
+/-- A `Type1` reads as its cell's reading. -/
+@[simp] theorem reads_type1 {F : Type} [Add F] [Mul F] [Zero F] {V : Snarky.Valuation F}
+    {t : Type1 (FVar F)} {a : Type1 F} :
+    CircuitType.Reads V t a ↔ t.val.val V = a.val :=
+  (CircuitType.reads_ofEquiv _ _).trans CircuitType.reads_fvar
+
+/-- A carried scalar's cell carries no well-formedness constraint of its own: the ladder
+consuming it is what pins its reading. -/
+instance instCheckedTypeType1 {F c : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] : CheckedType F c (Type1 F) (Type1 (FVar F)) :=
+  CheckedType.ofEquiv Type1.equivCarrier Type1.equivCarrier
+
+/-- The deployed encode (PS `toShifted` at `Fp → Type1 Fq`): shift in the scalar
+field — `(s − 2^255 − 1) / 2` — and carry the canonical representative across the
+boundary. -/
+def Type1.toShifted (s : Fp) : Type1 Fq :=
+  ⟨(((s - 2 ^ 255 - 1) / 2 : Fp).val : Fq)⟩
+
+/-- The integer a carried representative decodes to: `fromShifted` at `n = 255` over
+`ℤ`, applied to the canonical representative — the scalar the consuming ladder computes
+with (the `BigInt` stage of PS `fromShifted`). -/
+def Type1.toScalarZ (t : Type1 Fq) : ℤ :=
+  Type1.fromShifted 255 (⟨(t.val.val : ℤ)⟩ : Type1 ℤ)
+
+/-- The deployed decode (PS `fromShifted` at `Type1 Fq → Fp`): the decode integer
+reduced into the scalar field. -/
+def Type1.toScalar (t : Type1 Fq) : Fp :=
+  (t.toScalarZ : Fp)
+
+/-- The round trip: the encode's decode is the encoded scalar. -/
+theorem Type1.toScalar_toShifted (z : Fp) : (Type1.toShifted z).toScalar = z := by
+  set t : Fp := (z - 2 ^ 255 - 1) / 2 with ht
+  have htq : ((t.val : Fq)).val = t.val := by
+    rw [ZMod.val_natCast,
+      Nat.mod_eq_of_lt (lt_of_lt_of_le (ZMod.val_lt t) (by decide))]
+  have hback : ((t.val : ℕ) : Fp) = t := by
+    rw [ZMod.natCast_val, ZMod.cast_id]
+  simp only [Type1.toScalar, Type1.toScalarZ, Type1.toShifted, Type1.fromShifted,
+    Pasta.Shifted.unshiftType1, ← ht, htq]
+  push_cast
+  rw [hback, ht]
+  have hhalf : (2 : Fp) * ((z - 2 ^ 255 - 1) / 2) = z - 2 ^ 255 - 1 := by
+    rw [mul_comm]
+    exact div_mul_cancel₀ _ (by decide)
+  rw [hhalf]
+  ring
+
+/-- The zero-response carrier: the unique `t₀ < q` with `2·t₀ + 2^255 + 1 = 3·p` — the
+only odd multiple of the group order in the decode band `[2^255+1, 2^255+2q−1]`, so the
+one `Type1` representative whose decode is the zero scalar. -/
+def Type1.zeroCarrier : Fq := ((3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 : ℕ)
+
+/-- The decode hits zero exactly when the scalar field's order divides it — the decode is
+that integer cast, so this is `ZMod`'s zero test. -/
+theorem Type1.toScalar_eq_zero_iff_dvd (t : Type1 Fq) :
+    t.toScalar = 0 ↔ (PALLAS_BASE_CARD : ℤ) ∣ t.toScalarZ :=
+  ZMod.intCast_zmod_eq_zero_iff_dvd _ _
+
+/-- The band argument at abstract constants — the deployed literals stay quarantined in
+the caller's `decide` facts, so `omega` works over atoms only. -/
+private theorem dvd_band_iff {P Q v t : ℕ}
+    (hPodd : P % 2 = 1)
+    (h3 : 2 * t + 2 ^ 255 + 1 = 3 * P)
+    (hPC : P < 2 ^ 255 + 1)
+    (hband : 2 * Q + 2 ^ 255 + 1 < P * 4)
+    (hv : v < Q) :
+    P ∣ (2 * v + 2 ^ 255 + 1) ↔ v = t := by
+  constructor
+  · rintro ⟨k, hk⟩
+    have hk4 : k < 4 := by
+      refine Nat.lt_of_mul_lt_mul_left (a := P) ?_
+      rw [← hk]
+      omega
+    have hk1 : 1 < k := by
+      refine Nat.lt_of_mul_lt_mul_left (a := P) ?_
+      rw [← hk]
+      omega
+    have hk23 : k = 2 ∨ k = 3 := by omega
+    rcases hk23 with rfl | rfl
+    · omega
+    · omega
+  · rintro rfl
+    exact ⟨3, by omega⟩
+
+/-- The decode hits zero exactly at `zeroCarrier` — what an in-circuit zero-response
+exclusion inverts on both sides of its laws. -/
+theorem Type1.toScalar_eq_zero_iff (t : Type1 Fq) :
+    t.toScalar = 0 ↔ t.val = Type1.zeroCarrier := by
+  have ht : t.val.val < PALLAS_SCALAR_CARD := ZMod.val_lt _
+  have hiff : t.toScalar = 0
+      ↔ (PALLAS_BASE_CARD : ℤ) ∣ (2 * (t.val.val : ℤ) + 2 ^ 255 + 1) :=
+    Type1.toScalar_eq_zero_iff_dvd t
+  have hval : t.val = Type1.zeroCarrier
+      ↔ t.val.val = (3 * PALLAS_BASE_CARD - 2 ^ 255 - 1) / 2 := by
+    constructor
+    · intro h
+      rw [h, Type1.zeroCarrier, ZMod.val_natCast, Nat.mod_eq_of_lt (by decide)]
+    · intro h
+      rw [Type1.zeroCarrier, ← h, ZMod.natCast_val, ZMod.cast_id]
+  rw [hiff, hval]
+  have hcast : (2 * (t.val.val : ℤ) + 2 ^ 255 + 1)
+      = ((2 * t.val.val + 2 ^ 255 + 1 : ℕ) : ℤ) := by omega
+  rw [hcast, Int.natCast_dvd_natCast]
+  exact dvd_band_iff (by decide) (by decide) (by decide) (by decide) ht
 
 end Snarky

@@ -1,6 +1,6 @@
-import Snarky.Circuit.DSL.Field
-import Snarky.Circuit.DSL.Assert
-import Snarky.Circuit.DSL.Boolean
+import Snarky.DSL.Field
+import Snarky.DSL.Assert
+import Snarky.DSL.Boolean
 import Snarky.Kimchi.Semantics
 import Poseidon.GroupMap
 
@@ -124,6 +124,23 @@ private def sqrtFlagged [Field F] [DecidableEq F] [BasicSystem F c]
   assertSquare sqrtVal xOrMx
   pure (sqrtVal, isQR)
 
+open Std.Do in
+/-- The flagged root's contract: the flag is a bit, and the root squares to the operand
+where the flag is set, to its non-residue twist where it is clear. -/
+@[spec] private theorem sqrtFlagged_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (sqrtF : F → Option F) (nonResidue : F) (x : FVar F) :
+    ⦃⌜True⌝⦄
+    sqrtFlagged (c := Builder V c) sqrtF nonResidue x
+    ⦃⇓ r _ => ⌜∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
+      r.1.val V * r.1.val V = if bb then x.val V else nonResidue * x.val V⌝⦄ := by
+  simp only [sqrtFlagged, select_fvar]
+  mvcgen
+  rename_i _ isQR _ hbool _ _ hsel _ _ _ _ _ hsq
+  obtain ⟨bb, hbb⟩ := hbool
+  refine ⟨bb, hbb, ?_⟩
+  rw [hsq, hsel bb hbb, CVar.val_scale_]
+
 /-- The in-circuit BW19 map (PS `groupMapCircuit`): the candidate abscissae from
 seven `mul`s and one `div`, a flagged root per candidate, at least one flag
 asserted set, and the first-flagged candidate selected by mutually exclusive
@@ -170,488 +187,652 @@ def groupMapCircuit [Field F] [DecidableEq F] [BasicSystem F c]
   let xResult := CVar.add_ (CVar.add_ t1x t2x) t3x
   pure ⟨xResult, yResult⟩
 
-/-! ## The laws
-
-Soundness quotes the module's own pure model: any satisfying valuation reads the
-result as an on-curve pair whose abscissa is one of `potentialXs`' three
-candidates. Completeness lands on `groupMapPure` — the first-flagged candidate —
-under the advice coherence the honest run needs. -/
-
 open Std.Do in
-/-- `sqrtFlagged` is sound: the flag reads as a genuine bit and the returned value
-squares to the flag-selected operand — `y² = if isQR then x else nonResidue·x`. -/
-@[spec] private theorem sqrtFlagged_spec [Field F] [DecidableEq F] {c : Type}
+/-- **Soundness.** Any satisfying valuation reads the result as an on-curve pair
+(`y² = x³ + b`) whose abscissa is one of the three `potentialXs` candidates at the
+operand: the constraints force a set flag, the first-flag selectors are mutually
+exclusive boolean products, and the selected branch's `sqrtFlagged` root is the
+ordinate. The advice is universally quantified — soundness never consults it. -/
+theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
-    (sqrtF : F → Option F) (nonResidue : F) (x : FVar F)
-    (Q : PostCond (FVar F × BoolVar F) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : FVar F × BoolVar F) =>
-        ∃ bb : Bool, (↑r.2 : CVar F).val V = bit bb ∧
-          r.1.val V * r.1.val V
-            = (if bb then x.val V else nonResidue * x.val V)) Q⦄
-    (sqrtFlagged (c := c) sqrtF nonResidue x)
-    ⦃Q⦄ := by
-  simp only [sqrtFlagged]
-  mvcgen [witnessBool_spec, -witness_spec]
-  rename_i s hpre
-  intro isQR _ hbool
-  mvcgen
-  intro xOrMx _ hsel
-  mvcgen
-  intro sqrtVal _
-  mvcgen
-  intro _ _ hsq
-  mvcgen
-  rcases hbool with h0 | h1
-  · refine hpre (sqrtVal, isQR) _ ⟨false, by simpa [bit] using h0, ?_⟩
-    rw [hsq, hsel false (by simpa [bit] using h0)]
-    simp [selectPure, CVar.val_scale_]
-  · refine hpre (sqrtVal, isQR) _ ⟨true, by simpa [bit] using h1, ?_⟩
-    rw [hsq, hsel true (by simpa [bit] using h1)]
-    simp [selectPure]
-
-open Std.Do in
-/-- `sqrtFlagged`'s honest run accepts on an evaluable operand when `sqrtF`'s roots
-are genuine and a rootless operand's non-residue twist has a root; the flag
-reads the operand's residuosity and the value reads the advice's root of the
-flag-selected operand. -/
-private theorem sqrtFlagged_complete_spec [Field F] [DecidableEq F] {c : Type}
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (sqrtF : F → Option F) (nonResidue : F) (x : FVar F)
-    (hroot : ∀ a y, sqrtF a = some y → y * y = a)
-    (Q : PostCond (FVar F × BoolVar F)
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (x.eval env).isOk ∧
-          ∀ xv, x.eval env = .ok xv → sqrtF xv = none →
-            (sqrtF (nonResidue * xv)).isSome)
-        (fun env r env' => ∀ xv, x.eval env = .ok xv →
-          (↑r.2 : CVar F).eval env' = .ok (bit (sqrtF xv).isSome) ∧
-          r.1.eval env' = .ok
-            ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0))
-        Q⦄
-    (sqrtFlagged (c := Prover c) sqrtF nonResidue x)
-    ⦃Q⦄ := by
-  simp only [sqrtFlagged]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hokx, htw⟩, hk⟩ := hpre
-  obtain ⟨xv, hx⟩ := CVar.evalOk hokx
-  have hw₁ : isQRWit sqrtF x st.env = .ok (sqrtF xv).isSome := by
-    rw [show isQRWit sqrtF x st.env
-        = (fun v => (sqrtF v).isSome) <$> CVar.eval x st.env from rfl, hx]
-    rfl
-  refine ⟨by rw [hw₁]; rfl, fun isQR st₁ hrd₁ hle₁ => ?_⟩
-  have hb₁ : (↑isQR : CVar F).eval st₁.env = .ok (bit (sqrtF xv).isSome) := hrd₁ _ hw₁
-  have hx₁ : x.eval st₁.env = .ok xv := CVar.eval_le hle₁ hx
-  mvcgen
-  refine ⟨⟨ReadsBit.of_bit hb₁, by rw [hx₁]; rfl,
-    by rw [CVar.eval_scale_ hx₁ nonResidue]; rfl⟩, fun xOrMx st₂ hrd₂ hle₂ => ?_⟩
-  have hsel : xOrMx.eval st₂.env
-      = .ok (if (sqrtF xv).isSome then xv else nonResidue * xv) := by
-    simpa [selectPure] using hrd₂ _ _ _ hb₁ hx₁ (CVar.eval_scale_ hx₁ nonResidue)
-  have hw₂ : sqrtWit sqrtF xOrMx st₂.env
-      = .ok ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0) := by
-    rw [show sqrtWit sqrtF xOrMx st₂.env
-        = (fun v => (sqrtF v).getD 0) <$> CVar.eval xOrMx st₂.env from rfl, hsel]
-    rfl
-  mvcgen
-  refine ⟨by rw [hw₂]; rfl, fun sqrtVal st₃ hrd₃ hle₃ => ?_⟩
-  have hy₃ : sqrtVal.eval st₃.env
-      = .ok ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0) :=
-    hrd₃ _ hw₂
-  have hsel₃ : xOrMx.eval st₃.env
-      = .ok (if (sqrtF xv).isSome then xv else nonResidue * xv) :=
-    CVar.eval_le hle₃ hsel
-  mvcgen
-  refine ⟨⟨by rw [hy₃]; rfl, by rw [hsel₃]; rfl, fun a b ha hb => ?_⟩,
-    fun r st₄ hle₄ hf => ?_⟩
-  · -- the advice root really squares to the selected operand
-    rw [hy₃] at ha
-    rw [hsel₃] at hb
-    injection ha with ha
-    injection hb with hb
-    subst ha hb
-    rcases hcase : sqrtF xv with _ | y
-    · obtain ⟨z, hz⟩ := Option.isSome_iff_exists.mp (htw xv hx hcase)
-      simp [hz, hroot _ z hz]
-    · simp [hcase, hroot _ y hcase]
-  · exact hk (sqrtVal, isQR) ⟨st₄.nv, st₄.env, hf⟩
-      (fun xv' hx' => by
-        rw [hx] at hx'
-        injection hx' with hx'
-        subst hx'
-        exact ⟨CVar.eval_le ((hle₂.trans hle₃).trans hle₄) hb₁,
-          CVar.eval_le hle₄ hy₃⟩)
-      (((hle₁.trans hle₂).trans hle₃).trans hle₄)
-
-open Std.Do in
-/-- `groupMapCircuit` is sound: any satisfying valuation reads the result as an
-on-curve pair (`y² = x³ + b`) whose abscissa is one of the three `potentialXs`
-candidates at the operand — the constraints force a set flag, the first-flag
-selectors are mutually exclusive boolean products, and the selected branch's
-`sqrtFlagged` root is the ordinate. The advice `sqrtF` is universally quantified:
-soundness never consults it. -/
-theorem groupMapCircuit_spec [Field F] [DecidableEq F]
-    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F)
-    (Q : PostCond (AffinePoint (FVar F)) (.arg (BuilderState F) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar F)) =>
-        (r.x.val V = (potentialXs params (t.val V)).1
-          ∨ r.x.val V = (potentialXs params (t.val V)).2.1
-          ∨ r.x.val V = (potentialXs params (t.val V)).2.2) ∧
-        r.y.val V * r.y.val V
-          = r.x.val V * r.x.val V * r.x.val V + params.b) Q⦄
-    (groupMapCircuit (c := KimchiConstraint F) sqrtF params t)
-    ⦃Q⦄ := by
+    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V c) sqrtF params t
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs params (t.val V)).1 ∨
+        r.x.val V = (potentialXs params (t.val V)).2.1 ∨
+        r.x.val V = (potentialXs params (t.val V)).2.2) ∧
+      r.y.val V * r.y.val V = ySquared params (r.x.val V)⌝⦄ := by
   simp only [groupMapCircuit]
   mvcgen
-  rename_i s hpre
-  intro t2 _ ht2
-  mvcgen
-  intro alphaInv _ halphaInv
-  mvcgen
-  intro alpha _ halpha
-  mvcgen
-  intro t4 _ ht4
-  mvcgen
-  intro t4Alpha _ ht4Alpha
-  mvcgen
-  intro temp1 _ htemp1
-  mvcgen
-  intro t2Inv _ ht2Inv
-  mvcgen
-  intro t2PlusFuSq _ ht2PlusFuSq
-  mvcgen
-  intro temp2a _ htemp2a
-  mvcgen
-  intro temp2 _ htemp2
-  mvcgen
-  intro xSq1 _ hxSq1
-  mvcgen
-  intro xCu1 _ hxCu1
-  mvcgen
-  intro sf1 _ hsf1
-  mvcgen
-  intro xSq2 _ hxSq2
-  mvcgen
-  intro xCu2 _ hxCu2
-  mvcgen
-  intro sf2 _ hsf2
-  mvcgen
-  intro xSq3 _ hxSq3
-  mvcgen
-  intro xCu3 _ hxCu3
-  mvcgen
-  intro sf3 _ hsf3
-  mvcgen
-  intro _ _ hnz
-  mvcgen
-  intro x2First _ hx2First
-  mvcgen
-  intro nb2AndB3 _ hnb2AndB3
-  mvcgen
-  intro x3First _ hx3First
-  mvcgen
-  intro t3y _ ht3y
-  mvcgen
-  intro t2y _ ht2y
-  mvcgen
-  intro t1y _ ht1y
-  mvcgen
-  intro t3x _ ht3x
-  mvcgen
-  intro t2x _ ht2x
-  mvcgen
-  intro t1x _ ht1x
-  mvcgen
+  rename_i _ t2 _ ht2 alphaInv _ halphaInv alpha _ halpha t4 _ ht4 t4Alpha _ ht4Alpha temp1 _
+    htemp1 t2Inv _ ht2Inv t2PlusFuSq _ ht2PlusFuSq temp2a _ htemp2a temp2 _ htemp2 xSq1 _ hxSq1
+    xCu1 _ hxCu1 sf1 _ hsf1 xSq2 _ hxSq2 xCu2 _ hxCu2 sf2 _ hsf2 xSq3 _ hxSq3 xCu3 _ hxCu3 sf3 _
+    hsf3 _ _ hnz x2First _ hx2First nb2AndB3 _ hnb2AndB3 x3First _ hx3First t3y _ ht3y t2y _
+    ht2y t1y _ ht1y t3x _ ht3x t2x _ ht2x t1x _ ht1x
   obtain ⟨bb1, hb1, hy1⟩ := hsf1
   obtain ⟨bb2, hb2, hy2⟩ := hsf2
   obtain ⟨bb3, hb3, hy3⟩ := hsf3
-  -- the candidate values, from the arithmetic grants
-  have hval : ∀ (a : F), (CVar.const a : CVar F).val s.V = a := fun _ => rfl
-  have hx1v : (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1).val s.V
-      = (potentialXs params (t.val s.V)).1 := by
-    simp only [potentialXs, CVar.val_sub_, hval, htemp1, ht4Alpha, ht4, halpha,
-      halphaInv, ht2, CVar.val_add_]
-  have hx2v : (CVar.sub_ (.const (-params.u))
-        (CVar.sub_ (.const params.sqrtNeg3U2MinusUOver2) temp1)).val s.V
-      = (potentialXs params (t.val s.V)).2.1 := by
-    simp only [potentialXs, CVar.val_sub_, hval, htemp1, ht4Alpha, ht4, halpha,
-      halphaInv, ht2, CVar.val_add_]
-  have hx3v : (CVar.sub_ (.const params.u) temp2).val s.V
-      = (potentialXs params (t.val s.V)).2.2 := by
-    simp only [potentialXs, CVar.val_sub_, hval, htemp2, htemp2a, ht2PlusFuSq,
-      ht2Inv, halpha, halphaInv, ht2, CVar.val_add_]
-  -- the flag bits force exactly one first-flag selector
-  have hnb1 : (↑(Snarky.not sf1.2) : CVar F).val s.V = bit (!bb1) := by
-    rcases bb1 <;> simp [Snarky.not, circuitVal, CVar.val, hb1, bit]
-  have hnb2 : (↑(Snarky.not sf2.2) : CVar F).val s.V = bit (!bb2) := by
-    rcases bb2 <;> simp [Snarky.not, circuitVal, CVar.val, hb2, bit]
-  have hs2 := hx2First (!bb1) bb2 hnb1 hb2
-  have hs3 := hx3First (!bb1) (!bb2 && bb3) hnb1 (hnb2AndB3 (!bb2) bb3 hnb2 hb3)
-  -- select the branch: the sums collapse under the selector bits
+  have hval : ∀ a : F, (CVar.const a : CVar F).val V = a := fun _ => rfl
+  -- the three candidates, read off the arithmetic grants
+  have hx1v : ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1).val V
+      = (potentialXs params (t.val V)).1 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp1, ht4Alpha, ht4,
+      halpha, halphaInv, ht2]
+  have hx2v : ((CVar.const (-params.u)).sub_
+        ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)).val V
+      = (potentialXs params (t.val V)).2.1 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp1, ht4Alpha, ht4,
+      halpha, halphaInv, ht2]
+  have hx3v : ((CVar.const params.u).sub_ temp2).val V
+      = (potentialXs params (t.val V)).2.2 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp2, htemp2a,
+      ht2PlusFuSq, ht2Inv, halpha, halphaInv, ht2]
+  -- the flags force exactly one first-flag selector
+  have hs2 := hx2First (!bb1) bb2 (not_val hb1) hb2
+  have hs3 := hx3First (!bb1) (!bb2 && bb3) (not_val hb1)
+    (hnb2AndB3 (!bb2) bb3 (not_val hb2) hb3)
   rcases bb1 with _ | _
   · rcases bb2 with _ | _
     · rcases bb3 with _ | _
-      · -- all flags clear: the asserted flag sum is zero
-        exact absurd (by simp [circuitVal, hb1, hb2, hb3, bit]) hnz
-      · -- third candidate
-        refine hpre _ _ (Or.inr (Or.inr ?_)) ?_
+      · -- every flag clear: the asserted flag sum is zero
+        exact absurd (by simp [CVar.val_add_, hb1, hb2, hb3, bit]) hnz
+      · refine ⟨Or.inr (Or.inr ?_), ?_⟩
         · rw [← hx3v]
-          simp [circuitVal, CVar.val, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
-        · simpa [circuitVal, CVar.val, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+          simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+        · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
             hs2, hs3, bit, hxCu3, hxSq3] using hy3
-    · -- second candidate
-      refine hpre _ _ (Or.inr (Or.inl ?_)) ?_
+    · refine ⟨Or.inr (Or.inl ?_), ?_⟩
       · rw [← hx2v]
-        simp [circuitVal, CVar.val, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
-      · simpa [circuitVal, CVar.val, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+        simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+      · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
           hs2, hs3, bit, hxCu2, hxSq2] using hy2
-  · -- first candidate, whatever the later flags
-    refine hpre _ _ (Or.inl ?_) ?_
+  · refine ⟨Or.inl ?_, ?_⟩
     · rw [← hx1v]
-      simp [circuitVal, CVar.val, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
-    · simpa [circuitVal, CVar.val, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+      simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+    · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
         hs2, hs3, bit, hxCu1, hxSq1] using hy1
 
-open Std.Do in
-/-- `groupMapCircuit`'s honest run accepts and the result reads the pure map's point.
-Hypotheses: the operand evaluates; its `alphaInv` product is nonzero (the `div`
-divisor); some candidate ordinate square has a root — Shallue–van de Woestijne,
-taken as a hypothesis; `sqrtF`'s roots are genuine; a rootless value's non-residue
-twist has a root; and `2, 3 ≠ 0` price the flag-sum assertion. -/
-theorem groupMapCircuit_complete_spec [Field F] [DecidableEq F] {c : Type}
-    [BasicSystem F c] [Checker F c] [LawfulChecker F c]
-    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F)
+/-! ## Completeness
+
+The honest run, step by step in the DSL's reading currency: each gate's law takes its
+operands' readings and gives the result's, and `CircuitType.ReadsAs.mono` carries a
+reading past the gates that follow. -/
+
+/-- The ordinate-square block's honest run: two `mul`s and a constant add. -/
+private theorem ySquared_complete [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (params : GroupMapParams F)
+    (x : FVar F) (xv : F) :
+    Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := F) st x xv)
+      (do let xSq ← mul (c := c) x x
+          let xCu ← mul xSq x
+          pure (CVar.add_ xCu (CVar.const params.b)))
+      (fun r st' => CircuitType.ReadsAs (val := F) st' r (ySquared params xv)) := by
+  intro st hx
+  obtain ⟨xSq, st₁, hrun₁, hsat₁, h₁⟩ := mul_complete (c := c) x x xv xv st ⟨hx, hx⟩
+  obtain ⟨xCu, st₂, hrun₂, hsat₂, h₂⟩ :=
+    mul_complete (c := c) xSq x (xv * xv) xv st₁ ⟨h₁, hx.mono hrun₁.nv_le hrun₁.le⟩
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at h₂ ⊢
+  exact ⟨_, st₂, hrun₁.bind (hrun₂.bind rfl), fun hnv hle =>
+    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
+      (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure),
+    CVar.Scoped.add_ h₂.1 trivial, by rw [CVar.val_add_, h₂.2]; rfl⟩
+
+/-- **The flagged root's honest run.** With genuine roots, and a rootless operand's
+non-residue twist rooted, the run accepts: the flag reads the operand's residuosity and
+the value reads the advice's root of the flag-selected operand. -/
+private theorem sqrtFlagged_complete [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (sqrtF : F → Option F) (nonResidue : F)
+    (x : FVar F) (xv : F) (hroot : ∀ a y, sqrtF a = some y → y * y = a)
+    (htwist : sqrtF xv = none → (sqrtF (nonResidue * xv)).isSome) :
+    Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := F) st x xv)
+      (sqrtFlagged (c := c) sqrtF nonResidue x)
+      (fun r st' => CircuitType.ReadsAs (val := Bool) st' r.2 (sqrtF xv).isSome ∧
+        CircuitType.ReadsAs (val := F) st' r.1
+          ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0)) := by
+  intro st hx
+  have hx' := hx
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx'
+  obtain ⟨hscx, hvx⟩ := hx'
+  -- the residuosity flag
+  obtain ⟨isQR, st₁, hrun₁, hsat₁, hnv₁, hle₁, hsc₁, hrd₁⟩ :=
+    witness_complete (c := c) (val := Bool) (isQRWit sqrtF x) (st := st)
+      (v := (sqrtF xv).isSome)
+      (by simp)
+      (by
+        simp only [isQRWit, AsProver.bind_eq, AsProver.run_bind,
+          AsProver.readCVar_run hscx, hvx, Except.bind]
+        rfl)
+  -- the flag-selected operand
+  obtain ⟨xOrMx, st₂, hrun₂, hsat₂, hsel⟩ :=
+    selectField_complete (c := c) isQR x (CVar.scale_ nonResidue x) (sqrtF xv).isSome
+      xv (nonResidue * xv) st₁
+      ⟨⟨hsc₁, hrd₁⟩, hx.mono hnv₁ hle₁,
+        by
+          simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+          exact ⟨CVar.Scoped.scale_ (hscx.mono hnv₁),
+            by rw [CVar.val_scale_, CVar.val_of_le hle₁ hscx, hvx]⟩⟩
+  have hle₂ := hrun₂.le
+  have hnv₂ := hrun₂.nv_le
+  have hsel' := hsel
+  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hsel'
+  -- the advice's root really is one
+  have hsome : (sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).isSome := by
+    rcases hcase : sqrtF xv with _ | y
+    · simpa [hcase] using htwist hcase
+    · simp [hcase]
+  have hsq : ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0)
+      * ((sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0)
+      = (if (sqrtF xv).isSome then xv else nonResidue * xv) := by
+    obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp hsome
+    rw [hy]
+    exact hroot _ y hy
+  -- the root
+  obtain ⟨sqrtVal, st₃, hrun₃, hsat₃, hnv₃, hle₃, hsc₃, hrd₃⟩ :=
+    witness_complete (c := c) (val := F) (sqrtWit sqrtF xOrMx) (st := st₂)
+      (v := (sqrtF (if (sqrtF xv).isSome then xv else nonResidue * xv)).getD 0)
+      (by simp)
+      (by
+        simp only [sqrtWit, AsProver.bind_eq, AsProver.run_bind,
+          AsProver.readCVar_run hsel'.1, hsel'.2, Except.bind]
+        rfl)
+  -- the square row
+  obtain ⟨u, st₄, hrun₄, hsat₄, -⟩ :=
+    assertSquare_complete (c := c) sqrtVal xOrMx _ _ hsq st₃
+      ⟨⟨hsc₃, hrd₃⟩, hsel.mono hnv₃ hle₃⟩
+  have hle₄ := hrun₄.le
+  have hnv₄ := hrun₄.nv_le
+  refine ⟨(sqrtVal, isQR), st₄,
+    hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind rfl))), fun hnv hle =>
+      Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
+        (Sat.bind hrun₃ (hsat₃ ?_ ?_) (Sat.bind hrun₄ (hsat₄ hnv hle) Sat.pure))), ?_, ?_⟩
+  · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hnv₄)) hnv
+  · exact ((hle₂.trans hle₃).trans hle₄).trans hle
+  · exact Nat.le_trans (Nat.le_trans hnv₃ hnv₄) hnv
+  · exact (hle₃.trans hle₄).trans hle
+  · exact Nat.le_trans hnv₄ hnv
+  · exact hle₄.trans hle
+  · exact CircuitType.ReadsAs.mono (val := Bool)
+      (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hnv₄)) ((hle₂.trans hle₃).trans hle₄)
+      ⟨hsc₁, hrd₁⟩
+  · exact CircuitType.ReadsAs.mono (val := F) hnv₄ hle₄ ⟨hsc₃, hrd₃⟩
+
+/-- At least one flag set makes the asserted flag sum nonzero — where the characteristic
+is neither `2` nor `3`, which is what prices the sums `2` and `3`. -/
+private theorem flagSum [Field F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) :
+    ∀ a b c : Bool, (a = true ∨ b = true ∨ c = true) →
+      (bit a : F) + bit b + bit c ≠ 0 := by
+  rintro a b c h
+  cases a <;> cases b <;> cases c <;> simp_all [bit]
+  all_goals
+    first
+      | (rw [show (1 : F) + 1 = 2 from by norm_num]; exact h2)
+      | (rw [show (1 : F) + 1 + 1 = 3 from by norm_num]; exact h3)
+
+/-- **Completeness.** The honest run accepts and its result reads the pure map's point.
+The hypotheses: the operand reads a value whose `alphaInv` product is nonzero (the `div`
+divisor); some candidate's ordinate square has a root — Shallue–van de Woestijne, taken
+as a hypothesis; `sqrtF`'s roots are genuine; a rootless value's non-residue twist has a
+root; and `2, 3 ≠ 0` price the flag-sum assertion. -/
+theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) (tv : F)
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hne : (tv * tv + params.fu) * (tv * tv) ≠ 0)
     (hroot : ∀ a y, sqrtF a = some y → y * y = a)
     (htwist : ∀ a, sqrtF a = none → (sqrtF (params.nonResidue * a)).isSome)
-    (htwo : (2 : F) ≠ 0) (hthree : (3 : F) ≠ 0)
-    (Q : PostCond (AffinePoint (FVar F))
-      (.arg (ProverState F) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (t.eval env).isOk ∧
-          ∀ tv, t.eval env = .ok tv →
-            (tv * tv + params.fu) * (tv * tv) ≠ 0 ∧
-            ((sqrtF (ySquared params (potentialXs params tv).1)).isSome ∨
-              (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome ∨
-              (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome))
-        (fun env r env' => ∀ tv, t.eval env = .ok tv →
-          r.x.eval env' = .ok (groupMapPure sqrtF params tv).1 ∧
-          r.y.eval env' = .ok (groupMapPure sqrtF params tv).2)
-        Q⦄
-    (groupMapCircuit (c := Prover c) sqrtF params t)
-    ⦃Q⦄ := by
+    (hsome : (sqrtF (ySquared params (potentialXs params tv).1)).isSome = true ∨
+      (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome = true ∨
+      (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome = true) :
+    Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := F) st t tv)
+      (groupMapCircuit (c := c) sqrtF params t)
+      (fun r st' =>
+        CircuitType.ReadsAs (val := F) st' r.x (groupMapPure sqrtF params tv).1 ∧
+        CircuitType.ReadsAs (val := F) st' r.y (groupMapPure sqrtF params tv).2) := by
+  -- readings of the pure combinations, proof-local
+  have RC : ∀ (a : F) (s : ProverState F),
+      CircuitType.ReadsAs (val := F) s (CVar.const a) a := fun _ _ =>
+    ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩
+  have RS : ∀ {s : ProverState F} {u : FVar F} {uv a : F},
+      CircuitType.ReadsAs (val := F) s u uv →
+      CircuitType.ReadsAs (val := F) s ((CVar.const a).sub_ u) (a - uv) := by
+    intro s u uv a h
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at h ⊢
+    exact ⟨CVar.Scoped.sub_ trivial h.1, by rw [CVar.val_sub_, h.2]; rfl⟩
+  have RA : ∀ {s : ProverState F} {u : FVar F} {uv a : F},
+      CircuitType.ReadsAs (val := F) s u uv →
+      CircuitType.ReadsAs (val := F) s (u.add_ (CVar.const a)) (uv + a) := by
+    intro s u uv a h
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at h ⊢
+    exact ⟨CVar.Scoped.add_ h.1 trivial, by rw [CVar.val_add_, h.2]; rfl⟩
+  have RB : ∀ {s : ProverState F} {u v : FVar F} {uv vv : F},
+      CircuitType.ReadsAs (val := F) s u uv → CircuitType.ReadsAs (val := F) s v vv →
+      CircuitType.ReadsAs (val := F) s (u.add_ v) (uv + vv) := by
+    intro s u v uv vv hu hv
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+      at hu hv ⊢
+    exact ⟨CVar.Scoped.add_ hu.1 hv.1, by rw [CVar.val_add_, hu.2, hv.2]⟩
+  have RCoe : ∀ {s : ProverState F} {b : BoolVar F} {bb : Bool},
+      CircuitType.ReadsAs (val := Bool) s b bb →
+      CircuitType.ReadsAs (val := F) s (↑b : CVar F) (bit bb) := fun h =>
+    ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp h.1),
+      CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp h.2)⟩
+  have RNot : ∀ {s : ProverState F} {b : BoolVar F} {bb : Bool},
+      CircuitType.ReadsAs (val := Bool) s b bb →
+      CircuitType.ReadsAs (val := Bool) s (Snarky.not b) (!bb) := fun h =>
+    ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
+      CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
   simp only [groupMapCircuit]
-  mvcgen
-  rename_i st hpre
-  obtain ⟨⟨hokt, hcond⟩, hk⟩ := hpre
-  obtain ⟨tv, ht⟩ := CVar.evalOk hokt
-  obtain ⟨hne, hdisj⟩ := hcond tv ht
-  simp only [potentialXs, ySquared] at hdisj
-  have hcst : ∀ (a : F) (env : Assignments F),
-      (CVar.const a : CVar F).eval env = .ok a := fun _ _ => rfl
-  refine ⟨⟨by rw [ht]; rfl, by rw [ht]; rfl⟩, fun t2 s1 g1 l1 => ?_⟩
-  have h2 := g1 tv tv ht ht
-  mvcgen
-  refine ⟨⟨by rw [CVar.eval_add_ h2 rfl]; rfl, by rw [h2]; rfl⟩,
-    fun alphaInv s2 g2 l2 => ?_⟩
-  have hAI := g2 _ _ (CVar.eval_add_ h2 rfl) h2
-  mvcgen
-  refine ⟨⟨rfl, by rw [hAI]; rfl, fun yv hyv => ?_⟩, fun alpha s3 g3 l3 => ?_⟩
-  · rw [hAI] at hyv
-    injection hyv with hyv
-    exact hyv ▸ hne
-  have hAL := g3 _ _ (hcst _ _) hAI
-  mvcgen
-  have h2c := CVar.eval_le (l2.trans l3) h2
-  refine ⟨⟨by rw [h2c]; rfl, by rw [h2c]; rfl⟩, fun t4 s4 g4 l4 => ?_⟩
-  have h4 := g4 _ _ h2c h2c
-  mvcgen
-  have hALc := CVar.eval_le l4 hAL
-  refine ⟨⟨by rw [h4]; rfl, by rw [hALc]; rfl⟩, fun t4A s5 g5 l5 => ?_⟩
-  have h4A := g5 _ _ h4 hALc
-  mvcgen
-  refine ⟨⟨by rw [h4A]; rfl, rfl⟩, fun tm1 s6 g6 l6 => ?_⟩
-  have hT1 := g6 _ _ h4A rfl
-  mvcgen
-  have hALd := CVar.eval_le (l5.trans l6) hALc
-  have h2d := CVar.eval_le (l4.trans (l5.trans l6)) h2c
-  refine ⟨⟨by rw [hALd]; rfl, by rw [CVar.eval_add_ h2d rfl]; rfl⟩,
-    fun t2I s7 g7 l7 => ?_⟩
-  have hT2I := g7 _ _ hALd (CVar.eval_add_ h2d rfl)
-  mvcgen
-  have h2e := CVar.eval_le l7 h2d
-  refine ⟨⟨by rw [CVar.eval_add_ h2e rfl]; rfl, by rw [CVar.eval_add_ h2e rfl]; rfl⟩,
-    fun tFS s8 g8 l8 => ?_⟩
-  have hFS := g8 _ _ (CVar.eval_add_ h2e rfl) (CVar.eval_add_ h2e rfl)
-  mvcgen
-  have hT2Ic := CVar.eval_le l8 hT2I
-  refine ⟨⟨by rw [hFS]; rfl, by rw [hT2Ic]; rfl⟩, fun tm2a s9 g9 l9 => ?_⟩
-  have hT2a := g9 _ _ hFS hT2Ic
-  mvcgen
-  refine ⟨⟨by rw [hT2a]; rfl, rfl⟩, fun tm2 s10 g10 l10 => ?_⟩
-  have hT2 := g10 _ _ hT2a rfl
-  mvcgen
-  have hT1c := CVar.eval_le (l7.trans (l8.trans (l9.trans l10))) hT1
-  have hX1 := CVar.eval_sub_ (hcst params.sqrtNeg3U2MinusUOver2 _) hT1c
-  set X1 : F := params.sqrtNeg3U2MinusUOver2
-    - tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv)))
-      * params.sqrtNeg3U2 with hX1d
-  refine ⟨⟨by rw [hX1]; rfl, by rw [hX1]; rfl⟩, fun q1 s11 g11 l11 => ?_⟩
-  have hQ1 := g11 _ _ hX1 hX1
-  mvcgen
-  have hX1c := CVar.eval_le l11 hX1
-  refine ⟨⟨by rw [hQ1]; rfl, by rw [hX1c]; rfl⟩, fun cu1 s12 g12 l12 => ?_⟩
-  have hC1 := g12 _ _ hQ1 hX1c
-  mvcgen
-  refine sqrtFlagged_complete_spec (c := c) sqrtF params.nonResidue
-    (CVar.add_ cu1 (.const params.b)) hroot _ _
-    ⟨⟨by rw [CVar.eval_add_ hC1 (hcst _ _)]; rfl, fun v _ hnone => htwist v hnone⟩,
-      fun sf1 s13 g13 l13 => ?_⟩
+  intro st ht
+  obtain ⟨t2, st1, hrun1, hsat1, hT2⟩ :=
+    mul_complete (c := c) t t tv tv
+      st ⟨ht, ht⟩
+  have hT2Fu := RA hT2 (a := params.fu)
+  obtain ⟨alphaInv, st2, hrun2, hsat2, hAlphaInv⟩ :=
+    mul_complete (c := c) (t2.add_ (CVar.const params.fu)) t2
+      (tv * tv + params.fu) (tv * tv)
+      st1 ⟨hT2Fu, hT2⟩
+  have hT2 := hT2.mono hrun2.nv_le hrun2.le
+  have hT2Fu := hT2Fu.mono hrun2.nv_le hrun2.le
+  obtain ⟨alpha, st3, hrun3, hsat3, hAlpha⟩ :=
+    div_complete (c := c) (CVar.const 1) alphaInv 1
+      ((tv * tv + params.fu) * (tv * tv)) hne
+      st2 ⟨RC 1 _, hAlphaInv⟩
+  have hT2 := hT2.mono hrun3.nv_le hrun3.le
+  have hT2Fu := hT2Fu.mono hrun3.nv_le hrun3.le
+  obtain ⟨t4, st4, hrun4, hsat4, hT4⟩ :=
+    mul_complete (c := c) t2 t2 (tv * tv) (tv * tv)
+      st3 ⟨hT2, hT2⟩
+  have hT2Fu := hT2Fu.mono hrun4.nv_le hrun4.le
+  have hAlpha := hAlpha.mono hrun4.nv_le hrun4.le
+  obtain ⟨t4Alpha, st5, hrun5, hsat5, hT4Alpha⟩ :=
+    mul_complete (c := c) t4 alpha (tv * tv * (tv * tv))
+      (1 / ((tv * tv + params.fu) * (tv * tv)))
+      st4 ⟨hT4, hAlpha⟩
+  have hT2Fu := hT2Fu.mono hrun5.nv_le hrun5.le
+  have hAlpha := hAlpha.mono hrun5.nv_le hrun5.le
+  obtain ⟨temp1, st6, hrun6, hsat6, hTemp1⟩ :=
+    mul_complete (c := c) t4Alpha (CVar.const params.sqrtNeg3U2)
+      (tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv)))) params.sqrtNeg3U2
+      st5 ⟨hT4Alpha, RC _ _⟩
+  have hT2Fu := hT2Fu.mono hrun6.nv_le hrun6.le
+  have hAlpha := hAlpha.mono hrun6.nv_le hrun6.le
+  have hX1 : CircuitType.ReadsAs (val := F)
+    st6 ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1) (potentialXs params tv).1 := by
+    simpa [potentialXs] using RS hTemp1 (a := params.sqrtNeg3U2MinusUOver2)
+  have hX2 : CircuitType.ReadsAs (val := F)
+    st6 ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
+      (potentialXs params tv).2.1 := by
+    simpa [potentialXs] using RS hX1 (a := -params.u)
+  obtain ⟨t2Inv, st7, hrun7, hsat7, hT2Inv⟩ :=
+    mul_complete (c := c) alpha (t2.add_ (CVar.const params.fu))
+      (1 / ((tv * tv + params.fu) * (tv * tv))) (tv * tv + params.fu)
+      st6 ⟨hAlpha, hT2Fu⟩
+  have hT2Fu := hT2Fu.mono hrun7.nv_le hrun7.le
+  have hX1 := hX1.mono hrun7.nv_le hrun7.le
+  have hX2 := hX2.mono hrun7.nv_le hrun7.le
+  obtain ⟨t2PlusFuSq, st8, hrun8, hsat8, hT2PlusFuSq⟩ :=
+    mul_complete (c := c) (t2.add_ (CVar.const params.fu))
+      (t2.add_ (CVar.const params.fu)) (tv * tv + params.fu) (tv * tv + params.fu)
+      st7 ⟨hT2Fu, hT2Fu⟩
+  have hX1 := hX1.mono hrun8.nv_le hrun8.le
+  have hX2 := hX2.mono hrun8.nv_le hrun8.le
+  have hT2Inv := hT2Inv.mono hrun8.nv_le hrun8.le
+  obtain ⟨temp2a, st9, hrun9, hsat9, hTemp2a⟩ :=
+    mul_complete (c := c) t2PlusFuSq t2Inv ((tv * tv + params.fu) * (tv * tv + params.fu))
+      ((1 / ((tv * tv + params.fu) * (tv * tv))) * (tv * tv + params.fu))
+      st8 ⟨hT2PlusFuSq, hT2Inv⟩
+  have hX1 := hX1.mono hrun9.nv_le hrun9.le
+  have hX2 := hX2.mono hrun9.nv_le hrun9.le
+  obtain ⟨temp2, st10, hrun10, hsat10, hTemp2⟩ :=
+    mul_complete (c := c) temp2a (CVar.const params.inv3U2)
+      (((tv * tv + params.fu) * (tv * tv + params.fu)) * ((1 / ((tv * tv + params.fu) * (tv * tv)))
+        * (tv * tv + params.fu))) params.inv3U2
+      st9 ⟨hTemp2a, RC _ _⟩
+  have hX1 := hX1.mono hrun10.nv_le hrun10.le
+  have hX2 := hX2.mono hrun10.nv_le hrun10.le
+  have hX3 : CircuitType.ReadsAs (val := F) st10 ((CVar.const params.u).sub_ temp2)
+    (potentialXs params tv).2.2 := by
+    simpa [potentialXs] using RS hTemp2 (a := params.u)
+  obtain ⟨y1Sq, st11, hrun11, hsat11, hY1Sq⟩ :=
+    ySquared_complete (c := c) params ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)
+      (potentialXs params tv).1
+      st10 hX1
+  have hX1 := hX1.mono hrun11.nv_le hrun11.le
+  have hX2 := hX2.mono hrun11.nv_le hrun11.le
+  have hX3 := hX3.mono hrun11.nv_le hrun11.le
+  obtain ⟨sf1, st12, hrun12, hsat12, hSf1⟩ :=
+    sqrtFlagged_complete (c := c) sqrtF params.nonResidue
+      y1Sq (ySquared params (potentialXs params tv).1) hroot (htwist _)
+      st11 hY1Sq
+  have hX1 := hX1.mono hrun12.nv_le hrun12.le
+  have hX2 := hX2.mono hrun12.nv_le hrun12.le
+  have hX3 := hX3.mono hrun12.nv_le hrun12.le
   obtain ⟨y1, b1⟩ := sf1
-  obtain ⟨hB1, hY1⟩ := g13 _ (CVar.eval_add_ hC1 (hcst _ _))
-  mvcgen
-  have hX1e := CVar.eval_le (l12.trans l13) hX1c
-  have hX2 := CVar.eval_sub_ (hcst (-params.u) _) hX1e
-  refine ⟨⟨by rw [hX2]; rfl, by rw [hX2]; rfl⟩, fun q2 s14 g14 l14 => ?_⟩
-  have hQ2 := g14 _ _ hX2 hX2
-  mvcgen
-  have hX2c := CVar.eval_le l14 hX2
-  refine ⟨⟨by rw [hQ2]; rfl, by rw [hX2c]; rfl⟩, fun cu2 s15 g15 l15 => ?_⟩
-  have hC2 := g15 _ _ hQ2 hX2c
-  mvcgen
-  refine sqrtFlagged_complete_spec (c := c) sqrtF params.nonResidue
-    (CVar.add_ cu2 (.const params.b)) hroot _ _
-    ⟨⟨by rw [CVar.eval_add_ hC2 (hcst _ _)]; rfl, fun v _ hnone => htwist v hnone⟩,
-      fun sf2 s16 g16 l16 => ?_⟩
+  obtain ⟨hB1, hRoot1⟩ := hSf1
+  obtain ⟨y2Sq, st13, hrun13, hsat13, hY2Sq⟩ :=
+    ySquared_complete (c := c)
+      params ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
+      (potentialXs params tv).2.1
+      st12 hX2
+  have hX1 := hX1.mono hrun13.nv_le hrun13.le
+  have hX2 := hX2.mono hrun13.nv_le hrun13.le
+  have hX3 := hX3.mono hrun13.nv_le hrun13.le
+  have hB1 := hB1.mono hrun13.nv_le hrun13.le
+  have hRoot1 := hRoot1.mono hrun13.nv_le hrun13.le
+  obtain ⟨sf2, st14, hrun14, hsat14, hSf2⟩ :=
+    sqrtFlagged_complete (c := c) sqrtF params.nonResidue
+      y2Sq (ySquared params (potentialXs params tv).2.1) hroot (htwist _)
+      st13 hY2Sq
+  have hX1 := hX1.mono hrun14.nv_le hrun14.le
+  have hX2 := hX2.mono hrun14.nv_le hrun14.le
+  have hX3 := hX3.mono hrun14.nv_le hrun14.le
+  have hB1 := hB1.mono hrun14.nv_le hrun14.le
+  have hRoot1 := hRoot1.mono hrun14.nv_le hrun14.le
   obtain ⟨y2, b2⟩ := sf2
-  obtain ⟨hB2, hY2⟩ := g16 _ (CVar.eval_add_ hC2 (hcst _ _))
-  mvcgen
-  have hT2c := CVar.eval_le
-    (l11.trans (l12.trans (l13.trans (l14.trans (l15.trans l16))))) hT2
-  have hX3 := CVar.eval_sub_ (hcst params.u _) hT2c
-  set X3 : F := params.u
-    - (tv * tv + params.fu) * (tv * tv + params.fu)
-      * (1 / ((tv * tv + params.fu) * (tv * tv)) * (tv * tv + params.fu))
-      * params.inv3U2 with hX3d
-  refine ⟨⟨by rw [hX3]; rfl, by rw [hX3]; rfl⟩, fun q3 s17 g17 l17 => ?_⟩
-  have hQ3 := g17 _ _ hX3 hX3
-  mvcgen
-  have hX3c := CVar.eval_le l17 hX3
-  refine ⟨⟨by rw [hQ3]; rfl, by rw [hX3c]; rfl⟩, fun cu3 s18 g18 l18 => ?_⟩
-  have hC3 := g18 _ _ hQ3 hX3c
-  mvcgen
-  refine sqrtFlagged_complete_spec (c := c) sqrtF params.nonResidue
-    (CVar.add_ cu3 (.const params.b)) hroot _ _
-    ⟨⟨by rw [CVar.eval_add_ hC3 (hcst _ _)]; rfl, fun v _ hnone => htwist v hnone⟩,
-      fun sf3 s19 g19 l19 => ?_⟩
+  obtain ⟨hB2, hRoot2⟩ := hSf2
+  obtain ⟨y3Sq, st15, hrun15, hsat15, hY3Sq⟩ :=
+    ySquared_complete (c := c) params ((CVar.const params.u).sub_ temp2)
+      (potentialXs params tv).2.2
+      st14 hX3
+  have hX1 := hX1.mono hrun15.nv_le hrun15.le
+  have hX2 := hX2.mono hrun15.nv_le hrun15.le
+  have hX3 := hX3.mono hrun15.nv_le hrun15.le
+  have hB1 := hB1.mono hrun15.nv_le hrun15.le
+  have hRoot1 := hRoot1.mono hrun15.nv_le hrun15.le
+  have hB2 := hB2.mono hrun15.nv_le hrun15.le
+  have hRoot2 := hRoot2.mono hrun15.nv_le hrun15.le
+  obtain ⟨sf3, st16, hrun16, hsat16, hSf3⟩ :=
+    sqrtFlagged_complete (c := c) sqrtF params.nonResidue
+      y3Sq (ySquared params (potentialXs params tv).2.2) hroot (htwist _)
+      st15 hY3Sq
+  have hX1 := hX1.mono hrun16.nv_le hrun16.le
+  have hX2 := hX2.mono hrun16.nv_le hrun16.le
+  have hX3 := hX3.mono hrun16.nv_le hrun16.le
+  have hB1 := hB1.mono hrun16.nv_le hrun16.le
+  have hRoot1 := hRoot1.mono hrun16.nv_le hrun16.le
+  have hB2 := hB2.mono hrun16.nv_le hrun16.le
+  have hRoot2 := hRoot2.mono hrun16.nv_le hrun16.le
   obtain ⟨y3, b3⟩ := sf3
-  obtain ⟨hB3, hY3⟩ := g19 _ (CVar.eval_add_ hC3 (hcst _ _))
-  mvcgen
-  have hB1c := CVar.eval_le
-    (l14.trans (l15.trans (l16.trans (l17.trans (l18.trans l19))))) hB1
-  have hB2c := CVar.eval_le (l17.trans (l18.trans l19)) hB2
-  have hSum := CVar.eval_add_ (CVar.eval_add_ hB1c hB2c) hB3
-  refine ⟨⟨by rw [hSum]; rfl, fun vv hvv => ?_⟩, fun u20 s20 l20 => ?_⟩
-  · rw [hSum] at hvv
-    injection hvv with hvv
-    subst hvv
-    cases hb1c : (sqrtF (X1 * X1 * X1 + params.b)).isSome <;>
-      cases hb2c : (sqrtF ((-params.u - X1) * (-params.u - X1) * (-params.u - X1)
-        + params.b)).isSome <;>
-      cases hb3c : (sqrtF (X3 * X3 * X3 + params.b)).isSome <;>
-      simp [hb1c, hb2c, hb3c, bit] at hdisj ⊢ <;>
-      first
-      | exact one_ne_zero
-      | (rw [one_add_one_eq_two]; exact htwo)
-      | (rw [one_add_one_eq_two, two_add_one_eq_three]; exact hthree)
-  mvcgen
-  have hB1e := CVar.eval_le l20 hB1c
-  have hB2e := CVar.eval_le l20 hB2c
-  have hNB1 := not_eval (bb := (sqrtF (X1 * X1 * X1 + params.b)).isSome) hB1e
-  refine ⟨⟨by rw [hNB1]; rfl, by rw [hB2e]; rfl⟩, fun a1 s21 g21 l21 => ?_⟩
-  have hA1 := g21 _ _ hNB1 hB2e
-  mvcgen
-  have hB2f := CVar.eval_le l21 hB2e
-  have hB3c := CVar.eval_le (l20.trans l21) hB3
-  have hNB2 := not_eval (bb := (sqrtF ((-params.u - X1) * (-params.u - X1)
-    * (-params.u - X1) + params.b)).isSome) hB2f
-  refine ⟨⟨by rw [hNB2]; rfl, by rw [hB3c]; rfl⟩, fun a2 s22 g22 l22 => ?_⟩
-  have hA2 := g22 _ _ hNB2 hB3c
-  mvcgen
-  have hB1f := CVar.eval_le (l21.trans l22) hB1e
-  have hNB1' := not_eval (bb := (sqrtF (X1 * X1 * X1 + params.b)).isSome) hB1f
-  refine ⟨⟨by rw [hNB1']; rfl, by rw [hA2]; rfl⟩, fun a3 s23 g23 l23 => ?_⟩
-  have hA3 := g23 _ _ hNB1' hA2
-  mvcgen
-  have hY3c := CVar.eval_le (l20.trans (l21.trans (l22.trans l23))) hY3
-  refine ⟨⟨by rw [hA3]; rfl, by rw [hY3c]; rfl⟩, fun m3y s24 g24 l24 => ?_⟩
-  have hT3y := g24 _ _ hA3 hY3c
-  mvcgen
-  have hA1c := CVar.eval_le (l22.trans (l23.trans l24)) hA1
-  have hY2c := CVar.eval_le (l17.trans (l18.trans (l19.trans (l20.trans
-    (l21.trans (l22.trans (l23.trans l24))))))) hY2
-  refine ⟨⟨by rw [hA1c]; rfl, by rw [hY2c]; rfl⟩, fun m2y s25 g25 l25 => ?_⟩
-  have hT2y := g25 _ _ hA1c hY2c
-  mvcgen
-  have hB1g := CVar.eval_le (l23.trans (l24.trans l25)) hB1f
-  have hY1c := CVar.eval_le (l14.trans (l15.trans (l16.trans (l17.trans (l18.trans
-    (l19.trans (l20.trans (l21.trans (l22.trans (l23.trans
-    (l24.trans l25))))))))))) hY1
-  refine ⟨⟨by rw [hB1g]; rfl, by rw [hY1c]; rfl⟩, fun m1y s26 g26 l26 => ?_⟩
-  have hT1y := g26 _ _ hB1g hY1c
-  mvcgen
-  have hA3d := CVar.eval_le (l24.trans (l25.trans l26)) hA3
-  have hX3e := CVar.eval_le (l17.trans (l18.trans (l19.trans (l20.trans (l21.trans
-    (l22.trans (l23.trans (l24.trans (l25.trans l26))))))))) hX3
-  refine ⟨⟨by rw [hA3d]; rfl, by rw [hX3e]; rfl⟩, fun m3x s27 g27 l27 => ?_⟩
-  have hT3x := g27 _ _ hA3d hX3e
-  mvcgen
-  have hA1d := CVar.eval_le (l25.trans (l26.trans l27)) hA1c
-  have hX2e := CVar.eval_le (l14.trans (l15.trans (l16.trans (l17.trans (l18.trans
-    (l19.trans (l20.trans (l21.trans (l22.trans (l23.trans (l24.trans (l25.trans
-    (l26.trans l27))))))))))))) hX2
-  refine ⟨⟨by rw [hA1d]; rfl, by rw [hX2e]; rfl⟩, fun m2x s28 g28 l28 => ?_⟩
-  have hT2x := g28 _ _ hA1d hX2e
-  mvcgen
-  have hB1h := CVar.eval_le (l26.trans (l27.trans l28)) hB1g
-  have hX1f := CVar.eval_le (l14.trans (l15.trans (l16.trans (l17.trans (l18.trans
-    (l19.trans (l20.trans (l21.trans (l22.trans (l23.trans (l24.trans (l25.trans
-    (l26.trans (l27.trans l28)))))))))))))) hX1e
-  refine ⟨⟨by rw [hB1h]; rfl, by rw [hX1f]; rfl⟩, fun m1x s29 g29 l29 => ?_⟩
-  have hT1x := g29 _ _ hB1h hX1f
-  intro hf
-  have hT2xc := CVar.eval_le l29 hT2x
-  have hT3xc := CVar.eval_le (l28.trans l29) hT3x
-  have hT1yc := CVar.eval_le (l27.trans (l28.trans l29)) hT1y
-  have hT2yc := CVar.eval_le (l26.trans (l27.trans (l28.trans l29))) hT2y
-  have hT3yc := CVar.eval_le (l25.trans (l26.trans (l27.trans (l28.trans l29)))) hT3y
-  have lAll : st.env.Le s29.env :=
-    l1.trans (l2.trans (l3.trans (l4.trans (l5.trans (l6.trans (l7.trans (l8.trans
-      (l9.trans (l10.trans (l11.trans (l12.trans (l13.trans (l14.trans (l15.trans
-      (l16.trans (l17.trans (l18.trans (l19.trans (l20.trans (l21.trans (l22.trans
-      (l23.trans (l24.trans (l25.trans (l26.trans (l27.trans (l28.trans
-        l29)))))))))))))))))))))))))))
-  refine hk ⟨_, _⟩ ⟨s29.nv, s29.env, hf⟩ (fun tv' ht' => ?_) lAll
-  rw [ht] at ht'
-  injection ht' with ht'
-  subst ht'
-  refine ⟨?_, ?_⟩
-  · rw [CVar.eval_add_ (CVar.eval_add_ hT1x hT2xc) hT3xc]
-    simp only [groupMapPure, potentialXs, ySquared]
-    rw [← hX1d, ← hX3d]
-    rcases hc1 : sqrtF (X1 * X1 * X1 + params.b) with _ | w1 <;>
-      rcases hc2 : sqrtF ((-params.u - X1) * (-params.u - X1) * (-params.u - X1)
-        + params.b) with _ | w2 <;>
-      rcases hc3 : sqrtF (X3 * X3 * X3 + params.b) with _ | w3 <;>
-      simp [hc1, hc2, hc3, bit] at hdisj ⊢
-  · rw [CVar.eval_add_ (CVar.eval_add_ hT1yc hT2yc) hT3yc]
-    simp only [groupMapPure, potentialXs, ySquared]
-    rw [← hX1d, ← hX3d]
-    rcases hc1 : sqrtF (X1 * X1 * X1 + params.b) with _ | w1 <;>
-      rcases hc2 : sqrtF ((-params.u - X1) * (-params.u - X1) * (-params.u - X1)
-        + params.b) with _ | w2 <;>
-      rcases hc3 : sqrtF (X3 * X3 * X3 + params.b) with _ | w3 <;>
-      simp [hc1, hc2, hc3, bit] at hdisj ⊢
+  obtain ⟨hB3, hRoot3⟩ := hSf3
+  obtain ⟨u17, st17, hrun17, hsat17, -⟩ :=
+    assertNonZero_complete (c := c)
+      (((↑b1 : CVar F).add_ (↑b2 : CVar F)).add_ (↑b3 : CVar F))
+      (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome + bit (sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome + bit (sqrtF (ySquared params (potentialXs params
+          tv).2.2)).isSome)
+      (flagSum h2 h3 _ _ _ hsome) st16
+      (RB (RB (RCoe hB1) (RCoe hB2)) (RCoe hB3))
+  have hX1 := hX1.mono hrun17.nv_le hrun17.le
+  have hX2 := hX2.mono hrun17.nv_le hrun17.le
+  have hX3 := hX3.mono hrun17.nv_le hrun17.le
+  have hB1 := hB1.mono hrun17.nv_le hrun17.le
+  have hRoot1 := hRoot1.mono hrun17.nv_le hrun17.le
+  have hB2 := hB2.mono hrun17.nv_le hrun17.le
+  have hRoot2 := hRoot2.mono hrun17.nv_le hrun17.le
+  have hB3 := hB3.mono hrun17.nv_le hrun17.le
+  have hRoot3 := hRoot3.mono hrun17.nv_le hrun17.le
+  have hNB1 := RNot hB1
+  have hNB2 := RNot hB2
+  obtain ⟨x2First, st18, hrun18, hsat18, hX2First⟩ :=
+    and_complete (c := c) (Snarky.not b1)
+      b2 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
+      ((sqrtF (ySquared params (potentialXs params tv).2.1)).isSome)
+      st17 ⟨hNB1, hB2⟩
+  have hX1 := hX1.mono hrun18.nv_le hrun18.le
+  have hX2 := hX2.mono hrun18.nv_le hrun18.le
+  have hX3 := hX3.mono hrun18.nv_le hrun18.le
+  have hB1 := hB1.mono hrun18.nv_le hrun18.le
+  have hRoot1 := hRoot1.mono hrun18.nv_le hrun18.le
+  have hB2 := hB2.mono hrun18.nv_le hrun18.le
+  have hRoot2 := hRoot2.mono hrun18.nv_le hrun18.le
+  have hB3 := hB3.mono hrun18.nv_le hrun18.le
+  have hRoot3 := hRoot3.mono hrun18.nv_le hrun18.le
+  have hNB1 := hNB1.mono hrun18.nv_le hrun18.le
+  have hNB2 := hNB2.mono hrun18.nv_le hrun18.le
+  obtain ⟨nb2AndB3, st19, hrun19, hsat19, hNB2AndB3⟩ :=
+    and_complete (c := c) (Snarky.not b2)
+      b3 (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome)
+      ((sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)
+      st18 ⟨hNB2, hB3⟩
+  have hX1 := hX1.mono hrun19.nv_le hrun19.le
+  have hX2 := hX2.mono hrun19.nv_le hrun19.le
+  have hX3 := hX3.mono hrun19.nv_le hrun19.le
+  have hB1 := hB1.mono hrun19.nv_le hrun19.le
+  have hRoot1 := hRoot1.mono hrun19.nv_le hrun19.le
+  have hRoot2 := hRoot2.mono hrun19.nv_le hrun19.le
+  have hRoot3 := hRoot3.mono hrun19.nv_le hrun19.le
+  have hNB1 := hNB1.mono hrun19.nv_le hrun19.le
+  have hX2First := hX2First.mono hrun19.nv_le hrun19.le
+  obtain ⟨x3First, st20, hrun20, hsat20, hX3First⟩ :=
+    and_complete (c := c) (Snarky.not b1)
+      nb2AndB3 (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
+      (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params
+        (potentialXs params tv).2.2)).isSome)
+      st19 ⟨hNB1, hNB2AndB3⟩
+  have hX1 := hX1.mono hrun20.nv_le hrun20.le
+  have hX2 := hX2.mono hrun20.nv_le hrun20.le
+  have hX3 := hX3.mono hrun20.nv_le hrun20.le
+  have hB1 := hB1.mono hrun20.nv_le hrun20.le
+  have hRoot1 := hRoot1.mono hrun20.nv_le hrun20.le
+  have hRoot2 := hRoot2.mono hrun20.nv_le hrun20.le
+  have hRoot3 := hRoot3.mono hrun20.nv_le hrun20.le
+  have hX2First := hX2First.mono hrun20.nv_le hrun20.le
+  obtain ⟨t3y, st21, hrun21, hsat21, hT3y⟩ :=
+    mul_complete (c := c) (↑x3First : CVar F) y3
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (!(sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params
+          tv).2.2)).isSome)))
+      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome then ySquared params
+        (potentialXs params tv).2.2
+        else params.nonResidue * ySquared params (potentialXs params tv).2.2)).getD 0)
+      st20 ⟨RCoe hX3First, hRoot3⟩
+  have hX1 := hX1.mono hrun21.nv_le hrun21.le
+  have hX2 := hX2.mono hrun21.nv_le hrun21.le
+  have hX3 := hX3.mono hrun21.nv_le hrun21.le
+  have hB1 := hB1.mono hrun21.nv_le hrun21.le
+  have hRoot1 := hRoot1.mono hrun21.nv_le hrun21.le
+  have hRoot2 := hRoot2.mono hrun21.nv_le hrun21.le
+  have hRoot3 := hRoot3.mono hrun21.nv_le hrun21.le
+  have hX2First := hX2First.mono hrun21.nv_le hrun21.le
+  have hX3First := hX3First.mono hrun21.nv_le hrun21.le
+  obtain ⟨t2y, st22, hrun22, hsat22, hT2y⟩ :=
+    mul_complete (c := c) (↑x2First : CVar F) y2
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome))
+      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome then ySquared params
+        (potentialXs params tv).2.1
+        else params.nonResidue * ySquared params (potentialXs params tv).2.1)).getD 0)
+      st21 ⟨RCoe hX2First, hRoot2⟩
+  have hX1 := hX1.mono hrun22.nv_le hrun22.le
+  have hX2 := hX2.mono hrun22.nv_le hrun22.le
+  have hX3 := hX3.mono hrun22.nv_le hrun22.le
+  have hB1 := hB1.mono hrun22.nv_le hrun22.le
+  have hRoot1 := hRoot1.mono hrun22.nv_le hrun22.le
+  have hRoot2 := hRoot2.mono hrun22.nv_le hrun22.le
+  have hRoot3 := hRoot3.mono hrun22.nv_le hrun22.le
+  have hX2First := hX2First.mono hrun22.nv_le hrun22.le
+  have hX3First := hX3First.mono hrun22.nv_le hrun22.le
+  have hT3y := hT3y.mono hrun22.nv_le hrun22.le
+  obtain ⟨t1y, st23, hrun23, hsat23, hT1y⟩ :=
+    mul_complete (c := c) (↑b1 : CVar F) y1
+      (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome)
+      ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).1)).isSome then ySquared params
+        (potentialXs params tv).1
+        else params.nonResidue * ySquared params (potentialXs params tv).1)).getD 0)
+      st22 ⟨RCoe hB1, hRoot1⟩
+  have hX1 := hX1.mono hrun23.nv_le hrun23.le
+  have hX2 := hX2.mono hrun23.nv_le hrun23.le
+  have hX3 := hX3.mono hrun23.nv_le hrun23.le
+  have hB1 := hB1.mono hrun23.nv_le hrun23.le
+  have hRoot1 := hRoot1.mono hrun23.nv_le hrun23.le
+  have hRoot2 := hRoot2.mono hrun23.nv_le hrun23.le
+  have hRoot3 := hRoot3.mono hrun23.nv_le hrun23.le
+  have hX2First := hX2First.mono hrun23.nv_le hrun23.le
+  have hX3First := hX3First.mono hrun23.nv_le hrun23.le
+  have hT3y := hT3y.mono hrun23.nv_le hrun23.le
+  have hT2y := hT2y.mono hrun23.nv_le hrun23.le
+  obtain ⟨t3x, st24, hrun24, hsat24, hT3x⟩ :=
+    mul_complete (c := c) (↑x3First : CVar F) ((CVar.const params.u).sub_ temp2)
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (!(sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome && (sqrtF (ySquared params (potentialXs params
+          tv).2.2)).isSome)))
+      (potentialXs params tv).2.2
+      st23 ⟨RCoe hX3First, hX3⟩
+  have hX1 := hX1.mono hrun24.nv_le hrun24.le
+  have hX2 := hX2.mono hrun24.nv_le hrun24.le
+  have hX3 := hX3.mono hrun24.nv_le hrun24.le
+  have hB1 := hB1.mono hrun24.nv_le hrun24.le
+  have hRoot1 := hRoot1.mono hrun24.nv_le hrun24.le
+  have hRoot2 := hRoot2.mono hrun24.nv_le hrun24.le
+  have hRoot3 := hRoot3.mono hrun24.nv_le hrun24.le
+  have hX2First := hX2First.mono hrun24.nv_le hrun24.le
+  have hX3First := hX3First.mono hrun24.nv_le hrun24.le
+  have hT3y := hT3y.mono hrun24.nv_le hrun24.le
+  have hT2y := hT2y.mono hrun24.nv_le hrun24.le
+  have hT1y := hT1y.mono hrun24.nv_le hrun24.le
+  obtain ⟨t2x, st25, hrun25, hsat25, hT2x⟩ :=
+    mul_complete (c := c) (↑x2First : CVar F)
+      ((CVar.const (-params.u)).sub_ ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
+      (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome && (sqrtF (ySquared params
+        (potentialXs params tv).2.1)).isSome))
+      (potentialXs params tv).2.1
+      st24 ⟨RCoe hX2First, hX2⟩
+  have hX1 := hX1.mono hrun25.nv_le hrun25.le
+  have hX2 := hX2.mono hrun25.nv_le hrun25.le
+  have hX3 := hX3.mono hrun25.nv_le hrun25.le
+  have hB1 := hB1.mono hrun25.nv_le hrun25.le
+  have hRoot1 := hRoot1.mono hrun25.nv_le hrun25.le
+  have hRoot2 := hRoot2.mono hrun25.nv_le hrun25.le
+  have hRoot3 := hRoot3.mono hrun25.nv_le hrun25.le
+  have hX2First := hX2First.mono hrun25.nv_le hrun25.le
+  have hX3First := hX3First.mono hrun25.nv_le hrun25.le
+  have hT3y := hT3y.mono hrun25.nv_le hrun25.le
+  have hT2y := hT2y.mono hrun25.nv_le hrun25.le
+  have hT1y := hT1y.mono hrun25.nv_le hrun25.le
+  have hT3x := hT3x.mono hrun25.nv_le hrun25.le
+  obtain ⟨t1x, st26, hrun26, hsat26, hT1x⟩ :=
+    mul_complete (c := c) (↑b1 : CVar F) ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)
+      (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome)
+      (potentialXs params tv).1
+      st25 ⟨RCoe hB1, hX1⟩
+  have hX1 := hX1.mono hrun26.nv_le hrun26.le
+  have hX2 := hX2.mono hrun26.nv_le hrun26.le
+  have hX3 := hX3.mono hrun26.nv_le hrun26.le
+  have hB1 := hB1.mono hrun26.nv_le hrun26.le
+  have hRoot1 := hRoot1.mono hrun26.nv_le hrun26.le
+  have hRoot2 := hRoot2.mono hrun26.nv_le hrun26.le
+  have hRoot3 := hRoot3.mono hrun26.nv_le hrun26.le
+  have hX2First := hX2First.mono hrun26.nv_le hrun26.le
+  have hX3First := hX3First.mono hrun26.nv_le hrun26.le
+  have hT3y := hT3y.mono hrun26.nv_le hrun26.le
+  have hT2y := hT2y.mono hrun26.nv_le hrun26.le
+  have hT1y := hT1y.mono hrun26.nv_le hrun26.le
+  have hT3x := hT3x.mono hrun26.nv_le hrun26.le
+  have hT2x := hT2x.mono hrun26.nv_le hrun26.le
+
+  have N25 : st25.nv ≤ st26.nv := hrun26.nv_le
+  have L25 : st25.env.Le st26.env := hrun26.le
+  have N24 : st24.nv ≤ st26.nv := Nat.le_trans hrun25.nv_le N25
+  have L24 : st24.env.Le st26.env := hrun25.le.trans L25
+  have N23 : st23.nv ≤ st26.nv := Nat.le_trans hrun24.nv_le N24
+  have L23 : st23.env.Le st26.env := hrun24.le.trans L24
+  have N22 : st22.nv ≤ st26.nv := Nat.le_trans hrun23.nv_le N23
+  have L22 : st22.env.Le st26.env := hrun23.le.trans L23
+  have N21 : st21.nv ≤ st26.nv := Nat.le_trans hrun22.nv_le N22
+  have L21 : st21.env.Le st26.env := hrun22.le.trans L22
+  have N20 : st20.nv ≤ st26.nv := Nat.le_trans hrun21.nv_le N21
+  have L20 : st20.env.Le st26.env := hrun21.le.trans L21
+  have N19 : st19.nv ≤ st26.nv := Nat.le_trans hrun20.nv_le N20
+  have L19 : st19.env.Le st26.env := hrun20.le.trans L20
+  have N18 : st18.nv ≤ st26.nv := Nat.le_trans hrun19.nv_le N19
+  have L18 : st18.env.Le st26.env := hrun19.le.trans L19
+  have N17 : st17.nv ≤ st26.nv := Nat.le_trans hrun18.nv_le N18
+  have L17 : st17.env.Le st26.env := hrun18.le.trans L18
+  have N16 : st16.nv ≤ st26.nv := Nat.le_trans hrun17.nv_le N17
+  have L16 : st16.env.Le st26.env := hrun17.le.trans L17
+  have N15 : st15.nv ≤ st26.nv := Nat.le_trans hrun16.nv_le N16
+  have L15 : st15.env.Le st26.env := hrun16.le.trans L16
+  have N14 : st14.nv ≤ st26.nv := Nat.le_trans hrun15.nv_le N15
+  have L14 : st14.env.Le st26.env := hrun15.le.trans L15
+  have N13 : st13.nv ≤ st26.nv := Nat.le_trans hrun14.nv_le N14
+  have L13 : st13.env.Le st26.env := hrun14.le.trans L14
+  have N12 : st12.nv ≤ st26.nv := Nat.le_trans hrun13.nv_le N13
+  have L12 : st12.env.Le st26.env := hrun13.le.trans L13
+  have N11 : st11.nv ≤ st26.nv := Nat.le_trans hrun12.nv_le N12
+  have L11 : st11.env.Le st26.env := hrun12.le.trans L12
+  have N10 : st10.nv ≤ st26.nv := Nat.le_trans hrun11.nv_le N11
+  have L10 : st10.env.Le st26.env := hrun11.le.trans L11
+  have N9 : st9.nv ≤ st26.nv := Nat.le_trans hrun10.nv_le N10
+  have L9 : st9.env.Le st26.env := hrun10.le.trans L10
+  have N8 : st8.nv ≤ st26.nv := Nat.le_trans hrun9.nv_le N9
+  have L8 : st8.env.Le st26.env := hrun9.le.trans L9
+  have N7 : st7.nv ≤ st26.nv := Nat.le_trans hrun8.nv_le N8
+  have L7 : st7.env.Le st26.env := hrun8.le.trans L8
+  have N6 : st6.nv ≤ st26.nv := Nat.le_trans hrun7.nv_le N7
+  have L6 : st6.env.Le st26.env := hrun7.le.trans L7
+  have N5 : st5.nv ≤ st26.nv := Nat.le_trans hrun6.nv_le N6
+  have L5 : st5.env.Le st26.env := hrun6.le.trans L6
+  have N4 : st4.nv ≤ st26.nv := Nat.le_trans hrun5.nv_le N5
+  have L4 : st4.env.Le st26.env := hrun5.le.trans L5
+  have N3 : st3.nv ≤ st26.nv := Nat.le_trans hrun4.nv_le N4
+  have L3 : st3.env.Le st26.env := hrun4.le.trans L4
+  have N2 : st2.nv ≤ st26.nv := Nat.le_trans hrun3.nv_le N3
+  have L2 : st2.env.Le st26.env := hrun3.le.trans L3
+  have N1 : st1.nv ≤ st26.nv := Nat.le_trans hrun2.nv_le N2
+  have L1 : st1.env.Le st26.env := hrun2.le.trans L2
+  refine ⟨⟨(t1x.add_ t2x).add_ t3x, (t1y.add_ t2y).add_ t3y⟩, st26, ?_, ?_, ?_, ?_⟩
+  · exact hrun1.bind (hrun2.bind (hrun3.bind (hrun4.bind (hrun5.bind (hrun6.bind
+      (hrun7.bind (hrun8.bind (hrun9.bind (hrun10.bind (hrun11.bind (hrun12.bind
+      (hrun13.bind (hrun14.bind (hrun15.bind (hrun16.bind (hrun17.bind (hrun18.bind
+      (hrun19.bind (hrun20.bind (hrun21.bind (hrun22.bind (hrun23.bind (hrun24.bind
+      (hrun25.bind (hrun26.bind rfl)))))))))))))))))))))))))
+  · intro stf hnv hle
+    exact
+      Sat.bind hrun1 (hsat1 (Nat.le_trans N1 hnv) (L1.trans hle)) (
+      Sat.bind hrun2 (hsat2 (Nat.le_trans N2 hnv) (L2.trans hle)) (
+      Sat.bind hrun3 (hsat3 (Nat.le_trans N3 hnv) (L3.trans hle)) (
+      Sat.bind hrun4 (hsat4 (Nat.le_trans N4 hnv) (L4.trans hle)) (
+      Sat.bind hrun5 (hsat5 (Nat.le_trans N5 hnv) (L5.trans hle)) (
+      Sat.bind hrun6 (hsat6 (Nat.le_trans N6 hnv) (L6.trans hle)) (
+      Sat.bind hrun7 (hsat7 (Nat.le_trans N7 hnv) (L7.trans hle)) (
+      Sat.bind hrun8 (hsat8 (Nat.le_trans N8 hnv) (L8.trans hle)) (
+      Sat.bind hrun9 (hsat9 (Nat.le_trans N9 hnv) (L9.trans hle)) (
+      Sat.bind hrun10 (hsat10 (Nat.le_trans N10 hnv) (L10.trans hle)) (
+      Sat.bind hrun11 (hsat11 (Nat.le_trans N11 hnv) (L11.trans hle)) (
+      Sat.bind hrun12 (hsat12 (Nat.le_trans N12 hnv) (L12.trans hle)) (
+      Sat.bind hrun13 (hsat13 (Nat.le_trans N13 hnv) (L13.trans hle)) (
+      Sat.bind hrun14 (hsat14 (Nat.le_trans N14 hnv) (L14.trans hle)) (
+      Sat.bind hrun15 (hsat15 (Nat.le_trans N15 hnv) (L15.trans hle)) (
+      Sat.bind hrun16 (hsat16 (Nat.le_trans N16 hnv) (L16.trans hle)) (
+      Sat.bind hrun17 (hsat17 (Nat.le_trans N17 hnv) (L17.trans hle)) (
+      Sat.bind hrun18 (hsat18 (Nat.le_trans N18 hnv) (L18.trans hle)) (
+      Sat.bind hrun19 (hsat19 (Nat.le_trans N19 hnv) (L19.trans hle)) (
+      Sat.bind hrun20 (hsat20 (Nat.le_trans N20 hnv) (L20.trans hle)) (
+      Sat.bind hrun21 (hsat21 (Nat.le_trans N21 hnv) (L21.trans hle)) (
+      Sat.bind hrun22 (hsat22 (Nat.le_trans N22 hnv) (L22.trans hle)) (
+      Sat.bind hrun23 (hsat23 (Nat.le_trans N23 hnv) (L23.trans hle)) (
+      Sat.bind hrun24 (hsat24 (Nat.le_trans N24 hnv) (L24.trans hle)) (
+      Sat.bind hrun25 (hsat25 (Nat.le_trans N25 hnv) (L25.trans hle)) (
+      Sat.bind hrun26 (hsat26 hnv hle) Sat.pure)))))))))))))))))))))))))
+  · have h := RB (RB hT1x hT2x) hT3x
+    rcases h1 : sqrtF (ySquared params (potentialXs params tv).1) with _ | v1
+    · rcases h2' : sqrtF (ySquared params (potentialXs params tv).2.1) with _ | v2
+      · rcases h3' : sqrtF (ySquared params (potentialXs params tv).2.2) with _ | v3
+        · simp [h1, h2', h3'] at hsome
+        · simpa [groupMapPure, h1, h2', h3', bit] using h
+      · simpa [groupMapPure, h1, h2', bit] using h
+    · simpa [groupMapPure, h1, bit] using h
+  · have h := RB (RB hT1y hT2y) hT3y
+    rcases h1 : sqrtF (ySquared params (potentialXs params tv).1) with _ | v1
+    · rcases h2' : sqrtF (ySquared params (potentialXs params tv).2.1) with _ | v2
+      · rcases h3' : sqrtF (ySquared params (potentialXs params tv).2.2) with _ | v3
+        · simp [h1, h2', h3'] at hsome
+        · simpa [groupMapPure, h1, h2', h3', bit] using h
+      · simpa [groupMapPure, h1, h2', bit] using h
+    · simpa [groupMapPure, h1, bit] using h
 
 /-! ## The wire-protocol spec
 
@@ -752,62 +933,57 @@ private theorem sqrt?_twist {F : Type} [Field F] [Fintype F] [DecidableEq F]
   rfl
 
 open Std.Do in
-/-- Wire-level soundness: any satisfying valuation reads the result as a point of the
-wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the SvdW
-candidate abscissae. The advice is universally quantified: soundness never consults
-it. -/
-theorem groupMapCircuit_onCurve_spec (spec : _root_.Poseidon.GroupMap.Spec q)
-    (nonResidue : ZMod q) (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q))
-    (Q : PostCond (AffinePoint (FVar (ZMod q))) (.arg (BuilderState (ZMod q)) .pure)) :
-    ⦃Sound (fun V (r : AffinePoint (FVar (ZMod q))) =>
-        (r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1
-          ∨ r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.1
-          ∨ r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.2) ∧
-        OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)) Q⦄
-    (groupMapCircuit (c := KimchiConstraint (ZMod q)) sqrtF (.ofSpec spec nonResidue) t)
-    ⦃Q⦄ := by
-  intro s hpre
-  refine groupMapCircuit_spec sqrtF (.ofSpec spec nonResidue) t Q s ?_
-  intro r nv' hP
-  refine hpre r nv' ⟨hP.1, ?_⟩
-  show r.y.val s.V ^ 2 = r.x.val s.V ^ 3 + spec.E.A * r.x.val s.V + spec.E.B
+/-- **Wire-level soundness**: any satisfying valuation reads the result as a point of the
+wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the SvdW candidate
+abscissae. The advice is universally quantified: soundness never consults it. -/
+theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
+    [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
+    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q)
+    (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec nonResidue) t
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1 ∨
+        r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.1 ∨
+        r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.2) ∧
+      OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)⌝⦄ := by
+  intro nv h hsat
+  obtain ⟨hx, hy⟩ := groupMapCircuit_spec (c := c) (V := V) sqrtF
+    (.ofSpec spec nonResidue) t nv h hsat
+  refine ⟨hx, ?_⟩
+  show _ ^ 2 = _ ^ 3 + spec.E.A * _ + spec.E.B
   rw [spec.hA]
-  have hb := hP.2
-  simp only [GroupMapParams.ofSpec] at hb
-  linear_combination hb
+  simp only [ySquared] at hy
+  rw [show ((GroupMapParams.ofSpec spec nonResidue).b : ZMod q) = spec.E.B from rfl] at hy
+  linear_combination hy
 
-open Std.Do in
-/-- Wire-level completeness: the honest run lands on the wire map itself — the result
-reads `Poseidon.GroupMap.toGroup`, the map the verifier runs to derive the per-proof
-`U` base. `groupMapCircuit_complete_spec` at a wire `Spec`: the advice is the spec's
-own Tonelli–Shanks root, root-genuineness is `sqrt?_mul_self`, twist-totality is
-`sqrt?_twist` at a genuine non-residue, `2 ≠ 0` comes from `q ≠ 2`, and the pure model
-is rewritten by `groupMapPure_toGroup`. The SvdW disjunction (as `IsSquare`) and the
-operand nondegeneracy remain, with `q ≠ 3` pricing the flag-sum assertion. -/
-theorem groupMapCircuit_toGroup_complete_spec {c : Type} [BasicSystem (ZMod q) c]
-    [Checker (ZMod q) c] [LawfulChecker (ZMod q) c]
+open WeierstrassCurve.Affine in
+/-- **Wire-level completeness**: the honest run lands on the wire map itself — the result
+reads `Poseidon.GroupMap.toGroup`, the map the verifier runs to derive the per-proof `U`
+base. `groupMapCircuit_complete` at a wire `Spec`: the advice is the spec's own
+Tonelli–Shanks root, root-genuineness is `sqrt?_mul_self`, twist-totality is `sqrt?_twist`
+at a genuine non-residue, `2 ≠ 0` comes from `q ≠ 2`, and the pure model is rewritten by
+`groupMapPure_toGroup`. The SvdW disjunction (as `IsSquare`) and the operand's
+nondegeneracy remain, with `q ≠ 3` pricing the flag-sum assertion. -/
+theorem groupMapCircuit_toGroup_complete {c : Type} [BasicSystem (ZMod q) c]
+    [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
     (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q) (t : FVar (ZMod q))
-    (hq2 : q ≠ 2) (hq3 : q ≠ 3) (hnr0 : nonResidue ≠ 0) (hnr : ¬IsSquare nonResidue)
-    (Q : PostCond (AffinePoint (FVar (ZMod q)))
-      (.arg (ProverState (ZMod q)) (.except EvalError .pure))) :
-    ⦃Complete
-        (fun env => (t.eval env).isOk ∧
-          ∀ tv, t.eval env = .ok tv →
-            (tv * tv + spec.fu) * (tv * tv) ≠ 0 ∧
-            (IsSquare (ySquared (.ofSpec spec nonResidue)
-                (potentialXs (.ofSpec spec nonResidue) tv).1) ∨
-              IsSquare (ySquared (.ofSpec spec nonResidue)
-                (potentialXs (.ofSpec spec nonResidue) tv).2.1) ∨
-              IsSquare (ySquared (.ofSpec spec nonResidue)
-                (potentialXs (.ofSpec spec nonResidue) tv).2.2)))
-        (fun env r env' => ∀ tv, t.eval env = .ok tv →
-          r.x.eval env' = .ok (_root_.Poseidon.GroupMap.toGroup spec tv).x ∧
-          r.y.eval env' = .ok (_root_.Poseidon.GroupMap.toGroup spec tv).y)
-        Q⦄
-    (groupMapCircuit (c := Prover c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t)
-    ⦃Q⦄ := by
-  intro st hpre
-  obtain ⟨⟨hok, hcond⟩, hk⟩ := hpre
+    (tv : ZMod q) (hq2 : q ≠ 2) (hq3 : q ≠ 3) (hnr0 : nonResidue ≠ 0)
+    (hnr : ¬IsSquare nonResidue)
+    (hne : (tv * tv + spec.fu) * (tv * tv) ≠ 0)
+    (hsq : IsSquare (ySquared (.ofSpec spec nonResidue)
+          (potentialXs (.ofSpec spec nonResidue) tv).1) ∨
+        IsSquare (ySquared (.ofSpec spec nonResidue)
+          (potentialXs (.ofSpec spec nonResidue) tv).2.1) ∨
+        IsSquare (ySquared (.ofSpec spec nonResidue)
+          (potentialXs (.ofSpec spec nonResidue) tv).2.2)) :
+    Complete (F := ZMod q) (c := c)
+      (fun st => CircuitType.ReadsAs (val := ZMod q) st t tv)
+      (groupMapCircuit (c := c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t)
+      (fun r st' =>
+        CircuitType.ReadsAs (val := ZMod q) st' r.x
+          (_root_.Poseidon.GroupMap.toGroup spec tv).x ∧
+        CircuitType.ReadsAs (val := ZMod q) st' r.y
+          (_root_.Poseidon.GroupMap.toGroup spec tv).y) := by
   have hchar : ringChar (ZMod q) ≠ 2 := by
     rw [ZMod.ringChar_zmod_n]
     exact hq2
@@ -815,21 +991,19 @@ theorem groupMapCircuit_toGroup_complete_spec {c : Type} [BasicSystem (ZMod q) c
     intro h
     exact hq3 ((Nat.prime_dvd_prime_iff_eq Fact.out (by norm_num)).mp
       ((CharP.cast_eq_zero_iff (ZMod q) q 3).mp (by exact_mod_cast h)))
-  have hsome : ∀ v : ZMod q, IsSquare v → (spec.sqrt.sqrt? v).isSome := fun v hv => by
+  have hsome : ∀ v : ZMod q, IsSquare v → (spec.sqrt.sqrt? v).isSome = true := fun v hv => by
     obtain ⟨r, hr⟩ := spec.sqrt.sqrt?_isSome_of_isSquare hv
     rw [hr]
     rfl
-  refine groupMapCircuit_complete_spec spec.sqrt.sqrt? (.ofSpec spec nonResidue) t
-    (fun a y h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
-    (sqrt?_twist spec.sqrt hchar hnr0 hnr)
-    (Ring.two_ne_zero hchar) hthree Q st
-    ⟨⟨hok, fun tv htv => ?_⟩, fun r st' hpost hle => ?_⟩
-  · obtain ⟨hne, hdisj⟩ := hcond tv htv
-    exact ⟨hne, hdisj.imp (hsome _) (Or.imp (hsome _) (hsome _))⟩
-  · refine hk r st' (fun tv htv => ?_) hle
-    obtain ⟨hx, hy⟩ := hpost tv htv
-    rw [groupMapPure_toGroup] at hx hy
-    exact ⟨hx, hy⟩
+  intro st ht
+  obtain ⟨r, st', hrun, hsat, hx, hy⟩ :=
+    groupMapCircuit_complete (c := c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t tv
+      (Ring.two_ne_zero hchar) hthree hne
+      (fun a y h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
+      (sqrt?_twist spec.sqrt hchar hnr0 hnr)
+      (hsq.imp (hsome _) (Or.imp (hsome _) (hsome _))) st ht
+  rw [groupMapPure_toGroup] at hx hy
+  exact ⟨r, st', hrun, hsat, hx, hy⟩
 
 end Wire
 

@@ -1,4 +1,10 @@
 [
-  ["unusedArguments", "Snarky.instReprAffineExpression.repr"],
-  ["defsWithUnderscore", "Snarky.Parser.Attr.circuitVal_proc"]
+ [
+  "unusedArguments",
+  "Snarky.instReprAffineExpression.repr"
+ ],
+ [
+  "unusedArguments",
+  "Snarky.Builder"
+ ]
 ]

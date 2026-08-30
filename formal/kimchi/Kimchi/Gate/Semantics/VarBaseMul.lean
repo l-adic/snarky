@@ -1,4 +1,6 @@
+import Kimchi.Bits
 import Kimchi.Gate.VarBaseMul
+import Kimchi.Gate.Semantics.AddComplete
 import Pasta.Shifted
 import Mathlib
 
@@ -934,6 +936,26 @@ private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Pro
 
 /-! ## Main theorem: variable-base scalar multiplication -/
 
+/-- A run of `m` `varBaseMul` rows realizing the point sequence `P` and the register
+    sequence `N`: every row is a gate step, every row reads the base `T`, and each row's
+    input/output accumulators are `P i` / `P (i + 1)` with registers `N i` / `N (i + 1)`.
+    Unlike `EndoScalar`'s chain the linkage is stated against those sequences rather than
+    between adjacent rows — the ladder's induction is over them. -/
+private structure Chain (W : WeierstrassCurve.Affine F) (g : ℕ → Witness F) (m : ℕ)
+    (T : W.Point) (P : ℕ → W.Point) (N : ℕ → F) : Prop where
+  /-- Every row of the run is a gate step. -/
+  steps : ∀ i, i < m → GateStep W (g i)
+  /-- Every row reads the base point. -/
+  base : ∀ i (hi : i < m), T = Point.some _ _ (steps i hi).hT
+  /-- Row `i` opens at `P i`. -/
+  inPt : ∀ i (hi : i < m), P i = Point.some _ _ (steps i hi).a0
+  /-- Row `i` closes at `P (i + 1)`. -/
+  outPt : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (steps i hi).a5
+  /-- Row `i` opens at register `N i`. -/
+  regIn : ∀ i, i < m → N i = (g i).n
+  /-- Row `i` closes at register `N (i + 1)`. -/
+  regOut : ∀ i, i < m → N (i + 1) = (g i).nPrime
+
 /-- The computation the circuit provides. `m` chained `VarBaseMul` gates over a
     shared target `T`, threading BOTH the accumulator points `P` (gate `i`'s input
     `P i`, output `P (i+1)`) AND the scalar register `N` (input `N i = (g i).n`,
@@ -948,16 +970,12 @@ private structure GateStep (W : WeierstrassCurve.Affine F) (g : Witness F) : Pro
     `sound`. -/
 private theorem scalarMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (P : ℕ → W.Point) (T : W.Point) (N : ℕ → F)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime) :
+    (m : ℕ) (g : ℕ → Witness F)
+    (P : ℕ → W.Point) (T : W.Point) (N : ℕ → F) (hrun : Chain W g m T P N) :
     ∃ k : ℤ, P m = (32 : ℤ) ^ m • P 0 + k • T
            ∧ (k : F) = 2 * N m - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
            ∧ k.natAbs ≤ 32 ^ m - 1 := by
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
   obtain ⟨c, hc₁, hc₂, hc₃⟩ :
       ∃ c : ℕ → ℤ, (∀ i < m, P (i + 1) = (32 : ℤ) • P i + c i • T)
         ∧ (∀ i < m, (c i : F) = 2 * N (i + 1) - 64 * N i - 31)
@@ -987,19 +1005,15 @@ private theorem scalarMul
     register (`N 0 → N m`), in signed-digit form. -/
 private theorem scalarMul_baseMul
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (T : W.Point) (N : ℕ → F) (a : ℤ) (P : ℕ → W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (a : ℤ) (P : ℕ → W.Point) (hrun : Chain W g m T P N)
     (hP0 : P 0 = a • T) :
     ∃ n : ℤ, P m = n • T
            ∧ (n : F) = (32 : F) ^ m * (a : F) + 2 * N m
                         - 2 * (32 : F) ^ m * N 0 - ((32 : F) ^ m - 1)
            ∧ n.natAbs ≤ 32 ^ m * a.natAbs + (32 ^ m - 1) := by
-  obtain ⟨k, hk, hkf, hkb⟩ := scalarMul W ha m g gs P T N hT hin hout hregIn hregOut
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
+  obtain ⟨k, hk, hkf, hkb⟩ := scalarMul W ha m g P T N hrun
   refine ⟨(32 : ℤ) ^ m * a + k, ?_, ?_, ?_⟩
   · rw [hk, hP0, smul_smul, ← add_smul]
   · push_cast; rw [hkf]; ring
@@ -1027,18 +1041,14 @@ private theorem scalarMul_baseMul
     pickles `Shifted_value` contract. -/
 private theorem scalarMul_shifted
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (hrun : Chain W g m T P N)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0) :
     ∃ n : ℤ, P m = n • T ∧ (n : F) = unshiftType1 (5 * m) (N m)
            ∧ n.natAbs ≤ 3 * 32 ^ m := by
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
   obtain ⟨n, hn, hnf, hnb⟩ :=
-    scalarMul_baseMul W ha m g gs T N 2 P hT hin hout hregIn hregOut hP0
+    scalarMul_baseMul W ha m g T N 2 P hrun hP0
   refine ⟨n, hn, ?_, ?_⟩
   · have h32 : (2 : F) ^ (5 * m) = (32 : F) ^ m := by rw [pow_mul]; norm_num
     rw [hnf, hN0, unshiftType1, h32]
@@ -1060,19 +1070,15 @@ private theorem scalarMul_shifted
     prover-supplied output point or correction relation). -/
 private theorem scalarMul_type2
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)
-    (m : ℕ) (g : ℕ → Witness F) (gs : ∀ i, i < m → GateStep W (g i))
-    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point)
-    (hT : ∀ i (hi : i < m), T = Point.some _ _ (gs i hi).hT)
-    (hin : ∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
-    (hout : ∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
-    (hregIn : ∀ i, i < m → N i = (g i).n)
-    (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
+    (m : ℕ) (g : ℕ → Witness F)
+    (T : W.Point) (N : ℕ → F) (P : ℕ → W.Point) (hrun : Chain W g m T P N)
     (hP0 : P 0 = (2 : ℤ) • T) (hN0 : N 0 = 0)
     (sOdd : F) (hsOdd : sOdd = 0 ∨ sOdd = 1) :
     ∃ n : ℤ, (n : F) = unshiftType2 (5 * m) (N m) sOdd
       ∧ ((sOdd = 1 ∧ P m = n • T) ∨ (sOdd = 0 ∧ P m - T = n • T)) := by
+  have ⟨gs, hT, hin, hout, hregIn, hregOut⟩ := hrun
   obtain ⟨n, hn, hnf, _⟩ :=
-    scalarMul_shifted W ha m g gs T N P hT hin hout hregIn hregOut hP0 hN0
+    scalarMul_shifted W ha m g T N P hrun hP0 hN0
   rcases hsOdd with ho | ho
   · refine ⟨n - 1, ?_, Or.inr ⟨ho, ?_⟩⟩
     · push_cast; rw [hnf, ho, unshiftType1, unshiftType2]; ring
@@ -1246,6 +1252,12 @@ conclude correctness — `varBaseMul_subwrap_correct` unconditionally below the 
 def forbiddenValues (order : ℕ) : Set ℤ :=
   {s | ∃ t ∈ Ladder.forbiddenResidues, (order : ℤ) ∣ (s - t)}
 
+/-- `0` is a forbidden residue: a scalar the order divides is in the band — the
+degenerate final `[s]·T = 0`. -/
+theorem mem_forbiddenValues_of_dvd (order : ℕ) {s : ℤ} (h : (order : ℤ) ∣ s) :
+    s ∈ forbiddenValues order :=
+  ⟨0, by decide, by simpa using h⟩
+
 /-- `1` is a forbidden residue: a scalar `≡ 1 (mod order)` is in the band. The
 membership an off-band caller inverts to keep its final accumulator away from the
 base (`[s]·T = T` forces `order ∣ s − 1`). -/
@@ -1269,6 +1281,27 @@ lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
     · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
     · exact h1
   rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
+
+
+/-- **Off the base.** Under either ladder regime the run's scalar does not fix the base:
+`[2z + 2^L]·T ≠ 0`, i.e. `[2z + 2^L + 1]·T ≠ T`. Subwrap prices it by size, the one-wrap
+band by the forbidden residue `1`. What the parity fold's finite subtraction asks. -/
+theorem ladder_off_base (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
+    {T : c.Point} (hT : T ≠ 0) (L : ℕ) (z : ℤ) (h0 : 0 ≤ z) (hlt : z < 2 ^ L)
+    (hregime : 3 * 2 ^ L ≤ c.order ∨
+      (2 ^ (L - 1) < c.order ∧ c.order < 2 ^ L ∧ c.order % 4 = 1 ∧
+        (2 * z + 2 ^ L + 1) ∉ forbiddenValues c.order)) :
+    (2 * z + 2 ^ L) • T ≠ 0 := by
+  have hpow : (0 : ℤ) < 2 ^ L := by positivity
+  rcases hregime with hsub | ⟨-, -, -, hnf⟩
+  · refine smul_ne_zero_of_lt c hT (by omega) ?_
+    have h3 : (3 : ℤ) * 2 ^ L ≤ (c.order : ℤ) := by exact_mod_cast hsub
+    have : (2 : ℤ) ^ L = 2 ^ L := rfl
+    omega
+  · intro h
+    exact hnf (mem_forbiddenValues_of_dvd_sub_one c.order
+      (by simpa using (zsmul_eq_zero_iff_order_dvd c hT _).mp h))
 
 /-- The raw bit processed at sub-step `j`: bit `j % 5` of gate `j / 5`. -/
 private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
@@ -1557,10 +1590,6 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
     (hs : s = gateLadder g (5 * m)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
-  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
-  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
-      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
-    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
   -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
   have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
     intro k hk
@@ -1586,12 +1615,12 @@ private lemma gate_chain_produce (c : WeierstrassCurve.Affine F)
       obtain ⟨hbx, hby⟩ := hbase j hj'
       have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
       have hTeq_j : T = Point.some _ _ hTns_j := by
-        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+        rw [hTeq]; exact AddComplete.some_congr c hTns hTns_j hbx.symm hby.symm
       -- transport the threaded input accumulator to row `j`'s input column
       obtain ⟨hx0, hy0⟩ := haccP j hj'
       have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
       have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
-        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+        rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨hNDj, ha5ns, ha5eq⟩ :=
         gate_block_produce c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
           (fun ℓ _ => ⟨(hND (5 * j + ℓ) (by omega)).1, (hND (5 * j + ℓ) (by omega)).2.1⟩)
@@ -1627,10 +1656,6 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
         ∧ (∀ i (hi : i < m), P i = Point.some _ _ (gs i hi).a0)
         ∧ (∀ i (hi : i < m), P (i + 1) = Point.some _ _ (gs i hi).a5)
         ∧ P 0 = (2 : ℤ) • T := by
-  -- Point congruence across equal coordinates (local analog of `Gate.EndoMul.some_congr`).
-  have some_congr : ∀ {x x' y y' : F} (h : c.Nonsingular x y) (h' : c.Nonsingular x' y'),
-      x = x' → y = y' → Point.some _ _ h = Point.some _ _ h' := by
-    intro x x' y y' h h' hx hy; subst hx; subst hy; rfl
   -- coordinate threading: row `k`'s input column equals the accumulator at step `k`
   have haccP : ∀ k, k < m → (g k).x0 = accX g k ∧ (g k).y0 = accY g k := by
     intro k hk
@@ -1656,12 +1681,12 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
       obtain ⟨hbx, hby⟩ := hbase j hj'
       have hTns_j : c.Nonsingular (g j).xT (g j).yT := by rw [hbx, hby]; exact hTns
       have hTeq_j : T = Point.some _ _ hTns_j := by
-        rw [hTeq]; exact some_congr hTns hTns_j hbx.symm hby.symm
+        rw [hTeq]; exact AddComplete.some_congr c hTns hTns_j hbx.symm hby.symm
       -- transport the threaded input accumulator to row `j`'s input column
       obtain ⟨hx0, hy0⟩ := haccP j hj'
       have ha0ns_j : c.Nonsingular (g j).x0 (g j).y0 := by rw [hx0, hy0]; exact hk
       have ha0_j : Point.some _ _ ha0ns_j = gateLadder g (5 * j) • T := by
-        rw [some_congr ha0ns_j hk hx0 hy0]; exact hPk
+        rw [AddComplete.some_congr c ha0ns_j hk hx0 hy0]; exact hPk
       obtain ⟨nd, a1, a2, a3, a4, a5, ha5eq⟩ :=
         gate_block_full c g j h2 hTne hTns_j hTeq_j ha0ns_j (hholds j hj') ha0_j hodd
           (fun ℓ _ => hND (5 * j + ℓ) (by omega))
@@ -1682,13 +1707,15 @@ private lemma gateStep_chain (c : WeierstrassCurve.Affine F)
   have gs := (hkf m le_rfl).2
   refine ⟨gs, fun k => if hk : k ≤ m then Point.some _ _ (kf k hk) else 0, ?_, ?_, ?_, ?_⟩
   · intro i hi
-    exact hTeq.trans (some_congr hTns (gs i hi).hT (hbase i hi).1.symm (hbase i hi).2.symm)
+    exact hTeq.trans (AddComplete.some_congr c hTns (gs i hi).hT
+      (hbase i hi).1.symm (hbase i hi).2.symm)
   · intro i hi
     simp only [dif_pos (le_of_lt hi)]
-    exact some_congr (kf i (le_of_lt hi)) (gs i hi).a0 (haccP i hi).1.symm (haccP i hi).2.symm
+    exact AddComplete.some_congr c (kf i (le_of_lt hi)) (gs i hi).a0
+      (haccP i hi).1.symm (haccP i hi).2.symm
   · intro i hi
     simp only [dif_pos (Nat.succ_le_of_lt hi)]
-    exact some_congr (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
+    exact AddComplete.some_congr c (kf (i + 1) (Nat.succ_le_of_lt hi)) (gs i hi).a5 rfl rfl
   · simp only [dif_pos (Nat.zero_le m)]
     rw [(hkf 0 (Nat.zero_le m)).1]; simp only [Nat.mul_zero, gateLadder_zero]
 
@@ -1799,6 +1826,27 @@ def bitsRegister (bs : List F) : F := bs.foldl (fun a b => 2 * a + b) 0
 about through the Type1 unshift. -/
 def bitsVal (bs : List F) : ℤ := bs.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) 0
 
+/-- The MSB-first ℤ fold of the cells is the ℕ value of the decided cells, LSB-first —
+the one place the ladder's register orientation meets the bit vocabulary a canonicity
+lock speaks in. -/
+theorem bitsVal_eq_natLsbVal :
+    ∀ l : List F, bitsVal l = (natLsbVal ((l.map fun b => decide (b = 1)).reverse) : ℤ) := by
+  intro l
+  induction l using List.reverseRecOn with
+  | nil => rfl
+  | append_singleton l v ih =>
+    have h1 : bitsVal (l ++ [v]) = 2 * bitsVal l + if v = 1 then 1 else 0 := by
+      simp [bitsVal, List.foldl_append]
+    rw [h1, ih, List.map_append, List.map_singleton, List.reverse_append,
+      List.reverse_singleton, List.singleton_append, natLsbVal]
+    by_cases hv : v = 1
+    · simp only [hv, if_true, decide_true, Bool.toNat_true]
+      push_cast
+      ring
+    · simp only [hv, if_false, decide_false, Bool.toNat_false]
+      push_cast
+      ring
+
 theorem runBits_succ (g : ℕ → Witness F) (m : ℕ) :
     runBits g (m + 1) = runBits g m
       ++ [(g m).b0, (g m).b1, (g m).b2, (g m).b3, (g m).b4] := by
@@ -1852,13 +1900,36 @@ def accN (g : ℕ → Witness F) : ℕ → F
   | 0 => (g 0).n
   | i + 1 => (g i).nPrime
 
+/-- A run of `m` `varBaseMul` rows over the base `T`: every row satisfies the gate, every
+    row reads `T`, the accumulator threads from row to row, and the run opens at `2·T` —
+    what the gadget's doubled seed produces. The base is stated at `i ≤ m` so an empty run
+    still names its base, which is where `T ≠ 0` comes from. -/
+structure Run {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+    (T : c.Point) (g : ℕ → Witness F) (m : ℕ) : Prop where
+  /-- Every row of the run satisfies the gate. -/
+  holds : ∀ i, i < m → Holds (g i)
+  /-- Every row reads the base point. -/
+  base : ∀ i, i ≤ m → Kimchi.Gate.AddComplete.IsPoint c (g i).xT (g i).yT T
+  /-- Each row's output accumulator is the next row's input. -/
+  thread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5
+  /-- Each row's output register is the next row's input. -/
+  regThread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime
+  /-- The run opens at the doubled base. -/
+  init : Kimchi.Gate.AddComplete.IsPoint c (g 0).x0 (g 0).y0 ((2 : ℤ) • T)
+
+/-- The base is nonzero: row `0` names it. -/
+theorem Run.base_ne {F : Type*} [Field F] [DecidableEq F] {c : WeierstrassCurve.Affine F}
+    {T : c.Point} {g : ℕ → Witness F} {m : ℕ} (h : Run c T g m) : T ≠ 0 := by
+  obtain ⟨n, rfl⟩ := h.base 0 (Nat.zero_le m)
+  exact Point.some_ne_zero _
+
 /-- **The register chain.** Threading the register through `m` held gates reads the
 final register as the seed shifted up `5m` bits plus the base-2 fold of the run's
 bits — the gadget's scalar pin, at the zero seed. -/
-theorem chain_accN (m : ℕ) (g : ℕ → Witness F)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).n = (g i).nPrime) :
+theorem chain_accN {c : WeierstrassCurve.Affine F} {T : c.Point} (m : ℕ)
+    (g : ℕ → Witness F) (hrun : Run c T g m) :
     accN g m = 32 ^ m * accN g 0 + bitsRegister (runBits g m) := by
+  obtain ⟨hholds, -, -, hthread, -⟩ := hrun
   induction m with
   | zero => simp [bitsRegister, runBits]
   | succ k ih =>
@@ -1888,53 +1959,6 @@ theorem runBits_congr (g g' : ℕ → Witness F) (m : ℕ)
   | succ k ih =>
     rw [runBits_succ, runBits_succ, ih (fun i hi => h i (by omega)),
       h k (by omega)]
-
-/-- The ℤ-decode of a boolean bit list is nonnegative and bounded by its width. -/
-theorem bitsVal_lt (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
-    bitsVal l < 2 ^ l.length ∧ 0 ≤ bitsVal l := by
-  suffices h : ∀ z : ℤ, 0 ≤ z →
-      l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z
-        < 2 ^ l.length * (z + 1) ∧
-      z ≤ l.foldl (fun a b => 2 * a + if b = 1 then 1 else 0) z by
-    obtain ⟨h1, h2⟩ := h 0 le_rfl
-    exact ⟨by simpa [bitsVal] using h1, by simpa [bitsVal] using h2⟩
-  induction l with
-  | nil => intro z hz; simp
-  | cons b t ih =>
-    intro z hz
-    have hbit : (if b = 1 then (1 : ℤ) else 0) ≤ 1
-        ∧ 0 ≤ (if b = 1 then (1 : ℤ) else 0) := by
-      split <;> norm_num
-    have hz' : 0 ≤ 2 * z + if b = 1 then (1 : ℤ) else 0 := by omega
-    obtain ⟨ih1, ih2⟩ := ih (fun x hx => hb x (List.mem_cons_of_mem _ hx))
-      (2 * z + if b = 1 then 1 else 0) hz'
-    simp only [List.foldl_cons, List.length_cons]
-    constructor
-    · calc List.foldl _ (2 * z + if b = 1 then 1 else 0) t
-          < 2 ^ t.length * ((2 * z + if b = 1 then 1 else 0) + 1) := ih1
-        _ ≤ 2 ^ (t.length + 1) * (z + 1) := by
-            rw [pow_succ]
-            nlinarith [hbit.1, hbit.2,
-              pow_pos (show (0 : ℤ) < 2 by norm_num) t.length]
-    · omega
-
-/-- A zero prefix contributes nothing to the ℤ-decode. -/
-theorem bitsVal_drop_of_zeros (l : List F) (k : ℕ)
-    (hz : ∀ b ∈ l.take k, b = 0) : bitsVal l = bitsVal (l.drop k) := by
-  induction k generalizing l with
-  | zero => simp
-  | succ j ih =>
-    cases l with
-    | nil => simp
-    | cons b t =>
-      have hb0 : b = 0 := hz b (by simp)
-      have hrest : ∀ x ∈ t.take j, x = 0 := fun x hx =>
-        hz x (by
-          rw [List.take_succ_cons]
-          exact List.mem_cons_of_mem _ hx)
-      rw [List.drop_succ_cons, ← ih t hrest]
-      subst hb0
-      simp [bitsVal]
 
 /-- On boolean bits the field fold is the cast of the ℤ-decode. -/
 theorem bitsRegister_eq_cast (l : List F) (hb : ∀ b ∈ l, b = 0 ∨ b = 1) :
@@ -2041,6 +2065,67 @@ theorem bitsVal_testBit (x L : ℕ) (hx : x < 2 ^ L) :
 
 end RunBits
 
+/-! ### A run given as a list
+
+    A circuit builds its rows as a finite list, not as a function on `ℕ`; `Run.ofList` is
+    that caller's constructor, and the identities below say what the run's bit stream and
+    closing accumulators read as there. -/
+
+/-- The run a caller holding a finite list of rows builds. -/
+theorem Run.ofList {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+    (T : c.Point) (l : List (Witness F)) (dflt : Witness F)
+    (hholds : ∀ w ∈ l, Holds w)
+    (hbase : ∀ w ∈ dflt :: l, Kimchi.Gate.AddComplete.IsPoint c w.xT w.yT T)
+    (hthread : l.IsChain fun a b => (b.x0 = a.x5 ∧ b.y0 = a.y5) ∧ b.n = a.nPrime)
+    (hinit : Kimchi.Gate.AddComplete.IsPoint c (l.getD 0 dflt).x0 (l.getD 0 dflt).y0
+      ((2 : ℤ) • T)) :
+    Run c T (fun i => l.getD i dflt) l.length := by
+  have hget : ∀ i (hi : i < l.length), l.getD i dflt = l[i] :=
+    fun i hi => List.getD_eq_getElem _ _ hi
+  refine ⟨fun i hi => ?_, fun i hi => ?_, fun i hi => ?_, fun i hi => ?_, hinit⟩
+  · rw [hget i hi]
+    exact hholds _ (List.getElem_mem _)
+  · rcases Nat.lt_or_ge i l.length with h | h
+    · rw [hget i h]
+      exact hbase _ (List.mem_cons_of_mem _ (List.getElem_mem _))
+    · rw [List.getD_eq_default _ _ h]
+      exact hbase _ (List.mem_cons_self ..)
+  · rw [hget (i + 1) hi, hget i (by omega)]
+    exact (hthread.getElem i hi).1
+  · rw [hget (i + 1) hi, hget i (by omega)]
+    exact (hthread.getElem i hi).2
+
+/-- The bit stream of a run given as a list: its rows' five bits, concatenated. -/
+theorem runBits_getD {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+    (dflt : Witness F) :
+    runBits (fun i => l.getD i dflt) l.length
+      = l.flatMap fun w => [w.b0, w.b1, w.b2, w.b3, w.b4] := by
+  rw [runBits, List.flatMap_def, List.flatMap_def]
+  congr 1
+  refine List.ext_getElem (by simp) fun i _ h2 => ?_
+  simp only [List.getElem_map, List.getElem_range]
+  rw [List.getD_eq_getElem _ _ (by simpa using h2)]
+
+/-- A run given as a list closes at its last row's outputs. -/
+theorem acc_getD_length {F : Type*} [Field F] [DecidableEq F] (l : List (Witness F))
+    (hne : l ≠ []) (dflt : Witness F) :
+    accX (fun i => l.getD i dflt) l.length = (l.getLast hne).x5
+      ∧ accY (fun i => l.getD i dflt) l.length = (l.getLast hne).y5
+      ∧ accN (fun i => l.getD i dflt) l.length = (l.getLast hne).nPrime := by
+  obtain ⟨k, hk⟩ : ∃ k, l.length = k + 1 :=
+    ⟨l.length - 1, by have := List.length_pos_iff.mpr hne; omega⟩
+  have hlast : l.getD k dflt = l.getLast hne := by
+    rw [List.getD_eq_getElem _ _ (by omega), List.getLast_eq_getElem]
+    congr 1
+    omega
+  refine ⟨?_, ?_, ?_⟩ <;> rw [hk]
+  · show (l.getD k dflt).x5 = _
+    rw [hlast]
+  · show (l.getD k dflt).y5 = _
+    rw [hlast]
+  · show (l.getD k dflt).nPrime = _
+    rw [hlast]
+
 /-- **The generic off-band entry point.** `varBaseMul_subwrap_correct` and
     `varBaseMul_forbidden_correct` behind one regime dichotomy, for generic (dictionary)
     callers: EITHER the whole ladder fits below the order (`3·2^(5m) ≤ order`, no
@@ -2050,12 +2135,7 @@ end RunBits
 theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
     (c : WeierstrassCurve.Affine F)
     [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)] [Fact (Nat.Prime c.order)]
-    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : c.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : c.Nonsingular (g 0).x0 (g 0).y0) (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (m : ℕ) (g : ℕ → Witness F) (T : c.Point) (s : ℤ) (hrun : Run c T g m)
     (h2 : (2 : F) ≠ 0) (hodd : c.order ≠ 2)
     (hs : s = gateLadder g (5 * m))
     (hregime : 3 * 2 ^ (5 * m) ≤ c.order ∨
@@ -2063,11 +2143,19 @@ theorem varBaseMul_off {F : Type*} [Field F] [DecidableEq F]
         s ∉ forbiddenValues c.order)) :
     ∃ hfin : c.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  obtain ⟨hTns, hTeq⟩ := hrun.base 0 (Nat.zero_le m)
+  obtain ⟨hP0ns, hP0⟩ := hrun.init
+  have hTne := hrun.base_ne
+  have hholds := hrun.holds
+  have hthread := hrun.thread
+  have hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
+    Kimchi.Gate.AddComplete.IsPoint.coords_eq (hrun.base i (le_of_lt hi))
+      (hrun.base 0 (Nat.zero_le m))
   rcases hregime with hsub | ⟨hr1, hr2, hq4, hnf⟩
   · exact varBaseMul_subwrap_correct c m g T s hTne hholds hTns hTeq hbase hthread
-      hP0ns hP0 h2 hodd hsub hs
+      hP0ns hP0.symm h2 hodd hsub hs
   · exact varBaseMul_forbidden_correct c m g T s hTne hholds hTns hTeq hbase hthread
-      hP0ns hP0 h2 hodd hr1 hr2 hq4 hs hnf
+      hP0ns hP0.symm h2 hodd hr1 hr2 hq4 hs hnf
 
 /-! ## The produce chain
 
@@ -2119,6 +2207,27 @@ theorem chainBuild_eta (xT yT x0 y0 n0 : F) (bs : ℕ → F) (i : ℕ) :
           (bs (5 * i + 4)) := by
   cases i <;> rfl
 
+omit [DecidableEq F] in
+/-- The walk from row `1` on is the walk from row `0`'s outputs at the stream shifted
+past row `0`'s five bits — what a caller reading the run off one round at a time needs
+to step its induction. -/
+theorem chainBuild_shift (xT yT x0 y0 n0 : F) (bs : ℕ → F) :
+    ∀ j : ℕ, chainBuild xT yT x0 y0 n0 bs (j + 1)
+      = chainBuild xT yT (chainBuild xT yT x0 y0 n0 bs 0).x5
+          (chainBuild xT yT x0 y0 n0 bs 0).y5
+          (chainBuild xT yT x0 y0 n0 bs 0).nPrime (fun n => bs (n + 5)) j
+  | 0 => by
+    show build xT yT _ _ _ (bs (5 * 1)) (bs (5 * 1 + 1)) (bs (5 * 1 + 2)) (bs (5 * 1 + 3))
+      (bs (5 * 1 + 4)) = build xT yT _ _ _ (bs (0 + 5)) (bs (1 + 5)) (bs (2 + 5))
+      (bs (3 + 5)) (bs (4 + 5))
+    norm_num
+  | j + 1 => by
+    show build xT yT (chainBuild xT yT x0 y0 n0 bs (j + 1)).x5
+      (chainBuild xT yT x0 y0 n0 bs (j + 1)).y5
+      (chainBuild xT yT x0 y0 n0 bs (j + 1)).nPrime _ _ _ _ _ = _
+    rw [chainBuild_shift xT yT x0 y0 n0 bs j]
+    congr 1
+
 /-! The walk's structural equations: how a row's input cells thread from the previous
 row's outputs, and which of its cells are the arguments. The per-field equations of a
 row itself belong to `build` (`Kimchi/Gate/VarBaseMul`), which the walk is built from
@@ -2168,6 +2277,16 @@ theorem accN_chainBuild (m : ℕ) :
   cases m <;> rfl
 
 end ChainFields
+
+omit [DecidableEq F] in
+/-- The walk's bit stream is the stream it was built from: row `i` carries `bs 5i … bs 5i+4`. -/
+theorem runBits_chainBuild (xT yT x0 y0 n0 : F) (bs : ℕ → F) (m : ℕ) :
+    runBits (chainBuild xT yT x0 y0 n0 bs) m = (List.range (5 * m)).map bs := by
+  rw [← flatMap_range_window bs m, runBits]
+  congr 1
+  funext i
+  obtain ⟨-, -, h0, h1, h2, h3, h4⟩ := chainBuild_fields xT yT x0 y0 n0 bs i
+  rw [h0, h1, h2, h3, h4]
 
 /-- One honest bit step: at an accumulator `[k]·T` whose four degeneracy residues the
 regime has priced away, the generated `stepBit` values satisfy the bit block and the
@@ -2392,18 +2511,21 @@ incomplete runtime guard; the faithfulness caveat is in `§ Soundness: avoiding 
     faithfulness caveat. -/
 theorem varBaseMul_scaleFast1
     (m : ℕ) (g : ℕ → Witness Fq)
-    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : Vesta.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : Vesta.curve.toAffine.Nonsingular (g 0).x0 (g 0).y0)
-    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (T : Vesta.curve.toAffine.Point) (s : ℤ) (hrun : Run Vesta.curve.toAffine T g m)
     (hbits : 5 * m ≤ pastaFieldBits)
     (hs : s = gateLadder g (5 * m))
     (hnf : 5 * m = pastaFieldBits → s ∉ forbiddenValues Vesta.curve.toAffine.order) :
     ∃ hfin : Vesta.curve.toAffine.Nonsingular (accX g m) (accY g m),
       Point.some _ _ hfin = s • T ∧ ∀ i, i < m → NonDegen (g i) := by
+  obtain ⟨hTns, hTeq⟩ := hrun.base 0 (Nat.zero_le m)
+  obtain ⟨hP0ns, hP0'⟩ := hrun.init
+  have hP0 := hP0'.symm
+  have hTne := hrun.base_ne
+  have hholds := hrun.holds
+  have hthread := hrun.thread
+  have hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
+    Kimchi.Gate.AddComplete.IsPoint.coords_eq (hrun.base i (le_of_lt hi))
+      (hrun.base 0 (Nat.zero_le m))
   have hodd : Vesta.curve.toAffine.order ≠ 2 := by rw [Pasta.vesta_card]; decide
   rcases Nat.lt_or_ge (5 * m) pastaFieldBits with hlt | hge
   · -- sub-wrap: `5m` below `pastaFieldBits` with `5 ∣ 5m` ⟹ `5m ≤ pastaFieldBits - 5` ⟹ safe.
@@ -2449,13 +2571,8 @@ never a deployed entry point on its own. The split itself is modeled by `scalarM
     correction — matching the PureScript `scaleFast2` exactly. -/
 theorem varBaseMul_scaleFast2
     (m : ℕ) (hm : 0 < m) (g : ℕ → Witness Fp)
-    (T : Pallas.curve.toAffine.Point) (N : ℕ → Fp) (hTne : T ≠ 0)
-    (hholds : ∀ i, i < m → Holds (g i))
-    (hTns : Pallas.curve.toAffine.Nonsingular (g 0).xT (g 0).yT) (hTeq : T = Point.some _ _ hTns)
-    (hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT)
-    (hthread : ∀ i, i + 1 < m → (g (i + 1)).x0 = (g i).x5 ∧ (g (i + 1)).y0 = (g i).y5)
-    (hP0ns : Pallas.curve.toAffine.Nonsingular (g 0).x0 (g 0).y0)
-    (hP0 : Point.some _ _ hP0ns = (2 : ℤ) • T)
+    (T : Pallas.curve.toAffine.Point) (N : ℕ → Fp)
+    (hrun : Run Pallas.curve.toAffine T g m)
     (hregIn : ∀ i, i < m → N i = (g i).n)
     (hregOut : ∀ i, i < m → N (i + 1) = (g i).nPrime)
     (hN0 : N 0 = 0)
@@ -2466,6 +2583,15 @@ theorem varBaseMul_scaleFast2
       (n : Fp) = unshiftType2 (5 * m) (N m) sOdd
         ∧ ((sOdd = 1 ∧ Point.some _ _ hfin = n • T)
             ∨ (sOdd = 0 ∧ Point.some _ _ hfin - T = n • T)) := by
+  obtain ⟨hTns, hTeq⟩ := hrun.base 0 (Nat.zero_le m)
+  obtain ⟨hP0ns, hP0'⟩ := hrun.init
+  have hP0 := hP0'.symm
+  have hTne := hrun.base_ne
+  have hholds := hrun.holds
+  have hthread := hrun.thread
+  have hbase : ∀ i, i < m → (g i).xT = (g 0).xT ∧ (g i).yT = (g 0).yT := fun i hi =>
+    Kimchi.Gate.AddComplete.IsPoint.coords_eq (hrun.base i (le_of_lt hi))
+      (hrun.base 0 (Nat.zero_le m))
   obtain ⟨k, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : m ≠ 0)
   have h2 : (2 : Fp) ≠ 0 := by decide
   have hodd : Pallas.curve.toAffine.order ≠ 2 := by rw [Pasta.pallas_card]; decide
@@ -2492,8 +2618,8 @@ theorem varBaseMul_scaleFast2
   have hfin : Pallas.curve.toAffine.Nonsingular (accX g (k + 1)) (accY g (k + 1)) :=
     (gs k (by omega)).a5
   have hPm : P (k + 1) = Point.some _ _ hfin := hout k (by omega)
-  obtain ⟨n, hnf, hcase⟩ := scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ (k + 1) g gs T N P
-    hTP hin hout hregIn hregOut hP0P hN0 sOdd hsOdd
+  obtain ⟨n, hnf, hcase⟩ := scalarMul_type2 Pallas.curve.toAffine ⟨rfl, rfl, rfl⟩ (k + 1) g T N P
+    ⟨gs, hTP, hin, hout, hregIn, hregOut⟩ hP0P hN0 sOdd hsOdd
   refine ⟨hfin, n, hnf, ?_⟩
   rcases hcase with ⟨ho, hr⟩ | ⟨ho, hr⟩
   · exact Or.inl ⟨ho, by rw [← hPm]; exact hr⟩

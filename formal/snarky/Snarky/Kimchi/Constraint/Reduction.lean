@@ -1,4 +1,4 @@
-import Snarky.Backend.Assignments
+import Snarky.Assignments
 import Snarky.Kimchi.Constraint.Types
 
 /-!
@@ -33,7 +33,7 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   PS rank-2 argument is an abstraction firewall with no Lean consumer; PS needs it
   because its agreement laws quantify over class-polymorphic programs, where the
   firewall carries meaning.
-- The prover's write is guarded (`Assignments.extendPairs`), mirroring the base
+- The prover's write is guarded (`Assignments.extendFresh`), mirroring the base
   prover's strengthening of the PS write-once contract; on counter-fresh states it
   agrees with PS `set`.
 - PS throws on the statically-contradictory assertion `constant cl = constant cr` with
@@ -362,12 +362,9 @@ assign the fresh variable its value (the PS `createInternalVariable` instance me
 with the guarded write — see the module docstring). -/
 private def createInternalP [Add F] [Mul F] [Zero F] (e : AffineExpression F) :
     PlonkProver F Variable := fun s =>
-  match e.eval s.assignments with
+  match s.assignments.extendFresh s.nextVariable (e.val s.assignments.get) with
   | .error err => .error err
-  | .ok a =>
-    match s.assignments.extendPairs [(s.nextVariable, a)] with
-    | .error err => .error err
-    | .ok env => .ok (s.nextVariable, ⟨s.nextVariable + 1, env⟩)
+  | .ok env => .ok (s.nextVariable, ⟨s.nextVariable + 1, env⟩)
 
 instance [Add F] [Mul F] [Zero F] : PlonkReductionM F (PlonkProver F) where
   createInternalVariable := createInternalP
@@ -386,7 +383,7 @@ Only `createInternalVariable` moves the shared counter — by exactly one, on bo
 sides. The other builder ops touch rows, the gate queue, the union-find, and the
 constant cache; the other prover ops are inert. Stated here per op: the builder's
 counter behavior, total, and the prover op's success inversion, whose table extension
-is unconditional because `extendPairs` is guarded — success implies no overwrite. -/
+is unconditional because the write is guarded — success implies no overwrite. -/
 
 /-- The builder's allocation op, applied: return the current counter, advance it,
 touch the union-find, record the internal variable. -/
@@ -449,11 +446,9 @@ private theorem createInternalP_ok [Add F] [Mul F] [Zero F] {e : AffineExpressio
   unfold createInternalP at h
   split at h
   · cases h
-  split at h
-  · cases h
   next env' hext =>
     cases h
-    exact ⟨rfl, rfl, Assignments.le_extendPairs hext⟩
+    exact ⟨rfl, rfl, Assignments.le_extendFresh hext⟩
 
 /-! ## Seam coherence: the generic algorithms
 
@@ -551,7 +546,7 @@ protected theorem Seam.bind {α β : Type} {xB : PlonkBuilder F α}
   obtain ⟨ha, hn₁, hle₁, hm₁⟩ := hx h₁ sB hn
   obtain ⟨hb, hn₂, hle₂, hm₂⟩ := hf a h₂ (xB sB).2 hn₁
   rw [PlonkBuilder.bind_apply, ha]
-  exact ⟨hb, hn₂, hle₁.trans hle₂, hm₁.trans hm₂⟩
+  exact ⟨hb, hn₂, hle₁.trans hle₂, Nat.le_trans hm₁ hm₂⟩
 
 /-- Seams compose over `map`. -/
 protected theorem Seam.map {α β : Type} {xB : PlonkBuilder F α}

@@ -1,6 +1,7 @@
 /-
-Axiom-closure gate for the Snarky DSL library: the interpreter laws must be proved from
-the standard logical axioms alone — the deep embedding is pure core Lean, so nothing else
+Axiom-closure gate for the Snarky DSL library: the interpreter laws, the leaf witness
+interface, and every gadget's soundness and completeness law must be proved from the
+standard logical axioms alone — the deep embedding is pure core Lean, so nothing else
 (no `sorryAx`, no `native_decide`, no curve axioms) may appear in their closures. The sole
 exception is the deployed endo dictionaries (`deployedRoots`): their fields may carry the
 certified `native_decide` witnesses of the Pasta trust base, so every law theorem stays
@@ -14,6 +15,7 @@ Run from `formal/snarky/`:  lake env lean scripts/check_axioms.lean
 -/
 import Snarky
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.Sponge
@@ -29,185 +31,119 @@ open Lean Lean.Elab.Command
 
 namespace Snarky.CheckAxioms
 
-/-- The headline interpreter and gadget laws (beside their interpreters and gadgets). -/
+/-- The headline laws: the two interpreters and their composition, the reading vocabulary
+every completeness law is stated in, the `witness` leaf interface, the traversal
+combinators, the DSL operations, the whole-circuit layer, and the Kimchi gadgets. -/
 def roots : List Name :=
-  [ `Snarky.build_eraseWitness,
-    `Snarky.prove_assignments_le,
-    `Snarky.prove_build_agrees,
-    `Snarky.prove_complete,
-    `Snarky.CVar.eval_le,
-    `Snarky.build_bind,
+  -- The interpreters, their composition, and the lockstep between them.
+  [ `Snarky.build_bind,
+    `Snarky.prove_pure,
     `Snarky.prove_bind,
-    `Snarky.equals_spec,
-    `Snarky.equals_complete_spec,
-    `Snarky.mul_spec,
-    `Snarky.mul_complete_spec,
-    `Snarky.inv_spec,
-    `Snarky.inv_complete_spec,
-    `Snarky.div_spec,
-    `Snarky.div_complete_spec,
-    `Snarky.square_spec,
-    `Snarky.square_complete_spec,
-    `Snarky.pow_spec,
-    `Snarky.pow_complete_spec,
-    `Snarky.sum_eval,
-    `Snarky.not_eval,
-    `Snarky.neq_spec,
-    `Snarky.neq_complete_spec,
-    `Snarky.and_spec,
-    `Snarky.and_complete_spec,
-    `Snarky.or_spec,
-    `Snarky.or_complete_spec,
-    `Snarky.xor_spec,
-    `Snarky.xor_complete_spec,
-    `Snarky.select_spec,
-    `Snarky.select_complete_spec,
-    `Snarky.assertEqual_spec,
-    `Snarky.assertEqual_complete_spec,
-    `Snarky.assertNonZero_spec,
-    `Snarky.assertNonZero_complete_spec,
-    `Snarky.assertNotEqual_spec,
-    `Snarky.assertNotEqual_complete_spec,
-    `Snarky.assertSquare_spec,
-    `Snarky.assertSquare_complete_spec,
-    `Snarky.assert_spec,
-    `Snarky.assert_complete_spec,
-    `Snarky.invCore_spec,
-    `Snarky.any_spec,
-    `Snarky.any_complete_spec,
-    `Snarky.all_spec,
-    `Snarky.all_complete_spec,
-    `Snarky.allBools_spec,
-    `Snarky.allBools_complete_spec,
-    `Snarky.assertAny_spec,
-    `Snarky.assertAny_complete_spec,
-    `Snarky.assertAll_spec,
-    `Snarky.assertAll_complete_spec,
-    `Snarky.assertExactlyOne_spec,
-    `Snarky.assertExactlyOne_complete_spec,
-    `Snarky.pack_eval,
-    `Snarky.pack_val,
-    `Snarky.packPure_unpackPure,
-    `Snarky.unpack_spec,
-    `Snarky.unpack_complete_spec,
-    `Snarky.sealVar_spec,
-    `Snarky.sealVar_complete_spec,
-    `Snarky.Kimchi.AddFast.addFast_spec,
-    `Snarky.Kimchi.AddFast.addFast_checkFinite_spec,
-    `Snarky.Kimchi.Poseidon.poseidon_spec,
-    `Snarky.Kimchi.Poseidon.poseidon_complete_spec,
-    `Snarky.Kimchi.SpongeVar.absorb_spec,
-    `Snarky.Kimchi.SpongeVar.squeeze_spec,
-    `Snarky.Kimchi.SpongeVar.absorb_complete_spec,
-    `Snarky.Kimchi.SpongeVar.squeeze_complete_spec,
-    `Snarky.Kimchi.SpongeVar.vals_init,
-    `Snarky.Kimchi.SpongeVar.vals_ofConstants,
-    `Snarky.Kimchi.SpongeVar.reads_init,
-    `Snarky.Kimchi.SpongeVar.reads_ofConstants,
-    `Snarky.Kimchi.SpongeVar.Reads.le,
-    `Snarky.Kimchi.RandomOracle.update_spec,
-    `Snarky.Kimchi.RandomOracle.update_complete_spec,
-    `Snarky.Kimchi.RandomOracle.hash2_spec,
-    `Snarky.Kimchi.RandomOracle.hash2_complete_spec,
-    `Snarky.Kimchi.RandomOracle.hashVec_spec,
-    `Snarky.Kimchi.RandomOracle.hashVec_complete_spec,
-    `Snarky.readVal_fvar,
-    `Snarky.readVal_prod,
-    `Snarky.readable_fvar_iff,
-    `Snarky.readable_prod_iff,
-    `Snarky.reads_fvar_iff,
-    `Snarky.reads_prod_iff,
-    `Snarky.Readable.le,
-    `Snarky.Reads.le,
-    `Snarky.ReadsAll.le,
-    `Snarky.Reads.readable,
-    `Snarky.Reads.unique,
-    `Snarky.exists_reads,
-    `Snarky.exists_readsAll,
-    `Snarky.Kimchi.readVal_spongeState,
-    `Snarky.Kimchi.readable_spongeState_iff,
-    `Snarky.Kimchi.reads_spongeState_iff,
-    `Snarky.Kimchi.AddFast.addFast_complete_spec,
-    `Snarky.Kimchi.EndoScalar.toFieldChecked'_spec,
-    `Snarky.Kimchi.EndoScalar.toField_spec,
-    `Snarky.Kimchi.EndoScalar.toFieldChecked'_complete_spec,
-    `Snarky.Kimchi.EndoScalar.toField_complete_spec,
-    `Snarky.Kimchi.EndoMul.endoMul_spec,
-    `Snarky.Kimchi.EndoMul.endoMul_complete_spec,
-    `Snarky.Kimchi.EndoMul.endoInv_spec,
-    `Snarky.Kimchi.EndoMul.endoInv_complete_spec,
-    `Snarky.Kimchi.varBaseMul_spec,
-    `Snarky.Kimchi.varBaseMul_complete_spec,
-    `Snarky.Kimchi.scaleFast1_complete_spec,
-    `Snarky.Kimchi.scaleFast2_complete_spec,
-    `Snarky.Kimchi.scaleFast2'_complete_spec,
-    `Snarky.Kimchi.splitFieldVar_complete_spec,
-    `Snarky.Kimchi.rangeCheck128_spec, `Snarky.Kimchi.rangeCheck128_complete_spec,
-    `Snarky.Kimchi.lowest128Bits'_spec,
-    `Snarky.Kimchi.lowest128Bits'_complete_spec,
-    `Snarky.Kimchi.scaleFast1_spec,
-    `Snarky.Kimchi.splitFieldVar_spec,
-    `Snarky.Kimchi.scaleFast2_spec,
-    `Snarky.Kimchi.scaleFast2'_spec,
-    `Snarky.Kimchi.groupMapCircuit_spec,
-    `Snarky.Kimchi.groupMapCircuit_complete_spec,
-    `Snarky.Kimchi.groupMapPure_toGroup,
-    `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
-    `Snarky.Kimchi.groupMapCircuit_toGroup_complete_spec,
-    `Snarky.Kimchi.HasEndo.pallas,
-    `Snarky.Kimchi.HasEndo.vesta,
-    `Snarky.post_of_prove,
-
+    `Snarky.prove_addConstraint,
+    `Snarky.prove_build_agrees,
+    `Snarky.builder_spec_iff,
     `Snarky.addConstraint_spec,
-    `Snarky.addConstraint_complete_spec,
-    `Snarky.witnessBool_spec,
-    `Snarky.witness_complete_spec,
-    `Snarky.generateVec_spec,
-    `Snarky.generateVec_complete_spec,
-    `Snarky.sound_spec_iff,
-    `Snarky.complete_spec_iff,
-    `Snarky.Example.cubic_spec,
-    `Snarky.Example.cubic_complete_spec,
-    `Snarky.Example.cubic_sound,
-    `Snarky.Example.cubic_complete,
+
+    -- The completeness vocabulary: a run's reach, the rows it leaves satisfied, and the
+    -- reading that survives a later run.
+    `Snarky.Runs.bind,
+    `Snarky.Runs.le,
+    `Snarky.Runs.nv_le,
+    `Snarky.Sat.pure,
+    `Snarky.Sat.bind,
+    `Snarky.Sat.addConstraint,
+    `Snarky.Complete.post,
+    `Snarky.runs_post,
+    `Snarky.CVar.val_of_le,
+    `Snarky.CircuitType.Reads.of_le,
+    `Snarky.CircuitType.Scoped.mono,
+    `Snarky.CircuitType.ReadsAs.mono,
+
+    -- The leaf interface every gadget builds on.
+    `Snarky.witness_spec,
+    `Snarky.witness_complete,
+
+    -- The traversal combinators, whose laws the ladders' transports go through.
+    `Snarky.forM_spec,
+    `Snarky.forM_complete,
+    `Snarky.mapAccumM_spec,
+    `Snarky.mapAccumM_complete,
+    `Snarky.zipWithVecM_spec,
+    `Snarky.zipWithVecM_complete,
+
+    -- The DSL: field operations.
+    `Snarky.equals_spec, `Snarky.equals_complete,
+    `Snarky.isZero_spec, `Snarky.isZero_complete,
+    `Snarky.neq_spec, `Snarky.neq_complete,
+    `Snarky.mul_spec, `Snarky.mul_complete,
+    `Snarky.inv_spec, `Snarky.inv_complete,
+    `Snarky.div_spec, `Snarky.div_complete,
+    `Snarky.square_spec, `Snarky.square_complete,
+    `Snarky.pow_spec, `Snarky.pow_complete,
+
+    -- The DSL: boolean operations.
+    `Snarky.and_spec, `Snarky.and_complete,
+    `Snarky.or_spec, `Snarky.or_complete,
+    `Snarky.xor_spec, `Snarky.xor_complete,
+    `Snarky.any_spec, `Snarky.any_complete,
+    `Snarky.all_spec, `Snarky.all_complete,
+    `Snarky.selectField_spec, `Snarky.selectField_complete,
+    `Snarky.LawfulIfThenElse.select_complete,
+
+    -- The DSL: assertions.
+    `Snarky.assert_spec, `Snarky.assert_complete,
+    `Snarky.assertEq_spec, `Snarky.assertEq_complete,
+    `Snarky.assertEqual_spec, `Snarky.assertEqual_complete,
+    `Snarky.assertNonZero_spec, `Snarky.assertNonZero_complete,
+    `Snarky.assertNotEqual_spec, `Snarky.assertNotEqual_complete,
+    `Snarky.assertSquare_spec, `Snarky.assertSquare_complete,
+    `Snarky.assertAny_spec, `Snarky.assertAny_complete,
+    `Snarky.assertAll_spec, `Snarky.assertAll_complete,
+    `Snarky.assertExactlyOne_spec, `Snarky.assertExactlyOne_complete,
+
+    -- The DSL: bit decomposition and the seal.
+    `Snarky.unpack_spec, `Snarky.unpack_complete,
+    `Snarky.sealVar_spec, `Snarky.sealVar_complete,
+
+    -- The whole-circuit layer: the public interface's reading, and the payoff.
+    `Snarky.scoped_inputVar,
+    `Snarky.reads_inputVar,
     `Snarky.solve_complete,
-    `Snarky.proveWith_compileBody_slots,
-    `Snarky.Kimchi.kimchiOps_lockstep,
-    `Snarky.Kimchi.kimchiOps_proveExtends,
-    `Snarky.Kimchi.kimchiCompile_solve_nextVar,
-    `Snarky.Kimchi.kimchiSolve_publicSlots,
-    `Snarky.readVar_le,
-    `Snarky.CVar.reduce_eval,
-    `Snarky.fvar_value_roundTrip,
-    `Snarky.fvar_var_roundTrip,
-    `Snarky.boolVar_value_roundTrip,
-    `Snarky.boolVar_var_roundTrip,
-    `Snarky.build_eq_of_eraseWitness,
-    `Snarky.CircuitM.instLawfulMonad,
-    `Snarky.Basic.instLawfulBasicSystem,
-    `Snarky.Basic.instLawfulChecker,
+
+    -- The backends' reading of the `BasicSystem` primitives.
+    `Snarky.instLawfulBasicSystemBasic,
+    `Snarky.instLawfulBasicSystemBuilder,
     `Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem,
-    `Snarky.Kimchi.KimchiConstraint.instLawfulChecker,
-    `Snarky.instLawfulCircuitTypeF,
-    `Snarky.instLawfulCircuitTypeBool,
-    `Snarky.instLawfulCircuitTypeUnChecked,
-    `Snarky.instLawfulCircuitTypeProd,
-    `Snarky.instLawfulCircuitTypeVector,
-    `Snarky.instLawfulCheckedTypeF,
-    `Snarky.instLawfulCheckedTypeUnChecked,
-    `Snarky.instLawfulCheckedTypeBool,
-    `Snarky.instLawfulCheckedTypeProd,
-    `Snarky.instLawfulCheckedTypeVector,
-    `Snarky.instWitnessReadsF,
-    `Snarky.instWitnessReadsBool,
-    `Snarky.instWitnessReadsUnChecked,
-    `Snarky.instWitnessReadsProd,
-    `Snarky.instWitnessReadsVector,
-    `Snarky.CircuitType.ofEquiv,
-    `Snarky.LawfulCircuitType.ofEquiv,
-    `Snarky.CheckedType.ofEquiv,
-    `Snarky.LawfulCheckedType.ofEquiv,
-    `Snarky.WitnessReads.ofEquiv ]
+
+    -- The Kimchi gadgets.
+    `Snarky.Kimchi.CurvePoint.check_spec, `Snarky.Kimchi.CurvePoint.check_complete,
+    `Snarky.Kimchi.sealPoint_spec, `Snarky.Kimchi.sealPoint_complete,
+    `Snarky.Kimchi.infColumn_spec,
+    `Snarky.Kimchi.addFast_spec, `Snarky.Kimchi.addFast_complete,
+    `Snarky.Kimchi.Poseidon.poseidon_spec, `Snarky.Kimchi.Poseidon.poseidon_complete,
+    `Snarky.Kimchi.SpongeVar.absorb_spec, `Snarky.Kimchi.SpongeVar.absorb_complete,
+    `Snarky.Kimchi.SpongeVar.squeeze_spec, `Snarky.Kimchi.SpongeVar.squeeze_complete,
+    `Snarky.Kimchi.RandomOracle.update_spec, `Snarky.Kimchi.RandomOracle.update_complete,
+    `Snarky.Kimchi.RandomOracle.hash2_spec, `Snarky.Kimchi.RandomOracle.hash2_complete,
+    `Snarky.Kimchi.RandomOracle.hashVec_spec, `Snarky.Kimchi.RandomOracle.hashVec_complete,
+    `Snarky.Kimchi.EndoScalar.toField_spec, `Snarky.Kimchi.EndoScalar.toField_complete,
+    `Snarky.Kimchi.EndoMul.endoMul_spec, `Snarky.Kimchi.EndoMul.endoMul_complete,
+    `Snarky.Kimchi.EndoMul.endoInv_spec, `Snarky.Kimchi.EndoMul.endoInv_complete,
+    `Snarky.Kimchi.varBaseMul_spec, `Snarky.Kimchi.varBaseMul_complete,
+    `Snarky.Kimchi.scaleFast1_spec, `Snarky.Kimchi.scaleFast1_complete,
+    `Snarky.Kimchi.scaleFast2_spec, `Snarky.Kimchi.scaleFast2_complete,
+    `Snarky.Kimchi.scaleFast2'_spec, `Snarky.Kimchi.scaleFast2'_complete,
+    `Snarky.Kimchi.splitFieldVar_spec, `Snarky.Kimchi.splitFieldVar_complete,
+    `Snarky.Kimchi.rangeCheck128_spec, `Snarky.Kimchi.rangeCheck128_complete,
+    `Snarky.Kimchi.lowest128Bits'_spec, `Snarky.Kimchi.lowest128Bits'_complete,
+    `Snarky.Kimchi.groupMapCircuit_spec, `Snarky.Kimchi.groupMapCircuit_complete,
+    `Snarky.Kimchi.groupMapCircuit_onCurve_spec,
+    `Snarky.Kimchi.groupMapCircuit_toGroup_complete,
+    `Snarky.Kimchi.groupMapPure_toGroup,
+
+    -- The deployed dictionaries.
+    `Snarky.Kimchi.HasEndo.pallas,
+    `Snarky.Kimchi.HasEndo.vesta ]
 
 /-- Pure core Lean: only the three standard logical axioms are permitted. -/
 def allowed : List Name := [`propext, `Classical.choice, `Quot.sound]
@@ -254,16 +190,22 @@ run_cmd do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
     throwError "disallowed axioms found ({bad.size})"
 
--- The prover-tag invariant (`Backend/WP.lean`): the prover carriers must carry no
--- `ConstraintHolds` instance — one would make the two `WP` instances on `CircuitM`
--- ambiguous at the tag. Checked at a concrete field; a violating instance would be
--- declared generically and land here.
+-- The soundness-tag invariant (`WP.lean`): a program enters the soundness reading by
+-- NAMING the tag. `Builder V c` is `c` under a name instance search will not unfold, so
+-- `WP (CircuitM F (Builder V c))` must resolve and `WP (CircuitM F c)` must not — a
+-- generic instance at the untagged carrier would make the reading ambiguous. Checked at
+-- a concrete carrier; a violating instance would be declared generically and land here.
 run_cmd liftTermElabM do
-  for carrier in [``Snarky.ProverC, ``Snarky.Kimchi.KimchiProverC] do
-    let ty := Lean.mkApp2 (Lean.mkConst ``Snarky.ConstraintHolds)
-      (Lean.mkConst ``Snarky.Example.F17)
-      (Lean.mkApp (Lean.mkConst carrier) (Lean.mkConst ``Snarky.Example.F17))
-    if (← Lean.Meta.synthInstance? ty).isSome then
-      throwError "ConstraintHolds instance found at {carrier} — the prover WP \
-        resolution invariant (Backend/WP.lean) is broken"
-    IO.println s!"✓ no ConstraintHolds instance at {carrier}"
+  let resolves (ty : Lean.TSyntax `term) : Lean.Elab.TermElabM Bool := do
+    let e ← Lean.instantiateMVars (← Lean.Elab.Term.elabType ty)
+    return (← Lean.Meta.synthInstance? e).isSome
+  unless ← resolves (← `(Std.Do.WP
+      (Snarky.CircuitM Nat (Snarky.Builder (fun _ => (0 : Nat)) (Snarky.Basic Nat)))
+      (Std.Do.PostShape.arg Nat Std.Do.PostShape.pure))) do
+    throwError "no WP instance at the soundness tag — the tagged reading (WP.lean) is broken"
+  IO.println "✓ WP resolves at the soundness tag"
+  if ← resolves (← `(Std.Do.WP (Snarky.CircuitM Nat (Snarky.Basic Nat))
+      (Std.Do.PostShape.arg Nat Std.Do.PostShape.pure))) then
+    throwError "WP instance found at the untagged carrier — the soundness-tag \
+      resolution invariant (WP.lean) is broken"
+  IO.println "✓ no WP instance at the untagged carrier"

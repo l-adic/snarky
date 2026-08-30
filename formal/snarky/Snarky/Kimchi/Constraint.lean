@@ -1,4 +1,3 @@
-import Snarky.Backend.Ops
 import Snarky.Kimchi.Constraint.GenericPlonk
 import Snarky.Kimchi.Constraint.AddComplete
 import Snarky.Kimchi.Constraint.EndoScalar
@@ -152,6 +151,13 @@ def KimchiConstraint.reduce [Add F] [Mul F] [Sub F] [Zero F] [One F] [Neg F]
   | .endoMul c => .endoMul <$> c.reduce
   | .pad vs => .plonk <$> reducePad vs
 
+/- PORT: the ops record and its seam laws are OFF.
+
+The new core has no backend-ops indirection — `build` and `prove` are the two
+interpreters directly, with no per-constraint hook a backend can supply — so
+`BackendOps`, `Lockstep` and `ProveExtends` have no counterpart to instantiate.
+The reduction itself (above) is untouched.
+
 /-! ## The backend ops (PS's two instances, as one record) -/
 
 /-- The kimchi backend's ops (the PS `CompileCircuit`/`SolveCircuit` instances):
@@ -234,3 +240,4 @@ theorem kimchiOps_proveExtends [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F]
     exact ⟨hle, hmono⟩
 
 end Snarky.Kimchi
+-/

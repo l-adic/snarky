@@ -1,0 +1,77 @@
+-- Deferred from the dead-code gate's dead-zero contract (formal/scripts/deadcode.lean).
+--
+-- These declarations lost their consumer in the snarky core swap: the old core's
+-- whole-circuit lockstep theorem (`kimchiOps_lockstep`, `kimchiOps_proveExtends`) and the
+-- old gadget laws are gone, and the new gadget laws reach the gate model by a different
+-- route. Nothing here is known to be dead — the live set is NOT determinable yet.
+--
+-- What determines it: reviving the Schnorr verifier-faithfulness arc on the new core. That
+-- arc is what translates a verifier to a circuit and proves the two equivalent, so it is
+-- what actually consumes the gadget laws, the reduction's builder/prover coherence, and the
+-- gate model's structural equations. Until it lands, rooting these would make the manifest
+-- a fiction and deleting them would throw away results the arc is likely to need.
+--
+-- EXIT CONDITION: when the Schnorr arc is re-established, every line here is either
+-- reachable (delete the line) or genuinely dead (delete the declaration). This list only
+-- ever shrinks; adding to it needs the same kind of reason.
+--
+-- Format matches roots.txt: one fully-qualified name per line, `--` lines and blanks
+-- ignored. Private declarations are named by their user-facing name.
+
+-- The reduction's builder/prover seam coherence (Snarky/Kimchi/Constraint/*): the
+-- `Seam` combinators, the per-gate reducer seams, and the lockstep lemmas under them.
+-- Consumer: the whole-circuit lockstep theorem, not yet restated on the new core.
+Snarky.Kimchi.AddComplete.reduce_seam
+Snarky.Kimchi.addEqualsB_nextVariable
+Snarky.Kimchi.addEquals_builder
+Snarky.Kimchi.addEquals_seam
+Snarky.Kimchi.addGenericB_nextVariable
+Snarky.Kimchi.addGeneric_builder
+Snarky.Kimchi.addGeneric_seam
+Snarky.Kimchi.completelyReduce_lockstep
+Snarky.Kimchi.createInternalP_ok
+Snarky.Kimchi.EndoMul.reduceRounds_seam
+Snarky.Kimchi.EndoMul.reduce_seam
+Snarky.Kimchi.EndoMulRound.reduce_seam
+Snarky.Kimchi.EndoScalar.reduce_seam
+Snarky.Kimchi.EndoScalarRound.reduce_seam
+Snarky.Kimchi.PlonkBuilder.bind_apply
+Snarky.Kimchi.PlonkProver.bind_ok
+Snarky.Kimchi.PoseidonConstraint.reduce_seam
+Snarky.Kimchi.reduceAffineExpression_lockstep
+Snarky.Kimchi.reduceAffineExpression_seam
+Snarky.Kimchi.reduceAffinePoint_seam
+Snarky.Kimchi.reduce_seam
+Snarky.Kimchi.reduceState_seam
+Snarky.Kimchi.reduceStates_seam
+Snarky.Kimchi.reduceToVariable_lockstep
+Snarky.Kimchi.reduceToVariable_seam
+Snarky.Kimchi.ScaleRound.reduce_seam
+Snarky.Kimchi.Seam
+Snarky.Kimchi.Seam.bind
+Snarky.Kimchi.Seam.ite
+Snarky.Kimchi.Seam.map
+Snarky.Kimchi.Seam.pure
+Snarky.Kimchi.VarBaseMul.reduce_seam
+
+-- The gate model's structural equations (kimchi package): `build`/`chainBuild` field
+-- readers, the run congruence, and the EndoScalar decomposition's ℤ-shadow. Reachable
+-- from the OLD Snarky gadget laws only; the new laws take a different route.
+Kimchi.Gate.EndoMul.crumbList_getD
+Kimchi.Gate.VarBaseMul.accN_chainBuild
+Kimchi.Gate.VarBaseMul.accX_chainBuild
+Kimchi.Gate.VarBaseMul.accY_chainBuild
+Kimchi.Gate.VarBaseMul.build_fields
+Kimchi.Gate.VarBaseMul.build_nPrime
+Kimchi.Gate.VarBaseMul.build_step0
+Kimchi.Gate.VarBaseMul.build_step1
+Kimchi.Gate.VarBaseMul.build_step2
+Kimchi.Gate.VarBaseMul.build_step3
+Kimchi.Gate.VarBaseMul.build_step4
+Kimchi.Gate.VarBaseMul.chainBuild_succ_n
+Kimchi.Gate.VarBaseMul.chainBuild_succ_x0
+Kimchi.Gate.VarBaseMul.chainBuild_succ_y0
+Kimchi.Gate.VarBaseMul.runBits_congr
+
+-- The prover interpreter's domain lemma (Snarky/Prover.lean).
+Snarky.prove_dom

@@ -44,7 +44,6 @@ def roots : List Name :=
     `Kimchi.Gate.EndoScalar.sound, `Kimchi.Gate.EndoScalar.complete,
     `Kimchi.Gate.EndoScalar.chain_toField,
     `Kimchi.Gate.EndoScalar.chain_complete,
-    `Kimchi.Gate.EndoScalar.nReconstruct_lt,
     `Kimchi.Gate.EndoScalar.endoScalar_unique,
     -- the 128-bit range check the same gate implements (`RangeCheck.purs`)
     `Kimchi.Gate.EndoScalar.chain_range,

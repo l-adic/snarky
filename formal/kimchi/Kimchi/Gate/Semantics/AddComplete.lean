@@ -9,6 +9,30 @@ import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
 
 namespace Kimchi.Gate.AddComplete
 
+variable {F : Type u} [Field F]
+
+/-- These coordinates name that point: the pair is nonsingular and the point it gives is
+    `P`. What a caller holding coordinates and a caller holding a point agree on — the
+    gate layer states it so the circuit layer can read its own points through it. -/
+def IsPoint (W : WeierstrassCurve.Affine F) (x y : F) (P : W.Point) : Prop :=
+  ∃ h : W.Nonsingular x y, P = WeierstrassCurve.Affine.Point.some _ _ h
+
+/-- Two coordinate pairs naming the same point are the same pair. -/
+theorem IsPoint.coords_eq {W : WeierstrassCurve.Affine F} {x y x' y' : F} {P : W.Point}
+    (h : IsPoint W x y P) (h' : IsPoint W x' y' P) : x = x' ∧ y = y' := by
+  obtain ⟨n, rfl⟩ := h
+  obtain ⟨n', heq⟩ := h'
+  simp only [WeierstrassCurve.Affine.Point.some.injEq] at heq
+  exact heq
+
+/-- `Point.some` congruence over *both* coordinates: equal `x` and `y` values give equal
+    points, the nonsingularity proofs being irrelevant. The one point congruence — every
+    layer above transports along coordinate identities through it. -/
+theorem some_congr (W : WeierstrassCurve.Affine F) {x x' y y' : F}
+    (h : W.Nonsingular x y) (h' : W.Nonsingular x' y') (hx : x = x') (hy : y = y') :
+    WeierstrassCurve.Affine.Point.some _ _ h = WeierstrassCurve.Affine.Point.some _ _ h' := by
+  subst hx; subst hy; rfl
+
 variable {F : Type*}
 
 section Faithfulness

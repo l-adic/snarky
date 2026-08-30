@@ -31,7 +31,7 @@ Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
   (total rendering; the prover laws discharge assignedness on the reachable path).
 
 The round-trip check against `Kimchi.Index.build?` and the fixture byte-comparison
-live in `scripts/check_cs_equality.lean`; this module is the pure data path it
+live in `scripts/check_cs_basic.lean`; this module is the pure data path it
 exercises.
 -/
 

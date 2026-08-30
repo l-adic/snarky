@@ -11,7 +11,7 @@ inputs:
       Space-separated lake targets to build (from `formal/`, the aggregator workspace).
     required: false
     default: >-
-      Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture
+      Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr
       KimchiFixture
 outputs:
   cache-key:

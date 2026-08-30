@@ -1,13 +1,20 @@
 /-
 The CS-equality seam: compile the gadget circuits with the Lean kimchi backend and
-compare the assembled constraint system — gate types, coefficients, wiring, RAW
-PER-CELL VARIABLE IDS, public size, witness, and public values — against the
-recorded PureScript dumps (`KimchiFixture.PS` decodes the JSON schema; the fixture
-witness table is column-major, so the comparison transposes). The witness comparison
+compare the assembled constraint system — gate types, coefficients, wiring, per-cell
+variable ids, public size, witness, and public values — against the recorded
+PureScript dumps (`KimchiFixture.PS` decodes the JSON schema; the fixture witness
+table is column-major, so the comparison transposes). The witness comparison
 re-solves with the fixture's own public input, so it checks the deterministic
-pipeline, not the sampled randomness. The variable-ids check is the allocation-order
-contract: cell values and wire cycles are allocation-order-INSENSITIVE, so only the
-ids pin the shared counter's numbering.
+pipeline, not the sampled randomness.
+
+The variable-ids check is the allocation-order contract, compared UP TO A GLOBAL
+RENAMING: this backend numbers the reduction's internal variables above the circuit's
+rather than interleaved with them, and witnesses the public outputs rather than
+preallocating them (`Snarky.Kimchi.kimchiGateData`), so the two counters agree only
+up to a bijection. What the renaming-invariant form still pins — and what `wires`
+does not see, since a cell holding a once-used variable and an empty cell both wire
+to themselves — is the per-cell OCCUPANCY pattern and the identification the ids
+induce across cells.
 
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
@@ -31,18 +38,19 @@ The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
 this check against the exports its own commit just produced.
 
-Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_equality.lean
+Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_basic.lean
 (`KIMCHI_PS_RESULTS_DIR` overrides the default export location).
 -/
+import Std.Data.HashMap
 import KimchiFixture.PS
-import Snarky.DSL
+import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
-import Snarky.Kimchi.Circuit.GroupMap
 import Poseidon.Basic
 import Pasta.Endo
 
@@ -172,11 +180,33 @@ def boolAnyCircuit (x : BoolVar Fp) : CircuitM Fp C (BoolVar Fp) := do
 def boolAssertCircuit (x : BoolVar Fp) : CircuitM Fp C PUnit :=
   Snarky.assert x
 
-/-- `add_complete_step_circuit`: complete addition of two points, infinity
-witnessed. -/
-def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
-    CircuitM Fp C (AffinePoint (FVar Fp)) :=
-  (·.p) <$> addFast .dontCheckFinite p.1 p.2
+/-! ## The comparison -/
+
+/-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
+column-major recording) — the index round-trip ingests the LEAN output, so it holds
+with or without byte-agreement. -/
+def assembledRaw (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
+    (pubSize : Nat) (wit : List (Vector Fp 15)) (pubs : List Fp) : Raw :=
+  { publicInputSize := pubSize
+    typs := (gates.map (kindType ·.kind)).toArray
+    coeffs := (gates.map (·.coeffs.toArray)).toArray
+    wires := (gates.map fun g =>
+      (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
+    vars := (rows.map fun r => r.vars.toList.toArray).toArray
+    witness := ((List.range 15).map fun j =>
+      (wit.map fun row => row.toList.getD j 0).toArray).toArray
+    pub := pubs.toArray }
+
+/-- The round-trip law, decided per circuit: the compiled output padded into the
+index model builds by decision (`Index.build?` — domain shape, wiring bijectivity,
+public-row form) and the solved witness satisfies the verified checker. -/
+def indexRoundTrip (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
+    (pubSize : Nat) (wit : List (Vector Fp 15)) (pubs : List Fp) : Bool :=
+  match Kimchi.Fixture.PS.build (assembledRaw rows gates pubSize wit pubs) with
+  | .error _ => false
+  | .ok inst =>
+    haveI : NeZero inst.n := inst.nz
+    decide (Satisfies inst.idx inst.wit.pub inst.wit.tab)
 
 /-- `poseidon_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.Poseidon.poseidon`
 at the step field's parameters; the PS `Vector 3` interface renders as the gadget's
@@ -185,8 +215,7 @@ def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3
   let r ← poseidon Poseidon.fpParams ⟨s[0], s[1], s[2]⟩
   pure #v[r.s0, r.s1, r.s2]
 
-/-- The Vesta endomorphism's scalar eigenvalue at the step field (PS
-`endoScalar @Vesta.BaseField @Fp`; `Pasta.vestaLam`). -/
+/-- Vesta's GLV eigenvalue, as a scalar-field element. -/
 def endoVestaLam : Fp := (Pasta.vestaLam : ℤ)
 
 /-- `endo_scalar_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.EndoScalar.toField`
@@ -207,6 +236,13 @@ def varBaseMulCircuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   scaleFast1 255 51 input.1 ⟨input.2⟩
 
+/-- `scale_fast2_128_step_circuit` (the PS gadget
+`Snarky.Circuit.Kimchi.VarBaseMul.scaleFast2'` at 26 chunks / 127 `sDiv2` bits — the
+128-bit split-scalar path, exercising `splitFieldVar` and `scaleFast2`). -/
+def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+    CircuitM Fp C (AffinePoint (FVar Fp)) :=
+  scaleFast2' 255 26 127 input.1 input.2
+
 /-- The Pallas BW19 `setup()` parameters at the step field (PS
 `groupMapParams (Proxy @PallasG)`): the constants are the poseidon package's
 `Poseidon.GroupMapPallas` values; the non-residue is PS's search-from-2 result,
@@ -226,26 +262,24 @@ def groupMapParamsFp : GroupMapParams Fp :=
 
 /-- `group_map_step_circuit` (the PS gadget
 `Snarky.Circuit.Kimchi.GroupMap.groupMapCircuit` at the step field and Pallas
-parameters; the advice is inert for the CS build). -/
-def groupMapStepCircuit (input : FVar Fp) :
-    CircuitM Fp (KimchiConstraint Fp) PUnit := do
+parameters; the dump carries no witness, so the advice is inert here). -/
+def groupMapCircuitFp (input : FVar Fp) : CircuitM Fp C PUnit := do
   let _ ← groupMapCircuit (fun _ => none) groupMapParamsFp input
   pure ⟨⟩
 
-/-- `scale_fast2_128_step_circuit` (the PS gadget
-`Snarky.Circuit.Kimchi.VarBaseMul.scaleFast2'` at 26 chunks / 127 `sDiv2` bits — the
-128-bit split-scalar path, exercising `splitFieldVar` and `scaleFast2`). -/
-def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
+/-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
+def addCompleteCircuit (p : AffinePoint (FVar Fp) × AffinePoint (FVar Fp)) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
-  scaleFast2' 255 26 127 input.1 input.2
+  (·.p) <$> addFast .dontCheckFinite p.1 p.2
 
-/-! ## Pickles sub-circuits
+/-! ## The gadget-complete pickles sub-circuits
 
-Composition circuits from `packages/pickles`, transcribed against their dumps the
-same way the gadget circuits are — these are the first fixtures exercising the
-gadgets IN COMPOSITION. Their dumps are witness-less (`exactMatchEff`
-registrations), so the comparison checks the constraint-system side only: gate
-types, coefficients, wires, per-cell variable ids, public size. -/
+Composition fixtures: PS sub-circuits built only from gadgets this tree already
+carries, transcribed from `Test.Pickles.CircuitDiffs.Main` the same way the gadget
+circuits are — these are the first fixtures exercising the gadgets IN COMPOSITION.
+Their dumps are witness-less (`exactMatchEff` registrations), so the comparison
+checks the constraint-system side only: gate types, coefficients, wires, per-cell
+variable ids, public size. -/
 
 /-- `pow2_pow_step_circuit` (`Pickles.Util.Pow2.pow2PowSquare` at 16 squarings —
 sixteen `square` rows chained). -/
@@ -304,7 +338,8 @@ def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
 /-- The step-side `endoInv` scalar-field data: the Pallas group order is prime
 (`pallas_card` carries the `Fact` over to the numeral). -/
 def pallasOrderPrime : Nat.Prime PALLAS_SCALAR_CARD :=
-  Pasta.pallas_card ▸ (Fact.out : Nat.Prime CompElliptic.Curves.Pasta.Pallas.curve.toAffine.order)
+  Pasta.pallas_card ▸
+    (Fact.out : Nat.Prime CompElliptic.Curves.Pasta.Pallas.curve.toAffine.order)
 
 /-- One IPA fold step (`bullet_reduce_one_step_circuit`, the PS wrapper's inline body):
 `endoInv(L, u) + endo(R, u)` — the first fixture composing endoInv, endoMul, and
@@ -316,7 +351,7 @@ def bulletReduceOneCircuit (input : Vector (FVar Fp) 5) : CircuitM Fp C PUnit :=
     PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
     l ⟨input[4]⟩
   let rScaled ← endoMul Pasta.pallasEndo 32 r ⟨input[4]⟩
-  let _ ← addComplete lScaled rScaled
+  let _ ← addFast .checkFinite lScaled rScaled
   pure PUnit.unit
 
 /-- The IPA `lr_prod` fold (`bullet_reduce_step_circuit`, PS `IPA.bulletReduceCircuit`
@@ -334,48 +369,47 @@ def bulletReduceCircuit (input : Vector (FVar Fp) 75) : CircuitM Fp C PUnit := d
       PALLAS_SCALAR_CARD pallasOrderPrime ((Pasta.pallasLam : ℤ) : ZMod PALLAS_SCALAR_CARD)
       l ⟨u⟩
     let rScaled ← endoMul Pasta.pallasEndo 32 r ⟨u⟩
-    addComplete lScaled rScaled)
+    addFast .checkFinite lScaled rScaled)
   match terms with
   | [] => pure PUnit.unit
   | head :: tail => do
-    let _ ← tail.foldlM (fun acc q => (·.p) <$> addComplete acc q.p) head.p
+    let _ ← tail.foldlM (fun acc q => (·.p) <$> addFast .checkFinite acc q.p) head.p
     pure PUnit.unit
 
-/-! ## The comparison -/
-
-/-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
-column-major recording) — the index round-trip ingests the LEAN output, so it holds
-with or without byte-agreement. -/
-def assembledRaw (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
-    (pubSize : Nat) (wit : List (Vector Fp 15)) (pubs : List Fp) : Raw :=
-  { publicInputSize := pubSize
-    typs := (gates.map (kindType ·.kind)).toArray
-    coeffs := (gates.map (·.coeffs.toArray)).toArray
-    wires := (gates.map fun g =>
-      (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
-    vars := (rows.map fun r => r.vars.toList.toArray).toArray
-    witness := ((List.range 15).map fun j =>
-      (wit.map fun row => row.toList.getD j 0).toArray).toArray
-    pub := pubs.toArray }
-
-/-- The round-trip law, decided per circuit: the compiled output padded into the
-index model builds by decision (`Index.build?` — domain shape, wiring bijectivity,
-public-row form) and the solved witness satisfies the verified checker. -/
-def indexRoundTrip (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
-    (pubSize : Nat) (wit : List (Vector Fp 15)) (pubs : List Fp) : Bool :=
-  match Kimchi.Fixture.PS.build (assembledRaw rows gates pubSize wit pubs) with
-  | .error _ => false
-  | .ok inst =>
-    haveI : NeZero inst.n := inst.nz
-    decide (Satisfies inst.idx inst.wit.pub inst.wit.tab)
+/-- The per-cell variable ids, compared up to a global renaming: walk both cell
+sequences in row-major order building the id map both ways, and require a
+well-defined injection. A cell occupied on one side and empty on the other fails
+immediately, as does any pair of cells the two sides identify differently. -/
+def varsAgreeUpToRenaming (rows : List (KimchiRow Fp))
+    (dumped : Array (Array (Option ℕ))) : Bool := Id.run do
+  let lhs := rows.map (·.vars.toList)
+  let rhs := dumped.toList.map (·.toList)
+  if lhs.length != rhs.length then return false
+  let mut fwd : Std.HashMap ℕ ℕ := {}
+  let mut bwd : Std.HashMap ℕ ℕ := {}
+  for (lrow, rrow) in lhs.zip rhs do
+    if lrow.length != rrow.length then return false
+    for (l, r) in lrow.zip rrow do
+      match l, r with
+      | none, none => pure ()
+      | some v, some w =>
+        match fwd[v]?, bwd[w]? with
+        | none, none =>
+          fwd := fwd.insert v w
+          bwd := bwd.insert w v
+        | some w', some v' => if w' != w || v' != v then return false
+        | _, _ => return false
+      | _, _ => return false
+  return true
 
 /-- Compare one circuit's assembled system and re-solved witness against its dump:
 the CS data (types, coefficients, wires, public size) is input-independent; the
 witness re-solve seeds the fixture's recorded public inputs. -/
 def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
-    [CheckedType Fp C avar] [B : CircuitType Fp b bvar]
+    [CheckedType Fp C a avar] [B : CircuitType Fp b bvar]
     (main : avar → CircuitM Fp C bvar) (raw : Raw) : List (String × Bool) :=
-  let (rows, gates, pubSize) := kimchiGateData (a := a) (b := b) main
+  let (rows, gates, pubVars) := kimchiGateData (a := a) (b := b) main
+  let pubSize := pubVars.length
   let csChecks :=
     [ ("publicInputSize", pubSize == raw.publicInputSize),
       ("gate count", gates.length == raw.typs.size),
@@ -385,14 +419,16 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
         (gates.map fun g =>
           (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
           == raw.wires),
-      ("variables",
-        (rows.map fun r => r.vars.toList.toArray).toArray == raw.vars) ]
+      ("gate count matches wires", gates.length == raw.wires.size),
+      ("variables (up to renaming)", varsAgreeUpToRenaming rows raw.vars) ]
   let input : a := A.fieldsToValue (Vector.ofFn fun i => raw.pub.getD i 0)
+  -- A witness-less dump (the `exactMatchEff` registrations) has no witness side to
+  -- compare; `main` reports which circuits were checked CS-side only.
   let witChecks := if raw.witness.isEmpty then [] else
     match kimchiSolve (a := a) (b := b) main input with
     | .error _ => [("solve", false)]
     | .ok (_, env) =>
-      let (wit, pubs) := makeWitness env rows ((allocRange 0 pubSize).toList)
+      let (wit, pubs) := makeWitness env rows pubVars
       [ ("witness",
           (List.range 15).map (fun j => wit.map fun row => row.toList.getD j 0)
             == raw.witness.toList.map (·.toList)),
@@ -440,7 +476,7 @@ def targets : List (String × (Raw → List (String × Bool))) :=
     ("scale_fast2_128_step_circuit",
       compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
     ("group_map_step_circuit",
-      compareWith (a := Fp) (b := PUnit) groupMapStepCircuit),
+      compareWith (a := Fp) (b := PUnit) groupMapCircuitFp),
     ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
     ("b_correct_step_circuit",
       compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
@@ -465,7 +501,8 @@ def main : IO Unit := do
     | .ok (some fixture) =>
       let bad := (compare fixture).filter (!·.2)
       if bad.isEmpty then
-        IO.println s!"✓ {name}"
+        let note := if fixture.witness.isEmpty then "  (CS-side only: witness-less dump)" else ""
+        IO.println s!"✓ {name}{note}"
       else
         failures := failures + 1
         IO.println s!"✗ {name}: {String.intercalate ", " (bad.map (·.1))}"

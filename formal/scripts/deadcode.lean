@@ -16,19 +16,16 @@ blocks cannot rot into general exemption dumps. A trailing `-- synthesis: ...` c
 exempts a line from the textual check (instances are found by class resolution, not by name).
 
 All five packages are audited. `snarky/roots.txt` declares the DSL's port surface (the
-PS-export mirrors, the Lean-only laws, and the `Example` exhibits), so `Snarky.*`
-declarations sit under the same dead-zero contract as the rest of the tree; its internal
-machinery must stay reachable from that declared surface.
+PS-export mirrors, the Lean-only laws, and the exhibits), so `Snarky.*` declarations sit
+under the same dead-zero contract as the rest of the tree; its internal machinery must stay
+reachable from that declared surface.
 
-The SIZE of that deferral, measured (temporarily widening `isAudited` to all of `isOurs`, then
-restoring): **76 authored `Snarky.*` declarations, of which 43 are unreachable from the
-manifest's 8 roots and 33 are credited.** So the headline "dead 0 of 1558" is dead-0 over 1558
-of 1634 authored declarations, and the unaudited remainder is 43, not 3 and not 300. Those 43
-are overwhelmingly plain DSL surface — `assertEq`, `mul`, `witness`, `existsVars`,
-`addConstraint`, `fresh`, `readVar`, `mapVec`, the `CircuitM` monad instances, the
-`CheckedType`/`CircuitType` classes, the `Example` demo circuit — which is why closing the
-deferral is a design decision (which combinators are API of the port) rather than a deletion
-pass, and why rooting them liberally would make the gate vacuous for this package.
+Deferral: `scripts/deferred.txt` names declarations excluded from the dead check, each
+because the core swap took away its consumer while the replacement consumer does not exist
+yet. A deferral is not a claim that the declaration is dead — it is a claim that its status
+is not yet decidable, with the work that decides it named in that file. The gate FAILS on a
+stale deferral in either direction: a line naming something absent from the environment, or
+a line naming something that has since become reachable. So the list can only shrink.
 
 Run from `formal/` (the aggregator workspace):  scripts/deadcode.sh
 -/
@@ -41,12 +38,13 @@ import Snarky.Kimchi.Circuit.Poseidon
 import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.Sponge
 import Snarky.Kimchi.Circuit.RandomOracle
-import Snarky.Kimchi.Circuit.Utils
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.GroupMap
+import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Semantics
+import Schnorr
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi
@@ -125,6 +123,7 @@ def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
+    || (`Schnorr).isPrefixOf n
 
 /-- Is `n` under the dead-zero contract? Everything traversable — all five packages
     declare their surface. -/
@@ -148,7 +147,7 @@ end Kimchi.DeadCode
 run_cmd do
   let env ← getEnv
   let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
-    "bulletproof-pcs/roots.txt", "snarky/roots.txt"]
+    "bulletproof-pcs/roots.txt", "snarky/roots.txt", "schnorr/roots.txt"]
   -- parse the manifests: one fully-qualified name per line, optional trailing `-- comment`;
   -- `--` lines and blanks are ignored; `script-surface` markers delimit the script surface
   let mut roots : Array Name := #[]
@@ -170,7 +169,7 @@ run_cmd do
         if inSurface then surface := surface.push (n, note.startsWith "synthesis")
   -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
   let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",
-    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts"]
+    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts", "schnorr/scripts"]
   let mut corpus := ""
   for d in scriptDirs do
     for e in (← System.FilePath.readDir d) do
@@ -181,6 +180,13 @@ run_cmd do
   for (n, exempt) in surface do
     if !exempt && (corpus.splitOn n.getString!).length ≤ 1 then
       unanchored := unanchored.push n
+  -- the deferral: declarations the core swap orphaned, whose live/dead status the Schnorr
+  -- verifier-faithfulness arc will settle (scripts/deferred.txt records the reason and the
+  -- exit condition). Named by user-facing name, so a private declaration matches too.
+  let mut deferred : NameSet := ∅
+  for line in (← IO.FS.readFile "scripts/deferred.txt").splitOn "\n" do
+    let t := line.trim
+    unless t.isEmpty || t.startsWith "--" do deferred := deferred.insert t.toName
   let live := Kimchi.DeadCode.reachable env roots
   -- all authored declarations under the dead-zero contract
   let authored : Array Name :=
@@ -188,17 +194,33 @@ run_cmd do
       if Kimchi.DeadCode.isAudited n && !Kimchi.DeadCode.isAuxiliary env n then acc.push n
       else acc)
     |>.qsort (·.toString < ·.toString)
-  let dead := authored.filter fun n => !live.contains n
+  let userName (n : Name) : Name := (privateToUserName? n).getD n
+  let isDeferred (n : Name) : Bool := deferred.contains (userName n)
+  let dead := authored.filter fun n => !live.contains n && !isDeferred n
+  -- a deferral that is now reachable, or that names nothing audited at all, has done its
+  -- job or never had one: either way the line must go
+  let creditedDeferrals := authored.filter fun n => live.contains n && isDeferred n
+  let named : NameSet := authored.foldl (fun acc n => acc.insert (userName n)) ∅
+  let staleDeferrals := deferred.toList.filter (!named.contains ·) |>.toArray
   IO.println s!"roots: {roots.size} resolved, {missing.size} missing"
   for n in missing do IO.println s!"  ⚠ root not in env: {n}"
+  for n in staleDeferrals do
+    IO.println s!"  ⚠ deferral not in environment (drop the line): {n}"
+  for n in creditedDeferrals do
+    IO.println s!"  ⚠ deferral is now reachable (drop the line): {n}"
   for n in unanchored do
     IO.println s!"  ⚠ script-surface root not found in any scripts/ file: {n}"
+  let deferredHere := authored.filter fun n => !live.contains n && isDeferred n
   IO.println s!"authored decls (audited packages): {authored.size}   \
-live: {authored.size - dead.size}   dead: {dead.size}"
+live: {authored.size - dead.size - deferredHere.size}   \
+deferred: {deferredHere.size}   dead: {dead.size}"
   if dead.isEmpty then IO.println "── no dead code ──"
   else
     IO.println "── dead (authored, unreachable from roots) ──"
     for n in dead do IO.println s!"  {n}"
-  unless missing.isEmpty && unanchored.isEmpty && dead.isEmpty do
+  IO.println s!"deferred (scripts/deferred.txt): {deferred.size}"
+  unless missing.isEmpty && unanchored.isEmpty && dead.isEmpty
+      && staleDeferrals.isEmpty && creditedDeferrals.isEmpty do
     throwError "dead-code gate FAILED: {dead.size} dead, {missing.size} missing roots, \
-{unanchored.size} unanchored script-surface roots"
+{unanchored.size} unanchored script-surface roots, \
+{staleDeferrals.size + creditedDeferrals.size} stale deferrals"

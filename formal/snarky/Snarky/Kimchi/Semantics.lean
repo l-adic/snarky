@@ -1,5 +1,5 @@
 import Snarky.Kimchi.Constraint
-import Snarky.Backend.WP
+import Snarky.WP
 import Kimchi.Gate.AddComplete
 import Kimchi.Gate.Poseidon
 import Kimchi.Gate.EndoScalar
@@ -187,10 +187,16 @@ instance KimchiConstraint.instConstraintHolds :
 each law is `Basic`'s own. -/
 instance KimchiConstraint.instLawfulBasicSystem :
     LawfulBasicSystem F (KimchiConstraint F) where
-  holds_equal V a b h := LawfulBasicSystem.holds_equal (c := Basic F) V a b h
-  holds_r1cs V l r o h := LawfulBasicSystem.holds_r1cs (c := Basic F) V l r o h
-  holds_square V a sq h := LawfulBasicSystem.holds_square (c := Basic F) V a sq h
-  holds_boolean V x h := LawfulBasicSystem.holds_boolean (c := Basic F) V x h
+  holds_equal V a b := LawfulBasicSystem.holds_equal (c := Basic F) V a b
+  holds_r1cs V l r o := LawfulBasicSystem.holds_r1cs (c := Basic F) V l r o
+  holds_square V a sq := LawfulBasicSystem.holds_square (c := Basic F) V a sq
+  holds_boolean V x := LawfulBasicSystem.holds_boolean (c := Basic F) V x
+
+/- PORT: the partial-table checker is OFF.
+
+The new core's prover does not judge its table, so there is no `Checker` class to
+instantiate and no `eval`-into-`Except` reading: `CVar.val` is total. The `read`
+family above — already valuation-based — is the surviving half.
 
 /-- The payload's operand values on the prover's partial table, as the gate's witness
 record — `read` at an `Assignments`, failing where a value is missing. -/
@@ -367,6 +373,8 @@ instance KimchiConstraint.instLawfulChecker :
 /-- The kimchi prover carrier: the checking reading at the kimchi backend. -/
 abbrev KimchiProverC (F : Type) := Prover (KimchiConstraint F)
 
+-/
+
 /-- The kimchi constraint vocabulary, as a class over the carrier. NOT a backend
 seam: kimchi is the terminal constraint layer, and the two instances below — the sum
 itself and its prover tag — are the only two that will ever exist. The class exists
@@ -388,6 +396,7 @@ class KimchiSystem (F c : Type) where
 instance : KimchiSystem F (KimchiConstraint F) :=
   ⟨.addComplete, .poseidon, .endoScalar, .endoMul, .varBaseMul⟩
 
-instance [inst : KimchiSystem F c] : KimchiSystem F (Prover c) := inst
+instance [inst : KimchiSystem F c] {V : Valuation F} :
+    KimchiSystem F (Builder V c) := inst
 
 end Snarky.Kimchi
