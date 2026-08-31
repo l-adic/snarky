@@ -21,12 +21,12 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 10 | 9 |
-| `Sat` sites | — | 145 |
+| files | 11 | 8 |
+| `Sat` sites | — | 129 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
-`schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/AddComplete`, `schnorr/Schnorr/UnpackFull`.
 
 **Remaining**, largest first:
 
@@ -35,7 +35,6 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 | `Kimchi/Circuit/GroupMap.lean` | 0 | 35 |
 | `Kimchi/Circuit/VarBaseMul.lean` | 2 | 27 |
 | `Kimchi/Circuit/Sponge.lean` | 0 | 18 |
-| `Kimchi/Circuit/AddComplete.lean` | 3 | 16 |
 | `Kimchi/Circuit/RangeCheck.lean` | 4 | 15 |
 | `Kimchi/Circuit/EndoScalar.lean` | 2 | 14 |
 | `Kimchi/Circuit/EndoMul.lean` | 2 | 11 |
@@ -111,7 +110,10 @@ value the law is indexed by. See `Field.powGo_complete` and `Boolean.xor.core_co
   mentions `t✝¹ e✝¹`, and every explicit argument must be read off the goal. The fix is
   not to fight it: factor the witnessing branch into a `where core` and prove its law in
   its own binders. `xor` already had this shape; `selectField` was given it. Expect
-  `AddComplete`, `VarBaseMul` and `GroupMap` to want the same.
+  `VarBaseMul` and `GroupMap` to want the same. `AddComplete` did **not**: its branch is
+  on a plain enum (`Finiteness`), so a standalone law for the branching sub-circuit
+  (`infColumn_complete`, proved by `cases fin`) sufficed — the `where core` trick is
+  only for splits on a *CVar* scrutinee.
 
 - **The precondition of a framed law is sometimes a conjunction and sometimes curried.**
   `rintro st ⟨hr, hx⟩ stf hle` vs `rintro st hr hx stf hle` — read the goal.
