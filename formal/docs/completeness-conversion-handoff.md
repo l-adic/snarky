@@ -21,13 +21,13 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 14 | 5 |
-| `Sat` sites | — | 77 |
+| files | 15 | 4 |
+| `Sat` sites | — | 62 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
 `Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `Kimchi/Circuit/EndoMul`,
-`Kimchi/Circuit/VarBaseMul`, `schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/VarBaseMul`, `Kimchi/Circuit/RangeCheck`, `schnorr/Schnorr/UnpackFull`.
 
 **Remaining**, largest first:
 
@@ -35,7 +35,6 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 | --- | --- | --- |
 | `Kimchi/Circuit/GroupMap.lean` | 0 | 35 |
 | `Kimchi/Circuit/Sponge.lean` | 0 | 18 |
-| `Kimchi/Circuit/RangeCheck.lean` | 4 | 15 |
 | `Compile.lean` | 1 | 5 |
 | `Witness.lean` | 4 | 4 |
 
@@ -145,6 +144,13 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
 
 - **`Complete.pure_of` needs its `pre` pinned** when applied at a state
   (`Complete.pure_of (pre := …) … st h`), or the metavariable is stuck.
+
+- **A mid-`do` `if` inlines its continuation into both branches.** After
+  `by_cases hc … <;> simp only [hc, if_true]` the true branch's program is
+  `g >>= fun _ => (pure ⟨⟩ >>= fun _ => REST)` — the branch body does NOT group as
+  `(g >>= pure ⟨⟩) >>= REST`. Factor `REST`'s law as a `have hrest : Complete …` (with
+  the merged mid as its pre) and finish each branch with
+  `Complete.bind … fun _ => hrest` (`RangeCheck.lowest128Bits'_complete`).
 
 - **Anchor text edits precisely.** `attribute [irreducible] X` occurs more than once in
   some files; slicing to the first occurrence deletes half the module.
