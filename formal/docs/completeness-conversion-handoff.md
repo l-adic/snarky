@@ -21,20 +21,20 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 15 | 4 |
-| `Sat` sites | — | 62 |
+| files | 16 | 3 |
+| `Sat` sites | — | 44 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
 `Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `Kimchi/Circuit/EndoMul`,
-`Kimchi/Circuit/VarBaseMul`, `Kimchi/Circuit/RangeCheck`, `schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/VarBaseMul`, `Kimchi/Circuit/RangeCheck`, `Kimchi/Circuit/Sponge`,
+`schnorr/Schnorr/UnpackFull`.
 
 **Remaining**, largest first:
 
 | file | `Runs` | `Sat` |
 | --- | --- | --- |
 | `Kimchi/Circuit/GroupMap.lean` | 0 | 35 |
-| `Kimchi/Circuit/Sponge.lean` | 0 | 18 |
 | `Compile.lean` | 1 | 5 |
 | `Witness.lean` | 4 | 4 |
 
