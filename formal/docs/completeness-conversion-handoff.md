@@ -21,20 +21,19 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 13 | 6 |
-| `Sat` sites | — | 104 |
+| files | 14 | 5 |
+| `Sat` sites | — | 77 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
 `Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `Kimchi/Circuit/EndoMul`,
-`schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/VarBaseMul`, `schnorr/Schnorr/UnpackFull`.
 
 **Remaining**, largest first:
 
 | file | `Runs` | `Sat` |
 | --- | --- | --- |
 | `Kimchi/Circuit/GroupMap.lean` | 0 | 35 |
-| `Kimchi/Circuit/VarBaseMul.lean` | 2 | 27 |
 | `Kimchi/Circuit/Sponge.lean` | 0 | 18 |
 | `Kimchi/Circuit/RangeCheck.lean` | 4 | 15 |
 | `Compile.lean` | 1 | 5 |
@@ -129,10 +128,17 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
   mentions `t✝¹ e✝¹`, and every explicit argument must be read off the goal. The fix is
   not to fight it: factor the witnessing branch into a `where core` and prove its law in
   its own binders. `xor` already had this shape; `selectField` was given it. Expect
-  `VarBaseMul` and `GroupMap` to want the same. `AddComplete` did **not**: its branch is
-  on a plain enum (`Finiteness`), so a standalone law for the branching sub-circuit
-  (`infColumn_complete`, proved by `cases fin`) sufficed — the `where core` trick is
-  only for splits on a *CVar* scrutinee.
+  `GroupMap` to want the same. `AddComplete` and `VarBaseMul` did **not**: neither
+  branches on a CVar scrutinee (`AddComplete`'s branch is on the `Finiteness` enum,
+  handled by a standalone `infColumn_complete` proved by `cases fin`) — the `where core`
+  trick is only for splits on a *CVar* scrutinee.
+
+- **A `Mono` witness whose predicate is itself a `∀` needs its type pinned.** A lambda
+  like `fun _ _ hnv hle h x hx => …` is ambiguous while the frame's `R` is a
+  metavariable — hoist it into a `have hM : Mono (F := F) fun st => ∀ x ∈ …` first
+  (`VarBaseMul`'s `hpinM`). Deeply conjunctive contexts also read better with the base
+  `Mono` named once (`scaleRound_complete`'s `hMP`) and per-step wrappers
+  `Mono.and Mono.readsAs hMP` inline.
 
 - **The precondition of a framed law is sometimes a conjunction and sometimes curried.**
   `rintro st ⟨hr, hx⟩ stf hle` vs `rintro st hr hx stf hle` — read the goal.

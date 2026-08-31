@@ -322,201 +322,255 @@ private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverSta
     Complete (F := F) (c := KimchiConstraint F) (AccInv st₁ acc)
       (scaleRound (c := KimchiConstraint F) base acc bs)
       (fun p st' => AccInv st₁ p.2 st' ∧ RowGrant base acc bs p.1 p.2 st') := by
-  rintro st ⟨⟨hnv, hle⟩, hax, hay, han⟩
-  have hbx : base.x.Scoped st := hbase.1.mono hnv
-  have hby : base.y.Scoped st := hbase.2.mono hnv
-  have hb : ∀ (i : ℕ) (hi : i < 5), (bs[i]'hi).Scoped st :=
-    fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono hnv
-  set W := Kimchi.Gate.VarBaseMul.build (base.x.val st.env.get) (base.y.val st.env.get)
-    (acc.1.x.val st.env.get) (acc.1.y.val st.env.get) (acc.2.val st.env.get)
-    ((bs[0]'(by omega)).val st.env.get) ((bs[1]'(by omega)).val st.env.get)
-    ((bs[2]'(by omega)).val st.env.get) ((bs[3]'(by omega)).val st.env.get)
-    ((bs[4]'(by omega)).val st.env.get) with hW
+  simp only [scaleRound]
+  -- the ten cell readings at the entry table index the law
+  refine Complete.instantiate
+    (ι := F × F × F × F × F × F × F × F × F × F)
+    (P := fun v st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+      CircuitType.ReadsAs (val := F) st base.x v.1 ∧
+      CircuitType.ReadsAs (val := F) st base.y v.2.1 ∧
+      CircuitType.ReadsAs (val := F) st acc.1.x v.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st acc.1.y v.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st acc.2 v.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[0]'(by omega)) v.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[1]'(by omega)) v.2.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[2]'(by omega)) v.2.2.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[3]'(by omega)) v.2.2.2.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[4]'(by omega)) v.2.2.2.2.2.2.2.2.2)
+    (fun st h => ?_) fun v => ?_
+  · have hb : ∀ (i : ℕ) (hi : i < 5), (bs[i]'hi).Scoped st :=
+      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono h.1.1
+    exact ⟨(base.x.val st.env.get, base.y.val st.env.get, acc.1.x.val st.env.get,
+        acc.1.y.val st.env.get, acc.2.val st.env.get, (bs[0]'(by omega)).val st.env.get,
+        (bs[1]'(by omega)).val st.env.get, (bs[2]'(by omega)).val st.env.get,
+        (bs[3]'(by omega)).val st.env.get, (bs[4]'(by omega)).val st.env.get),
+      h.1,
+      ⟨CircuitType.scoped_fvar.mpr (hbase.1.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hbase.2.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr h.2.1, CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr h.2.2.1, CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr h.2.2.2, CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 0 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 1 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 2 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 3 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 4 (by omega)), CircuitType.reads_fvar.mpr rfl⟩⟩
+  obtain ⟨xB, yB, x0, y0, n0, b0, b1, b2, b3, b4⟩ := v
+  have hMP : Mono (F := F) fun st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+      CircuitType.ReadsAs (val := F) st base.x xB ∧
+      CircuitType.ReadsAs (val := F) st base.y yB ∧
+      CircuitType.ReadsAs (val := F) st acc.1.x x0 ∧
+      CircuitType.ReadsAs (val := F) st acc.1.y y0 ∧
+      CircuitType.ReadsAs (val := F) st acc.2 n0 ∧
+      CircuitType.ReadsAs (val := F) st (bs[0]'(by omega)) b0 ∧
+      CircuitType.ReadsAs (val := F) st (bs[1]'(by omega)) b1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[2]'(by omega)) b2 ∧
+      CircuitType.ReadsAs (val := F) st (bs[3]'(by omega)) b3 ∧
+      CircuitType.ReadsAs (val := F) st (bs[4]'(by omega)) b4 :=
+    Mono.and (fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩)
+      (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+            (Mono.and Mono.readsAs Mono.readsAs)))))))))
+  set W := Kimchi.Gate.VarBaseMul.build xB yB x0 y0 n0 b0 b1 b2 b3 b4 with hW
   -- the register advice
-  obtain ⟨nAcc, t0, R0, S0, N0, E0, C0, D0⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F) (nAccWit acc.2 bs) (st := st)
-      (v := W.nPrime)
-      (by simp)
-      (by
-        simp only [nAccWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run han,
-          AsProver.readCVar_run (hb 0 (by omega)), AsProver.readCVar_run (hb 1 (by omega)),
-          AsProver.readCVar_run (hb 2 (by omega)), AsProver.readCVar_run (hb 3 (by omega)),
-          AsProver.readCVar_run (hb 4 (by omega)), Except.bind]
-        rw [hW]
-        rfl)
-  simp only [CircuitType.scoped_fvar] at C0
-  simp only [CircuitType.reads_fvar] at D0
-  have LA0 : st.env.Le t0.env := E0
-  have NA0 : st.nv ≤ t0.nv := N0
-  -- bit step 0
-  obtain ⟨w0, t1, R1, S1, N1, E1, C1, D1⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[0]'(by omega)) ⟨acc.1.x, acc.1.y⟩) (st := t0) (by simp)
-      (v := (W.s0, W.s0 * W.s0,
-        2 * W.y0 / (2 * W.x0 + W.xT - W.s0 * W.s0) - W.s0, W.x1, W.y1))
-      (by
-        simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (hbx.mono NA0), AsProver.readCVar_run (hby.mono NA0),
-          AsProver.readCVar_run (hax.mono NA0), AsProver.readCVar_run (hay.mono NA0),
-          AsProver.readCVar_run ((hb 0 (by omega)).mono NA0), Except.bind,
-          CVar.val_of_le LA0 hbx, CVar.val_of_le LA0 hby,
-          CVar.val_of_le LA0 hax, CVar.val_of_le LA0 hay, CVar.val_of_le LA0 (hb 0 (by omega))]
-        rw [hW]
-        rfl)
-  obtain ⟨sl0, sq0, se0, ox0, oy0⟩ := w0
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at C1
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at D1
-  have LA1 : st.env.Le t1.env := LA0.trans E1
-  have NA1 : st.nv ≤ t1.nv := Nat.le_trans NA0 N1
-  -- bit step 1
-  obtain ⟨w1, t2, R2, S2, N2, E2, C2, D2⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩) (st := t1) (by simp)
-      (v := (W.s1, W.s1 * W.s1,
-        2 * W.y1 / (2 * W.x1 + W.xT - W.s1 * W.s1) - W.s1, W.x2, W.y2))
-      (by
-        simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (hbx.mono NA1), AsProver.readCVar_run (hby.mono NA1),
-          AsProver.readCVar_run C1.2.2.2.1, AsProver.readCVar_run C1.2.2.2.2,
-          AsProver.readCVar_run ((hb 1 (by omega)).mono NA1), Except.bind,
-          CVar.val_of_le LA1 hbx, CVar.val_of_le LA1 hby,
-          D1.2.2.2.1, D1.2.2.2.2, CVar.val_of_le LA1 (hb 1 (by omega))]
-        rw [hW]
-        rfl)
-  obtain ⟨sl1, sq1, se1, ox1, oy1⟩ := w1
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at C2
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at D2
-  have LA2 : st.env.Le t2.env := LA1.trans E2
-  have NA2 : st.nv ≤ t2.nv := Nat.le_trans NA1 N2
-  -- bit step 2
-  obtain ⟨w2, t3, R3, S3, N3, E3, C3, D3⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩) (st := t2) (by simp)
-      (v := (W.s2, W.s2 * W.s2,
-        2 * W.y2 / (2 * W.x2 + W.xT - W.s2 * W.s2) - W.s2, W.x3, W.y3))
-      (by
-        simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (hbx.mono NA2), AsProver.readCVar_run (hby.mono NA2),
-          AsProver.readCVar_run C2.2.2.2.1, AsProver.readCVar_run C2.2.2.2.2,
-          AsProver.readCVar_run ((hb 2 (by omega)).mono NA2), Except.bind,
-          CVar.val_of_le LA2 hbx, CVar.val_of_le LA2 hby,
-          D2.2.2.2.1, D2.2.2.2.2, CVar.val_of_le LA2 (hb 2 (by omega))]
-        rw [hW]
-        rfl)
-  obtain ⟨sl2, sq2, se2, ox2, oy2⟩ := w2
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at C3
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at D3
-  have LA3 : st.env.Le t3.env := LA2.trans E3
-  have NA3 : st.nv ≤ t3.nv := Nat.le_trans NA2 N3
-  -- bit step 3
-  obtain ⟨w3, t4, R4, S4, N4, E4, C4, D4⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩) (st := t3) (by simp)
-      (v := (W.s3, W.s3 * W.s3,
-        2 * W.y3 / (2 * W.x3 + W.xT - W.s3 * W.s3) - W.s3, W.x4, W.y4))
-      (by
-        simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (hbx.mono NA3), AsProver.readCVar_run (hby.mono NA3),
-          AsProver.readCVar_run C3.2.2.2.1, AsProver.readCVar_run C3.2.2.2.2,
-          AsProver.readCVar_run ((hb 3 (by omega)).mono NA3), Except.bind,
-          CVar.val_of_le LA3 hbx, CVar.val_of_le LA3 hby,
-          D3.2.2.2.1, D3.2.2.2.2, CVar.val_of_le LA3 (hb 3 (by omega))]
-        rw [hW]
-        rfl)
-  obtain ⟨sl3, sq3, se3, ox3, oy3⟩ := w3
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at C4
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at D4
-  have LA4 : st.env.Le t4.env := LA3.trans E4
-  have NA4 : st.nv ≤ t4.nv := Nat.le_trans NA3 N4
-  -- bit step 4
-  obtain ⟨w4, t5, R5, S5, N5, E5, C5, D5⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F)
-      (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩) (st := t4) (by simp)
-      (v := (W.s4, W.s4 * W.s4,
-        2 * W.y4 / (2 * W.x4 + W.xT - W.s4 * W.s4) - W.s4, W.x5, W.y5))
-      (by
-        simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (hbx.mono NA4), AsProver.readCVar_run (hby.mono NA4),
-          AsProver.readCVar_run C4.2.2.2.1, AsProver.readCVar_run C4.2.2.2.2,
-          AsProver.readCVar_run ((hb 4 (by omega)).mono NA4), Except.bind,
-          CVar.val_of_le LA4 hbx, CVar.val_of_le LA4 hby,
-          D4.2.2.2.1, D4.2.2.2.2, CVar.val_of_le LA4 (hb 4 (by omega))]
-        rw [hW]
-        rfl)
-  obtain ⟨sl4, sq4, se4, ox4, oy4⟩ := w4
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at C5
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at D5
-  have LA5 : st.env.Le t5.env := LA4.trans E5
-  have NA5 : st.nv ≤ t5.nv := Nat.le_trans NA4 N5
-  -- the tails
-  have M4 : t4.env.Le t5.env := E5
-  have M3 : t3.env.Le t5.env := E4.trans M4
-  have M2 : t2.env.Le t5.env := E3.trans M3
-  have M1 : t1.env.Le t5.env := E2.trans M2
-  have M0 : t0.env.Le t5.env := E1.trans M1
-  have K4 : t4.nv ≤ t5.nv := N5
-  have K3 : t3.nv ≤ t5.nv := Nat.le_trans N4 K4
-  have K2 : t2.nv ≤ t5.nv := Nat.le_trans N3 K3
-  have K1 : t1.nv ≤ t5.nv := Nat.le_trans N2 K2
-  have K0 : t0.nv ≤ t5.nv := Nat.le_trans N1 K1
-  refine ⟨(⟨acc.1, ⟨ox0, oy0⟩, ⟨ox1, oy1⟩, ⟨ox2, oy2⟩, ⟨ox3, oy3⟩, ⟨ox4, oy4⟩,
-      bs[0], bs[1], bs[2], bs[3], bs[4], sl0, sl1, sl2, sl3, sl4, acc.2, nAcc, base⟩,
-      (⟨ox4, oy4⟩, nAcc)), t5,
-    R0.bind (R1.bind (R2.bind (R3.bind (R4.bind (R5.bind rfl))))),
-    fun hnvF hleF =>
-      Sat.bind R0 (S0 (Nat.le_trans K0 hnvF) (M0.trans hleF))
-        (Sat.bind R1 (S1 (Nat.le_trans K1 hnvF) (M1.trans hleF))
-          (Sat.bind R2 (S2 (Nat.le_trans K2 hnvF) (M2.trans hleF))
-            (Sat.bind R3 (S3 (Nat.le_trans K3 hnvF) (M3.trans hleF))
-              (Sat.bind R4 (S4 (Nat.le_trans K4 hnvF) (M4.trans hleF))
-                (Sat.bind R5 (S5 hnvF hleF) Sat.pure))))),
-    ⟨⟨Nat.le_trans hnv NA5, hle.trans LA5⟩, C5.2.2.2.1, C5.2.2.2.2, C0.mono K0⟩,
-    ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
-  · intro cv hcv
-    simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
-    rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · exact hbx.mono NA5
-    · exact hby.mono NA5
-    · exact hax.mono NA5
-    · exact hay.mono NA5
-    · exact C1.2.2.2.1.mono K1
-    · exact C1.2.2.2.2.mono K1
-    · exact C2.2.2.2.1.mono K2
-    · exact C2.2.2.2.2.mono K2
-    · exact C3.2.2.2.1.mono K3
-    · exact C3.2.2.2.2.mono K3
-    · exact C4.2.2.2.1.mono K4
-    · exact C4.2.2.2.2.mono K4
-    · exact C5.2.2.2.1
-    · exact C5.2.2.2.2
-    · exact (hb 0 (by omega)).mono NA5
-    · exact (hb 1 (by omega)).mono NA5
-    · exact (hb 2 (by omega)).mono NA5
-    · exact (hb 3 (by omega)).mono NA5
-    · exact (hb 4 (by omega)).mono NA5
-    · exact C1.1.mono K1
-    · exact C2.1.mono K2
-    · exact C3.1.mono K3
-    · exact C4.1.mono K4
-    · exact C5.1
-    · exact han.mono NA5
-    · exact C0.mono K0
-  · simp only [ScaleRound.read, CVar.val_of_le LA5 hbx, CVar.val_of_le LA5 hby,
-      CVar.val_of_le LA5 hax, CVar.val_of_le LA5 hay, CVar.val_of_le LA5 han,
-      CVar.val_of_le LA5 (hb 0 (by omega)), CVar.val_of_le LA5 (hb 1 (by omega)),
-      CVar.val_of_le LA5 (hb 2 (by omega)), CVar.val_of_le LA5 (hb 3 (by omega)),
-      CVar.val_of_le LA5 (hb 4 (by omega)),
-      CVar.val_of_le M0 C0, D0,
-      CVar.val_of_le M1 C1.2.2.2.1, CVar.val_of_le M1 C1.2.2.2.2, CVar.val_of_le M1 C1.1,
-      CVar.val_of_le M2 C2.2.2.2.1, CVar.val_of_le M2 C2.2.2.2.2, CVar.val_of_le M2 C2.1,
-      CVar.val_of_le M3 C3.2.2.2.1, CVar.val_of_le M3 C3.2.2.2.2, CVar.val_of_le M3 C3.1,
-      CVar.val_of_le M4 C4.2.2.2.1, CVar.val_of_le M4 C4.2.2.2.2, CVar.val_of_le M4 C4.1,
-      D1.2.2.2.1, D1.2.2.2.2, D1.1, D2.2.2.2.1, D2.2.2.2.2, D2.1,
-      D3.2.2.2.1, D3.2.2.2.2, D3.1, D4.2.2.2.1, D4.2.2.2.2, D4.1,
-      D5.2.2.2.1, D5.2.2.2.2, D5.1]
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run0, h⟩) (fun _ _ h => h)
+      (Complete.frame hMP (Complete.witness (nAccWit acc.2 bs) W.nPrime (by simp))))
+    fun nAcc => ?_
+  case run0 =>
+    obtain ⟨hext, hBX, hBY, hAX, hAY, hRN, hb0, hb1, hb2, hb3, hb4⟩ := h
+    simp only [nAccWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hRN.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb0.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb2.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb3.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb4.1),
+      CircuitType.reads_fvar.mp hRN.2, CircuitType.reads_fvar.mp hb0.2,
+      CircuitType.reads_fvar.mp hb1.2, CircuitType.reads_fvar.mp hb2.2,
+      CircuitType.reads_fvar.mp hb3.2, CircuitType.reads_fvar.mp hb4.2, Except.bind]
     rw [hW]
     rfl
+  -- bit step 0
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run1, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs hMP)
+        (Complete.witness (bitWit base (bs[0]'(by omega)) acc.1)
+          (W.s0, W.s0 * W.s0,
+            2 * W.y0 / (2 * W.x0 + W.xT - W.s0 * W.s0) - W.s0, W.x1, W.y1) (by simp))))
+    fun w0 => ?_
+  case run1 =>
+    obtain ⟨hNA, hext, hBX, hBY, hAX, hAY, hRN, hb0, hb1, hb2, hb3, hb4⟩ := h
+    simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBX.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBY.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hAX.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hAY.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb0.1),
+      CircuitType.reads_fvar.mp hBX.2, CircuitType.reads_fvar.mp hBY.2,
+      CircuitType.reads_fvar.mp hAX.2, CircuitType.reads_fvar.mp hAY.2,
+      CircuitType.reads_fvar.mp hb0.2, Except.bind]
+    rw [hW]
+    rfl
+  obtain ⟨sl0, sq0, se0, ox0, oy0⟩ := w0
+  -- bit step 1
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run2, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs hMP))
+        (Complete.witness (bitWit base (bs[1]'(by omega)) ⟨ox0, oy0⟩)
+          (W.s1, W.s1 * W.s1,
+            2 * W.y1 / (2 * W.x1 + W.xT - W.s1 * W.s1) - W.s1, W.x2, W.y2) (by simp))))
+    fun w1 => ?_
+  case run2 =>
+    obtain ⟨hw0, hNA, hext, hBX, hBY, hAX, hAY, hRN, hb0, hb1, hb2, hb3, hb4⟩ := h
+    have hsc := hw0.1
+    have hrd := hw0.2
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hsc
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrd
+    simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBX.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBY.1),
+      AsProver.readCVar_run hsc.2.2.2.1, AsProver.readCVar_run hsc.2.2.2.2,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb1.1),
+      CircuitType.reads_fvar.mp hBX.2, CircuitType.reads_fvar.mp hBY.2,
+      hrd.2.2.2.1, hrd.2.2.2.2, CircuitType.reads_fvar.mp hb1.2, Except.bind]
+    rw [hW]
+    rfl
+  obtain ⟨sl1, sq1, se1, ox1, oy1⟩ := w1
+  -- bit step 2
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run3, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+          (Mono.and Mono.readsAs hMP)))
+        (Complete.witness (bitWit base (bs[2]'(by omega)) ⟨ox1, oy1⟩)
+          (W.s2, W.s2 * W.s2,
+            2 * W.y2 / (2 * W.x2 + W.xT - W.s2 * W.s2) - W.s2, W.x3, W.y3) (by simp))))
+    fun w2 => ?_
+  case run3 =>
+    obtain ⟨hw1, hw0, hNA, hext, hBX, hBY, hAX, hAY, hRN, hb0, hb1, hb2, hb3, hb4⟩ := h
+    have hsc := hw1.1
+    have hrd := hw1.2
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hsc
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrd
+    simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBX.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBY.1),
+      AsProver.readCVar_run hsc.2.2.2.1, AsProver.readCVar_run hsc.2.2.2.2,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb2.1),
+      CircuitType.reads_fvar.mp hBX.2, CircuitType.reads_fvar.mp hBY.2,
+      hrd.2.2.2.1, hrd.2.2.2.2, CircuitType.reads_fvar.mp hb2.2, Except.bind]
+    rw [hW]
+    rfl
+  obtain ⟨sl2, sq2, se2, ox2, oy2⟩ := w2
+  -- bit step 3
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run4, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+          (Mono.and Mono.readsAs (Mono.and Mono.readsAs hMP))))
+        (Complete.witness (bitWit base (bs[3]'(by omega)) ⟨ox2, oy2⟩)
+          (W.s3, W.s3 * W.s3,
+            2 * W.y3 / (2 * W.x3 + W.xT - W.s3 * W.s3) - W.s3, W.x4, W.y4) (by simp))))
+    fun w3 => ?_
+  case run4 =>
+    obtain ⟨hw2, hw1, hw0, hNA, hext, hBX, hBY, hAX, hAY, hRN, hb0, hb1, hb2, hb3, hb4⟩ := h
+    have hsc := hw2.1
+    have hrd := hw2.2
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hsc
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrd
+    simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBX.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBY.1),
+      AsProver.readCVar_run hsc.2.2.2.1, AsProver.readCVar_run hsc.2.2.2.2,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb3.1),
+      CircuitType.reads_fvar.mp hBX.2, CircuitType.reads_fvar.mp hBY.2,
+      hrd.2.2.2.1, hrd.2.2.2.2, CircuitType.reads_fvar.mp hb3.2, Except.bind]
+    rw [hW]
+    rfl
+  obtain ⟨sl3, sq3, se3, ox3, oy3⟩ := w3
+  -- bit step 4
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run5, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+          (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs hMP)))))
+        (Complete.witness (bitWit base (bs[4]'(by omega)) ⟨ox3, oy3⟩)
+          (W.s4, W.s4 * W.s4,
+            2 * W.y4 / (2 * W.x4 + W.xT - W.s4 * W.s4) - W.s4, W.x5, W.y5) (by simp))))
+    fun w4 => Complete.pure_of fun st h => ?post
+  case run5 =>
+    obtain ⟨hw3, hw2, hw1, hw0, hNA, hext, hBX, hBY, hAX, hAY, hRN,
+      hb0, hb1, hb2, hb3, hb4⟩ := h
+    have hsc := hw3.1
+    have hrd := hw3.2
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hsc
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrd
+    simp only [bitWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBX.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hBY.1),
+      AsProver.readCVar_run hsc.2.2.2.1, AsProver.readCVar_run hsc.2.2.2.2,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp hb4.1),
+      CircuitType.reads_fvar.mp hBX.2, CircuitType.reads_fvar.mp hBY.2,
+      hrd.2.2.2.1, hrd.2.2.2.2, CircuitType.reads_fvar.mp hb4.2, Except.bind]
+    rw [hW]
+    rfl
+  case post =>
+    obtain ⟨sl4, sq4, se4, ox4, oy4⟩ := w4
+    obtain ⟨hw4, hw3, hw2, hw1, hw0, hNA, hext, hBX, hBY, hAX, hAY, hRN,
+      hb0, hb1, hb2, hb3, hb4⟩ := h
+    have hC0 := CircuitType.scoped_fvar.mp hNA.1
+    have hD0 := CircuitType.reads_fvar.mp hNA.2
+    have hC1 := hw0.1; have hD1 := hw0.2
+    have hC2 := hw1.1; have hD2 := hw1.2
+    have hC3 := hw2.1; have hD3 := hw2.2
+    have hC4 := hw3.1; have hD4 := hw3.2
+    have hC5 := hw4.1; have hD5 := hw4.2
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hC1 hC2 hC3 hC4 hC5
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hD1 hD2 hD3 hD4 hD5
+    refine ⟨⟨hext, hC5.2.2.2.1, hC5.2.2.2.2, hC0⟩,
+      ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
+    · intro cv hcv
+      simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
+      rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+        rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+        rfl | rfl
+      · exact CircuitType.scoped_fvar.mp hBX.1
+      · exact CircuitType.scoped_fvar.mp hBY.1
+      · exact CircuitType.scoped_fvar.mp hAX.1
+      · exact CircuitType.scoped_fvar.mp hAY.1
+      · exact hC1.2.2.2.1
+      · exact hC1.2.2.2.2
+      · exact hC2.2.2.2.1
+      · exact hC2.2.2.2.2
+      · exact hC3.2.2.2.1
+      · exact hC3.2.2.2.2
+      · exact hC4.2.2.2.1
+      · exact hC4.2.2.2.2
+      · exact hC5.2.2.2.1
+      · exact hC5.2.2.2.2
+      · exact CircuitType.scoped_fvar.mp hb0.1
+      · exact CircuitType.scoped_fvar.mp hb1.1
+      · exact CircuitType.scoped_fvar.mp hb2.1
+      · exact CircuitType.scoped_fvar.mp hb3.1
+      · exact CircuitType.scoped_fvar.mp hb4.1
+      · exact hC1.1
+      · exact hC2.1
+      · exact hC3.1
+      · exact hC4.1
+      · exact hC5.1
+      · exact CircuitType.scoped_fvar.mp hRN.1
+      · exact hC0
+    · simp only [ScaleRound.read,
+        CircuitType.reads_fvar.mp hBX.2, CircuitType.reads_fvar.mp hBY.2,
+        CircuitType.reads_fvar.mp hAX.2, CircuitType.reads_fvar.mp hAY.2,
+        CircuitType.reads_fvar.mp hRN.2,
+        CircuitType.reads_fvar.mp hb0.2, CircuitType.reads_fvar.mp hb1.2,
+        CircuitType.reads_fvar.mp hb2.2, CircuitType.reads_fvar.mp hb3.2,
+        CircuitType.reads_fvar.mp hb4.2,
+        hD0, hD1.2.2.2.1, hD1.2.2.2.2, hD1.1, hD2.2.2.2.1, hD2.2.2.2.2, hD2.1,
+        hD3.2.2.2.1, hD3.2.2.2.2, hD3.1, hD4.2.2.2.1, hD4.2.2.2.2, hD4.1,
+        hD5.2.2.2.1, hD5.2.2.2.2, hD5.1]
+      rw [hW]
+      rfl
 
 end VarBaseMul
 
@@ -1007,71 +1061,103 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         OnCurveAs d.W st' r.g
           ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
             • Point.some _ _ hT)) := by
-  rintro st ⟨hBase, hRs⟩
-  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
-  rw [scoped_affinePoint] at hbase
-  obtain ⟨hbx, hby⟩ := hbase
-  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
-    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
-    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
-  obtain ⟨hscS, hrs⟩ := hRs
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  -- the sealed base
-  obtain ⟨sealed, st₁, hrun₁, hsat₁, hRp⟩ :=
-    sealPoint_complete (c := KimchiConstraint F) base ⟨xv, yv⟩ st
-      ⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, reads_affinePoint.mpr ⟨hrx, hry⟩⟩
-  have hle₁ := hrun₁.le
-  have hnv₁ := hrun₁.nv_le
-  obtain ⟨hsx, hsy⟩ := scoped_affinePoint.mp hRp.1
-  obtain ⟨hsxv, hsyv⟩ := reads_affinePoint.mp hRp.2
-  -- the scalar's bits, in one witness
-  obtain ⟨bits, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscB, hrdB⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := Vector F n)
-      (lsbBitsWit n scalar.val) (st := st₁)
-      (v := Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
-      (by simp)
-      (by
-        simp only [lsbBitsWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run (hscS.mono hnv₁), CVar.val_of_le hle₁ hscS, hrs, Except.bind]
-        rfl)
-  rw [CircuitType.scoped_vector] at hscB
-  rw [CircuitType.reads_vector] at hrdB
-  -- the doubled seed
-  have hTread : OnCurveAs d.W st₂ sealed (Point.some _ _ hT) := by
-    refine ⟨scoped_affinePoint.mpr ⟨hsx.mono hnv₂, hsy.mono hnv₂⟩, ?_⟩
-    show ∃ h : d.W.Nonsingular (sealed.x.val st₂.env.get) (sealed.y.val st₂.env.get), _
-    rw [CVar.val_of_le hle₂ hsx, CVar.val_of_le hle₂ hsy, hsxv, hsyv]
-    exact ⟨hT, rfl⟩
   have h2T : Point.some _ _ hT + Point.some _ _ hT ≠ 0 :=
     d.two_torsion_free _ (Point.some_ne_zero hT)
-  obtain ⟨p, st₃, hrun₃, hsat₃, ⟨hscP, hscI⟩, hadd⟩ :=
-    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite sealed sealed)
-      (fun V => addFast_spec (V := V) .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne sealed sealed)
-      (addFast_complete .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne sealed sealed
-        (Point.some _ _ hT) (Point.some _ _ hT)) st₂
-      ⟨hTread, hTread, h2T, fun _ => h2T⟩
-  have hle₃ := hrun₃.le
-  have hnv₃ := hrun₃.nv_le
-  have hP0read : OnCurveAs d.W st₃ p.p ((2 : ℤ) • Point.some _ _ hT) := by
-    refine ⟨hscP, ?_⟩
-    rw [two_zsmul]
-    rcases hadd.2 _ _ (hTread.mono hnv₃ hle₃).2 (hTread.mono hnv₃ hle₃).2 h2T with
-      ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd ((hadd.1 rfl).symm.trans hinf) (by norm_num)
-    · exact h3
-  rw [scoped_affinePoint] at hscP
-  obtain ⟨hP0ns, hP0eq⟩ := hP0read.2
-  have hsx₃ : sealed.x.Scoped st₃ := hsx.mono (Nat.le_trans hnv₂ hnv₃)
-  have hsy₃ : sealed.y.Scoped st₃ := hsy.mono (Nat.le_trans hnv₂ hnv₃)
-  have hsxv₃ : sealed.x.val st₃.env.get = xv := by
-    rw [CVar.val_of_le (hle₂.trans hle₃) hsx, hsxv]
-  have hsyv₃ : sealed.y.val st₃.env.get = yv := by
-    rw [CVar.val_of_le (hle₂.trans hle₃) hsy, hsyv]
+  -- the base's canonical reading, off any on-curve state
+  have hbread : ∀ {st : ProverState F}, OnCurveAs d.W st base (Point.some _ _ hT) →
+      CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ := fun h =>
+    ⟨h.1, reads_affinePoint.mpr (Kimchi.Gate.AddComplete.IsPoint.coords_eq h.2 ⟨hT, rfl⟩)⟩
+  simp only [varBaseMul]
+  -- the sealed base
+  refine Complete.bind
+    (Complete.imp (fun _ h => ⟨hbread h.1, h.2⟩) (fun _ _ h => h)
+      (Complete.frame Mono.readsAs
+        (sealPoint_complete (c := KimchiConstraint F) base ⟨xv, yv⟩)))
+    fun sealed => ?_
+  -- the sealed base's coordinates, and the base as a curve point, off any reading state
+  have hscoords : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ →
+        sealed.x.val st.env.get = xv ∧ sealed.y.val st.env.get = yv :=
+    fun h => reads_affinePoint.mp h.2
+  have hTread : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ →
+        OnCurveAs d.W st sealed (Point.some _ _ hT) := fun h =>
+    ⟨h.1, OnCurveAt.of_reads (p := sealed) (hscoords h).1 (hscoords h).2 hT⟩
+  -- the scalar's bits, in one witness
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?bitsrun, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+        (Complete.witness (lsbBitsWit n scalar.val)
+          (Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
+          (by simp))))
+    fun bits => ?_
+  case bitsrun =>
+    simp only [lsbBitsWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
+      CircuitType.reads_fvar.mp h.2.2, Except.bind]
+    rfl
+  -- the bits' landing table indexes the rest: the index carries the bit cells' scope
+  -- and canonical readings, and the sealed base's scope
+  refine Complete.instantiate
+    (ι := {st₂ : ProverState F // (∀ (i : ℕ) (hi : i < n),
+        (bits[i]'hi).Scoped st₂ ∧
+          (bits[i]'hi).val st₂.env.get
+            = if (ToNat.toNat sv).testBit i then 1 else 0) ∧
+      sealed.x.Scoped st₂ ∧ sealed.y.Scoped st₂})
+    (P := fun i st => (i.1.nv ≤ st.nv ∧ i.1.env.Le st.env) ∧
+      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ ∧
+      CircuitType.ReadsAs (val := F) st scalar.val sv)
+    (fun st h => ⟨⟨st, fun i hi =>
+        ⟨CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp h.1.1 i hi),
+          by simpa using
+            CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.1.2 i hi)⟩,
+        (scoped_affinePoint.mp h.2.1.1).1, (scoped_affinePoint.mp h.2.1.1).2⟩,
+      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.2.1, h.2.2⟩)
+    fun i => ?_
+  obtain ⟨st₂, hbitfacts, hsx₂, hsy₂⟩ := i
+  have hextM : Mono (F := F) fun st => st₂.nv ≤ st.nv ∧ st₂.env.Le st.env :=
+    fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩
+  -- the doubled seed
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨hTread h.2.1, hTread h.2.1, h2T, fun _ => h2T⟩, h⟩)
+      (fun _ _ h => h)
+      (Complete.frame (Mono.and hextM (Mono.and Mono.readsAs Mono.readsAs))
+        (addFast_complete .checkFinite d.W
+          ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne sealed sealed
+          (Point.some _ _ hT) (Point.some _ _ hT))))
+    fun p => ?_
+  -- the seed's coordinates index the rest, with the point they name on the index
+  refine Complete.instantiate
+    (ι := {q : F × F // ∃ h : d.W.Nonsingular q.1 q.2,
+      Point.some _ _ hT + Point.some _ _ hT = Point.some q.1 q.2 h})
+    (P := fun q st => (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) ∧
+      CircuitType.ReadsAs (val := F) st p.p.x q.1.1 ∧
+      CircuitType.ReadsAs (val := F) st p.p.y q.1.2 ∧
+      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ ∧
+      CircuitType.ReadsAs (val := F) st scalar.val sv)
+    (fun st h => ⟨⟨(p.p.x.val st.env.get, p.p.y.val st.env.get), (h.1.2.2 h2T).2⟩,
+      h.2.1,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp (h.1.2.2 h2T).1).1,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp (h.1.2.2 h2T).1).2,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      h.2.2.1, h.2.2.2⟩)
+    fun q => ?_
+  obtain ⟨⟨x0, y0⟩, hP0ns, hP0eq'⟩ := q
+  have hP0eq : (2 : ℤ) • Point.some _ _ hT = Point.some x0 y0 hP0ns := by
+    rw [two_zsmul]; exact hP0eq'
+  have hP0at : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := F) st p.p.x x0 →
+      CircuitType.ReadsAs (val := F) st p.p.y y0 →
+      OnCurveAt d.W st.env.get p.p ((2 : ℤ) • Point.some _ _ hT) := by
+    intro st hx hy
+    rw [hP0eq]
+    exact OnCurveAt.of_reads (p := p.p) (CircuitType.reads_fvar.mp hx.2)
+      (CircuitType.reads_fvar.mp hy.2) hP0ns
   -- the rows' bits: the reversed prefix of the scalar's bits, MSB-first
   set bsOf : ℕ → F := fun k =>
     if (ToNat.toNat sv).testBit (5 * chunks - 1 - k) then 1 else 0 with hbsOf
@@ -1093,14 +1179,13 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hbitSc : ∀ (k : ℕ), k < 5 * chunks → (msb.getD k (CVar.const 0)).Scoped st₂ := by
     intro k hk
     rw [hentry k hk]
-    exact CircuitType.scoped_fvar.mp (hscB _ _)
+    exact (hbitfacts _ (by omega)).1
   have hbitVal : ∀ (stf : ProverState F), st₂.env.Le stf.env →
       ∀ (k : ℕ), k < 5 * chunks →
         (msb.getD k (CVar.const 0)).val stf.env.get = bsOf k := by
     intro stf hlef k hk
-    rw [hentry k hk, CVar.val_of_le hlef (CircuitType.scoped_fvar.mp (hscB _ _)),
-      CircuitType.reads_fvar.mp (hrdB _ _), hbsOf]
-    simp
+    rw [hentry k hk, CVar.val_of_le hlef (hbitfacts _ (by omega)).1,
+      (hbitfacts _ (by omega)).2]
   -- the ladder
   have hP : ∀ x ∈ (List.range chunks).map window, VarBaseMul.BitRow st₂ x := by
     intro x hx v hv
@@ -1109,37 +1194,40 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     have hi' : i < chunks := by simpa using hi
     simp only [hwindow, Vector.getElem_ofFn]
     exact hbitSc (5 * i + j) (by omega)
-  obtain ⟨loop, st₄, hrun₄, hsat₄, hinv₄, hchainAt⟩ :=
-    mapAccumM_complete (F := F) (c := KimchiConstraint F)
-      (scaleRound sealed) (VarBaseMul.BitRow st₂) (fun _ => VarBaseMul.AccInv st₂)
-      (VarBaseMul.RowGrant sealed) (fun _ => VarBaseMul.AccInv.mono)
-      (VarBaseMul.RowGrant.mono sealed)
-      (fun acc x _ hx => VarBaseMul.scaleRound_complete st₂ sealed
-        ⟨hsx.mono hnv₂, hsy.mono hnv₂⟩ acc x hx)
-      (p.p, CVar.const 0) ((List.range chunks).map window) hP st₃
-      ⟨⟨hnv₃, hle₃⟩, hscP.1, hscP.2, trivial⟩
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.1, CircuitType.scoped_fvar.mp h.2.1.1,
+        CircuitType.scoped_fvar.mp h.2.2.1.1, trivial⟩, h⟩)
+      (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+          (Mono.and Mono.readsAs Mono.readsAs))))
+        (mapAccumM_complete (F := F) (c := KimchiConstraint F)
+          (scaleRound sealed) (VarBaseMul.BitRow st₂) (fun _ => VarBaseMul.AccInv st₂)
+          (VarBaseMul.RowGrant sealed) (fun _ => VarBaseMul.AccInv.mono)
+          (VarBaseMul.RowGrant.mono sealed)
+          (fun acc x _ hx =>
+            VarBaseMul.scaleRound_complete st₂ sealed ⟨hsx₂, hsy₂⟩ acc x hx)
+          (p.p, CVar.const 0) ((List.range chunks).map window) hP)))
+    fun loop => ?_
   obtain ⟨rounds, fin⟩ := loop
-  have hle₄ := hrun₄.le
-  have hnv₄ := hrun₄.nv_le
   have hpreflen : ((List.range chunks).map window).length = chunks := by simp
-  have hlenR : rounds.length = chunks := by
-    rw [ChainAt.length hchainAt, hpreflen]
   -- the honest walk
   set W : ℕ → Kimchi.Gate.VarBaseMul.Witness F :=
-    Kimchi.Gate.VarBaseMul.chainBuild xv yv (p.p.x.val st₃.env.get)
-      (p.p.y.val st₃.env.get) 0 bsOf with hWdef
-  have hWat : ∀ (stf : ProverState F), st₃.env.Le stf.env →
+    Kimchi.Gate.VarBaseMul.chainBuild xv yv x0 y0 0 bsOf with hWdef
+  have hWat : ∀ (stf : ProverState F), sealed.x.val stf.env.get = xv →
+      sealed.y.val stf.env.get = yv → p.p.x.val stf.env.get = x0 →
+      p.p.y.val stf.env.get = y0 →
       Kimchi.Gate.VarBaseMul.chainBuild (sealed.x.val stf.env.get)
           (sealed.y.val stf.env.get)
           ((p.p, (CVar.const 0 : FVar F)).1.x.val stf.env.get)
           ((p.p, (CVar.const 0 : FVar F)).1.y.val stf.env.get)
           ((p.p, (CVar.const 0 : FVar F)).2.val stf.env.get) bsOf = W := by
-    intro stf hlef
+    intro stf h1 h2 h3 h4
     show Kimchi.Gate.VarBaseMul.chainBuild (sealed.x.val stf.env.get)
       (sealed.y.val stf.env.get) (p.p.x.val stf.env.get) (p.p.y.val stf.env.get)
       ((CVar.const 0 : FVar F).val stf.env.get) bsOf = _
-    rw [CVar.val_of_le hlef hsx₃, CVar.val_of_le hlef hsy₃, hsxv₃, hsyv₃,
-      CVar.val_of_le hlef hscP.1, CVar.val_of_le hlef hscP.2, hWdef]
+    rw [h1, h2, h3, h4, hWdef]
     rfl
   have hbsbool : ∀ j : ℕ, j < 5 * chunks → bsOf j = 0 ∨ bsOf j = 1 := by
     intro j _
@@ -1168,21 +1256,34 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [hw]
     simp only [hwindow, Vector.getElem_ofFn]
     exact (hbitVal stf hlef (5 * i + j) (by omega)).symm
-  have hpayAt : ∀ (stf : ProverState F), st₄.nv ≤ stf.nv → st₄.env.Le stf.env →
+  -- every row of a granting trace holds, at any env-extension of its table
+  have hpayAt : ∀ (st stf : ProverState F), st.env.Le stf.env →
+      (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) →
+      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ →
+      CircuitType.ReadsAs (val := F) st p.p.x x0 →
+      CircuitType.ReadsAs (val := F) st p.p.y y0 →
+      ChainAt (VarBaseMul.RowGrant sealed) st (p.p, CVar.const 0)
+        ((List.range chunks).map window) rounds fin →
       ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read stf.env.get r) := by
-    intro stf hnvF hleF r hr
+    intro st stf hle hext hseal hp2x hp2y hchain r hr
+    have hnv := ProverState.nv_le_of_env_le hle
+    have hlenR : rounds.length = chunks := by rw [ChainAt.length hchain, hpreflen]
+    have hchain' := ChainAt.mono (VarBaseMul.RowGrant.mono sealed) hnv hle hchain
+    have hseal' := CircuitType.ReadsAs.mono hnv hle hseal
+    have hp2x' := CircuitType.ReadsAs.mono hnv hle hp2x
+    have hp2y' := CircuitType.ReadsAs.mono hnv hle hp2y
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
-    rw [VarBaseMul.grants_walk sealed stf
-        (ChainAt.mono (VarBaseMul.RowGrant.mono sealed) hnvF hleF hchainAt)
-        (fun k hk t ht => hbitsRead stf (hle₃.trans (hle₄.trans hleF)) k hk t ht) i hi,
-      hWat stf (hle₄.trans hleF)]
+    rw [VarBaseMul.grants_walk sealed stf hchain'
+        (fun k hk t ht => hbitsRead stf (hext.2.trans hle) k hk t ht) i hi,
+      hWat stf (hscoords hseal').1 (hscoords hseal').2
+        (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)]
     exact hwalkHolds i (by rw [← hlenR]; exact hi)
-  -- the trace's wiring, and the register it ends on
-  have hchain : Chain (VarBaseMul.Threads sealed) (p.p, CVar.const 0)
-      ((List.range chunks).map window) rounds fin := VarBaseMul.ChainAt.threads hchainAt
+  -- the bit stream a granting trace carries
   have hroundBits : ∀ (stf : ProverState F), st₂.env.Le stf.env →
+      Chain (VarBaseMul.Threads sealed) (p.p, CVar.const 0)
+        ((List.range chunks).map window) rounds fin →
       VarBaseMul.roundBits stf.env.get rounds = (List.range (5 * chunks)).map bsOf := by
-    intro stf hlef
+    intro stf hlef hchain
     rw [VarBaseMul.threads_rows hchain, List.flatMap_map,
       ← Kimchi.Gate.VarBaseMul.flatMap_range_window bsOf chunks]
     refine List.flatMap_congr fun i hi => ?_
@@ -1199,71 +1300,57 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         exact hbsbool j (List.mem_range.mp hj)), hbsOf,
       Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits,
       Int.cast_natCast, LawfulToNat.cast_toNat]
-  have hTs : ∀ (stf : ProverState F), st₂.nv ≤ stf.nv → st₂.env.Le stf.env →
-      OnCurveAt d.W stf.env.get sealed (Point.some _ _ hT) :=
-    fun stf hnvF hleF => (hTread.mono hnvF hleF).2
-  have hP0s : ∀ (stf : ProverState F), st₃.nv ≤ stf.nv → st₃.env.Le stf.env →
-      OnCurveAt d.W stf.env.get p.p ((2 : ℤ) • Point.some _ _ hT) :=
-    fun stf hnvF hleF => (hP0read.mono hnvF hleF).2
-  obtain ⟨-, -, hreg₄, -⟩ :=
-    VarBaseMul.run_sound d st₄.env.get (Point.some _ _ hT) hchain
-      (hpayAt st₄ (Nat.le_refl _) (Assignments.Le.refl _))
-      (hTs st₄ (Nat.le_trans hnv₃ hnv₄) (hle₃.trans hle₄))
-      (hP0s st₄ hnv₄ hle₄)
-  -- the register pin
-  have hscS₄ : scalar.val.Scoped st₄ :=
-    hscS.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hnv₄)))
-  have hpin : fin.2.val st₄.env.get = scalar.val.val st₄.env.get := by
-    rw [hreg₄, hroundBits st₄ (hle₃.trans hle₄), hregSv,
-      CVar.val_of_le ((hle₁.trans hle₂).trans (hle₃.trans hle₄)) hscS, hrs]
-  obtain ⟨u, st₅, hrun₅, hsat₅, -⟩ :=
-    assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val
-      (scalar.val.val st₄.env.get) st₄
-      ⟨⟨CircuitType.scoped_fvar.mpr hinv₄.2.2.2, CircuitType.reads_fvar.mpr hpin⟩,
-        ⟨CircuitType.scoped_fvar.mpr hscS₄, CircuitType.reads_fvar.mpr rfl⟩⟩
-  have hle₅ := hrun₅.le
-  have hnv₅ := hrun₅.nv_le
-  refine ⟨⟨fin.1, bits⟩, st₅,
-    hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind
-      (Runs.addConstraint.bind (hrun₅.bind rfl))))), ?_, ?_, ?_⟩
-  · intro stf hnvF hleF
-    have hnv₄f : st₄.nv ≤ stf.nv := Nat.le_trans hnv₅ hnvF
-    have hle₄f : st₄.env.Le stf.env := hle₅.trans hleF
-    refine Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
-      (Sat.bind hrun₃ (hsat₃ ?_ ?_) (Sat.bind hrun₄ (hsat₄ hnv₄f hle₄f)
-        (Sat.bind Runs.addConstraint (Sat.addConstraint (hpayAt stf hnv₄f hle₄f))
-          (Sat.bind hrun₅ (hsat₅ hnvF hleF) Sat.pure)))))
-    · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hnv₄)) hnv₄f
-    · exact ((hle₂.trans hle₃).trans hle₄).trans hle₄f
-    · exact Nat.le_trans (Nat.le_trans hnv₃ hnv₄) hnv₄f
-    · exact (hle₃.trans hle₄).trans hle₄f
-    · exact Nat.le_trans hnv₄ hnv₄f
-    · exact hle₄.trans hle₄f
-  · -- the bits read as the scalar's own, as one bundle
-    refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
-      CircuitType.reads_vector.mpr fun i hi => ?_⟩
-    · rw [getElem_mapVec]
-      exact CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp
-        ((hscB i hi).mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))))
-    · rw [getElem_mapVec]
-      refine CircuitType.reads_boolVar.mpr ?_
-      show (bits[i]'hi).val st₅.env.get = _
-      rw [CVar.val_of_le ((hle₃.trans hle₄).trans hle₅)
-        (CircuitType.scoped_fvar.mp (hscB i hi)),
-        CircuitType.reads_fvar.mp (hrdB i hi)]
-      simp [bit]
-  · -- the point conclusion, off the sound side's own reading of the trace
-    obtain ⟨-, -, -, hpoint⟩ :=
-      VarBaseMul.run_sound d st₅.env.get (Point.some _ _ hT) hchain
-        (hpayAt st₅ hnv₅ hle₅)
-        (hTs st₅ (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))
-          (hle₃.trans (hle₄.trans hle₅)))
-        (hP0s st₅ (Nat.le_trans hnv₄ hnv₅) (hle₄.trans hle₅))
-    rw [hroundBits st₅ (hle₃.trans (hle₄.trans hle₅)), hpreflen] at hpoint
-    rw [hbsOf, Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
-      at hpoint
-    exact ⟨scoped_affinePoint.mpr ⟨hinv₄.2.1.mono hnv₅, hinv₄.2.2.1.mono hnv₅⟩,
-      hpoint hregime⟩
+  -- the one `varBaseMul` row
+  refine Complete.bind (Complete.addConstraint ?row) fun _ => ?_
+  case row =>
+    rintro st ⟨⟨-, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ stf hle
+    exact hpayAt st stf hle hext hseal hp2x hp2y hchain
+  -- the register pin, and the returned point
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨⟨CircuitType.scoped_fvar.mpr h.1.1.2.2.2,
+          CircuitType.reads_fvar.mpr ?pin⟩, h.2.2.2.2.2⟩, h⟩)
+      (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and (Mono.and (fun _ _ hnv hle h => VarBaseMul.AccInv.mono _ hnv hle h)
+            (fun _ _ hnv hle h =>
+              ChainAt.mono (VarBaseMul.RowGrant.mono sealed) hnv hle h))
+          (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+            (Mono.and Mono.readsAs Mono.readsAs)))))
+        (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
+    fun _ => Complete.pure_of fun st h => ?post
+  case pin =>
+    obtain ⟨⟨-, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
+    obtain ⟨-, -, hreg, -⟩ :=
+      VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
+        (VarBaseMul.ChainAt.threads hchain)
+        (hpayAt st st (Assignments.Le.refl _) hext hseal hp2x hp2y hchain)
+        (hTread hseal).2 (hP0at hp2x hp2y)
+    rw [hreg, hroundBits st hext.2 (VarBaseMul.ChainAt.threads hchain), hregSv]
+  case post =>
+    obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
+    refine ⟨?_, ?_⟩
+    · -- the bits read as the scalar's own, as one bundle
+      refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
+        CircuitType.reads_vector.mpr fun i hi => ?_⟩
+      · rw [getElem_mapVec]
+        exact CircuitType.scoped_boolVar.mpr ((hbitfacts i hi).1.mono hext.1)
+      · rw [getElem_mapVec]
+        refine CircuitType.reads_boolVar.mpr ?_
+        show (bits[i]'hi).val st.env.get = _
+        rw [CVar.val_of_le hext.2 (hbitfacts i hi).1, (hbitfacts i hi).2]
+        simp [bit]
+    · -- the point conclusion, off the sound side's own reading of the trace
+      obtain ⟨-, -, -, hpoint⟩ :=
+        VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
+          (VarBaseMul.ChainAt.threads hchain)
+          (hpayAt st st (Assignments.Le.refl _) hext hseal hp2x hp2y hchain)
+          (hTread hseal).2 (hP0at hp2x hp2y)
+      rw [hroundBits st hext.2 (VarBaseMul.ChainAt.threads hchain), hpreflen] at hpoint
+      rw [hbsOf,
+        Kimchi.Gate.VarBaseMul.bitsVal_testBit (ToNat.toNat sv) (5 * chunks) hfits]
+        at hpoint
+      exact ⟨scoped_affinePoint.mpr ⟨hinv.2.1, hinv.2.2.1⟩, hpoint hregime⟩
 
 attribute [irreducible] lsbBitsWit varBaseMul
 
@@ -1318,10 +1405,10 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (scaleFast1 (c := KimchiConstraint F) n chunks base scalar)
       (fun r st' => OnCurveAs d.W st' r
         ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)) := by
-  intro st hst
-  obtain ⟨r, st₁, hrun, hsat, -, hpt⟩ :=
-    varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime st hst
-  exact ⟨r.g, st₁, hrun.bind rfl, fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure, hpt⟩
+  simp only [scaleFast1]
+  refine Complete.bind
+    (varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime)
+    fun r => Complete.pure_of fun _ h => h.2
 
 attribute [irreducible] scaleFast1
 
@@ -1456,35 +1543,55 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (fun r st' => OnCurveAs d.W st' r
         ((Pasta.Shifted.unshiftType2 (5 * chunks) (ToNat.toNat sv : ℤ) (if bb then 1 else 0))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hBase, hRsd, hRso⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hRsd hRso
-  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
-  rw [scoped_affinePoint] at hbase
-  obtain ⟨hbx, hby⟩ := hbase
-  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
-    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
-    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
-  obtain ⟨hsd, hrs⟩ := hRsd
-  obtain ⟨hso, hrb⟩ := hRso
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   have hfits' : ToNat.toNat sv < 2 ^ (5 * chunks) :=
     lt_of_lt_of_le hfits (Nat.pow_le_pow_right (by norm_num) hsplit)
+  -- the difference is finite: the regime keeps the result off the base
+  have hoff : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) ≠ 0 :=
+    Kimchi.Gate.VarBaseMul.ladder_off_base d.W (Point.some_ne_zero hT) (5 * chunks)
+      (ToNat.toNat sv) (by positivity) (by exact_mod_cast hfits') hregime
+  have hsum : ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+      • Point.some _ _ hT + -Point.some _ _ hT) ≠ 0 := by
+    rw [show ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+          • Point.some _ _ hT + -Point.some _ _ hT)
+        = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) from by
+        rw [Pasta.Shifted.unshiftType1]; module]
+    exact hoff
+  -- the negated base is a curve point wherever the base is
+  have hnegT : ∀ {st : ProverState F}, OnCurveAs d.W st base (Point.some _ _ hT) →
+      OnCurveAs d.W st ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
+    intro st h
+    obtain ⟨hbx, hby⟩ := scoped_affinePoint.mp h.1
+    exact ⟨scoped_affinePoint.mpr ⟨hbx, CVar.Scoped.scale_ hby⟩,
+      OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ h.2⟩
+  simp only [scaleFast2]
   -- the ladder
-  obtain ⟨r, st₁, hrun₁, hsat₁, hbits, hG⟩ :=
-    varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime st
-      ⟨⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, hbaseNS, hbaseEq⟩,
-        ⟨CircuitType.scoped_fvar.mpr hsd, CircuitType.reads_fvar.mpr hrs⟩⟩
-  have hle₁ := hrun₁.le
-  have hnv₁ := hrun₁.nv_le
+  refine Complete.bind
+    (Complete.imp (fun _ h => ⟨⟨h.1, h.2.1⟩, h.1, h.2.2⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.onCurveAs Mono.readsAs)
+        (varBaseMul_complete d n chunks hn base ⟨sDiv2⟩ xv yv sv hT hfits' hregime)))
+    fun r => ?_
+  -- the ladder's point never vanishes
+  have hGneAt : ∀ {st : ProverState F},
+      OnCurveAs d.W st r.g
+        ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+          • Point.some _ _ hT) →
+      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+        • Point.some _ _ hT) ≠ 0 := by
+    intro st h
+    obtain ⟨hGns, hGeq⟩ := h.2
+    rw [hGeq]
+    exact Point.some_ne_zero hGns
   -- the high bits the honest scalar leaves clear
-  have hbitsSc := CircuitType.scoped_vector.mp hbits.1
-  have hbitsRd := CircuitType.reads_vector.mp hbits.2
-  have hpinval : ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
-      x.Scoped st₁ ∧ x.val st₁.env.get = 0 := by
-    intro x hx
+  have hpinval : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := Vector Bool n) st (mapVec BoolVar.unchecked r.lsbBits)
+          (unpackPure sv n) →
+      ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits, x.Scoped st ∧ x.val st.env.get = 0 := by
+    intro st hbits x hx
+    have hbitsSc := CircuitType.scoped_vector.mp hbits.1
+    have hbitsRd := CircuitType.reads_vector.mp hbits.2
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hx
     have hi' : sDiv2Bits + i < n := by
       simp only [List.length_drop, Vector.length_toList] at hi
@@ -1497,163 +1604,123 @@ theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [getElem_mapVec] at hsc hval
     simp only [List.getElem_drop, Vector.getElem_toList]
     refine ⟨CircuitType.scoped_boolVar.mp hsc, ?_⟩
-    show (BoolVar.unchecked (r.lsbBits[sDiv2Bits + i]'hi')).toCVar.val st₁.env.get = 0
+    show (BoolVar.unchecked (r.lsbBits[sDiv2Bits + i]'hi')).toCVar.val st.env.get = 0
     rw [CircuitType.reads_boolVar.mp hval]
     simp [hbit, bit]
-  obtain ⟨u, st₂, hrun₂, hsat₂, hpin₂⟩ :=
-    forM_complete (F := F) (c := KimchiConstraint F)
-      (fun b : FVar F => assertEqual b (CVar.const 0))
-      (fun b => b ∈ r.lsbBits.toList.drop sDiv2Bits)
-      (fun _ st => ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
-        x.Scoped st ∧ x.val st.env.get = 0)
-      (fun b _ hb => by
-        intro stc hstc
-        obtain ⟨w, stc', hrunc, hsatc, -⟩ :=
-          assertEqual_complete (c := KimchiConstraint F) b (CVar.const 0) 0 stc
-            ⟨⟨CircuitType.scoped_fvar.mpr (hstc b hb).1,
-                CircuitType.reads_fvar.mpr (hstc b hb).2⟩,
-              ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩⟩
-        exact ⟨w, stc', hrunc, hsatc, fun x hx =>
-          ⟨(hstc x hx).1.mono hrunc.nv_le,
-            by rw [CVar.val_of_le hrunc.le (hstc x hx).1]; exact (hstc x hx).2⟩⟩)
-      (r.lsbBits.toList.drop sDiv2Bits) (fun x hx => hx) st₁ hpinval
-  have hle₂ := hrun₂.le
-  have hnv₂ := hrun₂.nv_le
-  -- the ladder's point, and the base's negation
-  have hG₂ : OnCurveAs d.W st₂ r.g
-      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT) :=
-    hG.mono hnv₂ hle₂
-  obtain ⟨hGns, hGeq⟩ := hG₂.2
-  have hGne : ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)
-      ≠ 0 := by rw [hGeq]; exact Point.some_ne_zero hGns
-  have hnegT : OnCurveAs d.W st₂ ⟨base.x, CVar.negate_ base.y⟩ (-Point.some _ _ hT) := by
-    refine ⟨scoped_affinePoint.mpr ⟨hbx.mono (Nat.le_trans hnv₁ hnv₂),
-      CVar.Scoped.scale_ (hby.mono (Nat.le_trans hnv₁ hnv₂))⟩, ?_⟩
-    refine OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ ?_
-    show Kimchi.Gate.AddComplete.IsPoint d.W (base.x.val st₂.env.get)
-      (base.y.val st₂.env.get) _
-    rw [CVar.val_of_le (hle₁.trans hle₂) hbx, CVar.val_of_le (hle₁.trans hle₂) hby,
-      hrx, hry]
-    exact ⟨hT, rfl⟩
-  -- the difference is finite: the regime keeps the result off the base
-  have hoff : ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) ≠ 0 :=
-    Kimchi.Gate.VarBaseMul.ladder_off_base d.W (Point.some_ne_zero hT) (5 * chunks)
-      (ToNat.toNat sv) (by positivity) (by exact_mod_cast hfits') hregime
-  have hsum : ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
-      + -Point.some _ _ hT) ≠ 0 := by
-    rw [show ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
-        + -Point.some _ _ hT)
-      = ((2 * (ToNat.toNat sv : ℤ) + 2 ^ (5 * chunks)) • Point.some _ _ hT) from by
-        rw [Pasta.Shifted.unshiftType1]; module]
-    exact hoff
-  obtain ⟨q, st₃, hrun₃, hsat₃, ⟨hscQ, hscI⟩, hadd⟩ :=
-    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite r.g
-        ⟨base.x, CVar.negate_ base.y⟩)
-      (fun V => addFast_spec (V := V) .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
-        ⟨base.x, CVar.negate_ base.y⟩)
-      (addFast_complete .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
-        ⟨base.x, CVar.negate_ base.y⟩
-        ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)
-        (-Point.some _ _ hT)) st₂
-      ⟨hG₂, hnegT, d.two_torsion_free _ hGne, fun _ => hsum⟩
-  have hle₃ := hrun₃.le
-  have hnv₃ := hrun₃.nv_le
-  have hscQ' : q.p.x.Scoped st₃ ∧ q.p.y.Scoped st₃ := scoped_affinePoint.mp hscQ
-  have hscG : r.g.x.Scoped st₂ ∧ r.g.y.Scoped st₂ := scoped_affinePoint.mp hG₂.1
-  have hQ : OnCurveAt d.W st₃.env.get q.p
-      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
-        + -Point.some _ _ hT) := by
-    rcases hadd.2 _ _ (hG₂.mono hnv₃ hle₃).2 (hnegT.mono hnv₃ hle₃).2
-      (d.two_torsion_free _ hGne) with ⟨hinf, hzero⟩ | ⟨-, h3⟩
-    · exact absurd hzero hsum
-    · exact h3
-  have hQpt : OnCurveAs d.W st₃ q.p
-      ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
-        + -Point.some _ _ hT) := ⟨hscQ, hQ⟩
-  -- the parity fold: the point conditional, `y` before `x`
-  have hwf : CircuitType.WellFormed (val := Bool) st₃.env.get sOdd := by
-    refine ⟨bb, CircuitType.reads_boolVar.mpr ?_⟩
-    rw [CVar.val_of_le ((hle₁.trans hle₂).trans hle₃) hso, hrb]
-  have hsoS : (↑sOdd : CVar F).Scoped st₃ :=
-    hso.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂ hnv₃))
-  have hbb₃ : (↑sOdd : CVar F).val st₃.env.get = bit bb := by
-    rw [CVar.val_of_le ((hle₁.trans hle₂).trans hle₃) hso, hrb]
-  obtain ⟨yr, st₄, hrun₄, hsat₄, hRY⟩ :=
-    selectField_complete (c := KimchiConstraint F) sOdd r.g.y q.p.y bb
-      (r.g.y.val st₃.env.get) (q.p.y.val st₃.env.get) st₃
-      ⟨⟨CircuitType.scoped_boolVar.mpr hsoS, CircuitType.reads_boolVar.mpr hbb₃⟩,
-        ⟨CircuitType.scoped_fvar.mpr (hscG.2.mono hnv₃), CircuitType.reads_fvar.mpr rfl⟩,
-        ⟨CircuitType.scoped_fvar.mpr hscQ'.2, CircuitType.reads_fvar.mpr rfl⟩⟩
-  have hscY : yr.Scoped st₄ := CircuitType.scoped_fvar.mp hRY.1
-  have hvalY : yr.val st₄.env.get
-      = if bb then r.g.y.val st₃.env.get else q.p.y.val st₃.env.get :=
-    CircuitType.reads_fvar.mp hRY.2
-  have hle₄ := hrun₄.le
-  have hnv₄ := hrun₄.nv_le
-  have hbb₄ : (↑sOdd : CVar F).val st₄.env.get = bit bb := by
-    rw [CVar.val_of_le hle₄ hsoS, hbb₃]
-  obtain ⟨xr, st₅, hrun₅, hsat₅, hRX⟩ :=
-    selectField_complete (c := KimchiConstraint F) sOdd r.g.x q.p.x bb
-      (r.g.x.val st₄.env.get) (q.p.x.val st₄.env.get) st₄
-      ⟨⟨CircuitType.scoped_boolVar.mpr (hsoS.mono hnv₄),
-          CircuitType.reads_boolVar.mpr hbb₄⟩,
-        ⟨CircuitType.scoped_fvar.mpr ((hscG.1.mono hnv₃).mono hnv₄),
-          CircuitType.reads_fvar.mpr rfl⟩,
-        ⟨CircuitType.scoped_fvar.mpr (hscQ'.1.mono hnv₄), CircuitType.reads_fvar.mpr rfl⟩⟩
-  have hscX : xr.Scoped st₅ := CircuitType.scoped_fvar.mp hRX.1
-  have hvalX : xr.val st₅.env.get
-      = if bb then r.g.x.val st₄.env.get else q.p.x.val st₄.env.get :=
-    CircuitType.reads_fvar.mp hRX.2
-  have hle₅ := hrun₅.le
-  have hnv₅ := hrun₅.nv_le
-  have hbb₅ : (↑sOdd : CVar F).val st₅.env.get = bit bb := by
-    rw [CVar.val_of_le hle₅ (hsoS.mono hnv₄), hbb₄]
-  refine ⟨⟨xr, yr⟩, st₅,
-    hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind (hrun₅.bind rfl)))), ?_, ?_⟩
-  · intro stf hnvF hleF
-    refine Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
-      (Sat.bind hrun₃ (hsat₃ ?_ ?_) (Sat.bind hrun₄ (hsat₄ ?_ ?_)
-        (Sat.bind hrun₅ (hsat₅ hnvF hleF) Sat.pure))))
-    · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)))
-        hnvF
-    · exact (((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hleF
-    · exact Nat.le_trans (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)) hnvF
-    · exact ((hle₃.trans hle₄).trans hle₅).trans hleF
-    · exact Nat.le_trans (Nat.le_trans hnv₄ hnv₅) hnvF
-    · exact (hle₄.trans hle₅).trans hleF
-    · exact Nat.le_trans hnv₅ hnvF
-    · exact hle₅.trans hleF
-  · refine ⟨scoped_affinePoint.mpr ⟨hscX, hscY.mono hnv₅⟩, ?_⟩
-    have hy : yr.val st₅.env.get
-        = if bb then r.g.y.val st₅.env.get else q.p.y.val st₅.env.get := by
-      rw [CVar.val_of_le hle₅ hscY, hvalY,
-        CVar.val_of_le (hle₄.trans hle₅) (hscG.2.mono hnv₃),
-        CVar.val_of_le (hle₄.trans hle₅) hscQ'.2]
-    have hx : xr.val st₅.env.get
-        = if bb then r.g.x.val st₅.env.get else q.p.x.val st₅.env.get := by
-      rw [hvalX, CVar.val_of_le hle₅ ((hscG.1.mono hnv₃).mono hnv₄),
-        CVar.val_of_le hle₅ (hscQ'.1.mono hnv₄)]
+  have hpinM : Mono (F := F) fun st => ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
+      x.Scoped st ∧ x.val st.env.get = 0 :=
+    fun _ _ hnv hle h x hx => ⟨(h x hx).1.mono hnv,
+      by rw [CVar.val_of_le hle (h x hx).1]; exact (h x hx).2⟩
+  -- pin the high bits
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨hpinval h.1.1, h.1.2, h.2.1, h.2.2⟩) (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and Mono.onCurveAs (Mono.and Mono.onCurveAs Mono.readsAs))
+        (forM_complete (F := F) (c := KimchiConstraint F)
+          (fun b : FVar F => assertEqual b (CVar.const 0))
+          (fun b => b ∈ r.lsbBits.toList.drop sDiv2Bits)
+          (fun _ st => ∀ x ∈ r.lsbBits.toList.drop sDiv2Bits,
+            x.Scoped st ∧ x.val st.env.get = 0)
+          (fun b _ hb =>
+            Complete.imp
+              (fun st hstc => ⟨⟨⟨CircuitType.scoped_fvar.mpr (hstc b hb).1,
+                  CircuitType.reads_fvar.mpr (hstc b hb).2⟩,
+                CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩,
+                hstc⟩)
+              (fun _ _ h => h.2)
+              (Complete.frame hpinM
+                (assertEqual_complete (c := KimchiConstraint F) b (CVar.const 0) 0)))
+          (r.lsbBits.toList.drop sDiv2Bits) (fun x hx => hx))))
+    fun _ => ?_
+  -- the parity fold's subtraction
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.2.1, hnegT h.2.2.1,
+        d.two_torsion_free _ (hGneAt h.2.1), fun _ => hsum⟩, h.2.1, h.2.2.2⟩)
+      (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.onCurveAs Mono.readsAs)
+        (addFast_complete .checkFinite d.W
+          ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne r.g
+          ⟨base.x, CVar.negate_ base.y⟩
+          ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+            • Point.some _ _ hT)
+          (-Point.some _ _ hT))))
+    fun q => ?_
+  -- the two points' coordinates index the selects
+  refine Complete.instantiate
+    (ι := {v : F × F × F × F //
+      Kimchi.Gate.AddComplete.IsPoint d.W v.1 v.2.1
+        ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+          • Point.some _ _ hT) ∧
+      Kimchi.Gate.AddComplete.IsPoint d.W v.2.2.1 v.2.2.2
+        ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+          • Point.some _ _ hT + -Point.some _ _ hT)})
+    (P := fun v st =>
+      CircuitType.ReadsAs (val := F) st r.g.x v.1.1 ∧
+      CircuitType.ReadsAs (val := F) st r.g.y v.1.2.1 ∧
+      CircuitType.ReadsAs (val := F) st q.p.x v.1.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st q.p.y v.1.2.2.2 ∧
+      CircuitType.ReadsAs (val := Bool) st sOdd bb)
+    (fun st h => ?inst) fun v => ?_
+  case inst =>
+    obtain ⟨⟨-, -, hQ⟩, hG, hsOdd⟩ := h
+    have hQpt := hQ hsum
+    exact ⟨⟨(r.g.x.val st.env.get, r.g.y.val st.env.get,
+        q.p.x.val st.env.get, q.p.y.val st.env.get), hG.2, hQpt.2⟩,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hG.1).1,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hG.1).2,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hQpt.1).1,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hQpt.1).2,
+        CircuitType.reads_fvar.mpr rfl⟩, hsOdd⟩
+  obtain ⟨⟨gx, gy, qx, qy⟩, hGpt, hQpt⟩ := v
+  -- the point conditional selects coordinatewise, `y` before `x`
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.2.2.2.2, h.2.1, h.2.2.2.1⟩, h.1, h.2.2.1, h.2.2.2.2⟩)
+      (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+        (selectField_complete (c := KimchiConstraint F) sOdd r.g.y q.p.y bb gy qy)))
+    fun yr => ?_
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.2.2.2, h.2.1, h.2.2.1⟩, h.1⟩)
+      (fun _ _ h => h)
+      (Complete.frame Mono.readsAs
+        (selectField_complete (c := KimchiConstraint F) sOdd r.g.x q.p.x bb gx qx)))
+    fun xr => Complete.pure_of fun st h => ?post
+  case post =>
+    obtain ⟨hxr, hyr⟩ := h
+    refine ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp hxr.1,
+      CircuitType.scoped_fvar.mp hyr.1⟩, ?_⟩
+    have hx := CircuitType.reads_fvar.mp hxr.2
+    have hy := CircuitType.reads_fvar.mp hyr.2
     cases bb with
     | false =>
-      show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st₅.env.get) (yr.val st₅.env.get)
-        ((2 * (ToNat.toNat sv : ℤ) + 0 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
+      show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st.env.get) (yr.val st.env.get)
+        ((Pasta.Shifted.unshiftType2 (5 * chunks) (ToNat.toNat sv : ℤ) 0)
+          • Point.some _ _ hT)
       rw [hx, hy, if_neg Bool.false_ne_true, if_neg Bool.false_ne_true,
-        show ((2 * (ToNat.toNat sv : ℤ) + 0 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
-          = ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT
-            + -Point.some _ _ hT) from by
-          rw [Pasta.Shifted.unshiftType1]; module]
-      exact (hQpt.mono (Nat.le_trans hnv₄ hnv₅) (hle₄.trans hle₅)).2
+        show ((Pasta.Shifted.unshiftType2 (5 * chunks) (ToNat.toNat sv : ℤ) 0)
+            • Point.some _ _ hT)
+          = ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+              • Point.some _ _ hT + -Point.some _ _ hT) from by
+          rw [Pasta.Shifted.unshiftType2, Pasta.Shifted.unshiftType1]; module]
+      exact hQpt
     | true =>
-      show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st₅.env.get) (yr.val st₅.env.get)
-        ((2 * (ToNat.toNat sv : ℤ) + 1 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
+      show Kimchi.Gate.AddComplete.IsPoint d.W (xr.val st.env.get) (yr.val st.env.get)
+        ((Pasta.Shifted.unshiftType2 (5 * chunks) (ToNat.toNat sv : ℤ) 1)
+          • Point.some _ _ hT)
       rw [hx, hy, if_pos rfl, if_pos rfl,
-        show ((2 * (ToNat.toNat sv : ℤ) + 1 + 2 ^ (5 * chunks)) • Point.some _ _ hT)
-          = ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)
-          from by rw [Pasta.Shifted.unshiftType1]; module]
-      exact ((hG₂.mono (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))
-        ((hle₃.trans hle₄).trans hle₅)).2)
+        show ((Pasta.Shifted.unshiftType2 (5 * chunks) (ToNat.toNat sv : ℤ) 1)
+            • Point.some _ _ hT)
+          = ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))
+              • Point.some _ _ hT) from by
+          rw [Pasta.Shifted.unshiftType2, Pasta.Shifted.unshiftType1]; module]
+      exact hGpt
 
 attribute [irreducible] scaleFast2
 
@@ -1705,43 +1772,52 @@ theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem 
       (splitFieldVar (c := c) s)
       (fun r st' => CircuitType.ReadsAs (val := F) st' r.1 (splitField sval).1 ∧
         CircuitType.ReadsAs (val := Bool) st' r.2 (splitField sval).2) := by
-  rintro st ⟨hsc, hval⟩
-  simp only [CircuitType.scoped_fvar, CircuitType.reads_fvar] at hsc hval
-  obtain ⟨w, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscW, hrdW⟩ :=
-    witness_complete (c := c) (val := F × Bool) (splitFieldWit s) (st := st)
-      (v := ((splitField sval).1, (splitField sval).2))
-      (by simp)
-      (by
-        simp only [splitFieldWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run hsc, hval, Except.bind]
-        rfl)
-  obtain ⟨wD, wO⟩ := w
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar,
-    CircuitType.scoped_boolVar] at hscW
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
-  have hbb : (↑wO : CVar F).val st₁.env.get = bit (splitField sval).2 :=
-    CircuitType.reads_boolVar.mp hrdW.2
-  have hpin : s.val st₁.env.get
-      = (CVar.add_ (CVar.scale_ 2 wD) ↑wO).val st₁.env.get := by
-    rw [CVar.val_add_, CVar.val_scale_, hrdW.1, hbb, CVar.val_of_le hle₁ hsc, hval]
+  have hjoin : 2 * (splitField sval).1 + bit (splitField sval).2 = sval := by
     simp only [splitField, bit, decide_eq_true_eq]
     split <;> field_simp <;> ring
-  obtain ⟨u, st₂, hrun₂, hsat₂, -⟩ :=
-    assertEqual_complete (c := c) s (CVar.add_ (CVar.scale_ 2 wD) ↑wO)
-      (s.val st₁.env.get) st₁
-      ⟨⟨CircuitType.scoped_fvar.mpr (hsc.mono hnv₁), CircuitType.reads_fvar.mpr rfl⟩,
+  simp only [splitFieldVar]
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?wrun, h⟩) (fun _ _ h => h)
+      (Complete.frame Mono.readsAs
+        (Complete.witness (splitFieldWit s)
+          ((splitField sval).1, (splitField sval).2) (by simp))))
+    fun w => ?_
+  case wrun =>
+    simp only [splitFieldWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1),
+      CircuitType.reads_fvar.mp h.2, Except.bind]
+    rfl
+  obtain ⟨wD, wO⟩ := w
+  -- the witnessed pair, componentwise
+  have hw : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := F × Bool) st (wD, wO)
+          ((splitField sval).1, (splitField sval).2) →
+        wD.Scoped st ∧ wD.val st.env.get = (splitField sval).1 ∧
+        (↑wO : CVar F).Scoped st ∧
+        (↑wO : CVar F).val st.env.get = bit (splitField sval).2 := by
+    intro st h
+    have hsc := h.1
+    have hrd := h.2
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar,
+      CircuitType.scoped_boolVar] at hsc
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrd
+    exact ⟨hsc.1, hrd.1, hsc.2, CircuitType.reads_boolVar.mp hrd.2⟩
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.2,
         ⟨CircuitType.scoped_fvar.mpr
-            (CVar.Scoped.add_ (CVar.Scoped.scale_ hscW.1) hscW.2),
-          CircuitType.reads_fvar.mpr hpin.symm⟩⟩
-  have hle₂ := hrun₂.le
-  have hnv₂ := hrun₂.nv_le
-  exact ⟨(wD, wO), st₂, hrun₁.bind (hrun₂.bind rfl), fun hnv hle =>
-    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hnv) (hle₂.trans hle))
-      (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure),
-    ⟨CircuitType.scoped_fvar.mpr (hscW.1.mono hnv₂),
-      CircuitType.reads_fvar.mpr (by rw [CVar.val_of_le hle₂ hscW.1, hrdW.1])⟩,
-    ⟨CircuitType.scoped_boolVar.mpr (hscW.2.mono hnv₂),
-      CircuitType.reads_boolVar.mpr (by rw [CVar.val_of_le hle₂ hscW.2, hbb])⟩⟩
+            (CVar.Scoped.add_ (CVar.Scoped.scale_ (hw h.1).1) (hw h.1).2.2.1),
+          CircuitType.reads_fvar.mpr (by
+            rw [CVar.val_add_, CVar.val_scale_, (hw h.1).2.1, (hw h.1).2.2.2,
+              hjoin])⟩⟩, h.1⟩)
+      (fun _ _ h => h)
+      (Complete.frame Mono.readsAs
+        (assertEqual_complete (c := c) s (CVar.add_ (CVar.scale_ 2 wD) ↑wO) sval)))
+    fun _ => Complete.pure_of fun st h =>
+      ⟨⟨CircuitType.scoped_fvar.mpr (hw h.2).1,
+        CircuitType.reads_fvar.mpr (hw h.2).2.1⟩,
+      ⟨CircuitType.scoped_boolVar.mpr (hw h.2).2.2.1,
+        CircuitType.reads_boolVar.mpr (hw h.2).2.2.2⟩⟩
 
 attribute [irreducible] splitFieldWit splitFieldVar
 
@@ -1802,28 +1878,15 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
             + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
-  rintro st ⟨hBase, hRs⟩
-  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
-  rw [scoped_affinePoint] at hbase
-  obtain ⟨hbx, hby⟩ := hbase
-  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
-    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
-    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
-  obtain ⟨hs, hrs⟩ := hRs
-  obtain ⟨w, st₁, hrun₁, hsat₁, hRD, hRO⟩ :=
-    splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval st
-      ⟨CircuitType.scoped_fvar.mpr hs, CircuitType.reads_fvar.mpr hrs⟩
-  have hle₁ := hrun₁.le
-  have hnv₁ := hrun₁.nv_le
-  obtain ⟨g, st₂, hrun₂, hsat₂, hpt⟩ :=
-    scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
-      (splitField sval).1 (splitField sval).2 hT hfits hregime st₁
-      ⟨OnCurveAs.mono hnv₁ hle₁ ⟨scoped_affinePoint.mpr ⟨hbx, hby⟩, hbaseNS, hbaseEq⟩,
-        hRD, hRO⟩
-  exact ⟨g, st₂, hrun₁.bind hrun₂, fun hnv hle =>
-    Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-      (hsat₂ hnv hle), hpt⟩
+  simp only [scaleFast2']
+  refine Complete.bind
+    (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
+      (Complete.frame Mono.onCurveAs
+        (splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval)))
+    fun w =>
+      Complete.imp (fun _ h => ⟨h.2, h.1.1, h.1.2⟩) (fun _ _ h => h)
+        (scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
+          (splitField sval).1 (splitField sval).2 hT hfits hregime)
 
 attribute [irreducible] scaleFast2'
 
