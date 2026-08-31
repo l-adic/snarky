@@ -49,7 +49,8 @@ over the local facts, at reducible transparency. Unification against the context
 is what pins the law's elided witness values. -/
 macro "complete_ctx" : tactic =>
   `(tactic| ((try casesm* _ ∧ _);
-             solve_by_elim (config := { transparency := .reducible, maxDepth := 16 })
+             solve_by_elim
+               (config := { transparency := .reducible, maxDepth := 16, exfalso := false })
                [And.intro]))
 
 /-- Apply the first `@[complete_law]` lemma whose program unifies with the
@@ -82,7 +83,9 @@ def completeStep (x : Ident) : TacticM Unit := withFreshMacroScope do
   let s4 ← `(tactic| case adp => (intro st h; complete_ctx))
   let s5 ← `(tactic| all_goals try assumption)
   let s6 ← `(tactic| case' k => intro $x:ident)
-  evalTactic (← `(tactic| ($s1; $s2; $s3; $s4; $s5; $s6)))
+  -- without this, a failing case body is RECOVERED (logged and admitted as sorry)
+  -- and the walk would march on past a step it did not actually prove
+  withoutRecover <| evalTactic (← `(tactic| ($s1; $s2; $s3; $s4; $s5; $s6)))
 
 /-- From a goal `Complete pre prog post`, the continuation of `prog`'s head bind,
 or `none` when `prog` is not a bind (the walk's stop condition). Reduction is
@@ -104,12 +107,19 @@ def extractCont (ty : Expr) : MetaM (Option Expr) := do
       if e' == e then return none else go e' fuel
   go args[args.size - 2]! 4
 
-/-- The binder names of a destructuring bind's match alternative, for splitting
-the introduced pair under its source names. -/
-def altNames (body : Expr) : Name × Name :=
+/-- The binder names of a destructuring bind's match alternative — the pattern's
+variables, in order — for splitting the introduced tuple under its source names.
+A match alternative is exactly one lambda per pattern variable (its body is a
+program term, never a lambda), so collecting the leading binders is the arity. -/
+def altBinderNames (body : Expr) : Array Name :=
   match body.getAppArgs.back? with
-  | some (.lam n1 _ (.lam n2 _ _ _) _) => (n1.eraseMacroScopes, n2.eraseMacroScopes)
-  | _ => (`fst, `snd)
+  | some alt => go alt #[]
+  | none => #[]
+where
+  /-- Collect the leading lambda binders. -/
+  go : Expr → Array Name → Array Name
+    | .lam n _ b _, acc => go b (acc.push n.eraseMacroScopes)
+    | _, acc => acc
 
 /-- A do-binder name fit for reintroduction: macro scopes erased, anonymous and
 `_` binders replaced. -/
@@ -128,10 +138,18 @@ partial def walk : TacticM Unit := do
     if isPair then
       let xi := mkIdent (Name.mkSimple "__sf")
       completeStep xi
-      let (n1, n2) := altNames k.bindingBody!
-      let i1 := mkIdent (stepName n1)
-      let i2 := mkIdent (stepName n2)
-      evalTactic (← `(tactic| obtain ⟨$i1:ident, $i2:ident⟩ := $xi:ident))
+      let collected := (altBinderNames k.bindingBody!).map stepName
+      let names := if collected.size ≥ 2 then collected else #[`fst, `snd]
+      -- split the nested product pairwise, innermost last
+      let mut cur := xi
+      for i in [0 : names.size - 2] do
+        let ni := mkIdent names[i]!
+        let tmp := mkIdent (Name.mkSimple s!"__sf{i}")
+        evalTactic (← `(tactic| obtain ⟨$ni:ident, $tmp:ident⟩ := $cur:ident))
+        cur := tmp
+      let a := mkIdent names[names.size - 2]!
+      let b := mkIdent names[names.size - 1]!
+      evalTactic (← `(tactic| obtain ⟨$a:ident, $b:ident⟩ := $cur:ident))
     else
       completeStep (mkIdent (stepName k.bindingName!))
   catch _ =>

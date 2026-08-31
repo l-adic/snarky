@@ -758,5 +758,5 @@ Snarky.Kimchi.groupMapCircuit_toGroup_complete
 Snarky.Tactic.walk
 Snarky.Tactic.completeStep
 Snarky.Tactic.extractCont
-Snarky.Tactic.altNames
+Snarky.Tactic.altBinderNames
 Snarky.Tactic.stepName

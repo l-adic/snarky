@@ -39,6 +39,7 @@ open Std.Do in
 
 /-- `assertEqual`'s completeness law: where the operands read equal the run succeeds and
 its row is satisfied — the unequal-constant arm is unreachable. -/
+@[complete_law]
 theorem assertEqual_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (v : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x v ∧

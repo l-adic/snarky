@@ -1,3 +1,4 @@
+import Snarky.Tactic
 import Snarky.DSL.Field
 import Kimchi.Gate.Semantics.EndoScalar
 import Snarky.DSL.Assert
@@ -454,6 +455,7 @@ private theorem chainAt_facts [Field F] [DecidableEq F] {st₂ stf : ProverState
 /-- **Completeness.** From a readable scalar the honest run succeeds, its rows hold at
 every extension, and the three accumulators read as the Algorithm-2 decompositions of
 the scalar's own crumb stream. -/
+@[complete_law]
 private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (rows : ℕ) (scalar : FVar F) (sv : F) :
     Complete (F := F) (c := KimchiConstraint F)
@@ -568,42 +570,31 @@ theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [Kimchi.Gate.EndoScalar.nReconstruct_crumbsOf, Nat.mod_eq_of_lt hlt,
       LawfulToNat.cast_toNat]
   simp only [toField]
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨h.1, h.1, h.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (toFieldChecked'_complete h2 h3 8 scalar sv)))
-    fun abn => ?_
-  obtain ⟨a, b, n⟩ := abn
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨hnv ▸ h.1.2.2, h.2.1⟩, h.1.1, h.1.2.1, h.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
-        (assertEqual_complete (c := KimchiConstraint F) n scalar sv)))
+  complete_walk
+  -- the walk stops at `assertEqual`: its precondition holds only through `hnv`'s
+  -- rewrite, which is content, not unification's business
+  refine Complete.seq (by complete_mono_tac)
+    (Complete.imp (fun st h => ⟨hnv ▸ h.2.2.2, h.1.1⟩) (fun _ _ h => h)
+      (assertEqual_complete (c := KimchiConstraint F) _ scalar sv))
     fun _ => ?_
   split
   · -- the endo coefficient is a constant: the reconstruction is an affine combination
     rename_i e
     refine Complete.pure_of fun st h => ?_
-    obtain ⟨-, hA, hB, hE⟩ := h
-    have he : e = ev := CircuitType.reads_fvar.mp hE.2
+    have he : e = ev := CircuitType.reads_fvar.mp h.1.1.2.2
     refine ⟨CircuitType.scoped_fvar.mpr
-      (CVar.Scoped.add_ (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hA.1))
-        (CircuitType.scoped_fvar.mp hB.1)), CircuitType.reads_fvar.mpr ?_⟩
-    simp only [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp hA.2,
-      CircuitType.reads_fvar.mp hB.2, he, Kimchi.Gate.EndoScalar.toField]
+      (CVar.Scoped.add_ (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp h.1.2.1.1))
+        (CircuitType.scoped_fvar.mp h.1.2.2.1.1)), CircuitType.reads_fvar.mpr ?_⟩
+    simp only [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp h.1.2.1.2,
+      CircuitType.reads_fvar.mp h.1.2.2.1.2, he, Kimchi.Gate.EndoScalar.toField]
     ring
-  · refine Complete.bind
-      (Complete.imp (fun _ h => ⟨⟨h.2.1, h.2.2.2⟩, h.2.2.1⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs
-          (mul_complete (c := KimchiConstraint F) a endo
-            (Kimchi.Gate.EndoScalar.decomposeA
-              (Kimchi.Gate.EndoScalar.crumbsOf (8 * 8) (ToNat.toNat sv))) ev)))
-      fun p => Complete.pure_of fun st h => ?_
+  · complete_walk
+    refine Complete.pure_of fun st h => ?_
     refine ⟨CircuitType.scoped_fvar.mpr
-      (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.2.1)
-        (CircuitType.scoped_fvar.mp h.1.1)), CircuitType.reads_fvar.mpr ?_⟩
-    rw [CVar.val_add_, CircuitType.reads_fvar.mp h.1.2, CircuitType.reads_fvar.mp h.2.2,
-      Kimchi.Gate.EndoScalar.toField]
+      (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.1.1.2.2.1.1)
+        (CircuitType.scoped_fvar.mp h.2.1)), CircuitType.reads_fvar.mpr ?_⟩
+    rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2.2,
+      CircuitType.reads_fvar.mp h.1.1.2.2.1.2, Kimchi.Gate.EndoScalar.toField]
     ring
 
 attribute [irreducible] EndoScalar.toFieldChecked' EndoScalar.toFieldChecked'.row
