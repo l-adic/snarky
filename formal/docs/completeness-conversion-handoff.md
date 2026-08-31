@@ -21,12 +21,13 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 12 | 7 |
-| `Sat` sites | — | 115 |
+| files | 13 | 6 |
+| `Sat` sites | — | 104 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
-`Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `Kimchi/Circuit/EndoMul`,
+`schnorr/Schnorr/UnpackFull`.
 
 **Remaining**, largest first:
 
@@ -36,7 +37,6 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 | `Kimchi/Circuit/VarBaseMul.lean` | 2 | 27 |
 | `Kimchi/Circuit/Sponge.lean` | 0 | 18 |
 | `Kimchi/Circuit/RangeCheck.lean` | 4 | 15 |
-| `Kimchi/Circuit/EndoMul.lean` | 2 | 11 |
 | `Compile.lean` | 1 | 5 |
 | `Witness.lean` | 4 | 4 |
 
@@ -103,10 +103,21 @@ value the law is indexed by. See `Field.powGo_complete` and `Boolean.xor.core_co
 by the crumb witness's landing table `st₁`. `instantiate` handles states as well as
 values: index over a `ProverState`-subtype whose property carries the pinned cells'
 scope and readings, with `P i st := i.1.nv ≤ st.nv ∧ i.1.env.Le st.env`, discharged at
-the current state with `⟨st, facts⟩` and two `refl`s. Also from that conversion: an
-`addConstraint` row obligation gets only `env.Le` (no `nv_le`), so a grant's
-row-transport wants a `holds_of_le` lemma split out of its `mono`
-(`RowGrant.holds_of_le`).
+the current state with `⟨st, facts⟩` and two `refl`s. `EndoMul` uses it twice — the
+bits' landing table, then the walk's seed coordinates (with the point they name as the
+subtype property).
+
+An `addConstraint` row obligation quantifies over `env.Le` extensions only — but
+`ProverState.nv_le_of_env_le` (in `Prover.lean`) recovers `nv_le` from the states'
+`dom` invariants, so ordinary `.mono` transports still work there (`EndoMul`'s row
+case). `EndoScalar` predates the lemma and instead split `RowGrant.holds_of_le` out of
+its `mono`; prefer the lemma in new work.
+
+Two elaboration rules of thumb from `EndoMul`: keep every `Complete.imp` post-map the
+identity `(fun _ _ h => h)` and extract in the NEXT stage's pre-map (a non-trivial
+post-map leaves the bind's `mid` undetermined and anonymous constructors fail to
+elaborate); and hoist any pre-map component whose type mentions a constructed bundle
+(`⟨phix, t.y⟩`) into a named pointwise `have` before the `refine`.
 
 ## Gotchas, all of which cost time at least once
 

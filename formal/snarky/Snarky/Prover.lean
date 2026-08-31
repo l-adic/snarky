@@ -231,6 +231,18 @@ private theorem get_of_le [Zero F] {st st' : ProverState F} (hle : st.env.Le st'
     (v : Variable) :
     (st.alloc xs).env.get v = (st.env.extendList st.nv xs.toList).get v := rfl
 
+/-- Preserving every assignment forces the counter along: each table is defined exactly
+below its own counter, so a slot live at the smaller frontier is live — hence below the
+counter — in the extension. What lets a fact quantified over `env.Le` extensions alone
+still transport counter-indexed structure. -/
+theorem nv_le_of_env_le {st st' : ProverState F} (hle : st.env.Le st'.env) :
+    st.nv ≤ st'.nv := by
+  rcases Nat.lt_or_ge st'.nv st.nv with h | h
+  · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp ((st.dom st'.nv).mpr h)
+    exact absurd ((st'.dom st'.nv).mp (Option.isSome_iff_exists.mpr ⟨x, hle _ _ hx⟩))
+      (Nat.lt_irrefl _)
+  · exact h
+
 end ProverState
 
 /-! ## Scope -/

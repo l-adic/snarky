@@ -724,65 +724,107 @@ private theorem endoMulRound_complete [Field F] [DecidableEq F] (st₁ : ProverS
     Complete (F := F) (c := KimchiConstraint F) (AccInv st₁ acc)
       (Snarky.Kimchi.endoMulRound (c := KimchiConstraint F) eb t acc bs)
       (fun p st' => AccInv st₁ p.2 st' ∧ RowGrant eb t acc bs p.1 p.2 st') := by
-  rintro st ⟨⟨hnv, hle⟩, hax, hay, han⟩
-  have htx : t.x.Scoped st := ht.1.mono hnv
-  have hty : t.y.Scoped st := ht.2.mono hnv
-  have hb : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).Scoped st :=
-    fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono hnv
-  set W := Kimchi.Gate.EndoMul.build eb (t.x.val st.env.get) (t.y.val st.env.get)
-    (acc.1.x.val st.env.get) (acc.1.y.val st.env.get) (acc.2.val st.env.get)
-    ((bs[0]'(by omega)).val st.env.get) ((bs[1]'(by omega)).val st.env.get)
-    ((bs[2]'(by omega)).val st.env.get) ((bs[3]'(by omega)).val st.env.get) with hW
-  obtain ⟨w, st', hrun, hsat, hnv', hle', hscW, hrdW⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := F × F × F × F × F × F × F × F)
-      (rowWit eb t bs acc) (st := st)
-      (v := (W.inv, W.nPrime, W.xR, W.yR, W.xS, W.yS, W.s1, W.s3))
-      (by simp)
-      (by
-        simp only [rowWit, AsProver.bind_eq, AsProver.run_bind, AsProver.readCVar_run htx,
-          AsProver.readCVar_run hty, AsProver.readCVar_run hax, AsProver.readCVar_run hay,
-          AsProver.readCVar_run han, AsProver.readCVar_run (hb 0 (by omega)),
-          AsProver.readCVar_run (hb 1 (by omega)), AsProver.readCVar_run (hb 2 (by omega)),
-          AsProver.readCVar_run (hb 3 (by omega)), Except.bind]
-        rfl)
-  obtain ⟨inv, nPrime, xR, yR, xS, yS, s1, s3⟩ := w
-  simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hscW
-  simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
-  refine ⟨(⟨t, acc.1, ⟨xR, yR⟩, ⟨xS, yS⟩, s1, s3, acc.2, nPrime,
-      bs[0], bs[1], bs[2], bs[3], inv⟩, (⟨xS, yS⟩, nPrime)), st', hrun.bind rfl,
-    fun hnvF hleF => Sat.bind hrun (hsat hnvF hleF) Sat.pure,
-    ⟨⟨Nat.le_trans hnv hnv', hle.trans hle'⟩, hscW.2.2.2.2.1, hscW.2.2.2.2.2.1,
-      hscW.2.1⟩,
-    ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
-  · intro cv hcv
-    simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
-    rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl
-    · exact htx.mono hnv'
-    · exact hty.mono hnv'
-    · exact hax.mono hnv'
-    · exact hay.mono hnv'
-    · exact han.mono hnv'
-    · exact hscW.2.1
-    · exact hscW.2.2.1
-    · exact hscW.2.2.2.1
-    · exact hscW.2.2.2.2.1
-    · exact hscW.2.2.2.2.2.1
-    · exact hscW.2.2.2.2.2.2.1
-    · exact hscW.2.2.2.2.2.2.2
-    · exact hscW.1
-    · exact (hb 0 (by omega)).mono hnv'
-    · exact (hb 1 (by omega)).mono hnv'
-    · exact (hb 2 (by omega)).mono hnv'
-    · exact (hb 3 (by omega)).mono hnv'
-  · simp only [EndoMulRound.readWith, hrdW.1, hrdW.2.1, hrdW.2.2.1, hrdW.2.2.2.1,
-      hrdW.2.2.2.2.1, hrdW.2.2.2.2.2.1, hrdW.2.2.2.2.2.2.1, hrdW.2.2.2.2.2.2.2,
-      CVar.val_of_le hle' htx, CVar.val_of_le hle' hty, CVar.val_of_le hle' hax,
-      CVar.val_of_le hle' hay, CVar.val_of_le hle' han,
-      CVar.val_of_le hle' (hb 0 (by omega)), CVar.val_of_le hle' (hb 1 (by omega)),
-      CVar.val_of_le hle' (hb 2 (by omega)), CVar.val_of_le hle' (hb 3 (by omega))]
-    rw [hW]
+  simp only [endoMulRound]
+  -- the nine cell readings at the entry table index the law
+  refine Complete.instantiate
+    (ι := F × F × F × F × F × F × F × F × F)
+    (P := fun v st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+      CircuitType.ReadsAs (val := F) st t.x v.1 ∧
+      CircuitType.ReadsAs (val := F) st t.y v.2.1 ∧
+      CircuitType.ReadsAs (val := F) st acc.1.x v.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st acc.1.y v.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st acc.2 v.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[0]'(by omega)) v.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[1]'(by omega)) v.2.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[2]'(by omega)) v.2.2.2.2.2.2.2.1 ∧
+      CircuitType.ReadsAs (val := F) st (bs[3]'(by omega)) v.2.2.2.2.2.2.2.2)
+    (fun st h => ?_) fun v => ?_
+  · have hb : ∀ (i : ℕ) (hi : i < 4), (bs[i]'hi).Scoped st :=
+      fun i hi => (hbs _ (Vector.mem_toList_iff.mpr (Vector.getElem_mem hi))).mono h.1.1
+    exact ⟨(t.x.val st.env.get, t.y.val st.env.get, acc.1.x.val st.env.get,
+        acc.1.y.val st.env.get, acc.2.val st.env.get, (bs[0]'(by omega)).val st.env.get,
+        (bs[1]'(by omega)).val st.env.get, (bs[2]'(by omega)).val st.env.get,
+        (bs[3]'(by omega)).val st.env.get),
+      h.1,
+      ⟨CircuitType.scoped_fvar.mpr (ht.1.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (ht.2.mono h.1.1), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr h.2.1, CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr h.2.2.1, CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr h.2.2.2, CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 0 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 1 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 2 (by omega)), CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (hb 3 (by omega)), CircuitType.reads_fvar.mpr rfl⟩⟩
+  obtain ⟨xt, yt, xp, yp, n, b1, b2, b3, b4⟩ := v
+  set W := Kimchi.Gate.EndoMul.build eb xt yt xp yp n b1 b2 b3 b4 with hW
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?run, h⟩) (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and (fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩)
+          (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+            (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+              (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs)))))))))
+        (Complete.witness (rowWit eb t bs acc)
+          (W.inv, W.nPrime, W.xR, W.yR, W.xS, W.yS, W.s1, W.s3) (by simp))))
+    fun w => Complete.pure_of fun st h => ?post
+  case run =>
+    simp only [rowWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.2.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.2.2.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.2.2.2.2.2.1.1),
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.2.2.2.2.2.2.2.1),
+      CircuitType.reads_fvar.mp h.2.1.2, CircuitType.reads_fvar.mp h.2.2.1.2,
+      CircuitType.reads_fvar.mp h.2.2.2.1.2, CircuitType.reads_fvar.mp h.2.2.2.2.1.2,
+      CircuitType.reads_fvar.mp h.2.2.2.2.2.1.2,
+      CircuitType.reads_fvar.mp h.2.2.2.2.2.2.1.2,
+      CircuitType.reads_fvar.mp h.2.2.2.2.2.2.2.1.2,
+      CircuitType.reads_fvar.mp h.2.2.2.2.2.2.2.2.1.2,
+      CircuitType.reads_fvar.mp h.2.2.2.2.2.2.2.2.2.2, Except.bind, ← hW]
     rfl
+  case post =>
+    obtain ⟨inv, nPrime, xR, yR, xS, yS, s1, s3⟩ := w
+    obtain ⟨⟨hscW, hrdW⟩, hP⟩ := h
+    simp only [CircuitType.scoped_prod, CircuitType.scoped_fvar] at hscW
+    simp only [CircuitType.reads_prod, CircuitType.reads_fvar] at hrdW
+    refine ⟨⟨hP.1, hscW.2.2.2.2.1, hscW.2.2.2.2.2.1, hscW.2.1⟩,
+      ⟨rfl, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl, rfl, rfl, rfl⟩, ?_, ?_⟩
+    · intro cv hcv
+      simp only [cells, List.mem_cons, List.not_mem_nil, or_false] at hcv
+      rcases hcv with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+        rfl | rfl | rfl | rfl | rfl | rfl
+      · exact CircuitType.scoped_fvar.mp hP.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.2.2.1.1
+      · exact hscW.2.1
+      · exact hscW.2.2.1
+      · exact hscW.2.2.2.1
+      · exact hscW.2.2.2.2.1
+      · exact hscW.2.2.2.2.2.1
+      · exact hscW.2.2.2.2.2.2.1
+      · exact hscW.2.2.2.2.2.2.2
+      · exact hscW.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.2.2.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.2.2.2.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.2.2.2.2.2.1.1
+      · exact CircuitType.scoped_fvar.mp hP.2.2.2.2.2.2.2.2.2.1
+    · simp only [EndoMulRound.readWith, hrdW.1, hrdW.2.1, hrdW.2.2.1, hrdW.2.2.2.1,
+        hrdW.2.2.2.2.1, hrdW.2.2.2.2.2.1, hrdW.2.2.2.2.2.2.1, hrdW.2.2.2.2.2.2.2,
+        CircuitType.reads_fvar.mp hP.2.1.2, CircuitType.reads_fvar.mp hP.2.2.1.2,
+        CircuitType.reads_fvar.mp hP.2.2.2.1.2, CircuitType.reads_fvar.mp hP.2.2.2.2.1.2,
+        CircuitType.reads_fvar.mp hP.2.2.2.2.2.1.2,
+        CircuitType.reads_fvar.mp hP.2.2.2.2.2.2.1.2,
+        CircuitType.reads_fvar.mp hP.2.2.2.2.2.2.2.1.2,
+        CircuitType.reads_fvar.mp hP.2.2.2.2.2.2.2.2.1.2,
+        CircuitType.reads_fvar.mp hP.2.2.2.2.2.2.2.2.2.2]
+      rw [hW]
+      rfl
 
 /-- A trace with no rounds traversed no rows. -/
 private theorem ChainAt.of_nil_out [Field F] [DecidableEq F] {eb : F}
@@ -1046,140 +1088,23 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hbits : 4 * 32 ≤ 244 := by norm_num
   replace hfits : ToNat.toNat sv < 4 ^ (2 * 32) := by norm_num; omega
   have h4 : (3 : ℤ) * 4 ^ 32 = 3 * 2 ^ 64 := by norm_num
-  rintro st ⟨hBase, hRs⟩
-  obtain ⟨hbase, hbaseNS, hbaseEq⟩ := hBase
-  rw [scoped_affinePoint] at hbase
-  obtain ⟨htx, hty⟩ := hbase
-  obtain ⟨hrx, hry⟩ := Kimchi.Gate.AddComplete.IsPoint.coords_eq
-    (⟨hbaseNS, hbaseEq⟩ : Kimchi.Gate.AddComplete.IsPoint d.W _ _ _)
-    (⟨hT, rfl⟩ : Kimchi.Gate.AddComplete.IsPoint d.W xv yv _)
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRs
-  obtain ⟨hscS, hrs⟩ := hRs
   haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
   haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
     ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
   have hφT := d.endo_nonsingular hT
-  -- the bulk bit witness
-  obtain ⟨bits, st₁, hrun₁, hsat₁, hnv₁, hle₁, hscB, hrdB⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := Vector (Vector F 4) 32)
-      (bitsWit 32 scalar.val) (st := st)
-      (v := Vector.ofFn fun r => Vector.ofFn fun j =>
-        if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * r.1 + j.1)) then 1 else 0)
-      (by simp)
-      (by
-        simp only [bitsWit, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run hscS, hrs, Except.bind]
-        rfl)
-  -- the sealed `β·x`
-  obtain ⟨phix, st₂, hrun₂, hsat₂, hR₂⟩ :=
-    sealVar_complete (c := KimchiConstraint F) (CVar.scale_ d.endo t.x)
-      (d.endo * t.x.val st₁.env.get) st₁
-      ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (htx.mono hnv₁)),
-        CircuitType.reads_fvar.mpr (CVar.val_scale_ ..)⟩
-  have hscP : phix.Scoped st₂ := CircuitType.scoped_fvar.mp hR₂.1
-  have hvalP : phix.val st₂.env.get = d.endo * t.x.val st₁.env.get :=
-    CircuitType.reads_fvar.mp hR₂.2
-  have hle₂ := hrun₂.le
-  have hnv₂ := hrun₂.nv_le
-  have htx₂ : t.x.Scoped st₂ := htx.mono (Nat.le_trans hnv₁ hnv₂)
-  have hty₂ : t.y.Scoped st₂ := hty.mono (Nat.le_trans hnv₁ hnv₂)
-  have hvx₂ : t.x.val st₂.env.get = xv := by
-    rw [CVar.val_of_le (hle₁.trans hle₂) htx, hrx]
-  have hvy₂ : t.y.val st₂.env.get = yv := by
-    rw [CVar.val_of_le (hle₁.trans hle₂) hty, hry]
-  have hvp₂ : phix.val st₂.env.get = d.endo * xv := by
-    rw [hvalP, CVar.val_of_le hle₁ htx, hrx]
-  -- the base and its image, read as curve points
-  have hTread : OnCurveAs d.W st₂ t (Point.some _ _ hT) := by
-    refine ⟨scoped_affinePoint.mpr ⟨htx₂, hty₂⟩, ?_⟩
-    show ∃ h : d.W.Nonsingular (t.x.val st₂.env.get) (t.y.val st₂.env.get), _
-    rw [hvx₂, hvy₂]
-    exact ⟨hT, rfl⟩
-  have hφTread : OnCurveAs d.W st₂ ⟨phix, t.y⟩ (Point.some _ _ hφT) := by
-    refine ⟨scoped_affinePoint.mpr ⟨hscP, hty₂⟩, ?_⟩
-    show ∃ h : d.W.Nonsingular (phix.val st₂.env.get) (t.y.val st₂.env.get), _
-    rw [hvp₂, hvy₂]
-    exact ⟨hφT, rfl⟩
+  -- the base's coordinates read off any on-curve state
+  have htcoords : ∀ {st : ProverState F},
+      OnCurveAs d.W st t (Point.some _ _ hT) →
+        t.x.val st.env.get = xv ∧ t.y.val st.env.get = yv :=
+    fun h => Kimchi.Gate.AddComplete.IsPoint.coords_eq h.2 ⟨hT, rfl⟩
   -- `T + φT` is finite: `[1 + λ]` does not kill `T`
   have hTφ : Point.some _ _ hT + Point.some _ _ hφT ≠ 0 := by
     intro hzero
     rw [d.eigen hT hφT] at hzero
     exact d.lam_succ_smul (Point.some _ _ hT) (Point.some_ne_zero hT)
       (by rw [← hzero]; module)
-  -- the first addition
-  obtain ⟨p1, st₃, hrun₃, hsat₃, ⟨hscP1, hscI1⟩, hadd1⟩ :=
-    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite t ⟨phix, t.y⟩)
-      (fun V => addFast_spec (V := V) .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩)
-      (addFast_complete .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩
-        (Point.some _ _ hT) (Point.some _ _ hφT)) st₂
-      ⟨hTread, hφTread, d.two_torsion_free _ (Point.some_ne_zero hT), fun _ => hTφ⟩
-  have hle₃ := hrun₃.le
-  have hnv₃ := hrun₃.nv_le
-  have hP1read : OnCurveAs d.W st₃ p1.p
-      (Point.some _ _ hT + Point.some _ _ hφT) := by
-    refine ⟨hscP1, ?_⟩
-    rcases hadd1.2 _ _ (hTread.mono hnv₃ hle₃).2 (hφTread.mono hnv₃ hle₃).2
-      (d.two_torsion_free _ (Point.some_ne_zero hT)) with ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd ((hadd1.1 rfl).symm.trans hinf) (by norm_num)
-    · exact h3
-  obtain ⟨hP1, hsum1⟩ := hP1read.2
   have h2P1 : Point.some _ _ hT + Point.some _ _ hφT
       + (Point.some _ _ hT + Point.some _ _ hφT) ≠ 0 := d.two_torsion_free _ hTφ
-  -- the second addition
-  obtain ⟨p2, st₄, hrun₄, hsat₄, ⟨hscP2, hscI2⟩, hadd2⟩ :=
-    Complete.post (g := addFast (c := KimchiConstraint F) .checkFinite p1.p p1.p)
-      (fun V => addFast_spec (V := V) .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p)
-      (addFast_complete .checkFinite d.W
-        ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p
-        (Point.some _ _ hT + Point.some _ _ hφT)
-        (Point.some _ _ hT + Point.some _ _ hφT)) st₃
-      ⟨hP1read, hP1read, h2P1, fun _ => h2P1⟩
-  have hle₄ := hrun₄.le
-  have hnv₄ := hrun₄.nv_le
-  have hP0read : OnCurveAs d.W st₄ p2.p
-      (Point.some _ _ hT + Point.some _ _ hφT
-        + (Point.some _ _ hT + Point.some _ _ hφT)) := by
-    refine ⟨hscP2, ?_⟩
-    rcases hadd2.2 _ _ (hP1read.mono hnv₄ hle₄).2 (hP1read.mono hnv₄ hle₄).2 h2P1 with
-      ⟨hinf, -⟩ | ⟨-, h3⟩
-    · exact absurd ((hadd2.1 rfl).symm.trans hinf) (by norm_num)
-    · exact h3
-  obtain ⟨hP0ns, hsum2⟩ := hP0read.2
-  rw [scoped_affinePoint] at hscP1 hscP2
-  -- the ladder
-  rw [CircuitType.scoped_vector] at hscB
-  rw [CircuitType.reads_vector] at hrdB
-  have hP : ∀ x ∈ bits.toList, BitRow st₁ x := by
-    intro x hx v hv
-    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
-    obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
-    exact CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp (hscB i hi) j hj)
-  obtain ⟨loop, st₅, hrun₅, hsat₅, hinv₅, hchainAt⟩ :=
-    mapAccumM_complete (F := F) (c := KimchiConstraint F)
-      (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁) (fun _ => AccInv st₁)
-      (RowGrant d.endo t) (fun _ => AccInv.mono)
-      (RowGrant.mono d.endo t)
-      (fun acc x _ hx =>
-        endoMulRound_complete st₁ d.endo t ⟨htx.mono hnv₁, hty.mono hnv₁⟩ acc x hx)
-      (p2.p, .const 0) bits.toList hP st₄
-      ⟨⟨Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hnv₄), (hle₂.trans hle₃).trans hle₄⟩,
-        hscP2.1, hscP2.2, trivial⟩
-  have hle₅ := hrun₅.le
-  have hnv₅ := hrun₅.nv_le
-  -- the walk the honest run is
-  have hx0 : ∀ (stf : ProverState F), st₄.env.Le stf.env →
-      p2.p.x.val stf.env.get = p2.p.x.val st₄.env.get :=
-    fun stf hlef => CVar.val_of_le hlef hscP2.1
-  have hy0 : ∀ (stf : ProverState F), st₄.env.Le stf.env →
-      p2.p.y.val stf.env.get = p2.p.y.val st₄.env.get :=
-    fun stf hlef => CVar.val_of_le hlef hscP2.2
-  set W : ℕ → Kimchi.Gate.EndoMul.Witness F :=
-    Kimchi.Gate.EndoMul.chainBuild d.endo xv yv (p2.p.x.val st₄.env.get)
-      (p2.p.y.val st₄.env.get) 0 (bitsOf (F := F) 32 (ToNat.toNat sv)) with hWdef
-  -- every row of the walk holds
   have hbsval : ∀ i, ((bitsOf (F := F) 32 (ToNat.toNat sv) i).1 = 0 ∨
         (bitsOf (F := F) 32 (ToNat.toNat sv) i).1 = 1) ∧
       ((bitsOf (F := F) 32 (ToNat.toNat sv) i).2.1 = 0 ∨
@@ -1190,15 +1115,47 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (bitsOf (F := F) 32 (ToNat.toNat sv) i).2.2.2 = 1) := by
     intro i
     refine ⟨?_, ?_, ?_, ?_⟩ <;> simp only [bitsOf] <;> split <;> simp
-  have hP0eq : Point.some _ _ hP0ns
-      = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
-    rw [← hsum2]
-    module
-  have hwalkHolds : ∀ i, i < 32 → Kimchi.Gate.EndoMul.Holds d.endo (W i) :=
-    Kimchi.Gate.EndoMul.chain_complete d.W (Point.some _ _ hT) (Point.some _ _ hφT)
-      (fun a b ha hb hba hbb =>
-        d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
-      32 hbits hT hφT rfl rfl (bitsOf (F := F) 32 (ToNat.toNat sv)) hbsval 0 hP0ns hP0eq
+  simp only [endoMul]
+  -- the bulk bit witness
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?bitsrun, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.onCurveAs Mono.readsAs)
+        (Complete.witness (bitsWit 32 scalar.val)
+          (Vector.ofFn fun r => Vector.ofFn fun j =>
+            if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * r.1 + j.1)) then 1 else 0)
+          (by simp))))
+    fun bits => ?_
+  case bitsrun =>
+    simp only [bitsWit, AsProver.bind_eq, AsProver.run_bind,
+      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
+      CircuitType.reads_fvar.mp h.2.2, Except.bind]
+    rfl
+  -- the bits' landing table indexes the rest of the run: the index carries the bit
+  -- cells' scope and canonical readings, and the base's scope
+  refine Complete.instantiate
+    (ι := {st₁ : ProverState F //
+      (∀ (i : ℕ) (hi : i < 32) (j : ℕ) (hj : j < 4),
+        ((bits[i]'hi)[j]'hj).Scoped st₁ ∧
+          ((bits[i]'hi)[j]'hj).val st₁.env.get
+            = if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * i + j)) then 1 else 0) ∧
+      t.x.Scoped st₁ ∧ t.y.Scoped st₁})
+    (P := fun i st => (i.1.nv ≤ st.nv ∧ i.1.env.Le st.env) ∧
+      OnCurveAs d.W st t (Point.some _ _ hT) ∧
+      CircuitType.ReadsAs (val := F) st scalar.val sv)
+    (fun st h => ?inst1) fun i => ?_
+  case inst1 =>
+    refine ⟨⟨st, fun i hi j hj =>
+        ⟨CircuitType.scoped_fvar.mp
+          (CircuitType.scoped_vector.mp (CircuitType.scoped_vector.mp h.1.1 i hi) j hj),
+          ?_⟩,
+        (scoped_affinePoint.mp h.2.1.1).1, (scoped_affinePoint.mp h.2.1.1).2⟩,
+      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.2.1, h.2.2⟩
+    have hv := CircuitType.reads_fvar.mp
+      (CircuitType.reads_vector.mp (CircuitType.reads_vector.mp h.1.2 i hi) j hj)
+    simpa using hv
+  obtain ⟨st₁, hbitfacts, htx₁, hty₁⟩ := i
+  have hextM : Mono (F := F) fun st => st₁.nv ≤ st.nv ∧ st₁.env.Le st.env :=
+    fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩
   -- the rows' bits, at any table past the witness
   have hbitsRead : ∀ (stf : ProverState F), st₁.env.Le stf.env →
       ∀ i (hi : i < bits.toList.length),
@@ -1213,34 +1170,91 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ((bits[i]'hi')[j]'hj).val stf.env.get
           = (if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * i + j)) then 1 else 0) := by
       intro j hj
-      rw [CVar.val_of_le hlef
-          (CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp (hscB i hi') j hj)),
-        CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp (hrdB i hi') j hj)]
-      simp
+      rw [CVar.val_of_le hlef (hbitfacts i hi' j hj).1, (hbitfacts i hi' j hj).2]
     simp only [Vector.getElem_toList, bitsOf]
     rw [hentry 0 (by omega), hentry 1 (by omega), hentry 2 (by omega), hentry 3 (by omega)]
     simp
-  -- the trace's rows and finals are the walk's, at any table past the ladder
-  have hst₁₅ : st₁.env.Le st₅.env := ((hle₂.trans hle₃).trans hle₄).trans hle₅
-  have hWat : ∀ (stf : ProverState F), st₅.env.Le stf.env →
-      Kimchi.Gate.EndoMul.chainBuild d.endo (t.x.val stf.env.get) (t.y.val stf.env.get)
-          ((p2.p, (CVar.const 0 : FVar F)).1.x.val stf.env.get)
-          ((p2.p, (CVar.const 0 : FVar F)).1.y.val stf.env.get)
-          ((p2.p, (CVar.const 0 : FVar F)).2.val stf.env.get)
-          (bitsOf (F := F) 32 (ToNat.toNat sv)) = W := by
-    intro stf hlef
-    have h1 : t.x.val stf.env.get = xv := by
-      rw [CVar.val_of_le (hle₅.trans hlef) (htx₂.mono (Nat.le_trans hnv₃ hnv₄)),
-        CVar.val_of_le (hle₃.trans hle₄) htx₂, hvx₂]
-    have h2 : t.y.val stf.env.get = yv := by
-      rw [CVar.val_of_le (hle₅.trans hlef) (hty₂.mono (Nat.le_trans hnv₃ hnv₄)),
-        CVar.val_of_le (hle₃.trans hle₄) hty₂, hvy₂]
-    show Kimchi.Gate.EndoMul.chainBuild d.endo (t.x.val stf.env.get) (t.y.val stf.env.get)
-        (p2.p.x.val stf.env.get) (p2.p.y.val stf.env.get)
-        ((CVar.const 0 : FVar F).val stf.env.get) _ = _
-    rw [h1, h2, hx0 stf (hle₅.trans hlef), hy0 stf (hle₅.trans hlef), hWdef]
-    rfl
-  -- the walk, as a run
+  have hP : ∀ x ∈ bits.toList, BitRow st₁ x := by
+    intro x hx v hv
+    obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
+    obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
+    exact (hbitfacts i hi j hj).1
+  -- the sealed `β·x`
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨CircuitType.scoped_fvar.mpr
+          (CVar.Scoped.scale_ (scoped_affinePoint.mp h.2.1.1).1),
+        CircuitType.reads_fvar.mpr (by rw [CVar.val_scale_, (htcoords h.2.1).1])⟩, h⟩)
+      (fun _ _ h => h)
+      (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
+        (sealVar_complete (c := KimchiConstraint F) (CVar.scale_ d.endo t.x)
+          (d.endo * xv))))
+    fun phix => ?_
+  -- the base's image, read as a curve point wherever `β·x` reads canonically
+  have hφTread : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := F) st phix (d.endo * xv) →
+      OnCurveAs d.W st t (Point.some _ _ hT) →
+      OnCurveAs d.W st ⟨phix, t.y⟩ (Point.some _ _ hφT) := fun hp hOn =>
+    ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp hp.1,
+        (scoped_affinePoint.mp hOn.1).2⟩,
+      OnCurveAt.of_reads (p := ⟨phix, t.y⟩) (CircuitType.reads_fvar.mp hp.2)
+        (htcoords hOn).2 hφT⟩
+  -- the first addition: `T + φT`, finite since `[1 + λ]` does not kill `T`
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.2.2.1, hφTread h.1 h.2.2.1,
+        d.two_torsion_free _ (Point.some_ne_zero hT), fun _ => hTφ⟩,
+        h.2.1, h.2.2.1, h.2.2.2⟩)
+      (fun _ _ h => h)
+      (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
+        (addFast_complete .checkFinite d.W
+          ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne t ⟨phix, t.y⟩
+          (Point.some _ _ hT) (Point.some _ _ hφT))))
+    fun p1 => ?_
+  -- the second addition: the doubling
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.1.2.2 hTφ, h.1.2.2 hTφ, h2P1, fun _ => h2P1⟩,
+        h.2.1, h.2.2.1, h.2.2.2⟩)
+      (fun _ _ h => h)
+      (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
+        (addFast_complete .checkFinite d.W
+          ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne p1.p p1.p
+          (Point.some _ _ hT + Point.some _ _ hφT)
+          (Point.some _ _ hT + Point.some _ _ hφT))))
+    fun p2 => ?_
+  -- the walk's seed coordinates index the rest, with the point they name on the index
+  refine Complete.instantiate
+    (ι := {q : F × F // ∃ h : d.W.Nonsingular q.1 q.2,
+      Point.some _ _ hT + Point.some _ _ hφT
+        + (Point.some _ _ hT + Point.some _ _ hφT) = Point.some q.1 q.2 h})
+    (P := fun q st => (st₁.nv ≤ st.nv ∧ st₁.env.Le st.env) ∧
+      CircuitType.ReadsAs (val := F) st p2.p.x q.1.1 ∧
+      CircuitType.ReadsAs (val := F) st p2.p.y q.1.2 ∧
+      OnCurveAs d.W st t (Point.some _ _ hT) ∧
+      CircuitType.ReadsAs (val := F) st scalar.val sv)
+    (fun st h => ⟨⟨(p2.p.x.val st.env.get, p2.p.y.val st.env.get), (h.1.2.2 h2P1).2⟩,
+      h.2.1,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp (h.1.2.2 h2P1).1).1,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp (h.1.2.2 h2P1).1).2,
+        CircuitType.reads_fvar.mpr rfl⟩,
+      h.2.2.1, h.2.2.2⟩)
+    fun q => ?_
+  obtain ⟨⟨x0, y0⟩, hP0ns, hP0eq'⟩ := q
+  -- the walk the honest run is, and its value-level facts
+  set W : ℕ → Kimchi.Gate.EndoMul.Witness F :=
+    Kimchi.Gate.EndoMul.chainBuild d.endo xv yv x0 y0 0
+      (bitsOf (F := F) 32 (ToNat.toNat sv)) with hWdef
+  have hP0eq : Point.some _ _ hP0ns
+      = (2 : ℤ) • Point.some _ _ hT + (2 : ℤ) • Point.some _ _ hφT := by
+    rw [← hP0eq']
+    module
+  have hwalkHolds : ∀ i, i < 32 → Kimchi.Gate.EndoMul.Holds d.endo (W i) :=
+    Kimchi.Gate.EndoMul.chain_complete d.W (Point.some _ _ hT) (Point.some _ _ hφT)
+      (fun a b ha hb hba hbb =>
+        d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
+      32 hbits hT hφT rfl rfl (bitsOf (F := F) 32 (ToNat.toNat sv)) hbsval 0 hP0ns hP0eq
   have hchainW : Kimchi.Gate.EndoMul.Chain d.W d.endo (Point.some _ _ hT)
       (Point.some _ _ hφT) W 32 := by
     refine ⟨hwalkHolds, fun i _ => ?_, fun i _ => ?_, fun i _ => ⟨rfl, rfl⟩,
@@ -1257,65 +1271,91 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       LawfulToNat.cast_toNat]
     intro r _
     cases r <;> exact ⟨rfl, rfl, rfl, rfl⟩
-  obtain ⟨hfx₅, hfy₅, hfn₅⟩ := grants_fin d.endo t st₅ hchainAt (hbitsRead st₅ hst₁₅)
-  rw [hWat st₅ (Assignments.Le.refl _), hlenB] at hfx₅ hfy₅ hfn₅
+  -- the trace's rows and finals are the walk's, wherever the seeds read canonically
+  have hWat : ∀ (stf : ProverState F), t.x.val stf.env.get = xv →
+      t.y.val stf.env.get = yv → p2.p.x.val stf.env.get = x0 →
+      p2.p.y.val stf.env.get = y0 →
+      Kimchi.Gate.EndoMul.chainBuild d.endo (t.x.val stf.env.get) (t.y.val stf.env.get)
+          ((p2.p, (CVar.const 0 : FVar F)).1.x.val stf.env.get)
+          ((p2.p, (CVar.const 0 : FVar F)).1.y.val stf.env.get)
+          ((p2.p, (CVar.const 0 : FVar F)).2.val stf.env.get)
+          (bitsOf (F := F) 32 (ToNat.toNat sv)) = W := by
+    intro stf h1 h2 h3 h4
+    show Kimchi.Gate.EndoMul.chainBuild d.endo (t.x.val stf.env.get) (t.y.val stf.env.get)
+        (p2.p.x.val stf.env.get) (p2.p.y.val stf.env.get)
+        ((CVar.const 0 : FVar F).val stf.env.get) _ = _
+    rw [h1, h2, h3, h4, hWdef]
+    rfl
+  -- the ladder
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨h.1, CircuitType.scoped_fvar.mp h.2.1.1,
+        CircuitType.scoped_fvar.mp h.2.2.1.1, trivial⟩, h⟩)
+      (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+          (Mono.and Mono.onCurveAs Mono.readsAs))))
+        (mapAccumM_complete (F := F) (c := KimchiConstraint F)
+          (Snarky.Kimchi.endoMulRound d.endo t) (BitRow st₁) (fun _ => AccInv st₁)
+          (RowGrant d.endo t) (fun _ => AccInv.mono) (RowGrant.mono d.endo t)
+          (fun acc x _ hx => endoMulRound_complete st₁ d.endo t ⟨htx₁, hty₁⟩ acc x hx)
+          (p2.p, .const 0) bits.toList hP)))
+    fun loop => ?_
+  obtain ⟨rounds, fin⟩ := loop
   -- the register pin
-  have hscL := hinv₅.2
-  have hpin : loop.2.2.val st₅.env.get = scalar.val.val st₅.env.get := by
-    rw [hfn₅, hreg, CVar.val_of_le hst₁₅ (hscS.mono hnv₁), CVar.val_of_le hle₁ hscS, hrs]
-  have hscS₅ : scalar.val.Scoped st₅ :=
-    hscS.mono (Nat.le_trans hnv₁ (Nat.le_trans hnv₂
-      (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))))
-  obtain ⟨u, st₆, hrun₆, hsat₆, -⟩ :=
-    assertEqual_complete (c := KimchiConstraint F) loop.2.2 scalar.val
-      (scalar.val.val st₅.env.get) st₅
-      ⟨⟨CircuitType.scoped_fvar.mpr hscL.2.2, CircuitType.reads_fvar.mpr hpin⟩,
-        ⟨CircuitType.scoped_fvar.mpr hscS₅, CircuitType.reads_fvar.mpr rfl⟩⟩
-  have hle₆ := hrun₆.le
-  have hnv₆ := hrun₆.nv_le
-  have hlenR : loop.1.length = 32 := by rw [ChainAt.length hchainAt, hlenB]
-  refine ⟨loop.2.1, st₆, hrun₁.bind (hrun₂.bind (hrun₃.bind (hrun₄.bind
-      (hrun₅.bind (hrun₆.bind (Runs.addConstraint.bind rfl)))))), ?_, ?_⟩
-  · intro stf hnvF hleF
-    have hle₅f : st₅.env.Le stf.env := hle₆.trans hleF
-    have hnv₅f : st₅.nv ≤ stf.nv := Nat.le_trans hnv₆ hnvF
-    have hpay : EndoMul.chainHolds stf.env.get d.endo
-        (loop.2.1.x.val stf.env.get, loop.2.1.y.val stf.env.get,
-          loop.2.2.val stf.env.get) loop.1 := by
-      refine chainHolds_of_walk d.endo t stf W
-        (ChainAt.mono (RowGrant.mono d.endo t) hnv₅f hle₅f hchainAt) ?_ ?_
-      · intro i hi
-        have := grants_walk d.endo t stf
-          (ChainAt.mono (RowGrant.mono d.endo t) hnv₅f hle₅f hchainAt)
-          (hbitsRead stf (hst₁₅.trans hle₅f)) i hi
-        rwa [hWat stf hle₅f] at this
-      · intro i hi
-        exact hwalkHolds i (by rw [← hlenR]; exact hi)
-    refine Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
-      (Sat.bind hrun₃ (hsat₃ ?_ ?_) (Sat.bind hrun₄ (hsat₄ ?_ ?_)
-        (Sat.bind hrun₅ (hsat₅ hnv₅f hle₅f) (Sat.bind hrun₆ (hsat₆ hnvF hleF)
-          (Sat.bind Runs.addConstraint (Sat.addConstraint hpay) Sat.pure))))))
-    · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅))) hnv₅f
-    · exact (((hle₂.trans hle₃).trans hle₄).trans hle₅).trans hle₅f
-    · exact Nat.le_trans (Nat.le_trans hnv₃ (Nat.le_trans hnv₄ hnv₅)) hnv₅f
-    · exact ((hle₃.trans hle₄).trans hle₅).trans hle₅f
-    · exact Nat.le_trans (Nat.le_trans hnv₄ hnv₅) hnv₅f
-    · exact (hle₄.trans hle₅).trans hle₅f
-    · exact Nat.le_trans hnv₅ hnv₅f
-    · exact hle₅.trans hle₅f
-  · -- the point conclusion, off the model's own chain theorem
-    obtain ⟨hfx₆, hfy₆, -⟩ := grants_fin d.endo t st₆
-      (ChainAt.mono (RowGrant.mono d.endo t) hnv₆ hle₆ hchainAt)
-      (hbitsRead st₆ (hst₁₅.trans hle₆))
-    rw [hWat st₆ hle₆, hlenB] at hfx₆ hfy₆
+  refine Complete.bind
+    (Complete.imp
+      (fun st h => ⟨⟨⟨CircuitType.scoped_fvar.mpr h.1.1.2.2.2,
+          CircuitType.reads_fvar.mpr ?pin⟩, h.2.2.2.2.2⟩, h⟩)
+      (fun _ _ h => h)
+      (Complete.frame
+        (Mono.and (Mono.and (fun _ _ hnv hle h => AccInv.mono _ hnv hle h)
+            (fun _ _ hnv hle h => ChainAt.mono (RowGrant.mono d.endo t) hnv hle h))
+          (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
+            (Mono.and Mono.onCurveAs Mono.readsAs)))))
+        (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
+    fun _ => ?_
+  case pin =>
+    obtain ⟨⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
+    obtain ⟨-, -, hfn⟩ := grants_fin d.endo t st hchain (hbitsRead st hext.2)
+    rw [hfn, hWat st (htcoords hOnT).1 (htcoords hOnT).2
+      (CircuitType.reads_fvar.mp hp2x.2) (CircuitType.reads_fvar.mp hp2y.2), hlenB, hreg]
+  -- the one `endoMul` row, and the returned accumulator
+  refine Complete.bind (Complete.addConstraint ?row)
+    fun _ => Complete.pure_of fun st h => ?post
+  case row =>
+    rintro st ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ stf hle
+    have hnv := ProverState.nv_le_of_env_le hle
+    have hlenR : rounds.length = 32 := by rw [ChainAt.length hchain, hlenB]
+    have hchain' := ChainAt.mono (RowGrant.mono d.endo t) hnv hle hchain
+    have hOnT' := OnCurveAs.mono hnv hle hOnT
+    have hp2x' := CircuitType.ReadsAs.mono hnv hle hp2x
+    have hp2y' := CircuitType.ReadsAs.mono hnv hle hp2y
+    have hwalk : ∀ i (hi : i < rounds.length),
+        EndoMulRound.readWith stf.env.get (rounds[i]'hi)
+            ((rounds[i]'hi).s.x.val stf.env.get) ((rounds[i]'hi).s.y.val stf.env.get)
+            ((rounds[i]'hi).nAccNext.val stf.env.get) = W i := by
+      intro i hi
+      have hgw := grants_walk d.endo t stf hchain'
+        (hbitsRead stf (hext.2.trans hle)) i hi
+      rwa [hWat stf (htcoords hOnT').1 (htcoords hOnT').2
+        (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)] at hgw
+    exact chainHolds_of_walk d.endo t stf W hchain' hwalk
+      (fun i hi => hwalkHolds i (by rw [← hlenR]; exact hi))
+  case post =>
+    -- the point conclusion, off the model's own chain theorem
+    obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hOnT, hscal⟩ := h
+    obtain ⟨hfx, hfy, -⟩ := grants_fin d.endo t st hchain (hbitsRead st hext.2)
+    rw [hWat st (htcoords hOnT).1 (htcoords hOnT).2 (CircuitType.reads_fvar.mp hp2x.2)
+      (CircuitType.reads_fvar.mp hp2y.2), hlenB] at hfx hfy
     obtain ⟨hfin', sc, A, B, hseq, hsab, hAle, hBle, hAval, hBval, -⟩ :=
       Kimchi.Gate.EndoMul.endoMul_off d.W d.two_ne d.three_ne d.odd d.endo
         (Point.some _ _ hT) (Point.some _ _ hφT)
         (fun a b ha hb hba hbb =>
           d.off_targets ha hb hba hbb (Point.some_ne_zero hT) (d.eigen hT hφT))
         32 hbits W hchainW hP0ns hP0eq d.lam (d.eigen hT hφT)
-    have hfin : d.W.Nonsingular (loop.2.1.x.val st₆.env.get) (loop.2.1.y.val st₆.env.get) := by
-      rw [hfx₆, hfy₆]
+    have hfin : d.W.Nonsingular (fin.1.x.val st.env.get) (fin.1.y.val st.env.get) := by
+      rw [hfx, hfy]
       exact hfin'
     have hcl : Kimchi.Gate.EndoMul.crumbList W 32
         = Kimchi.Gate.EndoScalar.crumbsOf (2 * 32) (ToNat.toNat sv) := by
@@ -1325,8 +1365,8 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     -- the accumulators, under their bounds, ARE the prechallenge's decoded integer
     rw [← decomposition_eq_endoExpandZ d (ToNat.toNat sv) hsab (h4 ▸ hAle) (h4 ▸ hBle)
       (hcl ▸ hAval) (hcl ▸ hBval)]
-    exact ⟨scoped_affinePoint.mpr ⟨hscL.1.mono hnv₆, hscL.2.1.mono hnv₆⟩, hfin,
-      ((Kimchi.Gate.AddComplete.some_congr d.W hfin hfin' hfx₆ hfy₆).trans hseq).symm⟩
+    exact ⟨scoped_affinePoint.mpr ⟨hinv.2.1, hinv.2.2.1⟩, hfin,
+      ((Kimchi.Gate.AddComplete.some_congr d.W hfin hfin' hfx hfy).trans hseq).symm⟩
 
 open Std.Do WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
 /-- **Soundness**, at the deployed thirty-two rounds — the sixty-four crumbs of a 128-bit
