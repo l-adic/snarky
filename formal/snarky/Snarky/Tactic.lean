@@ -43,90 +43,23 @@ macro "complete_mono_tac" : tactic =>
   `(tactic| apply_rules (config := { transparency := .reducible, maxDepth := 80 })
       using $(Lean.mkIdent `complete_mono))
 
-/-- A candidate's conclusion key: its head constant, and — for a reading — the
-head constant of the subject (the variable argument), when it has one. Lookup
-tries only candidates whose key can match the goal's, which is what keeps the
-search linear where `solve_by_elim` was multiplicative in the table. -/
-def conclusionKey (ty : Expr) : MetaM (Option (Name × Option Name)) :=
-  Meta.forallTelescopeReducing ty fun _ body => do
-    let body := body.cleanupAnnotations
-    let some h := body.getAppFn.constName? | return none
-    if h == ``Snarky.CircuitType.ReadsAs then
-      let args := body.getAppArgs
-      if args.size ≥ 2 then
-        let subj := (args[args.size - 2]!).cleanupAnnotations
-        return some (h, subj.getAppFn.constName?)
-      else
-        return some (h, none)
-    else
-      return some (h, none)
+/-- The adapter atom search's configuration: reducible so the reading atoms stay
+opaque, no `exfalso` (it backtracks badly over the shared value metavariables).
+The shallow config is the cheap first attempt; the deep one runs after the
+forward saturation, with depth for a `Forall₂` chain. -/
+def readsSearchShallow : Lean.Meta.SolveByElim.SolveByElimConfig :=
+  { transparency := .reducible, maxDepth := 4, exfalso := false }
 
-/-- Whether a candidate keyed `ck` can serve a goal keyed `gk`: heads equal, and
-a keyed subject only against the same subject former (an unkeyed conclusion —
-a bound-variable subject — is tried against anything of the right head). -/
-def keyServes (gk ck : Name × Option Name) : Bool :=
-  gk.1 == ck.1 && (ck.2.isNone || gk.2 == ck.2)
+/-- The saturated retry's configuration — see `readsSearchShallow`. -/
+def readsSearchDeep : Lean.Meta.SolveByElim.SolveByElimConfig :=
+  { transparency := .reducible, maxDepth := 12, exfalso := false }
 
-/-- The backward reading search: keyed candidate lookup — local hypotheses
-first, then the `@[complete_reads]` table in reverse registration order — with
-reducible-transparency `apply` and premise recursion. `apply`'s unification is
-what pins a law's elided witness values, which is the capability the engine
-exists to keep (indexed off-the-shelf search declines goals with assignable
-metavariables). -/
-partial def solveAtom (rules : Array (Expr × (Name × Option Name)))
-    (g : MVarId) (fuel : Nat) : Elab.Tactic.TacticM Bool := g.withContext do
-  if fuel == 0 then return false
-  let ty := (← instantiateMVars (← g.getType)).cleanupAnnotations
-  let some gh := ty.getAppFn.constName? | return false
-  let gk : Name × Option Name ←
-    if gh == ``Snarky.CircuitType.ReadsAs then
-      let args := ty.getAppArgs
-      if args.size ≥ 2 then
-        let subj ← Meta.withReducible <|
-          Meta.whnfCore (args[args.size - 2]!).cleanupAnnotations
-        pure (gh, subj.getAppFn.constName?)
-      else pure (gh, none)
-    else pure (gh, none)
-  -- local hypotheses, most recent first, then the table
-  let hyps ← g.getNondepPropHyps
-  let mut cands : Array (Expr × (Name × Option Name)) := #[]
-  for h in hyps.reverse do
-    if let some k ← conclusionKey (← h.getType) then
-      cands := cands.push (.fvar h, k)
-  let allCands := cands ++ rules
-  for (e, ck) in allCands do
-    unless keyServes gk ck do continue
-    let s ← Tactic.saveState
-    let ok ← try
-        let gs ← Meta.withReducible <| g.apply e
-        let mut ok := true
-        for g' in gs do
-          if ← g'.isAssigned then continue
-          unless ← solveAtom rules g' (fuel - 1) do
-            ok := false
-            break
-        pure ok
-      catch _ =>
-        pure false
-    if ok then return true
-    s.restore
-  return false
-
-/-- The table, keyed — reverse registration so downstream rules shadow. -/
-def readsRules : Elab.Tactic.TacticM (Array (Expr × (Name × Option Name))) := do
-  let names ← Lean.labelled `complete_reads
-  let mut out : Array (Expr × (Name × Option Name)) := #[]
-  for n in names.reverse do
-    if let some k ← conclusionKey (← getConstInfo n).type then
-      out := out.push (← Lean.Meta.mkConstWithFreshMVarLevels n, k)
-  return out
-
-/-- One adapter atom, by the keyed backward search — see `solveAtom`. -/
-elab "complete_reads_search" : tactic => do
-  let g ← Elab.Tactic.getMainGoal
-  unless ← solveAtom (← readsRules) g 12 do
-    throwError "complete_reads_search: no derivation for this atom"
-  Elab.Tactic.replaceMainGoal []
+/-- One adapter atom, by backward search over the local facts and the
+`@[complete_reads]` vocabulary. Unification against the context is what pins a
+law's elided witness values. -/
+macro "complete_reads_search" : tactic =>
+  `(tactic| solve_by_elim (config := Snarky.Tactic.readsSearchShallow)
+      using $(Lean.mkIdent `complete_reads))
 
 /-- Fails unless the goal is a reading-family atom — the only goals the forward
 saturation can help, so the expensive retry is never spent on a side condition
@@ -140,10 +73,10 @@ elab "complete_reads_goal_guard" : tactic => do
     | none => false
   unless ok do throwError "not a reading-family goal"
 
-/-- The saturated retry — the same engine; the name survives only so the
-rescue's saturation has a seam to run in. -/
+/-- The saturated retry — see `complete_reads_search`. -/
 macro "complete_reads_search_deep" : tactic =>
-  `(tactic| complete_reads_search)
+  `(tactic| solve_by_elim (config := Snarky.Tactic.readsSearchDeep)
+      using $(Lean.mkIdent `complete_reads))
 
 /-- Saturate the context forward with the `@[complete_reads_fwd]` projections:
 for every hypothesis a projection applies to, its conclusion joins the context —
@@ -195,7 +128,6 @@ macro "complete_ctx" : tactic =>
   `(tactic| ((try casesm* _ ∧ _);
              (try with_reducible and_intros);
              all_goals first
-               | exact trivial
                | complete_reads_search
                | (complete_reads_goal_guard;
                   (try complete_reads_saturate);
