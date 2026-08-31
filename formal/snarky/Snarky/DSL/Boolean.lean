@@ -52,6 +52,14 @@ theorem not_scoped [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
     (↑(Snarky.not b) : CVar F).Scoped st :=
   CVar.Scoped.sub_ trivial hb
 
+/-- A boolean bundle's reading, at its cell: the bit it spells. A law over `FVar`
+consumes a boolean operand through this. -/
+private theorem asField [Field F] [DecidableEq F] {st : ProverState F} {v : BoolVar F}
+    {vb : Bool} (h : CircuitType.ReadsAs (val := Bool) st v vb) :
+    CircuitType.ReadsAs (val := F) st (↑v : CVar F) (bit vb) :=
+  ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp h.1),
+    CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp h.2)⟩
+
 attribute [irreducible] Snarky.not
 
 /-! ## Selection -/
@@ -66,15 +74,18 @@ def selectField [Field F] [DecidableEq F] [BasicSystem F c] (b : BoolVar F) (t e
   | .const bv, t, e => pure (if bv = 1 then t else e)
   | b, .const tv, .const ev =>
     pure (CVar.add_ (.scale tv b) (CVar.scale_ ev (CVar.sub_ (.const 1) b)))
-  | b, t, e => do
-    let r ← witness (val := F) (advice b t e)
-    addConstraint (BasicSystem.r1cs b (CVar.sub_ t e) (CVar.sub_ r e))
-    pure r
+  | b, t, e => core b t e
 where
   /-- The advice: read the selector, return the branch it picks. -/
   advice (b : CVar F) (t e : FVar F) : AsProver F F := do
     let bv ← AsProver.readCVar b
     if bv = 1 then AsProver.readCVar t else AsProver.readCVar e
+  /-- The witnessing branch, isolated so its laws are stated in their own binders rather
+  than under the shape match (as `xor.core` is). -/
+  core (b : CVar F) (t e : FVar F) : CircuitM F c (FVar F) := do
+    let r ← witness (val := F) (advice b t e)
+    addConstraint (BasicSystem.r1cs b (CVar.sub_ t e) (CVar.sub_ r e))
+    pure r
 
 open Std.Do in
 /-- `selectField b t e` reads as the branch the selector's bit picks. -/
@@ -84,7 +95,7 @@ open Std.Do in
     selectField (c := Builder V c) b t e
     ⦃⇓ r _ => ⌜∀ bb : Bool, (↑b : CVar F).val V = bit bb →
         r.val V = if bb then t.val V else e.val V⌝⦄ := by
-  simp only [selectField]
+  simp only [selectField, selectField.core]
   mvcgen
   · subst_vars
     rename_i hbc _
@@ -109,6 +120,42 @@ open Std.Do in
     · rw [if_pos trivial, one_mul] at h
       simp [sub_left_inj.mp h]
 
+/-- The witnessing branch's completeness law, in its own binders: advise the selected
+branch, then pin it by the row. The three operand readings are framed across the
+allocation — the row needs them, the witness rule does not carry them. -/
+private theorem selectField.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
+    [ConstraintHolds F c] [LawfulBasicSystem F c] (b : CVar F) (t e : FVar F)
+    (bb : Bool) (tv ev : F) :
+    Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := F) st b (bit bb) ∧
+        CircuitType.ReadsAs (val := F) st t tv ∧ CircuitType.ReadsAs (val := F) st e ev)
+      (selectField.core (c := c) b t e)
+      (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) := by
+  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
+      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
+    fun h => CircuitType.reads_fvar.mp h.2
+  simp only [selectField.core]
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+        (Complete.witness (selectField.advice b t e) (if bb then tv else ev) (by simp))))
+    (fun r => Complete.bind (Complete.addConstraint ?_)
+      fun _ => Complete.pure_of fun _ h => h.1)
+  · rintro st ⟨hr, hb, ht, he⟩ stf hle
+    refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
+    simp only [CVar.val_sub_]
+    rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hb.1),
+      CVar.val_of_le hle (CircuitType.scoped_fvar.mp ht.1),
+      CVar.val_of_le hle (CircuitType.scoped_fvar.mp he.1),
+      CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
+      hrd hb, hrd ht, hrd he, hrd hr]
+    cases bb <;> simp [bit]
+  · cases bb <;>
+      simp [selectField.advice, AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.1),
+        AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1.1),
+        AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.2.1),
+        hrd h.1, hrd h.2.1, hrd h.2.2, bit, zero_ne_one]
+
 /-- `selectField`'s completeness law: from a state with scoped operands and a well-formed
 selector the run succeeds, the row it built is satisfied at every extension of the
 final table, and the result is scoped. -/
@@ -120,44 +167,41 @@ theorem selectField_complete [Field F] [DecidableEq F] [BasicSystem F c]
         CircuitType.ReadsAs (val := F) st e ev)
       (selectField (c := c) b t e)
       (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) := by
-  rintro st ⟨hb, ht, he⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar,
-    CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hb ht he ⊢
-  obtain ⟨hb, hval⟩ := hb
-  obtain ⟨ht, hvt⟩ := ht
-  obtain ⟨he, hve⟩ := he
-  subst hvt hve
+  have hrd : ∀ {st : ProverState F} {v : FVar F} {a : F},
+      CircuitType.ReadsAs (val := F) st v a → v.val st.env.get = a :=
+    fun h => CircuitType.reads_fvar.mp h.2
+  -- the witnessing branch, in its own binders
+  have hcore : Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := Bool) st b bb ∧
+        CircuitType.ReadsAs (val := F) st t tv ∧ CircuitType.ReadsAs (val := F) st e ev)
+      (selectField.core (c := c) (↑b : CVar F) t e)
+      (fun a st' => CircuitType.ReadsAs (val := F) st' a (if bb then tv else ev)) :=
+    Complete.imp (fun _ h => ⟨asField h.1, h.2⟩) (fun _ _ h => h)
+      (selectField.core_complete (↑b : CVar F) t e bb tv ev)
   simp only [selectField]
-  generalize (↑b : CVar F) = b' at hb hval ⊢
   split
-  · refine ⟨_, st, rfl, by simp [Sat, build], by split <;> assumption, ?_⟩
-    rename_i bv _ _
-    simp only [CVar.val] at hval
-    subst hval
-    cases bb <;> simp [bit, zero_ne_one]
-  · refine ⟨_, st, rfl, by simp [Sat, build],
-      CVar.Scoped.add_ hb (CVar.Scoped.scale_ (CVar.Scoped.sub_ trivial hb)), ?_⟩
-    cases bb <;> simp [CVar.val, bit, hval]
-  · obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
-      witness_complete (c := c) (selectField.advice b' t e)
-        (st := st) (v := if b'.val st.env.get = 1 then t.val st.env.get else e.val st.env.get)
-        (by simp)
-        (by by_cases hb1 : b'.val st.env.get = 1 <;> simp [selectField.advice, hb, ht, he, hb1])
-    refine ⟨r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope, ?_⟩
-    on_goal 2 =>
-      rw [CircuitType.reads_fvar.mp hreads, hval]
-      cases bb <;> simp [bit, zero_ne_one]
-    intro stf hnv' hle'
-    refine Sat.bind hrun (hsat hnv' hle')
-      (Sat.bind Runs.addConstraint (Sat.addConstraint ?_) Sat.pure)
-    refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-    have hr : r.val stf.env.get
-        = (if b'.val st.env.get = 1 then t.val st.env.get else e.val st.env.get) :=
-      (CircuitType.reads_iff.mp (hreads.of_le hscope hle')).2
-    simp only [CVar.val_sub_]
-    rw [CVar.val_of_le (hle.trans hle') hb, CVar.val_of_le (hle.trans hle') ht,
-      CVar.val_of_le (hle.trans hle') he, hr, hval]
-    cases bb <;> simp [bit, zero_ne_one]
+  · -- the selector is a constant: the branch is decided out of circuit
+    rename_i _ _ _ bv hbv
+    refine Complete.pure_of fun st h => ?_
+    have hv : bv = bit bb := by
+      rw [← CircuitType.reads_fvar.mp (asField (st := st) h.1).2, hbv]
+      rfl
+    subst hv
+    cases bb
+    · simpa [bit] using h.2.2
+    · simpa [bit] using h.2.1
+  · -- both branches constant: the select is an affine combination
+    refine Complete.pure_of fun st h => ⟨CircuitType.scoped_fvar.mpr ?_,
+      CircuitType.reads_fvar.mpr ?_⟩
+    · have hbsc : (↑b : CVar F).Scoped st := CircuitType.scoped_boolVar.mp h.1.1
+      exact CVar.Scoped.add_ hbsc (CVar.ScopedBy.scale_ (CVar.Scoped.sub_ trivial hbsc))
+    · have h1 := hrd h.2.1
+      have h2 := hrd h.2.2
+      have hbv := CircuitType.reads_fvar.mp (asField (st := st) h.1).2
+      simp only [CVar.val_add_, CVar.val_scale_, CVar.val_sub_, CVar.val] at h1 h2 ⊢
+      rw [hbv, h1, h2]
+      cases bb <;> simp [bit]
+  · exact hcore
 
 attribute [irreducible] selectField
 
@@ -269,29 +313,22 @@ instance instLawfulIfThenElseBoolVar : LawfulIfThenElse F c Bool (BoolVar F) whe
     rw [CircuitType.reads_boolVar, BoolVar.coe_unchecked, hr bb hb,
       CircuitType.reads_boolVar.mp ht, CircuitType.reads_boolVar.mp he]
     cases bb <;> simp
-  select_complete b t e bb tv ev := by
-    rintro st ⟨hb, ht, he⟩
-    obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
-      selectField_complete (c := c) b ↑t ↑e bb (bit tv) (bit ev) st
-        ⟨hb,
-          ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp ht.1),
-            CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp ht.2)⟩,
-          ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp he.1),
-            CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp he.2)⟩⟩
-    refine ⟨.unchecked r, st₁, hrun.bind rfl, fun hnv hle =>
-      Sat.bind hrun (hsat hnv hle) Sat.pure,
-      CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp hr.1),
-      CircuitType.reads_boolVar.mpr ?_⟩
-    rw [BoolVar.coe_unchecked, CircuitType.reads_fvar.mp hr.2]
-    cases bb <;> simp
+  select_complete b t e bb tv ev :=
+    Complete.bind
+      (Complete.imp (fun _ h => ⟨h.1, asField h.2.1, asField h.2.2⟩) (fun _ _ h => h)
+        (selectField_complete (c := c) b ↑t ↑e bb (bit tv) (bit ev)))
+      fun r => Complete.pure_of fun _ hr =>
+        ⟨CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp hr.1),
+          CircuitType.reads_boolVar.mpr (by
+            rw [BoolVar.coe_unchecked, CircuitType.reads_fvar.mp hr.2]
+            cases bb <;> simp)⟩
 
 instance instLawfulIfThenElseUnit : LawfulIfThenElse F c Unit Unit where
   select_sound V b t e tv ev bb _ _ _ := by
     intro _ _ _
     exact CircuitType.reads_unit
-  select_complete _ _ _ _ _ _ := fun st _ =>
-    ⟨(), st, rfl, fun _ _ => by simp [Sat, build],
-      CircuitType.scoped_unit, CircuitType.reads_unit⟩
+  select_complete _ _ _ _ _ _ :=
+    Complete.pure_of fun _ _ => ⟨CircuitType.scoped_unit, CircuitType.reads_unit⟩
 
 variable {a va b vb : Type}
 
@@ -321,25 +358,27 @@ instance instLawfulIfThenElseProd [CircuitType F a va] [CircuitType F b vb] [IfT
     cases bb <;>
       exact CircuitType.reads_prod.mpr ⟨h₁ _ hrows₁, h₂ nv hrows₂⟩
   select_complete s t e bb tv ev := by
-    rintro st ⟨hb, ht, he⟩
-    obtain ⟨tv₁, tv₂⟩ := tv
-    obtain ⟨ev₁, ev₂⟩ := ev
-    rw [CircuitType.ReadsAs, CircuitType.scoped_prod, CircuitType.reads_prod] at ht he
-    obtain ⟨r₂, st₁, hrun₂, hsat₂, hr₂⟩ :=
-      B.select_complete (c := c) s t.2 e.2 bb tv₂ ev₂ st
-        ⟨hb, ⟨ht.1.2, ht.2.2⟩, ⟨he.1.2, he.2.2⟩⟩
-    obtain ⟨r₁, st₂, hrun₁, hsat₁, hr₁⟩ :=
-      A.select_complete (c := c) s t.1 e.1 bb tv₁ ev₁ st₁
-        ⟨hb.mono hrun₂.nv_le hrun₂.le,
-          CircuitType.ReadsAs.mono hrun₂.nv_le hrun₂.le ⟨ht.1.1, ht.2.1⟩,
-          CircuitType.ReadsAs.mono hrun₂.nv_le hrun₂.le ⟨he.1.1, he.2.1⟩⟩
-    refine ⟨(r₁, r₂), st₂, hrun₂.bind (hrun₁.bind rfl), fun hnv hle =>
-      Sat.bind hrun₂ (hsat₂ (Nat.le_trans hrun₁.nv_le hnv) (hrun₁.le.trans hle))
-        (Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure), ?_⟩
-    have hr₂' := CircuitType.ReadsAs.mono hrun₁.nv_le hrun₁.le hr₂
-    refine ⟨CircuitType.scoped_prod.mpr ⟨hr₁.1, hr₂'.1⟩,
-      CircuitType.reads_prod.mpr ?_⟩
-    cases bb <;> exact ⟨hr₁.2, hr₂'.2⟩
+    have pfst : ∀ {st : ProverState F} {p : va × vb} {v : a × b},
+        CircuitType.ReadsAs (val := a × b) st p v →
+          CircuitType.ReadsAs (val := a) st p.1 v.1 :=
+      fun h => ⟨(CircuitType.scoped_prod.mp h.1).1, (CircuitType.reads_prod.mp h.2).1⟩
+    have psnd : ∀ {st : ProverState F} {p : va × vb} {v : a × b},
+        CircuitType.ReadsAs (val := a × b) st p v →
+          CircuitType.ReadsAs (val := b) st p.2 v.2 :=
+      fun h => ⟨(CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩
+    -- the second component runs first (the select's own order); the first component's
+    -- operands are framed across it
+    refine Complete.bind
+      (Complete.imp (fun _ h => ⟨⟨h.1, psnd h.2.1, psnd h.2.2⟩, h.1, pfst h.2.1, pfst h.2.2⟩)
+        (fun _ _ h => h)
+        (Complete.frame (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+          (B.select_complete (c := c) s t.2 e.2 bb tv.2 ev.2)))
+      fun r₂ => Complete.bind
+        (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
+          (Complete.frame Mono.readsAs (A.select_complete (c := c) s t.1 e.1 bb tv.1 ev.1)))
+        fun r₁ => Complete.pure_of fun _ h => ?_
+    refine ⟨CircuitType.scoped_prod.mpr ⟨h.1.1, h.2.1⟩, CircuitType.reads_prod.mpr ?_⟩
+    cases bb <;> exact ⟨h.1.2, h.2.2⟩
 
 instance instLawfulIfThenElseVector [CircuitType F a va] [IfThenElse F c va]
     [S : LawfulIfThenElse F c a va] {n : Nat} :
@@ -401,13 +440,10 @@ theorem LawfulIfThenElse.ofEquiv [CircuitType F a va] [IfThenElse F c va]
       simp only [build_bind, build, List.append_nil, Equiv.apply_symm_apply] at hsat ⊢
       cases bb <;> simpa using h nv hsat
     select_complete := fun s t e bb tv ev' => by
-      intro st hst
-      obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
-        S.select_complete (c := c) s (ew t) (ew e) bb (ev tv) (ev ev') st hst
-      refine ⟨ew.symm r, st₁, hrun.bind rfl, fun hnv hle =>
-        Sat.bind hrun (hsat hnv hle) Sat.pure, ?_⟩
-      show CircuitType.Scoped (val := a) st₁ (ew (ew.symm r)) ∧
-        CircuitType.Reads st₁.env.get (ew (ew.symm r)) (ev (if bb then tv else ev'))
+      refine Complete.bind (S.select_complete (c := c) s (ew t) (ew e) bb (ev tv) (ev ev'))
+        fun r => Complete.pure_of fun _ hr => ?_
+      show CircuitType.Scoped (val := a) _ (ew (ew.symm r)) ∧
+        CircuitType.Reads _ (ew (ew.symm r)) (ev (if bb then tv else ev'))
       rw [Equiv.apply_symm_apply]
       refine ⟨hr.1, ?_⟩
       cases bb <;> exact hr.2 }
@@ -459,21 +495,15 @@ theorem and_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.ReadsAs (val := Bool) st b bb)
       (Snarky.and (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab && bb)) := by
-  rintro st ⟨ha, hb⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at ha hb ⊢
-  obtain ⟨ha, hva⟩ := ha
-  obtain ⟨hb, hvb⟩ := hb
   simp only [Snarky.and]
-  obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
-    mul_complete (c := c) (↑a : CVar F) (↑b : CVar F) (bit ab) (bit bb) st
-      ⟨⟨CircuitType.scoped_fvar.mpr ha, CircuitType.reads_fvar.mpr hva⟩,
-        ⟨CircuitType.scoped_fvar.mpr hb, CircuitType.reads_fvar.mpr hvb⟩⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hr
-  refine ⟨.unchecked r, st₁, hrun.bind rfl, ?_, hr.1, ?_⟩
-  · intro stf hnv hle
-    exact Sat.bind hrun (hsat hnv hle) Sat.pure
-  · rw [BoolVar.coe_unchecked, hr.2]
-    cases ab <;> cases bb <;> simp [bit]
+  refine Complete.bind
+    (Complete.imp (fun _ h => ⟨asField h.1, asField h.2⟩) (fun _ _ h => h)
+      (mul_complete (c := c) (↑a : CVar F) (↑b : CVar F) (bit ab) (bit bb)))
+    fun r => Complete.pure_of fun _ hr =>
+      ⟨CircuitType.scoped_boolVar.mpr (CircuitType.scoped_fvar.mp hr.1),
+        CircuitType.reads_boolVar.mpr (by
+          rw [BoolVar.coe_unchecked, CircuitType.reads_fvar.mp hr.2]
+          cases ab <;> cases bb <;> simp [bit])⟩
 
 attribute [irreducible] Snarky.and
 
@@ -509,23 +539,20 @@ theorem or_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.ReadsAs (val := Bool) st b bb)
       (Snarky.or (c := c) a b)
       (fun r st' => CircuitType.ReadsAs (val := Bool) st' r (ab || bb)) := by
-  rintro st ⟨ha, hb⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at ha hb ⊢
-  obtain ⟨ha, hva⟩ := ha
-  obtain ⟨hb, hvb⟩ := hb
+  have neg : ∀ {st : ProverState F} {v : BoolVar F} {vb : Bool},
+      CircuitType.ReadsAs (val := Bool) st v vb →
+        CircuitType.ReadsAs (val := Bool) st (Snarky.not v) (!vb) :=
+    fun h => ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
+      CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
   simp only [Snarky.or]
-  obtain ⟨r, st₁, hrun, hsat, hr⟩ :=
-    and_complete (c := c) (Snarky.not a) (Snarky.not b) (!ab) (!bb) st
-      ⟨⟨CircuitType.scoped_boolVar.mpr (not_scoped ha),
-          CircuitType.reads_boolVar.mpr (not_val hva)⟩,
-        ⟨CircuitType.scoped_boolVar.mpr (not_scoped hb),
-          CircuitType.reads_boolVar.mpr (not_val hvb)⟩⟩
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_boolVar, CircuitType.reads_boolVar] at hr
-  refine ⟨Snarky.not r, st₁, hrun.bind rfl, ?_, not_scoped hr.1, ?_⟩
-  · intro stf hnv hle
-    exact Sat.bind hrun (hsat hnv hle) Sat.pure
-  · rw [not_val hr.2]
-    cases ab <;> cases bb <;> simp [bit]
+  refine Complete.bind
+    (Complete.imp (fun _ h => ⟨neg h.1, neg h.2⟩) (fun _ _ h => h)
+      (and_complete (c := c) (Snarky.not a) (Snarky.not b) (!ab) (!bb)))
+    fun r => Complete.pure_of fun _ hr =>
+      ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp hr.1)),
+        CircuitType.reads_boolVar.mpr (by
+          rw [not_val (CircuitType.reads_boolVar.mp hr.2)]
+          cases ab <;> cases bb <;> simp [bit])⟩
 
 attribute [irreducible] Snarky.or
 
@@ -652,26 +679,38 @@ private theorem xor.core_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (Snarky.xor.core (c := c) a b)
       (fun r st' => (↑r : CVar F).Scoped st' ∧
         CircuitType.WellFormed (val := Bool) st'.env.get r) := by
-  rintro st ⟨ha, hb, ⟨ab, hab⟩, ⟨bb, hbb⟩⟩
-  have hva := CircuitType.reads_boolVar.mp hab
-  have hvb := CircuitType.reads_boolVar.mp hbb
+  -- the precondition says only that the operands are well formed; `instantiate` names the
+  -- bits they read as, and the rest is the standard leaf chain.
+  refine Complete.instantiate
+    (P := fun p : Bool × Bool => fun st => CircuitType.ReadsAs (val := Bool) st a p.1 ∧
+      CircuitType.ReadsAs (val := Bool) st b p.2)
+    (fun st h => ⟨⟨h.2.2.1.choose, h.2.2.2.choose⟩,
+      ⟨CircuitType.scoped_boolVar.mpr h.1, h.2.2.1.choose_spec⟩,
+      ⟨CircuitType.scoped_boolVar.mpr h.2.1, h.2.2.2.choose_spec⟩⟩) fun p => ?_
+  obtain ⟨ab, bb⟩ := p
   simp only [Snarky.xor.core]
-  obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
-    witness_complete (c := c) (Snarky.xor.advice a b) (st := st) (v := bit (ab ^^ bb))
-      (by simp)
-      (by cases ab <;> cases bb <;> simp [Snarky.xor.advice, ha, hb, hva, hvb, bit])
-  have hr : r.val st₁.env.get = bit (ab ^^ bb) := (CircuitType.reads_iff.mp hreads).2
-  refine ⟨.unchecked r, st₁, hrun.bind rfl, ?_, CircuitType.scoped_fvar.mp hscope, ab ^^ bb,
-    CircuitType.reads_boolVar.mpr (by rw [BoolVar.coe_unchecked]; exact hr)⟩
-  intro stf hnv' hle'
-  refine Sat.bind hrun (hsat hnv' hle')
-    (Sat.bind Runs.addConstraint (Sat.addConstraint ?_) Sat.pure)
-  refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-  have hrf : r.val stf.env.get = bit (ab ^^ bb) :=
-    (CircuitType.reads_iff.mp (hreads.of_le hscope hle')).2
-  simp only [CVar.val_add_, CVar.val_sub_]
-  rw [CVar.val_of_le (hle.trans hle') ha, CVar.val_of_le (hle.trans hle') hb, hrf, hva, hvb]
-  cases ab <;> cases bb <;> simp [bit]
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+        (Complete.witness (Snarky.xor.advice a b) (bit (ab ^^ bb)) (by simp))))
+    (fun r => Complete.bind (Complete.addConstraint ?_)
+      fun _ => Complete.pure_of fun _ h =>
+        ⟨CircuitType.scoped_fvar.mp h.1.1, ab ^^ bb,
+          CircuitType.reads_boolVar.mpr (by
+            rw [BoolVar.coe_unchecked]; exact CircuitType.reads_fvar.mp h.1.2)⟩)
+  · rintro st ⟨hr, ha, hb⟩ stf hle
+    refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
+    simp only [CVar.val_add_, CVar.val_sub_]
+    rw [CVar.val_of_le hle (CircuitType.scoped_boolVar.mp ha.1),
+      CVar.val_of_le hle (CircuitType.scoped_boolVar.mp hb.1),
+      CVar.val_of_le hle (CircuitType.scoped_fvar.mp hr.1),
+      CircuitType.reads_boolVar.mp ha.2, CircuitType.reads_boolVar.mp hb.2,
+      CircuitType.reads_fvar.mp hr.2]
+    cases ab <;> cases bb <;> simp [bit]
+  · cases ab <;> cases bb <;>
+      simp [Snarky.xor.advice, CircuitType.scoped_boolVar.mp h.1.1,
+        CircuitType.scoped_boolVar.mp h.2.1,
+        CircuitType.reads_boolVar.mp h.1.2, CircuitType.reads_boolVar.mp h.2.2, bit]
 
 /-- `xor`'s completeness law: the folds are the operands' own contracts; the witnessing
 branch is `xor.core`'s. -/
@@ -683,32 +722,44 @@ theorem xor_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (Snarky.xor (c := c) a b)
       (fun r st' => (↑r : CVar F).Scoped st' ∧
         CircuitType.WellFormed (val := Bool) st'.env.get r) := by
-  rintro st ⟨ha, hb, ⟨ab, hab⟩, ⟨bb, hbb⟩⟩
-  have hva := CircuitType.reads_boolVar.mp hab
-  have hvb := CircuitType.reads_boolVar.mp hbb
-  have hcore := Snarky.xor.core_complete (c := c) a b st ⟨ha, hb, ⟨ab, hab⟩, ⟨bb, hbb⟩⟩
+  refine Complete.instantiate
+    (P := fun p : Bool × Bool => fun st => CircuitType.ReadsAs (val := Bool) st a p.1 ∧
+      CircuitType.ReadsAs (val := Bool) st b p.2)
+    (fun st h => ⟨⟨h.2.2.1.choose, h.2.2.2.choose⟩,
+      ⟨CircuitType.scoped_boolVar.mpr h.1, h.2.2.1.choose_spec⟩,
+      ⟨CircuitType.scoped_boolVar.mpr h.2.1, h.2.2.2.choose_spec⟩⟩) fun p => ?_
+  obtain ⟨ab, bb⟩ := p
+  have hcore : Complete (F := F) (c := c)
+      (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧
+        CircuitType.ReadsAs (val := Bool) st b bb)
+      (Snarky.xor.core (c := c) a b)
+      (fun r st' => (↑r : CVar F).Scoped st' ∧
+        CircuitType.WellFormed (val := Bool) st'.env.get r) :=
+    Complete.imp (fun _ h => ⟨CircuitType.scoped_boolVar.mp h.1.1,
+      CircuitType.scoped_boolVar.mp h.2.1, ⟨ab, h.1.2⟩, ⟨bb, h.2.2⟩⟩) (fun _ _ h => h)
+      (Snarky.xor.core_complete (c := c) a b)
+  -- every constant arm is a `pure`; the fallthroughs are `core`'s law
   simp only [Snarky.xor]
   split
-  · have hA : a.toCVar = CVar.const _ := ‹_›
-    have hB : b.toCVar = CVar.const _ := ‹_›
-    rw [hA] at hva
-    rw [hB] at hvb
-    simp only [CVar.val] at hva hvb
-    subst hva
-    subst hvb
-    exact ⟨_, st, rfl, by simp [Sat, build], trivial, ab ^^ bb,
-      CircuitType.reads_boolVar.mpr (by cases ab <;> cases bb <;> simp [bit])⟩
+  · rename_i av bv hA hB
+    refine Complete.pure_of fun st h => ⟨trivial, ab ^^ bb, CircuitType.reads_boolVar.mpr ?_⟩
+    have hva : av = bit ab := by rw [← CircuitType.reads_boolVar.mp h.1.2, hA]; rfl
+    have hvb : bv = bit bb := by rw [← CircuitType.reads_boolVar.mp h.2.2, hB]; rfl
+    subst hva; subst hvb
+    cases ab <;> cases bb <;> simp [bit]
   · split
-    · exact ⟨b, st, rfl, by simp [Sat, build], hb, bb, hbb⟩
+    · exact Complete.pure_of fun _ h => ⟨CircuitType.scoped_boolVar.mp h.2.1, bb, h.2.2⟩
     · split
-      · exact ⟨Snarky.not b, st, rfl, by simp [Sat, build], not_scoped hb, !bb,
-          CircuitType.reads_boolVar.mpr (not_val hvb)⟩
+      · exact Complete.pure_of fun _ h =>
+          ⟨not_scoped (CircuitType.scoped_boolVar.mp h.2.1), !bb,
+            CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2.2))⟩
       · exact hcore
   · split
-    · exact ⟨a, st, rfl, by simp [Sat, build], ha, ab, hab⟩
+    · exact Complete.pure_of fun _ h => ⟨CircuitType.scoped_boolVar.mp h.1.1, ab, h.1.2⟩
     · split
-      · exact ⟨Snarky.not a, st, rfl, by simp [Sat, build], not_scoped ha, !ab,
-          CircuitType.reads_boolVar.mpr (not_val hva)⟩
+      · exact Complete.pure_of fun _ h =>
+          ⟨not_scoped (CircuitType.scoped_boolVar.mp h.1.1), !ab,
+            CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.1.2))⟩
       · exact hcore
   · exact hcore
 
@@ -811,11 +862,15 @@ theorem any_complete [Field F] [DecidableEq F] [BasicSystem F c]
     match xs with
     | [] =>
       simp only [Snarky.any]
-      exact ⟨false_, st, rfl, by simp [Sat, build], false_scoped st, false,
-        CircuitType.reads_boolVar.mpr (by simp [bit])⟩
+      exact Complete.pure_of (pre := fun st' => ∀ b ∈ ([] : List (BoolVar F)),
+          (↑b : CVar F).Scoped st' ∧ CircuitType.WellFormed (val := Bool) st'.env.get b)
+        (a := false_) (fun st' _ => ⟨false_scoped st', false,
+          CircuitType.reads_boolVar.mpr (by simp [bit])⟩) st h
     | [a] =>
       simp only [Snarky.any]
-      exact ⟨a, st, rfl, by simp [Sat, build], h a (List.mem_cons_self ..)⟩
+      exact Complete.pure_of (pre := fun st' => ∀ v ∈ [a],
+          (↑v : CVar F).Scoped st' ∧ CircuitType.WellFormed (val := Bool) st'.env.get v)
+        (a := a) (fun _ h' => h' a (List.mem_cons_self ..)) st h
     | [a, b] =>
       simp only [Snarky.any]
       obtain ⟨ab, hab⟩ := (h a (by simp)).2
@@ -956,11 +1011,15 @@ theorem all_complete [Field F] [DecidableEq F] [BasicSystem F c]
     match xs with
     | [] =>
       simp only [Snarky.all]
-      exact ⟨true_, st, rfl, by simp [Sat, build], true_scoped st, true,
-        CircuitType.reads_boolVar.mpr (by simp [bit])⟩
+      exact Complete.pure_of (pre := fun st' => ∀ b ∈ ([] : List (BoolVar F)),
+          (↑b : CVar F).Scoped st' ∧ CircuitType.WellFormed (val := Bool) st'.env.get b)
+        (a := true_) (fun st' _ => ⟨true_scoped st', true,
+          CircuitType.reads_boolVar.mpr (by simp [bit])⟩) st h
     | [a] =>
       simp only [Snarky.all]
-      exact ⟨a, st, rfl, by simp [Sat, build], h a (List.mem_cons_self ..)⟩
+      exact Complete.pure_of (pre := fun st' => ∀ v ∈ [a],
+          (↑v : CVar F).Scoped st' ∧ CircuitType.WellFormed (val := Bool) st'.env.get v)
+        (a := a) (fun _ h' => h' a (List.mem_cons_self ..)) st h
     | [a, b] =>
       simp only [Snarky.all]
       obtain ⟨ab, hab⟩ := (h a (by simp)).2
