@@ -269,15 +269,12 @@ reading past the gates that follow. -/
           let xCu ← mul xSq x
           pure (CVar.add_ xCu (CVar.const params.b)))
       (fun r st' => CircuitType.ReadsAs (val := F) st' r (ySquared params xv)) := by
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨h, h⟩, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs (mul_complete (c := c) x x xv xv)))
-    fun xSq => Complete.bind (mul_complete (c := c) xSq x (xv * xv) xv)
-      fun xCu => Complete.pure_of fun st h =>
-        ⟨CircuitType.scoped_fvar.mpr
-            (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.1) trivial),
-          CircuitType.reads_fvar.mpr (by
-            rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2]; rfl)⟩
+  complete_walk
+  exact Complete.pure_of fun st h =>
+    ⟨CircuitType.scoped_fvar.mpr
+        (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp h.2.1) trivial),
+      CircuitType.reads_fvar.mpr (by
+        rw [CVar.val_add_, CircuitType.reads_fvar.mp h.2.2]; rfl)⟩
 
 /-- **The flagged root's honest run.** With genuine roots, and a rootless operand's
 non-residue twist rooted, the run accepts: the flag reads the operand's residuosity and
