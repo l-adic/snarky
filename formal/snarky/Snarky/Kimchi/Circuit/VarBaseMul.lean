@@ -1895,6 +1895,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul
 base scaled by the carrier's decode. The width fits and the regime holds for free here:
 a carrier's representative is below `|Fq| < 2^255`, and the band exclusion IS the
 regime. -/
+@[complete_law]
 theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FVar Fq)}
     {xv yv : Fq} {Z : Type1 Fq} (hT : Vesta.curve.toAffine.Nonsingular xv yv)
     (hband : Z.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :

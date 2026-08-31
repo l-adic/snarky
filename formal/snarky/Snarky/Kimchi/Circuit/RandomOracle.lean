@@ -368,6 +368,7 @@ readings. -/
 
 /-- **Completeness** (`hashVec`): the honest run accepts on read inputs, and the digest
 reads back the value `hash` of their values. -/
+@[complete_law]
 theorem hashVec_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (xs : List (FVar F))
     (vs : List F) :

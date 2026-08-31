@@ -1,3 +1,4 @@
+import Snarky.Tactic
 import Schnorr.Circuit
 
 /-!
@@ -155,7 +156,8 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
       (.cons (hk _ _ _ hsc.2.1.1 hrd.2.1.1) (.cons (hk _ _ _ hsc.2.1.2 hrd.2.1.2) .nil)))))
   -- the statement's points, in the curve vocabulary the gadget laws speak
   have hpkAs : ∀ st : ProverState Fq, CircuitType.ReadsAs (val := Statement Fq) st stv raw →
-      OnCurveAs Vesta.curve.toAffine st stv.pk.point PK := by
+      OnCurveAs HasEndo.vesta.W st stv.pk.point
+        (Point.some raw.pk.point.x raw.pk.point.y (nonsingular_toW hpkC)) := by
     rintro st ⟨hsc, hrd⟩
     rw [scoped_statement] at hsc
     rw [reads_statement] at hrd
@@ -178,29 +180,29 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
         GG :=
     fun _ => ⟨scoped_affinePoint.mpr ⟨CVar.scoped_const _ _, CVar.scoped_const _ _⟩,
       gen_nonsingular, rfl⟩
-  -- the ambient context: the statement's reading, and everything the stages add to it
-  have m₁ : Mono (F := Fq) fun st => CircuitType.ReadsAs (val := Statement Fq) st stv raw :=
-    Mono.readsAs
-  -- the transcript hash
-  refine Complete.seq m₁ (Complete.imp habs (fun _ _ h => h)
-    (RandomOracle.hashVec_complete Poseidon.fqParams fqParams_size _ _)) fun sq => ?_
-  -- its canonical bits: a representative is below the field's order
-  have hbound : ToNat.toNat (transcriptHash raw.pk raw.u) < PALLAS_SCALAR_CARD :=
+  -- the representatives' bounds — everything the walked stages' side conditions need
+  have hbound : ToNat.toNat
+      (Poseidon.RandomOracle.hash Poseidon.fqParams
+        [gen.x, gen.y, raw.pk.point.x, raw.pk.point.y, raw.u.point.x, raw.u.point.y])
+      < PALLAS_SCALAR_CARD :=
     ZMod.val_lt _
-  have hfit : ToNat.toNat (transcriptHash raw.pk raw.u) < 2 ^ 255 :=
+  have hfit : ToNat.toNat
+      (Poseidon.RandomOracle.hash Poseidon.fqParams
+        [gen.x, gen.y, raw.pk.point.x, raw.pk.point.y, raw.u.point.x, raw.u.point.y]) < 2 ^ 255 :=
     lt_of_lt_of_le hbound (by decide)
-  have m₂ := m₁.and (Mono.readsAs (v := sq) (a := transcriptHash raw.pk raw.u))
-  refine Complete.seq m₂ (Complete.imp (fun _ h => h.2) (fun _ _ h => h)
-    (unpackFull_complete PALLAS_SCALAR_CARD 255 (by decide) sq
-      (transcriptHash raw.pk raw.u) hfit hbound)) fun hbits => ?_
-  -- the challenge leg, on the low 128 bits
   have hnL : preChallenge raw.pk raw.u < 2 ^ 128 := Nat.mod_lt _ (by positivity)
-  have hlow : ∀ st : ProverState Fq,
-      CircuitType.ReadsAs (val := Vector Bool 255) st hbits
-        (unpackPure (transcriptHash raw.pk raw.u) 255) →
-      CircuitType.ReadsAs (val := Fq) st (packLow 128 (by omega) hbits)
+  have hzfit : ToNat.toNat raw.z.val < 2 ^ 255 :=
+    lt_of_lt_of_le (ZMod.val_lt _) (by decide)
+  have hzlock : Kimchi.natLsbVal (unpackPure raw.z.val 255).toList < PALLAS_SCALAR_CARD := by
+    rw [natLsbVal_unpackPure hzfit]
+    exact ZMod.val_lt _
+  have hlow : ∀ (st : ProverState Fq) (bv : Vector (BoolVar Fq) 255),
+      CircuitType.ReadsAs (val := Vector Bool 255) st bv
+        (unpackPure (Poseidon.RandomOracle.hash Poseidon.fqParams
+        [gen.x, gen.y, raw.pk.point.x, raw.pk.point.y, raw.u.point.x, raw.u.point.y]) 255) →
+      CircuitType.ReadsAs (val := Fq) st (packLow 128 (by omega) bv)
         ((preChallenge raw.pk raw.u : ℕ) : Fq) := by
-    rintro st ⟨hsc, hrd⟩
+    rintro st bv ⟨hsc, hrd⟩
     rw [CircuitType.scoped_vector] at hsc
     rw [CircuitType.reads_vector] at hrd
     refine hk _ _ _ (CVar.Scoped.packLow fun i hi =>
@@ -209,28 +211,9 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
         (fun i hi => CircuitType.reads_boolVar.mp (hrd i hi)),
       toList_takeVec, Kimchi.natLsbVal_take_eq_mod, natLsbVal_unpackPure hfit]
     rfl
-  have m₃ := m₂.and (Mono.readsAs (v := hbits)
-    (a := unpackPure (transcriptHash raw.pk raw.u) 255))
-  refine Complete.seq m₃
-    (Complete.imp (fun st h => ⟨hpkAs st h.1.1, hlow st h.2⟩) (fun _ _ h => h)
-      (EndoMul.vesta_endoMul_complete (nonsingular_toW hpkC) hnL)) fun cpk => ?_
-  -- the ladder leg, on the constant generator
-  have m₄ := m₃.and (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := cpk) (P := CC))
-  refine Complete.seq m₄
-    (Complete.imp (fun st h => ⟨hgenAs st, hzAs st h.1.1.1⟩) (fun _ _ h => h)
-      (vesta_varBaseMul_complete gen_nonsingular hband)) fun zr => ?_
-  -- the ladder's bits, locked below the scalar order
-  have hzfit : ToNat.toNat raw.z.val < 2 ^ 255 :=
-    lt_of_lt_of_le (ZMod.val_lt _) (by decide)
-  have hzlock : Kimchi.natLsbVal (unpackPure raw.z.val 255).toList < PALLAS_SCALAR_CARD := by
-    rw [natLsbVal_unpackPure hzfit]
-    exact ZMod.val_lt _
-  have m₅ := m₄.and ((Mono.readsAs (val := Vector Bool 255)
-      (v := mapVec BoolVar.unchecked zr.lsbBits) (a := unpackPure raw.z.val 255)).and
-    (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := zr.g) (P := ZG)))
-  refine Complete.seq m₅ (Complete.imp (fun _ h => h.2.1) (fun _ _ h => h)
-    (assertBitsBelow_complete PALLAS_SCALAR_CARD (by decide)
-      (mapVec BoolVar.unchecked zr.lsbBits) (unpackPure raw.z.val 255) hzlock)) fun _ => ?_
+  -- the hash, its canonical bits, the challenge leg, the ladder and its lock: walked,
+  -- the readings assembled through the bridges above
+  complete_walk
   -- the wire's check, in the ladder's currency: the sum IS the ladder's point
   have hsum : UU + CC = ZG := by
     rw [hZGdef, show (raw.z.toScalarZ : ℤ) • GG = ((raw.z.toScalarZ : ℤ) : Fp) • GG from
@@ -265,19 +248,21 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
     exact ⟨hk st p.x zx (scoped_affinePoint.mp hsc).1 hx,
       hk st p.y zy (scoped_affinePoint.mp hsc).2 hy⟩
   -- the complete addition, its result already read as the ladder's point
-  have m₆ := m₅.and (fun _ _ _ _ _ => trivial : Mono (F := Fq) fun _ => True)
-  refine Complete.seq m₆
+  refine Complete.seq (by complete_mono_tac)
     (Complete.imp (fun st h => ⟨huAs st h.1.1.1.1.1, h.1.1.2, hUUne, fun _ => hUC⟩)
       (fun _ _ h => hsum ▸ h.2.2 hUC)
       (addFast_complete Finiteness.checkFinite Vesta.curve.toAffine ⟨rfl, rfl, rfl, rfl⟩
         (by decide) stv.u.point cpk _ _)) fun rhs => ?_
   -- the two coordinate pins
-  have m₇ := m₆.and (Mono.onCurveAs (W := Vesta.curve.toAffine) (p := rhs.p) (P := ZG))
-  refine Complete.seq m₇
+  refine Complete.seq (by complete_mono_tac)
     (Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.2.2).1, (hcx st rhs.p h.2).1⟩)
       (fun _ _ h => h) (assertEqual_complete zr.g.x rhs.p.x zx)) fun _ => ?_
-  have m₈ := m₇.and (fun _ _ _ _ _ => trivial : Mono (F := Fq) fun _ => True)
-  exact Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.1.2.2).2, (hcx st rhs.p h.1.2).2⟩)
+  refine Complete.imp (fun st h => ⟨(hcx st zr.g h.1.1.1.2.2).2, (hcx st rhs.p h.1.2).2⟩)
     (fun _ _ _ => trivial) (assertEqual_complete zr.g.y rhs.p.y zy)
+  -- the leaked side conditions: the hash's size lemma, the two card bounds, and the
+  -- spec-form bounds the walk pinned at raw forms
+  all_goals first
+    | exact fqParams_size
+    | decide
 
 end Schnorr

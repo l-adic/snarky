@@ -1745,6 +1745,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.EndoScalar
 scalar cell reading as a prechallenge `n < 2^128`, the run succeeds and the result is the
 base scaled by the wire's challenge — the Fq-sponge's endo-expansion of `n`, acting
 through the point group's `Fp`-module structure. -/
+@[complete_law]
 theorem vesta_endoMul_complete {t : AffinePoint (FVar Fq)} {cv : FVar Fq} {xv yv : Fq}
     {n : ℕ} (hT : HasEndo.vesta.W.Nonsingular xv yv) (hn : n < 2 ^ 128) :
     Complete (F := Fq) (c := KimchiConstraint Fq)

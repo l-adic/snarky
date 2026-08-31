@@ -196,6 +196,7 @@ needs a characteristic hypothesis and is not stated. -/
 /-- `unpack`'s completeness law: where the operand's representative fits in `n` bits the
 run succeeds, its rows are satisfied at every extension of the final table, and the bits
 are scoped. -/
+@[complete_law]
 theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (n : Nat)
     (hlt : ToNat.toNat vv < 2 ^ n) :

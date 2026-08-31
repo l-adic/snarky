@@ -1,3 +1,4 @@
+import Snarky.Tactic
 import Mathlib.Data.List.Forall2
 import Snarky.DSL.Assert
 import Snarky.DSL.Bits
@@ -260,6 +261,7 @@ open Std.Do in
   rwa [natLsbVal_reverse_modBitsMsb hm, List.reverse_reverse] at hcmp
 
 /-- The lock's completeness law: bits reading as a value below `m` satisfy its rows. -/
+@[complete_law]
 theorem assertBitsBelow_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c]
     (m : ℕ) {n : ℕ} (hm : m < 2 ^ n) (bits : Vector (BoolVar F) n) (bs : Vector Bool n)
@@ -319,6 +321,7 @@ the reading's representative. -/
 
 /-- `unpackFull`'s completeness law: on a representative that fits the width and lies
 below `m` the run succeeds, and the bits are the operand's binary digits. -/
+@[complete_law]
 theorem unpackFull_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
     (m n : ℕ) (hm : m < 2 ^ n) (v : FVar F) (vv : F)
@@ -327,12 +330,10 @@ theorem unpackFull_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (unpackFull (c := c) m n v)
       (fun r st' => CircuitType.ReadsAs (val := Vector Bool n) st' r (unpackPure vv n)) := by
   simp only [unpackFull]
-  refine Complete.seq Mono.readsAs (unpack_complete (c := c) v vv n hfit) fun bits => ?_
-  refine Complete.seq (Mono.readsAs.and Mono.readsAs)
-    (Complete.imp (fun _ h => h.2) (fun _ _ h => h)
-      (assertBitsBelow_complete (c := c) m hm bits (unpackPure vv n)
-        (by rwa [natLsbVal_unpackPure hfit]))) fun _ => ?_
+  complete_walk
   exact Complete.pure_of fun _ h => h.1.2
+  -- the leaked canonicity bound: the digits' value is the representative
+  rwa [natLsbVal_unpackPure hfit]
 
 attribute [irreducible] unpackFull
 
