@@ -105,43 +105,45 @@ theorem CurvePoint.check_complete [ConstraintHolds F c] [LawfulBasicSystem F c]
     Complete (F := F) (c := c)
       (fun st => CircuitType.ReadsAs (val := CurvePoint a b F) st p P)
       (CurvePoint.check (c := c) p) (fun _ _ => True) := by
-  intro st hp
-  rw [CircuitType.ReadsAs, CircuitType.scoped_ofEquiv, CircuitType.reads_ofEquiv,
-    scoped_affinePoint, reads_affinePoint] at hp
-  obtain ⟨⟨hsx, hsy⟩, hvx, hvy⟩ := hp
-  have hx : CircuitType.ReadsAs (val := F) st p.point.x P.point.x :=
-    ⟨CircuitType.scoped_fvar.mpr hsx, CircuitType.reads_fvar.mpr hvx⟩
-  have hy : CircuitType.ReadsAs (val := F) st p.point.y P.point.y :=
-    ⟨CircuitType.scoped_fvar.mpr hsy, CircuitType.reads_fvar.mpr hvy⟩
-  obtain ⟨x2, st₁, hrun₁, hsat₁, h2⟩ := square_complete (c := c) p.point.x P.point.x st hx
-  obtain ⟨x3, st₂, hrun₂, hsat₂, h3⟩ :=
-    mul_complete (c := c) x2 p.point.x (P.point.x * P.point.x) P.point.x st₁
-      ⟨h2, hx.mono hrun₁.nv_le hrun₁.le⟩
-  have hrhs : CircuitType.ReadsAs (val := F) st₂
-      ((x3.add_ (CVar.scale_ a p.point.x)).add_ (.const b))
-      (P.point.x * P.point.x * P.point.x + a * P.point.x + b) := by
-    have hx₂ := hx.mono (Nat.le_trans hrun₁.nv_le hrun₂.nv_le) (hrun₁.le.trans hrun₂.le)
+  -- the bundle's reading, coordinatewise
+  have hpt : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := CurvePoint a b F) st p P →
+        CircuitType.ReadsAs (val := F) st p.point.x P.point.x ∧
+          CircuitType.ReadsAs (val := F) st p.point.y P.point.y := by
+    intro st hp
+    rw [CircuitType.ReadsAs, CircuitType.scoped_ofEquiv, CircuitType.reads_ofEquiv,
+      scoped_affinePoint, reads_affinePoint] at hp
+    exact ⟨⟨CircuitType.scoped_fvar.mpr hp.1.1, CircuitType.reads_fvar.mpr hp.2.1⟩,
+      ⟨CircuitType.scoped_fvar.mpr hp.1.2, CircuitType.reads_fvar.mpr hp.2.2⟩⟩
+  -- the curve's right-hand side, as an expression over the cube and the operand
+  have hrhs : ∀ {st : ProverState F} {x3 : FVar F},
+      CircuitType.ReadsAs (val := F) st x3 (P.point.x * P.point.x * P.point.x) →
+      CircuitType.ReadsAs (val := F) st p.point.x P.point.x →
+      CircuitType.ReadsAs (val := F) st ((x3.add_ (CVar.scale_ a p.point.x)).add_ (.const b))
+        (P.point.x * P.point.x * P.point.x + a * P.point.x + b) := by
+    intro st x3 h3 hx
     refine ⟨CircuitType.scoped_fvar.mpr
       (((CircuitType.scoped_fvar.mp h3.1).add_
-        (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hx₂.1))).add_ (CVar.scoped_const _ _)),
+        (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hx.1))).add_ (CVar.scoped_const _ _)),
       CircuitType.reads_fvar.mpr ?_⟩
     rw [CVar.val_add_, CVar.val_add_, CVar.val_scale_,
-      CircuitType.reads_fvar.mp h3.2, CircuitType.reads_fvar.mp hx₂.2]
+      CircuitType.reads_fvar.mp h3.2, CircuitType.reads_fvar.mp hx.2]
     rfl
-  obtain ⟨_, st₃, hrun₃, hsat₃, -⟩ :=
-    assertSquare_complete (c := c) p.point.y
-      ((x3.add_ (CVar.scale_ a p.point.x)).add_ (.const b))
-      P.point.y (P.point.x * P.point.x * P.point.x + a * P.point.x + b)
-      (by
-        have hoc' : P.point.y ^ 2 = P.point.x ^ 3 + a * P.point.x + b := hoc
-        linear_combination hoc')
-      st₂ ⟨hy.mono (Nat.le_trans hrun₁.nv_le hrun₂.nv_le) (hrun₁.le.trans hrun₂.le), hrhs⟩
-  exact ⟨PUnit.unit, st₃, hrun₁.bind (hrun₂.bind hrun₃), fun hnv hle =>
-    Sat.bind hrun₁
-      (hsat₁ (Nat.le_trans hrun₂.nv_le (Nat.le_trans hrun₃.nv_le hnv))
-        (hrun₂.le.trans (hrun₃.le.trans hle)))
-      (Sat.bind hrun₂ (hsat₂ (Nat.le_trans hrun₃.nv_le hnv) (hrun₃.le.trans hle))
-        (hsat₃ hnv hle)), trivial⟩
+  refine Complete.bind
+    (Complete.imp (fun _ h => ⟨(hpt h).1, hpt h⟩) (fun _ _ h => h)
+      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+        (square_complete (c := c) p.point.x P.point.x)))
+    fun x2 => Complete.bind
+      (Complete.imp (fun _ h => ⟨⟨h.1, h.2.1⟩, h.2⟩) (fun _ _ h => h)
+        (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+          (mul_complete (c := c) x2 p.point.x (P.point.x * P.point.x) P.point.x)))
+      fun x3 => Complete.imp (fun _ h => ⟨h.2.2, hrhs h.1 h.2.1⟩) (fun _ _ _ => trivial)
+        (assertSquare_complete (c := c) p.point.y
+          ((x3.add_ (CVar.scale_ a p.point.x)).add_ (.const b))
+          P.point.y (P.point.x * P.point.x * P.point.x + a * P.point.x + b)
+          (by
+            have hoc' : P.point.y ^ 2 = P.point.x ^ 3 + a * P.point.x + b := hoc
+            linear_combination hoc'))
 
 /-- The tagged point's well-formedness: the on-curve rows. This is the one checked type
 whose rows constrain the decoded value, so its admissible values are exactly the curve's
