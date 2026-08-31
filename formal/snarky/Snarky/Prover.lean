@@ -628,6 +628,21 @@ def Mono (P : ProverState F → Prop) : Prop :=
 @[complete_mono] theorem Mono.const {p : Prop} : Mono (F := F) fun _ => p :=
   fun _ _ _ _ h => h
 
+/-- A pinned allocation bound is monotone — the state-pinning idiom's first half. -/
+@[complete_mono] theorem Mono.nv_le {k : ℕ} : Mono (F := F) fun st => k ≤ st.nv :=
+  fun _ _ hnv _ h => Nat.le_trans h hnv
+
+/-- A pinned table extension is monotone — the state-pinning idiom's second half. -/
+@[complete_mono] theorem Mono.env_le {e : Assignments F} :
+    Mono (F := F) fun st => e.Le st.env :=
+  fun _ _ _ hle h => h.trans hle
+
+/-- A guarded monotone fact is monotone — the shape of a conditional grant, such as
+a law's "where the sum is finite the result reads it". -/
+@[complete_mono] theorem Mono.imp {p : Prop} {Q : ProverState F → Prop}
+    (hQ : Mono (F := F) Q) : Mono (F := F) fun st => p → Q st :=
+  fun _ _ hnv hle h hp => hQ _ _ hnv hle (h hp)
+
 /-- A reading is monotone. -/
 @[complete_mono]
 theorem Mono.readsAs [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F val var]

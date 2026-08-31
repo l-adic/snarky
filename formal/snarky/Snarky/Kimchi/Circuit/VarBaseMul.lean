@@ -1071,63 +1071,59 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ := fun h =>
     ⟨h.1, reads_affinePoint.mpr (Kimchi.Gate.AddComplete.IsPoint.coords_eq h.2 ⟨hT, rfl⟩)⟩
   simp only [varBaseMul]
-  -- the sealed base
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨hbread h.1, h.2⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
-        (sealPoint_complete (c := KimchiConstraint F) base ⟨xv, yv⟩)))
-    fun sealed => ?_
-  -- the sealed base's coordinates, and the base as a curve point, off any reading state
+  complete_walk
+  -- the base base's coordinates, and the base as a curve point, off any reading state
   have hscoords : ∀ {st : ProverState F},
-      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ →
-        sealed.x.val st.env.get = xv ∧ sealed.y.val st.env.get = yv :=
+      CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
+        base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv :=
     fun h => reads_affinePoint.mp h.2
   have hTread : ∀ {st : ProverState F},
-      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ →
-        OnCurveAs d.W st sealed (Point.some _ _ hT) := fun h =>
-    ⟨h.1, OnCurveAt.of_reads (p := sealed) (hscoords h).1 (hscoords h).2 hT⟩
-  -- the scalar's bits, in one witness
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?bitsrun, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (Complete.witness (lsbBitsWit n scalar.val)
-          (Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
-          (by simp))))
-    fun bits => ?_
-  case bitsrun =>
-    simp only [lsbBitsWit, AsProver.bind_eq, AsProver.run_bind,
-      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
-      CircuitType.reads_fvar.mp h.2.2, Except.bind]
-    rfl
-  -- the bits' landing table indexes the rest: the index carries the bit cells' scope
-  -- and canonical readings, and the sealed base's scope
+      CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
+        OnCurveAs d.W st base (Point.some _ _ hT) := fun h =>
+    ⟨h.1, OnCurveAt.of_reads (p := base) (hscoords h).1 (hscoords h).2 hT⟩
+  -- the scalar's lsbBits, in one witness
+  refine Complete.seq (by complete_mono_tac)
+    (Complete.imp
+      (fun st h => by
+        simp only [lsbBitsWit, AsProver.bind_eq, AsProver.run_bind,
+          AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.2.1),
+          CircuitType.reads_fvar.mp h.1.2.2, Except.bind]
+        rfl)
+      (fun _ _ h => h)
+      (Complete.witness (lsbBitsWit n scalar.val)
+        (Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
+        (by simp)))
+    fun lsbBits => ?_
+  -- the lsbBits' landing table indexes the rest: the index carries the bit cells' scope
+  -- and canonical readings, and the base base's scope
   refine Complete.instantiate
     (ι := {st₂ : ProverState F // (∀ (i : ℕ) (hi : i < n),
-        (bits[i]'hi).Scoped st₂ ∧
-          (bits[i]'hi).val st₂.env.get
+        (lsbBits[i]'hi).Scoped st₂ ∧
+          (lsbBits[i]'hi).val st₂.env.get
             = if (ToNat.toNat sv).testBit i then 1 else 0) ∧
-      sealed.x.Scoped st₂ ∧ sealed.y.Scoped st₂})
+      base.x.Scoped st₂ ∧ base.y.Scoped st₂})
     (P := fun i st => (i.1.nv ≤ st.nv ∧ i.1.env.Le st.env) ∧
-      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ ∧
+      CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ ∧
       CircuitType.ReadsAs (val := F) st scalar.val sv)
     (fun st h => ⟨⟨st, fun i hi =>
-        ⟨CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp h.1.1 i hi),
+        ⟨CircuitType.scoped_fvar.mp (CircuitType.scoped_vector.mp h.2.1 i hi),
           by simpa using
-            CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.1.2 i hi)⟩,
-        (scoped_affinePoint.mp h.2.1.1).1, (scoped_affinePoint.mp h.2.1.1).2⟩,
-      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.2.1, h.2.2⟩)
+            CircuitType.reads_fvar.mp (CircuitType.reads_vector.mp h.2.2 i hi)⟩,
+        (scoped_affinePoint.mp h.1.2.1).1, (scoped_affinePoint.mp h.1.2.1).2⟩,
+      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.1.2, h.1.1.2⟩)
     fun i => ?_
   obtain ⟨st₂, hbitfacts, hsx₂, hsy₂⟩ := i
   have hextM : Mono (F := F) fun st => st₂.nv ≤ st.nv ∧ st₂.env.Le st.env :=
     fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩
-  -- the doubled seed
+  -- the doubled seed: the finiteness and torsion side conditions are content the
+  -- adapter search must not invent, so this step stays on the combinators
   refine Complete.bind
     (Complete.imp
       (fun st h => ⟨⟨hTread h.2.1, hTread h.2.1, h2T, fun _ => h2T⟩, h⟩)
       (fun _ _ h => h)
       (Complete.frame (Mono.and hextM (Mono.and Mono.readsAs Mono.readsAs))
         (addFast_complete .checkFinite d.W
-          ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne sealed sealed
+          ⟨d.short.1, d.short.2.1, d.short.2.2.1, d.short.2.2.2⟩ d.two_ne base base
           (Point.some _ _ hT) (Point.some _ _ hT))))
     fun p => ?_
   -- the seed's coordinates index the rest, with the point they name on the index
@@ -1137,7 +1133,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (P := fun q st => (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) ∧
       CircuitType.ReadsAs (val := F) st p.p.x q.1.1 ∧
       CircuitType.ReadsAs (val := F) st p.p.y q.1.2 ∧
-      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ ∧
+      CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ ∧
       CircuitType.ReadsAs (val := F) st scalar.val sv)
     (fun st h => ⟨⟨(p.p.x.val st.env.get, p.p.y.val st.env.get), (h.1.2.2 h2T).2⟩,
       h.2.1,
@@ -1158,10 +1154,10 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [hP0eq]
     exact OnCurveAt.of_reads (p := p.p) (CircuitType.reads_fvar.mp hx.2)
       (CircuitType.reads_fvar.mp hy.2) hP0ns
-  -- the rows' bits: the reversed prefix of the scalar's bits, MSB-first
+  -- the rows' lsbBits: the reversed prefix of the scalar's lsbBits, MSB-first
   set bsOf : ℕ → F := fun k =>
     if (ToNat.toNat sv).testBit (5 * chunks - 1 - k) then 1 else 0 with hbsOf
-  set msb : List (FVar F) := (bits.toList.take (5 * chunks)).reverse with hmsb
+  set msb : List (FVar F) := (lsbBits.toList.take (5 * chunks)).reverse with hmsb
   set window : ℕ → Vector (FVar F) 5 := fun i =>
     Vector.ofFn fun j : Fin 5 => msb.getD (5 * i + j.1) (CVar.const 0) with hwindow
   have hmsblen : msb.length = 5 * chunks := by
@@ -1169,7 +1165,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     simp only [List.length_reverse, List.length_take, Vector.length_toList]
     omega
   have hentry : ∀ (k : ℕ) (hk : k < 5 * chunks),
-      msb.getD k (CVar.const 0) = bits[5 * chunks - 1 - k]'(by omega) := by
+      msb.getD k (CVar.const 0) = lsbBits[5 * chunks - 1 - k]'(by omega) := by
     intro k hk
     rw [List.getD_eq_getElem _ _ (by rw [hmsblen]; exact hk)]
     simp only [hmsb, List.getElem_reverse, List.getElem_take, Vector.getElem_toList,
@@ -1203,11 +1199,11 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
           (Mono.and Mono.readsAs Mono.readsAs))))
         (mapAccumM_complete (F := F) (c := KimchiConstraint F)
-          (scaleRound sealed) (VarBaseMul.BitRow st₂) (fun _ => VarBaseMul.AccInv st₂)
-          (VarBaseMul.RowGrant sealed) (fun _ => VarBaseMul.AccInv.mono)
-          (VarBaseMul.RowGrant.mono sealed)
+          (scaleRound base) (VarBaseMul.BitRow st₂) (fun _ => VarBaseMul.AccInv st₂)
+          (VarBaseMul.RowGrant base) (fun _ => VarBaseMul.AccInv.mono)
+          (VarBaseMul.RowGrant.mono base)
           (fun acc x _ hx =>
-            VarBaseMul.scaleRound_complete st₂ sealed ⟨hsx₂, hsy₂⟩ acc x hx)
+            VarBaseMul.scaleRound_complete st₂ base ⟨hsx₂, hsy₂⟩ acc x hx)
           (p.p, CVar.const 0) ((List.range chunks).map window) hP)))
     fun loop => ?_
   obtain ⟨rounds, fin⟩ := loop
@@ -1215,17 +1211,17 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the honest walk
   set W : ℕ → Kimchi.Gate.VarBaseMul.Witness F :=
     Kimchi.Gate.VarBaseMul.chainBuild xv yv x0 y0 0 bsOf with hWdef
-  have hWat : ∀ (stf : ProverState F), sealed.x.val stf.env.get = xv →
-      sealed.y.val stf.env.get = yv → p.p.x.val stf.env.get = x0 →
+  have hWat : ∀ (stf : ProverState F), base.x.val stf.env.get = xv →
+      base.y.val stf.env.get = yv → p.p.x.val stf.env.get = x0 →
       p.p.y.val stf.env.get = y0 →
-      Kimchi.Gate.VarBaseMul.chainBuild (sealed.x.val stf.env.get)
-          (sealed.y.val stf.env.get)
+      Kimchi.Gate.VarBaseMul.chainBuild (base.x.val stf.env.get)
+          (base.y.val stf.env.get)
           ((p.p, (CVar.const 0 : FVar F)).1.x.val stf.env.get)
           ((p.p, (CVar.const 0 : FVar F)).1.y.val stf.env.get)
           ((p.p, (CVar.const 0 : FVar F)).2.val stf.env.get) bsOf = W := by
     intro stf h1 h2 h3 h4
-    show Kimchi.Gate.VarBaseMul.chainBuild (sealed.x.val stf.env.get)
-      (sealed.y.val stf.env.get) (p.p.x.val stf.env.get) (p.p.y.val stf.env.get)
+    show Kimchi.Gate.VarBaseMul.chainBuild (base.x.val stf.env.get)
+      (base.y.val stf.env.get) (p.p.x.val stf.env.get) (p.p.y.val stf.env.get)
       ((CVar.const 0 : FVar F).val stf.env.get) bsOf = _
     rw [h1, h2, h3, h4, hWdef]
     rfl
@@ -1244,7 +1240,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       hbsbool 0 hP0ns hP0eq.symm (by rw [← hWdef, hgl]; exact hregime)
     rw [← hWdef] at h
     exact h
-  -- the rounds' readings are the walk's rows, at any table past the bits
+  -- the rounds' readings are the walk's rows, at any table past the lsbBits
   have hbitsRead : ∀ (stf : ProverState F), st₂.env.Le stf.env →
       ∀ (i : ℕ) (hi : i < ((List.range chunks).map window).length) (j : ℕ) (hj : j < 5),
         bsOf (5 * i + j)
@@ -1259,28 +1255,28 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- every row of a granting trace holds, at any env-extension of its table
   have hpayAt : ∀ (st stf : ProverState F), st.env.Le stf.env →
       (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) →
-      CircuitType.ReadsAs (val := AffinePoint F) st sealed ⟨xv, yv⟩ →
+      CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
       CircuitType.ReadsAs (val := F) st p.p.x x0 →
       CircuitType.ReadsAs (val := F) st p.p.y y0 →
-      ChainAt (VarBaseMul.RowGrant sealed) st (p.p, CVar.const 0)
+      ChainAt (VarBaseMul.RowGrant base) st (p.p, CVar.const 0)
         ((List.range chunks).map window) rounds fin →
       ∀ r ∈ rounds, Kimchi.Gate.VarBaseMul.Holds (ScaleRound.read stf.env.get r) := by
     intro st stf hle hext hseal hp2x hp2y hchain r hr
     have hnv := ProverState.nv_le_of_env_le hle
     have hlenR : rounds.length = chunks := by rw [ChainAt.length hchain, hpreflen]
-    have hchain' := ChainAt.mono (VarBaseMul.RowGrant.mono sealed) hnv hle hchain
+    have hchain' := ChainAt.mono (VarBaseMul.RowGrant.mono base) hnv hle hchain
     have hseal' := CircuitType.ReadsAs.mono hnv hle hseal
     have hp2x' := CircuitType.ReadsAs.mono hnv hle hp2x
     have hp2y' := CircuitType.ReadsAs.mono hnv hle hp2y
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hr
-    rw [VarBaseMul.grants_walk sealed stf hchain'
+    rw [VarBaseMul.grants_walk base stf hchain'
         (fun k hk t ht => hbitsRead stf (hext.2.trans hle) k hk t ht) i hi,
       hWat stf (hscoords hseal').1 (hscoords hseal').2
         (CircuitType.reads_fvar.mp hp2x'.2) (CircuitType.reads_fvar.mp hp2y'.2)]
     exact hwalkHolds i (by rw [← hlenR]; exact hi)
   -- the bit stream a granting trace carries
   have hroundBits : ∀ (stf : ProverState F), st₂.env.Le stf.env →
-      Chain (VarBaseMul.Threads sealed) (p.p, CVar.const 0)
+      Chain (VarBaseMul.Threads base) (p.p, CVar.const 0)
         ((List.range chunks).map window) rounds fin →
       VarBaseMul.roundBits stf.env.get rounds = (List.range (5 * chunks)).map bsOf := by
     intro stf hlef hchain
@@ -1314,7 +1310,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       (Complete.frame
         (Mono.and (Mono.and (fun _ _ hnv hle h => VarBaseMul.AccInv.mono _ hnv hle h)
             (fun _ _ hnv hle h =>
-              ChainAt.mono (VarBaseMul.RowGrant.mono sealed) hnv hle h))
+              ChainAt.mono (VarBaseMul.RowGrant.mono base) hnv hle h))
           (Mono.and hextM (Mono.and Mono.readsAs (Mono.and Mono.readsAs
             (Mono.and Mono.readsAs Mono.readsAs)))))
         (assertEqual_complete (c := KimchiConstraint F) fin.2 scalar.val sv)))
@@ -1330,14 +1326,14 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   case post =>
     obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
     refine ⟨?_, ?_⟩
-    · -- the bits read as the scalar's own, as one bundle
+    · -- the lsbBits read as the scalar's own, as one bundle
       refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
         CircuitType.reads_vector.mpr fun i hi => ?_⟩
       · rw [getElem_mapVec]
         exact CircuitType.scoped_boolVar.mpr ((hbitfacts i hi).1.mono hext.1)
       · rw [getElem_mapVec]
         refine CircuitType.reads_boolVar.mpr ?_
-        show (bits[i]'hi).val st.env.get = _
+        show (lsbBits[i]'hi).val st.env.get = _
         rw [CVar.val_of_le hext.2 (hbitfacts i hi).1, (hbitfacts i hi).2]
         simp [bit]
     · -- the point conclusion, off the sound side's own reading of the trace
@@ -1357,7 +1353,9 @@ attribute [irreducible] lsbBitsWit varBaseMul
 /-! ## `scaleFast1` -/
 
 /-- `scaleFast1 g a ~ [fromShifted a]·g` (PS docstring) — the `Type1` path, for a
-scalar field no larger than the circuit field. Drops the bits. -/
+scalar field no larger than the circuit field. Drops the lsbBits. -/
+
+
 def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks : ℕ) (p : AffinePoint (FVar F))
     (t : Type1 (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do

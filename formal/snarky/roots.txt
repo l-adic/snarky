@@ -760,3 +760,10 @@ Snarky.Tactic.completeStep
 Snarky.Tactic.extractCont
 Snarky.Tactic.altBinderNames
 Snarky.Tactic.stepName
+Snarky.Tactic.lawProgramHead
+
+-- The @[complete_mono] vocabulary consumed only through the walker's attribute
+-- table, which the reachability pass cannot see.
+Snarky.Mono.nv_le
+Snarky.Mono.env_le
+Snarky.Mono.imp

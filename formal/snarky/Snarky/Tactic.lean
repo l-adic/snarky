@@ -53,6 +53,17 @@ macro "complete_ctx" : tactic =>
                (config := { transparency := .reducible, maxDepth := 16, exfalso := false })
                [And.intro]))
 
+/-- The head constant of a `Complete` statement's program, through binders — the
+cheap pre-filter key for law lookup. `none` when it has no stable head. -/
+def lawProgramHead : Expr → Option Name
+  | .forallE _ _ b _ => lawProgramHead b
+  | e =>
+    let args := e.getAppArgs
+    if e.getAppFn.isConstOf ``Snarky.Complete && args.size ≥ 3 then
+      let fn := (args[args.size - 2]!).cleanupAnnotations.getAppFn
+      if fn.isConst then some fn.constName! else none
+    else none
+
 /-- Apply the first `@[complete_law]` lemma whose program unifies with the
 goal's, in reverse registration order so downstream composite laws shadow the
 primitive laws matching their unfolded prefixes. The law's non-program arguments
@@ -61,7 +72,18 @@ are left as goals: values for the adapter's unification, side conditions for
 elab "complete_apply_law" : tactic => do
   let laws ← Lean.labelled `complete_law
   let g ← getMainGoal
+  let ty := (← instantiateMVars (← g.getType)).cleanupAnnotations
+  let args := ty.getAppArgs
+  let goalHead : Option Name :=
+    if ty.getAppFn.isConstOf ``Snarky.Complete && args.size ≥ 3 then
+      let fn := (args[args.size - 2]!).cleanupAnnotations.getAppFn
+      if fn.isConst then some fn.constName! else none
+    else none
   for law in laws.reverse do
+    -- skip a law whose program cannot match: unifying against a stuck recursive
+    -- program (a loop combinator, say) is expensive enough to matter times the table
+    if let (some gh, some lh) := (goalHead, lawProgramHead (← getConstInfo law).type) then
+      if gh ≠ lh then continue
     let s ← Tactic.saveState
     try
       let gs ← g.apply (← mkConstWithFreshMVarLevels law)

@@ -442,6 +442,7 @@ never rebuilds the point.
 The row's satisfaction is the verified gate's own completeness: the advice computes
 exactly `Kimchi.Gate.AddComplete.build`'s canonical row, so the reading of
 the emitted payload IS that row and `complete_build` discharges it. -/
+@[complete_law]
 theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     (W : WeierstrassCurve.Affine F) (ha : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0)
     (htwo : (2 : F) ≠ 0) (p1' p2' : AffinePoint (FVar F)) (P Q : W.Point) :
