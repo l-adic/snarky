@@ -1,46 +1,43 @@
 # Completeness conversion — handoff
 
 Operational companion to `completeness-framework.md`. That document argues *why* the
-primitive set is what it is; this one says what has been converted, what is left, and how
-to do the next file without rediscovering the mechanics.
+primitive set is what it is; this one says what was converted and how, so that future
+work on the laws does not rediscover the mechanics.
 
-Branch: `completeness-framework`, six commits on top of `main`.
+Branch: `completeness-framework`.
 
-## The goal, stated as a measurement
+## The goal — ACHIEVED
 
-`Runs` and `Sat` are the prover interpreter's internals. They are currently named in
-files all over the tree, because most `_complete` laws were written before the
-combinators existed and construct `⟨a, st', Runs …, Sat …, post⟩` tuples by hand.
+`Runs` and `Sat` are the prover interpreter's internals. They used to be named in files
+all over the tree, because most `_complete` laws were written before the combinators
+existed and constructed `⟨a, st', Runs …, Sat …, post⟩` tuples by hand.
 
-The target is that they appear **only** in `Snarky/Prover.lean` and
-`Snarky/Witness.lean`, at which point both can be made `private` and the abstraction
-boundary is enforced by the module system rather than by convention.
+**They are now named only in `Snarky/Prover.lean`, where both are `private`** — the
+abstraction boundary is enforced by the module system, not by convention. Every gadget
+file, the seam (`Witness.lean`, `Compile.lean`), and the schnorr exemplar are at zero
+(`grep -o 'Runs' | wc -l` and `grep -o 'Sat\b' | wc -l` per file).
 
-Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
-`grep -o 'Sat\b' | wc -l`, both to zero.
+What crossed the flip:
 
-| | at zero | remaining |
-| --- | --- | --- |
-| files | 17 | 2 |
-| `Sat` sites | — | 9 |
+- `witness_complete` and `runs_witness` were **merged into `Complete.witness`**
+  (`Witness.lean`), whose proof discharges the run and row obligations without naming
+  the internals: the run component via `show prove _ st.nv st.env = _` (the definitions
+  unfold by defeq), the rows via a plain `intro con hcon`.
+- `solve_complete` (`Compile.lean`) states a combinator law for `compileBody` — check,
+  body, output witness and binding rows chained with `bind`/`frame`, the output value
+  named by `instantiate` off the body's `WellFormed` post — and then **applies** the
+  `Complete` at the seed, destructuring the existential. Destructuring is fine: the
+  components' types mention the private names, the source text does not.
+- Two public accessors serve proofs that destructure a `Complete` directly:
+  `run_le` (the run component's two order facts) and `runs_post` (a soundness spec read
+  at the run's own table — used by `Complete.post`, and directly by
+  `pow_complete`/`any_complete`/`all_complete`). Neither name contains the internals.
+- The API manifests were updated in step: `snarky/roots.txt` and
+  `snarky/scripts/check_axioms.lean` list the `Complete` rules instead of the
+  `Runs`/`Sat` family and `witness_complete`.
 
-**Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
-`Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
-`Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `Kimchi/Circuit/EndoMul`,
-`Kimchi/Circuit/VarBaseMul`, `Kimchi/Circuit/RangeCheck`, `Kimchi/Circuit/Sponge`,
-`Kimchi/Circuit/GroupMap`, `schnorr/Schnorr/UnpackFull` — every gadget file.
-
-**Remaining** — the seam itself:
-
-| file | `Runs` | `Sat` |
-| --- | --- | --- |
-| `Compile.lean` | 1 | 5 |
-| `Witness.lean` | 4 | 4 |
-
-`Witness.lean` and `Compile.lean` go **last**. They are the seam itself:
-`witness_complete` is what `Complete.witness` is built from, and `solve_complete` still
-consumes `witness_complete`'s raw `nv_le`/`Le` facts. Converting `solve_complete` to use
-`frame` is the final step before the `private` flip.
+Inside a proof, the goals still *display* the private names after `intro st h` on a
+`Complete` — that is expected; what the module system forbids is writing them.
 
 ## The rules
 
@@ -185,10 +182,11 @@ Before pushing, run the whole CI Gates list — read it from
 ## What is not being claimed
 
 `Complete.bind` needs an intermediate assertion. The one that always exists is the
-strongest postcondition, and it mentions `Runs` — so once `Runs` is private, a law whose
-value-level postcondition is too weak for its consumer must be *restated*, not worked
-around by unfolding. That is the intended trade, and it is why this work makes interface
-debt unavoidable rather than absent. `completeness-framework.md` §7 has the argument.
+strongest postcondition, and it mentions `Runs` — so now that `Runs` is private, a law
+whose value-level postcondition is too weak for its consumer must be *restated*, not
+worked around by unfolding. That is the intended trade, and it is why this work makes
+interface debt unavoidable rather than absent. `completeness-framework.md` §7 has the
+argument.
 
 The rule count is not proven minimal. `of_false` and `instantiate` were both discovered
 by conversion, not predicted, at a rate of roughly one per two files. Both were duals of

@@ -538,22 +538,22 @@ end Bundles
 /-! ## The graph -/
 
 /-- The prover's graph: from `st`, `g` runs to the result `a` at `st'`. -/
-def Runs (g : CircuitM F c α) (st : ProverState F) (a : α)
+private def Runs (g : CircuitM F c α) (st : ProverState F) (a : α)
     (st' : ProverState F) : Prop :=
   prove g st.nv st.env = .ok (st'.out a)
 
 /-- Every run only extends the table. -/
-theorem Runs.le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
+private theorem Runs.le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
     (h : Runs g st a st') : st.env.Le st'.env :=
   prove_le st.dom h
 
 /-- Every run only advances the counter. -/
-theorem Runs.nv_le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
+private theorem Runs.nv_le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
     (h : Runs g st a st') : st.nv ≤ st'.nv :=
   prove_nv_le h
 
 /-- Runs compose: the sequence runs through the head's final state. -/
-theorem Runs.bind {β : Type v} {g : CircuitM F c α} {k : α → CircuitM F c β}
+private theorem Runs.bind {β : Type v} {g : CircuitM F c α} {k : α → CircuitM F c β}
     {st st₁ st₂ : ProverState F} {a : α} {b : β}
     (h₁ : Runs g st a st₁) (h₂ : Runs (k a) st₁ b st₂) :
     Runs (g >>= k) st b st₂ := by
@@ -567,7 +567,7 @@ variable {F c : Type} {α : Type v}
 /-- The rows the builder emits from the run's initial counter, satisfied at the total
 reading of the run's final table — the half of completeness the run itself does not
 judge. -/
-def Sat [Zero F] [ConstraintHolds F c] (g : CircuitM F c α) (st st' : ProverState F) :
+private def Sat [Zero F] [ConstraintHolds F c] (g : CircuitM F c α) (st st' : ProverState F) :
     Prop :=
   ∀ con ∈ (build g st.nv).constraints, ConstraintHolds.Holds st'.env.get con
 
@@ -583,7 +583,7 @@ def Complete [Zero F] [ConstraintHolds F c] (pre : ProverState F → Prop)
 
 /-- Rows of a sequence are satisfied when the head's and — in lockstep through the
 head's run — the tail's are. -/
-theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : CircuitM F c α}
+private theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : CircuitM F c α}
     {k : α → CircuitM F c β} {st st₁ stf : ProverState F} {a : α}
     (hrun : Runs g st a st₁) (h₁ : Sat g st stf) (h₂ : Sat (k a) st₁ stf) :
     Sat (g >>= k) st stf := by
@@ -596,12 +596,19 @@ theorem Sat.bind [Zero F] [ConstraintHolds F c] {β : Type v} {g : CircuitM F c 
   · exact h₁ con h
   · exact h₂ con h
 
+/-- The two order facts of a completeness law's run component — the counter and the
+table only grow — for the seam proofs that destructure `Complete` directly and cannot
+name the run's own projections. -/
+theorem run_le {g : CircuitM F c α} {st st' : ProverState F} {a : α}
+    (h : Runs g st a st') : st.nv ≤ st'.nv ∧ st.env.Le st'.env :=
+  ⟨h.nv_le, h.le⟩
+
 /-- `addConstraint` is passive at the prover: no allocation, no failure. -/
-theorem Runs.addConstraint {con : c} {st : ProverState F} :
+private theorem Runs.addConstraint {con : c} {st : ProverState F} :
     Runs (Snarky.addConstraint con) st PUnit.unit st := rfl
 
 /-- `pure` emits no rows. -/
-theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F} :
+private theorem Sat.pure [Zero F] [ConstraintHolds F c] {a : α} {st stf : ProverState F} :
     Sat (pure a : CircuitM F c α) st stf := by
   intro con hcon
   simp [build] at hcon
@@ -710,7 +717,7 @@ theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Pr
 
 /-- `addConstraint`'s one row is satisfied exactly by its identity — the row obligation
 is the caller's contribution. -/
-theorem Sat.addConstraint [Zero F] [ConstraintHolds F c] {con : c} {st stf : ProverState F}
+private theorem Sat.addConstraint [Zero F] [ConstraintHolds F c] {con : c} {st stf : ProverState F}
     (h : ConstraintHolds.Holds stf.env.get con) : Sat (Snarky.addConstraint con) st stf := by
   intro c' hc'
   simp [Snarky.addConstraint, build] at hc'

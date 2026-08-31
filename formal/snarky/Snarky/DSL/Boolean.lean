@@ -900,7 +900,7 @@ theorem any_complete [Field F] [DecidableEq F] [BasicSystem F c]
     (hsat (Nat.le_refl _) (Assignments.Le.refl _))
   have hread : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = bit (f b) := fun b hb =>
     CircuitType.reads_boolVar.mp
-      (CircuitType.ReadsAs.mono hrun.nv_le hrun.le (hF b hb)).2
+      (CircuitType.ReadsAs.mono (run_le hrun).1 (run_le hrun).2 (hF b hb)).2
   have hbits : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = 0 ∨
       (↑b : CVar F).val st₁.env.get = 1 := by
     intro b hb
@@ -1049,7 +1049,7 @@ theorem all_complete [Field F] [DecidableEq F] [BasicSystem F c]
     (hsat (Nat.le_refl _) (Assignments.Le.refl _))
   have hread : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = bit (f b) := fun b hb =>
     CircuitType.reads_boolVar.mp
-      (CircuitType.ReadsAs.mono hrun.nv_le hrun.le (hF b hb)).2
+      (CircuitType.ReadsAs.mono (run_le hrun).1 (run_le hrun).2 (hF b hb)).2
   have hbits : ∀ b ∈ xs, (↑b : CVar F).val st₁.env.get = 0 ∨
       (↑b : CVar F).val st₁.env.get = 1 := by
     intro b hb

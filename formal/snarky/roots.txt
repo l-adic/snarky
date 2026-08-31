@@ -117,18 +117,20 @@ Snarky.prove_pure'
 Snarky.prove_bind
 Snarky.prove_addConstraint
 Snarky.prove_build_agrees
-Snarky.Runs
-Snarky.Runs.le
-Snarky.Runs.nv_le
-Snarky.Runs.bind
-Snarky.Runs.addConstraint
 Snarky.runs_post
-Snarky.Sat
-Snarky.Sat.pure
-Snarky.Sat.bind
-Snarky.Sat.addConstraint
+Snarky.run_le
 Snarky.Complete
 Snarky.Complete.post
+Snarky.Complete.bind
+Snarky.Complete.frame
+Snarky.Complete.addConstraint
+Snarky.Complete.pure
+Snarky.Complete.of_false
+Snarky.Complete.instantiate
+Snarky.Complete.witness
+Snarky.Mono.forall₂
+Snarky.Mono.scoped
+Snarky.ProverState.nv_le_of_env_le
 Snarky.CVar.Scoped
 Snarky.CVar.Scoped.mono
 Snarky.CVar.Scoped.add_
@@ -230,7 +232,6 @@ Snarky.readVar_run
 Snarky.run_mapM_readCVar
 Snarky.witness
 Snarky.witness_spec
-Snarky.witness_complete
 
 -- Sized vectors (Types/Vector.lean): the kernel-reducible map, the prefix at a definite
 -- length, and the split/chunk algebra the bit gadgets index through.

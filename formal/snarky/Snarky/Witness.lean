@@ -70,10 +70,10 @@ instance instCheckedTypeBool [Add F] [Mul F] [Zero F] [One F] [DecidableEq F]
     · exact ⟨false, by simpa [bit] using h⟩
     · exact ⟨true, by simpa [bit] using h⟩
   check_complete := by
-    intro _ _ b a _ st ⟨hs, hr⟩
-    refine ⟨PUnit.unit, st, Runs.addConstraint, ?_, trivial⟩
-    intro stf _ hle
-    refine Sat.addConstraint ((LawfulBasicSystem.holds_boolean _ _).mpr ?_)
+    intro _ _ b a _
+    refine Complete.imp (fun _ h => h) (fun _ _ _ => trivial) (Complete.addConstraint ?_)
+    rintro st ⟨hs, hr⟩ stf hle
+    refine (LawfulBasicSystem.holds_boolean _ _).mpr ?_
     have hv : (↑b : CVar F).val st.env.get = bit a :=
       congrArg (fun v : Vector F (CircuitType.size F Bool) =>
         v[0]'(show 0 < CircuitType.size F Bool from Nat.one_pos)) hr
@@ -106,7 +106,7 @@ instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     exact ⟨CheckedType.check_sound V p.1 nv fun con h => hsat con (List.mem_append_left _ h),
       CheckedType.check_sound V p.2 _ fun con h => hsat con (List.mem_append_right _ h)⟩
   check_complete := by
-    rintro _ _ ⟨v, w⟩ ⟨x, y⟩ hv st ⟨hs, hr⟩
+    rintro _ _ ⟨v, w⟩ ⟨x, y⟩ hv
     have hx : ∀ (V : Valuation F) (u : va), CircuitType.Reads V u x →
         CheckedType.post (c := c) (val := a) V u := fun V u hu =>
       (hv V (u, CircuitType.constVar y) (CircuitType.reads_prod.mpr
@@ -115,17 +115,16 @@ instance instCheckedTypeProd [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
         CheckedType.post (c := c) (val := b) V u := fun V u hu =>
       (hv V (CircuitType.constVar x, u) (CircuitType.reads_prod.mpr
         ⟨CircuitType.reads_constVar V x, hu⟩)).2
-    rw [CircuitType.scoped_prod] at hs
-    rw [CircuitType.reads_prod] at hr
-    obtain ⟨_, st₁, hrun₁, hsat₁, _⟩ :=
-      CheckedType.check_complete (c := c) (val := a) v x hx st ⟨hs.1, hr.1⟩
-    obtain ⟨_, st₂, hrun₂, hsat₂, _⟩ :=
-      CheckedType.check_complete (c := c) (val := b) w y hy st₁
-        ⟨hs.2.mono hrun₁.nv_le, hr.2.of_le hs.2 hrun₁.le⟩
-    refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
-    intro stf hnv hle
-    exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-      (hsat₂ hnv hle)
+    refine Complete.bind
+      (Complete.imp
+        (fun st h =>
+          ⟨⟨(CircuitType.scoped_prod.mp h.1).1, (CircuitType.reads_prod.mp h.2).1⟩,
+            (CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩)
+        (fun _ _ h => h)
+        (Complete.frame Mono.readsAs
+          (CheckedType.check_complete (c := c) (val := a) v x hx)))
+      fun _ => Complete.imp (fun _ h => h.2) (fun _ _ _ => trivial)
+        (CheckedType.check_complete (c := c) (val := b) w y hy)
 
 end Product
 
@@ -182,17 +181,25 @@ private theorem checkAll_complete [ConstraintHolds F c] [LawfulBasicSystem F c] 
       (checkAll (F := F) (c := c) (a := a) l) fun _ _ => True
   | [] => Complete.pure
   | v :: l => by
-    intro st hall
-    obtain ⟨x, hx, hs, hr⟩ := hall v (List.mem_cons_self ..)
-    obtain ⟨_, st₁, hrun₁, hsat₁, _⟩ :=
-      CheckedType.check_complete (c := c) (val := a) v x hx st ⟨hs, hr⟩
-    obtain ⟨_, st₂, hrun₂, hsat₂, _⟩ := checkAll_complete l st₁ fun w hw => by
-      obtain ⟨y, hy, hsw, hrw⟩ := hall w (List.mem_cons_of_mem _ hw)
-      exact ⟨y, hy, hsw.mono hrun₁.nv_le, hrw.of_le hsw hrun₁.le⟩
-    refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
-    intro stf hnv hle
-    exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-      (hsat₂ hnv hle)
+    -- the head's admissible value, named off the precondition
+    refine Complete.instantiate
+      (ι := {x : a // CheckedType.Valid (F := F) (c := c) (var := va) x})
+      (P := fun i st => CircuitType.ReadsAs (val := a) st v i.1 ∧
+        ∀ w ∈ l, ∃ x : a, CheckedType.Valid (F := F) (c := c) (var := va) x ∧
+          CircuitType.ReadsAs (val := a) st w x)
+      (fun st h => ⟨⟨(h v (List.mem_cons_self ..)).choose,
+          (h v (List.mem_cons_self ..)).choose_spec.1⟩,
+        (h v (List.mem_cons_self ..)).choose_spec.2,
+        fun w hw => h w (List.mem_cons_of_mem _ hw)⟩)
+      fun i => ?_
+    have hM : Mono (F := F) fun st => ∀ w ∈ l, ∃ x : a,
+        CheckedType.Valid (F := F) (c := c) (var := va) x ∧
+        CircuitType.ReadsAs (val := a) st w x :=
+      fun _ _ hnv hle h w hw => (h w hw).imp fun x hx => ⟨hx.1, hx.2.mono hnv hle⟩
+    refine Complete.bind
+      (Complete.frame hM (CheckedType.check_complete (c := c) (val := a) v i.1 i.2))
+      fun _ => Complete.imp (fun _ h => h.2) (fun _ _ _ => trivial)
+        (checkAll_complete l)
 
 end Laws
 
@@ -387,43 +394,23 @@ theorem run_mapM_readCVar [Add F] [Mul F] [Zero F] {st : ProverState F} :
   rw [dif_pos (by simp)]
   rfl
 
-/-- The honest run of a witness: the computation runs, the bundle is allocated at the
-counter with the value's encoding, and the run closes wherever the type's check — of a
-fresh, honest allocation — closes. The check may allocate, so its landing state is a
-hypothesis rather than a computation. -/
-private theorem runs_witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
-    [inst : CircuitType F val var] [CheckedType F c val var]
-    (compute : AsProver F val) {st st' : ProverState F} {v : val}
-    (h : compute.run st.env = .ok v)
-    (hcheck : Runs (CheckedType.check (c := c) (val := val)
-        (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
-      (st.alloc (inst.valueToFields v)) PUnit.unit st') :
-    Runs (witness (c := c) (val := val) compute) st
-      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) st' := by
-  show prove _ st.nv st.env = _
-  simp only [witness, prove, AsProver.map_eq, AsProver.run_bind, h, Except.bind,
-    AsProver.run_pure, prove_bind]
-  rw [show prove (CheckedType.check (c := c) (val := val)
-      (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
-      (st.nv + inst.size) (st.env.extendList st.nv (inst.valueToFields v).toList)
-      = .ok (st'.out PUnit.unit) from hcheck]
-
-/-- The witness leaf's completeness law — the one place the representation stack is
-crossed. A witness computation that runs to an admissible value yields a run to the
-allocated state whose fresh bundle is scoped and reads as that value, whose rows are the
-type's check rows, satisfied at any extension, and which only grows the table.
-Admissibility is what the type's own rows force (`CheckedType.Valid`), so the hypothesis
-restricts the honest prover's domain to exactly what the circuit accepts. -/
-theorem witness_complete [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
+/-- **The witness rule** — the one place the representation stack is crossed, and the
+leaf every gadget's completeness law builds on. A witness computation that succeeds at
+the entry table yields a run — the bundle allocated at the counter with the value's
+encoding, closing wherever the type's check of that fresh, honest allocation closes —
+whose fresh cells read as the computed value and whose rows are the type's check rows,
+satisfied at any extension. Admissibility is what the type's own rows force
+(`CheckedType.Valid`), so the hypothesis restricts the honest prover's domain to exactly
+what the circuit accepts. The allocation's two order facts are `Complete.frame`'s
+business, so they are not part of the rule. -/
+theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] [inst : CircuitType F val var]
-    [CheckedType F c val var] (compute : AsProver F val) {st : ProverState F} {v : val}
-    (hv : CheckedType.Valid (F := F) (c := c) (var := var) v)
-    (h : compute.run st.env = .ok v) :
-    ∃ (r : var) (st' : ProverState F), Runs (witness (c := c) (val := val) compute) st r st' ∧
-      (∀ {stf : ProverState F}, st'.nv ≤ stf.nv → st'.env.Le stf.env →
-        Sat (witness (c := c) (val := val) compute) st stf) ∧
-      st.nv ≤ st'.nv ∧ st.env.Le st'.env ∧
-      CircuitType.Scoped (val := val) st' r ∧ CircuitType.Reads st'.env.get r v := by
+    [CheckedType F c val var] (compute : AsProver F val) (v : val)
+    (hv : CheckedType.Valid (F := F) (c := c) (var := var) v) :
+    Complete (F := F) (c := c) (fun st => compute.run st.env = .ok v)
+      (witness (c := c) (val := val) compute)
+      (fun r st' => CircuitType.ReadsAs st' r v) := by
+  intro st h
   have hscope : CircuitType.Scoped (val := val) (st.alloc (inst.valueToFields v))
       (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) := by
     intro cv hcv
@@ -443,26 +430,20 @@ theorem witness_complete [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
     CheckedType.check_complete (c := c) (val := val)
       (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))) v hv
       (st.alloc (inst.valueToFields v)) ⟨hscope, hreads⟩
-  have hrun := runs_witness compute h hcheck
-  refine ⟨_, st', hrun, ?_, hrun.nv_le, hrun.le,
-    hscope.mono hcheck.nv_le, hreads.of_le hscope hcheck.le⟩
-  intro stf hnv' hle' con hcon
-  simp only [witness, build, build_bind, List.append_nil] at hcon
-  exact hsat hnv' hle' con hcon
-
-/-- **The witness rule**, at the completeness abstraction: the computation succeeds at the
-entry table, and the fresh cells read as its value. `witness_complete`'s two order facts
-are what a caller used to transport its own context across the allocation; `Complete.frame`
-does that now, so they are not part of the rule. -/
-theorem Complete.witness [Add F] [Mul F] [Zero F] [One F] [BasicSystem F c]
-    [ConstraintHolds F c] [LawfulBasicSystem F c] [CircuitType F val var]
-    [CheckedType F c val var] (compute : AsProver F val) (v : val)
-    (hv : CheckedType.Valid (F := F) (c := c) (var := var) v) :
-    Complete (F := F) (c := c) (fun st => compute.run st.env = .ok v)
-      (witness (c := c) (val := val) compute)
-      (fun r st' => CircuitType.ReadsAs st' r v) := fun _ h =>
-  let ⟨r, st', hrun, hsat, _, _, hsc, hrd⟩ := witness_complete compute hv h
-  ⟨r, st', hrun, hsat, hsc, hrd⟩
+  refine ⟨inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size)), st', ?_, ?_,
+    hscope.mono (run_le hcheck).1, hreads.of_le hscope (run_le hcheck).2⟩
+  · -- the run: the computation, the allocation, then wherever the check closed
+    show prove _ st.nv st.env = _
+    simp only [_root_.Snarky.witness, prove, AsProver.map_eq, AsProver.run_bind, h,
+      Except.bind, AsProver.run_pure, prove_bind]
+    rw [show prove (CheckedType.check (c := c) (val := val)
+        (inst.fieldsToVar (mapVec CVar.var (allocRange st.nv inst.size))))
+        (st.nv + inst.size) (st.env.extendList st.nv (inst.valueToFields v).toList)
+        = .ok (st'.out PUnit.unit) from hcheck]
+  · -- the rows: exactly the type's check rows, satisfied at any extension
+    intro stf hnv' hle' con hcon
+    simp only [_root_.Snarky.witness, build, build_bind, List.append_nil] at hcon
+    exact hsat hnv' hle' con hcon
 
 end Combinators
 

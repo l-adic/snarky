@@ -119,57 +119,72 @@ theorem solve_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHo
       Reads env.get (compile (a := a) (b := b) main).result.2 outVal := by
   have hav := scoped_inputVar (F := F) (avar := avar) input
   have hrv := reads_inputVar (F := F) (avar := avar) input
-  -- the input bundle's check, which may allocate auxiliaries of its own
-  obtain ⟨_, st₀, hcheck, hsat₀, _⟩ :=
-    CheckedType.check_complete (c := c) (val := a) (inputVar (F := F) (a := a)) input hinput
-      (seed (F := F) (avar := avar) input) ⟨hav, hrv⟩
-  -- the body, from where the check left off
-  obtain ⟨out, st₁, hrun₁, hsat₁, hscope₁, v, hreads₁⟩ :=
-    hmain st₀ ⟨hav.mono hcheck.nv_le, hrv.of_le hav hcheck.le⟩
-  -- the public bundle
-  obtain ⟨pub, st₂, hrun₂, hsat₂, hnv₂, hle₂, hscopeP, hreadsP⟩ :=
-    witness_complete (c := c) (val := UnChecked b)
-      (do let x ← readVar (val := b) out; pure (UnChecked.mk x)) (st := st₁)
-      (v := UnChecked.mk v) (by simp)
-      (by
-        simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run hscope₁,
-          (reads_iff.mp hreads₁).2]
-        rfl)
-  have hscopeP' : Scoped (val := b) st₂ pub.val := hscopeP
-  have hreadsP' : Reads st₂.env.get pub.val v := hreadsP
-  -- the binding rows
-  obtain ⟨_, st₃, hrun₃, hsat₃, -⟩ :=
-    assertEq_complete (c := c) (val := b) out pub.val v st₂
-      ⟨Scoped.mono hnv₂ hscope₁, hscopeP', hreads₁.of_le hscope₁ hle₂, hreadsP'⟩
-  -- the whole run
-  have hrun : Runs (compileBody (a := a) (b := b) main)
-      (seed (F := F) (avar := avar) input) (out, pub.val) st₃ :=
-    hcheck.bind (hrun₁.bind (hrun₂.bind (hrun₃.bind rfl)))
-  have hle₃ : st₂.env.Le st₃.env := hrun₃.le
-  have hres : ((out, pub.val) : bvar × bvar) = (compile (a := a) (b := b) main).result :=
-    (prove_build_agrees hrun).1
-  refine ⟨v, st₃.env, ?_, ?_, ?_, ?_, ?_⟩
+  -- the whole-circuit program's law, on the completeness primitives: the input's check,
+  -- the body, the public bundle's witness, and the binding rows, each framed across the
+  -- next
+  have hbody : Complete (F := F) (c := c)
+      (fun st => Scoped (val := a) st (inputVar (F := F) (a := a)) ∧
+        Reads st.env.get (inputVar (F := F) (a := a)) input)
+      (compileBody (a := a) (b := b) main)
+      (fun r st' => ∃ v : b, Scoped (val := b) st' r.1 ∧ Reads st'.env.get r.1 v ∧
+        Scoped (val := b) st' r.2 ∧ Reads st'.env.get r.2 v ∧
+        Reads st'.env.get (inputVar (F := F) (a := a)) input) := by
+    simp only [compileBody]
+    refine Complete.bind
+      (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h)
+        (Complete.frame Mono.readsAs
+          (CheckedType.check_complete (c := c) (val := a)
+            (inputVar (F := F) (a := a)) input hinput)))
+      fun _ => ?_
+    refine Complete.bind
+      (Complete.imp (fun _ h => ⟨h.2, h.2⟩) (fun _ _ h => h)
+        (Complete.frame Mono.readsAs hmain))
+      fun out => ?_
+    -- the body's output value, named off its well-formedness
+    refine Complete.instantiate (ι := b)
+      (P := fun v st => CircuitType.ReadsAs (val := b) st out v ∧
+        CircuitType.ReadsAs (val := a) st (inputVar (F := F) (a := a)) input)
+      (fun st h => ⟨h.1.2.choose, ⟨h.1.1, h.1.2.choose_spec⟩, h.2⟩)
+      fun v => ?_
+    refine Complete.bind
+      (Complete.imp (fun st h => ⟨?wrun, h⟩) (fun _ _ h => h)
+        (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
+          (Complete.witness
+            (do let x ← readVar (val := b) out; pure (UnChecked.mk x))
+            (UnChecked.mk v) (by simp))))
+      fun pub => ?_
+    case wrun =>
+      simp only [AsProver.bind_eq, AsProver.run_bind, readVar_run h.1.1,
+        (reads_iff.mp h.1.2).2, Except.bind]
+      rfl
+    refine Complete.bind
+      (Complete.imp
+        (fun st h => ⟨⟨h.2.1.1, CircuitType.scoped_unchecked.mp h.1.1,
+          h.2.1.2, CircuitType.reads_unchecked.mp h.1.2⟩, h⟩)
+        (fun _ _ h => h)
+        (Complete.frame
+          (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
+          (assertEq_complete (c := c) (val := b) out pub.val v)))
+      fun _ => Complete.pure_of fun st h =>
+        ⟨v, h.2.2.1.1, h.2.2.1.2, CircuitType.scoped_unchecked.mp h.2.1.1,
+          CircuitType.reads_unchecked.mp h.2.1.2, h.2.2.2.2⟩
+  obtain ⟨r, st', hrun, hsat, v, hsc1, hrd1, hsc2, hrd2, hrin⟩ :=
+    hbody (seed (F := F) (avar := avar) input) ⟨hav, hrv⟩
+  have hres : r = (compile (a := a) (b := b) main).result := (prove_build_agrees hrun).1
+  refine ⟨v, st'.env, ?_, ?_, hrin, ?_, ?_⟩
   · unfold solve
-    rw [show prove (compileBody (a := a) (b := b) main) (seed (F := F) (avar := avar) input).nv
-        (seed (F := F) (avar := avar) input).env = .ok (st₃.out (out, pub.val)) from hrun]
-    have hout : Scoped (val := b) st₃ out :=
-      Scoped.mono hrun₃.nv_le (Scoped.mono hnv₂ hscope₁)
-    show (match (readVar (val := b) out).run st₃.env with
+    rw [show prove (compileBody (a := a) (b := b) main)
+        (seed (F := F) (avar := avar) input).nv (seed (F := F) (avar := avar) input).env
+        = .ok (st'.out r) from hrun]
+    show (match (readVar (val := b) r.1).run st'.env with
       | Except.error e => Except.error e
-      | Except.ok outVal => Except.ok (outVal, st₃.env)) = Except.ok (v, st₃.env)
-    rw [readVar_run hout,
-      (reads_iff.mp ((hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃)).2]
-  · exact Sat.bind hcheck
-      (hsat₀ (hrun₁.nv_le.trans (hnv₂.trans hrun₃.nv_le))
-        (hrun₁.le.trans (hle₂.trans hle₃)))
-      (Sat.bind hrun₁ (hsat₁ (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hle₃))
-        (Sat.bind hrun₂ (hsat₂ hrun₃.nv_le hle₃)
-          (Sat.bind hrun₃ (hsat₃ (Nat.le_refl _) (Assignments.Le.refl _)) Sat.pure)))
-  · exact hrv.of_le hav (hcheck.le.trans (hrun₁.le.trans (hle₂.trans hle₃)))
+      | Except.ok outVal => Except.ok (outVal, st'.env)) = Except.ok (v, st'.env)
+    rw [readVar_run hsc1, (reads_iff.mp hrd1).2]
+  · exact hsat (Nat.le_refl _) (Assignments.Le.refl _)
   · rw [← hres]
-    exact (hreads₁.of_le hscope₁ hle₂).of_le (Scoped.mono hnv₂ hscope₁) hle₃
+    exact hrd1
   · rw [← hres]
-    exact hreadsP'.of_le hscopeP' hle₃
+    exact hrd2
 
 /-- The counter the body starts from: past the input slots, and past whatever the input
 bundle's own check allocated. -/

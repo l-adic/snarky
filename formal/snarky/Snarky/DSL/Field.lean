@@ -602,7 +602,7 @@ theorem pow_complete [Field F] [DecidableEq F] [BasicSystem F c]
   refine ⟨r, st₁, hrun, hsat, hsc, ?_⟩
   have hval := runs_post (fun V => pow_spec (c := c) (V := V) x n) hrun
     (hsat (Nat.le_refl _) (Assignments.Le.refl _))
-  rw [hval, CVar.val_of_le hrun.le hx]
+  rw [hval, CVar.val_of_le (run_le hrun).2 hx]
 
 attribute [irreducible] pow
 

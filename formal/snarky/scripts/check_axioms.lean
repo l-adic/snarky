@@ -46,14 +46,18 @@ def roots : List Name :=
 
     -- The completeness vocabulary: a run's reach, the rows it leaves satisfied, and the
     -- reading that survives a later run.
-    `Snarky.Runs.bind,
-    `Snarky.Runs.le,
-    `Snarky.Runs.nv_le,
-    `Snarky.Sat.pure,
-    `Snarky.Sat.bind,
-    `Snarky.Sat.addConstraint,
+    `Snarky.Complete.bind,
+    `Snarky.Complete.frame,
+    `Snarky.Complete.imp,
+    `Snarky.Complete.seq,
+    `Snarky.Complete.pure,
+    `Snarky.Complete.pure_of,
+    `Snarky.Complete.addConstraint,
+    `Snarky.Complete.of_false,
+    `Snarky.Complete.instantiate,
     `Snarky.Complete.post,
     `Snarky.runs_post,
+    `Snarky.run_le,
     `Snarky.CVar.val_of_le,
     `Snarky.CircuitType.Reads.of_le,
     `Snarky.CircuitType.Scoped.mono,
@@ -61,7 +65,7 @@ def roots : List Name :=
 
     -- The leaf interface every gadget builds on.
     `Snarky.witness_spec,
-    `Snarky.witness_complete,
+    `Snarky.Complete.witness,
 
     -- The traversal combinators, whose laws the ladders' transports go through.
     `Snarky.forM_spec,

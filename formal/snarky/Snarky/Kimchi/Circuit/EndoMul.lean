@@ -1537,10 +1537,8 @@ private theorem witnessAt_complete [Field F] [DecidableEq F] [BasicSystem F c]
     (hv : CheckedType.Valid (F := F) (c := c) (var := var) v)
     {pre : ProverState F → Prop} (h : ∀ st, pre st → compute.run st.env = .ok v) :
     Complete (F := F) (c := c) pre (witness (c := c) (val := val) compute)
-      (fun r st' => CircuitType.ReadsAs (val := val) st' r v) := by
-  intro st hst
-  obtain ⟨r, st', hrun, hsat, -, -, hsc, hrd⟩ := witness_complete compute hv (h st hst)
-  exact ⟨r, st', hrun, hsat, hsc, hrd⟩
+      (fun r st' => CircuitType.ReadsAs (val := val) st' r v) :=
+  Complete.imp h (fun _ _ h => h) (Complete.witness compute v hv)
 
 open Kimchi.Gate.EndoScalar in
 /-- The advice's decoded challenge is the residue of the integer `endoMul` names: the
