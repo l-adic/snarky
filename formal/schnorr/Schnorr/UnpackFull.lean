@@ -172,45 +172,41 @@ theorem ltBitstringValue_complete [Field F] [DecidableEq F] [BasicSystem F c]
     cases hfa with
     | cons hx htl =>
       rename_i b bs'
-      obtain ⟨r, st₁, hrun₁, hsat₁, hr⟩ := ih bs' st htl
-      have hx₁ := hx.mono hrun₁.nv_le hrun₁.le
-      obtain ⟨out, st₂, hrun₂, hsat₂, hout⟩ :=
-        Snarky.or_complete (c := c) (Snarky.not x) r (!b) (ltPure bs' ys) st₁
-          ⟨⟨CircuitType.scoped_boolVar.mpr
-              (not_scoped (CircuitType.scoped_boolVar.mp hx₁.1)),
-            CircuitType.reads_boolVar.mpr
-              (not_val (CircuitType.reads_boolVar.mp hx₁.2))⟩, hr⟩
-      refine ⟨out, st₂, hrun₁.bind hrun₂, ?_, ?_⟩
-      · intro stf hnv hle
-        exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-          (hsat₂ hnv hle)
-      · simpa [ltPure] using hout
+      exact Complete.imp (fun _ h => h) (fun _ _ h => by simpa [ltPure] using h)
+        (Complete.bind (Complete.frame Mono.readsAs (ih bs'))
+          fun r => Complete.imp
+            (fun _ h => ⟨⟨CircuitType.scoped_boolVar.mpr
+                (not_scoped (CircuitType.scoped_boolVar.mp h.2.1)),
+              CircuitType.reads_boolVar.mpr
+                (not_val (CircuitType.reads_boolVar.mp h.2.2))⟩, h.1⟩)
+            (fun _ _ h => h)
+            (Snarky.or_complete (c := c) (Snarky.not x) r (!b) (ltPure bs' ys)))
+        st ⟨htl, hx⟩
   | case2 x xs ys ih =>
     intro st hfa
     simp only [ltBitstringValue]
     cases hfa with
     | cons hx htl =>
       rename_i b bs'
-      obtain ⟨r, st₁, hrun₁, hsat₁, hr⟩ := ih bs' st htl
-      have hx₁ := hx.mono hrun₁.nv_le hrun₁.le
-      obtain ⟨out, st₂, hrun₂, hsat₂, hout⟩ :=
-        Snarky.and_complete (c := c) (Snarky.not x) r (!b) (ltPure bs' ys) st₁
-          ⟨⟨CircuitType.scoped_boolVar.mpr
-              (not_scoped (CircuitType.scoped_boolVar.mp hx₁.1)),
-            CircuitType.reads_boolVar.mpr
-              (not_val (CircuitType.reads_boolVar.mp hx₁.2))⟩, hr⟩
-      refine ⟨out, st₂, hrun₁.bind hrun₂, ?_, ?_⟩
-      · intro stf hnv hle
-        exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-          (hsat₂ hnv hle)
-      · simpa [ltPure] using hout
+      exact Complete.imp (fun _ h => h) (fun _ _ h => by simpa [ltPure] using h)
+        (Complete.bind (Complete.frame Mono.readsAs (ih bs'))
+          fun r => Complete.imp
+            (fun _ h => ⟨⟨CircuitType.scoped_boolVar.mpr
+                (not_scoped (CircuitType.scoped_boolVar.mp h.2.1)),
+              CircuitType.reads_boolVar.mpr
+                (not_val (CircuitType.reads_boolVar.mp h.2.2))⟩, h.1⟩)
+            (fun _ _ h => h)
+            (Snarky.and_complete (c := c) (Snarky.not x) r (!b) (ltPure bs' ys)))
+        st ⟨htl, hx⟩
   | case3 xs ys h1 h2 =>
     intro st hfa
     simp only [ltBitstringValue]
-    refine ⟨false_, st, rfl, fun _ _ => Sat.pure, ?_⟩
-    rw [ltPure_eq_false h1 h2 hfa]
-    exact ⟨CircuitType.scoped_boolVar.mpr (false_scoped st),
-      CircuitType.reads_boolVar.mpr (by simp [bit])⟩
+    exact Complete.pure_of
+      (pre := fun st' => List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
+        CircuitType.ReadsAs (val := Bool) st' x b) xs bs) (a := false_) (fun st' _ => by
+      rw [ltPure_eq_false h1 h2 hfa]
+      exact ⟨CircuitType.scoped_boolVar.mpr (false_scoped st'),
+        CircuitType.reads_boolVar.mpr (by simp [bit])⟩) st hfa
 
 attribute [irreducible] ltBitstringValue
 
@@ -271,29 +267,25 @@ theorem assertBitsBelow_complete [Field F] [DecidableEq F] [BasicSystem F c]
     Complete (F := F) (c := c)
       (fun st => CircuitType.ReadsAs (val := Vector Bool n) st bits bs)
       (assertBitsBelow (c := c) m bits) (fun _ _ => True) := by
-  intro st hb
-  simp only [assertBitsBelow]
-  obtain ⟨hsc, hrd⟩ := hb
-  rw [CircuitType.scoped_vector] at hsc
-  rw [CircuitType.reads_vector] at hrd
-  have hfa : List.Forall₂ (fun (x : BoolVar F) (b : Bool) =>
-      CircuitType.ReadsAs (val := Bool) st x b) bits.toList bs.toList := by
-    rw [List.forall₂_iff_get]
-    refine ⟨by simp, fun i h1 h2 => ?_⟩
-    simp only [List.get_eq_getElem, Vector.getElem_toList]
-    exact ⟨hsc i (by simpa using h1), hrd i (by simpa using h1)⟩
-  obtain ⟨lt, st₁, hrun₁, hsat₁, hlt⟩ :=
-    ltBitstringValue_complete (c := c) bits.toList.reverse (modBitsMsb m n) bs.toList.reverse
-      st (List.forall₂_reverse_iff.mpr hfa)
   have hltrue : ltPure bs.toList.reverse (modBitsMsb m n) = true :=
     (ltPure_iff_lt (by rw [List.length_reverse, modBitsMsb_length, Vector.length_toList])).mpr
       (by rwa [natLsbVal_reverse_modBitsMsb hm, List.reverse_reverse])
-  rw [hltrue] at hlt
-  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ := Snarky.assert_complete (c := c) lt st₁ hlt
-  refine ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, ?_, trivial⟩
-  intro stf hnv hle
-  exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-    (hsat₂ hnv hle)
+  simp only [assertBitsBelow]
+  refine Complete.bind
+    (Complete.imp (fun st hb => ?_) (fun _ _ h => h)
+      (ltBitstringValue_complete (c := c) bits.toList.reverse (modBitsMsb m n)
+        bs.toList.reverse))
+    fun lt => Complete.imp (fun _ h => by rwa [hltrue] at h) (fun _ _ _ => trivial)
+      (Snarky.assert_complete (c := c) lt)
+  -- the bundle's reading, as the reversed pointwise relation the comparison consumes
+  obtain ⟨hsc, hrd⟩ := hb
+  rw [CircuitType.scoped_vector] at hsc
+  rw [CircuitType.reads_vector] at hrd
+  refine List.forall₂_reverse_iff.mpr ?_
+  rw [List.forall₂_iff_get]
+  refine ⟨by simp, fun i h1 h2 => ?_⟩
+  simp only [List.get_eq_getElem, Vector.getElem_toList]
+  exact ⟨hsc i (by simpa using h1), hrd i (by simpa using h1)⟩
 
 attribute [irreducible] assertBitsBelow
 
