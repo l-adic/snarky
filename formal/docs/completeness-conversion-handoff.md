@@ -21,12 +21,12 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 11 | 8 |
-| `Sat` sites | — | 129 |
+| files | 12 | 7 |
+| `Sat` sites | — | 115 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
-`Kimchi/Circuit/AddComplete`, `schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `schnorr/Schnorr/UnpackFull`.
 
 **Remaining**, largest first:
 
@@ -36,7 +36,6 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 | `Kimchi/Circuit/VarBaseMul.lean` | 2 | 27 |
 | `Kimchi/Circuit/Sponge.lean` | 0 | 18 |
 | `Kimchi/Circuit/RangeCheck.lean` | 4 | 15 |
-| `Kimchi/Circuit/EndoScalar.lean` | 2 | 14 |
 | `Kimchi/Circuit/EndoMul.lean` | 2 | 11 |
 | `Compile.lean` | 1 | 5 |
 | `Witness.lean` | 4 | 4 |
@@ -99,6 +98,15 @@ out. See `RandomOracle.foldBlocks_complete`.
 
 **A precondition carrying only scope or well-formedness.** Use `instantiate` to name the
 value the law is indexed by. See `Field.powGo_complete` and `Boolean.xor.core_complete`.
+
+**A loop whose invariants pin a state.** `EndoScalar`'s `AccInv`/`CrumbRow` are indexed
+by the crumb witness's landing table `st₁`. `instantiate` handles states as well as
+values: index over a `ProverState`-subtype whose property carries the pinned cells'
+scope and readings, with `P i st := i.1.nv ≤ st.nv ∧ i.1.env.Le st.env`, discharged at
+the current state with `⟨st, facts⟩` and two `refl`s. Also from that conversion: an
+`addConstraint` row obligation gets only `env.Le` (no `nv_le`), so a grant's
+row-transport wants a `holds_of_le` lemma split out of its `mono`
+(`RowGrant.holds_of_le`).
 
 ## Gotchas, all of which cost time at least once
 
