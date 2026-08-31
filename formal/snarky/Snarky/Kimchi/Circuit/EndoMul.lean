@@ -1117,19 +1117,19 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     refine ⟨?_, ?_, ?_, ?_⟩ <;> simp only [bitsOf] <;> split <;> simp
   simp only [endoMul]
   -- the bulk bit witness
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨?bitsrun, h⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.onCurveAs Mono.readsAs)
-        (Complete.witness (bitsWit 32 scalar.val)
-          (Vector.ofFn fun r => Vector.ofFn fun j =>
-            if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * r.1 + j.1)) then 1 else 0)
-          (by simp))))
+  refine Complete.seq (by complete_mono_tac)
+    (Complete.imp
+      (fun st h => by
+        simp only [bitsWit, AsProver.bind_eq, AsProver.run_bind,
+          AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
+          CircuitType.reads_fvar.mp h.2.2, Except.bind]
+        rfl)
+      (fun _ _ h => h)
+      (Complete.witness (bitsWit 32 scalar.val)
+        (Vector.ofFn fun r => Vector.ofFn fun j =>
+          if (ToNat.toNat sv).testBit (4 * 32 - 1 - (4 * r.1 + j.1)) then 1 else 0)
+        (by simp)))
     fun bits => ?_
-  case bitsrun =>
-    simp only [bitsWit, AsProver.bind_eq, AsProver.run_bind,
-      AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.2.1),
-      CircuitType.reads_fvar.mp h.2.2, Except.bind]
-    rfl
   -- the bits' landing table indexes the rest of the run: the index carries the bit
   -- cells' scope and canonical readings, and the base's scope
   refine Complete.instantiate
@@ -1146,12 +1146,12 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   case inst1 =>
     refine ⟨⟨st, fun i hi j hj =>
         ⟨CircuitType.scoped_fvar.mp
-          (CircuitType.scoped_vector.mp (CircuitType.scoped_vector.mp h.1.1 i hi) j hj),
+          (CircuitType.scoped_vector.mp (CircuitType.scoped_vector.mp h.2.1 i hi) j hj),
           ?_⟩,
-        (scoped_affinePoint.mp h.2.1.1).1, (scoped_affinePoint.mp h.2.1.1).2⟩,
-      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.2.1, h.2.2⟩
+        (scoped_affinePoint.mp h.1.1.1).1, (scoped_affinePoint.mp h.1.1.1).2⟩,
+      ⟨Nat.le_refl _, Assignments.Le.refl _⟩, h.1.1, h.1.2⟩
     have hv := CircuitType.reads_fvar.mp
-      (CircuitType.reads_vector.mp (CircuitType.reads_vector.mp h.1.2 i hi) j hj)
+      (CircuitType.reads_vector.mp (CircuitType.reads_vector.mp h.2.2 i hi) j hj)
     simpa using hv
   obtain ⟨st₁, hbitfacts, htx₁, hty₁⟩ := i
   have hextM : Mono (F := F) fun st => st₁.nv ≤ st.nv ∧ st₁.env.Le st.env :=
@@ -1179,17 +1179,14 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
     obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
     exact (hbitfacts i hi j hj).1
-  -- the sealed `β·x`
-  refine Complete.bind
-    (Complete.imp
-      (fun st h => ⟨⟨CircuitType.scoped_fvar.mpr
-          (CVar.Scoped.scale_ (scoped_affinePoint.mp h.2.1.1).1),
-        CircuitType.reads_fvar.mpr (by rw [CVar.val_scale_, (htcoords h.2.1).1])⟩, h⟩)
-      (fun _ _ h => h)
-      (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
-        (sealVar_complete (c := KimchiConstraint F) (CVar.scale_ d.endo t.x)
-          (d.endo * xv))))
-    fun phix => ?_
+  -- the sealed `β·x`: the bridge reads the scaled abscissa off the on-curve fact,
+  -- and the walk pins the value through it
+  have hscaleR : ∀ {st : ProverState F}, OnCurveAs d.W st t (Point.some _ _ hT) →
+      CircuitType.ReadsAs (val := F) st (CVar.scale_ d.endo t.x) (d.endo * xv) :=
+    fun h => ⟨CircuitType.scoped_fvar.mpr
+        (CVar.Scoped.scale_ (scoped_affinePoint.mp h.1).1),
+      CircuitType.reads_fvar.mpr (by rw [CVar.val_scale_, (htcoords h).1])⟩
+  complete_walk
   -- the base's image, read as a curve point wherever `β·x` reads canonically
   have hφTread : ∀ {st : ProverState F},
       CircuitType.ReadsAs (val := F) st phix (d.endo * xv) →
@@ -1202,9 +1199,9 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   -- the first addition: `T + φT`, finite since `[1 + λ]` does not kill `T`
   refine Complete.bind
     (Complete.imp
-      (fun st h => ⟨⟨h.2.2.1, hφTread h.1 h.2.2.1,
+      (fun st h => ⟨⟨h.1.2.1, hφTread h.2 h.1.2.1,
         d.two_torsion_free _ (Point.some_ne_zero hT), fun _ => hTφ⟩,
-        h.2.1, h.2.2.1, h.2.2.2⟩)
+        h.1.1, h.1.2.1, h.1.2.2⟩)
       (fun _ _ h => h)
       (Complete.frame (Mono.and hextM (Mono.and Mono.onCurveAs Mono.readsAs))
         (addFast_complete .checkFinite d.W

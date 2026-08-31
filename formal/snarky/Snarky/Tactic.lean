@@ -100,9 +100,9 @@ conditions rejoin the goal list instead of demanding closure inside the step. -/
 def completeStep (x : Ident) : TacticM Unit := withFreshMacroScope do
   let s1 ← `(tactic| apply Snarky.Complete.seq ?mono
       (Snarky.Complete.imp ?adp (fun _ _ h => h) ?law) ?k)
-  let s2 ← `(tactic| case mono => complete_mono_tac)
+  let s2 ← `(tactic| case mono => ((try simp only []); complete_mono_tac))
   let s3 ← `(tactic| case' law => complete_apply_law)
-  let s4 ← `(tactic| case adp => (intro st h; complete_ctx))
+  let s4 ← `(tactic| case adp => (intro st h; (try simp only [] at h); complete_ctx))
   let s5 ← `(tactic| all_goals try assumption)
   let s6 ← `(tactic| case' k => intro $x:ident)
   -- without this, a failing case body is RECOVERED (logged and admitted as sorry)
