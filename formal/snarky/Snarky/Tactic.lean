@@ -43,95 +43,15 @@ macro "complete_mono_tac" : tactic =>
   `(tactic| apply_rules (config := { transparency := .reducible, maxDepth := 80 })
       using $(Lean.mkIdent `complete_mono))
 
-/-- The adapter atom search's configuration: reducible so the reading atoms stay
-opaque, no `exfalso` (it backtracks badly over the shared value metavariables).
-The shallow config is the cheap first attempt; the deep one runs after the
-forward saturation, with depth for a `Forall₂` chain. -/
-def readsSearchShallow : Lean.Meta.SolveByElim.SolveByElimConfig :=
-  { transparency := .reducible, maxDepth := 4, exfalso := false }
-
-/-- The saturated retry's configuration — see `readsSearchShallow`. -/
-def readsSearchDeep : Lean.Meta.SolveByElim.SolveByElimConfig :=
-  { transparency := .reducible, maxDepth := 12, exfalso := false }
-
-/-- One adapter atom, by backward search over the local facts and the
-`@[complete_reads]` vocabulary. Unification against the context is what pins a
-law's elided witness values. -/
-macro "complete_reads_search" : tactic =>
-  `(tactic| solve_by_elim (config := Snarky.Tactic.readsSearchShallow)
-      using $(Lean.mkIdent `complete_reads))
-
-/-- Fails unless the goal is a reading-family atom — the only goals the forward
-saturation can help, so the expensive retry is never spent on a side condition
-(a torsion `≠`, a finiteness guard) that a designed stop leaves unprovable. -/
-elab "complete_reads_goal_guard" : tactic => do
-  let ty := (← instantiateMVars (← (← getMainGoal).getType)).cleanupAnnotations
-  let ok := match ty.getAppFn.constName? with
-    | some n =>
-      n == ``Snarky.CircuitType.ReadsAs || n == `Snarky.Kimchi.OnCurveAs ||
-      n == `Snarky.Kimchi.SpongeVar.Reads || n == ``List.Forall₂
-    | none => false
-  unless ok do throwError "not a reading-family goal"
-
-/-- The saturated retry — see `complete_reads_search`. -/
-macro "complete_reads_search_deep" : tactic =>
-  `(tactic| solve_by_elim (config := Snarky.Tactic.readsSearchDeep)
-      using $(Lean.mkIdent `complete_reads))
-
-/-- Saturate the context forward with the `@[complete_reads_fwd]` projections:
-for every hypothesis a projection applies to, its conclusion joins the context —
-bounded passes, no duplicates. Projections run forward because their conclusions
-are unkeyed and would match every goal backward. -/
-elab "complete_reads_saturate" : tactic => do
-  let fwd ← Lean.labelled `complete_reads_fwd
-  -- each rule keyed by its (single) premise's head constant, for a cheap pre-filter
-  let keyed ← fwd.mapM fun f => do
-    let ty := (← getConstInfo f).type
-    let key ← Meta.forallTelescopeReducing ty fun xs _ => do
-      match xs.back? with
-      | some x => pure (← instantiateMVars (← Meta.inferType x)).getAppFn.constName?
-      | none => pure none
-    pure (f, key)
-  for _ in [0:1] do
-    let added ← Elab.Tactic.withMainContext do
-      let hyps ← (← getMainGoal).getNondepPropHyps
-      let mut seen : Array Expr := #[]
-      for h in hyps do
-        seen := seen.push ((← h.getType).consumeMData)
-      let mut added := false
-      for h in hyps do
-        let hHead := ((← h.getType).consumeMData).getAppFn.constName?
-        for (f, key) in keyed do
-          if key.isSome && key ≠ hHead then continue
-          -- probe without committing: failed applications leave no state behind
-          let cand ← Meta.withNewMCtxDepth <| Elab.Tactic.tryTactic? <| do
-            let e ← Meta.mkAppM f #[.fvar h]
-            let t ← instantiateMVars (← Meta.inferType e)
-            if t.hasMVar then failure
-            pure t
-          let some t := cand | continue
-          if seen.contains t.consumeMData then continue
-          seen := seen.push t.consumeMData
-          added := true
-          let e ← Meta.mkAppM f #[.fvar h]
-          let g ← (← getMainGoal).assert (← mkFreshUserName `hfwd) t e
-          let (_, g) ← g.intro1P
-          replaceMainGoal [g]
-      pure added
-    unless added do return
-
 /-- Discharge a step's adapter — the entailment from the accumulated context to
-the selected law's precondition: split the context, saturate it forward with the
-projections, split the goal into atoms, and search each atom independently, so
-failures stay local instead of backtracking across the conjunction. -/
+the selected law's precondition — by splitting the context and backward search
+over the local facts, at reducible transparency. Unification against the context
+is what pins the law's elided witness values. -/
 macro "complete_ctx" : tactic =>
   `(tactic| ((try casesm* _ ∧ _);
-             (try with_reducible and_intros);
-             all_goals first
-               | complete_reads_search
-               | (complete_reads_goal_guard;
-                  (try complete_reads_saturate);
-                  complete_reads_search_deep)))
+             solve_by_elim
+               (config := { transparency := .reducible, maxDepth := 16, exfalso := false })
+               [And.intro]))
 
 /-- The head constant of a `Complete` statement's program, through binders — the
 cheap pre-filter key for law lookup. `none` when it has no stable head. -/
@@ -179,12 +99,12 @@ conditions, continuation). `case'` lets the law's value goals and deferred side
 conditions rejoin the goal list instead of demanding closure inside the step. -/
 def completeStep (x : Ident) : TacticM Unit := withFreshMacroScope do
   let s1 ← `(tactic| apply Snarky.Complete.seq ?mono
-      (Snarky.Complete.imp ?adp (fun _ _ h => h) ?law) ?kont)
+      (Snarky.Complete.imp ?adp (fun _ _ h => h) ?law) ?k)
   let s2 ← `(tactic| case mono => ((try simp only []); complete_mono_tac))
   let s3 ← `(tactic| case' law => complete_apply_law)
   let s4 ← `(tactic| case adp => (intro st h; (try simp only [] at h); complete_ctx))
   let s5 ← `(tactic| all_goals try with_reducible assumption)
-  let s6 ← `(tactic| case' kont => intro $x:ident)
+  let s6 ← `(tactic| case' k => intro $x:ident)
   -- without this, a failing case body is RECOVERED (logged and admitted as sorry)
   -- and the walk would march on past a step it did not actually prove
   withoutRecover <| evalTactic (← `(tactic| ($s1; $s2; $s3; $s4; $s5; $s6)))

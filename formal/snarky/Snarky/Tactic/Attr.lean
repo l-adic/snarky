@@ -22,14 +22,3 @@ register_label_attr complete_law
 table's growth. `apply_rules using complete_mono` assembles the frame witness
 for a step's whole precondition from these. -/
 register_label_attr complete_mono
-
-/-- A reading-derivation rule: one per constructor of the interface grammar — a
-compound's reading from its parts', a part's from its bundle's. The walker's
-adapter search chains these; an adapter they cannot close needs a semantic fact,
-which is the caller's to state. -/
-register_label_attr complete_reads
-
-/-- A forward reading-derivation rule: a single-premise projection — a component's
-reading out of a bundle's. Projections run forward (saturating the context) because
-their conclusions are unkeyed and would match every goal backward. -/
-register_label_attr complete_reads_fwd

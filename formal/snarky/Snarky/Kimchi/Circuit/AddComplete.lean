@@ -365,53 +365,6 @@ preserve them — and the witnessed columns are whatever the row constrains them
 
 /-! ## Completeness -/
 
-/-- A point bundle's abscissa reads the value's. -/
-@[complete_reads_fwd] theorem CircuitType.ReadsAs.pointX [Add F] [Mul F] [Zero F]
-    {st : ProverState F} {p : AffinePoint (FVar F)} {v : AffinePoint F}
-    (h : CircuitType.ReadsAs (val := AffinePoint F) st p v) :
-    CircuitType.ReadsAs (val := F) st p.x v.x :=
-  ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp h.1).1,
-    CircuitType.reads_fvar.mpr (reads_affinePoint.mp h.2).1⟩
-
-/-- A point bundle's ordinate reads the value's. -/
-@[complete_reads_fwd] theorem CircuitType.ReadsAs.pointY [Add F] [Mul F] [Zero F]
-    {st : ProverState F} {p : AffinePoint (FVar F)} {v : AffinePoint F}
-    (h : CircuitType.ReadsAs (val := AffinePoint F) st p v) :
-    CircuitType.ReadsAs (val := F) st p.y v.y :=
-  ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp h.1).2,
-    CircuitType.reads_fvar.mpr (reads_affinePoint.mp h.2).2⟩
-
-/-- A bundle whose coordinates read a nonsingular pair is on the curve at that point. -/
-@[complete_reads] theorem OnCurveAs.of_coords [Field F] [DecidableEq F]
-    {W : WeierstrassCurve.Affine F} {st : ProverState F} {p : AffinePoint (FVar F)}
-    {xv yv : F} (hx : CircuitType.ReadsAs (val := F) st p.x xv)
-    (hy : CircuitType.ReadsAs (val := F) st p.y yv) (h : W.Nonsingular xv yv) :
-    OnCurveAs W st p (WeierstrassCurve.Affine.Point.some xv yv h) :=
-  ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp hx.1,
-      CircuitType.scoped_fvar.mp hy.1⟩,
-    OnCurveAt.of_reads (p := p) (CircuitType.reads_fvar.mp hx.2)
-      (CircuitType.reads_fvar.mp hy.2) h⟩
-
-/-- On the curve at a named point, the abscissa reads its coordinate. -/
-@[complete_reads_fwd] theorem OnCurveAs.readsX [Field F] [DecidableEq F]
-    {W : WeierstrassCurve.Affine F} {st : ProverState F} {p : AffinePoint (FVar F)}
-    {xv yv : F} {h : W.Nonsingular xv yv}
-    (hp : OnCurveAs W st p (WeierstrassCurve.Affine.Point.some xv yv h)) :
-    CircuitType.ReadsAs (val := F) st p.x xv :=
-  ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hp.1).1,
-    CircuitType.reads_fvar.mpr
-      (Kimchi.Gate.AddComplete.IsPoint.coords_eq hp.2 ⟨h, rfl⟩).1⟩
-
-/-- On the curve at a named point, the ordinate reads its coordinate. -/
-@[complete_reads_fwd] theorem OnCurveAs.readsY [Field F] [DecidableEq F]
-    {W : WeierstrassCurve.Affine F} {st : ProverState F} {p : AffinePoint (FVar F)}
-    {xv yv : F} {h : W.Nonsingular xv yv}
-    (hp : OnCurveAs W st p (WeierstrassCurve.Affine.Point.some xv yv h)) :
-    CircuitType.ReadsAs (val := F) st p.y yv :=
-  ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp hp.1).2,
-    CircuitType.reads_fvar.mpr
-      (Kimchi.Gate.AddComplete.IsPoint.coords_eq hp.2 ⟨h, rfl⟩).2⟩
-
 /-- A curve read is monotone — the `Mono` form, for a context that carries points. -/
 @[complete_mono] theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {p : AffinePoint (FVar F)} {P : W.Point} :

@@ -1179,8 +1179,13 @@ theorem endoMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     obtain ⟨i, hi, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hx)
     obtain ⟨j, hj, rfl⟩ := Vector.mem_iff_getElem.mp (Vector.mem_toList_iff.mp hv)
     exact (hbitfacts i hi j hj).1
-  -- the sealed `β·x`: the walk reads the scaled abscissa off the on-curve fact
-  -- through the reading vocabulary
+  -- the sealed `β·x`: the bridge reads the scaled abscissa off the on-curve fact,
+  -- and the walk pins the value through it
+  have hscaleR : ∀ {st : ProverState F}, OnCurveAs d.W st t (Point.some _ _ hT) →
+      CircuitType.ReadsAs (val := F) st (CVar.scale_ d.endo t.x) (d.endo * xv) :=
+    fun h => ⟨CircuitType.scoped_fvar.mpr
+        (CVar.Scoped.scale_ (scoped_affinePoint.mp h.1).1),
+      CircuitType.reads_fvar.mpr (by rw [CVar.val_scale_, (htcoords h).1])⟩
   complete_walk
   -- the base's image, read as a curve point wherever `β·x` reads canonically
   have hφTread : ∀ {st : ProverState F},

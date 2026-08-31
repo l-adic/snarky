@@ -378,6 +378,39 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (fun r st' =>
         CircuitType.ReadsAs (val := F) st' r.x (groupMapPure sqrtF params tv).1 ∧
         CircuitType.ReadsAs (val := F) st' r.y (groupMapPure sqrtF params tv).2) := by
+  -- readings of the pure combinations, proof-local
+  have RC : ∀ (a : F) (s : ProverState F),
+      CircuitType.ReadsAs (val := F) s (CVar.const a) a := fun _ _ =>
+    ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩
+  have RS : ∀ {s : ProverState F} {u : FVar F} {uv a : F},
+      CircuitType.ReadsAs (val := F) s u uv →
+      CircuitType.ReadsAs (val := F) s ((CVar.const a).sub_ u) (a - uv) := by
+    intro s u uv a h
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at h ⊢
+    exact ⟨CVar.Scoped.sub_ trivial h.1, by rw [CVar.val_sub_, h.2]; rfl⟩
+  have RA : ∀ {s : ProverState F} {u : FVar F} {uv a : F},
+      CircuitType.ReadsAs (val := F) s u uv →
+      CircuitType.ReadsAs (val := F) s (u.add_ (CVar.const a)) (uv + a) := by
+    intro s u uv a h
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at h ⊢
+    exact ⟨CVar.Scoped.add_ h.1 trivial, by rw [CVar.val_add_, h.2]; rfl⟩
+  have RB : ∀ {s : ProverState F} {u v : FVar F} {uv vv : F},
+      CircuitType.ReadsAs (val := F) s u uv → CircuitType.ReadsAs (val := F) s v vv →
+      CircuitType.ReadsAs (val := F) s (u.add_ v) (uv + vv) := by
+    intro s u v uv vv hu hv
+    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
+      at hu hv ⊢
+    exact ⟨CVar.Scoped.add_ hu.1 hv.1, by rw [CVar.val_add_, hu.2, hv.2]⟩
+  have RCoe : ∀ {s : ProverState F} {b : BoolVar F} {bb : Bool},
+      CircuitType.ReadsAs (val := Bool) s b bb →
+      CircuitType.ReadsAs (val := F) s (↑b : CVar F) (bit bb) := fun h =>
+    ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp h.1),
+      CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp h.2)⟩
+  have RNot : ∀ {s : ProverState F} {b : BoolVar F} {bb : Bool},
+      CircuitType.ReadsAs (val := Bool) s b bb →
+      CircuitType.ReadsAs (val := Bool) s (Snarky.not b) (!bb) := fun h =>
+    ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
+      CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
   -- the raw↔spec identifications: the arithmetic residue of the deferred style,
   -- hoisted above the walk so the leaked VCs capture them too
   have e1 : params.sqrtNeg3U2MinusUOver2 -
@@ -392,7 +425,7 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
   simp only [groupMapCircuit]
   complete_walk
   refine Complete.pure_of fun st h => ⟨?_, ?_⟩
-  · have hx := CircuitType.ReadsAs.add_ (CircuitType.ReadsAs.add_ h.2 h.1.2) h.1.1.2
+  · have hx := RB (RB h.2 h.1.2) h.1.1.2
     rw [e1, e2, e3] at hx
     rcases h1 : sqrtF (ySquared params (potentialXs params tv).1) with _ | v1
     · rcases h2' : sqrtF (ySquared params (potentialXs params tv).2.1) with _ | v2
@@ -401,8 +434,7 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
         · simpa [groupMapPure, h1, h2', h3', bit] using hx
       · simpa [groupMapPure, h1, h2', bit] using hx
     · simpa [groupMapPure, h1, bit] using hx
-  · have hy := CircuitType.ReadsAs.add_
-      (CircuitType.ReadsAs.add_ h.1.1.1.2 h.1.1.1.1.2) h.1.1.1.1.1.2
+  · have hy := RB (RB h.1.1.1.2 h.1.1.1.1.2) h.1.1.1.1.1.2
     rw [e1, e2, e3] at hy
     rcases h1 : sqrtF (ySquared params (potentialXs params tv).1) with _ | v1
     · rcases h2' : sqrtF (ySquared params (potentialXs params tv).2.1) with _ | v2
