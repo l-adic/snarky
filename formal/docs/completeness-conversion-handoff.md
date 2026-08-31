@@ -195,6 +195,37 @@ Walker gotchas, each paid for once:
 Out of scope by design: loops, state-indexed invariants, `instantiate`-shaped
 preconditions — those proofs stay on the combinators.
 
+### The reading-vocabulary experiment (run and reverted — findings only)
+
+Two commits (`847bb01a`, `2f56ff46`, reverted as `b05e7ddc`, `ec7a7aa6`) tested
+globalizing the per-proof reading bridges into attribute tables. What was learned,
+for whoever picks this up:
+
+- **The interface grammar closes.** One backward rule per expression former
+  (`const`, `add_`, `sub_`, `scale_`, the boolean coercion and negation, the
+  on-curve introduction) plus one forward projection per bundle former (pair,
+  `UnChecked`, `AffinePoint` coordinates, on-curve coordinate elims, the sponge
+  state, schnorr's `Statement` cells) sufficed for every adapter tried — failures
+  were always engine cost, never a missing rule. The rule statements are in the
+  reverted commits, ready to restore.
+- **Projections must run forward** (their conclusions are unkeyed backward and
+  match every goal via structure eta), rescue-style and guarded to reading-family
+  goals; deterministic structure (`Forall₂` of literal lists) must be split
+  structurally, never searched.
+- **The engine requirements are exactly three**: indexed candidate lookup,
+  forward saturation, and `apply`-semantics assignment of value metavariables in
+  the goal. `solve_by_elim` lacks the first (multiplicative cost, heartbeat
+  timeouts at GroupMap/schnorr scale); aesop has the first two but declines the
+  third (probed: its search makes no progress on `ReadsAs _ ?v` goals, which is
+  disqualifying — elided values are pinned by exactly that assignment). A bespoke
+  keyed matcher covers all three and reproduced the tree, but the marginal payoff
+  (schnorr's ~45 bridge lines) parked behind a projection normal-form keying
+  problem at the generator-point atom, and the machinery-to-payoff ratio did not
+  justify keeping a hand-rolled prover in the tree.
+- The walker itself needed only generic hardening throughout, none of it
+  reverted: `withoutRecover` atomicity, the law head-filter, reducible-only
+  side-condition discharge, beta-normalization after `instantiate`.
+
 ## Gate discipline
 
 Match the gates to the change class — see the memory note `ci-gates-are-mine`.
