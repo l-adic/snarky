@@ -551,6 +551,7 @@ private theorem toFieldChecked'_complete [Field F] [DecidableEq F] [ToNat F]
 of a 128-bit challenge, the width PS's `toFieldPure` fixes in its `SizedF 128` operand.
 On a scalar faithful to a representative of that width the honest run succeeds and the
 result reads as the sponge's endo-expansion of it. -/
+@[complete_law]
 theorem toField_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (scalar endo : FVar F) (sv ev : F)
     (hlt : ToNat.toNat sv < 2 ^ 128) :

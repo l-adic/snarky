@@ -731,7 +731,10 @@ theorem Complete.pure_of [Zero F] [ConstraintHolds F c] {pre : ProverState F →
     Complete pre (pure a : CircuitM F c α) post :=
   fun st hst => ⟨a, st, rfl, fun _ _ => Sat.pure, h st hst⟩
 
-/-- A program that emits no rows and allocates nothing is complete from every state. -/
+/-- A program that emits no rows and allocates nothing is complete from every state.
+In the law table this is what lets the walk step over a `pure` bound mid-chain — the
+residue of a statement-position `if` branch. -/
+@[complete_law]
 theorem Complete.pure [Zero F] [ConstraintHolds F c] {pre : ProverState F → Prop} {a : α} :
     Complete pre (pure a : CircuitM F c α) fun _ _ => True :=
   fun st _ => ⟨a, st, rfl, fun _ _ => Sat.pure, trivial⟩
