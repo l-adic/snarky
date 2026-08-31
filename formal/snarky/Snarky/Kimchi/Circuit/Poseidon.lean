@@ -298,6 +298,7 @@ table, and the output reads back as `Poseidon.blockCipher p sv`.
 
 The advice is the gate's canonical iterate, so the emitted chain is
 `chainHolds_rounds` — the gate's own `complete`, applied window by window. -/
+@[complete_law]
 theorem poseidon_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (s : SpongeState F) (sv : Poseidon.Triple F) :
