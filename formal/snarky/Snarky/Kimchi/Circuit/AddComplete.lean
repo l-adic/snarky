@@ -1,4 +1,5 @@
 import Snarky.DSL.Utils
+import Snarky.Tactic
 import Snarky.Kimchi.Semantics
 import Kimchi.Gate.Semantics.AddComplete
 
@@ -365,14 +366,14 @@ preserve them — and the witnessed columns are whatever the row constrains them
 /-! ## Completeness -/
 
 /-- A curve read is monotone — the `Mono` form, for a context that carries points. -/
-theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
+@[complete_mono] theorem Mono.onCurveAs [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine F}
     {p : AffinePoint (FVar F)} {P : W.Point} :
     Snarky.Mono (F := F) fun st => OnCurveAs W st p P :=
   fun _ _ hnv hle h => OnCurveAs.mono hnv hle h
 
 /-- Sealing a point: the run succeeds, its rows hold at every extension of the final
 table, and the sealed point is scoped and reads as the operand. -/
-theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (p : AffinePoint (FVar F))
     (P : AffinePoint F) :
     Complete (F := F) (c := c)
@@ -390,23 +391,18 @@ theorem sealPoint_complete [Field F] [DecidableEq F] [BasicSystem F c]
     ⟨CircuitType.scoped_fvar.mpr (scoped_affinePoint.mp h.1).2,
       CircuitType.reads_fvar.mpr (reads_affinePoint.mp h.2).2⟩
   simp only [sealPoint]
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨hy h, hx h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs (sealVar_complete (c := c) p.y P.y)))
-    fun ry => Complete.bind
-      (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-        (Complete.frame Mono.readsAs (sealVar_complete (c := c) p.x P.x)))
-      fun rx => Complete.pure_of fun st h =>
-        ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp h.1.1,
-            CircuitType.scoped_fvar.mp h.2.1⟩,
-          reads_affinePoint.mpr ⟨CircuitType.reads_fvar.mp h.1.2,
-            CircuitType.reads_fvar.mp h.2.2⟩⟩
+  complete_walk
+  exact Complete.pure_of fun st h =>
+    ⟨scoped_affinePoint.mpr ⟨CircuitType.scoped_fvar.mp h.2.1,
+        CircuitType.scoped_fvar.mp h.1.2.1⟩,
+      reads_affinePoint.mpr ⟨CircuitType.reads_fvar.mp h.2.2,
+        CircuitType.reads_fvar.mp h.1.2.2⟩⟩
 
 /-- The infinity column's completeness law: under `checkFinite` the flag is the constant
 `false` and nothing is emitted; under `dontCheckFinite` it is witnessed from the
 operands' readings. Either way the result reads the mode's flag value, so the row
 obligation downstream treats the two modes as one reading. -/
-theorem infColumn_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] theorem infColumn_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (fin : Finiteness)
     (q1 q2 : AffinePoint (FVar F)) (sameX : BoolVar F) (b : Bool) (y1 y2 : F) :
     Complete (F := F) (c := c)
@@ -502,92 +498,78 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
     obtain ⟨sv, hsv⟩ : ∃ v, (if x1 = x2 then 3 * x1 * x1 / (2 * y1)
         else (y2 - y1) / (x2 - x1)) = v := ⟨_, rfl⟩
     simp only [addFast]
-    refine Complete.bind
-      (Complete.frame Mono.readsAs
-        (sealPoint_complete (c := KimchiConstraint F) p1' ⟨x1, y1⟩))
-      fun q1 => Complete.bind
-        (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
-          (Complete.frame Mono.readsAs
-            (sealPoint_complete (c := KimchiConstraint F) p2' ⟨x2, y2⟩)))
-        fun q2 => Complete.bind
-          (Complete.imp (fun st h => ⟨?run1, h.2, h.1⟩) (fun _ _ h => h)
-            (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-              (Complete.witness (addFast.sameXAdvice q1 q2)
-                (⟨decide (x1 = x2)⟩ : UnChecked Bool) (by simp))))
-          fun sxU => Complete.bind
-            (Complete.imp
-              (fun st h => ⟨⟨hub h.1, hay h.2.1, hay h.2.2⟩, h.2.1, h.2.2, hub h.1⟩)
-              (fun _ _ h => h)
-              (Complete.frame
-                (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))
-                (infColumn_complete fin q1 q2 sxU.val (decide (x1 = x2)) y1 y2)))
-            fun inf => Complete.bind
-              (Complete.imp
-                (fun st h => ⟨?run2, h.2.1, h.2.2.1, h.2.2.2, h.1⟩) (fun _ _ h => h)
-                (Complete.frame
-                  (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-                    (Mono.and Mono.readsAs Mono.readsAs)))
-                  (Complete.witness (addFast.auxAdvice q1 q2 sxU.val)
-                    (⟨if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0,
-                      if x1 = x2 then 0 else (x2 - x1)⁻¹, sv⟩ : AddAux F) (by simp))))
-              fun aux => Complete.bind
-                (Complete.imp
-                  (fun st h => ⟨?run3, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2, h.1⟩)
-                  (fun _ _ h => h)
-                  (Complete.frame
-                    (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-                      (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs))))
-                    (Complete.witness (addFast.sumAdvice q1 q2 aux.s)
-                      (⟨sv * sv - (x1 + x2),
-                        sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩ : AffinePoint F)
-                      (by simp))))
-                fun p3 => Complete.bind (Complete.addConstraint ?row)
-                  fun _ => Complete.pure_of fun _ h =>
-                    ⟨h.1.1, CircuitType.scoped_boolVar.mp h.2.2.2.2.1.1⟩
-    case run1 =>
-      simp [addFast.sameXAdvice,
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.2).1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.1).1),
-        CircuitType.reads_fvar.mp (hax h.2).2, CircuitType.reads_fvar.mp (hax h.1).2]
-    case run2 =>
-      rw [← hsv]
-      by_cases hyy : y1 = y2 <;> by_cases hxx : x1 = x2 <;>
-        simp [addFast.auxAdvice, readVar_run h.2.2.2.1,
-          (CircuitType.reads_iff.mp h.2.2.2.2).2,
-          AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.2.1).1),
-          AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hay h.2.1).1),
-          AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.2.2.1).1),
-          AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hay h.2.2.1).1),
-          CircuitType.reads_fvar.mp (hax h.2.1).2,
-          CircuitType.reads_fvar.mp (hay h.2.1).2,
-          CircuitType.reads_fvar.mp (hax h.2.2.1).2,
-          CircuitType.reads_fvar.mp (hay h.2.2.1).2, hyy, hxx]
-    case run3 =>
-      simp [addFast.sumAdvice,
-        AsProver.readCVar_run (scoped_addAux.mp h.1.1).2.2,
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.2.1).1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.2.2.1).1),
-        AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hay h.2.1).1),
-        (reads_addAux.mp h.1.2).2.2, CircuitType.reads_fvar.mp (hax h.2.1).2,
-        CircuitType.reads_fvar.mp (hax h.2.2.1).2,
-        CircuitType.reads_fvar.mp (hay h.2.1).2]
+    complete_walk
+    refine Complete.seq (by complete_mono_tac)
+      (Complete.imp
+        (fun st h => by
+          simp [addFast.sameXAdvice,
+            AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.1.2).1),
+            AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.2).1),
+            CircuitType.reads_fvar.mp (hax h.1.2).2,
+            CircuitType.reads_fvar.mp (hax h.2).2])
+        (fun _ _ h => h)
+        (Complete.witness (addFast.sameXAdvice p1 p2)
+          (⟨decide (x1 = x2)⟩ : UnChecked Bool) (by simp)))
+      fun sameXU => ?_
+    complete_walk
+    refine Complete.seq (by complete_mono_tac)
+      (Complete.imp
+        (fun st h => by
+          rw [← hsv]
+          by_cases hyy : y1 = y2 <;> by_cases hxx : x1 = x2 <;>
+            simp [addFast.auxAdvice, readVar_run (hub h.1.2).1,
+              (CircuitType.reads_iff.mp (hub h.1.2).2).2,
+              AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.1.1.1.2).1),
+              AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hay h.1.1.1.2).1),
+              AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.1.1.2).1),
+              AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hay h.1.1.2).1),
+              CircuitType.reads_fvar.mp (hax h.1.1.1.2).2,
+              CircuitType.reads_fvar.mp (hay h.1.1.1.2).2,
+              CircuitType.reads_fvar.mp (hax h.1.1.2).2,
+              CircuitType.reads_fvar.mp (hay h.1.1.2).2, hyy, hxx])
+        (fun _ _ h => h)
+        (Complete.witness (addFast.auxAdvice p1 p2 sameXU.val)
+          (⟨if y1 = y2 then 0 else if x1 = x2 then (y2 - y1)⁻¹ else 0,
+            if x1 = x2 then 0 else (x2 - x1)⁻¹, sv⟩ : AddAux F) (by simp)))
+      fun aux => ?_
+    refine Complete.seq (by complete_mono_tac)
+      (Complete.imp
+        (fun st h => by
+          simp [addFast.sumAdvice,
+            AsProver.readCVar_run (scoped_addAux.mp h.2.1).2.2,
+            AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.1.1.1.1.2).1),
+            AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hax h.1.1.1.2).1),
+            AsProver.readCVar_run (CircuitType.scoped_fvar.mp (hay h.1.1.1.1.2).1),
+            (reads_addAux.mp h.2.2).2.2,
+            CircuitType.reads_fvar.mp (hax h.1.1.1.1.2).2,
+            CircuitType.reads_fvar.mp (hax h.1.1.1.2).2,
+            CircuitType.reads_fvar.mp (hay h.1.1.1.1.2).2])
+        (fun _ _ h => h)
+        (Complete.witness (addFast.sumAdvice p1 p2 aux.s)
+          (⟨sv * sv - (x1 + x2),
+            sv * (x1 - (sv * sv - (x1 + x2))) - y1⟩ : AffinePoint F)
+          (by simp)))
+      fun p3 => ?_
+    refine Complete.bind (Complete.addConstraint ?row) fun _ =>
+      Complete.pure_of fun _ h => ⟨h.2.1, CircuitType.scoped_boolVar.mp h.1.1.2.1⟩
     case row =>
-      rintro st ⟨hp3, hq1, hq2, hsx, hinf, haux⟩ stf hle
+      rintro st ⟨⟨⟨⟨⟨⟨-, hq1⟩, hq2⟩, hsxU⟩, hinf⟩, haux⟩, hp3⟩ stf hle
+      have hsx := hub hsxU
       -- the emitted row reads as the gate's canonical one
       show Kimchi.Gate.AddComplete.Holds (AddComplete.read stf.env.get _)
-      have r1x : q1.x.val stf.env.get = x1 := by
+      have r1x : p1.x.val stf.env.get = x1 := by
         rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp (hax hq1).1),
           CircuitType.reads_fvar.mp (hax hq1).2]
-      have r1y : q1.y.val stf.env.get = y1 := by
+      have r1y : p1.y.val stf.env.get = y1 := by
         rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp (hay hq1).1),
           CircuitType.reads_fvar.mp (hay hq1).2]
-      have r2x : q2.x.val stf.env.get = x2 := by
+      have r2x : p2.x.val stf.env.get = x2 := by
         rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp (hax hq2).1),
           CircuitType.reads_fvar.mp (hax hq2).2]
-      have r2y : q2.y.val stf.env.get = y2 := by
+      have r2y : p2.y.val stf.env.get = y2 := by
         rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp (hay hq2).1),
           CircuitType.reads_fvar.mp (hay hq2).2]
-      have rsx : (↑sxU.val : CVar F).val stf.env.get = bit (decide (x1 = x2)) := by
+      have rsx : (↑sameXU.val : CVar F).val stf.env.get = bit (decide (x1 = x2)) := by
         rw [CVar.val_of_le hle (CircuitType.scoped_boolVar.mp hsx.1),
           CircuitType.reads_boolVar.mp hsx.2]
       have rinf : (↑inf : CVar F).val stf.env.get
@@ -611,8 +593,8 @@ theorem addFast_complete [Field F] [DecidableEq F] (fin : Finiteness)
         rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp (hay hp3).1),
           CircuitType.reads_fvar.mp (hay hp3).2]
       have hread : AddComplete.read (F := F) stf.env.get
-          { p1 := q1, p2 := q2, p3 := p3, inf := (↑inf : CVar F),
-            sameX := (↑sxU.val : CVar F), s := aux.s, infZ := aux.infZ,
+          { p1 := p1, p2 := p2, p3 := p3, inf := (↑inf : CVar F),
+            sameX := (↑sameXU.val : CVar F), s := aux.s, infZ := aux.infZ,
             x21Inv := aux.x21Inv }
           = Kimchi.Gate.AddComplete.build (decide (fin = .checkFinite)) x1 y1 x2 y2 := by
         simp only [AddComplete.read, Kimchi.Gate.AddComplete.build, r1x, r1y, r2x, r2y,

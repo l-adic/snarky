@@ -80,6 +80,7 @@ private theorem sealVar.core_complete [Field F] [DecidableEq F] [BasicSystem F c
 
 /-- `sealVar`'s completeness law: the pass-through arms allocate nothing and stay within
 the operand's variables; the witnessing arm is `sealVar.core`'s. -/
+@[complete_law]
 theorem sealVar_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar (c := c) x)
