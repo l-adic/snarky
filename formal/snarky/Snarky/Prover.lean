@@ -534,6 +534,89 @@ theorem CircuitType.readVal_ofEquiv [Add F] [Mul F] [Zero F] [inst : CircuitType
 
 end Formers
 
+/-! ### The reading-derivation vocabulary
+
+One `@[complete_reads]` rule per constructor of the interface grammar: how a
+compound expression's reading is formed from its operands', and a component's
+recovered from its bundle's. The walker's adapter search chains these — each
+conclusion is keyed by a distinct head former and each premise reads a strictly
+smaller term, so the search is syntax-directed and terminates structurally. -/
+
+section ReadingRules
+
+variable {val var : Type}
+
+/-- A constant reads itself. -/
+@[complete_reads] theorem CircuitType.ReadsAs.const [Add F] [Mul F] [Zero F]
+    {st : ProverState F} {a : F} : CircuitType.ReadsAs (val := F) st (CVar.const a) a :=
+  ⟨CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩
+
+/-- A sum reads the sum of its operands' readings. -/
+@[complete_reads] theorem CircuitType.ReadsAs.add_ [Add F] [Mul F] [Zero F]
+    {st : ProverState F} {u v : FVar F} {uv vv : F}
+    (hu : CircuitType.ReadsAs (val := F) st u uv)
+    (hv : CircuitType.ReadsAs (val := F) st v vv) :
+    CircuitType.ReadsAs (val := F) st (CVar.add_ u v) (uv + vv) :=
+  ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp hu.1)
+      (CircuitType.scoped_fvar.mp hv.1)),
+    CircuitType.reads_fvar.mpr (by
+      rw [CVar.val_add_, CircuitType.reads_fvar.mp hu.2, CircuitType.reads_fvar.mp hv.2])⟩
+
+/-- A difference reads the difference of its operands' readings. -/
+@[complete_reads] theorem CircuitType.ReadsAs.sub_ [Ring F] [DecidableEq F]
+    {st : ProverState F} {u v : FVar F} {uv vv : F}
+    (hu : CircuitType.ReadsAs (val := F) st u uv)
+    (hv : CircuitType.ReadsAs (val := F) st v vv) :
+    CircuitType.ReadsAs (val := F) st (CVar.sub_ u v) (uv - vv) :=
+  ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.sub_ (CircuitType.scoped_fvar.mp hu.1)
+      (CircuitType.scoped_fvar.mp hv.1)),
+    CircuitType.reads_fvar.mpr (by
+      rw [CVar.val_sub_, CircuitType.reads_fvar.mp hu.2, CircuitType.reads_fvar.mp hv.2])⟩
+
+/-- A scaling reads the scaled reading. -/
+@[complete_reads] theorem CircuitType.ReadsAs.scale_ [AddZeroClass F] [MulZeroOneClass F]
+    [DecidableEq F]
+    {st : ProverState F} {u : FVar F} {uv a : F}
+    (hu : CircuitType.ReadsAs (val := F) st u uv) :
+    CircuitType.ReadsAs (val := F) st (CVar.scale_ a u) (a * uv) :=
+  ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hu.1)),
+    CircuitType.reads_fvar.mpr (by
+      rw [CVar.val_scale_, CircuitType.reads_fvar.mp hu.2])⟩
+
+/-- A boolean's field image reads its bit. -/
+@[complete_reads] theorem CircuitType.ReadsAs.coe [Add F] [Mul F] [Zero F] [One F]
+    [DecidableEq F] [NeZero (1 : F)] {st : ProverState F} {b : BoolVar F} {bb : Bool}
+    (h : CircuitType.ReadsAs (val := Bool) st b bb) :
+    CircuitType.ReadsAs (val := F) st (↑b : CVar F) (bit bb) :=
+  ⟨CircuitType.scoped_fvar.mpr (CircuitType.scoped_boolVar.mp h.1),
+    CircuitType.reads_fvar.mpr (CircuitType.reads_boolVar.mp h.2)⟩
+
+/-- A pair's first component reads the value's. -/
+@[complete_reads_fwd] theorem CircuitType.ReadsAs.fst {a b va vb : Type} [Add F] [Mul F]
+    [Zero F] [CircuitType F a va] [CircuitType F b vb] {st : ProverState F}
+    {p : va × vb} {v : a × b} (h : CircuitType.ReadsAs (val := a × b) st p v) :
+    CircuitType.ReadsAs (val := a) st p.1 v.1 :=
+  ⟨(CircuitType.scoped_prod.mp h.1).1, (CircuitType.reads_prod.mp h.2).1⟩
+
+/-- A pair's second component reads the value's. -/
+@[complete_reads_fwd] theorem CircuitType.ReadsAs.snd {a b va vb : Type} [Add F] [Mul F]
+    [Zero F] [CircuitType F a va] [CircuitType F b vb] {st : ProverState F}
+    {p : va × vb} {v : a × b} (h : CircuitType.ReadsAs (val := a × b) st p v) :
+    CircuitType.ReadsAs (val := b) st p.2 v.2 :=
+  ⟨(CircuitType.scoped_prod.mp h.1).2, (CircuitType.reads_prod.mp h.2).2⟩
+
+/-- The wrapper's payload reads the value's. -/
+@[complete_reads_fwd] theorem CircuitType.ReadsAs.uncheckedVal [Add F] [Mul F] [Zero F]
+    [CircuitType F val var] {st : ProverState F} {u : UnChecked var} {w : UnChecked val}
+    (h : CircuitType.ReadsAs (val := UnChecked val) st u w) :
+    CircuitType.ReadsAs (val := val) st u.val w.val :=
+  ⟨CircuitType.scoped_unchecked.mp h.1, CircuitType.reads_unchecked.mp h.2⟩
+
+attribute [complete_reads] List.Forall₂.cons List.Forall₂.nil
+
+end ReadingRules
+
+
 end Bundles
 
 /-! ## The graph -/

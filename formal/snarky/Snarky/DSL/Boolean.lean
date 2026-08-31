@@ -52,6 +52,14 @@ theorem not_scoped [Add F] [Sub F] [Zero F] [One F] [Neg F] [DecidableEq F]
     (↑(Snarky.not b) : CVar F).Scoped st :=
   CVar.Scoped.sub_ trivial hb
 
+/-- A negation reads the negated bit. -/
+@[complete_reads] theorem CircuitType.ReadsAs.not [Field F] [DecidableEq F]
+    {st : ProverState F} {b : BoolVar F} {bb : Bool}
+    (h : CircuitType.ReadsAs (val := Bool) st b bb) :
+    CircuitType.ReadsAs (val := Bool) st (Snarky.not b) (!bb) :=
+  ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
+    CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
+
 /-- A boolean bundle's reading, at its cell: the bit it spells. A law over `FVar`
 consumes a boolean operand through this. -/
 private theorem asField [Field F] [DecidableEq F] {st : ProverState F} {v : BoolVar F}

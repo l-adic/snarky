@@ -52,3 +52,11 @@ Schnorr.verifyCircuit_complete
 -- system and the solver — the form a deployed verifier and prover meet.
 Schnorr.verifyCircuit_compile_sound
 Schnorr.verifyCircuit_solve_complete
+
+-- The statement's @[complete_reads_fwd] projections — attribute-table vocabulary,
+-- invisible to the reachability pass.
+Schnorr.ReadsAs.statementPkX
+Schnorr.ReadsAs.statementPkY
+Schnorr.ReadsAs.statementUX
+Schnorr.ReadsAs.statementUY
+Schnorr.ReadsAs.statementZ

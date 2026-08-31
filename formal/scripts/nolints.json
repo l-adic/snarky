@@ -18,5 +18,13 @@
  [
   "defsWithUnderscore",
   "Parser.Attr.complete_mono"
+ ],
+ [
+  "defsWithUnderscore",
+  "Parser.Attr.complete_reads"
+ ],
+ [
+  "defsWithUnderscore",
+  "Parser.Attr.complete_reads_fwd"
  ]
 ]

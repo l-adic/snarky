@@ -767,3 +767,24 @@ Snarky.Tactic.lawProgramHead
 Snarky.Mono.nv_le
 Snarky.Mono.env_le
 Snarky.Mono.imp
+
+-- The @[complete_reads] / @[complete_reads_fwd] reading vocabulary, consumed only
+-- through the walker's attribute tables, and the search configurations its tactics
+-- read — all invisible to the reachability pass.
+Snarky.CircuitType.ReadsAs.const
+Snarky.CircuitType.ReadsAs.add_
+Snarky.CircuitType.ReadsAs.sub_
+Snarky.CircuitType.ReadsAs.scale_
+Snarky.CircuitType.ReadsAs.coe
+Snarky.CircuitType.ReadsAs.not
+Snarky.CircuitType.ReadsAs.fst
+Snarky.CircuitType.ReadsAs.snd
+Snarky.CircuitType.ReadsAs.uncheckedVal
+Snarky.Kimchi.CircuitType.ReadsAs.pointX
+Snarky.Kimchi.CircuitType.ReadsAs.pointY
+Snarky.Kimchi.OnCurveAs.of_coords
+Snarky.Kimchi.OnCurveAs.readsX
+Snarky.Kimchi.OnCurveAs.readsY
+Snarky.Kimchi.SpongeVar.Reads.state
+Snarky.Tactic.readsSearchShallow
+Snarky.Tactic.readsSearchDeep

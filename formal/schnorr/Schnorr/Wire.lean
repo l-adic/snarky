@@ -48,6 +48,7 @@ theorem gen_onCurve : OnCurve Vesta.curve.A Vesta.curve.B (gen.x, gen.y) := by
   · exact absurd h (by decide)
 
 /-- The generator as a Mathlib affine point. -/
+@[complete_reads]
 theorem gen_nonsingular : Vesta.curve.toAffine.Nonsingular gen.x gen.y :=
   nonsingular_toW gen_onCurve
 
@@ -96,6 +97,46 @@ cell. -/
         stv.z.val.val V = raw.z.val := by
   rw [CircuitType.reads_ofEquiv, CircuitType.reads_prod, CircuitType.reads_prod]
   simp
+
+/-- The statement's cells, read off its bundle — the walker's forward vocabulary. -/
+@[complete_reads_fwd] theorem ReadsAs.statementPkX {st : Snarky.ProverState Fq}
+    {stv : Statement (FVar Fq)} {raw : Statement Fq}
+    (h : CircuitType.ReadsAs (val := Statement Fq) st stv raw) :
+    CircuitType.ReadsAs (val := Fq) st stv.pk.point.x raw.pk.point.x :=
+  ⟨CircuitType.scoped_fvar.mpr (scoped_statement.mp h.1).1.1,
+    CircuitType.reads_fvar.mpr (reads_statement.mp h.2).1.1⟩
+
+/-- The public key's ordinate, off the statement. -/
+@[complete_reads_fwd] theorem ReadsAs.statementPkY {st : Snarky.ProverState Fq}
+    {stv : Statement (FVar Fq)} {raw : Statement Fq}
+    (h : CircuitType.ReadsAs (val := Statement Fq) st stv raw) :
+    CircuitType.ReadsAs (val := Fq) st stv.pk.point.y raw.pk.point.y :=
+  ⟨CircuitType.scoped_fvar.mpr (scoped_statement.mp h.1).1.2,
+    CircuitType.reads_fvar.mpr (reads_statement.mp h.2).1.2⟩
+
+/-- The commitment's abscissa, off the statement. -/
+@[complete_reads_fwd] theorem ReadsAs.statementUX {st : Snarky.ProverState Fq}
+    {stv : Statement (FVar Fq)} {raw : Statement Fq}
+    (h : CircuitType.ReadsAs (val := Statement Fq) st stv raw) :
+    CircuitType.ReadsAs (val := Fq) st stv.u.point.x raw.u.point.x :=
+  ⟨CircuitType.scoped_fvar.mpr (scoped_statement.mp h.1).2.1.1,
+    CircuitType.reads_fvar.mpr (reads_statement.mp h.2).2.1.1⟩
+
+/-- The commitment's ordinate, off the statement. -/
+@[complete_reads_fwd] theorem ReadsAs.statementUY {st : Snarky.ProverState Fq}
+    {stv : Statement (FVar Fq)} {raw : Statement Fq}
+    (h : CircuitType.ReadsAs (val := Statement Fq) st stv raw) :
+    CircuitType.ReadsAs (val := Fq) st stv.u.point.y raw.u.point.y :=
+  ⟨CircuitType.scoped_fvar.mpr (scoped_statement.mp h.1).2.1.2,
+    CircuitType.reads_fvar.mpr (reads_statement.mp h.2).2.1.2⟩
+
+/-- The response's cell, off the statement. -/
+@[complete_reads_fwd] theorem ReadsAs.statementZ {st : Snarky.ProverState Fq}
+    {stv : Statement (FVar Fq)} {raw : Statement Fq}
+    (h : CircuitType.ReadsAs (val := Statement Fq) st stv raw) :
+    CircuitType.ReadsAs (val := Fq) st stv.z.val raw.z.val :=
+  ⟨CircuitType.scoped_fvar.mpr (scoped_statement.mp h.1).2.2,
+    CircuitType.reads_fvar.mpr (reads_statement.mp h.2).2.2⟩
 
 /-- A point's serialization: its coordinates. -/
 def encodePoint (P : SWPoint Vesta.curve) : VestaPoint Fq := ⟨⟨P.x, P.y⟩⟩

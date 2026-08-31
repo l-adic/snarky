@@ -90,6 +90,11 @@ theorem Reads.mono [Add F] [Mul F] [Zero F] {st st' : ProverState F} {sv : Spong
     {s : Poseidon.State F} : Snarky.Mono (F := F) fun st => Reads st sv s :=
   fun _ _ hnv hle h => h.mono hnv hle
 
+/-- A sponge's state component reads the value sponge's. -/
+@[complete_reads_fwd] theorem Reads.state [Add F] [Mul F] [Zero F] {st : ProverState F}
+    {sv : SpongeVar F} {s : Poseidon.State F} (h : Reads st sv s) :
+    CircuitType.ReadsAs (val := Poseidon.Triple F) st sv.state s.state := h.1
+
 /-- A table reading is a valuation reading at that table. -/
 theorem Reads.readsAt [Add F] [Mul F] [Zero F] {st : ProverState F} {sv : SpongeVar F}
     {s : Poseidon.State F} (h : Reads st sv s) : ReadsAt st.env.get sv s :=
