@@ -786,5 +786,7 @@ Snarky.Kimchi.OnCurveAs.of_coords
 Snarky.Kimchi.OnCurveAs.readsX
 Snarky.Kimchi.OnCurveAs.readsY
 Snarky.Kimchi.SpongeVar.Reads.state
-Snarky.Tactic.readsSearchShallow
-Snarky.Tactic.readsSearchDeep
+Snarky.Tactic.solveAtom
+Snarky.Tactic.readsRules
+Snarky.Tactic.conclusionKey
+Snarky.Tactic.keyServes
