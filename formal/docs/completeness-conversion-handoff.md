@@ -21,20 +21,19 @@ Progress is therefore measured per file as `grep -o 'Runs' | wc -l` and
 
 | | at zero | remaining |
 | --- | --- | --- |
-| files | 16 | 3 |
-| `Sat` sites | — | 44 |
+| files | 17 | 2 |
+| `Sat` sites | — | 9 |
 
 **Done:** `DSL/Assert`, `DSL/Field`, `DSL/Boolean`, `DSL/Bits`, `DSL/Utils`, `Traverse`,
 `Kimchi/Circuit/RandomOracle`, `Kimchi/Circuit/CurvePoint`, `Kimchi/Circuit/Poseidon`,
 `Kimchi/Circuit/AddComplete`, `Kimchi/Circuit/EndoScalar`, `Kimchi/Circuit/EndoMul`,
 `Kimchi/Circuit/VarBaseMul`, `Kimchi/Circuit/RangeCheck`, `Kimchi/Circuit/Sponge`,
-`schnorr/Schnorr/UnpackFull`.
+`Kimchi/Circuit/GroupMap`, `schnorr/Schnorr/UnpackFull` — every gadget file.
 
-**Remaining**, largest first:
+**Remaining** — the seam itself:
 
 | file | `Runs` | `Sat` |
 | --- | --- | --- |
-| `Kimchi/Circuit/GroupMap.lean` | 0 | 35 |
 | `Compile.lean` | 1 | 5 |
 | `Witness.lean` | 4 | 4 |
 
@@ -126,11 +125,16 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
 - **A `split` on a CVar *constructor* renames the theorem's binders.** The goal then
   mentions `t✝¹ e✝¹`, and every explicit argument must be read off the goal. The fix is
   not to fight it: factor the witnessing branch into a `where core` and prove its law in
-  its own binders. `xor` already had this shape; `selectField` was given it. Expect
-  `GroupMap` to want the same. `AddComplete` and `VarBaseMul` did **not**: neither
-  branches on a CVar scrutinee (`AddComplete`'s branch is on the `Finiteness` enum,
-  handled by a standalone `infColumn_complete` proved by `cases fin`) — the `where core`
-  trick is only for splits on a *CVar* scrutinee.
+  its own binders. `xor` already had this shape; `selectField` was given it. No further
+  file needed it — `AddComplete`, `VarBaseMul` and `GroupMap` all branch on plain data
+  (an enum, a `Bool`, a `Fin`), where `cases`/`by_cases`/`match` at the law level
+  suffices. The trick is only for splits on a *CVar* scrutinee.
+
+- **A long straight-line chain is fine without state indexing** when every value is a
+  function of the law's own parameters: `GroupMap`'s 26-step chain is 26 `bind`s with
+  per-step frames, contexts kept to at most eight conjuncts by dropping each reading at
+  its last use. Track the mid-shape per step in a comment margin while writing; the
+  projection paths are the whole difficulty.
 
 - **A `Mono` witness whose predicate is itself a `∀` needs its type pinned.** A lambda
   like `fun _ _ hnv hle h x hx => …` is ambiguous while the frame's `R` is a
