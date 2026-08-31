@@ -749,3 +749,14 @@ Snarky.Kimchi.groupMapCircuit_spec
 Snarky.Kimchi.groupMapCircuit_complete
 Snarky.Kimchi.groupMapCircuit_onCurve_spec
 Snarky.Kimchi.groupMapCircuit_toGroup_complete
+
+-- The completeness walker (Tactic.lean): the tactic entry point and its per-step kernel.
+-- Tactic implementations are invoked through syntax, not proof terms, so the reachability
+-- pass cannot see their use sites; the walk is the surface, and the kernel and its
+-- expression analysis hang from it.
+-- (`walk` is a partial def — opaque to the pass — so its callees are rooted alongside it.)
+Snarky.Tactic.walk
+Snarky.Tactic.completeStep
+Snarky.Tactic.extractCont
+Snarky.Tactic.altNames
+Snarky.Tactic.stepName

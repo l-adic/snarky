@@ -1,4 +1,5 @@
 import Snarky.DSL.Field
+import Snarky.Tactic
 import Snarky.DSL.Assert
 import Snarky.DSL.Boolean
 import Snarky.Kimchi.Semantics
@@ -259,7 +260,7 @@ operands' readings and gives the result's, and `CircuitType.ReadsAs.mono` carrie
 reading past the gates that follow. -/
 
 /-- The ordinate-square block's honest run: two `mul`s and a constant add. -/
-private theorem ySquared_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] private theorem ySquared_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (params : GroupMapParams F)
     (x : FVar F) (xv : F) :
     Complete (F := F) (c := c)
@@ -281,7 +282,7 @@ private theorem ySquared_complete [Field F] [DecidableEq F] [BasicSystem F c]
 /-- **The flagged root's honest run.** With genuine roots, and a rootless operand's
 non-residue twist rooted, the run accepts: the flag reads the operand's residuosity and
 the value reads the advice's root of the flag-selected operand. -/
-private theorem sqrtFlagged_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] private theorem sqrtFlagged_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (sqrtF : F → Option F) (nonResidue : F)
     (x : FVar F) (xv : F) (hroot : ∀ a y, sqrtF a = some y → y * y = a)
     (htwist : sqrtF xv = none → (sqrtF (nonResidue * xv)).isSome) :
@@ -413,318 +414,41 @@ theorem groupMapCircuit_complete [Field F] [DecidableEq F] [BasicSystem F c]
       CircuitType.ReadsAs (val := Bool) s (Snarky.not b) (!bb) := fun h =>
     ⟨CircuitType.scoped_boolVar.mpr (not_scoped (CircuitType.scoped_boolVar.mp h.1)),
       CircuitType.reads_boolVar.mpr (not_val (CircuitType.reads_boolVar.mp h.2))⟩
+  -- the raw↔spec identifications: the arithmetic residue of the deferred style,
+  -- hoisted above the walk so the leaked VCs capture them too
+  have e1 : params.sqrtNeg3U2MinusUOver2 -
+      tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv))) * params.sqrtNeg3U2
+      = (potentialXs params tv).1 := by simp [potentialXs]
+  have e2 : -params.u - (potentialXs params tv).1 = (potentialXs params tv).2.1 := by
+    simp [potentialXs]
+  have e3 : params.u -
+      (tv * tv + params.fu) * (tv * tv + params.fu) *
+        (1 / ((tv * tv + params.fu) * (tv * tv)) * (tv * tv + params.fu)) * params.inv3U2
+      = (potentialXs params tv).2.2 := by simp [potentialXs]
   simp only [groupMapCircuit]
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h) (mul_complete (c := c) t t tv tv))
-    fun t2 => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨RA h, h⟩, h⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
-        (mul_complete (c := c) (t2.add_ (CVar.const params.fu)) t2
-          (tv * tv + params.fu) (tv * tv))))
-    fun alphaInv => ?_
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨⟨RC 1 st, h.1⟩, h.2⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
-        (div_complete (c := c) (CVar.const 1) alphaInv 1
-          ((tv * tv + params.fu) * (tv * tv)) hne)))
-    fun alpha => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨h.2, h.2⟩, h.1, h.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (mul_complete (c := c) t2 t2 (tv * tv) (tv * tv))))
-    fun t4 => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨h.1, h.2.1⟩, h.2.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (mul_complete (c := c) t4 alpha (tv * tv * (tv * tv))
-          (1 / ((tv * tv + params.fu) * (tv * tv))))))
-    fun t4Alpha => ?_
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨⟨h.1, RC _ st⟩, h.2.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (mul_complete (c := c) t4Alpha (CVar.const params.sqrtNeg3U2)
-          (tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv))))
-          params.sqrtNeg3U2)))
-    fun temp1 => ?_
-  -- the first two candidates, read off `temp1` at any table
-  have hX1p : ∀ {s : ProverState F},
-      CircuitType.ReadsAs (val := F) s temp1
-        (tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv)))
-          * params.sqrtNeg3U2) →
-      CircuitType.ReadsAs (val := F) s
-        ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)
-        (potentialXs params tv).1 := fun h => by
-    simpa [potentialXs] using RS h (a := params.sqrtNeg3U2MinusUOver2)
-  have hX2p : ∀ {s : ProverState F},
-      CircuitType.ReadsAs (val := F) s temp1
-        (tv * tv * (tv * tv) * (1 / ((tv * tv + params.fu) * (tv * tv)))
-          * params.sqrtNeg3U2) →
-      CircuitType.ReadsAs (val := F) s
-        ((CVar.const (-params.u)).sub_
-          ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
-        (potentialXs params tv).2.1 := fun h => by
-    simpa [potentialXs] using RS (hX1p h) (a := -params.u)
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨h.2.1, RA h.2.2⟩, h.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (mul_complete (c := c) alpha (t2.add_ (CVar.const params.fu))
-          (1 / ((tv * tv + params.fu) * (tv * tv))) (tv * tv + params.fu))))
-    fun t2Inv => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨RA h.2.2, RA h.2.2⟩, h.1, h.2.1⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (mul_complete (c := c) (t2.add_ (CVar.const params.fu))
-          (t2.add_ (CVar.const params.fu)) (tv * tv + params.fu)
-          (tv * tv + params.fu))))
-    fun t2PlusFuSq => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨h.1, h.2.1⟩, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
-        (mul_complete (c := c) t2PlusFuSq t2Inv
-          ((tv * tv + params.fu) * (tv * tv + params.fu))
-          ((1 / ((tv * tv + params.fu) * (tv * tv))) * (tv * tv + params.fu)))))
-    fun temp2a => ?_
-  refine Complete.bind
-    (Complete.imp (fun st h => ⟨⟨h.1, RC _ st⟩, h.2⟩) (fun _ _ h => h)
-      (Complete.frame Mono.readsAs
-        (mul_complete (c := c) temp2a (CVar.const params.inv3U2)
-          (((tv * tv + params.fu) * (tv * tv + params.fu))
-            * ((1 / ((tv * tv + params.fu) * (tv * tv))) * (tv * tv + params.fu)))
-          params.inv3U2)))
-    fun temp2 => ?_
-  -- the third candidate, read off `temp2` at any table
-  have hX3p : ∀ {s : ProverState F},
-      CircuitType.ReadsAs (val := F) s temp2
-        (((tv * tv + params.fu) * (tv * tv + params.fu))
-          * ((1 / ((tv * tv + params.fu) * (tv * tv))) * (tv * tv + params.fu))
-          * params.inv3U2) →
-      CircuitType.ReadsAs (val := F) s ((CVar.const params.u).sub_ temp2)
-        (potentialXs params tv).2.2 := fun h => by
-    simpa [potentialXs] using RS h (a := params.u)
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨hX1p h.2, h.1, h.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (ySquared_complete (c := c) params
-          ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)
-          (potentialXs params tv).1)))
-    fun y1Sq => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨h.1, h.2.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame (Mono.and Mono.readsAs Mono.readsAs)
-        (sqrtFlagged_complete (c := c) sqrtF params.nonResidue y1Sq
-          (ySquared params (potentialXs params tv).1) hroot (htwist _))))
-    fun sf1 => ?_
-  obtain ⟨y1, b1⟩ := sf1
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨hX2p h.2.2, h.1, h.2.1, h.2.2⟩) (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-          (Mono.and Mono.readsAs Mono.readsAs))
-        (ySquared_complete (c := c) params
-          ((CVar.const (-params.u)).sub_
-            ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
-          (potentialXs params tv).2.1)))
-    fun y2Sq => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2⟩) (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-          (Mono.and Mono.readsAs Mono.readsAs))
-        (sqrtFlagged_complete (c := c) sqrtF params.nonResidue y2Sq
-          (ySquared params (potentialXs params tv).2.1) hroot (htwist _))))
-    fun sf2 => ?_
-  obtain ⟨y2, b2⟩ := sf2
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨hX3p h.2.2.1, h.1, h.2.1, h.2.2.1, h.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-          (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-            (Mono.and Mono.readsAs Mono.readsAs)))
-        (ySquared_complete (c := c) params ((CVar.const params.u).sub_ temp2)
-          (potentialXs params tv).2.2)))
-    fun y3Sq => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-          (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-            (Mono.and Mono.readsAs Mono.readsAs)))
-        (sqrtFlagged_complete (c := c) sqrtF params.nonResidue y3Sq
-          (ySquared params (potentialXs params tv).2.2) hroot (htwist _))))
-    fun sf3 => ?_
-  obtain ⟨y3, b3⟩ := sf3
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨RB (RB (RCoe h.2.2.1.1) (RCoe h.2.1.1)) (RCoe h.1.1),
-        h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-          (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-            (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-              (Mono.and Mono.readsAs Mono.readsAs))))
-        (assertNonZero_complete (c := c)
-          (((↑b1 : CVar F).add_ (↑b2 : CVar F)).add_ (↑b3 : CVar F))
-          (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome
-            + bit (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome
-            + bit (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)
-          (flagSum h2 h3 _ _ _ hsome))))
-    fun _ => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RNot h.2.2.2.1.1, h.2.2.1.1⟩,
-        h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-          (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-            (Mono.and (Mono.and Mono.readsAs Mono.readsAs)
-              (Mono.and Mono.readsAs Mono.readsAs))))
-        (and_complete (c := c) (Snarky.not b1) b2
-          (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
-          ((sqrtF (ySquared params (potentialXs params tv).2.1)).isSome))))
-    fun x2First => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RNot h.2.2.1.1, h.2.1.1⟩,
-        h.1, h.2.2.2.1.1, h.2.2.2.1.2, h.2.2.1.2, h.2.1.2, h.2.2.2.2.1, h.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs))))))
-        (and_complete (c := c) (Snarky.not b2) b3
-          (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome)
-          ((sqrtF (ySquared params (potentialXs params tv).2.2)).isSome))))
-    fun nb2AndB3 => ?_
-  refine Complete.bind
-    (Complete.imp (fun _ h => ⟨⟨RNot h.2.2.1, h.1⟩, h.2⟩) (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs))))))
-        (and_complete (c := c) (Snarky.not b1) nb2AndB3
-          (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome)
-          (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome
-            && (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome))))
-    fun x3First => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RCoe h.1, h.2.2.2.2.2.1⟩,
-        h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.2.1,
-        h.2.2.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs))))))
-        (mul_complete (c := c) (↑x3First : CVar F) y3
-          (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome
-            && (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome
-              && (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)))
-          ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome then
-            ySquared params (potentialXs params tv).2.2
-            else params.nonResidue * ySquared params (potentialXs params tv).2.2)).getD
-              0))))
-    fun t3y => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RCoe h.2.2.1, h.2.2.2.2.2.1⟩,
-        h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.2.1,
-        h.2.2.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs))))))
-        (mul_complete (c := c) (↑x2First : CVar F) y2
-          (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome
-            && (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome))
-          ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome then
-            ySquared params (potentialXs params tv).2.1
-            else params.nonResidue * ySquared params (potentialXs params tv).2.1)).getD
-              0))))
-    fun t2y => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RCoe h.2.2.2.2.1, h.2.2.2.2.2.1⟩,
-        h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.2.1,
-        h.2.2.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-            (Mono.and Mono.readsAs Mono.readsAs))))))
-        (mul_complete (c := c) (↑b1 : CVar F) y1
-          (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome)
-          ((sqrtF (if (sqrtF (ySquared params (potentialXs params tv).1)).isSome then
-            ySquared params (potentialXs params tv).1
-            else params.nonResidue * ySquared params (potentialXs params tv).1)).getD
-              0))))
-    fun t1y => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RCoe h.2.2.2.1, hX3p h.2.2.2.2.2.2.1⟩,
-        h.1, h.2.1, h.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs)))))
-        (mul_complete (c := c) (↑x3First : CVar F) ((CVar.const params.u).sub_ temp2)
-          (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome
-            && (!(sqrtF (ySquared params (potentialXs params tv).2.1)).isSome
-              && (sqrtF (ySquared params (potentialXs params tv).2.2)).isSome)))
-          (potentialXs params tv).2.2)))
-    fun t3x => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RCoe h.2.2.2.2.1, hX2p h.2.2.2.2.2.2⟩,
-        h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs (Mono.and Mono.readsAs Mono.readsAs)))))
-        (mul_complete (c := c) (↑x2First : CVar F)
-          ((CVar.const (-params.u)).sub_
-            ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1))
-          (bit (!(sqrtF (ySquared params (potentialXs params tv).1)).isSome
-            && (sqrtF (ySquared params (potentialXs params tv).2.1)).isSome))
-          (potentialXs params tv).2.1)))
-    fun t2x => ?_
-  refine Complete.bind
-    (Complete.imp
-      (fun _ h => ⟨⟨RCoe h.2.2.2.2.2.1, hX1p h.2.2.2.2.2.2⟩,
-        h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1⟩)
-      (fun _ _ h => h)
-      (Complete.frame
-        (Mono.and Mono.readsAs (Mono.and Mono.readsAs (Mono.and Mono.readsAs
-          (Mono.and Mono.readsAs Mono.readsAs))))
-        (mul_complete (c := c) (↑b1 : CVar F)
-          ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)
-          (bit (sqrtF (ySquared params (potentialXs params tv).1)).isSome)
-          (potentialXs params tv).1)))
-    fun t1x => Complete.pure_of fun st h => ?_
-  obtain ⟨hT1x, hT2x, hT3x, hT1y, hT2y, hT3y⟩ := h
-  refine ⟨?_, ?_⟩
-  · have h := RB (RB hT1x hT2x) hT3x
+  complete_walk
+  refine Complete.pure_of fun st h => ⟨?_, ?_⟩
+  · have hx := RB (RB h.2 h.1.2) h.1.1.2
+    rw [e1, e2, e3] at hx
     rcases h1 : sqrtF (ySquared params (potentialXs params tv).1) with _ | v1
     · rcases h2' : sqrtF (ySquared params (potentialXs params tv).2.1) with _ | v2
       · rcases h3' : sqrtF (ySquared params (potentialXs params tv).2.2) with _ | v3
         · simp [h1, h2', h3'] at hsome
-        · simpa [groupMapPure, h1, h2', h3', bit] using h
-      · simpa [groupMapPure, h1, h2', bit] using h
-    · simpa [groupMapPure, h1, bit] using h
-  · have h := RB (RB hT1y hT2y) hT3y
+        · simpa [groupMapPure, h1, h2', h3', bit] using hx
+      · simpa [groupMapPure, h1, h2', bit] using hx
+    · simpa [groupMapPure, h1, bit] using hx
+  · have hy := RB (RB h.1.1.1.2 h.1.1.1.1.2) h.1.1.1.1.1.2
+    rw [e1, e2, e3] at hy
     rcases h1 : sqrtF (ySquared params (potentialXs params tv).1) with _ | v1
     · rcases h2' : sqrtF (ySquared params (potentialXs params tv).2.1) with _ | v2
       · rcases h3' : sqrtF (ySquared params (potentialXs params tv).2.2) with _ | v3
         · simp [h1, h2', h3'] at hsome
-        · simpa [groupMapPure, h1, h2', h3', bit] using h
-      · simpa [groupMapPure, h1, h2', bit] using h
-    · simpa [groupMapPure, h1, bit] using h
+        · simpa [groupMapPure, h1, h2', h3', bit] using hy
+      · simpa [groupMapPure, h1, h2', bit] using hy
+    · simpa [groupMapPure, h1, bit] using hy
+  · rw [e1, e2, e3]
+    exact flagSum h2 h3 _ _ _ hsome
+  all_goals exact htwist _
 
 /-! ## The wire-protocol spec
 

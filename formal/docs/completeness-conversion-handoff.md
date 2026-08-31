@@ -156,6 +156,45 @@ elaborate); and hoist any pre-map component whose type mentions a constructed bu
 - **Anchor text edits precisely.** `attribute [irreducible] X` occurs more than once in
   some files; slicing to the first occurrence deletes half the module.
 
+## The walker
+
+`Snarky/Tactic.lean` mechanizes the straight-line shape: `complete_walk` walks a
+`Complete pre (g₁ >>= …) post` goal bind by bind, at each step selecting the gadget's
+`@[complete_law]`, synthesizing the frame's `Mono` witness from `@[complete_mono]`
+(both label attributes, `Snarky/Tactic/Attr.lean` — downstream files extend the tables
+by tagging), discharging the adapter by search — which pins the law's witness values by
+unification, so laws carry no value arguments — absorbing `assumption`-shaped side
+conditions and deferring the rest as end-of-proof VCs. It stops at `pure` or at a bind
+with no registered law, main goal kept first, each step atomic.
+
+`groupMapCircuit_complete` is the exemplar: the 300-line hand chain is now
+`simp only [groupMapCircuit]; complete_walk`, three `simp [potentialXs]`-provable
+raw↔spec identities, the two value-case blocks, and four VC discharges. What the walker
+pins is the *raw compositional* value at every step; when a downstream consumer needs a
+folded spec form, the identification is stated once as a `have` and rewritten in — never
+threaded through the chain.
+
+Walker gotchas, each paid for once:
+
+- **`refine` cannot defer a step's mid** (it insists on synthesizing the dependent
+  implicits); `apply` postpones, and named holes solved in dependency order — law,
+  adapter, continuation — make elision work. `case'` (not `case`) lets a step's value
+  goals and deferred side conditions rejoin the goal list.
+- **Reducible transparency everywhere** in the searches, or the `ReadsAs`-family
+  abbreviations unfold to `∧` and the search explodes. Depth limits must exceed the
+  pile: the defaults (6) silently strand goals once the context outgrows them.
+- **Law order is most-specific-first** (reverse registration): a composite law's program
+  can share a prefix with a primitive law's (`ySquared_complete` starts with `mul`), and
+  the composite must win.
+- **Quotation hygiene**: attribute names in macro quotations need `mkIdent`; each
+  kernel invocation needs `withFreshMacroScope` or its named holes collide; multiline
+  tactic sequences don't parse inside quotations — build single tactics and splice.
+- Goal types can be `mdata`-wrapped (`cleanupAnnotations` before `getAppFn`), and
+  `partial def`s are opaque to the dead-code pass — root their callees alongside them.
+
+Out of scope by design: loops, state-indexed invariants, `instantiate`-shaped
+preconditions — those proofs stay on the combinators.
+
 ## Gate discipline
 
 Match the gates to the change class — see the memory note `ci-gates-are-mine`.

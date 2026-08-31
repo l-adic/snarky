@@ -1,4 +1,5 @@
 import Mathlib.Data.List.Forall2
+import Snarky.Tactic.Attr
 import Snarky.Assignments
 import Snarky.Encoding
 import Snarky.Builder
@@ -619,11 +620,16 @@ def Mono (P : ProverState F → Prop) : Prop :=
   ∀ st st' : ProverState F, st.nv ≤ st'.nv → st.env.Le st'.env → P st → P st'
 
 /-- Conjunction of monotone facts is monotone — how a context accumulates. -/
-theorem Mono.and [Zero F] {P Q : ProverState F → Prop} (hP : Mono (F := F) P)
+@[complete_mono] theorem Mono.and [Zero F] {P Q : ProverState F → Prop} (hP : Mono (F := F) P)
     (hQ : Mono (F := F) Q) : Mono (F := F) fun st => P st ∧ Q st :=
   fun _ _ hnv hle h => ⟨hP _ _ hnv hle h.1, hQ _ _ hnv hle h.2⟩
 
+/-- A state-independent fact is monotone — a context's constant conjuncts. -/
+@[complete_mono] theorem Mono.const {p : Prop} : Mono (F := F) fun _ => p :=
+  fun _ _ _ _ h => h
+
 /-- A reading is monotone. -/
+@[complete_mono]
 theorem Mono.readsAs [Add F] [Mul F] [Zero F] {val var : Type} [CircuitType F val var]
     {v : var} {a : val} : Mono (F := F) fun st => CircuitType.ReadsAs st v a :=
   fun _ _ hnv hle h => h.mono hnv hle

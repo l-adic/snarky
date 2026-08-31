@@ -90,7 +90,7 @@ open Std.Do in
 
 /-- `assertNonZero`'s completeness law: where the operand reads nonzero the run succeeds —
 `inv`'s — and its row is satisfied; the constant-zero arm is unreachable. -/
-theorem assertNonZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] theorem assertNonZero_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (hvne : vv ≠ 0) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st v vv) (assertNonZero (c := c) v)
       (fun _ _ => True) := by

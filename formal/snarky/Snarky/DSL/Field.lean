@@ -122,7 +122,7 @@ open Std.Do in
 /-- `mul`'s completeness law: from operands that read `xv` and `yv` the run succeeds, the
 row it built is satisfied at every extension of the final table, and the result reads
 their product — scope and reading together, as `CircuitType.ReadsAs` carries them. -/
-theorem mul_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] theorem mul_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧
         CircuitType.ReadsAs (val := F) st y yv)
@@ -242,7 +242,7 @@ divisor, so the field's total division is the honest reading with no side condit
 /-- `div`'s completeness law: where the divisor reads nonzero the run succeeds, the rows
 its calls built are satisfied at every extension of the final table, and the result is
 scoped — `inv`'s and `mul`'s laws composed, neither reopened. -/
-theorem div_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] theorem div_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x y : FVar F) (xv yv : F)
     (hne : yv ≠ 0) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv ∧

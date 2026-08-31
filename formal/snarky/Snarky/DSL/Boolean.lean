@@ -489,7 +489,7 @@ open Std.Do in
 
 /-- `and`'s completeness law: `mul`'s run, its reading recovered from `mul_spec` for the
 result's booleanity. -/
-theorem and_complete [Field F] [DecidableEq F] [BasicSystem F c]
+@[complete_law] theorem and_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (a b : BoolVar F) (ab bb : Bool) :
     Complete (fun st => CircuitType.ReadsAs (val := Bool) st a ab ∧
       CircuitType.ReadsAs (val := Bool) st b bb)
