@@ -1,3 +1,4 @@
+import Snarky.Tactic
 import Snarky.Kimchi.Circuit.EndoScalar
 import Snarky.DSL.SizedF
 
@@ -66,11 +67,9 @@ theorem rangeCheck128_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat 
         CircuitType.ReadsAs (val := F) st endo ev)
       (rangeCheck128 (c := KimchiConstraint F) endo v)
       (fun _ _ => True) := by
-  intro st hpre
-  obtain ⟨r, st₁, hrun, hsat, -⟩ :=
-    EndoScalar.toField_complete h2 h3 v.val endo vv ev hfits st hpre
-  exact ⟨⟨⟩, st₁, hrun.bind rfl, fun hnv hle =>
-    Sat.bind hrun (hsat hnv hle) Sat.pure, trivial⟩
+  simp only [rangeCheck128]
+  complete_walk
+  exact Complete.pure_of fun _ _ => trivial
 
 attribute [irreducible] rangeCheck128
 
@@ -146,10 +145,6 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
       (fun st => CircuitType.ReadsAs (val := F) st x xv ∧ CircuitType.ReadsAs (val := F) st endo ev)
       (lowest128Bits' (c := KimchiConstraint F) constrainLowBits endo x)
       (fun r st' => CircuitType.ReadsAs (val := F) st' r.val (lowest128BitsPure xv).val) := by
-  rintro st ⟨hRx, hRe⟩
-  have hRx' := hRx
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hRx'
-  obtain ⟨hscx, hvx⟩ := hRx'
   have hsplit : xv =
       ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) + 2 ^ 128 * ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
     have hmd := Nat.mod_add_div (ToNat.toNat xv) (2 ^ 128)
@@ -164,95 +159,62 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
     rw [hhi']
     exact hhi
   simp only [lowest128Bits']
-  obtain ⟨lohi, st₁, hrun₁, hsat₁, hnv₁, hle₁, hsc₁, hrd₁⟩ :=
-    witness_complete (c := KimchiConstraint F) (val := UnChecked (F × F))
-      (UnChecked.mk <$> lowestWit x) (st := st)
-      (v := ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F), ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩)
-      (by simp)
-      (by
+  -- the split, in one witness
+  refine Complete.seq (by complete_mono_tac)
+    (Complete.imp
+      (fun st h => by
         simp only [lowestWit, AsProver.map_eq, AsProver.bind_eq, AsProver.run_bind,
-          AsProver.readCVar_run hscx, hvx, Except.bind]
+          AsProver.readCVar_run (CircuitType.scoped_fvar.mp h.1.1),
+          CircuitType.reads_fvar.mp h.1.2, Except.bind]
         rfl)
+      (fun _ _ h => h)
+      (Complete.witness (UnChecked.mk <$> lowestWit x)
+        (⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+          ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩ : UnChecked (F × F))
+        (by simp)))
+    fun lohi => ?_
   obtain ⟨⟨lo, hi⟩⟩ := lohi
-  simp only [CircuitType.scoped_unchecked, CircuitType.scoped_prod,
-    CircuitType.scoped_fvar] at hsc₁
-  simp only [CircuitType.reads_unchecked, CircuitType.reads_prod,
-    CircuitType.reads_fvar] at hrd₁
-  have hRlo : CircuitType.ReadsAs (val := F) st₁ lo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) :=
-    ⟨CircuitType.scoped_fvar.mpr hsc₁.1, CircuitType.reads_fvar.mpr hrd₁.1⟩
-  have hRhi : CircuitType.ReadsAs (val := F) st₁ hi ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) :=
-    ⟨CircuitType.scoped_fvar.mpr hsc₁.2, CircuitType.reads_fvar.mpr hrd₁.2⟩
-  obtain ⟨rhi, st₂, hrun₂, hsat₂, -⟩ :=
-    EndoScalar.toField_complete h2 h3 hi endo ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) ev hhilt st₁
-      ⟨hRhi, hRe.mono hnv₁ hle₁⟩
-  have hle₂ := hrun₂.le
-  have hnv₂ := hrun₂.nv_le
-  -- the pin, at any table past the split
-  have hpin : ∀ stk : ProverState F, st₁.env.Le stk.env →
-      x.val stk.env.get = (CVar.add_ lo (CVar.scale_ ((2 : F) ^ 128) hi)).val stk.env.get := by
-    intro stk hlek
-    rw [CVar.val_add_, CVar.val_scale_,
-      CVar.val_of_le hlek (CircuitType.scoped_fvar.mp hRlo.1),
-      CVar.val_of_le hlek (CircuitType.scoped_fvar.mp hRhi.1),
-      CircuitType.reads_fvar.mp hRlo.2, CircuitType.reads_fvar.mp hRhi.2,
-      CVar.val_of_le (hle₁.trans hlek) hscx, hvx]
-    exact hsplit
+  -- the split's halves, componentwise
+  have hw : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := UnChecked (F × F)) st ⟨(lo, hi)⟩
+          ⟨(((ToNat.toNat xv % 2 ^ 128 : ℕ) : F),
+            ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F))⟩ →
+        CircuitType.ReadsAs (val := F) st lo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) ∧
+        CircuitType.ReadsAs (val := F) st hi ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) := by
+    intro st h
+    have hsc := h.1
+    have hrd := h.2
+    simp only [CircuitType.scoped_unchecked, CircuitType.scoped_prod,
+      CircuitType.scoped_fvar] at hsc
+    simp only [CircuitType.reads_unchecked, CircuitType.reads_prod,
+      CircuitType.reads_fvar] at hrd
+    exact ⟨⟨CircuitType.scoped_fvar.mpr hsc.1, CircuitType.reads_fvar.mpr hrd.1⟩,
+      ⟨CircuitType.scoped_fvar.mpr hsc.2, CircuitType.reads_fvar.mpr hrd.2⟩⟩
+  -- the halves and the recombination, as search rules for the walk
+  have hloR := fun {st : ProverState F} h => (hw (st := st) h).1
+  have hhiR := fun {st : ProverState F} h => (hw (st := st) h).2
+  have hxread : ∀ {st : ProverState F},
+      CircuitType.ReadsAs (val := F) st lo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) →
+      CircuitType.ReadsAs (val := F) st hi ((ToNat.toNat xv / 2 ^ 128 : ℕ) : F) →
+      CircuitType.ReadsAs (val := F) st
+        (CVar.add_ lo (CVar.scale_ ((2 : F) ^ 128) hi)) xv :=
+    fun hl hh => ⟨CircuitType.scoped_fvar.mpr
+        (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp hl.1)
+          (CVar.Scoped.scale_ (CircuitType.scoped_fvar.mp hh.1))),
+      CircuitType.reads_fvar.mpr (by
+        rw [CVar.val_add_, CVar.val_scale_, CircuitType.reads_fvar.mp hl.2,
+          CircuitType.reads_fvar.mp hh.2]
+        exact hsplit.symm)⟩
+  -- range-check the high half; the walk then stops at the statement-position `if`
+  complete_walk
   by_cases hc : constrainLowBits = true
   · simp only [hc, if_true]
-    obtain ⟨rlo, st₃, hrun₃, hsat₃, -⟩ :=
-      EndoScalar.toField_complete h2 h3 lo endo ((ToNat.toNat xv % 2 ^ 128 : ℕ) : F) ev hlolt st₂
-        ⟨hRlo.mono hnv₂ hle₂, hRe.mono (Nat.le_trans hnv₁ hnv₂) (hle₁.trans hle₂)⟩
-    have hle₃ := hrun₃.le
-    have hnv₃ := hrun₃.nv_le
-    obtain ⟨u, st₄, hrun₄, hsat₄, -⟩ :=
-      assertEqual_complete (c := KimchiConstraint F) x
-        (CVar.add_ lo (CVar.scale_ ((2 : F) ^ 128) hi))
-        (x.val st₃.env.get) st₃
-        ⟨⟨CircuitType.scoped_fvar.mpr (hscx.mono (Nat.le_trans hnv₁
-            (Nat.le_trans hnv₂ hnv₃))), CircuitType.reads_fvar.mpr rfl⟩,
-          ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.add_
-              ((CircuitType.scoped_fvar.mp hRlo.1).mono (Nat.le_trans hnv₂ hnv₃))
-              (CVar.Scoped.scale_
-                ((CircuitType.scoped_fvar.mp hRhi.1).mono (Nat.le_trans hnv₂ hnv₃)))),
-            CircuitType.reads_fvar.mpr (hpin st₃ (hle₂.trans hle₃)).symm⟩⟩
-    have hunit₃ : Runs (pure ⟨⟩ : CircuitM F (KimchiConstraint F) PUnit) st₃ ⟨⟩ st₃ := rfl
-    refine ⟨⟨lo⟩, st₄, hrun₁.bind (hrun₂.bind (hrun₃.bind
-        (Runs.bind hunit₃ (hrun₄.bind rfl)))),
-      fun hnv hle => Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
-        (Sat.bind hrun₃ (hsat₃ ?_ ?_)
-          (Sat.bind hunit₃ (by simp [Sat, build])
-            (Sat.bind hrun₄ (hsat₄ hnv hle) Sat.pure)))), ?_⟩
-    · exact Nat.le_trans (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hrun₄.nv_le)) hnv
-    · exact ((hle₂.trans hle₃).trans hrun₄.le).trans hle
-    · exact Nat.le_trans (Nat.le_trans hnv₃ hrun₄.nv_le) hnv
-    · exact (hle₃.trans hrun₄.le).trans hle
-    · exact Nat.le_trans hrun₄.nv_le hnv
-    · exact hrun₄.le.trans hle
-    · exact hRlo.mono (Nat.le_trans hnv₂ (Nat.le_trans hnv₃ hrun₄.nv_le))
-        ((hle₂.trans hle₃).trans hrun₄.le)
+    complete_walk
+    exact Complete.pure_of fun _ h => hloR h.1.1.1.1.2
   · simp only [Bool.not_eq_true] at hc
     simp only [hc, Bool.false_eq_true, if_false]
-    obtain ⟨u, st₃, hrun₃, hsat₃, -⟩ :=
-      assertEqual_complete (c := KimchiConstraint F) x
-        (CVar.add_ lo (CVar.scale_ ((2 : F) ^ 128) hi))
-        (x.val st₂.env.get) st₂
-        ⟨⟨CircuitType.scoped_fvar.mpr (hscx.mono (Nat.le_trans hnv₁ hnv₂)),
-            CircuitType.reads_fvar.mpr rfl⟩,
-          ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.add_
-              ((CircuitType.scoped_fvar.mp hRlo.1).mono hnv₂)
-              (CVar.Scoped.scale_ ((CircuitType.scoped_fvar.mp hRhi.1).mono hnv₂))),
-            CircuitType.reads_fvar.mpr (hpin st₂ hle₂).symm⟩⟩
-    have hunit₂ : Runs (pure ⟨⟩ : CircuitM F (KimchiConstraint F) PUnit) st₂ ⟨⟩ st₂ := rfl
-    refine ⟨⟨lo⟩, st₃,
-      hrun₁.bind (hrun₂.bind (Runs.bind hunit₂ (hrun₃.bind rfl))),
-      fun hnv hle => Sat.bind hrun₁ (hsat₁ ?_ ?_) (Sat.bind hrun₂ (hsat₂ ?_ ?_)
-        (Sat.bind hunit₂ (by simp [Sat, build])
-          (Sat.bind hrun₃ (hsat₃ hnv hle) Sat.pure))), ?_⟩
-    · exact Nat.le_trans (Nat.le_trans hnv₂ hrun₃.nv_le) hnv
-    · exact (hle₂.trans hrun₃.le).trans hle
-    · exact Nat.le_trans hrun₃.nv_le hnv
-    · exact hrun₃.le.trans hle
-    · exact hRlo.mono (Nat.le_trans hnv₂ hrun₃.nv_le) (hle₂.trans hrun₃.le)
+    complete_walk
+    exact Complete.pure_of fun _ h => hloR h.1.1.1.2
 
 attribute [irreducible] lowestWit lowest128Bits'
 

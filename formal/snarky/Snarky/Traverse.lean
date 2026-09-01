@@ -69,37 +69,35 @@ section Complete
 variable [Zero F] [ConstraintHolds F c] {α β γ : Type}
 
 private theorem zipGo_complete (f : α → β → CircuitM F c γ) (pre : ProverState F → Prop)
-    (hpre : ∀ {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env → pre st → pre st') :
+    (hpre : Mono (F := F) pre) :
     ∀ (n : Nat) (xs : Fin n → α) (ys : Fin n → β)
       (post : Fin n → γ → ProverState F → Prop),
-      (∀ (i : Fin n) {a : γ} {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env →
-        post i a st → post i a st') →
+      (∀ (i : Fin n) (a : γ), Mono (F := F) (post i a)) →
       (∀ i : Fin n, Complete pre (f (xs i) (ys i)) (post i)) →
       Complete pre (zipGo f n xs ys) (fun rs st' => ∀ i : Fin n, post i rs[i] st')
-  | 0, _, _, _, _, _ => fun st hst =>
-    ⟨#v[], st, rfl, fun _ _ => by simp [Sat, build, zipGo], fun i => i.elim0⟩
+  | 0, _, _, _, _, _ => Complete.pure_of fun _ _ i => i.elim0
   | n + 1, xs, ys, post, hmono, hf => by
-    intro st hst
-    obtain ⟨init, st₁, hrunI, hsatI, hpostI⟩ :=
-      zipGo_complete f pre hpre n (fun i => xs i.castSucc) (fun i => ys i.castSucc)
-        (fun i => post i.castSucc) (fun i => hmono i.castSucc) (fun i => hf i.castSucc)
-        st hst
-    obtain ⟨last, st₂, hrunL, hsatL, hpostL⟩ :=
-      hf (Fin.last n) st₁ (hpre hrunI.nv_le hrunI.le hst)
-    refine ⟨init.push last, st₂, hrunI.bind (hrunL.bind rfl), fun hnv hle =>
-      Sat.bind hrunI (hsatI (Nat.le_trans hrunL.nv_le hnv) (hrunL.le.trans hle))
-        (Sat.bind hrunL (hsatL hnv hle) Sat.pure), fun i => ?_⟩
-    refine Fin.lastCases ?_ (fun j => ?_) i
-    · simpa using hpostL
-    · simpa using hmono _ hrunL.nv_le hrunL.le (hpostI j)
+    refine Complete.bind
+      (Complete.imp (fun _ h => ⟨h, h⟩) (fun _ _ h => h)
+        (Complete.frame hpre (zipGo_complete f pre hpre n (fun i => xs i.castSucc)
+          (fun i => ys i.castSucc) (fun i => post i.castSucc)
+          (fun i => hmono i.castSucc) (fun i => hf i.castSucc))))
+      fun init => Complete.bind
+        (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
+          (Complete.frame
+            (show Mono (F := F) fun st => ∀ i : Fin n, post i.castSucc init[i] st from
+              fun _ _ hnv hle h i => hmono i.castSucc init[i] _ _ hnv hle (h i))
+            (hf (Fin.last n))))
+        fun last => Complete.pure_of fun _ h i => by
+          refine Fin.lastCases ?_ (fun j => ?_) i
+          · simpa using h.1
+          · simpa using h.2 j
 
 /-- Every entry's completeness composes into the loop's, given that the precondition and
 the entries' postconditions transport along the table's growth. -/
 theorem zipWithVecM_complete {n : Nat} (f : α → β → CircuitM F c γ) (xs : Vector α n)
     (ys : Vector β n) (pre : ProverState F → Prop) (post : Fin n → γ → ProverState F → Prop)
-    (hpre : ∀ {st st' : ProverState F}, st.nv ≤ st'.nv → st.env.Le st'.env → pre st → pre st')
-    (hpost : ∀ (i : Fin n) {a : γ} {st st' : ProverState F}, st.nv ≤ st'.nv →
-      st.env.Le st'.env → post i a st → post i a st')
+    (hpre : Mono (F := F) pre) (hpost : ∀ (i : Fin n) (a : γ), Mono (F := F) (post i a))
     (hf : ∀ i : Fin n, Complete pre (f xs[i] ys[i]) (post i)) :
     Complete pre (zipWithVecM f xs ys) (fun rs st' => ∀ i : Fin n, post i rs[i] st') :=
   zipGo_complete f pre hpre n _ _ post hpost hf
@@ -212,21 +210,15 @@ theorem mapAccumM_complete [Zero F] [ConstraintHolds F c] {s α β : Type}
     ∀ (init : s) (xs : List α), (∀ x ∈ xs, P x) →
       Complete (inv xs init) (mapAccumM f init xs)
         (fun p st' => inv [] p.2 st' ∧ ChainAt out st' init xs p.1 p.2)
-  | init, [], _ => fun st hst =>
-    ⟨([], init), st, rfl, fun _ _ => by simp [Sat, build, mapAccumM], hst, rfl, rfl⟩
-  | init, x :: xs, hP => by
-    intro st hst
-    obtain ⟨p, st₁, hrun₁, hsat₁, hinv₁, hout₁⟩ :=
-      hstep init x xs (hP x (by simp)) st hst
-    obtain ⟨q, st₂, hrun₂, hsat₂, hinv₂, hchain⟩ :=
-      mapAccumM_complete f P inv out hinv hout hstep p.2 xs
-        (fun y hy => hP y (by simp [hy])) st₁ hinv₁
-    refine ⟨(p.1 :: q.1, q.2), st₂, ?_, ?_, hinv₂,
-      ⟨p.1, q.1, p.2, rfl, hout _ _ _ _ hrun₂.nv_le hrun₂.le hout₁, hchain⟩⟩
-    · exact hrun₁.bind (hrun₂.bind rfl)
-    · intro stf hnv hle
-      exact Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-        (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure)
+  | init, [], _ => Complete.pure_of fun _ h => ⟨h, rfl, rfl⟩
+  | init, x :: xs, hP =>
+    Complete.bind (hstep init x xs (hP x (by simp)))
+      fun p => Complete.bind
+        (Complete.frame (fun _ _ hnv hle h => hout _ _ _ _ hnv hle h)
+          (mapAccumM_complete f P inv out hinv hout hstep p.2 xs
+            fun y hy => hP y (by simp [hy])))
+        fun q => Complete.pure_of fun _ h =>
+          ⟨h.1.1, p.1, q.1, p.2, rfl, h.2, h.1.2⟩
 
 open Std.Do in
 /-- `List.forM`'s soundness: a per-entry postcondition, established by the entry's own
@@ -258,16 +250,10 @@ theorem forM_complete [Zero F] [ConstraintHolds F c] {α : Type}
       Complete (inv (x :: xs)) (f x) (fun _ st' => inv xs st')) :
     ∀ l : List α, (∀ x ∈ l, P x) →
       Complete (inv l) (l.forM f) (fun _ st' => inv [] st')
-  | [], _ => fun st hst =>
-    ⟨PUnit.unit, st, rfl, fun _ _ => by simp [Sat, build], hst⟩
-  | x :: l, hP => by
-    intro st hst
-    obtain ⟨u₁, st₁, hrun₁, hsat₁, hinv₁⟩ := hstep x l (hP x (by simp)) st hst
-    obtain ⟨u₂, st₂, hrun₂, hsat₂, hinv₂⟩ :=
-      forM_complete f P inv hstep l (fun y hy => hP y (by simp [hy])) st₁ hinv₁
-    exact ⟨PUnit.unit, st₂, hrun₁.bind hrun₂, fun hnv hle =>
-      Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-        (hsat₂ hnv hle), hinv₂⟩
+  | [], _ => Complete.pure_of fun _ h => h
+  | x :: l, hP =>
+    Complete.bind (hstep x l (hP x (by simp)))
+      fun _ => forM_complete f P inv hstep l fun y hy => hP y (by simp [hy])
 
 attribute [irreducible] zipWithVecM
 

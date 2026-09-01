@@ -1,4 +1,5 @@
 import Snarky.DSL.Utils
+import Snarky.Tactic
 import Snarky.Kimchi.Circuit.Poseidon
 
 /-!
@@ -84,6 +85,11 @@ theorem Reads.mono [Add F] [Mul F] [Zero F] {st st' : ProverState F} {sv : Spong
     (h : Reads st sv s) : Reads st' sv s :=
   ⟨CircuitType.ReadsAs.mono hnv hle h.1, h.2⟩
 
+/-- A sponge's reading is monotone — `Reads.mono`, as walker vocabulary. -/
+@[complete_mono] theorem Mono.spongeReads [Add F] [Mul F] [Zero F] {sv : SpongeVar F}
+    {s : Poseidon.State F} : Snarky.Mono (F := F) fun st => Reads st sv s :=
+  fun _ _ hnv hle h => h.mono hnv hle
+
 /-- A table reading is a valuation reading at that table. -/
 theorem Reads.readsAt [Add F] [Mul F] [Zero F] {st : ProverState F} {sv : SpongeVar F}
     {s : Poseidon.State F} (h : Reads st sv s) : ReadsAt st.env.get sv s :=
@@ -134,6 +140,7 @@ input state's reading — the seal reads as the sum, in either operand order. -/
 
 /-- **Completeness** (`addSlotVar`): the honest run accepts on a read state and element,
 and the output reads `Poseidon.addSlot` of their values. -/
+@[complete_law]
 private theorem addSlotVar_complete [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (s : SpongeState F) (n : Fin 3)
     (x : FVar F) (sv : Poseidon.Triple F) (xv : F) :
@@ -143,54 +150,76 @@ private theorem addSlotVar_complete [Field F] [DecidableEq F] [BasicSystem F c]
       (addSlotVar (c := c) s n x)
       (fun r st' => CircuitType.ReadsAs (val := Poseidon.Triple F) st' r
         (Poseidon.addSlot sv n xv)) := by
-  rintro st ⟨hs, hx⟩
-  simp only [CircuitType.ReadsAs, scoped_spongeState, reads_spongeState,
-    CircuitType.scoped_fvar, CircuitType.reads_fvar] at hs hx ⊢
-  obtain ⟨⟨hs0, hs1, hs2⟩, hv0, hv1, hv2⟩ := hs
-  obtain ⟨hscx, hvx⟩ := hx
   match n with
   | 0 =>
-    obtain ⟨cell, st₁, hrun, hsat, hR⟩ :=
-      sealVar_complete (c := c) (CVar.add_ x s.s0) (xv + sv.1) st
-        ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.add_ hscx hs0),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_add_, hvx, hv0])⟩
-    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hR
-    refine ⟨⟨cell, s.s1, s.s2⟩, st₁, hrun.bind rfl,
-      fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure,
-      ⟨hR.1, hs1.mono hrun.nv_le, hs2.mono hrun.nv_le⟩, ?_, ?_, ?_⟩
-    · rw [show (Poseidon.addSlot sv 0 xv).1 = sv.1 + xv from rfl, hR.2, add_comm]
+    simp only [addSlotVar]
+    have hsum : ∀ {st : ProverState F},
+        CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv →
+        CircuitType.ReadsAs (val := F) st x xv →
+        CircuitType.ReadsAs (val := F) st (CVar.add_ x s.s0) (xv + sv.1) :=
+      fun hs hx => ⟨CircuitType.scoped_fvar.mpr
+          (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp hx.1)
+            (scoped_spongeState.mp hs.1).1),
+        CircuitType.reads_fvar.mpr (by
+          rw [CVar.val_add_, CircuitType.reads_fvar.mp hx.2,
+            (reads_spongeState.mp hs.2).1])⟩
+    complete_walk
+    refine Complete.pure_of fun st h => ?_
+    refine ⟨scoped_spongeState.mpr ⟨CircuitType.scoped_fvar.mp h.2.1,
+        (scoped_spongeState.mp h.1.1.1).2.1, (scoped_spongeState.mp h.1.1.1).2.2⟩,
+      reads_spongeState.mpr ⟨?_, ?_, ?_⟩⟩
+    · rw [show (Poseidon.addSlot sv 0 xv).1 = sv.1 + xv from rfl,
+        CircuitType.reads_fvar.mp h.2.2, add_comm]
     · rw [show (Poseidon.addSlot sv 0 xv).2.1 = sv.2.1 from rfl,
-        CVar.val_of_le hrun.le hs1, hv1]
+        (reads_spongeState.mp h.1.1.2).2.1]
     · rw [show (Poseidon.addSlot sv 0 xv).2.2 = sv.2.2 from rfl,
-        CVar.val_of_le hrun.le hs2, hv2]
+        (reads_spongeState.mp h.1.1.2).2.2]
   | 1 =>
-    obtain ⟨cell, st₁, hrun, hsat, hR⟩ :=
-      sealVar_complete (c := c) (CVar.add_ x s.s1) (xv + sv.2.1) st
-        ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.add_ hscx hs1),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_add_, hvx, hv1])⟩
-    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hR
-    refine ⟨⟨s.s0, cell, s.s2⟩, st₁, hrun.bind rfl,
-      fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure,
-      ⟨hs0.mono hrun.nv_le, hR.1, hs2.mono hrun.nv_le⟩, ?_, ?_, ?_⟩
+    simp only [addSlotVar]
+    have hsum : ∀ {st : ProverState F},
+        CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv →
+        CircuitType.ReadsAs (val := F) st x xv →
+        CircuitType.ReadsAs (val := F) st (CVar.add_ x s.s1) (xv + sv.2.1) :=
+      fun hs hx => ⟨CircuitType.scoped_fvar.mpr
+          (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp hx.1)
+            (scoped_spongeState.mp hs.1).2.1),
+        CircuitType.reads_fvar.mpr (by
+          rw [CVar.val_add_, CircuitType.reads_fvar.mp hx.2,
+            (reads_spongeState.mp hs.2).2.1])⟩
+    complete_walk
+    refine Complete.pure_of fun st h => ?_
+    refine ⟨scoped_spongeState.mpr ⟨(scoped_spongeState.mp h.1.1.1).1,
+        CircuitType.scoped_fvar.mp h.2.1, (scoped_spongeState.mp h.1.1.1).2.2⟩,
+      reads_spongeState.mpr ⟨?_, ?_, ?_⟩⟩
     · rw [show (Poseidon.addSlot sv 1 xv).1 = sv.1 from rfl,
-        CVar.val_of_le hrun.le hs0, hv0]
-    · rw [show (Poseidon.addSlot sv 1 xv).2.1 = sv.2.1 + xv from rfl, hR.2, add_comm]
+        (reads_spongeState.mp h.1.1.2).1]
+    · rw [show (Poseidon.addSlot sv 1 xv).2.1 = sv.2.1 + xv from rfl,
+        CircuitType.reads_fvar.mp h.2.2, add_comm]
     · rw [show (Poseidon.addSlot sv 1 xv).2.2 = sv.2.2 from rfl,
-        CVar.val_of_le hrun.le hs2, hv2]
+        (reads_spongeState.mp h.1.1.2).2.2]
   | 2 =>
-    obtain ⟨cell, st₁, hrun, hsat, hR⟩ :=
-      sealVar_complete (c := c) (CVar.add_ x s.s2) (xv + sv.2.2) st
-        ⟨CircuitType.scoped_fvar.mpr (CVar.Scoped.add_ hscx hs2),
-          CircuitType.reads_fvar.mpr (by rw [CVar.val_add_, hvx, hv2])⟩
-    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hR
-    refine ⟨⟨s.s0, s.s1, cell⟩, st₁, hrun.bind rfl,
-      fun hnv hle => Sat.bind hrun (hsat hnv hle) Sat.pure,
-      ⟨hs0.mono hrun.nv_le, hs1.mono hrun.nv_le, hR.1⟩, ?_, ?_, ?_⟩
+    simp only [addSlotVar]
+    have hsum : ∀ {st : ProverState F},
+        CircuitType.ReadsAs (val := Poseidon.Triple F) st s sv →
+        CircuitType.ReadsAs (val := F) st x xv →
+        CircuitType.ReadsAs (val := F) st (CVar.add_ x s.s2) (xv + sv.2.2) :=
+      fun hs hx => ⟨CircuitType.scoped_fvar.mpr
+          (CVar.Scoped.add_ (CircuitType.scoped_fvar.mp hx.1)
+            (scoped_spongeState.mp hs.1).2.2),
+        CircuitType.reads_fvar.mpr (by
+          rw [CVar.val_add_, CircuitType.reads_fvar.mp hx.2,
+            (reads_spongeState.mp hs.2).2.2])⟩
+    complete_walk
+    refine Complete.pure_of fun st h => ?_
+    refine ⟨scoped_spongeState.mpr ⟨(scoped_spongeState.mp h.1.1.1).1,
+        (scoped_spongeState.mp h.1.1.1).2.1, CircuitType.scoped_fvar.mp h.2.1⟩,
+      reads_spongeState.mpr ⟨?_, ?_, ?_⟩⟩
     · rw [show (Poseidon.addSlot sv 2 xv).1 = sv.1 from rfl,
-        CVar.val_of_le hrun.le hs0, hv0]
+        (reads_spongeState.mp h.1.1.2).1]
     · rw [show (Poseidon.addSlot sv 2 xv).2.1 = sv.2.1 from rfl,
-        CVar.val_of_le hrun.le hs1, hv1]
-    · rw [show (Poseidon.addSlot sv 2 xv).2.2 = sv.2.2 + xv from rfl, hR.2, add_comm]
+        (reads_spongeState.mp h.1.1.2).2.1]
+    · rw [show (Poseidon.addSlot sv 2 xv).2.2 = sv.2.2 + xv from rfl,
+        CircuitType.reads_fvar.mp h.2.2, add_comm]
 
 attribute [irreducible] addSlotVar
 
@@ -269,39 +298,35 @@ theorem absorb_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
       (absorb (c := KimchiConstraint F) p sv x)
       (fun r st' => Reads st' r (Poseidon.absorb1 p s xv)) := by
   obtain ⟨stv, mode⟩ := sv
-  rintro st ⟨⟨hR, hm⟩, hx⟩
-  simp only at hm
-  subst hm
   obtain ⟨sst, smode⟩ := s
-  cases smode with
+  -- the modes agree — metadata, so `instantiate` names the identification
+  refine Complete.instantiate (ι := PLift (mode = smode))
+    (P := fun _ st => Reads st ⟨stv, mode⟩ ⟨sst, smode⟩ ∧
+      CircuitType.ReadsAs (val := F) st x xv)
+    (fun st h => ⟨⟨h.1.2⟩, h⟩) fun hm => ?_
+  obtain ⟨hm⟩ := hm
+  subst hm
+  -- the state's reading, off the sponge's — the walk's way into the `Reads` bundle
+  have hstate : ∀ {st : ProverState F}, Reads st ⟨stv, mode⟩ ⟨sst, mode⟩ →
+      CircuitType.ReadsAs (val := Poseidon.Triple F) st stv sst := fun h => h.1
+  cases mode with
   | absorbed n =>
     by_cases hn : n.val = 2
     · simp only [absorb, if_pos hn]
-      obtain ⟨stp, st₁, hrun₁, hsat₁, hRp⟩ :=
-        Poseidon.poseidon_complete p hsize stv sst st hR
-      obtain ⟨st', st₂, hrun₂, hsat₂, hR'⟩ :=
-        addSlotVar_complete (c := KimchiConstraint F) stp 0 x
-          (Poseidon.blockCipher p sst) xv st₁
-          ⟨hRp, hx.mono hrun₁.nv_le hrun₁.le⟩
-      exact ⟨⟨st', .absorbed 1⟩, st₂, hrun₁.bind (hrun₂.bind rfl),
-        fun hnv hle => Sat.bind hrun₁ (hsat₁ (Nat.le_trans hrun₂.nv_le hnv) (hrun₂.le.trans hle))
-          (Sat.bind hrun₂ (hsat₂ hnv hle) Sat.pure),
-        by simp only [Poseidon.absorb1, if_pos hn]; exact hR',
-        by simp only [Poseidon.absorb1, if_pos hn]⟩
+      complete_walk
+      exact Complete.pure_of fun _ h =>
+        ⟨by simp only [Poseidon.absorb1, if_pos hn]; exact h.2,
+          by simp only [Poseidon.absorb1, if_pos hn]⟩
     · simp only [absorb, if_neg hn]
-      obtain ⟨st', st₁, hrun₁, hsat₁, hR'⟩ :=
-        addSlotVar_complete (c := KimchiConstraint F) stv n x sst xv st ⟨hR, hx⟩
-      exact ⟨⟨st', .absorbed (n + 1)⟩, st₁, hrun₁.bind rfl,
-        fun hnv hle => Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure,
-        by simp only [Poseidon.absorb1, if_neg hn]; exact hR',
-        by simp only [Poseidon.absorb1, if_neg hn]⟩
+      complete_walk
+      exact Complete.pure_of fun _ h =>
+        ⟨by simp only [Poseidon.absorb1, if_neg hn]; exact h.2,
+          by simp only [Poseidon.absorb1, if_neg hn]⟩
   | squeezed n =>
     simp only [absorb]
-    obtain ⟨st', st₁, hrun₁, hsat₁, hR'⟩ :=
-      addSlotVar_complete (c := KimchiConstraint F) stv 0 x sst xv st ⟨hR, hx⟩
-    exact ⟨⟨st', .absorbed 1⟩, st₁, hrun₁.bind rfl,
-      fun hnv hle => Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure,
-      by simp only [Poseidon.absorb1]; exact hR', by simp only [Poseidon.absorb1]⟩
+    complete_walk
+    exact Complete.pure_of fun _ h =>
+      ⟨by simp only [Poseidon.absorb1]; exact h.2, by simp only [Poseidon.absorb1]⟩
 
 attribute [irreducible] absorb
 
@@ -406,9 +431,6 @@ theorem squeeze_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
       (fun r st' => CircuitType.ReadsAs (val := F) st' r.1 (Poseidon.squeeze p s).1 ∧
         Reads st' r.2 (Poseidon.squeeze p s).2) := by
   obtain ⟨stv, mode⟩ := sv
-  rintro st ⟨hR, hm⟩
-  simp only at hm
-  subst hm
   obtain ⟨sst, smode⟩ := s
   have hslot : ∀ (stk : ProverState F) (t : SpongeState F) (v : Poseidon.Triple F),
       CircuitType.ReadsAs (val := Poseidon.Triple F) stk t v → ∀ k : Fin 3,
@@ -416,31 +438,38 @@ theorem squeeze_complete [Field F] [DecidableEq F] (p : Poseidon.Params F)
     intro stk t v h k
     exact ⟨CircuitType.scoped_fvar.mpr (slotVar_scoped h.1 k),
       CircuitType.reads_fvar.mpr (slotVar_val (CircuitType.reads_iff.mp h.2).2 k)⟩
-  cases smode with
+  -- the modes agree — metadata, so `instantiate` names the identification
+  refine Complete.instantiate (ι := PLift (mode = smode))
+    (P := fun _ st => Reads st ⟨stv, mode⟩ ⟨sst, smode⟩)
+    (fun st h => ⟨⟨h.2⟩, h⟩) fun hm => ?_
+  obtain ⟨hm⟩ := hm
+  subst hm
+  -- the state's reading, off the sponge's — the walk's way into the `Reads` bundle
+  have hstate : ∀ {st : ProverState F}, Reads st ⟨stv, mode⟩ ⟨sst, mode⟩ →
+      CircuitType.ReadsAs (val := Poseidon.Triple F) st stv sst := fun h => h.1
+  cases mode with
   | squeezed n =>
     by_cases hn : n.val = 2
     · simp only [squeeze, if_pos hn]
-      obtain ⟨stp, st₁, hrun₁, hsat₁, hRp⟩ :=
-        Poseidon.poseidon_complete p hsize stv sst st hR
-      refine ⟨(slotVar stp 0, ⟨stp, .squeezed 1⟩), st₁, hrun₁.bind rfl,
-        fun hnv hle => Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure, ?_, ?_, ?_⟩
-      · simpa only [Poseidon.squeeze, if_pos hn] using hslot st₁ stp _ hRp 0
-      · simpa only [Poseidon.squeeze, if_pos hn] using hRp
+      complete_walk
+      refine Complete.pure_of fun stk h => ?_
+      refine ⟨?_, ?_, ?_⟩
+      · simpa only [Poseidon.squeeze, if_pos hn] using hslot stk st _ h.2 0
+      · simpa only [Poseidon.squeeze, if_pos hn] using h.2
       · simp only [Poseidon.squeeze, if_pos hn]
     · simp only [squeeze, if_neg hn]
-      refine ⟨(slotVar stv n, ⟨stv, .squeezed (n + 1)⟩), st, rfl,
-        fun _ _ => by simp [Sat, build], ?_, ?_, ?_⟩
-      · simpa only [Poseidon.squeeze, if_neg hn] using hslot st stv _ hR n
-      · simpa only [Poseidon.squeeze, if_neg hn] using hR
+      refine Complete.pure_of fun st h => ?_
+      refine ⟨?_, ?_, ?_⟩
+      · simpa only [Poseidon.squeeze, if_neg hn] using hslot st stv _ h.1 n
+      · simpa only [Poseidon.squeeze, if_neg hn] using h.1
       · simp only [Poseidon.squeeze, if_neg hn]
   | absorbed n =>
     simp only [squeeze]
-    obtain ⟨stp, st₁, hrun₁, hsat₁, hRp⟩ :=
-      Poseidon.poseidon_complete p hsize stv sst st hR
-    refine ⟨(slotVar stp 0, ⟨stp, .squeezed 1⟩), st₁, hrun₁.bind rfl,
-      fun hnv hle => Sat.bind hrun₁ (hsat₁ hnv hle) Sat.pure, ?_, ?_, ?_⟩
-    · simpa only [Poseidon.squeeze] using hslot st₁ stp _ hRp 0
-    · simpa only [Poseidon.squeeze] using hRp
+    complete_walk
+    refine Complete.pure_of fun stk h => ?_
+    refine ⟨?_, ?_, ?_⟩
+    · simpa only [Poseidon.squeeze] using hslot stk st _ h.2 0
+    · simpa only [Poseidon.squeeze] using h.2
     · simp only [Poseidon.squeeze]
 
 attribute [irreducible] slotVar squeeze

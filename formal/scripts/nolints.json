@@ -10,5 +10,13 @@
  [
   "unusedArguments",
   "Snarky.Builder"
+ ],
+ [
+  "defsWithUnderscore",
+  "Parser.Attr.complete_law"
+ ],
+ [
+  "defsWithUnderscore",
+  "Parser.Attr.complete_mono"
  ]
 ]

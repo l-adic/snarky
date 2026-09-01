@@ -196,32 +196,30 @@ needs a characteristic hypothesis and is not stated. -/
 /-- `unpack`'s completeness law: where the operand's representative fits in `n` bits the
 run succeeds, its rows are satisfied at every extension of the final table, and the bits
 are scoped. -/
+@[complete_law]
 theorem unpack_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (v : FVar F) (vv : F) (n : Nat)
     (hlt : ToNat.toNat vv < 2 ^ n) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st v vv)
       (unpack (c := c) v n)
       (fun a st' => CircuitType.ReadsAs (val := Vector Bool n) st' a (unpackPure vv n)) := by
-  intro st hv'
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hv'
-  obtain ⟨hv, hvv⟩ := hv'
-  subst hvv
   simp only [unpack]
-  obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
-    witness_complete (c := c) (unpack.advice v n) (st := st)
-      (v := unpackPure (v.val st.env.get) n)
-      (by simp) (by simp [unpack.advice, hv])
-  refine ⟨r, st₁, hrun.bind rfl, ?_, hscope, hreads⟩
-  intro stf hnv' hle'
-  refine Sat.bind hrun (hsat hnv' hle')
-    (Sat.bind Runs.addConstraint (Sat.addConstraint ?_) Sat.pure)
-  refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
-  have hbits := CircuitType.reads_vector.mp (hreads.of_le hscope hle')
-  rw [CVar.val_of_le (hle.trans hle') hv,
-    pack_val (bs := unpackPure (v.val st.env.get) n)
-      fun i hi => CircuitType.reads_boolVar.mp (hbits i hi),
-    natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat]
-  simp
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
+      (Complete.frame Mono.readsAs
+        (Complete.witness (unpack.advice v n) (unpackPure vv n) (by simp))))
+    (fun r => Complete.bind (Complete.addConstraint ?_)
+      fun _ => Complete.pure_of fun _ h => h.1)
+  · rintro st ⟨hr, hv⟩ stf hle
+    refine (LawfulBasicSystem.holds_r1cs ..).mpr ?_
+    have hbits := CircuitType.reads_vector.mp (hr.2.of_le hr.1 hle)
+    rw [CVar.val_of_le hle (CircuitType.scoped_fvar.mp hv.1),
+      pack_val (bs := unpackPure vv n)
+        fun i hi => CircuitType.reads_boolVar.mp (hbits i hi),
+      natLsbVal_unpackPure hlt, LawfulToNat.cast_toNat, CircuitType.reads_fvar.mp hv.2]
+    simp
+  · simp [unpack.advice, readVar_run h.1, CircuitType.readVal_fvar,
+      CircuitType.reads_fvar.mp h.2]
 
 attribute [irreducible] unpack
 

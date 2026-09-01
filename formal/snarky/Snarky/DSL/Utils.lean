@@ -68,56 +68,47 @@ private theorem sealVar.core_complete [Field F] [DecidableEq F] [BasicSystem F c
     [ConstraintHolds F c] [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar.core (c := c) x)
       (fun a st' => CircuitType.ReadsAs (val := F) st' a xv) := by
-  intro st hx
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx ⊢
-  obtain ⟨hx, hvx⟩ := hx
-  subst hvx
   simp only [sealVar.core]
-  obtain ⟨r, st₁, hrun, hsat, hnv, hle, hscope, hreads⟩ :=
-    witness_complete (c := c) (readVar (val := F) x) (st := st) (v := x.val st.env.get)
-      (by simp)
-      (by simp [hx])
-  have hr : r.Scoped st₁ := CircuitType.scoped_fvar.mp hscope
-  have hval : r.val st₁.env.get = x.val st.env.get := (CircuitType.reads_iff.mp hreads).2
-  obtain ⟨_, st₂, hrun₂, hsat₂, -⟩ :=
-    assertEqual_complete (c := c) x r (x.val st.env.get) st₁
-      ⟨⟨CircuitType.scoped_fvar.mpr (hx.mono hnv),
-          CircuitType.reads_fvar.mpr (CVar.val_of_le hle hx)⟩,
-        ⟨CircuitType.scoped_fvar.mpr hr, CircuitType.reads_fvar.mpr hval⟩⟩
-  exact ⟨r, st₂, hrun.bind (hrun₂.bind rfl), fun hnv' hle' =>
-    Sat.bind hrun (hsat (hrun₂.nv_le.trans hnv') (hrun₂.le.trans hle'))
-      (Sat.bind hrun₂ (hsat₂ hnv' hle') Sat.pure), hr.mono hrun₂.nv_le,
-    by rw [CVar.val_of_le hrun₂.le hr, hval]⟩
+  refine Complete.bind
+    (Complete.imp (fun st h => ⟨?_, h⟩) (fun _ _ h => h)
+      (Complete.frame Mono.readsAs (Complete.witness (readVar (val := F) x) xv (by simp))))
+    fun r => Complete.bind
+      (Complete.imp (fun _ h => ⟨⟨h.2, h.1⟩, h.1⟩) (fun _ _ h => h)
+        (Complete.frame Mono.readsAs (assertEqual_complete (c := c) x r xv)))
+      fun _ => Complete.pure_of fun _ h => h.2
+  · simp [readVar_run h.1, CircuitType.readVal_fvar, CircuitType.reads_fvar.mp h.2]
 
 /-- `sealVar`'s completeness law: the pass-through arms allocate nothing and stay within
 the operand's variables; the witnessing arm is `sealVar.core`'s. -/
+@[complete_law]
 theorem sealVar_complete [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
     [LawfulBasicSystem F c] (x : FVar F) (xv : F) :
     Complete (fun st => CircuitType.ReadsAs (val := F) st x xv) (sealVar (c := c) x)
       (fun a st' => CircuitType.ReadsAs (val := F) st' a xv) := by
-  intro st hx
-  have hx' := hx
-  simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar] at hx'
-  obtain ⟨hxs, hvx⟩ := hx'
-  subst hvx
-  have hred := CVar.reduce_val x st.env.get
   simp only [sealVar]
   split
   · next v k heq =>
-    rw [heq] at hred
     split
     · subst ‹k = 1›
+      refine Complete.pure_of fun st h => ?_
+      have hxs := CircuitType.scoped_fvar.mp h.1
+      have hred := CVar.reduce_val x st.env.get
+      rw [heq] at hred
       have hv := CVar.ScopedBy.reduce hxs (v, 1) (by rw [heq]; exact List.mem_singleton_self _)
-      refine ⟨_, st, rfl, by simp [Sat, build], ?_⟩
-      simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-      exact ⟨(CVar.scoped_var ..).mpr hv, by simpa [AffineExpression.val] using hred⟩
-    · exact sealVar.core_complete x _ st hx
+      exact ⟨CircuitType.scoped_fvar.mpr ((CVar.scoped_var ..).mpr hv),
+        CircuitType.reads_fvar.mpr (by
+          rw [← CircuitType.reads_fvar.mp h.2]
+          simpa [AffineExpression.val] using hred)⟩
+    · exact sealVar.core_complete x _
   · next k heq =>
+    refine Complete.pure_of fun st h => ?_
+    have hred := CVar.reduce_val x st.env.get
     rw [heq] at hred
-    refine ⟨_, st, rfl, by simp [Sat, build], ?_⟩
-    simp only [CircuitType.ReadsAs, CircuitType.scoped_fvar, CircuitType.reads_fvar]
-    exact ⟨trivial, by simpa [AffineExpression.val] using hred⟩
-  · exact sealVar.core_complete x _ st hx
+    exact ⟨CircuitType.scoped_fvar.mpr trivial,
+      CircuitType.reads_fvar.mpr (by
+        rw [← CircuitType.reads_fvar.mp h.2]
+        simpa [AffineExpression.val] using hred)⟩
+  · exact sealVar.core_complete x _
 
 attribute [irreducible] sealVar sealVar.core
 
