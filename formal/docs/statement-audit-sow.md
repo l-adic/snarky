@@ -1,5 +1,12 @@
 # Statement of Work — Capstone / Statement-Correctness Audit of `formal/`
 
+> **STATUS (superseded): the probabilistic soundness line this document is largely about was
+> RETIRED.** The forking / knowledge-soundness tree in `kimchi` and `bulletproof-pcs`, and the
+> `Zcash/ironwood` dependency under it, were deleted; see `soundness-line-retirement.md` for
+> what went, why, and where to recover it. This file is kept as the record of an outside
+> engagement — read it as history. Its open items (O-1a / O-1b), its locked-target and
+> exhibit-set invariants, and its gate counts no longer describe this repository.
+
 **Status: PERFORMED — the audit this work order commissions was carried out; its findings are
 `statement-audit-report.md`,** whose follow-up routes are tracked in
 `external-audit-followup.md`. This document is the work order, kept as written: its line

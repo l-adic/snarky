@@ -1,5 +1,12 @@
 # Kimchi reorganization — target structure
 
+> **NOTE:** written before the probabilistic soundness line was retired. Names it cites
+> under `Kimchi/{Aggregate,SchwartzZippel,GrandProduct}.lean`,
+> `Kimchi/Index/{Aggregate,Degree,CopySoundness}.lean` and
+> `Kimchi/Protocol/{Accepts,Equation}.lean` (`Protocol.sound`,
+> `satisfies_iff_fullFamily_dvd`, `fullFamily`, `verifierEquation_iff`) no longer exist —
+> see `soundness-line-retirement.md`. The rest of the document still describes the tree.
+
 **Status: EXECUTED — this is the current layout, kept as the migration record.** Tree-verified:
 of the **22** names in the "new file" column of the tables below, **16 exist as written**, and the
 `Circuit/` and `Cycle/` directories the "from" columns cite are **gone**. The other six are parts
@@ -114,7 +121,7 @@ Capstone §716–1172 — the soundness-error and grid-from-density development
 terminal path. It is internally self-contained (nothing in the AGM/terminal path consumes
 it) and is being **deleted**, along with its only support module `Quotient/Rectangle.lean`
 (the forking-lemma counting toolkit, imported solely by Capstone's density section).
-`Quotient/SchwartzZippel.lean` is **not** part of the cut — it is the shared counting
+`Quotient/SchwartzZippel.lean` was **not** part of that cut — it was the shared counting
 foundation the whole PIOP and the AGM path rest on.
 
 Before deleting, the removed development is documented in full in

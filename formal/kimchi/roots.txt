@@ -8,10 +8,17 @@
 --   closure of these roots; anything compiled but outside that closure is dead.
 --
 -- The list is a MINIMAL GENERATING SET: a result reachable from a listed root is deliberately
--- not listed (e.g. `Kimchi.Protocol.sound` and the openings seam
--- `kimchiProof_sound_of_openings` are live through every run-level root; `zH_dvd_iff` and
--- `dvd_separation` through the whole soundness line). `scripts/check_axioms.lean` separately
--- pins the existence and axiom closure of the headline theorems, including ones unlisted here.
+-- not listed (e.g. `zH_dvd_iff` is live through `Lift.Argument.bridge`, and each gate's
+-- `Argument` family through `Protocol.Linearization`'s `gateLinearization`).
+-- `scripts/check_axioms.lean` separately pins the existence and axiom closure of the headline
+-- theorems, including ones unlisted here.
+--
+-- NOTE on what this package now is. `Kimchi.Verifier.kimchiVerify` is a SPECIFICATION — the
+-- transcription of proof-systems' `kimchi/src/verifier.rs`, and the anchor a circuit
+-- implementation is proved faithful to — not a theorem-bearing object. The probabilistic
+-- soundness development that once sat above it (`Verifier/KnowledgeSoundness.lean`,
+-- `Verifier/Capstone/`, `Verifier/Forking/`, `Verifier/Reduction/`) was retired; see git log
+-- for the tree. Nothing here should be read as a soundness claim about the deployed verifier.
 --
 -- Format: one fully-qualified declaration name per line; `--` lines and blanks are ignored.
 --
@@ -113,10 +120,106 @@ Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher
 Kimchi.Gate.Poseidon.fq_poseidonChain_complete
 Kimchi.Gate.Poseidon.fp_poseidonChain_complete
 
--- The arithmetization interface: satisfiability characterized by divisibility of the aggregate
--- family. (Its engine — `zH_dvd_iff`, `dvd_separation`, the `Argument` lifts — is live through
--- it and the soundness line.) Gated by `scripts/check_axioms.lean`.
+-- THE ARITHMETIZATION — what the verifier's commitments commit to.
+--
+-- The verifier opens commitments; it never handles raw polynomials. This layer is the other
+-- side of that: how a constraint system becomes the polynomial family the commitments are
+-- taken over, and what divisibility of that family means about the circuit.
+--
+-- `satisfies_iff_fullFamily_dvd` is the headline and the only result in the tree linking
+-- `Index.Satisfies` (the circuit) to the committed polynomials: a witness table satisfies the
+-- index iff, at every nondegenerate challenge pair, some accumulator makes every member of
+-- the family divisible by `Z_H`. Its engine — `zH_dvd_iff`, `dvd_separation`, the `Argument`
+-- lifts, `gateMember`, `fullFamily`, `pubPoly` — is live through it.
+--
+-- NOTE on `dvd_separation` and the SZ layer: the bad sets are EXPLICIT FINITE SETS with
+-- proved cardinality bounds, and the statements quantify over challenges outside them. That
+-- is deterministic algebra (a Vandermonde / too-many-roots argument), not a probabilistic
+-- claim. It is unrelated to the retired knowledge-soundness development, which is what the
+-- probabilistic reading belonged to; see docs/soundness-line-retirement.md.
 Kimchi.Index.satisfies_iff_fullFamily_dvd
+
+-- The same arithmetization at an EVALUATION check rather than a divisibility one: one
+-- accepting check of the aggregate against `t·Z_H`, at an α outside `badAlphas` and a ζ
+-- outside `badZetas`, implies the witness satisfies the index. This is what makes "verify at
+-- a single point" legitimate, and it is what the Schwartz–Zippel layer
+-- (`SchwartzZippel.lean`, `Aggregate.lean`) exists to support: both bad sets are explicit and
+-- carry proved cardinality bounds, so the statement quantifies over good challenges rather
+-- than over a distribution. The QUANTITATIVE side of the ζ bound needed the degree accounting
+-- of the former `Index/Degree.lean`, which went with the ideal-protocol layer; what is kept
+-- here is the qualitative theorem.
+Kimchi.Index.satisfies_of_evalCheck
+
+-- The bad sets' cardinality bounds, rooted as the anti-vacuity companions of the entry
+-- above: `α ∉ badAlphas` says nothing if `badAlphas` could be the whole field. These pin the
+-- α bad set at `≤ n·(K−1)` and the ζ bad set at `≤ D`, which is what makes the exclusion a
+-- genuine restriction and gives the counting its probabilistic *reading* — which is a remark
+-- about the statements, never part of one.
+Kimchi.card_badAlphas_le
+Kimchi.card_badZetas_le
+Kimchi.SZ.card_badComb_le
+
+-- The index's derived columns — the selectors, σ address columns and coefficient columns the
+-- verifying key commits to, and the agreement between the σ interpolants and the wiring.
+-- `check_index_fixture.sh` replays these on production data.
+Kimchi.Index.selectorPoly
+Kimchi.Index.coeffPoly
+Kimchi.Index.coeffRow
+Kimchi.Index.sigmaPoly
+Kimchi.Index.sigmaAddrRow
+Kimchi.Index.sigmaPoly_eq_wiring
+Kimchi.sigmaPermCol
+
+-- The column encoding: interpolants, their degree bound, and the self-evaluation identity.
+Kimchi.degree_columnPoly_lt
+Kimchi.columnPoly_eval_self
+
+-- Permutation-side identities not reached from the copy conclusion: the Lagrange numerator's
+-- division-free form (the boundary pins read it) and the indicator decomposition.
+Kimchi.Permutation.lagNumer_mul_sub
+Kimchi.Permutation.columnPoly_eq_sum_indicator
+
+-- The α-layout of the linearization: the aggregate combination read as an indexed sum.
+Kimchi.Protocol.Linearization.alphaCombo_eq_sum_getD
+
+-- The permutation argument's own conclusion: grand products agreeing at one good challenge
+-- pair force the witness to take equal values across every wire of the unmasked region.
+-- `copy_soundness_of_dvd`'s abstract core and the GrandProduct multiset layer are live
+-- through the index-level form.
+Kimchi.Index.copy_soundness_of_dvd
+
+-- What it means for a witness table to satisfy an index: the definition (no hand-written
+-- checker — `decide` is the checker, via the derived `Decidable` instance rooted in the
+-- script-surface block below). Reachable from the characterization, rooted anyway as the
+-- landing point for any future statement relating a compiled constraint system to the
+-- circuit a verifying key describes.
+Kimchi.Index.Satisfies
+
+-- The generic gate's reflection pair and the public-input fold.
+Kimchi.Gate.Generic.holds_iff
+Kimchi.Gate.Generic.withPublic_holds_iff
+
+-- What it means for a witness table to satisfy an index: the definition (no hand-written
+-- checker — `decide` is the checker, via the derived `Decidable` instance rooted in the
+-- script-surface block below). The landing point for any future statement relating a
+-- compiled constraint system to the circuit a verifying key describes.
+Kimchi.Index.Satisfies
+
+-- The verifier's body in closed form (`Verifier/Reflect.lean`): every intermediate of
+-- `kimchiVerify` as a named total function of the checked records. These lost their only
+-- in-tree consumer when the soundness development was retired, and are rooted deliberately
+-- rather than deleted: they are THE SPEC ANCHORS a circuit implementation of the verifier is
+-- proved faithful to (see the in-circuit-verifier arc). Stating a fragment's soundness
+-- against `runOracles`/`runVU`/`runPScalar`/`runFtComm` needs no new spec object, which is
+-- exactly what this layer exists for. The seven public forms reach the private ladder
+-- (`runZeta*`, `runFComm`, `runFtEval0P`, `runLinEvals`, `runInputP`) through the closure.
+Kimchi.Verifier.runOracles
+Kimchi.Verifier.runPubEvals
+Kimchi.Verifier.runVU
+Kimchi.Verifier.runPScalar
+Kimchi.Verifier.runFtComm
+Kimchi.Verifier.runStreamP
+Kimchi.Verifier.runInput
 
 -- The executable verifier, the wire parsers, and the rest of the surface the fixture
 -- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
@@ -159,109 +262,6 @@ Kimchi.Permutation.isPrimitiveRoot_of_certificate
 Kimchi.Permutation.cosetShifts_of_certificate
 Kimchi.Permutation.shiftSide_eval_row
 Kimchi.Permutation.sigmaSide_eval_row
-
--- =====================================================================================
--- THE KNOWLEDGE-SOUNDNESS DEVELOPMENT
---
--- The deployed verifier is knowledge-sound, per curve, in the random-oracle model: over a
--- uniformly sampled setup basis and a uniform challenge table, and for every complete fork
--- tape, the probability that the executable verifier accepts while the forking extractor
--- returns no table satisfying the circuit the verifying key corresponds to is at most
---   (Q + k + 1)*3/2^128 + (2^k + 1)*eps + delta + (Q + 1)*szBudget/2^128.
--- Trust surface: the standard axioms plus the Pasta certificates. No Fiat-Shamir axiom.
-Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound
-Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound
-
--- The extractor's cost for THIS family (audit O-1a). The call-bound hypothesis of the
--- endpoints, discharged at an explicit R = (2·2^128 + 1)^(k+1) on the same tape that
--- witnesses `Complete`. WORST CASE, exponential in k and in the challenge domain: it records
--- which reductions the hardness assumption is taken against, and is not a security claim.
--- The walk reaches KimchiFamily.reductionEfficient_of_bounded from here.
-Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.exists_complete_reductionEfficient
--- The floor under the same hypothesis: no R below 1 satisfies the efficiency gate, so `hEff`
--- cannot be met by a number advertising a zero-call reduction. It lifts the counter's own
--- >= 1 bound to the level the endpoints read it at, and does NOT make `hEff` easier to satisfy
--- (that is the entry above).
-Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficient
-
--- The CONDITIONAL AVERAGE axis (upstream's joint table-and-tape coin axis), standing beside the
--- per-tape entries above and replacing neither. The bridge from a family-level fork spread to an
--- average call bound over (table, tape) pairs; the walk from it reaches KimchiForkSpreadFamily,
--- attemptRuns_sum_le_of_forkSpreadFamily and ReductionEfficientAvg, so none of those is rooted
--- separately. `KimchiForkSpreadFamily` has NO witness at any layer, which is why the two
--- companions are rooted with it: the gate is reachable unconditionally at the worst-case
--- (2·2^128 + 1)^(k+1), and no R below 1 satisfies it.
-Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_forkSpreadFamily
-Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_worstCase
-Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficientAvg
-
--- The PROBABILITY half of that same conditional-average axis: the deployed verifier is
--- knowledge-sound, per curve, over (setup basis) x (challenge table x fork tape) jointly, with
--- the fork tape SAMPLED rather than fixed. Same four summands and the same constants as the
--- per-tape endpoints above; the completeness hypothesis is gone, discharged structurally by
--- RecursiveForkTape.toCoins_complete. NEITHER endpoint implies the other, and the per-tape pair
--- above is untouched. These two roots are terminal: the walk from them reaches the whole
--- probability layer (relationFinderAvg, DerivedUDLAdvantageLEAvg, DiscreteLogRelationHardForAvg,
--- both summands, the cover, both arm measures and the measure transport), so none of those is
--- rooted separately.
-Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound_avg
-Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound_avg
-
--- Faithfulness: the deployed verifier IS the challenge-generic one at the sponge's own
--- squeezes, stated at named sources rather than as an existential (an existential over the
--- challenges is satisfied even by a verifier with Fiat-Shamir deleted).
-Kimchi.Verifier.KnowledgeSoundness.kimchiVerify_eq_verifyWith
-
--- What the endpoints do and do not claim, rooted so they cannot be swept:
--- `FSFaithful` names the eight equations separating the game from the deployed verifier --
--- exactly the random-oracle idealisation, the same step the IPA capstone already takes --
--- and `wins_iff_kimchiVerify` is the pointwise bridge that holds wherever they do;
--- the honest family witnesses that the bound is a statement about the extractor rather
--- than about acceptance being empty.
-Kimchi.Verifier.Forking.Bridge.FSFaithful
-Kimchi.Verifier.Forking.Bridge.wins_iff_kimchiVerify
-Kimchi.Verifier.Forking.honestKimchiFamily_wins
-Kimchi.Verifier.Forking.honestKimchiFamily_failure_set
--- and the per-curve closures of the loop (external-audit B-4): a concrete four-row
--- index on each curve, and with it the honest family and its failure-set corollary,
--- unconditionally at the deployed instantiations.
-Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le
-Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le
--- and the same two guards against the CONDITIONAL-AVERAGE endpoints, over the joint
--- (table x tape) space: the honest family's win conjunct does not read the tape, so the
--- containment is the same, and `hcoins` is gone (structural via `toCoins_complete`).
-Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le_avg
-Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le_avg
--- and: the sampled basis is maximally non-binding -- `hbind` is refutable at
--- `augOfSetup (scalarBasis B s)`, which is why no binding hypothesis can appear anywhere
--- in the endpoints' ancestry (the module preamble's "eval pins would be circular" record).
-Kimchi.Verifier.KnowledgeSoundness.exists_ne_zero_kernel_scalarBasis
-
--- =====================================================================================
--- REVISIT: the AGM un-batching lemmas, rooted to keep them, not because they are API.
---
--- These are the results behind "no grid is needed": per-commitment representations plus ONE
--- accepted opening give every per-row evaluation pin, against two counted exclusion sets.
--- The endpoints do not call them -- they call the split forms
--- (`eval_pins_of_opening_of_eq`, `dlRelation_of_opening_ne`) that separate the
--- conclusion-given-equality from the relation-given-inequality -- so the closure would
--- otherwise drop them along with the old soundness chain.
---
--- They are kept because they are mathematical content rather than plumbing, and because the
--- un-batching argument is the part of this development with no counterpart upstream
--- (ironwood's `batch_open_soundV` needs a grid it cannot obtain from one run). Rooting is a
--- holding action: decide whether they earn standalone status or should follow the chain out.
---
--- NOTE: marking these `private` was considered and does not compose with rooting -- private
--- names are mangled, and nothing in their own files consumes them, so they would read as
--- unused file-local declarations to both `lake lint` and the dead-code pass.
-Kimchi.Verifier.eval_pins_of_opening
-Kimchi.Verifier.combinedCommitment_eq_commit_of_rep
-Kimchi.Verifier.dlRelation_of_opening_ne
-Kimchi.Verifier.dlRelation_of_commit_eq
-Kimchi.Verifier.dlRelation_of_chunk_rep_ne
-Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne
-Kimchi.Verifier.ft_identity_of_chunks
 
 -- Demo defs consumed by the kimchi-demo executable (Main.lean) and the files' own
 -- `#eval`/`example` regression sections — consumers the constant walk cannot see.

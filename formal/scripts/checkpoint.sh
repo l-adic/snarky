@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Run every gate that must be green before a consolidation step is committed.
+# Run every gate that must be green before a change is committed.
 #
-# The forking consolidation (docs/forking-consolidation-plan.md) deletes and restates proofs across
-# two packages in nine steps. Each step is meant to be independently committable, which is only
-# meaningful if "green" has one definition. This is that definition, ordered cheapest-first so a
-# failure surfaces before the expensive gates run.
+# One definition of "green", ordered cheapest-first so a failure surfaces before the expensive
+# gates run. CI (.github/workflows/lean.yml) runs the same set plus the fixture drivers and the
+# kernel replay; this is the local pre-commit pass.
 #
 # Usage:  formal/scripts/checkpoint.sh            # everything
 #         formal/scripts/checkpoint.sh --fast     # skip lake lint and the fixture gate
@@ -29,35 +28,28 @@ run() {
 # Cheap and catches the most common refactor slips.
 run "style (<=100 cols, no trailing ws/tabs, final newline)" bash scripts/check-style.sh
 run "sorry census" bash scripts/check_sorry_census.sh
-# The one guard nothing else can supply: a prover under pressure adjusts the STATEMENT and every
-# other gate stays green. See docs/locked-target.md.
-run "locked target" bash bulletproof-pcs/scripts/check_locked_target.sh
-
-# Builds. The shared workspace means one Mathlib for both packages.
-run "build Bulletproof" lake build Bulletproof
-run "build Kimchi" lake build Kimchi
-
-# Reuse seam: proves the upstream substitutions this refactor depends on still typecheck.
-run "ironwood generic seam" bash bulletproof-pcs/scripts/check_ironwood_generic.sh
-
-# The only BEHAVIOURAL gate: it #evals the extractor. Step 7 changes the extractor's algorithm
-# (freshness moves from field images to prechallenges), so this is what catches a wrong swap.
-run "extractor computes" bash bulletproof-pcs/scripts/check_extractor_computes.sh
+# Builds. The shared workspace means one Mathlib for every package.
+run "build" lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr
 
 # Trust boundary, per package.
 run "axioms (bulletproof-pcs)" bash bulletproof-pcs/scripts/check_axioms.sh
 run "axioms (kimchi)" bash kimchi/scripts/check_axioms.sh
 run "axioms (pasta)" bash pasta/scripts/check_axioms.sh
+run "axioms (poseidon)" bash poseidon/scripts/check_axioms.sh
 run "axioms (snarky)" bash snarky/scripts/check_axioms.sh
+run "axioms (schnorr)" bash schnorr/scripts/check_axioms.sh
+
+# Reachability from the packages' roots.txt: dead must be zero.
+run "dead code" bash scripts/deadcode.sh
 
 if [[ $FAST -eq 0 ]]; then
-  # Reflection.lean is on the fixture path; step 5 touches it.
   run "IPA fixture" bash bulletproof-pcs/scripts/check_ipa_fixture.sh
   # De-privatizing a declaration without a docstring trips docBlame, and it is a CI gate.
   # One `lake lint` over all eight roots accumulates every import environment in one process and
   # gets OOM-killed (see the CAVEAT in lakefile.toml) — run one linter process per root, as CI does.
   run "env linters (one process per root)" bash -c '
-    for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture; do
+    for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
+             Schnorr; do
       lake exe runLinter "$m" || exit 1
     done'
 fi

@@ -111,7 +111,7 @@ structure _root_.Kimchi.Index (F : Type*) [Field F] (n : ℕ) where
   omega_prim : IsPrimitiveRoot omega n
   /-- Production's zero-knowledge row count is `(16·nc + 5)/7` (constraints.rs:979),
   which is at least `3` at every chunk count `nc ≥ 1`. The permutation argument's
-  three-factor mask needs at least `2` (`zkpm_eval_ne_zero`), and the aggregate degree
+  three-factor mask needs at least `2`, and the aggregate degree
   accounting needs `3 ≤ n` — both covered by the production bound. -/
   zk_three : 3 ≤ zkRows
   zk_le : zkRows ≤ n

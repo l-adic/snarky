@@ -1,5 +1,12 @@
 # Statement-Correctness Audit of `formal/` — Findings Report
 
+> **STATUS (superseded): the probabilistic soundness line this document is largely about was
+> RETIRED.** The forking / knowledge-soundness tree in `kimchi` and `bulletproof-pcs`, and the
+> `Zcash/ironwood` dependency under it, were deleted; see `soundness-line-retirement.md` for
+> what went, why, and where to recover it. This file is kept as the record of an outside
+> engagement — read it as history. Its open items (O-1a / O-1b), its locked-target and
+> exhibit-set invariants, and its gate counts no longer describe this repository.
+
 **Scope.** This report executes `formal/docs/statement-audit-sow.md`: an audit of the Lean
 *statements* (theorem signatures, load-bearing definitions, declared axioms, and their
 docstrings/manifest prose) of the kimchi formalization — **not** the proof bodies, which

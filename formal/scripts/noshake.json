@@ -1,52 +1,39 @@
 {
- "ignoreImport": [
-  "Kimchi.Columns",
-  "Mathlib"
- ],
- "ignore": {
-  "Kimchi.Verifier.Reduction.Correspond": [
-   "Kimchi.Index.Aggregate"
+  "ignoreImport": [
+    "Kimchi.Columns",
+    "Mathlib"
   ],
-  "Kimchi.Verifier.Capstone.Reflection": [
-   "Bulletproof.Reflection"
-  ],
-  "Kimchi.Permutation.Wiring": [
-   "Kimchi.Permutation.Copy"
-  ],
-  "Kimchi.Permutation.Permutation": [
-   "Kimchi.GrandProduct"
-  ],
-  "Kimchi.Permutation.Copy": [
-   "Kimchi.SchwartzZippel"
-  ],
-  "Kimchi.Gate.VarBaseMul": [
-   "Kimchi.Gate.AddComplete",
-   "Pasta.Basic"
-  ],
-  "Kimchi.Gate.Semantics.EndoMul": [
-   "Kimchi.Gate.Semantics.VarBaseMul"
-  ],
-  "Kimchi.Gate.Generic": [
-   "Mathlib.Tactic"
-  ],
-  "Kimchi.Bits": [
-   "Mathlib.Tactic.Ring"
-  ],
-  "Kimchi.Gate.EndoMul": [
-   "Kimchi.Gate.VarBaseMul"
-  ],
-  "Kimchi.Gate.AddComplete": [
-   "Pasta.Basic"
-  ],
-  "Kimchi.Columns": [
-   "Init"
-  ],
-  "Kimchi.Verifier.Reduction.Soundness": [
-   "Bulletproof.Soundness"
-  ],
-  "Kimchi.Verifier.Capstone.Algebraic": [
-   "Kimchi.Verifier.Reduction.Soundness",
-   "Zcash.Snark.Soundness.AGM.Adapter"
-  ]
- }
+  "ignore": {
+    "Kimchi.Permutation.Wiring": [
+      "Kimchi.Permutation.Copy"
+    ],
+    "Kimchi.Permutation.Permutation": [
+      "Kimchi.GrandProduct"
+    ],
+    "Kimchi.Permutation.Copy": [
+      "Kimchi.SchwartzZippel"
+    ],
+    "Kimchi.Gate.VarBaseMul": [
+      "Kimchi.Gate.AddComplete",
+      "Pasta.Basic"
+    ],
+    "Kimchi.Gate.Semantics.EndoMul": [
+      "Kimchi.Gate.Semantics.VarBaseMul"
+    ],
+    "Kimchi.Gate.Generic": [
+      "Mathlib.Tactic"
+    ],
+    "Kimchi.Bits": [
+      "Mathlib.Tactic.Ring"
+    ],
+    "Kimchi.Gate.EndoMul": [
+      "Kimchi.Gate.VarBaseMul"
+    ],
+    "Kimchi.Gate.AddComplete": [
+      "Pasta.Basic"
+    ],
+    "Kimchi.Columns": [
+      "Init"
+    ]
+  }
 }

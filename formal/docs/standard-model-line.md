@@ -127,5 +127,6 @@ Generic finite-combinatorics over a `Finset (α × β)`, the Kővári–Sós–T
 
 `git show <this-branch>^:kimchi/Kimchi/Quotient/Rectangle.lean` restores the engine; the two
 Capstone sections and the roots/`check_axioms.lean`/`Kimchi.lean` entries are in the same commit's
-parent. The development depended only on `SchwartzZippel` (surviving), `kimchiBundle_sound`,
+parent. The development depended only on `SchwartzZippel` (since deleted too — see
+`soundness-line-retirement.md`), `kimchiBundle_sound`,
 `kimchi{Vesta,Pallas}_sound`, and the `kimchiBatchAcc_bundle_{curve}` bridges — all still present.

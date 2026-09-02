@@ -1,5 +1,12 @@
 # External Audit Report — the `formal/` Verification Stack
 
+> **STATUS (superseded): the probabilistic soundness line this document is largely about was
+> RETIRED.** The forking / knowledge-soundness tree in `kimchi` and `bulletproof-pcs`, and the
+> `Zcash/ironwood` dependency under it, were deleted; see `soundness-line-retirement.md` for
+> what went, why, and where to recover it. This file is kept as the record of an outside
+> engagement — read it as history. Its open items (O-1a / O-1b), its locked-target and
+> exhibit-set invariants, and its gate counts no longer describe this repository.
+
 **Engagement:** per `formal/docs/external-audit-sow.md` (2026-07-28).
 **Subject revision:** branch `kimchi-knowledge-soundness`; SoW pin `92a0fb7f` (PR #280), audited at
 HEAD `2c8c57cc` (= pin + one lint commit touching `bulletproof-pcs` only; that delta is examined

@@ -3,8 +3,8 @@ name: Lean
 # Separate from the main `CI` workflow: the Kimchi formalization has its own
 # toolchain (elan / lake / Mathlib) and is independent of the PureScript/Rust
 # build — so it runs in parallel and only when `formal/` (or this file) changes.
-# No submodules are needed: every Lean dependency (Mathlib, CompElliptic, ironwood)
-# is a lake git require; the large `mina` submodule is skipped.
+# No submodules are needed: every Lean dependency (Mathlib, CompElliptic) is a lake
+# git require; the large `mina` submodule is skipped.
 #
 # Four jobs: `build` runs the cheap source gates, builds every library target, and
 # saves the build cache (even on failure, so red iterations stay incremental);
@@ -48,7 +48,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         # No submodules: the large `mina` submodule is skipped, and every Lean
-        # dependency (Mathlib, CompElliptic, ironwood) is a lake git require.
+        # dependency (Mathlib, CompElliptic) is a lake git require.
         submodules: false
 
     - name: Lean style check
@@ -63,14 +63,6 @@ jobs:
     # script header.
     - name: Shape-literal gate
       run: bash kimchi/scripts/check_shape_literals.sh
-
-    # GATE (external-audit A-1: previously wired into no automation): the locked
-    # statement texts — the IPA rung and extractor shape, and the kimchi
-    # knowledge-soundness endpoints. Pure source checks, no build needed.
-    - name: Check the locked target statements
-      run: |
-        bash bulletproof-pcs/scripts/check_locked_target.sh
-        bash kimchi/scripts/check_locked_target.sh
 
     # GATE (A-1): the sorry census — `lake build` treats `sorry` as a warning, and the
     # axiom gates only see rooted closures; the census pins the whole tree.
@@ -254,17 +246,6 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean kimchi/scripts/check_linearization.lean
-
-    # GATE (external-audit A-1): the only BEHAVIOURAL anti-vacuity check — `#eval` the
-    # extraction pipeline on concrete fixtures and byte-compare the recovered witness;
-    # a check `Classical.choice` cannot fake. Plus the ironwood generic-instantiation
-    # seam (our Wins IS fsWinsFull at m = 0, at the deployed 2^128 alphabet).
-    - name: Check the extractor computes, and the ironwood seam instantiates
-      run: |
-        export PATH="$HOME/.elan/bin:$PATH"
-        BULLETPROOF_FIXTURES_DIR=bulletproof-pcs/fixtures \
-          lake env lean bulletproof-pcs/scripts/check_extractor_computes.lean
-        lake env lean bulletproof-pcs/scripts/check_ironwood_generic.lean
 
   fixtures-heavy:
     name: Heavy fixture checks (verifier, VK)

@@ -1,9 +1,5 @@
 import Bulletproof.Protocol
 import Bulletproof.Wire
-import Bulletproof.Soundness
-import Bulletproof.Reflection
-import Bulletproof.Forking.Capstone
-import Bulletproof.Forking.KnowledgeSoundness
 
 /-!
 # Bulletproof — the IPA polynomial commitment scheme
@@ -13,22 +9,19 @@ deployed by kimchi.
 
 - `Bulletproof/Protocol.lean` — the abstract scheme: SRS and commitment, opening proof and
   verifier, the batched opening, and the chunk layer.
-- `Bulletproof/Soundness.lean` and `Bulletproof/Soundness/SingleOpening.lean` — soundness of
-  those openings: single-opening extraction, binding as no-DL-relation, and the batched and
-  chunked headlines.
 - `Bulletproof/Wire.lean` — the executable wire verifier over the Pasta curves, driven by the
-  Poseidon Fq-sponge.
-- `Bulletproof/Reflection.lean` — the bridge between the executable and abstract layers.
-- `Bulletproof/Forking/` — the forking development, whose per-curve headline is knowledge
-  soundness of the deployed verifier, `Ipa.Forking.ipa{Vesta,Pallas}_knowledge_sound`.
+  Poseidon Fq-sponge. This is what `Kimchi.Verifier.kimchiVerify` finishes on
+  (`Ipa.verifyFrom`, from the warm fq-sponge state).
+
+Both layers are **specifications**: the transcription proof-systems' `poly-commitment` is
+measured against, and the anchor a circuit implementation of the opening check is proved
+faithful to. The soundness development this package once carried — abstract opening
+soundness, binding, and the forking/knowledge-soundness layer over `Zcash/ironwood` — was
+retired; see `git log` for the tree.
 
 The fixture decoders for the proof-systems wire data live in the separate
 `BulletproofFixture` target, driven by `scripts/check_ipa_fixture.lean`.
 
-Trust surface: DL-binding, a hypothesis throughout, plus the standard logical axioms and the
-Pasta trust base (the `native_decide` certificates that `scripts/check_axioms.lean` admits by
-defining module). There is no Fiat–Shamir axiom: the random-oracle idealisation enters only
-as the game's uniform challenge table, and the sponge-faithfulness exhibits
-(`Forking/Transcript.lean`, `Forking/Deployed.lean`) record how the game's reads relate to
-the deployed sponge.
+Trust surface: the standard logical axioms plus the Pasta trust base (the `native_decide`
+certificates that `scripts/check_axioms.lean` admits by defining module).
 -/
