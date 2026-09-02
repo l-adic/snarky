@@ -71,6 +71,7 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: the abstract scheme and the executable Pasta wire verifier (Poseidon-driven), which `kimchiVerify` finishes on; IPA fixtures + check script. A specification, no soundness claim |
 | `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
+| `pickles/` | `Pickles`, `PicklesFixture` | the in-circuit kimchi verifier, so far its linearization slice: the `PolishToken` language and stack-machine interpreter, the reflection certificate identifying the deployed token stream with `gateLinearization`, and the circuit reading proved to compute it. Requires snarky + kimchi + poseidon; own axiom gate, and the ONLY `native_decide` site in the tree outside CompElliptic and `Pasta/Endo.lean`. The token modules `Linearization/{Fp,Fq}.lean` are codegen output (`make gen-linearization`), committed because formal/'s CI checks out without the mina submodule |
 | `schnorr/` | `Schnorr` | the verifier-faithfulness exemplar: a Schnorr identification protocol over Vesta as a wire verifier, and (arriving) its in-circuit implementation with the laws tying the two. Requires snarky + poseidon; own axiom gate. NOT a PS port — no byte-parity obligation |
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
@@ -319,6 +320,10 @@ poseidon/scripts/check_fq_sponge.sh          # FqSponge op traces + group_map ve
 bulletproof-pcs/scripts/check_ipa_fixture.sh # the executable IPA verifiers accept wire data
 kimchi/scripts/check_perm_fixture.sh         # permutation argument row semantics on production data
 kimchi/scripts/check_index_fixture.sh        # index model: build-by-decision, derived columns, satisfiability
+pickles/scripts/check_axioms.sh              # the linearization results (the two declared certificates)
+pickles/scripts/check_polish.lean            # the ported token interpreter vs the production scalar side
+scripts/check_cs.lean                        # compiled constraint systems vs the PureScript dumps (workspace-level;
+                                             # needs the circuit-diffs exports, so CI runs it from test.yml)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative
