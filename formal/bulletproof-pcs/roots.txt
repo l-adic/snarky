@@ -1,158 +1,78 @@
 -- API root set for the bulletproof-pcs package (the IPA polynomial commitment).
 -- Consumed by the workspace dead-code pass (formal/scripts/deadcode.sh), which unions
 -- every package's roots.txt. The axiom audit lives in scripts/check_axioms.lean.
+--
+-- This package is a SPECIFICATION: the abstract scheme and the executable Pasta wire
+-- verifier, with no soundness claim attached. The soundness development it once carried
+-- (abstract opening soundness, binding, and the forking/knowledge-soundness layer over
+-- Zcash/ironwood) was retired; see git log for the tree.
 
--- Binding: exactly discrete-log-relation triviality among the generators, and the
--- opening is unique under binding.
-Bulletproof.commitmentBinding_iff_no_relation
-Bulletproof.ipaRelation_unique
+-- The executable wire verifier: the cold entry point, and the warm-sponge restart that
+-- `Kimchi.Verifier.kimchiVerify` finishes on.
+Bulletproof.Ipa.verify
+Bulletproof.Ipa.verifyFrom
+Bulletproof.Ipa.verifyWith
 
--- The executable wire verifier meets the algebra.
-Bulletproof.verify_reflects
+-- The Fiat-Shamir transcript the verifier derives its challenges from.
+Bulletproof.Ipa.transcript
+Bulletproof.Ipa.transcriptFrom
+Bulletproof.Ipa.roundChallenges
+Bulletproof.Ipa.shiftScalar
 
--- The conditional batch layer. NOT vacuous in itself: it takes the Fiat-Shamir tree as a
--- HYPOTHESIS and applies modus ponens, so it is honest plumbing over any module. It stays
--- because kimchi consumes it directly — `Verifier/Reduction/Soundness.lean` (2 sites) and,
--- through `ipa_soundnessA`, `Verifier/Capstone/{Algebraic,Reflection}.lean` (3 sites).
--- The new knowledge-soundness results cannot replace it: there is no `hFS` in them to
--- apply, and their conclusion is a measure rather than an implication from acceptance.
-Bulletproof.chunked_batch_soundness
+-- The batch layer the verifier reads its claims through, and the MSM underneath it.
+Bulletproof.Ipa.cipOf
+Bulletproof.Ipa.combineCommitments
+Bulletproof.Ipa.msm
+Bulletproof.Ipa.Input.commitmentFn
+Bulletproof.Ipa.Input.pointFn
+Bulletproof.Ipa.Input.evalFn
 
--- THE HEADLINE. Knowledge soundness of the deployed IPA verifier, per curve, in the
--- random-oracle model: an adversary makes the executable wire verifier accept while the
--- executable extractor returns no opening only with probability at most
--- (Q + k + 1)·3/2^128 + (2^k + 1)·ε + δ.
-Bulletproof.Ipa.Forking.ipaVesta_knowledge_sound
-Bulletproof.Ipa.Forking.ipaPallas_knowledge_sound
+-- The abstract scheme the wire verifier is stated over: commitment, the two opening
+-- relations, the pointwise and batched acceptance predicates, and the challenge
+-- polynomial.
+Bulletproof.commit
+Bulletproof.commitGen
+Bulletproof.commitₗ
+Bulletproof.innerProduct
+Bulletproof.evalVector
+Bulletproof.openingRelation
+Bulletproof.openingRelationB
+Bulletproof.VerifierAcceptsAt
+Bulletproof.BatchAccepts
+Bulletproof.recombine
+Bulletproof.combinedCommitment
+Bulletproof.combinedInnerProduct
+Bulletproof.combinedB
+Bulletproof.combinedEvalVector
+Bulletproof.bPoly
+Bulletproof.bPolyCoefficients
 
--- The query-loss rung underneath it, which assumes NO discrete-log hardness at all.
-Bulletproof.Ipa.Forking.vesta_failure_measure_le
-Bulletproof.Ipa.Forking.pallas_failure_measure_le
+-- The chunk layer, and the identities that give it content: a chunked commitment and a
+-- chunked inner product agree with their flattenings, and a combined evaluation vector
+-- pairs as the r-weighted sum of point evaluations.
+Bulletproof.chunkedCombinedCommitment
+Bulletproof.chunkedCombinedInnerProduct
+Bulletproof.chunkedCombinedCommitment_eq_flat
+Bulletproof.chunkedCombinedInnerProduct_eq_flat
+Bulletproof.innerProduct_combinedEvalVector
 
--- What the headline does and does not claim. Roots so they cannot be swept:
--- honestFamily_failure_set exhibits a family that accepts everywhere, so the bound is a
--- statement about the extractor and not about acceptance being empty;
--- reductionEfficient_exists obtains a call bound WITHOUT inspecting the counter, and is kept
--- for exactly that contrast now that exists_complete_reductionEfficient supplies one that IS
--- computed from the counter; derivedUDL_iff_residual_measure shows the δ summand is the
--- residual event's own measure rather than a reduction to a standard problem (only ε is that).
-Bulletproof.Ipa.Forking.honestFamily_failure_set
-Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficient_exists
-Bulletproof.Ipa.Forking.derivedUDL_iff_residual_measure
+-- Polynomial chunking: a chunk evaluates as the slice it was cut from, a polynomial is
+-- the weighted sum of its chunks, and the assembly round-trips within its degree bound.
+Bulletproof.chunkCoeffs
+Bulletproof.chunkPoly
+Bulletproof.chunkPoly_eval
+Bulletproof.eval_eq_sum_chunkPoly
+Bulletproof.assemblePoly
+Bulletproof.chunkCoeffs_assemblePoly
+Bulletproof.assemblePoly_natDegree_lt
 
--- The extractor's cost (audit O-1a). One tape is Complete AND achieves the explicit call
--- bound R = (2·2^128 + 1)^(k+1), so the endpoints' two coin-side hypotheses are jointly
--- dischargeable with a proved R rather than one a `sup` produced. WORST CASE and exponential
--- in k and in the challenge domain -- not a concrete-security claim, and the table-averaged
--- (6/δ)^k regime (O-1b) is still open. The walk reaches reductionEfficient_of_bounded,
--- deployedExtractRuns_le, kimchiExtractRuns_le and exists_complete_bounded_coins from here.
-Bulletproof.Ipa.Forking.DeployedFamily.exists_complete_reductionEfficient
--- The anti-vacuity companion, at the level the endpoints read the cost at. An upper bound on a
--- counter is worthless if the counter could be 0, and what `hEff` supplies is the summed bound,
--- not the counter: this rules out every R below 1. The walk reaches
--- one_le_deployedExtractRuns and one_le_kimchiExtractRuns -- which pin the counter itself at
--- >= 1 on every table and every tape -- so neither needs an entry of its own here.
-Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficient
-
--- Audit O-1b (M3', half 1): the CONDITIONAL branch of the cost, on upstream's joint
--- table-and-tape axis. Beside the per-tape worst-case block above, which it replaces nothing
--- of and which is still what both endpoints read. Conditional on KimchiForkSpreadFamily, a
--- hypothesis nothing in this tree proves and which -- unlike the abstract layer -- has no
--- family-level witness at all, so the block has no in-tree consumer and needs a root. The walk
--- from this one entry reaches all three of its companions -- KimchiForkSpreadFamily,
--- attemptRuns_sum_le_of_forkSpreadFamily and ReductionEfficientAvg -- so none needs its own.
-Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficientAvg_of_forkSpreadFamily
--- The average branch's own anti-vacuity pair (M3', half 2). reductionEfficientAvg_of_worstCase
--- makes ReductionEfficientAvg reachable WITHOUT KimchiForkSpreadFamily -- otherwise the twin
--- endpoints below would be gated on a hypothesis nothing in this tree can satisfy -- and
--- one_le_of_reductionEfficientAvg rules out an R = 0 gate on this axis exactly as
--- one_le_of_reductionEfficient does on the per-tape one. Neither is reachable from the twin
--- endpoints, which take ReductionEfficientAvg as a hypothesis rather than discharging it.
-Bulletproof.Ipa.Forking.DeployedFamily.reductionEfficientAvg_of_worstCase
-Bulletproof.Ipa.Forking.DeployedFamily.one_le_of_reductionEfficientAvg
-
--- THE HEADLINE TWINS (M3', half 2): the same knowledge-soundness bound on upstream's joint
--- (table x tape) axis, with the fork tape SAMPLED rather than fixed. Same right-hand side
--- (Q + k + 1)·3/2^128 + (2^k + 1)·ε + δ, no coins.Complete hypothesis (discharged structurally
--- by RecursiveForkTape.toCoins_complete), gated by ReductionEfficientAvg. They stand beside
--- the per-tape headline above, which they replace nothing of; neither implies the other. The
--- walk from these two reaches the whole probability half -- relationFinderAvg,
--- DerivedUDLAdvantageLEAvg, derivedUDLAvg_iff_residual_measure, the three summands, the
--- three-way cover, the terminal bound and DiscreteLogRelationHardForAvg -- so none needs its own.
-Bulletproof.Ipa.Forking.ipaVesta_knowledge_sound_avg
-Bulletproof.Ipa.Forking.ipaPallas_knowledge_sound_avg
-
--- Audit O-1b: the conditional tape-averaged run bound. The terminal of the fork-spread counting
--- layer in Forking/Game.lean -- conditional on a KimchiForkSpread hypothesis nothing in this tree
--- proves AT DEPLOYED PARAMETERS, so it has no in-tree consumer and needs a root. (It is not an
--- implication out of an empty hypothesis: see exists_kimchiForkSpread_two_le below.) The walk
--- reaches the whole layer from it: the depth induction kimchiForkFrom_sum_runs_le_of_forkSpread,
--- both pointwise bounds (kimchiForkFrom_node_runs_le, kimchiForkFrom_leaf_runs_le), the depth-0
--- tape sum kimchiForkFrom_sum_runs_le_leaf, kimchiScanCandidate_runs_cases, and the
--- candidate/good-set definitions KimchiForkSpread, kimchiScanCandidate, kimchiLeafCandidate,
--- kimchiGoodChallenges, kimchiLeafGoodChallenges. (This entry replaced the M1 TEMPORARY group at
--- iter-013, exactly as that group's own comment instructed: the corollary consumed both of its
--- lines.)
-Bulletproof.Forking.kimchiExtractRuns_sum_le_of_forkSpread
-
--- The anti-vacuity companions of that hypothesis, both exhibits, so nothing consumes them.
--- (a) a table whose own run is Schnorr-unstable forces sigma0 = 0 and collapses the conditional
---     bound to `0 <= ...`. The walk reaches kimchiLeafGoodChallenges_eq_empty_of_unstable from it.
-Bulletproof.Forking.kimchiForkSpread_eq_zero_of_leaf_unstable
--- (b) the coin-side degeneracy (O-1b milestone M4''): a node floor quantified over ARBITRARY coin
---     trees admits empty sampling orders, which make the fork fail outright, so it forces
---     sigma0 = 0 at every sigma.k >= 1 -- which is why the node clause reads tape-derived coins.
---     Stated at the un-narrowed clause so it survives the fix. The walk reaches
---     kimchiGoodChallenges_eq_empty_of_order_nil and the private
---     kimchiForkFrom_output_eq_none_of_order_nil from it.
-Bulletproof.Forking.kimchiNodeFloor_eq_zero_of_forall_coins
-
--- The satisfiability companion, in the other direction: KimchiForkSpread is not a predicate
--- nothing satisfies. Over Pre = Fin 5 with all-zero generators the adversary wins identically and
--- its prefixes never move, so BOTH clauses hold at sigma0 = 4 at EVERY round count (O-1b
--- milestone M5) -- the node clause included, which is vacuous only at sigma.k = 0 -- and the
--- conditional bound reads a real inequality (3^(k+1) * sum <= 30^(k+1) * |tapes|) rather than
--- `0 <= ...`. Four roots because none reaches another: two existential headlines (the sigma.k = 0
--- instance, kept because its statement is quoted downstream, and the every-round-count form,
--- whose sigma.k = K conjunct is what makes it say more), the applied bound, and its anti-vacuity
--- companion |tapes| <= sum. The walk reaches spreadExhibit_forkSpread, the fork-success induction
--- spreadExhibit_forkFrom_isSome and the private exhibit data from them.
-Bulletproof.Forking.exists_kimchiForkSpread_two_le
-Bulletproof.Forking.exists_kimchiForkSpread_two_le_of_rounds
-Bulletproof.Forking.spreadExhibit_extractRuns_sum_le
-Bulletproof.Forking.spreadExhibit_card_le_extractRuns_sum
-
--- The checked defences of the deployed model's two modelling steps, rooted for the same
--- reason: nothing consumes an exhibit.
--- (a) Fiat-Shamir faithfulness: the abstract verifier fed the Poseidon sponge's own reads IS
---     the executable `Ipa.verify` (cold and warm forms, and the sponge-source bridges).
-Bulletproof.Ipa.Forking.verifyOracle_spongeFS
-Bulletproof.Ipa.Forking.verifyOracleFrom_spongeFSFrom
-Bulletproof.Ipa.Forking.spongeFS_eq_from
-Bulletproof.Ipa.Forking.spongeOBase_eq_from
-Bulletproof.Ipa.Forking.spongeOScalar_eq_from
-Bulletproof.Ipa.Forking.toGroup_spongeOBase_preT
-Bulletproof.Ipa.Forking.uBaseOf_eq_transcript
--- (b) the `sg` slot: the idealized node domain deviates from the deployed schedule only in
---     the `sg` component, and that deviation is harmless on everything the game measures --
---     the faithfulness identity, the determination of `sg`, the pinning factorization, and
---     the fork's own reads.
-Bulletproof.Ipa.Forking.nodeTranscript_nodes
-Bulletproof.Ipa.Forking.sg_determined_of_verifyWith
-Bulletproof.Ipa.Forking.wireWins_pinTable
-Bulletproof.Ipa.Forking.pinTable_factors
-Bulletproof.Ipa.Forking.chainAt_sg
--- (c) the deployed family reads `σ.U` nowhere (both `rfl`), and a break at the sampled
---     generators is computed data, not an existence claim.
-Bulletproof.Ipa.Forking.wireWins_U_irrelevant
-Bulletproof.Ipa.Forking.deployedExtract_U_irrelevant
-Bulletproof.Ipa.Forking.uRepresentationOfBreak
--- (d) recovery instances certifying the base-generic honest lemmas recover the original
---     cold-base statements (the generalize-and-recover contract of `Forking/Honest.lean`).
-Bulletproof.Ipa.Forking.winsAtBase_uBaseOf
-Bulletproof.Ipa.Forking.honestNode_wins_everywhere
--- (e) the endpoints' tape-completeness hypothesis has an explicit closed witness.
-Bulletproof.Ipa.Forking.exists_complete_coins
+-- The two deployed curve dictionaries the wire verifier is instantiated at, and their
+-- point abbrevs. Consumed by downstream packages (kimchi instantiates `IpaVesta.curve`),
+-- so the walk inside this package cannot see them.
+Bulletproof.IpaVesta.curve
+Bulletproof.IpaVesta.Point
+Bulletproof.IpaPallas.curve
+Bulletproof.IpaPallas.Point
 
 -- The surface the fixture drivers and check gates exercise. Nothing in the library
 -- consumes these -- the scripts do, so the dead-code driver additionally checks each
@@ -170,15 +90,6 @@ Bulletproof.Fixture.recombinePoint
 Bulletproof.Fixture.recombineScalar
 Bulletproof.Fixture.segmentCombinePoint
 Bulletproof.Fixture.segmentCombineScalar
+Bulletproof.Ipa.Wire.Proof.check
 Bulletproof.Ipa.Wire.Input.check
-Bulletproof.Forking.ipaExtract
-Bulletproof.Forking.openingOfAcceptV
-Bulletproof.Forking.decIpaAcceptV -- synthesis: `by decide` on IpaAcceptV in check_extractor_computes.lean
-Bulletproof.Ipa.Forking.verifyWith_of_deferred_delta
 -- script-surface:end
-
--- `@[simp]` rfl-lemmas the live proofs use through `simp` -- simp applies rfl-rewrites
--- definitionally, so the lemma constant never lands in the proof term and the constant
--- walk cannot see the use. Deleting either breaks the build.
-Bulletproof.Forking.srsAt_k
-Bulletproof.Ipa.Forking.srsOfBasis_k

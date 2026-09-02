@@ -2,10 +2,24 @@
 
 This directory is a **Lean 4 + Mathlib** formalization of the kimchi proof system over
 the Pasta curves: the basic gate set (Generic, Poseidon, AddComplete, VarBaseMul, EndoMul,
-EndoScalar), the arithmetization, the executable verifier, and per-curve knowledge
-soundness of that verifier. **The modeled fragment excludes lookups, optional gates,
-recursion, and the sub-SRS regime** — Mina/pickles proofs are OUTSIDE it on four axes; the
-canonical fragment statement lives in `Kimchi/Verifier/KnowledgeSoundness.lean`'s preamble. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
+EndoScalar), the arithmetization, and the executable verifier.
+
+**The verifier is a SPECIFICATION, not a theorem-bearing object.**
+`Kimchi.Verifier.kimchiVerify` is the transcription of proof-systems'
+`kimchi/src/verifier.rs`, and `Kimchi/Verifier/Reflect.lean` names every intermediate of its
+body as a closed form. Those are the anchors a circuit implementation of the verifier is
+proved faithful to. The probabilistic soundness development that once sat above them
+(`Verifier/KnowledgeSoundness.lean`, `Verifier/Capstone/`, `Verifier/Forking/`,
+`Verifier/Reduction/`, and `Bulletproof/{Forking,Soundness*,Reflection}`) was **retired** —
+it came up inconclusive, and `git log` has the tree if it is ever wanted back. Do not
+reintroduce it, and do not read anything here as a soundness claim about the deployed
+verifier. Circuit-side work states RELATIVE faithfulness — constraints satisfied ⟹
+`kimchiVerify` accepts — which needs no soundness result and asserts none.
+
+**The modeled fragment excludes lookups, optional gates, recursion, and the sub-SRS
+regime** — Mina/pickles proofs are OUTSIDE it on four axes; the canonical fragment
+statement, with every declared deviation from `verifier.rs`, is the `## Scope` section of
+`Kimchi/Verifier/Kimchi.lean`'s preamble. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
 monad, no `FormalCircuit`/`ProvableType`/`ElaboratedCircuit`, no `circuit_proof_start`.
 Gates are modelled as **plain Lean predicates over witness structures**, and proved
 faithful to an external oracle — **Mathlib's elliptic-curve group law**
@@ -45,7 +59,7 @@ pure aggregator that owns no library and declares no `defaultTargets`, so it rep
 `cd formal/<pkg> && lake build` does work — all six declare `defaultTargets`. The toolchain
 is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakefile.toml`
 (Mathlib + `CompElliptic`, a git require pinned to daira upstream, which transitively pulls
-`CompPoly`; `zcash/ironwood` for the forking machinery, sharing the same CompElliptic pin).
+`CompPoly`).
 `import Mathlib` is used wholesale in the proof-heavy trees.
 
 **Package layout.** `formal/` is a lake workspace of standalone path-required packages:
@@ -54,8 +68,8 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | --- | --- | --- |
 | `pasta/` | `Pasta` | the Pasta curve trust base: the generic EC order/shape sugar, the GLV constants, the certified point counts and derived orders, point-group module instances, the wire scalar-shift algebra (`Pasta.Shifted`) |
 | `poseidon/` | `Poseidon`, `FixtureKit` | the Poseidon permutation + duplex sponge over both Pasta base fields, the `FqSponge` consumer layer, SvdW map-to-curve; plus the shared JSON-fixture/trace kit. Own fixtures + check scripts (`poseidon/scripts/`) |
-| `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: abstract scheme + soundness, the executable Pasta wire verifier (Poseidon-driven), the forking development and `ipa{Vesta,Pallas}_knowledge_sound`, IPA fixtures + check script |
-| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier + capstones); plus the fixture-decoding lib, kept out of `Kimchi` |
+| `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: the abstract scheme and the executable Pasta wire verifier (Poseidon-driven), which `kimchiVerify` finishes on; IPA fixtures + check script. A specification, no soundness claim |
+| `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
 | `schnorr/` | `Schnorr` | the verifier-faithfulness exemplar: a Schnorr identification protocol over Vesta as a wire verifier, and (arriving) its in-circuit implementation with the laws tying the two. Requires snarky + poseidon; own axiom gate. NOT a PS port — no byte-parity obligation |
 
@@ -111,20 +125,29 @@ described are gone; their content lives in `Gate/` + `Gate/Semantics/` + the pas
 | --- | --- | --- |
 | **Gate** | `kimchi/Kimchi/Gate/` | one gate row as a constraint predicate (`Holds`/`ok`/`ok_iff`), proved to compute the intended EC/permutation operation |
 | **Semantics** | `kimchi/Kimchi/Gate/Semantics/` | multi-row chains (ladders, GLV accumulation) and the per-curve deployed entry points, with pasta's certified orders/eigenvalues in place of the old axioms |
-| **Arithmetization** | `kimchi/Kimchi/{Index,Permutation,Protocol,Lift,...}` | the index, satisfiability ↔ divisibility, the linearization |
-| **Verifier** | `kimchi/Kimchi/Verifier/` | the executable verifier, the wire layer, and the knowledge-soundness development |
+| **Arithmetization** | `kimchi/Kimchi/{Index,Permutation,Lift,Domain,Aggregate,SchwartzZippel,GrandProduct,Protocol/Linearization}` | the index as data, `Index.Satisfies`, the wiring and σ columns, the polynomial lift, satisfiability ↔ divisibility (`satisfies_iff_fullFamily_dvd`), copy soundness, and the verifier's scalar side in closed form |
+| **Verifier** | `kimchi/Kimchi/Verifier/` | the executable verifier (`Kimchi.lean`), its body in closed form (`Reflect.lean`), and the serde wire boundary with its parse (`Wire.lean`) |
 
 `Main.lean` + `Kimchi/Gate/Generic.lean` are a runnable demo of "ingest a (gate, witness)
 and run the verified checker".
 
 Above the gate stack, the library has grown these further trees:
 
-- The vanishing-argument layer, as top-level modules rather than a directory:
-  `Kimchi/Domain.lean`, `Kimchi/Aggregate.lean` and `Kimchi/SchwartzZippel.lean` (the
-  divisibility engine), `Kimchi/Lift.lean` (the `Argument`/`ArgumentEnv` per-gate lifts), and
-  `Kimchi/GrandProduct.lean`.
-- **`Kimchi/Verifier/`** — the executable kimchi verifier, its reflection, and the
-  soundness capstones. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
+- The arithmetization, as top-level modules rather than a directory: `Kimchi/Domain.lean`
+  (the vanishing polynomial and its divisibility criterion), `Kimchi/Lift.lean` (the
+  `Argument` lifts, whose `Argument.bridge` says a gate's constraints hold at every row iff
+  its lift is divisible by `Z_H`), `Kimchi/{Aggregate,SchwartzZippel}.lean` (the α-aggregate
+  and its separation lemma) and `Kimchi/GrandProduct.lean`. The headline is
+  `Index.satisfies_iff_fullFamily_dvd` — the only result linking `Index.Satisfies` to the
+  committed polynomial family. **The SZ layer is deterministic algebra**, not a probabilistic
+  claim: the bad sets are explicit and their cardinalities are proved, so the statements
+  quantify over challenges outside them. Do not confuse it with the retired
+  knowledge-soundness development — `docs/soundness-line-retirement.md` records that
+  distinction, and an earlier pass deleted this layer by conflating the two before reverting.
+  What IS retired above it: the *ideal* polynomial protocol (`Protocol/{Accepts,Equation}`,
+  `Index/Degree`), whose bridge to the deployed verifier went with the forking tree.
+- **`Kimchi/Verifier/`** — the executable kimchi verifier and its reflection into named
+  run functions. The kimchi-proof JSON decoders live in `kimchi/KimchiFixture/`,
   its OWN library (`KimchiFixture`) sitting beside the `Kimchi/` tree, deliberately NOT
   part of `Kimchi`: checking
   against recorded data is not part of the development. Same split as `FixtureKit`
@@ -263,9 +286,9 @@ closure reduces to the three standard logical axioms (`propext`, `Classical.choi
 `Quot.sound`) plus **certified `native_decide` witnesses**: CompElliptic's primality,
 point-count, sqrt-order and eigen-anchor certificates, and pasta's two declared GLV
 eigenvalue anchors in `Pasta/Endo.lean` — each trusting the compiler through
-`Lean.trustCompiler`. Discrete-log hardness is a *hypothesis of the statements*; the
-random-oracle idealisation enters only as the game's uniform challenge table (`FSFaithful`
-names the identification with the deployed sponge).
+`Lean.trustCompiler`. No cryptographic hypothesis appears anywhere: discrete-log hardness and
+the random-oracle idealisation left with the retired soundness development, and nothing in
+the tree now needs either.
 
 **Axiom discipline (follow this):**
 - Introduce NO axioms. A genuinely unprovable fact becomes a *hypothesis* of the statements
@@ -286,9 +309,9 @@ proof-systems bump). The drivers, each a few seconds after `lake build Kimchi`, 
 CI-wired in `.github/workflows/lean.yml`:
 
 ```sh
-kimchi/scripts/check_axioms.sh               # kimchi's headline theorems reduce to the allowed axiom set
+kimchi/scripts/check_axioms.sh               # kimchi's rooted results reduce to the allowed axiom set
 pasta/scripts/check_axioms.sh                # the derived trust base (no eigen)
-bulletproof-pcs/scripts/check_axioms.sh      # the PCS soundness surface over its declared FS axioms
+bulletproof-pcs/scripts/check_axioms.sh      # the PCS definitional surface (standard axioms only)
 snarky/scripts/check_axioms.sh               # the DSL interpreter laws (standard axioms only)
 schnorr/scripts/check_axioms.sh              # the exemplar's wire surface (standard axioms only)
 poseidon/scripts/check_sponge_vectors.sh     # Poseidon automaton vs mina_poseidon traces (Fq and Fp)

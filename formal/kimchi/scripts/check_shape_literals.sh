@@ -8,8 +8,10 @@
 # any bare 6/7/15/43/44 in a type-shaped position — `Fin N` (including the
 # parenthesized `Fin (N)`), a `finRange N`, a `Vector` dimension, a `parseSized`
 # dimension, `.take 6`, or an `N * nc` stream size — fails the gate. A scanned
-# file-count floor (> 30; the tree holds ~38 today) guards against a renamed tree
-# passing vacuously.
+# file-count floor (> 18; the tree holds 23 today) guards against a renamed tree
+# passing vacuously. The floor was > 30 against a ~38-file tree; it was recalibrated
+# when the probabilistic soundness line and the Schwartz–Zippel layer were retired
+# (docs/soundness-line-retirement.md), which removed 15 files from this scan set.
 #
 # Deliberately OUT of scope (the audited policy):
 #   * Kimchi/Gate/** — gate-internal constants (S-box exponent, crumb counts,
@@ -34,7 +36,7 @@ files += ['KimchiFixture/Kimchi.lean', 'KimchiFixture/PS.lean']
 files += sorted(os.path.join('scripts', f) for f in os.listdir('scripts')
                 if f.endswith('.lean'))
 
-if len(files) <= 30:
+if len(files) <= 18:
     print(f"✗ scanned only {len(files)} file(s) — tree layout changed? the gate "
           "must see the full Kimchi/ + KimchiFixture/ + scripts/ set")
     sys.exit(1)

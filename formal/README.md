@@ -7,12 +7,14 @@
 
 A Lean 4 + Mathlib formalization of the kimchi proof system over the Pasta curves: the basic
 gate set (Generic, Poseidon, AddComplete, VarBaseMul, EndoMul, EndoScalar), the
-arithmetization, the executable verifier, and per-curve knowledge soundness of that verifier.
-Gates are modelled as plain Lean predicates over witness structures and proved faithful to
-Mathlib's elliptic-curve group law (`WeierstrassCurve.Affine`). **The modeled fragment
-excludes lookups, optional gates, recursion, and the sub-SRS regime** — Mina/pickles proofs
-are outside it on all four axes; the canonical fragment statement is the preamble of
-`kimchi/Kimchi/Verifier/KnowledgeSoundness.lean`. A second library, `Snarky`, is a
+arithmetization, and the executable verifier. Gates are modelled as plain Lean predicates
+over witness structures and proved faithful to Mathlib's elliptic-curve group law
+(`WeierstrassCurve.Affine`). The verifier itself is a **specification** — the transcription
+of proof-systems' `kimchi/src/verifier.rs`, and the anchor circuit implementations are proved
+faithful to; the probabilistic soundness development this tree once carried was retired.
+**The modeled fragment excludes lookups, optional gates, recursion, and the sub-SRS
+regime** — Mina/pickles proofs are outside it on all four axes; the canonical fragment
+statement is the `## Scope` section of `kimchi/Kimchi/Verifier/Kimchi.lean`'s preamble. A second library, `Snarky`, is a
 deep-embedded port of the PureScript circuit-building DSL, modelling how constraint systems
 are *constructed*; it is Mathlib-free by design and bridges to the verified generic-gate
 checker. See [`CLAUDE.md`](CLAUDE.md) for the detailed guide: the layer stack, the gate
@@ -30,9 +32,10 @@ pure aggregator that owns no library.
 - `pasta/` (lib `Pasta`) — the Pasta curve trust base: orders, GLV constants, point groups
 - `poseidon/` (libs `Poseidon`, `FixtureKit`) — the Poseidon permutation and sponge, the
   `FqSponge` consumer layer, SvdW map-to-curve, and the shared JSON-fixture kit
-- `bulletproof-pcs/` (lib `Bulletproof`) — the IPA polynomial commitment and its soundness
+- `bulletproof-pcs/` (lib `Bulletproof`) — the IPA polynomial commitment: the abstract
+  scheme and the executable Pasta wire verifier
 - `kimchi/` (libs `Kimchi`, `KimchiFixture`) — the kimchi protocol: gates, index,
-  arithmetization, the executable verifier, and the knowledge-soundness capstones
+  arithmetization, and the executable verifier with its body in closed form
 - `snarky/` (lib `Snarky`) — the deep-embedded circuit DSL and its kimchi bridge
 - `docs/` — design notes, the audit record, and the follow-up register
 - `scripts/` — workspace-wide gates (style, dead code, kernel replay, sorry census); each
@@ -73,8 +76,7 @@ scripts/deadcode.sh                     # reachability from the packages' roots.
 scripts/kernel-replay.sh                # lean4checker replays every .olean
 make lean-lint                          # Batteries' env_linter suite, one process per module
 make lean-shake                         # no redundant imports
-*/scripts/check_axioms.sh               # per-package axiom closures (all five packages)
-*/scripts/check_locked_target.sh        # the frozen endpoint statements and exhibit sets
+*/scripts/check_axioms.sh               # per-package axiom closures (all six packages)
 ```
 
 The fixture drivers (`*/scripts/check_*fixture*.sh`, `check_fq_sponge.sh`,

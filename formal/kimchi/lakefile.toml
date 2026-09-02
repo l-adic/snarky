@@ -16,8 +16,7 @@ lintDriverArgs = ["Kimchi", "KimchiFixture"]
 weak.linter.style.longLine = true
 
 # CompElliptic: concrete short-Weierstrass `SWCurve` / `SWPoint` with a proven group law, and
-# the Pasta curve instances. daira upstream, pinned by `rev` so the revision is locked (and
-# identical to ironwood's own CompElliptic pin, so they share one checkout).
+# the Pasta curve instances. daira upstream, pinned by `rev` so the revision is locked.
 [[require]]
 name = "CompElliptic"
 git = "https://github.com/daira/CompElliptic"
@@ -35,28 +34,16 @@ path = "../pasta"
 name = "poseidon"
 path = "../poseidon"
 
-# The IPA polynomial commitment scheme: abstract soundness, the executable wire verifier,
-# and its Poseidon Fiat-Shamir instantiation (formal/bulletproof-pcs).
+# The IPA polynomial commitment scheme: the abstract scheme and the executable wire
+# verifier, with its Poseidon Fiat-Shamir instantiation (formal/bulletproof-pcs).
 [[require]]
 name = "bulletproof-pcs"
 path = "../bulletproof-pcs"
 
-# Zcash/ironwood: the generic forking / random-oracle / knowledge-error machinery
-# (`Forking/Tree`, `Forking/Probability`, `Forking/KnowledgeError`,
-# `Forking/Adversary/OracleComp`, …) the probabilistic soundness layer under
-# `Kimchi/Verifier/Forking/` builds on. Pinned to a specific ironwood commit; bump
-# deliberately. Ironwood pins the SAME `daira/CompElliptic @ a549e455` we vendor, so its
-# transitive CompElliptic require resolves to our path package (one CompElliptic in the
-# workspace). See formal/docs/ironwood-refoundation-plan.md.
-[[require]]
-name = "Zcash"
-git = "https://github.com/zcash/ironwood"
-rev = "83a98f7fb3bcd8f87ddf0a459dcab96a782d91d8"
-
 # Mathlib gives us prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`), the trusted oracle the EC gates are checked against. Pinned to
 # the tag matching our Lean toolchain (v4.30.0). Kept LAST so this direct pin wins over the
-# mathlib revision CompElliptic/CompPoly/Zcash pull in transitively.
+# mathlib revision CompElliptic/CompPoly pull in transitively.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"

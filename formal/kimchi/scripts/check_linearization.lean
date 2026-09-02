@@ -13,7 +13,7 @@ combined evaluations, the production values of the permutation vanishing evaluat
 is where the expression framework's compiled token stream is adjudicated by value — it
 never appears in a Lean statement.
 
-The final check instantiates the point-bridge (`verifierEquation_iff`) numerically:
+The final check instantiates the verifier's acceptance identity numerically:
 `permScalar·σ₆(ζ) − ft_eval0` (production values; `σ₆(ζ)` is the one column the proof
 never evaluates, interpolated by the dumper) must equal the closed-form aggregate
 `Σ αᵏ·memberₖ(ζ)` — the quotient evaluation `t(ζ)` cancels between the two sides, so
@@ -130,7 +130,7 @@ def runFixture (path : String) (liveGates : List String) : IO Unit := do
     let mds := Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams
     let hConst := decide (gateLinearization endo mds α e = constTarget)
     let hFt := decide (ftEval0 n zkRows ω shifts endo mds α β γ ζ pubEval e = ftEval0Target)
-    -- The assembled acceptance identity — the point-bridge (`verifierEquation_iff`)
+    -- The assembled acceptance identity, at the production challenge point
     -- instantiated numerically on the real proof. The quotient evaluation t(ζ) cancels:
     -- permScalar·σ₆(ζ) − ft_eval0 must equal the aggregate Σ αᵏ·memberₖ(ζ), the left
     -- side from production values (σ₆(ζ) interpolated by the dumper — the one column
@@ -170,6 +170,6 @@ def main : IO Unit := do
   IO.println "✓ the closed-form linearization matches the production scalar side (zkpm, \
     perm_scalars, constant term, ft_eval0) on both the mixed-gate and the \
     scalar-multiplication circuits — every gate live in at least one — and the assembled \
-    acceptance identity holds (the verifierEquation_iff instance, numerically)"
+    acceptance identity holds numerically at the production challenges)"
 
 #eval main

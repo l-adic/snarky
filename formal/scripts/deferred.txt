@@ -75,3 +75,32 @@ Kimchi.Gate.VarBaseMul.runBits_congr
 
 -- The prover interpreter's domain lemma (Snarky/Prover.lean).
 Snarky.prove_dom
+
+-- ---------------------------------------------------------------------------------------
+-- Lost their consumer when the probabilistic soundness development was retired
+-- (`Kimchi/Verifier/{KnowledgeSoundness,Capstone,Forking,Reduction}`,
+-- `Bulletproof/{Forking,Soundness*,Reflection}`). Every one of these was reached only from
+-- inside that tree. Nothing here is known to be dead — the live set is NOT determinable
+-- yet: the arithmetization layer these sit in (`Index/`, `Protocol/Equation.lean`) is
+-- itself pending a keep-or-retire decision, and the verifier-side reads are plausible
+-- inputs to the in-circuit verifier arc's group fragment.
+--
+-- EXIT CONDITION, two ways: the arithmetization decision lands (either these become
+-- reachable from whatever roots survive it, or they go with it), or the in-circuit
+-- verifier arc consumes the stream reads. Either way every line here is then deleted —
+-- from this file if reachable, from the tree if not. This list only ever shrinks.
+
+-- (The index's polynomial columns and the permutation column identities that sat here were
+-- promoted to roots when the Schwartz–Zippel line was retired: they are the modelling of
+-- what the verifier's commitments commit to, not leftovers. See kimchi/roots.txt.)
+
+-- The verifier's segment-stream position reads (`Verifier/Kimchi.lean`) and the
+-- wire-to-abstract public view. The capstones consumed these; the group fragment of an
+-- in-circuit verifier is the plausible next consumer.
+Kimchi.Verifier.flatten_read
+Kimchi.Verifier.tailRows_read_lit
+Kimchi.Verifier.tailRows_read_w
+Kimchi.Verifier.tailRows_read_c
+Kimchi.Verifier.tailRows_read_s
+Kimchi.Verifier.pubView
+

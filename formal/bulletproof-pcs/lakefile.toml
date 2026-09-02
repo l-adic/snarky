@@ -30,13 +30,6 @@ path = "../pasta"
 name = "poseidon"
 path = "../poseidon"
 
-# Zcash/ironwood: the generic forking / AGM / knowledge-error machinery the Forking/
-# modules instantiate; same pin as the root workspace and kimchi.
-[[require]]
-name = "Zcash"
-git = "https://github.com/zcash/ironwood"
-rev = "83a98f7fb3bcd8f87ddf0a459dcab96a782d91d8"
-
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4.git"

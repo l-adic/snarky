@@ -336,7 +336,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         # Skip the large `mina` submodule; the Lean dependencies (CompElliptic,
-        # ironwood, Mathlib) are lake git requires, fetched by setup-lean.
+        # Mathlib) are lake git requires, fetched by setup-lean.
         submodules: false
 
     - name: Setup Lean + build the library

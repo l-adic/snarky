@@ -96,63 +96,13 @@ def roots : List Name :=
     `Kimchi.Gate.Poseidon.fp_poseidonChain_blockCipher,
     `Kimchi.Gate.Poseidon.fq_poseidonChain_complete,
     `Kimchi.Gate.Poseidon.fp_poseidonChain_complete,
+    `Kimchi.Lift.Argument.bridge,
+    `Kimchi.Index.Satisfies,
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
+    `Kimchi.Index.copy_soundness_of_dvd,
     `Kimchi.Verifier.kimchiVerify,
     `Kimchi.Verifier.Wire.KimchiProof.check,
-    `Kimchi.Verifier.Wire.KimchiVK.check,
-    `Kimchi.Protocol.sound,
-    -- The knowledge-soundness endpoints: the deployed verifier is knowledge-sound per curve,
-    -- over the standard axioms and the Pasta certificates alone.
-    `Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound,
-    `Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound,
-    -- The extractor's cost for this family (audit O-1a): the endpoints' call-bound hypothesis
-    -- discharged at an explicit, proved R on the same tape that witnesses `Complete`, and the
-    -- floor under that same hypothesis — no R below 1 satisfies it.
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.exists_complete_reductionEfficient,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficient,
-    -- The conditional-average counting layer (upstream's joint table-and-tape coin axis),
-    -- standing beside the per-tape entries above and replacing neither. Existence as well as
-    -- axioms: every public declaration of the block is pinned by name, terminals and plumbing
-    -- alike, so neither a deletion sweep nor a `sorry` behind a reachable terminal is silent.
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.KimchiForkSpreadFamily,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.attemptRuns_sum_le_of_forkSpreadFamily,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.ReductionEfficientAvg,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_forkSpreadFamily,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.reductionEfficientAvg_of_worstCase,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.one_le_of_reductionEfficientAvg,
-    -- The conditional-average PROBABILITY layer, and its two twin endpoints: knowledge
-    -- soundness over (setup basis) x (challenge table x fork tape) jointly, with the tape
-    -- sampled and no completeness hypothesis. Pinned on the same terms as the counting layer
-    -- above — every public declaration of the block by name, terminals and plumbing alike.
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.relationFinderAvg,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.DerivedUDLAdvantageLEAvg,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.relation_summand_avg,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.residual_summand_avg,
-    `Kimchi.Verifier.KnowledgeSoundness.KimchiFamily.DiscreteLogRelationHardForAvg,
-    `Kimchi.Verifier.KnowledgeSoundness.vesta_kimchi_knowledge_sound_avg,
-    `Kimchi.Verifier.KnowledgeSoundness.pallas_kimchi_knowledge_sound_avg,
-    `Kimchi.Verifier.Forking.honestKimchiFamily_wins,
-    -- The Tier-2/3 surface (external-audit A-2): the faithfulness layer, the named
-    -- anti-vacuity exhibits, and the REVISIT AGM lemmas are consumed by nothing, so no
-    -- other root's closure reaches them — gate them by name or a `sorry` there passes
-    -- the entire wired battery.
-    `Kimchi.Verifier.KnowledgeSoundness.kimchiVerify_eq_verifyWith,
-    `Kimchi.Verifier.Forking.Bridge.wins_iff_kimchiVerify,
-    `Kimchi.Verifier.Forking.honestKimchiFamily_failure_set,
-    `Kimchi.Verifier.KnowledgeSoundness.exists_ne_zero_kernel_scalarBasis,
-    `Kimchi.Verifier.eval_pins_of_opening,
-    `Kimchi.Verifier.combinedCommitment_eq_commit_of_rep,
-    `Kimchi.Verifier.dlRelation_of_opening_ne,
-    `Kimchi.Verifier.dlRelation_of_commit_eq,
-    `Kimchi.Verifier.dlRelation_of_chunk_rep_ne,
-    `Kimchi.Verifier.dlRelation_of_chunk_rep_masked_ne,
-    `Kimchi.Verifier.ft_identity_of_chunks,
-    -- the per-curve honest-family corollaries (external-audit B-4), and the same two guards
-    -- against the conditional-average endpoints over the joint (table x tape) space
-    `Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le,
-    `Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le,
-    `Kimchi.Verifier.Forking.vesta_honest_extraction_failure_measure_le_avg,
-    `Kimchi.Verifier.Forking.pallas_honest_extraction_failure_measure_le_avg ]
+    `Kimchi.Verifier.Wire.KimchiVK.check ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms. The pasta
     package declares NO axioms — the group orders are unconditional (CompElliptic's

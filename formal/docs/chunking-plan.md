@@ -1,5 +1,12 @@
 # Plan: full chunking (`nc > 1`) for the kimchi formalization
 
+> **NOTE:** written before the probabilistic soundness line was retired. Names it cites
+> under `Kimchi/{Aggregate,SchwartzZippel,GrandProduct}.lean`,
+> `Kimchi/Index/{Aggregate,Degree,CopySoundness}.lean` and
+> `Kimchi/Protocol/{Accepts,Equation}.lean` (`Protocol.sound`,
+> `satisfies_iff_fullFamily_dvd`, `fullFamily`, `verifierEquation_iff`) no longer exist —
+> see `soundness-line-retirement.md`. The rest of the document still describes the tree.
+
 **Status: COMPLETE (2026-07-21).** All phases executed, plus two follow-ons the plan
 did not anticipate: the full DELETION SWEEP (the nc = 1 verifier, reflection,
 reduction, and capstone layers are deleted; the chunked layer holds the plain names;
