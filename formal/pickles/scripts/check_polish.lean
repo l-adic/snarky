@@ -1,7 +1,7 @@
 import Kimchi.Protocol.Linearization
 import Kimchi.Verifier.Kimchi
 import Bulletproof.Wire
-import Pickles.Linearization.Interpreter
+import Pickles.Linearization.Spec
 import Pickles.Linearization.Fp
 import FixtureKit.Parse
 import Lean.Data.Json
@@ -55,48 +55,6 @@ def parsePE (j : Json) : Except String (F × F) := do
   unless a.size = 2 do throw s!"expected an evaluation pair, got {a.size} entries"
   return (a.getD 0 0, a.getD 1 0)
 
-/-- The interpreter environment at a concrete field, reading the production evaluations.
-
-`var` is the whole cell dictionary: witness columns at both rows, coefficients at the
-current row, and the six modelled gates' selectors. Out-of-range indices and the
-lookup columns read as zero, matching the interpreter's own defaulting discipline —
-neither is reachable in the live stream. -/
-def tokenEnv (endo α : F) (M : Kimchi.Gate.Poseidon.Mds F) (β γ zkpmZ : F)
-    (e : Evals F) : Env Id F where
-  add a b := a + b
-  sub a b := a - b
-  mul a b := pure (a * b)
-  pow v n := pure (v ^ n)
-  cell x := x
-  var col row := match col, row with
-    | .witness i, .curr => if h : i < wCols then e.w ⟨i, h⟩ else 0
-    | .witness i, .next => if h : i < wCols then e.wOmega ⟨i, h⟩ else 0
-    | .coefficient i, _ => if h : i < coeffCols then e.coeffs ⟨i, h⟩ else 0
-    | .index .generic, _ => e.genericSelector
-    | .index .poseidon, _ => e.poseidonSelector
-    | .index .completeAdd, _ => e.completeAddSelector
-    | .index .varBaseMul, _ => e.mulSelector
-    | .index .endoMul, _ => e.emulSelector
-    | .index .endoMulScalar, _ => e.endoScalarSelector
-    | _, _ => 0
-  alphaPow n := α ^ n
-  mds r c := match r, c with
-    | 0, 0 => M.m00 | 0, 1 => M.m01 | 0, 2 => M.m02
-    | 1, 0 => M.m10 | 1, 1 => M.m11 | 1, 2 => M.m12
-    | 2, 0 => M.m20 | 2, 1 => M.m21 | 2, 2 => M.m22
-    | _, _ => 0
-  endoCoefficient := endo
-  literal v := (v : F)
-  vanishesOnZeroKnowledgeAndPreviousRows := zkpmZ
-  -- Not reachable in the live stream, so NOT adjudicated by this driver.
-  unnormalizedLagrangeBasis _ _ := pure 0
-  jointCombiner := 0
-  beta := β
-  gamma := γ
-  -- Every optional feature disabled, as the modelled fragment requires and as the
-  -- PureScript `fieldEnv` already does. The enabled branch is a thunk and is never forced.
-  ifFeature _ _ onFalse := onFalse ()
-
 /-- Adjudicate one fixture pair: production's evaluations against the deployed token
 stream for the same curve. -/
 def runFixture (evalPath : String) : IO Unit := do
@@ -134,7 +92,7 @@ def runFixture (evalPath : String) : IO Unit := do
         completeAddSelector := addPE.1, mulSelector := mulPE.1
         emulSelector := emulPE.1, endoScalarSelector := endoselPE.1 }
     let M := Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
-    let mine : F := evaluate (tokenEnv endo α M β γ zkpmZ e) toks
+    let mine : F := evaluate (e.toEnv endo M α β γ 0 zkpmZ (fun _ _ => 0)) toks
     return (decide (mine = constTarget),
             decide (mine = gateLinearization endo M α e),
             constTarget)

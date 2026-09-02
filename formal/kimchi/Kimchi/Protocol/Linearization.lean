@@ -18,10 +18,19 @@ permutation argument holds the next three powers `α²¹, α²², α²³`.
 -/
 namespace Kimchi.Protocol.Linearization
 
+-- `Argument.constraints` and `ArgumentEnv.map` bind their rings in the SAME universe as
+-- the gate's field, so carriers are named at one explicit universe rather than `Type*`.
+universe u
+
 open Kimchi.Lift
 open Kimchi.Lift.Gate
 
-variable {F : Type*} [Field F]
+-- The evaluation record and the two functions that read it need no division, so they are
+-- stated over a commutative ring: that is what lets them be instantiated at a polynomial
+-- algebra, which `Kimchi.Lift.Argument.constraints` already supports and
+-- `Pickles.Linearization.Spec.gateLinearizationAt` exploits. Everything below `Evals`
+-- keeps `Field` — `Argument` itself requires one, and `ftEval0` divides.
+variable {F : Type*} [CommRing F]
 
 /-- The combined evaluations the scalar side reads: each column at `ζ`, with the witness
 and the accumulator also at `ζω`. -/
@@ -75,11 +84,52 @@ theorem alphaCombo_eq_sum_getD (α : F) :
     congr 1
     exact Finset.sum_congr rfl fun k _ => by ring
 
+/-! ### Naturality along an `F`-algebra map
+
+Every `Argument` carries a naturality square (`Kimchi.Lift.Argument.constraints_map`), so
+the whole gate linearization transports along an `F`-algebra homomorphism. This is what
+lets the linearization be computed once over a polynomial algebra and read back at the
+field: the polynomial identity, pushed through the evaluation homomorphism, IS the field
+identity. -/
+
+/-- Push a carrier map through the evaluations, cell by cell. -/
+def Evals.map {R S : Type*} (φ : R → S) (e : Evals R) : Evals S where
+  w i := φ (e.w i)
+  wOmega i := φ (e.wOmega i)
+  z := φ e.z
+  zOmega := φ e.zOmega
+  s i := φ (e.s i)
+  coeffs i := φ (e.coeffs i)
+  genericSelector := φ e.genericSelector
+  poseidonSelector := φ e.poseidonSelector
+  completeAddSelector := φ e.completeAddSelector
+  mulSelector := φ e.mulSelector
+  emulSelector := φ e.emulSelector
+  endoScalarSelector := φ e.endoScalarSelector
+
+/-- Mapping the evaluations and taking their cell environment is taking the cell
+environment and mapping it: both are `⟨φ ∘ e.w, φ ∘ e.wOmega, φ ∘ e.coeffs⟩`. The two
+spellings meet where `constraints_map` hands back the one and `gateLinearization` wants the
+other. -/
+private theorem evalEnv_map {R S : Type u} (φ : R → S) (e : Evals R) :
+    evalEnv (e.map φ) = (evalEnv e).map φ := rfl
+
+section Field
+
+variable {F : Type u} [Field F]
+
 /-- The gate linearization: each gate's α-weighted constraint list, evaluated at the
 cell environment and weighted by its evaluated selector. Gates share the alpha pool, so
-every list starts at `α⁰`. -/
-def gateLinearization (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α : F)
-    (e : Evals F) : F :=
+every list starts at `α⁰`.
+
+Read at an arbitrary `F`-algebra `R`, which is the freedom
+`Kimchi.Lift.Argument.constraints` already offers (`∀ {R} [CommRing R] [Algebra F R]`) and
+which a reflection proof needs in order to run the gates at a polynomial algebra. The gate
+PARAMETERS stay at `F` — they build the `Argument`s themselves — while the evaluations live
+at `R`. At `R := F` this is the ordinary scalar-side linearization, so `ftEval0` and the
+fixture drivers read it unchanged. -/
+def gateLinearization {R : Type u} [CommRing R] [Algebra F R] (endo : F)
+    (mds : Kimchi.Gate.Poseidon.Mds F) (α : R) (e : Evals R) : R :=
   e.genericSelector * alphaCombo α ((Generic.argument (F := F)).constraints (evalEnv e))
     + e.poseidonSelector
       * alphaCombo α ((Poseidon.argument mds).constraints (evalEnv e))
@@ -90,6 +140,36 @@ def gateLinearization (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α : F)
     + e.emulSelector * alphaCombo α ((EndoMul.argument endo).constraints (evalEnv e))
     + e.endoScalarSelector
       * alphaCombo α ((EndoScalar.argument (F := F)).constraints (evalEnv e))
+
+/-- **The gate linearization transports along an `F`-algebra map.** Computing it over `R`
+and pushing the result through `φ` is computing it over `S` from the pushed evaluations.
+
+The gate parameters `endo` and `mds` are untouched: they live at `F` and build the
+`Argument`s themselves, so `φ` never sees them. Each summand goes through in three moves —
+`φ` is a ring hom, so it splits the selector off the α-combination; the combination is a
+Horner fold, so `φ` distributes through it onto the constraint list; and that mapped list
+is `constraints_map`, the naturality square every gate already discharges. -/
+theorem gateLinearization_map {R S : Type u} [CommRing R] [CommRing S]
+    [Algebra F R] [Algebra F S] (φ : R →ₐ[F] S) (endo : F)
+    (mds : Kimchi.Gate.Poseidon.Mds F) (α : R) (e : Evals R) :
+    φ (gateLinearization endo mds α e) = gateLinearization endo mds (φ α) (e.map φ) := by
+  -- `φ` through a Horner fold, which is all `alphaCombo` is.
+  have hcombo : ∀ (L : List R), φ (alphaCombo α L) = alphaCombo (φ α) (L.map φ) := by
+    intro L
+    induction L with
+    | nil => simp [alphaCombo]
+    | cons c t ih =>
+      rw [show alphaCombo α (c :: t) = c + α * alphaCombo α t from rfl, List.map_cons,
+        show alphaCombo (φ α) (φ c :: t.map φ) = φ c + φ α * alphaCombo (φ α) (t.map φ)
+          from rfl, map_add, map_mul, ih]
+  -- One gate's summand: split, distribute, then cross with the naturality square.
+  have hgate : ∀ (G : Kimchi.Lift.Argument F) (sel : R),
+      φ (sel * alphaCombo α (G.constraints (evalEnv e)))
+        = φ sel * alphaCombo (φ α) (G.constraints (evalEnv (e.map φ))) := by
+    intro G sel
+    rw [map_mul, hcombo, G.constraints_map φ, evalEnv_map]
+  simp only [gateLinearization, map_add, hgate]
+  rfl
 
 /-- The scalar multiplying the permutation commitment: the negated `z(ζω)`-side product
 row of the permutation recurrence, at the first permutation alpha. -/
@@ -119,5 +199,7 @@ def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin permCols → F) (endo : F)
   let boundary := ((zeta1m1 * α ^ 22 * (ζ - wBoundary) + zeta1m1 * α ^ 23 * (ζ - 1))
     * (1 - e.z)) / ((ζ - wBoundary) * (ζ - 1))
   sigmaSide - pubEval - shiftSide + boundary - gateLinearization endo mds α e
+
+end Field
 
 end Kimchi.Protocol.Linearization

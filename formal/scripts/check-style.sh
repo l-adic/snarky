@@ -25,9 +25,11 @@ fix=0
 # submodule, .archon-seed/, which holds read-only copies of upstream sources staged for the
 # prover harness, and .archon/, the prover harness's own state — all four carry style we do not
 # own and none is committed here). The .archon/ clause matters for the *count* as much as for
-# pickles/Pickles/Linearization/F{p,q}.lean are gitignored codegen output (gen-tokens),
-# carrying 255-bit field literals that cannot be wrapped inside the column limit. They are
-# excluded on the same footing as the PureScript Pallas.purs / Vesta.purs they mirror.
+# pickles/Pickles/Linearization/F{p,q}.lean are codegen output (pickles-codegen's
+# gen-tokens), carrying 255-bit field literals that cannot be wrapped inside the column
+# limit. They are committed rather than gitignored — formal/'s CI checks out without the
+# mina submodule and so cannot regenerate them — but they are not hand-written source and
+# the formatter contract does not apply.
 # the checks: .archon/logs/*/snapshots/*/baseline.lean is a pre-edit copy of a source file
 # written once per snapshotting iteration, so without it the printed file count drifts upward
 # over time (and a snapshot taken mid-edit can fail the gate for a reason outside the tree).

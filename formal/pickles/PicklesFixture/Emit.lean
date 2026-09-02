@@ -79,7 +79,7 @@ private def flagSrc : FeatureFlag → String
   | .lookupsPerRow n => s!"(.lookupsPerRow {n})"
 
 /-- One token as a Lean term. -/
-def tokenSrc : PolishToken → String
+private def tokenSrc : PolishToken → String
   | .constant c => s!".constant {constSrc c}"
   | .challenge c => s!".challenge {chalSrc c}"
   | .cell col row => s!".cell {colSrc col} {rowSrc row}"

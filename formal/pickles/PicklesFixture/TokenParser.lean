@@ -75,21 +75,21 @@ private def hexStep (acc : Except String Nat) (c : Char) : Except String Nat :=
 
 /-- A `"0x…"` literal as a natural number. Rejects an empty numeral and any non-hex
 character. The deployed streams reach 46 hex digits, so the result is genuinely big. -/
-def parseHexNat (s : String) : Except String Nat :=
+private def parseHexNat (s : String) : Except String Nat :=
   if s.isEmpty then .error "empty hex literal"
   else s.foldl hexStep (.ok 0)
 
 /-! ## The leaf enumerations -/
 
 /-- `"Curr" | "Next"`. -/
-def parseCurrOrNext (j : Json) : Except String CurrOrNext := do
+private def parseCurrOrNext (j : Json) : Except String CurrOrNext := do
   match ← j.getStr? with
   | "Curr" => return .curr
   | "Next" => return .next
   | s => throw s!"unknown CurrOrNext: {s}"
 
 /-- A gate name, as an `Index` column's payload. -/
-def parseGateType (j : Json) : Except String GateType := do
+private def parseGateType (j : Json) : Except String GateType := do
   match ← j.getStr? with
   | "Generic" => return .generic
   | "Poseidon" => return .poseidon
@@ -106,7 +106,7 @@ def parseGateType (j : Json) : Except String GateType := do
   | s => throw s!"unknown GateType: {s}"
 
 /-- A lookup family name. -/
-def parseLookupPattern (j : Json) : Except String LookupPattern := do
+private def parseLookupPattern (j : Json) : Except String LookupPattern := do
   match ← j.getStr? with
   | "Lookup" => return .lookup
   | "Xor" => return .xor
@@ -115,7 +115,7 @@ def parseLookupPattern (j : Json) : Except String LookupPattern := do
   | s => throw s!"unknown LookupPattern: {s}"
 
 /-- A challenge name. -/
-def parseChallengeTerm (j : Json) : Except String ChallengeTerm := do
+private def parseChallengeTerm (j : Json) : Except String ChallengeTerm := do
   match ← j.getStr? with
   | "Alpha" => return .alpha
   | "Beta" => return .beta
@@ -126,7 +126,7 @@ def parseChallengeTerm (j : Json) : Except String ChallengeTerm := do
 /-! ## The tagged unions -/
 
 /-- A column reference: four bare tags, five single-key objects. -/
-def parseColumn (j : Json) : Except String Column := do
+private def parseColumn (j : Json) : Except String Column := do
   if let .ok s := j.getStr? then
     match s with
     | "LookupAggreg" => return .lookupAggreg
@@ -142,7 +142,7 @@ def parseColumn (j : Json) : Except String Column := do
   throw s!"unrecognised Column: {j.compress}"
 
 /-- A constant: the bare `EndoCoefficient` tag, an MDS entry, or a hex literal. -/
-def parseConstantTerm (j : Json) : Except String ConstantTerm := do
+private def parseConstantTerm (j : Json) : Except String ConstantTerm := do
   if let .ok s := j.getStr? then
     match s with
     | "EndoCoefficient" => return .endoCoefficient
@@ -153,7 +153,7 @@ def parseConstantTerm (j : Json) : Except String ConstantTerm := do
   throw s!"unrecognised ConstantTerm: {j.compress}"
 
 /-- A feature predicate: eight bare tags, three single-key objects. -/
-def parseFeatureFlag (j : Json) : Except String FeatureFlag := do
+private def parseFeatureFlag (j : Json) : Except String FeatureFlag := do
   if let .ok s := j.getStr? then
     match s with
     | "RangeCheck0" => return .rangeCheck0
@@ -180,7 +180,7 @@ private def parseGuard (j : Json) : Except String (FeatureFlag × Nat) := do
 /-! ## Tokens and streams -/
 
 /-- One token. Nullary tokens arrive as bare strings, the rest as single-key objects. -/
-def parseToken (j : Json) : Except String PolishToken := do
+private def parseToken (j : Json) : Except String PolishToken := do
   if let .ok s := j.getStr? then
     match s with
     | "Add" => return .add
