@@ -190,6 +190,17 @@ def evalLoop [Monad m] (env : Env m F) (toks : Array PolishToken) :
       | some tok => match tok with
         | .constant c =>
             evalLoop env toks fuel endPos (push (evalConstant env c) (advance s))
+        | .challenge .alpha =>
+            -- The Alpha+Pow peephole. Rust's `to_polish` only ever emits `Alpha` as part
+            -- of `Expr::Pow(alpha, n)`, so the pair fuses to one table lookup; the
+            -- fallback is defensive and fires on no deployed stream. It is what keeps the
+            -- α-sites free in circuit — 95 of the 474 rows at the deployed length — and it
+            -- is value-preserving wherever `alphaPow n` reads as `α^n`.
+            match toks[s.position + 1]? with
+            | some (.pow n) =>
+                evalLoop env toks fuel endPos
+                  (push (env.alphaPow n) { s with position := s.position + 2 })
+            | _ => evalLoop env toks fuel endPos (push (env.alphaPow 1) (advance s))
         | .challenge c =>
             evalLoop env toks fuel endPos (push (evalChallenge env c) (advance s))
         | .cell col row =>

@@ -360,12 +360,15 @@ jobs:
     # replay byte-equal against this commit's own exports, and each round-trips
     # through the verified index model on the recorded witness. This workflow has
     # no path filter, so every PR — PS-side or formal-side — is gated here.
+    # A WORKSPACE script (formal/scripts/), not a package one: the corpus spans
+    # packages, the linearization circuit coming from pickles and the gadgets from
+    # snarky, so no single package can import every circuit under comparison.
     - name: Check the kimchi CS-equality corpus
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
-          lake env lean --run snarky/scripts/check_cs_basic.lean
+          lake env lean --run scripts/check_cs.lean
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

@@ -104,6 +104,7 @@ The Lagrange basis cannot be given a variable — it is a function — and the l
 reaches it zero times, both occurrences lying inside disabled branches. -/
 private abbrev symEnv (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K) : Env Id (MPoly K) :=
   symEvals.toEnv endo mds (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0)
+    LookupEvals.zero (fun _ => false)
 
 /-! ## The assignment, generically -/
 
@@ -214,14 +215,16 @@ private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
     (hcert : (evaluate (symEnv endo mds) toks : MPoly K)
       = gateLinearization endo mds (xv 51) symEvals)
     (α β γ jc van : K) (e : Evals K) :
-    (evaluate (e.toEnv endo mds α β γ jc van (fun _ _ => 0)) toks : K)
+    (evaluate (e.toEnv endo mds α β γ jc van (fun _ _ => 0) LookupEvals.zero
+      (fun _ => false)) toks : K)
       = gateLinearization endo mds α e := by
   obtain ⟨hα, hβ, hγ, hjc, hvan⟩ := evalAt_chal α β γ jc van e
   have hE := symEvals_map α β γ jc van e
   have hc := toEnv_compatible (evalAt α β γ jc van e) endo mds
-    (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0) symEvals
+    (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0) LookupEvals.zero
+    (fun _ => false) symEvals
   rw [hE, hα, hβ, hγ, hjc, hvan] at hc
-  simp only [_root_.map_zero] at hc
+  simp only [_root_.map_zero, LookupEvals.map_zero (_root_.map_zero _)] at hc
   rw [evaluate_map hc, hcert, gateLinearization_map, hα, hE]
 
 /-! ## The two deployed streams -/
@@ -246,7 +249,8 @@ private theorem fp_reflects :
 
 /-- **The deployed `Fp` stream computes the gate linearization.** -/
 theorem evaluate_fpTokens (α β γ jc van : Fp) (e : Evals Fp) :
-    (evaluate (e.toEnv Pasta.pallasEndo symMds α β γ jc van (fun _ _ => 0)) fpTokens : Fp)
+    (evaluate (e.toEnv Pasta.pallasEndo symMds α β γ jc van (fun _ _ => 0) LookupEvals.zero
+      (fun _ => false)) fpTokens : Fp)
       = gateLinearization Pasta.pallasEndo symMds α e :=
   of_certificate _ _ _ fp_reflects α β γ jc van e
 
@@ -269,7 +273,8 @@ private theorem fq_reflects :
 
 /-- **The deployed `Fq` stream computes the gate linearization.** -/
 theorem evaluate_fqTokens (α β γ jc van : Fq) (e : Evals Fq) :
-    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ α β γ jc van (fun _ _ => 0)) fqTokens : Fq)
+    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ α β γ jc van (fun _ _ => 0) LookupEvals.zero
+      (fun _ => false)) fqTokens : Fq)
       = gateLinearization Pasta.vestaEndo symMdsQ α e :=
   of_certificate _ _ _ fq_reflects α β γ jc van e
 

@@ -15,12 +15,14 @@ both go through.
 
 Four choices, none of them forced by the type:
 
-* **Optional features are off.** `ifFeature` always takes the disabled branch. It cannot be
-  a parameter: the enabled branches read lookup columns, which this environment sends to
-  zero, so they would compute nonsense rather than the feature's real contribution. The
-  regime is CLAUDE.md's modelled fragment.
-* **Out-of-range indices and lookup columns read as zero**, mirroring the interpreter's own
-  defaulting rather than ruling them out by typing. Neither is reachable in the live stream.
+* **The feature predicate and the lookup evaluations are PARAMETERS**, following the
+  PureScript, where `ifFeature` is a field of `Env` and the eval point carries lookup
+  accessors — both specialised at the instantiation site rather than inside the
+  environment. The deployed instantiation passes `fun _ => false` and `LookupEvals.zero`,
+  which is CLAUDE.md's modelled fragment; pinning them here instead would make the enabled
+  case unstateable rather than merely unproved.
+* **Out-of-range indices read as zero**, mirroring the interpreter's own defaulting rather
+  than ruling them out by typing. Not reachable in the live stream.
 * **`literal` casts in `F` and then embeds**, rather than casting straight into `R`. The
   two agree (`algebraMap` is a ring homomorphism, so it commutes with `Nat.cast`), but a
   cast into `R` is computed by `Nat.unaryCast` at a polynomial algebra — one `+ 1` per
@@ -36,7 +38,7 @@ Four choices, none of them forced by the type:
 
 namespace Kimchi.Protocol.Linearization
 
-open Kimchi.Lift Kimchi.Lift.Gate
+open Kimchi.Lift Kimchi.Lift.Gate Pickles.Linearization
 
 -- `Env` lives at `Type`, and `Argument.constraints` needs `R` in the same universe as
 -- `F`; both carriers of interest (`ZMod p` and `CMvPolynomial n (ZMod p)`) are there.
@@ -44,11 +46,58 @@ variable {F : Type} [Field F] {R : Type} [CommRing R] [Algebra F R]
 
 /-! ## The interpreter environment -/
 
+/-- The lookup columns' evaluations. Kimchi's `Evals` has no fields for these — the
+modelled fragment excludes lookups — so they enter `toEnv` as a separate record, mirroring
+the accessors PureScript's eval point carries (`lookupAggreg`, `lookupSorted`, …). The
+deployed instantiation passes zeros, exactly as the PureScript harness does; carrying them
+as a PARAMETER rather than pinning them inside `toEnv` is what leaves the door open if the
+protocol formalization ever grows lookups. -/
+structure LookupEvals (R : Type) where
+  /-- Sorted lookup column `i` at a row. -/
+  sorted : Nat → CurrOrNext → R
+  /-- The lookup aggregation column at a row. -/
+  aggreg : CurrOrNext → R
+  /-- The lookup table column at a row. -/
+  table : CurrOrNext → R
+  /-- The runtime lookup table column at a row. -/
+  runtimeTable : CurrOrNext → R
+  /-- The runtime lookup selector column at a row. -/
+  runtimeSelector : CurrOrNext → R
+  /-- The selector of a lookup family. -/
+  kindIndex : LookupPattern → R
+
+/-- All lookup columns read as zero: the modelled fragment's instantiation. -/
+def LookupEvals.zero [Zero R] : LookupEvals R where
+  sorted _ _ := 0
+  aggreg _ := 0
+  table _ := 0
+  runtimeTable _ := 0
+  runtimeSelector _ := 0
+  kindIndex _ := 0
+
+/-- Push a carrier map through the lookup evaluations. -/
+def LookupEvals.map {S : Type} (φ : R → S) (lk : LookupEvals R) : LookupEvals S where
+  sorted i row := φ (lk.sorted i row)
+  aggreg row := φ (lk.aggreg row)
+  table row := φ (lk.table row)
+  runtimeTable row := φ (lk.runtimeTable row)
+  runtimeSelector row := φ (lk.runtimeSelector row)
+  kindIndex p := φ (lk.kindIndex p)
+
+/-- Zero is preserved: the modelled fragment's lookup evaluations transport to themselves.
+-/
+@[simp] theorem LookupEvals.map_zero {S : Type} [Zero R] [Zero S] {φ : R → S} (h0 : φ 0 = 0) :
+    LookupEvals.map φ LookupEvals.zero = (LookupEvals.zero : LookupEvals S) := by
+  simp [LookupEvals.map, LookupEvals.zero, h0]
+
+
+
 open Pickles.Linearization in
 /-- The environment the deployed token stream is read in, built from the same atoms
 `gateLinearizationAt` takes. See the preamble for the four choices this makes. -/
 def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
-    (α β γ jc van : R) (ulb : Bool → Int → R) (e : Evals R) : Env Id R where
+    (α β γ jc van : R) (ulb : Bool → Int → R) (lk : LookupEvals R)
+    (feat : FeatureFlag → Bool) (e : Evals R) : Env Id R where
   add a b := a + b
   sub a b := a - b
   mul a b := pure (a * b)
@@ -64,7 +113,13 @@ def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
     | .index .varBaseMul, _ => e.mulSelector
     | .index .endoMul, _ => e.emulSelector
     | .index .endoMulScalar, _ => e.endoScalarSelector
-    | _, _ => 0
+    | .lookupSorted i, row => lk.sorted i row
+    | .lookupAggreg, row => lk.aggreg row
+    | .lookupTable, row => lk.table row
+    | .lookupRuntimeTable, row => lk.runtimeTable row
+    | .lookupRuntimeSelector, row => lk.runtimeSelector row
+    | .lookupKindIndex p, _ => lk.kindIndex p
+    | .index _, _ => 0
   alphaPow n := α ^ n
   mds r c := match r, c with
     | 0, 0 => algebraMap F R mds.m00 | 0, 1 => algebraMap F R mds.m01
@@ -79,7 +134,7 @@ def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
   jointCombiner := jc
   beta := β
   gamma := γ
-  ifFeature _ _ onFalse := onFalse ()
+  ifFeature f onTrue onFalse := if feat f then onTrue () else onFalse ()
 
 /-! ## Naturality
 
@@ -92,10 +147,10 @@ open Pickles.Linearization in
 transporting it along `φ`. -/
 theorem toEnv_compatible {S : Type} [CommRing S] [Algebra F S] (φ : R →ₐ[F] S)
     (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
-    (ulb : Bool → Int → R) (e : Evals R) :
-    Compatible φ (e.toEnv endo mds α β γ jc van ulb)
+    (ulb : Bool → Int → R) (lk : LookupEvals R) (feat : FeatureFlag → Bool) (e : Evals R) :
+    Compatible φ (e.toEnv endo mds α β γ jc van ulb lk feat)
       ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
-        (fun zk off => φ (ulb zk off))) where
+        (fun zk off => φ (ulb zk off)) (lk.map φ) feat) where
   add a b := map_add φ a b
   sub a b := map_sub φ a b
   mul a b := map_mul φ a b
@@ -103,7 +158,10 @@ theorem toEnv_compatible {S : Type} [CommRing S] [Algebra F S] (φ : R →ₐ[F]
   var c r := by
     cases c with
     | index g => cases g <;> cases r <;> simp [Evals.toEnv, Evals.map]
-    | _ => cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
+    | witness i => cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
+    | coefficient i =>
+      cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
+    | _ => cases r <;> simp [Evals.toEnv, LookupEvals.map]
   cell _ := rfl
   alphaPow n := map_pow φ α n
   mds r c := by
@@ -117,7 +175,8 @@ theorem toEnv_compatible {S : Type} [CommRing S] [Algebra F S] (φ : R →ₐ[F]
   jointCombiner := rfl
   beta := rfl
   gamma := rfl
-  ifFeatureLeft _ _ _ := rfl
-  ifFeatureRight _ _ _ := rfl
+  ifFeature f t₁ n₁ t₂ n₂ ht hn := by
+    simp only [Evals.toEnv]
+    split <;> assumption
 
 end Kimchi.Protocol.Linearization

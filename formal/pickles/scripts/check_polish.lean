@@ -92,7 +92,8 @@ def runFixture (evalPath : String) : IO Unit := do
         completeAddSelector := addPE.1, mulSelector := mulPE.1
         emulSelector := emulPE.1, endoScalarSelector := endoselPE.1 }
     let M := Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
-    let mine : F := evaluate (e.toEnv endo M α β γ 0 zkpmZ (fun _ _ => 0)) toks
+    let mine : F := evaluate (e.toEnv endo M α β γ 0 zkpmZ (fun _ _ => 0) LookupEvals.zero
+      (fun _ => false)) toks
     return (decide (mine = constTarget),
             decide (mine = gateLinearization endo M α e),
             constTarget)

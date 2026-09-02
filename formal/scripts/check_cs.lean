@@ -38,13 +38,19 @@ The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
 this check against the exports its own commit just produced.
 
-Run from `formal/snarky/`:  lake env lean --run scripts/check_cs_basic.lean
+Run from `formal/`:  lake env lean --run scripts/check_cs.lean
+
+This is a WORKSPACE script rather than a package one: the corpus spans packages — the
+`Basic` and gate gadgets come from `snarky`, the linearization circuit from `pickles`,
+which requires snarky — so no single package can import every circuit under comparison.
 (`KIMCHI_PS_RESULTS_DIR` overrides the default export location).
 -/
 import Std.Data.HashMap
 import KimchiFixture.PS
 import Snarky
 import Snarky.Kimchi.Backend.Compile
+import Pickles.Linearization.Circuit
+import Pickles.Linearization.Fp
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
@@ -56,12 +62,12 @@ import Pasta.Endo
 
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
 
-/-- Where the circuit-diffs results live (package-relative default, env override). -/
+/-- Where the circuit-diffs results live (workspace-relative default, env override). -/
 def resultsDir : IO System.FilePath := do
   match (← IO.getEnv "KIMCHI_PS_RESULTS_DIR") with
   | some d => return d
   | none =>
-    return ".." / ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
+    return ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
 /-- The emitter tag as the index model's gate type (the mapping step 1 deferred to
 the assembly). -/
@@ -436,6 +442,75 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
         ("index round-trip", indexRoundTrip rows gates pubSize wit pubs) ]
   csChecks ++ witChecks
 
+/-! ## The linearization circuit
+
+Transcribes `Pickles.CircuitDiffs.PureScript.LinearizationCommon.linearizationCircuitM`.
+The 90-input layout is OCaml's (`dump_circuit_impl.ml`), not what the constant term needs:
+coefficients, `s` and the selectors arrive as (ζ, ζω) PAIRS though only the ζ component of
+the first two is ever read, and `z`/`s` are not read at all. -/
+
+open Pickles.Linearization in
+/-- `α^0 … α^(n+1)`, by successive multiplication — 69 rows at the deployed length, and
+the reason the interpreter's `alphaPow` is a lookup rather than an exponentiation. -/
+def alphaGo (alpha : FVar Fp) : Nat → FVar Fp → Array (FVar Fp) →
+    CircuitM Fp C (Array (FVar Fp))
+  | 0, _, acc => pure acc
+  | n + 1, prev, acc => do
+    let next ← Snarky.mul alpha prev
+    alphaGo alpha n next (acc.push next)
+
+open Pickles.Linearization in
+/-- The precomputed table: `[1, α, α², …, α^70]`. -/
+def precomputeAlphaPowers (alpha : FVar Fp) : CircuitM Fp C (Array (FVar Fp)) :=
+  alphaGo alpha 69 alpha #[.const 1, alpha]
+
+/-- The `2^log2`-th root of unity, from the field's two-adic root. Matches production's
+recorded `omega` (checked against `linearization_vesta.json`). -/
+def domainGenerator (log2 : Nat) : Fp :=
+  (0x2bce74deac30ebda362120830561f81aea322bf2b7bb7584bdad6fabd87ea32f : Fp) ^ (2 ^ (32 - log2))
+
+open Pickles.Linearization Kimchi.Protocol.Linearization in
+/-- The circuit under comparison. The `zkPoly` and `zeta^n - 1` terms are computed and
+DISCARDED: they emit rows the OCaml dump contains, so they are part of the constraint
+system being compared even though nothing reads them. -/
+def linearizationCircuit (domLog2 : Nat) (toks : Array PolishToken)
+    (inputs : Vector (FVar Fp) 90) : CircuitM Fp C (FVar Fp) := do
+  let get (i : Nat) : FVar Fp := inputs[i]?.getD (.const 0)
+  let gen := domainGenerator domLog2
+  let om1 := gen⁻¹
+  let om2 := om1 * om1
+  let om3 := om2 * om1
+  let alpha := get 86
+  let zeta := get 89
+  let pows ← precomputeAlphaPowers alpha
+  -- eager zk_polynomial, discarded
+  let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
+  let _ ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
+  -- eager zeta^n - 1, discarded
+  let _ ← Snarky.pow zeta (2 ^ domLog2)
+  let inp : Inputs Fp :=
+    { evals :=
+        { w i := get (2 * i)
+          wOmega i := get (2 * i + 1)
+          coeffs i := get (30 + 2 * i)
+          z := get 60
+          zOmega := get 61
+          s i := get (62 + 2 * i)
+          genericSelector := get 74
+          poseidonSelector := get 76
+          completeAddSelector := get 78
+          mulSelector := get 80
+          emulSelector := get 82
+          endoScalarSelector := get 84 }
+      alphaPows n := pows[n]?.getD (.const 0)
+      beta := get 87
+      gamma := get 88
+      jointCombiner := .const 1
+      vanishes := .const 1 }
+  evaluate (inp.toEnv Pasta.pallasEndo
+    (Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams)
+    lookupZero (fun _ => false)) toks
+
 /-- The corpus under comparison: every witness-carrying `Basic`-gadget circuit. -/
 def targets : List (String × (Raw → List (String × Bool))) :=
   [ ("mul_step_circuit", compareWith (a := Fp) (b := Fp) mulCircuit),
@@ -482,6 +557,9 @@ def targets : List (String × (Raw → List (String × Bool))) :=
       compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
     ("bullet_reduce_one_step_circuit",
       compareWith (a := Vector Fp 5) (b := PUnit) bulletReduceOneCircuit),
+    ("linearization_step_circuit",
+      compareWith (a := Vector Fp 90) (b := Fp)
+        (linearizationCircuit 16 Pickles.Linearization.fpTokens)),
     ("bullet_reduce_step_circuit",
       compareWith (a := Vector Fp 75) (b := PUnit) bulletReduceCircuit) ]
 
