@@ -42,3 +42,9 @@ globs = ["Pickles", "Pickles.+"]
 [[lean_lib]]
 name = "PicklesFixture"
 globs = ["PicklesFixture", "PicklesFixture.+"]
+
+# The token codegen: JSON dump -> `Pickles/Linearization/{Fp,Fq}.lean`. The Lean
+# counterpart of `pickles-codegen`'s `Generator.purs`; both read the same Rust dump.
+[[lean_exe]]
+name = "gen-tokens"
+root = "GenTokens"

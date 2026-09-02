@@ -32,7 +32,7 @@ main = launchAff_ do
     Just dir -> pure dir
 
   -- Parse and generate Pallas scalar field linearization
-  let pallasJsonPath = Path.concat [ inputDir, "pallas_scalar_field.json" ]
+  let pallasJsonPath = Path.concat [ inputDir, "fp.json" ]
   Console.log $ "Reading " <> pallasJsonPath
   pallasContent <- readTextFile UTF8 pallasJsonPath
   case readJSON pallasContent :: _ Linearization of
@@ -46,7 +46,7 @@ main = launchAff_ do
       Console.log $ "Pallas module generated successfully (" <> show (Array.length pallas.constant_term) <> " tokens)"
 
   -- Parse and generate Vesta scalar field linearization
-  let vestaJsonPath = Path.concat [ inputDir, "vesta_scalar_field.json" ]
+  let vestaJsonPath = Path.concat [ inputDir, "fq.json" ]
   Console.log $ "Reading " <> vestaJsonPath
   vestaContent <- readTextFile UTF8 vestaJsonPath
   case readJSON vestaContent :: _ Linearization of

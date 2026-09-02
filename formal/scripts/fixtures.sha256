@@ -1,7 +1,5 @@
 # Fixture manifest: sha256 of every committed fixture, regenerated from
-# tools/fixture-dump against the mina submodule at the revision below
-# (pickles/fixtures excepted: those come from packages/pickles-codegen's
-# gen-linearization, which reads the same submodule).
+# tools/fixture-dump against the mina submodule at the revision below.
 # Re-pin with scripts/check_fixtures_manifest.sh --regen after a deliberate
 # regeneration; a hash mismatch otherwise means a fixture was edited by hand.
 # mina-submodule: 3969f761846edc33b2a2fda8fd2d096d0442659e
@@ -31,8 +29,6 @@ db86d6b387910fef12e24f5d2d9527a495de18830b0de6db5e5c6648460243ca  kimchi/fixture
 ab577f4244a7c9820971c4ca2f1f1071a7d5bfa373e2d3d7a0a34a08a6d874cc  kimchi/fixtures/linearization_vesta.json
 ea8a77ba3c209c710b75d0a19965109a27307899eb6f18ff87a3ca4193594080  kimchi/fixtures/linearization_vesta_emul.json
 2a879a61c54363550a8fcd640911546180f99c9982f1c6938893ea6ced7d185e  kimchi/fixtures/perm_vesta.json
-e407a87952429bad57b43baf94cc12b53214e562713344b7771fc206fce6d9f3  pickles/fixtures/pallas_scalar_field.json
-a85ef9e73e73c50e59255bf50f15b9f8da05d91b0e383989eee7f42646f4a499  pickles/fixtures/vesta_scalar_field.json
 d3b09ea5aa0ddbcecfe5fe12fc6dba20c0b6f2b446bdd2980c8acd9d74bdc2d5  poseidon/fixtures/fq_sponge_pallas_vectors.json
 bab1beee0c88172c018ac68df8d98f5b6e29e19a4a2fd861e8318c4405445f86  poseidon/fixtures/fq_sponge_vectors.json
 a5d7679dff7d9d0ff943377ffaa892845f1efcc318b3432fac3a7545bf2f15cf  poseidon/fixtures/group_map_pallas_vectors.json
