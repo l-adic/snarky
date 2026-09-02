@@ -12,7 +12,7 @@ inputs:
     required: false
     default: >-
       Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr
-      KimchiFixture
+      KimchiFixture Pickles PicklesFixture
 outputs:
   cache-key:
     description: The primary key of the build-directory cache (for an explicit save).

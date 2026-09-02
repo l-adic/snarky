@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 manifest="scripts/fixtures.sha256"
-dirs=(kimchi/fixtures poseidon/fixtures bulletproof-pcs/fixtures)
+dirs=(kimchi/fixtures poseidon/fixtures bulletproof-pcs/fixtures pickles/fixtures)
 
 list_files() {
   # committed fixtures only: the *_debug.json sidecars are gitignored dev artifacts
@@ -31,7 +31,9 @@ rev() {
 
 if [[ "${1:-}" == "--regen" ]]; then
   { echo "# Fixture manifest: sha256 of every committed fixture, regenerated from"
-    echo "# tools/fixture-dump against the mina submodule at the revision below."
+    echo "# tools/fixture-dump against the mina submodule at the revision below"
+    echo "# (pickles/fixtures excepted: those come from packages/pickles-codegen's"
+    echo "# gen-linearization, which reads the same submodule)."
     echo "# Re-pin with scripts/check_fixtures_manifest.sh --regen after a deliberate"
     echo "# regeneration; a hash mismatch otherwise means a fixture was edited by hand."
     echo "# mina-submodule: $(rev)"

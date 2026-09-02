@@ -1,0 +1,44 @@
+name = "pickles"
+# Share the aggregator workspace's dependency checkouts (one Mathlib for every
+# package workspace — the editor opens files with the package as the root).
+packagesDir = "../.lake/packages"
+defaultTargets = ["Pickles"]
+# `lake lint` (standalone): Batteries' env-linter suite over this package's root.
+lintDriver = "batteries/runLinter"
+lintDriverArgs = ["Pickles", "PicklesFixture"]
+
+# The in-circuit kimchi verifier: PureScript `packages/pickles`' verification gadgets,
+# ported to the snarky DSL and proved faithful to the DEPLOYED verifier —
+# `Kimchi.Verifier.kimchiVerify` and the closed forms of `Kimchi/Verifier/Reflect.lean`,
+# which are the specs every law here lands on. No new spec objects: a fragment's
+# soundness is stated against the run function it implements.
+#
+# The statement shape is Schnorr's, at scale: every satisfying valuation of the compiled
+# constraints certifies the wire computation, and the honest run completes. It is
+# RELATIVE faithfulness — it neither assumes nor establishes that the wire verifier is
+# sound. See formal/docs/circuit-verifier-faithfulness.md for the fragment
+# decomposition, and docs/soundness-line-retirement.md for why soundness is out of scope.
+
+[[require]]
+name = "snarky"
+path = "../snarky"
+
+[[require]]
+name = "kimchi"
+path = "../kimchi"
+
+[[require]]
+name = "poseidon"
+path = "../poseidon"
+
+[[lean_lib]]
+name = "Pickles"
+globs = ["Pickles", "Pickles.+"]
+
+# The JSON ingestion layer, deliberately NOT part of `Pickles` — same split as
+# `KimchiFixture` / `FixtureKit` / `BulletproofFixture`: checking against recorded
+# production data is not part of the development, so the proof library never depends
+# on a decoder. Scripts import this directly.
+[[lean_lib]]
+name = "PicklesFixture"
+globs = ["PicklesFixture", "PicklesFixture.+"]

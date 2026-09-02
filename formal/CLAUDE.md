@@ -51,7 +51,7 @@ PureScript original module by module; `formal/docs/snarky-ps-alignment.md` recor
 completed sign-off walk.
 
 Build: `make lean-build` (from the parent repo root), which runs
-`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr`
+`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr Pickles`
 in `formal/`; CI runs the same list plus `KimchiFixture`. From `formal/` you must name that
 target list yourself — **bare `lake build` here is not a build gate**: the root package is a
 pure aggregator that owns no library and declares no `defaultTargets`, so it reports

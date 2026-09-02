@@ -22,7 +22,7 @@ expected=''
 actual=$(grep -rn '\bsorry\b' \
   bulletproof-pcs/Bulletproof bulletproof-pcs/BulletproofFixture.lean \
   bulletproof-pcs/scripts kimchi/Kimchi kimchi/KimchiFixture kimchi/KimchiFixture.lean \
-  kimchi/Main.lean kimchi/scripts pasta poseidon snarky scripts/deadcode.lean \
+  kimchi/Main.lean kimchi/scripts pasta pickles poseidon snarky scripts/deadcode.lean \
   --include='*.lean' \
   | grep -Fv -- '`sorry`' | grep -vE -- '--.*\bsorry\b' \
   | cut -d: -f1,2 | sort || true)
