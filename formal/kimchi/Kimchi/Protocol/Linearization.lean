@@ -177,21 +177,54 @@ coincides with the full `∏_{[n−zkRows, n)}` window only at `zkRows = 3`. -/
 def zkpmEval (n zkRows : ℕ) (ω ζ : F) : F :=
   (ζ - ω ^ (n - zkRows)) * (ζ - ω ^ (n - zkRows + 1)) * (ζ - ω ^ (n - 1))
 
+/-! ### The members of `ftEval0`
+
+`ftEval0` is a sum of five terms, and each is an object in its own right: an implementation
+computes them separately, and a statement that a circuit computes one of them needs that one
+to be nameable. They were local `let`s until this was needed, which made only the total
+addressable. The names follow the specification's, where the ζ-evaluated members carry a
+subscript distinguishing them from the row-level products of `Kimchi.Permutation`. -/
+
+/-- The σ-side product of the permutation recurrence at `ζ`, over the SIX evaluated σ
+columns. The seventh is not evaluated: the recurrence's full product is split there, this
+factor staying in `ftEval0` while `permScalar` carries the rest onto the σ₆ commitment. -/
+def sigmaSideEval (α β γ zkpmZ : F) (e : Evals F) : F :=
+  ((e.w 6 + γ) * e.zOmega * α ^ 21 * zkpmZ)
+    * ∏ i : Fin sigmaRows, (β * e.s i + e.w (sigmaCol i) + γ)
+
+/-- The shift-side product of the permutation recurrence at `ζ`, over all seven permutation
+columns — the coset shifts being verifier-key data, the record determines it outright. -/
+def shiftSideEval (α β γ ζ zkpmZ : F) (shifts : Fin permCols → F) (e : Evals F) : F :=
+  (α ^ 21 * zkpmZ * e.z)
+    * ∏ i : Fin permCols, (γ + β * ζ * shifts i + e.w (permCol i))
+
+/-- The accumulator boundary quotient, pinning `z` at the two masked rows. The denominator
+vanishes at `ζ ∈ {1, ω^{n−zkRows}}`, the nodes of those rows, which the fragment excludes. -/
+def boundaryEval (n zkRows : ℕ) (ω ζ α : F) (e : Evals F) : F :=
+  let zeta1m1 := ζ ^ n - 1
+  let wBoundary := ω ^ (n - zkRows)
+  ((zeta1m1 * α ^ 22 * (ζ - wBoundary) + zeta1m1 * α ^ 23 * (ζ - 1))
+    * (1 - e.z)) / ((ζ - wBoundary) * (ζ - 1))
+
 /-- The verifier's `ft(ζ)`: the permutation recurrence read at `ζ`, minus the public-input
 evaluation, plus the accumulator boundary quotient pinning the two masked rows, minus the
 gate linearization. -/
 def ftEval0 (n zkRows : ℕ) (ω : F) (shifts : Fin permCols → F) (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ ζ pubEval : F) (e : Evals F) : F :=
   let zkpmZ := zkpmEval n zkRows ω ζ
-  let zeta1m1 := ζ ^ n - 1
-  let wBoundary := ω ^ (n - zkRows)
-  let sigmaSide := ((e.w 6 + γ) * e.zOmega * α ^ 21 * zkpmZ)
-    * ∏ i : Fin sigmaRows, (β * e.s i + e.w (sigmaCol i) + γ)
-  let shiftSide := (α ^ 21 * zkpmZ * e.z)
-    * ∏ i : Fin permCols, (γ + β * ζ * shifts i + e.w (permCol i))
-  let boundary := ((zeta1m1 * α ^ 22 * (ζ - wBoundary) + zeta1m1 * α ^ 23 * (ζ - 1))
-    * (1 - e.z)) / ((ζ - wBoundary) * (ζ - 1))
-  sigmaSide - pubEval - shiftSide + boundary - gateLinearization endo mds α e
+  sigmaSideEval α β γ zkpmZ e - pubEval - shiftSideEval α β γ ζ zkpmZ shifts e
+    + boundaryEval n zkRows ω ζ α e - gateLinearization endo mds α e
+
+/-- **The decomposition**, definitionally. An implementation that computes the members
+separately assembles `ftEval0` by this equation, with each member discharged against its own
+name; the gate member is `gateLinearization`, which already had one. -/
+theorem ftEval0_eq (n zkRows : ℕ) (ω : F) (shifts : Fin permCols → F) (endo : F)
+    (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ ζ pubEval : F) (e : Evals F) :
+    ftEval0 n zkRows ω shifts endo mds α β γ ζ pubEval e
+      = sigmaSideEval α β γ (zkpmEval n zkRows ω ζ) e - pubEval
+        - shiftSideEval α β γ ζ (zkpmEval n zkRows ω ζ) shifts e
+        + boundaryEval n zkRows ω ζ α e - gateLinearization endo mds α e :=
+  rfl
 
 end Field
 

@@ -38,6 +38,9 @@
     "Pickles.Linearization.Circuit": [
       "Pickles.Linearization.Map"
     ],
+    "Pickles.FtEval0": [
+      "Pickles.Reflect.Soundness"
+    ],
     "Pickles.Reflect.Certificate": [
       "Pickles.Linearization.Map"
     ],
