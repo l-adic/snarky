@@ -20,12 +20,11 @@ module Pickles.Wrap.FinalizeOtherProof
 import Prelude
 
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse, traverse_)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, zipWith)
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
@@ -47,8 +46,7 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, const_, equals_, inv_, label, mul_, pow_, seal, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, const_, equals_, inv_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -339,18 +337,15 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- Inline perm scalar using shared alpha powers (a21, zkPoly).
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
-  actualPerm <- label "step10_perm" do
-    init' <- mul_ zOmegaTimesZeta beta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
-    let wSigmaPerm = zipWith Tuple (Vector.take @6 w0) s0
-    result <- foldM
-      ( \acc (Tuple wi si) -> do
-          betaSigma <- mul_ beta si
-          let term = add_ (add_ gamma betaSigma) wi
-          mul_ acc term
-      )
-      init'
-      wSigmaPerm
-    pure (negate_ result)
+  actualPerm <- label "step10_perm" $ Permutation.permScalarCircuit
+    { w: Vector.take @6 w0
+    , sigma: s0
+    , zOmega: zOmegaTimesZeta
+    , beta
+    , gamma
+    , zkPolynomial: zkPoly
+    , alphaPow21: a21
+    }
 
   -- zeta_to_srs_length computation (generates constraints even though result is voided)
   label "step10_zetaToSrs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)

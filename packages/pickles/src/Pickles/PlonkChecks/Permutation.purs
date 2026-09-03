@@ -14,6 +14,7 @@ module Pickles.PlonkChecks.Permutation
   , permScalar
   , permContribution
   , permContributionCircuit
+  , permScalarCircuit
   , permAlpha0
   ) where
 
@@ -30,6 +31,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt (fromInt)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Trace as Trace
+import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, add_, const_, div_, label, mul_, sub_)
 import Snarky.Curves.Class (class PrimeField, pow)
 
@@ -252,3 +254,33 @@ permContributionCircuit input { pEval0, alphaPow21: a21, alphaPow22: a22, alphaP
       div_ nominator denominator
 
     pure $ add_ (sub_ term1MinusP term2) boundary
+
+-- | The in-circuit twin of `permScalar` (OCaml `derive_plonk`'s `perm`):
+-- |
+-- |   -(z(zeta*omega) * beta * alpha^21 * zkp * ∏_{i<6} (gamma + beta*sigma_i + w_i))
+-- |
+-- | `mul_` chains in OCaml's evaluation order; `alpha^21` comes from the
+-- | caller's table.
+permScalarCircuit
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => { w :: Vector 6 (FVar f)
+     , sigma :: Vector 6 (FVar f)
+     , zOmega :: FVar f
+     , beta :: FVar f
+     , gamma :: FVar f
+     , zkPolynomial :: FVar f
+     , alphaPow21 :: FVar f
+     }
+  -> Snarky f c r (FVar f)
+permScalarCircuit { w, sigma, zOmega, beta, gamma, zkPolynomial, alphaPow21 } = do
+  init' <- mul_ zOmega beta >>= \t -> mul_ t alphaPow21 >>= \t' -> mul_ t' zkPolynomial
+  result <- foldM
+    ( \acc (Tuple wi si) -> do
+        betaSigma <- mul_ beta si
+        mul_ acc (add_ (add_ gamma betaSigma) wi)
+    )
+    init'
+    (zipWith Tuple w sigma)
+  pure (negate_ result)

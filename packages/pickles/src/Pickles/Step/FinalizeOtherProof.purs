@@ -29,7 +29,6 @@ import Prelude
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (pow) as Int
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
@@ -59,8 +58,7 @@ import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, and_, assertAny_, const_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -548,24 +546,15 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Inline perm scalar using shared alpha powers (a21, zkPoly).
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
-  actualPerm <- label "perm_actual" do
-    init' <- label "perm_init" do
-      t1 <- label "perm_init_1" $ mul_ zOmegaTimesZeta beta
-      t2 <- label "perm_init_2" $ mul_ t1 a21
-      label "perm_init_3" $ mul_ t2 zkPoly
-    let
-      wSigmaPerm :: Vector 6 (Tuple (Finite 6) (Tuple (FVar f) (FVar f)))
-      wSigmaPerm = mapWithIndex Tuple
-        $ Vector.zipWith Tuple (Vector.take @6 w0) s0
-    result <- foldM
-      ( \acc (Tuple fi (Tuple wi si)) -> label ("perm_fold_" <> show (getFinite fi)) do
-          betaSigma <- label "betaSigma" $ mul_ beta si
-          let term = add_ (add_ gamma betaSigma) wi
-          label "acc_mul" $ mul_ acc term
-      )
-      init'
-      wSigmaPerm
-    pure (negate_ result)
+  actualPerm <- label "perm_actual" $ Permutation.permScalarCircuit
+    { w: Vector.take @6 w0
+    , sigma: s0
+    , zOmega: zOmegaTimesZeta
+    , beta
+    , gamma
+    , zkPolynomial: zkPoly
+    , alphaPow21: a21
+    }
 
   -- zeta_to_srs_length computation (generates constraints even though result is voided)
   label "perm_pow_zeta_srs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
