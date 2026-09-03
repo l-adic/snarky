@@ -26,18 +26,19 @@ computes.
 * `evaluate_spec`: under `CircuitCompatible`, any satisfying valuation reads the circuit's
   answer as the pure interpreter's.
 * `inputs_circuitCompatible`: `Inputs.toEnv` is compatible with `Evals.toEnv` at the
-  readings of its own variables.
+  readings of its own variables, for any feature predicate and any Lagrange-basis gadget.
 
 ## Implementation notes
 
 This is relative faithfulness, in the pattern of `Snarky.mul_spec`: the circuit computes
 what the wire verifier computes; whether the wire verifier is sound is out of scope.
 
-The α-table is a lookup in circuit, so `alphaPow` sits on the affine side of
-`CircuitCompatible`. The table is finite, so `inputs_circuitCompatible` does not demand it
-read as `α^n` everywhere: the pure side is given the table's own readings, and the
-identification with `α^n` is made afterwards, only at the exponents the stream reads
-(`Pickles.Linearization.alphaExponents`).
+Nothing here is specialised. The feature predicate decides both environments'
+conditionals, the Lagrange-basis gadget is paired with whatever it computes, and the
+α-table, a lookup in circuit and hence on the affine side of `CircuitCompatible`, is
+paired with its own readings. Identifying the table with powers of `α` and discharging
+the gadget happens at the top, from what the concrete stream reads
+(`Pickles.Linearization.evaluate_congr`).
 -/
 
 namespace Pickles.Linearization
@@ -84,11 +85,6 @@ structure CircuitCompatible (V : Valuation F)
   beta : ce.beta.val V = pe.beta
   /-- The `γ` challenges agree. -/
   gamma : ce.gamma.val V = pe.gamma
-  /-- Related branches select related results. -/
-  ifFeature : ∀ (f : FeatureFlag) (t₁ n₁ : CircuitM F (Builder V c) (FVar F)) (t₂ n₂ : F),
-    ⦃⌜True⌝⦄ t₁ ⦃⇓ a _ => ⌜a.val V = t₂⌝⦄ → ⦃⌜True⌝⦄ n₁ ⦃⇓ a _ => ⌜a.val V = n₂⌝⦄ →
-      ⦃⌜True⌝⦄ ce.ifFeature f (fun _ => t₁) (fun _ => n₁)
-        ⦃⇓ a _ => ⌜a.val V = pe.ifFeature f (fun _ => t₂) (fun _ => n₂)⌝⦄
 
 /-! ## The machine is pinned -/
 
@@ -116,9 +112,10 @@ private abbrev rd (s : EvalState (FVar F)) : EvalState F := s.map (·.val V)
 
 /-- Any satisfying valuation reads the circuit run's final state as the pure run's from
 the read of the same start. -/
-private theorem evalLoop_spec (h : CircuitCompatible V ce pe)
-    (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)), ce.ifFeature f t n = n ())
-    (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = n ())
+private theorem evalLoop_spec (h : CircuitCompatible V ce pe) (feat : FeatureFlag → Bool)
+    (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)),
+      ce.ifFeature f t n = if feat f then t () else n ())
+    (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = if feat f then t () else n ())
     (toks : Array PolishToken) :
     ∀ (fuel endPos : Nat) (cs : EvalState (FVar F)),
       ⦃⌜True⌝⦄
@@ -215,10 +212,8 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe)
           mvcgen [hulb, ih]
           all_goals (intro hh; simp_all; try rfl)
         | skipIfNot f n =>
-          -- `hdc`/`hdp` pin both environments to the disabled branch, so only one
-          -- recursion is entered. `CircuitCompatible.ifFeature` itself stays conditional:
-          -- the SPECIALISATION lives in this theorem's statement, where it is visible,
-          -- rather than in the relation, where it would make the enabled case unstateable.
+          -- both conditionals are decided by `feat`, so the same branch is entered on
+          -- either side; `key` serves whichever it is
           have key : ∀ (bound pos : Nat),
               ⦃⌜True⌝⦄
               (do let s₁ ← evalLoop ce toks fuel bound { cs with position := pos }
@@ -235,20 +230,26 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe)
             simp [rd, EvalState.map]
           dsimp only
           rw [hdc, hdp]
-          mvcgen [key, ih]
-          all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
+          by_cases hf : feat f
+          · simp only [if_pos hf]
+            mvcgen [key, ih]
+            all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
+          · simp only [if_neg hf]
+            mvcgen [key, ih]
+            all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
 
 open Std.Do in
 /-- Any satisfying valuation reads the circuit's answer as the pure interpreter's. -/
-@[spec] theorem evaluate_spec (h : CircuitCompatible V ce pe)
-    (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)), ce.ifFeature f t n = n ())
-    (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = n ())
+@[spec] theorem evaluate_spec (h : CircuitCompatible V ce pe) (feat : FeatureFlag → Bool)
+    (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)),
+      ce.ifFeature f t n = if feat f then t () else n ())
+    (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = if feat f then t () else n ())
     (toks : Array PolishToken) :
     ⦃⌜True⌝⦄
     evaluate ce toks
     ⦃⇓ a _ => ⌜a.val V = evaluate pe toks⌝⦄ := by
   simp only [evaluate]
-  have hloop := evalLoop_spec h hdc hdp toks
+  have hloop := evalLoop_spec h feat hdc hdp toks
   mvcgen [hloop]
   rename_i hh
   rw [circ_topOrZero h]
@@ -297,8 +298,7 @@ structure Inputs (F : Type) where
 open Kimchi.Protocol.Linearization in
 /-- The circuit environment at the inputs `inp`: `add` and `sub` are affine and emit
 nothing, `mul` and `pow` are the gadgets, and the gate parameters and literals enter as
-constants. The Lagrange-basis gadget `ulb` is a parameter the circuit theorems say nothing
-about, since the deployed streams never reach it with the modelled features disabled. -/
+constants; the Lagrange-basis gadget `ulb` and the feature predicate are parameters. -/
 def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
     (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) :
@@ -340,59 +340,69 @@ def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
   gamma := inp.gamma
   ifFeature f onTrue onFalse := if feat f then onTrue () else onFalse ()
 
-/-- Replacing the Lagrange basis of an `Inputs.toEnv` environment builds the environment
-with the other one. -/
-theorem Inputs.toEnv_withUlb (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
-    (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F)) (feat : FeatureFlag → Bool)
-    (ulb₀ ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) :
-    (inp.toEnv endo mds lk feat ulb₀).withUlb ulb = inp.toEnv endo mds lk feat ulb := rfl
-
 open Kimchi.Protocol.Linearization in
 /-- `Inputs.toEnv` is compatible with the pure environment built from the readings of its
-own variables, with the α-table replaced by the circuit table's readings. Nothing is
-assumed about the table; `α` only seeds the base environment. -/
+own variables: the evaluations, challenges and α-table read under `V`, and the Lagrange
+basis `ulbP` that the gadget `ulb` computes (`hulb`). -/
 theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
-    (feat : FeatureFlag → Bool) (inp : Inputs F) (α : F) :
-    CircuitCompatible V (c := c) (inp.toEnv endo mds lk feat (fun _ _ => pure (.const 0)))
-      (((inp.evals.map (·.val V)).toEnv endo mds α (inp.beta.val V) (inp.gamma.val V)
-        (inp.jointCombiner.val V) (inp.vanishes.val V) (fun _ _ => 0)
-        (lk.map (·.val V)) feat).withAlphaPow (fun n => (inp.alphaPows n).val V)) where
-  add x y := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
-  sub x y := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
+    (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F (Builder V c) (FVar F))
+    (ulbP : Bool → Int → F)
+    (hulb : ∀ zk off, ⦃⌜True⌝⦄ ulb zk off ⦃⇓ a _ => ⌜a.val V = ulbP zk off⌝⦄)
+    (inp : Inputs F) :
+    CircuitCompatible V (c := c) (inp.toEnv endo mds lk feat ulb)
+      ((inp.evals.map (·.val V)).toEnv endo mds (fun n => (inp.alphaPows n).val V)
+        (inp.beta.val V) (inp.gamma.val V) (inp.jointCombiner.val V) (inp.vanishes.val V)
+        ulbP (lk.map (·.val V)) feat) where
+  add x y := by simp [Inputs.toEnv, Evals.toEnv]
+  sub x y := by simp [Inputs.toEnv, Evals.toEnv]
   mul x y := Snarky.mul_spec x y
   pow x n := Snarky.pow_spec x n
   var col row := by
     cases col with
-    | index g =>
-      cases g <;> cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map, Env.withAlphaPow]
+    | index g => cases g <;> cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map]
     | witness i =>
-      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map, Env.withAlphaPow]
-        <;> split <;> simp
+      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map] <;> split <;> simp
     | coefficient i =>
-      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map, Env.withAlphaPow]
-        <;> split <;> simp
-    | _ => cases row <;> simp [Inputs.toEnv, Evals.toEnv, LookupEvals.map, Env.withAlphaPow]
+      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map] <;> split <;> simp
+    | _ => cases row <;> simp [Inputs.toEnv, Evals.toEnv, LookupEvals.map]
   cell _ := rfl
   alphaPow n := rfl
   mds r c := by
     match r, c with
     | 0, 0 | 0, 1 | 0, 2 | 1, 0 | 1, 1 | 1, 2 | 2, 0 | 2, 1 | 2, 2 =>
-      simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
-    | _ + 3, _ | _, _ + 3 => simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
-  endoCoefficient := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
-  literal v := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
+      simp [Inputs.toEnv, Evals.toEnv]
+    | _ + 3, _ | _, _ + 3 => simp [Inputs.toEnv, Evals.toEnv]
+  endoCoefficient := by simp [Inputs.toEnv, Evals.toEnv]
+  literal v := by simp [Inputs.toEnv, Evals.toEnv]
   vanishes := rfl
-  ulb zk off := by
-    show ⦃⌜True⌝⦄ (pure (.const 0) : CircuitM F (Builder V c) (FVar F))
-      ⦃⇓ a _ => ⌜a.val V = (0 : F)⌝⦄
-    mvcgen
+  ulb zk off := hulb zk off
   jointCombiner := rfl
   beta := rfl
   gamma := rfl
-  ifFeature f t₁ n₁ t₂ n₂ ht hn := by
-    simp only [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
-    split <;> assumption
+
+/-- Two `Inputs.toEnv` environments differing only in the Lagrange-basis gadget read
+position `i` alike when the position does not read the Lagrange basis. -/
+theorem Inputs.toEnv_agreeAt (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
+    (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F)) (feat : FeatureFlag → Bool)
+    (ulb ulb' : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F)
+    (toks : Array PolishToken) (i : Nat) (hulb : noUlbAt toks i = true) :
+    (inp.toEnv endo mds lk feat ulb).agreeAt (inp.toEnv endo mds lk feat ulb') toks i := by
+  simp only [Env.agreeAt, noUlbAt] at hulb ⊢
+  cases h : toks[i]? with
+  | none => trivial
+  | some t =>
+    simp only [h] at hulb ⊢
+    cases t with
+    | challenge c =>
+      cases c with
+      | alpha =>
+        cases toks[i + 1]? with
+        | some u => cases u <;> rfl
+        | none => rfl
+      | _ => rfl
+    | unnormalizedLagrangeBasis zk off => simp at hulb
+    | _ => (try dsimp only) <;> (first | trivial | rfl | (intros; rfl))
 
 end Pickles.Linearization

@@ -95,8 +95,8 @@ def runFixture {n : ℕ} [Fact n.Prime] (toks : Array PolishToken)
         genericSelector := genPE.1, poseidonSelector := posPE.1
         completeAddSelector := addPE.1, mulSelector := mulPE.1
         emulSelector := emulPE.1, endoScalarSelector := endoselPE.1 }
-    let mine : ZMod n := evaluate (e.toEnv endo mds α β γ 0 zkpmZ (fun _ _ => 0)
-      LookupEvals.zero (fun _ => false)) toks
+    let mine : ZMod n := evaluate (e.toEnv endo mds (fun k => α ^ k) β γ 0 zkpmZ
+      (fun _ _ => 0) LookupEvals.zero (fun _ => false)) toks
     return (decide (mine = constTarget),
             decide (mine = gateLinearization endo mds α e),
             constTarget)

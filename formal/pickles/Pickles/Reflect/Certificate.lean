@@ -20,10 +20,9 @@ identity at every evaluation then follows by `Pickles.Linearization.evaluate_map
 
 * `evaluate_fpTokens`, `evaluate_fqTokens`: at every evaluation record and every choice of
   challenges, each deployed stream's pure value is `gateLinearization`.
-* `alphaExponents_fpTokens_le`, `alphaExponents_fqTokens_le`: each stream reads the
-  α-table at exponents at most `alphaBound`.
-* `visited_fpTokens_noUlb`, `visited_fqTokens_noUlb`: with the modelled features disabled,
-  neither stream reaches an `unnormalizedLagrangeBasis`.
+* `fpTokens_reads`, `fqTokens_reads`: with the modelled features disabled, each stream
+  reads the α-table at exponents at most `alphaBound` and never reads the Lagrange
+  basis.
 
 ## Implementation notes
 
@@ -35,8 +34,8 @@ nothing per token.
 This module is the only place in the tree that uses `native_decide` outside the upstream
 CompElliptic certificates and `Pasta/Endo.lean`, and it is named in the pickles axiom gate
 for that reason. It trusts the compiler through `Lean.trustCompiler`; kernel `decide` is
-not viable on a 486-monomial comparison over a 255-bit field. The reachability facts are
-decided here too so the gate has one module to trust.
+not viable on a 486-monomial comparison over a 255-bit field. The reachability fact about
+each stream is decided here too, so the gate has one module to trust.
 
 `endo` and `mds` are the deployed constants rather than variables: they parameterise the
 gates' `Argument`s, which are defined over the field. The certificate is therefore
@@ -84,8 +83,8 @@ private def symEvals : Evals (MPoly K) where
 /-- The interpreter environment at the formal evaluations, with a variable for each
 challenge. -/
 private abbrev symEnv (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K) : Env Id (MPoly K) :=
-  symEvals.toEnv endo mds (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0)
-    LookupEvals.zero (fun _ => false)
+  symEvals.toEnv endo mds (fun n => xv 51 ^ n) (xv 52) (xv 53) (xv 54) (xv 55)
+    (fun _ _ => 0) LookupEvals.zero (fun _ => false)
 
 /-! ## The assignment, generically -/
 
@@ -193,17 +192,23 @@ private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
     (hcert : (evaluate (symEnv endo mds) toks : MPoly K)
       = gateLinearization endo mds (xv 51) symEvals)
     (α β γ jc van : K) (e : Evals K) :
-    (evaluate (e.toEnv endo mds α β γ jc van (fun _ _ => 0) LookupEvals.zero
+    (evaluate (e.toEnv endo mds (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
       (fun _ => false)) toks : K)
       = gateLinearization endo mds α e := by
   obtain ⟨hα, hβ, hγ, hjc, hvan⟩ := evalAt_chal α β γ jc van e
   have hE := symEvals_map α β γ jc van e
   have hm := evaluate_map (evalAt α β γ jc van e) endo mds
-    (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0) LookupEvals.zero
+    (fun n => xv 51 ^ n) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0) LookupEvals.zero
     (fun _ => false) symEvals toks
-  rw [hE, hα, hβ, hγ, hjc, hvan] at hm
+  have hpow : (fun n => evalAt α β γ jc van e (xv 51 ^ n)) = fun n => α ^ n := by
+    funext n; rw [map_pow, hα]
+  rw [hE, hpow, hβ, hγ, hjc, hvan] at hm
   simp only [_root_.map_zero, LookupEvals.map_zero (_root_.map_zero _)] at hm
   rw [hm, hcert, gateLinearization_map, hα, hE]
+
+/-- The largest exponent at which either deployed stream reads the α-table. The PureScript
+table (`Pickles.Linearization.Env.AlphaPowersLen`) holds `71` entries. -/
+def alphaBound : Nat := 31
 
 /-! ## The two deployed streams -/
 
@@ -224,20 +229,28 @@ private theorem fp_reflects :
     symValueP = gateLinearization Pasta.pallasEndo symMds (xv 51) symEvals := by
   native_decide
 
-/-- With every feature disabled, the `Fp` stream reaches no `unnormalizedLagrangeBasis`. -/
-theorem visited_fpTokens_noUlb :
-    ∀ i ∈ visitedAll fpTokens, noUlbAt fpTokens i = true := by
+/-- What the `Fp` stream reads with every feature disabled: the α-table at exponents at
+most `alphaBound`, and never the Lagrange basis. -/
+theorem fpTokens_reads :
+    ∀ i ∈ visitedAll fpTokens (fun _ => false), readsWithin fpTokens alphaBound i = true := by
   native_decide
 
 /-- The deployed `Fp` stream computes the gate linearization at every evaluation record,
 every choice of challenges, and every Lagrange basis. -/
 theorem evaluate_fpTokens (α β γ jc van : Fp) (ulb : Bool → Int → Fp) (e : Evals Fp) :
-    (evaluate (e.toEnv Pasta.pallasEndo symMds α β γ jc van ulb LookupEvals.zero
+    (evaluate (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fpTokens : Fp)
       = gateLinearization Pasta.pallasEndo symMds α e := by
-  rw [← Evals.toEnv_withUlb Pasta.pallasEndo symMds α β γ jc van ulb LookupEvals.zero
-    (fun _ => false) e (fun _ _ => 0),
-    evaluate_withUlb _ _ _ (fun _ _ _ => rfl) visited_fpTokens_noUlb]
+  have hvis : ∀ i ∈ visitedAll fpTokens (fun _ => false),
+      (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+        (fun _ => false)).agreeAt
+      (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)) fpTokens i :=
+    fun i hi => Evals.toEnv_agreeAt Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb
+      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) fpTokens i
+      (fun _ _ => rfl) (readsWithin_noUlb (fpTokens_reads i hi))
+  rw [evaluate_congr _ _ fpTokens (fun _ => false) hvis (fun _ _ _ => rfl)
+    (fun _ _ _ => rfl) rfl]
   exact of_certificate _ _ _ fp_reflects α β γ jc van e
 
 /-- Pallas's scalar field, where a Vesta proof is verified. -/
@@ -257,37 +270,28 @@ private theorem fq_reflects :
     symValueQ = gateLinearization Pasta.vestaEndo symMdsQ (xv 51) symEvals := by
   native_decide
 
-/-- With every feature disabled, the `Fq` stream reaches no `unnormalizedLagrangeBasis`. -/
-theorem visited_fqTokens_noUlb :
-    ∀ i ∈ visitedAll fqTokens, noUlbAt fqTokens i = true := by
+/-- What the `Fq` stream reads with every feature disabled: the α-table at exponents at
+most `alphaBound`, and never the Lagrange basis. -/
+theorem fqTokens_reads :
+    ∀ i ∈ visitedAll fqTokens (fun _ => false), readsWithin fqTokens alphaBound i = true := by
   native_decide
 
 /-- The deployed `Fq` stream computes the gate linearization at every evaluation record,
 every choice of challenges, and every Lagrange basis. -/
 theorem evaluate_fqTokens (α β γ jc van : Fq) (ulb : Bool → Int → Fq) (e : Evals Fq) :
-    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ α β γ jc van ulb LookupEvals.zero
+    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fqTokens : Fq)
       = gateLinearization Pasta.vestaEndo symMdsQ α e := by
-  rw [← Evals.toEnv_withUlb Pasta.vestaEndo symMdsQ α β γ jc van ulb LookupEvals.zero
-    (fun _ => false) e (fun _ _ => 0),
-    evaluate_withUlb _ _ _ (fun _ _ _ => rfl) visited_fqTokens_noUlb]
+  have hvis : ∀ i ∈ visitedAll fqTokens (fun _ => false),
+      (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+        (fun _ => false)).agreeAt
+      (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)) fqTokens i :=
+    fun i hi => Evals.toEnv_agreeAt Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb
+      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) fqTokens i
+      (fun _ _ => rfl) (readsWithin_noUlb (fqTokens_reads i hi))
+  rw [evaluate_congr _ _ fqTokens (fun _ => false) hvis (fun _ _ _ => rfl)
+    (fun _ _ _ => rfl) rfl]
   exact of_certificate _ _ _ fq_reflects α β γ jc van e
-
-/-! ## How far the α-table is read
-
-The exponents a stream reads are `alphaExponents` of its array, decided here from the same
-closed term as the certificates. Both deployed streams stop at `31`; the PureScript table
-(`Pickles.Linearization.Env.AlphaPowersLen`) holds `71`. -/
-
-/-- The largest exponent at which either deployed stream reads the α-table. -/
-def alphaBound : Nat := 31
-
-/-- The `Fp` stream reads the α-table at exponents at most `alphaBound`. -/
-theorem alphaExponents_fpTokens_le : ∀ n ∈ alphaExponents fpTokens, n ≤ alphaBound := by
-  native_decide
-
-/-- The `Fq` stream reads the α-table at exponents at most `alphaBound`. -/
-theorem alphaExponents_fqTokens_le : ∀ n ∈ alphaExponents fqTokens, n ≤ alphaBound := by
-  native_decide
 
 end Pickles.Reflect

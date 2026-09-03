@@ -12,7 +12,8 @@ the stream against it is built from those.
 
 * `LookupEvals`: the lookup columns' evaluations, which kimchi's `Evals` does not carry.
 * `Evals.toEnv`: the pure interpreter environment at an evaluation record, over any
-  `F`-algebra `R`.
+  `F`-algebra `R`, with the α-table, the Lagrange basis and the feature predicate as
+  parameters.
 
 ## Implementation notes
 
@@ -83,9 +84,11 @@ omit [CommRing R] in
 
 
 open Pickles.Linearization in
-/-- The pure interpreter environment at the evaluations `e`, over an `F`-algebra `R`. -/
-def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
-    (α β γ jc van : R) (ulb : Bool → Int → R) (lk : LookupEvals R)
+/-- The pure interpreter environment at the evaluations `e`, over an `F`-algebra `R`. The
+α-table `alphaPow`, the Lagrange basis `ulb` and the feature predicate `feat` are
+parameters; the reflection instantiates the table at `(α ^ ·)`. -/
+def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (alphaPow : Nat → R)
+    (β γ jc van : R) (ulb : Bool → Int → R) (lk : LookupEvals R)
     (feat : FeatureFlag → Bool) (e : Evals R) : Env Id R where
   add a b := a + b
   sub a b := a - b
@@ -109,7 +112,7 @@ def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
     | .lookupRuntimeSelector, row => lk.runtimeSelector row
     | .lookupKindIndex p, _ => lk.kindIndex p
     | .index _, _ => 0
-  alphaPow n := α ^ n
+  alphaPow n := alphaPow n
   mds r c := match r, c with
     | 0, 0 => algebraMap F R mds.m00 | 0, 1 => algebraMap F R mds.m01
     | 0, 2 => algebraMap F R mds.m02 | 1, 0 => algebraMap F R mds.m10
@@ -129,58 +132,83 @@ section projections
 
 open Pickles.Linearization
 
-variable (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
+variable (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (alphaPow : Nat → R) (β γ jc van : R)
   (ulb : Bool → Int → R) (lk : LookupEvals R) (feat : FeatureFlag → Bool) (e : Evals R)
 
 @[simp] theorem Evals.toEnv_add (a b : R) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).add a b = a + b := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).add a b = a + b := rfl
 
 @[simp] theorem Evals.toEnv_sub (a b : R) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).sub a b = a - b := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).sub a b = a - b := rfl
 
 @[simp] theorem Evals.toEnv_mul (a b : R) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).mul a b = pure (a * b) := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).mul a b = pure (a * b) := rfl
 
 @[simp] theorem Evals.toEnv_pow (v : R) (n : Nat) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).pow v n = pure (v ^ n) := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).pow v n = pure (v ^ n) := rfl
 
 @[simp] theorem Evals.toEnv_cell (x : R) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).cell x = x := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).cell x = x := rfl
 
 @[simp] theorem Evals.toEnv_alphaPow (n : Nat) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).alphaPow n = α ^ n := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).alphaPow n = alphaPow n := rfl
 
 @[simp] theorem Evals.toEnv_endoCoefficient :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).endoCoefficient = algebraMap F R endo := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).endoCoefficient = algebraMap F R endo := rfl
 
 @[simp] theorem Evals.toEnv_literal (v : Nat) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).literal v = algebraMap F R (v : F) := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).literal v = algebraMap F R (v : F) := rfl
 
 @[simp] theorem Evals.toEnv_vanishes :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).vanishesOnZeroKnowledgeAndPreviousRows
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).vanishesOnZeroKnowledgeAndPreviousRows
       = van := rfl
 
 @[simp] theorem Evals.toEnv_unnormalizedLagrangeBasis (zk : Bool) (off : Int) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).unnormalizedLagrangeBasis zk off
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).unnormalizedLagrangeBasis zk off
       = pure (ulb zk off) := rfl
 
 @[simp] theorem Evals.toEnv_jointCombiner :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).jointCombiner = jc := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).jointCombiner = jc := rfl
 
-@[simp] theorem Evals.toEnv_beta : (e.toEnv endo mds α β γ jc van ulb lk feat).beta = β := rfl
+@[simp] theorem Evals.toEnv_beta :
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).beta = β := rfl
 
 @[simp] theorem Evals.toEnv_gamma :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).gamma = γ := rfl
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).gamma = γ := rfl
 
 @[simp] theorem Evals.toEnv_ifFeature (f : FeatureFlag) (t n : Unit → Id R) :
-    (e.toEnv endo mds α β γ jc van ulb lk feat).ifFeature f t n
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).ifFeature f t n
       = if feat f then t () else n () := rfl
 
-/-- Replacing the Lagrange basis of a `toEnv` environment builds the environment with the
-other one. -/
-theorem Evals.toEnv_withUlb (ulb₀ : Bool → Int → R) :
-    (e.toEnv endo mds α β γ jc van ulb₀ lk feat).withUlb (fun zk off => pure (ulb zk off))
-      = e.toEnv endo mds α β γ jc van ulb lk feat := rfl
+open Pickles.Linearization in
+/-- Two `toEnv` environments differing only in the α-table and the Lagrange basis read
+position `i` alike when the tables agree at the exponent read there, if any, and the
+position does not read the Lagrange basis. -/
+theorem Evals.toEnv_agreeAt (alphaPow' : Nat → R) (ulb' : Bool → Int → R)
+    (toks : Array PolishToken) (i : Nat)
+    (hα : ∀ n, alphaExponentAt toks i = some n → alphaPow n = alphaPow' n)
+    (hulb : noUlbAt toks i = true) :
+    (e.toEnv endo mds alphaPow β γ jc van ulb lk feat).agreeAt
+      (e.toEnv endo mds alphaPow' β γ jc van ulb' lk feat) toks i := by
+  simp only [Env.agreeAt, alphaExponentAt, noUlbAt] at hα hulb ⊢
+  cases h : toks[i]? with
+  | none => trivial
+  | some t =>
+    simp only [h] at hα hulb ⊢
+    cases t with
+    | challenge c =>
+      cases c with
+      | alpha =>
+        cases h' : toks[i + 1]? with
+        | some u =>
+          cases u with
+          | pow n => simp only [h'] at hα ⊢; exact hα n rfl
+          | _ => simp only [h'] at hα ⊢; exact hα 1 rfl
+        | none => simp only [h'] at hα ⊢; exact hα 1 rfl
+      | _ => simp [evalChallenge]
+    | unnormalizedLagrangeBasis zk off => simp at hulb
+    | constant c => cases c <;> simp [evalConstant, Evals.toEnv]
+    | _ => first | trivial | simp [Evals.toEnv]
 
 end projections
 
