@@ -52,13 +52,12 @@ lean: json
 	cd ../../formal/pickles && PATH="$$HOME/.elan/bin:$$PATH" \
 	  LINEARIZATION_JSON_DIR=$(CURDIR)/$(JSON_DIR) lake env lean --run scripts/gen_tokens.lean
 
-# Clean generated files
+# Clean generated files. The Lean token modules are committed, not build products, so
+# they are not removed here; regenerate them with `make gen-linearization-lean`.
 clean:
 	rm -f $(JSON_DIR)/*.json
 	rm -f $(OUTPUT_DIR)/Pallas.purs
 	rm -f $(OUTPUT_DIR)/Vesta.purs
-	rm -f ../../formal/pickles/Pickles/Linearization/Fp.lean
-	rm -f ../../formal/pickles/Pickles/Linearization/Fq.lean
 
 # Show what would be generated
 info:
