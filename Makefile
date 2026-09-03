@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-readings lean-kernel-check lean-prune-stale build-ps gen-linearization dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-readings lean-kernel-check lean-prune-stale build-ps gen-linearization gen-linearization-lean dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -116,6 +116,9 @@ cargo-clippy: ## Run clippy lints on workspace
 
 gen-linearization: build-napi ## Generate Kimchi linearization PureScript modules
 	cd packages/pickles-codegen && $(MAKE) generate
+
+gen-linearization-lean: ## Regenerate the COMMITTED Lean token modules formal/pickles/Pickles/Linearization/{Fp,Fq}.lean (needs elan; run on a proof-systems bump and commit the diff)
+	cd packages/pickles-codegen && $(MAKE) lean
 
 lint: ## Format, tidy, and lint all code (Rust + PureScript + Lean)
 	cargo fmt --all

@@ -5,6 +5,11 @@
 # 2. PureScript generator transforms JSON → .purs modules
 #
 # Output goes to ../pickles/src/Pickles/Linearization/
+#
+# A third stage, `lean`, renders the same JSON as Lean token modules for formal/pickles.
+# It is NOT part of `generate`: it needs a Lean toolchain, which the PureScript CI jobs
+# that run `make gen-linearization` do not install, and its output is committed rather
+# than regenerated per build. Run it via `make gen-linearization-lean` at the repo root.
 
 RUST_BIN := rust
 JSON_DIR := $(RUST_BIN)/output
@@ -15,7 +20,7 @@ OUTPUT_DIR := ../pickles/src/Pickles/Linearization
 all: generate
 
 # Full pipeline: JSON then PureScript
-generate: json purescript lean
+generate: json purescript
 
 # Step 1: Generate JSON from Kimchi using Rust
 json:
@@ -37,11 +42,11 @@ purescript: json
 	node -e "import('./../../output/Pickles.Linearization.Main/index.js').then(m => m.main())"
 	@echo "==> PureScript modules generated in $(OUTPUT_DIR)"
 
-# Step 3: Generate the Lean token modules from the same JSON.
+# Step 3 (separate; see the header): Generate the Lean token modules from the same JSON.
 # Unlike Pallas.purs / Vesta.purs these outputs are COMMITTED: formal/'s CI checks out
 # without the mina submodule (.github/workflows/lean.yml sets `submodules: false`), so it
-# cannot regenerate them and must read them from the tree. Re-run this target on a
-# proof-systems bump and commit the diff.
+# cannot regenerate them and must read them from the tree. Re-run this target
+# (`make gen-linearization-lean` at the root) on a proof-systems bump and commit the diff.
 lean: json
 	@echo "==> Generating Lean token modules from JSON..."
 	cd ../../formal/pickles && PATH="$$HOME/.elan/bin:$$PATH" \

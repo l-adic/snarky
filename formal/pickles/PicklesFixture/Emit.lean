@@ -9,8 +9,9 @@ needs the stream as a CLOSED TERM — `readLinearization` hands back an `IO` val
 theorem can mention — so the generated module is what a reflection proof would quantify
 over.
 
-Generated modules are build artifacts, gitignored exactly as `Pallas.purs`/`Vesta.purs`
-are, and produced by `make gen-linearization`.
+Generated modules are COMMITTED, unlike `Pallas.purs`/`Vesta.purs`: formal/'s CI checks
+out without the mina submodule and so cannot regenerate them. They are produced by
+`make gen-linearization-lean` at the repo root, on a proof-systems bump.
 -/
 
 namespace Pickles.Fixture

@@ -5,7 +5,8 @@ import PicklesFixture.Emit
 # `gen-tokens` — the linearization token codegen
 
 Reads `pickles-codegen`'s Rust dump and writes the Lean token modules, mirroring what
-`Generator.purs` does for PureScript. Driven by `make gen-linearization`.
+`Generator.purs` does for PureScript. Driven by `make gen-linearization-lean` at the repo
+root; the output is committed, so this runs on a proof-systems bump, not per build.
 
     LINEARIZATION_JSON_DIR   where fp.json / fq.json live
     LINEARIZATION_LEAN_DIR   where Fp.lean / Fq.lean are written
