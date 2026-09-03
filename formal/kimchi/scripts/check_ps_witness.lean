@@ -21,7 +21,7 @@ def resultsDir : IO System.FilePath := do
     return ".." / ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
 /-- The checks for one ingested instance, named for the report. `none` = no target. -/
-def checks (inst : Instance) : List (String × Option Bool) :=
+def checks (inst : Instance Fp) : List (String × Option Bool) :=
   haveI : NeZero inst.n := inst.nz
   let wit := inst.wit
   let sat (w : Fin inst.n → Fin wCols → Fp) (p : Fin inst.idx.publicCount → Fp) : Bool :=
@@ -61,7 +61,7 @@ def main : IO Unit := do
     | .ok (some fx) => do
         checked := checked + 1
         let name := p.fileName.getD p.toString
-        match Kimchi.Fixture.PS.build fx with
+        match Kimchi.Fixture.PS.build Kimchi.Fixture.PS.fpSide fx with
         | .error e => do
             allOk := false
             IO.println s!"✗ {name}: {e}"

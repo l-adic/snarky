@@ -240,6 +240,8 @@ Kimchi.Fixture.PS.Instance
 Kimchi.Fixture.PS.build
 Kimchi.Fixture.PS.parseComparison?
 Kimchi.Fixture.PS.parseComparisonCs?
+Kimchi.Fixture.PS.fpSide -- the step column's constants, scripts/check_cs.lean and check_ps_witness.lean
+Kimchi.Fixture.PS.fqSide -- the wrap column's constants, scripts/check_cs.lean
 Kimchi.Index.build?
 Kimchi.Index.instDecidableSatisfies -- synthesis: decide (Satisfies ..) in check_ps_witness.lean
 Kimchi.Permutation.primitiveRootCertificate

@@ -30,9 +30,15 @@ checks are CS-side only). Deferred, with the blocker each waits on:
   (packages/random-oracle; FOP additionally the OptSponge variant);
 - group_map_step — activatable now (Basic-only), transcription pending a
   Tonelli–Shanks sqrt witness helper;
-- group_map_wrap, combine_poly_wrap — gadget-complete but Fq-side: this corpus is
-  Fp-typed throughout, so the wrap column needs an Fq mirror of the plumbing;
+- combine_poly_wrap — gadget-complete, pending a transcription of `combinePolynomials`;
 - app_circuit_chunks2 — Basic-only but a 39MB dump (~2^16 rows): ingestion cost.
+
+The corpus has two columns. The step circuits run at `Fp` (Pallas's base field) and the
+wrap circuits at `Fq` (Vesta's base field): the plumbing is generic in the field, and each
+target carries its side's constants (`KimchiFixture.PS.Side`: the multiplicative generator,
+the endomorphism coefficient and the MDS matrix). The wrap column holds the group map at
+Vesta's parameters and the wrap linearization over `Pickles.Linearization.fqTokens`, so
+both deployed token streams are compared against their PureScript circuits.
 
 The dumps are the PS suite's gitignored export: generate with
 `CIRCUIT_DIFFS_WITNESS_EXPORT=1 npx spago test -p pickles-circuit-diffs`. CI runs
@@ -51,6 +57,7 @@ import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Pickles.Linearization.Circuit
 import Pickles.Linearization.Fp
+import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
@@ -83,9 +90,13 @@ def kindType : GateKind → GateType
 /-- `unpack`'s bit reads go through the canonical representative. -/
 instance : ToNat Fp := ⟨ZMod.val⟩
 
-/-- The kimchi constraint sum at the corpus field, the one instantiation every
-circuit below runs at. -/
+instance : ToNat Fq := ⟨ZMod.val⟩
+
+/-- The kimchi constraint sum at the step field. -/
 abbrev C := KimchiConstraint Fp
+
+/-- The kimchi constraint sum at the wrap field. -/
+abbrev Cq := KimchiConstraint Fq
 
 /-! ## The gadget circuits (transcribed from `Test.Pickles.CircuitDiffs.Main`) -/
 
@@ -191,8 +202,9 @@ def boolAssertCircuit (x : BoolVar Fp) : CircuitM Fp C PUnit :=
 /-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
 column-major recording) — the index round-trip ingests the LEAN output, so it holds
 with or without byte-agreement. -/
-def assembledRaw (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
-    (pubSize : Nat) (wit : List (Vector Fp 15)) (pubs : List Fp) : Raw :=
+def assembledRaw {F : Type} [Zero F] (rows : List (KimchiRow F))
+    (gates : List (AssembledGate F)) (pubSize : Nat) (wit : List (Vector F 15))
+    (pubs : List F) : Raw F :=
   { publicInputSize := pubSize
     typs := (gates.map (kindType ·.kind)).toArray
     coeffs := (gates.map (·.coeffs.toArray)).toArray
@@ -206,9 +218,10 @@ def assembledRaw (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
 /-- The round-trip law, decided per circuit: the compiled output padded into the
 index model builds by decision (`Index.build?` — domain shape, wiring bijectivity,
 public-row form) and the solved witness satisfies the verified checker. -/
-def indexRoundTrip (rows : List (KimchiRow Fp)) (gates : List (AssembledGate Fp))
-    (pubSize : Nat) (wit : List (Vector Fp 15)) (pubs : List Fp) : Bool :=
-  match Kimchi.Fixture.PS.build (assembledRaw rows gates pubSize wit pubs) with
+def indexRoundTrip {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
+    (rows : List (KimchiRow (ZMod p))) (gates : List (AssembledGate (ZMod p)))
+    (pubSize : Nat) (wit : List (Vector (ZMod p) 15)) (pubs : List (ZMod p)) : Bool :=
+  match Kimchi.Fixture.PS.build side (assembledRaw rows gates pubSize wit pubs) with
   | .error _ => false
   | .ok inst =>
     haveI : NeZero inst.n := inst.nz
@@ -250,21 +263,10 @@ def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
   scaleFast2' 255 26 127 input.1 input.2
 
 /-- The Pallas BW19 `setup()` parameters at the step field (PS
-`groupMapParams (Proxy @PallasG)`): the constants are the poseidon package's
-`Poseidon.GroupMapPallas` values; the non-residue is PS's search-from-2 result,
-`5`. The gates carry them as coefficients, so a wrong value fails the byte
-comparison itself. -/
-def groupMapParamsFp : GroupMapParams Fp :=
-  { u := 1
-  , fu := 6
-  , sqrtNeg3U2MinusUOver2 :=
-      8503465768106391777493614032514048814691664078728891710322960303815233784505
-  , sqrtNeg3U2 :=
-      17006931536212783554987228065028097629383328157457783420645920607630467569011
-  , inv3U2 :=
-      19298681539552699237261830834781317975575370987961040477303117842899978420225
-  , b := 5
-  , nonResidue := 5 }
+`groupMapParams (Proxy @PallasG)`): the poseidon package's `Poseidon.GroupMapPallas.spec`,
+with PS's search-from-2 non-residue, `5`. The gates carry them as coefficients, so a wrong
+value fails the byte comparison itself. -/
+def groupMapParamsFp : GroupMapParams Fp := .ofSpec Poseidon.GroupMapPallas.spec 5
 
 /-- `group_map_step_circuit` (the PS gadget
 `Snarky.Circuit.Kimchi.GroupMap.groupMapCircuit` at the step field and Pallas
@@ -386,7 +388,7 @@ def bulletReduceCircuit (input : Vector (FVar Fp) 75) : CircuitM Fp C PUnit := d
 sequences in row-major order building the id map both ways, and require a
 well-defined injection. A cell occupied on one side and empty on the other fails
 immediately, as does any pair of cells the two sides identify differently. -/
-def varsAgreeUpToRenaming (rows : List (KimchiRow Fp))
+def varsAgreeUpToRenaming {F : Type} (rows : List (KimchiRow F))
     (dumped : Array (Array (Option ℕ))) : Bool := Id.run do
   let lhs := rows.map (·.vars.toList)
   let rhs := dumped.toList.map (·.toList)
@@ -411,9 +413,11 @@ def varsAgreeUpToRenaming (rows : List (KimchiRow Fp))
 /-- Compare one circuit's assembled system and re-solved witness against its dump:
 the CS data (types, coefficients, wires, public size) is input-independent; the
 witness re-solve seeds the fixture's recorded public inputs. -/
-def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
-    [CheckedType Fp C a avar] [B : CircuitType Fp b bvar]
-    (main : avar → CircuitM Fp C bvar) (raw : Raw) : List (String × Bool) :=
+def compareWith {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
+    {a b avar bvar : Type} [A : CircuitType (ZMod p) a avar]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [B : CircuitType (ZMod p) b bvar]
+    (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) (raw : Raw (ZMod p)) :
+    List (String × Bool) :=
   let (rows, gates, pubVars) := kimchiGateData (a := a) (b := b) main
   let pubSize := pubVars.length
   let csChecks :=
@@ -439,8 +443,28 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
           (List.range 15).map (fun j => wit.map fun row => row.toList.getD j 0)
             == raw.witness.toList.map (·.toList)),
         ("public values", pubs == raw.pub.toList),
-        ("index round-trip", indexRoundTrip rows gates pubSize wit pubs) ]
+        ("index round-trip", indexRoundTrip side rows gates pubSize wit pubs) ]
   csChecks ++ witChecks
+
+/-- A corpus entry: parse the dump at the target's field and compare. -/
+def target {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
+    {a b avar bvar : Type} [CircuitType (ZMod p) a avar]
+    [CheckedType (ZMod p) (KimchiConstraint (ZMod p)) a avar] [CircuitType (ZMod p) b bvar]
+    (main : avar → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) bvar) (j : Json) :
+    Except String (Option (Bool × List (String × Bool))) := do
+  match ← parseComparisonCs? (m := p) j with
+  | none => return none
+  | some raw => return some (raw.witness.isEmpty, compareWith side (a := a) (b := b) main raw)
+
+/-- A step-side entry. -/
+def stepTarget {a b avar bvar : Type} [CircuitType Fp a avar] [CheckedType Fp C a avar]
+    [CircuitType Fp b bvar] (main : avar → CircuitM Fp C bvar) :=
+  target Kimchi.Fixture.PS.fpSide (a := a) (b := b) main
+
+/-- A wrap-side entry. -/
+def wrapTarget {a b avar bvar : Type} [CircuitType Fq a avar] [CheckedType Fq Cq a avar]
+    [CircuitType Fq b bvar] (main : avar → CircuitM Fq Cq bvar) :=
+  target Kimchi.Fixture.PS.fqSide (a := a) (b := b) main
 
 /-! ## The linearization circuit
 
@@ -452,8 +476,8 @@ component of the first two is ever read, and `z`/`s` are not read at all. -/
 open Pickles.Linearization in
 /-- `α^0 … α^(n+1)`, by successive multiplication — 69 rows at the deployed length, and
 the reason the interpreter's `alphaPow` is a lookup rather than an exponentiation. -/
-def alphaGo (alpha : FVar Fp) : Nat → FVar Fp → Array (FVar Fp) →
-    CircuitM Fp C (Array (FVar Fp))
+def alphaGo {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) :
+    Nat → FVar F → Array (FVar F) → CircuitM F (KimchiConstraint F) (Array (FVar F))
   | 0, _, acc => pure acc
   | n + 1, prev, acc => do
     let next ← Snarky.mul alpha prev
@@ -461,22 +485,21 @@ def alphaGo (alpha : FVar Fp) : Nat → FVar Fp → Array (FVar Fp) →
 
 open Pickles.Linearization in
 /-- The precomputed table: `[1, α, α², …, α^70]`. -/
-def precomputeAlphaPowers (alpha : FVar Fp) : CircuitM Fp C (Array (FVar Fp)) :=
+def precomputeAlphaPowers {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) :
+    CircuitM F (KimchiConstraint F) (Array (FVar F)) :=
   alphaGo alpha 69 alpha #[.const 1, alpha]
 
-/-- The `2^log2`-th root of unity, from the field's two-adic root. Matches production's
-recorded `omega` (checked against `linearization_vesta.json`). -/
-def domainGenerator (log2 : Nat) : Fp :=
-  (0x2bce74deac30ebda362120830561f81aea322bf2b7bb7584bdad6fabd87ea32f : Fp) ^ (2 ^ (32 - log2))
-
 open Pickles.Linearization Kimchi.Protocol.Linearization in
-/-- The circuit under comparison. The `zkPoly` and `zeta^n - 1` terms are computed and
-DISCARDED: they emit rows the OCaml dump contains, so they are part of the constraint
+/-- The circuit under comparison, at either side: the domain generator (PS
+`domainGenerator`, matching production's recorded `omega`), the endomorphism coefficient
+and the MDS matrix all come from `side`. The `zkPoly` and `zeta^n - 1` terms are computed
+and DISCARDED: they emit rows the OCaml dump contains, so they are part of the constraint
 system being compared even though nothing reads them. -/
-def linearizationCircuit (domLog2 : Nat) (toks : Array PolishToken)
-    (inputs : Vector (FVar Fp) 90) : CircuitM Fp C (FVar Fp) := do
-  let get (i : Nat) : FVar Fp := inputs[i]?.getD (.const 0)
-  let gen := domainGenerator domLog2
+def linearizationCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
+    (domLog2 : Nat) (toks : Array PolishToken) (inputs : Vector (FVar (ZMod p)) 90) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (FVar (ZMod p)) := do
+  let get (i : Nat) : FVar (ZMod p) := inputs[i]?.getD (.const 0)
+  let gen := side.omega (2 ^ domLog2)
   let om1 := gen⁻¹
   let om2 := om1 * om1
   let om3 := om2 * om1
@@ -488,7 +511,7 @@ def linearizationCircuit (domLog2 : Nat) (toks : Array PolishToken)
   let _ ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
   -- eager zeta^n - 1, discarded
   let _ ← Snarky.pow zeta (2 ^ domLog2)
-  let inp : Inputs Fp :=
+  let inp : Inputs (ZMod p) :=
     { evals :=
         { w i := get (2 * i)
           wOmega i := get (2 * i + 1)
@@ -507,61 +530,80 @@ def linearizationCircuit (domLog2 : Nat) (toks : Array PolishToken)
       gamma := get 88
       jointCombiner := .const 1
       vanishes := .const 1 }
-  evaluate (inp.toEnv Pasta.pallasEndo
-    (Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams)
-    lookupZero (fun _ => false) (fun _ _ => pure (.const 0))) toks
+  evaluate (inp.toEnv side.endo side.mds lookupZero (fun _ => false)
+    (fun _ _ => pure (.const 0))) toks
 
-/-- The corpus under comparison: every witness-carrying `Basic`-gadget circuit. -/
-def targets : List (String × (Raw → List (String × Bool))) :=
-  [ ("mul_step_circuit", compareWith (a := Fp) (b := Fp) mulCircuit),
-    ("inv_step_circuit", compareWith (a := Fp) (b := Fp) invCircuit),
-    ("div_step_circuit", compareWith (a := Fp) (b := Fp) divCircuit),
-    ("if_step_circuit", compareWith (a := Fp) (b := Fp) ifCircuit),
-    ("equals_step_circuit", compareWith (a := Fp) (b := Bool) equalsCircuit),
-    ("pow7_step_circuit", compareWith (a := Fp) (b := Fp) pow7Circuit),
-    ("pow8_step_circuit", compareWith (a := Fp) (b := Fp) pow8Circuit),
-    ("assert_equal_step_circuit", compareWith (a := Fp) (b := PUnit) assertEqualCircuit),
+/-! ## The wrap column
+
+The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
+parameters, and the linearization over the wrap token stream. -/
+
+/-- The Vesta BW19 `setup()` parameters at the wrap field (PS
+`groupMapParams (Proxy @VestaG)`): `Poseidon.GroupMapVesta.spec` with the same non-residue. -/
+def groupMapParamsFq : GroupMapParams Fq := .ofSpec Poseidon.GroupMapVesta.spec 5
+
+/-- `group_map_wrap_circuit` (the group-map gadget at the wrap field and Vesta parameters;
+the dump carries no witness, so the advice is inert here). -/
+def groupMapCircuitFq (input : FVar Fq) : CircuitM Fq Cq PUnit := do
+  let _ ← groupMapCircuit (fun _ => none) groupMapParamsFq input
+  pure ⟨⟩
+
+/-- The corpus under comparison: the step column, then the wrap column. -/
+def targets : List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
+  [ ("mul_step_circuit", stepTarget (a := Fp) (b := Fp) mulCircuit),
+    ("inv_step_circuit", stepTarget (a := Fp) (b := Fp) invCircuit),
+    ("div_step_circuit", stepTarget (a := Fp) (b := Fp) divCircuit),
+    ("if_step_circuit", stepTarget (a := Fp) (b := Fp) ifCircuit),
+    ("equals_step_circuit", stepTarget (a := Fp) (b := Bool) equalsCircuit),
+    ("pow7_step_circuit", stepTarget (a := Fp) (b := Fp) pow7Circuit),
+    ("pow8_step_circuit", stepTarget (a := Fp) (b := Fp) pow8Circuit),
+    ("assert_equal_step_circuit", stepTarget (a := Fp) (b := PUnit) assertEqualCircuit),
     ("app_circuit_two_phase_chain_make_zero",
-      compareWith (a := Fp) (b := PUnit) makeZeroAppCircuit),
+      stepTarget (a := Fp) (b := PUnit) makeZeroAppCircuit),
     ("app_circuit_two_phase_chain_increment",
-      compareWith (a := Fp) (b := PUnit) incrementAppCircuit),
-    ("assert_square_step_circuit", compareWith (a := Fp) (b := PUnit) assertSquareCircuit),
+      stepTarget (a := Fp) (b := PUnit) incrementAppCircuit),
+    ("assert_square_step_circuit", stepTarget (a := Fp) (b := PUnit) assertSquareCircuit),
     ("assert_non_zero_step_circuit",
-      compareWith (a := Fp) (b := PUnit) assertNonZeroCircuit),
+      stepTarget (a := Fp) (b := PUnit) assertNonZeroCircuit),
     ("assert_not_equal_step_circuit",
-      compareWith (a := Fp) (b := PUnit) assertNotEqualCircuit),
-    ("unpack_step_circuit", compareWith (a := Fp) (b := PUnit) unpackCircuit),
-    ("bool_and_step_circuit", compareWith (a := Bool) (b := Bool) boolAndCircuit),
-    ("bool_or_step_circuit", compareWith (a := Bool) (b := Bool) boolOrCircuit),
-    ("bool_xor_step_circuit", compareWith (a := Bool) (b := Bool) boolXorCircuit),
-    ("bool_all_step_circuit", compareWith (a := Bool) (b := Bool) boolAllCircuit),
-    ("bool_any_step_circuit", compareWith (a := Bool) (b := Bool) boolAnyCircuit),
-    ("bool_assert_step_circuit", compareWith (a := Bool) (b := PUnit) boolAssertCircuit),
+      stepTarget (a := Fp) (b := PUnit) assertNotEqualCircuit),
+    ("unpack_step_circuit", stepTarget (a := Fp) (b := PUnit) unpackCircuit),
+    ("bool_and_step_circuit", stepTarget (a := Bool) (b := Bool) boolAndCircuit),
+    ("bool_or_step_circuit", stepTarget (a := Bool) (b := Bool) boolOrCircuit),
+    ("bool_xor_step_circuit", stepTarget (a := Bool) (b := Bool) boolXorCircuit),
+    ("bool_all_step_circuit", stepTarget (a := Bool) (b := Bool) boolAllCircuit),
+    ("bool_any_step_circuit", stepTarget (a := Bool) (b := Bool) boolAnyCircuit),
+    ("bool_assert_step_circuit", stepTarget (a := Bool) (b := PUnit) boolAssertCircuit),
     ("add_complete_step_circuit",
-      compareWith (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
+      stepTarget (a := AffinePoint Fp × AffinePoint Fp) (b := AffinePoint Fp)
         addCompleteCircuit),
     ("poseidon_step_circuit",
-      compareWith (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit),
+      stepTarget (a := Vector Fp 3) (b := Vector Fp 3) poseidonCircuit),
     ("endo_scalar_step_circuit",
-      compareWith (a := Fp) (b := Fp) endoScalarCircuit),
+      stepTarget (a := Fp) (b := Fp) endoScalarCircuit),
     ("endo_mul_step_circuit",
-      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit),
+      stepTarget (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) endoMulCircuit),
     ("var_base_mul_step_circuit",
-      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) varBaseMulCircuit),
+      stepTarget (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) varBaseMulCircuit),
     ("scale_fast2_128_step_circuit",
-      compareWith (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
+      stepTarget (a := AffinePoint Fp × Fp) (b := AffinePoint Fp) scaleFast2_128Circuit),
     ("group_map_step_circuit",
-      compareWith (a := Fp) (b := PUnit) groupMapCircuitFp),
-    ("pow2_pow_step_circuit", compareWith (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
+      stepTarget (a := Fp) (b := PUnit) groupMapCircuitFp),
+    ("pow2_pow_step_circuit", stepTarget (a := Vector Fp 1) (b := PUnit) pow2PowCircuit),
     ("b_correct_step_circuit",
-      compareWith (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
+      stepTarget (a := Vector Fp 20) (b := PUnit) bCorrectCircuit),
     ("bullet_reduce_one_step_circuit",
-      compareWith (a := Vector Fp 5) (b := PUnit) bulletReduceOneCircuit),
+      stepTarget (a := Vector Fp 5) (b := PUnit) bulletReduceOneCircuit),
     ("linearization_step_circuit",
-      compareWith (a := Vector Fp 90) (b := Fp)
-        (linearizationCircuit 16 Pickles.Linearization.fpTokens)),
+      stepTarget (a := Vector Fp 90) (b := Fp)
+        (linearizationCircuit Kimchi.Fixture.PS.fpSide 16 Pickles.Linearization.fpTokens)),
     ("bullet_reduce_step_circuit",
-      compareWith (a := Vector Fp 75) (b := PUnit) bulletReduceCircuit) ]
+      stepTarget (a := Vector Fp 75) (b := PUnit) bulletReduceCircuit),
+    -- the wrap column
+    ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
+    ("linearization_wrap_circuit",
+      wrapTarget (a := Vector Fq 90) (b := Fq)
+        (linearizationCircuit Kimchi.Fixture.PS.fqSide 15 Pickles.Linearization.fqTokens)) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
@@ -569,17 +611,17 @@ def main : IO Unit := do
   for (name, compare) in targets do
     let path := dir / s!"{name}.json"
     let raw ← IO.FS.readFile path
-    match Json.parse raw >>= parseComparisonCs? with
+    match Json.parse raw >>= compare with
     | .error e =>
       failures := failures + 1
       IO.println s!"✗ {name}: parse error: {e}"
     | .ok none =>
       failures := failures + 1
       IO.println s!"✗ {name}: not a comparison dump"
-    | .ok (some fixture) =>
-      let bad := (compare fixture).filter (!·.2)
+    | .ok (some (witnessLess, checks)) =>
+      let bad := checks.filter (!·.2)
       if bad.isEmpty then
-        let note := if fixture.witness.isEmpty then "  (CS-side only: witness-less dump)" else ""
+        let note := if witnessLess then "  (CS-side only: witness-less dump)" else ""
         IO.println s!"✓ {name}{note}"
       else
         failures := failures + 1
