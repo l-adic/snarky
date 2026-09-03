@@ -50,6 +50,7 @@ import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
+import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
@@ -451,50 +452,23 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term.
   -- OCaml `step_verifier.ml` calls `Plonk_checks.ft_eval0` which is
   -- labelled `ft_eval0 / Field.Checked.mul` (~375 R1CS Generic gates
-  -- for the big perm-scalar sum + boundary). PS performs the same
-  -- arithmetic; the `ft_eval0_perm` label scopes the big mul chain so
-  -- the diff can localize any structural drift from the side-loaded
-  -- path in this region.
-  permResult <- label "ft_eval0_perm" do
-    let w6 = w0 !! unsafeFinite @15 6
-    term1Init <- label "term1_init" $
-      mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
-    let wSigma = zipWith Tuple (Vector.take @6 w0) s0
-    term1 <- label "term1_fold" $ foldM
-      ( \acc (Tuple wi si) -> do
-          betaSi <- mul_ beta si
-          mul_ (add_ (add_ betaSi wi) gamma) acc
-      )
-      term1Init
-      wSigma
-
-    let term1MinusP = sub_ term1 pEval0
-
-    term2Init <- label "term2_init" $
-      mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-    let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
-    term2 <- label "term2_fold" $ foldM
-      ( \acc (Tuple wi si) -> do
-          betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
-          mul_ acc (add_ (add_ gamma betaZetaSi) wi)
-      )
-      term2Init
-      wShifts
-
-    let
-      -- OCaml: omega_to_minus_zk_rows = omega_to_zk (circuit var, not constant)
-      zetaMinusOmegaZk = sub_ zeta omegaZk
-      zetaMinus1 = sub_ zeta (const_ one)
-
-    boundary <- label "boundary" do
-      term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
-      term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
-      let oneMinusZ = sub_ (const_ one) zZeta
-      nominator <- mul_ (add_ term22 term23) oneMinusZ
-      denominator <- mul_ zetaMinusOmegaZk zetaMinus1
-      div_ nominator denominator
-
-    pure $ add_ (sub_ term1MinusP term2) boundary
+  -- for the big perm-scalar sum + boundary). The permutation half is
+  -- `Permutation.permContributionCircuit`, shared with the wrap verifier.
+  -- OCaml: omega_to_minus_zk_rows = omega_to_zk (circuit var, not constant).
+  permResult <- Permutation.permContributionCircuit
+    { w: Vector.take @7 w0
+    , sigma: s0
+    , z: { zeta: zZeta, omegaTimesZeta: zOmegaTimesZeta }
+    , shifts
+    , alpha
+    , beta
+    , gamma
+    , zkPolynomial: zkPoly
+    , zetaToNMinus1
+    , omegaToMinusZkRows: omegaZk
+    , zeta
+    }
+    { pEval0, alphaPow21: a21, alphaPow22: a22, alphaPow23: a23 }
 
   let
     omegaForLagrange { zkRows: zk, offset } =

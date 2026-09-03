@@ -25,7 +25,7 @@ import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for, traverse, traverse_)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, zipWith, (!!))
+import Data.Vector (Vector, zipWith)
 import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
@@ -37,6 +37,7 @@ import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (absorbPointEval, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
+import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Util.Pow2 (pow2PowSquare)
@@ -47,7 +48,7 @@ import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, const_, equals_, inv_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -247,44 +248,24 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     a22 = alphaPow 22
     a23 = alphaPow 23
 
-  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term
-  let w6 = w0 !! unsafeFinite @15 6
-  term1Init <- label "step7_ft_term1init" $ mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
-  let wSigma = zipWith Tuple (Vector.take @6 w0) s0
-  term1 <- label "step7_ft_term1" $ foldM
-    ( \acc (Tuple wi si) -> do
-        betaSi <- mul_ beta si
-        mul_ (add_ (add_ betaSi wi) gamma) acc
-    )
-    term1Init
-    wSigma
-
-  let term1MinusP = sub_ term1 pEval0
-
-  term2Init <- label "step7_ft_term2init" $ mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-  let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
-  term2 <- label "step7_ft_term2" $ foldM
-    ( \acc (Tuple wi si) -> do
-        betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
-        mul_ acc (add_ (add_ gamma betaZetaSi) wi)
-    )
-    term2Init
-    wShifts
-
-  let
-    -- omega_to_zk is a constant in Wrap (unlike Step where it's a circuit var)
-    zetaMinusOmegaZk = sub_ zeta omegaZk
-    zetaMinus1 = sub_ zeta (const_ one)
-
-  boundary <- label "step7_ft_boundary" do
-    term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
-    term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
-    let oneMinusZ = sub_ (const_ one) zZeta
-    nominator <- mul_ (add_ term22 term23) oneMinusZ
-    denominator <- mul_ zetaMinusOmegaZk zetaMinus1
-    div_ nominator denominator
-
-  let permResult = add_ (sub_ term1MinusP term2) boundary
+  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term. The
+  -- permutation half is `Permutation.permContributionCircuit`, shared with
+  -- the step verifier. omega_to_zk is a constant in Wrap (unlike Step where
+  -- it's a circuit var) when the domain is; the gadget is agnostic.
+  permResult <- Permutation.permContributionCircuit
+    { w: Vector.take @7 w0
+    , sigma: s0
+    , z: { zeta: zZeta, omegaTimesZeta: zOmegaTimesZeta }
+    , shifts
+    , alpha
+    , beta
+    , gamma
+    , zkPolynomial: zkPoly
+    , zetaToNMinus1
+    , omegaToMinusZkRows: omegaZk
+    , zeta
+    }
+    { pEval0, alphaPow21: a21, alphaPow22: a22, alphaPow23: a23 }
 
   -- omegaForLagrange: matches OCaml plonk_checks.ml:311-328 unnormalized_lagrange_basis
   -- Returns the omega power for a given lagrange basis position.

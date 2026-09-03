@@ -13,6 +13,7 @@ module Pickles.PlonkChecks.Permutation
   ( PermutationInput
   , permScalar
   , permContribution
+  , permContributionCircuit
   , permAlpha0
   ) where
 
@@ -20,7 +21,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
-import Data.Foldable (foldl)
+import Data.Foldable (foldM, foldl)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
@@ -29,6 +30,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt (fromInt)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Trace as Trace
+import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, add_, const_, div_, label, mul_, sub_)
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------
@@ -98,10 +100,10 @@ permScalar input =
   in
     negate product
 
--- | Compute the permutation contribution to ft_eval0 (field-level only).
--- | This includes both product terms and the boundary quotient.
--- | Note: uses division, so this cannot be directly computed in-circuit
--- | without additional witness variables.
+-- | Compute the permutation contribution to ft_eval0 at the field level.
+-- | This includes both product terms and the boundary quotient. The
+-- | in-circuit twin is `permContributionCircuit` below (the division is a
+-- | witnessed inverse there).
 -- |
 -- | Reference: ft_eval0 in plonk_checks.ml
 permContribution :: forall f. PrimeField f => PermutationInput f -> f
@@ -175,3 +177,78 @@ permContribution input =
   in
     result
 
+-------------------------------------------------------------------------------
+-- | In-circuit computation
+-------------------------------------------------------------------------------
+
+-- | The in-circuit twin of `permContribution`, with the public-input evaluation
+-- | subtracted between the two products as OCaml's `ft_eval0` does:
+-- |
+-- |   term1 - p_eval0 - term2 + boundary
+-- |
+-- | Op for op the `ft_eval0` of `plonk_checks.ml` (`Plonk_checks.ft_eval0`,
+-- | labelled `ft_eval0 / Field.Checked.mul`): `mul_` chains in OCaml's
+-- | evaluation order, `beta * zeta` recomputed per shift step, the boundary
+-- | quotient's `alpha^23` term before its `alpha^22` term (OCaml evaluates
+-- | `a + b` right to left). The alpha powers come from the caller's
+-- | precomputed table (`precomputeAlphaPowers`), which OCaml's `scalars_env`
+-- | builds once and shares with the perm scalar. The caller subtracts the
+-- | constant term. The labels scope the big mul chain so the circuit diff can
+-- | localize structural drift in this region.
+-- |
+-- | `input.alpha` is unused here: the circuit reads the table, not `alpha`.
+permContributionCircuit
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => PermutationInput (FVar f)
+  -> { pEval0 :: FVar f, alphaPow21 :: FVar f, alphaPow22 :: FVar f, alphaPow23 :: FVar f }
+  -> Snarky f c r (FVar f)
+permContributionCircuit input { pEval0, alphaPow21: a21, alphaPow22: a22, alphaPow23: a23 } =
+  label "ft_eval0_perm" do
+    let
+      w0 = input.w
+      w6 = w0 !! unsafeFinite @7 6
+      beta = input.beta
+      gamma = input.gamma
+      zeta = input.zeta
+      zZeta = input.z.zeta
+      zOmegaTimesZeta = input.z.omegaTimesZeta
+      zkPoly = input.zkPolynomial
+    term1Init <- label "term1_init" $
+      mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
+    let wSigma = zipWith Tuple (Vector.take @6 w0) input.sigma
+    term1 <- label "term1_fold" $ foldM
+      ( \acc (Tuple wi si) -> do
+          betaSi <- mul_ beta si
+          mul_ (add_ (add_ betaSi wi) gamma) acc
+      )
+      term1Init
+      wSigma
+
+    let term1MinusP = sub_ term1 pEval0
+
+    term2Init <- label "term2_init" $
+      mul_ a21 zkPoly >>= \t -> mul_ t zZeta
+    let wShifts = zipWith Tuple w0 input.shifts
+    term2 <- label "term2_fold" $ foldM
+      ( \acc (Tuple wi si) -> do
+          betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
+          mul_ acc (add_ (add_ gamma betaZetaSi) wi)
+      )
+      term2Init
+      wShifts
+
+    let
+      zetaMinusOmegaZk = sub_ zeta input.omegaToMinusZkRows
+      zetaMinus1 = sub_ zeta (const_ one)
+
+    boundary <- label "boundary" do
+      term23 <- mul_ input.zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
+      term22 <- mul_ input.zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
+      let oneMinusZ = sub_ (const_ one) zZeta
+      nominator <- mul_ (add_ term22 term23) oneMinusZ
+      denominator <- mul_ zetaMinusOmegaZk zetaMinus1
+      div_ nominator denominator
+
+    pure $ add_ (sub_ term1MinusP term2) boundary

@@ -9,9 +9,10 @@ set_option mvcgen.warning false
 The step verifier's `ft_eval0` gadget — the permutation recurrence read at `ζ`, the
 public-input evaluation, the accumulator boundary quotient, and the interpreted gate
 linearization, assembled as `term1 − p_eval0 − term2 + boundary − constant_term` — ported
-op for op from `packages/pickles/src/Pickles/Step/FinalizeOtherProof.purs` (the
-`ft_eval0_perm` block and the subtraction that follows it), and proved to compute the wire
-verifier's `Kimchi.Protocol.Linearization.ftEval0`.
+op for op from `Pickles.PlonkChecks.Permutation.permContributionCircuit` (the gadget both
+PureScript verifiers call, `packages/pickles/src/Pickles/PlonkChecks/Permutation.purs`)
+followed by the constant-term subtraction of `Step/FinalizeOtherProof.purs`, and proved to
+compute the wire verifier's `Kimchi.Protocol.Linearization.ftEval0`.
 
 ## Main definitions
 
@@ -73,8 +74,8 @@ structure PermInputs (F : Type) where
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 
-/-- The `ft_eval0` gadget: `FinalizeOtherProof.purs`' `ft_eval0_perm` block followed by
-the subtraction of the interpreted constant term, in the source's operation order. -/
+/-- The `ft_eval0` gadget: the PureScript `permContributionCircuit` followed by the
+subtraction of the interpreted constant term, in the source's operation order. -/
 def ftEval0Circuit (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (toks : Array PolishToken)
     (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F c (FVar F))
     (inp : Inputs F) (ext : PermInputs F) : CircuitM F c (FVar F) := do

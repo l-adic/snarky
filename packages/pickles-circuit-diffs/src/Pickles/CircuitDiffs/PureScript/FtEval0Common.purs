@@ -5,19 +5,18 @@ module Pickles.CircuitDiffs.PureScript.FtEval0Common
 import Prelude
 
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Foldable (foldM)
 import Data.Int (pow) as Int
-import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, zipWith, (!!))
+import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domainShifts)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (PolishToken)
+import Pickles.PlonkChecks.Permutation (permContributionCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (FVar, Snarky, add_, div_, label, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (FVar, Snarky, label, mul_, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
@@ -30,8 +29,9 @@ import Snarky.Curves.Class (class HasEndo, class PrimeField)
 -- |   plus `p_eval0` at index 90
 -- | - Precomputed alpha powers, eager `zk_polynomial` and eager `zeta^n - 1`
 -- |   (the `scalars_env` prelude, in OCaml's emission order)
--- | - The permutation recurrence + boundary quotient, op for op as in
--- |   `Pickles.Step.FinalizeOtherProof`'s `ft_eval0_perm` block
+-- | - The permutation recurrence + boundary quotient via the library gadget
+-- |   `Pickles.PlonkChecks.Permutation.permContributionCircuit`, as both
+-- |   verifiers compute it
 -- | - The constant term via the monadic interpreter, subtracted last
 ftEval0CircuitM
   :: forall f f' r
@@ -150,47 +150,22 @@ ftEval0CircuitM domLog2 tokens inputs = do
     a22 = alphaPow 22
     a23 = alphaPow 23
 
-  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term, the op order
-  -- of `Pickles.Step.FinalizeOtherProof`'s `ft_eval0_perm` block
-  permResult <- label "ft_eval0_perm" do
-    let w6 = w0 !! unsafeFinite @15 6
-    term1Init <- label "term1_init" $
-      mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
-    let wSigma = zipWith Tuple (Vector.take @6 w0) s0
-    term1 <- label "term1_fold" $ foldM
-      ( \acc (Tuple wi si) -> do
-          betaSi <- mul_ beta si
-          mul_ (add_ (add_ betaSi wi) gamma) acc
-      )
-      term1Init
-      wSigma
-
-    let term1MinusP = sub_ term1 pEval0
-
-    term2Init <- label "term2_init" $
-      mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-    let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
-    term2 <- label "term2_fold" $ foldM
-      ( \acc (Tuple wi si) -> do
-          betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
-          mul_ acc (add_ (add_ gamma betaZetaSi) wi)
-      )
-      term2Init
-      wShifts
-
-    let
-      zetaMinusOmegaZk = sub_ zeta (const_ omegaToMinus3)
-      zetaMinus1 = sub_ zeta (const_ one)
-
-    boundary <- label "boundary" do
-      term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
-      term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
-      let oneMinusZ = sub_ (const_ one) zZeta
-      nominator <- mul_ (add_ term22 term23) oneMinusZ
-      denominator <- mul_ zetaMinusOmegaZk zetaMinus1
-      div_ nominator denominator
-
-    pure $ add_ (sub_ term1MinusP term2) boundary
+  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term; the
+  -- permutation half is the library gadget the verifiers use
+  permResult <- permContributionCircuit
+    { w: Vector.take @7 w0
+    , sigma: s0
+    , z: { zeta: zZeta, omegaTimesZeta: zOmegaTimesZeta }
+    , shifts
+    , alpha
+    , beta
+    , gamma
+    , zkPolynomial: zkPoly
+    , zetaToNMinus1
+    , omegaToMinusZkRows: const_ omegaToMinus3
+    , zeta
+    }
+    { pEval0, alphaPow21: a21, alphaPow22: a22, alphaPow23: a23 }
 
   constantTerm <- label "scalars_env" $ evaluateM tokens env
 
