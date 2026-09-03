@@ -44,15 +44,13 @@ import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precom
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
-import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
+import Pickles.PlonkChecks (extractEvalFields, maskedChallengeDigest, squeezeXiR)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, combinedInnerProduct)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
-import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Util.Pow2 (pow2PowSquare)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
@@ -294,29 +292,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- challenge_digest via OptSponge, absorb sponge_digest + challenge_digest +
   -- all evaluations, squeeze xi and r.
   ---------------------------------------------------------------------------
-  let
-    pending :: Array (Tuple (BoolVar f) (FVar f))
-    pending = Array.concat $ Vector.toUnfoldable $
-      Vector.zipWith
-        ( \keep chals ->
-            map (Tuple keep) (Vector.toUnfoldable chals)
-        )
-        mask
-        prevChallenges
-
-  { xi, r, xiCorrect } <- evalSpongeM initialSpongeCircuit do
-    absorb unfinalized.spongeDigestBeforeEvaluations
-    challengeDigest <- liftSnarky $
-      OptSponge.squeeze (OptSponge.create) pending
-    absorb challengeDigest
-    absorbAllEvals allEvals
-    xiActual <- squeezeScalarChallenge { endo: endoVar }
-    rActual <- squeezeScalarChallenge { endo: endoVar }
-    liftSnarky do
-      xiCorr <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
-      xi' <- toField @8 deferred.xi endoVar
-      r' <- toField @8 rActual endoVar
-      pure { xi: xi', r: r', xiCorrect: xiCorr }
+  { xi: xiActual, r: rActual } <- squeezeXiR
+    { spongeDigestBeforeEvaluations: unfinalized.spongeDigestBeforeEvaluations
+    , challengeDigest: maskedChallengeDigest mask prevChallenges
+    , allEvals
+    , endo: endoVar
+    , xiConstrainLowBits: true
+    }
+  xiCorrect <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
+  xi <- toField @8 deferred.xi endoVar
+  r <- toField @8 rActual endoVar
 
   ---------------------------------------------------------------------------
   -- Step 9: pow2_pows via Field.square

@@ -19,11 +19,9 @@ module Pickles.Wrap.FinalizeOtherProof
 
 import Prelude
 
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (unsafeFinite)
 import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (traverse, traverse_)
-import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
@@ -33,19 +31,17 @@ import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAl
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.PlonkChecks (absorbPointEval, extractEvalFields)
+import Pickles.PlonkChecks (challengeDigest, extractEvalFields, squeezeXiR)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, combinedInnerProduct)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Util.Pow2 (pow2PowSquare)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, const_, equals_, inv_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
@@ -146,35 +142,19 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- squeeze_scalar for xi (constrain_low_bits:false).
   -- squeeze_challenge for r (constrain_low_bits:true).
   ---------------------------------------------------------------------------
-  { xi, r, xiCorrect, xiRaw, rRaw } <- label "step4_sponge" $ evalSpongeM initialSpongeCircuit do
-    labelM "abs_sd" $ absorb unfinalized.spongeDigestBeforeEvaluations
-    -- Challenge digest: separate plain sponge over all prev challenges
-    challengeDigest <- liftSnarky $ label "step4_challengeDigest" $ evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
-      traverse_ (traverse_ absorb) prevChallenges
-      squeeze
-    labelM "abs_cd" $ absorb challengeDigest
-    labelM "abs_fte" $ absorb allEvals.ftEval1
-    labelM "abs_pe_z" $ absorb allEvals.publicEvals.zeta
-    labelM "abs_pe_zw" $ absorb allEvals.publicEvals.omegaTimesZeta
-    labelM "abs_ze_z" $ absorb allEvals.zEvals.zeta
-    labelM "abs_ze_zw" $ absorb allEvals.zEvals.omegaTimesZeta
-    _ <- traverse (\(Tuple i pe) -> labelM ("abs_ie_" <> show (getFinite i)) $ absorbPointEval pe)
-      (Vector.zip (Vector.generate @6 identity) allEvals.indexEvals)
-    _ <- traverse (\(Tuple i pe) -> labelM ("abs_we_" <> show (getFinite i)) $ absorbPointEval pe)
-      (Vector.zip (Vector.generate @15 identity) allEvals.witnessEvals)
-    _ <- traverse (\(Tuple i pe) -> labelM ("abs_ce_" <> show (getFinite i)) $ absorbPointEval pe)
-      (Vector.zip (Vector.generate @15 identity) allEvals.coeffEvals)
-    _ <- traverse (\(Tuple i pe) -> labelM ("abs_se_" <> show (getFinite i)) $ absorbPointEval pe)
-      (Vector.zip (Vector.generate @6 identity) allEvals.sigmaEvals)
-    -- xi: squeeze_scalar (constrain_low_bits:false)
-    xiActual <- labelM "sq_xi" $ squeezeScalar { endo: endoVar }
-    -- r: squeeze_challenge (constrain_low_bits:true)
-    rActual <- labelM "sq_r" $ squeezeScalarChallenge { endo: endoVar }
-    liftSnarky $ label "step4_expand" do
-      xiCorr <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
-      xi' <- toField @8 deferred.xi endoVar
-      r' <- toField @8 rActual endoVar
-      pure { xi: xi', r: r', xiCorrect: xiCorr, xiRaw: SizedF.toField xiActual, rRaw: SizedF.toField rActual }
+  { xi: xiActual, r: rActual } <- label "step4_sponge" $ squeezeXiR
+    { spongeDigestBeforeEvaluations: unfinalized.spongeDigestBeforeEvaluations
+    , challengeDigest: challengeDigest prevChallenges
+    , allEvals
+    , endo: endoVar
+    , xiConstrainLowBits: false
+    }
+  xiCorrect <- label "step4_xiCorrect" $ equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
+  xi <- label "step4_xi" $ toField @8 deferred.xi endoVar
+  r <- label "step4_r" $ toField @8 rActual endoVar
+  let
+    xiRaw = SizedF.toField xiActual
+    rRaw = SizedF.toField rActual
 
   ---------------------------------------------------------------------------
   -- Step 5: pow2_pows
