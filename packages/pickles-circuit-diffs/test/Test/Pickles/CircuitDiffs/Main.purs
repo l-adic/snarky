@@ -33,6 +33,7 @@ import Pickles.CircuitDiffs.PureScript.BulletReduceStep (compileBulletReduceStep
 import Pickles.CircuitDiffs.PureScript.CombinePoly (compileCombinePoly)
 import Pickles.CircuitDiffs.PureScript.FopStep (compileFopStep)
 import Pickles.CircuitDiffs.PureScript.FopWrap (compileFopWrap)
+import Pickles.CircuitDiffs.PureScript.FtEval0Step (compileFtEval0Step)
 import Pickles.CircuitDiffs.PureScript.Ftcomm (compileFtcomm)
 import Pickles.CircuitDiffs.PureScript.FtcommStep (compileFtcommStep)
 import Pickles.CircuitDiffs.PureScript.FullStepVerifyOne (compileFullStepVerifyOne)
@@ -1150,6 +1151,7 @@ spec bundle =
       describe "Linearization" do
         exactMatchEff "linearization_step_circuit" (fromCompiledCircuit =<< compileLinearizationStep)
         exactMatchEff "linearization_wrap_circuit" (fromCompiledCircuit =<< compileLinearizationWrap)
+        exactMatchEff "ft_eval0_step_circuit" (fromCompiledCircuit =<< compileFtEval0Step)
       describe "Pseudo module" do
         exactMatchEff "utils_ones_vector_n16_step_circuit" (fromCompiledCircuit =<< compileUtilsOnesVectorN16Step)
         exactMatchEff "utils_ones_vector_n16_wrap_circuit" (fromCompiledCircuit =<< compileUtilsOnesVectorN16Wrap)

@@ -2,15 +2,18 @@
 -- linearization slice). Consumed by the workspace dead-code pass
 -- (formal/scripts/deadcode.sh); the axiom audit is pickles/scripts/check_axioms.lean.
 --
--- The roots ARE the axiom gate's roots: the two circuit theorems, one per side of the
--- cycle, and the two reflection endpoints they rest on. Everything else the package
--- proves or defines — the token language, the machine, its simulation laws, the
--- environments, the certificates — must stay reachable from these four, which is what
--- keeps the dead-zero contract meaningful here.
+-- The roots ARE the axiom gate's roots: the two linearization circuit theorems, one per
+-- side of the cycle, the two reflection endpoints they rest on, and the two ft_eval0
+-- circuit theorems built on them. Everything else the package proves or defines — the
+-- token language, the machine, its simulation laws, the environments, the certificates,
+-- the gadget — must stay reachable from these six, which is what keeps the dead-zero
+-- contract meaningful here.
 Pickles.Reflect.circuit_gateLinearization_fp
 Pickles.Reflect.circuit_gateLinearization_fq
 Pickles.Reflect.evaluate_fpTokens
 Pickles.Reflect.evaluate_fqTokens
+Pickles.ftEval0Circuit_spec_fp
+Pickles.ftEval0Circuit_spec_fq
 
 -- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
 -- derived instances — comparable and printable, as the PureScript's `Eq`/`Show` are.

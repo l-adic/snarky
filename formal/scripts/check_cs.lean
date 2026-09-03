@@ -19,10 +19,12 @@ induce across cells.
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
 `Basic` gadget vocabulary, the landed gate gadgets (poseidon, endo_scalar,
-endo_mul), and the gadget-complete pickles sub-circuits (pow2_pow, b_correct,
+endo_mul), the gadget-complete pickles sub-circuits (pow2_pow, b_correct,
 bullet_reduce_one_step, bullet_reduce_step — composition fixtures, the bullet pair
 composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
-checks are CS-side only). Deferred, with the blocker each waits on:
+checks are CS-side only), and ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
+the linearization prelude, against the PS `FtEval0Common` harness). Deferred, with the
+blocker each waits on:
 - ftcomm_*, xhat_* (and everything downstream: ivp, verify, wrap/step mains) — the
   pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
   the VarBaseMul gadget's own oracle checks);
@@ -56,6 +58,7 @@ import KimchiFixture.PS
 import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Pickles.Linearization.Circuit
+import Pickles.FtEval0
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -490,6 +493,30 @@ def precomputeAlphaPowers {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) 
   alphaGo alpha 69 alpha #[.const 1, alpha]
 
 open Pickles.Linearization Kimchi.Protocol.Linearization in
+/-- The interpreter's inputs from the 90-entry layout: `get i` is input `i`, `pows` the
+precomputed α-table. -/
+def linearizationInputs {p : ℕ} [Fact p.Prime] (get : ℕ → FVar (ZMod p))
+    (pows : Array (FVar (ZMod p))) : Inputs (ZMod p) :=
+  { evals :=
+      { w i := get (2 * i)
+        wOmega i := get (2 * i + 1)
+        coeffs i := get (30 + 2 * i)
+        z := get 60
+        zOmega := get 61
+        s i := get (62 + 2 * i)
+        genericSelector := get 74
+        poseidonSelector := get 76
+        completeAddSelector := get 78
+        mulSelector := get 80
+        emulSelector := get 82
+        endoScalarSelector := get 84 }
+    alphaPows n := pows[n]?.getD (.const 0)
+    beta := get 87
+    gamma := get 88
+    jointCombiner := .const 1
+    vanishes := .const 1 }
+
+open Pickles.Linearization Kimchi.Protocol.Linearization in
 /-- The circuit under comparison, at either side: the domain generator (PS
 `domainGenerator`, matching production's recorded `omega`), the endomorphism coefficient
 and the MDS matrix all come from `side`. The `zkPoly` and `zeta^n - 1` terms are computed
@@ -511,27 +538,58 @@ def linearizationCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side
   let _ ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
   -- eager zeta^n - 1, discarded
   let _ ← Snarky.pow zeta (2 ^ domLog2)
-  let inp : Inputs (ZMod p) :=
-    { evals :=
-        { w i := get (2 * i)
-          wOmega i := get (2 * i + 1)
-          coeffs i := get (30 + 2 * i)
-          z := get 60
-          zOmega := get 61
-          s i := get (62 + 2 * i)
-          genericSelector := get 74
-          poseidonSelector := get 76
-          completeAddSelector := get 78
-          mulSelector := get 80
-          emulSelector := get 82
-          endoScalarSelector := get 84 }
-      alphaPows n := pows[n]?.getD (.const 0)
-      beta := get 87
-      gamma := get 88
-      jointCombiner := .const 1
-      vanishes := .const 1 }
-  evaluate (inp.toEnv side.endo side.mds lookupZero (fun _ => false)
+  evaluate ((linearizationInputs get pows).toEnv side.endo side.mds lookupZero (fun _ => false)
     (fun _ _ => pure (.const 0))) toks
+
+/-! ## The ft_eval0 circuit
+
+Transcribes `Pickles.CircuitDiffs.PureScript.FtEval0Common.ftEval0CircuitM`: the 90-input
+linearization layout plus `p_eval0` at index 90, the same `scalars_env` prelude with the
+`zkPoly` and `zeta^n − 1` rows now READ, and `Pickles.ftEval0Circuit` — the gadget the
+faithfulness theorem is about — fed those as its upstream inputs. The domain is constant
+in the dump, so `ω^{n − zkRows}` is the constant `ω⁻³` and the coset shifts are constants. -/
+
+/-- The step-side coset shifts, production's Blake2b-sampled `Shifts::new` values (PS reads
+them through `domainShifts`; recorded in `kimchi/fixtures/linearization_vesta{,_emul}.json`,
+identical at both domain sizes there). They enter the dump as Generic coefficients, so the
+comparison checks them against production rather than trusting them. -/
+def stepShifts : Fin permCols → Fp := fun i =>
+  (#[1, 328286983623303317637963920346571898945724874896624808297627776768640590563,
+     91433028157768305433241271390810941046493237899366836746431422160024463706,
+     240213425742950025341713987028051046476975246675775993287051503548513551377,
+     417757293700961807788464308236931191792053554682199437460107260306038610067,
+     430348682428487492383428014506756320686619984007091686553051322507181255952,
+     326625242707153437805405281465150497418605074624614708160829052937679007395]
+    : Array ℕ)[(i : ℕ)]?.getD 0
+
+open Pickles.Linearization Kimchi.Protocol.Linearization in
+/-- The `ft_eval0` circuit under comparison, at either side. -/
+def ftEval0CsCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
+    (domLog2 : Nat) (toks : Array PolishToken) (shifts : Fin permCols → ZMod p)
+    (inputs : Vector (FVar (ZMod p)) 91) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (FVar (ZMod p)) := do
+  let get (i : Nat) : FVar (ZMod p) := inputs[i]?.getD (.const 0)
+  let gen := side.omega (2 ^ domLog2)
+  let om1 := gen⁻¹
+  let om2 := om1 * om1
+  let om3 := om2 * om1
+  let alpha := get 86
+  let zeta := get 89
+  let pows ← precomputeAlphaPowers alpha
+  -- eager zk_polynomial
+  let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
+  let zkPoly ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
+  -- eager zeta^n - 1
+  let zetaToN ← Snarky.pow zeta (2 ^ domLog2)
+  let ext : Pickles.PermInputs (ZMod p) :=
+    { zeta := zeta
+      pubEval := get 90
+      zkPoly := zkPoly
+      zetaToNMinus1 := CVar.sub_ zetaToN (.const 1)
+      omegaZk := .const om3
+      shifts := shifts }
+  Pickles.ftEval0Circuit side.endo side.mds toks (fun _ => false) (fun _ _ => pure (.const 0))
+    (linearizationInputs get pows) ext
 
 /-! ## The wrap column
 
@@ -599,6 +657,10 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
         (linearizationCircuit Kimchi.Fixture.PS.fpSide 16 Pickles.Linearization.fpTokens)),
     ("bullet_reduce_step_circuit",
       stepTarget (a := Vector Fp 75) (b := PUnit) bulletReduceCircuit),
+    ("ft_eval0_step_circuit",
+      stepTarget (a := Vector Fp 91) (b := Fp)
+        (ftEval0CsCircuit Kimchi.Fixture.PS.fpSide 16 Pickles.Linearization.fpTokens
+          stepShifts)),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
