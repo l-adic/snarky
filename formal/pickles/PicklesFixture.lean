@@ -1,4 +1,5 @@
 import PicklesFixture.TokenParser
+import PicklesFixture.Emit
 
 /-!
 # PicklesFixture — decoders for recorded pickles data

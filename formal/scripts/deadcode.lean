@@ -4,10 +4,10 @@ Dead-code gate for the workspace.
 Lean has no export-list mechanism, so the packages' `roots.txt` manifests *define* the public
 API surface. This script treats their union as the root set: it imports the libraries, walks
 the constant-dependency graph (each declaration's type + value), and FAILS (nonzero exit) if
-any authored declaration — kimchi, pasta, poseidon, bulletproof-pcs, and the fixture libs —
-is not reachable from the roots. Auto-generated decls (recursors, constructors, projections,
-derive/`match_` auxiliaries, syntax parser descriptors) are excluded: they are noise, not
-authored code.
+any authored declaration — kimchi, pasta, poseidon, bulletproof-pcs, snarky, schnorr,
+pickles, and the fixture libs — is not reachable from the roots. Auto-generated decls
+(recursors, constructors, projections, derive/`match_` auxiliaries, syntax parser
+descriptors) are excluded: they are noise, not authored code.
 
 Script surface: a root inside a `-- script-surface:begin` / `-- script-surface:end` block in
 a manifest declares a declaration consumed by the `scripts/` drivers rather than the library.
@@ -15,10 +15,13 @@ The gate additionally checks each such name textually appears in some scripts/ f
 blocks cannot rot into general exemption dumps. A trailing `-- synthesis: ...` comment
 exempts a line from the textual check (instances are found by class resolution, not by name).
 
-All five packages are audited. `snarky/roots.txt` declares the DSL's port surface (the
+Every package is audited. `snarky/roots.txt` declares the DSL's port surface (the
 PS-export mirrors, the Lean-only laws, and the exhibits), so `Snarky.*` declarations sit
 under the same dead-zero contract as the rest of the tree; its internal machinery must stay
-reachable from that declared surface.
+reachable from that declared surface. `pickles/roots.txt` is the tightest manifest: its
+roots are the axiom gate's four results, and the whole package — the token language, the
+machine, the certificates — must stay reachable from them. That also discharges the
+kimchi lemmas (`Evals.map` and the naturality laws) whose only consumer is pickles.
 
 Deferral: `scripts/deferred.txt` names declarations excluded from the dead check, each
 because the core swap took away its consumer while the replacement consumer does not exist
@@ -45,6 +48,8 @@ import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Semantics
 import Schnorr
+import Pickles
+import PicklesFixture
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi
@@ -80,7 +85,8 @@ def directDeps (env : Environment) (n : Name) : Array Name :=
 /-- Name components that only compiler-generated auxiliaries carry. -/
 def generatedComponents : List String :=
   [ "rec", "recOn", "casesOn", "brecOn", "below", "ibelow", "binductionOn",
-    "noConfusion", "noConfusionType", "toCtorIdx", "ctorIdx", "ofNat", "sizeOf",
+    "noConfusion", "noConfusionType", "toCtorIdx", "ctorIdx", "ofNat", "ofNat_ctorIdx",
+    "sizeOf",
     "sizeOf_spec", "injEq", "inj", "eq_def", "congr_simp", "mk",
     "ctorElim", "ctorElimType", "proxyType", "proxyTypeEquiv", "ext", "ext_iff" ]
 
@@ -123,7 +129,7 @@ def isOurs (n : Name) : Bool :=
   let n := (privateToUserName? n).getD n
   (`Kimchi).isPrefixOf n || (`Pasta).isPrefixOf n || (`Poseidon).isPrefixOf n
     || (`FixtureKit).isPrefixOf n || (`Bulletproof).isPrefixOf n || (`Snarky).isPrefixOf n
-    || (`Schnorr).isPrefixOf n
+    || (`Schnorr).isPrefixOf n || (`Pickles).isPrefixOf n
 
 /-- Is `n` under the dead-zero contract? Everything traversable — all five packages
     declare their surface. -/
@@ -147,7 +153,8 @@ end Kimchi.DeadCode
 run_cmd do
   let env ← getEnv
   let manifests := ["kimchi/roots.txt", "pasta/roots.txt", "poseidon/roots.txt",
-    "bulletproof-pcs/roots.txt", "snarky/roots.txt", "schnorr/roots.txt"]
+    "bulletproof-pcs/roots.txt", "snarky/roots.txt", "schnorr/roots.txt",
+    "pickles/roots.txt"]
   -- parse the manifests: one fully-qualified name per line, optional trailing `-- comment`;
   -- `--` lines and blanks are ignored; `script-surface` markers delimit the script surface
   let mut roots : Array Name := #[]
@@ -168,8 +175,12 @@ run_cmd do
         if env.contains n then roots := roots.push n else missing := missing.push n
         if inSurface then surface := surface.push (n, note.startsWith "synthesis")
   -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
+  -- `pickles` itself is scanned (non-recursively) for `GenTokens.lean`: the codegen
+  -- executable is a driver like the scripts, and the PicklesFixture surface it consumes is
+  -- declared script-surface in pickles/roots.txt.
   let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",
-    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts", "schnorr/scripts"]
+    "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts", "schnorr/scripts",
+    "pickles/scripts", "pickles"]
   let mut corpus := ""
   for d in scriptDirs do
     for e in (← System.FilePath.readDir d) do

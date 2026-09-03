@@ -1,3 +1,5 @@
+import Pickles.Reflect.Soundness
+
 /-!
 # Pickles — the in-circuit kimchi verifier
 

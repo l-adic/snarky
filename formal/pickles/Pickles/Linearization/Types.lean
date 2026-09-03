@@ -43,7 +43,7 @@ inductive CurrOrNext where
   | curr
   /-- Its successor, used by the multi-row gates. -/
   | next
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- A gate's selector column, naming the gate whose selector polynomial is read. Includes
 the gates outside the modelled fragment (range check, foreign field, xor, rot): they occur
@@ -73,7 +73,7 @@ inductive GateType where
   | xor16
   /-- 64-bit rotation. -/
   | rot64
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- The lookup families a lookup selector can name. Outside the modelled fragment. -/
 inductive LookupPattern where
@@ -85,7 +85,7 @@ inductive LookupPattern where
   | rangeCheck
   /-- The foreign-field-multiplication lookup pattern. -/
   | foreignFieldMul
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- A column of the evaluation table, as a cell reference names it. -/
 inductive Column where
@@ -107,7 +107,7 @@ inductive Column where
   | lookupRuntimeSelector
   /-- The selector column of lookup family `p`. -/
   | lookupKindIndex (p : LookupPattern)
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- A constant the stream can push: a curve/field parameter or a numeric literal. -/
 inductive ConstantTerm where
@@ -117,7 +117,7 @@ inductive ConstantTerm where
   | mds (row col : Nat)
   /-- A numeric literal, decoded from the JSON's `"0x…"` string (see the preamble). -/
   | literal (value : Nat)
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- A verifier challenge the stream can push. -/
 inductive ChallengeTerm where
@@ -130,7 +130,7 @@ inductive ChallengeTerm where
   | gamma
   /-- The lookup joint combiner. Outside the modelled fragment. -/
   | jointCombiner
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- An optional-feature predicate, guarding a `SkipIf`/`SkipIfNot` branch. Every flag the
 deployed streams use is disabled in the modelled fragment, so every guarded branch is
@@ -158,7 +158,7 @@ inductive FeatureFlag where
   | tableWidth (n : Nat)
   /-- There are `n` lookups per row. -/
   | lookupsPerRow (n : Nat)
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 /-- One instruction of a linearization program. -/
 inductive PolishToken where
@@ -191,6 +191,6 @@ inductive PolishToken where
   | skipIf (f : FeatureFlag) (n : Nat)
   /-- Skip the next `n` tokens when feature `f` is DISABLED (the then-branch marker). -/
   | skipIfNot (f : FeatureFlag) (n : Nat)
-  deriving DecidableEq, Repr, Inhabited
+  deriving DecidableEq, Repr
 
 end Pickles.Linearization

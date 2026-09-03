@@ -1,0 +1,44 @@
+-- API root set for the pickles package (the in-circuit kimchi verifier, so far its
+-- linearization slice). Consumed by the workspace dead-code pass
+-- (formal/scripts/deadcode.sh); the axiom audit is pickles/scripts/check_axioms.lean.
+--
+-- The roots ARE the axiom gate's roots: the two circuit theorems, one per side of the
+-- cycle, and the two reflection endpoints they rest on. Everything else the package
+-- proves or defines — the token language, the machine, its simulation laws, the
+-- environments, the certificates — must stay reachable from these four, which is what
+-- keeps the dead-zero contract meaningful here.
+Pickles.Reflect.circuit_gateLinearization_fp
+Pickles.Reflect.circuit_gateLinearization_fq
+Pickles.Reflect.evaluate_fpTokens
+Pickles.Reflect.evaluate_fqTokens
+
+-- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
+-- derived instances — comparable and printable, as the PureScript's `Eq`/`Show` are.
+-- Consumed by `decide` and `#eval` at the REPL and by the fixture drivers' diagnostics.
+Pickles.Linearization.instDecidableEqCurrOrNext
+Pickles.Linearization.instReprCurrOrNext
+Pickles.Linearization.instDecidableEqGateType
+Pickles.Linearization.instReprGateType
+Pickles.Linearization.instDecidableEqLookupPattern
+Pickles.Linearization.instReprLookupPattern
+Pickles.Linearization.instDecidableEqColumn
+Pickles.Linearization.instReprColumn
+Pickles.Linearization.instDecidableEqConstantTerm
+Pickles.Linearization.instReprConstantTerm
+Pickles.Linearization.instDecidableEqChallengeTerm
+Pickles.Linearization.instReprChallengeTerm
+Pickles.Linearization.instDecidableEqFeatureFlag
+Pickles.Linearization.instReprFeatureFlag
+Pickles.Linearization.instDecidableEqPolishToken
+Pickles.Linearization.instReprPolishToken
+
+-- A `rfl` simp lemma (Linearization/Map.lean): used by `simp only` in both simulation
+-- proofs, where a definitional rewrite leaves no proof term for the walk to see.
+Pickles.Linearization.map_position
+
+-- The codegen surface (PicklesFixture): consumed by the `gen-tokens` executable
+-- (pickles/GenTokens.lean), a driver like the scripts.
+-- script-surface:begin
+Pickles.Fixture.readLinearization
+Pickles.Fixture.moduleSrc
+-- script-surface:end

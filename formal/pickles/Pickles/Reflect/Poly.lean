@@ -54,7 +54,7 @@ Unlike the instance above this may be noncomputable: it appears only in proofs, 
 the certificate's computation. -/
 
 /-- Evaluation at a point, as an `R`-algebra homomorphism out of the polynomial algebra.
-`aevalAlgHom_X` and `aevalAlgHom_C` are its computation rules. -/
+`aevalAlgHom_X` is its computation rule on variables; on constants `commutes` serves. -/
 noncomputable def aevalAlgHom {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ]
     (f : Fin n → σ) : CMvPolynomial n R →ₐ[R] σ :=
   { eval₂Hom (algebraMap R σ) f with
@@ -63,10 +63,5 @@ noncomputable def aevalAlgHom {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ
 @[simp] theorem aevalAlgHom_X {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ]
     (f : Fin n → σ) (i : Fin n) : aevalAlgHom (R := R) f (CMvPolynomial.X i) = f i :=
   aeval_X f i
-
-@[simp] theorem aevalAlgHom_C {n : ℕ} {σ : Type*} [CommRing σ] [Algebra R σ]
-    (f : Fin n → σ) (c : R) :
-    aevalAlgHom (R := R) f (CMvPolynomial.C c) = algebraMap R σ c :=
-  aeval_C f c
 
 end Pickles.Reflect
