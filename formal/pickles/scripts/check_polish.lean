@@ -9,23 +9,19 @@ import Lean.Data.Json
 /-!
 # The token interpreter against production
 
-The deployed linearization is a compiled `PolishToken` program, and until now this tree
-adjudicated it only BY VALUE: `kimchi/scripts/check_linearization.lean` checks the
-closed-form `gateLinearization` against production's `constant_term`, and says of the token
-stream that "it never appears in a Lean statement". This driver puts it in one.
-
-Two checks, on the same fixture pair the closed form is checked against:
+The deployed linearization is a compiled `PolishToken` program;
+`kimchi/scripts/check_linearization.lean` checks the closed-form `gateLinearization`
+against production's `constant_term`, and this driver checks the ported program against
+both. Two checks, on the same fixture pair:
 
 1. `evaluate tokens env = constant_term` — the ported stack machine reproduces production's
    own scalar, so the port is faithful to the Rust it was transcribed from.
 2. `evaluate tokens env = gateLinearization endo mds α e` — the token stream and the closed
    form agree at the production challenges.
 
-The second is the interesting one. It is a NUMERICAL INSTANCE of the reflection bridge —
-the symbolic identity "interpreting the deployed stream equals the closed-form gate
-linearization" that a `CMvPolynomial` development would have to prove. Passing here does not
-prove it, but it establishes the statement is true before any effort is spent proving it,
-and if that development turns out to be infeasible this check is what remains.
+The second is a numerical instance of the reflection certificate
+(`Pickles.Reflect.evaluate_fpTokens`), checked at production's challenges rather than
+symbolically.
 
 ## What the live stream exercises
 
@@ -36,10 +32,9 @@ uses `Witness`, `Coefficient` and the six modelled gates' `Index` columns; the `
 `Mds` and `EndoCoefficient` constants; and `Alpha` alone among the challenges.
 
 So `beta`, `gamma`, `jointCombiner`, `unnormalizedLagrangeBasis` and
-`vanishesOnZeroKnowledgeAndPreviousRows` are NOT adjudicated here — they are
-permutation- and lookup-side, outside the constant term, which is why
-`gateLinearization` does not take them either. They are supplied faithfully where the
-fixture carries the value, but this driver does not witness them.
+`vanishesOnZeroKnowledgeAndPreviousRows` are not adjudicated here: they are permutation-
+and lookup-side, outside the constant term, which is why `gateLinearization` does not take
+them either.
 -/
 
 open Lean FixtureKit Bulletproof Kimchi.Protocol Kimchi.Protocol.Linearization

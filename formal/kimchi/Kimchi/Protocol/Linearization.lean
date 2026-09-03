@@ -89,7 +89,7 @@ theorem alphaCombo_eq_sum_getD (α : F) :
 Every `Argument` carries a naturality square (`Kimchi.Lift.Argument.constraints_map`), so
 the whole gate linearization transports along an `F`-algebra homomorphism. This is what
 lets the linearization be computed once over a polynomial algebra and read back at the
-field: the polynomial identity, pushed through the evaluation homomorphism, IS the field
+field: the polynomial identity, pushed through the evaluation homomorphism, is the field
 identity. -/
 
 /-- Push a carrier map through the evaluations, cell by cell. -/
@@ -108,9 +108,7 @@ def Evals.map {R S : Type*} (φ : R → S) (e : Evals R) : Evals S where
   endoScalarSelector := φ e.endoScalarSelector
 
 /-- Mapping the evaluations and taking their cell environment is taking the cell
-environment and mapping it: both are `⟨φ ∘ e.w, φ ∘ e.wOmega, φ ∘ e.coeffs⟩`. The two
-spellings meet where `constraints_map` hands back the one and `gateLinearization` wants the
-other. -/
+environment and mapping it. -/
 private theorem evalEnv_map {R S : Type u} (φ : R → S) (e : Evals R) :
     evalEnv (e.map φ) = (evalEnv e).map φ := rfl
 
@@ -141,14 +139,9 @@ def gateLinearization {R : Type u} [CommRing R] [Algebra F R] (endo : F)
     + e.endoScalarSelector
       * alphaCombo α ((EndoScalar.argument (F := F)).constraints (evalEnv e))
 
-/-- **The gate linearization transports along an `F`-algebra map.** Computing it over `R`
-and pushing the result through `φ` is computing it over `S` from the pushed evaluations.
-
-The gate parameters `endo` and `mds` are untouched: they live at `F` and build the
-`Argument`s themselves, so `φ` never sees them. Each summand goes through in three moves —
-`φ` is a ring hom, so it splits the selector off the α-combination; the combination is a
-Horner fold, so `φ` distributes through it onto the constraint list; and that mapped list
-is `constraints_map`, the naturality square every gate already discharges. -/
+/-- The gate linearization transports along an `F`-algebra homomorphism: computing it over
+`R` and pushing the result through `φ` is computing it over `S` from the pushed
+evaluations. The gate parameters `endo` and `mds` live at `F`, so `φ` never sees them. -/
 theorem gateLinearization_map {R S : Type u} [CommRing R] [CommRing S]
     [Algebra F R] [Algebra F S] (φ : R →ₐ[F] S) (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (α : R) (e : Evals R) :

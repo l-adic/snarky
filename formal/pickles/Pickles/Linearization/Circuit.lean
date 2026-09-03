@@ -8,27 +8,36 @@ set_option mvcgen.warning false
 # The interpreter in circuit
 
 `Pickles.Linearization.evaluate` is generic in its monad, so the in-circuit reading of a
-token stream is not a second interpreter — it is the same one at `CircuitM`, where `mul`
-and `pow` emit constraints instead of returning values. What has to be proved is that the
-constraints it emits PIN the result: every satisfying valuation reads the circuit's output
-as the value the pure interpreter computes.
+token stream is the same interpreter at `CircuitM`, where `mul` and `pow` emit constraints
+instead of returning values. This file proves that the constraints it emits pin the result:
+every satisfying valuation reads the circuit's output as the value the pure interpreter
+computes.
 
-That is the relational half of the house pattern (`Snarky.mul_spec` and its siblings),
-and it is the statement the pickles verifier needs. Composed with
-`Pickles.Reflect.evaluate_fpTokens`, which identifies the pure reading with
-`Kimchi.Protocol.Linearization.gateLinearization`, it says the circuit computes the gate
-contribution to `ftEval0` — the wire protocol's own quantity, not a restatement of it.
+## Main definitions
 
-It is RELATIVE faithfulness throughout: that the circuit computes what the wire verifier
-computes. Whether the wire verifier is sound is a different question and out of scope.
+* `CircuitCompatible V ce pe`: a circuit environment computes a pure one under the
+  valuation `V`, with plain equations on the affine operations and weakest-precondition
+  triples on the constraint-emitting ones.
+* `Inputs`, `Inputs.toEnv`: the variables a circuit reading is given, and the circuit
+  environment built from them.
 
-## Why a second relation
+## Main results
 
-`Compatible` relates two environments by a carrier map, and will not serve here: the pure
-environment's `mul` is a function while the circuit's is monadic, so there is no map to
-push through it. `CircuitCompatible` is its sibling — plain equations on the affine
-operations, which are free in circuit and return values directly, and weakest-precondition
-triples on the constraint-emitting ones.
+* `evaluate_spec`: under `CircuitCompatible`, any satisfying valuation reads the circuit's
+  answer as the pure interpreter's.
+* `inputs_circuitCompatible`: `Inputs.toEnv` is compatible with `Evals.toEnv` at the
+  readings of its own variables.
+
+## Implementation notes
+
+This is relative faithfulness, in the pattern of `Snarky.mul_spec`: the circuit computes
+what the wire verifier computes; whether the wire verifier is sound is out of scope.
+
+The α-table is a lookup in circuit, so `alphaPow` sits on the affine side of
+`CircuitCompatible`. The table is finite, so `inputs_circuitCompatible` does not demand it
+read as `α^n` everywhere: the pure side is given the table's own readings, and the
+identification with `α^n` is made afterwards, only at the exponents the stream reads
+(`Pickles.Linearization.alphaExponents`).
 -/
 
 namespace Pickles.Linearization
@@ -38,12 +47,12 @@ open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c]
 
-/-- A circuit environment computes a pure one, under a valuation. The affine fields agree
-on the nose; the constraint-emitting fields agree in the sense that any satisfying
-valuation reads their result correctly. -/
+/-- A circuit environment computes a pure one under the valuation `V`: the affine fields
+agree on the nose, and any satisfying valuation reads the constraint-emitting fields'
+results correctly. -/
 structure CircuitCompatible (V : Valuation F)
     (ce : Env (CircuitM F (Builder V c)) (FVar F)) (pe : Env Id F) : Prop where
-  /-- Addition agrees; it is affine, so no constraint is emitted. -/
+  /-- Addition agrees. -/
   add : ∀ x y, (ce.add x y).val V = pe.add (x.val V) (y.val V)
   /-- Subtraction agrees. -/
   sub : ∀ x y, (ce.sub x y).val V = pe.sub (x.val V) (y.val V)
@@ -55,7 +64,7 @@ structure CircuitCompatible (V : Valuation F)
   var : ∀ col row, (ce.var col row).val V = pe.var col row
   /-- Cell post-processing agrees. -/
   cell : ∀ x, (ce.cell x).val V = pe.cell (x.val V)
-  /-- The α-powers agree — a table lookup in circuit, so affine. -/
+  /-- The α-powers agree. -/
   alphaPow : ∀ n, (ce.alphaPow n).val V = pe.alphaPow n
   /-- The MDS entries agree. -/
   mds : ∀ r c, (ce.mds r c).val V = pe.mds r c
@@ -75,9 +84,7 @@ structure CircuitCompatible (V : Valuation F)
   beta : ce.beta.val V = pe.beta
   /-- The `γ` challenges agree. -/
   gamma : ce.gamma.val V = pe.gamma
-  /-- Related branches select related results. Conditional rather than pinned to the
-  disabled branch, so the enabled case stays stateable — the feature predicate is a
-  parameter of both environments. -/
+  /-- Related branches select related results. -/
   ifFeature : ∀ (f : FeatureFlag) (t₁ n₁ : CircuitM F (Builder V c) (FVar F)) (t₂ n₂ : F),
     ⦃⌜True⌝⦄ t₁ ⦃⇓ a _ => ⌜a.val V = t₂⌝⦄ → ⦃⌜True⌝⦄ n₁ ⦃⇓ a _ => ⌜a.val V = n₂⌝⦄ →
       ⦃⌜True⌝⦄ ce.ifFeature f (fun _ => t₁) (fun _ => n₁)
@@ -107,12 +114,8 @@ private theorem circ_topOrZero (h : CircuitCompatible V ce pe) (s : EvalState (F
 /-- Reading a state cell by cell under the valuation. -/
 private abbrev rd (s : EvalState (FVar F)) : EvalState F := s.map (·.val V)
 
-/-- **The machine is pinned by the constraints it emits.** Any satisfying valuation reads
-the circuit run's final state as the pure run's, from the read of the same start.
-
-The induction is on the fuel and never inspects the token array. Each affine case rewrites
-with the corresponding `CircuitCompatible` equation and applies the hypothesis; each
-constraint-emitting case discharges through the corresponding triple. -/
+/-- Any satisfying valuation reads the circuit run's final state as the pure run's from
+the read of the same start. -/
 private theorem evalLoop_spec (h : CircuitCompatible V ce pe)
     (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)), ce.ifFeature f t n = n ())
     (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = n ())
@@ -236,9 +239,7 @@ private theorem evalLoop_spec (h : CircuitCompatible V ce pe)
           all_goals (intro hh; simp_all [circ_topOrZero h]; try rfl)
 
 open Std.Do in
-/-- **The entry point is pinned.** Any satisfying valuation reads the circuit's answer as
-the pure interpreter's. Registered as a `@[spec]` so consumers compose it with `mvcgen`,
-matching `Snarky.mul_spec` and its siblings. -/
+/-- Any satisfying valuation reads the circuit's answer as the pure interpreter's. -/
 @[spec] theorem evaluate_spec (h : CircuitCompatible V ce pe)
     (hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)), ce.ifFeature f t n = n ())
     (hdp : ∀ f (t n : Unit → Id F), pe.ifFeature f t n = n ())
@@ -258,22 +259,11 @@ matching `Snarky.mul_spec` and its siblings. -/
 
 /-! ## A concrete environment
 
-Everything above quantifies over an environment satisfying `CircuitCompatible`; this
-exhibits one. The circuit's inputs are variables already allocated by the caller — the
-proof's evaluations and challenges — together with the PRECOMPUTED table of α-powers.
+The circuit's inputs are variables already allocated by the caller, the proof's
+evaluations and challenges, together with the precomputed table of α-powers that
+`precomputeAlphaPowers` builds in the PureScript. -/
 
-That table is the reason `alphaPow` sits on the affine side of `CircuitCompatible`: in
-circuit it is a lookup, costing nothing, where computing `α^n` per occurrence would emit
-rows at each of the stream's 124 α-sites. It has to be built before the interpreter runs
-and handed in, exactly as `precomputeAlphaPowers` does in the PureScript — and it is
-FINITE, so the compatibility statement must not demand it read as `α^n` everywhere. It
-demands nothing: the pure side is given the table's own readings, and the identification
-with `α^n` is made afterwards, only at the exponents the stream reads
-(`Pickles.Linearization.alphaExponents`). -/
-
-/-- All lookup columns as the circuit constant zero — the modelled fragment's
-instantiation. `LookupEvals.zero` will not serve: `FVar` has no `Zero` instance, the
-circuit's zero being the constant expression rather than a field element. -/
+/-- All lookup columns as the circuit constant zero. -/
 def lookupZero [Zero F] : Kimchi.Protocol.Linearization.LookupEvals (FVar F) where
   sorted _ _ := .const 0
   aggreg _ := .const 0
@@ -282,7 +272,7 @@ def lookupZero [Zero F] : Kimchi.Protocol.Linearization.LookupEvals (FVar F) whe
   runtimeSelector _ := .const 0
   kindIndex _ := .const 0
 
-/-- Read under any valuation, the circuit's zero columns are the field's. -/
+/-- `lookupZero` reads as `LookupEvals.zero` under any valuation. -/
 @[simp] theorem lookupZero_map [Field F] {V : Valuation F} :
     (lookupZero (F := F)).map (·.val V)
       = Kimchi.Protocol.Linearization.LookupEvals.zero := by
@@ -305,12 +295,10 @@ structure Inputs (F : Type) where
   vanishes : FVar F
 
 open Kimchi.Protocol.Linearization in
-/-- The in-circuit environment. `add`/`sub` are the affine folds and emit nothing; `mul`
-and `pow` are the gadgets; the gate parameters and literals enter as constants.
-
-`unnormalizedLagrangeBasis` is a parameter, `ulb`, any gadget at all. The deployed stream
-never reaches it with the modelled features disabled (`Pickles.Reflect.visited_fpTokens_noUlb`),
-so the circuit theorems hold for every choice and say nothing about it. -/
+/-- The circuit environment at the inputs `inp`: `add` and `sub` are affine and emit
+nothing, `mul` and `pow` are the gadgets, and the gate parameters and literals enter as
+constants. The Lagrange-basis gadget `ulb` is a parameter the circuit theorems say nothing
+about, since the deployed streams never reach it with the modelled features disabled. -/
 def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
     (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) :
@@ -352,22 +340,17 @@ def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
   gamma := inp.gamma
   ifFeature f onTrue onFalse := if feat f then onTrue () else onFalse ()
 
-/-- Replacing the Lagrange basis of an `Inputs.toEnv` is building it with the other one. -/
+/-- Replacing the Lagrange basis of an `Inputs.toEnv` environment builds the environment
+with the other one. -/
 theorem Inputs.toEnv_withUlb (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F)) (feat : FeatureFlag → Bool)
     (ulb₀ ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) :
     (inp.toEnv endo mds lk feat ulb₀).withUlb ulb = inp.toEnv endo mds lk feat ulb := rfl
 
 open Kimchi.Protocol.Linearization in
-/-- **The concrete environment computes the specified one.** Under any satisfying
-valuation, the circuit environment's readings are the pure environment built from those
-same readings, with the α-table read as it is: the pure side's table is the circuit
-table's own readings rather than the powers of `α`, so nothing is assumed about it. That
-the readings are the powers of `α` where the stream looks is a separate obligation, on
-`alphaExponents` alone — see `Pickles.Reflect.circuit_gateLinearization` — which is what
-lets a finite precomputed table (`precomputeAlphaPowers`) discharge it. The `α` here only
-seeds the base environment and is overwritten by the table. The Lagrange basis is the
-constant zero on both sides; `evaluate_withUlb` lifts the circuit theorem to any gadget. -/
+/-- `Inputs.toEnv` is compatible with the pure environment built from the readings of its
+own variables, with the α-table replaced by the circuit table's readings. Nothing is
+assumed about the table; `α` only seeds the base environment. -/
 theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))

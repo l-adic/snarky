@@ -10,57 +10,41 @@ import Pasta.Endo
 /-!
 # The reflection certificate
 
-The deployed token stream and the closed-form gate linearization are THE SAME POLYNOMIAL.
-
-Both sides are run at `CMvPolynomial 56 Fp`, one distinct formal variable per input the
-interpreter's environment reads, and the resulting polynomials are compared. This is not
-agreement at production challenges — `pickles/scripts/check_polish.lean` already checks
-that — but symbolic equality, from which the identity at every evaluation follows by
-`Pickles.Linearization.evaluate_map` and
+The deployed token stream and the closed-form gate linearization are the same polynomial.
+Both sides are run at `CMvPolynomial 64 K`, one formal variable per input the interpreter's
+environment reads, and the resulting polynomials are compared by `native_decide`. The
+identity at every evaluation then follows by `Pickles.Linearization.evaluate_map` and
 `Kimchi.Protocol.Linearization.gateLinearization_map`.
 
-## Why this is cheap
+## Main results
 
-The whole 4220-token program collapses to 486 monomials. The linearization is a SUM of
-small per-gate constraints rather than a nested product, so normalising it does not blow
-up — Poseidon's degree-7 S-boxes included. The proof therefore costs one compiled
-polynomial comparison, and the two transport lemmas above are generic and cost nothing per
-token.
+* `evaluate_fpTokens`, `evaluate_fqTokens`: at every evaluation record and every choice of
+  challenges, each deployed stream's pure value is `gateLinearization`.
+* `alphaExponents_fpTokens_le`, `alphaExponents_fqTokens_le`: each stream reads the
+  α-table at exponents at most `alphaBound`.
+* `visited_fpTokens_noUlb`, `visited_fqTokens_noUlb`: with the modelled features disabled,
+  neither stream reaches an `unnormalizedLagrangeBasis`.
 
-## The trust surface
+## Implementation notes
 
-This module is the ONLY place in the tree that uses `native_decide` outside the upstream
-CompElliptic certificates and pasta's two declared GLV anchors, and it is named in each
-package's axiom gate for exactly that reason. Besides the two certificates it decides one
-more fact about the closed streams — how far they read the α-table, at the end of the
-module — which is bookkeeping of the same kind and lives here so the gate has one module
-to trust. It trusts the compiler through
-`Lean.trustCompiler`. The alternative, kernel `decide`, is not viable on a 486-monomial
-comparison over a 255-bit field.
+The 4220-token program collapses to 486 monomials: the linearization is a sum of small
+per-gate constraints rather than a nested product, so normalising it does not blow up. The
+proof costs one compiled polynomial comparison; the transport lemmas are generic and cost
+nothing per token.
 
-## From the certificate to the general statement
+This module is the only place in the tree that uses `native_decide` outside the upstream
+CompElliptic certificates and `Pasta/Endo.lean`, and it is named in the pickles axiom gate
+for that reason. It trusts the compiler through `Lean.trustCompiler`; kernel `decide` is
+not viable on a 486-monomial comparison over a 255-bit field. The reachability facts are
+decided here too so the gate has one module to trust.
 
-The certificate is an equality of POLYNOMIALS. `evaluate_fpTokens`, at the end of this
-module, is what one actually wants: at every evaluation record and every choice of
-challenges, the deployed stream agrees with the closed form. The transport is
-`toEnv_compatible` (the environment is natural), then `evaluate_map` (a machine run crosses
-the evaluation homomorphism) and `gateLinearization_map` (so does the closed form, resting
-on each gate's `constraints_map`). Nothing in it inspects the token array, so its cost is
-independent of the stream's length.
+`endo` and `mds` are the deployed constants rather than variables: they parameterise the
+gates' `Argument`s, which are defined over the field. The certificate is therefore
+per-curve, and both sides of the cycle are certified: `Fp`, Vesta's scalar field, where a
+Pallas proof is verified, and `Fq`, Pallas's scalar field, where a Vesta proof is verified.
 
-Everything between the certificate and that theorem is `private`: the symbolic apparatus
-exists only to state and discharge the certificate, and nothing outside should depend on
-the variable numbering.
-
-## Scope
-
-`endo` and `mds` are the DEPLOYED constants, not variables: they parameterise the gates'
-`Argument`s, which are defined over the field, so they cannot be formal. The certificate is
-therefore per-curve, and both sides of the cycle are certified here: `fp_reflects` over
-`Fp`, Vesta's scalar field, where a Pallas proof is verified; and `fq_reflects` over `Fq`,
-Pallas's scalar field, where a Vesta proof is verified. Each reads its own dump —
-`fpTokens` and `fqTokens` — and its own endomorphism constant, `Pasta.pallasEndo` matching
-the `endo` recorded in `kimchi/fixtures/linearization_vesta.json`.
+Everything between the certificates and the endpoints is `private`: nothing outside should
+depend on the variable numbering.
 -/
 
 namespace Pickles.Reflect
@@ -70,14 +54,10 @@ open CPoly Bulletproof Kimchi.Protocol.Linearization Pickles.Linearization
 variable {K : Type} [Field K] [BEq K] [LawfulBEq K]
 
 /-- One formal variable per environment input: 15 witness cells at `ζ`, 15 at `ζω`, 15
-coefficients, the six modelled gates' selectors, then `α`, `β`, `γ`, the joint combiner, the
-zero-knowledge vanishing evaluation, and finally the permutation columns `z`, `z(ζω)` and
-the six σ evaluations.
-
-The permutation columns are given variables even though neither side reads them. They cost
-nothing — an unread variable simply does not occur in either polynomial — and they let the
-transported evaluations be literally `e` rather than `e` with those fields zeroed, which
-is what spares the bridge a congruence lemma for each of `toEnv` and `gateLinearization`. -/
+coefficients, the six modelled gates' selectors, then `α`, `β`, `γ`, the joint combiner,
+the zero-knowledge vanishing evaluation, and the permutation columns `z`, `z(ζω)` and the
+six `σ` evaluations. The permutation columns are unread by both sides; giving them
+variables lets the transported evaluations be literally `e`. -/
 private abbrev NV : ℕ := 64
 
 /-- The polynomial algebra the identity is decided in. -/
@@ -101,11 +81,8 @@ private def symEvals : Evals (MPoly K) where
   emulSelector := xv 49
   endoScalarSelector := xv 50
 
-/-- The interpreter environment at the formal evaluations. `β`, `γ`, the joint combiner and
-the vanishing evaluation get their own variables even though the constant term reads none
-of them: that way the identity holds for every value of each, rather than for one choice.
-The Lagrange basis cannot be given a variable — it is a function — and the live stream
-reaches it zero times, both occurrences lying inside disabled branches. -/
+/-- The interpreter environment at the formal evaluations, with a variable for each
+challenge. -/
 private abbrev symEnv (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K) : Env Id (MPoly K) :=
   symEvals.toEnv endo mds (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0)
     LookupEvals.zero (fun _ => false)
@@ -125,9 +102,7 @@ private def chalOf (α β γ jc van : K) : Fin 5 → K
 private def accOf (e : Evals K) : Fin 2 → K
   | 0 => e.z | 1 => e.zOmega
 
-/-- The assignment sending each formal variable to its intended value. Every branch is a
-RANGE test, so each condition is one `omega` away — an `if k = 45 then …` chain would put
-thirteen equality side conditions in front of the later blocks. -/
+/-- The assignment sending each formal variable to its intended value. -/
 private def valsOf (α β γ jc van : K) (e : Evals K) (i : Fin NV) : K :=
   let k : ℕ := i
   if h : k < 15 then e.w ⟨k, h⟩
@@ -211,9 +186,8 @@ private theorem evalAt_chal (α β γ jc van : K) (e : Evals K) :
     · rw [evalAt_xv (h := by simp only [NV]; omega)]
       simp [valsOf, chalOf]
 
-/-- **The bridge.** A certificate over the polynomial algebra yields the identity at every
-evaluation record and every choice of challenges. Field-generic and token-generic: the two
-deployed streams differ only in which certificate is supplied. -/
+/-- A certificate over the polynomial algebra yields the identity at every evaluation
+record and every choice of challenges. -/
 private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
     (toks : Array PolishToken)
     (hcert : (evaluate (symEnv endo mds) toks : MPoly K)
@@ -242,23 +216,21 @@ abbrev symMds : Kimchi.Gate.Poseidon.Mds Fp :=
 
 instance : DecidableEq (MPoly Fp) := CPoly.Lawful.instDecidableEq
 
-/-- The stream's value over the polynomial algebra. Named rather than written inline:
-`evaluate` lands in `Id _`, and instance search for `DecidableEq` is syntactic. -/
+/-- The `Fp` stream's value over the polynomial algebra. -/
 private def symValueP : MPoly Fp := evaluate (symEnv Pasta.pallasEndo symMds) fpTokens
 
-/-- **The certificate, `Fp` side.** -/
+/-- The certificate over `Fp`. -/
 private theorem fp_reflects :
     symValueP = gateLinearization Pasta.pallasEndo symMds (xv 51) symEvals := by
   native_decide
 
-/-- The `Fp` stream reads `unnormalizedLagrangeBasis` at no visited position: its six
-occurrences sit inside disabled branches. -/
+/-- With every feature disabled, the `Fp` stream reaches no `unnormalizedLagrangeBasis`. -/
 theorem visited_fpTokens_noUlb :
     ∀ i ∈ visitedAll fpTokens, noUlbAt fpTokens i = true := by
   native_decide
 
-/-- **The deployed `Fp` stream computes the gate linearization**, whatever the Lagrange
-basis reads as. -/
+/-- The deployed `Fp` stream computes the gate linearization at every evaluation record,
+every choice of challenges, and every Lagrange basis. -/
 theorem evaluate_fpTokens (α β γ jc van : Fp) (ulb : Bool → Int → Fp) (e : Evals Fp) :
     (evaluate (e.toEnv Pasta.pallasEndo symMds α β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fpTokens : Fp)
@@ -280,18 +252,18 @@ instance : DecidableEq (MPoly Fq) := CPoly.Lawful.instDecidableEq
 /-- The `Fq` stream's value over the polynomial algebra. -/
 private def symValueQ : MPoly Fq := evaluate (symEnv Pasta.vestaEndo symMdsQ) fqTokens
 
-/-- **The certificate, `Fq` side.** -/
+/-- The certificate over `Fq`. -/
 private theorem fq_reflects :
     symValueQ = gateLinearization Pasta.vestaEndo symMdsQ (xv 51) symEvals := by
   native_decide
 
-/-- The `Fq` stream reads `unnormalizedLagrangeBasis` at no visited position. -/
+/-- With every feature disabled, the `Fq` stream reaches no `unnormalizedLagrangeBasis`. -/
 theorem visited_fqTokens_noUlb :
     ∀ i ∈ visitedAll fqTokens, noUlbAt fqTokens i = true := by
   native_decide
 
-/-- **The deployed `Fq` stream computes the gate linearization**, whatever the Lagrange
-basis reads as. -/
+/-- The deployed `Fq` stream computes the gate linearization at every evaluation record,
+every choice of challenges, and every Lagrange basis. -/
 theorem evaluate_fqTokens (α β γ jc van : Fq) (ulb : Bool → Int → Fq) (e : Evals Fq) :
     (evaluate (e.toEnv Pasta.vestaEndo symMdsQ α β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fqTokens : Fq)
@@ -301,26 +273,20 @@ theorem evaluate_fqTokens (α β γ jc van : Fq) (ulb : Bool → Int → Fq) (e 
     evaluate_withUlb _ _ _ (fun _ _ _ => rfl) visited_fqTokens_noUlb]
   exact of_certificate _ _ _ fq_reflects α β γ jc van e
 
-/-! ## What the streams reach
+/-! ## How far the α-table is read
 
-Two more facts decided from the closed arrays, each removing a hypothesis from the
-statements about the deployed streams.
-
-The streams read `alphaPow` only through the Alpha+Pow peephole, so the exponents reached
-are `alphaExponents` of the array — a syntactic fact, decided here from the same closed
-term the certificates are decided from. It is what a finite precomputed table needs: the
-circuit's obligation on the table stops at this bound instead of ranging over every
-natural. Both deployed streams stop at `31`; the PureScript table
+The exponents a stream reads are `alphaExponents` of its array, decided here from the same
+closed term as the certificates. Both deployed streams stop at `31`; the PureScript table
 (`Pickles.Linearization.Env.AlphaPowersLen`) holds `71`. -/
 
 /-- The largest exponent at which either deployed stream reads the α-table. -/
 def alphaBound : Nat := 31
 
-/-- The `Fp` stream reads the α-table at exponents `≤ alphaBound` only. -/
+/-- The `Fp` stream reads the α-table at exponents at most `alphaBound`. -/
 theorem alphaExponents_fpTokens_le : ∀ n ∈ alphaExponents fpTokens, n ≤ alphaBound := by
   native_decide
 
-/-- The `Fq` stream reads the α-table at exponents `≤ alphaBound` only. -/
+/-- The `Fq` stream reads the α-table at exponents at most `alphaBound`. -/
 theorem alphaExponents_fqTokens_le : ∀ n ∈ alphaExponents fqTokens, n ≤ alphaBound := by
   native_decide
 

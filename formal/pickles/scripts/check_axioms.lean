@@ -10,14 +10,12 @@ transport lemmas, the decided α-bound — is in their dependency closure, and
 `collectAxioms` walks the closure, so a stray axiom anywhere beneath them is caught here
 without being named.
 
-`Pickles/Reflect/Certificate.lean` is the ONLY module in this tree permitted to decide by
-`native_decide`: the two reflection certificates and the α-table bound of the closed
-streams. Every root rests on it, so every root may carry that module's certificates and
-nothing else; the rest of the closure must reduce to the standard logical axioms alone,
-since its content is ordinary proof and a certificate appearing there would mean a
-computation had leaked into a law.
+`Pickles/Reflect/Certificate.lean` is the only module in this tree permitted to decide by
+`native_decide`: the two reflection certificates and the reachability facts about the
+closed streams. Every root rests on it, so every root may carry that module's certificates
+and nothing else; the rest of the closure must reduce to the standard logical axioms alone.
 
-The discriminator is the DEFINING MODULE rather than a name prefix, following the kimchi
+The discriminator is the defining module rather than a name prefix, following the kimchi
 gate: an axiom's name is forgeable from inside a matching `namespace` block, its defining
 module is not.
 -/
@@ -36,14 +34,12 @@ def roots : List Name :=
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 
-/-- The roots allowed to carry a certified `native_decide` witness: all of them, each
-resting on `Certificate.lean`'s decisions — the polynomial identity for the endpoints, and
-that plus the α-table bound for the circuit theorems. -/
+/-- The roots allowed to carry a `native_decide` certificate: all of them, each resting on
+`Certificate.lean`'s decisions. -/
 def deployedRoots : List Name := roots
 
-/-- A trusted `native_decide` certificate: an upstream CompElliptic module (the Pasta field
-and curve certificates), `Pasta/Endo.lean` (the two declared GLV eigenvalue anchors), or
-`Pickles/Reflect/Certificate.lean` (the two linearization certificates). -/
+/-- A trusted `native_decide` certificate: one defined in an upstream CompElliptic module,
+in `Pasta/Endo.lean`, or in `Pickles/Reflect/Certificate.lean`. -/
 def isTrustedNativeDecide (env : Environment) (ax : Name) : Bool :=
   (ax.toString.splitOn "native_decide").length > 1 &&
     match env.getModuleFor? ax with

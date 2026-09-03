@@ -2,38 +2,29 @@
 # The linearization token language
 
 The `PolishToken` alphabet of kimchi's linearization, transcribed from
-`packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs` — itself the
+`packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs`, itself the
 PureScript image of proof-systems' `kimchi::circuits::expr::PolishToken`. A linearization
-is a reverse-Polish program over this alphabet, dumped from Rust into
-`packages/pickles-codegen/rust/output/{fp,fq}.json` and rendered into
-`Linearization/{Fp,Fq}.lean` by `scripts/gen_tokens.lean`. That JSON is the source of
-truth: the PureScript `Pickles.Linearization.{Pallas,Vesta}` modules are generated from
-it, so this transcription
-and the PureScript one are siblings rather than parent and child, and a disagreement
-between them is detectable.
+is a reverse-Polish program over this alphabet. It is dumped from Rust into
+`packages/pickles-codegen/rust/output/{fp,fq}.json`, from which both the PureScript modules
+`Pickles.Linearization.{Pallas,Vesta}` and the Lean modules `Linearization/{Fp,Fq}.lean`
+(via `scripts/gen_tokens.lean`) are generated, so the two transcriptions are independent
+and a disagreement between them is detectable.
 
-The stream is a **stack machine**, not an expression tree. `Dup`, `Store` and `Load` give
-sharing; `SkipIfNot`/`SkipIf` encode a feature-flag conditional as two bounded
-sub-sequences, laid out as
+The program is a stack machine rather than an expression tree: `dup`, `store` and `load`
+give sharing, and a feature-flag conditional is laid out as
+`skipIfNot f n₁ · e₁ · skipIf f n₂ · e₂`, with `e₁` taken when the feature is enabled and
+`e₂` otherwise. The semantics are in `Pickles.Linearization.Interpreter`.
 
-  `SkipIfNot f n₁ · e₁ · SkipIf f n₂ · e₂`
+## Implementation notes
 
-where `e₁` is taken when the feature is enabled and `e₂` when it is not. The semantics live
-in `Pickles.Linearization.Interpreter`; this module is the alphabet alone.
+`ConstantTerm.literal` carries a `Nat` where the PureScript carries the `"0x…"` string and
+parses it inside the environment; decoding once at parse time keeps the interpreter's
+constant lookup total.
 
-## Two deviations from the PureScript, both deliberate
-
-`ConstantTerm.literal` carries a `Nat`, where the PureScript carries the raw `"0x…"` string
-and defers to a partial `parseHex` inside the environment. Decoding the hex once, at parse
-time, keeps the interpreter's constant lookup total and reduces the environment's literal
-operation to a `Nat`-cast. The denoted values are identical; only the representation moves
-earlier.
-
-Column and slot indices are `Nat` rather than bounded types, mirroring the untyped numbers
-in the JSON. Range facts (`Witness` below 15, `Load` inside the store) belong to the
-well-formedness predicate over a concrete stream, where they are decidable, rather than to
-the alphabet — the deployed interpreter itself tolerates out-of-range indices by
-defaulting, and that behaviour must be modelled rather than typed away.
+Column and slot indices are `Nat` rather than bounded types, mirroring the JSON. The
+deployed interpreter tolerates out-of-range indices by defaulting, so that behaviour is
+modelled rather than ruled out by typing; range facts about a concrete stream belong to a
+decidable well-formedness predicate.
 -/
 
 namespace Pickles.Linearization
@@ -46,9 +37,8 @@ inductive CurrOrNext where
   | next
   deriving DecidableEq, Repr
 
-/-- A gate's selector column, naming the gate whose selector polynomial is read. Includes
-the gates outside the modelled fragment (range check, foreign field, xor, rot): they occur
-in the deployed stream, inside feature-flagged branches. -/
+/-- The gate whose selector polynomial an `index` column reads. Gates outside the modelled
+fragment occur in the deployed stream inside feature-flagged branches. -/
 inductive GateType where
   /-- The generic gate. -/
   | generic
@@ -122,8 +112,7 @@ inductive ConstantTerm where
 
 /-- A verifier challenge the stream can push. -/
 inductive ChallengeTerm where
-  /-- The constraint-aggregation challenge. Always emitted as part of `Expr::Pow(alpha, n)`,
-  which is what licenses the interpreter's Alpha+Pow peephole. -/
+  /-- The constraint-aggregation challenge `α`; kimchi emits it only as `Expr::Pow(alpha, n)`. -/
   | alpha
   /-- The permutation challenge `β`. -/
   | beta
@@ -133,9 +122,8 @@ inductive ChallengeTerm where
   | jointCombiner
   deriving DecidableEq, Repr
 
-/-- An optional-feature predicate, guarding a `SkipIf`/`SkipIfNot` branch. Every flag the
-deployed streams use is disabled in the modelled fragment, so every guarded branch is
-dead — see the specialization pass in `Pickles.Linearization.Interpreter`. -/
+/-- An optional-feature predicate guarding a `skipIf`/`skipIfNot` branch. Every flag is
+disabled in the modelled fragment. -/
 inductive FeatureFlag where
   /-- The range-check-0 gate is enabled. -/
   | rangeCheck0
@@ -181,16 +169,16 @@ inductive PolishToken where
   | sub
   /-- Push the zero-knowledge/previous-rows vanishing evaluation. -/
   | vanishesOnZeroKnowledgeAndPreviousRows
-  /-- Push the unnormalized Lagrange basis at `offset`; `zkRows` selects the shifted
-  domain. The offset is signed — the deployed streams use `0` and `-1`. -/
+  /-- Push the unnormalized Lagrange basis at the signed `offset`; `zkRows` selects the
+  shifted domain. -/
   | unnormalizedLagrangeBasis (zkRows : Bool) (offset : Int)
   /-- Append the top of the stack to the store, keeping it on the stack. -/
   | store
   /-- Push store slot `i`. -/
   | load (i : Nat)
-  /-- Skip the next `n` tokens when feature `f` is ENABLED (the else-branch marker). -/
+  /-- Skip the next `n` tokens when feature `f` is enabled: the else-branch marker. -/
   | skipIf (f : FeatureFlag) (n : Nat)
-  /-- Skip the next `n` tokens when feature `f` is DISABLED (the then-branch marker). -/
+  /-- Skip the next `n` tokens when feature `f` is disabled: the then-branch marker. -/
   | skipIfNot (f : FeatureFlag) (n : Nat)
   deriving DecidableEq, Repr
 

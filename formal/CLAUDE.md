@@ -345,10 +345,14 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
   results), `*_scalar` (scalar-field analogue).
 - **`F p` / `ZMod p`** for the field; `[Field F] [DecidableEq F]` (add `[CharP F p]` when the
   characteristic matters). Follow **Mathlib naming conventions** for new lemmas.
-- **Docstrings are dense and that's intentional** — every gate file opens with a multi-paragraph
-  preamble: the gate's source (link the `.purs` / `.rs` / proof-systems origin), the column
-  layout, the constraint transcription, and a prose statement of what each theorem means
-  *before* its signature. Match this house style; it's what makes the formalization auditable.
+- **Docstrings follow Mathlib's documentation conventions.** A module docstring opens with
+  `# Title`, a short description, then `## Main definitions`, `## Main results` and
+  `## Implementation notes` as warranted; design rationale lives there or in the commit
+  message. A declaration docstring is one to three declarative sentences saying what the
+  declaration is or states, with no headline emphasis (no bold sentences, no capitals for
+  stress). The gate files under `Kimchi/Gate/` predate this and carry longer preambles
+  (the gate's source, column layout and constraint transcription); keep those accurate,
+  and write new code to the Mathlib standard.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →
   completeness → runnable `#eval` example → supporting lemmas). Keep section docstrings in sync
   with reality (see below).

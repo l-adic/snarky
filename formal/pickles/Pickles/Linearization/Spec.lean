@@ -5,34 +5,29 @@ import Kimchi.Protocol.Linearization
 # The interpreter's environment, from the verifier's own evaluations
 
 `Kimchi.Protocol.Linearization.gateLinearization` takes exactly the atoms the deployed
-token stream reads — `(endo, mds, α, e)` — so the interpreter environment that adjudicates
-the stream against it should be BUILT from those, not assembled independently. `toEnv` is
-that adapter, and it is the single definition the fixture driver and any reflection proof
-both go through.
+token stream reads, `(endo, mds, α, e)`, so the interpreter environment that adjudicates
+the stream against it is built from those.
 
-## What `toEnv` decides
+## Main definitions
 
-Four choices, none of them forced by the type:
+* `LookupEvals`: the lookup columns' evaluations, which kimchi's `Evals` does not carry.
+* `Evals.toEnv`: the pure interpreter environment at an evaluation record, over any
+  `F`-algebra `R`.
 
-* **The feature predicate and the lookup evaluations are PARAMETERS**, following the
-  PureScript, where `ifFeature` is a field of `Env` and the eval point carries lookup
-  accessors — both specialised at the instantiation site rather than inside the
-  environment. The deployed instantiation passes `fun _ => false` and `LookupEvals.zero`,
-  which is CLAUDE.md's modelled fragment; pinning them here instead would make the enabled
-  case unstateable rather than merely unproved.
-* **Out-of-range indices read as zero**, mirroring the interpreter's own defaulting rather
-  than ruling them out by typing. Not reachable in the live stream.
-* **`literal` casts in `F` and then embeds**, rather than casting straight into `R`. The
-  two agree (`algebraMap` is a ring homomorphism, so it commutes with `Nat.cast`), but a
-  cast into `R` is computed by `Nat.unaryCast` at a polynomial algebra — one `+ 1` per
-  unit — and the dumped literals run to 255 bits. Casting in the field first keeps the
-  reflection finite. Soundness rests on the literals being canonical residues of `F`'s
-  characteristic, which is why a reflection must work over `ZMod p` and not `ℤ`.
-* **`β`, `γ`, `jointCombiner` and the ZK-vanishing evaluation are parameters**, though the
-  constant term reads none of them. Taking them lets a reflection give each a fresh
-  variable and conclude for every value, instead of for one choice. `ulb` cannot get that
-  treatment — it is a function, so it is supplied outright; the live stream reaches it zero
-  times, both occurrences sitting inside disabled branches.
+## Implementation notes
+
+The feature predicate, the lookup evaluations, the challenges `β`, `γ`, the joint combiner
+and the vanishing evaluation are parameters rather than pinned, following the PureScript;
+the deployed instantiation passes `fun _ => false`, `LookupEvals.zero` and the recorded
+values. Leaving them free lets a reflection give each a fresh variable and conclude for
+every value.
+
+Out-of-range column indices read as zero, mirroring the interpreter's own defaulting.
+
+`literal` casts in `F` and then embeds into `R` rather than casting into `R` directly: at a
+polynomial algebra a `Nat` cast is computed by `Nat.unaryCast`, one `+ 1` per unit, and the
+dumped literals run to 255 bits. This is why a reflection must work over `ZMod p` and not
+`ℤ`: the literals are canonical residues of `F`'s characteristic.
 -/
 
 namespace Kimchi.Protocol.Linearization
@@ -45,12 +40,8 @@ variable {F : Type} [Field F] {R : Type} [CommRing R] [Algebra F R]
 
 /-! ## The interpreter environment -/
 
-/-- The lookup columns' evaluations. Kimchi's `Evals` has no fields for these — the
-modelled fragment excludes lookups — so they enter `toEnv` as a separate record, mirroring
-the accessors PureScript's eval point carries (`lookupAggreg`, `lookupSorted`, …). The
-deployed instantiation passes zeros, exactly as the PureScript harness does; carrying them
-as a PARAMETER rather than pinning them inside `toEnv` is what leaves the door open if the
-protocol formalization ever grows lookups. -/
+/-- The lookup columns' evaluations, which kimchi's `Evals` has no fields for. The deployed
+instantiation passes `LookupEvals.zero`. -/
 structure LookupEvals (R : Type) where
   /-- Sorted lookup column `i` at a row. -/
   sorted : Nat → CurrOrNext → R
@@ -65,7 +56,7 @@ structure LookupEvals (R : Type) where
   /-- The selector of a lookup family. -/
   kindIndex : LookupPattern → R
 
-/-- All lookup columns read as zero: the modelled fragment's instantiation. -/
+/-- All lookup columns read as zero. -/
 def LookupEvals.zero [Zero R] : LookupEvals R where
   sorted _ _ := 0
   aggreg _ := 0
@@ -84,8 +75,7 @@ def LookupEvals.map {S : Type} (φ : R → S) (lk : LookupEvals R) : LookupEvals
   kindIndex p := φ (lk.kindIndex p)
 
 omit [CommRing R] in
-/-- Zero is preserved: the modelled fragment's lookup evaluations transport to themselves.
--/
+/-- `LookupEvals.zero` transports to itself along a zero-preserving map. -/
 @[simp] theorem LookupEvals.map_zero {S : Type} [Zero R] [Zero S] {φ : R → S} (h0 : φ 0 = 0) :
     LookupEvals.map φ LookupEvals.zero = (LookupEvals.zero : LookupEvals S) := by
   simp [LookupEvals.map, LookupEvals.zero, h0]
@@ -93,8 +83,7 @@ omit [CommRing R] in
 
 
 open Pickles.Linearization in
-/-- The environment the deployed token stream is read in, built from the same atoms
-`gateLinearizationAt` takes. See the preamble for the four choices this makes. -/
+/-- The pure interpreter environment at the evaluations `e`, over an `F`-algebra `R`. -/
 def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
     (α β γ jc van : R) (ulb : Bool → Int → R) (lk : LookupEvals R)
     (feat : FeatureFlag → Bool) (e : Evals R) : Env Id R where
@@ -187,7 +176,8 @@ variable (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
     (e.toEnv endo mds α β γ jc van ulb lk feat).ifFeature f t n
       = if feat f then t () else n () := rfl
 
-/-- Replacing the Lagrange basis of a `toEnv` is building it with the other one. -/
+/-- Replacing the Lagrange basis of a `toEnv` environment builds the environment with the
+other one. -/
 theorem Evals.toEnv_withUlb (ulb₀ : Bool → Int → R) :
     (e.toEnv endo mds α β γ jc van ulb₀ lk feat).withUlb (fun zk off => pure (ulb zk off))
       = e.toEnv endo mds α β γ jc van ulb lk feat := rfl

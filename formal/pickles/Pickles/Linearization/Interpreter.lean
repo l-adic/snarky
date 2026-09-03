@@ -4,112 +4,88 @@ import Pickles.Linearization.Types
 # The linearization stack machine
 
 The interpreter for `PolishToken` programs, ported from
-`packages/pickles/src/Pickles/Linearization/Interpreter.purs` — itself OCaml
+`packages/pickles/src/Pickles/Linearization/Interpreter.purs`, itself OCaml
 `plonk_checks.ml`'s expression evaluator.
 
-## One interpreter, not two
+## Main definitions
 
-The PureScript has `evaluate` (pure, over `Env a`) and `evaluateM` (in circuit, over
-`EnvM f n`, where `mul` and `pow` emit constraints). They are separate functions because
-PureScript has no cheap way to abstract "pure or monadic". Here they are ONE definition,
-generic in the monad: `m := Id` recovers the pure reading, and the circuit reading is the
-same function at the constraint-building monad.
+* `Env m F`: the operations of the machine at a carrier `F` and a monad `m`. The pure
+  reading is `m := Id`; the circuit reading is the same interpreter at `CircuitM`, where
+  `mul` and `pow` emit constraints.
+* `evalLoop`, `evaluate`: the machine and its entry point.
+* `alphaExponents`: the exponents at which a run may read the α-table, a syntactic
+  property of the program.
+* `visited`: the positions a run visits with every feature disabled.
 
-That is not cosmetic. It makes "the circuit interpreter agrees with the pure one" a
-simulation over the ENVIRONMENT — pointwise-related environments give related results —
-rather than a lockstep argument over two similar-but-different control flows. The shared
-control flow never enters the proof. It also matches the house idiom next door
-(`Snarky.BasicSystem` / `LawfulBasicSystem` with `Builder V c`).
+## Main results
 
-The two optimisations that make PureScript's `evaluateM` differ from its `evaluate` do not
-live here:
+* `evaluate_withAlphaPow`: a run reads the α-table only at `alphaExponents`.
+* `evaluate_withUlb`: a run with every feature disabled that visits no
+  `unnormalizedLagrangeBasis` does not depend on its implementation.
 
-* the **Alpha+Pow peephole** (`Challenge Alpha` followed by `Pow n` collapsing to a lookup
-  of `α^n`, saving constraints because `alphaPow` reads a precomputed table while `pow`
-  emits) becomes a token pre-pass, correct under the environment law
-  `pow (alphaPow 1) n = alphaPow n`;
-* the **ζⁿ⁻¹ memo** becomes the circuit environment's own business — which is why
-  `unnormalizedLagrangeBasis` is monadic here, exactly as `EnvM` splits it into
-  `computeZetaToNMinus1` and `lagrangeBasis`.
+## Implementation notes
 
-Relocating both keeps this file a single shared control flow, and turns each divergence
-into a named lemma instead of a structural difference.
+The PureScript has two interpreters, `evaluate` and `evaluateM`, because it cannot cheaply
+abstract over the monad. Here there is one, so "the circuit interpreter agrees with the
+pure one" is a statement about environments rather than about two control flows. The two
+optimisations that distinguish `evaluateM` are relocated: the Alpha+Pow peephole (an
+`alpha` followed by `pow n` reads the precomputed `α^n` instead of exponentiating) is part
+of the machine, and the `ζⁿ - 1` memo is the circuit environment's own business, which is
+why `unnormalizedLagrangeBasis` is monadic.
 
-## Faithful junk
+The deployed interpreter is total by defaulting: a stack underflow, an out-of-range `load`
+or a position past the end of the program advances silently, and the answer is the top of
+the stack or zero. That is modelled as is, since the object of study is the program that
+ships.
 
-The deployed interpreter is **total by defaulting**, and that is modelled, not repaired.
-Every stack underflow, every out-of-range `Load`, every index past the end of the program
-silently advances rather than failing, and the final answer is the top of the stack or zero
-if the stack is empty. A malformed program therefore computes garbage rather than an error.
-
-This is deliberate: an `Option`-returning interpreter would be cleaner mathematics and a
-different program, and the object of study is the one that ships. The statement that the
-deployed streams never reach a default branch belongs to a well-formedness predicate over a
-concrete program, where it is decidable — not to this definition.
-
-## Fuel, not well-founded recursion
-
-`SkipIfNot` evaluates both of its branches by re-entering the loop at nested bounds, and
-jumps advance the position by a count carried in the token, so the recursion is not
-structural in the program. Rather than a well-founded measure — which CLAUDE.md warns
-against in executable paths, since it obstructs kernel reduction — the loop takes a fuel
-budget. `evaluate` supplies `toks.size`, which suffices because the position strictly
-increases along every path and is bounded by the end position; that is the fuel-sufficiency
-statement the well-formedness layer discharges.
+`SkipIfNot` re-enters the loop at nested bounds and jumps advance by a count carried in
+the token, so the recursion is not structural. The loop takes a fuel budget instead of a
+well-founded measure, which would obstruct kernel reduction; `evaluate` supplies
+`toks.size`, which suffices because the position strictly increases along every path.
 -/
 
 namespace Pickles.Linearization
 
-/-- The interpreter's environment: how the abstract stack machine's operations are realised
-at a particular carrier and monad. Mirrors PureScript's `Env a` and `EnvM f n`, unified.
-
-Additive operations are pure because they are free in circuit (`CVar` addition is affine);
-multiplicative ones are monadic because they emit constraints. The pure reading takes
-`m := Id`, at which every monadic field is an ordinary function. -/
+/-- The machine's operations at a carrier `F` and a monad `m`, unifying the PureScript
+`Env a` and `EnvM f n`. Affine operations are pure, since they are free in circuit;
+constraint-emitting ones are monadic. -/
 structure Env (m : Type → Type) (F : Type) where
-  /-- Addition. Pure: free in circuit. -/
+  /-- Addition. -/
   add : F → F → F
-  /-- Subtraction. Pure: free in circuit. -/
+  /-- Subtraction. -/
   sub : F → F → F
-  /-- Multiplication. Monadic: emits a constraint in circuit. -/
+  /-- Multiplication; emits a constraint in circuit. -/
   mul : F → F → m F
-  /-- Exponentiation by a literal exponent. Monadic: emits constraints in circuit. -/
+  /-- Exponentiation by a literal exponent; emits constraints in circuit. -/
   pow : F → Nat → m F
   /-- The evaluation of a column at a row. -/
   var : Column → CurrOrNext → F
-  /-- Post-processing of a cell reading. Identity in the deployed environments; kept
-  because the PureScript carries it. -/
+  /-- Post-processing of a cell reading; the identity in the deployed environments. -/
   cell : F → F
-  /-- `α^n`. A lookup into precomputed powers in circuit, which is what the Alpha+Pow
-  peephole exists to reach. -/
+  /-- `α^n`; a lookup into a precomputed table in circuit. -/
   alphaPow : Nat → F
   /-- Entry `(row, col)` of the Poseidon MDS matrix. -/
   mds : Nat → Nat → F
   /-- The curve's endomorphism coefficient. -/
   endoCoefficient : F
-  /-- A numeric literal, already decoded from its hex string by the token parser. -/
+  /-- A numeric literal. -/
   literal : Nat → F
   /-- The zero-knowledge/previous-rows vanishing evaluation. -/
   vanishesOnZeroKnowledgeAndPreviousRows : F
-  /-- The unnormalized Lagrange basis at a signed offset. Monadic: the circuit
-  implementation computes `ζⁿ⁻¹` once and divides, and owns that memo itself. -/
+  /-- The unnormalized Lagrange basis at a signed offset. -/
   unnormalizedLagrangeBasis : Bool → Int → m F
-  /-- The lookup joint combiner. Outside the modelled fragment. -/
+  /-- The lookup joint combiner. -/
   jointCombiner : F
   /-- The permutation challenge `β`. -/
   beta : F
   /-- The permutation challenge `γ`. -/
   gamma : F
-  /-- Select between the branches of a feature-flag conditional. The branches are THUNKS,
-  so the branch not taken is never forced — which is how an environment that disables every
-  optional feature (as the deployed pure environment does, and as the modelled fragment
-  requires) evaluates none of the dead code. -/
+  /-- Select between the branches of a feature-flag conditional. The branches are thunks,
+  so the branch not taken is never forced. -/
   ifFeature : FeatureFlag → (Unit → m F) → (Unit → m F) → m F
 
 /-- The machine state: an operand stack, an append-only store for shared subexpressions,
-and a program counter. A concrete structure by requirement — CLAUDE.md's warning that state
-threaded through executable folds must be data, since function-valued state is eta-expanded
-and the fold goes exponential. -/
+and a program counter. -/
 structure EvalState (F : Type) where
   /-- The operand stack; the top is the last element. -/
   stack : Array F
@@ -137,7 +113,7 @@ def pop (s : EvalState F) : Option (F × EvalState F) :=
   | some v => some (v, { s with stack := s.stack.pop })
   | none => none
 
-/-- Pop two values, or `none` on underflow. The first component is the DEEPER operand, so
+/-- Pop two values, or `none` on underflow. The first component is the deeper operand, so
 `pop2` reads `a op b` in source order. -/
 def pop2 (s : EvalState F) : Option (F × F × EvalState F) :=
   match s.pop with
@@ -182,16 +158,14 @@ def evalConstant (env : Env m F) : ConstantTerm → F
   | .mds row col => env.mds row col
   | .literal v => env.literal v
 
-/-- A challenge's value. `Alpha` reads `α^1`; the fused `α^n` reading is the peephole's
-business, not this function's. -/
+/-- A challenge's value; `alpha` reads `α^1`. -/
 def evalChallenge (env : Env m F) : ChallengeTerm → F
   | .alpha => env.alphaPow 1
   | .beta => env.beta
   | .gamma => env.gamma
   | .jointCombiner => env.jointCombiner
 
-/-- The top of the stack, or zero when it is empty — the deployed interpreter's answer for
-an exhausted stack. -/
+/-- The top of the stack, or zero when it is empty. -/
 def topOrZero (env : Env m F) (s : EvalState F) : F :=
   s.stack.back?.getD (env.literal 0)
 
@@ -204,13 +178,10 @@ def falseCount (toks : Array PolishToken) (trueEnd : Nat) : Nat :=
 
 /-- Execute `toks` from `s.position` until `endPos`, within a fuel budget.
 
-The `SkipIfNot` case is where the layout is decoded: the marker at `p` is followed by
-`n` tokens of enabled-branch, a `SkipIf` marker, then the disabled-branch. Both branches are
-evaluated from the SAME starting state and contribute only their top-of-stack value —
-execution then resumes past both with that value pushed onto the ORIGINAL stack, so a
-branch's own stack and store effects are discarded. That discarding is what makes excising
-a dead branch safe: its stores never reach the outer store, so `Load` indices cannot
-shift. -/
+In the `skipIfNot` case the marker is followed by `n` tokens of enabled branch, a `skipIf`
+marker, then the disabled branch. Both branches run from the same starting state and
+contribute only their top-of-stack value, which is pushed onto the original stack; a
+branch's own stack and store effects are discarded. -/
 def evalLoop [Monad m] (env : Env m F) (toks : Array PolishToken) :
     Nat → Nat → EvalState F → m (EvalState F)
   | 0, _, s => pure s
@@ -290,12 +261,8 @@ def evalLoop [Monad m] (env : Env m F) (toks : Array PolishToken) :
                 pure (topOrZero env s₁))
             evalLoop env toks fuel endPos (push res { s with position := falseEnd })
 
-/-- Run a whole program: the value it leaves on top of the stack, or zero.
-
-The fuel budget is the program length. That suffices because the position strictly
-increases at every step and is bounded by the end position, so no execution path visits
-more than `toks.size` tokens — the fuel-sufficiency fact the well-formedness layer states
-and discharges. -/
+/-- Run a whole program: the value it leaves on top of the stack, or zero. The fuel budget
+is the program length, which suffices because the position strictly increases. -/
 def evaluate [Monad m] (env : Env m F) (toks : Array PolishToken) : m F := do
   let s ← evalLoop env toks toks.size toks.size EvalState.init
   pure (topOrZero env s)
@@ -303,13 +270,10 @@ def evaluate [Monad m] (env : Env m F) (toks : Array PolishToken) : m F := do
 
 /-! ## Where the α-table is read
 
-`alphaPow` is reached from exactly one place: the Alpha+Pow peephole, at `n` when `Alpha`
-is followed by `Pow n` and at `1` otherwise. So the exponents a run can read are a
-SYNTACTIC property of the program, listable by inspecting the array — and a run is
-insensitive to the table anywhere else. That is what lets a FINITE precomputed table
-discharge every α-obligation of a concrete stream: the obligation is stated on
-`alphaExponents toks`, and for the deployed streams that list is decided once, from the
-array, rather than assumed. -/
+`alphaPow` is reached only from the Alpha+Pow peephole, at `n` when `alpha` is followed by
+`pow n` and at `1` otherwise, so the exponents a run can read are a syntactic property of
+the program. A run is insensitive to the table anywhere else, which is what lets a finite
+precomputed table discharge every α-obligation of a concrete stream. -/
 
 /-- The exponents at which running `toks` may read `alphaPow`: `n` for each `Alpha` the
 peephole fuses with a following `Pow n`, and `1` for each it does not. -/
@@ -345,14 +309,11 @@ theorem mem_alphaExponents_one {toks : Array PolishToken} {i : Nat}
     | pow n => exact absurd h (hp n)
     | _ => simp [hi]
 
-/-- `env` with its α-table replaced. -/
+/-- `env` with its α-table replaced by `g`. -/
 def Env.withAlphaPow (env : Env m F) (g : Nat → F) : Env m F := { env with alphaPow := g }
 
-/-- **A run reads the α-table only at `alphaExponents`.** Two environments differing only
-in the table, and agreeing there, run identically — for every fuel, bound and start.
-
-Every case but the peephole's is `ih` then `rfl`: once the recursive call is rewritten,
-the two sides differ only in a projection of the updated record, which is definitional. -/
+/-- Two environments differing only in the α-table, and agreeing on `alphaExponents toks`,
+run identically for every fuel, bound and start. -/
 theorem evalLoop_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
     (toks : Array PolishToken) (hg : ∀ n ∈ alphaExponents toks, g n = env.alphaPow n) :
     ∀ (fuel endPos : Nat) (s : EvalState F),
@@ -389,7 +350,7 @@ theorem evalLoop_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
           | _ => simp only [ih] <;> rfl
         | _ => simp only [ih] <;> rfl
 
-/-- **The entry point reads the α-table only at `alphaExponents`.** -/
+/-- `evaluate` reads the α-table only at `alphaExponents toks`. -/
 theorem evaluate_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
     (toks : Array PolishToken) (hg : ∀ n ∈ alphaExponents toks, g n = env.alphaPow n) :
     evaluate (env.withAlphaPow g) toks = evaluate env toks := by
@@ -399,12 +360,10 @@ theorem evaluate_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
 
 /-! ## Where a disabled-features run goes
 
-With every feature disabled, `SkipIfNot` runs its second branch only, so the positions a
+With every feature disabled, `skipIfNot` runs its second branch only, so the positions a
 run visits are again a property of the program: `visited` walks the array with
-`evalLoop`'s control flow and no stack. A token the walk never reaches cannot influence
-the result, which is how `evaluate_withUlb` removes `unnormalizedLagrangeBasis` from the
-statement about the deployed streams: the walk decides that no visited position holds one,
-so the environment's implementation of it is irrelevant. -/
+`evalLoop`'s control flow and no stack. A token the walk never reaches cannot influence the
+result. -/
 
 /-- The positions a run with every feature disabled visits, from `pos` up to `endPos`
 within `fuel` steps. Mirrors `evalLoop`. -/
@@ -439,7 +398,7 @@ def noUlbAt (toks : Array PolishToken) (i : Nat) : Bool :=
   | some t => !t.isUlb
   | none => true
 
-/-- `env` with its Lagrange-basis implementation replaced. -/
+/-- `env` with its Lagrange-basis implementation replaced by `g`. -/
 def Env.withUlb (env : Env m F) (g : Bool → Int → m F) : Env m F :=
   { env with unnormalizedLagrangeBasis := g }
 
@@ -554,8 +513,8 @@ theorem evalLoop_withUlb [Monad m] (env : Env m F) (g : Bool → Int → m F)
           exact congrArg (bind _) (funext hcont)
         | _ => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
 
-/-- The entry point, for a stream no disabled-features run reads
-`unnormalizedLagrangeBasis` in. -/
+/-- `evaluate` with every feature disabled does not depend on the Lagrange-basis
+implementation when the run visits no `unnormalizedLagrangeBasis`. -/
 theorem evaluate_withUlb [Monad m] (env : Env m F) (g : Bool → Int → m F)
     (toks : Array PolishToken) (hdis : ∀ f (t n : Unit → m F), env.ifFeature f t n = n ())
     (hvis : ∀ i ∈ visitedAll toks, noUlbAt toks i = true) :

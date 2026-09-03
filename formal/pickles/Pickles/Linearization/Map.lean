@@ -4,12 +4,16 @@ import Pickles.Linearization.Spec
 # Transporting a run along an algebra homomorphism
 
 The reflection route computes the linearization once over a polynomial algebra and reads
-the answer back at the field through an evaluation homomorphism. For that to work the
-interpreter has to commute with the homomorphism: running over polynomials and then
-evaluating must agree with evaluating first and running over the field.
+the answer back at the field through an evaluation homomorphism, so the interpreter has to
+commute with the homomorphism.
 
-`evaluate_map` is that statement for `Evals.toEnv`: for an `F`-algebra homomorphism
-`φ : R →ₐ[F] S`, the run over `S` at the transported inputs is `φ` of the run over `R`.
+## Main results
+
+* `evaluate_map`: for an `F`-algebra homomorphism `φ : R →ₐ[F] S`, running `Evals.toEnv`
+  over `S` at the transported inputs is `φ` of the run over `R`.
+
+## Implementation notes
+
 Every operation of `toEnv` is a ring operation or an `algebraMap`, so each case of the
 induction is one of `map_add`, `map_mul`, `map_pow` or `φ.commutes`. The induction is on
 the fuel and never mentions the token array's contents.
@@ -23,7 +27,7 @@ variable {R S : Type} {φ : R → S}
 
 /-! ## `EvalState.map` -/
 
--- Oriented to move `.map φ` inward, so every left-hand side is first-order.
+-- Oriented to move `EvalState.map φ` inward, so every left-hand side is first-order.
 @[simp] private theorem map_push (v : R) (s : EvalState R) :
     (EvalState.push v s).map φ = EvalState.push (φ v) (s.map φ) := by
   simp [EvalState.push, EvalState.map]
@@ -112,8 +116,8 @@ private theorem toEnv_topOrZero (s : EvalState R) :
   simp only [topOrZero, map_back?]
   cases s.stack.back? <;> simp
 
-/-- The machine commutes with an algebra homomorphism: running over `S` from the mapped
-state is running over `R` and mapping the result, for every fuel, bound and start. -/
+/-- Running over `S` from the mapped state is running over `R` and mapping the result, for
+every fuel, bound and start. -/
 private theorem evalLoop_map (toks : Array PolishToken) :
     ∀ (fuel endPos : Nat) (s : EvalState R),
       evalLoop ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
@@ -201,8 +205,7 @@ private theorem evalLoop_map (toks : Array PolishToken) :
         | skipIf f n =>
           simpa using ih endPos { s with position := s.position + 1 + n }
         | skipIfNot f n =>
-          -- Both branches are runs of the same machine from a repositioned state, so one
-          -- lemma serves both; the conditional is `if feat f` on either side.
+          -- one lemma serves both branches; the conditional is `if feat f` on either side
           have key : ∀ (bound pos : Nat),
               φ (topOrZero (e.toEnv endo mds α β γ jc van ulb lk feat)
                   (evalLoop (e.toEnv endo mds α β γ jc van ulb lk feat) toks fuel bound

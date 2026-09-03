@@ -446,8 +446,8 @@ def compareWith {a b avar bvar : Type} [A : CircuitType Fp a avar]
 
 Transcribes `Pickles.CircuitDiffs.PureScript.LinearizationCommon.linearizationCircuitM`.
 The 90-input layout is OCaml's (`dump_circuit_impl.ml`), not what the constant term needs:
-coefficients, `s` and the selectors arrive as (ζ, ζω) PAIRS though only the ζ component of
-the first two is ever read, and `z`/`s` are not read at all. -/
+coefficients, `s` and the selectors arrive as `(ζ, ζω)` pairs though only the `ζ`
+component of the first two is ever read, and `z`/`s` are not read at all. -/
 
 open Pickles.Linearization in
 /-- `α^0 … α^(n+1)`, by successive multiplication — 69 rows at the deployed length, and
