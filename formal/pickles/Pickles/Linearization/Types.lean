@@ -5,9 +5,10 @@ The `PolishToken` alphabet of kimchi's linearization, transcribed from
 `packages/pickles-linearization-types/src/Pickles/Linearization/Types.purs` — itself the
 PureScript image of proof-systems' `kimchi::circuits::expr::PolishToken`. A linearization
 is a reverse-Polish program over this alphabet, dumped from Rust into
-`packages/pickles-codegen/rust/output/{pallas,vesta}_scalar_field.json` and decoded by
-`PicklesFixture.TokenParser`. That JSON is the source of truth: the PureScript
-`Pickles.Linearization.{Pallas,Vesta}` modules are generated FROM it, so this transcription
+`packages/pickles-codegen/rust/output/{fp,fq}.json` and rendered into
+`Linearization/{Fp,Fq}.lean` by `scripts/gen_tokens.lean`. That JSON is the source of
+truth: the PureScript `Pickles.Linearization.{Pallas,Vesta}` modules are generated from
+it, so this transcription
 and the PureScript one are siblings rather than parent and child, and a disagreement
 between them is detectable.
 

@@ -5,7 +5,7 @@ packagesDir = "../.lake/packages"
 defaultTargets = ["Pickles"]
 # `lake lint` (standalone): Batteries' env-linter suite over this package's root.
 lintDriver = "batteries/runLinter"
-lintDriverArgs = ["Pickles", "PicklesFixture"]
+lintDriverArgs = ["Pickles"]
 
 # The in-circuit kimchi verifier: PureScript `packages/pickles`' verification gadgets,
 # ported to the snarky DSL and proved faithful to the DEPLOYED verifier —
@@ -34,17 +34,3 @@ path = "../poseidon"
 [[lean_lib]]
 name = "Pickles"
 globs = ["Pickles", "Pickles.+"]
-
-# The JSON ingestion layer, deliberately NOT part of `Pickles` — same split as
-# `KimchiFixture` / `FixtureKit` / `BulletproofFixture`: checking against recorded
-# production data is not part of the development, so the proof library never depends
-# on a decoder. Scripts import this directly.
-[[lean_lib]]
-name = "PicklesFixture"
-globs = ["PicklesFixture", "PicklesFixture.+"]
-
-# The token codegen: JSON dump -> `Pickles/Linearization/{Fp,Fq}.lean`. The Lean
-# counterpart of `pickles-codegen`'s `Generator.purs`; both read the same Rust dump.
-[[lean_exe]]
-name = "gen-tokens"
-root = "GenTokens"

@@ -49,7 +49,6 @@ import Snarky.Kimchi.Circuit.CurvePoint
 import Snarky.Kimchi.Semantics
 import Schnorr
 import Pickles
-import PicklesFixture
 -- The fixture-decoding libraries are not part of any package's main library, so import them
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi
@@ -175,12 +174,9 @@ run_cmd do
         if env.contains n then roots := roots.push n else missing := missing.push n
         if inSurface then surface := surface.push (n, note.startsWith "synthesis")
   -- the script corpus: every file under the packages' scripts/ dirs (this analyzer excluded)
-  -- `pickles` itself is scanned (non-recursively) for `GenTokens.lean`: the codegen
-  -- executable is a driver like the scripts, and the PicklesFixture surface it consumes is
-  -- declared script-surface in pickles/roots.txt.
   let scriptDirs := ["scripts", "pasta/scripts", "poseidon/scripts",
     "bulletproof-pcs/scripts", "kimchi/scripts", "snarky/scripts", "schnorr/scripts",
-    "pickles/scripts", "pickles"]
+    "pickles/scripts"]
   let mut corpus := ""
   for d in scriptDirs do
     for e in (← System.FilePath.readDir d) do

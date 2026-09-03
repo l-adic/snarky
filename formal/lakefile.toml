@@ -30,7 +30,7 @@ name = "formal"
 lintDriver = "batteries/runLinter"
 lintDriverArgs = [
   "Kimchi", "KimchiFixture", "Snarky", "Pasta", "Poseidon", "FixtureKit",
-  "Bulletproof", "BulletproofFixture", "Schnorr", "Pickles", "PicklesFixture"
+  "Bulletproof", "BulletproofFixture", "Schnorr", "Pickles"
 ]
 
 # CompElliptic pinned at the workspace level (git, daira upstream @ a549e455) so this direct

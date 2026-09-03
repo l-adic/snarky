@@ -50,7 +50,7 @@ purescript: json
 lean: json
 	@echo "==> Generating Lean token modules from JSON..."
 	cd ../../formal/pickles && PATH="$$HOME/.elan/bin:$$PATH" \
-	  LINEARIZATION_JSON_DIR=$(CURDIR)/$(JSON_DIR) lake exe gen-tokens
+	  LINEARIZATION_JSON_DIR=$(CURDIR)/$(JSON_DIR) lake env lean --run scripts/gen_tokens.lean
 
 # Clean generated files
 clean:
