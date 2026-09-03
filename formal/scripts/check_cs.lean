@@ -646,6 +646,29 @@ def plonkChecksPassedStepCircuit (input : Vector (FVar Fp) 18) : CircuitM Fp C P
 def plonkChecksPassedWrapCircuit (input : Vector (FVar Fq) 18) : CircuitM Fq Cq PUnit :=
   permCheckCore input fun claimed actual => equals (Type2.fromShiftedCircuit 255 ⟨claimed⟩) actual
 
+/-! ## The challenge expansion circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.ExpandPlonk`: `α` at 0 and `ζ` at 3 expanded
+through `EndoScalar.toField` at the side's scalar endomorphism, `β`, `γ` untouched, then
+`ζω = ω · ζ` at the side's constant generator, which folds to no row. -/
+
+/-- The shared body at a side's endomorphism and generator. -/
+def expandPlonkCore {p : ℕ} [Fact p.Prime] (endo gen : ZMod p) (input : Vector (FVar (ZMod p)) 4) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
+  let endoVar : FVar (ZMod p) := .const endo
+  let _ ← EndoScalar.toField 8 input[0] endoVar
+  let zeta ← EndoScalar.toField 8 input[3] endoVar
+  let _ ← mul (.const gen) zeta
+  pure PUnit.unit
+
+/-- `expand_plonk_step_circuit`. -/
+def expandPlonkStepCircuit (input : Vector (FVar Fp) 4) : CircuitM Fp C PUnit :=
+  expandPlonkCore endoVestaLam (Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)) input
+
+/-- `expand_plonk_wrap_circuit`. -/
+def expandPlonkWrapCircuit (input : Vector (FVar Fq) 4) : CircuitM Fq Cq PUnit :=
+  expandPlonkCore endoPallasLam (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15)) input
+
 /-! ## The wrap column
 
 The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
@@ -719,6 +742,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("cip_step_circuit", stepTarget (a := Vector Fp 129) (b := PUnit) cipStepCircuit),
     ("plonk_checks_passed_step_circuit",
       stepTarget (a := Vector Fp 18) (b := PUnit) plonkChecksPassedStepCircuit),
+    ("expand_plonk_step_circuit",
+      stepTarget (a := Vector Fp 4) (b := PUnit) expandPlonkStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
@@ -727,7 +752,9 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("cip_wrap_circuit", wrapTarget (a := Vector Fq 127) (b := PUnit) cipWrapCircuit),
     ("b_correct_wrap_circuit", wrapTarget (a := Vector Fq 20) (b := PUnit) bCorrectWrapCircuit),
     ("plonk_checks_passed_wrap_circuit",
-      wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit) ]
+      wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit),
+    ("expand_plonk_wrap_circuit",
+      wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
