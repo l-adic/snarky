@@ -25,6 +25,11 @@ fix=0
 # submodule, .archon-seed/, which holds read-only copies of upstream sources staged for the
 # prover harness, and .archon/, the prover harness's own state — all four carry style we do not
 # own and none is committed here). The .archon/ clause matters for the *count* as much as for
+# pickles/Pickles/Linearization/F{p,q}.lean are codegen output (pickles/scripts/
+# gen_tokens.lean), one token per line with 255-bit field literals that run to the column
+# limit. They are committed rather than gitignored — formal/'s CI checks out without the
+# mina submodule and so cannot regenerate them — but they are not hand-written source and
+# the formatter contract does not apply.
 # the checks: .archon/logs/*/snapshots/*/baseline.lean is a pre-edit copy of a source file
 # written once per snapshotting iteration, so without it the printed file count drifts upward
 # over time (and a snapshot taken mid-edit can fail the gate for a reason outside the tree).
@@ -32,7 +37,8 @@ files=()
 while IFS= read -r f; do files+=("$f"); done \
   < <(find . -name '*.lean' \
         -not -path '*/.lake/*' -not -path './vendor/*' -not -path './.archon-seed/*' \
-        -not -path './.archon/*' | sort)
+        -not -path './.archon/*' \
+        -not -path './pickles/Pickles/Linearization/F[pq].lean' | sort)
 
 if [ "${#files[@]}" -eq 0 ]; then
   echo "no .lean files found under formal/"

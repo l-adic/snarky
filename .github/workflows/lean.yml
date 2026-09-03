@@ -146,6 +146,14 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake env lean snarky/scripts/check_axioms.lean
 
+    # The pickles linearization results. The two reflection endpoints are the only
+    # declarations in the tree permitted a native_decide certificate outside CompElliptic
+    # and Pasta/Endo.lean; the transport lemmas must stay pure.
+    - name: Gate the pickles linearization results
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake env lean pickles/scripts/check_axioms.lean
+
     # The schnorr exemplar's wire surface (standard axioms only).
     - name: Gate the schnorr exemplar
       run: |
@@ -161,7 +169,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-                 Bulletproof BulletproofFixture Schnorr; do
+                 Bulletproof BulletproofFixture Schnorr Pickles; do
           lake exe runLinter "$m" || exit 1
         done
 
@@ -176,7 +184,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake exe shake --cfg "$PWD/scripts/noshake.json" \
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-          Bulletproof BulletproofFixture Schnorr
+          Bulletproof BulletproofFixture Schnorr Pickles
 
     # GATE: every authored declaration must be reachable from the union of the packages'
     # roots.txt API manifests, and every script-surface root must appear in a scripts/
@@ -241,6 +249,14 @@ jobs:
     # ft_eval0) must reproduce, by value, the production scalar side of a real proof —
     # including the token-evaluated constant term (fixtures/linearization_vesta.json,
     # from tools/fixture-dump's linearization_dump).
+    # The ported token interpreter against the same production data: it must reproduce
+    # kimchi's own constant_term, and agree with the closed form it is proved equal to.
+    - name: Check the token interpreter against the production scalar side
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean pickles/scripts/check_polish.lean
+
     - name: Check the verifier linearization against the production scalar side
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

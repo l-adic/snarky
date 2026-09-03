@@ -51,7 +51,7 @@ PureScript original module by module; `formal/docs/snarky-ps-alignment.md` recor
 completed sign-off walk.
 
 Build: `make lean-build` (from the parent repo root), which runs
-`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr`
+`lake build Kimchi Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr Pickles`
 in `formal/`; CI runs the same list plus `KimchiFixture`. From `formal/` you must name that
 target list yourself — **bare `lake build` here is not a build gate**: the root package is a
 pure aggregator that owns no library and declares no `defaultTargets`, so it reports
@@ -71,6 +71,7 @@ is pinned in `lean-toolchain` (Lean `v4.30.0`, the official tag); deps in `lakef
 | `bulletproof-pcs/` | `Bulletproof` | the IPA polynomial commitment: the abstract scheme and the executable Pasta wire verifier (Poseidon-driven), which `kimchiVerify` finishes on; IPA fixtures + check script. A specification, no soundness claim |
 | `kimchi/` | `Kimchi`, `KimchiFixture` | the kimchi protocol: gates (arithmetization), the vanishing-argument modules (PIOP), `Index/`, `Protocol/` (the ideal protocol + soundness), `Verifier/` (the executable verifier, its run functions, the wire parse); plus the fixture-decoding lib, kept out of `Kimchi` |
 | `snarky/` | `Snarky` | the deep-embedded circuit-DSL port + its `Snarky.Kimchi.*` bridge; sits ON TOP (requires kimchi); own axiom gate (`snarky/scripts/check_axioms.sh`) |
+| `pickles/` | `Pickles` | the in-circuit kimchi verifier, so far its linearization slice: the `PolishToken` language and stack-machine interpreter, the reflection certificate identifying the deployed token stream with `gateLinearization`, and the circuit reading proved to compute it. Requires snarky + kimchi + poseidon; own axiom gate, and the ONLY `native_decide` site in the tree outside CompElliptic and `Pasta/Endo.lean`. The token modules `Linearization/{Fp,Fq}.lean` are codegen output (`scripts/gen_tokens.lean`, via `make gen-linearization-lean`), committed because formal/'s CI checks out without the mina submodule |
 | `schnorr/` | `Schnorr` | the verifier-faithfulness exemplar: a Schnorr identification protocol over Vesta as a wire verifier, and (arriving) its in-circuit implementation with the laws tying the two. Requires snarky + poseidon; own axiom gate. NOT a PS port — no byte-parity obligation |
 
 No package is privileged: `formal/` itself is a pure aggregator workspace (its lakefile
@@ -319,6 +320,10 @@ poseidon/scripts/check_fq_sponge.sh          # FqSponge op traces + group_map ve
 bulletproof-pcs/scripts/check_ipa_fixture.sh # the executable IPA verifiers accept wire data
 kimchi/scripts/check_perm_fixture.sh         # permutation argument row semantics on production data
 kimchi/scripts/check_index_fixture.sh        # index model: build-by-decision, derived columns, satisfiability
+pickles/scripts/check_axioms.sh              # the linearization results (the two declared certificates)
+pickles/scripts/check_polish.lean            # the ported token interpreter vs the production scalar side
+scripts/check_cs.lean                        # compiled constraint systems vs the PureScript dumps (workspace-level;
+                                             # needs the circuit-diffs exports, so CI runs it from test.yml)
 ```
 
 (Every package-local check reads its data through an env var whose **default is relative
@@ -340,10 +345,14 @@ op type, a decoder, and a `step : state -> op -> state x Bool`.
   results), `*_scalar` (scalar-field analogue).
 - **`F p` / `ZMod p`** for the field; `[Field F] [DecidableEq F]` (add `[CharP F p]` when the
   characteristic matters). Follow **Mathlib naming conventions** for new lemmas.
-- **Docstrings are dense and that's intentional** — every gate file opens with a multi-paragraph
-  preamble: the gate's source (link the `.purs` / `.rs` / proof-systems origin), the column
-  layout, the constraint transcription, and a prose statement of what each theorem means
-  *before* its signature. Match this house style; it's what makes the formalization auditable.
+- **Docstrings follow Mathlib's documentation conventions.** A module docstring opens with
+  `# Title`, a short description, then `## Main definitions`, `## Main results` and
+  `## Implementation notes` as warranted; design rationale lives there or in the commit
+  message. A declaration docstring is one to three declarative sentences saying what the
+  declaration is or states, with no headline emphasis (no bold sentences, no capitals for
+  stress). The gate files under `Kimchi/Gate/` predate this and carry longer preambles
+  (the gate's source, column layout and constraint transcription); keep those accurate,
+  and write new code to the Mathlib standard.
 - **Files are split into `/-! ## … -/` sections** (constraint model → reflection → soundness →
   completeness → runnable `#eval` example → supporting lemmas). Keep section docstrings in sync
   with reality (see below).

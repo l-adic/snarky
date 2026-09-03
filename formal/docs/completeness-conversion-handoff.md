@@ -242,7 +242,7 @@ lake exe runLinter Snarky        # and Schnorr if that package changed
 If the change touches a **definition** (as `selectField.core` did), also run:
 
 ```sh
-cd snarky && lake env lean scripts/check_cs_basic.lean   # constraint systems unchanged
+lake env lean --run scripts/check_cs.lean   # constraint systems unchanged
 cd snarky && lake env lean scripts/check_axioms.lean
 ```
 

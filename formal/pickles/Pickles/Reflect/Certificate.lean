@@ -1,0 +1,297 @@
+import Pickles.Linearization.Spec
+import Pickles.Linearization.Map
+import Pickles.Linearization.Fp
+import Pickles.Linearization.Fq
+import Pickles.Reflect.Poly
+import Kimchi.Verifier.Kimchi
+import Bulletproof.Wire
+import Pasta.Endo
+
+/-!
+# The reflection certificate
+
+The deployed token stream and the closed-form gate linearization are the same polynomial.
+Both sides are run at `CMvPolynomial 64 K`, one formal variable per input the interpreter's
+environment reads, and the resulting polynomials are compared by `native_decide`. The
+identity at every evaluation then follows by `Pickles.Linearization.evaluate_map` and
+`Kimchi.Protocol.Linearization.gateLinearization_map`.
+
+## Main results
+
+* `evaluate_fpTokens`, `evaluate_fqTokens`: at every evaluation record and every choice of
+  challenges, each deployed stream's pure value is `gateLinearization`.
+* `fpTokens_reads`, `fqTokens_reads`: with the modelled features disabled, each stream
+  reads the α-table at exponents at most `alphaBound` and never reads the Lagrange
+  basis.
+
+## Implementation notes
+
+The 4220-token program collapses to 486 monomials: the linearization is a sum of small
+per-gate constraints rather than a nested product, so normalising it does not blow up. The
+proof costs one compiled polynomial comparison; the transport lemmas are generic and cost
+nothing per token.
+
+This module is the only place in the tree that uses `native_decide` outside the upstream
+CompElliptic certificates and `Pasta/Endo.lean`, and it is named in the pickles axiom gate
+for that reason. It trusts the compiler through `Lean.trustCompiler`; kernel `decide` is
+not viable on a 486-monomial comparison over a 255-bit field. The reachability fact about
+each stream is decided here too, so the gate has one module to trust.
+
+`endo` and `mds` are the deployed constants rather than variables: they parameterise the
+gates' `Argument`s, which are defined over the field. The certificate is therefore
+per-curve, and both sides of the cycle are certified: `Fp`, Vesta's scalar field, where a
+Pallas proof is verified, and `Fq`, Pallas's scalar field, where a Vesta proof is verified.
+
+Everything between the certificates and the endpoints is `private`: nothing outside should
+depend on the variable numbering.
+-/
+
+namespace Pickles.Reflect
+
+open CPoly Bulletproof Kimchi.Protocol.Linearization Pickles.Linearization
+
+variable {K : Type} [Field K] [BEq K] [LawfulBEq K]
+
+/-- One formal variable per environment input: 15 witness cells at `ζ`, 15 at `ζω`, 15
+coefficients, the six modelled gates' selectors, then `α`, `β`, `γ`, the joint combiner,
+the zero-knowledge vanishing evaluation, and the permutation columns `z`, `z(ζω)` and the
+six `σ` evaluations. The permutation columns are unread by both sides; giving them
+variables lets the transported evaluations be literally `e`. -/
+private abbrev NV : ℕ := 64
+
+/-- The polynomial algebra the identity is decided in. -/
+private abbrev MPoly (K : Type) [Field K] [BEq K] [LawfulBEq K] := CMvPolynomial NV K
+
+/-- Variable `i`, or zero past the end. -/
+private def xv (i : ℕ) : MPoly K := if h : i < NV then CMvPolynomial.X ⟨i, h⟩ else 0
+
+/-- The evaluations, wholly formal. -/
+private def symEvals : Evals (MPoly K) where
+  w i := xv i
+  wOmega i := xv (15 + i)
+  z := xv 56
+  zOmega := xv 57
+  s i := xv (58 + i)
+  coeffs i := xv (30 + i)
+  genericSelector := xv 45
+  poseidonSelector := xv 46
+  completeAddSelector := xv 47
+  mulSelector := xv 48
+  emulSelector := xv 49
+  endoScalarSelector := xv 50
+
+/-- The interpreter environment at the formal evaluations, with a variable for each
+challenge. -/
+private abbrev symEnv (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K) : Env Id (MPoly K) :=
+  symEvals.toEnv endo mds (fun n => xv 51 ^ n) (xv 52) (xv 53) (xv 54) (xv 55)
+    (fun _ _ => 0) LookupEvals.zero (fun _ => false)
+
+/-! ## The assignment, generically -/
+
+/-- The six modelled gates' selectors, indexed. -/
+private def selOf (e : Evals K) : Fin 6 → K
+  | 0 => e.genericSelector | 1 => e.poseidonSelector | 2 => e.completeAddSelector
+  | 3 => e.mulSelector     | 4 => e.emulSelector     | 5 => e.endoScalarSelector
+
+/-- The five scalar inputs, indexed. -/
+private def chalOf (α β γ jc van : K) : Fin 5 → K
+  | 0 => α | 1 => β | 2 => γ | 3 => jc | 4 => van
+
+/-- The permutation accumulator at both points, indexed. -/
+private def accOf (e : Evals K) : Fin 2 → K
+  | 0 => e.z | 1 => e.zOmega
+
+/-- The assignment sending each formal variable to its intended value. -/
+private def valsOf (α β γ jc van : K) (e : Evals K) (i : Fin NV) : K :=
+  let k : ℕ := i
+  if h : k < 15 then e.w ⟨k, h⟩
+  else if h : k < 30 then e.wOmega ⟨k - 15, by omega⟩
+  else if h : k < 45 then e.coeffs ⟨k - 30, by omega⟩
+  else if h : k < 51 then selOf e ⟨k - 45, by omega⟩
+  else if h : k < 56 then chalOf α β γ jc van ⟨k - 51, by omega⟩
+  else if h : k < 58 then accOf e ⟨k - 56, by omega⟩
+  else if h : k < 64 then e.s ⟨k - 58, by omega⟩
+  else 0
+
+/-- Evaluation at that assignment, as a `K`-algebra homomorphism. -/
+private noncomputable def evalAt (α β γ jc van : K) (e : Evals K) : MPoly K →ₐ[K] K :=
+  aevalAlgHom (valsOf α β γ jc van e)
+
+@[simp] private theorem evalAt_xv (α β γ jc van : K) (e : Evals K) {i : ℕ} (h : i < NV) :
+    evalAt α β γ jc van e (xv i) = valsOf α β γ jc van e ⟨i, h⟩ := by
+  simp [evalAt, xv, h]
+
+/-- The formal evaluations, transported along the assignment, are the intended ones. -/
+private theorem symEvals_map (α β γ jc van : K) (e : Evals K) :
+    symEvals.map (evalAt α β γ jc van e) = e := by
+  have key : ∀ (k : ℕ) (h : k < NV),
+      evalAt α β γ jc van e (xv k) = valsOf α β γ jc van e ⟨k, h⟩ :=
+    fun k h => evalAt_xv α β γ jc van e h
+  refine Evals.ext ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+  · funext i; obtain ⟨i, hi⟩ := i
+    rw [show (Evals.map _ symEvals).w ⟨i, hi⟩ = evalAt α β γ jc van e (xv i) from rfl,
+      key i (by simp only [NV]; omega)]
+    simp [valsOf, hi]
+  · funext i; obtain ⟨i, hi⟩ := i
+    rw [show (Evals.map _ symEvals).wOmega ⟨i, hi⟩
+      = evalAt α β γ jc van e (xv (15 + i)) from rfl, key _ (by simp only [NV]; omega)]
+    simp [valsOf, Nat.add_sub_cancel_left, show ¬(15 + i < 15) from by omega,
+      show 15 + i < 30 from by omega]
+  · rw [show (Evals.map _ symEvals).z = evalAt α β γ jc van e (xv 56) from rfl,
+      key 56 (by simp only [NV]; omega)]
+    simp [valsOf, accOf]
+  · rw [show (Evals.map _ symEvals).zOmega = evalAt α β γ jc van e (xv 57) from rfl,
+      key 57 (by simp only [NV]; omega)]
+    simp [valsOf, accOf]
+  · funext i; obtain ⟨i, hi⟩ := i
+    rw [show (Evals.map _ symEvals).s ⟨i, hi⟩
+      = evalAt α β γ jc van e (xv (58 + i)) from rfl, key _ (by simp only [NV]; omega)]
+    simp [valsOf, Nat.add_sub_cancel_left, show ¬(58 + i < 15) from by omega,
+      show ¬(58 + i < 30) from by omega, show ¬(58 + i < 45) from by omega,
+      show ¬(58 + i < 51) from by omega, show ¬(58 + i < 56) from by omega,
+      show ¬(58 + i < 58) from by omega, show 58 + i < 64 from by omega]
+  · funext i; obtain ⟨i, hi⟩ := i
+    rw [show (Evals.map _ symEvals).coeffs ⟨i, hi⟩
+      = evalAt α β γ jc van e (xv (30 + i)) from rfl, key _ (by simp only [NV]; omega)]
+    simp [valsOf, Nat.add_sub_cancel_left, show ¬(30 + i < 15) from by omega,
+      show ¬(30 + i < 30) from by omega, show 30 + i < 45 from by omega]
+  all_goals
+    first
+      | (rw [show (Evals.map _ symEvals).genericSelector
+              = evalAt α β γ jc van e (xv 45) from rfl, key 45 (by simp only [NV]; omega)]
+         simp [valsOf, selOf])
+      | (rw [show (Evals.map _ symEvals).poseidonSelector
+              = evalAt α β γ jc van e (xv 46) from rfl, key 46 (by simp only [NV]; omega)]
+         simp [valsOf, selOf])
+      | (rw [show (Evals.map _ symEvals).completeAddSelector
+              = evalAt α β γ jc van e (xv 47) from rfl, key 47 (by simp only [NV]; omega)]
+         simp [valsOf, selOf])
+      | (rw [show (Evals.map _ symEvals).mulSelector
+              = evalAt α β γ jc van e (xv 48) from rfl, key 48 (by simp only [NV]; omega)]
+         simp [valsOf, selOf])
+      | (rw [show (Evals.map _ symEvals).emulSelector
+              = evalAt α β γ jc van e (xv 49) from rfl, key 49 (by simp only [NV]; omega)]
+         simp [valsOf, selOf])
+      | (rw [show (Evals.map _ symEvals).endoScalarSelector
+              = evalAt α β γ jc van e (xv 50) from rfl, key 50 (by simp only [NV]; omega)]
+         simp [valsOf, selOf])
+
+/-- The scalar inputs are transported to themselves. -/
+private theorem evalAt_chal (α β γ jc van : K) (e : Evals K) :
+    evalAt α β γ jc van e (xv 51) = α ∧ evalAt α β γ jc van e (xv 52) = β ∧
+      evalAt α β γ jc van e (xv 53) = γ ∧ evalAt α β γ jc van e (xv 54) = jc ∧
+      evalAt α β γ jc van e (xv 55) = van := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+    · rw [evalAt_xv (h := by simp only [NV]; omega)]
+      simp [valsOf, chalOf]
+
+/-- A certificate over the polynomial algebra yields the identity at every evaluation
+record and every choice of challenges. -/
+private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
+    (toks : Array PolishToken)
+    (hcert : (evaluate (symEnv endo mds) toks : MPoly K)
+      = gateLinearization endo mds (xv 51) symEvals)
+    (α β γ jc van : K) (e : Evals K) :
+    (evaluate (e.toEnv endo mds (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
+      (fun _ => false)) toks : K)
+      = gateLinearization endo mds α e := by
+  obtain ⟨hα, hβ, hγ, hjc, hvan⟩ := evalAt_chal α β γ jc van e
+  have hE := symEvals_map α β γ jc van e
+  have hm := evaluate_map (evalAt α β γ jc van e) endo mds
+    (fun n => xv 51 ^ n) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0) LookupEvals.zero
+    (fun _ => false) symEvals toks
+  have hpow : (fun n => evalAt α β γ jc van e (xv 51 ^ n)) = fun n => α ^ n := by
+    funext n; rw [map_pow, hα]
+  rw [hE, hpow, hβ, hγ, hjc, hvan] at hm
+  simp only [_root_.map_zero, LookupEvals.map_zero (_root_.map_zero _)] at hm
+  rw [hm, hcert, gateLinearization_map, hα, hE]
+
+/-- The largest exponent at which either deployed stream reads the α-table. The PureScript
+table (`Pickles.Linearization.Env.AlphaPowersLen`) holds `71` entries. -/
+def alphaBound : Nat := 31
+
+/-! ## The two deployed streams -/
+
+/-- Vesta's scalar field, where a Pallas proof is verified. -/
+abbrev Fp := IpaVesta.curve.ScalarField
+
+/-- The production Poseidon MDS matrix over `Fp`. -/
+abbrev symMds : Kimchi.Gate.Poseidon.Mds Fp :=
+  Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
+
+instance : DecidableEq (MPoly Fp) := CPoly.Lawful.instDecidableEq
+
+/-- The `Fp` stream's value over the polynomial algebra. -/
+private def symValueP : MPoly Fp := evaluate (symEnv Pasta.pallasEndo symMds) fpTokens
+
+/-- The certificate over `Fp`. -/
+private theorem fp_reflects :
+    symValueP = gateLinearization Pasta.pallasEndo symMds (xv 51) symEvals := by
+  native_decide
+
+/-- What the `Fp` stream reads with every feature disabled: the α-table at exponents at
+most `alphaBound`, and never the Lagrange basis. -/
+theorem fpTokens_reads :
+    ∀ i ∈ visitedAll fpTokens (fun _ => false), readsWithin fpTokens alphaBound i = true := by
+  native_decide
+
+/-- The deployed `Fp` stream computes the gate linearization at every evaluation record,
+every choice of challenges, and every Lagrange basis. -/
+theorem evaluate_fpTokens (α β γ jc van : Fp) (ulb : Bool → Int → Fp) (e : Evals Fp) :
+    (evaluate (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+      (fun _ => false)) fpTokens : Fp)
+      = gateLinearization Pasta.pallasEndo symMds α e := by
+  have hvis : ∀ i ∈ visitedAll fpTokens (fun _ => false),
+      (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+        (fun _ => false)).agreeAt
+      (e.toEnv Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)) fpTokens i :=
+    fun i hi => Evals.toEnv_agreeAt Pasta.pallasEndo symMds (fun n => α ^ n) β γ jc van ulb
+      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) fpTokens i
+      (fun _ _ => rfl) (readsWithin_noUlb (fpTokens_reads i hi))
+  rw [evaluate_congr _ _ fpTokens (fun _ => false) hvis (fun _ _ _ => rfl)
+    (fun _ _ _ => rfl) rfl]
+  exact of_certificate _ _ _ fp_reflects α β γ jc van e
+
+/-- Pallas's scalar field, where a Vesta proof is verified. -/
+abbrev Fq := IpaPallas.curve.ScalarField
+
+/-- The production Poseidon MDS matrix over `Fq`. -/
+abbrev symMdsQ : Kimchi.Gate.Poseidon.Mds Fq :=
+  Kimchi.Verifier.mdsOfParams IpaPallas.curve.frParams
+
+instance : DecidableEq (MPoly Fq) := CPoly.Lawful.instDecidableEq
+
+/-- The `Fq` stream's value over the polynomial algebra. -/
+private def symValueQ : MPoly Fq := evaluate (symEnv Pasta.vestaEndo symMdsQ) fqTokens
+
+/-- The certificate over `Fq`. -/
+private theorem fq_reflects :
+    symValueQ = gateLinearization Pasta.vestaEndo symMdsQ (xv 51) symEvals := by
+  native_decide
+
+/-- What the `Fq` stream reads with every feature disabled: the α-table at exponents at
+most `alphaBound`, and never the Lagrange basis. -/
+theorem fqTokens_reads :
+    ∀ i ∈ visitedAll fqTokens (fun _ => false), readsWithin fqTokens alphaBound i = true := by
+  native_decide
+
+/-- The deployed `Fq` stream computes the gate linearization at every evaluation record,
+every choice of challenges, and every Lagrange basis. -/
+theorem evaluate_fqTokens (α β γ jc van : Fq) (ulb : Bool → Int → Fq) (e : Evals Fq) :
+    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+      (fun _ => false)) fqTokens : Fq)
+      = gateLinearization Pasta.vestaEndo symMdsQ α e := by
+  have hvis : ∀ i ∈ visitedAll fqTokens (fun _ => false),
+      (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb LookupEvals.zero
+        (fun _ => false)).agreeAt
+      (e.toEnv Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)) fqTokens i :=
+    fun i hi => Evals.toEnv_agreeAt Pasta.vestaEndo symMdsQ (fun n => α ^ n) β γ jc van ulb
+      LookupEvals.zero (fun _ => false) e (fun n => α ^ n) (fun _ _ => 0) fqTokens i
+      (fun _ _ => rfl) (readsWithin_noUlb (fqTokens_reads i hi))
+  rw [evaluate_congr _ _ fqTokens (fun _ => false) hvis (fun _ _ _ => rfl)
+    (fun _ _ _ => rfl) rfl]
+  exact of_certificate _ _ _ fq_reflects α β γ jc van e
+
+end Pickles.Reflect

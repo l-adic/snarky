@@ -10,8 +10,11 @@ from `tools/fixture-dump`'s `linearization_dump`): the closed-form linearization
 `Kimchi/Verifier/Linearization.lean` must reproduce, on a real proof's challenges and
 combined evaluations, the production values of the permutation vanishing evaluation,
 `perm_scalars`, the token-evaluated `linearization.constant_term`, and `ft_eval0`. This
-is where the expression framework's compiled token stream is adjudicated by value — it
-never appears in a Lean statement.
+adjudicates the closed form BY VALUE against production. The compiled token stream itself
+is a separate object with its own development in the `pickles` package: ported in
+`Pickles.Linearization`, checked against this same fixture by
+`pickles/scripts/check_polish.lean`, and proved equal to `gateLinearization` at every
+evaluation by `Pickles.Reflect.evaluate_fpTokens`.
 
 The final check instantiates the verifier's acceptance identity numerically:
 `permScalar·σ₆(ζ) − ft_eval0` (production values; `σ₆(ζ)` is the one column the proof

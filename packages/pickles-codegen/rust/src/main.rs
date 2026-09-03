@@ -4,8 +4,8 @@
 //!   - LINEARIZATION_JSON_DIR: Directory to write output files
 //!
 //! Outputs:
-//!   - $LINEARIZATION_JSON_DIR/pallas_scalar_field.json
-//!   - $LINEARIZATION_JSON_DIR/vesta_scalar_field.json
+//!   - $LINEARIZATION_JSON_DIR/fp.json
+//!   - $LINEARIZATION_JSON_DIR/fq.json
 
 use ark_ff::PrimeField;
 use kimchi::{
@@ -137,17 +137,19 @@ fn main() {
         fs::create_dir_all(output_dir).expect("Failed to create output directory");
     }
 
-    // Generate for Pallas scalar field (Fp)
-    println!("Generating linearization for Pallas scalar field...");
+    // Fp — Pallas's BASE field, which is Vesta's scalar field. Named for the field it
+    // contains, not a curve: consumers verifying Pallas proofs work in Fp, so a
+    // curve-named file is read the wrong way round about half the time.
+    println!("Generating linearization over Fp...");
     let pallas_json = generate_linearization_json::<mina_curves::pasta::Fp>();
-    let pallas_path = output_dir.join("pallas_scalar_field.json");
+    let pallas_path = output_dir.join("fp.json");
     fs::write(&pallas_path, &pallas_json).expect("Failed to write Pallas linearization");
     println!("Wrote {}", pallas_path.display());
 
-    // Generate for Vesta scalar field (Fq)
-    println!("Generating linearization for Vesta scalar field...");
+    // Fq — Vesta's base field, which is Pallas's scalar field.
+    println!("Generating linearization over Fq...");
     let vesta_json = generate_linearization_json::<mina_curves::pasta::Fq>();
-    let vesta_path = output_dir.join("vesta_scalar_field.json");
+    let vesta_path = output_dir.join("fq.json");
     fs::write(&vesta_path, &vesta_json).expect("Failed to write Vesta linearization");
     println!("Wrote {}", vesta_path.display());
 
