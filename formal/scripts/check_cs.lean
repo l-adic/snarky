@@ -302,24 +302,30 @@ def pow2PowCircuit (input : Vector (FVar Fp) 1) : CircuitM Fp C PUnit := do
   let _ ← (List.range 16).foldlM (fun acc _ => square acc) input[0]
   pure PUnit.unit
 
-/-- `b_correct_step_circuit` (PS `bCorrectStepCircuit` over `IPA.bCorrectCircuit`):
-16 raw 128-bit challenges expanded through `EndoScalar.toField` at 8 rows — in
-REVERSE order, OCaml's right-to-left evaluation — then
-`b(ζ) + evalscale·b(ζω)` compared against the Type1-unshifted claimed `b`.
-Input layout: challenges 0–15, `ζ` 16, `ζω` 17, `evalscale` 18, claimed `b` 19. -/
+/-- `b_correct_step_circuit` (PS `bCorrectStepCircuit`): the 16 raw 128-bit challenges
+expanded by `Pickles.computeChallenges`, then `Pickles.bCorrectCircuit` against the
+Type1-unshifted claim. Input layout: challenges 0–15, `ζ` 16, `ζω` 17, `evalscale` 18,
+claimed `b` 19. -/
 def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
   let inl := input.toList
-  let endoVar : FVar Fp := .const endoVestaLam
-  let expandedRev ← ((inl.take 16).reverse).mapM
-    (fun c => EndoScalar.toField 8 c endoVar)
-  let expanded := expandedRev.reverse
   let zero : FVar Fp := .const 0
-  let expectedB : FVar Fp := Type1.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩
-  let bZetaOmega ← Pickles.bPolyCircuit expanded (inl.getD 17 zero)
-  let scaledB ← mul (inl.getD 18 zero) bZetaOmega
-  let bZeta ← Pickles.bPolyCircuit expanded (inl.getD 16 zero)
-  let computedB := CVar.add_ bZeta scaledB
-  let _ ← equals expectedB computedB
+  let expanded ← Pickles.computeChallenges (.const endoVestaLam) (inl.take 16)
+  let _ ← Pickles.bCorrectCircuit expanded (inl.getD 16 zero) (inl.getD 17 zero)
+    (inl.getD 18 zero) (Type1.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
+  pure PUnit.unit
+
+/-- The wrap-side scalar-challenge endomorphism (OCaml `Endo.Step_inner_curve.scalar`):
+Pallas's `λ` at the wrap field. -/
+def endoPallasLam : Fq := (Pasta.pallasLam : ℤ)
+
+/-- `b_correct_wrap_circuit` (PS `bCorrectWrapCircuit`): the step layout at the wrap field,
+the challenges expanded through `endoPallasLam`, the claim Type2-unshifted. -/
+def bCorrectWrapCircuit (input : Vector (FVar Fq) 20) : CircuitM Fq Cq PUnit := do
+  let inl := input.toList
+  let zero : FVar Fq := .const 0
+  let expanded ← Pickles.computeChallenges (.const endoPallasLam) (inl.take 16)
+  let _ ← Pickles.bCorrectCircuit expanded (inl.getD 16 zero) (inl.getD 17 zero)
+    (inl.getD 18 zero) (Type2.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
   pure PUnit.unit
 
 /-- The step-side `endoInv` scalar-field data: the Pallas group order is prime
@@ -686,7 +692,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("linearization_wrap_circuit",
       wrapTarget (a := Vector Fq 90) (b := Fq)
         (linearizationCircuit Kimchi.Fixture.PS.fqSide 15 Pickles.Linearization.fqTokens)),
-    ("cip_wrap_circuit", wrapTarget (a := Vector Fq 127) (b := PUnit) cipWrapCircuit) ]
+    ("cip_wrap_circuit", wrapTarget (a := Vector Fq 127) (b := PUnit) cipWrapCircuit),
+    ("b_correct_wrap_circuit", wrapTarget (a := Vector Fq 20) (b := PUnit) bCorrectWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

@@ -1,4 +1,5 @@
 import Snarky.DSL.Field
+import Snarky.Kimchi.Circuit.EndoScalar
 import Bulletproof.Protocol
 
 set_option mvcgen.warning false
@@ -6,21 +7,27 @@ set_option mvcgen.warning false
 /-!
 # The challenge polynomial in circuit
 
-Port of the PureScript `Pickles.IPA.bPolyCircuit` and `challengePolyEvals`: a previous
-proof's challenge polynomial `b(c, X) = ∏_{i<k} (1 + cᵢ · X^{2^{k−1−i}})`, for its `k`
-challenges `c₀, …, c_{k−1}`, evaluated at a point, and its evaluation for every previous
-proof.
+Port of the PureScript `Pickles.IPA` scalar gadgets: the challenge polynomial
+`b(c, X) = ∏_{i<k} (1 + cᵢ · X^{2^{k−1−i}})` of `k` challenges `c₀, …, c_{k−1}` evaluated at
+a point, its evaluation for every previous proof, the endomorphism expansion of the
+bulletproof challenges, and the `b_correct` check `b = b(c, ζ) + r · b(c, ζω)`.
 
 ## Main definitions
 
 * `bPolyCircuit`: the squarings of the point, then the product, in the PureScript's order.
 * `challengePolyEvals`: `∏_{i<k} (1 + c_{j,i} · pt^{2^{k−1−i}})` for each of `n` challenge
   vectors `(c_{j,0}, …, c_{j,k−1})`, `j < n`.
+* `computeChallenges`: `EndoScalar.toField` on each 128-bit challenge.
+* `computeBCircuit`, `bCorrectCircuit`: `b(c, ζ) + r · b(c, ζω)` and its comparison with
+  the claimed `b`.
 
 ## Main results
 
 * `bPolyCircuit_spec`, `challengePolyEvals_spec`: the outputs read as `Bulletproof.bPoly`
   at the readings of the challenges and the point.
+* `computeChallenges_spec`: the outputs read as `endoExpand` of the challenges' naturals.
+* `computeBCircuit_spec`, `bCorrectCircuit_spec`: the output reads as
+  `Bulletproof.combinedB`, and the bit as its comparison with the claim.
 -/
 
 namespace Pickles
@@ -60,6 +67,31 @@ def challengePolyEvals (pt : FVar F) : List (List (FVar F)) → CircuitM F c (Li
     let later ← challengePolyEvals pt rest
     let b ← bPolyCircuit chals pt
     pure (b :: later)
+
+/-- The bulletproof challenges expanded through the endomorphism `endo` (OCaml
+`compute_challenges`): `EndoScalar.toField` on each, the last challenge first and the results
+in vector order. -/
+def computeChallenges [ToNat F] [Snarky.Kimchi.KimchiSystem F c] (endo : FVar F) :
+    List (FVar F) → CircuitM F c (List (FVar F))
+  | [] => pure []
+  | ch :: rest => do
+    let later ← computeChallenges endo rest
+    let x ← Snarky.Kimchi.EndoScalar.toField 8 ch endo
+    pure (x :: later)
+
+/-- `b(c, ζ) + r · b(c, ζω)` for challenges `c`, the `ζω` evaluation first. -/
+def computeBCircuit (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F) :
+    CircuitM F c (FVar F) := do
+  let bZetaOmega ← bPolyCircuit chals zetaOmega
+  let scaledB ← mul evalscale bZetaOmega
+  let bZeta ← bPolyCircuit chals zeta
+  pure (CVar.add_ bZeta scaledB)
+
+/-- The bit `expectedB = b(c, ζ) + r · b(c, ζω)`. -/
+def bCorrectCircuit (chals : List (FVar F)) (zeta zetaOmega evalscale expectedB : FVar F) :
+    CircuitM F c (BoolVar F) := do
+  let computedB ← computeBCircuit chals zeta zetaOmega evalscale
+  equals expectedB computedB
 
 /-! ## Soundness -/
 
@@ -167,5 +199,60 @@ theorem challengePolyEvals_spec (pt : FVar F) :
     have hb := bPolyCircuit_spec (c := c) (V := V) chals pt cv hcv
     mvcgen [ih, hb]
     exact List.Forall₂.cons (CircuitType.reads_fvar.mpr ‹_›) ‹_›
+
+/-- Under any valuation satisfying the emitted constraints, with `endo` reading as `λ`, the
+`j`-th challenge reads as a natural `nⱼ < 2^128` and the `j`-th output as `endoExpand λ nⱼ`,
+Mina's `a·λ + b` from the GLV recoding of `nⱼ`. -/
+theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (endo : FVar F) :
+    ∀ chals : List (FVar F),
+      ⦃⌜True⌝⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
+      ⦃⇓ l _ => ⌜∃ ns : List ℕ,
+        List.Forall₂ (fun (ch : FVar F) (n : ℕ) => n < 2 ^ 128 ∧ ch.val V = (n : F)) chals ns ∧
+        List.Forall₂ (CircuitType.Reads V) l
+          (ns.map (Poseidon.FqSponge.endoExpand (endo.val V)))⌝⦄
+  | [] => by
+    simp only [computeChallenges]
+    mvcgen
+    exact ⟨[], .nil, .nil⟩
+  | ch :: rest => by
+    simp only [computeChallenges]
+    have ih := computeChallenges_spec h2 h3 endo rest
+    have hx := Snarky.Kimchi.EndoScalar.toField_spec (V := V) h2 h3 ch endo
+    mvcgen [ih, hx]
+    rename_i hrest _ _ hch
+    obtain ⟨ns, hns, hl⟩ := hrest
+    obtain ⟨n, hn, hchv, hrv⟩ := hch
+    exact ⟨n :: ns, .cons ⟨hn, hchv⟩ hns, .cons (CircuitType.reads_fvar.mpr hrv) hl⟩
+
+/-- Under any valuation satisfying the emitted constraints, with the challenges reading as
+`c = (c₀, …, c_{k−1})` and `ζ`, `ζω`, `r` as themselves, the output reads as
+`b(c, ζ) + r · b(c, ζω)`, which is `Bulletproof.combinedB c r ![ζ, ζω]`. -/
+theorem computeBCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F)
+    (cs : List F) (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
+    ⦃⌜True⌝⦄ computeBCircuit (c := Builder V c) chals zeta zetaOmega evalscale
+    ⦃⇓ a _ => ⌜a.val V = Bulletproof.combinedB (fun i : Fin cs.length => cs.get i)
+      (evalscale.val V) ![zeta.val V, zetaOmega.val V]⌝⦄ := by
+  simp only [computeBCircuit]
+  have hw := bPolyCircuit_spec (c := c) (V := V) chals zetaOmega cs hc
+  have hz := bPolyCircuit_spec (c := c) (V := V) chals zeta cs hc
+  mvcgen [hw, hz]
+  simp only [CVar.val_add_, Bulletproof.combinedB, Fin.sum_univ_two, Fin.val_zero, Fin.val_one,
+    pow_zero, pow_one, one_mul, Matrix.cons_val_zero, Matrix.cons_val_one, *]
+
+/-- Under any valuation satisfying the emitted constraints, with the challenges reading as
+`c`, the claim as `b` and `ζ`, `ζω`, `r` as themselves, the output bit reads `1` where
+`b = b(c, ζ) + r · b(c, ζω)` and `0` elsewhere. -/
+theorem bCorrectCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale expectedB : FVar F)
+    (cs : List F) (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
+    ⦃⌜True⌝⦄ bCorrectCircuit (c := Builder V c) chals zeta zetaOmega evalscale expectedB
+    ⦃⇓ b _ => ⌜(↑b : CVar F).val V = if expectedB.val V
+      = Bulletproof.combinedB (fun i : Fin cs.length => cs.get i) (evalscale.val V)
+          ![zeta.val V, zetaOmega.val V] then 1 else 0⌝⦄ := by
+  simp only [bCorrectCircuit]
+  have h := computeBCircuit_spec (c := c) (V := V) chals zeta zetaOmega evalscale cs hc
+  mvcgen [h]
+  intro hb
+  simp only [*]
 
 end Pickles
