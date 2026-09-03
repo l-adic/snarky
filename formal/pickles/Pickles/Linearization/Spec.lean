@@ -187,6 +187,11 @@ variable (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
     (e.toEnv endo mds α β γ jc van ulb lk feat).ifFeature f t n
       = if feat f then t () else n () := rfl
 
+/-- Replacing the Lagrange basis of a `toEnv` is building it with the other one. -/
+theorem Evals.toEnv_withUlb (ulb₀ : Bool → Int → R) :
+    (e.toEnv endo mds α β γ jc van ulb₀ lk feat).withUlb (fun zk off => pure (ulb zk off))
+      = e.toEnv endo mds α β γ jc van ulb lk feat := rfl
+
 end projections
 
 end Kimchi.Protocol.Linearization

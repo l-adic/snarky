@@ -146,6 +146,26 @@ def pop2 (s : EvalState F) : Option (F × F × EvalState F) :=
     | none => none
   | none => none
 
+theorem pop_position {s s' : EvalState F} {v : F} (h : s.pop = some (v, s')) :
+    s'.position = s.position := by
+  simp only [EvalState.pop] at h
+  split at h
+  · simp only [Option.some.injEq, Prod.mk.injEq] at h
+    rw [← h.2]
+  · exact absurd h (by simp)
+
+theorem pop2_position {s s' : EvalState F} {a b : F} (h : s.pop2 = some (a, b, s')) :
+    s'.position = s.position := by
+  simp only [EvalState.pop2] at h
+  split at h
+  · rename_i b₁ s₁ h₁
+    split at h
+    · rename_i a₁ s₂ h₂
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      rw [← h.2.2, pop_position h₂, pop_position h₁]
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
 /-- Apply `φ` to every cell of the stack and store; the position is unchanged. -/
 def map {S : Type} (φ : F → S) (s : EvalState F) : EvalState S :=
   ⟨s.stack.map φ, s.store.map φ, s.position⟩
@@ -174,6 +194,13 @@ def evalChallenge (env : Env m F) : ChallengeTerm → F
 an exhausted stack. -/
 def topOrZero (env : Env m F) (s : EvalState F) : F :=
   s.stack.back?.getD (env.literal 0)
+
+/-- The length of a disabled branch: the count carried by the `SkipIf` marker at
+`trueEnd`, or zero when there is none. -/
+def falseCount (toks : Array PolishToken) (trueEnd : Nat) : Nat :=
+  match toks[trueEnd]? with
+  | some (.skipIf _ c) => c
+  | _ => 0
 
 /-- Execute `toks` from `s.position` until `endPos`, within a fuel budget.
 
@@ -253,10 +280,7 @@ def evalLoop [Monad m] (env : Env m F) (toks : Array PolishToken) :
             evalLoop env toks fuel endPos { s with position := s.position + 1 + n }
         | .skipIfNot f n => do
             let trueEnd := s.position + 1 + n
-            let countFalse := match toks[trueEnd]? with
-              | some (.skipIf _ c) => c
-              | _ => 0
-            let falseEnd := trueEnd + 1 + countFalse
+            let falseEnd := trueEnd + 1 + falseCount toks trueEnd
             let res ← env.ifFeature f
               (fun _ => do
                 let s₁ ← evalLoop env toks fuel trueEnd { s with position := s.position + 1 }
@@ -370,6 +394,173 @@ theorem evaluate_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
     (toks : Array PolishToken) (hg : ∀ n ∈ alphaExponents toks, g n = env.alphaPow n) :
     evaluate (env.withAlphaPow g) toks = evaluate env toks := by
   simp only [evaluate, evalLoop_withAlphaPow env g toks hg]
+  rfl
+
+
+/-! ## Where a disabled-features run goes
+
+With every feature disabled, `SkipIfNot` runs its second branch only, so the positions a
+run visits are again a property of the program: `visited` walks the array with
+`evalLoop`'s control flow and no stack. A token the walk never reaches cannot influence
+the result, which is how `evaluate_withUlb` removes `unnormalizedLagrangeBasis` from the
+statement about the deployed streams: the walk decides that no visited position holds one,
+so the environment's implementation of it is irrelevant. -/
+
+/-- The positions a run with every feature disabled visits, from `pos` up to `endPos`
+within `fuel` steps. Mirrors `evalLoop`. -/
+def visited (toks : Array PolishToken) : Nat → Nat → Nat → List Nat
+  | 0, _, _ => []
+  | fuel + 1, endPos, pos =>
+    if pos ≥ endPos then []
+    else match (toks[pos]? : Option PolishToken) with
+      | none => []
+      | some (.challenge .alpha) =>
+        match (toks[pos + 1]? : Option PolishToken) with
+        | some (.pow _) => pos :: visited toks fuel endPos (pos + 2)
+        | _ => pos :: visited toks fuel endPos (pos + 1)
+      | some (.skipIf _ n) => pos :: visited toks fuel endPos (pos + 1 + n)
+      | some (.skipIfNot _ n) =>
+        pos :: (visited toks fuel (pos + 1 + n + 1 + falseCount toks (pos + 1 + n))
+            (pos + 1 + n + 1)
+          ++ visited toks fuel endPos (pos + 1 + n + 1 + falseCount toks (pos + 1 + n)))
+      | some _ => pos :: visited toks fuel endPos (pos + 1)
+
+/-- The positions a full run with every feature disabled visits. -/
+def visitedAll (toks : Array PolishToken) : List Nat := visited toks toks.size toks.size 0
+
+/-- Whether a token is an `unnormalizedLagrangeBasis`. -/
+def PolishToken.isUlb : PolishToken → Bool
+  | .unnormalizedLagrangeBasis _ _ => true
+  | _ => false
+
+/-- No `unnormalizedLagrangeBasis` at position `i`. -/
+def noUlbAt (toks : Array PolishToken) (i : Nat) : Bool :=
+  match toks[i]? with
+  | some t => !t.isUlb
+  | none => true
+
+/-- `env` with its Lagrange-basis implementation replaced. -/
+def Env.withUlb (env : Env m F) (g : Bool → Int → m F) : Env m F :=
+  { env with unnormalizedLagrangeBasis := g }
+
+/-- A run with every feature disabled that visits no `unnormalizedLagrangeBasis` does not
+depend on the environment's implementation of it. -/
+theorem evalLoop_withUlb [Monad m] (env : Env m F) (g : Bool → Int → m F)
+    (toks : Array PolishToken) (hdis : ∀ f (t n : Unit → m F), env.ifFeature f t n = n ()) :
+    ∀ (fuel endPos : Nat) (s : EvalState F),
+      (∀ i ∈ visited toks fuel endPos s.position, noUlbAt toks i = true) →
+      evalLoop (env.withUlb g) toks fuel endPos s = evalLoop env toks fuel endPos s := by
+  intro fuel
+  induction fuel with
+  | zero => intro endPos s _; rfl
+  | succ fuel ih =>
+    intro endPos s hvis
+    rw [evalLoop, evalLoop]
+    by_cases hge : s.position ≥ endPos
+    · simp only [if_pos hge]
+    · simp only [if_neg hge]
+      simp only [visited, if_neg hge] at hvis
+      cases htok : toks[s.position]? with
+      | none => rfl
+      | some tok =>
+        simp only [htok] at hvis
+        -- the continuation's obligation, for a next state whose position is known
+        have next : ∀ (pos : Nat) (st : EvalState F), st.position = pos →
+            (∀ i ∈ visited toks fuel endPos pos, noUlbAt toks i = true) →
+            evalLoop (env.withUlb g) toks fuel endPos st = evalLoop env toks fuel endPos st :=
+          fun pos st hst h => ih endPos st (hst ▸ h)
+        cases tok with
+        | unnormalizedLagrangeBasis zk off =>
+          have := hvis s.position (List.mem_cons_self ..)
+          simp [noUlbAt, htok, PolishToken.isUlb] at this
+        | challenge c =>
+          cases c with
+          | alpha =>
+            cases hp : toks[s.position + 1]? with
+            | some t =>
+              cases t with
+              | pow n =>
+                simp only [hp] at hvis
+                exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+              | _ =>
+                simp only [hp] at hvis
+                exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+            | none =>
+              simp only [hp] at hvis
+              exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | _ => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+        | dup =>
+          cases s.stack.back? with
+          | none => exact next _ s.advance rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some top =>
+            exact next _ (push top s.advance) rfl
+              (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+        | add =>
+          cases hp : s.pop2 with
+          | none => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some p =>
+            exact next (s.position + 1) _ (by simp [push, advance, pop2_position hp])
+              (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+        | sub =>
+          cases hp : s.pop2 with
+          | none => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some p =>
+            exact next (s.position + 1) _ (by simp [push, advance, pop2_position hp])
+              (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+        | mul =>
+          cases hp : s.pop2 with
+          | none => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some p =>
+            exact congrArg (env.mul p.1 p.2.1 >>= ·) (funext fun r =>
+              next (s.position + 1) (push r p.2.2.advance)
+                (by simp [push, advance, pop2_position hp])
+                (fun i hi => hvis i (List.mem_cons_of_mem _ hi)))
+        | pow n =>
+          cases hp : s.pop with
+          | none => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some p =>
+            exact congrArg (env.pow p.1 n >>= ·) (funext fun r =>
+              next (s.position + 1) (push r p.2.advance)
+                (by simp [push, advance, pop_position hp])
+                (fun i hi => hvis i (List.mem_cons_of_mem _ hi)))
+        | store =>
+          cases hp : s.pop with
+          | none => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some p =>
+            exact next (s.position + 1) _ (by simp [push, advance, pop_position hp])
+              (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+        | load i =>
+          dsimp only
+          cases s.store[i]? with
+          | none => exact next _ s.advance rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+          | some v =>
+            exact next _ (push v s.advance) rfl
+              (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+        | skipIfNot f n =>
+          have hdis' : ∀ f (t n : Unit → m F), (env.withUlb g).ifFeature f t n = n () := hdis
+          simp only [hdis, hdis']
+          have hfalse := ih (s.position + 1 + n + 1 + falseCount toks (s.position + 1 + n))
+            { s with position := s.position + 1 + n + 1 }
+            (fun i hi => hvis i (List.mem_cons_of_mem _ (List.mem_append_left _ hi)))
+          have hcont : ∀ res, evalLoop (env.withUlb g) toks fuel endPos
+                (push res { s with
+                  position := s.position + 1 + n + 1 + falseCount toks (s.position + 1 + n) })
+              = evalLoop env toks fuel endPos
+                (push res { s with
+                  position := s.position + 1 + n + 1 + falseCount toks (s.position + 1 + n) }) :=
+            fun res => next _ _ rfl
+              (fun i hi => hvis i (List.mem_cons_of_mem _ (List.mem_append_right _ hi)))
+          rw [hfalse]
+          exact congrArg (bind _) (funext hcont)
+        | _ => exact next _ _ rfl (fun i hi => hvis i (List.mem_cons_of_mem _ hi))
+
+/-- The entry point, for a stream no disabled-features run reads
+`unnormalizedLagrangeBasis` in. -/
+theorem evaluate_withUlb [Monad m] (env : Env m F) (g : Bool → Int → m F)
+    (toks : Array PolishToken) (hdis : ∀ f (t n : Unit → m F), env.ifFeature f t n = n ())
+    (hvis : ∀ i ∈ visitedAll toks, noUlbAt toks i = true) :
+    evaluate (env.withUlb g) toks = evaluate env toks := by
+  simp only [evaluate, evalLoop_withUlb env g toks hdis toks.size toks.size EvalState.init hvis]
   rfl
 
 end Pickles.Linearization

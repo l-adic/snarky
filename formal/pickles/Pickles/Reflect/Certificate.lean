@@ -251,12 +251,22 @@ private theorem fp_reflects :
     symValueP = gateLinearization Pasta.pallasEndo symMds (xv 51) symEvals := by
   native_decide
 
-/-- **The deployed `Fp` stream computes the gate linearization.** -/
-theorem evaluate_fpTokens (α β γ jc van : Fp) (e : Evals Fp) :
-    (evaluate (e.toEnv Pasta.pallasEndo symMds α β γ jc van (fun _ _ => 0) LookupEvals.zero
+/-- The `Fp` stream reads `unnormalizedLagrangeBasis` at no visited position: its six
+occurrences sit inside disabled branches. -/
+theorem visited_fpTokens_noUlb :
+    ∀ i ∈ visitedAll fpTokens, noUlbAt fpTokens i = true := by
+  native_decide
+
+/-- **The deployed `Fp` stream computes the gate linearization**, whatever the Lagrange
+basis reads as. -/
+theorem evaluate_fpTokens (α β γ jc van : Fp) (ulb : Bool → Int → Fp) (e : Evals Fp) :
+    (evaluate (e.toEnv Pasta.pallasEndo symMds α β γ jc van ulb LookupEvals.zero
       (fun _ => false)) fpTokens : Fp)
-      = gateLinearization Pasta.pallasEndo symMds α e :=
-  of_certificate _ _ _ fp_reflects α β γ jc van e
+      = gateLinearization Pasta.pallasEndo symMds α e := by
+  rw [← Evals.toEnv_withUlb Pasta.pallasEndo symMds α β γ jc van ulb LookupEvals.zero
+    (fun _ => false) e (fun _ _ => 0),
+    evaluate_withUlb _ _ _ (fun _ _ _ => rfl) visited_fpTokens_noUlb]
+  exact of_certificate _ _ _ fp_reflects α β γ jc van e
 
 /-- Pallas's scalar field, where a Vesta proof is verified. -/
 abbrev Fq := IpaPallas.curve.ScalarField
@@ -275,14 +285,26 @@ private theorem fq_reflects :
     symValueQ = gateLinearization Pasta.vestaEndo symMdsQ (xv 51) symEvals := by
   native_decide
 
-/-- **The deployed `Fq` stream computes the gate linearization.** -/
-theorem evaluate_fqTokens (α β γ jc van : Fq) (e : Evals Fq) :
-    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ α β γ jc van (fun _ _ => 0) LookupEvals.zero
-      (fun _ => false)) fqTokens : Fq)
-      = gateLinearization Pasta.vestaEndo symMdsQ α e :=
-  of_certificate _ _ _ fq_reflects α β γ jc van e
+/-- The `Fq` stream reads `unnormalizedLagrangeBasis` at no visited position. -/
+theorem visited_fqTokens_noUlb :
+    ∀ i ∈ visitedAll fqTokens, noUlbAt fqTokens i = true := by
+  native_decide
 
-/-! ## How far the α-table is read
+/-- **The deployed `Fq` stream computes the gate linearization**, whatever the Lagrange
+basis reads as. -/
+theorem evaluate_fqTokens (α β γ jc van : Fq) (ulb : Bool → Int → Fq) (e : Evals Fq) :
+    (evaluate (e.toEnv Pasta.vestaEndo symMdsQ α β γ jc van ulb LookupEvals.zero
+      (fun _ => false)) fqTokens : Fq)
+      = gateLinearization Pasta.vestaEndo symMdsQ α e := by
+  rw [← Evals.toEnv_withUlb Pasta.vestaEndo symMdsQ α β γ jc van ulb LookupEvals.zero
+    (fun _ => false) e (fun _ _ => 0),
+    evaluate_withUlb _ _ _ (fun _ _ _ => rfl) visited_fqTokens_noUlb]
+  exact of_certificate _ _ _ fq_reflects α β γ jc van e
+
+/-! ## What the streams reach
+
+Two more facts decided from the closed arrays, each removing a hypothesis from the
+statements about the deployed streams.
 
 The streams read `alphaPow` only through the Alpha+Pow peephole, so the exponents reached
 are `alphaExponents` of the array — a syntactic fact, decided here from the same closed

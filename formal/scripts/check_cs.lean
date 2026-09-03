@@ -509,7 +509,7 @@ def linearizationCircuit (domLog2 : Nat) (toks : Array PolishToken)
       vanishes := .const 1 }
   evaluate (inp.toEnv Pasta.pallasEndo
     (Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams)
-    lookupZero (fun _ => false)) toks
+    lookupZero (fun _ => false) (fun _ _ => pure (.const 0))) toks
 
 /-- The corpus under comparison: every witness-carrying `Basic`-gadget circuit. -/
 def targets : List (String × (Raw → List (String × Bool))) :=

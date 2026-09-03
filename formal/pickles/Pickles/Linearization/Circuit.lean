@@ -308,14 +308,13 @@ open Kimchi.Protocol.Linearization in
 /-- The in-circuit environment. `add`/`sub` are the affine folds and emit nothing; `mul`
 and `pow` are the gadgets; the gate parameters and literals enter as constants.
 
-`unnormalizedLagrangeBasis` is the constant zero rather than a gadget. The deployed stream
-reaches it zero times — both occurrences sit inside feature-flagged branches that the
-modelled fragment disables — so a real implementation would be unreachable code, and
-pinning it here keeps the pure side literally the one `Pickles.Reflect.evaluate_fpTokens`
-speaks about. -/
+`unnormalizedLagrangeBasis` is a parameter, `ulb`, any gadget at all. The deployed stream
+never reaches it with the modelled features disabled (`Pickles.Reflect.visited_fpTokens_noUlb`),
+so the circuit theorems hold for every choice and say nothing about it. -/
 def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F) (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
-    (feat : FeatureFlag → Bool) (inp : Inputs F) : Env (CircuitM F c) (FVar F) where
+    (feat : FeatureFlag → Bool) (ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) :
+    Env (CircuitM F c) (FVar F) where
   add := CVar.add_
   sub := CVar.sub_
   mul := Snarky.mul
@@ -347,26 +346,33 @@ def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
   endoCoefficient := .const endo
   literal v := .const (v : F)
   vanishesOnZeroKnowledgeAndPreviousRows := inp.vanishes
-  unnormalizedLagrangeBasis _ _ := pure (.const 0)
+  unnormalizedLagrangeBasis := ulb
   jointCombiner := inp.jointCombiner
   beta := inp.beta
   gamma := inp.gamma
   ifFeature f onTrue onFalse := if feat f then onTrue () else onFalse ()
 
+/-- Replacing the Lagrange basis of an `Inputs.toEnv` is building it with the other one. -/
+theorem Inputs.toEnv_withUlb (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
+    (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F)) (feat : FeatureFlag → Bool)
+    (ulb₀ ulb : Bool → Int → CircuitM F c (FVar F)) (inp : Inputs F) :
+    (inp.toEnv endo mds lk feat ulb₀).withUlb ulb = inp.toEnv endo mds lk feat ulb := rfl
+
 open Kimchi.Protocol.Linearization in
 /-- **The concrete environment computes the specified one.** Under any satisfying
 valuation, the circuit environment's readings are the pure environment built from those
-same readings, with the α-table read AS IT IS: the pure side's table is the circuit
+same readings, with the α-table read as it is: the pure side's table is the circuit
 table's own readings rather than the powers of `α`, so nothing is assumed about it. That
 the readings are the powers of `α` where the stream looks is a separate obligation, on
 `alphaExponents` alone — see `Pickles.Reflect.circuit_gateLinearization` — which is what
 lets a finite precomputed table (`precomputeAlphaPowers`) discharge it. The `α` here only
-seeds the base environment and is overwritten by the table. -/
+seeds the base environment and is overwritten by the table. The Lagrange basis is the
+constant zero on both sides; `evaluate_withUlb` lifts the circuit theorem to any gadget. -/
 theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
     (feat : FeatureFlag → Bool) (inp : Inputs F) (α : F) :
-    CircuitCompatible V (c := c) (inp.toEnv endo mds lk feat)
+    CircuitCompatible V (c := c) (inp.toEnv endo mds lk feat (fun _ _ => pure (.const 0)))
       (((inp.evals.map (·.val V)).toEnv endo mds α (inp.beta.val V) (inp.gamma.val V)
         (inp.jointCombiner.val V) (inp.vanishes.val V) (fun _ _ => 0)
         (lk.map (·.val V)) feat).withAlphaPow (fun n => (inp.alphaPows n).val V)) where
