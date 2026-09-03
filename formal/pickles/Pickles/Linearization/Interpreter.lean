@@ -272,4 +272,100 @@ def evaluate [Monad m] (env : Env m F) (toks : Array PolishToken) : m F := do
   let s ← evalLoop env toks toks.size toks.size EvalState.init
   pure (topOrZero env s)
 
+
+/-! ## Where the α-table is read
+
+`alphaPow` is reached from exactly one place: the Alpha+Pow peephole, at `n` when `Alpha`
+is followed by `Pow n` and at `1` otherwise. So the exponents a run can read are a
+SYNTACTIC property of the program, listable by inspecting the array — and a run is
+insensitive to the table anywhere else. That is what lets a FINITE precomputed table
+discharge every α-obligation of a concrete stream: the obligation is stated on
+`alphaExponents toks`, and for the deployed streams that list is decided once, from the
+array, rather than assumed. -/
+
+/-- The exponents at which running `toks` may read `alphaPow`: `n` for each `Alpha` the
+peephole fuses with a following `Pow n`, and `1` for each it does not. -/
+def alphaExponents (toks : Array PolishToken) : List Nat :=
+  (List.range toks.size).filterMap fun i =>
+    match (toks[i]? : Option PolishToken) with
+    | some (.challenge .alpha) =>
+      match (toks[i + 1]? : Option PolishToken) with
+      | some (.pow n) => some n
+      | _ => some 1
+    | _ => none
+
+/-- A fused `Alpha`/`Pow n` reads exponent `n`. -/
+theorem mem_alphaExponents_of_pow {toks : Array PolishToken} {i n : Nat}
+    (hi : toks[i]? = some (.challenge .alpha)) (hp : toks[i + 1]? = some (.pow n)) :
+    n ∈ alphaExponents toks := by
+  have hlt : i < toks.size := (Array.getElem?_eq_some_iff.mp hi).1
+  simp only [alphaExponents, List.mem_filterMap, List.mem_range]
+  exact ⟨i, hlt, by simp [hi, hp]⟩
+
+/-- An unfused `Alpha` reads exponent `1`. -/
+theorem mem_alphaExponents_one {toks : Array PolishToken} {i : Nat}
+    (hi : toks[i]? = some (.challenge .alpha))
+    (hp : ∀ n, toks[i + 1]? ≠ some (.pow n)) :
+    1 ∈ alphaExponents toks := by
+  have hlt : i < toks.size := (Array.getElem?_eq_some_iff.mp hi).1
+  simp only [alphaExponents, List.mem_filterMap, List.mem_range]
+  refine ⟨i, hlt, ?_⟩
+  cases h : toks[i + 1]? with
+  | none => simp [hi]
+  | some t =>
+    cases t with
+    | pow n => exact absurd h (hp n)
+    | _ => simp [hi]
+
+/-- `env` with its α-table replaced. -/
+def Env.withAlphaPow (env : Env m F) (g : Nat → F) : Env m F := { env with alphaPow := g }
+
+/-- **A run reads the α-table only at `alphaExponents`.** Two environments differing only
+in the table, and agreeing there, run identically — for every fuel, bound and start.
+
+Every case but the peephole's is `ih` then `rfl`: once the recursive call is rewritten,
+the two sides differ only in a projection of the updated record, which is definitional. -/
+theorem evalLoop_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
+    (toks : Array PolishToken) (hg : ∀ n ∈ alphaExponents toks, g n = env.alphaPow n) :
+    ∀ (fuel endPos : Nat) (s : EvalState F),
+      evalLoop (env.withAlphaPow g) toks fuel endPos s = evalLoop env toks fuel endPos s := by
+  intro fuel
+  induction fuel with
+  | zero => intro endPos s; rfl
+  | succ fuel ih =>
+    intro endPos s
+    rw [evalLoop, evalLoop]
+    split
+    · rfl
+    · cases htok : toks[s.position]? with
+      | none => rfl
+      | some tok =>
+        cases tok with
+        | challenge c =>
+          cases c with
+          | alpha =>
+            cases hp : toks[s.position + 1]? with
+            | some t =>
+              cases t with
+              | pow n =>
+                simp only [ih]
+                simp only [Env.withAlphaPow, hg n (mem_alphaExponents_of_pow htok hp)]
+              | _ =>
+                simp only [ih]
+                simp only [Env.withAlphaPow,
+                  hg 1 (mem_alphaExponents_one htok (fun _ h => by rw [hp] at h; cases h))]
+            | none =>
+              simp only [ih]
+              simp only [Env.withAlphaPow,
+                hg 1 (mem_alphaExponents_one htok (fun _ h => by rw [hp] at h; cases h))]
+          | _ => simp only [ih] <;> rfl
+        | _ => simp only [ih] <;> rfl
+
+/-- **The entry point reads the α-table only at `alphaExponents`.** -/
+theorem evaluate_withAlphaPow [Monad m] (env : Env m F) (g : Nat → F)
+    (toks : Array PolishToken) (hg : ∀ n ∈ alphaExponents toks, g n = env.alphaPow n) :
+    evaluate (env.withAlphaPow g) toks = evaluate env toks := by
+  simp only [evaluate, evalLoop_withAlphaPow env g toks hg]
+  rfl
+
 end Pickles.Linearization

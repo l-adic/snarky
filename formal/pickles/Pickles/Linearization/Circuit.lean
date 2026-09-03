@@ -265,7 +265,11 @@ proof's evaluations and challenges — together with the PRECOMPUTED table of α
 That table is the reason `alphaPow` sits on the affine side of `CircuitCompatible`: in
 circuit it is a lookup, costing nothing, where computing `α^n` per occurrence would emit
 rows at each of the stream's 124 α-sites. It has to be built before the interpreter runs
-and handed in, exactly as `precomputeAlphaPowers` does in the PureScript. -/
+and handed in, exactly as `precomputeAlphaPowers` does in the PureScript — and it is
+FINITE, so the compatibility statement must not demand it read as `α^n` everywhere. It
+demands nothing: the pure side is given the table's own readings, and the identification
+with `α^n` is made afterwards, only at the exponents the stream reads
+(`Pickles.Linearization.alphaExponents`). -/
 
 /-- All lookup columns as the circuit constant zero — the modelled fragment's
 instantiation. `LookupEvals.zero` will not serve: `FVar` has no `Zero` instance, the
@@ -352,38 +356,44 @@ def Inputs.toEnv [Field F] [DecidableEq F] [BasicSystem F c] (endo : F)
 open Kimchi.Protocol.Linearization in
 /-- **The concrete environment computes the specified one.** Under any satisfying
 valuation, the circuit environment's readings are the pure environment built from those
-same readings — provided the α-table reads as the powers of `α`, which is the caller's
-obligation and what `precomputeAlphaPowers` discharges. -/
+same readings, with the α-table read AS IT IS: the pure side's table is the circuit
+table's own readings rather than the powers of `α`, so nothing is assumed about it. That
+the readings are the powers of `α` where the stream looks is a separate obligation, on
+`alphaExponents` alone — see `Pickles.Reflect.circuit_gateLinearization` — which is what
+lets a finite precomputed table (`precomputeAlphaPowers`) discharge it. The `α` here only
+seeds the base environment and is overwritten by the table. -/
 theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo : F)
     (mds : Kimchi.Gate.Poseidon.Mds F)
     (lk : Kimchi.Protocol.Linearization.LookupEvals (FVar F))
-    (feat : FeatureFlag → Bool) (inp : Inputs F) (α : F)
-    (htab : ∀ n, (inp.alphaPows n).val V = α ^ n) :
+    (feat : FeatureFlag → Bool) (inp : Inputs F) (α : F) :
     CircuitCompatible V (c := c) (inp.toEnv endo mds lk feat)
-      ((inp.evals.map (·.val V)).toEnv endo mds α (inp.beta.val V) (inp.gamma.val V)
+      (((inp.evals.map (·.val V)).toEnv endo mds α (inp.beta.val V) (inp.gamma.val V)
         (inp.jointCombiner.val V) (inp.vanishes.val V) (fun _ _ => 0)
-        (lk.map (·.val V)) feat) where
-  add x y := by simp [Inputs.toEnv, Evals.toEnv]
-  sub x y := by simp [Inputs.toEnv, Evals.toEnv]
+        (lk.map (·.val V)) feat).withAlphaPow (fun n => (inp.alphaPows n).val V)) where
+  add x y := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
+  sub x y := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
   mul x y := Snarky.mul_spec x y
   pow x n := Snarky.pow_spec x n
   var col row := by
     cases col with
-    | index g => cases g <;> cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map]
+    | index g =>
+      cases g <;> cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map, Env.withAlphaPow]
     | witness i =>
-      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map] <;> split <;> simp
+      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map, Env.withAlphaPow]
+        <;> split <;> simp
     | coefficient i =>
-      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map] <;> split <;> simp
-    | _ => cases row <;> simp [Inputs.toEnv, Evals.toEnv, LookupEvals.map]
+      cases row <;> simp [Inputs.toEnv, Evals.toEnv, Evals.map, Env.withAlphaPow]
+        <;> split <;> simp
+    | _ => cases row <;> simp [Inputs.toEnv, Evals.toEnv, LookupEvals.map, Env.withAlphaPow]
   cell _ := rfl
-  alphaPow n := by simp [Inputs.toEnv, Evals.toEnv, htab]
+  alphaPow n := rfl
   mds r c := by
     match r, c with
     | 0, 0 | 0, 1 | 0, 2 | 1, 0 | 1, 1 | 1, 2 | 2, 0 | 2, 1 | 2, 2 =>
-      simp [Inputs.toEnv, Evals.toEnv]
-    | _ + 3, _ | _, _ + 3 => simp [Inputs.toEnv, Evals.toEnv]
-  endoCoefficient := by simp [Inputs.toEnv, Evals.toEnv]
-  literal v := by simp [Inputs.toEnv, Evals.toEnv]
+      simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
+    | _ + 3, _ | _, _ + 3 => simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
+  endoCoefficient := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
+  literal v := by simp [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
   vanishes := rfl
   ulb zk off := by
     show ⦃⌜True⌝⦄ (pure (.const 0) : CircuitM F (Builder V c) (FVar F))
@@ -393,7 +403,7 @@ theorem inputs_circuitCompatible [LawfulBasicSystem F c] {V : Valuation F} (endo
   beta := rfl
   gamma := rfl
   ifFeature f t₁ n₁ t₂ n₂ ht hn := by
-    simp only [Inputs.toEnv, Evals.toEnv]
+    simp only [Inputs.toEnv, Evals.toEnv, Env.withAlphaPow]
     split <;> assumption
 
 end Pickles.Linearization

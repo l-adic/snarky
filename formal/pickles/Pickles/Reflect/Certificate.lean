@@ -30,7 +30,10 @@ token.
 
 This module is the ONLY place in the tree that uses `native_decide` outside the upstream
 CompElliptic certificates and pasta's two declared GLV anchors, and it is named in each
-package's axiom gate for exactly that reason. It trusts the compiler through
+package's axiom gate for exactly that reason. Besides the two certificates it decides one
+more fact about the closed streams — how far they read the α-table, at the end of the
+module — which is bookkeeping of the same kind and lives here so the gate has one module
+to trust. It trusts the compiler through
 `Lean.trustCompiler`. The alternative, kernel `decide`, is not viable on a 486-monomial
 comparison over a 255-bit field.
 
@@ -277,5 +280,25 @@ theorem evaluate_fqTokens (α β γ jc van : Fq) (e : Evals Fq) :
       (fun _ => false)) fqTokens : Fq)
       = gateLinearization Pasta.vestaEndo symMdsQ α e :=
   of_certificate _ _ _ fq_reflects α β γ jc van e
+
+/-! ## How far the α-table is read
+
+The streams read `alphaPow` only through the Alpha+Pow peephole, so the exponents reached
+are `alphaExponents` of the array — a syntactic fact, decided here from the same closed
+term the certificates are decided from. It is what a finite precomputed table needs: the
+circuit's obligation on the table stops at this bound instead of ranging over every
+natural. Both deployed streams stop at `31`; the PureScript table
+(`Pickles.Linearization.Env.AlphaPowersLen`) holds `71`. -/
+
+/-- The largest exponent at which either deployed stream reads the α-table. -/
+def alphaBound : Nat := 31
+
+/-- The `Fp` stream reads the α-table at exponents `≤ alphaBound` only. -/
+theorem alphaExponents_fpTokens_le : ∀ n ∈ alphaExponents fpTokens, n ≤ alphaBound := by
+  native_decide
+
+/-- The `Fq` stream reads the α-table at exponents `≤ alphaBound` only. -/
+theorem alphaExponents_fqTokens_le : ∀ n ∈ alphaExponents fqTokens, n ≤ alphaBound := by
+  native_decide
 
 end Pickles.Reflect

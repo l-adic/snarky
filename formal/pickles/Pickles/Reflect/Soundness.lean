@@ -9,12 +9,23 @@ Where the three developments meet.
 * `Pickles.Linearization.evaluate_spec` — the constraints the in-circuit interpreter emits
   pin its output to the pure interpreter's value.
 * `Pickles.Linearization.inputs_circuitCompatible` — the concrete circuit environment
-  computes the specified one.
-* `Pickles.Reflect.evaluate_fpTokens` — the deployed stream's pure value IS the closed-form
-  gate linearization.
+  computes the specified one, with the α-table read as it is.
+* `Pickles.Linearization.evaluate_withAlphaPow` — the run reads the table only at the
+  stream's exponents, so a finite table discharges the identification with `α^n`.
+* `Pickles.Reflect.evaluate_fpTokens` / `evaluate_fqTokens` — each deployed stream's pure
+  value IS the closed-form gate linearization, and `alphaExponents_f{p,q}Tokens_le` — each
+  reads the table no further than `alphaBound`.
 
 Composing them gives a statement whose right-hand side is the verifier's own quantity
 rather than a restatement of the token program: the gate contribution to `ftEval0`.
+
+The composition is GENERIC — `circuit_gateLinearization` takes the stream and its
+reflection endpoint as arguments and knows nothing of Pasta — because nothing in it is
+field-specific; only the endpoint is. The two deployed corollaries instantiate it on each
+side of the cycle: `circuit_gateLinearization_fp` for the `Fp` stream, where a Pallas proof
+is verified, and `circuit_gateLinearization_fq` for the `Fq` stream, where a Vesta proof
+is. Those two are the results this package stands behind, and the axiom gate roots them:
+everything above is in their closure.
 
 It is RELATIVE faithfulness. It says the circuit computes what the wire protocol computes;
 whether the wire protocol is sound is a separate question and out of scope — see
@@ -28,37 +39,75 @@ namespace Pickles.Reflect
 
 open Std.Do Snarky Pickles.Linearization Kimchi.Protocol.Linearization
 
-variable {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c] [LawfulBasicSystem Fp c]
+/-- **The in-circuit reading of a certified stream computes the gate contribution to
+`ftEval0`**, for a table correct where the stream looks. Any valuation satisfying the
+emitted constraints reads the interpreter's output as `gateLinearization` at the readings
+of the circuit's own inputs.
 
-/-- **The in-circuit reading of the deployed stream computes the gate contribution to
-`ftEval0`.** Any valuation satisfying the emitted constraints reads the interpreter's
-output as `gateLinearization` at the readings of the circuit's own inputs.
+`hcert` is the stream's reflection endpoint — its pure value is the closed form at every
+evaluation and every challenge — and is all that ties the statement to a particular
+stream. The α-table obligation is on `alphaExponents toks` alone: the run reads the table
+nowhere else (`evaluate_withAlphaPow`), so a caller with a finite table owes nothing about
+the entries the stream never touches. -/
+theorem circuit_gateLinearization {F c : Type} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
+    (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (toks : Array PolishToken)
+    (hcert : ∀ (α β γ jc van : F) (e : Evals F),
+      (evaluate (e.toEnv endo mds α β γ jc van (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)) toks : F) = gateLinearization endo mds α e)
+    (inp : Inputs F) (α : F)
+    (htab : ∀ n ∈ alphaExponents toks, (inp.alphaPows n).val V = α ^ n) :
+    ⦃⌜True⌝⦄
+    evaluate (inp.toEnv (c := Builder V c) endo mds lookupZero (fun _ => false)) toks
+    ⦃⇓ a _ => ⌜a.val V = gateLinearization endo mds α (inp.evals.map (·.val V))⌝⦄ := by
+  have h := inputs_circuitCompatible (c := c) (V := V) endo mds lookupZero
+    (fun _ => false) inp α
+  rw [lookupZero_map] at h
+  have hdc : ∀ f (t n : Unit → CircuitM F (Builder V c) (FVar F)),
+      (inp.toEnv (c := Builder V c) endo mds lookupZero (fun _ => false)).ifFeature f t n
+        = n () := by
+    intro f t n; simp [Inputs.toEnv]
+  have hdp : ∀ f (t n : Unit → Id F),
+      (((inp.evals.map (·.val V)).toEnv endo mds α (inp.beta.val V) (inp.gamma.val V)
+        (inp.jointCombiner.val V) (inp.vanishes.val V) (fun _ _ => 0) LookupEvals.zero
+        (fun _ => false)).withAlphaPow (fun n => (inp.alphaPows n).val V)).ifFeature f t n
+        = n () := by
+    intro f t n; simp [Evals.toEnv, Env.withAlphaPow]
+  have hs := evaluate_spec h hdc hdp toks
+  rw [evaluate_withAlphaPow _ _ _ (fun n hn => by simpa [Evals.toEnv] using htab n hn),
+    hcert] at hs
+  exact hs
 
-The α-table hypothesis is the caller's obligation: the powers must be precomputed and read
-correctly, which is what `precomputeAlphaPowers` establishes on the PureScript side. It is
-what keeps `alphaPow` free — a lookup rather than a per-site exponentiation at each of the
-stream's 124 α-occurrences. -/
-theorem circuit_gateLinearization {V : Valuation Fp} (inp : Inputs Fp) (α : Fp)
-    (htab : ∀ n, (inp.alphaPows n).val V = α ^ n) :
+/-! ## The deployed streams
+
+One corollary per side of the cycle. Each supplies its endpoint from `Certificate.lean`
+and trades the exponent-set obligation for the decided bound, so a precomputed table of
+length `alphaBound + 1` is all a caller owes. -/
+
+/-- **The `Fp` stream in circuit computes the gate contribution to `ftEval0`** — Vesta's
+scalar field, where a Pallas proof is verified. -/
+theorem circuit_gateLinearization_fp {c : Type} [BasicSystem Fp c] [ConstraintHolds Fp c]
+    [LawfulBasicSystem Fp c] {V : Valuation Fp} (inp : Inputs Fp) (α : Fp)
+    (htab : ∀ n ≤ alphaBound, (inp.alphaPows n).val V = α ^ n) :
     ⦃⌜True⌝⦄
     evaluate (inp.toEnv (c := Builder V c) Pasta.pallasEndo symMds lookupZero
       (fun _ => false)) fpTokens
     ⦃⇓ a _ => ⌜a.val V = gateLinearization Pasta.pallasEndo symMds α
-      (inp.evals.map (·.val V))⌝⦄ := by
-  have h := inputs_circuitCompatible (c := c) (V := V) Pasta.pallasEndo symMds
-    lookupZero (fun _ => false) inp α htab
-  rw [lookupZero_map] at h
-  have hdc : ∀ f (t n : Unit → CircuitM Fp (Builder V c) (FVar Fp)),
-      (inp.toEnv (c := Builder V c) Pasta.pallasEndo symMds lookupZero
-        (fun _ => false)).ifFeature f t n = n () := by
-    intro f t n; simp [Inputs.toEnv]
-  have hdp : ∀ f (t n : Unit → Id Fp),
-      ((inp.evals.map (·.val V)).toEnv Pasta.pallasEndo symMds α (inp.beta.val V)
-        (inp.gamma.val V) (inp.jointCombiner.val V) (inp.vanishes.val V) (fun _ _ => 0)
-        LookupEvals.zero (fun _ => false)).ifFeature f t n = n () := by
-    intro f t n; simp [Evals.toEnv]
-  have hs := evaluate_spec h hdc hdp fpTokens
-  rw [evaluate_fpTokens] at hs
-  exact hs
+      (inp.evals.map (·.val V))⌝⦄ :=
+  circuit_gateLinearization Pasta.pallasEndo symMds fpTokens evaluate_fpTokens inp α
+    fun n hn => htab n (alphaExponents_fpTokens_le n hn)
+
+/-- **The `Fq` stream in circuit computes the gate contribution to `ftEval0`** — Pallas's
+scalar field, where a Vesta proof is verified. -/
+theorem circuit_gateLinearization_fq {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq c]
+    [LawfulBasicSystem Fq c] {V : Valuation Fq} (inp : Inputs Fq) (α : Fq)
+    (htab : ∀ n ≤ alphaBound, (inp.alphaPows n).val V = α ^ n) :
+    ⦃⌜True⌝⦄
+    evaluate (inp.toEnv (c := Builder V c) Pasta.vestaEndo symMdsQ lookupZero
+      (fun _ => false)) fqTokens
+    ⦃⇓ a _ => ⌜a.val V = gateLinearization Pasta.vestaEndo symMdsQ α
+      (inp.evals.map (·.val V))⌝⦄ :=
+  circuit_gateLinearization Pasta.vestaEndo symMdsQ fqTokens evaluate_fqTokens inp α
+    fun n hn => htab n (alphaExponents_fqTokens_le n hn)
 
 end Pickles.Reflect

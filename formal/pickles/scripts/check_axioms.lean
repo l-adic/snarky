@@ -1,13 +1,21 @@
-import Pickles.Reflect.Certificate
+import Pickles.Reflect.Soundness
 import Lean.Elab.Command
 
 /-! Gate the pickles linearization results' axiom closure.
 
-The two reflection endpoints are the ONLY declarations in this tree permitted a
-`native_decide` certificate, and only one from `Pickles/Reflect/Certificate.lean` — the
-module declared to hold them. Everything else, the transport lemmas included, must reduce
-to the standard logical axioms alone: their content is ordinary proof, and a certificate
-appearing there would mean a computation had leaked into a law.
+The roots are the results this package stands behind: the two circuit theorems, one per
+side of the cycle, and the two reflection endpoints they rest on. Everything else the
+package proves — the machine's simulation laws, the environment's compatibility, the
+transport lemmas, the decided α-bound — is in their dependency closure, and
+`collectAxioms` walks the closure, so a stray axiom anywhere beneath them is caught here
+without being named.
+
+`Pickles/Reflect/Certificate.lean` is the ONLY module in this tree permitted to decide by
+`native_decide`: the two reflection certificates and the α-table bound of the closed
+streams. Every root rests on it, so every root may carry that module's certificates and
+nothing else; the rest of the closure must reduce to the standard logical axioms alone,
+since its content is ordinary proof and a certificate appearing there would mean a
+computation had leaked into a law.
 
 The discriminator is the DEFINING MODULE rather than a name prefix, following the kimchi
 gate: an axiom's name is forgeable from inside a matching `namespace` block, its defining
@@ -20,20 +28,18 @@ namespace Pickles.CheckAxioms
 
 /-- Every result this package stands behind. -/
 def roots : List Name :=
-  [ `Pickles.Reflect.evaluate_fpTokens,
-    `Pickles.Reflect.evaluate_fqTokens,
-    `Pickles.Linearization.evaluate_map,
-    `Kimchi.Protocol.Linearization.toEnv_compatible,
-    `Kimchi.Protocol.Linearization.gateLinearization_map ]
+  [ `Pickles.Reflect.circuit_gateLinearization_fp,
+    `Pickles.Reflect.circuit_gateLinearization_fq,
+    `Pickles.Reflect.evaluate_fpTokens,
+    `Pickles.Reflect.evaluate_fqTokens ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 
-/-- The roots allowed to additionally carry a certified `native_decide` witness: the two
-reflection endpoints, which rest on the polynomial identity decided by compilation. -/
-def deployedRoots : List Name :=
-  [ `Pickles.Reflect.evaluate_fpTokens,
-    `Pickles.Reflect.evaluate_fqTokens ]
+/-- The roots allowed to carry a certified `native_decide` witness: all of them, each
+resting on `Certificate.lean`'s decisions — the polynomial identity for the endpoints, and
+that plus the α-table bound for the circuit theorems. -/
+def deployedRoots : List Name := roots
 
 /-- A trusted `native_decide` certificate: an upstream CompElliptic module (the Pasta field
 and curve certificates), `Pasta/Endo.lean` (the two declared GLV eigenvalue anchors), or
@@ -60,7 +66,7 @@ run_cmd do
         bad := bad.push (root, ax)
   if bad.isEmpty then
     IO.println s!"✓ all {Pickles.CheckAxioms.roots.length} Pickles roots reduce to \
-      {Pickles.CheckAxioms.allowed} (+ the two declared linearization certificates)"
+      {Pickles.CheckAxioms.allowed} (+ the declared Certificate.lean decisions)"
   else
     for (r, a) in bad do
       IO.eprintln s!"::error::{r} depends on disallowed axiom {a}"
