@@ -81,6 +81,10 @@ structure PointEvaluations (F : Type*) where
   /-- The evaluation at `ζω`. -/
   zetaOmega : F
 
+/-- The pair as a row of the batch's evaluation matrix: `ζ` then `ζω`. -/
+def PointEvaluations.toVector {F : Type*} (e : PointEvaluations F) : Vector F evalPts :=
+  #v[e.zeta, e.zetaOmega]
+
 /-- The proof's claimed evaluations, one `PointEvaluations` per column family
 (`ProofEvaluations`, proof.rs), generic in the per-point payload `E`: `Array F` on the
 wire (chunk vectors of unchecked length), `Vector F nc` after `check`. The fixed

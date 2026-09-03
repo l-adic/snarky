@@ -146,11 +146,17 @@ def ftEval0Circuit (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (toks : Array P
   let constantTerm ← evaluate (inp.toEnv endo mds lookupZero feat ulb) toks
   pure (CVar.sub_ permResult constantTerm)
 
-/-- Any valuation satisfying the constraints `ftEval0Circuit` emits reads its output as
-`ftEval0` at the readings of the inputs: the challenges and evaluations read under `V`, the
-α-table correct up to `bound ≥ 23` (`htab`), and the upstream inputs reading as the
-quantities they stand for (`hζ`, `hzk`, `hz1`, `hω`). The stream hypotheses `hcert` and
-`hreads` are `Pickles.Reflect.circuit_gateLinearization`'s. -/
+/-- Under any valuation satisfying the emitted constraints, with the α-table reading as the
+powers of `α` up to `bound ≥ 23`, the challenges as `β, γ, ζ`, the public evaluation as `p`,
+the evaluations as `wᵢ, sᵢ, z, z_ω`, and the upstream inputs as `zk = zkpm(ζ)`, `ζⁿ − 1` and
+`ω_zk = ω^{n−zkRows}`, the output reads as `ftEval0`, that is
+```
+  (w₆ + γ) · z_ω · α²¹ · zk · ∏_{i<6} (β·sᵢ + wᵢ + γ)  −  p
+  − α²¹ · zk · z · ∏_{i<7} (γ + β·ζ·shiftᵢ + wᵢ)
+  + ((ζⁿ−1)·α²²·(ζ − ω_zk) + (ζⁿ−1)·α²³·(ζ − 1)) · (1 − z) / ((ζ − ω_zk)·(ζ − 1))
+  − gateLinearization α (evals)
+```
+The stream hypotheses `hcert` and `hreads` are `Pickles.Reflect.circuit_gateLinearization`'s. -/
 theorem ftEval0Circuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
     (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (toks : Array PolishToken)
     (feat : FeatureFlag → Bool) (bound : Nat)

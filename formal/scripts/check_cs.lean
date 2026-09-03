@@ -22,8 +22,10 @@ The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 endo_mul), the gadget-complete pickles sub-circuits (pow2_pow, b_correct,
 bullet_reduce_one_step, bullet_reduce_step — composition fixtures, the bullet pair
 composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
-checks are CS-side only), and ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
-the linearization prelude, against the PS `FtEval0Common` harness). Deferred, with the
+checks are CS-side only), ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
+the linearization prelude, against the PS `FtEval0Common` harness), and cip_{step,wrap}
+(the proved `Pickles.combinedInnerProduct` over `Pickles.bPolyCircuit`, against the PS
+`Cip` harness — the wrap column's first pickles sub-circuit). Deferred, with the
 blocker each waits on:
 - ftcomm_*, xhat_* (and everything downstream: ivp, verify, wrap/step mains) — the
   pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
@@ -59,6 +61,8 @@ import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Pickles.Linearization.Circuit
 import Pickles.FtEval0
+import Pickles.IPA
+import Pickles.CombinedInnerProduct
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -298,33 +302,6 @@ def pow2PowCircuit (input : Vector (FVar Fp) 1) : CircuitM Fp C PUnit := do
   let _ ← (List.range 16).foldlM (fun acc _ => square acc) input[0]
   pure PUnit.unit
 
-/-- The Type1 shifted-scalar unshift constant `2^255 + 1` (PS `Shifted.shift1` at the
-255-bit step field): `fromShiftedType1Circuit t = 2·t + c`, constraint-free. -/
-def shift1c : Fp := 2 ^ 255 + 1
-
-/-- The challenge polynomial `∏ᵢ (1 + cᵢ·pt^(2^(k-1-i)))` (PS `IPA.bPolyCircuit`):
-`k−1` squarings (as generic `mul` rows, matching OCaml's `Field.( * )`), then the
-`k`-term product folded left, allocation order verbatim. -/
-def bPolyCircuit (chals : List (FVar Fp)) (pt : FVar Fp) :
-    CircuitM Fp C (FVar Fp) := do
-  let (squares, _) ← mapAccumM
-    (fun (prev : FVar Fp) (_ : Unit) => do
-      let sq ← mul prev prev
-      pure (sq, sq))
-    pt (List.replicate (chals.length - 1) ())
-  let powTwoPows := pt :: squares
-  match chals.zip powTwoPows.reverse with
-  | [] => pure (.const 1)
-  | (c0, pw0) :: rest => do
-    let cp0 ← mul c0 pw0
-    let init := CVar.add_ (.const 1) cp0
-    rest.foldlM
-      (fun acc (cpw : FVar Fp × FVar Fp) => do
-        let cp ← mul cpw.1 cpw.2
-        let term := CVar.add_ (.const 1) cp
-        mul term acc)
-      init
-
 /-- `b_correct_step_circuit` (PS `bCorrectStepCircuit` over `IPA.bCorrectCircuit`):
 16 raw 128-bit challenges expanded through `EndoScalar.toField` at 8 rows — in
 REVERSE order, OCaml's right-to-left evaluation — then
@@ -337,11 +314,10 @@ def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
     (fun c => EndoScalar.toField 8 c endoVar)
   let expanded := expandedRev.reverse
   let zero : FVar Fp := .const 0
-  let expectedB : FVar Fp :=
-    CVar.add_ (CVar.scale_ 2 (inl.getD 19 zero)) (.const shift1c)
-  let bZetaOmega ← bPolyCircuit expanded (inl.getD 17 zero)
+  let expectedB : FVar Fp := Type1.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩
+  let bZetaOmega ← Pickles.bPolyCircuit expanded (inl.getD 17 zero)
   let scaledB ← mul (inl.getD 18 zero) bZetaOmega
-  let bZeta ← bPolyCircuit expanded (inl.getD 16 zero)
+  let bZeta ← Pickles.bPolyCircuit expanded (inl.getD 16 zero)
   let computedB := CVar.add_ bZeta scaledB
   let _ ← equals expectedB computedB
   pure PUnit.unit
@@ -591,6 +567,49 @@ def ftEval0CsCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
   Pickles.ftEval0Circuit side.endo side.mds toks (fun _ => false) (fun _ _ => pure (.const 0))
     (linearizationInputs get pows) ext
 
+/-! ## The combined inner product circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.Cip`: both sides of the check over the dumps'
+layouts — two 16-entry previous-challenge vectors, `ζ`, `ζω`, `ξ`, `r`, `ft_eval0`,
+`ft_eval1`, the public evaluations, and the 43-entry evaluation block at each point — around
+the proved gadgets `Pickles.challengePolyEvals` and `Pickles.combinedInnerProduct`. The step side
+has two proofs-verified mask booleans first and a Type1 claim; the wrap side no mask and a
+Type2 claim. An entry's bit is the mask bit on the step side and the constant `true_` elsewhere,
+which `selectField` folds to no row. -/
+
+open Pickles in
+/-- The shared body from `base` on: the challenge polynomials of both previous proofs at
+`ζ` then `ζω`, the two batches, the gadget, and the equality with the unshifted claim. `sg`
+pairs an `sg` evaluation with its bit: the mask on the step side, `true_` on the wrap side. -/
+def cipCore {p : ℕ} [Fact p.Prime] (get : ℕ → FVar (ZMod p)) (base : ℕ)
+    (sg : Fin 2 → FVar (ZMod p) → BoolVar (ZMod p) × FVar (ZMod p)) (expected : FVar (ZMod p)) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
+  let at_ (i : ℕ) : FVar (ZMod p) := get (base + i)
+  let chals (j : ℕ) : List (FVar (ZMod p)) := (List.range 16).map fun k => at_ (16 * j + k)
+  let evals (b : ℕ) : List (FVar (ZMod p)) := (List.range 43).map fun j => at_ (b + j)
+  let zeta := at_ 32
+  let zetaw := at_ 33
+  let tagged (l : List (FVar (ZMod p))) : List (BoolVar (ZMod p) × FVar (ZMod p)) :=
+    List.zipWith (fun (j : Fin 2) x => sg j x) [0, 1] l
+  let sgZeta ← challengePolyEvals zeta [chals 0, chals 1]
+  let sgZetaw ← challengePolyEvals zetaw [chals 0, chals 1]
+  let actual ← combinedInnerProduct (at_ 34) (at_ 35)
+    (buildEvalList (tagged sgZeta) (at_ 38) (at_ 36) (evals 40))
+    (buildEvalList (tagged sgZetaw) (at_ 39) (at_ 37) (evals 83))
+  let _ ← equals expected actual
+  pure PUnit.unit
+
+/-- `cip_step_circuit`: mask bits at 0–1 (unchecked, OCaml `Boolean.Unsafe.of_cvar`), the
+shared layout from 2, the Type1 claim at 128. -/
+def cipStepCircuit (input : Vector (FVar Fp) 129) : CircuitM Fp C PUnit :=
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  cipCore get 2 (fun j x => (.unchecked (get j), x)) (Type1.fromShiftedCircuit 255 ⟨get 128⟩)
+
+/-- `cip_wrap_circuit`: the shared layout from 0, no mask, the Type2 claim at 126. -/
+def cipWrapCircuit (input : Vector (FVar Fq) 127) : CircuitM Fq Cq PUnit :=
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  cipCore get 0 (fun _ x => (true_, x)) (Type2.fromShiftedCircuit 255 ⟨get 126⟩)
+
 /-! ## The wrap column
 
 The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
@@ -661,11 +680,13 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       stepTarget (a := Vector Fp 91) (b := Fp)
         (ftEval0CsCircuit Kimchi.Fixture.PS.fpSide 16 Pickles.Linearization.fpTokens
           stepShifts)),
+    ("cip_step_circuit", stepTarget (a := Vector Fp 129) (b := PUnit) cipStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
       wrapTarget (a := Vector Fq 90) (b := Fq)
-        (linearizationCircuit Kimchi.Fixture.PS.fqSide 15 Pickles.Linearization.fqTokens)) ]
+        (linearizationCircuit Kimchi.Fixture.PS.fqSide 15 Pickles.Linearization.fqTokens)),
+    ("cip_wrap_circuit", wrapTarget (a := Vector Fq 127) (b := PUnit) cipWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

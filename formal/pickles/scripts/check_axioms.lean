@@ -4,8 +4,9 @@ import Lean.Elab.Command
 /-! Gate the pickles linearization results' axiom closure.
 
 The roots are the results this package stands behind: the two linearization circuit
-theorems, one per side of the cycle, the two reflection endpoints they rest on, and the two
-`ft_eval0` circuit theorems built on them. Everything else the
+theorems, one per side of the cycle, the two reflection endpoints they rest on, the two
+`ft_eval0` circuit theorems built on them, and the two field-generic IPA-side gadget
+theorems (the challenge polynomial and the combined inner product). Everything else the
 package proves — the machine's simulation laws, the environment's compatibility, the
 transport lemmas, the decided α-bound — is in their dependency closure, and
 `collectAxioms` walks the closure, so a stray axiom anywhere beneath them is caught here
@@ -32,7 +33,10 @@ def roots : List Name :=
     `Pickles.Reflect.evaluate_fpTokens,
     `Pickles.Reflect.evaluate_fqTokens,
     `Pickles.ftEval0Circuit_spec_fp,
-    `Pickles.ftEval0Circuit_spec_fq ]
+    `Pickles.ftEval0Circuit_spec_fq,
+    `Pickles.bPolyCircuit_spec,
+    `Pickles.challengePolyEvals_spec,
+    `Pickles.combinedInnerProduct_spec_cip ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]

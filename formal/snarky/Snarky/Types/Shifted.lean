@@ -17,11 +17,11 @@ half and a parity bit, standing for `2·sDiv2 + sOdd + 2^n`; `scaleFast2`'s ladd
 consumes it.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
-- Only the shifted carriers the `varBaseMul` laws speak about are ported: the `Type1`
-  newtype and the `SplitField` pair, each with its `fromShifted` decode. PS's `Type2`
-  newtype (whose decode delegates to `SplitField`'s), the `Shifted` class, the
-  forbidden-values checks, and the shifted circuit ops are consumed only by the
-  pickles modules and arrive with them.
+- The carriers ported are the `Type1` newtype and the `SplitField` pair the `varBaseMul`
+  laws speak about, and the `Type2` newtype the pickles verifiers unshift their deferred
+  values through, each with its `fromShifted` decode; the circuit-side decodes
+  `fromShiftedCircuit` are the affine unshifts. PS's `Shifted` class and the
+  forbidden-values checks are consumed only by the pickles modules and arrive with them.
 - PS bakes the width `n` into each field's `Shifted` instance (via `FieldSizeInBits`);
   the decodes here are generic, so `n` is an explicit argument.
 -/
@@ -43,6 +43,40 @@ its results through it, over whichever ring the consumer reads in (`F` for the w
 pin, `ℤ` for the group scalar). -/
 def Type1.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type1 R) : R :=
   Pasta.Shifted.unshiftType1 n t.val
+
+/-- The `Type1` decode in circuit (PS `fromShiftedType1Circuit`): the affine `2·t + 2^n + 1`,
+emitting no constraint. -/
+def Type1.fromShiftedCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ)
+    (t : Type1 (FVar F)) : FVar F :=
+  CVar.add_ (CVar.scale_ 2 t.val) (.const (2 ^ n + 1))
+
+/-- The circuit decode reads as the decode of the reading. -/
+@[simp] theorem Type1.val_fromShiftedCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ)
+    (t : Type1 (FVar F)) (V : Valuation F) :
+    (Type1.fromShiftedCircuit n t).val V = Type1.fromShifted n ⟨t.val.val V⟩ := by
+  simp [Type1.fromShiftedCircuit, Type1.fromShifted, Pasta.Shifted.unshiftType1, CVar.val,
+    add_assoc]
+
+/-- A scalar carried shifted by `2^n` (PS `Type2`): the wrapped value `t` stands for
+`t + 2^n`, the representation used when the scalar field is the larger of the pair. -/
+structure Type2 (α : Type u) where
+  /-- The shifted representative. -/
+  val : α
+
+/-- The `Type2` decode (PS `fromShifted`): the representative `t` stands for `t + 2^n`. -/
+def Type2.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type2 R) : R :=
+  t.val + 2 ^ n
+
+/-- The `Type2` decode in circuit (PS `fromShiftedType2Circuit`): the affine `t + 2^n`,
+emitting no constraint. -/
+def Type2.fromShiftedCircuit {F : Type} [Field F] (n : ℕ) (t : Type2 (FVar F)) : FVar F :=
+  CVar.add_ t.val (.const (2 ^ n))
+
+/-- The circuit decode reads as the decode of the reading. -/
+@[simp] theorem Type2.val_fromShiftedCircuit {F : Type} [Field F] (n : ℕ) (t : Type2 (FVar F))
+    (V : Valuation F) :
+    (Type2.fromShiftedCircuit n t).val V = Type2.fromShifted n ⟨t.val.val V⟩ := by
+  simp [Type2.fromShiftedCircuit, Type2.fromShifted, CVar.val]
 
 /-- A scalar carried as a half and a parity bit (PS `SplitField`), standing shifted
 for `2·sDiv2 + sOdd + 2^n`. Phantom like `Type1`: `scaleFast2`'s ladder realizes the

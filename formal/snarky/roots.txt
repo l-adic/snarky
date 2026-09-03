@@ -454,6 +454,10 @@ Snarky.instLawfulIfThenElsePoint
 -- applies them definitionally, so no proof term records them.
 Snarky.Type1
 Snarky.Type1.fromShifted
+Snarky.Type1.val_fromShiftedCircuit
+Snarky.Type2
+Snarky.Type2.fromShifted
+Snarky.Type2.val_fromShiftedCircuit
 Snarky.Type1.equivCarrier
 Snarky.Type1.equivCarrier_apply
 Snarky.Type1.equivCarrier_symm_apply
@@ -594,6 +598,10 @@ Snarky.Kimchi.instReprAssembledGate
 -- consumer is scripts/check_cs_basic.lean, invisible to any constant walk.
 Snarky.Kimchi.kimchiSolve
 Snarky.Kimchi.kimchiGateData
+-- The circuit-side shifted decodes (Types/Shifted.lean): consumed by scripts/check_cs.lean's
+-- pickles sub-circuit transcriptions, which unshift the deferred claims they compare.
+Snarky.Type1.fromShiftedCircuit
+Snarky.Type2.fromShiftedCircuit
 -- script-surface:end
 
 -- The complete-addition gadget (Snarky/Kimchi/Circuit/AddComplete.lean): the point bundle's

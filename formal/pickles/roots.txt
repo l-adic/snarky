@@ -15,6 +15,19 @@ Pickles.Reflect.evaluate_fqTokens
 Pickles.ftEval0Circuit_spec_fp
 Pickles.ftEval0Circuit_spec_fq
 
+-- The IPA-side scalar gadgets, field-generic (no per-side constants enter them): the
+-- challenge polynomials and the combined inner product, each proved to read as the
+-- `Bulletproof` quantity the wire verifier uses.
+Pickles.bPolyCircuit_spec
+Pickles.challengePolyEvals_spec
+Pickles.combinedInnerProduct_spec_cip
+
+-- script-surface:begin
+-- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
+-- transcription of the PureScript `Cip` harness.
+Pickles.buildEvalList
+-- script-surface:end
+
 -- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
 -- derived instances — comparable and printable, as the PureScript's `Eq`/`Show` are.
 -- Consumed by `decide` and `#eval` at the REPL and by the fixture drivers' diagnostics.

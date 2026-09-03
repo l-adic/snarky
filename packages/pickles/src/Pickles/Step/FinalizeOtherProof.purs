@@ -40,7 +40,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params)
-import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
+import Pickles.IPA (bCorrectCircuit, challengePolyEvals)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
@@ -48,7 +48,7 @@ import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
-import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, hornerCombine)
+import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, combinedInnerProduct)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
@@ -288,13 +288,8 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- OCaml right-to-left Vector.map2: index (n-1) evaluated before index 0.
   -- Within each, zetaw evaluated before zeta (right-to-left pair construction).
   ---------------------------------------------------------------------------
-  sgZetawRev <- for (Vector.reverse prevChallenges) \chals ->
-    bPolyCircuit { challenges: chals, x: zetaw }
-  let sgZetaw = Vector.reverse sgZetawRev
-
-  sgZetaRev <- for (Vector.reverse prevChallenges) \chals ->
-    bPolyCircuit { challenges: chals, x: zeta }
-  let sgZeta = Vector.reverse sgZetaRev
+  sgZetaw <- challengePolyEvals prevChallenges zetaw
+  sgZeta <- challengePolyEvals prevChallenges zeta
 
   ---------------------------------------------------------------------------
   -- Steps 5-8: Sponge operations
@@ -512,26 +507,24 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- OCaml labels: `combine / Field.Checked.mul`. PS wraps the two
   -- horner-fold evaluations in `combine` so per-label totals align.
   ---------------------------------------------------------------------------
-  cipCorrect <- label "combine" do
-    combineZetaw <- hornerCombine xi $ buildEvalList
-      { sgEvals: Vector.zipWith Tuple mask sgZetaw
-      , publicInput: allEvals.publicEvals.omegaTimesZeta
-      , ftEval: allEvals.ftEval1
-      , evals: extractEvalFields _.omegaTimesZeta allEvals
-      }
-
-    rTimesZetaw <- mul_ r combineZetaw
-
-    combineZeta <- hornerCombine xi $ buildEvalList
-      { sgEvals: Vector.zipWith Tuple mask sgZeta
-      , publicInput: allEvals.publicEvals.zeta
-      , ftEval: ftEval0
-      , evals: extractEvalFields _.zeta allEvals
-      }
-
-    let actualCip = add_ combineZeta rTimesZetaw
-    let expectedCip = ops.unshift deferred.combinedInnerProduct
-    equals_ expectedCip actualCip
+  actualCip <- combinedInnerProduct
+    { xi
+    , r
+    , evalsZeta: buildEvalList
+        { sgEvals: Vector.zipWith Tuple mask sgZeta
+        , publicInput: allEvals.publicEvals.zeta
+        , ftEval: ftEval0
+        , evals: extractEvalFields _.zeta allEvals
+        }
+    , evalsZetaw: buildEvalList
+        { sgEvals: Vector.zipWith Tuple mask sgZetaw
+        , publicInput: allEvals.publicEvals.omegaTimesZeta
+        , ftEval: allEvals.ftEval1
+        , evals: extractEvalFields _.omegaTimesZeta allEvals
+        }
+    }
+  let expectedCip = ops.unshift deferred.combinedInnerProduct
+  cipCorrect <- equals_ expectedCip actualCip
 
   ---------------------------------------------------------------------------
   -- Step 12: b_correct

@@ -1,5 +1,7 @@
 import Pickles.Reflect.Soundness
 import Pickles.FtEval0
+import Pickles.IPA
+import Pickles.CombinedInnerProduct
 
 /-!
 # Pickles — the in-circuit kimchi verifier
