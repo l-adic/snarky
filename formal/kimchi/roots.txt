@@ -182,6 +182,12 @@ Kimchi.Permutation.columnPoly_eq_sum_indicator
 -- The α-layout of the linearization: the aggregate combination read as an indexed sum.
 Kimchi.Protocol.Linearization.alphaCombo_eq_sum_getD
 
+-- The five members of `ftEval0` as separate objects, and the equation assembling them.
+-- The members themselves are live through `ftEval0` and so stay unlisted; the equation is
+-- rooted because it has no consumer HERE — it is the seam a circuit-side development
+-- assembles across, discharging each member against its own name.
+Kimchi.Protocol.Linearization.ftEval0_eq
+
 -- The permutation argument's own conclusion: grand products agreeing at one good challenge
 -- pair force the witness to take equal values across every wire of the unmasked region.
 -- `copy_soundness_of_dvd`'s abstract core and the GrandProduct multiset layer are live
