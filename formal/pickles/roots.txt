@@ -17,9 +17,10 @@ Pickles.ftEval0Circuit_spec_fq
 
 -- The scalar-side gadgets, field-generic (no per-side constants enter them): the
 -- challenge polynomials, the endomorphism expansion of the challenges, the `b_correct`
--- check, the combined inner product and the permutation scalar, each proved to read as
--- the `Bulletproof`, `FqSponge` or `Kimchi.Protocol.Linearization` quantity the wire
--- verifier uses.
+-- check, the combined inner product, the permutation scalar, the fr-sponge schedule and
+-- the conditional sponge behind the step side's masked challenge digest, each proved to
+-- read as the `Bulletproof`, `FqSponge`, `Poseidon` or `Kimchi.Protocol.Linearization`
+-- quantity the wire verifier uses.
 Pickles.challengePolyEvals_spec
 Pickles.computeChallenges_spec
 Pickles.bCorrectCircuit_spec
@@ -27,6 +28,8 @@ Pickles.combinedInnerProduct_spec_cip
 Pickles.permScalarCircuit_spec
 Pickles.challengeDigest_spec
 Pickles.squeezeXiR_spec
+Pickles.OptSponge.squeeze_spec
+Pickles.maskedChallengeDigest_spec
 
 -- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's

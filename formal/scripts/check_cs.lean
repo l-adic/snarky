@@ -670,13 +670,14 @@ def expandPlonkStepCircuit (input : Vector (FVar Fp) 4) : CircuitM Fp C PUnit :=
 def expandPlonkWrapCircuit (input : Vector (FVar Fq) 4) : CircuitM Fq Cq PUnit :=
   expandPlonkCore endoPallasLam (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15)) input
 
-/-! ## The fr-sponge circuits, wrap side
+/-! ## The fr-sponge circuits
 
-Transcribe `Pickles.CircuitDiffs.PureScript.SpongeChallenges`' wrap circuits: the plain
-challenge digest over both previous-challenge vectors, and the fr-sponge schedule with `ξ`
-by `squeeze_scalar` and `r` by `squeeze_challenge`, both expanded through the wrap side's
-scalar endomorphism. The step circuits, whose challenge digest is the masked `OptSponge`,
-wait on that gadget's port. -/
+Transcribe `Pickles.CircuitDiffs.PureScript.SpongeChallenges`: on the step side the masked
+challenge digest (the conditional sponge over both previous-challenge vectors, guarded by the
+proofs-verified mask) and the fr-sponge schedule with `ξ` and `r` both by
+`squeeze_challenge`; on the wrap side the plain challenge digest and the schedule with `ξ`
+by `squeeze_scalar` and `r` by `squeeze_challenge`; each side expands the challenges through
+its own scalar endomorphism. -/
 
 /-- The two previous-challenge vectors from `base`. -/
 def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
@@ -700,6 +701,28 @@ def proofEvalsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
      mulSelector := pair 84
      emulSelector := pair 86
      endomulScalarSelector := pair 88 })
+
+/-- `challenge_digest_step_circuit`: the mask bits at 0–1 (unchecked, OCaml
+`Boolean.Unsafe.of_cvar`), the previous challenges at 2–33. -/
+def challengeDigestStepCircuit (input : Vector (FVar Fp) 34) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let _ ← Pickles.maskedChallengeDigest Bulletproof.IpaVesta.curve.frParams
+    [.unchecked (get 0), .unchecked (get 1)] (prevChallengesOf get 2)
+  pure PUnit.unit
+
+/-- `sponge_and_challenges_step_circuit`: the mask at 0–1, the previous challenges at 2–33,
+the evaluations from 34. -/
+def spongeAndChallengesStepCircuit (input : Vector (FVar Fp) 124) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let (pub, evals) := proofEvalsOf get 34
+  let endoVar : FVar Fp := .const endoVestaLam
+  let (xi, r) ← Pickles.squeezeXiR Bulletproof.IpaVesta.curve.frParams (get 34)
+    (Pickles.maskedChallengeDigest Bulletproof.IpaVesta.curve.frParams
+      [.unchecked (get 0), .unchecked (get 1)] (prevChallengesOf get 2))
+    (get 35) pub evals endoVar true
+  let _ ← EndoScalar.toField 8 xi.val endoVar
+  let _ ← EndoScalar.toField 8 r.val endoVar
+  pure PUnit.unit
 
 /-- `challenge_digest_wrap_circuit`. -/
 def challengeDigestWrapCircuit (input : Vector (FVar Fq) 32) : CircuitM Fq Cq PUnit := do
@@ -795,6 +818,10 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       stepTarget (a := Vector Fp 18) (b := PUnit) plonkChecksPassedStepCircuit),
     ("expand_plonk_step_circuit",
       stepTarget (a := Vector Fp 4) (b := PUnit) expandPlonkStepCircuit),
+    ("challenge_digest_step_circuit",
+      stepTarget (a := Vector Fp 34) (b := PUnit) challengeDigestStepCircuit),
+    ("sponge_and_challenges_step_circuit",
+      stepTarget (a := Vector Fp 124) (b := PUnit) spongeAndChallengesStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",

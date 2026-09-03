@@ -41,7 +41,9 @@ def roots : List Name :=
     `Pickles.combinedInnerProduct_spec_cip,
     `Pickles.permScalarCircuit_spec,
     `Pickles.challengeDigest_spec,
-    `Pickles.squeezeXiR_spec ]
+    `Pickles.squeezeXiR_spec,
+    `Pickles.OptSponge.squeeze_spec,
+    `Pickles.maskedChallengeDigest_spec ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]

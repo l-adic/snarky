@@ -3,6 +3,7 @@ import Pickles.FtEval0
 import Pickles.IPA
 import Pickles.CombinedInnerProduct
 import Pickles.PermScalar
+import Pickles.OptSponge
 import Pickles.FrSponge
 
 /-!
