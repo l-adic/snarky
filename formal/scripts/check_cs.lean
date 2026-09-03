@@ -63,6 +63,7 @@ import Pickles.Linearization.Circuit
 import Pickles.FtEval0
 import Pickles.IPA
 import Pickles.CombinedInnerProduct
+import Pickles.PermScalar
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -616,6 +617,35 @@ def cipWrapCircuit (input : Vector (FVar Fq) 127) : CircuitM Fq Cq PUnit :=
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   cipCore get 0 (fun _ x => (true_, x)) (Type2.fromShiftedCircuit 255 ⟨get 126⟩)
 
+/-! ## The permutation scalar circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.PlonkChecksPassed`: the 18-input layout — `α`,
+`β`, `γ`, `zkPolynomial`, `z(ζω)`, `σ₀…σ₅`, `w₀…w₅`, the claimed perm — with `α²¹` by `pow`
+as the dump computes it, `Pickles.permScalarCircuit`, and the shifted comparison: the claim
+against the Type1 encode of the scalar on the step side, the Type2 decode of the claim
+against the scalar on the wrap side. -/
+
+open Pickles in
+/-- The shared body: `α²¹`, the scalar, and `compare claimed actual`. -/
+def permCheckCore {p : ℕ} [Fact p.Prime] (input : Vector (FVar (ZMod p)) 18)
+    (compare : FVar (ZMod p) → FVar (ZMod p) →
+      CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (BoolVar (ZMod p))) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
+  let get (i : ℕ) : FVar (ZMod p) := input[i]?.getD (.const 0)
+  let a21 ← Snarky.pow (get 0) 21
+  let actual ← permScalarCircuit (fun i => get (11 + i)) (fun i => get (5 + i)) (get 4) (get 1)
+    (get 2) (get 3) a21
+  let _ ← compare (get 17) actual
+  pure PUnit.unit
+
+/-- `plonk_checks_passed_step_circuit`: the Type1 claim against the encoded scalar. -/
+def plonkChecksPassedStepCircuit (input : Vector (FVar Fp) 18) : CircuitM Fp C PUnit :=
+  permCheckCore input fun claimed actual => equals claimed (Type1.ofFieldCircuit 255 actual)
+
+/-- `plonk_checks_passed_wrap_circuit`: the decoded Type2 claim against the scalar. -/
+def plonkChecksPassedWrapCircuit (input : Vector (FVar Fq) 18) : CircuitM Fq Cq PUnit :=
+  permCheckCore input fun claimed actual => equals (Type2.fromShiftedCircuit 255 ⟨claimed⟩) actual
+
 /-! ## The wrap column
 
 The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
@@ -687,13 +717,17 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
         (ftEval0CsCircuit Kimchi.Fixture.PS.fpSide 16 Pickles.Linearization.fpTokens
           stepShifts)),
     ("cip_step_circuit", stepTarget (a := Vector Fp 129) (b := PUnit) cipStepCircuit),
+    ("plonk_checks_passed_step_circuit",
+      stepTarget (a := Vector Fp 18) (b := PUnit) plonkChecksPassedStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
       wrapTarget (a := Vector Fq 90) (b := Fq)
         (linearizationCircuit Kimchi.Fixture.PS.fqSide 15 Pickles.Linearization.fqTokens)),
     ("cip_wrap_circuit", wrapTarget (a := Vector Fq 127) (b := PUnit) cipWrapCircuit),
-    ("b_correct_wrap_circuit", wrapTarget (a := Vector Fq 20) (b := PUnit) bCorrectWrapCircuit) ]
+    ("b_correct_wrap_circuit", wrapTarget (a := Vector Fq 20) (b := PUnit) bCorrectWrapCircuit),
+    ("plonk_checks_passed_wrap_circuit",
+      wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

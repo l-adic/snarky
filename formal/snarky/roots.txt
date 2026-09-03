@@ -455,6 +455,7 @@ Snarky.instLawfulIfThenElsePoint
 Snarky.Type1
 Snarky.Type1.fromShifted
 Snarky.Type1.val_fromShiftedCircuit
+Snarky.Type1.val_ofFieldCircuit
 Snarky.Type2
 Snarky.Type2.fromShifted
 Snarky.Type2.val_fromShiftedCircuit
@@ -601,6 +602,7 @@ Snarky.Kimchi.kimchiGateData
 -- The circuit-side shifted decodes (Types/Shifted.lean): consumed by scripts/check_cs.lean's
 -- pickles sub-circuit transcriptions, which unshift the deferred claims they compare.
 Snarky.Type1.fromShiftedCircuit
+Snarky.Type1.ofFieldCircuit
 Snarky.Type2.fromShiftedCircuit
 -- script-surface:end
 
