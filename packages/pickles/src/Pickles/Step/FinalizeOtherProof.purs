@@ -36,7 +36,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable as Foldable1
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), fst)
-import Data.Vector (Vector, zipWith, (!!))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params)
@@ -60,7 +60,7 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, div_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
