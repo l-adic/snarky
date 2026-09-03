@@ -28,14 +28,14 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith)
 import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
-import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
+import Pickles.IPA (bCorrectCircuit, challengePolyEvals)
 import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (absorbPointEval, extractEvalFields)
-import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, hornerCombine)
+import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, combinedInnerProduct)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
@@ -139,13 +139,8 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- OCaml right-to-left: zetaw tuple element first, then zeta.
   -- Within each: right-to-left Vector.map (last element first).
   ---------------------------------------------------------------------------
-  sgZetawRev <- label "step3_sgZetaw" $ for (Vector.reverse prevChallenges) \chals ->
-    bPolyCircuit { challenges: chals, x: zetaw }
-  let sgZetaw = Vector.reverse sgZetawRev
-
-  sgZetaRev <- label "step3_sgZeta" $ for (Vector.reverse prevChallenges) \chals ->
-    bPolyCircuit { challenges: chals, x: zeta }
-  let sgZeta = Vector.reverse sgZetaRev
+  sgZetaw <- label "step3_sgZetaw" $ challengePolyEvals prevChallenges zetaw
+  sgZeta <- label "step3_sgZeta" $ challengePolyEvals prevChallenges zeta
 
   ---------------------------------------------------------------------------
   -- Step 4: Sponge operations
@@ -304,25 +299,24 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- OCaml right-to-left for `+`: zetaw combine computed first.
   -- No mask: all sg_evals are EvalJust.
   ---------------------------------------------------------------------------
-  combineZetaw <- label "step8_combineZetaw" $ hornerCombine xi $ buildEvalListUnmasked
-    { sgEvals: sgZetaw
-    , publicInput: allEvals.publicEvals.omegaTimesZeta
-    , ftEval: allEvals.ftEval1
-    , evals: extractEvalFields _.omegaTimesZeta allEvals
+  actualCip <- combinedInnerProduct
+    { xi
+    , r
+    , evalsZeta: buildEvalListUnmasked
+        { sgEvals: sgZeta
+        , publicInput: allEvals.publicEvals.zeta
+        , ftEval: ftEval0
+        , evals: extractEvalFields _.zeta allEvals
+        }
+    , evalsZetaw: buildEvalListUnmasked
+        { sgEvals: sgZetaw
+        , publicInput: allEvals.publicEvals.omegaTimesZeta
+        , ftEval: allEvals.ftEval1
+        , evals: extractEvalFields _.omegaTimesZeta allEvals
+        }
     }
-
-  rTimesZetaw <- label "step8_rTimesZetaw" $ mul_ r combineZetaw
-
-  combineZeta <- label "step8_combineZeta" $ hornerCombine xi $ buildEvalListUnmasked
-    { sgEvals: sgZeta
-    , publicInput: allEvals.publicEvals.zeta
-    , ftEval: ftEval0
-    , evals: extractEvalFields _.zeta allEvals
-    }
-
-  let actualCip = add_ combineZeta rTimesZetaw
   let expectedCip = ops.unshift deferred.combinedInnerProduct
-  cipCorrect <- label "step8_cipCorrect" $ equals_ expectedCip actualCip
+  cipCorrect <- equals_ expectedCip actualCip
 
   ---------------------------------------------------------------------------
   -- Step 9: b_correct
@@ -377,8 +371,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   ivpTrace "wrap.fop.dbg.r_sponge_raw" rRaw
   ivpTrace "wrap.fop.dbg.cip_actual" actualCip
   ivpTrace "wrap.fop.dbg.cip_expected" expectedCip
-  ivpTrace "wrap.fop.dbg.combineZeta" combineZeta
-  ivpTrace "wrap.fop.dbg.combineZetaw" combineZetaw
   ivpTrace "wrap.fop.dbg.perm_actual" actualPerm
   ivpTrace "wrap.fop.dbg.zeta" zeta
   ivpTrace "wrap.fop.dbg.zetaw" zetaw

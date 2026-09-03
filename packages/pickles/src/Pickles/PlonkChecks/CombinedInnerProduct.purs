@@ -13,6 +13,7 @@ module Pickles.PlonkChecks.CombinedInnerProduct
   , hornerCombine
   , buildEvalList
   , buildEvalListUnmasked
+  , combinedInnerProduct
   ) where
 
 import Prelude
@@ -27,7 +28,7 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, if_, label)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, if_, label, mul_)
 import Snarky.Curves.Class (class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -172,3 +173,23 @@ buildEvalListUnmasked x =
     evals = map EvalJust $ NEA.fromFoldable1 x.evals
   in
     NEA.concat $ NEA.cons' sgEvals [ others, evals ]
+
+-- | The combined inner product `combine(zeta) + r * combine(zetaw)`, the
+-- | zetaw fold first.
+-- |
+-- | Reference: `combined_inner_product_correct` in step_verifier.ml
+combinedInnerProduct
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => { xi :: FVar f
+     , r :: FVar f
+     , evalsZeta :: NonEmptyArray (EvalOpt f)
+     , evalsZetaw :: NonEmptyArray (EvalOpt f)
+     }
+  -> Snarky f c r (FVar f)
+combinedInnerProduct { xi, r, evalsZeta, evalsZetaw } = label "combine" do
+  combineZetaw <- hornerCombine xi evalsZetaw
+  rTimesZetaw <- mul_ r combineZetaw
+  combineZeta <- hornerCombine xi evalsZeta
+  pure (add_ combineZeta rTimesZetaw)

@@ -24,6 +24,7 @@ module Pickles.IPA
   -- Challenge polynomial
   , bPoly
   , bPolyCircuit
+  , challengePolyEvals
   -- Combined b evaluation
   , computeB
   , computeBCircuit
@@ -167,6 +168,24 @@ bPolyCircuit { challenges: chals, x: pt } = label "b-poly" do
     )
     initProd
     rest
+
+-- | The previous proofs' challenge polynomials evaluated at one point (OCaml
+-- | `sg_evals`): `bPolyCircuit` per challenge vector. OCaml's `Vector.map`
+-- | evaluates right to left, so the last vector's polynomial is built first;
+-- | the result is in vector order.
+challengePolyEvals
+  :: forall n d dPred f c r
+   . Add 1 dPred d
+  => Reflectable d Int
+  => PrimeField f
+  => BasicSystem f c
+  => Vector n (Vector d (FVar f))
+  -> FVar f
+  -> Snarky f c r (Vector n (FVar f))
+challengePolyEvals prevChallenges pt = do
+  rev <- for (Vector.reverse prevChallenges) \chals ->
+    bPolyCircuit { challenges: chals, x: pt }
+  pure (Vector.reverse rev)
 
 -------------------------------------------------------------------------------
 -- | Combined b evaluation
