@@ -34,13 +34,13 @@ import Data.Int (pow) as Int
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable as Foldable1
-import Data.Traversable (for, traverse)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params)
-import Pickles.IPA (bCorrectCircuit, challengePolyEvals)
+import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
@@ -531,8 +531,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Expand 16 bulletproof challenges via endo (reverse order matching
   -- OCaml's right-to-left Vector.map evaluation).
   ---------------------------------------------------------------------------
-  expandedRev <- for (Vector.reverse deferred.bulletproofChallenges) \c -> toField @8 c endoVar
-  let expandedChallenges = Vector.reverse expandedRev
+  expandedChallenges <- computeChallenges deferred.bulletproofChallenges endoVar
 
   -- OCaml labels: `b_correct / Field.Checked.mul` — wrap the
   -- bCorrectCircuit body so the per-label diff aligns with OCaml.

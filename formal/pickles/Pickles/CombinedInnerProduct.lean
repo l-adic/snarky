@@ -145,7 +145,7 @@ the `ζ`-entries as `(k₀, e₀), …, (kₘ, eₘ)` and the `ζω`-entries as 
 the last entry of each kept, the output reads as
 `∑ⱼ ξʲ · fⱼ + r · ∑ⱼ ξʲ · f'ⱼ`, where `f₀, f₁, …` are the `eᵢ` with `kᵢ` set, in order, and
 `f'₀, f'₁, …` likewise the `e'ᵢ` with `k'ᵢ` set. -/
-theorem combinedInnerProduct_spec (ξ r : FVar F)
+private theorem combinedInnerProduct_spec (ξ r : FVar F)
     (evalsZeta evalsZetaw : List (BoolVar F × FVar F)) (xz xw : List (Bool × F))
     (hz : List.Forall₂ (CircuitType.Reads V) evalsZeta xz)
     (hw : List.Forall₂ (CircuitType.Reads V) evalsZetaw xw)

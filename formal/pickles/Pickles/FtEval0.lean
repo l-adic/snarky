@@ -157,7 +157,7 @@ the evaluations as `wᵢ, sᵢ, z, z_ω`, and the upstream inputs as `zk = zkpm(
   − gateLinearization α (evals)
 ```
 The stream hypotheses `hcert` and `hreads` are `Pickles.Reflect.circuit_gateLinearization`'s. -/
-theorem ftEval0Circuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
+private theorem ftEval0Circuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
     (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (toks : Array PolishToken)
     (feat : FeatureFlag → Bool) (bound : Nat)
     (hcert : ∀ (α β γ jc van : F) (e : Evals F),

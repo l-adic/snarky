@@ -16,10 +16,12 @@ Pickles.ftEval0Circuit_spec_fp
 Pickles.ftEval0Circuit_spec_fq
 
 -- The IPA-side scalar gadgets, field-generic (no per-side constants enter them): the
--- challenge polynomials and the combined inner product, each proved to read as the
--- `Bulletproof` quantity the wire verifier uses.
-Pickles.bPolyCircuit_spec
+-- challenge polynomials, the endomorphism expansion of the challenges, the `b_correct`
+-- check and the combined inner product, each proved to read as the `Bulletproof` (or
+-- `FqSponge`) quantity the wire verifier uses.
 Pickles.challengePolyEvals_spec
+Pickles.computeChallenges_spec
+Pickles.bCorrectCircuit_spec
 Pickles.combinedInnerProduct_spec_cip
 
 -- script-surface:begin

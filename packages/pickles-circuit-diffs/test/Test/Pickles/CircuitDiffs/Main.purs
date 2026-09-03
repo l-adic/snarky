@@ -25,7 +25,7 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, fromGateData, gateDataOf, parseOcamlFixtures)
-import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
+import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect, compileBCorrectWrap)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOne (compileBulletReduceOne)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOneStep (compileBulletReduceOneStep)
@@ -697,6 +697,7 @@ spec bundle =
       describe "Pickles Step sub-circuits" do
         exactMatchEff "pow2_pow_step_circuit" (fromCompiledCircuit =<< compilePow2Pow)
         exactMatchEff "b_correct_step_circuit" (fromCompiledCircuit =<< compileBCorrect)
+        exactMatchEff "b_correct_wrap_circuit" (fromCompiledCircuit =<< compileBCorrectWrap)
         exactMatchEff "hash_messages_for_next_step_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesStep)
         exactMatchEff "finalize_other_proof_step_circuit" (fromCompiledCircuit =<< compileFopStep)
         exactMatchEff "group_map_step_circuit" (fromCompiledCircuit =<< compileGroupMapStep)
