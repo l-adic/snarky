@@ -65,6 +65,7 @@ import Pickles.IPA
 import Pickles.CombinedInnerProduct
 import Pickles.PermScalar
 import Pickles.FrSponge
+import Pickles.FinalizeOtherProof
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -727,6 +728,90 @@ def spongeAndChallengesWrapCircuit (input : Vector (FVar Fq) 122) : CircuitM Fq 
   let _ ← EndoScalar.toField 8 r.val endoVar
   pure PUnit.unit
 
+/-! ## The `finalize_other_proof` circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.FopStep` and `FopWrap`: the whole scalar-side
+check on either side, `Pickles.finalizeOtherProofStep` at the step field's parameters over the
+151-input layout and `Pickles.finalizeOtherProofWrap` at the wrap field's over the 148-input
+layout, the wrap side's vanishing polynomial by `pow2PowMul` as the PS harness passes it. -/
+
+/-- The wrap-side coset shifts, production's `Shifts::new` values recorded in
+`kimchi/fixtures/linearization_pallas.json`. -/
+def wrapShifts : Fin permCols → Fq := fun i =>
+  (#[1, 328286983623303317637963920346571898945724874896624808297627776768640590563,
+     220790353665890403705559231885806581221301230221265349993193424985261418438,
+     211720422259245489258933986578227917398506328781182391541883955346082631533,
+     211634429328372259348572816867521795029192573698954618296359582461568682420,
+     317476258975906211462498873025720239242336777696786967497139785505242641540,
+     99141114743446054294525453467100398765600279346526770105380817318185104545]
+    : Array ℕ)[(i : ℕ)]?.getD 0
+
+open Pickles Kimchi.Verifier in
+/-- The unfinalized proof, witness and previous challenges from the dumps' layout: the five
+128-bit claims at 0–3 and 9, the shifted claims at 4–8, the 16 challenges at 10–25; then from
+`base` the public pair, 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `σ` pairs, 6
+selector pairs, `ft(ζω)`, the two previous-challenge vectors, and the digest before
+evaluations last. -/
+def fopInputsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
+    UnfinalizedProof (ZMod p) × ProofWitness (ZMod p) × List (List (FVar (ZMod p))) :=
+  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) := ⟨get (base + i), get (base + i + 1)⟩
+  let u : UnfinalizedProof (ZMod p) :=
+    { alpha := ⟨get 0⟩, beta := ⟨get 1⟩, gamma := ⟨get 2⟩, zeta := ⟨get 3⟩,
+      zetaToSrsLength := get 4, zetaToDomainSize := get 5, perm := get 6,
+      combinedInnerProduct := get 7, b := get 8, xi := ⟨get 9⟩,
+      bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩,
+      spongeDigestBeforeEvaluations := get (base + 121) }
+  let w : ProofWitness (ZMod p) :=
+    { ftEval1 := get (base + 88)
+      pub := pair 0
+      evals :=
+        { w := Vector.ofFn fun j => pair (2 + 2 * j)
+          coefficients := Vector.ofFn fun j => pair (32 + 2 * j)
+          z := pair 62
+          s := Vector.ofFn fun j => pair (64 + 2 * j)
+          genericSelector := pair 76
+          poseidonSelector := pair 78
+          completeAddSelector := pair 80
+          mulSelector := pair 82
+          emulSelector := pair 84
+          endomulScalarSelector := pair 86 } }
+  (u, w, prevChallengesOf get (base + 89))
+
+/-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the
+step shifts, `srs_length_log2 = 16`, `zk_rows = 3`. -/
+def fopStepParams : Pickles.FopParams Fp :=
+  { sponge := Bulletproof.IpaVesta.curve.frParams, endoLam := endoVestaLam,
+    endo := Kimchi.Fixture.PS.fpSide.endo, mds := Kimchi.Fixture.PS.fpSide.mds,
+    toks := Pickles.Linearization.fpTokens, shifts := stepShifts, srsLengthLog2 := 16,
+    zkRows := 3 }
+
+/-- `finalize_other_proof_step_circuit`: the mask at 26–27 (unchecked), `domain_log2` at 28,
+the evaluations from 29, one known domain of `log2 = 16`. -/
+def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let (u, w, prev) := fopInputsOf get 29
+  let _ ← Pickles.finalizeOtherProofStep fopStepParams
+    [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] u w [.unchecked (get 26), .unchecked (get 27)]
+    prev (get 28)
+  pure PUnit.unit
+
+/-- The wrap side's parameters: the Pallas fr-sponge, `λ`, the `Fq` linearization and the
+wrap shifts, `srs_length_log2 = 15`, `zk_rows = 3`. -/
+def fopWrapParams : Pickles.FopParams Fq :=
+  { sponge := Bulletproof.IpaPallas.curve.frParams, endoLam := endoPallasLam,
+    endo := Kimchi.Fixture.PS.fqSide.endo, mds := Kimchi.Fixture.PS.fqSide.mds,
+    toks := Pickles.Linearization.fqTokens, shifts := wrapShifts, srsLengthLog2 := 15,
+    zkRows := 3 }
+
+/-- `finalize_other_proof_wrap_circuit`: the evaluations from 26, the constant domain of
+`log2 = 15`, `ζⁿ − 1` by `pow2PowMul`. -/
+def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let (u, w, prev) := fopInputsOf get 26
+  let _ ← Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15))
+    15 (fun z => do let t ← Pickles.pow2PowMul z 15; pure (CVar.sub_ t (.const 1))) u w prev
+  pure PUnit.unit
+
 /-! ## The wrap column
 
 The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
@@ -806,6 +891,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       stepTarget (a := Vector Fp 34) (b := PUnit) challengeDigestStepCircuit),
     ("sponge_and_challenges_step_circuit",
       stepTarget (a := Vector Fp 124) (b := PUnit) spongeAndChallengesStepCircuit),
+    ("finalize_other_proof_step_circuit",
+      stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
@@ -820,7 +907,9 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("challenge_digest_wrap_circuit",
       wrapTarget (a := Vector Fq 32) (b := PUnit) challengeDigestWrapCircuit),
     ("sponge_and_challenges_wrap_circuit",
-      wrapTarget (a := Vector Fq 122) (b := PUnit) spongeAndChallengesWrapCircuit) ]
+      wrapTarget (a := Vector Fq 122) (b := PUnit) spongeAndChallengesWrapCircuit),
+    ("finalize_other_proof_wrap_circuit",
+      wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

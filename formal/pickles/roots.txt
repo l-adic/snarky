@@ -43,12 +43,18 @@ Pickles.zkPolynomial_eq_zkpmEval
 Pickles.knownDomainWhiches_spec
 Pickles.knownDomainVanishingPolynomial_spec
 Pickles.buildPow2PowsArray_spec
+Pickles.pow2PowSquare_spec
 Pickles.pow2PowMul_spec
 
 -- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList
+-- The two sides of `finalize_other_proof` (FinalizeOtherProof.lean): consumed by
+-- scripts/check_cs.lean's transcription of the `FopStep`/`FopWrap` harnesses, their
+-- soundness theorem pending.
+Pickles.finalizeOtherProofStep
+Pickles.finalizeOtherProofWrap
 -- script-surface:end
 
 -- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's

@@ -20,7 +20,8 @@ generator and the permutation vanishing polynomial (OCaml `plonk_checks.ml`
 * `zkPolynomial`: `(ζ − ω⁻¹)(ζ − ω^{−(zkRows−1)})(ζ − ω^{−zkRows})`.
 * `knownDomainWhiches`, `knownDomainVanishingPolynomial`: the selector bits from the
   runtime `domain_log2`, and `ζⁿ − 1` for the selected domain.
-* `buildPow2PowsArray`, `pow2PowMul`: `ζ^(2^i)` tables by squaring and by multiplication.
+* `buildPow2PowsArray`, `pow2PowSquare`, `pow2PowMul`: `ζ^(2^i)` by squaring and by
+  multiplication.
 
 ## Main results
 
@@ -28,7 +29,7 @@ generator and the permutation vanishing polynomial (OCaml `plonk_checks.ml`
   stated, and the polynomial is `Kimchi.Protocol.Linearization.zkpmEval` once `ωⁿ = 1`.
 * `knownDomainWhiches_spec`, `knownDomainVanishingPolynomial_spec`: the bits read as
   `[L = log2ᵢ]` and the polynomial as `∑ᵢ bᵢ · ζ^(2^log2ᵢ) − 1`.
-* `buildPow2PowsArray_spec`, `pow2PowMul_spec`.
+* `buildPow2PowsArray_spec`, `pow2PowSquare_spec`, `pow2PowMul_spec`.
 -/
 
 namespace Pickles
@@ -99,6 +100,14 @@ def pow2PowMul (x : FVar F) : ℕ → CircuitM F c (FVar F)
   | k + 1 => do
     let acc ← pow2PowMul x k
     mul acc acc
+
+/-- `x^(2^n)` by `n` `square` rows (PS `Pickles.Util.Pow2.pow2PowSquare`, OCaml
+`step_verifier.ml`'s `pow2_pow`). -/
+def pow2PowSquare (x : FVar F) : ℕ → CircuitM F c (FVar F)
+  | 0 => pure x
+  | k + 1 => do
+    let acc ← pow2PowSquare x k
+    square acc
 
 /-- `ζⁿ − 1` for the selected known domain (`Pseudo.Domain.to_domain`'s
 `vanishing_polynomial`, pseudo.ml:118–127): the table `ζ^(2^i)` for `i ≤ maxLog2` by
@@ -262,6 +271,22 @@ theorem pow2PowMul_spec (x : FVar F) :
   | k + 1 => by
     simp only [pow2PowMul]
     have ih := pow2PowMul_spec x k
+    mvcgen [ih]
+    rename_i acc _ hacc _ _
+    intro h
+    rw [h, hacc, ← pow_add, ← two_mul, pow_succ, mul_comm]
+
+/-- Under any valuation the output reads as `x^(2^n)`. -/
+theorem pow2PowSquare_spec (x : FVar F) :
+    ∀ n : ℕ, ⦃⌜True⌝⦄ pow2PowSquare (c := Builder V c) x n
+      ⦃⇓ r _ => ⌜r.val V = x.val V ^ (2 ^ n)⌝⦄
+  | 0 => by
+    simp only [pow2PowSquare]
+    mvcgen
+    simp
+  | k + 1 => by
+    simp only [pow2PowSquare]
+    have ih := pow2PowSquare_spec x k
     mvcgen [ih]
     rename_i acc _ hacc _ _
     intro h

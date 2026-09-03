@@ -52,6 +52,7 @@ def roots : List Name :=
     `Pickles.knownDomainWhiches_spec,
     `Pickles.knownDomainVanishingPolynomial_spec,
     `Pickles.buildPow2PowsArray_spec,
+    `Pickles.pow2PowSquare_spec,
     `Pickles.pow2PowMul_spec ]
 
 /-- The standard logical axioms, permitted everywhere. -/

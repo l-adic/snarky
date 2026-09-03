@@ -30,7 +30,7 @@ private def products : List (BoolVar F × FVar F) → CircuitM F c (List (FVar F
   | [] => pure []
   | (b, x) :: rest => do
     let tail ← products rest
-    let t ← mul x (↑b)
+    let t ← mul (↑b) x
     pure (t :: tail)
 
 /-- The mask-select `∑ᵢ bᵢ · xᵢ` (PS `Pseudo.mask`): one `mul` row per entry, the sum an
@@ -45,7 +45,7 @@ variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 private theorem products_spec :
     ∀ entries : List (BoolVar F × FVar F),
       ⦃⌜True⌝⦄ products (c := Builder V c) entries
-      ⦃⇓ r _ => ⌜r.map (·.val V) = entries.map fun e => e.2.val V * (↑e.1 : CVar F).val V⌝⦄
+      ⦃⇓ r _ => ⌜r.map (·.val V) = entries.map fun e => (↑e.1 : CVar F).val V * e.2.val V⌝⦄
   | [] => by
     simp only [products]
     mvcgen
@@ -73,6 +73,6 @@ theorem mask_spec (bits : List (BoolVar F)) (xs : List (FVar F)) :
     | nil => intro acc; simp
     | cons y l ih => intro acc; simp [List.foldl_cons, ih, CVar.val_add_, add_assoc]
   rw [hfold, hterms]
-  simp [mul_comm]
+  simp
 
 end Pickles.Pseudo
