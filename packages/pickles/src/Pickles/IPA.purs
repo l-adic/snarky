@@ -25,6 +25,7 @@ module Pickles.IPA
   , bPoly
   , bPolyCircuit
   , challengePolyEvals
+  , computeChallenges
   -- Combined b evaluation
   , computeB
   , computeBCircuit
@@ -59,11 +60,12 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnarky, squeeze, squeezeScalar)
 import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
 import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, groupMapCircuit)
+import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, groupMapCircuit, toField)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, pow)
@@ -186,6 +188,22 @@ challengePolyEvals prevChallenges pt = do
   rev <- for (Vector.reverse prevChallenges) \chals ->
     bPolyCircuit { challenges: chals, x: pt }
   pure (Vector.reverse rev)
+
+-- | The bulletproof challenges expanded through the endomorphism (OCaml
+-- | `compute_challenges`): `toField` on each 128-bit challenge. OCaml's
+-- | `Vector.map` evaluates right to left, so the last challenge is expanded
+-- | first; the result is in vector order.
+computeChallenges
+  :: forall d n f r
+   . FieldSizeInBits f n
+  => Compare 128 n LT
+  => PrimeField f
+  => Vector d (SizedF 128 (FVar f))
+  -> FVar f
+  -> Snarky f (KimchiConstraint f) r (Vector d (FVar f))
+computeChallenges chals endoVar = do
+  expandedRev <- for (Vector.reverse chals) \c -> toField @8 c endoVar
+  pure (Vector.reverse expandedRev)
 
 -------------------------------------------------------------------------------
 -- | Combined b evaluation

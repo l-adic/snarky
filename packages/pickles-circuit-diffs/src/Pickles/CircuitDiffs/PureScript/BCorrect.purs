@@ -1,67 +1,75 @@
 module Pickles.CircuitDiffs.PureScript.BCorrect
-  ( BCorrectInput
-  , parseBCorrectInput
-  , bCorrectStepCircuit
-  , compileBCorrect
+  ( compileBCorrect
+  , compileBCorrectWrap
   ) where
 
 import Prelude
 
 import Data.Fin (getFinite)
-import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, stepEndo, unsafeIdx)
-import Pickles.Field (StepField)
-import Pickles.IPA (bCorrectCircuit) as IPA
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, stepEndo, unsafeIdx, wrapEndo)
+import Pickles.Field (StepField, WrapField)
+import Pickles.IPA (bCorrectCircuit, computeChallenges) as IPA
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, Snarky, const_)
-import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
+import Snarky.Circuit.DSL (F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShiftedType1Circuit, fromShiftedType2Circuit)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
-type BCorrectInput f =
-  { rawChallenges :: Vector 16 (SizedF 128 (FVar f))
-  , zeta :: FVar f
-  , zetaOmega :: FVar f
-  , evalscale :: FVar f
-  , claimedB :: Type1 (FVar f)
-  }
-
-parseBCorrectInput :: Vector 20 (FVar StepField) -> BCorrectInput StepField
-parseBCorrectInput inputs =
+-- | `b_correct_{step,wrap}_circuit` (OCaml `dump_circuit_impl.ml`): 16 raw 128-bit
+-- | bulletproof challenges at 0-15, zeta at 16, zetaw at 17, evalscale at 18, and
+-- | the claimed `b` at 19 as a Type1 (step) or Type2 (wrap) shifted value.
+-- | Expand the challenges through the endomorphism, then check
+-- | `b = b(zeta) + evalscale * b(zetaw)` against the unshifted claim.
+bCorrectStepCircuit
+  :: forall r
+   . Vector 20 (FVar StepField)
+  -> Snarky StepField (KimchiConstraint StepField) r Unit
+bCorrectStepCircuit inputs = do
   let
     at = unsafeIdx inputs
-  in
-    { rawChallenges: Vector.generate \j -> asSizedF128 (at (getFinite j))
+
+    raw :: Vector 16 (SizedF 128 (FVar StepField))
+    raw = Vector.generate \j -> asSizedF128 (at (getFinite j))
+  expanded <- IPA.computeChallenges raw (const_ stepEndo)
+  void $ IPA.bCorrectCircuit
+    { challenges: expanded
     , zeta: at 16
     , zetaOmega: at 17
     , evalscale: at 18
-    , claimedB: Type1 (at 19)
+    , expectedB: fromShiftedType1Circuit (Type1 (at 19))
     }
 
-bCorrectStepCircuit
+bCorrectWrapCircuit
   :: forall r
-   . PrimeField StepField
-  => BCorrectInput StepField
-  -> Snarky StepField (KimchiConstraint StepField) r (BoolVar StepField)
-bCorrectStepCircuit input = do
-  let endoVar = const_ stepEndo :: FVar StepField
-  -- Expand challenges in reverse order (OCaml right-to-left evaluation)
-  expandedRev <- for (Vector.reverse input.rawChallenges) \c -> toField @8 c endoVar
-  let expanded = Vector.reverse expandedRev
-  IPA.bCorrectCircuit
+   . Vector 20 (FVar WrapField)
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
+bCorrectWrapCircuit inputs = do
+  let
+    at = unsafeIdx inputs
+
+    raw :: Vector 16 (SizedF 128 (FVar WrapField))
+    raw = Vector.generate \j -> asSizedF128 (at (getFinite j))
+  expanded <- IPA.computeChallenges raw (const_ wrapEndo)
+  void $ IPA.bCorrectCircuit
     { challenges: expanded
-    , zeta: input.zeta
-    , zetaOmega: input.zetaOmega
-    , evalscale: input.evalscale
-    , expectedB: fromShiftedType1Circuit input.claimedB
+    , zeta: at 16
+    , zetaOmega: at 17
+    , evalscale: at 18
+    , expectedB: fromShiftedType2Circuit (Type2 (at 19))
     }
 
 compileBCorrect :: Effect (CompiledCircuit StepField)
 compileBCorrect =
-  compile noAdvice (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> void $ bCorrectStepCircuit (parseBCorrectInput inputs))
+  compile noAdvice (Proxy @(Vector 20 (F StepField))) (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    bCorrectStepCircuit
+
+compileBCorrectWrap :: Effect (CompiledCircuit WrapField)
+compileBCorrectWrap =
+  compile noAdvice (Proxy @(Vector 20 (F WrapField))) (Proxy @Unit)
+    (Proxy @(KimchiConstraint WrapField))
+    bCorrectWrapCircuit

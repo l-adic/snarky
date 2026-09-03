@@ -23,12 +23,12 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (for, traverse, traverse_)
+import Data.Traversable (traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith)
 import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
-import Pickles.IPA (bCorrectCircuit, challengePolyEvals)
+import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.IncrementallyVerifyProof (ivpTrace)
 import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
@@ -323,8 +323,8 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- Expand 16 bulletproof challenges via endo (reverse order matching
   -- OCaml's right-to-left Vector.map evaluation).
   ---------------------------------------------------------------------------
-  expandedRev <- label "step9_expandChallenges" $ for (Vector.reverse deferred.bulletproofChallenges) \c -> toField @8 c endoVar
-  let expandedChallenges = Vector.reverse expandedRev
+  expandedChallenges <- label "step9_expandChallenges" $
+    computeChallenges deferred.bulletproofChallenges endoVar
 
   bCorrect <- label "step9_bCorrect" $ bCorrectCircuit
     { challenges: expandedChallenges
