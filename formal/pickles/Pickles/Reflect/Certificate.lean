@@ -1,4 +1,5 @@
 import Pickles.Linearization.Spec
+import Pickles.Linearization.Map
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Pickles.Reflect.Poly
@@ -223,12 +224,12 @@ private theorem of_certificate (endo : K) (mds : Kimchi.Gate.Poseidon.Mds K)
       = gateLinearization endo mds α e := by
   obtain ⟨hα, hβ, hγ, hjc, hvan⟩ := evalAt_chal α β γ jc van e
   have hE := symEvals_map α β γ jc van e
-  have hc := toEnv_compatible (evalAt α β γ jc van e) endo mds
+  have hm := evaluate_map (evalAt α β γ jc van e) endo mds
     (xv 51) (xv 52) (xv 53) (xv 54) (xv 55) (fun _ _ => 0) LookupEvals.zero
-    (fun _ => false) symEvals
-  rw [hE, hα, hβ, hγ, hjc, hvan] at hc
-  simp only [_root_.map_zero, LookupEvals.map_zero (_root_.map_zero _)] at hc
-  rw [evaluate_map hc, hcert, gateLinearization_map, hα, hE]
+    (fun _ => false) symEvals toks
+  rw [hE, hα, hβ, hγ, hjc, hvan] at hm
+  simp only [_root_.map_zero, LookupEvals.map_zero (_root_.map_zero _)] at hm
+  rw [hm, hcert, gateLinearization_map, hα, hE]
 
 /-! ## The two deployed streams -/
 

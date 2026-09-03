@@ -146,6 +146,10 @@ def pop2 (s : EvalState F) : Option (F × F × EvalState F) :=
     | none => none
   | none => none
 
+/-- Apply `φ` to every cell of the stack and store; the position is unchanged. -/
+def map {S : Type} (φ : F → S) (s : EvalState F) : EvalState S :=
+  ⟨s.stack.map φ, s.store.map φ, s.position⟩
+
 end EvalState
 
 open EvalState

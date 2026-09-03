@@ -1,6 +1,5 @@
 import Pickles.Linearization.Interpreter
 import Kimchi.Protocol.Linearization
-import Pickles.Linearization.Map
 
 /-!
 # The interpreter's environment, from the verifier's own evaluations
@@ -84,6 +83,7 @@ def LookupEvals.map {S : Type} (φ : R → S) (lk : LookupEvals R) : LookupEvals
   runtimeSelector row := φ (lk.runtimeSelector row)
   kindIndex p := φ (lk.kindIndex p)
 
+omit [CommRing R] in
 /-- Zero is preserved: the modelled fragment's lookup evaluations transport to themselves.
 -/
 @[simp] theorem LookupEvals.map_zero {S : Type} [Zero R] [Zero S] {φ : R → S} (h0 : φ 0 = 0) :
@@ -136,47 +136,57 @@ def Evals.toEnv (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
   gamma := γ
   ifFeature f onTrue onFalse := if feat f then onTrue () else onFalse ()
 
-/-! ## Naturality
+section projections
 
-`toEnv` commutes with an `F`-algebra homomorphism, which is what lets the interpreter be
-run once over a polynomial algebra and read back at the field. The gate parameters are
-untouched — `φ` meets them only through `commutes`, since they enter via `algebraMap`. -/
+open Pickles.Linearization
 
-open Pickles.Linearization in
-/-- Mapping the evaluations and building the environment is building the environment and
-transporting it along `φ`. -/
-theorem toEnv_compatible {S : Type} [CommRing S] [Algebra F S] (φ : R →ₐ[F] S)
-    (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
-    (ulb : Bool → Int → R) (lk : LookupEvals R) (feat : FeatureFlag → Bool) (e : Evals R) :
-    Compatible φ (e.toEnv endo mds α β γ jc van ulb lk feat)
-      ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
-        (fun zk off => φ (ulb zk off)) (lk.map φ) feat) where
-  add a b := map_add φ a b
-  sub a b := map_sub φ a b
-  mul a b := map_mul φ a b
-  pow v n := map_pow φ v n
-  var c r := by
-    cases c with
-    | index g => cases g <;> cases r <;> simp [Evals.toEnv, Evals.map]
-    | witness i => cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
-    | coefficient i =>
-      cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
-    | _ => cases r <;> simp [Evals.toEnv, LookupEvals.map]
-  cell _ := rfl
-  alphaPow n := map_pow φ α n
-  mds r c := by
-    match r, c with
-    | 0, 0 | 0, 1 | 0, 2 | 1, 0 | 1, 1 | 1, 2 | 2, 0 | 2, 1 | 2, 2 => exact φ.commutes _
-    | _ + 3, _ | _, _ + 3 => simp [Evals.toEnv]
-  endoCoefficient := φ.commutes _
-  literal v := φ.commutes _
-  vanishes := rfl
-  ulb _ _ := rfl
-  jointCombiner := rfl
-  beta := rfl
-  gamma := rfl
-  ifFeature f t₁ n₁ t₂ n₂ ht hn := by
-    simp only [Evals.toEnv]
-    split <;> assumption
+variable (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
+  (ulb : Bool → Int → R) (lk : LookupEvals R) (feat : FeatureFlag → Bool) (e : Evals R)
+
+@[simp] theorem Evals.toEnv_add (a b : R) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).add a b = a + b := rfl
+
+@[simp] theorem Evals.toEnv_sub (a b : R) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).sub a b = a - b := rfl
+
+@[simp] theorem Evals.toEnv_mul (a b : R) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).mul a b = pure (a * b) := rfl
+
+@[simp] theorem Evals.toEnv_pow (v : R) (n : Nat) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).pow v n = pure (v ^ n) := rfl
+
+@[simp] theorem Evals.toEnv_cell (x : R) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).cell x = x := rfl
+
+@[simp] theorem Evals.toEnv_alphaPow (n : Nat) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).alphaPow n = α ^ n := rfl
+
+@[simp] theorem Evals.toEnv_endoCoefficient :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).endoCoefficient = algebraMap F R endo := rfl
+
+@[simp] theorem Evals.toEnv_literal (v : Nat) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).literal v = algebraMap F R (v : F) := rfl
+
+@[simp] theorem Evals.toEnv_vanishes :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).vanishesOnZeroKnowledgeAndPreviousRows
+      = van := rfl
+
+@[simp] theorem Evals.toEnv_unnormalizedLagrangeBasis (zk : Bool) (off : Int) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).unnormalizedLagrangeBasis zk off
+      = pure (ulb zk off) := rfl
+
+@[simp] theorem Evals.toEnv_jointCombiner :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).jointCombiner = jc := rfl
+
+@[simp] theorem Evals.toEnv_beta : (e.toEnv endo mds α β γ jc van ulb lk feat).beta = β := rfl
+
+@[simp] theorem Evals.toEnv_gamma :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).gamma = γ := rfl
+
+@[simp] theorem Evals.toEnv_ifFeature (f : FeatureFlag) (t n : Unit → Id R) :
+    (e.toEnv endo mds α β γ jc van ulb lk feat).ifFeature f t n
+      = if feat f then t () else n () := rfl
+
+end projections
 
 end Kimchi.Protocol.Linearization

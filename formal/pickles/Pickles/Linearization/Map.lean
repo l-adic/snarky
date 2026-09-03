@@ -1,101 +1,45 @@
-import Pickles.Linearization.Interpreter
+import Pickles.Linearization.Spec
 
 /-!
-# Transporting a run along a carrier map
+# Transporting a run along an algebra homomorphism
 
 The reflection route computes the linearization once over a polynomial algebra and reads
 the answer back at the field through an evaluation homomorphism. For that to work the
-interpreter has to COMMUTE with the homomorphism: running over polynomials and then
+interpreter has to commute with the homomorphism: running over polynomials and then
 evaluating must agree with evaluating first and running over the field.
 
-`Env` cannot simply be mapped — its operations take carrier elements as INPUTS, so pushing
-`φ : R → S` forward would need a section of `φ`. What holds instead is a relation:
-`Compatible φ e₁ e₂` says `φ` intertwines the two environments operation by operation.
-`evalLoop_map` then shows the whole machine preserves it, and `evaluate_map` is the
-corollary at the entry point.
-
-The induction is on the fuel and never mentions the token array's contents, so it costs
-nothing per token — which is what keeps the reflection's expense confined to the one
-decidable equality over polynomials.
+`evaluate_map` is that statement for `Evals.toEnv`: for an `F`-algebra homomorphism
+`φ : R →ₐ[F] S`, the run over `S` at the transported inputs is `φ` of the run over `R`.
+Every operation of `toEnv` is a ring operation or an `algebraMap`, so each case of the
+induction is one of `map_add`, `map_mul`, `map_pow` or `φ.commutes`. The induction is on
+the fuel and never mentions the token array's contents.
 -/
 
 namespace Pickles.Linearization
 
-variable {R S : Type} (φ : R → S)
+open Kimchi.Protocol.Linearization
 
-/-- Push a carrier map through the machine state: both arrays cell by cell, position
-unchanged. -/
-def EvalState.map (s : EvalState R) : EvalState S :=
-  ⟨s.stack.map φ, s.store.map φ, s.position⟩
+variable {R S : Type} {φ : R → S}
 
-/-- `φ` intertwines two environments: every operation, and every constant, agrees across
-it. The branch clause is conditional rather than pointwise — `ifFeature` receives thunks,
-so what is required is that related branches give related results. -/
-structure Compatible (e₁ : Env Id R) (e₂ : Env Id S) : Prop where
-  /-- Addition is intertwined. -/
-  add : ∀ a b, φ (e₁.add a b) = e₂.add (φ a) (φ b)
-  /-- Subtraction is intertwined. -/
-  sub : ∀ a b, φ (e₁.sub a b) = e₂.sub (φ a) (φ b)
-  /-- Multiplication is intertwined. -/
-  mul : ∀ a b, φ (e₁.mul a b) = e₂.mul (φ a) (φ b)
-  /-- Exponentiation is intertwined. -/
-  pow : ∀ v n, φ (e₁.pow v n) = e₂.pow (φ v) n
-  /-- Cell readings agree. -/
-  var : ∀ c r, φ (e₁.var c r) = e₂.var c r
-  /-- Cell post-processing is intertwined. -/
-  cell : ∀ x, φ (e₁.cell x) = e₂.cell (φ x)
-  /-- The α-powers agree. -/
-  alphaPow : ∀ n, φ (e₁.alphaPow n) = e₂.alphaPow n
-  /-- The MDS entries agree. -/
-  mds : ∀ r c, φ (e₁.mds r c) = e₂.mds r c
-  /-- The endomorphism coefficients agree. -/
-  endoCoefficient : φ e₁.endoCoefficient = e₂.endoCoefficient
-  /-- Literals agree. -/
-  literal : ∀ v, φ (e₁.literal v) = e₂.literal v
-  /-- The zero-knowledge vanishing evaluations agree. -/
-  vanishes : φ e₁.vanishesOnZeroKnowledgeAndPreviousRows
-    = e₂.vanishesOnZeroKnowledgeAndPreviousRows
-  /-- The Lagrange bases agree. -/
-  ulb : ∀ zk off, φ (e₁.unnormalizedLagrangeBasis zk off)
-    = e₂.unnormalizedLagrangeBasis zk off
-  /-- The joint combiners agree. -/
-  jointCombiner : φ e₁.jointCombiner = e₂.jointCombiner
-  /-- The `β` challenges agree. -/
-  beta : φ e₁.beta = e₂.beta
-  /-- The `γ` challenges agree. -/
-  gamma : φ e₁.gamma = e₂.gamma
-  /-- Related branches select related results. Stated conditionally rather than by pinning
-  both environments to the disabled branch: the feature predicate is a parameter of
-  `Evals.toEnv`, so the enabled case must remain STATEABLE even where it is not the regime
-  under study. The cost is that `skipIfNot` recurses twice below, once per branch. -/
-  ifFeature : ∀ (f : FeatureFlag) (t₁ n₁ : Unit → Id R) (t₂ n₂ : Unit → Id S),
-    φ (t₁ ()) = t₂ () → φ (n₁ ()) = n₂ () →
-      φ (e₁.ifFeature f t₁ n₁) = e₂.ifFeature f t₂ n₂
+/-! ## `EvalState.map` -/
 
-variable {φ}
-
--- These are stated for an arbitrary carrier map because there are two: the evaluation
--- homomorphism of the reflection, and `(·.val V)` reading circuit variables under a
--- valuation. Oriented to move `.map φ` INWARD. The reverse orientation reads more naturally but its
--- left-hand side is the higher-order pattern `push (φ v) (s.map φ)`, which neither `rw`
--- nor `simp` fires reliably; inward, every left-hand side is first-order. Each case then
--- closes with `simpa using ih …`, so the hypothesis is normalised the same way.
-@[simp] theorem map_push (v : R) (s : EvalState R) :
+-- Oriented to move `.map φ` inward, so every left-hand side is first-order.
+@[simp] private theorem map_push (v : R) (s : EvalState R) :
     (EvalState.push v s).map φ = EvalState.push (φ v) (s.map φ) := by
   simp [EvalState.push, EvalState.map]
 
-@[simp] theorem map_advance (s : EvalState R) :
+@[simp] private theorem map_advance (s : EvalState R) :
     (EvalState.advance s).map φ = EvalState.advance (s.map φ) := by
   simp [EvalState.advance, EvalState.map]
 
 @[simp] theorem map_position (s : EvalState R) : (s.map φ).position = s.position := rfl
 
-@[simp] theorem map_withPos (s : EvalState R) (p : Nat) :
+@[simp] private theorem map_withPos (s : EvalState R) (p : Nat) :
     ({ s with position := p } : EvalState R).map φ
       = ({ s.map φ with position := p } : EvalState S) := by
   simp [EvalState.map]
 
-@[simp] theorem map_withStore (v : R) (s : EvalState R) :
+@[simp] private theorem map_withStore (v : R) (s : EvalState R) :
     ({ s with store := s.store.push v } : EvalState R).map φ
       = ({ s.map φ with store := (s.map φ).store.push (φ v) } : EvalState S) := by
   simp [EvalState.map]
@@ -103,56 +47,78 @@ variable {φ}
 @[simp] theorem map_back? (s : EvalState R) :
     (s.map φ).stack.back? = s.stack.back?.map φ := by simp [EvalState.map]
 
-@[simp] theorem map_store_get (s : EvalState R) (i : Nat) :
+@[simp] private theorem map_store_get (s : EvalState R) (i : Nat) :
     (s.map φ).store[i]? = s.store[i]?.map φ := by simp [EvalState.map]
 
-/-- Popping commutes: the mapped state pops the mapped value and the mapped remainder. -/
 theorem map_pop (s : EvalState R) :
     (s.map φ).pop = s.pop.map (fun p => (φ p.1, p.2.map φ)) := by
   cases h : s.stack.back? with
   | none => simp [EvalState.pop, EvalState.map, h]
   | some v => simp [EvalState.pop, EvalState.map, h, Array.map_pop]
 
-/-- Popping two commutes. -/
 theorem map_pop2 (s : EvalState R) :
     (s.map φ).pop2 = s.pop2.map (fun p => (φ p.1, φ p.2.1, p.2.2.map φ)) := by
   simp only [EvalState.pop2, map_pop]
-  cases h : s.pop with
-  | none => simp [h]
+  cases s.pop with
+  | none => simp
   | some p =>
     cases h2 : p.2.pop with
-    | none => simp [h, h2, map_pop]
-    | some q => simp [h, h2, map_pop]
+    | none => simp [h2, map_pop]
+    | some q => simp [h2, map_pop]
 
 /-! ## The machine commutes -/
 
-variable {e₁ : Env Id R} {e₂ : Env Id S}
+variable {F : Type} [Field F] [CommRing R] [Algebra F R] [CommRing S] [Algebra F S]
+  (φ : R →ₐ[F] S) (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F) (α β γ jc van : R)
+  (ulb : Bool → Int → R) (lk : LookupEvals R) (feat : FeatureFlag → Bool) (e : Evals R)
 
-private theorem map_evalConstant (h : Compatible φ e₁ e₂) (c : ConstantTerm) :
-    φ (evalConstant e₁ c) = evalConstant e₂ c := by
-  cases c <;> simp [evalConstant, h.endoCoefficient, h.mds, h.literal]
+private theorem toEnv_var (c : Column) (r : CurrOrNext) :
+    φ ((e.toEnv endo mds α β γ jc van ulb lk feat).var c r)
+      = ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+          (fun zk off => φ (ulb zk off)) (lk.map φ) feat).var c r := by
+  cases c with
+  | index g => cases g <;> cases r <;> simp [Evals.toEnv, Evals.map]
+  | witness i => cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
+  | coefficient i =>
+    cases r <;> simp [Evals.toEnv, Evals.map, apply_dite (f := φ), map_zero]
+  | _ => cases r <;> simp [Evals.toEnv, LookupEvals.map]
 
-private theorem map_evalChallenge (h : Compatible φ e₁ e₂) (c : ChallengeTerm) :
-    φ (evalChallenge e₁ c) = evalChallenge e₂ c := by
-  cases c <;> simp [evalChallenge, h.alphaPow, h.beta, h.gamma, h.jointCombiner]
+private theorem toEnv_mds (r c : Nat) :
+    φ ((e.toEnv endo mds α β γ jc van ulb lk feat).mds r c)
+      = ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+          (fun zk off => φ (ulb zk off)) (lk.map φ) feat).mds r c := by
+  match r, c with
+  | 0, 0 | 0, 1 | 0, 2 | 1, 0 | 1, 1 | 1, 2 | 2, 0 | 2, 1 | 2, 2 => exact φ.commutes _
+  | _ + 3, _ | _, _ + 3 => simp [Evals.toEnv]
 
-private theorem map_topOrZero (h : Compatible φ e₁ e₂) (s : EvalState R) :
-    φ (topOrZero e₁ s) = topOrZero e₂ (s.map φ) := by
+private theorem toEnv_constant (t : ConstantTerm) :
+    φ (evalConstant (e.toEnv endo mds α β γ jc van ulb lk feat) t)
+      = evalConstant ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+          (fun zk off => φ (ulb zk off)) (lk.map φ) feat) t := by
+  cases t with
+  | mds r c => exact toEnv_mds φ endo mds α β γ jc van ulb lk feat e r c
+  | _ => simp [evalConstant, φ.commutes]
+
+private theorem toEnv_challenge (t : ChallengeTerm) :
+    φ (evalChallenge (e.toEnv endo mds α β γ jc van ulb lk feat) t)
+      = evalChallenge ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+          (fun zk off => φ (ulb zk off)) (lk.map φ) feat) t := by
+  cases t <;> simp [evalChallenge]
+
+private theorem toEnv_topOrZero (s : EvalState R) :
+    φ (topOrZero (e.toEnv endo mds α β γ jc van ulb lk feat) s)
+      = topOrZero ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+          (fun zk off => φ (ulb zk off)) (lk.map φ) feat) (s.map φ) := by
   simp only [topOrZero, map_back?]
-  cases s.stack.back? <;> simp [h.literal]
+  cases s.stack.back? <;> simp
 
-/-- **The machine commutes with a compatible carrier map.** Running over `S` from the
-mapped state is running over `R` and mapping the result — for every fuel, bound and
-starting state.
-
-The induction is on the fuel alone. Each token case is the same three steps: rewrite the
-environment operation through `Compatible`, push the map past `push`/`advance`/`pop`, and
-apply the hypothesis. The `skipIfNot` case is the only one that recurses twice, and it
-discharges both of `ifFeature`'s branch obligations from the same hypothesis. -/
-private theorem evalLoop_map (h : Compatible φ e₁ e₂) (toks : Array PolishToken) :
+/-- The machine commutes with an algebra homomorphism: running over `S` from the mapped
+state is running over `R` and mapping the result, for every fuel, bound and start. -/
+private theorem evalLoop_map (toks : Array PolishToken) :
     ∀ (fuel endPos : Nat) (s : EvalState R),
-      evalLoop e₂ toks fuel endPos (s.map φ)
-        = (evalLoop e₁ toks fuel endPos s).map φ := by
+      evalLoop ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+          (fun zk off => φ (ulb zk off)) (lk.map φ) feat) toks fuel endPos (s.map φ)
+        = (evalLoop (e.toEnv endo mds α β γ jc van ulb lk feat) toks fuel endPos s).map φ := by
   intro fuel
   induction fuel with
   | zero => intro endPos s; rfl
@@ -167,8 +133,8 @@ private theorem evalLoop_map (h : Compatible φ e₁ e₂) (toks : Array PolishT
       | some tok =>
         cases tok with
         | constant c =>
-          simpa [← map_evalConstant h] using
-            ih endPos (EvalState.push (evalConstant e₁ c) s.advance)
+          simpa [← toEnv_constant] using
+            ih endPos (EvalState.push (evalConstant _ c) s.advance)
         | challenge c =>
           cases c with
           | alpha =>
@@ -176,24 +142,21 @@ private theorem evalLoop_map (h : Compatible φ e₁ e₂) (toks : Array PolishT
             | some t =>
               cases t with
               | pow n =>
-                simpa [hp, ← h.alphaPow] using
-                  ih endPos (EvalState.push (e₁.alphaPow n)
-                    { s with position := s.position + 2 })
+                simpa [hp] using
+                  ih endPos (EvalState.push (α ^ n) { s with position := s.position + 2 })
               | _ =>
-                simpa [hp, ← h.alphaPow] using
-                  ih endPos (EvalState.push (e₁.alphaPow 1) s.advance)
+                simpa [hp] using ih endPos (EvalState.push α s.advance)
             | none =>
-              simpa [hp, ← h.alphaPow] using
-                ih endPos (EvalState.push (e₁.alphaPow 1) s.advance)
+              simpa [hp] using ih endPos (EvalState.push α s.advance)
           | _ =>
-            simpa [← map_evalChallenge h] using
-              ih endPos (EvalState.push (evalChallenge e₁ _) s.advance)
+            simpa [← toEnv_challenge] using
+              ih endPos (EvalState.push (evalChallenge _ _) s.advance)
         | cell col row =>
-          simpa [← h.cell, ← h.var] using
-            ih endPos (EvalState.push (e₁.cell (e₁.var col row)) s.advance)
+          simpa [← toEnv_var] using
+            ih endPos (EvalState.push ((e.toEnv endo mds α β γ jc van ulb lk feat).var col row)
+              s.advance)
         | vanishesOnZeroKnowledgeAndPreviousRows =>
-          simpa [← h.vanishes] using
-            ih endPos (EvalState.push e₁.vanishesOnZeroKnowledgeAndPreviousRows s.advance)
+          simpa using ih endPos (EvalState.push van s.advance)
         | dup =>
           cases hb : s.stack.back? with
           | none => simpa [hb] using ih endPos s.advance
@@ -202,29 +165,28 @@ private theorem evalLoop_map (h : Compatible φ e₁ e₂) (toks : Array PolishT
           cases hp : s.pop2 with
           | none => simpa [map_pop2, hp] using ih endPos s.advance
           | some p =>
-            simpa [map_pop2, hp, ← h.add] using
-              ih endPos (EvalState.push (e₁.add p.1 p.2.1) p.2.2.advance)
+            simpa [map_pop2, hp] using
+              ih endPos (EvalState.push (p.1 + p.2.1) p.2.2.advance)
         | sub =>
           cases hp : s.pop2 with
           | none => simpa [map_pop2, hp] using ih endPos s.advance
           | some p =>
-            simpa [map_pop2, hp, ← h.sub] using
-              ih endPos (EvalState.push (e₁.sub p.1 p.2.1) p.2.2.advance)
+            simpa [map_pop2, hp] using
+              ih endPos (EvalState.push (p.1 - p.2.1) p.2.2.advance)
         | mul =>
           cases hp : s.pop2 with
           | none => simpa [map_pop2, hp] using ih endPos s.advance
           | some p =>
-            simpa [map_pop2, hp, ← h.mul] using
-              ih endPos (EvalState.push (e₁.mul p.1 p.2.1) p.2.2.advance)
+            simpa [map_pop2, hp] using
+              ih endPos (EvalState.push (p.1 * p.2.1) p.2.2.advance)
         | pow n =>
           cases hp : s.pop with
           | none => simpa [map_pop, hp] using ih endPos s.advance
           | some p =>
-            simpa [map_pop, hp, ← h.pow] using
-              ih endPos (EvalState.push (e₁.pow p.1 n) p.2.advance)
+            simpa [map_pop, hp] using
+              ih endPos (EvalState.push (p.1 ^ n) p.2.advance)
         | unnormalizedLagrangeBasis zk off =>
-          simpa [← h.ulb] using
-            ih endPos (EvalState.push (e₁.unnormalizedLagrangeBasis zk off) s.advance)
+          simpa using ih endPos (EvalState.push (ulb zk off) s.advance)
         | store =>
           cases hp : s.pop with
           | none => simpa [map_pop, hp] using ih endPos s.advance
@@ -240,48 +202,54 @@ private theorem evalLoop_map (h : Compatible φ e₁ e₂) (toks : Array PolishT
           simpa using ih endPos { s with position := s.position + 1 + n }
         | skipIfNot f n =>
           -- Both branches are runs of the same machine from a repositioned state, so one
-          -- lemma supplies both of `ifFeature`'s obligations. Two recursions rather than
-          -- one: the conditional clause does not presume which branch is taken.
+          -- lemma serves both; the conditional is `if feat f` on either side.
           have key : ∀ (bound pos : Nat),
-              φ (topOrZero e₁ (evalLoop e₁ toks fuel bound { s with position := pos }))
-                = topOrZero e₂
-                    (evalLoop e₂ toks fuel bound { s.map φ with position := pos }) := by
+              φ (topOrZero (e.toEnv endo mds α β γ jc van ulb lk feat)
+                  (evalLoop (e.toEnv endo mds α β γ jc van ulb lk feat) toks fuel bound
+                    { s with position := pos }))
+                = topOrZero ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+                      (fun zk off => φ (ulb zk off)) (lk.map φ) feat)
+                    (evalLoop ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+                      (fun zk off => φ (ulb zk off)) (lk.map φ) feat) toks fuel bound
+                      { s.map φ with position := pos }) := by
             intro bound pos
-            rw [map_topOrZero h, ← ih bound { s with position := pos }]
+            rw [toEnv_topOrZero, ← ih bound { s with position := pos }]
             simp
-          dsimp only
-          rw [← h.ifFeature f
-            (fun _ => topOrZero e₁ (evalLoop e₁ toks fuel (s.position + 1 + n)
-              { s with position := s.position + 1 }))
-            (fun _ => topOrZero e₁ (evalLoop e₁ toks fuel
-              (s.position + 1 + n + 1 +
-                match toks[s.position + 1 + n]? with
-                | some (.skipIf _ c) => c
-                | _ => 0)
-              { s with position := s.position + 1 + n + 1 }))
-            _ _ (key _ _) (key _ _)]
-          simpa using ih endPos
-            (EvalState.push
-              (e₁.ifFeature f
-                (fun _ => topOrZero e₁ (evalLoop e₁ toks fuel (s.position + 1 + n)
-                  { s with position := s.position + 1 }))
-                (fun _ => topOrZero e₁ (evalLoop e₁ toks fuel
+          simp only [Evals.toEnv_ifFeature, bind, pure]
+          by_cases hf : feat f
+          · simp only [if_pos hf]
+            rw [← key (s.position + 1 + n) (s.position + 1)]
+            simpa using ih endPos
+              (EvalState.push (topOrZero (e.toEnv endo mds α β γ jc van ulb lk feat)
+                (evalLoop (e.toEnv endo mds α β γ jc van ulb lk feat) toks fuel
+                  (s.position + 1 + n) { s with position := s.position + 1 }))
+                { s with position := s.position + 1 + n + 1 +
+                    match toks[s.position + 1 + n]? with
+                    | some (.skipIf _ c) => c
+                    | _ => 0 })
+          · simp only [if_neg hf]
+            rw [← key]
+            simpa using ih endPos
+              (EvalState.push (topOrZero (e.toEnv endo mds α β γ jc van ulb lk feat)
+                (evalLoop (e.toEnv endo mds α β γ jc van ulb lk feat) toks fuel
                   (s.position + 1 + n + 1 +
                     match toks[s.position + 1 + n]? with
                     | some (.skipIf _ c) => c
                     | _ => 0)
-                  { s with position := s.position + 1 + n + 1 })))
-              { s with position := s.position + 1 + n + 1 +
-                  match toks[s.position + 1 + n]? with
-                  | some (.skipIf _ c) => c
-                  | _ => 0 })
+                  { s with position := s.position + 1 + n + 1 }))
+                { s with position := s.position + 1 + n + 1 +
+                    match toks[s.position + 1 + n]? with
+                    | some (.skipIf _ c) => c
+                    | _ => 0 })
 
-/-- **The entry point commutes.** -/
-theorem evaluate_map (h : Compatible φ e₁ e₂) (toks : Array PolishToken) :
-    evaluate e₂ toks = φ (evaluate e₁ toks) := by
-  simp only [evaluate, Id.run, bind, pure]
+/-- Running `toEnv` over `S` at the transported inputs is `φ` of the run over `R`. -/
+theorem evaluate_map (toks : Array PolishToken) :
+    evaluate ((e.map φ).toEnv endo mds (φ α) (φ β) (φ γ) (φ jc) (φ van)
+        (fun zk off => φ (ulb zk off)) (lk.map φ) feat) toks
+      = φ (evaluate (e.toEnv endo mds α β γ jc van ulb lk feat) toks) := by
+  simp only [evaluate, bind, pure]
   rw [show (EvalState.init : EvalState S) = (EvalState.init : EvalState R).map φ from by
     simp [EvalState.init, EvalState.map]]
-  rw [evalLoop_map h toks, ← map_topOrZero h]
+  rw [evalLoop_map φ endo mds α β γ jc van ulb lk feat e toks, ← toEnv_topOrZero]
 
 end Pickles.Linearization

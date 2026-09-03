@@ -32,13 +32,21 @@ Pickles.Linearization.instReprFeatureFlag
 Pickles.Linearization.instDecidableEqPolishToken
 Pickles.Linearization.instReprPolishToken
 
--- A `rfl` simp lemma (Linearization/Map.lean): used by `simp only` in both simulation
--- proofs, where a definitional rewrite leaves no proof term for the walk to see.
+-- `rfl` simp lemmas: the `EvalState.map` position law (Linearization/Map.lean) and the
+-- `Evals.toEnv` projections (Linearization/Spec.lean). Fired by `simp` in the simulation
+-- proofs as definitional rewrites, which leave no proof term for the walk to see.
 Pickles.Linearization.map_position
-
--- The codegen surface (PicklesFixture): consumed by the `gen-tokens` executable
--- (pickles/GenTokens.lean), a driver like the scripts.
--- script-surface:begin
-Pickles.Fixture.readLinearization
-Pickles.Fixture.moduleSrc
--- script-surface:end
+Kimchi.Protocol.Linearization.Evals.toEnv_add
+Kimchi.Protocol.Linearization.Evals.toEnv_alphaPow
+Kimchi.Protocol.Linearization.Evals.toEnv_beta
+Kimchi.Protocol.Linearization.Evals.toEnv_cell
+Kimchi.Protocol.Linearization.Evals.toEnv_endoCoefficient
+Kimchi.Protocol.Linearization.Evals.toEnv_gamma
+Kimchi.Protocol.Linearization.Evals.toEnv_ifFeature
+Kimchi.Protocol.Linearization.Evals.toEnv_jointCombiner
+Kimchi.Protocol.Linearization.Evals.toEnv_literal
+Kimchi.Protocol.Linearization.Evals.toEnv_mul
+Kimchi.Protocol.Linearization.Evals.toEnv_pow
+Kimchi.Protocol.Linearization.Evals.toEnv_sub
+Kimchi.Protocol.Linearization.Evals.toEnv_unnormalizedLagrangeBasis
+Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
