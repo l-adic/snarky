@@ -57,6 +57,8 @@ data DomainMode
 -- |   identical across all unique domains
 -- |   (`disabled_not_the_same`).
 -- | - `srsLengthLog2`: Log2 of SRS length (e.g. 16)
+-- | - `zkRows`: kimchi's `zk_rows` for the `scalars_env` generator powers
+-- |   (OCaml `Plonk_checks.scalars_env ~zk_rows`; 3 at one chunk)
 -- | - `endo`: Endomorphism coefficient for scalar challenge conversion
 -- | - `linearizationPoly`: The linearization polynomial for gate constraints
 -- | - `domainMode`: Whether the prev proof's domain is compile-time
@@ -66,6 +68,7 @@ type Params nd f r =
   { domains :: Vector nd { generator :: FVar f, log2 :: Int }
   , shifts :: Vector 7 (FVar f)
   , srsLengthLog2 :: Int
+  , zkRows :: Int
   , endo :: f -- ^ EndoScalar coefficient
   , linearizationPoly :: LinearizationPoly f
   , domainMode :: DomainMode

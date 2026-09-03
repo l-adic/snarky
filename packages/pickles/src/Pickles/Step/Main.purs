@@ -47,6 +47,7 @@ import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.IncrementallyVerifyProof (ivpTrace)
@@ -1108,6 +1109,9 @@ stepMain
               -- same answer.
               , shifts: map const_ (LinFFI.domainShifts @StepField slotShiftsLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
+              -- OCaml `step_branch_data.ml`: the branch's `zk_rows`, the
+              -- default at one chunk; the step circuits here are single-chunk.
+              , zkRows: zkRowsByDefault
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
               , domainMode: slotConfig.fopDomainMode

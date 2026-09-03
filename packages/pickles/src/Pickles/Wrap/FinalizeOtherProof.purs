@@ -33,6 +33,7 @@ import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (challengeDigest, extractEvalFields, squeezeXiR)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, combinedInnerProduct)
+import Pickles.PlonkChecks.Domain (omegaPowers, zkPolynomial)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
@@ -42,7 +43,7 @@ import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, const_, equals_, inv_, label, mul_, pow_, seal, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, const_, equals_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -199,15 +200,9 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
   ---------------------------------------------------------------------------
   let gen = domain.generator
-  omegaM1 <- inv_ gen -- omega^-1 = one / gen
-  omegaM2 <- mul_ omegaM1 omegaM1 -- omega^-2 (OCaml: let square x = x * x in plonk_checks)
-  let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
-  omegaZk <- mul_ omegaZkP1 omegaM1 -- omega^-3
-
-  -- zkPoly = (zeta - omega^-1)(zeta - omega^-2)(zeta - omega^-3)
-  zkPoly <- label "step7_zkPoly" do
-    t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
-    mul_ t1 (zeta `sub_` omegaZk)
+  omegas@{ omegaToMinus1: omegaM1, omegaToZkPlus1: omegaZkP1, omegaToZk: omegaZk } <-
+    omegaPowers { generator: gen, zkRows: params.zkRows }
+  zkPoly <- label "step7_zkPoly" $ zkPolynomial zeta omegas
 
   -- zetaToNMinus1: zeta^n - 1 (no domain masking, just pow2pow and subtract)
   -- Uses mul_ (R1CS) not square_ because this comes from plonk_checks.pow2pow

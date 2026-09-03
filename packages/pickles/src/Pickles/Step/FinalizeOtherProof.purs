@@ -26,7 +26,6 @@ module Pickles.Step.FinalizeOtherProof
 
 import Prelude
 
-import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
@@ -47,6 +46,7 @@ import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
 import Pickles.PlonkChecks (extractEvalFields, maskedChallengeDigest, squeezeXiR)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, combinedInnerProduct)
+import Pickles.PlonkChecks.Domain (knownDomainVanishingPolynomial, knownDomainWhiches, omegaPowers, zkPolynomial)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
@@ -56,7 +56,7 @@ import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, and_, assertAny_, const_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
+import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, all_, and_, assertAny_, const_, equals_, if_, label, mul_, not_, pow_, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -249,11 +249,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   --   SideLoadedMode also uses `precomputedOnesPrefix` rather than
   --   the unique-domain whiches.
   domainWhichesKnown :: Maybe (Vector nd (BoolVar f)) <- case params.domainMode of
-    KnownDomainsMode -> do
-      domainWhichesRev <- traverse
-        (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
-        (Vector.reverse params.domains)
-      pure (Just (Vector.reverse domainWhichesRev))
+    KnownDomainsMode -> Just <$> knownDomainWhiches domainLog2Var params.domains
     SideLoadedMode -> pure Nothing
 
   maskedGen <- case domainWhichesKnown of
@@ -351,22 +347,12 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   ---------------------------------------------------------------------------
   -- Step 10: Omega powers in-circuit
   -- OCaml computes omega powers from maskedGen (non-constant), so each
-  -- produces R1CS constraints. zk_rows == zk_rows_by_default (3) → empty loop.
-  --   omega_to_minus_1 = one / gen
-  --   omega_to_minus_2 = square omega_to_minus_1
-  --   omega_to_zk_plus_1 = omega_to_minus_2 (empty loop for zk_rows=3)
-  --   omega_to_zk = omega_to_zk_plus_1 * omega_to_minus_1
+  -- produces R1CS constraints (`omegaPowers`, generic in `zkRows`), then
+  -- the permutation vanishing polynomial at zeta.
   ---------------------------------------------------------------------------
-  omegaM1 <- inv_ maskedGen
-  omegaM2 <- mul_ omegaM1 omegaM1 -- OCaml: square x = x * x (R1CS, not Square)
-  let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
-  omegaZk <- mul_ omegaZkP1 omegaM1
-
-  -- zkPoly = (zeta - omega^-1)(zeta - omega^-2)(zeta - omega^-3)
-  -- Note: omegaM1 = omega^-1, omegaZkP1 = omega^-2, omegaZk = omega^-3
-  zkPoly <- do
-    t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
-    mul_ t1 (zeta `sub_` omegaZk)
+  omegas@{ omegaToMinus1: omegaM1, omegaToZkPlus1: omegaZkP1, omegaToZk: omegaZk } <-
+    omegaPowers { generator: maskedGen, zkRows: params.zkRows }
+  zkPoly <- zkPolynomial zeta omegas
 
   -- zetaToNMinus1 via multi-domain vanishing polynomial.
   -- Mirrors OCaml `Pseudo.Domain.to_domain.vanishing_polynomial` (`pseudo.ml:118-127`):
@@ -378,18 +364,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- additional domain (mask multiplication).
   zetaToNMinus1 <- label "domain-vanishing-poly" case params.domainMode of
     KnownDomainsMode -> case domainWhichesKnown of
-      Just dw -> do
-        pow2PowsArr <- buildPow2PowsArray zeta maxLog2
-        let
-          pow2AtLog2 :: Vector nd (FVar f)
-          pow2AtLog2 = map
-            ( \d -> case Array.index pow2PowsArr d.log2 of
-                Just v -> v
-                Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
-            )
-            params.domains
-        masked <- Pseudo.mask dw pow2AtLog2
-        label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
+      Just dw -> knownDomainVanishingPolynomial dw params.domains maxLog2 zeta
       Nothing -> unsafeThrow
         "Pickles.Step.FinalizeOtherProof: KnownDomainsMode reached \
         \vanishing-poly without a precomputed `domainWhichesKnown` — \
@@ -599,28 +574,3 @@ mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
     )
     true_
     indices
-
--- | Build the runtime `pow2_pows` table = `[x, x^2, x^4, ..., x^(2^maxLog2)]`
--- | as an Array of length `maxLog2 + 1`. Emits exactly `maxLog2`
--- | Square constraints (one per consecutive squaring step).
--- |
--- | Mirrors OCaml `Pseudo.Domain.to_domain`'s `vanishing_polynomial`'s
--- | pow2_pows array build (`pseudo.ml:119-123`). Used by multi-domain
--- | dispatch where the runtime `maxLog2` is determined by the maximum
--- | log2 across the slot's possible domains.
-buildPow2PowsArray
-  :: forall f c r
-   . PrimeField f
-  => BasicSystem f c
-  => FVar f
-  -> Int
-  -> Snarky f c r (Array (FVar f))
-buildPow2PowsArray x maxLog2 = go [ x ] maxLog2
-  where
-  go acc i
-    | i <= 0 = pure acc
-    | otherwise = case Array.last acc of
-        Nothing -> pure acc -- unreachable: acc is non-empty
-        Just lastV -> do
-          sq <- square_ lastV
-          go (Array.snoc acc sq) (i - 1)
