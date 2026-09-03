@@ -3,6 +3,8 @@ import Kimchi.Verifier.Kimchi
 import Bulletproof.Wire
 import Pickles.Linearization.Spec
 import Pickles.Linearization.Fp
+import Pickles.Linearization.Fq
+import Pasta.Endo
 import FixtureKit.Parse
 import Lean.Data.Json
 
@@ -12,7 +14,8 @@ import Lean.Data.Json
 The deployed linearization is a compiled `PolishToken` program;
 `kimchi/scripts/check_linearization.lean` checks the closed-form `gateLinearization`
 against production's `constant_term`, and this driver checks the ported program against
-both. Two checks, on the same fixture pair:
+both. Two checks, on the same fixture pair the closed form is checked against and on the
+Pallas-side fixture, which is what anchors the `Fq` stream's constants:
 
 1. `evaluate tokens env = constant_term` — the ported stack machine reproduces production's
    own scalar, so the port is faithful to the Rust it was transcribed from.
@@ -24,6 +27,10 @@ The second is a numerical instance of the reflection certificate
 symbolically.
 
 ## What the live stream exercises
+
+The endomorphism constant each certificate is decided against (`Pasta.pallasEndo` for
+`Fp`, `Pasta.vestaEndo` for `Fq`) must equal the fixture's recorded `endo`, and the MDS
+matrix enters the token evaluation, so a pass anchors both to production.
 
 Only 1539 of the 4220 tokens are reachable: the seven top-level `SkipIfNot` guards
 (`RangeCheck0/1`, `ForeignField{Add,Mul}`, `Xor`, `Rot`, `LookupTables`) are all disabled in
@@ -41,25 +48,27 @@ open Lean FixtureKit Bulletproof Kimchi.Protocol Kimchi.Protocol.Linearization
 open Pickles.Linearization
 open scoped Kimchi
 
-abbrev C := IpaVesta.curve
-abbrev F := C.ScalarField
-
 /-- A `[zeta, zeta_omega]` evaluation pair. -/
-def parsePE (j : Json) : Except String (F × F) := do
-  let a ← parseArrOf (parseZMod (n := _)) j
+def parsePE {n : ℕ} (j : Json) : Except String (ZMod n × ZMod n) := do
+  let a ← parseArrOf (parseZMod (n := n)) j
   unless a.size = 2 do throw s!"expected an evaluation pair, got {a.size} entries"
   return (a.getD 0 0, a.getD 1 0)
 
-/-- Adjudicate one fixture pair: production's evaluations against the deployed token
-stream for the same curve. -/
-def runFixture (evalPath : String) : IO Unit := do
-  let toks := fpTokens
+/-- Adjudicate one fixture against the deployed token stream `toks` for the same curve,
+with the Lean side's MDS matrix `mds` and endomorphism constant `endo`. The fixture's
+recorded `endo` must equal `endo`: that is what anchors the constant the certificate is
+decided against to production. -/
+def runFixture {n : ℕ} [Fact n.Prime] (toks : Array PolishToken)
+    (mds : Kimchi.Gate.Poseidon.Mds (ZMod n)) (endo : ZMod n) (evalPath : String) :
+    IO Unit := do
   let raw ← IO.FS.readFile evalPath
-  let r : Except String (Bool × Bool × F) := do
+  let r : Except String (Bool × Bool × ZMod n) := do
     let j ← Json.parse raw
     let fld (k : String) : Except String Json := j.getObjVal? k
-    let f (k : String) : Except String F := do parseZMod (← fld k)
-    let endo ← f "endo"
+    let f (k : String) : Except String (ZMod n) := do parseZMod (← fld k)
+    let endoRec ← f "endo"
+    unless endoRec = endo do
+      throw "the fixture's recorded endo is not the Lean constant"
     let α ← f "alpha"
     let β ← f "beta"
     let γ ← f "gamma"
@@ -77,7 +86,7 @@ def runFixture (evalPath : String) : IO Unit := do
     let endoselPE ← parsePE (← fld "endomul_scalar_selector")
     unless wArr.size = wCols ∧ cArr.size = coeffCols ∧ sArr.size = sigmaRows do
       throw "unexpected column counts"
-    let e : Evals F :=
+    let e : Evals (ZMod n) :=
       { w := fun i => (wArr.getD i (0, 0)).1
         wOmega := fun i => (wArr.getD i (0, 0)).2
         z := zPE.1, zOmega := zPE.2
@@ -86,11 +95,10 @@ def runFixture (evalPath : String) : IO Unit := do
         genericSelector := genPE.1, poseidonSelector := posPE.1
         completeAddSelector := addPE.1, mulSelector := mulPE.1
         emulSelector := emulPE.1, endoScalarSelector := endoselPE.1 }
-    let M := Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
-    let mine : F := evaluate (e.toEnv endo M α β γ 0 zkpmZ (fun _ _ => 0) LookupEvals.zero
-      (fun _ => false)) toks
+    let mine : ZMod n := evaluate (e.toEnv endo mds α β γ 0 zkpmZ (fun _ _ => 0)
+      LookupEvals.zero (fun _ => false)) toks
     return (decide (mine = constTarget),
-            decide (mine = gateLinearization endo M α e),
+            decide (mine = gateLinearization endo mds α e),
             constTarget)
   match r with
   | .error err => throw (IO.userError s!"{evalPath}: {err}")
@@ -107,13 +115,19 @@ def runFixture (evalPath : String) : IO Unit := do
 def main : IO Unit := do
   let kdir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "../kimchi/fixtures"
   -- `IpaVesta.curve.ScalarField` is Fp (Pallas's base field), so the Fp stream is the
-  -- one these fixtures pair with. The dump is named by FIELD for exactly this reason:
-  -- named by curve it reads the wrong way round, and the mistake is quiet — five of the
-  -- six gates use only the literals 0..3, identical in both Pasta fields, so only
-  -- EndoScalar's large constants disagree.
-  runFixture s!"{kdir}/linearization_vesta.json"
-  runFixture s!"{kdir}/linearization_vesta_emul.json"
+  -- one the vesta fixtures pair with, and the pallas fixture pairs with the Fq stream.
+  -- The dump is named by field for exactly this reason: named by curve it reads the
+  -- wrong way round, and the mistake is quiet — five of the six gates use only the
+  -- literals 0..3, identical in both Pasta fields, so only EndoScalar's large constants
+  -- disagree. The endo constants and MDS matrices are the ones `Pickles.Reflect`'s
+  -- certificates are decided against, so a pass here anchors each certificate's
+  -- constants to production.
+  let mdsP := Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
+  let mdsQ := Kimchi.Verifier.mdsOfParams IpaPallas.curve.frParams
+  runFixture fpTokens mdsP Pasta.pallasEndo s!"{kdir}/linearization_vesta.json"
+  runFixture fpTokens mdsP Pasta.pallasEndo s!"{kdir}/linearization_vesta_emul.json"
+  runFixture fqTokens mdsQ Pasta.vestaEndo s!"{kdir}/linearization_pallas.json"
   IO.println "✓ the ported token interpreter reproduces production's constant_term, and \
-    agrees with the closed-form gate linearization, on both circuits"
+    agrees with the closed-form gate linearization, on both circuits and both fields"
 
 #eval main
