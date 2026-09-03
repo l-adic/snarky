@@ -87,13 +87,13 @@ private def parseGateKind : String → Except String GateType
 /-- A witness-carrying PureScript circuit: the gate table columns of the dump and the
 solved witness. Wires are `(column, row)` targets in kimchi's cyclic-successor
 encoding, one per column position. -/
-structure Raw where
+structure Raw (F : Type) where
   /-- The circuit's declared public-input size. -/
   publicInputSize : ℕ
   /-- The gate type of each dumped row. -/
   typs : Array GateType
   /-- The per-row coefficient cells. -/
-  coeffs : Array (Array Fp)
+  coeffs : Array (Array F)
   /-- The per-row wire targets, `(column, row)` per column position. -/
   wires : Array (Array (ℕ × ℕ))
   /-- The raw variable id in each register cell, `none` for an empty cell (the dump's
@@ -102,9 +102,9 @@ structure Raw where
   shared counter's numbering. -/
   vars : Array (Array (Option ℕ))
   /-- The solved witness rows, one register array per row. -/
-  witness : Array (Array Fp)
+  witness : Array (Array F)
   /-- The public-input values. -/
-  pub : Array Fp
+  pub : Array F
 
 /-- A `{row, col}` wire object as a `(column, row)` target. -/
 private def parseWire (j : Json) : Except String (ℕ × ℕ) := do
@@ -117,7 +117,7 @@ private def parseVarId (j : Json) : Except String (Option ℕ) := do
 
 /-- The gate table of a comparison JSON's PureScript side — the shared parse under
 both entry points below. -/
-private def parseGates (ps : Json) : Except String Raw := do
+private def parseGates {m : ℕ} (ps : Json) : Except String (Raw (ZMod m)) := do
   let gatesJ ← (← ps.getObjVal? "gates").getArr?
   let typs ← gatesJ.mapM fun g => do parseGateKind (← (← g.getObjVal? "kind").getStr?)
   let coeffs ← gatesJ.mapM fun g => do
@@ -135,7 +135,7 @@ private def parseGates (ps : Json) : Except String Raw := do
 
 /-- The PureScript side of a comparison JSON; `none` when the JSON is not a comparison
 or carries no witness. -/
-def parseComparison? (j : Json) : Except String (Option Raw) := do
+def parseComparison? {m : ℕ} (j : Json) : Except String (Option (Raw (ZMod m))) := do
   let .ok ps := j.getObjVal? "purescript" | return none
   let .ok w := ps.getObjVal? "witness" | return none
   if w.isNull then return none
@@ -151,7 +151,7 @@ per-cell variable ids, public size — is present in every dump, witness-carryin
 not. The CS-equality corpus reads through this entry so witness-less circuits still
 prove constraint equivalence; `parseComparison?` keeps its witness-only contract for
 the witness checker, which globs the results directory and skips on `none`. -/
-def parseComparisonCs? (j : Json) : Except String (Option Raw) := do
+def parseComparisonCs? {m : ℕ} (j : Json) : Except String (Option (Raw (ZMod m))) := do
   let .ok ps := j.getObjVal? "purescript" | return none
   let raw ← parseGates ps
   match ps.getObjVal? "witness" with
@@ -168,8 +168,24 @@ def parseComparisonCs? (j : Json) : Except String (Option Raw) := do
 /-- kimchi's zero-knowledge row count (one chunk). -/
 def zkRows : ℕ := 3
 
-/-- The Pasta base fields' multiplicative generator (proof-systems `fp.rs` GENERATOR). -/
-private def fpGenerator : ℕ := 5
+/-- The field-specific data domain synthesis and the index need: the multiplicative
+generator (`ω` and the coset shifts are its powers), the curve's endomorphism coefficient
+and the Poseidon MDS matrix. -/
+structure Side (p : ℕ) where
+  /-- The multiplicative generator (proof-systems `fp.rs`/`fq.rs` GENERATOR). -/
+  generator : ℕ
+  /-- The endomorphism coefficient of the curve whose base field this is. -/
+  endo : ZMod p
+  /-- The Poseidon MDS matrix over this field. -/
+  mds : Gate.Poseidon.Mds (ZMod p)
+
+/-- The step side: `Fp`, Pallas's base field. -/
+def fpSide : Side PALLAS_BASE_CARD :=
+  ⟨5, Pasta.pallasEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams⟩
+
+/-- The wrap side: `Fq`, Vesta's base field. -/
+def fqSide : Side PALLAS_SCALAR_CARD :=
+  ⟨5, Pasta.vestaEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaPallas.curve.frParams⟩
 
 /-- Fast modular exponentiation (`Monoid.npow` on `ZMod` is linear in the exponent —
 unusable at 255-bit exponents). -/
@@ -180,36 +196,42 @@ private def powMod (b : ℕ) : ℕ → ℕ → ℕ
     if (e + 1) % 2 = 0 then h * h % m else h * h % m * (b % m) % m
 decreasing_by omega
 
+/-- The generator of the domain of size `n`: `g^((p − 1)/n)`. At `n = 2^32` this is arkworks'
+`TWO_ADIC_ROOT_OF_UNITY` (`g^((p−1)/2^s)` with `s = 32` for both Pasta fields), so at
+`n = 2^k` it is that root raised to `2^(32 − k)`, the PureScript `domainGenerator`. -/
+def Side.omega {p : ℕ} (side : Side p) (n : ℕ) : ZMod p :=
+  (powMod side.generator ((p - 1) / n) p : ℕ)
+
 /-! ## Ingestion into the index model -/
 
 /-- A solved witness at domain size `n`: the public input and the 15-column register
 table — the decoded `WitnessExport`, and exactly the assignment arguments of
 `Satisfies`. -/
-structure Witness (n publicCount : ℕ) where
+structure Witness (F : Type) (n publicCount : ℕ) where
   /-- The public-input values. -/
-  pub : Fin publicCount → Fp
+  pub : Fin publicCount → F
   /-- The register table, one row per domain point. -/
-  tab : Fin n → Fin wCols → Fp
+  tab : Fin n → Fin wCols → F
 
 /-- A dumped circuit ingested into the index model: the index (constructed by decision)
 and the dumped witness, at the padded two-power domain bundled as `n` (the domain size
 is computed from the dump, so the existential is carried as a field, in the manner of
 the index's own laws). Consumers state their own propositions about it
 (`Satisfies inst.idx inst.wit.pub inst.wit.tab`), the way the fixture scripts do. -/
-structure Instance where
+structure Instance (F : Type) [Field F] where
   /-- The padded two-power domain size. -/
   n : ℕ
   /-- The domain size is positive (carried, since `n` is computed from the dump). -/
   nz : NeZero n
   /-- The index constructed from the dump by decision (`Index.build?`). -/
-  idx : Index Fp n
+  idx : Index F n
   /-- The dumped witness, shaped to the index's public count. -/
-  wit : Witness n idx.publicCount
+  wit : Witness F n idx.publicCount
 
 /-- The gate table at padded domain size `n`: the dump's rows, then constraint-free
 `zero` gates, identity-wired and witnessed by zeros. -/
-private def gateTable (raw : Raw) (n : ℕ) :
-    Except String (Fin n → GateRow Fp n) := do
+private def gateTable {F : Type} [Field F] (raw : Raw F) (n : ℕ) :
+    Except String (Fin n → GateRow F n) := do
   let rows := raw.typs.size
   let gateRows ← (Array.range n).mapM fun i => do
     if hreal : i < rows then do
@@ -220,11 +242,11 @@ private def gateTable (raw : Raw) (n : ℕ) :
       if h7 : ws.size = 7 then
         return { typ := raw.typs[i]!
                  coeffs := fun c => (raw.coeffs[i]!).getD (c : ℕ) 0
-                 wires := fun c => ws[(c : ℕ)]'(by omega) : GateRow Fp n }
+                 wires := fun c => ws[(c : ℕ)]'(by omega) : GateRow F n }
       else throw s!"expected 7 wires at row {i}, got {ws.size}"
     else if hi : i < n then
       return { typ := .zero, coeffs := fun _ => 0
-               wires := fun c => (c, ⟨i, hi⟩) : GateRow Fp n }
+               wires := fun c => (c, ⟨i, hi⟩) : GateRow F n }
     else throw "row index out of the padded domain"
   if hsz : gateRows.size = n then
     return fun i => gateRows[(i : ℕ)]'(by omega)
@@ -235,7 +257,8 @@ holding the gates plus the zero-knowledge rows, synthesize `ω = g^((p−1)/n)` 
 generator-power coset shifts, and construct the index with `Index.build?` — every
 synthesized law is decided on the data, so a wrong synthesis is a loud failure here,
 never a trusted fact downstream. -/
-def build (raw : Raw) : Except String Instance := do
+def build {p : ℕ} [Fact p.Prime] (side : Side p) (raw : Raw (ZMod p)) :
+    Except String (Instance (ZMod p)) := do
   let rows := raw.typs.size
   unless raw.coeffs.size = rows ∧ raw.wires.size = rows do throw "gate array sizes differ"
   unless raw.witness.size = 15 do throw s!"expected 15 witness columns, got {raw.witness.size}"
@@ -243,14 +266,12 @@ def build (raw : Raw) : Except String Instance := do
   unless raw.pub.size = raw.publicInputSize do throw "publicInputs size ≠ publicInputSize"
   unless raw.publicInputSize ≤ rows do throw "more public inputs than rows"
   let n := 2 ^ Nat.clog 2 (rows + zkRows)
-  let omega : Fp := (powMod fpGenerator ((PALLAS_BASE_CARD - 1) / n) PALLAS_BASE_CARD : ℕ)
+  let omega := side.omega n
   -- Synthesized generator-power shifts, *not* production's Blake2b-sampled ones — sound for
   -- this driver's purpose (the laws it decides are shift-set-generic; external-audit A-15).
-  let shifts : Fin permCols → Fp := fun i => (powMod fpGenerator (i : ℕ) PALLAS_BASE_CARD : ℕ)
+  let shifts : Fin permCols → ZMod p := fun i => (powMod side.generator (i : ℕ) p : ℕ)
   let gates ← gateTable raw n
-  match Index.build? gates raw.publicInputSize zkRows omega
-      Pasta.pallasEndo (Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams)
-      shifts with
+  match Index.build? gates raw.publicInputSize zkRows omega side.endo side.mds shifts with
   | none => throw "Index.build? rejected the padded dump (a synthesized law failed)"
   | some idx =>
     return { n := n
