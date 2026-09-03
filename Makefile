@@ -142,7 +142,7 @@ lean-dep-graph: ## Generate the Lean module dependency graph (formal/docs/module
 # formal/lakefile.toml.
 lean-lint: ## Run Batteries' env linters over every Lean library root
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" && \
-	for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr; do \
+	for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture Schnorr Pickles; do \
 	  lake exe runLinter $$m || exit 1; \
 	done
 
@@ -150,7 +150,7 @@ lean-shake: ## Check Lean imports for redundancy (mathlib shake; config formal/s
 	cd formal && PATH="$$HOME/.elan/bin:$$PATH" lake exe shake \
 	  --cfg "$$PWD/scripts/noshake.json" \
 	  Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
-	  Schnorr
+	  Schnorr Pickles
 
 lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from roots.txt
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/deadcode.sh

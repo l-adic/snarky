@@ -48,5 +48,5 @@ scripts/prune-stale-oleans.sh
 lake env "$dir/.lake/build/bin/lean4checker" \
   "--num-workers=${LEAN4CHECKER_WORKERS:-2}" \
   Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit Bulletproof BulletproofFixture \
-  Schnorr
+  Schnorr Pickles
 echo "✓ kernel replay clean (lean4checker $REV)"
