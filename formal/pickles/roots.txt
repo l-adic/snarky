@@ -25,6 +25,8 @@ Pickles.computeChallenges_spec
 Pickles.bCorrectCircuit_spec
 Pickles.combinedInnerProduct_spec_cip
 Pickles.permScalarCircuit_spec
+Pickles.challengeDigest_spec
+Pickles.squeezeXiR_spec
 
 -- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's

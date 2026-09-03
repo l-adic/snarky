@@ -64,6 +64,7 @@ import Pickles.FtEval0
 import Pickles.IPA
 import Pickles.CombinedInnerProduct
 import Pickles.PermScalar
+import Pickles.FrSponge
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -669,6 +670,56 @@ def expandPlonkStepCircuit (input : Vector (FVar Fp) 4) : CircuitM Fp C PUnit :=
 def expandPlonkWrapCircuit (input : Vector (FVar Fq) 4) : CircuitM Fq Cq PUnit :=
   expandPlonkCore endoPallasLam (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15)) input
 
+/-! ## The fr-sponge circuits, wrap side
+
+Transcribe `Pickles.CircuitDiffs.PureScript.SpongeChallenges`' wrap circuits: the plain
+challenge digest over both previous-challenge vectors, and the fr-sponge schedule with `ξ`
+by `squeeze_scalar` and `r` by `squeeze_challenge`, both expanded through the wrap side's
+scalar endomorphism. The step circuits, whose challenge digest is the masked `OptSponge`,
+wait on that gadget's port. -/
+
+/-- The two previous-challenge vectors from `base`. -/
+def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
+  [(List.range 16).map fun i => get (base + i), (List.range 16).map fun i => get (base + 16 + i)]
+
+open Kimchi.Verifier in
+/-- The public pair and the evaluation record from the dumps' layout at `base`: the digest
+before evaluations at `base`, `ft(ζω)` at `base + 1`, the public pair, then the 15 `w`
+pairs, 15 coefficient pairs, the `z` pair, 6 `s` pairs and the 6 selector pairs. -/
+def proofEvalsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
+    PointEvaluations (FVar (ZMod p)) × ProofEvaluations (FVar (ZMod p)) :=
+  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) := ⟨get (base + i), get (base + i + 1)⟩
+  (pair 2,
+   { w := Vector.ofFn fun j => pair (4 + 2 * j)
+     coefficients := Vector.ofFn fun j => pair (34 + 2 * j)
+     z := pair 64
+     s := Vector.ofFn fun j => pair (66 + 2 * j)
+     genericSelector := pair 78
+     poseidonSelector := pair 80
+     completeAddSelector := pair 82
+     mulSelector := pair 84
+     emulSelector := pair 86
+     endomulScalarSelector := pair 88 })
+
+/-- `challenge_digest_wrap_circuit`. -/
+def challengeDigestWrapCircuit (input : Vector (FVar Fq) 32) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let _ ← Pickles.challengeDigest Bulletproof.IpaPallas.curve.frParams (prevChallengesOf get 0)
+  pure PUnit.unit
+
+/-- `sponge_and_challenges_wrap_circuit`: previous challenges at 0–31, the evaluations from
+32. -/
+def spongeAndChallengesWrapCircuit (input : Vector (FVar Fq) 122) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let (pub, evals) := proofEvalsOf get 32
+  let endoVar : FVar Fq := .const endoPallasLam
+  let (xi, r) ← Pickles.squeezeXiR Bulletproof.IpaPallas.curve.frParams (get 32)
+    (Pickles.challengeDigest Bulletproof.IpaPallas.curve.frParams (prevChallengesOf get 0))
+    (get 33) pub evals endoVar false
+  let _ ← EndoScalar.toField 8 xi.val endoVar
+  let _ ← EndoScalar.toField 8 r.val endoVar
+  pure PUnit.unit
+
 /-! ## The wrap column
 
 The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
@@ -754,7 +805,11 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("plonk_checks_passed_wrap_circuit",
       wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit),
     ("expand_plonk_wrap_circuit",
-      wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit) ]
+      wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit),
+    ("challenge_digest_wrap_circuit",
+      wrapTarget (a := Vector Fq 32) (b := PUnit) challengeDigestWrapCircuit),
+    ("sponge_and_challenges_wrap_circuit",
+      wrapTarget (a := Vector Fq 122) (b := PUnit) spongeAndChallengesWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

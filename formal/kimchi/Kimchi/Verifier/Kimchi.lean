@@ -113,6 +113,41 @@ structure ProofEvaluations (E : Type*) where
   /-- The endoScalar selector's evaluation pair. -/
   endomulScalarSelector : PointEvaluations E
 
+/-- Push a map through an evaluation pair. -/
+def PointEvaluations.map {α β : Type*} (f : α → β) (e : PointEvaluations α) :
+    PointEvaluations β :=
+  ⟨f e.zeta, f e.zetaOmega⟩
+
+/-- Push a map through the evaluation record, pair by pair. -/
+def ProofEvaluations.map {α β : Type*} (f : α → β) (e : ProofEvaluations α) :
+    ProofEvaluations β where
+  w := e.w.map (PointEvaluations.map f)
+  z := e.z.map f
+  s := e.s.map (PointEvaluations.map f)
+  coefficients := e.coefficients.map (PointEvaluations.map f)
+  genericSelector := e.genericSelector.map f
+  poseidonSelector := e.poseidonSelector.map f
+  completeAddSelector := e.completeAddSelector.map f
+  mulSelector := e.mulSelector.map f
+  emulSelector := e.emulSelector.map f
+  endomulScalarSelector := e.endomulScalarSelector.map f
+
+/-- The fr-sponge transcript (verifier.rs:284–405) as the list absorbed, every entry widened
+to the column's chunk vector: the fq-sponge digest, the recursion digest, `ft(ζω)`, the
+two public chunk vectors, then per column the `ζ`-chunk vector and the `ζω`-chunk vector
+in the `absorb_evaluations` order (`z`, the six selectors, the witness columns, the
+coefficient columns, the σ columns). -/
+def frTranscript {F : Type*} {nc : ℕ} (fqDig recDigest ftEval1 : F)
+    (pubEvals : PointEvaluations (Vector F nc)) (evals : ProofEvaluations (Vector F nc)) :
+    List F :=
+  let pt := fun (e : PointEvaluations (Vector F nc)) => e.zeta.toList ++ e.zetaOmega.toList
+  [fqDig, recDigest, ftEval1] ++ pubEvals.zeta.toList ++ pubEvals.zetaOmega.toList
+    ++ pt evals.z ++ pt evals.genericSelector ++ pt evals.poseidonSelector
+    ++ pt evals.completeAddSelector ++ pt evals.mulSelector ++ pt evals.emulSelector
+    ++ pt evals.endomulScalarSelector
+    ++ (evals.w.toList.map pt).flatten ++ (evals.coefficients.toList.map pt).flatten
+    ++ (evals.s.toList.map pt).flatten
+
 /-! ## The checked records -/
 
 /-- The public-evaluation source, resolving production's control flow
@@ -276,33 +311,15 @@ def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
   let (zeta, s) := squeezeChallenge C.sponge s
   ⟨beta, gamma, alpha, zeta, fqDigest C s, s⟩
 
-/-- The fr-sponge schedule (verifier.rs:284–405): every absorb widened to the column's
-chunk vector — the two public chunk vectors via `absorb_multiple` (:391–392), then per
-column the `ζ`-chunk vector and the `ζω`-chunk vector (`absorb_evaluations`,
-plonk_sponge.rs: one `sponge.absorb` per point vector), in the `absorb_evaluations`
-order. -/
+/-- The fr-sponge schedule (verifier.rs:284–405): absorb `frTranscript`, with the
+recursion digest the fr-sponge digest of the empty recursion list, then squeeze the two
+prechallenges and expand them. -/
 def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
     (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     C.ScalarField × C.ScalarField :=
   let sp := frSpec C
-  let ab := fun (s : FqSponge.S C.scalar)
-      (e : PointEvaluations (Vector C.ScalarField nc)) =>
-    absorbFq sp (absorbFq sp s e.zeta.toList) e.zetaOmega.toList
-  let s := absorbFq sp FqSponge.init [fqDig]
-  let s := absorbFq sp s [frDigest C sp FqSponge.init]
-  let s := absorbFq sp s [cp.ftEval1]
-  let s := absorbFq sp s pubEvals.zeta.toList
-  let s := absorbFq sp s pubEvals.zetaOmega.toList
-  let s := ab s cp.evals.z
-  let s := ab s cp.evals.genericSelector
-  let s := ab s cp.evals.poseidonSelector
-  let s := ab s cp.evals.completeAddSelector
-  let s := ab s cp.evals.mulSelector
-  let s := ab s cp.evals.emulSelector
-  let s := ab s cp.evals.endomulScalarSelector
-  let s := cp.evals.w.foldl ab s
-  let s := cp.evals.coefficients.foldl ab s
-  let s := cp.evals.s.foldl ab s
+  let s := absorbFq sp FqSponge.init
+    (frTranscript fqDig (frDigest C sp FqSponge.init) cp.ftEval1 pubEvals cp.evals)
   let (v', s) := challengeNat sp s
   let (u', _) := challengeNat sp s
   (endoExpand C.sponge.lam v', endoExpand C.sponge.lam u')
