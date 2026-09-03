@@ -35,10 +35,8 @@ def roots : List Name :=
     `Pickles.Reflect.evaluate_fqTokens,
     `Pickles.ftEval0Circuit_spec_fp,
     `Pickles.ftEval0Circuit_spec_fq,
-    `Pickles.bPolyCircuit_spec,
     `Pickles.challengePolyEvals_spec,
     `Pickles.computeChallenges_spec,
-    `Pickles.computeBCircuit_spec,
     `Pickles.bCorrectCircuit_spec,
     `Pickles.combinedInnerProduct_spec_cip ]
 

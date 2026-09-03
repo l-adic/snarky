@@ -19,10 +19,8 @@ Pickles.ftEval0Circuit_spec_fq
 -- challenge polynomials, the endomorphism expansion of the challenges, the `b_correct`
 -- check and the combined inner product, each proved to read as the `Bulletproof` (or
 -- `FqSponge`) quantity the wire verifier uses.
-Pickles.bPolyCircuit_spec
 Pickles.challengePolyEvals_spec
 Pickles.computeChallenges_spec
-Pickles.computeBCircuit_spec
 Pickles.bCorrectCircuit_spec
 Pickles.combinedInnerProduct_spec_cip
 

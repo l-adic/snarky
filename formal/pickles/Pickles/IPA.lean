@@ -54,7 +54,7 @@ private def bPolyGo (acc : FVar F) : List (FVar F × FVar F) → CircuitM F c (F
 
 /-- The challenge polynomial `∏ᵢ (1 + cᵢ · pt^(2^(k−1−i)))` at `pt`. The product is seeded
 from the constant `1`, whose multiplication folds to no row. -/
-def bPolyCircuit (chals : List (FVar F)) (pt : FVar F) : CircuitM F c (FVar F) := do
+private def bPolyCircuit (chals : List (FVar F)) (pt : FVar F) : CircuitM F c (FVar F) := do
   let squares ← squaresGo pt (chals.length - 1)
   bPolyGo (.const 1) (chals.zip (pt :: squares).reverse)
 
@@ -80,7 +80,7 @@ def computeChallenges [ToNat F] [Snarky.Kimchi.KimchiSystem F c] (endo : FVar F)
     pure (x :: later)
 
 /-- `b(c, ζ) + r · b(c, ζω)` for challenges `c`, the `ζω` evaluation first. -/
-def computeBCircuit (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F) :
+private def computeBCircuit (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F) :
     CircuitM F c (FVar F) := do
   let bZetaOmega ← bPolyCircuit chals zetaOmega
   let scaledB ← mul evalscale bZetaOmega
@@ -155,7 +155,7 @@ private theorem map_val_of_forall₂ {l : List (FVar F)} {xs : List F}
 /-- Under any valuation satisfying the emitted constraints, with the `k` challenges reading
 as `c₀, …, c_{k−1}` and the point as `p`, the output reads as
 `b(c, p) = ∏_{i<k} (1 + cᵢ · p^{2^{k−1−i}})`, which is `Bulletproof.bPoly c p`. -/
-theorem bPolyCircuit_spec (chals : List (FVar F)) (pt : FVar F) (cs : List F)
+private theorem bPolyCircuit_spec (chals : List (FVar F)) (pt : FVar F) (cs : List F)
     (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
     ⦃⌜True⌝⦄ bPolyCircuit (c := Builder V c) chals pt
     ⦃⇓ a _ => ⌜a.val V = Bulletproof.bPoly (fun i : Fin cs.length => cs.get i)
@@ -228,7 +228,7 @@ theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 
 /-- Under any valuation satisfying the emitted constraints, with the challenges reading as
 `c = (c₀, …, c_{k−1})` and `ζ`, `ζω`, `r` as themselves, the output reads as
 `b(c, ζ) + r · b(c, ζω)`, which is `Bulletproof.combinedB c r ![ζ, ζω]`. -/
-theorem computeBCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F)
+private theorem computeBCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale : FVar F)
     (cs : List F) (hc : List.Forall₂ (CircuitType.Reads V) chals cs) :
     ⦃⌜True⌝⦄ computeBCircuit (c := Builder V c) chals zeta zetaOmega evalscale
     ⦃⇓ a _ => ⌜a.val V = Bulletproof.combinedB (fun i : Fin cs.length => cs.get i)
