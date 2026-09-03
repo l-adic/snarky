@@ -31,6 +31,20 @@ Pickles.squeezeXiR_spec
 Pickles.OptSponge.squeeze_spec
 Pickles.maskedChallengeDigest_spec
 
+-- The domain scalars of `finalize_other_proof` (Domain.lean, Pseudo.lean) and the α-power
+-- table (Linearization/Circuit.lean): the generator powers generic in `zk_rows`, the
+-- permutation vanishing polynomial and its identification with `zkpmEval`, the step
+-- side's domain selection and `ζⁿ − 1`, the `ζ^(2^i)` tables, the mask-select.
+Pickles.Linearization.precomputeAlphaPowers_spec
+Pickles.Pseudo.mask_spec
+Pickles.omegaPowers_spec
+Pickles.zkPolynomial_spec
+Pickles.zkPolynomial_eq_zkpmEval
+Pickles.knownDomainWhiches_spec
+Pickles.knownDomainVanishingPolynomial_spec
+Pickles.buildPow2PowsArray_spec
+Pickles.pow2PowMul_spec
+
 -- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.

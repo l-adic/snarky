@@ -5,6 +5,8 @@ import Pickles.CombinedInnerProduct
 import Pickles.PermScalar
 import Pickles.OptSponge
 import Pickles.FrSponge
+import Pickles.Pseudo
+import Pickles.Domain
 
 /-!
 # Pickles — the in-circuit kimchi verifier

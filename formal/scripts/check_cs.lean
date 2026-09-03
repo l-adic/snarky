@@ -460,22 +460,6 @@ The 90-input layout is OCaml's (`dump_circuit_impl.ml`), not what the constant t
 coefficients, `s` and the selectors arrive as `(ζ, ζω)` pairs though only the `ζ`
 component of the first two is ever read, and `z`/`s` are not read at all. -/
 
-open Pickles.Linearization in
-/-- `α^0 … α^(n+1)`, by successive multiplication — 69 rows at the deployed length, and
-the reason the interpreter's `alphaPow` is a lookup rather than an exponentiation. -/
-def alphaGo {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) :
-    Nat → FVar F → Array (FVar F) → CircuitM F (KimchiConstraint F) (Array (FVar F))
-  | 0, _, acc => pure acc
-  | n + 1, prev, acc => do
-    let next ← Snarky.mul alpha prev
-    alphaGo alpha n next (acc.push next)
-
-open Pickles.Linearization in
-/-- The precomputed table: `[1, α, α², …, α^70]`. -/
-def precomputeAlphaPowers {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) :
-    CircuitM F (KimchiConstraint F) (Array (FVar F)) :=
-  alphaGo alpha 69 alpha #[.const 1, alpha]
-
 open Pickles.Linearization Kimchi.Protocol.Linearization in
 /-- The interpreter's inputs from the 90-entry layout: `get i` is input `i`, `pows` the
 precomputed α-table. -/
@@ -516,7 +500,7 @@ def linearizationCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side
   let om3 := om2 * om1
   let alpha := get 86
   let zeta := get 89
-  let pows ← precomputeAlphaPowers alpha
+  let pows ← Pickles.Linearization.precomputeAlphaPowers alpha
   -- eager zk_polynomial, discarded
   let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
   let _ ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
@@ -559,7 +543,7 @@ def ftEval0CsCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
   let om3 := om2 * om1
   let alpha := get 86
   let zeta := get 89
-  let pows ← precomputeAlphaPowers alpha
+  let pows ← Pickles.Linearization.precomputeAlphaPowers alpha
   -- eager zk_polynomial
   let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
   let zkPoly ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))

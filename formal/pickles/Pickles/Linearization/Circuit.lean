@@ -405,4 +405,64 @@ theorem Inputs.toEnv_agreeAt (endo : F) (mds : Kimchi.Gate.Poseidon.Mds F)
     | unnormalizedLagrangeBasis zk off => simp at hulb
     | _ => (try dsimp only) <;> (first | trivial | rfl | (intros; rfl))
 
+/-! ## The α-power table -/
+
+/-- `α^(m) … α^(m+n−1)` appended to a table already holding `α^0 … α^(m−1)`, by
+successive multiplication from `prev = α^(m−1)`. -/
+private def alphaGo (alpha : FVar F) :
+    Nat → FVar F → Array (FVar F) → CircuitM F c (Array (FVar F))
+  | 0, _, acc => pure acc
+  | n + 1, prev, acc => do
+    let next ← mul alpha prev
+    alphaGo alpha n next (acc.push next)
+
+/-- The precomputed table `[1, α, α², …, α^70]` (PS `precomputeAlphaPowers`): 69 rows, and
+the reason the interpreter's `alphaPow` is a lookup rather than an exponentiation. -/
+def precomputeAlphaPowers (alpha : FVar F) : CircuitM F c (Array (FVar F)) :=
+  alphaGo alpha 69 alpha #[.const 1, alpha]
+
+/-- The loop invariant: a table of the first `m` powers grows to the first `m + n`. -/
+private theorem alphaGo_spec (alpha : FVar F) :
+    ∀ (n : ℕ) (prev : FVar F) (acc : Array (FVar F)),
+      ⦃⌜True⌝⦄ alphaGo (c := Builder V c) alpha n prev acc
+      ⦃⇓ r _ => ⌜∀ m, acc.size = m → 1 ≤ m → prev.val V = alpha.val V ^ (m - 1) →
+        (∀ k < m, (acc[k]?.getD (.const 0)).val V = alpha.val V ^ k) →
+        r.size = m + n ∧ ∀ k < m + n, (r[k]?.getD (.const 0)).val V = alpha.val V ^ k⌝⦄
+  | 0, prev, acc => by
+    simp only [alphaGo]
+    mvcgen
+    intro m hm _ _ hk
+    exact ⟨by simpa using hm, by simpa using hk⟩
+  | n + 1, prev, acc => by
+    simp only [alphaGo]
+    have ih := fun next => alphaGo_spec alpha n next (acc.push next)
+    mvcgen [ih]
+    rename_i next _ hnext _ _
+    intro hI m hm h1 hprev hk
+    have hm1 : m - 1 + 1 = m := by omega
+    obtain ⟨hsize, hent⟩ := hI (m + 1) (by simp [hm]) (by omega)
+      (by rw [hnext, hprev, Nat.add_sub_cancel, ← pow_succ', hm1])
+      (by
+        intro k hk'
+        rw [Array.getElem?_push]
+        split
+        · rename_i hkm
+          simp only [Option.getD_some, hnext, hprev, hkm, hm]
+          rw [← pow_succ', hm1]
+        · exact hk k (by omega))
+    exact ⟨by omega, fun k hk' => hent k (by omega)⟩
+
+/-- Under any valuation the table has 71 entries and entry `k` reads as `α^k`. -/
+theorem precomputeAlphaPowers_spec (alpha : FVar F) :
+    ⦃⌜True⌝⦄ precomputeAlphaPowers (c := Builder V c) alpha
+    ⦃⇓ pows _ => ⌜pows.size = 71 ∧
+      ∀ k ≤ 70, (pows[k]?.getD (.const 0)).val V = alpha.val V ^ k⌝⦄ := by
+  simp only [precomputeAlphaPowers]
+  have h := alphaGo_spec (c := c) (V := V) alpha 69 alpha #[.const 1, alpha]
+  mvcgen [h]
+  intro hI
+  obtain ⟨hsize, hent⟩ := hI 2 rfl (by omega) (by simp)
+    (by intro k hk; interval_cases k <;> simp)
+  exact ⟨hsize, fun k hk => hent k (by omega)⟩
+
 end Pickles.Linearization

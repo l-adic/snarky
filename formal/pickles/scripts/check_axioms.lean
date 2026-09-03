@@ -43,7 +43,16 @@ def roots : List Name :=
     `Pickles.challengeDigest_spec,
     `Pickles.squeezeXiR_spec,
     `Pickles.OptSponge.squeeze_spec,
-    `Pickles.maskedChallengeDigest_spec ]
+    `Pickles.maskedChallengeDigest_spec,
+    `Pickles.Linearization.precomputeAlphaPowers_spec,
+    `Pickles.Pseudo.mask_spec,
+    `Pickles.omegaPowers_spec,
+    `Pickles.zkPolynomial_spec,
+    `Pickles.zkPolynomial_eq_zkpmEval,
+    `Pickles.knownDomainWhiches_spec,
+    `Pickles.knownDomainVanishingPolynomial_spec,
+    `Pickles.buildPow2PowsArray_spec,
+    `Pickles.pow2PowMul_spec ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
