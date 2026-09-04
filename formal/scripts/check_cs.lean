@@ -713,6 +713,19 @@ def fqSpongeTranscriptStepCircuit (input : Vector (FVar Fp) 53) : CircuitM Fp C 
     ((List.range 7).map fun j => pt (39 + 2 * j))
   pure PUnit.unit
 
+
+/-- `fq_sponge_transcript_wrap_circuit`: the two mask bits at 0–1, the index digest at 2, two
+`sg_old` points at 3–6, `x_hat` at 7–8, the 15 `w_comm` points at 9–38, `z_comm` at 39–40, the
+7 `t_comm` points at 41–54. -/
+def fqSpongeTranscriptWrapCircuit (input : Vector (FVar Fq) 55) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
+  let _ ← Pickles.fqSpongeTranscriptOpt Bulletproof.IpaPallas.curve.frParams
+    (.const endoPallasLam) (get 2) [(.unchecked (get 0), pt 3), (.unchecked (get 1), pt 5)] [pt 7]
+    ((List.range 15).map fun j => [pt (9 + 2 * j)]) [pt 39]
+    ((List.range 7).map fun j => pt (41 + 2 * j))
+  pure PUnit.unit
+
 /-! ## The `finalize_other_proof` circuits
 
 Transcribe `Pickles.CircuitDiffs.PureScript.FopStep` and `FopWrap`: the whole scalar-side
@@ -874,6 +887,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit),
     ("expand_plonk_wrap_circuit",
       wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit),
+    ("fq_sponge_transcript_wrap_circuit",
+      wrapTarget (a := Vector Fq 55) (b := PUnit) fqSpongeTranscriptWrapCircuit),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
 
