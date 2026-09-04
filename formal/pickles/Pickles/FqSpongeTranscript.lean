@@ -2,6 +2,7 @@ import Snarky.Kimchi.Circuit.Sponge
 import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.AddComplete
 import Kimchi.Verifier.Kimchi
+import Pickles.OptSponge
 
 set_option mvcgen.warning false
 
@@ -133,6 +134,54 @@ def assertPlonkChallenges (o : FqTranscriptOutput F) (claims : PlonkClaims F) :
   assertEqual o.gamma.val claims.gamma.val
   assertEqual o.alpha.val claims.alpha.val
   assertEqual o.zeta.val claims.zeta.val
+
+
+/-! ## The wrap side, on the conditional sponge -/
+
+open OptSponge in
+/-- Absorb a point unconditionally (PS `optAbsorbPoint`): `x` then `y` under `true_`. -/
+private def optAbsorbPoint (ov : OptSpongeVar F) (P : AffinePoint (FVar F)) : OptSpongeVar F :=
+  optAbsorb (optAbsorb ov (true_, P.x)) (true_, P.y)
+
+open OptSponge in
+/-- Absorb a masked point (PS `spongeTranscriptOptCircuit`'s `sg_old` loop): `x` then `y`
+under the mask bit. -/
+private def optAbsorbMasked (ov : OptSpongeVar F) (m : BoolVar F × AffinePoint (FVar F)) :
+    OptSpongeVar F :=
+  optAbsorb (optAbsorb ov (m.1, m.2.x)) (m.1, m.2.y)
+
+open OptSponge in
+/-- One squeeze of the conditional sponge split to its low 128 bits (PS `optChallenge` at
+`true`, `optScalarChallenge` at `false`). -/
+def optSqueezePrechallenge [ToNat F] (p : Poseidon.Params F) (constrainLowBits : Bool)
+    (endo : FVar F) (ov : OptSpongeVar F) :
+    CircuitM F c (SizedF 128 (FVar F) × OptSpongeVar F) := do
+  let (x, ov) ← optSqueeze p ov
+  let chal ← lowest128Bits' constrainLowBits endo x
+  pure (chal, ov)
+
+open OptSponge in
+/-- The wrap side's fq-sponge transcript (PS `spongeTranscriptOptCircuit`): the step side's
+schedule on the conditional sponge, `sg_old` absorbed under its mask bits and `x_hat` given,
+the sponge handed to the plain sponge at `sponge_before_evaluations`, which is returned, and
+the digest squeezed from it. -/
+def fqSpongeTranscriptOpt [ToNat F] (p : Poseidon.Params F) (endo indexDigest : FVar F)
+    (sgOld : List (BoolVar F × AffinePoint (FVar F))) (xHat : List (AffinePoint (FVar F)))
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    CircuitM F c (FqTranscriptOutput F) := do
+  let ov := optAbsorb create (true_, indexDigest)
+  let ov := sgOld.foldl optAbsorbMasked ov
+  let ov := xHat.foldl optAbsorbPoint ov
+  let ov := wComm.foldl (fun ov col => col.foldl optAbsorbPoint ov) ov
+  let (beta, ov) ← optSqueezePrechallenge p true endo ov
+  let (gamma, ov) ← optSqueezePrechallenge p true endo ov
+  let ov := zComm.foldl optAbsorbPoint ov
+  let (alpha, ov) ← optSqueezePrechallenge p false endo ov
+  let ov := tComm.foldl optAbsorbPoint ov
+  let (zeta, ov) ← optSqueezePrechallenge p false endo ov
+  let sv := toRegularSponge ov
+  let (digest, _) ← SpongeVar.squeeze p sv
+  pure ⟨beta, gamma, alpha, zeta, xHat, digest, sv⟩
 
 /-! ## Soundness -/
 
@@ -327,6 +376,343 @@ theorem assertPlonkChallenges_spec (o : FqTranscriptOutput F) (claims : PlonkCla
   exact ⟨‹o.beta.val.val V = claims.beta.val.val V›.symm,
     ‹o.gamma.val.val V = claims.gamma.val.val V›.symm,
     ‹o.alpha.val.val V = claims.alpha.val.val V›.symm, hζ.symm⟩
+
+
+/-! ## Soundness of the wrap side -/
+
+open OptSponge
+
+/-- The guarded flattening of masked points: each coordinate under the point's bit. -/
+private def maskedFlat (l : List (Bool × AffinePoint F)) : List (Bool × F) :=
+  l.flatMap fun v => [(v.1, v.2.x), (v.1, v.2.y)]
+
+/-- The guarded flattening of unconditional points. -/
+private def pointsFlat (l : List (AffinePoint F)) : List (Bool × F) :=
+  l.flatMap fun P => [(true, P.x), (true, P.y)]
+
+/-- A point's coordinate list, the wire verifier's absorb order. -/
+private def flatCoords (l : List (AffinePoint F)) : List F :=
+  l.flatMap fun P => [P.x, P.y]
+
+omit [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+private theorem length_maskedFlat : ∀ l : List (Bool × AffinePoint F),
+    (maskedFlat l).length = 2 * l.length
+  | [] => rfl
+  | _ :: l => by
+    have ih := length_maskedFlat l
+    simp only [maskedFlat, List.flatMap_cons, List.length_append, List.length_cons,
+      List.length_nil] at ih ⊢
+    omega
+
+omit [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+private theorem length_pointsFlat : ∀ l : List (AffinePoint F),
+    (pointsFlat l).length = 2 * l.length
+  | [] => rfl
+  | _ :: l => by
+    have ih := length_pointsFlat l
+    simp only [pointsFlat, List.flatMap_cons, List.length_append, List.length_cons,
+      List.length_nil] at ih ⊢
+    omega
+
+omit [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+private theorem length_flatMap_pointsFlat : ∀ l : List (List (AffinePoint F)),
+    (l.flatMap pointsFlat).length = 2 * l.flatten.length
+  | [] => rfl
+  | _ :: l => by simp only [List.flatMap_cons, List.length_append, List.flatten_cons,
+      length_pointsFlat, length_flatMap_pointsFlat l]; omega
+
+omit [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept entries of unconditional points are their coordinates. -/
+private theorem kept_pointsFlat : ∀ l : List (AffinePoint F),
+    ((pointsFlat l).filter (·.1)).map (·.2) = flatCoords l
+  | [] => rfl
+  | _ :: l => by
+    have ih := kept_pointsFlat l
+    simp only [pointsFlat, flatCoords] at ih
+    simp [pointsFlat, flatCoords, ih]
+
+omit [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept entries of masked points are the kept points' coordinates. -/
+private theorem kept_maskedFlat : ∀ l : List (Bool × AffinePoint F),
+    ((maskedFlat l).filter (·.1)).map (·.2) = flatCoords ((l.filter (·.1)).map (·.2))
+  | [] => rfl
+  | (b, P) :: l => by
+    have ih := kept_maskedFlat l
+    simp only [maskedFlat, flatCoords] at ih
+    cases b <;> simp [maskedFlat, flatCoords, ih]
+
+omit [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept entries of columns are the columns' coordinates. -/
+private theorem kept_flatMap_pointsFlat : ∀ l : List (List (AffinePoint F)),
+    ((l.flatMap pointsFlat).filter (·.1)).map (·.2) = l.flatMap flatCoords
+  | [] => rfl
+  | _ :: l => by
+    simp only [List.flatMap_cons, List.filter_append, List.map_append, kept_pointsFlat,
+      kept_flatMap_pointsFlat l]
+
+omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing an appended list absorbs the halves in turn. -/
+private theorem absorb_append (p : Poseidon.Params F) (s : Poseidon.State F) (l₁ l₂ : List F) :
+    Poseidon.absorb p s (l₁ ++ l₂) = Poseidon.absorb p (Poseidon.absorb p s l₁) l₂ :=
+  List.foldl_append ..
+
+omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The wire verifier's point fold is the absorb of the coordinates. -/
+private theorem foldl_pts_eq (p : Poseidon.Params F) :
+    ∀ (l : List (AffinePoint F)) (s : Poseidon.State F),
+      (l.map coords).foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s
+        = Poseidon.absorb p s (flatCoords l)
+  | [], _ => rfl
+  | P :: l, s => by
+    simp only [List.map_cons, List.foldl_cons, foldl_pts_eq p l, flatCoords, List.flatMap_cons,
+      absorb_append, coords]
+
+omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The wire verifier's column fold is the absorb of the columns' coordinates. -/
+private theorem foldl_cols_eq (p : Poseidon.Params F) :
+    ∀ (l : List (List (AffinePoint F))) (s : Poseidon.State F),
+      (l.map (·.map coords)).foldl
+          (fun s l => l.foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s) s
+        = Poseidon.absorb p s (l.flatMap flatCoords)
+  | [], _ => rfl
+  | col :: l, s => by
+    simp only [List.map_cons, List.foldl_cons, foldl_pts_eq, foldl_cols_eq p l, List.flatMap_cons,
+      absorb_append]
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+private theorem reads_true : CircuitType.Reads V (true_ : BoolVar F) true :=
+  CircuitType.reads_boolVar.mpr (by simp [true_, bit])
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing a point while absorbing appends its coordinates, kept. -/
+private theorem optAbsorbPoint_reads {p : Poseidon.Params F} {ov : OptSpongeVar F} {ib : Bool}
+    {ps₀ : Poseidon.State F} {pend : List (Bool × F)} (h : AbsorbingReads p V ov ib ps₀ pend)
+    {P : AffinePoint (FVar F)} {Pv : AffinePoint F} (hP : CircuitType.Reads V P Pv) :
+    AbsorbingReads p V (optAbsorbPoint ov P) ib ps₀ (pend ++ [(true, Pv.x), (true, Pv.y)]) := by
+  obtain ⟨hx, hy⟩ := reads_affinePoint.mp hP
+  have h1 := optAbsorb_reads_absorbing h (e := (true_, P.x)) (v := (true, Pv.x))
+    (CircuitType.reads_prod.mpr ⟨reads_true, CircuitType.reads_fvar.mpr hx⟩)
+  have h2 := optAbsorb_reads_absorbing h1 (e := (true_, P.y)) (v := (true, Pv.y))
+    (CircuitType.reads_prod.mpr ⟨reads_true, CircuitType.reads_fvar.mpr hy⟩)
+  simpa [optAbsorbPoint, List.append_assoc] using h2
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing a point after a squeeze starts a block from the squeezed sponge with its
+coordinates, kept. -/
+private theorem optAbsorbPoint_reads_squeezed (p : Poseidon.Params F) {ov : OptSpongeVar F}
+    {ps : Poseidon.State F} (h : SqueezedReads V ov ps)
+    {P : AffinePoint (FVar F)} {Pv : AffinePoint F} (hP : CircuitType.Reads V P Pv) :
+    AbsorbingReads p V (optAbsorbPoint ov P) false ps [(true, Pv.x), (true, Pv.y)] := by
+  obtain ⟨hx, hy⟩ := reads_affinePoint.mp hP
+  have h1 := optAbsorb_reads_squeezed p h (e := (true_, P.x)) (v := (true, Pv.x))
+    (CircuitType.reads_prod.mpr ⟨reads_true, CircuitType.reads_fvar.mpr hx⟩)
+  have h2 := optAbsorb_reads_absorbing h1 (e := (true_, P.y)) (v := (true, Pv.y))
+    (CircuitType.reads_prod.mpr ⟨reads_true, CircuitType.reads_fvar.mpr hy⟩)
+  simpa [optAbsorbPoint] using h2
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing a masked point appends its coordinates under its bit. -/
+private theorem optAbsorbMasked_reads {p : Poseidon.Params F} {ov : OptSpongeVar F} {ib : Bool}
+    {ps₀ : Poseidon.State F} {pend : List (Bool × F)} (h : AbsorbingReads p V ov ib ps₀ pend)
+    {m : BoolVar F × AffinePoint (FVar F)} {v : Bool × AffinePoint F}
+    (hm : CircuitType.Reads V m v) :
+    AbsorbingReads p V (optAbsorbMasked ov m) ib ps₀
+      (pend ++ [(v.1, v.2.x), (v.1, v.2.y)]) := by
+  obtain ⟨mb, mP⟩ := m
+  obtain ⟨vb, vP⟩ := v
+  obtain ⟨hb, hP⟩ := CircuitType.reads_prod.mp hm
+  obtain ⟨hx, hy⟩ := reads_affinePoint.mp hP
+  have h1 := optAbsorb_reads_absorbing h (e := (mb, mP.x)) (v := (vb, vP.x))
+    (CircuitType.reads_prod.mpr ⟨hb, CircuitType.reads_fvar.mpr hx⟩)
+  have h2 := optAbsorb_reads_absorbing h1 (e := (mb, mP.y)) (v := (vb, vP.y))
+    (CircuitType.reads_prod.mpr ⟨hb, CircuitType.reads_fvar.mpr hy⟩)
+  simpa [optAbsorbMasked, List.append_assoc] using h2
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing points while absorbing appends their flattening. -/
+private theorem foldl_optAbsorbPoint_reads {p : Poseidon.Params F} :
+    ∀ {Ps : List (AffinePoint (FVar F))} {vs : List (AffinePoint F)},
+      List.Forall₂ (CircuitType.Reads V) Ps vs →
+      ∀ {ov : OptSpongeVar F} {ib : Bool} {ps₀ : Poseidon.State F} {pend : List (Bool × F)},
+        AbsorbingReads p V ov ib ps₀ pend →
+        AbsorbingReads p V (Ps.foldl optAbsorbPoint ov) ib ps₀ (pend ++ pointsFlat vs)
+  | [], [], .nil, _, _, _, _, h => by simpa [pointsFlat] using h
+  | _ :: _, _ :: _, .cons hP hs, _, _, _, _, h => by
+    have := foldl_optAbsorbPoint_reads hs (optAbsorbPoint_reads h hP)
+    simpa [pointsFlat, List.append_assoc] using this
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing masked points appends their guarded flattening. -/
+private theorem foldl_optAbsorbMasked_reads {p : Poseidon.Params F} :
+    ∀ {ms : List (BoolVar F × AffinePoint (FVar F))} {vs : List (Bool × AffinePoint F)},
+      List.Forall₂ (CircuitType.Reads V) ms vs →
+      ∀ {ov : OptSpongeVar F} {ib : Bool} {ps₀ : Poseidon.State F} {pend : List (Bool × F)},
+        AbsorbingReads p V ov ib ps₀ pend →
+        AbsorbingReads p V (ms.foldl optAbsorbMasked ov) ib ps₀ (pend ++ maskedFlat vs)
+  | [], [], .nil, _, _, _, _, h => by simpa [maskedFlat] using h
+  | _ :: _, _ :: _, .cons hm hs, _, _, _, _, h => by
+    have := foldl_optAbsorbMasked_reads hs (optAbsorbMasked_reads h hm)
+    simpa [maskedFlat, List.append_assoc] using this
+
+omit [BasicSystem F c] [KimchiSystem F c] in
+/-- Absorbing columns appends their flattenings. -/
+private theorem foldl_optAbsorbColumns_reads {p : Poseidon.Params F} :
+    ∀ {cols : List (List (AffinePoint (FVar F)))} {vs : List (List (AffinePoint F))},
+      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) cols vs →
+      ∀ {ov : OptSpongeVar F} {ib : Bool} {ps₀ : Poseidon.State F} {pend : List (Bool × F)},
+        AbsorbingReads p V ov ib ps₀ pend →
+        AbsorbingReads p V (cols.foldl (fun ov col => col.foldl optAbsorbPoint ov) ov) ib ps₀
+          (pend ++ vs.flatMap pointsFlat)
+  | [], [], .nil, _, _, _, _, h => by simpa using h
+  | _ :: _, _ :: _, .cons hc hs, _, _, _, _, h => by
+    have := foldl_optAbsorbColumns_reads hs (foldl_optAbsorbPoint_reads hc h)
+    simpa [List.append_assoc] using this
+
+/-- Under any valuation satisfying the emitted constraints, a prechallenge squeeze of the
+conditional sponge reads by phase as `squeezePrechallenge_spec` does from the value squeeze
+`optSqueeze_spec` gives: the low half of the squeeze, `lo < 2¹²⁸` where constrained, and the
+sponge squeezed. -/
+theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
+    (constrainLowBits : Bool) (endo : FVar F) (ov : OptSpongeVar F) :
+    ⦃⌜True⌝⦄ optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo
+      ov
+    ⦃⇓ r _ => ⌜(∀ ps : Poseidon.State F, SqueezedReads V ov ps →
+        (∃ hi : ℕ, hi < 2 ^ 128 ∧ (Poseidon.squeeze p ps).1 = r.1.val.val V + 2 ^ 128 * hi) ∧
+        (constrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ r.1.val.val V = n) ∧
+        SqueezedReads V r.2 (Poseidon.squeeze p ps).2) ∧
+      (∀ (ib : Bool) (ps₀ : Poseidon.State F) (pend : List (Bool × F)),
+        AbsorbingReads p V ov ib ps₀ pend →
+        ((∃ v ∈ pend, v.1 = true) ∨ ps₀.mode = .absorbed 0) →
+        (∀ k : ℕ, k ≤ pend.length → (k : F) = 0 → k = 0) →
+        (∃ hi : ℕ, hi < 2 ^ 128 ∧
+          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1
+            = r.1.val.val V + 2 ^ 128 * hi) ∧
+        (constrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ r.1.val.val V = n) ∧
+        SqueezedReads V r.2
+          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⌝⦄ := by
+  simp only [optSqueezePrechallenge]
+  have hsq := optSqueeze_spec (V := V) p hsize hall ov
+  have hlo := fun x => lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x
+  mvcgen [hsq, hlo]
+  rename_i _ x _ hx chal _ hchal
+  obtain ⟨hiv, he, ⟨n, hn, rfl⟩, hlow⟩ := hchal
+  refine ⟨fun ps hs => ?_, fun ib ps₀ pend h hne hchar => ?_⟩
+  · obtain ⟨hxv, hst⟩ := hx.1 ps hs
+    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, hlow, hst⟩
+  · obtain ⟨hxv, hst⟩ := hx.2 ib ps₀ pend h hne hchar
+    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, hlow, hst⟩
+
+/-- Under any valuation satisfying the emitted constraints, with the mask bits and `sg_old`
+reading as `sgv`, `x_hat` as `xv` and the commitments as `wv, zv, tv` (`z_comm` and `t_comm`
+non-empty), at a characteristic above the absorb count, the outputs satisfy
+`FqTranscriptReads` at the kept `sg_old` readings. -/
+theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
+    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
+    (sgv : List (Bool × AffinePoint F)) (hsg : List.Forall₂ (CircuitType.Reads V) sgOld sgv)
+    (xHat : List (AffinePoint (FVar F))) (xv : List (AffinePoint F))
+    (hx : List.Forall₂ (CircuitType.Reads V) xHat xv)
+    (wComm : List (List (AffinePoint (FVar F)))) (wv : List (List (AffinePoint F)))
+    (hw : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv)
+    (zComm tComm : List (AffinePoint (FVar F))) (zv tv : List (AffinePoint F))
+    (hz : List.Forall₂ (CircuitType.Reads V) zComm zv)
+    (ht : List.Forall₂ (CircuitType.Reads V) tComm tv) (hzne : zv ≠ []) (htne : tv ≠ [])
+    (hchar : ∀ k : ℕ,
+      k ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + zv.length + tv.length) →
+      (k : F) = 0 → k = 0) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      xHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv
+      V o⌝⦄ := by
+  obtain ⟨zP, zs, rfl⟩ : ∃ P Ps, zComm = P :: Ps := by
+    cases hz with
+    | nil => exact absurd rfl hzne
+    | cons _ _ => exact ⟨_, _, rfl⟩
+  obtain ⟨tP, ts, rfl⟩ : ∃ P Ps, tComm = P :: Ps := by
+    cases ht with
+    | nil => exact absurd rfl htne
+    | cons _ _ => exact ⟨_, _, rfl⟩
+  obtain ⟨zPv, zvs, rfl, hzP, hzs⟩ : ∃ v vs, zv = v :: vs ∧ CircuitType.Reads V zP v ∧
+      List.Forall₂ (CircuitType.Reads V) zs vs := by
+    cases hz with | cons h hs => exact ⟨_, _, rfl, h, hs⟩
+  obtain ⟨tPv, tvs, rfl, htP, hts⟩ : ∃ v vs, tv = v :: vs ∧ CircuitType.Reads V tP v ∧
+      List.Forall₂ (CircuitType.Reads V) ts vs := by
+    cases ht with | cons h hs => exact ⟨_, _, rfl, h, hs⟩
+  simp only [fqSpongeTranscriptOpt, List.foldl_cons]
+  -- the readings of the absorbed sponges, before the run
+  have r0 := optAbsorb_reads_absorbing (create_reads (V := V) p) (e := (true_, indexDigest))
+    (v := (true, indexDigest.val V)) (CircuitType.reads_prod.mpr ⟨reads_true, rfl⟩)
+  have r3 := foldl_optAbsorbColumns_reads hw
+    (foldl_optAbsorbPoint_reads hx (foldl_optAbsorbMasked_reads hsg r0))
+  have hpre := fun b ov => optSqueezePrechallenge_spec (V := V) h2 h3 p hsize hall b endo ov
+  have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
+  mvcgen [hpre, hsq]
+  rename_i _ pβ _ pγ _ pα _ hα pζ _ hζ pd _ hdig hβ hγ
+  -- β: the block of everything absorbed so far
+  have hlen0 : ([] ++ [(true, indexDigest.val V)] ++ maskedFlat sgv ++ pointsFlat xv
+      ++ wv.flatMap pointsFlat).length
+      ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + (zPv :: zvs).length
+        + (tPv :: tvs).length) := by
+    simp only [List.length_append, List.length_nil, List.length_cons, length_maskedFlat,
+      length_pointsFlat, length_flatMap_pointsFlat]
+    omega
+  obtain ⟨⟨nβ, hnβ, eβ⟩, hbetaLo, s5⟩ := hβ.2 _ _ _ r3
+    (Or.inl ⟨(true, indexDigest.val V), by simp, rfl⟩) (fun k hk => hchar k (le_trans hk hlen0))
+  obtain ⟨⟨nγ, hnγ, eγ⟩, hgammaLo, s6⟩ := hγ.1 _ s5
+  -- α: `z_comm` from the squeezed sponge
+  have rz := foldl_optAbsorbPoint_reads hzs (optAbsorbPoint_reads_squeezed p s6 hzP)
+  have hlenz : ([(true, zPv.x), (true, zPv.y)] ++ pointsFlat zvs).length
+      ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + (zPv :: zvs).length
+        + (tPv :: tvs).length) := by
+    simp only [List.length_append, List.length_cons, List.length_nil, length_pointsFlat]
+    omega
+  obtain ⟨⟨nα, hnα, eα⟩, -, s8⟩ := hα.2 _ _ _ rz (Or.inl ⟨(true, zPv.x), by simp, rfl⟩)
+    (fun k hk => hchar k (le_trans hk hlenz))
+  -- ζ: `t_comm` from the squeezed sponge
+  have rt := foldl_optAbsorbPoint_reads hts (optAbsorbPoint_reads_squeezed p s8 htP)
+  have hlent : ([(true, tPv.x), (true, tPv.y)] ++ pointsFlat tvs).length
+      ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + (zPv :: zvs).length
+        + (tPv :: tvs).length) := by
+    simp only [List.length_append, List.length_cons, List.length_nil, length_pointsFlat]
+    omega
+  obtain ⟨⟨nζ, hnζ, eζ⟩, -, s10⟩ := hζ.2 _ _ _ rt (Or.inl ⟨(true, tPv.x), by simp, rfl⟩)
+    (fun k hk => hchar k (le_trans hk hlent))
+  have s11 := toRegularSponge_reads s10
+  obtain ⟨hdv, -⟩ := hdig _ s11
+  -- the kept inputs are the wire verifier's absorb lists
+  have hkept : ((([] ++ [(true, indexDigest.val V)] ++ maskedFlat sgv ++ pointsFlat xv
+      ++ wv.flatMap pointsFlat).filter (fun v : Bool × F => v.1)).map (fun v : Bool × F => v.2))
+      = [indexDigest.val V] ++ flatCoords ((sgv.filter (·.1)).map (·.2)) ++ flatCoords xv
+        ++ wv.flatMap flatCoords := by
+    simp only [List.nil_append, List.filter_append, List.map_append, kept_maskedFlat,
+      kept_pointsFlat, kept_flatMap_pointsFlat]
+    rfl
+  have hkz : ((([(true, zPv.x), (true, zPv.y)] ++ pointsFlat zvs).filter
+      (fun v : Bool × F => v.1)).map (fun v : Bool × F => v.2))
+      = flatCoords (zPv :: zvs) := by
+    simp only [List.filter_append, List.map_append, kept_pointsFlat, flatCoords,
+      List.flatMap_cons]
+    rfl
+  have hkt : ((([(true, tPv.x), (true, tPv.y)] ++ pointsFlat tvs).filter
+      (fun v : Bool × F => v.1)).map (fun v : Bool × F => v.2))
+      = flatCoords (tPv :: tvs) := by
+    simp only [List.filter_append, List.map_append, kept_pointsFlat, flatCoords,
+      List.flatMap_cons]
+    rfl
+  simp only [hkept, hkz, hkt] at eβ eγ eα eζ hdv s11
+  unfold FqTranscriptReads fqSqueezes
+  simp only [foldl_pts_eq, foldl_cols_eq, ← absorb_append]
+  refine ⟨nβ, nγ, nα, nζ, hnβ, hnγ, hnα, hnζ, ?_, ?_, ?_, ?_, hbetaLo, hgammaLo, hx,
+    ?_, ?_⟩
+  · exact eβ
+  · exact eγ
+  · exact eα
+  · exact eζ
+  · exact hdv
+  · exact s11
 
 /-! ## The wire reading -/
 

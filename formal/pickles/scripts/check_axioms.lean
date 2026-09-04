@@ -46,6 +46,7 @@ def roots : List Name :=
     `Pickles.challengeDigest_spec,
     `Pickles.squeezeXiR_spec,
     `Pickles.OptSponge.squeeze_spec,
+    `Pickles.OptSponge.optSqueeze_spec,
     `Pickles.maskedChallengeDigest_spec,
     `Pickles.Linearization.precomputeAlphaPowers_spec,
     `Pickles.Pseudo.mask_spec,
@@ -64,6 +65,8 @@ def roots : List Name :=
     `Pickles.finalizeOtherProofWrap_spec_fq,
     `Pickles.squeezePrechallenge_spec,
     `Pickles.fqSpongeTranscript_spec,
+    `Pickles.optSqueezePrechallenge_spec,
+    `Pickles.fqSpongeTranscriptOpt_spec,
     `Pickles.assertPlonkChallenges_spec,
     `Pickles.FqTranscriptReads.wire ]
 

@@ -29,6 +29,7 @@ Pickles.permScalarCircuit_spec
 Pickles.challengeDigest_spec
 Pickles.squeezeXiR_spec
 Pickles.OptSponge.squeeze_spec
+Pickles.OptSponge.optSqueeze_spec
 Pickles.maskedChallengeDigest_spec
 
 -- The domain scalars of `finalize_other_proof` (Domain.lean, Pseudo.lean) and the α-power
@@ -59,10 +60,13 @@ Pickles.finalizeOtherProofStep_spec_fp
 Pickles.finalizeOtherProofWrap_spec_fq
 
 -- The group side's fq-sponge transcript (FqSpongeTranscript.lean): the prechallenge squeeze
--- and the schedule of `incrementally_verify_proof`, read as the wire verifier's `fqSqueezes`,
+-- and the schedule of `incrementally_verify_proof` on either sponge (the wrap side's on the
+-- conditional sponge, `sg_old` under its mask), read as the wire verifier's `fqSqueezes`,
 -- and at the deployed fields as its `fqPrechallenges` up to the `lowest_128_bits` slack.
 Pickles.squeezePrechallenge_spec
 Pickles.fqSpongeTranscript_spec
+Pickles.optSqueezePrechallenge_spec
+Pickles.fqSpongeTranscriptOpt_spec
 Pickles.assertPlonkChallenges_spec
 Pickles.FqTranscriptReads.wire
 
