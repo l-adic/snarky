@@ -52,6 +52,8 @@ Pickles.pow2PowMul_spec
 Pickles.finalizeOtherProofCore_spec
 Pickles.finalizeOtherProofStep_spec
 Pickles.finalizeOtherProofWrap_spec
+Pickles.finalizeOtherProofStep_spec_fp
+Pickles.finalizeOtherProofWrap_spec_fq
 
 -- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's

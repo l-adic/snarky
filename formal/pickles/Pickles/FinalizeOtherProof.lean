@@ -905,4 +905,85 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   rw [hz', ha', hβ, hγ, hperm] at hreads
   exact hreads
 
+/-! ## The deployed fields -/
+
+section Deployed
+
+open Pickles.Reflect Kimchi.Protocol.Linearization Poseidon.FqSponge
+
+/-- Naturals below `2¹²⁸` cast injectively into the step field. -/
+private theorem natCast_inj_fp (a b : ℕ) (ha : a < 2 ^ 128) (hb : b < 2 ^ 128)
+    (h : (a : Fp) = b) : a = b := by
+  have h' := (ZMod.natCast_eq_natCast_iff' a b _).mp h
+  rwa [Nat.mod_eq_of_lt (lt_trans ha (by decide)), Nat.mod_eq_of_lt (lt_trans hb (by decide))]
+    at h'
+
+/-- Naturals below `2¹²⁸` cast injectively into the wrap field. -/
+private theorem natCast_inj_fq (a b : ℕ) (ha : a < 2 ^ 128) (hb : b < 2 ^ 128)
+    (h : (a : Fq) = b) : a = b := by
+  have h' := (ZMod.natCast_eq_natCast_iff' a b _).mp h
+  rwa [Nat.mod_eq_of_lt (lt_trans ha (by decide)), Nat.mod_eq_of_lt (lt_trans hb (by decide))]
+    at h'
+
+/-- `finalizeOtherProofStep_spec` at the step field over the deployed `Fp` linearization
+(`Pasta.pallasEndo`, `symMds`, `fpTokens`), its `ft_eval0` hypothesis discharged by
+`ftEval0Circuit_spec_fp`. -/
+theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
+    (hP : P.endo = Pasta.pallasEndo ∧ P.mds = symMds ∧ P.toks = fpTokens)
+    (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
+    (h3zk : 3 ≤ P.zkRows) (domains : List (KnownDomain Fp))
+    (hnodup : (domains.map fun d => (d.log2 : Fp)).Nodup)
+    (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
+    (u : UnfinalizedProof Fp) (w : ProofWitness Fp) (mask : List (BoolVar Fp)) (ms : List Bool)
+    (hm : List.Forall₂ (CircuitType.Reads V) mask ms) (prev : List (List (FVar Fp)))
+    (cvs : List (List Fp)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
+    (hprevlen : prev.flatten.length < 2 ^ 128) (domainLog2Var : FVar Fp) :
+    ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) P domains u w mask
+      prev domainLog2Var
+    ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : Fp) ∧
+      ∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧ u.alpha.val.val V = a₀ ∧ u.zeta.val.val V = z₀ ∧
+      FopReads P true (2 ^ d₀.log2) d₀.generator
+        (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
+          (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
+        ms cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀) (u.beta.val.val V)
+        (u.gamma.val.val V) (u.perm.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
+  finalizeOtherProofStep_spec (by decide) (by decide) natCast_inj_fp P hsize h3zk domains hnodup
+    hdom u w mask ms hm prev cvs hprev hprevlen domainLog2Var
+    fun n ω ulb inp ext α ζ htab hζ hzk hz1 hω => by
+      obtain ⟨he, hmds, ht⟩ := hP
+      rw [he, hmds, ht]
+      exact ftEval0Circuit_spec_fp ulb inp ext n P.zkRows ω ζ α
+        (fun k hk => htab k (le_trans hk (by decide))) hζ hzk hz1 hω
+
+/-- `finalizeOtherProofWrap_spec` at the wrap field over the deployed `Fq` linearization
+(`Pasta.vestaEndo`, `symMdsQ`, `fqTokens`), its `ft_eval0` hypothesis discharged by
+`ftEval0Circuit_spec_fq`. -/
+theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
+    (hP : P.endo = Pasta.vestaEndo ∧ P.mds = symMdsQ ∧ P.toks = fqTokens)
+    (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
+    (h3zk : 3 ≤ P.zkRows) (gen : Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
+    (domainLog2 : ℕ) (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
+    (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
+    (u : UnfinalizedProof Fq) (w : ProofWitness Fq) (prev : List (List (FVar Fq)))
+    (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
+    ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
+      vanishing u w prev
+    ⦃⇓ o _ => ⌜∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧ u.alpha.val.val V = a₀ ∧
+      u.zeta.val.val V = z₀ ∧
+      FopReads P false n gen
+        (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
+          (prev.flatten.map (·.val V)))).1
+        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀)
+        (u.beta.val.val V) (u.gamma.val.val V) (u.perm.val V)
+        (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
+  finalizeOtherProofWrap_spec (by decide) (by decide) natCast_inj_fq P hsize h3zk gen n hzk hω
+    domainLog2 vanishing hvan u w prev cvs hprev
+    fun ulb inp ext α ζ htab hζ hzk' hz1 hω' => by
+      obtain ⟨he, hmds, ht⟩ := hP
+      rw [he, hmds, ht]
+      exact ftEval0Circuit_spec_fq ulb inp ext n P.zkRows gen ζ α
+        (fun k hk => htab k (le_trans hk (by decide))) hζ hzk' hz1 hω'
+
+end Deployed
+
 end Pickles

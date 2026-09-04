@@ -56,7 +56,9 @@ def roots : List Name :=
     `Pickles.pow2PowMul_spec,
     `Pickles.finalizeOtherProofCore_spec,
     `Pickles.finalizeOtherProofStep_spec,
-    `Pickles.finalizeOtherProofWrap_spec ]
+    `Pickles.finalizeOtherProofWrap_spec,
+    `Pickles.finalizeOtherProofStep_spec_fp,
+    `Pickles.finalizeOtherProofWrap_spec_fq ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
