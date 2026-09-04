@@ -272,6 +272,12 @@ type StepMainSrsData wrapVkChunks len nd blueprints =
   -- | (`step_verifier.ml:879-899`), which is then deduped into
   -- | `unique_domains` for `Pseudo.Domain.to_domain` dispatch.
   , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
+  -- | Per-slot kimchi `zk_rows` of the slot's prev step proof, the value
+  -- | its deferred permutation scalar was produced at
+  -- | (`zkRowsForNumChunks` of that rule's `@stepChunks`; 3 at one
+  -- | chunk). Mirrors OCaml `step_main.ml`'s `d.zk_rows` from the prev
+  -- | tag's `step_branch_data`.
+  , perSlotFopZkRows :: Vector len Int
   -- | Spec-indexed compile-time blueprint for each slot's wrap-VK
   -- | source. `Slot Compiled` slots contribute a
   -- | `SlotVkBlueprintCompiled` (`VkBlueprintConst` / `VkBlueprintShared`);
@@ -867,6 +873,7 @@ stepMain
   { perSlotLagrangeAt
   , blindingH
   , perSlotFopDomainLog2s
+  , perSlotFopZkRows
   , perSlotVkBlueprints
   }
   dummySg
@@ -1108,6 +1115,9 @@ stepMain
               -- same answer.
               , shifts: map const_ (LinFFI.domainShifts @StepField slotShiftsLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
+              -- OCaml `step_main.ml`: the prev tag's `zk_rows` (its
+              -- `step_branch_data`, derived from that rule's num_chunks).
+              , zkRows: perSlotFopZkRows !! i
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
               , domainMode: slotConfig.fopDomainMode

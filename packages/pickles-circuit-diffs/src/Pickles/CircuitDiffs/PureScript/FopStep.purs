@@ -12,6 +12,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
@@ -121,6 +122,7 @@ fopStepCircuit input =
           } :< Vector.nil
       , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2
+      , zkRows: zkRowsByDefault
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas
       , domainMode: KnownDomainsMode

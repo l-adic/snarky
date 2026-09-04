@@ -1,22 +1,25 @@
 import Pickles
 import Lean.Elab.Command
 
-/-! Gate the pickles linearization results' axiom closure.
+/-! Gate the pickles package's axiom closure.
 
-The roots are the results this package stands behind: the two linearization circuit
-theorems, one per side of the cycle, the two reflection endpoints they rest on, the two
-`ft_eval0` circuit theorems built on them, and the field-generic IPA-side gadget theorems
-(the challenge polynomials, their endomorphism expansion, `b_correct`, and the combined
-inner product). Everything else the
-package proves — the machine's simulation laws, the environment's compatibility, the
-transport lemmas, the decided α-bound — is in their dependency closure, and
-`collectAxioms` walks the closure, so a stray axiom anywhere beneath them is caught here
-without being named.
+The roots are the results this package stands behind — the same list as the API manifest
+`roots.txt`, whose grouped prose describes them: the two linearization circuit theorems,
+one per side of the cycle, the two reflection endpoints they rest on, the two `ft_eval0`
+circuit theorems built on them; the field-generic scalar-side gadget theorems (the IPA
+gadgets, the fr-sponge schedule and challenge digests, the α-table, the domain scalars and
+the mask-select); and the assembled `finalize_other_proof` theorems, generic and at the
+deployed fields. Everything else the package proves — the machine's simulation laws, the
+environment's compatibility, the transport lemmas, the decided α-bound — is in their
+dependency closure, and `collectAxioms` walks the closure, so a stray axiom anywhere
+beneath them is caught here without being named.
 
 `Pickles/Reflect/Certificate.lean` is the only module in this tree permitted to decide by
 `native_decide`: the two reflection certificates and the reachability facts about the
-closed streams. Every root rests on it, so every root may carry that module's certificates
-and nothing else; the rest of the closure must reduce to the standard logical axioms alone.
+closed streams. Only the roots that rest on the deployed token streams — the linearization,
+`ft_eval0` and deployed-field `finalize_other_proof` theorems — may carry that module's
+certificates (`deployedRoots`); the field-generic gadget and assembly theorems, and the
+rest of every closure, must reduce to the standard logical axioms alone.
 
 The discriminator is the defining module rather than a name prefix, following the kimchi
 gate: an axiom's name is forgeable from inside a matching `namespace` block, its defining
@@ -38,14 +41,42 @@ def roots : List Name :=
     `Pickles.challengePolyEvals_spec,
     `Pickles.computeChallenges_spec,
     `Pickles.bCorrectCircuit_spec,
-    `Pickles.combinedInnerProduct_spec_cip ]
+    `Pickles.combinedInnerProduct_spec_cip,
+    `Pickles.permScalarCircuit_spec,
+    `Pickles.challengeDigest_spec,
+    `Pickles.squeezeXiR_spec,
+    `Pickles.OptSponge.squeeze_spec,
+    `Pickles.maskedChallengeDigest_spec,
+    `Pickles.Linearization.precomputeAlphaPowers_spec,
+    `Pickles.Pseudo.mask_spec,
+    `Pickles.omegaPowers_spec,
+    `Pickles.zkPolynomial_spec,
+    `Pickles.zkPolynomial_eq_zkpmEval,
+    `Pickles.knownDomainWhiches_spec,
+    `Pickles.knownDomainVanishingPolynomial_spec,
+    `Pickles.buildPow2PowsArray_spec,
+    `Pickles.pow2PowSquare_spec,
+    `Pickles.pow2PowMul_spec,
+    `Pickles.finalizeOtherProofCore_spec,
+    `Pickles.finalizeOtherProofStep_spec,
+    `Pickles.finalizeOtherProofWrap_spec,
+    `Pickles.finalizeOtherProofStep_spec_fp,
+    `Pickles.finalizeOtherProofWrap_spec_fq ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 
-/-- The roots allowed to carry a `native_decide` certificate: all of them, each resting on
-`Certificate.lean`'s decisions. -/
-def deployedRoots : List Name := roots
+/-- The roots allowed to carry a `native_decide` certificate: those at the deployed token
+streams, each resting on `Certificate.lean`'s decisions. -/
+def deployedRoots : List Name :=
+  [ `Pickles.Reflect.circuit_gateLinearization_fp,
+    `Pickles.Reflect.circuit_gateLinearization_fq,
+    `Pickles.Reflect.evaluate_fpTokens,
+    `Pickles.Reflect.evaluate_fqTokens,
+    `Pickles.ftEval0Circuit_spec_fp,
+    `Pickles.ftEval0Circuit_spec_fq,
+    `Pickles.finalizeOtherProofStep_spec_fp,
+    `Pickles.finalizeOtherProofWrap_spec_fq ]
 
 /-- A trusted `native_decide` certificate: one defined in an upstream CompElliptic module,
 in `Pasta/Endo.lean`, or in `Pickles/Reflect/Certificate.lean`. -/

@@ -47,6 +47,7 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -257,6 +258,7 @@ stepAllEvalsToProofWitness (StepAllEvals r) =
 type FopBodyParams f =
   { domainLog2 :: Int
   , srsLengthLog2 :: Int
+  , zkRows :: Int
   , endo :: f
   , linearizationPoly :: LinearizationPoly f
   }
@@ -277,6 +279,7 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals =
         { generator: domain.generator, log2: fopBaseParams.domainLog2 } :< Vector.nil
     , shifts: domain.shifts
     , srsLengthLog2: fopBaseParams.srsLengthLog2
+    , zkRows: fopBaseParams.zkRows
     , endo: fopBaseParams.endo
     , linearizationPoly: fopBaseParams.linearizationPoly
     -- Always `KnownDomainsMode` here. Side-loading is a step-circuit
@@ -595,6 +598,9 @@ wrapMain config (StatementPacked stmtR) advice = do
     fopBaseParams =
       { domainLog2: wrapDomainLog2
       , srsLengthLog2: wrapSrsLengthLog2
+      -- OCaml `wrap_verifier.ml` passes `Plonk_checks.zk_rows_by_default`
+      -- to `finalize_other_proof` whatever the step proof's chunking.
+      , zkRows: zkRowsByDefault
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
       }

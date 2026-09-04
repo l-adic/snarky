@@ -84,6 +84,25 @@ theorem builder_spec_iff {V : Valuation F} [ConstraintHolds F c] {α : Type}
   · intro h nv _ hsat
     exact h nv hsat
 
+/-- A specification whose hypotheses concern values fixed before the run may carry them
+into the postcondition: `wp` is deterministic, so a family of triples indexed by such
+hypotheses is one triple with the family's conclusion universally quantified. -/
+theorem builder_spec_forall {V : Valuation F} [ConstraintHolds F c] {α ι : Type}
+    (g : CircuitM F (Builder V c) α) (P : ι → Prop) (post : ι → α → Prop)
+    (h : ∀ x, P x → ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜post x r⌝⦄) :
+    ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜∀ x, P x → post x r⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat x hx
+  exact (builder_spec_iff g (post x)).mp (h x hx) nv hsat
+
+/-- Weakening a specification's conclusion. -/
+theorem builder_spec_imp {V : Valuation F} [ConstraintHolds F c] {α : Type}
+    (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (h : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)
+    (hpq : ∀ r, P r → Q r) : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜Q r⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat
+  exact hpq _ ((builder_spec_iff g P).mp h nv hsat)
+
 /-! ## The lawful-backend interface -/
 
 /-- A backend whose reading of the `BasicSystem` primitives means what `Basic` means:

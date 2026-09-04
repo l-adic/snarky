@@ -20,47 +20,37 @@ module Pickles.Step.FinalizeOtherProof
   , finalizeOtherProofCircuit
   -- * Helpers (exported for use by Pickles.Step.Main's side-loaded slot dispatch)
   , mkSideLoadedOnesPrefixMask
-  -- * Component Circuits (exported for testing)
-  , module PlonkChecks
   ) where
 
 import Prelude
 
-import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (pow) as Int
-import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable as Foldable1
-import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.OptSponge as OptSponge
-import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
-import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
+import Pickles.PlonkChecks (extractEvalFields, maskedChallengeDigest, squeezeXiR)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, combinedInnerProduct)
+import Pickles.PlonkChecks.Domain (knownDomainVanishingPolynomial, knownDomainWhiches, omegaPowers, zkPolynomial)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation as Permutation
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
-import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Util.Pow2 (pow2PowSquare)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
+import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, all_, and_, assertAny_, const_, equals_, if_, label, mul_, not_, pow_, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -79,6 +69,28 @@ type SideLoadedDomainCount = 17
 -- | Maximum log2 in the side-loaded universe (= 16).
 sideLoadedDomainLog2Max :: Int
 sideLoadedDomainLog2Max = 16
+
+-- | The side-loaded candidate log2s `[0..16]` (OCaml `side_loaded_domain`'s
+-- | `Vector.init (S max_n) ~f:Fn.id`, `step_verifier.ml:817-840`).
+sideLoadedLog2s :: Vector SideLoadedDomainCount Int
+sideLoadedLog2s = Vector.generate getFinite
+
+-- | The generator of each side-loaded candidate domain, as constants.
+sideLoadedGenerators :: forall f. LinearizationFFI f => Vector SideLoadedDomainCount (FVar f)
+sideLoadedGenerators = map (const_ <<< domainGenerator) sideLoadedLog2s
+
+-- | The domain-mode dispatch, resolved once: what `maskedGen` and the
+-- | vanishing polynomial each select on. `KnownDomainsMode` carries the
+-- | which bit of each compile-time domain; `SideLoadedMode` carries the
+-- | ones-prefix mask (`Utils.ones_vector`) for the iterative vanishing
+-- | polynomial and the one-hot which bits over the `[0..16]` universe
+-- | (`O.of_index`), in OCaml's emission order.
+data DomainSel nd f
+  = Known (Vector nd (BoolVar f))
+  | SideLoaded
+      { onesPrefix :: Vector 16 (BoolVar f)
+      , whiches :: Vector SideLoadedDomainCount (BoolVar f)
+      }
 
 -- | Input for finalizing another proof.
 -- |
@@ -125,8 +137,8 @@ type Input n d f sf b =
 -- |
 -- | 5. **pow2_pows**: Compute zeta^(2^n) and zetaw^(2^n) via Square constraints
 -- |
--- | 6. **Omega powers in-circuit**: inv_(maskedGen) → omega^-1, square → omega^-2,
--- |    multiply → omega^-3 (matching OCaml's non-constant domain generator)
+-- | 6. **Omega powers in-circuit**: `omegaPowers` from the non-constant
+-- |    maskedGen, generic in the prev proof's `zkRows`
 -- |
 -- | 7. **ft_eval0**: Inlined computation using shared alpha powers and
 -- |    buildCircuitEnvM for constant_term evaluation
@@ -208,7 +220,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let gamma = SizedF.toField plonkMin.gamma
 
   ---------------------------------------------------------------------------
-  -- Step 3: Domain masking and zetaw
+  -- Step 3: Domain selection, masking and zetaw
   -- OCaml: gen = mask which (Vector.map domains domain_generator)
   --        zetaw = Field.mul gen plonk.zeta
   -- For nd=1: mask = b₀, gen = (b₀:>t) * gen₀_const = Scale (no Generic).
@@ -216,71 +228,26 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- In both cases gen is non-constant, so `mul_ gen zeta` emits one
   -- R1CS Generic gate.
   ---------------------------------------------------------------------------
-  -- OCaml `side_loaded_domain` (`step_verifier.ml:817-840`) computes
-  -- the `Utils.ones_vector` mask FIRST (16 equals + 16 `&&`), then
-  -- calls `O.of_index` (17 equals + 1 assert_any). PS mirrors that
-  -- order: ones-prefix mask first, then the domain-which traversal.
-  -- The precomputed mask is threaded down to the vanishing polynomial
-  -- via `Maybe (Vector 16 (BoolVar f))` (Just for SideLoadedMode,
-  -- Nothing for KnownDomainsMode where the compiled-path
-  -- vanishing_polynomial uses pow2_pows + Pseudo.mask instead).
-  precomputedOnesPrefix <- case params.domainMode of
-    SideLoadedMode -> Just <$> mkSideLoadedOnesPrefixMask domainLog2Var
-    KnownDomainsMode -> pure Nothing
+  domainSel <- case params.domainMode of
+    -- `knownDomainWhiches` is OCaml `step_verifier.ml:880-893`'s
+    -- `Vector.map unique_domains ~f:(equals branch_data.domain_log2)`,
+    -- emitted right-to-left as OCaml does (for domains [9, 14] the
+    -- `equals 14` gate precedes `equals 9`).
+    KnownDomainsMode -> Known <$> knownDomainWhiches domainLog2Var params.domains
+    -- OCaml `side_loaded_domain` (`step_verifier.ml:817-840`) computes
+    -- the `Utils.ones_vector` mask FIRST (16 equals + 16 `&&`), then
+    -- `O.of_index` over the `[0..16]` universe: 17 `equals_` gates over
+    -- [16, 15, …, 0] plus a `Boolean.Assert.any` (the one-hot constraint
+    -- at `one_hot_vector.ml:23`). No compile-time domain data enters.
+    SideLoadedMode -> do
+      onesPrefix <- mkSideLoadedOnesPrefixMask domainLog2Var
+      whiches <- knownDomainWhiches domainLog2Var (map { log2: _ } sideLoadedLog2s)
+      assertAny_ (Vector.toUnfoldable whiches)
+      pure (SideLoaded { onesPrefix, whiches })
 
-  -- Domain-which traversal — dispatches on `domainMode`:
-  --
-  -- * `KnownDomainsMode` reads the unique-domain Vector supplied by
-  --   the caller (`params.domains`). The result is kept at outer
-  --   scope as `Just _` and reused below by both `maskedGen` and the
-  --   pow2-mask in the vanishing-polynomial computation. OCaml
-  --   `step_verifier.ml:880-893`'s `Vector.map unique_domains
-  --   ~f:(equals branch_data.domain_log2)` evaluates right-to-left,
-  --   so for domains [9, 14] OCaml emits the `equals 14` gate
-  --   (constant 14 in coeffs[4]) BEFORE the `equals 9` gate. PS's
-  --   `traverse` is left-to-right, so we mirror OCaml by reversing
-  --   the input, traversing, and reversing the output back. Without
-  --   this, the resulting CS has the constants swapped relative to
-  --   OCaml.
-  --
-  -- * `SideLoadedMode` returns `Nothing` here — the universe
-  --   `Vector 17` of `[0..16]` log2s is synthesized inline below in
-  --   `maskedGen`, mirroring OCaml `step_verifier.ml:817-840`
-  --   `side_loaded_domain` exactly (which takes only
-  --   `branch_data.domain_log2` and builds `Vector.init (S max_n)
-  --   ~f:Fn.id` with `max_n = 16` internally — no compile-time
-  --   domain data passes through). The vanishing-poly path in
-  --   SideLoadedMode also uses `precomputedOnesPrefix` rather than
-  --   the unique-domain whiches.
-  domainWhichesKnown :: Maybe (Vector nd (BoolVar f)) <- case params.domainMode of
-    KnownDomainsMode -> do
-      domainWhichesRev <- traverse
-        (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
-        (Vector.reverse params.domains)
-      pure (Just (Vector.reverse domainWhichesRev))
-    SideLoadedMode -> pure Nothing
-
-  maskedGen <- case domainWhichesKnown of
-    Just dw -> Pseudo.mask dw (map _.generator params.domains)
-    Nothing -> do
-      -- SideLoadedMode: synthesize the universal `Vector 17` of
-      -- `[0..16]` candidate log2s + their generators inline. Emits 17
-      -- `equals_` gates over [16, 15, …, 0] (right-to-left) plus a
-      -- `Boolean.Assert.any` (= OCaml `O.of_index`'s one-hot
-      -- constraint at `one_hot_vector.ml:23`).
-      let
-        sideLoadedLog2s :: Vector SideLoadedDomainCount Int
-        sideLoadedLog2s = Vector.generate getFinite
-
-        sideLoadedGenerators :: Vector SideLoadedDomainCount (FVar f)
-        sideLoadedGenerators =
-          map (\log2 -> const_ (domainGenerator log2)) sideLoadedLog2s
-      domainWhichesRev <- traverse
-        (\log2 -> equals_ (const_ (fromInt log2)) domainLog2Var)
-        (Vector.reverse sideLoadedLog2s)
-      let domainWhiches = Vector.reverse domainWhichesRev
-      assertAny_ (Vector.toUnfoldable domainWhiches)
-      Pseudo.mask domainWhiches sideLoadedGenerators
+  maskedGen <- case domainSel of
+    Known whiches -> Pseudo.mask whiches (map _.generator params.domains)
+    SideLoaded { whiches } -> Pseudo.mask whiches sideLoadedGenerators
   zetaw <- mul_ maskedGen zeta
 
   ---------------------------------------------------------------------------
@@ -296,29 +263,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- challenge_digest via OptSponge, absorb sponge_digest + challenge_digest +
   -- all evaluations, squeeze xi and r.
   ---------------------------------------------------------------------------
-  let
-    pending :: Array (Tuple (BoolVar f) (FVar f))
-    pending = Array.concat $ Vector.toUnfoldable $
-      Vector.zipWith
-        ( \keep chals ->
-            map (Tuple keep) (Vector.toUnfoldable chals)
-        )
-        mask
-        prevChallenges
-
-  { xi, r, xiCorrect } <- evalSpongeM initialSpongeCircuit do
-    absorb unfinalized.spongeDigestBeforeEvaluations
-    challengeDigest <- liftSnarky $
-      OptSponge.squeeze (OptSponge.create) pending
-    absorb challengeDigest
-    absorbAllEvals allEvals
-    xiActual <- squeezeScalarChallenge { endo: endoVar }
-    rActual <- squeezeScalarChallenge { endo: endoVar }
-    liftSnarky do
-      xiCorr <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
-      xi' <- toField @8 deferred.xi endoVar
-      r' <- toField @8 rActual endoVar
-      pure { xi: xi', r: r', xiCorrect: xiCorr }
+  { xi: xiActual, r: rActual } <- squeezeXiR
+    { spongeDigestBeforeEvaluations: unfinalized.spongeDigestBeforeEvaluations
+    , challengeDigest: maskedChallengeDigest mask prevChallenges
+    , allEvals
+    , endo: endoVar
+    , xiConstrainLowBits: true
+    }
+  xiCorrect <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
+  xi <- toField @8 deferred.xi endoVar
+  r <- toField @8 rActual endoVar
 
   ---------------------------------------------------------------------------
   -- Step 9: pow2_pows via Field.square
@@ -368,22 +322,12 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   ---------------------------------------------------------------------------
   -- Step 10: Omega powers in-circuit
   -- OCaml computes omega powers from maskedGen (non-constant), so each
-  -- produces R1CS constraints. zk_rows == zk_rows_by_default (3) → empty loop.
-  --   omega_to_minus_1 = one / gen
-  --   omega_to_minus_2 = square omega_to_minus_1
-  --   omega_to_zk_plus_1 = omega_to_minus_2 (empty loop for zk_rows=3)
-  --   omega_to_zk = omega_to_zk_plus_1 * omega_to_minus_1
+  -- produces R1CS constraints (`omegaPowers`, generic in `zkRows`), then
+  -- the permutation vanishing polynomial at zeta.
   ---------------------------------------------------------------------------
-  omegaM1 <- inv_ maskedGen
-  omegaM2 <- mul_ omegaM1 omegaM1 -- OCaml: square x = x * x (R1CS, not Square)
-  let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
-  omegaZk <- mul_ omegaZkP1 omegaM1
-
-  -- zkPoly = (zeta - omega^-1)(zeta - omega^-2)(zeta - omega^-3)
-  -- Note: omegaM1 = omega^-1, omegaZkP1 = omega^-2, omegaZk = omega^-3
-  zkPoly <- do
-    t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
-    mul_ t1 (zeta `sub_` omegaZk)
+  omegas@{ omegaToMinus1: omegaM1, omegaToZkPlus1: omegaZkP1, omegaToZk: omegaZk } <-
+    omegaPowers { generator: maskedGen, zkRows: params.zkRows }
+  zkPoly <- zkPolynomial zeta omegas
 
   -- zetaToNMinus1 via multi-domain vanishing polynomial.
   -- Mirrors OCaml `Pseudo.Domain.to_domain.vanishing_polynomial` (`pseudo.ml:118-127`):
@@ -393,25 +337,9 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- For nd=1 emits same gate count as the previous single-domain
   -- `domainVanishingPoly`. For nd>1 emits one extra Generic per
   -- additional domain (mask multiplication).
-  zetaToNMinus1 <- label "domain-vanishing-poly" case params.domainMode of
-    KnownDomainsMode -> case domainWhichesKnown of
-      Just dw -> do
-        pow2PowsArr <- buildPow2PowsArray zeta maxLog2
-        let
-          pow2AtLog2 :: Vector nd (FVar f)
-          pow2AtLog2 = map
-            ( \d -> case Array.index pow2PowsArr d.log2 of
-                Just v -> v
-                Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
-            )
-            params.domains
-        masked <- Pseudo.mask dw pow2AtLog2
-        label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
-      Nothing -> unsafeThrow
-        "Pickles.Step.FinalizeOtherProof: KnownDomainsMode reached \
-        \vanishing-poly without a precomputed `domainWhichesKnown` — \
-        \bug in the domain-mode dispatch above."
-    SideLoadedMode -> do
+  zetaToNMinus1 <- label "domain-vanishing-poly" case domainSel of
+    Known whiches -> knownDomainVanishingPolynomial whiches params.domains zeta
+    SideLoaded { onesPrefix } -> do
       -- Iterative side-loaded vanishing polynomial. Mirrors OCaml
       -- `step_verifier.ml:796-810` (`vanishing_polynomial mask`):
       --   mask = ones_vector ~first_zero:domainLog2Var (length 16)
@@ -423,12 +351,6 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       -- materializing as needed. Matching this saves one Generic gate
       -- and keeps the Generic-pair queue parity in sync with OCaml at
       -- the start of `ft_eval0`.
-      onesPrefix <- case precomputedOnesPrefix of
-        Just v -> pure v
-        Nothing -> unsafeThrow
-          "Pickles.Step.FinalizeOtherProof: SideLoadedMode reached \
-          \vanishing-poly without a precomputed ones-prefix mask — \
-          \bug in the SideLoadedMode dispatch above."
       acc <- foldM
         ( \accV bit -> do
             sq <- square_ accV
@@ -548,24 +470,15 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Inline perm scalar using shared alpha powers (a21, zkPoly).
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
-  actualPerm <- label "perm_actual" do
-    init' <- label "perm_init" do
-      t1 <- label "perm_init_1" $ mul_ zOmegaTimesZeta beta
-      t2 <- label "perm_init_2" $ mul_ t1 a21
-      label "perm_init_3" $ mul_ t2 zkPoly
-    let
-      wSigmaPerm :: Vector 6 (Tuple (Finite 6) (Tuple (FVar f) (FVar f)))
-      wSigmaPerm = mapWithIndex Tuple
-        $ Vector.zipWith Tuple (Vector.take @6 w0) s0
-    result <- foldM
-      ( \acc (Tuple fi (Tuple wi si)) -> label ("perm_fold_" <> show (getFinite fi)) do
-          betaSigma <- label "betaSigma" $ mul_ beta si
-          let term = add_ (add_ gamma betaSigma) wi
-          label "acc_mul" $ mul_ acc term
-      )
-      init'
-      wSigmaPerm
-    pure (negate_ result)
+  actualPerm <- label "perm_actual" $ Permutation.permScalarCircuit
+    { w: Vector.take @6 w0
+    , sigma: s0
+    , zOmega: zOmegaTimesZeta
+    , beta
+    , gamma
+    , zkPolynomial: zkPoly
+    , alphaPow21: a21
+    }
 
   -- zeta_to_srs_length computation (generates constraints even though result is voided)
   label "perm_pow_zeta_srs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
@@ -625,28 +538,3 @@ mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
     )
     true_
     indices
-
--- | Build the runtime `pow2_pows` table = `[x, x^2, x^4, ..., x^(2^maxLog2)]`
--- | as an Array of length `maxLog2 + 1`. Emits exactly `maxLog2`
--- | Square constraints (one per consecutive squaring step).
--- |
--- | Mirrors OCaml `Pseudo.Domain.to_domain`'s `vanishing_polynomial`'s
--- | pow2_pows array build (`pseudo.ml:119-123`). Used by multi-domain
--- | dispatch where the runtime `maxLog2` is determined by the maximum
--- | log2 across the slot's possible domains.
-buildPow2PowsArray
-  :: forall f c r
-   . PrimeField f
-  => BasicSystem f c
-  => FVar f
-  -> Int
-  -> Snarky f c r (Array (FVar f))
-buildPow2PowsArray x maxLog2 = go [ x ] maxLog2
-  where
-  go acc i
-    | i <= 0 = pure acc
-    | otherwise = case Array.last acc of
-        Nothing -> pure acc -- unreachable: acc is non-empty
-        Just lastV -> do
-          sq <- square_ lastV
-          go (Array.snoc acc sq) (i - 1)

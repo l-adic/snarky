@@ -13,10 +13,11 @@ import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domainShifts)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (PolishToken)
+import Pickles.PlonkChecks.Domain (zkPolynomial)
 import Pickles.PlonkChecks.Permutation (permContributionCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (FVar, Snarky, label, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (FVar, Snarky, label, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
@@ -122,9 +123,12 @@ ftEval0CircuitM domLog2 tokens inputs = do
   -- scalars_env prelude: alpha powers, eager zk_polynomial, eager zeta^n - 1
   alphaPowers <- precomputeAlphaPowers alpha
 
-  zkPoly <- do
-    t1 <- mul_ (zeta `sub_` const_ omegaToMinus1) (zeta `sub_` const_ omegaToMinus2)
-    mul_ t1 (zeta `sub_` const_ omegaToMinus3)
+  -- the library gadget at constant powers (its two rows; the dump's constant domain)
+  zkPoly <- zkPolynomial zeta
+    { omegaToMinus1: const_ omegaToMinus1
+    , omegaToZkPlus1: const_ omegaToMinus2
+    , omegaToZk: const_ omegaToMinus3
+    }
 
   zetaToNMinus1 <- do
     zetaToN <- pow_ zeta (Int.pow 2 domLog2)

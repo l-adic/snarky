@@ -1,0 +1,265 @@
+import Snarky.Kimchi.Circuit.Sponge
+import Snarky.Kimchi.Circuit.RangeCheck
+import Kimchi.Verifier.Kimchi
+import Pickles.OptSponge
+
+set_option mvcgen.warning false
+
+/-!
+# The fr-sponge in circuit
+
+Port of the PureScript `Pickles.PlonkChecks.challengeDigest` and `squeezeXiR`: the digest
+of the previous proofs' bulletproof challenges, and the verifier's fr-sponge schedule —
+absorb the digest before evaluations, the challenge digest and every evaluation, then
+squeeze the two prechallenges `ξ` and `r` as 128-bit values.
+
+## Main definitions
+
+* `challengeDigest`: a fresh sponge absorbing every previous challenge, squeezed once.
+* `maskedChallengeDigest`: the step side's digest, the conditional sponge over the
+  challenges guarded by their proof's mask bit.
+* `squeezeXiR`: the schedule of `Kimchi.Verifier.frTranscript`, the challenge digest
+  computed between its first two absorbs, then two squeezes each split by
+  `lowest128Bits'`.
+
+## Main results
+
+* `challengeDigest_spec`: the output reads as the squeeze of the value sponge over the
+  challenges.
+* `maskedChallengeDigest_spec`: the output reads as the squeeze of the value sponge over
+  the challenge vectors whose mask bit is set.
+* `squeezeXiR_spec`: the sponge reads as `Poseidon.absorb` of `frTranscript`, and each
+  output is the low half of the corresponding squeeze: `x = lo + 2¹²⁸·hi` with `hi < 2¹²⁸`,
+  and `lo < 2¹²⁸` where the low bits are constrained.
+-/
+
+namespace Pickles
+
+open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
+
+variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
+
+/-- Absorb a list, left to right. -/
+private def absorbList (p : Poseidon.Params F) (sv : SpongeVar F) :
+    List (FVar F) → CircuitM F c (SpongeVar F)
+  | [] => pure sv
+  | x :: xs => do
+    let sv' ← SpongeVar.absorb p sv x
+    absorbList p sv' xs
+
+/-- The digest of the previous proofs' bulletproof challenges `c_{j,i}`: a fresh sponge
+absorbing them in order, squeezed once. -/
+def challengeDigest (p : Poseidon.Params F) (prev : List (List (FVar F))) :
+    CircuitM F c (FVar F) := do
+  let sv ← absorbList p SpongeVar.init prev.flatten
+  let (d, _) ← SpongeVar.squeeze p sv
+  pure d
+
+/-- Each challenge paired with its vector's guard, in order. -/
+private def maskedEntries {β α : Type} : List β → List (List α) → List (β × α)
+  | b :: bs, cs :: css => cs.map (b, ·) ++ maskedEntries bs css
+  | _, _ => []
+
+/-- The step side's digest of the previous proofs' challenges (PS `maskedChallengeDigest`):
+the conditional sponge over the challenges, each guarded by its proof's mask bit, squeezed
+once. -/
+def maskedChallengeDigest (p : Poseidon.Params F) (mask : List (BoolVar F))
+    (prev : List (List (FVar F))) : CircuitM F c (FVar F) :=
+  OptSponge.squeeze p (maskedEntries mask prev)
+
+/-- The transcript after the digest before evaluations: `frTranscript` from its second
+entry, at one chunk per column. -/
+private def frTail (recDigest ftEval1 : FVar F) (pub : PointEvaluations (FVar F))
+    (evals : ProofEvaluations (FVar F)) : List (FVar F) :=
+  let pt := fun (e : PointEvaluations (FVar F)) => [e.zeta, e.zetaOmega]
+  [recDigest, ftEval1, pub.zeta, pub.zetaOmega]
+    ++ pt evals.z ++ pt evals.genericSelector ++ pt evals.poseidonSelector
+    ++ pt evals.completeAddSelector ++ pt evals.mulSelector ++ pt evals.emulSelector
+    ++ pt evals.endomulScalarSelector
+    ++ (evals.w.toList.map pt).flatten ++ (evals.coefficients.toList.map pt).flatten
+    ++ (evals.s.toList.map pt).flatten
+
+/-- The fr-sponge schedule: absorb `digestBefore`, run `digest` and absorb its result,
+absorb `ft(ζω)`, the public pair and every column pair, then squeeze `ξ` and `r`, each
+split to its low 128 bits — `ξ` with the low bits constrained iff `xiConstrainLowBits`,
+`r` always. -/
+def squeezeXiR [ToNat F] (p : Poseidon.Params F) (digestBefore : FVar F)
+    (digest : CircuitM F c (FVar F)) (ftEval1 : FVar F) (pub : PointEvaluations (FVar F))
+    (evals : ProofEvaluations (FVar F)) (endo : FVar F) (xiConstrainLowBits : Bool) :
+    CircuitM F c (SizedF 128 (FVar F) × SizedF 128 (FVar F)) := do
+  let sv ← SpongeVar.absorb p SpongeVar.init digestBefore
+  let d ← digest
+  let sv ← absorbList p sv (frTail d ftEval1 pub evals)
+  let (x₁, sv) ← SpongeVar.squeeze p sv
+  let xi ← lowest128Bits' xiConstrainLowBits endo x₁
+  let (x₂, _) ← SpongeVar.squeeze p sv
+  let r ← lowest128Bits' true endo x₂
+  pure (xi, r)
+
+/-! ## Soundness -/
+
+variable {V : Valuation F}
+
+omit [DecidableEq F] in
+/-- The fresh circuit sponge reads as the fresh value sponge. -/
+private theorem readsAt_init : SpongeVar.ReadsAt V (SpongeVar.init (F := F)) Poseidon.init :=
+  ⟨rfl, rfl⟩
+
+/-- Absorbing a list reads as the value absorb of the readings. -/
+private theorem absorbList_spec (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) :
+    ∀ (sv : SpongeVar F) (xs : List (FVar F)),
+      ⦃⌜True⌝⦄ absorbList (c := Builder V (KimchiConstraint F)) p sv xs
+      ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
+        SpongeVar.ReadsAt V r (Poseidon.absorb p s (xs.map (·.val V)))⌝⦄
+  | sv, [] => by
+    simp only [absorbList]
+    mvcgen
+    simp [Poseidon.absorb]
+  | sv, x :: xs => by
+    simp only [absorbList]
+    have hx := SpongeVar.absorb_spec (V := V) p hsize sv x
+    have ih := fun sv' => absorbList_spec p hsize sv' xs
+    mvcgen [hx, ih]
+    rename_i _ _ _ hstep _ _
+    intro hrest s hs
+    exact hrest _ (hstep s hs)
+
+/-- Under any valuation satisfying the emitted constraints, with the challenges reading as
+`c_{j,i}`, the output reads as the first squeeze of the value sponge that absorbed them in
+order: `(squeeze p (absorb p init [c_{0,0}, …, c_{n−1,k−1}])).1`, which is the fr-sponge
+digest `frDigest` of the absorbed challenges. -/
+theorem challengeDigest_spec (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (prev : List (List (FVar F))) :
+    ⦃⌜True⌝⦄ challengeDigest (c := Builder V (KimchiConstraint F)) p prev
+    ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p
+      (Poseidon.absorb p Poseidon.init (prev.flatten.map (·.val V)))).1⌝⦄ := by
+  simp only [challengeDigest]
+  have ha := absorbList_spec (V := V) p hsize SpongeVar.init prev.flatten
+  have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
+  mvcgen [ha, hsq]
+  rename_i _ _ _ habs _ _ hsqz
+  exact (hsqz _ (habs _ readsAt_init)).1
+
+/-- The guarded entries read entrywise once the mask does. -/
+private theorem maskedEntries_forall₂ {mask : List (BoolVar F)} {ms : List Bool}
+    (hm : List.Forall₂ (CircuitType.Reads V) mask ms) :
+    ∀ prev : List (List (FVar F)), List.Forall₂ (CircuitType.Reads V) (maskedEntries mask prev)
+      (maskedEntries ms (prev.map (·.map (·.val V)))) := by
+  induction hm with
+  | nil => intro prev; cases prev <;> exact .nil
+  | cons hb _ ih =>
+    intro prev
+    cases prev with
+    | nil => exact .nil
+    | cons cs css =>
+      refine List.rel_append ?_ (ih css)
+      rw [List.map_map, List.forall₂_map_right_iff, List.forall₂_map_left_iff]
+      exact List.forall₂_same.mpr fun x _ =>
+        CircuitType.reads_prod.mpr ⟨hb, CircuitType.reads_fvar.mpr rfl⟩
+
+omit [Field F] [DecidableEq F] in
+/-- The kept entries are the vectors whose guard is set, in order. -/
+private theorem kept_maskedEntries :
+    ∀ (ms : List Bool) (vs : List (List F)),
+      ((maskedEntries ms vs).filter (·.1)).map (·.2)
+        = (List.zipWith (fun m cs => if m then cs else []) ms vs).flatten
+  | [], vs => by cases vs <;> rfl
+  | _ :: _, [] => rfl
+  | m :: ms, cs :: vs => by
+    have := kept_maskedEntries ms vs
+    cases m <;> simp [maskedEntries, List.filter_append, List.filter_map, this,
+      Function.comp_def]
+
+omit [Field F] [DecidableEq F] in
+/-- There are no more guarded entries than challenges. -/
+private theorem maskedEntries_length_le :
+    ∀ (mask : List (BoolVar F)) (prev : List (List (FVar F))),
+      (maskedEntries mask prev).length ≤ prev.flatten.length
+  | [], prev => by cases prev <;> simp [maskedEntries]
+  | _ :: _, [] => by simp [maskedEntries]
+  | _ :: bs, cs :: css => by
+    have := maskedEntries_length_le bs css
+    simp only [maskedEntries, List.length_append, List.length_map, List.flatten_cons]
+    omega
+
+/-- Under any valuation satisfying the emitted constraints, with the mask reading as
+`m_0, …, m_{n−1}` and the challenge vectors as `c_j = (c_{j,0}, …, c_{j,k−1})`, the output
+reads as the first squeeze of the value sponge that absorbed exactly the kept vectors in
+order: `(squeeze p (absorb p init (c_{j₁} ++ … ++ c_{jₗ}))).1` for `j₁ < … < jₗ` the indices
+with `m_j = 1`. -/
+theorem maskedChallengeDigest_spec (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
+    (mask : List (BoolVar F)) (prev : List (List (FVar F))) (ms : List Bool)
+    (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
+    (hchar : ∀ k : ℕ, k ≤ prev.flatten.length → (k : F) = 0 → k = 0) :
+    ⦃⌜True⌝⦄ maskedChallengeDigest (c := Builder V (KimchiConstraint F)) p mask prev
+    ⦃⇓ d _ => ⌜d.val V = (Poseidon.squeeze p (Poseidon.absorb p Poseidon.init
+      (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1⌝⦄
+    := by
+  simp only [maskedChallengeDigest]
+  have h := OptSponge.squeeze_spec (V := V) p hsize hall _ _ (maskedEntries_forall₂ hm prev)
+    (fun k hk => hchar k (le_trans hk (maskedEntries_length_le mask prev)))
+  rw [kept_maskedEntries, List.zipWith_map_right] at h
+  exact h
+
+omit [DecidableEq F] in
+/-- The circuit transcript reads as `frTranscript` at one chunk per column. -/
+private theorem map_val_frTail (digestBefore recDigest ftEval1 : FVar F)
+    (pub : PointEvaluations (FVar F)) (evals : ProofEvaluations (FVar F)) :
+    (digestBefore :: frTail recDigest ftEval1 pub evals).map (·.val V)
+      = frTranscript (digestBefore.val V) (recDigest.val V) (ftEval1.val V)
+          (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]) := by
+  simp [frTail, frTranscript, PointEvaluations.map, ProofEvaluations.map, List.map_flatten,
+    Function.comp_def, Vector.toList_map, List.map_map]
+
+/-- Under any valuation satisfying the emitted constraints, with `digest` reading as `dv`
+and the inputs as themselves, the two squeezes are the wire verifier's
+`frSqueezes p (frTranscript digestBefore dv ft(ζω) pub evals)` — the raw elements behind
+`frOracles`' `(v, u)` (`Kimchi.Verifier.frOracles_eq_frPrechallenges`) — and the outputs `ξ`, `r`
+are their 128-bit decompositions: `x₁ = ξ + 2¹²⁸·h₁` and `x₂ = r + 2¹²⁸·h₂` for some
+`h₁, h₂ < 2¹²⁸`, with `r < 2¹²⁸` and, where the low bits are constrained, `ξ < 2¹²⁸`. -/
+theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (digestBefore : FVar F) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
+    (dv : F) (hd : ⦃⌜True⌝⦄ digest ⦃⇓ d _ => ⌜d.val V = dv⌝⦄)
+    (ftEval1 : FVar F) (pub : PointEvaluations (FVar F)) (evals : ProofEvaluations (FVar F))
+    (endo : FVar F) (xiConstrainLowBits : Bool) :
+    ⦃⌜True⌝⦄
+    squeezeXiR (c := Builder V (KimchiConstraint F)) p digestBefore digest ftEval1 pub evals
+      endo xiConstrainLowBits
+    ⦃⇓ out _ => ⌜
+      let sq := frSqueezes p
+        (frTranscript (digestBefore.val V) dv (ftEval1.val V)
+          (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))
+      let x₁ := sq.1
+      let x₂ := sq.2
+      ∃ h₁ h₂ : ℕ, h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧
+        x₁ = out.1.val.val V + 2 ^ 128 * h₁ ∧ x₂ = out.2.val.val V + 2 ^ 128 * h₂ ∧
+        (xiConstrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ out.1.val.val V = n) ∧
+        (∃ n : ℕ, n < 2 ^ 128 ∧ out.2.val.val V = n)⌝⦄ := by
+  simp only [squeezeXiR]
+  have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init digestBefore
+  have ha := fun sv d => absorbList_spec (V := V) p hsize sv (frTail d ftEval1 pub evals)
+  have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
+  have hlo := fun b x => lowest128Bits'_spec (V := V) h2 h3 b endo x
+  mvcgen [h0, hd, ha, hsq, hlo]
+  rename_i _ _ _ hA _ _ hdv svB _ hB _ _ hsq1 _ _ hlo1 _ _ hsq2 _ _ hlo2
+  have hS : SpongeVar.ReadsAt V svB (Poseidon.absorb p Poseidon.init
+      (frTranscript (digestBefore.val V) dv (ftEval1.val V)
+        (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))) := by
+    have h := hB _ (hA _ readsAt_init)
+    rw [← hdv, ← map_val_frTail, List.map_cons, Poseidon.absorb, List.foldl_cons]
+    rw [Poseidon.absorb] at h
+    exact h
+  obtain ⟨hx1, hs1⟩ := hsq1 _ hS
+  obtain ⟨hx2, -⟩ := hsq2 _ hs1
+  obtain ⟨hiv₁, he₁, ⟨n₁, hn₁, rfl⟩, hb₁⟩ := hlo1
+  obtain ⟨hiv₂, he₂, ⟨n₂, hn₂, rfl⟩, hr₂⟩ := hlo2
+  simp only [frSqueezes]
+  refine ⟨n₁, n₂, hn₁, hn₂, ?_, ?_, hb₁, hr₂⟩
+  · rw [← hx1, he₁]
+  · rw [← hx2, he₂]
+
+end Pickles

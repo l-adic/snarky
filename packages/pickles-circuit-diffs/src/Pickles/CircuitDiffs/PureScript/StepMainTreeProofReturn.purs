@@ -33,6 +33,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Compiled, Slot)
@@ -149,6 +150,7 @@ compileStepMainTreeProofReturn params = do
               (nrrArt.stepDomainLog2 :< Vector.nil)
                 :< (selfLog2 :< Vector.nil)
                 :< Vector.nil
+          , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints:
               VkBlueprintConst nrrArt.wrapVk /\ VkBlueprintShared /\ unit
           }

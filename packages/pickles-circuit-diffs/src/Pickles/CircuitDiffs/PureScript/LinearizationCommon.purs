@@ -12,9 +12,10 @@ import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (PolishToken)
+import Pickles.PlonkChecks.Domain (zkPolynomial)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (FVar, Snarky, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (FVar, Snarky, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
@@ -124,9 +125,11 @@ linearizationCircuitM domLog2 tokens inputs = do
 
   -- 2. Eager zk_polynomial = (zeta - ω⁻¹)(zeta - ω⁻²)(zeta - ω⁻³)
   -- Matches OCaml plonk_checks.ml:272-279
-  _zkPoly <- do
-    t1 <- mul_ (zeta `sub_` const_ omegaToMinus1) (zeta `sub_` const_ omegaToMinus2)
-    mul_ t1 (zeta `sub_` const_ omegaToMinus3)
+  _zkPoly <- zkPolynomial zeta
+    { omegaToMinus1: const_ omegaToMinus1
+    , omegaToZkPlus1: const_ omegaToMinus2
+    , omegaToZk: const_ omegaToMinus3
+    }
 
   -- 3. Eager zeta_to_n_minus_1 = zeta^(2^domainLog2) - 1
   -- Matches OCaml plonk_checks.ml:294 (separate from the lazy binding at :281)

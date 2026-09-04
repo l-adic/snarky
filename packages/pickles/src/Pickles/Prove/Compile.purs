@@ -306,6 +306,10 @@ type CompileConfig prevsSpec slotVKs =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
   , perSlotImportedVKs :: slotVKs
   , debug :: Boolean
+  -- | The compile's declared `@stepChunks` (OCaml `compile.ml`'s
+  -- | `num_chunks`, one value for every branch). `Self` slots read their
+  -- | prev step proof's `zk_rows` from it.
+  , stepNumChunks :: Int
   -- | OCaml `override_wrap_domain` (`compile.ml`). When `Just o`, the
   -- | rule's wrap circuit uses domain log2 `o` instead of the default
   -- | `wrap_domains.h` (`common.ml:25-29`: N0→13, N1→14, N2→15).
@@ -639,6 +643,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
             , blindingH:
                 coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
             , perSlotFopDomainLog2s: Vector.nil
+            , perSlotFopZkRows: Vector.nil
             , perSlotVkBlueprints: unit
             }
         , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
@@ -802,6 +807,13 @@ instance
           Vector.replicate
             (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
 
+      -- The prev step proof's `zk_rows` (OCaml `step_main.ml`'s `d.zk_rows`):
+      -- `Self` is this compile's own step circuit at its declared chunk
+      -- count; `External` reads the imported rule's declared `@stepChunks`.
+      slotFopZkRows = case headSlotWrapKey of
+        Self -> zkRowsForNumChunks cfg.stepNumChunks
+        External vks -> zkRowsForNumChunks vks.stepNumChunks
+
       slotLagrange =
         -- Per-slot wrap-VK lagrange basis at the compile-wide
         -- `wrapVkChunks` (Dim 2). The chunk count is inferred from the
@@ -842,6 +854,8 @@ instance
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
+              , perSlotFopZkRows:
+                  slotFopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
               , perSlotVkBlueprints:
                   headSlotScaffold /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
               }
@@ -872,9 +886,9 @@ instance
             , slotStepDomainLog2:
                 ProofFFI.proverIndexDomainLog2 stepCR.proverIndex
             -- `Self`'s prev step circuit is the outer rule itself, so its
-            -- num_chunks is the compile-wide `@nc` type param. Wrap is
+            -- num_chunks is the compile-wide declared `@stepChunks`. Wrap is
             -- universally nc=1 (`num_chunks_by_default`).
-            , slotStepZkRows: zkRowsForNumChunks (reflectType (Proxy @slotVkChunks))
+            , slotStepZkRows: zkRowsForNumChunks cfg.stepNumChunks
             , slotWrapZkRows: zkRowsForNumChunks 1
             }
           External vks ->
@@ -1560,6 +1574,10 @@ instance
                   -- is in `Step.FinalizeOtherProof`'s SideLoadedMode).
                   selfStepDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
+              , perSlotFopZkRows:
+                  -- Side-loaded prevs are single-chunk (OCaml `compile.ml`'s
+                  -- side-loaded `For_step` at `zk_rows_by_default`).
+                  zkRowsForNumChunks 1 :< restShape.stepProveCtx.srsData.perSlotFopZkRows
               , perSlotVkBlueprints:
                   sideloadedPerDomainLagrangeAts
                     /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
@@ -2638,6 +2656,8 @@ class
   prePassDomainLog2s
     :: AdviceHandler r
     -> CompileMultiConfig
+    -> Int
+    -- ^ the declared `@stepChunks`
     -> Vector topBranches Int
     -> rulesCarrier
     -> Effect (Vector branches Int)
@@ -2651,6 +2671,8 @@ class
   runMultiCompile
     :: AdviceHandler r
     -> CompileMultiConfig
+    -> Int
+    -- ^ the declared `@stepChunks`
     -> Vector topBranches Int
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
@@ -2749,12 +2771,14 @@ runMultiCompileFull
   => Reflectable topBranches Int
   => AdviceHandler r
   -> CompileMultiConfig
+  -> Int
+  -- ^ the declared `@stepChunks`
   -> rulesCarrier
   -> Effect
        { stepResults :: perBranchStepCompileResults
        , log2s :: Vector topBranches Int
        }
-runMultiCompileFull handler cfg rules = do
+runMultiCompileFull handler cfg stepNumChunks rules = do
   let
     placeholder = Vector.replicate roughDomainsLog2
   log2s <- prePassDomainLog2s
@@ -2776,6 +2800,7 @@ runMultiCompileFull handler cfg rules = do
     @r
     handler
     cfg
+    stepNumChunks
     placeholder
     rules
   -- Lazy, persistent Lagrange-basis warming (opt-in via `lagrangeCache`). The
@@ -2820,6 +2845,7 @@ runMultiCompileFull handler cfg rules = do
     @r
     handler
     cfg
+    stepNumChunks
     log2s
     rules
   pure { stepResults, log2s }
@@ -2849,8 +2875,8 @@ instance
     Unit
     r
   where
-  prePassDomainLog2s _ _ _ _ = pure Vector.nil
-  runMultiCompile _ _ _ _ = pure unit
+  prePassDomainLog2s _ _ _ _ _ = pure Vector.nil
+  runMultiCompile _ _ _ _ _ = pure unit
   buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
 
 instance
@@ -3024,8 +3050,8 @@ instance
     )
     r
   where
-  prePassDomainLog2s handler cfg placeholder (RuleEntry r /\ restEntries) = do
-    let placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs placeholder
+  prePassDomainLog2s handler cfg stepNumChunks placeholder (RuleEntry r /\ restEntries) = do
+    let placeholderCtx = buildStepProveCtx @prevsSpec cfg stepNumChunks r.slotVKs placeholder
     headLog2 <- r.preComputeStepDomainLog2Fn handler placeholderCtx
     restVec <- prePassDomainLog2s
       @rest
@@ -3046,11 +3072,12 @@ instance
       @r
       handler
       cfg
+      stepNumChunks
       placeholder
       restEntries
     pure (headLog2 :< restVec)
-  runMultiCompile handler cfg log2s (RuleEntry r /\ restEntries) = do
-    let ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2s
+  runMultiCompile handler cfg stepNumChunks log2s (RuleEntry r /\ restEntries) = do
+    let ctx = buildStepProveCtx @prevsSpec cfg stepNumChunks r.slotVKs log2s
     headResult <- r.stepCompileFn handler ctx
     tailResults <- runMultiCompile
       @rest
@@ -3071,6 +3098,7 @@ instance
       @r
       handler
       cfg
+      stepNumChunks
       log2s
       restEntries
     pure (headResult /\ tailResults)
@@ -3426,15 +3454,18 @@ buildStepProveCtx
   => Reflectable nd Int
   => Reflectable wrapVkChunks Int
   => CompileMultiConfig
+  -> Int
+  -- ^ the declared `@stepChunks`
   -> slotVKs
   -> Vector nd Int
   -> PProveStep.StepProveContext wrapVkChunks mpv nd blueprints
-buildStepProveCtx cfg slotVKs selfStepDomainLog2s =
+buildStepProveCtx cfg stepNumChunks slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
       { srs: cfg.srs
       , perSlotImportedVKs: slotVKs
       , debug: cfg.debug
+      , stepNumChunks
       , proofCache: cfg.proofCache
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
@@ -3565,7 +3596,7 @@ runMultiProverBody
   -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
 runMultiProverBody
   handler
-  _ncProxy
+  ncProxy
   branchIdx
   cfg
   wrapResult
@@ -3580,6 +3611,7 @@ runMultiProverBody
       { srs: cfg.srs
       , perSlotImportedVKs: r.slotVKs
       , debug: cfg.debug
+      , stepNumChunks: reflectType ncProxy
       , proofCache: cfg.proofCache
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
@@ -4037,6 +4069,7 @@ compileMulti handler cfg rules = do
     @r
     handler
     cfg
+    (reflectType (Proxy :: Proxy stepChunks))
     rules
 
   -- Validate declared @stepChunks against per-branch num_chunks

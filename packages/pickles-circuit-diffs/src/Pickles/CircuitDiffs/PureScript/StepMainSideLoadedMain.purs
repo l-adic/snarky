@@ -25,6 +25,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
@@ -139,6 +140,7 @@ compileStepMainSideLoadedMain params = do
           -- compile.
           , perSlotFopDomainLog2s:
               (0 :< Vector.nil) :< Vector.nil
+          , perSlotFopZkRows: zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints:
               params.sideloadedPerDomainLagrangeAt /\ unit
           }

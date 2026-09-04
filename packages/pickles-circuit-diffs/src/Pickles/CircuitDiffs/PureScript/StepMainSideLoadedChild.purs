@@ -143,6 +143,7 @@ compileStepMainSideLoadedChild params = do
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
+          , perSlotFopZkRows: Vector.nil
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg

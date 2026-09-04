@@ -12,6 +12,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
@@ -116,6 +117,7 @@ fopWrapCircuit input =
           } :< Vector.nil
       , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
       , srsLengthLog2: wrapSrsLengthLog2
+      , zkRows: zkRowsByDefault
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
       , domainMode: KnownDomainsMode

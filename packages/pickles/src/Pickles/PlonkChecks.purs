@@ -14,18 +14,28 @@ module Pickles.PlonkChecks
   , extractEvalFields
   , absorbAllEvals
   , absorbPointEval
+  , challengeDigest
+  , maskedChallengeDigest
+  , squeezeXiR
   , module Pickles.PlonkChecks.Permutation
   ) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Foldable (traverse_)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (PointEval)
+import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks.Permutation (PermutationInput)
-import Pickles.Sponge (class MonadSponge, absorb)
+import Pickles.Sponge (class MonadSponge, absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar', squeezeScalarChallenge)
+import Poseidon (class PoseidonField)
+import Snarky.Circuit.DSL (BoolVar, FVar, SizedF, Snarky)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
 -------------------------------------------------------------------------------
 -- | Evaluation Types
@@ -133,3 +143,62 @@ absorbPointEval pe = do
   absorb pe.zeta
   absorb pe.omegaTimesZeta
 
+-------------------------------------------------------------------------------
+-- | The Fiat-Shamir schedule of finalize_other_proof
+-------------------------------------------------------------------------------
+
+-- | The digest of the previous proofs' bulletproof challenges (OCaml
+-- | `challenge_digest` in wrap_verifier.ml): a fresh sponge absorbing every
+-- | challenge, squeezed once.
+challengeDigest
+  :: forall n d f r
+   . PoseidonField f
+  => PrimeField f
+  => Vector n (Vector d (FVar f))
+  -> Snarky f (KimchiConstraint f) r (FVar f)
+challengeDigest prevChallenges = evalSpongeM initialSpongeCircuit do
+  traverse_ (traverse_ absorb) prevChallenges
+  squeeze
+
+-- | The digest of the previous proofs' bulletproof challenges under the
+-- | proofs-verified mask (OCaml `challenge_digest` in step_verifier.ml): an
+-- | `OptSponge` absorbing each challenge only where its proof's slot is real.
+maskedChallengeDigest
+  :: forall n d f r
+   . PoseidonField f
+  => PrimeField f
+  => Vector n (BoolVar f)
+  -> Vector n (Vector d (FVar f))
+  -> Snarky f (KimchiConstraint f) r (FVar f)
+maskedChallengeDigest mask prevChallenges =
+  OptSponge.squeeze OptSponge.create $ Array.concat $ Vector.toUnfoldable $
+    Vector.zipWith (\keep chals -> map (Tuple keep) (Vector.toUnfoldable chals))
+      mask
+      prevChallenges
+
+-- | The fr-sponge schedule (OCaml step_verifier.ml step 7, wrap_verifier.ml
+-- | step 4): absorb the sponge digest before evaluations, then the challenge
+-- | digest (computed here, between the two absorbs), then every evaluation;
+-- | squeeze xi and r as 128-bit scalar challenges. `xiConstrainLowBits` is
+-- | OCaml's `squeeze_challenge` (true, step) versus `squeeze_scalar` (false,
+-- | wrap) for xi; r is always `squeeze_challenge`.
+squeezeXiR
+  :: forall f cr
+   . PoseidonField f
+  => PrimeField f
+  => FieldSizeInBits f 255
+  => { spongeDigestBeforeEvaluations :: FVar f
+     , challengeDigest :: Snarky f (KimchiConstraint f) cr (FVar f)
+     , allEvals :: AllEvals (FVar f)
+     , endo :: FVar f
+     , xiConstrainLowBits :: Boolean
+     }
+  -> Snarky f (KimchiConstraint f) cr { xi :: SizedF 128 (FVar f), r :: SizedF 128 (FVar f) }
+squeezeXiR p = evalSpongeM initialSpongeCircuit do
+  absorb p.spongeDigestBeforeEvaluations
+  digest <- liftSnarky p.challengeDigest
+  absorb digest
+  absorbAllEvals p.allEvals
+  xi <- squeezeScalar' p.xiConstrainLowBits { endo: p.endo }
+  r <- squeezeScalarChallenge { endo: p.endo }
+  pure { xi, r }

@@ -57,6 +57,19 @@ def Type1.fromShiftedCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ)
   simp [Type1.fromShiftedCircuit, Type1.fromShifted, Pasta.Shifted.unshiftType1, CVar.val,
     add_assoc]
 
+/-- The `Type1` encode in circuit (PS `ofFieldType1Circuit`, OCaml `Type1.of_field`): the
+affine `(s − 2^n − 1) / 2`, emitting no constraint. -/
+def Type1.ofFieldCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ) (s : FVar F) : FVar F :=
+  CVar.scale_ 2⁻¹ (CVar.sub_ s (.const (2 ^ n + 1)))
+
+/-- The circuit encode reads as the encode of the reading. -/
+@[simp] theorem Type1.val_ofFieldCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ)
+    (s : FVar F) (V : Valuation F) :
+    (Type1.ofFieldCircuit n s).val V = Pasta.Shifted.shiftType1 n (s.val V) := by
+  simp only [Type1.ofFieldCircuit, CVar.val_scale_, CVar.val_sub_, CVar.val,
+    Pasta.Shifted.shiftType1, div_eq_mul_inv]
+  ring
+
 /-- A scalar carried shifted by `2^n` (PS `Type2`): the wrapped value `t` stands for
 `t + 2^n`, the representation used when the scalar field is the larger of the pair. -/
 structure Type2 (α : Type u) where

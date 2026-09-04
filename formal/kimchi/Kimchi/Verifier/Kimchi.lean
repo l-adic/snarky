@@ -113,6 +113,49 @@ structure ProofEvaluations (E : Type*) where
   /-- The endoScalar selector's evaluation pair. -/
   endomulScalarSelector : PointEvaluations E
 
+/-- Push a map through an evaluation pair. -/
+def PointEvaluations.map {α β : Type*} (f : α → β) (e : PointEvaluations α) :
+    PointEvaluations β :=
+  ⟨f e.zeta, f e.zetaOmega⟩
+
+/-- Push a map through the evaluation record, pair by pair. -/
+def ProofEvaluations.map {α β : Type*} (f : α → β) (e : ProofEvaluations α) :
+    ProofEvaluations β where
+  w := e.w.map (PointEvaluations.map f)
+  z := e.z.map f
+  s := e.s.map (PointEvaluations.map f)
+  coefficients := e.coefficients.map (PointEvaluations.map f)
+  genericSelector := e.genericSelector.map f
+  poseidonSelector := e.poseidonSelector.map f
+  completeAddSelector := e.completeAddSelector.map f
+  mulSelector := e.mulSelector.map f
+  emulSelector := e.emulSelector.map f
+  endomulScalarSelector := e.endomulScalarSelector.map f
+
+/-- The fr-sponge transcript (verifier.rs:284–405) as the list absorbed, every entry widened
+to the column's chunk vector: the fq-sponge digest, the recursion digest, `ft(ζω)`, the
+two public chunk vectors, then per column the `ζ`-chunk vector and the `ζω`-chunk vector
+in the `absorb_evaluations` order (`z`, the six selectors, the witness columns, the
+coefficient columns, the σ columns). -/
+def frTranscript {F : Type*} {nc : ℕ} (fqDig recDigest ftEval1 : F)
+    (pubEvals : PointEvaluations (Vector F nc)) (evals : ProofEvaluations (Vector F nc)) :
+    List F :=
+  let pt := fun (e : PointEvaluations (Vector F nc)) => e.zeta.toList ++ e.zetaOmega.toList
+  [fqDig, recDigest, ftEval1] ++ pubEvals.zeta.toList ++ pubEvals.zetaOmega.toList
+    ++ pt evals.z ++ pt evals.genericSelector ++ pt evals.poseidonSelector
+    ++ pt evals.completeAddSelector ++ pt evals.mulSelector ++ pt evals.emulSelector
+    ++ pt evals.endomulScalarSelector
+    ++ (evals.w.toList.map pt).flatten ++ (evals.coefficients.toList.map pt).flatten
+    ++ (evals.s.toList.map pt).flatten
+
+/-- The fr-sponge's two raw squeezes over a transcript (verifier.rs:388–403, before the
+limb packing): a fresh sponge absorbing the transcript, squeezed once for `v` and again for
+`u`. `frOracles` packs each to its low 128 bits and endo-expands
+(`frOracles_eq_frPrechallenges`); the circuit's fr-sponge is stated over the same pair. -/
+def frSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (transcript : List F) : F × F :=
+  let sq := Poseidon.squeeze p (Poseidon.absorb p Poseidon.init transcript)
+  (sq.1, (Poseidon.squeeze p sq.2).1)
+
 /-! ## The checked records -/
 
 /-- The public-evaluation source, resolving production's control flow
@@ -276,36 +319,61 @@ def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
   let (zeta, s) := squeezeChallenge C.sponge s
   ⟨beta, gamma, alpha, zeta, fqDigest C s, s⟩
 
-/-- The fr-sponge schedule (verifier.rs:284–405): every absorb widened to the column's
-chunk vector — the two public chunk vectors via `absorb_multiple` (:391–392), then per
-column the `ζ`-chunk vector and the `ζω`-chunk vector (`absorb_evaluations`,
-plonk_sponge.rs: one `sponge.absorb` per point vector), in the `absorb_evaluations`
-order. -/
+/-- The fr-sponge schedule (verifier.rs:284–405): absorb `frTranscript`, with the
+recursion digest the fr-sponge digest of the empty recursion list, then squeeze the two
+prechallenges and expand them. -/
 def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
     (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     C.ScalarField × C.ScalarField :=
   let sp := frSpec C
-  let ab := fun (s : FqSponge.S C.scalar)
-      (e : PointEvaluations (Vector C.ScalarField nc)) =>
-    absorbFq sp (absorbFq sp s e.zeta.toList) e.zetaOmega.toList
-  let s := absorbFq sp FqSponge.init [fqDig]
-  let s := absorbFq sp s [frDigest C sp FqSponge.init]
-  let s := absorbFq sp s [cp.ftEval1]
-  let s := absorbFq sp s pubEvals.zeta.toList
-  let s := absorbFq sp s pubEvals.zetaOmega.toList
-  let s := ab s cp.evals.z
-  let s := ab s cp.evals.genericSelector
-  let s := ab s cp.evals.poseidonSelector
-  let s := ab s cp.evals.completeAddSelector
-  let s := ab s cp.evals.mulSelector
-  let s := ab s cp.evals.emulSelector
-  let s := ab s cp.evals.endomulScalarSelector
-  let s := cp.evals.w.foldl ab s
-  let s := cp.evals.coefficients.foldl ab s
-  let s := cp.evals.s.foldl ab s
+  let s := absorbFq sp FqSponge.init
+    (frTranscript fqDig (frDigest C sp FqSponge.init) cp.ftEval1 pubEvals cp.evals)
   let (v', s) := challengeNat sp s
   let (u', _) := challengeNat sp s
   (endoExpand C.sponge.lam v', endoExpand C.sponge.lam u')
+
+/-- The fr-sponge's two 128-bit prechallenges over a transcript, as naturals: the values
+`challengeNat` packs from the two raw squeezes (`frSqueezes`), before the endomorphism
+expansion. `frOracles` is their expansion (`frOracles_eq_frPrechallenges`). -/
+def frPrechallenges {p : ℕ} [Field (ZMod p)] (params : Poseidon.Params (ZMod p))
+    (transcript : List (ZMod p)) : ℕ × ℕ :=
+  let sq := frSqueezes params transcript
+  (sq.1.val % 2 ^ 128, sq.2.val % 2 ^ 128)
+
+/-- `frOracles` is the endo-expansion of `frPrechallenges` over `frTranscript` at the empty
+recursion list's digest: `challengeNat` from an empty limb buffer is one raw squeeze's value
+mod `2^128`. -/
+theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    frOracles C cp fqDig pubEvals =
+      let pre := frPrechallenges C.frParams
+        (frTranscript fqDig (frDigest C (frSpec C) FqSponge.init) cp.ftEval1 pubEvals cp.evals)
+      (endoExpand C.sponge.lam pre.1, endoExpand C.sponge.lam pre.2) := by
+  simp only [frOracles, frPrechallenges, frSqueezes, absorbFq, challengeNat_fresh]
+  rfl
+
+/-- `lo` is the prechallenge `pre` up to the wrap-around slack of a 128-bit decomposition:
+`pre` itself (`k = 0`) or one of at most three aliases `(pre + k·p) mod 2¹²⁸`. -/
+def PrechallengeAlias (p pre lo : ℕ) : Prop :=
+  ∃ k ≤ 3, lo = (pre + k * p) % 2 ^ 128
+
+/-- The slack the circuit's `lowest_128_bits` leaves: a decomposition `x = lo + 2¹²⁸·hi` with
+`lo, hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is
+the prechallenge `x.val % 2¹²⁸` only up to `PrechallengeAlias`. -/
+theorem low128_of_decomp {p : ℕ} (hp : 2 ^ 254 < p) (x : ZMod p) (lo hi : ℕ)
+    (hlo : lo < 2 ^ 128) (hhi : hi < 2 ^ 128)
+    (h : x = (lo : ZMod p) + 2 ^ 128 * (hi : ZMod p)) :
+    PrechallengeAlias p (x.val % 2 ^ 128) lo := by
+  have hN : ((lo + 2 ^ 128 * hi : ℕ) : ZMod p) = x := by rw [h]; push_cast; ring
+  have hv : (lo + 2 ^ 128 * hi) % p = x.val := by rw [← ZMod.val_natCast, hN]
+  have hN' : x.val + (lo + 2 ^ 128 * hi) / p * p = lo + 2 ^ 128 * hi := by
+    rw [← hv, Nat.mod_add_div']
+  refine ⟨(lo + 2 ^ 128 * hi) / p, ?_, ?_⟩
+  · have := (Nat.div_lt_iff_lt_mul (by omega : 0 < p)).2
+      (show lo + 2 ^ 128 * hi < 4 * p by omega)
+    omega
+  · rw [Nat.mod_add_mod, hN']
+    omega
 
 /-! ## The scalar side -/
 

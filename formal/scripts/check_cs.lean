@@ -16,6 +16,13 @@ does not see, since a cell holding a once-used variable and an empty cell both w
 to themselves — is the per-cell OCCUPANCY pattern and the identification the ids
 induce across cells.
 
+Harness rule, the same as the PureScript side's (`Common.purs`): a target lays out the
+dump's inputs and calls the LIBRARY circuits (`Pickles.*`, `Snarky.*`) on them, never a
+re-implementation written here — the point is to prove the library circuits equivalent,
+so a library change must surface as a mismatch rather than be absorbed by the harness.
+Native constant folding (generators, their powers, endomorphism coefficients) is not
+circuit logic.
+
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
 `Basic` gadget vocabulary, the landed gate gadgets (poseidon, endo_scalar,
@@ -25,13 +32,16 @@ composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
 checks are CS-side only), ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
 the linearization prelude, against the PS `FtEval0Common` harness), and cip_{step,wrap}
 (the proved `Pickles.combinedInnerProduct` over `Pickles.bPolyCircuit`, against the PS
-`Cip` harness — the wrap column's first pickles sub-circuit). Deferred, with the
-blocker each waits on:
+`Cip` harness — the wrap column's first pickles sub-circuit), and the scalar side's
+remaining slices through to finalize_other_proof_{step,wrap} (the permutation scalar,
+expand_plonk, the challenge digests, the fr-sponge schedule, and the whole assembled
+`Pickles.finalizeOtherProofStep`/`Wrap` against the PS `FopStep`/`FopWrap` harnesses).
+Deferred, with the blocker each waits on:
 - ftcomm_*, xhat_* (and everything downstream: ivp, verify, wrap/step mains) — the
   pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
   the VarBaseMul gadget's own oracle checks);
-- hash_messages_*, finalize_other_proof_*, schnorr_verify — the sponge circuit layer
-  (packages/random-oracle; FOP additionally the OptSponge variant);
+- hash_messages_*, schnorr_verify — the sponge circuit layer
+  (packages/random-oracle);
 - group_map_step — activatable now (Basic-only), transcription pending a
   Tonelli–Shanks sqrt witness helper;
 - combine_poly_wrap — gadget-complete, pending a transcription of `combinePolynomials`;
@@ -63,6 +73,9 @@ import Pickles.Linearization.Circuit
 import Pickles.FtEval0
 import Pickles.IPA
 import Pickles.CombinedInnerProduct
+import Pickles.PermScalar
+import Pickles.FrSponge
+import Pickles.FinalizeOtherProof
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -458,22 +471,6 @@ The 90-input layout is OCaml's (`dump_circuit_impl.ml`), not what the constant t
 coefficients, `s` and the selectors arrive as `(ζ, ζω)` pairs though only the `ζ`
 component of the first two is ever read, and `z`/`s` are not read at all. -/
 
-open Pickles.Linearization in
-/-- `α^0 … α^(n+1)`, by successive multiplication — 69 rows at the deployed length, and
-the reason the interpreter's `alphaPow` is a lookup rather than an exponentiation. -/
-def alphaGo {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) :
-    Nat → FVar F → Array (FVar F) → CircuitM F (KimchiConstraint F) (Array (FVar F))
-  | 0, _, acc => pure acc
-  | n + 1, prev, acc => do
-    let next ← Snarky.mul alpha prev
-    alphaGo alpha n next (acc.push next)
-
-open Pickles.Linearization in
-/-- The precomputed table: `[1, α, α², …, α^70]`. -/
-def precomputeAlphaPowers {F : Type} [Field F] [DecidableEq F] (alpha : FVar F) :
-    CircuitM F (KimchiConstraint F) (Array (FVar F)) :=
-  alphaGo alpha 69 alpha #[.const 1, alpha]
-
 open Pickles.Linearization Kimchi.Protocol.Linearization in
 /-- The interpreter's inputs from the 90-entry layout: `get i` is input `i`, `pows` the
 precomputed α-table. -/
@@ -514,10 +511,9 @@ def linearizationCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side
   let om3 := om2 * om1
   let alpha := get 86
   let zeta := get 89
-  let pows ← precomputeAlphaPowers alpha
-  -- eager zk_polynomial, discarded
-  let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
-  let _ ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
+  let pows ← Pickles.Linearization.precomputeAlphaPowers alpha
+  -- eager zk_polynomial at constant powers, discarded
+  let _ ← Pickles.zkPolynomial zeta ⟨.const om1, .const om2, .const om3⟩
   -- eager zeta^n - 1, discarded
   let _ ← Snarky.pow zeta (2 ^ domLog2)
   evaluate ((linearizationInputs get pows).toEnv side.endo side.mds lookupZero (fun _ => false)
@@ -557,10 +553,9 @@ def ftEval0CsCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
   let om3 := om2 * om1
   let alpha := get 86
   let zeta := get 89
-  let pows ← precomputeAlphaPowers alpha
-  -- eager zk_polynomial
-  let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
-  let zkPoly ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
+  let pows ← Pickles.Linearization.precomputeAlphaPowers alpha
+  -- eager zk_polynomial at constant powers
+  let zkPoly ← Pickles.zkPolynomial zeta ⟨.const om1, .const om2, .const om3⟩
   -- eager zeta^n - 1
   let zetaToN ← Snarky.pow zeta (2 ^ domLog2)
   let ext : Pickles.PermInputs (ZMod p) :=
@@ -583,6 +578,10 @@ has two proofs-verified mask booleans first and a Type1 claim; the wrap side no 
 Type2 claim. An entry's bit is the mask bit on the step side and the constant `true_` elsewhere,
 which `selectField` folds to no row. -/
 
+/-- The two previous-challenge vectors from `base`. -/
+def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
+  [(List.range 16).map fun i => get (base + i), (List.range 16).map fun i => get (base + 16 + i)]
+
 open Pickles in
 /-- The shared body from `base` on: the challenge polynomials of both previous proofs at
 `ζ` then `ζω`, the two batches, the gadget, and the equality with the unshifted claim. `sg`
@@ -591,14 +590,14 @@ def cipCore {p : ℕ} [Fact p.Prime] (get : ℕ → FVar (ZMod p)) (base : ℕ)
     (sg : Fin 2 → FVar (ZMod p) → BoolVar (ZMod p) × FVar (ZMod p)) (expected : FVar (ZMod p)) :
     CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
   let at_ (i : ℕ) : FVar (ZMod p) := get (base + i)
-  let chals (j : ℕ) : List (FVar (ZMod p)) := (List.range 16).map fun k => at_ (16 * j + k)
+  let chals := prevChallengesOf at_ 0
   let evals (b : ℕ) : List (FVar (ZMod p)) := (List.range 43).map fun j => at_ (b + j)
   let zeta := at_ 32
   let zetaw := at_ 33
   let tagged (l : List (FVar (ZMod p))) : List (BoolVar (ZMod p) × FVar (ZMod p)) :=
     List.zipWith (fun (j : Fin 2) x => sg j x) [0, 1] l
-  let sgZeta ← challengePolyEvals zeta [chals 0, chals 1]
-  let sgZetaw ← challengePolyEvals zetaw [chals 0, chals 1]
+  let sgZeta ← challengePolyEvals zeta chals
+  let sgZetaw ← challengePolyEvals zetaw chals
   let actual ← combinedInnerProduct (at_ 34) (at_ 35)
     (buildEvalList (tagged sgZeta) (at_ 38) (at_ 36) (evals 40))
     (buildEvalList (tagged sgZetaw) (at_ 39) (at_ 37) (evals 83))
@@ -615,6 +614,156 @@ def cipStepCircuit (input : Vector (FVar Fp) 129) : CircuitM Fp C PUnit :=
 def cipWrapCircuit (input : Vector (FVar Fq) 127) : CircuitM Fq Cq PUnit :=
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   cipCore get 0 (fun _ x => (true_, x)) (Type2.fromShiftedCircuit 255 ⟨get 126⟩)
+
+/-! ## The permutation scalar circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.PlonkChecksPassed`: the 18-input layout — `α`,
+`β`, `γ`, `zkPolynomial`, `z(ζω)`, `σ₀…σ₅`, `w₀…w₅`, the claimed perm — with `α²¹` by `pow`
+as the dump computes it, `Pickles.permScalarCircuit`, and the shifted comparison: the claim
+against the Type1 encode of the scalar on the step side, the Type2 decode of the claim
+against the scalar on the wrap side. -/
+
+open Pickles in
+/-- The shared body: `α²¹`, the scalar, and `compare claimed actual`. -/
+def permCheckCore {p : ℕ} [Fact p.Prime] (input : Vector (FVar (ZMod p)) 18)
+    (compare : FVar (ZMod p) → FVar (ZMod p) →
+      CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (BoolVar (ZMod p))) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
+  let get (i : ℕ) : FVar (ZMod p) := input[i]?.getD (.const 0)
+  let a21 ← Snarky.pow (get 0) 21
+  let actual ← permScalarCircuit (fun i => get (11 + i)) (fun i => get (5 + i)) (get 4) (get 1)
+    (get 2) (get 3) a21
+  let _ ← compare (get 17) actual
+  pure PUnit.unit
+
+/-- `plonk_checks_passed_step_circuit`: the Type1 claim against the encoded scalar. -/
+def plonkChecksPassedStepCircuit (input : Vector (FVar Fp) 18) : CircuitM Fp C PUnit :=
+  permCheckCore input fun claimed actual => equals claimed (Type1.ofFieldCircuit 255 actual)
+
+/-- `plonk_checks_passed_wrap_circuit`: the decoded Type2 claim against the scalar. -/
+def plonkChecksPassedWrapCircuit (input : Vector (FVar Fq) 18) : CircuitM Fq Cq PUnit :=
+  permCheckCore input fun claimed actual => equals (Type2.fromShiftedCircuit 255 ⟨claimed⟩) actual
+
+/-! ## The challenge expansion circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.ExpandPlonk`: `α` at 0 and `ζ` at 3 expanded
+through `EndoScalar.toField` at the side's scalar endomorphism, `β`, `γ` untouched, then
+`ζω = ω · ζ` at the side's constant generator, which folds to no row. -/
+
+/-- The shared body at a side's endomorphism and generator. -/
+def expandPlonkCore {p : ℕ} [Fact p.Prime] (endo gen : ZMod p) (input : Vector (FVar (ZMod p)) 4) :
+    CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
+  let endoVar : FVar (ZMod p) := .const endo
+  let _ ← EndoScalar.toField 8 input[0] endoVar
+  let zeta ← EndoScalar.toField 8 input[3] endoVar
+  let _ ← mul (.const gen) zeta
+  pure PUnit.unit
+
+/-- `expand_plonk_step_circuit`. -/
+def expandPlonkStepCircuit (input : Vector (FVar Fp) 4) : CircuitM Fp C PUnit :=
+  expandPlonkCore endoVestaLam (Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)) input
+
+/-- `expand_plonk_wrap_circuit`. -/
+def expandPlonkWrapCircuit (input : Vector (FVar Fq) 4) : CircuitM Fq Cq PUnit :=
+  expandPlonkCore endoPallasLam (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15)) input
+
+/-! ## The evaluation layout
+
+The evaluation record as the dumps lay it out, shared by the `finalize_other_proof` targets
+below. The PS harnesses' fr-sponge slices (`SpongeChallenges`: the challenge digests and the
+schedule with `ξ`, `r`) are strict sub-circuits of those targets, so their byte-equality is
+checked there rather than as separate interpreter passes. -/
+
+open Kimchi.Verifier in
+/-- The public pair and the evaluation record from the dumps' layout, the public pair at
+`pubBase`: then the 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `s` pairs and the 6
+selector pairs. -/
+def evalsAt {p : ℕ} (get : ℕ → FVar (ZMod p)) (pubBase : ℕ) :
+    PointEvaluations (FVar (ZMod p)) × ProofEvaluations (FVar (ZMod p)) :=
+  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) :=
+    ⟨get (pubBase + i), get (pubBase + i + 1)⟩
+  (pair 0,
+   { w := Vector.ofFn fun j => pair (2 + 2 * j)
+     coefficients := Vector.ofFn fun j => pair (32 + 2 * j)
+     z := pair 62
+     s := Vector.ofFn fun j => pair (64 + 2 * j)
+     genericSelector := pair 76
+     poseidonSelector := pair 78
+     completeAddSelector := pair 80
+     mulSelector := pair 82
+     emulSelector := pair 84
+     endomulScalarSelector := pair 86 })
+
+/-! ## The `finalize_other_proof` circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.FopStep` and `FopWrap`: the whole scalar-side
+check on either side, `Pickles.finalizeOtherProofStep` at the step field's parameters over the
+151-input layout and `Pickles.finalizeOtherProofWrap` at the wrap field's over the 148-input
+layout, the wrap side's vanishing polynomial by `pow2PowMul` as the PS harness passes it. -/
+
+/-- The wrap-side coset shifts, production's `Shifts::new` values recorded in
+`kimchi/fixtures/linearization_pallas.json`. -/
+def wrapShifts : Fin permCols → Fq := fun i =>
+  (#[1, 328286983623303317637963920346571898945724874896624808297627776768640590563,
+     220790353665890403705559231885806581221301230221265349993193424985261418438,
+     211720422259245489258933986578227917398506328781182391541883955346082631533,
+     211634429328372259348572816867521795029192573698954618296359582461568682420,
+     317476258975906211462498873025720239242336777696786967497139785505242641540,
+     99141114743446054294525453467100398765600279346526770105380817318185104545]
+    : Array ℕ)[(i : ℕ)]?.getD 0
+
+open Pickles Kimchi.Verifier in
+/-- The unfinalized proof, witness and previous challenges from the dumps' layout: the five
+128-bit claims at 0–3 and 9, the shifted claims at 4–8, the 16 challenges at 10–25; then from
+`base` the public pair, 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `σ` pairs, 6
+selector pairs, `ft(ζω)`, the two previous-challenge vectors, and the digest before
+evaluations last. -/
+def fopInputsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
+    UnfinalizedProof (ZMod p) × ProofWitness (ZMod p) × List (List (FVar (ZMod p))) :=
+  let (pub, evals) := evalsAt get base
+  let u : UnfinalizedProof (ZMod p) :=
+    { alpha := ⟨get 0⟩, beta := ⟨get 1⟩, gamma := ⟨get 2⟩, zeta := ⟨get 3⟩,
+      zetaToSrsLength := get 4, zetaToDomainSize := get 5, perm := get 6,
+      combinedInnerProduct := get 7, b := get 8, xi := ⟨get 9⟩,
+      bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩,
+      spongeDigestBeforeEvaluations := get (base + 121) }
+  let w : ProofWitness (ZMod p) := { ftEval1 := get (base + 88), pub, evals }
+  (u, w, prevChallengesOf get (base + 89))
+
+/-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the
+step shifts, `srs_length_log2 = 16`, `zk_rows = 3`. -/
+def fopStepParams : Pickles.FopParams Fp :=
+  { sponge := Bulletproof.IpaVesta.curve.frParams, endoLam := endoVestaLam,
+    endo := Kimchi.Fixture.PS.fpSide.endo, mds := Kimchi.Fixture.PS.fpSide.mds,
+    toks := Pickles.Linearization.fpTokens, shifts := stepShifts, srsLengthLog2 := 16,
+    zkRows := 3 }
+
+/-- `finalize_other_proof_step_circuit`: the mask at 26–27 (unchecked), `domain_log2` at 28,
+the evaluations from 29, one known domain of `log2 = 16`. -/
+def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let (u, w, prev) := fopInputsOf get 29
+  let _ ← Pickles.finalizeOtherProofStep fopStepParams
+    [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] u w [.unchecked (get 26), .unchecked (get 27)]
+    prev (get 28)
+  pure PUnit.unit
+
+/-- The wrap side's parameters: the Pallas fr-sponge, `λ`, the `Fq` linearization and the
+wrap shifts, `srs_length_log2 = 15`, `zk_rows = 3`. -/
+def fopWrapParams : Pickles.FopParams Fq :=
+  { sponge := Bulletproof.IpaPallas.curve.frParams, endoLam := endoPallasLam,
+    endo := Kimchi.Fixture.PS.fqSide.endo, mds := Kimchi.Fixture.PS.fqSide.mds,
+    toks := Pickles.Linearization.fqTokens, shifts := wrapShifts, srsLengthLog2 := 15,
+    zkRows := 3 }
+
+/-- `finalize_other_proof_wrap_circuit`: the evaluations from 26, the constant domain of
+`log2 = 15`, `ζⁿ − 1` by `pow2PowMul`. -/
+def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let (u, w, prev) := fopInputsOf get 26
+  let _ ← Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15))
+    15 (fun z => do let t ← Pickles.pow2PowMul z 15; pure (CVar.sub_ t (.const 1))) u w prev
+  pure PUnit.unit
 
 /-! ## The wrap column
 
@@ -687,13 +836,25 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
         (ftEval0CsCircuit Kimchi.Fixture.PS.fpSide 16 Pickles.Linearization.fpTokens
           stepShifts)),
     ("cip_step_circuit", stepTarget (a := Vector Fp 129) (b := PUnit) cipStepCircuit),
+    ("plonk_checks_passed_step_circuit",
+      stepTarget (a := Vector Fp 18) (b := PUnit) plonkChecksPassedStepCircuit),
+    ("expand_plonk_step_circuit",
+      stepTarget (a := Vector Fp 4) (b := PUnit) expandPlonkStepCircuit),
+    ("finalize_other_proof_step_circuit",
+      stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
       wrapTarget (a := Vector Fq 90) (b := Fq)
         (linearizationCircuit Kimchi.Fixture.PS.fqSide 15 Pickles.Linearization.fqTokens)),
     ("cip_wrap_circuit", wrapTarget (a := Vector Fq 127) (b := PUnit) cipWrapCircuit),
-    ("b_correct_wrap_circuit", wrapTarget (a := Vector Fq 20) (b := PUnit) bCorrectWrapCircuit) ]
+    ("b_correct_wrap_circuit", wrapTarget (a := Vector Fq 20) (b := PUnit) bCorrectWrapCircuit),
+    ("plonk_checks_passed_wrap_circuit",
+      wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit),
+    ("expand_plonk_wrap_circuit",
+      wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit),
+    ("finalize_other_proof_wrap_circuit",
+      wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir

@@ -18,6 +18,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Compiled, Slot)
@@ -108,6 +109,7 @@ compileStepMainSimpleChain params = do
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: (selfLog2 :< Vector.nil) :< Vector.nil
+          , perSlotFopZkRows: zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints: VkBlueprintShared /\ unit
           }
           dummyWrapSg

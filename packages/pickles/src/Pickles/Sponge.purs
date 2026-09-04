@@ -16,6 +16,7 @@ module Pickles.Sponge
   , absorbMany
   , squeezeScalarChallenge
   , squeezeScalar
+  , squeezeScalar'
   , squeezeScalarChallengePure
   -- In-circuit sponge monad
   , SpongeM(..)
@@ -47,7 +48,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Circuit.DSL (FVar, SizedF, Snarky, const_, label)
-import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits, lowest128Bits', lowest128BitsPure)
+import Snarky.Circuit.Kimchi.RangeCheck (lowest128Bits', lowest128BitsPure)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
@@ -165,9 +166,7 @@ squeezeScalarChallenge
   => PoseidonField f
   => { endo :: FVar f | r }
   -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
-squeezeScalarChallenge params = do
-  x <- squeeze
-  liftSnarky $ lowest128Bits params.endo x
+squeezeScalarChallenge = squeezeScalar' true
 
 -- | Squeeze a scalar challenge with constrain_low_bits:false.
 -- |
@@ -180,9 +179,22 @@ squeezeScalar
   => PoseidonField f
   => { endo :: FVar f | r }
   -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
-squeezeScalar params = do
+squeezeScalar = squeezeScalar' false
+
+-- | Squeeze and split to the low 128 bits, constraining them iff the flag
+-- | is set (OCaml `lowest_128_bits ~constrain_low_bits`): the body of both
+-- | `squeezeScalarChallenge` (`true`) and `squeezeScalar` (`false`).
+squeezeScalar'
+  :: forall f r cr
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => Boolean
+  -> { endo :: FVar f | r }
+  -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
+squeezeScalar' constrainLowBits params = do
   x <- squeeze
-  liftSnarky $ lowest128Bits' false params.endo x
+  liftSnarky $ lowest128Bits' constrainLowBits params.endo x
 
 --------------------------------------------------------------------------------
 -- | Pure Sponge Monad: PureSpongeM

@@ -101,6 +101,8 @@ def roots : List Name :=
     `Kimchi.Index.satisfies_iff_fullFamily_dvd,
     `Kimchi.Index.copy_soundness_of_dvd,
     `Kimchi.Verifier.kimchiVerify,
+    `Kimchi.Verifier.frOracles_eq_frPrechallenges,
+    `Kimchi.Verifier.low128_of_decomp,
     `Kimchi.Verifier.Wire.KimchiProof.check,
     `Kimchi.Verifier.Wire.KimchiVK.check ]
 
