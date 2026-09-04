@@ -47,10 +47,11 @@ Pickles.pow2PowSquare_spec
 Pickles.pow2PowMul_spec
 
 -- `finalize_other_proof` (FinalizeOtherProof.lean): the shared body and the two sides, each
--- read as `FopReads` — the claimed scalars against the wire verifier's `frSqueezes` (the
--- raw squeezes behind `frOracles`, `Kimchi.Verifier.frOracles_eq_frSqueezes`, at the
--- circuit's recursion digest, in the relational low-128-bit form), and its `ftEval0`,
--- `combinedInnerProduct`, `combinedB` and `permScalar` quantities.
+-- read as `FopReads` — the claimed scalars against the wire verifier's `frSqueezes` (at the
+-- circuit's recursion digest, in the relational low-128-bit form) and its `ftEval0`,
+-- `combinedInnerProduct`, `combinedB` and `permScalar` quantities; at the deployed fields
+-- as `FopReadsWire`: `ξ`, `r` the verifier's `frPrechallenges` (`frOracles`' own,
+-- `Kimchi.Verifier.frOracles_eq_frPrechallenges`) up to the `lowest_128_bits` slack.
 Pickles.finalizeOtherProofCore_spec
 Pickles.finalizeOtherProofStep_spec
 Pickles.finalizeOtherProofWrap_spec

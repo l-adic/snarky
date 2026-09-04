@@ -151,7 +151,7 @@ def frTranscript {F : Type*} {nc : ℕ} (fqDig recDigest ftEval1 : F)
 /-- The fr-sponge's two raw squeezes over a transcript (verifier.rs:388–403, before the
 limb packing): a fresh sponge absorbing the transcript, squeezed once for `v` and again for
 `u`. `frOracles` packs each to its low 128 bits and endo-expands
-(`frOracles_eq_frSqueezes`); the circuit's fr-sponge is stated over the same pair. -/
+(`frOracles_eq_frPrechallenges`); the circuit's fr-sponge is stated over the same pair. -/
 def frSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (transcript : List F) : F × F :=
   let sq := Poseidon.squeeze p (Poseidon.absorb p Poseidon.init transcript)
   (sq.1, (Poseidon.squeeze p sq.2).1)
@@ -332,31 +332,47 @@ def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
   let (u', _) := challengeNat sp s
   (endoExpand C.sponge.lam v', endoExpand C.sponge.lam u')
 
-/-- `frOracles` through `frSqueezes`: each prechallenge is the corresponding raw squeeze's
-value mod `2^128` (`challengeNat` from an empty limb buffer), endo-expanded. -/
-theorem frOracles_eq_frSqueezes {nc k : ℕ} (cp : KimchiProof C nc k) (fqDig : C.ScalarField)
-    (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+/-- The fr-sponge's two 128-bit prechallenges over a transcript, as naturals: the values
+`challengeNat` packs from the two raw squeezes (`frSqueezes`), before the endomorphism
+expansion. `frOracles` is their expansion (`frOracles_eq_frPrechallenges`). -/
+def frPrechallenges {p : ℕ} [Field (ZMod p)] (params : Poseidon.Params (ZMod p))
+    (transcript : List (ZMod p)) : ℕ × ℕ :=
+  let sq := frSqueezes params transcript
+  (sq.1.val % 2 ^ 128, sq.2.val % 2 ^ 128)
+
+/-- `frOracles` is the endo-expansion of `frPrechallenges` over `frTranscript` at the empty
+recursion list's digest: `challengeNat` from an empty limb buffer is one raw squeeze's value
+mod `2^128`. -/
+theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     frOracles C cp fqDig pubEvals =
-      let sq := frSqueezes C.frParams
+      let pre := frPrechallenges C.frParams
         (frTranscript fqDig (frDigest C (frSpec C) FqSponge.init) cp.ftEval1 pubEvals cp.evals)
-      (endoExpand C.sponge.lam (sq.1.val % 2 ^ 128),
-        endoExpand C.sponge.lam (sq.2.val % 2 ^ 128)) := by
-  simp only [frOracles, frSqueezes, frSpec, absorbFq, FqSponge.init, challengeNat_fresh]
+      (endoExpand C.sponge.lam pre.1, endoExpand C.sponge.lam pre.2) := by
+  simp only [frOracles, frPrechallenges, frSqueezes, absorbFq, challengeNat_fresh]
+  rfl
+
+/-- `lo` is the prechallenge `pre` up to the wrap-around slack of a 128-bit decomposition:
+`pre` itself (`k = 0`) or one of at most three aliases `(pre + k·p) mod 2¹²⁸`. -/
+def PrechallengeAlias (p pre lo : ℕ) : Prop :=
+  ∃ k ≤ 3, lo = (pre + k * p) % 2 ^ 128
 
 /-- The slack the circuit's `lowest_128_bits` leaves: a decomposition `x = lo + 2¹²⁸·hi` with
-`lo, hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus. `lo` is the
-prechallenge `x.val % 2¹²⁸` (`k = 0`) or one of at most three wrap-around aliases. -/
+`lo, hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is
+the prechallenge `x.val % 2¹²⁸` only up to `PrechallengeAlias`. -/
 theorem low128_of_decomp {p : ℕ} (hp : 2 ^ 254 < p) (x : ZMod p) (lo hi : ℕ)
     (hlo : lo < 2 ^ 128) (hhi : hi < 2 ^ 128)
     (h : x = (lo : ZMod p) + 2 ^ 128 * (hi : ZMod p)) :
-    ∃ k ≤ 3, lo = (x.val + k * p) % 2 ^ 128 := by
+    PrechallengeAlias p (x.val % 2 ^ 128) lo := by
   have hN : ((lo + 2 ^ 128 * hi : ℕ) : ZMod p) = x := by rw [h]; push_cast; ring
   have hv : (lo + 2 ^ 128 * hi) % p = x.val := by rw [← ZMod.val_natCast, hN]
+  have hN' : x.val + (lo + 2 ^ 128 * hi) / p * p = lo + 2 ^ 128 * hi := by
+    rw [← hv, Nat.mod_add_div']
   refine ⟨(lo + 2 ^ 128 * hi) / p, ?_, ?_⟩
   · have := (Nat.div_lt_iff_lt_mul (by omega : 0 < p)).2
       (show lo + 2 ^ 128 * hi < 4 * p by omega)
     omega
-  · rw [← hv, Nat.mod_add_div']
+  · rw [Nat.mod_add_mod, hN']
     omega
 
 /-! ## The scalar side -/

@@ -217,7 +217,7 @@ private theorem map_val_frTail (digestBefore recDigest ftEval1 : FVar F)
 /-- Under any valuation satisfying the emitted constraints, with `digest` reading as `dv`
 and the inputs as themselves, the two squeezes are the wire verifier's
 `frSqueezes p (frTranscript digestBefore dv ft(ζω) pub evals)` — the raw elements behind
-`frOracles`' `(v, u)` (`Kimchi.Verifier.frOracles_eq_frSqueezes`) — and the outputs `ξ`, `r`
+`frOracles`' `(v, u)` (`Kimchi.Verifier.frOracles_eq_frPrechallenges`) — and the outputs `ξ`, `r`
 are their 128-bit decompositions: `x₁ = ξ + 2¹²⁸·h₁` and `x₂ = r + 2¹²⁸·h₂` for some
 `h₁, h₂ < 2¹²⁸`, with `r < 2¹²⁸` and, where the low bits are constrained, `ξ < 2¹²⁸`. -/
 theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
