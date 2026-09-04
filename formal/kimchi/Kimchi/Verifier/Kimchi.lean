@@ -319,6 +319,77 @@ def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
   let (zeta, s) := squeezeChallenge C.sponge s
   ⟨beta, gamma, alpha, zeta, fqDigest C s, s⟩
 
+/-- The fq-sponge run of `oracles` over the Poseidon automaton (verifier.rs:156–283), the
+commitments as coordinate pairs and pickles' recursion commitments absorbed after the index
+digest (kimchi: `[]`): the four raw squeezed elements behind `β, γ, α, ζ`, the digest
+element, and the pre-digest state. The circuit's fq-sponge is stated over this. -/
+def fqSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (indexDigest : F)
+    (recursion pubComm : List (F × F)) (wComm : List (List (F × F)))
+    (zComm tComm : List (F × F)) : (F × F × F × F) × F × Poseidon.State F :=
+  let pts := fun (s : Poseidon.State F) (l : List (F × F)) =>
+    l.foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s
+  let s := pts (pts (Poseidon.absorb p Poseidon.init [indexDigest]) recursion) pubComm
+  let s := wComm.foldl pts s
+  let sqβ := Poseidon.squeeze p s
+  let sqγ := Poseidon.squeeze p sqβ.2
+  let sqα := Poseidon.squeeze p (pts sqγ.2 zComm)
+  let sqζ := Poseidon.squeeze p (pts sqα.2 tComm)
+  ((sqβ.1, sqγ.1, sqα.1, sqζ.1), (Poseidon.squeeze p sqζ.2).1, sqζ.2)
+
+/-- The fq-sponge's four 128-bit prechallenges over the commitments, as naturals (the
+values `challenge`/`squeezeChallenge` pack from `fqSqueezes`), with the digest element and
+the pre-digest state. `fqOracles` is their cast, expansion and digest cast
+(`fqOracles_eq_fqPrechallenges`). -/
+def fqPrechallenges {p : ℕ} [Field (ZMod p)] (params : Poseidon.Params (ZMod p))
+    (indexDigest : ZMod p) (recursion pubComm : List (ZMod p × ZMod p))
+    (wComm : List (List (ZMod p × ZMod p))) (zComm tComm : List (ZMod p × ZMod p)) :
+    (ℕ × ℕ × ℕ × ℕ) × ZMod p × Poseidon.State (ZMod p) :=
+  let r := fqSqueezes params indexDigest recursion pubComm wComm zComm tComm
+  ((r.1.1.val % 2 ^ 128, r.1.2.1.val % 2 ^ 128, r.1.2.2.1.val % 2 ^ 128,
+    r.1.2.2.2.val % 2 ^ 128), r.2.1, r.2.2)
+
+/-- A commitment's chunk coordinates, in chunk order. -/
+def coords {n : ℕ} (v : Vector C.Point n) : List (C.BaseField × C.BaseField) :=
+  v.toList.map fun P => (P.x, P.y)
+
+/-- A point fold from an empty limb buffer is the coordinate fold on the automaton. -/
+private theorem foldl_absorbG (l : List C.Point) (st : Poseidon.State C.BaseField) :
+    l.foldl (absorbG C.sponge) ⟨st, []⟩
+      = ⟨(l.map fun P => (P.x, P.y)).foldl
+          (fun s q => Poseidon.absorb C.sponge.params s [q.1, q.2]) st, []⟩ := by
+  induction l generalizing st with
+  | nil => rfl
+  | cons P l ih => simp only [List.foldl_cons, List.map_cons, absorbG, absorbFq, ih]
+
+/-- The column fold likewise, column by column. -/
+private theorem foldl_cols {nc : ℕ} (cols : List (Vector C.Point nc))
+    (st : Poseidon.State C.BaseField) :
+    cols.foldl (fun s col => col.toList.foldl (absorbG C.sponge) s) ⟨st, []⟩
+      = ⟨(cols.map fun col => col.toList.map fun P => (P.x, P.y)).foldl
+          (fun s l => l.foldl (fun s q => Poseidon.absorb C.sponge.params s [q.1, q.2]) s)
+          st, []⟩ := by
+  induction cols generalizing st with
+  | nil => rfl
+  | cons col cols ih => simp only [List.foldl_cons, List.map_cons, foldl_absorbG, ih]
+
+/-- `fqOracles` through `fqPrechallenges`: `β, γ` the cast prechallenges (`challenge`),
+`α, ζ` their endo-expansions (`squeezeChallenge`), the digest the `from_bigint` cast of the
+digest element (zero when it does not fit), and the warm state the pre-digest state with an
+empty limb buffer. -/
+theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc) :
+    fqOracles C cvk cp publicComm =
+      let r := fqPrechallenges C.sponge.params cvk.digest [] (coords C publicComm)
+        (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
+        (cp.tComm.toList.map fun P => (P.x, P.y))
+      ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.sponge.lam r.1.2.2.1,
+        endoExpand C.sponge.lam r.1.2.2.2,
+        (if r.2.1.val < C.scalar then ((r.2.1.val : ℕ) : C.ScalarField) else 0),
+        ⟨r.2.2, []⟩⟩ := by
+  simp only [fqOracles, fqPrechallenges, fqSqueezes, coords, absorbFq, FqSponge.init,
+    ← Vector.foldl_toList, ← Array.foldl_toList, foldl_absorbG, foldl_cols, challenge_fresh,
+    squeezeChallenge_fresh, fqDigest, challengeFq, List.foldl_map, List.foldl_nil]
+
 /-- The fr-sponge schedule (verifier.rs:284–405): absorb `frTranscript`, with the
 recursion digest the fr-sponge digest of the empty recursion list, then squeeze the two
 prechallenges and expand them. -/

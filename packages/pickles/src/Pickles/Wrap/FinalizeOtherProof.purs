@@ -26,7 +26,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.FinalizeOtherProof (Output, Params)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
-import Pickles.IncrementallyVerifyProof (ivpTrace)
+import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)

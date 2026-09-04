@@ -8,6 +8,7 @@ import Pickles.FrSponge
 import Pickles.Pseudo
 import Pickles.Domain
 import Pickles.FinalizeOtherProof
+import Pickles.FqSpongeTranscript
 
 /-!
 # Pickles — the in-circuit kimchi verifier

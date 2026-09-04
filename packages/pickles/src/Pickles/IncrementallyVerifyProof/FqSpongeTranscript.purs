@@ -24,26 +24,35 @@
 module Pickles.IncrementallyVerifyProof.FqSpongeTranscript
   ( FqSpongeInput
   , FqSpongeOutput
+  , FqSpongeStepInput
+  , FqSpongeStepOutput
+  , spongeTranscriptCircuit
   , spongeTranscriptOptCircuit
+  , assertPlonkChallenges
+  , ivpTrace
   ) where
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Newtype (unwrap)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.OptSponge as OptSponge
-import Pickles.Sponge (SpongeM, getSponge, putSponge)
+import Pickles.Sponge (SpongeM, getSponge, labelM, liftSnarky, putSponge)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment)
+import Pickles.Verify.Types (PlonkMinimal)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, SizedF, exists, readCVar, true_)
+import Snarky.Circuit.DSL (class BasicSystem, Bool(..), BoolVar, FVar, SizedF, Snarky, assertEq, exists, label, readCVar, true_)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
@@ -78,6 +87,131 @@ type FqSpongeOutput f =
   , zetaChal :: SizedF 128 f
   , digest :: f
   }
+
+-- | The step side's transcript input: everything but `x_hat`, which the caller
+-- | computes at its point in the schedule (see `spongeTranscriptCircuit`).
+type FqSpongeStepInput sgOldN stepChunks tCommLen f =
+  { indexDigest :: f
+  , sgOld :: Vector sgOldN (AffinePoint f)
+  , wComm :: Vector 15 (ChunkedCommitment stepChunks (AffinePoint f))
+  , zComm :: ChunkedCommitment stepChunks (AffinePoint f)
+  , tComm :: Vector tCommLen (AffinePoint f)
+  }
+
+-- | The step side's transcript output: `FqSpongeOutput` plus the `x_hat` computed
+-- | inside the schedule.
+type FqSpongeStepOutput stepChunks f =
+  { xHat :: Vector stepChunks (AffinePoint f)
+  , beta :: SizedF 128 f
+  , gamma :: SizedF 128 f
+  , alphaChal :: SizedF 128 f
+  , zetaChal :: SizedF 128 f
+  , digest :: f
+  }
+
+-- | Trace a circuit value under a label (an `exists` read; no constraint). The
+-- | verifiers emit these at fixed points of their schedules, so the gadgets
+-- | keep them in place.
+ivpTrace
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => String
+  -> FVar f
+  -> Snarky f c r Unit
+ivpTrace labelStr v = do
+  _ <- exists do
+    val <- readCVar v
+    let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+    pure val
+  pure unit
+
+-- | Assert the four squeezed prechallenges equal the deferred plonk claims
+-- | (`step_verifier.ml:706-712`): `β, γ, α, ζ` in that order.
+assertPlonkChallenges
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => FqSpongeOutput (FVar f)
+  -> PlonkMinimal (FVar f)
+  -> Snarky f c r Unit
+assertPlonkChallenges squeezed expected = do
+  label "ivp_assert_plonk_beta" $ assertEq squeezed.beta expected.beta
+  label "ivp_assert_plonk_gamma" $ assertEq squeezed.gamma expected.gamma
+  label "ivp_assert_plonk_alpha" $ assertEq squeezed.alphaChal expected.alpha
+  label "ivp_assert_plonk_zeta" $ assertEq squeezed.zetaChal expected.zeta
+
+-- | The step side's transcript over the plain sponge (OCaml `step_verifier.ml:567-705`,
+-- | kimchi `verifier.rs:156-283` with pickles' `sg_old` absorbs after the index
+-- | digest): absorb the index digest and `sg_old`; run the caller's `x_hat`
+-- | computation at that point, as OCaml does, so its rows land between the
+-- | `sg_old` and `x_hat` absorbs; absorb `x_hat` and `w_comm`; squeeze β, γ by
+-- | `squeeze_challenge`; absorb `z_comm`; squeeze α by `squeeze_scalar`; absorb
+-- | `t_comm`; squeeze ζ by `squeeze_scalar`; squeeze the digest from a copy,
+-- | leaving the sponge at `sponge_before_evaluations`.
+spongeTranscriptCircuit
+  :: forall f sgOldN stepChunks tCommLen r cr
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => Reflectable sgOldN Int
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => { endo :: FVar f | r }
+  -> FqSpongeStepInput sgOldN stepChunks tCommLen (FVar f)
+  -> SpongeM f (KimchiConstraint f) cr (Vector stepChunks (AffinePoint (FVar f)))
+  -> SpongeM f (KimchiConstraint f) cr (FqSpongeStepOutput stepChunks (FVar f))
+spongeTranscriptCircuit params input computeXHat = do
+  liftSnarky $ ivpTrace "ivp.trace.index_digest" input.indexDigest
+  labelM "ivp_absorb_index_digest" $ Sponge.absorb input.indexDigest
+  labelM "ivp_absorb_sg_old" do
+    liftSnarky $ forWithIndex_ input.sgOld \fi (AffinePoint pt) -> do
+      let i = getFinite fi
+      ivpTrace ("ivp.trace.sg_old." <> show i <> ".x") pt.x
+      ivpTrace ("ivp.trace.sg_old." <> show i <> ".y") pt.y
+    for_ input.sgOld \(AffinePoint pt) -> do
+      labelM "ivp_sg_x" $ Sponge.absorb pt.x
+      labelM "ivp_sg_y" $ Sponge.absorb pt.y
+  xHat <- computeXHat
+  liftSnarky $ forWithIndex_ xHat \fi (AffinePoint pt) -> do
+    let i = getFinite fi
+    if i == 0 then do
+      ivpTrace "ivp.trace.xhat.x" pt.x
+      ivpTrace "ivp.trace.xhat.y" pt.y
+    else do
+      ivpTrace ("ivp.trace.xhat." <> show i <> ".x") pt.x
+      ivpTrace ("ivp.trace.xhat." <> show i <> ".y") pt.y
+  for_ xHat Sponge.absorbPoint
+  liftSnarky $ forWithIndex_ input.wComm \fi cc ->
+    forWithIndex_ (unwrap cc) \fj (AffinePoint pt) -> do
+      let i = getFinite fi
+      let j = getFinite fj
+      ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".x") pt.x
+      ivpTrace ("ivp.trace.w_comm." <> show i <> "." <> show j <> ".y") pt.y
+  for_ input.wComm \cc -> for_ (unwrap cc) Sponge.absorbPoint
+  beta <- Sponge.squeezeScalarChallenge params
+  liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
+  gamma <- Sponge.squeezeScalarChallenge params
+  liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
+  liftSnarky $ forWithIndex_ (unwrap input.zComm) \fj (AffinePoint pt) -> do
+    let j = getFinite fj
+    ivpTrace ("ivp.trace.zcomm." <> show j <> ".x") pt.x
+    ivpTrace ("ivp.trace.zcomm." <> show j <> ".y") pt.y
+  for_ (unwrap input.zComm) Sponge.absorbPoint
+  alphaChal <- Sponge.squeezeScalar params
+  liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
+  liftSnarky $ forWithIndex_ input.tComm \fi (AffinePoint pt) -> do
+    let i = getFinite fi
+    ivpTrace ("ivp.trace.tcomm." <> show i <> ".x") pt.x
+    ivpTrace ("ivp.trace.tcomm." <> show i <> ".y") pt.y
+  for_ input.tComm Sponge.absorbPoint
+  zetaChal <- Sponge.squeezeScalar params
+  liftSnarky $ ivpTrace "ivp.trace.zeta_squeezed" (SizedF.toField zetaChal)
+  spongeBeforeEvals <- getSponge
+  digest <- Sponge.squeeze
+  liftSnarky $ ivpTrace "ivp.trace.digest" digest
+  putSponge spongeBeforeEvals
+  pure { xHat, beta, gamma, alphaChal, zetaChal, digest }
 
 spongeTranscriptOptCircuit
   :: forall f sgOldN stepChunks tCommLen r cr

@@ -21,7 +21,8 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (Params) as FOP
-import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
+import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofParams, incrementallyVerifyProof, packStatement)
+import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
