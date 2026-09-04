@@ -215,11 +215,11 @@ private theorem map_val_frTail (digestBefore recDigest ftEval1 : FVar F)
     Function.comp_def, Vector.toList_map, List.map_map]
 
 /-- Under any valuation satisfying the emitted constraints, with `digest` reading as `dv`
-and the inputs as themselves, the sponge after the absorbs reads as
-`absorb p init (frTranscript digestBefore dv ft(ζω) pub evals)`; with `x₁` its first squeeze
-and `x₂` the second, the outputs `ξ`, `r` satisfy `x₁ = ξ + 2¹²⁸·h₁` and `x₂ = r + 2¹²⁸·h₂`
-for some `h₁, h₂ < 2¹²⁸`, with `r < 2¹²⁸` and, where the low bits are constrained,
-`ξ < 2¹²⁸`. -/
+and the inputs as themselves, the two squeezes are the wire verifier's
+`frSqueezes p (frTranscript digestBefore dv ft(ζω) pub evals)` — the raw elements behind
+`frOracles`' `(v, u)` (`Kimchi.Verifier.frOracles_eq_frSqueezes`) — and the outputs `ξ`, `r`
+are their 128-bit decompositions: `x₁ = ξ + 2¹²⁸·h₁` and `x₂ = r + 2¹²⁸·h₂` for some
+`h₁, h₂ < 2¹²⁸`, with `r < 2¹²⁸` and, where the low bits are constrained, `ξ < 2¹²⁸`. -/
 theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (digestBefore : FVar F) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
@@ -230,12 +230,11 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     squeezeXiR (c := Builder V (KimchiConstraint F)) p digestBefore digest ftEval1 pub evals
       endo xiConstrainLowBits
     ⦃⇓ out _ => ⌜
-      let s := Poseidon.absorb p Poseidon.init
+      let sq := frSqueezes p
         (frTranscript (digestBefore.val V) dv (ftEval1.val V)
           (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))
-      let sq := Poseidon.squeeze p s
       let x₁ := sq.1
-      let x₂ := (Poseidon.squeeze p sq.2).1
+      let x₂ := sq.2
       ∃ h₁ h₂ : ℕ, h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧
         x₁ = out.1.val.val V + 2 ^ 128 * h₁ ∧ x₂ = out.2.val.val V + 2 ^ 128 * h₂ ∧
         (xiConstrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ out.1.val.val V = n) ∧
@@ -258,6 +257,7 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   obtain ⟨hx2, -⟩ := hsq2 _ hs1
   obtain ⟨hiv₁, he₁, ⟨n₁, hn₁, rfl⟩, hb₁⟩ := hlo1
   obtain ⟨hiv₂, he₂, ⟨n₂, hn₂, rfl⟩, hr₂⟩ := hlo2
+  simp only [frSqueezes]
   refine ⟨n₁, n₂, hn₁, hn₂, ?_, ?_, hb₁, hr₂⟩
   · rw [← hx1, he₁]
   · rw [← hx2, he₂]

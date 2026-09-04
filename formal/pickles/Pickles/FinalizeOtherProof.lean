@@ -373,9 +373,10 @@ open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 /-- The reading of `finalize_other_proof`'s outputs (`finalizeOtherProofCore_spec`): with
 `ζ, α, β, γ` the expanded challenges, `permV` the permutation claim's inner value, `dv` the
 challenge digest, `ω` of order dividing `n`, the mask `ms`, the previous challenges `cvs`, and
-the fr-sponge state `s = absorb(init, frTranscript d dv ft(ζω) pub e)` with
-`(x₁, s₁) = squeeze s`, `x₂ = squeeze(s₁)₁`: there are `ξ₀ < 2¹²⁸` the `ξ` claim,
-`ξ' + 2¹²⁸·h₁ = x₁` the recomputed low half (below `2¹²⁸` where constrained),
+`(x₁, x₂) = frSqueezes P.sponge (frTranscript d dv ft(ζω) pub e)` the wire verifier's two raw
+fr-sponge squeezes (the elements behind `frOracles`' `(v, u)`, `frOracles_eq_frSqueezes`):
+there are `ξ₀ < 2¹²⁸` the `ξ` claim, `ξ' + 2¹²⁸·h₁ = x₁` the recomputed low half (below
+`2¹²⁸` where constrained; the verifier's prechallenge up to `low128_of_decomp`'s aliases),
 `r' + 2¹²⁸·h₂ = x₂` with `r' < 2¹²⁸`, and `ĉᵢ < 2¹²⁸` the challenge claims, such that with
 `ξ = endoExpand λ ξ₀`, `r = endoExpand λ r'`, `ft₀ = ftEval0 n zkRows ω shifts endo mds α β γ ζ
 pub(ζ) e` and the read batch `rows` (the kept `(b_j(ζ), b_j(ζω))` for `m_j = 1`, then
@@ -388,12 +389,11 @@ def FopReads (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
     (cvs : List (List F)) (u : UnfinalizedProof F) (w : ProofWitness F) (ζ α β γ permV : F)
     (unshiftV : F → F) (V : Valuation F) (o : FopOutput F) : Prop :=
       let e := w.evals.map (·.val V)
-    let s := Poseidon.absorb P.sponge Poseidon.init
+    let sq := frSqueezes P.sponge
       (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
         (w.pub.map fun x => #v[x.val V]) (w.evals.map fun x => #v[x.val V]))
-    let sq := Poseidon.squeeze P.sponge s
     let x₁ := sq.1
-    let x₂ := (Poseidon.squeeze P.sponge sq.2).1
+    let x₂ := sq.2
     let ft₀ := ftEval0 n P.zkRows ω P.shifts P.endo P.mds α β
       γ ζ (w.pub.zeta.val V) (linEvals e)
     ∃ (ξ₀ r' h₁ h₂ : ℕ) (ξ' : F) (ĉ : List ℕ),
@@ -443,8 +443,8 @@ open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 /-- Under any valuation satisfying the emitted constraints, with `ω` the generator's reading
 (non-zero by its `inv` row, and then of order dividing `n`), the mask reading as `m_j`, the
 previous challenges as `c_j`, the evaluations as `e`, `ζ, α, β, γ` the expanded challenges
-and the fr-sponge state `s = absorb(init, frTranscript d digest ft(ζω) pub e)` with
-`(x₁, s₁) = squeeze s` and `x₂ = squeeze(s₁)₁`:
+and `(x₁, x₂) = frSqueezes P.sponge (frTranscript d digest ft(ζω) pub e)` the wire verifier's
+two raw fr-sponge squeezes:
 
 * `ξ̂ < 2¹²⁸` is the `ξ` claim, `ξ' + 2¹²⁸·h₁ = x₁` the recomputed low half (below `2¹²⁸` where
   constrained), `r' + 2¹²⁸·h₂ = x₂` with `r' < 2¹²⁸`, and `ĉᵢ < 2¹²⁸` the challenge claims;

@@ -227,6 +227,12 @@ Kimchi.Verifier.runFtComm
 Kimchi.Verifier.runStreamP
 Kimchi.Verifier.runInput
 
+-- The fr-sponge seam the circuit side lands on: `frOracles` as the low 128 bits of the two
+-- raw squeezes over `frTranscript` (the form `Pickles.squeezeXiR_spec` reads), and the
+-- wrap-around slack a 128-bit decomposition of a squeezed element can carry.
+Kimchi.Verifier.frOracles_eq_frSqueezes
+Kimchi.Verifier.low128_of_decomp
+
 -- The executable verifier, the wire parsers, and the rest of the surface the fixture
 -- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
 -- proofs; the parsers turn dumped wire data into the checked records; the certificates

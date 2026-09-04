@@ -111,6 +111,16 @@ cast). -/
 def challengeNat (spec : Spec base scalar) (s : S base) : ℕ × S base :=
   squeezeLimbsPacked spec 2 s
 
+/-- A prechallenge from an empty limb buffer is one raw squeeze's value mod `2^128`, both
+of its limbs consumed, the buffer left empty. -/
+theorem challengeNat_fresh (spec : Spec base scalar) (s : State (ZMod base)) :
+    challengeNat spec ⟨s, []⟩
+      = ((squeeze spec.params s).1.val % 2 ^ 128, ⟨(squeeze spec.params s).2, []⟩) := by
+  rcases hsq : squeeze spec.params s with ⟨x, sp⟩
+  simp only [challengeNat, squeezeLimbsPacked, lowLimbs, hsq, List.nil_append, Prod.mk.injEq,
+    and_true]
+  omega
+
 /-- Squeeze a 128-bit prechallenge into the scalar field (`challenge`). -/
 def challenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
