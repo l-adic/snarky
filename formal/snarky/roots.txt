@@ -182,6 +182,8 @@ Snarky.instConstraintHoldsBuilder
 Snarky.instBasicSystemBuilder
 Snarky.instLawfulBasicSystemBuilder
 Snarky.builder_spec_iff
+Snarky.builder_spec_forall
+Snarky.builder_spec_imp
 Snarky.addConstraint_spec
 Snarky.LawfulBasicSystem
 

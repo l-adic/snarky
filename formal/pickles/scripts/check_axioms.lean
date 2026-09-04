@@ -53,7 +53,10 @@ def roots : List Name :=
     `Pickles.knownDomainVanishingPolynomial_spec,
     `Pickles.buildPow2PowsArray_spec,
     `Pickles.pow2PowSquare_spec,
-    `Pickles.pow2PowMul_spec ]
+    `Pickles.pow2PowMul_spec,
+    `Pickles.finalizeOtherProofCore_spec,
+    `Pickles.finalizeOtherProofStep_spec,
+    `Pickles.finalizeOtherProofWrap_spec ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]

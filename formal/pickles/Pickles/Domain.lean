@@ -177,21 +177,25 @@ theorem zkPolynomial_spec (zeta : FVar F) (o : OmegaPowers F) :
   simp only [CVar.val_sub_]
 
 omit [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] in
+/-- With `ω` of order dividing `n`, the negative powers are the complementary positive ones:
+`(ω⁻¹)^k = ω^(n−k)` for `k ≤ n`. -/
+theorem inv_pow_eq_pow_sub (n k : ℕ) (ω : F) (hω : ω ^ n = 1) (hk : k ≤ n) :
+    ω⁻¹ ^ k = ω ^ (n - k) := by
+  have : ω ^ (n - k) * ω ^ k = 1 := by rw [← pow_add, Nat.sub_add_cancel hk, hω]
+  rw [inv_pow]
+  exact (eq_inv_of_mul_eq_one_left this).symm
+
+omit [DecidableEq F] [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] in
 /-- With `ω` of order dividing `n` and `zkRows ≤ n`, the polynomial of the negative powers is
 `zkpmEval n zkRows ω ζ = (ζ − ω^(n−zkRows))(ζ − ω^(n−zkRows+1))(ζ − ω^(n−1))`. -/
 theorem zkPolynomial_eq_zkpmEval (n zkRows : ℕ) (ω ζ : F) (hω : ω ^ n = 1)
     (hzk : zkRows ≤ n) (h1 : 1 ≤ zkRows) :
     (ζ - ω⁻¹) * (ζ - ω⁻¹ ^ (zkRows - 1)) * (ζ - ω⁻¹ ^ zkRows)
       = Kimchi.Protocol.Linearization.zkpmEval n zkRows ω ζ := by
-  have key : ∀ k ≤ n, ω⁻¹ ^ k = ω ^ (n - k) := by
-    intro k hk
-    have : ω ^ (n - k) * ω ^ k = 1 := by rw [← pow_add, Nat.sub_add_cancel hk, hω]
-    rw [inv_pow]
-    exact (eq_inv_of_mul_eq_one_left this).symm
-  have h1' : ω⁻¹ = ω ^ (n - 1) := by simpa using key 1 (by omega)
+  have h1' : ω⁻¹ = ω ^ (n - 1) := by simpa using inv_pow_eq_pow_sub n 1 ω hω (by omega)
   unfold Kimchi.Protocol.Linearization.zkpmEval
-  rw [key zkRows hzk, key (zkRows - 1) (by omega), h1',
-    show n - (zkRows - 1) = n - zkRows + 1 by omega]
+  rw [inv_pow_eq_pow_sub n zkRows ω hω hzk, inv_pow_eq_pow_sub n (zkRows - 1) ω hω (by omega),
+    h1', show n - (zkRows - 1) = n - zkRows + 1 by omega]
   ring
 
 /-- The bits read as the equalities, in order. -/
