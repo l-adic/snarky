@@ -21,6 +21,10 @@ import Type.Proxy (Proxy(..))
 -- | zeta at 3 as 128-bit scalar challenges, beta and gamma at 1-2 untouched. Expand
 -- | alpha then zeta through the endomorphism, then `zetaw = generator * zeta` at the
 -- | side's constant domain generator.
+-- |
+-- | Layout only: the rows are the library's `toField` (the `EndoScalar` gadget the
+-- | verifiers expand every challenge with), twice; the product with a constant
+-- | generator folds to no row, as in the dump.
 expandPlonkStepCircuit
   :: forall r
    . Vector 4 (FVar StepField)

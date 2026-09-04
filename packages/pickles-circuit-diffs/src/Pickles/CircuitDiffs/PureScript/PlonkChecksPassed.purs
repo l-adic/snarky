@@ -25,6 +25,9 @@ import Type.Proxy (Proxy(..))
 -- | w[0..5] at 11-16, and the claimed perm at 17 as a Type1 (step) or Type2 (wrap)
 -- | shifted value. `alpha^21` is computed by `pow_` as the dump does, then the perm
 -- | scalar is compared with the claim through the shifted equality.
+-- |
+-- | Layout only: the rows are the DSL's `pow_`, the library's `permScalarCircuit`
+-- | (the verifiers' perm scalar) and the library's `shiftedEqualType1`/`Type2`.
 type PermInputs f =
   { alpha :: FVar f
   , beta :: FVar f

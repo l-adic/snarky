@@ -1,3 +1,12 @@
+-- | Shared plumbing for the PureScript side of the circuit diffs.
+-- |
+-- | Harness rule: a harness lays out the dump's inputs and calls LIBRARY
+-- | circuits on them; it never re-implements a circuit. Every constraint row
+-- | must come from a named library gadget (`Pickles.*`, `Snarky.Circuit.Kimchi.*`)
+-- | or a DSL primitive applied exactly as the dump applies it, so that a
+-- | library change is caught by the fixture rather than absorbed by the
+-- | harness. Native constant folding (domain generators, their powers, endo
+-- | coefficients) is not circuit logic.
 module Pickles.CircuitDiffs.PureScript.Common
   ( CompiledCircuit
   , StepArtifact

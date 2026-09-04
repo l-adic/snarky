@@ -22,6 +22,10 @@ import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Type.Proxy (Proxy(..))
 
+-- | Layout only, throughout this module: the rows are the library's
+-- | `maskedChallengeDigest` / `challengeDigest`, `squeezeXiR` (the verifiers' whole
+-- | fr-sponge schedule) and `toField`; the helpers below only index the inputs.
+
 -- | The two 16-entry previous-challenge vectors from index `base` of the inputs.
 prevChallengesFrom :: forall n f. Vector n (FVar f) -> Int -> Vector 2 (Vector 16 (FVar f))
 prevChallengesFrom inputs base = Vector.generate \j ->

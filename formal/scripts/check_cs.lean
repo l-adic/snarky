@@ -16,6 +16,13 @@ does not see, since a cell holding a once-used variable and an empty cell both w
 to themselves — is the per-cell OCCUPANCY pattern and the identification the ids
 induce across cells.
 
+Harness rule, the same as the PureScript side's (`Common.purs`): a target lays out the
+dump's inputs and calls the LIBRARY circuits (`Pickles.*`, `Snarky.*`) on them, never a
+re-implementation written here — the point is to prove the library circuits equivalent,
+so a library change must surface as a mismatch rather than be absorbed by the harness.
+Native constant folding (generators, their powers, endomorphism coefficients) is not
+circuit logic.
+
 The circuits transcribe `Test.Pickles.CircuitDiffs.Main`
 (packages/pickles-circuit-diffs/test/): every witness-carrying circuit built from the
 `Basic` gadget vocabulary, the landed gate gadgets (poseidon, endo_scalar,
@@ -505,9 +512,8 @@ def linearizationCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side
   let alpha := get 86
   let zeta := get 89
   let pows ← Pickles.Linearization.precomputeAlphaPowers alpha
-  -- eager zk_polynomial, discarded
-  let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
-  let _ ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
+  -- eager zk_polynomial at constant powers, discarded
+  let _ ← Pickles.zkPolynomial zeta ⟨.const om1, .const om2, .const om3⟩
   -- eager zeta^n - 1, discarded
   let _ ← Snarky.pow zeta (2 ^ domLog2)
   evaluate ((linearizationInputs get pows).toEnv side.endo side.mds lookupZero (fun _ => false)
@@ -548,9 +554,8 @@ def ftEval0CsCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
   let alpha := get 86
   let zeta := get 89
   let pows ← Pickles.Linearization.precomputeAlphaPowers alpha
-  -- eager zk_polynomial
-  let t1 ← Snarky.mul (CVar.sub_ zeta (.const om1)) (CVar.sub_ zeta (.const om2))
-  let zkPoly ← Snarky.mul t1 (CVar.sub_ zeta (.const om3))
+  -- eager zk_polynomial at constant powers
+  let zkPoly ← Pickles.zkPolynomial zeta ⟨.const om1, .const om2, .const om3⟩
   -- eager zeta^n - 1
   let zetaToN ← Snarky.pow zeta (2 ^ domLog2)
   let ext : Pickles.PermInputs (ZMod p) :=

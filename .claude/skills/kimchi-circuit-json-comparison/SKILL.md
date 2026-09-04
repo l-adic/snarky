@@ -102,6 +102,13 @@ cp mina/src/lib/pickles/dump_circuit/<name>.json \
 
 ## Step 4: Write the PureScript Comparison Test
 
+**Harness rule (both the PureScript harness and the Lean `formal/scripts/check_cs.lean`
+target):** a harness lays out the dump's inputs and calls the *library* circuits on them.
+Never re-implement a circuit in the harness — every constraint row must come from a named
+library gadget (`Pickles.*`, `Snarky.Circuit.Kimchi.*`) or a DSL primitive applied exactly
+as the dump applies it, so a library change is caught by the fixture instead of absorbed by
+the harness. Native constant folding (generators, their powers, endo coefficients) is fine.
+
 Tests live in `packages/snarky-kimchi/test/Test/Snarky/Circuit/Kimchi/CircuitJson.purs`.
 
 For each circuit shape, there's a compile helper:
