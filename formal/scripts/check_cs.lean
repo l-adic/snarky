@@ -25,13 +25,16 @@ composing endoInv + endoMul + addComplete; their dumps are witness-less, so the
 checks are CS-side only), ft_eval0_step (the proved `Pickles.ftEval0Circuit` under
 the linearization prelude, against the PS `FtEval0Common` harness), and cip_{step,wrap}
 (the proved `Pickles.combinedInnerProduct` over `Pickles.bPolyCircuit`, against the PS
-`Cip` harness — the wrap column's first pickles sub-circuit). Deferred, with the
-blocker each waits on:
+`Cip` harness — the wrap column's first pickles sub-circuit), and the scalar side's
+remaining slices through to finalize_other_proof_{step,wrap} (the permutation scalar,
+expand_plonk, the challenge digests, the fr-sponge schedule, and the whole assembled
+`Pickles.finalizeOtherProofStep`/`Wrap` against the PS `FopStep`/`FopWrap` harnesses).
+Deferred, with the blocker each waits on:
 - ftcomm_*, xhat_* (and everything downstream: ivp, verify, wrap/step mains) — the
   pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
   the VarBaseMul gadget's own oracle checks);
-- hash_messages_*, finalize_other_proof_*, schnorr_verify — the sponge circuit layer
-  (packages/random-oracle; FOP additionally the OptSponge variant);
+- hash_messages_*, schnorr_verify — the sponge circuit layer
+  (packages/random-oracle);
 - group_map_step — activatable now (Basic-only), transcription pending a
   Tonelli–Shanks sqrt witness helper;
 - combine_poly_wrap — gadget-complete, pending a transcription of `combinePolynomials`;
@@ -570,6 +573,10 @@ has two proofs-verified mask booleans first and a Type1 claim; the wrap side no 
 Type2 claim. An entry's bit is the mask bit on the step side and the constant `true_` elsewhere,
 which `selectField` folds to no row. -/
 
+/-- The two previous-challenge vectors from `base`. -/
+def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
+  [(List.range 16).map fun i => get (base + i), (List.range 16).map fun i => get (base + 16 + i)]
+
 open Pickles in
 /-- The shared body from `base` on: the challenge polynomials of both previous proofs at
 `ζ` then `ζω`, the two batches, the gadget, and the equality with the unshifted claim. `sg`
@@ -578,14 +585,14 @@ def cipCore {p : ℕ} [Fact p.Prime] (get : ℕ → FVar (ZMod p)) (base : ℕ)
     (sg : Fin 2 → FVar (ZMod p) → BoolVar (ZMod p) × FVar (ZMod p)) (expected : FVar (ZMod p)) :
     CircuitM (ZMod p) (KimchiConstraint (ZMod p)) PUnit := do
   let at_ (i : ℕ) : FVar (ZMod p) := get (base + i)
-  let chals (j : ℕ) : List (FVar (ZMod p)) := (List.range 16).map fun k => at_ (16 * j + k)
+  let chals := prevChallengesOf at_ 0
   let evals (b : ℕ) : List (FVar (ZMod p)) := (List.range 43).map fun j => at_ (b + j)
   let zeta := at_ 32
   let zetaw := at_ 33
   let tagged (l : List (FVar (ZMod p))) : List (BoolVar (ZMod p) × FVar (ZMod p)) :=
     List.zipWith (fun (j : Fin 2) x => sg j x) [0, 1] l
-  let sgZeta ← challengePolyEvals zeta [chals 0, chals 1]
-  let sgZetaw ← challengePolyEvals zetaw [chals 0, chals 1]
+  let sgZeta ← challengePolyEvals zeta chals
+  let sgZetaw ← challengePolyEvals zetaw chals
   let actual ← combinedInnerProduct (at_ 34) (at_ 35)
     (buildEvalList (tagged sgZeta) (at_ 38) (at_ 36) (evals 40))
     (buildEvalList (tagged sgZetaw) (at_ 39) (at_ 37) (evals 83))
@@ -655,78 +662,32 @@ def expandPlonkStepCircuit (input : Vector (FVar Fp) 4) : CircuitM Fp C PUnit :=
 def expandPlonkWrapCircuit (input : Vector (FVar Fq) 4) : CircuitM Fq Cq PUnit :=
   expandPlonkCore endoPallasLam (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15)) input
 
-/-! ## The fr-sponge circuits
+/-! ## The evaluation layout
 
-Transcribe `Pickles.CircuitDiffs.PureScript.SpongeChallenges`: on the step side the masked
-challenge digest (the conditional sponge over both previous-challenge vectors, guarded by the
-proofs-verified mask) and the fr-sponge schedule with `ξ` and `r` both by
-`squeeze_challenge`; on the wrap side the plain challenge digest and the schedule with `ξ`
-by `squeeze_scalar` and `r` by `squeeze_challenge`; each side expands the challenges through
-its own scalar endomorphism. -/
-
-/-- The two previous-challenge vectors from `base`. -/
-def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
-  [(List.range 16).map fun i => get (base + i), (List.range 16).map fun i => get (base + 16 + i)]
+The evaluation record as the dumps lay it out, shared by the `finalize_other_proof` targets
+below. The PS harnesses' fr-sponge slices (`SpongeChallenges`: the challenge digests and the
+schedule with `ξ`, `r`) are strict sub-circuits of those targets, so their byte-equality is
+checked there rather than as separate interpreter passes. -/
 
 open Kimchi.Verifier in
-/-- The public pair and the evaluation record from the dumps' layout at `base`: the digest
-before evaluations at `base`, `ft(ζω)` at `base + 1`, the public pair, then the 15 `w`
-pairs, 15 coefficient pairs, the `z` pair, 6 `s` pairs and the 6 selector pairs. -/
-def proofEvalsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
+/-- The public pair and the evaluation record from the dumps' layout, the public pair at
+`pubBase`: then the 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `s` pairs and the 6
+selector pairs. -/
+def evalsAt {p : ℕ} (get : ℕ → FVar (ZMod p)) (pubBase : ℕ) :
     PointEvaluations (FVar (ZMod p)) × ProofEvaluations (FVar (ZMod p)) :=
-  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) := ⟨get (base + i), get (base + i + 1)⟩
-  (pair 2,
-   { w := Vector.ofFn fun j => pair (4 + 2 * j)
-     coefficients := Vector.ofFn fun j => pair (34 + 2 * j)
-     z := pair 64
-     s := Vector.ofFn fun j => pair (66 + 2 * j)
-     genericSelector := pair 78
-     poseidonSelector := pair 80
-     completeAddSelector := pair 82
-     mulSelector := pair 84
-     emulSelector := pair 86
-     endomulScalarSelector := pair 88 })
-
-/-- `challenge_digest_step_circuit`: the mask bits at 0–1 (unchecked, OCaml
-`Boolean.Unsafe.of_cvar`), the previous challenges at 2–33. -/
-def challengeDigestStepCircuit (input : Vector (FVar Fp) 34) : CircuitM Fp C PUnit := do
-  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
-  let _ ← Pickles.maskedChallengeDigest Bulletproof.IpaVesta.curve.frParams
-    [.unchecked (get 0), .unchecked (get 1)] (prevChallengesOf get 2)
-  pure PUnit.unit
-
-/-- `sponge_and_challenges_step_circuit`: the mask at 0–1, the previous challenges at 2–33,
-the evaluations from 34. -/
-def spongeAndChallengesStepCircuit (input : Vector (FVar Fp) 124) : CircuitM Fp C PUnit := do
-  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
-  let (pub, evals) := proofEvalsOf get 34
-  let endoVar : FVar Fp := .const endoVestaLam
-  let (xi, r) ← Pickles.squeezeXiR Bulletproof.IpaVesta.curve.frParams (get 34)
-    (Pickles.maskedChallengeDigest Bulletproof.IpaVesta.curve.frParams
-      [.unchecked (get 0), .unchecked (get 1)] (prevChallengesOf get 2))
-    (get 35) pub evals endoVar true
-  let _ ← EndoScalar.toField 8 xi.val endoVar
-  let _ ← EndoScalar.toField 8 r.val endoVar
-  pure PUnit.unit
-
-/-- `challenge_digest_wrap_circuit`. -/
-def challengeDigestWrapCircuit (input : Vector (FVar Fq) 32) : CircuitM Fq Cq PUnit := do
-  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let _ ← Pickles.challengeDigest Bulletproof.IpaPallas.curve.frParams (prevChallengesOf get 0)
-  pure PUnit.unit
-
-/-- `sponge_and_challenges_wrap_circuit`: previous challenges at 0–31, the evaluations from
-32. -/
-def spongeAndChallengesWrapCircuit (input : Vector (FVar Fq) 122) : CircuitM Fq Cq PUnit := do
-  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let (pub, evals) := proofEvalsOf get 32
-  let endoVar : FVar Fq := .const endoPallasLam
-  let (xi, r) ← Pickles.squeezeXiR Bulletproof.IpaPallas.curve.frParams (get 32)
-    (Pickles.challengeDigest Bulletproof.IpaPallas.curve.frParams (prevChallengesOf get 0))
-    (get 33) pub evals endoVar false
-  let _ ← EndoScalar.toField 8 xi.val endoVar
-  let _ ← EndoScalar.toField 8 r.val endoVar
-  pure PUnit.unit
+  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) :=
+    ⟨get (pubBase + i), get (pubBase + i + 1)⟩
+  (pair 0,
+   { w := Vector.ofFn fun j => pair (2 + 2 * j)
+     coefficients := Vector.ofFn fun j => pair (32 + 2 * j)
+     z := pair 62
+     s := Vector.ofFn fun j => pair (64 + 2 * j)
+     genericSelector := pair 76
+     poseidonSelector := pair 78
+     completeAddSelector := pair 80
+     mulSelector := pair 82
+     emulSelector := pair 84
+     endomulScalarSelector := pair 86 })
 
 /-! ## The `finalize_other_proof` circuits
 
@@ -754,27 +715,14 @@ selector pairs, `ft(ζω)`, the two previous-challenge vectors, and the digest b
 evaluations last. -/
 def fopInputsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
     UnfinalizedProof (ZMod p) × ProofWitness (ZMod p) × List (List (FVar (ZMod p))) :=
-  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) := ⟨get (base + i), get (base + i + 1)⟩
+  let (pub, evals) := evalsAt get base
   let u : UnfinalizedProof (ZMod p) :=
     { alpha := ⟨get 0⟩, beta := ⟨get 1⟩, gamma := ⟨get 2⟩, zeta := ⟨get 3⟩,
       zetaToSrsLength := get 4, zetaToDomainSize := get 5, perm := get 6,
       combinedInnerProduct := get 7, b := get 8, xi := ⟨get 9⟩,
       bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩,
       spongeDigestBeforeEvaluations := get (base + 121) }
-  let w : ProofWitness (ZMod p) :=
-    { ftEval1 := get (base + 88)
-      pub := pair 0
-      evals :=
-        { w := Vector.ofFn fun j => pair (2 + 2 * j)
-          coefficients := Vector.ofFn fun j => pair (32 + 2 * j)
-          z := pair 62
-          s := Vector.ofFn fun j => pair (64 + 2 * j)
-          genericSelector := pair 76
-          poseidonSelector := pair 78
-          completeAddSelector := pair 80
-          mulSelector := pair 82
-          emulSelector := pair 84
-          endomulScalarSelector := pair 86 } }
+  let w : ProofWitness (ZMod p) := { ftEval1 := get (base + 88), pub, evals }
   (u, w, prevChallengesOf get (base + 89))
 
 /-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the
@@ -887,10 +835,6 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       stepTarget (a := Vector Fp 18) (b := PUnit) plonkChecksPassedStepCircuit),
     ("expand_plonk_step_circuit",
       stepTarget (a := Vector Fp 4) (b := PUnit) expandPlonkStepCircuit),
-    ("challenge_digest_step_circuit",
-      stepTarget (a := Vector Fp 34) (b := PUnit) challengeDigestStepCircuit),
-    ("sponge_and_challenges_step_circuit",
-      stepTarget (a := Vector Fp 124) (b := PUnit) spongeAndChallengesStepCircuit),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
     -- the wrap column
@@ -904,10 +848,6 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       wrapTarget (a := Vector Fq 18) (b := PUnit) plonkChecksPassedWrapCircuit),
     ("expand_plonk_wrap_circuit",
       wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit),
-    ("challenge_digest_wrap_circuit",
-      wrapTarget (a := Vector Fq 32) (b := PUnit) challengeDigestWrapCircuit),
-    ("sponge_and_challenges_wrap_circuit",
-      wrapTarget (a := Vector Fq 122) (b := PUnit) spongeAndChallengesWrapCircuit),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
 

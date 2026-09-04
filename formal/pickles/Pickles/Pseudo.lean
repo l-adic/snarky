@@ -1,5 +1,4 @@
 import Snarky.DSL.Field
-import Snarky.DSL.Boolean
 
 set_option mvcgen.warning false
 
@@ -37,7 +36,7 @@ private def products : List (BoolVar F × FVar F) → CircuitM F c (List (FVar F
 affine combination. -/
 def mask (bits : List (BoolVar F)) (xs : List (FVar F)) : CircuitM F c (FVar F) := do
   let terms ← products (bits.zip xs)
-  pure (terms.foldl CVar.add_ (.const 0))
+  pure (Snarky.sum terms)
 
 variable [ConstraintHolds F c] [LawfulBasicSystem F c] {V : Valuation F}
 
@@ -66,13 +65,6 @@ theorem mask_spec (bits : List (BoolVar F)) (xs : List (FVar F)) :
   have h := products_spec (c := c) (V := V) (bits.zip xs)
   mvcgen [h]
   rename_i _ terms _ hterms
-  have hfold : ∀ (l : List (FVar F)) (acc : CVar F),
-      (l.foldl CVar.add_ acc).val V = acc.val V + (l.map (·.val V)).sum := by
-    intro l
-    induction l with
-    | nil => intro acc; simp
-    | cons y l ih => intro acc; simp [List.foldl_cons, ih, CVar.val_add_, add_assoc]
-  rw [hfold, hterms]
-  simp
+  rw [Snarky.sum_eval, hterms]
 
 end Pickles.Pseudo

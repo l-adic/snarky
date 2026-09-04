@@ -31,7 +31,7 @@ import Data.Vector as Vector
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks.Permutation (PermutationInput)
-import Pickles.Sponge (class MonadSponge, absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
+import Pickles.Sponge (class MonadSponge, absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar', squeezeScalarChallenge)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (BoolVar, FVar, SizedF, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -199,8 +199,6 @@ squeezeXiR p = evalSpongeM initialSpongeCircuit do
   digest <- liftSnarky p.challengeDigest
   absorb digest
   absorbAllEvals p.allEvals
-  xi <-
-    if p.xiConstrainLowBits then squeezeScalarChallenge { endo: p.endo }
-    else squeezeScalar { endo: p.endo }
+  xi <- squeezeScalar' p.xiConstrainLowBits { endo: p.endo }
   r <- squeezeScalarChallenge { endo: p.endo }
   pure { xi, r }

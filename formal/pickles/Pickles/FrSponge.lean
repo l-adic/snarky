@@ -233,8 +233,9 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
       let s := Poseidon.absorb p Poseidon.init
         (frTranscript (digestBefore.val V) dv (ftEval1.val V)
           (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))
-      let (x₁, s₁) := Poseidon.squeeze p s
-      let x₂ := (Poseidon.squeeze p s₁).1
+      let sq := Poseidon.squeeze p s
+      let x₁ := sq.1
+      let x₂ := (Poseidon.squeeze p sq.2).1
       ∃ h₁ h₂ : ℕ, h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧
         x₁ = out.1.val.val V + 2 ^ 128 * h₁ ∧ x₂ = out.2.val.val V + 2 ^ 128 * h₂ ∧
         (xiConstrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ out.1.val.val V = n) ∧

@@ -129,9 +129,9 @@ structure FopOutput (F : Type) where
   /-- The bulletproof challenges expanded through `λ`. -/
   expandedChallenges : List (FVar F)
 
-/-- The linearization's view of the evaluations: the `ζ` column of each, and `ζω` of the
-witness and `z`. -/
-def linEvals (e : ProofEvaluations (FVar F)) : Kimchi.Protocol.Linearization.Evals (FVar F) where
+/-- The linearization's view of the evaluations, over variables or values (the one-chunk
+`KimchiProof.linEvals`): the `ζ` column of each, and `ζω` of the witness and `z`. -/
+def linEvals {α : Type} (e : ProofEvaluations α) : Kimchi.Protocol.Linearization.Evals α where
   w i := e.w[i].zeta
   wOmega i := e.w[i].zetaOmega
   z := e.z.zeta
@@ -145,14 +145,17 @@ def linEvals (e : ProofEvaluations (FVar F)) : Kimchi.Protocol.Linearization.Eva
   emulSelector := e.emulSelector.zeta
   endoScalarSelector := e.endomulScalarSelector.zeta
 
-/-- The 43 evaluations of a batch at one point in the combination order (PS
-`extractEvalFields`): `z`, the six selectors, the 15 witness columns, the 15 coefficients,
-the six `σ`. -/
+/-- The evaluation rows of a batch in combination order: `z`, the six selectors, the 15
+witness columns, the 15 coefficients, the six `σ`. -/
+def evalRows {α : Type} (e : ProofEvaluations α) : List (PointEvaluations α) :=
+  e.z :: [e.genericSelector, e.poseidonSelector, e.completeAddSelector, e.mulSelector,
+    e.emulSelector, e.endomulScalarSelector] ++ e.w.toList ++ e.coefficients.toList ++ e.s.toList
+
+/-- The 43 evaluations of a batch at one point (PS `extractEvalFields`): `evalRows`
+projected to the point. -/
 def evalFields (proj : PointEvaluations (FVar F) → FVar F) (e : ProofEvaluations (FVar F)) :
     List (FVar F) :=
-  proj e.z :: [proj e.genericSelector, proj e.poseidonSelector, proj e.completeAddSelector,
-    proj e.mulSelector, proj e.emulSelector, proj e.endomulScalarSelector]
-    ++ e.w.toList.map proj ++ e.coefficients.toList.map proj ++ e.s.toList.map proj
+  (evalRows e).map proj
 
 /-- The shared body from the expanded challenges on (PS steps 3–14 on either side): `ζω`,
 the challenge polynomials at `ζω` then `ζ`, the fr-sponge with `ξ` compared to its claim,
@@ -271,76 +274,37 @@ def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
 
 /-! ## The value side -/
 
-open Kimchi.Protocol.Linearization in
-/-- The one-chunk value of the evaluations (`KimchiProof.linEvals` at a single chunk): the
-`ζ` column of each, and `ζω` of the witness and `z`. -/
-def oneChunkEvals (e : ProofEvaluations F) : Evals F where
-  w i := e.w[i].zeta
-  wOmega i := e.w[i].zetaOmega
-  z := e.z.zeta
-  zOmega := e.z.zetaOmega
-  s i := e.s[i].zeta
-  coeffs i := e.coefficients[i].zeta
-  genericSelector := e.genericSelector.zeta
-  poseidonSelector := e.poseidonSelector.zeta
-  completeAddSelector := e.completeAddSelector.zeta
-  mulSelector := e.mulSelector.zeta
-  emulSelector := e.emulSelector.zeta
-  endoScalarSelector := e.endomulScalarSelector.zeta
-
-/-- The evaluation rows of a read batch in combination order: `z`, the six selectors, the
-15 witness columns, the 15 coefficients, the six `σ`. -/
-def evalRows (e : ProofEvaluations F) : List (PointEvaluations F) :=
-  e.z :: [e.genericSelector, e.poseidonSelector, e.completeAddSelector, e.mulSelector,
-    e.emulSelector, e.endomulScalarSelector] ++ e.w.toList ++ e.coefficients.toList ++ e.s.toList
-
 /-- The kept challenge-polynomial rows: the `j`-th previous proof's `(b_j(ζ), b_j(ζω))` where
 its mask bit is set. -/
 def sgRows (ms : List Bool) (a b : List F) : List (PointEvaluations F) :=
   ((ms.zip (a.zip b)).filter (·.1)).map fun e => ⟨e.2.1, e.2.2⟩
 
 omit [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The circuit's linearization view reads as the one-chunk value. -/
+/-- The linearization view is natural: reading the variables' view is the readings' view. -/
 private theorem map_linEvals (V : Valuation F) (e : ProofEvaluations (FVar F)) :
-    (linEvals e).map (·.val V) = oneChunkEvals (e.map (·.val V)) := by
-  simp [linEvals, oneChunkEvals, Kimchi.Protocol.Linearization.Evals.map,
-    ProofEvaluations.map, PointEvaluations.map]
+    (linEvals e).map (·.val V) = linEvals (e.map (·.val V)) := by
+  simp [linEvals, Kimchi.Protocol.Linearization.Evals.map, ProofEvaluations.map,
+    PointEvaluations.map]
 
 omit [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The `ζ` column of the evaluation fields reads as the rows' `ζ` column. -/
-private theorem map_evalFields_zeta (V : Valuation F) (e : ProofEvaluations (FVar F)) :
-    (evalFields (·.zeta) e).map (·.val V) = (evalRows (e.map (·.val V))).map (·.zeta) := by
-  simp [evalFields, evalRows, ProofEvaluations.map, PointEvaluations.map, Vector.toList_map,
-    List.map_map, Function.comp_def]
-
-omit [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The `ζω` column of the evaluation fields reads as the rows' `ζω` column. -/
-private theorem map_evalFields_zetaOmega (V : Valuation F) (e : ProofEvaluations (FVar F)) :
-    (evalFields (·.zetaOmega) e).map (·.val V)
-      = (evalRows (e.map (·.val V))).map (·.zetaOmega) := by
-  simp [evalFields, evalRows, ProofEvaluations.map, PointEvaluations.map, Vector.toList_map,
-    List.map_map, Function.comp_def]
+/-- A column of the evaluation fields reads as that column of the rows' readings. -/
+private theorem map_evalFields (V : Valuation F) (e : ProofEvaluations (FVar F))
+    (proj : ∀ {α : Type}, PointEvaluations α → α)
+    (hproj : ∀ p : PointEvaluations (FVar F), (proj p).val V = proj (p.map (·.val V))) :
+    (evalFields proj e).map (·.val V) = (evalRows (e.map (·.val V))).map proj := by
+  simp [evalFields, evalRows, ProofEvaluations.map, Vector.toList_map, List.map_map,
+    Function.comp_def, hproj]
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The kept entries of a masked zip are the `ζ` column of the kept rows. -/
-private theorem keptEvals_zip_left :
+/-- The kept entries of the two masked zips are the two columns of the kept rows. -/
+private theorem keptEvals_zip :
     ∀ (ms : List Bool) (a b : List F), a.length = b.length →
-      keptEvals (ms.zip a) = (sgRows ms a b).map (·.zeta)
-  | [], _, _, _ => by simp [keptEvals, sgRows]
-  | _ :: _, [], [], _ => by simp [keptEvals, sgRows]
-  | m :: ms, x :: a, y :: b, h => by
-    have := keptEvals_zip_left ms a b (by simpa using h)
-    cases m <;> simp [keptEvals, sgRows] at this ⊢ <;> exact this
-
-omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The kept entries of a masked zip are the `ζω` column of the kept rows. -/
-private theorem keptEvals_zip_right :
-    ∀ (ms : List Bool) (a b : List F), a.length = b.length →
+      keptEvals (ms.zip a) = (sgRows ms a b).map (·.zeta) ∧
       keptEvals (ms.zip b) = (sgRows ms a b).map (·.zetaOmega)
   | [], _, _, _ => by simp [keptEvals, sgRows]
   | _ :: _, [], [], _ => by simp [keptEvals, sgRows]
   | m :: ms, x :: a, y :: b, h => by
-    have := keptEvals_zip_right ms a b (by simpa using h)
+    have := keptEvals_zip ms a b (by simpa using h)
     cases m <;> simp [keptEvals, sgRows] at this ⊢ <;> exact this
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
@@ -427,10 +391,11 @@ def FopReads (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
     let s := Poseidon.absorb P.sponge Poseidon.init
       (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
         (w.pub.map fun x => #v[x.val V]) (w.evals.map fun x => #v[x.val V]))
-    let (x₁, s₁) := Poseidon.squeeze P.sponge s
-    let x₂ := (Poseidon.squeeze P.sponge s₁).1
+    let sq := Poseidon.squeeze P.sponge s
+    let x₁ := sq.1
+    let x₂ := (Poseidon.squeeze P.sponge sq.2).1
     let ft₀ := ftEval0 n P.zkRows ω P.shifts P.endo P.mds α β
-      γ ζ (w.pub.zeta.val V) (oneChunkEvals e)
+      γ ζ (w.pub.zeta.val V) (linEvals e)
     ∃ (ξ₀ r' h₁ h₂ : ℕ) (ξ' : F) (ĉ : List ℕ),
       ξ₀ < 2 ^ 128 ∧ u.xi.val.val V = ξ₀ ∧ h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧ r' < 2 ^ 128 ∧
       (xiConstrainLowBits = true → ∃ m : ℕ, m < 2 ^ 128 ∧ ξ' = m) ∧
@@ -448,7 +413,7 @@ def FopReads (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
       let bOk := unshiftV (u.b.val V) = combinedB (fun i : Fin cs.length => cs.get i) r ![ζ, ζ * ω]
       let permOk := unshiftV permV
         = permScalar β γ α (zkpmEval n P.zkRows ω ζ)
-            (oneChunkEvals e)
+            (linEvals e)
       (↑o.xiCorrect : CVar F).val V = (if ξ' = (ξ₀ : F) then 1 else 0) ∧
       (↑o.cipCorrect : CVar F).val V = (if cipOk then 1 else 0) ∧
       (↑o.bCorrect : CVar F).val V = (if bOk then 1 else 0) ∧
@@ -458,7 +423,22 @@ def FopReads (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
       List.Forall₂ (CircuitType.Reads V) o.expandedChallenges
         (ĉ.map (endoExpand P.endoLam))
 
-set_option maxHeartbeats 4000000 in
+open Kimchi.Protocol.Linearization in
+/-- The `ft_eval0` gadget's reading at the domain size `n`, generator `ω` and the parameters'
+linearization (`ftEval0Circuit_spec_fp`/`_fq` at the deployed fields): with the α-table
+reading as the powers of `α` and the permutation inputs reading as `ζ`, `zkpmEval`, `ζⁿ − 1`
+and `ω^(n − zkRows)`, the output reads as `ftEval0`. -/
+def FtEval0Hyp (V : Valuation F) (P : FopParams F) (n : ℕ) (ω : F) : Prop :=
+  ∀ (ulb : Bool → Int → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
+    (inp : Inputs F) (ext : PermInputs F) (α ζ : F),
+    (∀ k ≤ 70, (inp.alphaPows k).val V = α ^ k) → ext.zeta.val V = ζ →
+    ext.zkPoly.val V = zkpmEval n P.zkRows ω ζ → ext.zetaToNMinus1.val V = ζ ^ n - 1 →
+    ext.omegaZk.val V = ω ^ (n - P.zkRows) →
+    ⦃⌜True⌝⦄ ftEval0Circuit (c := Builder V (KimchiConstraint F)) P.endo P.mds P.toks
+      (fun _ => false) ulb inp ext
+    ⦃⇓ a _ => ⌜a.val V = ftEval0 n P.zkRows ω ext.shifts P.endo P.mds α (inp.beta.val V)
+      (inp.gamma.val V) ζ (ext.pubEval.val V) (inp.evals.map (·.val V))⌝⦄
+
 open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 /-- Under any valuation satisfying the emitted constraints, with `ω` the generator's reading
 (non-zero by its `inv` row, and then of order dividing `n`), the mask reading as `m_j`, the
@@ -497,26 +477,13 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (mask : List (BoolVar F)) (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
     (u : UnfinalizedProof F) (w : ProofWitness F) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
-    (zeta alpha beta gamma perm : FVar F)
-    (hft : ∀ (ulb : Bool → Int → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
-      (inp : Inputs F) (ext : PermInputs F) (α ζ : F),
-      (∀ k ≤ 70, (inp.alphaPows k).val V = α ^ k) → ext.zeta.val V = ζ →
-      ext.zkPoly.val V = zkpmEval n P.zkRows (gen.val V) ζ →
-      ext.zetaToNMinus1.val V = ζ ^ n - 1 →
-      ext.omegaZk.val V = gen.val V ^ (n - P.zkRows) →
-      ⦃⌜True⌝⦄ ftEval0Circuit (c := Builder V (KimchiConstraint F)) P.endo P.mds P.toks
-        (fun _ => false) ulb inp ext
-      ⦃⇓ a _ => ⌜a.val V = ftEval0 n P.zkRows (gen.val V) ext.shifts P.endo P.mds α
-        (inp.beta.val V) (inp.gamma.val V) ζ (ext.pubEval.val V)
-        (inp.evals.map (·.val V))⌝⦄) :
+    (zeta alpha beta gamma perm : FVar F) (hft : FtEval0Hyp V P n (gen.val V)) :
     ⦃⌜True⌝⦄ finalizeOtherProofCore (c := Builder V (KimchiConstraint F)) P ops
       xiConstrainLowBits digest gen pow2Log2 vanishing mask u w prev zeta alpha beta gamma perm
     ⦃⇓ o _ => ⌜gen.val V ≠ 0 ∧ FopReads P xiConstrainLowBits n (gen.val V) dv ms cvs u w
       (zeta.val V) (alpha.val V) (beta.val V) (gamma.val V) (perm.val V) unshiftV V o⌝⦄ := by
   simp only [finalizeOtherProofCore]
   have hsg := fun pt => challengePolyEvals_spec (V := V) (c := KimchiConstraint F) pt prev cvs hprev
-  have hsq := squeezeXiR_spec (V := V) h2 h3 P.sponge hsize u.spongeDigestBeforeEvaluations
-    digest dv hd w.ftEval1 w.pub w.evals (.const P.endoLam) xiConstrainLowBits
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hop := fun g => omegaPowers_spec (V := V) (c := KimchiConstraint F) g P.zkRows h3zk
   have hcip := fun (ξ r : FVar F) (ez ew : List (BoolVar F × FVar F)) =>
@@ -554,8 +521,19 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   have hvan' := fun z => builder_spec_forall (vanishing z) (fun _ : Unit => gen.val V ≠ 0)
     (fun _ v => v.val V = z.val V ^ n - 1) (fun _ h => hvan h z)
   clear hvan
-  mvcgen [hsg, hsq, htf, pow2PowSquare_spec, precomputeAlphaPowers_spec, hop, zkPolynomial_spec,
-    hvan', hft', hcip, hcc, hbc, hps, hcmp, hall]
+  have hsq := squeezeXiR_spec (V := V) h2 h3 P.sponge hsize u.spongeDigestBeforeEvaluations
+    digest dv hd w.ftEval1 w.pub w.evals (.const P.endoLam) xiConstrainLowBits
+  -- `hsq` is a fully applied triple over a concrete circuit: a tactic that unifies against
+  -- the context (`contradiction` in `mvcgen`'s trivial pass, `assumption`) unfolds its `wp` at
+  -- great cost, so the trivial pass is skipped and its four `2 ≠ 0`/`3 ≠ 0` conditions
+  -- closed by tag once `hsq` is cleared
+  mvcgen -trivial [hsg, hsq, htf, pow2PowSquare_spec, precomputeAlphaPowers_spec, hop,
+    zkPolynomial_spec, hvan', hft', hcip, hcc, hbc, hps, hcmp, hall]
+  clear hsq
+  case h2 => exact h2
+  case h2 => exact h2
+  case h3 => exact h3
+  case h3 => exact h3
   -- the `ft_eval0` premises and the characteristic bound of `all`, in whatever order they come
   all_goals try (first
     | exact ‹_ ∧ ∀ k ≤ 70, _›.2
@@ -598,19 +576,21 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       :: ⟨ft0.val V, w.ftEval1.val V⟩ :: evalRows (w.evals.map (·.val V))⟩
     (forall₂_buildEvalList hm hsgz _ _ _) (forall₂_buildEvalList hm hsgw _ _ _)
     (getLast_batch _ _ _ _) (getLast_batch _ _ _ _)
-    (by rw [keptEvals_batch, keptEvals_zip_left _ _ _ hlen, map_evalFields_zeta]; simp)
-    (by rw [keptEvals_batch, keptEvals_zip_right _ _ _ hlen, map_evalFields_zetaOmega]; simp)
+    (by rw [keptEvals_batch, (keptEvals_zip _ _ _ hlen).1, map_evalFields V _ (·.zeta) fun _ => rfl]
+        simp)
+    (by rw [keptEvals_batch, (keptEvals_zip _ _ _ hlen).2,
+          map_evalFields V _ (·.zetaOmega) fun _ => rfl]
+        simp)
   dsimp only at hcipv
   rw [hrval'] at hx2
   -- `b`
   have hbv := hbC _ hexpd
   -- the permutation scalar
-  have hpv := hpermA ⟨oneChunkEvals (w.evals.map (·.val V)), alpha.val V,
+  have hpv := hpermA ⟨linEvals (w.evals.map (·.val V)), alpha.val V,
       zkpmEval n P.zkRows (gen.val V) (zeta.val V)⟩
-    (fun i => by simp [linEvals, oneChunkEvals, ProofEvaluations.map, PointEvaluations.map,
-      Kimchi.sigmaCol])
-    (fun i => by simp [linEvals, oneChunkEvals, ProofEvaluations.map, PointEvaluations.map])
-    (by simp [linEvals, oneChunkEvals, ProofEvaluations.map, PointEvaluations.map])
+    (fun i => by simp [linEvals, ProofEvaluations.map, PointEvaluations.map, Kimchi.sigmaCol])
+    (fun i => by simp [linEvals, ProofEvaluations.map, PointEvaluations.map])
+    (by simp [linEvals, ProofEvaluations.map, PointEvaluations.map])
     (by
       rw [hzkp]
       obtain ⟨hne, ho1, ho2, ho3⟩ := hom
@@ -636,35 +616,21 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
 /-! ## The two sides -/
 
 omit [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- A mask-select over readings: with the bits reading as `f` over the domains, the sum of
-bit-times-entry is the sum over the domains. -/
-private theorem zip_map_sum {V : Valuation F} :
+/-- A mask-select over readings: with the bits reading as `f` over the domains and each
+domain's entry `g d` read by `r`, the sum of bit-times-entry is the sum over the domains. -/
+private theorem zip_map_sum {V : Valuation F} {β : Type} (r : β → F) :
     ∀ (bits : List (BoolVar F)) (ds : List (KnownDomain F)) (f : KnownDomain F → F)
-      (g : KnownDomain F → FVar F),
+      (g : KnownDomain F → β),
       bits.map (fun b : BoolVar F => (↑b : CVar F).val V) = ds.map f →
-      ((bits.zip (ds.map g)).map fun e => (↑e.1 : CVar F).val V * e.2.val V).sum
-        = (ds.map fun d => f d * (g d).val V).sum
+      ((bits.zip (ds.map g)).map fun e => (↑e.1 : CVar F).val V * r e.2).sum
+        = (ds.map fun d => f d * r (g d)).sum
   | [], [], _, _, _ => rfl
   | [], _ :: _, _, _, h => nomatch h
   | _ :: _, [], _, _, h => nomatch h
   | b :: bits, d :: ds, f, g, h => by
     simp only [List.map_cons, List.cons.injEq] at h
-    simp only [List.map_cons, List.zip_cons_cons, List.sum_cons, h.1, zip_map_sum bits ds f g h.2]
-
-omit [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
-/-- The same over the domains' `log2` entries. -/
-private theorem zip_map_sum_log2 {V : Valuation F} (ζ : F) :
-    ∀ (bits : List (BoolVar F)) (ds : List (KnownDomain F)) (f : KnownDomain F → F),
-      bits.map (fun b : BoolVar F => (↑b : CVar F).val V) = ds.map f →
-      ((bits.zip (ds.map (·.log2))).map fun e => (↑e.1 : CVar F).val V * ζ ^ (2 ^ e.2)).sum
-        = (ds.map fun d => f d * ζ ^ (2 ^ d.log2)).sum
-  | [], [], _, _ => rfl
-  | [], _ :: _, _, h => nomatch h
-  | _ :: _, [], _, h => nomatch h
-  | b :: bits, d :: ds, f, h => by
-    simp only [List.map_cons, List.cons.injEq] at h
     simp only [List.map_cons, List.zip_cons_cons, List.sum_cons, h.1,
-      zip_map_sum_log2 ζ bits ds f h.2]
+      zip_map_sum r bits ds f g h.2]
 
 omit [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
 /-- With the `log2` values distinct and `L` one of them, the one-hot sum selects that
@@ -741,7 +707,6 @@ private theorem wrapShiftOps_cmp [ConstraintHolds F c] [LawfulBasicSystem F c] {
   intro h
   rw [h, Type2.val_fromShiftedCircuit]
 
-set_option maxHeartbeats 1000000 in
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 /-- The step side: under any valuation satisfying the emitted constraints, the runtime
 `domain_log2` reads as one of the known domains' — `d₀`, of size `n = 2^log2` and generator
@@ -758,16 +723,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hm : List.Forall₂ (CircuitType.Reads V) mask ms) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
     (hprevlen : prev.flatten.length < 2 ^ 128) (domainLog2Var : FVar F)
-    (hft : ∀ (n : ℕ) (ω : F)
-      (ulb : Bool → Int → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
-      (inp : Inputs F) (ext : PermInputs F) (α ζ : F),
-      (∀ k ≤ 70, (inp.alphaPows k).val V = α ^ k) → ext.zeta.val V = ζ →
-      ext.zkPoly.val V = zkpmEval n P.zkRows ω ζ → ext.zetaToNMinus1.val V = ζ ^ n - 1 →
-      ext.omegaZk.val V = ω ^ (n - P.zkRows) →
-      ⦃⌜True⌝⦄ ftEval0Circuit (c := Builder V (KimchiConstraint F)) P.endo P.mds P.toks
-        (fun _ => false) ulb inp ext
-      ⦃⇓ a _ => ⌜a.val V = ftEval0 n P.zkRows ω ext.shifts P.endo P.mds α (inp.beta.val V)
-        (inp.gamma.val V) ζ (ext.pubEval.val V) (inp.evals.map (·.val V))⌝⦄) :
+    (hft : ∀ (n : ℕ) (ω : F), FtEval0Hyp V P n ω) :
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint F)) P domains u w mask
       prev domainLog2Var
     ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : F) ∧
@@ -804,7 +760,9 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (fun n hn => finalizeOtherProofCore_spec h2 h3 hinj P hsize h3zk n hn.1 stepShiftOps
         (fun x => Type1.fromShifted 255 ⟨x⟩) (fun x => Type1.val_fromShiftedCircuit 255 ⟨x⟩ V)
         (stepShiftOps_cmp h2) true _ _ hd gen hn.2.1 _ _ hn.2.2 mask ms hm u w prev cvs hprev
-        zeta alpha _ _ _ (fun ulb inp ext α ζ => hft n (gen.val V) ulb inp ext α ζ))
+        zeta alpha _ _ _ (hft n (gen.val V)))
+  -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
+  clear hd
   mvcgen [htf, hwh, hmask, hcore]
   rename_i _ zeta _ hz alpha _ ha whiches _ hwh' gen _ hgen _ _
   intro hcore'
@@ -818,7 +776,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     rfl
   have hgenv : gen.val V = (domains.map fun d =>
       (if domainLog2Var.val V = (d.log2 : F) then (1 : F) else 0) * d.generator).sum := by
-    rw [hgen, zip_map_sum whiches domains _ _ hbits]
+    rw [hgen, zip_map_sum (fun x : FVar F => x.val V) whiches domains _ _ hbits]
     rfl
   by_cases hmatch : ∃ d₀ ∈ domains, domainLog2Var.val V = (d₀.log2 : F)
   · obtain ⟨d₀, hd₀, hL⟩ := hmatch
@@ -833,7 +791,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       refine builder_spec_imp _ _ _ (knownDomainVanishingPolynomial_spec whiches
         (domains.map (·.log2)) ((domains.map (·.log2)).foldr max 0) z (le_foldr_max _))
         fun v hv => ?_
-      rw [hv, zip_map_sum_log2 (z.val V) whiches domains _ hbits,
+      rw [hv, zip_map_sum (fun l => z.val V ^ 2 ^ l) whiches domains _ _ hbits,
         onehot_sum _ _ domains hnodup d₀ hd₀ hL]
     obtain ⟨-, hreads⟩ := hcore' (2 ^ d₀.log2) hzk₀ (fun _ => by rw [hgen₀]; exact hω₀)
       (fun _ => hvan₀)
@@ -848,7 +806,6 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     obtain ⟨hne, -⟩ := hcore' P.zkRows le_rfl (fun h => absurd hgen0 h) (fun h => absurd hgen0 h)
     exact hne hgen0
 
-set_option maxHeartbeats 1000000 in
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 /-- The wrap side: under any valuation satisfying the emitted constraints, with the constant
 generator `ω` of order dividing `n` and the caller's vanishing polynomial reading `ζⁿ − 1`, and
@@ -863,15 +820,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
     (u : UnfinalizedProof F) (w : ProofWitness F) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
-    (hft : ∀ (ulb : Bool → Int → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
-      (inp : Inputs F) (ext : PermInputs F) (α ζ : F),
-      (∀ k ≤ 70, (inp.alphaPows k).val V = α ^ k) → ext.zeta.val V = ζ →
-      ext.zkPoly.val V = zkpmEval n P.zkRows gen ζ → ext.zetaToNMinus1.val V = ζ ^ n - 1 →
-      ext.omegaZk.val V = gen ^ (n - P.zkRows) →
-      ⦃⌜True⌝⦄ ftEval0Circuit (c := Builder V (KimchiConstraint F)) P.endo P.mds P.toks
-        (fun _ => false) ulb inp ext
-      ⦃⇓ a _ => ⌜a.val V = ftEval0 n P.zkRows gen ext.shifts P.endo P.mds α (inp.beta.val V)
-        (inp.gamma.val V) ζ (ext.pubEval.val V) (inp.evals.map (·.val V))⌝⦄) :
+    (hft : FtEval0Hyp V P n gen) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen domainLog2
       vanishing u w prev
     ⦃⇓ o _ => ⌜∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧ u.alpha.val.val V = a₀ ∧
@@ -894,6 +843,8 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (fun x => Type2.fromShifted 255 ⟨x⟩) (fun x => Type2.val_fromShiftedCircuit 255 ⟨x⟩ V)
       wrapShiftOps_cmp false _ _ hd (.const gen) (fun _ => hω) domainLog2 vanishing
       (fun _ => hvan) _ _ hm u w prev cvs hprev zeta alpha beta gamma perm hft
+  -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
+  clear hd
   mvcgen [htf, hcore]
   rename_i _ zeta _ hz gamma _ hγ beta _ hβ alpha _ ha perm _ hperm _ _ _ _ _ _ _ _
   intro _ hreads
@@ -911,19 +862,11 @@ section Deployed
 
 open Pickles.Reflect Kimchi.Protocol.Linearization Poseidon.FqSponge
 
-/-- Naturals below `2¹²⁸` cast injectively into the step field. -/
-private theorem natCast_inj_fp (a b : ℕ) (ha : a < 2 ^ 128) (hb : b < 2 ^ 128)
-    (h : (a : Fp) = b) : a = b := by
-  have h' := (ZMod.natCast_eq_natCast_iff' a b _).mp h
-  rwa [Nat.mod_eq_of_lt (lt_trans ha (by decide)), Nat.mod_eq_of_lt (lt_trans hb (by decide))]
-    at h'
-
-/-- Naturals below `2¹²⁸` cast injectively into the wrap field. -/
-private theorem natCast_inj_fq (a b : ℕ) (ha : a < 2 ^ 128) (hb : b < 2 ^ 128)
-    (h : (a : Fq) = b) : a = b := by
-  have h' := (ZMod.natCast_eq_natCast_iff' a b _).mp h
-  rwa [Nat.mod_eq_of_lt (lt_trans ha (by decide)), Nat.mod_eq_of_lt (lt_trans hb (by decide))]
-    at h'
+/-- Naturals below `2¹²⁸` cast injectively into a prime field of larger characteristic. -/
+private theorem natCast_inj (p : ℕ) (hp : 2 ^ 128 < p) (a b : ℕ) (ha : a < 2 ^ 128)
+    (hb : b < 2 ^ 128) (h : (a : ZMod p) = b) : a = b := by
+  have h' := (ZMod.natCast_eq_natCast_iff' a b p).mp h
+  rwa [Nat.mod_eq_of_lt (lt_trans ha hp), Nat.mod_eq_of_lt (lt_trans hb hp)] at h'
 
 /-- `finalizeOtherProofStep_spec` at the step field over the deployed `Fp` linearization
 (`Pasta.pallasEndo`, `symMds`, `fpTokens`), its `ft_eval0` hypothesis discharged by
@@ -947,8 +890,8 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
           (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
         ms cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀) (u.beta.val.val V)
         (u.gamma.val.val V) (u.perm.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
-  finalizeOtherProofStep_spec (by decide) (by decide) natCast_inj_fp P hsize h3zk domains hnodup
-    hdom u w mask ms hm prev cvs hprev hprevlen domainLog2Var
+  finalizeOtherProofStep_spec (by decide) (by decide) (natCast_inj _ (by decide)) P hsize h3zk
+    domains hnodup hdom u w mask ms hm prev cvs hprev hprevlen domainLog2Var
     fun n ω ulb inp ext α ζ htab hζ hzk hz1 hω => by
       obtain ⟨he, hmds, ht⟩ := hP
       rw [he, hmds, ht]
@@ -976,8 +919,8 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
         (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀)
         (u.beta.val.val V) (u.gamma.val.val V) (u.perm.val V)
         (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
-  finalizeOtherProofWrap_spec (by decide) (by decide) natCast_inj_fq P hsize h3zk gen n hzk hω
-    domainLog2 vanishing hvan u w prev cvs hprev
+  finalizeOtherProofWrap_spec (by decide) (by decide) (natCast_inj _ (by decide)) P hsize h3zk
+    gen n hzk hω domainLog2 vanishing hvan u w prev cvs hprev
     fun ulb inp ext α ζ htab hζ hzk' hz1 hω' => by
       obtain ⟨he, hmds, ht⟩ := hP
       rw [he, hmds, ht]
