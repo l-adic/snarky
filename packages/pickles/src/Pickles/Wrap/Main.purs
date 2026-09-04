@@ -51,7 +51,7 @@ import Pickles.Constants (zkRowsByDefault)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (WrapField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
-import Pickles.IncrementallyVerifyProof (ivpTrace)
+import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)

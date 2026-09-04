@@ -58,6 +58,14 @@ Pickles.finalizeOtherProofWrap_spec
 Pickles.finalizeOtherProofStep_spec_fp
 Pickles.finalizeOtherProofWrap_spec_fq
 
+-- The group side's fq-sponge transcript (FqSpongeTranscript.lean): the prechallenge squeeze
+-- and the schedule of `incrementally_verify_proof`, read as the wire verifier's `fqSqueezes`,
+-- and at the deployed fields as its `fqPrechallenges` up to the `lowest_128_bits` slack.
+Pickles.squeezePrechallenge_spec
+Pickles.fqSpongeTranscript_spec
+Pickles.assertPlonkChallenges_spec
+Pickles.FqTranscriptReads.wire
+
 -- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.

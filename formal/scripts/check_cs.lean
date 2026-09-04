@@ -76,6 +76,7 @@ import Pickles.CombinedInnerProduct
 import Pickles.PermScalar
 import Pickles.FrSponge
 import Pickles.FinalizeOtherProof
+import Pickles.FqSpongeTranscript
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -694,6 +695,24 @@ def evalsAt {p : ℕ} (get : ℕ → FVar (ZMod p)) (pubBase : ℕ) :
      emulSelector := pair 84
      endomulScalarSelector := pair 86 })
 
+/-! ## The fq-sponge transcript circuit
+
+Transcribes `Pickles.CircuitDiffs.PureScript.FqSpongeTranscript`: the group side's
+Fiat–Shamir schedule of `incrementally_verify_proof`, `Pickles.fqSpongeTranscript` at the
+step field's sponge and range-check endomorphism over the 53-input layout, `x_hat` handed in
+as the input point. -/
+
+/-- `fq_sponge_transcript_step_circuit`: the index digest at 0, two `sg_old` points at 1–4,
+`x_hat` at 5–6, the 15 `w_comm` points at 7–36, `z_comm` at 37–38, the 7 `t_comm` points at
+39–52. -/
+def fqSpongeTranscriptStepCircuit (input : Vector (FVar Fp) 53) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let _ ← Pickles.fqSpongeTranscript Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam)
+    (get 0) [pt 1, pt 3] (pure [pt 5]) ((List.range 15).map fun j => [pt (7 + 2 * j)]) [pt 37]
+    ((List.range 7).map fun j => pt (39 + 2 * j))
+  pure PUnit.unit
+
 /-! ## The `finalize_other_proof` circuits
 
 Transcribe `Pickles.CircuitDiffs.PureScript.FopStep` and `FopWrap`: the whole scalar-side
@@ -840,6 +859,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       stepTarget (a := Vector Fp 18) (b := PUnit) plonkChecksPassedStepCircuit),
     ("expand_plonk_step_circuit",
       stepTarget (a := Vector Fp 4) (b := PUnit) expandPlonkStepCircuit),
+    ("fq_sponge_transcript_step_circuit",
+      stepTarget (a := Vector Fp 53) (b := PUnit) fqSpongeTranscriptStepCircuit),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
     -- the wrap column

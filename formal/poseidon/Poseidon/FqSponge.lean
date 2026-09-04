@@ -126,6 +126,14 @@ def challenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
   ((n : ZMod scalar), s)
 
+/-- `challenge` from an empty limb buffer: the squeeze's value mod `2^128`, cast, the buffer
+left empty. -/
+theorem challenge_fresh (spec : Spec base scalar) (s : State (ZMod base)) :
+    challenge spec ⟨s, []⟩
+      = ((((squeeze spec.params s).1.val % 2 ^ 128 : ℕ) : ZMod scalar),
+          ⟨(squeeze spec.params s).2, []⟩) := by
+  simp only [challenge, challengeNat_fresh]
+
 /-- The endomorphism expansion of a 128-bit prechallenge into an effective scalar
 (`to_field_with_length`, Halo §6.2): fold the 2-bit windows from the top into the
 accumulators `a = b = 2`; the result is `a·λ + b`. -/
@@ -144,6 +152,14 @@ eigenvalue. -/
 def squeezeChallenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
   (endoExpand spec.lam n, s)
+
+/-- `squeezeChallenge` from an empty limb buffer: the endo-expansion of the squeeze's value
+mod `2^128`, the buffer left empty. -/
+theorem squeezeChallenge_fresh (spec : Spec base scalar) (s : State (ZMod base)) :
+    squeezeChallenge spec ⟨s, []⟩
+      = (endoExpand spec.lam ((squeeze spec.params s).1.val % 2 ^ 128),
+          ⟨(squeeze spec.params s).2, []⟩) := by
+  simp only [squeezeChallenge, challengeNat_fresh]
 
 end Poseidon.FqSponge
 
