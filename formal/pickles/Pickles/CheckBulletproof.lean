@@ -640,7 +640,7 @@ The ladder-witness vocabulary, shared with `checkBulletproof_spec_success` and i
 by the deployed sections below:
 
 * `sf` is the side's circuit scalar type (`Type1 (FVar F)` at wrap, the split
-  `Type2 (SplitField …)` at step) and `ω` the type of the witness the prover's ladder chose
+  `Type2 (SplitField …)` at step) and `wit` the type of the witness the prover's ladder chose
   for it — `scale_fast` pins the bit decomposition only through the value it packs to, so a
   scalar's reading is a witness, not a function of the scalar;
 * `Pre x w` says the witness `w` reads the circuit scalar `x` (`WrapLadderPre`: an integer
@@ -656,17 +656,17 @@ by the deployed sections below:
 `w` with `Pre x w` exists and, once `Reg w`, the output reads as `dec w • T` — and `hreg` says
 every witness of a scaled scalar is in regime (at the deployed curves: its decode is off the
 forbidden band). -/
-theorem ipaFinalCheck_spec {sf ω : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
+theorem ipaFinalCheck_spec {sf wit : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
     (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F)
     (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
-    (Pre : sf → ω → Prop) (Reg : ω → Prop) (dec : ω → ℤ)
+    (Pre : sf → wit → Prop) (Reg : wit → Prop) (dec : wit → ℤ)
     (sv : SpongeVar F) (t : FVar F) (u combined : AffinePoint (FVar F))
     (inp : CheckBulletproofInput F sf)
     (hscale : ∀ (pt : AffinePoint (FVar F)) (x : sf), x ∈ inp.scaled →
       ⦃⌜True⌝⦄ ops.scaleByShifted pt x
       ⦃⇓ r _ => ⌜∀ T : e.d.W.Point, OnCurveAt e.d.W V pt T →
-        ∃ w : ω, Pre x w ∧ (Reg w → OnCurveAt e.d.W V r (dec w • T))⌝⦄)
-    (hreg : ∀ (x : sf) (w : ω), x ∈ inp.scaled → Pre x w → Reg w)
+        ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt e.d.W V r (dec w • T))⌝⦄)
+    (hreg : ∀ (x : sf) (w : wit), x ∈ inp.scaled → Pre x w → Reg w)
     (δv sgv hv : e.d.W.Point)
     (lrv : List (e.d.W.Point × e.d.W.Point))
     (hlr : List.Forall₂ (PairReads e.d.W V) inp.lr lrv) (hlrne : inp.lr ≠ [])
@@ -674,7 +674,7 @@ theorem ipaFinalCheck_spec {sf ω : Type} (ops : IpaScalarOps F (Builder V (Kimc
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ ipaFinalCheck ops e p endo sv t u combined inp
     ⦃⇓ o _ => ⌜∀ uv Pv : e.d.W.Point, OnCurveAt e.d.W V u uv → OnCurveAt e.d.W V combined Pv →
-      o.t = t ∧ ∃ (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : ω),
+      o.t = t ∧ ∃ (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : wit),
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
       Pre inp.combinedInnerProduct wcip ∧ Pre inp.b wb ∧ Pre inp.z1 w₁ ∧ Pre inp.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
@@ -756,12 +756,12 @@ up to the ordinate's sign
 as some `c₀`, the four scaled scalars through some witnesses, and the success bit reads `1`
 exactly when the Schnorr equation holds at the readings — `u` the map's point or its negation,
 the combined commitment `hornerCombine`, `lr_prod` the `lrSum` of the terms. -/
-theorem checkBulletproof_spec_success {sf ω : Type}
+theorem checkBulletproof_spec_success {sf wit : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo : FVar F)
     (gm : GroupMapParams F) (sqrtF : F → Option F)
     (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
-    (Pre : sf → ω → Prop) (Reg : ω → Prop) (dec : ω → ℤ)
+    (Pre : sf → wit → Prop) (Reg : wit → Prop) (dec : wit → ℤ)
     (umap : F → e.d.W.Point)
     (hgm : ∀ t : FVar F, ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF gm t
       ⦃⇓ r _ => ⌜∃ U : e.d.W.Point, OnCurveAt e.d.W V r U ∧
@@ -772,15 +772,15 @@ theorem checkBulletproof_spec_success {sf ω : Type}
     (hscale : ∀ (pt : AffinePoint (FVar F)) (x : sf), x ∈ inp.scaled →
       ⦃⌜True⌝⦄ ops.scaleByShifted pt x
       ⦃⇓ r _ => ⌜∀ T : e.d.W.Point, OnCurveAt e.d.W V pt T →
-        ∃ w : ω, Pre x w ∧ (Reg w → OnCurveAt e.d.W V r (dec w • T))⌝⦄)
-    (hreg : ∀ (x : sf) (w : ω), x ∈ inp.scaled → Pre x w → Reg w)
+        ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt e.d.W V r (dec w • T))⌝⦄)
+    (hreg : ∀ (x : sf) (w : wit), x ∈ inp.scaled → Pre x w → Reg w)
     (n : ℕ) (hn : n < 2 ^ 128) (hxi : inp.xi.val.val V = n) (δv sgv hv : e.d.W.Point)
     (lrv : List (e.d.W.Point × e.d.W.Point))
     (hlr : List.Forall₂ (PairReads e.d.W V) inp.lr lrv) (hlrne : inp.lr ≠ [])
     (hδ : OnCurveAt e.d.W V inp.delta δv) (hsg : OnCurveAt e.d.W V inp.sg sgv)
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : ω),
+    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : wit),
       (U = umap (o.t.val V) ∨ U = -umap (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
       Pre inp.combinedInnerProduct wcip ∧ Pre inp.b wb ∧ Pre inp.z1 w₁ ∧ Pre inp.z2 w₂ ∧
