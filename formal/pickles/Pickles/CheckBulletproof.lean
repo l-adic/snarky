@@ -817,10 +817,10 @@ section Deployed
 
 open CompElliptic.Curves.Pasta Pasta.Shifted
 
-/-- The wrap side's ladder witness of a `Type1` scalar: an integer below `2²⁵⁵` reading as
-its representative. -/
+/-- The wrap side's ladder witness of a `Type1` scalar: an integer below `2²⁵⁴` (the ladder's
+top bit is pinned) reading as its representative. -/
 def WrapLadderPre (V : Valuation Fq) (x : Type1 (FVar Fq)) (z : ℤ) : Prop :=
-  0 ≤ z ∧ z < 2 ^ 255 ∧ (z : Fq) = x.val.val V
+  0 ≤ z ∧ z < 2 ^ 254 ∧ (z : Fq) = x.val.val V
 
 /-- The wrap side's decode of a witness: the `Type1` unshift. -/
 def wrapLadderDec (z : ℤ) : ℤ := unshiftType1 255 z
@@ -836,15 +836,8 @@ theorem wrap_scale_reads {V : Valuation Fq} (pt : AffinePoint (FVar Fq)) (x : Ty
         (WrapLadderReg z → OnCurveAt IpaEndo.vesta.d.W V r (wrapLadderDec z • T))⌝⦄ := by
   refine builder_spec_imp _ _ _
     (scaleFast1_spec (V := V) HasCurve.vesta 255 51 (by norm_num) pt x) fun r hr T hT => ?_
-  obtain ⟨z, h0, hlt, hz, hreg⟩ := hr T hT
-  exact ⟨z, ⟨h0, hlt, hz⟩, fun hR => hreg hR⟩
-
-/-- The wrap side's alias offset. `scale_fast` pins the ladder's 255 bits only through the
-value they pack to in the circuit field `Fq`, and `|Fq| < 2²⁵⁵`, so a shifted scalar's
-canonical representative `t` and `t + |Fq|` are both admissible decompositions for almost every
-`t`; the second decodes to the scalar plus `2·|Fq|`, which in the scalar field is
-`2·(|Fq| − |Fp|)`. -/
-def wrapAlias : Fp := 2 * (PALLAS_SCALAR_CARD : Fp)
+  obtain ⟨z, h0, -, hlt, hz, hreg⟩ := hr T hT
+  exact ⟨z, ⟨h0, hlt (by norm_num), hz⟩, fun hR => hreg hR⟩
 
 /-- The canonical decode of a wrap-side shifted scalar in the scalar field: the `Type1` unshift
 of the circuit value's representative — the wire's `Shifted_value.Type1.to_field` of the
@@ -852,34 +845,24 @@ crossing. -/
 def wrapDecode (V : Valuation Fq) (x : Type1 (FVar Fq)) : Fp :=
   unshiftType1 255 (((x.val.val V).val : ℕ) : Fp)
 
-/-- A wrap ladder witness is the shifted value's representative or that plus `|Fq|`. -/
-private theorem wrapLadderPre_cases {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
-    (h : WrapLadderPre V x z) :
-    z = ((x.val.val V).val : ℤ) ∨ z = ((x.val.val V).val : ℤ) + PALLAS_SCALAR_CARD := by
+/-- A wrap ladder witness is the shifted value's representative: `scaleFast1` pins the top bit
+of its 255-bit decomposition, so the witness is below `2²⁵⁴ < |Fq|`. -/
+private theorem wrapLadderPre_eq {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
+    (h : WrapLadderPre V x z) : z = ((x.val.val V).val : ℤ) := by
   obtain ⟨h0, hlt, hz⟩ := h
   have hv : (((z : Fq)).val : ℤ) = z % PALLAS_SCALAR_CARD := ZMod.val_intCast z
   rw [hz] at hv
-  have hdiv := Int.emod_add_mul_ediv z PALLAS_SCALAR_CARD
-  have h255 : (2 : ℤ) ^ 255 =
-    57896044618658097711785492504343953926634992332820282019728792003956564819968 := by norm_num
-  rw [h255] at hlt
-  simp only [PALLAS_SCALAR_CARD] at hv hdiv ⊢
-  omega
+  have h254 : (2 : ℤ) ^ 254 =
+    28948022309329048855892746252171976963317496166410141009864396001978282409984 := by norm_num
+  rw [h254] at hlt
+  rw [hv, Int.emod_eq_of_lt h0 (by simp only [PALLAS_SCALAR_CARD]; omega)]
 
-/-- A wrap ladder witness decodes, in the scalar field, to the canonical decode or to that plus
-`wrapAlias`. -/
+/-- A wrap ladder witness decodes, in the scalar field, to `wrapDecode`. -/
 private theorem wrapLadderDec_cast {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
-    (h : WrapLadderPre V x z) :
-    ∃ ε : Fp, (ε = 0 ∨ ε = wrapAlias) ∧ (wrapLadderDec z : Fp) = wrapDecode V x + ε := by
-  rcases wrapLadderPre_cases h with hz | hz
-  · refine ⟨0, Or.inl rfl, ?_⟩
-    simp only [wrapLadderDec, wrapDecode, unshiftType1, hz]
-    push_cast
-    ring
-  · refine ⟨wrapAlias, Or.inr rfl, ?_⟩
-    simp only [wrapLadderDec, wrapDecode, wrapAlias, unshiftType1, hz]
-    push_cast
-    ring
+    (h : WrapLadderPre V x z) : (wrapLadderDec z : Fp) = wrapDecode V x := by
+  simp only [wrapLadderDec, wrapDecode, unshiftType1, wrapLadderPre_eq h]
+  push_cast
+  ring
 
 /-- The step side's ladder witness of a split `Type2` scalar: the parity bit's reading and
 an integer below `2²⁵⁴` reading as the halved representative. -/
@@ -1115,7 +1098,7 @@ private theorem zsmul_eq_val_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x
     z • x = ((z : ZMod n).val : ℕ) • x := by
   have hv : (((z : ZMod n).val : ℕ) : ℤ) = z % n := ZMod.val_intCast z
   rw [← natCast_zsmul, hv]
-  conv_lhs => rw [← Int.emod_add_ediv z n]
+  conv_lhs => rw [← Int.emod_add_mul_ediv z n]
   rw [add_zsmul, mul_zsmul, natCast_zsmul, hn, add_zero]
 
 omit [Field F] [DecidableEq F] [ToNat F] in
@@ -1365,13 +1348,11 @@ and `h` as points, the ladder witnesses off the forbidden band — the challenge
 `schnorrAt` holds at `IpaVesta.curve`: the `U` base the deployed map-to-curve's point or its
 negation, the challenges the endo-expansions of `ns`, the combined commitment
 `combineCommitments` over the kept bases at the expanded `ξ`, and `cip`, `b`, `z₁`, `z₂` the
-`Type1` decodes of the circuit's shifted scalars (`wrapDecode`), each up to a prover-chosen
-offset `ε ∈ {0, wrapAlias}`. The offset is the production gadget's: `scale_fast_unpack`
-witnesses the 255 bits and asserts only that they pack to the scalar in `Fq`, and
-`Other_field.check` excludes the degenerate representatives modulo `|Fp|` but not the
-circuit-field alias `t + |Fq|`, which decodes to the scalar plus `2·(|Fq| − |Fp|)`. With
-`verifyWith_eq`, `success ∧ sg = ⟨bPolyCoefficients chals, g⟩` is `verifyWith` at those
-readings. -/
+`Type1` decodes of the circuit's shifted scalars (`wrapDecode`). The decodes are canonical
+because `scaleFast1` pins the top bit of its 255-bit decomposition (`scale_fast`'s check):
+without it `t` and `t + |Fq|` would both be admissible witnesses of a shifted value `t`, the
+second decoding to the scalar plus `2·(|Fq| − |Fp|)`. With `verifyWith_eq`,
+`success ∧ sg = ⟨bPolyCoefficients chals, g⟩` is `verifyWith` at those readings. -/
 theorem checkBulletproof_wrap_spec {V : Valuation Fq}
     (p : Poseidon.Params Fq) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (sv : SpongeVar Fq)
@@ -1395,20 +1376,17 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
       ((SWPoint.equivPoint Vesta.curve) σ.h)) :
     ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
       p endo groupMapParamsVesta sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : SWPoint Vesta.curve) (ns : List ℕ) (c₀ : ℕ) (εcip εb ε₁ ε₂ : Fp)
-        (chals : Vector Fp σ.k),
+    ⦃⇓ o _ => ⌜∃ (U : SWPoint Vesta.curve) (ns : List ℕ) (c₀ : ℕ) (chals : Vector Fp σ.k),
       (U = Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V) ∨
         U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
       chals.toList = ns.map (endoExpand Poseidon.FqVesta.spec.lam) ∧
-      (εcip = 0 ∨ εcip = wrapAlias) ∧ (εb = 0 ∨ εb = wrapAlias) ∧
-      (ε₁ = 0 ∨ ε₁ = wrapAlias) ∧ (ε₂ = 0 ∨ ε₂ = wrapAlias) ∧
       ((↑o.success : CVar Fq).val V = 1 ↔
         schnorrAt IpaVesta.curve σ U chals (endoExpand Poseidon.FqVesta.spec.lam c₀)
-          (wrapDecode V inp.combinedInnerProduct + εcip) (wrapDecode V inp.b + εb)
+          (wrapDecode V inp.combinedInnerProduct) (wrapDecode V inp.b)
           (combineCommitments IpaVesta.curve (endoExpand Poseidon.FqVesta.spec.lam n)
             ((bvW.filter (·.2)).map (·.1)).toArray)
-          ⟨lrW, δW, wrapDecode V inp.z1 + ε₁, wrapDecode V inp.z2 + ε₂, sgW⟩)⌝⦄ := by
+          ⟨lrW, δW, wrapDecode V inp.z1, wrapDecode V inp.z2, sgW⟩)⌝⦄ := by
   refine builder_spec_imp _ _ _
     (checkBulletproof_spec_success IpaScalarOps.wrap IpaEndo.vesta p hsize endo
       groupMapParamsVesta sqrtF fq_natCast_inj (wrapReading V)
@@ -1419,13 +1397,9 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
       n hn hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
   obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
   have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
-  obtain ⟨εcip, hεcip, hdcip⟩ := wrapLadderDec_cast hpcip
-  obtain ⟨εb, hεb, hdb⟩ := wrapLadderDec_cast hpb
-  obtain ⟨ε₁, hε₁, hd1⟩ := wrapLadderDec_cast hp1
-  obtain ⟨ε₂, hε₂, hd2⟩ := wrapLadderDec_cast hp2
-  refine ⟨(SWPoint.equivPoint Vesta.curve).symm U, ns, c₀, εcip, εb, ε₁, ε₂,
+  refine ⟨(SWPoint.equivPoint Vesta.curve).symm U, ns, c₀,
     ⟨(ns.map (endoExpand Poseidon.FqVesta.spec.lam)).toArray, by simp [hlen']⟩, ?_, hns, hc,
-    by simp, hεcip, hεb, hε₁, hε₂, ?_⟩
+    by simp, ?_⟩
   · beta_reduce at hU
     generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (CVar.val o.t V) = T at hU ⊢
     rcases hU with h | h
@@ -1434,7 +1408,8 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
       rw [h]
       exact (congrArg (SWPoint.equivPoint Vesta.curve).symm
         (map_neg (SWPoint.equivPoint Vesta.curve) T).symm).trans (AddEquiv.symm_apply_apply _ _)
-  · rw [← hdcip, ← hdb, ← hd1, ← hd2, hiff,
+  · rw [← wrapLadderDec_cast hpcip, ← wrapLadderDec_cast hpb, ← wrapLadderDec_cast hp1,
+      ← wrapLadderDec_cast hp2, hiff,
       ← schnorrPoint_iff_schnorrAt_vesta σ _ _ _ c₀ _ _ _ _ ⟨lrW, δW, _, _, sgW⟩ ns (by simp) rfl
         rfl]
     simp only [AddEquiv.apply_symm_apply]
