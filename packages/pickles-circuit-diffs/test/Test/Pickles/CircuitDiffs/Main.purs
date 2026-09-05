@@ -30,6 +30,8 @@ import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOne (compileBulletReduceOne)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOneStep (compileBulletReduceOneStep)
 import Pickles.CircuitDiffs.PureScript.BulletReduceStep (compileBulletReduceStep)
+import Pickles.CircuitDiffs.PureScript.CheckBulletproofStep (compileCheckBulletproofStep)
+import Pickles.CircuitDiffs.PureScript.CheckBulletproofWrap (compileCheckBulletproofWrap)
 import Pickles.CircuitDiffs.PureScript.Cip (compileCipStep, compileCipWrap)
 import Pickles.CircuitDiffs.PureScript.CombinePoly (compileCombinePoly)
 import Pickles.CircuitDiffs.PureScript.ExpandPlonk (compileExpandPlonkStep, compileExpandPlonkWrap)
@@ -727,6 +729,7 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "xhat_step_circuit" (fromCompiledCircuit =<< compileXhatStep stepSrsData)
+        exactMatchEff "check_bulletproof_step_circuit" (fromCompiledCircuit =<< compileCheckBulletproofStep stepSrsData.blindingH)
       describe "Pickles Wrap sub-circuits" do
         exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
         exactMatchEff "finalize_other_proof_wrap_circuit" (fromCompiledCircuit =<< compileFopWrap)
@@ -743,6 +746,7 @@ spec bundle =
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat wrapSrsData)
+        exactMatchEff "check_bulletproof_wrap_circuit" (fromCompiledCircuit =<< compileCheckBulletproofWrap wrapSrsData.blindingH)
       describe "IVP" do
         let
           wrapSrs = bundle.vestaCrs16

@@ -114,3 +114,16 @@ Kimchi.Protocol.Linearization.Evals.toEnv_pow
 Kimchi.Protocol.Linearization.Evals.toEnv_sub
 Kimchi.Protocol.Linearization.Evals.toEnv_unnormalizedLagrangeBasis
 Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
+
+-- The group side's opening check (CheckBulletproof.lean): the absorbed limbs, the round
+-- prechallenges and `check_bulletproof`'s transcript half, read as the wire verifier's
+-- `ipaSqueezes` from the warm sponge, and at the deployed fields as its `ipaPrechallenges`
+-- up to the `lowest_128_bits` slack.
+Pickles.absorbShifted_spec
+Pickles.extractScalarChallenges_spec
+Pickles.checkBulletproof_spec
+Pickles.CheckBulletproofReads.wire
+Pickles.IpaScalarOps.step
+Pickles.IpaScalarOps.wrap
+Pickles.IpaEndo.pallas
+Pickles.IpaEndo.vesta

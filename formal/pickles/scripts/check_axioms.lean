@@ -68,7 +68,11 @@ def roots : List Name :=
     `Pickles.optSqueezePrechallenge_spec,
     `Pickles.fqSpongeTranscriptOpt_spec,
     `Pickles.assertPlonkChallenges_spec,
-    `Pickles.FqTranscriptReads.wire ]
+    `Pickles.FqTranscriptReads.wire,
+    `Pickles.absorbShifted_spec,
+    `Pickles.extractScalarChallenges_spec,
+    `Pickles.checkBulletproof_spec,
+    `Pickles.CheckBulletproofReads.wire ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]

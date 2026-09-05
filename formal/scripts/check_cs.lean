@@ -77,6 +77,7 @@ import Pickles.PermScalar
 import Pickles.FrSponge
 import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
+import Pickles.CheckBulletproof
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -726,6 +727,44 @@ def fqSpongeTranscriptWrapCircuit (input : Vector (FVar Fq) 55) : CircuitM Fq Cq
     ((List.range 7).map fun j => pt (41 + 2 * j))
   pure PUnit.unit
 
+/-! ## The `check_bulletproof` circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.CheckBulletproofStep` and `CheckBulletproofWrap`:
+`Pickles.checkBulletproof` from a sponge at `sponge_before_evaluations` on either side,
+the step side at `IpaScalarOps.step`/`IpaEndo.pallas` over the 170-input layout, the wrap
+side at `IpaScalarOps.wrap`/`IpaEndo.vesta` over the 172-input layout with the two `sg_old`
+bases under their mask bits. The SRS blinding base `h` is a constant on both sides, as in
+production. -/
+
+/-- The Pallas SRS's blinding base `h` (production's, recorded as `srs_h` in
+`bulletproof-pcs/fixtures/ipa_batch_pallas.json`). -/
+def blindingHPallas : AffinePoint (FVar Fp) :=
+  ⟨.const 15427374333697483577096356340297985232933727912694971579453397496858943128065,
+   .const 2509910240642018366461735648111399592717548684137438645981418079872989533888⟩
+
+/-- The Vesta SRS's blinding base `h` (`srs_h` in `ipa_batch_vesta.json`). -/
+def blindingHVesta : AffinePoint (FVar Fq) :=
+  ⟨.const 4128018831155263258921677689761735101256426860488784731125497417640507220481,
+   .const 22304269070532896717707344537995120070212833580943367087267197592645043797542⟩
+
+/-- `check_bulletproof_step_circuit`: the sponge state at 0–2 (`Squeezed 1`), `ξ` at 3, the
+47 bases at 4–97 (unmasked), the 15 `(L, R)` pairs at 98–157, `δ` at 158, `sg` at 160, then
+`z₁`, `z₂`, `cip`, `b` as `(sDiv2, sOdd)` pairs at 162–169. -/
+def checkBulletproofStepCircuit (input : Vector (FVar Fp) 170) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  let sv : SpongeVar Fp := ⟨⟨get 0, get 1, get 2⟩, .squeezed 1⟩
+  let _ ← Pickles.checkBulletproof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
+    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) groupMapParamsFp (fun _ => none) sv
+    ((List.range 47).map fun j => (pt (4 + 2 * j), none))
+    { xi := ⟨get 3⟩, delta := pt 158, sg := pt 160
+      lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
+      z1 := shifted 162, z2 := shifted 164, combinedInnerProduct := shifted 166
+      b := shifted 168, blindingGenerator := blindingHPallas }
+  pure PUnit.unit
+
 /-! ## The `finalize_other_proof` circuits
 
 Transcribe `Pickles.CircuitDiffs.PureScript.FopStep` and `FopWrap`: the whole scalar-side
@@ -812,6 +851,25 @@ def groupMapCircuitFq (input : FVar Fq) : CircuitM Fq Cq PUnit := do
   let _ ← groupMapCircuit (fun _ => none) groupMapParamsFq input
   pure ⟨⟩
 
+/-- `check_bulletproof_wrap_circuit`: the sponge state at 0–2 (`Squeezed 1`), `ξ` at 3, the
+two mask bits at 4–5, the 47 bases at 6–99 (the two `sg_old` under the mask), the 16
+`(L, R)` pairs at 100–163, `δ` at 164, `sg` at 166, then `z₁`, `z₂`, `cip`, `b` at 168–171. -/
+def checkBulletproofWrapCircuit (input : Vector (FVar Fq) 172) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
+  let sv : SpongeVar Fq := ⟨⟨get 0, get 1, get 2⟩, .squeezed 1⟩
+  let bases : List (AffinePoint (FVar Fq) × Option (BoolVar Fq)) :=
+    [(pt 6, some (.unchecked (get 4))), (pt 8, some (.unchecked (get 5)))]
+      ++ (List.range 45).map fun j => (pt (10 + 2 * j), none)
+  let _ ← Pickles.checkBulletproof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
+    Bulletproof.IpaPallas.curve.frParams (.const endoPallasLam) groupMapParamsFq (fun _ => none) sv
+    bases
+    { xi := ⟨get 3⟩, delta := pt 164, sg := pt 166
+      lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
+      z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, combinedInnerProduct := ⟨get 170⟩
+      b := ⟨get 171⟩, blindingGenerator := blindingHVesta }
+  pure PUnit.unit
+
 /-- The corpus under comparison: the step column, then the wrap column. -/
 def targets : List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   [ ("mul_step_circuit", stepTarget (a := Fp) (b := Fp) mulCircuit),
@@ -874,6 +932,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       stepTarget (a := Vector Fp 4) (b := PUnit) expandPlonkStepCircuit),
     ("fq_sponge_transcript_step_circuit",
       stepTarget (a := Vector Fp 53) (b := PUnit) fqSpongeTranscriptStepCircuit),
+    ("check_bulletproof_step_circuit",
+      stepTarget (a := Vector Fp 170) (b := PUnit) checkBulletproofStepCircuit),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
     -- the wrap column
@@ -889,6 +949,8 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
       wrapTarget (a := Vector Fq 4) (b := PUnit) expandPlonkWrapCircuit),
     ("fq_sponge_transcript_wrap_circuit",
       wrapTarget (a := Vector Fq 55) (b := PUnit) fqSpongeTranscriptWrapCircuit),
+    ("check_bulletproof_wrap_circuit",
+      wrapTarget (a := Vector Fq 172) (b := PUnit) checkBulletproofWrapCircuit),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
 

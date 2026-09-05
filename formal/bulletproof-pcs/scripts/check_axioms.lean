@@ -34,6 +34,8 @@ def roots : List Name :=
     `Bulletproof.Ipa.verifyWith,
     `Bulletproof.Ipa.transcript,
     `Bulletproof.Ipa.transcriptFrom,
+    `Bulletproof.Ipa.transcriptFrom_eq_ipaPrechallenges,
+    `Bulletproof.Ipa.verifyWith_eq,
     `Bulletproof.Ipa.roundChallenges,
     -- the serde wire boundary and its parse
     `Bulletproof.Ipa.Wire.Proof.check,
