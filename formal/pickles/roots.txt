@@ -118,11 +118,17 @@ Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
 -- The group side's opening check (CheckBulletproof.lean): the absorbed limbs, the round
 -- prechallenges and `check_bulletproof`'s transcript half, read as the wire verifier's
 -- `ipaSqueezes` from the warm sponge, and at the deployed fields as its `ipaPrechallenges`
--- up to the `lowest_128_bits` slack.
+-- up to the `lowest_128_bits` slack; the algebra half, the success bit read as the Schnorr
+-- equation over the gadgets' group (`SchnorrPoint`) at the combined commitment
+-- (`hornerCombine`) and the challenge fold (`lrSum`).
 Pickles.absorbShifted_spec
 Pickles.extractScalarChallenges_spec
 Pickles.checkBulletproof_spec
 Pickles.CheckBulletproofReads.wire
+Pickles.combinePolynomials_spec
+Pickles.bulletReduce_spec
+Pickles.ipaFinalCheck_spec
+Pickles.checkBulletproof_spec_success
 Pickles.IpaScalarOps.step
 Pickles.IpaScalarOps.wrap
 Pickles.IpaEndo.pallas

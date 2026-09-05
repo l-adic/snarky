@@ -72,7 +72,11 @@ def roots : List Name :=
     `Pickles.absorbShifted_spec,
     `Pickles.extractScalarChallenges_spec,
     `Pickles.checkBulletproof_spec,
-    `Pickles.CheckBulletproofReads.wire ]
+    `Pickles.CheckBulletproofReads.wire,
+    `Pickles.combinePolynomials_spec,
+    `Pickles.bulletReduce_spec,
+    `Pickles.ipaFinalCheck_spec,
+    `Pickles.checkBulletproof_spec_success ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
