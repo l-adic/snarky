@@ -24,7 +24,7 @@ into the success bit.
   limbs);
 - `extractScalarChallenges`, `bulletReduce`, `combinePolynomials`, `ipaFinalCheck`,
   `checkBulletproof`: the gadgets, in PS's emission order (the shifted scalar's limbs
-  absorbed by `absorbList`, the point select by `Snarky.Kimchi.selectPoint`).
+  absorbed by `absorbList`, the point select the generic `select` at `AffinePoint`).
 -/
 
 namespace Pickles
@@ -416,7 +416,7 @@ private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
     exact fun _ h => h
   | acc, (b, mask) :: bases, (bvp, bb) :: bv, .cons hbm hrest => by
     obtain ⟨hpt, hmask⟩ := hbm
-    simp only [hornerFold, List.foldl_cons, select_affinePoint]
+    simp only [hornerFold, List.foldl_cons]
     have hem := endoMul_spec (V := V) e.d acc xi
     have hadd := fun q => addFast_checkFinite_spec (V := V) e.d.W e.d.short e.d.two_ne
       e.d.two_torsion_free b q
@@ -433,7 +433,7 @@ private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
       exact hrest' _ (by simpa [hornerStep] using hr bvp _ hpt hxa')
     | some keep =>
       simp only at hmask
-      have hsel := fun r => selectPoint_spec (V := V) (c := KimchiConstraint F) keep r acc
+      have hsel := fun r => select_affinePoint_spec (V := V) (c := KimchiConstraint F) keep r acc
       mvcgen [-Snarky.Kimchi.addFast_spec, hem, hadd, hsel, ih]
       rename_i _ xiAcc _ hxa r _ hr sel _ hsel' rr _
       intro hrest' accv hacc

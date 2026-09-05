@@ -5,8 +5,8 @@ import Snarky.DSL.Boolean
 # Point-level gadgets and readings
 
 Small point-level pieces the group-side gadgets compose, beside `OnCurveAt`: a point read
-off cells is nonzero, the conditional select of a point (PS `if_` at `AffinePoint`, in
-OCaml's reverse array order), and `addFast` at `checkFinite` read as the group sum.
+off cells is nonzero, `select` at a point (PS `if_` at `AffinePoint`, in OCaml's reverse
+array order) with its reading, and `addFast` at `checkFinite` read as the group sum.
 -/
 
 namespace Snarky.Kimchi
@@ -22,32 +22,24 @@ theorem OnCurveAt.ne_zero [Field F] [DecidableEq F] {W : WeierstrassCurve.Affine
   obtain ⟨hns, rfl⟩ := h
   exact Point.some_ne_zero hns
 
-/-- Select a point by a bit (PS `if_` at `AffinePoint`, OCaml's reverse array order): `y`
-then `x`. -/
-def selectPoint [Field F] [DecidableEq F] [BasicSystem F c] (b : BoolVar F)
-    (t e : AffinePoint (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
-  let y ← selectField b t.y e.y
-  let x ← selectField b t.x e.x
-  pure ⟨x, y⟩
-
-/-- Points select coordinatewise, `y` before `x`. -/
+/-- Points select coordinatewise, `y` before `x` (PS `if_` at `AffinePoint`, OCaml's reverse
+array order). -/
 instance instIfThenElseAffinePoint [Field F] [DecidableEq F] [BasicSystem F c] :
-    IfThenElse F c (AffinePoint (FVar F)) :=
-  ⟨selectPoint⟩
-
-/-- Selection at a point is `selectPoint` — the instance's defining equation. -/
-@[simp] theorem select_affinePoint [Field F] [DecidableEq F] [BasicSystem F c] (b : BoolVar F)
-    (t e : AffinePoint (FVar F)) : select (c := c) b t e = selectPoint b t e := rfl
+    IfThenElse F c (AffinePoint (FVar F)) where
+  select b t e := do
+    let y ← selectField b t.y e.y
+    let x ← selectField b t.x e.x
+    pure ⟨x, y⟩
 
 /-- Under any valuation satisfying the emitted constraints, the selected point reads as the
 selected reading. -/
-theorem selectPoint_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
+theorem select_affinePoint_spec {V : Valuation F} [Field F] [DecidableEq F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (b : BoolVar F) (t e : AffinePoint (FVar F)) :
-    ⦃⌜True⌝⦄ selectPoint (c := Builder V c) b t e
+    ⦃⌜True⌝⦄ select (c := Builder V c) b t e
     ⦃⇓ r _ => ⌜∀ bb : Bool, (↑b : CVar F).val V = bit bb →
       ∀ {W : WeierstrassCurve.Affine F} (T E : W.Point), OnCurveAt W V t T → OnCurveAt W V e E →
         OnCurveAt W V r (if bb then T else E)⌝⦄ := by
-  simp only [selectPoint]
+  simp only [select]
   mvcgen
   rename_i _ y _ hy x _ hx
   intro bb hb W T E hT hE
