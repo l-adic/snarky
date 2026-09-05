@@ -656,7 +656,8 @@ by the deployed sections below:
 `w` with `Pre x w` exists and, once `Reg w`, the output reads as `dec w • T` — and `hreg` says
 every witness of a scaled scalar is in regime (at the deployed curves: its decode is off the
 forbidden band). -/
-theorem ipaFinalCheck_spec {sf wit : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
+theorem ipaFinalCheck_spec {sf wit : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
     (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F)
     (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
     (Pre : sf → wit → Prop) (Reg : wit → Prop) (dec : wit → ℤ)
