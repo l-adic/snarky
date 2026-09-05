@@ -40,7 +40,7 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
 /-- Absorb a list, left to right. -/
-private def absorbList (p : Poseidon.Params F) (sv : SpongeVar F) :
+def absorbList (p : Poseidon.Params F) (sv : SpongeVar F) :
     List (FVar F) → CircuitM F c (SpongeVar F)
   | [] => pure sv
   | x :: xs => do
@@ -106,7 +106,7 @@ private theorem readsAt_init : SpongeVar.ReadsAt V (SpongeVar.init (F := F)) Pos
   ⟨rfl, rfl⟩
 
 /-- Absorbing a list reads as the value absorb of the readings. -/
-private theorem absorbList_spec (p : Poseidon.Params F)
+theorem absorbList_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) :
     ∀ (sv : SpongeVar F) (xs : List (FVar F)),
       ⦃⌜True⌝⦄ absorbList (c := Builder V (KimchiConstraint F)) p sv xs

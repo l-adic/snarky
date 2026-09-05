@@ -69,7 +69,7 @@ def roots : List Name :=
     `Pickles.fqSpongeTranscriptOpt_spec,
     `Pickles.assertPlonkChallenges_spec,
     `Pickles.FqTranscriptReads.wire,
-    `Pickles.absorbShifted_spec,
+    `Pickles.absorbList_spec,
     `Pickles.extractScalarChallenges_spec,
     `Pickles.checkBulletproof_spec,
     `Pickles.CheckBulletproofReads.wire,

@@ -67,6 +67,7 @@ which requires snarky — so no single package can import every circuit under co
 -/
 import Std.Data.HashMap
 import KimchiFixture.PS
+import BulletproofFixture
 import Snarky
 import Snarky.Kimchi.Backend.Compile
 import Pickles.Linearization.Circuit
@@ -736,21 +737,20 @@ side at `IpaScalarOps.wrap`/`IpaEndo.vesta` over the 172-input layout with the t
 bases under their mask bits. The SRS blinding base `h` is a constant on both sides, as in
 production. -/
 
-/-- The Pallas SRS's blinding base `h` (production's, recorded as `srs_h` in
-`bulletproof-pcs/fixtures/ipa_batch_pallas.json`). -/
-def blindingHPallas : AffinePoint (FVar Fp) :=
-  ⟨.const 15427374333697483577096356340297985232933727912694971579453397496858943128065,
-   .const 2509910240642018366461735648111399592717548684137438645981418079872989533888⟩
-
-/-- The Vesta SRS's blinding base `h` (`srs_h` in `ipa_batch_vesta.json`). -/
-def blindingHVesta : AffinePoint (FVar Fq) :=
-  ⟨.const 4128018831155263258921677689761735101256426860488784731125497417640507220481,
-   .const 22304269070532896717707344537995120070212833580943367087267197592645043797542⟩
+/-- The SRS blinding base `h` of a fixture (`srs_h`, the same production SRS the IPA
+fixture checks read), as a constant point. -/
+def blindingBase (C : Bulletproof.Ipa.CommitmentCurve) (path : System.FilePath) :
+    IO (AffinePoint (FVar (ZMod C.base))) := do
+  let raw ← IO.FS.readFile path
+  match Json.parse raw >>= fun j => j.getObjVal? "srs_h" >>= Bulletproof.Fixture.parsePt C with
+  | .ok P => return ⟨.const P.x, .const P.y⟩
+  | .error e => throw (IO.userError s!"{path}: {e}")
 
 /-- `check_bulletproof_step_circuit`: the sponge state at 0–2 (`Squeezed 1`), `ξ` at 3, the
 47 bases at 4–97 (unmasked), the 15 `(L, R)` pairs at 98–157, `δ` at 158, `sg` at 160, then
 `z₁`, `z₂`, `cip`, `b` as `(sDiv2, sOdd)` pairs at 162–169. -/
-def checkBulletproofStepCircuit (input : Vector (FVar Fp) 170) : CircuitM Fp C PUnit := do
+def checkBulletproofStepCircuit (blindingH : AffinePoint (FVar Fp)) (input : Vector (FVar Fp) 170) :
+    CircuitM Fp C PUnit := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
@@ -762,7 +762,7 @@ def checkBulletproofStepCircuit (input : Vector (FVar Fp) 170) : CircuitM Fp C P
     { xi := ⟨get 3⟩, delta := pt 158, sg := pt 160
       lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
       z1 := shifted 162, z2 := shifted 164, combinedInnerProduct := shifted 166
-      b := shifted 168, blindingGenerator := blindingHPallas }
+      b := shifted 168, blindingGenerator := blindingH }
   pure PUnit.unit
 
 /-! ## The `finalize_other_proof` circuits
@@ -854,7 +854,8 @@ def groupMapCircuitFq (input : FVar Fq) : CircuitM Fq Cq PUnit := do
 /-- `check_bulletproof_wrap_circuit`: the sponge state at 0–2 (`Squeezed 1`), `ξ` at 3, the
 two mask bits at 4–5, the 47 bases at 6–99 (the two `sg_old` under the mask), the 16
 `(L, R)` pairs at 100–163, `δ` at 164, `sg` at 166, then `z₁`, `z₂`, `cip`, `b` at 168–171. -/
-def checkBulletproofWrapCircuit (input : Vector (FVar Fq) 172) : CircuitM Fq Cq PUnit := do
+def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vector (FVar Fq) 172) :
+    CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let sv : SpongeVar Fq := ⟨⟨get 0, get 1, get 2⟩, .squeezed 1⟩
@@ -867,11 +868,13 @@ def checkBulletproofWrapCircuit (input : Vector (FVar Fq) 172) : CircuitM Fq Cq 
     { xi := ⟨get 3⟩, delta := pt 164, sg := pt 166
       lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
       z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, combinedInnerProduct := ⟨get 170⟩
-      b := ⟨get 171⟩, blindingGenerator := blindingHVesta }
+      b := ⟨get 171⟩, blindingGenerator := blindingH }
   pure PUnit.unit
 
-/-- The corpus under comparison: the step column, then the wrap column. -/
-def targets : List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
+/-- The corpus under comparison: the step column, then the wrap column, at the two SRS
+blinding bases. -/
+def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
+    List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   [ ("mul_step_circuit", stepTarget (a := Fp) (b := Fp) mulCircuit),
     ("inv_step_circuit", stepTarget (a := Fp) (b := Fp) invCircuit),
     ("div_step_circuit", stepTarget (a := Fp) (b := Fp) divCircuit),
@@ -933,7 +936,7 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("fq_sponge_transcript_step_circuit",
       stepTarget (a := Vector Fp 53) (b := PUnit) fqSpongeTranscriptStepCircuit),
     ("check_bulletproof_step_circuit",
-      stepTarget (a := Vector Fp 170) (b := PUnit) checkBulletproofStepCircuit),
+      stepTarget (a := Vector Fp 170) (b := PUnit) (checkBulletproofStepCircuit hStep)),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
     -- the wrap column
@@ -950,14 +953,17 @@ def targets : List (String × (Json → Except String (Option (Bool × List (Str
     ("fq_sponge_transcript_wrap_circuit",
       wrapTarget (a := Vector Fq 55) (b := PUnit) fqSpongeTranscriptWrapCircuit),
     ("check_bulletproof_wrap_circuit",
-      wrapTarget (a := Vector Fq 172) (b := PUnit) checkBulletproofWrapCircuit),
+      wrapTarget (a := Vector Fq 172) (b := PUnit) (checkBulletproofWrapCircuit hWrap)),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
+  let fdir := (← IO.getEnv "BULLETPROOF_FIXTURES_DIR").getD "bulletproof-pcs/fixtures"
+  let hStep ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
+  let hWrap ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
   let mut failures := 0
-  for (name, compare) in targets do
+  for (name, compare) in targets hStep hWrap do
     let path := dir / s!"{name}.json"
     let raw ← IO.FS.readFile path
     match Json.parse raw >>= compare with
@@ -977,4 +983,4 @@ def main : IO Unit := do
         IO.println s!"✗ {name}: {String.intercalate ", " (bad.map (·.1))}"
   if failures > 0 then
     throw <| IO.userError s!"CS-equality FAILED ({failures} circuit(s))"
-  IO.println s!"── CS equality OK ({targets.length} circuits) ──"
+  IO.println s!"── CS equality OK ({(targets hStep hWrap).length} circuits) ──"

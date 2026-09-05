@@ -308,7 +308,7 @@ def scalarLimbs (x : C.ScalarField) : List C.BaseField :=
   else [((x.val / 2 : ℕ) : C.BaseField), ((x.val % 2 : ℕ) : C.BaseField)]
 
 /-- `absorbFr` absorbs `scalarLimbs`. -/
-theorem absorbFr_eq (s : FqSponge.S C.base) (x : C.ScalarField) :
+private theorem absorbFr_eq (s : FqSponge.S C.base) (x : C.ScalarField) :
     absorbFr C.sponge s x = absorbFq C.sponge s (scalarLimbs C x) := by
   unfold absorbFr scalarLimbs
   split <;> rfl

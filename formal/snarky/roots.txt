@@ -627,6 +627,11 @@ Snarky.Kimchi.OnCurveAt
 Snarky.Kimchi.OnCurveAs.mono
 Snarky.Kimchi.Mono.onCurveAs
 Snarky.Kimchi.OnCurveAt.neg
+Snarky.Kimchi.OnCurveAt.ne_zero
+Snarky.Kimchi.selectPoint
+Snarky.Kimchi.selectPoint_spec
+Snarky.Kimchi.select_affinePoint
+Snarky.Kimchi.addFast_checkFinite_spec
 Snarky.Kimchi.OnCurveAt.congr_simp
 Snarky.Kimchi.Finiteness
 Snarky.Kimchi.instDecidableEqFiniteness
