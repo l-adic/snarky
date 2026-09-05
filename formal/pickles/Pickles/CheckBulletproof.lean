@@ -632,10 +632,30 @@ private theorem bulletReduce_spec' (e : IpaEndo F)
 
 /-- Under any valuation satisfying the emitted constraints, with `u`, the combined
 commitment, the pairs, `δ`, `sg` and `h` reading as points, and the side's scaling reading
-through a ladder witness (`hscale`: some `w` with `Pre x w`, the result `dec w • T` once `w`
-is in the regime `Reg`; `hreg`: every such witness is), the challenges read as some `ns`, `c`
-as some `c₀`, each scaled scalar through some witness, and the success bit reads `1` exactly
-when `SchnorrPoint` holds at those readings. -/
+through a ladder witness, the challenges read as some `ns`, `c` as some `c₀`, each scaled
+scalar through some witness, and the success bit reads `1` exactly when `SchnorrPoint` holds
+at those readings.
+
+The ladder-witness vocabulary, shared with `checkBulletproof_spec_success` and instantiated
+by the deployed sections below:
+
+* `sf` is the side's circuit scalar type (`Type1 (FVar F)` at wrap, the split
+  `Type2 (SplitField …)` at step) and `ω` the type of the witness the prover's ladder chose
+  for it — `scale_fast` pins the bit decomposition only through the value it packs to, so a
+  scalar's reading is a witness, not a function of the scalar;
+* `Pre x w` says the witness `w` reads the circuit scalar `x` (`WrapLadderPre`: an integer
+  below `2²⁵⁵` whose cast is `x`'s value; `StepLadderPre`: the parity bit's reading and an
+  integer below `2²⁵⁴` whose cast is the half);
+* `Reg w` is the ladder regime the witness must be in for the scaling law to speak
+  (`WrapLadderReg`, `StepLadderReg`: the curve's `LadderRegime` at the witness's decode);
+* `dec w` is the integer the witness decodes to, the scalar that acts on the point
+  (`wrapLadderDec`: the `Type1` unshift; `stepLadderDec`: the `Type2` unshift of half and
+  parity).
+
+`hscale` is then the shape the `scaleFast` laws give — if the input point reads as `T`, some
+`w` with `Pre x w` exists and, once `Reg w`, the output reads as `dec w • T` — and `hreg` says
+every witness of a scaled scalar is in regime (at the deployed curves: its decode is off the
+forbidden band). -/
 theorem ipaFinalCheck_spec {sf ω : Type} (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
     (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F)
     (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
@@ -729,8 +749,9 @@ theorem ipaFinalCheck_spec {sf ω : Type} (ops : IpaScalarOps F (Builder V (Kimc
 
 /-- The algebra half of `check_bulletproof`. Under any valuation satisfying the emitted
 constraints, with the bases reading as `bv` (non-empty, `ξ` reading as `n`), the pairs, `δ`,
-`sg` and `h` as points, the side's scaling reading through ladder witnesses (`hscale`, `hreg`,
-the shape the `scaleFast` laws give) and the map-to-curve as `umap` up to the ordinate's sign
+`sg` and `h` as points, the side's scaling reading through ladder witnesses (`hscale`, `hreg`, the
+`Pre`/`Reg`/`dec` vocabulary defined at `ipaFinalCheck_spec`) and the map-to-curve as `umap`
+up to the ordinate's sign
 (`hgm`, the shape `groupMapCircuit_toGroup_spec` gives): the challenges read as some `ns`, `c`
 as some `c₀`, the four scaled scalars through some witnesses, and the success bit reads `1`
 exactly when the Schnorr equation holds at the readings — `u` the map's point or its negation,
