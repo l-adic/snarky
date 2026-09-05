@@ -19,6 +19,15 @@ Bulletproof.Ipa.transcriptFrom
 Bulletproof.Ipa.roundChallenges
 Bulletproof.Ipa.shiftScalar
 
+-- The prechallenge level of the transcript and the Schnorr equation at given advice, the
+-- forms a circuit implementation of `check_bulletproof` is read against.
+Bulletproof.Ipa.ipaSqueezes
+Bulletproof.Ipa.ipaPrechallenges
+Bulletproof.Ipa.ipaRound_foldl
+Bulletproof.Ipa.transcriptFrom_eq_ipaPrechallenges
+Bulletproof.Ipa.schnorrAt
+Bulletproof.Ipa.verifyWith_eq
+
 -- The batch layer the verifier reads its claims through, and the MSM underneath it.
 Bulletproof.Ipa.cipOf
 Bulletproof.Ipa.combineCommitments

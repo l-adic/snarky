@@ -95,6 +95,14 @@ theorem builder_spec_forall {V : Valuation F} [ConstraintHolds F c] {α ι : Typ
   intro nv hsat x hx
   exact (builder_spec_iff g (post x)).mp (h x hx) nv hsat
 
+/-- Every program satisfies the trivial specification: the reading of a sub-circuit whose
+outputs a statement does not mention. -/
+theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
+    (g : CircuitM F (Builder V c) α) : ⦃⌜True⌝⦄ g ⦃⇓ _ _ => ⌜True⌝⦄ := by
+  rw [builder_spec_iff]
+  intro _ _
+  trivial
+
 /-- Weakening a specification's conclusion. -/
 theorem builder_spec_imp {V : Valuation F} [ConstraintHolds F c] {α : Type}
     (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (h : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)

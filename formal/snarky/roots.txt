@@ -184,6 +184,7 @@ Snarky.instLawfulBasicSystemBuilder
 Snarky.builder_spec_iff
 Snarky.builder_spec_forall
 Snarky.builder_spec_imp
+Snarky.builder_spec_true
 Snarky.addConstraint_spec
 Snarky.LawfulBasicSystem
 
@@ -626,6 +627,10 @@ Snarky.Kimchi.OnCurveAt
 Snarky.Kimchi.OnCurveAs.mono
 Snarky.Kimchi.Mono.onCurveAs
 Snarky.Kimchi.OnCurveAt.neg
+Snarky.Kimchi.OnCurveAt.ne_zero
+Snarky.Kimchi.instIfThenElseAffinePoint
+Snarky.Kimchi.select_affinePoint_spec
+Snarky.Kimchi.addFast_checkFinite_spec
 Snarky.Kimchi.OnCurveAt.congr_simp
 Snarky.Kimchi.Finiteness
 Snarky.Kimchi.instDecidableEqFiniteness

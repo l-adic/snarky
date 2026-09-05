@@ -43,7 +43,7 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier
 variable {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
 
 /-- Absorb a point (PS `absorbPoint`): `x` then `y`. -/
-private def absorbPoint (p : Poseidon.Params F) (sv : SpongeVar F) (P : AffinePoint (FVar F)) :
+def absorbPoint (p : Poseidon.Params F) (sv : SpongeVar F) (P : AffinePoint (FVar F)) :
     CircuitM F c (SpongeVar F) := do
   let sv ← SpongeVar.absorb p sv P.x
   SpongeVar.absorb p sv P.y
@@ -217,7 +217,7 @@ private theorem readsAt_init : SpongeVar.ReadsAt V (SpongeVar.init (F := F)) Pos
   ⟨rfl, rfl⟩
 
 /-- Absorbing a point reads as absorbing its coordinates. -/
-private theorem absorbPoint_spec (p : Poseidon.Params F)
+theorem absorbPoint_spec (p : Poseidon.Params F)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (sv : SpongeVar F)
     (P : AffinePoint (FVar F)) :
     ⦃⌜True⌝⦄ absorbPoint (c := Builder V (KimchiConstraint F)) p sv P
