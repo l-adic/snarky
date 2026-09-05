@@ -1353,13 +1353,21 @@ attribute [irreducible] lsbBitsWit varBaseMul
 /-! ## `scaleFast1` -/
 
 /-- `scaleFast1 g a ~ [fromShifted a]·g` (PS docstring) — the `Type1` path, for a
-scalar field no larger than the circuit field. Drops the lsbBits. -/
+scalar field no larger than the circuit field. At the full width it pins the ladder's top
+bit to zero (OCaml `scale_fast`): an `n`-bit string is a unique decomposition of the packed
+scalar only below the modulus, and `t + modulus` fits below `2ⁿ` for almost every `t`. Drops
+the lsbBits. -/
 
 
 def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks : ℕ) (p : AffinePoint (FVar F))
     (t : Type1 (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks p t
+  -- at the full field width an `n`-bit string is not a unique decomposition of the packed
+  -- scalar (`t` and `t + modulus` both fit): pin the top bit, as OCaml `scale_fast` does
+  -- and as `scaleFast2` pins the bits above its split, so the ladder runs on the canonical one
+  if n ≤ 5 * chunks then
+    (r.lsbBits.toList.drop (5 * chunks - 1)).forM fun bit => assertEqual bit (.const 0)
   pure r.g
 
 open Std.Do WeierstrassCurve.Affine in
@@ -1373,21 +1381,63 @@ theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     ⦃⌜True⌝⦄
     scaleFast1 (c := Builder V (KimchiConstraint F)) n chunks base scalar
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
-      ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ (5 * chunks) ∧ (z : F) = scalar.val.val V ∧
+      ∃ z : ℤ, 0 ≤ z ∧ z < 2 ^ (5 * chunks) ∧ (n ≤ 5 * chunks → z < 2 ^ (5 * chunks - 1)) ∧
+        (z : F) = scalar.val.val V ∧
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r ((Pasta.Shifted.unshiftType1 (5 * chunks) z) • T)⌝⦄ := by
   have hvbm := fun (V : Valuation F) => varBaseMul_spec (V := V) d n chunks hn base scalar
+  have hpin := forM_spec (V := V) (c := KimchiConstraint F)
+    (fun b : FVar F => assertEqual (c := Builder V (KimchiConstraint F)) b (CVar.const 0))
+    (fun b : FVar F => b.val V = (CVar.const 0 : FVar F).val V)
+    (fun b => assertEqual_spec (V := V) b (CVar.const 0))
   unfold scaleFast1
-  mvcgen [hvbm]
-  rename_i r _ hr
-  intro T hT
-  obtain ⟨bs, -, hreg, hpoint⟩ := hr T hT
-  refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, ?_, ?_, hpoint⟩
-  · exact_mod_cast (by simpa using Kimchi.natLsbVal_lt bs.toList :
-      Kimchi.natLsbVal bs.toList < 2 ^ (5 * chunks))
-  · rw [hreg]
-    push_cast
-    ring
+  mvcgen [hvbm, hpin]
+  · -- the full width: the pinned top bit halves the ladder's range
+    rename_i r _ _ _ hr _ _ hpin0
+    intro T hT
+    obtain ⟨bs, hread, hreg, hpoint⟩ := hr T hT
+    have hzeros : ∀ b ∈ bs.toList.drop (5 * chunks - 1), b = false := by
+      intro b hb
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hb
+      have hi' : 5 * chunks - 1 + i < 5 * chunks := by
+        simp only [List.length_drop, Vector.length_toList] at hi
+        omega
+      have hidx : 5 * chunks - 1 + i < n := Nat.lt_of_lt_of_le hi' hn
+      have hmem : r.lsbBits.toList[5 * chunks - 1 + i]'(by simpa using hidx)
+          ∈ r.lsbBits.toList.drop (5 * chunks - 1) := by
+        have heq : (r.lsbBits.toList.drop (5 * chunks - 1))[i]'(by
+            simp only [List.length_drop, Vector.length_toList]; omega)
+            = r.lsbBits.toList[5 * chunks - 1 + i]'(by simpa using hidx) := List.getElem_drop ..
+        rw [← heq]
+        exact List.getElem_mem _
+      have hb0 : bit bs[5 * chunks - 1 + i] = (0 : F) := by
+        rw [← hread (5 * chunks - 1 + i) hi',
+          show r.lsbBits[5 * chunks - 1 + i]'hidx
+            = r.lsbBits.toList[5 * chunks - 1 + i]'(by simpa using hidx) from rfl,
+          hpin0 _ hmem]
+        simp [CVar.val]
+      rw [List.getElem_drop, Vector.getElem_toList]
+      cases hbb : bs[5 * chunks - 1 + i] with
+      | false => rfl
+      | true => rw [hbb] at hb0; simp [bit] at hb0
+    refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, ?_, fun _ => ?_, ?_, hpoint⟩
+    · exact_mod_cast (by simpa using Kimchi.natLsbVal_lt bs.toList :
+        Kimchi.natLsbVal bs.toList < 2 ^ (5 * chunks))
+    · exact_mod_cast Kimchi.natLsbVal_lt_of_drop_false hzeros
+    · rw [hreg]
+      push_cast
+      ring
+  · -- below the full width: no pin, the bound is vacuous
+    rename_i r _ hnle _ hr
+    intro T hT
+    obtain ⟨bs, -, hreg, hpoint⟩ := hr T hT
+    refine ⟨(Kimchi.natLsbVal bs.toList : ℤ), Int.natCast_nonneg _, ?_, fun h => absurd h hnle,
+      ?_, hpoint⟩
+    · exact_mod_cast (by simpa using Kimchi.natLsbVal_lt bs.toList :
+        Kimchi.natLsbVal bs.toList < 2 ^ (5 * chunks))
+    · rw [hreg]
+      push_cast
+      ring
 
 open WeierstrassCurve.Affine in
 /-- **Completeness** (`scaleFast1`). `varBaseMul`'s honest run, with the bits dropped. -/
@@ -1395,6 +1445,7 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) (xv yv sv : F)
     (hT : d.W.Nonsingular xv yv) (hfits : ToNat.toNat sv < 2 ^ (5 * chunks))
+    (hfits1 : n ≤ 5 * chunks → ToNat.toNat sv < 2 ^ (5 * chunks - 1))
     (hregime : d.LadderRegime (5 * chunks)
       (Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ))) :
     Complete (F := F) (c := KimchiConstraint F)
@@ -1405,8 +1456,57 @@ theorem scaleFast1_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ((Pasta.Shifted.unshiftType1 (5 * chunks) (ToNat.toNat sv : ℤ)) • Point.some _ _ hT)) := by
   simp only [scaleFast1]
   refine Complete.bind
-    (varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime)
-    fun r => Complete.pure_of fun _ h => h.2
+    (varBaseMul_complete d n chunks hn base scalar xv yv sv hT hfits hregime) fun r => ?_
+  by_cases hle : n ≤ 5 * chunks
+  · simp only [hle, ↓reduceIte]
+    -- the top bit the honest scalar leaves clear
+    have hpinval : ∀ {st : ProverState F},
+        CircuitType.ReadsAs (val := Vector Bool n) st (mapVec BoolVar.unchecked r.lsbBits)
+            (unpackPure sv n) →
+        ∀ x ∈ r.lsbBits.toList.drop (5 * chunks - 1), x.Scoped st ∧ x.val st.env.get = 0 := by
+      intro st hbits x hx
+      have hbitsSc := CircuitType.scoped_vector.mp hbits.1
+      have hbitsRd := CircuitType.reads_vector.mp hbits.2
+      obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hx
+      have hi' : 5 * chunks - 1 + i < n := by
+        simp only [List.length_drop, Vector.length_toList] at hi
+        omega
+      have hbit : (ToNat.toNat sv).testBit (5 * chunks - 1 + i) = false :=
+        Nat.testBit_lt_two_pow
+          (lt_of_lt_of_le (hfits1 hle) (Nat.pow_le_pow_right (by norm_num) (by omega)))
+      have hsc := hbitsSc (5 * chunks - 1 + i) hi'
+      have hval := hbitsRd (5 * chunks - 1 + i) hi'
+      rw [getElem_mapVec] at hsc hval
+      simp only [List.getElem_drop, Vector.getElem_toList]
+      refine ⟨CircuitType.scoped_boolVar.mp hsc, ?_⟩
+      show (BoolVar.unchecked (r.lsbBits[5 * chunks - 1 + i]'hi')).toCVar.val st.env.get = 0
+      rw [CircuitType.reads_boolVar.mp hval]
+      simp [hbit, bit]
+    have hpinM : Mono (F := F) fun st => ∀ x ∈ r.lsbBits.toList.drop (5 * chunks - 1),
+        x.Scoped st ∧ x.val st.env.get = 0 :=
+      fun _ _ hnv hle h x hx => ⟨(h x hx).1.mono hnv,
+        by rw [CVar.val_of_le hle (h x hx).1]; exact (h x hx).2⟩
+    refine Complete.bind
+      (Complete.imp (fun st h => ⟨hpinval h.1, h.2⟩) (fun _ _ h => h.2)
+        (Complete.frame Mono.onCurveAs
+          (forM_complete (F := F) (c := KimchiConstraint F)
+            (fun b : FVar F => assertEqual b (CVar.const 0))
+            (fun b => b ∈ r.lsbBits.toList.drop (5 * chunks - 1))
+            (fun _ st => ∀ x ∈ r.lsbBits.toList.drop (5 * chunks - 1),
+              x.Scoped st ∧ x.val st.env.get = 0)
+            (fun b _ hb =>
+              Complete.imp
+                (fun st hstc => ⟨⟨⟨CircuitType.scoped_fvar.mpr (hstc b hb).1,
+                    CircuitType.reads_fvar.mpr (hstc b hb).2⟩,
+                  CircuitType.scoped_fvar.mpr trivial, CircuitType.reads_fvar.mpr rfl⟩,
+                  hstc⟩)
+                (fun _ _ h => h.2)
+                (Complete.frame hpinM
+                  (assertEqual_complete (c := KimchiConstraint F) b (CVar.const 0) 0)))
+            _ (fun _ hx => hx))))
+      fun _ => Complete.pure_of fun _ h => h
+  · simp only [hle, ↓reduceIte]
+    exact Complete.bind (Complete.pure_of fun _ h => h.2) fun _ => Complete.pure_of fun _ h => h
 
 attribute [irreducible] scaleFast1
 

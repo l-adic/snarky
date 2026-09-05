@@ -631,6 +631,9 @@ Snarky.Kimchi.OnCurveAt.ne_zero
 Snarky.Kimchi.instIfThenElseAffinePoint
 Snarky.Kimchi.select_affinePoint_spec
 Snarky.Kimchi.addFast_checkFinite_spec
+Snarky.Kimchi.HasCurve.pallas
+Snarky.Kimchi.HasCurve.vesta_ladderRegime
+Snarky.Kimchi.HasCurve.pallas_ladderRegime
 Snarky.Kimchi.OnCurveAt.congr_simp
 Snarky.Kimchi.Finiteness
 Snarky.Kimchi.instDecidableEqFiniteness
@@ -763,6 +766,8 @@ Snarky.Kimchi.groupMapPure
 Snarky.Kimchi.groupMapPure_toGroup
 Snarky.Kimchi.groupMapCircuit
 Snarky.Kimchi.groupMapCircuit_spec
+Snarky.Kimchi.groupMapCircuit_first_spec
+Snarky.Kimchi.groupMapCircuit_toGroup_spec
 Snarky.Kimchi.groupMapCircuit_complete
 Snarky.Kimchi.groupMapCircuit_onCurve_spec
 Snarky.Kimchi.groupMapCircuit_toGroup_complete
