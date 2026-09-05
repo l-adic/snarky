@@ -76,15 +76,24 @@ def roots : List Name :=
     `Pickles.combinePolynomials_spec,
     `Pickles.bulletReduce_spec,
     `Pickles.ipaFinalCheck_spec,
-    `Pickles.checkBulletproof_spec_success ]
+    `Pickles.checkBulletproof_spec_success,
+    `Pickles.schnorrPoint_iff_schnorrAt_vesta,
+    `Pickles.schnorrPoint_iff_schnorrAt_pallas,
+    `Pickles.checkBulletproof_wrap_spec,
+    `Pickles.checkBulletproof_step_spec ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 
 /-- The roots allowed to carry a `native_decide` certificate: those at the deployed token
-streams, each resting on `Certificate.lean`'s decisions. -/
+streams, each resting on `Certificate.lean`'s decisions, and those at the deployed curves,
+resting on CompElliptic's order and primality certificates. -/
 def deployedRoots : List Name :=
-  [ `Pickles.Reflect.circuit_gateLinearization_fp,
+  [ `Pickles.schnorrPoint_iff_schnorrAt_vesta,
+    `Pickles.schnorrPoint_iff_schnorrAt_pallas,
+    `Pickles.checkBulletproof_wrap_spec,
+    `Pickles.checkBulletproof_step_spec,
+    `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,
     `Pickles.Reflect.evaluate_fqTokens,
