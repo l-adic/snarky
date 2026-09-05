@@ -763,6 +763,8 @@ Snarky.Kimchi.groupMapPure
 Snarky.Kimchi.groupMapPure_toGroup
 Snarky.Kimchi.groupMapCircuit
 Snarky.Kimchi.groupMapCircuit_spec
+Snarky.Kimchi.groupMapCircuit_first_spec
+Snarky.Kimchi.groupMapCircuit_toGroup_spec
 Snarky.Kimchi.groupMapCircuit_complete
 Snarky.Kimchi.groupMapCircuit_onCurve_spec
 Snarky.Kimchi.groupMapCircuit_toGroup_complete

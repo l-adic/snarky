@@ -707,8 +707,9 @@ theorem ipaFinalCheck_spec {sf : Type} (ops : IpaScalarOps F (Builder V (KimchiC
 /-- The algebra half of `check_bulletproof`. Under any valuation satisfying the emitted
 constraints, with the bases reading as `bv` (non-empty, `ξ` reading as `n`), the pairs, `δ`,
 `sg` and `h` as points, the side's scaling reading as `dec` (`hscale`) and the map-to-curve
-as `umap` (`hgm`): the challenges read as some `ns`, `c` as some `c₀`, and the success bit
-reads `1` exactly when the Schnorr equation holds at the readings — `u = umap t`, the combined
+as `umap` up to the ordinate's sign (`hgm`, the shape `groupMapCircuit_toGroup_spec` gives):
+the challenges read as some `ns`, `c` as some `c₀`, and the success bit reads `1` exactly when
+the Schnorr equation holds at the readings — `u` the map's point or its negation, the combined
 commitment `hornerCombine`, `lr_prod` the `lrSum` of the terms. -/
 theorem checkBulletproof_spec_success {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
@@ -721,7 +722,8 @@ theorem checkBulletproof_spec_success {sf : Type}
       ⦃⇓ r _ => ⌜∀ T : e.d.W.Point, OnCurveAt e.d.W V pt T → OnCurveAt e.d.W V r (dec x • T)⌝⦄)
     (umap : F → e.d.W.Point)
     (hgm : ∀ t : FVar F, ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF gm t
-      ⦃⇓ r _ => ⌜OnCurveAt e.d.W V r (umap (t.val V))⌝⦄)
+      ⦃⇓ r _ => ⌜∃ U : e.d.W.Point, OnCurveAt e.d.W V r U ∧
+        (U = umap (t.val V) ∨ U = -umap (t.val V))⌝⦄)
     (sv : SpongeVar F) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
     (bv : List (e.d.W.Point × Bool)) (hb : List.Forall₂ (MaskedBaseReads e.d.W V) bases bv)
     (hbne : bases ≠ []) (inp : CheckBulletproofInput F sf) (n : ℕ) (hn : n < 2 ^ 128)
@@ -731,10 +733,11 @@ theorem checkBulletproof_spec_success {sf : Type}
     (hδ : OnCurveAt e.d.W V inp.delta δv) (hsg : OnCurveAt e.d.W V inp.sg sgv)
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (ns : List ℕ) (c₀ : ℕ), List.Forall₂ (Reads128 V) o.challenges ns ∧
-      Reads128 V o.c c₀ ∧
+    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List ℕ) (c₀ : ℕ),
+      (U = umap (o.t.val V) ∨ U = -umap (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
       ((↑o.success : CVar F).val V = 1 ↔
-        SchnorrPoint e.d.lam c₀ (umap (o.t.val V)) (hornerCombine (endoExpandZ e.d.lam n) bv)
+        SchnorrPoint e.d.lam c₀ U (hornerCombine (endoExpandZ e.d.lam n) bv)
           (lrSum (List.zipWith (lrTerm e.d.lam) lrv ns)) δv sgv hv
           (dec inp.combinedInnerProduct) (dec inp.b) (dec inp.z1) (dec inp.z2))⌝⦄ := by
   simp only [checkBulletproof]
@@ -749,9 +752,10 @@ theorem checkBulletproof_spec_success {sf : Type}
   case vc1.hsize => exact hsize
   rename_i _ _ _ tv _ _ u _ hu comb _ hP o _
   intro ho
-  obtain ⟨ht, hrest⟩ := ho _ _ hu hP
+  obtain ⟨U, hU, hsign⟩ := hu
+  obtain ⟨ht, ns, c₀, hns, hc, hiff⟩ := ho _ _ hU hP
   rw [ht]
-  exact hrest
+  exact ⟨U, ns, c₀, hsign, hns, hc, hiff⟩
 
 /-! ## The wire reading -/
 
