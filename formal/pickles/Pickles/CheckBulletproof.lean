@@ -630,44 +630,45 @@ private theorem bulletReduce_spec' (e : IpaEndo F)
   intro nv hsat pv hp hne
   exact (builder_spec_iff _ _).mp (bulletReduce_spec e hchar pairs pv hp hne) nv hsat
 
+/-- How a side's `scaleByShifted` reads under `V` (the proof-side companion of
+`IpaScalarOps`, one value per side: `wrapReading`, `stepReading`). `scale_fast` pins the
+ladder's bit decomposition only through the value it packs to, so a scalar's reading is a
+witness the prover chose, not a function of the scalar: the law says some witness reads the
+scalar and, once it is in the ladder's regime, its decode is what acted on the point. -/
+structure IpaScalarOps.Reading {sf : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (W : WeierstrassCurve.Affine F) where
+  /-- The ladder witness type (wrap: an integer; step: the half and the parity bit). -/
+  wit : Type
+  /-- `Pre x w`: the witness `w` reads the circuit scalar `x`. -/
+  Pre : sf → wit → Prop
+  /-- `Reg w`: the ladder regime in which the scaling law speaks. -/
+  Reg : wit → Prop
+  /-- `dec w`: the integer the witness decodes to — the scalar that acts on the point. -/
+  dec : wit → ℤ
+  /-- The shape condition on a scalar the law needs (step: the parity bit reads as a bit). -/
+  WellFormed : sf → Prop
+  /-- The law: if the input point reads as `T`, some witness reads `x`, and in regime the
+  output reads as its decode times `T`. -/
+  scale : ∀ (pt : AffinePoint (FVar F)) (x : sf), WellFormed x →
+    ⦃⌜True⌝⦄ ops.scaleByShifted pt x
+    ⦃⇓ r _ => ⌜∀ T : W.Point, OnCurveAt W V pt T →
+      ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt W V r (dec w • T))⌝⦄
+
 /-- Under any valuation satisfying the emitted constraints, with `u`, the combined
-commitment, the pairs, `δ`, `sg` and `h` reading as points, and the side's scaling reading
-through a ladder witness, the challenges read as some `ns`, `c` as some `c₀`, each scaled
-scalar through some witness, and the success bit reads `1` exactly when `SchnorrPoint` holds
-at those readings.
-
-The ladder-witness vocabulary, shared with `checkBulletproof_spec_success` and instantiated
-by the deployed sections below:
-
-* `sf` is the side's circuit scalar type (`Type1 (FVar F)` at wrap, the split
-  `Type2 (SplitField …)` at step) and `wit` the type of the witness the prover's ladder chose
-  for it — `scale_fast` pins the bit decomposition only through the value it packs to, so a
-  scalar's reading is a witness, not a function of the scalar;
-* `Pre x w` says the witness `w` reads the circuit scalar `x` (`WrapLadderPre`: an integer
-  below `2²⁵⁵` whose cast is `x`'s value; `StepLadderPre`: the parity bit's reading and an
-  integer below `2²⁵⁴` whose cast is the half);
-* `Reg w` is the ladder regime the witness must be in for the scaling law to speak
-  (`WrapLadderReg`, `StepLadderReg`: the curve's `LadderRegime` at the witness's decode);
-* `dec w` is the integer the witness decodes to, the scalar that acts on the point
-  (`wrapLadderDec`: the `Type1` unshift; `stepLadderDec`: the `Type2` unshift of half and
-  parity).
-
-`hscale` is then the shape the `scaleFast` laws give — if the input point reads as `T`, some
-`w` with `Pre x w` exists and, once `Reg w`, the output reads as `dec w • T` — and `hreg` says
-every witness of a scaled scalar is in regime (at the deployed curves: its decode is off the
-forbidden band). -/
-theorem ipaFinalCheck_spec {sf wit : Type}
+commitment, the pairs, `δ`, `sg` and `h` reading as points, the scaled scalars well-formed and
+their witnesses in regime (`hreg`; at the deployed curves: the decode is off the forbidden
+band), the challenges read as some `ns`, `c` as some `c₀`, each scaled scalar through some
+witness of the side's `Reading`, and the success bit reads `1` exactly when `SchnorrPoint`
+holds at those readings. -/
+theorem ipaFinalCheck_spec {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
     (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F)
     (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
-    (Pre : sf → wit → Prop) (Reg : wit → Prop) (dec : wit → ℤ)
+    (R : ops.Reading e.d.W)
     (sv : SpongeVar F) (t : FVar F) (u combined : AffinePoint (FVar F))
     (inp : CheckBulletproofInput F sf)
-    (hscale : ∀ (pt : AffinePoint (FVar F)) (x : sf), x ∈ inp.scaled →
-      ⦃⌜True⌝⦄ ops.scaleByShifted pt x
-      ⦃⇓ r _ => ⌜∀ T : e.d.W.Point, OnCurveAt e.d.W V pt T →
-        ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt e.d.W V r (dec w • T))⌝⦄)
-    (hreg : ∀ (x : sf) (w : wit), x ∈ inp.scaled → Pre x w → Reg w)
+    (hwf : ∀ x ∈ inp.scaled, R.WellFormed x)
+    (hreg : ∀ (x : sf) (w : R.wit), x ∈ inp.scaled → R.Pre x w → R.Reg w)
     (δv sgv hv : e.d.W.Point)
     (lrv : List (e.d.W.Point × e.d.W.Point))
     (hlr : List.Forall₂ (PairReads e.d.W V) inp.lr lrv) (hlrne : inp.lr ≠ [])
@@ -675,12 +676,12 @@ theorem ipaFinalCheck_spec {sf wit : Type}
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ ipaFinalCheck ops e p endo sv t u combined inp
     ⦃⇓ o _ => ⌜∀ uv Pv : e.d.W.Point, OnCurveAt e.d.W V u uv → OnCurveAt e.d.W V combined Pv →
-      o.t = t ∧ ∃ (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : wit),
+      o.t = t ∧ ∃ (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : R.wit),
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
-      Pre inp.combinedInnerProduct wcip ∧ Pre inp.b wb ∧ Pre inp.z1 w₁ ∧ Pre inp.z2 w₂ ∧
+      R.Pre inp.combinedInnerProduct wcip ∧ R.Pre inp.b wb ∧ R.Pre inp.z1 w₁ ∧ R.Pre inp.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
         SchnorrPoint e.d.lam c₀ uv Pv (lrSum (List.zipWith (lrTerm e.d.lam) lrv ns)) δv sgv hv
-          (dec wcip) (dec wb) (dec w₁) (dec w₂))⌝⦄ := by
+          (R.dec wcip) (R.dec wb) (R.dec w₁) (R.dec w₂))⌝⦄ := by
   simp only [ipaFinalCheck]
   have hext := fun sv' => extractScalarChallenges_length (V := V) p endo sv' inp.lr
   have hbr := fun pairs => bulletReduce_spec' (V := V) e hchar pairs
@@ -691,10 +692,11 @@ theorem ipaFinalCheck_spec {sf wit : Type}
   have hpre := fun sv' => builder_spec_true
     (squeezePrechallenge (c := Builder V (KimchiConstraint F)) p false endo sv')
   have hem := fun g x => endoMul_spec (V := V) e.d g x
-  have hsc1 := fun pt => hscale pt inp.combinedInnerProduct (by simp [CheckBulletproofInput.scaled])
-  have hsc2 := fun pt => hscale pt inp.b (by simp [CheckBulletproofInput.scaled])
-  have hsc3 := fun pt => hscale pt inp.z1 (by simp [CheckBulletproofInput.scaled])
-  have hsc4 := fun pt => hscale pt inp.z2 (by simp [CheckBulletproofInput.scaled])
+  have hsc1 := fun pt => R.scale pt inp.combinedInnerProduct
+    (hwf _ (by simp [CheckBulletproofInput.scaled]))
+  have hsc2 := fun pt => R.scale pt inp.b (hwf _ (by simp [CheckBulletproofInput.scaled]))
+  have hsc3 := fun pt => R.scale pt inp.z1 (hwf _ (by simp [CheckBulletproofInput.scaled]))
+  have hsc4 := fun pt => R.scale pt inp.z2 (hwf _ (by simp [CheckBulletproofInput.scaled]))
   have hr1 := hreg inp.combinedInnerProduct
   have hr2 := hreg inp.b
   have hr3 := hreg inp.z1
@@ -750,53 +752,49 @@ theorem ipaFinalCheck_spec {sf wit : Type}
 
 /-- The algebra half of `check_bulletproof`. Under any valuation satisfying the emitted
 constraints, with the bases reading as `bv` (non-empty, `ξ` reading as `n`), the pairs, `δ`,
-`sg` and `h` as points, the side's scaling reading through ladder witnesses (`hscale`, `hreg`, the
-`Pre`/`Reg`/`dec` vocabulary defined at `ipaFinalCheck_spec`) and the map-to-curve as `umap`
-up to the ordinate's sign
+`sg` and `h` as points, the side's scaling reading through the ladder witnesses of its
+`IpaScalarOps.Reading` (`R`, `hwf`, `hreg`) and the map-to-curve as `umap` up to the
+ordinate's sign
 (`hgm`, the shape `groupMapCircuit_toGroup_spec` gives): the challenges read as some `ns`, `c`
 as some `c₀`, the four scaled scalars through some witnesses, and the success bit reads `1`
 exactly when the Schnorr equation holds at the readings — `u` the map's point or its negation,
 the combined commitment `hornerCombine`, `lr_prod` the `lrSum` of the terms. -/
-theorem checkBulletproof_spec_success {sf wit : Type}
+theorem checkBulletproof_spec_success {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo : FVar F)
     (gm : GroupMapParams F) (sqrtF : F → Option F)
     (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
-    (Pre : sf → wit → Prop) (Reg : wit → Prop) (dec : wit → ℤ)
-    (umap : F → e.d.W.Point)
+    (R : ops.Reading e.d.W) (umap : F → e.d.W.Point)
     (hgm : ∀ t : FVar F, ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF gm t
       ⦃⇓ r _ => ⌜∃ U : e.d.W.Point, OnCurveAt e.d.W V r U ∧
         (U = umap (t.val V) ∨ U = -umap (t.val V))⌝⦄)
     (sv : SpongeVar F) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
     (bv : List (e.d.W.Point × Bool)) (hb : List.Forall₂ (MaskedBaseReads e.d.W V) bases bv)
     (hbne : bases ≠ []) (inp : CheckBulletproofInput F sf)
-    (hscale : ∀ (pt : AffinePoint (FVar F)) (x : sf), x ∈ inp.scaled →
-      ⦃⌜True⌝⦄ ops.scaleByShifted pt x
-      ⦃⇓ r _ => ⌜∀ T : e.d.W.Point, OnCurveAt e.d.W V pt T →
-        ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt e.d.W V r (dec w • T))⌝⦄)
-    (hreg : ∀ (x : sf) (w : wit), x ∈ inp.scaled → Pre x w → Reg w)
+    (hwf : ∀ x ∈ inp.scaled, R.WellFormed x)
+    (hreg : ∀ (x : sf) (w : R.wit), x ∈ inp.scaled → R.Pre x w → R.Reg w)
     (n : ℕ) (hn : n < 2 ^ 128) (hxi : inp.xi.val.val V = n) (δv sgv hv : e.d.W.Point)
     (lrv : List (e.d.W.Point × e.d.W.Point))
     (hlr : List.Forall₂ (PairReads e.d.W V) inp.lr lrv) (hlrne : inp.lr ≠ [])
     (hδ : OnCurveAt e.d.W V inp.delta δv) (hsg : OnCurveAt e.d.W V inp.sg sgv)
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : wit),
+    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : R.wit),
       (U = umap (o.t.val V) ∨ U = -umap (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
-      Pre inp.combinedInnerProduct wcip ∧ Pre inp.b wb ∧ Pre inp.z1 w₁ ∧ Pre inp.z2 w₂ ∧
+      R.Pre inp.combinedInnerProduct wcip ∧ R.Pre inp.b wb ∧ R.Pre inp.z1 w₁ ∧ R.Pre inp.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
         SchnorrPoint e.d.lam c₀ U (hornerCombine (endoExpandZ e.d.lam n) bv)
           (lrSum (List.zipWith (lrTerm e.d.lam) lrv ns)) δv sgv hv
-          (dec wcip) (dec wb) (dec w₁) (dec w₂))⌝⦄ := by
+          (R.dec wcip) (R.dec wb) (R.dec w₁) (R.dec w₂))⌝⦄ := by
   simp only [checkBulletproof]
   have habs := fun sv' limbs => builder_spec_true
     (absorbList (c := Builder V (KimchiConstraint F)) p sv' limbs)
   have hsq := fun sv' => builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv')
   have hcomb := combinePolynomials_spec (V := V) e inp.xi n hn hxi hchar bases bv hb hbne
-  have hfin := fun sv' t u comb => ipaFinalCheck_spec (V := V) ops e p endo hchar Pre Reg dec
-    sv' t u comb inp hscale hreg δv sgv hv lrv hlr hlrne hδ hsg hh
+  have hfin := fun sv' t u comb => ipaFinalCheck_spec (V := V) ops e p endo hchar R
+    sv' t u comb inp hwf hreg δv sgv hv lrv hlr hlrne hδ hsg hh
   mvcgen -trivial [habs, hsq, hgm, hcomb, hfin]
   case vc1.hsize => exact hsize
   rename_i _ _ _ tv _ _ u _ hu comb _ hP o _
@@ -869,6 +867,28 @@ theorem step_scale_reads {V : Valuation Fp} (pt : AffinePoint (FVar Fp))
       x.val.sDiv2 x.val.sOdd) fun r hr T hT => ?_
   obtain ⟨z, h0, hlt, hz, hreg⟩ := hr T hT bb hbit
   exact ⟨(z, bb), ⟨hbit, h0, hlt, hz⟩, fun hR => hreg hR⟩
+
+/-- The wrap side's reading: `IpaScalarOps.wrap` at Vesta through `wrap_scale_reads`; every
+`Type1` scalar is well-formed. -/
+def wrapReading (V : Valuation Fq) :
+    IpaScalarOps.Reading (V := V) IpaScalarOps.wrap IpaEndo.vesta.d.W where
+  wit := ℤ
+  Pre := WrapLadderPre V
+  Reg := WrapLadderReg
+  dec := wrapLadderDec
+  WellFormed _ := True
+  scale pt x _ := wrap_scale_reads pt x
+
+/-- The step side's reading: `IpaScalarOps.step` at Pallas through `step_scale_reads`; a split
+scalar is well-formed when its parity bit reads as a bit. -/
+def stepReading (V : Valuation Fp) :
+    IpaScalarOps.Reading (V := V) IpaScalarOps.step IpaEndo.pallas.d.W where
+  wit := ℤ × Bool
+  Pre := StepLadderPre V
+  Reg := StepLadderReg
+  dec := stepLadderDec
+  WellFormed x := ∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb
+  scale pt x h := h.elim fun bb hbit => step_scale_reads pt x bb hbit
 
 end Deployed
 
@@ -1316,10 +1336,10 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
           ⟨lrW, δW, (wrapLadderDec z₁ : Fp), (wrapLadderDec z₂ : Fp), sgW⟩)⌝⦄ := by
   refine builder_spec_imp _ _ _
     (checkBulletproof_spec_success IpaScalarOps.wrap IpaEndo.vesta p hsize endo
-      groupMapParamsVesta sqrtF fq_natCast_inj (WrapLadderPre V) WrapLadderReg wrapLadderDec
+      groupMapParamsVesta sqrtF fq_natCast_inj (wrapReading V)
       (fun t => SWPoint.equivPoint Vesta.curve
         (Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec t)) (vesta_groupMap_reads sqrtF)
-      sv bases _ hb hbne inp (fun pt x _ => wrap_scale_reads pt x)
+      sv bases _ hb hbne inp (fun _ _ => trivial)
       (fun x z hx hpre => HasCurve.vesta_ladderRegime _ (hband x z hx hpre))
       n hn hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
   obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
@@ -1576,11 +1596,10 @@ theorem checkBulletproof_step_spec {V : Valuation Fp}
           ⟨lrW, δW, (stepLadderDec z₁ : Fq), (stepLadderDec z₂ : Fq), sgW⟩)⌝⦄ := by
   refine builder_spec_imp _ _ _
     (checkBulletproof_spec_success IpaScalarOps.step IpaEndo.pallas p hsize endo
-      groupMapParamsPallas sqrtF fp_natCast_inj (StepLadderPre V) StepLadderReg stepLadderDec
+      groupMapParamsPallas sqrtF fp_natCast_inj (stepReading V)
       (fun t => SWPoint.equivPoint Pallas.curve
         (Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec t)) (pallas_groupMap_reads sqrtF)
-      sv bases _ hb hbne inp
-      (fun pt x hx => (hbits x hx).elim fun bb hbit => step_scale_reads pt x bb hbit)
+      sv bases _ hb hbne inp hbits
       (fun x w hx hpre => HasCurve.pallas_ladderRegime _ (hband x w hx hpre))
       n hn hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
   obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
