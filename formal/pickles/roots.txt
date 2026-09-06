@@ -47,6 +47,18 @@ Pickles.buildPow2PowsArray_spec
 Pickles.pow2PowSquare_spec
 Pickles.pow2PowMul_spec
 
+-- The statement records (Statement.lean): the two public inputs, transcribed from the
+-- PureScript `Pickles.Types` — the vocabulary the boundary glue is stated over.
+Pickles.PlonkInCircuit
+Pickles.DeferredValues
+Pickles.UnfinalizedProof
+Pickles.BranchData
+Pickles.WrapDeferredValues
+Pickles.WrapProofState
+Pickles.WrapStatement
+Pickles.StepProofState
+Pickles.StepStatement
+
 -- `finalize_other_proof` (FinalizeOtherProof.lean): the shared body and the two sides, each
 -- read as `FopReads` — the claimed scalars against the wire verifier's `frSqueezes` (at the
 -- circuit's recursion digest, in the relational low-128-bit form) and its `ftEval0`,
