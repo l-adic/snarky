@@ -754,10 +754,11 @@ def checkBulletproofStepCircuit (blindingH : AffinePoint (FVar Fp)) (input : Vec
     Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
     (fun _ => none) sv
     ((List.range 47).map fun j => (pt (4 + 2 * j), none))
-    { xi := ⟨get 3⟩, delta := pt 158, sg := pt 160
-      lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
-      z1 := shifted 162, z2 := shifted 164, combinedInnerProduct := shifted 166
-      b := shifted 168, blindingGenerator := blindingH }
+    { xi := ⟨get 3⟩
+      deferred := { combinedInnerProduct := shifted 166, b := shifted 168 }
+      opening := { lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
+                   z1 := shifted 162, z2 := shifted 164, delta := pt 158, sg := pt 160 }
+      blindingGenerator := blindingH }
   pure PUnit.unit
 
 /-! ## The `finalize_other_proof` circuits
@@ -857,10 +858,11 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
     Bulletproof.IpaPallas.curve.frParams (.const endoPallasLam) Pickles.groupMapParamsVesta
     (fun _ => none) sv
     bases
-    { xi := ⟨get 3⟩, delta := pt 164, sg := pt 166
-      lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
-      z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, combinedInnerProduct := ⟨get 170⟩
-      b := ⟨get 171⟩, blindingGenerator := blindingH }
+    { xi := ⟨get 3⟩
+      deferred := { combinedInnerProduct := ⟨get 170⟩, b := ⟨get 171⟩ }
+      opening := { lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
+                   z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, delta := pt 164, sg := pt 166 }
+      blindingGenerator := blindingH }
   pure PUnit.unit
 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
