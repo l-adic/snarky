@@ -17,6 +17,15 @@ Poseidon.fpParams
 Poseidon.FqVesta.spec
 Poseidon.FqPallas.spec
 
+-- script-surface:begin
+-- The production sponge's named squeeze operations (`challenge`, `squeeze_challenge`):
+-- `challengeNat` cast, resp. endo-expanded. The verifier's schedules apply those steps
+-- themselves (`Kimchi.Verifier.fqRun`, `FqRun.expand`); these stay as the operations the
+-- trace fixtures are replayed against by scripts/check_fq_sponge.lean.
+Poseidon.FqSponge.challenge
+Poseidon.FqSponge.squeezeChallenge
+-- script-surface:end
+
 -- The SvdW map-to-curve.
 Poseidon.GroupMapVesta.toGroup
 Poseidon.GroupMapPallas.toGroup

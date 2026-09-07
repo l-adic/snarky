@@ -250,12 +250,11 @@ def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
     C.ScalarField :=
   (challengeFq sp s).1
 
-/-- The fq-sponge digest (`DefaultFqSponge::digest`, sponge.rs:388–397): squeeze one base
-element and cast it to the scalar field by `from_bigint`, which returns **zero when the
-value does not fit** — not a modular reduction. The state is consumed (production takes
-`mut self`); the caller keeps its pre-digest copy. -/
-private def fqDigest (s : FqSponge.S C.base) : C.ScalarField :=
-  let (x, _) := challengeFq C.sponge s
+/-- The cast of the fq-sponge digest into the scalar field (`DefaultFqSponge::digest`,
+sponge.rs:388–397, `from_bigint`): the representative, or **zero when the value does not
+fit** — not a modular reduction. The consumer's step: the sponge only produces the
+base-field element (`FqRun.digestElem`). -/
+def castDigest (x : C.BaseField) : C.ScalarField :=
   if x.val < C.scalar then ((x.val : ℕ) : C.ScalarField) else 0
 
 /-! ## The oracle outputs and the public evaluations -/
@@ -303,21 +302,50 @@ private def publicEvals {F : Type*} [Field F] (n : ℕ)
 
 /-! ## The Fiat–Shamir schedules -/
 
+/-- What the fq-sponge run of `oracles` produces, before any cast or expansion: the four
+128-bit prechallenges, the digest element (in the base field), and the **warm** post-`ζ`
+state. This is exactly what a circuit's group half emits (`Pickles.fqSpongeTranscript`);
+`FqRun.expand` is the consumer's step. -/
+structure FqRun (C : Ipa.CommitmentCurve) where
+  /-- The `β` prechallenge. -/
+  beta : ℕ
+  /-- The `γ` prechallenge. -/
+  gamma : ℕ
+  /-- The `α` prechallenge. -/
+  alpha : ℕ
+  /-- The `ζ` prechallenge. -/
+  zeta : ℕ
+  /-- The digest squeeze, a base-field element (`fq_sponge.clone().digest()` before its cast). -/
+  digestElem : C.BaseField
+  /-- The pre-digest sponge state, continued by the IPA finish. -/
+  warm : FqSponge.S C.base
+
 /-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): `absorb_commitment` is
 chunk-wise `absorbG`, so the public-commitment and per-column absorbs are chunk
-folds; the squeeze schedule is chunk-count-independent. -/
-def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) : FqOracles C :=
+folds; the squeeze schedule is chunk-count-independent. Every squeeze is `challengeNat`. -/
+def fqRun {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : FqRun C :=
   let s := absorbFq C.sponge FqSponge.init [cvk.digest]
   let s := publicComm.foldl (absorbG C.sponge) s
   let s := cp.wComm.foldl (fun s col => col.foldl (absorbG C.sponge) s) s
-  let (beta, s) := challenge C.sponge s
-  let (gamma, s) := challenge C.sponge s
+  let (beta, s) := challengeNat C.sponge s
+  let (gamma, s) := challengeNat C.sponge s
   let s := cp.zComm.foldl (absorbG C.sponge) s
-  let (alpha, s) := squeezeChallenge C.sponge s
+  let (alpha, s) := challengeNat C.sponge s
   let s := cp.tComm.foldl (absorbG C.sponge) s
-  let (zeta, s) := squeezeChallenge C.sponge s
-  ⟨beta, gamma, alpha, zeta, fqDigest C s, s⟩
+  let (zeta, s) := challengeNat C.sponge s
+  ⟨beta, gamma, alpha, zeta, (challengeFq C.sponge s).1, s⟩
+
+/-- The consumer's view of an fq-sponge run: `β, γ` cast into the scalar field, `α, ζ`
+endo-expanded at the sponge's eigenvalue, the digest cast. -/
+def FqRun.expand (r : FqRun C) : FqOracles C :=
+  ⟨(r.beta : C.ScalarField), (r.gamma : C.ScalarField), endoExpand C.sponge.lam r.alpha,
+    endoExpand C.sponge.lam r.zeta, castDigest C r.digestElem, r.warm⟩
+
+/-- The fq-sponge oracles: the run, expanded. -/
+def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : FqOracles C :=
+  (fqRun C cvk cp publicComm).expand
 
 /-- The fq-sponge run of `oracles` over the Poseidon automaton (verifier.rs:156–283), the
 commitments as coordinate pairs and pickles' recursion commitments absorbed after the index
@@ -386,21 +414,29 @@ theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
         endoExpand C.sponge.lam r.1.2.2.2,
         (if r.2.1.val < C.scalar then ((r.2.1.val : ℕ) : C.ScalarField) else 0),
         ⟨r.2.2, []⟩⟩ := by
-  simp only [fqOracles, fqPrechallenges, fqSqueezes, coords, absorbFq, FqSponge.init,
-    ← Vector.foldl_toList, ← Array.foldl_toList, foldl_absorbG, foldl_cols, challenge_fresh,
-    squeezeChallenge_fresh, fqDigest, challengeFq, List.foldl_map, List.foldl_nil]
+  simp only [fqOracles, FqRun.expand, fqRun, castDigest, fqPrechallenges, fqSqueezes, coords,
+    absorbFq, FqSponge.init, ← Vector.foldl_toList, ← Array.foldl_toList, foldl_absorbG,
+    foldl_cols, challengeNat_fresh, challengeFq, List.foldl_map, List.foldl_nil]
 
 /-- The fr-sponge schedule (verifier.rs:284–405): absorb `frTranscript`, with the
 recursion digest the fr-sponge digest of the empty recursion list, then squeeze the two
-prechallenges and expand them. -/
-def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
-    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
-    C.ScalarField × C.ScalarField :=
+128-bit prechallenges. What a circuit's scalar half recomputes (`Pickles.squeezeXiR`);
+`frOracles` is the consumer's expansion. -/
+def frRun {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : ℕ × ℕ :=
   let sp := frSpec C
   let s := absorbFq sp FqSponge.init
     (frTranscript fqDig (frDigest C sp FqSponge.init) cp.ftEval1 pubEvals cp.evals)
   let (v', s) := challengeNat sp s
   let (u', _) := challengeNat sp s
+  (v', u')
+
+/-- The fr-sponge oracles: the run's two prechallenges, endo-expanded at the sponge's
+eigenvalue — the polyscale and the evalscale. -/
+def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    C.ScalarField × C.ScalarField :=
+  let (v', u') := frRun C cp fqDig pubEvals
   (endoExpand C.sponge.lam v', endoExpand C.sponge.lam u')
 
 /-- The fr-sponge's two 128-bit prechallenges over a transcript, as naturals: the values
@@ -420,7 +456,7 @@ theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
       let pre := frPrechallenges C.frParams
         (frTranscript fqDig (frDigest C (frSpec C) FqSponge.init) cp.ftEval1 pubEvals cp.evals)
       (endoExpand C.sponge.lam pre.1, endoExpand C.sponge.lam pre.2) := by
-  simp only [frOracles, frPrechallenges, frSqueezes, absorbFq, challengeNat_fresh]
+  simp only [frOracles, frRun, frPrechallenges, frSqueezes, absorbFq, challengeNat_fresh]
   rfl
 
 /-- `lo` is the prechallenge `pre` up to the wrap-around slack of a 128-bit decomposition:
