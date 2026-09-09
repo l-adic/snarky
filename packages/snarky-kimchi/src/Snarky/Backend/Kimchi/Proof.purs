@@ -24,6 +24,7 @@ module Snarky.Backend.Kimchi.Proof
   , proofOraclesRec
   , proofBulletproofChallenges
   , proofOpeningPrechallenges
+  , proofPrevChallenges
   , verifyOpeningProof
   , verifyOpeningProofsBatch
   , computeB0
@@ -236,7 +237,15 @@ class ProofFFI f g c | f -> g c, g -> f c where
   -- | many proofs that share this wrap verifier index. The homogeneous
   -- | specialization of OCaml `Verify.verify_heterogenous`'s final
   -- | `batch_verify` (all proofs of one tag). `[]` is vacuously `true`.
-  verifyOpeningProofsBatch :: VerifierIndex g f -> Array { proof :: Proof g f, publicInput :: Array f } -> Boolean
+  -- | Each entry's `prevChallenges` is the accumulator list kimchi absorbs
+  -- | and opens (`c` the commitment curve's coordinate field, where the
+  -- | `sg` points live); a non-empty list is injected over whatever the
+  -- | proof object stores, so the verifier decides the accumulators. An
+  -- | empty list leaves the proof object's own list in place.
+  verifyOpeningProofsBatch
+    :: VerifierIndex g f
+    -> Array { proof :: Proof g f, publicInput :: Array f, prevChallenges :: Array { sgX :: c, sgY :: c, challenges :: Array f } }
+    -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
@@ -253,6 +262,12 @@ class ProofFFI f g c | f -> g c, g -> f c where
     :: VerifierIndex g f
     -> { proof :: Proof g f, publicInput :: Array f, prevChallenges :: Array { sgX :: c, sgY :: c, challenges :: Array f } }
     -> Array f
+  -- | The accumulator list the proof object stores (`prev_challenges`, as
+  -- | the prover created it), in the shape `prevChallenges` arguments take.
+  -- | Read-only: the verifier never trusts it (`Pickles.Verify.wrapAccumulators`
+  -- | rebuilds the list from the carried messages), but tests compare the
+  -- | rebuilt list against it.
+  proofPrevChallenges :: Proof g f -> Array { sgX :: c, sgY :: c, challenges :: Array f }
   -- | `log_size_of_group` of the prover index's d1 evaluation domain.
   proverIndexDomainLog2 :: ProverIndex g f -> Int
   -- | All chunks of the `i`-th SRS lagrange commitment at a given domain log2.
@@ -610,8 +625,31 @@ foreign import vestaProofOpeningPrechallenges
 foreign import pallasVerifyOpeningProof :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
 
-foreign import pallasVerifyOpeningProofsBatch :: VerifierIndex Vesta.G Pallas.BaseField -> Array { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
-foreign import vestaVerifyOpeningProofsBatch :: VerifierIndex Pallas.G Vesta.BaseField -> Array { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
+foreign import pallasProofPrevChallenges
+  :: Proof Vesta.G Pallas.BaseField
+  -> Array { sgX :: Pallas.ScalarField, sgY :: Pallas.ScalarField, challenges :: Array Pallas.BaseField }
+
+foreign import vestaProofPrevChallenges
+  :: Proof Pallas.G Vesta.BaseField
+  -> Array { sgX :: Vesta.ScalarField, sgY :: Vesta.ScalarField, challenges :: Array Vesta.BaseField }
+
+foreign import pallasVerifyOpeningProofsBatch
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> Array
+       { proof :: Proof Vesta.G Pallas.BaseField
+       , publicInput :: Array Pallas.BaseField
+       , prevChallenges :: Array { sgX :: Pallas.ScalarField, sgY :: Pallas.ScalarField, challenges :: Array Pallas.BaseField }
+       }
+  -> Boolean
+
+foreign import vestaVerifyOpeningProofsBatch
+  :: VerifierIndex Pallas.G Vesta.BaseField
+  -> Array
+       { proof :: Proof Pallas.G Vesta.BaseField
+       , publicInput :: Array Vesta.BaseField
+       , prevChallenges :: Array { sgX :: Vesta.ScalarField, sgY :: Vesta.ScalarField, challenges :: Array Vesta.BaseField }
+       }
+  -> Boolean
 
 -- NOTE: `u_t` is the sponge output AFTER absorbing shifted CIP and BEFORE
 -- `group_map`. It is squeezed in the commitment curve's BASE field (=
@@ -704,6 +742,7 @@ instance ProofFFI Pallas.BaseField Vesta.G Pallas.ScalarField where
   computeB0 = Domain.computeB0
   proofOraclesRec = pallasProofOracles
   proofOpeningPrechallenges = pallasProofOpeningPrechallenges
+  proofPrevChallenges = pallasProofPrevChallenges
   proverIndexDomainLog2 = pallasProverIndexDomainLog2
   srsLagrangeCommitmentChunksAt = pallasSrsLagrangeCommitmentChunksAt
   srsBlindingGenerator = pallasSrsBlindingGenerator
@@ -722,6 +761,7 @@ instance ProofFFI Vesta.BaseField Pallas.G Vesta.ScalarField where
   computeB0 = Domain.computeB0
   proofOraclesRec = vestaProofOracles
   proofOpeningPrechallenges = vestaProofOpeningPrechallenges
+  proofPrevChallenges = vestaProofPrevChallenges
   proverIndexDomainLog2 = vestaProverIndexDomainLog2
   srsLagrangeCommitmentChunksAt = vestaSrsLagrangeCommitmentChunksAt
   srsBlindingGenerator = vestaSrsBlindingGenerator

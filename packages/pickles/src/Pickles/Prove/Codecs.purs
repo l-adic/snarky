@@ -41,7 +41,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
-import Pickles.Verify (VerifiableProof, Verifier)
+import Pickles.Verify (VerifiableProof, Verifier, dummyWrapSgOf)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Simple.JSON (readJSON, writeJSON)
 import Snarky.Backend.Kimchi.Proof (vestaProofFromSerdeJson, vestaProofToSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)
@@ -196,4 +196,5 @@ decodeVerifier srs s = do
     , stepSrsLengthLog2: w.stepSrsLengthLog2
     , stepEndo: w.stepEndo
     , linearizationPoly: Linearization.pallas
+    , dummyWrapSg: dummyWrapSgOf srs.pallasSrs
     }

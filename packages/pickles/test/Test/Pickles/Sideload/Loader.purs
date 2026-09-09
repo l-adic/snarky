@@ -255,6 +255,7 @@ loadFixture cfg sharedSrs dir = do
 
     verifier = mkVerifier
       { wrapVK: vk
+      , pallasSrs: sharedSrs.pallasSrs
       , vestaSrs
       , stepNumChunks
       }

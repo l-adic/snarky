@@ -32,7 +32,12 @@
 -- | 4. **Kimchi batch-verify on the wrap proof** (stage 3) — assemble
 -- |    the wrap public input from the expanded deferred values + the
 -- |    two recomputed digests via `assembleWrapMainInput`, flatten via
--- |    `CircuitType`, hand it to `pallasVerifyOpeningProof`.
+-- |    `CircuitType`, rebuild the proof's accumulator list from the
+-- |    carried messages (`wrapAccumulators`, OCaml `verify.ml`'s
+-- |    `message`), and hand both to the kimchi batch verifier. The list
+-- |    the prover stored in the proof object is never used: it would let
+-- |    the prover open the wrap proof at accumulators unrelated to the
+-- |    `sg` it hashed.
 -- |
 -- | The separation between `Verifier` (per-tag constants — wrap VK,
 -- | Vesta SRS, step domain metadata) and `CompiledProof` (per-proof
@@ -67,12 +72,14 @@ module Pickles.Verify
   , mkSomeCompiledProofWidthData
   , Verifier
   , VerifiableProof
+  , dummyWrapSgOf
   , messageDigests
   , mkVerifier
   , toVerifiable
   , verify
   , verifyBatch
   , verifyStages
+  , wrapAccumulators
   , wrapPublicInput
   , wrapPublicInputOf
   ) where
@@ -101,6 +108,7 @@ import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Kimchi.Impl.Pallas (pallasSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Proof (Proof, permutationVanishingPolynomial, verifyOpeningProofsBatch)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
@@ -110,7 +118,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Types (valueToFields)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Pasta (PallasG, VestaG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -- | Per-tag verification state. Shippable independently of provers —
@@ -131,27 +139,40 @@ type Verifier =
   , stepEndo :: StepField
   -- | Tick linearization polynomial (= `Pickles.Linearization.pallas`).
   , linearizationPoly :: LinearizationPoly StepField
+  -- | The accumulator a padding slot carries (OCaml `Dummy.Ipa.Wrap.sg`):
+  -- | the challenge-polynomial commitment of the dummy wrap challenges on
+  -- | the Pallas SRS. `wrapAccumulators` pads with it.
+  , dummyWrapSg :: AffinePoint StepField
   }
 
+-- | OCaml `Dummy.Ipa.Wrap.sg`: `compute_sg` of the dummy wrap challenges on
+-- | the Pallas SRS, the commitment every dummy-padded accumulator slot
+-- | carries.
+dummyWrapSgOf :: CRS PallasG -> AffinePoint StepField
+dummyWrapSgOf pallasSrs =
+  pallasSrsBPolyCommitmentPoint pallasSrs (Vector.toUnfoldable dummyIpaChallenges.wrapExpanded)
+
 -- | Build a `Verifier` from the minimum the caller supplies (a compiled
--- | wrap VK, a Vesta SRS, and the step `numChunks` driving zk_rows). All
--- | derived constants (endo, linearization) come from the standard
--- | Pickles setup. The per-proof step domain log2 (= generator + shifts)
--- | is carried by each `VerifiableProof`'s `stepDomainLog2` and rebuilt
--- | at verify time — see [`verifyOne`].
+-- | wrap VK, the two SRSes, and the step `numChunks` driving zk_rows). All
+-- | derived constants (endo, linearization, the dummy accumulator) come
+-- | from the standard Pickles setup. The per-proof step domain log2
+-- | (= generator + shifts) is carried by each `VerifiableProof`'s
+-- | `stepDomainLog2` and rebuilt at verify time — see [`verifyOne`].
 mkVerifier
   :: { wrapVK :: VerifierIndex PallasG WrapField
+     , pallasSrs :: CRS PallasG
      , vestaSrs :: CRS VestaG
      , stepNumChunks :: Int
      }
   -> Verifier
-mkVerifier { wrapVK, vestaSrs, stepNumChunks } =
+mkVerifier { wrapVK, pallasSrs, vestaSrs, stepNumChunks } =
   { wrapVK
   , vestaSrs
   , stepZkRows: zkRowsForNumChunks stepNumChunks
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepEndo: case (endoScalar) of EndoScalar e -> e
   , linearizationPoly: Linearization.pallas
+  , dummyWrapSg: dummyWrapSgOf pallasSrs
   }
 
 -- | The five fields whose Vector size depends on the rule's *actual*
@@ -421,6 +442,37 @@ messageDigests verifier vp =
   in
     { step, wrap }
 
+-- | The wrap proof's kimchi accumulator list, rebuilt from the carried
+-- | messages as OCaml `verify.ml` builds `message`: the step message's
+-- | `challenge_polynomial_commitments` front-padded with the dummy wrap
+-- | `sg`, zipped with the wrap message's expanded old challenges
+-- | front-padded with the dummy wrap challenges, to `PaddedLength`
+-- | (OCaml: `Vector.extend_front` to `max_proofs_verified`, then
+-- | `Wrap_hack.pad_accumulator`; one pad here, since both use the same
+-- | dummy accumulator). Each entry is a previous wrap proof's `sg` (a
+-- | Pallas point, `StepField` coordinates) with its 15 expanded `WrapField`
+-- | challenges — the `prev_challenges` kimchi absorbs into both sponges
+-- | and opens at the head of its batch. The list the prover stored in the
+-- | proof object is deliberately not read.
+wrapAccumulators
+  :: Verifier
+  -> VerifiableProof
+  -> Array { sgX :: StepField, sgY :: StepField, challenges :: Array WrapField }
+wrapAccumulators verifier vp =
+  let
+    paddedLen = reflectType (Proxy :: Proxy PaddedLength)
+
+    padFront :: forall a. a -> Array a -> Array a
+    padFront dummy xs = Array.replicate (paddedLen - Array.length xs) dummy <> xs
+
+    sgs = padFront verifier.dummyWrapSg vp.prevChallengePolynomialCommitments
+    chals = padFront dummyIpaChallenges.wrapExpanded vp.prevWrapBulletproofChallenges
+  in
+    Array.zipWith
+      (\(AffinePoint sg) ch -> { sgX: sg.x, sgY: sg.y, challenges: Vector.toUnfoldable ch })
+      sgs
+      chals
+
 -- | Stage 1 for a `VerifiableProof`: reconstruct the expanded wrap deferred
 -- | values from the carried minimal skeleton. The prev-proof bp-challenge
 -- | width is reified back from the array length (`Vector.reifyVector`).
@@ -458,16 +510,21 @@ expandDv verifier vp =
 
 -- | Per-proof verification: stage 1 (expand deferred values), stage 2
 -- | (IPA step accumulator check) and stage 3 (message digests), plus
--- | assembly of the wrap proof's kimchi public input. Stage 4 (the kimchi
--- | opening-proof check) is deliberately NOT done here — `verify` batches it across
--- | all proofs into ONE amortized `batch_verify`. Mirrors OCaml
--- | `Verify.verify_heterogenous` (per-instance expand + accumulator
--- | term, then a single batched dlog check).
+-- | assembly of the wrap proof's kimchi public input and accumulator list.
+-- | Stage 4 (the kimchi opening-proof check) is deliberately NOT done here
+-- | — `verify` batches it across all proofs into ONE amortized
+-- | `batch_verify`. Mirrors OCaml `Verify.verify_heterogenous`
+-- | (per-instance expand + accumulator term, then a single batched dlog
+-- | check).
 perProof
   :: Verifier
   -> VerifiableProof
   -> { accumulatorOk :: Boolean
-     , ctx :: { proof :: Proof PallasG WrapField, publicInput :: Array WrapField }
+     , ctx ::
+         { proof :: Proof PallasG WrapField
+         , publicInput :: Array WrapField
+         , prevChallenges :: Array { sgX :: StepField, sgY :: StepField, challenges :: Array WrapField }
+         }
      }
 perProof verifier vp =
   let
@@ -488,13 +545,14 @@ perProof verifier vp =
     -- ===== Stage 3: the message digests, from the VK and the state. =====
     digests = messageDigests verifier vp
 
-    -- Wrap proof's kimchi public input. Stage 4 (the opening-proof
-    -- check) is intentionally deferred to `verifyBatch`, which runs it for
-    -- every proof in ONE amortized `verifyOpeningProofsBatch`.
+    -- Wrap proof's kimchi public input and accumulator list. Stage 4 (the
+    -- opening-proof check) is intentionally deferred to `verifyBatch`,
+    -- which runs it for every proof in ONE amortized
+    -- `verifyOpeningProofsBatch`.
     pi = wrapPublicInputOf dv digests.step digests.wrap
   in
     { accumulatorOk
-    , ctx: { proof: vp.wrapProof, publicInput: pi }
+    , ctx: { proof: vp.wrapProof, publicInput: pi, prevChallenges: wrapAccumulators verifier vp }
     }
 
 -- | Verify an array of proofs (all of the same tag).

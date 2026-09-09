@@ -4173,6 +4173,7 @@ compileMulti handler cfg rules = do
 
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex
+      , pallasSrs: cfg.srs.pallasSrs
       , vestaSrs: cfg.srs.vestaSrs
       , stepNumChunks: reflectType (Proxy :: Proxy stepChunks)
       }
