@@ -30,6 +30,9 @@ recomputes each from the evaluations and compares.
   selection — and the side's shifted-value conventions (`FopShiftOps`, at the side's
   `Type1`/`Type2` claims). The claims arrive as an `UnfinalizedProof` of `Pickles.Statement`,
   the step statement's per-predecessor record.
+* `FopShiftOps.Reading`: how a side's shift ops read under a valuation — the claim
+  reading, its decode, and the two laws — one value per side (`stepShiftOps.reading`,
+  `wrapShiftOps.reading`); `finalizeOtherProofCore_spec` takes one.
 * `FopChecks`, `FopReads`, `FopReadsWire`: the readings the soundness theorems conclude —
   the three claim checks at given effective challenges; the exact reading of the whole
   circuit, its `ξ`, `r` as 128-bit decompositions of the wire verifier's `frSqueezes`; and
@@ -467,11 +470,29 @@ def FtEval0Hyp (V : Valuation F) (P : FopParams F) (n : ℕ) (ω : F) : Prop :=
     ⦃⇓ a _ => ⌜a.val V = ftEval0 n P.zkRows ω ext.shifts P.endo P.mds α (inp.beta.val V)
       (inp.gamma.val V) ζ (ext.pubEval.val V) (inp.evals.map (·.val V))⌝⦄
 
+omit [ToNat F] in
+/-- How a side's shift ops read under `V` (the proof-side companion of `FopShiftOps`, one
+value per side: `stepShiftOps.reading`, `wrapShiftOps.reading`): a claim reads as `read x`,
+its circuit decode as `unshiftV` of that reading, and the comparison of a claim with a
+scalar as the equality of the decode with the scalar's reading. -/
+structure FopShiftOps.Reading {V : Valuation F} {sf : Type}
+    (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) where
+  /-- The reading of a shifted claim. -/
+  read : sf → F
+  /-- The decode of a reading. -/
+  unshiftV : F → F
+  /-- The circuit decode reads as the decode of the reading. -/
+  unshift : ∀ x, (ops.unshift x).val V = unshiftV (read x)
+  /-- The comparison reads as the decoded claim against the scalar. -/
+  cmp : ∀ (a : sf) (b : FVar F), ⦃⌜True⌝⦄ ops.shiftedEqual a b
+    ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if unshiftV (read a) = b.val V then 1 else 0⌝⦄
+
 open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 /-- Under any valuation satisfying the emitted constraints, with `ω` the generator's reading
 (non-zero by its `inv` row, and then of order dividing `n`), the mask reading as `m_j`, the
-previous challenges as `c_j`, the evaluations as `e`, `ζ, α, β, γ` the expanded challenges
-and `(x₁, x₂) = frSqueezes P.sponge (frTranscript d digest ft(ζω) pub e)` the wire verifier's
+previous challenges as `c_j`, the evaluations as `e`, `ζ, α, β, γ` the expanded challenges,
+the shifted claims read through `R` (`unshift` its decode of a reading) and
+`(x₁, x₂) = frSqueezes P.sponge (frTranscript d digest ft(ζω) pub e)` the wire verifier's
 two raw fr-sponge squeezes:
 
 * `ξ̂ < 2¹²⁸` is the `ξ` claim, `ξ' + 2¹²⁸·h₁ = x₁` the recomputed low half (below `2¹²⁸` where
@@ -493,13 +514,9 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hinj : CastInj128 F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (n : ℕ) (hzk : P.zkRows ≤ n)
-    {sf : Type} (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (unshiftV : F → F)
-    (u : UnfinalizedProof F sf) (perm : sf) (cipV bV permV : F)
-    (hunCip : (ops.unshift u.deferredValues.combinedInnerProduct).val V = unshiftV cipV)
-    (hunB : (ops.unshift u.deferredValues.b).val V = unshiftV bV)
-    (hcmp : ∀ b, ⦃⌜True⌝⦄ ops.shiftedEqual perm b
-      ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if unshiftV permV = b.val V then 1 else 0⌝⦄)
-    (xiConstrainLowBits : Bool) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
+    {sf : Type} (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (R : ops.Reading)
+    (u : UnfinalizedProof F sf) (perm : sf) (xiConstrainLowBits : Bool)
+    (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (dv : F) (hd : ⦃⌜True⌝⦄ digest ⦃⇓ d _ => ⌜d.val V = dv⌝⦄)
     (gen : FVar F) (hω : gen.val V ≠ 0 → gen.val V ^ n = 1) (pow2Log2 : ℕ)
     (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
@@ -511,8 +528,11 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     ⦃⌜True⌝⦄ finalizeOtherProofCore (c := Builder V (KimchiConstraint F)) P ops
       xiConstrainLowBits digest gen pow2Log2 vanishing mask u w prev zeta alpha beta gamma perm
     ⦃⇓ o _ => ⌜gen.val V ≠ 0 ∧ FopReads P xiConstrainLowBits n (gen.val V) dv ms cvs u w
-      (zeta.val V) (alpha.val V) (beta.val V) (gamma.val V) permV cipV bV unshiftV V o⌝⦄ := by
+      (zeta.val V) (alpha.val V) (beta.val V) (gamma.val V) (R.read perm)
+      (R.read u.deferredValues.combinedInnerProduct) (R.read u.deferredValues.b) R.unshiftV
+      V o⌝⦄ := by
   simp only [finalizeOtherProofCore]
+  have hcmp := R.cmp perm
   have hsg := fun pt => challengePolyEvals_spec (V := V) (c := KimchiConstraint F) pt prev cvs hprev
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hop := fun g => omegaPowers_spec (V := V) (c := KimchiConstraint F) g P.zkRows h3zk
@@ -630,8 +650,8 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   -- the conjunction
   rw [map_linEvals] at hft0
   rw [hxival] at hxiC
-  rw [hunCip, hcipv, hxi', hr', hft0] at hcipC
-  rw [hunB, hr', hzw] at hbv
+  rw [R.unshift, hcipv, hxi', hr', hft0] at hcipC
+  rw [R.unshift, hr', hzw] at hbv
   rw [hpv] at hplonk
   have hbool := four_bits (fun b : BoolVar F => (↑b : CVar F).val V) xiC bC cipC plonkC
     _ _ _ _ hxiC hbv hcipC hplonk
@@ -737,6 +757,26 @@ private theorem wrapShiftOps_cmp [ConstraintHolds F c] [LawfulBasicSystem F c] {
   intro h
   rw [h, Type2.val_fromShiftedCircuit]
 
+omit [ToNat F] in
+/-- The step side's reading: a Type1 claim reads as its representative, decoded by
+`Type1.fromShifted 255`. -/
+def stepShiftOps.reading {V : Valuation F} (h2 : (2 : F) ≠ 0) :
+    (stepShiftOps (F := F) (c := Builder V (KimchiConstraint F))).Reading where
+  read x := x.val.val V
+  unshiftV x := Type1.fromShifted 255 ⟨x⟩
+  unshift x := Type1.val_fromShiftedCircuit 255 x V
+  cmp a b := stepShiftOps_cmp h2 a b
+
+omit [ToNat F] in
+/-- The wrap side's reading: a Type2 claim reads as its representative, decoded by
+`Type2.fromShifted 255`. -/
+def wrapShiftOps.reading {V : Valuation F} :
+    (wrapShiftOps (F := F) (c := Builder V (KimchiConstraint F))).Reading where
+  read x := x.val.val V
+  unshiftV x := Type2.fromShifted 255 ⟨x⟩
+  unshift x := Type2.val_fromShiftedCircuit 255 x V
+  cmp a b := wrapShiftOps_cmp a b
+
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 /-- The step side: under any valuation satisfying the emitted constraints, the runtime
 `domain_log2` reads as one of the known domains' — `d₀`, of size `n = 2^log2` and generator
@@ -795,10 +835,8 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
         (u.deferredValues.combinedInnerProduct.val.val V) (u.deferredValues.b.val.val V)
         (fun x => Type1.fromShifted 255 ⟨x⟩) V o)
       (fun n hn => finalizeOtherProofCore_spec h2 h3 hinj P hsize h3zk n hn.1 stepShiftOps
-        (fun x => Type1.fromShifted 255 ⟨x⟩) u u.deferredValues.plonk.perm _ _ _
-        (Type1.val_fromShiftedCircuit 255 _ V) (Type1.val_fromShiftedCircuit 255 _ V)
-        (stepShiftOps_cmp h2 _) true _ _ hd gen hn.2.1 _ _ hn.2.2 mask ms hm w prev cvs hprev
-        zeta alpha _ _ (hft n (gen.val V)))
+        (stepShiftOps.reading h2) u u.deferredValues.plonk.perm true _ _ hd gen hn.2.1 _ _
+        hn.2.2 mask ms hm w prev cvs hprev zeta alpha _ _ (hft n (gen.val V)))
   -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
   clear hd
   mvcgen [htf, hwh, hmask, hcore]
@@ -879,10 +917,8 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (List.forall₂_same.mpr fun _ _ => CircuitType.reads_boolVar.mpr (by simp [true_, bit])))
   have hcore := fun (zeta alpha beta gamma perm : FVar F) =>
     finalizeOtherProofCore_spec h2 h3 hinj P hsize h3zk n hzk wrapShiftOps
-      (fun x => Type2.fromShifted 255 ⟨x⟩) u ⟨perm⟩ _ _ (perm.val V)
-      (Type2.val_fromShiftedCircuit 255 _ V) (Type2.val_fromShiftedCircuit 255 _ V)
-      (wrapShiftOps_cmp ⟨perm⟩) false _ _ hd (.const gen) (fun _ => hω) domainLog2 vanishing
-      (fun _ => hvan) _ _ hm w prev cvs hprev zeta alpha beta gamma hft
+      wrapShiftOps.reading u ⟨perm⟩ false _ _ hd (.const gen) (fun _ => hω) domainLog2
+      vanishing (fun _ => hvan) _ _ hm w prev cvs hprev zeta alpha beta gamma hft
   -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
   clear hd
   mvcgen [htf, hcore]
@@ -893,6 +929,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   have hc : (CVar.const P.endoLam : CVar F).val V = P.endoLam := rfl
   rw [hc] at hz' ha'
   refine ⟨⟨a₀, ha₀⟩, ⟨z₀, hz₀⟩, haval, hzval, ?_⟩
+  dsimp only [wrapShiftOps.reading] at hreads
   rw [hz', ha', hβ, hγ, hperm] at hreads
   exact hreads
 
