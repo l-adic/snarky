@@ -16,8 +16,10 @@ reintroduce it, and do not read anything here as a soundness claim about the dep
 verifier. Circuit-side work states RELATIVE faithfulness — constraints satisfied ⟹
 `kimchiVerify` accepts — which needs no soundness result and asserts none.
 
-**The modeled fragment excludes lookups, optional gates, recursion, and the sub-SRS
-regime** — Mina/pickles proofs are OUTSIDE it on four axes; the canonical fragment
+**The modeled fragment excludes lookups, optional gates, and the sub-SRS regime, and
+transcribes recursion's old accumulators without fixture validation** (`kimchiVerify` takes
+them beside the proof; every fixture passes none) — Mina/pickles proofs are OUTSIDE it on
+the three excluded axes; the canonical fragment
 statement, with every declared deviation from `verifier.rs`, is the `## Scope` section of
 `Kimchi/Verifier/Kimchi.lean`'s preamble. The `Kimchi.*` namespace is **not** a circuit-DSL embedding: there is no `Circuit`
 monad, no `FormalCircuit`/`ProvableType`/`ElaboratedCircuit`, no `circuit_proof_start`.
