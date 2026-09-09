@@ -422,6 +422,7 @@ dependencies = [
  "poly-commitment",
  "rand",
  "rand_chacha",
+ "rmp-serde",
  "serde_json",
 ]
 

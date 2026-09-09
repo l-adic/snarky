@@ -17,6 +17,7 @@ import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
 import Test.Pickles.SharedSrs (buildSharedSrs)
 import Test.Pickles.Sideload.DigestEqNrrSpec as SideloadDigestEqNrr
+import Test.Pickles.Sideload.LeanInputsSpec as SideloadLeanInputs
 import Test.Pickles.Sideload.RoundTripMainChildSpec as SideloadRoundTripMainChild
 import Test.Pickles.Sideload.RoundTripNrrSpec as SideloadRoundTripNrr
 import Test.Pickles.Sideload.VerifyFixturesSpec as SideloadVerifyFixtures
@@ -62,6 +63,7 @@ spec = beforeAll buildSharedSrs do
   SideloadDigestEqNrr.spec
   SideloadVerifyNrr.spec
   SideloadVerifyFixtures.spec
+  SideloadLeanInputs.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'

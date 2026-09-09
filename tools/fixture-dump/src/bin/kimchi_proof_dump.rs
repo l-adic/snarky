@@ -29,6 +29,9 @@
 //! For a genuine proof the carried values equal the barycentric ones, so both verify
 //! against the same transcript.
 
+// The fixture literal outgrew `json!`'s default macro recursion budget.
+#![recursion_limit = "256"]
+
 use ark_poly::EvaluationDomain;
 use fixture_dump::{mixed_circuit, mixed_index};
 use groupmap::GroupMap;
@@ -97,10 +100,6 @@ fn main() {
         &[pub0],
     )
     .expect("production verifier rejected the fixture proof");
-    assert!(
-        proof.prev_challenges.is_empty(),
-        "fixture proof unexpectedly carries recursion challenges"
-    );
 
     let digest = verifier_index.digest::<BaseSponge>();
     let (_, endo_r) = Vesta::endos();
@@ -109,6 +108,24 @@ fn main() {
         .get_lagrange_basis(verifier_index.domain);
     let ev = &proof.evals;
 
+    // The old accumulators, `{comm, chals}` each (verifier.rs `prev_challenges`): the
+
+    // commitment as its chunk vector, the round challenges in order.
+
+    let prev_challenges: Vec<serde_json::Value> = proof
+        .prev_challenges
+        .iter()
+        .map(|rc| {
+            json!({
+
+                "comm": rc.comm.chunks.iter().map(pt).collect::<Vec<_>>(),
+
+                "chals": rc.chals.iter().map(fe).collect::<Vec<_>>(),
+
+            })
+        })
+        .collect();
+
     let fixture = json!({
         "curve": "vesta",
         // --- verifier key ---
@@ -116,6 +133,7 @@ fn main() {
         "zk_rows": verifier_index.zk_rows.to_string(),
         "max_poly_size": verifier_index.max_poly_size.to_string(),
         "public_count": verifier_index.public.to_string(),
+        "prev_challenges_count": verifier_index.prev_challenges.to_string(),
         "omega": fe(&verifier_index.domain.group_gen),
         "shifts": verifier_index.shift.iter().map(fe).collect::<Vec<_>>(),
         "endo": fe(&verifier_index.endo),
@@ -138,6 +156,7 @@ fn main() {
         // --- public input ---
         "public": [fe(&pub0)],
         // --- proof ---
+                "prev_challenges": prev_challenges,
         "w_comm": proof.commitments.w_comm.iter().map(comm1).collect::<Vec<_>>(),
         "z_comm": comm1(&proof.commitments.z_comm),
         "t_comm": proof.commitments.t_comm.chunks.iter().map(pt).collect::<Vec<_>>(),

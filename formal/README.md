@@ -12,9 +12,10 @@ over witness structures and proved faithful to Mathlib's elliptic-curve group la
 (`WeierstrassCurve.Affine`). The verifier itself is a **specification** — the transcription
 of proof-systems' `kimchi/src/verifier.rs`, and the anchor circuit implementations are proved
 faithful to; the probabilistic soundness development this tree once carried was retired.
-**The modeled fragment excludes lookups, optional gates, and the sub-SRS regime, and
-transcribes recursion's old accumulators without fixture validation** — Mina/pickles proofs
-are outside it on the three excluded axes; the canonical fragment
+**The modeled fragment excludes lookups and optional gates**; recursion's old accumulators
+are on the wire, validated on a deployed pickles wrap proof, and production's sub-SRS
+one-chunk regime is in scope — Mina/pickles proofs are outside it only where they use
+lookups or optional gates; the canonical fragment
 statement is the `## Scope` section of `kimchi/Kimchi/Verifier/Kimchi.lean`'s preamble. A second library, `Snarky`, is a
 deep-embedded port of the PureScript circuit-building DSL, modelling how constraint systems
 are *constructed*; it is Mathlib-free by design and bridges to the verified generic-gate

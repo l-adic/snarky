@@ -14,7 +14,7 @@ public-evaluation requirement) factored as a total parse into the CHECKED record
 types). A checked record cannot hold a ragged proof — the parse IS the proof.
 
 There is deliberately no verifier here: clients (the fixture drivers, any host) parse
-at the run's chunk count (`runNc`, under the SRS pin `σ.k ≤ domainLog2`) and call the
+at the run's chunk count (`runNc`) and call the
 protocol verifier `Kimchi.Verifier.kimchiVerify` on the parsed records themselves —
 check-then-verify is the client's one-line composition. On the fields production
 checks — the evaluation lengths and the `t` bound — rejecting ragged input is the
@@ -41,11 +41,17 @@ variable (C : Ipa.CommitmentCurve)
 (`checkChunks` against the run's `chunk_size`). -/
 private abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
 
+/-- A wire old accumulator (`RecursionChallenge`, proof.rs): the previous opening's
+commitment as a chunk vector and its expanded round challenges, both unchecked. -/
+structure RecursionChallenge (C : Ipa.CommitmentCurve) where
+  /-- The commitment (`comm`); the parse pins it to one chunk. -/
+  comm : PolyComm C
+  /-- The round challenges (`chals`); the parse pins them to the SRS's round count. -/
+  chals : Array C.ScalarField
+
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
-data are absent — a declared deferral — and so are `prev_challenges`: the checked
-verifier takes the old accumulators as an argument beside the proof
-(`Kimchi.Verifier.Accumulator`), and the wire records carry none. -/
+data are absent — a declared deferral. -/
 structure KimchiProof (C : Ipa.CommitmentCurve) where
   /-- The 15 witness-column commitments (`w_comm: [PolyComm; COLUMNS]`). -/
   wComm : Vector (PolyComm C) wCols
@@ -66,6 +72,8 @@ structure KimchiProof (C : Ipa.CommitmentCurve) where
   /-- The batched IPA opening proof — the serde wire form; its round count is checked
   against the SRS's `σ.k` by the parse. -/
   opening : Ipa.Wire.Proof C
+  /-- The old accumulators (`prev_challenges`), unchecked. -/
+  prevChallenges : Array (RecursionChallenge C)
 
 /-- The kimchi verifier index wire record (`VerifierIndex`, verifier_index.rs): fixed
 dimensions serde-typed (`sigma_comm: [PolyComm; PERMUTS]`,
@@ -106,6 +114,8 @@ structure KimchiVK (C : Ipa.CommitmentCurve) where
   /-- The number of zero-knowledge rows (`zk_rows`) — nc-dependent in production
   (constraints.rs:774–784), carried as data here. -/
   zkRows : ℕ
+  /-- The accumulator count the key was built with (`prev_challenges`). -/
+  prevChallenges : ℕ
   /-- `verifier_index.endo`, the `ft_eval0` endo coefficient — *not* serialized data
   (production marks it `#[serde(skip)]` and recomputes it as `G::other_curve_endo()`,
   i.e. `endos::<OtherG>().0`, the OTHER curve's base-field endo — verifier_index.rs:140;
@@ -170,8 +180,15 @@ def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C)
     let pubEvals ← match p.pubEvals with
       | some pe => (checkPointEvals nc pe).map .carried
       | none => if h : nc = 1 then some (.barycentric h) else none
+    -- an accumulator is one chunk at `k` round challenges (`RecursionChallenge::evals`
+    -- at `max_poly_size = 2^k`, the deployed case; the two-chunk split of a larger
+    -- challenge polynomial is not transcribed)
+    let olds ← p.prevChallenges.mapM fun rc => do
+      let comm ← checkChunks 1 rc.comm
+      let u ← checkChunks k rc.chals
+      return ({ sg := comm[0], u } : Kimchi.Verifier.Accumulator C k)
     return { wComm, zComm, tComm := p.tComm, tComm_le := htc, evals, pubEvals,
-             ftEval1 := p.ftEval1, opening := opening }
+             ftEval1 := p.ftEval1, opening := opening, olds }
   else none
 
 /-- **The key check**: every committed column validated to `nc` chunks. The Lagrange
@@ -189,18 +206,16 @@ def KimchiVK.check {C : Ipa.CommitmentCurve} (nc : ℕ) (vk : KimchiVK C) :
            mulComm := ← checkChunks nc vk.mulComm
            emulComm := ← checkChunks nc vk.emulComm
            endomulScalarComm := ← checkChunks nc vk.endomulScalarComm
-           shifts := vk.shifts, zkRows := vk.zkRows, endo := vk.endo
-           digest := vk.digest
+           shifts := vk.shifts, zkRows := vk.zkRows, prevChallenges := vk.prevChallenges
+           endo := vk.endo, digest := vk.digest
            lagrangeBasis := ← vk.lagrangeBasis.mapM (checkChunks nc) }
 
-/-- The run's chunk count, from the domain and SRS widths (production
-`chunk_size = d1 / max_poly_size`, verifier.rs:145–152): the count clients `check`
-against. Meaningful only under the SRS pin `σ.k ≤ vk.domainLog2` (production's
-sub-SRS `chunk_size = 1` regime is out of scope); clients guard it — the `ℕ`
-subtraction underneath returns `1` on the unguarded underflow, so the client-side
-guard is load-bearing (external-audit C-4). -/
+/-- The run's chunk count, from the domain and SRS widths — production's formula
+(verifier.rs:145–152): one chunk when the domain is below the SRS (the sub-SRS regime
+every small circuit lives in), else `d1 / max_poly_size`. The count clients `check`
+against. -/
 def runNc (σ : SRS C.Point) (vk : KimchiVK C) : ℕ :=
-  2 ^ (vk.domainLog2 - σ.k)
+  if vk.domainLog2 < σ.k then 1 else 2 ^ (vk.domainLog2 - σ.k)
 
 end Kimchi.Verifier.Wire
 

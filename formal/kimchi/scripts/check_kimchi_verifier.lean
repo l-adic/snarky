@@ -7,8 +7,9 @@ import Lean.Data.Json
 
 One verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
 through the client-side `verifyWire` composition below — parse the wire records with
-`Wire.{KimchiVK,KimchiProof}.check`, then verify. Five fixtures spanning both curves,
-`nc ∈ {1, 2, 8}`, both public-evaluation sources, and `max_poly_size` at and off `n/2`:
+`Wire.{KimchiVK,KimchiProof}.check`, then verify. Fixtures spanning both curves,
+`nc ∈ {1, 2, 8}`, both public-evaluation sources, `max_poly_size` at, off and above
+`n/2`, and the recursion path on a deployed pickles proof:
 
 * `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`) without carried
   public evaluations (o1js / OCaml `to_repr` drop them at `nc = 1`), so the verifier
@@ -23,6 +24,11 @@ through the client-side `verifyWire` composition below — parse the wire record
   `n = 64`, a full `56`-chunk quotient), for nc > 2 and `max_poly_size ≠ n/2`. (`nc = 3`
   is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking
   and the prover rejects it.)
+* `fixtures/kimchi_proof_pallas_pickles.json` — a deployed pickles wrap proof (OCaml
+  through the Rust prover, `tree_proof_return` at two proofs; `kimchi_proof_dump_pickles`
+  re-encodes it from the side-loaded fixture, the terminator's public input and its
+  accumulator list) with its two old accumulators, at the wrap domain `2^14` below the
+  `2^15` Tock SRS: the recursion path, and production's sub-SRS one-chunk regime.
 
 Each run checks the accept bit, then two negative matrices:
 
@@ -31,14 +37,18 @@ Each run checks the accept bit, then two negative matrices:
   witness-column chunk 1), the quotient commitment at chunk 0 and at the high chunk
   (`7·nc − 1`, the second `ft_comm` collapse group — exists only at `nc = 2`),
   an EMPTIED quotient commitment (which parses — production bounds `t_comm.len()` from
-  above only, verifier.rs:260 — and must fail the ft identity), `ft_eval1`, and (where
-  carried) a public-evaluation chunk;
+  above only, verifier.rs:260 — and must fail the ft identity), `ft_eval1`, (where
+  carried) a public-evaluation chunk, and (where the proof carries accumulators) an old
+  accumulator's commitment, one of its challenges, and the whole list dropped against
+  the key's count;
 * **parse rejections** (`Wire.check` must return `none` — ragged or mis-pinned wire
   input, matching production's `Err` returns): a ragged evaluation chunk vector, a
   missing `evals_public` at `nc > 1` (production's `MissingPublicInputEvaluation`,
   verifier.rs:334–335), an oversized `t_comm` (`> 7·nc`), a wrong opening round count
   (an `lr` pair popped — this failure arises in the IPA-side `Ipa.Wire.Proof.check`
-  and propagates through `KimchiProof.check`), and a ragged VK chunk vector.
+  and propagates through `KimchiProof.check`), a ragged VK chunk vector, and (where
+  the proof carries accumulators) an accumulator with a short challenge vector or a
+  two-chunk commitment.
 
 The emptied quotient carries one extra, positive assertion: that it PARSES. `verifyWire`
 is check-then-verify, so a parse rejection would flip its verdict for the wrong reason —
@@ -51,18 +61,16 @@ either reproduces production's accept bit here or fails. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 
-/-- The client-side composition: parse the wire records at the run's chunk count
-(under the SRS pin) and hand the checked records to the protocol verifier —
+/-- The client-side composition: parse the wire records at the run's chunk count and
+hand the checked records to the protocol verifier —
 check-then-verify, the wire module's intended use. Ragged or mis-pinned input is
 rejected, matching production's `Err` returns. -/
 def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
     (vk : Wire.KimchiVK C) (p : Wire.KimchiProof C)
     (pub : Array C.ScalarField) : Bool :=
-  if σ.k ≤ vk.domainLog2 then
-    match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) σ.k with
-    | some cvk, some cp => kimchiVerify C σ cvk cp pub #v[]
-    | _, _ => false
-  else false
+  match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) σ.k with
+  | some cvk, some cp => kimchiVerify C σ cvk cp pub
+  | _, _ => false
 
 /-- One chunked-verifier fixture run: decode (both formats), verify, and check the
 corruption and parse-rejection matrices. Throws on any unexpected verdict.
@@ -75,7 +83,8 @@ already exercised at `nc ≤ 2`; the kept high-chunk `t_comm` corruption keeps t
 run non-vacuous. The parse-rejection matrix is cheap (`Wire.check` short-circuits before
 `kimchiVerify`), so it runs in full regardless. -/
 def runChunked (C : Ipa.CommitmentCurve)
-    (path : String) (expectPublic : Bool) (heavy : Bool := false) : IO Unit := do
+    (path : String) (expectPublic : Bool) (heavy : Bool := false) (olds : ℕ := 0) :
+    IO Unit := do
   let raw ← IO.FS.readFile path
   let r : Except String
       (_ × Wire.KimchiVK C × Wire.KimchiProof C × Array C.ScalarField) := do
@@ -95,11 +104,17 @@ def runChunked (C : Ipa.CommitmentCurve)
   | .ok (σ, vk, proof, pub) =>
     unless proof.pubEvals.isSome == expectPublic do
       throw (IO.userError s!"{path}: unexpected evals_public presence")
+    unless proof.prevChallenges.size = olds do
+      throw (IO.userError s!"{path}: expected {olds} old accumulators, \
+        got {proof.prevChallenges.size}")
     let nc := Wire.runNc C σ vk
     let verify (p : Wire.KimchiProof C) : Bool := verifyWire C σ vk p pub
+    IO.println s!"{path}: verifying (nc = {nc}, {proof.prevChallenges.size} accumulators)…"
+    (← IO.getStdout).flush
     let ok := verify proof
     IO.println s!"{path}: chunked verify (nc = {nc}): \
       {if ok then "ACCEPT" else "REJECT (BUG)"}"
+    (← IO.getStdout).flush
     -- one chunk of the z evaluation bumped, on either evaluation point
     let bumpZ (zetaSide : Bool) (c : ℕ) : Wire.KimchiProof C :=
       { proof with evals := { proof.evals with z :=
@@ -147,8 +162,24 @@ def runChunked (C : Ipa.CommitmentCurve)
           !verify { proof with pubEvals := some { pe with zeta := pe.zeta.modify 0 (· + 1) } })
       | none =>
         IO.println "  - corrupted public eval: skipped (no carried evals at nc = 1)"
+    -- The old accumulators, where the proof carries any (the recursion path): the
+    -- commitment absorbed into the fq-sponge and opened at the head of the batch, the
+    -- challenges digested into the fr-sponge and defining that row's claims, and the
+    -- count guard against the key's — each must flip the verdict.
+    -- (`withAcc f` rewrites the first accumulator by `f`.)
+    let withAcc (f : Wire.RecursionChallenge C → Wire.RecursionChallenge C) :
+        Wire.KimchiProof C :=
+      { proof with prevChallenges := proof.prevChallenges.modify 0 f }
+    if 0 < proof.prevChallenges.size then
+      corrupts := corrupts.push ("corrupted old accumulator commitment",
+        !verify (withAcc fun rc => { rc with comm := rc.comm.modify 0 (· + σ.h) }))
+      corrupts := corrupts.push ("corrupted old accumulator challenge (round 0)",
+        !verify (withAcc fun rc => { rc with chals := rc.chals.modify 0 (· + 1) }))
+      corrupts := corrupts.push ("dropped old accumulators (count ≠ the key's)",
+        !verify { proof with prevChallenges := #[] })
     for (name, rejected) in corrupts do
       IO.println s!"  {if rejected then "✓ REJECT" else "✗ ACCEPT (SOUNDNESS BUG)"}: {name}"
+      (← IO.getStdout).flush
     -- parse rejections: `Wire.check` must return `none` on ragged/mis-pinned input.
     -- The first also runs through `verifyWire`, exercising the composition's
     -- `none => false` branch.
@@ -168,6 +199,13 @@ def runChunked (C : Ipa.CommitmentCurve)
     if 1 < nc then
       let noPub : Wire.KimchiProof C := { proof with pubEvals := none }
       parses := parses.push ("missing evals_public at nc > 1", (noPub.check nc σ.k).isNone)
+    if 0 < proof.prevChallenges.size then
+      let shortChals := withAcc fun rc => { rc with chals := rc.chals.pop }
+      let twoChunk := withAcc fun rc => { rc with comm := rc.comm.push σ.h }
+      parses := parses.push ("old accumulator with a short challenge vector",
+        (shortChals.check nc σ.k).isNone)
+      parses := parses.push ("old accumulator with a two-chunk commitment",
+        (twoChunk.check nc σ.k).isNone)
     for (name, rejected) in parses do
       IO.println s!"  {if rejected then "✓ none" else "✗ parsed (BUG)"}: {name}"
     -- Non-vacuity of the emptied-quotient corruption above (audit O-2). `verify` is
@@ -189,26 +227,45 @@ abbrev CP := IpaPallas.curve
 -- the check interpreted at elaboration time — the slow path this exe target replaces).
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
+  -- `KIMCHI_FIXTURE_FILTER=<substring>` runs only the fixtures whose path contains it
+  -- (for profiling one run); `KIMCHI_PICKLES_FIXTURE=1` adds the pickles proof, which the
+  -- driver cannot yet afford (its 2^15-point opening check grows past 14 GB compiled).
+  let filter ← IO.getEnv "KIMCHI_FIXTURE_FILTER"
+  let withPickles := (← IO.getEnv "KIMCHI_PICKLES_FIXTURE").isSome
+  let run (C : Ipa.CommitmentCurve) (path : String) (expectPublic : Bool)
+      (heavy : Bool := false) (olds : ℕ := 0) : IO Unit := do
+    let wanted : Bool := match filter with
+      | some f => decide ((path.splitOn f).length > 1)
+      | none => true
+    if wanted then runChunked C path expectPublic heavy olds
+    else IO.println s!"{path}: skipped (KIMCHI_FIXTURE_FILTER)"
   -- nc = 1: the deployed wire form (barycentric public evals), then the carried-public
   -- twin (the PubEvalSrc.carried branch at one chunk).
-  runChunked CV s!"{dir}/kimchi_proof_vesta.json" false
-  runChunked CV s!"{dir}/kimchi_proof_vesta_pub.json" true
+  run CV s!"{dir}/kimchi_proof_vesta.json" false
+  run CV s!"{dir}/kimchi_proof_vesta_pub.json" true
   -- nc = 2 on both curves.
-  runChunked CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
-  runChunked CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
+  run CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
+  run CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
   -- DISABLED (2026-08-02): the nc = 8 run (max_poly_size ≠ n/2, bounded corruption
   -- matrix — each verify a 56-chunk batch MSM) peaks near 28 GB resident COMPILED,
   -- beyond any CI runner, and was the OOM that killed the gates job. The nc = 8 regime
   -- (the audit's C-3) is temporarily unexercised by this driver; re-enable once the
   -- driver's memory is understood (the interpreted run fit in 16 GB for months).
-  -- runChunked CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
+  -- run CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
   --   (heavy := true)
   -- Live EndoMul + VarBaseMul selectors at an empty public input (the audit's C-3 /
   -- V-1 mask): acceptance here pins the α-weighted constraint order and the
   -- scalar-register sign of both scalar-multiplication gates, and exercises the
   -- empty-public branch (public commitment = the all-ones blinding mask).
-  runChunked CV s!"{dir}/kimchi_proof_vesta_emul.json" false
-  IO.println "✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
-    barycentric and carried, nc = 2 on both curves, and the live-EndoMul/VarBaseMul \
-    empty-public proof; nc = 8 disabled pending the driver's memory), reject \
-    corruptions, and refuse to parse ragged wire data"
+  run CV s!"{dir}/kimchi_proof_vesta_emul.json" false
+  -- The recursion path on a deployed artifact: a pickles wrap proof (OCaml through the
+  -- Rust prover, `tree_proof_return` at two proofs) with its two old accumulators, at
+  -- the wrap domain 2^14 below the 2^15 Tock SRS — the sub-SRS one-chunk regime. Opt-in:
+  -- every verify is a 2^15-point opening check, beyond the driver's memory today.
+  if withPickles then
+    run CP s!"{dir}/kimchi_proof_pallas_pickles.json" false (heavy := true) (olds := 2)
+  IO.println s!"✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
+    barycentric and carried, nc = 2 on both curves, the live-EndoMul/VarBaseMul \
+    empty-public proof{if withPickles then ", and a pickles wrap proof with its old \
+    accumulators" else ""}; nc = 8 and, by default, the pickles proof are out pending the \
+    driver's memory), reject corruptions, and refuse to parse ragged wire data"

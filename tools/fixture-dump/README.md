@@ -16,12 +16,12 @@ cd tools/fixture-dump
 rustup run 1.92 cargo build --release
 ```
 
-Eight binaries, all deterministic (seeded ChaCha20). `formal/` is a workspace of
-packages, each owning its fixtures — every binary takes its output directory as an
-argument, and the right target depends on which package checks the artifact. Several
-binaries emit MORE THAN ONE fixture from a single invocation (`index_dump` writes three
-indices; `kimchi_proof_dump` writes two proof serializations; `kimchi_proof_dump_nc2`
-writes both Pasta curves):
+Nine binaries, all deterministic (seeded ChaCha20, or re-encoding recorded data).
+`formal/` is a workspace of packages, each owning its fixtures — every binary takes its
+output directory as an argument, and the right target depends on which package checks
+the artifact. Several binaries emit MORE THAN ONE fixture from a single invocation
+(`index_dump` writes three indices; `kimchi_proof_dump` writes two proof serializations;
+`kimchi_proof_dump_nc2` writes both Pasta curves):
 
 ```sh
 # Sponge-layer artifacts: constants + vectors  →  the poseidon package
@@ -38,7 +38,16 @@ writes both Pasta curves):
 ./target/release/kimchi_proof_dump_nc2 ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc8 ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_emul ../../formal/kimchi/fixtures
+# a deployed pickles wrap proof (OCaml through the Rust prover) with its accumulators:
+# the side-loaded fixture directory, the cached Pallas SRS, and the output directory
+./target/release/kimchi_proof_dump_pickles \
+  ../../packages/pickles/test/fixtures/tree_proof_return/wrap2 ../../srs-cache/pallas.srs \
+  ../../formal/kimchi/fixtures
 ```
+
+Every kimchi-proof fixture carries the proof's old accumulators (`prev_challenges`, a
+`{comm, chals}` record each — empty in the non-recursive ones) and the key's accumulator
+count (`prev_challenges_count`).
 
 > **Caveat (`sponge_dump`'s Lean output):** the generated-constants half of
 > `sponge_dump` predates the `formal/` package split — it still writes
@@ -120,6 +129,17 @@ a Lean-side divergence layer by layer). They are debugging aids, gitignored
 | artifact | contents | checked by |
 |---|---|---|
 | `kimchi/fixtures/kimchi_proof_vesta_emul.json` | a proof over a circuit with LIVE `EndoMul` and `VarBaseMul` rows (an 8-bit endo scalar and a 10-bit variable-base scalar, witnesses from production's own `endosclmul::gen_witness` / `varbasemul::witness`) and an EMPTY public input. Every other proof fixture has `emul_selector ≡ 0` and `mul_selector ≡ 0`, which is what let the audit's V-1 (EndoMul constraint order/sign) hide under green drivers; this proof's acceptance pins the α-weighted constraint order of both scalar-multiplication gates and the empty-public commitment branch. The unused selector/coefficient VK commitments are zero polynomials, encoded as the `(0, 0)` identity sentinel. | `kimchi/scripts/check_kimchi_verifier.sh` |
+
+`kimchi_proof_dump_pickles` (nothing generated: a side-loaded pickles fixture re-encoded —
+`proof.serde.json` / `vk.serde.json` as OCaml wrote them through the Rust prover, plus
+`lean_inputs.json`, the wrap public input and the accumulator list the PureScript
+terminator computes for them, written by `Test.Pickles.Sideload.LeanInputsSpec`; the
+index is hydrated as kimchi-napi hydrates it, the list is checked against the proof's
+own, and the production verifier must accept):
+
+| artifact | contents | checked by |
+|---|---|---|
+| `kimchi/fixtures/kimchi_proof_pallas_pickles.json` | the `tree_proof_return` two-proof wrap proof with its two old accumulators, at the wrap domain `2^14` below the `2^15` Tock SRS (production's sub-SRS one-chunk regime): the recursion path on a deployed artifact. One-chunk format without `evals_public`; `srs_g` is the SRS prefix the key uses, `lagrange_basis` the public prefix | `kimchi/scripts/check_kimchi_verifier.sh` |
 
 `index_dump` additionally emits `index_vesta_nc8.json` (the mixed circuit over the
 `max_poly_size = 8` SRS of `kimchi_proof_dump_nc8`, where `zk_rows = 19` grows the domain
