@@ -86,11 +86,10 @@ private def runLinEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
     Evals C.ScalarField :=
   cp.linEvals (runZetaM C σ cvk cp pub olds) (runZetaOmegaM C σ cvk cp pub olds)
 
-/-- The run's fr-sponge challenges `(v, u)` — polyscale and evalscale of the batch. -/
-def runVU (σ : SRS C.Point) (cvk : KimchiVK C nc)
+/-- The run's fr-sponge oracles: the polyscale `ξ` and the evalscale `r` of the batch. -/
+def runFrOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (olds : Vector (Accumulator C σ.k) m) :
-    C.ScalarField × C.ScalarField :=
+    (olds : Vector (Accumulator C σ.k) m) : FrOracles C :=
   frOracles C cp (runOracles C σ cvk cp pub olds).digest (runPubEvals C σ cvk cp pub olds)
     olds
 
@@ -173,7 +172,7 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (olds : Vector (Accumulator C σ.k) m) :
     Ipa.Input C σ.k (m + (nc + 1 + tailRowCount * nc)) evalPts :=
   runInputP C σ cvk cp pub olds (runPubEvals C σ cvk cp pub olds)
-    (runVU C σ cvk cp pub olds).1 (runVU C σ cvk cp pub olds).2
+    (runFrOracles C σ cvk cp pub olds).xi (runFrOracles C σ cvk cp pub olds).r
 
 
 /-! ## The body reflection -/
