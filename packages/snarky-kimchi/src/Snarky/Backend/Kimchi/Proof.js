@@ -223,7 +223,7 @@ export const vestaVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput 
 export const pallasVerifyOpeningProofsBatch = (verifierIndex) => (entries) => {
   if (entries.length === 0) return true;
   const indexes = entries.map(() => verifierIndex);
-  const proofs = entries.map((e) => withInjectedInputs(e.proof, e.publicInput, [],
+  const proofs = entries.map((e) => withInjectedInputs(e.proof, e.publicInput, e.prevChallenges,
     k.WasmFpPolyComm, fpToBytes, fqToBytes, k.caml_pasta_fp_plonk_proof_deep_copy));
   return k.caml_pasta_fp_plonk_proof_batch_verify(indexes, proofs);
 };
@@ -231,7 +231,7 @@ export const pallasVerifyOpeningProofsBatch = (verifierIndex) => (entries) => {
 export const vestaVerifyOpeningProofsBatch = (verifierIndex) => (entries) => {
   if (entries.length === 0) return true;
   const indexes = entries.map(() => verifierIndex);
-  const proofs = entries.map((e) => withInjectedInputs(e.proof, e.publicInput, [],
+  const proofs = entries.map((e) => withInjectedInputs(e.proof, e.publicInput, e.prevChallenges,
     k.WasmFqPolyComm, fqToBytes, fpToBytes, k.caml_pasta_fq_plonk_proof_deep_copy));
   return k.caml_pasta_fq_plonk_proof_batch_verify(indexes, proofs);
 };
@@ -462,6 +462,30 @@ export const vestaProverIndexDomainLog2 = (proverIndex) => {
   const size = k.caml_pasta_fq_plonk_index_domain_d1_size(proverIndex);
   return Math.log2(size) | 0;
 };
+
+// The accumulator list a proof object stores (`prev_challenges_*` getters),
+// decoded back to the `{ sgX, sgY, challenges }` shape `flattenPrev` takes:
+// one `WasmVecVec` row of concatenated 32-byte scalars per accumulator, and
+// one single-chunk PolyComm per `sg`. Field/coord decoders mirror the
+// `createProofWithPrev` encoders of the same curve.
+function readPrevChallenges(proof, decodeField, decodeCoord) {
+  const comms = proof.prev_challenges_comms;
+  const scalars = proof.prev_challenges_scalars;
+  const out = new Array(comms.length);
+  for (let i = 0; i < comms.length; i++) {
+    const sg = comms[i].unshifted[0];
+    const flat = scalars.get(i);
+    const challenges = [];
+    for (let off = 0; off + 32 <= flat.length; off += 32) {
+      challenges.push(decodeField(flat.subarray(off, off + 32)));
+    }
+    out[i] = { sgX: decodeCoord(sg.x), sgY: decodeCoord(sg.y), challenges };
+  }
+  return out;
+}
+
+export const pallasProofPrevChallenges = (proof) => readPrevChallenges(proof, fpFromBytes, fqFromBytes);
+export const vestaProofPrevChallenges = (proof) => readPrevChallenges(proof, fqFromBytes, fpFromBytes);
 
 // ---------------------------------------------------------------------------
 // SRS extractors — `pallas*` lives on Vesta SRS, `vesta*` on Pallas SRS.

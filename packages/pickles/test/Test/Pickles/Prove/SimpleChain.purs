@@ -28,13 +28,14 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertAny_, const_, equals_, exists, not_)
 import Snarky.Circuit.Types (NoOutput(..))
 import Snarky.Curves.Class (fromInt)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 import Test.Pickles.SerializeRoundTrip (roundTripJSONAndVerify)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
@@ -147,6 +148,18 @@ spec = describe "Pickles.Prove.SimpleChain" do
     logInfo "[SimpleChain] verifying 5-proof chain…"
     verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true
     logInfo "[SimpleChain] verification complete"
+
+    -- The verifier recomputes both message digests, so a recursive proof
+    -- presented with a different application state, a different previous
+    -- opening `sg`, or different previous wrap challenges must be rejected.
+    let vp1 = toVerifiable b1
+    verify output.verifier (vp1 { appState = map (add one) vp1.appState }) `shouldEqual` false
+    verify output.verifier
+      (vp1 { prevChallengePolynomialCommitments = map (\(AffinePoint pt) -> AffinePoint pt { x = pt.x + one }) vp1.prevChallengePolynomialCommitments })
+      `shouldEqual` false
+    verify output.verifier
+      (vp1 { prevWrapBulletproofChallenges = map (map (add one)) vp1.prevWrapBulletproofChallenges })
+      `shouldEqual` false
 
     -- Each iteration's app-state input must equal the value we
     -- supplied as `appInput` to the prover. The rule asserts

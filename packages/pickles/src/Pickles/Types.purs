@@ -7,6 +7,7 @@
 module Pickles.Types
   ( StepIPARounds
   , WrapIPARounds
+  , WrapVkChunks
   , module ChunkedCommitmentReExports
   , MaxProofsVerified
   , PaddedLength
@@ -47,6 +48,15 @@ type StepIPARounds = 16
 
 -- | IPA rounds in a Wrap (Tock / Pallas-committed) proof — `Rounds.Wrap = 15`.
 type WrapIPARounds = 15
+
+-- | Chunk count of a wrap VK's commitments: `1`. A wrap circuit's domain is
+-- | 2^13, 2^14 or 2^15 by `max_proofs_verified` (`common.ml`'s
+-- | `wrap_domains`) and never exceeds the Tock SRS, 2^15
+-- | (`Max_degree.wrap_log2` = `WrapIPARounds`), so every wrap polynomial
+-- | is one chunk. OCaml fixes the wrap-VK consumer to
+-- | `num_chunks_by_default = 1` (`step_main.ml:347`), and `verify.ml`
+-- | hashes each commitment as the one-element `[| x |]`.
+type WrapVkChunks = 1
 
 -- | Maximum number of previous proofs verified per step. In Pickles
 -- | this is the **per-compile-circuit** `max_proofs_verified` parameter

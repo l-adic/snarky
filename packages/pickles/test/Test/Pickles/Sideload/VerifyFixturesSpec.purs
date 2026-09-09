@@ -10,7 +10,11 @@
 -- | (NRR — mpv = 0, nc = 1 — is covered by `VerifyNrrSpec`.) Each loads via
 -- | `loadFixture` with the single-field statement codec
 -- | (`decodeHex` + `\f -> [f]`) and asserts the canonical verify accepts it —
--- | exercising the loader's full mpv = 0/1/2 generality at nc = 1.
+-- | exercising the loader's full mpv = 0/1/2 generality at nc = 1 — and that
+-- | the accumulator list the verifier rebuilds from the carried messages
+-- | (`wrapAccumulators`) is the list OCaml's prover stored in the proof
+-- | (`Wrap_hack.pad_accumulator` of the same data), so the verifier opens
+-- | exactly the accumulators the messages name.
 -- |
 -- | NOTE on num_chunks > 1 (chunks2 was dropped from this matrix): a
 -- | serialized chunked proof CANNOT be verified from the standard Pickles
@@ -32,7 +36,8 @@ import Prelude
 import Colog (LoggerT, Message)
 import Effect.Aff (Aff)
 import Effect.Aff.Class (liftAff)
-import Pickles.Verify (verifyStages)
+import Pickles.Verify (verifyStages, wrapAccumulators)
+import Snarky.Backend.Kimchi.Proof (proofPrevChallenges)
 import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Pickles.Sideload.Loader (decodeHex, loadFixture)
 import Test.Spec (SpecT, describe, it)
@@ -60,3 +65,5 @@ spec = describe "Pickles.Sideload.VerifyFixtures (mpv)" do
     fixture <- loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs } dir
     verifyStages fixture.verifier fixture.verifiableProof
       `shouldEqual` { accumulatorOk: true, kimchiOk: true }
+    wrapAccumulators fixture.verifier fixture.verifiableProof
+      `shouldEqual` proofPrevChallenges fixture.verifiableProof.wrapProof

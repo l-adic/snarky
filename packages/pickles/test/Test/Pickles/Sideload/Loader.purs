@@ -62,7 +62,6 @@ import Pickles (PaddedLength, StepField, StepIPARounds, VerifiableProof, Verifie
 import Pickles.Dummy (dummyIpaChallenges, stepEndo, wrapEndo)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Prove.Step (extractWrapVKForStepHash)
 import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
@@ -128,14 +127,15 @@ type OcamlProofWire =
 
 -- | Assemble a canonical `VerifiableProof` from an `OcamlProofWire` plus the
 -- | data that lives outside OCaml's proof_state JSON: the serde-decoded
--- | kimchi wrap proof, the two recomputed message digests, and the
--- | prev-proof bp-challenges (`[]` for mpv=0). Verification is then the
+-- | kimchi wrap proof, the application state fields, and the expanded
+-- | prev-proof bp-challenges (`[]` for mpv=0). The message digests are
+-- | recomputed by `Pickles.Verify` itself; verification is then the
 -- | ordinary `Pickles.Verify.verify`.
 ocamlProofWireToVerifiable
   :: { wrapProof :: Proof Pallas.G WrapField
-     , messagesForNextStepProofDigest :: StepField
-     , messagesForNextWrapProofDigest :: WrapField
+     , appState :: Array StepField
      , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
+     , prevWrapBulletproofChallenges :: Array (Vector WrapIPARounds WrapField)
      }
   -> OcamlProofWire
   -> VerifiableProof
@@ -147,10 +147,11 @@ ocamlProofWireToVerifiable extra w =
   , spongeDigestBeforeEvaluations: w.spongeDigestBeforeEvaluations
   , prevEvalsChunked: w.prevEvalsChunked
   , pEval0Chunks: w.pEval0Chunks
+  , appState: extra.appState
   , oldBulletproofChallenges: extra.oldBulletproofChallenges
+  , prevChallengePolynomialCommitments: w.prevStepSgs
   , challengePolynomialCommitment: w.challengePolynomialCommitment
-  , messagesForNextStepProofDigest: extra.messagesForNextStepProofDigest
-  , messagesForNextWrapProofDigest: extra.messagesForNextWrapProofDigest
+  , prevWrapBulletproofChallenges: extra.prevWrapBulletproofChallenges
   , stepDomainLog2: w.stepDomainLog2
   }
 
@@ -222,8 +223,6 @@ loadFixture cfg sharedSrs dir = do
     -- is unusable: the proof-cache `Repr` erases it to `unit` (→ JSON null).
     appStateFields = cfg.statementToFields statement
 
-    wrapVkStep = extractWrapVKForStepHash @1 vk
-
     -- Expand the carried prev-proof bullet challenges (mpv-many; empty at
     -- mpv=0). Step challenges (16-round) via the step endo, wrap challenges
     -- (15-round) via the wrap endo — same `toFieldPure ... endo` the prover
@@ -237,35 +236,13 @@ loadFixture cfg sharedSrs dir = do
     prevWrapExpanded :: Array (Vector WrapIPARounds WrapField)
     prevWrapExpanded = map (map expandWrap) wire.prevWrapChalsRaw
 
-    -- messages_for_next_step_proof digest: one {sg, expandedBpChallenges} per
-    -- prev proof. `reifyVector` handles any mpv width (0/1/2).
-    stepProofs = Array.zipWith
-      (\sg expandedBpChallenges -> { sg, expandedBpChallenges })
-      wire.prevStepSgs
-      prevStepExpanded
-
-    msgStep = Vector.reifyVector stepProofs \proofs ->
-      hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep, appState: appStateFields, proofs }
-
-    -- messages_for_next_wrap_proof digest: front-pad the prev wrap challenges
-    -- with dummies up to PaddedLength (OCaml `Wrap_hack.pad_challenges`
-    -- prepends dummies — wrap_hack.ml:19-28). At mpv=0 this is all dummies.
-    paddedLen = reflectType (Proxy :: Proxy PaddedLength)
-    msgWrapPaddedArr =
-      Array.replicate (paddedLen - Array.length prevWrapExpanded)
-        dummyIpaChallenges.wrapExpanded
-        <> prevWrapExpanded
-
-    msgWrap = Vector.reifyVector msgWrapPaddedArr \paddedChallenges ->
-      hashMessagesForNextWrapProofPureGeneral
-        { sg: wire.challengePolynomialCommitment, paddedChallenges }
-
+    -- Both message digests are recomputed inside `Pickles.Verify` from the
+    -- wrap VK, these app-state fields and the carried prev-proof data.
     verifiableProof = ocamlProofWireToVerifiable
       { wrapProof: wireProof
-      , messagesForNextStepProofDigest: msgStep
-      , messagesForNextWrapProofDigest: msgWrap
+      , appState: appStateFields
       , oldBulletproofChallenges: prevStepExpanded
+      , prevWrapBulletproofChallenges: prevWrapExpanded
       }
       wire
 
@@ -278,6 +255,7 @@ loadFixture cfg sharedSrs dir = do
 
     verifier = mkVerifier
       { wrapVK: vk
+      , pallasSrs: sharedSrs.pallasSrs
       , vestaSrs
       , stepNumChunks
       }
