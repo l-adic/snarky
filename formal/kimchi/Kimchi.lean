@@ -60,8 +60,9 @@ soundness claim: the probabilistic soundness development this package once carri
 retired (see the module preamble of `Kimchi/Verifier/Kimchi.lean` for what the verifier
 does and does not model, and `git log` for the retired tree).
 
-**The modelled fragment excludes lookups, optional gates, recursion, and the sub-SRS
-regime.** The canonical statement of that scope, with every declared deviation from
+**The modelled fragment excludes lookups, optional gates, and the sub-SRS regime; the old
+accumulators of recursion are transcribed but validated by transcription only, every
+fixture carrying none.** The canonical statement of that scope, with every declared deviation from
 `verifier.rs`, is the `## Scope` section of `Kimchi/Verifier/Kimchi.lean`'s preamble. The
 package declares no axioms: every rooted result reduces to the standard logical axioms plus
 the Pasta trust base, which `scripts/check_axioms.sh` enforces.

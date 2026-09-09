@@ -359,13 +359,11 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   let
     bpInput =
       { xi: input.deferredValues.xi
-      , delta: input.opening.delta
-      , sg: input.opening.sg
-      , lr: input.opening.lr
-      , z1: input.opening.z1
-      , z2: input.opening.z2
-      , combinedInnerProduct: input.deferredValues.combinedInnerProduct
-      , b: input.deferredValues.b
+      , deferred:
+          { combinedInnerProduct: input.deferredValues.combinedInnerProduct
+          , b: input.deferredValues.b
+          }
+      , opening: input.opening
       , blindingGenerator: constPt params.blindingH
       }
 

@@ -88,13 +88,8 @@ checkBulletproofStepCircuit blindingH input = do
   _ <- evalSpongeM sponge $
     checkBulletproof @StepField @PallasG StepOtherField.ipaScalarOps params input.bases input.masks
       { xi: input.xi
-      , delta: input.delta
-      , sg: input.sg
-      , lr: input.lr
-      , z1: input.z1
-      , z2: input.z2
-      , combinedInnerProduct: input.combinedInnerProduct
-      , b: input.b
+      , deferred: { combinedInnerProduct: input.combinedInnerProduct, b: input.b }
+      , opening: { lr: input.lr, z1: input.z1, z2: input.z2, delta: input.delta, sg: input.sg }
       , blindingGenerator: AffinePoint { x: const_ hx, y: const_ hy }
       }
   pure unit

@@ -18,6 +18,8 @@ module Pickles.IPA
   , ComputeBInput
   , BCorrectInput
   , BulletReduceInput
+  , BulletproofDeferred
+  , BulletproofOpening
   , IpaFinalCheckInput
   , IpaFinalCheckResult
   , CheckBulletproofInput
@@ -351,22 +353,34 @@ bulletReduceCircuit { pairs, challenges } = label "bullet-reduce" do
 -- | The circuit field is `f`, the commitment curve is `g` with base field `f`.
 -- | Scalars like z1, z2 are in the commitment curve's scalar field,
 -- | represented via the shifted type `sf` in the circuit field.
-type IpaFinalCheckInput n f sf =
-  { -- Opening proof fields (coordinates in f = commitment curve base field)
-    delta :: AffinePoint f
-  , sg :: AffinePoint f -- challenge_polynomial_commitment
-  , lr :: Vector n (LrPair f)
-  -- Scalars from opening proof (shifted representation)
+-- | The two deferred scalars of the opening check (OCaml `Types.Step.Bulletproof.Advice`;
+-- | not called advice here, since in snarky "advice" is the prover-side handler mechanism
+-- | and these are public input of the previous proof): used in the Schnorr equation here,
+-- | certified by the next circuit's `finalizeOtherProof` (`combinedInnerProductCorrect`,
+-- | `bCorrect`).
+type BulletproofDeferred sf =
+  { combinedInnerProduct :: sf
+  , b :: sf
+  }
+
+-- | The opening proof as the circuit reads it (OCaml `Openings.Bulletproof.t`; the same
+-- | fields as `WrapProofOpening` in `Pickles.Types`, as a plain record): checked in the
+-- | Schnorr equation here. Only `sg` is looked at again, one proof later, as `sg_old`.
+type BulletproofOpening n f sf =
+  { lr :: Vector n (LrPair f)
   , z1 :: sf
   , z2 :: sf
-  -- u = group_map(squeeze(sponge)) — derived by caller before combine_poly
-  , u :: AffinePoint f
+  , delta :: AffinePoint f
+  , sg :: AffinePoint f -- challenge_polynomial_commitment
+  }
+
+type IpaFinalCheckInput n f sf =
+  { -- u = group_map(squeeze(sponge)) — derived by caller before combine_poly
+    u :: AffinePoint f
   -- Combined polynomial commitment (from verifier index + xi)
   , combinedPolynomial :: AffinePoint f
-  -- Combined inner product (shifted representation)
-  , combinedInnerProduct :: sf
-  -- b value (shifted representation, verified separately via bCorrectCircuit)
-  , b :: sf
+  , deferred :: BulletproofDeferred sf
+  , opening :: BulletproofOpening n f sf
   -- Blinding generator H (from SRS, constant)
   , blindingGenerator :: AffinePoint f
   }
@@ -423,10 +437,10 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- circuit reads from the step proof's opening via Req.Openings_proof
   -- + deferredValues — if any differs from OCaml, localizes the bug.
   liftSnarky do
-    ivpTrace "ipa.dbg.sg.x" (unwrap input.sg).x
-    ivpTrace "ipa.dbg.sg.y" (unwrap input.sg).y
-    ivpTrace "ipa.dbg.delta.x" (unwrap input.delta).x
-    ivpTrace "ipa.dbg.delta.y" (unwrap input.delta).y
+    ivpTrace "ipa.dbg.sg.x" (unwrap input.opening.sg).x
+    ivpTrace "ipa.dbg.sg.y" (unwrap input.opening.sg).y
+    ivpTrace "ipa.dbg.delta.x" (unwrap input.opening.delta).x
+    ivpTrace "ipa.dbg.delta.y" (unwrap input.opening.delta).y
     ivpTrace "ipa.dbg.cp.x" (unwrap input.combinedPolynomial).x
     ivpTrace "ipa.dbg.cp.y" (unwrap input.combinedPolynomial).y
     ivpTrace "ipa.dbg.u.x" (unwrap input.u).x
@@ -435,13 +449,13 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- 1. Extract 128-bit scalar challenges from L/R pairs
   -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
   scalarChallenges <- labelM "ipa_extract_challenges" $
-    extractScalarChallenges params input.lr
+    extractScalarChallenges params input.opening.lr
 
   -- 2. Compute lr_prod from L/R pairs and challenges
   -- OCaml: bullet_reduce does curve ops (endo_inv/endo/add_fast) AFTER all absorptions
   lrProd <- liftSnarky $ label "ipa_bullet_reduce" $ do
     { p } <- bulletReduceCircuit @f @g
-      { pairs: input.lr
+      { pairs: input.opening.lr
       , challenges: scalarChallenges
       }
     pure p
@@ -451,7 +465,7 @@ ipaFinalCheckCircuit scalarOps params input = do
   --        combined_polynomial + uc
   -- Right-to-left: uc first, then add
   pPrime <- liftSnarky $ label "ipa_scale_cip" do
-    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted input.u input.combinedInnerProduct
+    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted input.u input.deferred.combinedInnerProduct
     { p } <- label "ipa_scale_cip_add" $ addComplete input.combinedPolynomial cipU
     pure p
 
@@ -464,7 +478,7 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- OCaml: absorb sponge PC delta ; let c = squeeze_scalar sponge
   -- This happens AFTER bullet_reduce and q computation in OCaml
   c <- labelM "ipa_squeeze_c" $ do
-    absorbPoint input.delta
+    absorbPoint input.opening.delta
     squeezeScalar params
 
   -- DIAG: dump Q + c at this point
@@ -476,14 +490,14 @@ ipaFinalCheckCircuit scalarOps params input = do
   success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
     cQ <- label "ipa_endo_q" $ endo @128 @32 q c
-    { p: lhs } <- label "ipa_lhs_add" $ addComplete cQ input.delta
+    { p: lhs } <- label "ipa_lhs_add" $ addComplete cQ input.opening.delta
 
     -- 8. Compute RHS: z1*(sg + b*u) + z2*H
     -- Note: b is provided as input and verified separately via bCorrectCircuit
-    bU <- label "ipa_scale_b" $ scalarOps.scaleByShifted input.u input.b
-    { p: sgPlusBU } <- label "ipa_sg_add" $ addComplete input.sg bU
-    z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.z1
-    z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.z2
+    bU <- label "ipa_scale_b" $ scalarOps.scaleByShifted input.u input.deferred.b
+    { p: sgPlusBU } <- label "ipa_sg_add" $ addComplete input.opening.sg bU
+    z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.opening.z1
+    z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.opening.z2
     { p: rhs } <- label "ipa_rhs_add" $ addComplete z1Term z2Term
 
     -- DIAG: dump LHS + RHS at the final equation
@@ -551,17 +565,10 @@ combinePolynomials bases masks xi = label "combine-polynomials" do
 -- | Input for the full bulletproof verification circuit.
 -- | Contains all proof data needed after the Fq-sponge transcript.
 type CheckBulletproofInput n f sf =
-  { -- Polyscale challenge (128-bit, from Fr-sponge)
+  { -- Polyscale challenge (128-bit, from Fr-sponge; a deferred value)
     xi :: SizedF 128 f
-  -- Opening proof fields
-  , delta :: AffinePoint f
-  , sg :: AffinePoint f
-  , lr :: Vector n (LrPair f)
-  , z1 :: sf
-  , z2 :: sf
-  -- Advice (from deferred values)
-  , combinedInnerProduct :: sf
-  , b :: sf
+  , deferred :: BulletproofDeferred sf
+  , opening :: BulletproofOpening n f sf
   -- Constant
   , blindingGenerator :: AffinePoint f
   }
@@ -612,7 +619,7 @@ checkBulletproof scalarOps params commitmentBases baseMasks input = do
   -- 1. Absorb shift_scalar(CIP) into sponge
   -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
   labelM "bp_absorb_cip" $ do
-    let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
+    let cipFields = scalarOps.shiftedToAbsorbFields input.deferred.combinedInnerProduct
     for_ cipFields absorb
 
   -- Dump sponge state after CIP absorb.
@@ -635,15 +642,10 @@ checkBulletproof scalarOps params commitmentBases baseMasks input = do
 
   -- 4. Delegate to ipaFinalCheckCircuit (u already computed)
   labelM "bp_ipa_check" $ ipaFinalCheckCircuit @f @g scalarOps params
-    { delta: input.delta
-    , sg: input.sg
-    , lr: input.lr
-    , z1: input.z1
-    , z2: input.z2
-    , u
+    { u
     , combinedPolynomial
-    , combinedInnerProduct: input.combinedInnerProduct
-    , b: input.b
+    , deferred: input.deferred
+    , opening: input.opening
     , blindingGenerator: input.blindingGenerator
     }
 

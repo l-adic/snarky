@@ -216,12 +216,12 @@ Kimchi.Index.Satisfies
 -- in-tree consumer when the soundness development was retired, and are rooted deliberately
 -- rather than deleted: they are THE SPEC ANCHORS a circuit implementation of the verifier is
 -- proved faithful to (see the in-circuit-verifier arc). Stating a fragment's soundness
--- against `runOracles`/`runVU`/`runPScalar`/`runFtComm` needs no new spec object, which is
+-- against `runOracles`/`runFrOracles`/`runPScalar`/`runFtComm` needs no new spec object, which is
 -- exactly what this layer exists for. The seven public forms reach the private ladder
 -- (`runZeta*`, `runFComm`, `runFtEval0P`, `runLinEvals`, `runInputP`) through the closure.
 Kimchi.Verifier.runOracles
 Kimchi.Verifier.runPubEvals
-Kimchi.Verifier.runVU
+Kimchi.Verifier.runFrOracles
 Kimchi.Verifier.runPScalar
 Kimchi.Verifier.runFtComm
 Kimchi.Verifier.runStreamP

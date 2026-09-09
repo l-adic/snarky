@@ -2,6 +2,7 @@ import Snarky.Kimchi.Circuit.Sponge
 import Snarky.Kimchi.Circuit.RangeCheck
 import Kimchi.Verifier.Kimchi
 import Pickles.OptSponge
+import Pickles.Prechallenge
 
 set_option mvcgen.warning false
 
@@ -218,8 +219,8 @@ private theorem map_val_frTail (digestBefore recDigest ftEval1 : FVar F)
 and the inputs as themselves, the two squeezes are the wire verifier's
 `frSqueezes p (frTranscript digestBefore dv ft(ζω) pub evals)` — the raw elements behind
 `frOracles`' `(v, u)` (`Kimchi.Verifier.frOracles_eq_frPrechallenges`) — and the outputs `ξ`, `r`
-are their 128-bit decompositions: `x₁ = ξ + 2¹²⁸·h₁` and `x₂ = r + 2¹²⁸·h₂` for some
-`h₁, h₂ < 2¹²⁸`, with `r < 2¹²⁸` and, where the low bits are constrained, `ξ < 2¹²⁸`. -/
+are their low halves (`Low128`), `r` a prechallenge and, where the low bits are
+constrained, `ξ` too. -/
 theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (digestBefore : FVar F) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
@@ -235,10 +236,9 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
           (pub.map fun x => #v[x.val V]) (evals.map fun x => #v[x.val V]))
       let x₁ := sq.1
       let x₂ := sq.2
-      ∃ h₁ h₂ : ℕ, h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧
-        x₁ = out.1.val.val V + 2 ^ 128 * h₁ ∧ x₂ = out.2.val.val V + 2 ^ 128 * h₂ ∧
-        (xiConstrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ out.1.val.val V = n) ∧
-        (∃ n : ℕ, n < 2 ^ 128 ∧ out.2.val.val V = n)⌝⦄ := by
+      Low128 V x₁ out.1 ∧ Low128 V x₂ out.2 ∧
+        (xiConstrainLowBits = true → ∃ m : Prechallenge, Reads128 V out.1 m) ∧
+        (∃ m : Prechallenge, Reads128 V out.2 m)⌝⦄ := by
   simp only [squeezeXiR]
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init digestBefore
   have ha := fun sv d => absorbList_spec (V := V) p hsize sv (frTail d ftEval1 pub evals)
@@ -258,7 +258,7 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   obtain ⟨hiv₁, he₁, ⟨n₁, hn₁, rfl⟩, hb₁⟩ := hlo1
   obtain ⟨hiv₂, he₂, ⟨n₂, hn₂, rfl⟩, hr₂⟩ := hlo2
   simp only [frSqueezes]
-  refine ⟨n₁, n₂, hn₁, hn₂, ?_, ?_, hb₁, hr₂⟩
+  refine ⟨⟨n₁, hn₁, ?_⟩, ⟨n₂, hn₂, ?_⟩, fun h => reads128_of_nat (hb₁ h), reads128_of_nat hr₂⟩
   · rw [← hx1, he₁]
   · rw [← hx2, he₂]
 

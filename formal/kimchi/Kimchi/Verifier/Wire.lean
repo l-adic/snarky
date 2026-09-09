@@ -43,7 +43,9 @@ private abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
 
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
-data and `prev_challenges` are absent — declared deferrals of this transcription. -/
+data are absent — a declared deferral — and so are `prev_challenges`: the checked
+verifier takes the old accumulators as an argument beside the proof
+(`Kimchi.Verifier.Accumulator`), and the wire records carry none. -/
 structure KimchiProof (C : Ipa.CommitmentCurve) where
   /-- The 15 witness-column commitments (`w_comm: [PolyComm; COLUMNS]`). -/
   wComm : Vector (PolyComm C) wCols

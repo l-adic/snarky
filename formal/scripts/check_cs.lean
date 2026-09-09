@@ -754,10 +754,11 @@ def checkBulletproofStepCircuit (blindingH : AffinePoint (FVar Fp)) (input : Vec
     Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
     (fun _ => none) sv
     ((List.range 47).map fun j => (pt (4 + 2 * j), none))
-    { xi := ⟨get 3⟩, delta := pt 158, sg := pt 160
-      lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
-      z1 := shifted 162, z2 := shifted 164, combinedInnerProduct := shifted 166
-      b := shifted 168, blindingGenerator := blindingH }
+    { xi := ⟨get 3⟩
+      deferred := { combinedInnerProduct := shifted 166, b := shifted 168 }
+      opening := { lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
+                   z1 := shifted 162, z2 := shifted 164, delta := pt 158, sg := pt 160 }
+      blindingGenerator := blindingH }
   pure PUnit.unit
 
 /-! ## The `finalize_other_proof` circuits
@@ -784,14 +785,18 @@ open Pickles Kimchi.Verifier in
 `base` the public pair, 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `σ` pairs, 6
 selector pairs, `ft(ζω)`, the two previous-challenge vectors, and the digest before
 evaluations last. -/
-def fopInputsOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) :
-    UnfinalizedProof (ZMod p) × ProofWitness (ZMod p) × List (List (FVar (ZMod p))) :=
+def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ → FVar (ZMod p))
+    (base : ℕ) :
+    UnfinalizedProof (ZMod p) sf × ProofWitness (ZMod p) × List (List (FVar (ZMod p))) :=
   let (pub, evals) := evalsAt get base
-  let u : UnfinalizedProof (ZMod p) :=
-    { alpha := ⟨get 0⟩, beta := ⟨get 1⟩, gamma := ⟨get 2⟩, zeta := ⟨get 3⟩,
-      zetaToSrsLength := get 4, zetaToDomainSize := get 5, perm := get 6,
-      combinedInnerProduct := get 7, b := get 8, xi := ⟨get 9⟩,
-      bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩,
+  let u : UnfinalizedProof (ZMod p) sf :=
+    { deferredValues :=
+        { plonk := { alpha := ⟨get 0⟩, beta := ⟨get 1⟩, gamma := ⟨get 2⟩, zeta := ⟨get 3⟩,
+                     zetaToSrsLength := mk (get 4), zetaToDomainSize := mk (get 5),
+                     perm := mk (get 6) }
+          combinedInnerProduct := mk (get 7), b := mk (get 8), xi := ⟨get 9⟩,
+          bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩ }
+      shouldFinalize := true_
       spongeDigestBeforeEvaluations := get (base + 121) }
   let w : ProofWitness (ZMod p) := { ftEval1 := get (base + 88), pub, evals }
   (u, w, prevChallengesOf get (base + 89))
@@ -808,7 +813,7 @@ def fopStepParams : Pickles.FopParams Fp :=
 the evaluations from 29, one known domain of `log2 = 16`. -/
 def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C PUnit := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
-  let (u, w, prev) := fopInputsOf get 29
+  let (u, w, prev) := fopInputsOf Type1.mk get 29
   let _ ← Pickles.finalizeOtherProofStep fopStepParams
     [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] u w [.unchecked (get 26), .unchecked (get 27)]
     prev (get 28)
@@ -826,7 +831,7 @@ def fopWrapParams : Pickles.FopParams Fq :=
 `log2 = 15`, `ζⁿ − 1` by `pow2PowMul`. -/
 def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let (u, w, prev) := fopInputsOf get 26
+  let (u, w, prev) := fopInputsOf Type2.mk get 26
   let _ ← Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15))
     15 (fun z => do let t ← Pickles.pow2PowMul z 15; pure (CVar.sub_ t (.const 1))) u w prev
   pure PUnit.unit
@@ -857,10 +862,11 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
     Bulletproof.IpaPallas.curve.frParams (.const endoPallasLam) Pickles.groupMapParamsVesta
     (fun _ => none) sv
     bases
-    { xi := ⟨get 3⟩, delta := pt 164, sg := pt 166
-      lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
-      z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, combinedInnerProduct := ⟨get 170⟩
-      b := ⟨get 171⟩, blindingGenerator := blindingH }
+    { xi := ⟨get 3⟩
+      deferred := { combinedInnerProduct := ⟨get 170⟩, b := ⟨get 171⟩ }
+      opening := { lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
+                   z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, delta := pt 164, sg := pt 166 }
+      blindingGenerator := blindingH }
   pure PUnit.unit
 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
