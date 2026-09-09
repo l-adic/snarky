@@ -30,7 +30,6 @@ module Pickles.Prove.Step
   , BuildStepAdviceInput
   , BuildSlotAdviceInput
   , extractWrapVKCommsAdvice
-  , extractWrapVKForStepHash
   , dummyWrapTockPublicInput
   , StepRule
   , StepRuleAt
@@ -97,7 +96,7 @@ import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, 
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.VerificationKey (StepVK, VerificationKey(..), vestaVerifierIndexCommitments)
+import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, vestaVerifierIndexCommitments)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -477,35 +476,6 @@ extractWrapVKCommsAdvice vk =
       , coeff: map (over ChunkedCommitment (map wrapPt)) comms.coeff
       , index: map (over ChunkedCommitment (map wrapPt)) comms.index
       }
-
--- | `StepVK wrapVkChunks StepField` extracted from a compiled wrap
--- | verifier index. Used for `hashMessagesForNextStepProofPure` in
--- | the step field — the dummy wrap proof's
--- | `messages_for_next_step_proof` hash mirrors OCaml's
--- | `Common.hash_messages_for_next_step_proof` on the real wrap VK.
--- |
--- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2); distinct
--- | from the wrap circuit's `stepChunks` (Dim 1). OCaml fixes
--- | `wrapVkChunks = num_chunks_by_default = 1` at `step_main.ml:347`;
--- | callers pass `@1` at the specialization boundary.
-extractWrapVKForStepHash
-  :: forall @wrapVkChunks
-   . Reflectable wrapVkChunks Int
-  => VerifierIndex PallasG WrapField
-  -> StepVK wrapVkChunks StepField
-extractWrapVKForStepHash vk =
-  let
-    comms = vestaVerifierIndexCommitments @wrapVkChunks vk
-  in
-    { sigmaComm: comms.sigma
-    , coefficientsComm: comms.coeff
-    , genericComm: Vector.index comms.index (unsafeFinite @6 0)
-    , psmComm: Vector.index comms.index (unsafeFinite @6 1)
-    , completeAddComm: Vector.index comms.index (unsafeFinite @6 2)
-    , mulComm: Vector.index comms.index (unsafeFinite @6 3)
-    , emulComm: Vector.index comms.index (unsafeFinite @6 4)
-    , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
-    }
 
 --------------------------------------------------------------------------------
 -- mpvMax-padding dummies

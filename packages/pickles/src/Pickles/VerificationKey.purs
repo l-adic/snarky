@@ -6,6 +6,7 @@
 module Pickles.VerificationKey
   ( VerificationKey(..)
   , extractWrapVKComms
+  , extractWrapVKForStepHash
   , StepVK
   , chooseKey
   , VerifierIndexCommitments
@@ -16,6 +17,7 @@ module Pickles.VerificationKey
 import Prelude
 
 import Data.Array as Array
+import Data.Fin (unsafeFinite)
 import Data.Newtype (over, over2)
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable (foldl1)
@@ -24,6 +26,7 @@ import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Field (StepField, WrapField)
 import Pickles.Types (ChunkedCommitment(..))
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
@@ -228,6 +231,37 @@ type StepVK stepChunks f =
   , emulComm :: ChunkedCommitment stepChunks (AffinePoint f)
   , endomulScalarComm :: ChunkedCommitment stepChunks (AffinePoint f)
   }
+
+-- | `StepVK wrapVkChunks StepField` extracted from a compiled wrap
+-- | verifier index: the commitments the step circuit absorbs into the
+-- | `messages_for_next_step_proof` digest (OCaml
+-- | `Common.hash_messages_for_next_step_proof` on `dlog_plonk_index`).
+-- | Shared by the prover (`Pickles.Prove.Step`) and the out-of-circuit
+-- | verifier (`Pickles.Verify`), which recomputes that digest from the
+-- | real wrap VK.
+-- |
+-- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2); distinct
+-- | from the wrap circuit's `stepChunks` (Dim 1). OCaml fixes
+-- | `wrapVkChunks = num_chunks_by_default = 1` at `step_main.ml:347`;
+-- | callers pass `@1` at the specialization boundary.
+extractWrapVKForStepHash
+  :: forall @wrapVkChunks
+   . Reflectable wrapVkChunks Int
+  => VerifierIndex Pallas.G WrapField
+  -> StepVK wrapVkChunks StepField
+extractWrapVKForStepHash vk =
+  let
+    comms = vestaVerifierIndexCommitments @wrapVkChunks vk
+  in
+    { sigmaComm: comms.sigma
+    , coefficientsComm: comms.coeff
+    , genericComm: Vector.index comms.index (unsafeFinite @6 0)
+    , psmComm: Vector.index comms.index (unsafeFinite @6 1)
+    , completeAddComm: Vector.index comms.index (unsafeFinite @6 2)
+    , mulComm: Vector.index comms.index (unsafeFinite @6 3)
+    , emulComm: Vector.index comms.index (unsafeFinite @6 4)
+    , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
+    }
 
 -- | Wrap_verifier.choose_key
 -- |

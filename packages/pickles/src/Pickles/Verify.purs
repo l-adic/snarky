@@ -6,7 +6,7 @@
 -- | a prover hands over; `verify` tells you whether the proof is valid
 -- | for its claimed statement.
 -- |
--- | Internally, `verifyOne` runs the three stages OCaml's
+-- | Internally, `perProof` runs the stages OCaml's
 -- | `verify_heterogenous` runs for each proof:
 -- |
 -- | 1. **Expand deferred values** (stage 1) — reconstruct the full
@@ -19,9 +19,19 @@
 -- |    via a Vesta-SRS MSM. This is the expensive IPA check Pickles
 -- |    defers through the recursion.
 -- |
--- | 3. **Kimchi batch-verify on the wrap proof** (stage 3) — assemble
+-- | 3. **Recompute the two message digests** — the
+-- |    `messages_for_next_step_proof` digest from the REAL wrap VK, the
+-- |    claimed application state and the carried prev `(sg, challenges)`
+-- |    (OCaml `verify.ml`, `Common.hash_messages_for_next_step_proof`
+-- |    with `~app_state`), and the `messages_for_next_wrap_proof` digest
+-- |    from the carried `sg` and the dummy-padded prev wrap challenges
+-- |    (`Wrap_hack.hash_messages_for_next_wrap_proof`). The verifier never
+-- |    trusts a prover-supplied digest: these two hashes are what bind
+-- |    the whole chain to the verification key and to the statement.
+-- |
+-- | 4. **Kimchi batch-verify on the wrap proof** (stage 3) — assemble
 -- |    the wrap public input from the expanded deferred values + the
--- |    two message digests via `assembleWrapMainInput`, flatten via
+-- |    two recomputed digests via `assembleWrapMainInput`, flatten via
 -- |    `CircuitType`, hand it to `pallasVerifyOpeningProof`.
 -- |
 -- | The separation between `Verifier` (per-tag constants — wrap VK,
@@ -41,12 +51,14 @@
 -- | `UnfinalizedProof`) since these appear in `Verifier`-shaped
 -- | values consumers will see.
 -- |
--- | `verifyOne` runs three stages per proof; they are internal —
+-- | `perProof` runs the stages per proof; they are internal —
 -- | callers see only the bundled `verify` ("proof → yes/no"):
 -- |   1. Expand deferred values from the wrap proof's minimal
 -- |      skeleton.
 -- |   2. Accumulator IPA-step check (Vesta-SRS MSM).
--- |   3. Kimchi `batch_verify` on the wrap proof.
+-- |   3. Recompute both message digests from the wrap VK, the claimed
+-- |      application state and the carried prev-proof data.
+-- |   4. Kimchi `batch_verify` on the wrap proof.
 module Pickles.Verify
   ( module Pickles.Verify.Types
   , CompiledProof(..)
@@ -55,6 +67,7 @@ module Pickles.Verify
   , mkSomeCompiledProofWidthData
   , Verifier
   , VerifiableProof
+  , messageDigests
   , mkVerifier
   , toVerifiable
   , verify
@@ -72,6 +85,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Constants (zkRowsForNumChunks)
+import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -79,8 +93,11 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
+import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
+import Pickles.VerificationKey (extractWrapVKForStepHash)
 import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkExpanded, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, expandPlonkMinimal, toPlonkMinimal)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
@@ -278,13 +295,12 @@ newtype CompiledProof mpv stmtVal = CompiledProof
   -- step SRS. Lives in `messages_for_next_wrap_proof.challenge_polynomial_commitment`.
   , challengePolynomialCommitment :: AffinePoint WrapField
 
-  -- Pre-hashed message digests (both ends of the recursion). OCaml's
-  -- verify.ml hashes these from the raw messages in the verifier; here
-  -- we keep them pre-hashed on the prover side (same value). See
-  -- `Pickles.Step.MessageHash.hashMessagesForNextStepProofPure` +
-  -- `Pickles.Wrap.MessageHash.hashMessagesForNextWrapProofPureGeneral`.
-  , messagesForNextStepProofDigest :: StepField
-  , messagesForNextWrapProofDigest :: WrapField
+  -- The application state exactly as the step circuit absorbed it into
+  -- the `messages_for_next_step_proof` digest: the rule's public input
+  -- fields followed by its public output fields (`Pickles.Step.Main`'s
+  -- `hashAppFields`). The verifier recomputes that digest from these
+  -- fields and the real wrap VK; no digest is carried.
+  , appState :: Array StepField
 
   -- Per-rule width-dependent fields, hidden via existential. Bundles:
   --   * oldBulletproofChallenges
@@ -305,13 +321,17 @@ newtype CompiledProof mpv stmtVal = CompiledProof
   }
 
 -- | The minimal, serializable proof an out-of-circuit verifier actually
--- | consumes: the wrap kimchi proof plus the carried statement skeleton.
--- | Everything else a `CompiledProof` carries — the recursive-step
--- | bookkeeping hidden in `widthData`, the collapsed `prevEvals`, the
--- | application `statement`/`publicOutput` — is irrelevant to
--- | verification, so it isn't here. The per-rule prev-proof width is
--- | erased to a plain `Array`: verification only iterates
--- | `oldBulletproofChallenges`.
+-- | consumes: the wrap kimchi proof, the carried statement skeleton, and
+-- | the raw messages both message digests are recomputed from. Everything
+-- | else a `CompiledProof` carries — the typed application `statement`,
+-- | the collapsed `prevEvals` — is irrelevant to verification, so it isn't
+-- | here. The per-rule prev-proof width is erased to plain `Array`s; the
+-- | three prev-indexed arrays are aligned slot by slot.
+-- |
+-- | The two message digests are deliberately NOT fields: a digest the
+-- | prover supplied would let the prover choose which wrap VK and which
+-- | application state the chain is bound to. `messageDigests` recomputes
+-- | them, as OCaml's `verify.ml` does.
 type VerifiableProof =
   { wrapProof :: Proof PallasG WrapField
   , rawPlonk :: PlonkMinimal (F StepField)
@@ -320,17 +340,22 @@ type VerifiableProof =
   , spongeDigestBeforeEvaluations :: StepField
   , prevEvalsChunked :: ChunkedAllEvals StepField
   , pEval0Chunks :: Array StepField
+  -- The claimed application state, as `CompiledProof.appState`.
+  , appState :: Array StepField
+  -- `messages_for_next_step_proof`: per prev proof, its expanded
+  -- 16-round step challenges and its challenge-polynomial commitment.
   , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
+  , prevChallengePolynomialCommitments :: Array (AffinePoint StepField)
+  -- `messages_for_next_wrap_proof`: this proof's inner step opening `sg`
+  -- (also the accumulator-check target) and, per prev proof, its
+  -- expanded 15-round wrap challenges.
   , challengePolynomialCommitment :: AffinePoint WrapField
-  , messagesForNextStepProofDigest :: StepField
-  , messagesForNextWrapProofDigest :: WrapField
+  , prevWrapBulletproofChallenges :: Array (Vector WrapIPARounds WrapField)
   , stepDomainLog2 :: Int
   }
 
 -- | Project a prover-produced `CompiledProof` to the `VerifiableProof` the
--- | verifier needs, erasing the per-rule width existential (its
--- | `oldBulletproofChallenges` is the only `widthData` field verification
--- | reads).
+-- | verifier needs, erasing the per-rule width existential.
 toVerifiable
   :: forall mpv stmtVal
    . CompiledProof mpv stmtVal
@@ -345,14 +370,56 @@ toVerifiable (CompiledProof p) =
         , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
         , prevEvalsChunked: p.prevEvalsChunked
         , pEval0Chunks: p.pEval0Chunks
+        , appState: p.appState
         , oldBulletproofChallenges: Array.fromFoldable wd.oldBulletproofChallenges
+        , prevChallengePolynomialCommitments: Array.fromFoldable wd.outerStepChalPolyComms
         , challengePolynomialCommitment: p.challengePolynomialCommitment
-        , messagesForNextStepProofDigest: p.messagesForNextStepProofDigest
-        , messagesForNextWrapProofDigest: p.messagesForNextWrapProofDigest
+        , prevWrapBulletproofChallenges: Array.fromFoldable wd.msgWrapChallenges
         , stepDomainLog2: p.stepDomainLog2
         }
     )
     p.widthData
+
+-- | The two message digests of the wrap statement, recomputed from the
+-- | verifier's wrap VK and the proof's carried raw messages. This is the
+-- | binding step of OCaml's `verify.ml`: the step digest absorbs the REAL
+-- | wrap VK commitments (`Common.hash_messages_for_next_step_proof
+-- | ~dlog_plonk_index:key.commitments`), the claimed `app_state`, and each
+-- | prev proof's `(sg, expanded step challenges)`; the wrap digest absorbs
+-- | the prev wrap challenges front-padded with dummies to `PaddedLength`
+-- | (`Wrap_hack.pad_challenges`) and this proof's inner `sg`. Both land in
+-- | the wrap public input, so a proof whose step circuit hashed any other
+-- | key or state fails the kimchi check.
+messageDigests
+  :: Verifier
+  -> VerifiableProof
+  -> { step :: StepField, wrap :: WrapField }
+messageDigests verifier vp =
+  let
+    stepProofs = Array.zipWith
+      (\sg expandedBpChallenges -> { sg, expandedBpChallenges })
+      vp.prevChallengePolynomialCommitments
+      vp.oldBulletproofChallenges
+
+    step = Vector.reifyVector stepProofs \proofs ->
+      hashMessagesForNextStepProofPure
+        { stepVk: extractWrapVKForStepHash @1 verifier.wrapVK
+        , appState: vp.appState
+        , proofs
+        }
+
+    paddedLen = reflectType (Proxy :: Proxy PaddedLength)
+
+    wrapPadded =
+      Array.replicate (paddedLen - Array.length vp.prevWrapBulletproofChallenges)
+        dummyIpaChallenges.wrapExpanded
+        <> vp.prevWrapBulletproofChallenges
+
+    wrap = Vector.reifyVector wrapPadded \paddedChallenges ->
+      hashMessagesForNextWrapProofPureGeneral
+        { sg: vp.challengePolynomialCommitment, paddedChallenges }
+  in
+    { step, wrap }
 
 -- | Stage 1 for a `VerifiableProof`: reconstruct the expanded wrap deferred
 -- | values from the carried minimal skeleton. The prev-proof bp-challenge
@@ -389,10 +456,10 @@ expandDv verifier vp =
         , linearizationPoly: verifier.linearizationPoly
         }
 
--- | Per-proof verification: stage 1 (expand deferred values) and
--- | stage 2 (IPA step accumulator check), plus assembly of the wrap
--- | proof's kimchi public input. Stage 3 (the kimchi opening-proof
--- | check) is deliberately NOT done here — `verify` batches it across
+-- | Per-proof verification: stage 1 (expand deferred values), stage 2
+-- | (IPA step accumulator check) and stage 3 (message digests), plus
+-- | assembly of the wrap proof's kimchi public input. Stage 4 (the kimchi
+-- | opening-proof check) is deliberately NOT done here — `verify` batches it across
 -- | all proofs into ONE amortized `batch_verify`. Mirrors OCaml
 -- | `Verify.verify_heterogenous` (per-instance expand + accumulator
 -- | term, then a single batched dlog check).
@@ -418,10 +485,13 @@ perProof verifier vp =
 
     accumulatorOk = computedSg == vp.challengePolynomialCommitment
 
-    -- Wrap proof's kimchi public input. Stage 3 (the opening-proof
+    -- ===== Stage 3: the message digests, from the VK and the state. =====
+    digests = messageDigests verifier vp
+
+    -- Wrap proof's kimchi public input. Stage 4 (the opening-proof
     -- check) is intentionally deferred to `verifyBatch`, which runs it for
     -- every proof in ONE amortized `verifyOpeningProofsBatch`.
-    pi = wrapPublicInputOf dv vp.messagesForNextStepProofDigest vp.messagesForNextWrapProofDigest
+    pi = wrapPublicInputOf dv digests.step digests.wrap
   in
     { accumulatorOk
     , ctx: { proof: vp.wrapProof, publicInput: pi }
@@ -480,9 +550,10 @@ wrapPublicInput v cp = wrapPublicInputVP v (toVerifiable cp)
 
 wrapPublicInputVP :: Verifier -> VerifiableProof -> Array WrapField
 wrapPublicInputVP v vp =
-  wrapPublicInputOf (expandDv v vp)
-    vp.messagesForNextStepProofDigest
-    vp.messagesForNextWrapProofDigest
+  let
+    digests = messageDigests v vp
+  in
+    wrapPublicInputOf (expandDv v vp) digests.step digests.wrap
 
 -- | Flatten an expanded `WrapDeferredValuesOutput` + both message digests
 -- | into the kimchi public-input array via `assembleWrapMainInput` + the

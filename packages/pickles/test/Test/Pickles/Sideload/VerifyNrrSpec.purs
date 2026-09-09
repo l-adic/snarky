@@ -21,9 +21,21 @@ import Test.Spec.Assertions (shouldEqual)
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Sideload.NRR verify" do
   it "verify accepts the OCaml-produced NRR wrap proof" (liftAff <<< body)
+  it "verify rejects the same proof under a different application state" (liftAff <<< tampered)
   where
-  body :: SharedSrs -> Aff Unit
-  body { pallasSrs, vestaSrs } = do
-    fixture <- loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs }
+  load { pallasSrs, vestaSrs } =
+    loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs }
       "packages/pickles/test/fixtures/sideload/nrr"
+
+  body :: SharedSrs -> Aff Unit
+  body srs = do
+    fixture <- load srs
     verify fixture.verifier fixture.verifiableProof `shouldEqual` true
+
+  -- The step-message digest is recomputed from the claimed state, so a
+  -- proof presented for any other state must fail the kimchi check.
+  tampered :: SharedSrs -> Aff Unit
+  tampered srs = do
+    fixture <- load srs
+    let vp = fixture.verifiableProof
+    verify fixture.verifier (vp { appState = map (add one) vp.appState }) `shouldEqual` false

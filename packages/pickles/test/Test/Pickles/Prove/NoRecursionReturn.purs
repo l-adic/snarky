@@ -93,4 +93,8 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       Right compiledProof -> do
         logInfo "[NoRecursionReturn] verifying proof…"
         verify output.verifier (toVerifiable compiledProof) `shouldEqual` true
+        -- The verifier binds the proof to the claimed application state
+        -- through the recomputed step-message digest.
+        let vp = toVerifiable compiledProof
+        verify output.verifier (vp { appState = map (add one) vp.appState }) `shouldEqual` false
         logInfo "[NoRecursionReturn] verification complete"

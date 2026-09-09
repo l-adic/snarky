@@ -40,7 +40,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Types (StepIPARounds)
+import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Pickles.Verify (VerifiableProof, Verifier)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Simple.JSON (readJSON, writeJSON)
@@ -75,10 +75,11 @@ type VerifiableProofWire =
   , spongeDigestBeforeEvaluations :: StepField
   , prevEvalsChunked :: ChunkedAllEvalsWire StepField
   , pEval0Chunks :: Array StepField
+  , appState :: Array StepField
   , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
+  , prevChallengePolynomialCommitments :: Array (AffinePoint StepField)
   , challengePolynomialCommitment :: AffinePoint WrapField
-  , messagesForNextStepProofDigest :: StepField
-  , messagesForNextWrapProofDigest :: WrapField
+  , prevWrapBulletproofChallenges :: Array (Vector WrapIPARounds WrapField)
   , stepDomainLog2 :: Int
   }
 
@@ -133,10 +134,11 @@ toWire vp =
   , spongeDigestBeforeEvaluations: vp.spongeDigestBeforeEvaluations
   , prevEvalsChunked: toWireEvals vp.prevEvalsChunked
   , pEval0Chunks: vp.pEval0Chunks
+  , appState: vp.appState
   , oldBulletproofChallenges: vp.oldBulletproofChallenges
+  , prevChallengePolynomialCommitments: vp.prevChallengePolynomialCommitments
   , challengePolynomialCommitment: vp.challengePolynomialCommitment
-  , messagesForNextStepProofDigest: vp.messagesForNextStepProofDigest
-  , messagesForNextWrapProofDigest: vp.messagesForNextWrapProofDigest
+  , prevWrapBulletproofChallenges: vp.prevWrapBulletproofChallenges
   , stepDomainLog2: vp.stepDomainLog2
   }
 
@@ -151,10 +153,11 @@ fromWire w = do
     , spongeDigestBeforeEvaluations: w.spongeDigestBeforeEvaluations
     , prevEvalsChunked
     , pEval0Chunks: w.pEval0Chunks
+    , appState: w.appState
     , oldBulletproofChallenges: w.oldBulletproofChallenges
+    , prevChallengePolynomialCommitments: w.prevChallengePolynomialCommitments
     , challengePolynomialCommitment: w.challengePolynomialCommitment
-    , messagesForNextStepProofDigest: w.messagesForNextStepProofDigest
-    , messagesForNextWrapProofDigest: w.messagesForNextWrapProofDigest
+    , prevWrapBulletproofChallenges: w.prevWrapBulletproofChallenges
     , stepDomainLog2: w.stepDomainLog2
     }
 

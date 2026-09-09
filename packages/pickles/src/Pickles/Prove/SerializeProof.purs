@@ -146,12 +146,11 @@ reconstructCompiledProof dummies scp =
       , prevEvalsChunked: vp.prevEvalsChunked
       , pEval0Chunks: vp.pEval0Chunks
       , challengePolynomialCommitment: vp.challengePolynomialCommitment
-      , messagesForNextStepProofDigest: vp.messagesForNextStepProofDigest
-      , messagesForNextWrapProofDigest: vp.messagesForNextWrapProofDigest
+      , appState: vp.appState
       , widthData:
           rebuildWidthData dummies vp.oldBulletproofChallenges
-            scp.messagesForNextWrapProof.oldBulletproofChallenges
-            scp.messagesForNextStepProof.challengePolynomialCommitments
+            vp.prevWrapBulletproofChallenges
+            vp.prevChallengePolynomialCommitments
       , stepDomainLog2: vp.stepDomainLog2
       }
 

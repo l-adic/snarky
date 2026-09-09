@@ -170,7 +170,7 @@ import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (fromShifted, toShifted) as Kimchi
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Circuit.Types (class CircuitType, fieldsToValue)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Curves.Class (fromInt) as Curves
@@ -3965,8 +3965,11 @@ runMultiProverBody
             -- note above); recursive consumers read this via `prev.pEval0Chunks`.
             , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
             , challengePolynomialCommitment: stepProofSg
-            , messagesForNextStepProofDigest: msgStep
-            , messagesForNextWrapProofDigest: msgWrap
+            -- The fields the step circuit hashed into the step message
+            -- digest: public input, then public output (`hashAppFields`).
+            , appState:
+                valueToFields @StepField @inputVal appInput
+                  <> stepResult.userPublicOutputFields
             , widthData
             , stepDomainLog2: selfStepDomainLog2
             }
