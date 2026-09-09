@@ -189,8 +189,8 @@ def shiftScalar (x : C.ScalarField) : C.ScalarField :=
   else Pasta.Shifted.shiftType2 (Nat.size C.scalar) x
 
 /-- One round of the challenge fold: absorb `L` and `R`, squeeze one challenge, push it. -/
-private def roundStep (acc : Array ℕ × FqSponge.S C.base) (LR : C.Point × C.Point) :
-    Array ℕ × FqSponge.S C.base :=
+private def roundStep (acc : Array Prechallenge × FqSponge.S C.base)
+    (LR : C.Point × C.Point) : Array Prechallenge × FqSponge.S C.base :=
   let us := challengeNat C.sponge (absorbG C.sponge (absorbG C.sponge acc.2 LR.1) LR.2)
   (acc.1.push us.1, us.2)
 
@@ -198,7 +198,7 @@ private def roundStep (acc : Array ℕ × FqSponge.S C.base) (LR : C.Point × C.
 squeeze one 128-bit prechallenge, threading the sponge state — one push per `(L, R)`
 pair. The array-level engine of `roundChallenges`; the fold state is concrete data. -/
 def roundChallengesAux (s : FqSponge.S C.base) (lr : Array (C.Point × C.Point)) :
-    Array ℕ × FqSponge.S C.base :=
+    Array Prechallenge × FqSponge.S C.base :=
   lr.foldl (roundStep C) (#[], s)
 
 /-- A left fold that pushes exactly one element per step grows the array by the list
@@ -225,7 +225,7 @@ theorem roundChallengesAux_size (s : FqSponge.S C.base) (lr : Array (C.Point × 
 /-- The round prechallenges of a checked proof, from a given sponge state: the 128-bit
 vector — sized by construction, one per round — and the post-fold sponge state. -/
 def roundChallenges (s : FqSponge.S C.base) {k : ℕ} (lr : Vector (C.Point × C.Point) k) :
-    Vector ℕ k × FqSponge.S C.base :=
+    Vector Prechallenge k × FqSponge.S C.base :=
   let r := roundChallengesAux C s lr.toArray
   (⟨r.1, (roundChallengesAux_size C s lr.toArray).trans lr.size_toArray⟩, r.2)
 
@@ -238,7 +238,7 @@ the Schnorr prechallenge. This is exactly what a circuit's group half emits
 (`Pickles.checkBulletproof`). The round prechallenges come back as a `Vector` at the
 checked round count, so every downstream read is total. -/
 def ipaRun (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
-    C.BaseField × Vector ℕ k × ℕ :=
+    C.BaseField × Vector Prechallenge k × Prechallenge :=
   let s := absorbFr C.sponge s₀ (shiftScalar C (cipOf inp))
   let (t, s) := challengeFq C.sponge s
   let (chals, s) := roundChallenges C s inp.proof.lr
@@ -252,7 +252,8 @@ sponge's eigenvalue. -/
 def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
   let (t, chals, c) := ipaRun C s₀ inp
-  (C.toGroup t, chals.map (endoExpand C.sponge.lam), endoExpand C.sponge.lam c)
+  (C.toGroup t, chals.map (fun u => endoExpand C.sponge.lam u.val),
+    endoExpand C.sponge.lam c.val)
 
 /-- The standalone verifier's Fiat–Shamir schedule: `transcriptFrom` at the fresh
 sponge `FqSponge.init` — the cold start. -/
@@ -366,7 +367,8 @@ private def coordsPair (q : C.Point × C.Point) :
   ((q.1.x, q.1.y), (q.2.x, q.2.y))
 
 /-- The 128-bit packing of a raw squeeze. -/
-private def packRaw (x : C.BaseField) : ℕ := x.val % 2 ^ 128
+private def packRaw (x : C.BaseField) : Prechallenge :=
+  ⟨x.val % 2 ^ 128, Nat.mod_lt _ (Nat.two_pow_pos _)⟩
 
 /-- The round fold from an empty limb buffer is `ipaRound` on the automaton, its
 prechallenges the packings of the raw elements. -/
@@ -387,13 +389,13 @@ private theorem foldl_rounds (l : List (C.Point × C.Point)) (acc : List C.BaseF
     exact h
 
 /-- `ipaRun` from a warm state with an empty limb buffer is `ipaPrechallenges` on the
-automaton: the same `t`, the same packed round and Schnorr prechallenges. -/
+automaton: the same `t`, the same packed round and Schnorr prechallenges (as naturals). -/
 theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Input C k m p) :
     let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
       (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
     (ipaRun C ⟨st, []⟩ inp).1 = r.1 ∧
-    (ipaRun C ⟨st, []⟩ inp).2.1.toList = r.2.1 ∧
-    (ipaRun C ⟨st, []⟩ inp).2.2 = r.2.2 := by
+    (ipaRun C ⟨st, []⟩ inp).2.1.toList.map Subtype.val = r.2.1 ∧
+    (ipaRun C ⟨st, []⟩ inp).2.2.val = r.2.2 := by
   dsimp only
   unfold ipaRun
   rw [absorbFr_eq]
@@ -415,9 +417,9 @@ theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Inpu
   unfold ipaPrechallenges ipaSqueezes
   rw [hs]
   refine ⟨rfl, ?_, ?_⟩
-  · show chals.toArray.toList = _
+  · show chals.toArray.toList.map Subtype.val = _
     rw [h1]
-    rfl
+    simp only [List.map_map, Function.comp_def, packRaw]
   · simp only [absorbG, absorbFq, challengeNat_fresh]
 
 /-- `transcriptFrom` from a warm state with an empty limb buffer, through
@@ -433,7 +435,7 @@ theorem transcriptFrom_eq_ipaPrechallenges (st : Poseidon.State C.BaseField)
   obtain ⟨h1, h2, h3⟩ := ipaRun_eq_ipaPrechallenges C st inp
   simp only [transcriptFrom]
   refine ⟨by rw [h1], ?_, by rw [h3]⟩
-  rw [Vector.toList_map, h2]
+  simp only [Vector.toList_map, ← h2, List.map_map, Function.comp_def]
 
 /-- The Schnorr equation of the opening at given advice: `verifyWith`'s first conjunct
 with the combined inner product `cip` and the challenge-polynomial evaluation `b` as

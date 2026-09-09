@@ -14,11 +14,13 @@ cardinalities.
 
 ## The limb buffer
 
-Alongside the Poseidon state, the sponge carries a buffer `lastSqueezed` of 64-bit limbs.
-Each raw squeeze contributes its two low limbs (128 high-entropy bits), and a scalar
-challenge (`challenge`, 128 bits) is packed from the next two buffered limbs. Every
+Alongside the Poseidon state, the sponge carries a buffer `lastSqueezed` of 64-bit limbs
+(`Limb`). Each raw squeeze contributes its two low limbs (128 high-entropy bits), and a
+prechallenge (`challengeNat`, 128 bits) is packed from the next two buffered limbs. Every
 absorption clears the buffer, and field-element squeezes (`challengeFq`) bypass it and clear
-it.
+it. The bounds are in the types: a limb is a `Limb`, a packed prechallenge a `Prechallenge`,
+so a consumer of a squeeze's output holds its 128-bit bound without knowing where the value
+came from.
 
 ## The endomorphism expansion
 
@@ -49,12 +51,20 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 variable {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
 
+/-- A 64-bit limb of a raw squeeze. -/
+abbrev Limb := { n : ℕ // n < 2 ^ 64 }
+
+/-- A 128-bit prechallenge (`ScalarChallenge`): what every limb-packed squeeze produces,
+before its field cast (`challenge`) or endo-expansion (`squeezeChallenge`). The bound is in
+the type, so a Fiat–Shamir run's outputs carry it wherever they are consumed. -/
+abbrev Prechallenge := { n : ℕ // n < 2 ^ 128 }
+
 /-- A sponge in flight: the Poseidon automaton over the base field, plus its limb buffer. -/
 structure S (base : ℕ) where
   /-- The Poseidon duplex automaton over the base field. -/
   sponge : State (ZMod base)
-  /-- Buffered 64-bit limbs of raw squeezes not yet consumed by a challenge. -/
-  lastSqueezed : List ℕ
+  /-- Buffered 64-bit limbs of raw squeezes not yet consumed by a prechallenge. -/
+  lastSqueezed : List Limb
 
 /-- The fresh sponge: fresh automaton, empty buffer. -/
 def init : S base := ⟨Poseidon.init, []⟩
@@ -63,8 +73,9 @@ def init : S base := ⟨Poseidon.init, []⟩
 
 /-- The two low 64-bit limbs of a squeezed element — its 128 high-entropy bits
 (`HIGH_ENTROPY_LIMBS = 2`). -/
-private def lowLimbs (x : ZMod base) : List ℕ :=
-  [x.val % 2 ^ 64, x.val / 2 ^ 64 % 2 ^ 64]
+private def lowLimbs (x : ZMod base) : List Limb :=
+  [⟨x.val % 2 ^ 64, Nat.mod_lt _ (Nat.two_pow_pos _)⟩,
+    ⟨x.val / 2 ^ 64 % 2 ^ 64, Nat.mod_lt _ (Nat.two_pow_pos _)⟩]
 
 /-- Absorb base-field elements (`absorb_fq`): clear the buffer, absorb each. -/
 def absorbFq (spec : Spec base scalar) (s : S base) (xs : List (ZMod base)) : S base :=
@@ -97,28 +108,32 @@ def challengeFq (spec : Spec base scalar) (s : S base) : ZMod base × S base :=
 /-- Take two 64-bit limbs from the buffer and pack them into a 128-bit value, refilling the
 buffer from the sponge as needed (`squeeze_limbs` at `CHALLENGE_LENGTH_IN_LIMBS = 2`). The
 `fuel` argument bounds the refills: each adds two limbs, so one suffices even from empty. -/
-private def squeezeLimbsPacked (spec : Spec base scalar) : ℕ → S base → ℕ × S base
-  | 0, s => (0, s)
+private def squeezeLimbsPacked (spec : Spec base scalar) :
+    ℕ → S base → Prechallenge × S base
+  | 0, s => (⟨0, Nat.two_pow_pos _⟩, s)
   | fuel + 1, s =>
     match s.lastSqueezed with
-    | l0 :: l1 :: rest => (l0 + l1 * 2 ^ 64, ⟨s.sponge, rest⟩)
+    | l0 :: l1 :: rest =>
+      (⟨l0.val + l1.val * 2 ^ 64, by have := l0.property; have := l1.property; omega⟩,
+        ⟨s.sponge, rest⟩)
     | buf =>
       let (x, sp) := squeeze spec.params s.sponge
       squeezeLimbsPacked spec fuel ⟨sp, buf ++ lowLimbs x⟩
 
-/-- Squeeze a 128-bit prechallenge, as a natural number (`challenge`, before the field
-cast). -/
-def challengeNat (spec : Spec base scalar) (s : S base) : ℕ × S base :=
+/-- Squeeze a 128-bit prechallenge (`challenge`, before the field cast). -/
+def challengeNat (spec : Spec base scalar) (s : S base) : Prechallenge × S base :=
   squeezeLimbsPacked spec 2 s
 
+omit [Field (ZMod scalar)] in
 /-- A prechallenge from an empty limb buffer is one raw squeeze's value mod `2^128`, both
 of its limbs consumed, the buffer left empty. -/
 theorem challengeNat_fresh (spec : Spec base scalar) (s : State (ZMod base)) :
     challengeNat spec ⟨s, []⟩
-      = ((squeeze spec.params s).1.val % 2 ^ 128, ⟨(squeeze spec.params s).2, []⟩) := by
+      = (⟨(squeeze spec.params s).1.val % 2 ^ 128, Nat.mod_lt _ (Nat.two_pow_pos _)⟩,
+          ⟨(squeeze spec.params s).2, []⟩) := by
   rcases hsq : squeeze spec.params s with ⟨x, sp⟩
   simp only [challengeNat, squeezeLimbsPacked, lowLimbs, hsq, List.nil_append, Prod.mk.injEq,
-    and_true]
+    Subtype.mk.injEq, and_true]
   omega
 
 /-- Squeeze a 128-bit prechallenge into the scalar field (`challenge`): `challengeNat`, cast.
@@ -126,7 +141,7 @@ The consumer's step over the run; kept as the production sponge's named operatio
 against its traces. -/
 def challenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
-  ((n : ZMod scalar), s)
+  ((n.val : ZMod scalar), s)
 
 /-- The endomorphism expansion of a 128-bit prechallenge into an effective scalar
 (`to_field_with_length`, Halo §6.2): fold the 2-bit windows from the top into the
@@ -146,7 +161,7 @@ eigenvalue. The consumer's step over the run; kept as the production sponge's na
 operation, checked against its traces. -/
 def squeezeChallenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
-  (endoExpand spec.lam n, s)
+  (endoExpand spec.lam n.val, s)
 
 
 end Poseidon.FqSponge
