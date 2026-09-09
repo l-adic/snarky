@@ -3952,8 +3952,11 @@ runMultiProverBody
               , dummyChalPolyComm: dummyWrapSgInStepField
               }
 
+          let
+            statement = StatementIO { input: appInput, output: publicOutput }
+
           pure $ Right $ CompiledProof
-            { statement: StatementIO { input: appInput, output: publicOutput }
+            { statement
             , wrapProof: wrapProveResult.proof
             , rawPlonk: toPlonkMinimal wrapDv.plonk
             , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges
@@ -3965,11 +3968,9 @@ runMultiProverBody
             -- note above); recursive consumers read this via `prev.pEval0Chunks`.
             , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
             , challengePolynomialCommitment: stepProofSg
-            -- The fields the step circuit hashed into the step message
-            -- digest: public input, then public output (`hashAppFields`).
-            , appState:
-                valueToFields @StepField @inputVal appInput
-                  <> stepResult.userPublicOutputFields
+            -- The statement's fields, input then output: what the step
+            -- circuit hashed into the step message digest (`hashAppFields`).
+            , appState: valueToFields @StepField statement
             , widthData
             , stepDomainLog2: selfStepDomainLog2
             }

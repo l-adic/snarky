@@ -101,7 +101,7 @@ import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
+import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (extractWrapVKForStepHash)
 import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkExpanded, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, expandPlonkMinimal, toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -424,7 +424,7 @@ messageDigests verifier vp =
 
     step = Vector.reifyVector stepProofs \proofs ->
       hashMessagesForNextStepProofPure
-        { stepVk: extractWrapVKForStepHash @1 verifier.wrapVK
+        { stepVk: extractWrapVKForStepHash @WrapVkChunks verifier.wrapVK
         , appState: vp.appState
         , proofs
         }

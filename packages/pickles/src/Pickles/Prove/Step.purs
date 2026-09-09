@@ -95,7 +95,7 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesF
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, replicateStepSlotsCarrier)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, vestaVerifierIndexCommitments)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (UnfinalizedProof)
@@ -635,7 +635,7 @@ dummyWrapTockPublicInput input =
     -- OCaml `proof.ml:168-171` sets
     --   messages_for_next_step_proof.challenge_polynomial_commitments
     --     = Vector.init most_recent_width ~f:(fun _ -> Lazy.force Dummy.Ipa.Wrap.sg)
-    wrapVkStep = extractWrapVKForStepHash @1 input.wrapVK
+    wrapVkStep = extractWrapVKForStepHash @WrapVkChunks input.wrapVK
 
     stepExpanded = dummyIpaChallenges.stepExpanded
 
@@ -994,7 +994,7 @@ buildSlotAdvice input = do
     msgWrapHashStep = F (crossFieldDigest msgWrapHash)
 
   let
-    wrapVkStep = extractWrapVKForStepHash @1 input.wrapVK
+    wrapVkStep = extractWrapVKForStepHash @WrapVkChunks input.wrapVK
 
     -- Per-slot `prev_challenge_polynomial_commitments :: Vector n` —
     -- derived from the PaddedLength-sized input by dropping
@@ -1158,7 +1158,7 @@ buildSlotAdvice input = do
       , stepOmegaForLagrange: \_ -> one
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
-      , dlogIndex: extractWrapVKForStepHash @1 input.wrapVK
+      , dlogIndex: extractWrapVKForStepHash @WrapVkChunks input.wrapVK
       , appStateFields: valueToFields @StepField @prevHeadStmt input.prevStatement
       , stepPrevSgs: prevCpcs
       , wrapChallengePolynomialCommitment: input.stepOpeningSg
