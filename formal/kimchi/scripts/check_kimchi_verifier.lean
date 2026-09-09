@@ -21,7 +21,7 @@ through the client-side `verifyWire` composition below — parse the wire record
 * `fixtures/kimchi_proof_{vesta,pallas}_nc2.json` — production `nc = 2` proofs on both
   curves (half-domain SRS, two chunks per column, carried public evaluations);
 * `fixtures/kimchi_proof_pallas_pickles.json` — a deployed pickles wrap proof (OCaml
-  through the Rust prover, `tree_proof_return` at two proofs; `kimchi_proof_dump_pickles`
+  through the Rust prover, `simple_chain`'s second wrap; `kimchi_proof_dump_pickles`
   re-encodes it from the side-loaded fixture, the terminator's public input and its
   accumulator list) with its two old accumulators, at the wrap domain `2^14` below the
   `2^15` Tock SRS: the recursion path, and production's sub-SRS one-chunk regime.
@@ -248,7 +248,7 @@ def main : IO Unit := do
   -- empty-public branch (public commitment = the all-ones blinding mask).
   run CV s!"{dir}/kimchi_proof_vesta_emul.json" false
   -- The recursion path on a deployed artifact: a pickles wrap proof (OCaml through the
-  -- Rust prover, `tree_proof_return` at two proofs) with its two old accumulators, at
+  -- Rust prover, `simple_chain`'s second wrap) with its two old accumulators, at
   -- the wrap domain 2^14 below the 2^15 Tock SRS — the sub-SRS one-chunk regime. Opt-in:
   -- every verify is a 2^15-point opening check, beyond the driver's memory today.
   if withPickles then

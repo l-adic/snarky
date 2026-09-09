@@ -40,7 +40,7 @@ the artifact. Several binaries emit MORE THAN ONE fixture from a single invocati
 # a deployed pickles wrap proof (OCaml through the Rust prover) with its accumulators:
 # the side-loaded fixture directory, the cached Pallas SRS, and the output directory
 ./target/release/kimchi_proof_dump_pickles \
-  ../../packages/pickles/test/fixtures/tree_proof_return/wrap2 ../../srs-cache/pallas.srs \
+  ../../packages/pickles/test/fixtures/simple_chain/wrap1 ../../srs-cache/pallas.srs \
   ../../formal/kimchi/fixtures
 ```
 
@@ -132,7 +132,7 @@ own, and the production verifier must accept):
 
 | artifact | contents | checked by |
 |---|---|---|
-| `kimchi/fixtures/kimchi_proof_pallas_pickles.json` | the `tree_proof_return` two-proof wrap proof with its two old accumulators, at the wrap domain `2^14` below the `2^15` Tock SRS (production's sub-SRS one-chunk regime): the recursion path on a deployed artifact. One-chunk format without `evals_public`; `srs_g` is the SRS prefix the key uses, `lagrange_basis` the public prefix | `kimchi/scripts/check_kimchi_verifier.sh` |
+| `kimchi/fixtures/kimchi_proof_pallas_pickles.json` | the `simple_chain` second wrap proof with its two old accumulators (one dummy, one the real accumulator of the first), at the wrap domain `2^14` below the `2^15` Tock SRS (production's sub-SRS one-chunk regime): the recursion path on a deployed artifact. One-chunk format without `evals_public`; `srs_g` is the SRS prefix the key uses, `lagrange_basis` the public prefix | `kimchi/scripts/check_kimchi_verifier.sh` |
 
 `sponge_dump`'s fq-sponge traces include the identity-absorb position probe
 `[absorb_g_inf, absorb_fr, challenge]` — the shape class that distinguishes the two-zero
