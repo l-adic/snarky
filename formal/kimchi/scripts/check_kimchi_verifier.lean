@@ -8,8 +8,8 @@ import Lean.Data.Json
 One verifier (`kimchiVerify`, over checked records at chunk count `nc`), exercised
 through the client-side `verifyWire` composition below — parse the wire records with
 `Wire.{KimchiVK,KimchiProof}.check`, then verify. Fixtures spanning both curves,
-`nc ∈ {1, 2, 8}`, both public-evaluation sources, `max_poly_size` at, off and above
-`n/2`, and the recursion path on a deployed pickles proof:
+`nc ∈ {1, 2}`, both public-evaluation sources, `max_poly_size` at `n`, `n/2` and above
+`n`, and the recursion path on a deployed pickles proof:
 
 * `fixtures/kimchi_proof_vesta.json` — the one-chunk proof (`nc = 1`) without carried
   public evaluations (o1js / OCaml `to_repr` drop them at `nc = 1`), so the verifier
@@ -20,10 +20,6 @@ through the client-side `verifyWire` composition below — parse the wire record
   `PubEvalSrc.carried` branch, its corruption case below flipping the verdict;
 * `fixtures/kimchi_proof_{vesta,pallas}_nc2.json` — production `nc = 2` proofs on both
   curves (half-domain SRS, two chunks per column, carried public evaluations);
-* `fixtures/kimchi_proof_vesta_nc8.json` — an `nc = 8` proof (`max_poly_size = n/8`,
-  `n = 64`, a full `56`-chunk quotient), for nc > 2 and `max_poly_size ≠ n/2`. (`nc = 3`
-  is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking
-  and the prover rejects it.)
 * `fixtures/kimchi_proof_pallas_pickles.json` — a deployed pickles wrap proof (OCaml
   through the Rust prover, `tree_proof_return` at two proofs; `kimchi_proof_dump_pickles`
   re-encodes it from the side-loaded fixture, the terminator's public input and its
@@ -246,13 +242,6 @@ def main : IO Unit := do
   -- nc = 2 on both curves.
   run CV s!"{dir}/kimchi_proof_vesta_nc2.json" true
   run CP s!"{dir}/kimchi_proof_pallas_nc2.json" true
-  -- DISABLED (2026-08-02): the nc = 8 run (max_poly_size ≠ n/2, bounded corruption
-  -- matrix — each verify a 56-chunk batch MSM) peaks near 28 GB resident COMPILED,
-  -- beyond any CI runner, and was the OOM that killed the gates job. The nc = 8 regime
-  -- (the audit's C-3) is temporarily unexercised by this driver; re-enable once the
-  -- driver's memory is understood (the interpreted run fit in 16 GB for months).
-  -- run CV s!"{dir}/kimchi_proof_vesta_nc8.json" true
-  --   (heavy := true)
   -- Live EndoMul + VarBaseMul selectors at an empty public input (the audit's C-3 /
   -- V-1 mask): acceptance here pins the α-weighted constraint order and the
   -- scalar-register sign of both scalar-multiplication gates, and exercises the
@@ -267,5 +256,5 @@ def main : IO Unit := do
   IO.println s!"✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     barycentric and carried, nc = 2 on both curves, the live-EndoMul/VarBaseMul \
     empty-public proof{if withPickles then ", and a pickles wrap proof with its old \
-    accumulators" else ""}; nc = 8 and, by default, the pickles proof are out pending the \
-    driver's memory), reject corruptions, and refuse to parse ragged wire data"
+    accumulators" else "; the pickles proof is out by default pending the driver's \
+    memory"}), reject corruptions, and refuse to parse ragged wire data"

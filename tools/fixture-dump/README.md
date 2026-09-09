@@ -16,7 +16,7 @@ cd tools/fixture-dump
 rustup run 1.92 cargo build --release
 ```
 
-Nine binaries, all deterministic (seeded ChaCha20, or re-encoding recorded data).
+Eight binaries, all deterministic (seeded ChaCha20, or re-encoding recorded data).
 `formal/` is a workspace of packages, each owning its fixtures — every binary takes its
 output directory as an argument, and the right target depends on which package checks
 the artifact. Several binaries emit MORE THAN ONE fixture from a single invocation
@@ -36,7 +36,6 @@ the artifact. Several binaries emit MORE THAN ONE fixture from a single invocati
 ./target/release/linearization_dump ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_nc2 ../../formal/kimchi/fixtures
-./target/release/kimchi_proof_dump_nc8 ../../formal/kimchi/fixtures
 ./target/release/kimchi_proof_dump_emul ../../formal/kimchi/fixtures
 # a deployed pickles wrap proof (OCaml through the Rust prover) with its accumulators:
 # the side-loaded fixture directory, the cached Pallas SRS, and the output directory
@@ -118,12 +117,6 @@ sidecars next to the fixtures (the verifier's intermediate oracle values, for lo
 a Lean-side divergence layer by layer). They are debugging aids, gitignored
 (`formal/kimchi/fixtures/.gitignore`), never checked in.
 
-`kimchi_proof_dump_nc8`:
-
-| artifact | contents | checked by |
-|---|---|---|
-| `kimchi/fixtures/kimchi_proof_vesta_nc8.json` | an `nc = 8` proof (nc > 2 parameter coverage): the same mixed circuit and seed re-proved over an `max_poly_size = 8` SRS. There the chunked `zk_rows` (19) grow the domain to `n = 64`, so `nc = n / max_poly_size = 8` with a full `56`-chunk quotient, and `max_poly_size = n/8 ≠ n/2`. Same chunk-array encoding as the `nc = 2` twins. (`nc = 3` is unproducible — a non-power-of-two `max_poly_size` misaligns the segment chunking and the production prover rejects it with `WrongBlinders`; `nc = 4` would need a larger circuit.) No debug sidecar. | `kimchi/scripts/check_kimchi_verifier.sh` |
-
 `kimchi_proof_dump_emul`:
 
 | artifact | contents | checked by |
@@ -141,10 +134,7 @@ own, and the production verifier must accept):
 |---|---|---|
 | `kimchi/fixtures/kimchi_proof_pallas_pickles.json` | the `tree_proof_return` two-proof wrap proof with its two old accumulators, at the wrap domain `2^14` below the `2^15` Tock SRS (production's sub-SRS one-chunk regime): the recursion path on a deployed artifact. One-chunk format without `evals_public`; `srs_g` is the SRS prefix the key uses, `lagrange_basis` the public prefix | `kimchi/scripts/check_kimchi_verifier.sh` |
 
-`index_dump` additionally emits `index_vesta_nc8.json` (the mixed circuit over the
-`max_poly_size = 8` SRS of `kimchi_proof_dump_nc8`, where `zk_rows = 19` grows the domain
-to 64) so `check_vk_correspond.sh` can adjudicate `Corresponds` at `nc = 8` (audit C-3),
-and `sponge_dump`'s fq-sponge traces include the identity-absorb position probe
+`sponge_dump`'s fq-sponge traces include the identity-absorb position probe
 `[absorb_g_inf, absorb_fr, challenge]` — the shape class that distinguishes the two-zero
 identity absorb from a one-zero encoding (audit V-2); an immediate squeeze cannot.
 

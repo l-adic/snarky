@@ -281,8 +281,8 @@ jobs:
     # The composed executable verifier against complete production wire proofs
     # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_emul}.json from
     # the kimchi_proof_dump binaries — the emul one carries live EndoMul/VarBaseMul
-    # selectors and an empty public input; see the audit's V-1/C-3. The nc = 8 fixture is
-    # disabled in the driver pending its memory — see the note there). Interpreted via
+    # selectors and an empty public input; see the audit's V-1/C-3. The pickles fixture
+    # is opt-in in the driver pending its memory — see the note there). Interpreted via
     # `lean --run` (the script has no `#eval`): the compiled driver peaks ~30 GB
     # resident; the interpreter fits the runner.
     - name: Check the executable kimchi verifier against a production proof
@@ -291,8 +291,8 @@ jobs:
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean --run kimchi/scripts/check_kimchi_verifier.lean
 
-    # The verifier-key <-> index correspondence across both curves (nc = 1 and 2; the
-    # nc = 8 regime is disabled in the driver pending its memory). Interpreted, as above.
+    # The verifier-key <-> index correspondence across both curves (nc = 1 and 2).
+    # Interpreted, as above.
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

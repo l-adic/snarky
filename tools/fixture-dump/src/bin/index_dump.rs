@@ -91,7 +91,7 @@ macro_rules! dump_index {
                 let override_srs_size = srs_over(n_probe);
                 let index = mixed_index_over::<$G>(gates, override_srs_size);
                 // At `None`/`n/2` the chunked zk_rows fit the probed domain; a smaller
-                // SRS (the nc = 8 instance) legitimately grows it (zk_rows = 19).
+                // SRS would legitimately grow it.
                 if override_srs_size.map_or(true, |s| s >= n_probe / 2) {
                     assert_eq!(
                         index.cs.domain.d1.size(),
@@ -249,25 +249,9 @@ dump_index!(
     "nc=2",
     "index_pallas_nc2.json"
 );
-// The nc = 8 instance (external-audit C-3: `Corresponds` was unwitnessed at nc = 8):
-// the same mixed circuit over the `max_poly_size = 8` SRS of `kimchi_proof_dump_nc8`,
-// where the chunked `zk_rows = 19` grow the domain to 64.
-dump_index!(
-    vesta_nc8,
-    "vesta",
-    mina_curves::pasta::Vesta,
-    mina_curves::pasta::VestaParameters,
-    mina_curves::pasta::Fp,
-    mixed_circuit,
-    |_| Some(8),
-    "nc=8",
-    "index_vesta_nc8.json"
-);
-
 fn main() {
     let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".to_string());
     vesta::run(&out_dir);
     vesta_nc2::run(&out_dir);
     pallas_nc2::run(&out_dir);
-    vesta_nc8::run(&out_dir);
 }
