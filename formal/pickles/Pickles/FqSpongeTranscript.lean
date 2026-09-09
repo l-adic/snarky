@@ -3,6 +3,7 @@ import Snarky.Kimchi.Circuit.RangeCheck
 import Snarky.Kimchi.Circuit.AddComplete
 import Kimchi.Verifier.Kimchi
 import Pickles.OptSponge
+import Pickles.Prechallenge
 
 set_option mvcgen.warning false
 
@@ -274,15 +275,15 @@ private theorem absorbColumns_spec (p : Poseidon.Params F)
     intro hrest s hs
     simpa using hrest _ (hstep s hs)
 
-/-- A prechallenge squeeze reads as the low half of the value squeeze: `x = lo + 2¹²⁸·hi`
-with `hi < 2¹²⁸`, `lo < 2¹²⁸` where constrained, the sponge as the squeezed state. -/
+/-- A prechallenge squeeze reads as the low half of the value squeeze (`Low128`), as a
+prechallenge where constrained, the sponge as the squeezed state. -/
 theorem squeezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (constrainLowBits : Bool) (endo : FVar F) (sv : SpongeVar F) :
     ⦃⌜True⌝⦄ squeezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo sv
     ⦃⇓ r _ => ⌜∀ s, SpongeVar.ReadsAt V sv s →
-      (∃ hi : ℕ, hi < 2 ^ 128 ∧ (Poseidon.squeeze p s).1 = r.1.val.val V + 2 ^ 128 * hi) ∧
-      (constrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ r.1.val.val V = n) ∧
+      Low128 V (Poseidon.squeeze p s).1 r.1 ∧
+      (constrainLowBits = true → ∃ m : Prechallenge, Reads128 V r.1 m) ∧
       SpongeVar.ReadsAt V r.2 (Poseidon.squeeze p s).2⌝⦄ := by
   simp only [squeezePrechallenge]
   have hsq := SpongeVar.squeeze_spec (V := V) p hsize sv
@@ -292,23 +293,22 @@ theorem squeezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
   intro s hs
   obtain ⟨hxv, hst⟩ := hx s hs
   obtain ⟨hiv, he, ⟨n, hn, rfl⟩, hlow⟩ := hchal
-  exact ⟨⟨n, hn, by rw [← hxv, he]⟩, hlow, hst⟩
+  exact ⟨⟨n, hn, by rw [← hxv, he]⟩, fun h => reads128_of_nat (hlow h), hst⟩
 
 open Kimchi.Verifier in
 /-- The reading of the transcript's outputs (`fqSpongeTranscript_spec`): with
 `(β̂, γ̂, α̂, ζ̂)`, `d`, `warm` the wire verifier's `fqSqueezes` over the index digest, the
-`sg_old`, `x_hat`, `w_comm`, `z_comm`, `t_comm` readings, each challenge is a 128-bit
-decomposition `x̂ = chal + 2¹²⁸·h` with `h < 2¹²⁸`, `β, γ` below `2¹²⁸`, `x_hat` reads as
-`xv`, the digest as `d` and the sponge as `warm`. -/
+`sg_old`, `x_hat`, `w_comm`, `z_comm`, `t_comm` readings, each challenge is the low half of
+its squeeze (`Low128`), `β, γ` read as prechallenges, `x_hat` reads as `xv`, the digest as
+`d` and the sponge as `warm`. -/
 def FqTranscriptReads (p : Poseidon.Params F) (indexDigest : F)
     (sgOld xv : List (AffinePoint F)) (wComm : List (List (AffinePoint F)))
     (zComm tComm : List (AffinePoint F)) (V : Valuation F) (o : FqTranscriptOutput F) : Prop :=
   let r := fqSqueezes p indexDigest (sgOld.map coords) (xv.map coords)
     (wComm.map (·.map coords)) (zComm.map coords) (tComm.map coords)
-  ∃ hβ hγ hα hζ : ℕ, hβ < 2 ^ 128 ∧ hγ < 2 ^ 128 ∧ hα < 2 ^ 128 ∧ hζ < 2 ^ 128 ∧
-    r.1.1 = o.beta.val.val V + 2 ^ 128 * hβ ∧ r.1.2.1 = o.gamma.val.val V + 2 ^ 128 * hγ ∧
-    r.1.2.2.1 = o.alpha.val.val V + 2 ^ 128 * hα ∧ r.1.2.2.2 = o.zeta.val.val V + 2 ^ 128 * hζ ∧
-    (∃ n : ℕ, n < 2 ^ 128 ∧ o.beta.val.val V = n) ∧ (∃ n : ℕ, n < 2 ^ 128 ∧ o.gamma.val.val V = n) ∧
+  Low128 V r.1.1 o.beta ∧ Low128 V r.1.2.1 o.gamma ∧
+    Low128 V r.1.2.2.1 o.alpha ∧ Low128 V r.1.2.2.2 o.zeta ∧
+    (∃ m : Prechallenge, Reads128 V o.beta m) ∧ (∃ m : Prechallenge, Reads128 V o.gamma m) ∧
     List.Forall₂ (CircuitType.Reads V) o.xHat xv ∧
     o.digest.val V = r.2.1 ∧ SpongeVar.ReadsAt V o.sponge r.2.2
 
@@ -343,25 +343,18 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
   have s2 := hB _ s1
   have s3 := hC _ s2
   have s4 := hD _ s3
-  obtain ⟨⟨nβ, hnβ, eβ⟩, ⟨mβ, hmβ, hbetaLo⟩, s5⟩ := hβ _ s4
-  obtain ⟨⟨nγ, hnγ, eγ⟩, ⟨mγ, hmγ, hgammaLo⟩, s6⟩ := hγ _ s5
+  obtain ⟨eβ, hbetaLo, s5⟩ := hβ _ s4
+  obtain ⟨eγ, hgammaLo, s6⟩ := hγ _ s5
   have s7 := hE _ s6
-  obtain ⟨⟨nα, hnα, eα⟩, -, s8⟩ := hα _ s7
+  obtain ⟨eα, -, s8⟩ := hα _ s7
   have s9 := hF _ s8
-  obtain ⟨⟨nζ, hnζ, eζ⟩, -, s10⟩ := hζ _ s9
+  obtain ⟨eζ, -, s10⟩ := hζ _ s9
   obtain ⟨hdv, -⟩ := hdig _ s10
   simp only [Poseidon.absorb, List.foldl_cons, List.foldl_nil, coords_of_reads hsg,
     coords_of_reads hxh, coords_of_reads hz, coords_of_reads ht, coords_of_reads_cols hw]
     at eβ eγ eα eζ hdv s10
   unfold FqTranscriptReads fqSqueezes
-  refine ⟨nβ, nγ, nα, nζ, hnβ, hnγ, hnα, hnζ, ?_, ?_, ?_, ?_, ⟨mβ, hmβ, hbetaLo⟩,
-    ⟨mγ, hmγ, hgammaLo⟩, hxh, ?_, ?_⟩
-  · exact eβ
-  · exact eγ
-  · exact eα
-  · exact eζ
-  · exact hdv
-  · exact s10
+  exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hxh, hdv, s10⟩
 
 /-- Under any valuation satisfying the emitted constraints, each claim reads as the
 corresponding squeezed prechallenge. -/
@@ -579,17 +572,16 @@ theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
     ⦃⌜True⌝⦄ optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo
       ov
     ⦃⇓ r _ => ⌜(∀ ps : Poseidon.State F, SqueezedReads V ov ps →
-        (∃ hi : ℕ, hi < 2 ^ 128 ∧ (Poseidon.squeeze p ps).1 = r.1.val.val V + 2 ^ 128 * hi) ∧
-        (constrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ r.1.val.val V = n) ∧
+        Low128 V (Poseidon.squeeze p ps).1 r.1 ∧
+        (constrainLowBits = true → ∃ m : Prechallenge, Reads128 V r.1 m) ∧
         SqueezedReads V r.2 (Poseidon.squeeze p ps).2) ∧
       (∀ (ib : Bool) (ps₀ : Poseidon.State F) (pend : List (Bool × F)),
         AbsorbingReads p V ov ib ps₀ pend →
         ((∃ v ∈ pend, v.1 = true) ∨ ps₀.mode = .absorbed 0) →
         (∀ k : ℕ, k ≤ pend.length → (k : F) = 0 → k = 0) →
-        (∃ hi : ℕ, hi < 2 ^ 128 ∧
-          (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1
-            = r.1.val.val V + 2 ^ 128 * hi) ∧
-        (constrainLowBits = true → ∃ n : ℕ, n < 2 ^ 128 ∧ r.1.val.val V = n) ∧
+        Low128 V (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).1
+          r.1 ∧
+        (constrainLowBits = true → ∃ m : Prechallenge, Reads128 V r.1 m) ∧
         SqueezedReads V r.2
           (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⌝⦄ := by
   simp only [optSqueezePrechallenge]
@@ -600,9 +592,9 @@ theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
   obtain ⟨hiv, he, ⟨n, hn, rfl⟩, hlow⟩ := hchal
   refine ⟨fun ps hs => ?_, fun ib ps₀ pend h hne hchar => ?_⟩
   · obtain ⟨hxv, hst⟩ := hx.1 ps hs
-    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, hlow, hst⟩
+    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, fun h => reads128_of_nat (hlow h), hst⟩
   · obtain ⟨hxv, hst⟩ := hx.2 ib ps₀ pend h hne hchar
-    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, hlow, hst⟩
+    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, fun h => reads128_of_nat (hlow h), hst⟩
 
 /-- Under any valuation satisfying the emitted constraints, with the mask bits and `sg_old`
 reading as `sgv`, `x_hat` as `xv` and the commitments as `wv, zv, tv` (`z_comm` and `t_comm`
@@ -659,9 +651,9 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     simp only [List.length_append, List.length_nil, List.length_cons, length_maskedFlat,
       length_pointsFlat, length_flatMap_pointsFlat]
     omega
-  obtain ⟨⟨nβ, hnβ, eβ⟩, hbetaLo, s5⟩ := hβ.2 _ _ _ r3
+  obtain ⟨eβ, hbetaLo, s5⟩ := hβ.2 _ _ _ r3
     (Or.inl ⟨(true, indexDigest.val V), by simp, rfl⟩) (fun k hk => hchar k (le_trans hk hlen0))
-  obtain ⟨⟨nγ, hnγ, eγ⟩, hgammaLo, s6⟩ := hγ.1 _ s5
+  obtain ⟨eγ, hgammaLo, s6⟩ := hγ.1 _ s5
   -- α: `z_comm` from the squeezed sponge
   have rz := foldl_optAbsorbPoint_reads hzs (optAbsorbPoint_reads_squeezed p s6 hzP)
   have hlenz : ([(true, zPv.x), (true, zPv.y)] ++ pointsFlat zvs).length
@@ -669,7 +661,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
         + (tPv :: tvs).length) := by
     simp only [List.length_append, List.length_cons, List.length_nil, length_pointsFlat]
     omega
-  obtain ⟨⟨nα, hnα, eα⟩, -, s8⟩ := hα.2 _ _ _ rz (Or.inl ⟨(true, zPv.x), by simp, rfl⟩)
+  obtain ⟨eα, -, s8⟩ := hα.2 _ _ _ rz (Or.inl ⟨(true, zPv.x), by simp, rfl⟩)
     (fun k hk => hchar k (le_trans hk hlenz))
   -- ζ: `t_comm` from the squeezed sponge
   have rt := foldl_optAbsorbPoint_reads hts (optAbsorbPoint_reads_squeezed p s8 htP)
@@ -678,7 +670,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
         + (tPv :: tvs).length) := by
     simp only [List.length_append, List.length_cons, List.length_nil, length_pointsFlat]
     omega
-  obtain ⟨⟨nζ, hnζ, eζ⟩, -, s10⟩ := hζ.2 _ _ _ rt (Or.inl ⟨(true, tPv.x), by simp, rfl⟩)
+  obtain ⟨eζ, -, s10⟩ := hζ.2 _ _ _ rt (Or.inl ⟨(true, tPv.x), by simp, rfl⟩)
     (fun k hk => hchar k (le_trans hk hlent))
   have s11 := toRegularSponge_reads s10
   obtain ⟨hdv, -⟩ := hdig _ s11
@@ -705,33 +697,26 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
   simp only [hkept, hkz, hkt] at eβ eγ eα eζ hdv s11
   unfold FqTranscriptReads fqSqueezes
   simp only [foldl_pts_eq, foldl_cols_eq, ← absorb_append]
-  refine ⟨nβ, nγ, nα, nζ, hnβ, hnγ, hnα, hnζ, ?_, ?_, ?_, ?_, hbetaLo, hgammaLo, hx,
-    ?_, ?_⟩
-  · exact eβ
-  · exact eγ
-  · exact eα
-  · exact eζ
-  · exact hdv
-  · exact s11
+  exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hx, hdv, s11⟩
 
 /-! ## The wire reading -/
 
 open Kimchi.Verifier in
 /-- `FqTranscriptReads` at a deployed field, against the wire verifier: with `pre` the
-verifier's `fqPrechallenges`, `β` and `γ` are its first two up to `PrechallengeAlias`, and
-`α`, `ζ` its last two once identified with 128-bit claims `a₀`, `z₀`; the digest reads as the
-digest element and the sponge as the pre-digest state (`fqOracles_eq_fqPrechallenges`
-carries these to `fqOracles`). -/
+verifier's `fqPrechallenges`, `β` and `γ` read as prechallenges that are its first two up to
+`PrechallengeAlias`, and `α`, `ζ`, once read as prechallenges, are its last two up to the
+alias; the digest reads as the digest element and the sponge as the pre-digest state
+(`fqOracles_eq_fqPrechallenges` carries these to `fqOracles`). -/
 def FqTranscriptReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZMod p))
     (indexDigest : ZMod p) (sgOld xv : List (AffinePoint (ZMod p)))
     (wComm : List (List (AffinePoint (ZMod p)))) (zComm tComm : List (AffinePoint (ZMod p)))
     (V : Valuation (ZMod p)) (o : FqTranscriptOutput (ZMod p)) : Prop :=
   let pre := fqPrechallenges params indexDigest (sgOld.map coords) (xv.map coords)
     (wComm.map (·.map coords)) (zComm.map coords) (tComm.map coords)
-  (∃ b₀ : ℕ, o.beta.val.val V = b₀ ∧ PrechallengeAlias p pre.1.1 b₀) ∧
-  (∃ g₀ : ℕ, o.gamma.val.val V = g₀ ∧ PrechallengeAlias p pre.1.2.1 g₀) ∧
-  (∀ a₀ : ℕ, a₀ < 2 ^ 128 → o.alpha.val.val V = a₀ → PrechallengeAlias p pre.1.2.2.1 a₀) ∧
-  (∀ z₀ : ℕ, z₀ < 2 ^ 128 → o.zeta.val.val V = z₀ → PrechallengeAlias p pre.1.2.2.2 z₀) ∧
+  (∃ b₀, Reads128 V o.beta b₀ ∧ PrechallengeAlias p pre.1.1 b₀) ∧
+  (∃ g₀, Reads128 V o.gamma g₀ ∧ PrechallengeAlias p pre.1.2.1 g₀) ∧
+  (∀ a₀, Reads128 V o.alpha a₀ → PrechallengeAlias p pre.1.2.2.1 a₀) ∧
+  (∀ z₀, Reads128 V o.zeta z₀ → PrechallengeAlias p pre.1.2.2.2 z₀) ∧
   List.Forall₂ (CircuitType.Reads V) o.xHat xv ∧
   o.digest.val V = pre.2.1 ∧ SpongeVar.ReadsAt V o.sponge pre.2.2
 
@@ -745,14 +730,8 @@ theorem FqTranscriptReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p)
     {V : Valuation (ZMod p)} {o : FqTranscriptOutput (ZMod p)}
     (h : FqTranscriptReads params indexDigest sgOld xv wComm zComm tComm V o) :
     FqTranscriptReadsWire params indexDigest sgOld xv wComm zComm tComm V o := by
-  obtain ⟨hβ, hγ, hα, hζ, hhβ, hhγ, hhα, hhζ, eβ, eγ, eα, eζ, ⟨b₀, hb₀, hbv⟩, ⟨g₀, hg₀, hgv⟩,
-    hxh, hd, hs⟩ := h
-  refine ⟨⟨b₀, hbv, ?_⟩, ⟨g₀, hgv, ?_⟩, ?_, ?_, hxh, hd, hs⟩
-  · exact low128_of_decomp hp _ b₀ hβ hb₀ hhβ (by rw [eβ, hbv])
-  · exact low128_of_decomp hp _ g₀ hγ hg₀ hhγ (by rw [eγ, hgv])
-  · intro a₀ ha₀ hav
-    exact low128_of_decomp hp _ a₀ hα ha₀ hhα (by rw [eα, hav])
-  · intro z₀ hz₀ hzv
-    exact low128_of_decomp hp _ z₀ hζ hz₀ hhζ (by rw [eζ, hzv])
+  obtain ⟨lβ, lγ, lα, lζ, ⟨b₀, hbv⟩, ⟨g₀, hgv⟩, hxh, hd, hs⟩ := h
+  exact ⟨⟨b₀, hbv, lβ.alias hp hbv⟩, ⟨g₀, hgv, lγ.alias hp hgv⟩, fun _ hav => lα.alias hp hav,
+    fun _ hzv => lζ.alias hp hzv, hxh, hd, hs⟩
 
 end Pickles

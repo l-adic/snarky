@@ -6,6 +6,7 @@ import Pickles.FrSponge
 import Pickles.Domain
 import Snarky.Types.Shifted
 import Pickles.Statement
+import Pickles.Prechallenge
 
 set_option mvcgen.warning false
 
@@ -382,9 +383,10 @@ open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 challenge digest, `ω` of order dividing `n`, the mask `ms`, the previous challenges `cvs`, and
 `(x₁, x₂) = frSqueezes P.sponge (frTranscript d dv ft(ζω) pub e)` the wire verifier's two raw
 fr-sponge squeezes (the elements behind `frOracles`' `(v, u)`, `frOracles_eq_frPrechallenges`):
-there are `ξ₀ < 2¹²⁸` the `ξ` claim, `ξ' + 2¹²⁸·h₁ = x₁` the recomputed low half (below
-`2¹²⁸` where constrained), `r' + 2¹²⁸·h₂ = x₂` with `r' < 2¹²⁸`, and `ĉᵢ < 2¹²⁸` the
-challenge claims, such that `xiCorrect = [ξ' = ξ₀]` and `FopChecks` holds at
+there are the prechallenge `ξ₀` the `ξ` claim reads as, `ξ' + 2¹²⁸·h₁ = x₁` the recomputed
+low half (a prechallenge where constrained), `r' + 2¹²⁸·h₂ = x₂` with `r'` a prechallenge,
+and the prechallenges `ĉᵢ` the challenge claims read as, such that `xiCorrect = [ξ' = ξ₀]`
+and `FopChecks` holds at
 `ξ = endoExpand λ ξ₀`, `r = endoExpand λ r'` and the expanded challenges `endoExpand λ ĉᵢ`.
 `FopReads.wire` reads this against the wire verifier's prechallenges at a deployed field. -/
 def FopReads {sf : Type} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
@@ -395,16 +397,14 @@ def FopReads {sf : Type} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ)
         (w.pub.map fun x => #v[x.val V]) (w.evals.map fun x => #v[x.val V]))
     let x₁ := sq.1
     let x₂ := sq.2
-    ∃ (ξ₀ r' h₁ h₂ : ℕ) (ξ' : F) (ĉ : List ℕ),
-      ξ₀ < 2 ^ 128 ∧ u.deferredValues.xi.val.val V = ξ₀ ∧ h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧
-      r' < 2 ^ 128 ∧
-      (xiConstrainLowBits = true → ∃ m : ℕ, m < 2 ^ 128 ∧ ξ' = m) ∧
-      x₁ = ξ' + 2 ^ 128 * h₁ ∧ x₂ = r' + 2 ^ 128 * h₂ ∧
-      List.Forall₂ (fun (ch : SizedF 128 (FVar F)) (k : ℕ) => k < 2 ^ 128 ∧ ch.val.val V = k)
-        u.deferredValues.bulletproofChallenges ĉ ∧
-      (↑o.xiCorrect : CVar F).val V = (if ξ' = (ξ₀ : F) then 1 else 0) ∧
-      FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀)
-        (endoExpand P.endoLam r') (ĉ.map (endoExpand P.endoLam))
+    ∃ (ξ₀ r' : Prechallenge) (h₁ h₂ : ℕ) (ξ' : F) (ĉ : List Prechallenge),
+      Reads128 V u.deferredValues.xi ξ₀ ∧ h₁ < 2 ^ 128 ∧ h₂ < 2 ^ 128 ∧
+      (xiConstrainLowBits = true → ∃ m : Prechallenge, ξ' = m.val) ∧
+      x₁ = ξ' + 2 ^ 128 * h₁ ∧ x₂ = r'.val + 2 ^ 128 * h₂ ∧
+      List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges ĉ ∧
+      (↑o.xiCorrect : CVar F).val V = (if ξ' = (ξ₀.val : F) then 1 else 0) ∧
+      FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀.val)
+        (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
 
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 /-- `FopReads` at a deployed field, against the wire verifier: with
@@ -420,14 +420,13 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p)) (
   let pre := frPrechallenges P.sponge
     (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
       (w.pub.map fun x => #v[x.val V]) (w.evals.map fun x => #v[x.val V]))
-  ∃ (ξ₀ r' : ℕ) (ĉ : List ℕ),
-    ξ₀ < 2 ^ 128 ∧ u.deferredValues.xi.val.val V = ξ₀ ∧ PrechallengeAlias p pre.2 r' ∧
+  ∃ (ξ₀ r' : Prechallenge) (ĉ : List Prechallenge),
+    Reads128 V u.deferredValues.xi ξ₀ ∧ PrechallengeAlias p pre.2 r' ∧
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 0 ∨ (↑o.xiCorrect : CVar (ZMod p)).val V = 1) ∧
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 1 → PrechallengeAlias p pre.1 ξ₀) ∧
-    List.Forall₂ (fun (ch : SizedF 128 (FVar (ZMod p))) (k : ℕ) => k < 2 ^ 128 ∧ ch.val.val V = k)
-      u.deferredValues.bulletproofChallenges ĉ ∧
-    FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀)
-      (endoExpand P.endoLam r') (ĉ.map (endoExpand P.endoLam))
+    List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges ĉ ∧
+    FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀.val)
+      (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
 
 /-- At a prime field of more than 254 bits, the exact reading is the wire reading: the
 128-bit decompositions of the verifier's raw squeezes are its prechallenges up to
@@ -440,16 +439,16 @@ theorem FopReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p) {sf : Type}
     {o : FopOutput (ZMod p)}
     (h : FopReads P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o) :
     FopReadsWire P n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o := by
-  obtain ⟨ξ₀, r', h₁, h₂, ξ', ĉ, hξ₀, hxival, hh1, hh2, hr', -, hx1, hx2, hĉ, hxiC, hchecks⟩ := h
+  obtain ⟨ξ₀, r', h₁, h₂, ξ', ĉ, hxival, hh1, hh2, -, hx1, hx2, hĉ, hxiC, hchecks⟩ := h
   haveI : Fact (1 < p) := ⟨by omega⟩
-  refine ⟨ξ₀, r', ĉ, hξ₀, hxival, low128_of_decomp hp _ r' h₂ hr' hh2 hx2, ?_, ?_, hĉ, hchecks⟩
+  refine ⟨ξ₀, r', ĉ, hxival, low128_of_decomp hp _ r' h₂ hh2 hx2, ?_, ?_, hĉ, hchecks⟩
   · rw [hxiC]
     split <;> simp
   · intro hone
     rw [hxiC] at hone
     split at hone
     · rename_i heq
-      exact low128_of_decomp hp _ ξ₀ h₁ hξ₀ hh1 (by rw [hx1, heq])
+      exact low128_of_decomp hp _ ξ₀ h₁ hh1 (by rw [hx1, heq])
     · exact absurd hone zero_ne_one
 
 open Kimchi.Protocol.Linearization in
@@ -491,7 +490,7 @@ the check bits read as
 
 and the expanded challenges read as `endoExpand λ ĉᵢ`. -/
 theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (hinj : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hinj : CastInj128 F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (n : ℕ) (hzk : P.zkRows ≤ n)
     {sf : Type} (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (unshiftV : F → F)
@@ -588,10 +587,10 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   have hc : (CVar.const P.endoLam : CVar F).val V = P.endoLam := rfl
   rw [hc] at hxi hr hexp
   rw [mul_comm] at hzw
-  obtain ⟨h₁, h₂, hh1, hh2, hx1, hx2, hlo, ⟨r'n, hr'n, hrval⟩⟩ := hsq'
+  obtain ⟨⟨h₁, hh1, hx1⟩, ⟨h₂, hh2, hx2⟩, hlo, ⟨r'n, hrval⟩⟩ := hsq'
   obtain ⟨ξ₀, hξ₀, hxival, hxi'⟩ := hxi
   obtain ⟨m, hm', hrval', hr'⟩ := hr
-  have hmr : m = r'n := hinj m r'n hm' hr'n (by rw [← hrval', hrval])
+  have hmr : m = r'n.val := hinj m r'n.val hm' r'n.property (by rw [← hrval', hrval])
   subst hmr
   obtain ⟨ns, hns, hexpd⟩ := hexp
   -- the read batch
@@ -639,9 +638,9 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   refine ⟨hom.1, ?_⟩
   unfold FopReads FopChecks
   rw [hfin hbool]
-  refine ⟨ξ₀, m, h₁, h₂, xr.1.val.val V, ns, hξ₀, hxival, hh1, hh2, hm', hlo, hx1, hx2, ?_,
+  refine ⟨⟨ξ₀, hξ₀⟩, r'n, h₁, h₂, xr.1.val.val V, ns, hxival, hh1, hh2, hlo, hx1, hx2, ?_,
     hxiC, hcipC, hbv, hplonk, ?_, hexpd⟩
-  · exact List.forall₂_map_left_iff.mp hns
+  · exact (List.forall₂_map_left_iff (f := fun x : SizedF 128 (FVar F) => x.val)).mp hns
   · simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq]
 
 /-! ## The two sides -/
@@ -745,7 +744,7 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 λ ẑ`, `α = endoExpand λ â`, `β, γ` the raw claims, the digest of the mask-kept previous
 challenges, `ξ` constrained below `2¹²⁸`, and the Type1 decode of the shifted claims. -/
 theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (hinj : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hinj : CastInj128 F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (domains : List (KnownDomain F))
     (hnodup : (domains.map fun d => (d.log2 : F)).Nodup)
@@ -759,12 +758,12 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint F)) P domains u w mask
       prev domainLog2Var
     ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : F) ∧
-      ∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧
-      u.deferredValues.plonk.alpha.val.val V = a₀ ∧ u.deferredValues.plonk.zeta.val.val V = z₀ ∧
+      ∃ a₀ z₀ : Prechallenge,
+      Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
       FopReads P true (2 ^ d₀.log2) d₀.generator
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
-        ms cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀)
+        ms cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
         (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ := by
@@ -834,7 +833,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
         onehot_sum _ _ domains hnodup d₀ hd₀ hL]
     obtain ⟨-, hreads⟩ := hcore' (2 ^ d₀.log2) hzk₀ (fun _ => by rw [hgen₀]; exact hω₀)
       (fun _ => hvan₀)
-    refine ⟨d₀, hd₀, hL, a₀, z₀, ha₀, hz₀, haval, hzval, ?_⟩
+    refine ⟨d₀, hd₀, hL, ⟨a₀, ha₀⟩, ⟨z₀, hz₀⟩, haval, hzval, ?_⟩
     rw [hgen₀, hz', ha'] at hreads
     exact hreads
   · exfalso
@@ -852,7 +851,7 @@ generator `ω` of order dividing `n` and the caller's vanishing polynomial readi
 `α = endoExpand λ â`, `β, γ` the raw claims, the digest of all previous challenges, `ξ`
 unconstrained, and the Type2 decode of the shifted claims. -/
 theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
-    (hinj : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hinj : CastInj128 F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (gen : F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
     (domainLog2 : ℕ) (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
@@ -862,12 +861,12 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (hft : FtEval0Hyp V P n gen) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen domainLog2
       vanishing u w prev
-    ⦃⇓ o _ => ⌜∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧
-      u.deferredValues.plonk.alpha.val.val V = a₀ ∧ u.deferredValues.plonk.zeta.val.val V = z₀ ∧
+    ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
+      Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
       FopReads P false n gen
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (prev.flatten.map (·.val V)))).1
-        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀)
+        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
         (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ := by
@@ -893,7 +892,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   obtain ⟨a₀, ha₀, haval, ha'⟩ := ha
   have hc : (CVar.const P.endoLam : CVar F).val V = P.endoLam := rfl
   rw [hc] at hz' ha'
-  refine ⟨a₀, z₀, ha₀, hz₀, haval, hzval, ?_⟩
+  refine ⟨⟨a₀, ha₀⟩, ⟨z₀, hz₀⟩, haval, hzval, ?_⟩
   rw [hz', ha', hβ, hγ, hperm] at hreads
   exact hreads
 
@@ -902,12 +901,6 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
 section Deployed
 
 open Pickles.Reflect Kimchi.Protocol.Linearization Poseidon.FqSponge
-
-/-- Naturals below `2¹²⁸` cast injectively into a prime field of larger characteristic. -/
-private theorem natCast_inj (p : ℕ) (hp : 2 ^ 128 < p) (a b : ℕ) (ha : a < 2 ^ 128)
-    (hb : b < 2 ^ 128) (h : (a : ZMod p) = b) : a = b := by
-  have h' := (ZMod.natCast_eq_natCast_iff' a b p).mp h
-  rwa [Nat.mod_eq_of_lt (lt_trans ha hp), Nat.mod_eq_of_lt (lt_trans hb hp)] at h'
 
 /-- `finalizeOtherProofStep_spec` at the step field over the deployed `Fp` linearization
 (`Pasta.pallasEndo`, `symMds`, `fpTokens`), its `ft_eval0` hypothesis discharged by
@@ -926,25 +919,25 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) P domains u w mask
       prev domainLog2Var
     ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : Fp) ∧
-      ∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧
-      u.deferredValues.plonk.alpha.val.val V = a₀ ∧ u.deferredValues.plonk.zeta.val.val V = z₀ ∧
+      ∃ a₀ z₀ : Prechallenge,
+      Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
       FopReadsWire P (2 ^ d₀.log2) d₀.generator
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
-        ms cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀)
+        ms cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
         (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _
-    (finalizeOtherProofStep_spec (by decide) (by decide) (natCast_inj _ (by decide)) P hsize h3zk
-      domains hnodup hdom u w mask ms hm prev cvs hprev hprevlen domainLog2Var
+    (finalizeOtherProofStep_spec (by decide) (by decide) (castInj128_of_lt _ (by decide)) P hsize
+      h3zk domains hnodup hdom u w mask ms hm prev cvs hprev hprevlen domainLog2Var
       fun n ω ulb inp ext α ζ htab hζ hzk hz1 hω => by
         obtain ⟨he, hmds, ht⟩ := hP
         rw [he, hmds, ht]
         exact ftEval0Circuit_spec_fp ulb inp ext n P.zkRows ω ζ α
           (fun k hk => htab k (le_trans hk (by decide))) hζ hzk hz1 hω)
-    fun _ ⟨d₀, hd₀, hL, a₀, z₀, ha₀, hz₀, haval, hzval, hr⟩ =>
-      ⟨d₀, hd₀, hL, a₀, z₀, ha₀, hz₀, haval, hzval, hr.wire (by decide)⟩
+    fun _ ⟨d₀, hd₀, hL, a₀, z₀, haval, hzval, hr⟩ =>
+      ⟨d₀, hd₀, hL, a₀, z₀, haval, hzval, hr.wire (by decide)⟩
 
 /-- `finalizeOtherProofWrap_spec` at the wrap field over the deployed `Fq` linearization
 (`Pasta.vestaEndo`, `symMdsQ`, `fqTokens`), its `ft_eval0` hypothesis discharged by
@@ -959,25 +952,25 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
       vanishing u w prev
-    ⦃⇓ o _ => ⌜∃ a₀ z₀ : ℕ, a₀ < 2 ^ 128 ∧ z₀ < 2 ^ 128 ∧
-      u.deferredValues.plonk.alpha.val.val V = a₀ ∧ u.deferredValues.plonk.zeta.val.val V = z₀ ∧
+    ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
+      Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
       FopReadsWire P n gen
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (prev.flatten.map (·.val V)))).1
-        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀) (endoExpand P.endoLam a₀)
+        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
         (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _
-    (finalizeOtherProofWrap_spec (by decide) (by decide) (natCast_inj _ (by decide)) P hsize h3zk
-      gen n hzk hω domainLog2 vanishing hvan u w prev cvs hprev
+    (finalizeOtherProofWrap_spec (by decide) (by decide) (castInj128_of_lt _ (by decide)) P hsize
+      h3zk gen n hzk hω domainLog2 vanishing hvan u w prev cvs hprev
       fun ulb inp ext α ζ htab hζ hzk' hz1 hω' => by
         obtain ⟨he, hmds, ht⟩ := hP
         rw [he, hmds, ht]
         exact ftEval0Circuit_spec_fq ulb inp ext n P.zkRows gen ζ α
           (fun k hk => htab k (le_trans hk (by decide))) hζ hzk' hz1 hω')
-    fun _ ⟨a₀, z₀, ha₀, hz₀, haval, hzval, hr⟩ =>
-      ⟨a₀, z₀, ha₀, hz₀, haval, hzval, hr.wire (by decide)⟩
+    fun _ ⟨a₀, z₀, haval, hzval, hr⟩ =>
+      ⟨a₀, z₀, haval, hzval, hr.wire (by decide)⟩
 
 end Deployed
 

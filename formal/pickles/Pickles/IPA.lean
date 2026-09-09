@@ -1,6 +1,7 @@
 import Snarky.DSL.Field
 import Snarky.Kimchi.Circuit.EndoScalar
 import Bulletproof.Protocol
+import Pickles.Prechallenge
 
 set_option mvcgen.warning false
 
@@ -201,16 +202,16 @@ theorem challengePolyEvals_spec (pt : FVar F) :
     exact List.Forall₂.cons (CircuitType.reads_fvar.mpr ‹_›) ‹_›
 
 /-- Under any valuation satisfying the emitted constraints, with `endo` reading as `λ`, the
-`j`-th challenge reads as a natural `nⱼ < 2^128` and the `j`-th output as `endoExpand λ nⱼ`,
+`j`-th challenge reads as a prechallenge `nⱼ` and the `j`-th output as `endoExpand λ nⱼ`,
 Mina's `a·λ + b` from the GLV recoding of `nⱼ`. -/
 theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (endo : FVar F) :
     ∀ chals : List (FVar F),
       ⦃⌜True⌝⦄ computeChallenges (c := Builder V (Snarky.Kimchi.KimchiConstraint F)) endo chals
-      ⦃⇓ l _ => ⌜∃ ns : List ℕ,
-        List.Forall₂ (fun (ch : FVar F) (n : ℕ) => n < 2 ^ 128 ∧ ch.val V = (n : F)) chals ns ∧
+      ⦃⇓ l _ => ⌜∃ ns : List Prechallenge,
+        List.Forall₂ (fun (ch : FVar F) (n : Prechallenge) => Reads128 V ⟨ch⟩ n) chals ns ∧
         List.Forall₂ (CircuitType.Reads V) l
-          (ns.map (Poseidon.FqSponge.endoExpand (endo.val V)))⌝⦄
+          (ns.map fun n => Poseidon.FqSponge.endoExpand (endo.val V) n.val)⌝⦄
   | [] => by
     simp only [computeChallenges]
     mvcgen
@@ -223,7 +224,7 @@ theorem computeChallenges_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 
     rename_i hrest _ _ hch
     obtain ⟨ns, hns, hl⟩ := hrest
     obtain ⟨n, hn, hchv, hrv⟩ := hch
-    exact ⟨n :: ns, .cons ⟨hn, hchv⟩ hns, .cons (CircuitType.reads_fvar.mpr hrv) hl⟩
+    exact ⟨⟨n, hn⟩ :: ns, .cons hchv hns, .cons (CircuitType.reads_fvar.mpr hrv) hl⟩
 
 /-- Under any valuation satisfying the emitted constraints, with the challenges reading as
 `c = (c₀, …, c_{k−1})` and `ζ`, `ζω`, `r` as themselves, the output reads as

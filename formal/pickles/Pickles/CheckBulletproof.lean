@@ -5,6 +5,7 @@ import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Types.Shifted
 import Snarky.Kimchi.Circuit.Point
 import Pickles.FrSponge
+import Pickles.Prechallenge
 
 /-!
 # The in-circuit IPA opening check
@@ -255,11 +256,6 @@ variable {V : Valuation F}
 private def coordsPair (q : AffinePoint F × AffinePoint F) : (F × F) × (F × F) :=
   ((q.1.x, q.1.y), (q.2.x, q.2.y))
 
-/-- A raw squeeze and a 128-bit circuit value in the `lowest_128_bits` relation:
-`x = lo + 2¹²⁸·hi` with `hi < 2¹²⁸`. -/
-def Low128 (V : Valuation F) (x : F) (u : SizedF 128 (FVar F)) : Prop :=
-  ∃ hi : ℕ, hi < 2 ^ 128 ∧ x = u.val.val V + 2 ^ 128 * hi
-
 open Bulletproof.Ipa in
 /-- The transcript reading of the check's outputs (`checkBulletproof_spec`): with
 `(t, us, c)` the wire verifier's `ipaSqueezes` from the sponge's reading over the limbs,
@@ -422,14 +418,14 @@ def MaskedBaseReads (W : WeierstrassCurve.Affine F) (V : Valuation F)
 /-- Under any valuation satisfying the emitted constraints, with the bases reading as `bv`,
 the Horner fold from an accumulator reading as `accv` reads as the model fold. `n` is the
 challenge's reading, pinned to the gadgets' own by `hchar`. -/
-private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : ℕ)
-    (hn : n < 2 ^ 128) (hxi : xi.val.val V = n)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b) :
+private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : Prechallenge)
+    (hxi : Reads128 V xi n)
+    (hchar : CastInj128 F) :
     ∀ (acc : AffinePoint (FVar F)) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
       (bv : List (e.d.W.Point × Bool)), List.Forall₂ (MaskedBaseReads e.d.W V) bases bv →
       ⦃⌜True⌝⦄ hornerFold (c := Builder V (KimchiConstraint F)) e xi acc bases
       ⦃⇓ r _ => ⌜∀ accv : e.d.W.Point, OnCurveAt e.d.W V acc accv →
-        OnCurveAt e.d.W V r (bv.foldl (hornerStep (endoExpandZ e.d.lam n)) accv)⌝⦄
+        OnCurveAt e.d.W V r (bv.foldl (hornerStep (endoExpandZ e.d.lam n.val)) accv)⌝⦄
   | acc, [], [], .nil => by
     simp only [hornerFold, List.foldl_nil]
     mvcgen
@@ -440,7 +436,7 @@ private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
     have hem := endoMul_spec (V := V) e.d acc xi
     have hadd := fun q => addFast_checkFinite_spec (V := V) e.d.W e.d.short e.d.two_ne
       e.d.two_torsion_free b q
-    have ih := fun acc' => hornerFold_spec e xi n hn hxi hchar acc' bases bv hrest
+    have ih := fun acc' => hornerFold_spec e xi n hxi hchar acc' bases bv hrest
     cases mask with
     | none =>
       simp only at hmask
@@ -449,7 +445,7 @@ private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
       rename_i _ xiAcc _ hxa r _ hr rr _
       intro hrest' accv hacc
       obtain ⟨n', hn', hxi', hxa'⟩ := hxa accv hacc
-      obtain rfl : n' = n := hchar n' n hn' hn (hxi'.symm.trans hxi)
+      obtain rfl : n' = n.val := hchar n' n.val hn' n.property (hxi'.symm.trans hxi)
       exact hrest' _ (by simpa [hornerStep] using hr bvp _ hpt hxa')
     | some keep =>
       simp only at hmask
@@ -458,7 +454,7 @@ private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
       rename_i _ xiAcc _ hxa r _ hr sel _ hsel' rr _
       intro hrest' accv hacc
       obtain ⟨n', hn', hxi', hxa'⟩ := hxa accv hacc
-      obtain rfl : n' = n := hchar n' n hn' hn (hxi'.symm.trans hxi)
+      obtain rfl : n' = n.val := hchar n' n.val hn' n.property (hxi'.symm.trans hxi)
       have hs := hsel' bb hmask _ _ (hr bvp _ hpt hxa') hacc
       refine hrest' _ ?_
       cases bb <;> simpa [hornerStep] using hs
@@ -466,13 +462,13 @@ private theorem hornerFold_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
 
 /-- Under any valuation satisfying the emitted constraints, with the bases reading as `bv`
 (non-empty), the combination reads as `hornerCombine` at the expanded challenge. -/
-theorem combinePolynomials_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : ℕ)
-    (hn : n < 2 ^ 128) (hxi : xi.val.val V = n)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+theorem combinePolynomials_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : Prechallenge)
+    (hxi : Reads128 V xi n)
+    (hchar : CastInj128 F)
     (bases : List (AffinePoint (FVar F) × Option (BoolVar F))) (bv : List (e.d.W.Point × Bool))
     (hb : List.Forall₂ (MaskedBaseReads e.d.W V) bases bv) (hne : bases ≠ []) :
     ⦃⌜True⌝⦄ combinePolynomials (c := Builder V (KimchiConstraint F)) e xi bases
-    ⦃⇓ r _ => ⌜OnCurveAt e.d.W V r (hornerCombine (endoExpandZ e.d.lam n) bv)⌝⦄ := by
+    ⦃⇓ r _ => ⌜OnCurveAt e.d.W V r (hornerCombine (endoExpandZ e.d.lam n.val) bv)⌝⦄ := by
   have hrev := List.forall₂_reverse_iff.mpr hb
   simp only [combinePolynomials, hornerCombine]
   rcases hbr : bases.reverse with _ | ⟨h, t⟩
@@ -483,7 +479,7 @@ theorem combinePolynomials_spec (e : IpaEndo F) (xi : SizedF 128 (FVar F)) (n : 
       exact absurd hrev (by simp)
     · rw [hvr] at hrev
       obtain ⟨⟨hhpt, -⟩, htail⟩ := List.forall₂_cons.mp hrev
-      have hf := hornerFold_spec (V := V) e xi n hn hxi hchar h.1 t tv htail
+      have hf := hornerFold_spec (V := V) e xi n hxi hchar h.1 t tv htail
       exact builder_spec_imp _ _ _ hf fun r hr => hr _ hhpt
 
 /-- A pair reads as two curve points. -/
@@ -491,20 +487,17 @@ def PairReads (W : WeierstrassCurve.Affine F) (V : Valuation F)
     (q : AffinePoint (FVar F) × AffinePoint (FVar F)) (v : W.Point × W.Point) : Prop :=
   OnCurveAt W V q.1 v.1 ∧ OnCurveAt W V q.2 v.2
 
-/-- A 128-bit circuit value reads as the natural `m`. -/
-def Reads128 (V : Valuation F) (u : SizedF 128 (FVar F)) (m : ℕ) : Prop :=
-  m < 2 ^ 128 ∧ u.val.val V = (m : F)
-
 /-- Under any valuation satisfying the emitted constraints, with the pairs reading as `pv`,
 the terms read as `lrTerm` at the readings, the challenges reading as some `ns`. -/
 private theorem bulletTerms_spec (e : IpaEndo F)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b) :
+    (hchar : CastInj128 F) :
     ∀ (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)))
       (pv : List (e.d.W.Point × e.d.W.Point)),
       List.Forall₂ (fun q v => PairReads e.d.W V q.1 v) pairs pv →
       ⦃⌜True⌝⦄ bulletTerms (c := Builder V (KimchiConstraint F)) e pairs
-      ⦃⇓ r _ => ⌜∃ ns : List ℕ, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
-        List.Forall₂ (OnCurveAt e.d.W V) r (List.zipWith (lrTerm e.d.lam) pv ns)⌝⦄
+      ⦃⇓ r _ => ⌜∃ ns : List Prechallenge, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
+        List.Forall₂ (OnCurveAt e.d.W V) r
+          (List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val))⌝⦄
   | [], [], .nil => by
     simp only [bulletTerms]
     mvcgen
@@ -522,7 +515,7 @@ private theorem bulletTerms_spec (e : IpaEndo F)
     obtain ⟨n'', hn'', hq'', hRr⟩ := hem' v.2 hR
     obtain rfl : n' = n'' := hchar n' n'' hn' hn'' (hq'.symm.trans hq'')
     obtain ⟨ns, hns, hterms⟩ := hrest
-    refine ⟨n' :: ns, .cons ⟨hn', hq'⟩ hns, List.Forall₂.cons ?_ hterms⟩
+    refine ⟨⟨n', hn'⟩ :: ns, .cons hq' hns, List.Forall₂.cons ?_ hterms⟩
     have hadd' := hr R _ hRs hRr
     rw [hRform] at hadd'
     unfold lrTerm
@@ -557,13 +550,13 @@ private theorem sumPoints_spec (e : IpaEndo F) :
 /-- Under any valuation satisfying the emitted constraints, with the pairs (non-empty)
 reading as `pv` and their challenges as `ns`, `lr_prod` reads as `lrSum` of the terms. -/
 theorem bulletReduce_spec (e : IpaEndo F)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hchar : CastInj128 F)
     (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F)))
     (pv : List (e.d.W.Point × e.d.W.Point))
     (hp : List.Forall₂ (fun q v => PairReads e.d.W V q.1 v) pairs pv) (hne : pairs ≠ []) :
     ⦃⌜True⌝⦄ bulletReduce (c := Builder V (KimchiConstraint F)) e pairs
-    ⦃⇓ r _ => ⌜∃ ns : List ℕ, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
-      OnCurveAt e.d.W V r (lrSum (List.zipWith (lrTerm e.d.lam) pv ns))⌝⦄ := by
+    ⦃⇓ r _ => ⌜∃ ns : List Prechallenge, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
+      OnCurveAt e.d.W V r (lrSum (List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val)))⌝⦄ := by
   simp only [bulletReduce]
   have ht := bulletTerms_spec (V := V) e hchar pairs pv hp
   have hs := fun acc qs => sumPoints_spec (V := V) e acc qs
@@ -579,7 +572,7 @@ theorem bulletReduce_spec (e : IpaEndo F)
     intro hrest
     obtain ⟨ns, hns, hterms⟩ := hterms
     refine ⟨ns, hns, ?_⟩
-    rcases hz : List.zipWith (lrTerm e.d.lam) pv ns with _ | ⟨w, ws⟩
+    rcases hz : List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val) with _ | ⟨w, ws⟩
     · rw [hz] at hterms
       exact absurd hterms (by simp)
     · rw [hz] at hterms
@@ -635,13 +628,13 @@ private theorem forall₂_zip_right {α β γ : Type} {R : β → γ → Prop} :
 
 /-- `bulletReduce_spec` with the readings carried into the postcondition. -/
 private theorem bulletReduce_spec' (e : IpaEndo F)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hchar : CastInj128 F)
     (pairs : List ((AffinePoint (FVar F) × AffinePoint (FVar F)) × SizedF 128 (FVar F))) :
     ⦃⌜True⌝⦄ bulletReduce (c := Builder V (KimchiConstraint F)) e pairs
     ⦃⇓ r _ => ⌜∀ pv : List (e.d.W.Point × e.d.W.Point),
       List.Forall₂ (fun q v => PairReads e.d.W V q.1 v) pairs pv → pairs ≠ [] →
-      ∃ ns : List ℕ, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
-        OnCurveAt e.d.W V r (lrSum (List.zipWith (lrTerm e.d.lam) pv ns))⌝⦄ := by
+      ∃ ns : List Prechallenge, List.Forall₂ (fun q m => Reads128 V q.2 m) pairs ns ∧
+        OnCurveAt e.d.W V r (lrSum (List.zipWith (lrTerm e.d.lam) pv (ns.map Subtype.val)))⌝⦄ := by
   rw [builder_spec_iff]
   intro nv hsat pv hp hne
   exact (builder_spec_iff _ _).mp (bulletReduce_spec e hchar pairs pv hp hne) nv hsat
@@ -679,7 +672,7 @@ holds at those readings. -/
 theorem ipaFinalCheck_spec {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf)
     (e : IpaEndo F) (p : Poseidon.Params F) (endo : FVar F)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hchar : CastInj128 F)
     (R : ops.Reading e.d.W)
     (sv : SpongeVar F) (t : FVar F) (u combined : AffinePoint (FVar F))
     (inp : CheckBulletproofInput F sf)
@@ -692,12 +685,13 @@ theorem ipaFinalCheck_spec {sf : Type}
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ ipaFinalCheck ops e p endo sv t u combined inp
     ⦃⇓ o _ => ⌜∀ uv Pv : e.d.W.Point, OnCurveAt e.d.W V u uv → OnCurveAt e.d.W V combined Pv →
-      o.t = t ∧ ∃ (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : R.wit),
+      o.t = t ∧ ∃ (ns : List Prechallenge) (c₀ : Prechallenge) (wcip wb w₁ w₂ : R.wit),
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
       R.Pre inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
       R.Pre inp.opening.z1 w₁ ∧ R.Pre inp.opening.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
-        SchnorrPoint e.d.lam c₀ uv Pv (lrSum (List.zipWith (lrTerm e.d.lam) lrv ns)) δv sgv hv
+        SchnorrPoint e.d.lam c₀.val uv Pv
+          (lrSum (List.zipWith (lrTerm e.d.lam) lrv (ns.map Subtype.val))) δv sgv hv
           (R.dec wcip) (R.dec wb) (R.dec w₁) (R.dec w₂))⌝⦄ := by
   simp only [ipaFinalCheck]
   have hext := fun sv' => extractScalarChallenges_length (V := V) p endo sv' inp.opening.lr
@@ -745,8 +739,8 @@ theorem ipaFinalCheck_spec {sf : Type}
   have hyb : (↑yEq : CVar F).val V = bit (decide (lhs.p.y.val V = rhs.p.y.val V)) := by
     rw [hy]; simp only [bit, decide_eq_true_eq]
   have hsucc := hand _ _ hxb hyb
-  refine ⟨trivial, ns, c₀, wcip, wb, w₁, w₂, forall₂_zip_right hlen hns,
-    by rw [← hns.length_eq, List.length_zip, hlen, hlr.length_eq, min_self], ⟨hc₀, hcv⟩, hpcip,
+  refine ⟨trivial, ns, ⟨c₀, hc₀⟩, wcip, wb, w₁, w₂, forall₂_zip_right hlen hns,
+    by rw [← hns.length_eq, List.length_zip, hlen, hlr.length_eq, min_self], hcv, hpcip,
     hpb, hp1, hp2, ?_⟩
   unfold SchnorrPoint
   constructor
@@ -780,7 +774,7 @@ theorem checkBulletproof_spec_success {sf : Type}
     (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo : FVar F)
     (gm : GroupMapParams F) (sqrtF : F → Option F)
-    (hchar : ∀ a b : ℕ, a < 2 ^ 128 → b < 2 ^ 128 → (a : F) = b → a = b)
+    (hchar : CastInj128 F)
     (R : ops.Reading e.d.W) (umap : F → e.d.W.Point)
     (hgm : ∀ t : FVar F, ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF gm t
       ⦃⇓ r _ => ⌜∃ U : e.d.W.Point, OnCurveAt e.d.W V r U ∧
@@ -790,27 +784,28 @@ theorem checkBulletproof_spec_success {sf : Type}
     (hbne : bases ≠ []) (inp : CheckBulletproofInput F sf)
     (hwf : ∀ x ∈ inp.scaled, R.WellFormed x)
     (hreg : ∀ (x : sf) (w : R.wit), x ∈ inp.scaled → R.Pre x w → R.Reg w)
-    (n : ℕ) (hn : n < 2 ^ 128) (hxi : inp.xi.val.val V = n) (δv sgv hv : e.d.W.Point)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n) (δv sgv hv : e.d.W.Point)
     (lrv : List (e.d.W.Point × e.d.W.Point))
     (hlr : List.Forall₂ (PairReads e.d.W V) inp.opening.lr lrv) (hlrne : inp.opening.lr ≠ [])
     (hδ : OnCurveAt e.d.W V inp.opening.delta δv) (hsg : OnCurveAt e.d.W V inp.opening.sg sgv)
     (hh : OnCurveAt e.d.W V inp.blindingGenerator hv) :
     ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List ℕ) (c₀ : ℕ) (wcip wb w₁ w₂ : R.wit),
+    ⦃⇓ o _ => ⌜∃ (U : e.d.W.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (wcip wb w₁ w₂ : R.wit),
       (U = umap (o.t.val V) ∨ U = -umap (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
       R.Pre inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
       R.Pre inp.opening.z1 w₁ ∧ R.Pre inp.opening.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
-        SchnorrPoint e.d.lam c₀ U (hornerCombine (endoExpandZ e.d.lam n) bv)
-          (lrSum (List.zipWith (lrTerm e.d.lam) lrv ns)) δv sgv hv
+        SchnorrPoint e.d.lam c₀.val U (hornerCombine (endoExpandZ e.d.lam n.val) bv)
+          (lrSum (List.zipWith (lrTerm e.d.lam) lrv (ns.map Subtype.val))) δv sgv hv
           (R.dec wcip) (R.dec wb) (R.dec w₁) (R.dec w₂))⌝⦄ := by
   simp only [checkBulletproof]
   have habs := fun sv' limbs => builder_spec_true
     (absorbList (c := Builder V (KimchiConstraint F)) p sv' limbs)
   have hsq := fun sv' => builder_spec_true
     (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv')
-  have hcomb := combinePolynomials_spec (V := V) e inp.xi n hn hxi hchar bases bv hb hbne
+  have hcomb := combinePolynomials_spec (V := V) e inp.xi n hxi hchar bases bv hb hbne
   have hfin := fun sv' t u comb => ipaFinalCheck_spec (V := V) ops e p endo hchar R
     sv' t u comb inp hwf hreg δv sgv hv lrv hlr hlrne hδ hsg hh
   mvcgen -trivial [habs, hsq, hgm, hcomb, hfin]
@@ -1353,12 +1348,6 @@ section DeployedWrap
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass Poseidon.FqSponge
 open Kimchi.Gate.EndoScalar Kimchi.Gate.VarBaseMul Bulletproof Bulletproof.Ipa
 
-/-- Naturals below `2¹²⁸` cast injectively into `Fq`. -/
-private theorem fq_natCast_inj (a b : ℕ) (ha : a < 2 ^ 128) (hb : b < 2 ^ 128)
-    (h : (a : Fq) = b) : a = b := by
-  have h' := (ZMod.natCast_eq_natCast_iff' a b _).mp h
-  rwa [Nat.mod_eq_of_lt (lt_trans ha (by decide)), Nat.mod_eq_of_lt (lt_trans hb (by decide))] at h'
-
 /-- **The wrap side's `check_bulletproof` at the wire.** Under any valuation satisfying the
 emitted constraints — the bases reading as Vesta points (the last kept), the pairs, `δ`, `sg`
 and `h` as points, the ladder witnesses off the forbidden band — the challenges read as some
@@ -1382,7 +1371,7 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
     (inp : CheckBulletproofInput Fq (Type1 (FVar Fq)))
     (hband : ∀ (x : Type1 (FVar Fq)) (z : ℤ), x ∈ inp.scaled → WrapLadderPre V x z →
       wrapLadderDec z ∉ forbiddenValues PALLAS_BASE_CARD)
-    (n : ℕ) (hn : n < 2 ^ 128) (hxi : inp.xi.val.val V = n)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n)
     (σ : SRS (SWPoint Vesta.curve))
     (lrW : Vector (SWPoint Vesta.curve × SWPoint Vesta.curve) σ.k) (δW sgW : SWPoint Vesta.curve)
     (hlr : List.Forall₂ (PairReads IpaEndo.vesta.d.W V) inp.opening.lr (lrW.toList.map fun q =>
@@ -1394,30 +1383,31 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
       ((SWPoint.equivPoint Vesta.curve) σ.h)) :
     ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
       p endo groupMapParamsVesta sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : SWPoint Vesta.curve) (ns : List ℕ) (c₀ : ℕ) (chals : Vector Fp σ.k),
+    ⦃⇓ o _ => ⌜∃ (U : SWPoint Vesta.curve) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector Fp σ.k),
       (U = Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V) ∨
         U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (endoExpand Poseidon.FqVesta.spec.lam) ∧
+      chals.toList = ns.map (fun m => endoExpand Poseidon.FqVesta.spec.lam m.val) ∧
       ((↑o.success : CVar Fq).val V = 1 ↔
-        schnorrAt IpaVesta.curve σ U chals (endoExpand Poseidon.FqVesta.spec.lam c₀)
+        schnorrAt IpaVesta.curve σ U chals (endoExpand Poseidon.FqVesta.spec.lam c₀.val)
           (wrapDecode V inp.deferred.combinedInnerProduct) (wrapDecode V inp.deferred.b)
-          (combineCommitments IpaVesta.curve (endoExpand Poseidon.FqVesta.spec.lam n)
+          (combineCommitments IpaVesta.curve (endoExpand Poseidon.FqVesta.spec.lam n.val)
             ((bvW.filter (·.2)).map (·.1)).toArray)
           ⟨lrW, δW, wrapDecode V inp.opening.z1, wrapDecode V inp.opening.z2, sgW⟩)⌝⦄ := by
   refine builder_spec_imp _ _ _
     (checkBulletproof_spec_success IpaScalarOps.wrap IpaEndo.vesta p hsize endo
-      groupMapParamsVesta sqrtF fq_natCast_inj (wrapReading V)
+      groupMapParamsVesta sqrtF (castInj128_of_lt _ (by decide)) (wrapReading V)
       (fun t => SWPoint.equivPoint Vesta.curve
         (Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec t)) (vesta_groupMap_reads sqrtF)
       sv bases _ hb hbne inp (fun _ _ => trivial)
       (fun x z hx hpre => HasCurve.vesta_ladderRegime _ (hband x z hx hpre))
-      n hn hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
+      n hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
   obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
   have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
   refine ⟨(SWPoint.equivPoint Vesta.curve).symm U, ns, c₀,
-    ⟨(ns.map (endoExpand Poseidon.FqVesta.spec.lam)).toArray, by simp [hlen']⟩, ?_, hns, hc,
-    by simp, ?_⟩
+    ⟨(ns.map fun m => endoExpand Poseidon.FqVesta.spec.lam m.val).toArray, by simp [hlen']⟩,
+    ?_, hns, hc, by simp, ?_⟩
   · beta_reduce at hU
     generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (CVar.val o.t V) = T at hU ⊢
     rcases hU with h | h
@@ -1428,10 +1418,10 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
         (map_neg (SWPoint.equivPoint Vesta.curve) T).symm).trans (AddEquiv.symm_apply_apply _ _)
   · rw [← wrapLadderDec_cast hpcip, ← wrapLadderDec_cast hpb, ← wrapLadderDec_cast hp1,
       ← wrapLadderDec_cast hp2, hiff,
-      ← schnorrPoint_iff_schnorrAt_vesta σ _ _ _ c₀ _ _ _ _ ⟨lrW, δW, _, _, sgW⟩ ns (by simp) rfl
-        rfl]
+      ← schnorrPoint_iff_schnorrAt_vesta σ _ _ _ c₀.val _ _ _ _ ⟨lrW, δW, _, _, sgW⟩
+        (ns.map Subtype.val) (by simp [Function.comp_def]) rfl rfl]
     simp only [AddEquiv.apply_symm_apply]
-    rw [← vesta_hornerCombine_eq n bvW hlast, AddEquiv.apply_symm_apply]
+    rw [← vesta_hornerCombine_eq n.val bvW hlast, AddEquiv.apply_symm_apply]
     exact Iff.rfl
 
 end DeployedWrap
@@ -1612,12 +1602,6 @@ section DeployedStep
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass Poseidon.FqSponge
 open Kimchi.Gate.EndoScalar Kimchi.Gate.VarBaseMul Bulletproof Bulletproof.Ipa Pasta.Shifted
 
-/-- Naturals below `2¹²⁸` cast injectively into `Fp`. -/
-private theorem fp_natCast_inj (a b : ℕ) (ha : a < 2 ^ 128) (hb : b < 2 ^ 128)
-    (h : (a : Fp) = b) : a = b := by
-  have h' := (ZMod.natCast_eq_natCast_iff' a b _).mp h
-  rwa [Nat.mod_eq_of_lt (lt_trans ha (by decide)), Nat.mod_eq_of_lt (lt_trans hb (by decide))] at h'
-
 /-- **The step side's `check_bulletproof` at the wire.** Under any valuation satisfying the
 emitted constraints — the bases reading as Pallas points (the last kept), the pairs, `δ`, `sg`
 and `h` as points, the parity bits reading as bits, the ladder witnesses' halves off the
@@ -1641,7 +1625,7 @@ theorem checkBulletproof_step_spec {V : Valuation Fp}
     (hbits : ∀ x ∈ inp.scaled, ∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb)
     (hband : ∀ (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (w : ℤ × Bool), x ∈ inp.scaled →
       StepLadderPre V x w → unshiftType1 255 w.1 ∉ forbiddenValues PALLAS_SCALAR_CARD)
-    (n : ℕ) (hn : n < 2 ^ 128) (hxi : inp.xi.val.val V = n)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n)
     (σ : SRS (SWPoint Pallas.curve))
     (lrW : Vector (SWPoint Pallas.curve × SWPoint Pallas.curve) σ.k) (δW sgW : SWPoint Pallas.curve)
     (hlr : List.Forall₂ (PairReads IpaEndo.pallas.d.W V) inp.opening.lr (lrW.toList.map fun q =>
@@ -1653,30 +1637,31 @@ theorem checkBulletproof_step_spec {V : Valuation Fp}
       ((SWPoint.equivPoint Pallas.curve) σ.h)) :
     ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step
       IpaEndo.pallas p endo groupMapParamsPallas sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : SWPoint Pallas.curve) (ns : List ℕ) (c₀ : ℕ) (chals : Vector Fq σ.k),
+    ⦃⇓ o _ => ⌜∃ (U : SWPoint Pallas.curve) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector Fq σ.k),
       (U = Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (o.t.val V) ∨
         U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (endoExpand Poseidon.FqPallas.spec.lam) ∧
+      chals.toList = ns.map (fun m => endoExpand Poseidon.FqPallas.spec.lam m.val) ∧
       ((↑o.success : CVar Fp).val V = 1 ↔
-        schnorrAt IpaPallas.curve σ U chals (endoExpand Poseidon.FqPallas.spec.lam c₀)
+        schnorrAt IpaPallas.curve σ U chals (endoExpand Poseidon.FqPallas.spec.lam c₀.val)
           (stepDecode V inp.deferred.combinedInnerProduct) (stepDecode V inp.deferred.b)
-          (combineCommitments IpaPallas.curve (endoExpand Poseidon.FqPallas.spec.lam n)
+          (combineCommitments IpaPallas.curve (endoExpand Poseidon.FqPallas.spec.lam n.val)
             ((bvW.filter (·.2)).map (·.1)).toArray)
           ⟨lrW, δW, stepDecode V inp.opening.z1, stepDecode V inp.opening.z2, sgW⟩)⌝⦄ := by
   refine builder_spec_imp _ _ _
     (checkBulletproof_spec_success IpaScalarOps.step IpaEndo.pallas p hsize endo
-      groupMapParamsPallas sqrtF fp_natCast_inj (stepReading V)
+      groupMapParamsPallas sqrtF (castInj128_of_lt _ (by decide)) (stepReading V)
       (fun t => SWPoint.equivPoint Pallas.curve
         (Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec t)) (pallas_groupMap_reads sqrtF)
       sv bases _ hb hbne inp hbits
       (fun x w hx hpre => HasCurve.pallas_ladderRegime _ (hband x w hx hpre))
-      n hn hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
+      n hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
   obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
   have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
   refine ⟨(SWPoint.equivPoint Pallas.curve).symm U, ns, c₀,
-    ⟨(ns.map (endoExpand Poseidon.FqPallas.spec.lam)).toArray, by simp [hlen']⟩, ?_, hns, hc,
-    by simp, ?_⟩
+    ⟨(ns.map fun m => endoExpand Poseidon.FqPallas.spec.lam m.val).toArray, by simp [hlen']⟩,
+    ?_, hns, hc, by simp, ?_⟩
   · beta_reduce at hU
     generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (CVar.val o.t V) = T at hU ⊢
     rcases hU with h | h
@@ -1687,10 +1672,10 @@ theorem checkBulletproof_step_spec {V : Valuation Fp}
         (map_neg (SWPoint.equivPoint Pallas.curve) T).symm).trans (AddEquiv.symm_apply_apply _ _)
   · rw [← stepLadderDec_cast hpcip, ← stepLadderDec_cast hpb, ← stepLadderDec_cast hp1,
       ← stepLadderDec_cast hp2, hiff,
-      ← schnorrPoint_iff_schnorrAt_pallas σ _ _ _ c₀ _ _ _ _ ⟨lrW, δW, _, _, sgW⟩ ns (by simp) rfl
-        rfl]
+      ← schnorrPoint_iff_schnorrAt_pallas σ _ _ _ c₀.val _ _ _ _ ⟨lrW, δW, _, _, sgW⟩
+        (ns.map Subtype.val) (by simp [Function.comp_def]) rfl rfl]
     simp only [AddEquiv.apply_symm_apply]
-    rw [← pallas_hornerCombine_eq n bvW hlast, AddEquiv.apply_symm_apply]
+    rw [← pallas_hornerCombine_eq n.val bvW hlast, AddEquiv.apply_symm_apply]
     exact Iff.rfl
 
 end DeployedStep
@@ -1700,7 +1685,7 @@ end DeployedStep
 open Kimchi.Verifier Bulletproof.Ipa in
 /-- `CheckBulletproofReads` at a deployed field, against the wire verifier: with `(t, us, c)`
 the verifier's `ipaPrechallenges`, `t` reads exactly, and each round prechallenge and `c`,
-once identified with a 128-bit value, is its counterpart up to `PrechallengeAlias`
+once read as a prechallenge, is its counterpart up to `PrechallengeAlias`
 (`transcriptFrom_eq_ipaPrechallenges` carries these to `transcriptFrom`'s `U` base, round
 challenges and Schnorr challenge). -/
 def CheckBulletproofReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZMod p))
@@ -1710,8 +1695,8 @@ def CheckBulletproofReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params
   let r := ipaPrechallenges params s₀ cipLimbs (lrv.map coordsPair) (δv.x, δv.y)
   o.t.val V = r.1 ∧
   List.Forall₂ (fun (pre : ℕ) (u : SizedF 128 (FVar (ZMod p))) =>
-    ∀ u₀ : ℕ, u₀ < 2 ^ 128 → u.val.val V = u₀ → PrechallengeAlias p pre u₀) r.2.1 o.challenges ∧
-  (∀ c₀ : ℕ, c₀ < 2 ^ 128 → o.c.val.val V = c₀ → PrechallengeAlias p r.2.2 c₀)
+    ∀ m, Reads128 V u m → PrechallengeAlias p pre m) r.2.1 o.challenges ∧
+  (∀ m, Reads128 V o.c m → PrechallengeAlias p r.2.2 m)
 
 open Kimchi.Verifier Bulletproof.Ipa in
 /-- At a prime field of more than 254 bits, the exact reading is the wire reading
@@ -1722,10 +1707,11 @@ theorem CheckBulletproofReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p)
     {V : Valuation (ZMod p)} {o : CheckBulletproofOutput (ZMod p)}
     (h : CheckBulletproofReads params s₀ cipLimbs lrv δv V o) :
     CheckBulletproofReadsWire params s₀ cipLimbs lrv δv V o := by
-  obtain ⟨ht, hus, ⟨hi, hhi, hc⟩⟩ := h
-  refine ⟨ht, ?_, fun c₀ hc₀ hcv => low128_of_decomp hp _ c₀ hi hc₀ hhi (by rw [hc, hcv])⟩
+  obtain ⟨ht, hus, hlc⟩ := h
+  refine ⟨ht, ?_, fun _ hm => hlc.alias hp hm⟩
   simp only [ipaPrechallenges]
-  exact List.forall₂_map_left_iff.mpr (hus.imp fun _ _ ⟨hi, hhi, hx⟩ u₀ hu₀ huv =>
-    low128_of_decomp hp _ u₀ hi hu₀ hhi (by rw [hx, huv]))
+  refine List.forall₂_map_left_iff.mpr (hus.imp ?_)
+  intro _ _ hl m hm
+  exact hl.alias hp hm
 
 end Pickles

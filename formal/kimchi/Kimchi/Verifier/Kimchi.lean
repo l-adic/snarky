@@ -487,18 +487,20 @@ theorem frOracles_eq_frPrechallenges {nc k m : ℕ} (cp : KimchiProof C nc k)
   simp only [frOracles, frRun, frPrechallenges, frSqueezes, absorbFq, challengeNat_fresh]
   rfl
 
-/-- `lo` is the prechallenge `pre` up to the wrap-around slack of a 128-bit decomposition:
-`pre` itself (`k = 0`) or one of at most three aliases `(pre + k·p) mod 2¹²⁸`. -/
-def PrechallengeAlias (p pre lo : ℕ) : Prop :=
-  ∃ k ≤ 3, lo = (pre + k * p) % 2 ^ 128
+/-- A circuit's prechallenge `lo` is the verifier's `pre` (a packed squeeze, as a natural) up
+to the wrap-around slack of a 128-bit decomposition: `pre` itself (`k = 0`) or one of at most
+three aliases `(pre + k·p) mod 2¹²⁸`. -/
+def PrechallengeAlias (p pre : ℕ) (lo : Prechallenge) : Prop :=
+  ∃ k ≤ 3, lo.val = (pre + k * p) % 2 ^ 128
 
 /-- The slack the circuit's `lowest_128_bits` leaves: a decomposition `x = lo + 2¹²⁸·hi` with
-`lo, hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is
-the prechallenge `x.val % 2¹²⁸` only up to `PrechallengeAlias`. -/
-theorem low128_of_decomp {p : ℕ} (hp : 2 ^ 254 < p) (x : ZMod p) (lo hi : ℕ)
-    (hlo : lo < 2 ^ 128) (hhi : hi < 2 ^ 128)
-    (h : x = (lo : ZMod p) + 2 ^ 128 * (hi : ZMod p)) :
+`hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is the
+prechallenge `x.val % 2¹²⁸` only up to `PrechallengeAlias`. -/
+theorem low128_of_decomp {p : ℕ} (hp : 2 ^ 254 < p) (x : ZMod p) (lo : Prechallenge) (hi : ℕ)
+    (hhi : hi < 2 ^ 128) (h : x = (lo.val : ZMod p) + 2 ^ 128 * (hi : ZMod p)) :
     PrechallengeAlias p (x.val % 2 ^ 128) lo := by
+  obtain ⟨lo, hlo⟩ := lo
+  simp only [PrechallengeAlias] at *
   have hN : ((lo + 2 ^ 128 * hi : ℕ) : ZMod p) = x := by rw [h]; push_cast; ring
   have hv : (lo + 2 ^ 128 * hi) % p = x.val := by rw [← ZMod.val_natCast, hN]
   have hN' : x.val + (lo + 2 ^ 128 * hi) / p * p = lo + 2 ^ 128 * hi := by

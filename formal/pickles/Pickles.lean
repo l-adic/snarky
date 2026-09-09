@@ -1,5 +1,6 @@
 import Pickles.Reflect.Soundness
 import Pickles.FtEval0
+import Pickles.Prechallenge
 import Pickles.IPA
 import Pickles.CombinedInnerProduct
 import Pickles.PermScalar
