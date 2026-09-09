@@ -10,9 +10,10 @@ module Snarky.Circuit.Kimchi.VarBaseMul
 
 import Prelude
 
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (foldl, traverse_)
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (:<))
@@ -162,7 +163,13 @@ scaleFast1
   -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
 scaleFast1 p t = label "scale-fast-1" do
-  { g } <- varBaseMul @nChunks @bitsUsed p t
+  { g, lsbBits } <- varBaseMul @nChunks @bitsUsed p t
+  -- At the full field width a `bitsUsed`-bit string is not a unique decomposition of the
+  -- packed scalar (`t` and `t + modulus` both fit), so pin the top bit to zero and the
+  -- ladder runs on the canonical one — OCaml `scale_fast`'s check, mirroring what
+  -- `scaleFast2` does for the bits above its split.
+  when (reflectType (Proxy @bitsUsed) >= reflectType (Proxy @n)) do
+    traverse_ (\x -> assertEqual_ x (const_ zero)) (Array.last (Vector.toUnfoldable lsbBits))
   pure g
 
 {-

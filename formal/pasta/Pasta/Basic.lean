@@ -191,6 +191,12 @@ theorem vesta_equivPoint_smul (z : Fp) (P : SWPoint vestaCurve) :
     SWPoint.equivPoint vestaCurve (z • P) = z • SWPoint.equivPoint vestaCurve P :=
   map_nsmul _ _ _
 
+/-- The Pallas twin of `vestaAffineModule`. -/
+instance pallasAffineModule : Module Fq pallasCurve.toAffine.Point :=
+  AddCommGroup.zmodModule fun Q => by
+    rw [← (SWPoint.equivPoint pallasCurve).apply_symm_apply Q, ← map_nsmul, ← Pallas.card_eq,
+      card_nsmul_eq_zero', map_zero]
+
 /-- The Pallas twin of `vesta_smul_val`. -/
 theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=
   rfl

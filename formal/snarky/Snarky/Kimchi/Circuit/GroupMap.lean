@@ -253,6 +253,85 @@ theorem groupMapCircuit_spec {V : Valuation F} [Field F] [DecidableEq F]
     · simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
         hs2, hs3, bit, hxCu1, hxSq1] using hy1
 
+open Std.Do in
+/-- **Soundness, first-flagged.** The selected candidate is the first whose flag is set, and
+every earlier candidate's flag is clear with its clearance certified: a root of the
+non-residue twist of its ordinate square. The advice is universally quantified. -/
+theorem groupMapCircuit_first_spec {V : Valuation F} [Field F] [DecidableEq F]
+    [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c]
+    (sqrtF : F → Option F) (params : GroupMapParams F) (t : FVar F) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V c) sqrtF params t
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs params (t.val V)).1 ∧
+        r.y.val V * r.y.val V = ySquared params (potentialXs params (t.val V)).1) ∨
+      ((∃ y : F, y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).1) ∧
+        r.x.val V = (potentialXs params (t.val V)).2.1 ∧
+        r.y.val V * r.y.val V = ySquared params (potentialXs params (t.val V)).2.1) ∨
+      ((∃ y : F, y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).1) ∧
+        (∃ y : F, y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).2.1) ∧
+        r.x.val V = (potentialXs params (t.val V)).2.2 ∧
+        r.y.val V * r.y.val V = ySquared params (potentialXs params (t.val V)).2.2)⌝⦄ := by
+  simp only [groupMapCircuit]
+  mvcgen
+  rename_i _ t2 _ ht2 alphaInv _ halphaInv alpha _ halpha t4 _ ht4 t4Alpha _ ht4Alpha temp1 _
+    htemp1 t2Inv _ ht2Inv t2PlusFuSq _ ht2PlusFuSq temp2a _ htemp2a temp2 _ htemp2 xSq1 _ hxSq1
+    xCu1 _ hxCu1 sf1 _ hsf1 xSq2 _ hxSq2 xCu2 _ hxCu2 sf2 _ hsf2 xSq3 _ hxSq3 xCu3 _ hxCu3 sf3 _
+    hsf3 _ _ hnz x2First _ hx2First nb2AndB3 _ hnb2AndB3 x3First _ hx3First t3y _ ht3y t2y _
+    ht2y t1y _ ht1y t3x _ ht3x t2x _ ht2x t1x _ ht1x
+  obtain ⟨bb1, hb1, hy1⟩ := hsf1
+  obtain ⟨bb2, hb2, hy2⟩ := hsf2
+  obtain ⟨bb3, hb3, hy3⟩ := hsf3
+  have hval : ∀ a : F, (CVar.const a : CVar F).val V = a := fun _ => rfl
+  have hx1v : ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1).val V
+      = (potentialXs params (t.val V)).1 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp1, ht4Alpha, ht4,
+      halpha, halphaInv, ht2]
+  have hx2v : ((CVar.const (-params.u)).sub_
+        ((CVar.const params.sqrtNeg3U2MinusUOver2).sub_ temp1)).val V
+      = (potentialXs params (t.val V)).2.1 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp1, ht4Alpha, ht4,
+      halpha, halphaInv, ht2]
+  have hx3v : ((CVar.const params.u).sub_ temp2).val V
+      = (potentialXs params (t.val V)).2.2 := by
+    simp only [potentialXs, CVar.val_sub_, CVar.val_add_, hval, htemp2, htemp2a,
+      ht2PlusFuSq, ht2Inv, halpha, halphaInv, ht2]
+  have hs2 := hx2First (!bb1) bb2 (not_val hb1) hb2
+  have hs3 := hx3First (!bb1) (!bb2 && bb3) (not_val hb1)
+    (hnb2AndB3 (!bb2) bb3 (not_val hb2) hb3)
+  -- the twist certificates of clear flags
+  have htw1 : bb1 = false → ∃ y : F,
+      y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).1 := by
+    rintro rfl
+    exact ⟨sf1.1.val V, by simpa [ySquared, CVar.val_add_, hxCu1, hxSq1, hx1v] using hy1⟩
+  have htw2 : bb2 = false → ∃ y : F,
+      y * y = params.nonResidue * ySquared params (potentialXs params (t.val V)).2.1 := by
+    rintro rfl
+    exact ⟨sf2.1.val V, by simpa [ySquared, CVar.val_add_, hxCu2, hxSq2, hx2v] using hy2⟩
+  rcases bb1 with _ | _
+  · rcases bb2 with _ | _
+    · rcases bb3 with _ | _
+      · exact absurd (by simp [CVar.val_add_, hb1, hb2, hb3, bit]) hnz
+      · refine Or.inr (Or.inr ⟨htw1 rfl, htw2 rfl, ?_, ?_⟩)
+        · rw [← hx3v]
+          simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+        · have hx : ((CVar.const params.u).sub_ temp2).val V
+              = (potentialXs params (t.val V)).2.2 := hx3v
+          rw [← hx]
+          simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+            hs2, hs3, bit, hxCu3, hxSq3] using hy3
+    · refine Or.inr (Or.inl ⟨htw1 rfl, ?_, ?_⟩)
+      · rw [← hx2v]
+        simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+      · rw [← hx2v]
+        simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+          hs2, hs3, bit, hxCu2, hxSq2] using hy2
+  · refine Or.inl ⟨?_, ?_⟩
+    · rw [← hx1v]
+      simp [CVar.val_add_, ht1x, ht2x, ht3x, hb1, hs2, hs3, bit]
+    · rw [← hx1v]
+      simpa [CVar.val_add_, ySquared, ht1x, ht2x, ht3x, ht1y, ht2y, ht3y, hb1,
+        hs2, hs3, bit, hxCu1, hxSq1] using hy1
+
 /-! ## Completeness
 
 The honest run, step by step in the DSL's reading currency: each gate's law takes its
@@ -618,6 +697,86 @@ theorem groupMapCircuit_toGroup_complete {c : Type} [BasicSystem (ZMod q) c]
   rw [groupMapPure_toGroup] at hx hy
   exact ⟨r, st', hrun, hsat, hx, hy⟩
 
+
+/-- A twist root certifies a non-square: if `y² = nr·a` with `a = s²` nonzero, then
+`nr = (y/s)²`. -/
+private theorem not_isSquare_of_twist {F : Type} [Field F] {nr a y : F}
+    (hnr : ¬IsSquare nr) (ha : a ≠ 0) (h : y * y = nr * a) : ¬IsSquare a := by
+  rintro ⟨s, rfl⟩
+  have hs : s ≠ 0 := fun hs => ha (by rw [hs, mul_zero])
+  refine hnr ⟨y / s, ?_⟩
+  rw [div_mul_div_comm, h, mul_div_assoc, div_self (mul_ne_zero hs hs), mul_one]
+
+/-- `getY` finds a root exactly at the squares. -/
+private theorem getY_eq_none_iff (spec : _root_.Poseidon.GroupMap.Spec q) (x : ZMod q) :
+    _root_.Poseidon.GroupMap.getY spec x = none
+      ↔ ¬IsSquare (_root_.Poseidon.GroupMap.curveEqn spec x) := by
+  constructor
+  · intro hnone hsq
+    obtain ⟨r, hr⟩ := spec.sqrt.sqrt?_isSome_of_isSquare hsq
+    rw [_root_.Poseidon.GroupMap.getY, hr] at hnone
+    cases hnone
+  · intro hnsq
+    rcases hy : _root_.Poseidon.GroupMap.getY spec x with _ | y
+    · rfl
+    · exact absurd ⟨y, (TonelliShanks.sqrt?_mul_self spec.sqrt hy).symm⟩ hnsq
+
+open Std.Do in
+/-- **Wire-level soundness**: at a wire `Spec` with a genuine non-residue and no candidate
+ordinate square zero, any satisfying valuation reads the result as the wire map's point
+`toGroup`, up to the sign of the ordinate — the constraints pin the root's square, not
+its sign. The advice is universally quantified. -/
+theorem groupMapCircuit_toGroup_spec {V : Valuation (ZMod q)} {c : Type}
+    [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
+    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q)
+    (hnr : ¬IsSquare nonResidue)
+    (hnz : ∀ x : ZMod q, _root_.Poseidon.GroupMap.curveEqn spec x ≠ 0)
+    (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec nonResidue) t
+    ⦃⇓ r _ => ⌜r.x.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).x ∧
+      (r.y.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y ∨
+        r.y.val V = -(_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y)⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (groupMapCircuit_first_spec (c := c) sqrtF (.ofSpec spec nonResidue) t) fun r h => ?_
+  simp only [potentialXs_ofSpec, ySquared_ofSpec] at h
+  simp only [_root_.Poseidon.GroupMap.toGroup]
+  have hnone : ∀ x : ZMod q, _root_.Poseidon.GroupMap.getY spec x = none →
+      r.y.val V * r.y.val V = _root_.Poseidon.GroupMap.curveEqn spec x → False :=
+    fun x hn hy => (getY_eq_none_iff spec x).mp hn ⟨_, hy.symm⟩
+  have hsome : ∀ x y w : ZMod q, _root_.Poseidon.GroupMap.getY spec x = some y →
+      w * w = nonResidue * _root_.Poseidon.GroupMap.curveEqn spec x → False := fun x y w hs hw => by
+    rw [(getY_eq_none_iff spec x).mpr (not_isSquare_of_twist hnr (hnz x) hw)] at hs
+    cases hs
+  have hsign : ∀ x y : ZMod q, _root_.Poseidon.GroupMap.getY spec x = some y →
+      r.y.val V * r.y.val V = _root_.Poseidon.GroupMap.curveEqn spec x →
+      r.y.val V = y ∨ r.y.val V = -y := fun x y hs hy =>
+    mul_self_eq_mul_self_iff.mp (hy.trans (TonelliShanks.sqrt?_mul_self spec.sqrt hs).symm)
+  split
+  · rename_i y hy1
+    rcases h with ⟨hx, hy⟩ | ⟨⟨w, hw⟩, -, -⟩ | ⟨⟨w, hw⟩, -, -, -⟩
+    · exact ⟨hx, hsign _ y hy1 hy⟩
+    · exact (hsome _ y w hy1 hw).elim
+    · exact (hsome _ y w hy1 hw).elim
+  · rename_i hy1
+    split
+    · rename_i y hy2
+      rcases h with ⟨-, hy⟩ | ⟨-, hx, hy⟩ | ⟨-, ⟨w, hw⟩, -, -⟩
+      · exact (hnone _ hy1 hy).elim
+      · exact ⟨hx, hsign _ y hy2 hy⟩
+      · exact (hsome _ y w hy2 hw).elim
+    · rename_i hy2
+      split
+      · rename_i y hy3
+        rcases h with ⟨-, hy⟩ | ⟨-, -, hy⟩ | ⟨-, -, hx, hy⟩
+        · exact (hnone _ hy1 hy).elim
+        · exact (hnone _ hy2 hy).elim
+        · exact ⟨hx, hsign _ y hy3 hy⟩
+      · rename_i hy3
+        rcases h with ⟨-, hy⟩ | ⟨-, -, hy⟩ | ⟨-, -, -, hy⟩
+        · exact (hnone _ hy1 hy).elim
+        · exact (hnone _ hy2 hy).elim
+        · exact (hnone _ hy3 hy).elim
 end Wire
 
 end Snarky.Kimchi

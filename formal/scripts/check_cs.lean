@@ -285,17 +285,11 @@ def scaleFast2_128Circuit (input : AffinePoint (FVar Fp) × FVar Fp) :
     CircuitM Fp C (AffinePoint (FVar Fp)) :=
   scaleFast2' 255 26 127 input.1 input.2
 
-/-- The Pallas BW19 `setup()` parameters at the step field (PS
-`groupMapParams (Proxy @PallasG)`): the poseidon package's `Poseidon.GroupMapPallas.spec`,
-with PS's search-from-2 non-residue, `5`. The gates carry them as coefficients, so a wrong
-value fails the byte comparison itself. -/
-def groupMapParamsFp : GroupMapParams Fp := .ofSpec Poseidon.GroupMapPallas.spec 5
-
 /-- `group_map_step_circuit` (the PS gadget
 `Snarky.Circuit.Kimchi.GroupMap.groupMapCircuit` at the step field and Pallas
 parameters; the dump carries no witness, so the advice is inert here). -/
 def groupMapCircuitFp (input : FVar Fp) : CircuitM Fp C PUnit := do
-  let _ ← groupMapCircuit (fun _ => none) groupMapParamsFp input
+  let _ ← groupMapCircuit (fun _ => none) Pickles.groupMapParamsPallas input
   pure ⟨⟩
 
 /-- The complete-addition gadget, in its `dontCheckFinite` mode. -/
@@ -757,7 +751,8 @@ def checkBulletproofStepCircuit (blindingH : AffinePoint (FVar Fp)) (input : Vec
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   let sv : SpongeVar Fp := ⟨⟨get 0, get 1, get 2⟩, .squeezed 1⟩
   let _ ← Pickles.checkBulletproof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
-    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) groupMapParamsFp (fun _ => none) sv
+    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
+    (fun _ => none) sv
     ((List.range 47).map fun j => (pt (4 + 2 * j), none))
     { xi := ⟨get 3⟩, delta := pt 158, sg := pt 160
       lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
@@ -841,14 +836,10 @@ def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq C
 The library gadgets the wrap-side dumps exercise, at `Fq`: the group map at Vesta's
 parameters, and the linearization over the wrap token stream. -/
 
-/-- The Vesta BW19 `setup()` parameters at the wrap field (PS
-`groupMapParams (Proxy @VestaG)`): `Poseidon.GroupMapVesta.spec` with the same non-residue. -/
-def groupMapParamsFq : GroupMapParams Fq := .ofSpec Poseidon.GroupMapVesta.spec 5
-
 /-- `group_map_wrap_circuit` (the group-map gadget at the wrap field and Vesta parameters;
 the dump carries no witness, so the advice is inert here). -/
 def groupMapCircuitFq (input : FVar Fq) : CircuitM Fq Cq PUnit := do
-  let _ ← groupMapCircuit (fun _ => none) groupMapParamsFq input
+  let _ ← groupMapCircuit (fun _ => none) Pickles.groupMapParamsVesta input
   pure ⟨⟩
 
 /-- `check_bulletproof_wrap_circuit`: the sponge state at 0–2 (`Squeezed 1`), `ξ` at 3, the
@@ -863,7 +854,8 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
     [(pt 6, some (.unchecked (get 4))), (pt 8, some (.unchecked (get 5)))]
       ++ (List.range 45).map fun j => (pt (10 + 2 * j), none)
   let _ ← Pickles.checkBulletproof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
-    Bulletproof.IpaPallas.curve.frParams (.const endoPallasLam) groupMapParamsFq (fun _ => none) sv
+    Bulletproof.IpaPallas.curve.frParams (.const endoPallasLam) Pickles.groupMapParamsVesta
+    (fun _ => none) sv
     bases
     { xi := ⟨get 3⟩, delta := pt 164, sg := pt 166
       lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))

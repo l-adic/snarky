@@ -129,6 +129,16 @@ Pickles.combinePolynomials_spec
 Pickles.bulletReduce_spec
 Pickles.ipaFinalCheck_spec
 Pickles.checkBulletproof_spec_success
+Pickles.schnorrPoint_iff_schnorrAt_vesta
+Pickles.schnorrPoint_iff_schnorrAt_pallas
+Pickles.checkBulletproof_wrap_spec
+Pickles.checkBulletproof_step_spec
+Pickles.wrap_scale_reads
+Pickles.step_scale_reads
+Pickles.vesta_groupMap_reads
+Pickles.pallas_groupMap_reads
+Pickles.vesta_curveEqn_ne_zero
+Pickles.pallas_curveEqn_ne_zero
 Pickles.IpaScalarOps.step
 Pickles.IpaScalarOps.wrap
 Pickles.IpaEndo.pallas
