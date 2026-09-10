@@ -281,10 +281,11 @@ jobs:
     # The composed executable verifier against complete production wire proofs
     # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_emul}.json from
     # the kimchi_proof_dump binaries — the emul one carries live EndoMul/VarBaseMul
-    # selectors and an empty public input; see the audit's V-1/C-3. The pickles fixture
-    # is opt-in in the driver for its ~15-min runtime — see the note there). Interpreted
-    # via `lean --run` (the script has no `#eval`); the standard matrix is fast, and
-    # compiled would fit the runner (< 1 GB) but save little.
+    # selectors and an empty public input; see the audit's V-1/C-3. The pickles wrap
+    # fixture runs here too — its 2^15-point opening check is ~16 s now that the opening
+    # MSM uses CompElliptic's fast projective Pippenger). Interpreted via `lean --run`
+    # (the script has no `#eval`); the whole matrix is fast, and compiled would fit the
+    # runner (< 1 GB) but save little.
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

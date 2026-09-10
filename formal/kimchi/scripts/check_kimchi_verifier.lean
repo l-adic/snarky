@@ -224,11 +224,8 @@ abbrev CP := IpaPallas.curve
 def main : IO Unit := do
   let dir := (← IO.getEnv "KIMCHI_FIXTURES_DIR").getD "fixtures"
   -- `KIMCHI_FIXTURE_FILTER=<substring>` runs only the fixtures whose path contains it
-  -- (for profiling one run); `KIMCHI_PICKLES_FIXTURE=1` adds the pickles proof, opt-in
-  -- for its ~15-min runtime (the affine-inversion cost of the 2^15-point MSM), not memory
-  -- — compiled it peaks under 1 GB.
+  -- (for profiling one run).
   let filter ← IO.getEnv "KIMCHI_FIXTURE_FILTER"
-  let withPickles := (← IO.getEnv "KIMCHI_PICKLES_FIXTURE").isSome
   let run (C : Ipa.CommitmentCurve) (path : String) (expectPublic : Bool)
       (heavy : Bool := false) (olds : ℕ := 0) : IO Unit := do
     let wanted : Bool := match filter with
@@ -250,13 +247,12 @@ def main : IO Unit := do
   run CV s!"{dir}/kimchi_proof_vesta_emul.json" false
   -- The recursion path on a deployed artifact: a pickles wrap proof (OCaml through the
   -- Rust prover, `simple_chain`'s second wrap) with its two old accumulators, at
-  -- the wrap domain 2^14 below the 2^15 Tock SRS — the sub-SRS one-chunk regime. Opt-in:
-  -- its 2^15-point opening check takes ~15 min (compiled 892 s / < 1 GB, interpreted
-  -- 1705 s / 5.6 GB), the affine-inversion cost of the MSM.
-  if withPickles then
-    run CP s!"{dir}/kimchi_proof_pallas_pickles.json" false (heavy := true) (olds := 2)
+  -- the wrap domain 2^14 below the 2^15 Tock SRS — the sub-SRS one-chunk regime. Its
+  -- 2^15-point opening check runs in ~16 s interpreted now that the opening MSM
+  -- dispatches to CompElliptic's fast projective Pippenger (one field inversion for the
+  -- whole commitment, not ~256 per point); it was ~1705 s on the old affine fold.
+  run CP s!"{dir}/kimchi_proof_pallas_pickles.json" false (heavy := true) (olds := 2)
   IO.println s!"✓ the executable kimchi verifiers accept the production proofs (nc = 1 \
     barycentric and carried, nc = 2 on both curves, the live-EndoMul/VarBaseMul \
-    empty-public proof{if withPickles then ", and a pickles wrap proof with its old \
-    accumulators" else "; the pickles proof is out by default for its ~15-min \
-    runtime"}), reject corruptions, and refuse to parse ragged wire data"
+    empty-public proof, and a pickles wrap proof with its old accumulators), reject \
+    corruptions, and refuse to parse ragged wire data"
