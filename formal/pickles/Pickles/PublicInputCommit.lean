@@ -114,6 +114,14 @@ private def sumCorrections (ci : Fin nc) :
       sumCorrections ci acc'.p rest
   | acc, .condAdd _ _ :: rest => sumCorrections ci acc rest
 
+/-- The full one-chunk public-input commitment (PS `publicInputCommit`, one chunk): sum the
+corrections into `init` (seeded by `start`, the first correction on the deployed path), fold
+the ladders, negate, add `h`. -/
+private def publicInputCommitFull (ci : Fin nc) (start blindingH : AffinePoint (FVar F))
+    (leaves : List (Leaf F nc)) : CircuitM F S (AffinePoint (FVar F)) := do
+  let init ← sumCorrections ci start leaves
+  publicInputCommitChunk ci init blindingH leaves
+
 /-- The reading + ladder-witness data the fold produces for one leaf: a scalar leaf yields its
 ladder width `L = 5·chunks`, the split witness `(z, bb)` and the base's curve point `T`; a
 `condAdd` leaf yields its bit and base point. -/
@@ -207,6 +215,30 @@ private def LeafReads (ci : Fin nc) (V : Valuation F) : Leaf F nc → LeafInfo F
   | .condAdd b base, .cond bb T =>
       OnCurveAt d.W V base[ci] T ∧ (↑b : CVar F).val V = bit bb
   | _, _ => False
+
+omit [ToNat F] in
+/-- **Regime discharge per width.** A leaf's `regimeOK` follows from the subwrap bounds for the
+narrow widths (`b128` at `L = 130`, `b10` at `L = 10`, via `ladderRegime_subwrap`) and a
+supplied full-width regime (`hfull`, discharged at the deployed curve from the forbidden-band
+exclusion). `condAdd` is trivial. -/
+private theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
+    {leaf : Leaf F nc} {info : LeafInfo F d}
+    (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
+    (hr : LeafReads ci V leaf info)
+    (hfull : ∀ z bb T, info = LeafInfo.scalar 255 z bb T →
+        d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z)) :
+    info.regimeOK := by
+  cases leaf <;> cases info <;> simp only [LeafReads] at hr <;>
+    first
+      | exact hr.elim
+      | trivial
+      | (obtain ⟨hL, -, -, -, -⟩ := hr
+         subst hL
+         simp only [LeafInfo.regimeOK]
+         first
+           | exact hfull _ _ _ rfl
+           | exact ladderRegime_subwrap d _ _ h130
+           | exact ladderRegime_subwrap d _ _ h10)
 
 /-- **The per-chunk fold reads as the accumulator plus the sum of leaf deltas.** For a
 satisfying assignment, `foldChunk ci acc leaves` reads, at any `accv` for `acc`, as
@@ -418,6 +450,28 @@ private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
         (sumCorrections_spec ci rest cps acc hrest) fun r hr accv hacc => ?_
       simp only [List.sum_cons, hcp0, zero_add]
       exact hr accv hacc
+
+/-- **The full one-chunk gadget computes the honest MSM.** Composing the corrections sum with
+`publicInputCommitChunk_net_spec`: with `start` reading as `sv` and corrections as `cps`, the
+output reads as `-(Σ netDelta) + h`, under the seed condition `sv + Σcps = Σ corrDelta`. -/
+private theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
+    (start blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
+    (Ts cps : List d.W.Point) (sv Hv : d.W.Point)
+    (hstart : OnCurveAt d.W V start sv) (hH : OnCurveAt d.W V blindingH Hv)
+    (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
+    (hcorr : List.Forall₂ (CorrPre ci V) leaves cps) :
+    ⦃⌜True⌝⦄
+    publicInputCommitFull (S := Builder V (KimchiConstraint F)) ci start blindingH leaves
+    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+      (sv + cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
+        OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
+  simp only [publicInputCommitFull]
+  have hsum := sumCorrections_spec ci leaves cps start hcorr
+  mvcgen [hsum]
+  rename_i _ rinit
+  intro s hpost
+  exact publicInputCommitChunk_net_spec ci rinit blindingH leaves Ts (sv + cps.sum) Hv
+    (hpost sv hstart) hH hpre s trivial
 
 end Fold
 
