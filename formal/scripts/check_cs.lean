@@ -36,8 +36,10 @@ the linearization prelude, against the PS `FtEval0Common` harness), and cip_{ste
 remaining slices through to finalize_other_proof_{step,wrap} (the permutation scalar,
 expand_plonk, the challenge digests, the fr-sponge schedule, and the whole assembled
 `Pickles.finalizeOtherProofStep`/`Wrap` against the PS `FopStep`/`FopWrap` harnesses).
-Deferred, with the blocker each waits on:
-- ftcomm_*, xhat_* (and everything downstream: ivp, verify, wrap/step mains) — the
+and xhat_wrap (the wrap-side public-input-commitment MSM, `Pickles.publicInputCommitFull`
+against the PS `Xhat` harness, with the Lagrange bases loaded from the circuit-diffs export
+and the shift corrections derived by `smulFast`). Deferred, with the blocker each waits on:
+- ftcomm_*, xhat_step (and everything downstream: ivp, verify, wrap/step mains) — the
   pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
   the VarBaseMul gadget's own oracle checks);
 - hash_messages_*, schnorr_verify — the sponge circuit layer
@@ -79,6 +81,8 @@ import Pickles.FrSponge
 import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
+import Pickles.PublicInputCommit
+import CompElliptic.Curves.Pasta.Fast.Projective.Core
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
 import Snarky.Kimchi.Circuit.AddComplete
@@ -869,9 +873,79 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
       blindingGenerator := blindingH }
   pure PUnit.unit
 
+/-! ## The public-input commitment (`x_hat`)
+
+The wrap-side `x_hat` MSM (`Pickles.publicInputCommitFull`) against the PS `Xhat` harness's
+`xhat_wrap_circuit`. The 34 Vesta Lagrange bases and blinding `h` are SRS constants Lean
+cannot compute; they arrive in `xhat_wrap_lagrange.json` (the circuit-diffs export). The
+per-leaf shift corrections `-(2^L)·base` are derived HERE via CompElliptic's `smulFast`, so
+only the bases are dumped. Packing (`Pickles.PackedStepPublicInput 1 15` walked by the
+`PublicInputCommit` typeclass, through nested tuples — no field reorder) fixes the leaf
+order: for `i = 0..33`, input `i` is leaf `i`'s scalar/bit and Lagrange base `i` its base,
+with `full` (255-bit) at {0,2,4,6,8,10,32,33}, `condAdd` (the five shifted-scalar parities and
+`should_finalize`) at {1,3,5,7,9,31}, `b128` at {11..30}. The six `condAdd` bits carry the
+packing's booleanity checks, emitted (in walk order) before the gadget. -/
+
+/-- The Vesta curve of the `x_hat` Lagrange bases (Fq coordinates). -/
+abbrev XhatCurve := Bulletproof.IpaVesta.curve
+
+open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
+/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a one-chunk constant point:
+`smulFast` computes `[2^L]·P` (the ladder shift `L = 5·chunks`), negated coordinatewise
+(`(x, -y)` on `y² = x³ + 5`). Matches PS `scalarMulLeaf`'s `-pow2pow(base, 5·nChunks)`. -/
+def xhatCorr (L : ℕ) (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
+  let Q := smulFast XhatCurve.E (by decide) (by decide) (2 ^ L) P
+  #v[⟨.const Q.x, .const (-Q.y)⟩]
+
+/-- A Lagrange base `P` as a one-chunk constant point. -/
+def xhatBase (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
+  #v[⟨.const P.x, .const P.y⟩]
+
+/-- `xhat_wrap_circuit`: the packing's six booleanity checks (walk order), then
+`Pickles.publicInputCommitFull` over the 34-leaf list — `full` at {0,2,4,6,8,10,32,33}
+(`L = 255`), `b128` at {11..30} (`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads
+input `i` and Lagrange base `pts[i]`. -/
+def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
+    (input : Vector (FVar Fq) 34) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : XhatCurve.Point :=
+    pts[i]?.getD (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
+  addConstraint (BasicSystem.boolean (get 1) : Cq)
+  addConstraint (BasicSystem.boolean (get 3) : Cq)
+  addConstraint (BasicSystem.boolean (get 5) : Cq)
+  addConstraint (BasicSystem.boolean (get 7) : Cq)
+  addConstraint (BasicSystem.boolean (get 9) : Cq)
+  addConstraint (BasicSystem.boolean (get 31) : Cq)
+  let full (i : ℕ) : Pickles.Leaf Fq 1 := .full (get i) (xhatBase (pt i)) (xhatCorr 255 (pt i))
+  let b128 (i : ℕ) : Pickles.Leaf Fq 1 := .b128 (get i) (xhatBase (pt i)) (xhatCorr 130 (pt i))
+  let cond (i : ℕ) : Pickles.Leaf Fq 1 := .condAdd (.unchecked (get i)) (xhatBase (pt i))
+  let leaves : List (Pickles.Leaf Fq 1) :=
+    [ full 0, cond 1, full 2, cond 3, full 4, cond 5, full 6, cond 7, full 8, cond 9, full 10 ]
+      ++ (List.range 20).map (fun j => b128 (11 + j))
+      ++ [ cond 31, full 32, full 33 ]
+  let _ ← Pickles.publicInputCommitFull (0 : Fin 1) h leaves
+  pure PUnit.unit
+
+/-- The 34 Vesta Lagrange bases and blinding `h` of `xhat_wrap_circuit`, from the
+circuit-diffs export `xhat_wrap_lagrange.json` (`{lagrange : [[x,y]×34], h : [x,y]}`,
+decimal pairs). Parsed as `IpaVesta` points; the corrections are derived in-circuit. -/
+def xhatWrapPoints (path : System.FilePath) :
+    IO (Array XhatCurve.Point × AffinePoint (FVar Fq)) := do
+  let raw ← IO.FS.readFile path
+  let parsed : Except String (Array XhatCurve.Point × XhatCurve.Point) := do
+    let j ← Json.parse raw
+    let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt XhatCurve)
+      (← j.getObjVal? "lagrange")
+    let h ← Bulletproof.Fixture.parsePt XhatCurve (← j.getObjVal? "h")
+    pure (lagr, h)
+  match parsed with
+  | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
+  | .error e => throw (IO.userError s!"{path}: {e}")
+
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
-def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
+def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq))
+    (xhatPts : Array XhatCurve.Point) (xhatH : AffinePoint (FVar Fq)) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   [ ("mul_step_circuit", stepTarget (a := Fp) (b := Fp) mulCircuit),
     ("inv_step_circuit", stepTarget (a := Fp) (b := Fp) invCircuit),
@@ -953,15 +1027,26 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
     ("check_bulletproof_wrap_circuit",
       wrapTarget (a := Vector Fq 172) (b := PUnit) (checkBulletproofWrapCircuit hWrap)),
     ("finalize_other_proof_wrap_circuit",
-      wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit) ]
+      wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
+    ("xhat_wrap_circuit",
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit xhatPts xhatH)) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
   let fdir := (← IO.getEnv "BULLETPROOF_FIXTURES_DIR").getD "bulletproof-pcs/fixtures"
   let hStep ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
   let hWrap ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
+  -- The `x_hat` Lagrange dump lives beside the OCaml reference fixtures (the PS suite's
+  -- `fixtureDir`), the sibling of the results dir the comparison dumps come from.
+  let (xhatPts, xhatH) ← xhatWrapPoints
+    ((dir.parent.getD dir) / "ocaml" / "xhat_wrap_lagrange.json")
+  -- `KIMCHI_CS_FILTER` narrows the corpus to targets whose name contains it — for local
+  -- validation of one circuit against a partial results dir. Unset (CI) runs the whole corpus.
+  let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
+  let selected := (targets hStep hWrap xhatPts xhatH).filter fun (n, _) =>
+    filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
-  for (name, compare) in targets hStep hWrap do
+  for (name, compare) in selected do
     let path := dir / s!"{name}.json"
     let raw ← IO.FS.readFile path
     match Json.parse raw >>= compare with
@@ -981,4 +1066,4 @@ def main : IO Unit := do
         IO.println s!"✗ {name}: {String.intercalate ", " (bad.map (·.1))}"
   if failures > 0 then
     throw <| IO.userError s!"CS-equality FAILED ({failures} circuit(s))"
-  IO.println s!"── CS equality OK ({(targets hStep hWrap).length} circuits) ──"
+  IO.println s!"── CS equality OK ({selected.length} circuits) ──"
