@@ -751,13 +751,16 @@ spec bundle =
         -- `xhat_wrap_circuit`) so the Lean `check_cs` harness can reproduce the gadget:
         -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
         -- (`-2^L·base`) itself via `smulFast`. Format: `[x, y]` decimal pairs (`parseSWPoint`).
+        -- Written into `resultsDir` beside the comparison dumps, so it rides the same
+        -- artifact to the Lean checker; the consumers that scan the dir (the witness checker,
+        -- the visualizer) skip it — it carries no `purescript` field and no manifest entry.
         liftEffect do
           let
             ptToJson :: AffinePoint Fq -> Array String
             ptToJson (AffinePoint { x, y }) =
               [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
             lagr = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs 16 i)
-          FS.writeTextFile UTF8 (fixtureDir <> "xhat_wrap_lagrange.json")
+          FS.writeTextFile UTF8 (resultsDir <> "xhat_wrap_lagrange.json")
             (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
         exactMatchEff "check_bulletproof_wrap_circuit" (fromCompiledCircuit =<< compileCheckBulletproofWrap wrapSrsData.blindingH)
       describe "IVP" do

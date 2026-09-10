@@ -250,23 +250,16 @@ jobs:
 
     # Run-scoped transport to the `check-ps-witness` job — the checker can only
     # ever see the witness its own commit generated.
+    # Includes xhat_wrap_lagrange.json (the x_hat wrap gadget's Lagrange bases, SRS
+    # constants Lean cannot compute) — scripts/check_cs.lean's xhat_wrap_circuit target
+    # reads it from this dir. It carries no `purescript` field and no manifest entry, so
+    # the witness checker and the visualizer, which scan the dir for comparison dumps, skip
+    # it.
     - name: Upload witness-carrying results for the Lean checker
       uses: actions/upload-artifact@v4
       with:
         name: circuit-diff-witnesses
         path: packages/pickles-circuit-diffs/circuits/results/*.json
-        retention-days: 1
-
-    # The x_hat wrap gadget's Lagrange bases (SRS constants Lean cannot compute) —
-    # written to circuits/ocaml/ by the harness, consumed by scripts/check_cs.lean's
-    # xhat_wrap_circuit target. Transported to the check-ps-witness job separately from
-    # the results artifact so it never lands in circuits/results/ (which check_ps_witness
-    # and the visualizer both scan for comparison dumps).
-    - name: Upload the x_hat Lagrange bases for the Lean checker
-      uses: actions/upload-artifact@v4
-      with:
-        name: xhat-wrap-lagrange
-        path: packages/pickles-circuit-diffs/circuits/ocaml/xhat_wrap_lagrange.json
         retention-days: 1
 
     # The visualizer bundles circuits/results/ into its dist (deployed to Pages);
@@ -354,19 +347,13 @@ jobs:
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean
 
+    # Includes xhat_wrap_lagrange.json, read by scripts/check_cs.lean's xhat_wrap_circuit
+    # target from this same dir.
     - name: Download the witness-carrying results
       uses: actions/download-artifact@v4
       with:
         name: circuit-diff-witnesses
         path: packages/pickles-circuit-diffs/circuits/results/
-
-    # The x_hat wrap Lagrange bases, into circuits/ocaml/ where scripts/check_cs.lean's
-    # loader looks (the sibling of the results dir) — the xhat_wrap_circuit target below.
-    - name: Download the x_hat Lagrange bases
-      uses: actions/download-artifact@v4
-      with:
-        name: xhat-wrap-lagrange
-        path: packages/pickles-circuit-diffs/circuits/ocaml/
 
     - name: Check witnesses against the index model
       run: |

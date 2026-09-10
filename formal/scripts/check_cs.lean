@@ -1036,10 +1036,9 @@ def main : IO Unit := do
   let fdir := (← IO.getEnv "BULLETPROOF_FIXTURES_DIR").getD "bulletproof-pcs/fixtures"
   let hStep ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
   let hWrap ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
-  -- The `x_hat` Lagrange dump lives beside the OCaml reference fixtures (the PS suite's
-  -- `fixtureDir`), the sibling of the results dir the comparison dumps come from.
-  let (xhatPts, xhatH) ← xhatWrapPoints
-    ((dir.parent.getD dir) / "ocaml" / "xhat_wrap_lagrange.json")
+  -- The `x_hat` Lagrange dump sits in the results dir beside the comparison dumps (it
+  -- carries no `purescript` field and no manifest entry, so the other consumers skip it).
+  let (xhatPts, xhatH) ← xhatWrapPoints (dir / "xhat_wrap_lagrange.json")
   -- `KIMCHI_CS_FILTER` narrows the corpus to targets whose name contains it — for local
   -- validation of one circuit against a partial results dir. Unset (CI) runs the whole corpus.
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
