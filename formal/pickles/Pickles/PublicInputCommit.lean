@@ -27,7 +27,7 @@ the read requires to be `-(2^{5·chunks})·base` — cancelling the ladder's shi
 `[scalar]·base`. `condAdd` is the 1-bit conditional-add path (a boolean statement field or a
 shifted scalar's parity), no correction. Each field is chunked (`Vector _ nc`) so the
 per-chunk accumulator runs in parallel. -/
-private inductive Leaf (F : Type) [Field F] (nc : ℕ) where
+inductive Leaf (F : Type) [Field F] (nc : ℕ) where
   /-- A full 255-bit field element: `(n, chunks, sDiv2Bits) = (255, 51, 254)`. -/
   | full (scalar : FVar F) (base correction : Vector (AffinePoint (FVar F)) nc)
   /-- A 128-bit packed value: `(255, 26, 127)`. -/
@@ -134,7 +134,7 @@ private def sumCorrectionsHead (ci : Fin nc) :
 
 /-- The full one-chunk public-input commitment (PS `publicInputCommit`, one chunk): head-seed
 the corrections into `init`, fold the ladders, negate, add `h`. -/
-private def publicInputCommitFull (ci : Fin nc) (blindingH : AffinePoint (FVar F))
+def publicInputCommitFull (ci : Fin nc) (blindingH : AffinePoint (FVar F))
     (leaves : List (Leaf F nc)) : CircuitM F S (AffinePoint (FVar F)) := do
   let init ← sumCorrectionsHead ci leaves
   publicInputCommitChunk ci init blindingH leaves
@@ -238,7 +238,7 @@ omit [ToNat F] in
 narrow widths (`b128` at `L = 130`, `b10` at `L = 10`, via `ladderRegime_subwrap`) and a
 supplied full-width regime (`hfull`, discharged at the deployed curve from the forbidden-band
 exclusion). `condAdd` is trivial. -/
-private theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
+theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
     {leaf : Leaf F nc} {info : LeafInfo F d}
     (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
     (hr : LeafReads ci V leaf info)
@@ -507,7 +507,7 @@ private theorem sumCorrectionsHead_spec (ci : Fin nc) {V : Valuation F} :
 /-- **The full one-chunk gadget computes the honest MSM.** Composing the corrections sum with
 `publicInputCommitChunk_net_spec`: with `start` reading as `sv` and corrections as `cps`, the
 output reads as `-(Σ netDelta) + h`, under the seed condition `sv + Σcps = Σ corrDelta`. -/
-private theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
+theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
     (hH : OnCurveAt d.W V blindingH Hv)

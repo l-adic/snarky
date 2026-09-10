@@ -155,3 +155,14 @@ Pickles.IpaScalarOps.step
 Pickles.IpaScalarOps.wrap
 Pickles.IpaEndo.pallas
 Pickles.IpaEndo.vesta
+
+-- The in-circuit public-input commitment (x_hat) gadget, consumed by the check_cs harness,
+-- and its faithfulness theorem (the honest one-chunk MSM reads as `-(Σ netDelta) + h` under
+-- the head-seed condition), axiom-audited like the other gadget specs. The reading vocabulary
+-- and the fold/corrections lemmas it rests on stay private but reachable from the spec.
+Pickles.publicInputCommitFull
+Pickles.publicInputCommitFull_spec
+-- The regime-discharge bridge a consumer uses to satisfy the spec's `∀ i, regimeOK`
+-- conditional: the leaves' reads plus the unconditional narrow-width subwrap bounds
+-- (`ladderRegime_subwrap`, reachable from here) give each leaf's `LadderRegime`.
+Pickles.LeafReads.regimeOK

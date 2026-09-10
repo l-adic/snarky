@@ -12,6 +12,7 @@ import Pickles.Statement
 import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
+import Pickles.PublicInputCommit
 
 /-!
 # Pickles — the in-circuit kimchi verifier
