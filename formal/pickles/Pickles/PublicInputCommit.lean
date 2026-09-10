@@ -114,12 +114,29 @@ private def sumCorrections (ci : Fin nc) :
       sumCorrections ci acc'.p rest
   | acc, .condAdd _ _ :: rest => sumCorrections ci acc rest
 
-/-- The full one-chunk public-input commitment (PS `publicInputCommit`, one chunk): sum the
-corrections into `init` (seeded by `start`, the first correction on the deployed path), fold
-the ladders, negate, add `h`. -/
-private def publicInputCommitFull (ci : Fin nc) (start blindingH : AffinePoint (FVar F))
+/-- The leaves reach a scalar leaf — so the head-seeded corrections fold has a seed. -/
+private def leafHasScalar : List (Leaf F nc) → Prop
+  | [] => False
+  | .condAdd _ _ :: rest => leafHasScalar rest
+  | _ => True
+
+/-- Head-seeded corrections sum (PS `InCircuitCorrections`'s `init`): the first scalar leaf's
+correction seeds the fold (no gate), each later scalar correction adds one (`n` corrections →
+`n−1` gates, matching OCaml). `condAdd` leaves are skipped; the all-`condAdd`/empty case is the
+unused origin. -/
+private def sumCorrectionsHead (ci : Fin nc) :
+    List (Leaf F nc) → CircuitM F S (AffinePoint (FVar F))
+  | [] => pure ⟨.const 0, .const 0⟩
+  | .full _ _ corr :: rest => sumCorrections ci corr[ci] rest
+  | .b128 _ _ corr :: rest => sumCorrections ci corr[ci] rest
+  | .b10 _ _ corr :: rest => sumCorrections ci corr[ci] rest
+  | .condAdd _ _ :: rest => sumCorrectionsHead ci rest
+
+/-- The full one-chunk public-input commitment (PS `publicInputCommit`, one chunk): head-seed
+the corrections into `init`, fold the ladders, negate, add `h`. -/
+private def publicInputCommitFull (ci : Fin nc) (blindingH : AffinePoint (FVar F))
     (leaves : List (Leaf F nc)) : CircuitM F S (AffinePoint (FVar F)) := do
-  let init ← sumCorrections ci start leaves
+  let init ← sumCorrectionsHead ci leaves
   publicInputCommitChunk ci init blindingH leaves
 
 /-- The reading + ladder-witness data the fold produces for one leaf: a scalar leaf yields its
@@ -451,27 +468,64 @@ private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
       simp only [List.sum_cons, hcp0, zero_add]
       exact hr accv hacc
 
+omit [ToNat F] in
+/-- **The head-seeded corrections sum reads as `Σ cps`.** The first scalar leaf's correction
+seeds the fold; the rest add via `sumCorrections_spec`; `condAdd` leaves skip (their `cp = 0`).
+Needs a scalar leaf (`leafHasScalar`) so the origin is not returned. -/
+private theorem sumCorrectionsHead_spec (ci : Fin nc) {V : Valuation F} :
+    ∀ (leaves : List (Leaf F nc)) (cps : List d.W.Point),
+      List.Forall₂ (CorrPre ci V) leaves cps → leafHasScalar leaves →
+      ⦃⌜True⌝⦄ sumCorrectionsHead (S := Builder V (KimchiConstraint F)) ci leaves
+      ⦃⇓ r _ => ⌜OnCurveAt d.W V r cps.sum⌝⦄
+  | [], [], .nil, hne => by simp only [leafHasScalar] at hne
+  | .full _ _ corr :: rest, cp :: cps, .cons hcp hrest, _ => by
+      simp only [sumCorrectionsHead]
+      refine builder_spec_imp _ _ _ (sumCorrections_spec ci rest cps corr[ci] hrest)
+        fun r hr => ?_
+      simp only [List.sum_cons]
+      exact hr cp hcp
+  | .b128 _ _ corr :: rest, cp :: cps, .cons hcp hrest, _ => by
+      simp only [sumCorrectionsHead]
+      refine builder_spec_imp _ _ _ (sumCorrections_spec ci rest cps corr[ci] hrest)
+        fun r hr => ?_
+      simp only [List.sum_cons]
+      exact hr cp hcp
+  | .b10 _ _ corr :: rest, cp :: cps, .cons hcp hrest, _ => by
+      simp only [sumCorrectionsHead]
+      refine builder_spec_imp _ _ _ (sumCorrections_spec ci rest cps corr[ci] hrest)
+        fun r hr => ?_
+      simp only [List.sum_cons]
+      exact hr cp hcp
+  | .condAdd _ _ :: rest, cp :: cps, .cons hcp hrest, hne => by
+      simp only [sumCorrectionsHead]
+      have hcp0 : cp = 0 := hcp
+      refine builder_spec_imp _ _ _ (sumCorrectionsHead_spec ci rest cps hrest hne)
+        fun r hr => ?_
+      simp only [List.sum_cons, hcp0, zero_add]
+      exact hr
+
 /-- **The full one-chunk gadget computes the honest MSM.** Composing the corrections sum with
 `publicInputCommitChunk_net_spec`: with `start` reading as `sv` and corrections as `cps`, the
 output reads as `-(Σ netDelta) + h`, under the seed condition `sv + Σcps = Σ corrDelta`. -/
 private theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
-    (start blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
-    (Ts cps : List d.W.Point) (sv Hv : d.W.Point)
-    (hstart : OnCurveAt d.W V start sv) (hH : OnCurveAt d.W V blindingH Hv)
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
+    (Ts cps : List d.W.Point) (Hv : d.W.Point)
+    (hH : OnCurveAt d.W V blindingH Hv)
     (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
-    (hcorr : List.Forall₂ (CorrPre ci V) leaves cps) :
+    (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
+    (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
-    publicInputCommitFull (S := Builder V (KimchiConstraint F)) ci start blindingH leaves
+    publicInputCommitFull (S := Builder V (KimchiConstraint F)) ci blindingH leaves
     ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
-      (sv + cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
+      (cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
         OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
   simp only [publicInputCommitFull]
-  have hsum := sumCorrections_spec ci leaves cps start hcorr
+  have hsum := sumCorrectionsHead_spec ci leaves cps hcorr hscalar
   mvcgen [hsum]
   rename_i _ rinit
   intro s hpost
-  exact publicInputCommitChunk_net_spec ci rinit blindingH leaves Ts (sv + cps.sum) Hv
-    (hpost sv hstart) hH hpre s trivial
+  exact publicInputCommitChunk_net_spec ci rinit blindingH leaves Ts cps.sum Hv
+    hpost hH hpre s trivial
 
 end Fold
 
