@@ -39,7 +39,7 @@ lintDriverArgs = [
 [[require]]
 name = "CompElliptic"
 git = "https://github.com/l-adic/CompElliptic"
-rev = "4955f1bf2705fd978df28056b10e2b6dfc185f76"
+rev = "4ca6b7149f7fa0b94efd350703f4e58915c27423"
 
 [[require]]
 name = "pasta"
