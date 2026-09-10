@@ -19,8 +19,8 @@ weak.linter.style.longLine = true
 # the Pasta curve instances. daira upstream, pinned by `rev` so the revision is locked.
 [[require]]
 name = "CompElliptic"
-git = "https://github.com/daira/CompElliptic"
-rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
+git = "https://github.com/l-adic/CompElliptic"
+rev = "4955f1bf2705fd978df28056b10e2b6dfc185f76"
 
 # The Pasta curve trust base: the generic EC order/shape sugar, the concrete GLV constants,
 # the Hasse/CM axioms and their derived orders, and the point-group module structure.
@@ -64,12 +64,13 @@ globs = ["KimchiFixture", "KimchiFixture.+"]
 name = "kimchi-demo"
 root = "Main"
 
-# The two heavy fixture drivers, compiled: native they run ~13x faster than interpreted
-# — but the compiled full runs peak near 30 GB resident (the interpreter fits in 16 GB),
-# so CI runs them INTERPRETED via `lake env lean --run` until that memory is understood.
-# Local use: `lake exe <name>` on a big-RAM machine (each script's `main`); the drivers
-# deliberately have no `#eval main`, so plain `lake env lean` elaborates without
-# running.
+# The two heavy fixture drivers, compiled: native they run ~2x faster than interpreted,
+# and since CompElliptic's fintypePoints initializer was made lazy they peak under 1 GB
+# resident (it was that eager initializer, not the verifier, behind the old ~30 GB). CI
+# still runs them INTERPRETED via `lake env lean --run`: no compile step, and the standard
+# fixture matrix is fast either way. Local use: `lake exe <name>` (each script's `main`);
+# the drivers deliberately have no `#eval main`, so plain `lake env lean` elaborates
+# without running.
 [[lean_exe]]
 name = "check-vk-correspond"
 root = "scripts.check_vk_correspond"

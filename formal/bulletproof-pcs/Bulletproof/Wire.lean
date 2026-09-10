@@ -115,9 +115,12 @@ abbrev CommitmentCurve.Point (C : CommitmentCurve) := SWPoint C.E
 variable (C : CommitmentCurve)
 
 /-- Multi-scalar multiplication `∑ i, aᵢ • gᵢ` — the group-side mirror of
-`Bulletproof.commitGen`, with the scalars acting through `val`. -/
+`Bulletproof.commitGen`, the scalars acting through `val`. Written as a tail-recursive
+left fold over `List.finRange n` rather than `Finset.sum`, whose `Multiset.foldr`
+lowering is not tail recursive; the deployed `sg`-correctness check folds over the whole
+`2 ^ σ.k` SRS. It computes the same value as `∑ i, (a i).val • g i`. -/
 def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Point :=
-  ∑ i, (a i).val • g i
+  (List.finRange n).foldl (fun acc i => acc + (a i).val • g i) 0
 
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
