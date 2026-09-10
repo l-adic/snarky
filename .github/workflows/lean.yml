@@ -86,6 +86,18 @@ jobs:
       id: lean
       uses: ./.github/actions/setup-lean
 
+    # Compile the CS-equality checker HERE, in the one job that SAVES the build cache, so
+    # its native binary and the project's `.c.o` objects ride the shared cache to every
+    # consumer. The check_cs corpus is heavy interpreted (~35-57 min); compiled it runs in
+    # seconds, so `check-ps-witness` (test.yml) restores this cache and runs `lake exe
+    # check-cs` rather than `lean --run`. Building the exe needs no fixtures — it reads the
+    # dumps at run time — so it fits the library build job. The compile fee is paid once
+    # per `formal/**/*.lean` change (the cache key), not once per consumer run.
+    - name: Compile the CS-equality checker (cached for its consumers)
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake build check-cs
+
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact
     # primary-key hit the save is a no-op warning.
