@@ -121,6 +121,40 @@ private def LeafInfo.regimeOK : LeafInfo F d → Prop
   | .scalar L z _ _ => d.LadderRegime L (Pasta.Shifted.unshiftType1 L z)
   | .cond _ _ => True
 
+/-- The shift correction a scalar leaf's `init` supplies: `-(2^L)·T` (cancelling the ladder's
+`+2^L`); `0` for `condAdd`. Depends only on the leaf's width and base, not the split. -/
+private def LeafInfo.corrDelta : LeafInfo F d → d.W.Point
+  | .scalar L _ _ T => -(2 ^ L : ℤ) • T
+  | .cond _ _ => 0
+
+/-- The net `[scalar]·T` a leaf contributes once the shift is cancelled: `(2z+bit)·T` for a
+scalar leaf, `T` iff the bit for `condAdd`. This is the honest MSM summand. -/
+private def LeafInfo.netDelta : LeafInfo F d → d.W.Point
+  | .scalar _ z bb T => (2 * z + (if bb then 1 else 0)) • T
+  | .cond bb T => if bb then T else 0
+
+omit [ToNat F] in
+/-- Per leaf, the correction plus the bare ladder is the net: the shift cancels. -/
+private theorem LeafInfo.corrDelta_add_delta (i : LeafInfo F d) :
+    i.corrDelta + i.delta = i.netDelta := by
+  cases i with
+  | scalar L z bb T =>
+      simp only [corrDelta, delta, netDelta]
+      rw [← add_zsmul]
+      congr 1
+      ring
+  | cond bb T => simp only [corrDelta, delta, netDelta, zero_add]
+
+omit [ToNat F] in
+/-- Summed: `Σ corrections + Σ bare-ladders = Σ net MSM terms`. -/
+private theorem LeafInfo.sum_corrDelta_add_delta (infos : List (LeafInfo F d)) :
+    (infos.map corrDelta).sum + (infos.map delta).sum = (infos.map netDelta).sum := by
+  induction infos with
+  | nil => simp
+  | cons i rest ih =>
+      simp only [List.map_cons, List.sum_cons]
+      rw [add_add_add_comm, corrDelta_add_delta, ih]
+
 /-- The per-leaf precondition the fold assumes: the base at chunk `ci` reads as a curve point,
 and — for a `condAdd` — its bit is boolean-valued under `V` (the boolean constraint the packing
 emits; carried as a well-formedness premise, as `checkBulletproof`'s `hbits`). -/
@@ -281,6 +315,27 @@ private theorem publicInputCommitChunk_spec (ci : Fin nc) {V : Valuation F}
   have hacc := hoc Iv hI hregs
   have hneg := OnCurveAt.neg ⟨d.short.1, d.short.2.2.1⟩ hacc
   exact haddpost _ Hv hneg hH
+
+/-- **The one-chunk gadget computes the honest MSM.** When `init` reads as the corrections'
+sum `Σ corrDelta` (over the produced infos), the shifts cancel and the output reads as
+`-(Σ netDelta) + h` — `-(Σ [scalar]·base) + h`, the shape `publicCommitment` has. The
+`Iv = Σ corrDelta` premise sits inside, after the infos are produced. -/
+private theorem publicInputCommitChunk_net_spec (ci : Fin nc) {V : Valuation F}
+    (init blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc)) (Ts : List d.W.Point)
+    (Iv Hv : d.W.Point) (hI : OnCurveAt d.W V init Iv) (hH : OnCurveAt d.W V blindingH Hv)
+    (hpre : List.Forall₂ (LeafPre ci V) leaves Ts) :
+    ⦃⌜True⌝⦄
+    publicInputCommitChunk (S := Builder V (KimchiConstraint F)) ci init blindingH leaves
+    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+      (Iv = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
+        OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (publicInputCommitChunk_spec ci init blindingH leaves Ts Iv Hv hI hH hpre) fun r hr => ?_
+  obtain ⟨infos, hrf, hoc⟩ := hr
+  refine ⟨infos, hrf, fun hIeq hregs => ?_⟩
+  have h := hoc hregs
+  rw [hIeq, LeafInfo.sum_corrDelta_add_delta] at h
+  exact h
 
 end Fold
 
