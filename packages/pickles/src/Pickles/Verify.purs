@@ -82,6 +82,7 @@ module Pickles.Verify
   , wrapAccumulators
   , wrapPublicInput
   , wrapPublicInputOf
+  , wrapPublicInputVP
   ) where
 
 import Prelude

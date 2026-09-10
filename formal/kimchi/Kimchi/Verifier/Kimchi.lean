@@ -34,20 +34,23 @@ layers never import `Wire`.
 Every deferral is declared here.
 
 * no lookups (the wire records carry none). The old accumulators (`prev_challenges`)
-  ARE transcribed: `kimchiVerify` takes them as a vector beside the proof, absorbed into
-  both sponges and opened at the head of the batch (verifier.rs:165–168, :290–299,
-  :311–329, :972–975). The wire records carry none and every fixture is at the empty
-  vector, so the recursion path is validated by transcription only; production's count
-  guard against the key's `prev_challenges` (verifier.rs:810–815) has no counterpart,
-  the wire key carrying no count (cf. the public-input count below);
+  are on the wire: a proof carries them (`KimchiProof.olds`, each a commitment and its
+  `k` expanded round challenges), the key carries its count (`KimchiVK.prevChallenges`;
+  the count guard of verifier.rs:810–815 is `kimchiVerify`'s), and the schedules and
+  the batch read them as `oracles`/`to_batch` read `self.prev_challenges`
+  (verifier.rs:165–168, :290–299, :311–329, :972–975). Validated on a deployed pickles
+  wrap proof with its two accumulators (`fixtures/kimchi_proof_pallas_pickles.json`);
 * the VK digest is an *input* (`KimchiVK.digest`); transcribing
   `VerifierIndex::digest()` (verifier_index.rs:399) is a declared deferral;
 * `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the
   single σ-commitment term (verifier.rs:897–956);
-* `σ.k > domainLog2` — production's sub-SRS `chunk_size = 1` regime — is out of scope. The
-  verifier does *not* reject it: the guard is the client's, and it is load-bearing, because
-  the `ℕ` subtraction under `runNc` returns `1` on the unguarded underflow (`Wire.lean`,
-  external-audit C-4);
+* production's sub-SRS regime `d1 < max_poly_size` (`chunk_size = 1`, verifier.rs:145–152)
+  is in scope: `Wire.runNc` is production's formula, and it is where every deployed pickles
+  proof but the two-proof wrap lives (wrap domains `2^13`, `2^14` against the `2^15` Tock
+  SRS; small step domains against the `2^16` Tick SRS). The body reads only the SRS
+  exponent where production reads `max_poly_size` (`ζ^M`, the opening's round count), so
+  nothing else distinguishes the regime; the pickles fixture above is its evidence. (The
+  `ℕ` underflow of the former `runNc`, external-audit C-4, went with the formula.)
 * at the two excluded evaluation points `ζ ∈ {1, ω^(n−zkRows)}` production *panics*
   (`.expect("negligible probability")`, verifier.rs:459–460) while this executable
   takes `ZMod`'s junk division (`x/0 = 0`) and proceeds — harmless for the theorems,
@@ -170,6 +173,16 @@ inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
   | carried (pe : PointEvaluations (Vector C.ScalarField nc))
   | barycentric (h : nc = 1)
 
+/-- An old accumulator (`RecursionChallenge`, proof.rs): a commitment the batch opens at
+the challenge polynomial of a previous opening — its final folded generator and the `k`
+endo-expanded round challenges. A proof carries them (`prev_challenges`), one chunk
+each. -/
+structure Accumulator (C : Ipa.CommitmentCurve) (k : ℕ) where
+  /-- The previous opening's final folded generator (`comm`, a single point). -/
+  sg : C.Point
+  /-- Its round challenges, endo-expanded into the scalar field (`chals`). -/
+  u : Vector C.ScalarField k
+
 /-- A chunk-validated proof at round count `k` (the SRS's `σ.k`): what
 `KimchiProof.check nc k` returns, and the only thing the verifier body and the
 soundness layer ever read. -/
@@ -189,16 +202,8 @@ structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
   ftEval1 : C.ScalarField
   /-- The batched IPA opening proof, at the SRS's round count `k`. -/
   opening : Ipa.Proof C k
-
-/-- An old accumulator (`RecursionChallenge`, proof.rs): a commitment the batch opens at
-the challenge polynomial of a previous opening — its final folded generator and the `k`
-endo-expanded round challenges. The verifier takes them beside the proof; production
-carries them inside it (`prev_challenges`). -/
-structure Accumulator (C : Ipa.CommitmentCurve) (k : ℕ) where
-  /-- The previous opening's final folded generator (`comm`, a single point). -/
-  sg : C.Point
-  /-- Its round challenges, endo-expanded into the scalar field (`chals`). -/
-  u : Vector C.ScalarField k
+  /-- The old accumulators (`prev_challenges`), each at the SRS's round count `k`. -/
+  olds : Array (Accumulator C k)
 
 /-- A chunk-validated verifier key. -/
 structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
@@ -226,6 +231,9 @@ structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
   shifts : Vector C.ScalarField permCols
   /-- The number of zero-knowledge rows (`zk_rows`). -/
   zkRows : ℕ
+  /-- The accumulator count the key was built with (`prev_challenges`): a proof's list
+  must have exactly this length (verifier.rs:810–815). -/
+  prevChallenges : ℕ
   /-- `verifier_index.endo`, the `ft_eval0` endo coefficient. -/
   endo : C.ScalarField
   /-- The precomputed `VerifierIndex::digest()` — an input here. -/
@@ -267,7 +275,7 @@ def frDigest (sp : FqSponge.Spec C.scalar C.scalar) (s : FqSponge.S C.scalar) :
 /-- The recursion digest (verifier.rs:290–299): the digest of a second fresh fr-sponge
 that absorbed every old accumulator's challenges in order. At no accumulators it is the
 constant `frDigest (frSpec C) FqSponge.init`. -/
-def recDigest {m k : ℕ} (us : Vector (Vector C.ScalarField k) m) : C.ScalarField :=
+def recDigest {k : ℕ} (us : Array (Vector C.ScalarField k)) : C.ScalarField :=
   frDigest C (frSpec C)
     (absorbFq (frSpec C) FqSponge.init (us.toList.map Vector.toList).flatten)
 
@@ -349,14 +357,14 @@ structure FqRun (C : Ipa.CommitmentCurve) where
   /-- The pre-digest sponge state, continued by the IPA finish. -/
   warm : FqSponge.S C.base
 
-/-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): the index digest, the old
-accumulators' commitments (:165–168), then `absorb_commitment` chunk-wise as `absorbG`,
-so the public-commitment and per-column absorbs are chunk folds; the squeeze schedule is
-chunk-count-independent. Every squeeze is `challengeNat`. -/
-def fqRun {nc k m : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) (olds : Vector (Accumulator C k) m) : FqRun C :=
+/-- The fq-sponge schedule of `oracles` (verifier.rs:156–283): the index digest, the
+proof's old accumulators' commitments (:165–168), then `absorb_commitment` chunk-wise as
+`absorbG`, so the public-commitment and per-column absorbs are chunk folds; the squeeze
+schedule is chunk-count-independent. Every squeeze is `challengeNat`. -/
+def fqRun {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : FqRun C :=
   let s := absorbFq C.sponge FqSponge.init [cvk.digest]
-  let s := (olds.map (·.sg)).foldl (absorbG C.sponge) s
+  let s := (cp.olds.map (·.sg)).foldl (absorbG C.sponge) s
   let s := publicComm.foldl (absorbG C.sponge) s
   let s := cp.wComm.foldl (fun s col => col.foldl (absorbG C.sponge) s) s
   let (beta, s) := challengeNat C.sponge s
@@ -375,9 +383,9 @@ def FqRun.expand (r : FqRun C) : FqOracles C :=
     castDigest C r.digestElem, r.warm⟩
 
 /-- The fq-sponge oracles: the run, expanded. -/
-def fqOracles {nc k m : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
-    (publicComm : Vector C.Point nc) (olds : Vector (Accumulator C k) m) : FqOracles C :=
-  (fqRun C cvk cp publicComm olds).expand
+def fqOracles {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) : FqOracles C :=
+  (fqRun C cvk cp publicComm).expand
 
 /-- The fq-sponge run of `oracles` over the Poseidon automaton (verifier.rs:156–283), the
 commitments as coordinate pairs and the old accumulators' commitments absorbed after the
@@ -436,12 +444,11 @@ private theorem foldl_cols {nc : ℕ} (cols : List (Vector C.Point nc))
 `α, ζ` their endo-expansions (`squeezeChallenge`), the digest the `from_bigint` cast of the
 digest element (zero when it does not fit), and the warm state the pre-digest state with an
 empty limb buffer. -/
-theorem fqOracles_eq_fqPrechallenges {nc k m : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc)
-    (olds : Vector (Accumulator C k) m) :
-    fqOracles C cvk cp publicComm olds =
-      let r := fqPrechallenges C.sponge.params cvk.digest (coords C (olds.map (·.sg)))
-        (coords C publicComm)
+theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc k) (publicComm : Vector C.Point nc) :
+    fqOracles C cvk cp publicComm =
+      let r := fqPrechallenges C.sponge.params cvk.digest
+        ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C publicComm)
         (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
         (cp.tComm.toList.map fun P => (P.x, P.y))
       ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.sponge.lam r.1.2.2.1,
@@ -462,14 +469,13 @@ structure FrRun where
   r : Prechallenge
 
 /-- The fr-sponge schedule (verifier.rs:284–405): absorb `frTranscript`, with the
-recursion digest `recDigest` of the old accumulators' challenges, then squeeze the two
-128-bit prechallenges. Every squeeze is `challengeNat`. -/
-def frRun {nc k m : ℕ} (cp : KimchiProof C nc k)
-    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc))
-    (olds : Vector (Accumulator C k) m) : FrRun :=
+recursion digest `recDigest` of the proof's old accumulators' challenges, then squeeze the
+two 128-bit prechallenges. Every squeeze is `challengeNat`. -/
+def frRun {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) : FrRun :=
   let sp := frSpec C
   let s := absorbFq sp FqSponge.init
-    (frTranscript fqDig (recDigest C (olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
+    (frTranscript fqDig (recDigest C (cp.olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
   let (xi, s) := challengeNat sp s
   let (r, _) := challengeNat sp s
   ⟨xi, r⟩
@@ -480,10 +486,10 @@ def FrRun.expand (x : FrRun) : FrOracles C :=
   ⟨endoExpand C.sponge.lam x.xi.val, endoExpand C.sponge.lam x.r.val⟩
 
 /-- The fr-sponge oracles: the run, expanded. -/
-def frOracles {nc k m : ℕ} (cp : KimchiProof C nc k)
-    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc))
-    (olds : Vector (Accumulator C k) m) : FrOracles C :=
-  FrRun.expand C (frRun C cp fqDig pubEvals olds)
+def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    FrOracles C :=
+  FrRun.expand C (frRun C cp fqDig pubEvals)
 
 /-- The fr-sponge's two 128-bit prechallenges over a transcript, as naturals: the values
 `challengeNat` packs from the two raw squeezes (`frSqueezes`), before the endomorphism
@@ -496,12 +502,11 @@ def frPrechallenges {p : ℕ} [Field (ZMod p)] (params : Poseidon.Params (ZMod p
 /-- `frOracles` is the endo-expansion of `frPrechallenges` over `frTranscript` at the old
 accumulators' `recDigest`: `challengeNat` from an empty limb buffer is one raw squeeze's
 value mod `2^128`. -/
-theorem frOracles_eq_frPrechallenges {nc k m : ℕ} (cp : KimchiProof C nc k)
-    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc))
-    (olds : Vector (Accumulator C k) m) :
-    frOracles C cp fqDig pubEvals olds =
+theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
+    (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
+    frOracles C cp fqDig pubEvals =
       let pre := frPrechallenges C.frParams
-        (frTranscript fqDig (recDigest C (olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
+        (frTranscript fqDig (recDigest C (cp.olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
       ⟨endoExpand C.sponge.lam pre.1, endoExpand C.sponge.lam pre.2⟩ := by
   simp only [frOracles, FrRun.expand, frRun, frPrechallenges, frSqueezes, absorbFq,
     challengeNat_fresh]
@@ -705,27 +710,28 @@ end TailReads
 /-! ## The verifier -/
 
 /-- **The verifier body over checked records** (`to_batch` + the opening check,
-verifier.rs:781–1194, one proof, basic gate set): the two remaining argument-dependent
-guards (the public input against the domain and the Lagrange table); the per-chunk
-public commitment; the Fiat–Shamir schedules at chunk absorbs; the scalar side on
-chunk-COMBINED evaluations; the `ft_comm` double collapse at `ζ^max_poly_size`
-(:960–965); the old accumulators' rows (:972–975, each a single segment: the commitment
-at the challenge polynomial of its round challenges) then the 45 logical rows in
-`to_batch` order flattened to the SEGMENT stream (one flat row per chunk, ft single —
-the per-chunk polyscale walk of `combined_inner_product`/`combine_commitments`); the
-warm-sponge IPA finish. -/
-def kimchiVerify {nc m : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (olds : Vector (Accumulator C σ.k) m) : Bool :=
+verifier.rs:781–1194, one proof, basic gate set): the argument-dependent guards (the
+accumulator count against the key's, :810–815; the public input against the domain and
+the Lagrange table); the per-chunk public commitment; the Fiat–Shamir schedules at chunk
+absorbs; the scalar side on chunk-COMBINED evaluations; the `ft_comm` double collapse at
+`ζ^max_poly_size` (:960–965); the old accumulators' rows (:972–975, each a single
+segment: the commitment at the challenge polynomial of its round challenges) then the
+45 logical rows in `to_batch` order flattened to the SEGMENT stream (one flat row per
+chunk, ft single — the per-chunk polyscale walk of
+`combined_inner_product`/`combine_commitments`); the warm-sponge IPA finish. -/
+def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : Bool :=
   let n := cvk.n
-  -- Production's guard here is the exact count `public_input.len() != verifier_index.public`
-  -- (verifier.rs:816–820); the wire key carries no count, so these two bounds
-  -- substitute — a declared deviation (module preamble), closed at the soundness layer.
-  if cvk.lagrangeBasis.size < pub.size || n < pub.size then
+  -- Production's public-input guard is the exact count `public_input.len() !=
+  -- verifier_index.public` (verifier.rs:816–820); the wire key carries no count, so the
+  -- two bounds substitute — a declared deviation (module preamble), closed at the
+  -- soundness layer. The accumulator count guard is production's own (:810–815).
+  if cvk.lagrangeBasis.size < pub.size || n < pub.size
+      || cp.olds.size ≠ cvk.prevChallenges then
     false
   else
     let publicComm := publicCommitment C σ cvk pub
-    let o := fqOracles C cvk cp publicComm olds
+    let o := fqOracles C cvk cp publicComm
     let zetaOmega := o.zeta * cvk.omega
     let zetaN := powPow2 o.zeta cvk.domainLog2
     let zetaOmegaN := powPow2 zetaOmega cvk.domainLog2
@@ -737,21 +743,23 @@ def kimchiVerify {nc m : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     let shifts : Fin permCols → C.ScalarField := fun i => cvk.shifts[i]
     let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
       cvk.endo (mdsOfParams C.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
-    let fr := frOracles C cp o.digest pubEvals olds
+    let fr := frOracles C cp o.digest pubEvals
     let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n cvk.zkRows cvk.omega o.zeta
     let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e
     let fComm := cvk.sigmaComm[6].map (fun P => pScalar.val • P)
     let ftComm := Ipa.combineCommitments C zetaM fComm.toArray
       - (zetaN - 1).val • Ipa.combineCommitments C zetaM cp.tComm
+    let accRows : Vector (C.Point × C.ScalarField × C.ScalarField) cp.olds.size :=
+      ⟨cp.olds.map (fun a => (a.sg, bPoly a.u.get o.zeta, bPoly a.u.get zetaOmega)), by simp⟩
     let stream : Vector (C.Point × C.ScalarField × C.ScalarField)
-        (m + (nc + 1 + tailRowCount * nc)) :=
-      olds.map (fun a => (a.sg, bPoly a.u.get o.zeta, bPoly a.u.get zetaOmega))
+        (cp.olds.size + (nc + 1 + tailRowCount * nc)) :=
+      accRows
         ++ ((Vector.ofFn fun c : Fin nc =>
               (publicComm[c], pubEvals.zeta[c], pubEvals.zetaOmega[c]))
             ++ (⟨#[(ftComm, ftEval0, cp.ftEval1)], rfl⟩
                 : Vector (C.Point × C.ScalarField × C.ScalarField) 1)
             ++ (tailRowsOf C cvk cp).flatten)
-    let inp : Ipa.Input C σ.k (m + (nc + 1 + tailRowCount * nc)) evalPts :=
+    let inp : Ipa.Input C σ.k (cp.olds.size + (nc + 1 + tailRowCount * nc)) evalPts :=
       { commitments := stream.map (·.1)
         xs := ⟨#[o.zeta, zetaOmega], rfl⟩
         evals := stream.map (fun r => (⟨#[r.2.1, r.2.2], rfl⟩ : Vector _ evalPts))

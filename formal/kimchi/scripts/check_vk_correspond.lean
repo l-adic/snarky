@@ -225,14 +225,8 @@ def main : IO Unit := do
   -- Pallas: nc = 2 (zk_rows = 5) against the Pallas index.
   runCurve IpaPallas.curve s!"{dir}/index_pallas_nc2.json"
     [s!"{dir}/kimchi_proof_pallas_nc2.json"]
-  -- DISABLED (2026-08-02): the nc = 8 regime, together with the sibling disable in
-  -- check_kimchi_verifier.lean — the compiled full run peaked near 30 GB resident,
-  -- beyond any CI runner. `Corresponds` above nc = 2 (the audit's C-3) is temporarily
-  -- unexercised by this driver; re-enable once the driver's memory is understood.
-  -- runCurve IpaVesta.curve s!"{dir}/index_vesta_nc8.json"
-  --   [s!"{dir}/kimchi_proof_vesta_nc8.json"]
-  IO.println "✓ the production verifier keys (Vesta nc = 1 and 2, Pallas nc = 2; nc = 8 \
-    disabled pending the driver's memory) correspond to their indices: every committed \
+  IO.println "✓ the production verifier keys (Vesta nc = 1 and 2, Pallas nc = 2) \
+    correspond to their indices: every committed \
     column chunk is the value-MSM of its derived column against the Lagrange chunk \
     commitments — σ columns from the model's own Index.sigmaAddrRow, selectors \
     per-chunk masked"

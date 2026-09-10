@@ -18,10 +18,13 @@
 //! Same wire-format conventions as `kimchi_proof_dump.rs` (`nc = 1`, no `evals_public`
 //! recorded — the deployed representation).
 
-use ark_ff::Zero;
+// The fixture literal outgrew `json!`'s default macro recursion budget.
+#![recursion_limit = "256"]
+
 use ark_ec::AffineRepr as _;
-use groupmap::GroupMap;
+use ark_ff::Zero;
 use fixture_dump::{emul_circuit, emul_index};
+use groupmap::GroupMap;
 use kimchi::{
     curve::KimchiCurve, proof::ProverProof, verifier::verify, verifier_index::VerifierIndex,
 };
@@ -108,12 +111,31 @@ fn main() {
         .get_lagrange_basis(verifier_index.domain);
     use ark_poly::EvaluationDomain;
 
+    // The old accumulators, `{comm, chals}` each (verifier.rs `prev_challenges`): the
+
+    // commitment as its chunk vector, the round challenges in order.
+
+    let prev_challenges: Vec<serde_json::Value> = proof
+        .prev_challenges
+        .iter()
+        .map(|rc| {
+            json!({
+
+                "comm": rc.comm.chunks.iter().map(pt).collect::<Vec<_>>(),
+
+                "chals": rc.chals.iter().map(fe).collect::<Vec<_>>(),
+
+            })
+        })
+        .collect();
+
     let fixture = json!({
         "curve": "vesta",
         "n": verifier_index.domain.size().to_string(),
         "zk_rows": verifier_index.zk_rows.to_string(),
         "max_poly_size": verifier_index.max_poly_size.to_string(),
         "public_count": verifier_index.public.to_string(),
+        "prev_challenges_count": verifier_index.prev_challenges.to_string(),
         "omega": fe(&verifier_index.domain.group_gen),
         "shifts": verifier_index.shift.iter().map(fe).collect::<Vec<_>>(),
         "endo": fe(&verifier_index.endo),
@@ -132,6 +154,7 @@ fn main() {
         "emul_comm": comm1(&verifier_index.emul_comm),
         "endomul_scalar_comm": comm1(&verifier_index.endomul_scalar_comm),
         "public": [],
+                "prev_challenges": prev_challenges,
         "w_comm": proof.commitments.w_comm.iter().map(comm1).collect::<Vec<_>>(),
         "z_comm": comm1(&proof.commitments.z_comm),
         "t_comm": proof.commitments.t_comm.chunks.iter().map(pt).collect::<Vec<_>>(),

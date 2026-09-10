@@ -17,6 +17,9 @@ Decoders for the CHUNKED kimchi proof + verifier-key records
   pairs, decoded as singleton chunk vectors — so the one-chunk fixture runs through the
   chunked verifier (the no-regression adjudication).
 
+Both carry the proof's old accumulators (`prev_challenges`, `{comm, chals}` records) and
+the key's accumulator count (`prev_challenges_count`).
+
 The two are distinguished per field by the first element's shape (coordinate/value
 strings vs nested arrays); `evals_public` is absent in the one-chunk format and decodes
 to `none`.
@@ -53,6 +56,13 @@ private def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
              zetaOmega := ← parseArrOf (parseZMod (n := C.scalar)) a[1]! }
 
 
+/-- A wire old accumulator: `{comm, chals}`, the commitment a chunk vector (either
+format) and the challenges a scalar array. -/
+private def parseRecursionChallenge (C : Ipa.CommitmentCurve) (j : Json) :
+    Except String (RecursionChallenge C) := do
+  return { comm := ← parseComm C (← j.getObjVal? "comm")
+           chals := ← parseArrOf (parseZMod (n := C.scalar)) (← j.getObjVal? "chals") }
+
 /-- Parse an array and check the serde-fixed dimension (`[T; N]` rejects wrong lengths
 at deserialization). -/
 def parseSized {α : Type} (nm : String) (m : ℕ) (a : Array α) :
@@ -88,7 +98,9 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
            evals
            pubEvals
            ftEval1 := ← parseZMod (← fld "ft_eval1")
-           opening := ← parseProof C j }
+           opening := ← parseProof C j
+           prevChallenges := ← parseArrOf (parseRecursionChallenge C)
+             (← fld "prev_challenges") }
 
 /-- The chunked verifier key (SRS excluded — parse it with `parseSRSAt` at
 `Nat.log2 max_poly_size`). The fr-sponge parameters are not wire data: they live on
@@ -116,6 +128,7 @@ def parseVK (C : Ipa.CommitmentCurve) (j : Json) :
            shifts := ← parseSized "shifts" permCols
              (← parseArrOf (parseZMod (n := C.scalar)) (← fld "shifts"))
            zkRows := ← nat "zk_rows"
+           prevChallenges := ← nat "prev_challenges_count"
            endo := ← parseZMod (← fld "endo")
            digest := ← parseZMod (← fld "digest")
            lagrangeBasis := ← parseArrOf (parseComm C) (← fld "lagrange_basis") }

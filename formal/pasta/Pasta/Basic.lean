@@ -82,14 +82,6 @@ theorem SWPoint.card_eq_point {F : Type*} [Field F] [DecidableEq F] (E : SWCurve
     Nat.card (SWPoint E) = Nat.card (Point (toW E.A E.B)) :=
   Nat.card_congr (SWPoint.equivPoint E).toEquiv
 
-/-- A nonzero point's coordinates are on the curve: the `𝒪` sentinel `(0, 0)` is the only
-valid off-curve pair. -/
-theorem SWPoint.onCurve_of_ne_zero {F : Type*} [Field F] {E : SWCurve F} {P : SWPoint E}
-    (h : P ≠ 0) : OnCurve E.A E.B (P.x, P.y) := by
-  rcases P.onCurve with hc | h0
-  · exact hc
-  · exact absurd (SWPoint.ext_pair (Q := 0) h0) h
-
 /-- An on-curve pair is a nonzero point: the `𝒪` sentinel `(0, 0)` is off every curve
 (`B ≠ 0`) — the converse of `onCurve_of_ne_zero`. -/
 theorem SWPoint.mk_ne_zero {F : Type*} [Field F] {E : SWCurve F} {x y : F}

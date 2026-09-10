@@ -33,13 +33,13 @@ lintDriverArgs = [
   "Bulletproof", "BulletproofFixture", "Schnorr", "Pickles"
 ]
 
-# CompElliptic pinned at the workspace level (git, daira upstream @ a549e455) so this direct
+# CompElliptic pinned at the workspace level (git, l-adic fork @ 4955f1bf: upstream 2c04440 + the fintypePoints thunk) so this direct
 # require is authoritative over transitive resolution — the same discipline as mathlib.
 # Bump this rev in lockstep with the packages' requires (all identical).
 [[require]]
 name = "CompElliptic"
-git = "https://github.com/daira/CompElliptic"
-rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
+git = "https://github.com/l-adic/CompElliptic"
+rev = "4ca6b7149f7fa0b94efd350703f4e58915c27423"
 
 [[require]]
 name = "pasta"

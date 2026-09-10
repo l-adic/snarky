@@ -1,4 +1,6 @@
 import CompElliptic.Curves.Pasta
+import CompElliptic.Curves.Pasta.Fast.MsmProj
+import CompElliptic.Curves.Pasta.Fast.MsmProjPallas
 import Pasta.Shifted
 import Poseidon.GroupMap
 import Bulletproof.Protocol
@@ -100,6 +102,14 @@ structure CommitmentCurve where
   E : SWCurve (ZMod base)
   /-- The map-to-curve deriving the transcript `U` base from a squeezed field element. -/
   toGroup : ZMod base → SWPoint E
+  /-- A fast multi-scalar multiplication for this curve: the windowed-Pippenger accelerator
+  run in projective coordinates, standing in for the naive `∑` so the executable verifier's
+  large MSMs (the `2 ^ σ.k`-point `sg`-correctness check) pay one field inversion instead of
+  one per addition. -/
+  fastMsm : {n : ℕ} → (Fin n → SWPoint E) → (Fin n → ZMod scalar) → SWPoint E
+  /-- `fastMsm` computes the multi-scalar multiplication `∑ i, (a i).val • g i`. -/
+  fastMsm_spec : ∀ {n : ℕ} (g : Fin n → SWPoint E) (a : Fin n → ZMod scalar),
+    fastMsm g a = ∑ i, (a i).val • g i
 
 attribute [instance] CommitmentCurve.primeBase CommitmentCurve.primeScalar
 
@@ -114,10 +124,12 @@ abbrev CommitmentCurve.Point (C : CommitmentCurve) := SWPoint C.E
 
 variable (C : CommitmentCurve)
 
-/-- Multi-scalar multiplication `∑ i, aᵢ • gᵢ` — the group-side mirror of
-`Bulletproof.commitGen`, with the scalars acting through `val`. -/
+/-- Multi-scalar multiplication `∑ i, aᵢ • gᵢ` — dispatched to the curve's `fastMsm`
+accelerator (the windowed Pippenger run in projective coordinates), which `fastMsm_spec`
+proves equals the sum. This keeps the verifier's `2 ^ σ.k`-point `sg`-check from paying a
+field inversion per addition. -/
 def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Point :=
-  ∑ i, (a i).val • g i
+  C.fastMsm g a
 
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
@@ -538,6 +550,13 @@ abbrev curve : Ipa.CommitmentCurve where
   frParams := fpParams
   E := Vesta.curve
   toGroup := GroupMapVesta.toGroup
+  fastMsm := fun {_} g a =>
+    CompElliptic.Curves.Pasta.Fast.MsmProj.pippengerProjScatterPar 8
+      (List.ofFn fun i => ((a i).val, g i))
+  fastMsm_spec := fun {_} g a => by
+    rw [CompElliptic.Curves.Pasta.Fast.MsmProj.pippengerProjScatterPar_eq_msm 8 (by decide)
+        (List.ofFn fun i => ((a i).val, g i))]
+    simp [List.map_ofFn, List.sum_ofFn]
 
 /-- The Vesta point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve
@@ -558,6 +577,13 @@ abbrev curve : Ipa.CommitmentCurve where
   frParams := fqParams
   E := Pallas.curve
   toGroup := GroupMapPallas.toGroup
+  fastMsm := fun {_} g a =>
+    CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar 8
+      (List.ofFn fun i => ((a i).val, g i))
+  fastMsm_spec := fun {_} g a => by
+    rw [CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar_eq_msm 8 (by decide)
+        (List.ofFn fun i => ((a i).val, g i))]
+    simp [List.map_ofFn, List.sum_ofFn]
 
 /-- The Pallas point type. -/
 abbrev Point := Ipa.CommitmentCurve.Point curve

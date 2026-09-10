@@ -79,9 +79,9 @@ jobs:
     # elan + Mathlib olean cache + the Kimchi build-directory cache + `lake build` of
     # the library list. The two heavy fixture drivers run INTERPRETED in their own
     # parallel lane below: their `lean_exe` targets exist (kimchi/lakefile.toml) and are
-    # ~13x faster, but the compiled runtime peaks near 30 GB resident on either driver —
-    # beyond any runner — where the interpreter has fit in 16 GB for months. Recompile
-    # them into CI once the drivers' memory is understood.
+    # ~2x faster, but the standard fixture matrix is fast interpreted and needs no compile
+    # step. (Compiled they peak under 1 GB since CompElliptic's fintypePoints initializer
+    # was made lazy; the old ~30 GB was that initializer, not the verifier.)
     - name: Setup Lean + build the library (= check every proof)
       id: lean
       uses: ./.github/actions/setup-lean
@@ -281,18 +281,19 @@ jobs:
     # The composed executable verifier against complete production wire proofs
     # (fixtures/kimchi_proof_{vesta,vesta_pub,vesta_nc2,pallas_nc2,vesta_emul}.json from
     # the kimchi_proof_dump binaries — the emul one carries live EndoMul/VarBaseMul
-    # selectors and an empty public input; see the audit's V-1/C-3. The nc = 8 fixture is
-    # disabled in the driver pending its memory — see the note there). Interpreted via
-    # `lean --run` (the script has no `#eval`): the compiled driver peaks ~30 GB
-    # resident; the interpreter fits the runner.
+    # selectors and an empty public input; see the audit's V-1/C-3. The pickles wrap
+    # fixture runs here too — its 2^15-point opening check is ~16 s now that the opening
+    # MSM uses CompElliptic's fast projective Pippenger). Interpreted via `lean --run`
+    # (the script has no `#eval`); the whole matrix is fast, and compiled would fit the
+    # runner (< 1 GB) but save little.
     - name: Check the executable kimchi verifier against a production proof
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean --run kimchi/scripts/check_kimchi_verifier.lean
 
-    # The verifier-key <-> index correspondence across both curves (nc = 1 and 2; the
-    # nc = 8 regime is disabled in the driver pending its memory). Interpreted, as above.
+    # The verifier-key <-> index correspondence across both curves (nc = 1 and 2).
+    # Interpreted, as above.
     - name: Check the verifier key corresponds to the index
       run: |
         export PATH="$HOME/.elan/bin:$PATH"

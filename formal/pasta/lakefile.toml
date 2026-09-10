@@ -18,8 +18,8 @@ weak.linter.style.longLine = true
 # package's require, so lake dedups them to one checkout.
 [[require]]
 name = "CompElliptic"
-git = "https://github.com/daira/CompElliptic"
-rev = "a549e4555b17bbbe3c8d48aa7d5b493912ccfbe9"
+git = "https://github.com/l-adic/CompElliptic"
+rev = "4ca6b7149f7fa0b94efd350703f4e58915c27423"
 
 # Mathlib: prime fields (`ZMod p`) and the elliptic-curve group law
 # (`WeierstrassCurve.Affine`). Pinned to the tag matching the toolchain.

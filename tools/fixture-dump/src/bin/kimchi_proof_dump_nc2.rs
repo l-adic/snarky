@@ -112,10 +112,6 @@ macro_rules! dump_nc2 {
                     &[pub0],
                 )
                 .expect("production verifier rejected the fixture proof");
-                assert!(
-                    proof.prev_challenges.is_empty(),
-                    "fixture proof unexpectedly carries recursion challenges"
-                );
                 let nc = n / verifier_index.max_poly_size;
                 assert_eq!(nc, 2, "expected a two-chunk fixture");
                 assert!(
@@ -134,6 +130,31 @@ macro_rules! dump_nc2 {
                     .as_ref()
                     .expect("chunked proof must carry public evaluations");
 
+                // The old accumulators, `{comm, chals}` each (verifier.rs `prev_challenges`): the
+
+                // commitment as its chunk vector, the round challenges in order.
+
+                let prev_challenges: Vec<serde_json::Value> = proof
+
+                    .prev_challenges
+
+                    .iter()
+
+                    .map(|rc| {
+
+                        json!({
+
+                            "comm": rc.comm.chunks.iter().map(pt).collect::<Vec<_>>(),
+
+                            "chals": rc.chals.iter().map(fe).collect::<Vec<_>>(),
+
+                        })
+
+                    })
+
+                    .collect();
+
+
                 let fixture = json!({
                     "curve": $curve_str,
                     // --- verifier key ---
@@ -141,6 +162,7 @@ macro_rules! dump_nc2 {
                     "zk_rows": verifier_index.zk_rows.to_string(),
                     "max_poly_size": verifier_index.max_poly_size.to_string(),
                     "public_count": verifier_index.public.to_string(),
+                    "prev_challenges_count": verifier_index.prev_challenges.to_string(),
                     "omega": fe(&verifier_index.domain.group_gen),
                     "shifts": verifier_index.shift.iter().map(fe).collect::<Vec<_>>(),
                     "endo": fe(&verifier_index.endo),
@@ -164,6 +186,7 @@ macro_rules! dump_nc2 {
                     // --- public input ---
                     "public": [fe(&pub0)],
                     // --- proof ---
+                                        "prev_challenges": prev_challenges,
                     "w_comm": proof.commitments.w_comm.iter()
                         .map(|c| commc(c, nc)).collect::<Vec<_>>(),
                     "z_comm": commc(&proof.commitments.z_comm, nc),
