@@ -97,6 +97,23 @@ private def publicInputCommitChunk (ci : Fin nc) (init blindingH : AffinePoint (
   let acc ← foldChunk ci init leaves
   (·.p) <$> addFast .checkFinite ⟨acc.x, CVar.negate_ acc.y⟩ blindingH
 
+/-- Sum the leaves' shift corrections onto `acc` at chunk `ci` (PS `InCircuitCorrections`'s
+`init`): each scalar leaf adds its `correction`, `condAdd` contributes nothing. The running
+`acc` threads through, as `sumPoints` does for `bullet_reduce`. -/
+private def sumCorrections (ci : Fin nc) :
+    AffinePoint (FVar F) → List (Leaf F nc) → CircuitM F S (AffinePoint (FVar F))
+  | acc, [] => pure acc
+  | acc, .full _ _ corr :: rest => do
+      let acc' ← addFast .checkFinite acc corr[ci]
+      sumCorrections ci acc'.p rest
+  | acc, .b128 _ _ corr :: rest => do
+      let acc' ← addFast .checkFinite acc corr[ci]
+      sumCorrections ci acc'.p rest
+  | acc, .b10 _ _ corr :: rest => do
+      let acc' ← addFast .checkFinite acc corr[ci]
+      sumCorrections ci acc'.p rest
+  | acc, .condAdd _ _ :: rest => sumCorrections ci acc rest
+
 /-- The reading + ladder-witness data the fold produces for one leaf: a scalar leaf yields its
 ladder width `L = 5·chunks`, the split witness `(z, bb)` and the base's curve point `T`; a
 `condAdd` leaf yields its bit and base point. -/
@@ -164,6 +181,15 @@ private def LeafPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point �
   | .b10 _ base _, T => OnCurveAt d.W V base[ci] T
   | .condAdd b base, T =>
       OnCurveAt d.W V base[ci] T ∧ ∃ bb : Bool, (↑b : CVar F).val V = bit bb
+
+/-- One leaf's correction reads as a curve point at chunk `ci`: a scalar leaf's `correction`
+on-curve as `cp` (deployed: `-(2^L)·base`, i.e. its `LeafInfo.corrDelta`), a `condAdd`
+contributing nothing (`cp = 0`). -/
+private def CorrPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
+  | .full _ _ corr, cp => OnCurveAt d.W V corr[ci] cp
+  | .b128 _ _ corr, cp => OnCurveAt d.W V corr[ci] cp
+  | .b10 _ _ corr, cp => OnCurveAt d.W V corr[ci] cp
+  | .condAdd _ _, cp => cp = 0
 
 /-- One leaf reads as one `LeafInfo` at chunk `ci`: the base on-curve as `T`, the scalar split
 pinned to the scalar's value (with the width's range on `z`), or the `condAdd` bit read. The
@@ -336,6 +362,62 @@ private theorem publicInputCommitChunk_net_spec (ci : Fin nc) {V : Valuation F}
   have h := hoc hregs
   rw [hIeq, LeafInfo.sum_corrDelta_add_delta] at h
   exact h
+
+omit [ToNat F] in
+/-- **The corrections-sum reads as `accv + Σ` the correction points.** Given each leaf's
+correction reads as `cp` (`condAdd`: `0`), `sumCorrections ci acc leaves` reads as
+`accv + Σ cps`. By induction on `leaves`, as `sumPoints_spec`. -/
+private theorem sumCorrections_spec (ci : Fin nc) {V : Valuation F} :
+    ∀ (leaves : List (Leaf F nc)) (cps : List d.W.Point) (acc : AffinePoint (FVar F)),
+      List.Forall₂ (CorrPre ci V) leaves cps →
+      ⦃⌜True⌝⦄ sumCorrections (S := Builder V (KimchiConstraint F)) ci acc leaves
+      ⦃⇓ r _ => ⌜∀ accv : d.W.Point, OnCurveAt d.W V acc accv →
+        OnCurveAt d.W V r (accv + cps.sum)⌝⦄
+  | [], [], acc, .nil => by
+      simp only [sumCorrections]
+      mvcgen
+      intro accv hacc
+      simpa using hacc
+  | .full _ _ corr :: rest, cp :: cps, acc, .cons hcp hrest => by
+      simp only [sumCorrections]
+      have hadd := addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
+        d.two_torsion_free acc corr[ci]
+      have ih := fun acc' => sumCorrections_spec ci rest cps acc' hrest
+      mvcgen [-Snarky.Kimchi.addFast_spec, hadd, ih]
+      rename_i _ _ _ haddc' _ _
+      intro ihpost accv hacc
+      simp only [List.sum_cons]
+      rw [← add_assoc]
+      exact ihpost _ (haddc' accv cp hacc hcp)
+  | .b128 _ _ corr :: rest, cp :: cps, acc, .cons hcp hrest => by
+      simp only [sumCorrections]
+      have hadd := addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
+        d.two_torsion_free acc corr[ci]
+      have ih := fun acc' => sumCorrections_spec ci rest cps acc' hrest
+      mvcgen [-Snarky.Kimchi.addFast_spec, hadd, ih]
+      rename_i _ _ _ haddc' _ _
+      intro ihpost accv hacc
+      simp only [List.sum_cons]
+      rw [← add_assoc]
+      exact ihpost _ (haddc' accv cp hacc hcp)
+  | .b10 _ _ corr :: rest, cp :: cps, acc, .cons hcp hrest => by
+      simp only [sumCorrections]
+      have hadd := addFast_checkFinite_spec (V := V) d.W d.short d.two_ne
+        d.two_torsion_free acc corr[ci]
+      have ih := fun acc' => sumCorrections_spec ci rest cps acc' hrest
+      mvcgen [-Snarky.Kimchi.addFast_spec, hadd, ih]
+      rename_i _ _ _ haddc' _ _
+      intro ihpost accv hacc
+      simp only [List.sum_cons]
+      rw [← add_assoc]
+      exact ihpost _ (haddc' accv cp hacc hcp)
+  | .condAdd _ _ :: rest, cp :: cps, acc, .cons hcp hrest => by
+      simp only [sumCorrections]
+      have hcp0 : cp = 0 := hcp
+      refine builder_spec_imp _ _ _
+        (sumCorrections_spec ci rest cps acc hrest) fun r hr accv hacc => ?_
+      simp only [List.sum_cons, hcp0, zero_add]
+      exact hr accv hacc
 
 end Fold
 
