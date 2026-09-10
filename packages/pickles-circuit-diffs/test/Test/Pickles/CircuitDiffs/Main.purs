@@ -106,7 +106,8 @@ import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, generator, toAffine)
+import JS.BigInt as BigInt
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, generator, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -746,6 +747,18 @@ spec bundle =
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatchEff "xhat_wrap_circuit" (fromCompiledCircuit =<< compileXhat wrapSrsData)
+        -- Dump the 34 Lagrange bases + blinding `h` (the SRS constants baked into
+        -- `xhat_wrap_circuit`) so the Lean `check_cs` harness can reproduce the gadget:
+        -- Lean cannot compute Lagrange commitments (no SRS/FFI); it derives the corrections
+        -- (`-2^L·base`) itself via `smulFast`. Format: `[x, y]` decimal pairs (`parseSWPoint`).
+        liftEffect do
+          let
+            ptToJson :: AffinePoint Fq -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            lagr = Array.range 0 33 <#> \i -> ptToJson (pallasSrsLagrangeCommitmentAt srs 16 i)
+          FS.writeTextFile UTF8 (fixtureDir <> "xhat_wrap_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (pallasSrsBlindingGenerator srs) })
         exactMatchEff "check_bulletproof_wrap_circuit" (fromCompiledCircuit =<< compileCheckBulletproofWrap wrapSrsData.blindingH)
       describe "IVP" do
         let
