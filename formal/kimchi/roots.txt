@@ -234,6 +234,11 @@ Kimchi.Verifier.frOracles_eq_frPrechallenges
 Kimchi.Verifier.fqOracles_eq_fqPrechallenges
 Kimchi.Verifier.low128_of_decomp
 
+-- The public-input-commitment MSM re-association the pickles x_hat glue lands on:
+-- `publicCommitment` as a per-chunk `(… .map …).sum + h`, an order-free fold rewrite.
+-- Consumed from pickles (the x_hat side lemma).
+Kimchi.Verifier.publicCommitment_eq_sum
+
 -- The executable verifier, the wire parsers, and the rest of the surface the fixture
 -- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
 -- proofs; the parsers turn dumped wire data into the checked records; the certificates

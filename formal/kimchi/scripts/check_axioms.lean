@@ -105,7 +105,8 @@ def roots : List Name :=
     `Kimchi.Verifier.fqOracles_eq_fqPrechallenges,
     `Kimchi.Verifier.low128_of_decomp,
     `Kimchi.Verifier.Wire.KimchiProof.check,
-    `Kimchi.Verifier.Wire.KimchiVK.check ]
+    `Kimchi.Verifier.Wire.KimchiVK.check,
+    `Kimchi.Verifier.publicCommitment_eq_sum ]
 
 /-- The only axioms the roots may depend on: the standard logical axioms. The pasta
     package declares NO axioms — the group orders are unconditional (CompElliptic's
