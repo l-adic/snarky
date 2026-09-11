@@ -863,12 +863,9 @@ of its 255-bit decomposition, so the witness is below `2²⁵⁴ < |Fq|`. -/
 private theorem wrapLadderPre_eq {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
     (h : WrapLadderPre V x z) : z = ((x.val.val V).val : ℤ) := by
   obtain ⟨h0, hlt, hz⟩ := h
-  have hv : (((z : Fq)).val : ℤ) = z % PALLAS_SCALAR_CARD := ZMod.val_intCast z
-  rw [hz] at hv
-  have h254 : (2 : ℤ) ^ 254 =
-    28948022309329048855892746252171976963317496166410141009864396001978282409984 := by norm_num
-  rw [h254] at hlt
-  rw [hv, Int.emod_eq_of_lt h0 (by simp only [PALLAS_SCALAR_CARD]; omega)]
+  rw [← hz]
+  exact (toNat_intCast_of_lt PALLAS_SCALAR_CARD h0
+    (lt_of_lt_of_le hlt (by norm_num [PALLAS_SCALAR_CARD]))).symm
 
 /-- A wrap ladder witness decodes, in the scalar field, to `wrapDecode`. -/
 private theorem wrapLadderDec_cast {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
@@ -917,14 +914,10 @@ private theorem stepLadderDec_cast {V : Valuation Fp}
     {x : Type2 (SplitField (FVar Fp) (BoolVar Fp))} {w : ℤ × Bool} (h : StepLadderPre V x w) :
     (stepLadderDec w : Fq) = stepDecode V x := by
   obtain ⟨hb, h0, hlt, hz⟩ := h
-  have hv : (((w.1 : Fp)).val : ℤ) = w.1 % PALLAS_BASE_CARD := ZMod.val_intCast w.1
+  have hv : (((w.1 : Fp)).val : ℤ) = w.1 :=
+    toNat_intCast_of_lt PALLAS_BASE_CARD h0
+      (lt_of_lt_of_le hlt (by norm_num [PALLAS_BASE_CARD]))
   rw [hz] at hv
-  have h254 : (2 : ℤ) ^ 254 =
-    28948022309329048855892746252171976963317496166410141009864396001978282409984 := by norm_num
-  rw [h254] at hlt
-  have hmod : w.1 % PALLAS_BASE_CARD = w.1 := Int.emod_eq_of_lt h0 (by
-    simp only [PALLAS_BASE_CARD]; omega)
-  rw [hmod] at hv
   simp only [stepLadderDec, stepDecode, unshiftType2, hb]
   rw [← hv]
   rcases w.2 with _ | _

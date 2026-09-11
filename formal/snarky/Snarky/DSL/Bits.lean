@@ -44,6 +44,13 @@ theorem toNat_eq_of_natCast_eq {F : Type} [NatCast F] [ToNat F] [LawfulToNat F]
     (hn : n < LawfulToNat.card (F := F)) : ToNat.toNat x = n := by
   rw [← h, LawfulToNat.toNat_natCast n hn]
 
+/-- An integer below the modulus is its own representative: `toNat (m : ZMod p) = m` for
+`0 ≤ m < p`. The `ℤ` twin of `LawfulToNat.toNat_natCast`. -/
+theorem toNat_intCast_of_lt (p : ℕ) [NeZero p] {m : ℤ} (h0 : 0 ≤ m) (hlt : m < p) :
+    (ToNat.toNat ((m : ZMod p)) : ℤ) = m := by
+  show ((ZMod.val ((m : ZMod p))) : ℤ) = m
+  rw [ZMod.val_intCast]; exact Int.emod_eq_of_lt h0 hlt
+
 /-! ## The value level -/
 
 /-- The value-level unpacking: the canonical representative's `n` low binary digits,

@@ -75,3 +75,14 @@ path = "schnorr"
 [[require]]
 name = "pickles"
 path = "pickles"
+
+# The CS-equality corpus (scripts/check_cs.lean) as a compiled executable. The interpreted
+# run (`lake env lean --run`) is ~35-57 min; the compiled exe runs the same `main` in
+# seconds. CI compiles it once in the lean.yml build job (the cache-saving job) and the
+# check-ps-witness job runs `lake exe check-cs`; it also makes local validation of new
+# targets realistic. `main` reads the PS circuit dumps from `KIMCHI_PS_RESULTS_DIR`
+# (default the packages' `circuits/results/`, the wrap Lagrange bases from the `ocaml`
+# sibling).
+[[lean_exe]]
+name = "check-cs"
+root = "scripts.check_cs"

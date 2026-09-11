@@ -250,6 +250,11 @@ jobs:
 
     # Run-scoped transport to the `check-ps-witness` job — the checker can only
     # ever see the witness its own commit generated.
+    # Includes xhat_wrap_lagrange.json (the x_hat wrap gadget's Lagrange bases, SRS
+    # constants Lean cannot compute) — scripts/check_cs.lean's xhat_wrap_circuit target
+    # reads it from this dir. It carries no `purescript` field and no manifest entry, so
+    # the witness checker and the visualizer, which scan the dir for comparison dumps, skip
+    # it.
     - name: Upload witness-carrying results for the Lean checker
       uses: actions/upload-artifact@v4
       with:
@@ -342,6 +347,8 @@ jobs:
     - name: Setup Lean + build the library
       uses: ./.github/actions/setup-lean
 
+    # Includes xhat_wrap_lagrange.json, read by scripts/check_cs.lean's xhat_wrap_circuit
+    # target from this same dir.
     - name: Download the witness-carrying results
       uses: actions/download-artifact@v4
       with:
@@ -363,12 +370,17 @@ jobs:
     # A WORKSPACE script (formal/scripts/), not a package one: the corpus spans
     # packages, the linearization circuit coming from pickles and the gadgets from
     # snarky, so no single package can import every circuit under comparison.
+    #
+    # Run the COMPILED `check-cs` exe (the lean.yml build job pre-built it into the shared
+    # cache): the interpreted corpus is ~35-57 min, the compiled one seconds. On a cache
+    # hit `lake exe check-cs` is a no-op build + run; on a partial restore it recompiles
+    # only what changed, then runs.
     - name: Check the kimchi CS-equality corpus
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         cd formal
         KIMCHI_PS_RESULTS_DIR=../packages/pickles-circuit-diffs/circuits/results \
-          lake env lean --run scripts/check_cs.lean
+          lake exe check-cs
 
   # ---- build the example app for GitHub Pages -------------------------
   # The in-browser block-pipeline app: wasm kimchi backend + vite bundle,

@@ -595,6 +595,27 @@ def publicCommitment {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
         (fun acc Pp => acc + (-Pp.2).val • Pp.1[c]) 0
       + σ.h)
 
+/-- A left fold of addition from a start is the start plus the sum. -/
+private theorem foldl_add_eq {G : Type*} [AddMonoid G] (init : G) :
+    ∀ l : List G, l.foldl (· + ·) init = init + l.sum
+  | [] => by simp
+  | x :: l => by
+    rw [List.foldl_cons, foldl_add_eq (init + x) l, List.sum_cons, _root_.add_assoc]
+
+/-- `publicCommitment` as a per-chunk list sum plus `h` (nonempty input): an order-free
+re-association of the fold into `(… .map …).sum + h`, the clean per-position target for the
+group side's leaf-list induction (no negation rewrite, no curve-order fact). -/
+theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (hne : pub.size ≠ 0) :
+    publicCommitment C σ cvk pub =
+      Vector.ofFn (fun c : Fin nc =>
+        (((cvk.lagrangeBasis.extract 0 pub.size).zip pub).toList.map
+            (fun Pp => (-Pp.2).val • Pp.1[c])).sum + σ.h) := by
+  unfold publicCommitment
+  rw [if_neg hne]
+  refine congrArg Vector.ofFn (funext fun c => ?_)
+  rw [← Array.foldl_toList, ← List.foldl_map, foldl_add_eq, _root_.zero_add]
+
 /-! ## The stream combinators -/
 
 /-- Reading a flattened uniform block vector: block `q`, offset `r` sits at

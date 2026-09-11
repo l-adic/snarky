@@ -1921,12 +1921,23 @@ attribute [irreducible] splitFieldWit splitFieldVar
 
 /-! ## `scaleFast2'` -/
 
-/-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. -/
+/-- The width `scaleFast2'` runs `scaleFast2` at: one below `sDiv2Bits` at the full field
+width (`n ≤ sDiv2Bits + 1`), so the ladder pins one more bit of the half; `sDiv2Bits` itself
+otherwise. -/
+def scaleFast2'Width (n sDiv2Bits : ℕ) : ℕ :=
+  if n ≤ sDiv2Bits + 1 then sDiv2Bits - 1 else sDiv2Bits
+
+/-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. At the full
+field width the split `2·sDiv2 + sOdd = s` is an equation in the circuit field that, with
+`sDiv2` only bounded below `2^sDiv2Bits`, both `s` and `s + modulus` solve for almost every
+`s` — decoding to different multiples of the base. So `scaleFast2` then runs at
+`scaleFast2'Width`, one bit narrower (the same ladder; one more pinned bit), making the
+decomposition canonical (OCaml `scale_fast2'` at `num_bits - 1`). -/
 def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (s : FVar F) : CircuitM F c (AffinePoint (FVar F)) := do
   let (sDiv2, sOdd) ← splitFieldVar s
-  scaleFast2 n chunks sDiv2Bits base sDiv2 sOdd
+  scaleFast2 n chunks (scaleFast2'Width n sDiv2Bits) base sDiv2 sOdd
 
 open Std.Do WeierstrassCurve.Affine in
 /-- **Soundness** (`scaleFast2'`). The split path at a raw scalar: the ladder's half,
@@ -1938,24 +1949,31 @@ theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     scaleFast2' (c := Builder V (KimchiConstraint F)) n chunks sDiv2Bits base s
     ⦃⇓ r _ => ⌜∀ T : d.W.Point, OnCurveAt d.W V base T →
       ∃ (z : ℤ) (bb : Bool), 0 ≤ z ∧ z < 2 ^ sDiv2Bits ∧
+        (n ≤ sDiv2Bits + 1 → z < 2 ^ (sDiv2Bits - 1)) ∧
         ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V ∧
         ∀ _ : d.LadderRegime (5 * chunks) (Pasta.Shifted.unshiftType1 (5 * chunks) z),
           OnCurveAt d.W V r
             ((Pasta.Shifted.unshiftType2 (5 * chunks) z (if bb then 1 else 0)) • T)⌝⦄ := by
+  have hsplit' : scaleFast2'Width n sDiv2Bits ≤ 5 * chunks := by
+    unfold scaleFast2'Width; split_ifs <;> omega
   have hsplitV := fun (V : Valuation F) =>
     splitFieldVar_spec (c := KimchiConstraint F) (V := V) s
   have hsf2 := fun (V : Valuation F) (sDiv2 : FVar F) (sOdd : BoolVar F) =>
-    scaleFast2_spec (V := V) d n chunks sDiv2Bits hn hsplit base sDiv2 sOdd
+    scaleFast2_spec (V := V) d n chunks (scaleFast2'Width n sDiv2Bits) hn hsplit' base sDiv2 sOdd
   simp only [scaleFast2']
   mvcgen [hsplitV, hsf2]
   rename_i hsp _ _
   intro hq T hT
   obtain ⟨bb, hbit, hpin⟩ := hsp
   obtain ⟨z, h0, hlt, hzval, hpoint⟩ := hq T hT bb hbit
-  refine ⟨z, bb, h0, hlt, ?_, hpoint⟩
-  push_cast
-  rw [hpin, hzval]
-  cases bb <;> simp [bit]
+  have hw : 2 ^ scaleFast2'Width n sDiv2Bits ≤ (2 : ℤ) ^ sDiv2Bits := by
+    apply pow_le_pow_right₀ (by norm_num)
+    unfold scaleFast2'Width; split_ifs <;> omega
+  refine ⟨z, bb, h0, lt_of_lt_of_le hlt hw, fun hfull => ?_, ?_, hpoint⟩
+  · rwa [scaleFast2'Width, if_pos hfull] at hlt
+  · push_cast
+    rw [hpin, hzval]
+    cases bb <;> simp [bit]
 
 
 open WeierstrassCurve.Affine in
@@ -1965,7 +1983,7 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
     (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F)
     (xv yv sval : F) (hT : d.W.Nonsingular xv yv)
-    (hfits : ToNat.toNat (splitField sval).1 < 2 ^ sDiv2Bits)
+    (hfits : ToNat.toNat (splitField sval).1 < 2 ^ scaleFast2'Width n sDiv2Bits)
     (hregime : d.LadderRegime (5 * chunks)
       (Pasta.Shifted.unshiftType1 (5 * chunks) ((ToNat.toNat (splitField sval).1 : ℤ)))) :
     Complete (F := F) (c := KimchiConstraint F)
@@ -1976,6 +1994,8 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         ((2 * (ToNat.toNat (splitField sval).1 : ℤ)
             + (if (splitField sval).2 then 1 else 0) + 2 ^ (5 * chunks))
           • Point.some _ _ hT)) := by
+  have hsplit' : scaleFast2'Width n sDiv2Bits ≤ 5 * chunks := by
+    unfold scaleFast2'Width; split_ifs <;> omega
   simp only [scaleFast2']
   refine Complete.bind
     (Complete.imp (fun _ h => ⟨h.2, h.1⟩) (fun _ _ h => h)
@@ -1983,8 +2003,8 @@ theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (splitFieldVar_complete (c := KimchiConstraint F) d.two_ne s sval)))
     fun w =>
       Complete.imp (fun _ h => ⟨h.2, h.1.1, h.1.2⟩) (fun _ _ h => h)
-        (scaleFast2_complete d n chunks sDiv2Bits hn hsplit base w.1 w.2 xv yv
-          (splitField sval).1 (splitField sval).2 hT hfits hregime)
+        (scaleFast2_complete d n chunks (scaleFast2'Width n sDiv2Bits) hn hsplit' base w.1 w.2
+          xv yv (splitField sval).1 (splitField sval).2 hT hfits hregime)
 
 attribute [irreducible] scaleFast2'
 
