@@ -53,6 +53,26 @@ private theorem ladderRegime_subwrap {F : Type} [Field F] [DecidableEq F] (d : H
   unfold HasCurve.LadderRegime
   exact Or.inl h
 
+/-- One leaf's scalar as a `CVar`: the scalar for the three widths, the bit for `condAdd`.
+The public-input entry a leaf contributes to the MSM, before the group-order reduction. -/
+def Leaf.scalarVar : Leaf F nc → CVar F
+  | .full s _ _ => s
+  | .b128 s _ _ => s
+  | .b10 s _ _ => s
+  | .condAdd b _ => (↑b : CVar F)
+
+/-- The faithful mirror of `Other_field.With_top_bit0` for a full 255-bit leaf: any ladder
+decode `(z, bb)` of its scalar (the `scaleFast2'` bound `0 ≤ z < 2^254`, `2z+bb` reading as the
+scalar) already has its top bit zero, `2z + bb < 2^254`. This is the unchecked top-bit
+assumption the deployed `scale_fast2` typ carries, not a constraint; the narrow leaves need no
+such premise (their own width bounds the decode below the field size) and `condAdd` is a bit.
+Discharged by the packing item. -/
+def Leaf.canonFull (V : Valuation F) : Leaf F nc → Prop
+  | .full s _ _ => ∀ (z : ℤ) (bb : Bool), 0 ≤ z → z < 2 ^ 254 →
+      ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V →
+        2 * z + (if bb then 1 else 0) < 2 ^ 254
+  | _ => True
+
 end Reads
 
 /-! ## The per-chunk fold -/
@@ -115,7 +135,7 @@ private def sumCorrections (ci : Fin nc) :
   | acc, .condAdd _ _ :: rest => sumCorrections ci acc rest
 
 /-- The leaves reach a scalar leaf — so the head-seeded corrections fold has a seed. -/
-private def leafHasScalar : List (Leaf F nc) → Prop
+def leafHasScalar : List (Leaf F nc) → Prop
   | [] => False
   | .condAdd _ _ :: rest => leafHasScalar rest
   | _ => True
@@ -200,7 +220,7 @@ private theorem LeafInfo.sum_corrDelta_add_delta (infos : List (LeafInfo F d)) :
 /-- The per-leaf precondition the fold assumes: the base at chunk `ci` reads as a curve point,
 and — for a `condAdd` — its bit is boolean-valued under `V` (the boolean constraint the packing
 emits; carried as a well-formedness premise, as `checkBulletproof`'s `hbits`). -/
-private def LeafPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
+def LeafPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
   | .full _ base _, T => OnCurveAt d.W V base[ci] T
   | .b128 _ base _, T => OnCurveAt d.W V base[ci] T
   | .b10 _ base _, T => OnCurveAt d.W V base[ci] T
@@ -210,7 +230,7 @@ private def LeafPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point �
 /-- One leaf's correction reads as a curve point at chunk `ci`: a scalar leaf's `correction`
 on-curve as `cp` (deployed: `-(2^L)·base`, i.e. its `LeafInfo.corrDelta`), a `condAdd`
 contributing nothing (`cp = 0`). -/
-private def CorrPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
+def CorrPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
   | .full _ _ corr, cp => OnCurveAt d.W V corr[ci] cp
   | .b128 _ _ corr, cp => OnCurveAt d.W V corr[ci] cp
   | .b10 _ _ corr, cp => OnCurveAt d.W V corr[ci] cp
@@ -256,6 +276,96 @@ theorem LeafReads.regimeOK {V : Valuation F} {ci : Fin nc}
            | exact hfull _ _ _ rfl
            | exact ladderRegime_subwrap d _ _ h130
            | exact ladderRegime_subwrap d _ _ h10)
+
+omit [ToNat F] in
+/-- **The regime discharge, lifted to the whole leaf list.** Every info a leaf list reads to
+is in regime, off the narrow subwrap bounds and a single full-width forbidden-band premise
+(supplied at the deployed curve). The list form `publicInputCommitFull_spec`'s regime premise
+wants. -/
+private theorem leafReads_regimeOK_all {V : Valuation F} {ci : Fin nc}
+    (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
+    {leaves : List (Leaf F nc)} {infos : List (LeafInfo F d)}
+    (hr : List.Forall₂ (LeafReads ci V) leaves infos)
+    (hfull : ∀ z bb T, LeafInfo.scalar 255 z bb T ∈ infos →
+        d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z)) :
+    ∀ i ∈ infos, i.regimeOK := by
+  induction hr with
+  | nil => simp
+  | @cons leaf info ls is hli _ ih =>
+      intro i hi
+      rcases List.mem_cons.1 hi with rfl | hi'
+      · exact LeafReads.regimeOK h130 h10 hli
+          (fun z bb T heq => hfull z bb T (heq ▸ List.mem_cons_self ..))
+      · exact ih (fun z bb T hmem => hfull z bb T (List.mem_cons_of_mem info hmem)) i hi'
+
+/-- **A scalar leaf's correction cell reads as the honest shift `-(2^{5·chunks})·base`.** The
+public premise the seed condition needs: the constant correction is exactly what cancels the
+ladder's `+2^L` shift. `condAdd` has no correction. Stated over the leaf's own cells (no
+`LeafInfo`), so it can sit on the public glue hypothesis. -/
+def CorrHonest (d : HasCurve F) (ci : Fin nc) (V : Valuation F) : Leaf F nc → Prop
+  | .full _ base corr =>
+      ∀ T, OnCurveAt d.W V base[ci] T → OnCurveAt d.W V corr[ci] (-(2 ^ 255 : ℤ) • T)
+  | .b128 _ base corr =>
+      ∀ T, OnCurveAt d.W V base[ci] T → OnCurveAt d.W V corr[ci] (-(2 ^ 130 : ℤ) • T)
+  | .b10 _ base corr =>
+      ∀ T, OnCurveAt d.W V base[ci] T → OnCurveAt d.W V corr[ci] (-(2 ^ 10 : ℤ) • T)
+  | .condAdd _ _ => True
+
+omit [ToNat F] in
+/-- **The seed discharge.** With honest corrections, the corrections' readings sum to the
+`corrDelta` sum — exactly `publicInputCommitFull_spec`'s seed premise. Position-wise
+`cp = corrDelta info` (via `OnCurveAt.eq` on the shared cell), lifted over the list. -/
+private theorem corrSum_eq {V : Valuation F} {ci : Fin nc} :
+    ∀ {leaves : List (Leaf F nc)} {cps : List d.W.Point} {infos : List (LeafInfo F d)},
+      List.Forall₂ (CorrPre ci V) leaves cps →
+      List.Forall₂ (LeafReads ci V) leaves infos →
+      (∀ leaf ∈ leaves, CorrHonest d ci V leaf) →
+      cps.sum = (infos.map LeafInfo.corrDelta).sum
+  | [], [], [], .nil, .nil, _ => by simp
+  | leaf :: ls, cp :: cps, info :: is, .cons hcp hcps, .cons hr hrs, hhon => by
+      simp only [List.sum_cons, List.map_cons]
+      rw [corrSum_eq hcps hrs (fun l hl => hhon l (List.mem_cons_of_mem _ hl))]
+      have hhead : cp = LeafInfo.corrDelta info := by
+        have hh := hhon leaf (List.mem_cons_self ..)
+        cases leaf with
+        | full scalar base corr =>
+            cases info with
+            | scalar L z bb T =>
+                obtain ⟨hL, hb, -, -, -⟩ := hr
+                subst hL
+                simp only [CorrPre] at hcp
+                simp only [CorrHonest] at hh
+                simp only [LeafInfo.corrDelta]
+                exact OnCurveAt.eq hcp (hh _ hb) rfl rfl
+            | cond bb T => simp only [LeafReads] at hr
+        | b128 scalar base corr =>
+            cases info with
+            | scalar L z bb T =>
+                obtain ⟨hL, hb, -, -, -⟩ := hr
+                subst hL
+                simp only [CorrPre] at hcp
+                simp only [CorrHonest] at hh
+                simp only [LeafInfo.corrDelta]
+                exact OnCurveAt.eq hcp (hh _ hb) rfl rfl
+            | cond bb T => simp only [LeafReads] at hr
+        | b10 scalar base corr =>
+            cases info with
+            | scalar L z bb T =>
+                obtain ⟨hL, hb, -, -, -⟩ := hr
+                subst hL
+                simp only [CorrPre] at hcp
+                simp only [CorrHonest] at hh
+                simp only [LeafInfo.corrDelta]
+                exact OnCurveAt.eq hcp (hh _ hb) rfl rfl
+            | cond bb T => simp only [LeafReads] at hr
+        | condAdd b base =>
+            cases info with
+            | scalar L z bb T => simp only [LeafReads] at hr
+            | cond bb T =>
+                simp only [CorrPre] at hcp
+                simp only [LeafInfo.corrDelta]
+                exact hcp
+      rw [hhead]
 
 /-- **The per-chunk fold reads as the accumulator plus the sum of leaf deltas.** For a
 satisfying assignment, `foldChunk ci acc leaves` reads, at any `accv` for `acc`, as
@@ -526,6 +636,218 @@ theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
   intro s hpost
   exact publicInputCommitChunk_net_spec ci rinit blindingH leaves Ts cps.sum Hv
     hpost hH hpre s trivial
+
+/-- **The net read, premises discharged.** `publicInputCommitFull_spec` with its seed
+(`corrSum_eq`, from honest corrections) and regime (`leafReads_regimeOK_all`, from the width
+bounds and the full-width band premise) supplied: the output reads unconditionally as
+`-(Σ netDelta) + h`, the honest MSM. The last step before the wire crossing (`publicCommitment`). -/
+private theorem publicInputCommitFull_net (ci : Fin nc) {V : Valuation F}
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
+    (Ts cps : List d.W.Point) (Hv : d.W.Point)
+    (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
+    (hfull : ∀ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos →
+        ∀ z bb T, LeafInfo.scalar 255 z bb T ∈ infos →
+          d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z))
+    (hH : OnCurveAt d.W V blindingH Hv)
+    (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
+    (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
+    (hscalar : leafHasScalar leaves)
+    (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
+    ⦃⌜True⌝⦄
+    publicInputCommitFull (S := Builder V (KimchiConstraint F)) ci blindingH leaves
+    ⦃⇓ r _ => ⌜∃ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos ∧
+      OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv)⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (publicInputCommitFull_spec ci blindingH leaves Ts cps Hv hH hpre hcorr hscalar)
+    fun r hr => ?_
+  obtain ⟨infos, hff, himp⟩ := hr
+  exact ⟨infos, hff,
+    himp (corrSum_eq hcorr hff hhon) (leafReads_regimeOK_all h130 h10 hff (hfull infos hff))⟩
+
+/-- **The honest MSM as a single point.** `publicInputCommitFull_net` with the net-delta sum
+identified as a caller-supplied point `msm` (via `hmsm`): the output reads as `-msm + h`. The
+wire crossing supplies `msm = publicCommitment`'s MSM and discharges `hmsm` from the canonical
+decode. -/
+private theorem publicInputCommitFull_msm (ci : Fin nc) {V : Valuation F}
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
+    (Ts cps : List d.W.Point) (Hv msm : d.W.Point)
+    (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
+    (hfull : ∀ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos →
+        ∀ z bb T, LeafInfo.scalar 255 z bb T ∈ infos →
+          d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z))
+    (hH : OnCurveAt d.W V blindingH Hv)
+    (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
+    (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
+    (hscalar : leafHasScalar leaves)
+    (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf)
+    (hmsm : ∀ infos : List (LeafInfo F d), List.Forall₂ (LeafReads ci V) leaves infos →
+        (infos.map LeafInfo.netDelta).sum = msm) :
+    ⦃⌜True⌝⦄
+    publicInputCommitFull (S := Builder V (KimchiConstraint F)) ci blindingH leaves
+    ⦃⇓ r _ => ⌜OnCurveAt d.W V r (-msm + Hv)⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (publicInputCommitFull_net ci blindingH leaves Ts cps Hv h130 h10 hfull hH hpre hcorr
+      hscalar hhon) fun r hr => ?_
+  obtain ⟨infos, hff, hread⟩ := hr
+  rw [hmsm infos hff] at hread
+  exact hread
+
+/-! ## The public MSM the leaves commit to, and the reads read against it -/
+
+/-- The full 255-bit leaf's ladder regime, phrased over its public scalar cell: any decode
+`(z, bb)` in the `scaleFast2'` range lands in `LadderRegime`. The narrow leaves discharge their
+own regime from the width bounds (`ladderRegime_subwrap`), so carry `True`. Mirrors the fold's
+`hfull` premise without naming the private `LeafInfo`. -/
+def Leaf.regimeFull (d : HasCurve F) (V : Valuation F) : Leaf F nc → Prop
+  | .full s _ _ => ∀ (z : ℤ) (bb : Bool), 0 ≤ z → z < 2 ^ 254 →
+      ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V →
+        d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z)
+  | _ => True
+
+/-- The honest public MSM the leaves commit to at chunk `ci`: each leaf's canonical scalar
+value (`ToNat.toNat` of its `scalarVar` reading) times its base point (from `LeafPre`). This is
+`Σ [scalarₗ]·baseₗ`, the point `publicCommitment` negates and adds `h` to. -/
+def publicMsm (V : Valuation F) (leaves : List (Leaf F nc)) (Ts : List d.W.Point) : d.W.Point :=
+  ((leaves.zip Ts).map (fun p => ToNat.toNat ((p.1.scalarVar).val V) • p.2)).sum
+
+/-- `publicMsm` peels one leaf/base pair off the front. -/
+theorem publicMsm_cons (V : Valuation F) (leaf : Leaf F nc) (T : d.W.Point)
+    (ls : List (Leaf F nc)) (Ts : List d.W.Point) :
+    publicMsm V (leaf :: ls) (T :: Ts)
+      = ToNat.toNat ((leaf.scalarVar).val V) • T + publicMsm V ls Ts := by
+  simp [publicMsm, List.zip_cons_cons]
+
+omit [ToNat F] in
+/-- **The regime premise, lifted from leaves to the fold's info form.** A `.scalar 255 …` in the
+produced infos comes from a full leaf (the narrow widths read to `L = 130`/`10`), so its regime
+is the leaf's `Leaf.regimeFull`. Discharges the fold's `hfull` from the public `hregime`. -/
+private theorem regimeFull_hfull {V : Valuation F} {ci : Fin nc} :
+    ∀ {leaves : List (Leaf F nc)} {infos : List (LeafInfo F d)},
+      (∀ leaf ∈ leaves, Leaf.regimeFull d V leaf) →
+      List.Forall₂ (LeafReads ci V) leaves infos →
+      ∀ z bb T, LeafInfo.scalar 255 z bb T ∈ infos →
+        d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z)
+  | [], [], _, .nil, z, bb, T, hmem => by simp at hmem
+  | leaf :: ls, info :: is, hreg, .cons hr hrs, z, bb, T, hmem => by
+      rcases List.mem_cons.1 hmem with heq | hmem'
+      · subst heq
+        cases leaf with
+        | full s base corr =>
+            obtain ⟨_, _, h0, hlt, hval⟩ := hr
+            exact (hreg _ (List.mem_cons_self ..)) z bb h0 hlt hval
+        | b128 s base corr => obtain ⟨hL, _⟩ := hr; exact absurd hL (by norm_num)
+        | b10 s base corr => obtain ⟨hL, _⟩ := hr; exact absurd hL (by norm_num)
+        | condAdd b base => exact hr.elim
+      · exact regimeFull_hfull (fun l hl => hreg l (List.mem_cons_of_mem _ hl)) hrs z bb T hmem'
+
+/-- **The net-delta sum is the public MSM.** Under the field's below-`2^254` faithfulness
+(`hcast`), the bit reading (`hbit`), and the full leaves' top-bit-0 premise (`hcanon`), the honest
+`Σ netDelta` over the produced infos equals `publicMsm` — each `(2z+bb)·T` collapses to
+`toNat(scalar)·T` (canonical decode: narrow leaves from their width, full leaves from `hcanon`),
+and each `condAdd` bit lines up. Discharges the fold's `hmsm`. -/
+private theorem netDelta_sum_eq_publicMsm {V : Valuation F} {ci : Fin nc}
+    (hcast : ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : F)) : ℤ) = m)
+    (hbit : ∀ b : Bool, ToNat.toNat (bit b : F) = if b then 1 else 0) :
+    ∀ {leaves : List (Leaf F nc)} {infos : List (LeafInfo F d)} {Ts : List d.W.Point},
+      List.Forall₂ (LeafReads ci V) leaves infos →
+      List.Forall₂ (LeafPre ci V) leaves Ts →
+      (∀ leaf ∈ leaves, Leaf.canonFull V leaf) →
+      (infos.map LeafInfo.netDelta).sum = publicMsm V leaves Ts
+  | [], [], [], .nil, .nil, _ => by simp [publicMsm]
+  | leaf :: ls, info :: is, T :: Ts, .cons hr hrs, .cons hp hps, hcanon => by
+      have ihv := netDelta_sum_eq_publicMsm hcast hbit hrs hps
+        (fun l hl => hcanon l (List.mem_cons_of_mem _ hl))
+      have hhead : LeafInfo.netDelta info = ToNat.toNat ((leaf.scalarVar).val V) • T := by
+        cases leaf with
+        | full s base corr =>
+            cases info with
+            | scalar L z bb T' =>
+                obtain ⟨hL, hocI, h0, hlt, hval⟩ := hr
+                subst hL
+                have hcl := (hcanon _ (List.mem_cons_self ..)) z bb h0 hlt hval
+                have hTeq : T' = T := OnCurveAt.eq hocI hp rfl rfl
+                have hm0 : (0 : ℤ) ≤ 2 * z + (if bb then 1 else 0) := by
+                  have : (0 : ℤ) ≤ (if bb then 1 else 0) := by cases bb <;> simp
+                  linarith
+                have hc := hcast _ hm0 hcl
+                simp only [LeafInfo.netDelta, Leaf.scalarVar]
+                rw [hTeq, ← hval, ← natCast_zsmul, hc]
+            | cond bb T' => exact hr.elim
+        | b128 s base corr =>
+            cases info with
+            | scalar L z bb T' =>
+                obtain ⟨hL, hocI, h0, hlt, hval⟩ := hr
+                subst hL
+                have hcl : 2 * z + (if bb then 1 else 0) < 2 ^ 254 := by
+                  have hb : (if bb then (1 : ℤ) else 0) ≤ 1 := by cases bb <;> simp
+                  have hle : z ≤ 2 ^ 127 - 1 := by omega
+                  have hpp : (2 : ℤ) ^ 128 = 2 * 2 ^ 127 := by ring
+                  have hpow : (2 : ℤ) ^ 128 ≤ 2 ^ 254 := by norm_num
+                  linarith
+                have hTeq : T' = T := OnCurveAt.eq hocI hp rfl rfl
+                have hm0 : (0 : ℤ) ≤ 2 * z + (if bb then 1 else 0) := by
+                  have : (0 : ℤ) ≤ (if bb then 1 else 0) := by cases bb <;> simp
+                  linarith
+                have hc := hcast _ hm0 hcl
+                simp only [LeafInfo.netDelta, Leaf.scalarVar]
+                rw [hTeq, ← hval, ← natCast_zsmul, hc]
+            | cond bb T' => exact hr.elim
+        | b10 s base corr =>
+            cases info with
+            | scalar L z bb T' =>
+                obtain ⟨hL, hocI, h0, hlt, hval⟩ := hr
+                subst hL
+                have hcl : 2 * z + (if bb then 1 else 0) < 2 ^ 254 := by
+                  have hb : (if bb then (1 : ℤ) else 0) ≤ 1 := by cases bb <;> simp
+                  have hle : z ≤ 2 ^ 9 - 1 := by omega
+                  have hpp : (2 : ℤ) ^ 10 = 2 * 2 ^ 9 := by ring
+                  have hpow : (2 : ℤ) ^ 10 ≤ 2 ^ 254 := by norm_num
+                  linarith
+                have hTeq : T' = T := OnCurveAt.eq hocI hp rfl rfl
+                have hm0 : (0 : ℤ) ≤ 2 * z + (if bb then 1 else 0) := by
+                  have : (0 : ℤ) ≤ (if bb then 1 else 0) := by cases bb <;> simp
+                  linarith
+                have hc := hcast _ hm0 hcl
+                simp only [LeafInfo.netDelta, Leaf.scalarVar]
+                rw [hTeq, ← hval, ← natCast_zsmul, hc]
+            | cond bb T' => exact hr.elim
+        | condAdd b base =>
+            cases info with
+            | scalar L z bb T' => exact hr.elim
+            | cond bb T' =>
+                obtain ⟨hocI, hbb⟩ := hr
+                have hTeq : T' = T := OnCurveAt.eq hocI hp.1 rfl rfl
+                simp only [LeafInfo.netDelta, Leaf.scalarVar]
+                rw [hTeq, hbb, hbit]
+                cases bb <;> simp
+      simp only [List.map_cons, List.sum_cons]
+      rw [hhead, ihv, publicMsm_cons]
+
+/-- **The full one-chunk gadget reads as `-(publicMsm) + h`.** `publicInputCommitFull_msm` with
+its `hfull`/`hmsm` premises discharged publicly: the regime from `hregime` (`regimeFull_hfull`),
+the MSM identity from `netDelta_sum_eq_publicMsm` (needing `hcast`, `hbit`, `hcanon`). The output
+reads unconditionally as `-(Σ [scalarₗ]·baseₗ) + h`, the shape the wire's `publicCommitment` has.
+The clean public seam the `x_hat` wire crossing consumes — no private `LeafInfo`/`LeafReads`. -/
+theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
+    (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
+    (Ts cps : List d.W.Point) (Hv : d.W.Point)
+    (hcast : ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : F)) : ℤ) = m)
+    (hbit : ∀ b : Bool, ToNat.toNat (bit b : F) = if b then 1 else 0)
+    (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
+    (hregime : ∀ leaf ∈ leaves, Leaf.regimeFull d V leaf)
+    (hcanon : ∀ leaf ∈ leaves, Leaf.canonFull V leaf)
+    (hH : OnCurveAt d.W V blindingH Hv)
+    (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
+    (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
+    (hscalar : leafHasScalar leaves)
+    (hhon : ∀ leaf ∈ leaves, CorrHonest d ci V leaf) :
+    ⦃⌜True⌝⦄
+    publicInputCommitFull (S := Builder V (KimchiConstraint F)) ci blindingH leaves
+    ⦃⇓ r _ => ⌜OnCurveAt d.W V r (-(publicMsm V leaves Ts) + Hv)⌝⦄ :=
+  publicInputCommitFull_msm ci blindingH leaves Ts cps Hv (publicMsm V leaves Ts) h130 h10
+    (fun _infos hr z bb T hmem => regimeFull_hfull hregime hr z bb T hmem)
+    hH hpre hcorr hscalar hhon
+    (fun _infos hr => netDelta_sum_eq_publicMsm hcast hbit hr hpre hcanon)
 
 end Fold
 

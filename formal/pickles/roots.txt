@@ -166,3 +166,9 @@ Pickles.publicInputCommitFull_spec
 -- conditional: the leaves' reads plus the unconditional narrow-width subwrap bounds
 -- (`ladderRegime_subwrap`, reachable from here) give each leaf's `LadderRegime`.
 Pickles.LeafReads.regimeOK
+-- The public seam of the x_hat read: the gadget output reads as `-(publicMsm) + h` with the
+-- canonical `Fq` decode carried as the spec hypothesis `Leaf.canonFull` (mirroring the deployed
+-- `scale_fast2` `With_top_bit0` typ — no constraint), and the wire crossing tying it to the
+-- verifier's `publicCommitment` on the Vesta commitment curve.
+Pickles.publicInputCommitFull_reads
+Pickles.xHat_reads_publicCommitment
