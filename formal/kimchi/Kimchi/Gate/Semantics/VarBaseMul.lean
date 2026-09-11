@@ -501,7 +501,7 @@ private lemma ladder_odd (L : ℕ) (k ε : ℕ → ℤ)
     doublings. For ANY prime `q ≡ 1 (mod 4)` in the one-wrap regime, the actual
     reachable degenerate set is a subset of these, so excluding them is sound; for the
     Pasta primes it is exactly this set. -/
-private def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
+def forbiddenResidues : List ℤ := [0, 1, -1, 2, -2, 3, -3, 5, 7, 9, 11]
 
 /-- Depth-1 input (`L = j + 1`): every degeneracy branch lands on a forbidden residue. -/
 private lemma degen_d1 (q L : ℕ)

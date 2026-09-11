@@ -61,18 +61,6 @@ def Leaf.scalarVar : Leaf F nc → CVar F
   | .b10 s _ _ => s
   | .condAdd b _ => (↑b : CVar F)
 
-/-- The faithful mirror of `Other_field.With_top_bit0` for a full 255-bit leaf: any ladder
-decode `(z, bb)` of its scalar (the `scaleFast2'` bound `0 ≤ z < 2^254`, `2z+bb` reading as the
-scalar) already has its top bit zero, `2z + bb < 2^254`. This is the unchecked top-bit
-assumption the deployed `scale_fast2` typ carries, not a constraint; the narrow leaves need no
-such premise (their own width bounds the decode below the field size) and `condAdd` is a bit.
-Discharged by the packing item. -/
-def Leaf.canonFull (V : Valuation F) : Leaf F nc → Prop
-  | .full s _ _ => ∀ (z : ℤ) (bb : Bool), 0 ≤ z → z < 2 ^ 254 →
-      ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V →
-        2 * z + (if bb then 1 else 0) < 2 ^ 254
-  | _ => True
-
 end Reads
 
 /-! ## The per-chunk fold -/
@@ -237,11 +225,13 @@ def CorrPre (ci : Fin nc) (V : Valuation F) : Leaf F nc → d.W.Point → Prop
   | .condAdd _ _, cp => cp = 0
 
 /-- One leaf reads as one `LeafInfo` at chunk `ci`: the base on-curve as `T`, the scalar split
-pinned to the scalar's value (with the width's range on `z`), or the `condAdd` bit read. The
-ladder regime is deliberately absent — it is `LeafInfo.regimeOK`, a premise of the fold. -/
+pinned to the scalar's value (with the width's range on `z` — for the full leaf the pinned
+`2^253`, `scaleFast2'`'s top-bit pin at the field width, which makes `2z + bb < 2^254` and the
+decode canonical), or the `condAdd` bit read. The ladder regime is deliberately absent — it
+is `LeafInfo.regimeOK`, a premise of the fold. -/
 private def LeafReads (ci : Fin nc) (V : Valuation F) : Leaf F nc → LeafInfo F d → Prop
   | .full scalar base _, .scalar L z bb T =>
-      L = 255 ∧ OnCurveAt d.W V base[ci] T ∧ 0 ≤ z ∧ z < 2 ^ 254 ∧
+      L = 255 ∧ OnCurveAt d.W V base[ci] T ∧ 0 ≤ z ∧ z < 2 ^ 253 ∧
         ((2 * z + (if bb then 1 else 0) : ℤ) : F) = scalar.val V
   | .b128 scalar base _, .scalar L z bb T =>
       L = 130 ∧ OnCurveAt d.W V base[ci] T ∧ 0 ≤ z ∧ z < 2 ^ 127 ∧
@@ -392,8 +382,9 @@ private theorem foldChunk_spec (ci : Fin nc) {V : Valuation F} :
       mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd, ih]
       rename_i _ _ _ hsf' _ _ hadd' _ _
       rintro ⟨rest_infos, hrf, hrest_oc⟩
-      obtain ⟨z, bb, h0, hlt, hval, hladder⟩ := hsf' T hT
-      refine ⟨.scalar 255 z bb T :: rest_infos, List.Forall₂.cons ⟨rfl, hT, h0, hlt, hval⟩ hrf, ?_⟩
+      obtain ⟨z, bb, h0, -, hlt, hval, hladder⟩ := hsf' T hT
+      refine ⟨.scalar 255 z bb T :: rest_infos,
+        List.Forall₂.cons ⟨rfl, hT, h0, hlt (by norm_num), hval⟩ hrf, ?_⟩
       · intro accv hacc hregs
         have hhead : d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z) :=
           hregs _ List.mem_cons_self
@@ -414,7 +405,7 @@ private theorem foldChunk_spec (ci : Fin nc) {V : Valuation F} :
       mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd, ih]
       rename_i _ _ _ hsf' _ _ hadd' _ _
       rintro ⟨rest_infos, hrf, hrest_oc⟩
-      obtain ⟨z, bb, h0, hlt, hval, hladder⟩ := hsf' T hT
+      obtain ⟨z, bb, h0, hlt, -, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 130 z bb T :: rest_infos, List.Forall₂.cons ⟨rfl, hT, h0, hlt, hval⟩ hrf, ?_⟩
       · intro accv hacc hregs
         have hhead : d.LadderRegime 130 (Pasta.Shifted.unshiftType1 130 z) :=
@@ -436,7 +427,7 @@ private theorem foldChunk_spec (ci : Fin nc) {V : Valuation F} :
       mvcgen [-Snarky.Kimchi.addFast_spec, hsf, hadd, ih]
       rename_i _ _ _ hsf' _ _ hadd' _ _
       rintro ⟨rest_infos, hrf, hrest_oc⟩
-      obtain ⟨z, bb, h0, hlt, hval, hladder⟩ := hsf' T hT
+      obtain ⟨z, bb, h0, hlt, -, hval, hladder⟩ := hsf' T hT
       refine ⟨.scalar 10 z bb T :: rest_infos, List.Forall₂.cons ⟨rfl, hT, h0, hlt, hval⟩ hrf, ?_⟩
       · intro accv hacc hregs
         have hhead : d.LadderRegime 10 (Pasta.Shifted.unshiftType1 10 z) :=
@@ -695,11 +686,11 @@ private theorem publicInputCommitFull_msm (ci : Fin nc) {V : Valuation F}
 /-! ## The public MSM the leaves commit to, and the reads read against it -/
 
 /-- The full 255-bit leaf's ladder regime, phrased over its public scalar cell: any decode
-`(z, bb)` in the `scaleFast2'` range lands in `LadderRegime`. The narrow leaves discharge their
-own regime from the width bounds (`ladderRegime_subwrap`), so carry `True`. Mirrors the fold's
-`hfull` premise without naming the private `LeafInfo`. -/
+`(z, bb)` in the `scaleFast2'` range (`z < 2^253`, the pinned half) lands in `LadderRegime`.
+The narrow leaves discharge their own regime from the width bounds (`ladderRegime_subwrap`),
+so carry `True`. Mirrors the fold's `hfull` premise without naming the private `LeafInfo`. -/
 def Leaf.regimeFull (d : HasCurve F) (V : Valuation F) : Leaf F nc → Prop
-  | .full s _ _ => ∀ (z : ℤ) (bb : Bool), 0 ≤ z → z < 2 ^ 254 →
+  | .full s _ _ => ∀ (z : ℤ) (bb : Bool), 0 ≤ z → z < 2 ^ 253 →
       ((2 * z + (if bb then 1 else 0) : ℤ) : F) = s.val V →
         d.LadderRegime 255 (Pasta.Shifted.unshiftType1 255 z)
   | _ => True
@@ -741,22 +732,20 @@ private theorem regimeFull_hfull {V : Valuation F} {ci : Fin nc} :
       · exact regimeFull_hfull (fun l hl => hreg l (List.mem_cons_of_mem _ hl)) hrs z bb T hmem'
 
 /-- **The net-delta sum is the public MSM.** Under the field's below-`2^254` faithfulness
-(`hcast`), the bit reading (`hbit`), and the full leaves' top-bit-0 premise (`hcanon`), the honest
-`Σ netDelta` over the produced infos equals `publicMsm` — each `(2z+bb)·T` collapses to
-`toNat(scalar)·T` (canonical decode: narrow leaves from their width, full leaves from `hcanon`),
-and each `condAdd` bit lines up. Discharges the fold's `hmsm`. -/
+(`hcast`) and the bit reading (`hbit`), the honest `Σ netDelta` over the produced infos equals
+`publicMsm` — each `(2z+bb)·T` collapses to `toNat(scalar)·T` (the decode is canonical at every
+width: the narrow leaves from their width, the full leaf from `scaleFast2'`'s top-bit pin,
+`z < 2^253`), and each `condAdd` bit lines up. Discharges the fold's `hmsm`. -/
 private theorem netDelta_sum_eq_publicMsm {V : Valuation F} {ci : Fin nc}
     (hcast : ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : F)) : ℤ) = m)
     (hbit : ∀ b : Bool, ToNat.toNat (bit b : F) = if b then 1 else 0) :
     ∀ {leaves : List (Leaf F nc)} {infos : List (LeafInfo F d)} {Ts : List d.W.Point},
       List.Forall₂ (LeafReads ci V) leaves infos →
       List.Forall₂ (LeafPre ci V) leaves Ts →
-      (∀ leaf ∈ leaves, Leaf.canonFull V leaf) →
       (infos.map LeafInfo.netDelta).sum = publicMsm V leaves Ts
-  | [], [], [], .nil, .nil, _ => by simp [publicMsm]
-  | leaf :: ls, info :: is, T :: Ts, .cons hr hrs, .cons hp hps, hcanon => by
+  | [], [], [], .nil, .nil => by simp [publicMsm]
+  | leaf :: ls, info :: is, T :: Ts, .cons hr hrs, .cons hp hps => by
       have ihv := netDelta_sum_eq_publicMsm hcast hbit hrs hps
-        (fun l hl => hcanon l (List.mem_cons_of_mem _ hl))
       have hhead : LeafInfo.netDelta info = ToNat.toNat ((leaf.scalarVar).val V) • T := by
         cases leaf with
         | full s base corr =>
@@ -764,7 +753,11 @@ private theorem netDelta_sum_eq_publicMsm {V : Valuation F} {ci : Fin nc}
             | scalar L z bb T' =>
                 obtain ⟨hL, hocI, h0, hlt, hval⟩ := hr
                 subst hL
-                have hcl := (hcanon _ (List.mem_cons_self ..)) z bb h0 hlt hval
+                have hcl : 2 * z + (if bb then 1 else 0) < 2 ^ 254 := by
+                  have hb : (if bb then (1 : ℤ) else 0) ≤ 1 := by cases bb <;> simp
+                  have hle : z ≤ 2 ^ 253 - 1 := by omega
+                  have hpp : (2 : ℤ) ^ 254 = 2 * 2 ^ 253 := by ring
+                  linarith
                 have hTeq : T' = T := OnCurveAt.eq hocI hp rfl rfl
                 have hm0 : (0 : ℤ) ≤ 2 * z + (if bb then 1 else 0) := by
                   have : (0 : ℤ) ≤ (if bb then 1 else 0) := by cases bb <;> simp
@@ -825,9 +818,10 @@ private theorem netDelta_sum_eq_publicMsm {V : Valuation F} {ci : Fin nc}
 
 /-- **The full one-chunk gadget reads as `-(publicMsm) + h`.** `publicInputCommitFull_msm` with
 its `hfull`/`hmsm` premises discharged publicly: the regime from `hregime` (`regimeFull_hfull`),
-the MSM identity from `netDelta_sum_eq_publicMsm` (needing `hcast`, `hbit`, `hcanon`). The output
-reads unconditionally as `-(Σ [scalarₗ]·baseₗ) + h`, the shape the wire's `publicCommitment` has.
-The clean public seam the `x_hat` wire crossing consumes — no private `LeafInfo`/`LeafReads`. -/
+the MSM identity from `netDelta_sum_eq_publicMsm` (needing `hcast`, `hbit`; the canonical decode
+is the ladder's own top-bit pin, no premise). The output reads unconditionally as
+`-(Σ [scalarₗ]·baseₗ) + h`, the shape the wire's `publicCommitment` has. The clean public seam
+the `x_hat` wire crossing consumes — no private `LeafInfo`/`LeafReads`. -/
 theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
     (blindingH : AffinePoint (FVar F)) (leaves : List (Leaf F nc))
     (Ts cps : List d.W.Point) (Hv : d.W.Point)
@@ -835,7 +829,6 @@ theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
     (hbit : ∀ b : Bool, ToNat.toNat (bit b : F) = if b then 1 else 0)
     (h130 : 3 * 2 ^ 130 ≤ d.W.order) (h10 : 3 * 2 ^ 10 ≤ d.W.order)
     (hregime : ∀ leaf ∈ leaves, Leaf.regimeFull d V leaf)
-    (hcanon : ∀ leaf ∈ leaves, Leaf.canonFull V leaf)
     (hH : OnCurveAt d.W V blindingH Hv)
     (hpre : List.Forall₂ (LeafPre ci V) leaves Ts)
     (hcorr : List.Forall₂ (CorrPre ci V) leaves cps)
@@ -847,7 +840,7 @@ theorem publicInputCommitFull_reads (ci : Fin nc) {V : Valuation F}
   publicInputCommitFull_msm ci blindingH leaves Ts cps Hv (publicMsm V leaves Ts) h130 h10
     (fun _infos hr z bb T hmem => regimeFull_hfull hregime hr z bb T hmem)
     hH hpre hcorr hscalar hhon
-    (fun _infos hr => netDelta_sum_eq_publicMsm hcast hbit hr hpre hcanon)
+    (fun _infos hr => netDelta_sum_eq_publicMsm hcast hbit hr hpre)
 
 end Fold
 

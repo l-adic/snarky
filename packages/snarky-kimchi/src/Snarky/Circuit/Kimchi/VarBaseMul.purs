@@ -192,10 +192,26 @@ scaleFast2
   -> { sDiv2 :: FVar f, sOdd :: BoolVar f }
   -> Snarky f (KimchiConstraint f) r
        (AffinePoint (FVar f))
-scaleFast2 base { sDiv2, sOdd } = label "scale-fast-2" do
+scaleFast2 base split = scaleFast2From @nChunks (reflectType (Proxy @sDiv2Bits)) base split
+
+-- | `scaleFast2` with the pin boundary as a value: the ladder on `sDiv2`, every lsb bit
+-- | from index `pinFrom` on asserted zero, then the parity fold. `scaleFast2` pins from
+-- | `sDiv2Bits`; `scaleFast2'` pins one bit lower at the full field width (see there).
+scaleFast2From
+  :: forall r f n @nChunks bitsUsed _l
+   . FieldSizeInBits f n
+  => Add bitsUsed _l n
+  => Mul 5 nChunks bitsUsed
+  => Reflectable bitsUsed Int
+  => PrimeField f
+  => Int
+  -> AffinePoint (FVar f)
+  -> { sDiv2 :: FVar f, sOdd :: BoolVar f }
+  -> Snarky f (KimchiConstraint f) r
+       (AffinePoint (FVar f))
+scaleFast2From pinFrom base { sDiv2, sOdd } = label "scale-fast-2" do
   { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
-  let { after } = Vector.splitAt @sDiv2Bits lsbBits
-  traverse_ (\x -> assertEqual_ x (const_ zero)) after
+  traverse_ (\x -> assertEqual_ x (const_ zero)) (Array.drop pinFrom (Vector.toUnfoldable lsbBits))
   if_ sOdd g =<< do
     negBase <- EllipticCurve.negate base
     { p } <- addFast CheckFinite g negBase
@@ -240,6 +256,13 @@ Like scaleFast2 but takes a raw field element instead of a pre-split Type2.
 Splits s into (sDiv2, sOdd) where s = 2*sDiv2 + sOdd (parity decomposition),
 constrains the split, then delegates to scaleFast2 which adds the 2^n shift
 via varBaseMul. This matches OCaml's scale_fast2'.
+
+At the full field width (sDiv2Bits + 1 >= n) the split equation is not a unique
+decomposition of s: with sDiv2 only bounded below 2^sDiv2Bits, both s and s + modulus
+solve 2*sDiv2 + sOdd = s for almost every s, and they decode to different multiples of
+the base. So the ladder then pins one more bit of sDiv2 (from sDiv2Bits - 1; the chunk
+count is unchanged), making 2*sDiv2 + sOdd < 2^sDiv2Bits and the decomposition
+canonical — OCaml scale_fast2' runs scale_fast2 at num_bits - 1 for the same effect.
 -}
 scaleFast2'
   :: forall r f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
@@ -249,6 +272,7 @@ scaleFast2'
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
+  => Reflectable n Int
   => PrimeField f
   => AffinePoint (FVar f)
   -> FVar f
@@ -256,4 +280,8 @@ scaleFast2'
        (AffinePoint (FVar f))
 scaleFast2' base s = label "scale-fast-2-prime" do
   split <- splitFieldVar s
-  scaleFast2 @nChunks @sDiv2Bits base split
+  let
+    sDiv2Bits = reflectType (Proxy @sDiv2Bits)
+    pinFrom =
+      if sDiv2Bits + 1 >= reflectType (Proxy @n) then sDiv2Bits - 1 else sDiv2Bits
+  scaleFast2From @nChunks pinFrom base split

@@ -139,11 +139,89 @@ private theorem crossing_list {nc : ℕ} (ci : Fin nc) (V : Valuation Fq)
     rw [htie i hil]
     rfl
 
+/-! ## The full leaf's regime at Vesta: a sixteen-value window -/
+
+/-- `δ = p − 2^254`, with `p` the Vesta order: the pinned full-leaf ladder top `2z + 2^255 + 1`
+meets the forbidden band exactly at `z ∈ [δ−2, δ+5]`. -/
+def xhatBandDelta : ℕ := PALLAS_BASE_CARD - 2 ^ 254
+
+/-- A full leaf's scalar value avoids the sixteen values `2z + bb`, `z ∈ [δ−2, δ+5]`, at which
+the ladder degenerates; the narrow leaves and `condAdd` carry `True`. The concrete, decidable
+form of `Leaf.regimeFull` at Vesta — the exact completeness gap of the deployed gadget. -/
+def Leaf.offBand {nc : ℕ} (V : Valuation Fq) : Leaf Fq nc → Prop
+  | .full s _ _ =>
+      ToNat.toNat (s.val V) < 2 * xhatBandDelta - 4 ∨
+        2 * xhatBandDelta + 11 < ToNat.toNat (s.val V)
+  | _ => True
+
+/-- **The pinned full-leaf ladder is in regime off the window.** For `0 ≤ z < 2^253` the top
+`2z + 2^255 + 1` lies in `(2p − 2^126, 3p)`, so it is a forbidden residue `t` only as `t + 2p`;
+parity kills the even `t`, and each odd `t` pins `z = δ + (t−1)/2`, inside the window. -/
+theorem Leaf.regimeFull_of_offBand {nc : ℕ} (V : Valuation Fq) (leaf : Leaf Fq nc)
+    (h : leaf.offBand V) : Leaf.regimeFull HasCurve.vesta V leaf := by
+  cases leaf with
+  | full s base corr =>
+      intro z bb h0 hlt hval
+      have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+      have hb01 : (0 : ℤ) ≤ (if bb then 1 else 0) ∧ (if bb then (1 : ℤ) else 0) ≤ 1 := by
+        cases bb <;> simp
+      have h253 : (2 : ℤ) ^ 253
+          = 14474011154664524427946373126085988481658748083205070504932198000989141204992 := by
+        norm_num
+      have h255 : (2 : ℤ) ^ 255
+          = 57896044618658097711785492504343953926634992332820282019728792003956564819968 := by
+        norm_num
+      have hp : (PALLAS_BASE_CARD : ℤ)
+          = 28948022309329048855892746252171976963363056481941560715954676764349967630337 := by
+        norm_num [PALLAS_BASE_CARD]
+      have hδ : xhatBandDelta = 45560315531419706090280762371685220353 := by
+        norm_num [xhatBandDelta, PALLAS_BASE_CARD]
+      rw [h253] at hlt
+      have hv : (ToNat.toNat (s.val V) : ℤ) = 2 * z + (if bb then 1 else 0) := by
+        rw [← hval]
+        exact toNat_intCast_of_lt PALLAS_SCALAR_CARD (by omega)
+          (lt_of_lt_of_le (by omega : 2 * z + (if bb then 1 else 0) < 2 ^ 254)
+            (by norm_num [PALLAS_SCALAR_CARD]))
+      simp only [Leaf.offBand, hδ] at h
+      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
+      · decide
+      · decide
+      · decide
+      · intro hmem
+        simp only [Kimchi.Gate.VarBaseMul.forbiddenValues, Set.mem_setOf_eq,
+          Kimchi.Gate.VarBaseMul.Ladder.forbiddenResidues, List.mem_cons, List.mem_nil_iff,
+          or_false, Pasta.Shifted.unshiftType1] at hmem
+        obtain ⟨t, ht, k, hk⟩ := hmem
+        rw [hp, h255] at hk
+        -- the residues lie in `[-3, 11]`; that is all the bound argument needs (no `omega`:
+        -- it enumerates the 253-bit range)
+        have htb : -3 ≤ t ∧ t ≤ 11 := by
+          rcases ht with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+            norm_num
+        -- the multiplier is 2: the top lies in `(p, 3p)`
+        have hk1 : 1 + 1 ≤ k := Int.add_one_le_iff.mpr (lt_of_not_ge fun hle => by linarith)
+        have hk2 : k ≤ 2 := Int.lt_add_one_iff.mp (lt_of_not_ge fun hle => by linarith)
+        have hk : k = 2 := le_antisymm hk2 (by linarith)
+        subst hk
+        -- the value then sits in the window
+        norm_num at h
+        rcases h with h | h
+        · have h' : (ToNat.toNat (s.val V) : ℤ) < 91120631062839412180561524743370440702 := by
+            exact_mod_cast h
+          linarith
+        · have h' : (91120631062839412180561524743370440717 : ℤ) < ToNat.toNat (s.val V) := by
+            exact_mod_cast h
+          linarith
+  | b128 _ _ _ => trivial
+  | b10 _ _ _ => trivial
+  | condAdd _ _ => trivial
+
 /-- The binding the deferred packing item discharges — everything the faithfulness read needs
 of the outside world, in public terms (no `LeafInfo`/`LeafReads`). The scalar-side alias
-(`Fq → Fp`) is absorbed into `pubOf`; `canon` reflects `scale_fast2`'s top-bit pin, and the
-fold premises (`pre`/`corr`/`scalar`/`hon`/`regime`) are exactly `publicInputCommitFull_reads`'s.
-`Ts` are the leaves' base points, `cps` their correction points. -/
+(`Fq → Fp`) is absorbed into `pubOf`, and the fold premises (`pre`/`corr`/`scalar`/`hon`) are
+exactly `publicInputCommitFull_reads`'s, with its regime premise narrowed to the sixteen-value
+window `offBand` (`Leaf.regimeFull_of_offBand`). `Ts` are the leaves' base points, `cps` their
+correction points. -/
 structure XhatBinding {nc : ℕ} (ci : Fin nc) (V : Valuation Fq)
     (σ : Bulletproof.SRS Bulletproof.IpaVesta.curve.Point)
     (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
@@ -159,10 +237,8 @@ structure XhatBinding {nc : ℕ} (ci : Fin nc) (V : Valuation Fq)
   scalar : leafHasScalar leaves
   /-- Each leaf's correction is the honest shift `-(2^L)·base`. -/
   hon : ∀ leaf ∈ leaves, CorrHonest HasCurve.vesta ci V leaf
-  /-- Each full leaf's scalar has its top bit zero — the `With_top_bit0` assumption. -/
-  canon : ∀ leaf ∈ leaves, Leaf.canonFull V leaf
-  /-- Each full leaf's ladder decode is in regime (the forbidden-band exclusion). -/
-  regime : ∀ leaf ∈ leaves, Leaf.regimeFull HasCurve.vesta V leaf
+  /-- Each full leaf's value avoids the sixteen-value band window (`Leaf.offBand`). -/
+  offBand : ∀ leaf ∈ leaves, Leaf.offBand V leaf
   /-- There are at least as many Lagrange bases as public-input leaves. -/
   hsize : leaves.length ≤ cvk.lagrangeBasis.size
   /-- Each leaf's chunk base reads as the verifier's Lagrange base at that index — the walk-order
@@ -174,9 +250,10 @@ structure XhatBinding {nc : ℕ} (ci : Fin nc) (V : Valuation Fq)
 /-- **The x_hat commitment gadget reads as the wire verifier's `publicCommitment`.** The
 in-circuit public-input obligation of the group half (`incrementally_verify_proof`):
 `publicInputCommitFull` commits to `pubOf leaves`, crossed to Mathlib's Vesta group by
-`SWPoint.equivPoint`. The subtle half (the canonical `Fq` decode, `-(Σ [scalarₗ]·baseₗ) + h`) is
-`publicInputCommitFull_reads`; this crosses that to the wire's `publicCommitment` — the `Fq → Fp`
-reduction is exact (`vesta_zsmul_eq`), so the read carries no slack. -/
+`SWPoint.equivPoint`. The subtle half (the canonical `Fq` decode — the ladder's top-bit pin —
+`-(Σ [scalarₗ]·baseₗ) + h`) is `publicInputCommitFull_reads`; this crosses that to the wire's
+`publicCommitment` — the `Fq → Fp` reduction is exact (`vesta_zsmul_eq`), so the read carries
+no slack. -/
 theorem xHat_reads_publicCommitment {nc : ℕ} (ci : Fin nc) {V : Valuation Fq}
     (σ : Bulletproof.SRS Bulletproof.IpaVesta.curve.Point)
     (cvk : Kimchi.Verifier.KimchiVK Bulletproof.IpaVesta.curve nc)
@@ -189,11 +266,9 @@ theorem xHat_reads_publicCommitment {nc : ℕ} (ci : Fin nc) {V : Valuation Fq}
       ((SWPoint.equivPoint Vesta.curve)
         (Kimchi.Verifier.publicCommitment Bulletproof.IpaVesta.curve σ cvk
           (pubOf V leaves))[ci])⌝⦄ := by
-  have hcast : ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : Fq)) : ℤ) = m := by
-    intro m hm0 hmlt
-    have hp : (2 : ℤ) ^ 254 ≤ (PALLAS_SCALAR_CARD : ℤ) := by norm_num [PALLAS_SCALAR_CARD]
-    show ((ZMod.val ((m : Fq))) : ℤ) = m
-    rw [ZMod.val_intCast]; exact Int.emod_eq_of_lt hm0 (by push_cast; linarith)
+  have hcast : ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : Fq)) : ℤ) = m :=
+    fun m hm0 hmlt => toNat_intCast_of_lt PALLAS_SCALAR_CARD hm0
+      (lt_of_lt_of_le hmlt (by norm_num [PALLAS_SCALAR_CARD]))
   have hbit : ∀ b : Bool, ToNat.toNat (bit b : Fq) = if b then 1 else 0 := by
     haveI : Fact (1 < PALLAS_SCALAR_CARD) := ⟨by norm_num [PALLAS_SCALAR_CARD]⟩
     intro b
@@ -230,7 +305,8 @@ theorem xHat_reads_publicCommitment {nc : ℕ} (ci : Fin nc) {V : Valuation Fq}
       crossing_list ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
   refine builder_spec_imp _ _ _
     (publicInputCommitFull_reads (d := HasCurve.vesta) ci blindingH leaves Ts cps
-      ((SWPoint.equivPoint Vesta.curve) σ.h) hcast hbit h130 h10 hbind.regime hbind.canon
+      ((SWPoint.equivPoint Vesta.curve) σ.h) hcast hbit h130 h10
+      (fun leaf hl => Leaf.regimeFull_of_offBand V leaf (hbind.offBand leaf hl))
       hbind.blinding hbind.pre hbind.corr hbind.scalar hbind.hon) fun r hr => ?_
   rw [hcross]; exact hr
 
