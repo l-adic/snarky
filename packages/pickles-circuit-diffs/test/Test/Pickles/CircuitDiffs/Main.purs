@@ -18,6 +18,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console as Console
 import Effect.Exception (throw)
+import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
@@ -106,7 +107,6 @@ import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import JS.BigInt as BigInt
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, generator, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -754,7 +754,10 @@ spec bundle =
         -- Written into `resultsDir` beside the comparison dumps, so it rides the same
         -- artifact to the Lean checker; the consumers that scan the dir (the witness checker,
         -- the visualizer) skip it — it carries no `purescript` field and no manifest entry.
-        liftEffect do
+        -- Emitted inside an `it` so it runs after the `beforeAll_` `resetOutputDirs` has created
+        -- (and not since wiped) `resultsDir`; a bare effect here would run at spec-construction
+        -- time, before the directory exists.
+        it "dumps the xhat_wrap Lagrange bases for the Lean check_cs harness" $ liftEffect do
           let
             ptToJson :: AffinePoint Fq -> Array String
             ptToJson (AffinePoint { x, y }) =
