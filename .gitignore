@@ -111,3 +111,9 @@ prof/
 
 # Profiling visualizations: commit PNGs; SVGs are large/regenerable (tools/profile/)
 bench/profiles/*.svg
+
+# Local agent harness (snarky-agent); built out-of-tree, never committed
+/harness/
+
+# Claude Code local state (skills, per-project memory) — kept local, not tracked
+/.claude/
