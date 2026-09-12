@@ -721,6 +721,22 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
   simp only [foldl_pts_eq, foldl_cols_eq, ← absorb_append]
   exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hx, hdv, s11⟩
 
+/-- The conditional transcript returns the `x_hat` it was given. -/
+theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
+    (sgOld : List (BoolVar F × AffinePoint (FVar F))) (xHat : List (AffinePoint (FVar F)))
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      xHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜o.xHat = xHat⌝⦄ := by
+  simp only [fqSpongeTranscriptOpt]
+  have h1 := fun (b : Bool) ov => builder_spec_true
+    (optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p b endo ov)
+  have h2 := fun sv => builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
+  mvcgen -trivial [h1, h2]
+  case vc1.hsize => exact hsize
+
 /-! ## The wire reading -/
 
 open Kimchi.Verifier in

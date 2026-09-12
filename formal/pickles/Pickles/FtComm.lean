@@ -394,4 +394,8 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
 
 end Side
 
+/-! The gadgets are sealed after their reads: a consumer composes `ftComm_reads`, never the
+body. -/
+attribute [irreducible] hornerReduce ftComm
+
 end Pickles

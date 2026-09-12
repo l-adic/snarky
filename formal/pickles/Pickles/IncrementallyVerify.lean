@@ -614,24 +614,6 @@ private theorem olds_reads_plain :
   | [], _ :: _, _, h => by rw [List.map_cons] at h; cases h
   | _ :: _, [], _, h => by rw [List.map_cons] at h; cases h
 
-/-- The conditional transcript returns the `x_hat` it was given. -/
-private theorem transcriptOpt_xHat (p : Poseidon.Params C.BaseField)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar C.BaseField)
-    (sgOld : List (BoolVar C.BaseField × AffinePoint (FVar C.BaseField)))
-    (xHat : List (AffinePoint (FVar C.BaseField)))
-    (wComm : List (List (AffinePoint (FVar C.BaseField))))
-    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint C.BaseField)) p endo
-      indexDigest sgOld xHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜o.xHat = xHat⌝⦄ := by
-  simp only [fqSpongeTranscriptOpt]
-  have h1 := fun (b : Bool) ov => builder_spec_true
-    (optSqueezePrechallenge (c := Builder V (KimchiConstraint C.BaseField)) p b endo ov)
-  have h2 := fun sv => builder_spec_true
-    (SpongeVar.squeeze (c := Builder V (KimchiConstraint C.BaseField)) p sv)
-  mvcgen -trivial [h1, h2]
-  case vc1.hsize => exact hsize
-
 /-- The plain transcript's `x_hat` is `computeXHat`'s, read as it reads. -/
 private theorem transcript_xHat (p : Poseidon.Params C.BaseField)
     (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar C.BaseField)
@@ -728,8 +710,8 @@ private theorem transcriptOpt_reads (S : IvpSide C V ops)
         ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⌝⦄ := by
   rw [builder_spec_iff]
   intro nv hsat
-  refine ⟨(builder_spec_iff _ _).mp (transcriptOpt_xHat _ hsize endo indexDigest sgOld xHat wComm
-    zComm tComm) nv hsat, fun sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar => ?_⟩
+  refine ⟨(builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_xHat _ hsize endo indexDigest sgOld
+    xHat wComm zComm tComm) nv hsat, fun sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar => ?_⟩
   exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec S.two_ne S.three_ne _ hsize
     S.small_inj endo indexDigest sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht
     hzne htne hchar) nv hsat
@@ -1023,6 +1005,10 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       hFq hasrt' ftc hft' o hcb'
 
 end Assembly
+
+/-! The gadget is sealed after its read: a consumer composes `incrementallyVerifyProof_reads`,
+never the body. -/
+attribute [irreducible] incrementallyVerifyProof
 
 /-! ## The deployed sides -/
 
