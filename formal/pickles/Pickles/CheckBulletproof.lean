@@ -818,6 +818,206 @@ theorem checkBulletproof_spec_success {sf : Type}
   rw [ht]
   exact ⟨U, ns, c₀, wcip, wb, w₁, w₂, hsign, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩
 
+/-- `checkBulletproof_spec_success` with the reading and every point reading at a curve `W`
+the endomorphism bundle's curve equals — the form a side generic in its wire curve consumes. -/
+theorem checkBulletproof_spec_success_at {sf : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    {W : WeierstrassCurve.Affine F} (hW : e.d.W = W)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo : FVar F)
+    (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (hchar : CastInj128 F)
+    (R : ops.Reading W) (umap : F → W.Point)
+    (hgm : ∀ t : FVar F, ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint F)) sqrtF gm t
+      ⦃⇓ r _ => ⌜∃ U : W.Point, OnCurveAt W V r U ∧
+        (U = umap (t.val V) ∨ U = -umap (t.val V))⌝⦄)
+    (sv : SpongeVar F) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
+    (bv : List (W.Point × Bool)) (hb : List.Forall₂ (MaskedBaseReads W V) bases bv)
+    (hbne : bases ≠ []) (inp : CheckBulletproofInput F sf)
+    (hwf : ∀ x ∈ inp.scaled, R.WellFormed x)
+    (hreg : ∀ (x : sf) (w : R.wit), x ∈ inp.scaled → R.Pre x w → R.Reg w)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n) (δv sgv hv : W.Point)
+    (lrv : List (W.Point × W.Point))
+    (hlr : List.Forall₂ (PairReads W V) inp.opening.lr lrv) (hlrne : inp.opening.lr ≠ [])
+    (hδ : OnCurveAt W V inp.opening.delta δv) (hsg : OnCurveAt W V inp.opening.sg sgv)
+    (hh : OnCurveAt W V inp.blindingGenerator hv) :
+    ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜∃ (U : W.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (wcip wb w₁ w₂ : R.wit),
+      (U = umap (o.t.val V) ∨ U = -umap (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
+      R.Pre inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
+      R.Pre inp.opening.z1 w₁ ∧ R.Pre inp.opening.z2 w₂ ∧
+      ((↑o.success : CVar F).val V = 1 ↔
+        SchnorrPoint e.d.lam c₀.val U (hornerCombine (endoExpandZ e.d.lam n.val) bv)
+          (lrSum (List.zipWith (lrTerm e.d.lam) lrv (ns.map Subtype.val))) δv sgv hv
+          (R.dec wcip) (R.dec wb) (R.dec w₁) (R.dec w₂))⌝⦄ := by
+  subst hW
+  exact checkBulletproof_spec_success ops e p hsize endo gm sqrtF hchar R umap hgm sv bases bv hb
+    hbne inp hwf hreg n hxi δv sgv hv lrv hlr hlrne hδ hsg hh
+
+/-! ## A side of the group half
+
+What a side supplies to read the group half's gadgets on the wire's commitment curve `C`
+(`Bulletproof.Ipa.CommitmentCurve`): its ladder reading, the decode of a shifted claim, the
+curve's group facts, the endomorphism and map-to-curve data, the field facts the transcript's
+squeezes need, the absorbed limbs of a canonical claim, and the bridges from the gadgets'
+group vocabulary (`SchnorrPoint`, `hornerCombine`) to the wire's (`schnorrAt`,
+`combineCommitments`). One value per deployed side, `wrapSide` and `stepSide` below. The
+opening check's read on any side, `IvpSide.opening_reads`, is proved once, from
+`checkBulletproof_spec_success`. -/
+
+section Side
+
+open Bulletproof Bulletproof.Ipa CompElliptic.CurveForms.ShortWeierstrass
+
+/-- What a side supplies to read the group half's gadgets on the wire's commitment curve `C`:
+how its shifted-scalar ladder reads (`R`); the scalar-field decode of a shifted claim, with the
+law that a ladder witness's integer decode casts to it; the facts about `C`'s affine group the
+adds and negations need — the scalar order kills the group (so an integer acts as its residue's
+representative), the curve is short (`A = 0`), the base field is not of characteristic 2 and
+the group has no 2-torsion; the endomorphism bundle (at the wire curve) and the map-to-curve
+parameters the opening check runs on; the field facts the transcript's squeezes need; the limbs
+a canonical claim absorbs as, tied to the wire's; the map-to-curve gadget's read; and the two
+bridges from the gadgets' group vocabulary to the wire's. One value per deployed side:
+`wrapSide`, `stepSide`. -/
+structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
+    (ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf) where
+  /-- The ladder's reading on the wire curve's affine group. -/
+  R : IpaScalarOps.Reading (V := V) ops C.E.toAffine
+  /-- The canonical decode of a shifted claim in the scalar field. -/
+  decode : sf → C.ScalarField
+  /-- A ladder witness of a claim decodes, in the scalar field, to the claim's decode. -/
+  dec_cast : ∀ {x : sf} {w : R.wit}, R.Pre x w → (R.dec w : C.ScalarField) = decode x
+  /-- The scalar order kills the wire point group. -/
+  card_nsmul : ∀ X : C.Point, C.scalar • X = 0
+  /-- The curve is short: `y² = x³ + B`. -/
+  a_zero : C.E.A = 0
+  /-- The base field is not of characteristic 2. -/
+  two_ne : (2 : C.BaseField) ≠ 0
+  /-- The affine group has no 2-torsion. -/
+  two_torsion_free : ∀ P : C.E.toAffine.Point, P ≠ 0 → P + P ≠ 0
+  /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
+  e : IpaEndo C.BaseField
+  /-- The bundle's curve is the wire curve. -/
+  eW : e.d.W = C.E.toAffine
+  /-- The map-to-curve parameters deriving the `U` base. -/
+  gm : GroupMapParams C.BaseField
+  /-- The base field is not of characteristic 3 (the prechallenge squeeze's `endo_scalar`). -/
+  three_ne : (3 : C.BaseField) ≠ 0
+  /-- Naturals up to 3 cast injectively (the conditional sponge's mask count). -/
+  small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : C.BaseField) = k → j = k
+  /-- The base field has more than 254 bits: a low-128-bit read is a `PrechallengeAlias`. -/
+  base_big : 2 ^ 254 < C.base
+  /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
+  ladder witness is below `2²⁵⁴ < |Fq|`); on the step side a split claim whose halved limb
+  keeps `2·sDiv2 + sOdd` below the scalar modulus — the 254-bit range check alone leaves one
+  bit of slack, the `scale_fast2` top-bit family (#341). -/
+  Canon : sf → Prop
+  /-- At a ladder witness of a canonical claim, the limbs the claim absorbs as are the wire's
+  `scalarLimbs` of the shifted decode. -/
+  absorb_limbs : ∀ {x : sf} {w : R.wit}, Canon x → R.Pre x w →
+    (ops.shiftedToAbsorbFields x).map (·.val V) = scalarLimbs C (shiftScalar C (decode x))
+  /-- The map-to-curve gadget reads as the wire's `toGroup` up to sign. -/
+  groupMap : ∀ (sqrtF : C.BaseField → Option C.BaseField) (t : FVar C.BaseField),
+    ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint C.BaseField)) sqrtF gm t
+    ⦃⇓ r _ => ⌜∃ U : C.E.toAffine.Point, OnCurveAt C.E.toAffine V r U ∧
+      (U = SWPoint.equivPoint C.E (C.toGroup (t.val V)) ∨
+        U = -SWPoint.equivPoint C.E (C.toGroup (t.val V)))⌝⦄
+  /-- Horner's rule over the kept bases, read back in the wire group, is the wire's polyscale
+  combination at the expanded challenge. -/
+  horner : ∀ (n : ℕ) (bvW : List (C.Point × Bool)), (∀ h, bvW.getLast? = some h → h.2 = true) →
+    (SWPoint.equivPoint C.E).symm (hornerCombine (endoExpandZ e.d.lam n)
+        (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)))
+      = combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n)
+          ((bvW.filter (·.2)).map (·.1)).toArray
+  /-- The gadgets' Schnorr equation, read back in the wire group, is the wire's `schnorrAt`. -/
+  schnorr : ∀ (σ : SRS C.Point) (U P : C.Point) (chals : Vector C.ScalarField σ.k) (c₀ : ℕ)
+    (cip b z₁ z₂ : ℤ) (pr : Ipa.Proof C σ.k) (ns : List ℕ),
+    chals.toList = ns.map (Poseidon.FqSponge.endoExpand C.sponge.lam) →
+    pr.z1 = (z₁ : C.ScalarField) → pr.z2 = (z₂ : C.ScalarField) →
+    (SchnorrPoint e.d.lam c₀ (SWPoint.equivPoint C.E U) (SWPoint.equivPoint C.E P)
+        (lrSum (List.zipWith (lrTerm e.d.lam) (pr.lr.toList.map fun q =>
+          (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)) ns))
+        (SWPoint.equivPoint C.E pr.delta) (SWPoint.equivPoint C.E pr.sg)
+        (SWPoint.equivPoint C.E σ.h) cip b z₁ z₂
+      ↔ schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀)
+          (cip : C.ScalarField) (b : C.ScalarField) P pr)
+
+variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+  {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
+
+/-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
+reading it in the ladder's regime (at the deployed curves: the decode is off the forbidden
+band — the `scale_fast`-family premise #341 tracks). -/
+def IvpSide.ClaimOk (S : IvpSide C V ops) (x : sf) : Prop :=
+  S.R.WellFormed x ∧ ∀ w, S.R.Pre x w → S.R.Reg w
+
+/-- **The opening check reads as the wire's, on any side.** Under any valuation satisfying the
+emitted constraints — the bases reading as wire points under their bits (the last kept), every
+scaled claim a claim the ladder read speaks about, `ξ` reading as `n`, the pairs, `δ`, `sg` and
+`h` as the wire's points — the challenges read as some `ns`, `c` as some `c₀`, `U` is the
+map-to-curve of `t` up to sign, `cip` has a ladder witness, and the success bit reads `1`
+exactly when the wire verifier's `schnorrAt` holds at the side's decodes over the kept bases
+combined at `n`'s expansion. -/
+theorem IvpSide.opening_reads (S : IvpSide C V ops)
+    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
+    (sv : SpongeVar C.BaseField)
+    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
+    (bvW : List (C.Point × Bool))
+    (hb : List.Forall₂ (MaskedBaseReads C.E.toAffine V) bases
+      (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)))
+    (hbne : bases ≠ []) (hlast : ∀ h, bvW.getLast? = some h → h.2 = true)
+    (inp : CheckBulletproofInput C.BaseField sf) (hclaims : ∀ x ∈ inp.scaled, S.ClaimOk x)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n)
+    (σ : SRS C.Point) (lrW : Vector (C.Point × C.Point) σ.k) (δW sgW : C.Point)
+    (hlr : List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr
+      (lrW.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)))
+    (hlrne : inp.opening.lr ≠ [])
+    (hδ : OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E δW))
+    (hsg : OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E sgW))
+    (hh : OnCurveAt C.E.toAffine V inp.blindingGenerator (SWPoint.equivPoint C.E σ.h)) :
+    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint C.BaseField)) ops S.e
+      C.sponge.params endo S.gm sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector C.ScalarField σ.k),
+      (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
+      ((↑o.success : CVar C.BaseField).val V = 1 ↔
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+          (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
+            ((bvW.filter (·.2)).map (·.1)).toArray)
+          ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩)⌝⦄ := by
+  have hcast : CastInj128 C.BaseField :=
+    castInj128_of_lt C.base (lt_trans (by norm_num) S.base_big)
+  refine builder_spec_imp _ _ _
+    (checkBulletproof_spec_success_at ops S.e S.eW _ hsize endo S.gm sqrtF hcast S.R
+      (fun t => SWPoint.equivPoint C.E (C.toGroup t)) (S.groupMap sqrtF) sv bases _ hb hbne inp
+      (fun x hx => (hclaims x hx).1) (fun x w hx hpre => (hclaims x hx).2 w hpre)
+      n hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
+  obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
+  have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
+  refine ⟨(SWPoint.equivPoint C.E).symm U, ns, c₀,
+    ⟨(ns.map fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val).toArray,
+      by simp [hlen']⟩, ?_, hns, hc, by simp, ⟨wcip, hpcip⟩, ?_⟩
+  · beta_reduce at hU
+    generalize C.toGroup (o.t.val V) = T at hU ⊢
+    rcases hU with h | h
+    · left; rw [h, AddEquiv.symm_apply_apply]
+    · right
+      rw [h]
+      exact (congrArg (SWPoint.equivPoint C.E).symm
+        (map_neg (SWPoint.equivPoint C.E) T).symm).trans (AddEquiv.symm_apply_apply _ _)
+  · rw [← S.dec_cast hpcip, ← S.dec_cast hpb, ← S.dec_cast hp1, ← S.dec_cast hp2, hiff,
+      ← S.schnorr σ _ _ _ c₀.val _ _ _ _ ⟨lrW, δW, _, _, sgW⟩ (ns.map Subtype.val)
+        (by simp [Function.comp_def]) rfl rfl]
+    simp only [AddEquiv.apply_symm_apply]
+    rw [← S.horner n.val bvW hlast, AddEquiv.apply_symm_apply]
+
+end Side
 
 /-! ## The deployed ladders
 
@@ -1351,82 +1551,68 @@ section DeployedWrap
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass Poseidon.FqSponge
 open Kimchi.Gate.EndoScalar Kimchi.Gate.VarBaseMul Bulletproof Bulletproof.Ipa
 
-/-- **The wrap side's `check_bulletproof` at the wire.** Under any valuation satisfying the
-emitted constraints — the bases reading as Vesta points (the last kept), the pairs, `δ`, `sg`
-and `h` as points, the ladder witnesses off the forbidden band — the challenges read as some
-`ns`, `c` as some `c₀`, and the success bit reads `1` exactly when the wire verifier's
-`schnorrAt` holds at `IpaVesta.curve`: the `U` base the deployed map-to-curve's point or its
-negation, the challenges the endo-expansions of `ns`, the combined commitment
-`combineCommitments` over the kept bases at the expanded `ξ`, and `cip`, `b`, `z₁`, `z₂` the
-`Type1` decodes of the circuit's shifted scalars (`wrapDecode`). The decodes are canonical
-because `scaleFast1` pins the top bit of its 255-bit decomposition (`scale_fast`'s check):
-without it `t` and `t + |Fq|` would both be admissible witnesses of a shifted value `t`, the
-second decoding to the scalar plus `2·(|Fq| − |Fp|)`. With `verifyWith_eq`,
+/-- The wrap circuit absorbs the claimed `cip` as its one `Type1` limb, and the wire absorbs
+`scalarLimbs (shiftScalar cip)`: at Vesta these agree, the ladder witness bounding the cell
+below the scalar modulus so the decode's re-shift is the cell. -/
+private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
+    (h : WrapLadderPre V x z) :
+    ((IpaScalarOps.wrap (c := Builder V (KimchiConstraint Fq))).shiftedToAbsorbFields x).map
+        (·.val V)
+      = scalarLimbs IpaVesta.curve (shiftScalar IpaVesta.curve (wrapDecode V x)) := by
+  show [x.val.val V] = _
+  symm
+  have hsz : Nat.size IpaVesta.curve.scalar = 255 :=
+    le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_BASE_CARD]))
+      (Nat.lt_size.mpr (by norm_num [PALLAS_BASE_CARD]))
+  have hlt : IpaVesta.curve.scalar < IpaVesta.curve.base := by decide
+  simp only [scalarLimbs, shiftScalar, if_pos hlt, hsz, wrapDecode,
+    Pasta.Shifted.shiftType1_unshiftType1 (by decide : (2 : Fp) ≠ 0)]
+  obtain ⟨h0, hlt', hz⟩ := h
+  have hval : ((x.val.val V).val : ℤ) = z := by
+    rw [← hz, ZMod.val_intCast, Int.emod_eq_of_lt h0
+      (lt_of_lt_of_le hlt' (by norm_num [PALLAS_SCALAR_CARD]))]
+  have hv : (x.val.val V).val < PALLAS_BASE_CARD := by
+    have : ((x.val.val V).val : ℤ) < 2 ^ 254 := hval ▸ hlt'
+    have : (x.val.val V).val < 2 ^ 254 := by exact_mod_cast this
+    exact lt_trans this (by norm_num [PALLAS_BASE_CARD])
+  rw [ZMod.val_natCast, Nat.mod_eq_of_lt hv, ZMod.natCast_zmod_val]
+
+/-- Naturals up to 3 cast injectively into `Fq`. -/
+private theorem fq_small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fq) = k → j = k := by
+  intro j k hj hk h
+  interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
+
+/-- **The wrap side**: `IpaScalarOps.wrap` at Vesta (`IpaVesta.curve`, base `Fq`, scalar `Fp`)
+through `wrapReading`, the `Type1` claims decoding by `wrapDecode`, every claim canonical. The
+decodes are canonical because `scaleFast1` pins the top bit of its 255-bit decomposition
+(`scale_fast`'s check): without it `t` and `t + |Fq|` would both be admissible witnesses of a
+shifted value `t`, the second decoding to the scalar plus `2·(|Fq| − |Fp|)`. Its opening check
+reads as the wire's by `IvpSide.opening_reads`; with `verifyWith_eq`,
 `success ∧ sg = ⟨bPolyCoefficients chals, g⟩` is `verifyWith` at those readings. -/
-theorem checkBulletproof_wrap_spec {V : Valuation Fq}
-    (p : Poseidon.Params Fq) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (endo : FVar Fq) (sqrtF : Fq → Option Fq) (sv : SpongeVar Fq)
-    (bases : List (AffinePoint (FVar Fq) × Option (BoolVar Fq)))
-    (bvW : List (SWPoint Vesta.curve × Bool))
-    (hb : List.Forall₂ (MaskedBaseReads IpaEndo.vesta.d.W V) bases
-      (bvW.map fun b => ((SWPoint.equivPoint Vesta.curve) b.1, b.2)))
-    (hbne : bases ≠ []) (hlast : ∀ h, bvW.getLast? = some h → h.2 = true)
-    (inp : CheckBulletproofInput Fq (Type1 (FVar Fq)))
-    (hband : ∀ (x : Type1 (FVar Fq)) (z : ℤ), x ∈ inp.scaled → WrapLadderPre V x z →
-      wrapLadderDec z ∉ forbiddenValues PALLAS_BASE_CARD)
-    (n : Prechallenge) (hxi : Reads128 V inp.xi n)
-    (σ : SRS (SWPoint Vesta.curve))
-    (lrW : Vector (SWPoint Vesta.curve × SWPoint Vesta.curve) σ.k) (δW sgW : SWPoint Vesta.curve)
-    (hlr : List.Forall₂ (PairReads IpaEndo.vesta.d.W V) inp.opening.lr (lrW.toList.map fun q =>
-      ((SWPoint.equivPoint Vesta.curve) q.1, (SWPoint.equivPoint Vesta.curve) q.2)))
-    (hlrne : inp.opening.lr ≠ [])
-    (hδ : OnCurveAt IpaEndo.vesta.d.W V inp.opening.delta ((SWPoint.equivPoint Vesta.curve) δW))
-    (hsg : OnCurveAt IpaEndo.vesta.d.W V inp.opening.sg ((SWPoint.equivPoint Vesta.curve) sgW))
-    (hh : OnCurveAt IpaEndo.vesta.d.W V inp.blindingGenerator
-      ((SWPoint.equivPoint Vesta.curve) σ.h)) :
-    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
-      p endo groupMapParamsVesta sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : SWPoint Vesta.curve) (ns : List Prechallenge) (c₀ : Prechallenge)
-      (chals : Vector Fp σ.k),
-      (U = Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V) ∨
-        U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V)) ∧
-      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (fun m => endoExpand Poseidon.FqVesta.spec.lam m.val) ∧
-      (∃ z : ℤ, WrapLadderPre V inp.deferred.combinedInnerProduct z) ∧
-      ((↑o.success : CVar Fq).val V = 1 ↔
-        schnorrAt IpaVesta.curve σ U chals (endoExpand Poseidon.FqVesta.spec.lam c₀.val)
-          (wrapDecode V inp.deferred.combinedInnerProduct) (wrapDecode V inp.deferred.b)
-          (combineCommitments IpaVesta.curve (endoExpand Poseidon.FqVesta.spec.lam n.val)
-            ((bvW.filter (·.2)).map (·.1)).toArray)
-          ⟨lrW, δW, wrapDecode V inp.opening.z1, wrapDecode V inp.opening.z2, sgW⟩)⌝⦄ := by
-  refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success IpaScalarOps.wrap IpaEndo.vesta p hsize endo
-      groupMapParamsVesta sqrtF (castInj128_of_lt _ (by decide)) (wrapReading V)
-      (fun t => SWPoint.equivPoint Vesta.curve
-        (Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec t)) (vesta_groupMap_reads sqrtF)
-      sv bases _ hb hbne inp (fun _ _ => trivial)
-      (fun x z hx hpre => HasCurve.vesta_ladderRegime _ (hband x z hx hpre))
-      n hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
-  obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
-  have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
-  refine ⟨(SWPoint.equivPoint Vesta.curve).symm U, ns, c₀,
-    ⟨(ns.map fun m => endoExpand Poseidon.FqVesta.spec.lam m.val).toArray, by simp [hlen']⟩,
-    ?_, hns, hc, by simp, ⟨wcip, hpcip⟩, ?_⟩
-  · beta_reduce at hU
-    generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (CVar.val o.t V) = T at hU ⊢
-    rcases hU with h | h
-    · left; rw [h, AddEquiv.symm_apply_apply]
-    · right
-      rw [h]
-      exact (congrArg (SWPoint.equivPoint Vesta.curve).symm
-        (map_neg (SWPoint.equivPoint Vesta.curve) T).symm).trans (AddEquiv.symm_apply_apply _ _)
-  · rw [← wrapLadderDec_cast hpcip, ← wrapLadderDec_cast hpb, ← wrapLadderDec_cast hp1,
-      ← wrapLadderDec_cast hp2, hiff,
-      ← schnorrPoint_iff_schnorrAt_vesta σ _ _ _ c₀.val _ _ _ _ ⟨lrW, δW, _, _, sgW⟩
-        (ns.map Subtype.val) (by simp [Function.comp_def]) rfl rfl]
-    simp only [AddEquiv.apply_symm_apply]
-    rw [← vesta_hornerCombine_eq n.val bvW hlast, AddEquiv.apply_symm_apply]
-    exact Iff.rfl
+def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap where
+  R := wrapReading V
+  decode := wrapDecode V
+  dec_cast h := wrapLadderDec_cast h
+  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
+  a_zero := rfl
+  two_ne := HasCurve.vesta.two_ne
+  two_torsion_free := HasCurve.vesta.two_torsion_free
+  e := IpaEndo.vesta
+  eW := rfl
+  gm := groupMapParamsVesta
+  three_ne := by decide
+  small_inj := fq_small_inj
+  base_big := by norm_num [PALLAS_SCALAR_CARD]
+  Canon _ := True
+  absorb_limbs _ h := wrap_cip_limbs h
+  groupMap sqrtF t := by
+    -- the map-to-curve by projection reduction, not unification (which unfolds the SvdW map)
+    dsimp only
+    unfold Poseidon.GroupMapVesta.toGroup
+    exact vesta_groupMap_reads sqrtF t
+  horner n bvW hlast := vesta_hornerCombine_eq n bvW hlast
+  schnorr σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3 :=
+    schnorrPoint_iff_schnorrAt_vesta σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3
 
 end DeployedWrap
 
@@ -1595,82 +1781,75 @@ section DeployedStep
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass Poseidon.FqSponge
 open Kimchi.Gate.EndoScalar Kimchi.Gate.VarBaseMul Bulletproof Bulletproof.Ipa Pasta.Shifted
 
-/-- **The step side's `check_bulletproof` at the wire.** Under any valuation satisfying the
-emitted constraints — the bases reading as Pallas points (the last kept), the pairs, `δ`, `sg`
-and `h` as points, the parity bits reading as bits, the ladder witnesses' halves off the
-forbidden band — the challenges read as some `ns`, `c` as some `c₀`, and the success bit reads
-`1` exactly when the wire verifier's `schnorrAt` holds at `IpaPallas.curve`: the `U` base the
-deployed map-to-curve's point or its negation, the challenges the endo-expansions of `ns`,
-the combined commitment `combineCommitments` over the kept bases at the expanded `ξ`, and
-`cip`, `b`, `z₁`, `z₂` the `Type2` decodes of the circuit's split scalars (`stepDecode`). No
-alias here: the half is unpacked in `254 < log₂ |Fp|` bits, so its witness is canonical. With
-`verifyWith_eq`, `success ∧ sg = ⟨bPolyCoefficients chals, g⟩` is `verifyWith` at those
-readings. -/
-theorem checkBulletproof_step_spec {V : Valuation Fp}
-    (p : Poseidon.Params Fp) (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (sv : SpongeVar Fp)
-    (bases : List (AffinePoint (FVar Fp) × Option (BoolVar Fp)))
-    (bvW : List (SWPoint Pallas.curve × Bool))
-    (hb : List.Forall₂ (MaskedBaseReads IpaEndo.pallas.d.W V) bases
-      (bvW.map fun b => ((SWPoint.equivPoint Pallas.curve) b.1, b.2)))
-    (hbne : bases ≠ []) (hlast : ∀ h, bvW.getLast? = some h → h.2 = true)
-    (inp : CheckBulletproofInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (hbits : ∀ x ∈ inp.scaled, ∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb)
-    (hband : ∀ (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (w : ℤ × Bool), x ∈ inp.scaled →
-      StepLadderPre V x w → unshiftType1 255 w.1 ∉ forbiddenValues PALLAS_SCALAR_CARD)
-    (n : Prechallenge) (hxi : Reads128 V inp.xi n)
-    (σ : SRS (SWPoint Pallas.curve))
-    (lrW : Vector (SWPoint Pallas.curve × SWPoint Pallas.curve) σ.k) (δW sgW : SWPoint Pallas.curve)
-    (hlr : List.Forall₂ (PairReads IpaEndo.pallas.d.W V) inp.opening.lr (lrW.toList.map fun q =>
-      ((SWPoint.equivPoint Pallas.curve) q.1, (SWPoint.equivPoint Pallas.curve) q.2)))
-    (hlrne : inp.opening.lr ≠ [])
-    (hδ : OnCurveAt IpaEndo.pallas.d.W V inp.opening.delta ((SWPoint.equivPoint Pallas.curve) δW))
-    (hsg : OnCurveAt IpaEndo.pallas.d.W V inp.opening.sg ((SWPoint.equivPoint Pallas.curve) sgW))
-    (hh : OnCurveAt IpaEndo.pallas.d.W V inp.blindingGenerator
-      ((SWPoint.equivPoint Pallas.curve) σ.h)) :
-    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step
-      IpaEndo.pallas p endo groupMapParamsPallas sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : SWPoint Pallas.curve) (ns : List Prechallenge) (c₀ : Prechallenge)
-      (chals : Vector Fq σ.k),
-      (U = Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (o.t.val V) ∨
-        U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (o.t.val V)) ∧
-      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (fun m => endoExpand Poseidon.FqPallas.spec.lam m.val) ∧
-      (∃ w : ℤ × Bool, StepLadderPre V inp.deferred.combinedInnerProduct w) ∧
-      ((↑o.success : CVar Fp).val V = 1 ↔
-        schnorrAt IpaPallas.curve σ U chals (endoExpand Poseidon.FqPallas.spec.lam c₀.val)
-          (stepDecode V inp.deferred.combinedInnerProduct) (stepDecode V inp.deferred.b)
-          (combineCommitments IpaPallas.curve (endoExpand Poseidon.FqPallas.spec.lam n.val)
-            ((bvW.filter (·.2)).map (·.1)).toArray)
-          ⟨lrW, δW, stepDecode V inp.opening.z1, stepDecode V inp.opening.z2, sgW⟩)⌝⦄ := by
-  refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success IpaScalarOps.step IpaEndo.pallas p hsize endo
-      groupMapParamsPallas sqrtF (castInj128_of_lt _ (by decide)) (stepReading V)
-      (fun t => SWPoint.equivPoint Pallas.curve
-        (Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec t)) (pallas_groupMap_reads sqrtF)
-      sv bases _ hb hbne inp hbits
-      (fun x w hx hpre => HasCurve.pallas_ladderRegime _ (hband x w hx hpre))
-      n hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
-  obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
-  have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
-  refine ⟨(SWPoint.equivPoint Pallas.curve).symm U, ns, c₀,
-    ⟨(ns.map fun m => endoExpand Poseidon.FqPallas.spec.lam m.val).toArray, by simp [hlen']⟩,
-    ?_, hns, hc, by simp, ⟨wcip, hpcip⟩, ?_⟩
-  · beta_reduce at hU
-    generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (CVar.val o.t V) = T at hU ⊢
-    rcases hU with h | h
-    · left; rw [h, AddEquiv.symm_apply_apply]
-    · right
-      rw [h]
-      exact (congrArg (SWPoint.equivPoint Pallas.curve).symm
-        (map_neg (SWPoint.equivPoint Pallas.curve) T).symm).trans (AddEquiv.symm_apply_apply _ _)
-  · rw [← stepLadderDec_cast hpcip, ← stepLadderDec_cast hpb, ← stepLadderDec_cast hp1,
-      ← stepLadderDec_cast hp2, hiff,
-      ← schnorrPoint_iff_schnorrAt_pallas σ _ _ _ c₀.val _ _ _ _ ⟨lrW, δW, _, _, sgW⟩
-        (ns.map Subtype.val) (by simp [Function.comp_def]) rfl rfl]
-    simp only [AddEquiv.apply_symm_apply]
-    rw [← pallas_hornerCombine_eq n.val bvW hlast, AddEquiv.apply_symm_apply]
-    exact Iff.rfl
+/-- The step circuit absorbs the claimed `cip` as its halved limb then its parity bit, and the
+wire absorbs `scalarLimbs (shiftScalar cip)`: at Pallas these agree when the claim is canonical
+(`2·sDiv2 + sOdd` below the scalar modulus), the decode's re-shift then splitting back into the
+cells. -/
+private theorem step_cip_limbs {V : Valuation Fp} {x : Type2 (SplitField (FVar Fp) (BoolVar Fp))}
+    (hc : 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val < PALLAS_SCALAR_CARD)
+    {w : ℤ × Bool} (h : StepLadderPre V x w) :
+    ((IpaScalarOps.step (c := Builder V (KimchiConstraint Fp))).shiftedToAbsorbFields x).map
+        (·.val V)
+      = scalarLimbs IpaPallas.curve (shiftScalar IpaPallas.curve (stepDecode V x)) := by
+  show [x.val.sDiv2.val V, (↑x.val.sOdd : CVar Fp).val V] = _
+  obtain ⟨hb, -, -, -⟩ := h
+  have hsz : Nat.size IpaPallas.curve.scalar = 255 :=
+    le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_SCALAR_CARD]))
+      (Nat.lt_size.mpr (by norm_num [PALLAS_SCALAR_CARD]))
+  have hlt : ¬ IpaPallas.curve.scalar < IpaPallas.curve.base := by decide
+  simp only [scalarLimbs, shiftScalar, if_neg hlt, hsz, stepDecode, shiftType2_unshiftType2]
+  have hon : ((↑x.val.sOdd : CVar Fp).val V).val ≤ 1 := by
+    rw [hb]
+    cases w.2 <;> simp [bit, ZMod.val_one]
+  have hsum : (2 * (((x.val.sDiv2.val V).val : ℕ) : Fq) + ((((↑x.val.sOdd : CVar Fp).val V).val :
+      ℕ) : Fq)).val = 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val := by
+    have : (2 * (((x.val.sDiv2.val V).val : ℕ) : Fq) + ((((↑x.val.sOdd : CVar Fp).val V).val :
+        ℕ) : Fq)) = ((2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val : ℕ) :
+        Fq) := by push_cast; ring
+    rw [this, ZMod.val_natCast, Nat.mod_eq_of_lt hc]
+  rw [hsum]
+  have h1 : (2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val) / 2
+      = (x.val.sDiv2.val V).val := by omega
+  have h2 : (2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val) % 2
+      = ((↑x.val.sOdd : CVar Fp).val V).val := by omega
+  rw [h1, h2, ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
+
+/-- Naturals up to 3 cast injectively into `Fp`. -/
+private theorem fp_small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fp) = k → j = k := by
+  intro j k hj hk h
+  interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
+
+/-- **The step side**: `IpaScalarOps.step` at Pallas (`IpaPallas.curve`, base `Fp`, scalar
+`Fq`) through `stepReading`, the split `Type2` claims decoding by `stepDecode`. The decode is
+canonical (the half is unpacked in `254 < log₂ |Fp|` bits), but a claim absorbs canonically
+only when its `2·sDiv2 + sOdd` is below the scalar modulus: the 254-bit range check leaves one
+bit of slack over the honest half, the `scale_fast2` top-bit family (#341). Its opening check
+reads as the wire's by `IvpSide.opening_reads`; with `verifyWith_eq`,
+`success ∧ sg = ⟨bPolyCoefficients chals, g⟩` is `verifyWith` at those readings. -/
+def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step where
+  R := stepReading V
+  decode := stepDecode V
+  dec_cast h := stepLadderDec_cast h
+  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
+  a_zero := rfl
+  two_ne := HasCurve.pallas.two_ne
+  two_torsion_free := HasCurve.pallas.two_torsion_free
+  e := IpaEndo.pallas
+  eW := rfl
+  gm := groupMapParamsPallas
+  three_ne := by decide
+  small_inj := fp_small_inj
+  base_big := by norm_num [PALLAS_BASE_CARD]
+  Canon x := 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val
+    < PALLAS_SCALAR_CARD
+  absorb_limbs hc h := step_cip_limbs hc h
+  groupMap sqrtF t := by
+    dsimp only
+    unfold Poseidon.GroupMapPallas.toGroup
+    exact pallas_groupMap_reads sqrtF t
+  horner n bvW hlast := pallas_hornerCombine_eq n bvW hlast
+  schnorr σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3 :=
+    schnorrPoint_iff_schnorrAt_pallas σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3
 
 end DeployedStep
 

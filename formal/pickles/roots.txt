@@ -132,7 +132,9 @@ Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
 -- `ipaSqueezes` from the warm sponge, and at the deployed fields as its `ipaPrechallenges`
 -- up to the `lowest_128_bits` slack; the algebra half, the success bit read as the Schnorr
 -- equation over the gadgets' group (`SchnorrPoint`) at the combined commitment
--- (`hornerCombine`) and the challenge fold (`lrSum`).
+-- (`hornerCombine`) and the challenge fold (`lrSum`); the side interface `IvpSide` and its
+-- opening read `IvpSide.opening_reads`, the success bit as the wire's `schnorrAt` on any
+-- side, with the two deployed sides `wrapSide` and `stepSide`.
 Pickles.absorbList_spec
 Pickles.extractScalarChallenges_spec
 Pickles.checkBulletproof_spec
@@ -143,8 +145,9 @@ Pickles.ipaFinalCheck_spec
 Pickles.checkBulletproof_spec_success
 Pickles.schnorrPoint_iff_schnorrAt_vesta
 Pickles.schnorrPoint_iff_schnorrAt_pallas
-Pickles.checkBulletproof_wrap_spec
-Pickles.checkBulletproof_step_spec
+Pickles.IvpSide.opening_reads
+Pickles.wrapSide
+Pickles.stepSide
 Pickles.wrap_scale_reads
 Pickles.step_scale_reads
 Pickles.vesta_groupMap_reads
@@ -176,12 +179,9 @@ Pickles.xHat_reads_publicCommitment
 -- The `ft_comm` gadget (FtComm.lean, `Common.ft_comm`), generic in the side's shifted-scalar
 -- operations, and its read: on any side (`IvpSide` — the ladder reading, the claim decode and
 -- the curve's group facts) the constructed cell crosses to the wire's `runFtComm`, given the
--- claims decode to the wire's scalars and the `σ₆`/`t_comm` cells read as the commitments. The
--- two deployed sides instantiate it.
+-- claims decode to the wire's scalars and the `σ₆`/`t_comm` cells read as the commitments.
 Pickles.ftComm
 Pickles.ftComm_reads
-Pickles.wrapSide
-Pickles.stepSide
 
 -- The group half (IncrementallyVerify.lean, `incrementally_verify_proof`): the index-digest
 -- squeeze, the fq-sponge transcript, the plonk-claim assertions, `ft_comm`, the `to_batch`

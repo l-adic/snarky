@@ -16,14 +16,11 @@ where `reduce` is the `ζ^{2^k}`-Horner collapse of a chunk array (`reduce_chunk
 emission order follows OCaml's right-to-left argument evaluation: reduce `σ₆`, scale by `perm`,
 reduce `t_comm`, scale by `ζⁿ` and negate, then `f_comm + reduced_t`, then `+ negated`.
 
-The gadget is generic in the side's shifted-scalar operations (`IpaScalarOps`); so is its read.
-`IvpSide` names what a side supplies to read the group half's gadgets on the wire's commitment
-curve: its ladder reading (`IpaScalarOps.Reading`), the scalar-field decode of a shifted claim
-with the law tying a ladder witness's integer decode to it, the curve's group facts, and — for
-the assembly `Pickles.IncrementallyVerify` — the endomorphism and map-to-curve data, the field
-facts the transcript needs, the absorbed limbs of a claim, and the opening check's read. The
-two deployed values, `wrapSide` and `stepSide`, live beside that assembly. `FtCommReads` is the
-leg's read: the constructed cell crosses to the wire's `runFtComm`
+The gadget is generic in the side's shifted-scalar operations (`IpaScalarOps`); so is its read,
+in the side interface `IvpSide` of `Pickles.CheckBulletproof` — the ladder reading
+(`IpaScalarOps.Reading`), the scalar-field decode of a shifted claim with the law tying a
+ladder witness's integer decode to it, and the curve's group facts are what `ft_comm` uses of
+it. `FtCommReads` is the leg's read: the constructed cell crosses to the wire's `runFtComm`
 (`combine(ζ^{2^k}, perm·σ₆) − (ζⁿ − 1)·combine(ζ^{2^k}, t_comm)`), given the claims decode to
 the wire's scalars, each a claim the ladder read speaks about (`IvpSide.ClaimOk`: well-formed,
 and its witnesses in the ladder regime — the forbidden-band premise of the `scale_fast` family),
@@ -73,99 +70,10 @@ end Gadget
 
 /-! ## A side of the group half -/
 
-/-- What a side supplies to read the group half's gadgets on the wire's commitment curve `C`:
-how its shifted-scalar ladder reads (`R`); the scalar-field decode of a shifted claim, with the
-law that a ladder witness's integer decode casts to it; the facts about `C`'s affine group the
-adds and negations need — the scalar order kills the group (so an integer acts as its residue's
-representative), the curve is short (`A = 0`), the base field is not of characteristic 2 and
-the group has no 2-torsion; the endomorphism bundle and map-to-curve parameters the opening
-check runs on; the field facts the transcript's squeezes need; the limbs a claim absorbs as,
-tied to the wire's; and the opening check's read (`checkBulletproof_wrap_spec`,
-`checkBulletproof_step_spec`, in the side-generic vocabulary). One value per deployed side:
-`wrapSide`, `stepSide` (`Pickles.IncrementallyVerify`). -/
-structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
-    (ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf) where
-  /-- The ladder's reading on the wire curve's affine group. -/
-  R : IpaScalarOps.Reading (V := V) ops C.E.toAffine
-  /-- The canonical decode of a shifted claim in the scalar field. -/
-  decode : sf → C.ScalarField
-  /-- A ladder witness of a claim decodes, in the scalar field, to the claim's decode. -/
-  dec_cast : ∀ {x : sf} {w : R.wit}, R.Pre x w → (R.dec w : C.ScalarField) = decode x
-  /-- The scalar order kills the wire point group. -/
-  card_nsmul : ∀ X : C.Point, C.scalar • X = 0
-  /-- The curve is short: `y² = x³ + B`. -/
-  a_zero : C.E.A = 0
-  /-- The base field is not of characteristic 2. -/
-  two_ne : (2 : C.BaseField) ≠ 0
-  /-- The affine group has no 2-torsion. -/
-  two_torsion_free : ∀ P : C.E.toAffine.Point, P ≠ 0 → P + P ≠ 0
-  /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
-  e : IpaEndo C.BaseField
-  /-- The map-to-curve parameters deriving the `U` base. -/
-  gm : GroupMapParams C.BaseField
-  /-- The base field is not of characteristic 3 (the prechallenge squeeze's `endo_scalar`). -/
-  three_ne : (3 : C.BaseField) ≠ 0
-  /-- Naturals up to 3 cast injectively (the conditional sponge's mask count). -/
-  small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : C.BaseField) = k → j = k
-  /-- The base field has more than 254 bits: a low-128-bit read is a `PrechallengeAlias`. -/
-  base_big : 2 ^ 254 < C.base
-  /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
-  ladder witness is below `2²⁵⁴ < |Fq|`); on the step side a split claim whose halved limb
-  keeps `2·sDiv2 + sOdd` below the scalar modulus — the 254-bit range check alone leaves one
-  bit of slack, the `scale_fast2` top-bit family (#341). -/
-  Canon : sf → Prop
-  /-- At a ladder witness of a canonical claim, the limbs the claim absorbs as are the wire's
-  `scalarLimbs` of the shifted decode. -/
-  absorb_limbs : ∀ {x : sf} {w : R.wit}, Canon x → R.Pre x w →
-    (ops.shiftedToAbsorbFields x).map (·.val V) = scalarLimbs C (shiftScalar C (decode x))
-  /-- The opening check's read: with the bases reading as `bvW` under their bits (the last
-  kept), every scaled claim well-formed with its witnesses in regime, `ξ` reading as `n` and the
-  opening's points as the wire's, the challenges read as some `ns`, `c` as some `c₀`, `U` is the
-  map-to-curve of `t` up to sign, `cip` has a ladder witness, and the success bit reads `1`
-  exactly when the Schnorr equation holds at the decodes over the kept bases combined at `n`'s
-  expansion. -/
-  opening : ∀ (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
-    (sv : SpongeVar C.BaseField)
-    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
-    (bvW : List (C.Point × Bool)),
-    List.Forall₂ (MaskedBaseReads C.E.toAffine V) bases
-      (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)) →
-    bases ≠ [] → (∀ h, bvW.getLast? = some h → h.2 = true) →
-    ∀ inp : CheckBulletproofInput C.BaseField sf,
-    (∀ x ∈ inp.scaled, R.WellFormed x ∧ ∀ w, R.Pre x w → R.Reg w) →
-    ∀ n : Prechallenge, Reads128 V inp.xi n →
-    ∀ (σ : SRS C.Point) (lrW : Vector (C.Point × C.Point) σ.k) (δW sgW : C.Point),
-    List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr
-      (lrW.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)) →
-    inp.opening.lr ≠ [] →
-    OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E δW) →
-    OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E sgW) →
-    OnCurveAt C.E.toAffine V inp.blindingGenerator (SWPoint.equivPoint C.E σ.h) →
-    C.sponge.params.roundConstants.size = Poseidon.fullRounds →
-    ⦃⌜True⌝⦄ checkBulletproof ops e C.sponge.params endo gm sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
-      (chals : Vector C.ScalarField σ.k),
-      (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
-      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
-      (∃ w : R.wit, R.Pre inp.deferred.combinedInnerProduct w) ∧
-      ((↑o.success : CVar C.BaseField).val V = 1 ↔
-        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
-          (decode inp.deferred.combinedInnerProduct) (decode inp.deferred.b)
-          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
-            ((bvW.filter (·.2)).map (·.1)).toArray)
-          ⟨lrW, δW, decode inp.opening.z1, decode inp.opening.z2, sgW⟩)⌝⦄
-
 section Side
 
 variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
-
-/-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
-reading it in the ladder's regime (at the deployed curves: the decode is off the forbidden
-band — the `scale_fast`-family premise #341 tracks). -/
-def IvpSide.ClaimOk (S : IvpSide C V ops) (x : sf) : Prop :=
-  S.R.WellFormed x ∧ ∀ w, S.R.Pre x w → S.R.Reg w
 
 /-- A commitment cell list reads as a wire commitment list, pointwise through `equivPoint`. -/
 def CommReads (C : CommitmentCurve) (V : Valuation C.BaseField)
