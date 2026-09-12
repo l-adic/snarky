@@ -868,7 +868,7 @@ private theorem wrapLadderPre_eq {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : �
     (lt_of_lt_of_le hlt (by norm_num [PALLAS_SCALAR_CARD]))).symm
 
 /-- A wrap ladder witness decodes, in the scalar field, to `wrapDecode`. -/
-private theorem wrapLadderDec_cast {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
+theorem wrapLadderDec_cast {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
     (h : WrapLadderPre V x z) : (wrapLadderDec z : Fp) = wrapDecode V x := by
   simp only [wrapLadderDec, wrapDecode, unshiftType1, wrapLadderPre_eq h]
   push_cast
@@ -910,7 +910,7 @@ def stepDecode (V : Valuation Fp) (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))
     ((((↑x.val.sOdd : CVar Fp).val V).val : ℕ) : Fq)
 
 /-- A step ladder witness decodes, in the scalar field, to `stepDecode`. -/
-private theorem stepLadderDec_cast {V : Valuation Fp}
+theorem stepLadderDec_cast {V : Valuation Fp}
     {x : Type2 (SplitField (FVar Fp) (BoolVar Fp))} {w : ℤ × Bool} (h : StepLadderPre V x w) :
     (stepLadderDec w : Fq) = stepDecode V x := by
   obtain ⟨hb, h0, hlt, hz⟩ := h
@@ -1115,6 +1115,27 @@ private theorem val_mul_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0)
   conv_rhs => rw [← Nat.mod_add_div (a.val * b.val) n, add_nsmul, mul_nsmul', hn, _root_.add_zero]
 
 omit [Field F] [DecidableEq F] [ToNat F] in
+/-- The wire's polyscale combination is Horner's rule over the list, the scalar acting by its
+representative — on any commitment curve whose point group its scalar order kills. -/
+theorem combineCommitments_eq_foldr (C : Bulletproof.Ipa.CommitmentCurve)
+    (hn : ∀ x : C.Point, C.scalar • x = 0) (ξ : C.ScalarField) (cs : List C.Point) :
+    Bulletproof.Ipa.combineCommitments C ξ cs.toArray
+      = cs.foldr (fun P acc => P + ξ.val • acc) 0 := by
+  haveI : NeZero C.scalar := ⟨C.primeScalar.out.ne_zero⟩
+  have key : ∀ (l : List C.Point) (acc : C.Point) (pw : C.ScalarField),
+      (l.foldl (fun (acc : C.Point × C.ScalarField) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
+        (acc, pw)).1 = acc + pw.val • l.foldr (fun P acc => P + ξ.val • acc) 0 := by
+    intro l
+    induction l with
+    | nil => intro acc pw; simp
+    | cons P l ih =>
+      intro acc pw
+      rw [List.foldl_cons, ih, List.foldr_cons, nsmul_add, val_mul_nsmul C.scalar hn,
+        _root_.add_assoc]
+  unfold Bulletproof.Ipa.combineCommitments
+  rw [← Array.foldl_toList, List.toList_toArray, key, ZMod.val_one, one_nsmul, _root_.zero_add]
+
+omit [Field F] [DecidableEq F] [ToNat F] in
 /-- The masked Horner fold skips exactly the unkept bases. -/
 private theorem foldl_hornerStep_eq (ξ : ℤ) :
     ∀ (t : List (G × Bool)) (acc : G),
@@ -1219,25 +1240,14 @@ private theorem vesta_zipTerms :
     simp only [List.map_cons, List.zipWith_cons_cons, List.zip_cons_cons, vesta_lrTerm_eq]
     exact congrArg _ (vesta_zipTerms l ns)
 
-/-- The wire's polyscale combination is Horner's rule over the list, the scalar acting by
-its representative. -/
+/-- The wire's polyscale combination at Vesta is Horner's rule over the list
+(`combineCommitments_eq_foldr`). -/
 private theorem combineCommitments_eq_foldr_vesta (ξ : Fp) (cs : List (SWPoint Vesta.curve)) :
     combineCommitments IpaVesta.curve ξ cs.toArray
-      = cs.foldr (fun P acc => P + ξ.val • acc) 0 := by
-  have hn : ∀ x : SWPoint Vesta.curve, PALLAS_BASE_CARD • x = 0 := fun x =>
-    ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) x
-  have key : ∀ (l : List (SWPoint Vesta.curve)) (acc : SWPoint Vesta.curve) (pw : Fp),
-      (l.foldl (fun (acc : SWPoint Vesta.curve × Fp) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
-        (acc, pw)).1 = acc + pw.val • l.foldr (fun P acc => P + ξ.val • acc) 0 := by
-    intro l
-    induction l with
-    | nil => intro acc pw; simp
-    | cons P l ih =>
-      intro acc pw
-      rw [List.foldl_cons, ih, List.foldr_cons, nsmul_add, val_mul_nsmul PALLAS_BASE_CARD hn,
-        _root_.add_assoc]
-  unfold combineCommitments
-  rw [← Array.foldl_toList, List.toList_toArray, key, ZMod.val_one, one_nsmul, _root_.zero_add]
+      = cs.foldr (fun P acc => P + ξ.val • acc) 0 :=
+  combineCommitments_eq_foldr IpaVesta.curve
+    (fun x => ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) x) ξ cs
+
 /-- Horner's rule over the kept bases, read back in the wire group, is the wire's polyscale
 combination at the expanded challenge. -/
 private theorem vesta_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Vesta.curve × Bool))
@@ -1471,25 +1481,14 @@ private theorem pallas_zipTerms :
     simp only [List.map_cons, List.zipWith_cons_cons, List.zip_cons_cons, pallas_lrTerm_eq]
     exact congrArg _ (pallas_zipTerms l ns)
 
-/-- The wire's polyscale combination is Horner's rule over the list, the scalar acting by
-its representative. -/
+/-- The wire's polyscale combination at Pallas is Horner's rule over the list
+(`combineCommitments_eq_foldr`). -/
 private theorem combineCommitments_eq_foldr_pallas (ξ : Fq) (cs : List (SWPoint Pallas.curve)) :
     combineCommitments IpaPallas.curve ξ cs.toArray
-      = cs.foldr (fun P acc => P + ξ.val • acc) 0 := by
-  have hn : ∀ x : SWPoint Pallas.curve, PALLAS_SCALAR_CARD • x = 0 := fun x =>
-    ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) x
-  have key : ∀ (l : List (SWPoint Pallas.curve)) (acc : SWPoint Pallas.curve) (pw : Fq),
-      (l.foldl (fun (acc : SWPoint Pallas.curve × Fq) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
-        (acc, pw)).1 = acc + pw.val • l.foldr (fun P acc => P + ξ.val • acc) 0 := by
-    intro l
-    induction l with
-    | nil => intro acc pw; simp
-    | cons P l ih =>
-      intro acc pw
-      rw [List.foldl_cons, ih, List.foldr_cons, nsmul_add, val_mul_nsmul PALLAS_SCALAR_CARD hn,
-        _root_.add_assoc]
-  unfold combineCommitments
-  rw [← Array.foldl_toList, List.toList_toArray, key, ZMod.val_one, one_nsmul, _root_.zero_add]
+      = cs.foldr (fun P acc => P + ξ.val • acc) 0 :=
+  combineCommitments_eq_foldr IpaPallas.curve
+    (fun x => ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) x) ξ cs
+
 /-- Horner's rule over the kept bases, read back in the wire group, is the wire's polyscale
 combination at the expanded challenge. -/
 private theorem pallas_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Pallas.curve × Bool))

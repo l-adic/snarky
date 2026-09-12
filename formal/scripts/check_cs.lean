@@ -38,8 +38,10 @@ expand_plonk, the challenge digests, the fr-sponge schedule, and the whole assem
 `Pickles.finalizeOtherProofStep`/`Wrap` against the PS `FopStep`/`FopWrap` harnesses).
 and xhat_wrap (the wrap-side public-input-commitment MSM, `Pickles.publicInputCommitFull`
 against the PS `Xhat` harness, with the Lagrange bases loaded from the circuit-diffs export
-and the shift corrections derived by `smulFast`). Deferred, with the blocker each waits on:
-- ftcomm_*, xhat_step (and everything downstream: ivp, verify, wrap/step mains) — the
+and the shift corrections derived by `smulFast`), and ftcomm_{step,wrap} (the proved
+`Pickles.ftComm` at either side's `IpaScalarOps`, against the PS `FtcommStep`/`Ftcomm`
+harnesses). Deferred, with the blocker each waits on:
+- xhat_step (and everything downstream: ivp, verify, wrap/step mains) — the
   pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
   the VarBaseMul gadget's own oracle checks);
 - hash_messages_*, schnorr_verify — the sponge circuit layer
@@ -82,6 +84,7 @@ import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
 import Pickles.PublicInputCommit
+import Pickles.FtComm
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
@@ -942,6 +945,42 @@ def xhatWrapPoints (path : System.FilePath) :
   | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
   | .error e => throw (IO.userError s!"{path}: {e}")
 
+/-! ## The `ft_comm` circuits
+
+Transcribe `Pickles.CircuitDiffs.PureScript.FtcommStep` and `Ftcomm`: `Pickles.ftComm` at
+either side's `IpaScalarOps` over the dumps' layouts — the 7 `t_comm` points at 0–13, then
+`perm`, `ζ^{2^k}`, `ζⁿ`: `(sDiv2, sOdd)` Type2 pairs at 14–19 on the step side, one Type1 cell
+each at 14–16 on the wrap side. `σ₆` is the one-chunk constant group generator (OCaml
+`Inner_curve.Params.one`, the IVP dump's `dummy_comm`). -/
+
+/-- The Pallas group generator (proof-systems `pallas.rs` `G_GENERATOR_{X,Y}`), as a constant
+point at the step field. -/
+def pallasGenerator : AffinePoint (FVar Fp) :=
+  ⟨.const 1, .const 12418654782883325593414442427049395787963493412651469444558597405572177144507⟩
+
+/-- The Vesta group generator (proof-systems `vesta.rs` `G_GENERATOR_{X,Y}`), as a constant
+point at the wrap field. -/
+def vestaGenerator : AffinePoint (FVar Fq) :=
+  ⟨.const 1, .const 11426906929455361843568202299992114520848200991084027513389447476559454104162⟩
+
+/-- `ftcomm_step_circuit`. -/
+def ftcommStepCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  let _ ← Pickles.ftComm Pickles.IpaScalarOps.step [pallasGenerator]
+    ((List.range 7).map fun j => pt (2 * j)) (shifted 14) (shifted 16) (shifted 18)
+  pure PUnit.unit
+
+/-- `ftcomm_wrap_circuit`. -/
+def ftcommWrapCircuit (input : Vector (FVar Fq) 17) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
+  let _ ← Pickles.ftComm Pickles.IpaScalarOps.wrap [vestaGenerator]
+    ((List.range 7).map fun j => pt (2 * j)) ⟨get 14⟩ ⟨get 15⟩ ⟨get 16⟩
+  pure PUnit.unit
+
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
 def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq))
@@ -1011,6 +1050,7 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq))
       stepTarget (a := Vector Fp 170) (b := PUnit) (checkBulletproofStepCircuit hStep)),
     ("finalize_other_proof_step_circuit",
       stepTarget (a := Vector Fp 151) (b := PUnit) finalizeOtherProofStepCircuit),
+    ("ftcomm_step_circuit", stepTarget (a := Vector Fp 20) (b := PUnit) ftcommStepCircuit),
     -- the wrap column
     ("group_map_wrap_circuit", wrapTarget (a := Fq) (b := PUnit) groupMapCircuitFq),
     ("linearization_wrap_circuit",
@@ -1029,7 +1069,8 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq))
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
     ("xhat_wrap_circuit",
-      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit xhatPts xhatH)) ]
+      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit xhatPts xhatH)),
+    ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit) ]
 
 def main : IO Unit := do
   let dir ← resultsDir
