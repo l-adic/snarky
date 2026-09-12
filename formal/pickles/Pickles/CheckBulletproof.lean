@@ -253,7 +253,7 @@ def checkBulletproof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
 variable {V : Valuation F}
 
 /-- A pair of points' coordinates, the form `Bulletproof.Ipa.ipaSqueezes` takes. -/
-private def coordsPair (q : AffinePoint F × AffinePoint F) : (F × F) × (F × F) :=
+def coordsPair (q : AffinePoint F × AffinePoint F) : (F × F) × (F × F) :=
   ((q.1.x, q.1.y), (q.2.x, q.2.y))
 
 open Bulletproof.Ipa in
@@ -1392,6 +1392,7 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
         U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
       chals.toList = ns.map (fun m => endoExpand Poseidon.FqVesta.spec.lam m.val) ∧
+      (∃ z : ℤ, WrapLadderPre V inp.deferred.combinedInnerProduct z) ∧
       ((↑o.success : CVar Fq).val V = 1 ↔
         schnorrAt IpaVesta.curve σ U chals (endoExpand Poseidon.FqVesta.spec.lam c₀.val)
           (wrapDecode V inp.deferred.combinedInnerProduct) (wrapDecode V inp.deferred.b)
@@ -1410,7 +1411,7 @@ theorem checkBulletproof_wrap_spec {V : Valuation Fq}
   have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
   refine ⟨(SWPoint.equivPoint Vesta.curve).symm U, ns, c₀,
     ⟨(ns.map fun m => endoExpand Poseidon.FqVesta.spec.lam m.val).toArray, by simp [hlen']⟩,
-    ?_, hns, hc, by simp, ?_⟩
+    ?_, hns, hc, by simp, ⟨wcip, hpcip⟩, ?_⟩
   · beta_reduce at hU
     generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (CVar.val o.t V) = T at hU ⊢
     rcases hU with h | h

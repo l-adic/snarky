@@ -189,25 +189,25 @@ def fqSpongeTranscriptOpt [ToNat F] (p : Poseidon.Params F) (endo indexDigest : 
 variable {V : Valuation F}
 
 /-- A point's coordinates, the form `Kimchi.Verifier.fqSqueezes` takes. -/
-private def coords (P : AffinePoint F) : F × F := (P.x, P.y)
+def pointCoords (P : AffinePoint F) : F × F := (P.x, P.y)
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- Points reading as values have the values' coordinates. -/
 private theorem coords_of_reads :
     ∀ {Ps : List (AffinePoint (FVar F))} {vs : List (AffinePoint F)},
       List.Forall₂ (CircuitType.Reads V) Ps vs →
-      Ps.map (fun P => (P.x.val V, P.y.val V)) = vs.map coords
+      Ps.map (fun P => (P.x.val V, P.y.val V)) = vs.map pointCoords
   | [], [], .nil => rfl
   | _ :: _, _ :: _, .cons h hs => by
     obtain ⟨hx, hy⟩ := reads_affinePoint.mp h
-    simp only [List.map_cons, hx, hy, coords_of_reads hs, coords]
+    simp only [List.map_cons, hx, hy, coords_of_reads hs, pointCoords]
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- Columns reading as values have the values' coordinates, column by column. -/
 private theorem coords_of_reads_cols :
     ∀ {cols : List (List (AffinePoint (FVar F)))} {vs : List (List (AffinePoint F))},
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) cols vs →
-      cols.map (·.map fun P => (P.x.val V, P.y.val V)) = vs.map (·.map coords)
+      cols.map (·.map fun P => (P.x.val V, P.y.val V)) = vs.map (·.map pointCoords)
   | [], [], .nil => rfl
   | _ :: _, _ :: _, .cons h hs => by
     simp only [List.map_cons, coords_of_reads h, coords_of_reads_cols hs]
@@ -304,8 +304,8 @@ its squeeze (`Low128`), `β, γ` read as prechallenges, `x_hat` reads as `xv`, t
 def FqTranscriptReads (p : Poseidon.Params F) (indexDigest : F)
     (sgOld xv : List (AffinePoint F)) (wComm : List (List (AffinePoint F)))
     (zComm tComm : List (AffinePoint F)) (V : Valuation F) (o : FqTranscriptOutput F) : Prop :=
-  let r := fqSqueezes p indexDigest (sgOld.map coords) (xv.map coords)
-    (wComm.map (·.map coords)) (zComm.map coords) (tComm.map coords)
+  let r := fqSqueezes p indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
+    (wComm.map (·.map pointCoords)) (zComm.map pointCoords) (tComm.map pointCoords)
   Low128 V r.1.1 o.beta ∧ Low128 V r.1.2.1 o.gamma ∧
     Low128 V r.1.2.2.1 o.alpha ∧ Low128 V r.1.2.2.2 o.zeta ∧
     (∃ m : Prechallenge, Reads128 V o.beta m) ∧ (∃ m : Prechallenge, Reads128 V o.gamma m) ∧
@@ -453,18 +453,18 @@ omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The wire verifier's point fold is the absorb of the coordinates. -/
 private theorem foldl_pts_eq (p : Poseidon.Params F) :
     ∀ (l : List (AffinePoint F)) (s : Poseidon.State F),
-      (l.map coords).foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s
+      (l.map pointCoords).foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s
         = Poseidon.absorb p s (flatCoords l)
   | [], _ => rfl
   | P :: l, s => by
     simp only [List.map_cons, List.foldl_cons, foldl_pts_eq p l, flatCoords, List.flatMap_cons,
-      absorb_append, coords]
+      absorb_append, pointCoords]
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The wire verifier's column fold is the absorb of the columns' coordinates. -/
 private theorem foldl_cols_eq (p : Poseidon.Params F) :
     ∀ (l : List (List (AffinePoint F))) (s : Poseidon.State F),
-      (l.map (·.map coords)).foldl
+      (l.map (·.map pointCoords)).foldl
           (fun s l => l.foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s) s
         = Poseidon.absorb p s (l.flatMap flatCoords)
   | [], _ => rfl
@@ -711,8 +711,8 @@ def FqTranscriptReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZM
     (indexDigest : ZMod p) (sgOld xv : List (AffinePoint (ZMod p)))
     (wComm : List (List (AffinePoint (ZMod p)))) (zComm tComm : List (AffinePoint (ZMod p)))
     (V : Valuation (ZMod p)) (o : FqTranscriptOutput (ZMod p)) : Prop :=
-  let pre := fqPrechallenges params indexDigest (sgOld.map coords) (xv.map coords)
-    (wComm.map (·.map coords)) (zComm.map coords) (tComm.map coords)
+  let pre := fqPrechallenges params indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
+    (wComm.map (·.map pointCoords)) (zComm.map pointCoords) (tComm.map pointCoords)
   (∃ b₀, Reads128 V o.beta b₀ ∧ PrechallengeAlias p pre.1.1 b₀) ∧
   (∃ g₀, Reads128 V o.gamma g₀ ∧ PrechallengeAlias p pre.1.2.1 g₀) ∧
   (∀ a₀, Reads128 V o.alpha a₀ → PrechallengeAlias p pre.1.2.2.1 a₀) ∧
