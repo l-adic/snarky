@@ -172,3 +172,13 @@ Pickles.LeafReads.regimeOK
 -- verifier's `publicCommitment` on the Vesta commitment curve.
 Pickles.publicInputCommitFull_reads
 Pickles.xHat_reads_publicCommitment
+
+-- The `ft_comm` gadget (FtComm.lean, `Common.ft_comm`), generic in the side's shifted-scalar
+-- operations, and its read: on any side (`IvpSide` — the ladder reading, the claim decode and
+-- the curve's group facts) the constructed cell crosses to the wire's `runFtComm`, given the
+-- claims decode to the wire's scalars and the `σ₆`/`t_comm` cells read as the commitments. The
+-- two deployed sides instantiate it.
+Pickles.ftComm
+Pickles.ftComm_reads
+Pickles.wrapSide
+Pickles.stepSide

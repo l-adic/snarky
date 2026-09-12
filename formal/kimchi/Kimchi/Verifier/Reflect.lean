@@ -42,8 +42,9 @@ private def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   (runOracles C σ cvk cp pub).zeta * cvk.omega
 
-/-- The domain-size power `ζⁿ`, by the squaring ladder. -/
-private def runZetaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
+/-- The domain-size power `ζⁿ`, by the squaring ladder. Public: the wrap circuit consumes it
+as the deferred `zeta_to_domain_size` claim, which the group-half read ties to this. -/
+def runZetaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runOracles C σ cvk cp pub).zeta cvk.domainLog2
 
@@ -52,8 +53,10 @@ private def runZetaOmegaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runZetaOmega C σ cvk cp pub) cvk.domainLog2
 
-/-- The chunk-combination power `ζ^{2^σ.k}` (`ζ^max_poly_size`). -/
-private def runZetaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
+/-- The chunk-combination power `ζ^{2^σ.k}` (`ζ^max_poly_size`). Public: the wrap circuit
+consumes it as the deferred `zeta_to_srs_length` claim, which the group-half read ties to
+this. -/
+def runZetaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runOracles C σ cvk cp pub).zeta σ.k
 
@@ -103,7 +106,7 @@ def runPScalar (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (runLinEvals C σ cvk cp pub)
 
 /-- The run's `f_comm` chunks — the `pScalar`-scaled `σ₆` chunk vector. -/
-private def runFComm (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runFComm (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     Vector C.Point nc :=
   cvk.sigmaComm[6].map (fun P => (runPScalar C σ cvk cp pub).val • P)
