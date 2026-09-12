@@ -220,42 +220,34 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   /-- The `sg` cell reads as the proof's. -/
   sg : OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E cp.opening.sg)
 
-/-- The group half's read. With `pre` the wire's fq prechallenges (`fqOracles`' own,
-`fqOracles_eq_fqPrechallenges`) and `r` its IPA prechallenges from the warm post-`ζ` state at
-the claimed `cip` (`transcriptFrom_eq_ipaPrechallenges`'s form, the claim in place of the
-wire's `cipOf`): (1) the digest cell, cast as the wire casts it, is the wire's digest; (2) the
-four plonk claims, once read as prechallenges, are `pre`'s up to `PrechallengeAlias`; (3) for
-any prechallenge `ξ₀` the claimed `ξ` reads as, the returned round prechallenges read as some
-`ns`, `r`'s up to the alias, and, with `U` the map-to-curve of `r`'s `t` up to sign and `c₀`
-`r`'s Schnorr prechallenge up to the alias, the success bit reads `1` exactly when
+/-- The group half's read. With `pre` the wire's raw fq run (`fqRun`, what `fqOracles`
+expands) and `r` its IPA run from the warm post-`ζ` state at the claimed `cip` (`ipaRunAt`,
+the claim in place of the wire's `cipOf`): (1) the digest cell is the wire's digest element;
+(2) the four plonk claims, once read as prechallenges, are `pre`'s up to `PrechallengeAlias`;
+(3) for any prechallenge `ξ₀` the claimed `ξ` reads as, the returned round prechallenges read
+as some `ns`, `r`'s up to the alias, and, with `U` the map-to-curve of `r`'s `t` up to sign and
+`c₀` `r`'s Schnorr prechallenge up to the alias, the success bit reads `1` exactly when
 `Ipa.schnorrAt` holds at `U`, the expansions of `ns` and `c₀`, the claimed `cip` and `b`, the
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
 def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpInput C.BaseField sf)
     (o : IvpOutput C.BaseField) : Prop :=
-  let pre := fqPrechallenges C.sponge.params cvk.digest
-    ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y))
-    (coords C (publicCommitment C σ cvk pub)) (cp.wComm.toList.map (coords C))
-    (coords C cp.zComm) (cp.tComm.toList.map fun P => (P.x, P.y))
-  let ora := runOracles C σ cvk cp pub
-  let r := ipaPrechallenges C.sponge.params ora.warm.sponge
-    (scalarLimbs C (shiftScalar C (S.decode inp.deferred.combinedInnerProduct)))
-    (cp.opening.lr.toList.map fun q => ((q.1.x, q.1.y), (q.2.x, q.2.y)))
-    (cp.opening.delta.x, cp.opening.delta.y)
+  let pre := fqRun C cvk cp (publicCommitment C σ cvk pub)
+  let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
   let run := runInput C σ cvk cp pub
-  ora.digest = castDigest C (o.spongeDigest.val V) ∧
-  (∀ m, Reads128 V inp.plonk.chals.beta m → PrechallengeAlias C.base pre.1.1 m) ∧
-  (∀ m, Reads128 V inp.plonk.chals.gamma m → PrechallengeAlias C.base pre.1.2.1 m) ∧
-  (∀ m, Reads128 V inp.plonk.chals.alpha m → PrechallengeAlias C.base pre.1.2.2.1 m) ∧
-  (∀ m, Reads128 V inp.plonk.chals.zeta m → PrechallengeAlias C.base pre.1.2.2.2 m) ∧
+  pre.digestElem = o.spongeDigest.val V ∧
+  (∀ m, Reads128 V inp.plonk.chals.beta m → PrechallengeAlias C.base pre.beta.val m) ∧
+  (∀ m, Reads128 V inp.plonk.chals.gamma m → PrechallengeAlias C.base pre.gamma.val m) ∧
+  (∀ m, Reads128 V inp.plonk.chals.alpha m → PrechallengeAlias C.base pre.alpha.val m) ∧
+  (∀ m, Reads128 V inp.plonk.chals.zeta m → PrechallengeAlias C.base pre.zeta.val m) ∧
   ∀ ξ₀, Reads128 V inp.xi ξ₀ →
     ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
       (chals : Vector C.ScalarField σ.k),
       (U = C.toGroup r.1 ∨ U = -C.toGroup r.1) ∧
       List.Forall₂ (Reads128 V) o.bulletproofChallenges ns ∧
-      List.Forall₂ (PrechallengeAlias C.base) r.2.1 ns ∧
-      PrechallengeAlias C.base r.2.2 c₀ ∧
+      List.Forall₂ (PrechallengeAlias C.base) (r.2.1.toList.map Subtype.val) ns ∧
+      PrechallengeAlias C.base r.2.2.val c₀ ∧
       chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
       (((↑o.success : CVar C.BaseField).val V = 1) ↔
         schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
@@ -476,69 +468,6 @@ section Assembly
 variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
-/-! The wire bridges below are stated at a generic curve or at variables, projected to the
-component in use, and only ever *rewritten* with at Vesta. The kernel compares same-headed
-applications argument-first, so a goal `(⟨…⟩ : _ × _).2.2 = (fqSqueezes …).2.2` at the deployed
-Poseidon parameters makes it try `⟨…⟩ ≡ fqSqueezes …` — and expand the sponge permutation
-symbolically before that fails — where the projected `(fqPrechallenges …).2.2 =
-(fqSqueezes …).2.2` closes syntactically. -/
-
-/-- The wire's digest, through `fqOracles_eq_fqPrechallenges`. -/
-private theorem fqOracles_digest_eq (C : CommitmentCurve) {nc k : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc k) (pc : Vector C.Point nc) :
-    (fqOracles C cvk cp pc).digest
-      = castDigest C (fqPrechallenges C.sponge.params cvk.digest
-          ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C pc)
-          (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
-          (cp.tComm.toList.map fun P => (P.x, P.y))).2.1 := by
-  rw [fqOracles_eq_fqPrechallenges]
-  rfl
-
-/-- The wire's warm state, through `fqOracles_eq_fqPrechallenges`. -/
-private theorem fqOracles_warm_eq (C : CommitmentCurve) {nc k : ℕ} (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc k) (pc : Vector C.Point nc) :
-    (fqOracles C cvk cp pc).warm.sponge
-      = (fqPrechallenges C.sponge.params cvk.digest
-          ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C pc)
-          (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
-          (cp.tComm.toList.map fun P => (P.x, P.y))).2.2 := by
-  rw [fqOracles_eq_fqPrechallenges]
-
-section Prechallenges
-
-variable (C : CommitmentCurve) (p : Poseidon.Params (ZMod C.base)) (d : ZMod C.base)
-  (a b : List (ZMod C.base × ZMod C.base)) (c : List (List (ZMod C.base × ZMod C.base)))
-  (e f : List (ZMod C.base × ZMod C.base))
-
-/-- `fqPrechallenges`'s `β` packing, at variables. -/
-private theorem fqPrechallenges_beta :
-    (fqPrechallenges p d a b c e f).1.1 = (fqSqueezes p d a b c e f).1.1.val % 2 ^ 128 := rfl
-
-/-- `fqPrechallenges`'s `γ` packing, at variables. -/
-private theorem fqPrechallenges_gamma :
-    (fqPrechallenges p d a b c e f).1.2.1 = (fqSqueezes p d a b c e f).1.2.1.val % 2 ^ 128 :=
-  rfl
-
-/-- `fqPrechallenges`'s `α` packing, at variables. -/
-private theorem fqPrechallenges_alpha :
-    (fqPrechallenges p d a b c e f).1.2.2.1
-      = (fqSqueezes p d a b c e f).1.2.2.1.val % 2 ^ 128 := rfl
-
-/-- `fqPrechallenges`'s `ζ` packing, at variables. -/
-private theorem fqPrechallenges_zeta :
-    (fqPrechallenges p d a b c e f).1.2.2.2
-      = (fqSqueezes p d a b c e f).1.2.2.2.val % 2 ^ 128 := rfl
-
-/-- `fqPrechallenges`'s digest element, at variables. -/
-private theorem fqPrechallenges_digestElem :
-    (fqPrechallenges p d a b c e f).2.1 = (fqSqueezes p d a b c e f).2.1 := rfl
-
-/-- `fqPrechallenges`'s pre-digest state, at variables. -/
-private theorem fqPrechallenges_warm :
-    (fqPrechallenges p d a b c e f).2.2 = (fqSqueezes p d a b c e f).2.2 := rfl
-
-end Prechallenges
-
 /-- Alias readings compose: the wire's prechallenges alias the cells' readings. -/
 private theorem forall₂_alias {pres : List ℕ} {us : List (SizedF 128 (FVar C.BaseField))}
     {ns : List Prechallenge}
@@ -628,45 +557,21 @@ private theorem transcript_xHat (p : Poseidon.Params C.BaseField)
     ⦃⇓ o _ => ⌜CommReads C V o.xHat xv⌝⦄ :=
   fqSpongeTranscript_xHat p hsize endo indexDigest sgOld computeXHat _ hx wComm zComm tComm
 
-/-- The wire's warm state at the transcript readings is the raw pre-digest state. -/
-private theorem warm_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (hpre : fqSqueezes C.sponge.params cvk.digest
-      (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-      (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
-      ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
-      ((cp.zComm.toList.map wirePt).map pointCoords)
-      ((cp.tComm.toList.map wirePt).map pointCoords)
-      = fqSqueezes C.sponge.params cvk.digest
-        ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y))
-        (coords C (publicCommitment C σ cvk pub))
-        (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
-        (cp.tComm.toList.map fun P => (P.x, P.y))) :
-    (runOracles C σ cvk cp pub).warm.sponge
-      = (fqSqueezes C.sponge.params cvk.digest
-        (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-        (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
-        ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
-        ((cp.zComm.toList.map wirePt).map pointCoords)
-        ((cp.tComm.toList.map wirePt).map pointCoords)).2.2 := by
-  show (fqOracles C cvk cp (publicCommitment C σ cvk pub)).warm.sponge = _
-  rw [fqOracles_warm_eq, fqPrechallenges_warm C, ← hpre]
-
-/-- `IvpReads`'s IPA prechallenges are the opening check's, at the claimed `cip`'s absorbed
-limbs and the pairs' and `δ`'s coordinate readings. -/
-private theorem ipa_pre_eq {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
-    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (cip : sf) (hc : S.Canon cip) {w : S.R.wit} (hw : S.R.Pre cip w)
-    (s : Poseidon.State C.BaseField) (hs : (runOracles C σ cvk cp pub).warm.sponge = s) :
-    ipaPrechallenges C.sponge.params (runOracles C σ cvk cp pub).warm.sponge
-        (scalarLimbs C (shiftScalar C (S.decode cip)))
-        (cp.opening.lr.toList.map fun q => ((q.1.x, q.1.y), (q.2.x, q.2.y)))
-        (cp.opening.delta.x, cp.opening.delta.y)
-      = ipaPrechallenges C.sponge.params s ((ops.shiftedToAbsorbFields cip).map (·.val V))
-          ((cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)).map coordsPair)
-          ((wirePt cp.opening.delta).x, (wirePt cp.opening.delta).y) := by
-  rw [S.absorb_limbs hc hw, hs]
-  simp only [List.map_map, Function.comp_def, coordsPair, wirePt]
+/-- The wire's IPA run at a canonical claim, read: its `t`, round and Schnorr prechallenges are
+`ipaPrechallenges` at the claim's absorbed limbs and the pairs' and `δ`'s coordinate readings —
+what the opening check's transcript read (`CheckBulletproofReads`) speaks about. -/
+private theorem ipaRunAt_reads {k : ℕ} (S : IvpSide C V ops) (st : Poseidon.State C.BaseField)
+    (cip : sf) (hc : S.Canon cip) {w : S.R.wit} (hw : S.R.Pre cip w) (pr : Ipa.Proof C k) :
+    let r := ipaPrechallenges C.sponge.params st ((ops.shiftedToAbsorbFields cip).map (·.val V))
+      ((pr.lr.toList.map fun q => (wirePt q.1, wirePt q.2)).map coordsPair)
+      ((wirePt pr.delta).x, (wirePt pr.delta).y)
+    (ipaRunAt C ⟨st, []⟩ (S.decode cip) pr).1 = r.1 ∧
+    (ipaRunAt C ⟨st, []⟩ (S.decode cip) pr).2.1.toList.map Subtype.val = r.2.1 ∧
+    (ipaRunAt C ⟨st, []⟩ (S.decode cip) pr).2.2.val = r.2.2 := by
+  have h := ipaRunAt_eq_ipaPrechallenges C st (S.decode cip) pr
+  dsimp only at h ⊢
+  rw [← S.absorb_limbs hc hw] at h
+  simpa only [List.map_map, Function.comp_def, coordsPair, wirePt] using h
 
 /-- The success clause at the stream bases and the proof record is `IvpReads`'s, at
 `runInput`'s commitments and `cp.opening`. -/
@@ -842,14 +747,22 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
         (cp.tComm.toList.map fun P => (P.x, P.y)) := by
     delta Kimchi.Verifier.coords
     simp only [pointCoords, wirePt, List.map_map, Function.comp_def]
+  set fqW := fqSqueezes C.sponge.params cvk.digest
+    (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
+    (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
+    ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
+    ((cp.zComm.toList.map wirePt).map pointCoords) ((cp.tComm.toList.map wirePt).map pointCoords)
+    with hfqW
+  -- the wire's raw run, field by field, at those squeezes
+  obtain ⟨hβ, hγ, hα, hζ, hd, hwarm⟩ :=
+    fqRun_eq_fqSqueezes C cvk cp (publicCommitment C σ cvk pub)
+  rw [← hpre] at hβ hγ hα hζ hd hwarm
   unfold IvpReads
   dsimp only
-  rw [fqPrechallenges_beta C, fqPrechallenges_gamma C, fqPrechallenges_alpha C,
-    fqPrechallenges_zeta C, ← hpre]
+  rw [hβ, hγ, hα, hζ, hd, hwarm]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- the digest
-    show (fqOracles C cvk cp (publicCommitment C σ cvk pub)).digest = _
-    rw [fqOracles_digest_eq, fqPrechallenges_digestElem C, ← hpre, ← hFq.2.2.2.2.2.2.2.1]
+    exact hFq.2.2.2.2.2.2.2.1.symm
   · intro m hm
     exact Low128.alias S.base_big hFq.1 (hasrt.1.symm.trans hm)
   · intro m hm
@@ -887,9 +800,10 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
       reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.delta)
     -- the opening transcript, from the warm sponge
     have hT := CheckBulletproofReads.wire S.base_big (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
-    -- the wire's IPA prechallenges at these readings are `IvpReads`'s
-    rw [ipa_pre_eq S σ cvk cp pub inp.deferred.combinedInnerProduct hcanon hwc _
-      (warm_eq σ cvk cp pub hpre)]
+    -- the wire's IPA run at the claimed `cip` is the opening check's transcript
+    obtain ⟨h1, h2, h3⟩ :=
+      ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hcanon hwc cp.opening
+    rw [h1, h2, h3]
     refine ⟨U, ns, c₀, chals, ?_, hns, forall₂_alias hT.2.1 hns, hT.2.2 c₀ hc, hchals, ?_⟩
     · rw [← hT.1]
       exact hU

@@ -249,14 +249,21 @@ any expansion: absorb the shifted combined inner product; squeeze the `U` base's
 the Schnorr prechallenge. This is exactly what a circuit's group half emits
 (`Pickles.checkBulletproof`). The round prechallenges come back as a `Vector` at the
 checked round count, so every downstream read is total. -/
-def ipaRun (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
+def ipaRunAt (s₀ : FqSponge.S C.base) (cip : C.ScalarField) (pr : Proof C k) :
     C.BaseField × Vector Prechallenge k × Prechallenge :=
-  let s := absorbFr C.sponge s₀ (shiftScalar C (cipOf inp))
+  let s := absorbFr C.sponge s₀ (shiftScalar C cip)
   let (t, s) := challengeFq C.sponge s
-  let (chals, s) := roundChallenges C s inp.proof.lr
-  let s := absorbG C.sponge s inp.proof.delta
+  let (chals, s) := roundChallenges C s pr.lr
+  let s := absorbG C.sponge s pr.delta
   let (c, _) := challengeNat C.sponge s
   (t, chals, c)
+
+/-- `ipaRunAt` at the verifier's own combined inner product `cipOf inp`. A circuit's group half
+runs the same schedule at a *claimed* inner product, so the schedule is named with `cip` as a
+parameter and this is its wire instance. -/
+def ipaRun (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
+    C.BaseField × Vector Prechallenge k × Prechallenge :=
+  ipaRunAt C s₀ (cipOf inp) inp.proof
 
 /-- The verifier's Fiat–Shamir schedule from `s₀`: `ipaRun`, with the consumer's decodes
 applied — `t` mapped to the curve, the round and Schnorr prechallenges endo-expanded at the
@@ -400,30 +407,32 @@ private theorem foldl_rounds (l : List (C.Point × C.Point)) (acc : List C.BaseF
     simp only [List.map_append, List.map_singleton, packRaw] at h
     exact h
 
-/-- `ipaRun` from a warm state with an empty limb buffer is `ipaPrechallenges` on the
+/-- `ipaRunAt` from a warm state with an empty limb buffer is `ipaPrechallenges` on the
 automaton: the same `t`, the same packed round and Schnorr prechallenges (as naturals). -/
-theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Input C k m p) :
-    let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
-      (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
-    (ipaRun C ⟨st, []⟩ inp).1 = r.1 ∧
-    (ipaRun C ⟨st, []⟩ inp).2.1.toList.map Subtype.val = r.2.1 ∧
-    (ipaRun C ⟨st, []⟩ inp).2.2.val = r.2.2 := by
+theorem ipaRunAt_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (cip : C.ScalarField)
+    (pr : Proof C k) :
+    let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C cip))
+      (pr.lr.toList.map fun q => ((q.1.x, q.1.y), (q.2.x, q.2.y))) (pr.delta.x, pr.delta.y)
+    (ipaRunAt C ⟨st, []⟩ cip pr).1 = r.1 ∧
+    (ipaRunAt C ⟨st, []⟩ cip pr).2.1.toList.map Subtype.val = r.2.1 ∧
+    (ipaRunAt C ⟨st, []⟩ cip pr).2.2.val = r.2.2 := by
   dsimp only
-  unfold ipaRun
+  unfold ipaRunAt
   rw [absorbFr_eq]
   simp only [absorbFq, challengeFq]
   generalize hs : Poseidon.squeeze C.sponge.params
-    (Poseidon.absorb C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))) = sqT
-  have h1 : (roundChallenges C ⟨sqT.2, []⟩ inp.proof.lr).1.toArray
-      = (roundChallengesAux C ⟨sqT.2, []⟩ inp.proof.lr.toArray).1 := rfl
-  have h2 : (roundChallenges C ⟨sqT.2, []⟩ inp.proof.lr).2
-      = (roundChallengesAux C ⟨sqT.2, []⟩ inp.proof.lr.toArray).2 := rfl
-  have hf := foldl_rounds C inp.proof.lr.toArray.toList [] sqT.2
+    (Poseidon.absorb C.sponge.params st (scalarLimbs C (shiftScalar C cip))) = sqT
+  have h1 : (roundChallenges C ⟨sqT.2, []⟩ pr.lr).1.toArray
+      = (roundChallengesAux C ⟨sqT.2, []⟩ pr.lr.toArray).1 := rfl
+  have h2 : (roundChallenges C ⟨sqT.2, []⟩ pr.lr).2
+      = (roundChallengesAux C ⟨sqT.2, []⟩ pr.lr.toArray).2 := rfl
+  have hf := foldl_rounds C pr.lr.toArray.toList [] sqT.2
   simp only [List.map_nil] at hf
+  delta coordsPair at hf
   rw [roundChallengesAux, ← Array.foldl_toList, hf] at h1 h2
-  have hl : inp.proof.lr.toArray.toList = inp.proof.lr.toList := rfl
+  have hl : pr.lr.toArray.toList = pr.lr.toList := rfl
   rw [hl] at h1 h2
-  rcases hrc : roundChallenges C ⟨sqT.2, []⟩ inp.proof.lr with ⟨chals, s⟩
+  rcases hrc : roundChallenges C ⟨sqT.2, []⟩ pr.lr with ⟨chals, s⟩
   rw [hrc] at h1 h2
   subst h2
   unfold ipaPrechallenges ipaSqueezes
@@ -433,6 +442,16 @@ theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Inpu
     rw [h1]
     simp only [List.map_map, Function.comp_def, packRaw]
   · simp only [absorbG, absorbFq, challengeNat_fresh]
+
+/-- `ipaRun` from a warm state with an empty limb buffer is `ipaPrechallenges` on the
+automaton: `ipaRunAt_eq_ipaPrechallenges` at the verifier's own inner product. -/
+theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Input C k m p) :
+    let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
+      (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
+    (ipaRun C ⟨st, []⟩ inp).1 = r.1 ∧
+    (ipaRun C ⟨st, []⟩ inp).2.1.toList.map Subtype.val = r.2.1 ∧
+    (ipaRun C ⟨st, []⟩ inp).2.2.val = r.2.2 :=
+  ipaRunAt_eq_ipaPrechallenges C st (cipOf inp) inp.proof
 
 /-- `transcriptFrom` from a warm state with an empty limb buffer, through
 `ipaPrechallenges`: the `U` base is the map-to-curve of `t`, the round challenges and `c`

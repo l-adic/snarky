@@ -459,6 +459,27 @@ theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
     absorbFq, FqSponge.init, ← Vector.foldl_toList, ← Array.foldl_toList, foldl_absorbG,
     foldl_cols, challengeNat_fresh, challengeFq, List.foldl_map]
 
+/-- The raw run `fqRun` through `fqSqueezes` on the automaton, field by field: each
+prechallenge is the packing of its squeeze, the digest element the digest squeeze, the warm
+state the pre-digest state with an empty limb buffer. The circuit's fq-sponge is read against
+`fqSqueezes`; this is how that read reaches the wire's run. -/
+theorem fqRun_eq_fqSqueezes {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
+    (publicComm : Vector C.Point nc) :
+    let r := fqSqueezes C.sponge.params cvk.digest
+      ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C publicComm)
+      (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
+      (cp.tComm.toList.map fun P => (P.x, P.y))
+    (fqRun C cvk cp publicComm).beta.val = r.1.1.val % 2 ^ 128 ∧
+    (fqRun C cvk cp publicComm).gamma.val = r.1.2.1.val % 2 ^ 128 ∧
+    (fqRun C cvk cp publicComm).alpha.val = r.1.2.2.1.val % 2 ^ 128 ∧
+    (fqRun C cvk cp publicComm).zeta.val = r.1.2.2.2.val % 2 ^ 128 ∧
+    (fqRun C cvk cp publicComm).digestElem = r.2.1 ∧
+    (fqRun C cvk cp publicComm).warm = ⟨r.2.2, []⟩ := by
+  dsimp only
+  simp only [fqRun, fqSqueezes, coords, absorbFq, FqSponge.init, ← Vector.foldl_toList,
+    ← Array.foldl_toList, foldl_absorbG, foldl_cols, challengeNat_fresh, challengeFq,
+    List.foldl_map, and_self]
+
 /-- What the fr-sponge run of `oracles` produces, before any expansion: the two 128-bit
 prechallenges. This is what a circuit's scalar half recomputes (`Pickles.squeezeXiR`);
 `FrRun.expand` is the consumer's step. -/
