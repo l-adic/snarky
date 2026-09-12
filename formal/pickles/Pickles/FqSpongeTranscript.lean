@@ -737,6 +737,69 @@ theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F)
   mvcgen -trivial [h1, h2]
   case vc1.hsize => exact hsize
 
+/-! ### The `∀`-forms
+
+The specs above are families indexed by the readings of the absorbed cells. An assembly runs
+`mvcgen` over the whole gadget before those readings are in hand, so it takes the same
+specs with the readings quantified in the postcondition — stated here, once, beside the
+family forms, and never restated by a consumer (`scripts/check-spec-locality.sh`). -/
+
+/-- `fqSpongeTranscript_spec` with the commitment readings quantified in the postcondition,
+together with any property `P` of `computeXHat`'s result, carried to `x_hat`: given
+`computeXHat` reads as `xv` and satisfies `P`, the output's `x_hat` satisfies `P` and the
+transcript reads at `xv` and any readings of the other cells. -/
+theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F)))
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    (P : List (AffinePoint (FVar F)) → Prop) (xv : List (AffinePoint F))
+    (hx : ⦃⌜True⌝⦄ computeXHat
+      ⦃⇓ pts _ => ⌜P pts ∧ List.Forall₂ (CircuitType.Reads V) pts xv⌝⦄)
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      computeXHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜P o.xHat ∧
+      ∀ (sgv : List (AffinePoint F)) (wv : List (List (AffinePoint F)))
+      (zv tv : List (AffinePoint F)),
+      List.Forall₂ (CircuitType.Reads V) sgOld sgv →
+      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
+      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
+      FqTranscriptReads p (indexDigest.val V) sgv xv wv zv tv V o⌝⦄ := by
+  refine builder_spec_and _ _ _ (fqSpongeTranscript_xHat p hsize endo indexDigest sgOld
+    computeXHat P (builder_spec_imp _ _ _ hx fun _ h => h.1) wComm zComm tComm) ?_
+  rw [builder_spec_iff]
+  intro nv hsat sgv wv zv tv hsg hw hz ht
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscript_spec h2 h3 p hsize endo indexDigest sgOld
+    sgv hsg computeXHat xv (builder_spec_imp _ _ _ hx fun _ h => h.2) wComm wv hw zComm tComm
+    zv tv hz ht) nv hsat
+
+/-- `fqSpongeTranscriptOpt_spec` with every reading quantified in the postcondition, together
+with the returned `x_hat`. -/
+theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
+    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
+    (xHat : List (AffinePoint (FVar F))) (wComm : List (List (AffinePoint (FVar F))))
+    (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      xHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜o.xHat = xHat ∧
+      ∀ (sgv : List (Bool × AffinePoint F)) (xv : List (AffinePoint F))
+      (wv : List (List (AffinePoint F))) (zv tv : List (AffinePoint F)),
+      List.Forall₂ (CircuitType.Reads V) sgOld sgv → List.Forall₂ (CircuitType.Reads V) xHat xv →
+      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
+      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
+      zv ≠ [] → tv ≠ [] →
+      (∀ k : ℕ, k ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + zv.length + tv.length) →
+        (k : F) = 0 → k = 0) →
+      FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⌝⦄ := by
+  refine builder_spec_and _ _ _
+    (fqSpongeTranscriptOpt_xHat p hsize endo indexDigest sgOld xHat wComm zComm tComm) ?_
+  rw [builder_spec_iff]
+  intro nv hsat sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec h2 h3 p hsize hall endo indexDigest
+    sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht hzne htne hchar) nv hsat
+
 /-! ## The wire reading -/
 
 open Kimchi.Verifier in

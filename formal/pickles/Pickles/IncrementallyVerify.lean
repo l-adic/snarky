@@ -543,20 +543,6 @@ private theorem olds_reads_plain :
   | [], _ :: _, _, h => by rw [List.map_cons] at h; cases h
   | _ :: _, [], _, h => by rw [List.map_cons] at h; cases h
 
-/-- The plain transcript's `x_hat` is `computeXHat`'s, read as it reads. -/
-private theorem transcript_xHat (p : Poseidon.Params C.BaseField)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar C.BaseField)
-    (sgOld : List (AffinePoint (FVar C.BaseField)))
-    (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
-      (List (AffinePoint (FVar C.BaseField))))
-    (xv : List C.Point) (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜CommReads C V pts xv⌝⦄)
-    (wComm : List (List (AffinePoint (FVar C.BaseField))))
-    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
-    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint C.BaseField)) p endo
-      indexDigest sgOld computeXHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜CommReads C V o.xHat xv⌝⦄ :=
-  fqSpongeTranscript_xHat p hsize endo indexDigest sgOld computeXHat _ hx wComm zComm tComm
-
 /-- The wire's IPA run at a canonical claim, read: its `t`, round and Schnorr prechallenges are
 `ipaPrechallenges` at the claim's absorbed limbs and the pairs' and `δ`'s coordinate readings —
 what the opening check's transcript read (`CheckBulletproofReads`) speaks about. -/
@@ -590,123 +576,6 @@ private theorem success_eq {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
   rw [streamBv_kept σ cvk cp pub oldsW hkept, Array.toArray_toList, hz1, hz2]
   exact id
 
-/-- `fqSpongeTranscriptOpt_spec` on the side, its readings moved into the postcondition so the
-assembly can feed it to `mvcgen` before the readings are in hand, together with the returned
-`x_hat`. -/
-private theorem transcriptOpt_reads (S : IvpSide C V ops)
-    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
-    (endo indexDigest : FVar C.BaseField)
-    (sgOld : List (BoolVar C.BaseField × AffinePoint (FVar C.BaseField)))
-    (xHat : List (AffinePoint (FVar C.BaseField)))
-    (wComm : List (List (AffinePoint (FVar C.BaseField))))
-    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint C.BaseField))
-      C.sponge.params endo indexDigest sgOld xHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜o.xHat = xHat ∧
-      ∀ (sgv : List (Bool × AffinePoint C.BaseField)) (xv : List (AffinePoint C.BaseField))
-      (wv : List (List (AffinePoint C.BaseField))) (zv tv : List (AffinePoint C.BaseField)),
-      List.Forall₂ (CircuitType.Reads V) sgOld sgv → List.Forall₂ (CircuitType.Reads V) xHat xv →
-      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
-      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
-      zv ≠ [] → tv ≠ [] →
-      (∀ k : ℕ, k ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + zv.length + tv.length) →
-        (k : C.BaseField) = 0 → k = 0) →
-      FqTranscriptReads C.sponge.params (indexDigest.val V)
-        ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat
-  refine ⟨(builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_xHat _ hsize endo indexDigest sgOld
-    xHat wComm zComm tComm) nv hsat, fun sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar => ?_⟩
-  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec S.two_ne S.three_ne _ hsize
-    S.small_inj endo indexDigest sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht
-    hzne htne hchar) nv hsat
-
-/-- `fqSpongeTranscript_spec` on the side, its readings moved into the postcondition, together
-with the read of the `x_hat` it computes. -/
-private theorem transcript_reads (S : IvpSide C V ops)
-    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
-    (endo indexDigest : FVar C.BaseField) (sgOld : List (AffinePoint (FVar C.BaseField)))
-    (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
-      (List (AffinePoint (FVar C.BaseField))))
-    (xv : List C.Point) (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜CommReads C V pts xv⌝⦄)
-    (wComm : List (List (AffinePoint (FVar C.BaseField))))
-    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
-    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint C.BaseField))
-      C.sponge.params endo indexDigest sgOld computeXHat wComm zComm tComm
-    ⦃⇓ o _ => ⌜CommReads C V o.xHat xv ∧
-      ∀ (sgv : List (AffinePoint C.BaseField)) (wv : List (List (AffinePoint C.BaseField)))
-      (zv tv : List (AffinePoint C.BaseField)),
-      List.Forall₂ (CircuitType.Reads V) sgOld sgv →
-      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
-      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
-      FqTranscriptReads C.sponge.params (indexDigest.val V) sgv (xv.map wirePt) wv zv tv V o⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat
-  refine ⟨(builder_spec_iff _ _).mp (transcript_xHat _ hsize endo indexDigest sgOld computeXHat xv
-    hx wComm zComm tComm) nv hsat, fun sgv wv zv tv hsg hw hz ht => ?_⟩
-  exact (builder_spec_iff _ _).mp (fqSpongeTranscript_spec S.two_ne S.three_ne _ hsize endo
-    indexDigest sgOld sgv hsg computeXHat (xv.map wirePt)
-    (builder_spec_imp _ _ _ hx fun _ h => h.reads) wComm wv hw zComm tComm zv tv hz ht) nv hsat
-
-/-- The side's `checkBulletproof` read on one run, its readings moved into the postcondition:
-the transcript reading (`checkBulletproof_spec`) and the side's read (`IvpSide.opening`). -/
-private def OpeningReads (S : IvpSide C V ops) (sv : SpongeVar C.BaseField)
-    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
-    (inp : CheckBulletproofInput C.BaseField sf) (o : CheckBulletproofOutput C.BaseField) :
-    Prop :=
-  (∀ (s₀ : Poseidon.State C.BaseField)
-    (lrv : List (AffinePoint C.BaseField × AffinePoint C.BaseField))
-    (δv : AffinePoint C.BaseField),
-    SpongeVar.ReadsAt V sv s₀ → List.Forall₂ (CircuitType.Reads V) inp.opening.lr lrv →
-    CircuitType.Reads V inp.opening.delta δv →
-    CheckBulletproofReads C.sponge.params s₀
-      ((ops.shiftedToAbsorbFields inp.deferred.combinedInnerProduct).map (·.val V)) lrv δv V o) ∧
-  (∀ bvW : List (C.Point × Bool),
-    List.Forall₂ (MaskedBaseReads C.E.toAffine V) bases
-      (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)) →
-    bases ≠ [] → (∀ h, bvW.getLast? = some h → h.2 = true) →
-    (∀ x ∈ inp.scaled, S.ClaimOk x) →
-    ∀ n : Prechallenge, Reads128 V inp.xi n →
-    ∀ (σ : SRS C.Point) (lrW : Vector (C.Point × C.Point) σ.k) (δW sgW : C.Point),
-    List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr
-      (lrW.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)) →
-    inp.opening.lr ≠ [] →
-    OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E δW) →
-    OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E sgW) →
-    OnCurveAt C.E.toAffine V inp.blindingGenerator (SWPoint.equivPoint C.E σ.h) →
-    ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
-      (chals : Vector C.ScalarField σ.k),
-      (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
-      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
-      (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
-      ((↑o.success : CVar C.BaseField).val V = 1 ↔
-        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
-          (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
-          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
-            ((bvW.filter (·.2)).map (·.1)).toArray)
-          ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩))
-
-/-- The side's `checkBulletproof` on one run reads as `OpeningReads`. -/
-private theorem checkBulletproof_side (S : IvpSide C V ops)
-    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
-    (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
-    (sv : SpongeVar C.BaseField)
-    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
-    (inp : CheckBulletproofInput C.BaseField sf) :
-    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint C.BaseField)) ops S.e
-      C.sponge.params endo S.gm sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜OpeningReads S sv bases inp o⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat
-  unfold OpeningReads
-  refine ⟨fun s₀ lrv δv hs hlr hδ => ?_,
-    fun bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh => ?_⟩
-  · exact (builder_spec_iff _ _).mp (checkBulletproof_spec S.two_ne S.three_ne ops S.e _ hsize
-      endo S.gm sqrtF sv s₀ hs bases inp lrv hlr δv hδ) nv hsat
-  · exact (builder_spec_iff _ _).mp (S.opening_reads hsize endo sqrtF sv bases bvW hb hbne hlast
-      inp hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh) nv hsat
-
 /-- The assembly's read from the transcript on: with the transcript's `x_hat` read as the
 wire's public commitment and its outputs at the wire's commitment readings (the index digest
 already the key's), the plonk claims asserted equal to the squeezes, `ft_comm` read and the
@@ -731,7 +600,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (hft : FtCommReads S σ cvk cp pub ftc inp.plonk.perm inp.plonk.zetaToSrsLength
       inp.plonk.zetaToDomainSize ⟨inp.sigmaLast.toArray, hσlen⟩ inp.tComm)
     (o : CheckBulletproofOutput C.BaseField)
-    (hcb : OpeningReads S tr.sponge (inp.bases tr.xHat ftc)
+    (hcb : S.OpeningReads tr.sponge (inp.bases tr.xHat ftc)
       ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ o) :
     IvpReads S σ cvk cp pub inp ⟨tr.digest, o.success, o.challenges⟩ := by
   -- the wire's fq squeezes at these readings are `IvpReads`'s
@@ -851,14 +720,14 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   simp only [Vector.toList_mk] at hft
   have hcb := fun (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField))) =>
-    checkBulletproof_side S hsize endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
+    S.opening_reads hsize endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
   obtain ⟨sIdx, hsIdx, hdig⟩ := hIdx
   cases optSponge with
   | true =>
     simp only [incrementallyVerifyProof, if_true]
     have htr := fun (d : FVar C.BaseField) (xHat : List (AffinePoint (FVar C.BaseField))) =>
-      transcriptOpt_reads S hsize endo d (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat
-        inp.wComm inp.zComm inp.tComm
+      fqSpongeTranscriptOpt_reads (V := V) S.two_ne S.three_ne _ hsize S.small_inj endo d
+        (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
     case vc1.hsize => exact hsize
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
@@ -902,8 +771,9 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
     have htr := fun (d : FVar C.BaseField) =>
-      transcript_reads S hsize endo d (inp.sgOld.map (·.2)) computeXHat _ hXhat inp.wComm
-        inp.zComm inp.tComm
+      fqSpongeTranscript_reads (V := V) S.two_ne S.three_ne _ hsize endo d (inp.sgOld.map (·.2))
+        computeXHat (fun pts => CommReads C V pts (publicCommitment C σ cvk pub).toList) _
+        (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [htr, hasrt, hft, hcb]
     case vc1.hsize => exact hsize
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'

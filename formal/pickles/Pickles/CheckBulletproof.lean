@@ -368,6 +368,28 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {sf : Ty
   exact ⟨htv, hchals, hi, hhi, hc⟩
 
 
+/-- `checkBulletproof_spec` with the sponge, pair and `δ` readings quantified in the
+postcondition — the shape an assembly hands `mvcgen` before the readings are in hand, stated
+once here and never restated by a consumer (`scripts/check-spec-locality.sh`). -/
+theorem checkBulletproof_reads (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {sf : Type}
+    (ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf) (e : IpaEndo F)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F) (sv : SpongeVar F)
+    (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
+    (inp : CheckBulletproofInput F sf) :
+    ⦃⌜True⌝⦄ checkBulletproof ops e p endo gm sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜∀ (s₀ : Poseidon.State F) (lrv : List (AffinePoint F × AffinePoint F))
+      (δv : AffinePoint F), SpongeVar.ReadsAt V sv s₀ →
+      List.Forall₂ (CircuitType.Reads V) inp.opening.lr lrv →
+      CircuitType.Reads V inp.opening.delta δv →
+      CheckBulletproofReads p s₀
+        ((ops.shiftedToAbsorbFields inp.deferred.combinedInnerProduct).map (·.val V))
+        lrv δv V o⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat s₀ lrv δv hs hlr hδ
+  exact (builder_spec_iff _ _).mp (checkBulletproof_spec h2 h3 ops e p hsize endo gm sqrtF sv s₀
+    hs bases inp lrv hlr δv hδ) nv hsat
+
 /-! ## Soundness: the algebra
 
 The group-side readings, over Mathlib's `W.Point` where the gadget specs are stated:
@@ -952,14 +974,14 @@ band — the `scale_fast`-family premise #341 tracks). -/
 def IvpSide.ClaimOk (S : IvpSide C V ops) (x : sf) : Prop :=
   S.R.WellFormed x ∧ ∀ w, S.R.Pre x w → S.R.Reg w
 
-/-- **The opening check reads as the wire's, on any side.** Under any valuation satisfying the
-emitted constraints — the bases reading as wire points under their bits (the last kept), every
+/-- The opening check's read at given readings (the family form `IvpSide.opening_reads`
+quantifies): with the bases reading as wire points under their bits (the last kept), every
 scaled claim a claim the ladder read speaks about, `ξ` reading as `n`, the pairs, `δ`, `sg` and
 `h` as the wire's points — the challenges read as some `ns`, `c` as some `c₀`, `U` is the
 map-to-curve of `t` up to sign, `cip` has a ladder witness, and the success bit reads `1`
 exactly when the wire verifier's `schnorrAt` holds at the side's decodes over the kept bases
 combined at `n`'s expansion. -/
-theorem IvpSide.opening_reads (S : IvpSide C V ops)
+private theorem IvpSide.opening_reads_at (S : IvpSide C V ops)
     (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
     (sv : SpongeVar C.BaseField)
@@ -1016,6 +1038,71 @@ theorem IvpSide.opening_reads (S : IvpSide C V ops)
         (by simp [Function.comp_def]) rfl rfl]
     simp only [AddEquiv.apply_symm_apply]
     rw [← S.horner n.val bvW hlast, AddEquiv.apply_symm_apply]
+
+/-- The opening check's read on a side, every reading quantified: the transcript half
+(`CheckBulletproofReads` at the sponge, pair and `δ` readings, the claimed `cip`'s absorbed
+limbs) and the algebra half — for any readings of the bases as wire points under their bits
+(the last kept), with every scaled claim a claim the ladder read speaks about, `ξ` reading as
+`n`, and the pairs, `δ`, `sg` and `h` reading as the wire's points: the challenges read as
+some `ns`, `c` as some `c₀`, `U` is the map-to-curve of `t` up to sign, `cip` has a ladder
+witness, and the success bit reads `1` exactly when the wire verifier's `schnorrAt` holds at
+the side's decodes over the kept bases combined at `n`'s expansion. -/
+def IvpSide.OpeningReads (S : IvpSide C V ops) (sv : SpongeVar C.BaseField)
+    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
+    (inp : CheckBulletproofInput C.BaseField sf) (o : CheckBulletproofOutput C.BaseField) :
+    Prop :=
+  (∀ (s₀ : Poseidon.State C.BaseField)
+    (lrv : List (AffinePoint C.BaseField × AffinePoint C.BaseField))
+    (δv : AffinePoint C.BaseField),
+    SpongeVar.ReadsAt V sv s₀ → List.Forall₂ (CircuitType.Reads V) inp.opening.lr lrv →
+    CircuitType.Reads V inp.opening.delta δv →
+    CheckBulletproofReads C.sponge.params s₀
+      ((ops.shiftedToAbsorbFields inp.deferred.combinedInnerProduct).map (·.val V)) lrv δv V o) ∧
+  (∀ bvW : List (C.Point × Bool),
+    List.Forall₂ (MaskedBaseReads C.E.toAffine V) bases
+      (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)) →
+    bases ≠ [] → (∀ h, bvW.getLast? = some h → h.2 = true) →
+    (∀ x ∈ inp.scaled, S.ClaimOk x) →
+    ∀ n : Prechallenge, Reads128 V inp.xi n →
+    ∀ (σ : SRS C.Point) (lrW : Vector (C.Point × C.Point) σ.k) (δW sgW : C.Point),
+    List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr
+      (lrW.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)) →
+    inp.opening.lr ≠ [] →
+    OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E δW) →
+    OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E sgW) →
+    OnCurveAt C.E.toAffine V inp.blindingGenerator (SWPoint.equivPoint C.E σ.h) →
+    ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector C.ScalarField σ.k),
+      (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
+      ((↑o.success : CVar C.BaseField).val V = 1 ↔
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+          (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
+            ((bvW.filter (·.2)).map (·.1)).toArray)
+          ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩))
+
+/-- **The opening check reads as the wire's, on any side.** Under any valuation satisfying the
+emitted constraints the outputs satisfy `IvpSide.OpeningReads`: the transcript half from
+`checkBulletproof_reads`, the algebra half from `IvpSide.opening_reads_at`. The shape an
+assembly hands `mvcgen`, stated once here (`scripts/check-spec-locality.sh`). -/
+theorem IvpSide.opening_reads (S : IvpSide C V ops)
+    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
+    (sv : SpongeVar C.BaseField)
+    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
+    (inp : CheckBulletproofInput C.BaseField sf) :
+    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint C.BaseField)) ops S.e
+      C.sponge.params endo S.gm sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜S.OpeningReads sv bases inp o⌝⦄ := by
+  refine builder_spec_and _ _ _
+    (checkBulletproof_reads S.two_ne S.three_ne ops S.e _ hsize endo S.gm sqrtF sv bases inp) ?_
+  rw [builder_spec_iff]
+  intro nv hsat bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh
+  exact (builder_spec_iff _ _).mp (S.opening_reads_at hsize endo sqrtF sv bases bvW hb hbne
+    hlast inp hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh) nv hsat
 
 end Side
 

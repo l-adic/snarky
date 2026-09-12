@@ -103,6 +103,15 @@ theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
   intro _ _
   trivial
 
+/-- Two specifications of one program conjoin: `wp` is deterministic, so both conclusions hold
+of the one result. -/
+theorem builder_spec_and {V : Valuation F} [ConstraintHolds F c] {α : Type}
+    (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (hp : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)
+    (hq : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜Q r⌝⦄) : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r ∧ Q r⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat
+  exact ⟨(builder_spec_iff g P).mp hp nv hsat, (builder_spec_iff g Q).mp hq nv hsat⟩
+
 /-- Weakening a specification's conclusion. -/
 theorem builder_spec_imp {V : Valuation F} [ConstraintHolds F c] {α : Type}
     (g : CircuitM F (Builder V c) α) (P Q : α → Prop) (h : ⦃⌜True⌝⦄ g ⦃⇓ r _ => ⌜P r⌝⦄)

@@ -211,6 +211,12 @@ jobs:
     - name: Check reading lemmas
       run: bash scripts/check-readings.sh
 
+    # GATE: a pickles gadget's spec is stated once, in its module — a consumer names the
+    # exported shape (family or ∀-form) in a `have`, never restates it (the mirror of
+    # sealing, which stops a consumer unfolding the body).
+    - name: Check spec locality
+      run: bash scripts/check-spec-locality.sh
+
     # Compatibility: the IPA verifier model must accept real kimchi/proof-systems
     # transcripts, and both chunk-fold mechanisms must match production — the chunk
     # layer's recombination (fixtures/ipa_{opening,batch,chunked2,chunked3}_*.json,
