@@ -185,9 +185,12 @@ Pickles.stepSide
 
 -- The group half (IncrementallyVerify.lean, `incrementally_verify_proof`): the index-digest
 -- squeeze, the fq-sponge transcript, the plonk-claim assertions, `ft_comm`, the `to_batch`
--- bases and `check_bulletproof`, one gadget on either side; and the wrap side's read
--- `IvpReads` — the digest is the wire's `runOracles`, the plonk claims and the round
+-- bases and `check_bulletproof`, one gadget on either side; its read `IvpReads` on any side
+-- (`IvpSide`) — the digest is the wire's `runOracles`, the plonk claims and the round
 -- prechallenges are its fq / IPA prechallenges up to the `lowest_128_bits` slack, and the
--- success bit is the Schnorr equation over the wire's batch stream `runInput`.
+-- success bit is the Schnorr equation over the wire's batch stream `runInput` — and the two
+-- deployed instantiations.
 Pickles.incrementallyVerifyProof
+Pickles.incrementallyVerifyProof_reads
 Pickles.incrementallyVerifyProof_wrap_reads
+Pickles.incrementallyVerifyProof_step_reads

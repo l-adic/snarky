@@ -32,8 +32,13 @@ batch stream `runInput`, at the claimed `ξ`, `cip`, `b`. The `sg`-correctness e
 absorbs this `sg` as an old accumulator (`KimchiProof.olds`). `IvpTies` names what the read
 assumes: the cells read as the wire's key, proof and claims.
 
-`incrementallyVerifyProof_wrap_reads` is the wrap side's read; the step side's is pending on
-its `x_hat` gadget.
+`incrementallyVerifyProof_reads` is the read on any side, generic in `IvpSide` — the ladder
+reading, the decode, the endomorphism and map-to-curve data, the field facts, the absorbed
+limbs and the opening check's read a side supplies; `wrapSide` and `stepSide` are the two
+deployed values and `incrementallyVerifyProof_wrap_reads` / `incrementallyVerifyProof_step_reads`
+the read at each. The step side's claimed `cip` must absorb canonically (`IvpSide.Canon`): its
+halved limb is range-checked to 254 bits, one bit more than the honest half takes, so a
+non-canonical claim would absorb limbs the wire does not.
 -/
 
 namespace Pickles
@@ -464,44 +469,12 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
 
 end Helpers
 
-/-! ## The wrap side's readings -/
+/-! ## The side-generic readings -/
 
-section WrapHelpers
+section Assembly
 
-open Kimchi.Gate.VarBaseMul Pasta.Shifted
-
-/-- At Vesta the one-wrap regime is the off-band condition: the subwrap disjunct is false. -/
-private theorem vesta_regime_offBand {z : ℤ} (h : HasCurve.vesta.LadderRegime 255 z) :
-    z ∉ forbiddenValues PALLAS_BASE_CARD := by
-  rcases h with h | ⟨_, _, _, h⟩
-  · exfalso
-    have hO : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
-    rw [hO] at h
-    exact absurd h (by norm_num [PALLAS_BASE_CARD])
-  · have hO : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
-    rwa [hO] at h
-
-/-- The wrap circuit absorbs the claimed `cip` as its one `Type1` limb, and the wire absorbs
-`scalarLimbs (shiftScalar cip)`: at Vesta these agree, the ladder witness bounding the cell
-below the scalar modulus so the decode's re-shift is the cell. -/
-private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
-    (h : WrapLadderPre V x z) :
-    scalarLimbs IpaVesta.curve (shiftScalar IpaVesta.curve (wrapDecode V x)) = [x.val.val V] := by
-  have hsz : Nat.size IpaVesta.curve.scalar = 255 :=
-    le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_BASE_CARD]))
-      (Nat.lt_size.mpr (by norm_num [PALLAS_BASE_CARD]))
-  have hlt : IpaVesta.curve.scalar < IpaVesta.curve.base := by decide
-  simp only [scalarLimbs, shiftScalar, if_pos hlt, hsz, wrapDecode,
-    shiftType1_unshiftType1 (by decide : (2 : Fp) ≠ 0)]
-  obtain ⟨h0, hlt', hz⟩ := h
-  have hval : ((x.val.val V).val : ℤ) = z := by
-    rw [← hz, ZMod.val_intCast, Int.emod_eq_of_lt h0
-      (lt_of_lt_of_le hlt' (by norm_num [PALLAS_SCALAR_CARD]))]
-  have hv : (x.val.val V).val < PALLAS_BASE_CARD := by
-    have : ((x.val.val V).val : ℤ) < 2 ^ 254 := hval ▸ hlt'
-    have : (x.val.val V).val < 2 ^ 254 := by exact_mod_cast this
-    exact lt_trans this (by norm_num [PALLAS_BASE_CARD])
-  rw [ZMod.val_natCast, Nat.mod_eq_of_lt hv, ZMod.natCast_zmod_val]
+variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+  {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-! The wire bridges below are stated at a generic curve or at variables, projected to the
 component in use, and only ever *rewritten* with at Vesta. The kernel compares same-headed
@@ -566,43 +539,34 @@ private theorem fqPrechallenges_warm :
 
 end Prechallenges
 
-/-- The wrap field spelled as the wire's `ZMod IpaVesta.curve.base` (at the generic bridges'
-instance) and as `Fq` name the same `fqSqueezes`, at variables. -/
-private theorem fqSqueezes_base_eq (p : Poseidon.Params Fq) (d : Fq) (a b : List (Fq × Fq))
-    (c : List (List (Fq × Fq))) (e f : List (Fq × Fq)) :
-    (@fqSqueezes (ZMod IpaVesta.curve.base) (ZMod.instField _) p d a b c e f)
-      = (fqSqueezes (F := Fq) p d a b c e f) := rfl
-
 /-- Alias readings compose: the wire's prechallenges alias the cells' readings. -/
-private theorem forall₂_alias {V : Valuation Fq} {pres : List ℕ}
-    {us : List (SizedF 128 (FVar Fq))} {ns : List Prechallenge}
-    (h1 : List.Forall₂ (fun (pre : ℕ) (u : SizedF 128 (FVar Fq)) =>
-      ∀ m, Reads128 V u m → PrechallengeAlias PALLAS_SCALAR_CARD pre m) pres us)
+private theorem forall₂_alias {pres : List ℕ} {us : List (SizedF 128 (FVar C.BaseField))}
+    {ns : List Prechallenge}
+    (h1 : List.Forall₂ (fun (pre : ℕ) (u : SizedF 128 (FVar C.BaseField)) =>
+      ∀ m, Reads128 V u m → PrechallengeAlias C.base pre m) pres us)
     (h2 : List.Forall₂ (Reads128 V) us ns) :
-    List.Forall₂ (PrechallengeAlias PALLAS_SCALAR_CARD) pres ns := by
+    List.Forall₂ (PrechallengeAlias C.base) pres ns := by
   induction h1 generalizing ns with
   | nil => cases h2; exact .nil
   | cons h hs ih => cases h2 with | cons h' hs' => exact .cons (h _ h') (ih hs')
 
 /-- A pair read as two wire points reads as their coordinates. -/
-private theorem pairReads_reads {V : Valuation Fq}
-    {q : AffinePoint (FVar Fq) × AffinePoint (FVar Fq)}
-    {P : IpaVesta.curve.Point × IpaVesta.curve.Point}
-    (h : PairReads IpaEndo.vesta.d.W V q
-      (SWPoint.equivPoint Vesta.curve P.1, SWPoint.equivPoint Vesta.curve P.2)) :
+private theorem pairReads_reads
+    {q : AffinePoint (FVar C.BaseField) × AffinePoint (FVar C.BaseField)} {P : C.Point × C.Point}
+    (h : PairReads C.E.toAffine V q (SWPoint.equivPoint C.E P.1, SWPoint.equivPoint C.E P.2)) :
     CircuitType.Reads V q (wirePt P.1, wirePt P.2) :=
   CircuitType.reads_prod.mpr
-    ⟨reads_affinePoint.mpr (onCurveAt_equivPoint_coords (C := IpaVesta.curve) h.1),
-     reads_affinePoint.mpr (onCurveAt_equivPoint_coords (C := IpaVesta.curve) h.2)⟩
+    ⟨reads_affinePoint.mpr (onCurveAt_equivPoint_coords h.1),
+     reads_affinePoint.mpr (onCurveAt_equivPoint_coords h.2)⟩
 
-/-- The wrap side's `sg_old` cells, each under its keep bit, read as the olds' bits and
-coordinates — the conditional transcript's reading of the masked list. -/
-private theorem olds_reads {V : Valuation Fq} :
-    ∀ {sgOld : List (Option (BoolVar Fq) × AffinePoint (FVar Fq))}
-      {oldsW : List (IpaVesta.curve.Point × Bool)},
+/-- The conditional sponge's `sg_old` cells, each under a keep bit, read as the olds' bits and
+coordinates. -/
+private theorem olds_reads :
+    ∀ {sgOld : List (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField))}
+      {oldsW : List (C.Point × Bool)},
       (∀ m ∈ sgOld, m.1.isSome) →
-      List.Forall₂ (MaskedBaseReads HasCurve.vesta.W V) (sgOld.map fun m => (m.2, m.1))
-        (oldsW.map fun b => (SWPoint.equivPoint Vesta.curve b.1, b.2)) →
+      List.Forall₂ (MaskedBaseReads C.E.toAffine V) (sgOld.map fun m => (m.2, m.1))
+        (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)) →
       List.Forall₂ (CircuitType.Reads V) (sgOld.map fun m => (m.1.getD true_, m.2))
         (oldsW.map fun b => (b.2, wirePt b.1))
   | [], [], _, _ => .nil
@@ -615,224 +579,686 @@ private theorem olds_reads {V : Valuation Fq} :
       rw [hk] at h1 ⊢
       simp only [MaskedBaseReads, Option.getD_some] at h1 ⊢
       exact CircuitType.reads_prod.mpr ⟨CircuitType.reads_boolVar.mpr h1.2,
-        reads_affinePoint.mpr (onCurveAt_equivPoint_coords (C := IpaVesta.curve) h1.1)⟩
+        reads_affinePoint.mpr (onCurveAt_equivPoint_coords h1.1)⟩
+  | [], _ :: _, _, h => by rw [List.map_cons] at h; cases h
+  | _ :: _, [], _, h => by rw [List.map_cons] at h; cases h
+
+/-- The plain sponge's unmasked `sg_old` cells read as the olds' coordinates, every old kept. -/
+private theorem olds_reads_plain :
+    ∀ {sgOld : List (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField))}
+      {oldsW : List (C.Point × Bool)},
+      (∀ m ∈ sgOld, m.1.isSome = false) →
+      List.Forall₂ (MaskedBaseReads C.E.toAffine V) (sgOld.map fun m => (m.2, m.1))
+        (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)) →
+      List.Forall₂ (CircuitType.Reads V) (sgOld.map (·.2)) (oldsW.map fun b => wirePt b.1) ∧
+        ∀ b ∈ oldsW, b.2 = true
+  | [], [], _, _ => ⟨.nil, fun _ h => nomatch h⟩
+  | m :: sg, b :: os, hm, h => by
+    rw [List.map_cons, List.map_cons] at h
+    rw [List.map_cons, List.map_cons]
+    cases h with
+    | cons h1 hs =>
+      obtain ⟨ih1, ih2⟩ := olds_reads_plain (fun x hx => hm x (List.mem_cons_of_mem _ hx)) hs
+      have hk : m.1 = none := by
+        have := hm m (List.mem_cons_self ..)
+        cases hm1 : m.1 with
+        | none => rfl
+        | some k => rw [hm1] at this; simp at this
+      rw [hk] at h1
+      simp only [MaskedBaseReads] at h1
+      refine ⟨.cons (reads_affinePoint.mpr (onCurveAt_equivPoint_coords h1.1)) ih1, ?_⟩
+      intro b' hb'
+      rcases List.mem_cons.mp hb' with rfl | hb'
+      · exact h1.2
+      · exact ih2 b' hb'
   | [], _ :: _, _, h => by rw [List.map_cons] at h; cases h
   | _ :: _, [], _, h => by rw [List.map_cons] at h; cases h
 
 /-- The conditional transcript returns the `x_hat` it was given. -/
-private theorem transcriptOpt_xHat {V : Valuation Fq} (p : Poseidon.Params Fq)
-    (hsize : p.roundConstants.size = Poseidon.fullRounds)
-    (endo indexDigest : FVar Fq) (sgOld : List (BoolVar Fq × AffinePoint (FVar Fq)))
-    (xHat : List (AffinePoint (FVar Fq))) (wComm : List (List (AffinePoint (FVar Fq))))
-    (zComm tComm : List (AffinePoint (FVar Fq))) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint Fq)) p endo indexDigest sgOld
-      xHat wComm zComm tComm
+private theorem transcriptOpt_xHat (p : Poseidon.Params C.BaseField)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar C.BaseField)
+    (sgOld : List (BoolVar C.BaseField × AffinePoint (FVar C.BaseField)))
+    (xHat : List (AffinePoint (FVar C.BaseField)))
+    (wComm : List (List (AffinePoint (FVar C.BaseField))))
+    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint C.BaseField)) p endo
+      indexDigest sgOld xHat wComm zComm tComm
     ⦃⇓ o _ => ⌜o.xHat = xHat⌝⦄ := by
   simp only [fqSpongeTranscriptOpt]
   have h1 := fun (b : Bool) ov => builder_spec_true
-    (optSqueezePrechallenge (c := Builder V (KimchiConstraint Fq)) p b endo ov)
+    (optSqueezePrechallenge (c := Builder V (KimchiConstraint C.BaseField)) p b endo ov)
   have h2 := fun sv => builder_spec_true
-    (SpongeVar.squeeze (c := Builder V (KimchiConstraint Fq)) p sv)
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint C.BaseField)) p sv)
   mvcgen -trivial [h1, h2]
   case vc1.hsize => exact hsize
 
-/-- The opening's ties at the wrap side's spellings (`IpaEndo.vesta.d.W`, `Vesta.curve`), as
-`checkBulletproof_wrap_spec` and `checkBulletproof_spec` consume them. A separate declaration
-so the curve-spelling conversions are kernel-checked on their own. -/
-private theorem wrap_opening_ties {nc : ℕ} {V : Valuation Fq} {σ : SRS IpaVesta.curve.Point}
-    {cvk : KimchiVK IpaVesta.curve nc} {cp : KimchiProof IpaVesta.curve nc σ.k} {pub : Array Fp}
-    {inp : IvpInput Fq (Type1 (FVar Fq))} {oldsW : List (IpaVesta.curve.Point × Bool)}
-    (hties : IvpTies (wrapSide V) σ cvk cp pub inp oldsW) {blindingH : AffinePoint (FVar Fq)}
-    (hh : OnCurveAt HasCurve.vesta.W V blindingH (SWPoint.equivPoint Vesta.curve σ.h)) :
-    List.Forall₂ (PairReads IpaEndo.vesta.d.W V) inp.opening.lr (cp.opening.lr.toList.map fun q =>
-      (SWPoint.equivPoint Vesta.curve q.1, SWPoint.equivPoint Vesta.curve q.2)) ∧
-    OnCurveAt IpaEndo.vesta.d.W V inp.opening.delta
-      (SWPoint.equivPoint Vesta.curve cp.opening.delta) ∧
-    OnCurveAt IpaEndo.vesta.d.W V inp.opening.sg (SWPoint.equivPoint Vesta.curve cp.opening.sg) ∧
-    OnCurveAt IpaEndo.vesta.d.W V blindingH (SWPoint.equivPoint Vesta.curve σ.h) ∧
-    List.Forall₂ (CircuitType.Reads V) inp.opening.lr
-      (cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)) ∧
-    CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
-  ⟨hties.lr, hties.delta, hties.sg, hh,
-   List.forall₂_map_right_iff.2
-     ((List.forall₂_map_right_iff.1 hties.lr).imp fun _ _ h => pairReads_reads h),
-   reads_affinePoint.mpr (onCurveAt_equivPoint_coords (C := IpaVesta.curve) hties.delta)⟩
-
-/-- `bases_reads` at the wrap side's spellings (a separate declaration, as above). -/
-private theorem wrap_bases_reads {nc : ℕ} {V : Valuation Fq} {σ : SRS IpaVesta.curve.Point}
-    {cvk : KimchiVK IpaVesta.curve nc} {cp : KimchiProof IpaVesta.curve nc σ.k} {pub : Array Fp}
-    {inp : IvpInput Fq (Type1 (FVar Fq))} {oldsW : List (IpaVesta.curve.Point × Bool)}
-    (hties : IvpTies (wrapSide V) σ cvk cp pub inp oldsW) {xHat : List (AffinePoint (FVar Fq))}
-    (hx : CommReads IpaVesta.curve V xHat (publicCommitment IpaVesta.curve σ cvk pub).toList)
-    {ftc : AffinePoint (FVar Fq)}
-    (hf : OnCurveAt IpaVesta.curve.E.toAffine V ftc
-      (SWPoint.equivPoint IpaVesta.curve.E (runFtComm IpaVesta.curve σ cvk cp pub))) :
-    List.Forall₂ (MaskedBaseReads IpaEndo.vesta.d.W V) (inp.bases xHat ftc)
-      ((streamBv σ cvk cp pub oldsW).map fun b => (SWPoint.equivPoint Vesta.curve b.1, b.2)) :=
-  bases_reads hties hx hf
+/-- The plain transcript's `x_hat` is `computeXHat`'s, read as it reads. -/
+private theorem transcript_xHat (p : Poseidon.Params C.BaseField)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar C.BaseField)
+    (sgOld : List (AffinePoint (FVar C.BaseField)))
+    (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
+      (List (AffinePoint (FVar C.BaseField))))
+    (xv : List C.Point) (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜CommReads C V pts xv⌝⦄)
+    (wComm : List (List (AffinePoint (FVar C.BaseField))))
+    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint C.BaseField)) p endo
+      indexDigest sgOld computeXHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜CommReads C V o.xHat xv⌝⦄ :=
+  fqSpongeTranscript_xHat p hsize endo indexDigest sgOld computeXHat _ hx wComm zComm tComm
 
 /-- The wire's warm state at the transcript readings is the raw pre-digest state. -/
-private theorem wrap_warm_eq {nc : ℕ} (σ : SRS IpaVesta.curve.Point)
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
-    (hpre : fqSqueezes (F := Fq) IpaVesta.curve.sponge.params cvk.digest
+private theorem warm_eq {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (hpre : fqSqueezes C.sponge.params cvk.digest
       (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-      (((publicCommitment IpaVesta.curve σ cvk pub).toList.map wirePt).map pointCoords)
+      (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
       ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
       ((cp.zComm.toList.map wirePt).map pointCoords)
       ((cp.tComm.toList.map wirePt).map pointCoords)
-      = fqSqueezes (F := Fq) IpaVesta.curve.sponge.params cvk.digest
+      = fqSqueezes C.sponge.params cvk.digest
         ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y))
-        (coords IpaVesta.curve (publicCommitment IpaVesta.curve σ cvk pub))
-        (cp.wComm.toList.map (coords IpaVesta.curve)) (coords IpaVesta.curve cp.zComm)
+        (coords C (publicCommitment C σ cvk pub))
+        (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
         (cp.tComm.toList.map fun P => (P.x, P.y))) :
-    (runOracles IpaVesta.curve σ cvk cp pub).warm.sponge
-      = (fqSqueezes (F := Fq) IpaVesta.curve.sponge.params cvk.digest
+    (runOracles C σ cvk cp pub).warm.sponge
+      = (fqSqueezes C.sponge.params cvk.digest
         (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-        (((publicCommitment IpaVesta.curve σ cvk pub).toList.map wirePt).map pointCoords)
+        (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
         ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
         ((cp.zComm.toList.map wirePt).map pointCoords)
         ((cp.tComm.toList.map wirePt).map pointCoords)).2.2 := by
-  show (fqOracles IpaVesta.curve cvk cp (publicCommitment IpaVesta.curve σ cvk pub)).warm.sponge = _
-  rw [fqOracles_warm_eq, fqPrechallenges_warm IpaVesta.curve, fqSqueezes_base_eq, ← hpre]
+  show (fqOracles C cvk cp (publicCommitment C σ cvk pub)).warm.sponge = _
+  rw [fqOracles_warm_eq, fqPrechallenges_warm C, ← hpre]
 
-/-- `IvpReads`'s IPA prechallenges at the wrap side are the opening check's, at the claimed
-`cip`'s one limb and the pairs' and `δ`'s coordinate readings. -/
-private theorem wrap_ipa_pre_eq {nc : ℕ} {V : Valuation Fq} (σ : SRS IpaVesta.curve.Point)
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
-    (cip : Type1 (FVar Fq)) {zc : ℤ} (hzc : WrapLadderPre V cip zc)
-    (s : Poseidon.State Fq) (hw : (runOracles IpaVesta.curve σ cvk cp pub).warm.sponge = s) :
-    ipaPrechallenges Poseidon.FqVesta.spec.params
-        (runOracles IpaVesta.curve σ cvk cp pub).warm.sponge
-        (scalarLimbs IpaVesta.curve (shiftScalar IpaVesta.curve ((wrapSide V).decode cip)))
+/-- `IvpReads`'s IPA prechallenges are the opening check's, at the claimed `cip`'s absorbed
+limbs and the pairs' and `δ`'s coordinate readings. -/
+private theorem ipa_pre_eq {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (cip : sf) (hc : S.Canon cip) {w : S.R.wit} (hw : S.R.Pre cip w)
+    (s : Poseidon.State C.BaseField) (hs : (runOracles C σ cvk cp pub).warm.sponge = s) :
+    ipaPrechallenges C.sponge.params (runOracles C σ cvk cp pub).warm.sponge
+        (scalarLimbs C (shiftScalar C (S.decode cip)))
         (cp.opening.lr.toList.map fun q => ((q.1.x, q.1.y), (q.2.x, q.2.y)))
         (cp.opening.delta.x, cp.opening.delta.y)
-      = ipaPrechallenges IpaVesta.curve.sponge.params s [cip.val.val V]
+      = ipaPrechallenges C.sponge.params s ((ops.shiftedToAbsorbFields cip).map (·.val V))
           ((cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)).map coordsPair)
           ((wirePt cp.opening.delta).x, (wirePt cp.opening.delta).y) := by
-  show ipaPrechallenges IpaVesta.curve.sponge.params _
-    (scalarLimbs IpaVesta.curve (shiftScalar IpaVesta.curve (wrapDecode V cip))) _ _ = _
-  rw [wrap_cip_limbs hzc, hw, List.map_map]
-  rfl
+  rw [S.absorb_limbs hc hw, hs]
+  simp only [List.map_map, Function.comp_def, coordsPair, wirePt]
 
 /-- The success clause at the stream bases and the proof record is `IvpReads`'s, at
 `runInput`'s commitments and `cp.opening`. -/
-private theorem wrap_success_eq {nc : ℕ} {V : Valuation Fq} (σ : SRS IpaVesta.curve.Point)
-    (cvk : KimchiVK IpaVesta.curve nc) (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
-    (oldsW : List (IpaVesta.curve.Point × Bool))
+private theorem success_eq {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (oldsW : List (C.Point × Bool))
     (hkept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList)
-    (z1 z2 : Type1 (FVar Fq)) (hz1 : wrapDecode V z1 = cp.opening.z1)
-    (hz2 : wrapDecode V z2 = cp.opening.z2) (U : IpaVesta.curve.Point)
-    (chals : Vector Fp σ.k) (c cip b ξ : Fp) (P : Prop) :
-    (P ↔ schnorrAt IpaVesta.curve σ U chals c cip b
-        (combineCommitments IpaVesta.curve ξ
-          ((((streamBv σ cvk cp pub oldsW).filter (·.2)).map (·.1)).toArray))
-        ⟨cp.opening.lr, cp.opening.delta, wrapDecode V z1, wrapDecode V z2, cp.opening.sg⟩) →
-    (P ↔ schnorrAt IpaVesta.curve σ U chals c cip b
-        (combineCommitments IpaVesta.curve ξ
-          (runInput IpaVesta.curve σ cvk cp pub).commitments.toArray)
-        (runInput IpaVesta.curve σ cvk cp pub).proof) := by
+    (z1 z2 : sf) (hz1 : S.decode z1 = cp.opening.z1) (hz2 : S.decode z2 = cp.opening.z2)
+    (U : C.Point) (chals : Vector C.ScalarField σ.k) (c cip b ξ : C.ScalarField) (P : Prop) :
+    (P ↔ schnorrAt C σ U chals c cip b
+        (combineCommitments C ξ ((((streamBv σ cvk cp pub oldsW).filter (·.2)).map (·.1)).toArray))
+        ⟨cp.opening.lr, cp.opening.delta, S.decode z1, S.decode z2, cp.opening.sg⟩) →
+    (P ↔ schnorrAt C σ U chals c cip b
+        (combineCommitments C ξ (runInput C σ cvk cp pub).commitments.toArray)
+        (runInput C σ cvk cp pub).proof) := by
   rw [streamBv_kept σ cvk cp pub oldsW hkept, Array.toArray_toList, hz1, hz2]
   exact id
 
-/-- `fqSpongeTranscriptOpt_spec` at the wrap field, its readings moved into the postcondition
-so the assembly can feed it to `mvcgen` before the readings are in hand, together with the
-returned `x_hat`. -/
-private theorem transcriptOpt_wrap {V : Valuation Fq}
-    (hsize : IpaVesta.curve.sponge.params.roundConstants.size = Poseidon.fullRounds)
-    (endo indexDigest : FVar Fq) (sgOld : List (BoolVar Fq × AffinePoint (FVar Fq)))
-    (xHat : List (AffinePoint (FVar Fq))) (wComm : List (List (AffinePoint (FVar Fq))))
-    (zComm tComm : List (AffinePoint (FVar Fq))) :
-    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint Fq))
-      IpaVesta.curve.sponge.params endo indexDigest sgOld xHat wComm zComm tComm
+/-- `fqSpongeTranscriptOpt_spec` on the side, its readings moved into the postcondition so the
+assembly can feed it to `mvcgen` before the readings are in hand, together with the returned
+`x_hat`. -/
+private theorem transcriptOpt_reads (S : IvpSide C V ops)
+    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo indexDigest : FVar C.BaseField)
+    (sgOld : List (BoolVar C.BaseField × AffinePoint (FVar C.BaseField)))
+    (xHat : List (AffinePoint (FVar C.BaseField)))
+    (wComm : List (List (AffinePoint (FVar C.BaseField))))
+    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint C.BaseField))
+      C.sponge.params endo indexDigest sgOld xHat wComm zComm tComm
     ⦃⇓ o _ => ⌜o.xHat = xHat ∧
-      ∀ (sgv : List (Bool × AffinePoint Fq)) (xv : List (AffinePoint Fq))
-      (wv : List (List (AffinePoint Fq))) (zv tv : List (AffinePoint Fq)),
+      ∀ (sgv : List (Bool × AffinePoint C.BaseField)) (xv : List (AffinePoint C.BaseField))
+      (wv : List (List (AffinePoint C.BaseField))) (zv tv : List (AffinePoint C.BaseField)),
       List.Forall₂ (CircuitType.Reads V) sgOld sgv → List.Forall₂ (CircuitType.Reads V) xHat xv →
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
       List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
       zv ≠ [] → tv ≠ [] →
       (∀ k : ℕ, k ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + zv.length + tv.length) →
-        (k : Fq) = 0 → k = 0) →
-      FqTranscriptReads IpaVesta.curve.sponge.params (indexDigest.val V)
+        (k : C.BaseField) = 0 → k = 0) →
+      FqTranscriptReads C.sponge.params (indexDigest.val V)
         ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⌝⦄ := by
-  have hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fq) = k → j = k := by
-    intro j k hj hk h
-    interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
   rw [builder_spec_iff]
   intro nv hsat
   refine ⟨(builder_spec_iff _ _).mp (transcriptOpt_xHat _ hsize endo indexDigest sgOld xHat wComm
     zComm tComm) nv hsat, fun sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar => ?_⟩
-  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec (by decide) (by decide) _ hsize
-    hall endo indexDigest sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec S.two_ne S.three_ne _ hsize
+    S.small_inj endo indexDigest sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht
     hzne htne hchar) nv hsat
 
-/-- The wrap side's `checkBulletproof` on one run: the transcript reading
-(`checkBulletproof_spec`) and the algebra (`checkBulletproof_wrap_spec`), their readings moved
-into the postcondition. -/
-private theorem checkBulletproof_wrap {V : Valuation Fq}
-    (hsize : IpaVesta.curve.sponge.params.roundConstants.size = Poseidon.fullRounds)
-    (endo : FVar Fq) (sqrtF : Fq → Option Fq) (sv : SpongeVar Fq)
-    (bases : List (AffinePoint (FVar Fq) × Option (BoolVar Fq)))
-    (inp : CheckBulletproofInput Fq (Type1 (FVar Fq))) :
-    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap
-      IpaEndo.vesta IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF sv bases inp
-    ⦃⇓ o _ => ⌜(∀ (s₀ : Poseidon.State Fq) (lrv : List (AffinePoint Fq × AffinePoint Fq))
-        (δv : AffinePoint Fq), SpongeVar.ReadsAt V sv s₀ →
-        List.Forall₂ (CircuitType.Reads V) inp.opening.lr lrv →
-        CircuitType.Reads V inp.opening.delta δv →
-        CheckBulletproofReads IpaVesta.curve.sponge.params s₀
-          [inp.deferred.combinedInnerProduct.val.val V] lrv δv V o) ∧
-      (∀ (bvW : List (SWPoint Vesta.curve × Bool)),
-        List.Forall₂ (MaskedBaseReads IpaEndo.vesta.d.W V) bases
-          (bvW.map fun b => ((SWPoint.equivPoint Vesta.curve) b.1, b.2)) →
-        bases ≠ [] → (∀ h, bvW.getLast? = some h → h.2 = true) →
-        (∀ (x : Type1 (FVar Fq)) (z : ℤ), x ∈ inp.scaled → WrapLadderPre V x z →
-          wrapLadderDec z ∉ forbiddenValues PALLAS_BASE_CARD) →
-        ∀ (n : Prechallenge), Reads128 V inp.xi n →
-        ∀ (σ : SRS (SWPoint Vesta.curve))
-          (lrW : Vector (SWPoint Vesta.curve × SWPoint Vesta.curve) σ.k)
-          (δW sgW : SWPoint Vesta.curve),
-        List.Forall₂ (PairReads IpaEndo.vesta.d.W V) inp.opening.lr (lrW.toList.map fun q =>
-          ((SWPoint.equivPoint Vesta.curve) q.1, (SWPoint.equivPoint Vesta.curve) q.2)) →
-        inp.opening.lr ≠ [] →
-        OnCurveAt IpaEndo.vesta.d.W V inp.opening.delta ((SWPoint.equivPoint Vesta.curve) δW) →
-        OnCurveAt IpaEndo.vesta.d.W V inp.opening.sg ((SWPoint.equivPoint Vesta.curve) sgW) →
-        OnCurveAt IpaEndo.vesta.d.W V inp.blindingGenerator ((SWPoint.equivPoint Vesta.curve) σ.h) →
-        ∃ (U : SWPoint Vesta.curve) (ns : List Prechallenge) (c₀ : Prechallenge)
-          (chals : Vector Fp σ.k),
-          (U = Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V) ∨
-            U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapVesta.spec (o.t.val V)) ∧
-          List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-          chals.toList
-            = ns.map (fun m => Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam m.val) ∧
-          (∃ z : ℤ, WrapLadderPre V inp.deferred.combinedInnerProduct z) ∧
-          ((↑o.success : CVar Fq).val V = 1 ↔
-            schnorrAt IpaVesta.curve σ U chals
-              (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam c₀.val)
-              (wrapDecode V inp.deferred.combinedInnerProduct) (wrapDecode V inp.deferred.b)
-              (combineCommitments IpaVesta.curve
-                (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n.val)
-                ((bvW.filter (·.2)).map (·.1)).toArray)
-              ⟨lrW, δW, wrapDecode V inp.opening.z1, wrapDecode V inp.opening.z2, sgW⟩))⌝⦄ := by
+/-- `fqSpongeTranscript_spec` on the side, its readings moved into the postcondition, together
+with the read of the `x_hat` it computes. -/
+private theorem transcript_reads (S : IvpSide C V ops)
+    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo indexDigest : FVar C.BaseField) (sgOld : List (AffinePoint (FVar C.BaseField)))
+    (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
+      (List (AffinePoint (FVar C.BaseField))))
+    (xv : List C.Point) (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜CommReads C V pts xv⌝⦄)
+    (wComm : List (List (AffinePoint (FVar C.BaseField))))
+    (zComm tComm : List (AffinePoint (FVar C.BaseField))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint C.BaseField))
+      C.sponge.params endo indexDigest sgOld computeXHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜CommReads C V o.xHat xv ∧
+      ∀ (sgv : List (AffinePoint C.BaseField)) (wv : List (List (AffinePoint C.BaseField)))
+      (zv tv : List (AffinePoint C.BaseField)),
+      List.Forall₂ (CircuitType.Reads V) sgOld sgv →
+      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
+      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
+      FqTranscriptReads C.sponge.params (indexDigest.val V) sgv (xv.map wirePt) wv zv tv V o⌝⦄ := by
   rw [builder_spec_iff]
   intro nv hsat
-  refine ⟨fun s₀ lrv δv hs hlr hδ => ?_, fun bvW hb hbne hlast hband n hxi σ lrW δW sgW hlr hlrne
-    hδ hsg hh => ?_⟩
-  · exact (builder_spec_iff _ _).mp (checkBulletproof_spec (by decide) (by decide)
-      IpaScalarOps.wrap IpaEndo.vesta _ hsize endo groupMapParamsVesta sqrtF sv s₀ hs bases inp
-      lrv hlr δv hδ) nv hsat
-  · exact (builder_spec_iff _ _).mp (checkBulletproof_wrap_spec _ hsize endo sqrtF sv bases bvW
-      hb hbne hlast inp hband n hxi σ lrW δW sgW hlr hlrne hδ hsg hh) nv hsat
+  refine ⟨(builder_spec_iff _ _).mp (transcript_xHat _ hsize endo indexDigest sgOld computeXHat xv
+    hx wComm zComm tComm) nv hsat, fun sgv wv zv tv hsg hw hz ht => ?_⟩
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscript_spec S.two_ne S.three_ne _ hsize endo
+    indexDigest sgOld sgv hsg computeXHat (xv.map wirePt)
+    (builder_spec_imp _ _ _ hx fun _ h => h.reads) wComm wv hw zComm tComm zv tv hz ht) nv hsat
 
-end WrapHelpers
+/-- The side's `checkBulletproof` read on one run, its readings moved into the postcondition:
+the transcript reading (`checkBulletproof_spec`) and the side's read (`IvpSide.opening`). -/
+private def OpeningReads (S : IvpSide C V ops) (sv : SpongeVar C.BaseField)
+    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
+    (inp : CheckBulletproofInput C.BaseField sf) (o : CheckBulletproofOutput C.BaseField) :
+    Prop :=
+  (∀ (s₀ : Poseidon.State C.BaseField)
+    (lrv : List (AffinePoint C.BaseField × AffinePoint C.BaseField))
+    (δv : AffinePoint C.BaseField),
+    SpongeVar.ReadsAt V sv s₀ → List.Forall₂ (CircuitType.Reads V) inp.opening.lr lrv →
+    CircuitType.Reads V inp.opening.delta δv →
+    CheckBulletproofReads C.sponge.params s₀
+      ((ops.shiftedToAbsorbFields inp.deferred.combinedInnerProduct).map (·.val V)) lrv δv V o) ∧
+  (∀ bvW : List (C.Point × Bool),
+    List.Forall₂ (MaskedBaseReads C.E.toAffine V) bases
+      (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)) →
+    bases ≠ [] → (∀ h, bvW.getLast? = some h → h.2 = true) →
+    (∀ x ∈ inp.scaled, S.ClaimOk x) →
+    ∀ n : Prechallenge, Reads128 V inp.xi n →
+    ∀ (σ : SRS C.Point) (lrW : Vector (C.Point × C.Point) σ.k) (δW sgW : C.Point),
+    List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr
+      (lrW.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)) →
+    inp.opening.lr ≠ [] →
+    OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E δW) →
+    OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E sgW) →
+    OnCurveAt C.E.toAffine V inp.blindingGenerator (SWPoint.equivPoint C.E σ.h) →
+    ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector C.ScalarField σ.k),
+      (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
+      ((↑o.success : CVar C.BaseField).val V = 1 ↔
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+          (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
+            ((bvW.filter (·.2)).map (·.1)).toArray)
+          ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩))
 
-/-! ## The wrap side -/
+/-- The side's `checkBulletproof` on one run reads as `OpeningReads`. -/
+private theorem checkBulletproof_side (S : IvpSide C V ops)
+    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
+    (sv : SpongeVar C.BaseField)
+    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
+    (inp : CheckBulletproofInput C.BaseField sf) :
+    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint C.BaseField)) ops S.e
+      C.sponge.params endo S.gm sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜OpeningReads S sv bases inp o⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat
+  unfold OpeningReads
+  refine ⟨fun s₀ lrv δv hs hlr hδ => ?_,
+    fun bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh => ?_⟩
+  · exact (builder_spec_iff _ _).mp (checkBulletproof_spec S.two_ne S.three_ne ops S.e _ hsize
+      endo S.gm sqrtF sv s₀ hs bases inp lrv hlr δv hδ) nv hsat
+  · exact (builder_spec_iff _ _).mp (S.opening endo sqrtF sv bases bvW hb hbne hlast inp hclaims
+      n hxi σ lrW δW sgW hlr hlrne hδ hsg hh hsize) nv hsat
 
-/-- **The wrap side's group half reads as the wire's.** At Vesta (`IpaVesta.curve`, the wrap
-circuit over `Fq` verifying a step proof), on the conditional sponge with every `sg_old`
-under a keep bit, given the index-digest squeeze reads as the key's digest, `x_hat` reads as
-the wire's `publicCommitment` (`xHat_reads_publicCommitment` supplies this from
-`XhatBinding`), and the cells tie as `IvpTies`, the output satisfies `IvpReads`. -/
+/-- The assembly's read from the transcript on: with the transcript's `x_hat` read as the
+wire's public commitment and its outputs at the wire's commitment readings (the index digest
+already the key's), the plonk claims asserted equal to the squeezes, `ft_comm` read and the
+opening check read, the output satisfies `IvpReads`. -/
+private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool))
+    (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp pub inp oldsW)
+    (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
+    (hcanon : S.Canon inp.deferred.combinedInnerProduct) (hlrne : inp.opening.lr ≠ [])
+    (hσlen : inp.sigmaLast.toArray.size = nc) (tr : FqTranscriptOutput C.BaseField)
+    (hx : CommReads C V tr.xHat (publicCommitment C σ cvk pub).toList)
+    (hFq : FqTranscriptReads C.sponge.params cvk.digest ((cp.olds.map (·.sg)).toList.map wirePt)
+      ((publicCommitment C σ cvk pub).toList.map wirePt)
+      (cp.wComm.toList.map fun P => P.toList.map wirePt) (cp.zComm.toList.map wirePt)
+      (cp.tComm.toList.map wirePt) V tr)
+    (hasrt : inp.plonk.chals.beta.val.val V = tr.beta.val.val V ∧
+      inp.plonk.chals.gamma.val.val V = tr.gamma.val.val V ∧
+      inp.plonk.chals.alpha.val.val V = tr.alpha.val.val V ∧
+      inp.plonk.chals.zeta.val.val V = tr.zeta.val.val V)
+    (ftc : AffinePoint (FVar C.BaseField))
+    (hft : FtCommReads S σ cvk cp pub ftc inp.plonk.perm inp.plonk.zetaToSrsLength
+      inp.plonk.zetaToDomainSize ⟨inp.sigmaLast.toArray, hσlen⟩ inp.tComm)
+    (o : CheckBulletproofOutput C.BaseField)
+    (hcb : OpeningReads S tr.sponge (inp.bases tr.xHat ftc)
+      ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ o) :
+    IvpReads S σ cvk cp pub inp ⟨tr.digest, o.success, o.challenges⟩ := by
+  -- the wire's fq squeezes at these readings are `IvpReads`'s
+  have hpre : fqSqueezes C.sponge.params cvk.digest
+      (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
+      (((publicCommitment C σ cvk pub).toList.map wirePt).map pointCoords)
+      ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
+      ((cp.zComm.toList.map wirePt).map pointCoords) ((cp.tComm.toList.map wirePt).map pointCoords)
+      = fqSqueezes C.sponge.params cvk.digest
+        ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y))
+        (coords C (publicCommitment C σ cvk pub))
+        (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
+        (cp.tComm.toList.map fun P => (P.x, P.y)) := by
+    delta Kimchi.Verifier.coords
+    simp only [pointCoords, wirePt, List.map_map, Function.comp_def]
+  unfold IvpReads
+  dsimp only
+  rw [fqPrechallenges_beta C, fqPrechallenges_gamma C, fqPrechallenges_alpha C,
+    fqPrechallenges_zeta C, ← hpre]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- the digest
+    show (fqOracles C cvk cp (publicCommitment C σ cvk pub)).digest = _
+    rw [fqOracles_digest_eq, fqPrechallenges_digestElem C, ← hpre, ← hFq.2.2.2.2.2.2.2.1]
+  · intro m hm
+    exact Low128.alias S.base_big hFq.1 (hasrt.1.symm.trans hm)
+  · intro m hm
+    exact Low128.alias S.base_big hFq.2.1 (hasrt.2.1.symm.trans hm)
+  · intro m hm
+    exact Low128.alias S.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
+  · intro m hm
+    exact Low128.alias S.base_big hFq.2.2.2.1 (hasrt.2.2.2.symm.trans hm)
+  · intro ξ₀ hξ
+    -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
+    have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
+        List sf), x ∈ inp.shifted := fun x hx =>
+      (List.sublist_append_left [inp.plonk.perm, inp.plonk.zetaToSrsLength,
+        inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
+        inp.opening.z1, inp.opening.z2]).subset hx
+    have hftc := hft hties.perm hties.zetaM hties.zetaN
+      (hties.claimOk _ (hmem _ (by simp))) (hties.claimOk _ (hmem _ (by simp)))
+      (hties.claimOk _ (hmem _ (by simp))) (by simpa using hties.sigmaLast) hties.t
+    -- the bases read as the stream bases; the opening's points as the proof's
+    have hb := bases_reads hties hx hftc
+    have hbne : inp.bases tr.xHat ftc ≠ [] := by simp [IvpInput.bases]
+    have hclaims : ∀ x ∈ (⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ :
+        CheckBulletproofInput C.BaseField sf).scaled, S.ClaimOk x := fun x hxs =>
+      hties.claimOk x ((List.sublist_append_right [inp.plonk.perm, inp.plonk.zetaToSrsLength,
+        inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
+        inp.opening.z1, inp.opening.z2]).subset hxs)
+    obtain ⟨U, ns, c₀, chals, hU, hns, hc, hchals, ⟨wc, hwc⟩, hiff⟩ :=
+      hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hclaims ξ₀ hξ σ cp.opening.lr
+        cp.opening.delta cp.opening.sg hties.lr hlrne hties.delta hties.sg hh
+    have hlrv : List.Forall₂ (CircuitType.Reads V) inp.opening.lr
+        (cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)) :=
+      List.forall₂_map_right_iff.2
+        ((List.forall₂_map_right_iff.1 hties.lr).imp fun _ _ h => pairReads_reads h)
+    have hδv : CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
+      reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.delta)
+    -- the opening transcript, from the warm sponge
+    have hT := CheckBulletproofReads.wire S.base_big (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
+    -- the wire's IPA prechallenges at these readings are `IvpReads`'s
+    rw [ipa_pre_eq S σ cvk cp pub inp.deferred.combinedInnerProduct hcanon hwc _
+      (warm_eq σ cvk cp pub hpre)]
+    refine ⟨U, ns, c₀, chals, ?_, hns, forall₂_alias hT.2.1 hns, hT.2.2 c₀ hc, hchals, ?_⟩
+    · rw [← hT.1]
+      exact hU
+    · exact success_eq S σ cvk cp pub oldsW hties.olds_kept inp.opening.z1 inp.opening.z2
+        hties.z1 hties.z2 U chals _ _ _ _ _ hiff
+
+/-! ## The read theorem -/
+
+/-- **The group half reads as the wire's, on either side.** On the side `S`, given the
+index-digest squeeze reads as the key's digest, `x_hat` reads as the wire's `publicCommitment`
+(`xHat_reads_publicCommitment` supplies this from `XhatBinding` on the wrap side), the `sg_old`
+cells are masked exactly on the conditional sponge (`optSponge`), the cells tie as `IvpTies`,
+the claimed `cip` absorbs canonically (`IvpSide.Canon`) and the base field's characteristic
+exceeds the absorb count, the output satisfies `IvpReads`. -/
+theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField) (optSponge : Bool)
+    (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
+    (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
+      (List (AffinePoint (FVar C.BaseField))))
+    (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool))
+    (hIdx : ∃ s : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex s ∧
+      (Poseidon.squeeze C.sponge.params s).1 = cvk.digest)
+    (hXhat : ⦃⌜True⌝⦄ computeXHat
+      ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
+    (hmask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge)
+    (hties : IvpTies S σ cvk cp pub inp oldsW)
+    (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
+    (hcanon : S.Canon inp.deferred.combinedInnerProduct)
+    (hnc : 0 < nc) (htne : inp.tComm ≠ []) (hlrne : inp.opening.lr ≠ [])
+    (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
+      + inp.zComm.length + inp.tComm.length) → (k : C.BaseField) = 0 → k = 0) :
+    ⦃⌜True⌝⦄
+    incrementallyVerifyProof ops S.e C.sponge.params endo S.gm sqrtF optSponge blindingH
+      spongeAfterIndex computeXHat inp
+    ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp o⌝⦄ := by
+  have hσlen : inp.sigmaLast.toArray.size = nc := by
+    have := hties.sigmaLast.length_eq
+    simpa using this
+  have hasrt := fun (tr : FqTranscriptOutput C.BaseField) =>
+    assertPlonkChallenges_spec (V := V) tr inp.plonk.chals
+  have hft := ftComm_reads S σ cvk cp pub inp.plonk.perm inp.plonk.zetaToSrsLength
+    inp.plonk.zetaToDomainSize ⟨inp.sigmaLast.toArray, hσlen⟩ inp.tComm hnc htne
+  simp only [Vector.toList_mk] at hft
+  have hcb := fun (sv : SpongeVar C.BaseField)
+    (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField))) =>
+    checkBulletproof_side S hsize endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
+  obtain ⟨sIdx, hsIdx, hdig⟩ := hIdx
+  cases optSponge with
+  | true =>
+    simp only [incrementallyVerifyProof, if_true]
+    have htr := fun (d : FVar C.BaseField) (xHat : List (AffinePoint (FVar C.BaseField))) =>
+      transcriptOpt_reads S hsize endo d (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat
+        inp.wComm inp.zComm inp.tComm
+    mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
+    case vc1.hsize => exact hsize
+    rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
+    have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
+    -- the transcript, at the wire readings of every absorbed cell
+    have hsgv := olds_reads hmask hties.olds
+    have hzne : (cp.zComm.toList.map wirePt) ≠ [] := by
+      intro h
+      have := congrArg List.length h
+      simp at this
+      omega
+    have htne' : (cp.tComm.toList.map wirePt) ≠ [] := by
+      intro h
+      apply htne
+      rw [List.map_eq_nil_iff] at h
+      exact List.eq_nil_of_length_eq_zero (hties.t.length_eq.trans (by rw [h]; rfl))
+    have hchar' : ∀ k : ℕ, k ≤ 1 + 2 * ((oldsW.map fun b => (b.2, wirePt b.1)).length
+        + ((publicCommitment C σ cvk pub).toList.map wirePt).length
+        + (cp.wComm.toList.map fun P => P.toList.map wirePt).flatten.length
+        + (cp.zComm.toList.map wirePt).length + (cp.tComm.toList.map wirePt).length) →
+        (k : C.BaseField) = 0 → k = 0 := by
+      intro k hk
+      refine hchar k ?_
+      have h1 := hsgv.length_eq
+      have h2 := (forall₂_flatten' hties.w.reads).length_eq
+      have h3 := hties.z.length_eq
+      have h4 := hties.t.length_eq
+      simp only [List.length_map, Vector.length_toList] at h1 h2 h3 h4 hk ⊢
+      omega
+    have hFq := htr'.2 _ _ _ _ _ hsgv hx.reads hties.w.reads hties.z.reads hties.t.reads hzne
+      htne' hchar'
+    rw [hd] at hFq
+    -- the kept `sg_old` readings are the olds' `sg`
+    have hkept : ((oldsW.map fun b => (b.2, wirePt b.1)).filter (·.1)).map (·.2)
+        = (cp.olds.map (·.sg)).toList.map wirePt := by
+      rw [← hties.olds_kept, List.filter_map, List.map_map, List.map_map]
+      rfl
+    rw [hkept] at hFq
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hcanon hlrne hσlen tr
+      (htr'.1 ▸ hx) hFq hasrt' ftc hft' o hcb'
+  | false =>
+    simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
+    have htr := fun (d : FVar C.BaseField) =>
+      transcript_reads S hsize endo d (inp.sgOld.map (·.2)) computeXHat _ hXhat inp.wComm
+        inp.zComm inp.tComm
+    mvcgen -trivial [htr, hasrt, hft, hcb]
+    case vc1.hsize => exact hsize
+    rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
+    have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
+    -- every old is kept: the plain sponge absorbs them all
+    obtain ⟨hsgv, hall⟩ := olds_reads_plain hmask hties.olds
+    have hkept : oldsW.map (fun b => wirePt b.1) = (cp.olds.map (·.sg)).toList.map wirePt := by
+      rw [← hties.olds_kept, List.filter_eq_self.2 hall, List.map_map]
+      rfl
+    have hFq := htr'.2 _ _ _ _ hsgv hties.w.reads hties.z.reads hties.t.reads
+    rw [hd, hkept] at hFq
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hcanon hlrne hσlen tr htr'.1
+      hFq hasrt' ftc hft' o hcb'
+
+end Assembly
+
+/-! ## The deployed sides -/
+
+section Sides
+
+open Kimchi.Gate.VarBaseMul Pasta.Shifted
+
+/-- At Vesta the one-wrap regime is the off-band condition: the subwrap disjunct is false. -/
+private theorem vesta_regime_offBand {z : ℤ} (h : HasCurve.vesta.LadderRegime 255 z) :
+    z ∉ forbiddenValues PALLAS_BASE_CARD := by
+  rcases h with h | ⟨_, _, _, h⟩
+  · exfalso
+    have hO : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+    rw [hO] at h
+    exact absurd h (by norm_num [PALLAS_BASE_CARD])
+  · have hO : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
+    rwa [hO] at h
+
+/-- The Pallas twin of `vesta_regime_offBand`. -/
+private theorem pallas_regime_offBand {z : ℤ} (h : HasCurve.pallas.LadderRegime 255 z) :
+    z ∉ forbiddenValues PALLAS_SCALAR_CARD := by
+  rcases h with h | ⟨_, _, _, h⟩
+  · exfalso
+    have hO : HasCurve.pallas.W.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
+    rw [hO] at h
+    exact absurd h (by norm_num [PALLAS_SCALAR_CARD])
+  · have hO : HasCurve.pallas.W.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
+    rwa [hO] at h
+
+/-- Naturals up to 3 cast injectively into `Fq`. -/
+private theorem fq_small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fq) = k → j = k := by
+  intro j k hj hk h
+  interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
+
+/-- Naturals up to 3 cast injectively into `Fp`. -/
+private theorem fp_small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fp) = k → j = k := by
+  intro j k hj hk h
+  interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
+
+/-- The wrap circuit absorbs the claimed `cip` as its one `Type1` limb, and the wire absorbs
+`scalarLimbs (shiftScalar cip)`: at Vesta these agree, the ladder witness bounding the cell
+below the scalar modulus so the decode's re-shift is the cell. -/
+private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ}
+    (h : WrapLadderPre V x z) :
+    ((IpaScalarOps.wrap (c := Builder V (KimchiConstraint Fq))).shiftedToAbsorbFields x).map
+        (·.val V)
+      = scalarLimbs IpaVesta.curve (shiftScalar IpaVesta.curve (wrapDecode V x)) := by
+  show [x.val.val V] = _
+  symm
+  have hsz : Nat.size IpaVesta.curve.scalar = 255 :=
+    le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_BASE_CARD]))
+      (Nat.lt_size.mpr (by norm_num [PALLAS_BASE_CARD]))
+  have hlt : IpaVesta.curve.scalar < IpaVesta.curve.base := by decide
+  simp only [scalarLimbs, shiftScalar, if_pos hlt, hsz, wrapDecode,
+    shiftType1_unshiftType1 (by decide : (2 : Fp) ≠ 0)]
+  obtain ⟨h0, hlt', hz⟩ := h
+  have hval : ((x.val.val V).val : ℤ) = z := by
+    rw [← hz, ZMod.val_intCast, Int.emod_eq_of_lt h0
+      (lt_of_lt_of_le hlt' (by norm_num [PALLAS_SCALAR_CARD]))]
+  have hv : (x.val.val V).val < PALLAS_BASE_CARD := by
+    have : ((x.val.val V).val : ℤ) < 2 ^ 254 := hval ▸ hlt'
+    have : (x.val.val V).val < 2 ^ 254 := by exact_mod_cast this
+    exact lt_trans this (by norm_num [PALLAS_BASE_CARD])
+  rw [ZMod.val_natCast, Nat.mod_eq_of_lt hv, ZMod.natCast_zmod_val]
+
+/-- The step circuit absorbs the claimed `cip` as its halved limb then its parity bit, and the
+wire absorbs `scalarLimbs (shiftScalar cip)`: at Pallas these agree when the claim is canonical
+(`2·sDiv2 + sOdd` below the scalar modulus), the decode's re-shift then splitting back into the
+cells. -/
+private theorem step_cip_limbs {V : Valuation Fp} {x : Type2 (SplitField (FVar Fp) (BoolVar Fp))}
+    (hc : 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val < PALLAS_SCALAR_CARD)
+    {w : ℤ × Bool} (h : StepLadderPre V x w) :
+    ((IpaScalarOps.step (c := Builder V (KimchiConstraint Fp))).shiftedToAbsorbFields x).map
+        (·.val V)
+      = scalarLimbs IpaPallas.curve (shiftScalar IpaPallas.curve (stepDecode V x)) := by
+  show [x.val.sDiv2.val V, (↑x.val.sOdd : CVar Fp).val V] = _
+  obtain ⟨hb, -, -, -⟩ := h
+  have hsz : Nat.size IpaPallas.curve.scalar = 255 :=
+    le_antisymm (Nat.size_le.mpr (by norm_num [PALLAS_SCALAR_CARD]))
+      (Nat.lt_size.mpr (by norm_num [PALLAS_SCALAR_CARD]))
+  have hlt : ¬ IpaPallas.curve.scalar < IpaPallas.curve.base := by decide
+  simp only [scalarLimbs, shiftScalar, if_neg hlt, hsz, stepDecode, shiftType2_unshiftType2]
+  have hon : ((↑x.val.sOdd : CVar Fp).val V).val ≤ 1 := by
+    rw [hb]
+    cases w.2 <;> simp [bit, ZMod.val_one]
+  have hsum : (2 * (((x.val.sDiv2.val V).val : ℕ) : Fq) + ((((↑x.val.sOdd : CVar Fp).val V).val :
+      ℕ) : Fq)).val = 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val := by
+    have : (2 * (((x.val.sDiv2.val V).val : ℕ) : Fq) + ((((↑x.val.sOdd : CVar Fp).val V).val :
+        ℕ) : Fq)) = ((2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val : ℕ) :
+        Fq) := by push_cast; ring
+    rw [this, ZMod.val_natCast, Nat.mod_eq_of_lt hc]
+  rw [hsum]
+  have h1 : (2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val) / 2
+      = (x.val.sDiv2.val V).val := by omega
+  have h2 : (2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val) % 2
+      = ((↑x.val.sOdd : CVar Fp).val V).val := by omega
+  rw [h1, h2, ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
+
+/-- `checkBulletproof_wrap_spec` in the side-generic vocabulary. -/
+private theorem wrap_opening {V : Valuation Fq} (endo : FVar Fq) (sqrtF : Fq → Option Fq)
+    (sv : SpongeVar Fq) (bases : List (AffinePoint (FVar Fq) × Option (BoolVar Fq)))
+    (bvW : List (IpaVesta.curve.Point × Bool))
+    (hb : List.Forall₂ (MaskedBaseReads IpaVesta.curve.E.toAffine V) bases
+      (bvW.map fun b => (SWPoint.equivPoint IpaVesta.curve.E b.1, b.2)))
+    (hbne : bases ≠ []) (hlast : ∀ h, bvW.getLast? = some h → h.2 = true)
+    (inp : CheckBulletproofInput Fq (Type1 (FVar Fq)))
+    (hclaims : ∀ x ∈ inp.scaled, (wrapReading V).WellFormed x ∧
+      ∀ w, (wrapReading V).Pre x w → (wrapReading V).Reg w)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n) (σ : SRS IpaVesta.curve.Point)
+    (lrW : Vector (IpaVesta.curve.Point × IpaVesta.curve.Point) σ.k) (δW sgW : IpaVesta.curve.Point)
+    (hlr : List.Forall₂ (PairReads IpaVesta.curve.E.toAffine V) inp.opening.lr (lrW.toList.map
+      fun q => (SWPoint.equivPoint IpaVesta.curve.E q.1, SWPoint.equivPoint IpaVesta.curve.E q.2)))
+    (hlrne : inp.opening.lr ≠ [])
+    (hδ : OnCurveAt IpaVesta.curve.E.toAffine V inp.opening.delta
+      (SWPoint.equivPoint IpaVesta.curve.E δW))
+    (hsg : OnCurveAt IpaVesta.curve.E.toAffine V inp.opening.sg
+      (SWPoint.equivPoint IpaVesta.curve.E sgW))
+    (hh : OnCurveAt IpaVesta.curve.E.toAffine V inp.blindingGenerator
+      (SWPoint.equivPoint IpaVesta.curve.E σ.h))
+    (hsize : IpaVesta.curve.sponge.params.roundConstants.size = Poseidon.fullRounds) :
+    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap
+      IpaEndo.vesta IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜∃ (U : IpaVesta.curve.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector IpaVesta.curve.ScalarField σ.k),
+      (U = IpaVesta.curve.toGroup (o.t.val V) ∨ U = -IpaVesta.curve.toGroup (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
+      chals.toList
+        = ns.map (fun m => Poseidon.FqSponge.endoExpand IpaVesta.curve.sponge.lam m.val) ∧
+      (∃ w : (wrapReading V).wit, (wrapReading V).Pre inp.deferred.combinedInnerProduct w) ∧
+      ((↑o.success : CVar Fq).val V = 1 ↔
+        schnorrAt IpaVesta.curve σ U chals
+          (Poseidon.FqSponge.endoExpand IpaVesta.curve.sponge.lam c₀.val)
+          (wrapDecode V inp.deferred.combinedInnerProduct) (wrapDecode V inp.deferred.b)
+          (combineCommitments IpaVesta.curve
+            (Poseidon.FqSponge.endoExpand IpaVesta.curve.sponge.lam n.val)
+            ((bvW.filter (·.2)).map (·.1)).toArray)
+          ⟨lrW, δW, wrapDecode V inp.opening.z1, wrapDecode V inp.opening.z2, sgW⟩)⌝⦄ := by
+  refine builder_spec_imp _ _ _ (checkBulletproof_wrap_spec _ hsize endo sqrtF sv bases bvW hb
+    hbne hlast inp (fun x z hx hpre => vesta_regime_offBand ((hclaims x hx).2 z hpre)) n hxi σ
+    lrW δW sgW hlr hlrne hδ hsg hh) fun o ho => ?_
+  -- the map-to-curve by projection reduction, not unification (which unfolds the SvdW map)
+  dsimp only
+  unfold Poseidon.GroupMapVesta.toGroup
+  exact ho
+
+/-- `checkBulletproof_step_spec` in the side-generic vocabulary. -/
+private theorem step_opening {V : Valuation Fp} (endo : FVar Fp) (sqrtF : Fp → Option Fp)
+    (sv : SpongeVar Fp) (bases : List (AffinePoint (FVar Fp) × Option (BoolVar Fp)))
+    (bvW : List (IpaPallas.curve.Point × Bool))
+    (hb : List.Forall₂ (MaskedBaseReads IpaPallas.curve.E.toAffine V) bases
+      (bvW.map fun b => (SWPoint.equivPoint IpaPallas.curve.E b.1, b.2)))
+    (hbne : bases ≠ []) (hlast : ∀ h, bvW.getLast? = some h → h.2 = true)
+    (inp : CheckBulletproofInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (hclaims : ∀ x ∈ inp.scaled, (stepReading V).WellFormed x ∧
+      ∀ w, (stepReading V).Pre x w → (stepReading V).Reg w)
+    (n : Prechallenge) (hxi : Reads128 V inp.xi n) (σ : SRS IpaPallas.curve.Point)
+    (lrW : Vector (IpaPallas.curve.Point × IpaPallas.curve.Point) σ.k)
+    (δW sgW : IpaPallas.curve.Point)
+    (hlr : List.Forall₂ (PairReads IpaPallas.curve.E.toAffine V) inp.opening.lr
+      (lrW.toList.map fun q =>
+        (SWPoint.equivPoint IpaPallas.curve.E q.1, SWPoint.equivPoint IpaPallas.curve.E q.2)))
+    (hlrne : inp.opening.lr ≠ [])
+    (hδ : OnCurveAt IpaPallas.curve.E.toAffine V inp.opening.delta
+      (SWPoint.equivPoint IpaPallas.curve.E δW))
+    (hsg : OnCurveAt IpaPallas.curve.E.toAffine V inp.opening.sg
+      (SWPoint.equivPoint IpaPallas.curve.E sgW))
+    (hh : OnCurveAt IpaPallas.curve.E.toAffine V inp.blindingGenerator
+      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
+    (hsize : IpaPallas.curve.sponge.params.roundConstants.size = Poseidon.fullRounds) :
+    ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step
+      IpaEndo.pallas IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF sv bases inp
+    ⦃⇓ o _ => ⌜∃ (U : IpaPallas.curve.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
+      (chals : Vector IpaPallas.curve.ScalarField σ.k),
+      (U = IpaPallas.curve.toGroup (o.t.val V) ∨ U = -IpaPallas.curve.toGroup (o.t.val V)) ∧
+      List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
+      chals.toList
+        = ns.map (fun m => Poseidon.FqSponge.endoExpand IpaPallas.curve.sponge.lam m.val) ∧
+      (∃ w : (stepReading V).wit, (stepReading V).Pre inp.deferred.combinedInnerProduct w) ∧
+      ((↑o.success : CVar Fp).val V = 1 ↔
+        schnorrAt IpaPallas.curve σ U chals
+          (Poseidon.FqSponge.endoExpand IpaPallas.curve.sponge.lam c₀.val)
+          (stepDecode V inp.deferred.combinedInnerProduct) (stepDecode V inp.deferred.b)
+          (combineCommitments IpaPallas.curve
+            (Poseidon.FqSponge.endoExpand IpaPallas.curve.sponge.lam n.val)
+            ((bvW.filter (·.2)).map (·.1)).toArray)
+          ⟨lrW, δW, stepDecode V inp.opening.z1, stepDecode V inp.opening.z2, sgW⟩)⌝⦄ := by
+  refine builder_spec_imp _ _ _ (checkBulletproof_step_spec _ hsize endo sqrtF sv bases bvW hb
+    hbne hlast inp (fun x hx => (hclaims x hx).1)
+    (fun x w hx hpre => pallas_regime_offBand ((hclaims x hx).2 w hpre)) n hxi σ lrW δW sgW hlr
+    hlrne hδ hsg hh) fun o ho => ?_
+  dsimp only
+  unfold Poseidon.GroupMapPallas.toGroup
+  exact ho
+
+/-- The wrap side: `IpaScalarOps.wrap` at Vesta (`IpaVesta.curve`, base `Fq`, scalar `Fp`)
+through `wrapReading`, the `Type1` claims decoding by `wrapDecode`, every claim canonical. -/
+def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap where
+  R := wrapReading V
+  decode := wrapDecode V
+  dec_cast h := wrapLadderDec_cast h
+  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
+  a_zero := rfl
+  two_ne := HasCurve.vesta.two_ne
+  two_torsion_free := HasCurve.vesta.two_torsion_free
+  e := IpaEndo.vesta
+  gm := groupMapParamsVesta
+  three_ne := by decide
+  small_inj := fq_small_inj
+  base_big := by norm_num [PALLAS_SCALAR_CARD]
+  Canon _ := True
+  absorb_limbs _ h := wrap_cip_limbs h
+  opening := wrap_opening
+
+/-- The step side: `IpaScalarOps.step` at Pallas (`IpaPallas.curve`, base `Fp`, scalar `Fq`)
+through `stepReading`, the split `Type2` claims decoding by `stepDecode`, a claim canonical
+when its `2·sDiv2 + sOdd` is below the scalar modulus. -/
+def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step where
+  R := stepReading V
+  decode := stepDecode V
+  dec_cast h := stepLadderDec_cast h
+  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
+  a_zero := rfl
+  two_ne := HasCurve.pallas.two_ne
+  two_torsion_free := HasCurve.pallas.two_torsion_free
+  e := IpaEndo.pallas
+  gm := groupMapParamsPallas
+  three_ne := by decide
+  small_inj := fp_small_inj
+  base_big := by norm_num [PALLAS_BASE_CARD]
+  Canon x := 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val
+    < PALLAS_SCALAR_CARD
+  absorb_limbs hc h := step_cip_limbs hc h
+  opening := step_opening
+
+/-- **The wrap side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
+`wrapSide` — the conditional sponge, every `sg_old` under a keep bit, every claim canonical. -/
 theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
@@ -847,143 +1273,48 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
     (hmask : ∀ m ∈ inp.sgOld, m.1.isSome)
     (hties : IvpTies (wrapSide V) σ cvk cp pub inp oldsW)
-    (hh : OnCurveAt HasCurve.vesta.W V blindingH (SWPoint.equivPoint Vesta.curve σ.h))
+    (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH (SWPoint.equivPoint IpaVesta.curve.E σ.h))
     (hnc : 0 < nc) (htne : inp.tComm ≠ []) (hlrne : inp.opening.lr ≠ [])
     (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
       + inp.zComm.length + inp.tComm.length) → (k : Fq) = 0 → k = 0) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params endo
       groupMapParamsVesta sqrtF true blindingH spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp o⌝⦄ := by
-  have hσlen : inp.sigmaLast.toArray.size = nc := by
-    have := hties.sigmaLast.length_eq
-    simpa using this
-  simp only [incrementallyVerifyProof, if_true]
-  have htr := fun (d : FVar Fq) (xHat : List (AffinePoint (FVar Fq))) =>
-    transcriptOpt_wrap (V := V) hsize endo d (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat
-      inp.wComm inp.zComm inp.tComm
-  have hasrt := fun (tr : FqTranscriptOutput Fq) =>
-    assertPlonkChallenges_spec (V := V) tr inp.plonk.chals
-  have hft := ftComm_reads (wrapSide V) σ cvk cp pub inp.plonk.perm inp.plonk.zetaToSrsLength
-    inp.plonk.zetaToDomainSize ⟨inp.sigmaLast.toArray, hσlen⟩ inp.tComm hnc htne
-  simp only [Vector.toList_mk] at hft
-  have hcb := fun (sv : SpongeVar Fq)
-    (bases : List (AffinePoint (FVar Fq) × Option (BoolVar Fq))) =>
-    checkBulletproof_wrap (V := V) hsize endo sqrtF sv bases
-      ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
-  mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
-  case vc1.hsize => exact hsize
-  rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
-  -- the index digest
-  obtain ⟨sIdx, hsIdx, hdig⟩ := hIdx
-  have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
-  -- the transcript, at the wire readings of every absorbed cell
-  have hsgv := olds_reads hmask hties.olds
-  have hzne : (cp.zComm.toList.map wirePt) ≠ [] := by
-    intro h
-    have := congrArg List.length h
-    simp at this
-    omega
-  have htne' : (cp.tComm.toList.map wirePt) ≠ [] := by
-    intro h
-    apply htne
-    rw [List.map_eq_nil_iff] at h
-    exact List.eq_nil_of_length_eq_zero (hties.t.length_eq.trans (by rw [h]; rfl))
-  have hchar' : ∀ k : ℕ, k ≤ 1 + 2 * ((oldsW.map fun b => (b.2, wirePt b.1)).length
-      + ((publicCommitment IpaVesta.curve σ cvk pub).toList.map wirePt).length
-      + (cp.wComm.toList.map fun P => P.toList.map wirePt).flatten.length
-      + (cp.zComm.toList.map wirePt).length + (cp.tComm.toList.map wirePt).length) →
-      (k : Fq) = 0 → k = 0 := by
-    intro k hk
-    refine hchar k ?_
-    have h1 := hsgv.length_eq
-    have h2 := (forall₂_flatten' hties.w.reads).length_eq
-    have h3 := hties.z.length_eq
-    have h4 := hties.t.length_eq
-    simp only [List.length_map, Vector.length_toList] at h1 h2 h3 h4 hk ⊢
-    omega
-  have hFq := htr'.2 _ _ _ _ _ hsgv hx.reads hties.w.reads hties.z.reads hties.t.reads hzne htne'
-    hchar'
-  have hx' : CommReads IpaVesta.curve V tr.xHat
-      (publicCommitment IpaVesta.curve σ cvk pub).toList :=
-    htr'.1 ▸ hx
-  rw [hd] at hFq
-  -- the kept `sg_old` readings are the olds' `sg`
-  have hkept : ((oldsW.map fun b => (b.2, wirePt b.1)).filter (·.1)).map (·.2)
-      = (cp.olds.map (·.sg)).toList.map wirePt := by
-    rw [← hties.olds_kept, List.filter_map, List.map_map, List.map_map]
-    rfl
-  rw [hkept] at hFq
-  have hp : 2 ^ 254 < PALLAS_SCALAR_CARD := by norm_num [PALLAS_SCALAR_CARD]
-  -- the wire's fq squeezes at these readings are `IvpReads`'s
-  have hpre : fqSqueezes (F := Fq) IpaVesta.curve.sponge.params cvk.digest
-      (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
-      (((publicCommitment IpaVesta.curve σ cvk pub).toList.map wirePt).map pointCoords)
-      ((cp.wComm.toList.map fun P => P.toList.map wirePt).map (·.map pointCoords))
-      ((cp.zComm.toList.map wirePt).map pointCoords) ((cp.tComm.toList.map wirePt).map pointCoords)
-      = fqSqueezes (F := Fq) IpaVesta.curve.sponge.params cvk.digest
-        ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y))
-        (coords IpaVesta.curve (publicCommitment IpaVesta.curve σ cvk pub))
-        (cp.wComm.toList.map (coords IpaVesta.curve)) (coords IpaVesta.curve cp.zComm)
-        (cp.tComm.toList.map fun P => (P.x, P.y)) := by
-    delta Kimchi.Verifier.coords
-    simp only [pointCoords, wirePt, List.map_map, Function.comp_def]
-  unfold IvpReads
-  dsimp only
-  rw [fqPrechallenges_beta IpaVesta.curve, fqPrechallenges_gamma IpaVesta.curve,
-    fqPrechallenges_alpha IpaVesta.curve, fqPrechallenges_zeta IpaVesta.curve,
-    fqSqueezes_base_eq, ← hpre]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · -- the digest
-    show (fqOracles IpaVesta.curve cvk cp (publicCommitment IpaVesta.curve σ cvk pub)).digest = _
-    rw [fqOracles_digest_eq, fqPrechallenges_digestElem IpaVesta.curve, fqSqueezes_base_eq,
-      ← hpre, ← hFq.2.2.2.2.2.2.2.1]
-  · intro m hm
-    exact Low128.alias hp hFq.1 (hasrt'.1.symm.trans hm)
-  · intro m hm
-    exact Low128.alias hp hFq.2.1 (hasrt'.2.1.symm.trans hm)
-  · intro m hm
-    exact Low128.alias hp hFq.2.2.1 (hasrt'.2.2.1.symm.trans hm)
-  · intro m hm
-    exact Low128.alias hp hFq.2.2.2.1 (hasrt'.2.2.2.symm.trans hm)
-  · intro ξ₀ hξ
-    -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
-    have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
-        List (Type1 (FVar Fq))), x ∈ inp.shifted := fun x hx =>
-      (List.sublist_append_left [inp.plonk.perm, inp.plonk.zetaToSrsLength,
-        inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
-        inp.opening.z1, inp.opening.z2]).subset hx
-    have hftc := hft' hties.perm hties.zetaM hties.zetaN
-      (hties.claimOk _ (hmem _ (by simp))) (hties.claimOk _ (hmem _ (by simp)))
-      (hties.claimOk _ (hmem _ (by simp))) (by simpa using hties.sigmaLast) hties.t
-    -- the bases read as the stream bases
-    have hb := wrap_bases_reads hties hx' hftc
-    obtain ⟨hlrW, hδW, hsgW, hhW, hlrv, hδv⟩ := wrap_opening_ties hties hh
-    have hbne : inp.bases tr.xHat ftc ≠ [] := by simp [IvpInput.bases]
-    have hband : ∀ (x : Type1 (FVar Fq)) (z : ℤ),
-        x ∈ (⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ :
-          CheckBulletproofInput Fq (Type1 (FVar Fq))).scaled →
-        WrapLadderPre V x z →
-        wrapLadderDec z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues PALLAS_BASE_CARD := by
-      intro x z hxs hpre
-      have hxm : x ∈ inp.shifted :=
-        (List.sublist_append_right [inp.plonk.perm, inp.plonk.zetaToSrsLength,
-          inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
-          inp.opening.z1, inp.opening.z2]).subset hxs
-      exact vesta_regime_offBand ((hties.claimOk x hxm).2 z hpre)
-    obtain ⟨U, ns, c₀, chals, hU, hns, hc, hchals, ⟨zc, hzc⟩, hiff⟩ :=
-      hcb'.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hband ξ₀ hξ σ cp.opening.lr
-        cp.opening.delta cp.opening.sg hlrW hlrne hδW hsgW hhW
-    -- the opening transcript, from the warm sponge
-    have hT := CheckBulletproofReads.wire hp (hcb'.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
-    -- the wire's IPA prechallenges at these readings are `IvpReads`'s
-    rw [wrap_ipa_pre_eq σ cvk cp pub inp.deferred.combinedInnerProduct hzc _
-      (wrap_warm_eq σ cvk cp pub hpre)]
-    refine ⟨U, ns, c₀, chals, ?_, hns, forall₂_alias hT.2.1 hns, hT.2.2 c₀ hc, hchals, ?_⟩
-    · unfold Poseidon.GroupMapVesta.toGroup
-      rw [← hT.1]
-      exact hU
-    · exact wrap_success_eq σ cvk cp pub oldsW hties.olds_kept inp.opening.z1 inp.opening.z2
-        hties.z1 hties.z2 U chals _ _ _ _ _ hiff
+    ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp o⌝⦄ :=
+  incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub hsize endo sqrtF true blindingH
+    spongeAfterIndex computeXHat inp oldsW hIdx hXhat hmask hties hh trivial hnc htne hlrne hchar
+
+/-- **The step side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
+`stepSide` — the plain sponge, no `sg_old` masked, the claimed `cip` canonical. -/
+theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
+    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq)
+    (hsize : IpaPallas.curve.sponge.params.roundConstants.size = Poseidon.fullRounds)
+    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
+    (spongeAfterIndex : SpongeVar Fp)
+    (computeXHat : CircuitM Fp (Builder V (KimchiConstraint Fp)) (List (AffinePoint (FVar Fp))))
+    (inp : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (oldsW : List (IpaPallas.curve.Point × Bool))
+    (hIdx : ∃ s : Poseidon.State Fp, SpongeVar.ReadsAt V spongeAfterIndex s ∧
+      (Poseidon.squeeze IpaPallas.curve.sponge.params s).1 = cvk.digest)
+    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
+      ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)
+    (hmask : ∀ m ∈ inp.sgOld, m.1.isSome = false)
+    (hties : IvpTies (stepSide V) σ cvk cp pub inp oldsW)
+    (hh : OnCurveAt IpaPallas.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
+    (hcanon : 2 * (inp.deferred.combinedInnerProduct.val.sDiv2.val V).val
+      + ((↑inp.deferred.combinedInnerProduct.val.sOdd : CVar Fp).val V).val < PALLAS_SCALAR_CARD)
+    (hnc : 0 < nc) (htne : inp.tComm ≠ []) (hlrne : inp.opening.lr ≠ [])
+    (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
+      + inp.zComm.length + inp.tComm.length) → (k : Fp) = 0 → k = 0) :
+    ⦃⌜True⌝⦄
+    incrementallyVerifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
+      groupMapParamsPallas sqrtF false blindingH spongeAfterIndex computeXHat inp
+    ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp o⌝⦄ :=
+  incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub hsize endo sqrtF false blindingH
+    spongeAfterIndex computeXHat inp oldsW hIdx hXhat hmask hties hh hcanon hnc htne hlrne hchar
+
+end Sides
 
 end Pickles

@@ -356,6 +356,28 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
   unfold FqTranscriptReads fqSqueezes
   exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hxh, hdv, s10⟩
 
+/-- The plain transcript's `x_hat` is `computeXHat`'s: any read of the latter's result is a
+read of the former's. -/
+theorem fqSpongeTranscript_xHat [ToNat F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
+    (sgOld : List (AffinePoint (FVar F)))
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    (P : List (AffinePoint (FVar F)) → Prop) (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜P pts⌝⦄)
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      computeXHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜P o.xHat⌝⦄ := by
+  simp only [fqSpongeTranscript]
+  have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init indexDigest
+  have hpts := fun sv qs => absorbPoints_spec (V := V) p hsize sv qs
+  have hcols := fun sv cols => absorbColumns_spec (V := V) p hsize sv cols
+  have hpre := fun (b : Bool) sv => builder_spec_true
+    (squeezePrechallenge (c := Builder V (KimchiConstraint F)) p b endo sv)
+  have hsq := fun sv => builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
+  mvcgen -trivial [h0, hpts, hx, hcols, hpre, hsq]
+  all_goals first | exact hsize | assumption
+
 /-- Under any valuation satisfying the emitted constraints, each claim reads as the
 corresponding squeezed prechallenge. -/
 theorem assertPlonkChallenges_spec (o : FqTranscriptOutput F) (claims : PlonkClaims F) :

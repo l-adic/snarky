@@ -1636,6 +1636,7 @@ theorem checkBulletproof_step_spec {V : Valuation Fp}
         U = -Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
       chals.toList = ns.map (fun m => endoExpand Poseidon.FqPallas.spec.lam m.val) ∧
+      (∃ w : ℤ × Bool, StepLadderPre V inp.deferred.combinedInnerProduct w) ∧
       ((↑o.success : CVar Fp).val V = 1 ↔
         schnorrAt IpaPallas.curve σ U chals (endoExpand Poseidon.FqPallas.spec.lam c₀.val)
           (stepDecode V inp.deferred.combinedInnerProduct) (stepDecode V inp.deferred.b)
@@ -1654,7 +1655,7 @@ theorem checkBulletproof_step_spec {V : Valuation Fp}
   have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
   refine ⟨(SWPoint.equivPoint Pallas.curve).symm U, ns, c₀,
     ⟨(ns.map fun m => endoExpand Poseidon.FqPallas.spec.lam m.val).toArray, by simp [hlen']⟩,
-    ?_, hns, hc, by simp, ?_⟩
+    ?_, hns, hc, by simp, ⟨wcip, hpcip⟩, ?_⟩
   · beta_reduce at hU
     generalize Poseidon.GroupMap.toGroup Poseidon.GroupMapPallas.spec (CVar.val o.t V) = T at hU ⊢
     rcases hU with h | h
