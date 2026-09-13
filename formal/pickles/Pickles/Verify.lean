@@ -1,0 +1,279 @@
+import Pickles.IncrementallyVerify
+import Pickles.FinalizeOtherProof
+import Pickles.PublicInputCommit
+import Pickles.Statement
+
+/-!
+# `verify` (the step side)
+
+The port of OCaml `Step_verifier.verify` (`step_verifier.ml:1340–1413`), the `verify` call of
+PS `Pickles.Step.VerifyOne.verifyOne`.
+
+`verify` is the group half with its public input fixed: the wrap statement is packed into the
+`x_hat` leaves (`Spec.pack`, PS `packStatement`), `incrementally_verify_proof` runs with the
+claims of the unfinalized proof (`xi`, `combined_inner_product`, `b`, `plonk`), and its two
+outputs other than the success bit are asserted against that proof: the digest equals the
+claimed `sponge_digest_before_evaluations`, and each returned round prechallenge equals the
+claimed one — except in the base case, where the claim is compared with itself.
+
+The two circuits that touch one proof, the group half here and the scalar half
+(`finalize_other_proof`) one circuit later over the other field, compose to the wire
+verifier in `Pickles.TwoHalves`; `Step_main.verify_one`, which runs them on two different
+proofs in one circuit, is not ported.
+
+## Main definitions
+
+* `WrapStatement.packed`, `packLeaves`: the wrap statement as the `x_hat` leaf list;
+* `verifyWrap`: `Step_verifier.verify`.
+
+## Main results
+
+* `VerifyReads` / `verifyWrap_step_reads`: `verify` reads as the group half's `IvpReads` at
+  the public input `pubOf (packLeaves statement)`, the wire's public input being the packed
+  statement, with the claimed digest equal to the wire's digest element and, off the base
+  case, the claimed round prechallenges equal to the returned ones pair by pair (hence,
+  through `IvpReads`, the wire's up to `PrechallengeAlias`). The `x_hat` chunks read through
+  `xHatKnown_reads_publicCommitment` at the `XhatBinding` of each chunk, the group half
+  through `incrementallyVerifyProof_step_reads`, and the assertion loop by its invariant.
+-/
+
+namespace Pickles
+
+open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
+open CompElliptic.CurveForms.ShortWeierstrass
+
+/-! ## Packing the wrap statement -/
+
+section Pack
+
+variable {F : Type} [Field F] [DecidableEq F] {nc : ℕ}
+
+/-- `Branch_data.pack`: `4·domain_log2 + m₀ + 2·m₁`, a 10-bit value (PS `packStatement`). A
+missing mask bit reads as `0`. -/
+def BranchData.packed (bd : BranchData F) : FVar F :=
+  let bit (i : ℕ) : CVar F := match bd.proofsVerifiedMask[i]? with
+    | some b => (↑b : CVar F)
+    | none => .const 0
+  CVar.add_ (CVar.scale_ 4 bd.domainLog2) (CVar.add_ (bit 0) (CVar.scale_ 2 (bit 1)))
+
+/-- A packed public-input scalar with its ladder width: a full field element, a 128-bit
+value, or the 10-bit packed branch data. -/
+inductive PackedScalar (F : Type) [Field F] where
+  /-- A 255-bit field element. -/
+  | full (s : FVar F)
+  /-- A 128-bit value. -/
+  | b128 (s : FVar F)
+  /-- A 10-bit value. -/
+  | b10 (s : FVar F)
+
+/-- `Spec.pack (Wrap.Statement.In_circuit.to_data statement)` (PS `packStatement`), in walk
+order: the five shifted scalars `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ` (128), `α, ζ, ξ`
+(128), the three digests `sponge_digest, msg_wrap, msg_step` (full), the round challenges
+(128), the packed branch data (10). The shifted scalars are the step proof's `Fp` values in
+their `Type1` representative, a full field element each. -/
+def WrapStatement.packed (st : WrapStatement F (Type1 (FVar F))) : List (PackedScalar F) :=
+  let dv := st.proofState.deferredValues
+  let pl := dv.plonk
+  [.full dv.combinedInnerProduct.val, .full dv.b.val, .full pl.zetaToSrsLength.val,
+   .full pl.zetaToDomainSize.val, .full pl.perm.val,
+   .b128 pl.beta.val, .b128 pl.gamma.val,
+   .b128 pl.alpha.val, .b128 pl.zeta.val, .b128 dv.xi.val,
+   .full st.proofState.spongeDigestBeforeEvaluations,
+   .full st.proofState.messagesForNextWrapProof, .full st.messagesForNextStepProof]
+  ++ dv.bulletproofChallenges.map (fun c => .b128 c.val)
+  ++ [.b10 dv.branchData.packed]
+
+/-- The `x_hat` leaves of a wrap statement: leaf `i` is scalar `i` of `WrapStatement.packed`
+with Lagrange base `i` and its shift correction (`lagrange_with_correction`). -/
+def packLeaves (st : WrapStatement F (Type1 (FVar F)))
+    (bases corrs : List (Vector (AffinePoint (FVar F)) nc)) : List (Leaf F nc) :=
+  List.zipWith (fun k bc => match k with
+    | .full s => Leaf.full s bc.1 bc.2
+    | .b128 s => Leaf.b128 s bc.1 bc.2
+    | .b10 s => Leaf.b10 s bc.1 bc.2) st.packed (bases.zip corrs)
+
+/-- The group half's input with its claims taken from an unfinalized proof
+(`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
+of `unfinalized.deferred_values`; the key, proof and `sg_old` cells as given. -/
+def IvpInput.withClaims {sf : Type} (inp : IvpInput F sf) (u : UnfinalizedProof F sf) :
+    IvpInput F sf :=
+  let dv := u.deferredValues
+  { inp with
+    plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
+      dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
+    xi := dv.xi
+    deferred := ⟨dv.combinedInnerProduct, dv.b⟩ }
+
+end Pack
+
+/-! ## The gadgets -/
+
+section Gadget
+
+variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+
+/-- `Step_verifier.verify` (`step_verifier.ml:1340`): `x_hat` from the packed statement
+(`publicInputCommitKnown`, chunk by chunk, with the constant correction seed and sum), the
+group half at the unfinalized proof's claims, then the two assertions: the digest equals the
+claimed `sponge_digest_before_evaluations`; each returned round prechallenge equals the
+claimed one, the claim compared with itself in the base case. Returns the success bit. -/
+def verifyWrap {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Poseidon.Params F)
+    (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
+    (blindingH : AffinePoint (FVar F)) {nc : ℕ}
+    (bases corrs : List (Vector (AffinePoint (FVar F)) nc))
+    (corrHead corrSum : Vector (AffinePoint (FVar F)) nc)
+    (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
+    (statement : WrapStatement F (Type1 (FVar F))) (u : UnfinalizedProof F sf)
+    (cells : IvpInput F sf) : CircuitM F c (BoolVar F) := do
+  let leaves := packLeaves statement bases corrs
+  let computeXHat : CircuitM F c (List (AffinePoint (FVar F))) :=
+    (List.finRange nc).mapM fun ci =>
+      publicInputCommitKnown ci blindingH corrHead[ci] corrSum[ci] leaves
+  let o ← incrementallyVerifyProof ops e p endo gm sqrtF false blindingH spongeAfterIndex
+    computeXHat (cells.withClaims u)
+  assertEqual u.spongeDigestBeforeEvaluations o.spongeDigest
+  for c12 in u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges do
+    let c2' ← selectField isBaseCase c12.1.val c12.2.val
+    assertEqual c12.1.val c2'
+  pure o.success
+
+end Gadget
+
+/-! ## The reads -/
+
+section Read
+
+variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+  {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
+
+/-- `verify`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
+input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
+`sponge_digest_before_evaluations` (so the claim is the wire's digest element), and whose
+round prechallenges read as the claimed ones off the base case, pair by pair over the zip
+(the gadget compares the two lists as far as both reach; their lengths are the statement's
+and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges
+up to `PrechallengeAlias`. -/
+def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (cells : IvpInput C.BaseField sf)
+    (u : UnfinalizedProof C.BaseField sf) (base : Bool) (v : BoolVar C.BaseField) : Prop :=
+  ∃ o : IvpOutput C.BaseField,
+    IvpReads S σ cvk cp pub (cells.withClaims u).toIvpClaims o ∧
+    o.success = v ∧
+    u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
+    (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges,
+      p.1.val.val V = p.2.val.val V)
+
+/-- A `mapM` of reads: each element's result reads against its own target. -/
+private theorem mapM_forall₂ {F c : Type} [Field F] [DecidableEq F] [ConstraintHolds F c]
+    {V : Valuation F} {α β γ : Type} (f : α → CircuitM F (Builder V c) β) (R : β → γ → Prop)
+    (Q : α → γ) (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜R r (Q a)⌝⦄) :
+    ∀ l : List α, ⦃⌜True⌝⦄ l.mapM f ⦃⇓ rs _ => ⌜List.Forall₂ R rs (l.map Q)⌝⦄
+  | [] => by
+    rw [List.mapM_nil, List.map_nil]
+    mvcgen
+    exact .nil
+  | a :: l => by
+    rw [List.mapM_cons, List.map_cons]
+    have ih := mapM_forall₂ f R Q hf l
+    mvcgen [hf, ih]
+    rename_i r _ hr rs _ hrs
+    exact .cons hr hrs
+
+end Read
+
+section StepRead
+
+/-- **`verify` reads as the group half at the packed statement, on the step side.** The wire's
+public input is `pubOf (packLeaves statement)`, the statement's scalars reduced to `Fq`; the
+`x_hat` binding ties the leaves' bases to the key's Lagrange bases and the correction cells
+to the honest shifts; the remaining premises are `incrementallyVerifyProof_step_reads`'s at
+the claims-substituted cells. -/
+theorem verifyWrap_step_reads {nc : ℕ} {V : Valuation Fp}
+    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc σ.k)
+    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
+    (bases corrs : List (Vector (AffinePoint (FVar Fp)) nc))
+    (corrHead corrSum : Vector (AffinePoint (FVar Fp)) nc)
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp) (base : Bool)
+    (statement : WrapStatement Fp (Type1 (FVar Fp)))
+    (u : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (oldsW : List (IpaPallas.curve.Point × Bool))
+    (Ts cps : List (Fin nc → HasCurve.pallas.W.Point))
+    (hbase : CircuitType.Reads V isBaseCase base)
+    (hbases : bases ≠ []) (hcorrs : corrs ≠ [])
+    (hIdx : ∃ s : Poseidon.State Fp, SpongeVar.ReadsAt V spongeAfterIndex s ∧
+      (Poseidon.squeeze IpaPallas.curve.sponge.params s).1 = cvk.digest)
+    (hxhat : ∀ ci : Fin nc,
+      XhatBinding xhatStep ci V σ cvk blindingH (packLeaves statement bases corrs)
+        (Ts.map (· ci)) (cps.map (· ci)) ∧
+      OnCurveAt HasCurve.pallas.W V corrSum[ci] (cps.map (· ci)).sum)
+    (hmask : ∀ m ∈ cells.sgOld, m.1.isSome = false)
+    (hties : IvpTies (stepSide V) σ cvk cp
+      (pubOf IpaPallas.curve V (packLeaves statement bases corrs)) (cells.withClaims u) oldsW)
+    (hh : OnCurveAt IpaPallas.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
+    (hcanon : 2 * (u.deferredValues.combinedInnerProduct.val.sDiv2.val V).val
+      + ((↑u.deferredValues.combinedInnerProduct.val.sOdd : CVar Fp).val V).val
+      < PALLAS_SCALAR_CARD)
+    (hnc : 0 < nc) (htne : cells.tComm ≠ []) (hlrne : cells.opening.lr ≠ [])
+    (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (cells.sgOld.length + nc + cells.wComm.flatten.length
+      + cells.zComm.length + cells.tComm.length) → (k : Fp) = 0 → k = 0) :
+    ⦃⌜True⌝⦄
+    verifyWrap (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
+      IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH bases corrs
+      corrHead corrSum spongeAfterIndex isBaseCase statement u cells
+    ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
+      (pubOf IpaPallas.curve V (packLeaves statement bases corrs)) cells u base v⌝⦄ := by
+  -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
+  have hhead : leafHeadScalar (packLeaves statement bases corrs) := by
+    obtain ⟨b, bs, rfl⟩ := List.exists_cons_of_ne_nil hbases
+    obtain ⟨c', cs, rfl⟩ := List.exists_cons_of_ne_nil hcorrs
+    simp [packLeaves, WrapStatement.packed, leafHeadScalar]
+  -- `x_hat`, chunk by chunk, reads as the wire's public commitment
+  have hXhat : ⦃⌜True⌝⦄
+      (List.finRange nc).mapM (fun ci => publicInputCommitKnown
+        (S := Builder V (KimchiConstraint Fp)) ci blindingH corrHead[ci] corrSum[ci]
+        (packLeaves statement bases corrs))
+      ⦃⇓ pts _ => ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk
+        (pubOf IpaPallas.curve V (packLeaves statement bases corrs))).toList⌝⦄ := by
+    have hvec : (publicCommitment IpaPallas.curve σ cvk
+        (pubOf IpaPallas.curve V (packLeaves statement bases corrs))).toList
+        = (List.finRange nc).map fun ci => (publicCommitment IpaPallas.curve σ cvk
+            (pubOf IpaPallas.curve V (packLeaves statement bases corrs)))[ci] := by
+      apply List.ext_getElem <;> simp
+    unfold CommReads
+    rw [hvec]
+    exact mapM_forall₂ _ (fun r P => OnCurveAt xhatStep.d.W V r (xhatStep.e P)) _
+      (fun ci => xHatKnown_reads_publicCommitment xhatStep ci σ cvk blindingH corrHead[ci]
+        corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _
+  have hivp := incrementallyVerifyProof_step_reads σ cvk cp _ endo sqrtF blindingH
+    spongeAfterIndex _ (cells.withClaims u) oldsW hIdx hXhat hmask hties hh hcanon hnc htne
+    hlrne hchar
+  have hb := CircuitType.reads_boolVar.mp hbase
+  simp only [verifyWrap]
+  mvcgen [hivp] invariants
+    · ⇓⟨xs, _⟩ => ⌜base = false → ∀ p ∈ xs.prefix, p.1.val.val V = p.2.val.val V⌝
+  · -- the loop step: the selected cell reads as the returned prechallenge off the base case
+    rename_i pref cur suff _ _ _ hinv r _ hsel _ _ heq
+    intro hbf p hp
+    rw [List.mem_append, List.mem_singleton] at hp
+    rcases hp with hp | rfl
+    · exact hinv hbf p hp
+    · rw [heq, hsel base hb, hbf]
+      simp
+  · -- the loop entry: nothing compared yet
+    intro _ p hp
+    exact absurd hp List.not_mem_nil
+  · -- the exit: the read
+    rename_i o _ hivp' _ _ hdig _ _ hall
+    exact ⟨o, hivp', rfl, hdig, hall⟩
+
+end StepRead
+
+/-! The gadget is sealed after its read: a consumer composes `verifyWrap_step_reads`, never the
+body. -/
+attribute [irreducible] verifyWrap
+
+end Pickles
