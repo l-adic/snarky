@@ -22,6 +22,19 @@ namespace Pickles
 
 open Snarky
 
+/-! ## The recursion constants -/
+
+/-- `Max_proofs_verified` (`Pickles_types.Nat.N2`, `Wrap_hack.Padded_length`): the number of
+predecessor slots of a step proof; a rule with fewer predecessors pads with dummies. -/
+def MaxProofsVerified : ℕ := 2
+
+/-- The step SRS's round count (`Common.Max_degree.step_log2`): a step proof's opening has
+this many rounds, and so does each of its old accumulators. -/
+def StepIPARounds : ℕ := 16
+
+/-- The wrap SRS's round count (`Common.Max_degree.wrap_log2`). -/
+def WrapIPARounds : ℕ := 15
+
 /-- The plonk claims (PS `PlonkInCircuit`, OCaml `Plonk.In_circuit`): the four
 prechallenges and the three shifted linearization scalars. -/
 structure PlonkInCircuit (F sf : Type) where
