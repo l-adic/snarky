@@ -730,6 +730,17 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "xhat_step_circuit" (fromCompiledCircuit =<< compileXhatStep stepSrsData)
+        -- The step-side twin of the `xhat_wrap_lagrange.json` dump below: the 30 Pallas
+        -- Lagrange bases + blinding `h` baked into `xhat_step_circuit`, for the Lean
+        -- `check_cs` harness (`xhatStepCircuit`), which derives the corrections itself.
+        it "dumps the xhat_step Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fp -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepSrs 16 i)
+          FS.writeTextFile UTF8 (resultsDir <> "xhat_step_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepSrs) })
         exactMatchEff "check_bulletproof_step_circuit" (fromCompiledCircuit =<< compileCheckBulletproofStep stepSrsData.blindingH)
       describe "Pickles Wrap sub-circuits" do
         exactMatchEff "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit =<< compileHashMessagesWrap)
