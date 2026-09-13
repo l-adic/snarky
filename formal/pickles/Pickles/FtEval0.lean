@@ -243,4 +243,8 @@ theorem ftEval0Circuit_spec_fq {c : Type} [BasicSystem Fq c] [ConstraintHolds Fq
     (fun α β γ jc van e => evaluate_fqTokens α β γ jc van _ e) fqTokens_reads (by decide)
     ulb inp ext n zkRows ω ζ α htab hζ hzk hz1 hω
 
+/-! The gadget is sealed after its specs: a consumer composes `ftEval0Circuit_spec_fp` /
+`ftEval0Circuit_spec_fq`, never the body. -/
+attribute [irreducible] ftEval0Circuit
+
 end Pickles

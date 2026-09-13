@@ -194,4 +194,8 @@ theorem combinedInnerProduct_spec_cip (ξ r : FVar F)
   rw [hrz, hrw, alphaCombo_rows_eq_combinedInnerProduct] at h
   exact h
 
+/-! The gadgets are sealed after their reads: a consumer composes `combinedInnerProduct_spec_cip`,
+never the body. -/
+attribute [irreducible] hornerStep hornerGo hornerCombine combinedInnerProduct
+
 end Pickles

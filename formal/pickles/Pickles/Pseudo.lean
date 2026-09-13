@@ -67,4 +67,8 @@ theorem mask_spec (bits : List (BoolVar F)) (xs : List (FVar F)) :
   rename_i _ terms _ hterms
   rw [Snarky.sum_eval, hterms]
 
+/-! The gadgets are sealed after their spec: a consumer composes `mask_spec`, never the
+bodies. -/
+attribute [irreducible] products mask
+
 end Pickles.Pseudo

@@ -262,4 +262,8 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   · rw [← hx1, he₁]
   · rw [← hx2, he₂]
 
+/-! The gadgets are sealed after their specs: a consumer composes `challengeDigest_spec`,
+`maskedChallengeDigest_spec` and `squeezeXiR_spec`, never the bodies. -/
+attribute [irreducible] absorbList challengeDigest maskedChallengeDigest squeezeXiR
+
 end Pickles

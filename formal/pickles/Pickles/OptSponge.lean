@@ -983,6 +983,10 @@ theorem toRegularSponge_reads {ov : OptSpongeVar F} {ps : Poseidon.State F}
   obtain ⟨n, hph, hst, hm, -⟩ := h
   exact ⟨by simpa [toRegularSponge, hph] using hst, by simp [toRegularSponge, hph, hm]⟩
 
+/-! The gadgets are sealed after their specs: a consumer composes `squeeze_spec` and
+`optSqueeze_spec`, never the bodies. -/
+attribute [irreducible] addIn condPermute consumePair consumePairs consume squeeze optSqueeze
+
 end OptSponge
 
 end Pickles
