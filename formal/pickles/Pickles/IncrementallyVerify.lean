@@ -223,8 +223,10 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
 /-- The group half's read. With `pre` the wire's raw fq run (`fqRun`, what `fqOracles`
 expands) and `r` its IPA run from the warm post-`ζ` state at the claimed `cip` (`ipaRunAt`,
 the claim in place of the wire's `cipOf`): (1) the digest cell is the wire's digest element;
-(2) the four plonk claims, once read as prechallenges, are `pre`'s up to `PrechallengeAlias`;
-(3) for any prechallenge `ξ₀` the claimed `ξ` reads as, the returned round prechallenges read
+(2) the claimed `β`, `γ` read as prechallenges that are `pre`'s up to `PrechallengeAlias`, and
+the claimed `α`, `ζ`, once read as prechallenges, are `pre`'s up to the alias (the transcript
+range-checks the first two, `FqTranscriptReadsWire`); (3) for any prechallenge `ξ₀` the
+claimed `ξ` reads as, the returned round prechallenges read
 as some `ns`, `r`'s up to the alias, and, with `U` the map-to-curve of `r`'s `t` up to sign and
 `c₀` `r`'s Schnorr prechallenge up to the alias, the success bit reads `1` exactly when
 `Ipa.schnorrAt` holds at `U`, the expansions of `ns` and `c₀`, the claimed `cip` and `b`, the
@@ -237,8 +239,8 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
   let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
   let run := runInput C σ cvk cp pub
   pre.digestElem = o.spongeDigest.val V ∧
-  (∀ m, Reads128 V inp.plonk.chals.beta m → PrechallengeAlias C.base pre.beta.val m) ∧
-  (∀ m, Reads128 V inp.plonk.chals.gamma m → PrechallengeAlias C.base pre.gamma.val m) ∧
+  (∃ m, Reads128 V inp.plonk.chals.beta m ∧ PrechallengeAlias C.base pre.beta.val m) ∧
+  (∃ m, Reads128 V inp.plonk.chals.gamma m ∧ PrechallengeAlias C.base pre.gamma.val m) ∧
   (∀ m, Reads128 V inp.plonk.chals.alpha m → PrechallengeAlias C.base pre.alpha.val m) ∧
   (∀ m, Reads128 V inp.plonk.chals.zeta m → PrechallengeAlias C.base pre.zeta.val m) ∧
   ∀ ξ₀, Reads128 V inp.xi ξ₀ →
@@ -632,10 +634,10 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- the digest
     exact hFq.2.2.2.2.2.2.2.1.symm
-  · intro m hm
-    exact Low128.alias S.base_big hFq.1 (hasrt.1.symm.trans hm)
-  · intro m hm
-    exact Low128.alias S.base_big hFq.2.1 (hasrt.2.1.symm.trans hm)
+  · obtain ⟨m, hm⟩ := hFq.2.2.2.2.1
+    exact ⟨m, hasrt.1.trans hm, Low128.alias S.base_big hFq.1 hm⟩
+  · obtain ⟨m, hm⟩ := hFq.2.2.2.2.2.1
+    exact ⟨m, hasrt.2.1.trans hm, Low128.alias S.base_big hFq.2.1 hm⟩
   · intro m hm
     exact Low128.alias S.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
   · intro m hm
