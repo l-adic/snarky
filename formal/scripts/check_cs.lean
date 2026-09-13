@@ -36,14 +36,13 @@ the linearization prelude, against the PS `FtEval0Common` harness), and cip_{ste
 remaining slices through to finalize_other_proof_{step,wrap} (the permutation scalar,
 expand_plonk, the challenge digests, the fr-sponge schedule, and the whole assembled
 `Pickles.finalizeOtherProofStep`/`Wrap` against the PS `FopStep`/`FopWrap` harnesses).
-and xhat_wrap (the wrap-side public-input-commitment MSM, `Pickles.publicInputCommitFull`
-against the PS `Xhat` harness, with the Lagrange bases loaded from the circuit-diffs export
-and the shift corrections derived by `smulFast`), and ftcomm_{step,wrap} (the proved
+and xhat_{wrap,step} (the public-input-commitment MSM on either side —
+`Pickles.publicInputCommitFull` against the PS `Xhat` harness, `Pickles.publicInputCommitKnown`
+against `XhatStep` — with the Lagrange bases loaded from the circuit-diffs exports and the
+shift corrections derived by `smulFast`), and ftcomm_{step,wrap} (the proved
 `Pickles.ftComm` at either side's `IpaScalarOps`, against the PS `FtcommStep`/`Ftcomm`
 harnesses). Deferred, with the blocker each waits on:
-- xhat_step (and everything downstream: ivp, verify, wrap/step mains) — the
-  pickles buildout (var_base_mul and scale_fast2_128 themselves are ACTIVE below:
-  the VarBaseMul gadget's own oracle checks);
+- ivp, verify, wrap/step mains — the pickles buildout;
 - hash_messages_*, schnorr_verify — the sponge circuit layer
   (packages/random-oracle);
 - group_map_step — activatable now (Basic-only), transcription pending a
@@ -945,6 +944,68 @@ def xhatWrapPoints (path : System.FilePath) :
   | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
   | .error e => throw (IO.userError s!"{path}: {e}")
 
+/-! ### The step side (`xhat_step_circuit`)
+
+The step-side `x_hat` MSM (`Pickles.publicInputCommitKnown`, OCaml `multiscale_known`) against
+the PS `XhatStep` harness's `xhat_step_circuit`: 30 Pallas Lagrange bases (Fp coordinates) and
+the blinding `h` from `xhat_step_lagrange.json`. The leaf widths follow
+`XhatStep.parseXhatStepInput`: `full` (255-bit) at {0..4, 10..12}, `b128` at {5..9, 13..28},
+`b10` at {29}; no `condAdd`. In `PureCorrections` mode the corrections are constants: the
+gadget takes the first leaf's correction (`corrHead`, the seed PS uses only when the first
+result is a `condAdd`) and their sum (`corrSum`), both computed natively here. -/
+
+/-- The Pallas curve of the step-side `x_hat` Lagrange bases (Fp coordinates). -/
+abbrev XhatStepCurve := Bulletproof.IpaPallas.curve
+
+open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
+/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a native Pallas point. -/
+def xhatStepCorrPt (L : ℕ) (P : XhatStepCurve.Point) : XhatStepCurve.Point :=
+  -(smulFast XhatStepCurve.E (by decide) (by decide) (2 ^ L) P)
+
+/-- A native Pallas point as a constant cell at the step field. -/
+def xhatStepCell (P : XhatStepCurve.Point) : AffinePoint (FVar Fp) := ⟨.const P.x, .const P.y⟩
+
+/-- A native Pallas point as a one-chunk constant point at the step field. -/
+def xhatStepConst (P : XhatStepCurve.Point) : Vector (AffinePoint (FVar Fp)) 1 :=
+  #v[xhatStepCell P]
+
+/-- The ladder width of step leaf `i` (`XhatStep.parseXhatStepInput`). -/
+def xhatStepWidth (i : ℕ) : ℕ :=
+  if i < 5 ∨ (10 ≤ i ∧ i < 13) then 255 else if i = 29 then 10 else 130
+
+/-- `xhat_step_circuit`: `Pickles.publicInputCommitKnown` over the 30-leaf list, leaf `i`
+reading input `i` and Lagrange base `pts[i]`, with the constant correction seed and sum. -/
+def xhatStepCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
+    (input : Vector (FVar Fp) 30) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : XhatStepCurve.Point := pts[i]?.getD 0
+  let corr (i : ℕ) : XhatStepCurve.Point := xhatStepCorrPt (xhatStepWidth i) (pt i)
+  let leaf (i : ℕ) : Pickles.Leaf Fp 1 :=
+    match xhatStepWidth i with
+    | 255 => .full (get i) (xhatStepConst (pt i)) (xhatStepConst (corr i))
+    | 10 => .b10 (get i) (xhatStepConst (pt i)) (xhatStepConst (corr i))
+    | _ => .b128 (get i) (xhatStepConst (pt i)) (xhatStepConst (corr i))
+  let leaves : List (Pickles.Leaf Fp 1) := (List.range 30).map leaf
+  let corrSum : XhatStepCurve.Point := ((List.range 30).map corr).sum
+  let _ ← Pickles.publicInputCommitKnown (0 : Fin 1) h (xhatStepCell (corr 0))
+    (xhatStepCell corrSum) leaves
+  pure PUnit.unit
+
+/-- The 30 Pallas Lagrange bases and blinding `h` of `xhat_step_circuit`, from the
+circuit-diffs export `xhat_step_lagrange.json` (same format as the wrap export). -/
+def xhatStepPoints (path : System.FilePath) :
+    IO (Array XhatStepCurve.Point × AffinePoint (FVar Fp)) := do
+  let raw ← IO.FS.readFile path
+  let parsed : Except String (Array XhatStepCurve.Point × XhatStepCurve.Point) := do
+    let j ← Json.parse raw
+    let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt XhatStepCurve)
+      (← j.getObjVal? "lagrange")
+    let h ← Bulletproof.Fixture.parsePt XhatStepCurve (← j.getObjVal? "h")
+    pure (lagr, h)
+  match parsed with
+  | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
+  | .error e => throw (IO.userError s!"{path}: {e}")
+
 /-! ## The `ft_comm` circuits
 
 Transcribe `Pickles.CircuitDiffs.PureScript.FtcommStep` and `Ftcomm`: `Pickles.ftComm` at
@@ -983,8 +1044,7 @@ def ftcommWrapCircuit (input : Vector (FVar Fq) 17) : CircuitM Fq Cq PUnit := do
 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
-def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq))
-    (xhatPts : Array XhatCurve.Point) (xhatH : AffinePoint (FVar Fq)) :
+def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   [ ("mul_step_circuit", stepTarget (a := Fp) (b := Fp) mulCircuit),
     ("inv_step_circuit", stepTarget (a := Fp) (b := Fp) invCircuit),
@@ -1068,22 +1128,44 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq))
       wrapTarget (a := Vector Fq 172) (b := PUnit) (checkBulletproofWrapCircuit hWrap)),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
-    ("xhat_wrap_circuit",
-      wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit xhatPts xhatH)),
     ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit) ]
+
+/-- The two `x_hat` targets, each present only when its Lagrange export is (a narrowed local
+PS run regenerates one column's exports; the unfiltered run has both). -/
+def xhatTargets (wrap : Option (Array XhatCurve.Point × AffinePoint (FVar Fq)))
+    (step : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp))) :
+    List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
+  (step.toList.map fun (pts, h) =>
+    ("xhat_step_circuit", stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts h)))
+  ++ (wrap.toList.map fun (pts, h) =>
+    ("xhat_wrap_circuit", wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts h)))
+
+/-- Load an `x_hat` Lagrange export when present. Under `KIMCHI_CS_FILTER` a missing export
+skips its target (a narrowed PS run regenerates only the selected circuits' exports); in the
+unfiltered run — CI — it is an error. -/
+def optionalExport {α : Type} (filter : String) (path : System.FilePath)
+    (load : System.FilePath → IO α) : IO (Option α) := do
+  if ← path.pathExists then
+    some <$> load path
+  else if filter.isEmpty then
+    throw (IO.userError s!"missing export: {path}")
+  else
+    IO.println s!"· {path.fileName.getD path.toString} not exported: its target is skipped"
+    pure none
 
 def main : IO Unit := do
   let dir ← resultsDir
   let fdir := (← IO.getEnv "BULLETPROOF_FIXTURES_DIR").getD "bulletproof-pcs/fixtures"
   let hStep ← blindingBase Bulletproof.IpaPallas.curve s!"{fdir}/ipa_batch_pallas.json"
   let hWrap ← blindingBase Bulletproof.IpaVesta.curve s!"{fdir}/ipa_batch_vesta.json"
-  -- The `x_hat` Lagrange dump sits in the results dir beside the comparison dumps (it
-  -- carries no `purescript` field and no manifest entry, so the other consumers skip it).
-  let (xhatPts, xhatH) ← xhatWrapPoints (dir / "xhat_wrap_lagrange.json")
   -- `KIMCHI_CS_FILTER` narrows the corpus to targets whose name contains it — for local
   -- validation of one circuit against a partial results dir. Unset (CI) runs the whole corpus.
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
-  let selected := (targets hStep hWrap xhatPts xhatH).filter fun (n, _) =>
+  -- The `x_hat` Lagrange dumps sit in the results dir beside the comparison dumps (they
+  -- carry no `purescript` field and no manifest entry, so the other consumers skip them).
+  let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") xhatWrapPoints
+  let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") xhatStepPoints
+  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatStep).filter fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
   for (name, compare) in selected do

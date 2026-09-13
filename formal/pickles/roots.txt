@@ -159,22 +159,30 @@ Pickles.IpaScalarOps.wrap
 Pickles.IpaEndo.pallas
 Pickles.IpaEndo.vesta
 
--- The in-circuit public-input commitment (x_hat) gadget, consumed by the check_cs harness,
--- and its faithfulness theorem (the honest one-chunk MSM reads as `-(Σ netDelta) + h` under
--- the head-seed condition), axiom-audited like the other gadget specs. The reading vocabulary
--- and the fold/corrections lemmas it rests on stay private but reachable from the spec.
+-- The in-circuit public-input commitment (x_hat) gadgets, consumed by the check_cs harness —
+-- the wrap side's `publicInputCommitFull` (corrections summed in circuit) and the step side's
+-- `publicInputCommitKnown` (OCaml `multiscale_known`: constant correction sum) — and their
+-- faithfulness theorems (the honest one-chunk MSM reads as `-(Σ netDelta) + h` under the seed
+-- condition), axiom-audited like the other gadget specs. The reading vocabulary and the
+-- fold/corrections lemmas they rest on stay private but reachable from the specs.
 Pickles.publicInputCommitFull
 Pickles.publicInputCommitFull_spec
+Pickles.publicInputCommitKnown
+Pickles.publicInputCommitKnown_spec
 -- The regime-discharge bridge a consumer uses to satisfy the spec's `∀ i, regimeOK`
 -- conditional: the leaves' reads plus the unconditional narrow-width subwrap bounds
 -- (`ladderRegime_subwrap`, reachable from here) give each leaf's `LadderRegime`.
 Pickles.LeafReads.regimeOK
--- The public seam of the x_hat read: the gadget output reads as `-(publicMsm) + h` with the
--- canonical `Fq` decode carried as the spec hypothesis `Leaf.canonFull` (mirroring the deployed
--- `scale_fast2` `With_top_bit0` typ — no constraint), and the wire crossing tying it to the
--- verifier's `publicCommitment` on the Vesta commitment curve.
+-- The public seam of the x_hat reads: either gadget's output reads as `-(publicMsm) + h`, and
+-- the wire crossing ties that to the verifier's `publicCommitment` on the commitment curve,
+-- generically over an `XhatSide` (the point group, its crossing, the order killing it, the
+-- side's forbidden-band exclusion), instantiated at Vesta (`xhatWrap`) and Pallas (`xhatStep`).
 Pickles.publicInputCommitFull_reads
+Pickles.publicInputCommitKnown_reads
 Pickles.xHat_reads_publicCommitment
+Pickles.xHatKnown_reads_publicCommitment
+Pickles.xhatWrap
+Pickles.xhatStep
 
 -- The `ft_comm` gadget (FtComm.lean, `Common.ft_comm`), generic in the side's shifted-scalar
 -- operations, and its read: on any side (`IvpSide` — the ladder reading, the claim decode and
