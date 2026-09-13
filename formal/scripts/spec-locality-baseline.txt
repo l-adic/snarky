@@ -7,6 +7,7 @@
 # The token interpreter is monad-generic (Linearization/Interpreter.lean); its circuit
 # instance's reading is the linearization circuit's own result.
 pickles/Pickles/Linearization/Circuit.lean:evalLoop
+pickles/Pickles/Linearization/Circuit.lean:evaluate
 # The reflection theorems read the generic interpreter at the certified deployed streams.
 pickles/Pickles/Reflect/Soundness.lean:evaluate
 # The x_hat wire crossing (`xHat_reads_publicCommitment`) is stated beside the wire

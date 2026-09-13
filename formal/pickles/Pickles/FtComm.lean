@@ -126,17 +126,6 @@ private theorem IvpSide.scale_val (S : IvpSide C V ops) {x : sf} {w : S.R.wit}
     (T : C.E.toAffine.Point) : S.R.dec w • T = s.val • T := by
   rw [S.zsmul_eq, S.dec_cast hpre, hdec]
 
-/-- The side's scaling read with the well-formedness moved into the postcondition, so it serves
-as a `mvcgen` spec before the claim's well-formedness is in hand. -/
-private theorem IvpSide.scale_reads (S : IvpSide C V ops) (pt : AffinePoint (FVar C.BaseField))
-    (x : sf) :
-    ⦃⌜True⌝⦄ ops.scaleByShifted pt x
-    ⦃⇓ r _ => ⌜S.R.WellFormed x → ∀ T : C.E.toAffine.Point, OnCurveAt C.E.toAffine V pt T →
-      ∃ w, S.R.Pre x w ∧ (S.R.Reg w → OnCurveAt C.E.toAffine V r (S.R.dec w • T))⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat hwf
-  exact (builder_spec_iff _ _).mp (S.R.scale pt x hwf) nv hsat
-
 /-- The scalar-field Horner collapse of a point list, `P₀ + ξ·(P₁ + ξ·(…))` — `Σᵢ ξⁱ·Pᵢ`. -/
 private def hornerVal (C : CommitmentCurve) (ξ : C.ScalarField)
     (Ps : List C.E.toAffine.Point) : C.E.toAffine.Point :=
@@ -200,7 +189,7 @@ private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
   | c :: c' :: rest, _ => by
       simp only [hornerReduce]
       have ih := hornerReduce_reads S zM (c' :: rest) (List.cons_ne_nil _ _)
-      have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.scale_reads r zM
+      have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zM
       have hadd := fun (s : AffinePoint (FVar C.BaseField)) =>
         addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
           S.two_torsion_free c s
@@ -251,9 +240,9 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
     omega
   simp only [ftComm]
   have hhσ := hornerReduce_reads S zetaMCell sigma6Cells.toList hσne
-  have hscP := fun (r : AffinePoint (FVar C.BaseField)) => S.scale_reads r permCell
+  have hscP := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r permCell
   have hht := hornerReduce_reads S zetaMCell tCommCells hne
-  have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.scale_reads r zetaNCell
+  have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zetaNCell
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
     addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
       S.two_torsion_free a b

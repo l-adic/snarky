@@ -685,6 +685,19 @@ structure IpaScalarOps.Reading {sf : Type}
     ⦃⇓ r _ => ⌜∀ T : W.Point, OnCurveAt W V pt T →
       ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt W V r (dec w • T))⌝⦄
 
+omit [ToNat F] in
+/-- The reading's scaling law with the well-formedness moved into the postcondition: the shape
+an assembly hands `mvcgen` before the claim's well-formedness is in hand. -/
+theorem IpaScalarOps.Reading.scale_reads {sf : Type}
+    {ops : IpaScalarOps F (Builder V (KimchiConstraint F)) sf} {W : WeierstrassCurve.Affine F}
+    (R : ops.Reading W) (pt : AffinePoint (FVar F)) (x : sf) :
+    ⦃⌜True⌝⦄ ops.scaleByShifted pt x
+    ⦃⇓ r _ => ⌜R.WellFormed x → ∀ T : W.Point, OnCurveAt W V pt T →
+      ∃ w, R.Pre x w ∧ (R.Reg w → OnCurveAt W V r (R.dec w • T))⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat hwf
+  exact (builder_spec_iff _ _).mp (R.scale pt x hwf) nv hsat
+
 /-- Under any valuation satisfying the emitted constraints, with `u`, the combined
 commitment, the pairs, `δ`, `sg` and `h` reading as points, the scaled scalars well-formed and
 their witnesses in regime (`hreg`; at the deployed curves: the decode is off the forbidden
