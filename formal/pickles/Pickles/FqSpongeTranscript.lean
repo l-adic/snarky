@@ -835,4 +835,9 @@ theorem FqTranscriptReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p)
   exact ⟨⟨b₀, hbv, lβ.alias hp hbv⟩, ⟨g₀, hgv, lγ.alias hp hgv⟩, fun _ hav => lα.alias hp hav,
     fun _ hzv => lζ.alias hp hzv, hxh, hd, hs⟩
 
+/-! The gadgets are sealed after their reads: a consumer composes `fqSpongeTranscript_reads`,
+`fqSpongeTranscriptOpt_reads` and `assertPlonkChallenges_spec`, never the bodies. -/
+attribute [irreducible] absorbPoint absorbPoints absorbColumns squeezePrechallenge
+  fqSpongeTranscript assertPlonkChallenges optSqueezePrechallenge fqSpongeTranscriptOpt
+
 end Pickles

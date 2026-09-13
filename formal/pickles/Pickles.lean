@@ -13,7 +13,6 @@ import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
 import Pickles.PublicInputCommit
-import Pickles.XhatGlue
 import Pickles.FtComm
 import Pickles.IncrementallyVerify
 

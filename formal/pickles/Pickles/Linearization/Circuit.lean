@@ -465,4 +465,9 @@ theorem precomputeAlphaPowers_spec (alpha : FVar F) :
     (by intro k hk; interval_cases k <;> simp)
   exact ⟨hsize, fun k hk => hent k (by omega)⟩
 
+/-! The α-table gadgets are sealed after their spec: a consumer composes
+`precomputeAlphaPowers_spec`, never the bodies. The token interpreter (`evalLoop`, `evaluate`)
+is monad-generic and stays reducible: the map and circuit laws above unfold it by design. -/
+attribute [irreducible] alphaGo precomputeAlphaPowers
+
 end Pickles.Linearization

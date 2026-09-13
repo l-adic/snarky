@@ -256,4 +256,9 @@ theorem bCorrectCircuit_spec (chals : List (FVar F)) (zeta zetaOmega evalscale e
   intro hb
   simp only [*]
 
+/-! The gadgets are sealed after their specs: a consumer composes `challengePolyEvals_spec`,
+`computeChallenges_spec` and `bCorrectCircuit_spec`, never the bodies. -/
+attribute [irreducible] squaresGo bPolyGo bPolyCircuit challengePolyEvals computeChallenges
+  computeBCircuit bCorrectCircuit
+
 end Pickles

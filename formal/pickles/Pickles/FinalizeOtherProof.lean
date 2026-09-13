@@ -1011,4 +1011,8 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
 
 end Deployed
 
+/-! The gadgets are sealed after their reads: a consumer composes `finalizeOtherProofStep_spec`
+and `finalizeOtherProofWrap_spec` (or their deployed-field forms), never the bodies. -/
+attribute [irreducible] finalizeOtherProofCore finalizeOtherProofStep finalizeOtherProofWrap
+
 end Pickles

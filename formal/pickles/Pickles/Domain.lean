@@ -315,4 +315,9 @@ theorem knownDomainVanishingPolynomial_spec (whiches : List (BoolVar F)) (log2s 
   simp only [Function.comp_def, Prod.map_fst, Prod.map_snd, id_eq,
     hpows.2 e.2 (hlog e.2 (List.of_mem_zip he).2)]
 
+/-! The gadgets are sealed after their specs: a consumer composes the specs, never the
+bodies. -/
+attribute [irreducible] omegaLoop omegaPowers zkPolynomial whichesGo knownDomainWhiches
+  buildPow2PowsArray pow2PowMul pow2PowSquare knownDomainVanishingPolynomial
+
 end Pickles

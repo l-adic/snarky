@@ -67,4 +67,8 @@ theorem permScalarCircuit_spec [ConstraintHolds F c] [LawfulBasicSystem F c] {V 
   congr 1
   ac_rfl
 
+/-! The gadget is sealed after its spec: a consumer composes `permScalarCircuit_spec`, never
+the body. -/
+attribute [irreducible] permScalarCircuit
+
 end Pickles

@@ -22,8 +22,9 @@
 # are out of scope: their deployed instantiations belong here.
 #
 # What counts as a gadget: a `def` or `abbrev` of the package (attributed or not, e.g.
-# `@[irreducible] def`), and a field of a package `structure`/`class` whose type mentions
-# `Builder`, `CircuitM` or a triple (an ops record's gadget field). What is scanned: every `theorem`
+# `@[irreducible] def`) whose signature mentions `CircuitM`, and a field of a package
+# `structure`/`class` whose type mentions `Builder`, `CircuitM` or a triple (an ops record's
+# gadget field). The monad-generic token interpreter is not one. What is scanned: every `theorem`
 # (attributed or not, e.g. `@[spec] theorem`); its statement ends at the first depth-0 `:=`
 # that is not a `let` binder, so `(c := Builder …)` and `let` do not hide the conclusion.
 #
@@ -37,9 +38,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 2   # -> formal/
 
 pkg="pickles/Pickles"
-# By-design splits, grandfathered: `file:gadget` pairs whose triple lives apart from the
-# gadget on purpose (the reason beside each). Never grow this for a new assembly.
-baseline="scripts/spec-locality-baseline.txt"
 
 files=()
 while IFS= read -r f; do files+=("$f"); done < <(find "$pkg" -name '*.lean' | sort)
@@ -51,7 +49,7 @@ fi
 out=$(mktemp)
 trap 'rm -f "$out"' EXIT
 
-# One awk program, three passes: the baseline, the package's gadgets, the package's theorems.
+# One awk program, two passes: the package's gadgets, then the package's theorems.
 # Plain POSIX awk (mawk on CI, BSD awk on macOS): byte-indexed `index`/`substr` throughout.
 if ! awk '
   BEGIN { M = "⦃⌜True⌝⦄" }
@@ -89,23 +87,25 @@ if ! awk '
     return parts[n]
   }
 
-  # pass 0: the baseline
-  pass == 0 {
-    sub(/#.*/, ""); gsub(/ /, "")
-    if ($0 != "") allowed[$0] = 1
-    next
-  }
-
-  # pass 1: gadget names -> defining file
+  # pass 1: gadget names -> defining file. A `def`/`abbrev` is a gadget when its signature
+  # (the text up to its `:=`) mentions `CircuitM`: the monad-generic token interpreter
+  # (`evalLoop`, `evaluate` in Linearization/Interpreter.lean) is a function the circuit
+  # module instantiates, not a gadget, and its circuit reading is the result of that module.
+  # (No apostrophes in these comments: the whole program is a single-quoted shell string.)
   pass == 1 {
-    if (FNR == 1) { in_struct = 0 }
+    if (FNR == 1) { end_def(); in_struct = 0 }
     if ($0 ~ /^(@\[[^]]*\] *)?(private |protected )?(noncomputable )?(def|abbrev) [A-Za-z_][A-Za-z0-9_.]*/) {
+      end_def()
       line = $0
       sub(/^(@\[[^]]*\] *)?(private |protected )?(noncomputable )?(def|abbrev) /, "", line)
       match(line, /^[A-Za-z_][A-Za-z0-9_.]*/)
-      register(short_of(substr(line, RSTART, RLENGTH)), FILENAME)
+      dname = short_of(substr(line, RSTART, RLENGTH)); dfile = FILENAME; dbuf = $0
       in_struct = 0
       next
+    }
+    if (dname != "") {
+      if ($0 ~ /^[^ \t]/) end_def()
+      else { dbuf = dbuf " " $0; next }
     }
     if ($0 ~ /^(private |protected )?(structure|class) [A-Za-z_]/) {
       in_struct = 1; field = ""; field_text = ""
@@ -129,6 +129,11 @@ if ! awk '
     local_def[file ":" short] = 1
   }
 
+  function end_def() {
+    if (dname != "" && index(statement(dbuf), "CircuitM") > 0) register(dname, dfile)
+    dname = ""; dbuf = ""
+  }
+
   function end_field(file) {
     if (field != "" && (index(field_text, "Builder") > 0 || index(field_text, "CircuitM") > 0 || index(field_text, M) > 0))
       register(field, file)
@@ -137,7 +142,7 @@ if ! awk '
 
   # pass 2: theorem conclusions
   pass == 2 {
-    if (FNR == 1) { flush(); in_struct = 0 }
+    if (FNR == 1) { end_def(); flush(); in_struct = 0 }
     if ($0 ~ /^(@\[[^]]*\] *)?(private |protected )?theorem /) { flush(); buf = $0; ln = FNR; bfile = FILENAME; next }
     if (buf != "" && $0 ~ /^[^ \t]/) flush()
     if (buf != "") buf = buf " " $0
@@ -159,8 +164,7 @@ if ! awk '
         } else {
           short = short_of(g)
           home = def_of[short]
-          if (home != "" && home != bfile && !((bfile ":" short) in local_def) &&
-              !((bfile ":" short) in allowed))
+          if (home != "" && home != bfile && !((bfile ":" short) in local_def))
             print bfile ":" ln ": triple about \047" short "\047 (defined in " home ") stated outside its module"
         }
       }
@@ -175,7 +179,7 @@ if ! awk '
     print "CHECKED " checked + 0
     print "ERRORS " errors + 0
   }
-' pass=0 "$baseline" pass=1 "${files[@]}" pass=2 "${files[@]}" > "$out"; then
+' pass=1 "${files[@]}" pass=2 "${files[@]}" > "$out"; then
   echo "spec-locality gate ERROR: scanner failed" >&2
   exit 2
 fi

@@ -1980,4 +1980,9 @@ theorem CheckBulletproofReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p)
   intro _ _ hl m hm
   exact hl.alias hp hm
 
+/-! The gadgets are sealed after their reads: a consumer composes `checkBulletproof_reads` and
+`IvpSide.opening_reads`, never the bodies. -/
+attribute [irreducible] extractScalarChallenges bulletTerms sumPoints bulletReduce hornerFold
+  combinePolynomials ipaFinalCheck checkBulletproof
+
 end Pickles
