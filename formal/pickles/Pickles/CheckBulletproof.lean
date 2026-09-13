@@ -909,11 +909,12 @@ open Bulletproof Bulletproof.Ipa CompElliptic.CurveForms.ShortWeierstrass
 how its shifted-scalar ladder reads (`R`); the scalar-field decode of a shifted claim, with the
 law that a ladder witness's integer decode casts to it; the facts about `C`'s affine group the
 adds and negations need — the scalar order kills the group (so an integer acts as its residue's
-representative), the curve is short (`A = 0`), the base field is not of characteristic 2 and
-the group has no 2-torsion; the endomorphism bundle (at the wire curve) and the map-to-curve
-parameters the opening check runs on; the field facts the transcript's squeezes need; the limbs
-a canonical claim absorbs as, tied to the wire's; the map-to-curve gadget's read; and the two
-bridges from the gadgets' group vocabulary to the wire's. One value per deployed side:
+representative), the curve is short (`A = 0`) and the group has no 2-torsion; the
+endomorphism bundle (at the wire curve) and the map-to-curve parameters the opening check runs
+on; the base field's size and the sponge's round count, from which the field facts the
+transcript's squeezes need follow (`IvpSide.two_ne`, `IvpSide.three_ne`, `IvpSide.small_inj`);
+the limbs a canonical claim absorbs as, tied to the wire's; the map-to-curve gadget's read; and
+the two bridges from the gadgets' group vocabulary to the wire's. One value per deployed side:
 `wrapSide`, `stepSide`. -/
 structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
     (ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf) where
@@ -927,8 +928,6 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   card_nsmul : ∀ X : C.Point, C.scalar • X = 0
   /-- The curve is short: `y² = x³ + B`. -/
   a_zero : C.E.A = 0
-  /-- The base field is not of characteristic 2. -/
-  two_ne : (2 : C.BaseField) ≠ 0
   /-- The affine group has no 2-torsion. -/
   two_torsion_free : ∀ P : C.E.toAffine.Point, P ≠ 0 → P + P ≠ 0
   /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
@@ -937,12 +936,10 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   eW : e.d.W = C.E.toAffine
   /-- The map-to-curve parameters deriving the `U` base. -/
   gm : GroupMapParams C.BaseField
-  /-- The base field is not of characteristic 3 (the prechallenge squeeze's `endo_scalar`). -/
-  three_ne : (3 : C.BaseField) ≠ 0
-  /-- Naturals up to 3 cast injectively (the conditional sponge's mask count). -/
-  small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : C.BaseField) = k → j = k
   /-- The base field has more than 254 bits: a low-128-bit read is a `PrechallengeAlias`. -/
   base_big : 2 ^ 254 < C.base
+  /-- The sponge parameters carry the full round constants. -/
+  hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
   ladder witness is below `2²⁵⁴ < |Fq|`); on the step side a split claim whose halved limb
   keeps `2·sDiv2 + sOdd` below the scalar modulus — the 254-bit range check alone leaves one
@@ -981,6 +978,20 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
 variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
+/-- Naturals up to 3 cast injectively (the conditional sponge's mask count). -/
+theorem IvpSide.small_inj (S : IvpSide C V ops) :
+    ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : C.BaseField) = k → j = k :=
+  fun j k _ _ h =>
+    castInj128_of_lt C.base (lt_trans (by norm_num) S.base_big) j k (by omega) (by omega) h
+
+/-- The base field is not of characteristic 2. -/
+theorem IvpSide.two_ne (S : IvpSide C V ops) : (2 : C.BaseField) ≠ 0 := fun h =>
+  absurd (S.small_inj 2 0 (by norm_num) (by norm_num) (by simpa using h)) (by norm_num)
+
+/-- The base field is not of characteristic 3 (the prechallenge squeeze's `endo_scalar`). -/
+theorem IvpSide.three_ne (S : IvpSide C V ops) : (3 : C.BaseField) ≠ 0 := fun h =>
+  absurd (S.small_inj 3 0 (by norm_num) (by norm_num) (by simpa using h)) (by norm_num)
+
 /-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
 reading it in the ladder's regime (at the deployed curves: the decode is off the forbidden
 band — the `scale_fast`-family premise #341 tracks). -/
@@ -994,9 +1005,8 @@ scaled claim a claim the ladder read speaks about, `ξ` reading as `n`, the pair
 map-to-curve of `t` up to sign, `cip` has a ladder witness, and the success bit reads `1`
 exactly when the wire verifier's `schnorrAt` holds at the side's decodes over the kept bases
 combined at `n`'s expansion. -/
-private theorem IvpSide.opening_reads_at (S : IvpSide C V ops)
-    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
-    (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
+private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.BaseField)
+    (sqrtF : C.BaseField → Option C.BaseField)
     (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
     (bvW : List (C.Point × Bool))
@@ -1029,7 +1039,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops)
   have hcast : CastInj128 C.BaseField :=
     castInj128_of_lt C.base (lt_trans (by norm_num) S.base_big)
   refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success_at ops S.e S.eW _ hsize endo S.gm sqrtF hcast S.R
+    (checkBulletproof_spec_success_at ops S.e S.eW _ S.hsize endo S.gm sqrtF hcast S.R
       (fun t => SWPoint.equivPoint C.E (C.toGroup t)) (S.groupMap sqrtF) sv bases _ hb hbne inp
       (fun x hx => (hclaims x hx).1) (fun x w hx hpre => (hclaims x hx).2 w hpre)
       n hxi _ _ _ _ hlr hlrne hδ hsg hh) fun o ho => ?_
@@ -1102,7 +1112,6 @@ emitted constraints the outputs satisfy `IvpSide.OpeningReads`: the transcript h
 `checkBulletproof_reads`, the algebra half from `IvpSide.opening_reads_at`. The shape an
 assembly hands `mvcgen`, stated once here (`scripts/check-spec-locality.sh`). -/
 theorem IvpSide.opening_reads (S : IvpSide C V ops)
-    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
     (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
@@ -1111,10 +1120,10 @@ theorem IvpSide.opening_reads (S : IvpSide C V ops)
       C.sponge.params endo S.gm sqrtF sv bases inp
     ⦃⇓ o _ => ⌜S.OpeningReads sv bases inp o⌝⦄ := by
   refine builder_spec_and _ _ _
-    (checkBulletproof_reads S.two_ne S.three_ne ops S.e _ hsize endo S.gm sqrtF sv bases inp) ?_
+    (checkBulletproof_reads S.two_ne S.three_ne ops S.e _ S.hsize endo S.gm sqrtF sv bases inp) ?_
   rw [builder_spec_iff]
   intro nv hsat bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh
-  exact (builder_spec_iff _ _).mp (S.opening_reads_at hsize endo sqrtF sv bases bvW hb hbne
+  exact (builder_spec_iff _ _).mp (S.opening_reads_at endo sqrtF sv bases bvW hb hbne
     hlast inp hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh) nv hsat
 
 end Side
@@ -1677,11 +1686,6 @@ private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ
     exact lt_trans this (by norm_num [PALLAS_BASE_CARD])
   rw [ZMod.val_natCast, Nat.mod_eq_of_lt hv, ZMod.natCast_zmod_val]
 
-/-- Naturals up to 3 cast injectively into `Fq`. -/
-private theorem fq_small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fq) = k → j = k := by
-  intro j k hj hk h
-  interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
-
 /-- **The wrap side**: `IpaScalarOps.wrap` at Vesta (`IpaVesta.curve`, base `Fq`, scalar `Fp`)
 through `wrapReading`, the `Type1` claims decoding by `wrapDecode`, every claim canonical. The
 decodes are canonical because `scaleFast1` pins the top bit of its 255-bit decomposition
@@ -1695,14 +1699,12 @@ def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap whe
   dec_cast h := wrapLadderDec_cast h
   card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
   a_zero := rfl
-  two_ne := HasCurve.vesta.two_ne
   two_torsion_free := HasCurve.vesta.two_torsion_free
   e := IpaEndo.vesta
   eW := rfl
   gm := groupMapParamsVesta
-  three_ne := by decide
-  small_inj := fq_small_inj
   base_big := by norm_num [PALLAS_SCALAR_CARD]
+  hsize := Kimchi.Gate.Poseidon.fqParams_size
   Canon _ := True
   absorb_limbs _ h := wrap_cip_limbs h
   groupMap sqrtF t := by
@@ -1914,11 +1916,6 @@ private theorem step_cip_limbs {V : Valuation Fp} {x : Type2 (SplitField (FVar F
       = ((↑x.val.sOdd : CVar Fp).val V).val := by omega
   rw [h1, h2, ZMod.natCast_zmod_val, ZMod.natCast_zmod_val]
 
-/-- Naturals up to 3 cast injectively into `Fp`. -/
-private theorem fp_small_inj : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : Fp) = k → j = k := by
-  intro j k hj hk h
-  interval_cases j <;> interval_cases k <;> first | rfl | exact absurd h (by decide)
-
 /-- **The step side**: `IpaScalarOps.step` at Pallas (`IpaPallas.curve`, base `Fp`, scalar
 `Fq`) through `stepReading`, the split `Type2` claims decoding by `stepDecode`. The decode is
 canonical (the half is unpacked in `254 < log₂ |Fp|` bits), but a claim absorbs canonically
@@ -1932,14 +1929,12 @@ def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step wh
   dec_cast h := stepLadderDec_cast h
   card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
   a_zero := rfl
-  two_ne := HasCurve.pallas.two_ne
   two_torsion_free := HasCurve.pallas.two_torsion_free
   e := IpaEndo.pallas
   eW := rfl
   gm := groupMapParamsPallas
-  three_ne := by decide
-  small_inj := fp_small_inj
   base_big := by norm_num [PALLAS_BASE_CARD]
+  hsize := Kimchi.Gate.Poseidon.fpParams_size
   Canon x := 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val
     < PALLAS_SCALAR_CARD
   absorb_limbs hc h := step_cip_limbs hc h

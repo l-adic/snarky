@@ -689,7 +689,6 @@ the claimed `cip` absorbs canonically (`IvpSide.Canon`) and the base field's cha
 exceeds the absorb count, the output satisfies `IvpReads`. -/
 theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField) (optSponge : Bool)
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
     (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
@@ -720,16 +719,16 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   simp only [Vector.toList_mk] at hft
   have hcb := fun (sv : SpongeVar C.BaseField)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField))) =>
-    S.opening_reads hsize endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
+    S.opening_reads endo sqrtF sv bases ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩
   obtain ⟨sIdx, hsIdx, hdig⟩ := hIdx
   cases optSponge with
   | true =>
     simp only [incrementallyVerifyProof, if_true]
     have htr := fun (d : FVar C.BaseField) (xHat : List (AffinePoint (FVar C.BaseField))) =>
-      fqSpongeTranscriptOpt_reads (V := V) S.two_ne S.three_ne _ hsize S.small_inj endo d
+      fqSpongeTranscriptOpt_reads (V := V) S.two_ne S.three_ne _ S.hsize S.small_inj endo d
         (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
-    case vc1.hsize => exact hsize
+    case vc1.hsize => exact S.hsize
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
@@ -771,11 +770,11 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
     have htr := fun (d : FVar C.BaseField) =>
-      fqSpongeTranscript_reads (V := V) S.two_ne S.three_ne _ hsize endo d (inp.sgOld.map (·.2))
+      fqSpongeTranscript_reads (V := V) S.two_ne S.three_ne _ S.hsize endo d (inp.sgOld.map (·.2))
         computeXHat (fun pts => CommReads C V pts (publicCommitment C σ cvk pub).toList) _
         (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [htr, hasrt, hft, hcb]
-    case vc1.hsize => exact hsize
+    case vc1.hsize => exact S.hsize
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all
@@ -803,7 +802,6 @@ section Sides
 theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
     (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
-    (hsize : IpaVesta.curve.sponge.params.roundConstants.size = Poseidon.fullRounds)
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
     (spongeAfterIndex : SpongeVar Fq)
     (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
@@ -822,7 +820,7 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params endo
       groupMapParamsVesta sqrtF true blindingH spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp o⌝⦄ :=
-  incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub hsize endo sqrtF true blindingH
+  incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub endo sqrtF true blindingH
     spongeAfterIndex computeXHat inp oldsW hIdx hXhat hmask hties hh trivial hnc htne hlrne hchar
 
 /-- **The step side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
@@ -830,7 +828,6 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
 theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc σ.k) (pub : Array Fq)
-    (hsize : IpaPallas.curve.sponge.params.roundConstants.size = Poseidon.fullRounds)
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
     (spongeAfterIndex : SpongeVar Fp)
     (computeXHat : CircuitM Fp (Builder V (KimchiConstraint Fp)) (List (AffinePoint (FVar Fp))))
@@ -853,7 +850,7 @@ theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     incrementallyVerifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
       groupMapParamsPallas sqrtF false blindingH spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp o⌝⦄ :=
-  incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub hsize endo sqrtF false blindingH
+  incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub endo sqrtF false blindingH
     spongeAfterIndex computeXHat inp oldsW hIdx hXhat hmask hties hh hcanon hnc htne hlrne hchar
 
 end Sides
