@@ -1676,10 +1676,8 @@ private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ
   have hlt : IpaVesta.curve.scalar < IpaVesta.curve.base := by decide
   simp only [scalarLimbs, shiftScalar, if_pos hlt, hsz, wrapDecode,
     Pasta.Shifted.shiftType1_unshiftType1 (by decide : (2 : Fp) ≠ 0)]
-  obtain ⟨h0, hlt', hz⟩ := h
-  have hval : ((x.val.val V).val : ℤ) = z := by
-    rw [← hz, ZMod.val_intCast, Int.emod_eq_of_lt h0
-      (lt_of_lt_of_le hlt' (by norm_num [PALLAS_SCALAR_CARD]))]
+  have hval : ((x.val.val V).val : ℤ) = z := (wrapLadderPre_eq h).symm
+  have hlt' : z < 2 ^ 254 := h.2.1
   have hv : (x.val.val V).val < PALLAS_BASE_CARD := by
     have : ((x.val.val V).val : ℤ) < 2 ^ 254 := hval ▸ hlt'
     have : (x.val.val V).val < 2 ^ 254 := by exact_mod_cast this

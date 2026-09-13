@@ -311,25 +311,13 @@ private theorem CommReads.masked {cells : List (AffinePoint (FVar C.BaseField))}
   rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff]
   exact h.imp fun _ _ hc => ⟨hc, rfl⟩
 
-private theorem forall₂_append' {α β : Type} {R : α → β → Prop} :
-    ∀ {l₁ : List α} {u₁ : List β} (l₂ : List α) (u₂ : List β),
-      List.Forall₂ R l₁ u₁ → List.Forall₂ R l₂ u₂ → List.Forall₂ R (l₁ ++ l₂) (u₁ ++ u₂)
-  | [], [], _, _, .nil, h₂ => h₂
-  | _ :: _, _ :: _, l₂, u₂, .cons h hs, h₂ => .cons h (forall₂_append' l₂ u₂ hs h₂)
-
-private theorem forall₂_flatten' {α β : Type} {R : α → β → Prop} :
-    ∀ {l : List (List α)} {u : List (List β)}, List.Forall₂ (List.Forall₂ R) l u →
-      List.Forall₂ R l.flatten u.flatten
-  | [], [], .nil => .nil
-  | _ :: _, _ :: _, .cons h hs => forall₂_append' _ _ h (forall₂_flatten' hs)
-
 /-- Unmasked chunked columns read as their points, kept, flattened. -/
 private theorem ColumnsRead.masked {nc : ℕ} {cols : List (List (AffinePoint (FVar C.BaseField)))}
     {Ps : List (Vector C.Point nc)} (h : ColumnsRead C V cols Ps) :
     List.Forall₂ (MaskedBaseReads C.E.toAffine V) (cols.flatten.map fun P => (P, none))
       ((Ps.map Vector.toList).flatten.map fun P => (SWPoint.equivPoint C.E P, true)) := by
   rw [List.map_flatten, List.map_flatten]
-  refine forall₂_flatten' ?_
+  refine List.rel_flatten ?_
   rw [List.forall₂_map_left_iff, List.forall₂_map_right_iff, List.forall₂_map_right_iff]
   exact h.imp fun _ _ hc => hc.masked
 
@@ -339,15 +327,10 @@ private theorem zipSeg_fst {nc : ℕ} (comm : Vector C.Point nc)
   ext i hi
   simp [zipSeg]
 
-private theorem map_fst_zip' {α β : Type} {n : ℕ} (as : Vector α n) (bs : Vector β n) :
-    (as.zip bs).map (·.1) = as := by
-  ext i hi
-  simp
-
 private theorem toList_map_fst_zip {α β γ : Type} {n : ℕ} (as : Vector α n) (bs : Vector β n)
     (f : α → γ) : List.map (fun x => f x.1) (as.toList.zip bs.toList) = as.toList.map f := by
   show List.map (f ∘ (fun x : α × β => x.1)) _ = _
-  rw [← List.map_map, ← Vector.toList_zip, ← Vector.toList_map, map_fst_zip']
+  rw [← List.map_map, ← Vector.toList_zip, ← Vector.toList_map, Vector.map_fst_zip]
 
 private theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
     v.flatten.toList = (v.toList.map Vector.toList).flatten := by
@@ -453,13 +436,13 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
   have hs := hties.sigma.masked
   simp only [List.map_append, List.map_map, List.append_assoc, List.map_cons, List.map_nil,
     Function.comp_def] at hi hw hc hs ⊢
-  refine forall₂_append' _ _ hties.olds ?_
-  refine forall₂_append' _ _ hx.masked ?_
-  refine forall₂_append' _ _ (.cons ⟨hf, rfl⟩ .nil) ?_
-  refine forall₂_append' _ _ hties.z.masked ?_
-  refine forall₂_append' _ _ hi ?_
-  refine forall₂_append' _ _ hw ?_
-  exact forall₂_append' _ _ hc hs
+  refine List.rel_append hties.olds ?_
+  refine List.rel_append hx.masked ?_
+  refine List.rel_append (.cons ⟨hf, rfl⟩ .nil) ?_
+  refine List.rel_append hties.z.masked ?_
+  refine List.rel_append hi ?_
+  refine List.rel_append hw ?_
+  exact List.rel_append hc hs
 
 end Helpers
 
@@ -753,7 +736,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       intro k hk
       refine hchar k ?_
       have h1 := hsgv.length_eq
-      have h2 := (forall₂_flatten' hties.w.reads).length_eq
+      have h2 := (List.rel_flatten hties.w.reads).length_eq
       have h3 := hties.z.length_eq
       have h4 := hties.t.length_eq
       simp only [List.length_map, Vector.length_toList] at h1 h2 h3 h4 hk ⊢
