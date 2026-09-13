@@ -79,8 +79,13 @@ def roots : List Name :=
     `Pickles.checkBulletproof_spec_success,
     `Pickles.schnorrPoint_iff_schnorrAt_vesta,
     `Pickles.schnorrPoint_iff_schnorrAt_pallas,
-    `Pickles.checkBulletproof_wrap_spec,
-    `Pickles.checkBulletproof_step_spec ]
+    `Pickles.IvpSide.opening_reads,
+    `Pickles.wrapSide,
+    `Pickles.stepSide,
+    `Pickles.ftComm_reads,
+    `Pickles.incrementallyVerifyProof_reads,
+    `Pickles.incrementallyVerifyProof_wrap_reads,
+    `Pickles.incrementallyVerifyProof_step_reads ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
@@ -91,8 +96,10 @@ resting on CompElliptic's order and primality certificates. -/
 def deployedRoots : List Name :=
   [ `Pickles.schnorrPoint_iff_schnorrAt_vesta,
     `Pickles.schnorrPoint_iff_schnorrAt_pallas,
-    `Pickles.checkBulletproof_wrap_spec,
-    `Pickles.checkBulletproof_step_spec,
+    `Pickles.wrapSide,
+    `Pickles.stepSide,
+    `Pickles.incrementallyVerifyProof_wrap_reads,
+    `Pickles.incrementallyVerifyProof_step_reads,
     `Pickles.Reflect.circuit_gateLinearization_fp,
     `Pickles.Reflect.circuit_gateLinearization_fq,
     `Pickles.Reflect.evaluate_fpTokens,

@@ -16,12 +16,11 @@ where `reduce` is the `ζ^{2^k}`-Horner collapse of a chunk array (`reduce_chunk
 emission order follows OCaml's right-to-left argument evaluation: reduce `σ₆`, scale by `perm`,
 reduce `t_comm`, scale by `ζⁿ` and negate, then `f_comm + reduced_t`, then `+ negated`.
 
-The gadget is generic in the side's shifted-scalar operations (`IpaScalarOps`); so is its read.
-`IvpSide` names what a side supplies to read a group-half gadget on the wire's commitment
-curve: its ladder reading (`IpaScalarOps.Reading`), the scalar-field decode of a shifted claim
-with the law tying a ladder witness's integer decode to it, and the curve's group facts.
-`wrapSide` and `stepSide` are the two deployed values. `FtCommReads` is the leg's read: the
-constructed cell crosses to the wire's `runFtComm`
+The gadget is generic in the side's shifted-scalar operations (`IpaScalarOps`); so is its read,
+in the side interface `IvpSide` of `Pickles.CheckBulletproof` — the ladder reading
+(`IpaScalarOps.Reading`), the scalar-field decode of a shifted claim with the law tying a
+ladder witness's integer decode to it, and the curve's group facts are what `ft_comm` uses of
+it. `FtCommReads` is the leg's read: the constructed cell crosses to the wire's `runFtComm`
 (`combine(ζ^{2^k}, perm·σ₆) − (ζⁿ − 1)·combine(ζ^{2^k}, t_comm)`), given the claims decode to
 the wire's scalars, each a claim the ladder read speaks about (`IvpSide.ClaimOk`: well-formed,
 and its witnesses in the ladder regime — the forbidden-band premise of the `scale_fast` family),
@@ -69,41 +68,12 @@ def ftComm {sf : Type} (ops : IpaScalarOps F c sf)
 
 end Gadget
 
-/-! ## A side of the group half -/
-
-/-- What a side supplies to read a group-half gadget on the wire's commitment curve `C`: how
-its shifted-scalar ladder reads (`R`); the scalar-field decode of a shifted claim, with the law
-that a ladder witness's integer decode casts to it; and the facts about `C`'s affine group the
-adds and negations need — the scalar order kills the group (so an integer acts as its residue's
-representative), the curve is short (`A = 0`), the base field is not of characteristic 2 and
-the group has no 2-torsion. One value per deployed side: `wrapSide`, `stepSide`. -/
-structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
-    (ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf) where
-  /-- The ladder's reading on the wire curve's affine group. -/
-  R : IpaScalarOps.Reading (V := V) ops C.E.toAffine
-  /-- The canonical decode of a shifted claim in the scalar field. -/
-  decode : sf → C.ScalarField
-  /-- A ladder witness of a claim decodes, in the scalar field, to the claim's decode. -/
-  dec_cast : ∀ {x : sf} {w : R.wit}, R.Pre x w → (R.dec w : C.ScalarField) = decode x
-  /-- The scalar order kills the wire point group. -/
-  card_nsmul : ∀ X : C.Point, C.scalar • X = 0
-  /-- The curve is short: `y² = x³ + B`. -/
-  a_zero : C.E.A = 0
-  /-- The base field is not of characteristic 2. -/
-  two_ne : (2 : C.BaseField) ≠ 0
-  /-- The affine group has no 2-torsion. -/
-  two_torsion_free : ∀ P : C.E.toAffine.Point, P ≠ 0 → P + P ≠ 0
+/-! ## The read on a side -/
 
 section Side
 
 variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
-
-/-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
-reading it in the ladder's regime (at the deployed curves: the decode is off the forbidden
-band — the `scale_fast`-family premise #341 tracks). -/
-def IvpSide.ClaimOk (S : IvpSide C V ops) (x : sf) : Prop :=
-  S.R.WellFormed x ∧ ∀ w, S.R.Pre x w → S.R.Reg w
 
 /-- A commitment cell list reads as a wire commitment list, pointwise through `equivPoint`. -/
 def CommReads (C : CommitmentCurve) (V : Valuation C.BaseField)
@@ -155,17 +125,6 @@ private theorem IvpSide.scale_val (S : IvpSide C V ops) {x : sf} {w : S.R.wit}
     {s : C.ScalarField} (hpre : S.R.Pre x w) (hdec : S.decode x = s)
     (T : C.E.toAffine.Point) : S.R.dec w • T = s.val • T := by
   rw [S.zsmul_eq, S.dec_cast hpre, hdec]
-
-/-- The side's scaling read with the well-formedness moved into the postcondition, so it serves
-as a `mvcgen` spec before the claim's well-formedness is in hand. -/
-private theorem IvpSide.scale_reads (S : IvpSide C V ops) (pt : AffinePoint (FVar C.BaseField))
-    (x : sf) :
-    ⦃⌜True⌝⦄ ops.scaleByShifted pt x
-    ⦃⇓ r _ => ⌜S.R.WellFormed x → ∀ T : C.E.toAffine.Point, OnCurveAt C.E.toAffine V pt T →
-      ∃ w, S.R.Pre x w ∧ (S.R.Reg w → OnCurveAt C.E.toAffine V r (S.R.dec w • T))⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat hwf
-  exact (builder_spec_iff _ _).mp (S.R.scale pt x hwf) nv hsat
 
 /-- The scalar-field Horner collapse of a point list, `P₀ + ξ·(P₁ + ξ·(…))` — `Σᵢ ξⁱ·Pᵢ`. -/
 private def hornerVal (C : CommitmentCurve) (ξ : C.ScalarField)
@@ -230,7 +189,7 @@ private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
   | c :: c' :: rest, _ => by
       simp only [hornerReduce]
       have ih := hornerReduce_reads S zM (c' :: rest) (List.cons_ne_nil _ _)
-      have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.scale_reads r zM
+      have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zM
       have hadd := fun (s : AffinePoint (FVar C.BaseField)) =>
         addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
           S.two_torsion_free c s
@@ -281,9 +240,9 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
     omega
   simp only [ftComm]
   have hhσ := hornerReduce_reads S zetaMCell sigma6Cells.toList hσne
-  have hscP := fun (r : AffinePoint (FVar C.BaseField)) => S.scale_reads r permCell
+  have hscP := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r permCell
   have hht := hornerReduce_reads S zetaMCell tCommCells hne
-  have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.scale_reads r zetaNCell
+  have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zetaNCell
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
     addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
       S.two_torsion_free a b
@@ -332,28 +291,8 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
 
 end Side
 
-/-! ## The deployed sides -/
-
-/-- The wrap side: `IpaScalarOps.wrap` at Vesta (`IpaVesta.curve`, base `Fq`, scalar `Fp`)
-through `wrapReading`, the `Type1` claims decoding by `wrapDecode`. -/
-def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap where
-  R := wrapReading V
-  decode := wrapDecode V
-  dec_cast h := wrapLadderDec_cast h
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
-  a_zero := rfl
-  two_ne := HasCurve.vesta.two_ne
-  two_torsion_free := HasCurve.vesta.two_torsion_free
-
-/-- The step side: `IpaScalarOps.step` at Pallas (`IpaPallas.curve`, base `Fp`, scalar `Fq`)
-through `stepReading`, the split `Type2` claims decoding by `stepDecode`. -/
-def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step where
-  R := stepReading V
-  decode := stepDecode V
-  dec_cast h := stepLadderDec_cast h
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
-  a_zero := rfl
-  two_ne := HasCurve.pallas.two_ne
-  two_torsion_free := HasCurve.pallas.two_torsion_free
+/-! The gadgets are sealed after their reads: a consumer composes `ftComm_reads`, never the
+body. -/
+attribute [irreducible] hornerReduce ftComm
 
 end Pickles

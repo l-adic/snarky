@@ -1,4 +1,4 @@
-.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-readings lean-kernel-check lean-prune-stale build-ps gen-linearization gen-linearization-lean dep-graph pickles-inventory
+.PHONY: help all clean build-napi test-curves test-snarky test-pickles-circuit-diffs test-libs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint lean-build lean-check-witnesses lean-style lean-style-fix lean-dep-graph lean-lint lean-shake lean-deadcode lean-readings lean-spec-locality lean-kernel-check lean-prune-stale build-ps gen-linearization gen-linearization-lean dep-graph pickles-inventory
 
 .DEFAULT_GOAL := help
 
@@ -157,6 +157,9 @@ lean-deadcode: ## Gate: fail on any authored Lean declaration unreachable from r
 
 lean-readings: ## Gate: every domain CircuitType instance has its reads_/scoped_ lemmas
 	bash formal/scripts/check-readings.sh
+
+lean-spec-locality: ## Gate: a pickles gadget's spec is stated only in the gadget's module
+	bash formal/scripts/check-spec-locality.sh
 
 lean-kernel-check: ## Kernel-replay every Lean module through lean4checker
 	PATH="$$HOME/.elan/bin:$$PATH" bash formal/scripts/kernel-replay.sh

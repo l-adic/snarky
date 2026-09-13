@@ -15,6 +15,7 @@ import Pickles.CheckBulletproof
 import Pickles.PublicInputCommit
 import Pickles.XhatGlue
 import Pickles.FtComm
+import Pickles.IncrementallyVerify
 
 /-!
 # Pickles — the in-circuit kimchi verifier

@@ -189,25 +189,25 @@ def fqSpongeTranscriptOpt [ToNat F] (p : Poseidon.Params F) (endo indexDigest : 
 variable {V : Valuation F}
 
 /-- A point's coordinates, the form `Kimchi.Verifier.fqSqueezes` takes. -/
-private def coords (P : AffinePoint F) : F × F := (P.x, P.y)
+def pointCoords (P : AffinePoint F) : F × F := (P.x, P.y)
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- Points reading as values have the values' coordinates. -/
 private theorem coords_of_reads :
     ∀ {Ps : List (AffinePoint (FVar F))} {vs : List (AffinePoint F)},
       List.Forall₂ (CircuitType.Reads V) Ps vs →
-      Ps.map (fun P => (P.x.val V, P.y.val V)) = vs.map coords
+      Ps.map (fun P => (P.x.val V, P.y.val V)) = vs.map pointCoords
   | [], [], .nil => rfl
   | _ :: _, _ :: _, .cons h hs => by
     obtain ⟨hx, hy⟩ := reads_affinePoint.mp h
-    simp only [List.map_cons, hx, hy, coords_of_reads hs, coords]
+    simp only [List.map_cons, hx, hy, coords_of_reads hs, pointCoords]
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- Columns reading as values have the values' coordinates, column by column. -/
 private theorem coords_of_reads_cols :
     ∀ {cols : List (List (AffinePoint (FVar F)))} {vs : List (List (AffinePoint F))},
       List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) cols vs →
-      cols.map (·.map fun P => (P.x.val V, P.y.val V)) = vs.map (·.map coords)
+      cols.map (·.map fun P => (P.x.val V, P.y.val V)) = vs.map (·.map pointCoords)
   | [], [], .nil => rfl
   | _ :: _, _ :: _, .cons h hs => by
     simp only [List.map_cons, coords_of_reads h, coords_of_reads_cols hs]
@@ -304,8 +304,8 @@ its squeeze (`Low128`), `β, γ` read as prechallenges, `x_hat` reads as `xv`, t
 def FqTranscriptReads (p : Poseidon.Params F) (indexDigest : F)
     (sgOld xv : List (AffinePoint F)) (wComm : List (List (AffinePoint F)))
     (zComm tComm : List (AffinePoint F)) (V : Valuation F) (o : FqTranscriptOutput F) : Prop :=
-  let r := fqSqueezes p indexDigest (sgOld.map coords) (xv.map coords)
-    (wComm.map (·.map coords)) (zComm.map coords) (tComm.map coords)
+  let r := fqSqueezes p indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
+    (wComm.map (·.map pointCoords)) (zComm.map pointCoords) (tComm.map pointCoords)
   Low128 V r.1.1 o.beta ∧ Low128 V r.1.2.1 o.gamma ∧
     Low128 V r.1.2.2.1 o.alpha ∧ Low128 V r.1.2.2.2 o.zeta ∧
     (∃ m : Prechallenge, Reads128 V o.beta m) ∧ (∃ m : Prechallenge, Reads128 V o.gamma m) ∧
@@ -355,6 +355,28 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
     at eβ eγ eα eζ hdv s10
   unfold FqTranscriptReads fqSqueezes
   exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hxh, hdv, s10⟩
+
+/-- The plain transcript's `x_hat` is `computeXHat`'s: any read of the latter's result is a
+read of the former's. -/
+theorem fqSpongeTranscript_xHat [ToNat F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
+    (sgOld : List (AffinePoint (FVar F)))
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    (P : List (AffinePoint (FVar F)) → Prop) (hx : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ => ⌜P pts⌝⦄)
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      computeXHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜P o.xHat⌝⦄ := by
+  simp only [fqSpongeTranscript]
+  have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init indexDigest
+  have hpts := fun sv qs => absorbPoints_spec (V := V) p hsize sv qs
+  have hcols := fun sv cols => absorbColumns_spec (V := V) p hsize sv cols
+  have hpre := fun (b : Bool) sv => builder_spec_true
+    (squeezePrechallenge (c := Builder V (KimchiConstraint F)) p b endo sv)
+  have hsq := fun sv => builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
+  mvcgen -trivial [h0, hpts, hx, hcols, hpre, hsq]
+  all_goals first | exact hsize | assumption
 
 /-- Under any valuation satisfying the emitted constraints, each claim reads as the
 corresponding squeezed prechallenge. -/
@@ -453,18 +475,18 @@ omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The wire verifier's point fold is the absorb of the coordinates. -/
 private theorem foldl_pts_eq (p : Poseidon.Params F) :
     ∀ (l : List (AffinePoint F)) (s : Poseidon.State F),
-      (l.map coords).foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s
+      (l.map pointCoords).foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s
         = Poseidon.absorb p s (flatCoords l)
   | [], _ => rfl
   | P :: l, s => by
     simp only [List.map_cons, List.foldl_cons, foldl_pts_eq p l, flatCoords, List.flatMap_cons,
-      absorb_append, coords]
+      absorb_append, pointCoords]
 
 omit [DecidableEq F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The wire verifier's column fold is the absorb of the columns' coordinates. -/
 private theorem foldl_cols_eq (p : Poseidon.Params F) :
     ∀ (l : List (List (AffinePoint F))) (s : Poseidon.State F),
-      (l.map (·.map coords)).foldl
+      (l.map (·.map pointCoords)).foldl
           (fun s l => l.foldl (fun s q => Poseidon.absorb p s [q.1, q.2]) s) s
         = Poseidon.absorb p s (l.flatMap flatCoords)
   | [], _ => rfl
@@ -699,6 +721,85 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
   simp only [foldl_pts_eq, foldl_cols_eq, ← absorb_append]
   exact ⟨eβ, eγ, eα, eζ, hbetaLo, hgammaLo, hx, hdv, s11⟩
 
+/-- The conditional transcript returns the `x_hat` it was given. -/
+theorem fqSpongeTranscriptOpt_xHat [ToNat F] (p : Poseidon.Params F)
+    (hsize : p.roundConstants.size = Poseidon.fullRounds) (endo indexDigest : FVar F)
+    (sgOld : List (BoolVar F × AffinePoint (FVar F))) (xHat : List (AffinePoint (FVar F)))
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      xHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜o.xHat = xHat⌝⦄ := by
+  simp only [fqSpongeTranscriptOpt]
+  have h1 := fun (b : Bool) ov => builder_spec_true
+    (optSqueezePrechallenge (c := Builder V (KimchiConstraint F)) p b endo ov)
+  have h2 := fun sv => builder_spec_true
+    (SpongeVar.squeeze (c := Builder V (KimchiConstraint F)) p sv)
+  mvcgen -trivial [h1, h2]
+  case vc1.hsize => exact hsize
+
+/-! ### The `∀`-forms
+
+The specs above are families indexed by the readings of the absorbed cells. An assembly runs
+`mvcgen` over the whole gadget before those readings are in hand, so it takes the same
+specs with the readings quantified in the postcondition — stated here, once, beside the
+family forms, and never restated by a consumer (`scripts/check-spec-locality.sh`). -/
+
+/-- `fqSpongeTranscript_spec` with the commitment readings quantified in the postcondition,
+together with any property `P` of `computeXHat`'s result, carried to `x_hat`: given
+`computeXHat` reads as `xv` and satisfies `P`, the output's `x_hat` satisfies `P` and the
+transcript reads at `xv` and any readings of the other cells. -/
+theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F)))
+    (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
+    (P : List (AffinePoint (FVar F)) → Prop) (xv : List (AffinePoint F))
+    (hx : ⦃⌜True⌝⦄ computeXHat
+      ⦃⇓ pts _ => ⌜P pts ∧ List.Forall₂ (CircuitType.Reads V) pts xv⌝⦄)
+    (wComm : List (List (AffinePoint (FVar F)))) (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscript (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      computeXHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜P o.xHat ∧
+      ∀ (sgv : List (AffinePoint F)) (wv : List (List (AffinePoint F)))
+      (zv tv : List (AffinePoint F)),
+      List.Forall₂ (CircuitType.Reads V) sgOld sgv →
+      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
+      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
+      FqTranscriptReads p (indexDigest.val V) sgv xv wv zv tv V o⌝⦄ := by
+  refine builder_spec_and _ _ _ (fqSpongeTranscript_xHat p hsize endo indexDigest sgOld
+    computeXHat P (builder_spec_imp _ _ _ hx fun _ h => h.1) wComm zComm tComm) ?_
+  rw [builder_spec_iff]
+  intro nv hsat sgv wv zv tv hsg hw hz ht
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscript_spec h2 h3 p hsize endo indexDigest sgOld
+    sgv hsg computeXHat xv (builder_spec_imp _ _ _ hx fun _ h => h.2) wComm wv hw zComm tComm
+    zv tv hz ht) nv hsat
+
+/-- `fqSpongeTranscriptOpt_spec` with every reading quantified in the postcondition, together
+with the returned `x_hat`. -/
+theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
+    (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
+    (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
+    (xHat : List (AffinePoint (FVar F))) (wComm : List (List (AffinePoint (FVar F))))
+    (zComm tComm : List (AffinePoint (FVar F))) :
+    ⦃⌜True⌝⦄ fqSpongeTranscriptOpt (c := Builder V (KimchiConstraint F)) p endo indexDigest sgOld
+      xHat wComm zComm tComm
+    ⦃⇓ o _ => ⌜o.xHat = xHat ∧
+      ∀ (sgv : List (Bool × AffinePoint F)) (xv : List (AffinePoint F))
+      (wv : List (List (AffinePoint F))) (zv tv : List (AffinePoint F)),
+      List.Forall₂ (CircuitType.Reads V) sgOld sgv → List.Forall₂ (CircuitType.Reads V) xHat xv →
+      List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) wComm wv →
+      List.Forall₂ (CircuitType.Reads V) zComm zv → List.Forall₂ (CircuitType.Reads V) tComm tv →
+      zv ≠ [] → tv ≠ [] →
+      (∀ k : ℕ, k ≤ 1 + 2 * (sgv.length + xv.length + wv.flatten.length + zv.length + tv.length) →
+        (k : F) = 0 → k = 0) →
+      FqTranscriptReads p (indexDigest.val V) ((sgv.filter (·.1)).map (·.2)) xv wv zv tv V o⌝⦄ := by
+  refine builder_spec_and _ _ _
+    (fqSpongeTranscriptOpt_xHat p hsize endo indexDigest sgOld xHat wComm zComm tComm) ?_
+  rw [builder_spec_iff]
+  intro nv hsat sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec h2 h3 p hsize hall endo indexDigest
+    sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht hzne htne hchar) nv hsat
+
 /-! ## The wire reading -/
 
 open Kimchi.Verifier in
@@ -711,8 +812,8 @@ def FqTranscriptReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZM
     (indexDigest : ZMod p) (sgOld xv : List (AffinePoint (ZMod p)))
     (wComm : List (List (AffinePoint (ZMod p)))) (zComm tComm : List (AffinePoint (ZMod p)))
     (V : Valuation (ZMod p)) (o : FqTranscriptOutput (ZMod p)) : Prop :=
-  let pre := fqPrechallenges params indexDigest (sgOld.map coords) (xv.map coords)
-    (wComm.map (·.map coords)) (zComm.map coords) (tComm.map coords)
+  let pre := fqPrechallenges params indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
+    (wComm.map (·.map pointCoords)) (zComm.map pointCoords) (tComm.map pointCoords)
   (∃ b₀, Reads128 V o.beta b₀ ∧ PrechallengeAlias p pre.1.1 b₀) ∧
   (∃ g₀, Reads128 V o.gamma g₀ ∧ PrechallengeAlias p pre.1.2.1 g₀) ∧
   (∀ a₀, Reads128 V o.alpha a₀ → PrechallengeAlias p pre.1.2.2.1 a₀) ∧
