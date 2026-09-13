@@ -941,9 +941,9 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   /-- The sponge parameters carry the full round constants. -/
   hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
-  ladder witness is below `2²⁵⁴ < |Fq|`); on the step side a split claim whose halved limb
-  keeps `2·sDiv2 + sOdd` below the scalar modulus — the 254-bit range check alone leaves one
-  bit of slack, the `scale_fast2` top-bit family (#341). -/
+  ladder witness is below `2²⁵⁴`, under the scalar modulus `|Fp|`); on the step side a split
+  claim whose halved limb keeps `2·sDiv2 + sOdd` below the scalar modulus — the 254-bit range
+  check alone leaves one bit of slack, the `scale_fast2` top-bit family (#341). -/
   Canon : sf → Prop
   /-- At a ladder witness of a canonical claim, the limbs the claim absorbs as are the wire's
   `scalarLimbs` of the shifted decode. -/

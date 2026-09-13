@@ -68,7 +68,7 @@ def ftComm {sf : Type} (ops : IpaScalarOps F c sf)
 
 end Gadget
 
-/-! ## A side of the group half -/
+/-! ## The read on a side -/
 
 section Side
 

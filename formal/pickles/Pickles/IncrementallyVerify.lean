@@ -7,7 +7,7 @@ import Kimchi.Columns
 
 The port of PS `Pickles.IncrementallyVerifyProof.incrementallyVerifyProof` (OCaml
 `Step_verifier.incrementally_verify_proof`, `step_verifier.ml:536–786`, and
-`Wrap_verifier.incrementally_verify_proof`, `wrap_verifier.ml:1418–1546`): the verifier's
+`Wrap_verifier.incrementally_verify_proof`, `wrap_verifier.ml:882–1546`): the verifier's
 group half, one circuit on either side of the cycle. It squeezes the index digest, runs the
 fq-sponge transcript (`fqSpongeTranscript` on the step side's plain sponge, with `x_hat`
 computed at its point of the schedule; `fqSpongeTranscriptOpt` on the wrap side's conditional
@@ -23,8 +23,8 @@ deferred `ξ`) and scales by them. Their relation to the statement `finalize` ch
 `verify`'s (`step_verifier.ml:1340`), stated above this module.
 
 `IvpReads` is the read, on either side (`IvpSide`): the digest is the wire's
-(`runOracles`), the four plonk claims and the returned round prechallenges are the wire's
-fq / IPA prechallenges up to the `lowest_128_bits` slack `PrechallengeAlias`, and the success
+(`fqRun`'s digest element), the four plonk claims and the returned round prechallenges are the
+wire's fq / IPA prechallenges up to the `lowest_128_bits` slack `PrechallengeAlias`, and the success
 bit holds exactly when the Schnorr equation `Ipa.schnorrAt` holds — at the circuit's own
 transcript (the wire's up to those slacks and the map-to-curve's sign), over the wire's
 batch stream `runInput`, at the claimed `ξ`, `cip`, `b`. The `sg`-correctness equation of
@@ -33,8 +33,9 @@ absorbs this `sg` as an old accumulator (`KimchiProof.olds`). `IvpTies` names wh
 assumes: the cells read as the wire's key, proof and claims.
 
 `incrementallyVerifyProof_reads` is the read on any side, generic in `IvpSide` — the ladder
-reading, the decode, the endomorphism and map-to-curve data, the field facts, the absorbed
-limbs and the opening check's read a side supplies; `wrapSide` and `stepSide` are the two
+reading, the decode, the group facts, the endomorphism and map-to-curve data, the absorbed
+limbs and the two group bridges a side supplies, from which its opening check reads as the
+wire's (`IvpSide.opening_reads`); `wrapSide` and `stepSide` are the two
 deployed values and `incrementallyVerifyProof_wrap_reads` / `incrementallyVerifyProof_step_reads`
 the read at each. The step side's claimed `cip` must absorb canonically (`IvpSide.Canon`): its
 halved limb is range-checked to 254 bits, one bit more than the honest half takes, so a
@@ -668,7 +669,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
 
 /-- **The group half reads as the wire's, on either side.** On the side `S`, given the
 index-digest squeeze reads as the key's digest, `x_hat` reads as the wire's `publicCommitment`
-(`xHat_reads_publicCommitment` supplies this from `XhatBinding` on the wrap side), the `sg_old`
+(chunk by chunk, `xHat_reads_publicCommitment` from `XhatBinding` on the wrap side), the `sg_old`
 cells are masked exactly on the conditional sponge (`optSponge`), the cells tie as `IvpTies`,
 the claimed `cip` absorbs canonically (`IvpSide.Canon`) and the base field's characteristic
 exceeds the absorb count, the output satisfies `IvpReads`. -/

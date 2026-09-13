@@ -186,7 +186,7 @@ Pickles.ftComm_reads
 -- The group half (IncrementallyVerify.lean, `incrementally_verify_proof`): the index-digest
 -- squeeze, the fq-sponge transcript, the plonk-claim assertions, `ft_comm`, the `to_batch`
 -- bases and `check_bulletproof`, one gadget on either side; its read `IvpReads` on any side
--- (`IvpSide`) — the digest is the wire's `runOracles`, the plonk claims and the round
+-- (`IvpSide`) — the digest is the wire's `fqRun` digest element, the plonk claims and the round
 -- prechallenges are its fq / IPA prechallenges up to the `lowest_128_bits` slack, and the
 -- success bit is the Schnorr equation over the wire's batch stream `runInput` — and the two
 -- deployed instantiations.
