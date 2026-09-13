@@ -928,17 +928,17 @@ def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let _ ← Pickles.publicInputCommitFull (0 : Fin 1) h leaves
   pure PUnit.unit
 
-/-- The 34 Vesta Lagrange bases and blinding `h` of `xhat_wrap_circuit`, from the
-circuit-diffs export `xhat_wrap_lagrange.json` (`{lagrange : [[x,y]×34], h : [x,y]}`,
-decimal pairs). Parsed as `IpaVesta` points; the corrections are derived in-circuit. -/
-def xhatWrapPoints (path : System.FilePath) :
-    IO (Array XhatCurve.Point × AffinePoint (FVar Fq)) := do
+/-- The Lagrange bases and blinding `h` of an `x_hat` circuit, from its circuit-diffs export
+(`{lagrange : [[x,y]×n], h : [x,y]}`, decimal pairs), parsed as points of `C` — `IpaVesta` for
+`xhat_wrap_lagrange.json`, `IpaPallas` for `xhat_step_lagrange.json`. The corrections are
+derived in-circuit. -/
+def xhatPoints (C : Bulletproof.Ipa.CommitmentCurve) (path : System.FilePath) :
+    IO (Array C.Point × AffinePoint (FVar C.BaseField)) := do
   let raw ← IO.FS.readFile path
-  let parsed : Except String (Array XhatCurve.Point × XhatCurve.Point) := do
+  let parsed : Except String (Array C.Point × C.Point) := do
     let j ← Json.parse raw
-    let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt XhatCurve)
-      (← j.getObjVal? "lagrange")
-    let h ← Bulletproof.Fixture.parsePt XhatCurve (← j.getObjVal? "h")
+    let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt C) (← j.getObjVal? "lagrange")
+    let h ← Bulletproof.Fixture.parsePt C (← j.getObjVal? "h")
     pure (lagr, h)
   match parsed with
   | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
@@ -990,21 +990,6 @@ def xhatStepCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp)
   let _ ← Pickles.publicInputCommitKnown (0 : Fin 1) h (xhatStepCell (corr 0))
     (xhatStepCell corrSum) leaves
   pure PUnit.unit
-
-/-- The 30 Pallas Lagrange bases and blinding `h` of `xhat_step_circuit`, from the
-circuit-diffs export `xhat_step_lagrange.json` (same format as the wrap export). -/
-def xhatStepPoints (path : System.FilePath) :
-    IO (Array XhatStepCurve.Point × AffinePoint (FVar Fp)) := do
-  let raw ← IO.FS.readFile path
-  let parsed : Except String (Array XhatStepCurve.Point × XhatStepCurve.Point) := do
-    let j ← Json.parse raw
-    let lagr ← FixtureKit.parseArrOf (Bulletproof.Fixture.parsePt XhatStepCurve)
-      (← j.getObjVal? "lagrange")
-    let h ← Bulletproof.Fixture.parsePt XhatStepCurve (← j.getObjVal? "h")
-    pure (lagr, h)
-  match parsed with
-  | .ok (lagr, h) => return (lagr, ⟨.const h.x, .const h.y⟩)
-  | .error e => throw (IO.userError s!"{path}: {e}")
 
 /-! ## The `ft_comm` circuits
 
@@ -1163,8 +1148,8 @@ def main : IO Unit := do
   let filter := (← IO.getEnv "KIMCHI_CS_FILTER").getD ""
   -- The `x_hat` Lagrange dumps sit in the results dir beside the comparison dumps (they
   -- carry no `purescript` field and no manifest entry, so the other consumers skip them).
-  let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") xhatWrapPoints
-  let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") xhatStepPoints
+  let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") (xhatPoints XhatCurve)
+  let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") (xhatPoints XhatStepCurve)
   let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatStep).filter fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0

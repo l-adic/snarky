@@ -1207,7 +1207,7 @@ end Fold
 The gadget reads land at `-(publicMsm) + h` over Mathlib's point group of the commitment
 curve; this section crosses that to the wire verifier's `publicCommitment` on the commitment
 curve, generically over an `XhatSide`, instantiated at Vesta (`xhatWrap`) and Pallas
-(`xhatStep`). The short reduction lemma is private in `CheckBulletproof`, so restated here. -/
+(`xhatStep`). -/
 
 section XhatCrossing
 
@@ -1217,21 +1217,13 @@ section Crossing
 
 variable {G : Type} [AddCommGroup G]
 
-/-- In a group killed by `n`, an integer acts as its residue's canonical representative.
-(Restated from `CheckBulletproof`, where it is private.) -/
-private theorem zsmul_eq_val_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) (z : ℤ) (x : G) :
-    z • x = ((z : ZMod n).val : ℕ) • x := by
-  have hv : (((z : ZMod n).val : ℕ) : ℤ) = z % n := ZMod.val_intCast z
-  rw [← natCast_zsmul, hv]
-  conv_lhs => rw [← Int.emod_add_mul_ediv z n]
-  rw [add_zsmul, mul_zsmul, natCast_zsmul, hn, _root_.add_zero]
-
 /-- **Negating an `ℕ`-scaling in a group killed by `n` is the `ZMod n`-negated scalar's
 scaling.** The MSM's `-(k·X)` is `((-k : ZMod n)).val · X` — the group's characteristic is the
-scalar order, so the `ℕ → ZMod n` reduction and the negation commute exactly. -/
+scalar order, so the `ℕ → ZMod n` reduction (`Pasta.zsmul_eq_val_nsmul`) and the negation
+commute exactly. -/
 private theorem neg_nsmul_eq (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) (k : ℕ) (X : G) :
     -((k : ℕ) • X) = ((-(k : ZMod n)).val : ℕ) • X := by
-  rw [← natCast_zsmul, ← neg_zsmul, zsmul_eq_val_nsmul n hn]
+  rw [← natCast_zsmul, ← neg_zsmul, Pasta.zsmul_eq_val_nsmul n hn]
   simp only [Int.cast_neg, Int.cast_natCast]
 
 /-- **The negated `publicMsm` term list is the wire's negated-scalar term list.** Termwise
@@ -1344,9 +1336,11 @@ def Leaf.offBand (p : ℕ) (V : Valuation F) : Leaf F nc → Prop
 
 /-- The curve facts the x_hat crossing needs of one side: the circuit's point group `d`
 (Mathlib's affine group of the commitment curve), the crossing `e` to the wire's `SWPoint`
-group, and the group being killed by the wire's scalar order (so the integer → scalar reduction
-is exact), with the two size facts the fold's regime discharge uses and the side's own
-forbidden-band exclusion. Instantiated at `xhatWrap` (Vesta) and `xhatStep` (Pallas). -/
+group, the group being killed by the wire's scalar order (so the integer → scalar reduction
+is exact), the base field's width, and the Pasta shape of the scalar order — the group order,
+in `(2^254, 2^254 + 2^253)` and `1 mod 4` — from which the fold's regime discharge follows
+(`XhatSide.order_big`, `XhatSide.regime`). Instantiated at `xhatWrap` (Vesta) and `xhatStep`
+(Pallas). -/
 structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) where
   /-- The circuit-side curve data at the commitment curve's base field. -/
   d : HasCurve C.BaseField
@@ -1356,133 +1350,116 @@ structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) where
   card_nsmul : ∀ X : d.W.Point, C.scalar • X = 0
   /-- The base field has more than 254 bits: a `2^254`-bounded integer casts faithfully. -/
   base_big : 2 ^ 254 < C.base
-  /-- The narrow ladders (`L ≤ 130`) are in the subwrap regime. -/
-  order_big : 3 * 2 ^ 130 ≤ d.W.order
-  /-- A full leaf off the sixteen-value window is in the ladder regime. -/
-  regime : ∀ {nc : ℕ} (V : Valuation C.BaseField) (leaf : Leaf C.BaseField nc),
-    leaf.offBand C.scalar V → Leaf.regimeFull d V leaf
+  /-- The circuit-side group's order is the wire's scalar order. -/
+  order_eq : d.W.order = C.scalar
+  /-- The scalar order has 255 bits. -/
+  scalar_lo : 2 ^ 254 < C.scalar
+  /-- The scalar order is below `2^254 + 2^253`: the pinned full ladder wraps exactly twice. -/
+  scalar_hi : C.scalar < 2 ^ 254 + 2 ^ 253
+  /-- The scalar order is `1 mod 4`, as the one-wrap ladder regime asks. -/
+  scalar_mod : C.scalar % 4 = 1
 
 end Generic
 
-/-- **The pinned full-leaf ladder is in regime off the window, at Vesta.** For `0 ≤ z < 2^253`
-the top `2z + 2^255 + 1` lies in `(2p − 2^126, 3p)`, so it is a forbidden residue `t` only as
-`t + 2p`; parity kills the even `t`, and each odd `t` pins `z = δ + (t−1)/2`, inside the
-window. -/
-theorem Leaf.regimeFull_of_offBand_vesta {nc : ℕ} (V : Valuation Fq) (leaf : Leaf Fq nc)
-    (h : leaf.offBand PALLAS_BASE_CARD V) : Leaf.regimeFull HasCurve.vesta V leaf := by
+section SideFacts
+
+variable {C : Bulletproof.Ipa.CommitmentCurve}
+
+/-- The cast premise of the gadget reads at a side: a `2^254`-bounded integer reads back from
+the base field. -/
+private theorem xhatSide_cast (s : XhatSide C) :
+    ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : C.BaseField)) : ℤ) = m := by
+  haveI : NeZero C.base := ⟨(Fact.out : C.base.Prime).ne_zero⟩
+  intro m hm0 hmlt
+  exact toNat_intCast_of_lt C.base hm0 (lt_of_lt_of_le hmlt (by exact_mod_cast s.base_big.le))
+
+/-- The bit premise of the gadget reads: `bit b` reads as `0`/`1`. -/
+private theorem xhatSide_bit (_s : XhatSide C) :
+    ∀ b : Bool, ToNat.toNat (bit b : C.BaseField) = if b then 1 else 0 := by
+  haveI : Fact (1 < C.base) := ⟨(Fact.out : C.base.Prime).one_lt⟩
+  intro b
+  cases b
+  · show ZMod.val (bit false : ZMod C.base) = 0; simp [bit]
+  · show ZMod.val (bit true : ZMod C.base) = 1; simp [bit, ZMod.val_one]
+
+/-- The narrow ladders (`L ≤ 130`) are in the subwrap regime: the order has 255 bits. -/
+theorem XhatSide.order_big (s : XhatSide C) : 3 * 2 ^ 130 ≤ s.d.W.order := by
+  rw [s.order_eq]; exact le_trans (by norm_num) s.scalar_lo.le
+
+/-- **The pinned full-leaf ladder is in regime off the window.** With the order `p` in
+`(2^254, 2^254 + 2^253)`, for `0 ≤ z < 2^253` the top `2z + 2^255 + 1` lies in `(p, 3p)`, so it
+is a forbidden residue `t ∈ [-3, 11]` only as `t + 2p`; that pins the value `2z + bb` into
+`[2δ − 4, 2δ + 11]`, `δ = p − 2^254` — the sixteen-value window `Leaf.offBand` excludes. -/
+theorem XhatSide.regime (s : XhatSide C) {nc : ℕ} (V : Valuation C.BaseField)
+    (leaf : Leaf C.BaseField nc) (h : leaf.offBand C.scalar V) : Leaf.regimeFull s.d V leaf := by
   cases leaf with
-  | full s base corr =>
+  | full sc base corr =>
       intro z bb h0 hlt hval
-      have hOv : HasCurve.vesta.W.order = PALLAS_BASE_CARD := Pasta.vesta_card
       have hb01 : (0 : ℤ) ≤ (if bb then 1 else 0) ∧ (if bb then (1 : ℤ) else 0) ≤ 1 := by
         cases bb <;> simp
       have h253 : (2 : ℤ) ^ 253
           = 14474011154664524427946373126085988481658748083205070504932198000989141204992 := by
         norm_num
+      have h254 : (2 : ℤ) ^ 254
+          = 28948022309329048855892746252171976963317496166410141009864396001978282409984 := by
+        norm_num
       have h255 : (2 : ℤ) ^ 255
           = 57896044618658097711785492504343953926634992332820282019728792003956564819968 := by
         norm_num
-      have hp : (PALLAS_BASE_CARD : ℤ)
-          = 28948022309329048855892746252171976963363056481941560715954676764349967630337 := by
-        norm_num [PALLAS_BASE_CARD]
-      have hδ : xhatBandDelta PALLAS_BASE_CARD = 45560315531419706090280762371685220353 := by
-        norm_num [xhatBandDelta, PALLAS_BASE_CARD]
-      rw [h253] at hlt
-      have hv : (ToNat.toNat (s.val V) : ℤ) = 2 * z + (if bb then 1 else 0) := by
+      have hlo : (2 : ℤ) ^ 254 < C.scalar := by exact_mod_cast s.scalar_lo
+      have hhi : (C.scalar : ℤ) < 2 ^ 254 + 2 ^ 253 := by exact_mod_cast s.scalar_hi
+      have hlo' := s.scalar_lo
+      have hδ : (xhatBandDelta C.scalar : ℤ) = C.scalar - 2 ^ 254 := by
+        unfold xhatBandDelta; omega
+      rw [h253] at hlt hhi
+      rw [h254] at hlo hhi hδ
+      have hv : (ToNat.toNat (sc.val V) : ℤ) = 2 * z + (if bb then 1 else 0) := by
         rw [← hval]
-        exact toNat_intCast_of_lt PALLAS_SCALAR_CARD (by omega)
-          (lt_of_lt_of_le (by omega : 2 * z + (if bb then 1 else 0) < 2 ^ 254)
-            (by norm_num [PALLAS_SCALAR_CARD]))
-      simp only [Leaf.offBand, hδ] at h
-      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
-      · decide
-      · decide
-      · decide
+        exact xhatSide_cast s _ (by omega) (by omega)
+      simp only [Leaf.offBand] at h
+      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [s.order_eq]
+      · simpa using s.scalar_lo
+      · exact lt_trans s.scalar_hi (by norm_num)
+      · exact s.scalar_mod
       · intro hmem
         simp only [Kimchi.Gate.VarBaseMul.forbiddenValues, Set.mem_setOf_eq,
           Kimchi.Gate.VarBaseMul.Ladder.forbiddenResidues, List.mem_cons, List.mem_nil_iff,
           or_false, Pasta.Shifted.unshiftType1] at hmem
         obtain ⟨t, ht, k, hk⟩ := hmem
-        rw [hp, h255] at hk
+        rw [h255] at hk
         -- the residues lie in `[-3, 11]`; that is all the bound argument needs (no `omega`:
         -- it enumerates the 253-bit range)
         have htb : -3 ≤ t ∧ t ≤ 11 := by
           rcases ht with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
             norm_num
         -- the multiplier is 2: the top lies in `(p, 3p)`
-        have hk1 : 1 + 1 ≤ k := Int.add_one_le_iff.mpr (lt_of_not_ge fun hle => by linarith)
-        have hk2 : k ≤ 2 := Int.lt_add_one_iff.mp (lt_of_not_ge fun hle => by linarith)
-        have hk : k = 2 := le_antisymm hk2 (by linarith)
+        have hp0 : (0 : ℤ) ≤ C.scalar := by positivity
+        have hk1 : 2 ≤ k := by
+          by_contra hle
+          have : (C.scalar : ℤ) * k ≤ C.scalar * 1 :=
+            mul_le_mul_of_nonneg_left (by omega) hp0
+          linarith
+        have hk2 : k ≤ 2 := by
+          by_contra hle
+          have : (C.scalar : ℤ) * 3 ≤ C.scalar * k :=
+            mul_le_mul_of_nonneg_left (by omega) hp0
+          linarith
+        have hk : k = 2 := le_antisymm hk2 hk1
         subst hk
         -- the value then sits in the window
-        norm_num at h
         rcases h with h | h
-        · have h' : (ToNat.toNat (s.val V) : ℤ) < 91120631062839412180561524743370440702 := by
-            exact_mod_cast h
+        · have h' : (ToNat.toNat (sc.val V) : ℤ) < 2 * (xhatBandDelta C.scalar : ℤ) - 4 := by
+            have h4 : 4 ≤ 2 * xhatBandDelta C.scalar := by unfold xhatBandDelta; omega
+            omega
           linarith
-        · have h' : (91120631062839412180561524743370440717 : ℤ) < ToNat.toNat (s.val V) := by
+        · have h' : 2 * (xhatBandDelta C.scalar : ℤ) + 11 < ToNat.toNat (sc.val V) := by
             exact_mod_cast h
           linarith
   | b128 _ _ _ => trivial
   | b10 _ _ _ => trivial
   | condAdd _ _ => trivial
 
-/-- **The pinned full-leaf ladder is in regime off the window, at Pallas.** The same argument
-as `Leaf.regimeFull_of_offBand_vesta` at the Pallas order `PALLAS_SCALAR_CARD`. -/
-theorem Leaf.regimeFull_of_offBand_pallas {nc : ℕ} (V : Valuation Fp) (leaf : Leaf Fp nc)
-    (h : leaf.offBand PALLAS_SCALAR_CARD V) : Leaf.regimeFull HasCurve.pallas V leaf := by
-  cases leaf with
-  | full s base corr =>
-      intro z bb h0 hlt hval
-      have hOv : HasCurve.pallas.W.order = PALLAS_SCALAR_CARD := Pasta.pallas_card
-      have hb01 : (0 : ℤ) ≤ (if bb then 1 else 0) ∧ (if bb then (1 : ℤ) else 0) ≤ 1 := by
-        cases bb <;> simp
-      have h253 : (2 : ℤ) ^ 253
-          = 14474011154664524427946373126085988481658748083205070504932198000989141204992 := by
-        norm_num
-      have h255 : (2 : ℤ) ^ 255
-          = 57896044618658097711785492504343953926634992332820282019728792003956564819968 := by
-        norm_num
-      have hp : (PALLAS_SCALAR_CARD : ℤ)
-          = 28948022309329048855892746252171976963363056481941647379679742748393362948097 := by
-        norm_num [PALLAS_SCALAR_CARD]
-      have hδ : xhatBandDelta PALLAS_SCALAR_CARD = 45560315531506369815346746415080538113 := by
-        norm_num [xhatBandDelta, PALLAS_SCALAR_CARD]
-      rw [h253] at hlt
-      have hv : (ToNat.toNat (s.val V) : ℤ) = 2 * z + (if bb then 1 else 0) := by
-        rw [← hval]
-        exact toNat_intCast_of_lt PALLAS_BASE_CARD (by omega)
-          (lt_of_lt_of_le (by omega : 2 * z + (if bb then 1 else 0) < 2 ^ 254)
-            (by norm_num [PALLAS_BASE_CARD]))
-      simp only [Leaf.offBand, hδ] at h
-      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [hOv]
-      · decide
-      · decide
-      · decide
-      · intro hmem
-        simp only [Kimchi.Gate.VarBaseMul.forbiddenValues, Set.mem_setOf_eq,
-          Kimchi.Gate.VarBaseMul.Ladder.forbiddenResidues, List.mem_cons, List.mem_nil_iff,
-          or_false, Pasta.Shifted.unshiftType1] at hmem
-        obtain ⟨t, ht, k, hk⟩ := hmem
-        rw [hp, h255] at hk
-        have htb : -3 ≤ t ∧ t ≤ 11 := by
-          rcases ht with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-            norm_num
-        have hk1 : 1 + 1 ≤ k := Int.add_one_le_iff.mpr (lt_of_not_ge fun hle => by linarith)
-        have hk2 : k ≤ 2 := Int.lt_add_one_iff.mp (lt_of_not_ge fun hle => by linarith)
-        have hk : k = 2 := le_antisymm hk2 (by linarith)
-        subst hk
-        norm_num at h
-        rcases h with h | h
-        · have h' : (ToNat.toNat (s.val V) : ℤ) < 91120631063012739630693492830161076222 := by
-            exact_mod_cast h
-          linarith
-        · have h' : (91120631063012739630693492830161076237 : ℤ) < ToNat.toNat (s.val V) := by
-            exact_mod_cast h
-          linarith
-  | b128 _ _ _ => trivial
-  | b10 _ _ _ => trivial
-  | condAdd _ _ => trivial
+end SideFacts
 
 /-- The wrap side of the x_hat crossing: Vesta bases at `Fq`, scalar order `PALLAS_BASE_CARD`. -/
 noncomputable def xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
@@ -1490,8 +1467,10 @@ noncomputable def xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
   e := SWPoint.equivPoint Vesta.curve
   card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
   base_big := by norm_num [PALLAS_SCALAR_CARD]
-  order_big := by rw [Pasta.vesta_card]; norm_num [PALLAS_BASE_CARD]
-  regime V leaf h := Leaf.regimeFull_of_offBand_vesta V leaf h
+  order_eq := Pasta.vesta_card
+  scalar_lo := by norm_num [PALLAS_BASE_CARD]
+  scalar_hi := by norm_num [PALLAS_BASE_CARD]
+  scalar_mod := by norm_num [PALLAS_BASE_CARD]
 
 /-- The step side of the x_hat crossing: Pallas bases at `Fp`, scalar order
 `PALLAS_SCALAR_CARD`. -/
@@ -1500,8 +1479,10 @@ noncomputable def xhatStep : XhatSide Bulletproof.IpaPallas.curve where
   e := SWPoint.equivPoint Pallas.curve
   card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
   base_big := by norm_num [PALLAS_BASE_CARD]
-  order_big := by rw [Pasta.pallas_card]; norm_num [PALLAS_SCALAR_CARD]
-  regime V leaf h := Leaf.regimeFull_of_offBand_pallas V leaf h
+  order_eq := Pasta.pallas_card
+  scalar_lo := by norm_num [PALLAS_SCALAR_CARD]
+  scalar_hi := by norm_num [PALLAS_SCALAR_CARD]
+  scalar_mod := by norm_num [PALLAS_SCALAR_CARD]
 
 section Binding
 
@@ -1567,23 +1548,6 @@ private theorem xhat_cross (s : XhatSide C) (ci : Fin nc) {V : Valuation C.BaseF
       (fun leaf => ToNat.toNat (leaf.scalarVar.val V)) (leaves.zip Ts)
   rw [equivPoint_publicCommitment s.e σ cvk (pubOf C V leaves) ci hne',
     crossing_list s.e ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
-
-/-- The cast premise of the gadget reads at a side: a `2^254`-bounded integer reads back from
-the base field. -/
-private theorem xhatSide_cast (s : XhatSide C) :
-    ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : C.BaseField)) : ℤ) = m := by
-  haveI : NeZero C.base := ⟨(Fact.out : C.base.Prime).ne_zero⟩
-  intro m hm0 hmlt
-  exact toNat_intCast_of_lt C.base hm0 (lt_of_lt_of_le hmlt (by exact_mod_cast s.base_big.le))
-
-/-- The bit premise of the gadget reads: `bit b` reads as `0`/`1`. -/
-private theorem xhatSide_bit (_s : XhatSide C) :
-    ∀ b : Bool, ToNat.toNat (bit b : C.BaseField) = if b then 1 else 0 := by
-  haveI : Fact (1 < C.base) := ⟨(Fact.out : C.base.Prime).one_lt⟩
-  intro b
-  cases b
-  · show ZMod.val (bit false : ZMod C.base) = 0; simp [bit]
-  · show ZMod.val (bit true : ZMod C.base) = 1; simp [bit, ZMod.val_one]
 
 /-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The
 in-circuit public-input obligation of the group half (`incrementally_verify_proof`):

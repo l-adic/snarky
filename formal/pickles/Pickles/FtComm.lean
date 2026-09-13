@@ -99,15 +99,6 @@ def FtCommReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
 
 /-! ## Reading helpers -/
 
-/-- In a group killed by `n`, an integer acts as its residue's canonical representative
-(restated; private in `CheckBulletproof`). -/
-private theorem zsmul_eq_val_nsmul {G : Type} [AddCommGroup G] (n : ℕ) [NeZero n]
-    (hn : ∀ x : G, n • x = 0) (z : ℤ) (x : G) : z • x = ((z : ZMod n).val : ℕ) • x := by
-  have hv : (((z : ZMod n).val : ℕ) : ℤ) = z % n := ZMod.val_intCast z
-  rw [← natCast_zsmul, hv]
-  conv_lhs => rw [← Int.emod_add_mul_ediv z n]
-  rw [add_zsmul, mul_zsmul, natCast_zsmul, hn, _root_.add_zero]
-
 /-- The scalar order kills the affine group too, across `equivPoint`. -/
 private theorem IvpSide.aff_nsmul (S : IvpSide C V ops) (X : C.E.toAffine.Point) :
     C.scalar • X = 0 := by
@@ -117,7 +108,7 @@ private theorem IvpSide.aff_nsmul (S : IvpSide C V ops) (X : C.E.toAffine.Point)
 private theorem IvpSide.zsmul_eq (S : IvpSide C V ops) (z : ℤ) (X : C.E.toAffine.Point) :
     z • X = ((z : C.ScalarField).val : ℕ) • X :=
   haveI : NeZero C.scalar := ⟨C.primeScalar.out.ne_zero⟩
-  zsmul_eq_val_nsmul C.scalar S.aff_nsmul z X
+  Pasta.zsmul_eq_val_nsmul C.scalar S.aff_nsmul z X
 
 /-- A scale by a claim decoding to `s` acts by `s.val`: the witness's integer decode is `s`'s
 representative (`dec_cast`) and the group is killed by the scalar order. -/
