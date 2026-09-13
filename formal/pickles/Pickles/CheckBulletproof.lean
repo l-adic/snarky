@@ -1408,15 +1408,6 @@ section Bridge
 variable {G : Type} [AddCommGroup G]
 
 omit [Field F] [DecidableEq F] [ToNat F] in
-/-- In a group killed by `n`, an integer acts as its residue's canonical representative. -/
-private theorem zsmul_eq_val_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) (z : ℤ) (x : G) :
-    z • x = ((z : ZMod n).val : ℕ) • x := by
-  have hv : (((z : ZMod n).val : ℕ) : ℤ) = z % n := ZMod.val_intCast z
-  rw [← natCast_zsmul, hv]
-  conv_lhs => rw [← Int.emod_add_mul_ediv z n]
-  rw [add_zsmul, mul_zsmul, natCast_zsmul, hn, add_zero]
-
-omit [Field F] [DecidableEq F] [ToNat F] in
 /-- In a group killed by `n`, the representative of a product acts as the composite. -/
 private theorem val_mul_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) (a b : ZMod n) (X : G) :
     (a * b).val • X = a.val • b.val • X := by
@@ -1503,7 +1494,7 @@ private theorem vesta_card_nsmul (X : Vesta.curve.toAffine.Point) : PALLAS_BASE_
 /-- An integer acts on Vesta points as its residue's representative in the scalar field. -/
 private theorem vesta_zsmul_eq (z : ℤ) (X : Vesta.curve.toAffine.Point) :
     z • X = ((z : Fp).val : ℕ) • X :=
-  zsmul_eq_val_nsmul PALLAS_BASE_CARD vesta_card_nsmul z X
+  Pasta.zsmul_eq_val_nsmul PALLAS_BASE_CARD vesta_card_nsmul z X
 
 /-- The gadgets' integer endo-expansion at Vesta's eigenvalue casts to the wire's. -/
 private theorem vesta_endoExpandZ_cast (n : ℕ) :
@@ -1530,7 +1521,7 @@ private theorem vesta_lrTerm_eq (q : SWPoint Vesta.curve × SWPoint Vesta.curve)
   rw [AddEquiv.symm_apply_apply, AddEquiv.symm_apply_apply]
   rw [zmod_inv_val_congr _ PALLAS_BASE_CARD Pasta.vesta_card]
   rw [vesta_endoExpandZ_cast]
-  rw [zsmul_eq_val_nsmul PALLAS_BASE_CARD
+  rw [Pasta.zsmul_eq_val_nsmul PALLAS_BASE_CARD
     (fun X => ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X), vesta_endoExpandZ_cast]
 
 /-- The round terms of `lr_prod`, read back in the wire group, are the wire's round terms at
@@ -1591,7 +1582,7 @@ private theorem vesta_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Vesta.curv
   | nil => simp
   | cons P cs ih =>
     rw [List.map_cons, List.foldr_cons, List.foldr_cons, map_add, map_zsmul, ih,
-      AddEquiv.symm_apply_apply, zsmul_eq_val_nsmul PALLAS_BASE_CARD hn]
+      AddEquiv.symm_apply_apply, Pasta.zsmul_eq_val_nsmul PALLAS_BASE_CARD hn]
 
 /-- The bridge: the gadgets' Schnorr equation over Mathlib's Vesta point group, at the
 readings' images under `SWPoint.equivPoint`, is the wire verifier's `schnorrAt` at the
@@ -1728,7 +1719,7 @@ private theorem pallas_card_nsmul (X : Pallas.curve.toAffine.Point) : PALLAS_SCA
 /-- An integer acts on Pallas points as its residue's representative in the scalar field. -/
 private theorem pallas_zsmul_eq (z : ℤ) (X : Pallas.curve.toAffine.Point) :
     z • X = ((z : Fq).val : ℕ) • X :=
-  zsmul_eq_val_nsmul PALLAS_SCALAR_CARD pallas_card_nsmul z X
+  Pasta.zsmul_eq_val_nsmul PALLAS_SCALAR_CARD pallas_card_nsmul z X
 
 /-- The gadgets' integer endo-expansion at Pallas's eigenvalue casts to the wire's. -/
 private theorem pallas_endoExpandZ_cast (n : ℕ) :
@@ -1749,7 +1740,7 @@ private theorem pallas_lrTerm_eq (q : SWPoint Pallas.curve × SWPoint Pallas.cur
   rw [AddEquiv.symm_apply_apply, AddEquiv.symm_apply_apply]
   rw [zmod_inv_val_congr _ PALLAS_SCALAR_CARD Pasta.pallas_card]
   rw [pallas_endoExpandZ_cast]
-  rw [zsmul_eq_val_nsmul PALLAS_SCALAR_CARD
+  rw [Pasta.zsmul_eq_val_nsmul PALLAS_SCALAR_CARD
     (fun X => ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X), pallas_endoExpandZ_cast]
 
 /-- The round terms of `lr_prod`, read back in the wire group, are the wire's round terms at
@@ -1811,7 +1802,7 @@ private theorem pallas_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Pallas.cu
   | nil => simp
   | cons P cs ih =>
     rw [List.map_cons, List.foldr_cons, List.foldr_cons, map_add, map_zsmul, ih,
-      AddEquiv.symm_apply_apply, zsmul_eq_val_nsmul PALLAS_SCALAR_CARD hn]
+      AddEquiv.symm_apply_apply, Pasta.zsmul_eq_val_nsmul PALLAS_SCALAR_CARD hn]
 
 /-- The bridge: the gadgets' Schnorr equation over Mathlib's Pallas point group, at the
 readings' images under `SWPoint.equivPoint`, is the wire verifier's `schnorrAt` at the

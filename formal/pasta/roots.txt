@@ -32,6 +32,7 @@ Pasta.vestaPointModule
 Pasta.pallasPointModule
 Pasta.vesta_smul_val
 Pasta.pallas_smul_val
+Pasta.zsmul_eq_val_nsmul
 
 -- The wire scalar-shift algebra and its round-trips.
 Pasta.Shifted.shiftType1
