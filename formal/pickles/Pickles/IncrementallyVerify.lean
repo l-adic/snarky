@@ -741,11 +741,11 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | true =>
     simp only [incrementallyVerifyProof, if_true]
     have htr := fun (d : FVar C.BaseField) (xHat : List (AffinePoint (FVar C.BaseField))) =>
-      fqSpongeTranscriptOpt_reads (V := V) S.curve.two_ne S.curve.three_ne _ S.curve.hsize
+      fqSpongeTranscriptOpt_reads (V := V) S.curve.two_ne S.curve.three_ne _ C.sponge_size
         S.curve.small_inj endo d
         (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
-    case vc1.hsize => exact S.curve.hsize
+    case vc1.hsize => exact C.sponge_size
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
@@ -787,12 +787,12 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
     have htr := fun (d : FVar C.BaseField) =>
-      fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne _ S.curve.hsize endo d
+      fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne _ C.sponge_size endo d
         (inp.sgOld.map (·.2))
         computeXHat (fun pts => CommReads C V pts (publicCommitment C σ cvk pub).toList) _
         (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [htr, hasrt, hft, hcb]
-    case vc1.hsize => exact S.curve.hsize
+    case vc1.hsize => exact C.sponge_size
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all

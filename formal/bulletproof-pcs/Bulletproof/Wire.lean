@@ -92,6 +92,9 @@ structure CommitmentCurve where
   [primeScalar : Fact (Nat.Prime scalar)]
   /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
+  /-- The sponge's round-constant table covers the permutation exactly: `5 × 11` entries, no
+  ragged tail. What every consumer running the sponge in circuit has to know. -/
+  sponge_size : sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- The scalar-side Poseidon parameters — production's `G::sponge_params()`,
   curve-determined like the fq-sponge spec. Not read by the IPA opening verifier
   itself; carried on the bundle for the consumers that run a scalar-side (fr-)sponge
@@ -575,6 +578,10 @@ abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_SCALAR_CARD
   scalar := PALLAS_BASE_CARD
   sponge := FqVesta.spec
+  sponge_size := by
+    show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
+    rw [Array.size_map]
+    rfl
   frParams := fpParams
   E := Vesta.curve
   a_zero := rfl
@@ -604,6 +611,10 @@ abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_BASE_CARD
   scalar := PALLAS_SCALAR_CARD
   sponge := FqPallas.spec
+  sponge_size := by
+    show (Poseidon.FpKimchi.roundConstants.map _).size = Poseidon.fullRounds
+    rw [Array.size_map]
+    rfl
   frParams := fqParams
   E := Pallas.curve
   a_zero := rfl

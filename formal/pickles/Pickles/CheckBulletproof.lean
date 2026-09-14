@@ -908,12 +908,12 @@ open Bulletproof Bulletproof.Ipa CompElliptic.CurveForms.ShortWeierstrass
 
 /-- What the wire's commitment curve supplies to the group half's gadgets, whichever side runs
 them: the endomorphism bundle and the map-to-curve parameters the opening check runs on; the
-curve's deployed shape and its sponge's round count, from which follow both the field facts the
-transcript's squeezes need (`IvpCurve.two_ne`, `IvpCurve.three_ne`, `IvpCurve.small_inj`) and
-the group fact the adds and negations need (`IvpCurve.two_torsion_free`; that the curve is
-short and that the scalar order kills the group are `C`'s own, `C.a_zero` and `C.card_nsmul`);
-and the three bridges from the gadgets' vocabulary to the wire's. None of it mentions the
-side's scalar representation. One value per curve: `IvpCurve.vesta`, `IvpCurve.pallas`. -/
+curve's deployed shape, from which follow both the field facts the transcript's squeezes need
+(`IvpCurve.two_ne`, `IvpCurve.three_ne`, `IvpCurve.small_inj`) and the group fact the adds and
+negations need (`IvpCurve.two_torsion_free`); and the three bridges from the gadgets'
+vocabulary to the wire's. The curve's shortness, its scalar order's action and its sponge's
+round count are `C`'s own (`C.a_zero`, `C.card_nsmul`, `C.sponge_size`). None of it mentions
+the side's scalar representation. One value per curve: `IvpCurve.vesta`, `IvpCurve.pallas`. -/
 structure IvpCurve (C : CommitmentCurve) where
   /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
   e : IpaEndo C.BaseField
@@ -924,8 +924,6 @@ structure IvpCurve (C : CommitmentCurve) where
   /-- The curve has the deployed shape: the base field's width makes a low-128-bit read a
   `PrechallengeAlias`, and the scalar order's leaves the group without 2-torsion. -/
   shape : PastaShape C
-  /-- The sponge parameters carry the full round constants. -/
-  hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- The map-to-curve gadget reads as the wire's `toGroup` up to sign. -/
   groupMap : ∀ (V : Valuation C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
       (t : FVar C.BaseField),
@@ -1046,7 +1044,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
   have hcast : CastInj128 C.BaseField :=
     castInj128_of_lt C.base (lt_trans (by norm_num) S.curve.shape.base_big)
   refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success_at ops S.curve.e S.curve.eW _ S.curve.hsize endo S.curve.gm
+    (checkBulletproof_spec_success_at ops S.curve.e S.curve.eW _ C.sponge_size endo S.curve.gm
       sqrtF hcast S.R (fun t => SWPoint.equivPoint C.E (C.toGroup t)) (S.curve.groupMap V sqrtF)
       sv bases _ hb hbne inp
       (fun x hx => (hclaims x hx).1) (fun x w hx hpre => (hclaims x hx).2 w hpre)
@@ -1128,7 +1126,7 @@ theorem IvpSide.opening_reads (S : IvpSide C V ops)
       C.sponge.params endo S.curve.gm sqrtF sv bases inp
     ⦃⇓ o _ => ⌜S.OpeningReads sv bases inp o⌝⦄ := by
   refine builder_spec_and _ _ _
-    (checkBulletproof_reads S.curve.two_ne S.curve.three_ne ops S.curve.e _ S.curve.hsize endo
+    (checkBulletproof_reads S.curve.two_ne S.curve.three_ne ops S.curve.e _ C.sponge_size endo
       S.curve.gm sqrtF sv bases inp) ?_
   rw [builder_spec_iff]
   intro nv hsat bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh
@@ -1688,7 +1686,6 @@ def IvpCurve.vesta : IvpCurve IpaVesta.curve where
   eW := rfl
   gm := groupMapParamsVesta
   shape := pastaShapeVesta
-  hsize := Kimchi.Gate.Poseidon.fqParams_size
   groupMap _ sqrtF t := by
     -- the map-to-curve by projection reduction, not unification (which unfolds the SvdW map)
     dsimp only
@@ -1918,7 +1915,6 @@ def IvpCurve.pallas : IvpCurve IpaPallas.curve where
   eW := rfl
   gm := groupMapParamsPallas
   shape := pastaShapePallas
-  hsize := Kimchi.Gate.Poseidon.fpParams_size
   groupMap _ sqrtF t := by
     dsimp only
     unfold Poseidon.GroupMapPallas.toGroup
