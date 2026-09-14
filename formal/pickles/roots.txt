@@ -202,3 +202,20 @@ Pickles.incrementallyVerifyProof
 Pickles.incrementallyVerifyProof_reads
 Pickles.incrementallyVerifyProof_wrap_reads
 Pickles.incrementallyVerifyProof_step_reads
+
+-- The two halves of one proof (TwoHalves.lean): the group half (`incrementally_verify_proof`,
+-- in the circuit that receives the proof) then the scalar half (`finalize_other_proof`, one
+-- circuit later over the other field), read as `kimchiVerify` at honest claims given the
+-- deferred `sg` equation — the per-proof checkpoint, at one chunk; at a step proof with the
+-- claim tie unfolded. The exact reads (the `lowest_128_bits` alias and the map-to-curve sign
+-- closed) and their inclusions into the slack reads; the recursion constants of the
+-- statement records.
+Pickles.twoHalves_kimchiVerify
+Pickles.twoHalves_iff_schnorr
+Pickles.twoHalves_kimchiVerify_vesta
+Pickles.vesta_claim_tie
+Pickles.IvpReadsExact.toReads
+Pickles.FopReadsExact.toWire
+Pickles.MaxProofsVerified
+Pickles.StepIPARounds
+Pickles.WrapIPARounds

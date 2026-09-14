@@ -53,9 +53,10 @@ open scoped Kimchi
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
 
-/-- The witness evaluations (PS `ProofWitness`'s `AllEvals`): `ft(ζω)`, the public pair and
+/-- The evaluations of the proof under finalization (PS `AllEvals`, OCaml
+`Plonk_types.All_evals`, the `prev_proof_evals` witness): `ft(ζω)`, the public pair and
 the proof's evaluations at `ζ` and `ζω`. -/
-structure ProofWitness (F : Type) where
+structure AllEvals (F : Type) where
   /-- `ft(ζω)`. -/
   ftEval1 : FVar F
   /-- The public-input polynomial at `ζ` and `ζω`. -/
@@ -148,7 +149,7 @@ challenges expanded and `b` against its claim, the permutation scalar, the voide
 def finalizeOtherProofCore {sf : Type} (P : FopParams F) (ops : FopShiftOps F c sf)
     (xiConstrainLowBits : Bool) (digest : CircuitM F c (FVar F)) (gen : FVar F)
     (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F c (FVar F)) (mask : List (BoolVar F))
-    (u : UnfinalizedProof F sf) (w : ProofWitness F) (prev : List (List (FVar F)))
+    (u : UnfinalizedProof F sf) (w : AllEvals F) (prev : List (List (FVar F)))
     (zeta alpha beta gamma : FVar F) (perm : sf) : CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let zetaw ← mul gen zeta
@@ -224,7 +225,7 @@ expanded, the domain selected from the runtime `domain_log2` and its generator
 mask-selected, then the core with the masked challenge digest, `ξ` by `squeeze_challenge`,
 the `ζ^(2^srs)` rows and the known-domain vanishing polynomial. -/
 def finalizeOtherProofStep (P : FopParams F) (domains : List (KnownDomain F))
-    (u : UnfinalizedProof F (Type1 (FVar F))) (w : ProofWitness F) (mask : List (BoolVar F))
+    (u : UnfinalizedProof F (Type1 (FVar F))) (w : AllEvals F) (mask : List (BoolVar F))
     (prev : List (List (FVar F))) (domainLog2Var : FVar F) : CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
@@ -244,7 +245,7 @@ generator with the plain challenge digest, `ξ` by `squeeze_scalar`, the `ζ^(2^
 and the caller's vanishing polynomial. -/
 def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
     (vanishing : FVar F → CircuitM F c (FVar F)) (u : UnfinalizedProof F (Type2 (FVar F)))
-    (w : ProofWitness F) (prev : List (List (FVar F))) : CircuitM F c (FopOutput F) := do
+    (w : AllEvals F) (prev : List (List (FVar F))) : CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let pl := u.deferredValues.plonk
   let zeta ← EndoScalar.toField 8 pl.zeta.val endoVar
@@ -291,6 +292,20 @@ private theorem keptEvals_zip :
   | m :: ms, x :: a, y :: b, h => by
     have := keptEvals_zip ms a b (by simpa using h)
     cases m <;> simp [keptEvals, sgRows] at this ⊢ <;> exact this
+
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept rows of the masked challenge lists are the kept lists, mapped: `sgRows` over two
+images of one list of challenge lists is the kept challenge lists under both maps. -/
+theorem sgRows_kept (f g : List F → F) :
+    ∀ (ms : List Bool) (cvs : List (List F)),
+      sgRows ms (cvs.map f) (cvs.map g)
+        = (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten.map
+            fun cv => (⟨f cv, g cv⟩ : PointEvaluations F)
+  | [], _ => by simp [sgRows]
+  | _ :: _, [] => by simp [sgRows]
+  | m :: ms, cv :: cvs => by
+    have ih := sgRows_kept f g ms cvs
+    cases m <;> simp [sgRows] at ih ⊢ <;> exact ih
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The kept entries of a batch: the kept masked entries, the public and `ft` entries, and
@@ -361,7 +376,7 @@ the evaluation rows), `cipCorrect = [unshift(cip claim) = combinedInnerProduct �
 `plonkOk = [unshift(permV) = permScalar β γ α (zkpmEval n zkRows ω ζ) e]`, `finalized` the
 conjunction of the four bits reading `1`, and the expanded challenges read `cs`. -/
 def FopChecks (P : FopParams F) (n : ℕ) (ω : F) (ms : List Bool) (cvs : List (List F))
-    (w : ProofWitness F) (ζ α β γ permV cipV bV : F) (unshiftV : F → F)
+    (w : AllEvals F) (ζ α β γ permV cipV bV : F) (unshiftV : F → F)
     (V : Valuation F) (o : FopOutput F) (ξ r : F) (cs : List F) : Prop :=
   let e := w.evals.map (·.val V)
   let ft₀ := ftEval0 n P.zkRows ω P.shifts P.endo P.mds α β γ ζ (w.pub.zeta.val V) (linEvals e)
@@ -393,7 +408,7 @@ and `FopChecks` holds at
 `ξ = endoExpand λ ξ₀`, `r = endoExpand λ r'` and the expanded challenges `endoExpand λ ĉᵢ`.
 `FopReads.wire` reads this against the wire verifier's prechallenges at a deployed field. -/
 def FopReads {sf : Type} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
-    (ms : List Bool) (cvs : List (List F)) (u : UnfinalizedProof F sf) (w : ProofWitness F)
+    (ms : List Bool) (cvs : List (List F)) (u : UnfinalizedProof F sf) (w : AllEvals F)
     (ζ α β γ permV cipV bV : F) (unshiftV : F → F) (V : Valuation F) (o : FopOutput F) : Prop :=
     let sq := frSqueezes P.sponge
       (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
@@ -418,7 +433,7 @@ reads `1`, the `ξ` claim is `pre.1` up to the alias, and `FopChecks` holds at t
 endo-expansions of the `ξ` claim, of `r` and of the challenge claims. -/
 def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p)) (n : ℕ)
     (ω dv : ZMod p) (ms : List Bool) (cvs : List (List (ZMod p))) (u : UnfinalizedProof (ZMod p) sf)
-    (w : ProofWitness (ZMod p)) (ζ α β γ permV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p)
+    (w : AllEvals (ZMod p)) (ζ α β γ permV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p)
     (V : Valuation (ZMod p)) (o : FopOutput (ZMod p)) : Prop :=
   let pre := frPrechallenges P.sponge
     (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
@@ -437,7 +452,7 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p)) (
 the 128-bit claim. -/
 theorem FopReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p) {sf : Type}
     {P : FopParams (ZMod p)} {xiConstrainLowBits : Bool} {n : ℕ} {ω dv : ZMod p} {ms : List Bool}
-    {cvs : List (List (ZMod p))} {u : UnfinalizedProof (ZMod p) sf} {w : ProofWitness (ZMod p)}
+    {cvs : List (List (ZMod p))} {u : UnfinalizedProof (ZMod p) sf} {w : AllEvals (ZMod p)}
     {ζ α β γ permV cipV bV : ZMod p} {unshiftV : ZMod p → ZMod p} {V : Valuation (ZMod p)}
     {o : FopOutput (ZMod p)}
     (h : FopReads P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o) :
@@ -522,7 +537,7 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : gen.val V ≠ 0 → ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
     (mask : List (BoolVar F)) (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
-    (w : ProofWitness F) (prev : List (List (FVar F)))
+    (w : AllEvals F) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
     (zeta alpha beta gamma : FVar F) (hft : FtEval0Hyp V P n (gen.val V)) :
     ⦃⌜True⌝⦄ finalizeOtherProofCore (c := Builder V (KimchiConstraint F)) P ops
@@ -789,7 +804,7 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (h3zk : 3 ≤ P.zkRows) (domains : List (KnownDomain F))
     (hnodup : (domains.map fun d => (d.log2 : F)).Nodup)
     (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
-    (u : UnfinalizedProof F (Type1 (FVar F))) (w : ProofWitness F) (mask : List (BoolVar F))
+    (u : UnfinalizedProof F (Type1 (FVar F))) (w : AllEvals F) (mask : List (BoolVar F))
     (ms : List Bool) (hm : List.Forall₂ (CircuitType.Reads V) mask ms)
     (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
@@ -894,7 +909,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (h3zk : 3 ≤ P.zkRows) (gen : F) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
     (domainLog2 : ℕ) (vanishing : FVar F → CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof F (Type2 (FVar F))) (w : ProofWitness F) (prev : List (List (FVar F)))
+    (u : UnfinalizedProof F (Type2 (FVar F))) (w : AllEvals F) (prev : List (List (FVar F)))
     (cvs : List (List F)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
     (hft : FtEval0Hyp V P n gen) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint F)) P gen domainLog2
@@ -948,7 +963,7 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     (h3zk : 3 ≤ P.zkRows) (domains : List (KnownDomain Fp))
     (hnodup : (domains.map fun d => (d.log2 : Fp)).Nodup)
     (hdom : ∀ d ∈ domains, P.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
-    (u : UnfinalizedProof Fp (Type1 (FVar Fp))) (w : ProofWitness Fp) (mask : List (BoolVar Fp))
+    (u : UnfinalizedProof Fp (Type1 (FVar Fp))) (w : AllEvals Fp) (mask : List (BoolVar Fp))
     (ms : List Bool)
     (hm : List.Forall₂ (CircuitType.Reads V) mask ms) (prev : List (List (FVar Fp)))
     (cvs : List (List Fp)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs)
@@ -985,7 +1000,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (h3zk : 3 ≤ P.zkRows) (gen : Fq) (n : ℕ) (hzk : P.zkRows ≤ n) (hω : gen ^ n = 1)
     (domainLog2 : ℕ) (vanishing : FVar Fq → CircuitM Fq (Builder V (KimchiConstraint Fq)) (FVar Fq))
     (hvan : ∀ z, ⦃⌜True⌝⦄ vanishing z ⦃⇓ v _ => ⌜v.val V = z.val V ^ n - 1⌝⦄)
-    (u : UnfinalizedProof Fq (Type2 (FVar Fq))) (w : ProofWitness Fq) (prev : List (List (FVar Fq)))
+    (u : UnfinalizedProof Fq (Type2 (FVar Fq))) (w : AllEvals Fq) (prev : List (List (FVar Fq)))
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
       vanishing u w prev

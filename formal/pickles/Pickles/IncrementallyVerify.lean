@@ -80,19 +80,25 @@ structure IvpPlonk (F sf : Type) where
   /-- The `ζⁿ` claim (`zeta_to_domain_size`). -/
   zetaToDomainSize : sf
 
-/-- What the group half consumes (PS `IncrementallyVerifyProofInput`; the OCaml arguments
-`sg_old`, `plonk`, `xi`, `advice`, `verification_key`, `messages`, `opening`): every
-commitment as its chunk list, in the key's and proof's column order. -/
-structure IvpInput (F sf : Type) where
-  /-- The previous proofs' challenge-polynomial commitments, each under its keep bit on the
-  wrap side (`Opt.Maybe (keep, p)`) and unmasked on the step side (padded with dummies). -/
-  sgOld : List (Option (BoolVar F) × AffinePoint (FVar F))
+/-- The deferred claims the group half consumes (the OCaml arguments `plonk`, `xi`,
+`advice`): the plonk claims, the polyscale `ξ` and the opening's `cip`, `b`. The cells the
+read `IvpReads` speaks about; the rest of `IvpInput` enters the read only through
+`IvpTies`. -/
+structure IvpClaims (F sf : Type) where
   /-- The deferred plonk claims. -/
   plonk : IvpPlonk F sf
   /-- The deferred polyscale `ξ`, 128 bits. -/
   xi : SizedF 128 (FVar F)
   /-- The deferred `cip` and `b` (`advice`). -/
   deferred : BulletproofDeferred sf
+
+/-- What the group half consumes (PS `IncrementallyVerifyProofInput`; the OCaml arguments
+`sg_old`, `plonk`, `xi`, `advice`, `verification_key`, `messages`, `opening`): the claims,
+and every commitment as its chunk list, in the key's and proof's column order. -/
+structure IvpInput (F sf : Type) extends IvpClaims F sf where
+  /-- The previous proofs' challenge-polynomial commitments, each under its keep bit on the
+  wrap side (`Opt.Maybe (keep, p)`) and unmasked on the step side (padded with dummies). -/
+  sgOld : List (Option (BoolVar F) × AffinePoint (FVar F))
   /-- The key's last permutation commitment `σ₆`, absorbed in the index digest and read by
   `ft_comm` — not a batch base. -/
   sigmaLast : List (AffinePoint (FVar F))
@@ -234,7 +240,7 @@ as some `ns`, `r`'s up to the alias, and, with `U` the map-to-curve of `r`'s `t`
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
 def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpInput C.BaseField sf)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpClaims C.BaseField sf)
     (o : IvpOutput C.BaseField) : Prop :=
   let pre := fqRun C cvk cp (publicCommitment C σ cvk pub)
   let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
@@ -258,6 +264,37 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
           (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam ξ₀.val)
             run.commitments.toArray)
           run.proof)
+
+/-- What the group half's read assumes of its cells and constants, on the side `S`: the
+sponge after the index digest squeezes to the key's digest, the `sg_old` cells are masked as
+the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), the
+blinding cell reads as `σ.h`, the claimed `cip` is canonical for the side's ladder, and the
+shape guards a key and proof satisfy: a chunk, a quotient chunk, a round, and a base field
+wider than the absorb count. -/
+structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
+    (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
+    (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool)) : Prop where
+  /-- The sponge after the index digest squeezes to the key's digest. -/
+  idx : ∃ s : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex s ∧
+    (Poseidon.squeeze C.sponge.params s).1 = cvk.digest
+  /-- Every `sg_old` cell carries a keep bit exactly on the conditional sponge. -/
+  mask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge
+  /-- The cells read as the wire's key and proof. -/
+  ties : IvpTies S σ cvk cp pub inp oldsW
+  /-- The blinding cell reads as the SRS blinding. -/
+  blinding : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h)
+  /-- The claimed `cip` is canonical for the side's ladder. -/
+  canon : S.Canon inp.deferred.combinedInnerProduct
+  /-- At least one chunk. -/
+  nc_pos : 0 < nc
+  /-- At least one quotient chunk. -/
+  t_ne : inp.tComm ≠ []
+  /-- At least one round. -/
+  lr_ne : inp.opening.lr ≠ []
+  /-- The base field's characteristic exceeds the absorb count. -/
+  char : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
+    + inp.zComm.length + inp.tComm.length) → (k : C.BaseField) = 0 → k = 0
 
 end Read
 
@@ -588,7 +625,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (o : CheckBulletproofOutput C.BaseField)
     (hcb : S.OpeningReads tr.sponge (inp.bases tr.xHat ftc)
       ⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ o) :
-    IvpReads S σ cvk cp pub inp ⟨tr.digest, o.success, o.challenges⟩ := by
+    IvpReads S σ cvk cp pub inp.toIvpClaims ⟨tr.digest, o.success, o.challenges⟩ := by
   -- the wire's fq squeezes at these readings are `IvpReads`'s
   have hpre : fqSqueezes C.sponge.params cvk.digest
       (((cp.olds.map (·.sg)).toList.map wirePt).map pointCoords)
@@ -667,12 +704,10 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
 
 /-! ## The read theorem -/
 
-/-- **The group half reads as the wire's, on either side.** On the side `S`, given the
-index-digest squeeze reads as the key's digest, `x_hat` reads as the wire's `publicCommitment`
-(chunk by chunk, `xHat_reads_publicCommitment` from `XhatBinding` on the wrap side), the `sg_old`
-cells are masked exactly on the conditional sponge (`optSponge`), the cells tie as `IvpTies`,
-the claimed `cip` absorbs canonically (`IvpSide.Canon`) and the base field's characteristic
-exceeds the absorb count, the output satisfies `IvpReads`. -/
+/-- **The group half reads as the wire's, on either side.** On the side `S`, given `x_hat`
+reads as the wire's `publicCommitment` (chunk by chunk, `xHat_reads_publicCommitment` from
+`XhatBinding` on the wrap side) and the cells and constants read as the wire's (`IvpHyps`),
+the output satisfies `IvpReads`. -/
 theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (endo : FVar C.BaseField) (sqrtF : C.BaseField → Option C.BaseField) (optSponge : Bool)
@@ -680,21 +715,14 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
       (List (AffinePoint (FVar C.BaseField))))
     (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool))
-    (hIdx : ∃ s : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex s ∧
-      (Poseidon.squeeze C.sponge.params s).1 = cvk.digest)
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
-    (hmask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge)
-    (hties : IvpTies S σ cvk cp pub inp oldsW)
-    (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
-    (hcanon : S.Canon inp.deferred.combinedInnerProduct)
-    (hnc : 0 < nc) (htne : inp.tComm ≠ []) (hlrne : inp.opening.lr ≠ [])
-    (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
-      + inp.zComm.length + inp.tComm.length) → (k : C.BaseField) = 0 → k = 0) :
+    (h : IvpHyps S σ cvk cp pub optSponge blindingH spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof ops S.e C.sponge.params endo S.gm sqrtF optSponge blindingH
       spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp o⌝⦄ := by
+    ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
+  obtain ⟨hIdx, hmask, hties, hh, hcanon, hnc, htne, hlrne, hchar⟩ := h
   have hσlen : inp.sigmaLast.toArray.size = nc := by
     have := hties.sigmaLast.length_eq
     simpa using this
@@ -792,22 +820,15 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (spongeAfterIndex : SpongeVar Fq)
     (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
     (inp : IvpInput Fq (Type1 (FVar Fq))) (oldsW : List (IpaVesta.curve.Point × Bool))
-    (hIdx : ∃ s : Poseidon.State Fq, SpongeVar.ReadsAt V spongeAfterIndex s ∧
-      (Poseidon.squeeze IpaVesta.curve.sponge.params s).1 = cvk.digest)
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
-    (hmask : ∀ m ∈ inp.sgOld, m.1.isSome)
-    (hties : IvpTies (wrapSide V) σ cvk cp pub inp oldsW)
-    (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH (SWPoint.equivPoint IpaVesta.curve.E σ.h))
-    (hnc : 0 < nc) (htne : inp.tComm ≠ []) (hlrne : inp.opening.lr ≠ [])
-    (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
-      + inp.zComm.length + inp.tComm.length) → (k : Fq) = 0 → k = 0) :
+    (h : IvpHyps (wrapSide V) σ cvk cp pub true blindingH spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params endo
       groupMapParamsVesta sqrtF true blindingH spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp o⌝⦄ :=
+    ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
   incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub endo sqrtF true blindingH
-    spongeAfterIndex computeXHat inp oldsW hIdx hXhat hmask hties hh trivial hnc htne hlrne hchar
+    spongeAfterIndex computeXHat inp oldsW hXhat h
 
 /-- **The step side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
 `stepSide` — the plain sponge, no `sg_old` masked, the claimed `cip` canonical. -/
@@ -819,25 +840,15 @@ theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (computeXHat : CircuitM Fp (Builder V (KimchiConstraint Fp)) (List (AffinePoint (FVar Fp))))
     (inp : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (oldsW : List (IpaPallas.curve.Point × Bool))
-    (hIdx : ∃ s : Poseidon.State Fp, SpongeVar.ReadsAt V spongeAfterIndex s ∧
-      (Poseidon.squeeze IpaPallas.curve.sponge.params s).1 = cvk.digest)
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)
-    (hmask : ∀ m ∈ inp.sgOld, m.1.isSome = false)
-    (hties : IvpTies (stepSide V) σ cvk cp pub inp oldsW)
-    (hh : OnCurveAt IpaPallas.curve.E.toAffine V blindingH
-      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
-    (hcanon : 2 * (inp.deferred.combinedInnerProduct.val.sDiv2.val V).val
-      + ((↑inp.deferred.combinedInnerProduct.val.sOdd : CVar Fp).val V).val < PALLAS_SCALAR_CARD)
-    (hnc : 0 < nc) (htne : inp.tComm ≠ []) (hlrne : inp.opening.lr ≠ [])
-    (hchar : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
-      + inp.zComm.length + inp.tComm.length) → (k : Fp) = 0 → k = 0) :
+    (h : IvpHyps (stepSide V) σ cvk cp pub false blindingH spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
       groupMapParamsPallas sqrtF false blindingH spongeAfterIndex computeXHat inp
-    ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp o⌝⦄ :=
+    ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
   incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub endo sqrtF false blindingH
-    spongeAfterIndex computeXHat inp oldsW hIdx hXhat hmask hties hh hcanon hnc htne hlrne hchar
+    spongeAfterIndex computeXHat inp oldsW hXhat h
 
 end Sides
 

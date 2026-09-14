@@ -38,7 +38,7 @@ def runOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
   fqOracles C cvk cp (publicCommitment C σ cvk pub)
 
 /-- The second batch point `ζω`. -/
-private def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runZetaOmega (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   (runOracles C σ cvk cp pub).zeta * cvk.omega
 
@@ -49,7 +49,7 @@ def runZetaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
   powPow2 (runOracles C σ cvk cp pub).zeta cvk.domainLog2
 
 /-- The power `(ζω)ⁿ`, by the squaring ladder. -/
-private def runZetaOmegaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runZetaOmegaN (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runZetaOmega C σ cvk cp pub) cvk.domainLog2
 
@@ -61,7 +61,7 @@ def runZetaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
   powPow2 (runOracles C σ cvk cp pub).zeta σ.k
 
 /-- The chunk-combination power `(ζω)^{2^σ.k}`. -/
-private def runZetaOmegaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runZetaOmegaM (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) : C.ScalarField :=
   powPow2 (runZetaOmega C σ cvk cp pub) σ.k
 
@@ -76,7 +76,7 @@ def runPubEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
 
 
 /-- The run's chunk-combined evaluation record — the verifier's `evals.combine`. -/
-private def runLinEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runLinEvals (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) :
     Evals C.ScalarField :=
   cp.linEvals (runZetaM C σ cvk cp pub) (runZetaOmegaM C σ cvk cp pub)
@@ -87,7 +87,7 @@ def runFrOracles (σ : SRS C.Point) (cvk : KimchiVK C nc)
   frOracles C cp (runOracles C σ cvk cp pub).digest (runPubEvals C σ cvk cp pub)
 
 /-- The run's computed `ft(ζ)` claim at a given combined public evaluation. -/
-private def runFtEval0P (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runFtEval0P (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pubEval0 : C.ScalarField) : C.ScalarField :=
   ftEval0 cvk.n cvk.zkRows cvk.omega (fun i => cvk.shifts[i]) cvk.endo
@@ -142,7 +142,7 @@ def runStreamP (σ : SRS C.Point) (cvk : KimchiVK C nc)
         ++ (tailRowsOf C cvk cp).flatten)
 
 /-- The batched IPA input at given public evaluations and combination scalars. -/
-private def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
+def runInputP (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pe : Kimchi.Verifier.PointEvaluations (Vector C.ScalarField nc))
     (v u : C.ScalarField) :
@@ -166,5 +166,35 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
 
 /-! ## The body reflection -/
 
+
+/-! ## The body reflection -/
+
+/-- The argument-dependent guards of `kimchiVerify` (verifier.rs:810–820, and the public
+input against the Lagrange table and the domain): the public input fits the Lagrange table
+and the domain, and the accumulator count is the key's. -/
+def Guards {k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) (pub : Array C.ScalarField) :
+    Prop :=
+  ¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨ cp.olds.size ≠ cvk.prevChallenges)
+
+/-- `kimchiVerify` accepts iff the guards hold and the warm-sponge IPA finish (`verifyFrom`)
+accepts on the run's own input. -/
+theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) :
+    kimchiVerify C σ cvk cp pub = true
+      ↔ Guards C cvk cp pub ∧
+        Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub) = true := by
+  have hkv : kimchiVerify C σ cvk cp pub
+      = (if cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size
+            || cp.olds.size ≠ cvk.prevChallenges then false
+          else Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)) := rfl
+  have hcond : (cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size
+      || cp.olds.size ≠ cvk.prevChallenges) = true ↔ ¬ Guards C cvk cp pub := by
+    simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_not, or_assoc]
+  rw [hkv]
+  by_cases hg : Guards C cvk cp pub
+  · rw [if_neg (hcond.not.mpr (not_not.mpr hg))]
+    simp [hg]
+  · rw [if_pos (hcond.mpr hg)]
+    simp [hg]
 
 end Kimchi.Verifier

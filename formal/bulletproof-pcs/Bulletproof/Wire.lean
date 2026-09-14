@@ -270,9 +270,9 @@ applied — `t` mapped to the curve, the round and Schnorr prechallenges endo-ex
 sponge's eigenvalue. -/
 def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
-  let (t, chals, c) := ipaRun C s₀ inp
-  (C.toGroup t, chals.map (fun u => endoExpand C.sponge.lam u.val),
-    endoExpand C.sponge.lam c.val)
+  let r := ipaRun C s₀ inp
+  (C.toGroup r.1, r.2.1.map (fun u => endoExpand C.sponge.lam u.val),
+    endoExpand C.sponge.lam r.2.2.val)
 
 /-- The standalone verifier's Fiat–Shamir schedule: `transcriptFrom` at the fresh
 sponge `FqSponge.init` — the cold start. -/

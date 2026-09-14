@@ -793,7 +793,7 @@ selector pairs, `ft(ζω)`, the two previous-challenge vectors, and the digest b
 evaluations last. -/
 def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ → FVar (ZMod p))
     (base : ℕ) :
-    UnfinalizedProof (ZMod p) sf × ProofWitness (ZMod p) × List (List (FVar (ZMod p))) :=
+    UnfinalizedProof (ZMod p) sf × AllEvals (ZMod p) × List (List (FVar (ZMod p))) :=
   let (pub, evals) := evalsAt get base
   let u : UnfinalizedProof (ZMod p) sf :=
     { deferredValues :=
@@ -804,7 +804,7 @@ def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ →
           bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩ }
       shouldFinalize := true_
       spongeDigestBeforeEvaluations := get (base + 121) }
-  let w : ProofWitness (ZMod p) := { ftEval1 := get (base + 88), pub, evals }
+  let w : AllEvals (ZMod p) := { ftEval1 := get (base + 88), pub, evals }
   (u, w, prevChallengesOf get (base + 89))
 
 /-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the

@@ -15,7 +15,8 @@ prechallenge is met through it:
   half `u`: `x = u + 2¹²⁸·hi` for some `hi < 2¹²⁸`, the decomposition the gadget pins (not
   necessarily the canonical one, hence `PrechallengeAlias`);
 * `CastInj128 F` — naturals below `2¹²⁸` cast injectively into `F`, what pins a gadget's
-  own reading of a prechallenge to the claimed one.
+  own reading of a prechallenge to the claimed one, and makes a cell's reading unique
+  (`Reads128.unique`). A list of readings is one equation of lists (`forall₂_reads128_iff`).
 -/
 
 namespace Pickles
@@ -53,6 +54,27 @@ theorem castInj128_of_lt (p : ℕ) (hp : 2 ^ 128 < p) : CastInj128 (ZMod p) := b
   intro a b ha hb h
   have h' := (ZMod.natCast_eq_natCast_iff' a b p).mp h
   rwa [Nat.mod_eq_of_lt (lt_trans ha hp), Nat.mod_eq_of_lt (lt_trans hb hp)] at h'
+
+omit [Field F] [DecidableEq F] in
+/-- The prechallenge cast is injective where naturals below `2¹²⁸` cast injectively. -/
+theorem CastInj128.prechallenge_injective [NatCast F] (hinj : CastInj128 F) :
+    Function.Injective (fun m : Prechallenge => (m.val : F)) :=
+  fun m m' h => Subtype.ext (hinj _ _ m.2 m'.2 h)
+
+omit [DecidableEq F] in
+/-- A cell reads as at most one prechallenge, the casts being injective below `2¹²⁸`. -/
+theorem Reads128.unique (hinj : CastInj128 F) {V : Valuation F} {u : SizedF 128 (FVar F)}
+    {m m' : Prechallenge} (h : Reads128 V u m) (h' : Reads128 V u m') : m = m' :=
+  hinj.prechallenge_injective (h.symm.trans h')
+
+omit [DecidableEq F] in
+/-- A cell list reads as a prechallenge list: `Forall₂ (Reads128 V)` is one equation of
+lists, the cells' values against the prechallenges' casts. -/
+theorem forall₂_reads128_iff {V : Valuation F} {cs : List (SizedF 128 (FVar F))}
+    {ms : List Prechallenge} :
+    List.Forall₂ (Reads128 V) cs ms ↔ cs.map (·.val.val V) = ms.map (fun m => (m.val : F)) := by
+  rw [← List.forall₂_eq_eq_eq, List.forall₂_map_left_iff, List.forall₂_map_right_iff]
+  rfl
 
 /-- At a prime field of more than 254 bits, a `Low128` decomposition reads, through any
 prechallenge reading of its low half, as the verifier's prechallenge up to

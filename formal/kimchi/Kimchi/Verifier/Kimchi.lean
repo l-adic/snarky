@@ -139,6 +139,29 @@ def ProofEvaluations.map {α β : Type*} (f : α → β) (e : ProofEvaluations �
   emulSelector := e.emulSelector.map f
   endomulScalarSelector := e.endomulScalarSelector.map f
 
+instance : Functor PointEvaluations where
+  map := PointEvaluations.map
+
+instance : LawfulFunctor PointEvaluations where
+  map_const := rfl
+  id_map _ := rfl
+  comp_map _ _ _ := rfl
+
+instance : Functor ProofEvaluations where
+  map := ProofEvaluations.map
+
+instance : LawfulFunctor ProofEvaluations where
+  map_const := rfl
+  id_map := fun {α} e => by
+    have h : PointEvaluations.map (id : α → α) = id :=
+      funext fun p => LawfulFunctor.id_map (f := PointEvaluations) p
+    cases e; simp [Functor.map, ProofEvaluations.map, h]
+  comp_map f g e := by
+    have h : ∀ p, PointEvaluations.map g (PointEvaluations.map f p)
+        = PointEvaluations.map (g ∘ f) p :=
+      fun p => (LawfulFunctor.comp_map (f := PointEvaluations) f g p).symm
+    cases e; simp [Functor.map, ProofEvaluations.map, Vector.map_map, Function.comp_def, h]
+
 /-- The fr-sponge transcript (verifier.rs:284–405) as the list absorbed, every entry widened
 to the column's chunk vector: the fq-sponge digest, the recursion digest, `ft(ζω)`, the
 two public chunk vectors, then per column the `ζ`-chunk vector and the `ζω`-chunk vector
@@ -538,6 +561,10 @@ to the wrap-around slack of a 128-bit decomposition: `pre` itself (`k = 0`) or o
 three aliases `(pre + k·p) mod 2¹²⁸`. -/
 def PrechallengeAlias (p pre : ℕ) (lo : Prechallenge) : Prop :=
   ∃ k ≤ 3, lo.val = (pre + k * p) % 2 ^ 128
+
+/-- A prechallenge is its own alias (`k = 0`). -/
+theorem PrechallengeAlias.refl (p : ℕ) (m : Prechallenge) : PrechallengeAlias p m.val m :=
+  ⟨0, by omega, by rw [Nat.zero_mul, Nat.add_zero, Nat.mod_eq_of_lt m.2]⟩
 
 /-- The slack the circuit's `lowest_128_bits` leaves: a decomposition `x = lo + 2¹²⁸·hi` with
 `hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is the
