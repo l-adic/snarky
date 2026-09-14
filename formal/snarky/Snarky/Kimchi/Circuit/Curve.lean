@@ -75,39 +75,54 @@ theorem HasCurve.two_torsion_free [Field F] [DecidableEq F] (d : HasCurve F)
   exact _root_.Pasta.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
     (by rw [two_zsmul, hzero])
 
-/-- The dictionary the `EndoMul` laws close over: a `HasCurve` with the endomorphism
-coefficient, its scalar eigenvalue, and every curve-level fact the `endoMul` law pair
-consumes. The wire twin is `Pasta.EndoSpec`, which carries the same mathematics without
-the circuit layer's extra characteristic and order facts. -/
+/-- The dictionary the `EndoMul` laws close over: a `HasCurve` carrying the curve's GLV
+endomorphism, together with the further field and order facts the `endoMul` law pair
+consumes. The endomorphism itself is the wire's own record, `Pasta.EndoSpec`, rather than
+a second copy of its coefficient, eigenvalue and GLV facts; `HasEndo.endo`, `HasEndo.lam`
+and the three theorems below project them out under the names the laws use. -/
 structure HasEndo (F : Type) [Field F] [DecidableEq F] extends HasCurve F where
-  /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
-  endo : F
-  /-- The scalar eigenvalue `λ` of the endomorphism: `φ(T) = [λ]·T`. -/
-  lam : ℤ
+  /-- The curve's GLV endomorphism, as the wire states it. -/
+  spec : Pasta.EndoSpec W
   /-- The curve is smooth, so an on-curve point is nonsingular
   (`equation_iff_nonsingular_of_Δ_ne_zero`). -/
   delta_ne : W.Δ ≠ 0
   /-- The field does not have characteristic `3`. -/
   three_ne : (3 : F) ≠ 0
-  /-- The eigenvalue relation `φ(T) = [λ]·T` at every on-curve point. -/
-  eigen : ∀ {x y : F} (hT : W.Nonsingular x y) (hφT : W.Nonsingular (endo * x) y),
-    Point.some _ _ hφT = lam • Point.some _ _ hT
-  /-- The endomorphism maps the curve to itself. -/
-  endo_nonsingular : ∀ {x y : F}, W.Nonsingular x y → W.Nonsingular (endo * x) y
-  /-- The GLV off-targets fact: a bounded nonzero two-base combination avoids `±T`,
-  `±φT` (`Pasta.{pallas,vesta}_combo_off_targets`'s shape). -/
-  off_targets : ∀ {a b : ℤ}, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
-    ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
-      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
-      a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
-  /-- `[1 + λ]` does not kill a nonzero point — the init sum `T + φT` is finite. -/
-  lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
   /-- The order is not `3` either: with `odd`, both `2` and `3` are units in
   `ZMod order`, which lets the decompose tables be read in the scalar field. -/
   order_ne_three : W.order ≠ 3
   /-- The char window: integers below `2^127` in magnitude embed injectively in `F`,
   so bounded fold values with equal `F`-images are equal integers. -/
   char_big : ∀ z : ℤ, |z| < 2 ^ 127 → (z : F) = 0 → z = 0
+
+variable [Field F] [DecidableEq F]
+
+/-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
+@[reducible] def HasEndo.endo (d : HasEndo F) : F := d.spec.coeff
+
+/-- The scalar eigenvalue `λ` of the endomorphism: `φ(T) = [λ]·T`. -/
+@[reducible] def HasEndo.lam (d : HasEndo F) : ℤ := d.spec.lam
+
+/-- The endomorphism maps the curve to itself. -/
+theorem HasEndo.endo_nonsingular (d : HasEndo F) {x y : F} (h : d.W.Nonsingular x y) :
+    d.W.Nonsingular (d.endo * x) y := d.spec.endo_nonsingular h
+
+/-- The eigenvalue relation `φ(T) = [λ]·T` at every on-curve point. -/
+theorem HasEndo.eigen (d : HasEndo F) {x y : F} (hT : d.W.Nonsingular x y)
+    (hφT : d.W.Nonsingular (d.endo * x) y) :
+    Point.some _ _ hφT = d.lam • Point.some _ _ hT := d.spec.eigen hT
+
+/-- The GLV off-targets fact: a bounded nonzero two-base combination avoids `±T`, `±φT`. -/
+theorem HasEndo.off_targets (d : HasEndo F) {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
+    (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126) {T φT : d.W.Point} (hTne : T ≠ 0)
+    (heig : φT = d.lam • T) :
+    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
+      a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT :=
+  d.spec.off_targets ha hb hba hbb hTne heig
+
+/-- `[1 + λ]` does not kill a nonzero point — the init sum `T + φT` is finite. -/
+theorem HasEndo.lam_succ_smul (d : HasEndo F) (T : d.W.Point) (hne : T ≠ 0) :
+    (1 + d.lam) • T ≠ 0 := d.spec.lam_succ_smul T hne
 
 /-! ## The deployed dictionaries -/
 
@@ -131,29 +146,13 @@ open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
   two_ne := by decide
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The endomorphism dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts
-from `Pasta` (`pallas_eigen`, `pallas_endo_nonsingular`, `pallas_card`) and the GLV
-off-targets fact. -/
+/-- The endomorphism dictionary at deployed Pallas: `Pasta.pallasEndoSpec` over
+`HasCurve.pallas`, and the field and order facts on top of it. -/
 def HasEndo.pallas : HasEndo Fp where
-  W := Pallas.curve.toAffine
-  endo := pallasEndo
-  lam := pallasLam
-  short := ⟨rfl, rfl, rfl, rfl⟩
+  toHasCurve := HasCurve.pallas
+  spec := pallasEndoSpec
   delta_ne := by decide
-  prime := Fact.out
-  odd := by rw [pallas_card]; decide
-  two_ne := by decide
   three_ne := by decide
-  eigen := fun hT _ => pallas_eigen hT
-  endo_nonsingular := fun h => pallas_endo_nonsingular h
-  off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
-    _root_.Pasta.pallas_combo_off_targets ha hb hba hbb hTne heig
-  lam_succ_smul := fun T hTne => by
-    haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-        ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-    exact _root_.Pasta.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
-      (by norm_num [pallasLam])
-      (by rw [pallas_card]; norm_num [pallasLam])
   order_ne_three := by rw [pallas_card]; decide
   char_big := fun z hz h0 => by
     have hdvd : ((PALLAS_BASE_CARD : ℕ) : ℤ) ∣ z :=
@@ -163,25 +162,10 @@ def HasEndo.pallas : HasEndo Fp where
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
 /-- The endomorphism dictionary at deployed Vesta — the other half of the 2-cycle. -/
 @[reducible] def HasEndo.vesta : HasEndo Fq where
-  W := Vesta.curve.toAffine
-  endo := vestaEndo
-  lam := vestaLam
-  short := ⟨rfl, rfl, rfl, rfl⟩
+  toHasCurve := HasCurve.vesta
+  spec := vestaEndoSpec
   delta_ne := by decide
-  prime := Fact.out
-  odd := by rw [vesta_card]; decide
-  two_ne := by decide
   three_ne := by decide
-  eigen := fun hT _ => vesta_eigen hT
-  endo_nonsingular := fun h => vesta_endo_nonsingular h
-  off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
-    _root_.Pasta.vesta_combo_off_targets ha hb hba hbb hTne heig
-  lam_succ_smul := fun T hTne => by
-    haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-        ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-    exact _root_.Pasta.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
-      (by norm_num [vestaLam])
-      (by rw [vesta_card]; norm_num [vestaLam])
   order_ne_three := by rw [vesta_card]; decide
   char_big := fun z hz h0 => by
     have hdvd : ((PALLAS_SCALAR_CARD : ℕ) : ℤ) ∣ z :=

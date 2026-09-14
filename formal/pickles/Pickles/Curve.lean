@@ -16,8 +16,9 @@ its gadget dictionary instead of asking for the coupling as fields.
 
 * `HasCurve.ofCommitmentCurve` — the dictionary of a commitment curve, at the bounds `2 < base`
   and `2 < scalar` that rule out characteristic `2` and a 2-torsion group.
-* `PastaShape` — the deployed shape of a commitment curve, and `PastaShape.d` its dictionary.
-  `pastaShapeVesta` and `pastaShapePallas` are the two witnesses.
+* `PastaShape` — the deployed shape of a commitment curve, with `PastaShape.d` its curve
+  dictionary and `PastaShape.e` its endomorphism dictionary. `pastaShapeVesta` and
+  `pastaShapePallas` are the two witnesses.
 
 ## Main results
 
@@ -47,7 +48,7 @@ bounds.
 Reducible, and a structure literal: consumers state their premises over `d.W`, and instance
 search runs at reducible transparency, so `d.W` has to reduce to `C.E.toAffine` there. The
 projection is iota on the literal, so the proof fields are never forced. -/
-@[reducible] noncomputable def _root_.Snarky.Kimchi.HasCurve.ofCommitmentCurve
+@[reducible] def _root_.Snarky.Kimchi.HasCurve.ofCommitmentCurve
     (C : CommitmentCurve) (hbase : 2 < C.base) (hscalar : 2 < C.scalar) :
     HasCurve C.BaseField where
   W := C.E.toAffine
@@ -78,10 +79,60 @@ structure PastaShape (C : KimchiCurve) : Prop where
 
 /-- The gadget dictionary at a shaped curve: the 254-bit bounds weakened to the `2 <` ones
 `HasCurve.ofCommitmentCurve` asks for. -/
-@[reducible] noncomputable def PastaShape.d {C : KimchiCurve} (s : PastaShape C) :
+@[reducible] def PastaShape.d {C : KimchiCurve} (s : PastaShape C) :
     HasCurve C.BaseField :=
   HasCurve.ofCommitmentCurve C.toCommitmentCurve (lt_trans (by norm_num) s.base_big)
     (lt_trans (by norm_num) s.scalar_lo)
+
+/-- The endomorphism dictionary of a shaped commitment curve: the curve's own `Pasta.EndoSpec`
+on top of `PastaShape.d`, with the smoothness, characteristic and order facts the `endoMul`
+laws need read off the shape. The endomorphism's mathematics is stated once, on the wire; this
+is only the gadget layer's view of it. -/
+@[reducible] def PastaShape.e {C : KimchiCurve} (s : PastaShape C) : HasEndo C.BaseField where
+  toHasCurve := s.d
+  spec := C.endo
+  delta_ne := by
+    show WeierstrassCurve.Δ (toW C.E.A C.E.B) ≠ 0
+    rw [toW_Δ]
+    exact C.E.IsElliptic.ne_zero
+  three_ne := by
+    haveI : Fact (Nat.Prime C.base) := C.primeBase
+    intro h
+    have h3 : ((3 : ℕ) : ZMod C.base) = 0 := by exact_mod_cast h
+    rw [ZMod.natCast_eq_zero_iff] at h3
+    have := Nat.le_of_dvd (by norm_num) h3
+    have := s.base_big
+    omega
+  order_ne_three := by
+    rw [C.order_eq]
+    have := s.scalar_lo
+    omega
+  char_big := fun z hz h0 => by
+    have hdvd : ((C.base : ℕ) : ℤ) ∣ z := (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
+    refine Int.eq_zero_of_abs_lt_dvd hdvd (lt_of_lt_of_le hz ?_)
+    exact_mod_cast le_of_lt (lt_of_lt_of_le (by norm_num : (2 : ℕ) ^ 127 < 2 ^ 254) s.base_big.le)
+
+/-- The scalar field is not of characteristic `2`. -/
+theorem PastaShape.scalar_two_ne {C : KimchiCurve} (s : PastaShape C) :
+    (2 : C.ScalarField) ≠ 0 := by
+  haveI : Fact (Nat.Prime C.scalar) := C.primeScalar
+  intro h
+  have h2 : ((2 : ℕ) : ZMod C.scalar) = 0 := by exact_mod_cast h
+  rw [ZMod.natCast_eq_zero_iff] at h2
+  have := Nat.le_of_dvd (by norm_num) h2
+  have := s.scalar_lo
+  omega
+
+/-- The scalar field is not of characteristic `3`. -/
+theorem PastaShape.scalar_three_ne {C : KimchiCurve} (s : PastaShape C) :
+    (3 : C.ScalarField) ≠ 0 := by
+  haveI : Fact (Nat.Prime C.scalar) := C.primeScalar
+  intro h
+  have h3 : ((3 : ℕ) : ZMod C.scalar) = 0 := by exact_mod_cast h
+  rw [ZMod.natCast_eq_zero_iff] at h3
+  have := Nat.le_of_dvd (by norm_num) h3
+  have := s.scalar_lo
+  omega
 
 /-- Vesta has the shape: base `PALLAS_SCALAR_CARD`, scalar order `PALLAS_BASE_CARD`. -/
 theorem pastaShapeVesta : PastaShape Bulletproof.IpaVesta.curve where

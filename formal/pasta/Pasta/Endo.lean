@@ -479,6 +479,8 @@ structure EndoSpec {F : Type*} [Field F] [DecidableEq F] (W : WeierstrassCurve.A
     ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
       a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
       a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
+  /-- `[1 + λ]` does not kill a nonzero point, so the GLV init sum `T + φT` is finite. -/
+  lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
 
 /-- Vesta's endomorphism. -/
 def vestaEndoSpec : EndoSpec Vesta.curve.toAffine where
@@ -488,6 +490,11 @@ def vestaEndoSpec : EndoSpec Vesta.curve.toAffine where
   eigen h := vesta_eigen h
   off_targets := fun {_ _} ha hb hba hbb {_ _} hTne heig =>
     vesta_combo_off_targets ha hb hba hbb hTne heig
+  lam_succ_smul := fun T hTne => by
+    haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
+        ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
+    exact smul_ne_zero_of_lt Vesta.curve.toAffine hTne (by norm_num [vestaLam])
+      (by rw [vesta_card]; norm_num [vestaLam])
 
 /-- Pallas's endomorphism. -/
 def pallasEndoSpec : EndoSpec Pallas.curve.toAffine where
@@ -497,5 +504,10 @@ def pallasEndoSpec : EndoSpec Pallas.curve.toAffine where
   eigen h := pallas_eigen h
   off_targets := fun {_ _} ha hb hba hbb {_ _} hTne heig =>
     pallas_combo_off_targets ha hb hba hbb hTne heig
+  lam_succ_smul := fun T hTne => by
+    haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
+        ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
+    exact smul_ne_zero_of_lt Pallas.curve.toAffine hTne (by norm_num [pallasLam])
+      (by rw [pallas_card]; norm_num [pallasLam])
 
 end Pasta
