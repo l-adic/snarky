@@ -12,6 +12,7 @@ import Pickles.Statement
 import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
+import Pickles.Curve
 import Pickles.PublicInputCommit
 import Pickles.FtComm
 import Pickles.IncrementallyVerify

@@ -1,9 +1,7 @@
-import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
-import Bulletproof.Wire
-import Pasta.Basic
+import Pickles.Curve
 
 /-!
 # The in-circuit public-input commitment (`x_hat`)
@@ -1334,34 +1332,41 @@ def Leaf.offBand (p : ℕ) (V : Valuation F) : Leaf F nc → Prop
         2 * xhatBandDelta p + 11 < ToNat.toNat (s.val V)
   | _ => True
 
-/-- The curve facts the x_hat crossing needs of one side: the circuit's point group `d`
-(Mathlib's affine group of the commitment curve), the crossing `e` to the wire's `SWPoint`
-group, the group being killed by the wire's scalar order (so the integer → scalar reduction
-is exact), the base field's width, and the Pasta shape of the scalar order — the group order,
-in `(2^254, 2^254 + 2^253)` and `1 mod 4` — from which the fold's regime discharge follows
-(`XhatSide.order_big`, `XhatSide.regime`). Instantiated at `xhatWrap` (Vesta) and `xhatStep`
-(Pallas). -/
-structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) where
-  /-- The circuit-side curve data at the commitment curve's base field. -/
-  d : HasCurve C.BaseField
-  /-- The crossing from the wire's point group to the circuit-side point group. -/
-  e : C.Point ≃+ d.W.Point
-  /-- The wire scalar order kills the circuit-side point group. -/
-  card_nsmul : ∀ X : d.W.Point, C.scalar • X = 0
+/-- The facts the x_hat crossing needs of one side beyond its commitment curve: the base field's
+width, and the Pasta shape of the scalar order — in `(2^254, 2^254 + 2^253)` and `1 mod 4` —
+from which the fold's regime discharge follows (`XhatSide.order_big`, `XhatSide.regime`). The
+circuit's point group and the crossing to the wire's are the curve's own (`XhatSide.d`,
+`XhatSide.e`). Instantiated at `xhatWrap` (Vesta) and `xhatStep` (Pallas). -/
+structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) : Prop where
   /-- The base field has more than 254 bits: a `2^254`-bounded integer casts faithfully. -/
   base_big : 2 ^ 254 < C.base
-  /-- The circuit-side group's order is the wire's scalar order. -/
-  order_eq : d.W.order = C.scalar
   /-- The scalar order has 255 bits. -/
   scalar_lo : 2 ^ 254 < C.scalar
   /-- The scalar order is below `2^254 + 2^253`: the pinned full ladder wraps exactly twice. -/
   scalar_hi : C.scalar < 2 ^ 254 + 2 ^ 253
   /-- The scalar order is `1 mod 4`, as the one-wrap ladder regime asks. -/
   scalar_mod : C.scalar % 4 = 1
-  /-- The crossing lands on the commitment curve: a cell reading as a crossed wire point reads
-  as that point on `C.E`, the form the group half consumes. -/
-  onCurve_cross : ∀ (V : Valuation C.BaseField) (r : AffinePoint (FVar C.BaseField)) (P : C.Point),
-    OnCurveAt d.W V r (e P) → OnCurveAt C.E.toAffine V r (SWPoint.equivPoint C.E P)
+
+/-- The circuit-side curve data: the gadget dictionary of the commitment curve. -/
+noncomputable def XhatSide.d {C : Bulletproof.Ipa.CommitmentCurve} (s : XhatSide C) :
+    HasCurve C.BaseField :=
+  HasCurve.ofCommitmentCurve C (lt_trans (by norm_num) s.base_big)
+    (lt_trans (by norm_num) s.scalar_lo)
+
+/-- The crossing from the wire's point group to the circuit-side point group. -/
+noncomputable def XhatSide.e {C : Bulletproof.Ipa.CommitmentCurve} (s : XhatSide C) :
+    C.Point ≃+ s.d.W.Point :=
+  SWPoint.equivPoint C.E
+
+/-- The circuit-side group's order is the wire's scalar order. -/
+theorem XhatSide.order_eq {C : Bulletproof.Ipa.CommitmentCurve} (s : XhatSide C) :
+    s.d.W.order = C.scalar :=
+  C.order_eq
+
+/-- The wire scalar order kills the circuit-side point group. -/
+theorem XhatSide.card_nsmul {C : Bulletproof.Ipa.CommitmentCurve} (s : XhatSide C)
+    (X : s.d.W.Point) : C.scalar • X = 0 :=
+  C.affine_card_nsmul X
 
 end Generic
 
@@ -1466,29 +1471,19 @@ theorem XhatSide.regime (s : XhatSide C) {nc : ℕ} (V : Valuation C.BaseField)
 end SideFacts
 
 /-- The wrap side of the x_hat crossing: Vesta bases at `Fq`, scalar order `PALLAS_BASE_CARD`. -/
-noncomputable def xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
-  d := HasCurve.vesta
-  e := SWPoint.equivPoint Vesta.curve
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
+theorem xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
   base_big := by norm_num [PALLAS_SCALAR_CARD]
-  order_eq := Pasta.vesta_card
   scalar_lo := by norm_num [PALLAS_BASE_CARD]
   scalar_hi := by norm_num [PALLAS_BASE_CARD]
   scalar_mod := by norm_num [PALLAS_BASE_CARD]
-  onCurve_cross _ _ _ h := h
 
 /-- The step side of the x_hat crossing: Pallas bases at `Fp`, scalar order
 `PALLAS_SCALAR_CARD`. -/
-noncomputable def xhatStep : XhatSide Bulletproof.IpaPallas.curve where
-  d := HasCurve.pallas
-  e := SWPoint.equivPoint Pallas.curve
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
+theorem xhatStep : XhatSide Bulletproof.IpaPallas.curve where
   base_big := by norm_num [PALLAS_BASE_CARD]
-  order_eq := Pasta.pallas_card
   scalar_lo := by norm_num [PALLAS_SCALAR_CARD]
   scalar_hi := by norm_num [PALLAS_SCALAR_CARD]
   scalar_mod := by norm_num [PALLAS_SCALAR_CARD]
-  onCurve_cross _ _ _ h := h
 
 section Binding
 

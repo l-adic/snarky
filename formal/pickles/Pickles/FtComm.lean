@@ -100,9 +100,9 @@ def FtCommReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
 /-! ## Reading helpers -/
 
 /-- The scalar order kills the affine group too, across `equivPoint`. -/
-private theorem IvpSide.aff_nsmul (S : IvpSide C V ops) (X : C.E.toAffine.Point) :
-    C.scalar • X = 0 := by
-  rw [← (SWPoint.equivPoint C.E).apply_symm_apply X, ← map_nsmul, S.card_nsmul, map_zero]
+private theorem IvpSide.aff_nsmul (_S : IvpSide C V ops) (X : C.E.toAffine.Point) :
+    C.scalar • X = 0 :=
+  C.affine_card_nsmul X
 
 /-- An integer acts on the affine group as its residue's representative in the scalar field. -/
 private theorem IvpSide.zsmul_eq (S : IvpSide C V ops) (z : ℤ) (X : C.E.toAffine.Point) :
@@ -182,7 +182,7 @@ private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
       have ih := hornerReduce_reads S zM (c' :: rest) (List.cons_ne_nil _ _)
       have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zM
       have hadd := fun (s : AffinePoint (FVar C.BaseField)) =>
-        addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
+        addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.two_ne
           S.two_torsion_free c s
       mvcgen -trivial [-Snarky.Kimchi.addFast_spec, ih, hsc, hadd]
       clear ih
@@ -235,7 +235,7 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   have hht := hornerReduce_reads S zetaMCell tCommCells hne
   have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zetaNCell
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
-    addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
+    addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.two_ne
       S.two_torsion_free a b
   mvcgen -trivial [-Snarky.Kimchi.addFast_spec, hhσ, hscP, hht, hscN, hadd]
   clear hhσ hht
@@ -269,9 +269,9 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   -- `hornerVal`, pull the `perm` scaling out, split `ζⁿ − 1`, and match `h2`.
   simp only [runFtComm, runFComm]
   rw [hζM, hsP, hζN]
-  have hcT := combineCommitments_eq_foldr C S.card_nsmul ζM cp.tComm.toList
+  have hcT := combineCommitments_eq_foldr C C.card_nsmul ζM cp.tComm.toList
   rw [Array.toArray_toList] at hcT
-  have hcσ := combineCommitments_eq_foldr C S.card_nsmul ζM
+  have hcσ := combineCommitments_eq_foldr C C.card_nsmul ζM
     ((cvk.sigmaComm[6]).toList.map (fun P => sP.val • P))
   rw [show ((cvk.sigmaComm[6]).toList.map (fun P => sP.val • P)).toArray
       = ((cvk.sigmaComm[6]).map (fun P => sP.val • P)).toArray

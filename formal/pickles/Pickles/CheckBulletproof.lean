@@ -6,6 +6,7 @@ import Snarky.Types.Shifted
 import Snarky.Kimchi.Circuit.Point
 import Pickles.FrSponge
 import Pickles.Prechallenge
+import Pickles.Curve
 
 /-!
 # The in-circuit IPA opening check
@@ -924,12 +925,6 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   decode : sf → C.ScalarField
   /-- A ladder witness of a claim decodes, in the scalar field, to the claim's decode. -/
   dec_cast : ∀ {x : sf} {w : R.wit}, R.Pre x w → (R.dec w : C.ScalarField) = decode x
-  /-- The scalar order kills the wire point group. -/
-  card_nsmul : ∀ X : C.Point, C.scalar • X = 0
-  /-- The curve is short: `y² = x³ + B`. -/
-  a_zero : C.E.A = 0
-  /-- The affine group has no 2-torsion. -/
-  two_torsion_free : ∀ P : C.E.toAffine.Point, P ≠ 0 → P + P ≠ 0
   /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
   e : IpaEndo C.BaseField
   /-- The bundle's curve is the wire curve. -/
@@ -938,6 +933,8 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   gm : GroupMapParams C.BaseField
   /-- The base field has more than 254 bits: a low-128-bit read is a `PrechallengeAlias`. -/
   base_big : 2 ^ 254 < C.base
+  /-- The scalar order has 255 bits: the group has no 2-torsion. -/
+  scalar_big : 2 ^ 254 < C.scalar
   /-- The sponge parameters carry the full round constants. -/
   hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
@@ -991,6 +988,12 @@ theorem IvpSide.two_ne (S : IvpSide C V ops) : (2 : C.BaseField) ≠ 0 := fun h 
 /-- The base field is not of characteristic 3 (the prechallenge squeeze's `endo_scalar`). -/
 theorem IvpSide.three_ne (S : IvpSide C V ops) : (3 : C.BaseField) ≠ 0 := fun h =>
   absurd (S.small_inj 3 0 (by norm_num) (by norm_num) (by simpa using h)) (by norm_num)
+
+/-- The affine group has no 2-torsion: its order is an odd prime. -/
+theorem IvpSide.two_torsion_free (S : IvpSide C V ops) (P : C.E.toAffine.Point) (hne : P ≠ 0) :
+    P + P ≠ 0 :=
+  (HasCurve.ofCommitmentCurve C (lt_trans (by norm_num) S.base_big)
+    (lt_trans (by norm_num) S.scalar_big)).two_torsion_free P hne
 
 /-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
 reading it in the ladder's regime (at the deployed curves: the decode is off the forbidden
@@ -1489,7 +1492,7 @@ open Kimchi.Gate.EndoScalar Bulletproof Bulletproof.Ipa
 
 /-- The Vesta point group is killed by its order. -/
 private theorem vesta_card_nsmul (X : Vesta.curve.toAffine.Point) : PALLAS_BASE_CARD • X = 0 :=
-  ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
+  IpaVesta.curve.affine_card_nsmul X
 
 /-- An integer acts on Vesta points as its residue's representative in the scalar field. -/
 private theorem vesta_zsmul_eq (z : ℤ) (X : Vesta.curve.toAffine.Point) :
@@ -1521,8 +1524,7 @@ private theorem vesta_lrTerm_eq (q : SWPoint Vesta.curve × SWPoint Vesta.curve)
   rw [AddEquiv.symm_apply_apply, AddEquiv.symm_apply_apply]
   rw [zmod_inv_val_congr _ PALLAS_BASE_CARD Pasta.vesta_card]
   rw [vesta_endoExpandZ_cast]
-  rw [Pasta.zsmul_eq_val_nsmul PALLAS_BASE_CARD
-    (fun X => ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X), vesta_endoExpandZ_cast]
+  rw [Pasta.zsmul_eq_val_nsmul PALLAS_BASE_CARD IpaVesta.curve.card_nsmul, vesta_endoExpandZ_cast]
 
 /-- The round terms of `lr_prod`, read back in the wire group, are the wire's round terms at
 the expanded challenges. -/
@@ -1545,8 +1547,7 @@ private theorem vesta_zipTerms :
 private theorem combineCommitments_eq_foldr_vesta (ξ : Fp) (cs : List (SWPoint Vesta.curve)) :
     combineCommitments IpaVesta.curve ξ cs.toArray
       = cs.foldr (fun P acc => P + ξ.val • acc) 0 :=
-  combineCommitments_eq_foldr IpaVesta.curve
-    (fun x => ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) x) ξ cs
+  combineCommitments_eq_foldr IpaVesta.curve IpaVesta.curve.card_nsmul ξ cs
 
 /-- Horner's rule over the kept bases, read back in the wire group, is the wire's polyscale
 combination at the expanded challenge. -/
@@ -1557,8 +1558,7 @@ private theorem vesta_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Vesta.curv
           (bvW.map fun b => ((SWPoint.equivPoint Vesta.curve) b.1, b.2)))
       = combineCommitments IpaVesta.curve (endoExpand Poseidon.FqVesta.spec.lam n)
           ((bvW.filter (·.2)).map (·.1)).toArray := by
-  have hn : ∀ x : SWPoint Vesta.curve, PALLAS_BASE_CARD • x = 0 := fun x =>
-    ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) x
+  have hn : ∀ x : SWPoint Vesta.curve, PALLAS_BASE_CARD • x = 0 := IpaVesta.curve.card_nsmul
   have hlast' : ∀ h, (bvW.map fun b => ((SWPoint.equivPoint Vesta.curve) b.1, b.2)).getLast?
       = some h → h.2 = true := by
     intro h hh
@@ -1686,13 +1686,11 @@ def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap whe
   R := wrapReading V
   decode := wrapDecode V
   dec_cast h := wrapLadderDec_cast h
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
-  a_zero := rfl
-  two_torsion_free := HasCurve.vesta.two_torsion_free
   e := IpaEndo.vesta
   eW := rfl
   gm := groupMapParamsVesta
   base_big := by norm_num [PALLAS_SCALAR_CARD]
+  scalar_big := by norm_num [PALLAS_BASE_CARD]
   hsize := Kimchi.Gate.Poseidon.fqParams_size
   Canon _ := True
   absorb_limbs _ h := wrap_cip_limbs h
@@ -1714,7 +1712,7 @@ open Kimchi.Gate.EndoScalar Bulletproof Bulletproof.Ipa
 
 /-- The Pallas point group is killed by its order. -/
 private theorem pallas_card_nsmul (X : Pallas.curve.toAffine.Point) : PALLAS_SCALAR_CARD • X = 0 :=
-  ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
+  IpaPallas.curve.affine_card_nsmul X
 
 /-- An integer acts on Pallas points as its residue's representative in the scalar field. -/
 private theorem pallas_zsmul_eq (z : ℤ) (X : Pallas.curve.toAffine.Point) :
@@ -1740,8 +1738,8 @@ private theorem pallas_lrTerm_eq (q : SWPoint Pallas.curve × SWPoint Pallas.cur
   rw [AddEquiv.symm_apply_apply, AddEquiv.symm_apply_apply]
   rw [zmod_inv_val_congr _ PALLAS_SCALAR_CARD Pasta.pallas_card]
   rw [pallas_endoExpandZ_cast]
-  rw [Pasta.zsmul_eq_val_nsmul PALLAS_SCALAR_CARD
-    (fun X => ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X), pallas_endoExpandZ_cast]
+  rw [Pasta.zsmul_eq_val_nsmul PALLAS_SCALAR_CARD IpaPallas.curve.card_nsmul,
+    pallas_endoExpandZ_cast]
 
 /-- The round terms of `lr_prod`, read back in the wire group, are the wire's round terms at
 the expanded challenges. -/
@@ -1764,8 +1762,7 @@ private theorem pallas_zipTerms :
 private theorem combineCommitments_eq_foldr_pallas (ξ : Fq) (cs : List (SWPoint Pallas.curve)) :
     combineCommitments IpaPallas.curve ξ cs.toArray
       = cs.foldr (fun P acc => P + ξ.val • acc) 0 :=
-  combineCommitments_eq_foldr IpaPallas.curve
-    (fun x => ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) x) ξ cs
+  combineCommitments_eq_foldr IpaPallas.curve IpaPallas.curve.card_nsmul ξ cs
 
 /-- Horner's rule over the kept bases, read back in the wire group, is the wire's polyscale
 combination at the expanded challenge. -/
@@ -1776,8 +1773,7 @@ private theorem pallas_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Pallas.cu
           (bvW.map fun b => ((SWPoint.equivPoint Pallas.curve) b.1, b.2)))
       = combineCommitments IpaPallas.curve (endoExpand Poseidon.FqPallas.spec.lam n)
           ((bvW.filter (·.2)).map (·.1)).toArray := by
-  have hn : ∀ x : SWPoint Pallas.curve, PALLAS_SCALAR_CARD • x = 0 := fun x =>
-    ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) x
+  have hn : ∀ x : SWPoint Pallas.curve, PALLAS_SCALAR_CARD • x = 0 := IpaPallas.curve.card_nsmul
   have hlast' : ∀ h, (bvW.map fun b => ((SWPoint.equivPoint Pallas.curve) b.1, b.2)).getLast?
       = some h → h.2 = true := by
     intro h hh
@@ -1916,13 +1912,11 @@ def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step wh
   R := stepReading V
   decode := stepDecode V
   dec_cast h := stepLadderDec_cast h
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
-  a_zero := rfl
-  two_torsion_free := HasCurve.pallas.two_torsion_free
   e := IpaEndo.pallas
   eW := rfl
   gm := groupMapParamsPallas
   base_big := by norm_num [PALLAS_BASE_CARD]
+  scalar_big := by norm_num [PALLAS_SCALAR_CARD]
   hsize := Kimchi.Gate.Poseidon.fpParams_size
   Canon x := 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val
     < PALLAS_SCALAR_CARD

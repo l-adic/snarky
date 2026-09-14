@@ -226,7 +226,7 @@ theorem verifyProof_reads
       (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (X.e P)) _
         (fun ci => xHatKnown_reads_publicCommitment X ci σ cvk blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
-      fun pts hp => hp.imp fun r P h => X.onCurve_cross V r P h
+      fun pts hp => hp.imp fun _ _ h => h
   have hivp := incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
     spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hivp
   have hb := CircuitType.reads_boolVar.mp hbase

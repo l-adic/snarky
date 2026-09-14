@@ -100,6 +100,10 @@ structure CommitmentCurve where
   frParams : Params (ZMod scalar)
   /-- The curve, in short-Weierstrass form over the base field. -/
   E : SWCurve (ZMod base)
+  /-- The curve is short: `y² = x³ + B`. -/
+  a_zero : E.A = 0
+  /-- The scalar cardinality is the group order: `ScalarField` is the scalar ring of `Point`. -/
+  card : Nat.card (SWPoint E) = scalar
   /-- The map-to-curve deriving the transcript `U` base from a squeezed field element. -/
   toGroup : ZMod base → SWPoint E
   /-- A fast multi-scalar multiplication for this curve: the windowed-Pippenger accelerator
@@ -121,6 +125,11 @@ abbrev CommitmentCurve.ScalarField (C : CommitmentCurve) := ZMod C.scalar
 
 /-- The point type — the library's proof-carrying `SWPoint`, with its group structure. -/
 abbrev CommitmentCurve.Point (C : CommitmentCurve) := SWPoint C.E
+
+/-- The scalar order kills the point group (Lagrange): the integer → scalar reduction of a
+scalar action is exact. -/
+theorem CommitmentCurve.card_nsmul (C : CommitmentCurve) (X : C.Point) : C.scalar • X = 0 := by
+  rw [← C.card]; exact card_nsmul_eq_zero'
 
 variable (C : CommitmentCurve)
 
@@ -568,6 +577,8 @@ abbrev curve : Ipa.CommitmentCurve where
   sponge := FqVesta.spec
   frParams := fpParams
   E := Vesta.curve
+  a_zero := rfl
+  card := Vesta.card_eq
   toGroup := GroupMapVesta.toGroup
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProj.pippengerProjScatterPar 8
@@ -595,6 +606,8 @@ abbrev curve : Ipa.CommitmentCurve where
   sponge := FqPallas.spec
   frParams := fqParams
   E := Pallas.curve
+  a_zero := rfl
+  card := Pallas.card_eq
   toGroup := GroupMapPallas.toGroup
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar 8
