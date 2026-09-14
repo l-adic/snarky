@@ -28,13 +28,14 @@ proofs in one circuit, is not ported.
 
 ## Main results
 
-* `VerifyReads` / `verifyWrap_step_reads`: `verify` reads as the group half's `IvpReads` at
-  the public input `pubOf (packLeaves statement)`, the wire's public input being the packed
-  statement, with the claimed digest equal to the wire's digest element and, off the base
-  case, the claimed round prechallenges equal to the returned ones pair by pair (hence,
-  through `IvpReads`, the wire's up to `PrechallengeAlias`). The `x_hat` chunks read through
-  `xHatKnown_reads_publicCommitment` at the `XhatBinding` of each chunk, the group half
-  through `incrementallyVerifyProof_step_reads`, and the assertion loop by its invariant.
+* `VerifyReads` / `verifyWrap_reads`: on any group side and `x_hat` side, `verify` reads as
+  the group half's `IvpReads` at the public input `pubOf (packLeaves statement)`, the wire's
+  public input being the packed statement, with the claimed digest equal to the wire's digest
+  element and, off the base case, the claimed round prechallenges equal to the returned ones
+  pair by pair (hence, through `IvpReads`, the wire's up to `PrechallengeAlias`). The `x_hat`
+  chunks read through `xHatKnown_reads_publicCommitment` at the tables' binding
+  (`XhatTable.Bound`), the group half through `incrementallyVerifyProof_reads` at `IvpHyps`,
+  and the assertion loop by its invariant. `verifyWrap_step_reads` is the step side.
 -/
 
 namespace Pickles
@@ -162,75 +163,71 @@ def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
     (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges,
       p.1.val.val V = p.2.val.val V)
 
-end Read
-
-section StepRead
-
-/-- **`verify` reads as the group half at the packed statement, on the step side.** The wire's
-public input is `pubOf (packLeaves statement)`, the statement's scalars reduced to `Fq`; the
-`x_hat` binding ties the leaves' bases to the key's Lagrange bases and the correction cells
-to the honest shifts; the remaining premises are `incrementallyVerifyProof_step_reads`'s at
-the claims-substituted cells. -/
-theorem verifyWrap_step_reads
+/-- **`verify` reads as the group half at the packed statement, on either side.** On the group
+side `S` and the `x_hat` side `X`: the wire's public input is `pubOf (packLeaves statement)`,
+the statement's scalars reduced to the scalar field; the `x_hat` tables are bound to the key
+at those leaves (`XhatTable.Bound`); the group half's premises hold at the claims-substituted
+cells (`IvpHyps`). -/
+theorem verifyWrap_reads
     {nc : ℕ}
-    {V : Valuation Fp}
+    (S : IvpSide C V ops)
+    (X : XhatSide C)
     -- the wire objects
-    (σ : SRS IpaPallas.curve.Point)
-    (cvk : KimchiVK IpaPallas.curve nc)
-    (cp : KimchiProof IpaPallas.curve nc σ.k)
+    (σ : SRS C.Point)
+    (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k)
     -- the circuit's constants
-    (endo : FVar Fp)
-    (sqrtF : Fp → Option Fp)
-    (blindingH : AffinePoint (FVar Fp))
+    (endo : FVar C.BaseField)
+    (sqrtF : C.BaseField → Option C.BaseField)
+    (blindingH : AffinePoint (FVar C.BaseField))
     -- the `x_hat` tables
-    (tab : XhatTable Fp nc)
+    (tab : XhatTable C.BaseField nc)
     -- the cells: the sponge after the index digest, the base-case bit, the wrap statement,
     -- the unfinalized proof it is checked against, the group half's commitment cells
-    (spongeAfterIndex : SpongeVar Fp)
-    (isBaseCase : BoolVar Fp)
-    (statement : WrapStatement Fp (Type1 (FVar Fp)))
-    (u : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (spongeAfterIndex : SpongeVar C.BaseField)
+    (isBaseCase : BoolVar C.BaseField)
+    (statement : WrapStatement C.BaseField (Type1 (FVar C.BaseField)))
+    (u : UnfinalizedProof C.BaseField sf)
+    (cells : IvpInput C.BaseField sf)
     -- the values the premises speak about: the base-case bit, the `sg_old` points under their
     -- bits
     (base : Bool)
-    (oldsW : List (IpaPallas.curve.Point × Bool))
+    (oldsW : List (C.Point × Bool))
     -- the base-case bit's reading, the tables bound to the key at the packed statement's
     -- leaves, the group half's premises at the claims-substituted cells
     (hbase : CircuitType.Reads V isBaseCase base)
-    (htab : tab.Bound xhatStep V σ cvk blindingH (packLeaves statement tab))
-    (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
-      false blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
+    (htab : tab.Bound X V σ cvk blindingH (packLeaves statement tab))
+    (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false blindingH
+      spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    verifyWrap (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
-      IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
-      spongeAfterIndex isBaseCase statement u cells
-    ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
-      (pubOf IpaPallas.curve V (packLeaves statement tab)) cells u base v⌝⦄ := by
+    verifyWrap (c := Builder V (KimchiConstraint C.BaseField)) ops S.e C.sponge.params endo S.gm
+      sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
+    ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) cells u base v⌝⦄ := by
   obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
   -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
   have hhead : leafHeadScalar (packLeaves statement tab) := by
     obtain ⟨b, bs, hb⟩ := List.exists_cons_of_ne_nil hbases
     obtain ⟨c', cs, hc⟩ := List.exists_cons_of_ne_nil hcorrs
     simp [packLeaves, WrapStatement.packed, leafHeadScalar, hb, hc]
-  -- `x_hat`, chunk by chunk, reads as the wire's public commitment
+  -- `x_hat`, chunk by chunk, reads as the wire's public commitment, crossed to `C.E`
   have hXhat : ⦃⌜True⌝⦄
       (List.finRange nc).mapM (fun ci => publicInputCommitKnown
-        (S := Builder V (KimchiConstraint Fp)) ci blindingH tab.corrHead[ci] tab.corrSum[ci]
-        (packLeaves statement tab))
-      ⦃⇓ pts _ => ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk
-        (pubOf IpaPallas.curve V (packLeaves statement tab))).toList⌝⦄ := by
-    have hvec : (publicCommitment IpaPallas.curve σ cvk
-        (pubOf IpaPallas.curve V (packLeaves statement tab))).toList
-        = (List.finRange nc).map fun ci => (publicCommitment IpaPallas.curve σ cvk
-            (pubOf IpaPallas.curve V (packLeaves statement tab)))[ci] := by
+        (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH tab.corrHead[ci]
+        tab.corrSum[ci] (packLeaves statement tab))
+      ⦃⇓ pts _ => ⌜CommReads C V pts
+        (publicCommitment C σ cvk (pubOf C V (packLeaves statement tab))).toList⌝⦄ := by
+    have hvec : (publicCommitment C σ cvk (pubOf C V (packLeaves statement tab))).toList
+        = (List.finRange nc).map fun ci =>
+            (publicCommitment C σ cvk (pubOf C V (packLeaves statement tab)))[ci] := by
       apply List.ext_getElem <;> simp
     unfold CommReads
     rw [hvec]
-    exact builder_spec_mapM _ (fun r P => OnCurveAt xhatStep.d.W V r (xhatStep.e P)) _
-      (fun ci => xHatKnown_reads_publicCommitment xhatStep ci σ cvk blindingH tab.corrHead[ci]
-        tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _
-  have hivp := incrementallyVerifyProof_step_reads σ cvk cp _ endo sqrtF blindingH
+    refine builder_spec_imp _ _ _
+      (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (X.e P)) _
+        (fun ci => xHatKnown_reads_publicCommitment X ci σ cvk blindingH tab.corrHead[ci]
+          tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
+      fun pts hp => hp.imp fun r P h => X.onCurve_cross V r P h
+  have hivp := incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
     spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hivp
   have hb := CircuitType.reads_boolVar.mp hbase
   simp only [verifyWrap]
@@ -250,6 +247,34 @@ theorem verifyWrap_step_reads
   · -- the exit: the read
     rename_i o _ hivp' _ _ hdig _ _ hall
     exact ⟨o, hivp', rfl, hdig, hall⟩
+
+end Read
+
+section StepRead
+
+/-- **`verify` reads as the group half on the step side**: `verifyWrap_reads` at `stepSide`
+and `xhatStep`. -/
+theorem verifyWrap_step_reads {nc : ℕ} {V : Valuation Fp}
+    (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
+    (cp : KimchiProof IpaPallas.curve nc σ.k)
+    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
+    (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (statement : WrapStatement Fp (Type1 (FVar Fp)))
+    (u : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
+    (hbase : CircuitType.Reads V isBaseCase base)
+    (htab : tab.Bound xhatStep V σ cvk blindingH (packLeaves statement tab))
+    (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
+      false blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
+    ⦃⌜True⌝⦄
+    verifyWrap (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
+      IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
+      spongeAfterIndex isBaseCase statement u cells
+    ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
+      (pubOf IpaPallas.curve V (packLeaves statement tab)) cells u base v⌝⦄ :=
+  verifyWrap_reads (stepSide V) xhatStep σ cvk cp endo sqrtF blindingH tab spongeAfterIndex
+    isBaseCase statement u cells base oldsW hbase htab hivp
 
 end StepRead
 

@@ -1358,6 +1358,10 @@ structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) where
   scalar_hi : C.scalar < 2 ^ 254 + 2 ^ 253
   /-- The scalar order is `1 mod 4`, as the one-wrap ladder regime asks. -/
   scalar_mod : C.scalar % 4 = 1
+  /-- The crossing lands on the commitment curve: a cell reading as a crossed wire point reads
+  as that point on `C.E`, the form the group half consumes. -/
+  onCurve_cross : ∀ (V : Valuation C.BaseField) (r : AffinePoint (FVar C.BaseField)) (P : C.Point),
+    OnCurveAt d.W V r (e P) → OnCurveAt C.E.toAffine V r (SWPoint.equivPoint C.E P)
 
 end Generic
 
@@ -1471,6 +1475,7 @@ noncomputable def xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
   scalar_lo := by norm_num [PALLAS_BASE_CARD]
   scalar_hi := by norm_num [PALLAS_BASE_CARD]
   scalar_mod := by norm_num [PALLAS_BASE_CARD]
+  onCurve_cross _ _ _ h := h
 
 /-- The step side of the x_hat crossing: Pallas bases at `Fp`, scalar order
 `PALLAS_SCALAR_CARD`. -/
@@ -1483,6 +1488,7 @@ noncomputable def xhatStep : XhatSide Bulletproof.IpaPallas.curve where
   scalar_lo := by norm_num [PALLAS_SCALAR_CARD]
   scalar_hi := by norm_num [PALLAS_SCALAR_CARD]
   scalar_mod := by norm_num [PALLAS_SCALAR_CARD]
+  onCurve_cross _ _ _ h := h
 
 section Binding
 
