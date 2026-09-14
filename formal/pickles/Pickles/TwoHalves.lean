@@ -306,8 +306,8 @@ def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sca
     IvpReadsExact G.side E.σ E.cvk cp pub G.claims.deferredValues.toIvpClaims o ∧
     o.success = G.success ∧
     G.claims.spongeDigestBeforeEvaluations.val G.V = o.spongeDigest.val G.V ∧
-    List.Forall₂ (fun c₁ c₂ : SizedF 128 (FVar C.BaseField) => c₁.val.val G.V = c₂.val.val G.V)
-      G.claims.deferredValues.bulletproofChallenges o.bulletproofChallenges
+    G.claims.deferredValues.bulletproofChallenges.map (·.val.val G.V)
+      = o.bulletproofChallenges.map (·.val.val G.V)
 
 /-- The scalar half's read: `FopReadsExact` with every parameter derived — `FopParams.ofEnv`,
 the key's domain, the proof's recursion digest — and every value it checks at taken from the
@@ -377,11 +377,10 @@ structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sc
   /-- The permutation-scalar claim, likewise. -/
   perm : Sc.side.decode Sc.claims.deferredValues.plonk.perm
     = G.side.decode G.claims.deferredValues.plonk.perm
-  /-- The round challenges: the two cells read one prechallenge, round by round. -/
-  chals : List.Forall₂
-    (fun (cg : SizedF 128 (FVar C.BaseField)) (cs : SizedF 128 (FVar C.ScalarField)) =>
-      ∃ m : Prechallenge, Reads128 G.V cg m ∧ Reads128 Sc.V cs m)
-    G.claims.deferredValues.bulletproofChallenges Sc.claims.deferredValues.bulletproofChallenges
+  /-- The round challenges: the two cell lists read one prechallenge list. -/
+  chals : ∃ ms : List Prechallenge,
+    List.Forall₂ (Reads128 G.V) G.claims.deferredValues.bulletproofChallenges ms ∧
+    List.Forall₂ (Reads128 Sc.V) Sc.claims.deferredValues.bulletproofChallenges ms
   /-- The fq digest: the scalar half's cell is the cast of the group half's. -/
   digest : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
     = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V)
@@ -604,22 +603,6 @@ private theorem proofEvals_of_headD {F : Type} [Field F] (V : Valuation F)
     pointEvals_of_headD V _ _ h3, pointEvals_of_headD V _ _ h4, pointEvals_of_headD V _ _ h5,
     pointEvals_of_headD V _ _ h6⟩
 
-/-- The prechallenges the scalar half's challenge cells read are the ones the group half's
-output cells read, the group half's statement cells reading as its output cells and the two
-statements' cell lists being tied. -/
-private theorem chals_eq {p q : ℕ} [Fact p.Prime] [Fact q.Prime] (hp : 2 ^ 128 < p)
-    (hq : 2 ^ 128 < q) {Vg : Valuation (ZMod p)} {Vs : Valuation (ZMod q)} :
-    ∀ {gs os : List (SizedF 128 (FVar (ZMod p)))} {ss : List (SizedF 128 (FVar (ZMod q)))}
-      {rs cs : List Prechallenge},
-      List.Forall₂ (fun c₁ c₂ : SizedF 128 (FVar (ZMod p)) => c₁.val.val Vg = c₂.val.val Vg) gs os →
-      List.Forall₂ (Reads128 Vg) os rs →
-      List.Forall₂ (fun cg cs => ∃ m : Prechallenge, Reads128 Vg cg m ∧ Reads128 Vs cs m) gs ss →
-      List.Forall₂ (Reads128 Vs) ss cs → cs = rs
-  | _, _, _, _, _, .nil, .nil, .nil, .nil => rfl
-  | _, _, _, _, _, .cons hv hvs, .cons hg hgs, .cons ⟨_, hm1, hm2⟩ hts, .cons hs hss => by
-    rw [Reads128.unique (castInj128_of_lt _ hq) hs hm2,
-      Reads128.unique (castInj128_of_lt _ hp) hm1 (hv.trans hg), chals_eq hp hq hvs hgs hts hss]
-
 /-- `combinedB` over a vector's list is `combinedB` over the vector. -/
 private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
     (x : Fin m → F) :
@@ -745,9 +728,13 @@ theorem twoHalves_iff_schnorr
     rw [Reads128.unique hinjS hξS hm, hmv]
     show _ = (frOracles C cp _ _).xi
     rw [frOracles_eq_frPrechallenges]
+  -- the round challenges: the cell lists' readings are equations of lists
+  obtain ⟨ms, hmsG, hmsS⟩ := ht.chals
+  rw [forall₂_reads128_iff] at hmsG hmsS hns hĉ
   have hĉeq : ĉ = (ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
-    chals_eq hbase hscalar hbpc hns ht.chals hĉ
+    (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
+      (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc.trans hns)))
   -- the four checks, in wire terms
   rw [hζ, hα, hβ, hγ, ht.evals, hpz, hpzo, ht.ftEval1] at hcipC
   rw [hζ] at hbC
