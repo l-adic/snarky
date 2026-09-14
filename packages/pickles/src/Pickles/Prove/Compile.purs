@@ -79,7 +79,7 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks.Chunks as Chunks
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofsVerified (ProofsVerifiedCount, boolVecToProofsVerified)
+import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
@@ -110,7 +110,8 @@ import Pickles.Prove.Wrap
   , wrapCompile
   , wrapSolveAndProve
   )
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Prove.Slot as RuntimeSlot
+import Pickles.Prove.SlotCompile as SlotCompile
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, projectVk, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
@@ -159,7 +160,6 @@ import Snarky.Backend.Kimchi.Proof
   , proofOraclesRec
   , proverIndexDomainLog2
   , srsBlindingGenerator
-  , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
 import Snarky.Backend.Kimchi.ProofCache (ProofCache)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
@@ -785,77 +785,71 @@ instance
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
-      -- Slot's wrap domain (drives lagrange basis for slot's IVP).
-      -- Self → outer rule's wrap_domain (with override applied);
-      -- External → imported rule's wrap_domain.
-      slotWrapDomainLog2 = case headSlotWrapKey of
-        External vks -> vks.wrapDomainLog2
-        Self -> outerWrapDomainLog2
+      -- This slot, as runtime data. The per-slot derivations
+      -- (wrap domain, source step domains, zk_rows, VK blueprint) all
+      -- live in `Pickles.Prove.SlotCompile`; this instance only says
+      -- what the slot *is* and splices the one entry onto the tail.
+      -- Phase 1 of docs/pickles-rule-dsl-simplification-plan.md.
+      headSlot :: RuntimeSlot.Slot
+      headSlot =
+        { localMpv: reflectType (Proxy @n)
+        , source: case headSlotWrapKey of
+            Self -> RuntimeSlot.SelfSource
+            External vks -> RuntimeSlot.ExternalSource
+              { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
+              , wrapDomainLog2: vks.wrapDomainLog2
+              -- Only single-rule external sources are supported; the
+              -- one domain is replicated to the branch width by
+              -- `slotSourceDomainLog2s`.
+              , stepDomainLog2s:
+                  [ ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex ]
+              , numChunks: vks.stepNumChunks
+              }
+        }
 
-      -- Slot's source proof system's unique step-domain log2s
-      -- (mirrors OCaml `domain_for_compiled`'s `domains` argument):
-      --   * Self → outer rule's compilation-wide unique_domains
-      --     (passed in as `selfStepDomainLog2s`, full Vector nd).
-      --   * External → imported rule's domains. Currently we only
-      --     support External → single-rule sources, so we replicate
-      --     the imported rule's single step domain log2 across nd
-      --     slots. For our test set (TreeProofReturn NRR external
-      --     with nd=1) this gives the correct `Vector 1 [importedLog2]`.
-      slotFopDomainLog2s = case headSlotWrapKey of
-        Self -> selfStepDomainLog2s
-        External vks ->
-          Vector.replicate
-            (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
+      -- `wrapVkChunks` and `nd` are method-level; both are inferred
+      -- from the `ShapeCompileData wrapVkChunks … nd` return type,
+      -- never named — symmetric to how the old `slotLagrange` did it.
+      headEntry = SlotCompile.slotCompileEntry
+        { pallasSrs: cfg.srs.pallasSrs
+        , stepNumChunks: cfg.stepNumChunks
+        , outerWrapDomainLog2
+        , branchCount: Vector.length selfStepDomainLog2s
+        }
+        (Vector.toUnfoldable selfStepDomainLog2s)
+        headSlot
 
-      -- The prev step proof's `zk_rows` (OCaml `step_main.ml`'s `d.zk_rows`):
-      -- `Self` is this compile's own step circuit at its declared chunk
-      -- count; `External` reads the imported rule's declared `@stepChunks`.
-      slotFopZkRows = case headSlotWrapKey of
-        Self -> zkRowsForNumChunks cfg.stepNumChunks
-        External vks -> zkRowsForNumChunks vks.stepNumChunks
+      -- Translate to `Step.VkSource`'s older vocabulary, which names
+      -- these two by mechanism (shared advice / baked constant) rather
+      -- than by slot source. Phase 2 removes that type.
+      headSlotScaffold = case headEntry.vkBlueprint of
+        SlotCompile.BlueprintSelf -> VkBlueprintShared
+        SlotCompile.BlueprintExternal vk -> VkBlueprintConst vk
+        SlotCompile.BlueprintSideLoaded _ -> unsafeThrow
+          "shapeCompileData: a Slot Compiled produced a side-loaded blueprint"
 
-      slotLagrange =
-        -- Per-slot wrap-VK lagrange basis at the compile-wide
-        -- `wrapVkChunks` (Dim 2). The chunk count is inferred from the
-        -- `LagrangeBaseLookup wrapVkChunks` this must produce (flows
-        -- from the `ShapeCompileData wrapVkChunks` return) — never
-        -- named, symmetric to `nc`. At `wrapVkChunks = 1` (protocol-
-        -- guaranteed: wrap depth ≤ Tock SRS max_poly_size) the chunks
-        -- array is length-1 and this is byte-identical to the old
-        -- single-chunk path.
-        mkConstLagrangeBaseLookup \i ->
-          let
-            chunksArr =
-              ProofFFI.srsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
-          in
-            case Vector.toVector (map coerce chunksArr) of
-              Just v -> v
-              Nothing -> unsafeThrow
-                $ "shapeCompileData.slotLagrange: wrap-VK lagrange chunks size "
-                    <> "mismatch with wrapVkChunks (got "
-                    <> show (Array.length chunksArr)
-                    <> ")"
+      headFopDomainLog2s = case Vector.toVector headEntry.fopDomainLog2s of
+        Just v -> v
+        Nothing -> unsafeThrow
+          $ "shapeCompileData: slot step-domain count "
+              <> show (Array.length headEntry.fopDomainLog2s)
+              <> " does not match the branch count "
+              <> show (Vector.length selfStepDomainLog2s)
 
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-
-      -- Reference: OCaml `step_main.ml:514-528`.
-      headSlotScaffold = case headSlotWrapKey of
-        Self -> VkBlueprintShared
-        External vks ->
-          VkBlueprintConst (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
     in
       { stepProveCtx:
           { srsData:
               { perSlotLagrangeAt:
-                  slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
+                  headEntry.lagrangeAt :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
                   coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
               , perSlotFopDomainLog2s:
-                  slotFopDomainLog2s
+                  headFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotFopZkRows:
-                  slotFopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
+                  headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
               , perSlotVkBlueprints:
                   headSlotScaffold /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
               }
@@ -1504,60 +1498,41 @@ instance
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
-      -- Unused for side-loaded slots (Step.Main reads the per-domain
-      -- triple inside `SideloadedExistsVk`); kept to match the
-      -- `perSlotLagrangeAt` vector shape.
-      slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
-      slotLagrange =
-        -- Per-slot wrap-VK lagrange basis at the compile-wide
-        -- `wrapVkChunks` (Dim 2). Chunk count inferred from the
-        -- `LagrangeBaseLookup wrapVkChunks` this must produce (flows
-        -- from the `ShapeCompileData wrapVkChunks` return) — never
-        -- named, symmetric to `nc`. At `wrapVkChunks = 1` the chunks
-        -- array is length-1: byte-identical to the old single-chunk
-        -- path.
-        mkConstLagrangeBaseLookup \i ->
-          let
-            chunksArr =
-              ProofFFI.srsLagrangeCommitmentChunksAt cfg.srs.pallasSrs slotWrapDomainLog2 i
-          in
-            case Vector.toVector (map coerce chunksArr) of
-              Just v -> v
-              Nothing -> unsafeThrow
-                $ "shapeCompileData.slotLagrange: wrap-VK lagrange chunks size "
-                    <> "mismatch with wrapVkChunks (got "
-                    <> show (Array.length chunksArr)
-                    <> ")"
+      -- This slot, as runtime data. All four per-slot derivations live
+      -- in `Pickles.Prove.SlotCompile`: the side-loaded slot's wrap
+      -- domain placeholder comes from its own compile-time bound, its
+      -- step domains are the enclosing compile's (a placeholder — real
+      -- dispatch is in `Step.FinalizeOtherProof`'s side-loaded mode),
+      -- its zk_rows are single-chunk, and its blueprint is the
+      -- per-domain lagrange table that `Step.Main` one-hot muxes.
+      -- Phase 1 of docs/pickles-rule-dsl-simplification-plan.md.
+      headSlot :: RuntimeSlot.Slot
+      headSlot =
+        { localMpv: slotMpvMax
+        , source: RuntimeSlot.SideLoadedSource
+        }
 
-      -- Per-domain × per-chunk lagrange tables for the side-loaded
-      -- VK's `actualWrapDomainSize` ∈ {N0=13, N1=14, N2=15}. Step.Main
-      -- one-hot-muxes among these per-chunk via
-      -- `mkSideloadedLagrangeLookup`. `nc` here is the slot's wrap-VK
-      -- chunks count (the parameter on `Slot SideLoaded mpvMax nc stmt`);
-      -- the chunked FFI returns a length-nc array per domain per index.
-      sideloadedPerDomainLagrangeAts
-        :: Vector ProofsVerifiedCount
-             (Int -> Vector slotVkChunks (AffinePoint (F StepField)))
-      sideloadedPerDomainLagrangeAts = map
-        ( \log2 i ->
-            let
-              chunksArr = ProofFFI.srsLagrangeCommitmentChunksAt
-                cfg.srs.pallasSrs
-                log2
-                i
-            in
-              case Vector.toVector @slotVkChunks (map coerce chunksArr) of
-                Just v -> (v :: Vector _ (AffinePoint (F StepField)))
-                Nothing -> unsafeThrow
-                  $ "sideloadedPerDomainLagrangeAts: lagrange chunks size mismatch (log2="
-                      <> show log2
-                      <> ", got "
-                      <> show (Array.length chunksArr)
-                      <> ", expected slotVkChunks="
-                      <> show (reflectType (Proxy @slotVkChunks))
-                      <> ")"
-        )
-        (13 :< 14 :< 15 :< Vector.nil)
+      headEntry = SlotCompile.slotCompileEntry
+        { pallasSrs: cfg.srs.pallasSrs
+        , stepNumChunks: cfg.stepNumChunks
+        , outerWrapDomainLog2
+        , branchCount: Vector.length selfStepDomainLog2s
+        }
+        (Vector.toUnfoldable selfStepDomainLog2s)
+        headSlot
+
+      headSideloadedLagrangeAts = case headEntry.vkBlueprint of
+        SlotCompile.BlueprintSideLoaded tables -> tables
+        _ -> unsafeThrow
+          "shapeCompileData: a Slot SideLoaded produced a compiled blueprint"
+
+      headFopDomainLog2s = case Vector.toVector headEntry.fopDomainLog2s of
+        Just v -> v
+        Nothing -> unsafeThrow
+          $ "shapeCompileData: slot step-domain count "
+              <> show (Array.length headEntry.fopDomainLog2s)
+              <> " does not match the branch count "
+              <> show (Vector.length selfStepDomainLog2s)
 
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
@@ -1565,21 +1540,16 @@ instance
       { stepProveCtx:
           { srsData:
               { perSlotLagrangeAt:
-                  slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
+                  headEntry.lagrangeAt :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
               , blindingH:
                   coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
               , perSlotFopDomainLog2s:
-                  -- Side-loaded slots have no compile-time step domain;
-                  -- placeholder fills the vector shape (real dispatch
-                  -- is in `Step.FinalizeOtherProof`'s SideLoadedMode).
-                  selfStepDomainLog2s
+                  headFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotFopZkRows:
-                  -- Side-loaded prevs are single-chunk (OCaml `compile.ml`'s
-                  -- side-loaded `For_step` at `zk_rows_by_default`).
-                  zkRowsForNumChunks 1 :< restShape.stepProveCtx.srsData.perSlotFopZkRows
+                  headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
               , perSlotVkBlueprints:
-                  sideloadedPerDomainLagrangeAts
+                  headSideloadedLagrangeAts
                     /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
