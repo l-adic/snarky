@@ -182,8 +182,8 @@ private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
       have ih := hornerReduce_reads S zM (c' :: rest) (List.cons_ne_nil _ _)
       have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zM
       have hadd := fun (s : AffinePoint (FVar C.BaseField)) =>
-        addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.two_ne
-          S.two_torsion_free c s
+        addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.curve.two_ne
+          S.curve.two_torsion_free c s
       mvcgen -trivial [-Snarky.Kimchi.addFast_spec, ih, hsc, hadd]
       clear ih
       rename_i _ _ _ hih _ _ hsc' _ _
@@ -235,8 +235,8 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   have hht := hornerReduce_reads S zetaMCell tCommCells hne
   have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zetaNCell
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
-    addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.two_ne
-      S.two_torsion_free a b
+    addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.curve.two_ne
+      S.curve.two_torsion_free a b
   mvcgen -trivial [-Snarky.Kimchi.addFast_spec, hhσ, hscP, hht, hscN, hadd]
   clear hhσ hht
   rename_i _ _ _ hhσ' _ _ hscP' _ _ hht' _ _ hscN' _ _ hadd1 _ _

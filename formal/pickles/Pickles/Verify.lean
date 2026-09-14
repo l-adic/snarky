@@ -200,7 +200,8 @@ theorem verifyProof_reads
     (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false blindingH
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.e C.sponge.params endo S.gm
+    verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params endo
+      S.curve.gm
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) cells u base v⌝⦄ := by
   obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
