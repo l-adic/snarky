@@ -562,6 +562,10 @@ three aliases `(pre + k·p) mod 2¹²⁸`. -/
 def PrechallengeAlias (p pre : ℕ) (lo : Prechallenge) : Prop :=
   ∃ k ≤ 3, lo.val = (pre + k * p) % 2 ^ 128
 
+/-- A prechallenge is its own alias (`k = 0`). -/
+theorem PrechallengeAlias.refl (p : ℕ) (m : Prechallenge) : PrechallengeAlias p m.val m :=
+  ⟨0, by omega, by rw [Nat.zero_mul, Nat.add_zero, Nat.mod_eq_of_lt m.2]⟩
+
 /-- The slack the circuit's `lowest_128_bits` leaves: a decomposition `x = lo + 2¹²⁸·hi` with
 `hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is the
 prechallenge `x.val % 2¹²⁸` only up to `PrechallengeAlias`. -/

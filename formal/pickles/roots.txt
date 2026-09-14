@@ -219,6 +219,3 @@ Pickles.FopReadsExact.toWire
 Pickles.MaxProofsVerified
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
--- A `rfl` simp lemma (see `map_position` above): the projection of `transcriptFrom`, fired
--- by `simp` as a definitional rewrite.
-Pickles.transcriptFrom_eq

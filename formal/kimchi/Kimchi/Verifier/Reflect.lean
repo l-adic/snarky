@@ -167,4 +167,34 @@ def runInput (σ : SRS C.Point) (cvk : KimchiVK C nc)
 /-! ## The body reflection -/
 
 
+/-! ## The body reflection -/
+
+/-- The argument-dependent guards of `kimchiVerify` (verifier.rs:810–820, and the public
+input against the Lagrange table and the domain): the public input fits the Lagrange table
+and the domain, and the accumulator count is the key's. -/
+def Guards {k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k) (pub : Array C.ScalarField) :
+    Prop :=
+  ¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨ cp.olds.size ≠ cvk.prevChallenges)
+
+/-- `kimchiVerify` accepts iff the guards hold and the warm-sponge IPA finish (`verifyFrom`)
+accepts on the run's own input. -/
+theorem kimchiVerify_reflects (σ : SRS C.Point) (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k)
+    (pub : Array C.ScalarField) :
+    kimchiVerify C σ cvk cp pub = true
+      ↔ Guards C cvk cp pub ∧
+        Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub) = true := by
+  have hkv : kimchiVerify C σ cvk cp pub
+      = (if cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size
+            || cp.olds.size ≠ cvk.prevChallenges then false
+          else Ipa.verifyFrom C σ (runOracles C σ cvk cp pub).warm (runInput C σ cvk cp pub)) := rfl
+  have hcond : (cvk.lagrangeBasis.size < pub.size || cvk.n < pub.size
+      || cp.olds.size ≠ cvk.prevChallenges) = true ↔ ¬ Guards C cvk cp pub := by
+    simp only [Guards, Bool.or_eq_true, decide_eq_true_eq, ne_eq, not_not, or_assoc]
+  rw [hkv]
+  by_cases hg : Guards C cvk cp pub
+  · rw [if_neg (hcond.not.mpr (not_not.mpr hg))]
+    simp [hg]
+  · rw [if_pos (hcond.mpr hg)]
+    simp [hg]
+
 end Kimchi.Verifier

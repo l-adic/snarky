@@ -453,6 +453,15 @@ theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Inpu
     (ipaRun C ⟨st, []⟩ inp).2.2.val = r.2.2 :=
   ipaRunAt_eq_ipaPrechallenges C st (cipOf inp) inp.proof
 
+/-- `transcriptFrom`, projected: `ipaRunAt` at the input's own inner product, decoded. A
+`rfl` lemma: `simp` fires it as a definitional rewrite where unfolding `transcriptFrom`'s
+tuple match would recurse into the sponge. -/
+theorem transcriptFrom_eq (s : Poseidon.FqSponge.S C.base) (inp : Input C k m p) :
+    transcriptFrom C s inp
+      = (C.toGroup (ipaRunAt C s (cipOf inp) inp.proof).1,
+        (ipaRunAt C s (cipOf inp) inp.proof).2.1.map (fun u => endoExpand C.sponge.lam u.val),
+        endoExpand C.sponge.lam (ipaRunAt C s (cipOf inp) inp.proof).2.2.val) := rfl
+
 /-- `transcriptFrom` from a warm state with an empty limb buffer, through
 `ipaPrechallenges`: the `U` base is the map-to-curve of `t`, the round challenges and `c`
 the endo-expansions of the packed squeezes. -/

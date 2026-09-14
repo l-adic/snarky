@@ -294,6 +294,20 @@ private theorem keptEvals_zip :
     cases m <;> simp [keptEvals, sgRows] at this ⊢ <;> exact this
 
 omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
+/-- The kept rows of the masked challenge lists are the kept lists, mapped: `sgRows` over two
+images of one list of challenge lists is the kept challenge lists under both maps. -/
+theorem sgRows_kept (f g : List F → F) :
+    ∀ (ms : List Bool) (cvs : List (List F)),
+      sgRows ms (cvs.map f) (cvs.map g)
+        = (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten.map
+            fun cv => (⟨f cv, g cv⟩ : PointEvaluations F)
+  | [], _ => by simp [sgRows]
+  | _ :: _, [] => by simp [sgRows]
+  | m :: ms, cv :: cvs => by
+    have ih := sgRows_kept f g ms cvs
+    cases m <;> simp [sgRows] at ih ⊢ <;> exact ih
+
+omit [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c] in
 /-- The kept entries of a batch: the kept masked entries, the public and `ft` entries, and
 every evaluation. -/
 private theorem keptEvals_batch (sg : List (Bool × F)) (p f : F) (ev : List F) :

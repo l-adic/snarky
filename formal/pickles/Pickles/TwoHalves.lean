@@ -210,10 +210,6 @@ def IvpReadsExact {nc : ℕ}
         (combineCommitments C (endoExpand C.sponge.lam ξ₀.val) run.commitments.toArray)
         run.proof)
 
-/-- A prechallenge is its own alias (`k = 0`). -/
-private theorem alias_refl (p : ℕ) (m : Prechallenge) : PrechallengeAlias p m.val m :=
-  ⟨0, by omega, by rw [Nat.zero_mul, Nat.add_zero, Nat.mod_eq_of_lt m.2]⟩
-
 /-- The exact read implies the read, the base field being wider than 128 bits. -/
 theorem IvpReadsExact.toReads {nc : ℕ}
     (hbig : 2 ^ 128 < C.base)
@@ -228,13 +224,13 @@ theorem IvpReadsExact.toReads {nc : ℕ}
     IvpReads S σ cvk cp pub claims o := by
   obtain ⟨hd, hβ, hγ, hα, hζ, hξ⟩ := h
   have hinj := castInj128_of_lt _ hbig
-  refine ⟨hd, ⟨_, hβ, alias_refl _ _⟩, ⟨_, hγ, alias_refl _ _⟩,
-    fun m hm => Reads128.unique hinj hα hm ▸ alias_refl _ _,
-    fun m hm => Reads128.unique hinj hζ hm ▸ alias_refl _ _, fun ξ₀ hξ₀ => ?_⟩
+  refine ⟨hd, ⟨_, hβ, PrechallengeAlias.refl _ _⟩, ⟨_, hγ, PrechallengeAlias.refl _ _⟩,
+    fun m hm => Reads128.unique hinj hα hm ▸ PrechallengeAlias.refl _ _,
+    fun m hm => Reads128.unique hinj hζ hm ▸ PrechallengeAlias.refl _ _, fun ξ₀ hξ₀ => ?_⟩
   obtain ⟨hns, hiff⟩ := hξ ξ₀ hξ₀
   exact ⟨_, _, _, _, Or.inl rfl, hns,
-    List.forall₂_map_left_iff.mpr (List.forall₂_same.mpr fun m _ => alias_refl _ m),
-    alias_refl _ _, Vector.toList_map, hiff⟩
+    List.forall₂_map_left_iff.mpr (List.forall₂_same.mpr fun m _ => PrechallengeAlias.refl _ m),
+    PrechallengeAlias.refl _ _, Vector.toList_map, hiff⟩
 
 end Exact
 
@@ -285,8 +281,8 @@ theorem FopReadsExact.toWire {sf : Type}
     (h : FopReadsExact P n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o) :
     FopReadsWire P n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o := by
   obtain ⟨ξ₀, r', ĉ, hξ, hr, hbit, hxi, hĉ, hchecks⟩ := h
-  exact ⟨ξ₀, r', ĉ, hξ, hr ▸ alias_refl _ _, hbit, fun h1 => (hxi.1 h1) ▸ alias_refl _ _, hĉ,
-    hchecks⟩
+  exact ⟨ξ₀, r', ĉ, hξ, hr ▸ PrechallengeAlias.refl _ _, hbit,
+    fun h1 => (hxi.1 h1) ▸ PrechallengeAlias.refl _ _, hĉ, hchecks⟩
 
 end ExactFr
 
@@ -426,12 +422,6 @@ def SgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
   let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
   run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i])
 
-/-- The argument-dependent guards of `kimchiVerify` (verifier.rs:810–820 and the public
-input against the Lagrange table and the domain). -/
-def Guards (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) : Prop :=
-  ¬ (E.cvk.lagrangeBasis.size < pub.size ∨ E.cvk.n < pub.size
-    ∨ cp.olds.size ≠ E.cvk.prevChallenges)
-
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
 /-- A zip mapped through its second component is the second list mapped. -/
@@ -464,18 +454,6 @@ private theorem bPoly_toList {F : Type} [Field F] {k : ℕ} (u : Vector F k) (x 
   simp only [finCongr_apply, Fin.val_cast, List.get_eq_getElem, Vector.getElem_toList,
     Vector.length_toList]
   rfl
-
-/-- The kept rows of the masked challenge lists are the kept lists, mapped. -/
-private theorem sgRows_kept {F : Type} [Field F] (f g : List F → F) :
-    ∀ (ms : List Bool) (cvs : List (List F)),
-      sgRows ms (cvs.map f) (cvs.map g)
-        = (List.zipWith (fun m cv => if m then [cv] else []) ms cvs).flatten.map
-            fun cv => (⟨f cv, g cv⟩ : PointEvaluations F)
-  | [], _ => by simp [sgRows]
-  | _ :: _, [] => by simp [sgRows]
-  | m :: ms, cv :: cvs => by
-    have ih := sgRows_kept f g ms cvs
-    cases m <;> simp [sgRows] at ih ⊢ <;> exact ih
 
 /-- The one-chunk proof's combined evaluations are the linearization view of its chunks. -/
 private theorem linEvals_one {C : CommitmentCurve} {k : ℕ} (cp : KimchiProof C 1 k)
@@ -585,16 +563,6 @@ private theorem pointFn_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Arra
           (runOracles C E.σ E.cvk cp pub).zeta * E.cvk.omega] := by
   funext j
   fin_cases j <;> rfl
-
-/-- `transcriptFrom`, projected: `ipaRunAt` at the input's own inner product, decoded. A
-`rfl` lemma: `simp` fires it as a definitional rewrite where unfolding `transcriptFrom`'s
-tuple match would recurse into the sponge. -/
-theorem transcriptFrom_eq {k m p : ℕ} (s : Poseidon.FqSponge.S C.base)
-    (inp : Input C k m p) :
-    transcriptFrom C s inp
-      = (C.toGroup (ipaRunAt C s (cipOf inp) inp.proof).1,
-        (ipaRunAt C s (cipOf inp) inp.proof).2.1.map (fun u => endoExpand C.sponge.lam u.val),
-        endoExpand C.sponge.lam (ipaRunAt C s (cipOf inp) inp.proof).2.2.val) := rfl
 
 /-- **The two bits are the wire's acceptance at honest claims.** Without `SgOk`: the two bits
 read `1` iff the claims are the wire's own values and the opening's Schnorr equation holds at
@@ -767,7 +735,7 @@ theorem twoHalves_kimchiVerify
     (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k)
     (pub : Array C.ScalarField)
-    (hguard : Guards E cp pub)
+    (hguard : Guards C E.cvk cp pub)
     -- the group half
     (G : GroupHalf C sf)
     (hg : G.Reads E cp pub)
@@ -781,17 +749,9 @@ theorem twoHalves_kimchiVerify
         ∧ SgOk E cp pub
       ↔ kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
   have h := twoHalves_iff_schnorr E hbase hscalar cp pub G hg Sc hs ht
-  -- the body reflection: the guards, then the warm-sponge IPA finish on the run's input
-  have hkv : kimchiVerify C E.σ E.cvk cp pub
-      = (if E.cvk.lagrangeBasis.size < pub.size || E.cvk.n < pub.size
-            || cp.olds.size ≠ E.cvk.prevChallenges then false
-          else verifyFrom C E.σ (runOracles C E.σ E.cvk cp pub).warm
-            (runInput C E.σ E.cvk cp pub)) := rfl
-  have hcond : ¬ (E.cvk.lagrangeBasis.size < pub.size || E.cvk.n < pub.size
-      || cp.olds.size ≠ E.cvk.prevChallenges) = true := by
-    simpa [Guards, and_assoc] using hguard
+  -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
   simp only [transcriptFrom_eq] at h
-  rw [h, hkv, if_neg hcond]
+  rw [h, kimchiVerify_reflects, and_iff_right hguard]
   simp only [SgOk, verifyFrom, transcriptFrom_eq, verifyWith_eq]
   exact ⟨fun ⟨⟨hc, hs⟩, hsg⟩ => ⟨⟨hs, hsg⟩, hc⟩, fun ⟨⟨hs, hsg⟩, hc⟩ => ⟨⟨hc, hs⟩, hsg⟩⟩
 
@@ -811,10 +771,10 @@ section StepProof
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The step circuit's scalar side: `Type1` claims unshifted at `255` bits, the `Fp`
-linearization tokens. -/
+/-- The step circuit's scalar side: `Type1` claims decoded as the step reading unshifts them
+(`stepShiftOps.reading`, `Type1.fromShifted 255`), the `Fp` linearization tokens. -/
 def fopStep (V : Valuation Fp) : FopSide IpaVesta.curve V (Type1 (FVar Fp)) where
-  decode x := Type1.fromShifted 255 ⟨x.val.val V⟩
+  decode x := (stepShiftOps.reading (V := V) (by decide)).unshiftV (x.val.val V)
   toks := Linearization.fpTokens
 
 /-- The wrap circuit's group half of a step proof: `wrapSide` at the circuit's valuation. -/
@@ -836,7 +796,8 @@ theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
     (x : Type1 (FVar Fp))
     (y : Type1 (FVar Fq)) :
     (fopStep Vs).decode x = (wrapSide Vg).decode y ↔ x.val.val Vs = ((y.val.val Vg).val : Fp) := by
-  simp only [fopStep, wrapSide, wrapDecode, Type1.fromShifted, Pasta.Shifted.unshiftType1]
+  simp only [fopStep, stepShiftOps.reading, wrapSide, wrapDecode, Type1.fromShifted,
+    Pasta.Shifted.unshiftType1]
   constructor
   · intro h
     have h2 : (2 : Fp) ≠ 0 := by decide
@@ -850,7 +811,7 @@ theorem twoHalves_kimchiVerify_vesta
     (E : Env IpaVesta.curve)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp)
-    (hguard : Guards E cp pub)
+    (hguard : Guards IpaVesta.curve E.cvk cp pub)
     -- the wrap circuit: its valuation, its statement's claims, its success bit, its read
     (Vg : Valuation Fq)
     (claimsG : UnfinalizedProof Fq (Type1 (FVar Fq)))
