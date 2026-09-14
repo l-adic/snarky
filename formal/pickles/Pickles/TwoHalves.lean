@@ -702,7 +702,7 @@ theorem twoHalves_iff_schnorr
       = (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm := by
     simp only [runOracles, fqOracles, FqRun.expand]
   rw [hproof] at hiff
-  simp only [ScalarHalf.ClaimsHonest, ClaimsHonest, run, tr, transcriptFrom_eq, hwarm, hproof]
+  simp only [ScalarHalf.ClaimsHonest, ClaimsHonest, run, tr, transcriptFrom, hwarm, hproof]
   rw [hfin]
   simp only [ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
   rw [hxi, hbIff, hpermIff]
@@ -750,9 +750,9 @@ theorem twoHalves_kimchiVerify
       ↔ kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
   have h := twoHalves_iff_schnorr E hbase hscalar cp pub G hg Sc hs ht
   -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
-  simp only [transcriptFrom_eq] at h
+  simp only [transcriptFrom] at h
   rw [h, kimchiVerify_reflects, and_iff_right hguard]
-  simp only [SgOk, verifyFrom, transcriptFrom_eq, verifyWith_eq]
+  simp only [SgOk, verifyFrom, transcriptFrom, verifyWith_eq]
   exact ⟨fun ⟨⟨hc, hs⟩, hsg⟩ => ⟨⟨hs, hsg⟩, hc⟩, fun ⟨⟨hs, hsg⟩, hc⟩ => ⟨⟨hc, hs⟩, hsg⟩⟩
 
 end Ties

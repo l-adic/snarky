@@ -25,9 +25,6 @@ Bulletproof.Ipa.ipaSqueezes
 Bulletproof.Ipa.ipaPrechallenges
 Bulletproof.Ipa.ipaRound_foldl
 Bulletproof.Ipa.transcriptFrom_eq_ipaPrechallenges
--- A `rfl` simp lemma: the projection of `transcriptFrom`, fired by `simp` as a definitional
--- rewrite, which leaves no proof term for the dead-code walk to see.
-Bulletproof.Ipa.transcriptFrom_eq
 Bulletproof.Ipa.schnorrAt
 Bulletproof.Ipa.verifyWith_eq
 
