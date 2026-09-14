@@ -39,9 +39,14 @@ theorem _root_.Bulletproof.Ipa.CommitmentCurve.affine_card_nsmul (C : Commitment
 
 /-- The gadget layer's curve dictionary of a commitment curve: the affine form of `C.E`, short
 by `C.a_zero`, of prime order by `C.card`, and off characteristic `2` and 2-torsion by the two
-bounds. -/
-noncomputable def _root_.Snarky.Kimchi.HasCurve.ofCommitmentCurve (C : CommitmentCurve)
-    (hbase : 2 < C.base) (hscalar : 2 < C.scalar) : HasCurve C.BaseField where
+bounds.
+
+Reducible, and a structure literal: consumers state their premises over `d.W`, and instance
+search runs at reducible transparency, so `d.W` has to reduce to `C.E.toAffine` there. The
+projection is iota on the literal, so the proof fields are never forced. -/
+@[reducible] noncomputable def _root_.Snarky.Kimchi.HasCurve.ofCommitmentCurve
+    (C : CommitmentCurve) (hbase : 2 < C.base) (hscalar : 2 < C.scalar) :
+    HasCurve C.BaseField where
   W := C.E.toAffine
   short := ⟨rfl, rfl, rfl, C.a_zero⟩
   prime := C.order_eq ▸ Fact.out

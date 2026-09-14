@@ -223,7 +223,7 @@ theorem verifyProof_reads
     unfold CommReads
     rw [hvec]
     refine builder_spec_imp _ _ _
-      (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (X.e P)) _
+      (builder_spec_mapM _ (fun r P => OnCurveAt X.d.W V r (SWPoint.equivPoint C.E P)) _
         (fun ci => xHatKnown_reads_publicCommitment X ci σ cvk blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
       fun pts hp => hp.imp fun _ _ h => h
