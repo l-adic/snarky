@@ -41,8 +41,10 @@ and xhat_{wrap,step} (the public-input-commitment MSM on either side —
 against `XhatStep` — with the Lagrange bases loaded from the circuit-diffs exports and the
 shift corrections derived by `smulFast`), and ftcomm_{step,wrap} (the proved
 `Pickles.ftComm` at either side's `IpaScalarOps`, against the PS `FtcommStep`/`Ftcomm`
-harnesses). Deferred, with the blocker each waits on:
-- ivp, verify, wrap/step mains — the pickles buildout;
+harnesses), and ivp_step (the whole group half, `Pickles.incrementallyVerifyProof` on the
+step side against the PS `IvpStep` harness, its Lagrange bases from the circuit-diffs
+export). Deferred, with the blocker each waits on:
+- verify, ivp_wrap, wrap/step mains — the pickles buildout;
 - hash_messages_*, schnorr_verify — the sponge circuit layer
   (packages/random-oracle);
 - group_map_step — activatable now (Basic-only), transcription pending a
@@ -84,6 +86,8 @@ import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
 import Pickles.PublicInputCommit
 import Pickles.FtComm
+import Pickles.IncrementallyVerify
+import Pickles.Verify
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
@@ -973,22 +977,36 @@ def xhatStepConst (P : XhatStepCurve.Point) : Vector (AffinePoint (FVar Fp)) 1 :
 def xhatStepWidth (i : ℕ) : ℕ :=
   if i < 5 ∨ (10 ≤ i ∧ i < 13) then 255 else if i = 29 then 10 else 130
 
+/-- The shift correction of step leaf `i` at the Lagrange bases `pts`. -/
+def xhatStepCorr (pts : Array XhatStepCurve.Point) (i : ℕ) : XhatStepCurve.Point :=
+  xhatStepCorrPt (xhatStepWidth i) (pts[i]?.getD 0)
+
+/-- The 30 step leaves: leaf `i` reads `get i` at Lagrange base `pts[i]` with its constant
+correction, at the width `xhatStepWidth i`. -/
+def xhatStepLeaves (pts : Array XhatStepCurve.Point) (get : ℕ → FVar Fp) :
+    List (Pickles.Leaf Fp 1) :=
+  (List.range 30).map fun i =>
+    let base := xhatStepConst (pts[i]?.getD 0)
+    let corr := xhatStepConst (xhatStepCorr pts i)
+    match xhatStepWidth i with
+    | 255 => .full (get i) base corr
+    | 10 => .b10 (get i) base corr
+    | _ => .b128 (get i) base corr
+
+/-- The known-domain `x_hat` over the step leaves, with the constant correction seed and sum:
+the one chunk, as the list the group half consumes. -/
+def xhatStepCommit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
+    (get : ℕ → FVar Fp) : CircuitM Fp C (List (AffinePoint (FVar Fp))) := do
+  let corrSum : XhatStepCurve.Point := ((List.range 30).map (xhatStepCorr pts)).sum
+  let r ← Pickles.publicInputCommitKnown (0 : Fin 1) h (xhatStepCell (xhatStepCorr pts 0))
+    (xhatStepCell corrSum) (xhatStepLeaves pts get)
+  pure [r]
+
 /-- `xhat_step_circuit`: `Pickles.publicInputCommitKnown` over the 30-leaf list, leaf `i`
 reading input `i` and Lagrange base `pts[i]`, with the constant correction seed and sum. -/
 def xhatStepCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
     (input : Vector (FVar Fp) 30) : CircuitM Fp C PUnit := do
-  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
-  let pt (i : ℕ) : XhatStepCurve.Point := pts[i]?.getD 0
-  let corr (i : ℕ) : XhatStepCurve.Point := xhatStepCorrPt (xhatStepWidth i) (pt i)
-  let leaf (i : ℕ) : Pickles.Leaf Fp 1 :=
-    match xhatStepWidth i with
-    | 255 => .full (get i) (xhatStepConst (pt i)) (xhatStepConst (corr i))
-    | 10 => .b10 (get i) (xhatStepConst (pt i)) (xhatStepConst (corr i))
-    | _ => .b128 (get i) (xhatStepConst (pt i)) (xhatStepConst (corr i))
-  let leaves : List (Pickles.Leaf Fp 1) := (List.range 30).map leaf
-  let corrSum : XhatStepCurve.Point := ((List.range 30).map corr).sum
-  let _ ← Pickles.publicInputCommitKnown (0 : Fin 1) h (xhatStepCell (corr 0))
-    (xhatStepCell corrSum) leaves
+  let _ ← xhatStepCommit pts h fun i => input[i]?.getD (.const 0)
   pure PUnit.unit
 
 /-! ## The `ft_comm` circuits
@@ -1025,6 +1043,160 @@ def ftcommWrapCircuit (input : Vector (FVar Fq) 17) : CircuitM Fq Cq PUnit := do
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
   let _ ← Pickles.ftComm Pickles.IpaScalarOps.wrap [vestaGenerator]
     ((List.range 7).map fun j => pt (2 * j)) ⟨get 14⟩ ⟨get 15⟩ ⟨get 16⟩
+  pure PUnit.unit
+
+/-! ## The `incrementally_verify_proof` circuit
+
+Transcribes `Pickles.CircuitDiffs.PureScript.IvpStep`: the 175-input layout is the packed
+public input at 0–29 (the `x_hat` leaves, at the widths of `xhat_step_circuit`), the deferred
+values at 30–59 (`α, β, γ, ζ` at 30–33, `perm`, `ζ^{2^k}`, `ζⁿ`, `cip`, `b` as `(sDiv2, sOdd)`
+pairs at 34–43, `ξ` at 44, the 15 round challenges at 45–59), the 15 `w_comm` points at
+60–89, `z_comm` at 90, the 7 `t_comm` points at 92–105, `δ` at 106, `sg` at 108, the 15
+`(L, R)` pairs at 110–169, `z₁`, `z₂` at 170–173 and the claimed digest at 174. The key's
+commitments are the dummy generator and the two `sg_old` the dummy wrap `sg` (PS `Common`).
+The standalone PS harness derives the index digest by absorbing the key's commitments into a
+fresh sponge (`IncrementallyVerifyProof.purs`, the `Nothing` branch), so this harness replays
+that absorb before handing the sponge to the gadget. The 30 Lagrange bases and `h` are the
+`pallasCrs15` SRS's at domain 15 (`ivp_step_lagrange.json`), not `xhat_step_circuit`'s. -/
+
+/-- The dummy `sg_old` (PS `dummyWrapSg`), as a constant point at the step field. -/
+def dummyWrapSg : AffinePoint (FVar Fp) :=
+  ⟨.const 8063668238751197448664615329057427953229339439010717262869116690340613895496,
+   .const 2694491010813221541025626495812026140144933943906714931997499229912601205355⟩
+
+/-- The sponge after the dummy key's index digest: `σ₀…σ₅`, `σ₆`, the 15 coefficient
+commitments and the six index commitments, each chunk's `x` then `y`, absorbed into the fresh
+sponge — 28 copies of the generator. -/
+def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
+  (List.replicate 28 pallasGenerator).foldlM
+    (fun sv P => do
+      let sv ← SpongeVar.absorb Bulletproof.IpaVesta.curve.frParams sv P.x
+      SpongeVar.absorb Bulletproof.IpaVesta.curve.frParams sv P.y)
+    SpongeVar.init
+
+/-- The group half's cells from the 175-input layout at `get`: the claims and the opening
+from the inputs, the key's commitments and `sg_old` dummy constants. -/
+def ivpStepInput (get : ℕ → FVar Fp) :
+    Pickles.IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  { plonk := ⟨⟨⟨get 30⟩, ⟨get 31⟩, ⟨get 32⟩, ⟨get 33⟩⟩, shifted 34, shifted 36, shifted 38⟩
+    xi := ⟨get 44⟩
+    deferred := ⟨shifted 40, shifted 42⟩
+    sgOld := [(none, dummyWrapSg), (none, dummyWrapSg)]
+    sigmaLast := [pallasGenerator]
+    indexComms := List.replicate 6 [pallasGenerator]
+    coefficientsComm := List.replicate 15 [pallasGenerator]
+    sigmaComm := List.replicate 6 [pallasGenerator]
+    wComm := (List.range 15).map fun j => [pt (60 + 2 * j)]
+    zComm := [pt 90]
+    tComm := (List.range 7).map fun j => pt (92 + 2 * j)
+    opening := { lr := (List.range 15).map fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+                 z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 } }
+
+/-- `ivp_step_circuit`: the index-digest sponge, `Pickles.incrementallyVerifyProof` on the
+step side with `x_hat` the known-domain commitment of inputs 0–29, then the harness's
+assertions — the digest against input 174 and each returned round challenge against its
+claim. -/
+def ivpStepCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
+    (input : Vector (FVar Fp) 175) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let sv ← dummyIndexSponge
+  let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
+    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
+    (fun _ => none) false h sv (xhatStepCommit pts h get) (ivpStepInput get)
+  assertEqual o.spongeDigest (get 174)
+  for c in ((List.range 15).map fun j => get (45 + j)).zip o.bulletproofChallenges do
+    assertEqual c.1 c.2.val
+  pure PUnit.unit
+
+/-! ## The `verify` circuit (`Step_verifier.verify`)
+
+Transcribes `Pickles.CircuitDiffs.PureScript.StepVerify`: the 268-input layout is the wrap
+proof at 0–113 (15 `w_comm` points at 0–29, `z_comm` at 30, 7 `t_comm` points at 32–45, the
+15 `(L, R)` pairs at 46–105, `z₁`, `z₂` at 106–109, `δ` at 110, `sg` at 112), the wrap
+statement's proof state at 114–143 (`α, β, γ, ζ` at 114–117, `ζ^{2^k}`, `ζⁿ`, `perm` at
+118–120, `cip`, `b` at 121–122, `ξ` at 123, the 16 round challenges at 124–139, the two mask
+bits at 140–141, `domain_log2` at 142, the digest at 143), dead evaluation inputs at 144–232,
+the unfinalized proof at 233–264 (`cip`, `b`, `ζ^{2^k}`, `ζⁿ`, `perm` as `(sDiv2, sOdd)` pairs at
+233–242, the digest at 243, `β, γ, α, ζ` at 244–247, `ξ` at 248, the 15 round challenges at
+249–263), `is_base_case` at 265 and the two message digests at 266–267. The key and `sg_old`
+are the dummies of `ivp_step_circuit`, the index digest the same replayed absorb, the
+Lagrange bases the same `pallasCrs15` export. -/
+
+/-- The unfinalized proof the verified wrap proof is checked against, from the 268-input
+layout. -/
+def stepVerifyUnfinalized (get : ℕ → FVar Fp) :
+    Pickles.UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  { deferredValues :=
+      { plonk := { alpha := ⟨get 246⟩, beta := ⟨get 244⟩, gamma := ⟨get 245⟩, zeta := ⟨get 247⟩,
+                   perm := shifted 241, zetaToSrsLength := shifted 237,
+                   zetaToDomainSize := shifted 239 }
+        combinedInnerProduct := shifted 233, b := shifted 235, xi := ⟨get 248⟩
+        bulletproofChallenges := (List.range 15).map fun j => ⟨get (249 + j)⟩ }
+    shouldFinalize := true_
+    spongeDigestBeforeEvaluations := get 243 }
+
+/-- The wrap statement from the 268-input layout: the proof state's claims as `Type1` cells,
+the branch data, the three digests. -/
+def stepVerifyStatement (get : ℕ → FVar Fp) : Pickles.WrapStatement Fp (Type1 (FVar Fp)) :=
+  { proofState :=
+      { deferredValues :=
+          { plonk := { alpha := ⟨get 114⟩, beta := ⟨get 115⟩, gamma := ⟨get 116⟩,
+                       zeta := ⟨get 117⟩, perm := ⟨get 120⟩, zetaToSrsLength := ⟨get 118⟩,
+                       zetaToDomainSize := ⟨get 119⟩ }
+            combinedInnerProduct := ⟨get 121⟩, b := ⟨get 122⟩, xi := ⟨get 123⟩
+            bulletproofChallenges := (List.range 16).map fun j => ⟨get (124 + j)⟩
+            branchData := { domainLog2 := get 142,
+                            proofsVerifiedMask := [.unchecked (get 140), .unchecked (get 141)] } }
+        spongeDigestBeforeEvaluations := get 143
+        messagesForNextWrapProof := get 266 }
+    messagesForNextStepProof := get 267 }
+
+/-- The group half's cells from the 268-input layout: the wrap proof's commitments and
+opening, the key and `sg_old` dummies; the claim cells are `verify`'s to substitute. -/
+def stepVerifyCells (get : ℕ → FVar Fp) :
+    Pickles.IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  let dv := (stepVerifyUnfinalized get).deferredValues
+  { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
+      dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
+    xi := dv.xi
+    deferred := ⟨dv.combinedInnerProduct, dv.b⟩
+    sgOld := [(none, dummyWrapSg), (none, dummyWrapSg)]
+    sigmaLast := [pallasGenerator]
+    indexComms := List.replicate 6 [pallasGenerator]
+    coefficientsComm := List.replicate 15 [pallasGenerator]
+    sigmaComm := List.replicate 6 [pallasGenerator]
+    wComm := (List.range 15).map fun j => [pt (2 * j)]
+    zComm := [pt 30]
+    tComm := (List.range 7).map fun j => pt (32 + 2 * j)
+    opening := { lr := (List.range 15).map fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
+                 z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
+
+/-- The `x_hat` tables at the Lagrange bases `pts`: the bases, their constant corrections,
+and the known-domain fold's seed and sum. -/
+def stepVerifyTable (pts : Array XhatStepCurve.Point) : Pickles.XhatTable Fp 1 :=
+  { bases := (List.range 30).map fun i => xhatStepConst (pts[i]?.getD 0)
+    corrs := (List.range 30).map fun i => xhatStepConst (xhatStepCorr pts i)
+    corrHead := xhatStepConst (xhatStepCorr pts 0)
+    corrSum := xhatStepConst ((List.range 30).map (xhatStepCorr pts)).sum }
+
+/-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
+side over the parsed statement, unfinalized proof and cells. -/
+def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
+    (input : Vector (FVar Fp) 268) : CircuitM Fp C PUnit := do
+  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
+  let sv ← dummyIndexSponge
+  let _ ← Pickles.verifyProof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
+    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
+    (fun _ => none) h (stepVerifyTable pts) sv (.unchecked (get 265)) (stepVerifyStatement get)
+    (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit
 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
@@ -1115,13 +1287,19 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
     ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit) ]
 
-/-- The two `x_hat` targets, each present only when its Lagrange export is (a narrowed local
-PS run regenerates one column's exports; the unfiltered run has both). -/
+/-- The targets baked over a Lagrange export, each present only when its export is (a
+narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/
 def xhatTargets (wrap : Option (Array XhatCurve.Point × AffinePoint (FVar Fq)))
-    (step : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp))) :
+    (step : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp)))
+    (ivpStep : Option (Array XhatStepCurve.Point × AffinePoint (FVar Fp))) :
     List (String × (Json → Except String (Option (Bool × List (String × Bool))))) :=
   (step.toList.map fun (pts, h) =>
     ("xhat_step_circuit", stepTarget (a := Vector Fp 30) (b := PUnit) (xhatStepCircuit pts h)))
+  ++ (ivpStep.toList.map fun (pts, h) =>
+    ("ivp_step_circuit", stepTarget (a := Vector Fp 175) (b := PUnit) (ivpStepCircuit pts h)))
+  ++ (ivpStep.toList.map fun (pts, h) =>
+    ("step_verify_circuit",
+      stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
     ("xhat_wrap_circuit", wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts h)))
 
@@ -1150,7 +1328,9 @@ def main : IO Unit := do
   -- carry no `purescript` field and no manifest entry, so the other consumers skip them).
   let xhatWrap ← optionalExport filter (dir / "xhat_wrap_lagrange.json") (xhatPoints XhatCurve)
   let xhatStep ← optionalExport filter (dir / "xhat_step_lagrange.json") (xhatPoints XhatStepCurve)
-  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatStep).filter fun (n, _) =>
+  let ivpStep ← optionalExport filter (dir / "ivp_step_lagrange.json") (xhatPoints XhatStepCurve)
+  let selected := (targets hStep hWrap ++ xhatTargets xhatWrap xhatStep ivpStep).filter
+    fun (n, _) =>
     filter.isEmpty || (n.splitOn filter).length > 1
   let mut failures := 0
   for (name, compare) in selected do
