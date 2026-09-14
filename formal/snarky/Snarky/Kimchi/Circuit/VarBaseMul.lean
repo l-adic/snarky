@@ -133,7 +133,7 @@ theorem HasCurve.two_torsion_free [Field F] [DecidableEq F] (d : HasCurve F)
       · exact h
     exact_mod_cast h3
   intro hzero
-  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
+  exact _root_.Pasta.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
     (by rw [two_zsmul, hzero])
 
 /-! ## The round

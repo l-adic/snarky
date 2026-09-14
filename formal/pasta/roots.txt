@@ -34,6 +34,13 @@ Pasta.vesta_smul_val
 Pasta.pallas_smul_val
 Pasta.zsmul_eq_val_nsmul
 
+-- The curve's endomorphism as the wire states it: the coefficient `β`, the eigenvalue `λ`,
+-- and the two facts the GLV ladder rests on, with the two deployed witnesses. The circuit
+-- twin is `Snarky.Kimchi.HasEndo`, which is built from one of these.
+Pasta.EndoSpec
+Pasta.vestaEndoSpec
+Pasta.pallasEndoSpec
+
 -- The wire scalar-shift algebra and its round-trips.
 Pasta.Shifted.shiftType1
 Pasta.Shifted.unshiftType1

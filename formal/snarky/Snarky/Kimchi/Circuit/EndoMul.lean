@@ -266,7 +266,7 @@ theorem HasEndo.two_torsion_free [Field F] [DecidableEq F] (d : HasEndo F)
       · exact h
     exact_mod_cast h3
   intro hzero
-  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
+  exact _root_.Pasta.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
     (by rw [two_zsmul, hzero])
 
 open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
@@ -286,11 +286,11 @@ def HasEndo.pallas : HasEndo Fp where
   eigen := fun hT _ => pallas_eigen hT
   endo_nonsingular := fun h => pallas_endo_nonsingular h
   off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
-    Kimchi.Gate.EndoMul.pallas_combo_off_targets ha hb hba hbb hTne heig
+    _root_.Pasta.pallas_combo_off_targets ha hb hba hbb hTne heig
   lam_succ_smul := fun T hTne => by
     haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
         ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
+    exact _root_.Pasta.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
       (by norm_num [pallasLam])
       (by rw [pallas_card]; norm_num [pallasLam])
   order_ne_three := by rw [pallas_card]; decide
@@ -314,11 +314,11 @@ open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
   eigen := fun hT _ => vesta_eigen hT
   endo_nonsingular := fun h => vesta_endo_nonsingular h
   off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
-    Kimchi.Gate.EndoMul.vesta_combo_off_targets ha hb hba hbb hTne heig
+    _root_.Pasta.vesta_combo_off_targets ha hb hba hbb hTne heig
   lam_succ_smul := fun T hTne => by
     haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
         ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
+    exact _root_.Pasta.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
       (by norm_num [vestaLam])
       (by rw [vesta_card]; norm_num [vestaLam])
   order_ne_three := by rw [vesta_card]; decide
@@ -1564,7 +1564,7 @@ theorem toField_crumbsOf_eq_endoExpandZ [Field F] [DecidableEq F] (d : HasEndo F
   rfl
 
 open WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
-open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
+open Kimchi.Gate.VarBaseMul (smul_eq_smul_of_zmod_eq) in
 /-- **Completeness**, at the honest advice — the gadget instantiated in its own scalar
 field (`q := W.order`, `λ' := λ mod q`). On an input reading as a curve point and a
 challenge faithful and within the deployed width, the run succeeds, every row it emits
@@ -1598,7 +1598,7 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hkne : k ≠ 0 := by rw [hkdef, Ne, ZMod.val_eq_zero]; exact inv_ne_zero hs0
   have hklt : k < d.W.order := ZMod.val_lt _
   have hkG : ((k : ℕ) : ℤ) • G ≠ 0 :=
-    smul_ne_zero_of_lt d.W hGne (by exact_mod_cast Nat.pos_of_ne_zero hkne)
+    _root_.Pasta.smul_ne_zero_of_lt d.W hGne (by exact_mod_cast Nat.pos_of_ne_zero hkne)
       (by exact_mod_cast hklt)
   obtain ⟨px, py, hpns, hpteq⟩ :
       ∃ px py, ∃ h : d.W.Nonsingular px py, (k : ℕ) • G = Point.some _ _ h := by

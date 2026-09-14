@@ -226,7 +226,7 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
     haveI : Fact (Nat.Prime Vesta.curve.toAffine.order) := ⟨HasCurve.vesta.prime⟩
     intro h0
     refine hz0 ?_
-    have hdvd := (Kimchi.Gate.VarBaseMul.zsmul_eq_zero_iff_order_dvd Vesta.curve.toAffine
+    have hdvd := (Pasta.zsmul_eq_zero_iff_order_dvd Vesta.curve.toAffine
       (Point.some_ne_zero gen_nonsingular) _).mp h0
     rw [Pasta.vesta_card] at hdvd
     exact (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mpr hdvd
