@@ -172,11 +172,6 @@ def FopParams.ofEnv {C : CommitmentCurve} (E : Env C) (toks : Array Linearizatio
     srsLengthLog2 := E.σ.k
     zkRows := E.cvk.zkRows }
 
-/-- The integer a 128-bit cell holds at a valuation. -/
-def _root_.Snarky.SizedF.readNat {p : ℕ} (V : Valuation (ZMod p))
-    (s : SizedF 128 (FVar (ZMod p))) : ℕ :=
-  (s.val.val V).val
-
 /-! ## The reads with their slacks closed -/
 
 section Exact
@@ -219,21 +214,6 @@ def IvpReadsExact {nc : ℕ}
 private theorem alias_refl (p : ℕ) (m : Prechallenge) : PrechallengeAlias p m.val m :=
   ⟨0, by omega, by rw [Nat.zero_mul, Nat.add_zero, Nat.mod_eq_of_lt m.2]⟩
 
-/-- The integer a 128-bit cell reads as, at a field wider than 128 bits. -/
-private theorem readNat_of_reads {p : ℕ} [Fact p.Prime] (hbig : 2 ^ 128 < p)
-    {W : Valuation (ZMod p)}
-    {u : SizedF 128 (FVar (ZMod p))} {m : Prechallenge} (h : Reads128 W u m) :
-    u.readNat W = m.val := by
-  unfold SizedF.readNat
-  unfold Reads128 at h
-  rw [h, ZMod.val_natCast, Nat.mod_eq_of_lt (lt_trans m.2 hbig)]
-
-/-- Two prechallenges a cell reads as are equal, the field being wider than 128 bits. -/
-private theorem reads128_inj {p : ℕ} [Fact p.Prime] (hbig : 2 ^ 128 < p) {W : Valuation (ZMod p)}
-    {u : SizedF 128 (FVar (ZMod p))} {m m' : Prechallenge} (h : Reads128 W u m)
-    (h' : Reads128 W u m') : m = m' :=
-  Subtype.ext ((readNat_of_reads hbig h).symm.trans (readNat_of_reads hbig h'))
-
 /-- The exact read implies the read, the base field being wider than 128 bits. -/
 theorem IvpReadsExact.toReads {nc : ℕ}
     (hbig : 2 ^ 128 < C.base)
@@ -247,9 +227,10 @@ theorem IvpReadsExact.toReads {nc : ℕ}
     (h : IvpReadsExact S σ cvk cp pub claims o) :
     IvpReads S σ cvk cp pub claims o := by
   obtain ⟨hd, hβ, hγ, hα, hζ, hξ⟩ := h
+  have hinj := castInj128_of_lt _ hbig
   refine ⟨hd, ⟨_, hβ, alias_refl _ _⟩, ⟨_, hγ, alias_refl _ _⟩,
-    fun m hm => reads128_inj hbig hα hm ▸ alias_refl _ _,
-    fun m hm => reads128_inj hbig hζ hm ▸ alias_refl _ _, fun ξ₀ hξ₀ => ?_⟩
+    fun m hm => Reads128.unique hinj hα hm ▸ alias_refl _ _,
+    fun m hm => Reads128.unique hinj hζ hm ▸ alias_refl _ _, fun ξ₀ hξ₀ => ?_⟩
   obtain ⟨hns, hiff⟩ := hξ ξ₀ hξ₀
   exact ⟨_, _, _, _, Or.inl rfl, hns,
     List.forall₂_map_left_iff.mpr (List.forall₂_same.mpr fun m _ => alias_refl _ m),
@@ -330,16 +311,17 @@ def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sca
 
 /-- The scalar half's read: `FopReadsExact` with every parameter derived — `FopParams.ofEnv`,
 the key's domain, the proof's recursion digest — and every value it checks at taken from the
-half's cells: the four plonk challenges as the cells' integers (`α`, `ζ` expanded at the
-sponge's eigenvalue), the three shifted claims through the side's decode. -/
+half's cells: the `α`, `ζ` cells read as prechallenges, expanded at the sponge's eigenvalue
+(the shape of `finalizeOtherProofStep_spec_fp`), `β`, `γ` as the cells' values, the three
+shifted claims through the side's decode. -/
 def ScalarHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf C sf' E.σ.k) :
     Prop :=
   let dv := Sc.claims.deferredValues
+  ∀ a₀ z₀ : Prechallenge, Reads128 Sc.V dv.plonk.alpha a₀ → Reads128 Sc.V dv.plonk.zeta z₀ →
   FopReadsExact (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) E.cvk.n E.cvk.omega
     (recDigest C (cp.olds.map (·.u))) Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList)
     Sc.claims Sc.evals
-    (endoExpand C.sponge.lam (dv.plonk.zeta.readNat Sc.V))
-    (endoExpand C.sponge.lam (dv.plonk.alpha.readNat Sc.V))
+    (endoExpand C.sponge.lam z₀.val) (endoExpand C.sponge.lam a₀.val)
     (dv.plonk.beta.val.val Sc.V) (dv.plonk.gamma.val.val Sc.V)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.combinedInnerProduct)
     (Sc.side.decode dv.b) id Sc.V Sc.out
@@ -417,25 +399,27 @@ structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sc
 
 /-- The claims are the wire's own values: `cip` is `cipOf` the run's input, `b` is
 `combinedB` at the run's round challenges, the permutation scalar is `runPScalar`, and the
-`ξ` claim (as the 128-bit integer `xiV`) is the run's fr-sponge `ξ` prechallenge. What the
-scalar half's `finalized` bit asserts, in wire terms. -/
+`ξ` cell reads as the run's fr-sponge `ξ` prechallenge. What the scalar half's `finalized`
+bit asserts, in wire terms. -/
 def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cipV bV permV : C.ScalarField) (xiV : ℕ) : Prop :=
+    (cipV bV permV : C.ScalarField) (V : Valuation C.ScalarField)
+    (xi : SizedF 128 (FVar C.ScalarField)) : Prop :=
   let run := runInput C E.σ E.cvk cp pub
   let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
   cipV = cipOf run ∧
   bV = combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn ∧
   permV = runPScalar C E.σ E.cvk cp pub ∧
-  xiV = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
-    (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub) cp.evals)).1
+  ∃ m : Prechallenge, Reads128 V xi m ∧
+    m.val = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
+      (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub) cp.evals)).1
 
 /-- The claims of a scalar half, as `ClaimsHonest` reads them: the three shifted claims
-through the side's decode, `ξ` as its cell's integer. -/
+through the side's decode, the `ξ` cell at the half's valuation. -/
 def ScalarHalf.ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (Sc : ScalarHalf C sf' E.σ.k) : Prop :=
   let dv := Sc.claims.deferredValues
   Pickles.ClaimsHonest E cp pub (Sc.side.decode dv.combinedInnerProduct) (Sc.side.decode dv.b)
-    (Sc.side.decode dv.plonk.perm) (dv.xi.readNat Sc.V)
+    (Sc.side.decode dv.plonk.perm) Sc.V dv.xi
 
 /-- The deferred `sg`-correctness equation of the proof's opening at the wire's round
 challenges (`verifyWith`'s second conjunct): what pickles checks one proof later. -/
@@ -633,7 +617,8 @@ private theorem chals_eq {p q : ℕ} [Fact p.Prime] [Fact q.Prime] (hp : 2 ^ 128
       List.Forall₂ (Reads128 Vs) ss cs → cs = rs
   | _, _, _, _, _, .nil, .nil, .nil, .nil => rfl
   | _, _, _, _, _, .cons hv hvs, .cons hg hgs, .cons ⟨_, hm1, hm2⟩ hts, .cons hs hss => by
-    rw [reads128_inj hq hs hm2, reads128_inj hp hm1 (hv.trans hg), chals_eq hp hq hvs hgs hts hss]
+    rw [Reads128.unique (castInj128_of_lt _ hq) hs hm2,
+      Reads128.unique (castInj128_of_lt _ hp) hm1 (hv.trans hg), chals_eq hp hq hvs hgs hts hss]
 
 /-- `combinedB` over a vector's list is `combinedB` over the vector. -/
 private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
@@ -693,9 +678,6 @@ theorem twoHalves_iff_schnorr
   obtain ⟨o, hx, hsucc, hdig, hbpc⟩ := hg
   simp only [IvpReadsExact, DeferredValues.toIvpClaims] at hx
   obtain ⟨hdE, hβG, hγG, hαG, hζG, hξG⟩ := hx
-  -- the scalar half's read
-  simp only [ScalarHalf.Reads, FopReadsExact, FopChecks, FopParams.ofEnv, id_eq] at hs
-  obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiIff, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   -- the shared prechallenges
   obtain ⟨a₀, hαGa, hαSa⟩ := ht.alpha
   obtain ⟨z₀, hζGz, hζSz⟩ := ht.zeta
@@ -703,28 +685,32 @@ theorem twoHalves_iff_schnorr
   obtain ⟨g₀, hγGg, hγSg⟩ := ht.gamma
   obtain ⟨ξ₀, hξGx, hξSx⟩ := ht.xi
   obtain ⟨hns, hiff⟩ := hξG ξ₀ hξGx
-  obtain rfl : ξ₀ = ξ₀' := reads128_inj hscalar hξSx hξS
   rw [hsucc] at hiff
+  have hinjG := castInj128_of_lt _ hbase
+  have hinjS := castInj128_of_lt _ hscalar
+  -- the scalar half's read, at the shared `α`, `ζ`
+  have hs := hs a₀ z₀ hαSa hζSz
+  simp only [FopReadsExact, FopChecks, FopParams.ofEnv, id_eq] at hs
+  obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiIff, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
+  obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
-  have hζ : endoExpand C.sponge.lam (Sc.claims.deferredValues.plonk.zeta.readNat Sc.V)
-      = (runOracles C E.σ E.cvk cp pub).zeta := by
+  have hζ : endoExpand C.sponge.lam z₀.val = (runOracles C E.σ E.cvk cp pub).zeta := by
     simp only [runOracles, fqOracles, FqRun.expand]
-    rw [readNat_of_reads hscalar hζSz, reads128_inj hbase hζGz hζG]
-  have hα : endoExpand C.sponge.lam (Sc.claims.deferredValues.plonk.alpha.readNat Sc.V)
-      = (runOracles C E.σ E.cvk cp pub).alpha := by
+    rw [Reads128.unique hinjG hζGz hζG]
+  have hα : endoExpand C.sponge.lam a₀.val = (runOracles C E.σ E.cvk cp pub).alpha := by
     simp only [runOracles, fqOracles, FqRun.expand]
-    rw [readNat_of_reads hscalar hαSa, reads128_inj hbase hαGa hαG]
+    rw [Reads128.unique hinjG hαGa hαG]
   have hβ : Sc.claims.deferredValues.plonk.beta.val.val Sc.V
       = (runOracles C E.σ E.cvk cp pub).beta := by
     simp only [runOracles, fqOracles, FqRun.expand]
     unfold Reads128 at hβSb
-    rw [reads128_inj hbase hβGb hβG] at hβSb
+    rw [Reads128.unique hinjG hβGb hβG] at hβSb
     exact hβSb
   have hγ : Sc.claims.deferredValues.plonk.gamma.val.val Sc.V
       = (runOracles C E.σ E.cvk cp pub).gamma := by
     simp only [runOracles, fqOracles, FqRun.expand]
     unfold Reads128 at hγSg
-    rw [reads128_inj hbase hγGg hγG] at hγSg
+    rw [Reads128.unique hinjG hγGg hγG] at hγSg
     exact hγSg
   have hd : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
       = (runOracles C E.σ E.cvk cp pub).digest := by
@@ -741,20 +727,24 @@ theorem twoHalves_iff_schnorr
     show _ = (frOracles C cp _ _).r
     rw [frOracles_eq_frPrechallenges, hr']
   have hxi : (↑Sc.out.xiCorrect : CVar C.ScalarField).val Sc.V = 1
-      ↔ Sc.claims.deferredValues.xi.readNat Sc.V
-        = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
+      ↔ ∃ m : Prechallenge, Reads128 Sc.V Sc.claims.deferredValues.xi m ∧
+        m.val = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
             (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub)
             cp.evals)).1 := by
-    rw [hxiIff, readNat_of_reads hscalar hξS]
-  have hξrun : Sc.claims.deferredValues.xi.readNat Sc.V
-        = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
+    rw [hxiIff]
+    constructor
+    · exact fun h => ⟨ξ₀, hξS, h⟩
+    · rintro ⟨m, hm, hmv⟩
+      rw [Reads128.unique hinjS hξS hm, hmv]
+  have hξrun : (∃ m : Prechallenge, Reads128 Sc.V Sc.claims.deferredValues.xi m ∧
+        m.val = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
             (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub)
-            cp.evals)).1 →
+            cp.evals)).1) →
       endoExpand C.sponge.lam ξ₀.val = run.polyscale := by
-    intro h
-    rw [readNat_of_reads hscalar hξS] at h
+    rintro ⟨m, hm, hmv⟩
+    rw [Reads128.unique hinjS hξS hm, hmv]
     show _ = (frOracles C cp _ _).xi
-    rw [frOracles_eq_frPrechallenges, h]
+    rw [frOracles_eq_frPrechallenges]
   have hĉeq : ĉ = (ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
     chals_eq hbase hscalar hbpc hns ht.chals hĉ
