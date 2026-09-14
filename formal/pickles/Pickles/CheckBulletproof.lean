@@ -912,8 +912,9 @@ curve's deployed shape, from which follow both the field facts the transcript's 
 (`IvpCurve.two_ne`, `IvpCurve.three_ne`, `IvpCurve.small_inj`) and the group fact the adds and
 negations need (`IvpCurve.two_torsion_free`); and the three bridges from the gadgets'
 vocabulary to the wire's. The curve's shortness, its scalar order's action and its sponge's
-round count are `C`'s own (`C.a_zero`, `C.card_nsmul`, `C.sponge_size`). None of it mentions
-the side's scalar representation. One value per curve: `IvpCurve.vesta`, `IvpCurve.pallas`. -/
+round count are not here: they are `C.a_zero`, `C.card_nsmul` and `C.sponge.hsize`. None of it
+mentions the side's scalar representation. One value per curve: `IvpCurve.vesta`,
+`IvpCurve.pallas`. -/
 structure IvpCurve (C : CommitmentCurve) where
   /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
   e : IpaEndo C.BaseField
@@ -1044,7 +1045,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
   have hcast : CastInj128 C.BaseField :=
     castInj128_of_lt C.base (lt_trans (by norm_num) S.curve.shape.base_big)
   refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success_at ops S.curve.e S.curve.eW _ C.sponge_size endo S.curve.gm
+    (checkBulletproof_spec_success_at ops S.curve.e S.curve.eW _ C.sponge.hsize endo S.curve.gm
       sqrtF hcast S.R (fun t => SWPoint.equivPoint C.E (C.toGroup t)) (S.curve.groupMap V sqrtF)
       sv bases _ hb hbne inp
       (fun x hx => (hclaims x hx).1) (fun x w hx hpre => (hclaims x hx).2 w hpre)
@@ -1126,7 +1127,7 @@ theorem IvpSide.opening_reads (S : IvpSide C V ops)
       C.sponge.params endo S.curve.gm sqrtF sv bases inp
     ⦃⇓ o _ => ⌜S.OpeningReads sv bases inp o⌝⦄ := by
   refine builder_spec_and _ _ _
-    (checkBulletproof_reads S.curve.two_ne S.curve.three_ne ops S.curve.e _ C.sponge_size endo
+    (checkBulletproof_reads S.curve.two_ne S.curve.three_ne ops S.curve.e _ C.sponge.hsize endo
       S.curve.gm sqrtF sv bases inp) ?_
   rw [builder_spec_iff]
   intro nv hsat bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh

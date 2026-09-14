@@ -46,6 +46,10 @@ structure Spec (base scalar : ℕ) where
   params : Params (ZMod base)
   /-- The endomorphism eigenvalue `λ` used by the scalar field's challenge expansion. -/
   lam : ZMod scalar
+  /-- The round-constant table covers the permutation exactly: `5 × 11` entries, no ragged
+  tail. Every consumer that runs the sponge needs this, so the spec carries it rather than
+  each of them taking it as a hypothesis. -/
+  hsize : params.roundConstants.size = fullRounds
 
 open CompElliptic.CurveForms.ShortWeierstrass
 
@@ -176,8 +180,13 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 /-- The Vesta side of the cycle: the `fq_kimchi` parameters and the Vesta eigenvalue
 (`DefaultFqSponge<VestaParameters>`). -/
-def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD :=
-  ⟨fqParams, ((Pasta.vestaLam : ℤ) : Fp)⟩
+def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD where
+  params := fqParams
+  lam := ((Pasta.vestaLam : ℤ) : Fp)
+  hsize := by
+    show (FqKimchi.roundConstants.map _).size = fullRounds
+    rw [Array.size_map]
+    rfl
 
 end FqVesta
 
@@ -189,8 +198,13 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 (`DefaultFqSponge<PallasParameters>`). Here the scalar field is the larger of the pair, so
 `absorbFr` takes the high-bits/low-bit branch. Nothing selects that branch but the
 cardinalities. -/
-def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD :=
-  ⟨fpParams, ((Pasta.pallasLam : ℤ) : Fq)⟩
+def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD where
+  params := fpParams
+  lam := ((Pasta.pallasLam : ℤ) : Fq)
+  hsize := by
+    show (FpKimchi.roundConstants.map _).size = fullRounds
+    rw [Array.size_map]
+    rfl
 
 end FqPallas
 

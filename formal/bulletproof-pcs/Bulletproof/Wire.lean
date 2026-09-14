@@ -92,15 +92,15 @@ structure CommitmentCurve where
   [primeScalar : Fact (Nat.Prime scalar)]
   /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
   sponge : FqSponge.Spec base scalar
-  /-- The sponge's round-constant table covers the permutation exactly: `5 × 11` entries, no
-  ragged tail. What every consumer running the sponge in circuit has to know. -/
-  sponge_size : sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- The scalar-side Poseidon parameters — production's `G::sponge_params()`,
   curve-determined like the fq-sponge spec. Not read by the IPA opening verifier
   itself; carried on the bundle for the consumers that run a scalar-side (fr-)sponge
   over the same curve (kimchi's `frOracles`), the way production types the table on
   the curve rather than on any wire record. -/
   frParams : Params (ZMod scalar)
+  /-- The scalar-side table likewise covers the permutation exactly, which is what
+  `Kimchi.Verifier.frSpec` needs to build the fr-sponge's spec out of it. -/
+  frParams_size : frParams.roundConstants.size = Poseidon.fullRounds
   /-- The curve, in short-Weierstrass form over the base field. -/
   E : SWCurve (ZMod base)
   /-- The curve is short: `y² = x³ + B`. -/
@@ -578,11 +578,11 @@ abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_SCALAR_CARD
   scalar := PALLAS_BASE_CARD
   sponge := FqVesta.spec
-  sponge_size := by
-    show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
+  frParams := fpParams
+  frParams_size := by
+    show (Poseidon.FpKimchi.roundConstants.map _).size = Poseidon.fullRounds
     rw [Array.size_map]
     rfl
-  frParams := fpParams
   E := Vesta.curve
   a_zero := rfl
   card := Vesta.card_eq
@@ -611,11 +611,11 @@ abbrev curve : Ipa.CommitmentCurve where
   base := PALLAS_BASE_CARD
   scalar := PALLAS_SCALAR_CARD
   sponge := FqPallas.spec
-  sponge_size := by
-    show (Poseidon.FpKimchi.roundConstants.map _).size = Poseidon.fullRounds
+  frParams := fqParams
+  frParams_size := by
+    show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
     rw [Array.size_map]
     rfl
-  frParams := fqParams
   E := Pallas.curve
   a_zero := rfl
   card := Pallas.card_eq

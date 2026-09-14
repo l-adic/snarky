@@ -276,7 +276,7 @@ deliberately dead: the fr-sponge path never endo-expands through its own spec.
 lives on the fq-side spec), and `frDigest`'s `challengeFq`/`challengeNat` never read
 `lam`, so the slot is unused and zeroed. -/
 def frSpec (C : Ipa.CommitmentCurve) : FqSponge.Spec C.scalar C.scalar :=
-  ⟨C.frParams, 0⟩
+  ⟨C.frParams, 0, C.frParams_size⟩
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
 of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
