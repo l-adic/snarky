@@ -122,8 +122,8 @@ def main : IO Unit := do
   -- disagree. The endo constants and MDS matrices are the ones `Pickles.Reflect`'s
   -- certificates are decided against, so a pass here anchors each certificate's
   -- constants to production.
-  let mdsP := Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
-  let mdsQ := Kimchi.Verifier.mdsOfParams IpaPallas.curve.frParams
+  let mdsP := Kimchi.Verifier.mdsOfParams IpaVesta.curve.frSponge.params
+  let mdsQ := Kimchi.Verifier.mdsOfParams IpaPallas.curve.frSponge.params
   runFixture fpTokens mdsP Pasta.pallasEndo s!"{kdir}/linearization_vesta.json"
   runFixture fpTokens mdsP Pasta.pallasEndo s!"{kdir}/linearization_vesta_emul.json"
   runFixture fqTokens mdsQ Pasta.vestaEndo s!"{kdir}/linearization_pallas.json"
