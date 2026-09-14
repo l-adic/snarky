@@ -370,6 +370,10 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -- | call mirrors one OCaml `Req.*` request.
 -------------------------------------------------------------------------------
 
+-- | The type-level-carrier entry point: derives the widths and the
+-- | padded-challenge allocation from `slots` and hands them to
+-- | `wrapMainCore`. Everything slot-shaped about the wrap circuit lives
+-- | in these few lines.
 wrapMain
   :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
    . PrimeField WrapField
@@ -379,6 +383,69 @@ wrapMain
   -- `Slots2 w0 w1` (mpv=2). The `Compare mpv 3 LT` constraint
   -- propagates into `wrapVerify`; today's pickles caps `mpv` at 2.
   => PadSlots slots mpv
+  => Reflectable stepChunks Int
+  => Reflectable tCommLen Int
+  => Reflectable nonSgBases Int
+  => Compare 0 stepChunks LT
+  => Add 1 numChunksPred stepChunks
+  => Mul 7 stepChunks tCommLen
+  => Add 1 tCommLenPred tCommLen
+  => Mul 15 stepChunks wCoeffN
+  => Mul 6 stepChunks indexSigmaN
+  => Mul 44 stepChunks chunkBases
+  => Add 1 chunkBases nonSgBases
+  => Add stepChunks 1 sg1
+  => Add sg1 stepChunks sg2
+  => Add sg2 indexSigmaN sg3
+  => Add sg3 wCoeffN sg4
+  => Add sg4 wCoeffN sg5
+  => Add sg5 indexSigmaN nonSgBases
+  -- `exists` on the `oldBpChals` advice field needs both `CircuitType`
+  -- and `CheckedType` instances for the `slots` shape. This is the
+  -- obstacle to making the carrier runtime: allocation is type-directed,
+  -- even though the circuit body below needs only the widths.
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => Reflectable branches Int
+  => Reflectable mpv Int
+  => Add 1 branchesPred branches
+  => Compare mpv 3 LT
+  => Add mpv nonSgBases totalBases
+  => Add 1 totalBasesPred totalBases
+  => WrapMainConfig branches stepChunks
+  -> WrapMainInputVar
+  -> WrapAdvice mpv stepChunks slots
+  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
+wrapMain config input advice =
+  wrapMainCore @branches @stepChunks config input advice
+    (slotWidthsOf (Proxy :: Proxy slots))
+    ( do
+        -- Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
+        -- Returns a `slots`-shaped value; `PadSlots` projects it into a
+        -- uniform `Vector mpv (Vector PaddedLength a)`, prepending the
+        -- right number of dummy stacks per slot to mirror OCaml's
+        -- `Wrap_hack.Checked.pad_challenges`.
+        slotsValue <- label "old-bp-chals" $ exists $
+          pure advice <#> \r -> r.oldBpChals
+        pure (padAllSlots (map const_ dummyIpaChallenges.wrapExpanded) slotsValue)
+    )
+
+-- | The wrap circuit proper. Slot-shaped inputs reach it already
+-- | flattened: the per-slot widths as a plain `Vector mpv Int`, and the
+-- | padded bullet-proof challenge stacks as an action, which must stay
+-- | an action because it allocates witness variables at a fixed point
+-- | in the `exists` order and moving it would change the circuit.
+-- |
+-- | `slots` survives only as an unconstrained variable inside
+-- | `WrapAdvice`, whose sole slot-shaped field is `oldBpChals` — the one
+-- | this function no longer reads. Nothing in the body below depends on
+-- | the carrier's shape, which is what the extraction demonstrates.
+wrapMainCore
+  :: forall @branches slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+   . PrimeField WrapField
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
@@ -401,17 +468,6 @@ wrapMain
   => Add sg3 wCoeffN sg4
   => Add sg4 wCoeffN sg5
   => Add sg5 indexSigmaN nonSgBases
-  -- `exists` on the `oldBpChals` advice field needs
-  -- both `CircuitType` and `CheckedType` instances for the `slots`
-  -- shape. They exist for concrete `Slots1` / `Slots2` via the
-  -- `Product` / `Const Unit` instances in `Snarky.Circuit.Types`
-  -- — we just need to thread the constraints through the
-  -- polymorphic header.
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
@@ -425,8 +481,16 @@ wrapMain
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks slots
+  -- | Per-slot `max_local_max_proofs_verified`, for the sponge-state
+  -- | lookup and for recovering the unpadded challenges.
+  -> Vector mpv Int
+  -- | Allocates `oldBpChals` and front-pads each slot's stack to
+  -- | `PaddedLength`. An action, not a value: it must run at step 6 of
+  -- | the `exists` sequence.
+  -> Snarky WrapField (KimchiConstraint WrapField) r
+       (Vector mpv (Vector PaddedLength (Vector WrapIPARounds (FVar WrapField))))
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-wrapMain config (StatementPacked stmtR) advice = do
+wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
     wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
@@ -563,14 +627,7 @@ wrapMain config (StatementPacked stmtR) advice = do
   -- uniform `Vector mpv (Vector PaddedLength a)`, prepending the
   -- right number of dummy bp-challenge stacks per slot to mirror
   -- OCaml's `Wrap_hack.Checked.pad_challenges`.
-  slotsValue <- label "old-bp-chals" $ exists $
-    pure advice <#> \r -> r.oldBpChals
-  let
-    dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
-
-    paddedChalsAll
-      :: Vector mpv (Vector PaddedLength (Vector WrapIPARounds (FVar WrapField)))
-    paddedChalsAll = padAllSlots dummyChallenge slotsValue
+  paddedChalsAll <- allocPaddedChals
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
   rawEvals <- label "evals" $ exists $
@@ -663,7 +720,6 @@ wrapMain config (StatementPacked stmtR) advice = do
   let
     states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
     paddedLenInt = reflectType (Proxy @PaddedLength)
-    slotWidths = slotWidthsOf (Proxy :: Proxy slots)
     perSlotSponge = map (\w -> Vector.index states (unsafeFinite @3 w)) slotWidths
 
     -- Real (unpadded) challenges per slot: drop the leading padding
