@@ -1,5 +1,4 @@
 import Std.Tactic.Do
-import Mathlib.Data.List.Forall2
 import Snarky.Builder
 import Snarky.BasicSystem
 
@@ -120,24 +119,6 @@ theorem builder_spec_imp {V : Valuation F} [ConstraintHolds F c] {α : Type}
   rw [builder_spec_iff]
   intro nv hsat
   exact hpq _ ((builder_spec_iff g P).mp h nv hsat)
-
-/-- A `mapM` of specifications: each element's result reads against its own target, so the
-list of results reads against the list of targets. The `List.mapM` combinator `mvcgen` lacks
-(it has `forIn`). -/
-theorem builder_spec_mapM {V : Valuation F} [ConstraintHolds F c] {α β γ : Type}
-    (f : α → CircuitM F (Builder V c) β) (R : β → γ → Prop) (Q : α → γ)
-    (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜R r (Q a)⌝⦄) :
-    ∀ l : List α, ⦃⌜True⌝⦄ l.mapM f ⦃⇓ rs _ => ⌜List.Forall₂ R rs (l.map Q)⌝⦄
-  | [] => by
-    rw [List.mapM_nil, List.map_nil]
-    mvcgen
-    exact .nil
-  | a :: l => by
-    rw [List.mapM_cons, List.map_cons]
-    have ih := builder_spec_mapM f R Q hf l
-    mvcgen [hf, ih]
-    rename_i r _ hr rs _ hrs
-    exact .cons hr hrs
 
 /-! ## The lawful-backend interface -/
 
