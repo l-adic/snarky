@@ -720,7 +720,8 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
     (h : IvpHyps S σ cvk cp pub optSponge blindingH spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
-    incrementallyVerifyProof ops S.curve.e C.sponge.params endo S.curve.gm sqrtF optSponge
+    incrementallyVerifyProof ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap) sqrtF
+      optSponge
       blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by

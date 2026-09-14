@@ -201,7 +201,7 @@ theorem verifyProof_reads
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params endo
-      S.curve.gm
+      (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) cells u base v⌝⦄ := by
   obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab

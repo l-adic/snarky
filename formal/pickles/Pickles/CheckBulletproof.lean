@@ -924,16 +924,16 @@ parameters are. The curve's shortness, its scalar order's action and its sponge'
 are not here either: they are `C.a_zero`, `C.card_nsmul` and `C.sponge.hsize`. None of it
 mentions the side's scalar representation. One value per curve: `IvpCurve.vesta`,
 `IvpCurve.pallas`. -/
-structure IvpCurve (C : KimchiCurve) where
-  /-- The map-to-curve parameters deriving the `U` base. -/
-  gm : GroupMapParams C.BaseField
+structure IvpCurve (C : KimchiCurve) : Prop where
   /-- The curve has the deployed shape: the base field's width makes a low-128-bit read a
   `PrechallengeAlias`, and the scalar order's leaves the group without 2-torsion. -/
   shape : PastaShape C
-  /-- The map-to-curve gadget reads as the wire's `toGroup` up to sign. -/
+  /-- The map-to-curve gadget reads as the wire's `toGroup` up to sign (`groupMap_reads` at
+  any shaped curve). -/
   groupMap : ∀ (V : Valuation C.BaseField) (sqrtF : C.BaseField → Option C.BaseField)
       (t : FVar C.BaseField),
-    ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint C.BaseField)) sqrtF gm t
+    ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint C.BaseField)) sqrtF
+      (.ofSpec C.groupMap) t
     ⦃⇓ r _ => ⌜∃ U : C.E.toAffine.Point, OnCurveAt C.E.toAffine V r U ∧
       (U = SWPoint.equivPoint C.E (C.toGroup (t.val V)) ∨
         U = -SWPoint.equivPoint C.E (C.toGroup (t.val V)))⌝⦄
@@ -1046,7 +1046,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
     (hsg : OnCurveAt C.E.toAffine V inp.opening.sg (SWPoint.equivPoint C.E sgW))
     (hh : OnCurveAt C.E.toAffine V inp.blindingGenerator (SWPoint.equivPoint C.E σ.h)) :
     ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e
-      C.sponge.params endo S.curve.gm sqrtF sv bases inp
+      C.sponge.params endo (.ofSpec C.groupMap) sqrtF sv bases inp
     ⦃⇓ o _ => ⌜∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
       (chals : Vector C.ScalarField σ.k),
       (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
@@ -1062,7 +1062,8 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
   have hcast : CastInj128 C.BaseField :=
     castInj128_of_lt C.base (lt_trans (by norm_num) S.curve.shape.base_big)
   refine builder_spec_imp _ _ _
-    (checkBulletproof_spec_success_at ops S.curve.e S.curve.eW _ C.sponge.hsize endo S.curve.gm
+    (checkBulletproof_spec_success_at ops S.curve.e S.curve.eW _ C.sponge.hsize endo
+      (.ofSpec C.groupMap)
       sqrtF hcast S.R (fun t => SWPoint.equivPoint C.E (C.toGroup t)) (S.curve.groupMap V sqrtF)
       sv bases _ hb hbne inp
       (fun x hx => (hclaims x hx).1) (fun x w hx hpre => (hclaims x hx).2 w hpre)
@@ -1142,11 +1143,11 @@ theorem IvpSide.opening_reads (S : IvpSide C V ops)
     (bases : List (AffinePoint (FVar C.BaseField) × Option (BoolVar C.BaseField)))
     (inp : CheckBulletproofInput C.BaseField sf) :
     ⦃⌜True⌝⦄ checkBulletproof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e
-      C.sponge.params endo S.curve.gm sqrtF sv bases inp
+      C.sponge.params endo (.ofSpec C.groupMap) sqrtF sv bases inp
     ⦃⇓ o _ => ⌜S.OpeningReads sv bases inp o⌝⦄ := by
   refine builder_spec_and _ _ _
     (checkBulletproof_reads S.curve.two_ne S.curve.three_ne ops S.curve.e _ C.sponge.hsize endo
-      S.curve.gm sqrtF sv bases inp) ?_
+      (.ofSpec C.groupMap) sqrtF sv bases inp) ?_
   rw [builder_spec_iff]
   intro nv hsat bvW hb hbne hlast hclaims n hxi σ lrW δW sgW hlr hlrne hδ hsg hh
   exact (builder_spec_iff _ _).mp (S.opening_reads_at endo sqrtF sv bases bvW hb hbne
@@ -1288,47 +1289,62 @@ def stepReading (V : Valuation Fp) :
 end Deployed
 
 
-section DeployedVesta
+section GroupMapBridge
 
 open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta Poseidon.GroupMap
-open WeierstrassCurve.Affine
+open WeierstrassCurve.Affine Bulletproof Bulletproof.Ipa
 
-/-- The wrap side's group-map parameters (PS `groupMapParams (Proxy @VestaG)`): the Vesta
-BW19 `setup()` spec with the non-residue `5`. -/
-abbrev groupMapParamsVesta : GroupMapParams Fq := .ofSpec Poseidon.GroupMapVesta.spec 5
+/-- Transporting a point along an equality of curves leaves its coordinates alone. What
+`KimchiCurve.toGroup`'s `▸` amounts to at the coordinate level. -/
+private theorem swpoint_cast {F : Type} [Field F] [DecidableEq F] {E₁ E₂ : SWCurve F}
+    (h : E₁ = E₂) (P : SWPoint E₁) : (h ▸ P).x = P.x ∧ (h ▸ P).y = P.y := by
+  subst h; exact ⟨rfl, rfl⟩
 
-/-- No Vesta point has ordinate zero — it would be 2-torsion — so no candidate ordinate
-square vanishes. -/
-theorem vesta_curveEqn_ne_zero (x : Fq) : curveEqn Poseidon.GroupMapVesta.spec x ≠ 0 := by
+/-- No candidate ordinate square vanishes on a shaped curve: a point with ordinate zero
+would be 2-torsion, and a shaped curve's group has none. -/
+theorem PastaShape.curveEqn_ne_zero {C : KimchiCurve} (sh : PastaShape C) (x : C.BaseField) :
+    curveEqn C.groupMap x ≠ 0 := by
   intro h0
-  have hon : OnCurve Vesta.curve.A Vesta.curve.B (x, 0) := by
-    have hA : Vesta.curve.A = 0 := Poseidon.GroupMapVesta.spec.hA
+  have hE : C.groupMap.E = C.E := C.groupMap_E
+  have hA : C.E.A = 0 := hE ▸ C.groupMap.hA
+  simp only [curveEqn, hE] at h0
+  have hon : OnCurve C.E.A C.E.B (x, 0) := by
     simp only [OnCurve, hA, zero_mul, _root_.add_zero]
-    simpa [curveEqn, Poseidon.GroupMapVesta.spec] using h0.symm
+    simpa using h0.symm
   have hns := nonsingular_toW hon
-  have hQ2 : Point.some x 0 hns + Point.some x 0 hns = 0 :=
-    Point.add_self_of_Y_eq (by simp [negY, toW])
-  exact HasEndo.vesta.two_torsion_free _ (Point.some_ne_zero hns) hQ2
+  exact sh.d.two_torsion_free _ (Point.some_ne_zero hns)
+    (Point.add_self_of_Y_eq (by simp [negY, toW]))
 
-/-- The wrap side's map-to-curve reads as the wire map `toGroup`'s point, up to sign. -/
-theorem vesta_groupMap_reads {V : Valuation Fq} (sqrtF : Fq → Option Fq) (t : FVar Fq) :
-    ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint Fq)) sqrtF groupMapParamsVesta t
-    ⦃⇓ r _ => ⌜∃ U : IpaEndo.vesta.d.W.Point, OnCurveAt IpaEndo.vesta.d.W V r U ∧
-      (U = SWPoint.equivPoint Poseidon.GroupMapVesta.spec.E
-          (toGroup Poseidon.GroupMapVesta.spec (t.val V)) ∨
-        U = -SWPoint.equivPoint Poseidon.GroupMapVesta.spec.E
-          (toGroup Poseidon.GroupMapVesta.spec (t.val V)))⌝⦄ := by
+/-- The map-to-curve gadget at a shaped curve's own SvdW spec reads as the wire map
+`KimchiCurve.toGroup`, up to the sign of the ordinate — the constraints pin the root's
+square, not its sign. The only datum beyond the curve is the non-residue the in-circuit
+flagged-root trick needs, which the wire map has no counterpart for. -/
+theorem groupMap_reads {C : KimchiCurve} (sh : PastaShape C) {V : Valuation C.BaseField}
+    (sqrtF : C.BaseField → Option C.BaseField) (t : FVar C.BaseField) :
+    ⦃⌜True⌝⦄
+    groupMapCircuit (c := Builder V (KimchiConstraint C.BaseField)) sqrtF
+      (.ofSpec C.groupMap) t
+    ⦃⇓ r _ => ⌜∃ U : C.E.toAffine.Point, OnCurveAt C.E.toAffine V r U ∧
+      (U = SWPoint.equivPoint C.E (C.toGroup (t.val V)) ∨
+        U = -SWPoint.equivPoint C.E (C.toGroup (t.val V)))⌝⦄ := by
+  haveI := C.primeBase
+  have hE : C.groupMap.E = C.E := C.groupMap_E
+  have hgx : (C.toGroup (t.val V)).x = (toGroup C.groupMap (t.val V)).x :=
+    (swpoint_cast C.groupMap_E _).1
+  have hgy : (C.toGroup (t.val V)).y = (toGroup C.groupMap (t.val V)).y :=
+    (swpoint_cast C.groupMap_E _).2
   rw [builder_spec_iff]
   intro nv hsat
   obtain ⟨hx, hy⟩ := (builder_spec_iff _ _).mp (groupMapCircuit_toGroup_spec (V := V)
-    (c := KimchiConstraint Fq) Poseidon.GroupMapVesta.spec 5 Vesta.five_not_isSquare
-    vesta_curveEqn_ne_zero sqrtF t) nv hsat
+    (c := KimchiConstraint C.BaseField) C.groupMap sh.curveEqn_ne_zero sqrtF t) nv hsat
   obtain ⟨-, hcurve⟩ := (builder_spec_iff _ _).mp (groupMapCircuit_spec (V := V)
-    (c := KimchiConstraint Fq) sqrtF groupMapParamsVesta t) nv hsat
-  generalize (build (groupMapCircuit (c := Builder V (KimchiConstraint Fq)) sqrtF
-    groupMapParamsVesta t) nv).result = r at hx hy hcurve ⊢
-  generalize toGroup Poseidon.GroupMapVesta.spec (t.val V) = P at hx hy ⊢
-  have hon : OnCurve Vesta.curve.A Vesta.curve.B (P.x, P.y) := by
+    (c := KimchiConstraint C.BaseField) sqrtF (.ofSpec C.groupMap) t) nv hsat
+  rw [← hgx] at hx
+  rw [← hgy] at hy
+  generalize (build (groupMapCircuit (c := Builder V (KimchiConstraint C.BaseField)) sqrtF
+    (.ofSpec C.groupMap) t) nv).result = r at hx hy hcurve ⊢
+  generalize C.toGroup (t.val V) = P at hx hy ⊢
+  have hon : OnCurve C.E.A C.E.B (P.x, P.y) := by
     rcases P.onCurve with h | h
     · exact h
     · exfalso
@@ -1338,12 +1354,12 @@ theorem vesta_groupMap_reads {V : Valuation Fq} (sqrtF : Fq → Option Fq) (t : 
       have hy0 : r.y.val V = 0 := by rcases hy with hy | hy <;> simp [hy]
       rw [hy0, hx] at hcurve
       simp [ySquared, GroupMapParams.ofSpec] at hcurve
-      exact absurd hcurve (by decide)
+      exact C.E.B_nonzero (hE ▸ hcurve.symm)
   have hns := nonsingular_toW hon
   rw [SWPoint.equivPoint_eq_some P hon]
   rcases hy with hy | hy
   · exact ⟨_, OnCurveAt.of_reads hx hy hns, Or.inl rfl⟩
-  · have hr' : OnCurveAt (toW Vesta.curve.A Vesta.curve.B) V ⟨r.x, CVar.negate_ r.y⟩
+  · have hr' : OnCurveAt (toW C.E.A C.E.B) V ⟨r.x, CVar.negate_ r.y⟩
         (Point.some P.x P.y hns) :=
       OnCurveAt.of_reads (p := ⟨r.x, CVar.negate_ r.y⟩) hx
         (by simp only [CVar.val_negate_, hy, _root_.neg_neg]) hns
@@ -1353,74 +1369,15 @@ theorem vesta_groupMap_reads {V : Valuation Fq} (sqrtF : Fq → Option Fq) (t : 
       simp only [CVar.val_negate_, _root_.neg_neg]
     simpa only [OnCurveAt, hval] using hneg
 
-end DeployedVesta
+/-- The wrap side's group-map parameters (PS `groupMapParams (Proxy @VestaG)`): Vesta's own
+BW19 `setup()` spec, read as the gadget's parameter record. -/
+abbrev groupMapParamsVesta : GroupMapParams Fq := .ofSpec IpaVesta.curve.groupMap
 
-section DeployedPallas
+/-- The step side's group-map parameters (PS `groupMapParams (Proxy @PallasG)`): Pallas's own
+BW19 `setup()` spec, read as the gadget's parameter record. -/
+abbrev groupMapParamsPallas : GroupMapParams Fp := .ofSpec IpaPallas.curve.groupMap
 
-open CompElliptic.CurveForms.ShortWeierstrass CompElliptic.Curves.Pasta Poseidon.GroupMap
-open WeierstrassCurve.Affine
-
-/-- The step side's group-map parameters (PS `groupMapParams (Proxy @PallasG)`): the Pallas
-BW19 `setup()` spec with the non-residue `5`. -/
-abbrev groupMapParamsPallas : GroupMapParams Fp := .ofSpec Poseidon.GroupMapPallas.spec 5
-
-/-- No Pallas point has ordinate zero — it would be 2-torsion — so no candidate ordinate
-square vanishes. -/
-theorem pallas_curveEqn_ne_zero (x : Fp) : curveEqn Poseidon.GroupMapPallas.spec x ≠ 0 := by
-  intro h0
-  have hon : OnCurve Pallas.curve.A Pallas.curve.B (x, 0) := by
-    have hA : Pallas.curve.A = 0 := Poseidon.GroupMapPallas.spec.hA
-    simp only [OnCurve, hA, zero_mul, _root_.add_zero]
-    simpa [curveEqn, Poseidon.GroupMapPallas.spec] using h0.symm
-  have hns := nonsingular_toW hon
-  have hQ2 : Point.some x 0 hns + Point.some x 0 hns = 0 :=
-    Point.add_self_of_Y_eq (by simp [negY, toW])
-  exact HasEndo.pallas.two_torsion_free _ (Point.some_ne_zero hns) hQ2
-
-/-- The step side's map-to-curve reads as the wire map `toGroup`'s point, up to sign. -/
-theorem pallas_groupMap_reads {V : Valuation Fp} (sqrtF : Fp → Option Fp) (t : FVar Fp) :
-    ⦃⌜True⌝⦄ groupMapCircuit (c := Builder V (KimchiConstraint Fp)) sqrtF groupMapParamsPallas t
-    ⦃⇓ r _ => ⌜∃ U : IpaEndo.pallas.d.W.Point, OnCurveAt IpaEndo.pallas.d.W V r U ∧
-      (U = SWPoint.equivPoint Poseidon.GroupMapPallas.spec.E
-          (toGroup Poseidon.GroupMapPallas.spec (t.val V)) ∨
-        U = -SWPoint.equivPoint Poseidon.GroupMapPallas.spec.E
-          (toGroup Poseidon.GroupMapPallas.spec (t.val V)))⌝⦄ := by
-  rw [builder_spec_iff]
-  intro nv hsat
-  obtain ⟨hx, hy⟩ := (builder_spec_iff _ _).mp (groupMapCircuit_toGroup_spec (V := V)
-    (c := KimchiConstraint Fp) Poseidon.GroupMapPallas.spec 5 Pallas.five_not_isSquare
-    pallas_curveEqn_ne_zero sqrtF t) nv hsat
-  obtain ⟨-, hcurve⟩ := (builder_spec_iff _ _).mp (groupMapCircuit_spec (V := V)
-    (c := KimchiConstraint Fp) sqrtF groupMapParamsPallas t) nv hsat
-  generalize (build (groupMapCircuit (c := Builder V (KimchiConstraint Fp)) sqrtF
-    groupMapParamsPallas t) nv).result = r at hx hy hcurve ⊢
-  generalize toGroup Poseidon.GroupMapPallas.spec (t.val V) = P at hx hy ⊢
-  have hon : OnCurve Pallas.curve.A Pallas.curve.B (P.x, P.y) := by
-    rcases P.onCurve with h | h
-    · exact h
-    · exfalso
-      obtain ⟨hpx, hpy⟩ := Prod.mk.injEq _ _ _ _ ▸ h
-      rw [hpx] at hx
-      rw [hpy] at hy
-      have hy0 : r.y.val V = 0 := by rcases hy with hy | hy <;> simp [hy]
-      rw [hy0, hx] at hcurve
-      simp [ySquared, GroupMapParams.ofSpec] at hcurve
-      exact absurd hcurve (by decide)
-  have hns := nonsingular_toW hon
-  rw [SWPoint.equivPoint_eq_some P hon]
-  rcases hy with hy | hy
-  · exact ⟨_, OnCurveAt.of_reads hx hy hns, Or.inl rfl⟩
-  · have hr' : OnCurveAt (toW Pallas.curve.A Pallas.curve.B) V ⟨r.x, CVar.negate_ r.y⟩
-        (Point.some P.x P.y hns) :=
-      OnCurveAt.of_reads (p := ⟨r.x, CVar.negate_ r.y⟩) hx
-        (by simp only [CVar.val_negate_, hy, _root_.neg_neg]) hns
-    have hneg := OnCurveAt.neg ⟨rfl, rfl⟩ hr'
-    refine ⟨-(Point.some P.x P.y hns), ?_, Or.inr rfl⟩
-    have hval : (CVar.negate_ (CVar.negate_ r.y)).val V = r.y.val V := by
-      simp only [CVar.val_negate_, _root_.neg_neg]
-    simpa only [OnCurveAt, hval] using hneg
-
-end DeployedPallas
+end GroupMapBridge
 
 
 /-! ## The bridge to the wire group
@@ -1686,14 +1643,9 @@ private theorem wrap_cip_limbs {V : Valuation Fq} {x : Type1 (FVar Fq)} {z : ℤ
 
 /-- **Vesta's gadget facts** (`IpaVesta.curve`, base `Fq`, scalar `Fp`): the Vesta map-to-curve
 parameters with their bridge, the Pasta shape, and the two generic transport bridges at it. -/
-def IvpCurve.vesta : IvpCurve IpaVesta.curve where
-  gm := groupMapParamsVesta
+theorem IvpCurve.vesta : IvpCurve IpaVesta.curve where
   shape := pastaShapeVesta
-  groupMap _ sqrtF t := by
-    -- the map-to-curve by projection reduction, not unification (which unfolds the SvdW map)
-    dsimp only
-    unfold Bulletproof.Ipa.KimchiCurve.toGroup
-    exact vesta_groupMap_reads sqrtF t
+  groupMap _ sqrtF t := groupMap_reads pastaShapeVesta sqrtF t
   horner n bvW hlast := hornerCombine_eq pastaShapeVesta n bvW hlast
   schnorr σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3 :=
     schnorrPoint_iff_schnorrAt pastaShapeVesta σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3
@@ -1756,13 +1708,9 @@ private theorem step_cip_limbs {V : Valuation Fp} {x : Type2 (SplitField (FVar F
 /-- **Pallas's gadget facts** (`IpaPallas.curve`, base `Fp`, scalar `Fq`): the Pallas
 map-to-curve parameters with their bridge, the Pasta shape, and the two generic transport
 bridges at it. -/
-def IvpCurve.pallas : IvpCurve IpaPallas.curve where
-  gm := groupMapParamsPallas
+theorem IvpCurve.pallas : IvpCurve IpaPallas.curve where
   shape := pastaShapePallas
-  groupMap _ sqrtF t := by
-    dsimp only
-    unfold Bulletproof.Ipa.KimchiCurve.toGroup
-    exact pallas_groupMap_reads sqrtF t
+  groupMap _ sqrtF t := groupMap_reads pastaShapePallas sqrtF t
   horner n bvW hlast := hornerCombine_eq pastaShapePallas n bvW hlast
   schnorr σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3 :=
     schnorrPoint_iff_schnorrAt pastaShapePallas σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3

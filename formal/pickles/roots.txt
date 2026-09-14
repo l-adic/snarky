@@ -152,10 +152,8 @@ Pickles.wrapSide
 Pickles.stepSide
 Pickles.wrap_scale_reads
 Pickles.step_scale_reads
-Pickles.vesta_groupMap_reads
-Pickles.pallas_groupMap_reads
-Pickles.vesta_curveEqn_ne_zero
-Pickles.pallas_curveEqn_ne_zero
+Pickles.groupMap_reads
+Pickles.PastaShape.curveEqn_ne_zero
 Pickles.IpaScalarOps.step
 Pickles.IpaScalarOps.wrap
 Pickles.IpaEndo.pallas
