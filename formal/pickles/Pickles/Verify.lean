@@ -24,18 +24,18 @@ proofs in one circuit, is not ported.
 ## Main definitions
 
 * `WrapStatement.packed`, `packLeaves`: the wrap statement as the `x_hat` leaf list;
-* `verifyWrap`: `Step_verifier.verify`.
+* `verifyProof`: `Step_verifier.verify`.
 
 ## Main results
 
-* `VerifyReads` / `verifyWrap_reads`: on any group side and `x_hat` side, `verify` reads as
+* `VerifyReads` / `verifyProof_reads`: on any group side and `x_hat` side, `verify` reads as
   the group half's `IvpReads` at the public input `pubOf (packLeaves statement)`, the wire's
   public input being the packed statement, with the claimed digest equal to the wire's digest
   element and, off the base case, the claimed round prechallenges equal to the returned ones
   pair by pair (hence, through `IvpReads`, the wire's up to `PrechallengeAlias`). The `x_hat`
   chunks read through `xHatKnown_reads_publicCommitment` at the tables' binding
   (`XhatTable.Bound`), the group half through `incrementallyVerifyProof_reads` at `IvpHyps`,
-  and the assertion loop by its invariant. `verifyWrap_step_reads` is the step side.
+  and the assertion loop by its invariant. `verifyProof_step_reads` is the step side.
 -/
 
 namespace Pickles
@@ -119,7 +119,7 @@ variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [Kim
 group half at the unfinalized proof's claims, then the two assertions: the digest equals the
 claimed `sponge_digest_before_evaluations`; each returned round prechallenge equals the
 claimed one, the claim compared with itself in the base case. Returns the success bit. -/
-def verifyWrap {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Poseidon.Params F)
+def verifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Poseidon.Params F)
     (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) {nc : ℕ} (tab : XhatTable F nc)
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
@@ -168,7 +168,7 @@ side `S` and the `x_hat` side `X`: the wire's public input is `pubOf (packLeaves
 the statement's scalars reduced to the scalar field; the `x_hat` tables are bound to the key
 at those leaves (`XhatTable.Bound`); the group half's premises hold at the claims-substituted
 cells (`IvpHyps`). -/
-theorem verifyWrap_reads
+theorem verifyProof_reads
     {nc : ℕ}
     (S : IvpSide C V ops)
     (X : XhatSide C)
@@ -200,7 +200,7 @@ theorem verifyWrap_reads
     (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false blindingH
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    verifyWrap (c := Builder V (KimchiConstraint C.BaseField)) ops S.e C.sponge.params endo S.gm
+    verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.e C.sponge.params endo S.gm
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) cells u base v⌝⦄ := by
   obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
@@ -230,7 +230,7 @@ theorem verifyWrap_reads
   have hivp := incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
     spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hivp
   have hb := CircuitType.reads_boolVar.mp hbase
-  simp only [verifyWrap]
+  simp only [verifyProof]
   mvcgen [hivp] invariants
     · ⇓⟨xs, _⟩ => ⌜base = false → ∀ p ∈ xs.prefix, p.1.val.val V = p.2.val.val V⌝
   · -- the loop step: the selected cell reads as the returned prechallenge off the base case
@@ -252,9 +252,9 @@ end Read
 
 section StepRead
 
-/-- **`verify` reads as the group half on the step side**: `verifyWrap_reads` at `stepSide`
+/-- **`verify` reads as the group half on the step side**: `verifyProof_reads` at `stepSide`
 and `xhatStep`. -/
-theorem verifyWrap_step_reads {nc : ℕ} {V : Valuation Fp}
+theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc σ.k)
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
@@ -268,18 +268,18 @@ theorem verifyWrap_step_reads {nc : ℕ} {V : Valuation Fp}
     (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
       false blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    verifyWrap (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
+    verifyProof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
       IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
       (pubOf IpaPallas.curve V (packLeaves statement tab)) cells u base v⌝⦄ :=
-  verifyWrap_reads (stepSide V) xhatStep σ cvk cp endo sqrtF blindingH tab spongeAfterIndex
+  verifyProof_reads (stepSide V) xhatStep σ cvk cp endo sqrtF blindingH tab spongeAfterIndex
     isBaseCase statement u cells base oldsW hbase htab hivp
 
 end StepRead
 
-/-! The gadget is sealed after its read: a consumer composes `verifyWrap_step_reads`, never the
+/-! The gadget is sealed after its read: a consumer composes `verifyProof_step_reads`, never the
 body. -/
-attribute [irreducible] verifyWrap
+attribute [irreducible] verifyProof
 
 end Pickles
