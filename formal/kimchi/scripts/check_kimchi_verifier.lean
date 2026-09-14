@@ -61,7 +61,7 @@ open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier
 hand the checked records to the protocol verifier —
 check-then-verify, the wire module's intended use. Ragged or mis-pinned input is
 rejected, matching production's `Err` returns. -/
-def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
+def verifyWire (C : Ipa.KimchiCurve) (σ : Bulletproof.SRS C.Point)
     (vk : Wire.KimchiVK C) (p : Wire.KimchiProof C)
     (pub : Array C.ScalarField) : Bool :=
   match vk.check (Wire.runNc C σ vk), p.check (Wire.runNc C σ vk) σ.k with
@@ -78,7 +78,7 @@ The skipped corruption KINDS (chunk-0 evals, `ft_eval1`, the base `t_comm` chunk
 already exercised at `nc ≤ 2`; the kept high-chunk `t_comm` corruption keeps the nc > 2
 run non-vacuous. The parse-rejection matrix is cheap (`Wire.check` short-circuits before
 `kimchiVerify`), so it runs in full regardless. -/
-def runChunked (C : Ipa.CommitmentCurve)
+def runChunked (C : Ipa.KimchiCurve)
     (path : String) (expectPublic : Bool) (heavy : Bool := false) (olds : ℕ := 0) :
     IO Unit := do
   let raw ← IO.FS.readFile path
@@ -226,7 +226,7 @@ def main : IO Unit := do
   -- `KIMCHI_FIXTURE_FILTER=<substring>` runs only the fixtures whose path contains it
   -- (for profiling one run).
   let filter ← IO.getEnv "KIMCHI_FIXTURE_FILTER"
-  let run (C : Ipa.CommitmentCurve) (path : String) (expectPublic : Bool)
+  let run (C : Ipa.KimchiCurve) (path : String) (expectPublic : Bool)
       (heavy : Bool := false) (olds : ℕ := 0) : IO Unit := do
     let wanted : Bool := match filter with
       | some f => decide ((path.splitOn f).length > 1)

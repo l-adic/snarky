@@ -37,7 +37,7 @@ For each fixture the driver checks:
 
 The whole body is generic over the commitment curve `C` (so both Pasta scalar fields run
 through one code path); the per-curve Poseidon MDS is derived from the curve bundle as the
-`Index.build?` parameter `mdsOfParams C.frParams`.
+`Index.build?` parameter `mdsOfParams C.frSponge.params`.
 -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.Verifier
@@ -53,7 +53,7 @@ def parseGateType : String → Except String GateType
   | t => .error s!"unknown gate type: {t}"
 
 /-- The index-fixture data a run consumes, over the commitment curve's scalar field. -/
-structure RawFixture (C : Ipa.CommitmentCurve) where
+structure RawFixture (C : Ipa.KimchiCurve) where
   /-- The domain size `n` (a power of two). -/
   n : ℕ
   /-- The zero-knowledge row count (`3` unchunked, `5` at `nc = 2`). -/
@@ -83,7 +83,7 @@ structure RawFixture (C : Ipa.CommitmentCurve) where
   /-- The production σ (sigma) columns. -/
   sigma : Array (Array C.ScalarField)
 
-def parseRaw (C : Ipa.CommitmentCurve) (j : Json) : Except String (RawFixture C) := do
+def parseRaw (C : Ipa.KimchiCurve) (j : Json) : Except String (RawFixture C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let pF : Json → Except String C.ScalarField := parseZMod
   let gatesJ ← (← fld "gates").getArr?
@@ -113,7 +113,7 @@ def parseRaw (C : Ipa.CommitmentCurve) (j : Json) : Except String (RawFixture C)
            coefficients := ← parseArrOf (parseArrOf pF) (← fld "coefficients")
            sigma := ← parseArrOf (parseArrOf pF) (← fld "sigma") }
 
-def buildGates {C : Ipa.CommitmentCurve} (fx : RawFixture C) {n : ℕ} (_hn : fx.n = n) :
+def buildGates {C : Ipa.KimchiCurve} (fx : RawFixture C) {n : ℕ} (_hn : fx.n = n) :
     Except String (Fin n → GateRow C.ScalarField n) := do
   unless fx.typs.size = n && fx.wires.size = n && fx.coeffs.size = n do
     throw "gate table size mismatch"
@@ -133,7 +133,7 @@ def buildGates {C : Ipa.CommitmentCurve} (fx : RawFixture C) {n : ℕ} (_hn : fx
     return fun i => rows[(i : ℕ)]'(by omega)
   else throw "row count"
 
-def checks {C : Ipa.CommitmentCurve} (fx : RawFixture C) {n : ℕ} [NeZero n]
+def checks {C : Ipa.KimchiCurve} (fx : RawFixture C) {n : ℕ} [NeZero n]
     (idx : Index C.ScalarField n) : List (String × Bool) :=
   let wTab : Fin n → Fin wCols → C.ScalarField :=
     fun i c => (fx.witness[(c : ℕ)]!)[(i : ℕ)]!
@@ -173,11 +173,11 @@ def checks {C : Ipa.CommitmentCurve} (fx : RawFixture C) {n : ℕ} [NeZero n]
       | none => false),
     ("corrupted public input rejected", !sat wTab (fun i => pub i + 1)) ]
 
-def run {C : Ipa.CommitmentCurve}
+def run {C : Ipa.KimchiCurve}
     {n : ℕ} [NeZero n] (fx : RawFixture C) (hn : fx.n = n) : IO Unit := do
   let gates ← IO.ofExcept (buildGates fx hn)
   let some idx := Index.build? gates fx.publicCount fx.zkRows fx.omega fx.endoBase
-      (mdsOfParams C.frParams) (fun i => fx.shifts[(i : ℕ)]!)
+      (mdsOfParams C.frSponge.params) (fun i => fx.shifts[(i : ℕ)]!)
     | throw (IO.userError "Index.build? rejected the production data")
   IO.println "  ✓ Index.build? accepts (all laws decided on production data)"
   let results := checks fx (n := n) idx
@@ -189,7 +189,7 @@ def run {C : Ipa.CommitmentCurve}
     (n={n}, zk_rows={fx.zkRows}, gates incl. generic/poseidon/completeAdd/endoScalar)"
 
 /-- Read, parse, and run one index fixture over its commitment curve. -/
-def runFile (C : Ipa.CommitmentCurve) (path : String) : IO Unit := do
+def runFile (C : Ipa.KimchiCurve) (path : String) : IO Unit := do
   IO.println s!"— {path} —"
   let raw ← IO.FS.readFile path
   let fx ← match Json.parse raw >>= parseRaw C with

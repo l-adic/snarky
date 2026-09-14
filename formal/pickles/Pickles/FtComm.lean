@@ -72,11 +72,11 @@ end Gadget
 
 section Side
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- A commitment cell list reads as a wire commitment list, pointwise through `equivPoint`. -/
-def CommReads (C : CommitmentCurve) (V : Valuation C.BaseField)
+def CommReads (C : KimchiCurve) (V : Valuation C.BaseField)
     (cells : List (AffinePoint (FVar C.BaseField))) (Ps : List C.Point) : Prop :=
   List.Forall₂ (fun cell P => OnCurveAt C.E.toAffine V cell (SWPoint.equivPoint C.E P)) cells Ps
 
@@ -118,14 +118,14 @@ private theorem IvpSide.scale_val (S : IvpSide C V ops) {x : sf} {w : S.R.wit}
   rw [S.zsmul_eq, S.dec_cast hpre, hdec]
 
 /-- The scalar-field Horner collapse of a point list, `P₀ + ξ·(P₁ + ξ·(…))` — `Σᵢ ξⁱ·Pᵢ`. -/
-private def hornerVal (C : CommitmentCurve) (ξ : C.ScalarField)
+private def hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
     (Ps : List C.E.toAffine.Point) : C.E.toAffine.Point :=
   Ps.foldr (fun P acc => P + ξ.val • acc) 0
 
 /-- Horner is linear in the points, across the crossing: the crossed collapse of the
 `s`-scaled wire points is `s.val` times the crossed collapse. Stated on the wire's own list
 shape (`map e (map (s • ·) cs)`) so the read can rewrite with it directly. -/
-private theorem hornerVal_map_smul (C : CommitmentCurve) (ξ s : C.ScalarField)
+private theorem hornerVal_map_smul (C : KimchiCurve) (ξ s : C.ScalarField)
     (cs : List C.Point) :
     hornerVal C ξ (List.map (SWPoint.equivPoint C.E) (List.map (fun P => s.val • P) cs))
       = s.val • hornerVal C ξ (List.map (SWPoint.equivPoint C.E) cs) := by
@@ -138,7 +138,7 @@ private theorem hornerVal_map_smul (C : CommitmentCurve) (ξ s : C.ScalarField)
       exact smul_comm _ _ _
 
 /-- `equivPoint` carries the wire's Horner fold to `hornerVal` over the mapped points. -/
-private theorem equivPoint_hornerVal (C : CommitmentCurve) (ξ : C.ScalarField)
+private theorem equivPoint_hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
     (cs : List C.Point) :
     (SWPoint.equivPoint C.E) (cs.foldr (fun P acc => P + ξ.val • acc) 0)
       = hornerVal C ξ (cs.map (SWPoint.equivPoint C.E)) := by

@@ -21,13 +21,13 @@ open Lean Bulletproof.Fixture Bulletproof
 /-- The client-side composition: parse the wire claim at the SRS's round count and its
 announced shape, then verify — check-then-verify; a ragged claim parses to `none` and
 is rejected, the same observable behavior as production's guards. -/
-def verifyWire (C : Ipa.CommitmentCurve) (σ : Bulletproof.SRS C.Point)
+def verifyWire (C : Ipa.KimchiCurve) (σ : Bulletproof.SRS C.Point)
     (w : Ipa.Wire.Input C) : Bool :=
   match w.check σ.k with
   | some inp => Ipa.verify C σ inp
   | none => false
 
-def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) :
+def checkFixture (C : Ipa.KimchiCurve) (curveName : String) (path : String) :
     IO Bool := do
   let raw ← IO.FS.readFile path
   let (σ, fx) ← match Json.parse raw >>= fun j => do
@@ -54,7 +54,7 @@ def checkFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) 
     corrupted: {if rejected then "REJECT (expected)" else "ACCEPT (BUG)"}"
   return hComm && hEval && ok && rejected
 
-def checkBatchFixture (C : Ipa.CommitmentCurve) (curveName : String) (path : String) :
+def checkBatchFixture (C : Ipa.KimchiCurve) (curveName : String) (path : String) :
     IO Bool := do
   let raw ← IO.FS.readFile path
   let (σ, fx) ← match Json.parse raw >>= fun j => do

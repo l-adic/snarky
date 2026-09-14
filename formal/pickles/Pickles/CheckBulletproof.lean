@@ -894,7 +894,7 @@ theorem checkBulletproof_spec_success_at {sf : Type}
 /-! ## A side of the group half
 
 What a side supplies to read the group half's gadgets on the wire's commitment curve `C`
-(`Bulletproof.Ipa.CommitmentCurve`): its ladder reading, the decode of a shifted claim, the
+(`Bulletproof.Ipa.KimchiCurve`): its ladder reading, the decode of a shifted claim, the
 curve's group facts, the endomorphism and map-to-curve data, the field facts the transcript's
 squeezes need, the absorbed limbs of a canonical claim, and the bridges from the gadgets'
 group vocabulary (`SchnorrPoint`, `hornerCombine`) to the wire's (`schnorrAt`,
@@ -915,7 +915,7 @@ vocabulary to the wire's. The curve's shortness, its scalar order's action and i
 round count are not here: they are `C.a_zero`, `C.card_nsmul` and `C.sponge.hsize`. None of it
 mentions the side's scalar representation. One value per curve: `IvpCurve.vesta`,
 `IvpCurve.pallas`. -/
-structure IvpCurve (C : CommitmentCurve) where
+structure IvpCurve (C : KimchiCurve) where
   /-- The endomorphism bundle the opening check's `endo_mul`s and challenge expansions run on. -/
   e : IpaEndo C.BaseField
   /-- The bundle's curve is the wire curve. -/
@@ -957,7 +957,7 @@ scalar-field decode of a shifted claim, with the law that a ladder witness's int
 casts to it; and which claims absorb canonically, with the limbs they absorb as. These are the
 fields that genuinely differ between the wrap side's `Type1` claims and the step side's split
 `Type2` ones. One value per deployed side: `wrapSide`, `stepSide`. -/
-structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
+structure IvpSide (C : KimchiCurve) (V : Valuation C.BaseField) {sf : Type}
     (ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf) where
   /-- The curve's own gadget facts, shared by both sides of the cycle. -/
   curve : IvpCurve C
@@ -976,7 +976,7 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   `scalarLimbs` of the shifted decode. -/
   absorb_limbs : ∀ {x : sf} {w : R.wit}, Canon x → R.Pre x w →
     (ops.shiftedToAbsorbFields x).map (·.val V) = scalarLimbs C (shiftScalar C (decode x))
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- Naturals up to 3 cast injectively (the conditional sponge's mask count). -/
@@ -1425,7 +1425,7 @@ private theorem val_mul_nsmul (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0)
 omit [Field F] [DecidableEq F] [ToNat F] in
 /-- The wire's polyscale combination is Horner's rule over the list, the scalar acting by its
 representative — on any commitment curve whose point group its scalar order kills. -/
-theorem combineCommitments_eq_foldr (C : Bulletproof.Ipa.CommitmentCurve)
+theorem combineCommitments_eq_foldr (C : Bulletproof.Ipa.KimchiCurve)
     (hn : ∀ x : C.Point, C.scalar • x = 0) (ξ : C.ScalarField) (cs : List C.Point) :
     Bulletproof.Ipa.combineCommitments C ξ cs.toArray
       = cs.foldr (fun P acc => P + ξ.val • acc) 0 := by
@@ -1690,7 +1690,7 @@ def IvpCurve.vesta : IvpCurve IpaVesta.curve where
   groupMap _ sqrtF t := by
     -- the map-to-curve by projection reduction, not unification (which unfolds the SvdW map)
     dsimp only
-    unfold Poseidon.GroupMapVesta.toGroup
+    unfold Bulletproof.Ipa.KimchiCurve.toGroup
     exact vesta_groupMap_reads sqrtF t
   horner n bvW hlast := vesta_hornerCombine_eq n bvW hlast
   schnorr σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3 :=
@@ -1918,7 +1918,7 @@ def IvpCurve.pallas : IvpCurve IpaPallas.curve where
   shape := pastaShapePallas
   groupMap _ sqrtF t := by
     dsimp only
-    unfold Poseidon.GroupMapPallas.toGroup
+    unfold Bulletproof.Ipa.KimchiCurve.toGroup
     exact pallas_groupMap_reads sqrtF t
   horner n bvW hlast := pallas_hornerCombine_eq n bvW hlast
   schnorr σ U P chals c₀ cip b z₁ z₂ pr ns h1 h2 h3 :=

@@ -167,11 +167,11 @@ end Gadget
 
 section Read
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- A list of chunked commitment cells reads, column by column, as the wire's commitments. -/
-def ColumnsRead (C : CommitmentCurve) (V : Valuation C.BaseField) {nc : ℕ}
+def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
     (cols : List (List (AffinePoint (FVar C.BaseField)))) (Ps : List (Vector C.Point nc)) :
     Prop :=
   List.Forall₂ (fun col P => CommReads C V col P.toList) cols Ps
@@ -304,7 +304,7 @@ section Helpers
 
 open WeierstrassCurve.Affine
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField}
+variable {C : KimchiCurve} {V : Valuation C.BaseField}
 
 /-- A cell reading as a wire point across `equivPoint` has the point's coordinates: the wire's
 points are all finite (the `𝒪` sentinel is not a curve read). -/
@@ -488,7 +488,7 @@ end Helpers
 
 section Assembly
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- Alias readings compose: the wire's prechallenges alias the cells' readings. -/

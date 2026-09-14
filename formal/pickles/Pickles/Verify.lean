@@ -143,7 +143,7 @@ end Gadget
 
 section Read
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- `verify`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public

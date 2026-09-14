@@ -1243,7 +1243,7 @@ end Crossing
 group.** The wire's negated-scalar MSM with each Lagrange base mapped over, plus `h`. Pure
 additive-equiv algebra over `publicCommitment_eq_sum` (G1); the wire crossing instantiates it
 at `SWPoint.equivPoint`. -/
-theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.CommitmentCurve} {nc : ℕ} {G : Type}
+theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ} {G : Type}
     [AddCommGroup G] (e : C.Point ≃+ G) (σ : Bulletproof.SRS C.Point)
     (cvk : Kimchi.Verifier.KimchiVK C nc)
     (pub : Array C.ScalarField) (ci : Fin nc) (hne : pub.size ≠ 0) :
@@ -1264,7 +1264,7 @@ variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {nc : ℕ}
 scalar leaf contributes its circuit-field scalar's value cast to the scalar field — the
 group-order reduction the MSM performs on the in-circuit scalar — and each `condAdd` its bit.
 The `ℕ → ZMod C.scalar` cast IS the reduction, so no slack predicate is needed. -/
-def pubOf (C : Bulletproof.Ipa.CommitmentCurve) (V : Valuation F) (leaves : List (Leaf F nc)) :
+def pubOf (C : Bulletproof.Ipa.KimchiCurve) (V : Valuation F) (leaves : List (Leaf F nc)) :
     Array C.ScalarField :=
   (leaves.map (fun leaf => ((ToNat.toNat (leaf.scalarVar.val V) : ℕ) : C.ScalarField))).toArray
 
@@ -1277,7 +1277,7 @@ def leafBaseAt (ci : Fin nc) : Leaf F nc → AffinePoint (FVar F)
 
 omit [DecidableEq F] in
 /-- `pubOf` has one entry per leaf. -/
-theorem pubOf_size (C : Bulletproof.Ipa.CommitmentCurve) (V : Valuation F)
+theorem pubOf_size (C : Bulletproof.Ipa.KimchiCurve) (V : Valuation F)
     (leaves : List (Leaf F nc)) : (pubOf C V leaves).size = leaves.length := by simp [pubOf]
 
 omit [ToNat F] in
@@ -1292,7 +1292,7 @@ private theorem leafPre_onCurve {d : HasCurve F} (ci : Fin nc) (V : Valuation F)
 walk-order correspondence: at each `i`, the wire pairs Lagrange base `i` with `pubOf`'s `i`-th
 scalar, and the gadget pairs leaf `i`'s base — read as that same Lagrange base by `htie` — with
 its own scalar. The circuit-field → scalar-field reduction is the cast, so the scalars agree. -/
-private theorem crossing_list {C : Bulletproof.Ipa.CommitmentCurve} {d : HasCurve F}
+private theorem crossing_list {C : Bulletproof.Ipa.KimchiCurve} {d : HasCurve F}
     (e : C.Point ≃+ d.W.Point) (ci : Fin nc) (V : Valuation F)
     (cvk : Kimchi.Verifier.KimchiVK C nc)
     (leaves : List (Leaf F nc)) (Ts : List d.W.Point)
@@ -1336,7 +1336,7 @@ end Generic
 
 section SideFacts
 
-variable {C : Bulletproof.Ipa.CommitmentCurve}
+variable {C : Bulletproof.Ipa.KimchiCurve}
 
 /-- The cast premise of the gadget reads at a side: a `2^254`-bounded integer reads back from
 the base field. -/
@@ -1437,7 +1437,7 @@ end SideFacts
 
 section Binding
 
-variable {C : Bulletproof.Ipa.CommitmentCurve} {nc : ℕ}
+variable {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
 
 /-- The `x_hat` tables of a circuit (OCaml `lagrange_with_correction` and `multiscale_known`'s
 constant corrections): per public-input scalar its Lagrange base and its shift correction,
@@ -1485,7 +1485,7 @@ structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseFiel
 /-- **The wire's `publicCommitment`, crossed, is `-(publicMsm) + h`.** The shared half of the two
 x_hat reads: `equivPoint_publicCommitment` unfolds the wire's MSM, `crossing_list` ties each
 Lagrange base to the leaf's base reading, and `neg_publicMsm_sum` moves the negation through
-the exact integer → scalar reduction (`CommitmentCurve.affine_card_nsmul`). -/
+the exact integer → scalar reduction (`KimchiCurve.affine_card_nsmul`). -/
 private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
@@ -1520,7 +1520,7 @@ in-circuit public-input obligation of the group half (`incrementally_verify_proo
 `SWPoint.equivPoint`. The subtle half (the canonical decode — the ladder's top-bit pin —
 `-(Σ [scalarₗ]·baseₗ) + h`) is `publicInputCommitFull_reads`; this crosses that to the wire's
 `publicCommitment` — the integer → scalar reduction is exact
-(`CommitmentCurve.affine_card_nsmul`), so the read carries no slack. -/
+(`KimchiCurve.affine_card_nsmul`), so the read carries no slack. -/
 theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))

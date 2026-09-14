@@ -35,7 +35,7 @@ open Lean Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Wire
 
 /-- A chunked commitment: a bare `[x, y]` point (one-chunk format — first element a
 coordinate string) as a singleton, else an array of points. -/
-def parseComm (C : Ipa.CommitmentCurve) (j : Json) : Except String (Array C.Point) := do
+def parseComm (C : Ipa.KimchiCurve) (j : Json) : Except String (Array C.Point) := do
   match (← j.getArr?).toList with
   | [] => throw "empty commitment"
   | Json.str _ :: _ => return #[← parsePt C j]
@@ -43,7 +43,7 @@ def parseComm (C : Ipa.CommitmentCurve) (j : Json) : Except String (Array C.Poin
 
 /-- A chunked evaluation pair: `[ζ, ζω]` value strings (one-chunk format) as singleton
 chunk vectors, else `[[ζ-chunks], [ζω-chunks]]`. -/
-private def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
+private def parseEval (C : Ipa.KimchiCurve) (j : Json) :
     Except String (Kimchi.Verifier.PointEvaluations (Array C.ScalarField)) := do
   let a ← j.getArr?
   unless a.size = 2 do throw s!"expected an evaluation pair, got {a.size} entries"
@@ -58,7 +58,7 @@ private def parseEval (C : Ipa.CommitmentCurve) (j : Json) :
 
 /-- A wire old accumulator: `{comm, chals}`, the commitment a chunk vector (either
 format) and the challenges a scalar array. -/
-private def parseRecursionChallenge (C : Ipa.CommitmentCurve) (j : Json) :
+private def parseRecursionChallenge (C : Ipa.KimchiCurve) (j : Json) :
     Except String (RecursionChallenge C) := do
   return { comm := ← parseComm C (← j.getObjVal? "comm")
            chals := ← parseArrOf (parseZMod (n := C.scalar)) (← j.getObjVal? "chals") }
@@ -72,7 +72,7 @@ def parseSized {α : Type} (nm : String) (m : ℕ) (a : Array α) :
 
 /-- The chunked kimchi proof wire record. `evals_public` is optional wire data: absent
 (the one-chunk format) decodes to `none`. -/
-def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
+def parseKimchiProof (C : Ipa.KimchiCurve) (j : Json) :
     Except String (KimchiProof C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let pe := parseEval C
@@ -104,8 +104,8 @@ def parseKimchiProof (C : Ipa.CommitmentCurve) (j : Json) :
 
 /-- The chunked verifier key (SRS excluded — parse it with `parseSRSAt` at
 `Nat.log2 max_poly_size`). The fr-sponge parameters are not wire data: they live on
-the commitment curve (`C.frParams`). -/
-def parseVK (C : Ipa.CommitmentCurve) (j : Json) :
+the commitment curve (`C.frSponge.params`). -/
+def parseVK (C : Ipa.KimchiCurve) (j : Json) :
     Except String (KimchiVK C) := do
   let fld (k : String) : Except String Json := j.getObjVal? k
   let nat (k : String) : Except String ℕ := do

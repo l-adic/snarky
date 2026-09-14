@@ -35,7 +35,7 @@ open Lean FixtureKit Bulletproof Bulletproof
 open CompElliptic.CurveForms.ShortWeierstrass
 
 /-- Parse a JSON point of `C` — `parseSWPoint` at the canonical base-field decoder. -/
-def parsePt (C : Ipa.CommitmentCurve) : Json → Except String C.Point :=
+def parsePt (C : Ipa.KimchiCurve) : Json → Except String C.Point :=
   parseSWPoint (parseZMod (n := C.base)) C.E
 
 /-- The fixture's `srs_g`/`srs_h` as a library SRS at a given round count `k` (the
@@ -43,7 +43,7 @@ IPA fixtures carry `k` directly; the kimchi-proof fixture instead derives it fro
 domain size and calls this function at `Nat.log2 max_poly_size`). The abstract
 randomisation base `U` is transcript-derived by
 the verifier and never read; it is filled with `0`. -/
-def parseSRSAt (C : Ipa.CommitmentCurve) (k : ℕ) (j : Json) :
+def parseSRSAt (C : Ipa.KimchiCurve) (k : ℕ) (j : Json) :
     Except String (SRS C.Point) := do
   let g ← parseArrOf (parsePt C) (← j.getObjVal? "srs_g")
   if h : g.size = 2 ^ k then
@@ -54,12 +54,12 @@ def parseSRSAt (C : Ipa.CommitmentCurve) (k : ℕ) (j : Json) :
   else throw s!"srs_g size {g.size} ≠ 2 ^ {k}"
 
 /-- `parseSRSAt` at the fixture's own `k` field. -/
-def parseSRS (C : Ipa.CommitmentCurve) (j : Json) : Except String (SRS C.Point) := do
+def parseSRS (C : Ipa.KimchiCurve) (j : Json) : Except String (SRS C.Point) := do
   parseSRSAt C (← (← j.getObjVal? "k").getNat?) j
 
 /-- Parse the fixture's opening-proof fields (`lr`, `delta`, `z1`, `z2`, `sg`) into a
 wire proof. -/
-def parseProof (C : Ipa.CommitmentCurve) (j : Json) :
+def parseProof (C : Ipa.KimchiCurve) (j : Json) :
     Except String (Ipa.Wire.Proof C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
   let fld (k : String) : Except String Json := j.getObjVal? k
@@ -71,7 +71,7 @@ def parseProof (C : Ipa.CommitmentCurve) (j : Json) :
 
 /-- One parsed combine-then-open fixture: the chunked wire view (chunk points and chunk
 evaluations per polynomial), the production-combined view, and the opening proof. -/
-structure Raw (C : Ipa.CommitmentCurve) where
+structure Raw (C : Ipa.KimchiCurve) where
   /-- The chunk points per polynomial — the chunked wire view of the commitments. -/
   chunkComms : Array (Array C.Point)
   /-- The production-combined commitment per polynomial (`chunk_commitment(x^(2^k))`). -/
@@ -91,7 +91,7 @@ structure Raw (C : Ipa.CommitmentCurve) where
 
 /-- Parse one combine-then-open fixture, guarding the recorded curve name against
 `curveName`. -/
-def parseRaw (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
+def parseRaw (C : Ipa.KimchiCurve) (curveName : String) (j : Json) :
     Except String (Raw C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
   let fld (k : String) : Except String Json := j.getObjVal? k
@@ -109,18 +109,18 @@ def parseRaw (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
 
 /-- Commitment recombination, executably: `∑ i, yⁱ • Pᵢ` — the chunked commitment
 recombination's group-side formula. The identity at one chunk. -/
-def recombinePoint (C : Ipa.CommitmentCurve) (y : C.ScalarField)
+def recombinePoint (C : Ipa.KimchiCurve) (y : C.ScalarField)
     (chunks : Array C.Point) : C.Point :=
   Ipa.msm C (fun i : Fin chunks.size => chunks.getD i 0) (fun i => y ^ (i : ℕ))
 
 /-- Evaluation recombination, executably: `∑ i, yⁱ · eᵢ` — `eval_eq_sum_chunkPoly`'s
 formula. The identity at one chunk. -/
-def recombineScalar (C : Ipa.CommitmentCurve) (y : C.ScalarField)
+def recombineScalar (C : Ipa.KimchiCurve) (y : C.ScalarField)
     (chunks : Array C.ScalarField) : C.ScalarField :=
   (List.range chunks.size).foldr (fun i acc => y ^ i * chunks.getD i 0 + acc) 0
 
 /-- The combined view as the executable verifier's input. -/
-def Raw.toInput {C : Ipa.CommitmentCurve} (raw : Raw C) : Ipa.Wire.Input C :=
+def Raw.toInput {C : Ipa.KimchiCurve} (raw : Raw C) : Ipa.Wire.Input C :=
   { commitments := raw.combinedComms
     xs := raw.xs
     evals := raw.evals
@@ -131,7 +131,7 @@ def Raw.toInput {C : Ipa.CommitmentCurve} (raw : Raw C) : Ipa.Wire.Input C :=
 /-- One parsed chunked-batch fixture: the chunked wire view, the production flat
 combination targets (`combine_commitments` at `rand_base = 1`, `combined_inner_product`),
 and the opening proof. -/
-structure RawBatch (C : Ipa.CommitmentCurve) where
+structure RawBatch (C : Ipa.KimchiCurve) where
   /-- The chunk points per polynomial — the multi-chunk `PolyComm`s entering the batch
   as-is, each chunk one segment. -/
   chunkComms : Array (Array C.Point)
@@ -153,7 +153,7 @@ structure RawBatch (C : Ipa.CommitmentCurve) where
 
 /-- Parse one chunked-batch fixture, guarding the recorded curve name against
 `curveName`. -/
-def parseRawBatch (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
+def parseRawBatch (C : Ipa.KimchiCurve) (curveName : String) (j : Json) :
     Except String (RawBatch C) := do
   let parseS : Json → Except String C.ScalarField := parseZMod
   let fld (k : String) : Except String Json := j.getObjVal? k
@@ -172,7 +172,7 @@ def parseRawBatch (C : Ipa.CommitmentCurve) (curveName : String) (j : Json) :
 /-- The chunked batch's segment-stream commitment combination (`combine_commitments` at
 `rand_base = 1`), executably: polynomial-outer, chunk-inner, one consecutive `ξ` power
 per segment — `chunkedCombinedCommitment`'s formula. -/
-def segmentCombinePoint (C : Ipa.CommitmentCurve) (ξ : C.ScalarField)
+def segmentCombinePoint (C : Ipa.KimchiCurve) (ξ : C.ScalarField)
     (comms : Array (Array C.Point)) : C.Point :=
   (comms.foldl (fun acc chunks =>
       chunks.foldl (fun (a : C.Point × C.ScalarField) P => (a.1 + a.2.val • P, a.2 * ξ))
@@ -182,7 +182,7 @@ def segmentCombinePoint (C : Ipa.CommitmentCurve) (ξ : C.ScalarField)
 /-- The chunked combined inner product (`combined_inner_product`), executably: segment
 `(i, c)` contributes its evalscale-combined point values at the segment's `ξ` power —
 `chunkedCombinedInnerProduct`'s formula. `evals` is `[poly][point][chunk]`. -/
-def segmentCombineScalar (C : Ipa.CommitmentCurve) (ξ r : C.ScalarField)
+def segmentCombineScalar (C : Ipa.KimchiCurve) (ξ r : C.ScalarField)
     (evals : Array (Array (Array C.ScalarField))) : C.ScalarField :=
   (evals.foldl (fun (acc : C.ScalarField × C.ScalarField) perPoint =>
       (List.range (perPoint.getD 0 #[]).size).foldl (fun a c =>
@@ -195,7 +195,7 @@ def segmentCombineScalar (C : Ipa.CommitmentCurve) (ξ r : C.ScalarField)
 (`chunkedCombined*_eq_flat`) as data. The production opening of a chunked batch IS the
 opening of this flat batch, so the executable verifier adjudicates the whole
 segment layout by accepting it. -/
-def RawBatch.toFlatInput {C : Ipa.CommitmentCurve} (raw : RawBatch C) :
+def RawBatch.toFlatInput {C : Ipa.KimchiCurve} (raw : RawBatch C) :
     Ipa.Wire.Input C :=
   { commitments := raw.chunkComms.flatMap id
     xs := raw.xs

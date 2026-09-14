@@ -2,6 +2,7 @@ import CompElliptic.Curves.Pasta
 import CompElliptic.Curves.Pasta.Fast.MsmProj
 import CompElliptic.Curves.Pasta.Fast.MsmProjPallas
 import Pasta.Shifted
+import Pasta.Endo
 import Poseidon.GroupMap
 import Bulletproof.Protocol
 
@@ -79,10 +80,15 @@ namespace Bulletproof.Ipa
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof
 
-/-- The per-curve data of the verifier, bundled as a single index — base and scalar
-cardinalities with their primality facts, the Fq-sponge spec, the curve, and the
-map-to-curve. Carrying facts rather than field structures makes every field operation
-resolve to the canonical `ZMod` instances on both the executable and abstract sides. -/
+/-- The curve itself, with nothing a protocol layers on top of it: the two cardinalities with
+their primality facts, the short-Weierstrass curve over the base field, its group order, and
+the fast multi-scalar multiplication. Carrying facts rather than field structures makes every
+field operation resolve to the canonical `ZMod` instances on both the executable and abstract
+sides.
+
+The sponges, the endomorphism and the map-to-curve are on `KimchiCurve`, which extends this.
+Nothing supplies one of those in isolation: there are exactly two curves in the tree, and each
+supplies all of it at once. -/
 structure CommitmentCurve where
   /-- The base-field cardinality; the field itself is the canonical `ZMod base`. -/
   base : ℕ
@@ -90,25 +96,12 @@ structure CommitmentCurve where
   scalar : ℕ
   [primeBase : Fact (Nat.Prime base)]
   [primeScalar : Fact (Nat.Prime scalar)]
-  /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
-  sponge : FqSponge.Spec base scalar
-  /-- The scalar-side Poseidon parameters — production's `G::sponge_params()`,
-  curve-determined like the fq-sponge spec. Not read by the IPA opening verifier
-  itself; carried on the bundle for the consumers that run a scalar-side (fr-)sponge
-  over the same curve (kimchi's `frOracles`), the way production types the table on
-  the curve rather than on any wire record. -/
-  frParams : Params (ZMod scalar)
-  /-- The scalar-side table likewise covers the permutation exactly, which is what
-  `Kimchi.Verifier.frSpec` needs to build the fr-sponge's spec out of it. -/
-  frParams_size : frParams.roundConstants.size = Poseidon.fullRounds
   /-- The curve, in short-Weierstrass form over the base field. -/
   E : SWCurve (ZMod base)
   /-- The curve is short: `y² = x³ + B`. -/
   a_zero : E.A = 0
   /-- The scalar cardinality is the group order: `ScalarField` is the scalar ring of `Point`. -/
   card : Nat.card (SWPoint E) = scalar
-  /-- The map-to-curve deriving the transcript `U` base from a squeezed field element. -/
-  toGroup : ZMod base → SWPoint E
   /-- A fast multi-scalar multiplication for this curve: the windowed-Pippenger accelerator
   run in projective coordinates, standing in for the naive `∑` so the executable verifier's
   large MSMs (the `2 ^ σ.k`-point `sg`-correctness check) pay one field inversion instead of
@@ -134,7 +127,31 @@ scalar action is exact. -/
 theorem CommitmentCurve.card_nsmul (C : CommitmentCurve) (X : C.Point) : C.scalar • X = 0 := by
   rw [← C.card]; exact card_nsmul_eq_zero'
 
-variable (C : CommitmentCurve)
+/-- The curve as the kimchi verifier needs it: the curve itself, the two sponges, the
+endomorphism and the SvdW map-to-curve, with the tie between the map's curve and this one.
+
+One record rather than four, because there are exactly two of these in the tree and no half of
+it is ever supplied on its own. The IPA opening verifier is indexed by this as well; it reads
+everything here except `frSponge`. -/
+structure KimchiCurve extends CommitmentCurve where
+  /-- The Fq-sponge spec driving the verifier's Fiat–Shamir transcript. -/
+  sponge : FqSponge.Spec base scalar
+  /-- The scalar-side sponge, production's `G::sponge_params()`, that kimchi's `frOracles`
+  runs. Not read by the IPA opening verifier itself. -/
+  frSponge : FqSponge.Spec scalar scalar
+  /-- The endomorphism the challenge expansion and the `endo_mul` ladders run on. -/
+  endo : Pasta.EndoSpec E.toAffine
+  /-- The SvdW map-to-curve deriving the transcript `U` base from a squeezed field element. -/
+  groupMap : Poseidon.GroupMap.Spec base
+  /-- The map-to-curve targets this curve. -/
+  groupMap_E : groupMap.E = E
+
+/-- The map-to-curve, as the transcript uses it: the SvdW map of `groupMap`, transported along
+the tie to this curve's point type. -/
+def KimchiCurve.toGroup (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
+  C.groupMap_E ▸ Poseidon.GroupMap.toGroup C.groupMap t
+
+variable (C : KimchiCurve)
 
 /-- Multi-scalar multiplication `∑ i, aᵢ • gᵢ` — dispatched to the curve's `fastMsm`
 accelerator (the windowed Pippenger run in projective coordinates), which `fastMsm_spec`
@@ -145,7 +162,7 @@ def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Poin
 
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
-structure Proof (C : CommitmentCurve) (k : ℕ) where
+structure Proof (C : KimchiCurve) (k : ℕ) where
   /-- The per-round `(L, R)` commitment pairs — a `Vector` at the checked round count `k`. -/
   lr : Vector (C.Point × C.Point) k
   /-- The Schnorr commitment `δ`. -/
@@ -161,7 +178,7 @@ structure Proof (C : CommitmentCurve) (k : ℕ) where
 points: the per-polynomial commitments (one segment each), the evaluation points, the
 claimed evaluation matrix (`evals[i][j]` = polynomial `i` at point `j`), the
 combination scalars, and the proof. Every read is total. -/
-structure Input (C : CommitmentCurve) (k m p : ℕ) where
+structure Input (C : KimchiCurve) (k m p : ℕ) where
   /-- The per-polynomial commitments, one segment each — the `m` rows of the claim. -/
   commitments : Vector C.Point m
   /-- The `p` evaluation points. -/
@@ -178,23 +195,23 @@ structure Input (C : CommitmentCurve) (k m p : ℕ) where
 variable {k m p : ℕ}
 
 /-- The commitments as the `Fin`-indexed function of the abstract claim. -/
-def Input.commitmentFn {C : CommitmentCurve} (inp : Input C k m p) :
+def Input.commitmentFn {C : KimchiCurve} (inp : Input C k m p) :
     Fin m → C.Point :=
   fun i => inp.commitments[i]
 
 /-- The evaluation points as the `Fin`-indexed function of the abstract claim. -/
-def Input.pointFn {C : CommitmentCurve} (inp : Input C k m p) :
+def Input.pointFn {C : KimchiCurve} (inp : Input C k m p) :
     Fin p → C.ScalarField :=
   fun j => inp.xs[j]
 
 /-- The claimed evaluation matrix as the indexed function of the abstract claim. -/
-def Input.evalFn {C : CommitmentCurve} (inp : Input C k m p) :
+def Input.evalFn {C : KimchiCurve} (inp : Input C k m p) :
     Fin m → Fin p → C.ScalarField :=
   fun i j => (inp.evals[i])[j]
 
 /-- The combined inner product of the claimed evaluations
 (`Bulletproof.combinedInnerProduct` at the checked matrix). -/
-def cipOf {C : CommitmentCurve} (inp : Input C k m p) : C.ScalarField :=
+def cipOf {C : KimchiCurve} (inp : Input C k m p) : C.ScalarField :=
   combinedInnerProduct inp.polyscale inp.evalscale inp.evalFn
 
 /-- The polyscale combination `∑ i, ξ^i • Cᵢ` of the commitments — the group-side mirror
@@ -508,11 +525,11 @@ end Bulletproof.Ipa
 
 namespace Bulletproof.Ipa.Wire
 
-variable {C : CommitmentCurve}
+variable {C : KimchiCurve}
 
 /-- The wire opening proof (`OpeningProof`, ipa.rs): `lr` is a `Vec` — its length is
 the SRS's round count, pinned by `check`. -/
-structure Proof (C : CommitmentCurve) where
+structure Proof (C : KimchiCurve) where
   /-- The per-round `(L, R)` pairs — a `Vec`; its length is pinned to the round count
   by `check`. -/
   lr : Array (C.Point × C.Point)
@@ -526,7 +543,7 @@ structure Proof (C : CommitmentCurve) where
   sg : C.Point
 
 /-- The wire batched claim (`BatchEvaluationProof`): every payload a `Vec`. -/
-structure Input (C : CommitmentCurve) where
+structure Input (C : KimchiCurve) where
   /-- The per-polynomial commitments. -/
   commitments : Array C.Point
   /-- The evaluation points. -/
@@ -574,19 +591,23 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 /-- The Vesta bundle. The scalar modulus is below the base modulus, so scalars absorb in
 Type1 form. The scalar field is `Fp`, so `G::sponge_params()` is the `fp_kimchi`
 table. -/
-abbrev curve : Ipa.CommitmentCurve where
+abbrev curve : Ipa.KimchiCurve where
   base := PALLAS_SCALAR_CARD
   scalar := PALLAS_BASE_CARD
   sponge := FqVesta.spec
-  frParams := fpParams
-  frParams_size := by
-    show (Poseidon.FpKimchi.roundConstants.map _).size = Poseidon.fullRounds
-    rw [Array.size_map]
-    rfl
+  frSponge :=
+    { params := fpParams
+      lam := 0
+      hsize := by
+        show (Poseidon.FpKimchi.roundConstants.map _).size = Poseidon.fullRounds
+        rw [Array.size_map]
+        rfl }
   E := Vesta.curve
   a_zero := rfl
   card := Vesta.card_eq
-  toGroup := GroupMapVesta.toGroup
+  endo := Pasta.vestaEndoSpec
+  groupMap := GroupMapVesta.spec
+  groupMap_E := rfl
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProj.pippengerProjScatterPar 8
       (List.ofFn fun i => ((a i).val, g i))
@@ -596,7 +617,7 @@ abbrev curve : Ipa.CommitmentCurve where
     simp [List.map_ofFn, List.sum_ofFn]
 
 /-- The Vesta point type. -/
-abbrev Point := Ipa.CommitmentCurve.Point curve
+abbrev Point := curve.Point
 
 end Bulletproof.IpaVesta
 
@@ -607,19 +628,23 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Poseidon Bulletproof
 /-- The Pallas bundle. The scalar modulus is above the base modulus, so scalars absorb in
 Type2 form (selected by the cardinalities). The scalar field is `Fq`, so
 `G::sponge_params()` is the `fq_kimchi` table. -/
-abbrev curve : Ipa.CommitmentCurve where
+abbrev curve : Ipa.KimchiCurve where
   base := PALLAS_BASE_CARD
   scalar := PALLAS_SCALAR_CARD
   sponge := FqPallas.spec
-  frParams := fqParams
-  frParams_size := by
-    show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
-    rw [Array.size_map]
-    rfl
+  frSponge :=
+    { params := fqParams
+      lam := 0
+      hsize := by
+        show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
+        rw [Array.size_map]
+        rfl }
   E := Pallas.curve
   a_zero := rfl
   card := Pallas.card_eq
-  toGroup := GroupMapPallas.toGroup
+  endo := Pasta.pallasEndoSpec
+  groupMap := GroupMapPallas.spec
+  groupMap_E := rfl
   fastMsm := fun {_} g a =>
     CompElliptic.Curves.Pasta.Fast.MsmProjPallas.pippengerProjScatterPar 8
       (List.ofFn fun i => ((a i).val, g i))
@@ -629,6 +654,6 @@ abbrev curve : Ipa.CommitmentCurve where
     simp [List.map_ofFn, List.sum_ofFn]
 
 /-- The Pallas point type. -/
-abbrev Point := Ipa.CommitmentCurve.Point curve
+abbrev Point := curve.Point
 
 end Bulletproof.IpaPallas

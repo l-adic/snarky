@@ -66,7 +66,7 @@ projection is iota on the literal, so the proof fields are never forced. -/
 cycle state them once here rather than each restating them. Not fields of `CommitmentCurve`:
 a commitment curve in general has no 255-bit scalar order, and the wire package is generic
 over any of them. -/
-structure PastaShape (C : CommitmentCurve) : Prop where
+structure PastaShape (C : KimchiCurve) : Prop where
   /-- The base field has more than 254 bits: a `2^254`-bounded integer casts faithfully. -/
   base_big : 2 ^ 254 < C.base
   /-- The scalar order has 255 bits. -/
@@ -78,9 +78,9 @@ structure PastaShape (C : CommitmentCurve) : Prop where
 
 /-- The gadget dictionary at a shaped curve: the 254-bit bounds weakened to the `2 <` ones
 `HasCurve.ofCommitmentCurve` asks for. -/
-@[reducible] noncomputable def PastaShape.d {C : CommitmentCurve} (s : PastaShape C) :
+@[reducible] noncomputable def PastaShape.d {C : KimchiCurve} (s : PastaShape C) :
     HasCurve C.BaseField :=
-  HasCurve.ofCommitmentCurve C (lt_trans (by norm_num) s.base_big)
+  HasCurve.ofCommitmentCurve C.toCommitmentCurve (lt_trans (by norm_num) s.base_big)
     (lt_trans (by norm_num) s.scalar_lo)
 
 /-- Vesta has the shape: base `PALLAS_SCALAR_CARD`, scalar order `PALLAS_BASE_CARD`. -/

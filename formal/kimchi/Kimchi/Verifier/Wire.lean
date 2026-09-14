@@ -32,18 +32,18 @@ open CompElliptic.CurveForms.ShortWeierstrass
 open Bulletproof
 open Kimchi.Verifier (PointEvaluations ProofEvaluations PubEvalSrc)
 
-variable (C : Ipa.CommitmentCurve)
+variable (C : Ipa.KimchiCurve)
 
 /-! ## The wire records -/
 
 /-- A wire polynomial commitment: the per-chunk commitment vector (`PolyComm.elems`,
 `Vec<G>`). serde imposes NO length here — the chunk count is a verify-time check
 (`checkChunks` against the run's `chunk_size`). -/
-private abbrev PolyComm (C : Ipa.CommitmentCurve) := Array C.Point
+private abbrev PolyComm (C : Ipa.KimchiCurve) := Array C.Point
 
 /-- A wire old accumulator (`RecursionChallenge`, proof.rs): the previous opening's
 commitment as a chunk vector and its expanded round challenges, both unchecked. -/
-structure RecursionChallenge (C : Ipa.CommitmentCurve) where
+structure RecursionChallenge (C : Ipa.KimchiCurve) where
   /-- The commitment (`comm`); the parse pins it to one chunk. -/
   comm : PolyComm C
   /-- The round challenges (`chals`); the parse pins them to the SRS's round count. -/
@@ -52,7 +52,7 @@ structure RecursionChallenge (C : Ipa.CommitmentCurve) where
 /-- The kimchi proof wire record (`ProverProof` + `ProofEvaluations`, proof.rs:50–170),
 basic gate set: fixed dimensions serde-typed, chunk payloads unchecked arrays. Lookup
 data are absent — a declared deferral. -/
-structure KimchiProof (C : Ipa.CommitmentCurve) where
+structure KimchiProof (C : Ipa.KimchiCurve) where
   /-- The 15 witness-column commitments (`w_comm: [PolyComm; COLUMNS]`). -/
   wComm : Vector (PolyComm C) wCols
   /-- The permutation-aggregation commitment (`z_comm`). -/
@@ -81,7 +81,7 @@ dimensions serde-typed (`sigma_comm: [PolyComm; PERMUTS]`,
 unchecked arrays. The SRS stays separate and universal; `nc` is derived in
 the client from the domain and the SRS width (`chunk_size = d1 / max_poly_size`,
 verifier.rs:145–152). -/
-structure KimchiVK (C : Ipa.CommitmentCurve) where
+structure KimchiVK (C : Ipa.KimchiCurve) where
   /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
   domainLog2 : ℕ
   /-- The domain generator `ω` (`domain.group_gen`). -/
@@ -170,7 +170,7 @@ The quotient commitment is NOT pinned non-empty. An earlier revision guarded
 hypothesis has since been retired (external-audit O-2), so the empty quotient — which
 production accepts, `verifier.rs:260` bounding `t_comm.len()` from above only — now
 parses and is governed by the knowledge-soundness endpoints like any other run. -/
-def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C) :
+def KimchiProof.check {C : Ipa.KimchiCurve} (nc k : ℕ) (p : KimchiProof C) :
     Option (Kimchi.Verifier.KimchiProof C nc k) := do
   let wComm ← p.wComm.mapM (checkChunks nc)
   let zComm ← checkChunks nc p.zComm
@@ -195,7 +195,7 @@ def KimchiProof.check {C : Ipa.CommitmentCurve} (nc k : ℕ) (p : KimchiProof C)
 basis is validated in FULL (production computes it from the SRS, where the chunking is
 structural — `get_lagrange_basis` chunks every basis polynomial identically; a wire
 key with ragged Lagrange data corresponds to no SRS and is rejected). -/
-def KimchiVK.check {C : Ipa.CommitmentCurve} (nc : ℕ) (vk : KimchiVK C) :
+def KimchiVK.check {C : Ipa.KimchiCurve} (nc : ℕ) (vk : KimchiVK C) :
     Option (Kimchi.Verifier.KimchiVK C nc) := do
   return { domainLog2 := vk.domainLog2, omega := vk.omega
            sigmaComm := ← vk.sigmaComm.mapM (checkChunks nc)

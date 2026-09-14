@@ -181,11 +181,11 @@ structure Side (p : ℕ) where
 
 /-- The step side: `Fp`, Pallas's base field. -/
 def fpSide : Side PALLAS_BASE_CARD :=
-  ⟨5, Pasta.pallasEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams⟩
+  ⟨5, Pasta.pallasEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frSponge.params⟩
 
 /-- The wrap side: `Fq`, Vesta's base field. -/
 def fqSide : Side PALLAS_SCALAR_CARD :=
-  ⟨5, Pasta.vestaEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaPallas.curve.frParams⟩
+  ⟨5, Pasta.vestaEndo, Kimchi.Verifier.mdsOfParams Bulletproof.IpaPallas.curve.frSponge.params⟩
 
 /-- Fast modular exponentiation (`Monoid.npow` on `ZMod` is linear in the exponent —
 unusable at 255-bit exponents). -/
