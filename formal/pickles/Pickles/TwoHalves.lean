@@ -603,13 +603,6 @@ private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C
 
 /-! ### Reading the cells through the ties -/
 
-/-- A one-entry vector is the singleton of its entry. -/
-private theorem vec1_eq {α : Type} (v : Vector α 1) : #v[v[0]] = v := by
-  obtain ⟨⟨l⟩, h⟩ := v
-  simp at h
-  match l, h with
-  | [a], _ => rfl
-
 /-- An evaluation pair whose values are a one-chunk pair's heads is that pair, chunked. -/
 private theorem pointEvals_of_headD {F : Type} [Field F] (V : Valuation F)
     (p : PointEvaluations (FVar F))
@@ -618,7 +611,7 @@ private theorem pointEvals_of_headD {F : Type} [Field F] (V : Valuation F)
   obtain ⟨qz, qo⟩ := q
   simp only [PointEvaluations.map, PointEvaluations.mk.injEq, vec1_headD] at h ⊢
   rw [h.1, h.2]
-  exact ⟨vec1_eq qz, vec1_eq qo⟩
+  exact ⟨vector_singleton_eta qz, vector_singleton_eta qo⟩
 
 /-- Likewise for a vector of evaluation pairs. -/
 private theorem vecEvals_of_headD {F : Type} [Field F] (V : Valuation F) {n : ℕ}
@@ -664,11 +657,6 @@ private theorem chals_eq {p q : ℕ} [Fact p.Prime] [Fact q.Prime] (hp : 2 ^ 128
   | _, _, _, _, .nil, .nil, .nil => rfl
   | _, _, _, _, .cons hg hgs, .cons ⟨_, hm1, hm2⟩ hts, .cons hs hss => by
     rw [reads128_inj hq hs hm2, reads128_inj hp hm1 hg, chals_eq hp hq hgs hts hss]
-
-/-- A `0`/`1` indicator reads `1` exactly when its condition holds. -/
-private theorem indicator_eq_one {F : Type} [Field F] {P : Prop} [Decidable P] :
-    (if P then (1 : F) else 0) = 1 ↔ P := by
-  split <;> simp [*]
 
 /-- `combinedB` over a vector's list is `combinedB` over the vector. -/
 private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
@@ -801,7 +789,8 @@ theorem twoHalves_iff_schnorr
       ((↑Sc.out.cipCorrect : CVar C.ScalarField).val Sc.V = 1
         ↔ Sc.side.decode Sc.claims.deferredValues.combinedInnerProduct = cipOf run) := by
     intro hξv
-    rw [hcipC, indicator_eq_one, hξv, hr, cip_congr _ _ _ _ (rows_eq E cp pub _ _ ht.olds)]
+    simp only [hcipC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
+    rw [hξv, hr, cip_congr _ _ _ _ (rows_eq E cp pub _ _ ht.olds)]
     exact Iff.rfl
   have hbIff : (↑Sc.out.bCorrect : CVar C.ScalarField).val Sc.V = 1
       ↔ Sc.side.decode Sc.claims.deferredValues.b
@@ -809,10 +798,11 @@ theorem twoHalves_iff_schnorr
             ((ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
                 (fun m => endoExpand C.sponge.lam m.val))[i]) run.evalscale run.pointFn := by
-    rw [hbC, indicator_eq_one, hr, hĉeq, ← Vector.toList_map, combinedB_toList, pointFn_eq]
+    simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
+    rw [hr, hĉeq, ← Vector.toList_map, combinedB_toList, pointFn_eq]
   have hpermIff : (↑Sc.out.plonkOk : CVar C.ScalarField).val Sc.V = 1
       ↔ Sc.side.decode Sc.claims.deferredValues.plonk.perm = runPScalar C E.σ E.cvk cp pub := by
-    rw [hpermC, indicator_eq_one]
+    simp only [hpermC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
     unfold runPScalar runLinEvals
     rw [linEvals_one]
   -- assemble, the wire's transcript projected (no unfolding of the sponge runs)
@@ -822,7 +812,9 @@ theorem twoHalves_iff_schnorr
     simp only [runOracles, fqOracles, FqRun.expand]
   rw [hproof] at hiff
   simp only [ScalarHalf.ClaimsHonest, ClaimsHonest, run, tr, transcriptFrom_eq, hwarm, hproof]
-  rw [hfin, indicator_eq_one, hxi, hbIff, hpermIff]
+  rw [hfin]
+  simp only [ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
+  rw [hxi, hbIff, hpermIff]
   constructor
   · rintro ⟨hsG, hxiV, hb, hcip, hperm⟩
     have hξv := hξrun hxiV
