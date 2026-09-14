@@ -7,6 +7,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Traverse
 import Kimchi.Gate.VarBaseMul
 import Kimchi.Gate.Semantics.VarBaseMul
+import Snarky.Kimchi.Circuit.Curve
 import Kimchi.Gate.Semantics.EndoMul
 
 /-!
@@ -63,46 +64,10 @@ variable {F c : Type}
 
 open Std.Do WeierstrassCurve.Affine
 
-/-! ## The curve dictionary
+/-! ## The ladder regime at the deployed curves
 
-What every law below closes over. -/
-
-/-- The curve dictionary the VarBaseMul laws close over (the PS ambient
-`WeierstrassCurve` class): the curve, its Pasta short shape, and the group facts the
-ladder's gate-semantics theorems consume. Like `HasEndo`, the laws stay generic over
-it and are concretized only inside a larger circuit's instantiation. -/
-structure HasCurve (F : Type) [Field F] [DecidableEq F] where
-  /-- The curve the base point and accumulators live on. -/
-  W : WeierstrassCurve.Affine F
-  /-- The Pasta short-Weierstrass shape. -/
-  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
-  /-- The group order is prime. -/
-  prime : Nat.Prime W.order
-  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
-  odd : W.order ≠ 2
-  /-- The field does not have characteristic `2`. -/
-  two_ne : (2 : F) ≠ 0
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The dictionary at deployed Vesta — the curve the Schnorr statement's points live on
-and the ladder's base group. -/
-@[reducible] def HasCurve.vesta : HasCurve Fq where
-  W := Vesta.curve.toAffine
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  prime := Fact.out
-  odd := by rw [vesta_card]; decide
-  two_ne := by decide
-
-/-- The regime the ladder's non-degeneracy pricing needs, at `L` bits over the
-dictionary's order: EITHER the whole ladder fits below the order (subwrap — no
-condition on the scalar), OR the one-wrap band holds and the scalar's Type1 decode
-`z` avoids the forbidden residues. `varBaseMul_off`'s dichotomy, at the law's
-list-level decode. -/
-def HasCurve.LadderRegime [Field F] [DecidableEq F] (d : HasCurve F) (L : ℕ)
-    (z : ℤ) : Prop :=
-  3 * 2 ^ L ≤ d.W.order ∨
-    (2 ^ (L - 1) < d.W.order ∧ d.W.order < 2 ^ L ∧ d.W.order % 4 = 1 ∧
-      z ∉ Kimchi.Gate.VarBaseMul.forbiddenValues d.W.order)
+The dictionary itself is `Snarky.Kimchi.HasCurve`; what is local here is the regime
+discharge the ladder's laws consume. -/
 
 open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
 /-- At Vesta, a `Type1` carrier off the ladder's forbidden band is in the one-wrap
@@ -116,25 +81,6 @@ private theorem vesta_ladderRegime (t : Type1 Fq)
   · decide
   · decide
   · exact hband
-
-open WeierstrassCurve.Affine in
-/-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
-zero. What the addition gadget asks of the base it doubles. -/
-theorem HasCurve.two_torsion_free [Field F] [DecidableEq F] (d : HasCurve F)
-    (P : d.W.Point) (hne : P ≠ 0) : P + P ≠ 0 := by
-  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
-  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
-    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
-    have h2 := (Fact.out : Nat.Prime d.W.order).two_le
-    have h3 : 3 ≤ d.W.order := by
-      rcases Nat.lt_or_ge d.W.order 3 with h | h
-      · exact absurd (by omega : d.W.order = 2) d.odd
-      · exact h
-    exact_mod_cast h3
-  intro hzero
-  exact _root_.Pasta.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
-    (by rw [two_zsmul, hzero])
 
 /-! ## The round
 

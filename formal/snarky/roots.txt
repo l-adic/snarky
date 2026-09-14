@@ -631,7 +631,6 @@ Snarky.Kimchi.OnCurveAt.ne_zero
 Snarky.Kimchi.instIfThenElseAffinePoint
 Snarky.Kimchi.select_affinePoint_spec
 Snarky.Kimchi.addFast_checkFinite_spec
-Snarky.Kimchi.HasCurve.pallas
 Snarky.Kimchi.HasCurve.vesta_ladderRegime
 Snarky.Kimchi.HasCurve.pallas_ladderRegime
 Snarky.Kimchi.OnCurveAt.congr_simp
@@ -697,10 +696,18 @@ Snarky.Kimchi.EndoScalar.toField_spec
 Snarky.Kimchi.EndoScalar.toField_complete
 Snarky.Kimchi.EndoScalar.toFieldChecked'
 
+-- The curve dictionaries (Snarky/Kimchi/Circuit/Curve.lean): what the group-side laws close
+-- over, with the deployed Pasta values, which are the discharge artifacts AND the exhibit
+-- that each dictionary is satisfiable.
+Snarky.Kimchi.HasCurve
+Snarky.Kimchi.HasCurve.vesta
+Snarky.Kimchi.HasCurve.pallas
+Snarky.Kimchi.HasEndo
+Snarky.Kimchi.HasEndo.pallas
+Snarky.Kimchi.HasEndo.vesta
+
 -- The endomul gadget (Snarky/Kimchi/Circuit/EndoMul.lean): the ladder step, the gadget and
--- its inverse-direction wrapper, a law pair each, and the curve dictionary the laws take —
--- with the deployed Pasta values, which are the discharge artifacts AND the exhibit that
--- the dictionary is satisfiable.
+-- its inverse-direction wrapper, and a law pair each.
 Snarky.Kimchi.endoMulRound
 Snarky.Kimchi.endoMul
 Snarky.Kimchi.endoInv
@@ -710,16 +717,10 @@ Snarky.Kimchi.EndoMul.vesta_endoMul_complete
 Snarky.Kimchi.EndoMul.endoMul_complete
 Snarky.Kimchi.EndoMul.endoInv_spec
 Snarky.Kimchi.EndoMul.endoInv_complete
-Snarky.Kimchi.HasEndo
-Snarky.Kimchi.HasEndo.pallas
-Snarky.Kimchi.HasEndo.vesta
 
 -- The variable-base multiplication gadget (Snarky/Kimchi/Circuit/VarBaseMul.lean): the
 -- ladder step, the gadget with its result record, the scaleFast wrappers and the shifted
--- carriers they split through, each with its law pair, and the curve dictionary the laws
--- take.
-Snarky.Kimchi.HasCurve
-Snarky.Kimchi.HasCurve.vesta
+-- carriers they split through, each with its law pair.
 Snarky.Kimchi.scaleRound
 Snarky.Kimchi.VarBaseMulResult
 Snarky.Kimchi.varBaseMul

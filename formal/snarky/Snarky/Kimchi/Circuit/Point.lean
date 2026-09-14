@@ -73,15 +73,6 @@ theorem addFast_checkFinite_spec {V : Valuation F} [Field F] [DecidableEq F]
   · exact absurd (h1.symm.trans (hflag rfl)) one_ne_zero
   · exact hs
 
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The ladder dictionary at deployed Pallas, the step side's base group. -/
-@[reducible] def HasCurve.pallas : HasCurve Fp where
-  W := Pallas.curve.toAffine
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  prime := Fact.out
-  odd := by rw [pallas_card]; decide
-  two_ne := by decide
-
 open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
 /-- At Vesta, a ladder integer off the forbidden band is in the one-wrap regime at 255
 bits: the deployed order sits in the band and is `1 mod 4`. -/
