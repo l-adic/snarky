@@ -164,22 +164,6 @@ def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
     (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges,
       p.1.val.val V = p.2.val.val V)
 
-/-- A `mapM` of reads: each element's result reads against its own target. -/
-private theorem mapM_forall₂ {F c : Type} [Field F] [DecidableEq F] [ConstraintHolds F c]
-    {V : Valuation F} {α β γ : Type} (f : α → CircuitM F (Builder V c) β) (R : β → γ → Prop)
-    (Q : α → γ) (hf : ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜R r (Q a)⌝⦄) :
-    ∀ l : List α, ⦃⌜True⌝⦄ l.mapM f ⦃⇓ rs _ => ⌜List.Forall₂ R rs (l.map Q)⌝⦄
-  | [] => by
-    rw [List.mapM_nil, List.map_nil]
-    mvcgen
-    exact .nil
-  | a :: l => by
-    rw [List.mapM_cons, List.map_cons]
-    have ih := mapM_forall₂ f R Q hf l
-    mvcgen [hf, ih]
-    rename_i r _ hr rs _ hrs
-    exact .cons hr hrs
-
 end Read
 
 section StepRead
@@ -245,7 +229,7 @@ theorem verifyWrap_step_reads {nc : ℕ} {V : Valuation Fp}
       apply List.ext_getElem <;> simp
     unfold CommReads
     rw [hvec]
-    exact mapM_forall₂ _ (fun r P => OnCurveAt xhatStep.d.W V r (xhatStep.e P)) _
+    exact builder_spec_mapM _ (fun r P => OnCurveAt xhatStep.d.W V r (xhatStep.e P)) _
       (fun ci => xHatKnown_reads_publicCommitment xhatStep ci σ cvk blindingH corrHead[ci]
         corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _
   have hivp := incrementallyVerifyProof_step_reads σ cvk cp _ endo sqrtF blindingH
