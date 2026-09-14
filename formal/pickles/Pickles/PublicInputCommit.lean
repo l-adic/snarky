@@ -1358,6 +1358,10 @@ structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) where
   scalar_hi : C.scalar < 2 ^ 254 + 2 ^ 253
   /-- The scalar order is `1 mod 4`, as the one-wrap ladder regime asks. -/
   scalar_mod : C.scalar % 4 = 1
+  /-- The crossing lands on the commitment curve: a cell reading as a crossed wire point reads
+  as that point on `C.E`, the form the group half consumes. -/
+  onCurve_cross : ∀ (V : Valuation C.BaseField) (r : AffinePoint (FVar C.BaseField)) (P : C.Point),
+    OnCurveAt d.W V r (e P) → OnCurveAt C.E.toAffine V r (SWPoint.equivPoint C.E P)
 
 end Generic
 
@@ -1471,6 +1475,7 @@ noncomputable def xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
   scalar_lo := by norm_num [PALLAS_BASE_CARD]
   scalar_hi := by norm_num [PALLAS_BASE_CARD]
   scalar_mod := by norm_num [PALLAS_BASE_CARD]
+  onCurve_cross _ _ _ h := h
 
 /-- The step side of the x_hat crossing: Pallas bases at `Fp`, scalar order
 `PALLAS_SCALAR_CARD`. -/
@@ -1483,10 +1488,24 @@ noncomputable def xhatStep : XhatSide Bulletproof.IpaPallas.curve where
   scalar_lo := by norm_num [PALLAS_SCALAR_CARD]
   scalar_hi := by norm_num [PALLAS_SCALAR_CARD]
   scalar_mod := by norm_num [PALLAS_SCALAR_CARD]
+  onCurve_cross _ _ _ h := h
 
 section Binding
 
 variable {C : Bulletproof.Ipa.CommitmentCurve} {nc : ℕ}
+
+/-- The `x_hat` tables of a circuit (OCaml `lagrange_with_correction` and `multiscale_known`'s
+constant corrections): per public-input scalar its Lagrange base and its shift correction,
+chunked, and the correction seed and sum the known-domain fold takes as constants. -/
+structure XhatTable (F : Type) [Field F] (nc : ℕ) where
+  /-- The Lagrange bases, one per scalar. -/
+  bases : List (Vector (AffinePoint (FVar F)) nc)
+  /-- The shift corrections, one per scalar. -/
+  corrs : List (Vector (AffinePoint (FVar F)) nc)
+  /-- The correction seed of the known-domain fold. -/
+  corrHead : Vector (AffinePoint (FVar F)) nc
+  /-- The correction sum of the known-domain fold. -/
+  corrSum : Vector (AffinePoint (FVar F)) nc
 
 /-- The binding the deferred packing item discharges — everything the faithfulness read needs
 of the outside world, in public terms (no `LeafInfo`/`LeafReads`). The scalar-side alias
@@ -1600,6 +1619,22 @@ theorem xHatKnown_reads_publicCommitment (s : XhatSide C) (ci : Fin nc)
       (fun leaf hl => s.regime V leaf (hbind.offBand leaf hl))
       hbind.blinding hbind.pre hbind.corr hC hhead hbind.hon) fun r hr => ?_
   rw [xhat_cross s ci σ cvk blindingH leaves Ts cps hbind hne]; exact hr
+
+/-- An `x_hat` table is bound to the verifier key at the leaves it serves: chunk by chunk, the
+leaves' `XhatBinding` at some base and correction points with the correction sum reading as
+their sum, and the tables nonempty (the known-domain fold is seeded by the first leaf). -/
+structure XhatTable.Bound (s : XhatSide C) (V : Valuation C.BaseField)
+    (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
+    (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
+    (T : XhatTable C.BaseField nc) : Prop where
+  /-- Each chunk's binding, with the correction sum read. -/
+  chunks : ∃ Ts cps : List (Fin nc → s.d.W.Point), ∀ ci : Fin nc,
+    XhatBinding s ci V σ cvk blindingH leaves (Ts.map (· ci)) (cps.map (· ci)) ∧
+    OnCurveAt s.d.W V T.corrSum[ci] (cps.map (· ci)).sum
+  /-- At least one base. -/
+  bases_ne : T.bases ≠ []
+  /-- At least one correction. -/
+  corrs_ne : T.corrs ≠ []
 
 end Binding
 

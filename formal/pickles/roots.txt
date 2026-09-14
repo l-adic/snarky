@@ -219,3 +219,9 @@ Pickles.FopReadsExact.toWire
 Pickles.MaxProofsVerified
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
+
+-- `verify` (Verify.lean, `Step_verifier.verify`): the group half with its public input fixed
+-- to the packed wrap statement's `x_hat` leaves and its outputs asserted against the
+-- unfinalized proof's claims; its read on the step side, `VerifyReads`.
+Pickles.verifyProof
+Pickles.verifyProof_step_reads

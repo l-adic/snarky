@@ -993,6 +993,17 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "ivp_step_circuit" (fromCompiledCircuit =<< compileIvpStep stepSrsData)
+        -- The `pallasCrs15` twin of `xhat_step_lagrange.json`: the 30 Lagrange bases at domain
+        -- 15 and the blinding `h` baked into `ivp_step_circuit` (and `step_verify_circuit`),
+        -- for the Lean `check_cs` harness (`ivpStepCircuit`), which derives the corrections.
+        it "dumps the ivp_step Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fp -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepSrs 15 i)
+          FS.writeTextFile UTF8 (resultsDir <> "ivp_step_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepSrs) })
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
@@ -1003,6 +1014,16 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "step_verify_circuit" (fromCompiledCircuit =<< compileStepVerify stepVerifySrsData)
+        -- The same `pallasCrs15` export as `ivp_step_lagrange.json`, written here too so a run
+        -- narrowed to `step_verify_circuit` carries it (a narrowed run resets the results dir).
+        it "dumps the step_verify_circuit Lagrange bases for the Lean check_cs harness" $ liftEffect do
+          let
+            ptToJson :: AffinePoint Fp -> Array String
+            ptToJson (AffinePoint { x, y }) =
+              [ BigInt.toString (toBigInt x), BigInt.toString (toBigInt y) ]
+            lagr = Array.range 0 29 <#> \i -> ptToJson (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)
+          FS.writeTextFile UTF8 (resultsDir <> "ivp_step_lagrange.json")
+            (writeJSON { lagrange: lagr, h: ptToJson (vestaSrsBlindingGenerator stepVerifySrs) })
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
