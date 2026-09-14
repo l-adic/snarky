@@ -390,11 +390,10 @@ structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sc
     = (cp.olds.map (·.u.toList)).toList
   /-- `ft(ζω)` is the proof's. -/
   ftEval1 : Sc.evals.ftEval1.val Sc.V = cp.ftEval1
-  /-- The evaluations are the proof's (one chunk). -/
-  evals : Sc.evals.evals.map (·.val Sc.V) = cp.evals.map (·.toList.headD 0)
-  /-- The public evaluations are the run's (`runPubEvals`, one chunk). -/
-  pubEvals : Sc.evals.pub.map (·.val Sc.V)
-    = (runPubEvals C E.σ E.cvk cp pub).map (·.toList.headD 0)
+  /-- The evaluation cells are the proof's evaluations, as its one-chunk vectors. -/
+  evals : Sc.evals.evals.map (fun x => #v[x.val Sc.V]) = cp.evals
+  /-- The public evaluation cells are the run's (`runPubEvals`), as its one-chunk vectors. -/
+  pubEvals : Sc.evals.pub.map (fun x => #v[x.val Sc.V]) = runPubEvals C E.σ E.cvk cp pub
 
 /-- The claims are the wire's own values: `cip` is `cipOf` the run's input, `b` is
 `combinedB` at the run's round challenges, the permutation scalar is `runPScalar`, and the
@@ -569,40 +568,6 @@ private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C
 
 /-! ### Reading the cells through the ties -/
 
-/-- An evaluation pair whose values are a one-chunk pair's heads is that pair, chunked. -/
-private theorem pointEvals_of_headD {F : Type} [Field F] (V : Valuation F)
-    (p : PointEvaluations (FVar F))
-    (q : PointEvaluations (Vector F 1)) (h : p.map (·.val V) = q.map (·.toList.headD 0)) :
-    p.map (fun x => #v[x.val V]) = q := by
-  obtain ⟨qz, qo⟩ := q
-  simp only [PointEvaluations.map, PointEvaluations.mk.injEq, vec1_headD] at h ⊢
-  rw [h.1, h.2]
-  exact ⟨vector_singleton_eta qz, vector_singleton_eta qo⟩
-
-/-- Likewise for a vector of evaluation pairs. -/
-private theorem vecEvals_of_headD {F : Type} [Field F] (V : Valuation F) {n : ℕ}
-    (p : Vector (PointEvaluations (FVar F)) n) (q : Vector (PointEvaluations (Vector F 1)) n)
-    (h : p.map (PointEvaluations.map (·.val V)) = q.map (PointEvaluations.map (·.toList.headD 0))) :
-    p.map (PointEvaluations.map fun x => #v[x.val V]) = q := by
-  ext i hi
-  simp only [Vector.getElem_map]
-  refine pointEvals_of_headD V p[i] q[i] ?_
-  have := congrArg (fun v : Vector (PointEvaluations F) n => v[i]) h
-  simpa only [Vector.getElem_map] using this
-
-/-- Likewise for the evaluation record. -/
-private theorem proofEvals_of_headD {F : Type} [Field F] (V : Valuation F)
-    (p : ProofEvaluations (FVar F))
-    (q : ProofEvaluations (Vector F 1)) (h : p.map (·.val V) = q.map (·.toList.headD 0)) :
-    p.map (fun x => #v[x.val V]) = q := by
-  obtain ⟨qw, qz, qs, qc, q1, q2, q3, q4, q5, q6⟩ := q
-  simp only [ProofEvaluations.map, ProofEvaluations.mk.injEq] at h ⊢
-  obtain ⟨hw, hz, hs, hc, h1, h2, h3, h4, h5, h6⟩ := h
-  exact ⟨vecEvals_of_headD V _ _ hw, pointEvals_of_headD V _ _ hz, vecEvals_of_headD V _ _ hs,
-    vecEvals_of_headD V _ _ hc, pointEvals_of_headD V _ _ h1, pointEvals_of_headD V _ _ h2,
-    pointEvals_of_headD V _ _ h3, pointEvals_of_headD V _ _ h4, pointEvals_of_headD V _ _ h5,
-    pointEvals_of_headD V _ _ h6⟩
-
 /-- `combinedB` over a vector's list is `combinedB` over the vector. -/
 private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
     (x : Fin m → F) :
@@ -698,14 +663,18 @@ theorem twoHalves_iff_schnorr
   have hd : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
       = (runOracles C E.σ E.cvk cp pub).digest := by
     rw [ht.digest, hdig, ← hdE]; rfl
-  have hpubv : Sc.evals.pub.map (fun x => #v[x.val Sc.V]) = runPubEvals C E.σ E.cvk cp pub :=
-    pointEvals_of_headD _ _ _ ht.pubEvals
-  have hevv : Sc.evals.evals.map (fun x => #v[x.val Sc.V]) = cp.evals :=
-    proofEvals_of_headD _ _ _ ht.evals
-  have hpz := congrArg PointEvaluations.zeta ht.pubEvals
-  have hpzo := congrArg PointEvaluations.zetaOmega ht.pubEvals
-  simp only [PointEvaluations.map, vec1_headD] at hpz hpzo
-  rw [hd, ht.ftEval1, hpubv, hevv] at hr' hxiIff
+  -- the evaluation values are the proof's heads: the functor law, `headD 0 ∘ #v[·]` being `id`
+  have hev : Sc.evals.evals.map (·.val Sc.V) = cp.evals.map (·.toList.headD 0) := by
+    rw [← ht.evals]
+    show ProofEvaluations.map _ _
+      = (·.toList.headD 0) <$> (fun x => #v[x.val Sc.V]) <$> Sc.evals.evals
+    rw [← LawfulFunctor.comp_map]
+    rfl
+  have hpz : Sc.evals.pub.zeta.val Sc.V = (runPubEvals C E.σ E.cvk cp pub).zeta[0] := by
+    rw [← ht.pubEvals]; rfl
+  have hpzo : Sc.evals.pub.zetaOmega.val Sc.V = (runPubEvals C E.σ E.cvk cp pub).zetaOmega[0] := by
+    rw [← ht.pubEvals]; rfl
+  rw [hd, ht.ftEval1, ht.pubEvals, ht.evals] at hr' hxiIff
   have hr : endoExpand C.sponge.lam r'.val = run.evalscale := by
     show _ = (frOracles C cp _ _).r
     rw [frOracles_eq_frPrechallenges, hr']
@@ -736,9 +705,9 @@ theorem twoHalves_iff_schnorr
     (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
       (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc.trans hns)))
   -- the four checks, in wire terms
-  rw [hζ, hα, hβ, hγ, ht.evals, hpz, hpzo, ht.ftEval1] at hcipC
+  rw [hζ, hα, hβ, hγ, hev, hpz, hpzo, ht.ftEval1] at hcipC
   rw [hζ] at hbC
-  rw [hζ, hα, hβ, hγ, ht.evals] at hpermC
+  rw [hζ, hα, hβ, hγ, hev] at hpermC
   have hcipIff : endoExpand C.sponge.lam ξ₀.val = run.polyscale →
       ((↑Sc.out.cipCorrect : CVar C.ScalarField).val Sc.V = 1
         ↔ Sc.side.decode Sc.claims.deferredValues.combinedInnerProduct = cipOf run) := by
