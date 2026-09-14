@@ -171,7 +171,7 @@ cells (`IvpHyps`). -/
 theorem verifyProof_reads
     {nc : ℕ}
     (S : IvpSide C V ops)
-    (X : XhatSide C)
+    (X : PastaShape C)
     -- the wire objects
     (σ : SRS C.Point)
     (cvk : KimchiVK C nc)
@@ -253,7 +253,7 @@ end Read
 section StepRead
 
 /-- **`verify` reads as the group half on the step side**: `verifyProof_reads` at `stepSide`
-and `xhatStep`. -/
+and `pastaShapePallas`. -/
 theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (σ : SRS IpaPallas.curve.Point) (cvk : KimchiVK IpaPallas.curve nc)
     (cp : KimchiProof IpaPallas.curve nc σ.k)
@@ -264,7 +264,7 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (cells : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase base)
-    (htab : tab.Bound xhatStep V σ cvk blindingH (packLeaves statement tab))
+    (htab : tab.Bound pastaShapePallas V σ cvk blindingH (packLeaves statement tab))
     (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
       false blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -273,7 +273,8 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
       spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
       (pubOf IpaPallas.curve V (packLeaves statement tab)) cells u base v⌝⦄ :=
-  verifyProof_reads (stepSide V) xhatStep σ cvk cp endo sqrtF blindingH tab spongeAfterIndex
+  verifyProof_reads (stepSide V) pastaShapePallas σ cvk cp endo sqrtF blindingH tab
+    spongeAfterIndex
     isBaseCase statement u cells base oldsW hbase htab hivp
 
 end StepRead

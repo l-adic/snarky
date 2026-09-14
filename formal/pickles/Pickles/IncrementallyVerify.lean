@@ -656,13 +656,13 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
   · -- the digest
     exact hFq.2.2.2.2.2.2.2.1.symm
   · obtain ⟨m, hm⟩ := hFq.2.2.2.2.1
-    exact ⟨m, hasrt.1.trans hm, Low128.alias S.base_big hFq.1 hm⟩
+    exact ⟨m, hasrt.1.trans hm, Low128.alias S.shape.base_big hFq.1 hm⟩
   · obtain ⟨m, hm⟩ := hFq.2.2.2.2.2.1
-    exact ⟨m, hasrt.2.1.trans hm, Low128.alias S.base_big hFq.2.1 hm⟩
+    exact ⟨m, hasrt.2.1.trans hm, Low128.alias S.shape.base_big hFq.2.1 hm⟩
   · intro m hm
-    exact Low128.alias S.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
+    exact Low128.alias S.shape.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
   · intro m hm
-    exact Low128.alias S.base_big hFq.2.2.2.1 (hasrt.2.2.2.symm.trans hm)
+    exact Low128.alias S.shape.base_big hFq.2.2.2.1 (hasrt.2.2.2.symm.trans hm)
   · intro ξ₀ hξ
     -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
     have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
@@ -691,7 +691,8 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     have hδv : CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
       reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.delta)
     -- the opening transcript, from the warm sponge
-    have hT := CheckBulletproofReads.wire S.base_big (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
+    have hT := CheckBulletproofReads.wire S.shape.base_big
+      (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
     -- the wire's IPA run at the claimed `cip` is the opening check's transcript
     obtain ⟨h1, h2, h3⟩ :=
       ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hcanon hwc cp.opening

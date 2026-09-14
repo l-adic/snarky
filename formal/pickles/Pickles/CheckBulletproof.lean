@@ -908,12 +908,12 @@ open Bulletproof Bulletproof.Ipa CompElliptic.CurveForms.ShortWeierstrass
 
 /-- What a side supplies to read the group half's gadgets on the wire's commitment curve `C`:
 how its shifted-scalar ladder reads (`R`); the scalar-field decode of a shifted claim, with the
-law that a ladder witness's integer decode casts to it; the facts about `C`'s affine group the
-adds and negations need — the scalar order kills the group (so an integer acts as its residue's
-representative), the curve is short (`A = 0`) and the group has no 2-torsion; the
-endomorphism bundle (at the wire curve) and the map-to-curve parameters the opening check runs
-on; the base field's size and the sponge's round count, from which the field facts the
-transcript's squeezes need follow (`IvpSide.two_ne`, `IvpSide.three_ne`, `IvpSide.small_inj`);
+law that a ladder witness's integer decode casts to it; the endomorphism bundle (at the wire
+curve) and the map-to-curve parameters the opening check runs on; the curve's deployed shape
+and the sponge's round count, from which follow both the field facts the transcript's squeezes
+need (`IvpSide.two_ne`, `IvpSide.three_ne`, `IvpSide.small_inj`) and the group fact the adds
+and negations need (`IvpSide.two_torsion_free`; that the curve is short and that the scalar
+order kills the group are `C`'s own, `C.a_zero` and `C.card_nsmul`);
 the limbs a canonical claim absorbs as, tied to the wire's; the map-to-curve gadget's read; and
 the two bridges from the gadgets' group vocabulary to the wire's. One value per deployed side:
 `wrapSide`, `stepSide`. -/
@@ -931,10 +931,9 @@ structure IvpSide (C : CommitmentCurve) (V : Valuation C.BaseField) {sf : Type}
   eW : e.d.W = C.E.toAffine
   /-- The map-to-curve parameters deriving the `U` base. -/
   gm : GroupMapParams C.BaseField
-  /-- The base field has more than 254 bits: a low-128-bit read is a `PrechallengeAlias`. -/
-  base_big : 2 ^ 254 < C.base
-  /-- The scalar order has 255 bits: the group has no 2-torsion. -/
-  scalar_big : 2 ^ 254 < C.scalar
+  /-- The curve has the deployed shape: the base field's width makes a low-128-bit read a
+  `PrechallengeAlias`, and the scalar order's leaves the group without 2-torsion. -/
+  shape : PastaShape C
   /-- The sponge parameters carry the full round constants. -/
   hsize : C.sponge.params.roundConstants.size = Poseidon.fullRounds
   /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
@@ -979,7 +978,7 @@ variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
 theorem IvpSide.small_inj (S : IvpSide C V ops) :
     ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : C.BaseField) = k → j = k :=
   fun j k _ _ h =>
-    castInj128_of_lt C.base (lt_trans (by norm_num) S.base_big) j k (by omega) (by omega) h
+    castInj128_of_lt C.base (lt_trans (by norm_num) S.shape.base_big) j k (by omega) (by omega) h
 
 /-- The base field is not of characteristic 2. -/
 theorem IvpSide.two_ne (S : IvpSide C V ops) : (2 : C.BaseField) ≠ 0 := fun h =>
@@ -992,8 +991,7 @@ theorem IvpSide.three_ne (S : IvpSide C V ops) : (3 : C.BaseField) ≠ 0 := fun 
 /-- The affine group has no 2-torsion: its order is an odd prime. -/
 theorem IvpSide.two_torsion_free (S : IvpSide C V ops) (P : C.E.toAffine.Point) (hne : P ≠ 0) :
     P + P ≠ 0 :=
-  (HasCurve.ofCommitmentCurve C (lt_trans (by norm_num) S.base_big)
-    (lt_trans (by norm_num) S.scalar_big)).two_torsion_free P hne
+  S.shape.d.two_torsion_free P hne
 
 /-- A shifted claim the ladder read speaks about: well-formed for the side, and every witness
 reading it in the ladder's regime (at the deployed curves: the decode is off the forbidden
@@ -1040,7 +1038,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
             ((bvW.filter (·.2)).map (·.1)).toArray)
           ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩)⌝⦄ := by
   have hcast : CastInj128 C.BaseField :=
-    castInj128_of_lt C.base (lt_trans (by norm_num) S.base_big)
+    castInj128_of_lt C.base (lt_trans (by norm_num) S.shape.base_big)
   refine builder_spec_imp _ _ _
     (checkBulletproof_spec_success_at ops S.e S.eW _ S.hsize endo S.gm sqrtF hcast S.R
       (fun t => SWPoint.equivPoint C.E (C.toGroup t)) (S.groupMap sqrtF) sv bases _ hb hbne inp
@@ -1689,8 +1687,7 @@ def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap whe
   e := IpaEndo.vesta
   eW := rfl
   gm := groupMapParamsVesta
-  base_big := by norm_num [PALLAS_SCALAR_CARD]
-  scalar_big := by norm_num [PALLAS_BASE_CARD]
+  shape := pastaShapeVesta
   hsize := Kimchi.Gate.Poseidon.fqParams_size
   Canon _ := True
   absorb_limbs _ h := wrap_cip_limbs h
@@ -1915,8 +1912,7 @@ def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step wh
   e := IpaEndo.pallas
   eW := rfl
   gm := groupMapParamsPallas
-  base_big := by norm_num [PALLAS_BASE_CARD]
-  scalar_big := by norm_num [PALLAS_SCALAR_CARD]
+  shape := pastaShapePallas
   hsize := Kimchi.Gate.Poseidon.fpParams_size
   Canon x := 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val
     < PALLAS_SCALAR_CARD

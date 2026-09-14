@@ -175,15 +175,15 @@ Pickles.publicInputCommitKnown_spec
 Pickles.LeafReads.regimeOK
 -- The public seam of the x_hat reads: either gadget's output reads as `-(publicMsm) + h`, and
 -- the wire crossing ties that to the verifier's `publicCommitment` on the commitment curve,
--- generically over an `XhatSide` (the base field's width and the Pasta shape of the scalar
--- order; the point group and its crossing are the commitment curve's own, `Pickles.Curve`),
--- instantiated at Vesta (`xhatWrap`) and Pallas (`xhatStep`).
+-- generically over a `PastaShape` (the curve's own deployed shape; the point group and its
+-- crossing are the commitment curve's own too, `Pickles.Curve`), instantiated at Vesta
+-- (`pastaShapeVesta`) and Pallas (`pastaShapePallas`).
 Pickles.publicInputCommitFull_reads
 Pickles.publicInputCommitKnown_reads
 Pickles.xHat_reads_publicCommitment
 Pickles.xHatKnown_reads_publicCommitment
-Pickles.xhatWrap
-Pickles.xhatStep
+Pickles.pastaShapeVesta
+Pickles.pastaShapePallas
 
 -- The `ft_comm` gadget (FtComm.lean, `Common.ft_comm`), generic in the side's shifted-scalar
 -- operations, and its read: on any side (`IvpSide` — the ladder reading, the claim decode and
