@@ -57,7 +57,6 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Either (Either(..))
 import Data.Enum (fromEnum)
-import Data.Exists (runExists)
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Functor.Product (Product, product)
@@ -995,7 +994,6 @@ instance
             -- the existential opened once here rather than around this
             -- whole block. See `Pickles.Verify.PrevProofData`.
             prevData = prevProofDataOf prevVerifier prevCp
-            prev = prevData.proof
 
             prevStepBpChalsExpanded =
               map
@@ -1003,15 +1001,14 @@ instance
                     toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
                       stepEndoScalarF
                 )
-                prev.rawBulletproofChallenges
+                prevData.proof.rawBulletproofChallenges
 
-            wrapPI = wrapPublicInputVP prevVerifier prev
+            wrapPI = wrapPublicInputVP prevVerifier prevData.proof
           in
-            ( \wd ->
                   let
                     prevZetaField =
                       coerce
-                        (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
+                        (toFieldPure prevData.proof.rawPlonk.zeta (F prevVerifier.stepEndo))
 
                     -- The prev's branch-specific step domain. The `Verifier`
                     -- no longer carries a step domain log2 (it's per-branch);
@@ -1019,12 +1016,12 @@ instance
                     -- dispatch picks the right domain for each prev. Mirrors
                     -- OCaml `branch_data.domain_log2` driving `step_domain`
                     -- inside `expand_deferred`.
-                    prevStepGenerator = domainGenerator prev.stepDomainLog2
+                    prevStepGenerator = domainGenerator prevData.proof.stepDomainLog2
 
-                    prevStepShifts = domainShifts prev.stepDomainLog2
+                    prevStepShifts = domainShifts prevData.proof.stepDomainLog2
 
                     prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-                      { domainLog2: prev.stepDomainLog2
+                      { domainLog2: prevData.proof.stepDomainLog2
                       , zkRows: prevVerifier.stepZkRows
                       , pt: prevZetaField
                       }
@@ -1035,17 +1032,17 @@ instance
                     -- proof's real width: padding here would change both
                     -- the challenges digest and the combined inner
                     -- product.
-                    prevDv = Vector.reifyVector prev.oldBulletproofChallenges
+                    prevDv = Vector.reifyVector prevData.proof.oldBulletproofChallenges
                       \prevOldBpChals -> expandDeferredForVerify
-                      { rawPlonk: prev.rawPlonk
-                      , rawBulletproofChallenges: prev.rawBulletproofChallenges
-                      , branchData: prev.branchData
+                      { rawPlonk: prevData.proof.rawPlonk
+                      , rawBulletproofChallenges: prevData.proof.rawBulletproofChallenges
+                      , branchData: prevData.proof.branchData
                       , spongeDigestBeforeEvaluations:
-                          prev.spongeDigestBeforeEvaluations
-                      , chunkedAllEvals: prev.prevEvalsChunked
-                      , pEval0Chunks: prev.pEval0Chunks
+                          prevData.proof.spongeDigestBeforeEvaluations
+                      , chunkedAllEvals: prevData.proof.prevEvalsChunked
+                      , pEval0Chunks: prevData.proof.pEval0Chunks
                       , oldBulletproofChallenges: prevOldBpChals
-                      , domainLog2: prev.stepDomainLog2
+                      , domainLog2: prevData.proof.stepDomainLog2
                       , zkRows: prevVerifier.stepZkRows
                       , srsLengthLog2: prevVerifier.stepSrsLengthLog2
                       , generator: prevStepGenerator
@@ -1063,16 +1060,8 @@ instance
                            }
                     prevPaddedChalPolys = Vector.zipWith
                       (\sg ch -> { sg, challenges: ch })
-                      wd.outerStepChalPolyCommsPadded
-                      wd.msgWrapChallengesPadded
-
-                    prevPaddedWrapBpChals
-                      :: Vector PaddedLength (Vector WrapIPARounds WrapField)
-                    prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
-
-                    prevPaddedStepHashChals
-                      :: Vector PaddedLength (Vector StepIPARounds StepField)
-                    prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
+                      prevData.padded.outerStepChalPolyCommsPadded
+                      prevData.padded.msgWrapChallengesPadded
 
                     fopState =
                       { deferredValues:
@@ -1088,9 +1077,9 @@ instance
                       }
                   in
                     { prevStatement: prevRaw.statement
-                    , stepOpeningSg: prev.challengePolynomialCommitment
-                    , kimchiPrevSg: prev.challengePolynomialCommitment
-                    , wrapProof: prev.wrapProof
+                    , stepOpeningSg: prevData.proof.challengePolynomialCommitment
+                    , kimchiPrevSg: prevData.proof.challengePolynomialCommitment
+                    , wrapProof: prevData.proof.wrapProof
                     , wrapPublicInputArr: wrapPI
                     , prevChalPolys: prevPaddedChalPolys
                     , wrapPlonkRaw:
@@ -1100,17 +1089,15 @@ instance
                         , zeta: SizedF.unwrapF prevDv.plonk.zeta
                         }
                     , wrapPrevEvals: prevData.prevEvals
-                    , wrapBranchData: prev.branchData
-                    , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
+                    , wrapBranchData: prevData.proof.branchData
+                    , wrapSpongeDigest: prevData.proof.spongeDigestBeforeEvaluations
                     , mustVerify: true
-                    , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
+                    , wrapOwnPaddedBpChals: prevData.padded.msgWrapChallengesPadded
                     , fopState
                     , stepAdvicePrevEvals: prevData.prevEvals
                     , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
-                    , prevChallengesForStepHash: prevPaddedStepHashChals
+                    , prevChallengesForStepHash: prevData.padded.oldBulletproofChallengesPadded
                     }
-              )
-              prevData.padded
     -- Per-slot helper: build THIS slot's contribution (PS analog of
     -- OCaml `expand_proof` at `step.ml:122-150`). Mirrors OCaml's
     -- `expand_proof dlog_vk dlog_index app_state p data ~must_verify`
@@ -1324,8 +1311,13 @@ instance
             }
         InductivePrev prevCp prevTag ->
           let
-            CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
+
+            -- As in `mkStepAdvice`: the erased proof plus its constants,
+            -- existential opened once. This branch needs only the padded
+            -- accumulators, so there is no unpadded vector to reify and
+            -- no raw record to keep.
+            prevData = prevProofDataOf prevVerifier prevCp
 
             prevStepBpChalsExpanded =
               map
@@ -1333,15 +1325,13 @@ instance
                     toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
                       stepEndoScalarF
                 )
-                prev.rawBulletproofChallenges
+                prevData.proof.rawBulletproofChallenges
 
-            prevWrapPI = wrapPublicInput prevVerifier prevCp
+            prevWrapPI = wrapPublicInputVP prevVerifier prevData.proof
           in
             -- Reference: OCaml `step_main`'s
             -- `messages_for_next_step_proof.old_bulletproof_challenges`
             -- threading.
-            runExists
-              ( \(CompiledProofWidthData wd) ->
                   let
                     -- FFI boundary: kimchi's `prev_challenges` argument
                     -- expects a flat `Array {sgX, sgY, challenges :: Array}`
@@ -1365,12 +1355,12 @@ instance
                             , challenges: Vector.toUnfoldable ch
                             }
                         )
-                        wd.outerStepChalPolyCommsPadded
-                        wd.msgWrapChallengesPadded
+                        prevData.padded.outerStepChalPolyCommsPadded
+                        prevData.padded.msgWrapChallengesPadded
 
                     prevWrapOracles =
                       ProofFFI.proofOraclesRec slotWrapVK
-                        { proof: prev.wrapProof
+                        { proof: prevData.proof.wrapProof
                         , publicInput: prevWrapPI
                         , prevChallenges: prevWrapKimchiPrevChals
                         }
@@ -1381,7 +1371,7 @@ instance
                       , zeta: prevWrapOracles.zeta
                       , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
                       }
-                    prevWrapData = vestaProofData @WrapIPARounds prev.wrapProof
+                    prevWrapData = vestaProofData @WrapIPARounds prevData.proof.wrapProof
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
@@ -1406,19 +1396,17 @@ instance
                       :: Vector n (Vector WrapIPARounds (F WrapField))
                     headSlotPrevWrapBpChalsVec =
                       Vector.drop @slotPad
-                        (map (map F) wd.msgWrapChallengesPadded)
+                        (map (map F) prevData.padded.msgWrapChallengesPadded)
                   in
-                    { prevSg: prev.challengePolynomialCommitment
+                    { prevSg: prevData.proof.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded
                     , prevStepAcc: WeierstrassAffinePoint
-                        { x: F (unwrap prev.challengePolynomialCommitment).x
-                        , y: F (unwrap prev.challengePolynomialCommitment).y
+                        { x: F (unwrap prevData.proof.challengePolynomialCommitment).x
+                        , y: F (unwrap prevData.proof.challengePolynomialCommitment).y
                         }
                     , headPrevEvals: prevHeadPrevEvals
                     , headSlotPrevWrapBpChalsVec
                     }
-              )
-              prev.widthData
 
       -- Recurse into rest.
       restSideInfo =
@@ -1627,7 +1615,7 @@ instance
             -- in (= mpvMax-domain wrap log2) is consumed only at the
             -- BasePrev/dummy site, where `proofMustVerify=false`
             -- masks its downstream effect; InductivePrev reads
-            -- `prev.stepDomainLog2`.
+            -- `prevData.proof.stepDomainLog2`.
             Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
         -- Side-loaded inner proofs in current pickles are universally
         -- `num_chunks_by_default = 1`, so step zk_rows = 3. (The
@@ -1711,7 +1699,6 @@ instance
             -- the existential opened once here rather than around this
             -- whole block. See `Pickles.Verify.PrevProofData`.
             prevData = prevProofDataOf prevVerifier prevCp
-            prev = prevData.proof
 
             prevStepBpChalsExpanded =
               map
@@ -1719,22 +1706,21 @@ instance
                     toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
                       stepEndoScalarF
                 )
-                prev.rawBulletproofChallenges
+                prevData.proof.rawBulletproofChallenges
 
-            wrapPI = wrapPublicInputVP prevVerifier prev
+            wrapPI = wrapPublicInputVP prevVerifier prevData.proof
           in
-            ( \wd ->
                   let
                     prevZetaField =
                       coerce
-                        (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
+                        (toFieldPure prevData.proof.rawPlonk.zeta (F prevVerifier.stepEndo))
 
-                    prevStepGenerator = domainGenerator prev.stepDomainLog2
+                    prevStepGenerator = domainGenerator prevData.proof.stepDomainLog2
 
-                    prevStepShifts = domainShifts prev.stepDomainLog2
+                    prevStepShifts = domainShifts prevData.proof.stepDomainLog2
 
                     prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-                      { domainLog2: prev.stepDomainLog2
+                      { domainLog2: prevData.proof.stepDomainLog2
                       , zkRows: prevVerifier.stepZkRows
                       , pt: prevZetaField
                       }
@@ -1745,17 +1731,17 @@ instance
                     -- proof's real width: padding here would change both
                     -- the challenges digest and the combined inner
                     -- product.
-                    prevDv = Vector.reifyVector prev.oldBulletproofChallenges
+                    prevDv = Vector.reifyVector prevData.proof.oldBulletproofChallenges
                       \prevOldBpChals -> expandDeferredForVerify
-                      { rawPlonk: prev.rawPlonk
-                      , rawBulletproofChallenges: prev.rawBulletproofChallenges
-                      , branchData: prev.branchData
+                      { rawPlonk: prevData.proof.rawPlonk
+                      , rawBulletproofChallenges: prevData.proof.rawBulletproofChallenges
+                      , branchData: prevData.proof.branchData
                       , spongeDigestBeforeEvaluations:
-                          prev.spongeDigestBeforeEvaluations
-                      , chunkedAllEvals: prev.prevEvalsChunked
-                      , pEval0Chunks: prev.pEval0Chunks
+                          prevData.proof.spongeDigestBeforeEvaluations
+                      , chunkedAllEvals: prevData.proof.prevEvalsChunked
+                      , pEval0Chunks: prevData.proof.pEval0Chunks
                       , oldBulletproofChallenges: prevOldBpChals
-                      , domainLog2: prev.stepDomainLog2
+                      , domainLog2: prevData.proof.stepDomainLog2
                       , zkRows: prevVerifier.stepZkRows
                       , srsLengthLog2: prevVerifier.stepSrsLengthLog2
                       , generator: prevStepGenerator
@@ -1773,16 +1759,8 @@ instance
                            }
                     prevPaddedChalPolys = Vector.zipWith
                       (\sg ch -> { sg, challenges: ch })
-                      wd.outerStepChalPolyCommsPadded
-                      wd.msgWrapChallengesPadded
-
-                    prevPaddedWrapBpChals
-                      :: Vector PaddedLength (Vector WrapIPARounds WrapField)
-                    prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
-
-                    prevPaddedStepHashChals
-                      :: Vector PaddedLength (Vector StepIPARounds StepField)
-                    prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
+                      prevData.padded.outerStepChalPolyCommsPadded
+                      prevData.padded.msgWrapChallengesPadded
 
                     fopState =
                       { deferredValues:
@@ -1798,9 +1776,9 @@ instance
                       }
                   in
                     { prevStatement: prevRaw.statement
-                    , stepOpeningSg: prev.challengePolynomialCommitment
-                    , kimchiPrevSg: prev.challengePolynomialCommitment
-                    , wrapProof: prev.wrapProof
+                    , stepOpeningSg: prevData.proof.challengePolynomialCommitment
+                    , kimchiPrevSg: prevData.proof.challengePolynomialCommitment
+                    , wrapProof: prevData.proof.wrapProof
                     , wrapPublicInputArr: wrapPI
                     , prevChalPolys: prevPaddedChalPolys
                     , wrapPlonkRaw:
@@ -1810,17 +1788,15 @@ instance
                         , zeta: SizedF.unwrapF prevDv.plonk.zeta
                         }
                     , wrapPrevEvals: prevData.prevEvals
-                    , wrapBranchData: prev.branchData
-                    , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
+                    , wrapBranchData: prevData.proof.branchData
+                    , wrapSpongeDigest: prevData.proof.spongeDigestBeforeEvaluations
                     , mustVerify: true
-                    , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
+                    , wrapOwnPaddedBpChals: prevData.padded.msgWrapChallengesPadded
                     , fopState
                     , stepAdvicePrevEvals: prevData.prevEvals
                     , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
-                    , prevChallengesForStepHash: prevPaddedStepHashChals
+                    , prevChallengesForStepHash: prevData.padded.oldBulletproofChallengesPadded
                     }
-              )
-              prevData.padded
 
     contrib <- buildSlotAdvice @mpvMax @slotVkChunks
       { publicInput: appInput
@@ -2018,8 +1994,13 @@ instance
             }
         InductivePrev prevCp prevTag ->
           let
-            CompiledProof prev = prevCp
             Tag { verifier: prevVerifier } = prevTag
+
+            -- As in `mkStepAdvice`: the erased proof plus its constants,
+            -- existential opened once. This branch needs only the padded
+            -- accumulators, so there is no unpadded vector to reify and
+            -- no raw record to keep.
+            prevData = prevProofDataOf prevVerifier prevCp
 
             prevStepBpChalsExpanded =
               map
@@ -2027,12 +2008,10 @@ instance
                     toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
                       stepEndoScalarF
                 )
-                prev.rawBulletproofChallenges
+                prevData.proof.rawBulletproofChallenges
 
-            prevWrapPI = wrapPublicInput prevVerifier prevCp
+            prevWrapPI = wrapPublicInputVP prevVerifier prevData.proof
           in
-            runExists
-              ( \(CompiledProofWidthData wd) ->
                   let
                     prevWrapKimchiPrevChals
                       :: Array
@@ -2048,12 +2027,12 @@ instance
                             , challenges: Vector.toUnfoldable ch
                             }
                         )
-                        wd.outerStepChalPolyCommsPadded
-                        wd.msgWrapChallengesPadded
+                        prevData.padded.outerStepChalPolyCommsPadded
+                        prevData.padded.msgWrapChallengesPadded
 
                     prevWrapOracles =
                       ProofFFI.proofOraclesRec slotWrapVK
-                        { proof: prev.wrapProof
+                        { proof: prevData.proof.wrapProof
                         , publicInput: prevWrapPI
                         , prevChallenges: prevWrapKimchiPrevChals
                         }
@@ -2064,7 +2043,7 @@ instance
                       , zeta: prevWrapOracles.zeta
                       , zetaOmega: prevWrapOracles.zeta * domainGenerator slotWrapDomainLog2
                       }
-                    prevWrapData = vestaProofData @WrapIPARounds prev.wrapProof
+                    prevWrapData = vestaProofData @WrapIPARounds prevData.proof.wrapProof
                     prevHeadPrevEvals = StepAllEvals
                       { ftEval1: F prevWrapOracles.ftEval1
                       , publicEvals:
@@ -2087,19 +2066,17 @@ instance
                       :: Vector mpvMax (Vector WrapIPARounds (F WrapField))
                     headSlotPrevWrapBpChalsVec =
                       Vector.drop @slotPad
-                        (map (map F) wd.msgWrapChallengesPadded)
+                        (map (map F) prevData.padded.msgWrapChallengesPadded)
                   in
-                    { prevSg: prev.challengePolynomialCommitment
+                    { prevSg: prevData.proof.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded
                     , prevStepAcc: WeierstrassAffinePoint
-                        { x: F (unwrap prev.challengePolynomialCommitment).x
-                        , y: F (unwrap prev.challengePolynomialCommitment).y
+                        { x: F (unwrap prevData.proof.challengePolynomialCommitment).x
+                        , y: F (unwrap prevData.proof.challengePolynomialCommitment).y
                         }
                     , headPrevEvals: prevHeadPrevEvals
                     , headSlotPrevWrapBpChalsVec
                     }
-              )
-              prev.widthData
 
       restSideInfo =
         { challengePolynomialCommitments: tailChalPolyComms
@@ -3979,7 +3956,7 @@ runMultiProverBody
             , prevEvals: allEvals
             , prevEvalsChunked: chunkedAllEvals
             -- Full `nc`-chunk public eval from the proof (see `chunkedAllEvals`
-            -- note above); recursive consumers read this via `prev.pEval0Chunks`.
+            -- note above); recursive consumers read this via `prevData.proof.pEval0Chunks`.
             , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
             , challengePolynomialCommitment: stepProofSg
             -- The statement's fields, input then output: what the step
