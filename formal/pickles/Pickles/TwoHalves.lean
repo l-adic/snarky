@@ -219,12 +219,6 @@ def IvpReadsExact {nc : ℕ}
 private theorem alias_refl (p : ℕ) (m : Prechallenge) : PrechallengeAlias p m.val m :=
   ⟨0, by omega, by rw [Nat.zero_mul, Nat.add_zero, Nat.mod_eq_of_lt m.2]⟩
 
-/-- A prechallenge list is its own alias, entry by entry. -/
-private theorem forall₂_alias_refl (p : ℕ) :
-    ∀ l : List Prechallenge, List.Forall₂ (PrechallengeAlias p) (l.map Subtype.val) l
-  | [] => .nil
-  | m :: l => .cons (alias_refl p m) (forall₂_alias_refl p l)
-
 /-- The integer a 128-bit cell reads as, at a field wider than 128 bits. -/
 private theorem readNat_of_reads {p : ℕ} [Fact p.Prime] (hbig : 2 ^ 128 < p)
     {W : Valuation (ZMod p)}
@@ -257,8 +251,9 @@ theorem IvpReadsExact.toReads {nc : ℕ}
     fun m hm => reads128_inj hbig hα hm ▸ alias_refl _ _,
     fun m hm => reads128_inj hbig hζ hm ▸ alias_refl _ _, fun ξ₀ hξ₀ => ?_⟩
   obtain ⟨hns, hiff⟩ := hξ ξ₀ hξ₀
-  exact ⟨_, _, _, _, Or.inl rfl, hns, forall₂_alias_refl _ _, alias_refl _ _,
-    Vector.toList_map, hiff⟩
+  exact ⟨_, _, _, _, Or.inl rfl, hns,
+    List.forall₂_map_left_iff.mpr (List.forall₂_same.mpr fun m _ => alias_refl _ m),
+    alias_refl _ _, Vector.toList_map, hiff⟩
 
 end Exact
 
@@ -460,23 +455,12 @@ def Guards (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
 /-- A zip mapped through its second component is the second list mapped. -/
 private theorem zip_map_snd {α β γ : Type} (g : β → γ) :
     ∀ (l₁ : List α) (l₂ : List β), l₁.length = l₂.length →
-      (l₁.zip l₂).map (fun x => g x.2) = l₂.map g
-  | [], [], _ => rfl
-  | [], _ :: _, h => by simp at h
-  | _ :: _, [], h => by simp at h
-  | _ :: l₁, _ :: l₂, h => by
-    simp only [List.zip_cons_cons, List.map_cons, List.cons.injEq, true_and]
-    exact zip_map_snd g l₁ l₂ (by simpa using h)
+      (l₁.zip l₂).map (fun x => g x.2) = l₂.map g := fun l₁ l₂ h => by
+  rw [show (fun x : α × β => g x.2) = g ∘ Prod.snd from rfl, ← List.map_map,
+    List.map_snd_zip h.ge]
 
 /-- The head of a one-entry vector's list. -/
 private theorem vec1_headD {α : Type} (v : Vector α 1) (d : α) : v.toList.headD d = v[0] := by
-  obtain ⟨⟨l⟩, h⟩ := v
-  simp at h
-  match l, h with
-  | [a], _ => rfl
-
-/-- The head of a one-entry vector's list, in `head?` form (what `simp` produces). -/
-private theorem vec1_head? {α : Type} (v : Vector α 1) (d : α) : v.toList.head?.getD d = v[0] := by
   obtain ⟨⟨l⟩, h⟩ := v
   simp at h
   match l, h with
@@ -515,8 +499,8 @@ private theorem sgRows_kept {F : Type} [Field F] (f g : List F → F) :
 private theorem linEvals_one {C : CommitmentCurve} {k : ℕ} (cp : KimchiProof C 1 k)
     (zM zOM : C.ScalarField) :
     cp.linEvals zM zOM = linEvals (cp.evals.map (·.toList.headD 0)) := by
-  ext <;> simp [KimchiProof.linEvals, linEvals, ProofEvaluations.map, PointEvaluations.map,
-    combineAt_one, vec1_head?]
+  ext <;> simp only [KimchiProof.linEvals, linEvals, ProofEvaluations.map, PointEvaluations.map,
+    combineAt_one, Fin.getElem_fin, Vector.getElem_map, vec1_headD]
 
 /-- The combined inner product over a row list is the one over a vector with the same rows. -/
 private theorem cip_congr {F : Type} [Field F] (ξ r : F) {m : ℕ} (rows : List (PointEvaluations F))
@@ -540,9 +524,8 @@ private theorem cip_congr {F : Type} [Field F] (ξ r : F) {m : ℕ} (rows : List
 
 /-- Flattening a list of singletons is mapping. -/
 private theorem flatten_singletons {α β : Type} (f : α → β) :
-    ∀ l : List α, (l.map fun x => [f x]).flatten = l.map f
-  | [] => rfl
-  | x :: l => by simp [flatten_singletons f l]
+    ∀ l : List α, (l.map fun x => [f x]).flatten = l.map f := fun l => by
+  induction l <;> simp_all
 
 /-- One row's segments at one chunk, as a list: its single triple. -/
 private theorem zipSeg_toList_one {C : CommitmentCurve} (comm : Vector C.Point 1)
@@ -637,26 +620,20 @@ private theorem proofEvals_of_headD {F : Type} [Field F] (V : Valuation F)
     pointEvals_of_headD V _ _ h3, pointEvals_of_headD V _ _ h4, pointEvals_of_headD V _ _ h5,
     pointEvals_of_headD V _ _ h6⟩
 
-/-- Cells reading as cells that read prechallenges read those prechallenges. -/
-private theorem forall₂_reads_of_val {p : ℕ} [Fact p.Prime] {W : Valuation (ZMod p)} :
-    ∀ {gs os : List (SizedF 128 (FVar (ZMod p)))} {rs : List Prechallenge},
-      List.Forall₂ (fun c₁ c₂ : SizedF 128 (FVar (ZMod p)) => c₁.val.val W = c₂.val.val W) gs os →
-      List.Forall₂ (Reads128 W) os rs → List.Forall₂ (Reads128 W) gs rs
-  | _, _, _, .nil, .nil => .nil
-  | _, _, _, .cons h hs, .cons h' hs' => .cons (h.trans h') (forall₂_reads_of_val hs hs')
-
 /-- The prechallenges the scalar half's challenge cells read are the ones the group half's
-read, the two cell lists being tied. -/
+output cells read, the group half's statement cells reading as its output cells and the two
+statements' cell lists being tied. -/
 private theorem chals_eq {p q : ℕ} [Fact p.Prime] [Fact q.Prime] (hp : 2 ^ 128 < p)
     (hq : 2 ^ 128 < q) {Vg : Valuation (ZMod p)} {Vs : Valuation (ZMod q)} :
-    ∀ {gs : List (SizedF 128 (FVar (ZMod p)))} {ss : List (SizedF 128 (FVar (ZMod q)))}
+    ∀ {gs os : List (SizedF 128 (FVar (ZMod p)))} {ss : List (SizedF 128 (FVar (ZMod q)))}
       {rs cs : List Prechallenge},
-      List.Forall₂ (Reads128 Vg) gs rs →
+      List.Forall₂ (fun c₁ c₂ : SizedF 128 (FVar (ZMod p)) => c₁.val.val Vg = c₂.val.val Vg) gs os →
+      List.Forall₂ (Reads128 Vg) os rs →
       List.Forall₂ (fun cg cs => ∃ m : Prechallenge, Reads128 Vg cg m ∧ Reads128 Vs cs m) gs ss →
       List.Forall₂ (Reads128 Vs) ss cs → cs = rs
-  | _, _, _, _, .nil, .nil, .nil => rfl
-  | _, _, _, _, .cons hg hgs, .cons ⟨_, hm1, hm2⟩ hts, .cons hs hss => by
-    rw [reads128_inj hq hs hm2, reads128_inj hp hm1 hg, chals_eq hp hq hgs hts hss]
+  | _, _, _, _, _, .nil, .nil, .nil, .nil => rfl
+  | _, _, _, _, _, .cons hv hvs, .cons hg hgs, .cons ⟨_, hm1, hm2⟩ hts, .cons hs hss => by
+    rw [reads128_inj hq hs hm2, reads128_inj hp hm1 (hv.trans hg), chals_eq hp hq hvs hgs hts hss]
 
 /-- `combinedB` over a vector's list is `combinedB` over the vector. -/
 private theorem combinedB_toList {F : Type} [Field F] {k m : ℕ} (v : Vector F k) (r : F)
@@ -780,7 +757,7 @@ theorem twoHalves_iff_schnorr
     rw [frOracles_eq_frPrechallenges, h]
   have hĉeq : ĉ = (ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
-    chals_eq hbase hscalar (forall₂_reads_of_val hbpc hns) ht.chals hĉ
+    chals_eq hbase hscalar hbpc hns ht.chals hĉ
   -- the four checks, in wire terms
   rw [hζ, hα, hβ, hγ, ht.evals, hpz, hpzo, ht.ftEval1] at hcipC
   rw [hζ] at hbC
