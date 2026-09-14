@@ -71,6 +71,9 @@ module Pickles.Verify
   , SomeCompiledProofWidthData
   , mkSomeCompiledProofWidthData
   , Verifier
+  , PaddedAccumulators
+  , PrevProofData
+  , prevProofDataOf
   , VerifiableProof
   , dummyWrapSgOf
   , messageDigests
@@ -401,6 +404,68 @@ toVerifiable (CompiledProof p) =
         }
     )
     p.widthData
+
+-- | A previous proof as the recursive prover needs it: the erased proof,
+-- | the constants it is judged against, and the two views `toVerifiable`
+-- | does not keep.
+-- |
+-- | The step circuit finishes the previous step proof's deferred
+-- | arithmetic, so building its advice means replaying the verifier's
+-- | computation natively to produce the witness. `expandDeferredForVerify`
+-- | draws eight of its sixteen inputs from `proof` and four from
+-- | `verifier`, and `wrapPublicInputVP` needs both.
+-- |
+-- | `prevEvals` is the chunk-collapsed evals form. `VerifiableProof` keeps
+-- | only the chunked form; the recursive plumbing in `Pickles.Prove.Step`
+-- | still consumes single evals, so it is carried here until that moves.
+-- |
+-- | `padded` holds the `Vector PaddedLength` views, which the verifier
+-- | never needs because it folds over unpadded accumulators, and padding
+-- | would change both the challenges digest and the combined inner
+-- | product. They are front-pads of the unpadded arrays already in
+-- | `proof`, so they could be recomputed rather than carried; doing so
+-- | needs the three padding dummies to be shown equal to the ones
+-- | `mkSomeCompiledProofWidthData` used.
+type PrevProofData =
+  { proof :: VerifiableProof
+  , verifier :: Verifier
+  , prevEvals :: AllEvals StepField
+  , padded :: PaddedAccumulators
+  }
+
+-- | The three per-prev accumulators front-padded to `PaddedLength`.
+-- | Field names keep the `Padded` suffix deliberately: `VerifiableProof`
+-- | carries unpadded fields of the same base names, and the two are not
+-- | interchangeable. Padding changes the challenges digest and the
+-- | combined inner product.
+type PaddedAccumulators =
+  { oldBulletproofChallengesPadded :: Vector PaddedLength (Vector StepIPARounds StepField)
+  , msgWrapChallengesPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+  , outerStepChalPolyCommsPadded :: Vector PaddedLength (AffinePoint StepField)
+  }
+
+-- | Build the recursive prover's view of a previous proof. Opens the
+-- | width existential once, here, instead of inside the per-slot advice
+-- | logic.
+prevProofDataOf
+  :: forall mpv stmtVal
+   . Verifier
+  -> CompiledProof mpv stmtVal
+  -> PrevProofData
+prevProofDataOf verifier cp@(CompiledProof p) =
+  { proof: toVerifiable cp
+  , verifier
+  , prevEvals: p.prevEvals
+  , padded:
+      runExists
+        ( \(CompiledProofWidthData wd) ->
+            { oldBulletproofChallengesPadded: wd.oldBulletproofChallengesPadded
+            , msgWrapChallengesPadded: wd.msgWrapChallengesPadded
+            , outerStepChalPolyCommsPadded: wd.outerStepChalPolyCommsPadded
+            }
+        )
+        p.widthData
+  }
 
 -- | The two message digests of the wrap statement, recomputed from the
 -- | verifier's wrap VK and the proof's carried raw messages. This is the

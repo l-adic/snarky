@@ -28,13 +28,16 @@ module Pickles.Prove.Slot
   , isSideLoaded
   , slotNumChunks
   , slotSourceDomainLog2s
+  , slotStepDomainLog2
   , slotWrapDomainLog2
+  , slotWrapVerifierIndex
   ) where
 
 import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Semigroup.Foldable (maximum)
 import Pickles.Field (WrapField)
 import Pickles.Step.Dummy (wrapDomainLog2ForProofsVerified)
@@ -63,9 +66,10 @@ type CompiledTagData =
   -- | verified, 14 for 1, 15 for 2 (`common.ml`).
   , wrapDomainLog2 :: Int
   -- | The imported system's realized step-domain log2, one per branch
-  -- | of that system, deduplicated. Single-branch sources give a
-  -- | one-element array.
-  , stepDomainLog2s :: Array Int
+  -- | of that system, deduplicated. Non-empty for the same reason
+  -- | `AppSpec.rules` is: a system with no branches has no step circuit
+  -- | and so no domain.
+  , stepDomainLog2s :: NonEmptyArray Int
   -- | The imported system's compile-time `num_chunks`. `zk_rows`
   -- | follows from it.
   , numChunks :: Int
@@ -186,9 +190,10 @@ slotSourceDomainLog2s :: Int -> Array Int -> Slot -> Array Int
 slotSourceDomainLog2s branchCount selfStepDomainLog2s slot = case slot.source of
   SelfSource -> selfStepDomainLog2s
   SideLoadedSource -> selfStepDomainLog2s
-  ExternalSource d -> case d.stepDomainLog2s of
-    [ only ] -> Array.replicate branchCount only
-    many -> many
+  ExternalSource d
+    | NEA.length d.stepDomainLog2s == 1 ->
+        Array.replicate branchCount (NEA.head d.stepDomainLog2s)
+    | otherwise -> NEA.toArray d.stepDomainLog2s
 
 -- | The slot source's compile-time `num_chunks`, from which `zk_rows`
 -- | follows. `Self` slots take the enclosing compile's declared value.
@@ -199,3 +204,28 @@ slotNumChunks selfNumChunks slot = case slot.source of
   SelfSource -> selfNumChunks
   ExternalSource d -> d.numChunks
   SideLoadedSource -> 1
+
+-- | The wrap verification key the slot verifies its previous proof
+-- | against. `Self` slots take the enclosing compile's own, which the
+-- | caller supplies because at step-compile time it is read from advice.
+slotWrapVerifierIndex
+  :: VerifierIndex PallasG WrapField -> Slot -> VerifierIndex PallasG WrapField
+slotWrapVerifierIndex selfWrapVerifierIndex slot = case slot.source of
+  SelfSource -> selfWrapVerifierIndex
+  ExternalSource d -> d.wrapVerifierIndex
+  SideLoadedSource -> selfWrapVerifierIndex
+
+-- | The single step-domain log2 of the slot's source, for the places
+-- | that need one scalar rather than the per-branch vector: the dummy
+-- | wrap public input's `branch_data.domain_log2`, and the deferred
+-- | values the slot finalizes.
+-- |
+-- | `Self` slots take the enclosing compile's own realized domain,
+-- | which only exists after its step circuit is built, so the caller
+-- | supplies it. Only single-branch external sources are supported, so
+-- | their one domain is the head of the array.
+slotStepDomainLog2 :: Int -> Slot -> Int
+slotStepDomainLog2 selfStepDomainLog2 slot = case slot.source of
+  SelfSource -> selfStepDomainLog2
+  SideLoadedSource -> selfStepDomainLog2
+  ExternalSource d -> NEA.head d.stepDomainLog2s
