@@ -164,7 +164,7 @@ count, and the side's tokens. -/
 def FopParams.ofEnv {C : KimchiCurve} (E : Env C) (toks : Array Linearization.PolishToken) :
     FopParams C.ScalarField :=
   { sponge := C.frSponge.params
-    endoLam := C.sponge.lam
+    endoLam := C.lam
     endo := E.cvk.endo
     mds := mdsOfParams C.frSponge.params
     toks := toks
@@ -204,10 +204,10 @@ def IvpReadsExact {nc : ℕ}
   ∀ ξ₀, Reads128 V claims.xi ξ₀ →
     List.Forall₂ (Reads128 V) o.bulletproofChallenges r.2.1.toList ∧
     (((↑o.success : CVar C.BaseField).val V = 1) ↔
-      schnorrAt C σ (C.toGroup r.1) (r.2.1.map fun m => endoExpand C.sponge.lam m.val)
-        (endoExpand C.sponge.lam r.2.2.val)
+      schnorrAt C σ (C.toGroup r.1) (r.2.1.map fun m => endoExpand C.lam m.val)
+        (endoExpand C.lam r.2.2.val)
         (S.decode claims.deferred.combinedInnerProduct) (S.decode claims.deferred.b)
-        (combineCommitments C (endoExpand C.sponge.lam ξ₀.val) run.commitments.toArray)
+        (combineCommitments C (endoExpand C.lam ξ₀.val) run.commitments.toArray)
         run.proof)
 
 /-- The exact read implies the read, the base field being wider than 128 bits. -/
@@ -317,7 +317,7 @@ def ScalarHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf 
   FopReadsExact (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) E.cvk.n E.cvk.omega
     (recDigest C (cp.olds.map (·.u))) Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList)
     Sc.claims Sc.evals
-    (endoExpand C.sponge.lam z₀.val) (endoExpand C.sponge.lam a₀.val)
+    (endoExpand C.lam z₀.val) (endoExpand C.lam a₀.val)
     (dv.plonk.beta.val.val Sc.V) (dv.plonk.gamma.val.val Sc.V)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.combinedInnerProduct)
     (Sc.side.decode dv.b) id Sc.V Sc.out
@@ -610,10 +610,10 @@ theorem twoHalves_iff_schnorr
   obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiIff, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
-  have hζ : endoExpand C.sponge.lam z₀.val = (runOracles C E.σ E.cvk cp pub).zeta := by
+  have hζ : endoExpand C.lam z₀.val = (runOracles C E.σ E.cvk cp pub).zeta := by
     simp only [runOracles, fqOracles, FqRun.expand]
     rw [Reads128.unique hinjG hζGz hζG]
-  have hα : endoExpand C.sponge.lam a₀.val = (runOracles C E.σ E.cvk cp pub).alpha := by
+  have hα : endoExpand C.lam a₀.val = (runOracles C E.σ E.cvk cp pub).alpha := by
     simp only [runOracles, fqOracles, FqRun.expand]
     rw [Reads128.unique hinjG hαGa hαG]
   have hβ : Sc.claims.deferredValues.plonk.beta.val.val Sc.V
@@ -643,7 +643,7 @@ theorem twoHalves_iff_schnorr
   have hpzo : Sc.evals.pub.zetaOmega.val Sc.V = (runPubEvals C E.σ E.cvk cp pub).zetaOmega[0] := by
     rw [← ht.pubEvals]; rfl
   rw [hd, ht.ftEval1, ht.pubEvals, ht.evals] at hr' hxiIff
-  have hr : endoExpand C.sponge.lam r'.val = run.evalscale := by
+  have hr : endoExpand C.lam r'.val = run.evalscale := by
     show _ = (frOracles C cp _ _).r
     rw [frOracles_eq_frPrechallenges, hr']
   have hxi : (↑Sc.out.xiCorrect : CVar C.ScalarField).val Sc.V = 1
@@ -662,7 +662,7 @@ theorem twoHalves_iff_schnorr
             (frTranscript (runOracles C E.σ E.cvk cp pub).digest
             (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub)
             cp.evals)).1) →
-      endoExpand C.sponge.lam ξ₀.val = run.polyscale := by
+      endoExpand C.lam ξ₀.val = run.polyscale := by
     rintro ⟨m, hm, hmv⟩
     rw [Reads128.unique hinjS hξS hm, hmv]
     show _ = (frOracles C cp _ _).xi
@@ -678,7 +678,7 @@ theorem twoHalves_iff_schnorr
   rw [hζ, hα, hβ, hγ, hev, hpz, hpzo, ht.ftEval1] at hcipC
   rw [hζ] at hbC
   rw [hζ, hα, hβ, hγ, hev] at hpermC
-  have hcipIff : endoExpand C.sponge.lam ξ₀.val = run.polyscale →
+  have hcipIff : endoExpand C.lam ξ₀.val = run.polyscale →
       ((↑Sc.out.cipCorrect : CVar C.ScalarField).val Sc.V = 1
         ↔ Sc.side.decode Sc.claims.deferredValues.combinedInnerProduct = cipOf run) := by
     intro hξv
@@ -690,7 +690,7 @@ theorem twoHalves_iff_schnorr
         = combinedB (fun i =>
             ((ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
-                (fun m => endoExpand C.sponge.lam m.val))[i]) run.evalscale run.pointFn := by
+                (fun m => endoExpand C.lam m.val))[i]) run.evalscale run.pointFn := by
     simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
     rw [hr, hĉeq, ← Vector.toList_map, combinedB_toList, pointFn_eq]
   have hpermIff : (↑Sc.out.plonkOk : CVar C.ScalarField).val Sc.V = 1

@@ -151,6 +151,11 @@ the tie to this curve's point type. -/
 def KimchiCurve.toGroup (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
   C.groupMap_E ▸ Poseidon.GroupMap.toGroup C.groupMap t
 
+/-- The endomorphism eigenvalue in the scalar field: what the transcript's challenge
+expansion (`endoExpand`) runs at. The eigenvalue itself is an integer on the endomorphism
+spec; this is its image in the field the challenges live in. -/
+def KimchiCurve.lam (C : KimchiCurve) : C.ScalarField := (C.endo.lam : C.ScalarField)
+
 variable (C : KimchiCurve)
 
 /-- Multi-scalar multiplication `∑ i, aᵢ • gᵢ` — dispatched to the curve's `fastMsm`
@@ -300,8 +305,8 @@ sponge's eigenvalue. -/
 def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
   let r := ipaRun C s₀ inp
-  (C.toGroup r.1, r.2.1.map (fun u => endoExpand C.sponge.lam u.val),
-    endoExpand C.sponge.lam r.2.2.val)
+  (C.toGroup r.1, r.2.1.map (fun u => endoExpand C.lam u.val),
+    endoExpand C.lam r.2.2.val)
 
 /-- The standalone verifier's Fiat–Shamir schedule: `transcriptFrom` at the fresh
 sponge `FqSponge.init` — the cold start. -/
@@ -490,8 +495,8 @@ theorem transcriptFrom_eq_ipaPrechallenges (st : Poseidon.State C.BaseField)
     let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
       (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
     (transcriptFrom C ⟨st, []⟩ inp).1 = C.toGroup r.1 ∧
-    (transcriptFrom C ⟨st, []⟩ inp).2.1.toList = r.2.1.map (endoExpand C.sponge.lam) ∧
-    (transcriptFrom C ⟨st, []⟩ inp).2.2 = endoExpand C.sponge.lam r.2.2 := by
+    (transcriptFrom C ⟨st, []⟩ inp).2.1.toList = r.2.1.map (endoExpand C.lam) ∧
+    (transcriptFrom C ⟨st, []⟩ inp).2.2 = endoExpand C.lam r.2.2 := by
   obtain ⟨h1, h2, h3⟩ := ipaRun_eq_ipaPrechallenges C st inp
   simp only [transcriptFrom]
   refine ⟨by rw [h1], ?_, by rw [h3]⟩
@@ -597,7 +602,6 @@ abbrev curve : Ipa.KimchiCurve where
   sponge := FqVesta.spec
   frSponge :=
     { params := fpParams
-      lam := 0
       hsize := by
         show (Poseidon.FpKimchi.roundConstants.map _).size = Poseidon.fullRounds
         rw [Array.size_map]
@@ -634,7 +638,6 @@ abbrev curve : Ipa.KimchiCurve where
   sponge := FqPallas.spec
   frSponge :=
     { params := fqParams
-      lam := 0
       hsize := by
         show (Poseidon.FqKimchi.roundConstants.map _).size = Poseidon.fullRounds
         rw [Array.size_map]

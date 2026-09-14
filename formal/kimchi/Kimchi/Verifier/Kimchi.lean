@@ -272,7 +272,7 @@ def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
 /-- The fr-sponge spec of a commitment curve: the curve's scalar-side Poseidon
 parameters (`C.frSponge.params`, production's `G::sponge_params()`) with `lam := 0` —
 deliberately dead: the fr-sponge path never endo-expands through its own spec.
-`frOracles` expands its two squeezed prechallenges at `C.sponge.lam` (the eigenvalue
+`frOracles` expands its two squeezed prechallenges at `C.lam` (the eigenvalue
 lives on the fq-side spec), and `frDigest`'s `challengeFq`/`challengeNat` never read
 `lam`, so the slot is unused and zeroed. -/
 def frSpec (C : Ipa.KimchiCurve) : FqSponge.Spec C.scalar C.scalar :=
@@ -402,7 +402,7 @@ def fqRun {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
 endo-expanded at the sponge's eigenvalue, the digest cast. -/
 def FqRun.expand (r : FqRun C) : FqOracles C :=
   ⟨(r.beta.val : C.ScalarField), (r.gamma.val : C.ScalarField),
-    endoExpand C.sponge.lam r.alpha.val, endoExpand C.sponge.lam r.zeta.val,
+    endoExpand C.lam r.alpha.val, endoExpand C.lam r.zeta.val,
     castDigest C r.digestElem, r.warm⟩
 
 /-- The fq-sponge oracles: the run, expanded. -/
@@ -474,8 +474,8 @@ theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
         ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C publicComm)
         (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
         (cp.tComm.toList.map fun P => (P.x, P.y))
-      ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.sponge.lam r.1.2.2.1,
-        endoExpand C.sponge.lam r.1.2.2.2,
+      ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.lam r.1.2.2.1,
+        endoExpand C.lam r.1.2.2.2,
         (if r.2.1.val < C.scalar then ((r.2.1.val : ℕ) : C.ScalarField) else 0),
         ⟨r.2.2, []⟩⟩ := by
   simp only [fqOracles, FqRun.expand, fqRun, castDigest, fqPrechallenges, fqSqueezes, coords,
@@ -527,7 +527,7 @@ def frRun {nc k : ℕ} (cp : KimchiProof C nc k)
 /-- The consumer's view of an fr-sponge run: both prechallenges endo-expanded at the
 sponge's eigenvalue — the polyscale and the evalscale. -/
 def FrRun.expand (x : FrRun) : FrOracles C :=
-  ⟨endoExpand C.sponge.lam x.xi.val, endoExpand C.sponge.lam x.r.val⟩
+  ⟨endoExpand C.lam x.xi.val, endoExpand C.lam x.r.val⟩
 
 /-- The fr-sponge oracles: the run, expanded. -/
 def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
@@ -551,7 +551,7 @@ theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
     frOracles C cp fqDig pubEvals =
       let pre := frPrechallenges C.frSponge.params
         (frTranscript fqDig (recDigest C (cp.olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
-      ⟨endoExpand C.sponge.lam pre.1, endoExpand C.sponge.lam pre.2⟩ := by
+      ⟨endoExpand C.lam pre.1, endoExpand C.lam pre.2⟩ := by
   simp only [frOracles, FrRun.expand, frRun, frPrechallenges, frSqueezes, absorbFq,
     challengeNat_fresh]
   rfl

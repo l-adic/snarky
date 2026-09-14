@@ -1753,17 +1753,16 @@ theorem vesta_endoMul_complete {t : AffinePoint (FVar Fq)} {cv : FVar Fq} {xv yv
         CircuitType.ReadsAs (val := Fq) st cv ((n : ℕ) : Fq))
       (Snarky.Kimchi.endoMul (c := KimchiConstraint Fq) HasEndo.vesta.endo 32 t ⟨cv⟩)
       (fun r st' => OnCurveAs HasEndo.vesta.W st' r
-        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
+        ((Poseidon.FqSponge.endoExpand ((HasEndo.vesta.lam : ℤ) : Fp) n : Fp)
           • Point.some _ _ hT)) := by
   have hcard : n < LawfulToNat.card (F := Fq) := by
     show n < PALLAS_SCALAR_CARD
     exact lt_of_lt_of_le hn (by decide)
   have hrep : ToNat.toNat ((n : ℕ) : Fq) = n := LawfulToNat.toNat_natCast n hcard
   have hfits : ToNat.toNat ((n : ℕ) : Fq) < 2 ^ 128 := by rw [hrep]; exact hn
-  have hexp : (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
+  have hexp : (Poseidon.FqSponge.endoExpand ((HasEndo.vesta.lam : ℤ) : Fp) n : Fp)
       = ((endoExpandZ HasEndo.vesta.lam n : ℤ) : Fp) := by
-    rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-      endoExpandZ_cast (by decide) (by decide)]
+    rw [endoExpandZ_cast (by decide) (by decide)]
   have hgen := endoMul_complete HasEndo.vesta t ⟨cv⟩ xv yv ((n : ℕ) : Fq) hT hfits
   intro st hst
   obtain ⟨r, st', hrun, hsat, hpt⟩ := hgen st hst
@@ -1792,7 +1791,7 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
         OnCurveAt Vesta.curve.toAffine V r (endoExpandZ HasEndo.vesta.lam m • T)) :
     ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V t T →
       OnCurveAt Vesta.curve.toAffine V r
-        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp) • T) := by
+        ((Poseidon.FqSponge.endoExpand ((HasEndo.vesta.lam : ℤ) : Fp) n : Fp) • T) := by
   intro T hT
   obtain ⟨m, hm, hmread, hseq⟩ := h T hT
   have hmn : m = n :=
@@ -1801,8 +1800,7 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
       (Set.mem_Iio.mpr (lt_of_lt_of_le hn (by decide)))
       (by rw [← hmread, hread])
   subst hmn
-  rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-    ← endoExpandZ_cast (by decide) (by decide), Int.cast_smul_eq_zsmul]
+  rw [← endoExpandZ_cast (by decide) (by decide), Int.cast_smul_eq_zsmul]
   exact hseq
 
 end EndoMul

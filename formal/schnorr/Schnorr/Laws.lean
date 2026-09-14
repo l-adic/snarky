@@ -134,7 +134,7 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
     Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC) with hUUdef
   set GG : Vesta.curve.toAffine.Point := Point.some gen.x gen.y gen_nonsingular with hGGdef
   set CC : Vesta.curve.toAffine.Point :=
-    (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
+    (Poseidon.FqSponge.endoExpand ((_root_.Pasta.vestaLam : ℤ) : Fp)
       (preChallenge raw.pk raw.u) : Fp) • PK with hCCdef
   set ZG : Vesta.curve.toAffine.Point := raw.z.toScalarZ • GG with hZGdef
   -- a cell reading, packed

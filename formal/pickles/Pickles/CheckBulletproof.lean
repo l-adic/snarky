@@ -937,19 +937,19 @@ structure IvpCurve (C : KimchiCurve) where
   horner : ∀ (n : ℕ) (bvW : List (C.Point × Bool)), (∀ h, bvW.getLast? = some h → h.2 = true) →
     (SWPoint.equivPoint C.E).symm (hornerCombine (endoExpandZ e.d.lam n)
         (bvW.map fun b => (SWPoint.equivPoint C.E b.1, b.2)))
-      = combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n)
+      = combineCommitments C (Poseidon.FqSponge.endoExpand C.lam n)
           ((bvW.filter (·.2)).map (·.1)).toArray
   /-- The gadgets' Schnorr equation, read back in the wire group, is the wire's `schnorrAt`. -/
   schnorr : ∀ (σ : SRS C.Point) (U P : C.Point) (chals : Vector C.ScalarField σ.k) (c₀ : ℕ)
     (cip b z₁ z₂ : ℤ) (pr : Ipa.Proof C σ.k) (ns : List ℕ),
-    chals.toList = ns.map (Poseidon.FqSponge.endoExpand C.sponge.lam) →
+    chals.toList = ns.map (Poseidon.FqSponge.endoExpand C.lam) →
     pr.z1 = (z₁ : C.ScalarField) → pr.z2 = (z₂ : C.ScalarField) →
     (SchnorrPoint e.d.lam c₀ (SWPoint.equivPoint C.E U) (SWPoint.equivPoint C.E P)
         (lrSum (List.zipWith (lrTerm e.d.lam) (pr.lr.toList.map fun q =>
           (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2)) ns))
         (SWPoint.equivPoint C.E pr.delta) (SWPoint.equivPoint C.E pr.sg)
         (SWPoint.equivPoint C.E σ.h) cip b z₁ z₂
-      ↔ schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀)
+      ↔ schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀)
           (cip : C.ScalarField) (b : C.ScalarField) P pr)
 
 /-- What a side supplies beyond its curve: how its shifted-scalar ladder reads (`R`); the
@@ -1034,12 +1034,12 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
       (chals : Vector C.ScalarField σ.k),
       (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
       (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
       ((↑o.success : CVar C.BaseField).val V = 1 ↔
-        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
-          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.lam n.val)
             ((bvW.filter (·.2)).map (·.1)).toArray)
           ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩)⌝⦄ := by
   have hcast : CastInj128 C.BaseField :=
@@ -1053,7 +1053,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
   obtain ⟨U, ns, c₀, wcip, wb, w₁, w₂, hU, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ := ho
   have hlen' : ns.length = σ.k := by rw [hlen, List.length_map, Vector.length_toList]
   refine ⟨(SWPoint.equivPoint C.E).symm U, ns, c₀,
-    ⟨(ns.map fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val).toArray,
+    ⟨(ns.map fun m => Poseidon.FqSponge.endoExpand C.lam m.val).toArray,
       by simp [hlen']⟩, ?_, hns, hc, by simp, ⟨wcip, hpcip⟩, ?_⟩
   · beta_reduce at hU
     generalize C.toGroup (o.t.val V) = T at hU ⊢
@@ -1105,12 +1105,12 @@ def IvpSide.OpeningReads (S : IvpSide C V ops) (sv : SpongeVar C.BaseField)
       (chals : Vector C.ScalarField σ.k),
       (U = C.toGroup (o.t.val V) ∨ U = -C.toGroup (o.t.val V)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
       (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
       ((↑o.success : CVar C.BaseField).val V = 1 ↔
-        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
-          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam n.val)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.lam n.val)
             ((bvW.filter (·.2)).map (·.1)).toArray)
           ⟨lrW, δW, S.decode inp.opening.z1, S.decode inp.opening.z2, sgW⟩))
 
@@ -1506,7 +1506,7 @@ private theorem vesta_zsmul_eq (z : ℤ) (X : Vesta.curve.toAffine.Point) :
 
 /-- The gadgets' integer endo-expansion at Vesta's eigenvalue casts to the wire's. -/
 private theorem vesta_endoExpandZ_cast (n : ℕ) :
-    ((endoExpandZ Pasta.vestaLam n : ℤ) : Fp) = endoExpand Poseidon.FqVesta.spec.lam n :=
+    ((endoExpandZ Pasta.vestaLam n : ℤ) : Fp) = endoExpand IpaVesta.curve.lam n :=
   endoExpandZ_cast (by decide) (by decide) Pasta.vestaLam n
 
 /-- The inverse's representative does not depend on how the order is named. -/
@@ -1521,8 +1521,8 @@ private theorem vesta_lrTerm_eq (q : SWPoint Vesta.curve × SWPoint Vesta.curve)
     (SWPoint.equivPoint Vesta.curve).symm
         (lrTerm Pasta.vestaLam ((SWPoint.equivPoint Vesta.curve) q.1,
           (SWPoint.equivPoint Vesta.curve) q.2) n)
-      = ((endoExpand Poseidon.FqVesta.spec.lam n)⁻¹).val • q.1
-        + (endoExpand Poseidon.FqVesta.spec.lam n).val • q.2 := by
+      = ((endoExpand IpaVesta.curve.lam n)⁻¹).val • q.1
+        + (endoExpand IpaVesta.curve.lam n).val • q.2 := by
   unfold lrTerm
   rw [map_add]
   rw [map_nsmul, map_zsmul]
@@ -1539,7 +1539,7 @@ private theorem vesta_zipTerms :
         (l.map fun q =>
           ((SWPoint.equivPoint Vesta.curve) q.1, (SWPoint.equivPoint Vesta.curve) q.2)) ns).map
         (SWPoint.equivPoint Vesta.curve).symm
-      = (l.zip (ns.map (endoExpand Poseidon.FqVesta.spec.lam))).map
+      = (l.zip (ns.map (endoExpand IpaVesta.curve.lam))).map
           fun x => (x.2⁻¹).val • x.1.1 + x.2.val • x.1.2
   | [], _ => by simp
   | _ :: _, [] => by simp
@@ -1561,7 +1561,7 @@ private theorem vesta_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Vesta.curv
     (SWPoint.equivPoint Vesta.curve).symm
         (hornerCombine (endoExpandZ Pasta.vestaLam n)
           (bvW.map fun b => ((SWPoint.equivPoint Vesta.curve) b.1, b.2)))
-      = combineCommitments IpaVesta.curve (endoExpand Poseidon.FqVesta.spec.lam n)
+      = combineCommitments IpaVesta.curve (endoExpand IpaVesta.curve.lam n)
           ((bvW.filter (·.2)).map (·.1)).toArray := by
   have hn : ∀ x : SWPoint Vesta.curve, PALLAS_BASE_CARD • x = 0 := IpaVesta.curve.card_nsmul
   have hlast' : ∀ h, (bvW.map fun b => ((SWPoint.equivPoint Vesta.curve) b.1, b.2)).getLast?
@@ -1594,7 +1594,7 @@ readings' images under `SWPoint.equivPoint`, is the wire verifier's `schnorrAt` 
 expanded challenges and the cast scalars. -/
 theorem schnorrPoint_iff_schnorrAt_vesta (σ : SRS (SWPoint Vesta.curve)) (U P : SWPoint Vesta.curve)
     (chals : Vector Fp σ.k) (c₀ : ℕ) (cip b z₁ z₂ : ℤ) (pr : Ipa.Proof IpaVesta.curve σ.k)
-    (ns : List ℕ) (hchals : chals.toList = ns.map (endoExpand Poseidon.FqVesta.spec.lam))
+    (ns : List ℕ) (hchals : chals.toList = ns.map (endoExpand IpaVesta.curve.lam))
     (hz1 : pr.z1 = (z₁ : Fp)) (hz2 : pr.z2 = (z₂ : Fp)) :
     SchnorrPoint Pasta.vestaLam c₀ (SWPoint.equivPoint Vesta.curve U)
         (SWPoint.equivPoint Vesta.curve P)
@@ -1602,7 +1602,7 @@ theorem schnorrPoint_iff_schnorrAt_vesta (σ : SRS (SWPoint Vesta.curve)) (U P :
           ((SWPoint.equivPoint Vesta.curve) q.1, (SWPoint.equivPoint Vesta.curve) q.2)) ns))
         (SWPoint.equivPoint Vesta.curve pr.delta) (SWPoint.equivPoint Vesta.curve pr.sg)
         (SWPoint.equivPoint Vesta.curve σ.h) cip b z₁ z₂
-      ↔ schnorrAt IpaVesta.curve σ U chals (endoExpand Poseidon.FqVesta.spec.lam c₀) (cip : Fp)
+      ↔ schnorrAt IpaVesta.curve σ U chals (endoExpand IpaVesta.curve.lam c₀) (cip : Fp)
           (b : Fp) P pr := by
   have hsm : ∀ (z : ℤ) (X : Vesta.curve.toAffine.Point), z • X = ((z : Fp).val : ℕ) • X :=
     vesta_zsmul_eq
@@ -1619,19 +1619,19 @@ theorem schnorrPoint_iff_schnorrAt_vesta (σ : SRS (SWPoint Vesta.curve)) (U P :
   dsimp only
   rw [hz1, hz2, ← Array.foldl_toList, Array.toList_zip, hfold]
   have hl1 : pr.lr.toArray.toList = pr.lr.toList := rfl
-  have hl2 : chals.toArray.toList = ns.map (endoExpand Poseidon.FqVesta.spec.lam) := hchals
+  have hl2 : chals.toArray.toList = ns.map (endoExpand IpaVesta.curve.lam) := hchals
   rw [hl1, hl2]
   have hZ : List.zipWith (lrTerm Pasta.vestaLam) (List.map (fun q =>
         ((SWPoint.equivPoint Vesta.curve) q.1, (SWPoint.equivPoint Vesta.curve) q.2))
           pr.lr.toList) ns
-      = ((pr.lr.toList.zip (ns.map (endoExpand Poseidon.FqVesta.spec.lam))).map
+      = ((pr.lr.toList.zip (ns.map (endoExpand IpaVesta.curve.lam))).map
           fun x => (x.2⁻¹).val • x.1.1 + x.2.val • x.1.2).map
             (SWPoint.equivPoint Vesta.curve) := by
     rw [← hzip, List.map_map]
     simp only [Function.comp_def, AddEquiv.apply_symm_apply, List.map_id']
-  have key1 : (SWPoint.equivPoint Vesta.curve) ((endoExpand Poseidon.FqVesta.spec.lam c₀).val •
+  have key1 : (SWPoint.equivPoint Vesta.curve) ((endoExpand IpaVesta.curve.lam c₀).val •
         (P + (cip : Fp).val • U + ((pr.lr.toList.zip
-          (ns.map (endoExpand Poseidon.FqVesta.spec.lam))).map
+          (ns.map (endoExpand IpaVesta.curve.lam))).map
             fun x => (x.2⁻¹).val • x.1.1 + x.2.val • x.1.2).sum) + pr.delta)
       = endoExpandZ Pasta.vestaLam c₀ • ((SWPoint.equivPoint Vesta.curve) P +
           cip • (SWPoint.equivPoint Vesta.curve) U +
@@ -1729,7 +1729,7 @@ private theorem pallas_zsmul_eq (z : ℤ) (X : Pallas.curve.toAffine.Point) :
 
 /-- The gadgets' integer endo-expansion at Pallas's eigenvalue casts to the wire's. -/
 private theorem pallas_endoExpandZ_cast (n : ℕ) :
-    ((endoExpandZ Pasta.pallasLam n : ℤ) : Fq) = endoExpand Poseidon.FqPallas.spec.lam n :=
+    ((endoExpandZ Pasta.pallasLam n : ℤ) : Fq) = endoExpand IpaPallas.curve.lam n :=
   endoExpandZ_cast (by decide) (by decide) Pasta.pallasLam n
 
 /-- A round term of `lr_prod`, read back in the wire group, is the wire's round term at the
@@ -1738,8 +1738,8 @@ private theorem pallas_lrTerm_eq (q : SWPoint Pallas.curve × SWPoint Pallas.cur
     (SWPoint.equivPoint Pallas.curve).symm
         (lrTerm Pasta.pallasLam ((SWPoint.equivPoint Pallas.curve) q.1,
           (SWPoint.equivPoint Pallas.curve) q.2) n)
-      = ((endoExpand Poseidon.FqPallas.spec.lam n)⁻¹).val • q.1
-        + (endoExpand Poseidon.FqPallas.spec.lam n).val • q.2 := by
+      = ((endoExpand IpaPallas.curve.lam n)⁻¹).val • q.1
+        + (endoExpand IpaPallas.curve.lam n).val • q.2 := by
   unfold lrTerm
   rw [map_add]
   rw [map_nsmul, map_zsmul]
@@ -1757,7 +1757,7 @@ private theorem pallas_zipTerms :
         (l.map fun q =>
           ((SWPoint.equivPoint Pallas.curve) q.1, (SWPoint.equivPoint Pallas.curve) q.2)) ns).map
         (SWPoint.equivPoint Pallas.curve).symm
-      = (l.zip (ns.map (endoExpand Poseidon.FqPallas.spec.lam))).map
+      = (l.zip (ns.map (endoExpand IpaPallas.curve.lam))).map
           fun x => (x.2⁻¹).val • x.1.1 + x.2.val • x.1.2
   | [], _ => by simp
   | _ :: _, [] => by simp
@@ -1779,7 +1779,7 @@ private theorem pallas_hornerCombine_eq (n : ℕ) (bvW : List (SWPoint Pallas.cu
     (SWPoint.equivPoint Pallas.curve).symm
         (hornerCombine (endoExpandZ Pasta.pallasLam n)
           (bvW.map fun b => ((SWPoint.equivPoint Pallas.curve) b.1, b.2)))
-      = combineCommitments IpaPallas.curve (endoExpand Poseidon.FqPallas.spec.lam n)
+      = combineCommitments IpaPallas.curve (endoExpand IpaPallas.curve.lam n)
           ((bvW.filter (·.2)).map (·.1)).toArray := by
   have hn : ∀ x : SWPoint Pallas.curve, PALLAS_SCALAR_CARD • x = 0 := IpaPallas.curve.card_nsmul
   have hlast' : ∀ h, (bvW.map fun b => ((SWPoint.equivPoint Pallas.curve) b.1, b.2)).getLast?
@@ -1814,7 +1814,7 @@ expanded challenges and the cast scalars. -/
 theorem schnorrPoint_iff_schnorrAt_pallas (σ : SRS (SWPoint Pallas.curve))
     (U P : SWPoint Pallas.curve)
     (chals : Vector Fq σ.k) (c₀ : ℕ) (cip b z₁ z₂ : ℤ) (pr : Ipa.Proof IpaPallas.curve σ.k)
-    (ns : List ℕ) (hchals : chals.toList = ns.map (endoExpand Poseidon.FqPallas.spec.lam))
+    (ns : List ℕ) (hchals : chals.toList = ns.map (endoExpand IpaPallas.curve.lam))
     (hz1 : pr.z1 = (z₁ : Fq)) (hz2 : pr.z2 = (z₂ : Fq)) :
     SchnorrPoint Pasta.pallasLam c₀ (SWPoint.equivPoint Pallas.curve U)
         (SWPoint.equivPoint Pallas.curve P)
@@ -1822,7 +1822,7 @@ theorem schnorrPoint_iff_schnorrAt_pallas (σ : SRS (SWPoint Pallas.curve))
           ((SWPoint.equivPoint Pallas.curve) q.1, (SWPoint.equivPoint Pallas.curve) q.2)) ns))
         (SWPoint.equivPoint Pallas.curve pr.delta) (SWPoint.equivPoint Pallas.curve pr.sg)
         (SWPoint.equivPoint Pallas.curve σ.h) cip b z₁ z₂
-      ↔ schnorrAt IpaPallas.curve σ U chals (endoExpand Poseidon.FqPallas.spec.lam c₀) (cip : Fq)
+      ↔ schnorrAt IpaPallas.curve σ U chals (endoExpand IpaPallas.curve.lam c₀) (cip : Fq)
           (b : Fq) P pr := by
   have hsm : ∀ (z : ℤ) (X : Pallas.curve.toAffine.Point), z • X = ((z : Fq).val : ℕ) • X :=
     pallas_zsmul_eq
@@ -1839,19 +1839,19 @@ theorem schnorrPoint_iff_schnorrAt_pallas (σ : SRS (SWPoint Pallas.curve))
   dsimp only
   rw [hz1, hz2, ← Array.foldl_toList, Array.toList_zip, hfold]
   have hl1 : pr.lr.toArray.toList = pr.lr.toList := rfl
-  have hl2 : chals.toArray.toList = ns.map (endoExpand Poseidon.FqPallas.spec.lam) := hchals
+  have hl2 : chals.toArray.toList = ns.map (endoExpand IpaPallas.curve.lam) := hchals
   rw [hl1, hl2]
   have hZ : List.zipWith (lrTerm Pasta.pallasLam) (List.map (fun q =>
         ((SWPoint.equivPoint Pallas.curve) q.1, (SWPoint.equivPoint Pallas.curve) q.2))
           pr.lr.toList) ns
-      = ((pr.lr.toList.zip (ns.map (endoExpand Poseidon.FqPallas.spec.lam))).map
+      = ((pr.lr.toList.zip (ns.map (endoExpand IpaPallas.curve.lam))).map
           fun x => (x.2⁻¹).val • x.1.1 + x.2.val • x.1.2).map
             (SWPoint.equivPoint Pallas.curve) := by
     rw [← hzip, List.map_map]
     simp only [Function.comp_def, AddEquiv.apply_symm_apply, List.map_id']
-  have key1 : (SWPoint.equivPoint Pallas.curve) ((endoExpand Poseidon.FqPallas.spec.lam c₀).val •
+  have key1 : (SWPoint.equivPoint Pallas.curve) ((endoExpand IpaPallas.curve.lam c₀).val •
         (P + (cip : Fq).val • U + ((pr.lr.toList.zip
-          (ns.map (endoExpand Poseidon.FqPallas.spec.lam))).map
+          (ns.map (endoExpand IpaPallas.curve.lam))).map
             fun x => (x.2⁻¹).val • x.1.1 + x.2.val • x.1.2).sum) + pr.delta)
       = endoExpandZ Pasta.pallasLam c₀ • ((SWPoint.equivPoint Pallas.curve) P +
           cip • (SWPoint.equivPoint Pallas.curve) U +

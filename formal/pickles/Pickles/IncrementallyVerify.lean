@@ -257,11 +257,11 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
       List.Forall₂ (Reads128 V) o.bulletproofChallenges ns ∧
       List.Forall₂ (PrechallengeAlias C.base) (r.2.1.toList.map Subtype.val) ns ∧
       PrechallengeAlias C.base r.2.2.val c₀ ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
       (((↑o.success : CVar C.BaseField).val V = 1) ↔
-        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
-          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam ξ₀.val)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.lam ξ₀.val)
             run.commitments.toArray)
           run.proof)
 
