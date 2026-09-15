@@ -32,7 +32,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), PrevSlot(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -45,9 +45,9 @@ prepareProve srs = do
     @NrrRules
     @(F StepField)
     @Unit
-    @NoSlots
     @1
     noAdvice
+    []
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 nrrEntry)
   let
@@ -65,9 +65,9 @@ prepareProve srs = do
     @TreeRules
     @(F StepField)
     @(F StepField)
-    @(Slots2 0 2)
     @1
     noAdvice
+    [ 0, 2 ]
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
     (tuple1 treeEntry)
 

@@ -21,7 +21,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), NoSlots, StepField, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), StepField, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Pickles.Prove.Codecs (decodeVerifiableProof, decodeVerifier, encodeVerifiableProof, encodeVerifier)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
@@ -46,9 +46,9 @@ spec = describe "Pickles.Prove.Codecs" do
         @NrrRules
         @(F StepField)
         @Unit
-        @NoSlots
         @1
         noAdvice
+        []
         { srs: { vestaSrs, pallasSrs }
         , debug: false
         , wrapDomainOverride: Nothing

@@ -27,7 +27,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -142,9 +142,9 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @NoRecursionInputRules
       @Unit
       @(F StepField)
-      @NoSlots
       @1
       noAdvice
+      []
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -201,9 +201,9 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @SideLoadedMainRules
       @Unit
       @(F StepField)
-      @(Slots1 2)
       @1
       noAdvice
+      [ 2 ]
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

@@ -13,9 +13,9 @@
 -- | rule's prevs is the tuple chain
 -- | `Slot k₁ n₁ s₁ /\ Slot k₂ n₂ s₂ /\ … /\ Unit`.
 -- |
--- | Step- and wrap-side carriers (`Pickles.Step.Slots`,
--- | `Pickles.Wrap.Slots`) parameterise their type classes by these
--- | descriptors so both sides agree on the slot shape.
+-- | The step-side carrier (`Pickles.Step.Slots`) parameterises its
+-- | type classes by these descriptors. The wrap side takes its slot
+-- | widths as a runtime `Vector mpv Int` instead.
 module Pickles.Slots
   ( SlotKind
   , Compiled

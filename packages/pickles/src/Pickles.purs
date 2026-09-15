@@ -11,7 +11,6 @@ module Pickles
   ( module Pickles.Field
   , module Pickles.ProofsVerified
   , module Pickles.Slots
-  , module Pickles.Wrap.Slots
   , module Pickles.Types
   , module Pickles.Prove.Step
   , module Pickles.Prove.Compile
@@ -25,4 +24,3 @@ import Pickles.Prove.Step (StepRule)
 import Pickles.Slots (Compiled, SideLoaded, Slot, SlotKind)
 import Pickles.Types (PaddedLength, StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.Verify (VerifiableProof, Verifier, mkVerifier, toVerifiable, verify, verifyBatch, wrapPublicInputOf)
-import Pickles.Wrap.Slots (NoSlots, Slots1, Slots2)

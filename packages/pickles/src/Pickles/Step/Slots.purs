@@ -20,7 +20,7 @@
 -- | wrap proof's chunks count equals its VK's chunks count, which
 -- | is the protocol invariant.
 -- |
--- | Step-side analog of `Pickles.Wrap.Slots`. Reference: OCaml
+-- | Reference: OCaml
 -- | `per_proof_witness.ml`, `step_main.ml`'s `exists_prevs`,
 -- | `wrap_main.ml:80`'s `~num_chunks`.
 module Pickles.Step.Slots

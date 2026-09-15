@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), Verifier, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Advice (badAdvice)
@@ -322,9 +322,9 @@ compileTxCircuit chainId lagrangeCache srs = do
       @TxnSnarkRules
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @(Slots2 2 2)
       @1
       badAdvice
+      [ 2, 2 ]
       cfg
       rules
   let

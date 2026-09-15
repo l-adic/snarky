@@ -2,11 +2,10 @@
 -- |
 -- | Parameterized by:
 -- | - @branches: number of step circuit variants
--- | - @slots: per-slot widths of `Max_widths_by_slot.maxes`, encoded
--- |   as one of `NoSlots` (mpv=0), `Slots1 w` (mpv=1), or
--- |   `Slots2 w0 w1` (mpv=2) from `Pickles.Wrap.Slots`. The `mpv`
--- |   parameter is derived from `slots` via the `slots -> mpv`
--- |   functional dependency on `PadSlots`.
+-- | - @mpv: number of prev slots
+-- |
+-- | The per-slot widths of `Max_widths_by_slot.maxes` arrive as a
+-- | runtime `Vector mpv Int` argument, not as a type-level shape.
 -- |
 -- | The circuit, in OCaml exists order (matching `wrap_main.ml`):
 -- |   1. Req.Which_branch     — single field
@@ -30,7 +29,6 @@ module Pickles.Wrap.Main
   , WrapMainInput
   , WrapMainInputVar
   , wrapMain
-  , wrapMainForPrevs
   ) where
 
 import Prelude
@@ -70,8 +68,6 @@ import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
-import Pickles.Wrap.Slots (class PadSlots, slotWidthsOf)
-import Pickles.Wrap.SlotsFromSpec (class SlotsFromSpec)
 import Pickles.Wrap.Types (PrevProofState(..), StatementPacked(..))
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare, class Mul)
@@ -79,12 +75,11 @@ import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (class CheckedType, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
-import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, curveParams, fromInt)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
@@ -372,19 +367,17 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -- | call mirrors one OCaml `Req.*` request.
 -------------------------------------------------------------------------------
 
--- | The type-level-carrier entry point: derives the widths and the
--- | padded-challenge allocation from `slots` and hands them to
+-- | Allocates the slot challenges and hands them, with the widths, to
 -- | `wrapMainCore`. Everything slot-shaped about the wrap circuit lives
 -- | in these few lines.
+-- |
+-- | The widths are a value: one `max_local_max_proofs_verified` per
+-- | slot, supplied by whoever knows the application's rules. `mpv` is
+-- | their count and stays type-level because it sizes the statement
+-- | vectors the circuit reads.
 wrapMain
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
    . PrimeField WrapField
-  -- `slots` carries the per-slot widths; `mpv` is derived via the
-  -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
-  -- supported today: `NoSlots` (mpv=0), `Slots1 w` (mpv=1),
-  -- `Slots2 w0 w1` (mpv=2). The `Compare mpv 3 LT` constraint
-  -- propagates into `wrapVerify`; today's pickles caps `mpv` at 2.
-  => PadSlots slots mpv
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
   => Reflectable nonSgBases Int
@@ -402,15 +395,6 @@ wrapMain
   => Add sg3 wCoeffN sg4
   => Add sg4 wCoeffN sg5
   => Add sg5 indexSigmaN nonSgBases
-  -- `exists` on the `oldBpChals` advice field needs both `CircuitType`
-  -- and `CheckedType` instances for the `slots` shape. This is the
-  -- obstacle to making the carrier runtime: allocation is type-directed,
-  -- even though the circuit body below needs only the widths.
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
@@ -420,8 +404,10 @@ wrapMain
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks
+  -- | One `max_local_max_proofs_verified` per slot, in slot order.
+  -> Vector mpv Int
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-wrapMain config input advice =
+wrapMain config input advice widths =
   wrapMainCore @branches @stepChunks config input advice widths
     ( do
         -- Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
@@ -434,8 +420,6 @@ wrapMain config input advice =
         pure (padPerSlot (map const_ dummyIpaChallenges.wrapExpanded) slotsValue)
     )
   where
-  widths = slotWidthsOf (Proxy :: Proxy slots)
-
   -- Front-pad each slot's stack to `PaddedLength` and square the result
   -- up to `Vector mpv (Vector PaddedLength _)`. The lengths come from
   -- `widths`, so both conversions are total; they throw rather than
@@ -653,11 +637,9 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
   let stepAccsAffine = map unwrapPt stepAccs
 
   -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
-  -- Returns a `slots`-shaped value (one of `NoSlots`, `Slots1 w`,
-  -- `Slots2 w0 w1`). The `PadSlots` class projects this into a
-  -- uniform `Vector mpv (Vector PaddedLength a)`, prepending the
-  -- right number of dummy bp-challenge stacks per slot to mirror
-  -- OCaml's `Wrap_hack.Checked.pad_challenges`.
+  -- Allocates one bp-challenge stack per slot at that slot's own
+  -- width, then front-pads each to `PaddedLength` with dummy stacks,
+  -- mirroring OCaml's `Wrap_hack.Checked.pad_challenges`.
   paddedChalsAll <- allocPaddedChals
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
@@ -991,48 +973,3 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
 
   label "block6-wrapVerify" $ wrapVerify ivpParams fullIvpInput verifyInput
 
--- | Spec-in API surface for `wrapMain`: takes `@prevsSpec` and
--- | derives `slots` via `SlotsFromSpec`. Used by single-rule
--- | circuit-diff fixtures that have a `prevsSpec` to hand and would
--- | otherwise hand-write the corresponding `slots` shape. Multi-rule
--- | wraps can't go through this (`prevsSpec -> slots` funcdep
--- | doesn't compose across rules) and call `wrapMain @branches @slots`
--- | directly.
-wrapMainForPrevs
-  :: forall @branches @prevsSpec @stepChunks numChunksPred slots mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
-   . PrimeField WrapField
-  => SlotsFromSpec prevsSpec slots
-  => PadSlots slots mpv
-  => Reflectable stepChunks Int
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
-  => Compare 0 stepChunks LT
-  => Add 1 numChunksPred stepChunks
-  => Mul 7 stepChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 stepChunks wCoeffN
-  => Mul 6 stepChunks indexSigmaN
-  => Mul 44 stepChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add stepChunks 1 sg1
-  => Add sg1 stepChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => Reflectable branches Int
-  => Reflectable mpv Int
-  => Add 1 branchesPred branches
-  => Compare mpv 3 LT
-  => Add mpv nonSgBases totalBases
-  => Add 1 totalBasesPred totalBases
-  => WrapMainConfig branches stepChunks
-  -> WrapMainInputVar
-  -> WrapAdvice mpv stepChunks
-  -> Snarky WrapField (KimchiConstraint WrapField) r Unit
-wrapMainForPrevs = wrapMain @branches @slots @stepChunks

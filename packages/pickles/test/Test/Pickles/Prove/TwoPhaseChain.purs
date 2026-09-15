@@ -22,17 +22,16 @@ import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Data.Either (Either(..))
-import Data.Functor.Product (Product)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (Tuple1, tuple1, tuple2, (/\))
-import Data.Vector (Vector, (:<))
+import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), Compiled, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -157,9 +156,9 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       @TwoPhaseChainRules
       @Unit
       @(F StepField)
-      @(Product (Vector 1) NoSlots)
       @1
       noAdvice
+      [ 1 ]
       cfg
       rules
 

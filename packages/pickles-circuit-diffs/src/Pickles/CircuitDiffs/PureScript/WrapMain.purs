@@ -11,7 +11,6 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
-import Data.Tuple.Nested (Tuple1)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -19,14 +18,11 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (StepMainSimpleChainParams, compileStepMainSimpleChain)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO)
 import Pickles.Wrap.Advice (WrapAdvice)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -58,7 +54,7 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
     dummyAdvice :: WrapAdvice 1 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @(Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit))) @1 config stmt dummyAdvice)
+    (\stmt -> wrapMain @1 @1 @1 config stmt dummyAdvice (1 :< Vector.nil))
   wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs

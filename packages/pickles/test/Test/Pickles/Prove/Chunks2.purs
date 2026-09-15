@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -98,9 +98,9 @@ spec = describe "Pickles.Prove.Chunks2" do
       @Chunks2Rules
       @Unit
       @Unit
-      @NoSlots
       @2
       noAdvice
+      []
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       -- N1 wrap_domain override (= log2 14), matching chunks2.ml's
