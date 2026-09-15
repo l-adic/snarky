@@ -49,6 +49,9 @@ module Pickles.Typ
   , existsTyp
   , arrayTyp
   , perSlotTyp
+  , unitTyp
+  , pairTyp
+  , transportTyp
   ) where
 
 import Prelude
@@ -56,6 +59,7 @@ import Prelude
 import Data.Array as Array
 import Data.Foldable (sum, traverse_)
 import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, CircuitOps(..), FVar, Snarky(..), check, fieldsToVar, sizeInFields, valueToFields)
 import Type.Proxy (Proxy(..))
@@ -140,6 +144,73 @@ perSlotTyp widths elem =
       Array.cons
         (map elem.fromVars (chunksOf elem.size (Array.take (w * elem.size) vars)))
         (split ws' (Array.drop (w * elem.size) vars))
+
+-- | The empty product: no field elements, nothing to constrain.
+-- |
+-- | Terminates a `pairTyp` chain, the way `Unit` terminates the nested
+-- | tuple a `TupleN` is made of. Taken from the class rather than
+-- | written out, so that the terminator agrees with the instance by
+-- | construction instead of by assertion.
+unitTyp :: forall f c. Typ f c Unit Unit
+unitTyp = typOf
+
+-- | Two shapes in sequence: the left's field elements, then the right's.
+-- |
+-- | This is what a derived `CircuitType` already does for a product. Its
+-- | generic instance adds the two sizes, concatenates the two
+-- | serialisations in order, and splits the field array at the left
+-- | size. So a right-nested chain of `pairTyp` ending in `unitTyp`
+-- | reproduces what the instance for the corresponding `TupleN` emits,
+-- | field for field.
+-- |
+-- | That correspondence is the point. It is what lets a record's `Typ`
+-- | be written out by hand and still allocate the identical circuit,
+-- | provided the chain lists the fields in the same order the `TupleN`
+-- | did.
+-- |
+-- | Unlike `unitTyp` this cannot come from the class, because it
+-- | combines two `Typ` values and the interesting one is `arrayTyp` at
+-- | a width known only at runtime. There is no instance to take it
+-- | from. The docstring above is the obligation that replaces one.
+pairTyp
+  :: forall f c leftVal leftVar rightVal rightVar
+   . Typ f c leftVal leftVar
+  -> Typ f c rightVal rightVar
+  -> Typ f c (Tuple leftVal rightVal) (Tuple leftVar rightVar)
+pairTyp left right =
+  { size: left.size + right.size
+  , toFields: \(Tuple lv rv) -> left.toFields lv <> right.toFields rv
+  , fromVars: \vars ->
+      let
+        { before, after } = Array.splitAt left.size vars
+      in
+        Tuple (left.fromVars before) (right.fromVars after)
+  , check: \(Tuple la ra) -> left.check la *> right.check ra
+  }
+
+-- | Re-present a shape at a different value and variable type, without
+-- | touching its layout.
+-- |
+-- | Three functions rather than two isomorphisms, because a `Typ` never
+-- | reads a value back out of field elements. The value type is only
+-- | ever consumed, so it needs one direction; the variable type is both
+-- | produced by `fromVars` and consumed by `check`, so it needs both.
+-- |
+-- | Use it to land a `pairTyp` chain on a record: the chain fixes the
+-- | field order, and this names the fields.
+transportTyp
+  :: forall f c val var val' var'
+   . (val' -> val)
+  -> (var -> var')
+  -> (var' -> var)
+  -> Typ f c val var
+  -> Typ f c val' var'
+transportTyp toVal fromVar toVar t =
+  { size: t.size
+  , toFields: \v -> t.toFields (toVal v)
+  , fromVars: \vars -> fromVar (t.fromVars vars)
+  , check: \v -> t.check (toVar v)
+  }
 
 chunksOf :: forall a. Int -> Array a -> Array (Array a)
 chunksOf n xs
