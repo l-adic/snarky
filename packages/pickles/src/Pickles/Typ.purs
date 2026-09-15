@@ -47,10 +47,15 @@ module Pickles.Typ
   ( Typ
   , typOf
   , existsTyp
+  , arrayTyp
+  , perSlotTyp
   ) where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Foldable (sum, traverse_)
+import Data.Maybe (Maybe(..))
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, CircuitOps(..), FVar, Snarky(..), check, fieldsToVar, sizeInFields, valueToFields)
 import Type.Proxy (Proxy(..))
@@ -100,3 +105,44 @@ existsTyp t w = do
   let v = t.fromVars (map Var vars)
   t.check v
   pure v
+
+-- | A fixed-length array of a repeated element type.
+arrayTyp :: forall f c val var. Int -> Typ f c val var -> Typ f c (Array val) (Array var)
+arrayTyp n elem =
+  { size: n * elem.size
+  , toFields: \xs -> Array.concatMap elem.toFields xs
+  , fromVars: \vars -> map elem.fromVars (chunksOf elem.size vars)
+  , check: traverse_ elem.check
+  }
+
+-- | One inner array per slot, each as wide as that slot's
+-- | `max_local_max_proofs_verified`, all sharing an element type.
+-- |
+-- | This is the shape of a rule's previous-proof slot data: one stack of
+-- | bullet-proof challenges per slot, of differing widths. The
+-- | type-level encoding is a nested `Product` of `Vector w`; here the
+-- | widths are the argument.
+perSlotTyp
+  :: forall f c val var
+   . Array Int
+  -> Typ f c val var
+  -> Typ f c (Array (Array val)) (Array (Array var))
+perSlotTyp widths elem =
+  { size: sum widths * elem.size
+  , toFields: Array.concatMap (Array.concatMap elem.toFields)
+  , fromVars: split widths
+  , check: traverse_ (traverse_ elem.check)
+  }
+  where
+  split ws vars = case Array.uncons ws of
+    Nothing -> []
+    Just { head: w, tail: ws' } ->
+      Array.cons
+        (map elem.fromVars (chunksOf elem.size (Array.take (w * elem.size) vars)))
+        (split ws' (Array.drop (w * elem.size) vars))
+
+chunksOf :: forall a. Int -> Array a -> Array (Array a)
+chunksOf n xs
+  | n <= 0 = []
+  | Array.null xs = []
+  | otherwise = Array.cons (Array.take n xs) (chunksOf n (Array.drop n xs))

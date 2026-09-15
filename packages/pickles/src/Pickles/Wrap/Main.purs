@@ -41,6 +41,7 @@ import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Effect.Exception.Unsafe (unsafeThrow)
 import Data.Newtype (over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
@@ -62,13 +63,14 @@ import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
+import Pickles.Typ (existsTyp, perSlotTyp, typOf)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
-import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
+import Pickles.Wrap.Slots (class PadSlots, slotWidthsOf)
 import Pickles.Wrap.SlotsFromSpec (class SlotsFromSpec)
 import Pickles.Wrap.Types (PrevProofState(..), StatementPacked(..))
 import Pickles.Wrap.Verify (wrapVerify)
@@ -417,21 +419,50 @@ wrapMain
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
-  -> WrapAdvice mpv stepChunks slots
+  -> WrapAdvice mpv stepChunks
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapMain config input advice =
-  wrapMainCore @branches @stepChunks config input advice
-    (slotWidthsOf (Proxy :: Proxy slots))
+  wrapMainCore @branches @stepChunks config input advice widths
     ( do
         -- Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
-        -- Returns a `slots`-shaped value; `PadSlots` projects it into a
-        -- uniform `Vector mpv (Vector PaddedLength a)`, prepending the
-        -- right number of dummy stacks per slot to mirror OCaml's
-        -- `Wrap_hack.Checked.pad_challenges`.
-        slotsValue <- label "old-bp-chals" $ exists $
-          pure advice <#> \r -> r.oldBpChals
-        pure (padAllSlots (map const_ dummyIpaChallenges.wrapExpanded) slotsValue)
+        -- Allocated against the widths rather than a type-level slot
+        -- shape, then front-padded to `PaddedLength` per slot, mirroring
+        -- OCaml's `Wrap_hack.Checked.pad_challenges`.
+        slotsValue <- label "old-bp-chals" $ existsTyp
+          (perSlotTyp (Vector.toUnfoldable widths) typOf)
+          (pure advice <#> \r -> r.oldBpChals)
+        pure (padPerSlot (map const_ dummyIpaChallenges.wrapExpanded) slotsValue)
     )
+  where
+  widths = slotWidthsOf (Proxy :: Proxy slots)
+
+  -- Front-pad each slot's stack to `PaddedLength` and square the result
+  -- up to `Vector mpv (Vector PaddedLength _)`. The lengths come from
+  -- `widths`, so both conversions are total; they throw rather than
+  -- silently truncating because a mismatch here would change the
+  -- challenges the circuit absorbs.
+  padPerSlot dummy perSlot =
+    orThrow "wrapMain: slot count does not match mpv"
+      ( Vector.toVector
+          ( map
+              ( \stack ->
+                  orThrow "wrapMain: slot stack wider than PaddedLength"
+                    ( Vector.toVector
+                        ( Array.replicate
+                            (reflectType (Proxy @PaddedLength) - Array.length stack)
+                            dummy
+                            <> stack
+                        )
+                    )
+              )
+              perSlot
+          )
+      )
+
+  orThrow :: forall a. String -> Maybe a -> a
+  orThrow msg = case _ of
+    Just v -> v
+    Nothing -> unsafeThrow msg
 
 -- | The wrap circuit proper. Slot-shaped inputs reach it already
 -- | flattened: the per-slot widths as a plain `Vector mpv Int`, and the
@@ -444,7 +475,7 @@ wrapMain config input advice =
 -- | this function no longer reads. Nothing in the body below depends on
 -- | the carrier's shape, which is what the extraction demonstrates.
 wrapMainCore
-  :: forall @branches slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
+  :: forall @branches @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
    . PrimeField WrapField
   => Reflectable stepChunks Int
   => Reflectable tCommLen Int
@@ -480,7 +511,7 @@ wrapMainCore
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
-  -> WrapAdvice mpv stepChunks slots
+  -> WrapAdvice mpv stepChunks
   -- | Per-slot `max_local_max_proofs_verified`, for the sponge-state
   -- | lookup and for recovering the unpadded challenges.
   -> Vector mpv Int
@@ -1002,6 +1033,6 @@ wrapMainForPrevs
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
-  -> WrapAdvice mpv stepChunks slots
+  -> WrapAdvice mpv stepChunks
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapMainForPrevs = wrapMain @branches @slots @stepChunks

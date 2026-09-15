@@ -33,8 +33,6 @@ module Pickles.Prove.Compile
   , shapeProveData
   , class PadProveDataMpv
   , padShapeProveData
-  , class ConvertSlots
-  , convertSlots
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
@@ -59,7 +57,7 @@ import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
-import Data.Functor.Product (Product, product)
+import Data.Functor.Product (Product)
 import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over, unwrap, wrap)
@@ -142,7 +140,7 @@ import Pickles.Verify
   )
 import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
+import Pickles.Wrap.Slots (class PadSlots, NoSlots)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)
 import Prim.Ordering as PrimOrdering
@@ -381,8 +379,8 @@ type ShapeProveSideInfo mpv =
 -- | Nil provides empty vectors (Vector.nil for everything, noSlots for
 -- | `slotsValue`). Cons recursively cons each slot's entry onto the
 -- | tail from `shapeProveData @rest`.
-type ShapeProveData :: Int -> (Type -> Type) -> Type
-type ShapeProveData mpv slots =
+type ShapeProveData :: Int -> Type
+type ShapeProveData mpv =
   { prevSgs :: Vector mpv (AffinePoint WrapField)
   , prevStepChallenges :: Vector mpv (Vector StepIPARounds StepField)
   , msgWrapChallenges :: Vector mpv (Vector WrapIPARounds WrapField)
@@ -400,7 +398,7 @@ type ShapeProveData mpv slots =
         }
   -- | Runtime realisation of the `slots` type constructor carrying
   -- | each prev's wrap bp-challenges.
-  , slotsValue :: slots (Vector WrapIPARounds (F WrapField))
+  , slotsValue :: Array (Array (Vector WrapIPARounds (F WrapField)))
   }
 
 --------------------------------------------------------------------------------
@@ -448,47 +446,23 @@ type PadProveDataDummies =
   , dummySlotChal :: Vector WrapIPARounds (F WrapField)
   }
 
--- | Convert one slots-carrier shape to another, filling any new slots
--- | with the supplied dummy. Two instances:
--- |
--- |   * Identity (`slotsSrc = slotsDst`) — pass through.
--- |   * Fallback for `slotsSrc = NoSlots`: produce a fresh `slotsDst a`
--- |     populated by `replicateSlots` from `Pickles.Wrap.Slots`.
--- |
--- | The `NoSlots → slotsDst` case is what TwoPhaseChain b0 needs (rule
--- | has 0 prev proofs, wrap circuit has 1 slot of width 1). Other
--- | conversions (e.g. `Slots1 1 → Slots2 1 2`) are not yet implemented
--- | — adding them needs structural induction on `slotsDst`'s widths.
-class ConvertSlots (slotsSrc :: Type -> Type) (slotsDst :: Type -> Type) where
-  convertSlots :: forall a. a -> slotsSrc a -> slotsDst a
-
-instance ConvertSlots slotsSrc slotsSrc where
-  convertSlots _ = identity
-
-else instance
-  ( PadSlots slotsDst mpvDst
-  , Reflectable mpvDst Int
-  ) =>
-  ConvertSlots NoSlots slotsDst where
-  convertSlots dummy _ = replicateSlots dummy
-
--- | Pad a `ShapeProveData mpv slots` to `ShapeProveData mpvMax slotsMax`.
+-- | Pad a `ShapeProveData mpv` to `ShapeProveData mpvMax`.
 -- |
 -- | When `mpv = mpvMax` and `slots = slotsMax`, the conversion is the
 -- | identity (the fast-path instance below). Otherwise the rule's mpv
 -- | is strictly less than the wrap circuit's mpvMax; the prov-data
 -- | needs front-padding with `Dummy.*` values to match the wrap
 -- | circuit's expected shape (the general instance below).
-class PadProveDataMpv (mpv :: Int) (slots :: Type -> Type) (mpvMax :: Int) (slotsMax :: Type -> Type) where
+class PadProveDataMpv (mpv :: Int) (mpvMax :: Int) where
   padShapeProveData
     :: PadProveDataDummies
-    -> ShapeProveData mpv slots
-    -> ShapeProveData mpvMax slotsMax
+    -> ShapeProveData mpv
+    -> ShapeProveData mpvMax
 
 -- | Fast-path: rule's mpv/slots equal the wrap circuit's mpvMax/slotsMax.
 -- | Identity. Single-rule callers all hit this — preserves byte-identical
 -- | witness (the cast is a tautology since both sides are the same type).
-instance PadProveDataMpv mpv slots mpv slots where
+instance PadProveDataMpv mpv mpv where
   padShapeProveData _ = identity
 
 -- | General fallback: rule's mpv < wrap's mpvMax. Front-pads each
@@ -498,11 +472,10 @@ instance PadProveDataMpv mpv slots mpv slots where
 -- | unfinalized_proofs ... Unfinalized.dummy` and analog padding for
 -- | the other per-prev fields.
 else instance
-  ( ConvertSlots slots slotsMax
-  , Add mpvPad mpv mpvMax
+  ( Add mpvPad mpv mpvMax
   , Reflectable mpvPad Int
   ) =>
-  PadProveDataMpv mpv slots mpvMax slotsMax where
+  PadProveDataMpv mpv mpvMax where
   padShapeProveData dummies sd =
     { prevSgs:
         Vector.append (Vector.replicate @mpvPad dummies.dummyPrevSg)
@@ -528,7 +501,14 @@ else instance
     , kimchiPrevEntries:
         Vector.append (Vector.replicate @mpvPad dummies.dummyKimchiPrevEntry)
           sd.kimchiPrevEntries
-    , slotsValue: convertSlots dummies.dummySlotChal sd.slotsValue
+    -- Front-pad the slot list itself: a rule with fewer slots than the
+    -- wrap circuit's `mpvMax` contributes dummy stacks for the missing
+    -- ones. Was `convertSlots`, which needed a class instance per pair
+    -- of carrier shapes and only ever had two.
+    , slotsValue:
+        Array.replicate (reflectType (Proxy @mpvPad))
+          [ dummies.dummySlotChal ]
+          <> sd.slotsValue
     }
 
 --------------------------------------------------------------------------------
@@ -630,7 +610,7 @@ class
     -> ShapeProveSideInfo mpv
     -> prevsCarrier
     -> vkCarrier
-    -> ShapeProveData mpv slots
+    -> ShapeProveData mpv
 
 --------------------------------------------------------------------------------
 -- CompilableSpec Unit (N=0, NRR-shape)
@@ -716,7 +696,7 @@ instance CompilableSpec Unit Unit Unit 0 NoSlots Unit Unit Unit Unit where
     , prevEvals: Vector.nil
     , prevWrapDomainIndices: Vector.nil
     , kimchiPrevEntries: Vector.nil
-    , slotsValue: noSlots
+    , slotsValue: []
     }
 
 --------------------------------------------------------------------------------
@@ -1306,8 +1286,9 @@ instance
             , prevStepChals: dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F (unwrap stepSgD).x, y: F (unwrap stepSgD).y }
             , headPrevEvals
-            , headSlotPrevWrapBpChalsVec:
-                Vector.replicate @n (map F dummyIpaChallenges.wrapExpanded)
+            , headSlotPrevWrapBpChals:
+                Array.replicate (reflectType (Proxy @n))
+                  (map F dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
@@ -1390,13 +1371,15 @@ instance
                           map (peWF <<< prevWrapCollapse) prevWrapData.evals.indexEvals
                       }
 
-                    -- Take the slot's `Vector n` view by dropping the
-                    -- prepended dummies from the padded `Vector PaddedLength`.
-                    headSlotPrevWrapBpChalsVec
-                      :: Vector n (Vector WrapIPARounds (F WrapField))
-                    headSlotPrevWrapBpChalsVec =
-                      Vector.drop @slotPad
-                        (map (map F) prevData.padded.msgWrapChallengesPadded)
+                    -- The slot's own stacks, recovered by dropping the
+                    -- prepended dummies from the padded form.
+                    headSlotPrevWrapBpChals
+                      :: Array (Vector WrapIPARounds (F WrapField))
+                    headSlotPrevWrapBpChals =
+                      Array.drop (reflectType (Proxy @slotPad))
+                        ( Vector.toUnfoldable
+                            (map (map F) prevData.padded.msgWrapChallengesPadded)
+                        )
                   in
                     { prevSg: prevData.proof.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded
@@ -1405,7 +1388,7 @@ instance
                         , y: F (unwrap prevData.proof.challengePolynomialCommitment).y
                         }
                     , headPrevEvals: prevHeadPrevEvals
-                    , headSlotPrevWrapBpChalsVec
+                    , headSlotPrevWrapBpChals
                     }
 
       -- Recurse into rest.
@@ -1436,7 +1419,7 @@ instance
           , challenges: msgForNextWrapRealChals
           } :< restProveData.kimchiPrevEntries
       , slotsValue:
-          product slotData.headSlotPrevWrapBpChalsVec restProveData.slotsValue
+          Array.cons slotData.headSlotPrevWrapBpChals restProveData.slotsValue
       }
 
 --------------------------------------------------------------------------------
@@ -1861,7 +1844,7 @@ instance
   -- with the same three substitutions as `mkStepAdvice` above:
   -- slot sized at `mpvMax` (not `n`), `slotWrapVK` /
   -- `slotWrapDomainLog2` from the runtime VK, rest threaded with
-  -- `restVkCarrier`. The `headSlotPrevWrapBpChalsVec :: Vector mpvMax`
+  -- `restVkCarrier`. The `headSlotPrevWrapBpChals :: Array`
   -- BasePrev branch is sized at the side-loaded tag's upper bound.
   shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
     let
@@ -1933,7 +1916,7 @@ instance
            , prevStepChals :: Vector StepIPARounds StepField
            , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
            , headPrevEvals :: StepAllEvals (F WrapField)
-           , headSlotPrevWrapBpChalsVec :: Vector mpvMax (Vector WrapIPARounds (F WrapField))
+           , headSlotPrevWrapBpChals :: Array (Vector WrapIPARounds (F WrapField))
            }
       slotData = case headSlot of
         BasePrev _ ->
@@ -1989,8 +1972,9 @@ instance
             , prevStepChals: dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F (unwrap stepSgD).x, y: F (unwrap stepSgD).y }
             , headPrevEvals
-            , headSlotPrevWrapBpChalsVec:
-                Vector.replicate @mpvMax (map F dummyIpaChallenges.wrapExpanded)
+            , headSlotPrevWrapBpChals:
+                Array.replicate (reflectType (Proxy @mpvMax))
+                  (map F dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
@@ -2062,11 +2046,13 @@ instance
                           map (peWF <<< prevWrapCollapse) prevWrapData.evals.indexEvals
                       }
 
-                    headSlotPrevWrapBpChalsVec
-                      :: Vector mpvMax (Vector WrapIPARounds (F WrapField))
-                    headSlotPrevWrapBpChalsVec =
-                      Vector.drop @slotPad
-                        (map (map F) prevData.padded.msgWrapChallengesPadded)
+                    headSlotPrevWrapBpChals
+                      :: Array (Vector WrapIPARounds (F WrapField))
+                    headSlotPrevWrapBpChals =
+                      Array.drop (reflectType (Proxy @slotPad))
+                        ( Vector.toUnfoldable
+                            (map (map F) prevData.padded.msgWrapChallengesPadded)
+                        )
                   in
                     { prevSg: prevData.proof.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded
@@ -2075,7 +2061,7 @@ instance
                         , y: F (unwrap prevData.proof.challengePolynomialCommitment).y
                         }
                     , headPrevEvals: prevHeadPrevEvals
-                    , headSlotPrevWrapBpChalsVec
+                    , headSlotPrevWrapBpChals
                     }
 
       restSideInfo =
@@ -2102,7 +2088,7 @@ instance
           , challenges: msgForNextWrapRealChals
           } :< restProveData.kimchiPrevEntries
       , slotsValue:
-          product slotData.headSlotPrevWrapBpChalsVec restProveData.slotsValue
+          Array.cons slotData.headSlotPrevWrapBpChals restProveData.slotsValue
       }
 
 --------------------------------------------------------------------------------
@@ -2934,7 +2920,7 @@ instance
   , Add padMax mpvMax PaddedLength
   , Compare mpvMax 3 LT
   , PadSlots slotsMax mpvMax
-  , PadProveDataMpv ruleMpv slots mpvMax slotsMax
+  , PadProveDataMpv ruleMpv mpvMax
   -- `topBranches` stays fixed across the recursion; required by
   -- `buildStepProveCtx` and Vector dispatch.
   , Reflectable topBranches Int
@@ -3547,7 +3533,7 @@ runMultiProverBody
   => Add mpvMax nonSgBases totalBasesMax
   => Add 1 totalBasesMaxPred totalBasesMax
   => PadSlots slotsMax mpvMax
-  => PadProveDataMpv mpv slots mpvMax slotsMax
+  => PadProveDataMpv mpv mpvMax
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
   => CircuitType StepField prevInputVal prevInputVar

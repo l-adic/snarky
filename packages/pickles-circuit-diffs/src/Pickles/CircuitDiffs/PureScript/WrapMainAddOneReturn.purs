@@ -23,7 +23,6 @@ import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (StepMainAddOneRetur
 import Pickles.Field (StepField, WrapField)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -55,7 +54,7 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
       }
   -- `slots` derived from `@Unit` via `SlotsFromSpec` funcdep.
   let
-    dummyAdvice :: WrapAdvice 0 1 NoSlots
+    dummyAdvice :: WrapAdvice 0 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt dummyAdvice)

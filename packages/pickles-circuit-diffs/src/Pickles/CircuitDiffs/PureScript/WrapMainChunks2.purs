@@ -28,7 +28,6 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -95,7 +94,7 @@ compileWrapMainChunks2 { blindingH } stepParams = do
   -- @2 stepChunks type-app drives the wrap IVP's chunked w/z/t MSM
   -- (Pcs_batch.combine_split_commitments with num_chunks=2).
   let
-    dummyAdvice :: WrapAdvice 0 2 NoSlots
+    dummyAdvice :: WrapAdvice 0 2
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt dummyAdvice)

@@ -27,7 +27,6 @@ import Pickles.Slots (Compiled, Slot)
 import Pickles.Types (StatementIO)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (Slots2)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -63,7 +62,7 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   -- TPR: 2 prev slots, [NRR (n=0); self (n=2)]; slots derived from
   -- PrevsSpec via funcdep.
   let
-    dummyAdvice :: WrapAdvice 2 1 (Slots2 0 2)
+    dummyAdvice :: WrapAdvice 2 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->

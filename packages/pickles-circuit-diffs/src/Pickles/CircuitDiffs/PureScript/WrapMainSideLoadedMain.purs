@@ -30,7 +30,6 @@ import Pickles.Slots (SideLoaded, Slot)
 import Pickles.Types (StatementIO)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (Slots1)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -65,7 +64,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived
   -- from the `Slot SideLoaded` spec via funcdep.
   let
-    dummyAdvice :: WrapAdvice 1 1 (Slots1 2)
+    dummyAdvice :: WrapAdvice 1 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->

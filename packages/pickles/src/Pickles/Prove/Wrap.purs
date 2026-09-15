@@ -148,11 +148,14 @@ type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
   -- | supply dummy sgs.
   , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
 
+  -- | Prev wrap bp challenges, one stack per slot at that slot's own
+  -- | width. Was a `slots`-shaped nested `Product`; now the widths ride
+  -- | with the data.
   -- | Heterogeneous prev wrap bp challenges, in `slots`-shaped form
   -- | (one of `NoSlots`, `Slots1 w`, `Slots2 w0 w1` from
   -- | `Pickles.Wrap.Slots`). Constructed via the smart constructors
   -- | `noSlots` / `slots1` / `slots2`.
-  , prevOldBpChals :: slots (Vector WrapIPARounds (F WrapField))
+  , prevOldBpChals :: Array (Array (Vector WrapIPARounds (F WrapField)))
 
   -- | Prev wrap proofs' polynomial evaluations (`StepAllEvals` per
   -- | proof, wrap-field scalars). OCaml's `prev_evals`.
@@ -177,7 +180,7 @@ buildWrapAdvice
   :: forall @stepChunks mpv slots
    . Reflectable stepChunks Int
   => BuildWrapAdviceInput mpv slots
-  -> WrapAdvice mpv stepChunks slots
+  -> WrapAdvice mpv stepChunks
 buildWrapAdvice input =
   let
     -- ===== Req.Messages (step.ml commitments → wrap witness). =====
@@ -283,7 +286,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) (slots 
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
-  , advice :: WrapAdvice mpv stepChunks slots
+  , advice :: WrapAdvice mpv stepChunks
   -- | When `true`, enables prover-state debug checks, runs
   -- | `verifyProverIndex` against the solved witness, and dumps
   -- | `/tmp/ps_wrap_row_labels.txt` for debugging witness
@@ -395,7 +398,7 @@ wrapCompile ctx = do
   -- never projected — the `unsafeCoerce unit` bottom below is never
   -- forced.
   let
-    dummyAdvice :: WrapAdvice mpv stepChunks slots
+    dummyAdvice :: WrapAdvice mpv stepChunks
     dummyAdvice = unsafeCoerce unit
   builtState <-
     compile noAdvice
