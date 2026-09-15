@@ -307,17 +307,33 @@ type CompileConfig prevsSpec slotVKs =
   -- | `num_chunks`, one value for every branch). `Self` slots read their
   -- | prev step proof's `zk_rows` from it.
   , stepNumChunks :: Int
-  -- | OCaml `override_wrap_domain` (`compile.ml`). When `Just o`, the
-  -- | rule's wrap circuit uses domain log2 `o` instead of the default
-  -- | `wrap_domains.h` (`common.ml:25-29`: N0→13, N1→14, N2→15).
-  -- | Affects the per-slot lagrange basis for self-recursive slots and
-  -- | the wrap circuit's own kimchi domain. Tree_proof_return uses
-  -- | `Just 14` (override:N1) per OCaml `dump_tree_proof_return.ml`.
-  , wrapDomainOverride :: Maybe Int
+  -- | The wrap domain this compile's own wrap circuit is assumed to
+  -- | have. One value for the whole compile, so a `Self` prev slot,
+  -- | which verifies a proof of this very system, reads it directly
+  -- | instead of deriving a domain of its own.
+  , selfWrapDomainLog2 :: Int
   -- | Optional disk proof-cache (test/dev). `Nothing` = no caching
   -- | (always prove). Mirrors OCaml `compile`'s `?proof_cache`.
   , proofCache :: Maybe ProofCache
   }
+
+-- | The compile's wrap domain: the override when given, otherwise the
+-- | three-entry table applied to `max_proofs_verified`.
+-- |
+-- | This mirrors OCaml `compile.ml:464-477`, and the mirror is exact in
+-- | a way worth recording. `Wrap_domains.Make.f`, the function that
+-- | `compile.ml` actually calls, is nothing but that table lookup. The
+-- | same functor defines `f_debug`, which builds a dummy wrap circuit
+-- | and measures it, but nothing calls it, and the file carries a TODO
+-- | asking why the functor ignores its own arguments.
+-- |
+-- | So neither side estimates. The table is a guess that can be wrong,
+-- | which is what the override is for, and what the check after
+-- | `wrapCompile` reports when the guess misses.
+resolveSelfWrapDomainLog2 :: Int -> Maybe Int -> Int
+resolveSelfWrapDomainLog2 mpvMax = case _ of
+  Just o -> o
+  Nothing -> wrapDomainLog2ForProofsVerified mpvMax
 
 -- | Shape-constant compile-time data, provided by the `CompilableSpec`
 -- | instance. Everything here is derived from the `prevsSpec` shape +
@@ -754,9 +770,7 @@ instance
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
       outerMpv = reflectType (Proxy @mpv)
-      outerWrapDomainLog2 = case cfg.wrapDomainOverride of
-        Just o -> o
-        Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
+      outerWrapDomainLog2 = cfg.selfWrapDomainLog2
 
       -- This slot, as runtime data. The per-slot derivations
       -- (wrap domain, source step domains, zk_rows, VK blueprint) all
@@ -861,13 +875,10 @@ instance
         }
 
       -- Self/External dispatch (OCaml `step.ml:751-754`). `Self` honours
-      -- `cfg.wrapDomainOverride` (= OCaml `override_wrap_domain`);
-      -- `External`'s wrapDomainLog2 already encodes its own override.
-      -- Note this resolves the override against the *slot's* mpv, unlike
-      -- `shapeCompileData`, which resolves it against the rule's.
-      outerOverridenWrapDomainLog2 = case cfg.wrapDomainOverride of
-        Just o -> o
-        Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
+      -- A `Self` slot's source is a proof of this same system, so its
+      -- wrap domain is this compile's own. `External`'s stored
+      -- wrapDomainLog2 already encodes its own compile's.
+      outerOverridenWrapDomainLog2 = cfg.selfWrapDomainLog2
       slotParams =
         { slotWrapVK:
             RuntimeSlot.slotWrapVerifierIndex wrapCR.verifierIndex runtimeSlot
@@ -1155,12 +1166,10 @@ instance
           External vks -> vks.wrapCompileResult.verifierIndex
 
       -- Slot's wrap domain log2: Self honours the outer rule's
-      -- `wrapDomainOverride`; External slots use the imported rule's
-      -- stored wrapDomainLog2. Same logic as `shapeCompileData`'s
+      -- this compile's own wrap domain; External slots use the imported
+      -- rule's stored wrapDomainLog2. Same logic as `shapeCompileData`'s
       -- slotParams.
-      outerOverridenWrapDomainLog2 = case cfg.wrapDomainOverride of
-        Just o -> o
-        Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
+      outerOverridenWrapDomainLog2 = cfg.selfWrapDomainLog2
 
       slotWrapDomainLog2 = case headSlotWrapKey of
         External vks -> vks.wrapDomainLog2
@@ -1486,9 +1495,7 @@ instance
       restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
       outerMpv = reflectType (Proxy @mpv)
       slotMpvMax = reflectType (Proxy @mpvMax)
-      outerWrapDomainLog2 = case cfg.wrapDomainOverride of
-        Just o -> o
-        Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
+      outerWrapDomainLog2 = cfg.selfWrapDomainLog2
 
       -- This slot, as runtime data. All four per-slot derivations live
       -- in `Pickles.Prove.SlotCompile`: the side-loaded slot's wrap
@@ -2992,7 +2999,11 @@ instance
     r
   where
   prePassDomainLog2s handler cfg stepNumChunks placeholder (RuleEntry r /\ restEntries) = do
-    let placeholderCtx = buildStepProveCtx @prevsSpec cfg stepNumChunks r.slotVKs placeholder
+    let
+      placeholderCtx = buildStepProveCtx @prevsSpec cfg stepNumChunks
+        (reflectType (Proxy :: Proxy mpvMax))
+        r.slotVKs
+        placeholder
     headLog2 <- r.preComputeStepDomainLog2Fn handler placeholderCtx
     restVec <- prePassDomainLog2s
       @rest
@@ -3017,7 +3028,11 @@ instance
       restEntries
     pure (headLog2 :< restVec)
   runMultiCompile handler cfg stepNumChunks log2s (RuleEntry r /\ restEntries) = do
-    let ctx = buildStepProveCtx @prevsSpec cfg stepNumChunks r.slotVKs log2s
+    let
+      ctx = buildStepProveCtx @prevsSpec cfg stepNumChunks
+        (reflectType (Proxy :: Proxy mpvMax))
+        r.slotVKs
+        log2s
     headResult <- r.stepCompileFn handler ctx
     tailResults <- runMultiCompile
       @rest
@@ -3391,10 +3406,12 @@ buildStepProveCtx
   => CompileMultiConfig
   -> Int
   -- ^ the declared `@stepChunks`
+  -> Int
+  -- ^ the compile's `mpvMax`, which fixes its wrap domain
   -> slotVKs
   -> Vector nd Int
   -> PProveStep.StepProveContext wrapVkChunks mpv nd blueprints
-buildStepProveCtx cfg stepNumChunks slotVKs selfStepDomainLog2s =
+buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
       { srs: cfg.srs
@@ -3402,7 +3419,8 @@ buildStepProveCtx cfg stepNumChunks slotVKs selfStepDomainLog2s =
       , debug: cfg.debug
       , stepNumChunks
       , proofCache: cfg.proofCache
-      , wrapDomainOverride: cfg.wrapDomainOverride
+      , selfWrapDomainLog2:
+          resolveSelfWrapDomainLog2 selfMpvMax cfg.wrapDomainOverride
       }
     shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2s
   in
@@ -3541,7 +3559,10 @@ runMultiProverBody
       , debug: cfg.debug
       , stepNumChunks: reflectType ncProxy
       , proofCache: cfg.proofCache
-      , wrapDomainOverride: cfg.wrapDomainOverride
+      , selfWrapDomainLog2:
+          resolveSelfWrapDomainLog2
+            (reflectType (Proxy :: Proxy mpvMax))
+            cfg.wrapDomainOverride
       }
     -- Pass the FULL `Vector topBranches Int` of all branches' step
     -- domain log2s. Drives multi-domain Pseudo dispatch in
