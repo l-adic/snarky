@@ -199,7 +199,7 @@ instance
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot n wrapVkChunks stmt /\ rest)
+    (Slot n stmt /\ rest)
     wrapVkChunks
     len
     (SlotVkBlueprint wrapVkChunks /\ restScaffolds)

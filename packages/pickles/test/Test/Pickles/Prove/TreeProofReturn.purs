@@ -58,8 +58,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot 0 1 (StatementIO Unit (F StepField)))
-    (Slot 2 1 (StatementIO Unit (F StepField)))
+    (Slot 0 (StatementIO Unit (F StepField)))
+    (Slot 2 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule 2
@@ -110,7 +110,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
 
     let nrrRules = tuple1 nrrEntry
 
@@ -121,7 +121,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @Unit
       @1
       noAdvice
-      []
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing
@@ -152,7 +151,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField) @1
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
       treeProofReturnRule
       (tuple2 (External nrrProverVKs) Self)
 
@@ -165,7 +164,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @(F StepField)
       @1
       noAdvice
-      [ 0, 2 ]
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Just 14

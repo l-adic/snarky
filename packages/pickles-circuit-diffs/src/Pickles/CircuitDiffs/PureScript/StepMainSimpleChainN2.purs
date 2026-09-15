@@ -109,7 +109,7 @@ compileStepMainSimpleChainN2 params = do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot 2 1 (StatementIO (F StepField) Unit)) (Slot 2 1 (StatementIO (F StepField) Unit)))
+          @(Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)

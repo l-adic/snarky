@@ -109,7 +109,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
-          @(Tuple1 (Slot 1 1 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)

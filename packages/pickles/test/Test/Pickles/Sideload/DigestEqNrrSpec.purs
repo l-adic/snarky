@@ -39,7 +39,7 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   body { pallasSrs, vestaSrs, lagrangeCache } = do
     -- PureScript-side compile: produce the wrap VK for NRR.
     nrrEntry :: RuleEntry _ _ _ _ Unit _ _ _ _ _ _ <-
-      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
+      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
     let rules = tuple1 nrrEntry
     output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti
       @NrrRules
@@ -47,7 +47,6 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       @Unit
       @1
       noAdvice
-      []
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

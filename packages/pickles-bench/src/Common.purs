@@ -82,8 +82,8 @@ benchIterations = 3
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot 0 1 (StatementIO Unit (F StepField)))
-    (Slot 2 1 (StatementIO Unit (F StepField)))
+    (Slot 0 (StatementIO Unit (F StepField)))
+    (Slot 2 (StatementIO Unit (F StepField)))
 
 -- | Verbatim `Tree_proof_return` N=2 rule + the tunable filler loop
 -- | (stack-safe `tailRecM`; `StepRule` carries `MonadRec`).

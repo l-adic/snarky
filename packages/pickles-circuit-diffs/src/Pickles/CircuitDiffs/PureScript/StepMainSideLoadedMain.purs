@@ -113,7 +113,7 @@ compileStepMainSideLoadedMain params = do
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @(Tuple1 (Slot 2 1 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)

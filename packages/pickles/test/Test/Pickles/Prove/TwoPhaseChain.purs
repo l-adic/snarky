@@ -117,7 +117,7 @@ type TwoPhaseChainRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (Tuple1 (Slot 1 1 (StatementIO (F StepField) Unit)))
+        (Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
         (Tuple1 SlotWrapKey)
         RulesNil
     )
@@ -148,8 +148,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 makeZeroRule unit
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 incrementRule (tuple1 Self)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti
@@ -158,7 +158,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       @(F StepField)
       @1
       noAdvice
-      [ 1 ]
       cfg
       rules
 

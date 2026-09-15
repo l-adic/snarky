@@ -254,7 +254,7 @@ type TxnSnarkRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 2
         (TxnStmt /\ TxnStmt /\ Unit)
-        (Slot 2 1 TxnStmt /\ Slot 2 1 TxnStmt /\ Unit)
+        (Slot 2 TxnStmt /\ Slot 2 TxnStmt /\ Unit)
         (SlotWrapKey /\ SlotWrapKey /\ Unit)
         RulesNil
     )
@@ -299,7 +299,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @2
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @1
       @(TxAdviceRow d ())
       (baseRule @d chainId)
       unit
@@ -308,7 +307,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @2
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @1
       @(TxAdviceRow d ())
       mergeRule
       (tuple2 Self Self)
@@ -322,7 +320,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @(Statement Vesta.ScalarField)
       @1
       badAdvice
-      [ 2, 2 ]
       cfg
       rules
   let

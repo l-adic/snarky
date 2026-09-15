@@ -73,7 +73,7 @@ simpleChainN2Rule getPrevStates self = do
 type SimpleChainN2Rules =
   RulesCons 2
     (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
-    (Tuple2 (Slot 2 1 (StatementIO (F StepField) Unit)) (Slot 2 1 (StatementIO (F StepField) Unit)))
+    (Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit)))
     (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
@@ -92,7 +92,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField) @1
+    entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField)
       simpleChainN2Rule
       (tuple2 Self Self)
 
@@ -105,7 +105,6 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
       @(F StepField)
       @1
       noAdvice
-      [ 2, 2 ]
       cfg
       rules
 

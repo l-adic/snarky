@@ -1093,7 +1093,7 @@ spec bundle =
         exactMatchEff "chunks2_step_main_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainChunks2 stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
-        -- * per-slot SPPW sizing  (`Slot 0 1 … /\ Slot 2 1 … /\ Unit`)
+        -- * per-slot SPPW sizing  (`Slot 0 … /\ Slot 2 … /\ Unit`)
         -- * per-slot FOP domain   (`[13, 14]`)
         -- * per-slot wrap VK      (`[Just no_rec_vk, Nothing]`)
         -- * per-slot lagrange     (`[domain 13 lookup, domain 14 lookup]`).

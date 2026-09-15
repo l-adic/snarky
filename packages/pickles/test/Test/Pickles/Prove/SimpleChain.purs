@@ -75,7 +75,7 @@ simpleChainRule getPrevStates self = do
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) NoOutput))
-    (Tuple1 (Slot 1 1 (StatementIO (F StepField) NoOutput)))
+    (Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput)))
     (Tuple1 SlotWrapKey)
     RulesNil
 
@@ -87,7 +87,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
-    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput @(F StepField) @1 simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput @(F StepField) simpleChainRule (tuple1 Self)
 
     let rules = tuple1 chainEntry
 
@@ -98,7 +98,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
       @(F StepField)
       @1
       noAdvice
-      [ 1 ]
       { srs: { vestaSrs, pallasSrs }
       , debug: false
       , wrapDomainOverride: Nothing

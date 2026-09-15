@@ -136,7 +136,7 @@ compileStepMainTreeProofReturn params = do
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
-          @(Tuple2 (Slot 0 1 (StatementIO Unit (F StepField))) (Slot 2 1 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot 0 (StatementIO Unit (F StepField))) (Slot 2 (StatementIO Unit (F StepField))))
           @Unit
           @(F StepField)
           @(F StepField)

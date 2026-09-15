@@ -367,12 +367,11 @@ buildStepAdvice input =
     -- NB: the `UnChecked <$>` on `bulletproofChallenges` etc. matches
     -- OCaml's in-circuit wrapping at the FOP state construction site.
     dummySlot
-      :: forall n slotVkChunks
+      :: forall n
        . Reflectable n Int
-      => Reflectable slotVkChunks Int
       => Proxy n
       -> Step.PerProofWitness
-           slotVkChunks
+           WrapVkChunks
            StepIPARounds
            WrapIPARounds
            (F StepField)
@@ -923,8 +922,8 @@ type BuildSlotAdviceInput inputVal stmt =
 -- | Reference: mina/src/lib/crypto/pickles/step.ml:131-150 (`expand_proof`
 -- | signature) + step.ml:736-770 (the `go` recursion that conses each
 -- | per-slot output onto the rest's vectors).
-type SlotAdviceContrib :: Int -> Type
-type SlotAdviceContrib slotVkChunks =
+type SlotAdviceContrib :: Type
+type SlotAdviceContrib =
   { challengePolynomialCommitment :: AffinePoint StepField
   , slotUnfinalized ::
       PerProofUnfinalized
@@ -940,7 +939,7 @@ type SlotAdviceContrib slotVkChunks =
       }
   , slotSppw ::
       Step.PerProofWitness
-        slotVkChunks
+        WrapVkChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -967,15 +966,14 @@ type SlotAdviceContrib slotVkChunks =
 --------------------------------------------------------------------------------
 
 buildSlotAdvice
-  :: forall @n @slotVkChunks inputVal input prevHeadStmt prevHeadStmtVar pad
+  :: forall @n inputVal input prevHeadStmt prevHeadStmtVar pad
    . Reflectable n Int
-  => Reflectable slotVkChunks Int
   => Reflectable pad Int
   => Add pad n PaddedLength
   => CircuitType StepField inputVal input
   => CircuitType StepField prevHeadStmt prevHeadStmtVar
   => BuildSlotAdviceInput inputVal prevHeadStmt
-  -> Effect (SlotAdviceContrib slotVkChunks)
+  -> Effect SlotAdviceContrib
 buildSlotAdvice input = do
   let
     -- Wrap_hack-padded bp_chals for the wrap proof's hash AND the
@@ -1180,7 +1178,7 @@ buildSlotAdvice input = do
       , stepPrevSgsPadded: prevCpcs
       }
 
-    expandProofResult = PureStep.expandProof @slotVkChunks expandProofInputRec
+    expandProofResult = PureStep.expandProof @WrapVkChunks expandProofInputRec
 
   let
     dStep = expandProofResult.deferredStep
@@ -1282,7 +1280,7 @@ buildSlotAdvice input = do
 
     z2 = toShifted (F openingZ2Raw)
 
-    wrapCommits = vestaProofCommitments @slotVkChunks input.wrapProof
+    wrapCommits = vestaProofCommitments @WrapVkChunks input.wrapProof
 
     mkPallasAffine :: AffinePoint StepField -> { x :: F StepField, y :: F StepField }
     mkPallasAffine (AffinePoint pt) = { x: F pt.x, y: F pt.y }
@@ -1324,7 +1322,7 @@ buildSlotAdvice input = do
     -- preserving heterogeneous per-entry values for rules like
     -- Tree_proof_return.
     slotSppw
-      :: Step.PerProofWitness slotVkChunks StepIPARounds WrapIPARounds
+      :: Step.PerProofWitness WrapVkChunks StepIPARounds WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
@@ -1642,19 +1640,18 @@ writeRowLabelsTo path publicInputSize cs = do
 -- | two that a comment asks the reader to believe agree.
 buildStepCircuit
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks
+       @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Reflectable slotVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -1737,7 +1734,7 @@ buildStepCircuit handler ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @(SLVK.VerificationKey slotVkChunks (F StepField) Boolean)
+            @(SLVK.VerificationKey WrapVkChunks (F StepField) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
@@ -1756,19 +1753,18 @@ buildStepCircuit handler ctx rule = do
 -- | and verifier indices from its gates.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks
+       @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Reflectable slotVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -1823,7 +1819,6 @@ stepCompile handler ctx rule = do
       @mpvMax
       @mpvPad
       @nd
-      @slotVkChunks
       handler
       ctx
       rule
@@ -1908,7 +1903,7 @@ stepCompile handler ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks
+       @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
@@ -1916,14 +1911,13 @@ preComputeStepDomainLog2
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Reflectable slotVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -1978,14 +1972,21 @@ preComputeStepDomainLog2 handler ctx rule = do
       @mpvMax
       @mpvPad
       @nd
-      @slotVkChunks
       handler
       ctx
       rule
   let
     gateCount = Array.length kimchiRows
     piSize = Array.length builtState.publicInputs
-    zkRows = zkRowsForNumChunks (reflectType (Proxy :: Proxy slotVkChunks))
+    -- This is THIS step circuit's own `zk_rows`, which follows from its
+    -- own `num_chunks` — a step-side quantity. It used to read the
+    -- slot-VK chunk count, which is a wrap-side one; the two were never
+    -- distinguishable because every caller passed 1 for both. Pinned to
+    -- 1 here to preserve exactly that behaviour, rather than renamed to
+    -- `WrapVkChunks`, which would assert something false. A compile at
+    -- `stepChunks = 2` (the `chunks2` fixture) already computes its
+    -- domain from `zkRowsForNumChunks 1`; that predates this change.
+    zkRows = zkRowsForNumChunks 1
     rows = zkRows + piSize + gateCount
   pure (ceilLog2 rows)
   where
@@ -2005,19 +2006,18 @@ preComputeStepDomainLog2 handler ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks
+       @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.SlotProveVk WrapVkChunks) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Reflectable slotVkChunks Int
   => Reflectable outputSize Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
@@ -2091,7 +2091,7 @@ stepSolveAndProve handler ctx rule compileResult advice = do
               @valCarrier
               @mpvMax
               @nd
-              @(SideloadBundle.SlotProveVk slotVkChunks)
+              @(SideloadBundle.SlotProveVk WrapVkChunks)
               rule
               ctx.srsData
               ctx.dummySg

@@ -1,16 +1,11 @@
 -- | Type-level slot descriptors shared between step- and wrap-side
 -- | per-slot carriers. The descriptor encodes what a parent rule needs
 -- | from each prev slot at the type level: the slot's
--- | `max_proofs_verified`, the `num_chunks` of the compile that produced
--- | the prev, and the prev's statement type.
+-- | `max_proofs_verified` and the prev's statement type.
 -- |
 -- | Pure phantom types — no value-level inhabitants. The spec for a
 -- | rule's prevs is the tuple chain
--- | `Slot n₁ nc₁ s₁ /\ Slot n₂ nc₂ s₂ /\ … /\ Unit`.
--- |
--- | The step-side carrier (`Pickles.Step.Slots`) parameterises its
--- | type classes by these descriptors. The wrap side takes its slot
--- | widths as a runtime `Vector mpv Int` instead.
+-- | `Slot n₁ s₁ /\ Slot n₂ s₂ /\ … /\ Unit`.
 -- |
 -- | **Where the kind went.** This type used to carry a `SlotKind` tag
 -- | distinguishing a compiled prev, whose wrap VK is baked in at
@@ -22,24 +17,45 @@
 -- | The distinction is now carried where it already existed as data: the
 -- | slot's key (`Pickles.Prove.Compile.SlotWrapKey`) says which kind it
 -- | is, and the one place that needs to know dispatches on it.
+-- |
+-- | **Where the chunk count went.** This type also used to carry an
+-- | `nc`, documented as the `num_chunks` of the compile that produced
+-- | the prev, on the grounds that a step circuit verifying that prev
+-- | must allocate its FFI commitments at that count. That is not what a
+-- | step circuit does. It verifies the prev's WRAP proof against the
+-- | prev's WRAP verification key, and never sees the prev's step proof,
+-- | so what it allocates is sized by the prev's wrap chunk count —
+-- | `Pickles.Types.WrapVkChunks`, which is 1 because a wrap domain is
+-- | drawn from a three-entry table and never exceeds the wrap SRS. Every
+-- | spec in the repository wrote `1` there for the life of the type.
+-- |
+-- | The two counts that do vary live elsewhere, and neither is per-slot
+-- | type-level data:
+-- |
+-- |   * `stepChunks` — the chunks of a step proof, compile-wide. A step
+-- |     domain can exceed the step SRS, so this is real: `chunks2` is a
+-- |     fixture at 2. It is `compileMulti`'s `@stepChunks`, and it is
+-- |     consumed by the WRAP circuit (`Pickles.Wrap.Main`,
+-- |     `incrementallyVerifyProof`) verifying a step proof. A compile at
+-- |     `stepChunks = 2` still presents a one-chunk wrap VK to whatever
+-- |     verifies it.
+-- |   * the prev's own `num_chunks` — genuinely per-slot, since an
+-- |     external tag was produced by a different compile. It is runtime
+-- |     data: `Pickles.Prove.Slot.slotNumChunks`, which reads it off the
+-- |     slot's source and from which the prev's `zk_rows` follows.
 module Pickles.Slots
   ( Slot
   ) where
 
 -- | A type-level slot descriptor: `max_proofs_verified` (or, for a
 -- | side-loaded slot, the compile-time upper bound on the side-loaded
--- | tag's mpv), `num_chunks` of the prev's compile, and the prev's
--- | statement type.
+-- | tag's mpv), and the prev's statement type.
 -- |
--- | `stepChunks` is an axis of its own because `num_chunks` is
--- | per-compile in OCaml Pickles — each prev tag was produced by some
--- | `Pickles.compile_promise ~num_chunks:N` call, and the step circuit
--- | that verifies that prev needs to allocate FFI commitments at THAT
--- | num_chunks. Self-recursive prevs in a compile with `@stepChunks:k`
--- | conventionally have `stepChunks=k`. External-tag prevs can have a
--- | different `stepChunks` than the current compile.
+-- | The `n` is also the slot's width for the wrap circuit — see
+-- | `Pickles.Prove.Compile.SlotWidths`, which reads it back rather than
+-- | having the application restate it.
 -- |
 -- | Pure phantom; no value-level inhabitants. The spec is the tuple
--- | chain `Slot n₁ nc₁ s₁ /\ Slot n₂ nc₂ s₂ /\ … /\ Unit` — `Unit`
--- | terminates the chain (the empty-prev list).
-foreign import data Slot :: Int -> Int -> Type -> Type
+-- | chain `Slot n₁ s₁ /\ Slot n₂ s₂ /\ … /\ Unit` — `Unit` terminates
+-- | the chain (the empty-prev list).
+foreign import data Slot :: Int -> Type -> Type

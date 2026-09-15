@@ -30,13 +30,13 @@ module Pickles.Sideload.Advice
 
 import Prelude
 
-import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Pickles.Field (StepField)
 import Pickles.Sideload.Bundle (SlotProveVk)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Slots (Slot)
+import Pickles.Types (WrapVkChunks)
 import Snarky.Circuit.DSL (F)
 
 -- | Prove-time spec-indexed VK carrier shape. Funcdep
@@ -60,8 +60,8 @@ instance SideloadedVKsCarrier Unit Unit
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot n slotVkChunks statement /\ rest)
-    (SlotProveVk slotVkChunks /\ restCarrier)
+    (Slot n statement /\ rest)
+    (SlotProveVk WrapVkChunks /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
 -- |
@@ -101,10 +101,8 @@ instance MkUnitVkCarrier Unit Unit where
   mkUnitVkCarrier = unit
 
 instance
-  ( MkUnitVkCarrier rest restCarrier
-  , Reflectable slotVkChunks Int
-  ) =>
+  MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
-    (Slot n slotVkChunks statement /\ rest)
-    (SLVK.VerificationKey slotVkChunks (F StepField) Boolean /\ restCarrier) where
+    (Slot n statement /\ rest)
+    (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

@@ -48,7 +48,7 @@ import Pickles.Slots (Slot)
 import Pickles.Step.Types (PerProofWitness, WrapProof, perProofWitnessTyp)
 import Pickles.Step.VkSource (SlotVkSource)
 import Pickles.Typ (Typ, pairTyp, unitTyp)
-import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
+import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -73,7 +73,7 @@ instance SlotVkCarrier Unit Unit
 
 instance
   SlotVkCarrier rest restVk =>
-  SlotVkCarrier (Slot n slotVkChunks statement /\ rest) (SlotVkSource slotVkChunks /\ restVk)
+  SlotVkCarrier (Slot n statement /\ rest) (SlotVkSource WrapVkChunks /\ restVk)
 
 -- | Spec → (`len`, `pwCarrier`, `vkCarrier`) mapping plus two
 -- | traversals: one over `pwCarrier` alone (legacy), one zipping
@@ -174,23 +174,23 @@ instance StepSlotsCarrier Unit nc ds dw f sf b 0 Unit Unit where
 -- | correct for a wrap-side count, since every wrap VK in a compile has
 -- | the same one.
 instance
-  ( StepSlotsCarrier rest nc ds dw f sf b restLen restPw restVk
+  ( StepSlotsCarrier rest WrapVkChunks ds dw f sf b restLen restPw restVk
   , Add restLen 1 len
   , Reflectable n Int
   , Add pad n PaddedLength
   , Reflectable pad Int
   ) =>
   StepSlotsCarrier
-    (Slot n nc statement /\ rest)
-    nc
+    (Slot n statement /\ rest)
+    WrapVkChunks
     ds
     dw
     f
     sf
     b
     len
-    (PerProofWitness nc ds dw f sf b /\ restPw)
-    (SlotVkSource nc /\ restVk)
+    (PerProofWitness WrapVkChunks ds dw f sf b /\ restPw)
+    (SlotVkSource WrapVkChunks /\ restVk)
   where
   traverseStepSlotsA f (here /\ rest) =
     Vector.cons
@@ -247,15 +247,15 @@ instance
   ( StepSlotsTyp rest restVal restVar
   , Reflectable n Int
   , CircuitType StepField
-      (WrapProof WrapIPARounds slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)) (Type2 (SplitField (F StepField) Boolean)))
-      (WrapProof WrapIPARounds slotVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
+      (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (F StepField)) (Type2 (SplitField (F StepField) Boolean)))
+      (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
   , CheckedType StepField (KimchiConstraint StepField)
-      (WrapProof WrapIPARounds slotVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
+      (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
   ) =>
   StepSlotsTyp
-    (Slot n slotVkChunks statement /\ rest)
-    (SlotWitnessVal slotVkChunks /\ restVal)
-    (SlotWitnessVar slotVkChunks /\ restVar)
+    (Slot n statement /\ rest)
+    (SlotWitnessVal WrapVkChunks /\ restVal)
+    (SlotWitnessVar WrapVkChunks /\ restVar)
   where
   stepSlotsTyp =
     pairTyp (perProofWitnessTyp (reflectType (Proxy :: Proxy n))) (stepSlotsTyp @rest)
@@ -271,5 +271,5 @@ instance SlotStatementsCarrier Unit Unit
 instance
   SlotStatementsCarrier rest restValCarrier =>
   SlotStatementsCarrier
-    (Slot n slotVkChunks statement /\ rest)
+    (Slot n statement /\ rest)
     (statement /\ restValCarrier)

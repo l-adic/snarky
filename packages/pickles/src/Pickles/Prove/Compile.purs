@@ -32,8 +32,11 @@ module Pickles.Prove.Compile
   , mkStepAdvice
   , shapeProveData
   , padShapeProveData
+  , class SlotWidths
+  , slotWidthsOf
   , class CompilableRulesSpec
   , branchCount
+  , ruleSlotWidths
   , extractStepCompileFns
   , extractStepProveFns
   , runStepCompiles
@@ -461,14 +464,13 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
 -- | slot's oracle work still happens before the tail's, as it did when
 -- | the body lived in the instance.
 consMkStepAdvice
-  :: forall @w wPad slotVkChunks inputVal input prevHeadInput prevHeadStmt
+  :: forall @w wPad inputVal input prevHeadInput prevHeadStmt
        prevHeadStmtVar prevsSpec restSpec restLen len headVkCell
        restCarrier restValCarrier restVkCarrier
    . Reflectable w Int
   => Compare w 3 LT
   => Reflectable wPad Int
   => Add wPad w PaddedLength
-  => Reflectable slotVkChunks Int
   => Add restLen 1 len
   => CircuitType StepField inputVal input
   => CircuitType StepField prevHeadStmt prevHeadStmtVar
@@ -496,7 +498,7 @@ consMkStepAdvice
        { stepAdvice ::
            StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal
              len
-             ( Step.PerProofWitness slotVkChunks StepIPARounds WrapIPARounds
+             ( Step.PerProofWitness WrapVkChunks StepIPARounds WrapIPARounds
                  (F StepField)
                  (Type2 (SplitField (F StepField) Boolean))
                  Boolean
@@ -508,7 +510,7 @@ consMkStepAdvice
        , baseCaseWrapPublicInputs :: Vector len (Array WrapField)
        }
 consMkStepAdvice srs appInput slotParams headVkCell headSlot restEffect = do
-  contrib <- buildSlotAdvice @w @slotVkChunks
+  contrib <- buildSlotAdvice @w
     { publicInput: appInput
     , prevStatement: slotData.prevStatement
     , wrapDomainLog2: slotParams.slotWrapDomainLog2
@@ -1375,7 +1377,6 @@ instance
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
   , Reflectable n Int
-  , Reflectable slotVkChunks Int
   , Reflectable mpv Int
   , Reflectable pad Int
   , Add slotPad n PaddedLength
@@ -1388,7 +1389,7 @@ instance
   , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (Slot n slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (Slot n (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     (SlotWrapKey /\ restSlotVKs)
     ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput)
         /\ restPrevsCarrier
@@ -1396,7 +1397,7 @@ instance
     mpv
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
-        slotVkChunks
+        WrapVkChunks
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -1408,11 +1409,11 @@ instance
     -- `SideLoadedVk bundle` for a side-loaded slot, `NoSideLoadedVk`
     -- for a compiled one, whose key is a compile-time constant.
     -- Mirrors `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
-    (SideloadBundle.SlotProveVk slotVkChunks /\ restVkCarrier)
+    (SideloadBundle.SlotProveVk WrapVkChunks /\ restVkCarrier)
     -- Compile-time blueprint for this slot's wrap-VK source, one
     -- constructor per source. Bundled into the post-walk
     -- `SlotVkSource` by `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprint slotVkChunks /\ restScaffolds)
+    (SlotVkBlueprint WrapVkChunks /\ restScaffolds)
   where
   shapeCompileData cfg selfStepDomainLog2s =
     consShapeCompileData cfg selfStepDomainLog2s headSlot
@@ -1555,6 +1556,52 @@ foreign import data RulesNil :: RulesSpec
 -- | parameters bind that branch's mpv / valCarrier / prevsSpec /
 -- | slotVKs; the fifth is the rest of the list.
 foreign import data RulesCons :: Int -> Type -> Type -> Type -> RulesSpec -> RulesSpec
+
+-- | A rule's per-slot `max_proofs_verified`, in slot order.
+-- |
+-- | `Slot n _ _` already records `n` — that is what its first parameter
+-- | is. This reads it back as a value, so the wrap circuit's slot widths
+-- | are derived from the spec rather than restated beside it.
+class SlotWidths (prevsSpec :: Type) where
+  slotWidthsOf :: forall proxy. proxy prevsSpec -> Array Int
+
+instance SlotWidths Unit where
+  slotWidthsOf _ = []
+
+instance (Reflectable n Int, SlotWidths rest) => SlotWidths (Slot n stmt /\ rest) where
+  slotWidthsOf _ = Array.cons (reflectType (Proxy @n)) (slotWidthsOf (Proxy @rest))
+
+-- | The wrap circuit's per-slot widths, overlaid from every branch's own
+-- | slot list.
+-- |
+-- | A branch with `mpv` slots is front-padded into the last `mpv`
+-- | positions of the wrap circuit's `mpvMax`, so two branches can reach
+-- | the same position and must agree on its width there — a real slot
+-- | supplies exactly `n` challenge stacks (`Add slotPad n PaddedLength`),
+-- | and the circuit allocates exactly `widths[i]`. `mpvMax` is a maximum
+-- | over branches, so some branch covers every position and the result
+-- | is total.
+deriveWrapSlotWidths :: Int -> Array (Array Int) -> Array Int
+deriveWrapSlotWidths mpvMax perRule =
+  Array.mapWithIndex (\i _ -> atPosition i) (Array.replicate mpvMax unit)
+  where
+  atPosition i = case Array.nub (Array.mapMaybe (widthAt i) perRule) of
+    [ w ] -> w
+    [] -> unsafeThrow
+      $ "compileMulti: no rule declares slot " <> show i <> " of " <> show mpvMax
+    ws -> unsafeThrow
+      $ "compileMulti: rules disagree on the width of slot "
+          <> show i
+          <> ": "
+          <> show ws
+          <> ". A slot's width is its `Slot n _ _`, and every rule whose "
+          <> "prevs reach that slot must declare the same n."
+
+  widthAt i ws =
+    let
+      pad = mpvMax - Array.length ws
+    in
+      if i < pad then Nothing else Array.index ws (i - pad)
 
 -- | Type-level `max` over two `Int` kinds, dispatched via `Compare`.
 class IntMax (a :: Int) (b :: Int) (c :: Int) | a b -> c
@@ -1741,6 +1788,11 @@ class
   -- | would, but via direct class-method dispatch.
   branchCount :: forall proxy. proxy rs -> Int
 
+  -- | Each branch's own slot widths, in branch order, read off its
+  -- | `Slot n _ _` chain. `deriveWrapSlotWidths` overlays these into the
+  -- | wrap circuit's single `mpvMax`-long list.
+  ruleSlotWidths :: forall proxy. proxy rs -> Array (Array Int)
+
   -- | Extract each `RuleEntry`'s `stepCompileFn` field into a Tuple
   -- | chain whose shape mirrors `rulesCarrier`. Pure value-level
   -- | rewriting: each per-rule entry yields its already-captured
@@ -1813,6 +1865,7 @@ instance
     r
   where
   branchCount _ = 0
+  ruleSlotWidths _ = []
   extractStepCompileFns _ = unit
   runStepCompiles _ _ _ = pure unit
   extractStepProveFns _ = unit
@@ -1835,6 +1888,7 @@ instance
       restStepProveFns
       r
   , Add restBranches 1 branches
+  , SlotWidths prevsSpec
   , StepSlotsCarrier
       prevsSpec
       WrapVkChunks
@@ -1910,6 +1964,24 @@ instance
       @restStepProveFns
       @r
       (Proxy :: Proxy rest)
+  ruleSlotWidths _ =
+    Array.cons (slotWidthsOf (Proxy :: Proxy prevsSpec))
+      ( ruleSlotWidths
+          @rest
+          @inputVal
+          @outputVal
+          @prevInputVal
+          @topBranches
+          @restBranches
+          @mpvMax
+          @restCarrier
+          @restStepCompileFns
+          @restCtxs
+          @restStepCompileResults
+          @restStepProveFns
+          @r
+          (Proxy :: Proxy rest)
+      )
   extractStepCompileFns (RuleEntry r /\ rest) =
     r.stepCompileFn
       /\ extractStepCompileFns
@@ -2585,7 +2657,7 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs v
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @r
+  :: forall @mpvMax @outputVal @prevInputVal @r
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        inputVal inputVar outputVar prevInputVar slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
@@ -2601,22 +2673,21 @@ mkRuleEntry
   -- Compile-path carrier: cells = side-loaded VK descriptor. Synthesised
   -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
   -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  -- `WrapVkChunks` (Dim 2) is distinct from `slotVkChunks` (the
-  -- side-loaded slot's own count, Dim 3) and from the wrap circuit's
-  -- `stepChunks` (Dim 1).
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
+  -- A side-loaded tag's VK is a wrap VK, so it is `WrapVkChunks` like
+  -- every other VK a step circuit reads. Distinct from the wrap
+  -- circuit's `stepChunks`, which is the one count that varies.
+  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `SideloadBundle.SlotProveVk`, carrying
   -- a bundle exactly at the side-loaded slots. Sourced from
   -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec WrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.SlotProveVk WrapVkChunks) prevsSpec WrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Reflectable slotVkChunks Int
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable outputSize Int
@@ -2675,7 +2746,6 @@ mkRuleEntry rule slotVKs =
           @mpvMax
           @mpvPad
           @nd
-          @slotVkChunks
           handler
           ctx
           rule
@@ -2693,7 +2763,6 @@ mkRuleEntry rule slotVKs =
           @mpvMax
           @mpvPad
           @nd
-          @slotVkChunks
           handler
           ctx
           rule
@@ -2711,7 +2780,6 @@ mkRuleEntry rule slotVKs =
           @mpvMax
           @mpvPad
           @nd
-          @slotVkChunks
           handler
           ctx
           rule
@@ -3335,11 +3403,6 @@ compileMulti
   -- the actual max across rules' prev counts.
   => MaxOfRulesMpvs rs mpvMax
   => AdviceHandler r
-  -- | The wrap circuit's per-slot `max_local_max_proofs_verified`, in
-  -- | slot order, one entry per slot of the widest rule. Supplied by
-  -- | the application, which knows its rules. Its length must be
-  -- | `mpvMax`.
-  -> Array Int
   -> CompileMultiConfig
   -> rulesCarrier
   -> Effect
@@ -3351,7 +3414,25 @@ compileMulti
            outputVal
            Unit
        )
-compileMulti handler slotWidths cfg rules = do
+compileMulti handler cfg rules = do
+  let
+    slotWidths = deriveWrapSlotWidths (reflectType (Proxy :: Proxy mpvMax))
+      ( ruleSlotWidths
+          @rs
+          @inputVal
+          @outputVal
+          @prevInputVal
+          @branches
+          @branches
+          @mpvMax
+          @rulesCarrier
+          @stepCompileFnsCarrier
+          @perBranchCtxsCarrier
+          @perBranchStepCompileResults
+          @stepProveFnsCarrier
+          @r
+          (Proxy :: Proxy rs)
+      )
   -- Step 1: per-rule pre-pass + step compile.
   --
   -- `runMultiCompileFull` calls `prePassDomainLog2s` then

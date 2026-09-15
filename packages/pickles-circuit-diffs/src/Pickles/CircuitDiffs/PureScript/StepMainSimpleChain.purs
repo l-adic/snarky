@@ -97,7 +97,7 @@ compileStepMainSimpleChain params = do
       --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple1 (Slot 1 1 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
