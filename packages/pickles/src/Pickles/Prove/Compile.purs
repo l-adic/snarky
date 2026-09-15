@@ -121,7 +121,7 @@ import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprint)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify
   ( CompiledProof(..)
@@ -462,7 +462,7 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
 -- | the body lived in the instance.
 consMkStepAdvice
   :: forall @w wPad slotVkChunks inputVal input prevHeadInput prevHeadStmt
-       prevHeadStmtVar prevsSpec restSpec wrapVkChunks restLen len headVkCell
+       prevHeadStmtVar prevsSpec restSpec restLen len headVkCell
        restCarrier restValCarrier restVkCarrier
    . Reflectable w Int
   => Compare w 3 LT
@@ -484,7 +484,7 @@ consMkStepAdvice
   -> PrevSlot prevHeadInput w prevHeadStmt
   -> Effect
        { stepAdvice ::
-           StepAdvice restSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal
+           StepAdvice restSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal
              restLen
              restCarrier
              restValCarrier
@@ -494,7 +494,7 @@ consMkStepAdvice
        }
   -> Effect
        { stepAdvice ::
-           StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal
+           StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal
              len
              ( Step.PerProofWitness slotVkChunks StepIPARounds WrapIPARounds
                  (F StepField)
@@ -547,8 +547,7 @@ consMkStepAdvice srs appInput slotParams headVkCell headSlot restEffect = do
       , messagesForNextWrapProofDummyHash: restA.messagesForNextWrapProofDummyHash
       -- Wrap VK is compile-wide-constant; propagate the base case's
       -- unchanged. Value-identical to a fresh extraction from the same
-      -- wrap result, but ties `wrapVkChunks` through the carrier across
-      -- the recursion.
+      -- wrap result.
       , wrapVerifierIndex: restA.wrapVerifierIndex
       , kimchiPrevChallenges:
           contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
@@ -858,8 +857,8 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
     BasePrev _ ->
       let
         -- `dummyWrapProof` is a WRAP proof: its publicEvals chunk count
-        -- is Dim 2 (`wrapVkChunks`), protocol-pinned to 1 (wrap domain
-        -- ≤ wrap SRS — same invariant as `num_chunks_by_default`). The
+        -- is Dim 2 (`WrapVkChunks`), pinned to 1 (wrap domain ≤ wrap
+        -- SRS — same invariant as `num_chunks_by_default`). The
         -- dummy wrap proof's public eval = the oracle's recomputed
         -- x_hat (OCaml `wrap.ml:110-116` `None` branch), NOT
         -- `proofData(dummy).evals.public` — the dummy wire proof
@@ -1235,9 +1234,8 @@ class
   -- | derived from instance head free vars) unifies with the method's
   -- | return type.
   mkStepAdvice
-    :: forall wrapVkChunks inputVal inputVar
+    :: forall inputVal inputVar
      . CircuitType StepField inputVal inputVar
-    => Reflectable wrapVkChunks Int
     => CompileConfig prevsSpec slotVKs
     -> StepCompileResult
     -> WrapCompileResult
@@ -1245,13 +1243,8 @@ class
     -> prevsCarrier
     -> vkCarrier
     -> Effect
-         { -- `wrapVkChunks` is a free compile-wide parameter (the
-           -- wrap VK's own chunk count, OCaml `step_main.ml:347`
-           -- `num_chunks_by_default`). Library code stays polymorphic;
-           -- callers pin it (tests pass `@1`, the protocol-guaranteed
-           -- value since the wrap domain never exceeds the wrap SRS).
-           stepAdvice ::
-             StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal mpv
+         { stepAdvice ::
+             StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal mpv
                carrier
                valCarrier
                vkCarrier
@@ -1312,21 +1305,10 @@ instance CompilableSpec Unit Unit Unit 0 Unit Unit Unit Unit where
         -- Nil has no prev slots, so `stepDomainLog2` is dead — the
         -- per-slot dummy that consumes it gets replicated to a
         -- `Vector 0` (= empty). `0` is a sentinel; any value works.
-        -- `wrapVkChunks` is inferred end-to-end from the method's
-        -- return type: the single `StepAdvice` expression below flows
-        -- straight into the typed record field, never named —
-        -- symmetric to how `nc` is inferred from the spec/carrier.
-        -- (Inlined, not let-bound, so the `Reflectable wrapVkChunks Int`
-        -- on `buildStepAdvice` resolves only after the return type
-        -- pins `wrapVkChunks`, instead of at a generalized binding.)
-        -- `wrapVkChunks` appears in `StepAdvice` *only* via the
-        -- `wrapVerifierIndex` field, which we overwrite here. So the
-        -- `buildStepAdvice` placeholder is pinned `@1` (its dummy
-        -- wrap-VK is discarded); `over StepAdvice` rewrites
-        -- `wrapVerifierIndex` to `extractWrapVKCommsAdvice`'s
-        -- `VerificationKey wrapVkChunks`, which the method return type
-        -- pins by inference — symmetric to how `nc` flows from the
-        -- spec/carrier (never named, no class param).
+        -- `WrapVkChunks` enters `StepAdvice` only via the
+        -- `wrapVerifierIndex` field, which `over StepAdvice` rewrites
+        -- here to `extractWrapVKCommsAdvice`'s; `buildStepAdvice`'s
+        -- dummy wrap-VK is discarded.
         { stepAdvice:
             over StepAdvice
               ( \r -> r
@@ -1334,7 +1316,7 @@ instance CompilableSpec Unit Unit Unit 0 Unit Unit Unit Unit where
                   , messagesForNextWrapProofDummyHash = dummyHash
                   }
               )
-              ( buildStepAdvice @Unit @1
+              ( buildStepAdvice @Unit
                   { publicInput: appInput
                   , stepDomainLog2: 0
                   , prevAppStates: unit
@@ -1713,7 +1695,6 @@ class CompilableRulesSpec
   -> Int
   -> Int
   -> Int
-  -> Int
   -> Type
   -> Type
   -> Type
@@ -1730,14 +1711,13 @@ class
     topBranches
     branches
     mpvMax
-    wrapVkChunks
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
     perBranchStepCompileResults
     stepProveFnsCarrier
     r
-  | rs topBranches wrapVkChunks r ->
+  | rs topBranches r ->
     branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
     perBranchStepCompileResults
     stepProveFnsCarrier
@@ -1813,7 +1793,6 @@ instance
     topBranches
     0
     mpvMax
-    wrapVkChunks
     Unit
     Unit
     Unit
@@ -1837,7 +1816,6 @@ instance
       topBranches
       restBranches
       mpvMax
-      wrapVkChunks
       restCarrier
       restStepCompileFns
       restCtxs
@@ -1847,7 +1825,7 @@ instance
   , Add restBranches 1 branches
   , StepSlotsCarrier
       prevsSpec
-      wrapVkChunks
+      WrapVkChunks
       StepIPARounds
       WrapIPARounds
       (F StepField)
@@ -1877,8 +1855,7 @@ instance
     topBranches
     branches
     mpvMax
-    wrapVkChunks
-    ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
         /\ restCarrier
     )
     ( ( AdviceHandler r
@@ -1892,7 +1869,7 @@ instance
     ( ( AdviceHandler r
         -> PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
-        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
              inputVal
              ruleMpv
              carrier
@@ -1914,7 +1891,6 @@ instance
       @topBranches
       @restBranches
       @mpvMax
-      @wrapVkChunks
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -1932,7 +1908,6 @@ instance
         @topBranches
         @restBranches
         @mpvMax
-        @wrapVkChunks
         @restCarrier
         @restStepCompileFns
         @restCtxs
@@ -1950,7 +1925,6 @@ instance
       @topBranches
       @restBranches
       @mpvMax
-      @wrapVkChunks
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -1976,7 +1950,6 @@ instance
         @topBranches
         @restBranches
         @mpvMax
-        @wrapVkChunks
         @restCarrier
         @restStepCompileFns
         @restCtxs
@@ -1996,7 +1969,6 @@ instance
         @topBranches
         @restBranches
         @mpvMax
-        @wrapVkChunks
         @restCarrier
         @restStepCompileFns
         @restCtxs
@@ -2019,7 +1991,6 @@ instance
 
 class
   CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax
-    wrapVkChunks
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
@@ -2034,7 +2005,6 @@ class
     topBranches
     branches
     mpvMax
-    wrapVkChunks
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
@@ -2042,7 +2012,7 @@ class
     stepProveFnsCarrier
     proversCarrier
     r
-  | rs topBranches wrapVkChunks r -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+  | rs topBranches r -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
     perBranchStepCompileResults stepProveFnsCarrier
     proversCarrier
   where
@@ -2153,7 +2123,7 @@ class
 -- | via `:<` from Nil's `Vector.nil` up to `Vector topBranches Int`
 -- | at the outermost call).
 runMultiCompileFull
-  :: forall @rs @inputVal @outputVal @prevInputVal @topBranches @mpvMax @wrapVkChunks @r
+  :: forall @rs @inputVal @outputVal @prevInputVal @topBranches @mpvMax @r
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -2164,7 +2134,6 @@ runMultiCompileFull
        topBranches
        topBranches
        mpvMax
-       wrapVkChunks
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -2172,7 +2141,6 @@ runMultiCompileFull
        stepProveFnsCarrier
        proversCarrier
        r
-  => Reflectable wrapVkChunks Int
   => Reflectable topBranches Int
   => AdviceHandler r
   -> CompileMultiConfig
@@ -2194,7 +2162,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @topBranches
     @topBranches
     @mpvMax
-    @wrapVkChunks
     @rulesCarrier
     @stepCompileFnsCarrier
     @perBranchCtxsCarrier
@@ -2238,7 +2205,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @topBranches
     @topBranches
     @mpvMax
-    @wrapVkChunks
     @rulesCarrier
     @stepCompileFnsCarrier
     @perBranchCtxsCarrier
@@ -2268,7 +2234,6 @@ instance
     topBranches
     0
     mpvMax
-    wrapVkChunks
     Unit
     Unit
     Unit
@@ -2286,7 +2251,6 @@ instance
       topBranches
       restBranches
       mpvMax
-      wrapVkChunks
       restCarrier
       restStepCompileFns
       restCtxs
@@ -2302,29 +2266,6 @@ instance
   -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
   , CircuitGateConstructor WrapField PallasG
-  , Reflectable wrapVkChunks Int
-  , Compare 0 wrapVkChunks LT
-  -- Full wrap-VK-chunk (Dim 2) layout chain, threaded because
-  -- `buildBranchProvers` calls `runMultiProverBody` (→ the step
-  -- entry fns) and `wrapVkChunks` is abstract here. Mirrors
-  -- `stepMain`/`mkRuleEntry`'s chain.
-  , Add 1 wvcChunksPred wrapVkChunks
-  , Mul 7 wrapVkChunks wvcTCommLen
-  , Add 1 wvcTCommLenPred wvcTCommLen
-  , Mul 15 wrapVkChunks wvcWCoeffN
-  , Mul 6 wrapVkChunks wvcIndexSigmaN
-  , Mul 44 wrapVkChunks wvcChunkBases
-  , Add 1 wvcChunkBases wvcNonSgBases
-  , Add wrapVkChunks 1 wvcSg1
-  , Add wvcSg1 wrapVkChunks wvcSg2
-  , Add wvcSg2 wvcIndexSigmaN wvcSg3
-  , Add wvcSg3 wvcWCoeffN wvcSg4
-  , Add wvcSg4 wvcWCoeffN wvcSg5
-  , Add wvcSg5 wvcIndexSigmaN wvcNonSgBases
-  , Add 2 wvcNonSgBases wvcTotalBases
-  , Add 1 wvcTotalBasesPred wvcTotalBases
-  , Reflectable wvcTCommLen Int
-  , Reflectable wvcNonSgBases Int
   , Reflectable ruleMpv Int
   , Reflectable pad Int
   , Reflectable outputSize Int
@@ -2360,8 +2301,7 @@ instance
       topBranches
       branches
       mpvMax
-      wrapVkChunks
-      ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
+      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
           /\ restCarrier
       )
       ( ( AdviceHandler r
@@ -2375,7 +2315,7 @@ instance
       ( ( AdviceHandler r
           -> PProveStep.StepProveContext ruleMpv topBranches blueprints
           -> PProveStep.StepCompileResult
-          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
                inputVal
                ruleMpv
                carrier
@@ -2401,8 +2341,7 @@ instance
     topBranches
     branches
     mpvMax
-    wrapVkChunks
-    ( RuleEntry prevsSpec ruleMpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
         /\ restCarrier
     )
     ( ( AdviceHandler r
@@ -2416,7 +2355,7 @@ instance
     ( ( AdviceHandler r
         -> PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
-        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
              inputVal
              ruleMpv
              carrier
@@ -2455,7 +2394,6 @@ instance
       @topBranches
       @restBranches
       @mpvMax
-      @wrapVkChunks
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -2484,7 +2422,6 @@ instance
       @topBranches
       @restBranches
       @mpvMax
-      @wrapVkChunks
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -2533,8 +2470,7 @@ instance
           -- front-pads the per-rule proveData up to it with `Dummy.*`
           -- values; at `ruleMpv = mpvMax` that padding is empty.
           @mpvMax
-                @mpvPad
-          @wrapVkChunks
+          @mpvPad
           handler
           ncProxy
           thisBranch
@@ -2554,7 +2490,6 @@ instance
       @topBranches
       @restBranches
       @mpvMax
-      @wrapVkChunks
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -2589,7 +2524,6 @@ data RuleEntry
   :: Type
   -> Int
   -> Int
-  -> Int
   -> Type
   -> Type
   -> Type
@@ -2599,7 +2533,7 @@ data RuleEntry
   -> Type
   -> Row (Type -> Type)
   -> Type
-data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r = RuleEntry
+data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r = RuleEntry
   { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
     -- | with OCaml `rough_domains` log2=20) and returns the actual
     -- | `selfStepDomainLog2` derived by counting gates in a one-shot
@@ -2624,7 +2558,7 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
       AdviceHandler r
       -> PProveStep.StepProveContext mpv nd blueprints
       -> PProveStep.StepCompileResult
-      -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+      -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
            inputVal
            mpv
            carrier
@@ -2639,35 +2573,13 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @wrapVkChunks @r
+  :: forall @mpvMax @outputVal @prevInputVal @slotVkChunks @r
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
-       wrapVkChunksPred wvcTCommLen wvcTCommLenPred wvcWCoeffN wvcIndexSigmaN
-       wvcChunkBases wvcNonSgBases wvcSg1 wvcSg2 wvcSg3 wvcSg4 wvcSg5
-       wvcTotalBases wvcTotalBasesPred
        inputVal inputVar outputVar prevInputVar slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
        compileSideloadedVkCarrier sideloadedVkCarrier blueprints
        vkSourcesCarrier
    . CircuitGateConstructor StepField VestaG
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks wvcTCommLen
-  => Add 1 wvcTCommLenPred wvcTCommLen
-  => Mul 15 wrapVkChunks wvcWCoeffN
-  => Mul 6 wrapVkChunks wvcIndexSigmaN
-  => Mul 44 wrapVkChunks wvcChunkBases
-  => Add 1 wvcChunkBases wvcNonSgBases
-  => Add wrapVkChunks 1 wvcSg1
-  => Add wvcSg1 wrapVkChunks wvcSg2
-  => Add wvcSg2 wvcIndexSigmaN wvcSg3
-  => Add wvcSg3 wvcWCoeffN wvcSg4
-  => Add wvcSg4 wvcWCoeffN wvcSg5
-  => Add wvcSg5 wvcIndexSigmaN wvcNonSgBases
-  => Add 2 wvcNonSgBases wvcTotalBases
-  => Add 1 wvcTotalBasesPred wvcTotalBases
-  => Reflectable wvcTCommLen Int
-  => Reflectable wvcNonSgBases Int
   -- `vkSourcesCarrier` is uniquely determined by `prevsSpec` (see the
   -- `prevsSpec -> vkCarrier` fundep on `BuildSlotVkSources`), so compile-
   -- and prove-path constraints share one binder. The two BuildSlotVkSources
@@ -2677,16 +2589,15 @@ mkRuleEntry
   -- Compile-path carrier: cells = side-loaded VK descriptor. Synthesised
   -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
   -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
-  -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
-  -- a free parameter (callers pin `@1`, protocol-guaranteed). Distinct
-  -- from `nc` (the chunks2/side-loaded slot's own count, Dim 3) and
-  -- the wrap circuit's `stepChunks` (Dim 1).
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
+  -- `WrapVkChunks` (Dim 2) is distinct from `slotVkChunks` (the
+  -- side-loaded slot's own count, Dim 3) and from the wrap circuit's
+  -- `stepChunks` (Dim 1).
+  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
   -- Prove-path carrier: cells = `SideloadBundle.SlotProveVk`, carrying
   -- a bundle exactly at the side-loaded slots. Sourced from
   -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec wrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec WrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
@@ -2708,7 +2619,7 @@ mkRuleEntry
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2719,7 +2630,7 @@ mkRuleEntry
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2732,7 +2643,7 @@ mkRuleEntry
   => SlotStatementsCarrier prevsSpec valCarrier
   => PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
-  -> Effect (RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints r)
+  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier blueprints r)
 mkRuleEntry rule slotVKs =
   -- The rule already has the bare-`m` `StepRule` shape the step
   -- functions expect — pass it straight through (compile and prove use
@@ -2753,7 +2664,6 @@ mkRuleEntry rule slotVKs =
           @mpvPad
           @nd
           @slotVkChunks
-          @wrapVkChunks
           handler
           ctx
           rule
@@ -2772,7 +2682,6 @@ mkRuleEntry rule slotVKs =
           @mpvPad
           @nd
           @slotVkChunks
-          @wrapVkChunks
           handler
           ctx
           rule
@@ -2791,7 +2700,6 @@ mkRuleEntry rule slotVKs =
           @mpvPad
           @nd
           @slotVkChunks
-          @wrapVkChunks
           handler
           ctx
           rule
@@ -2890,16 +2798,13 @@ runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
        @topBranches
-       @mpvMax @mpvPad @wrapVkChunks @stepChunks numChunksPred wrapVkChunksPred
+       @mpvMax @mpvPad @stepChunks numChunksPred
        branches branchesPred topBranchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
        vkCarrier blueprints r
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv valCarrier carrier vkCarrier blueprints
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
   => SlotStatementsCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -2978,7 +2883,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv topBranches wrapVkChunks valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
+  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier blueprints r
   -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
   -> Effect (Either ProveError (CompiledProof mpvMax (StatementIO inputVal outputVal)))
 runMultiProverBody
@@ -3363,7 +3268,7 @@ runMultiProverBody
             }
 
 compileMulti
-  :: forall @rs @outputVal @prevInputVal @stepChunks @wrapVkChunks numChunksPred
+  :: forall @rs @outputVal @prevInputVal @stepChunks numChunksPred
        r
        inputVal mpvMax
        branches
@@ -3379,7 +3284,6 @@ compileMulti
        branches
        branches
        mpvMax
-       wrapVkChunks
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -3388,8 +3292,6 @@ compileMulti
        proversCarrier
        r
   => CircuitGateConstructor WrapField PallasG
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
   => Reflectable branches Int
   => Reflectable mpvMax Int
   => Reflectable stepChunks Int
@@ -3453,7 +3355,6 @@ compileMulti handler slotWidths cfg rules = do
     @prevInputVal
     @branches
     @mpvMax
-    @wrapVkChunks
     @r
     handler
     cfg
@@ -3496,7 +3397,6 @@ compileMulti handler slotWidths cfg rules = do
       @branches
       @branches
       @mpvMax
-      @wrapVkChunks
       @rulesCarrier
       @stepCompileFnsCarrier
       @perBranchCtxsCarrier
@@ -3559,7 +3459,6 @@ compileMulti handler slotWidths cfg rules = do
     @branches
     @branches
     @mpvMax
-    @wrapVkChunks
     @rulesCarrier
     @stepCompileFnsCarrier
     @perBranchCtxsCarrier

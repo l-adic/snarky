@@ -38,8 +38,8 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   body :: SharedSrs -> LoggerT Message Aff Unit
   body { pallasSrs, vestaSrs, lagrangeCache } = do
     -- PureScript-side compile: produce the wrap VK for NRR.
-    nrrEntry :: RuleEntry _ _ _ _ _ Unit _ _ _ _ _ _ <-
-      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry :: RuleEntry _ _ _ _ Unit _ _ _ _ _ _ <-
+      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
     let rules = tuple1 nrrEntry
     output <- withSpan "[DigestEqNrr] compile" $ liftEffect $ compileMulti
       @NrrRules

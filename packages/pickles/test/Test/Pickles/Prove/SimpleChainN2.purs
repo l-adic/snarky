@@ -92,7 +92,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField) @1 @1
+    entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField) @1
       simpleChainN2Rule
       (tuple2 Self Self)
 

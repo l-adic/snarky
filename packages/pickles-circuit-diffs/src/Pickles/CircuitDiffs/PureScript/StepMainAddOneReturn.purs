@@ -80,7 +80,7 @@ compileStepMainAddOneReturn params = do
       -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
       -- pick any concrete CircuitType-havers; Unit works.
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1 @Unit @1
+      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1 @Unit
           addOneReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

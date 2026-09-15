@@ -117,7 +117,6 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @1
           @2
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
-          @1
           incrementRule
           { blindingH: params.blindingH
           -- nd=2 dispatch list: OCaml's `domain_for_compiled`

@@ -110,7 +110,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
 
     let nrrRules = tuple1 nrrEntry
 
@@ -152,7 +152,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField) @1
       treeProofReturnRule
       (tuple2 (External nrrProverVKs) Self)
 

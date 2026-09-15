@@ -51,7 +51,7 @@ fullCompile srs = do
   -- witness monad `m` is never pinned by usage — pin it to `Effect`
   -- explicitly (compile discards the `exists` bodies, so `m` is phantom
   -- here; any `Monad`/`MonadEffect`/`MonadRec` works).
-  nrrEntry <- pinCompileEntry <$> mkRuleEntry @0 @(F StepField) @Unit @1 @1 @() nrrRule unit
+  nrrEntry <- pinCompileEntry <$> mkRuleEntry @0 @(F StepField) @Unit @1 @() nrrRule unit
   nrr <- compileMulti
     @NrrRules
     @(F StepField)
@@ -69,7 +69,7 @@ fullCompile srs = do
       , stepNumChunks: nrr.vks.stepChunks
       }
 
-  treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1 @()
+  treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @(F StepField) @1 @()
     benchTreeRule
     (tuple2 (External nrrProverVKs) Self)
   tree <- compileMulti

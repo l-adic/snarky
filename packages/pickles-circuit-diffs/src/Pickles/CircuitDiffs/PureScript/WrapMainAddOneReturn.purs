@@ -58,7 +58,7 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @1 @0 @1 config stmt dummyAdvice Vector.nil)
-  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2

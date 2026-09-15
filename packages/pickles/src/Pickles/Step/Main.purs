@@ -61,7 +61,7 @@ import Pickles.Typ (existsTyp)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -734,9 +734,7 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
-       @valCarrier @mpvMax mpvPad @nd ndPred @cell @wrapVkChunks
-       wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases totalBases totalBasesPred
-       sg1 sg2 sg3 sg4 sg5
+       @valCarrier @mpvMax mpvPad @nd ndPred @cell
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
        r
@@ -749,12 +747,13 @@ stepMain
   -- output is a heterogeneous Tuple-chain `vkSourcesCarrier` with
   -- each cell sized by *that slot's* `nc`.
   --
-  -- `wrapVkChunks` is the chunks count of THIS compile's own
-  -- wrap VK (Dim 2 viewed at the outer rule level — distinct from
-  -- per-slot `nc` values, distinct from the wrap circuit's
-  -- `stepChunks` / Dim 1). OCaml fixes this to 1
-  -- (`step_main.ml:347` `num_chunks_by_default`).
-  => BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  -- The wrap VK is one chunk (`Pickles.Types.WrapVkChunks`), so this
+  -- signature names the constant rather than quantifying over it. It
+  -- used to carry fourteen constraints deriving the chunked-base layout
+  -- from an abstract count; at 1 they are `tCommLen = 7`,
+  -- `nonSgBases = 45`, `totalBases = 47`, and the solver discharges
+  -- them at `verifyOne` without being told.
+  => BuildSlotVkSources cell prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
@@ -768,7 +767,7 @@ stepMain
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -779,30 +778,6 @@ stepMain
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable len Int
-  => Reflectable wrapVkChunks Int
-  -- verifyOne layout-chain prereqs threaded through stepMain. The
-  -- intermediate types (wrapVkChunksPred, tCommLen, wCoeffN, etc.) are
-  -- all functionally determined by `wrapVkChunks` via the Mul/Add
-  -- class fundeps, so concrete `wrapVkChunks` callers can omit them
-  -- and the compiler will infer.
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 wrapVkChunks wCoeffN
-  => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 44 wrapVkChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add wrapVkChunks 1 sg1
-  => Add sg1 wrapVkChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => Add 2 nonSgBases totalBases
-  => Add 1 totalBasesPred totalBases
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
@@ -821,7 +796,7 @@ stepMain
   -> StepMainSrsData len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Ref (Maybe (Array (FVar StepField)))
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
 stepMain
@@ -850,7 +825,7 @@ stepMain
   -- calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
-      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @wrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
+      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @WrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
       -- The rule reads previous proofs' statements through this deferred
       -- getter (projected from advice; forced only inside the rule's own
       -- `exists` bodies, so compile never touches the dummy advice).
@@ -887,7 +862,7 @@ stepMain
   -- Also used directly by the outer hash (step 9) — the
   -- hash_messages_for_next_step_proof sponge absorbs self's wrap VK
   -- commitments (= `dlog_plonk_index`) once, NOT per-slot.
-  (VerificationKey sharedVkRec :: VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))) <-
+  (VerificationKey sharedVkRec :: VerificationKey WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField))) <-
     label "exists_wrap_index"
       $ exists (pure advice <#> \(StepAdvice r) -> r.wrapVerifierIndex)
   let
@@ -965,7 +940,7 @@ stepMain
   -- and the `of_compiled_with_known_wrap_key` / `self_data` dispatch
   -- at step_main.ml:513-528).
   results <- label "prevs_verified" do
-    rs <- traverseStepSlotsAWithVk @prevsSpec @wrapVkChunks
+    rs <- traverseStepSlotsAWithVk @prevsSpec @WrapVkChunks
       ( \slotWidth i sppw slotVkSrc -> do
           let
             pw = reshapePerProofWitness slotWidth sppw
@@ -1090,7 +1065,7 @@ stepMain
               slotVkComms
               constDummySg
           r <- label ("slot_" <> show (getFinite i)) $
-            verifyOne @wrapVkChunks slotFopParams input slotIvpParams
+            verifyOne slotFopParams input slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }

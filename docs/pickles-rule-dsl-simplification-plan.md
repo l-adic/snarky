@@ -218,10 +218,13 @@ only for a reason stated at the site.
 `mpv` is the third case. It varies per application *and* is named by the
 specification, so the two-way split above has no room for it. §9.3.
 
-Chunk counts (`stepChunks`, `wrapVkChunks`) are explicitly out of scope
-for Phases 1–3. They vary per application but index protocol records
-inside the circuit (`Vector stepChunks` in `IncrementallyVerifyProof`,
-`PublicInputCommit`), not the slot list; leave them as they are.
+Chunk counts (`stepChunks`, `wrapVkChunks`) were put out of scope for
+Phases 1–3 on the grounds that they vary per application but index
+protocol records inside the circuit (`Vector stepChunks` in
+`IncrementallyVerifyProof`, `PublicInputCommit`), not the slot list. That
+holds for `stepChunks`, which does vary. It does not hold for
+`wrapVkChunks`: a wrap domain never exceeds the wrap SRS, so it is the
+literal `Pickles.Types.WrapVkChunks = 1` on the whole step path. §9.8.
 
 The per-slot chunk count is load-bearing in a way this section
 underestimated: it also indexes the carriers the compiler's methods
@@ -686,7 +689,7 @@ independently. They are, but what a step slot sees is the prev's wrap
 proof, never its step proof, so an application with `stepChunks = 2`
 still presents a 1-chunk wrap VK to anything verifying it.
 
-Two consequences, both landed:
+Three consequences, all landed:
 
   * `StepSlotsCarrier` takes the count as a class parameter rather than a
     per-slot rank-2 binder. Every `unsafeCoerce` on the per-slot path
@@ -697,11 +700,21 @@ Two consequences, both landed:
     verifier uses `44·nc + 1`. They agree only at `nc = 1`. Nothing
     consumed it, which is why it could be wrong indefinitely; deleting it
     changed nothing.
+  * `wrapVkChunks` stopped being a type variable. `verifyOne`, `stepMain`,
+    the four `Prove/Step` runners, `RuleEntry`, `CompilableRulesSpec`,
+    `compileMulti` and `deriveWrapVKFromCompiled` all name the literal
+    `WrapVkChunks` instead of quantifying, and every call site lost the
+    `@1` it was passing. The IVP layout stays generic in
+    `incrementallyVerifyProof` itself, because the wrap side calls it at
+    `stepChunks`, where chunking is real.
 
 What remains: `Slot n nc stmt` still carries the count per slot, though
 every class that reads it now unifies it across slots. Collapsing to
 `Slot n stmt` deletes a type argument from every spec in the repository —
-every one of them writes the same `1`.
+every one of them writes the same `1`. `BuildSlotVkSources` keeps the
+count as a class parameter for one reason: its instance head unifies the
+parameter with the slot's own `nc`, so a spec writing `Slot n 2 stmt`
+fails to resolve rather than coercing.
 
 The general lesson is the one §9.2 states from the other direction: a
 type parameter more general than the protocol is not free. It cost a

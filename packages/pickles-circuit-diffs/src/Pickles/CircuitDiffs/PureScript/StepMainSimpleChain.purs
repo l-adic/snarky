@@ -105,7 +105,6 @@ compileStepMainSimpleChain params = do
           @1
           @1
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
-          @1
           simpleChainRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: (selfLog2 :< Vector.nil) :< Vector.nil

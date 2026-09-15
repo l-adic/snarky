@@ -226,12 +226,11 @@ type BuildStepAdviceInput inputVal valCarrier vkCarrier =
 -- | `Vector.replicate` at `n=0` produces nil, so slots with `n_i=0`
 -- | have empty `prevChallenges` / `prevSgs` automatically.
 buildStepAdvice
-  :: forall @prevsSpec @wrapVkChunks inputVal len carrier valCarrier vkCarrier vkSourcesCarrier
+  :: forall @prevsSpec inputVal len carrier valCarrier vkCarrier vkSourcesCarrier
    . Reflectable len Int
-  => Reflectable wrapVkChunks Int
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -242,7 +241,7 @@ buildStepAdvice
        vkSourcesCarrier
   => SlotStatementsCarrier prevsSpec valCarrier
   => BuildStepAdviceInput inputVal valCarrier vkCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier vkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier vkCarrier
 buildStepAdvice input =
   let
     -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
@@ -428,14 +427,13 @@ buildStepAdvice input =
       }
   in
     StepAdvice
-      { perProofSlotsCarrier: replicateStepSlotsCarrier @prevsSpec @wrapVkChunks dummySlot
+      { perProofSlotsCarrier: replicateStepSlotsCarrier @prevsSpec @WrapVkChunks dummySlot
       , publicInput: input.publicInput
       , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
       , messagesForNextWrapProof: Vector.replicate (F zero)
       , messagesForNextWrapProofDummyHash: F zero
       , wrapVerifierIndex:
-          -- wrapVkChunks is universally quantified at buildStepAdvice;
-          -- each commitment is a `Vector wrapVkChunks` of placeholders.
+          -- Each commitment is a `Vector WrapVkChunks` of placeholders.
           VerificationKey
             { sigma: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
             , coeff: Vector.generate (\_ -> ChunkedCommitment (Vector.replicate g0w))
@@ -457,17 +455,15 @@ buildStepAdvice input =
 -- | StepField)). The wrap VK's commitments are Pallas points with
 -- | coordinates in Pallas.BaseField = StepField, so no cross-field
 -- | coercion is needed.
--- | Polymorphic on `wrapVkChunks` — the wrap VK's own chunk count
--- | (Dim 2). Distinct from the wrap circuit's `stepChunks` (Dim 1)
--- | and from a side-loaded slot's chunks (Dim 3 / `nc`).
+-- | At `WrapVkChunks` — the wrap VK's own chunk count (Dim 2), which is
+-- | 1. Distinct from the wrap circuit's `stepChunks` (Dim 1), which is
+-- | the one that varies.
 extractWrapVKCommsAdvice
-  :: forall @wrapVkChunks
-   . Reflectable wrapVkChunks Int
-  => VerifierIndex PallasG WrapField
-  -> VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
+  :: VerifierIndex PallasG WrapField
+  -> VerificationKey WrapVkChunks (WeierstrassAffinePoint PallasG (F StepField))
 extractWrapVKCommsAdvice vk =
   let
-    comms = vestaVerifierIndexCommitments @wrapVkChunks vk
+    comms = vestaVerifierIndexCommitments @WrapVkChunks vk
 
     wrapPt :: AffinePoint StepField -> WeierstrassAffinePoint PallasG (F StepField)
     wrapPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
@@ -739,8 +735,8 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | the prev step circuit has nc != wrap's nc.
   , stepZkRows :: Int
   -- | Kimchi `zk_rows` for the WRAP proof being verified. Currently
-  -- | `wrapVkChunks` is universally pinned to 1 so this is 3, but
-  -- | threaded explicitly to mirror the step-side wiring.
+  -- | `WrapVkChunks = 1` so this is always 3, but threaded explicitly
+  -- | to mirror the step-side wiring.
   , wrapZkRows :: Int
   , wrapVK :: VerifierIndex PallasG WrapField
   -- | Previous step proof's opening sg (Vesta point, Fq coords =
@@ -1498,15 +1494,6 @@ type StepRuleAt (r :: Row (Type -> Type)) (n :: Int) valCarrier inputVal input o
 -- |   known wrap keys) that `stepMain` consumes.
 -- | * `dummySg` — dummy sg point for sg_old padding in verify_one.
 -- | * `crs` — the step circuit's Vesta SRS.
--- NOTE: `wrapVkChunks` is structurally a parameter of
--- `StepMainSrsData`, but at the prover-entry layer we pin it to
--- `1` (= OCaml's `num_chunks_by_default`, `step_main.ml:347`). Keeping
--- this type *itself* generic on `wrapVkChunks` would force every
--- caller of `stepCompile` / `stepSolveAndProve` / `preComputeStepDomainLog2`
--- to thread it, but no current caller has anything other than 1 to
--- pass. The mid-tier (`Pickles.Step.Main`) stays generic, so a future
--- chunked-wrap world can specialize `StepProveContext` per-rule
--- without revisiting the mid-tier types.
 type StepProveContext :: Int -> Int -> Type -> Type
 type StepProveContext len nd blueprints =
   { srsData :: StepMainSrsData len nd blueprints
@@ -1655,39 +1642,13 @@ writeRowLabelsTo path publicInputSize cs = do
 -- | two that a comment asks the reader to believe agree.
 buildStepCircuit
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks @wrapVkChunks
-       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
-       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       @mpvMax @mpvPad @nd @slotVkChunks
+       ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  -- `wrapVkChunks` is the wrap VK's own chunk count (Dim 2), a free
-  -- compile-wide parameter. Callers pin it (`@1`, protocol-guaranteed
-  -- since the wrap domain never exceeds the wrap SRS). The Mul/Add
-  -- layout chain below is functionally determined by `wrapVkChunks`
-  -- (mirrors `stepMain`'s signature); threaded here because the
-  -- compile entry points stay generic over `wrapVkChunks`.
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 wrapVkChunks wCoeffN
-  => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 44 wrapVkChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add wrapVkChunks 1 sg1
-  => Add sg1 wrapVkChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => Add 2 nonSgBases totalBases
-  => Add 1 totalBasesPred totalBases
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1708,7 +1669,7 @@ buildStepCircuit
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -1719,7 +1680,7 @@ buildStepCircuit
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -1752,7 +1713,7 @@ buildStepCircuit handler ctx rule = do
   -- `AccountMapM m`) resolves via `m`'s own instances directly.
   let
     dummyAdvice
-      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
+      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks
            inputVal
            len
            carrier
@@ -1777,8 +1738,6 @@ buildStepCircuit handler ctx rule = do
             @mpvMax
             @nd
             @(SLVK.VerificationKey slotVkChunks (F StepField) Boolean)
-            -- ctx is `StepProveContext wrapVkChunks ...` (free; callers pin).
-            @wrapVkChunks
             rule
             ctx.srsData
             ctx.dummySg
@@ -1797,33 +1756,13 @@ buildStepCircuit handler ctx rule = do
 -- | and verifier indices from its gates.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks @wrapVkChunks
-       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
-       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       @mpvMax @mpvPad @nd @slotVkChunks
+       ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 wrapVkChunks wCoeffN
-  => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 44 wrapVkChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add wrapVkChunks 1 sg1
-  => Add sg1 wrapVkChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => Add 2 nonSgBases totalBases
-  => Add 1 totalBasesPred totalBases
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1844,7 +1783,7 @@ stepCompile
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -1855,7 +1794,7 @@ stepCompile
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -1885,7 +1824,6 @@ stepCompile handler ctx rule = do
       @mpvPad
       @nd
       @slotVkChunks
-      @wrapVkChunks
       handler
       ctx
       rule
@@ -1970,38 +1908,16 @@ stepCompile handler ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks @wrapVkChunks
-       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
-       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       @mpvMax @mpvPad @nd @slotVkChunks
+       ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
-  -- a free parameter; the Mul/Add chain mirrors `stepMain`'s.
-  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 wrapVkChunks wCoeffN
-  => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 44 wrapVkChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add wrapVkChunks 1 sg1
-  => Add sg1 wrapVkChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => Add 2 nonSgBases totalBases
-  => Add 1 totalBasesPred totalBases
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2022,7 +1938,7 @@ preComputeStepDomainLog2
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2033,7 +1949,7 @@ preComputeStepDomainLog2
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2063,7 +1979,6 @@ preComputeStepDomainLog2 handler ctx rule = do
       @mpvPad
       @nd
       @slotVkChunks
-      @wrapVkChunks
       handler
       ctx
       rule
@@ -2088,43 +2003,15 @@ preComputeStepDomainLog2 handler ctx rule = do
 -- | Errors surface through `ExceptT EvaluationError m` — the same
 -- | error type the underlying `SolverT` uses. Constraint-system-
 -- | unsatisfied failures are reported as `FailedAssertion`.
--- NOTE: pins `wrapVkChunks = 1` (= OCaml `num_chunks_by_default` at
--- `step_main.ml:347`). The mid-tier `Pickles.Step.Main.stepMain` and
--- `Pickles.Step.Main.StepMainSrsData` stay generic on `wrapVkChunks`,
--- but at the prover entry point we pin so that the advice's
--- `StepAdvice` field can carry concrete VK commitment shapes without
--- threading the type variable through every call site.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd @slotVkChunks @wrapVkChunks
-       ndPred wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN
-       chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred
+       @mpvMax @mpvPad @nd @slotVkChunks
+       ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
-  -- a free parameter (callers pin `@1`). Mul/Add chain mirrors stepMain.
-  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
-  => Reflectable wrapVkChunks Int
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
-  => Mul 7 wrapVkChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 wrapVkChunks wCoeffN
-  => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 44 wrapVkChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add wrapVkChunks 1 sg1
-  => Add sg1 wrapVkChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => Add 2 nonSgBases totalBases
-  => Add 1 totalBasesPred totalBases
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2145,7 +2032,7 @@ stepSolveAndProve
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2156,7 +2043,7 @@ stepSolveAndProve
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
-       wrapVkChunks
+       WrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2171,7 +2058,7 @@ stepSolveAndProve
   -> StepProveContext len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Effect (Either EvaluationError (StepProveResult outputSize))
 stepSolveAndProve handler ctx rule compileResult advice = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
@@ -2205,10 +2092,6 @@ stepSolveAndProve handler ctx rule compileResult advice = do
               @mpvMax
               @nd
               @(SideloadBundle.SlotProveVk slotVkChunks)
-              -- ctx is `StepProveContext wrapVkChunks ...`; thread the
-              -- compile-wide `wrapVkChunks` into stepMain to match
-              -- ctx.srsData. (Mid-tier stepMain stays generic.)
-              @wrapVkChunks
               rule
               ctx.srsData
               ctx.dummySg

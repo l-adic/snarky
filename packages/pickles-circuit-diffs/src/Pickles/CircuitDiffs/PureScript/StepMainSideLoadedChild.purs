@@ -138,7 +138,6 @@ compileStepMainSideLoadedChild params = do
           @0
           @1
           @Unit
-          @1
           sideLoadedChildRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

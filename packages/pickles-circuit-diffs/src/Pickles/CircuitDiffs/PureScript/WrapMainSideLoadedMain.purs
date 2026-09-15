@@ -70,7 +70,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
           dummyAdvice
           (2 :< Vector.nil)
     )
-  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2

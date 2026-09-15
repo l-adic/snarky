@@ -144,7 +144,6 @@ compileStepMainTreeProofReturn params = do
           @2
           @1
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
-          @1
           treeProofReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s:

@@ -45,6 +45,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
+import Pickles.Types (WrapVkChunks)
 import Pickles.VerificationKey (StepVK, VerificationKey)
 import Snarky.Backend.Builder (CircuitBuilderState, constraintsToArray)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
@@ -180,12 +181,11 @@ deriveStepVKFromCompiled vestaSrs builtState = do
 -- | `perSlotVkBlueprints` (e.g. `BlueprintExternal realNrrWrapVK` for
 -- | Tree_proof_return's slot 0).
 deriveWrapVKFromCompiled
-  :: forall @wrapVkChunks @len
-   . Reflectable wrapVkChunks Int
-  => Reflectable len Int
+  :: forall @len
+   . Reflectable len Int
   => CRS PallasG
   -> CompiledCircuit WrapField
-  -> Effect (VerificationKey wrapVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
+  -> Effect (VerificationKey WrapVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
 deriveWrapVKFromCompiled pallasSrs builtState = do
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
@@ -205,7 +205,7 @@ deriveWrapVKFromCompiled pallasSrs builtState = do
       , crs: pallasSrs
       }
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
-  pure $ extractWrapVKCommsAdvice @wrapVkChunks verifierIndex
+  pure $ extractWrapVKCommsAdvice verifierIndex
 
 -------------------------------------------------------------------------------
 -- | Compile-result artifacts

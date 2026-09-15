@@ -38,7 +38,7 @@ spec = describe "Pickles.Prove.Codecs" do
       cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR"
         <#> map \dir -> mkProofCache (dir <> "/Codecs.json")
 
-      nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+      nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 nrrRule unit
       let rules = tuple1 nrrEntry
 
       logInfo "[Codecs] compiling…"

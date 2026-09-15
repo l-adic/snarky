@@ -118,7 +118,6 @@ compileStepMainSimpleChainN2 params = do
           @2
           @1
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
-          @1
           simpleChainN2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
