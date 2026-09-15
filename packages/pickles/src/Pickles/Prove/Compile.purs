@@ -335,6 +335,79 @@ resolveSelfWrapDomainLog2 mpvMax = case _ of
   Just o -> o
   Nothing -> wrapDomainLog2ForProofsVerified mpvMax
 
+-- | Everything `shapeCompileData` does that does not depend on what
+-- | kind of slot the head is: run the slot compiler over it, splice the
+-- | three per-slot entries onto the tail, and set the rule-wide fields.
+-- |
+-- | Its two instances differed in three values and nothing else, so
+-- | those three are the arguments: what the head slot is, and how to
+-- | read its blueprint into whichever carrier cell that kind of slot
+-- | contributes. The blueprint is a function rather than a value
+-- | because the entry it comes from is computed here.
+-- |
+-- | `slotNc` stays a type variable: a slot's chunk count belongs to the
+-- | compile that produced its previous proofs, so two slots of one rule
+-- | can differ. That is what keeps the carrier a typed chain and this a
+-- | helper rather than a fold over an array.
+consShapeCompileData
+  :: forall prevsSpec slotVKs wrapNc slotNc mpv restMpv nd headScaffold restBlueprints
+   . Add restMpv 1 mpv
+  => Reflectable mpv Int
+  => Reflectable nd Int
+  => Reflectable wrapNc Int
+  => Reflectable slotNc Int
+  => CompileConfig prevsSpec slotVKs
+  -> Vector nd Int
+  -> RuntimeSlot.Slot
+  -> (SlotCompile.SlotVkBlueprint slotNc -> headScaffold)
+  -> ShapeCompileData wrapNc restMpv nd restBlueprints
+  -> ShapeCompileData wrapNc mpv nd (headScaffold /\ restBlueprints)
+consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint restShape =
+  { stepProveCtx:
+      { srsData:
+          { perSlotLagrangeAt:
+              headEntry.lagrangeAt :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
+          , blindingH:
+              coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
+          , perSlotFopDomainLog2s:
+              headFopDomainLog2s
+                :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
+          , perSlotFopZkRows:
+              headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
+          , perSlotVkBlueprints:
+              readBlueprint headEntry.vkBlueprint
+                /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
+          }
+      , dummySg: outerDummySgs.ipa.wrap.sg
+      , crs: cfg.srs.vestaSrs
+      , debug: cfg.debug
+      , proofCache: cfg.proofCache
+      }
+  , wrapDomainLog2: cfg.selfWrapDomainLog2
+  }
+  where
+  headEntry = SlotCompile.slotCompileEntry
+    { pallasSrs: cfg.srs.pallasSrs
+    , stepNumChunks: cfg.stepNumChunks
+    , outerWrapDomainLog2: cfg.selfWrapDomainLog2
+    , branchCount: Vector.length selfStepDomainLog2s
+    }
+    (Vector.toUnfoldable selfStepDomainLog2s)
+    headSlot
+
+  headFopDomainLog2s = case Vector.toVector headEntry.fopDomainLog2s of
+    Just v -> v
+    Nothing -> unsafeThrow
+      $ "shapeCompileData: slot step-domain count "
+          <> show (Array.length headEntry.fopDomainLog2s)
+          <> " does not match the branch count "
+          <> show (Vector.length selfStepDomainLog2s)
+
+  outerBcd = Dummy.baseCaseDummies
+    { maxProofsVerified: reflectType (Proxy :: Proxy mpv) }
+  outerDummySgs =
+    Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
+
 -- | Shape-constant compile-time data, provided by the `CompilableSpec`
 -- | instance. Everything here is derived from the `prevsSpec` shape +
 -- | the `perSlotImportedVKs` bundle — no dependence on the rule or on
@@ -765,89 +838,42 @@ instance
     (SlotVkBlueprintCompiled slotVkChunks /\ restScaffolds)
   where
   shapeCompileData cfg selfStepDomainLog2s =
-    let
-      headSlotWrapKey /\ restSlotVKs = cfg.perSlotImportedVKs
-      restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-      restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
-      outerMpv = reflectType (Proxy @mpv)
-      outerWrapDomainLog2 = cfg.selfWrapDomainLog2
+    consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint
+      (shapeCompileData @rest restCfg selfStepDomainLog2s)
+    where
+    headSlotWrapKey /\ restSlotVKs = cfg.perSlotImportedVKs
+    restCfg = cfg { perSlotImportedVKs = restSlotVKs }
 
-      -- This slot, as runtime data. The per-slot derivations
-      -- (wrap domain, source step domains, zk_rows, VK blueprint) all
-      -- live in `Pickles.Prove.SlotCompile`; this instance only says
-      -- what the slot *is* and splices the one entry onto the tail.
-      -- Phase 1 of docs/pickles-rule-dsl-simplification-plan.md.
-      headSlot :: RuntimeSlot.Slot
-      headSlot =
-        { localMpv: reflectType (Proxy @n)
-        , source: case headSlotWrapKey of
-            Self -> RuntimeSlot.SelfSource
-            External vks -> RuntimeSlot.ExternalSource
-              { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
-              , wrapDomainLog2: vks.wrapDomainLog2
-              -- Only single-rule external sources are supported; the
-              -- one domain is replicated to the branch width by
-              -- `slotSourceDomainLog2s`.
-              , stepDomainLog2s:
-                  NonEmptyArray.singleton
-                    (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
-              , numChunks: vks.stepNumChunks
-              }
-        }
-
-      -- `wrapVkChunks` and `nd` are method-level; both are inferred
-      -- from the `ShapeCompileData wrapVkChunks … nd` return type,
-      -- never named — symmetric to how the old `slotLagrange` did it.
-      headEntry = SlotCompile.slotCompileEntry
-        { pallasSrs: cfg.srs.pallasSrs
-        , stepNumChunks: cfg.stepNumChunks
-        , outerWrapDomainLog2
-        , branchCount: Vector.length selfStepDomainLog2s
-        }
-        (Vector.toUnfoldable selfStepDomainLog2s)
-        headSlot
-
-      -- Translate to `Step.VkSource`'s older vocabulary, which names
-      -- these two by mechanism (shared advice / baked constant) rather
-      -- than by slot source. Phase 2 removes that type.
-      headSlotScaffold = case headEntry.vkBlueprint of
-        SlotCompile.BlueprintSelf -> VkBlueprintShared
-        SlotCompile.BlueprintExternal vk -> VkBlueprintConst vk
-        SlotCompile.BlueprintSideLoaded _ -> unsafeThrow
-          "shapeCompileData: a Slot Compiled produced a side-loaded blueprint"
-
-      headFopDomainLog2s = case Vector.toVector headEntry.fopDomainLog2s of
-        Just v -> v
-        Nothing -> unsafeThrow
-          $ "shapeCompileData: slot step-domain count "
-              <> show (Array.length headEntry.fopDomainLog2s)
-              <> " does not match the branch count "
-              <> show (Vector.length selfStepDomainLog2s)
-
-      outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
-      outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-    in
-      { stepProveCtx:
-          { srsData:
-              { perSlotLagrangeAt:
-                  headEntry.lagrangeAt :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
-              , blindingH:
-                  coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
-              , perSlotFopDomainLog2s:
-                  headFopDomainLog2s
-                    :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-              , perSlotFopZkRows:
-                  headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
-              , perSlotVkBlueprints:
-                  headSlotScaffold /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
-              }
-          , dummySg: outerDummySgs.ipa.wrap.sg
-          , crs: cfg.srs.vestaSrs
-          , debug: cfg.debug
-          , proofCache: cfg.proofCache
-          }
-      , wrapDomainLog2: outerWrapDomainLog2
+    -- This slot, as runtime data. The per-slot derivations (wrap
+    -- domain, source step domains, zk_rows, VK blueprint) live in
+    -- `Pickles.Prove.SlotCompile`; this instance only says what the
+    -- slot *is*.
+    headSlot :: RuntimeSlot.Slot
+    headSlot =
+      { localMpv: reflectType (Proxy @n)
+      , source: case headSlotWrapKey of
+          Self -> RuntimeSlot.SelfSource
+          External vks -> RuntimeSlot.ExternalSource
+            { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
+            , wrapDomainLog2: vks.wrapDomainLog2
+            -- Only single-rule external sources are supported; the
+            -- one domain is replicated to the branch width by
+            -- `slotSourceDomainLog2s`.
+            , stepDomainLog2s:
+                NonEmptyArray.singleton
+                  (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
+            , numChunks: vks.stepNumChunks
+            }
       }
+
+    -- Translate to `Step.VkSource`'s older vocabulary, which names
+    -- these two by mechanism (shared advice / baked constant) rather
+    -- than by slot source. Phase 2 removes that type.
+    readBlueprint = case _ of
+      SlotCompile.BlueprintSelf -> VkBlueprintShared
+      SlotCompile.BlueprintExternal vk -> VkBlueprintConst vk
+      SlotCompile.BlueprintSideLoaded _ -> unsafeThrow
+        "shapeCompileData: a Slot Compiled produced a side-loaded blueprint"
 
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (_ /\ restVkCarrier) = do
     let
@@ -1489,75 +1515,29 @@ instance
   -- against the runtime VK's `actualWrapDomainSize` bits in
   -- `Step.Main`).
   shapeCompileData cfg selfStepDomainLog2s =
-    let
-      _ /\ restSlotVKs = cfg.perSlotImportedVKs
-      restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-      restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
-      outerMpv = reflectType (Proxy @mpv)
-      slotMpvMax = reflectType (Proxy @mpvMax)
-      outerWrapDomainLog2 = cfg.selfWrapDomainLog2
+    consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint
+      (shapeCompileData @rest restCfg selfStepDomainLog2s)
+    where
+    _ /\ restSlotVKs = cfg.perSlotImportedVKs
+    restCfg = cfg { perSlotImportedVKs = restSlotVKs }
 
-      -- This slot, as runtime data. All four per-slot derivations live
-      -- in `Pickles.Prove.SlotCompile`: the side-loaded slot's wrap
-      -- domain placeholder comes from its own compile-time bound, its
-      -- step domains are the enclosing compile's (a placeholder — real
-      -- dispatch is in `Step.FinalizeOtherProof`'s side-loaded mode),
-      -- its zk_rows are single-chunk, and its blueprint is the
-      -- per-domain lagrange table that `Step.Main` one-hot muxes.
-      -- Phase 1 of docs/pickles-rule-dsl-simplification-plan.md.
-      headSlot :: RuntimeSlot.Slot
-      headSlot =
-        { localMpv: slotMpvMax
-        , source: RuntimeSlot.SideLoadedSource
-        }
-
-      headEntry = SlotCompile.slotCompileEntry
-        { pallasSrs: cfg.srs.pallasSrs
-        , stepNumChunks: cfg.stepNumChunks
-        , outerWrapDomainLog2
-        , branchCount: Vector.length selfStepDomainLog2s
-        }
-        (Vector.toUnfoldable selfStepDomainLog2s)
-        headSlot
-
-      headSideloadedLagrangeAts = case headEntry.vkBlueprint of
-        SlotCompile.BlueprintSideLoaded tables -> tables
-        _ -> unsafeThrow
-          "shapeCompileData: a Slot SideLoaded produced a compiled blueprint"
-
-      headFopDomainLog2s = case Vector.toVector headEntry.fopDomainLog2s of
-        Just v -> v
-        Nothing -> unsafeThrow
-          $ "shapeCompileData: slot step-domain count "
-              <> show (Array.length headEntry.fopDomainLog2s)
-              <> " does not match the branch count "
-              <> show (Vector.length selfStepDomainLog2s)
-
-      outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
-      outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-    in
-      { stepProveCtx:
-          { srsData:
-              { perSlotLagrangeAt:
-                  headEntry.lagrangeAt :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
-              , blindingH:
-                  coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
-              , perSlotFopDomainLog2s:
-                  headFopDomainLog2s
-                    :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-              , perSlotFopZkRows:
-                  headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
-              , perSlotVkBlueprints:
-                  headSideloadedLagrangeAts
-                    /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
-              }
-          , dummySg: outerDummySgs.ipa.wrap.sg
-          , crs: cfg.srs.vestaSrs
-          , debug: cfg.debug
-          , proofCache: cfg.proofCache
-          }
-      , wrapDomainLog2: outerWrapDomainLog2
+    -- This slot, as runtime data. All four per-slot derivations live in
+    -- `Pickles.Prove.SlotCompile`: the side-loaded slot's wrap domain
+    -- placeholder comes from its own compile-time bound, its step
+    -- domains are the enclosing compile's (a placeholder — real
+    -- dispatch is in `Step.FinalizeOtherProof`'s side-loaded mode), its
+    -- zk_rows are single-chunk, and its blueprint is the per-domain
+    -- lagrange table that `Step.Main` one-hot muxes.
+    headSlot :: RuntimeSlot.Slot
+    headSlot =
+      { localMpv: reflectType (Proxy @mpvMax)
+      , source: RuntimeSlot.SideLoadedSource
       }
+
+    readBlueprint = case _ of
+      SlotCompile.BlueprintSideLoaded tables -> tables
+      _ -> unsafeThrow
+        "shapeCompileData: a Slot SideLoaded produced a compiled blueprint"
 
   -- Structural copy of the `Slot Compiled` `mkStepAdvice` with two
   -- changes:
