@@ -342,11 +342,12 @@ mpvFrontPad mkDummy real =
         unsafePartial $ fromJust $ Vector.toVector @mpvMax arr
 
 -------------------------------------------------------------------------------
--- | Per-proof witness allocation
+-- | Per-proof witness, reshaped for use
 -- |
--- | Allocates one per-proof witness in OCaml's exact hlist order.
--- | Each `exists advice` call allocates variables sequentially; the order
--- | of calls determines the variable index assignment.
+-- | The allocation itself is `Pickles.Step.Types.perProofWitnessTyp`,
+-- | which lays the witness out in OCaml's exact hlist order: variables
+-- | are allocated sequentially, so that order fixes the variable index
+-- | assignment. What follows here only rearranges what it produced.
 -- |
 -- | OCaml Per_proof_witness hlist:
 -- |   [statement(Unit), Wrap_proof(Messages+Bulletproof), Proof_state,
@@ -358,7 +359,7 @@ mpvFrontPad mkDummy real =
 -- |   + branch_data(mask0,mask1,domLog2) at end
 -------------------------------------------------------------------------------
 
-type AllocatedPerProofWitness n stepChunks tCommLen =
+type ReshapedPerProofWitness n stepChunks tCommLen =
   { wComm :: Vector 15 (ChunkedCommitment stepChunks (WeierstrassAffinePoint PallasG (FVar StepField)))
   , zComm :: ChunkedCommitment stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))
   -- Flat tComm: tCommLen = 7 * stepChunks pieces of the quotient poly.
@@ -398,18 +399,25 @@ type AllocatedPerProofWitness n stepChunks tCommLen =
   , prevSgs :: Vector n (WeierstrassAffinePoint PallasG (FVar StepField))
   }
 
-allocatePerProofWitness
-  :: forall @n @stepChunks tCommLen r
-   . PrimeField StepField
-  => Reflectable n Int
+-- | Reshape one allocated per-proof witness into the flatter record the
+-- | rest of `stepMain` reads: `tComm` concatenated, the nested
+-- | newtype wrappers unwrapped, and the two per-previous-proof arrays
+-- | recovered at the slot's width.
+-- |
+-- | Nothing is allocated here — this emits no constraints and reads no
+-- | advice. The `exists` happened upstream, against
+-- | `Pickles.Step.Types.perProofWitnessTyp`.
+reshapePerProofWitness
+  :: forall @n @stepChunks tCommLen
+   . Reflectable n Int
   => Reflectable stepChunks Int
   => Mul 7 stepChunks tCommLen
   -- | The slot's width. Still type-level, because everything below this
   -- | function is indexed by it; the witness above no longer is.
   => Proxy n
   -> PerProofWitness stepChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
-  -> Snarky StepField (KimchiConstraint StepField) r (AllocatedPerProofWitness n stepChunks tCommLen)
-allocatePerProofWitness _ (PerProofWitness ppw) = do
+  -> ReshapedPerProofWitness n stepChunks tCommLen
+reshapePerProofWitness _ (PerProofWitness ppw) =
   let
     WrapProof wrapProofRec = ppw.wrapProof
     WrapProofMessages msgRec = wrapProofRec.messages
@@ -445,10 +453,9 @@ allocatePerProofWitness _ (PerProofWitness ppw) = do
       , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
-  let
     tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
     tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
-  pure
+  in
     -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
     -- to flat Vector tCommLen pt via Vector.concat (= 7 * stepChunks pieces).
     { wComm: msgRec.wComm
@@ -480,7 +487,7 @@ allocatePerProofWitness _ (PerProofWitness ppw) = do
   atSlotWidth field xs = case Vector.toVector xs of
     Just v -> v
     Nothing -> unsafeThrow $
-      "allocatePerProofWitness: " <> field <> " has " <> show (Array.length xs)
+      "reshapePerProofWitness: " <> field <> " has " <> show (Array.length xs)
         <> " entries, expected "
         <> show (reflectType (Proxy :: Proxy n))
 
@@ -606,7 +613,7 @@ buildVerifyOneInput
    . Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
-  => AllocatedPerProofWitness n stepChunks tCommLen
+  => ReshapedPerProofWitness n stepChunks tCommLen
   -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
@@ -722,11 +729,10 @@ unfFields unf =
 -------------------------------------------------------------------------------
 -- | V2 step_main — spec-indexed per-slot carrier variant
 -- |
--- | Drops `getStepPerProofWitnesses` / `traverse allocatePerProofWitness`
--- | / `Vector.generateA @n` in favor of `getStepSlotsCarrier` + a single
--- | `traverseStepSlotsA` that walks the carrier per slot, extracting SPPW
--- | from `StepSlot`, allocating, and running verify_one — all with the
--- | per-slot `n_i` in scope.
+-- | Drops `getStepPerProofWitnesses` / `Vector.generateA @n` in favor of
+-- | `getStepSlotsCarrier` + a single `traverseStepSlotsA` that walks the
+-- | carrier per slot, extracting SPPW from `StepSlot`, reshaping it, and
+-- | running verify_one — all with the per-slot `n_i` in scope.
 -- |
 -- | Everything else (public input allocation, wrap VK, unfinalized
 -- | proofs, messages_for_next_wrap_proof, outer hash, output
@@ -969,8 +975,9 @@ stepMain
   results <- label "prevs_verified" do
     rs <- traverseStepSlotsAWithVk @prevsSpec
       ( \slotWidth i sppw slotVkSrc -> do
-          pw <- allocatePerProofWitness slotWidth sppw
           let
+            pw = reshapePerProofWitness slotWidth sppw
+
             -- Per-slot Vector nd of all possible source-branch step domains.
             -- For nd=1 this is `Vector 1 [theLog2]` (single-rule, External
             -- with single-branch source, or Self with single-branch source).
