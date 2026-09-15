@@ -90,7 +90,6 @@ import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData, stepMain)
-import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, replicateStepSlotsCarrier)
 import Pickles.Step.Types as Step
@@ -1687,7 +1686,7 @@ stepCompile
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
-  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
@@ -1897,7 +1896,7 @@ preComputeStepDomainLog2
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
-  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
@@ -2043,7 +2042,7 @@ stepSolveAndProve
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
-  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Add mpvPad len mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize

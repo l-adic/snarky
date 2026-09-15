@@ -22,10 +22,6 @@ module Pickles.Step.Main
   , liftDummyPerProofUnfinalized
   , stepMain
   -- * mpvMax-padding
-  , class IntEq
-  , class MpvPaddingDispatch
-  , mpvFrontPadVecD
-  , class MpvPadding
   , mpvFrontPad
   , mpvFrontPadVec
   ) where
@@ -67,7 +63,6 @@ import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
-import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -286,73 +281,31 @@ stepEndoVal :: StepField
 stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 
 --------------------------------------------------------------------------------
--- MpvPadding class
+-- mpvMax-padding
 --
--- Relates `mpvPad + len = mpvMax` at the type level for step PI
+-- `Add mpvPad len mpvMax` relates the two widths, for step PI
 -- mpvMax-padding (mirroring OCaml `step.ml:782-787`'s
 -- `Vector.extend_front unfinalized_proofs ... Unfinalized.dummy`).
 --
--- Implementation dispatches on `IntEq len mpvMax` — both positions
--- are always concrete at use sites (from caller @-args), so the
--- Boolean is determined cleanly. The True branch (`len = mpvMax`)
--- pins `mpvPad = 0` via the head pattern; the False branch defers
--- to `Prim.Int.Add` for the actual relation.
---
--- The asymmetric formulations we tried earlier (literal `0` in head,
--- IsZero-gated dispatch) all hit corners of PureScript's instance
--- resolution where `else` chains don't fall through cleanly. Keying
--- the dispatch on `IntEq len mpvMax` works because `len` and
--- `mpvMax` are *always* both concrete at the points PS needs to
--- discharge the constraint:
---
---   * abstract `MpvPadding 0 a a`: IntEq a a → True ✓
---   * concrete distinct `MpvPadding 1 0 1`: IntEq 0 1 → False, defers
---     to Add 1 0 1 ✓
---   * fundep-derived `MpvPadding ? 1 1`: IntEq 1 1 → True, pins
---     mpvPad = 0 ✓
+-- This used to be three classes — `IntEq`, `MpvPaddingDispatch` and
+-- `MpvPadding` — dispatching on whether `len` equalled `mpvMax` so
+-- that the `mpvPad = 0` case could avoid asking `Prim.Int.Add` to
+-- solve `Add 0 len len` for an abstract `len`. `Add` discharges that
+-- case at every site in this tree, so the dispatch was buying nothing.
 --------------------------------------------------------------------------------
 
-class IntEq (a :: Int) (b :: Int) (res :: Boolean) | a b -> res
-
-instance IntEq a a True
-else instance IntEq a b False
-
-class
-  MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
-  | isEqual mpvPad len -> mpvMax
-  , isEqual len mpvMax -> mpvPad
-  , isEqual mpvPad mpvMax -> len
-  where
-  mpvFrontPadVecD :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
-
-instance MpvPaddingDispatch True 0 len len where
-  mpvFrontPadVecD _ real = real
-
-instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax where
-  mpvFrontPadVecD padding real = Vector.append padding real
-
-class
-  MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
-  | mpvPad len -> mpvMax
-  , len mpvMax -> mpvPad
-  , mpvPad mpvMax -> len
-  where
-  -- | Concatenate a padding vector with a real vector to produce the
-  -- | full mpvMax-sized vector. Dispatches through `MpvPaddingDispatch`:
-  -- | when `mpvPad = 0` the True instance returns `real` directly (no
-  -- | `Add 0 len len` constraint needed); otherwise the False instance
-  -- | uses `Vector.append`.
-  mpvFrontPadVec :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
-
-instance
-  ( IntEq len mpvMax isEqual
-  , MpvPaddingDispatch isEqual mpvPad len mpvMax
-  ) =>
-  MpvPadding mpvPad len mpvMax where
-  mpvFrontPadVec = mpvFrontPadVecD @isEqual
+-- | Concatenate a padding vector with a real vector to produce the
+-- | full mpvMax-sized vector.
+mpvFrontPadVec
+  :: forall a mpvPad len mpvMax
+   . Add mpvPad len mpvMax
+  => Vector mpvPad a
+  -> Vector len a
+  -> Vector mpvMax a
+mpvFrontPadVec = Vector.append
 
 -- | Front-pad a `Vector len a` with `mpvPad` copies of a dummy value
--- | to produce a `Vector mpvMax a`. The `MpvPadding mpvPad len mpvMax`
+-- | to produce a `Vector mpvMax a`. The `Add mpvPad len mpvMax`
 -- | constraint witnesses `mpvPad + len = mpvMax` at the type level.
 -- |
 -- | The dummy is a thunk so the single-rule path (`mpvPad = 0`) does
@@ -360,15 +313,15 @@ instance
 -- | the dummy can trigger Rust FFI (lagrange / blinding-generator
 -- | computations) that advance shared chacha8 RNG state.
 -- |
--- | Implementation: when `mpvPad = 0`, `MpvPadding 0 len len` instance
--- | guarantees `mpvMax = len` so we `unsafeCoerce real` directly
--- | (zero work, byte-identical witness). When `mpvPad > 0`, we build
--- | a runtime-sized array and re-wrap via `Vector.toVector +
+-- | Implementation: when `mpvPad = 0`, `Add 0 len mpvMax` gives
+-- | `mpvMax = len` so we `unsafeCoerce real` directly (zero work,
+-- | byte-identical witness). When `mpvPad > 0`, we build a
+-- | runtime-sized array and re-wrap via `Vector.toVector +
 -- | unsafePartial fromJust` (the runtime check is a tautology — array
 -- | length always equals `mpvPad + len = mpvMax`).
 mpvFrontPad
   :: forall a mpvPad len mpvMax
-   . MpvPadding mpvPad len mpvMax
+   . Add mpvPad len mpvMax
   => Reflectable mpvPad Int
   => Reflectable mpvMax Int
   => (Unit -> a)
@@ -858,7 +811,7 @@ stepMain
   -- mpvMax-padding. When `mpvMax = len` then `mpvPad = 0` and padding
   -- emits nothing (circuit shape unchanged). When `mpvPad > 0`,
   -- `mpvFrontPad` prepends that many dummy entries.
-  => MpvPadding mpvPad len mpvMax
+  => Add mpvPad len mpvMax
   => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize

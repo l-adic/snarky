@@ -127,7 +127,7 @@ compileStepMainSideLoadedChild params = do
       -- digest — no unfinalized_proofs, no msgs_wrap entries).
       -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
       -- @valCarrier @mpvMax @nd. Implicit: input/output/prevInput
-      -- (CircuitType funcdep), mpvPad (MpvPadding), outputSize
+      -- (CircuitType funcdep), mpvPad (Add), outputSize
       -- (Mul/Add chain).
       ( \_ -> stepMain
           @Unit

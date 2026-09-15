@@ -120,7 +120,6 @@ import Pickles.Step.Dummy
   )
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprint)
-import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds)
@@ -1601,7 +1600,7 @@ instance (Compare a b ord, IntMaxOrd ord a b c) => IntMax a b c
 
 -- | `MaxOfRulesMpvs rules mpvMax` enforces `mpvMax = max(ruleMpv across
 -- | rules)` at the type level — strict equality, not just `≥`. The
--- | per-rule `MpvPadding ruleMpv mpvPad mpvMax` constraint inside
+-- | per-rule `Add mpvPad ruleMpv mpvMax` constraint inside
 -- | `CompilableRulesSpecShape` already requires `ruleMpv ≤ mpvMax`,
 -- | but doesn't pin `mpvMax` to the actual maximum. Threading
 -- | `MaxOfRulesMpvs` alongside CompilableRulesSpecShape closes that
@@ -2355,7 +2354,7 @@ instance
   , Add pad ruleMpv PaddedLength
   -- outputSize derives from mpvMax (the wrap circuit's max).
   , Reflectable mpvPad Int
-  , MpvPadding.MpvPadding mpvPad ruleMpv mpvMax
+  , Add mpvPad ruleMpv mpvMax
   , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
@@ -2725,7 +2724,7 @@ mkRuleEntry
   => Compare 0 nd LT
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => MpvPadding.MpvPadding mpvPad mpv mpvMax
+  => Add mpvPad mpv mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
@@ -2945,7 +2944,7 @@ runMultiProverBody
   => Reflectable mpvPad Int
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => MpvPadding.MpvPadding mpvPad mpv mpvMax
+  => Add mpvPad mpv mpvMax
   => Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
@@ -3443,7 +3442,7 @@ compileMulti
   => Add mpvMax nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   -- Strict-equality enforcement: `mpvMax = max(ruleMpv across rs)`,
-  -- not just `≥` (which the per-rule `MpvPadding` constraints inside
+  -- not just `≥` (which the per-rule `Add mpvPad _ mpvMax` constraints inside
   -- `CompilableRulesSpecShape` already provide). Mirrors OCaml's
   -- `compile_promise ~max_proofs_verified:(module Nat.NX)` where X is
   -- the actual max across rules' prev counts.

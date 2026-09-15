@@ -378,13 +378,18 @@ collapsed to one shared body each. `Prove/Compile.purs` 4193 → 3751.
 Commits `c320838a`, `9ac3ea92`, `bfe19d41`. Gates green, digests
 identical.
 
-### Phase 1b — evaluation interpreter — NEXT, and never was blocked
+### Phase 1b — evaluation interpreter — DEFERRED, it is a new feature
 
 `eval_r` and the derivation checker of §3.5, over the Phase 1 `AppSpec`.
 Port one existing prove-based test (the SimpleChain chain) to evaluate the
 chain and prove once from the recorded derivation. Exit: the evaluated
 chain and the proved chain agree on every statement; wall-clock of the
 evaluated test is reported.
+
+Technically unblocked — it needs nothing this plan found unbuildable.
+Deferred anyway: the work on this branch is consolidation, and an
+evaluation interpreter adds surface rather than removing it. It returns
+once the existing codebase is small enough to reason about.
 
 ### Phase 2 — runtime translation layer
 

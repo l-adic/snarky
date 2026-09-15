@@ -91,7 +91,7 @@ compileStepMainNoRecursionReturn params = do
       -- inputVal/outputVal are both `F StepField`.
       -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
       -- @valCarrier @mpvMax. Implicit: input/output/prevInput (via
-      -- CircuitType), mpvPad (MpvPadding), outputSize (Mul/Add chain),
+      -- CircuitType), mpvPad (Add), outputSize (Mul/Add chain),
       -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
