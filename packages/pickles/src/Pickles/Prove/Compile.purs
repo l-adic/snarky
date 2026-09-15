@@ -78,6 +78,8 @@ import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
+import Pickles.Prove.Slot as RuntimeSlot
+import Pickles.Prove.SlotCompile as SlotCompile
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -105,8 +107,6 @@ import Pickles.Prove.Wrap
   , wrapCompile
   , wrapSolveAndProve
   )
-import Pickles.Prove.Slot as RuntimeSlot
-import Pickles.Prove.SlotCompile as SlotCompile
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), projectVk, requireBundle, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
@@ -1135,42 +1135,54 @@ padShapeProveData
    . Add mpvPad mpv mpvMax
   => Reflectable mpvPad Int
   => PadProveDataDummies
+  -- | The wrap circuit's per-slot `max_local_max_proofs_verified`, in
+  -- | slot order. Front-padding fills the first `mpvPad` of these, and
+  -- | each dummy slot's stack must be exactly as wide as the slot the
+  -- | wrap circuit allocated — see `slotsValue` below.
+  -> Array Int
   -> ShapeProveData mpv
   -> ShapeProveData mpvMax
-padShapeProveData dummies sd =
+padShapeProveData dummies slotWidths sd =
   { prevSgs:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevSg)
-          sd.prevSgs
-    , prevStepChallenges:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevStepChals)
-          sd.prevStepChallenges
-    , msgWrapChallenges:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyMsgWrapChal)
-          sd.msgWrapChallenges
-    , prevUnfinalizedProofs:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevUnfinalizedProof)
-          sd.prevUnfinalizedProofs
-    , prevStepAccs:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevStepAcc)
-          sd.prevStepAccs
-    , prevEvals:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevEvals)
-          sd.prevEvals
-    , prevWrapDomainIndices:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevWrapDomainIdx)
-          sd.prevWrapDomainIndices
-    , kimchiPrevEntries:
-        Vector.append (Vector.replicate @mpvPad dummies.dummyKimchiPrevEntry)
-          sd.kimchiPrevEntries
-    -- Front-pad the slot list itself: a rule with fewer slots than the
-    -- wrap circuit's `mpvMax` contributes dummy stacks for the missing
-    -- ones. Was `convertSlots`, which needed a class instance per pair
-    -- of carrier shapes and only ever had two.
-    , slotsValue:
-        Array.replicate (reflectType (Proxy @mpvPad))
-          [ dummies.dummySlotChal ]
-          <> sd.slotsValue
-    }
+      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevSg)
+        sd.prevSgs
+  , prevStepChallenges:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevStepChals)
+        sd.prevStepChallenges
+  , msgWrapChallenges:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyMsgWrapChal)
+        sd.msgWrapChallenges
+  , prevUnfinalizedProofs:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevUnfinalizedProof)
+        sd.prevUnfinalizedProofs
+  , prevStepAccs:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevStepAcc)
+        sd.prevStepAccs
+  , prevEvals:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevEvals)
+        sd.prevEvals
+  , prevWrapDomainIndices:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyPrevWrapDomainIdx)
+        sd.prevWrapDomainIndices
+  , kimchiPrevEntries:
+      Vector.append (Vector.replicate @mpvPad dummies.dummyKimchiPrevEntry)
+        sd.kimchiPrevEntries
+  -- Front-pad the slot list itself: a rule with fewer slots than the
+  -- wrap circuit's `mpvMax` contributes dummy stacks for the missing
+  -- ones. Was `convertSlots`, which needed a class instance per pair
+  -- of carrier shapes and only ever had two.
+  --
+  -- Each dummy slot is as wide as the slot the wrap circuit allocated
+  -- for it: `Wrap.Main` allocates `oldBpChals` through
+  -- `perSlotTyp widths`, whose size is `sum widths`, and `existsTyp`
+  -- assigns from the value's fields. A dummy narrower than its slot
+  -- leaves the tail variables allocated and unassigned, which the
+  -- solver reports as `MissingVariable` from inside `b-poly`.
+  , slotsValue:
+      map (\w -> Array.replicate w dummies.dummySlotChal)
+        (Array.take (reflectType (Proxy @mpvPad)) slotWidths)
+        <> sd.slotsValue
+  }
 
 --------------------------------------------------------------------------------
 -- CompilableSpec — the shape-dependent dispatch class
@@ -1459,9 +1471,9 @@ instance
       -- believes this slot is side-loaded and it is not, and nothing
       -- downstream would tell them.
       _ | SideloadBundle.SideLoadedVk _ <- headVk -> unsafeThrow
-          "mkStepAdvice: this slot's key is Self or External, so its wrap \
-          \verification key is baked in at compile time, but a side-loaded \
-          \verification key was supplied for it in `sideloadedVKs`"
+        "mkStepAdvice: this slot's key is Self or External, so its wrap \
+        \verification key is baked in at compile time, but a side-loaded \
+        \verification key was supplied for it in `sideloadedVKs`"
       _ ->
         { slotWrapVK:
             RuntimeSlot.slotWrapVerifierIndex wrapCR.verifierIndex runtimeSlot
@@ -3033,7 +3045,7 @@ runMultiProverBody
       , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
       }
 
-    proveDataMax = padShapeProveData padDummies proveData
+    proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
   eStepResult <- r.stepProveFn handler shape.stepProveCtx stepCR stepAdvice
   case eStepResult of
