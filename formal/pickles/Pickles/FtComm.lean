@@ -99,23 +99,13 @@ def FtCommReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
 
 /-! ## Reading helpers -/
 
-/-- The scalar order kills the affine group too, across `equivPoint`. -/
-private theorem IvpSide.aff_nsmul (_S : IvpSide C V ops) (X : C.E.toAffine.Point) :
-    C.scalar • X = 0 :=
-  C.affine_card_nsmul X
-
-/-- An integer acts on the affine group as its residue's representative in the scalar field. -/
-private theorem IvpSide.zsmul_eq (S : IvpSide C V ops) (z : ℤ) (X : C.E.toAffine.Point) :
-    z • X = ((z : C.ScalarField).val : ℕ) • X :=
-  haveI : NeZero C.scalar := ⟨C.primeScalar.out.ne_zero⟩
-  Pasta.zsmul_eq_val_nsmul C.scalar S.aff_nsmul z X
-
 /-- A scale by a claim decoding to `s` acts by `s.val`: the witness's integer decode is `s`'s
-representative (`dec_cast`) and the group is killed by the scalar order. -/
+representative (`dec_cast`) and the group is a module over the scalar field
+(`CommitmentCurve.affineModule`). -/
 private theorem IvpSide.scale_val (S : IvpSide C V ops) {x : sf} {w : S.R.wit}
     {s : C.ScalarField} (hpre : S.R.Pre x w) (hdec : S.decode x = s)
     (T : C.E.toAffine.Point) : S.R.dec w • T = s.val • T := by
-  rw [S.zsmul_eq, S.dec_cast hpre, hdec]
+  rw [Pasta.zsmul_eq_val_nsmul C.scalar, S.dec_cast hpre, hdec]
 
 /-- The scalar-field Horner collapse of a point list, `P₀ + ξ·(P₁ + ξ·(…))` — `Σᵢ ξⁱ·Pᵢ`. -/
 private def hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
@@ -148,15 +138,15 @@ private theorem equivPoint_hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
       simp only [hornerVal, List.map_cons, List.foldr_cons] at ih ⊢
       rw [map_add, map_nsmul, ih]
 
-/-- `(ζ − 1)` acts as `ζ` minus the identity: the scalar-field subtraction is exact on a group
-killed by the scalar order. -/
-private theorem IvpSide.sub_one_val_smul (S : IvpSide C V ops) (ζ : C.ScalarField)
+/-- `(ζ − 1)` acts as `ζ` minus the identity: the scalar-field subtraction is exact on a module
+over the scalar field. A fact about the curve, not about a side. -/
+private theorem sub_one_val_smul (ζ : C.ScalarField)
     (X : C.E.toAffine.Point) : (ζ - 1).val • X = ζ.val • X - X := by
-  haveI : NeZero C.scalar := ⟨C.primeScalar.out.ne_zero⟩
   have h : (((ζ.val : ℤ) - 1 : ℤ) : C.ScalarField) = ζ - 1 := by
     push_cast
     rw [ZMod.natCast_zmod_val]
-  rw [← h, ← S.zsmul_eq, sub_zsmul, natCast_zsmul, one_zsmul, sub_eq_add_neg]
+  rw [← h, ← Pasta.zsmul_eq_val_nsmul C.scalar, sub_zsmul, natCast_zsmul, one_zsmul,
+    sub_eq_add_neg]
 
 /-- `hornerReduce` reads as the scalar-field Horner collapse of the chunks' points: given the
 `ζ^{2^k}` claim decodes to `ξ` and is a claim the ladder speaks about, and the chunks read as
@@ -269,15 +259,15 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   -- `hornerVal`, pull the `perm` scaling out, split `ζⁿ − 1`, and match `h2`.
   simp only [runFtComm, runFComm]
   rw [hζM, hsP, hζN]
-  have hcT := combineCommitments_eq_foldr C C.card_nsmul ζM cp.tComm.toList
+  have hcT := combineCommitments_eq_foldr C ζM cp.tComm.toList
   rw [Array.toArray_toList] at hcT
-  have hcσ := combineCommitments_eq_foldr C C.card_nsmul ζM
+  have hcσ := combineCommitments_eq_foldr C ζM
     ((cvk.sigmaComm[6]).toList.map (fun P => sP.val • P))
   rw [show ((cvk.sigmaComm[6]).toList.map (fun P => sP.val • P)).toArray
       = ((cvk.sigmaComm[6]).map (fun P => sP.val • P)).toArray
     from by rw [Vector.toArray_map, List.map_toArray, Vector.toList, Array.toArray_toList]] at hcσ
   rw [hcσ, hcT, map_sub, map_nsmul, equivPoint_hornerVal, equivPoint_hornerVal,
-    hornerVal_map_smul, S.sub_one_val_smul]
+    hornerVal_map_smul, sub_one_val_smul]
   exact OnCurveAt.congr_pt h2 (by rw [sub_sub_eq_add_sub, sub_eq_add_neg])
 
 end Side

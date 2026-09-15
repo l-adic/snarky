@@ -1219,15 +1219,15 @@ variable {G : Type} [AddCommGroup G]
 scaling.** The MSM's `-(k·X)` is `((-k : ZMod n)).val · X` — the group's characteristic is the
 scalar order, so the `ℕ → ZMod n` reduction (`Pasta.zsmul_eq_val_nsmul`) and the negation
 commute exactly. -/
-private theorem neg_nsmul_eq (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) (k : ℕ) (X : G) :
+private theorem neg_nsmul_eq (n : ℕ) [NeZero n] [Module (ZMod n) G] (k : ℕ) (X : G) :
     -((k : ℕ) • X) = ((-(k : ZMod n)).val : ℕ) • X := by
-  rw [← natCast_zsmul, ← neg_zsmul, Pasta.zsmul_eq_val_nsmul n hn]
+  rw [← natCast_zsmul, ← neg_zsmul, Pasta.zsmul_eq_val_nsmul n]
   simp only [Int.cast_neg, Int.cast_natCast]
 
 /-- **The negated `publicMsm` term list is the wire's negated-scalar term list.** Termwise
 `-((f aₗ) · Tₗ) = ((-↑(f aₗ)).val · Tₗ)` over `neg_nsmul_eq`, lifted over the (leaf, base) list —
 the shape `equivPoint_publicCommitment` produces once the scalars line up. -/
-private theorem neg_publicMsm_sum (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x = 0) {A : Type}
+private theorem neg_publicMsm_sum (n : ℕ) [NeZero n] [Module (ZMod n) G] {A : Type}
     (f : A → ℕ) (l : List (A × G)) :
     -(l.map (fun p => f p.1 • p.2)).sum
       = (l.map (fun p => ((-(↑(f p.1) : ZMod n)).val : ℕ) • p.2)).sum := by
@@ -1235,7 +1235,7 @@ private theorem neg_publicMsm_sum (n : ℕ) [NeZero n] (hn : ∀ x : G, n • x 
   | nil => simp
   | cons p rest ih =>
       simp only [List.map_cons, List.sum_cons, neg_add]
-      rw [neg_nsmul_eq n hn, ih]
+      rw [neg_nsmul_eq n, ih]
 
 end Crossing
 
@@ -1509,7 +1509,7 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
       = ((leaves.zip Ts).map (fun p =>
           ((-(↑(ToNat.toNat (p.1.scalarVar.val V)) : C.ScalarField)).val : ℕ) • p.2)).sum := by
     rw [publicMsm]
-    exact neg_publicMsm_sum C.scalar C.affine_card_nsmul
+    exact neg_publicMsm_sum C.scalar
       (fun leaf => ToNat.toNat (leaf.scalarVar.val V)) (leaves.zip Ts)
   rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
     crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]

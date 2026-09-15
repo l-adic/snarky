@@ -153,15 +153,18 @@ open CompElliptic.Curves.Pasta.Vesta renaming curve → vestaCurve
 open CompElliptic.Curves.Pasta.Pallas renaming curve → pallasCurve
 open CompElliptic.Fields.Pasta
 
-/-- In an additive group killed by `n`, an integer acts as its residue's canonical
-representative in `ZMod n`. This is the integer-to-scalar reduction the in-circuit readers
-perform when a gadget's integer decode meets the wire verifier's scalar-field action. -/
-theorem zsmul_eq_val_nsmul {G : Type*} [AddCommGroup G] (n : ℕ) [NeZero n]
-    (hn : ∀ x : G, n • x = 0) (z : ℤ) (x : G) : z • x = ((z : ZMod n).val : ℕ) • x := by
-  have hv : (((z : ZMod n).val : ℕ) : ℤ) = z % n := ZMod.val_intCast z
-  rw [← natCast_zsmul, hv]
-  conv_lhs => rw [← Int.emod_add_mul_ediv z n]
-  rw [add_zsmul, mul_zsmul, natCast_zsmul, hn, _root_.add_zero]
+/-- In a `ZMod n`-module, an integer acts as its residue's canonical representative. This is
+the integer-to-scalar reduction the in-circuit readers perform when a gadget's integer decode
+meets the wire verifier's scalar-field action, which computes with `ZMod.val`.
+
+Stated over the module instance rather than over a bare `∀ x, n • x = 0`: the killing fact is
+what builds the instance (`AddCommGroup.zmodModule`), so a consumer that has the instance
+should not have to thread the fact as well. -/
+theorem zsmul_eq_val_nsmul {G : Type*} [AddCommGroup G] (n : ℕ) [NeZero n] [Module (ZMod n) G]
+    (z : ℤ) (x : G) : z • x = ((z : ZMod n).val : ℕ) • x := by
+  rw [← Int.cast_smul_eq_zsmul (ZMod n) z x]
+  conv_lhs => rw [← ZMod.natCast_zmod_val ((z : ZMod n))]
+  rw [Nat.cast_smul_eq_nsmul]
 
 /-- The Vesta point group as a module over its scalar field. -/
 instance vestaPointModule : Module Fp (SWPoint vestaCurve) :=
