@@ -60,6 +60,7 @@ import Data.Array as Array
 import Data.Foldable (sum, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
+import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, AsProver, CircuitOps(..), FVar, Snarky(..), check, fieldsToVar, sizeInFields, valueToFields)
 import Type.Proxy (Proxy(..))
@@ -105,10 +106,35 @@ existsTyp
   -> AsProver f r val
   -> Snarky f c r var
 existsTyp t w = do
-  vars <- Snarky \(CircuitOps ops) -> ops.existsOp t.size (map t.toFields w)
+  vars <- Snarky \(CircuitOps ops) -> ops.existsOp t.size (map fieldsOfDeclaredSize w)
   let v = t.fromVars (map Var vars)
   t.check v
   pure v
+  where
+  -- `existsOp` allocates `t.size` variables from the TYPE and assigns
+  -- them from these fields. Supply fewer and the tail is allocated and
+  -- never assigned, which the solver reports as `MissingVariable` at
+  -- whatever gate first reads one — arbitrarily far from the mistake,
+  -- and naming a variable index rather than the shape that was wrong.
+  -- Supply more and the surplus is dropped silently. The two numbers
+  -- meet here and nowhere else, so check them here.
+  --
+  -- Prove-time only: the circuit-building pass discards this action, so
+  -- a compile cannot reach it. That is the right scope — at build time
+  -- there is no value to disagree with.
+  fieldsOfDeclaredSize val =
+    let
+      fs = t.toFields val
+      n = Array.length fs
+    in
+      if n == t.size then fs
+      else unsafeThrow
+        $ "existsTyp: the type declares "
+            <> show t.size
+            <> " field elements but the witness supplied "
+            <> show n
+            <> ". Allocation follows the type and assignment follows the "
+            <> "value, so this would leave variables unassigned."
 
 -- | A fixed-length array of a repeated element type.
 arrayTyp :: forall f c val var. Int -> Typ f c val var -> Typ f c (Array val) (Array var)
