@@ -46,6 +46,7 @@ import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
+import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -467,9 +468,12 @@ allocatePerProofWitness
   => Reflectable n Int
   => Reflectable stepChunks Int
   => Mul 7 stepChunks tCommLen
-  => PerProofWitness n stepChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -- | The slot's width. Still type-level, because everything below this
+  -- | function is indexed by it; the witness above no longer is.
+  => Proxy n
+  -> PerProofWitness stepChunks StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
   -> Snarky StepField (KimchiConstraint StepField) r (AllocatedPerProofWitness n stepChunks tCommLen)
-allocatePerProofWitness (PerProofWitness ppw) = do
+allocatePerProofWitness _ (PerProofWitness ppw) = do
   let
     WrapProof wrapProofRec = ppw.wrapProof
     WrapProofMessages msgRec = wrapProofRec.messages
@@ -526,9 +530,23 @@ allocatePerProofWitness (PerProofWitness ppw) = do
         , mask1: branchDataRec.mask1
         , domainLog2Var: branchDataRec.domainLog2
         }
-    , prevChallenges: coerce ppw.prevChallenges
-    , prevSgs: ppw.prevSgs
+    , prevChallenges: coerce (atSlotWidth "prevChallenges" ppw.prevChallenges)
+    , prevSgs: atSlotWidth "prevSgs" ppw.prevSgs
     }
+  where
+  -- The witness carries its per-previous-proof data as arrays, since
+  -- the slot's width is not in its type. Everything downstream of here
+  -- is still indexed by that width, so it is recovered once, at this
+  -- boundary. The array was allocated by `perProofWitnessTyp` at the
+  -- width the spec declares, which is the same `n`, so a mismatch is a
+  -- bug in this module rather than anything a prover can provoke.
+  atSlotWidth :: forall a. String -> Array a -> Vector n a
+  atSlotWidth field xs = case Vector.toVector xs of
+    Just v -> v
+    Nothing -> unsafeThrow $
+      "allocatePerProofWitness: " <> field <> " has " <> show (Array.length xs)
+        <> " entries, expected "
+        <> show (reflectType (Proxy :: Proxy n))
 
 -------------------------------------------------------------------------------
 -- | Unfinalized proof allocation
@@ -810,11 +828,10 @@ stepMain
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  -- The same carrier pair as the two constraints above, but as one
-  -- value, so the slot chain can be allocated without a shape in the
-  -- type. Phase B reifies only the chain; every slot is still `typOf`.
+  -- The carrier's layout as a value. It cannot come from `CircuitType`
+  -- any more: each slot's witness holds its previous-proof data in
+  -- arrays, so nothing can count the variables from the type alone.
+  -- The widths come from the spec, which still declares them.
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -1015,8 +1032,8 @@ stepMain
   -- at step_main.ml:513-528).
   results <- label "prevs_verified" do
     rs <- traverseStepSlotsAWithVk @prevsSpec
-      ( \i sppw slotVkSrc -> do
-          pw <- allocatePerProofWitness sppw
+      ( \slotWidth i sppw slotVkSrc -> do
+          pw <- allocatePerProofWitness slotWidth sppw
           let
             -- Per-slot Vector nd of all possible source-branch step domains.
             -- For nd=1 this is `Vector 1 [theLog2]` (single-rule, External

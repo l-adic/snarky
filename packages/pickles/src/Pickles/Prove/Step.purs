@@ -371,15 +371,15 @@ buildStepAdvice input =
       :: forall n slotVkChunks
        . Reflectable n Int
       => Reflectable slotVkChunks Int
-      => Step.PerProofWitness
-           n
+      => Proxy n
+      -> Step.PerProofWitness
            slotVkChunks
            StepIPARounds
            WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
-    dummySlot = Step.PerProofWitness
+    dummySlot slotWidth = Step.PerProofWitness
       { wrapProof: Step.WrapProof
           { opening: WrapProofOpening
               { lr: Vector.generate
@@ -422,8 +422,9 @@ buildStepAdvice input =
           }
       , prevEvals: prevEvalsDummy
       , prevChallenges:
-          Vector.replicate (UnChecked (map F dummyIpaChallenges.stepExpanded))
-      , prevSgs: Vector.replicate (WeierstrassAffinePoint g0)
+          Array.replicate (reflectType slotWidth)
+            (UnChecked (map F dummyIpaChallenges.stepExpanded))
+      , prevSgs: Array.replicate (reflectType slotWidth) (WeierstrassAffinePoint g0)
       }
   in
     StepAdvice
@@ -926,8 +927,8 @@ type BuildSlotAdviceInput inputVal stmt =
 -- | Reference: mina/src/lib/crypto/pickles/step.ml:131-150 (`expand_proof`
 -- | signature) + step.ml:736-770 (the `go` recursion that conses each
 -- | per-slot output onto the rest's vectors).
-type SlotAdviceContrib :: Int -> Int -> Type
-type SlotAdviceContrib n slotVkChunks =
+type SlotAdviceContrib :: Int -> Type
+type SlotAdviceContrib slotVkChunks =
   { challengePolynomialCommitment :: AffinePoint StepField
   , slotUnfinalized ::
       PerProofUnfinalized
@@ -943,7 +944,6 @@ type SlotAdviceContrib n slotVkChunks =
       }
   , slotSppw ::
       Step.PerProofWitness
-        n
         slotVkChunks
         StepIPARounds
         WrapIPARounds
@@ -956,7 +956,7 @@ type SlotAdviceContrib n slotVkChunks =
 -- buildSlotAdvice — per-slot oracle-enriched advice builder
 --
 -- PS analog of OCaml's `expand_proof` (`step.ml:122-150`). Returns ONE
--- slot's contribution as `SlotAdviceContrib n`; the caller
+-- slot's contribution as `SlotAdviceContrib`; the caller
 -- (`mkStepAdvice` in `Pickles.Prove.Compile`) cons-recurses over the
 -- prev list to assemble the multi-slot `StepAdvice`, mirroring OCaml's
 -- `go` recursion at `step.ml:736-770`.
@@ -979,7 +979,7 @@ buildSlotAdvice
   => CircuitType StepField inputVal input
   => CircuitType StepField prevHeadStmt prevHeadStmtVar
   => BuildSlotAdviceInput inputVal prevHeadStmt
-  -> Effect (SlotAdviceContrib n slotVkChunks)
+  -> Effect (SlotAdviceContrib slotVkChunks)
 buildSlotAdvice input = do
   let
     -- Wrap_hack-padded bp_chals for the wrap proof's hash AND the
@@ -1328,7 +1328,7 @@ buildSlotAdvice input = do
     -- preserving heterogeneous per-entry values for rules like
     -- Tree_proof_return.
     slotSppw
-      :: Step.PerProofWitness n slotVkChunks StepIPARounds WrapIPARounds
+      :: Step.PerProofWitness slotVkChunks StepIPARounds WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean
@@ -1383,10 +1383,10 @@ buildSlotAdvice input = do
           , indexEvals: map PointEval evalsForAdvice.allEvals.indexEvals
           , ftEval1: evalsForAdvice.allEvals.ftEval1
           }
-      , prevChallenges: map
+      , prevChallenges: Vector.toUnfoldable $ map
           (\chals -> UnChecked (map F chals))
           (Vector.drop @pad input.prevChallengesForStepHash)
-      , prevSgs: map
+      , prevSgs: Vector.toUnfoldable $ map
           (\e -> WeierstrassAffinePoint (coerce e.sg :: { x :: F StepField, y :: F StepField }))
           (Vector.drop @pad input.prevChalPolys)
       }
@@ -1694,8 +1694,6 @@ stepCompile
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -1906,8 +1904,6 @@ preComputeStepDomainLog2
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -2054,8 +2050,6 @@ stepSolveAndProve
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec

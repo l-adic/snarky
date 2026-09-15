@@ -82,7 +82,7 @@ compileStepMainSimpleChain params = do
       dummyAdvice
         :: StepAdvice _ _ _ _ _ _
              ( Tuple
-                 ( PerProofWitness 1 1 StepIPARounds WrapIPARounds (F StepField)
+                 ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                      (Type2 (SplitField (F StepField) Boolean))
                      Boolean
                  )

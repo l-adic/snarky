@@ -729,7 +729,6 @@ instance
     mpv
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
-        n
         slotVkChunks
         StepIPARounds
         WrapIPARounds
@@ -1458,7 +1457,6 @@ instance
     mpv
     (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
     ( Step.PerProofWitness
-        mpvMax
         slotVkChunks
         StepIPARounds
         WrapIPARounds
@@ -2903,9 +2901,8 @@ instance
   , CircuitType StepField inputVal inputVar
   , CircuitType StepField outputVal outputVar
   , CircuitType StepField prevInputVal prevInputVar
-  , CircuitType StepField carrier carrierFVar
+  , StepSlotsTyp prevsSpec carrier carrierFVar
   , CheckedType StepField (KimchiConstraint StepField) inputVar
-  , CheckedType StepField (KimchiConstraint StepField) carrierFVar
   , CompilableRulesSpec
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
       inputVal
@@ -3252,8 +3249,6 @@ mkRuleEntry
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
   => CircuitType StepField prevInputVal prevInputVar
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -3499,9 +3494,8 @@ runMultiProverBody
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
   => CircuitType StepField prevInputVal prevInputVar
-  => CircuitType StepField carrier carrierFVar
+  => StepSlotsTyp prevsSpec carrier carrierFVar
   => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierFVar
   => AdviceHandler r
   -> Proxy stepChunks
   -> Int
