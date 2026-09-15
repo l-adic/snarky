@@ -211,7 +211,10 @@ Pickles.incrementallyVerifyProof_step_reads
 -- deferred `sg` equation — the per-proof checkpoint, at one chunk; at a step proof with the
 -- claim tie unfolded. The exact reads (the `lowest_128_bits` alias and the map-to-curve sign
 -- closed) and their inclusions into the slack reads; the recursion constants of the
--- statement records.
+-- statement records. `sgOk_iff` is the decidable mirror of the deferred `sg` conjunct the
+-- checkpoint carries as a hypothesis — the form the terminator runs out of circuit, and the
+-- root `sgOk` itself is reachable from (scripts/check_sg_ok.lean runs it on a wire proof).
+Pickles.sgOk_iff
 Pickles.twoHalves_kimchiVerify
 Pickles.twoHalves_iff_schnorr
 Pickles.twoHalves_kimchiVerify_vesta

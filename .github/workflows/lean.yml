@@ -310,6 +310,16 @@ jobs:
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean --run kimchi/scripts/check_kimchi_verifier.lean
 
+    # The deferred `sg` obligation on the same deployed wrap proof: the one conjunct of
+    # `verifyWith` that the per-proof checkpoint carries as a hypothesis, because pickles
+    # defers it to whoever terminates the chain. Run here in the form that verifier would,
+    # with two corruptions keeping the acceptance non-vacuous.
+    - name: Check the deferred sg obligation against a deployed wrap proof
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        KIMCHI_FIXTURES_DIR=kimchi/fixtures \
+          lake env lean --run pickles/scripts/check_sg_ok.lean
+
     # The verifier-key <-> index correspondence across both curves (nc = 1 and 2).
     # Interpreted, as above.
     - name: Check the verifier key corresponds to the index

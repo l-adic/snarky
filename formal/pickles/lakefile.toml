@@ -34,3 +34,11 @@ path = "../poseidon"
 [[lean_lib]]
 name = "Pickles"
 globs = ["Pickles", "Pickles.+"]
+
+# The deferred `sg` obligation against a deployed wrap proof, compiled. Its cost is the
+# opening MSM over the wrap domain's 2^14 points, run four times (the acceptance and two
+# corruptions, plus the full verify), so native is worth the build. CI runs it interpreted
+# via `lake env lean --run`, as it does the other heavy fixture drivers.
+[[lean_exe]]
+name = "check-sg-ok"
+root = "scripts.check_sg_ok"

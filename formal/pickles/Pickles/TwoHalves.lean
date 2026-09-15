@@ -422,6 +422,18 @@ def SgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
   let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
   run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i])
 
+/-- The decidable mirror of `SgOk`. This is the check the terminator runs out of circuit,
+so it is the form in which the deferred obligation meets a wire proof. -/
+def sgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) : Bool :=
+  let run := runInput C E.σ E.cvk cp pub
+  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+  decide (run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i]))
+
+/-- `sgOk` reflects `SgOk`. -/
+theorem sgOk_iff (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
+    sgOk E cp pub = true ↔ SgOk E cp pub := by
+  simp [sgOk, SgOk]
+
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
 /-- A zip mapped through its second component is the second list mapped. -/
