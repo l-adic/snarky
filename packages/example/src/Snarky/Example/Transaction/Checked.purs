@@ -300,7 +300,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @NoOutput
       @(Statement Vesta.ScalarField)
       @1
-      @1
       @(TxAdviceRow d ())
       (baseRule @d chainId)
       unit
@@ -309,7 +308,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @2
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @1
       @1
       @(TxAdviceRow d ())
       mergeRule
