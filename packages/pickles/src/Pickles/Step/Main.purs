@@ -59,7 +59,8 @@ import Pickles.Slots (Compiled, SideLoaded, Slot)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
-import Pickles.Step.Slots (class StepSlotsCarrier, traverseStepSlotsAWithVk)
+import Pickles.Step.Slots (class StepSlotsCarrier, class StepSlotsTyp, stepSlotsTyp, traverseStepSlotsAWithVk)
+import Pickles.Typ (existsTyp)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded, SlotVkSource(..))
@@ -811,6 +812,10 @@ stepMain
   => CircuitType StepField prevInputVal prevInput
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  -- The same carrier pair as the two constraints above, but as one
+  -- value, so the slot chain can be allocated without a shape in the
+  -- type. Phase B reifies only the chain; every slot is still `typOf`.
+  => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds
@@ -946,7 +951,8 @@ stepMain
   --    spec-indexed variant. Each slot of the carrier holds a
   --    `StepSlot n_i ds dw …` typed with its own per-slot n_i.
   slotsCarrier <- label "exists_prevs"
-    $ exists (pure advice <#> \(StepAdvice r) -> r.perProofSlotsCarrier)
+    $ existsTyp (stepSlotsTyp @prevsSpec)
+        (pure advice <#> \(StepAdvice r) -> r.perProofSlotsCarrier)
 
   -- 5. exists: unfinalized proofs (uniform Vector len).
   rawUnfinalizedProofs <- label "exists_unfinalized"

@@ -121,7 +121,7 @@ import Pickles.Step.Dummy
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded)
 import Pickles.Step.Main as MpvPadding
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds)
 import Pickles.Util.Unique (Unique, newUnique)
@@ -3254,6 +3254,7 @@ mkRuleEntry
   => CircuitType StepField prevInputVal prevInputVar
   => CircuitType StepField carrier carrierVar
   => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
        StepIPARounds

@@ -27,6 +27,10 @@ module Pickles.Step.Slots
   ( class StepSlotsCarrier
   , class SlotStatementsCarrier
   , class SlotVkCarrier
+  , class StepSlotsTyp
+  , SlotWitnessVal
+  , SlotWitnessVar
+  , stepSlotsTyp
   , traverseStepSlotsA
   , traverseStepSlotsAWithVk
   , replicateStepSlotsCarrier
@@ -39,12 +43,17 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Field (StepField)
 import Pickles.Slots (Slot)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Step.VkSource (SlotVkSource)
-import Pickles.Types (PaddedLength)
+import Pickles.Typ (Typ, pairTyp, typOf, unitTyp)
+import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Types.Shifted (SplitField, Type2)
 
 -- | `vkCarrier` derivation from `spec` (independent of `f`/`sf`/`b`).
 -- | `SlotVkSource nc` doesn't carry the value/var field-element
@@ -250,6 +259,52 @@ instance
 
   replicateStepSlotsCarrier dummyPPW =
     dummyPPW /\ replicateStepSlotsCarrier @rest dummyPPW
+
+-- | A slot's per-proof witness, at the one pair of instantiations every
+-- | caller of `StepSlotsCarrier` uses: values over `F StepField`,
+-- | variables over `FVar StepField`.
+type SlotWitnessVal n slotVkChunks =
+  PerProofWitness n slotVkChunks StepIPARounds WrapIPARounds
+    (F StepField)
+    (Type2 (SplitField (F StepField) Boolean))
+    Boolean
+
+type SlotWitnessVar n slotVkChunks =
+  PerProofWitness n slotVkChunks StepIPARounds WrapIPARounds
+    (FVar StepField)
+    (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+    (BoolVar StepField)
+
+-- | The per-proof carrier's layout, as a value.
+-- |
+-- | `StepSlotsCarrier` is indexed by one field-element type at a time,
+-- | so it names the value carrier and the variable carrier through two
+-- | separate dictionaries. A `Typ` relates the two, so it needs both at
+-- | once; hence a second class over the same spec, pinned to the pair
+-- | of instantiations every caller actually uses.
+-- |
+-- | Each slot's witness still comes from the class via `typOf`. What is
+-- | reified here is only the chain that joins the slots, and `pairTyp`
+-- | reproduces the layout the tuple instance gives it. Nothing moves to
+-- | runtime yet.
+class StepSlotsTyp :: Type -> Type -> Type -> Constraint
+class StepSlotsTyp spec valCarrier varCarrier | spec -> valCarrier varCarrier where
+  stepSlotsTyp :: Typ StepField (KimchiConstraint StepField) valCarrier varCarrier
+
+instance StepSlotsTyp Unit Unit Unit where
+  stepSlotsTyp = unitTyp
+
+instance
+  ( StepSlotsTyp rest restVal restVar
+  , CircuitType StepField (SlotWitnessVal n slotVkChunks) (SlotWitnessVar n slotVkChunks)
+  , CheckedType StepField (KimchiConstraint StepField) (SlotWitnessVar n slotVkChunks)
+  ) =>
+  StepSlotsTyp
+    (Slot k n slotVkChunks statement /\ rest)
+    (SlotWitnessVal n slotVkChunks /\ restVal)
+    (SlotWitnessVar n slotVkChunks /\ restVar)
+  where
+  stepSlotsTyp = pairTyp typOf (stepSlotsTyp @rest)
 
 -- | Type-level mapping `spec → valCarrier` for the heterogeneous
 -- | per-slot statements carrier (one slot per prev, holding that
