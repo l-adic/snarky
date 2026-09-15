@@ -49,8 +49,7 @@ import Pickles.Step.Types (PerProofWitness, WrapProof, perProofWitnessTyp)
 import Pickles.Step.VkSource (SlotVkSource)
 import Pickles.Typ (Typ, pairTyp, unitTyp)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
-import Prim.Int (class Add, class Compare, class Mul)
-import Prim.Ordering (LT)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (PallasG)
@@ -92,11 +91,23 @@ instance
 -- | distinguish them. `vkCarrier` is determined by `spec` alone
 -- | (see `SlotVkCarrier` superclass) so it stays consistent across
 -- | the value-side and var-side `StepSlotsCarrier` dictionaries.
+-- | `nc` — the wrap-VK chunk count shared by every slot — is a class
+-- | parameter rather than a per-slot rank-2 binder. It is a wrap-side
+-- | count: a step circuit verifies its prevs' *wrap* proofs, and a wrap
+-- | domain never exceeds the wrap SRS, so it is 1 for every slot of
+-- | every compile. (The count that genuinely varies is Dim 1,
+-- | `stepChunks`, which lives on the wrap side — see
+-- | `Pickles.Types`'s chunk-count note and `Pickles.Wrap.Main`.)
+-- |
+-- | Keeping it out of the rank-2 binder is what lets the callback's
+-- | body use the caller's own layout constraints at `nc` — so
+-- | `verifyOne` can be called directly, with no restatement of its
+-- | constraint signature here and no `unsafeCoerce` at the call.
 class StepSlotsCarrier
-  :: Type -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Type -> Constraint
+  :: Type -> Int -> Int -> Int -> Type -> Type -> Type -> Int -> Type -> Type -> Constraint
 class
   SlotVkCarrier spec vkCarrier <=
-  StepSlotsCarrier spec ds dw f sf b len pwCarrier vkCarrier
+  StepSlotsCarrier spec nc ds dw f sf b len pwCarrier vkCarrier
   | spec ds dw f sf b -> len pwCarrier
   , spec -> vkCarrier
   where
@@ -106,19 +117,13 @@ class
   traverseStepSlotsA
     :: forall m result
      . Applicative m
-    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad
+    => ( forall n pad
           . Reflectable n Int
-         => Reflectable slotVkChunks Int
-         => Reflectable tCommLen Int
          => Reflectable pad Int
-         => Compare 0 slotVkChunks LT
-         => Add 1 ncPred slotVkChunks
-         => Mul 7 slotVkChunks tCommLen
-         => Add 1 tCommLenPred tCommLen
          => Add pad n PaddedLength
          => Proxy n
          -> Finite len
-         -> PerProofWitness slotVkChunks ds dw f sf b
+         -> PerProofWitness nc ds dw f sf b
          -> m result
        )
     -> pwCarrier
@@ -132,20 +137,14 @@ class
   traverseStepSlotsAWithVk
     :: forall m result
      . Applicative m
-    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad
+    => ( forall n pad
           . Reflectable n Int
-         => Reflectable slotVkChunks Int
-         => Reflectable tCommLen Int
          => Reflectable pad Int
-         => Compare 0 slotVkChunks LT
-         => Add 1 ncPred slotVkChunks
-         => Mul 7 slotVkChunks tCommLen
-         => Add 1 tCommLenPred tCommLen
          => Add pad n PaddedLength
          => Proxy n
          -> Finite len
-         -> PerProofWitness slotVkChunks ds dw f sf b
-         -> SlotVkSource slotVkChunks
+         -> PerProofWitness nc ds dw f sf b
+         -> SlotVkSource nc
          -> m result
        )
     -> pwCarrier
@@ -155,49 +154,43 @@ class
   -- | Build a `pwCarrier` from a rank-2 polymorphic dummy slot. Each
   -- | slot auto-specialises the dummy to its own `n_i` and `nc_i`.
   replicateStepSlotsCarrier
-    :: ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad
+    :: ( forall n pad
           . Reflectable n Int
-         => Reflectable slotVkChunks Int
-         => Reflectable tCommLen Int
          => Reflectable pad Int
-         => Compare 0 slotVkChunks LT
-         => Add 1 ncPred slotVkChunks
-         => Mul 7 slotVkChunks tCommLen
-         => Add 1 tCommLenPred tCommLen
          => Add pad n PaddedLength
          => Proxy n
-         -> PerProofWitness slotVkChunks ds dw f sf b
+         -> PerProofWitness nc ds dw f sf b
        )
     -> pwCarrier
 
-instance StepSlotsCarrier Unit ds dw f sf b 0 Unit Unit where
+instance StepSlotsCarrier Unit nc ds dw f sf b 0 Unit Unit where
   traverseStepSlotsA _ _ = pure Vector.nil
   traverseStepSlotsAWithVk _ _ _ = pure Vector.nil
   replicateStepSlotsCarrier _ = unit
 
+-- | The slot's own chunk count is unified with the class's `nc` by
+-- | reusing the variable in the slot's position. A spec that asks for
+-- | two different counts across its slots does not resolve — which is
+-- | correct for a wrap-side count, since every wrap VK in a compile has
+-- | the same one.
 instance
-  ( StepSlotsCarrier rest ds dw f sf b restLen restPw restVk
+  ( StepSlotsCarrier rest nc ds dw f sf b restLen restPw restVk
   , Add restLen 1 len
   , Reflectable n Int
-  , Reflectable slotVkChunks Int
-  , Reflectable tCommLen Int
-  , Compare 0 slotVkChunks LT
-  , Add 1 ncPred slotVkChunks
-  , Mul 7 slotVkChunks tCommLen
-  , Add 1 tCommLenPred tCommLen
   , Add pad n PaddedLength
   , Reflectable pad Int
   ) =>
   StepSlotsCarrier
-    (Slot n slotVkChunks statement /\ rest)
+    (Slot n nc statement /\ rest)
+    nc
     ds
     dw
     f
     sf
     b
     len
-    (PerProofWitness slotVkChunks ds dw f sf b /\ restPw)
-    (SlotVkSource slotVkChunks /\ restVk)
+    (PerProofWitness nc ds dw f sf b /\ restPw)
+    (SlotVkSource nc /\ restVk)
   where
   traverseStepSlotsA f (here /\ rest) =
     Vector.cons

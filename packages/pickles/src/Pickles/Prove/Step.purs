@@ -231,6 +231,7 @@ buildStepAdvice
   => Reflectable wrapVkChunks Int
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -427,7 +428,7 @@ buildStepAdvice input =
       }
   in
     StepAdvice
-      { perProofSlotsCarrier: replicateStepSlotsCarrier @prevsSpec dummySlot
+      { perProofSlotsCarrier: replicateStepSlotsCarrier @prevsSpec @wrapVkChunks dummySlot
       , publicInput: input.publicInput
       , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
       , messagesForNextWrapProof: Vector.replicate (F zero)
@@ -1707,6 +1708,7 @@ buildStepCircuit
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -1717,6 +1719,7 @@ buildStepCircuit
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -1841,6 +1844,7 @@ stepCompile
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -1851,6 +1855,7 @@ stepCompile
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2017,6 +2022,7 @@ preComputeStepDomainLog2
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2027,6 +2033,7 @@ preComputeStepDomainLog2
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -2138,6 +2145,7 @@ stepSolveAndProve
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2148,6 +2156,7 @@ stepSolveAndProve
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)

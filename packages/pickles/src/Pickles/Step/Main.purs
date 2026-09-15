@@ -161,20 +161,18 @@ type RuleOutput n prevInput output =
 -- | and the user gets a compile-time type error — not a silent runtime
 -- | coerce.
 -- |
--- | The dispatch in `stepMain` still needs a few `unsafeCoerce` calls
--- | because PS can't propagate the instance-head unification into the
--- | case-arm body (the rank-2 callback rebinds `nc` as an abstract
--- | local). Those coerces are syntactic bridges for an equality
--- | already proven at instance-resolution time; the soundness lemma
--- | is documented at each site.
+-- | `Pickles.Step.Slots.StepSlotsCarrier` takes `nc` as a class
+-- | parameter for the same reason, so the traversal callback hands the
+-- | dispatch a `PerProofWitness wrapVkChunks …` and a
+-- | `SlotVkSource wrapVkChunks` directly. That is what lets the body
+-- | below call `verifyOne` with no `unsafeCoerce` anywhere on the
+-- | per-slot path: every width in sight is the same one, by
+-- | construction rather than by argument.
 -- |
--- | This is conservative vs OCaml, which allows heterogeneous per-slot
--- | ncs in principle (each prev's wrap_domain → its own chunks count).
--- | In practice every Mina top-level compile uses `num_chunks_by_default
--- | = 1` for ALL prev slots; chunks2 is the only nc>1 fixture and has
--- | no prev slots (mpvMax=0). Lifting this constraint requires
--- | restructuring `perSlotLagrangeAt` from `Vector len
--- | (LagrangeBaseLookup wrapVkChunks _)` into a per-slot type carrier.
+-- | This is a wrap-side count, and a wrap domain never exceeds the wrap
+-- | SRS, so it is 1 for every slot of every compile. The count that
+-- | genuinely varies is Dim 1, `stepChunks`, which belongs to the wrap
+-- | circuit verifying a step proof — see `Pickles.Wrap.Main`.
 class BuildSlotVkSources
   :: Type -> Type -> Int -> Int -> Type -> Type -> Type -> Constraint
 class
@@ -770,6 +768,7 @@ stepMain
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
@@ -966,7 +965,7 @@ stepMain
   -- and the `of_compiled_with_known_wrap_key` / `self_data` dispatch
   -- at step_main.ml:513-528).
   results <- label "prevs_verified" do
-    rs <- traverseStepSlotsAWithVk @prevsSpec
+    rs <- traverseStepSlotsAWithVk @prevsSpec @wrapVkChunks
       ( \slotWidth i sppw slotVkSrc -> do
           let
             pw = reshapePerProofWitness slotWidth sppw
@@ -1010,15 +1009,12 @@ stepMain
                 , correctionMode: PureCorrections
                 , fopDomainMode: KnownDomainsMode
                 -- A Self slot verifies a proof of THIS system, so the
-                -- key it checks against is this compile's own wrap VK
-                -- and its chunk count is this compile's `wrapVkChunks`.
-                -- That is a protocol fact about what `BlueprintSelf`
-                -- means, not something the spec's `nc` records, so it
-                -- cannot be discharged here: `sharedVkRec` is the one
-                -- allocation made at the top of `stepMain` (step 3) and
-                -- reused by every Self slot — allocating per slot would
-                -- emit extra `exists` calls and change the circuit.
-                , vkRec: unsafeCoerce sharedVkRec
+                -- key it checks against is this compile's own wrap VK.
+                -- `sharedVkRec` is the one allocation made at the top
+                -- of `stepMain` (step 3) and reused by every Self slot;
+                -- allocating per slot would emit extra `exists` calls
+                -- and change the circuit.
+                , vkRec: sharedVkRec
                 }
               SideloadedExistsVk perDomainLagrangeAts (SLVK.VerificationKey sl) ->
                 { lagrangeAt: mkSideloadedLagrangeLookup
@@ -1032,12 +1028,7 @@ stepMain
 
             slotIvpParams =
               { curveParams: curveParams (Proxy @PallasG)
-              -- Same soundness lemma as SharedExistsVk: BuildSlotVkSources's
-              -- instance head structurally unifies `nc ~ wrapVkChunks`,
-              -- but PS doesn't propagate that to the dispatch body. The
-              -- coerce is the syntactic bridge for an equality enforced
-              -- at instance-resolution time.
-              , lagrangeAt: unsafeCoerce slotConfig.lagrangeAt
+              , lagrangeAt: slotConfig.lagrangeAt
               , blindingH
               , correctionMode: slotConfig.correctionMode
               , endo: stepEndoVal
@@ -1099,12 +1090,7 @@ stepMain
               slotVkComms
               constDummySg
           r <- label ("slot_" <> show (getFinite i)) $
-            -- Same soundness lemma: `nc ~ wrapVkChunks` is structurally
-            -- enforced by the BuildSlotVkSources instance head, but PS
-            -- doesn't propagate it to the dispatch body. Pin verifyOne
-            -- at `wrapVkChunks` (matching perSlotLagrangeAt-derived
-            -- slotConfig) and coerce `input`'s vkComms to bridge.
-            verifyOne @wrapVkChunks slotFopParams (unsafeCoerce input) slotIvpParams
+            verifyOne @wrapVkChunks slotFopParams input slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }

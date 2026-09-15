@@ -1847,6 +1847,7 @@ instance
   , Add restBranches 1 branches
   , StepSlotsCarrier
       prevsSpec
+      wrapVkChunks
       StepIPARounds
       WrapIPARounds
       (F StepField)
@@ -2707,6 +2708,7 @@ mkRuleEntry
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (F StepField)
@@ -2717,6 +2719,7 @@ mkRuleEntry
        vkSourcesCarrier
   => StepSlotsCarrier
        prevsSpec
+       wrapVkChunks
        StepIPARounds
        WrapIPARounds
        (FVar StepField)
