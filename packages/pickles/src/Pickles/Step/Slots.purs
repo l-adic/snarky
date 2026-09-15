@@ -106,28 +106,15 @@ class
   traverseStepSlotsA
     :: forall m result
      . Applicative m
-    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
+    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad
           . Reflectable n Int
          => Reflectable slotVkChunks Int
          => Reflectable tCommLen Int
-         => Reflectable nonSgBases Int
          => Reflectable pad Int
          => Compare 0 slotVkChunks LT
          => Add 1 ncPred slotVkChunks
          => Mul 7 slotVkChunks tCommLen
          => Add 1 tCommLenPred tCommLen
-         -- Shared bindings (Mul fundep collapses same-RHS counts).
-         => Mul 15 slotVkChunks wCoeffN
-         => Mul 6 slotVkChunks indexSigmaN
-         => Mul 43 slotVkChunks chunkBases
-         => Add 2 chunkBases nonSgBases
-         => Add 2 nonSgBases totalBases
-         => Add 2 slotVkChunks sg1
-         => Add sg1 indexSigmaN sg2
-         => Add sg2 wCoeffN sg3
-         => Add sg3 wCoeffN sg4
-         => Add sg4 indexSigmaN nonSgBases
-         => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
          => Proxy n
          -> Finite len
@@ -145,28 +132,15 @@ class
   traverseStepSlotsAWithVk
     :: forall m result
      . Applicative m
-    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
+    => ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad
           . Reflectable n Int
          => Reflectable slotVkChunks Int
          => Reflectable tCommLen Int
-         => Reflectable nonSgBases Int
          => Reflectable pad Int
          => Compare 0 slotVkChunks LT
          => Add 1 ncPred slotVkChunks
          => Mul 7 slotVkChunks tCommLen
          => Add 1 tCommLenPred tCommLen
-         -- Shared bindings (Mul fundep collapses same-RHS counts).
-         => Mul 15 slotVkChunks wCoeffN
-         => Mul 6 slotVkChunks indexSigmaN
-         => Mul 43 slotVkChunks chunkBases
-         => Add 2 chunkBases nonSgBases
-         => Add 2 nonSgBases totalBases
-         => Add 2 slotVkChunks sg1
-         => Add sg1 indexSigmaN sg2
-         => Add sg2 wCoeffN sg3
-         => Add sg3 wCoeffN sg4
-         => Add sg4 indexSigmaN nonSgBases
-         => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
          => Proxy n
          -> Finite len
@@ -181,28 +155,15 @@ class
   -- | Build a `pwCarrier` from a rank-2 polymorphic dummy slot. Each
   -- | slot auto-specialises the dummy to its own `n_i` and `nc_i`.
   replicateStepSlotsCarrier
-    :: ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad nonSgBases chunkBases wCoeffN indexSigmaN sg1 sg2 sg3 sg4 totalBases totalBasesPred
+    :: ( forall n slotVkChunks ncPred tCommLen tCommLenPred pad
           . Reflectable n Int
          => Reflectable slotVkChunks Int
          => Reflectable tCommLen Int
-         => Reflectable nonSgBases Int
          => Reflectable pad Int
          => Compare 0 slotVkChunks LT
          => Add 1 ncPred slotVkChunks
          => Mul 7 slotVkChunks tCommLen
          => Add 1 tCommLenPred tCommLen
-         -- Shared bindings (Mul fundep collapses same-RHS counts).
-         => Mul 15 slotVkChunks wCoeffN
-         => Mul 6 slotVkChunks indexSigmaN
-         => Mul 43 slotVkChunks chunkBases
-         => Add 2 chunkBases nonSgBases
-         => Add 2 nonSgBases totalBases
-         => Add 2 slotVkChunks sg1
-         => Add sg1 indexSigmaN sg2
-         => Add sg2 wCoeffN sg3
-         => Add sg3 wCoeffN sg4
-         => Add sg4 indexSigmaN nonSgBases
-         => Add 1 totalBasesPred totalBases
          => Add pad n PaddedLength
          => Proxy n
          -> PerProofWitness slotVkChunks ds dw f sf b
@@ -220,22 +181,10 @@ instance
   , Reflectable n Int
   , Reflectable slotVkChunks Int
   , Reflectable tCommLen Int
-  , Reflectable nonSgBases Int
   , Compare 0 slotVkChunks LT
   , Add 1 ncPred slotVkChunks
   , Mul 7 slotVkChunks tCommLen
   , Add 1 tCommLenPred tCommLen
-  , Mul 15 slotVkChunks wCoeffN
-  , Mul 6 slotVkChunks indexSigmaN
-  , Mul 43 slotVkChunks chunkBases
-  , Add 2 chunkBases nonSgBases
-  , Add 2 nonSgBases totalBases
-  , Add 2 slotVkChunks sg1
-  , Add sg1 indexSigmaN sg2
-  , Add sg2 wCoeffN sg3
-  , Add sg3 wCoeffN sg4
-  , Add sg4 indexSigmaN nonSgBases
-  , Add 1 totalBasesPred totalBases
   , Add pad n PaddedLength
   , Reflectable pad Int
   ) =>
