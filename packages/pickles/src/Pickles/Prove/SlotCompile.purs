@@ -2,15 +2,12 @@
 -- | `Array Slot` instead of dispatching through one type-class instance
 -- | per slot shape.
 -- |
--- | This is the first of the three functions of
--- | `docs/pickles-rule-dsl-simplification-plan.md` §3.2: the value-level
--- | replacement for `CompilableSpec`'s `shapeCompileData`. It produces
--- | exactly what that method's `srsData` record carried, one entry per
--- | slot, in slot order.
+-- | It produces exactly what `CompilableSpec`'s `shapeCompileData`
+-- | carried in its `srsData` record, one entry per slot, in slot order.
 -- |
--- | The chunk counts stay type-level, as the plan says: `nc` here is the
--- | compile-wide wrap-VK chunk count, a protocol constant. What became
--- | runtime is the slot list itself.
+-- | The chunk counts stay type-level: `nc` here is the compile-wide
+-- | wrap-VK chunk count, a protocol constant. What became runtime is the
+-- | slot list itself.
 module Pickles.Prove.SlotCompile
   ( SlotCompileConfig
   , SlotCompileEntry

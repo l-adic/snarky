@@ -14,9 +14,6 @@
 -- | `Vector 32` of unfinalized fields, chunk counts) stay type-level;
 -- | lengths that vary per application (slot count, `mpv`, branch
 -- | count) live here.
--- |
--- | See `docs/pickles-rule-dsl-simplification-plan.md` §3.1 and
--- | `docs/pickles-rule-dsl-phase0-inventory.md` §6.1.
 module Pickles.Prove.Slot
   ( CompiledTagData
   , Slot
