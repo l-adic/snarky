@@ -1978,14 +1978,15 @@ preComputeStepDomainLog2 handler ctx rule = do
   let
     gateCount = Array.length kimchiRows
     piSize = Array.length builtState.publicInputs
-    -- This is THIS step circuit's own `zk_rows`, which follows from its
-    -- own `num_chunks` — a step-side quantity. It used to read the
-    -- slot-VK chunk count, which is a wrap-side one; the two were never
-    -- distinguishable because every caller passed 1 for both. Pinned to
-    -- 1 here to preserve exactly that behaviour, rather than renamed to
-    -- `WrapVkChunks`, which would assert something false. A compile at
-    -- `stepChunks = 2` (the `chunks2` fixture) already computes its
-    -- domain from `zkRowsForNumChunks 1`; that predates this change.
+    -- Domain SELECTION uses a fixed 3, not the circuit's chunk-derived
+    -- `zk_rows`. That is OCaml's `Fix_domains.zk_rows` (`fix_domains.ml:4`,
+    -- `let zk_rows = 3`), a module constant unconditional on `num_chunks`,
+    -- consumed by the same `zk_rows + public_input_size + rows_len` at
+    -- `fix_domains.ml:77-79`. A compile at `stepChunks = 2` sizes its
+    -- domain with 3 here and uses the real `zkRowsForNumChunks stepChunks`
+    -- where the proof is actually checked (`Prove.Compile`'s `selfZkRows`,
+    -- for the wrap's deferred values). Deriving this one from `stepChunks`
+    -- would move step domains away from OCaml's.
     zkRows = zkRowsForNumChunks 1
     rows = zkRows + piSize + gateCount
   pure (ceilLog2 rows)
