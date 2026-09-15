@@ -4062,6 +4062,31 @@ compileMulti handler slotWidths cfg rules = do
                 <> show (Array.length slotWidths)
     }
 
+  -- The wrap domain the step circuits were built against is an
+  -- assumption. Every step circuit bakes it in before the wrap circuit
+  -- exists, so a wrong assumption is not detected here; it surfaces much
+  -- later as a failure inside the kimchi prover, on the first proof that
+  -- verifies a real previous proof. Compare the assumption against the
+  -- circuit that was actually built, and say which is which.
+  --
+  -- Port of OCaml `compile.ml:850-864`, including its wording.
+  let
+    actualWrapDomainLog2 = ProofFFI.proverIndexDomainLog2 wrapResult.proverIndex
+    assumedWrapDomainLog2 = case cfg.wrapDomainOverride of
+      Just o -> o
+      Nothing -> wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
+  -- `Exc.throw`, not `unsafeThrow`: the latter throws as soon as it is
+  -- evaluated, which in a strict language is before `when` inspects the
+  -- condition.
+  when (actualWrapDomainLog2 /= assumedWrapDomainLog2)
+    $ Exc.throw
+    $ "compileMulti: this circuit was compiled for proofs using the wrap "
+        <> "domain of size "
+        <> show assumedWrapDomainLog2
+        <> ", but the actual wrap domain size for the circuit has size "
+        <> show actualWrapDomainLog2
+        <> ". Set wrapDomainOverride to the correct domain size."
+
   -- Step 3: build per-branch BranchProver closures (each captures its
   -- branchIdx for `whichBranch` baking in the wrap statement). The
   -- FULL `Vector branches Int` of step-domain log2s is shared by
