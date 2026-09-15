@@ -201,7 +201,6 @@
           "dependencies": [
             "arrays",
             "blake2",
-            "const",
             "curves",
             "effect",
             "either",
@@ -210,7 +209,6 @@
             "exists",
             "foldable-traversable",
             "foreign",
-            "functors",
             "integers",
             "js-bigints",
             "lagrange-cache",

@@ -40,9 +40,9 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
-import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -57,10 +57,10 @@ import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class StepSlotsCarrier, class StepSlotsTyp, stepSlotsTyp, traverseStepSlotsAWithVk)
-import Pickles.Typ (existsTyp)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
+import Pickles.Typ (existsTyp)
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Int (class Add, class Compare, class Mul)
@@ -445,6 +445,7 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
       , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
+
     tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
     tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
   in

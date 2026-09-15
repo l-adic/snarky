@@ -33,8 +33,8 @@ import Pickles.Prove.Slot (Slot, SlotSource(..), slotNumChunks, slotSourceDomain
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
-import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.Proof (srsLagrangeCommitmentChunksAt) as ProofFFI
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F(..))
