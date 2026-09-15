@@ -31,7 +31,6 @@ module Pickles.Prove.Compile
   , shapeCompileData
   , mkStepAdvice
   , shapeProveData
-  , class PadProveDataMpv
   , padShapeProveData
   , class CompilableRulesSpec
   , branchCount
@@ -1056,9 +1055,9 @@ type ShapeProveSideInfo mpv =
   }
 
 -- | All shape-specific per-slot data needed at wrap-stage construction.
--- | Fields are Vector mpv (one entry per slot); runProverBody pads the
--- | mpv-sized vectors to wrap-hack Vector 2 where needed and computes
--- | the proofs-verified mask from `mpv` directly.
+-- | Fields are Vector mpv (one entry per slot); `runMultiProverBody`
+-- | pads the mpv-sized vectors to wrap-hack Vector 2 where needed and
+-- | computes the proofs-verified mask from `mpv` directly.
 -- |
 -- | Nil provides empty vectors (Vector.nil for everything, noSlots for
 -- | `slotsValue`). Cons recursively cons each slot's entry onto the
@@ -1086,21 +1085,13 @@ type ShapeProveData mpv =
   }
 
 --------------------------------------------------------------------------------
--- PadProveDataMpv — convert ShapeProveData mpv slots → ShapeProveData
--- mpvMax slotsMax. Mirrors the rule's actual mpv/slots shape (driven by
--- prevsSpec) up to the wrap circuit's wider mpvMax/slotsMax.
---
--- The two-instance chain uses `else instance` (PS overlapping-instance
--- syntax). PS picks the first matching instance, so the identity head
--- with repeated vars (`mpv slots mpv slots`) fires whenever the types
--- align (single-rule callers, where `mpv = mpvMax` and `slots =
--- slotsMax`); otherwise the general instance front-pads each Vector
--- field via `PadProveDataDummies` and converts the slots carrier via
--- `ConvertSlots`.
+-- padShapeProveData — convert ShapeProveData mpv → ShapeProveData
+-- mpvMax. Mirrors the rule's actual mpv shape (driven by prevsSpec) up
+-- to the wrap circuit's wider mpvMax.
 --------------------------------------------------------------------------------
 
 -- | Per-entry dummy values for padding. Each field is one entry's
--- | worth — the general `PadProveDataMpv` instance front-pads each
+-- | worth — `padShapeProveData` front-pads each
 -- | `Vector mpv` field with `(mpvMax - mpv)` copies of the
 -- | corresponding dummy.
 -- |
@@ -1130,38 +1121,28 @@ type PadProveDataDummies =
   , dummySlotChal :: Vector WrapIPARounds (F WrapField)
   }
 
--- | Pad a `ShapeProveData mpv` to `ShapeProveData mpvMax`.
+-- | Pad a `ShapeProveData mpv` to `ShapeProveData mpvMax` by
+-- | front-padding each `Vector mpv` field with `mpvPad = mpvMax - mpv`
+-- | copies of the corresponding dummy. Mirrors OCaml
+-- | `step.ml:736-770`'s `extend_front unfinalized_proofs ...
+-- | Unfinalized.dummy` and the analogous padding for the other
+-- | per-prev fields.
 -- |
--- | When `mpv = mpvMax` and `slots = slotsMax`, the conversion is the
--- | identity (the fast-path instance below). Otherwise the rule's mpv
--- | is strictly less than the wrap circuit's mpvMax; the prov-data
--- | needs front-padding with `Dummy.*` values to match the wrap
--- | circuit's expected shape (the general instance below).
-class PadProveDataMpv (mpv :: Int) (mpvMax :: Int) where
-  padShapeProveData
-    :: PadProveDataDummies
-    -> ShapeProveData mpv
-    -> ShapeProveData mpvMax
-
--- | Fast-path: rule's mpv/slots equal the wrap circuit's mpvMax/slotsMax.
--- | Identity. Single-rule callers all hit this — preserves byte-identical
--- | witness (the cast is a tautology since both sides are the same type).
-instance PadProveDataMpv mpv mpv where
-  padShapeProveData _ = identity
-
--- | General fallback: rule's mpv < wrap's mpvMax. Front-pads each
--- | `Vector mpv` field with `mpvPad = mpvMax - mpv` copies of the
--- | corresponding dummy, and converts the slots carrier via
--- | `ConvertSlots`. Mirrors OCaml `step.ml:736-770`'s `extend_front
--- | unfinalized_proofs ... Unfinalized.dummy` and analog padding for
--- | the other per-prev fields.
-else instance
-  ( Add mpvPad mpv mpvMax
-  , Reflectable mpvPad Int
-  ) =>
-  PadProveDataMpv mpv mpvMax where
-  padShapeProveData dummies sd =
-    { prevSgs:
+-- | A single-rule caller has `mpv = mpvMax`, hence `mpvPad = 0`, and
+-- | every `Vector.replicate @0` below is empty and every append the
+-- | identity — so that case needs no branch of its own. It used to
+-- | have one: an identity instance ahead of this body in an `else`
+-- | chain, there to keep the solver from being asked for
+-- | `Add 0 mpv mpv`. It answers.
+padShapeProveData
+  :: forall mpv mpvPad mpvMax
+   . Add mpvPad mpv mpvMax
+  => Reflectable mpvPad Int
+  => PadProveDataDummies
+  -> ShapeProveData mpv
+  -> ShapeProveData mpvMax
+padShapeProveData dummies sd =
+  { prevSgs:
         Vector.append (Vector.replicate @mpvPad dummies.dummyPrevSg)
           sd.prevSgs
     , prevStepChallenges:
@@ -2358,14 +2339,13 @@ instance
   , Mul mpvMax Step.UnfinalizedFieldCount unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
-  -- Wrap-stage constraints on `mpvMax`/`slotsMax` (the wrap circuit's
-  -- wider shape). The general `PadProveDataMpv` instance front-pads the
-  -- per-rule `ruleMpv`/`slots` shape up to `mpvMax`/`slotsMax`.
+  -- Wrap-stage constraints on `mpvMax` (the wrap circuit's wider
+  -- shape). `padShapeProveData` front-pads the per-rule `ruleMpv`
+  -- shape up to `mpvMax`.
   , Reflectable mpvMax Int
   , Reflectable padMax Int
   , Add padMax mpvMax PaddedLength
   , Compare mpvMax 3 LT
-  , PadProveDataMpv ruleMpv mpvMax
   -- `topBranches` stays fixed across the recursion; required by
   -- `buildStepProveCtx` and Vector dispatch.
   , Reflectable topBranches Int
@@ -2553,11 +2533,9 @@ instance
           @prevInputVal
           @prevInputVar
           @topBranches
-          -- Pass the wrap circuit's `mpvMax`/`slotsMax`. When
-          -- `ruleMpv = mpvMax`, the identity `PadProveDataMpv`
-          -- instance fires; otherwise the general instance front-pads
-          -- the per-rule proveData up to the wrap circuit's wider
-          -- shape via `Dummy.*` values.
+          -- Pass the wrap circuit's `mpvMax`. `padShapeProveData`
+          -- front-pads the per-rule proveData up to it with `Dummy.*`
+          -- values; at `ruleMpv = mpvMax` that padding is empty.
           @mpvMax
                 @mpvPad
           @wrapVkChunks
@@ -2896,7 +2874,7 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
 --------------------------------------------------------------------------------
 -- runMultiProverBody — per-branch prover body.
 --
--- Pipeline (mirrors single-rule runProverBody):
+-- Pipeline:
 --   1. mkStepAdvice @prevsSpec cfg stepCR wrapResult appInput prevs
 --   2. shapeProveData @prevsSpec cfg wrapResult sideInfo prevs
 --   3. stepProveFn ctx stepCR stepAdvice
@@ -2975,7 +2953,6 @@ runMultiProverBody
   => Compare mpvMax 3 LT
   => Add mpvMax nonSgBases totalBasesMax
   => Add 1 totalBasesMaxPred totalBasesMax
-  => PadProveDataMpv mpv mpvMax
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
   => CircuitType StepField prevInputVal prevInputVar
@@ -3059,11 +3036,10 @@ runMultiProverBody
       prevs
       sideloadedVKs
 
-    -- Pad rule's mpv/slots-shaped proveData to the wrap circuit's
-    -- mpvMax/slotsMax shape. Identity for single-rule callers
-    -- (mpv = mpvMax, slots = slotsMax); the general
-    -- `PadProveDataMpv` instance front-pads with dummies for
-    -- multi-rule callers where the rule's mpv < wrap's mpvMax.
+    -- Pad the rule's mpv-shaped proveData to the wrap circuit's mpvMax
+    -- shape. Empty padding for single-rule callers (mpv = mpvMax);
+    -- `padShapeProveData` front-pads with dummies for multi-rule
+    -- callers where the rule's mpv < wrap's mpvMax.
     --
     -- Dummies sized at the wrap circuit's `mpvMax` mirror OCaml
     -- `step.ml:736-770`'s `extend_front ... Unfinalized.dummy` and

@@ -1550,7 +1550,7 @@ type StepProveResult (outputSize :: Int) =
   -- | Field-flattened representation of the rule's user
   -- | `publicOutput` value, recovered post-solve. Carried as a raw
   -- | `Array StepField` (not `outputVal`) so that consumers like
-  -- | `runProverBody` apply their own `fieldsToValue @StepField
+  -- | `runMultiProverBody` apply their own `fieldsToValue @StepField
   -- | @outputVal` and producers that don't care can ignore it.
   -- | Empty when the rule's output type is `Unit`.
   , userPublicOutputFields :: Array StepField
@@ -2146,7 +2146,7 @@ stepSolveAndProve handler ctx rule compileResult advice = do
       -- `stepMain`'s rule_main block didn't run — that's a bug; we
       -- surface it as a FailedAssertion rather than silently
       -- producing zeros. Raw field values are returned;
-      -- `runProverBody` applies `fieldsToValue` against the rule's
+      -- `runMultiProverBody` applies `fieldsToValue` against the rule's
       -- specific `outputVal`.
       captured <- Ref.read captureRef
       let
