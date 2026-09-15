@@ -1506,8 +1506,9 @@ type StepRuleAt (r :: Row (Type -> Type)) (n :: Int) valCarrier inputVal input o
 -- pass. The mid-tier (`Pickles.Step.Main`) stays generic, so a future
 -- chunked-wrap world can specialize `StepProveContext` per-rule
 -- without revisiting the mid-tier types.
-type StepProveContext wrapVkChunks len nd blueprints =
-  { srsData :: StepMainSrsData wrapVkChunks len nd blueprints
+type StepProveContext :: Int -> Int -> Type -> Type
+type StepProveContext len nd blueprints =
+  { srsData :: StepMainSrsData len nd blueprints
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
   -- | When `true`, enables prover-state debug checks and runs a
@@ -1726,7 +1727,7 @@ buildStepCircuit
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext wrapVkChunks len nd blueprints
+  -> StepProveContext len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect
        { builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
@@ -1860,7 +1861,7 @@ stepCompile
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext wrapVkChunks len nd blueprints
+  -> StepProveContext len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile handler ctx rule = do
@@ -2036,7 +2037,7 @@ preComputeStepDomainLog2
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
-  -> StepProveContext wrapVkChunks len nd blueprints
+  -> StepProveContext len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 handler ctx rule = do
@@ -2158,7 +2159,7 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) input
   => SlotStatementsCarrier prevsSpec valCarrier
   => AdviceHandler r
-  -> StepProveContext wrapVkChunks len nd blueprints
+  -> StepProveContext len nd blueprints
   -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier

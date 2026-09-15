@@ -129,8 +129,7 @@ compileStepMainSideLoadedMain params = do
           -- The side-loaded slot ignores `perSlotLagrangeAt` (Step.Main
           -- reads the per-domain tables from `SlotVkBlueprintSideLoaded` instead);
           -- it's still required to satisfy the Vector shape.
-          { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           -- Side-loaded slots ignore this Vector —
           -- `Step.FinalizeOtherProof`'s `SideLoadedMode` synthesises
           -- the `Vector 17 [0..16]` universe from

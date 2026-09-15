@@ -949,7 +949,8 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
             }
           tprStepSrsData =
-            { perSlotLagrangeAt: tprLagrangeAtD13 :< tprLagrangeAtD14 :< Vector.nil
+            { slot0LagrangeAt: tprLagrangeAtD13
+            , slot1LagrangeAt: tprLagrangeAtD14
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
             , nrrWrapSrsData: wrapTprNrrWrapSrsData
             , nrrStepSrsData: wrapTprNrrStepSrsData
@@ -1128,7 +1129,8 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           treeProofReturnSrsData =
-            { perSlotLagrangeAt: lagrangeAtD13 :< lagrangeAtD14 :< Vector.nil
+            { slot0LagrangeAt: lagrangeAtD13
+            , slot1LagrangeAt: lagrangeAtD14
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData

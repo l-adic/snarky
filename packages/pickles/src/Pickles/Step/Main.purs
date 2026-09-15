@@ -49,7 +49,7 @@ import Pickles.FinalizeOtherProof (DomainMode(..))
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
+import Pickles.PublicInputCommit (CorrectionMode(..), mkSideloadedLagrangeLookup)
 import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Slot)
@@ -210,8 +210,8 @@ instance
   where
   buildSlotVkSources (headBlueprint /\ restScaffolds) (headCell /\ restCellCarrier) = do
     headSrc <- case headBlueprint of
-      BlueprintSelf -> pure SharedExistsVk
-      BlueprintExternal v -> pure (ConstVk v)
+      BlueprintSelf lagrange -> pure (SharedExistsVk lagrange)
+      BlueprintExternal lagrange v -> pure (ConstVk lagrange v)
       BlueprintSideLoaded headLagrange -> do
         headVar <- exists (pure (projectVk headCell))
         pure (SideloadedExistsVk headLagrange headVar)
@@ -223,28 +223,22 @@ instance
 -- | self-recursive rules share one value across slots, heterogeneous
 -- | prevs differ per slot) and per-slot wrap-VK sources (see
 -- | `SlotVkSource`).
-type StepMainSrsData wrapVkChunks len nd blueprints =
-  { -- | Per-slot lagrange commitments. In OCaml
+type StepMainSrsData :: Int -> Int -> Type -> Type
+type StepMainSrsData len nd blueprints =
+  { -- | Shared Tock SRS h-generator. `Generators.h =
+    -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
+    -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
+    -- | NOT per-slot.
+    --
+    -- | The per-slot lagrange bases used to live here as a
+    -- | `Vector len (LagrangeBaseLookup wrapVkChunks _)`, one width for
+    -- | every slot. They are per-slot data at the slot's own chunk
+    -- | count, so they travel in `perSlotVkBlueprints` instead. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
-    -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
-    -- | from the per-slot `Types_map.For_step.t`. The SRS itself is
-    -- | shared (one Tock URS, step_main.ml:394). For heterogeneous
-    -- | prevs (Tree_proof_return: slot 0 @ domain 2^13; slot 1 @
-    -- | domain 2^14), the lagrange commitments at each index differ
-    -- | per slot — same SRS, different domain size, different `i`-th
-    -- | lagrange basis point.
-    -- Per-slot lagrange lookup, generic over `wrapVkChunks` so the same
-    -- type works whether the slot's prev wrap proof is single- or
-    -- multi-chunk. At Mina's current top-level compile this collapses to
-    -- nc=1 (`num_chunks_by_default` at `step_main.ml:347`), but the type
-    -- stays open so a future chunked wrap (or heterogeneous-nc prev
-    -- slots, via task #51) doesn't force a refactor.
-    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup wrapVkChunks StepField)
-  -- | Shared Tock SRS h-generator. `Generators.h =
-  -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
-  -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
-  -- | NOT per-slot.
-  , blindingH :: AffinePoint (F StepField)
+    -- | (step_verifier.ml:564-571) reads the PREV's `wrap_domain` from
+    -- | the per-slot `Types_map.For_step.t`, which is the same story:
+    -- | shared SRS (one Tock URS, step_main.ml:394), per-slot domain.
+    blindingH :: AffinePoint (F StepField)
   -- | Per-slot Vector of all step-domain log2s the slot's prev
   -- | source could have. For single-rule callers (and any slot whose
   -- | source has a single branch) this is `Vector 1 [theLog2]`;
@@ -825,7 +819,7 @@ stepMain
        -> input
        -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput len prevInput output)
      )
-  -> StepMainSrsData wrapVkChunks len nd blueprints
+  -> StepMainSrsData len nd blueprints
   -> AffinePoint StepField
   -> sideloadedVkCarrier
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
@@ -833,8 +827,7 @@ stepMain
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
 stepMain
   rule
-  { perSlotLagrangeAt
-  , blindingH
+  { blindingH
   , perSlotFopDomainLog2s
   , perSlotFopZkRows
   , perSlotVkBlueprints
@@ -1006,39 +999,29 @@ stepMain
             -- system enforces the protocol invariant that the wrap
             -- proof's chunks count equals its VK's chunks count.
             slotConfig = case slotVkSrc of
-              ConstVk constVk ->
-                { lagrangeAt: perSlotLagrangeAt !! i
+              ConstVk lagrange constVk ->
+                { lagrangeAt: lagrange
                 , correctionMode: PureCorrections
                 , fopDomainMode: KnownDomainsMode
                 , vkRec: let VerificationKey r = liftConstVk constVk in r
                 }
-              SharedExistsVk ->
-                -- Soundness lemma: the BuildSlotVkSources instance has
-                -- structural head
-                -- `Slot n wrapVkChunks stmt /\ rest`, which
-                -- only matches when the slot's nc IS wrapVkChunks.
-                -- `SharedExistsVk` is ONLY constructed from that
-                -- instance, so when this arm fires we have
-                -- nc ~ wrapVkChunks. PureScript's type checker
-                -- can't propagate the instance-head unification
-                -- into the case-body's local `nc` variable, hence
-                -- the coerce — purely a syntactic bridge for an
-                -- equality that's structurally enforced at the
-                -- instance site.
-                { lagrangeAt: perSlotLagrangeAt !! i
+              SharedExistsVk lagrange ->
+                { lagrangeAt: lagrange
                 , correctionMode: PureCorrections
                 , fopDomainMode: KnownDomainsMode
+                -- A Self slot verifies a proof of THIS system, so the
+                -- key it checks against is this compile's own wrap VK
+                -- and its chunk count is this compile's `wrapVkChunks`.
+                -- That is a protocol fact about what `BlueprintSelf`
+                -- means, not something the spec's `nc` records, so it
+                -- cannot be discharged here: `sharedVkRec` is the one
+                -- allocation made at the top of `stepMain` (step 3) and
+                -- reused by every Self slot — allocating per slot would
+                -- emit extra `exists` calls and change the circuit.
                 , vkRec: unsafeCoerce sharedVkRec
                 }
               SideloadedExistsVk perDomainLagrangeAts (SLVK.VerificationKey sl) ->
-                -- `mkSideloadedLagrangeLookup` now returns
-                -- `LagrangeBaseLookup nc _` at the slot's own nc (the
-                -- per-domain blueprint is chunked properly via
-                -- `SlotVkBlueprintSideLoaded nc`). Same soundness lemma
-                -- as the ConstVk/SharedExistsVk arms: nc ~ wrapVkChunks
-                -- by the BuildSlotVkSources instance head; the coerce
-                -- here just unifies the case-join.
-                { lagrangeAt: unsafeCoerce $ mkSideloadedLagrangeLookup
+                { lagrangeAt: mkSideloadedLagrangeLookup
                     (curveParams (Proxy @PallasG))
                     sl.actualWrapDomainSize
                     perDomainLagrangeAts

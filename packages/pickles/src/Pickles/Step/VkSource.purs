@@ -19,6 +19,7 @@ module Pickles.Step.VkSource
 import Data.Vector (Vector)
 import Pickles.Field (StepField)
 import Pickles.ProofsVerified (ProofsVerifiedCount)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.VerificationKey (VerificationKey)
 import Snarky.Circuit.DSL (BoolVar, F, FVar)
@@ -37,10 +38,18 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 -- | muxes over against the runtime key's `actualWrapDomainSize`.
 -- |
 -- | `nc` is the chunks count of the producing compile's wrap VK.
+-- | The compiled cases carry the slot's lagrange basis, at *this
+-- | slot's* chunk count: the basis is read at the slot source's wrap
+-- | domain, so it belongs to the slot, not to the enclosing compile.
+-- | The side-loaded case has no compile-time domain to read one at —
+-- | it carries the three per-domain tables instead and muxes among
+-- | them in-circuit.
 data SlotVkBlueprint :: Int -> Type
 data SlotVkBlueprint slotVkChunks
-  = BlueprintSelf
-  | BlueprintExternal (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
+  = BlueprintSelf (LagrangeBaseLookup slotVkChunks StepField)
+  | BlueprintExternal
+      (LagrangeBaseLookup slotVkChunks StepField)
+      (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
   | BlueprintSideLoaded (SlotVkBlueprintSideLoaded slotVkChunks)
 
 -- | The side-loaded case's payload — the
@@ -68,8 +77,10 @@ type SlotVkBlueprintSideLoaded slotVkChunks =
 -- | each slot in a rule's spec can carry its own chunks count).
 data SlotVkSource :: Int -> Type
 data SlotVkSource slotVkChunks
-  = ConstVk (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
-  | SharedExistsVk
+  = ConstVk
+      (LagrangeBaseLookup slotVkChunks StepField)
+      (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
+  | SharedExistsVk (LagrangeBaseLookup slotVkChunks StepField)
   | SideloadedExistsVk
       (SlotVkBlueprintSideLoaded slotVkChunks)
       (SLVK.VerificationKey slotVkChunks (FVar StepField) (BoolVar StepField))

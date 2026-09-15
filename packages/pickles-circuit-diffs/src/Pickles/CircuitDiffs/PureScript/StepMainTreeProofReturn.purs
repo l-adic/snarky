@@ -59,7 +59,8 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | override_wrap_domain:N1). Each slot needs its own lagrange lookup
 -- | keyed on the slot's domain size.
 type StepMainTreeProofReturnParams =
-  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup 1 StepField)
+  { slot0LagrangeAt :: LagrangeBaseLookup 1 StepField
+  , slot1LagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   -- SRS data for compiling NRR's wrap circuit (used to derive slot 0's
   -- known wrap key).
@@ -145,15 +146,18 @@ compileStepMainTreeProofReturn params = do
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
           @1
           treeProofReturnRule
-          { perSlotLagrangeAt: params.perSlotLagrangeAt
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
               (nrrArt.stepDomainLog2 :< Vector.nil)
                 :< (selfLog2 :< Vector.nil)
                 :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints:
-              BlueprintExternal nrrArt.wrapVk /\ BlueprintSelf /\ unit
+              -- Heterogeneous wrap domains: slot 0 reads NRR's basis at
+              -- 2^13, slot 1 self's at 2^14. Each travels with its slot.
+              BlueprintExternal params.slot0LagrangeAt nrrArt.wrapVk
+                /\ BlueprintSelf params.slot1LagrangeAt
+                /\ unit
           }
           dummyWrapSg
           (tuple2 SLVK.compileDummy SLVK.compileDummy)

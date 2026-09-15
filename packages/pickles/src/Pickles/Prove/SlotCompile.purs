@@ -30,7 +30,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Prove.Slot (Slot, SlotSource(..), slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
-import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
@@ -44,22 +44,14 @@ import Type.Proxy (Proxy(..))
 
 -- | What one slot contributes to the step prover's `srsData`.
 -- |
--- | The two chunk counts are genuinely distinct axes, and conflating
--- | them is the mistake the Phase 0 inventory records as OQ-8:
--- |
--- |   * `wrapNc` is the enclosing compile's wrap-VK chunk count, which
--- |     fixes the width of every slot's lagrange basis;
--- |   * `slotNc` is the chunk count of the compile that produced *this*
--- |     slot's previous proofs, which fixes its wrap-VK blueprint.
--- |
--- | `Pickles.Step.Main`'s `BuildSlotVkSources` unifies them in its
--- | instance heads; `Pickles.Prove.Compile` keeps them apart. Both are
--- | 1 in every fixture, so nothing observable depends on the
--- | difference today.
-type SlotCompileEntry :: Int -> Int -> Type
-type SlotCompileEntry wrapNc slotNc =
-  { lagrangeAt :: LagrangeBaseLookup wrapNc StepField
-  , fopDomainLog2s :: Array Int
+-- | Everything here is at `slotNc`, the chunk count of the compile that
+-- | produced *this* slot's previous proofs — including the lagrange
+-- | basis, which is read at the slot source's own wrap domain. The
+-- | enclosing compile's wrap-VK chunk count is a different axis (the
+-- | Phase 0 inventory's OQ-8) and does not appear here at all.
+type SlotCompileEntry :: Int -> Type
+type SlotCompileEntry slotNc =
+  { fopDomainLog2s :: Array Int
   , fopZkRows :: Int
   , vkBlueprint :: SlotVkBlueprint slotNc
   }
@@ -129,45 +121,45 @@ externalWrapVk vk = VerificationKey
 -- | enclosing compile's own per-branch step domains, which only exist
 -- | after the pre-pass; `Self` slots take it verbatim.
 slotCompileEntry
-  :: forall @wrapNc @slotNc
-   . Reflectable wrapNc Int
-  => Reflectable slotNc Int
+  :: forall @slotNc
+   . Reflectable slotNc Int
   => SlotCompileConfig
   -> Array Int
   -> Slot
-  -> SlotCompileEntry wrapNc slotNc
+  -> SlotCompileEntry slotNc
 slotCompileEntry cfg selfStepDomainLog2s slot =
-  { lagrangeAt: mkConstLagrangeBaseLookup (lagrangeAt (slotWrapDomainLog2 outer slot))
-  , fopDomainLog2s: slotSourceDomainLog2s cfg.branchCount selfStepDomainLog2s slot
+  { fopDomainLog2s: slotSourceDomainLog2s cfg.branchCount selfStepDomainLog2s slot
   , fopZkRows: zkRowsForNumChunks (slotNumChunks cfg.stepNumChunks slot)
   , vkBlueprint: blueprint
   }
   where
   outer = cfg.outerWrapDomainLog2
 
-  -- The compile-wide lagrange basis, at this slot's wrap domain.
-  lagrangeAt :: Int -> Int -> Vector wrapNc (AffinePoint (F StepField))
+  -- This slot's lagrange basis, at its own wrap domain and its own
+  -- chunk count. Both belong to the slot: the domain is the source's,
+  -- and a chunked source has a chunked basis.
+  lagrangeAt :: Int -> Int -> Vector slotNc (AffinePoint (F StepField))
   lagrangeAt = lagrangeAtDomain cfg.pallasSrs
 
-  -- The side-loaded tables, at the slot source's own chunk count.
-  sideLoadedAt :: Int -> Int -> Vector slotNc (AffinePoint (F StepField))
-  sideLoadedAt = lagrangeAtDomain cfg.pallasSrs
+  slotLagrange = mkConstLagrangeBaseLookup (lagrangeAt (slotWrapDomainLog2 outer slot))
 
   blueprint = case slot.source of
-    SelfSource -> BlueprintSelf
-    ExternalSource d -> BlueprintExternal (externalWrapVk @slotNc d.wrapVerifierIndex)
+    SelfSource -> BlueprintSelf slotLagrange
+    ExternalSource d ->
+      BlueprintExternal slotLagrange (externalWrapVk @slotNc d.wrapVerifierIndex)
+    -- A side-loaded slot's wrap domain is not known until prove time,
+    -- so it carries all three bases and muxes in-circuit instead.
     SideLoadedSource ->
-      BlueprintSideLoaded (map sideLoadedAt (13 :< 14 :< 15 :< Vector.nil))
+      BlueprintSideLoaded (map lagrangeAt (13 :< 14 :< 15 :< Vector.nil))
 
 -- | The whole slot list, in order. `CompilableRulesSpec`'s recursion
 -- | becomes this `map`.
 slotCompileData
-  :: forall @wrapNc @slotNc
-   . Reflectable wrapNc Int
-  => Reflectable slotNc Int
+  :: forall @slotNc
+   . Reflectable slotNc Int
   => SlotCompileConfig
   -> Array Int
   -> Array Slot
-  -> Array (SlotCompileEntry wrapNc slotNc)
+  -> Array (SlotCompileEntry slotNc)
 slotCompileData cfg selfStepDomainLog2s =
-  map (slotCompileEntry @wrapNc @slotNc cfg selfStepDomainLog2s)
+  map (slotCompileEntry @slotNc cfg selfStepDomainLog2s)

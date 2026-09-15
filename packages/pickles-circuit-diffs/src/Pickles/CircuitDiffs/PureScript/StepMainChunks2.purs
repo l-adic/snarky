@@ -98,8 +98,7 @@ compileStepMainChunks2 params = do
       -- (degenerate Input mode) with `~auxiliary_typ:Typ.unit`.
       ( \_ -> stepMain @Unit @Unit @Unit @Unit @Unit @0 @1 @Unit @1
           chunks2Rule
-          { perSlotLagrangeAt: Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotFopZkRows: Vector.nil
           , perSlotVkBlueprints: unit

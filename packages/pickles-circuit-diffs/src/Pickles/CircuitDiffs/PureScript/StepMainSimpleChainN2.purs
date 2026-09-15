@@ -120,12 +120,12 @@ compileStepMainSimpleChainN2 params = do
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
           @1
           simpleChainN2Rule
-          { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
               (selfLog2 :< Vector.nil) :< (selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
-          , perSlotVkBlueprints: BlueprintSelf /\ BlueprintSelf /\ unit
+          , perSlotVkBlueprints:
+              BlueprintSelf params.lagrangeAt /\ BlueprintSelf params.lagrangeAt /\ unit
           }
           dummyWrapSg
           -- Side-loaded VK carrier: two Cons slots, both compiled Self

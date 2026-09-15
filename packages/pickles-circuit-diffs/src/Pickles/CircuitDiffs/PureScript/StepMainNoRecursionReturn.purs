@@ -97,8 +97,7 @@ compileStepMainNoRecursionReturn params = do
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
       ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @Unit @0 @1 @Unit @1
           noRecursionReturnRule
-          { perSlotLagrangeAt: Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotFopZkRows: Vector.nil
           , perSlotVkBlueprints: unit

@@ -119,8 +119,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
           @1
           incrementRule
-          { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           -- nd=2 dispatch list: OCaml's `domain_for_compiled`
           -- (step_verifier.ml:879-899) passes both branches' step
           -- domains to `Pseudo.Domain.to_domain` for runtime dispatch
@@ -128,7 +127,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           , perSlotFopDomainLog2s:
               (makeZeroLog2 :< selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< Vector.nil
-          , perSlotVkBlueprints: BlueprintSelf /\ unit
+          , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt /\ unit
           }
           dummyWrapSg
           (tuple1 SLVK.compileDummy)

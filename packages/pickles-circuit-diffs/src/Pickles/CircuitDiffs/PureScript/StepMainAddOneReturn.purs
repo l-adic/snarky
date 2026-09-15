@@ -82,8 +82,7 @@ compileStepMainAddOneReturn params = do
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1 @Unit @1
           addOneReturnRule
-          { perSlotLagrangeAt: Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotFopZkRows: Vector.nil
           , perSlotVkBlueprints: unit

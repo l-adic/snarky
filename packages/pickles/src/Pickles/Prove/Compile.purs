@@ -393,23 +393,20 @@ bundleWrapDomainLog2 bundle =
 -- | can differ. That is what keeps the carrier a typed chain and this a
 -- | helper rather than a fold over an array.
 consShapeCompileData
-  :: forall prevsSpec slotVKs wrapNc slotNc mpv restMpv nd restBlueprints
+  :: forall prevsSpec slotVKs slotNc mpv restMpv nd restBlueprints
    . Add restMpv 1 mpv
   => Reflectable mpv Int
   => Reflectable nd Int
-  => Reflectable wrapNc Int
   => Reflectable slotNc Int
   => CompileConfig prevsSpec slotVKs
   -> Vector nd Int
   -> RuntimeSlot.Slot
-  -> ShapeCompileData wrapNc restMpv nd restBlueprints
-  -> ShapeCompileData wrapNc mpv nd (SlotVkBlueprint slotNc /\ restBlueprints)
+  -> ShapeCompileData restMpv nd restBlueprints
+  -> ShapeCompileData mpv nd (SlotVkBlueprint slotNc /\ restBlueprints)
 consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
   { stepProveCtx:
       { srsData:
-          { perSlotLagrangeAt:
-              headEntry.lagrangeAt :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
-          , blindingH:
+          { blindingH:
               coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
           , perSlotFopDomainLog2s:
               headFopDomainLog2s
@@ -1017,9 +1014,9 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
 -- |   for Cons).
 -- | * `wrapDomainLog2` — OCaml `wrap_domains.h` (13 for N=0 in pickles,
 -- |   14 for N=1, 15 for N=2).
-type ShapeCompileData :: Int -> Int -> Int -> Type -> Type
-type ShapeCompileData wrapVkChunks mpv nd blueprints =
-  { stepProveCtx :: StepProveContext wrapVkChunks mpv nd blueprints
+type ShapeCompileData :: Int -> Int -> Type -> Type
+type ShapeCompileData mpv nd blueprints =
+  { stepProveCtx :: StepProveContext mpv nd blueprints
   , wrapDomainLog2 :: Int
   }
 
@@ -1222,14 +1219,13 @@ class
   -- | `External` slots ignore this argument and read the imported
   -- | rule's step domain from its prover index (Vector 1 of that).
   shapeCompileData
-    :: forall @wrapVkChunks @nd ndPred
+    :: forall @nd ndPred
      . Add 1 ndPred nd
     => Compare 0 nd LT
     => Reflectable nd Int
-    => Reflectable wrapVkChunks Int
     => CompileConfig prevsSpec slotVKs
     -> Vector nd Int
-    -> ShapeCompileData wrapVkChunks mpv nd blueprints
+    -> ShapeCompileData mpv nd blueprints
 
   -- | Step solver advice + side info. Recurses on `rest` to assemble
   -- | the multi-slot StepAdvice (PS analog of OCaml `step.ml:736-770`).
@@ -1284,8 +1280,7 @@ instance CompilableSpec Unit Unit Unit 0 Unit Unit Unit Unit where
   shapeCompileData cfg _ =
     { stepProveCtx:
         { srsData:
-            { perSlotLagrangeAt: Vector.nil
-            , blindingH:
+            { blindingH:
                 coerce (ProofFFI.srsBlindingGenerator cfg.srs.pallasSrs :: AffinePoint StepField)
             , perSlotFopDomainLog2s: Vector.nil
             , perSlotFopZkRows: Vector.nil
@@ -1886,15 +1881,15 @@ instance
         /\ restCarrier
     )
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
+        -> PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
-    (PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints /\ restCtxs)
+    (PProveStep.StepProveContext ruleMpv topBranches blueprints /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
+        -> PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
         -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
              inputVal
@@ -2369,15 +2364,15 @@ instance
           /\ restCarrier
       )
       ( ( AdviceHandler r
-          -> PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
+          -> PProveStep.StepProveContext ruleMpv topBranches blueprints
           -> Effect PProveStep.StepCompileResult
         )
           /\ restStepCompileFns
       )
-      (PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints /\ restCtxs)
+      (PProveStep.StepProveContext ruleMpv topBranches blueprints /\ restCtxs)
       (PProveStep.StepCompileResult /\ restStepCompileResults)
       ( ( AdviceHandler r
-          -> PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
+          -> PProveStep.StepProveContext ruleMpv topBranches blueprints
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
                inputVal
@@ -2410,15 +2405,15 @@ instance
         /\ restCarrier
     )
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
+        -> PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
-    (PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints /\ restCtxs)
+    (PProveStep.StepProveContext ruleMpv topBranches blueprints /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( AdviceHandler r
-        -> PProveStep.StepProveContext wrapVkChunks ruleMpv topBranches blueprints
+        -> PProveStep.StepProveContext ruleMpv topBranches blueprints
         -> PProveStep.StepCompileResult
         -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
              inputVal
@@ -2614,9 +2609,9 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
     -- | proof-system's `branches` count, used for Pseudo dispatch
     -- | over Self-prev step domains in `finalizeOtherProofCircuit`.
     preComputeStepDomainLog2Fn ::
-      AdviceHandler r -> PProveStep.StepProveContext wrapVkChunks mpv nd blueprints -> Effect Int
+      AdviceHandler r -> PProveStep.StepProveContext mpv nd blueprints -> Effect Int
   , stepCompileFn ::
-      AdviceHandler r -> PProveStep.StepProveContext wrapVkChunks mpv nd blueprints -> Effect PProveStep.StepCompileResult
+      AdviceHandler r -> PProveStep.StepProveContext mpv nd blueprints -> Effect PProveStep.StepCompileResult
   -- | `vkCarrier` is the spec-derived per-slot side-loaded VK carrier
   -- | (`SideloadedVKsCarrier prevsSpec vkCarrier`): compiled slots
   -- | contribute `Unit`, side-loaded slots contribute a runtime
@@ -2626,7 +2621,7 @@ data RuleEntry prevsSpec mpv nd wrapVkChunks valCarrier inputVal carrier outputS
   -- | `stepSolveAndProve` see a saturated `StepAdvice`.
   , stepProveFn ::
       AdviceHandler r
-      -> PProveStep.StepProveContext wrapVkChunks mpv nd blueprints
+      -> PProveStep.StepProveContext mpv nd blueprints
       -> PProveStep.StepCompileResult
       -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds wrapVkChunks
            inputVal
@@ -2842,12 +2837,11 @@ type PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputV
 -- | `shapeCompileData @prevsSpec` for the per-prev-spec layout
 -- | (per-slot lagrange basis, blinding H, FOP domains).
 buildStepProveCtx
-  :: forall @prevsSpec @nd @wrapVkChunks ndPred slotVKs prevsCarrier mpv valCarrier carrier vkCarrier blueprints
+  :: forall @prevsSpec @nd ndPred slotVKs prevsCarrier mpv valCarrier carrier vkCarrier blueprints
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv valCarrier carrier vkCarrier blueprints
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
-  => Reflectable wrapVkChunks Int
   => CompileMultiConfig
   -> Int
   -- ^ the declared `@stepChunks`
@@ -2855,7 +2849,7 @@ buildStepProveCtx
   -- ^ the compile's `mpvMax`, which fixes its wrap domain
   -> slotVKs
   -> Vector nd Int
-  -> PProveStep.StepProveContext wrapVkChunks mpv nd blueprints
+  -> PProveStep.StepProveContext mpv nd blueprints
 buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
