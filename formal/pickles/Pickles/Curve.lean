@@ -41,6 +41,13 @@ theorem _root_.Bulletproof.Ipa.CommitmentCurve.affine_card_nsmul (C : Commitment
     (X : C.E.toAffine.Point) : C.scalar • X = 0 := by
   rw [← C.order_eq]; exact card_nsmul_eq_zero'
 
+/-- Mathlib's affine group as a module over the scalar field, the twin of
+`CommitmentCurve.pointModule` on the carrier the gadget theorems live on. Derived from
+`affine_card_nsmul`, so the two carriers of one group both have the scalar action. -/
+instance _root_.Bulletproof.Ipa.CommitmentCurve.affineModule (C : CommitmentCurve) :
+    Module C.ScalarField C.E.toAffine.Point :=
+  AddCommGroup.zmodModule C.affine_card_nsmul
+
 /-- The gadget layer's curve dictionary of a commitment curve: the affine form of `C.E`, short
 by `C.a_zero`, of prime order by `C.card`, and off characteristic `2` and 2-torsion by the two
 bounds.

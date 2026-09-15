@@ -127,6 +127,16 @@ scalar action is exact. -/
 theorem CommitmentCurve.card_nsmul (C : CommitmentCurve) (X : C.Point) : C.scalar • X = 0 := by
   rw [← C.card]; exact card_nsmul_eq_zero'
 
+instance CommitmentCurve.neZeroScalar (C : CommitmentCurve) : NeZero C.scalar :=
+  ⟨C.primeScalar.out.ne_zero⟩
+
+/-- The point group as a module over the scalar field. Derived from `card` rather than
+supplied: the group is killed by the scalar order, which is exactly what makes it a
+`ZMod scalar`-module. With this in scope a generic proof over an abstract curve has Mathlib's
+`smul` API, instead of rebuilding the action from the killing fact by hand. -/
+instance CommitmentCurve.pointModule (C : CommitmentCurve) : Module C.ScalarField C.Point :=
+  AddCommGroup.zmodModule C.card_nsmul
+
 /-- The curve as the kimchi verifier needs it: the curve itself, the two sponges, the
 endomorphism and the SvdW map-to-curve, with the tie between the map's curve and this one.
 

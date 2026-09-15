@@ -1401,10 +1401,10 @@ omit [Field F] [DecidableEq F] [ToNat F] in
 /-- The wire's polyscale combination is Horner's rule over the list, the scalar acting by its
 representative — on any commitment curve whose point group its scalar order kills. -/
 theorem combineCommitments_eq_foldr (C : Bulletproof.Ipa.KimchiCurve)
-    (hn : ∀ x : C.Point, C.scalar • x = 0) (ξ : C.ScalarField) (cs : List C.Point) :
+    (ξ : C.ScalarField) (cs : List C.Point) :
     Bulletproof.Ipa.combineCommitments C ξ cs.toArray
       = cs.foldr (fun P acc => P + ξ.val • acc) 0 := by
-  haveI : NeZero C.scalar := ⟨C.primeScalar.out.ne_zero⟩
+  have hn : ∀ x : C.Point, C.scalar • x = 0 := C.card_nsmul
   have key : ∀ (l : List C.Point) (acc : C.Point) (pw : C.ScalarField),
       (l.foldl (fun (acc : C.Point × C.ScalarField) P => (acc.1 + acc.2.val • P, acc.2 * ξ))
         (acc, pw)).1 = acc + pw.val • l.foldr (fun P acc => P + ξ.val • acc) 0 := by
@@ -1472,12 +1472,6 @@ open Kimchi.Gate.EndoScalar Bulletproof Bulletproof.Ipa
 
 variable {C : KimchiCurve} (sh : PastaShape C)
 
-/-- An integer acts on the curve's points as its residue's representative in the scalar
-field. -/
-private theorem zsmul_eq (z : ℤ) (X : C.E.toAffine.Point) :
-    z • X = ((z : C.ScalarField).val : ℕ) • X :=
-  Pasta.zsmul_eq_val_nsmul C.scalar C.affine_card_nsmul z X
-
 include sh in
 /-- The gadgets' integer endo-expansion at the curve's eigenvalue casts to the wire's. -/
 private theorem endoExpandZ_cast' (n : ℕ) :
@@ -1502,7 +1496,7 @@ private theorem lrTerm_eq (sh : PastaShape C) (q : C.Point × C.Point) (n : ℕ)
   rw [AddEquiv.symm_apply_apply, AddEquiv.symm_apply_apply]
   rw [zmod_inv_val_congr _ C.scalar C.order_eq]
   rw [endoExpandZ_cast' sh]
-  rw [Pasta.zsmul_eq_val_nsmul C.scalar C.card_nsmul, endoExpandZ_cast' sh]
+  rw [Pasta.zsmul_eq_val_nsmul C.scalar, endoExpandZ_cast' sh]
 
 /-- The round terms of `lr_prod`, read back in the wire group, are the wire's round terms at
 the expanded challenges. -/
@@ -1528,7 +1522,6 @@ theorem hornerCombine_eq (sh : PastaShape C) (n : ℕ) (bvW : List (C.Point × B
           (bvW.map fun b => ((SWPoint.equivPoint C.E) b.1, b.2)))
       = combineCommitments C (endoExpand C.lam n)
           ((bvW.filter (·.2)).map (·.1)).toArray := by
-  have hn : ∀ x : C.Point, C.scalar • x = 0 := C.card_nsmul
   have hlast' : ∀ h, (bvW.map fun b => ((SWPoint.equivPoint C.E) b.1, b.2)).getLast?
       = some h → h.2 = true := by
     intro h hh
@@ -1539,7 +1532,7 @@ theorem hornerCombine_eq (sh : PastaShape C) (n : ℕ) (bvW : List (C.Point × B
       simp only [Option.map_some, Option.some.injEq] at hh
       rw [← hh]
       exact hlast g hl
-  rw [hornerCombine_eq_foldr _ _ hlast', combineCommitments_eq_foldr C hn]
+  rw [hornerCombine_eq_foldr _ _ hlast', combineCommitments_eq_foldr C]
   have hfl : (bvW.map fun b => ((SWPoint.equivPoint C.E) b.1, b.2)).filter (·.2)
       = (bvW.filter (·.2)).map fun b => ((SWPoint.equivPoint C.E) b.1, b.2) := by
     rw [List.filter_map]; rfl
@@ -1552,7 +1545,7 @@ theorem hornerCombine_eq (sh : PastaShape C) (n : ℕ) (bvW : List (C.Point × B
   | nil => simp
   | cons P cs ih =>
     rw [List.map_cons, List.foldr_cons, List.foldr_cons, map_add, map_zsmul, ih,
-      AddEquiv.symm_apply_apply, Pasta.zsmul_eq_val_nsmul C.scalar hn]
+      AddEquiv.symm_apply_apply, Pasta.zsmul_eq_val_nsmul C.scalar]
 
 /-- The bridge: the gadgets' Schnorr equation over Mathlib's point group, at the readings'
 images under `SWPoint.equivPoint`, is the wire verifier's `schnorrAt` at the expanded
@@ -1569,7 +1562,7 @@ theorem schnorrPoint_iff_schnorrAt (sh : PastaShape C) (σ : SRS C.Point) (U P :
       ↔ schnorrAt C σ U chals (endoExpand C.lam c₀) (cip : C.ScalarField)
           (b : C.ScalarField) P pr := by
   have hsm : ∀ (z : ℤ) (X : C.E.toAffine.Point), z • X = ((z : C.ScalarField).val : ℕ) • X :=
-    zsmul_eq
+    fun z X => Pasta.zsmul_eq_val_nsmul C.scalar z X
   have hzip := zipTerms sh pr.lr.toList ns
   -- the wire's fold as a start plus a sum
   have hfold : ∀ (l : List ((C.Point × C.Point) × C.ScalarField)) (init : C.Point),
