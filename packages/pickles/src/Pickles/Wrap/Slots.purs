@@ -44,25 +44,18 @@ module Pickles.Wrap.Slots
     NoSlots
   , Slots1
   , Slots2
-  -- * Smart constructors for value-level slots
-  , noSlots
   -- * Class machinery for structural induction
   , class PadSlots
   , slotWidthsOf
-  , padAllSlots
-  , replicateSlots
   ) where
 
 import Prelude
 
-import Data.Const (Const(..))
-import Data.Functor.Product (Product, product)
-import Data.Newtype (unwrap)
+import Data.Const (Const)
+import Data.Functor.Product (Product)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.Types (PaddedLength)
 import Prim.Int (class Add)
 import Type.Proxy (Proxy(..))
 
@@ -88,15 +81,6 @@ type Slots2 :: Int -> Int -> Type -> Type
 type Slots2 w0 w1 = Product (Vector w0) (Slots1 w1)
 
 --------------------------------------------------------------------------------
--- Smart constructors
---------------------------------------------------------------------------------
-
--- | Smart constructor for `NoSlots`. Produces the single `Const unit`
--- | value that inhabits every `NoSlots a` type.
-noSlots :: forall a. NoSlots a
-noSlots = Const unit
-
---------------------------------------------------------------------------------
 -- PadSlots class: structural induction over slot lists
 --------------------------------------------------------------------------------
 
@@ -115,41 +99,9 @@ class PadSlots (slots :: Type -> Type) (mpv :: Int) | slots -> mpv where
   -- | for pre-computed sponge-state lookup.
   slotWidthsOf :: Proxy slots -> Vector mpv Int
 
-  -- | Pad each slot's bp-challenge stack to `PaddedLength = 2` by
-  -- | front-padding with the `dummy` element, and collect the
-  -- | results into a homogeneous outer `Vector mpv`. Matches
-  -- | OCaml's `Wrap_hack.Checked.pad_challenges` applied per-slot.
-  -- |
-  -- | After this call, downstream code operates on a plain
-  -- | `Vector mpv (Vector PaddedLength a)` and no longer needs
-  -- | class dispatch for per-slot iteration.
-  padAllSlots
-    :: forall a
-     . a
-    -> slots a
-    -> Vector mpv (Vector PaddedLength a)
-
-  -- | Build a `slots a` populated with `seed` in every per-slot vector
-  -- | position. The shape (per-slot widths) is determined by the
-  -- | instance — the seed value is broadcast.
-  -- |
-  -- | Used by `zeroWrapAdvice` to construct an mpv-polymorphic
-  -- | placeholder for the `oldBpChals` field of `WrapAdvice`. Mirrors
-  -- | the structural layout of `padAllSlots` but skips the per-slot
-  -- | dummy padding (the result is the unpadded `slots a`, not a
-  -- | padded `Vector mpv (Vector PaddedLength a)`).
-  replicateSlots
-    :: forall a
-     . a
-    -> slots a
-
--- Nil case: empty slot list (`NoSlots`), mpv=0. The `a` is truly
--- phantom here — the method signature quantifies over it at the
--- method level, and `Const Unit a` ignores `a` by definition.
+-- Nil case: empty slot list (`NoSlots`), mpv=0.
 instance PadSlots NoSlots 0 where
   slotWidthsOf _ = Vector.nil
-  padAllSlots _ _ = Vector.nil
-  replicateSlots _ = noSlots
 
 -- Cons case: head slot of width `w`, tail `rest :: Type -> Type`
 -- (either another `Product (Vector w') rest'` or `NoSlots`). The
@@ -157,8 +109,6 @@ instance PadSlots NoSlots 0 where
 -- tail's shape and eventually terminates at `NoSlots`.
 instance
   ( Reflectable w Int
-  , Add pad w PaddedLength
-  , Reflectable pad Int
   , PadSlots rest restLen
   , Add restLen 1 mpv
   , Reflectable mpv Int
@@ -166,32 +116,4 @@ instance
   PadSlots (Product (Vector w) rest) mpv where
   slotWidthsOf _ =
     reflectType (Proxy :: Proxy w) :< slotWidthsOf (Proxy :: Proxy rest)
-  padAllSlots dummy p =
-    let
-      Tuple headSlot restSlot = unwrap p
-    in
-      padSlotDummy dummy headSlot :< padAllSlots dummy restSlot
-  replicateSlots seed =
-    product (Vector.replicate seed) (replicateSlots seed)
-
--- | Pad a single slot's vector to `PaddedLength` by prepending
--- | `(PaddedLength - w)` copies of the dummy. The `Add pad w
--- | PaddedLength` + `Reflectable pad Int` constraints come from
--- | the Cons instance's context and give us the runtime padding
--- | length.
--- |
--- | Unexported because the class's `padAllSlots` is the only
--- | intended user.
-padSlotDummy
-  :: forall w pad a
-   . Reflectable pad Int
-  => Add pad w PaddedLength
-  => a
-  -> Vector w a
-  -> Vector PaddedLength a
-padSlotDummy dummy slot =
-  let
-    padding = Vector.replicate dummy
-  in
-    Vector.append padding slot
 
