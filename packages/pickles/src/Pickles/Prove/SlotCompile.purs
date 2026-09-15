@@ -14,7 +14,6 @@
 module Pickles.Prove.SlotCompile
   ( SlotCompileConfig
   , SlotCompileEntry
-  , SlotVkBlueprint(..)
   , slotCompileData
   , slotCompileEntry
   ) where
@@ -30,9 +29,9 @@ import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.Field (StepField, WrapField)
-import Pickles.ProofsVerified (ProofsVerifiedCount)
 import Pickles.Prove.Slot (Slot, SlotSource(..), slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup, mkConstLagrangeBaseLookup)
+import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Safe.Coerce (coerce)
@@ -42,28 +41,6 @@ import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
-
--- | Per-slot wrap-VK source, as one runtime sum instead of the
--- | heterogeneous tuple chain the type-level code threaded through
--- | `perSlotVkBlueprints`.
--- |
--- | One constructor per `SlotSource`, named to match it. What differs
--- | between them is where the step circuit gets the wrap verification
--- | key: a self slot reads the shared one from advice, an external
--- | slot has its source's baked in as a constant, and a side-loaded
--- | slot carries the per-domain lagrange tables that
--- | `Pickles.Step.Main` one-hot muxes over at prove time.
--- |
--- | `Pickles.Step.VkSource`'s older `VkBlueprintShared` /
--- | `VkBlueprintConst` name the same two cases after the mechanism
--- | rather than the source; `Pickles.Prove.Compile` translates between
--- | the two vocabularies until that type goes in Phase 2.
-data SlotVkBlueprint :: Int -> Type
-data SlotVkBlueprint nc
-  = BlueprintSelf
-  | BlueprintExternal (VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField)))
-  | BlueprintSideLoaded
-      (Vector ProofsVerifiedCount (Int -> Vector nc (AffinePoint (F StepField))))
 
 -- | What one slot contributes to the step prover's `srsData`.
 -- |

@@ -58,7 +58,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=1, single side-loaded slot with bound 2 (the side-loaded
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived
-  -- from the `Slot SideLoaded` spec via funcdep.
+  -- from the `Slot 2 1 _` spec via funcdep.
   let
     dummyAdvice :: WrapAdvice 1 1
     dummyAdvice = unsafeCoerce unit

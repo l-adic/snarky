@@ -84,7 +84,7 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, mkUnitVkCarrier)
-import Pickles.Sideload.Bundle (Bundle) as SideloadBundle
+import Pickles.Sideload.Bundle (SlotProveVk) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
@@ -2012,7 +2012,7 @@ stepSolveAndProve
    . CircuitGateConstructor StepField VestaG
   -- `wrapVkChunks` is the compile-wide wrap-VK chunk count (Dim 2),
   -- a free parameter (callers pin `@1`). Mul/Add chain mirrors stepMain.
-  => BuildSlotVkSources (SideloadBundle.Bundle slotVkChunks) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec wrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable wrapVkChunks Int
   => Compare 0 wrapVkChunks LT
@@ -2110,7 +2110,7 @@ stepSolveAndProve handler ctx rule compileResult advice = do
               @valCarrier
               @mpvMax
               @nd
-              @(SideloadBundle.Bundle slotVkChunks)
+              @(SideloadBundle.SlotProveVk slotVkChunks)
               -- ctx is `StepProveContext wrapVkChunks ...`; thread the
               -- compile-wide `wrapVkChunks` into stepMain to match
               -- ctx.srsData. (Mid-tier stepMain stays generic.)

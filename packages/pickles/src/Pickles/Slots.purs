@@ -1,48 +1,38 @@
 -- | Type-level slot descriptors shared between step- and wrap-side
--- | per-slot carriers. The descriptor encodes how a parent rule
--- | identifies each prev slot:
--- |
--- |   * `SlotKind` distinguishes a `Compiled` prev (whose wrap VK is
--- |     baked into the parent's compile output at step-compile time)
--- |     from a `SideLoaded` prev (whose wrap VK is supplied at prove
--- |     time).
--- |   * `Slot k n stmt` carries the kind tag, the slot's
--- |     `max_proofs_verified`, and the prev's statement type.
+-- | per-slot carriers. The descriptor encodes what a parent rule needs
+-- | from each prev slot at the type level: the slot's
+-- | `max_proofs_verified`, the `num_chunks` of the compile that produced
+-- | the prev, and the prev's statement type.
 -- |
 -- | Pure phantom types — no value-level inhabitants. The spec for a
 -- | rule's prevs is the tuple chain
--- | `Slot k₁ n₁ s₁ /\ Slot k₂ n₂ s₂ /\ … /\ Unit`.
+-- | `Slot n₁ nc₁ s₁ /\ Slot n₂ nc₂ s₂ /\ … /\ Unit`.
 -- |
 -- | The step-side carrier (`Pickles.Step.Slots`) parameterises its
 -- | type classes by these descriptors. The wrap side takes its slot
 -- | widths as a runtime `Vector mpv Int` instead.
+-- |
+-- | **Where the kind went.** This type used to carry a `SlotKind` tag
+-- | distinguishing a compiled prev, whose wrap VK is baked in at
+-- | step-compile time, from a side-loaded one, whose wrap VK arrives at
+-- | prove time. That tag forced every class on this path into two
+-- | near-identical instances, one per kind, and forced the value-level
+-- | three-case slot source to be narrowed to one case at each of them —
+-- | narrowings whose impossible branches were filled with `unsafeThrow`.
+-- | The distinction is now carried where it already existed as data: the
+-- | slot's key (`Pickles.Prove.Compile.SlotWrapKey`) says which kind it
+-- | is, and the one place that needs to know dispatches on it.
 module Pickles.Slots
-  ( SlotKind
-  , Compiled
-  , SideLoaded
-  , Slot
+  ( Slot
   ) where
 
--- | Kind for a slot's source: a `Compiled` slot is a previously-
--- | compiled rule whose wrap VK is baked into the parent's compile
--- | output; a `SideLoaded` slot's wrap VK is supplied at prove time.
-data SlotKind
-
--- | Phantom inhabitant of `SlotKind` — wrap VK + step-domain log2 are
--- | known at compile time.
-foreign import data Compiled :: SlotKind
-
--- | Phantom inhabitant of `SlotKind` — wrap VK + step-domain log2 are
--- | sourced at runtime from a `Pickles.Sideload.VerificationKey`.
-foreign import data SideLoaded :: SlotKind
-
--- | A type-level slot descriptor: kind tag, `max_proofs_verified` (or
--- | for side-loaded slots, the compile-time upper bound on the
--- | side-loaded tag's mpv), `num_chunks` of the prev's compile, and
--- | the prev's statement type.
+-- | A type-level slot descriptor: `max_proofs_verified` (or, for a
+-- | side-loaded slot, the compile-time upper bound on the side-loaded
+-- | tag's mpv), `num_chunks` of the prev's compile, and the prev's
+-- | statement type.
 -- |
--- | `stepChunks` is the third axis because `num_chunks` is per-compile
--- | in OCaml Pickles — each prev tag was produced by some
+-- | `stepChunks` is an axis of its own because `num_chunks` is
+-- | per-compile in OCaml Pickles — each prev tag was produced by some
 -- | `Pickles.compile_promise ~num_chunks:N` call, and the step circuit
 -- | that verifies that prev needs to allocate FFI commitments at THAT
 -- | num_chunks. Self-recursive prevs in a compile with `@stepChunks:k`
@@ -50,6 +40,6 @@ foreign import data SideLoaded :: SlotKind
 -- | different `stepChunks` than the current compile.
 -- |
 -- | Pure phantom; no value-level inhabitants. The spec is the tuple
--- | chain `Slot k₁ n₁ nc₁ s₁ /\ Slot k₂ n₂ nc₂ s₂ /\ … /\ Unit` — `Unit`
+-- | chain `Slot n₁ nc₁ s₁ /\ Slot n₂ nc₂ s₂ /\ … /\ Unit` — `Unit`
 -- | terminates the chain (the empty-prev list).
-foreign import data Slot :: SlotKind -> Int -> Int -> Type -> Type
+foreign import data Slot :: Int -> Int -> Type -> Type

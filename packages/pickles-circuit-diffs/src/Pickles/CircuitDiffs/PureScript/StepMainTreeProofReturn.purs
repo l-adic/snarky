@@ -36,9 +36,10 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Slots (Compiled, Slot)
+import Pickles.Sideload.VerificationKey as SLVK
+import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
-import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
@@ -134,14 +135,14 @@ compileStepMainTreeProofReturn params = do
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot 0 1 (StatementIO Unit (F StepField))) (Slot 2 1 (StatementIO Unit (F StepField))))
           @Unit
           @(F StepField)
           @(F StepField)
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
           @1
-          @Unit
+          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           @1
           treeProofReturnRule
           { perSlotLagrangeAt: params.perSlotLagrangeAt
@@ -152,10 +153,10 @@ compileStepMainTreeProofReturn params = do
                 :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints:
-              VkBlueprintConst nrrArt.wrapVk /\ VkBlueprintShared /\ unit
+              BlueprintExternal nrrArt.wrapVk /\ BlueprintSelf /\ unit
           }
           dummyWrapSg
-          (tuple2 unit unit)
+          (tuple2 SLVK.compileDummy SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

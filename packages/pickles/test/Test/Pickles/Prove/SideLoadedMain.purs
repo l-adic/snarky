@@ -1,7 +1,7 @@
 -- | End-to-end test for the side-loaded `step_main` pipeline.
 -- |
 -- | Drives `compileMulti` over a 1-rule spec whose single prev slot is
--- | a `Slot SideLoaded` (= the prev's wrap key is supplied at
+-- | a side-loaded slot (= the prev's wrap key is supplied at
 -- | prove time rather than compile time). The test compiles an
 -- | Input-mode `No_recursion` child, drives its prover to obtain a
 -- | `CompiledProof 0`, width-lifts to the side-loaded tag's bound, and
@@ -27,7 +27,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -96,8 +96,8 @@ type NoRecursionInputRules =
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
-    (Tuple1 Unit)
+    (Tuple1 (Slot 2 1 (StatementIO (F StepField) Unit)))
+    (Tuple1 SlotWrapKey)
     RulesNil
 
 -- | Side-loaded main rule. Asserts `1 + prev == self` OR base case,
@@ -195,7 +195,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @1
       @1
       sideLoadedMainRule
-      (tuple1 unit)
+      (tuple1 SideLoadedKey)
 
     parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
       @SideLoadedMainRules
@@ -227,7 +227,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
       , prevs: tuple1 (InductivePrev childCp2' childTag2)
-      , sideloadedVKs: childVK /\ unit
+      , sideloadedVKs: SideLoadedVk childVK /\ unit
       }
     case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)

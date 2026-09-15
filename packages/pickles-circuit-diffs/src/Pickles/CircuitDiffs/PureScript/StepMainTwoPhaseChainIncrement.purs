@@ -33,9 +33,10 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Slots (Compiled, Slot)
+import Pickles.Sideload.VerificationKey as SLVK
+import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
-import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -108,14 +109,14 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
-          @(Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot 1 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @2
-          @Unit
+          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           @1
           incrementRule
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
@@ -127,10 +128,10 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           , perSlotFopDomainLog2s:
               (makeZeroLog2 :< selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< Vector.nil
-          , perSlotVkBlueprints: VkBlueprintShared /\ unit
+          , perSlotVkBlueprints: BlueprintSelf /\ unit
           }
           dummyWrapSg
-          (tuple1 unit)
+          (tuple1 SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

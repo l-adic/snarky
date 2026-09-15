@@ -8,9 +8,9 @@
 -- | `CircuitM t m` polymorphism; OCaml dispatches via
 -- | request/handler).
 -- |
--- | Everything that differs between `Unit` / `Slot Compiled`
--- | shapes lives inside `CompilableSpec`'s instances; `compile`
--- | dispatches through them.
+-- | Everything that differs between the empty prev list (`Unit`) and a
+-- | `Slot n nc stmt /\ rest` lives inside `CompilableSpec`'s two
+-- | instances; `compile` dispatches through them.
 module Pickles.Prove.Compile
   ( PrevSlot(..)
   , SlotWrapKey(..)
@@ -109,9 +109,9 @@ import Pickles.Prove.Wrap
 import Pickles.Prove.Slot as RuntimeSlot
 import Pickles.Prove.SlotCompile as SlotCompile
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
-import Pickles.Sideload.Bundle (Bundle, projectVk, verifierIndex) as SideloadBundle
+import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), projectVk, requireBundle, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
-import Pickles.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Slots (Slot)
 import Pickles.Step.Dummy
   ( baseCaseDummies
   , computeDummySgValues
@@ -119,7 +119,7 @@ import Pickles.Step.Dummy
   , wrapDummyUnfinalizedProof
   )
 import Pickles.Step.Dummy as Dummy
-import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded)
+import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprint)
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
@@ -248,22 +248,36 @@ type ProverVKs =
 -- |   (`{ stepCompileResult, wrapCompileResult, wrapDomainLog2 }`).
 -- |   Step compile bakes the external wrap VK as a constant in the
 -- |   step circuit (no advice path needed for that slot).
+-- | * `SideLoadedKey` — the slot has no compile-time key at all. Its
+-- |   wrap VK arrives as a runtime witness in `StepInputs.sideloadedVKs`
+-- |   and is allocated in-circuit; what compile time fixes is only the
+-- |   upper bound on its `max_proofs_verified`, which the slot's `n`
+-- |   carries. OCaml's `Types_map.t` makes the same distinction as a
+-- |   runtime sum (`Compiled` / `Side_loaded`).
+-- |
+-- | This is the only place the compiled/side-loaded distinction is
+-- | made. It used to also be a type-level kind index on
+-- | `Pickles.Slots.Slot`, which forced every spec-indexed class on this
+-- | path into two near-identical instances that then had to narrow this
+-- | sum back down to one case each.
 data SlotWrapKey
   = Self
   | External ProverVKs
+  | SideLoadedKey
 
 type StepInputs :: Type -> Type -> Type -> Type -> Type
 type StepInputs prevsSpec inputVal prevsCarrier vkCarrier =
   { appInput :: inputVal
   , prevs :: prevsCarrier
-  -- | Spec-indexed runtime side-loaded VK carrier. Compiled-only
-  -- | specs (NRR/Simple_chain/Tree/TwoPhaseChain) populate this with
-  -- | `mkUnitVkCarrier @prevsSpec` (an all-Unit chain — semantically
-  -- | identical to omitting the field). Specs containing
-  -- | `Slot SideLoaded` slots populate the corresponding
-  -- | slot positions with real `Pickles.Sideload.VerificationKey`
-  -- | bundles. Mirrors OCaml's per-prove `~handler`: the runtime VK
-  -- | is bound at prove time, not at compile time.
+  -- | Spec-indexed runtime side-loaded VK carrier: one
+  -- | `SlotProveVk nc` per slot. A rule whose slots are all compiled
+  -- | (NRR/Simple_chain/Tree/TwoPhaseChain) passes `NoSideLoadedVk`
+  -- | at every position. A slot whose key is `SideLoadedKey` must be
+  -- | given `SideLoadedVk` its runtime bundle here; supplying one for
+  -- | a `Self` or `External` slot is refused rather than ignored.
+  -- | Mirrors
+  -- | OCaml's per-prove `~handler`: the runtime VK is bound at prove
+  -- | time, not at compile time.
   , sideloadedVKs :: vkCarrier
   }
 
@@ -335,22 +349,53 @@ resolveSelfWrapDomainLog2 mpvMax = case _ of
   Just o -> o
   Nothing -> wrapDomainLog2ForProofsVerified mpvMax
 
--- | Everything `shapeCompileData` does that does not depend on what
--- | kind of slot the head is: run the slot compiler over it, splice the
--- | three per-slot entries onto the tail, and set the rule-wide fields.
+-- | One slot's compile-time key, as the runtime slot record the
+-- | per-slot derivations in `Pickles.Prove.Slot` read.
 -- |
--- | Its two instances differed in three values and nothing else, so
--- | those three are the arguments: what the head slot is, and how to
--- | read its blueprint into whichever carrier cell that kind of slot
--- | contributes. The blueprint is a function rather than a value
--- | because the entry it comes from is computed here.
+-- | This is the whole of what the erased `SlotKind` index used to say,
+-- | and it says it once.
+runtimeSlotOf :: Int -> SlotWrapKey -> RuntimeSlot.Slot
+runtimeSlotOf localMpv key =
+  { localMpv
+  , source: case key of
+      Self -> RuntimeSlot.SelfSource
+      SideLoadedKey -> RuntimeSlot.SideLoadedSource
+      External vks -> RuntimeSlot.ExternalSource
+        { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
+        , wrapDomainLog2: vks.wrapDomainLog2
+        -- Only single-rule external sources are supported; the one
+        -- domain is replicated to the branch width by
+        -- `slotSourceDomainLog2s`.
+        , stepDomainLog2s:
+            NonEmptyArray.singleton
+              (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
+        , numChunks: vks.stepNumChunks
+        }
+  }
+
+-- | A side-loaded slot's wrap domain log2, decoded from its runtime
+-- | VK descriptor's length-3 one-hot `actualWrapDomainSize` vector.
+bundleWrapDomainLog2 :: forall nc. SideloadBundle.Bundle nc -> Int
+bundleWrapDomainLog2 bundle =
+  Dummy.wrapDomainLog2ForProofsVerified
+    ( fromEnum
+        ( boolVecToProofsVerified
+            ( case SideloadBundle.projectVk bundle of
+                SLVK.VerificationKey vkRec -> vkRec.actualWrapDomainSize
+            )
+        )
+    )
+
+-- | Everything `shapeCompileData` does for one slot: run the slot
+-- | compiler over it, splice the four per-slot entries onto the tail,
+-- | and set the rule-wide fields.
 -- |
 -- | `slotNc` stays a type variable: a slot's chunk count belongs to the
 -- | compile that produced its previous proofs, so two slots of one rule
 -- | can differ. That is what keeps the carrier a typed chain and this a
 -- | helper rather than a fold over an array.
 consShapeCompileData
-  :: forall prevsSpec slotVKs wrapNc slotNc mpv restMpv nd headScaffold restBlueprints
+  :: forall prevsSpec slotVKs wrapNc slotNc mpv restMpv nd restBlueprints
    . Add restMpv 1 mpv
   => Reflectable mpv Int
   => Reflectable nd Int
@@ -359,10 +404,9 @@ consShapeCompileData
   => CompileConfig prevsSpec slotVKs
   -> Vector nd Int
   -> RuntimeSlot.Slot
-  -> (SlotCompile.SlotVkBlueprint slotNc -> headScaffold)
   -> ShapeCompileData wrapNc restMpv nd restBlueprints
-  -> ShapeCompileData wrapNc mpv nd (headScaffold /\ restBlueprints)
-consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint restShape =
+  -> ShapeCompileData wrapNc mpv nd (SlotVkBlueprint slotNc /\ restBlueprints)
+consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
   { stepProveCtx:
       { srsData:
           { perSlotLagrangeAt:
@@ -375,7 +419,7 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint restShape =
           , perSlotFopZkRows:
               headEntry.fopZkRows :< restShape.stepProveCtx.srsData.perSlotFopZkRows
           , perSlotVkBlueprints:
-              readBlueprint headEntry.vkBlueprint
+              headEntry.vkBlueprint
                 /\ restShape.stepProveCtx.srsData.perSlotVkBlueprints
           }
       , dummySg: outerDummySgs.ipa.wrap.sg
@@ -1340,11 +1384,19 @@ instance CompilableSpec Unit Unit Unit 0 Unit Unit Unit Unit where
     }
 
 --------------------------------------------------------------------------------
--- CompilableSpec Slot Compiled (N ≥ 1, recursive)
+-- CompilableSpec Slot (N ≥ 1, recursive)
 --------------------------------------------------------------------------------
 
--- | Recursive instance covering all `Slot Compiled n stmt /\ rest` shapes.
+-- | Recursive instance covering all `Slot n nc stmt /\ rest` shapes.
 -- | Derives `mpv` and `prevsCarrier` by recursing through `rest`.
+-- |
+-- | One instance for all three slot sources. Which source a slot has is
+-- | the runtime `SlotWrapKey` in `cfg.perSlotImportedVKs`, and the two
+-- | methods that read prove-time values dispatch on it. There used to
+-- | be two instances, one per `SlotKind`, structurally identical apart
+-- | from having that dispatch resolved statically — and each then had
+-- | to narrow the runtime blueprint sum back down to its own case, with
+-- | an `unsafeThrow` for the case its kind had ruled out.
 instance
   ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restValCarrier restCarrier restVkCarrier restScaffolds
   -- Both orderings: `restMpv 1 mpv` synthesizes `mpv` from `restMpv`;
@@ -1367,7 +1419,7 @@ instance
   , SlotStatementsCarrier rest restValCarrier
   ) =>
   CompilableSpec
-    (Slot Compiled n slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (Slot n slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     (SlotWrapKey /\ restSlotVKs)
     ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput)
         /\ restPrevsCarrier
@@ -1383,19 +1435,18 @@ instance
         Boolean
         /\ restCarrier
     )
-    -- Compiled slots ignore the runtime side-loaded VK; the head
-    -- entry of the carrier is `Unit`. Mirrors
-    -- `Pickles.Sideload.Advice.SideloadedVKsCarrier`'s
-    -- `Slot Compiled → Unit /\ restCarrier` instance.
-    (Unit /\ restVkCarrier)
-    -- Compile-time blueprint for this slot's wrap-VK source. `Self`
-    -- becomes `VkBlueprintShared`; `External` becomes `VkBlueprintConst`.
-    -- Bundled into the post-walk `SlotVkSource` by
-    -- `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprintCompiled slotVkChunks /\ restScaffolds)
+    -- What the prove call supplies for this slot's wrap VK:
+    -- `SideLoadedVk bundle` for a side-loaded slot, `NoSideLoadedVk`
+    -- for a compiled one, whose key is a compile-time constant.
+    -- Mirrors `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
+    (SideloadBundle.SlotProveVk slotVkChunks /\ restVkCarrier)
+    -- Compile-time blueprint for this slot's wrap-VK source, one
+    -- constructor per source. Bundled into the post-walk
+    -- `SlotVkSource` by `buildSlotVkSources` at circuit-build time.
+    (SlotVkBlueprint slotVkChunks /\ restScaffolds)
   where
   shapeCompileData cfg selfStepDomainLog2s =
-    consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint
+    consShapeCompileData cfg selfStepDomainLog2s headSlot
       (shapeCompileData @rest restCfg selfStepDomainLog2s)
     where
     headSlotWrapKey /\ restSlotVKs = cfg.perSlotImportedVKs
@@ -1406,77 +1457,73 @@ instance
     -- `Pickles.Prove.SlotCompile`; this instance only says what the
     -- slot *is*.
     headSlot :: RuntimeSlot.Slot
-    headSlot =
-      { localMpv: reflectType (Proxy @n)
-      , source: case headSlotWrapKey of
-          Self -> RuntimeSlot.SelfSource
-          External vks -> RuntimeSlot.ExternalSource
-            { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
-            , wrapDomainLog2: vks.wrapDomainLog2
-            -- Only single-rule external sources are supported; the
-            -- one domain is replicated to the branch width by
-            -- `slotSourceDomainLog2s`.
-            , stepDomainLog2s:
-                NonEmptyArray.singleton
-                  (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
-            , numChunks: vks.stepNumChunks
-            }
-      }
+    headSlot = runtimeSlotOf (reflectType (Proxy @n)) headSlotWrapKey
 
-    -- Translate to `Step.VkSource`'s older vocabulary, which names
-    -- these two by mechanism (shared advice / baked constant) rather
-    -- than by slot source. Phase 2 removes that type.
-    readBlueprint = case _ of
-      SlotCompile.BlueprintSelf -> VkBlueprintShared
-      SlotCompile.BlueprintExternal vk -> VkBlueprintConst vk
-      SlotCompile.BlueprintSideLoaded _ -> unsafeThrow
-        "shapeCompileData: a Slot Compiled produced a side-loaded blueprint"
-
-  mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (_ /\ restVkCarrier) =
-    consMkStepAdvice @n cfg.srs appInput slotParams unit headSlot
+  mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
+    consMkStepAdvice @n cfg.srs appInput slotParams headVk headSlot
       (mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs restVkCarrier)
     where
     headSlotWrapKey /\ restSlotVKs = cfg.perSlotImportedVKs
     restCfg = cfg { perSlotImportedVKs = restSlotVKs }
 
-    -- This slot, as runtime data. Same record `shapeCompileData`
-    -- builds; the per-slot derivations below read it through
-    -- `Pickles.Prove.Slot` instead of re-deciding Self-versus-External
-    -- once per value.
+    -- Same record `shapeCompileData` builds; the derivations below read
+    -- it through `Pickles.Prove.Slot` rather than re-deciding the
+    -- slot's source once per value.
     runtimeSlot :: RuntimeSlot.Slot
-    runtimeSlot =
-      { localMpv: reflectType (Proxy @n)
-      , source: case headSlotWrapKey of
-          Self -> RuntimeSlot.SelfSource
-          External vks -> RuntimeSlot.ExternalSource
-            { wrapVerifierIndex: vks.wrapCompileResult.verifierIndex
-            , wrapDomainLog2: vks.wrapDomainLog2
-            , stepDomainLog2s:
-                NonEmptyArray.singleton
-                  (ProofFFI.proverIndexDomainLog2 vks.stepCompileResult.proverIndex)
-            , numChunks: vks.stepNumChunks
-            }
-      }
+    runtimeSlot = runtimeSlotOf (reflectType (Proxy @n)) headSlotWrapKey
 
-    slotParams =
-      { slotWrapVK:
-          RuntimeSlot.slotWrapVerifierIndex wrapCR.verifierIndex runtimeSlot
-      , slotWrapDomainLog2:
-          RuntimeSlot.slotWrapDomainLog2 cfg.selfWrapDomainLog2 runtimeSlot
-      , slotStepDomainLog2:
-          RuntimeSlot.slotStepDomainLog2
-            (ProofFFI.proverIndexDomainLog2 stepCR.proverIndex)
-            runtimeSlot
-      -- `Self`'s prev step circuit is the outer rule itself, so its
-      -- num_chunks is the compile-wide declared `@stepChunks`;
-      -- `External` reads the imported rule's. Wrap is universally
-      -- nc=1 (`num_chunks_by_default`).
-      , slotStepZkRows:
-          zkRowsForNumChunks (RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot)
-      , slotWrapZkRows: zkRowsForNumChunks 1
-      }
+    -- A side-loaded slot's wrap VK is a runtime witness, so its three
+    -- domain-ish values come off the bundle rather than off anything
+    -- this compile knows. The witness is still sized at the tag's
+    -- compile-time upper bound `n`; the runtime key's smaller
+    -- `actualWrapDomainSize` is masked in-circuit.
+    slotParams = case headSlotWrapKey of
+      SideLoadedKey ->
+        { slotWrapVK: SideloadBundle.verifierIndex bundle
+        , slotWrapDomainLog2: bundleWrapDomainLog2 bundle
+        , slotStepDomainLog2:
+            -- Side-loaded VKs don't carry the prev's step domain; the
+            -- step circuit dispatches via Pseudo over [0..16] in
+            -- `Step.FinalizeOtherProof`'s SideLoadedMode. This stand-in
+            -- is consumed only at the BasePrev site, where
+            -- `proofMustVerify = false` masks its downstream effect;
+            -- InductivePrev reads the prev's own `stepDomainLog2`.
+            Dummy.wrapDomainLog2ForProofsVerified (reflectType (Proxy @n))
+        -- Side-loaded inner proofs in current pickles are universally
+        -- `num_chunks_by_default = 1`, so step zk_rows = 3. (The
+        -- `side_loaded_domain` Pseudo varies the domain log2, not nc.)
+        , slotStepZkRows: zkRowsForNumChunks 1
+        , slotWrapZkRows: zkRowsForNumChunks 1
+        }
+        where
+        bundle = SideloadBundle.requireBundle headVk
+      -- The key decides the slot's source, so a runtime VK supplied
+      -- here would be silently dropped. Refuse instead: the caller
+      -- believes this slot is side-loaded and it is not, and nothing
+      -- downstream would tell them.
+      _ | SideloadBundle.SideLoadedVk _ <- headVk -> unsafeThrow
+          "mkStepAdvice: this slot's key is Self or External, so its wrap \
+          \verification key is baked in at compile time, but a side-loaded \
+          \verification key was supplied for it in `sideloadedVKs`"
+      _ ->
+        { slotWrapVK:
+            RuntimeSlot.slotWrapVerifierIndex wrapCR.verifierIndex runtimeSlot
+        , slotWrapDomainLog2:
+            RuntimeSlot.slotWrapDomainLog2 cfg.selfWrapDomainLog2 runtimeSlot
+        , slotStepDomainLog2:
+            RuntimeSlot.slotStepDomainLog2
+              (ProofFFI.proverIndexDomainLog2 stepCR.proverIndex)
+              runtimeSlot
+        -- `Self`'s prev step circuit is the outer rule itself, so its
+        -- num_chunks is the compile-wide declared `@stepChunks`;
+        -- `External` reads the imported rule's. Wrap is universally
+        -- nc=1 (`num_chunks_by_default`).
+        , slotStepZkRows:
+            zkRowsForNumChunks (RuntimeSlot.slotNumChunks cfg.stepNumChunks runtimeSlot)
+        , slotWrapZkRows: zkRowsForNumChunks 1
+        }
 
-  shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (_ /\ restVkCarrier) =
+  shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
     consShapeProveData cfg.srs slotParams sideInfo headSlot
       (shapeProveData @rest restCfg wrapCR restSideInfo restPrevs restVkCarrier)
     where
@@ -1485,179 +1532,18 @@ instance
 
     -- A `Self` slot verifies a proof of this same system, so it reads
     -- this compile's own wrap VK and domain; an `External` slot reads
-    -- the imported compile's, which that compile stored.
+    -- the imported compile's, which that compile stored; a side-loaded
+    -- slot reads both off the runtime bundle.
     slotParams =
       { slotWrapVK: case headSlotWrapKey of
           Self -> wrapCR.verifierIndex
           External vks -> vks.wrapCompileResult.verifierIndex
+          SideLoadedKey -> SideloadBundle.verifierIndex (SideloadBundle.requireBundle headVk)
       , slotWrapDomainLog2: case headSlotWrapKey of
           External vks -> vks.wrapDomainLog2
-          _ -> cfg.selfWrapDomainLog2
+          SideLoadedKey -> bundleWrapDomainLog2 (SideloadBundle.requireBundle headVk)
+          Self -> cfg.selfWrapDomainLog2
       , slotWidth: reflectType (Proxy @n)
-      , slotPad: reflectType (Proxy @slotPad)
-      }
-
-    restSideInfo =
-      { challengePolynomialCommitments:
-          (Vector.uncons sideInfo.challengePolynomialCommitments).tail
-      , unfinalizedSlots: (Vector.uncons sideInfo.unfinalizedSlots).tail
-      , baseCaseWrapPublicInputs:
-          (Vector.uncons sideInfo.baseCaseWrapPublicInputs).tail
-      }
-
---------------------------------------------------------------------------------
--- CompilableSpec Slot SideLoaded (mpvMax ≥ 1, recursive)
---
--- Structural mirror of the `Slot Compiled` instance. The slot's wrap
--- VK / actual_wrap_domain / step_domain are sourced at runtime from
--- the head `VerificationKey` of the spec-indexed `vkCarrier`.
--- Reference: OCaml `step_main.ml:520-525`'s `Side_loaded -> of_side_loaded`.
---------------------------------------------------------------------------------
-
-instance
-  ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restValCarrier restCarrier restVkCarrier restScaffolds
-  -- Both orderings: `restMpv 1 mpv` synthesizes `mpv` from `restMpv`;
-  -- `1 restMpv mpv` is the form `Vector.uncons` needs to recover
-  -- `restMpv` from `mpv`.
-  , Add restMpv 1 mpv
-  , Add 1 restMpv mpv
-  , Add pad mpv PaddedLength
-  , Reflectable mpvMax Int
-  , Reflectable slotVkChunks Int
-  , Reflectable mpv Int
-  , Reflectable pad Int
-  , Add slotPad mpvMax PaddedLength
-  , Reflectable slotPad Int
-  , Compare mpv 3 LT
-  , Compare 0 mpv LT
-  , Compare mpvMax 3 LT
-  , CircuitType StepField prevHeadInput prevHeadInputVar
-  , CircuitType StepField prevHeadOutput prevHeadOutputVar
-  , SlotStatementsCarrier rest restValCarrier
-  ) =>
-  CompilableSpec
-    (Slot SideLoaded mpvMax slotVkChunks (StatementIO prevHeadInput prevHeadOutput) /\ rest)
-    -- Side-loaded slots have NO compile-time wrap key; the head entry
-    -- of `slotVKs` is `Unit`. Mirrors the `vkCarrier` head being
-    -- `VerificationKey` (the runtime VK takes the place of the
-    -- compile-time `SlotWrapKey`).
-    (Unit /\ restSlotVKs)
-    ( PrevSlot prevHeadInput mpvMax (StatementIO prevHeadInput prevHeadOutput)
-        /\ restPrevsCarrier
-    )
-    mpv
-    (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
-    ( Step.PerProofWitness
-        slotVkChunks
-        StepIPARounds
-        WrapIPARounds
-        (F StepField)
-        (Type2 (SplitField (F StepField) Boolean))
-        Boolean
-        /\ restCarrier
-    )
-    (SideloadBundle.Bundle slotVkChunks /\ restVkCarrier)
-    -- Side-loaded blueprint = the per-domain lagrange tables (one
-    -- entry per `wrap_domain ∈ {N0, N1, N2}`). The runtime VK is
-    -- bundled in by `buildSlotVkSources` at circuit-build time.
-    (SlotVkBlueprintSideLoaded slotVkChunks /\ restScaffolds)
-  where
-  -- Structural mirror of the `Slot Compiled` `shapeCompileData`. The
-  -- slot's compile-time `slotWrapDomainLog2` and `slotLagrange` are
-  -- carried as placeholders so the `perSlotLagrangeAt` /
-  -- `perSlotFopDomainLog2s` vectors still have the right shape; the
-  -- side-loaded slot's actual wrap-domain / lagrange come from
-  -- `headSlotVkSource = SideloadedExistsVk …` (one-hot multiplexed
-  -- against the runtime VK's `actualWrapDomainSize` bits in
-  -- `Step.Main`).
-  shapeCompileData cfg selfStepDomainLog2s =
-    consShapeCompileData cfg selfStepDomainLog2s headSlot readBlueprint
-      (shapeCompileData @rest restCfg selfStepDomainLog2s)
-    where
-    _ /\ restSlotVKs = cfg.perSlotImportedVKs
-    restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-
-    -- This slot, as runtime data. All four per-slot derivations live in
-    -- `Pickles.Prove.SlotCompile`: the side-loaded slot's wrap domain
-    -- placeholder comes from its own compile-time bound, its step
-    -- domains are the enclosing compile's (a placeholder — real
-    -- dispatch is in `Step.FinalizeOtherProof`'s side-loaded mode), its
-    -- zk_rows are single-chunk, and its blueprint is the per-domain
-    -- lagrange table that `Step.Main` one-hot muxes.
-    headSlot :: RuntimeSlot.Slot
-    headSlot =
-      { localMpv: reflectType (Proxy @mpvMax)
-      , source: RuntimeSlot.SideLoadedSource
-      }
-
-    readBlueprint = case _ of
-      SlotCompile.BlueprintSideLoaded tables -> tables
-      _ -> unsafeThrow
-        "shapeCompileData: a Slot SideLoaded produced a compiled blueprint"
-
-  mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
-    consMkStepAdvice @mpvMax cfg.srs appInput slotParams headVk headSlot
-      (mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs restVkCarrier)
-    where
-    _ /\ restSlotVKs = cfg.perSlotImportedVKs
-    restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-
-    -- Everything the compiled instance derives from a `SlotWrapKey`,
-    -- this one reads off the runtime bundle instead. The witness is
-    -- still sized at the tag's compile-time upper bound; the runtime
-    -- key's smaller `actualWrapDomainSize` is masked in-circuit.
-    slotParams =
-      { slotWrapVK: SideloadBundle.verifierIndex headVk
-      , slotWrapDomainLog2:
-          -- Decoded from the VK descriptor's length-3 one-hot vector.
-          Dummy.wrapDomainLog2ForProofsVerified
-            ( fromEnum
-                ( boolVecToProofsVerified
-                    ( case SideloadBundle.projectVk headVk of
-                        SLVK.VerificationKey headVkRec ->
-                          headVkRec.actualWrapDomainSize
-                    )
-                )
-            )
-      , slotStepDomainLog2:
-          -- Side-loaded VKs don't carry the prev's step domain; the step
-          -- circuit dispatches via Pseudo over [0..16] in
-          -- `Step.FinalizeOtherProof`'s SideLoadedMode. This stand-in is
-          -- consumed only at the BasePrev site, where
-          -- `proofMustVerify = false` masks its downstream effect;
-          -- InductivePrev reads the prev's own `stepDomainLog2`.
-          Dummy.wrapDomainLog2ForProofsVerified (reflectType (Proxy @mpvMax))
-      -- Side-loaded inner proofs in current pickles are universally
-      -- `num_chunks_by_default = 1`, so step zk_rows = 3. (The
-      -- `side_loaded_domain` Pseudo varies the domain log2, not nc.)
-      , slotStepZkRows: zkRowsForNumChunks 1
-      , slotWrapZkRows: zkRowsForNumChunks 1
-      }
-
-  shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
-    consShapeProveData cfg.srs slotParams sideInfo headSlot
-      (shapeProveData @rest restCfg wrapCR restSideInfo restPrevs restVkCarrier)
-    where
-    _ /\ restSlotVKs = cfg.perSlotImportedVKs
-    restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-
-    -- A side-loaded slot has no compile-time key. Both its verifier
-    -- index and its wrap domain come off the runtime bundle, the
-    -- latter decoded from the `actualWrapDomainSize` one-hot in the
-    -- bundle's `vk` descriptor.
-    slotParams =
-      { slotWrapVK: SideloadBundle.verifierIndex headVk
-      , slotWrapDomainLog2:
-          Dummy.wrapDomainLog2ForProofsVerified
-            ( fromEnum
-                ( boolVecToProofsVerified
-                    ( case SideloadBundle.projectVk headVk of
-                        SLVK.VerificationKey headVkRec ->
-                          headVkRec.actualWrapDomainSize
-                    )
-                )
-            )
-      , slotWidth: reflectType (Proxy @mpvMax)
       , slotPad: reflectType (Proxy @slotPad)
       }
 
@@ -2824,9 +2710,10 @@ mkRuleEntry
   -- the wrap circuit's `stepChunks` (Dim 1).
   => BuildSlotVkSources (SLVK.VerificationKey slotVkChunks (F StepField) Boolean) prevsSpec wrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
-  -- Prove-path carrier: cells = `SideloadBundle.Bundle`. Sourced from
+  -- Prove-path carrier: cells = `SideloadBundle.SlotProveVk`, carrying
+  -- a bundle exactly at the side-loaded slots. Sourced from
   -- `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
-  => BuildSlotVkSources (SideloadBundle.Bundle slotVkChunks) prevsSpec wrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources (SideloadBundle.SlotProveVk slotVkChunks) prevsSpec wrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
@@ -3151,12 +3038,10 @@ runMultiProverBody
     -- step_main's `step_domains:all_step_domains` (compile.ml:568).
     shape = shapeCompileData @prevsSpec perRuleCfg allStepDomainLog2s
 
-  -- Per-prove side-loaded VK carrier from `stepInputs`. For
-  -- compiled-only specs the caller passes `mkUnitVkCarrier @prevsSpec`
-  -- (an all-Unit chain — semantically identical to the prior
-  -- baked-in synthesis). For specs containing
-  -- `Slot SideLoaded`, the caller supplies the runtime VK at
-  -- the corresponding slot positions, mirroring OCaml's `~handler`.
+  -- Per-prove side-loaded VK carrier from `stepInputs`. A rule with no
+  -- side-loaded slot passes `NoSideLoadedVk` at every position; a slot
+  -- keyed `SideLoadedKey` gets `SideLoadedVk` its runtime bundle,
+  -- mirroring OCaml's `~handler`.
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
     mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
       prevs

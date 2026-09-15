@@ -32,7 +32,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (BranchProver(..), PrevSlot(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), PrevSlot(..), SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -87,7 +87,7 @@ prepareProve srs = do
     treeProver noAdvice
       { appInput: unit
       , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
-      , sideloadedVKs: tuple2 unit unit
+      , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
       } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
@@ -98,7 +98,7 @@ prepareProve srs = do
         ( treeProver noAdvice
             { appInput: unit
             , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
-            , sideloadedVKs: tuple2 unit unit
+            , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
             }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)

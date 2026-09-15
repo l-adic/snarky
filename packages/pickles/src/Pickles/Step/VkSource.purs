@@ -7,11 +7,11 @@
 -- |
 -- | Each cell is parameterized by `nc` — the chunks count of that
 -- | particular slot's wrap VK (the slot's own `nc` from
--- | `Slot k n nc statement`). Heterogeneous per-slot chunks: each
+-- | `Slot n nc statement`). Heterogeneous per-slot chunks: each
 -- | slot's wrap VK carries the chunks count of *its* producing
 -- | compile, not a shared homogenized value.
 module Pickles.Step.VkSource
-  ( SlotVkBlueprintCompiled(..)
+  ( SlotVkBlueprint(..)
   , SlotVkBlueprintSideLoaded
   , SlotVkSource(..)
   ) where
@@ -25,17 +25,25 @@ import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 
--- | Compile-time blueprint for a `Slot Compiled` slot. Two inhabitants
--- | only — `BuildSlotVkSources`'s Compiled instance pattern-matches
--- | exhaustively without an "impossible" fallthrough.
+-- | Compile-time blueprint for one slot's wrap-VK source: where the
+-- | step circuit gets the verification key it verifies this slot's
+-- | previous proof against.
+-- |
+-- | One constructor per `Pickles.Prove.Slot.SlotSource`, named to match
+-- | it. A self slot reads the shared key from advice (the wrap circuit
+-- | does not exist yet at step-compile time), an external slot has its
+-- | source's key baked in as a constant, and a side-loaded slot carries
+-- | the per-domain lagrange tables that `Pickles.Step.Main` one-hot
+-- | muxes over against the runtime key's `actualWrapDomainSize`.
 -- |
 -- | `nc` is the chunks count of the producing compile's wrap VK.
-data SlotVkBlueprintCompiled :: Int -> Type
-data SlotVkBlueprintCompiled slotVkChunks
-  = VkBlueprintConst (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
-  | VkBlueprintShared
+data SlotVkBlueprint :: Int -> Type
+data SlotVkBlueprint slotVkChunks
+  = BlueprintSelf
+  | BlueprintExternal (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
+  | BlueprintSideLoaded (SlotVkBlueprintSideLoaded slotVkChunks)
 
--- | Compile-time blueprint for a `Slot SideLoaded` slot — the
+-- | The side-loaded case's payload — the
 -- | per-domain × per-chunk lagrange tables. Each domain entry returns
 -- | a `Vector nc (AffinePoint _)` (the SRS lagrange commitment split
 -- | over `nc` chunks), and `Step.Main` muxes 1-hot over domains

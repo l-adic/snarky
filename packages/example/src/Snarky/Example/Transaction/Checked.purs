@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Advice (badAdvice)
@@ -254,7 +254,7 @@ type TxnSnarkRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 2
         (TxnStmt /\ TxnStmt /\ Unit)
-        (Slot Compiled 2 1 TxnStmt /\ Slot Compiled 2 1 TxnStmt /\ Unit)
+        (Slot 2 1 TxnStmt /\ Slot 2 1 TxnStmt /\ Unit)
         (SlotWrapKey /\ SlotWrapKey /\ Unit)
         RulesNil
     )
@@ -345,7 +345,7 @@ compileTxCircuit chainId lagrangeCache srs = do
         mergeProver (runTransferMaskM { currentTransaction: Nothing, mask })
           { appInput: statement
           , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
-          , sideloadedVKs: tuple2 unit unit
+          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res

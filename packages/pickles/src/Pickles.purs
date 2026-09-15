@@ -10,6 +10,7 @@
 module Pickles
   ( module Pickles.Field
   , module Pickles.ProofsVerified
+  , module Pickles.Sideload.Bundle
   , module Pickles.Slots
   , module Pickles.Types
   , module Pickles.Prove.Step
@@ -21,6 +22,10 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.ProofsVerified (ProofsVerified(..))
 import Pickles.Prove.Compile (BranchProver(..), CompiledProof(..), PrevSlot(..), RuleEntry, RulesCons, RulesNil, SlotWrapKey(..), Tag(..), compileMulti, mkRuleEntry)
 import Pickles.Prove.Step (StepRule)
-import Pickles.Slots (Compiled, SideLoaded, Slot, SlotKind)
+-- | Only the per-slot prove-time cell: a rule with no side-loaded slot
+-- | still has to name `NoSideLoadedVk` once per slot. The rest of the
+-- | side-loading surface stays behind `import Pickles.Sideload`.
+import Pickles.Sideload.Bundle (SlotProveVk(..))
+import Pickles.Slots (Slot)
 import Pickles.Types (PaddedLength, StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.Verify (VerifiableProof, Verifier, mkVerifier, toVerifiable, verify, verifyBatch, wrapPublicInputOf)

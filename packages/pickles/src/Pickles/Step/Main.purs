@@ -56,7 +56,7 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
 import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
-import Pickles.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Slots (Slot)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
@@ -64,7 +64,7 @@ import Pickles.Step.Slots (class StepSlotsCarrier, class StepSlotsTyp, stepSlots
 import Pickles.Typ (existsTyp)
 import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Step.VkSource (SlotVkBlueprintCompiled(..), SlotVkBlueprintSideLoaded, SlotVkSource(..))
+import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
 import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Boolean (False, True)
@@ -144,26 +144,27 @@ type RuleOutput n prevInput output =
 -- | spec-indexed blueprint carrier alongside the (also spec-indexed)
 -- | side-loaded VK cell carrier. The output is a Tuple-chain mirroring
 -- | `Pickles.Step.Slots`'s `vkCarrier` — each slot's `SlotVkSource nc`
--- | is sized by *that slot's* `nc` from `Slot k n nc statement`.
+-- | is sized by *that slot's* `nc` from `Slot n nc statement`.
 -- |
--- | For each `Slot SideLoaded` position the runtime VK is allocated
--- | in-circuit via `exists` and bundled (with the compile-time
--- | per-domain lagrange tables) into the `SideloadedExistsVk`
--- | constructor. For `Slot Compiled` positions the blueprint's
--- | `VkBlueprintConst`/`VkBlueprintShared` passes straight through
--- | to `ConstVk`/`SharedExistsVk`. The cell carrier supplies the
--- | runtime descriptors for side-loaded slots and `Unit` for compiled
--- | slots.
+-- | The dispatch is on the slot's runtime `SlotVkBlueprint`, which is
+-- | where the kind of the slot actually lives: `BlueprintSelf` and
+-- | `BlueprintExternal` pass straight through to `SharedExistsVk` /
+-- | `ConstVk`, and `BlueprintSideLoaded` allocates the runtime VK
+-- | in-circuit via `exists` and bundles it with the compile-time
+-- | per-domain lagrange tables into `SideloadedExistsVk`. The cell
+-- | carrier supplies that runtime descriptor; at the other two cases
+-- | its cell is never read.
 -- |
--- | Reference: OCaml `step_main.ml`'s tag-kind dispatch.
+-- | Reference: OCaml `step_main.ml`'s tag-kind dispatch, which is a
+-- | runtime match on `Types_map.t` for the same reason.
 -- |
--- | `wrapVkChunks` is the outer compile's wrap-VK chunks count. Both
--- | Compiled and SideLoaded instance heads STRUCTURALLY UNIFY the
--- | slot's nc with `wrapVkChunks` (by reusing the same type variable
--- | name in the slot's `nc` position). If a caller's spec writes
--- | `Slot Compiled n 2 stmt` while `wrapVkChunks = 1` is in scope, the
--- | instance does not resolve and the user gets a compile-time type
--- | error — not a silent runtime coerce.
+-- | `wrapVkChunks` is the outer compile's wrap-VK chunks count. The
+-- | instance head STRUCTURALLY UNIFIES the slot's nc with
+-- | `wrapVkChunks` (by reusing the same type variable name in the
+-- | slot's `nc` position). If a caller's spec writes `Slot n 2 stmt`
+-- | while `wrapVkChunks = 1` is in scope, the instance does not resolve
+-- | and the user gets a compile-time type error — not a silent runtime
+-- | coerce.
 -- |
 -- | The dispatch in `stepMain` still needs a few `unsafeCoerce` calls
 -- | because PS can't propagate the instance-head unification into the
@@ -198,26 +199,6 @@ instance BuildSlotVkSources cell Unit wrapVkChunks 0 Unit Unit Unit where
 
 instance
   ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
-  , Add restLen 1 len
-  ) =>
-  BuildSlotVkSources cell
-    (Slot Compiled n wrapVkChunks stmt /\ rest)
-    wrapVkChunks
-    len
-    (SlotVkBlueprintCompiled wrapVkChunks /\ restScaffolds)
-    (Unit /\ restCellCarrier)
-    (SlotVkSource wrapVkChunks /\ restVkCarrier)
-  where
-  buildSlotVkSources (headScaffold /\ restScaffolds) (_ /\ restCellCarrier) = do
-    let
-      headSrc = case headScaffold of
-        VkBlueprintConst v -> ConstVk v
-        VkBlueprintShared -> SharedExistsVk
-    restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
-    pure (headSrc /\ restSrcs)
-
-instance
-  ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
   , HasSideLoadedVk wrapVkChunks cell
   , Reflectable wrapVkChunks Int
   , CheckedType StepField (KimchiConstraint StepField)
@@ -225,16 +206,20 @@ instance
   , Add restLen 1 len
   ) =>
   BuildSlotVkSources cell
-    (Slot SideLoaded mpvMax wrapVkChunks stmt /\ rest)
+    (Slot n wrapVkChunks stmt /\ rest)
     wrapVkChunks
     len
-    (SlotVkBlueprintSideLoaded wrapVkChunks /\ restScaffolds)
+    (SlotVkBlueprint wrapVkChunks /\ restScaffolds)
     (cell /\ restCellCarrier)
     (SlotVkSource wrapVkChunks /\ restVkCarrier)
   where
-  buildSlotVkSources (headLagrange /\ restScaffolds) (headCell /\ restCellCarrier) = do
-    headVar <- exists (pure (projectVk headCell))
-    let headSrc = SideloadedExistsVk headLagrange headVar
+  buildSlotVkSources (headBlueprint /\ restScaffolds) (headCell /\ restCellCarrier) = do
+    headSrc <- case headBlueprint of
+      BlueprintSelf -> pure SharedExistsVk
+      BlueprintExternal v -> pure (ConstVk v)
+      BlueprintSideLoaded headLagrange -> do
+        headVar <- exists (pure (projectVk headCell))
+        pure (SideloadedExistsVk headLagrange headVar)
     restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
     pure (headSrc /\ restSrcs)
 
@@ -281,14 +266,12 @@ type StepMainSrsData wrapVkChunks len nd blueprints =
   -- | tag's `step_branch_data`.
   , perSlotFopZkRows :: Vector len Int
   -- | Spec-indexed compile-time blueprint for each slot's wrap-VK
-  -- | source. `Slot Compiled` slots contribute a
-  -- | `SlotVkBlueprintCompiled` (`VkBlueprintConst` / `VkBlueprintShared`);
-  -- | `Slot SideLoaded` slots contribute a `SlotVkBlueprintSideLoaded`
-  -- | (per-domain lagrange tables). The runtime VK for side-loaded
-  -- | slots is bundled in by `buildSlotVkSources` at circuit-build
-  -- | time. The `blueprints` shape mirrors `prevsSpec` slot-for-slot,
-  -- | so a Compiled instance physically cannot receive a SideLoaded
-  -- | blueprint and vice-versa — the protocol invariant is type-level.
+  -- | source — one `SlotVkBlueprint nc` per slot, at that slot's own
+  -- | chunk count. The runtime VK for side-loaded slots is bundled in
+  -- | by `buildSlotVkSources` at circuit-build time. The `blueprints`
+  -- | shape mirrors `prevsSpec` slot-for-slot, which is what fixes each
+  -- | cell's `nc`; which of the three sources a slot has is runtime
+  -- | data inside the cell.
   , perSlotVkBlueprints :: blueprints
   }
 
@@ -807,12 +790,11 @@ stepMain
        unfsTotal digestPlusUnfs
        r
    . PrimeField StepField
-  -- Spec-indexed walk that, for each `Slot SideLoaded` position,
+  -- Spec-indexed walk that, at each `BlueprintSideLoaded` slot,
   -- allocates a `SLVK.VerificationKey (FVar _) (BoolVar _)` via
   -- `exists` and bundles it (alongside the compile-time per-domain
-  -- lagrange tables) into the per-slot `SlotVkSource nc`. For each
-  -- `Slot Compiled` position, walks the blueprint's
-  -- `VkBlueprintConst`/`VkBlueprintShared` straight through. The
+  -- lagrange tables) into the per-slot `SlotVkSource nc`, and walks
+  -- `BlueprintSelf` / `BlueprintExternal` straight through. The
   -- output is a heterogeneous Tuple-chain `vkSourcesCarrier` with
   -- each cell sized by *that slot's* `nc`.
   --
@@ -912,8 +894,9 @@ stepMain
   -- exists. Mirrors OCaml's `with_label "rule_main" (fun () -> rule.main ...)`
   -- where the rule body itself contains `exists Side_loaded_verification_key.typ`
   -- (dump_circuit_impl.ml:4388 inside the lambda passed to `with_label`).
-  -- For compiled-only specs the blueprint is all-Compiled and
-  -- `buildSlotVkSources` emits no `exists` calls.
+  -- For compiled-only rules no slot's blueprint is
+  -- `BlueprintSideLoaded` and `buildSlotVkSources` emits no `exists`
+  -- calls.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
     label "rule_main" do
       perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @wrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
@@ -946,9 +929,9 @@ stepMain
 
   -- 3. exists: SHARED VK via Req.Wrap_index.
   --    Mirrors OCaml's `dlog_plonk_index` (step_main.ml:498) — one
-  --    exists-allocation at the top, reused by every `Nothing` slot
-  --    (i.e. slots whose prev is SELF). Slots with `Just vk` ignore
-  --    this allocation and inline their constant VK instead.
+  --    exists-allocation at the top, reused by every `BlueprintSelf`
+  --    slot (i.e. slots whose prev is SELF). `BlueprintExternal` slots
+  --    ignore this allocation and inline their constant VK instead.
   --
   -- Also used directly by the outer hash (step 9) — the
   -- hash_messages_for_next_step_proof sponge absorbs self's wrap VK
@@ -1070,9 +1053,9 @@ stepMain
                 , vkRec: let VerificationKey r = liftConstVk constVk in r
                 }
               SharedExistsVk ->
-                -- Soundness lemma: the BuildSlotVkSources Compiled
-                -- instance has structural head
-                -- `Slot Compiled n wrapVkChunks stmt /\ rest`, which
+                -- Soundness lemma: the BuildSlotVkSources instance has
+                -- structural head
+                -- `Slot n wrapVkChunks stmt /\ rest`, which
                 -- only matches when the slot's nc IS wrapVkChunks.
                 -- `SharedExistsVk` is ONLY constructed from that
                 -- instance, so when this arm fires we have
@@ -1090,11 +1073,11 @@ stepMain
               SideloadedExistsVk perDomainLagrangeAts (SLVK.VerificationKey sl) ->
                 -- `mkSideloadedLagrangeLookup` now returns
                 -- `LagrangeBaseLookup nc _` at the slot's own nc (the
-                -- per-domain blueprint is chunked properly via the new
+                -- per-domain blueprint is chunked properly via
                 -- `SlotVkBlueprintSideLoaded nc`). Same soundness lemma
                 -- as the ConstVk/SharedExistsVk arms: nc ~ wrapVkChunks
-                -- by the BuildSlotVkSources SideLoaded instance head;
-                -- the coerce here just unifies the case-join.
+                -- by the BuildSlotVkSources instance head; the coerce
+                -- here just unifies the case-join.
                 { lagrangeAt: unsafeCoerce $ mkSideloadedLagrangeLookup
                     (curveParams (Proxy @PallasG))
                     sl.actualWrapDomainSize

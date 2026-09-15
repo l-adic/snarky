@@ -11,5 +11,5 @@ module Pickles.Sideload
   , module Snarky.Backend.Kimchi.Proof
   ) where
 
-import Pickles.Sideload.Bundle (Bundle, mkBundle, verifierIndex)
+import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), mkBundle, verifierIndex)
 import Snarky.Backend.Kimchi.Proof (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson, vestaVerifierIndexToSerdeJson)

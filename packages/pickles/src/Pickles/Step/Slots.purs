@@ -3,7 +3,7 @@
 -- | A rule's prev list is encoded at the type level as a tuple chain
 -- | of `Slot` descriptors (from `Pickles.Slots`) ending in `Unit`:
 -- |
--- |   Slot Compiled 1 1 (StatementIO Stmt) /\ Slot SideLoaded 2 1 Stmt' /\ Unit
+-- |   Slot 1 1 (StatementIO Stmt) /\ Slot 2 1 Stmt' /\ Unit
 -- |
 -- | Two parallel carriers, both derived from the same spec:
 -- |
@@ -13,7 +13,7 @@
 -- |   sources (compile-time blueprint + side-loaded `exists`).
 -- |
 -- | Both share the slot's `nc` at every position because they're
--- | parallel pattern matches on the same `Slot k n nc statement`.
+-- | parallel pattern matches on the same `Slot n nc statement`.
 -- | `traverseStepSlotsAWithVk` walks both in lockstep and exposes
 -- | `pw` and `vkSrc` to the rank-2 callback under one shared `nc`
 -- | binder per slot — the type system enforces (per slot) that the
@@ -74,7 +74,7 @@ instance SlotVkCarrier Unit Unit
 
 instance
   SlotVkCarrier rest restVk =>
-  SlotVkCarrier (Slot k n slotVkChunks statement /\ rest) (SlotVkSource slotVkChunks /\ restVk)
+  SlotVkCarrier (Slot n slotVkChunks statement /\ rest) (SlotVkSource slotVkChunks /\ restVk)
 
 -- | Spec → (`len`, `pwCarrier`, `vkCarrier`) mapping plus two
 -- | traversals: one over `pwCarrier` alone (legacy), one zipping
@@ -84,12 +84,12 @@ instance
 -- | Carrier derivation:
 -- |
 -- | * `Unit` (empty spec) → `Unit` / `Unit`
--- | * `Slot k n nc stmt /\ rest` →
+-- | * `Slot n nc stmt /\ rest` →
 -- |     `PerProofWitness n nc … /\ restPw` and `SlotVkSource nc /\ restVk`
 -- |
--- | The kind `k` doesn't affect either carrier — both compiled and
--- | side-loaded slots present the same `PerProofWitness` and
--- | `SlotVkSource` shapes. `vkCarrier` is determined by `spec` alone
+-- | Compiled and side-loaded slots present the same `PerProofWitness`
+-- | and `SlotVkSource` shapes, which is why the spec does not
+-- | distinguish them. `vkCarrier` is determined by `spec` alone
 -- | (see `SlotVkCarrier` superclass) so it stays consistent across
 -- | the value-side and var-side `StepSlotsCarrier` dictionaries.
 class StepSlotsCarrier
@@ -240,7 +240,7 @@ instance
   , Reflectable pad Int
   ) =>
   StepSlotsCarrier
-    (Slot k n slotVkChunks statement /\ rest)
+    (Slot n slotVkChunks statement /\ rest)
     ds
     dw
     f
@@ -311,7 +311,7 @@ instance
       (WrapProof WrapIPARounds slotVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
   ) =>
   StepSlotsTyp
-    (Slot k n slotVkChunks statement /\ rest)
+    (Slot n slotVkChunks statement /\ rest)
     (SlotWitnessVal slotVkChunks /\ restVal)
     (SlotWitnessVar slotVkChunks /\ restVar)
   where
@@ -329,5 +329,5 @@ instance SlotStatementsCarrier Unit Unit
 instance
   SlotStatementsCarrier rest restValCarrier =>
   SlotStatementsCarrier
-    (Slot k n slotVkChunks statement /\ rest)
+    (Slot n slotVkChunks statement /\ rest)
     (statement /\ restValCarrier)

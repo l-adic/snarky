@@ -32,7 +32,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -73,7 +73,7 @@ simpleChainN2Rule getPrevStates self = do
 type SimpleChainN2Rules =
   RulesCons 2
     (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
-    (Tuple2 (Slot Compiled 2 1 (StatementIO (F StepField) Unit)) (Slot Compiled 2 1 (StatementIO (F StepField) Unit)))
+    (Tuple2 (Slot 2 1 (StatementIO (F StepField) Unit)) (Slot 2 1 (StatementIO (F StepField) Unit)))
     (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
@@ -125,7 +125,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         eRes <- liftEffect $ prover noAdvice
           { appInput
           , prevs: tuple2 prev1 prev2
-          , sideloadedVKs: tuple2 unit unit
+          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("SimpleChainN2 prover: " <> show e)

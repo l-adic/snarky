@@ -45,7 +45,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -58,8 +58,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot Compiled 0 1 (StatementIO Unit (F StepField)))
-    (Slot Compiled 2 1 (StatementIO Unit (F StepField)))
+    (Slot 0 1 (StatementIO Unit (F StepField)))
+    (Slot 2 1 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule 2
@@ -194,7 +194,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp' nrr.tag) selfPrev
-          , sideloadedVKs: tuple2 unit unit
+          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)
