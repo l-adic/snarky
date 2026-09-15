@@ -60,6 +60,19 @@ Type-level classes to be removed: `CompilableSpec`, `CompilableRulesSpec`,
 `BuildSlotVkSources`, `IntEq`, `MpvPaddingDispatch`, and the
 `SlotsFromSpec` machinery on the wrap side.
 
+**As of 2026-09-15**, gone: `ConvertSlots`, `PadProveDataMpv`, `IntEq`,
+`MpvPaddingDispatch`, `MpvPadding`, `SlotsFromSpec`, and the `SlotKind`
+index with the instance splits it forced. `Compile.purs` is 3608 lines
+(from 4193), `Step/Main.purs` 1215 (from 1280). `Step.purs` is 2302
+(from 2211): the growth is `buildStepCircuit`, which cost lines to make
+the domain pre-pass and the real compile share one circuit (§9.7's
+neighbour finding, recorded in the commit).
+
+`BuildSlotVkSources` is no longer on the list — it is one instance
+dispatching on a runtime sum. The three `Compilable*` classes are
+structural recursion over the rules list, which is not what this plan
+was written to remove.
+
 Symptom to keep in mind as the yardstick: `compileMulti`'s signature
 quantifies over roughly thirty type variables with a dozen `Reflectable`
 constraints, to compile a list of rules.
@@ -182,6 +195,14 @@ the slot list reaches it:
 - `MpvPaddingDispatch` / `IntEq` → `replicate (mpv - length slots) dummy`.
 - `Reflectable n / stepChunks / mpvPad / mpvMax / nd` → plain `Int`
   arguments.
+
+The first two happened, but not this way, and the difference is worth
+keeping. `BuildSlotVkSources` did not become a `map`; its per-shape
+instances collapsed to one because the shape was a type index over a
+distinction that was already runtime data. The padding classes did not
+become `replicate`; they were deleted outright, because `Vector.append`
+over `Prim.Int.Add` was already what they were reimplementing (§9.7).
+Neither needed the runtime layer this section proposes.
 
 `Wrap/Main.purs` likewise: `SlotsFromSpec` → the same `Array Slot`, and the
 per-branch selection over `branches` becomes a loop over a runtime count.
@@ -391,33 +412,37 @@ Deferred anyway: the work on this branch is consolidation, and an
 evaluation interpreter adds surface rather than removing it. It returns
 once the existing codebase is small enough to reason about.
 
-### Phase 2 — runtime translation layer
+### Phase 2 — runtime translation layer — PARTLY DONE, see §9.7
 
 Route `Array Slot` into `Step/Main` and `Wrap/Main`; remove
 `BuildSlotVkSources`, `MpvPaddingDispatch`, `IntEq`, `SlotsFromSpec`, and
 the application-shape `Reflectable` indices. Exit: gates green, digests
 identical.
 
-### Phase 3 — delete the shape machinery — BLOCKED as written, see §9.1
+`MpvPaddingDispatch`, `IntEq` and `SlotsFromSpec` are gone — the padding
+family for the reason in §9.7, which is not the reason this plan gave.
+`BuildSlotVkSources` stays, and is no longer worth removing: it is one
+instance dispatching on a runtime sum, which is what this plan wanted
+everything to become.
+
+### Phase 3 — delete the shape machinery — PARTLY DONE, see §9.1 and §9.8
 
 Remove `CompilableSpec`, `CompilableRulesSpec`, `CompilableRulesSpecShape`,
 `ConvertSlots`, `PadProveDataMpv`, `IntMax*`, `MaxOfRulesMpvs`, `RulesSpec`
 and their instances. Replace `compileMulti`'s signature with one over
 `AppSpec`.
 
-`ConvertSlots` and the `SlotsFromSpec` machinery are gone. The rest is
-blocked behind the per-slot chunk count for the reason in §9.1, and that
-axis should stay. Rewrite this phase around what survives, or scope the
-chunk axis as its own project first — it is larger than everything on the
-branch so far, because that count sizes the in-circuit inner-product base
-layout and not merely a container.
+`ConvertSlots`, `SlotsFromSpec` and `PadProveDataMpv` are gone. The three
+remaining classes are Nil+Cons structural recursion over the rules list,
+not duplication, and the split between `CompilableRulesSpec` and
+`CompilableRulesSpecShape` works around a real constraint-discharge
+cascade — so "delete them" is not the right frame. What is left of this
+phase is §9.8: `Slot`'s chunk-count parameter is now per-slot in the type
+and single-valued in practice, and removing it deletes a type argument
+from every spec in the repo.
 
-The padding classes are the exception and are *not* blocked:
-`MpvPaddingDispatch`, `IntEq` and `MpvPadding` pad vectors that are
-homogeneous in their element type and sized only by the rule's slot
-count, so the reified-`Typ` technique that erased the step witness width
-applies to them directly. That is the one piece of this phase available
-today.
+The per-slot chunk count was recorded here as the blocker. §9.8 records
+why it is not one.
 
 ### Phase 4 — optional: black-box sugar, proof lookup, graph interpreters, paper alignment
 
@@ -446,6 +471,19 @@ change).
 
 The runtime replacements are not free: the three slot functions of §3.2
 and the explicit validation take space that the instances did not.
+
+**These estimates are stale and were built on a wrong premise.** They
+assume the shape machinery comes out and a runtime equivalent goes in,
+sized accordingly. What actually reduced `Compile.purs` by 585 lines was
+not that trade at all: it was deleting duplication the type level had
+forced (two instances per kind, two blueprint vocabularies), plus two
+class families that were standing in for `Prim.Int.Add` (§9.7) and one
+type parameter more general than the protocol (§9.8). None of those
+needed a runtime replacement, because none of them was doing work.
+
+Re-estimating is not worth it until §9.8's remaining item lands, since
+the same question — how much of this is machinery versus how much is
+machinery guarding a constant — applies to every row.
 
 ## 7. Risks
 
@@ -483,14 +521,15 @@ additive).
 3. ~~`outputSize` (§3.2): existential at the three `compile` /
    `makeSolver'` sites, or a runtime-length output type.~~ **Closed**:
    neither is available without changing `snarky`. §9.2.
-4. `slotVkChunks` is documented as the prev's *step* chunk count
+4. ~~`slotVkChunks` is documented as the prev's *step* chunk count
    (`Pickles/Slots.purs:39–50`) and used as the slot's *wrap-VK* chunk
    count (`Compile.purs` 736, 1447, 1538–1540), unified with
    `wrapVkChunks` in `BuildSlotVkSources`' heads (inventory OQ-8). Both
    are 1 in every fixture. Pick one name and meaning; the value stays
-   type-level. Note this is now known to be the axis that keeps
-   `CompilableSpec` alive (§9.1), so the naming matters more than it did
-   when the value looked incidental.
+   type-level.~~ **Closed**: it is the slot's wrap-VK chunk count, the
+   documentation was the wrong half, and it is 1 by protocol rather than
+   by fixture. §9.8. The open part is no longer naming but whether the
+   parameter should exist at all.
 
 Resolved (see §10): statements are outputs, not inputs, of the rule; the
 proof channel is harness-side and the rule's type never mentions proofs.
@@ -498,11 +537,15 @@ Resolved (Phase 0): the side-loaded `mpv` bound is the tag's `localMpv`,
 the same field every kind carries (§3.1).
 Resolved (§9.4): the wrap domain is one value per compile, not per slot,
 and no estimator exists on either side.
+Resolved (§9.8): the chunk count a step slot carries is wrap-side and
+pinned to 1; only `stepChunks`, on the wrap side, varies.
 
 ## 9. Findings from implementing this plan (2026-09-15)
 
 Checked on `worktree-pickles-rule-dsl-phase1`, base `origin/main`. Each
-item corrects or adds to the section it names.
+item corrects or adds to the section it names. §9.8 corrects §9.1, which
+was written earlier the same day — the order below is the order the
+findings arrived, not their reliability.
 
 ### 9.1 Phases 1 and 3 are not buildable as written (§5)
 
@@ -513,12 +556,16 @@ that slot's chunk count — the VK blueprint chain and the per-proof
 witness carrier. A function over an array cannot build a per-slot
 type-indexed chain, so the class survives and Phase 3 sits behind it.
 
-This is not a defect in the chunk axis. A slot verifies a proof from
-another application; applications are compiled independently; an
-application importing one chunked tag and one unchunked one has slots
-that genuinely differ in it. That every slot declaration in the
-repository says `1` is a fact about the fixtures, not the axis. §3.3 and
-open question 4 are right to keep it type-level.
+This paragraph originally read: *"This is not a defect in the chunk axis.
+A slot verifies a proof from another application; applications are
+compiled independently; an application importing one chunked tag and one
+unchunked one has slots that genuinely differ in it. That every slot
+declaration in the repository says `1` is a fact about the fixtures, not
+the axis."* **That is wrong, and §9.8 records why.** The count a step
+slot carries is wrap-side, and a wrap domain never exceeds the wrap SRS,
+so it is 1 for every slot of every compile — not a fixture accident. The
+count that genuinely varies is `stepChunks`, which belongs to the wrap
+circuit.
 
 What landed instead is the deduplication half: each method's two
 near-verbatim instance bodies became one shared body, with the instances
@@ -596,6 +643,70 @@ crossing a module boundary, and they must run sequentially: they drive
 For work like §9.1 the prove gate is the load-bearing one. Those bodies
 do cross-field coercions and oracle calls that only end-to-end proving
 exercises, so a bad text move passes a type-check and fails there.
+
+It also misses unused imports entirely. `check` is clean on a tree the
+gate rejects with `UnusedExplicitImport`, because the gate builds with
+warnings as errors and `check` does not. That cost two gate runs.
+
+### 9.7 Type classes standing in for `Prim.Int`
+
+`MpvPaddingDispatch`, `IntEq` and `MpvPadding` related
+`mpvPad + len = mpvMax`. `Vector.append` already has that signature over
+`Prim.Int.Add`. The three classes existed only to dispatch on whether
+`len` equalled `mpvMax`, so the solver was never asked for
+`Add 0 len len` at an abstract `len`. It answers, at all seven sites,
+and `mpvFrontPadVec` is now `Vector.append`.
+
+`PadProveDataMpv` was the same shape — an identity instance ahead of the
+real one in an `else` chain — and went the same way. Its general body was
+already correct at `mpvPad = 0`, where every `Vector.replicate @0` is
+empty. These were the last two `else instance` chains in the tree.
+
+Whether the solver ever failed on those cases is not recoverable. The
+`MpvPadding` banner listed formulations that had been tried and rejected,
+so something was hit; this tree does not reproduce it. Worth re-testing
+such a workaround rather than inheriting it.
+
+### 9.8 The step-side chunk count is not per-slot (corrects §9.1)
+
+Three counts are in play, and `Pickles.Types`'s note names them. Only one
+varies:
+
+  * `stepChunks` — chunks of the step proof a **wrap** circuit verifies.
+    A step domain can exceed the wrap SRS, so this is real: `chunks2` is
+    a fixture at 2. It lives in `Wrap/Main` and `Wrap/Verify` and is
+    untouched by any of this.
+  * `wrapVkChunks` — this compile's own wrap VK. A wrap domain comes from
+    a three-entry table and never exceeds the wrap SRS, so it is 1.
+  * the slot's count — the chunk count of the **wrap** VK a step circuit
+    verifies its prev against. Wrap-side, so 1, for the same reason.
+
+§9.1 argued the third varies because applications are compiled
+independently. They are, but what a step slot sees is the prev's wrap
+proof, never its step proof, so an application with `stepChunks = 2`
+still presents a 1-chunk wrap VK to anything verifying it.
+
+Two consequences, both landed:
+
+  * `StepSlotsCarrier` takes the count as a class parameter rather than a
+    per-slot rank-2 binder. Every `unsafeCoerce` on the per-slot path
+    went with it — each had been bridging a width the callback made
+    abstract against one the caller had concrete.
+  * A chain of fourteen constraints describing the inner-product base
+    layout sat on those callbacks, computing `43·nc + 2` where the
+    verifier uses `44·nc + 1`. They agree only at `nc = 1`. Nothing
+    consumed it, which is why it could be wrong indefinitely; deleting it
+    changed nothing.
+
+What remains: `Slot n nc stmt` still carries the count per slot, though
+every class that reads it now unifies it across slots. Collapsing to
+`Slot n stmt` deletes a type argument from every spec in the repository —
+every one of them writes the same `1`.
+
+The general lesson is the one §9.2 states from the other direction: a
+type parameter more general than the protocol is not free. It cost a
+wrong constraint chain, a set of coerces, and an argument in this
+document for keeping all of it.
 
 ## 10. History: why OCaml's rule mentions proofs, and what was actually required
 
