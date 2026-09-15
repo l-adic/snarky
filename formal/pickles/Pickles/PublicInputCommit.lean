@@ -1,9 +1,7 @@
-import Snarky.Kimchi.Circuit.VarBaseMul
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
-import Bulletproof.Wire
-import Pasta.Basic
+import Pickles.Curve
 
 /-!
 # The in-circuit public-input commitment (`x_hat`)
@@ -26,10 +24,10 @@ one fold from the first ladder result, then the constant correction sum). Both r
 
 The last section is the wire crossing (glue G2, second half): `xHat_reads_publicCommitment`
 and `xHatKnown_reads_publicCommitment` cross those reads to the wire verifier's own
-`Kimchi.Verifier.publicCommitment` on the commitment curve, generically over an `XhatSide`
+`Kimchi.Verifier.publicCommitment` on the commitment curve, generically over a `PastaShape`
 (the point group, the `SWPoint.equivPoint` crossing, and the group's order killing it, so the
 integer→scalar reduction is exact — no `lowest_128_bits` slack here), instantiated at
-`xhatWrap` (Vesta) and `xhatStep` (Pallas).
+`pastaShapeVesta` (Vesta) and `pastaShapePallas` (Pallas).
 -/
 
 namespace Pickles
@@ -1206,8 +1204,8 @@ end Fold
 
 The gadget reads land at `-(publicMsm) + h` over Mathlib's point group of the commitment
 curve; this section crosses that to the wire verifier's `publicCommitment` on the commitment
-curve, generically over an `XhatSide`, instantiated at Vesta (`xhatWrap`) and Pallas
-(`xhatStep`). -/
+curve, generically over a `PastaShape`, instantiated at Vesta (`pastaShapeVesta`) and Pallas
+(`pastaShapePallas`). -/
 
 section XhatCrossing
 
@@ -1245,7 +1243,7 @@ end Crossing
 group.** The wire's negated-scalar MSM with each Lagrange base mapped over, plus `h`. Pure
 additive-equiv algebra over `publicCommitment_eq_sum` (G1); the wire crossing instantiates it
 at `SWPoint.equivPoint`. -/
-theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.CommitmentCurve} {nc : ℕ} {G : Type}
+theorem equivPoint_publicCommitment {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ} {G : Type}
     [AddCommGroup G] (e : C.Point ≃+ G) (σ : Bulletproof.SRS C.Point)
     (cvk : Kimchi.Verifier.KimchiVK C nc)
     (pub : Array C.ScalarField) (ci : Fin nc) (hne : pub.size ≠ 0) :
@@ -1266,7 +1264,7 @@ variable {F : Type} [Field F] [DecidableEq F] [ToNat F] {nc : ℕ}
 scalar leaf contributes its circuit-field scalar's value cast to the scalar field — the
 group-order reduction the MSM performs on the in-circuit scalar — and each `condAdd` its bit.
 The `ℕ → ZMod C.scalar` cast IS the reduction, so no slack predicate is needed. -/
-def pubOf (C : Bulletproof.Ipa.CommitmentCurve) (V : Valuation F) (leaves : List (Leaf F nc)) :
+def pubOf (C : Bulletproof.Ipa.KimchiCurve) (V : Valuation F) (leaves : List (Leaf F nc)) :
     Array C.ScalarField :=
   (leaves.map (fun leaf => ((ToNat.toNat (leaf.scalarVar.val V) : ℕ) : C.ScalarField))).toArray
 
@@ -1279,7 +1277,7 @@ def leafBaseAt (ci : Fin nc) : Leaf F nc → AffinePoint (FVar F)
 
 omit [DecidableEq F] in
 /-- `pubOf` has one entry per leaf. -/
-theorem pubOf_size (C : Bulletproof.Ipa.CommitmentCurve) (V : Valuation F)
+theorem pubOf_size (C : Bulletproof.Ipa.KimchiCurve) (V : Valuation F)
     (leaves : List (Leaf F nc)) : (pubOf C V leaves).size = leaves.length := by simp [pubOf]
 
 omit [ToNat F] in
@@ -1294,7 +1292,7 @@ private theorem leafPre_onCurve {d : HasCurve F} (ci : Fin nc) (V : Valuation F)
 walk-order correspondence: at each `i`, the wire pairs Lagrange base `i` with `pubOf`'s `i`-th
 scalar, and the gadget pairs leaf `i`'s base — read as that same Lagrange base by `htie` — with
 its own scalar. The circuit-field → scalar-field reduction is the cast, so the scalars agree. -/
-private theorem crossing_list {C : Bulletproof.Ipa.CommitmentCurve} {d : HasCurve F}
+private theorem crossing_list {C : Bulletproof.Ipa.KimchiCurve} {d : HasCurve F}
     (e : C.Point ≃+ d.W.Point) (ci : Fin nc) (V : Valuation F)
     (cvk : Kimchi.Verifier.KimchiVK C nc)
     (leaves : List (Leaf F nc)) (Ts : List d.W.Point)
@@ -1334,51 +1332,22 @@ def Leaf.offBand (p : ℕ) (V : Valuation F) : Leaf F nc → Prop
         2 * xhatBandDelta p + 11 < ToNat.toNat (s.val V)
   | _ => True
 
-/-- The curve facts the x_hat crossing needs of one side: the circuit's point group `d`
-(Mathlib's affine group of the commitment curve), the crossing `e` to the wire's `SWPoint`
-group, the group being killed by the wire's scalar order (so the integer → scalar reduction
-is exact), the base field's width, and the Pasta shape of the scalar order — the group order,
-in `(2^254, 2^254 + 2^253)` and `1 mod 4` — from which the fold's regime discharge follows
-(`XhatSide.order_big`, `XhatSide.regime`). Instantiated at `xhatWrap` (Vesta) and `xhatStep`
-(Pallas). -/
-structure XhatSide (C : Bulletproof.Ipa.CommitmentCurve) where
-  /-- The circuit-side curve data at the commitment curve's base field. -/
-  d : HasCurve C.BaseField
-  /-- The crossing from the wire's point group to the circuit-side point group. -/
-  e : C.Point ≃+ d.W.Point
-  /-- The wire scalar order kills the circuit-side point group. -/
-  card_nsmul : ∀ X : d.W.Point, C.scalar • X = 0
-  /-- The base field has more than 254 bits: a `2^254`-bounded integer casts faithfully. -/
-  base_big : 2 ^ 254 < C.base
-  /-- The circuit-side group's order is the wire's scalar order. -/
-  order_eq : d.W.order = C.scalar
-  /-- The scalar order has 255 bits. -/
-  scalar_lo : 2 ^ 254 < C.scalar
-  /-- The scalar order is below `2^254 + 2^253`: the pinned full ladder wraps exactly twice. -/
-  scalar_hi : C.scalar < 2 ^ 254 + 2 ^ 253
-  /-- The scalar order is `1 mod 4`, as the one-wrap ladder regime asks. -/
-  scalar_mod : C.scalar % 4 = 1
-  /-- The crossing lands on the commitment curve: a cell reading as a crossed wire point reads
-  as that point on `C.E`, the form the group half consumes. -/
-  onCurve_cross : ∀ (V : Valuation C.BaseField) (r : AffinePoint (FVar C.BaseField)) (P : C.Point),
-    OnCurveAt d.W V r (e P) → OnCurveAt C.E.toAffine V r (SWPoint.equivPoint C.E P)
-
 end Generic
 
 section SideFacts
 
-variable {C : Bulletproof.Ipa.CommitmentCurve}
+variable {C : Bulletproof.Ipa.KimchiCurve}
 
 /-- The cast premise of the gadget reads at a side: a `2^254`-bounded integer reads back from
 the base field. -/
-private theorem xhatSide_cast (s : XhatSide C) :
+private theorem xhatSide_cast (s : PastaShape C) :
     ∀ m : ℤ, 0 ≤ m → m < 2 ^ 254 → (ToNat.toNat ((m : C.BaseField)) : ℤ) = m := by
   haveI : NeZero C.base := ⟨(Fact.out : C.base.Prime).ne_zero⟩
   intro m hm0 hmlt
   exact toNat_intCast_of_lt C.base hm0 (lt_of_lt_of_le hmlt (by exact_mod_cast s.base_big.le))
 
 /-- The bit premise of the gadget reads: `bit b` reads as `0`/`1`. -/
-private theorem xhatSide_bit (_s : XhatSide C) :
+private theorem xhatSide_bit (_s : PastaShape C) :
     ∀ b : Bool, ToNat.toNat (bit b : C.BaseField) = if b then 1 else 0 := by
   haveI : Fact (1 < C.base) := ⟨(Fact.out : C.base.Prime).one_lt⟩
   intro b
@@ -1387,14 +1356,15 @@ private theorem xhatSide_bit (_s : XhatSide C) :
   · show ZMod.val (bit true : ZMod C.base) = 1; simp [bit, ZMod.val_one]
 
 /-- The narrow ladders (`L ≤ 130`) are in the subwrap regime: the order has 255 bits. -/
-theorem XhatSide.order_big (s : XhatSide C) : 3 * 2 ^ 130 ≤ s.d.W.order := by
-  rw [s.order_eq]; exact le_trans (by norm_num) s.scalar_lo.le
+theorem PastaShape.order_big (s : PastaShape C) : 3 * 2 ^ 130 ≤ s.d.W.order := by
+  rw [show s.d.W.order = C.scalar from C.order_eq]
+  exact le_trans (by norm_num) s.scalar_lo.le
 
 /-- **The pinned full-leaf ladder is in regime off the window.** With the order `p` in
 `(2^254, 2^254 + 2^253)`, for `0 ≤ z < 2^253` the top `2z + 2^255 + 1` lies in `(p, 3p)`, so it
 is a forbidden residue `t ∈ [-3, 11]` only as `t + 2p`; that pins the value `2z + bb` into
 `[2δ − 4, 2δ + 11]`, `δ = p − 2^254` — the sixteen-value window `Leaf.offBand` excludes. -/
-theorem XhatSide.regime (s : XhatSide C) {nc : ℕ} (V : Valuation C.BaseField)
+theorem PastaShape.regime (s : PastaShape C) {nc : ℕ} (V : Valuation C.BaseField)
     (leaf : Leaf C.BaseField nc) (h : leaf.offBand C.scalar V) : Leaf.regimeFull s.d V leaf := by
   cases leaf with
   | full sc base corr =>
@@ -1421,7 +1391,7 @@ theorem XhatSide.regime (s : XhatSide C) {nc : ℕ} (V : Valuation C.BaseField)
         rw [← hval]
         exact xhatSide_cast s _ (by omega) (by omega)
       simp only [Leaf.offBand] at h
-      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [s.order_eq]
+      refine Or.inr ⟨?_, ?_, ?_, ?_⟩ <;> rw [show s.d.W.order = C.scalar from C.order_eq]
       · simpa using s.scalar_lo
       · exact lt_trans s.scalar_hi (by norm_num)
       · exact s.scalar_mod
@@ -1465,34 +1435,9 @@ theorem XhatSide.regime (s : XhatSide C) {nc : ℕ} (V : Valuation C.BaseField)
 
 end SideFacts
 
-/-- The wrap side of the x_hat crossing: Vesta bases at `Fq`, scalar order `PALLAS_BASE_CARD`. -/
-noncomputable def xhatWrap : XhatSide Bulletproof.IpaVesta.curve where
-  d := HasCurve.vesta
-  e := SWPoint.equivPoint Vesta.curve
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_BASE_CARD) X
-  base_big := by norm_num [PALLAS_SCALAR_CARD]
-  order_eq := Pasta.vesta_card
-  scalar_lo := by norm_num [PALLAS_BASE_CARD]
-  scalar_hi := by norm_num [PALLAS_BASE_CARD]
-  scalar_mod := by norm_num [PALLAS_BASE_CARD]
-  onCurve_cross _ _ _ h := h
-
-/-- The step side of the x_hat crossing: Pallas bases at `Fp`, scalar order
-`PALLAS_SCALAR_CARD`. -/
-noncomputable def xhatStep : XhatSide Bulletproof.IpaPallas.curve where
-  d := HasCurve.pallas
-  e := SWPoint.equivPoint Pallas.curve
-  card_nsmul X := ZModModule.char_nsmul_eq_zero (n := PALLAS_SCALAR_CARD) X
-  base_big := by norm_num [PALLAS_BASE_CARD]
-  order_eq := Pasta.pallas_card
-  scalar_lo := by norm_num [PALLAS_SCALAR_CARD]
-  scalar_hi := by norm_num [PALLAS_SCALAR_CARD]
-  scalar_mod := by norm_num [PALLAS_SCALAR_CARD]
-  onCurve_cross _ _ _ h := h
-
 section Binding
 
-variable {C : Bulletproof.Ipa.CommitmentCurve} {nc : ℕ}
+variable {C : Bulletproof.Ipa.KimchiCurve} {nc : ℕ}
 
 /-- The `x_hat` tables of a circuit (OCaml `lagrange_with_correction` and `multiscale_known`'s
 constant corrections): per public-input scalar its Lagrange base and its shift correction,
@@ -1511,16 +1456,16 @@ structure XhatTable (F : Type) [Field F] (nc : ℕ) where
 of the outside world, in public terms (no `LeafInfo`/`LeafReads`). The scalar-side alias
 (circuit field → scalar field) is absorbed into `pubOf`, and the fold premises
 (`pre`/`corr`/`hon`) are exactly the gadget reads', with the regime premise narrowed to the
-sixteen-value window `offBand` (`XhatSide.regime`). `Ts` are the leaves' base points, `cps`
+sixteen-value window `offBand` (`PastaShape.regime`). `Ts` are the leaves' base points, `cps`
 their correction points. The gadget-specific seed facts (`leafHasScalar` for the wrap fold,
 `leafHeadScalar` and the constant correction sum for the known-domain fold) stay beside the
 read they serve. -/
-structure XhatBinding (s : XhatSide C) (ci : Fin nc) (V : Valuation C.BaseField)
+structure XhatBinding (s : PastaShape C) (ci : Fin nc) (V : Valuation C.BaseField)
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point) : Prop where
   /-- The blinding cell reads as the verifier's SRS blinding `σ.h`, crossed to the point group. -/
-  blinding : OnCurveAt s.d.W V blindingH (s.e σ.h)
+  blinding : OnCurveAt s.d.W V blindingH (SWPoint.equivPoint C.E σ.h)
   /-- Each leaf reads its base cell as a curve point `Ts[i]` (and its bit, for `condAdd`). -/
   pre : List.Forall₂ (LeafPre ci V) leaves Ts
   /-- Each leaf's correction cell reads as `cps[i]`. -/
@@ -1535,23 +1480,24 @@ structure XhatBinding (s : XhatSide C) (ci : Fin nc) (V : Valuation C.BaseField)
   tie the packing item owns. -/
   bases : ∀ (i : ℕ) (hi : i < leaves.length),
     OnCurveAt s.d.W V (leafBaseAt ci leaves[i])
-      (s.e ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hsize))[ci]))
+      (SWPoint.equivPoint C.E ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hsize))[ci]))
 
 /-- **The wire's `publicCommitment`, crossed, is `-(publicMsm) + h`.** The shared half of the two
 x_hat reads: `equivPoint_publicCommitment` unfolds the wire's MSM, `crossing_list` ties each
 Lagrange base to the leaf's base reading, and `neg_publicMsm_sum` moves the negation through
-the exact integer → scalar reduction (`XhatSide.card_nsmul`). -/
-private theorem xhat_cross (s : XhatSide C) (ci : Fin nc) {V : Valuation C.BaseField}
+the exact integer → scalar reduction (`KimchiCurve.affine_card_nsmul`). -/
+private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
     (hne : leaves ≠ []) :
-    s.e (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci]
-      = -(publicMsm V leaves Ts) + s.e σ.h := by
+    SWPoint.equivPoint C.E (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci]
+      = -(publicMsm V leaves Ts) + SWPoint.equivPoint C.E σ.h := by
   haveI : NeZero C.scalar := ⟨(Fact.out : C.scalar.Prime).ne_zero⟩
   have hlen : Ts.length = leaves.length := (List.Forall₂.length_eq hbind.pre).symm
   have htie : ∀ (i : ℕ) (hi : i < leaves.length),
-      Ts[i]'(hlen ▸ hi) = s.e ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hbind.hsize))[ci]) := by
+      Ts[i]'(hlen ▸ hi)
+        = SWPoint.equivPoint C.E ((cvk.lagrangeBasis[i]'(lt_of_lt_of_le hi hbind.hsize))[ci]) := by
     intro i hi
     have hpre_i : LeafPre ci V leaves[i] (Ts[i]'(hlen ▸ hi)) :=
       hbind.pre.get hi (hlen ▸ hi)
@@ -1563,19 +1509,19 @@ private theorem xhat_cross (s : XhatSide C) (ci : Fin nc) {V : Valuation C.BaseF
       = ((leaves.zip Ts).map (fun p =>
           ((-(↑(ToNat.toNat (p.1.scalarVar.val V)) : C.ScalarField)).val : ℕ) • p.2)).sum := by
     rw [publicMsm]
-    exact neg_publicMsm_sum C.scalar s.card_nsmul
+    exact neg_publicMsm_sum C.scalar C.affine_card_nsmul
       (fun leaf => ToNat.toNat (leaf.scalarVar.val V)) (leaves.zip Ts)
-  rw [equivPoint_publicCommitment s.e σ cvk (pubOf C V leaves) ci hne',
-    crossing_list s.e ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
+  rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
+    crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
 
 /-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The
 in-circuit public-input obligation of the group half (`incrementally_verify_proof`):
-`publicInputCommitFull` commits to `pubOf leaves`, crossed to Mathlib's point group by the
-side's `e`. The subtle half (the canonical decode — the ladder's top-bit pin —
+`publicInputCommitFull` commits to `pubOf leaves`, crossed to Mathlib's point group by
+`SWPoint.equivPoint`. The subtle half (the canonical decode — the ladder's top-bit pin —
 `-(Σ [scalarₗ]·baseₗ) + h`) is `publicInputCommitFull_reads`; this crosses that to the wire's
-`publicCommitment` — the integer → scalar reduction is exact (`XhatSide.card_nsmul`), so the
-read carries no slack. -/
-theorem xHat_reads_publicCommitment (s : XhatSide C) (ci : Fin nc) {V : Valuation C.BaseField}
+`publicCommitment` — the integer → scalar reduction is exact
+(`KimchiCurve.affine_card_nsmul`), so the read carries no slack. -/
+theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
@@ -1583,11 +1529,13 @@ theorem xHat_reads_publicCommitment (s : XhatSide C) (ci : Fin nc) {V : Valuatio
     ⦃⌜True⌝⦄
     publicInputCommitFull (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH leaves
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r
-      (s.e (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+      (SWPoint.equivPoint C.E
+        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; simp [leafHasScalar] at hscalar
   refine builder_spec_imp _ _ _
-    (publicInputCommitFull_reads (d := s.d) ci blindingH leaves Ts cps (s.e σ.h)
+    (publicInputCommitFull_reads (d := s.d) ci blindingH leaves Ts cps
+      (SWPoint.equivPoint C.E σ.h)
       (xhatSide_cast s) (xhatSide_bit s) s.order_big
       (le_trans (by norm_num) s.order_big)
       (fun leaf hl => s.regime V leaf (hbind.offBand leaf hl))
@@ -1598,7 +1546,7 @@ theorem xHat_reads_publicCommitment (s : XhatSide C) (ci : Fin nc) {V : Valuatio
 known-domain shape (`publicInputCommitKnown`, OCaml `multiscale_known`): the corrections are
 constants, so their sum `corrSum` is a single constant cell the binding reads as `Σ cps`, and
 the leaves are headed by a scalar leaf. Otherwise `xHat_reads_publicCommitment`. -/
-theorem xHatKnown_reads_publicCommitment (s : XhatSide C) (ci : Fin nc)
+theorem xHatKnown_reads_publicCommitment (s : PastaShape C) (ci : Fin nc)
     {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH corrHead corrSum : AffinePoint (FVar C.BaseField))
@@ -1609,11 +1557,13 @@ theorem xHatKnown_reads_publicCommitment (s : XhatSide C) (ci : Fin nc)
     publicInputCommitKnown (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH corrHead
       corrSum leaves
     ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r
-      (s.e (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
+      (SWPoint.equivPoint C.E
+        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; exact hhead.elim
   refine builder_spec_imp _ _ _
-    (publicInputCommitKnown_reads (d := s.d) ci blindingH corrHead corrSum leaves Ts cps (s.e σ.h)
+    (publicInputCommitKnown_reads (d := s.d) ci blindingH corrHead corrSum leaves Ts cps
+      (SWPoint.equivPoint C.E σ.h)
       (xhatSide_cast s) (xhatSide_bit s) s.order_big
       (le_trans (by norm_num) s.order_big)
       (fun leaf hl => s.regime V leaf (hbind.offBand leaf hl))
@@ -1623,7 +1573,7 @@ theorem xHatKnown_reads_publicCommitment (s : XhatSide C) (ci : Fin nc)
 /-- An `x_hat` table is bound to the verifier key at the leaves it serves: chunk by chunk, the
 leaves' `XhatBinding` at some base and correction points with the correction sum reading as
 their sum, and the tables nonempty (the known-domain fold is seeded by the first leaf). -/
-structure XhatTable.Bound (s : XhatSide C) (V : Valuation C.BaseField)
+structure XhatTable.Bound (s : PastaShape C) (V : Valuation C.BaseField)
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
     (T : XhatTable C.BaseField nc) : Prop where

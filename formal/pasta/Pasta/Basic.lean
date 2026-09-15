@@ -193,11 +193,53 @@ theorem vesta_equivPoint_smul (z : Fp) (P : SWPoint vestaCurve) :
     SWPoint.equivPoint vestaCurve (z • P) = z • SWPoint.equivPoint vestaCurve P :=
   map_nsmul _ _ _
 
-/-- The Pallas twin of `vestaAffineModule`. -/
-instance pallasAffineModule : Module Fq pallasCurve.toAffine.Point :=
-  AddCommGroup.zmodModule fun Q => by
-    rw [← (SWPoint.equivPoint pallasCurve).apply_symm_apply Q, ← map_nsmul, ← Pallas.card_eq,
-      card_nsmul_eq_zero', map_zero]
+/-! ## Scalar multiples of a point of prime order
+
+Two facts about any short-Weierstrass curve of prime order, used wherever a run has to know
+that an accumulator has not collapsed onto the base or onto zero. They are pure group theory:
+nothing here mentions a gate, a circuit or a sponge. -/
+
+/-- **Core non-degeneracy.** With prime `order`, a nonzero point times a scalar strictly
+between `0` and `order` is nonzero. -/
+lemma smul_ne_zero_of_lt {F : Type*} [Field F] [DecidableEq F] (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0)
+    {k : ℤ} (h0 : 0 < k) (hlt : k < (c.order : ℤ)) : k • T ≠ 0 := by
+  intro h_contra
+  -- prime `order` together with `0 < k < order` forces `gcd k order = 1`
+  have h_coprime : Int.gcd k (c.order : ℤ) = 1 := by
+    refine Nat.coprime_comm.mp
+      ((Fact.out : Nat.Prime c.order).coprime_iff_not_dvd.mpr fun hd => ?_)
+    have := Int.le_of_dvd (by positivity) (Int.natCast_dvd.mpr hd)
+    omega
+  -- Bézout: `k * a + order * b = 1`
+  obtain ⟨a, b, hab⟩ : ∃ a b : ℤ, k * a + (c.order : ℤ) * b = 1 := by
+    have h := Int.gcd_eq_gcd_ab k (c.order : ℤ)
+    exact ⟨_, _, h.symm.trans (by rw [h_coprime]; simp)⟩
+  -- hence `T = a • (k • T) + b • (order • T)`, and both terms vanish
+  have h_decomp : T = a • (k • T) + b • ((c.order : ℤ) • T) := by
+    rw [← mul_smul, ← mul_smul, ← add_smul, mul_comm a k, mul_comm b (c.order : ℤ), hab,
+      one_zsmul]
+  have hord : (c.order : ℤ) • T = 0 := by rw [natCast_zsmul]; exact card_nsmul_eq_zero'
+  rw [h_contra, hord, smul_zero, smul_zero, _root_.add_zero] at h_decomp
+  exact hT h_decomp
+
+/-- **Prime order ⇒ full order.** For a nonzero point `T`, a scalar multiple `m • T` vanishes
+iff `order ∣ m`. (`order` is prime and `order • T = 0`, so `addOrderOf T ∣ order`; nonzero `T`
+rules out `addOrderOf T = 1`, hence it equals `order`.) -/
+lemma zsmul_eq_zero_iff_order_dvd {F : Type*} [Field F] [DecidableEq F]
+    (c : WeierstrassCurve.Affine F)
+    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
+    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0) (m : ℤ) :
+    m • T = 0 ↔ (c.order : ℤ) ∣ m := by
+  have hdvd : (addOrderOf T : ℤ) ∣ (c.order : ℤ) :=
+    addOrderOf_dvd_iff_zsmul_eq_zero.mpr (by rw [natCast_zsmul]; exact card_nsmul_eq_zero')
+  have horder : addOrderOf T = c.order := by
+    have hnat : addOrderOf T ∣ c.order := by exact_mod_cast hdvd
+    rcases Nat.Prime.eq_one_or_self_of_dvd (Fact.out : Nat.Prime c.order) _ hnat with h1 | h1
+    · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
+    · exact h1
+  rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
 
 /-- The Pallas twin of `vesta_smul_val`. -/
 theorem pallas_smul_val (z : Fq) (P : SWPoint pallasCurve) : z • P = z.val • P :=

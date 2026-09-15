@@ -91,7 +91,7 @@ open scoped Kimchi
 
 /-- The verification environment: the SRS and the verifier key of the proof under
 verification, at one chunk. Shared by the wire verifier and both circuit halves. -/
-structure Env (C : CommitmentCurve) where
+structure Env (C : KimchiCurve) where
   /-- The SRS (`σ.h` the blinding base, `σ.k` the round count). -/
   σ : SRS C.Point
   /-- The verifier key, one chunk. -/
@@ -105,7 +105,7 @@ the claim cells of its statement — the deferred values it scales by, the round
 the fq digest its `incrementally_verify_proof` output is asserted equal to (`verify`) — and
 the one bit it exports, the success bit. The `IvpOutput` itself is internal: existential in
 `GroupHalf.Reads`, pinned to the claims by those assertions. -/
-structure GroupHalf (C : CommitmentCurve) (sf : Type) where
+structure GroupHalf (C : KimchiCurve) (sf : Type) where
   /-- The circuit's valuation (over the base field). -/
   V : Valuation C.BaseField
   /-- The shifted-scalar operations of the side. -/
@@ -129,7 +129,7 @@ def DeferredValues.toIvpClaims {F sf : Type} (dv : DeferredValues F sf) :
 
 /-- The scalar half's side: how a shifted claim cell reads as a scalar (the unshifted value
 at the valuation), and the side's linearization token stream. -/
-structure FopSide (C : CommitmentCurve) (V : Valuation C.ScalarField) (sf : Type) where
+structure FopSide (C : KimchiCurve) (V : Valuation C.ScalarField) (sf : Type) where
   /-- The scalar a shifted claim cell reads as: its value, unshifted. -/
   decode : sf → C.ScalarField
   /-- The linearization token stream of the side. -/
@@ -139,7 +139,7 @@ structure FopSide (C : CommitmentCurve) (V : Valuation C.ScalarField) (sf : Type
 the following step circuit): its valuation, its side, the deferred claim cells with the fq
 digest, the evaluation cells, the predecessor mask and previous-challenge cells, and its
 output — the four checks, their conjunction and the expanded challenges. -/
-structure ScalarHalf (C : CommitmentCurve) (sf : Type) (k : ℕ) where
+structure ScalarHalf (C : KimchiCurve) (sf : Type) (k : ℕ) where
   /-- The circuit's valuation (over the scalar field). -/
   V : Valuation C.ScalarField
   /-- The side. -/
@@ -161,12 +161,12 @@ structure ScalarHalf (C : CommitmentCurve) (sf : Type) (k : ℕ) where
 /-- `finalize_other_proof`'s parameters from the environment: the fr-sponge, the eigenvalue,
 the MDS matrix, the key's endo coefficient, coset shifts and `zk_rows`, the SRS's round
 count, and the side's tokens. -/
-def FopParams.ofEnv {C : CommitmentCurve} (E : Env C) (toks : Array Linearization.PolishToken) :
+def FopParams.ofEnv {C : KimchiCurve} (E : Env C) (toks : Array Linearization.PolishToken) :
     FopParams C.ScalarField :=
-  { sponge := C.frParams
-    endoLam := C.sponge.lam
+  { sponge := C.frSponge.params
+    endoLam := C.lam
     endo := E.cvk.endo
-    mds := mdsOfParams C.frParams
+    mds := mdsOfParams C.frSponge.params
     toks := toks
     shifts := fun i => E.cvk.shifts[i]
     srsLengthLog2 := E.σ.k
@@ -176,7 +176,7 @@ def FopParams.ofEnv {C : CommitmentCurve} (E : Env C) (toks : Array Linearizatio
 
 section Exact
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- `IvpReads` with its slacks closed: the four plonk cells read the wire's fq
@@ -204,10 +204,10 @@ def IvpReadsExact {nc : ℕ}
   ∀ ξ₀, Reads128 V claims.xi ξ₀ →
     List.Forall₂ (Reads128 V) o.bulletproofChallenges r.2.1.toList ∧
     (((↑o.success : CVar C.BaseField).val V = 1) ↔
-      schnorrAt C σ (C.toGroup r.1) (r.2.1.map fun m => endoExpand C.sponge.lam m.val)
-        (endoExpand C.sponge.lam r.2.2.val)
+      schnorrAt C σ (C.toGroup r.1) (r.2.1.map fun m => endoExpand C.lam m.val)
+        (endoExpand C.lam r.2.2.val)
         (S.decode claims.deferred.combinedInnerProduct) (S.decode claims.deferred.b)
-        (combineCommitments C (endoExpand C.sponge.lam ξ₀.val) run.commitments.toArray)
+        (combineCommitments C (endoExpand C.lam ξ₀.val) run.commitments.toArray)
         run.proof)
 
 /-- The exact read implies the read, the base field being wider than 128 bits. -/
@@ -290,7 +290,7 @@ end ExactFr
 
 section AtCells
 
-variable {C : CommitmentCurve} {sf sf' : Type}
+variable {C : KimchiCurve} {sf sf' : Type}
 
 /-- The group half's read (`verify`'s, exact): some `incrementally_verify_proof` output
 satisfying `IvpReadsExact` at the half's side and claim cells, whose success bit is the
@@ -317,7 +317,7 @@ def ScalarHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf 
   FopReadsExact (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) E.cvk.n E.cvk.omega
     (recDigest C (cp.olds.map (·.u))) Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList)
     Sc.claims Sc.evals
-    (endoExpand C.sponge.lam z₀.val) (endoExpand C.sponge.lam a₀.val)
+    (endoExpand C.lam z₀.val) (endoExpand C.lam a₀.val)
     (dv.plonk.beta.val.val Sc.V) (dv.plonk.gamma.val.val Sc.V)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.combinedInnerProduct)
     (Sc.side.decode dv.b) id Sc.V Sc.out
@@ -328,7 +328,7 @@ end AtCells
 
 section Ties
 
-variable {C : CommitmentCurve} {sf sf' : Type}
+variable {C : KimchiCurve} {sf sf' : Type}
 
 /-- What the two halves share, and what the scalar half's cells are on the wire. Two kinds:
 
@@ -404,7 +404,7 @@ def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Scalar
   bV = combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn ∧
   permV = runPScalar C E.σ E.cvk cp pub ∧
   ∃ m : Prechallenge, Reads128 V xi m ∧
-    m.val = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
+    m.val = (frPrechallenges C.frSponge.params (frTranscript (runOracles C E.σ E.cvk cp pub).digest
       (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub) cp.evals)).1
 
 /-- The claims of a scalar half, as `ClaimsHonest` reads them: the three shifted claims
@@ -456,7 +456,7 @@ private theorem bPoly_toList {F : Type} [Field F] {k : ℕ} (u : Vector F k) (x 
   rfl
 
 /-- The one-chunk proof's combined evaluations are the linearization view of its chunks. -/
-private theorem linEvals_one {C : CommitmentCurve} {k : ℕ} (cp : KimchiProof C 1 k)
+private theorem linEvals_one {C : KimchiCurve} {k : ℕ} (cp : KimchiProof C 1 k)
     (zM zOM : C.ScalarField) :
     cp.linEvals zM zOM = linEvals (cp.evals.map (·.toList.headD 0)) := by
   ext <;> simp only [KimchiProof.linEvals, linEvals, ProofEvaluations.map, PointEvaluations.map,
@@ -488,14 +488,14 @@ private theorem flatten_singletons {α β : Type} (f : α → β) :
   induction l <;> simp_all
 
 /-- One row's segments at one chunk, as a list: its single triple. -/
-private theorem zipSeg_toList_one {C : CommitmentCurve} (comm : Vector C.Point 1)
+private theorem zipSeg_toList_one {C : KimchiCurve} (comm : Vector C.Point 1)
     (ev : PointEvaluations (Vector C.ScalarField 1)) :
     (zipSeg C comm ev).toList = [(comm[0], ev.zeta[0], ev.zetaOmega[0])] := by
   simp [zipSeg, Vector.toList_ofFn, List.ofFn_succ]
 
 /-- The tail rows as a list: the four regions' lists (the vector append is typed at the
 literal `tailRowCount`, which `Vector.toList_append` does not see through). -/
-private theorem tailRows_toList {C : CommitmentCurve} {k : ℕ} (cvk : KimchiVK C 1)
+private theorem tailRows_toList {C : KimchiCurve} {k : ℕ} (cvk : KimchiVK C 1)
     (cp : KimchiProof C 1 k) :
     (tailRowsOf C cvk cp).toList
       = (litRowsOf C cvk cp).toList
@@ -521,7 +521,7 @@ private theorem rows_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C
         (cvs.map fun cv => bPoly (fun i : Fin cv.length => cv.get i) (o.zeta * E.cvk.omega))
       ++ ⟨pe.zeta[0], pe.zetaOmega[0]⟩
         :: ⟨ftEval0 E.cvk.n E.cvk.zkRows E.cvk.omega (fun i => E.cvk.shifts[i]) E.cvk.endo
-              (mdsOfParams C.frParams) o.alpha o.beta o.gamma o.zeta pe.zeta[0] (linEvals e),
+              (mdsOfParams C.frSponge.params) o.alpha o.beta o.gamma o.zeta pe.zeta[0] (linEvals e),
             cp.ftEval1⟩
         :: evalRows e).map PointEvaluations.toVector
     = ((runStreamP C E.σ E.cvk cp pub pe).map
@@ -610,10 +610,10 @@ theorem twoHalves_iff_schnorr
   obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiIff, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
-  have hζ : endoExpand C.sponge.lam z₀.val = (runOracles C E.σ E.cvk cp pub).zeta := by
+  have hζ : endoExpand C.lam z₀.val = (runOracles C E.σ E.cvk cp pub).zeta := by
     simp only [runOracles, fqOracles, FqRun.expand]
     rw [Reads128.unique hinjG hζGz hζG]
-  have hα : endoExpand C.sponge.lam a₀.val = (runOracles C E.σ E.cvk cp pub).alpha := by
+  have hα : endoExpand C.lam a₀.val = (runOracles C E.σ E.cvk cp pub).alpha := by
     simp only [runOracles, fqOracles, FqRun.expand]
     rw [Reads128.unique hinjG hαGa hαG]
   have hβ : Sc.claims.deferredValues.plonk.beta.val.val Sc.V
@@ -643,12 +643,13 @@ theorem twoHalves_iff_schnorr
   have hpzo : Sc.evals.pub.zetaOmega.val Sc.V = (runPubEvals C E.σ E.cvk cp pub).zetaOmega[0] := by
     rw [← ht.pubEvals]; rfl
   rw [hd, ht.ftEval1, ht.pubEvals, ht.evals] at hr' hxiIff
-  have hr : endoExpand C.sponge.lam r'.val = run.evalscale := by
+  have hr : endoExpand C.lam r'.val = run.evalscale := by
     show _ = (frOracles C cp _ _).r
     rw [frOracles_eq_frPrechallenges, hr']
   have hxi : (↑Sc.out.xiCorrect : CVar C.ScalarField).val Sc.V = 1
       ↔ ∃ m : Prechallenge, Reads128 Sc.V Sc.claims.deferredValues.xi m ∧
-        m.val = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
+        m.val = (frPrechallenges C.frSponge.params
+            (frTranscript (runOracles C E.σ E.cvk cp pub).digest
             (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub)
             cp.evals)).1 := by
     rw [hxiIff]
@@ -657,10 +658,11 @@ theorem twoHalves_iff_schnorr
     · rintro ⟨m, hm, hmv⟩
       rw [Reads128.unique hinjS hξS hm, hmv]
   have hξrun : (∃ m : Prechallenge, Reads128 Sc.V Sc.claims.deferredValues.xi m ∧
-        m.val = (frPrechallenges C.frParams (frTranscript (runOracles C E.σ E.cvk cp pub).digest
+        m.val = (frPrechallenges C.frSponge.params
+            (frTranscript (runOracles C E.σ E.cvk cp pub).digest
             (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub)
             cp.evals)).1) →
-      endoExpand C.sponge.lam ξ₀.val = run.polyscale := by
+      endoExpand C.lam ξ₀.val = run.polyscale := by
     rintro ⟨m, hm, hmv⟩
     rw [Reads128.unique hinjS hξS hm, hmv]
     show _ = (frOracles C cp _ _).xi
@@ -676,7 +678,7 @@ theorem twoHalves_iff_schnorr
   rw [hζ, hα, hβ, hγ, hev, hpz, hpzo, ht.ftEval1] at hcipC
   rw [hζ] at hbC
   rw [hζ, hα, hβ, hγ, hev] at hpermC
-  have hcipIff : endoExpand C.sponge.lam ξ₀.val = run.polyscale →
+  have hcipIff : endoExpand C.lam ξ₀.val = run.polyscale →
       ((↑Sc.out.cipCorrect : CVar C.ScalarField).val Sc.V = 1
         ↔ Sc.side.decode Sc.claims.deferredValues.combinedInnerProduct = cipOf run) := by
     intro hξv
@@ -688,7 +690,7 @@ theorem twoHalves_iff_schnorr
         = combinedB (fun i =>
             ((ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
               (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.map
-                (fun m => endoExpand C.sponge.lam m.val))[i]) run.evalscale run.pointFn := by
+                (fun m => endoExpand C.lam m.val))[i]) run.evalscale run.pointFn := by
     simp only [hbC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
     rw [hr, hĉeq, ← Vector.toList_map, combinedB_toList, pointFn_eq]
   have hpermIff : (↑Sc.out.plonkOk : CVar C.ScalarField).val Sc.V = 1

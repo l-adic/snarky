@@ -37,7 +37,7 @@ at `n = 32`) makes the σ value-MSMs miss the production commitments and fails t
 run therefore pins the un-zeroed correspondence, the raw wiring addresses.
 
 The whole body is generic over the commitment curve `C`; the per-curve Poseidon MDS is
-derived from the curve bundle and passed to `Index.build?` as `mdsOfParams C.frParams`. -/
+derived from the curve bundle and passed to `Index.build?` as `mdsOfParams C.frSponge.params`. -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.Verifier
 
@@ -45,7 +45,7 @@ open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi Kimchi.Index Kimchi.
 wire pointers), the domain/permutation constants, and the production-derived selector
 and coefficient columns. σ columns are deliberately not read — the model derives them
 (see the module docstring). -/
-structure IdxData (C : Ipa.CommitmentCurve) where
+structure IdxData (C : Ipa.KimchiCurve) where
   /-- The domain size `n`. -/
   n : ℕ
   /-- The number of public-input rows. -/
@@ -77,7 +77,7 @@ def parseGateType : String → Except String GateType
   | "endoScalar" => .ok .endoScalar
   | t => .error s!"unknown gate type: {t}"
 
-def parseIdx (C : Ipa.CommitmentCurve) (ji : Json) : Except String (IdxData C) := do
+def parseIdx (C : Ipa.KimchiCurve) (ji : Json) : Except String (IdxData C) := do
   let fld (k : String) : Except String Json := ji.getObjVal? k
   let parseF : Json → Except String C.ScalarField := parseZMod
   let gatesJ ← (← fld "gates").getArr?
@@ -96,7 +96,7 @@ def parseIdx (C : Ipa.CommitmentCurve) (ji : Json) : Except String (IdxData C) :
            selJ := ← fld "selectors"
            coefficients := ← parseArrOf (parseArrOf parseF) (← fld "coefficients") }
 
-def buildGates {C : Ipa.CommitmentCurve} (d : IdxData C) {n : ℕ} (_hn : d.n = n) :
+def buildGates {C : Ipa.KimchiCurve} (d : IdxData C) {n : ℕ} (_hn : d.n = n) :
     Except String (Fin n → GateRow C.ScalarField n) := do
   unless d.typs.size = n && d.wires.size = n && d.coeffs.size = n do
     throw "gate table size mismatch"
@@ -117,7 +117,7 @@ def buildGates {C : Ipa.CommitmentCurve} (d : IdxData C) {n : ℕ} (_hn : d.n = 
   else throw "row count"
 
 /-- The value-MSM of a column against one chunk slice of the basis commitments. -/
-def basisChunkMSM (C : Ipa.CommitmentCurve) (basis : Array (Array C.Point)) (c : ℕ)
+def basisChunkMSM (C : Ipa.KimchiCurve) (basis : Array (Array C.Point)) (c : ℕ)
     (col : Array C.ScalarField) : C.Point :=
   Ipa.msm C (fun j : Fin basis.size => (basis.getD j #[]).getD c 0)
     (fun j => col.getD j 0)
@@ -125,14 +125,14 @@ def basisChunkMSM (C : Ipa.CommitmentCurve) (basis : Array (Array C.Point)) (c :
 /-- The MODEL's σ columns at the given `zk_rows`: `Index.build?` on the dumped gate
 table (every index law decided), then `Index.sigmaAddrRow` — the wiring addresses
 through the model's own zeroing branch. -/
-def sigmaColsOf {C : Ipa.CommitmentCurve}
+def sigmaColsOf {C : Ipa.KimchiCurve}
     (d : IdxData C) (zkRows : ℕ) : Except String (Array (Array C.ScalarField)) :=
   if hpos : 0 < d.n then
     haveI : NeZero d.n := ⟨Nat.pos_iff_ne_zero.mp hpos⟩
     do
       let gates ← buildGates d rfl
       let some idx := Index.build? gates d.publicCount zkRows d.omega d.endoBase
-          (mdsOfParams C.frParams) (fun i => d.shifts[(i : ℕ)]!)
+          (mdsOfParams C.frSponge.params) (fun i => d.shifts[(i : ℕ)]!)
         | throw s!"Index.build? rejected the index data at zk_rows = {zkRows}"
       return (List.finRange permCols).toArray.map fun c =>
         ((List.finRange d.n).map (idx.sigmaAddrRow c)).toArray
@@ -140,7 +140,7 @@ def sigmaColsOf {C : Ipa.CommitmentCurve}
 
 /-- One chunking regime: the VK fixture at `vkPath` against the index data, with the
 σ columns derived by the model itself at this regime's `zk_rows`. -/
-def runRegime (C : Ipa.CommitmentCurve)
+def runRegime (C : Ipa.KimchiCurve)
     (d : IdxData C) (vkPath : String) : IO Unit := do
   let vkJ ← IO.FS.readFile vkPath
   let r : Except String
@@ -205,7 +205,7 @@ def runRegime (C : Ipa.CommitmentCurve)
       throw (IO.userError s!"{vkPath}: chunked VK correspondence check FAILED")
 
 /-- Read an index fixture and run every VK against it. -/
-def runCurve (C : Ipa.CommitmentCurve)
+def runCurve (C : Ipa.KimchiCurve)
     (idxPath : String) (vkPaths : List String) : IO Unit := do
   let idxJ ← IO.FS.readFile idxPath
   let d ← match Json.parse idxJ >>= parseIdx C with

@@ -544,10 +544,10 @@ open CompElliptic.Fields CompElliptic.CurveForms.ShortWeierstrass
 
 variable {q : ℕ} [Fact q.Prime]
 
-/-- This module's parameters, read off a wire `Poseidon.GroupMap.Spec` — plus the
-non-residue the in-circuit flagged-root trick needs, which the wire map has no
-counterpart for (it retries candidates instead of certifying failures). -/
-def GroupMapParams.ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q) :
+/-- This module's parameters, read off a wire `Poseidon.GroupMap.Spec`. Every field comes
+from the spec, the non-residue the in-circuit flagged-root trick needs included: there is
+one map-to-curve per curve, and the spec is where it lives. -/
+def GroupMapParams.ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) :
     GroupMapParams (ZMod q) where
   u := spec.u
   fu := spec.fu
@@ -555,13 +555,12 @@ def GroupMapParams.ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue :
   sqrtNeg3U2 := spec.sqrtNegThreeUSquared
   inv3U2 := spec.invThreeUSquared
   b := spec.E.B
-  nonResidue := nonResidue
+  nonResidue := spec.nonResidue
 
 /-- The candidate abscissae agree with the wire map's: `potentialXs` at `ofSpec` is
 `Poseidon.GroupMap.potentialXs`. -/
-theorem potentialXs_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q)
-    (nonResidue t : ZMod q) :
-    potentialXs (.ofSpec spec nonResidue) t
+theorem potentialXs_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) (t : ZMod q) :
+    potentialXs (.ofSpec spec) t
       = _root_.Poseidon.GroupMap.potentialXs spec t := by
   have hinv : (1 : ZMod q) / ((t * t + spec.fu) * (t * t))
       = (t ^ 2 * (t ^ 2 + spec.fu))⁻¹ := by
@@ -573,22 +572,20 @@ theorem potentialXs_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q)
 
 /-- The candidate test values agree with the wire map's: `ySquared` at `ofSpec` is
 `Poseidon.GroupMap.curveEqn`. -/
-theorem ySquared_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q)
-    (nonResidue x : ZMod q) :
-    ySquared (.ofSpec spec nonResidue) x = _root_.Poseidon.GroupMap.curveEqn spec x := by
+theorem ySquared_ofSpec (spec : _root_.Poseidon.GroupMap.Spec q) (x : ZMod q) :
+    ySquared (.ofSpec spec) x = _root_.Poseidon.GroupMap.curveEqn spec x := by
   simp only [ySquared, _root_.Poseidon.GroupMap.curveEqn, GroupMapParams.ofSpec]
   ring
 
 /-- **The wire identification**: at a wire `Spec`, with the spec's own Tonelli–Shanks
 root as advice, the module's pure model computes the wire map's point — coordinate for
 coordinate, first-flagged candidate for first-flagged candidate. -/
-theorem groupMapPure_toGroup (spec : _root_.Poseidon.GroupMap.Spec q)
-    (nonResidue t : ZMod q) :
-    groupMapPure spec.sqrt.sqrt? (.ofSpec spec nonResidue) t
+theorem groupMapPure_toGroup (spec : _root_.Poseidon.GroupMap.Spec q) (t : ZMod q) :
+    groupMapPure spec.sqrt.sqrt? (.ofSpec spec) t
       = ((_root_.Poseidon.GroupMap.toGroup spec t).x,
           (_root_.Poseidon.GroupMap.toGroup spec t).y) := by
   have hys : ∀ x : ZMod q,
-      spec.sqrt.sqrt? (ySquared (GroupMapParams.ofSpec spec nonResidue) x)
+      spec.sqrt.sqrt? (ySquared (GroupMapParams.ofSpec spec) x)
         = _root_.Poseidon.GroupMap.getY spec x := fun x => by
     rw [ySquared_ofSpec, _root_.Poseidon.GroupMap.getY]
   rcases hg : _root_.Poseidon.GroupMap.toGroup spec t with ⟨px, py, hval⟩
@@ -630,22 +627,22 @@ wire spec's curve — `OnCurve`, the verifier's own predicate — at one of the 
 abscissae. The advice is universally quantified: soundness never consults it. -/
 theorem groupMapCircuit_onCurve_spec {V : Valuation (ZMod q)} {c : Type}
     [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
-    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q)
+    (spec : _root_.Poseidon.GroupMap.Spec q)
     (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
     ⦃⌜True⌝⦄
-    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec nonResidue) t
-    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).1 ∨
-        r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.1 ∨
-        r.x.val V = (potentialXs (.ofSpec spec nonResidue) (t.val V)).2.2) ∧
+    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec) t
+    ⦃⇓ r _ => ⌜(r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).1 ∨
+        r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).2.1 ∨
+        r.x.val V = (potentialXs (.ofSpec spec) (t.val V)).2.2) ∧
       OnCurve spec.E.A spec.E.B (r.x.val V, r.y.val V)⌝⦄ := by
   intro nv h hsat
   obtain ⟨hx, hy⟩ := groupMapCircuit_spec (c := c) (V := V) sqrtF
-    (.ofSpec spec nonResidue) t nv h hsat
+    (.ofSpec spec) t nv h hsat
   refine ⟨hx, ?_⟩
   show _ ^ 2 = _ ^ 3 + spec.E.A * _ + spec.E.B
   rw [spec.hA]
   simp only [ySquared] at hy
-  rw [show ((GroupMapParams.ofSpec spec nonResidue).b : ZMod q) = spec.E.B from rfl] at hy
+  rw [show ((GroupMapParams.ofSpec spec).b : ZMod q) = spec.E.B from rfl] at hy
   linear_combination hy
 
 open WeierstrassCurve.Affine in
@@ -658,19 +655,18 @@ at a genuine non-residue, `2 ≠ 0` comes from `q ≠ 2`, and the pure model is 
 nondegeneracy remain, with `q ≠ 3` pricing the flag-sum assertion. -/
 theorem groupMapCircuit_toGroup_complete {c : Type} [BasicSystem (ZMod q) c]
     [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
-    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q) (t : FVar (ZMod q))
-    (tv : ZMod q) (hq2 : q ≠ 2) (hq3 : q ≠ 3) (hnr0 : nonResidue ≠ 0)
-    (hnr : ¬IsSquare nonResidue)
+    (spec : _root_.Poseidon.GroupMap.Spec q) (t : FVar (ZMod q))
+    (tv : ZMod q) (hq2 : q ≠ 2) (hq3 : q ≠ 3)
     (hne : (tv * tv + spec.fu) * (tv * tv) ≠ 0)
-    (hsq : IsSquare (ySquared (.ofSpec spec nonResidue)
-          (potentialXs (.ofSpec spec nonResidue) tv).1) ∨
-        IsSquare (ySquared (.ofSpec spec nonResidue)
-          (potentialXs (.ofSpec spec nonResidue) tv).2.1) ∨
-        IsSquare (ySquared (.ofSpec spec nonResidue)
-          (potentialXs (.ofSpec spec nonResidue) tv).2.2)) :
+    (hsq : IsSquare (ySquared (.ofSpec spec)
+          (potentialXs (.ofSpec spec) tv).1) ∨
+        IsSquare (ySquared (.ofSpec spec)
+          (potentialXs (.ofSpec spec) tv).2.1) ∨
+        IsSquare (ySquared (.ofSpec spec)
+          (potentialXs (.ofSpec spec) tv).2.2)) :
     Complete (F := ZMod q) (c := c)
       (fun st => CircuitType.ReadsAs (val := ZMod q) st t tv)
-      (groupMapCircuit (c := c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t)
+      (groupMapCircuit (c := c) spec.sqrt.sqrt? (.ofSpec spec) t)
       (fun r st' =>
         CircuitType.ReadsAs (val := ZMod q) st' r.x
           (_root_.Poseidon.GroupMap.toGroup spec tv).x ∧
@@ -689,10 +685,13 @@ theorem groupMapCircuit_toGroup_complete {c : Type} [BasicSystem (ZMod q) c]
     rfl
   intro st ht
   obtain ⟨r, st', hrun, hsat, hx, hy⟩ :=
-    groupMapCircuit_complete (c := c) spec.sqrt.sqrt? (.ofSpec spec nonResidue) t tv
+    groupMapCircuit_complete (c := c) spec.sqrt.sqrt? (.ofSpec spec) t tv
       (Ring.two_ne_zero hchar) hthree hne
       (fun a y h => TonelliShanks.sqrt?_mul_self spec.sqrt h)
-      (sqrt?_twist spec.sqrt hchar hnr0 hnr)
+      (sqrt?_twist spec.sqrt hchar
+        (fun h => spec.nonResidue_spec
+          (by rw [show spec.nonResidue = 0 from h]; exact ⟨0, by ring⟩))
+        spec.nonResidue_spec)
       (hsq.imp (hsome _) (Or.imp (hsome _) (hsome _))) st ht
   rw [groupMapPure_toGroup] at hx hy
   exact ⟨r, st', hrun, hsat, hx, hy⟩
@@ -728,25 +727,26 @@ ordinate square zero, any satisfying valuation reads the result as the wire map'
 its sign. The advice is universally quantified. -/
 theorem groupMapCircuit_toGroup_spec {V : Valuation (ZMod q)} {c : Type}
     [BasicSystem (ZMod q) c] [ConstraintHolds (ZMod q) c] [LawfulBasicSystem (ZMod q) c]
-    (spec : _root_.Poseidon.GroupMap.Spec q) (nonResidue : ZMod q)
-    (hnr : ¬IsSquare nonResidue)
+    (spec : _root_.Poseidon.GroupMap.Spec q)
     (hnz : ∀ x : ZMod q, _root_.Poseidon.GroupMap.curveEqn spec x ≠ 0)
     (sqrtF : ZMod q → Option (ZMod q)) (t : FVar (ZMod q)) :
     ⦃⌜True⌝⦄
-    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec nonResidue) t
+    groupMapCircuit (c := Builder V c) sqrtF (.ofSpec spec) t
     ⦃⇓ r _ => ⌜r.x.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).x ∧
       (r.y.val V = (_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y ∨
         r.y.val V = -(_root_.Poseidon.GroupMap.toGroup spec (t.val V)).y)⌝⦄ := by
   refine builder_spec_imp _ _ _
-    (groupMapCircuit_first_spec (c := c) sqrtF (.ofSpec spec nonResidue) t) fun r h => ?_
+    (groupMapCircuit_first_spec (c := c) sqrtF (.ofSpec spec) t) fun r h => ?_
   simp only [potentialXs_ofSpec, ySquared_ofSpec] at h
   simp only [_root_.Poseidon.GroupMap.toGroup]
   have hnone : ∀ x : ZMod q, _root_.Poseidon.GroupMap.getY spec x = none →
       r.y.val V * r.y.val V = _root_.Poseidon.GroupMap.curveEqn spec x → False :=
     fun x hn hy => (getY_eq_none_iff spec x).mp hn ⟨_, hy.symm⟩
   have hsome : ∀ x y w : ZMod q, _root_.Poseidon.GroupMap.getY spec x = some y →
-      w * w = nonResidue * _root_.Poseidon.GroupMap.curveEqn spec x → False := fun x y w hs hw => by
-    rw [(getY_eq_none_iff spec x).mpr (not_isSquare_of_twist hnr (hnz x) hw)] at hs
+      w * w = spec.nonResidue * _root_.Poseidon.GroupMap.curveEqn spec x → False :=
+    fun x y w hs hw => by
+    rw [(getY_eq_none_iff spec x).mpr
+      (not_isSquare_of_twist spec.nonResidue_spec (hnz x) hw)] at hs
     cases hs
   have hsign : ∀ x y : ZMod q, _root_.Poseidon.GroupMap.getY spec x = some y →
       r.y.val V * r.y.val V = _root_.Poseidon.GroupMap.curveEqn spec x →

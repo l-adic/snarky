@@ -72,11 +72,11 @@ end Gadget
 
 section Side
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- A commitment cell list reads as a wire commitment list, pointwise through `equivPoint`. -/
-def CommReads (C : CommitmentCurve) (V : Valuation C.BaseField)
+def CommReads (C : KimchiCurve) (V : Valuation C.BaseField)
     (cells : List (AffinePoint (FVar C.BaseField))) (Ps : List C.Point) : Prop :=
   List.Forall₂ (fun cell P => OnCurveAt C.E.toAffine V cell (SWPoint.equivPoint C.E P)) cells Ps
 
@@ -100,9 +100,9 @@ def FtCommReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kimch
 /-! ## Reading helpers -/
 
 /-- The scalar order kills the affine group too, across `equivPoint`. -/
-private theorem IvpSide.aff_nsmul (S : IvpSide C V ops) (X : C.E.toAffine.Point) :
-    C.scalar • X = 0 := by
-  rw [← (SWPoint.equivPoint C.E).apply_symm_apply X, ← map_nsmul, S.card_nsmul, map_zero]
+private theorem IvpSide.aff_nsmul (_S : IvpSide C V ops) (X : C.E.toAffine.Point) :
+    C.scalar • X = 0 :=
+  C.affine_card_nsmul X
 
 /-- An integer acts on the affine group as its residue's representative in the scalar field. -/
 private theorem IvpSide.zsmul_eq (S : IvpSide C V ops) (z : ℤ) (X : C.E.toAffine.Point) :
@@ -118,14 +118,14 @@ private theorem IvpSide.scale_val (S : IvpSide C V ops) {x : sf} {w : S.R.wit}
   rw [S.zsmul_eq, S.dec_cast hpre, hdec]
 
 /-- The scalar-field Horner collapse of a point list, `P₀ + ξ·(P₁ + ξ·(…))` — `Σᵢ ξⁱ·Pᵢ`. -/
-private def hornerVal (C : CommitmentCurve) (ξ : C.ScalarField)
+private def hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
     (Ps : List C.E.toAffine.Point) : C.E.toAffine.Point :=
   Ps.foldr (fun P acc => P + ξ.val • acc) 0
 
 /-- Horner is linear in the points, across the crossing: the crossed collapse of the
 `s`-scaled wire points is `s.val` times the crossed collapse. Stated on the wire's own list
 shape (`map e (map (s • ·) cs)`) so the read can rewrite with it directly. -/
-private theorem hornerVal_map_smul (C : CommitmentCurve) (ξ s : C.ScalarField)
+private theorem hornerVal_map_smul (C : KimchiCurve) (ξ s : C.ScalarField)
     (cs : List C.Point) :
     hornerVal C ξ (List.map (SWPoint.equivPoint C.E) (List.map (fun P => s.val • P) cs))
       = s.val • hornerVal C ξ (List.map (SWPoint.equivPoint C.E) cs) := by
@@ -138,7 +138,7 @@ private theorem hornerVal_map_smul (C : CommitmentCurve) (ξ s : C.ScalarField)
       exact smul_comm _ _ _
 
 /-- `equivPoint` carries the wire's Horner fold to `hornerVal` over the mapped points. -/
-private theorem equivPoint_hornerVal (C : CommitmentCurve) (ξ : C.ScalarField)
+private theorem equivPoint_hornerVal (C : KimchiCurve) (ξ : C.ScalarField)
     (cs : List C.Point) :
     (SWPoint.equivPoint C.E) (cs.foldr (fun P acc => P + ξ.val • acc) 0)
       = hornerVal C ξ (cs.map (SWPoint.equivPoint C.E)) := by
@@ -182,8 +182,8 @@ private theorem hornerReduce_reads (S : IvpSide C V ops) (zM : sf) :
       have ih := hornerReduce_reads S zM (c' :: rest) (List.cons_ne_nil _ _)
       have hsc := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zM
       have hadd := fun (s : AffinePoint (FVar C.BaseField)) =>
-        addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
-          S.two_torsion_free c s
+        addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.curve.two_ne
+          S.curve.two_torsion_free c s
       mvcgen -trivial [-Snarky.Kimchi.addFast_spec, ih, hsc, hadd]
       clear ih
       rename_i _ _ _ hih _ _ hsc' _ _
@@ -235,8 +235,8 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   have hht := hornerReduce_reads S zetaMCell tCommCells hne
   have hscN := fun (r : AffinePoint (FVar C.BaseField)) => S.R.scale_reads r zetaNCell
   have hadd := fun (a b : AffinePoint (FVar C.BaseField)) =>
-    addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, S.a_zero⟩ S.two_ne
-      S.two_torsion_free a b
+    addFast_checkFinite_spec (V := V) C.E.toAffine ⟨rfl, rfl, rfl, C.a_zero⟩ S.curve.two_ne
+      S.curve.two_torsion_free a b
   mvcgen -trivial [-Snarky.Kimchi.addFast_spec, hhσ, hscP, hht, hscN, hadd]
   clear hhσ hht
   rename_i _ _ _ hhσ' _ _ hscP' _ _ hht' _ _ hscN' _ _ hadd1 _ _
@@ -269,9 +269,9 @@ theorem ftComm_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : 
   -- `hornerVal`, pull the `perm` scaling out, split `ζⁿ − 1`, and match `h2`.
   simp only [runFtComm, runFComm]
   rw [hζM, hsP, hζN]
-  have hcT := combineCommitments_eq_foldr C S.card_nsmul ζM cp.tComm.toList
+  have hcT := combineCommitments_eq_foldr C C.card_nsmul ζM cp.tComm.toList
   rw [Array.toArray_toList] at hcT
-  have hcσ := combineCommitments_eq_foldr C S.card_nsmul ζM
+  have hcσ := combineCommitments_eq_foldr C C.card_nsmul ζM
     ((cvk.sigmaComm[6]).toList.map (fun P => sP.val • P))
   rw [show ((cvk.sigmaComm[6]).toList.map (fun P => sP.val • P)).toArray
       = ((cvk.sigmaComm[6]).map (fun P => sP.val • P)).toArray

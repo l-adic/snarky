@@ -217,7 +217,7 @@ abbrev Fp := IpaVesta.curve.ScalarField
 
 /-- The production Poseidon MDS matrix over `Fp`. -/
 abbrev symMds : Kimchi.Gate.Poseidon.Mds Fp :=
-  Kimchi.Verifier.mdsOfParams IpaVesta.curve.frParams
+  Kimchi.Verifier.mdsOfParams IpaVesta.curve.frSponge.params
 
 instance : DecidableEq (MPoly Fp) := CPoly.Lawful.instDecidableEq
 
@@ -258,7 +258,7 @@ abbrev Fq := IpaPallas.curve.ScalarField
 
 /-- The production Poseidon MDS matrix over `Fq`. -/
 abbrev symMdsQ : Kimchi.Gate.Poseidon.Mds Fq :=
-  Kimchi.Verifier.mdsOfParams IpaPallas.curve.frParams
+  Kimchi.Verifier.mdsOfParams IpaPallas.curve.frSponge.params
 
 instance : DecidableEq (MPoly Fq) := CPoly.Lawful.instDecidableEq
 

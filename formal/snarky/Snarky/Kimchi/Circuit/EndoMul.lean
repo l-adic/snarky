@@ -8,6 +8,7 @@ import Snarky.DSL.Bits
 import Snarky.Kimchi.Semantics
 import Snarky.Traverse
 import Snarky.Kimchi.Circuit.AddComplete
+import Snarky.Kimchi.Circuit.Curve
 
 /-!
 # The EndoMul gadget
@@ -200,132 +201,6 @@ the row threading definitional: a round's output cells and its successor's input
 cells are the same variables. -/
 
 open Std.Do WeierstrassCurve.Affine
-
-/-- The endomorphism dictionary (PS `HasEndo` together with the ambient curve facts):
-the curve, the endomorphism coefficient and its scalar eigenvalue, and every
-curve-level fact the `endoMul` law pair consumes. This is the deep embedding's
-rendering of the PS typeclass dictionary — a structure passed explicitly, not a
-class, since the formal tree threads theorem content by argument. Generic circuit
-laws take one `HasEndo F` and compose over an abstract field the way the PS pickles
-circuits do; the deployed `HasEndo.pallas`/`HasEndo.vesta` discharge it, mirroring
-the instantiation at wrap/step main. -/
-structure HasEndo (F : Type) [Field F] [DecidableEq F] where
-  /-- The curve the base point and accumulators live on. -/
-  W : WeierstrassCurve.Affine F
-  /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
-  endo : F
-  /-- The scalar eigenvalue `λ` of the endomorphism: `φ(T) = [λ]·T`. -/
-  lam : ℤ
-  /-- The Pasta short-Weierstrass shape. -/
-  short : W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0 ∧ W.a₄ = 0
-  /-- The curve is smooth, so an on-curve point is nonsingular
-  (`equation_iff_nonsingular_of_Δ_ne_zero`). -/
-  delta_ne : W.Δ ≠ 0
-  /-- The group order is prime. -/
-  prime : Nat.Prime W.order
-  /-- The group order is not `2` — with `prime`, the group has no 2-torsion. -/
-  odd : W.order ≠ 2
-  /-- The field does not have characteristic `2`. -/
-  two_ne : (2 : F) ≠ 0
-  /-- The field does not have characteristic `3`. -/
-  three_ne : (3 : F) ≠ 0
-  /-- The eigenvalue relation `φ(T) = [λ]·T` at every on-curve point. -/
-  eigen : ∀ {x y : F} (hT : W.Nonsingular x y) (hφT : W.Nonsingular (endo * x) y),
-    Point.some _ _ hφT = lam • Point.some _ _ hT
-  /-- The endomorphism maps the curve to itself. -/
-  endo_nonsingular : ∀ {x y : F}, W.Nonsingular x y → W.Nonsingular (endo * x) y
-  /-- The GLV off-targets fact: a bounded nonzero two-base combination avoids `±T`,
-  `±φT` (`Kimchi.Gate.EndoMul.{pallas,vesta}_combo_off_targets`'s shape). -/
-  off_targets : ∀ {a b : ℤ}, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
-    ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
-      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
-      a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
-  /-- `[1 + λ]` does not kill a nonzero point — the init sum `T + φT` is finite. -/
-  lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
-  /-- The order is not `3` either: with `odd`, both `2` and `3` are units in
-  `ZMod order`, which lets the decompose tables be read in the scalar field. -/
-  order_ne_three : W.order ≠ 3
-  /-- The char window: integers below `2^127` in magnitude embed injectively in `F`,
-  so bounded fold values with equal `F`-images are equal integers. -/
-  char_big : ∀ z : ℤ, |z| < 2 ^ 127 → (z : F) = 0 → z = 0
-
-open WeierstrassCurve.Affine in
-/-- No point of the group is 2-torsion: the order is an odd prime, so doubling kills only
-zero. This is what the addition gadget asks of its first operand, and it holds of every
-point the dictionary describes. -/
-theorem HasEndo.two_torsion_free [Field F] [DecidableEq F] (d : HasEndo F)
-    (P : d.W.Point) (hne : P ≠ 0) : P + P ≠ 0 := by
-  haveI : Fact (Nat.Prime d.W.order) := ⟨d.prime⟩
-  haveI : Fact (d.W.a₁ = 0 ∧ d.W.a₂ = 0 ∧ d.W.a₃ = 0) :=
-    ⟨⟨d.short.1, d.short.2.1, d.short.2.2.1⟩⟩
-  have hlt : (2 : ℤ) < (d.W.order : ℤ) := by
-    have h2 := (Fact.out : Nat.Prime d.W.order).two_le
-    have h3 : 3 ≤ d.W.order := by
-      rcases Nat.lt_or_ge d.W.order 3 with h | h
-      · exact absurd (by omega : d.W.order = 2) d.odd
-      · exact h
-    exact_mod_cast h3
-  intro hzero
-  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt d.W hne (by norm_num) hlt
-    (by rw [two_zsmul, hzero])
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The dictionary at deployed Pallas: `pallasEndo`/`pallasLam`, the facts from
-`Pasta` (`pallas_eigen`, `pallas_endo_nonsingular`, `pallas_card`) and the GLV
-off-targets fact from the kimchi gate semantics. -/
-def HasEndo.pallas : HasEndo Fp where
-  W := Pallas.curve.toAffine
-  endo := pallasEndo
-  lam := pallasLam
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  delta_ne := by decide
-  prime := Fact.out
-  odd := by rw [pallas_card]; decide
-  two_ne := by decide
-  three_ne := by decide
-  eigen := fun hT _ => pallas_eigen hT
-  endo_nonsingular := fun h => pallas_endo_nonsingular h
-  off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
-    Kimchi.Gate.EndoMul.pallas_combo_off_targets ha hb hba hbb hTne heig
-  lam_succ_smul := fun T hTne => by
-    haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
-        ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Pallas.curve.toAffine hTne
-      (by norm_num [pallasLam])
-      (by rw [pallas_card]; norm_num [pallasLam])
-  order_ne_three := by rw [pallas_card]; decide
-  char_big := fun z hz h0 => by
-    have hdvd : ((PALLAS_BASE_CARD : ℕ) : ℤ) ∣ z :=
-      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
-    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
-
-open CompElliptic.Curves.Pasta CompElliptic.Fields.Pasta Pasta in
-/-- The dictionary at deployed Vesta — the other half of the 2-cycle. -/
-@[reducible] def HasEndo.vesta : HasEndo Fq where
-  W := Vesta.curve.toAffine
-  endo := vestaEndo
-  lam := vestaLam
-  short := ⟨rfl, rfl, rfl, rfl⟩
-  delta_ne := by decide
-  prime := Fact.out
-  odd := by rw [vesta_card]; decide
-  two_ne := by decide
-  three_ne := by decide
-  eigen := fun hT _ => vesta_eigen hT
-  endo_nonsingular := fun h => vesta_endo_nonsingular h
-  off_targets := fun {a b} ha hb hba hbb {T φT} hTne heig =>
-    Kimchi.Gate.EndoMul.vesta_combo_off_targets ha hb hba hbb hTne heig
-  lam_succ_smul := fun T hTne => by
-    haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
-        ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
-    exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt Vesta.curve.toAffine hTne
-      (by norm_num [vestaLam])
-      (by rw [vesta_card]; norm_num [vestaLam])
-  order_ne_three := by rw [vesta_card]; decide
-  char_big := fun z hz h0 => by
-    have hdvd : ((PALLAS_SCALAR_CARD : ℕ) : ℤ) ∣ z :=
-      (ZMod.intCast_zmod_eq_zero_iff_dvd z _).mp h0
-    exact Int.eq_zero_of_abs_lt_dvd hdvd (hz.trans (by norm_num))
 
 namespace EndoMul
 
@@ -1564,7 +1439,7 @@ theorem toField_crumbsOf_eq_endoExpandZ [Field F] [DecidableEq F] (d : HasEndo F
   rfl
 
 open WeierstrassCurve.Affine Kimchi.Gate.EndoScalar in
-open Kimchi.Gate.VarBaseMul (smul_ne_zero_of_lt smul_eq_smul_of_zmod_eq) in
+open Kimchi.Gate.VarBaseMul (smul_eq_smul_of_zmod_eq) in
 /-- **Completeness**, at the honest advice — the gadget instantiated in its own scalar
 field (`q := W.order`, `λ' := λ mod q`). On an input reading as a curve point and a
 challenge faithful and within the deployed width, the run succeeds, every row it emits
@@ -1598,7 +1473,7 @@ theorem endoInv_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   have hkne : k ≠ 0 := by rw [hkdef, Ne, ZMod.val_eq_zero]; exact inv_ne_zero hs0
   have hklt : k < d.W.order := ZMod.val_lt _
   have hkG : ((k : ℕ) : ℤ) • G ≠ 0 :=
-    smul_ne_zero_of_lt d.W hGne (by exact_mod_cast Nat.pos_of_ne_zero hkne)
+    _root_.Pasta.smul_ne_zero_of_lt d.W hGne (by exact_mod_cast Nat.pos_of_ne_zero hkne)
       (by exact_mod_cast hklt)
   obtain ⟨px, py, hpns, hpteq⟩ :
       ∃ px py, ∃ h : d.W.Nonsingular px py, (k : ℕ) • G = Point.some _ _ h := by
@@ -1753,17 +1628,16 @@ theorem vesta_endoMul_complete {t : AffinePoint (FVar Fq)} {cv : FVar Fq} {xv yv
         CircuitType.ReadsAs (val := Fq) st cv ((n : ℕ) : Fq))
       (Snarky.Kimchi.endoMul (c := KimchiConstraint Fq) HasEndo.vesta.endo 32 t ⟨cv⟩)
       (fun r st' => OnCurveAs HasEndo.vesta.W st' r
-        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
+        ((Poseidon.FqSponge.endoExpand ((HasEndo.vesta.lam : ℤ) : Fp) n : Fp)
           • Point.some _ _ hT)) := by
   have hcard : n < LawfulToNat.card (F := Fq) := by
     show n < PALLAS_SCALAR_CARD
     exact lt_of_lt_of_le hn (by decide)
   have hrep : ToNat.toNat ((n : ℕ) : Fq) = n := LawfulToNat.toNat_natCast n hcard
   have hfits : ToNat.toNat ((n : ℕ) : Fq) < 2 ^ 128 := by rw [hrep]; exact hn
-  have hexp : (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp)
+  have hexp : (Poseidon.FqSponge.endoExpand ((HasEndo.vesta.lam : ℤ) : Fp) n : Fp)
       = ((endoExpandZ HasEndo.vesta.lam n : ℤ) : Fp) := by
-    rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-      endoExpandZ_cast (by decide) (by decide)]
+    rw [endoExpandZ_cast (by decide) (by decide)]
   have hgen := endoMul_complete HasEndo.vesta t ⟨cv⟩ xv yv ((n : ℕ) : Fq) hT hfits
   intro st hst
   obtain ⟨r, st', hrun, hsat, hpt⟩ := hgen st hst
@@ -1792,7 +1666,7 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
         OnCurveAt Vesta.curve.toAffine V r (endoExpandZ HasEndo.vesta.lam m • T)) :
     ∀ T : Vesta.curve.toAffine.Point, OnCurveAt Vesta.curve.toAffine V t T →
       OnCurveAt Vesta.curve.toAffine V r
-        ((Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam n : Fp) • T) := by
+        ((Poseidon.FqSponge.endoExpand ((HasEndo.vesta.lam : ℤ) : Fp) n : Fp) • T) := by
   intro T hT
   obtain ⟨m, hm, hmread, hseq⟩ := h T hT
   have hmn : m = n :=
@@ -1801,8 +1675,7 @@ theorem vesta_endoMul_read {V : Valuation Fq} {t r : AffinePoint (FVar Fq)}
       (Set.mem_Iio.mpr (lt_of_lt_of_le hn (by decide)))
       (by rw [← hmread, hread])
   subst hmn
-  rw [show Poseidon.FqVesta.spec.lam = ((HasEndo.vesta.lam : ℤ) : Fp) from rfl,
-    ← endoExpandZ_cast (by decide) (by decide), Int.cast_smul_eq_zsmul]
+  rw [← endoExpandZ_cast (by decide) (by decide), Int.cast_smul_eq_zsmul]
   exact hseq
 
 end EndoMul

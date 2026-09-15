@@ -77,8 +77,8 @@ def roots : List Name :=
     `Pickles.bulletReduce_spec,
     `Pickles.ipaFinalCheck_spec,
     `Pickles.checkBulletproof_spec_success,
-    `Pickles.schnorrPoint_iff_schnorrAt_vesta,
-    `Pickles.schnorrPoint_iff_schnorrAt_pallas,
+    `Pickles.schnorrPoint_iff_schnorrAt,
+    `Pickles.hornerCombine_eq,
     `Pickles.IvpSide.opening_reads,
     `Pickles.wrapSide,
     `Pickles.stepSide,
@@ -94,9 +94,7 @@ def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
 streams, each resting on `Certificate.lean`'s decisions, and those at the deployed curves,
 resting on CompElliptic's order and primality certificates. -/
 def deployedRoots : List Name :=
-  [ `Pickles.schnorrPoint_iff_schnorrAt_vesta,
-    `Pickles.schnorrPoint_iff_schnorrAt_pallas,
-    `Pickles.wrapSide,
+  [ `Pickles.wrapSide,
     `Pickles.stepSide,
     `Pickles.incrementallyVerifyProof_wrap_reads,
     `Pickles.incrementallyVerifyProof_step_reads,

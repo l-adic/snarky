@@ -386,4 +386,128 @@ theorem vesta_glv_no_short_relation {a b : ℤ} (hne : a ≠ 0 ∨ b ≠ 0)
     (v := 28855319743346159024713648477422223361)
     (by decide) (by decide) (by decide) (by decide) (by decide) hne ha hb
 
+/-! ## GLV off-targets
+
+That the ladder's two-base accumulator never lands back on `±T` or `±φT`. Pure group theory
+on top of the lattice facts above: nothing here mentions a gate or a circuit. -/
+
+/-- `|x| < 2¹²⁶` keeps the offsets `x ∓ 1` inside the GLV bound `2¹²⁶`. -/
+private lemma abs_offset_lt {x : ℤ} (hx : |x| < 2 ^ 126) :
+    |x - 1| ≤ 2 ^ 126 ∧ |x + 1| ≤ 2 ^ 126 := by
+  rw [abs_lt] at hx
+  exact ⟨by rw [abs_le]; omega, by rw [abs_le]; omega⟩
+
+/-- **GLV off-targets.** With the eigenvalue `φT = [λ]·T` and the four no-short-relation facts
+for the accumulator's offset coefficients, the two-base combination `[a]·T + [b]·φT` is none of
+`±T`, `±φT`. -/
+private theorem combo_off_targets {F : Type*} [Field F] [DecidableEq F]
+    (W : WeierstrassCurve.Affine F)
+    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
+    {T φT : W.Point} (hTne : T ≠ 0) {lam : ℤ} (heig : φT = lam • T) {a b : ℤ}
+    (h1 : ¬ (W.order : ℤ) ∣ (a - 1 + b * lam))
+    (h2 : ¬ (W.order : ℤ) ∣ (a + 1 + b * lam))
+    (h3 : ¬ (W.order : ℤ) ∣ (a + (b - 1) * lam))
+    (h4 : ¬ (W.order : ℤ) ∣ (a + (b + 1) * lam)) :
+    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
+      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
+  have combo : ∀ c : ℤ, a • T + b • φT = c • T ↔ (W.order : ℤ) ∣ (a + b * lam - c) := by
+    intro c
+    have e : a • T + b • φT - c • T = (a + b * lam - c) • T := by rw [heig]; module
+    rw [← sub_eq_zero, e, zsmul_eq_zero_iff_order_dvd W hTne]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro hP
+    exact h1 (by have := (combo 1).mp (hP.trans (one_zsmul T).symm)
+                 rwa [show a + b * lam - 1 = a - 1 + b * lam by ring] at this)
+  · intro hP
+    exact h2 (by have := (combo (-1)).mp (hP.trans (neg_one_zsmul T).symm)
+                 rwa [show a + b * lam - (-1) = a + 1 + b * lam by ring] at this)
+  · intro hP
+    exact h3 (by have := (combo lam).mp (hP.trans (by rw [heig]))
+                 rwa [show a + b * lam - lam = a + (b - 1) * lam by ring] at this)
+  · intro hP
+    exact h4 (by have := (combo (-lam)).mp (hP.trans (by rw [heig]; simp))
+                 rwa [show a + b * lam - -lam = a + (b + 1) * lam by ring] at this)
+
+/-- **GLV off-targets at Pallas.** A bounded nonzero two-base accumulator avoids `±T`, `±φT`. -/
+theorem pallas_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
+    (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126)
+    {T φT : Pallas.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = pallasLam • T) :
+    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
+      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
+  obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
+  obtain ⟨hb1, hb1'⟩ := abs_offset_lt hbb
+  exact combo_off_targets Pallas.curve.toAffine hTne heig
+    (pallas_glv_no_short_relation (Or.inr hb) ha1 hbb.le)
+    (pallas_glv_no_short_relation (Or.inr hb) ha1' hbb.le)
+    (pallas_glv_no_short_relation (Or.inl ha) hba.le hb1)
+    (pallas_glv_no_short_relation (Or.inl ha) hba.le hb1')
+
+/-- **GLV off-targets at Vesta** — the other half of the 2-cycle. -/
+theorem vesta_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
+    (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126)
+    {T φT : Vesta.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = vestaLam • T) :
+    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
+      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
+  obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
+  obtain ⟨hb1, hb1'⟩ := abs_offset_lt hbb
+  exact combo_off_targets Vesta.curve.toAffine hTne heig
+    (vesta_glv_no_short_relation (Or.inr hb) ha1 hbb.le)
+    (vesta_glv_no_short_relation (Or.inr hb) ha1' hbb.le)
+    (vesta_glv_no_short_relation (Or.inl ha) hba.le hb1)
+    (vesta_glv_no_short_relation (Or.inl ha) hba.le hb1')
+
+/-! ## The endomorphism, as the wire states it -/
+
+/-- A curve's GLV endomorphism: the coefficient `β` with `φ(x, y) = (β·x, y)`, its scalar
+eigenvalue `λ`, and the two facts that make the ladder sound — that `φ` maps the curve to
+itself, and that the bounded two-base accumulator stays off `±T`, `±φT`.
+
+The circuit twin is `Snarky.Kimchi.HasEndo`, which adds only what the gate semantics need on
+top of a `HasCurve`. There are exactly two of these, `vestaEndoSpec` and `pallasEndoSpec`. -/
+structure EndoSpec {F : Type*} [Field F] [DecidableEq F] (W : WeierstrassCurve.Affine F) where
+  /-- The endomorphism coefficient `β`: `φ(x, y) = (β·x, y)`. -/
+  coeff : F
+  /-- The scalar eigenvalue `λ` of the endomorphism: `φ(T) = [λ]·T`. -/
+  lam : ℤ
+  /-- The endomorphism maps the curve to itself. -/
+  endo_nonsingular : ∀ {x y : F}, W.Nonsingular x y → W.Nonsingular (coeff * x) y
+  /-- The eigenvalue relation `φ(T) = [λ]·T` at every on-curve point. -/
+  eigen : ∀ {x y : F} (h : W.Nonsingular x y),
+    Point.some _ _ (endo_nonsingular h) = lam • Point.some _ _ h
+  /-- A bounded nonzero two-base combination avoids `±T`, `±φT`. -/
+  off_targets : ∀ {a b : ℤ}, a ≠ 0 → b ≠ 0 → |a| < 2 ^ 126 → |b| < 2 ^ 126 →
+    ∀ {T φT : W.Point}, T ≠ 0 → φT = lam • T →
+      a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T ∧
+      a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT
+  /-- `[1 + λ]` does not kill a nonzero point, so the GLV init sum `T + φT` is finite. -/
+  lam_succ_smul : ∀ T : W.Point, T ≠ 0 → (1 + lam) • T ≠ 0
+
+/-- Vesta's endomorphism. -/
+def vestaEndoSpec : EndoSpec Vesta.curve.toAffine where
+  coeff := vestaEndo
+  lam := vestaLam
+  endo_nonsingular h := vesta_endo_nonsingular h
+  eigen h := vesta_eigen h
+  off_targets := fun {_ _} ha hb hba hbb {_ _} hTne heig =>
+    vesta_combo_off_targets ha hb hba hbb hTne heig
+  lam_succ_smul := fun T hTne => by
+    haveI : Fact (Vesta.curve.toAffine.a₁ = 0 ∧ Vesta.curve.toAffine.a₂ = 0
+        ∧ Vesta.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
+    exact smul_ne_zero_of_lt Vesta.curve.toAffine hTne (by norm_num [vestaLam])
+      (by rw [vesta_card]; norm_num [vestaLam])
+
+/-- Pallas's endomorphism. -/
+def pallasEndoSpec : EndoSpec Pallas.curve.toAffine where
+  coeff := pallasEndo
+  lam := pallasLam
+  endo_nonsingular h := pallas_endo_nonsingular h
+  eigen h := pallas_eigen h
+  off_targets := fun {_ _} ha hb hba hbb {_ _} hTne heig =>
+    pallas_combo_off_targets ha hb hba hbb hTne heig
+  lam_succ_smul := fun T hTne => by
+    haveI : Fact (Pallas.curve.toAffine.a₁ = 0 ∧ Pallas.curve.toAffine.a₂ = 0
+        ∧ Pallas.curve.toAffine.a₃ = 0) := ⟨rfl, rfl, rfl⟩
+    exact smul_ne_zero_of_lt Pallas.curve.toAffine hTne (by norm_num [pallasLam])
+      (by rw [pallas_card]; norm_num [pallasLam])
+
 end Pasta

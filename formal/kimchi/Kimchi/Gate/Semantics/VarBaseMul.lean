@@ -1093,31 +1093,6 @@ point `T`, with `k` strictly between `1` and `order − 1`, is neither `T` nor `
 different `x`-coordinate than `T`. These library lemmas are the mathematical core of "the partial
 accumulators stay away from `±T`", consumed by the per-row non-degeneracy below. -/
 
-/-- **Core non-degeneracy.** With prime `order`, a nonzero point times a scalar strictly
-    between `0` and `order` is nonzero. -/
-lemma smul_ne_zero_of_lt (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0)
-    {k : ℤ} (h0 : 0 < k) (hlt : k < (c.order : ℤ)) : k • T ≠ 0 := by
-  intro h_contra
-  -- prime `order` together with `0 < k < order` forces `gcd k order = 1`
-  have h_coprime : Int.gcd k (c.order : ℤ) = 1 := by
-    refine Nat.coprime_comm.mp
-      ((Fact.out : Nat.Prime c.order).coprime_iff_not_dvd.mpr fun hd => ?_)
-    have := Int.le_of_dvd (by positivity) (Int.natCast_dvd.mpr hd)
-    omega
-  -- Bézout: `k * a + order * b = 1`
-  obtain ⟨a, b, hab⟩ : ∃ a b : ℤ, k * a + (c.order : ℤ) * b = 1 := by
-    have h := Int.gcd_eq_gcd_ab k (c.order : ℤ)
-    exact ⟨_, _, h.symm.trans (by rw [h_coprime]; simp)⟩
-  -- hence `T = a • (k • T) + b • (order • T)`, and both terms vanish
-  have h_decomp : T = a • (k • T) + b • ((c.order : ℤ) • T) := by
-    rw [← mul_smul, ← mul_smul, ← add_smul, mul_comm a k, mul_comm b (c.order : ℤ), hab,
-      one_zsmul]
-  have hord : (c.order : ℤ) • T = 0 := by rw [natCast_zsmul]; exact card_nsmul_eq_zero'
-  rw [h_contra, hord, smul_zero, smul_zero, add_zero] at h_decomp
-  exact hT h_decomp
-
 omit [DecidableEq F] in
 /-- **x-coordinate bridge.** On a short-Weierstrass curve, a point that is neither `T`
     nor `−T` has a different `x`-coordinate. -/
@@ -1192,7 +1167,7 @@ lemma y_ne_zero_of_odd_order (c : WeierstrassCurve.Affine F)
   have hlt : (2 : ℤ) < (c.order : ℤ) := by
     have : 3 ≤ c.order := by have := (Fact.out : Nat.Prime c.order).two_le; omega
     exact_mod_cast this
-  exact smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
+  exact Pasta.smul_ne_zero_of_lt c hPne (by norm_num) hlt h2P
 
 /-- **t-condition self-enforcement.** The gate constraints together with prime order
     already force `t ≠ 0` — the forbidden check is *not* needed for the second-addition
@@ -1265,23 +1240,6 @@ theorem mem_forbiddenValues_of_dvd_sub_one (order : ℕ) {s : ℤ}
     (h : (order : ℤ) ∣ (s - 1)) : s ∈ forbiddenValues order :=
   ⟨1, by decide, h⟩
 
-/-- **Prime order ⇒ full order.** For a nonzero point `T` on a `short-Weierstrass curve`, a scalar
-    multiple `m • T` vanishes iff `order ∣ m`. (`order` is prime and `order • T = 0`, so
-    `addOrderOf T ∣ order`; nonzero `T` rules out `addOrderOf T = 1`, hence it equals
-    `order`.) -/
-lemma zsmul_eq_zero_iff_order_dvd (c : WeierstrassCurve.Affine F)
-    [Fact (c.a₁ = 0 ∧ c.a₂ = 0 ∧ c.a₃ = 0)]
-    [Fact (Nat.Prime c.order)] {T : c.Point} (hT : T ≠ 0) (m : ℤ) :
-    m • T = 0 ↔ (c.order : ℤ) ∣ m := by
-  have hdvd : (addOrderOf T : ℤ) ∣ (c.order : ℤ) :=
-    addOrderOf_dvd_iff_zsmul_eq_zero.mpr (by rw [natCast_zsmul]; exact card_nsmul_eq_zero')
-  have horder : addOrderOf T = c.order := by
-    have hnat : addOrderOf T ∣ c.order := by exact_mod_cast hdvd
-    rcases Nat.Prime.eq_one_or_self_of_dvd (Fact.out : Nat.Prime c.order) _ hnat with h1 | h1
-    · exact absurd (AddMonoid.addOrderOf_eq_one_iff.mp h1) hT
-    · exact h1
-  rw [← addOrderOf_dvd_iff_zsmul_eq_zero, horder]
-
 
 /-- **Off the base.** Under either ladder regime the run's scalar does not fix the base:
 `[2z + 2^L]·T ≠ 0`, i.e. `[2z + 2^L + 1]·T ≠ T`. Subwrap prices it by size, the one-wrap
@@ -1295,13 +1253,13 @@ theorem ladder_off_base (c : WeierstrassCurve.Affine F)
     (2 * z + 2 ^ L) • T ≠ 0 := by
   have hpow : (0 : ℤ) < 2 ^ L := by positivity
   rcases hregime with hsub | ⟨-, -, -, hnf⟩
-  · refine smul_ne_zero_of_lt c hT (by omega) ?_
+  · refine Pasta.smul_ne_zero_of_lt c hT (by omega) ?_
     have h3 : (3 : ℤ) * 2 ^ L ≤ (c.order : ℤ) := by exact_mod_cast hsub
     have : (2 : ℤ) ^ L = 2 ^ L := rfl
     omega
   · intro h
     exact hnf (mem_forbiddenValues_of_dvd_sub_one c.order
-      (by simpa using (zsmul_eq_zero_iff_order_dvd c hT _).mp h))
+      (by simpa using (Pasta.zsmul_eq_zero_iff_order_dvd c hT _).mp h))
 
 /-- The raw bit processed at sub-step `j`: bit `j % 5` of gate `j / 5`. -/
 private def gateBit (g : ℕ → Witness F) (j : ℕ) : F :=
@@ -1415,9 +1373,9 @@ private lemma gate_step_advance' (c : WeierstrassCurve.Affine F)
     · contrapose! hkx1
       have hd : (k - 1) • Point.some _ _ hTns = 0 := by
         rw [sub_smul, one_smul, ← hIk, hkx1, sub_self]
-      exact (zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
+      exact (Pasta.zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
     · contrapose! hkx2
-      rw [← zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hkx2,
+      rw [← Pasta.zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hkx2,
         neg_add_cancel]
   have htne : 2 * xi + xT - s1 * s1 ≠ 0 := tne_of_holds c h2 hodd hI hh
   obtain ⟨hO, hOeq⟩ := singleBit_sound c hshort b xT yT s1 xi yi xo yo hI hQ hxne htne hh
@@ -2316,7 +2274,7 @@ private lemma step_produce (c : WeierstrassCurve.Affine F)
     · contrapose! hq1
       have hd : (k - 1) • Point.some _ _ hTns = 0 := by
         rw [sub_smul, one_smul, ← hIk, hq1, sub_self]
-      exact (zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
+      exact (Pasta.zsmul_eq_zero_iff_order_dvd c hTne _).1 hd
     · contrapose! hq2
       rw [← zsmul_eq_zero_iff_order_dvd c hTne, add_zsmul, one_zsmul, ← hIk, hq2,
         neg_add_cancel]

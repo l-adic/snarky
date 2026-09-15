@@ -714,7 +714,8 @@ as the input point. -/
 def fqSpongeTranscriptStepCircuit (input : Vector (FVar Fp) 53) : CircuitM Fp C PUnit := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
-  let _ ← Pickles.fqSpongeTranscript Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam)
+  let _ ← Pickles.fqSpongeTranscript Bulletproof.IpaVesta.curve.frSponge.params
+    (.const endoVestaLam)
     (get 0) [pt 1, pt 3] (pure [pt 5]) ((List.range 15).map fun j => [pt (7 + 2 * j)]) [pt 37]
     ((List.range 7).map fun j => pt (39 + 2 * j))
   pure PUnit.unit
@@ -726,7 +727,7 @@ def fqSpongeTranscriptStepCircuit (input : Vector (FVar Fp) 53) : CircuitM Fp C 
 def fqSpongeTranscriptWrapCircuit (input : Vector (FVar Fq) 55) : CircuitM Fq Cq PUnit := do
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
-  let _ ← Pickles.fqSpongeTranscriptOpt Bulletproof.IpaPallas.curve.frParams
+  let _ ← Pickles.fqSpongeTranscriptOpt Bulletproof.IpaPallas.curve.frSponge.params
     (.const endoPallasLam) (get 2) [(.unchecked (get 0), pt 3), (.unchecked (get 1), pt 5)] [pt 7]
     ((List.range 15).map fun j => [pt (9 + 2 * j)]) [pt 39]
     ((List.range 7).map fun j => pt (41 + 2 * j))
@@ -743,7 +744,7 @@ production. -/
 
 /-- The SRS blinding base `h` of a fixture (`srs_h`, the same production SRS the IPA
 fixture checks read), as a constant point. -/
-def blindingBase (C : Bulletproof.Ipa.CommitmentCurve) (path : System.FilePath) :
+def blindingBase (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
     IO (AffinePoint (FVar (ZMod C.base))) := do
   let raw ← IO.FS.readFile path
   match Json.parse raw >>= fun j => j.getObjVal? "srs_h" >>= Bulletproof.Fixture.parsePt C with
@@ -761,7 +762,7 @@ def checkBulletproofStepCircuit (blindingH : AffinePoint (FVar Fp)) (input : Vec
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   let sv : SpongeVar Fp := ⟨⟨get 0, get 1, get 2⟩, .squeezed 1⟩
   let _ ← Pickles.checkBulletproof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
-    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
+    Bulletproof.IpaVesta.curve.frSponge.params (.const endoVestaLam) Pickles.groupMapParamsPallas
     (fun _ => none) sv
     ((List.range 47).map fun j => (pt (4 + 2 * j), none))
     { xi := ⟨get 3⟩
@@ -814,7 +815,7 @@ def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ →
 /-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the
 step shifts, `srs_length_log2 = 16`, `zk_rows = 3`. -/
 def fopStepParams : Pickles.FopParams Fp :=
-  { sponge := Bulletproof.IpaVesta.curve.frParams, endoLam := endoVestaLam,
+  { sponge := Bulletproof.IpaVesta.curve.frSponge.params, endoLam := endoVestaLam,
     endo := Kimchi.Fixture.PS.fpSide.endo, mds := Kimchi.Fixture.PS.fpSide.mds,
     toks := Pickles.Linearization.fpTokens, shifts := stepShifts, srsLengthLog2 := 16,
     zkRows := 3 }
@@ -832,7 +833,7 @@ def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C
 /-- The wrap side's parameters: the Pallas fr-sponge, `λ`, the `Fq` linearization and the
 wrap shifts, `srs_length_log2 = 15`, `zk_rows = 3`. -/
 def fopWrapParams : Pickles.FopParams Fq :=
-  { sponge := Bulletproof.IpaPallas.curve.frParams, endoLam := endoPallasLam,
+  { sponge := Bulletproof.IpaPallas.curve.frSponge.params, endoLam := endoPallasLam,
     endo := Kimchi.Fixture.PS.fqSide.endo, mds := Kimchi.Fixture.PS.fqSide.mds,
     toks := Pickles.Linearization.fqTokens, shifts := wrapShifts, srsLengthLog2 := 15,
     zkRows := 3 }
@@ -869,7 +870,7 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
     [(pt 6, some (.unchecked (get 4))), (pt 8, some (.unchecked (get 5)))]
       ++ (List.range 45).map fun j => (pt (10 + 2 * j), none)
   let _ ← Pickles.checkBulletproof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
-    Bulletproof.IpaPallas.curve.frParams (.const endoPallasLam) Pickles.groupMapParamsVesta
+    Bulletproof.IpaPallas.curve.frSponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
     (fun _ => none) sv
     bases
     { xi := ⟨get 3⟩
@@ -936,7 +937,7 @@ def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
 (`{lagrange : [[x,y]×n], h : [x,y]}`, decimal pairs), parsed as points of `C` — `IpaVesta` for
 `xhat_wrap_lagrange.json`, `IpaPallas` for `xhat_step_lagrange.json`. The corrections are
 derived in-circuit. -/
-def xhatPoints (C : Bulletproof.Ipa.CommitmentCurve) (path : System.FilePath) :
+def xhatPoints (C : Bulletproof.Ipa.KimchiCurve) (path : System.FilePath) :
     IO (Array C.Point × AffinePoint (FVar C.BaseField)) := do
   let raw ← IO.FS.readFile path
   let parsed : Except String (Array C.Point × C.Point) := do
@@ -1070,8 +1071,8 @@ sponge — 28 copies of the generator. -/
 def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
   (List.replicate 28 pallasGenerator).foldlM
     (fun sv P => do
-      let sv ← SpongeVar.absorb Bulletproof.IpaVesta.curve.frParams sv P.x
-      SpongeVar.absorb Bulletproof.IpaVesta.curve.frParams sv P.y)
+      let sv ← SpongeVar.absorb Bulletproof.IpaVesta.curve.frSponge.params sv P.x
+      SpongeVar.absorb Bulletproof.IpaVesta.curve.frSponge.params sv P.y)
     SpongeVar.init
 
 /-- The group half's cells from the 175-input layout at `get`: the claims and the opening
@@ -1104,7 +1105,7 @@ def ivpStepCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let sv ← dummyIndexSponge
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
-    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
+    Bulletproof.IpaVesta.curve.frSponge.params (.const endoVestaLam) Pickles.groupMapParamsPallas
     (fun _ => none) false h sv (xhatStepCommit pts h get) (ivpStepInput get)
   assertEqual o.spongeDigest (get 174)
   for c in ((List.range 15).map fun j => get (45 + j)).zip o.bulletproofChallenges do
@@ -1194,7 +1195,7 @@ def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar F
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let sv ← dummyIndexSponge
   let _ ← Pickles.verifyProof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
-    Bulletproof.IpaVesta.curve.frParams (.const endoVestaLam) Pickles.groupMapParamsPallas
+    Bulletproof.IpaVesta.curve.frSponge.params (.const endoVestaLam) Pickles.groupMapParamsPallas
     (fun _ => none) h (stepVerifyTable pts) sv (.unchecked (get 265)) (stepVerifyStatement get)
     (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit

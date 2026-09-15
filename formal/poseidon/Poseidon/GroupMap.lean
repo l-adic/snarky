@@ -64,6 +64,13 @@ structure Spec (q : ℕ) [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod 
   sqrtNegThreeUSquaredMinusUOver2 : ZMod q
   /-- `(3u²)⁻¹` (`setup()`). -/
   invThreeUSquared : ZMod q
+  /-- A known quadratic non-residue of the base field. The map itself never uses it — it
+  retries candidates — but an in-circuit implementation cannot retry, and certifies a failed
+  root by exhibiting a square of the twist instead. It lives here because it is a fact about
+  this field's square roots, like `sqrt`, and because there is one of these per curve. -/
+  nonResidue : ZMod q
+  /-- It is a genuine non-residue, which is what makes a failed root certifiable. -/
+  nonResidue_spec : ¬IsSquare nonResidue
 
 variable {q : ℕ} [Field (ZMod q)] [Fintype (ZMod q)] [DecidableEq (ZMod q)]
 
@@ -152,6 +159,8 @@ def spec : GroupMap.Spec PALLAS_SCALAR_CARD where
   sqrtNegThreeUSquared := sqrtNegThreeUSquared
   sqrtNegThreeUSquaredMinusUOver2 := sqrtNegThreeUSquaredMinusUOver2
   invThreeUSquared := invThreeUSquared
+  nonResidue := 5
+  nonResidue_spec := Vesta.five_not_isSquare
 
 example : fu = GroupMap.curveEqn spec u := by decide
 
@@ -205,6 +214,8 @@ def spec : GroupMap.Spec PALLAS_BASE_CARD where
   sqrtNegThreeUSquared := sqrtNegThreeUSquared
   sqrtNegThreeUSquaredMinusUOver2 := sqrtNegThreeUSquaredMinusUOver2
   invThreeUSquared := invThreeUSquared
+  nonResidue := 5
+  nonResidue_spec := Pallas.five_not_isSquare
 
 example : fu = GroupMap.curveEqn spec u := by decide
 

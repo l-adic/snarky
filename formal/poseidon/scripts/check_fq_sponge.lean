@@ -45,19 +45,20 @@ def parseOp {F Fr : Type} [Field F] [DecidableEq F] (E : SWCurve F)
 /-- One op's transition and verdict: absorptions are free, squeezes compare against the
 expectation. -/
 def step {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
-    (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : FqSponge.S base)
+    (spec : Spec base scalar) (lam : ZMod scalar) {E : SWCurve (ZMod base)} (s : FqSponge.S base)
     (op : VOp E (ZMod scalar)) : FqSponge.S base × Bool :=
   match op with
   | .absorbFr x => (absorbFr spec s x, true)
   | .absorbG P => (absorbG spec s P, true)
   | .challengeFq e => let (x, s) := challengeFq spec s; (s, decide (x = e))
   | .challenge e => let (x, s) := challenge spec s; (s, decide (x = e))
-  | .squeezeChallenge e => let (x, s) := squeezeChallenge spec s; (s, decide (x = e))
+  | .squeezeChallenge e => let (x, s) := squeezeChallenge spec lam s; (s, decide (x = e))
 
 def checkSponge {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
-    (spec : Spec base scalar) (E : SWCurve (ZMod base)) (path : String) : IO Bool :=
+    (spec : Spec base scalar) (lam : ZMod scalar) (E : SWCurve (ZMod base)) (path : String) :
+    IO Bool :=
   Trace.check (parseOp E (parseZMod (n := base)) (parseZMod (n := scalar))) FqSponge.init
-    (step spec) path
+    (step spec lam) path
 
 def checkGroupMap {q : ℕ} [Field (ZMod q)] [DecidableEq (ZMod q)]
     (toGroup : ZMod q → ZMod q × ZMod q) (path : String) : IO Bool := do
@@ -76,8 +77,10 @@ def checkGroupMap {q : ℕ} [Field (ZMod q)] [DecidableEq (ZMod q)]
 
 def main : IO Unit := do
   let dir := (← IO.getEnv "POSEIDON_FIXTURES_DIR").getD "fixtures"
-  let okV ← checkSponge FqVesta.spec Vesta.curve s!"{dir}/fq_sponge_vectors.json"
-  let okP ← checkSponge FqPallas.spec Pallas.curve s!"{dir}/fq_sponge_pallas_vectors.json"
+  let okV ← checkSponge FqVesta.spec ((Pasta.vestaLam : ℤ) : ZMod _) Vesta.curve
+    s!"{dir}/fq_sponge_vectors.json"
+  let okP ← checkSponge FqPallas.spec ((Pasta.pallasLam : ℤ) : ZMod _) Pallas.curve
+    s!"{dir}/fq_sponge_pallas_vectors.json"
   let okGV ← checkGroupMap (fun t => let u := GroupMapVesta.toGroup t; (u.x, u.y))
     s!"{dir}/group_map_vectors.json"
   let okGP ← checkGroupMap (fun t => let u := GroupMapPallas.toGroup t; (u.x, u.y))

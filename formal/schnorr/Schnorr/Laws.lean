@@ -134,7 +134,7 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
     Point.some raw.u.point.x raw.u.point.y (nonsingular_toW huC) with hUUdef
   set GG : Vesta.curve.toAffine.Point := Point.some gen.x gen.y gen_nonsingular with hGGdef
   set CC : Vesta.curve.toAffine.Point :=
-    (Poseidon.FqSponge.endoExpand Poseidon.FqVesta.spec.lam
+    (Poseidon.FqSponge.endoExpand ((_root_.Pasta.vestaLam : ℤ) : Fp)
       (preChallenge raw.pk raw.u) : Fp) • PK with hCCdef
   set ZG : Vesta.curve.toAffine.Point := raw.z.toScalarZ • GG with hZGdef
   -- a cell reading, packed
@@ -226,7 +226,7 @@ theorem verifyCircuit_complete (stv : Statement (FVar Fq)) (raw : Statement Fq)
     haveI : Fact (Nat.Prime Vesta.curve.toAffine.order) := ⟨HasCurve.vesta.prime⟩
     intro h0
     refine hz0 ?_
-    have hdvd := (Kimchi.Gate.VarBaseMul.zsmul_eq_zero_iff_order_dvd Vesta.curve.toAffine
+    have hdvd := (Pasta.zsmul_eq_zero_iff_order_dvd Vesta.curve.toAffine
       (Point.some_ne_zero gen_nonsingular) _).mp h0
     rw [Pasta.vesta_card] at hdvd
     exact (ZMod.intCast_zmod_eq_zero_iff_dvd _ _).mpr hdvd

@@ -29,8 +29,8 @@ def roots : List Name :=
     `Kimchi.Gate.EndoMul.sound, `Kimchi.Gate.EndoMul.complete,
     `Kimchi.Gate.EndoMul.endoMul,
     `Kimchi.Gate.EndoMul.pallas_endoMul, `Kimchi.Gate.EndoMul.vesta_endoMul,
-    `Kimchi.Gate.EndoMul.pallas_combo_off_targets,
-    `Kimchi.Gate.EndoMul.vesta_combo_off_targets ]
+    `Pasta.pallas_combo_off_targets,
+    `Pasta.vesta_combo_off_targets ]
 
 end Kimchi.RefactorBaseline
 

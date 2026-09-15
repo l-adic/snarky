@@ -101,7 +101,7 @@ def runFixture (path : String) (liveGates : List String) : IO Unit := do
         ("poseidon", e.poseidonSelector
           * alphaCombo α ((Kimchi.Lift.Gate.Poseidon.argument
               (Kimchi.Verifier.mdsOfParams
-                Bulletproof.IpaVesta.curve.frParams)).constraints
+                Bulletproof.IpaVesta.curve.frSponge.params)).constraints
             gEnv),
           ← gateTarget "poseidon"),
         ("completeAdd", e.completeAddSelector
@@ -130,7 +130,7 @@ def runFixture (path : String) (liveGates : List String) : IO Unit := do
     let hGates := gates.all fun (_, mine, target) => mine = target
     let hZkpm := decide (zkpmEval n zkRows ω ζ = zkpmZ)
     let hPerm := decide (permScalar β γ α zkpmZ e = permTarget)
-    let mds := Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frParams
+    let mds := Kimchi.Verifier.mdsOfParams Bulletproof.IpaVesta.curve.frSponge.params
     let hConst := decide (gateLinearization endo mds α e = constTarget)
     let hFt := decide (ftEval0 n zkRows ω shifts endo mds α β γ ζ pubEval e = ftEval0Target)
     -- The assembled acceptance identity, at the production challenge point

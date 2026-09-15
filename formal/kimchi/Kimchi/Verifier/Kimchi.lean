@@ -76,7 +76,7 @@ namespace Kimchi.Verifier
 open CompElliptic.CurveForms.ShortWeierstrass
 open Poseidon Poseidon.FqSponge Bulletproof
 
-variable (C : Ipa.CommitmentCurve)
+variable (C : Ipa.KimchiCurve)
 
 /-! ## The evaluation containers -/
 
@@ -192,7 +192,7 @@ def frSqueezes {F : Type*} [Field F] (p : Poseidon.Params F) (transcript : List 
 (verifier.rs:332–379): carried evaluations are accepted at any `nc` and REQUIRED at
 `nc > 1`; the barycentric fallback exists only at `nc = 1` (it needs `ζ`, so it is
 computed in the verifier body). -/
-inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
+inductive PubEvalSrc (C : Ipa.KimchiCurve) (nc : ℕ) where
   | carried (pe : PointEvaluations (Vector C.ScalarField nc))
   | barycentric (h : nc = 1)
 
@@ -200,7 +200,7 @@ inductive PubEvalSrc (C : Ipa.CommitmentCurve) (nc : ℕ) where
 the challenge polynomial of a previous opening — its final folded generator and the `k`
 endo-expanded round challenges. A proof carries them (`prev_challenges`), one chunk
 each. -/
-structure Accumulator (C : Ipa.CommitmentCurve) (k : ℕ) where
+structure Accumulator (C : Ipa.KimchiCurve) (k : ℕ) where
   /-- The previous opening's final folded generator (`comm`, a single point). -/
   sg : C.Point
   /-- Its round challenges, endo-expanded into the scalar field (`chals`). -/
@@ -209,7 +209,7 @@ structure Accumulator (C : Ipa.CommitmentCurve) (k : ℕ) where
 /-- A chunk-validated proof at round count `k` (the SRS's `σ.k`): what
 `KimchiProof.check nc k` returns, and the only thing the verifier body and the
 soundness layer ever read. -/
-structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
+structure KimchiProof (C : Ipa.KimchiCurve) (nc k : ℕ) where
   /-- The witness-column commitments (`w_comm`), one `nc`-chunk vector per column. -/
   wComm : Vector (Vector C.Point nc) wCols
   /-- The permutation-aggregation commitment (`z_comm`). -/
@@ -229,7 +229,7 @@ structure KimchiProof (C : Ipa.CommitmentCurve) (nc k : ℕ) where
   olds : Array (Accumulator C k)
 
 /-- A chunk-validated verifier key. -/
-structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
+structure KimchiVK (C : Ipa.KimchiCurve) (nc : ℕ) where
   /-- The domain size exponent: `n = 2 ^ domainLog2`. -/
   domainLog2 : ℕ
   /-- The domain generator `ω` (`domain.group_gen`). -/
@@ -266,17 +266,17 @@ structure KimchiVK (C : Ipa.CommitmentCurve) (nc : ℕ) where
   lagrangeBasis : Array (Vector C.Point nc)
 
 /-- The domain size of a checked key. -/
-def KimchiVK.n {C : Ipa.CommitmentCurve} {nc : ℕ}
+def KimchiVK.n {C : Ipa.KimchiCurve} {nc : ℕ}
     (cvk : KimchiVK C nc) : ℕ := 2 ^ cvk.domainLog2
 
 /-- The fr-sponge spec of a commitment curve: the curve's scalar-side Poseidon
-parameters (`C.frParams`, production's `G::sponge_params()`) with `lam := 0` —
+parameters (`C.frSponge.params`, production's `G::sponge_params()`) with `lam := 0` —
 deliberately dead: the fr-sponge path never endo-expands through its own spec.
-`frOracles` expands its two squeezed prechallenges at `C.sponge.lam` (the eigenvalue
+`frOracles` expands its two squeezed prechallenges at `C.lam` (the eigenvalue
 lives on the fq-side spec), and `frDigest`'s `challengeFq`/`challengeNat` never read
 `lam`, so the slot is unused and zeroed. -/
-def frSpec (C : Ipa.CommitmentCurve) : FqSponge.Spec C.scalar C.scalar :=
-  ⟨C.frParams, 0⟩
+def frSpec (C : Ipa.KimchiCurve) : FqSponge.Spec C.scalar C.scalar :=
+  C.frSponge
 
 /-- A Poseidon parameter table's MDS matrix as the gate's `Mds` record — the wire form
 of production's `Constants { mds: G::sponge_params().mds, .. }` (the scalar-side table,
@@ -314,7 +314,7 @@ def castDigest (x : C.BaseField) : C.ScalarField :=
 /-- The fq-sponge outputs of `oracles` (verifier.rs:156–283): the challenges, the digest
 handed to the fr-sponge, and the **warm** post-`ζ` sponge state that the opening
 verification continues (verifier.rs:1184). -/
-structure FqOracles (C : Ipa.CommitmentCurve) where
+structure FqOracles (C : Ipa.KimchiCurve) where
   /-- The permutation argument's challenge `β`. -/
   beta : C.ScalarField
   /-- The permutation argument's challenge `γ`. -/
@@ -330,7 +330,7 @@ structure FqOracles (C : Ipa.CommitmentCurve) where
 
 /-- The fr-sponge outputs of `oracles` (verifier.rs:284–405): the polyscale and the
 evalscale of the batch, expanded. -/
-structure FrOracles (C : Ipa.CommitmentCurve) where
+structure FrOracles (C : Ipa.KimchiCurve) where
   /-- The polyscale `ξ` (verifier.rs `v`). -/
   xi : C.ScalarField
   /-- The evalscale `r` (verifier.rs `u`). -/
@@ -366,7 +366,7 @@ private def publicEvals {F : Type*} [Field F] (n : ℕ)
 128-bit prechallenges, the digest element (in the base field), and the **warm** post-`ζ`
 state. This is exactly what a circuit's group half emits (`Pickles.fqSpongeTranscript`);
 `FqRun.expand` is the consumer's step. -/
-structure FqRun (C : Ipa.CommitmentCurve) where
+structure FqRun (C : Ipa.KimchiCurve) where
   /-- The `β` prechallenge. -/
   beta : Prechallenge
   /-- The `γ` prechallenge. -/
@@ -402,7 +402,7 @@ def fqRun {nc k : ℕ} (cvk : KimchiVK C nc) (cp : KimchiProof C nc k)
 endo-expanded at the sponge's eigenvalue, the digest cast. -/
 def FqRun.expand (r : FqRun C) : FqOracles C :=
   ⟨(r.beta.val : C.ScalarField), (r.gamma.val : C.ScalarField),
-    endoExpand C.sponge.lam r.alpha.val, endoExpand C.sponge.lam r.zeta.val,
+    endoExpand C.lam r.alpha.val, endoExpand C.lam r.zeta.val,
     castDigest C r.digestElem, r.warm⟩
 
 /-- The fq-sponge oracles: the run, expanded. -/
@@ -474,8 +474,8 @@ theorem fqOracles_eq_fqPrechallenges {nc k : ℕ} (cvk : KimchiVK C nc)
         ((cp.olds.map (·.sg)).toList.map fun P => (P.x, P.y)) (coords C publicComm)
         (cp.wComm.toList.map (coords C)) (coords C cp.zComm)
         (cp.tComm.toList.map fun P => (P.x, P.y))
-      ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.sponge.lam r.1.2.2.1,
-        endoExpand C.sponge.lam r.1.2.2.2,
+      ⟨(r.1.1 : C.ScalarField), (r.1.2.1 : C.ScalarField), endoExpand C.lam r.1.2.2.1,
+        endoExpand C.lam r.1.2.2.2,
         (if r.2.1.val < C.scalar then ((r.2.1.val : ℕ) : C.ScalarField) else 0),
         ⟨r.2.2, []⟩⟩ := by
   simp only [fqOracles, FqRun.expand, fqRun, castDigest, fqPrechallenges, fqSqueezes, coords,
@@ -527,7 +527,7 @@ def frRun {nc k : ℕ} (cp : KimchiProof C nc k)
 /-- The consumer's view of an fr-sponge run: both prechallenges endo-expanded at the
 sponge's eigenvalue — the polyscale and the evalscale. -/
 def FrRun.expand (x : FrRun) : FrOracles C :=
-  ⟨endoExpand C.sponge.lam x.xi.val, endoExpand C.sponge.lam x.r.val⟩
+  ⟨endoExpand C.lam x.xi.val, endoExpand C.lam x.r.val⟩
 
 /-- The fr-sponge oracles: the run, expanded. -/
 def frOracles {nc k : ℕ} (cp : KimchiProof C nc k)
@@ -549,9 +549,9 @@ value mod `2^128`. -/
 theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
     (fqDig : C.ScalarField) (pubEvals : PointEvaluations (Vector C.ScalarField nc)) :
     frOracles C cp fqDig pubEvals =
-      let pre := frPrechallenges C.frParams
+      let pre := frPrechallenges C.frSponge.params
         (frTranscript fqDig (recDigest C (cp.olds.map (·.u))) cp.ftEval1 pubEvals cp.evals)
-      ⟨endoExpand C.sponge.lam pre.1, endoExpand C.sponge.lam pre.2⟩ := by
+      ⟨endoExpand C.lam pre.1, endoExpand C.lam pre.2⟩ := by
   simp only [frOracles, FrRun.expand, frRun, frPrechallenges, frSqueezes, absorbFq,
     challengeNat_fresh]
   rfl
@@ -597,7 +597,7 @@ def combineAt {F : Type*} [Field F] (xM : F) (chunks : Array F) : F :=
 `evals.public` when present (production prefers it at ANY `nc`); else the one-chunk
 barycentric computation — the `nc = 1`-only branch, its `nc = 1` proof carried by the
 `PubEvalSrc.barycentric` constructor. -/
-def publicEvalChunks {C : Ipa.CommitmentCurve} {nc k : ℕ} (cp : KimchiProof C nc k)
+def publicEvalChunks {C : Ipa.KimchiCurve} {nc k : ℕ} (cp : KimchiProof C nc k)
     (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField)
     (pub : Array C.ScalarField) : PointEvaluations (Vector C.ScalarField nc) :=
   match cp.pubEvals with
@@ -610,7 +610,7 @@ def publicEvalChunks {C : Ipa.CommitmentCurve} {nc k : ℕ} (cp : KimchiProof C 
 the verifier's `evals.combine(&powers_of_eval_points_for_chunks)` (verifier.rs:409):
 every column combined at `ζ^max_poly_size` (`ζω`-side values at `(ζω)^max_poly_size`).
 Every read is total off the checked record. -/
-def KimchiProof.linEvals {C : Ipa.CommitmentCurve} {nc k : ℕ}
+def KimchiProof.linEvals {C : Ipa.KimchiCurve} {nc k : ℕ}
     (cp : KimchiProof C nc k) (zetaM zetaOmegaM : C.ScalarField) :
     Kimchi.Protocol.Linearization.Evals C.ScalarField where
   w i := combineAt zetaM (cp.evals.w[i]).zeta.toArray
@@ -811,7 +811,7 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     let e := cp.linEvals zetaM zetaOmegaM
     let shifts : Fin permCols → C.ScalarField := fun i => cvk.shifts[i]
     let ftEval0 := Kimchi.Protocol.Linearization.ftEval0 n cvk.zkRows cvk.omega shifts
-      cvk.endo (mdsOfParams C.frParams) o.alpha o.beta o.gamma o.zeta pubEval0 e
+      cvk.endo (mdsOfParams C.frSponge.params) o.alpha o.beta o.gamma o.zeta pubEval0 e
     let fr := frOracles C cp o.digest pubEvals
     let zkpmZ := Kimchi.Protocol.Linearization.zkpmEval n cvk.zkRows cvk.omega o.zeta
     let pScalar := Kimchi.Protocol.Linearization.permScalar o.beta o.gamma o.alpha zkpmZ e

@@ -649,37 +649,7 @@ private theorem block_tne (W : WeierstrassCurve.Affine F) [Fact (Nat.Prime W.ord
     have : (2 : ℕ) < W.order :=
       lt_of_le_of_ne (Fact.out : Nat.Prime W.order).two_le (Ne.symm hodd)
     exact_mod_cast this
-  exact Kimchi.Gate.VarBaseMul.smul_ne_zero_of_lt W hPne (by norm_num) hlt h2P
-
-/-- **GLV off-targets.** With the eigenvalue `φT = [λ]·T` and the four no-short-relation facts
-    for the accumulator's offset coefficients, the two-base combination `[a]·T + [b]·φT` is none
-    of `±T`, `±φT`. The geometric core of `hxne`. -/
-private theorem combo_off_targets (W : WeierstrassCurve.Affine F)
-    [Fact (W.a₁ = 0 ∧ W.a₂ = 0 ∧ W.a₃ = 0)] [Fact (Nat.Prime W.order)]
-    {T φT : W.Point} (hTne : T ≠ 0) {lam : ℤ} (heig : φT = lam • T) {a b : ℤ}
-    (h1 : ¬ (W.order : ℤ) ∣ (a - 1 + b * lam))
-    (h2 : ¬ (W.order : ℤ) ∣ (a + 1 + b * lam))
-    (h3 : ¬ (W.order : ℤ) ∣ (a + (b - 1) * lam))
-    (h4 : ¬ (W.order : ℤ) ∣ (a + (b + 1) * lam)) :
-    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
-      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
-  have combo : ∀ c : ℤ, a • T + b • φT = c • T ↔ (W.order : ℤ) ∣ (a + b * lam - c) := by
-    intro c
-    have e : a • T + b • φT - c • T = (a + b * lam - c) • T := by rw [heig]; module
-    rw [← sub_eq_zero, e, Kimchi.Gate.VarBaseMul.zsmul_eq_zero_iff_order_dvd W hTne]
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · intro hP
-    exact h1 (by have := (combo 1).mp (hP.trans (one_zsmul T).symm)
-                 rwa [show a + b * lam - 1 = a - 1 + b * lam by ring] at this)
-  · intro hP
-    exact h2 (by have := (combo (-1)).mp (hP.trans (neg_one_zsmul T).symm)
-                 rwa [show a + b * lam - (-1) = a + 1 + b * lam by ring] at this)
-  · intro hP
-    exact h3 (by have := (combo lam).mp (hP.trans (by rw [heig]))
-                 rwa [show a + b * lam - lam = a + (b - 1) * lam by ring] at this)
-  · intro hP
-    exact h4 (by have := (combo (-lam)).mp (hP.trans (by rw [heig]; simp))
-                 rwa [show a + b * lam - -lam = a + (b + 1) * lam by ring] at this)
+  exact Pasta.smul_ne_zero_of_lt W hPne (by norm_num) hlt h2P
 
 /-- A bounded variant of `Gate.EndoMul.selectQ` that additionally returns the integer fact
     `e = 1 ∨ e = -1` (the sign), which `selectQ` discards. Same case split, threading the fourth
@@ -1805,40 +1775,6 @@ A two-base combination `[a]·T + [b]·φT` with coefficients inside the GLV boun
 comfortably above any `4^m` a `< 254`-bit challenge reaches) and nonzero is none of `±T`, `±φT`.
 This is the consumer of `*_glv_no_short_relation` — the geometric core that, threaded through the
 per-row accumulators (`accumulator_chain`), discharges the per-row `hxne`. -/
-
-/-- `|x| < 2¹²⁶` keeps the offsets `x ∓ 1` inside the GLV bound `2¹²⁶`. -/
-private lemma abs_offset_lt {x : ℤ} (hx : |x| < 2 ^ 126) :
-    |x - 1| ≤ 2 ^ 126 ∧ |x + 1| ≤ 2 ^ 126 := by
-  rw [abs_lt] at hx
-  exact ⟨by rw [abs_le]; omega, by rw [abs_le]; omega⟩
-
-/-- **GLV off-targets at Pallas.** A bounded nonzero two-base accumulator avoids `±T`, `±φT`. -/
-theorem pallas_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
-    (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126)
-    {T φT : Pallas.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = pallasLam • T) :
-    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
-      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
-  obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
-  obtain ⟨hb1, hb1'⟩ := abs_offset_lt hbb
-  exact combo_off_targets Pallas.curve.toAffine hTne heig
-    (pallas_glv_no_short_relation (Or.inr hb) ha1 hbb.le)
-    (pallas_glv_no_short_relation (Or.inr hb) ha1' hbb.le)
-    (pallas_glv_no_short_relation (Or.inl ha) hba.le hb1)
-    (pallas_glv_no_short_relation (Or.inl ha) hba.le hb1')
-
-/-- **GLV off-targets at Vesta** — the other half of the 2-cycle. -/
-theorem vesta_combo_off_targets {a b : ℤ} (ha : a ≠ 0) (hb : b ≠ 0)
-    (hba : |a| < 2 ^ 126) (hbb : |b| < 2 ^ 126)
-    {T φT : Vesta.curve.toAffine.Point} (hTne : T ≠ 0) (heig : φT = vestaLam • T) :
-    a • T + b • φT ≠ T ∧ a • T + b • φT ≠ -T
-      ∧ a • T + b • φT ≠ φT ∧ a • T + b • φT ≠ -φT := by
-  obtain ⟨ha1, ha1'⟩ := abs_offset_lt hba
-  obtain ⟨hb1, hb1'⟩ := abs_offset_lt hbb
-  exact combo_off_targets Vesta.curve.toAffine hTne heig
-    (vesta_glv_no_short_relation (Or.inr hb) ha1 hbb.le)
-    (vesta_glv_no_short_relation (Or.inr hb) ha1' hbb.le)
-    (vesta_glv_no_short_relation (Or.inl ha) hba.le hb1)
-    (vesta_glv_no_short_relation (Or.inl ha) hba.le hb1')
 
 /-! ## `endoMul` at the curves
 

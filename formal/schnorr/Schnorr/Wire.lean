@@ -119,7 +119,7 @@ def preChallenge (pk u : VestaPoint Fq) : ℕ :=
 /-- The challenge: the prechallenge through the endomorphism expansion, a Vesta
 scalar. -/
 def challenge (pk u : VestaPoint Fq) : Fp :=
-  FqSponge.endoExpand FqVesta.spec.lam (preChallenge pk u)
+  FqSponge.endoExpand ((_root_.Pasta.vestaLam : ℤ) : Fp) (preChallenge pk u)
 
 /-- The wire verifier: deserialize — both points on Vesta, the response decode
 nonzero — then `[z]·G = u + [c]·pk`, the scalars acting through the point group's

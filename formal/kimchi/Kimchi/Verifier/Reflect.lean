@@ -25,7 +25,7 @@ open Poseidon Poseidon.FqSponge Bulletproof Kimchi.Index
 open Kimchi.Protocol.Linearization Polynomial
 open Kimchi.Verifier
 
-variable (C : Ipa.CommitmentCurve)
+variable (C : Ipa.KimchiCurve)
 
 /-! ## The run-derived data -/
 
@@ -91,7 +91,7 @@ def runFtEval0P (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (pubEval0 : C.ScalarField) : C.ScalarField :=
   ftEval0 cvk.n cvk.zkRows cvk.omega (fun i => cvk.shifts[i]) cvk.endo
-    (mdsOfParams C.frParams)
+    (mdsOfParams C.frSponge.params)
     (runOracles C σ cvk cp pub).alpha (runOracles C σ cvk cp pub).beta
     (runOracles C σ cvk cp pub).gamma (runOracles C σ cvk cp pub).zeta pubEval0
     (runLinEvals C σ cvk cp pub)

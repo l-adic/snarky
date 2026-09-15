@@ -167,11 +167,11 @@ end Gadget
 
 section Read
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- A list of chunked commitment cells reads, column by column, as the wire's commitments. -/
-def ColumnsRead (C : CommitmentCurve) (V : Valuation C.BaseField) {nc : ℕ}
+def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
     (cols : List (List (AffinePoint (FVar C.BaseField)))) (Ps : List (Vector C.Point nc)) :
     Prop :=
   List.Forall₂ (fun col P => CommReads C V col P.toList) cols Ps
@@ -257,11 +257,11 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
       List.Forall₂ (Reads128 V) o.bulletproofChallenges ns ∧
       List.Forall₂ (PrechallengeAlias C.base) (r.2.1.toList.map Subtype.val) ns ∧
       PrechallengeAlias C.base r.2.2.val c₀ ∧
-      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.sponge.lam m.val) ∧
+      chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
       (((↑o.success : CVar C.BaseField).val V = 1) ↔
-        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.sponge.lam c₀.val)
+        schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
-          (combineCommitments C (Poseidon.FqSponge.endoExpand C.sponge.lam ξ₀.val)
+          (combineCommitments C (Poseidon.FqSponge.endoExpand C.lam ξ₀.val)
             run.commitments.toArray)
           run.proof)
 
@@ -304,7 +304,7 @@ section Helpers
 
 open WeierstrassCurve.Affine
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField}
+variable {C : KimchiCurve} {V : Valuation C.BaseField}
 
 /-- A cell reading as a wire point across `equivPoint` has the point's coordinates: the wire's
 points are all finite (the `𝒪` sentinel is not a curve read). -/
@@ -488,7 +488,7 @@ end Helpers
 
 section Assembly
 
-variable {C : CommitmentCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- Alias readings compose: the wire's prechallenges alias the cells' readings. -/
@@ -656,13 +656,13 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
   · -- the digest
     exact hFq.2.2.2.2.2.2.2.1.symm
   · obtain ⟨m, hm⟩ := hFq.2.2.2.2.1
-    exact ⟨m, hasrt.1.trans hm, Low128.alias S.base_big hFq.1 hm⟩
+    exact ⟨m, hasrt.1.trans hm, Low128.alias S.curve.shape.base_big hFq.1 hm⟩
   · obtain ⟨m, hm⟩ := hFq.2.2.2.2.2.1
-    exact ⟨m, hasrt.2.1.trans hm, Low128.alias S.base_big hFq.2.1 hm⟩
+    exact ⟨m, hasrt.2.1.trans hm, Low128.alias S.curve.shape.base_big hFq.2.1 hm⟩
   · intro m hm
-    exact Low128.alias S.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
+    exact Low128.alias S.curve.shape.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
   · intro m hm
-    exact Low128.alias S.base_big hFq.2.2.2.1 (hasrt.2.2.2.symm.trans hm)
+    exact Low128.alias S.curve.shape.base_big hFq.2.2.2.1 (hasrt.2.2.2.symm.trans hm)
   · intro ξ₀ hξ
     -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
     have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
@@ -691,7 +691,8 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     have hδv : CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
       reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.delta)
     -- the opening transcript, from the warm sponge
-    have hT := CheckBulletproofReads.wire S.base_big (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
+    have hT := CheckBulletproofReads.wire S.curve.shape.base_big
+      (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
     -- the wire's IPA run at the claimed `cip` is the opening check's transcript
     obtain ⟨h1, h2, h3⟩ :=
       ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hcanon hwc cp.opening
@@ -719,7 +720,9 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
     (h : IvpHyps S σ cvk cp pub optSponge blindingH spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
-    incrementallyVerifyProof ops S.e C.sponge.params endo S.gm sqrtF optSponge blindingH
+    incrementallyVerifyProof ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap) sqrtF
+      optSponge
+      blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
   obtain ⟨hIdx, hmask, hties, hh, hcanon, hnc, htne, hlrne, hchar⟩ := h
@@ -739,10 +742,11 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | true =>
     simp only [incrementallyVerifyProof, if_true]
     have htr := fun (d : FVar C.BaseField) (xHat : List (AffinePoint (FVar C.BaseField))) =>
-      fqSpongeTranscriptOpt_reads (V := V) S.two_ne S.three_ne _ S.hsize S.small_inj endo d
+      fqSpongeTranscriptOpt_reads (V := V) S.curve.two_ne S.curve.three_ne _ C.sponge.hsize
+        S.curve.small_inj endo d
         (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
-    case vc1.hsize => exact S.hsize
+    case vc1.hsize => exact C.sponge.hsize
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
@@ -784,11 +788,12 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
     have htr := fun (d : FVar C.BaseField) =>
-      fqSpongeTranscript_reads (V := V) S.two_ne S.three_ne _ S.hsize endo d (inp.sgOld.map (·.2))
+      fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne _ C.sponge.hsize endo d
+        (inp.sgOld.map (·.2))
         computeXHat (fun pts => CommReads C V pts (publicCommitment C σ cvk pub).toList) _
         (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [htr, hasrt, hft, hcb]
-    case vc1.hsize => exact S.hsize
+    case vc1.hsize => exact C.sponge.hsize
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all
