@@ -1,6 +1,6 @@
 -- | `Chunks2` at four chunks: one rule with no prevs whose body fills
 -- | 2^17 rows, declared at `stepChunks = 4` with the wrap domain
--- | overridden to 2^14, so kimchi's PCS runs the step at four chunks
+-- | overridden to 2^15, so kimchi's PCS runs the step at four chunks
 -- | and the wrap at one.
 -- |
 -- | Proving emits a step and a wrap kimchi witness — counters 0 and 1
@@ -77,7 +77,7 @@ spec = describe "Pickles.Prove.Chunks4" do
 
     -- The step SRS has depth 2^16, and this rule's 2^17 rows round the
     -- step domain up to 2^18, giving four chunks. The wrap SRS has
-    -- depth 2^15 and the wrap domain is overridden to 2^14, giving one
+    -- depth 2^15 and the wrap domain is overridden to 2^15, giving one
     -- chunk.
     chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks4Rule Vector.nil
     let rules = tuple1 chunks4Entry
@@ -91,7 +91,7 @@ spec = describe "Pickles.Prove.Chunks4" do
       noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
-      , wrapDomainOverride: Just 14
+      , wrapDomainOverride: Just 15
       , proofCache: cache
       , lagrangeCache: Just lagrangeCache
       }
