@@ -38,6 +38,7 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, const_)
@@ -58,13 +59,12 @@ type StepMainNoRecursionReturnParams =
 noRecursionReturnRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r Unit
+  => AsProver StepField r (PrevValues Unit)
   -> Unit
   -> Snarky StepField (KimchiConstraint StepField) r
-       (RuleOutput 0 Unit (FVar StepField))
+       (RuleOutput Unit (FVar StepField))
 noRecursionReturnRule _ _ = pure
-  { prevPublicInputs: Vector.nil
-  , proofMustVerify: Vector.nil
+  { prevs: toPrevs unit
   , publicOutput: const_ zero
   }
 
@@ -82,20 +82,17 @@ compileStepMainNoRecursionReturn params = do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
-      -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
-      -- pick any concrete CircuitType-havers; Unit works.
-      --
       -- Output mode: inputVal/input are Unit (no caller-supplied input),
       -- outputVal/output are `F StepField` / `FVar StepField` (the returned
       -- field). Contrast Add_one_return's Input_and_output mode where
       -- inputVal/outputVal are both `F StepField`.
-      -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
-      -- @valCarrier @mpvMax. Implicit: input/output/prevInput (via
-      -- CircuitType), mpvPad (Add), outputSize (Mul/Add chain),
+      -- Visible axes: @prevsSpec @inputVal @outputVal @valCarrier
+      -- @mpvMax. Implicit: input/output (via CircuitType), mpvPad
+      -- (Add), outputSize (Mul/Add chain),
       -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @Unit @0 @1 @Unit
+      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @0 @1 @Unit
           noRecursionReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

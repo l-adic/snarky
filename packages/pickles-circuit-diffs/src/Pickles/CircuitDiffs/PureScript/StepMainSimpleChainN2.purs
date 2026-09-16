@@ -25,6 +25,7 @@ import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -43,6 +44,10 @@ type StepMainSimpleChainN2Params =
   , blindingH :: AffinePoint (F StepField)
   }
 
+-- | The rule's two self prev slots, each at width 2.
+type SimpleChainN2PrevsSpec =
+  Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit))
+
 -- | Simple_Chain N2 rule: self_correct = (1 + prev1 + prev2 == self)
 -- | Both proofs have the same proof_must_verify = not is_base_case.
 -- | The two previous app-states are read from the deferred prev-states
@@ -52,20 +57,21 @@ type StepMainSimpleChainN2Params =
 simpleChainN2Rule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r
-       (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
+  => AsProver StepField r (PrevValues SimpleChainN2PrevsSpec)
   -> FVar StepField
-  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 2 (FVar StepField) Unit)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput SimpleChainN2PrevsSpec Unit)
 simpleChainN2Rule getPrevStates appState = do
-  prev1 <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
-  prev2 <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  prev1 <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
+  prev2 <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
   isBaseCase <- equals_ (const_ zero) appState
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (CVar.add_ (const_ one) prev1) prev2) appState
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
-    { prevPublicInputs: prev1 :< prev2 :< Vector.nil
-    , proofMustVerify: proofMustVerify :< proofMustVerify :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev1, output: unit }, proofMustVerify }
+          /\ PrevStatement { publicInput: StatementIO { input: prev2, output: unit }, proofMustVerify }
+          /\ unit
     , publicOutput: unit
     }
 
@@ -109,10 +115,9 @@ compileStepMainSimpleChainN2 params = do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit)))
+          @SimpleChainN2PrevsSpec
           @(F StepField)
           @Unit
-          @(F StepField)
           @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
           )
           @2

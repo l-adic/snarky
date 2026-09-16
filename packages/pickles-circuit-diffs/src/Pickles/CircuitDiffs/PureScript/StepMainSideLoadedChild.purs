@@ -32,6 +32,7 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Field (StepField)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F(..), FVar, SizedF, Snarky, assertEqual_, const_, exists)
@@ -69,10 +70,10 @@ innerCurveGen =
 sideLoadedChildRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r Unit
+  => AsProver StepField r (PrevValues Unit)
   -> FVar StepField
   -> Snarky StepField (KimchiConstraint StepField) r
-       (RuleOutput 0 Unit Unit)
+       (RuleOutput Unit Unit)
 sideLoadedChildRule _ appState = do
   -- dummy_constraints body — translation of OCaml
   -- dump_side_loaded_main.ml:49-73.
@@ -103,8 +104,7 @@ sideLoadedChildRule _ appState = do
   -- `StepField.Assert.equal self StepField.zero`
   assertEqual_ appState (const_ zero)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
@@ -125,14 +125,12 @@ compileStepMainSideLoadedChild params = do
       -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,
       -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
       -- digest — no unfinalized_proofs, no msgs_wrap entries).
-      -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
-      -- @valCarrier @mpvMax @nd. Implicit: input/output/prevInput
-      -- (CircuitType funcdep), mpvPad (Add), outputSize
-      -- (Mul/Add chain).
+      -- Visible axes: @prevsSpec @inputVal @outputVal @valCarrier
+      -- @mpvMax @nd. Implicit: input/output (CircuitType funcdep),
+      -- mpvPad (Add), outputSize (Mul/Add chain).
       ( \_ -> stepMain
           @Unit
           @(F StepField)
-          @Unit
           @Unit
           @Unit
           @0

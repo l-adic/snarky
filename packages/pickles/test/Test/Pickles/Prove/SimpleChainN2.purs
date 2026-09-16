@@ -27,7 +27,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -42,32 +42,34 @@ type Stmt = StatementIO (F StepField) Unit
 -- | Asserts `self = 1 + prev1 + prev2`, bypassed when `self = 0`. Both
 -- | slots are self prevs and share one `proofMustVerify`.
 simpleChainN2Rule
-  :: StepRule 2
-       (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
+  :: StepRule SimpleChainN2PrevsSpec
        (F StepField)
        (FVar StepField)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
 simpleChainN2Rule getPrevStates self = do
-  prev1 <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
-  prev2 <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  prev1 <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
+  prev2 <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
   isBaseCase <- equals_ (const_ zero) self
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (CVar.add_ (const_ one) prev1) prev2) self
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
-    { prevPublicInputs: prev1 :< prev2 :< Vector.nil
-    , proofMustVerify: proofMustVerify :< proofMustVerify :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev1, output: unit }, proofMustVerify }
+          /\ PrevStatement { publicInput: StatementIO { input: prev2, output: unit }, proofMustVerify }
+          /\ unit
     , publicOutput: unit
     }
 
--- | Carrier for the single rule: two self prev slots, each at width 2.
+-- | The rule's two self prev slots, each at width 2.
+type SimpleChainN2PrevsSpec =
+  Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit))
+
+-- | Carrier for the single rule.
 type SimpleChainN2Rules =
   RulesCons 2
-    (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
-    (Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit)))
+    SimpleChainN2PrevsSpec
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -84,7 +86,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField)
+    entry <- liftEffect $ mkRuleEntry @2 @Unit
       simpleChainN2Rule
       (Self :< Self :< Vector.nil)
 
@@ -94,7 +96,6 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
     out <- withSpan "[SimpleChainN2] compile" $ liftEffect $ compileMulti
       @SimpleChainN2Rules
       @Unit
-      @(F StepField)
       @1
       noAdvice
       cfg

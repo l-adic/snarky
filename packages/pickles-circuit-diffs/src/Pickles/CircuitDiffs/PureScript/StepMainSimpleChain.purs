@@ -25,6 +25,7 @@ import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -43,23 +44,27 @@ type StepMainSimpleChainParams =
   , blindingH :: AffinePoint (F StepField)
   }
 
+-- | The rule's one self prev slot, at width 1.
+type SimpleChainPrevsSpec = Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
+
 -- | Simple_Chain N1 rule: self_correct = (1 + prev == self)
 -- | Reference: dump_circuit_impl.ml:4390-4413
 simpleChainRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r (Tuple1 (StatementIO (F StepField) Unit))
+  => AsProver StepField r (PrevValues SimpleChainPrevsSpec)
   -> FVar StepField
-  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 1 (FVar StepField) Unit)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput SimpleChainPrevsSpec Unit)
 simpleChainRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
   isBaseCase <- equals_ (const_ zero) appState
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
-    { prevPublicInputs: prev :< Vector.nil
-    , proofMustVerify: proofMustVerify :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify }
+          /\ unit
     , publicOutput: unit
     }
 
@@ -93,14 +98,13 @@ compileStepMainSimpleChain params = do
              _
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-      -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
-      --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
+      -- Axes: @prevsSpec @inputVal @outputVal @valCarrier @mpvMax @nd
+      --       @cell.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
+          @SimpleChainPrevsSpec
           @(F StepField)
           @Unit
-          @(F StepField)
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1

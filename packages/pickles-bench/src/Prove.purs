@@ -42,11 +42,10 @@ import Snarky.Circuit.DSL (F(..))
 -- | the NRR base, prove b0; return the b1 prove as a runnable thunk.
 prepareProve :: BenchSrs -> Effect (Aff Unit)
 prepareProve srs = do
-  nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
+  nrrEntry <- mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
   nrr <- compileMulti
     @NrrRules
     @(F StepField)
-    @Unit
     @1
     noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
@@ -59,12 +58,11 @@ prepareProve srs = do
       , stepNumChunks: nrr.vks.stepChunks
       }
 
-  treeEntry <- mkRuleEntry @2 @(F StepField) @(F StepField)
+  treeEntry <- mkRuleEntry @2 @(F StepField)
     benchTreeRule
     (External nrrProverVKs :< Self :< Vector.nil)
   tree <- compileMulti
     @TreeRules
-    @(F StepField)
     @(F StepField)
     @1
     noAdvice

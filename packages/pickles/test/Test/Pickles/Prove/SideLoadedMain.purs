@@ -25,7 +25,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -58,14 +58,11 @@ innerCurveGen =
 -- | `VarBaseMul`, `EndoMul`, on-curve — that the child step constraint
 -- | system must contain for byte parity with the reference.
 noRecursionInputRule
-  :: StepRule 0
-       Unit
+  :: StepRule Unit
        (F StepField)
        (FVar StepField)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
 noRecursionInputRule _ self = do
   x <- exists (pure (F (fromInt 3) :: F StepField))
   -- `g` is allocated as a `WeierstrassAffinePoint` so that `exists`
@@ -78,20 +75,22 @@ noRecursionInputRule _ self = do
   _ <- endo @4 @1 (AffinePoint g) (unsafeCoerce x :: SizedF 4 (FVar StepField))
   assertEqual_ self (const_ zero)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
 -- | Carrier for the single child rule, at width 0 with no prevs.
 type NoRecursionInputRules =
-  RulesCons 0 Unit Unit RulesNil
+  RulesCons 0 Unit RulesNil
 
--- | Carrier for the parent rule: one side-loaded prev slot at width 2.
+-- | The parent rule's one side-loaded prev slot, at width 2.
+type SideLoadedMainPrevsSpec =
+  Tuple1 (Slot 2 (StatementIO (F StepField) Unit))
+
+-- | Carrier for the parent rule.
 type SideLoadedMainRules =
   RulesCons 1
-    (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
+    SideLoadedMainPrevsSpec
     RulesNil
 
 -- | The parent rule: asserts `1 + prev == self`, or the base case
@@ -103,22 +102,20 @@ type SideLoadedMainRules =
 -- | through the `step_keys` constants baked into the wrap constraint
 -- | system.
 sideLoadedMainRule
-  :: StepRule 1
-       (Tuple1 (StatementIO (F StepField) Unit))
+  :: StepRule SideLoadedMainPrevsSpec
        (F StepField)
        (FVar StepField)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
 sideLoadedMainRule getPrevStates self = do
-  prev <- exists $ getPrevStates <#> \(StatementIO { input } /\ _) -> input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
   isBaseCase <- equals_ (const_ zero) self
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
-    { prevPublicInputs: prev :< Vector.nil
-    , proofMustVerify: true_ :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+          /\ unit
     , publicOutput: unit
     }
 
@@ -129,14 +126,13 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     -- The child's kimchi wrap verification key becomes the runtime
     -- `wrapVk` of the parent's side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
+    childEntry <- liftEffect $ mkRuleEntry @0 @Unit
       noRecursionInputRule
       Vector.nil
 
     child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ compileMulti
       @NoRecursionInputRules
       @Unit
-      @(F StepField)
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }
@@ -182,14 +178,12 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     sideLoadedEntry <- liftEffect $ mkRuleEntry
       @1
       @Unit
-      @(F StepField)
       sideLoadedMainRule
       (SideLoadedKey :< Vector.nil)
 
     parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
       @SideLoadedMainRules
       @Unit
-      @(F StepField)
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }

@@ -27,7 +27,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -45,32 +45,32 @@ import Test.Spec.Assertions (shouldEqual)
 -- | rule serves every iteration: b0 passes a `BasePrev` dummy
 -- | statement, b_{k+1} passes `InductivePrev` on b_k.
 simpleChainRule
-  :: StepRule 1
-       (Tuple1 (StatementIO (F StepField) NoOutput))
+  :: StepRule SimpleChainPrevsSpec
        (F StepField)
        (FVar StepField)
        NoOutput
        NoOutput
-       (F StepField)
-       (FVar StepField)
 simpleChainRule getPrevStates self = do
-  prev <- exists $ getPrevStates <#> \(StatementIO { input } /\ _) -> input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
   isBaseCase <- equals_ (const_ zero) self
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
-    { prevPublicInputs: prev :< Vector.nil
-    , proofMustVerify: proofMustVerify :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: NoOutput }, proofMustVerify }
+          /\ unit
     , publicOutput: NoOutput
     }
 
--- | Carrier for the single rule: one self-recursive prev slot at
--- | width 1.
+-- | The rule's one self-recursive prev slot, at width 1.
+type SimpleChainPrevsSpec =
+  Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput))
+
+-- | Carrier for the single rule.
 type SimpleChainRules =
   RulesCons 1
-    (Tuple1 (StatementIO (F StepField) NoOutput))
-    (Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput)))
+    SimpleChainPrevsSpec
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -78,7 +78,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
 
-    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput @(F StepField) simpleChainRule (Self :< Vector.nil)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput simpleChainRule (Self :< Vector.nil)
 
     let rules = tuple1 chainEntry
 
@@ -86,7 +86,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
     output <- withSpan "[SimpleChain] compile" $ liftEffect $ compileMulti
       @SimpleChainRules
       @NoOutput
-      @(F StepField)
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }

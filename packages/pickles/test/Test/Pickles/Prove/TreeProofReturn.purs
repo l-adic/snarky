@@ -28,7 +28,7 @@ import Effect.Aff.Class (liftAff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), CompiledProof(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -45,42 +45,39 @@ type TreeProofReturnPrevsSpec =
     (Slot 2 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
-  :: StepRule 2
-       (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+  :: StepRule TreeProofReturnPrevsSpec
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
        (F StepField)
        (FVar StepField)
 treeProofReturnRule getPrevStates _ = do
-  nrrInput <- exists $ getPrevStates <#> \(StatementIO { output: nrrOut } /\ _) -> nrrOut
-  prevInput <- exists $ getPrevStates <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
-  isBaseCase <- exists $ getPrevStates <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut == F (negate one)
+  nrrInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { output: nrrOut } /\ _) -> nrrOut
+  prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut
+  isBaseCase <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output: prevOut } /\ _) -> prevOut == F (negate one)
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
   pure
-    { prevPublicInputs: nrrInput :< prevInput :< Vector.nil
-    , proofMustVerify: true_ :< proofMustVerifySlot1 :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: unit, output: nrrInput }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prevInput }, proofMustVerify: proofMustVerifySlot1 }
+          /\ unit
     , publicOutput: selfVal
     }
 
-nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
+nrrRule :: StepRule Unit Unit Unit (F StepField) (FVar StepField)
 nrrRule _ _ = pure
-  { prevPublicInputs: Vector.nil
-  , proofMustVerify: Vector.nil
+  { prevs: toPrevs unit
   , publicOutput: const_ zero
   }
 
 -- | Carrier for the single `nrrRule`, at width 0.
 type NrrRules =
-  RulesCons 0 Unit Unit
+  RulesCons 0 Unit
     RulesNil
 
 -- | Carrier for the single `treeProofReturnRule`, at width 2.
 type TreeRules =
   RulesCons 2
-    (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
     TreeProofReturnPrevsSpec
     RulesNil
 
@@ -89,7 +86,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
 
     let nrrRules = tuple1 nrrEntry
 
@@ -97,7 +94,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     nrr <- withSpan "[TreeProofReturn] compile nrr" $ liftEffect $ compileMulti
       @NrrRules
       @(F StepField)
-      @Unit
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }
@@ -126,7 +122,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , stepNumChunks: nrr.vks.stepChunks
         }
 
-    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
+    treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField)
       treeProofReturnRule
       (External nrrProverVKs :< Self :< Vector.nil)
 
@@ -135,7 +131,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     logInfo "[TreeProofReturn] compiling tree…"
     tree <- withSpan "[TreeProofReturn] compile tree" $ liftEffect $ compileMulti
       @TreeRules
-      @(F StepField)
       @(F StepField)
       @1
       noAdvice

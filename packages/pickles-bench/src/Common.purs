@@ -26,10 +26,8 @@ import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Data.Foldable (for_)
 import Data.Int.Bits as Bits
 import Data.Tuple.Nested (Tuple2, (/\))
-import Data.Vector ((:<))
-import Data.Vector as Vector
 import Effect (Effect)
-import Pickles (RulesCons, RulesNil, Slot, StatementIO(..), StepField, StepRule)
+import Pickles (PrevStatement(..), RulesCons, RulesNil, Slot, StatementIO(..), StepField, StepRule, prevValues, toPrevs)
 import Snarky.Backend.Kimchi.Impl.Pallas as P
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -88,21 +86,18 @@ type TreeProofReturnPrevsSpec =
 -- | Verbatim `Tree_proof_return` N=2 rule + the tunable filler loop
 -- | (stack-safe `tailRecM`; `StepRule` carries `MonadRec`).
 benchTreeRule
-  :: StepRule 2
-       (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+  :: StepRule TreeProofReturnPrevsSpec
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
        (F StepField)
        (FVar StepField)
 benchTreeRule getPrevStates _ = do
   -- The two prev statements arrive via the deferred getter (slot 0 = NRR
   -- base, slot 1 = the recursive `Self` prev); their public OUTPUT is the
   -- field this rule threads. Read each slot's `.output` through `exists`.
-  nrrInput <- exists $ getPrevStates <#> \(StatementIO { output } /\ _) -> output
-  prevInput <- exists $ getPrevStates <#> \(_ /\ StatementIO { output } /\ _) -> output
-  isBaseCase <- exists $ getPrevStates <#> \(_ /\ StatementIO { output } /\ _) -> output == F (negate one)
+  nrrInput <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { output } /\ _) -> output
+  prevInput <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output } /\ _) -> output
+  isBaseCase <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO { output } /\ _) -> output == F (negate one)
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
   let
@@ -119,24 +114,24 @@ benchTreeRule getPrevStates _ = do
     )
     0
   pure
-    { prevPublicInputs: nrrInput :< prevInput :< Vector.nil
-    , proofMustVerify: true_ :< proofMustVerifySlot1 :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: unit, output: nrrInput }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prevInput }, proofMustVerify: proofMustVerifySlot1 }
+          /\ unit
     , publicOutput: selfVal
     }
 
-nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
+nrrRule :: StepRule Unit Unit Unit (F StepField) (FVar StepField)
 nrrRule _ _ = pure
-  { prevPublicInputs: Vector.nil
-  , proofMustVerify: Vector.nil
+  { prevs: toPrevs unit
   , publicOutput: const_ zero
   }
 
 type NrrRules =
-  RulesCons 0 Unit Unit
+  RulesCons 0 Unit
     RulesNil
 
 type TreeRules =
   RulesCons 2
-    (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
     TreeProofReturnPrevsSpec
     RulesNil

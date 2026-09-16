@@ -33,6 +33,7 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -53,12 +54,11 @@ type StepMainAddOneReturnParams =
 addOneReturnRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r Unit
+  => AsProver StepField r (PrevValues Unit)
   -> FVar StepField
-  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 0 Unit (FVar StepField))
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput Unit (FVar StepField))
 addOneReturnRule _ x = pure
-  { prevPublicInputs: Vector.nil
-  , proofMustVerify: Vector.nil
+  { prevs: toPrevs unit
   , publicOutput: CVar.add_ (const_ one) x
   }
 
@@ -77,10 +77,8 @@ compileStepMainAddOneReturn params = do
       -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
       -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
       -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
-      -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
-      -- pick any concrete CircuitType-havers; Unit works.
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @Unit @0 @1 @Unit
+      ( \_ -> stepMain @Unit @(F StepField) @(F StepField) @Unit @0 @1 @Unit
           addOneReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

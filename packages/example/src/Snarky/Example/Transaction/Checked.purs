@@ -38,15 +38,16 @@ import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr (Signature(..)) as Schnorr
 import Data.Tuple (Tuple, fst, snd)
-import Data.Tuple.Nested (type (/\), Tuple2, tuple2, (/\))
+import Data.Tuple.Nested (type (/\), tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry, prevValues, toPrevs)
 import Pickles.Step.Main (RuleOutput)
+import Pickles.Step.Slots (PrevValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Advice (badAdvice)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -117,22 +118,19 @@ baseRule
   :: forall @d r
    . Reflectable d Int
   => ChainId
-  -> AsProver Vesta.ScalarField (TxAdviceRow d r) Unit
+  -> AsProver Vesta.ScalarField (TxAdviceRow d r) (PrevValues Unit)
   -> Statement (FVar Vesta.ScalarField)
-  -- `prevInput = Stmt` is shared across the program's branches (the merge
-  -- branch's prev statements); it is phantom here (0 prevs).
   -> Snarky
        Vesta.ScalarField
        (KimchiConstraint Vesta.ScalarField)
        (TxAdviceRow d r)
-       (RuleOutput 0 (Statement (FVar Vesta.ScalarField)) NoOutput)
+       (RuleOutput Unit NoOutput)
 baseRule chainId _ (Statement { source, target }) = do
   tx <- exists (liftAdvice getCurrentTransaction)
   computedTarget <- applyTxChecked @d chainId source tx
   assertEq target computedTarget
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: NoOutput
     }
 
@@ -141,22 +139,18 @@ baseRule chainId _ (Statement { source, target }) = do
 -- | no app/ledger advice — so its `m` stays free (an ordinary `StepRule`).
 mergeRule
   :: forall r
-   . AsProver Vesta.ScalarField r
-       ( Tuple2
-           (StatementIO (Statement Vesta.ScalarField) NoOutput)
-           (StatementIO (Statement Vesta.ScalarField) NoOutput)
-       )
+   . AsProver Vesta.ScalarField r (PrevValues MergePrevsSpec)
   -> Statement (FVar Vesta.ScalarField)
   -> Snarky
        Vesta.ScalarField
        (KimchiConstraint Vesta.ScalarField)
        r
-       (RuleOutput 2 (Statement (FVar Vesta.ScalarField)) NoOutput)
+       (RuleOutput MergePrevsSpec NoOutput)
 mergeRule getPrevStates (Statement { source, target }) = do
   -- The two sub-statements are the verified prev proofs' public inputs;
   -- witness them from the deferred prev-states getter.
-  s1@(Statement { source: source1, target: target1 }) <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
-  s2@(Statement { source: source2, target: target2 }) <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
+  s1@(Statement { source: source1, target: target1 }) <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
+  s2@(Statement { source: source2, target: target2 }) <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.input
   -- Merge relation (Mina `Merge.main`): the outer statement's source is
   -- s1's source, its target is s2's target, and s1's target connects to
   -- s2's source.
@@ -164,8 +158,10 @@ mergeRule getPrevStates (Statement { source, target }) = do
   assertEq target target2
   assertEq target1 source2
   pure
-    { prevPublicInputs: s1 :< s2 :< Vector.nil
-    , proofMustVerify: true_ :< true_ :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: s1, output: NoOutput }, proofMustVerify: true_ }
+          /\ PrevStatement { publicInput: StatementIO { input: s2, output: NoOutput }, proofMustVerify: true_ }
+          /\ unit
     , publicOutput: NoOutput
     }
 
@@ -247,14 +243,16 @@ applyTxChecked chainId root (SignedTransaction { signature, transaction }) = do
 
 type TxnStmt = StatementIO (Statement Vesta.ScalarField) NoOutput
 
+-- | The merge rule's two `Self` slots, each width 2 (a proof of THIS
+-- | mpv=2 program).
+type MergePrevsSpec = Slot 2 TxnStmt /\ Slot 2 TxnStmt /\ Unit
+
 -- | The two-branch program. Branch 0 (base) has no prev slots; branch 1
--- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
--- | program) at one chunk.
+-- | (merge) has `MergePrevsSpec`, at one chunk.
 type TxnSnarkRules =
-  RulesCons 0 Unit Unit
+  RulesCons 0 Unit
     ( RulesCons 2
-        (TxnStmt /\ TxnStmt /\ Unit)
-        (Slot 2 TxnStmt /\ Slot 2 TxnStmt /\ Unit)
+        MergePrevsSpec
         RulesNil
     )
 
@@ -297,7 +295,6 @@ compileTxCircuit chainId lagrangeCache srs = do
     mkRuleEntry
       @2
       @NoOutput
-      @(Statement Vesta.ScalarField)
       @(TxAdviceRow d ())
       (baseRule @d chainId)
       Vector.nil
@@ -305,7 +302,6 @@ compileTxCircuit chainId lagrangeCache srs = do
     mkRuleEntry
       @2
       @NoOutput
-      @(Statement Vesta.ScalarField)
       @(TxAdviceRow d ())
       mergeRule
       (Self :< Self :< Vector.nil)
@@ -316,7 +312,6 @@ compileTxCircuit chainId lagrangeCache srs = do
     compileMulti
       @TxnSnarkRules
       @NoOutput
-      @(Statement Vesta.ScalarField)
       @1
       badAdvice
       cfg

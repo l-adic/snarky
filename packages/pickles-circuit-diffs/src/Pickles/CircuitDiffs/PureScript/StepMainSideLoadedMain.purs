@@ -31,6 +31,7 @@ import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -66,12 +67,12 @@ type StepMainSideLoadedMainParams =
 sideLoadedMainRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r (Tuple1 (StatementIO (F StepField) Unit))
+  => AsProver StepField r (PrevValues SideLoadedMainPrevsSpec)
   -> FVar StepField
   -> Snarky StepField (KimchiConstraint StepField) r
-       (RuleOutput 1 (FVar StepField) Unit)
+       (RuleOutput SideLoadedMainPrevsSpec Unit)
 sideLoadedMainRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
   isBaseCase <- equals_ (const_ zero) appState
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
@@ -80,10 +81,15 @@ sideLoadedMainRule getPrevStates appState = do
   -- emit ~25 extra Generic gates that vanish under `true_` constant-
   -- folding. Reference: OCaml `dump_side_loaded_main.ml:179`.
   pure
-    { prevPublicInputs: prev :< Vector.nil
-    , proofMustVerify: true_ :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+          /\ unit
     , publicOutput: unit
     }
+
+-- | The rule's one side-loaded prev slot, at the tag's compile-time
+-- | upper bound `N2`.
+type SideLoadedMainPrevsSpec = Tuple1 (Slot 2 (StatementIO (F StepField) Unit))
 
 compileStepMainSideLoadedMain
   :: StepMainSideLoadedMainParams -> Effect StepArtifact
@@ -113,10 +119,9 @@ compileStepMainSideLoadedMain params = do
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @(Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
+          @SideLoadedMainPrevsSpec
           @(F StepField)
           @Unit
-          @(F StepField)
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1

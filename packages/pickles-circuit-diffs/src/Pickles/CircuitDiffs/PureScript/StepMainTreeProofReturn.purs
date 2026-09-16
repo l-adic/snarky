@@ -5,13 +5,10 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 
 -- | step_main circuit for the Tree_proof_return rule.
 -- |
--- | **N = 2**, **Output mode**, **heterogeneous prevs** at the rule
--- | level but homogeneous at the value-type level: both prev
--- | `public_input` slots are `StepField.typ` even though the first prev's
+-- | **N = 2**, **Output mode**, **heterogeneous prevs**: the first prev's
 -- | rule has `max_proofs_verified = N0` (No_recursion_return) and the
--- | second is `self` with `max_proofs_verified = N2`. Our
--- | `Vector n (FVar StepField)` `prevPublicInputs` field handles this
--- | shape without needing an HList.
+-- | second is `self` with `max_proofs_verified = N2`. Both slots happen
+-- | to carry the same statement type, `StatementIO Unit (F StepField)`.
 -- |
 -- | Rule body computes `self = if is_base_case then 0 else 1 + prev`
 -- | and exposes it as `publicOutput`.
@@ -40,6 +37,7 @@ import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
@@ -82,27 +80,33 @@ type StepMainTreeProofReturnParams =
 treeProofReturnRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r
-       (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
+  => AsProver StepField r (PrevValues TreeProofReturnPrevsSpec)
   -> Unit
   -> Snarky StepField (KimchiConstraint StepField) r
-       (RuleOutput 2 (FVar StepField) (FVar StepField))
+       (RuleOutput TreeProofReturnPrevsSpec (FVar StepField))
 treeProofReturnRule getPrevStates _ = do
-  no_recursive_input <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.output
-  prev <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.output
-  is_base_case <- exists $ getPrevStates <#> \(_ /\ StatementIO p2 /\ _) -> p2.output == F (negate one)
+  no_recursive_input <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.output
+  prev <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.output
+  is_base_case <- exists $ getPrevStates <#> prevValues <#> \(_ /\ StatementIO p2 /\ _) -> p2.output == F (negate one)
   let proofMustVerify = not_ is_base_case
   self <- if_ is_base_case (const_ zero) (CVar.add_ (const_ one) prev)
   pure
-    { prevPublicInputs: no_recursive_input :< prev :< Vector.nil
     -- prev[0] always verifies (Boolean.true_ in OCaml);
     -- prev[1] verifies iff not base case.
-    , proofMustVerify:
-        (coerce (const_ one :: FVar StepField) :: BoolVar StepField)
-          :< proofMustVerify
-          :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement
+          { publicInput: StatementIO { input: unit, output: no_recursive_input }
+          , proofMustVerify: (coerce (const_ one :: FVar StepField) :: BoolVar StepField)
+          }
+          /\ PrevStatement { publicInput: StatementIO { input: unit, output: prev }, proofMustVerify }
+          /\ unit
     , publicOutput: self
     }
+
+-- | Slot 0: the separately compiled No_recursion_return (width 0);
+-- | slot 1: self (width 2).
+type TreeProofReturnPrevsSpec =
+  Tuple2 (Slot 0 (StatementIO Unit (F StepField))) (Slot 2 (StatementIO Unit (F StepField)))
 
 compileStepMainTreeProofReturn
   :: StepMainTreeProofReturnParams -> Effect StepArtifact
@@ -136,9 +140,8 @@ compileStepMainTreeProofReturn params = do
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
-          @(Tuple2 (Slot 0 (StatementIO Unit (F StepField))) (Slot 2 (StatementIO Unit (F StepField))))
+          @TreeProofReturnPrevsSpec
           @Unit
-          @(F StepField)
           @(F StepField)
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2

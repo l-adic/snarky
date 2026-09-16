@@ -30,6 +30,7 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F, FVar, Snarky, assertEqual_, const_)
@@ -48,15 +49,14 @@ type StepMainTwoPhaseChainMakeZeroParams =
 makeZeroRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r Unit
+  => AsProver StepField r (PrevValues Unit)
   -> FVar StepField
   -> Snarky StepField (KimchiConstraint StepField) r
-       (RuleOutput 0 Unit Unit)
+       (RuleOutput Unit Unit)
 makeZeroRule _ appState = do
   assertEqual_ appState (const_ zero)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
@@ -79,7 +79,6 @@ compileStepMainTwoPhaseChainMakeZero params = do
       ( \_ -> stepMain
           @Unit
           @(F StepField)
-          @Unit
           @Unit
           @Unit
           @1

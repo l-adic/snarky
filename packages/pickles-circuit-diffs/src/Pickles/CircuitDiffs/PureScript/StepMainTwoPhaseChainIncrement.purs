@@ -37,6 +37,7 @@ import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
+import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -55,21 +56,25 @@ type StepMainTwoPhaseChainIncrementParams =
   , blindingH :: AffinePoint (F StepField)
   }
 
+-- | The rule's one self prev slot, at width 1.
+type IncrementPrevsSpec = Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
+
 -- | `increment` rule: asserts `self_v = prev + 1`. No base case branch
 -- | (unlike SimpleChain), so `proofMustVerify` is a constant `true_`.
 incrementRule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r (Tuple1 (StatementIO (F StepField) Unit))
+  => AsProver StepField r (PrevValues IncrementPrevsSpec)
   -> FVar StepField
   -> Snarky StepField (KimchiConstraint StepField) r
-       (RuleOutput 1 (FVar StepField) Unit)
+       (RuleOutput IncrementPrevsSpec Unit)
 incrementRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> \(StatementIO p1 /\ _) -> p1.input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
   assertEqual_ (CVar.add_ (const_ one) prev) appState
   pure
-    { prevPublicInputs: prev :< Vector.nil
-    , proofMustVerify: true_ :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+          /\ unit
     , publicOutput: unit
     }
 
@@ -109,10 +114,9 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
-          @(Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
+          @IncrementPrevsSpec
           @(F StepField)
           @Unit
-          @(F StepField)
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @2
