@@ -241,22 +241,70 @@ def ipaFinalCheck {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
   let success ← Snarky.and xEq yEq
   pure ⟨success, chals, t, cc, sv⟩
 
+/-- The sign flag's advice: whether the ordinate's representative lies in the upper half,
+at or above `(p + 1) / 2`. -/
+private def isUpperWit (y : FVar F) : AsProver F Bool := do
+  let v ← AsProver.readCVar y
+  pure (decide ((fieldModulus F + 1) / 2 ≤ ToNat.toNat v))
+
+/-- The IPA base with its ordinate in the lower half (PS `lowerHalfPoint`, OCaml
+`lower_half_point`): `(x, y')` with `y' = ±y` and `y'` split below `(p + 1) / 2`. The group
+map leaves the square root's sign to the prover; the wire verifier takes the lower-half root
+too. -/
+def lowerHalfPoint (endo : FVar F) (pt : AffinePoint (FVar F)) :
+    CircuitM F c (AffinePoint (FVar F)) := do
+  let isUpper ← witness (val := Bool) (isUpperWit pt.y)
+  let y ← select isUpper (CVar.scale_ (-1) pt.y) pt.y
+  let _ ← split128Below true endo ((fieldModulus F + 1) / 2) y
+  pure ⟨pt.x, y⟩
+
 /-- The opening check (PS `checkBulletproof`, OCaml `check_bulletproof`): from the sponge at
-`sponge_before_evaluations`, absorb the shifted `cip`, squeeze and map the `U` base,
-combine the bases by `ξ` under their masks, and run the final check. -/
+`sponge_before_evaluations`, absorb the shifted `cip`, squeeze and map the `U` base, pin its
+ordinate to the lower half, combine the bases by `ξ` under their masks, and run the final
+check. -/
 def checkBulletproof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (sv : SpongeVar F) (bases : List (AffinePoint (FVar F) × Option (BoolVar F)))
     (inp : CheckBulletproofInput F sf) : CircuitM F c (CheckBulletproofOutput F) := do
   let sv ← absorbList p sv (ops.shiftedToAbsorbFields inp.deferred.combinedInnerProduct)
   let (t, sv) ← SpongeVar.squeeze p sv
-  let u ← groupMapCircuit sqrtF gm t
+  let u' ← groupMapCircuit sqrtF gm t
+  let u ← lowerHalfPoint endo u'
   let combined ← combinePolynomials e inp.xi bases
   ipaFinalCheck ops e p endo sv t u combined inp
 
 /-! ## Soundness: the transcript -/
 
 variable {V : Valuation F}
+
+/-- Under any valuation satisfying the emitted constraints, `lowerHalfPoint` keeps the abscissa
+and reads the ordinate as the input's or its negation. -/
+theorem lowerHalfPoint_spec (endo : FVar F) (pt : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄ lowerHalfPoint (c := Builder V (KimchiConstraint F)) endo pt
+    ⦃⇓ r _ => ⌜r.x = pt.x ∧ (r.y.val V = pt.y.val V ∨ r.y.val V = -pt.y.val V)⌝⦄ := by
+  have hsplit := fun (b : ℕ) (y : FVar F) =>
+    builder_spec_true (split128Below (c := Builder V (KimchiConstraint F)) true endo b y)
+  simp only [lowerHalfPoint, select_fvar]
+  mvcgen [hsplit]
+  rename_i hb _ _ hsel _ _
+  obtain ⟨bb, hbb⟩ := hb
+  have hy := hsel bb hbb
+  cases bb <;> simp [hy, CVar.val_scale_]
+
+/-- The curve reading `lowerHalfPoint_spec` gives: the output reads as the input's point or
+its negation, on a curve with `a₁ = a₃ = 0`. -/
+theorem lowerHalfPoint_onCurve (endo : FVar F)
+    {W : WeierstrassCurve.Affine F} (ha : W.a₁ = 0 ∧ W.a₃ = 0) (pt : AffinePoint (FVar F)) :
+    ⦃⌜True⌝⦄ lowerHalfPoint (c := Builder V (KimchiConstraint F)) endo pt
+    ⦃⇓ r _ => ⌜∀ U : W.Point, OnCurveAt W V pt U →
+      ∃ U' : W.Point, OnCurveAt W V r U' ∧ (U' = U ∨ U' = -U)⌝⦄ := by
+  refine builder_spec_imp _ _ _ (lowerHalfPoint_spec endo pt) fun r hr U hU => ?_
+  obtain ⟨hx, hy | hy⟩ := hr
+  · exact ⟨U, by simpa only [OnCurveAt, hx, hy] using hU, Or.inl rfl⟩
+  · exact ⟨-U, by simpa only [OnCurveAt, hx, hy, CVar.val_negate_] using OnCurveAt.neg ha hU,
+      Or.inr rfl⟩
+
+attribute [irreducible] lowerHalfPoint
 
 /-- A pair of points' coordinates, the form `Bulletproof.Ipa.ipaSqueezes` takes. -/
 def coordsPair (q : AffinePoint F × AffinePoint F) : (F × F) × (F × F) :=
@@ -338,6 +386,8 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {sf : Ty
   have hsq := fun sv' => SpongeVar.squeeze_spec (V := V) p hsize sv'
   have hgm := fun t => builder_spec_true (groupMapCircuit (c := Builder V (KimchiConstraint F))
     sqrtF gm t)
+  have hlh := fun pt => builder_spec_true
+    (lowerHalfPoint (c := Builder V (KimchiConstraint F)) endo pt)
   have hcomb := fun xi bs => builder_spec_true
     (combinePolynomials (c := Builder V (KimchiConstraint F)) e xi bs)
   have hext := fun sv' =>
@@ -351,7 +401,7 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {sf : Ty
   have hpre := fun sv' => squeezePrechallenge_spec (V := V) h2 h3 p hsize false endo sv'
   have heq := fun a b => builder_spec_true (equals (c := Builder V (KimchiConstraint F)) a b)
   have hand := fun a b => builder_spec_true (Snarky.and (c := Builder V (KimchiConstraint F)) a b)
-  mvcgen [hlimbs, hsq, hgm, hcomb, hext, hbr, hsc, hadd, hem, hδs, hpre, heq, hand]
+  mvcgen [hlimbs, hsq, hgm, hlh, hcomb, hext, hbr, hsc, hadd, hem, hδs, hpre, heq, hand]
   case vc2.W => exact e.d.W
   case vc3.ha => exact e.d.short
   case vc5.W => exact e.d.W
@@ -362,8 +412,8 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) {sf : Ty
   case vc12.ha => exact e.d.short
   case vc14.W => exact e.d.W
   case vc15.ha => exact e.d.short
-  rename_i _ svL _ hL sqT _ hT u _ comb _ ext _ hext lrProd _ cipU _ pP _ _ q _ _ svD _ hD cP _ hC
-    cQ _ lhs _ _ bU _ sgBU _ _ z1T _ z2T _ rhs _ xEq _ _ yEq _ _ succ _ _ _
+  rename_i _ svL _ hL sqT _ hT _ _ u _ comb _ ext _ hext lrProd _ cipU _ pP _ _ q _ _ svD _ hD cP _
+    hC cQ _ lhs _ _ bU _ sgBU _ _ z1T _ z2T _ rhs _ xEq _ _ yEq _ _ succ _ _ _
   have s1 := hL s₀ hs
   obtain ⟨htv, s2⟩ := hT _ s1
   obtain ⟨hchals, s3⟩ := hext _ s2
@@ -849,11 +899,16 @@ theorem checkBulletproof_spec_success {sf : Type}
   have hcomb := combinePolynomials_spec (V := V) e inp.xi n hxi hchar bases bv hb hbne
   have hfin := fun sv' t u comb => ipaFinalCheck_spec (V := V) ops e p endo hchar R
     sv' t u comb inp hwf hreg δv sgv hv lrv hlr hlrne hδ hsg hh
-  mvcgen -trivial [habs, hsq, hgm, hcomb, hfin]
+  have hlh := lowerHalfPoint_onCurve (V := V) endo ⟨e.d.short.1, e.d.short.2.2.1⟩
+  mvcgen -trivial [habs, hsq, hgm, hlh, hcomb, hfin]
   case vc1.hsize => exact hsize
-  rename_i _ _ _ tv _ _ u _ hu comb _ hP o _
+  rename_i _ _ _ tv _ _ _ _ hu u _ hlow comb _ hP o _
   intro ho
-  obtain ⟨U, hU, hsign⟩ := hu
+  obtain ⟨U₀, hU₀, hsign₀⟩ := hu
+  -- the lower-half ordinate keeps the point up to sign
+  obtain ⟨U, hU, hsign'⟩ := hlow U₀ hU₀
+  have hsign : U = umap (tv.1.val V) ∨ U = -umap (tv.1.val V) := by
+    rcases hsign' with rfl | rfl <;> rcases hsign₀ with rfl | rfl <;> simp
   obtain ⟨ht, ns, c₀, wcip, wb, w₁, w₂, hns, hlen, hc, hpcip, hpb, hp1, hp2, hiff⟩ :=
     ho _ _ hU hP
   rw [ht]

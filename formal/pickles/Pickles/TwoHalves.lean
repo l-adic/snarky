@@ -180,10 +180,10 @@ variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- `IvpReads` with its slacks closed: the four plonk cells read the wire's fq
-prechallenges exactly, the map-to-curve is the wire's `toGroup` (no sign), the returned
-round prechallenges are the wire's and the Schnorr prechallenge is the wire's. What
-`IvpReads` becomes once `lowest_128_bits` and the map-to-curve's square root are pinned in
-circuit; `IvpReadsExact.toReads` is the inclusion. -/
+prechallenges exactly, the `U` base is the wire's `uBase` (no sign), the returned round
+prechallenges are the wire's and the Schnorr prechallenge is the wire's. What `IvpReads`
+becomes once `lowest_128_bits` and the map-to-curve's square root are pinned in circuit;
+`IvpReadsExact.toReads` is the inclusion. -/
 def IvpReadsExact {nc : ℕ}
     (S : IvpSide C V ops)
     (σ : SRS C.Point)
@@ -204,7 +204,7 @@ def IvpReadsExact {nc : ℕ}
   ∀ ξ₀, Reads128 V claims.xi ξ₀ →
     List.Forall₂ (Reads128 V) o.bulletproofChallenges r.2.1.toList ∧
     (((↑o.success : CVar C.BaseField).val V = 1) ↔
-      schnorrAt C σ (C.toGroup r.1) (r.2.1.map fun m => endoExpand C.lam m.val)
+      schnorrAt C σ (C.uBase r.1) (r.2.1.map fun m => endoExpand C.lam m.val)
         (endoExpand C.lam r.2.2.val)
         (S.decode claims.deferred.combinedInnerProduct) (S.decode claims.deferred.b)
         (combineCommitments C (endoExpand C.lam ξ₀.val) run.commitments.toArray)
@@ -228,7 +228,7 @@ theorem IvpReadsExact.toReads {nc : ℕ}
     fun m hm => Reads128.unique hinj hα hm ▸ PrechallengeAlias.refl _ _,
     fun m hm => Reads128.unique hinj hζ hm ▸ PrechallengeAlias.refl _ _, fun ξ₀ hξ₀ => ?_⟩
   obtain ⟨hns, hiff⟩ := hξ ξ₀ hξ₀
-  exact ⟨_, _, _, _, Or.inl rfl, hns,
+  exact ⟨_, _, _, _, C.uBase_eq_or_neg _, hns,
     List.forall₂_map_left_iff.mpr (List.forall₂_same.mpr fun m _ => PrechallengeAlias.refl _ m),
     PrechallengeAlias.refl _ _, Vector.toList_map, hiff⟩
 

@@ -40,6 +40,10 @@ Every deferral is declared here.
   the batch read them as `oracles`/`to_batch` read `self.prev_challenges`
   (verifier.rs:165–168, :290–299, :311–329, :972–975). Validated on a deployed pickles
   wrap proof with its two accumulators (`fixtures/kimchi_proof_pallas_pickles.json`);
+* the opening's `U` base is the map-to-curve point with its ordinate in the lower half
+  (`Ipa.KimchiCurve.uBase`), as the pinned proof-systems derives it (`lower_half_ordinate`,
+  `poly-commitment/src/ipa.rs`, at both `u_base` sites); upstream proof-systems takes the
+  field's square root as returned, a sign a circuit cannot check without that pin;
 * the VK digest is an *input* (`KimchiVK.digest`); transcribing
   `VerifierIndex::digest()` (verifier_index.rs:399) is a declared deferral;
 * `linearization.index_terms` is empty at the basic gate set, so `f_comm` is the
