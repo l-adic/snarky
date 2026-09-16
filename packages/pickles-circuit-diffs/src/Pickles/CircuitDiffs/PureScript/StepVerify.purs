@@ -151,7 +151,7 @@ stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
     ivpInput =
       { publicInput
       , sgOld: constDummySg :< constDummySg :< Vector.nil
-      , sgOldMask: Vector.replicate ((const_ one))
+      , sgOldMask: Nothing
       , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
           { index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _
