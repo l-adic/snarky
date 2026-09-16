@@ -74,7 +74,6 @@ type SimpleChainN2Rules =
   RulesCons 2
     (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
     (Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit)))
-    (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -94,7 +93,7 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
     entry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField)
       simpleChainN2Rule
-      (tuple2 Self Self)
+      (Self :< Self :< Vector.nil)
 
     let rules = tuple1 entry
 

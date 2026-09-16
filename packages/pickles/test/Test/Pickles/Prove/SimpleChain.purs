@@ -76,7 +76,6 @@ type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) NoOutput))
     (Tuple1 (Slot 1 (StatementIO (F StepField) NoOutput)))
-    (Tuple1 SlotWrapKey)
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -87,7 +86,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
-    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput @(F StepField) simpleChainRule (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput @(F StepField) simpleChainRule (Self :< Vector.nil)
 
     let rules = tuple1 chainEntry
 

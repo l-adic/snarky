@@ -251,11 +251,10 @@ type TxnStmt = StatementIO (Statement Vesta.ScalarField) NoOutput
 -- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
 -- | program) at one chunk.
 type TxnSnarkRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     ( RulesCons 2
         (TxnStmt /\ TxnStmt /\ Unit)
         (Slot 2 TxnStmt /\ Slot 2 TxnStmt /\ Unit)
-        (SlotWrapKey /\ SlotWrapKey /\ Unit)
         RulesNil
     )
 
@@ -301,7 +300,7 @@ compileTxCircuit chainId lagrangeCache srs = do
       @(Statement Vesta.ScalarField)
       @(TxAdviceRow d ())
       (baseRule @d chainId)
-      unit
+      Vector.nil
   mergeEntry <-
     mkRuleEntry
       @2
@@ -309,7 +308,7 @@ compileTxCircuit chainId lagrangeCache srs = do
       @(Statement Vesta.ScalarField)
       @(TxAdviceRow d ())
       mergeRule
-      (tuple2 Self Self)
+      (Self :< Self :< Vector.nil)
 
   let rules = tuple2 baseEntry mergeEntry
 

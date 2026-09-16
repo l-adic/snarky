@@ -90,14 +90,13 @@ noRecursionInputRule _ self = do
 -- | 1-rule carrier for the Input-mode No_recursion child (mpv=0,
 -- | valCarrier=Unit, no prevs).
 type NoRecursionInputRules =
-  RulesCons 0 Unit Unit Unit RulesNil
+  RulesCons 0 Unit Unit RulesNil
 
 -- | 1-rule carrier with a single side-loaded prev slot, `Width.Max = N2`.
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
     (Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
-    (Tuple1 SlotWrapKey)
     RulesNil
 
 -- | Side-loaded main rule. Asserts `1 + prev == self` OR base case,
@@ -136,7 +135,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- runtime `wrapVk` for the side-loaded slot.
     childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
       noRecursionInputRule
-      unit
+      Vector.nil
 
     child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ compileMulti
       @NoRecursionInputRules
@@ -192,7 +191,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @Unit
       @(F StepField)
       sideLoadedMainRule
-      (tuple1 SideLoadedKey)
+      (SideLoadedKey :< Vector.nil)
 
     parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
       @SideLoadedMainRules

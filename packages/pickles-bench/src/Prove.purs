@@ -27,6 +27,8 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1, tuple2)
+import Data.Vector ((:<))
+import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -40,7 +42,7 @@ import Snarky.Circuit.DSL (F(..))
 -- | the NRR base, prove b0; return the b1 prove as a runnable thunk.
 prepareProve :: BenchSrs -> Effect (Aff Unit)
 prepareProve srs = do
-  nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+  nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
   nrr <- compileMulti
     @NrrRules
     @(F StepField)
@@ -59,7 +61,7 @@ prepareProve srs = do
 
   treeEntry <- mkRuleEntry @2 @(F StepField) @(F StepField)
     benchTreeRule
-    (tuple2 (External nrrProverVKs) Self)
+    (External nrrProverVKs :< Self :< Vector.nil)
   tree <- compileMulti
     @TreeRules
     @(F StepField)

@@ -114,11 +114,10 @@ incrementRule getPrevStates self = do
 -- |   * branch 0: makeZero (mpv=0, no prevs)
 -- |   * branch 1: increment (mpv=1, one self-prev)
 type TwoPhaseChainRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
         (Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
-        (Tuple1 SlotWrapKey)
         RulesNil
     )
 
@@ -148,8 +147,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule Vector.nil
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (Self :< Vector.nil)
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti

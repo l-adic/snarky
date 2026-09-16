@@ -21,7 +21,9 @@ import Control.Promise (fromAff)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (tuple1, tuple2)
+import Data.Tuple.Nested (tuple1)
+import Data.Vector ((:<))
+import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Pickles (RuleEntry, SlotWrapKey(..), StepField, compileMulti, mkRuleEntry)
@@ -36,9 +38,9 @@ import Snarky.Circuit.DSL (F)
 -- | `inputVal = Unit`, so this `identity` cast supplies the missing pin
 -- | with named type variables (no wildcard warnings).
 pinCompileEntry
-  :: forall prevsSpec mpv nd valCarrier carrier outputSize slotVKs vkCarrier blueprints
-   . RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize slotVKs vkCarrier blueprints ()
-  -> RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize slotVKs vkCarrier blueprints ()
+  :: forall prevsSpec mpv nd valCarrier carrier outputSize vkCarrier blueprints
+   . RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize vkCarrier blueprints ()
+  -> RuleEntry prevsSpec mpv nd valCarrier Unit carrier outputSize vkCarrier blueprints ()
 pinCompileEntry = identity
 
 -- | The full example-circuit compilation against the shared SRS: the
@@ -51,7 +53,7 @@ fullCompile srs = do
   -- witness monad `m` is never pinned by usage — pin it to `Effect`
   -- explicitly (compile discards the `exists` bodies, so `m` is phantom
   -- here; any `Monad`/`MonadEffect`/`MonadRec` works).
-  nrrEntry <- pinCompileEntry <$> mkRuleEntry @0 @(F StepField) @Unit @() nrrRule unit
+  nrrEntry <- pinCompileEntry <$> mkRuleEntry @0 @(F StepField) @Unit @() nrrRule Vector.nil
   nrr <- compileMulti
     @NrrRules
     @(F StepField)
@@ -70,7 +72,7 @@ fullCompile srs = do
 
   treeEntry <- pinCompileEntry <$> mkRuleEntry @2 @(F StepField) @(F StepField) @()
     benchTreeRule
-    (tuple2 (External nrrProverVKs) Self)
+    (External nrrProverVKs :< Self :< Vector.nil)
   tree <- compileMulti
     @TreeRules
     @(F StepField)

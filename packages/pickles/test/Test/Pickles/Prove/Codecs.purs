@@ -17,6 +17,7 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1)
+import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
@@ -38,7 +39,7 @@ spec = describe "Pickles.Prove.Codecs" do
       cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR"
         <#> map \dir -> mkProofCache (dir <> "/Codecs.json")
 
-      nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+      nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
       let rules = tuple1 nrrEntry
 
       logInfo "[Codecs] compiling…"

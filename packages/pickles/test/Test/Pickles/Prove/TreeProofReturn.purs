@@ -92,7 +92,7 @@ nrrRule _ _ = pure
 -- | NRR's 1-rule carrier (same shape as the standalone NRR test). NRR
 -- | output is a StepField, so the StepRule's outputVal is `F StepField`.
 type NrrRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     RulesNil
 
 -- | Tree_proof_return's 1-rule carrier. Two prev slots: an NRR external
@@ -101,7 +101,6 @@ type TreeRules =
   RulesCons 2
     (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
     TreeProofReturnPrevsSpec
-    (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -110,7 +109,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
     -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
 
     let nrrRules = tuple1 nrrEntry
 
@@ -153,7 +152,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
     treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
       treeProofReturnRule
-      (tuple2 (External nrrProverVKs) Self)
+      (External nrrProverVKs :< Self :< Vector.nil)
 
     let treeRules = tuple1 treeEntry
 

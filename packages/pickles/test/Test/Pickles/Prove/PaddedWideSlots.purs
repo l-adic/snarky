@@ -32,6 +32,8 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple2, tuple2)
+import Data.Vector ((:<))
+import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
@@ -53,11 +55,10 @@ type Stmt = StatementIO (F StepField) Unit
 -- | width 2 and branch 0's `mpvPad` is 2 — every slot it presents is a
 -- | dummy that must still be two stacks wide.
 type PaddedWideSlotsRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     ( RulesCons 2
         (Tuple2 Stmt Stmt)
         (Tuple2 (Slot 2 Stmt) (Slot 2 Stmt))
-        (Tuple2 SlotWrapKey SlotWrapKey)
         RulesNil
     )
 
@@ -77,10 +78,10 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField) makeZeroRule unit
+    baseEntry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField) makeZeroRule Vector.nil
     mergeEntry <- liftEffect $ mkRuleEntry @2 @Unit @(F StepField)
       simpleChainN2Rule
-      (tuple2 Self Self)
+      (Self :< Self :< Vector.nil)
     let rules = tuple2 baseEntry mergeEntry
 
     logInfo "[PaddedWideSlots] compiling…"
