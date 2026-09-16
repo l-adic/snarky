@@ -11,7 +11,6 @@
 module Pickles.Prove.SlotCompile
   ( SlotCompileConfig
   , SlotCompileEntry
-  , slotCompileData
   , slotCompileEntry
   ) where
 
@@ -148,15 +147,3 @@ slotCompileEntry cfg selfStepDomainLog2s slot =
     -- so it carries all three bases and muxes in-circuit instead.
     SideLoadedSource ->
       BlueprintSideLoaded (map lagrangeAt (13 :< 14 :< 15 :< Vector.nil))
-
--- | The whole slot list, in order. `CompilableRulesSpec`'s recursion
--- | becomes this `map`.
-slotCompileData
-  :: forall @slotNc
-   . Reflectable slotNc Int
-  => SlotCompileConfig
-  -> Array Int
-  -> Array Slot
-  -> Array (SlotCompileEntry slotNc)
-slotCompileData cfg selfStepDomainLog2s =
-  map (slotCompileEntry @slotNc cfg selfStepDomainLog2s)

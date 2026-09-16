@@ -1,4 +1,4 @@
-module Pickles.Hex
+module Pickles.Util.Hex
   ( parseHex
   ) where
 
