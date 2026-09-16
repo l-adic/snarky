@@ -1,3 +1,4 @@
+import Std.Data.HashMap
 import Snarky.Kimchi.Constraint
 
 /-!
@@ -14,11 +15,10 @@ here is the circuit-diffs JSON schema `KimchiFixture.PS.Raw` decodes — the D-K
 comparison seam.
 
 Name map: `makePublicInputRows`, `makeGateData`, `makeWitness` keep their names;
-`makeWireMapping`/`makeGates` collapse into `wireTarget`/`assembleGates` — the PS
-`ST`-pass builds placement/class stores imperatively and then SORTS each class's
-cells, so the pure rendering computes each cell's successor in its class's sorted
-cell list directly (the sort makes the discovery order irrelevant; what survives is
-row-major cell order within the sorted class and the cyclic successor).
+`makeWireMapping`/`makeGates` become `wireMap`/`assembleGates` — the PS `ST`-pass builds
+placement/class stores imperatively and then SORTS each class's cells; `wireMap`
+collects the classes in row-major order, which is that sorted order, and maps each
+cell to its cyclic successor.
 
 Deviations from the PS original (per `formal/docs/snarky-kimchi-alignment.md`):
 - `Wire` is a plain `(row, col)` record (the PS type is an FFI constructor); a cell
@@ -59,60 +59,40 @@ structure AssembledGate (F : Type u) where
   coeffs : List F
   deriving Repr, DecidableEq
 
-/-- The permutation cells of the row list: every `(row, col)` with `col < 7` holding
-a variable, tagged with that variable's class root — in row-major cell order. -/
-def permCells (roots : Array Variable) (rows : List (KimchiRow F)) :
-    List ((Nat × Nat) × Nat) :=
-  (rows.zipIdx.map fun (row, i) =>
-    ((row.vars.toList.take 7).zipIdx.filterMap fun (mv, j) =>
-      mv.map fun v => ((i, j), roots.getD v v))).flatten
-
-/-- Insertion into an ascending cell list (structural, kernel-reducible — the PS
-`Array.sort` of a class's cells). -/
-private def insertCell (c : Nat × Nat) : List (Nat × Nat) → List (Nat × Nat)
-  | [] => [c]
-  | d :: rest =>
-    if c.1 < d.1 ∨ (c.1 = d.1 ∧ c.2 ≤ d.2) then c :: d :: rest
-    else d :: insertCell c rest
-
-/-- A class's cells, ascending: every permutation cell whose variable shares the
-given root. -/
-def classCells (roots : Array Variable) (rows : List (KimchiRow F)) (root : Variable) :
-    List (Nat × Nat) :=
-  ((permCells roots rows).filterMap fun (c, r) =>
-    if r = root then some c else none).foldl (fun acc c => insertCell c acc) []
-
-/-- The cyclic successor of `c` in the ascending cell list (the PS
-`zip sorted (rotateLeft sorted)` pairing): the element after `c`, wrapping the last
-element around to the threaded head; `c` itself when the list misses it. -/
-private def cycleNextFrom (head c : Nat × Nat) : List (Nat × Nat) → Nat × Nat
-  | [] => c
-  | [d] => if d = c then head else c
-  | d :: e :: rest => if d = c then e else cycleNextFrom head c (e :: rest)
-
-/-- The wiring target of cell `(i, j)` (the PS wire map, functionally): the cyclic
-successor within its variable's sorted class when the cell is wired, else the cell
-itself. -/
-def wireTarget (roots : Array Variable) (rows : List (KimchiRow F)) (i j : Nat) : Wire :=
-  match (permCells roots rows).lookup (i, j) with
-  | none => ⟨i, j⟩
-  | some root =>
-    match classCells roots rows root with
-    | [] => ⟨i, j⟩
-    | cells@(head :: _) =>
-      let t := cycleNextFrom head (i, j) cells
-      ⟨t.1, t.2⟩
+/-- The wire map (PS `makeWireMapping`): every wired permutation cell `(row, col)`,
+`col < 7`, to the next cell of its variable's class, the last wrapping to the first.
+One pass over the rows collects each class's cells; row-major discovery is already the
+ascending cell order PS sorts into, so no class needs a sort. -/
+def wireMap (roots : Array Variable) (rows : List (KimchiRow F)) :
+    Std.HashMap (Nat × Nat) Wire := Id.run do
+  let mut classes : Std.HashMap Variable (Array (Nat × Nat)) := {}
+  let mut i := 0
+  for row in rows do
+    let mut j := 0
+    for mv in row.vars.toList.take 7 do
+      if let some v := mv then
+        classes := classes.alter (roots.getD v v) fun
+          | none => some #[(i, j)]
+          | some cs => some (cs.push (i, j))
+      j := j + 1
+    i := i + 1
+  let mut m : Std.HashMap (Nat × Nat) Wire := {}
+  for (_, cells) in classes do
+    for k in [0:cells.size] do
+      let t := cells[(k + 1) % cells.size]!
+      m := m.insert cells[k]! ⟨t.1, t.2⟩
+  return m
 
 /-- Assemble the gate table (PS `makeGates`): per row the tag, the seven wiring
-targets, and the coefficients. -/
+targets (a cell outside every class targets itself), and the coefficients. -/
 def assembleGates (roots : Array Variable) (rows : List (KimchiRow F)) :
     List (AssembledGate F) :=
+  let wm := wireMap roots rows
+  let target (i j : Nat) : Wire := wm.getD (i, j) ⟨i, j⟩
   rows.zipIdx.map fun (row, i) =>
     { kind := row.kind,
-      wires := ⟨⟨[wireTarget roots rows i 0, wireTarget roots rows i 1,
-                  wireTarget roots rows i 2, wireTarget roots rows i 3,
-                  wireTarget roots rows i 4, wireTarget roots rows i 5,
-                  wireTarget roots rows i 6]⟩, by simp⟩,
+      wires := ⟨⟨[target i 0, target i 1, target i 2, target i 3, target i 4, target i 5,
+                  target i 6]⟩, by simp⟩,
       coeffs := row.coeffs }
 
 /-- The public-input rows (PS `makePublicInputRows`): one generic row per public
