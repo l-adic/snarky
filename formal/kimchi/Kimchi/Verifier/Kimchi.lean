@@ -560,35 +560,6 @@ theorem frOracles_eq_frPrechallenges {nc k : ℕ} (cp : KimchiProof C nc k)
     challengeNat_fresh]
   rfl
 
-/-- A circuit's prechallenge `lo` is the verifier's `pre` (a packed squeeze, as a natural) up
-to the wrap-around slack of a 128-bit decomposition: `pre` itself (`k = 0`) or one of at most
-three aliases `(pre + k·p) mod 2¹²⁸`. -/
-def PrechallengeAlias (p pre : ℕ) (lo : Prechallenge) : Prop :=
-  ∃ k ≤ 3, lo.val = (pre + k * p) % 2 ^ 128
-
-/-- A prechallenge is its own alias (`k = 0`). -/
-theorem PrechallengeAlias.refl (p : ℕ) (m : Prechallenge) : PrechallengeAlias p m.val m :=
-  ⟨0, by omega, by rw [Nat.zero_mul, Nat.add_zero, Nat.mod_eq_of_lt m.2]⟩
-
-/-- The slack the circuit's `lowest_128_bits` leaves: a decomposition `x = lo + 2¹²⁸·hi` with
-`hi < 2¹²⁸` need not be the canonical one, since `2²⁵⁶` exceeds the modulus, so `lo` is the
-prechallenge `x.val % 2¹²⁸` only up to `PrechallengeAlias`. -/
-theorem low128_of_decomp {p : ℕ} (hp : 2 ^ 254 < p) (x : ZMod p) (lo : Prechallenge) (hi : ℕ)
-    (hhi : hi < 2 ^ 128) (h : x = (lo.val : ZMod p) + 2 ^ 128 * (hi : ZMod p)) :
-    PrechallengeAlias p (x.val % 2 ^ 128) lo := by
-  obtain ⟨lo, hlo⟩ := lo
-  simp only [PrechallengeAlias] at *
-  have hN : ((lo + 2 ^ 128 * hi : ℕ) : ZMod p) = x := by rw [h]; push_cast; ring
-  have hv : (lo + 2 ^ 128 * hi) % p = x.val := by rw [← ZMod.val_natCast, hN]
-  have hN' : x.val + (lo + 2 ^ 128 * hi) / p * p = lo + 2 ^ 128 * hi := by
-    rw [← hv, Nat.mod_add_div']
-  refine ⟨(lo + 2 ^ 128 * hi) / p, ?_, ?_⟩
-  · have := (Nat.div_lt_iff_lt_mul (by omega : 0 < p)).2
-      (show lo + 2 ^ 128 * hi < 4 * p by omega)
-    omega
-  · rw [Nat.mod_add_mod, hN']
-    omega
-
 /-! ## The scalar side -/
 
 /-- The chunk combination `∑ c, chunks[c] · xM ^ c` at `xM = pt^max_poly_size` — the

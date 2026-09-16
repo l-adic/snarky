@@ -32,7 +32,7 @@ proofs in one circuit, is not ported.
   the group half's `IvpReads` at the public input `pubOf (packLeaves statement)`, the wire's
   public input being the packed statement, with the claimed digest equal to the wire's digest
   element and, off the base case, the claimed round prechallenges equal to the returned ones
-  pair by pair (hence, through `IvpReads`, the wire's up to `PrechallengeAlias`). The `x_hat`
+  pair by pair (hence, through `IvpReads`, the wire's). The `x_hat`
   chunks read through `xHatKnown_reads_publicCommitment` at the tables' binding
   (`XhatTable.Bound`), the group half through `incrementallyVerifyProof_reads` at `IvpHyps`,
   and the assertion loop by its invariant. `verifyProof_step_reads` is the step side.
@@ -151,8 +151,7 @@ input `pub`, whose success bit is the returned bit, whose digest cell reads as t
 `sponge_digest_before_evaluations` (so the claim is the wire's digest element), and whose
 round prechallenges read as the claimed ones off the base case, pair by pair over the zip
 (the gadget compares the two lists as far as both reach; their lengths are the statement's
-and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges
-up to `PrechallengeAlias`. -/
+and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (cells : IvpInput C.BaseField sf)
     (u : UnfinalizedProof C.BaseField sf) (base : Bool) (v : BoolVar C.BaseField) : Prop :=

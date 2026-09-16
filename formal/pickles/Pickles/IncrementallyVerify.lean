@@ -24,9 +24,8 @@ deferred `ξ`) and scales by them. Their relation to the statement `finalize` ch
 
 `IvpReads` is the read, on either side (`IvpSide`): the digest is the wire's
 (`fqRun`'s digest element), the four plonk claims and the returned round prechallenges are the
-wire's fq / IPA prechallenges up to the `lowest_128_bits` slack `PrechallengeAlias`, and the success
-bit holds exactly when the Schnorr equation `Ipa.schnorrAt` holds — at the circuit's own
-transcript (the wire's up to those slacks and the map-to-curve's sign), over the wire's
+wire's fq / IPA prechallenges, and the success bit holds exactly when the Schnorr equation
+`Ipa.schnorrAt` holds — at the circuit's own transcript (the wire's), over the wire's
 batch stream `runInput`, at the claimed `ξ`, `cip`, `b`. The `sg`-correctness equation of
 `Ipa.verifyWith` is NOT the circuit's: pickles defers it to the next proof, whose verifier
 absorbs this `sg` as an old accumulator (`KimchiProof.olds`). `IvpTies` names what the read
@@ -230,12 +229,11 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
 /-- The group half's read. With `pre` the wire's raw fq run (`fqRun`, what `fqOracles`
 expands) and `r` its IPA run from the warm post-`ζ` state at the claimed `cip` (`ipaRunAt`,
 the claim in place of the wire's `cipOf`): (1) the digest cell is the wire's digest element;
-(2) the claimed `β`, `γ` read as prechallenges that are `pre`'s up to `PrechallengeAlias`, and
-the claimed `α`, `ζ`, once read as prechallenges, are `pre`'s up to the alias (the transcript
-range-checks the first two, `FqTranscriptReadsWire`); (3) for any prechallenge `ξ₀` the
-claimed `ξ` reads as, the returned round prechallenges read
-as some `ns`, `r`'s up to the alias, and, with `U` the map-to-curve of `r`'s `t` up to sign and
-`c₀` `r`'s Schnorr prechallenge up to the alias, the success bit reads `1` exactly when
+(2) the claimed `β`, `γ` read as `pre`'s prechallenges, and the claimed `α`, `ζ`, once read as
+prechallenges, are `pre`'s (the transcript range-checks the first two,
+`FqTranscriptReadsWire`); (3) for any prechallenge `ξ₀` the claimed `ξ` reads as, the returned
+round prechallenges read as `r`'s, and, with `U` the `uBase` of `r`'s `t` and `c₀` `r`'s
+Schnorr prechallenge, the success bit reads `1` exactly when
 `Ipa.schnorrAt` holds at `U`, the expansions of `ns` and `c₀`, the claimed `cip` and `b`, the
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
@@ -246,17 +244,16 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
   let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
   let run := runInput C σ cvk cp pub
   pre.digestElem = o.spongeDigest.val V ∧
-  (∃ m, Reads128 V inp.plonk.chals.beta m ∧ PrechallengeAlias C.base pre.beta.val m) ∧
-  (∃ m, Reads128 V inp.plonk.chals.gamma m ∧ PrechallengeAlias C.base pre.gamma.val m) ∧
-  (∀ m, Reads128 V inp.plonk.chals.alpha m → PrechallengeAlias C.base pre.alpha.val m) ∧
-  (∀ m, Reads128 V inp.plonk.chals.zeta m → PrechallengeAlias C.base pre.zeta.val m) ∧
+  Reads128 V inp.plonk.chals.beta pre.beta ∧
+  Reads128 V inp.plonk.chals.gamma pre.gamma ∧
+  (∀ m, Reads128 V inp.plonk.chals.alpha m → m = pre.alpha) ∧
+  (∀ m, Reads128 V inp.plonk.chals.zeta m → m = pre.zeta) ∧
   ∀ ξ₀, Reads128 V inp.xi ξ₀ →
     ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
       (chals : Vector C.ScalarField σ.k),
-      (U = C.toGroup r.1 ∨ U = -C.toGroup r.1) ∧
+      U = C.uBase r.1 ∧
       List.Forall₂ (Reads128 V) o.bulletproofChallenges ns ∧
-      List.Forall₂ (PrechallengeAlias C.base) (r.2.1.toList.map Subtype.val) ns ∧
-      PrechallengeAlias C.base r.2.2.val c₀ ∧
+      ns = r.2.1.toList ∧ c₀ = r.2.2 ∧
       chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
       (((↑o.success : CVar C.BaseField).val V = 1) ↔
         schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
@@ -491,16 +488,16 @@ section Assembly
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
-/-- Alias readings compose: the wire's prechallenges alias the cells' readings. -/
-private theorem forall₂_alias {pres : List ℕ} {us : List (SizedF 128 (FVar C.BaseField))}
+/-- Exact readings compose: the cells' readings are the wire's prechallenges. -/
+private theorem forall₂_exact {pres : List ℕ} {us : List (SizedF 128 (FVar C.BaseField))}
     {ns : List Prechallenge}
     (h1 : List.Forall₂ (fun (pre : ℕ) (u : SizedF 128 (FVar C.BaseField)) =>
-      ∀ m, Reads128 V u m → PrechallengeAlias C.base pre m) pres us)
+      ∀ m, Reads128 V u m → m.val = pre) pres us)
     (h2 : List.Forall₂ (Reads128 V) us ns) :
-    List.Forall₂ (PrechallengeAlias C.base) pres ns := by
+    ns.map Subtype.val = pres := by
   induction h1 generalizing ns with
-  | nil => cases h2; exact .nil
-  | cons h hs ih => cases h2 with | cons h' hs' => exact .cons (h _ h') (ih hs')
+  | nil => cases h2; rfl
+  | cons h hs ih => cases h2 with | cons h' hs' => rw [List.map_cons, h _ h', ih hs']
 
 /-- A pair read as two wire points reads as their coordinates. -/
 private theorem pairReads_reads
@@ -651,18 +648,24 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
   rw [← hpre] at hβ hγ hα hζ hd hwarm
   unfold IvpReads
   dsimp only
-  rw [hβ, hγ, hα, hζ, hd, hwarm]
+  rw [hd, hwarm]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- the digest
     exact hFq.2.2.2.2.2.2.2.1.symm
-  · obtain ⟨m, hm⟩ := hFq.2.2.2.2.1
-    exact ⟨m, hasrt.1.trans hm, Low128.alias S.curve.shape.base_big hFq.1 hm⟩
+  · -- `β` and `γ`: the transcript's range-checked reads are the wire's prechallenges
+    obtain ⟨m, hm⟩ := hFq.2.2.2.2.1
+    show _ = _
+    rw [hβ, hFq.1.exact hm]
+    exact hasrt.1.trans hm
   · obtain ⟨m, hm⟩ := hFq.2.2.2.2.2.1
-    exact ⟨m, hasrt.2.1.trans hm, Low128.alias S.curve.shape.base_big hFq.2.1 hm⟩
+    show _ = _
+    rw [hγ, hFq.2.1.exact hm]
+    exact hasrt.2.1.trans hm
+  · -- `α` and `ζ`, once read
+    intro m hm
+    exact Subtype.ext (by rw [hα, hFq.2.2.1.exact (hasrt.2.2.1.symm.trans hm)])
   · intro m hm
-    exact Low128.alias S.curve.shape.base_big hFq.2.2.1 (hasrt.2.2.1.symm.trans hm)
-  · intro m hm
-    exact Low128.alias S.curve.shape.base_big hFq.2.2.2.1 (hasrt.2.2.2.symm.trans hm)
+    exact Subtype.ext (by rw [hζ, hFq.2.2.2.1.exact (hasrt.2.2.2.symm.trans hm)])
   · intro ξ₀ hξ
     -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
     have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
@@ -691,15 +694,17 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     have hδv : CircuitType.Reads V inp.opening.delta (wirePt cp.opening.delta) :=
       reads_affinePoint.mpr (onCurveAt_equivPoint_coords hties.delta)
     -- the opening transcript, from the warm sponge
-    have hT := CheckBulletproofReads.wire S.curve.shape.base_big
-      (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
+    have hT := CheckBulletproofReads.wire (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
     -- the wire's IPA run at the claimed `cip` is the opening check's transcript
     obtain ⟨h1, h2, h3⟩ :=
       ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hcanon hwc cp.opening
-    rw [h1, h2, h3]
-    refine ⟨U, ns, c₀, chals, ?_, hns, forall₂_alias hT.2.1 hns, hT.2.2 c₀ hc, hchals, ?_⟩
+    rw [h1]
+    refine ⟨U, ns, c₀, chals, ?_, hns, ?_, Subtype.ext ((hT.2.2 c₀ hc).trans h3.symm), hchals,
+      ?_⟩
     · rw [← hT.1]
       exact hU
+    · exact List.map_injective_iff.mpr Subtype.val_injective
+        ((forall₂_exact hT.2.1 hns).trans h2.symm)
     · exact success_eq S σ cvk cp pub oldsW hties.olds_kept inp.opening.z1 inp.opening.z2
         hties.z1 hties.z2 U chals _ _ _ _ _ hiff
 
@@ -742,7 +747,8 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | true =>
     simp only [incrementallyVerifyProof, if_true]
     have htr := fun (d : FVar C.BaseField) (xHat : List (AffinePoint (FVar C.BaseField))) =>
-      fqSpongeTranscriptOpt_reads (V := V) S.curve.two_ne S.curve.three_ne _ C.sponge.hsize
+      fqSpongeTranscriptOpt_reads (V := V) S.curve.two_ne S.curve.three_ne S.curve.splitWidth _
+        C.sponge.hsize
         S.curve.small_inj endo d
         (inp.sgOld.map fun m => (m.1.getD true_, m.2)) xHat inp.wComm inp.zComm inp.tComm
     mvcgen -trivial [hXhat, htr, hasrt, hft, hcb]
@@ -788,7 +794,8 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
     have htr := fun (d : FVar C.BaseField) =>
-      fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne _ C.sponge.hsize endo d
+      fqSpongeTranscript_reads (V := V) S.curve.two_ne S.curve.three_ne S.curve.splitWidth _
+        C.sponge.hsize endo d
         (inp.sgOld.map (·.2))
         computeXHat (fun pts => CommReads C V pts (publicCommitment C σ cvk pub).toList) _
         (builder_spec_imp _ _ _ hXhat fun _ h => ⟨h, h.reads⟩) inp.wComm inp.zComm inp.tComm

@@ -222,6 +222,7 @@ and the inputs as themselves, the two squeezes are the wire verifier's
 are their low halves (`Low128`), `r` a prechallenge and, where the low bits are
 constrained, `ξ` too. -/
 theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (digestBefore : FVar F) (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (dv : F) (hd : ⦃⌜True⌝⦄ digest ⦃⇓ d _ => ⌜d.val V = dv⌝⦄)
@@ -243,7 +244,8 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init digestBefore
   have ha := fun sv d => absorbList_spec (V := V) p hsize sv (frTail d ftEval1 pub evals)
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
-  have hlo := fun b x => lowest128Bits'_spec (V := V) h2 h3 b endo x
+  have hlo := fun b x => builder_spec_and _ _ _ (lowest128Bits'_spec (V := V) h2 h3 b endo x)
+    (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt b endo x)
   mvcgen [h0, hd, ha, hsq, hlo]
   rename_i _ _ _ hA _ _ hdv svB _ hB _ _ hsq1 _ _ hlo1 _ _ hsq2 _ _ hlo2
   have hS : SpongeVar.ReadsAt V svB (Poseidon.absorb p Poseidon.init
@@ -255,12 +257,11 @@ theorem squeezeXiR_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     exact h
   obtain ⟨hx1, hs1⟩ := hsq1 _ hS
   obtain ⟨hx2, -⟩ := hsq2 _ hs1
-  obtain ⟨hiv₁, he₁, ⟨n₁, hn₁, rfl⟩, hb₁⟩ := hlo1
-  obtain ⟨hiv₂, he₂, ⟨n₂, hn₂, rfl⟩, hr₂⟩ := hlo2
+  obtain ⟨⟨-, -, -, hb₁⟩, hc₁⟩ := hlo1
+  obtain ⟨⟨-, -, -, hr₂⟩, hc₂⟩ := hlo2
   simp only [frSqueezes]
-  refine ⟨⟨n₁, hn₁, ?_⟩, ⟨n₂, hn₂, ?_⟩, fun h => reads128_of_nat (hb₁ h), reads128_of_nat hr₂⟩
-  · rw [← hx1, he₁]
-  · rw [← hx2, he₂]
+  exact ⟨fun lo hl hr => hx1 ▸ hc₁ lo hl hr, fun lo hl hr => hx2 ▸ hc₂ lo hl hr,
+    fun h => reads128_of_nat (hb₁ h), reads128_of_nat hr₂⟩
 
 /-! The gadgets are sealed after their specs: a consumer composes `challengeDigest_spec`,
 `maskedChallengeDigest_spec` and `squeezeXiR_spec`, never the bodies. -/

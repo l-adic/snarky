@@ -171,13 +171,25 @@ in the lower half. -/
 def KimchiCurve.uBase (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
   C.lowerHalf (C.toGroup t)
 
-/-- The `U` base is the map-to-curve's point or its negation. -/
-theorem KimchiCurve.uBase_eq_or_neg (C : KimchiCurve) (t : ZMod C.base) :
-    C.uBase t = C.toGroup t ∨ C.uBase t = -C.toGroup t := by
-  unfold uBase lowerHalf
-  split
-  · exact Or.inr rfl
-  · exact Or.inl rfl
+/-- A point or its negation whose ordinate lies below `(p + 1)/2` is `lowerHalf` of the
+point: the lower-half ordinate is unique, a zero ordinate being its own negation. -/
+theorem KimchiCurve.lowerHalf_eq_of_lt (C : KimchiCurve) (hodd : 2 < C.base)
+    {P Q : SWPoint C.E} (hQ : Q = P ∨ Q = -P) (hy : Q.y.val < (C.base + 1) / 2) :
+    Q = C.lowerHalf P := by
+  have hval := fun a : ZMod C.base => ZMod.val_lt a
+  unfold lowerHalf
+  rcases hQ with rfl | rfl
+  · rw [if_neg (by omega)]
+  · by_cases hz : P.y = 0
+    · have hneg : -P = P := SWPoint.ext_pair (by simp [hz])
+      rw [if_neg (by rw [hz, ZMod.val_zero]; omega), hneg]
+    · rw [if_pos]
+      haveI : NeZero P.y := ⟨hz⟩
+      have hn := ZMod.val_neg_of_ne_zero P.y
+      simp only [SWPoint.neg_y] at hy
+      have := hval P.y
+      omega
+
 
 /-- The endomorphism eigenvalue in the scalar field: what the transcript's challenge
 expansion (`endoExpand`) runs at. The eigenvalue itself is an integer on the endomorphism

@@ -141,6 +141,55 @@ private theorem assertSplitBelow_spec {V : Valuation F} [Field F] [DecidableEq F
   simp only [assertSplitBelow]
   mvcgen [htf]
 
+/-- **Soundness** (`assertSplitBelow`, the comparison): where naturals below `2^130` cast
+injectively and the bound fits in 256 bits, any satisfying valuation reading the limbs as
+128-bit naturals reads them below the bound. -/
+private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
+    (endo lo hi : FVar F) (bound : ℕ) (hbound : bound < 2 ^ 256) :
+    ⦃⌜True⌝⦄
+    assertSplitBelow (c := Builder V (KimchiConstraint F)) endo lo hi bound
+    ⦃⇓ _ _ => ⌜∀ l h : ℕ, l < 2 ^ 128 → h < 2 ^ 128 → lo.val V = l → hi.val V = h →
+      l + 2 ^ 128 * h < bound⌝⦄ := by
+  have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
+  simp only [assertSplitBelow]
+  mvcgen [htf]
+  rename_i _ _ _ hd1 top _ htop _ _ hsel _ _ hd2
+  intro l h hl hh hlo hhi
+  have hdm := Nat.mod_add_div bound (2 ^ 128)
+  have hbh : bound / 2 ^ 128 < 2 ^ 128 := by
+    rw [Nat.div_lt_iff_lt_mul (by positivity)]
+    calc bound < 2 ^ 256 := hbound
+      _ = 2 ^ 128 * 2 ^ 128 := by norm_num
+  have hbl : bound % 2 ^ 128 < 2 ^ 128 := Nat.mod_lt _ (by positivity)
+  -- the high limb is at most the bound's
+  obtain ⟨n1, hn1, hv1, -⟩ := hd1
+  simp only [CVar.val_sub_, CVar.val, hhi] at hv1
+  have he1 : bound / 2 ^ 128 = h + n1 :=
+    hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv1)
+  rcases Nat.lt_or_ge h (bound / 2 ^ 128) with hlt | hge
+  · -- a strictly smaller high limb leaves room for any low limb
+    have hm : 2 ^ 128 * (h + 1) ≤ 2 ^ 128 * (bound / 2 ^ 128) := Nat.mul_le_mul_left _ hlt
+    rw [mul_add, mul_one] at hm
+    generalize bound / 2 ^ 128 = bq at hm hdm
+    generalize 2 ^ 128 * bq = kb at hm hdm
+    generalize 2 ^ 128 * h = kh at hm ⊢
+    omega
+  · -- equal high limbs: the selected difference pins the low limb below the bound's
+    have hheq : h = bound / 2 ^ 128 := by omega
+    have htop1 : (↑top : CVar F).val V = bit true := by
+      rw [htop]
+      simp [CVar.val, hhi, hheq, bit]
+    have hd := hsel true htop1
+    obtain ⟨n2, hn2, hv2, -⟩ := hd2
+    simp only [if_true, CVar.val_sub_, CVar.val, hlo] at hd
+    rw [hd] at hv2
+    have he2 : bound % 2 ^ 128 = l + n2 + 1 :=
+      hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv2)
+    rw [← hheq] at hdm
+    nlinarith
+
 /-- The modulus read off a lawful field is its cardinality: `-1`'s representative is the
 largest one. -/
 theorem fieldModulus_eq_card [Field F] [ToNat F] [LawfulToNat F] :
@@ -275,6 +324,37 @@ theorem split128Below_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     exact ⟨lohi.val.2.val V, by rw [heq, CVar.val_add_, CVar.val_scale_],
       ⟨nh, hnhlt, hnh⟩, fun hc => absurd hc hfalse⟩
 
+/-- **Soundness, below the bound** (`split128Below`): where naturals below `2^130` cast
+injectively and the bound fits in 256 bits, a low half reading as a 128-bit natural `l`
+splits the operand below the bound, `x = l + 2^128·h` with `h < 2^128` and
+`l + 2^128·h < bound`. At the field's modulus this makes `l` the canonical
+representative's low half. -/
+theorem split128Below_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
+    (constrainLowBits : Bool) (endo : FVar F) (bound : ℕ) (hbound : bound < 2 ^ 256)
+    (x : FVar F) :
+    ⦃⌜True⌝⦄
+    split128Below (c := Builder V (KimchiConstraint F)) constrainLowBits endo bound x
+    ⦃⇓ r _ => ⌜∀ l : ℕ, l < 2 ^ 128 → r.val.val V = l →
+      ∃ h : ℕ, h < 2 ^ 128 ∧ x.val V = (l : F) + 2 ^ 128 * (h : F) ∧
+        l + 2 ^ 128 * h < bound⌝⦄ := by
+  have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
+  have hcmp := fun (lo hi : FVar F) =>
+    assertSplitBelow_below (V := V) h2 h3 hinj endo lo hi bound hbound
+  simp only [split128Below]
+  mvcgen [htf, hcmp]
+  · rename_i lohi _ _ _ _ _ hhi _ _ _ _ _ heq _ _ hb
+    intro l hl hr
+    obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
+    exact ⟨nh, hnhlt, by rw [heq, CVar.val_add_, CVar.val_scale_, ← hnh]; exact congrArg (· + _) hr,
+      hb l nh hl hnhlt hr hnh⟩
+  · rename_i lohi _ _ _ _ _ hhi _ _ heq _ _ hb
+    intro l hl hr
+    obtain ⟨nh, hnhlt, hnh, -⟩ := hhi
+    exact ⟨nh, hnhlt, by rw [heq, CVar.val_add_, CVar.val_scale_, ← hnh]; exact congrArg (· + _) hr,
+      hb l nh hl hnhlt hr hnh⟩
+
 /-- **Soundness** (`lowest128Bits'`): `split128Below_spec` at the field's modulus. -/
 theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (constrainLowBits : Bool) (endo x : FVar F) :
@@ -286,6 +366,20 @@ theorem lowest128Bits'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F
       (constrainLowBits = true →
         ∃ n : ℕ, n < 2 ^ 128 ∧ r.val.val V = (n : F))⌝⦄ :=
   split128Below_spec h2 h3 constrainLowBits endo (fieldModulus F) x
+
+/-- **Soundness, canonical** (`lowest128Bits'`): `split128Below_below` at the field's
+modulus — a low half reading as a 128-bit natural is the low half of a split below the
+modulus, so of the operand's canonical representative. -/
+theorem lowest128Bits'_below {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
+    (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hinj : ∀ a b : ℕ, a < 2 ^ 130 → b < 2 ^ 130 → (a : F) = b → a = b)
+    (hmod : fieldModulus F < 2 ^ 256) (constrainLowBits : Bool) (endo x : FVar F) :
+    ⦃⌜True⌝⦄
+    lowest128Bits' (c := Builder V (KimchiConstraint F)) constrainLowBits endo x
+    ⦃⇓ r _ => ⌜∀ l : ℕ, l < 2 ^ 128 → r.val.val V = l →
+      ∃ h : ℕ, h < 2 ^ 128 ∧ x.val V = (l : F) + 2 ^ 128 * (h : F) ∧
+        l + 2 ^ 128 * h < fieldModulus F⌝⦄ :=
+  split128Below_below h2 h3 hinj constrainLowBits endo (fieldModulus F) hmod x
 
 /-- **Completeness** (`lowest128Bits'`): the honest run accepts and the result reads the
 pure split's low half. The field fits in 256 bits, and both halves' representatives must
