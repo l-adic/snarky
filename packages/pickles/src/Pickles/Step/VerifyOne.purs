@@ -17,7 +17,7 @@ import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (Params) as FOP
@@ -28,6 +28,7 @@ import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Verify.Types (BranchData)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -111,7 +112,7 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
   , messagesForNextWrapProof :: fv
   , mustVerify :: bv
   -- Branch data fields (used by packStatement for publicInput construction)
-  , branchData :: { mask0 :: fv, mask1 :: fv, domainLog2Var :: fv }
+  , branchData :: BranchData fv fv
   -- Mask for this proof (trimmed proofs_verified_mask, Vector n)
   , proofMask :: Vector n bv
   -- VK commitments for sponge_after_index and IVP
@@ -176,7 +177,7 @@ verifyOne fopParams input ivpParams = do
     , witness: { allEvals: input.allEvals }
     , mask: input.proofMask
     , prevChallenges: input.prevChallenges
-    , domainLog2Var: input.branchData.domainLog2Var
+    , domainLog2Var: input.branchData.domainLog2
     }
 
   -- DIAG: emit each of the 4 FOP sub-check booleans to identify which
@@ -217,10 +218,7 @@ verifyOne fopParams input ivpParams = do
               , xi: input.proofState.xi
               , bulletproofChallenges: input.proofState.bulletproofChallenges
               , b: input.proofState.b
-              , branchData:
-                  { domainLog2: input.branchData.domainLog2Var
-                  , proofsVerifiedMask: (coerce input.branchData.mask0) :< (coerce input.branchData.mask1) :< Vector.nil
-                  }
+              , branchData: input.branchData { proofsVerifiedMask = map coerce input.branchData.proofsVerifiedMask }
               }
           , spongeDigestBeforeEvaluations: input.proofState.spongeDigest
           , messagesForNextWrapProof: input.messagesForNextWrapProof

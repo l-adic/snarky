@@ -35,8 +35,8 @@ import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, Lagra
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
-import Pickles.Types (ChunkedCommitment(..))
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
+import Pickles.Types (ChunkedCommitment(..), WrapStatement)
+import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 -- IvpBaseline (= 45) is the stepChunks=1 base count; here we derive the
 -- chunked count from `stepChunks` via `Mul`/`Add` constraints.
 import Poseidon (class PoseidonField)
@@ -402,13 +402,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 packStatement
   :: forall d f sf
    . PrimeField f
-  => { proofState ::
-         { deferredValues :: WrapDeferredValues d (FVar f) sf (BoolVar f)
-         , spongeDigestBeforeEvaluations :: FVar f
-         , messagesForNextWrapProof :: FVar f
-         }
-     , messagesForNextStepProof :: FVar f
-     }
+  => WrapStatement d (FVar f) sf (BoolVar f)
   -> Tuple (Vector 5 sf)
        ( Tuple (Vector 2 (SizedF 128 (FVar f)))
            ( Tuple (Vector 3 (SizedF 128 (FVar f)))

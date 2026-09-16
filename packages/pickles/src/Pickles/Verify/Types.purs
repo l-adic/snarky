@@ -16,7 +16,6 @@ module Pickles.Verify.Types
   , PlonkMinimal
   , PlonkInCircuit
   , toPlonkMinimal
-  , PlonkExpanded
   , expandPlonkMinimal
   -- * Step Deferred Values & Unfinalized Proof
   , DeferredValues

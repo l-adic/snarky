@@ -106,7 +106,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (ChunkedEvals, Evals, PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (extractWrapVKForStepHash)
-import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkExpanded, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, expandPlonkMinimal, toPlonkMinimal)
+import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)

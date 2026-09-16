@@ -148,7 +148,10 @@ fullStepVerifyOneN2Circuit { lagrangeAt, blindingH } inputs = do
           }
       , messagesForNextWrapProof: at 302
       , mustVerify: coerce (at 303) :: BoolVar StepField
-      , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
+      , branchData:
+          { proofsVerifiedMask: mask0 :< mask1 :< Vector.nil
+          , domainLog2: at (proofStateBase + 28)
+          }
       -- N2: trim_front [mask0, mask1] with lte N2 N2 = identity (both mask entries)
       , proofMask: (coerce mask0) :< (coerce mask1) :< Vector.nil
       , vkComms:

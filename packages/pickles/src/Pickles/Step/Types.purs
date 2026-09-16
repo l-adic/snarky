@@ -4,7 +4,7 @@
 -- | no wrap-side module imports any of these directly.
 module Pickles.Step.Types
   ( UnfinalizedFieldCount
-  , BranchData(..)
+  , AllocBranchData(..)
   , WrapProof(..)
   , FopProofState(..)
   , ProofState(..)
@@ -16,11 +16,14 @@ import Prelude
 
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, tuple10, tuple2, tuple3, tuple5, uncurry10, uncurry2, uncurry3, uncurry5)
-import Data.Vector (Vector)
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, (!!), (:<))
+import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.Typ (Typ, arrayTyp, pairTyp, transportTyp, typOf, unitTyp)
 import Pickles.Types (AllocEvals, WrapProofMessages, WrapProofOpening)
+import Pickles.Verify.Types (BranchData)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)
@@ -57,32 +60,31 @@ type UnfinalizedFieldCount = 32
 -- | and `endoScalar @Vesta.BaseField @StepField` gives the right value.
 -- |
 -- | Reference: branch_data.ml, mina/src/lib/crypto/pickles/impls.ml
-newtype BranchData f b = BranchData
-  { mask0 :: b
-  , mask1 :: b
-  , domainLog2 :: f
-  }
+newtype AllocBranchData f b = AllocBranchData (BranchData f b)
+
+-- | The wire layout: the two mask bits first, then the domain log2
+-- | (`branch_data.ml`'s hlist order). The record itself stores the mask as a
+-- | `Vector 2`, so this pair is the only place the two orders meet.
+branchTuple :: forall f b. BranchData f b -> Tuple3 b b f
+branchTuple r = tuple3
+  (r.proofsVerifiedMask !! unsafeFinite @2 0)
+  (r.proofsVerifiedMask !! unsafeFinite @2 1)
+  r.domainLog2
+
+tupleBranch :: forall f b. Tuple3 b b f -> AllocBranchData f b
+tupleBranch = uncurry3 \mask0 mask1 domainLog2 ->
+  AllocBranchData { domainLog2, proofsVerifiedMask: mask0 :< mask1 :< Vector.nil }
 
 instance
   ( CircuitType f a fvar
   , CircuitType f b bvar
   ) =>
-  CircuitType f (BranchData a b) (BranchData fvar bvar) where
+  CircuitType f (AllocBranchData a b) (AllocBranchData fvar bvar) where
   sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 b b a))
-  valueToFields (BranchData r) = genericValueToFields (tuple3 r.mask0 r.mask1 r.domainLog2)
-  fieldsToValue fs =
-    let
-      tup :: Tuple3 b b a
-      tup = genericFieldsToValue fs
-    in
-      uncurry3 (\mask0 mask1 domainLog2 -> BranchData { mask0, mask1, domainLog2 }) tup
-  varToFields (BranchData r) = genericVarToFields @(Tuple3 b b a) (tuple3 r.mask0 r.mask1 r.domainLog2)
-  fieldsToVar fs =
-    let
-      tup :: Tuple3 bvar bvar fvar
-      tup = genericFieldsToVar @(Tuple3 b b a) fs
-    in
-      uncurry3 (\mask0 mask1 domainLog2 -> BranchData { mask0, mask1, domainLog2 }) tup
+  valueToFields (AllocBranchData r) = genericValueToFields (branchTuple r)
+  fieldsToValue fs = tupleBranch (genericFieldsToValue fs :: Tuple3 b b a)
+  varToFields (AllocBranchData r) = genericVarToFields @(Tuple3 b b a) (branchTuple r)
+  fieldsToVar fs = tupleBranch (genericFieldsToVar @(Tuple3 b b a) fs :: Tuple3 bvar bvar fvar)
 
 -- | CheckedType for the var representation: Boolean checks on the masks
 -- | plus the endoscalar check on domainLog2.
@@ -92,10 +94,10 @@ instance
   , HasEndo basef f
   , CheckedType f (KimchiConstraint f) (Tuple3 (BoolVar f) (BoolVar f) (FVar f))
   ) =>
-  CheckedType f (KimchiConstraint f) (BranchData (FVar f) (BoolVar f)) where
-  check (BranchData r) = label "branch-data-check" do
+  CheckedType f (KimchiConstraint f) (AllocBranchData (FVar f) (BoolVar f)) where
+  check (AllocBranchData r) = label "branch-data-check" do
     -- Boolean checks on masks + (no-op) check on domLog2 via Tuple3 delegation
-    check (tuple3 r.mask0 r.mask1 r.domainLog2)
+    check (branchTuple r)
     -- Endoscalar check on domainLog2 (matches OCaml Branch_data.typ.check)
     let EndoScalar e = endoScalar @basef @f
     _ <- EndoScalar.toField @1 (unsafePartial (unsafeFromField r.domainLog2) :: SizedF 16 (FVar f)) (const_ e)
@@ -260,7 +262,7 @@ instance (CheckedType f c var) => CheckedType f c (FopProofState d var) where
 -- | and only concretize at the top-level binding).
 newtype ProofState (d :: Int) f b = ProofState
   { fopState :: FopProofState d f
-  , branchData :: BranchData f b
+  , branchData :: AllocBranchData f b
   }
 
 instance
@@ -269,27 +271,27 @@ instance
   ) =>
   CircuitType f (ProofState d (F f) Boolean) (ProofState d (FVar f) (BoolVar f)) where
   sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean)))
+    (Proxy @(Tuple2 (FopProofState d (F f)) (AllocBranchData (F f) Boolean)))
   valueToFields (ProofState r) = genericValueToFields (tuple2 r.fopState r.branchData)
   fieldsToValue fs =
     let
-      tup :: Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean)
+      tup :: Tuple2 (FopProofState d (F f)) (AllocBranchData (F f) Boolean)
       tup = genericFieldsToValue fs
     in
       uncurry2 (\fopState branchData -> ProofState { fopState, branchData }) tup
   varToFields (ProofState r) = genericVarToFields
-    @(Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean))
+    @(Tuple2 (FopProofState d (F f)) (AllocBranchData (F f) Boolean))
     (tuple2 r.fopState r.branchData)
   fieldsToVar fs =
     let
-      tup :: Tuple2 (FopProofState d (FVar f)) (BranchData (FVar f) (BoolVar f))
-      tup = genericFieldsToVar @(Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean)) fs
+      tup :: Tuple2 (FopProofState d (FVar f)) (AllocBranchData (FVar f) (BoolVar f))
+      tup = genericFieldsToVar @(Tuple2 (FopProofState d (F f)) (AllocBranchData (F f) Boolean)) fs
     in
       uncurry2 (\fopState branchData -> ProofState { fopState, branchData }) tup
 
 instance
   ( CheckedType f (KimchiConstraint f) (FopProofState d (FVar f))
-  , CheckedType f (KimchiConstraint f) (BranchData (FVar f) (BoolVar f))
+  , CheckedType f (KimchiConstraint f) (AllocBranchData (FVar f) (BoolVar f))
   ) =>
   CheckedType f (KimchiConstraint f) (ProofState d (FVar f) (BoolVar f)) where
   check (ProofState r) = check (tuple2 r.fopState r.branchData)

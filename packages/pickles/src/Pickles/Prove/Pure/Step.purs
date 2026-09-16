@@ -33,11 +33,10 @@ module Pickles.Prove.Pure.Step
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Newtype (over, unwrap)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector, (!!))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
@@ -821,15 +820,10 @@ expandProof input =
     -- `proofsVerifiedMask :: Vector 2 _`) into the
     -- `Pickles.Types.BranchData` newtype (mask0/mask1 named fields,
     -- `F`-wrapped domainLog2). Same data, different packaging.
-    branchData =
-      let
-        v = deferredStep.branchData.proofsVerifiedMask
-      in
-        Step.BranchData
-          { mask0: v !! unsafeFinite @2 0
-          , mask1: v !! unsafeFinite @2 1
-          , domainLog2: F deferredStep.branchData.domainLog2
-          }
+    branchData = Step.AllocBranchData
+      { domainLog2: F deferredStep.branchData.domainLog2
+      , proofsVerifiedMask: deferredStep.branchData.proofsVerifiedMask
+      }
 
     proofState = Step.ProofState
       -- The 5 fp slots store the **shifted inner** form (matching

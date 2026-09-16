@@ -52,7 +52,7 @@ import Prelude
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Lazy as Lazy
@@ -63,7 +63,7 @@ import Data.String (Pattern(..), Replacement(..))
 import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
@@ -301,8 +301,7 @@ buildStepAdvice input =
       --   N1 → [F, T]
       --   N2 → [T, T]
       { domainLog2: F (Curves.fromInt input.stepDomainLog2)
-      , mask0: mrw >= 2
-      , mask1: mrw >= 1
+      , proofsVerifiedMask: (mrw >= 2) :< (mrw >= 1) :< Vector.nil
       }
 
     dvFop = dummyFop.deferredValues
@@ -403,11 +402,7 @@ buildStepAdvice input =
               , xi: UnChecked dvFop.xi
               , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
               }
-          , branchData: Step.BranchData
-              { domainLog2: dummyBranch.domainLog2
-              , mask0: dummyBranch.mask0
-              , mask1: dummyBranch.mask1
-              }
+          , branchData: Step.AllocBranchData dummyBranch
           }
       , prevEvals: prevEvalsDummy
       , prevChallenges:
@@ -1299,11 +1294,7 @@ buildSlotAdvice input = do
             }
         }
 
-    slotBranchData =
-      { domainLog2: F input.wrapBranchData.domainLog2
-      , mask0: input.wrapBranchData.proofsVerifiedMask `Vector.index` (unsafeFinite @2 0)
-      , mask1: input.wrapBranchData.proofsVerifiedMask `Vector.index` (unsafeFinite @2 1)
-      }
+    slotBranchData = input.wrapBranchData { domainLog2 = F input.wrapBranchData.domainLog2 }
 
     dvFop = fopState.deferredValues
     pFop = dvFop.plonk
@@ -1353,11 +1344,7 @@ buildSlotAdvice input = do
               , xi: UnChecked dvFop.xi
               , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
               }
-          , branchData: Step.BranchData
-              { domainLog2: slotBranchData.domainLog2
-              , mask0: slotBranchData.mask0
-              , mask1: slotBranchData.mask1
-              }
+          , branchData: Step.AllocBranchData slotBranchData
           }
       , prevEvals: AllocEvals evalsForAdvice.allEvals
       , prevChallenges: Vector.toUnfoldable $ map

@@ -57,7 +57,8 @@ import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Slots (class StepSlotsCarrier, class StepSlotsTyp, stepSlotsTyp, traverseStepSlotsAWithVk)
-import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
+import Pickles.Step.Types (AllocBranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
+import Pickles.Verify.Types (BranchData)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
 import Pickles.Typ (existsTyp)
@@ -386,7 +387,7 @@ type ReshapedPerProofWitness n stepChunks tCommLen =
       , sigmaEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
       , indexEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
       }
-  , branchData :: { mask0 :: BoolVar StepField, mask1 :: BoolVar StepField, domainLog2Var :: FVar StepField }
+  , branchData :: BranchData (FVar StepField) (BoolVar StepField)
   , prevChallenges :: Vector n (Vector StepIPARounds (FVar StepField))
   , prevSgs :: Vector n (WeierstrassAffinePoint PallasG (FVar StepField))
   }
@@ -416,7 +417,7 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
     WrapProofOpening openRec = wrapProofRec.opening
     ProofState psRec = ppw.proofState
     FopProofState fopRec = psRec.fopState
-    BranchData branchDataRec = psRec.branchData
+    AllocBranchData branchDataRec = psRec.branchData
     AllocEvals allEvals = ppw.prevEvals
 
     fopState =
@@ -451,9 +452,8 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
     , fopState
     , allEvals
     , branchData:
-        { mask0: branchDataRec.mask0
-        , mask1: branchDataRec.mask1
-        , domainLog2Var: branchDataRec.domainLog2
+        { proofsVerifiedMask: branchDataRec.proofsVerifiedMask
+        , domainLog2: branchDataRec.domainLog2
         }
     , prevChallenges: coerce (atSlotWidth "prevChallenges" ppw.prevChallenges)
     , prevSgs: atSlotWidth "prevSgs" ppw.prevSgs
@@ -619,7 +619,7 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
 
     -- proofMask: drop the front `pad` elements of [mask0, mask1] to keep the last `n`.
     fullMasks :: Vector PaddedLength (BoolVar StepField)
-    fullMasks = pw.branchData.mask0 :< pw.branchData.mask1 :< Vector.nil
+    fullMasks = pw.branchData.proofsVerifiedMask
 
     proofMask :: Vector n (BoolVar StepField)
     proofMask = Vector.drop @pad fullMasks
@@ -647,11 +647,8 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
     , unfinalized
     , messagesForNextWrapProof: msgWrap
     , mustVerify
-    , branchData:
-        { mask0: coerce pw.branchData.mask0 :: FVar StepField
-        , mask1: coerce pw.branchData.mask1 :: FVar StepField
-        , domainLog2Var: pw.branchData.domainLog2Var
-        }
+    , branchData: pw.branchData
+        { proofsVerifiedMask = map (coerce :: BoolVar StepField -> FVar StepField) pw.branchData.proofsVerifiedMask }
     , proofMask
     , vkComms
     , sgOld
