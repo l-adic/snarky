@@ -27,15 +27,11 @@
 #   tools/regen-fixtures.sh tree         # only Tree_proof_return
 #
 # Environment / prerequisites:
-#   - Nix shell at `mina#default` (builds OCaml dumpers).
-#   - `~/.cargo/bin/cargo` to build the kimchi-stubs static lib with the
-#     deterministic-RNG patch:
-#
-#       cd mina/src/lib/crypto/proof-systems && \
-#         ~/.cargo/bin/cargo build -p kimchi-stubs --release && \
-#         mkdir -p /tmp/local_kimchi_stubs/lib && \
-#         cp target/release/libkimchi_stubs.a /tmp/local_kimchi_stubs/lib/
-#
+#   - The mina submodule's local opam switch at `mina/_opam` (builds the
+#     OCaml dumpers; no nix, and no switch inherited from the shell).
+#   - Cargo: dune builds kimchi-stubs itself from the in-tree
+#     proof-systems (which carries the deterministic-RNG and witness-dump
+#     patches); no prebuilt static lib.
 #   - Seed is pinned at 42 (matches the PS-side test setup).
 #
 # Exit:
@@ -48,18 +44,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/tools/lib/common.sh"
 FIXTURE_DIR="$REPO_ROOT/packages/pickles/test/fixtures"
 WITNESS_DIR="$FIXTURE_DIR/witness"
-KIMCHI_STUBS_LOCAL=/tmp/local_kimchi_stubs
 SEED=42
-NIX_FLAKE='mina#default'
-
-if [ ! -f "$KIMCHI_STUBS_LOCAL/lib/libkimchi_stubs.a" ]; then
-  die "$KIMCHI_STUBS_LOCAL/lib/libkimchi_stubs.a missing.
-Build it with:
-  cd $REPO_ROOT/mina/src/lib/crypto/proof-systems && \\
-    ~/.cargo/bin/cargo build -p kimchi-stubs --release && \\
-    mkdir -p $KIMCHI_STUBS_LOCAL/lib && \\
-    cp target/release/libkimchi_stubs.a $KIMCHI_STUBS_LOCAL/lib/"
-fi
+MINA_SWITCH="$REPO_ROOT/mina/_opam"
 
 mode="${1:-all}"
 
@@ -91,8 +77,10 @@ run_dumper() {
   local exe_path="$1"
   local env_setup="$2"
   echo "==> Running $exe_path" >&2
-  nix develop "$NIX_FLAKE" -c bash -c "
-    export KIMCHI_STUBS_STATIC_LIB=$KIMCHI_STUBS_LOCAL
+  env PATH="$MINA_SWITCH/bin:$PATH" \
+    OPAM_SWITCH_PREFIX="$MINA_SWITCH" \
+    CAML_LD_LIBRARY_PATH="$MINA_SWITCH/lib/stublibs" \
+    bash -c "
     export KIMCHI_DETERMINISTIC_SEED=$SEED
     $env_setup
     cd $REPO_ROOT/mina && \
