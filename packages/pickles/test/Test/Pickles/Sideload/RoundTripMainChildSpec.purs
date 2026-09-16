@@ -1,13 +1,7 @@
--- | Round-trip validation for the OCaml-emitted side-loaded child fixture
--- | (`packages/pickles/test/fixtures/sideload_main_child/`, the
--- | `No_recursion` child of `dump_side_loaded_main.ml`). Same checks as
--- | `RoundTripNrrSpec` on a different OCaml-produced fixture:
--- |
--- |   * cross-stack VK serde byte-identity;
--- |   * the child's public input decodes to `StepField.zero`;
--- |   * the loaded `VerifiableProof` + `Verifier` survive a full JSON
--- |     round-trip through `Pickles.Prove.Codecs` and the decoded proof
--- |     still verifies.
+-- | `RoundTripNrrSpec`'s three checks on a second fixture,
+-- | `packages/pickles/test/fixtures/sideload_main_child/` — the
+-- | no-recursion child of a side-loaded parent, whose public input is
+-- | zero.
 module Test.Pickles.Sideload.RoundTripMainChildSpec (spec) where
 
 import Prelude
@@ -38,7 +32,6 @@ spec = describe "Pickles.Sideload.MainChild roundtrip" do
 
     vestaVerifierIndexToSerdeJson fixture.vk `shouldEqual` fixture.vkJson
 
-    -- The side-loaded child's public input is StepField.zero.
     fixture.statement `shouldEqual` (fromInt 0 :: StepField)
 
     let

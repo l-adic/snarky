@@ -1,13 +1,11 @@
--- | PureScript-side analog of OCaml's `chunks4` base-case (b0) test
--- | (`mina/src/lib/crypto/pickles/test/chunked_circuits/chunks4.ml`).
+-- | `Chunks2` at four chunks: one rule with no prevs whose body fills
+-- | 2^17 rows, declared at `stepChunks = 4` with the wrap domain
+-- | overridden to 2^14, so kimchi's PCS runs the step at four chunks
+-- | and the wrap at one.
 -- |
--- | Single N=0 rule whose body fills 2^17 rows with `mul_ (fresh_zero)
--- | (fresh_zero)` plus one 7-wire Raw Generic gate; declared with
--- | `num_chunks = 4` and `wrap_domain_override = N1` so kimchi's PCS
--- | runs at step num_chunks=4 (max_poly_size = 2^16, domain = 2^18).
--- | The proof creation triggers a step and a wrap kimchi prover
--- | invocation — counters 0 and 1 in `KIMCHI_WITNESS_DUMP` — so the
--- | witness can be diffed against `dump_chunks4.exe` byte-for-byte.
+-- | Proving emits a step and a wrap kimchi witness — counters 0 and 1
+-- | under `KIMCHI_WITNESS_DUMP` — which a byte-for-byte diff against
+-- | the reference dump compares.
 module Test.Pickles.Prove.Chunks4
   ( Chunks4Rules
   , chunks4Rule
@@ -38,11 +36,10 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
--- | The chunks4 leaf rule body: 2^18 + 1 `mul_ (fresh_zero) (fresh_zero)`
--- | fillers (each R1CS = half a kimchi row, so we get 2^17 + 1 rows)
--- | followed by a 7-wire Raw Generic with zero coeffs (forces the 7th
--- | permuted column's polynomial degree above 2^17). Mirrors the
--- | `main` field of the OCaml `chunks4.ml` choice.
+-- | 2^18 + 1 `mul_` fillers on fresh zeros — each constraint is half a
+-- | kimchi row, so 2^17 + 1 rows — then one 7-wire Raw Generic with
+-- | zero coefficients, which pushes the 7th permuted column's degree
+-- | above 2^17.
 chunks4Rule :: StepRule 0 Unit Unit Unit Unit Unit Unit Unit
 chunks4Rule _ _ = do
   let
@@ -68,8 +65,7 @@ chunks4Rule _ _ = do
     , publicOutput: unit
     }
 
--- | Single-rule carrier for chunks4: one `RulesCons` for the leaf rule,
--- | terminated by `RulesNil`. Same shape as chunks2/NRR (N=0, no prevs).
+-- | Carrier for the single `chunks4Rule`, at width 0 with no prevs.
 type Chunks4Rules =
   RulesCons 0 Unit Unit
     RulesNil
@@ -78,16 +74,11 @@ spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks4" do
   it "base case (b0) — chunks=4 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks4.json")
-    -- Step kimchi uses `vestaSrs` (depth 2^16 via cache load). With
-    -- chunks4's 2^17-row step circuit, the step domain rounds to
-    -- 2^18 → num_chunks = 4 (= 2^18 / 2^16). Wrap kimchi uses
-    -- `pallasSrs` at depth 2^15 — matches OCaml's Tock URS
-    -- (`Backend.Tock.Keypair.load_urs ()` at `Tock.Rounds.n = N15`,
-    -- `kimchi_pasta_basic.ml:6`). Wrap domain is 2^14 (override) so
-    -- num_chunks at wrap = 1.
 
-    -- @nc=1 placeholder for side-loaded-slot chunks count
-    -- (no side-loaded slots here).
+    -- The step SRS has depth 2^16, and this rule's 2^17 rows round the
+    -- step domain up to 2^18, giving four chunks. The wrap SRS has
+    -- depth 2^15 and the wrap domain is overridden to 2^14, giving one
+    -- chunk.
     chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks4Rule Vector.nil
     let rules = tuple1 chunks4Entry
 

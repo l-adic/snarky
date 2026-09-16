@@ -1,21 +1,12 @@
--- | Verifier-side deferred-values expansion: pure PS port of OCaml
--- | `mina/src/lib/crypto/pickles/wrap_deferred_values.ml:17-193`
--- | `Wrap_deferred_values.expand_deferred`.
+-- | The verifier's counterpart to
+-- | `Pickles.Prove.Pure.Wrap.wrapComputeDeferredValues`. Without the
+-- | step proof there is no `proofOraclesRec` call to sample the
+-- | Fiat–Shamir challenges, only the wrap statement's minimal skeleton
+-- | and its `sponge_digest_before_evaluations` checkpoint. So the
+-- | sponge is replayed from that checkpoint to recover `xi` and `r`,
+-- | and the `Pickles.Prove.Pure.Common` helpers derive the rest.
 -- |
--- | This is the companion of `Pickles.Prove.Pure.Wrap.wrapComputeDeferredValues`,
--- | which is the PROVER side (takes a step proof + calls `proofOraclesRec`
--- | to sample the Fiat–Shamir challenges). The verifier cannot call
--- | `proofOraclesRec` because it doesn't have the step proof — the
--- | carried wrap statement only contains the MINIMAL skeleton plus the
--- | `sponge_digest_before_evaluations` checkpoint. This module replays the
--- | sponge from that checkpoint to recover `xi` and `r`, pulls the raw
--- | 128-bit `alpha / beta / gamma / zeta` directly from the minimal
--- | statement, and reuses the same helpers in `Pickles.Prove.Pure.Common`
--- | to derive `plonk / combined_inner_product / b / bulletproof_challenges`.
--- |
--- | Self-consistency: for any step proof, `expandDeferredForVerify` should
--- | produce the same `WrapDeferredValuesOutput` as `wrapComputeDeferredValues`
--- | would on the fields consumed by `assembleWrapMainInput`. That's the test.
+-- | On the fields `assembleWrapMainInput` reads, the two must agree.
 module Pickles.Prove.Pure.Verify
   ( ExpandDeferredInput
   , expandDeferredForVerify
@@ -43,22 +34,6 @@ import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toShifted)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 
--- | Verifier-side input to `expandDeferredForVerify`. The fields split into
--- | three groups:
--- |
--- | * **Carried from wrap statement skeleton.** These come out of the wrap
--- |   proof's `proof_state` unchanged and are just passed through:
--- |   `rawPlonk`, `rawBulletproofChallenges`, `branchData`,
--- |   `spongeDigestBeforeEvaluations`.
--- | * **Prev proofs.** `oldBulletproofChallenges` (from
--- |   `messages_for_next_step_proof.old_bulletproof_challenges`). The
--- |   `allEvals` record (from the wrap proof's carried `prev_evals`, = the
--- |   inner step proof's polynomial evaluations).
--- | * **Static domain / SRS metadata.** Shared with the prover — read from
--- |   the step verifier index at runtime: `domainLog2`, `zkRows`,
--- |   `srsLengthLog2`, `generator`, `shifts`, `vanishesOnZk`,
--- |   `omegaForLagrange`, `endo` (= `endoScalar @StepField`),
--- |   `linearizationPoly`.
 type ExpandDeferredInput n =
   { -- Carried (raw) values from the wrap proof's minimal proof state.
     rawPlonk :: PlonkMinimal (F StepField)
@@ -66,17 +41,15 @@ type ExpandDeferredInput n =
   , branchData :: BranchData StepField Boolean
   , spongeDigestBeforeEvaluations :: StepField
 
-  -- Evals + prev-proof bp chals (= the inner step proof's data, carried
-  -- by the wrap proof). Chunked form (`NonEmptyArray (PointEval f)`
-  -- per polynomial); collapsed form derived internally via
-  -- `collapseChunkedEvals` once zeta/zetaw are known. CIP consumes
-  -- chunked directly via `combinedInnerProductBatchChunked`.
+  -- The inner step proof's data, carried by the wrap proof. Chunked;
+  -- `collapseChunkedEvals` below derives the collapsed form once zeta
+  -- and zetaw are known, while the combined inner product takes the
+  -- chunked form as it is.
   , chunkedEvals :: ChunkedEvals StepField
   , pEval0Chunks :: Array StepField
   , oldBulletproofChallenges :: Vector n (Vector StepIPARounds StepField)
 
-  -- Static step-domain / SRS metadata (same source as prover — read from
-  -- the step verifier index).
+  -- Step domain and SRS metadata, from the step verifier index.
   , domainLog2 :: Int
   , zkRows :: Int
   , srsLengthLog2 :: Int
@@ -88,10 +61,8 @@ type ExpandDeferredInput n =
   , linearizationPoly :: LinearizationPoly StepField
   }
 
--- | Compute `challenges_digest = sponge(expanded old_bp_chals flattened)`.
--- | Matches the sub-sponge in `wrap_deferred_values.ml:128-137` — a fresh
--- | `Tick_field_sponge.Field` that absorbs every expanded bp-challenge
--- | (outer × inner), then squeezes one field element.
+-- | One field element squeezed from a fresh sponge that has absorbed
+-- | every expanded previous-proof bp challenge, outer by inner.
 challengesDigest
   :: forall n
    . Vector n (Vector StepIPARounds StepField)
@@ -101,34 +72,24 @@ challengesDigest expandedOldBpChals =
     for_ expandedOldBpChals \inner -> for_ inner absorb
     squeeze
 
--- | Main port of OCaml `Wrap_deferred_values.expand_deferred`.
--- | All derivation logic reuses `Pickles.Prove.Pure.Common` helpers;
--- | this function's job is to replay the sponge and plumb the carried
--- | minimal values through to the common helpers.
+-- | The deferred values recovered from a wrap proof's carried minimal
+-- | statement: replay the sponge, then run the carried values through
+-- | the `Pickles.Prove.Pure.Common` derivations.
 expandDeferredForVerify
   :: forall n
    . ExpandDeferredInput n
   -> WrapDeferredValuesOutput
 expandDeferredForVerify input =
   let
-    -- ===== Step 1. Endo-expand zeta (needed for zetaw + scalars_env in
-    -- derivePlonk). alpha is expanded once below for oraclesReconstructed;
-    -- beta/gamma stay in their raw 128-bit form.
+    -- Only zeta is expanded here; alpha is expanded below for
+    -- `oraclesReconstructed`, and beta and gamma stay raw.
     zetaField = coerce (toFieldPure input.rawPlonk.zeta (F input.endo))
 
     zetaw = zetaField * input.generator
 
-    -- Collapsed evals (= OCaml `Plonk_checks.evals_of_split_evals`)
-    -- derived from the chunked form via Horner at `zeta^(2^srsLengthLog2)`.
-    -- Used by derivePlonk / ftEval0; the CIP step below consumes the
-    -- chunked form directly. NOTE: the sponge absorb just below uses
-    -- the collapsed form, which is correct only for inner proofs at
-    -- num_chunks=1 (every NEA has length 1 → collapsed equals the only
-    -- chunk). For inner proofs with num_chunks > 1 the kimchi prover's
-    -- FS sponge absorbs each chunk separately and this replay would
-    -- diverge — a separate fix (out of scope for the immediate
-    -- chunks2 prover witness convergence, which depends on the wrap
-    -- PROVER's CIP only).
+    -- Collapsed by Horner at `zeta^(2^srsLengthLog2)`, for
+    -- `derivePlonk` and `ftEval0`; the combined inner product below
+    -- takes the chunked form instead.
     collapsedEvals = collapseChunkedEvals
       { rounds: input.srsLengthLog2
       , zeta: zetaField
@@ -136,26 +97,16 @@ expandDeferredForVerify input =
       }
       input.chunkedEvals
 
-    -- ===== Step 2. Sponge replay to recover xi, r. ====================
-    -- OCaml: create sponge, absorb sponge_digest_before_evaluations;
-    -- then absorb challenges_digest, ft_eval1, and evals (in
-    -- `to_absorption_sequence` order); squeeze xi_chal, r_chal as 128-bit.
-    -- `input.oldBulletproofChallenges` is already `Ipa.Step.compute_challenges`-
-    -- expanded by the caller (step field elements, not raw 128-bit chals).
+    -- Sponge replay to recover xi and r.
+    -- `input.oldBulletproofChallenges` arrives already endo-expanded.
     { xiRawSized, rRawSized } =
       evalPureSpongeM (initialSponge) do
         absorb input.spongeDigestBeforeEvaluations
         absorb (challengesDigest input.oldBulletproofChallenges)
         absorb input.chunkedEvals.ftEval1
-        -- Absorb chunked evaluations in the order kimchi's FrSponge does:
-        -- `absorb_multiple(&public_evals[0])` then `absorb_multiple(&public_evals[1])`
-        -- then `absorb_evaluations(&evals)` which per polynomial absorbs
-        -- `absorb(&p.zeta)` (all chunks) then `absorb(&p.zeta_omega)` (all
-        -- chunks). For nc=1 this matches the old collapsed single-value path;
-        -- for nc>1 it absorbs each chunk, keeping the sponge state in sync
-        -- with the prover's FrSponge (which also absorbed each chunk).
+        -- Absorption order is fixed by the prover's FrSponge: public
+        -- evals, then z, 6 index, 15 witness, 15 coeff, 6 sigma.
         absorbChunked input.chunkedEvals.publicEvals
-        -- to_absorption_sequence order: z, 6 index, 15 w, 15 coeff, 6 sigma
         absorbChunked input.chunkedEvals.zEvals
         for_ input.chunkedEvals.indexEvals absorbChunked
         for_ input.chunkedEvals.witnessEvals absorbChunked
@@ -165,20 +116,16 @@ expandDeferredForVerify input =
         rChal <- squeezeScalarChallengePureF
         pure { xiRawSized: xiChal, rRawSized: rChal }
       where
-      -- Absorb all-zeta chunks then all-zetaw chunks for one polynomial,
-      -- matching Rust `absorb(&p.zeta); absorb(&p.zeta_omega)` where each
-      -- is a Vec of length num_chunks.
+      -- One polynomial's chunks: all at zeta, then all at zetaw.
       absorbChunked :: NonEmptyArray _ -> _
       absorbChunked chunks = do
         for_ (NEA.toArray chunks) \pe -> absorb pe.zeta
         for_ (NEA.toArray chunks) \pe -> absorb pe.omegaTimesZeta
 
-    -- Endo-expand xi and r to full field values.
     xiField = coerce (toFieldPure xiRawSized (F input.endo))
 
     rField = coerce (toFieldPure rRawSized (F input.endo))
 
-    -- ===== Step 3. Type1.derive_plonk (wrap.ml:202-208). ==============
     derivePlonkInput =
       { plonkMinimal: input.rawPlonk
       , w: map _.zeta (Vector.take @7 collapsedEvals.witnessEvals)
@@ -195,7 +142,6 @@ expandDeferredForVerify input =
 
     stepPlonkDerived = derivePlonk derivePlonkInput
 
-    -- ===== Step 4. ft_eval0 for the step field. =======================
     ftEval0Input =
       { plonkMinimal: input.rawPlonk
       , allEvals: collapsedEvals
@@ -213,9 +159,6 @@ expandDeferredForVerify input =
 
     stepFtEval0 = ftEval0 ftEval0Input
 
-    -- ===== Step 5. combined_inner_product (wrap.ml:22-62, 235-245). ====
-    -- Uses chunked evals for CIP to match OCaml's
-    -- `Pcs_batch.combine_split_evaluations` xi-batching across chunks.
     cipInput =
       { allEvals: input.chunkedEvals
       , publicEvals: input.chunkedEvals.publicEvals
@@ -230,9 +173,6 @@ expandDeferredForVerify input =
 
     cipActual = combinedInnerProductBatchChunked cipInput
 
-    -- ===== Step 6. new bulletproof challenges + b (wrap.ml:209-224). ===
-    -- `computeBpChalsAndB` is field-polymorphic; unwrap `F` from raw
-    -- chals so `f = StepField` agrees with `endo/zeta/zetaw/r`.
     newBpResult = computeBpChalsAndB
       { rawPrechallenges: map unwrapF input.rawBulletproofChallenges
       , endo: input.endo
@@ -241,10 +181,9 @@ expandDeferredForVerify input =
       , r: rField
       }
 
-    -- ===== Step 7. oracles — fill in the full OraclesResult. ==========
-    -- The verifier can reconstruct every field; downstream code
-    -- (assembleWrapMainInput) only reads a subset, but
-    -- WrapDeferredValuesOutput expects the full record.
+    -- The verifier can reconstruct every `OraclesResult` field.
+    -- `assembleWrapMainInput` reads only a few, but
+    -- `WrapDeferredValuesOutput` carries the whole record.
     expandedPlonk =
       { alpha: coerce (toFieldPure input.rawPlonk.alpha (F input.endo)) :: StepField
       , beta: coerce (SizedF.toField input.rawPlonk.beta) :: StepField
@@ -252,8 +191,6 @@ expandDeferredForVerify input =
       , zeta: zetaField
       }
 
-    -- `OraclesResult f` is field-polymorphic; the existing callers use
-    -- `f = StepField` (un-F-wrapped). Unwrap F from the raw sized chals.
     oraclesReconstructed =
       { alpha: expandedPlonk.alpha
       , beta: unwrapF input.rawPlonk.beta
@@ -288,8 +225,7 @@ expandDeferredForVerify input =
     , newBulletproofChallenges: newBpResult
     }
 
--- | Pure squeeze of a 128-bit scalar challenge, wrapped into `F StepField`.
--- | `Pickles.Sponge.squeezeScalarChallengePure` returns `SizedF 128 f`;
--- | our `ScalarChallenge (F StepField)` type wants `SizedF 128 (F StepField)`.
+-- | `Pickles.Sponge.squeezeScalarChallengePure` at the
+-- | `ScalarChallenge (F StepField)` the deferred values want.
 squeezeScalarChallengePureF :: PureSpongeM StepField (SizedF 128 (F StepField))
 squeezeScalarChallengePureF = wrapF <$> squeezeScalarChallengePure

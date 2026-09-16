@@ -32,6 +32,8 @@ of how the port was arrived at — and scratch work gets removed, not reworded.
   hyphen.
 - No trailing whitespace; the existing formatter contract covers the rest.
 - Section headers in export lists are for lists over ~15 names. Drop them on short lists.
+- The module docstring must stay flush against the `module` keyword — nothing between them, not
+  even a blank line. A module-level `--` note goes below the import block instead.
 
 ## The convention
 
@@ -137,16 +139,16 @@ the whole package.
 
 A comment pass changes comments only. Before handing over:
 
-1. **Prose-only diff.** Code must be byte-identical to `HEAD`:
+1. **Prose-only diff.** No code line may be added or removed. Every line this prints is a
+   violation to undo:
 
    ```sh
-   git diff --name-only -- '*.purs' | while IFS= read -r f; do
-     diff <(git show "HEAD:$f" | grep -v '^ *--') <(grep -v '^ *--' "$f") > /dev/null \
-       || echo "FAIL: $f"
-   done
+   git diff --no-ext-diff -U0 -- 'packages/pickles/src/**/*.purs' \
+     | grep '^[+-]' | grep -v '^[+-][+-]' | grep -v '^[+-] *--'
    ```
 
-   This misses trailing `-- ^` comments on code lines; check those by eye in the diff.
+   Hits on a line carrying a trailing `-- ^` are expected when that note changed; read those in
+   the diff and confirm the code half is identical.
 2. `check <file>` on every touched module — an unterminated block comment swallows code.
 3. `lint` — the formatter contract.
 

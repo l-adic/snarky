@@ -28,25 +28,13 @@ import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
 
--- | Pickles test suite.
+-- | The pickles suite. Every spec here runs a full prove flow — step
+-- | compile, step prove, wrap compile, wrap prove, iterated for the
+-- | chained cases — and asserts that the proofs it produces verify.
 -- |
--- | Each test runs a full prove flow (step compile → step solve+prove →
--- | wrap compile → wrap solve+prove, iterated for multi-step cases) and
--- | asserts that every produced proof validates via
--- | `ProofFFI.verifyOpeningProof` (kimchi batch_verify). That's the
--- | actual correctness check.
--- |
--- | Historical note: during byte-identity convergence with OCaml, these
--- | tests also emitted a `Pickles.Trace` transcript compared against a
--- | committed OCaml fixture. That scaffolding is now diagnostic — the
--- | trace fixtures live outside the git tree, regenerable via
--- | `tools/regen-fixtures.sh`, and only consumed by the manual diff
--- | scripts in `tools/`. Tests don't depend on any `.trace` files.
--- | Specs that take a `SharedSrs` per-test value get the SRS built once
--- | via `beforeAll buildSharedSrs` (memoized for the whole pickles suite —
--- | the lagrange-basis cache attached to each SRS is then populated once
--- | and reused across every test, saving ~tens of seconds per run).
--- | Specs that don't need the SRS sit outside the `beforeAll` block.
+-- | `beforeAll buildSharedSrs` builds one SRS for all of them, so the
+-- | Lagrange bases attached to it are populated once per run rather
+-- | than once per test.
 spec :: SpecT (LoggerT Message Aff) Unit Aff Unit
 spec = beforeAll buildSharedSrs do
   CompileValidation.spec
@@ -71,6 +59,6 @@ main :: Effect Unit
 main = runSpecAndExitProcess'
   { defaultConfig: Cfg.defaultConfig, parseCLIOptions: true }
   [ consoleReporter ]
-  -- Run the whole suite in `LoggerT Message Aff`, lowering it to `Aff` here
-  -- (once) by providing the console logger via `usingLoggerT`.
+  -- The suite runs in `LoggerT Message Aff`; this is the one place it
+  -- is lowered to `Aff`, by supplying the console logger.
   (hoistSpec identity (\_ -> usingLoggerT richMessageStdout) spec)

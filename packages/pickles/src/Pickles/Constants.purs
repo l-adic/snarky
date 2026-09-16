@@ -1,7 +1,5 @@
--- | Pickles-wide value-level protocol constants. The corresponding
--- | type-level numerics live in `Pickles.Types` (`StepIPARounds`,
--- | `WrapIPARounds`, etc.); this module covers values that don't fit
--- | naturally as type-level naturals.
+-- | Value-level protocol constants. The ones that are type-level
+-- | naturals live in `Pickles.Types` instead.
 module Pickles.Constants
   ( zkRowsByDefault
   , zkRowsForNumChunks
@@ -10,20 +8,18 @@ module Pickles.Constants
 
 import Prelude
 
--- | OCaml `Plonk_checks.zk_rows_by_default`: kimchi's `zk_rows` at one chunk.
+-- | Kimchi's `zk_rows` at one chunk.
 zkRowsByDefault :: Int
 zkRowsByDefault = 3
 
--- | Kimchi's `zk_rows` derived from `num_chunks`. Mirrors the formula
--- | in `kimchi/src/circuits/constraints.rs:759-761`:
--- |   `zk_rows = (16 * num_chunks + 5) / 7`
--- | Values: nc=1 → 3, nc=2 → 5, nc=3 → 7, nc=4 → 9.
+-- | Kimchi's `zk_rows` as a function of `num_chunks`. The formula is
+-- | fixed by the backend (`kimchi`'s `constraints.rs`), not chosen
+-- | here.
 zkRowsForNumChunks :: Int -> Int
 zkRowsForNumChunks nc = (16 * nc + 5) `div` 7
 
--- | OCaml `Fix_domains.rough_domains` placeholder log2. The pre-pass
--- | builds each rule's step circuit with this domain so the gate count
--- | can be measured; the real-pass replaces it with the precise log2
--- | derived from that count.
+-- | Placeholder domain log2 for the sizing pre-pass. Each rule's step
+-- | circuit is built at this domain only so its gate count can be
+-- | measured; the real pass then uses the log2 that count implies.
 roughDomainsLog2 :: Int
 roughDomainsLog2 = 20

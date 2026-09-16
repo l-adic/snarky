@@ -1,44 +1,21 @@
--- | Field-polymorphic pure helpers shared by the step and wrap
--- | provers.
--- |
--- | This module consolidates what used to live in six separate
--- | `Pickles.Prove.Pure.*` modules:
--- |
--- | * `EvalsOfSplit` → `actualEvaluation`, `evalsOfSplitPoint`
--- | * `BulletproofB` → `computeBpChalsAndB`
--- | * `CombinedInnerProductBatch` → `combinedInnerProductBatch`
--- | * `DerivePlonkType1` / `DerivePlonkType2` → `derivePlonk`
--- | * `FtEval0Type1` / `FtEval0Type2` → `ftEval0`
--- |
--- | The Type1/Type2 split in the last four was pure duplication —
--- | OCaml shares the same `derive_plonk` / `ft_eval0` body under the
--- | `Plonk_checks.Make (Shifted_value.Type1) ...` vs
--- | `Plonk_checks.Make (Shifted_value.Type2) ...` functor
--- | instantiations. In PS we recover the same sharing via a
--- | `Shifted (F f) sf` constraint: the caller picks the output
--- | shifted-value type (via return-type annotation) and the same body
--- | services both Type1 and Type2 callers.
--- |
--- | All helpers are pure (no FFI, no circuit monad). They are consumed
--- | by `Pickles.Prove.Pure.Step` (and eventually `Pickles.Prove.Pure.Wrap`).
+-- | Field-polymorphic scalar helpers shared by the step and wrap
+-- | provers: evaluation recombination, the batched combined inner
+-- | product, and the `derivePlonk` / `ftEval0` derivations. Pure —
+-- | no FFI and no circuit monad.
 module Pickles.Prove.Pure.Common
-  ( -- * Evaluation recombination
+  (
     actualEvaluation
-  -- * Bulletproof
   , BulletproofBInput
   , BulletproofBOutput
   , computeBpChalsAndB
-  -- * Combined inner product
   , CombinedInnerProductBatchInput
   , combinedInnerProductBatch
   , CombinedInnerProductBatchChunkedInput
   , combinedInnerProductBatchChunked
-  -- * Scalar derivations (unified Type1+Type2)
   , DerivePlonkInput
   , derivePlonk
   , FtEval0Input
   , ftEval0
-  -- * Cross-field reinterpretation
   , crossFieldDigest
   ) where
 
@@ -73,26 +50,21 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 import Snarky.Types.Shifted (class Shifted, toShifted)
 
 --------------------------------------------------------------------------------
--- Evaluation recombination — `actualEvaluation` / `evalsOfSplitPoint`
+-- Evaluation recombination
 --------------------------------------------------------------------------------
 
--- | `pow2Pow n x = x^(2^n)`, computed by repeated squaring.
--- |
--- | Matches the local `pt_n` computation in OCaml's `actual_evaluation`
--- | (plonk_checks.ml:92-94).
+-- | `pow2Pow n x = x^(2^n)`, by repeated squaring.
 pow2Pow :: forall f. Semiring f => Int -> f -> f
 pow2Pow n x
   | n <= 0 = x
   | otherwise = pow2Pow (n - 1) (x * x)
 
--- | Combine a chunked evaluation `e` at a point `pt`, with chunk base
--- | `pt^(2^rounds)`. Given `e = [a0, a1, ..., a_{n-1}]` and
--- | `ptN = pt^(2^rounds)`, returns
+-- | Combine a chunked evaluation `e = [a0, …, a_{n-1}]` at a point
+-- | `pt`, with chunk base `ptN = pt^(2^rounds)`:
 -- |
--- |   `a0 + ptN · a1 + ptN^2 · a2 + ... + ptN^(n-1) · a_{n-1}`
+-- |   `a0 + ptN · a1 + ptN^2 · a2 + … + ptN^(n-1) · a_{n-1}`
 -- |
--- | Computed via Horner's rule, mirroring OCaml's `actual_evaluation`
--- | (`plonk_checks.ml:90-100`). For an empty input, returns `zero`.
+-- | Zero for an empty input.
 actualEvaluation
   :: forall f
    . Semiring f
@@ -114,20 +86,13 @@ type BulletproofBInput d f =
   , r :: f
   }
 
--- | Output of `computeBpChalsAndB`.
--- |
--- | * `chals` — endo-expanded field-level bulletproof challenges.
--- | * `b` — `b_poly(zeta) + r · b_poly(zetaw)`, the opening target.
 type BulletproofBOutput d f =
   { chals :: Vector d f
   , b :: f
   }
 
--- | Pure PS port of the "new bulletproof challenges + b" computation
--- | at OCaml `step.ml:359-379`. Expands the raw prechallenges via
--- | `toFieldPure`, builds the challenge polynomial via `bPoly`, and
--- | evaluates `b_poly(zeta) + r·b_poly(zetaw)` — the combined IPA
--- | opening target.
+-- | The endo-expanded bulletproof challenges and the combined IPA
+-- | opening target `b_poly(zeta) + r · b_poly(zetaw)` over them.
 computeBpChalsAndB
   :: forall d f n
    . Reflectable d Int
@@ -148,19 +113,11 @@ computeBpChalsAndB input =
     { chals, b }
 
 --------------------------------------------------------------------------------
--- Combined inner product — `combinedInnerProductBatch`
+-- Combined inner product
 --------------------------------------------------------------------------------
 
--- | Input to `combinedInnerProductBatch`.
--- |
--- | Type parameters:
--- |
--- | * `n` — number of previous proofs whose bp challenges feed one
--- |   `b_poly` each into the batch.
--- | * `d` — length of each prev-proof bp challenge vector (= IPA
--- |   rounds).
--- | * `f` — the field in which the CIP is computed. Step-field side
--- |   uses `StepField`; wrap-field side uses `WrapField`.
+-- | Input to `combinedInnerProductBatch`: `n` previous proofs
+-- | contributing one `b_poly` each, `d` IPA rounds, in the field `f`.
 type CombinedInnerProductBatchInput n d f =
   { allEvals :: Evals f
   , publicEvals :: PointEval f
@@ -173,28 +130,16 @@ type CombinedInnerProductBatchInput n d f =
   , zetaw :: f
   }
 
--- | Field-polymorphic pure PS port of kimchi's batched
--- | `combined_inner_product`. Used on both sides of the recursion:
--- |
--- | * **step-field** — `Pickles.Wrap.combined_inner_product` in OCaml
--- |   `wrap.ml:22-62` (called from `expand_deferred`). Caller
--- |   instantiates `f = StepField`.
--- | * **wrap-field** — the inline block at OCaml
--- |   `step.ml:464-496`. Caller instantiates `f = WrapField`.
--- |
--- | Batching order (matching `wrap.ml:50-54` / `step.ml:472-485`):
--- | `b_polys (n)`, `public_input (1)`, `ft (1)`, `z (1)`,
--- | `index (6)`, `witness (15)`, `coefficient (15)`, `sigma (6)`.
--- |
--- | Implements the Horner fold
+-- | The batched combined inner product, the Horner fold
 -- |
 -- |   `sum_i xi^i · (eval_i.zeta + r · eval_i.omegaTimesZeta)`
 -- |
--- | which factors as `combine Fst zeta + r · combine Snd zetaw`, the
--- | form OCaml uses.
+-- | Batching order is fixed by the verifier: `b_polys (n)`,
+-- | `public_input (1)`, `ft (1)`, `z (1)`, `index (6)`,
+-- | `witness (15)`, `coefficient (15)`, `sigma (6)`.
 -- |
--- | Non-chunked assumption: single chunk per polynomial. Caller must
--- | recombine via `evalsOfSplitPoint` upstream.
+-- | One chunk per polynomial; chunked callers use
+-- | `combinedInnerProductBatchChunked`.
 combinedInnerProductBatch
   :: forall n d f
    . Reflectable d Int
@@ -233,13 +178,10 @@ combinedInnerProductBatch input =
   in
     (foldl step { result: zero, scale: one } orderedEvals).result
 
--- | Input to `combinedInnerProductBatchChunked` — the chunk-aware CIP.
--- |
--- | Identical to `CombinedInnerProductBatchInput` except `allEvals` and
--- | `publicEvals` carry `NonEmptyArray (PointEval f)` per polynomial
--- | (= one PointEval per chunk). `ftEval0`, `ftEval1`, and the bp
--- | challenge polynomials remain single-valued (they have no chunked
--- | structure in OCaml either).
+-- | Input to `combinedInnerProductBatchChunked`. As
+-- | `CombinedInnerProductBatchInput`, except that `allEvals` and
+-- | `publicEvals` carry one `PointEval` per chunk; `ftEval0`,
+-- | `ftEval1` and the bp challenge polynomials are never chunked.
 type CombinedInnerProductBatchChunkedInput n d f =
   { allEvals :: ChunkedEvals f
   , publicEvals :: NonEmptyArray (PointEval f)
@@ -252,25 +194,13 @@ type CombinedInnerProductBatchChunkedInput n d f =
   , zetaw :: f
   }
 
--- | Chunk-aware CIP. Mirrors OCaml `wrap.ml:22-62 combined_inner_product`
--- | which uses `Pcs_batch.combine_split_evaluations` to flatten chunked
--- | evaluations across all polynomials and xi-fold right-to-left:
+-- | The chunk-aware combined inner product: every polynomial's chunks
+-- | are flattened into one list per evaluation point, each list is
+-- | xi-folded, and the result is `combine zeta + r · combine zetaw`.
 -- |
--- |   `combine pt = sum_i xi^i * flat[i]`
--- |
--- |   where `flat = [bp_polys at pt] ++ public_input_chunks ++ [ft]
--- |              ++ z_chunks ++ index_chunks ++ witness_chunks
--- |              ++ coeff_chunks ++ sigma_chunks`
--- |
--- | The total CIP is `combine zeta + r * combine zetaw`.
--- |
--- | For inner proofs at num_chunks=1 each NonEmptyArray has length 1 and
--- | this collapses to the legacy single-eval `combinedInnerProductBatch`
--- | (byte-identical output). For chunks2 (step num_chunks=2) the extra
--- | chunks contribute additional xi-weighted terms.
--- |
--- | Reference: `Pcs_batch.combine_split_evaluations`
--- | (`pcs_batch.ml:42-51`).
+-- | At `num_chunks = 1` each chunk array is a singleton and this
+-- | agrees with `combinedInnerProductBatch`; above that the extra
+-- | chunks contribute further xi-weighted terms.
 combinedInnerProductBatchChunked
   :: forall n d f
    . Reflectable d Int
@@ -279,8 +209,7 @@ combinedInnerProductBatchChunked
   -> f
 combinedInnerProductBatchChunked input =
   let
-    -- bp polynomials evaluated at zeta and zetaw — single-valued (no chunking).
-    -- Each contributes one element to the flat list per `pt`.
+    -- bp polynomials are never chunked: one flat-list element each.
     bPolyZeta = map (\chals -> bPoly chals input.zeta)
       (Array.fromFoldable input.oldBulletproofChallenges)
     bPolyZetaw = map (\chals -> bPoly chals input.zetaw)
@@ -288,18 +217,14 @@ combinedInnerProductBatchChunked input =
 
     all = input.allEvals
 
-    -- Flatten all chunked PointEvals projecting `proj` (either `_.zeta`
-    -- or `_.omegaTimesZeta`) across the polynomial list. Each polynomial
-    -- contributes its full chunk array (length `num_chunks`).
     extractChunks
       :: (PointEval f -> f) -> NonEmptyArray (PointEval f) -> Array f
     extractChunks proj nea = map proj (NEA.toArray nea)
 
-    -- Build the flat list for one evaluation point. Matches OCaml's
-    -- ordering at `wrap.ml:46-54`:
-    --   bp_polys (singletons) ++ public_input chunks ++ [ft]
-    --   ++ z chunks ++ index chunks ++ witness chunks ++ coeff chunks
-    --   ++ sigma chunks
+    -- The flat list for one evaluation point. Its order is fixed by
+    -- the verifier's batching: bp_polys, public_input chunks, ft, z
+    -- chunks, index chunks, witness chunks, coeff chunks, sigma
+    -- chunks.
     flatAt :: (PointEval f -> f) -> f -> Array f -> Array f
     flatAt proj ftValue bpValues =
       bpValues
@@ -311,9 +236,7 @@ combinedInnerProductBatchChunked input =
         <> Array.concatMap (extractChunks proj) (Vector.toUnfoldable all.coeffEvals)
         <> Array.concatMap (extractChunks proj) (Vector.toUnfoldable all.sigmaEvals)
 
-    -- Pcs_batch.combine_split_evaluations: reverse and xi-fold with
-    --   acc' = fx + xi * acc
-    -- (= horner with xi). For empty input returns zero.
+    -- Horner in xi, right to left; zero for an empty list.
     combine :: Array f -> f
     combine flat =
       case Array.uncons (Array.reverse flat) of
@@ -325,22 +248,16 @@ combinedInnerProductBatchChunked input =
       + input.r * combine (flatAt _.omegaTimesZeta input.ftEval1 bPolyZetaw)
 
 --------------------------------------------------------------------------------
--- Scalar derivations — `derivePlonk` / `ftEval0` (Type1+Type2 unified)
+-- Scalar derivations
 --------------------------------------------------------------------------------
 
 -- | Input to `derivePlonk`.
 -- |
--- | Matches the OCaml step.ml / wrap.ml variable names:
--- |
 -- | * `plonkMinimal` — raw 128-bit challenges, carried forward
 -- |   unchanged into the output.
--- | * `w`, `sigma`, `zZeta`, `zOmegaTimesZeta` — recombined polynomial
--- |   evaluations at (zeta, zeta·omega).
--- | * `shifts` — the 7 permutation shift constants from the domain.
--- | * `generator` — the circuit's domain generator omega.
--- | * `domainLog2` — log2 of the domain size.
--- | * `zkRows` — zero-knowledge row count (standard kimchi: 3).
--- | * `srsLengthLog2` — log2 of the SRS length, for `zeta_to_srs_length`.
+-- | * `w`, `sigma`, `zZeta`, `zOmegaTimesZeta` — recombined
+-- |   polynomial evaluations at `(zeta, zeta·omega)`.
+-- | * `shifts` — the 7 permutation shift constants of the domain.
 -- | * `endo` — scalar endo coefficient for challenge expansion.
 type DerivePlonkInput f =
   { plonkMinimal :: PlonkMinimal (F f)
@@ -356,29 +273,15 @@ type DerivePlonkInput f =
   , endo :: f
   }
 
--- | Unified pure port of OCaml's `Plonk_checks.derive_plonk`
--- | (`plonk_checks.ml:403-441`), field-polymorphic over both
--- | instantiations:
+-- | The derived Plonk scalars — `perm`, `zetaToDomainSize`,
+-- | `zetaToSrsLength` — in the caller's shifted-value
+-- | representation, with `plonkMinimal`'s raw challenges passed
+-- | through.
 -- |
--- | * `Make (Shifted_value.Type1) (Scalars_tokens_interpreter.Tick)`
--- |   (called from `wrap.ml` and `wrap_deferred_values.expand_deferred`)
--- | * `Make (Shifted_value.Type2) (Scalars_tokens_interpreter.Tock)`
--- |   (called from `step.ml:498-511`)
--- |
--- | The `Shifted (F f) sf` constraint picks which shifted-value
--- | representation the output uses. The body is identical across both
--- | instantiations; OCaml achieves the same sharing via functor
--- | application.
--- |
--- | Callers disambiguate via return-type annotation:
--- |
--- | @
--- |   let p :: PlonkInCircuit (F StepField) (Type1 (F StepField))
--- |       p = derivePlonk stepInput
--- |
--- |   let p :: PlonkInCircuit (F WrapField) (Type2 (F WrapField))
--- |       p = derivePlonk wrapInput
--- | @
+-- | One body serves both the Type1 and the Type2 callers: the
+-- | `Shifted (F f) sf` constraint resolves against the return-type
+-- | annotation at the call site, and that is what picks the output
+-- | representation.
 derivePlonk
   :: forall f sf
    . PrimeField f
@@ -435,26 +338,18 @@ derivePlonk input =
     , zetaToSrsLength: toShifted (F zetaToSrsLength)
     }
 
--- | Input to `ftEval0`.
+-- | Input to `ftEval0`. Beyond the `DerivePlonkInput` fields:
 -- |
--- | Field-polymorphic version that unifies `FtEval0Type1Input` and
--- | `FtEval0Type2Input`. Callers pass the linearization token stream
--- | appropriate for their field:
--- |
--- | * step field → `Pickles.Linearization.pallas`
--- | * wrap field → `Pickles.Linearization.vesta`
--- |
--- | See `DerivePlonkInput` for the common fields. The additional
--- | fields are:
--- |
--- | * `allEvals` — all recombined polynomial evals at (zeta, zeta·omega).
--- | * `pEval0Chunks` — public-input poly evaluation chunks at zeta.
+-- | * `pEval0Chunks` — public-input polynomial evaluation chunks at
+-- |   `zeta`.
 -- | * `vanishesOnZk` — precomputed
 -- |   `vanishes_on_zero_knowledge_and_previous_rows`.
--- | * `omegaForLagrange` — maps `{ zkRows, offset }` to the
--- |   appropriate omega power for `unnormalized_lagrange_basis` lookups.
--- | * `linearizationPoly` — the Polish-notation token stream for the
--- |   target circuit.
+-- | * `omegaForLagrange` — the omega power an
+-- |   `unnormalized_lagrange_basis` lookup at `{ zkRows, offset }`
+-- |   needs.
+-- | * `linearizationPoly` — the token stream for the target circuit:
+-- |   `Pickles.Linearization.pallas` in the step field,
+-- |   `Pickles.Linearization.vesta` in the wrap field.
 type FtEval0Input f =
   { plonkMinimal :: PlonkMinimal (F f)
   , allEvals :: Evals f
@@ -470,27 +365,10 @@ type FtEval0Input f =
   , linearizationPoly :: LinearizationPoly f
   }
 
--- | Unified pure port of OCaml's `Plonk_checks.ft_eval0`
--- | (`plonk_checks.ml:350-400`), field-polymorphic over both Type1 and
--- | Type2 instantiations. OCaml shares the body across
--- |
--- | * `Make (Shifted_value.Type1) ...` — called from
--- |   `wrap.ml::combined_inner_product` (the wrap prover, operating
--- |   in the step field, which is `Tick.Field`);
--- | * `Make (Shifted_value.Type2) ...` — called from step.ml:488 (the
--- |   step prover, operating in the wrap field, which is `Tock.Field`).
--- |
--- | Result:
--- |
--- |   `ft_eval0 = permContribution - pEval0Folded - constantTerm`
--- |
--- | where
--- |
--- | * `permContribution` = `term1 - term2 + boundary` from
--- |   `Pickles.PlonkChecks.permContribution`;
--- | * `pEval0Folded` = Horner fold of `pEval0Chunks` at
--- |   `zeta^(2^srsLengthLog2)`;
--- | * `constantTerm` = `evaluate linearizationPoly (fieldEnv ...)`.
+-- | `ft_eval0 = permContribution - pEval0Folded - constantTerm`,
+-- | where `pEval0Folded` is the Horner fold of `pEval0Chunks` at
+-- | `zeta^(2^srsLengthLog2)` and `constantTerm` is
+-- | `linearizationPoly` evaluated in the scalar environment.
 ftEval0
   :: forall f f'
    . PrimeField f
@@ -557,10 +435,8 @@ ftEval0 input =
 
     result = permRaw - pEval0Folded - constantTerm
 
-    -- ===== DIAGNOSTIC TRACE (chunks2 nc=2 byte-diff) =====
-    -- Mirror labels emitted by OCaml `plonk_checks.ml` instrumentation;
-    -- both sides write to `PICKLES_TRACE_FILE`. Strip these once the
-    -- residual nc-dependent bug is found.
+    -- Diagnostic trace. The labels pair with the ones the OCaml side
+    -- emits; both write to `PICKLES_TRACE_FILE`.
     traceArr lbl arr = Array.foldM
       (\i v -> Trace.field (lbl <> show i) v *> pure (i + 1))
       (0 :: Int)
@@ -597,13 +473,10 @@ ftEval0 input =
 -- Cross-field reinterpretation
 --------------------------------------------------------------------------------
 
--- | Reinterpret a field element's integer representation in another
--- | field. Used for hash digests and packed-limb values that must
--- | appear bit-identically in both curves of the Pasta cycle.
--- |
--- | Safe when the source value's big-int representation fits within
--- | the target field's modulus — true for digests (hashes are bounded
--- | by the sponge output width < both Pallas/Vesta scalar moduli) and
--- | for limb-packed values (each limb < 2^64).
+-- | Reinterpret a field element's integer representation in the other
+-- | field of the Pasta cycle, for digests and packed limbs that must
+-- | appear bit-identically on both. Safe while that integer stays
+-- | below the target modulus — true of sponge digests, and of limbs,
+-- | each `< 2^64`.
 crossFieldDigest :: forall f f'. PrimeField f => PrimeField f' => f -> f'
 crossFieldDigest = fromBigInt <<< toBigInt

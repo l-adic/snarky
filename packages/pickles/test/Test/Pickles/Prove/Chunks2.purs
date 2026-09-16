@@ -1,13 +1,11 @@
--- | PureScript-side analog of OCaml's `chunks2` base-case (b0) test
--- | (`mina/src/lib/crypto/pickles/test/chunked_circuits/chunks2.ml:9-56`).
+-- | The chunked case: one rule with no prevs whose body fills 2^16
+-- | rows, declared at `stepChunks = 2` with the wrap domain overridden
+-- | to 2^14, so kimchi's PCS runs the step at two chunks and the wrap
+-- | at one.
 -- |
--- | Single N=0 rule whose body fills 2^16 rows with `mul_ (fresh_zero)
--- | (fresh_zero)` plus one 7-wire Raw Generic gate; declared with
--- | `num_chunks = 2` and `wrap_domain_override = N1` so kimchi's PCS
--- | runs at num_chunks=2 (max_poly_size = 2^16, domain = 2^17). The
--- | proof creation triggers a step and a wrap kimchi prover invocation
--- | — counters 0 and 1 in `KIMCHI_WITNESS_DUMP` — so the witness can
--- | be diffed against `dump_chunks2.exe` byte-for-byte.
+-- | Proving emits a step and a wrap kimchi witness — counters 0 and 1
+-- | under `KIMCHI_WITNESS_DUMP` — which a byte-for-byte diff against
+-- | the reference dump compares.
 module Test.Pickles.Prove.Chunks2
   ( Chunks2Rules
   , chunks2Rule
@@ -38,11 +36,10 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
--- | The chunks2 leaf rule body: 2^17 + 1 `mul_ (fresh_zero) (fresh_zero)`
--- | fillers (each R1CS = half a kimchi row, so we get 2^16 + 1 rows)
--- | followed by a 7-wire Raw Generic with zero coeffs (forces the 7th
--- | permuted column's polynomial degree above 2^16). Mirrors the
--- | `main` field of the OCaml `chunks2.ml` choice at lines 18-48.
+-- | 2^17 + 1 `mul_` fillers on fresh zeros — each constraint is half a
+-- | kimchi row, so 2^16 + 1 rows — then one 7-wire Raw Generic with
+-- | zero coefficients, which pushes the 7th permuted column's degree
+-- | above 2^16.
 chunks2Rule :: StepRule 0 Unit Unit Unit Unit Unit Unit Unit
 chunks2Rule _ _ = do
   let
@@ -68,8 +65,7 @@ chunks2Rule _ _ = do
     , publicOutput: unit
     }
 
--- | Single-rule carrier for chunks2: one `RulesCons` for the leaf rule,
--- | terminated by `RulesNil`. Same shape as NRR (N=0, no prevs).
+-- | Carrier for the single `chunks2Rule`, at width 0 with no prevs.
 type Chunks2Rules =
   RulesCons 0 Unit Unit
     RulesNil
@@ -78,18 +74,11 @@ spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Chunks2" do
   it "base case (b0) — chunks=2 step+wrap proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/Chunks2.json")
-    -- Step kimchi uses `vestaSrs` (depth 2^16 by default cache load).
-    -- With chunks2's 2^16-row step circuit, the step domain rounds to
-    -- 2^17 → num_chunks = 2 (= 2^17 / 2^16). Wrap kimchi uses
-    -- `pallasSrs` at depth 2^15 — matches OCaml's Tock URS
-    -- (`Backend.Tock.Keypair.load_urs ()` at `Tock.Rounds.n = N15`,
-    -- `kimchi_pasta_basic.ml:6`). Wrap domain is 2^14 (override) so
-    -- num_chunks at wrap = 1; the smaller SRS gives the correct
-    -- max_poly_size = 32768 byte-for-byte with OCaml.
 
-    -- @nc=1 is a placeholder for the side-loaded-slot chunks count
-    -- (no side-loaded slots here; nc is irrelevant but must be pinned
-    -- for `Reflectable nc Int` to resolve at module-load time).
+    -- The step SRS has depth 2^16, and this rule's 2^16 rows round the
+    -- step domain up to 2^17, giving two chunks. The wrap SRS has depth
+    -- 2^15 and the wrap domain is overridden to 2^14, giving one chunk
+    -- and a `max_poly_size` of 32768.
     chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks2Rule Vector.nil
     let rules = tuple1 chunks2Entry
 
@@ -102,8 +91,6 @@ spec = describe "Pickles.Prove.Chunks2" do
       noAdvice
       { srs: { vestaSrs, pallasSrs }
       , debug: false
-      -- N1 wrap_domain override (= log2 14), matching chunks2.ml's
-      -- `~override_wrap_domain:N1`.
       , wrapDomainOverride: Just 14
       , proofCache: cache
       , lagrangeCache: Just lagrangeCache

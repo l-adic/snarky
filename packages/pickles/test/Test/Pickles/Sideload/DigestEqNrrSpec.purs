@@ -1,16 +1,12 @@
--- | OCaml ↔ PureScript NRR VK compatibility test.
+-- | `compileMulti` must produce, for `nrrRule`, the same kimchi
+-- | `VerifierIndex` that the OCaml compile produced for the same rule.
 -- |
--- | Compiles the NRR rule on the PureScript side via `compileMulti` and
--- | loads the OCaml-emitted NRR fixture's wrap VK, then compares the two
--- | via the full-VK JSON key used by `Snarky.Backend.Kimchi.ProofCache` (covers every
--- | stable kimchi `VerifierIndex` field — domain, evals, shifts,
--- | max_poly_size, public, prev_challenges, zk_rows). Stringwise equality
--- | of the JSON key implies bit-equivalent VKs at the kimchi level.
--- |
--- | Stronger than the byte-identity round-trip in `RoundTripNrrSpec`: that
--- | one verifies we can round-trip a given JSON; this one verifies that
--- | PS's `compileMulti` produces the same kimchi `VerifierIndex` that
--- | OCaml's `Pickles.compile_promise` does for the same rule.
+-- | The two wrap VKs are compared through the full-VK JSON key of
+-- | `Snarky.Backend.Kimchi.ProofCache`, which covers every stable
+-- | `VerifierIndex` field — domain, evals, shifts, `max_poly_size`,
+-- | public, `prev_challenges`, `zk_rows` — so equal keys mean
+-- | bit-equivalent VKs. `RoundTripNrrSpec` only pins the codec on one
+-- | JSON; this pins the compile itself.
 module Test.Pickles.Sideload.DigestEqNrrSpec (spec) where
 
 import Prelude
@@ -38,7 +34,6 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
   where
   body :: SharedSrs -> LoggerT Message Aff Unit
   body { pallasSrs, vestaSrs, lagrangeCache } = do
-    -- PureScript-side compile: produce the wrap VK for NRR.
     nrrEntry :: RuleEntry _ _ _ _ Unit _ _ _ _ _ <-
       liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
     let rules = tuple1 nrrEntry
@@ -56,11 +51,10 @@ spec = describe "Pickles.Sideload.NRR VK equality" do
       }
       rules
 
-    -- OCaml-side fixture: load the wrap VK from the dumped serde JSON.
+    -- The reference wrap VK comes from the dumped serde JSON.
     fixture <- liftAff $ loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs }
       "packages/pickles/test/fixtures/sideload/nrr"
 
-    -- Compare full-VK JSON keys; string equality ⇒ bit-equivalent VKs.
     let psKey = vestaVerifierIndexJsonKey output.verifier.wrapVK
     let ocamlKey = vestaVerifierIndexJsonKey fixture.vk
     psKey `shouldEqual` ocamlKey

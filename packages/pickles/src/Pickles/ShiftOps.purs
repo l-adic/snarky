@@ -1,10 +1,7 @@
--- | Shared type aliases for shifted-value operations used by IPA and FOP circuits.
--- |
--- | These record types bundle the operations needed to work with cross-field
--- | shifted scalar representations (Type1 for Wrap, Type2/SplitField for Step).
--- |
--- | - `IpaScalarOps`: Full set of operations for IPA verification (scale, absorb, unshift, equal)
--- | - `FopShiftOps`: Subset needed by FinalizeOtherProof (unshift, equal)
+-- | Operation records passed to the IPA and finalize-other-proof
+-- | circuits, which are written once and instantiated at both shifted
+-- | scalar representations: Type1 on the wrap side, Type2/SplitField on
+-- | the step side.
 module Pickles.ShiftOps
   ( IpaScalarOps
   , FopShiftOps
@@ -14,48 +11,37 @@ import Snarky.Circuit.DSL (BoolVar, FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | Operations for working with shifted scalar values in the IPA circuit.
--- |
--- | This record bundles operations that depend on the specific shifted type
--- | (Type1 for Vesta scalars in Pallas circuits, Type2 for Pallas scalars in Vesta circuits).
--- |
--- | Parameters:
--- | - `f`: base field type (Pallas.BaseField or Vesta.BaseField)
--- | - `t`: tag type
--- | - `m`: underlying monad
--- | - `sf`: shifted scalar type (Type1 (FVar f) or SplitField (FVar f) (BoolVar f))
+-- | Everything the IPA circuit needs from a shifted scalar `sf`, which
+-- | is `Type1 (FVar f)` on the wrap side and
+-- | `SplitField (FVar f) (BoolVar f)` on the step side.
 type IpaScalarOps f r sf =
-  { -- | Scale a curve point by a shifted scalar value.
-    -- | This corresponds to `scale_fast` in wrap_verifier.ml.
+  { -- | Scale a curve point by a shifted scalar.
     scaleByShifted ::
       AffinePoint (FVar f)
       -> sf
       -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
-  , -- | Get the field elements to absorb for a shifted scalar.
-    -- | For Type1: returns [t] (single field element)
-    -- | For Type2: returns [sDiv2, if sOdd then 1 else 0] (two elements)
+  , -- | The field elements a shifted scalar absorbs as: `[t]` for
+    -- | Type1, `[sDiv2, sOdd]` for Type2.
     shiftedToAbsorbFields ::
       sf
       -> Array (FVar f)
-  , -- | Recover the original field element from a shifted representation.
-    -- | For Type1: s = 2*t + 2^n + 1
-    -- | For Type2: s = 2*sDiv2 + sOdd + 2^n
+  , -- | Recover the field element behind a shifted representation:
+    -- | `s = 2t + 2^n + 1` for Type1, `s = 2·sDiv2 + sOdd + 2^n` for
+    -- | Type2.
     unshift ::
       sf
       -> FVar f
-  , -- | Compare a claimed shifted value against a raw computed value.
-    -- | Uses the of_field convention (shift the raw value, compare inners)
-    -- | to match OCaml's Shifted_value.equal.
+  , -- | Compare a claimed shifted value against a raw computed one, by
+    -- | shifting the raw value and comparing the inner representations
+    -- | rather than unshifting.
     shiftedEqual ::
       sf
       -> FVar f
       -> Snarky f (KimchiConstraint f) r (BoolVar f)
   }
 
--- | Subset of shift operations needed by FinalizeOtherProof circuits.
--- |
--- | Both Step and Wrap FOP need only `unshift` and `shiftedEqual` to verify
--- | deferred values (combined_inner_product, b, perm).
+-- | The two operations the finalize-other-proof circuits need to check
+-- | a deferred value: `unshift` and `shiftedEqual`.
 type FopShiftOps f r sf =
   { unshift :: sf -> FVar f
   , shiftedEqual :: sf -> FVar f -> Snarky f (KimchiConstraint f) r (BoolVar f)

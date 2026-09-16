@@ -1,6 +1,6 @@
--- | Stack-based interpreter for Polish notation linearization polynomials.
--- | This approach avoids generating large PureScript expressions that
--- | overwhelm the compiler's type checker.
+-- | A stack machine over the Polish-notation linearization tables.
+-- | The tables are interpreted rather than compiled into PureScript
+-- | expressions, which at that size overwhelm the type checker.
 module Pickles.Linearization.Interpreter
   ( evaluate
   , evaluateM
@@ -16,27 +16,25 @@ import Pickles.Linearization.Env (Env, EnvM)
 import Pickles.Linearization.Types (ChallengeTerm(..), ConstantTerm(..), PolishToken(..))
 import Snarky.Circuit.DSL (FVar)
 
--- | Evaluation state: stack of values and stored values for Load
+-- | The value stack, the `Store`/`Load` slots, and the token index.
 type EvalState a =
   { stack :: Array a
   , store :: Array a
-  , position :: Int -- Current position in token array
+  , position :: Int
   }
 
--- | Initial empty state
 initialState :: forall a. EvalState a
 initialState = { stack: [], store: [], position: 0 }
 
--- | Evaluate a Polish notation token array with the given environment
+-- | The value `tokens` leaves on top of the stack under `env`, or
+-- | zero if it leaves none.
 evaluate :: forall a. Array PolishToken -> Env a -> a
 evaluate tokens env =
   let
     finalState = evalLoop tokens (Array.length tokens) initialState
   in
-    -- Result is the top of the stack (or zero if empty)
     fromMaybe (env.field "0x0") (Array.last finalState.stack)
   where
-  -- Main evaluation loop — processes tokens from position until endPos
   evalLoop :: Array PolishToken -> Int -> EvalState a -> EvalState a
   evalLoop toks endPos state =
     if state.position >= endPos then
@@ -50,33 +48,25 @@ evaluate tokens env =
           in
             evalLoop toks endPos newState
 
-  -- Evaluate a single token
   evalToken :: Array PolishToken -> PolishToken -> EvalState a -> EvalState a
   evalToken toks token state = case token of
-    -- Constants
     Constant term -> push (evalConstant term) (advance state)
 
-    -- Challenges
-    -- Note: this pure interpreter does not do the Alpha+Pow peephole
-    -- because over concrete fields, alphaPow is just a lookup and the
-    -- separate Pow case handles exponentiation. The peephole matters
-    -- in evaluateM where it avoids generating unnecessary constraints.
+    -- No `Alpha`+`Pow` peephole here: with no constraints to save,
+    -- the separate `Pow` case is enough.
     Challenge Alpha -> push (env.alphaPow 1) (advance state)
     Challenge Beta -> push env.beta (advance state)
     Challenge Gamma -> push env.gamma (advance state)
     Challenge JointCombiner -> push env.jointCombiner (advance state)
 
-    -- Cell access
     Cell { col, row } ->
       push (env.cell (env.var col row)) (advance state)
 
-    -- Stack operations
     Dup ->
       case Array.last state.stack of
         Just top -> push top (advance state)
         Nothing -> advance state
 
-    -- Arithmetic
     Add ->
       case pop2 state of
         Just { a, b, newState } ->
@@ -101,7 +91,7 @@ evaluate tokens env =
           push (env.pow value n) (advance newState)
         Nothing -> advance state
 
-    -- Store/Load for sharing subexpressions
+    -- `Store`/`Load` carry the subexpressions the token stream shares.
     Store ->
       case pop state of
         Just { value, newState } ->
@@ -116,17 +106,16 @@ evaluate tokens env =
         Just value -> push value (advance state)
         Nothing -> advance state
 
-    -- Special terms
     VanishesOnZeroKnowledgeAndPreviousRows ->
       push env.vanishesOnZeroKnowledgeAndPreviousRows (advance state)
 
     UnnormalizedLagrangeBasis { zk_rows, offset } ->
       push (env.unnormalizedLagrangeBasis { zkRows: zk_rows, offset }) (advance state)
 
-    -- Conditional: IfFeature is encoded as a pair:
-    --   SkipIfNot(flag, len_e1) [e1 tokens] SkipIf(flag, len_e2) [e2 tokens]
-    -- We evaluate both branches as bounded sub-sequences, extract their
-    -- top-of-stack values, and let ifFeature select the result.
+    -- A feature-gated subexpression is encoded as the pair
+    --   SkipIfNot(flag, len_e1) [e1] SkipIf(flag, len_e2) [e2]
+    -- so each branch is a bounded sub-sequence, run for its
+    -- top-of-stack value and selected by `ifFeature`.
     SkipIfNot flag countTrue ->
       let
         trueEnd = state.position + 1 + countTrue
@@ -145,17 +134,15 @@ evaluate tokens env =
       in
         push result (state { position = falseEnd })
 
-    -- SkipIf is consumed by the SkipIfNot handler above.
+    -- `SkipIf` is consumed by the `SkipIfNot` handler above.
     SkipIf _ count ->
       state { position = state.position + 1 + count }
 
-  -- Evaluate a constant term
   evalConstant = case _ of
     EndoCoefficient -> env.endoCoefficient
     Mds { row, col } -> env.mds { row, col }
     Literal hex -> env.field hex
 
-  -- Stack helpers
   push :: a -> EvalState a -> EvalState a
   push value state = state { stack = Array.snoc state.stack value }
 
@@ -173,25 +160,19 @@ evaluate tokens env =
   advance :: EvalState a -> EvalState a
   advance state = state { position = state.position + 1 }
 
--- | Monadic evaluation state: extends EvalState with a lazy cache for zeta^n-1.
--- | The cache matches OCaml's `lazy (domain#vanishing_polynomial zeta)` binding
--- | (plonk_checks.ml:280), which is forced on first UnnormalizedLagrangeBasis call.
+-- | `EvalState` plus a slot for `zeta^n - 1`, which is computed
+-- | part-way through evaluation rather than up front.
 type EvalStateM a =
   { stack :: Array a
   , store :: Array a
   , position :: Int
-  , zetaCache :: Maybe a -- ^ Memoized zeta^n-1, computed on first UnnormalizedLagrangeBasis
+  , zetaCache :: Maybe a -- ^ filled by the first `UnnormalizedLagrangeBasis`
   }
 
--- | Monadic interpreter for Polish notation linearization polynomials.
--- | Unlike `evaluate`, this runs in the Snarky monad with FVar stack values.
--- | Key differences:
--- | - Stack holds already-evaluated FVar values (not monadic actions)
--- | - Store saves FVar values; Load retrieves them without re-execution
--- | - Peephole: Challenge Alpha + Pow N → alphaPow(N) pure lookup
--- | - Mul/Pow/UnnormalizedLagrangeBasis are monadic (create R1CS constraints)
--- | - Add/Sub are pure CVar operations (no constraints)
--- | - Lazy zeta^n-1: computed on first UnnormalizedLagrangeBasis, cached for reuse
+-- | `evaluate` in a constraint-emitting monad. The stack holds
+-- | evaluated `FVar`s, so a `Load` reuses a value rather than
+-- | re-emitting the constraints that produced it. `Mul`, `Pow` and the
+-- | Lagrange basis emit constraints; `Add` and `Sub` are free.
 evaluateM
   :: forall f n
    . Monad n
@@ -203,7 +184,6 @@ evaluateM tokens env = do
   finalState <- evalLoopM tokens (Array.length tokens) initState
   pure $ fromMaybe (env.field "0x0") (Array.last finalState.stack)
   where
-  -- Main evaluation loop (monadic) — processes tokens from position until endPos
   evalLoopM :: Array PolishToken -> Int -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
   evalLoopM toks endPos state =
     if state.position >= endPos then
@@ -215,17 +195,13 @@ evaluateM tokens env = do
           newState <- evalTokenM toks token state
           evalLoopM toks endPos newState
 
-  -- Evaluate a single token (monadic)
   evalTokenM :: Array PolishToken -> PolishToken -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
   evalTokenM toks token state = case token of
-    -- Constants (pure)
     Constant term -> pure $ push (evalConstantM term) (advance state)
 
-    -- Challenges
-    -- Peephole: Challenge Alpha is always followed by Pow N in the
-    -- generated token streams (Rust's to_polish only emits Alpha as
-    -- part of Expr::Pow(alpha, n)). The fallback to alphaPow 1 is
-    -- defensive and never fires in practice.
+    -- Every `Challenge Alpha` in the generated tables is immediately
+    -- followed by a `Pow`, so the pair is read as one table lookup and
+    -- the `alphaPow 1` fallback never fires.
     Challenge Alpha ->
       case Array.index toks (state.position + 1) of
         Just (Pow n) ->
@@ -236,17 +212,14 @@ evaluateM tokens env = do
     Challenge Gamma -> pure $ push env.gamma (advance state)
     Challenge JointCombiner -> pure $ push env.jointCombiner (advance state)
 
-    -- Cell access (pure)
     Cell { col, row } ->
       pure $ push (env.cell (env.var col row)) (advance state)
 
-    -- Stack operations (pure)
     Dup ->
       case Array.last state.stack of
         Just top -> pure $ push top (advance state)
         Nothing -> pure $ advance state
 
-    -- Arithmetic
     Add ->
       case pop2' state of
         Just { a, b, newState } ->
@@ -273,8 +246,6 @@ evaluateM tokens env = do
           pure $ push result (advance newState)
         Nothing -> pure $ advance state
 
-    -- Store/Load for sharing subexpressions
-    -- Store saves the already-evaluated FVar value.
     Store ->
       case pop' state of
         Just { value, newState } ->
@@ -284,18 +255,17 @@ evaluateM tokens env = do
             pure $ push value (advance storeState)
         Nothing -> pure $ advance state
 
-    -- Load retrieves the saved FVar value (no re-execution!)
+    -- `Load` returns the stored `FVar`, emitting nothing.
     Load n ->
       case Array.index state.store n of
         Just value -> pure $ push value (advance state)
         Nothing -> pure $ advance state
 
-    -- Special terms
     VanishesOnZeroKnowledgeAndPreviousRows ->
       pure $ push env.vanishesOnZeroKnowledgeAndPreviousRows (advance state)
 
-    -- Lazy zeta^n-1: compute on first use, cache for subsequent calls.
-    -- Matches OCaml's Lazy.force zeta_to_n_minus_1 in unnormalized_lagrange_basis.
+    -- `zeta^n - 1` is computed at the first basis term, so its
+    -- constraints land there rather than at the start of the stream.
     UnnormalizedLagrangeBasis { zk_rows, offset } ->
       case state.zetaCache of
         Just cached -> do
@@ -306,10 +276,10 @@ evaluateM tokens env = do
           result <- env.lagrangeBasis zetaToNMinus1 { zkRows: zk_rows, offset }
           pure $ push result (advance (state { zetaCache = Just zetaToNMinus1 }))
 
-    -- Conditional: IfFeature is encoded as a pair:
-    --   SkipIfNot(flag, len_e1) [e1 tokens] SkipIf(flag, len_e2) [e2 tokens]
-    -- We evaluate both branches as bounded sub-sequences, extract their
-    -- top-of-stack values, and let ifFeature select the result.
+    -- A feature-gated subexpression is encoded as the pair
+    --   SkipIfNot(flag, len_e1) [e1] SkipIf(flag, len_e2) [e2]
+    -- so each branch is a bounded sub-sequence, run for its
+    -- top-of-stack value and selected by `ifFeature`.
     SkipIfNot flag countTrue -> do
       let
         trueEnd = state.position + 1 + countTrue
@@ -329,17 +299,15 @@ evaluateM tokens env = do
         }
       pure $ push result (state { position = falseEnd })
 
-    -- SkipIf is consumed by the SkipIfNot handler above.
+    -- `SkipIf` is consumed by the `SkipIfNot` handler above.
     SkipIf _ count ->
       pure $ state { position = state.position + 1 + count }
 
-  -- Evaluate a constant term (pure)
   evalConstantM = case _ of
     EndoCoefficient -> env.endoCoefficient
     Mds { row, col } -> env.mds { row, col }
     Literal hex -> env.field hex
 
-  -- Stack helpers
   push :: FVar f -> EvalStateM (FVar f) -> EvalStateM (FVar f)
   push value state = state { stack = Array.snoc state.stack value }
 

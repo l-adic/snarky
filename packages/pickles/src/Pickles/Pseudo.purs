@@ -1,10 +1,8 @@
--- | Pseudo-selection circuits for dynamic dispatch over a fixed set of options.
--- |
--- | Used in wrap_main to select domain parameters based on which_branch
--- | and wrap_domain_index.
--- |
--- | Reference: mina/src/lib/crypto/pickles/pseudo/pseudo.ml
--- |            mina/src/lib/crypto/pickles_base/one_hot_vector/one_hot_vector.ml
+-- | Selection over a fixed set of options by a one-hot vector of
+-- | circuit bits, and the plonk domain built that way.
+-- | `Pickles.Wrap.Main` selects on the branch and the wrap domain
+-- | index; `Pickles.Step.FinalizeOtherProof` selects the prev proof's
+-- | domain generator.
 module Pickles.Pseudo
   ( oneHotVector
   , mask
@@ -34,16 +32,8 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 
--- | Create a one-hot vector from a field variable index.
--- |
--- | For each j in [0..n-1], computes Field.equal (Field.of_int j) index.
--- | Then asserts at least one entry is true via assert_non_zero(sum(bits)).
--- |
--- | Constraint generation (utils.ml:65-78, utils.ml:361):
--- |   - n × Field.equal: each allocates (r, inv) via exists + 2 R1CS constraints
--- |   - 1 × assert_non_zero(num_true): inv(sum) = 1 R1CS constraint
--- |
--- | Reference: one_hot_vector.ml:21-24
+-- | The bits `index == j` for `j` in `[0..n-1]`, asserted to contain
+-- | at least one true entry.
 oneHotVector
   :: forall @n f r
    . PrimeField f
@@ -51,7 +41,8 @@ oneHotVector
   => FVar f
   -> Snarky f (KimchiConstraint f) r (Vector n (BoolVar f))
 oneHotVector index = label "one-hot-vector" do
-  -- OCaml Vector.init evaluates right-to-left (j=n-1 first, j=0 last)
+  -- The comparison for `j = n-1` is emitted first and `j = 0` last;
+  -- that order fixes the constraint sequence.
   let indices = Vector.generate @n identity
   vRev <- traverse (\j -> equals_ (const_ (fromBigInt (fromInt (getFinite j)))) index)
     (Vector.reverse indices)
@@ -63,16 +54,8 @@ oneHotVector index = label "one-hot-vector" do
   assertNonZero_ (foldl add_ (const_ zero) asFields)
   pure v
 
--- | Mask-select: compute ∑ bits[i] * xs[i].
--- |
--- | Each bit is coerced to a field and multiplied with the corresponding value.
--- | Results are summed via Cvar addition (no constraints for the sum).
--- |
--- | Constraint generation (pseudo.ml:23-28):
--- |   - n × Field.mul (b :> t) x: each generates 1 R1CS if b is non-constant
--- |   - fold with Field.(+): pure CVar addition, 0 constraints
--- |
--- | Reference: pseudo.ml:23-28
+-- | `∑ bits[i] * xs[i]`. Only the products cost constraints; the sum
+-- | is `CVar` addition.
 mask
   :: forall n f r
    . PrimeField f
@@ -81,7 +64,8 @@ mask
   -> Vector n (FVar f)
   -> Snarky f (KimchiConstraint f) r (FVar f)
 mask bits xs = label "pseudo-mask" do
-  -- OCaml Vector.map evaluates right-to-left (::  constructor)
+  -- The last product is emitted first; that order fixes the
+  -- constraint sequence.
   let
     boolToField = coerce
   termsRev <- traverse (\(Tuple b x) -> mul_ (boolToField b) x) $
@@ -89,11 +73,7 @@ mask bits xs = label "pseudo-mask" do
   let terms = Vector.reverse termsRev
   pure $ foldl add_ (const_ zero) terms
 
--- | Choose a value from a vector using a one-hot selector.
--- |
--- | Maps each option through f, then mask-selects.
--- |
--- | Reference: pseudo.ml:30-31
+-- | `mask` over the options mapped through `f`.
 choose
   :: forall n a f r
    . PrimeField f
@@ -104,34 +84,21 @@ choose
   -> Snarky f (KimchiConstraint f) r (FVar f)
 choose bits xs f = mask bits (map f xs)
 
--- | Plonk domain with dynamically-selected parameters.
--- |
--- | Reference: plonk_checks.ml plonk_domain object type
+-- | A plonk domain whose parameters were selected in-circuit. The
+-- | vanishing polynomial is a closure so its constraints are emitted
+-- | where it is applied, not where the domain is built.
 type PlonkDomain f r =
   { generator :: FVar f
   , shifts :: Vector 7 (FVar f)
   , vanishingPolynomial :: FVar f -> Snarky f (KimchiConstraint f) r (FVar f)
   }
 
--- | Pseudo.Domain.to_domain: construct a plonk domain from a one-hot selection
--- | over possible domain sizes.
+-- | The plonk domain selected by `which` from the candidate sizes
+-- | `log2s`, which index a `buildPow2Pows` table of `maxLog2` entries.
 -- |
--- | @maxLog2: type-level upper bound on domain log2 sizes. The pow2_pows table
--- |   has this many entries (indices 0..maxLog2-1). Each log2 value in `log2s`
--- |   must be a valid `Finite maxLog2` index.
--- |
--- | Shifts optimization: if all domain sizes produce identical shifts (which
--- | they do in practice), returns constants with 0 constraints. The OCaml
--- | implementation fails at runtime if shifts differ (disabled_not_the_same).
--- |
--- | Generator: selected via mask, generates n R1CS constraints.
--- |
--- | VanishingPolynomial: lazy closure that when called:
--- |   1. Builds pow2_pows via repeated squaring (maxLog2 Square constraints)
--- |   2. Selects x^(2^log2_size) via choose/mask (n R1CS constraints)
--- |   3. Subtracts 1 and seals (exists + assertEqual = 1 R1CS)
--- |
--- | Reference: pseudo.ml:103-128
+-- | The shifts are taken from the first candidate and emitted as
+-- | constants. Every candidate must therefore have the same shifts;
+-- | nothing here checks that.
 toDomain
   :: forall @maxLog2 maxPred n f r
    . PrimeField f
@@ -147,22 +114,18 @@ toDomain
   -> Vector n (Finite maxLog2)
   -> Snarky f (KimchiConstraint f) r (PlonkDomain f r)
 toDomain { shifts: getShifts, domainGenerator } which log2s = do
-  -- Shifts: all domains have same shifts, return constants (pseudo.ml:61-73)
   let shifts_ = map const_ (getShifts (getFinite (Vector.head log2s)))
-  -- Generator: mask-select over domain generators (pseudo.ml:95-96)
   generator <- mask which (map (\d -> const_ (domainGenerator (getFinite d))) log2s)
   let
-    -- Vanishing polynomial closure (pseudo.ml:118-127)
     vanishingPolynomial x = do
-      -- pow2_pows = [x, x^2, x^4, ..., x^(2^(maxLog2-1))]
       pow2Pows <- buildPow2Pows x
       zetaToN <- choose which log2s
         (\log2 -> Vector.index pow2Pows log2)
       seal (zetaToN `sub_` const_ one)
   pure { generator, shifts: shifts_, vanishingPolynomial }
 
--- | Build table of squared powers: [x, x^2, x^4, ..., x^(2^(k-1))]
--- | Returns a Vector of size k, where entry i = x^(2^i).
+-- | `[x, x^2, x^4, …, x^(2^(k-1))]`: entry `i` is `x^(2^i)`, at a cost
+-- | of `k-1` Square constraints.
 buildPow2Pows
   :: forall @k kPred f r
    . Add 1 kPred k
@@ -172,7 +135,7 @@ buildPow2Pows
   => FVar f
   -> Snarky f (KimchiConstraint f) r (Vector k (FVar f))
 buildPow2Pows x = do
-  -- Use the tail of a k-sized vector (k-1 elements) to drive k-1 squarings
+  -- The tail of a `k`-sized vector drives the `k-1` squarings.
   let { tail: drivers } = Vector.uncons (Vector.generate identity)
   Tuple rest _ <- mapAccumM
     ( \prev _ -> do

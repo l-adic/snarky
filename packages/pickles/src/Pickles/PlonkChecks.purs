@@ -1,19 +1,13 @@
--- | The scalar side of the kimchi verifier, as pickles defers it.
+-- | The scalar side of the kimchi verifier, as pickles defers it: the
+-- | evaluation records and their chunk recombination, the domain
+-- | scalars, the gate-constraint environment the linearization
+-- | interpreter reads, the permutation argument, the combined inner
+-- | product, and the fr-sponge schedule deriving `xi` and `r`.
 -- |
--- | This is the PureScript counterpart of OCaml
--- | `mina/src/lib/crypto/pickles/plonk_checks/plonk_checks.ml`, and it keeps
--- | that file's shape: the evaluation records, chunk recombination
--- | (`actual_evaluation` / `evals_of_split_evals`), the domain scalars of
--- | `scalars_env`, the gate-constraint environment the linearization
--- | interpreter reads, the permutation argument (`perm_scalar`, the
--- | permutation half of `ft_eval0`), the combined inner product
--- | (`Pcs_batch.combine_split_evaluations`), and the fr-sponge schedule that
--- | derives `xi` and `r`.
--- |
--- | Both `finalize_other_proof`s are built out of these pieces:
--- | `Pickles.Step.FinalizeOtherProof` (step_verifier.ml) and
--- | `Pickles.Wrap.FinalizeOtherProof` (wrap_verifier.ml). The pure reference
--- | prover (`Pickles.Prove.Pure.*`) and the out-of-circuit verifier
+-- | Both finalize-other-proof circuits are built from these pieces:
+-- | `Pickles.Step.FinalizeOtherProof` and
+-- | `Pickles.Wrap.FinalizeOtherProof`. The pure reference prover
+-- | (`Pickles.Prove.Pure.*`) and the out-of-circuit verifier
 -- | (`Pickles.Verify`) consume the same records.
 module Pickles.PlonkChecks
   ( -- * Evaluation records
@@ -39,10 +33,10 @@ module Pickles.PlonkChecks
   , permContributionCircuit
   , permScalarCircuit
   -- * The combined inner product
-  -- |
-  -- | `EvalOpt` is abstract: `buildEvalList`/`buildEvalListUnmasked` produce
-  -- | the list and `combinedInnerProduct` consumes it, so the constructors
-  -- | stay in here.
+  --
+  -- `EvalOpt` is exported without its constructors:
+  -- `buildEvalList`/`buildEvalListUnmasked` produce the list and
+  -- `combinedInnerProduct` consumes it.
   , EvalOpt
   , buildEvalList
   , buildEvalListUnmasked
@@ -92,38 +86,6 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, po
 -- | Evaluation records
 -------------------------------------------------------------------------------
 
--- | All polynomial evaluations at zeta and zeta*omega.
--- |
--- | These are the witness values needed for PLONK verification.
--- | The sizes match Kimchi's configuration:
--- | - ft polynomial (only at zeta*omega, ftEval0 is computed)
--- | - 6 selector (index) polynomials
--- | - 15 witness columns
--- | - 15 coefficient columns
--- | - 6 sigma polynomials (PERMUTS - 1)
--- |
--- | Each `PointEval` here is the COLLAPSED (single-chunk) form produced by
--- | `collapsePointEval` — chunks recombined via Horner at `pt^(2^rounds)`.
--- | Used by ftEval0, derivePlonk, and any other code path that consumes a
--- | polynomial's value at zeta / zetaw.
--- |
--- | For the COMBINED INNER PRODUCT specifically, the original CHUNKED
--- | evals must be xi-batched (`Pcs_batch.combine_split_evaluations`);
--- | see `ChunkedEvals` below.
--- |
-
--- | The CHUNKED form of `Evals`: each polynomial's evaluation at zeta
--- | / zeta·omega is a `NonEmptyArray (PointEval f)` with one entry per
--- | chunk. For an inner proof at num_chunks=1 each array has length 1
--- | (and the chunked combine collapses to the same result as the legacy
--- | single-eval one); for chunks2 (step num_chunks=2) each polynomial
--- | contributes 2 chunks.
--- |
--- | OCaml stores these as `(f array * f array)` per polynomial inside
--- | `Plonk_types.Evals.t` (`wrap.ml:25-26`). The xi-batching
--- | `Pcs_batch.combine_split_evaluations` flattens the chunk arrays and
--- | folds right-to-left with `acc' = chunk + xi * acc`.
-
 -- | Extract the 43 always-present evaluation fields in CIP order:
 -- | z(1), index(6), witness(15), coeff(15), sigma(6).
 extractEvalFields :: forall f. (PointEval f -> f) -> Evals f -> Vector 43 f
@@ -136,8 +98,8 @@ extractEvalFields proj evals =
 
 -- | Absorb all polynomial evaluations into the sponge.
 -- |
--- | Follows Kimchi's absorption order:
--- | ftEval1, public, z, index (6), witness (15), coeff (15), sigma (6)
+-- | The order is fixed by the verifier's transcript: `ftEval1`, public,
+-- | `z`, index (6), witness (15), coeff (15), sigma (6).
 absorbEvals
   :: forall f m
    . MonadSponge f m
@@ -152,7 +114,7 @@ absorbEvals evals = do
   traverse_ absorbPointEval evals.coeffEvals
   traverse_ absorbPointEval evals.sigmaEvals
 
--- | Absorb a `PointEval`: zeta then zeta*omega.
+-- | Absorb a `PointEval`: `zeta` then `omegaTimesZeta`.
 absorbPointEval
   :: forall f m
    . MonadSponge f m
@@ -166,31 +128,15 @@ absorbPointEval pe = do
 -- | Chunk recombination
 -------------------------------------------------------------------------------
 --
--- When a polynomial doesn't fit in a single SRS-sized slice, the prover
--- commits to chunks `e[0], e[1], ..., e[n-1]` representing
---   P(x) = e[0] + e[1] * x^N + e[2] * x^(2N) + ... + e[n-1] * x^((n-1)*N)
--- where `N = 2^rounds` is the SRS-poly size. These recombine the chunks at
--- evaluation point `pt` into the single scalar `P(pt)` via Horner's method
--- (`plonk_checks.ml:90-100`, `actual_evaluation`).
---
--- Validation strategy: no in-isolation golden tests. Correctness is
--- exercised end-to-end via Checkpoint 4's chunks2 witness-byte-equality
--- (any error in this Horner combine cascades to combined_inner_product
--- divergence at the byte level vs OCaml). See `docs/chunking.md` and
--- `docs/chunking-ffi-audit.md`.
+-- A polynomial too large for one SRS-sized slice is committed as chunks
+-- `e[0], …, e[n-1]` with
+--   P(x) = e[0] + e[1]·x^N + … + e[n-1]·x^((n-1)·N)
+-- for `N = 2^rounds` the SRS-poly size. These recombine the chunks at
+-- an evaluation point `pt` into the single scalar `P(pt)`. Background:
+-- `docs/chunking.md`.
 
--- | Horner combine for `n` chunked evaluations at point `pt^(2^rounds)`.
--- |
--- | Returns `e[0] + ptN * (e[1] + ptN * (... + ptN * e[n-1]))`
--- | where `ptN = pt^(2^rounds)`. Algebraically:
--- |   Σ_{i=0..n-1} e[i] * ptN^i
--- |
--- | At `n=1` returns `e[0]` unchanged (identity).
--- |
--- | The implementation mirrors the OCaml 6-liner exactly:
--- |   1. Compute `ptN` via `rounds` rounds of squaring `pt`.
--- |   2. Reverse the input array.
--- |   3. Fold from the new head with accumulator update `acc' = fx + ptN * acc`.
+-- | Horner combine of `n` chunked evaluations: `Σ_{i<n} e[i] * ptN^i`,
+-- | where `ptN = pt^(2^rounds)`. At `n = 1` the identity.
 actualEvaluationArr
   :: forall f
    . Semiring f
@@ -207,23 +153,16 @@ actualEvaluationArr xs pt rounds =
       Just { head, tail } -> foldl (\acc fx -> fx + ptN * acc) head tail
       Nothing -> zero
 
--- | `squareN n x = x^(2^n)`. n=0 → x, n=1 → x*x, n=2 → (x*x)^2 = x^4, etc.
+-- | `x^(2^n)`, by `n` squarings.
 squareN :: forall f. Semiring f => Int -> f -> f
 squareN n x = go n x
   where
   go 0 acc = acc
   go i acc = go (i - 1) (acc * acc)
 
--- | Collapse a chunked PointEval (one {zeta, omegaTimesZeta} per chunk)
--- | into a scalar PointEval by Horner-combining each component at its
--- | respective evaluation point.
--- |
--- | At `num_chunks = 1` returns the only chunk's value verbatim
--- | (Horner-of-1 = identity). At `n > 1` produces the polynomial's
--- | combined evaluation `Σ_{i=0..n-1} chunk[i] * pt^(2^rounds * i)`.
--- |
--- | This is the host-side analog of OCaml's `evals_of_split_evals`
--- | (`plonk_checks.ml:102`).
+-- | Collapse a chunked `PointEval` — one `{ zeta, omegaTimesZeta }` per
+-- | chunk — into a single one, Horner-combining each component at its
+-- | own evaluation point.
 collapsePointEval
   :: forall f
    . Semiring f
@@ -238,14 +177,11 @@ collapsePointEval { rounds, zeta, zetaOmega } chunks =
     , omegaTimesZeta: actualEvaluationArr (map _.omegaTimesZeta arr) zetaOmega rounds
     }
 
--- | Collapse every `NonEmptyArray (PointEval f)` in a `ChunkedEvals f`
--- | into a single `PointEval f` via `collapsePointEval`. Mirrors OCaml
--- | `Plonk_checks.evals_of_split_evals` applied to a whole `Evals.t`.
+-- | Collapse every chunked evaluation of a `ChunkedEvals` via
+-- | `collapsePointEval`, giving one value per polynomial.
 -- |
--- | The result feeds `ftEval0`, `derivePlonk`, and any other downstream
--- | code that wants a single value per polynomial. CIP itself does NOT
--- | go through here — it consumes the chunked form directly (= OCaml
--- | `Pcs_batch.combine_split_evaluations`).
+-- | The combined inner product does not go through here: it xi-batches
+-- | the chunked form directly.
 collapseChunkedEvals
   :: forall f
    . Semiring f
@@ -269,28 +205,26 @@ collapseChunkedEvals ctx chunked =
 -- | Domain scalars
 -------------------------------------------------------------------------------
 --
--- The domain-dependent scalars of `finalize_other_proof`, shared by the step
--- and wrap verifiers: the negative powers of the domain generator and the
--- permutation vanishing polynomial (`plonk_checks.ml` `scalars_env`), and the
--- step side's known-domain selection and vanishing polynomial
--- (`step_verifier.ml` `finalize_other_proof` and `pseudo.ml`
--- `Pseudo.Domain.to_domain`).
+-- The domain-dependent scalars of finalize-other-proof, shared by the
+-- step and wrap verifiers: the negative powers of the domain generator
+-- and the permutation vanishing polynomial, plus the step side's
+-- known-domain selection and vanishing polynomial.
 
--- | `ω⁻¹`, `ω^{-(zkRows-1)}` and `ω^{-zkRows}` for the domain generator `ω`.
+-- | `ω⁻¹`, `ω^{-(zkRows-1)}` and `ω^{-zkRows}` for a domain generator
+-- | `ω`.
 type OmegaPowers f =
   { omegaToMinus1 :: FVar f
   , omegaToZkPlus1 :: FVar f
   , omegaToZk :: FVar f
   }
 
--- | The negative generator powers (plonk_checks.ml:248-264): `ω⁻¹ = 1/gen`,
--- | `ω⁻² = ω⁻¹ · ω⁻¹` (OCaml's `square x = x * x`, an R1CS row), then
--- | `zkRows − 3` further multiplications by `ω⁻¹` (none at the default
--- | `zkRows = 3`) reaching `ω^{-(zkRows-1)}`, and one more for `ω^{-zkRows}`.
+-- | The `OmegaPowers` of a domain generator: one inverse, one squaring,
+-- | then `zkRows − 3` further multiplications by `ω⁻¹` — none at the
+-- | default `zkRows = 3` — reaching `ω^{-(zkRows-1)}`, and one more for
+-- | `ω^{-zkRows}`. The row sequence is part of the circuit's shape.
 -- |
--- | Requires `zkRows ≥ 3` (kimchi's minimum, `zkRowsByDefault`); a smaller
--- | value has no `ω^{-(zkRows-1)}` distinct from the two rows above and is
--- | rejected, as OCaml's `Array.init` at a negative length raises.
+-- | `zkRows ≥ 3`, kimchi's minimum (`zkRowsByDefault`), is required:
+-- | below it `ω^{-(zkRows-1)}` is not distinct from the other two.
 omegaPowers
   :: forall f c r
    . PrimeField f
@@ -317,8 +251,7 @@ omegaPowers { generator, zkRows }
             go omegaToMinus1 next (i - 1)
 
 -- | The permutation vanishing polynomial at `ζ`,
--- | `(ζ − ω⁻¹)(ζ − ω^{-(zkRows-1)})(ζ − ω^{-zkRows})` (plonk_checks.ml:273-279):
--- | two rows.
+-- | `(ζ − ω⁻¹)(ζ − ω^{-(zkRows-1)})(ζ − ω^{-zkRows})`, in two rows.
 zkPolynomial
   :: forall f c r
    . PrimeField f
@@ -330,9 +263,9 @@ zkPolynomial zeta { omegaToMinus1, omegaToZkPlus1, omegaToZk } = do
   t1 <- mul_ (zeta `sub_` omegaToMinus1) (zeta `sub_` omegaToZkPlus1)
   mul_ t1 (zeta `sub_` omegaToZk)
 
--- | Which known domain is the prev proof's: one `equals_` of the runtime
--- | `domain_log2` against each domain's, emitted last-to-first (OCaml's
--- | right-to-left `Vector.map`, step_verifier.ml:880-893), in domain order.
+-- | Which known domain is the previous proof's: one `equals_` of the
+-- | runtime `domain_log2` against each domain's. The rows are emitted
+-- | last-to-first; the result is in domain order.
 knownDomainWhiches
   :: forall nd f c r rd
    . PrimeField f
@@ -344,9 +277,8 @@ knownDomainWhiches domainLog2Var domains = do
   rev <- traverse (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var) (Vector.reverse domains)
   pure (Vector.reverse rev)
 
--- | `ζⁿ − 1` for the selected known domain (`Pseudo.Domain.to_domain`'s
--- | `vanishing_polynomial`, pseudo.ml:118-127): the table `ζ^{2^i}` for
--- | `i` up to the largest domain's log2 by squaring, the entry at each
+-- | `ζⁿ − 1` for the selected known domain: the table `ζ^{2^i}` for `i`
+-- | up to the largest domain's log2 by squaring, the entry at each
 -- | domain's log2 selected by the which bits, minus one, sealed.
 knownDomainVanishingPolynomial
   :: forall nd f r rd
@@ -364,7 +296,7 @@ knownDomainVanishingPolynomial whiches domains zeta = do
   masked <- Pseudo.mask whiches pow2AtLog2
   label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
 
--- | `[x, x², x⁴, …, x^(2^maxLog2)]` by `maxLog2` Square rows (`pseudo.ml:119-123`).
+-- | `[x, x², x⁴, …, x^(2^maxLog2)]`, by `maxLog2` Square rows.
 buildPow2PowsArray
   :: forall f c r
    . PrimeField f
@@ -387,15 +319,13 @@ buildPow2PowsArray x maxLog2 = go [ x ] maxLog2
 -------------------------------------------------------------------------------
 --
 -- The linearization interpreter reads the constraint polynomial off an
--- `EvalPoint` and a challenge record; these two build them from the proof's
--- evaluations. The constraint polynomial combines witness evaluations
--- (15 columns × 2 rows), coefficient evaluations (15 columns), gate selector
--- evaluations (Poseidon, Generic, VarBaseMul, …), the protocol challenges
--- (alpha, beta, gamma, jointCombiner) and the domain-dependent values
--- (Lagrange basis, vanishing polynomial).
+-- `EvalPoint` and a challenge record; these two build them from the
+-- proof's evaluations.
 
--- | Build EvalPoint from input vectors.
--- | Maps column lookups to the appropriate vector elements.
+-- | The `EvalPoint` the linearization interpreter reads: witness,
+-- | coefficient and gate-selector lookups resolved against the proof's
+-- | evaluation vectors. Every lookup-argument column returns
+-- | `defaultVal`.
 buildEvalPoint
   :: forall a
    . { witnessEvals :: Vector 15 (PointEval a)
@@ -420,10 +350,9 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
     , index: \row gt ->
         let
           idx = unsafeFinite @6
-          -- Gate order matches Kimchi verifier's column ordering:
-          -- Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar
-          -- See kimchi/src/verifier.rs lines 485-490
-          -- Only these 6 gate types are supported; others require additional FFI support.
+          -- The index column order is fixed by the kimchi verifier:
+          -- Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul,
+          -- EndoMulScalar. No other gate type is supported.
           gateIdx = case gt of
             Generic -> idx 0
             Poseidon -> idx 1
@@ -442,10 +371,12 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
     , lookupKindIndex: \_ -> defaultVal
     }
 
--- | Build Challenges from input values.
--- | The UnnormalizedLagrangeBasis calls in the linearization are:
--- |   { zkRows: false, offset: 0 }
--- |   { zkRows: true, offset: -1 }
+-- | The challenge record the linearization interpreter reads.
+-- |
+-- | The linearization only ever asks for two unnormalized Lagrange
+-- | bases, `{ zkRows: false, offset: 0 }` and
+-- | `{ zkRows: true, offset: -1 }`; anything else falls back to the
+-- | first.
 buildChallenges
   :: forall a r
    . { alpha :: a
@@ -480,61 +411,53 @@ buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse
 -- | The permutation argument
 -------------------------------------------------------------------------------
 --
--- The permutation contribution to the linearization check. The full
--- verification equation is
---   ft_eval0 = perm_contribution - constant_term + boundary_quotient = 0
--- where the gate-constraint environment above supplies `constant_term` and
--- these supply the permutation terms.
+-- The permutation contribution to the linearization check
+--  ft_eval0 = perm_contribution − constant_term + boundary_quotient = 0
+-- where the gate-constraint environment above supplies `constant_term`.
 --
 -- See: https://o1-labs.github.io/mina-book/crypto/plonk/maller_15.html
 
--- | The offset of alpha powers for the permutation argument.
--- | See: https://github.com/o1-labs/proof-systems/blob/516b16fc9b0fdcab5c608cd1aea07c0c66b6675d/kimchi/src/index.rs#L190
+-- | The offset of the alpha powers reserved for the permutation
+-- | argument, fixed by kimchi:
+-- | https://github.com/o1-labs/proof-systems/blob/516b16fc9b0fdcab5c608cd1aea07c0c66b6675d/kimchi/src/index.rs#L190
 permAlpha0 :: Int
 permAlpha0 = 21
 
--- | Input record for permutation argument verification.
--- | Kimchi uses 7 permutation columns (PERMUTS = 7), with 6 sigma
--- | polynomial evaluations included in the proof (PERMUTS - 1 = 6).
--- |
--- | Use as `PermutationInput f` for field values or
--- | `PermutationInput (FVar f)` for circuit variables.
+-- | The inputs to the permutation argument, at `a = f` out of circuit
+-- | and `a = FVar f` in circuit. Kimchi has 7 permutation columns, and
+-- | the proof carries `PERMUTS - 1 = 6` sigma evaluations.
 type PermutationInput a =
-  { -- First 7 witness column evaluations at zeta
+  { -- the first 7 witness evaluations at `zeta`
     w :: Vector 7 a
-  , -- Sigma polynomial evaluations at zeta (6 columns, PERMUTS-1)
+  , -- sigma evaluations at `zeta`
     sigma :: Vector 6 a
-  , -- Permutation polynomial z evaluations at zeta and zeta*omega
+  , -- the permutation polynomial
     z :: PointEval a
-  , -- Domain shift values (7 values, one per permutation column)
+  , -- one domain shift per permutation column
     shifts :: Vector 7 a
-  , -- Protocol challenges
+  , -- protocol challenges
     alpha :: a
   , beta :: a
   , gamma :: a
-  , -- Zero-knowledge polynomial evaluated at zeta:
-    -- zkp = (zeta - omega^{n-1}) * (zeta - omega^{n-2}) * (zeta - omega^{n-3})
+  , -- `zkPolynomial` above, at `zeta`
     zkPolynomial :: a
-  , -- zeta^n - 1 (domain vanishing polynomial at zeta)
+  , -- `zeta^n - 1`, the domain vanishing polynomial at `zeta`
     zetaToNMinus1 :: a
-  , -- omega^{-zkRows} (domain generator raised to minus zk_rows)
+  , -- `omega^{-zkRows}`
     omegaToMinusZkRows :: a
-  , -- The evaluation point itself
+  , -- the evaluation point
     zeta :: a
   }
 
--- | Compute the perm scalar at the field level.
--- | This is the coefficient of z(x) in the full linearization polynomial.
+-- | The coefficient of `z(x)` in the linearization polynomial, out of
+-- | circuit:
 -- |
--- | perm = -(z(zeta*omega) * beta * alpha^21 * zkp * ∏_{i=0}^{5}(gamma + beta*sigma_i + w_i))
--- |
--- | Reference: derive_plonk in plonk_checks.ml
+-- |   -(z(ζω) · β · α²¹ · zkp · ∏_{i<6} (γ + β·σ_i + w_i))
 permScalar :: forall f. PrimeField f => PermutationInput f -> f
 permScalar input =
   let
     alphaPow21 = pow input.alpha (BigInt.fromInt permAlpha0)
     init = input.z.omegaTimesZeta * input.beta * alphaPow21 * input.zkPolynomial
-    -- Zip first 6 witness columns with sigma, fold the product
     wSigma = zipWith Tuple (Vector.take @6 input.w) input.sigma
     product = foldl
       (\acc (Tuple wi si) -> acc * (input.gamma + input.beta * si + wi))
@@ -543,12 +466,10 @@ permScalar input =
   in
     negate product
 
--- | Compute the permutation contribution to ft_eval0 at the field level.
--- | This includes both product terms and the boundary quotient. The
--- | in-circuit twin is `permContributionCircuit` below (the division is a
--- | witnessed inverse there).
--- |
--- | Reference: ft_eval0 in plonk_checks.ml
+-- | The permutation contribution to `ft_eval0`, out of circuit: both
+-- | product terms and the boundary quotient. The in-circuit twin is
+-- | `permContributionCircuit`, where the division is a witnessed
+-- | inverse.
 permContribution :: forall f. PrimeField f => PermutationInput f -> f
 permContribution input =
   let
@@ -560,9 +481,7 @@ permContribution input =
     term1Init = (w6 + input.gamma) * input.z.omegaTimesZeta * alphaPow21 * input.zkPolynomial
     wSigma = zipWith Tuple (Vector.take @6 input.w) input.sigma
 
-    -- Trace per-iteration accumulator. Final value = same as `term1`
-    -- computed via `foldl` below; we use the array version so we can
-    -- capture intermediates.
+    -- `scanl`, not `foldl`: the trace below wants the intermediates.
     term1Stages :: Array f
     term1Stages = Array.scanl
       (\acc (Tuple wi si) -> (input.beta * si + wi + input.gamma) * acc)
@@ -596,7 +515,7 @@ permContribution input =
 
     result = term1 - term2 + boundary
 
-    -- ===== DIAGNOSTIC TRACE (chunks2 nc=2 byte-diff) =====
+    -- Trace points for the transcript diff; see `Pickles.Trace`.
     traceArr lbl arr = Array.foldM
       (\i v -> Trace.field (lbl <> show i) v *> pure (i + 1))
       (0 :: Int)
@@ -620,22 +539,17 @@ permContribution input =
   in
     result
 
--- | The in-circuit twin of `permContribution`, with the public-input evaluation
--- | subtracted between the two products as OCaml's `ft_eval0` does:
+-- | The in-circuit twin of `permContribution`, with the public-input
+-- | evaluation subtracted between the two products as `ft_eval0` does:
 -- |
--- |   term1 - p_eval0 - term2 + boundary
+-- |   term1 - pEval0 - term2 + boundary
 -- |
--- | Op for op the `ft_eval0` of `plonk_checks.ml` (`Plonk_checks.ft_eval0`,
--- | labelled `ft_eval0 / Field.Checked.mul`): `mul_` chains in OCaml's
--- | evaluation order, `beta * zeta` recomputed per shift step, the boundary
--- | quotient's `alpha^23` term before its `alpha^22` term (OCaml evaluates
--- | `a + b` right to left). The alpha powers come from the caller's
--- | precomputed table (`precomputeAlphaPowers`), which OCaml's `scalars_env`
--- | builds once and shares with the perm scalar. The caller subtracts the
--- | constant term. The labels scope the big mul chain so the circuit diff can
--- | localize structural drift in this region.
--- |
--- | `input.alpha` is unused here: the circuit reads the table, not `alpha`.
+-- | The multiplication order is part of the circuit's shape: `β·ζ` is
+-- | recomputed at each shift step, and the boundary quotient emits its
+-- | `α²³` term before its `α²²` term. The alpha powers come from the
+-- | caller's table (`precomputeAlphaPowers`), leaving `input.alpha`
+-- | unused, and the caller subtracts the constant term. The labels
+-- | scope the mul chain for the circuit diff.
 permContributionCircuit
   :: forall f c r
    . PrimeField f
@@ -692,12 +606,12 @@ permContributionCircuit input { pEval0, alphaPow21: a21, alphaPow22: a22, alphaP
 
     pure $ add_ (sub_ term1MinusP term2) boundary
 
--- | The in-circuit twin of `permScalar` (OCaml `derive_plonk`'s `perm`):
+-- | The in-circuit twin of `permScalar`:
 -- |
--- |   -(z(zeta*omega) * beta * alpha^21 * zkp * ∏_{i<6} (gamma + beta*sigma_i + w_i))
+-- |   -(z(ζω) · β · α²¹ · zkp · ∏_{i<6} (γ + β·σ_i + w_i))
 -- |
--- | `mul_` chains in OCaml's evaluation order; `alpha^21` comes from the
--- | caller's table.
+-- | The multiplication order is part of the circuit's shape; `α²¹`
+-- | comes from the caller's table.
 permScalarCircuit
   :: forall f c r
    . PrimeField f
@@ -726,22 +640,15 @@ permScalarCircuit { w, sigma, zOmega, beta, gamma, zkPolynomial: zkPoly, alphaPo
 -- | The combined inner product
 -------------------------------------------------------------------------------
 
--- | Evaluation in the Horner fold: either always present (Just) or masked (Maybe).
--- |
--- | Matches OCaml's `Pcs_batch.combine_split_evaluations` which uses
--- | `Shifted_value.of_cvar` for always-present and `if_` for masked evaluations.
+-- | An entry of the Horner fold: always present (`EvalJust`) or folded
+-- | in only when a bit is set (`EvalMaybe`).
 data EvalOpt f
   = EvalJust (FVar f)
   | EvalMaybe (BoolVar f) (FVar f)
 
--- | Horner fold matching OCaml's `Pcs_batch.combine_split_evaluations`.
--- |
--- | Takes the polynomial batching scalar (xi) and a flat evaluation list.
--- | Reverses the list, initializes from head, folds with mul_and_add:
--- |   Just fx → fx + xi * acc
--- |   Maybe (b, fx) → if b then (fx + xi * acc) else acc
--- |
--- | Reference: step_verifier.ml:1060-1121 (combine ~ft ~sg_evals)
+-- | Horner fold of a flat evaluation list under the batching scalar
+-- | `xi`, from the last entry back: `acc' = fx + xi * acc`. A masked
+-- | entry leaves `acc` untouched when its bit is false.
 hornerCombine
   :: forall f c r
    . PrimeField f
@@ -769,10 +676,9 @@ hornerCombine xi evals = label "horner-combine" do
     initResult
     rest
 
--- | Build the flat evaluation list matching OCaml's combine function.
--- |
--- | Order: sg_evals(n), public_input, ft_eval, z+index+witness+coeff+sigma (43).
--- | This matches `Evals.In_circuit.to_list` order for always-present fields.
+-- | The flat evaluation list for `combinedInnerProduct`. The order is
+-- | fixed by the batching: `sgEvals` (n), public input, `ftEval`, then
+-- | the 43 fields of `extractEvalFields`.
 buildEvalList
   :: forall n f
    . { sgEvals :: Vector n (Tuple (BoolVar f) (FVar f))
@@ -792,10 +698,8 @@ buildEvalList x =
       $
         NEA.cons' others [ evals ]
 
--- | Build evaluation list with all sg_evals unmasked (EvalJust).
--- |
--- | Used by the Wrap FOP where all previous proofs are always present
--- | (no proofs-verified mask).
+-- | `buildEvalList` with every `sgEval` always present: the wrap
+-- | verifier has no proofs-verified mask.
 buildEvalListUnmasked
   :: forall n nPred f
    . Add 1 nPred n
@@ -813,10 +717,8 @@ buildEvalListUnmasked x =
   in
     NEA.concat $ NEA.cons' sgEvals [ others, evals ]
 
--- | The combined inner product `combine(zeta) + r * combine(zetaw)`, the
--- | zetaw fold first.
--- |
--- | Reference: `combined_inner_product_correct` in step_verifier.ml
+-- | The combined inner product `combine(zeta) + r * combine(zetaw)`.
+-- | The zetaw fold is emitted first.
 combinedInnerProduct
   :: forall f c r
    . PrimeField f
@@ -834,12 +736,11 @@ combinedInnerProduct { xi, r, evalsZeta, evalsZetaw } = label "combine" do
   pure (add_ combineZeta rTimesZetaw)
 
 -------------------------------------------------------------------------------
--- | The fr-sponge schedule of finalize_other_proof
+-- | The fr-sponge schedule of finalize-other-proof
 -------------------------------------------------------------------------------
 
--- | The digest of the previous proofs' bulletproof challenges (OCaml
--- | `challenge_digest` in wrap_verifier.ml): a fresh sponge absorbing every
--- | challenge, squeezed once.
+-- | The digest of the previous proofs' bulletproof challenges: a fresh
+-- | sponge absorbing every challenge, squeezed once.
 challengeDigest
   :: forall n d f r
    . PoseidonField f
@@ -850,9 +751,8 @@ challengeDigest prevChallenges = evalSpongeM initialSpongeCircuit do
   traverse_ (traverse_ absorb) prevChallenges
   squeeze
 
--- | The digest of the previous proofs' bulletproof challenges under the
--- | proofs-verified mask (OCaml `challenge_digest` in step_verifier.ml): an
--- | `OptSponge` absorbing each challenge only where its proof's slot is real.
+-- | `challengeDigest` under the proofs-verified mask: an `OptSponge`
+-- | absorbing each challenge only where its proof's slot is real.
 maskedChallengeDigest
   :: forall n d f r
    . PoseidonField f
@@ -866,12 +766,14 @@ maskedChallengeDigest mask prevChallenges =
       mask
       prevChallenges
 
--- | The fr-sponge schedule (OCaml step_verifier.ml step 7, wrap_verifier.ml
--- | step 4): absorb the sponge digest before evaluations, then the challenge
--- | digest (computed here, between the two absorbs), then every evaluation;
--- | squeeze xi and r as 128-bit scalar challenges. `xiConstrainLowBits` is
--- | OCaml's `squeeze_challenge` (true, step) versus `squeeze_scalar` (false,
--- | wrap) for xi; r is always `squeeze_challenge`.
+-- | The fr-sponge schedule: absorb the sponge digest before
+-- | evaluations, then the challenge digest — computed here, between the
+-- | two absorbs — then every evaluation; squeeze `xi` and `r` as
+-- | 128-bit scalar challenges.
+-- |
+-- | `xiConstrainLowBits` says whether `xi`'s low 128 bits are
+-- | range-checked: the step verifier sets it, the wrap verifier does
+-- | not. `r`'s low bits are always checked.
 squeezeXiR
   :: forall f cr
    . PoseidonField f
@@ -893,32 +795,29 @@ squeezeXiR p = evalSpongeM initialSpongeCircuit do
   r <- squeezeScalarChallenge { endo: p.endo }
   pure { xi, r }
 
--- | Input for the out-of-circuit fr-sponge, whose absorption order matches
--- | Kimchi's protocol exactly: fq_digest, prev_challenge_digest, ft_eval1,
--- | public_evals, then all poly evals in the order z, selectors (6),
--- | witness (15), coefficients (15), sigma (6).
--- |
--- | Reference: mina/src/lib/pickles/step_verifier.ml (lines 946-954)
+-- | Input for the out-of-circuit fr-sponge. The absorption order is
+-- | fixed by the protocol: `fqDigest`, `prevChallengeDigest`,
+-- | `ftEval1`, the public evals, then the polynomial evals as `z`,
+-- | selectors (6), witness (15), coefficients (15), sigma (6).
 type FrSpongeInput f =
   { evals :: Evals f
-  , fqDigest :: f -- Fq-sponge digest before Fr-sponge
-  , prevChallengeDigest :: f -- digest of previous recursion challenges (zero for base case)
-  , endo :: f -- EndoScalar coefficient (= G::endos().1 = endo_r)
+  , fqDigest :: f -- ^ the fq-sponge digest before the fr-sponge
+  , prevChallengeDigest :: f -- ^ zero in the base case
+  , endo :: f -- ^ the endoscalar coefficient `endo_r`
   }
 
--- | Result of Fr-sponge challenge derivation.
--- | Contains both raw 128-bit scalar challenges and endo-expanded full field values.
--- | Raw values are used for xi_correct/r_correct verification (comparing 128-bit challenges).
--- | Expanded values are used for CIP computation.
+-- | The fr-sponge challenges in both forms: the raw 128-bit challenges,
+-- | which the deferred-values checks compare, and their endo
+-- | expansions, which the combined inner product uses.
 type FrSpongeChallenges f =
-  { rawXi :: SizedF 128 f -- raw 128-bit xi challenge (for verification)
-  , xi :: f -- endo-expanded polyscale (for CIP)
-  , rawR :: SizedF 128 f -- raw 128-bit r challenge (for verification)
-  , evalscale :: f -- endo-expanded evalscale (for CIP)
+  { rawXi :: SizedF 128 f
+  , xi :: f -- ^ the endo-expanded polyscale
+  , rawR :: SizedF 128 f
+  , evalscale :: f -- ^ the endo-expanded evalscale
   }
 
--- | The out-of-circuit twin of `squeezeXiR`: replay the fr-sponge and return
--- | both the raw 128-bit challenges and their endo expansions.
+-- | The out-of-circuit twin of `squeezeXiR`: replay the fr-sponge and
+-- | return both the raw 128-bit challenges and their endo expansions.
 frSpongeChallengesPure
   :: forall f
    . PrimeField f
@@ -928,35 +827,29 @@ frSpongeChallengesPure
   -> FrSpongeChallenges f
 frSpongeChallengesPure input =
   evalPureSpongeM initialSponge do
-    -- 1. Absorb fq_digest and prev_challenge_digest
     absorb input.fqDigest
     absorb input.prevChallengeDigest
 
-    -- 2. Absorb ft_eval1
     absorb input.evals.ftEval1
 
-    -- 3. Absorb public evals
     absorbPointEval input.evals.publicEvals
 
-    -- 4. Absorb all polynomial evaluations
     absorbEvaluationsPure input.evals
 
-    -- 5. Squeeze scalar challenge for xi (raw 128-bit)
     rawXi <- squeezeScalarChallengePure
 
-    -- 6. Squeeze scalar challenge for r (raw 128-bit)
     rawR <- squeezeScalarChallengePure
 
-    -- 7. Expand to full field via endo for CIP use
     let
       xi = toFieldPure (coerceViaBits rawXi) input.endo
       evalscale = toFieldPure (coerceViaBits rawR) input.endo
 
     pure { rawXi, xi, rawR, evalscale }
 
--- | Absorb the z, selector, witness, coefficient and sigma evaluations, in
--- | Kimchi's order. Unlike `absorbEvals` this skips `ftEval1` and the
--- | public evals, which `frSpongeChallengesPure` absorbs earlier.
+-- | Absorb the `z`, selector, witness, coefficient and sigma
+-- | evaluations in transcript order. Unlike `absorbEvals` this skips
+-- | `ftEval1` and the public evals, absorbed earlier by
+-- | `frSpongeChallengesPure`.
 absorbEvaluationsPure
   :: forall f
    . PoseidonField f

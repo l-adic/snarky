@@ -1,15 +1,10 @@
--- | Per-slot wrap-VK source / blueprint types.
+-- | Where the step circuit gets the wrap verification key for each of
+-- | its previous-proof slots: the compile-time blueprint, and the
+-- | post-walk value `Pickles.Step.Main` dispatches on.
 -- |
--- | Extracted from `Pickles.Step.Main` so that `Pickles.Step.Slots`
--- | (which defines the spec-indexed carrier traversal that walks
--- | these alongside `PerProofWitness`) can import them without
--- | creating a module cycle through `Step.Main`.
--- |
--- | Each cell is parameterized by `nc` — the chunks count of that
--- | particular slot's wrap VK (the slot's own `nc` from
--- | `Slot n nc statement`). Heterogeneous per-slot chunks: each
--- | slot's wrap VK carries the chunks count of *its* producing
--- | compile, not a shared homogenized value.
+-- | These live below `Pickles.Step.Main` rather than in it so that
+-- | `Pickles.Step.Slots`, whose carrier traversal walks them alongside
+-- | `PerProofWitness`, can import them without a cycle.
 module Pickles.Step.VkSource
   ( SlotVkBlueprint(..)
   , SlotVkBlueprintSideLoaded
@@ -26,24 +21,20 @@ import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 
--- | Compile-time blueprint for one slot's wrap-VK source: where the
--- | step circuit gets the verification key it verifies this slot's
--- | previous proof against.
+-- | Compile-time blueprint for one slot's wrap-VK source.
 -- |
--- | One constructor per `Pickles.Prove.Slot.SlotSource`, named to match
--- | it. A self slot reads the shared key from advice (the wrap circuit
--- | does not exist yet at step-compile time), an external slot has its
--- | source's key baked in as a constant, and a side-loaded slot carries
--- | the per-domain lagrange tables that `Pickles.Step.Main` one-hot
--- | muxes over against the runtime key's `actualWrapDomainSize`.
+-- | One constructor per `Pickles.Prove.Slot.SlotSource`, named to
+-- | match. A self slot reads the shared key from advice, because the
+-- | wrap circuit does not exist yet at step-compile time; an external
+-- | slot has its source's key baked in as a constant; a side-loaded
+-- | slot carries the per-domain lagrange tables that
+-- | `Pickles.Step.Main` one-hot muxes over against the runtime key's
+-- | `actualWrapDomainSize`.
 -- |
--- | `nc` is the chunks count of the producing compile's wrap VK.
--- | The compiled cases carry the slot's lagrange basis, at *this
--- | slot's* chunk count: the basis is read at the slot source's wrap
--- | domain, so it belongs to the slot, not to the enclosing compile.
--- | The side-loaded case has no compile-time domain to read one at —
--- | it carries the three per-domain tables instead and muxes among
--- | them in-circuit.
+-- | `slotVkChunks` is the chunk count of the producing compile's wrap
+-- | VK. The compiled cases carry their lagrange basis at that count,
+-- | since the basis is read at the slot source's own wrap domain; the
+-- | side-loaded case has no compile-time domain to read one at.
 data SlotVkBlueprint :: Int -> Type
 data SlotVkBlueprint slotVkChunks
   = BlueprintSelf (LagrangeBaseLookup slotVkChunks StepField)
@@ -52,29 +43,19 @@ data SlotVkBlueprint slotVkChunks
       (VerificationKey slotVkChunks (WeierstrassAffinePoint PallasG (F StepField)))
   | BlueprintSideLoaded (SlotVkBlueprintSideLoaded slotVkChunks)
 
--- | The side-loaded case's payload — the
--- | per-domain × per-chunk lagrange tables. Each domain entry returns
--- | a `Vector nc (AffinePoint _)` (the SRS lagrange commitment split
--- | over `nc` chunks), and `Step.Main` muxes 1-hot over domains
--- | per-chunk to produce the chunked `LagrangeBaseLookup nc _`.
--- |
--- | Mirrors OCaml's `wrap_verifier.ml:334-356` pattern where each
--- | domain contributes a full chunks-array.
--- |
--- | The runtime VK is allocated in-circuit by `BuildSlotVkSources`
--- | and bundled alongside this into `SlotVkSource.SideloadedExistsVk`.
+-- | The side-loaded case's payload: one lagrange table per candidate
+-- | wrap domain, each returning that domain's SRS lagrange commitment
+-- | split over `slotVkChunks` chunks. `Pickles.Step.Main` muxes 1-hot
+-- | over domains, per chunk, to get a `LagrangeBaseLookup`.
 type SlotVkBlueprintSideLoaded :: Int -> Type
 type SlotVkBlueprintSideLoaded slotVkChunks =
   Vector ProofsVerifiedCount (Int -> Vector slotVkChunks (AffinePoint (F StepField)))
 
--- | Post-walk per-slot wrap-VK dispatch type. `SideloadedExistsVk`
--- | bundles BOTH the compile-time per-domain lagrange tables and the
--- | in-circuit-allocated side-loaded VK descriptor so the Step.Main
--- | dispatch loop has everything in one place — no parallel
--- | `Vector len (Maybe …)` lookup required.
--- |
--- | `nc` is the slot's own wrap-VK chunks count (heterogeneous —
--- | each slot in a rule's spec can carry its own chunks count).
+-- | One slot's wrap VK as `Pickles.Step.Main` dispatches on it, built
+-- | from that slot's `SlotVkBlueprint` by `buildSlotVkSources`.
+-- | `SideloadedExistsVk` carries the compile-time per-domain lagrange
+-- | tables and the in-circuit-allocated VK descriptor together, so the
+-- | dispatch loop needs no parallel lookup.
 data SlotVkSource :: Int -> Type
 data SlotVkSource slotVkChunks
   = ConstVk

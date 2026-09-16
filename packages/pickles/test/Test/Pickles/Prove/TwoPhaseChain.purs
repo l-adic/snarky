@@ -1,17 +1,11 @@
--- | PureScript-side analog of OCaml's `dump_two_phase_chain.ml` —
--- | minimal multi-branch fixture, two rules sharing one wrap VK.
+-- | The smallest multi-branch proof system: `makeZeroRule` (branch 0,
+-- | no prevs, asserts `self = 0`) and `incrementRule` (branch 1, one
+-- | self-prev, asserts `self = prev + 1`), sharing one wrap VK.
 -- |
--- | The two rules:
--- |
--- |   makeZeroRule  (branch 0):
--- |     prevs = []
--- |     body asserts self = 0
--- |
--- |   incrementRule (branch 1):
--- |     prevs = [self]   -- "self" = ANY branch of this proof system
--- |     body asserts self = prev + 1
--- |
--- | OCaml reference: `mina/src/lib/crypto/pickles/dump_two_phase_chain/dump_two_phase_chain.ml`.
+-- | The spec chains b0..b3 across both branches and discharges all four
+-- | proofs in one `verifyBatch`, so it fails if the wrap circuit
+-- | dispatches on the wrong branch or a proof's step domain is taken
+-- | from another branch.
 module Test.Pickles.Prove.TwoPhaseChain
   ( spec
   , makeZeroRule
@@ -44,15 +38,9 @@ import Test.Spec.Assertions (shouldEqual)
 
 --------------------------------------------------------------------------------
 -- Rule bodies
---
--- Mirror dump_two_phase_chain.ml's Inductive_rule.t bodies 1:1.
--- Both rules share inputVal = F StepField, outputVal = Unit (Input
--- mode), prevInputVal = F StepField (the proof-system's app-state).
 --------------------------------------------------------------------------------
 
--- | Branch 0: assert public_input = 0. No prevs.
--- |
--- | Mirrors `dump_two_phase_chain.ml`'s `make_zero` rule.
+-- | Branch 0: assert the public input is zero. No prevs.
 makeZeroRule
   :: StepRule 0 Unit
        (F StepField)
@@ -69,18 +57,9 @@ makeZeroRule _ self = do
     , publicOutput: unit
     }
 
--- | Branch 1: read prev (any branch's proof's app-state), assert
--- | public_input = prev + 1.
--- |
--- | Mirrors `dump_two_phase_chain.ml`'s `increment` rule. The
--- | `prevs = [self]` slot resolves to either branch at proof time —
--- | THIS is the multi-branch dispatch this whole apparatus exists to
--- | exercise.
--- |
--- | `valCarrier = Tuple (StatementIO (F StepField) Unit) Unit`
--- | matches the prev shape: one prev slot whose statement is
--- | `StatementIO (F StepField) Unit` (= "an integer counter, no
--- | output").
+-- | Branch 1: assert the public input is one more than the prev's app
+-- | state. The single `Self` prev slot resolves to either branch at
+-- | proof time, which is the dispatch this fixture exercises.
 incrementRule
   :: StepRule 1
        (Tuple1 (StatementIO (F StepField) Unit))
@@ -95,24 +74,18 @@ incrementRule getPrevStates self = do
   assertEqual_ self (CVar.add_ (const_ one) prev)
   pure
     { prevPublicInputs: prev :< Vector.nil
-    -- proof_must_verify = true unconditionally for now. The OCaml
-    -- fixture also unconditionally verifies; the dispatch happens at
-    -- the wrap layer based on `whichBranch`, not at the rule-body
-    -- level.
+    -- Branch dispatch happens at the wrap layer, from `whichBranch`,
+    -- so the prev is unconditionally verified here.
     , proofMustVerify: true_ :< Vector.nil
     , publicOutput: unit
     }
 
 --------------------------------------------------------------------------------
--- Per-rule `RuleEntry` builders. The branch-0 (mpv=0, no prevs)
--- entry is `Unit`-shaped; branch 1 (mpv=1, one self-prev) carries
--- the increment rule's prev statement plus its self slotVK.
+-- Rules spec
 --------------------------------------------------------------------------------
 
--- | Two-branch `RulesSpec`:
--- |
--- |   * branch 0: makeZero (mpv=0, no prevs)
--- |   * branch 1: increment (mpv=1, one self-prev)
+-- | The two branches: branch 0 at `mpv = 0` with no prevs, branch 1 at
+-- | `mpv = 1` with one self-prev.
 type TwoPhaseChainRules =
   RulesCons 0 Unit Unit
     ( RulesCons 1
@@ -127,14 +100,6 @@ type TwoPhaseChainRules =
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.TwoPhaseChain" do
-  -- Multi-branch chain b0..b3 prove + verify under the shared wrap VK.
-  --   * `compileMulti` end-to-end (multi-branch step+wrap compile)
-  --   * b0 from branch 0 (make_zero), b1..b3 from branch 1 (increment),
-  --     each chained as `InductivePrev`.
-  --   * Single `verify` call discharges all four proofs against the
-  --     shared verifier — relies on per-proof `stepDomainLog2` so each
-  --     proof's deferred-values reconstruction uses its own branch's
-  --     step domain (b0=9, b1..b3=14).
   it "b0..b3 chain prove + verify under shared wrap VK" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TwoPhaseChain.json")
 
@@ -163,12 +128,9 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     let
       BranchProver makeZeroProver = fst output.provers
       BranchProver incrementProver = fst (snd output.provers)
-      -- Round-trip every recursive prev through SerializeProof; faithful
-      -- reconstruction leaves the chain byte-identical so the assertions hold.
+      -- Every prev is round-tripped through serialization before it is
+      -- consumed, so the chain closes only if that is faithful.
       dummies = mkWidthDummies pallasSrs vestaSrs
-    -- Branch 0 (makeZero) has no prevs → spec-derived `vkCarrier =
-    -- Unit`. Branch 1 (increment) has one compiled prev slot →
-    -- `vkCarrier = Tuple1 Unit`.
     logInfo "[TwoPhaseChain] proving [step0, wrap0]"
     eRes <- withSpan "[TwoPhaseChain] prove b0" $ liftEffect $ makeZeroProver noAdvice
       { appInput: F zero, prevs: unit, sideloadedVKs: unit }
@@ -177,7 +139,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Right p -> pure p
     b0' <- roundTripAndVerify dummies output.verifier b0
 
-    -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0 (branch 0).
+    -- b1's prev is a branch-0 proof; b2 and b3 chain branch 1 onto
+    -- itself.
     logInfo "[TwoPhaseChain] proving [step1, wrap1]"
     eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ incrementProver noAdvice
       { appInput: F one
@@ -188,7 +151,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> pure p
     b1' <- roundTripAndVerify dummies output.verifier b1
-    -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
     logInfo "[TwoPhaseChain] proving [step2, wrap2]"
     eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 2 :: StepField)
@@ -199,7 +161,6 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
       Right p -> pure p
     b2' <- roundTripAndVerify dummies output.verifier b2
-    -- b3 = increment(b2); appInput = 2 + 1 = 3.
     logInfo "[TwoPhaseChain] proving [step3, wrap3]"
     eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 3 :: StepField)
@@ -210,11 +171,9 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)
       Right p -> pure p
 
-    -- Verify all four proofs (b0 from branch 0, b1..b3 from branch 1)
-    -- against the shared multi-branch verifier. Per-proof
-    -- `stepDomainLog2` carried by `CompiledProof` lets each proof's
-    -- deferred-values reconstruction pick the right branch's step
-    -- domain.
+    -- One verifier for proofs of both branches: the `stepDomainLog2`
+    -- each `CompiledProof` carries is what lets deferred-values
+    -- reconstruction pick that proof's own step domain.
     logInfo "[TwoPhaseChain] verifying 4-proof chain…"
     verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3 ]) `shouldEqual` true
     logInfo "[TwoPhaseChain] verification complete"

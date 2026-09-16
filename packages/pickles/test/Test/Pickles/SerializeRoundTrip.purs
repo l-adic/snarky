@@ -1,13 +1,12 @@
--- | Shared helper for exercising `Pickles.Prove.SerializeProof` across the
--- | recursive prove tests: round-trip every proof used as a recursive prev. If
--- | reconstruction is faithful the downstream proof is unchanged, so the test's
--- | existing verify/equality assertions still hold — at zero extra proving.
+-- | Lets the recursive prove tests exercise
+-- | `Pickles.Prove.SerializeProof` for free: a proof round-tripped
+-- | before being used as a prev leaves the chain unchanged if
+-- | reconstruction is faithful, so the tests' own assertions carry the
+-- | round trip too.
 -- |
--- | Two flavours: `roundTripAndVerify` exercises the in-memory transform
--- | (`toSerializableCompiledProof`/`reconstructCompiledProof`), used by every
--- | prove test; `roundTripJSONAndVerify` additionally goes through the JSON
--- | `encodeCompiledProof`/`decodeCompiledProof` Sendability codec, used where the
--- | statement type is serializable (e.g. SimpleChain over `NoOutput`).
+-- | `roundTripAndVerify` goes through the in-memory transform;
+-- | `roundTripJSONAndVerify` goes through the JSON codec as well, and
+-- | needs a serializable statement.
 module Test.Pickles.SerializeRoundTrip
   ( module Pickles.Prove.SerializeProof
   , roundTrip
@@ -28,11 +27,12 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Test.Spec.Assertions (shouldEqual)
 
--- | The SRSes the JSON decode needs (any record carrying them, e.g. the `Env`).
+-- | The SRSes the JSON decode needs, left open so a test can pass its
+-- | whole environment.
 type Srs r = { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG | r }
 
--- | Serialize a `CompiledProof` and reconstruct it (in memory) — the identity
--- | if reconstruction is faithful.
+-- | Serialize a `CompiledProof` and reconstruct it in memory — the
+-- | identity, if reconstruction is faithful.
 roundTrip
   :: forall mpv stmt
    . WidthDummies
@@ -40,9 +40,8 @@ roundTrip
   -> CompiledProof mpv stmt
 roundTrip dummies = reconstructCompiledProof dummies <<< toSerializableCompiledProof
 
--- | As `roundTrip`, but through the JSON `encodeCompiledProof`/
--- | `decodeCompiledProof` codec (which subsume the in-memory transform).
--- | Requires a serializable statement; a decode failure crashes the test.
+-- | As `roundTrip`, but through the JSON codec, which subsumes the
+-- | in-memory transform. A decode failure crashes the test.
 roundTripJSON
   :: forall mpv stmt r
    . WriteForeign stmt
@@ -53,11 +52,9 @@ roundTripJSON
 roundTripJSON srs =
   either (unsafeCrashWith <<< show) identity <<< decodeCompiledProof srs <<< encodeCompiledProof
 
--- | Round-trip a proof, assert the reconstruction still verifies standalone, and
--- | return it for downstream use as a recursive prev. Splitting the round-trip
--- | out as an explicit, asserted step documents that the test exercises
--- | serialize → reconstruct, and the subsequent use-as-prev is the
--- | byte-faithfulness check.
+-- | Round-trip a proof, assert the reconstruction verifies on its own,
+-- | and return it for use as a recursive prev, which is the stricter
+-- | check.
 roundTripAndVerify
   :: forall mpv stmt m
    . MonadAff m

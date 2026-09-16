@@ -1,25 +1,13 @@
--- | JSON codecs for OUT-OF-CIRCUIT wrap verification: a `VerifiableProof`
--- | (what `Pickles.Verify.verify` consumes) and a `Verifier` (the per-tag
--- | constants it needs). This is purely for shipping a finished proof +
--- | verifier to a client and verifying it again — it has nothing to do with
--- | in-circuit verification.
+-- | JSON codecs for out-of-circuit wrap verification: a
+-- | `VerifiableProof` (what `Pickles.Verify.verify` consumes) and a
+-- | `Verifier` (the constants it needs), for shipping a finished proof
+-- | to a client and verifying it there.
 -- |
--- | Design:
--- |
--- |  * The big object — the wrap kimchi proof — round-trips through the Rust
--- |    `serde_json` codec (`vestaProof{To,From}SerdeJson`), and the wrap VK
--- |    through `vestaVerifierIndex{To,From}SerdeJson`. We use the underlying
--- |    serde serializers wherever they exist.
--- |  * Everything else is the carried statement skeleton — pickles-level
--- |    field elements with no Rust serde codec. Those serialize through
--- |    simple-json using the leaf `ReadForeign`/`WriteForeign` instances on
--- |    `VestaScalarField`/`PallasScalarField` (hex), `F`, `SizedF`, and
--- |    `Vector`, so the records fall out for free.
--- |  * Some data is NEVER serialized but RECONSTRUCTED at decode time: the
--- |    `Verifier`'s `linearizationPoly` is the fixed `Linearization.pallas`
--- |    constant, and the two SRSes are too large to embed — they are passed
--- |    into `decodeVerifier`. (The expanded deferred values are likewise
--- |    reconstructed, but that happens inside `verify`, not here.)
+-- | The wrap kimchi proof and the wrap VK round-trip through the Rust
+-- | serde codecs; the statement skeleton around them has none, and goes
+-- | through simple-json's leaf instances. `linearizationPoly` and the
+-- | two SRSes are never serialized — the first is the constant
+-- | `Linearization.pallas`, the second are supplied to `decodeVerifier`.
 module Pickles.Prove.Codecs
   ( encodeVerifiableProof
   , decodeVerifiableProof
@@ -49,10 +37,9 @@ import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | Wire form of the chunked evals: the only difference from `ChunkedEvals`
--- | is that each polynomial's per-chunk `NonEmptyArray` becomes a plain
--- | `Array` (simple-json has no `NonEmptyArray` codec). `PointEval` is the
--- | record `{ zeta, omegaTimesZeta }`, so it serializes directly.
+-- | Wire form of `ChunkedEvals`: each polynomial's per-chunk
+-- | `NonEmptyArray` becomes a plain `Array`, simple-json having no
+-- | `NonEmptyArray` codec.
 type ChunkedEvalsWire f =
   { publicEvals :: Array (PointEval f)
   , witnessEvals :: Vector 15 (Array (PointEval f))
@@ -63,9 +50,9 @@ type ChunkedEvalsWire f =
   , ftEval1 :: f
   }
 
--- | Wire form of a `VerifiableProof`: the wrap proof becomes its serde-JSON
--- | string, the chunked evals lose their `NonEmptyArray`s, and every other
--- | field is identical (and serialized via the leaf instances).
+-- | Wire form of a `VerifiableProof`: the wrap proof becomes its
+-- | serde-JSON string and the chunked evals lose their
+-- | `NonEmptyArray`s; every other field is unchanged.
 type VerifiableProofWire =
   { wrapProof :: String
   , rawPlonk :: PlonkMinimal (F StepField)
@@ -82,9 +69,8 @@ type VerifiableProofWire =
   , stepDomainLog2 :: Int
   }
 
--- | Wire form of a `Verifier`: the wrap VK becomes its serde-JSON string; the
--- | small step-domain constants serialize directly. `linearizationPoly` and
--- | the two SRSes are NOT here — they're reconstructed/supplied on decode.
+-- | Wire form of a `Verifier`: the wrap VK becomes its serde-JSON
+-- | string, and the step-domain constants serialize directly.
 type VerifierWire =
   { wrapVK :: String
   , stepZkRows :: Int
@@ -160,16 +146,12 @@ fromWire w = do
     , stepDomainLog2: w.stepDomainLog2
     }
 
--- | Serialize a `VerifiableProof` to JSON.
 encodeVerifiableProof :: VerifiableProof -> String
 encodeVerifiableProof = writeJSON <<< toWire
 
--- | Parse a `VerifiableProof` from JSON.
 decodeVerifiableProof :: String -> Either MultipleErrors VerifiableProof
 decodeVerifiableProof s = (readJSON s :: Either MultipleErrors VerifiableProofWire) >>= fromWire
 
--- | Serialize a `Verifier` to JSON. The wrap VK goes through serde; the SRSes
--- | and the (constant) linearization polynomial are dropped.
 encodeVerifier :: Verifier -> String
 encodeVerifier v = writeJSON
   ( { wrapVK: vestaVerifierIndexToSerdeJson v.wrapVK
@@ -179,9 +161,8 @@ encodeVerifier v = writeJSON
     } :: VerifierWire
   )
 
--- | Parse a `Verifier` from JSON. The caller supplies the two SRSes (the wrap
--- | VK is rehydrated with the Pallas/wrap SRS; the Vesta/step SRS is stored as
--- | is); `linearizationPoly` is reconstructed from the fixed constant.
+-- | The wrap VK is rehydrated with the caller's Pallas SRS; the Vesta
+-- | SRS is stored as is.
 decodeVerifier
   :: { pallasSrs :: CRS PallasG, vestaSrs :: CRS VestaG }
   -> String

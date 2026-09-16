@@ -1,36 +1,17 @@
--- | Packed Step Statement with OCaml-compatible field ordering.
+-- | The step statement in the field order the verifier fixes: the
+-- | Lagrange MSM for `x_hat` consumes public-input fields
+-- | left-to-right, so the layout is not free.
 -- |
--- | OCaml's `Spec.pack` serializes `Per_proof` fields in `to_data` order
--- | (composition_types.ml:1212), not alphabetical. Since the Lagrange MSM
--- | for `x_hat` consumes fields left-to-right, the ordering must match.
--- |
--- | This newtype wraps the Step statement record but its `CircuitType` and
--- | `PublicInputCommit` instances delegate through nested `Data.Tuple.Nested`
--- | shapes that mirror OCaml's per-proof and statement layouts:
--- |
--- |   Per_proof to_data:
--- |     [ fq (5)         — combined_inner_product, b, ztSrs, ztDs, perm
--- |     ; digest         — sponge_digest_before_evaluations
--- |     ; challenge (2)  — beta, gamma
--- |     ; scalar_chal (3)— alpha, zeta, xi
--- |     ; bp_challenges  — bulletproof_challenges
--- |     ; bool           — should_finalize
--- |     ]
--- |
--- |   Statement to_data:
--- |     [ Vector n per_proof
--- |     ; messages_for_next_step_proof
--- |     ; Vector n messages_for_next_wrap_proof
--- |     ]
--- |
--- | Reference: composition_types.ml `Per_proof.In_circuit.to_data` (line 1212),
--- |            `Statement.to_data` (line 1344).
+-- | Hence a newtype rather than the bare record — a record would pick
+-- | up `RCircuitType`'s alphabetical field order, and the wire order is
+-- | different. The `CircuitType` and `PublicInputCommit` instances
+-- | delegate to the `Data.Tuple.Nested` shapes below, which spell the
+-- | real order out; swapping the newtype for the record compiles and
+-- | silently corrupts the encoding.
 module Pickles.PackedStatement
   ( PackedStepPublicInput(..)
-  -- Re-exported for circuit-diffs test wrappers that construct
-  -- PackedStepPublicInput from a flat input array. Production code should
-  -- prefer the record constructor; the tuple helpers exist purely as a
-  -- convenience to keep test wrappers small.
+  -- Exported for `pickles-circuit-diffs`, which builds a
+  -- `PackedStepPublicInput` from a flat input array.
   , PerProofTuple
   , StmtTuple
   , fromPackedTuple
@@ -53,10 +34,6 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (CurveParams)
 import Type.Proxy (Proxy(..))
 
--------------------------------------------------------------------------------
--- | The packed statement newtype
--------------------------------------------------------------------------------
-
 newtype PackedStepPublicInput (n :: Int) (dw :: Int) fv b = PackedStepPublicInput
   { proofState ::
       { unfinalizedProofs :: Vector n (UnfinalizedProof dw fv (Type2 (SplitField fv b)) b)
@@ -65,12 +42,7 @@ newtype PackedStepPublicInput (n :: Int) (dw :: Int) fv b = PackedStepPublicInpu
   , messagesForNextWrapProof :: Vector n fv
   }
 
--------------------------------------------------------------------------------
--- | Internal tuple shapes mirroring OCaml `to_data` order
--------------------------------------------------------------------------------
-
--- | One per-proof "page" in OCaml `to_data` order. Each component matches
--- | the corresponding `Spec.T.Vector` entry in `Per_proof.In_circuit.spec`.
+-- | One per-proof page of the statement, in wire order.
 type PerProofTuple dw fv b =
   Tuple6
     (Vector 5 (Type2 (SplitField fv b))) -- fq: cip, b, ztSrs, ztDs, perm
@@ -80,22 +52,18 @@ type PerProofTuple dw fv b =
     (Vector dw (SizedF 128 fv)) -- bp_challenges
     b -- bool: should_finalize
 
--- | Whole-statement tuple in OCaml `Statement.to_data` order:
--- | (Vector mpv per_proof, msg_for_next_step, Vector mpv msg_for_next_wrap).
+-- | The whole statement in wire order: the `n` per-proof pages, the
+-- | `messages_for_next_step_proof` digest, then the `n`
+-- | `messages_for_next_wrap_proof` digests.
 type StmtTuple n dw fv b =
   Tuple3
     (Vector n (PerProofTuple dw fv b))
     fv
     (Vector n fv)
 
--- | Convenience alias used by both instances to drive
--- | `genericValueToFields` / `genericFieldsToValue` etc.
+-- | `StmtTuple` at the value representation, the form both instances
+-- | hand to the generic field conversions.
 type StmtTupleVal n dw f = StmtTuple n dw (F f) Boolean
-
--------------------------------------------------------------------------------
--- | Internal conversions (NOT exported — clients construct PackedStepPublicInput
--- | directly via the record constructor and never see the tuple shape).
--------------------------------------------------------------------------------
 
 toPackedTuple
   :: forall n dw fv b
@@ -153,10 +121,6 @@ fromPackedTuple = uncurry3 \proofs mfnsp mfnwp ->
     , spongeDigestBeforeEvaluations: digest
     }
 
--------------------------------------------------------------------------------
--- | CircuitType instance — delegates to the tuple, which gives OCaml ordering.
--------------------------------------------------------------------------------
-
 instance
   ( PrimeField f
   , CircuitType f (StmtTupleVal n dw f) (StmtTuple n dw (FVar f) (BoolVar f))
@@ -169,10 +133,6 @@ instance
   fieldsToValue fs = fromPackedTuple (fieldsToValue @f @(StmtTupleVal n dw f) fs)
   varToFields x = varToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
   fieldsToVar fs = fromPackedTuple (fieldsToVar @f @(StmtTupleVal n dw f) fs)
-
--------------------------------------------------------------------------------
--- | PublicInputCommit instance — same delegation pattern.
--------------------------------------------------------------------------------
 
 instance
   ( PublicInputCommit (StmtTuple n dw (FVar f) (BoolVar f)) f

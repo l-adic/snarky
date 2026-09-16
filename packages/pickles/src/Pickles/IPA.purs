@@ -1,18 +1,10 @@
--- | IPA (Inner Product Argument) verification circuits.
--- |
--- | This module provides in-circuit implementations for verifying IPA opening proofs
--- | as used in the Kimchi/Pickles proving system.
--- |
--- | The key operations are:
--- | - Challenge extraction from L/R commitment pairs via Fiat-Shamir
--- | - bPoly: The challenge polynomial from the IPA protocol
--- | - computeB: Combines bPoly evaluations at zeta and zeta*omega
--- | - Verification that b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
--- | - ipaFinalCheck: The full IPA verification equation (c*Q + delta = z1*(sg + b*u) + z2*H)
--- |
--- | Reference: wrap_verifier.ml in mina/src/lib/pickles
+-- | In-circuit verification of a kimchi IPA opening proof: the
+-- | challenge polynomial `bPoly` and its two-point combination, the
+-- | Fiat-Shamir extraction of the round challenges, the Horner combine
+-- | of the commitment bases, and the final equation
+-- | `c*Q + delta = z1*(sg + b*u) + z2*H`.
 module Pickles.IPA
-  ( -- Types
+  ( -- * Types
     LrPair
   , BPolyInput
   , ComputeBInput
@@ -23,25 +15,25 @@ module Pickles.IPA
   , IpaFinalCheckInput
   , IpaFinalCheckResult
   , CheckBulletproofInput
-  -- Challenge polynomial
+  -- * Challenge polynomial
   , bPoly
   , bPolyCircuit
   , challengePolyEvals
   , computeChallenges
-  -- Combined b evaluation
+  -- * Combined b evaluation
   , computeB
   , computeBCircuit
-  -- Challenge extraction (returns 128-bit scalar challenges)
+  -- * Challenge extraction
   , extractScalarChallenges
-  -- Bullet reduce (lr_prod computation)
+  -- * Bullet reduce
   , bulletReduceCircuit
-  -- Verification
+  -- * Verification
   , bCorrectCircuit
-  -- Combined polynomial commitment
+  -- * Combined polynomial commitment
   , combinePolynomials
-  -- IPA final check
+  -- * IPA final check
   , ipaFinalCheckCircuit
-  -- Full bulletproof check
+  -- * Full bulletproof check
   , checkBulletproof
   ) where
 
@@ -77,15 +69,14 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | Types
 -------------------------------------------------------------------------------
 
--- | A pair of L and R commitment points from an IPA round.
--- | These are curve points on the commitment curve (the "other" curve in the 2-cycle).
+-- | The `L` and `R` commitment points of one IPA round, on the
+-- | commitment curve — the other curve of the 2-cycle.
 type LrPair f = { l :: AffinePoint f, r :: AffinePoint f }
 
--- | Input type for bPoly circuit tests.
 type BPolyInput d f = { challenges :: Vector d f, x :: f }
 
--- | Input type for computeB and related circuits.
--- | Open row type to allow extension (e.g., adding expectedB for bCorrect).
+-- | The `computeBCircuit` arguments, as an open row so `BCorrectInput`
+-- | can extend it.
 type ComputeBInput d f r =
   { challenges :: Vector d f
   , zeta :: f
@@ -94,12 +85,8 @@ type ComputeBInput d f r =
   | r
   }
 
--- | Input type for bCorrect / bCorrectCircuit.
--- | Extends ComputeBInput with the expected b value for verification.
 type BCorrectInput n f = ComputeBInput n f (expectedB :: f)
 
--- | Input type for bulletReduce.
--- | Contains L/R pairs and the 128-bit scalar challenges.
 type BulletReduceInput n f =
   { pairs :: Vector n (LrPair f)
   , challenges :: Vector n (SizedF 128 f)
@@ -109,15 +96,11 @@ type BulletReduceInput n f =
 -- | Challenge Polynomial (b_poly)
 -------------------------------------------------------------------------------
 
--- | The challenge polynomial from the IPA protocol.
+-- | The IPA challenge polynomial
+-- | `b_poly(chals, x) = ∏_{i<k} (1 + chals[i] * x^{2^{k-1-i}})`, step 8
+-- | of appendix A.2 of https://eprint.iacr.org/2020/499.
 -- |
--- | Computes: b_poly(chals, x) = prod_{i=0}^{k-1} (1 + chals[i] * x^{2^{k-1-i}})
--- |
--- | This is "step 8: Define the univariate polynomial" of appendix A.2 of
--- | https://eprint.iacr.org/2020/499
--- |
--- | The `d` parameter is the number of IPA rounds (= domain log2), which equals
--- | the length of the challenges vector.
+-- | `d` is the number of IPA rounds, the domain log2.
 bPoly :: forall d f. Reflectable d Int => PrimeField f => Vector d f -> f -> f
 bPoly chals x =
   let
@@ -125,19 +108,15 @@ bPoly chals x =
     powTwos = Vector.generate \i ->
       pow x (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt (getFinite i)))
 
-    -- Reverse to get [x^{2^{d-1}}, ..., x^4, x^2, x]
-    -- Then zip with chals to compute (1 + chal * pow) for each pair
+    -- reversed to [x^{2^{d-1}}, …, x², x], then paired with chals
     terms = Vector.zipWith (\c p -> one + c * p) chals (Vector.reverse powTwos)
   in
     product terms
 
--- | Circuit version of bPoly using two-phase approach matching OCaml.
--- |
--- | Phase 1: Build pow_two_pows = [pt, pt^2, pt^4, ..., pt^(2^(k-1))] via k-1 squarings
--- | Phase 2: Compute product = ∏ (1 + chals[i] * powTwoPows[k-1-i]) with k-1 accumulations
--- |
--- | This matches OCaml's challenge_polynomial (wrap_verifier.ml:35-57) exactly,
--- | producing the same constraint ordering.
+-- | The in-circuit `bPoly`, in two phases: `k-1` squarings building
+-- | `[pt, pt², pt⁴, …, pt^(2^(k-1))]`, then `k-1` accumulations of
+-- | `∏ (1 + chals[i] * powTwoPows[k-1-i])`. The split and its order fix
+-- | the constraint sequence.
 bPolyCircuit
   :: forall d dPred f c r
    . Add 1 dPred d
@@ -147,7 +126,6 @@ bPolyCircuit
   => BPolyInput d (FVar f)
   -> Snarky f c r (FVar f)
 bPolyCircuit { challenges: chals, x: pt } = label "b-poly" do
-  -- Phase 1: Build pow_two_pows via k-1 squarings
   let { tail: chalsTail } = Vector.uncons chals
   Tuple squaredPowers _ <- mapAccumM
     ( \prev _ -> do
@@ -158,7 +136,6 @@ bPolyCircuit { challenges: chals, x: pt } = label "b-poly" do
     chalsTail
   let powTwoPows = Vector.append (pt :< Vector.nil) squaredPowers
 
-  -- Phase 2: Product = ∏_{i=0}^{k-1} (1 + chals[i] * powTwoPows[k-1-i])
   let
     paired = Vector.zipWith Tuple chals (Vector.reverse powTwoPows)
     { head: Tuple c0 pw0, tail: rest } = Vector.uncons paired
@@ -173,10 +150,9 @@ bPolyCircuit { challenges: chals, x: pt } = label "b-poly" do
     initProd
     rest
 
--- | The previous proofs' challenge polynomials evaluated at one point (OCaml
--- | `sg_evals`): `bPolyCircuit` per challenge vector. OCaml's `Vector.map`
--- | evaluates right to left, so the last vector's polynomial is built first;
--- | the result is in vector order.
+-- | The previous proofs' challenge polynomials at one point:
+-- | `bPolyCircuit` per challenge vector. The last vector's polynomial
+-- | is emitted first; the result is in vector order.
 challengePolyEvals
   :: forall n d dPred f c r
    . Add 1 dPred d
@@ -191,9 +167,8 @@ challengePolyEvals prevChallenges pt = do
     bPolyCircuit { challenges: chals, x: pt }
   pure (Vector.reverse rev)
 
--- | The bulletproof challenges expanded through the endomorphism (OCaml
--- | `compute_challenges`): `toField` on each 128-bit challenge. OCaml's
--- | `Vector.map` evaluates right to left, so the last challenge is expanded
+-- | The bulletproof challenges expanded through the endomorphism:
+-- | `toField` on each 128-bit challenge. The last challenge is expanded
 -- | first; the result is in vector order.
 computeChallenges
   :: forall d n f r
@@ -211,11 +186,7 @@ computeChallenges chals endoVar = do
 -- | Combined b evaluation
 -------------------------------------------------------------------------------
 
--- | Compute the combined b value at two evaluation points.
--- |
--- | This combines bPoly evaluations: b(zeta) + evalscale * b(zeta*omega)
--- |
--- | Corresponds to lines 201-210 of poly-commitment/src/ipa.rs in SRS::verify.
+-- | `bPoly(chals, zeta) + evalscale * bPoly(chals, zetaOmega)`.
 computeB
   :: forall d f
    . Reflectable d Int
@@ -226,12 +197,8 @@ computeB
 computeB chals { zeta, zetaOmega, evalscale } =
   bPoly chals zeta + evalscale * bPoly chals zetaOmega
 
--- | Circuit version of computeB.
--- |
--- | Combines bPolyCircuit evaluations: b(zeta) + evalscale * b(zeta*omega)
--- |
--- | Evaluation order matches OCaml's right-to-left argument evaluation:
--- | bPoly(zetaOmega), then evalscale * result, then bPoly(zeta).
+-- | The in-circuit `computeB`. The `zetaOmega` evaluation is emitted
+-- | first, then its scaling, then the `zeta` evaluation.
 computeBCircuit
   :: forall d dPred f c r cr
    . Add 1 dPred d
@@ -241,8 +208,6 @@ computeBCircuit
   => ComputeBInput d (FVar f) r
   -> Snarky f c cr (FVar f)
 computeBCircuit { challenges, zeta, zetaOmega, evalscale } = label "compute-b" do
-  -- OCaml evaluates: challenge_poly zeta + (r * challenge_poly zetaw)
-  -- Right-to-left: zetaw first, then r * result, then zeta
   bZetaOmega <- bPolyCircuit { challenges, x: zetaOmega }
   scaledB <- pure evalscale * pure bZetaOmega
   bZeta <- bPolyCircuit { challenges, x: zeta }
@@ -252,13 +217,9 @@ computeBCircuit { challenges, zeta, zetaOmega, evalscale } = label "compute-b" d
 -- | Challenge Extraction (In-Circuit)
 -------------------------------------------------------------------------------
 
--- | Extract all 128-bit scalar challenges from a vector of L/R pairs.
--- |
--- | This processes all IPA rounds sequentially, building up the
--- | scalar challenge vector. The endo mapping to full field elements
--- | happens separately, outside this function.
--- |
--- | The number of rounds `n` equals the SRS log size
+-- | The 128-bit scalar challenge of each IPA round, in order. The endo
+-- | expansion to full field elements happens separately, in
+-- | `computeChallenges`.
 extractScalarChallenges
   :: forall n f r cr
    . PrimeField f
@@ -268,22 +229,16 @@ extractScalarChallenges
   -> Vector n (LrPair (FVar f))
   -> SpongeM f (KimchiConstraint f) cr (Vector n (SizedF 128 (FVar f)))
 extractScalarChallenges params pairs = for pairs \{ l, r } -> do
-  -- Absorb L and R points into the sponge
   absorbPoint l
   absorbPoint r
-  -- squeeze_scalar with constrain_low_bits:false (matches OCaml's squeeze_scalar)
+  -- `squeezeScalar` leaves the low 128 bits unconstrained.
   squeezeScalar params
 
 -------------------------------------------------------------------------------
 -- | Verification
 -------------------------------------------------------------------------------
 
--- | Circuit version of b correctness check.
--- |
--- | Computes b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
--- | and returns a boolean constraint for equality with expected value.
--- |
--- | This is the in-circuit version of the "b_correct" check.
+-- | Whether `computeBCircuit` agrees with the statement's `expectedB`.
 bCorrectCircuit
   :: forall n nPred f c r
    . Add 1 nPred n
@@ -300,11 +255,8 @@ bCorrectCircuit input@{ expectedB } = label "b-correct" do
 -- | Bullet Reduce (lr_prod computation)
 -------------------------------------------------------------------------------
 
--- | Circuit version of bullet reduce.
--- |
--- | Computes: lr_prod = Σ_i [endoInv(L_i, u_i) + endo(R_i, u_i)]
--- |
--- | Uses the efficient endo/endoInv circuits for scalar multiplication.
+-- | `lr_prod = Σ_i (endoInv(L_i, u_i) + endo(R_i, u_i))`, over the
+-- | round challenges `u_i`.
 bulletReduceCircuit
   :: forall n nPred @f f' @g r
    . Reflectable n Int
@@ -318,17 +270,16 @@ bulletReduceCircuit
   => BulletReduceInput n (FVar f)
   -> Snarky f (KimchiConstraint f) r { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
 bulletReduceCircuit { pairs, challenges } = label "bullet-reduce" do
-  -- Process each (L, R, u) triple to compute endoInv(L, u) + endo(R, u)
-  -- OCaml let-binding order: endo_inv(L) first, then endo(R), then add_fast
+  -- Emission order: endoInv(L), then endo(R), then the add.
   terms <- for (Vector.zip pairs challenges) \(Tuple { l, r } u) -> do
     lScaled <- endoInv @f @f' @g l u
     rScaled <- endo @128 @32 r u
     addComplete lScaled rScaled
   let
     { head, tail } = Vector.uncons terms
-  -- Sum all terms using add_fast without infinity check, matching OCaml's
-  -- Array.reduce_exn ~f:(Ops.add_fast ?check_finite:None)
-  -- (default check_finite=true means inf=Field.zero, a constant)
+  -- `addComplete` assumes finite inputs, so every term's `isInfinity`
+  -- is the constant `false_` rather than a witness. Folding the points
+  -- alone therefore loses nothing.
   result <- foldM
     (\acc q -> _.p <$> addComplete acc q.p)
     head.p
@@ -339,74 +290,57 @@ bulletReduceCircuit { pairs, challenges } = label "bullet-reduce" do
 -- | IPA Final Check Circuit
 -------------------------------------------------------------------------------
 
--- | Input for IPA final verification.
+-- | The two deferred scalars of the opening check: used in the Schnorr
+-- | equation here, certified by the next circuit's
+-- | `finalizeOtherProof`.
 -- |
--- | The verification equation is: c*Q + delta = z1*(sg + b*u) + z2*H
--- | where:
--- | - Q = combinedPolynomial + combinedInnerProduct*u + lr_prod
--- | - u = groupMap(squeeze(sponge)) after absorbing combinedInnerProduct
--- | - challenges = extracted from L/R pairs via sponge
--- | - c = squeeze(sponge) after absorbing delta
--- | - b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
--- | - lr_prod = Σ_i [chal_inv_i * L_i + chal_i * R_i]
--- |
--- | The circuit field is `f`, the commitment curve is `g` with base field `f`.
--- | Scalars like z1, z2 are in the commitment curve's scalar field,
--- | represented via the shifted type `sf` in the circuit field.
--- | The two deferred scalars of the opening check (OCaml `Types.Step.Bulletproof.Advice`;
--- | not called advice here, since in snarky "advice" is the prover-side handler mechanism
--- | and these are public input of the previous proof): used in the Schnorr equation here,
--- | certified by the next circuit's `finalizeOtherProof` (`combinedInnerProductCorrect`,
--- | `bCorrect`).
+-- | Not named "advice": in snarky that word is the prover-side handler
+-- | mechanism, and these are public input of the previous proof.
 type BulletproofDeferred sf =
   { combinedInnerProduct :: sf
   , b :: sf
   }
 
--- | The opening proof as the circuit reads it (OCaml `Openings.Bulletproof.t`; the same
--- | fields as `WrapProofOpening` in `Pickles.Types`, as a plain record): checked in the
--- | Schnorr equation here. Only `sg` is looked at again, one proof later, as `sg_old`.
+-- | The opening proof as the circuit reads it — the same fields as
+-- | `WrapProofOpening` in `Pickles.Types`, as a plain record — checked
+-- | in the Schnorr equation here. Only `sg` is looked at again, one
+-- | proof later, as `sg_old`.
 type BulletproofOpening n f sf =
   { lr :: Vector n (LrPair f)
   , z1 :: sf
   , z2 :: sf
   , delta :: AffinePoint f
-  , sg :: AffinePoint f -- challenge_polynomial_commitment
+  , sg :: AffinePoint f -- ^ the challenge-polynomial commitment
   }
 
 type IpaFinalCheckInput n f sf =
-  { -- u = group_map(squeeze(sponge)) — derived by caller before combine_poly
+  { -- `groupMap(squeeze(sponge))`, derived by the caller
     u :: AffinePoint f
-  -- Combined polynomial commitment (from verifier index + xi)
+  -- from the verifier index and `xi`
   , combinedPolynomial :: AffinePoint f
   , deferred :: BulletproofDeferred sf
   , opening :: BulletproofOpening n f sf
-  -- Blinding generator H (from SRS, constant)
+  -- the SRS blinding generator `H`, a constant
   , blindingGenerator :: AffinePoint f
   }
 
--- | Result of IPA final check, including the success boolean and
--- | the extracted 128-bit scalar challenges (bulletproof challenges).
+-- | The check's verdict and the round challenges it extracted.
 type IpaFinalCheckResult n f =
   { success :: BoolVar f
   , challenges :: Vector n (SizedF 128 (FVar f))
   }
 
--- | In-circuit IPA final verification.
+-- | The IPA verification equation
+-- | `c*Q + delta = z1*(sg + b*u) + z2*H`, with the round challenges and
+-- | `c` derived from the sponge.
 -- |
--- | This circuit implements the IPA verification equation:
--- |   c*Q + delta = z1*(sg + b*u) + z2*H
+-- | Stays in `SpongeM` so the caller owns the sponge lifecycle; the
+-- | sponge must be ready to squeeze for `u`, that is, just after
+-- | absorbing the combined inner product.
 -- |
--- | It derives u, challenges, and c from the sponge (Fiat-Shamir), verifying
--- | compatibility with proofs generated by Kimchi.
--- |
--- | This circuit stays in `SpongeM` so the caller can manage the sponge lifecycle.
--- | The sponge should be in the state ready to squeeze for u (i.e., after absorbing
--- | combined_inner_product).
--- |
--- | NOTE: This circuit operates over the commitment curve's base field (circuit field f).
--- | For Pallas circuits (Fp), the commitment curve is Vesta, use Type1 for sf.
--- | For Vesta circuits (Fq), the commitment curve is Pallas, use Type2 for sf.
+-- | The circuit field `f` is the commitment curve's base field: a
+-- | Pallas circuit (Fp) commits on Vesta and takes `Type1` for `sf`, a
+-- | Vesta circuit (Fq) commits on Pallas and takes `Type2`.
 ipaFinalCheckCircuit
   :: forall n nPred @f f' @g sf r cr
    . Reflectable n Int
@@ -425,17 +359,14 @@ ipaFinalCheckCircuit
   -> SpongeM f (KimchiConstraint f) cr (IpaFinalCheckResult n f)
 ipaFinalCheckCircuit scalarOps params input = do
   let
-    -- Local copy of Pickles.Verify.ivpTrace — can't import from Verify
-    -- due to cycle (Verify imports IPA). Semantics identical.
+    -- A local copy of the `ivpTrace` in
+    -- `Pickles.IncrementallyVerifyProof.FqSpongeTranscript`.
     ivpTrace labelStr v = do
       _ <- SDSL.exists do
         val <- SDSL.readCVar v
         let _ = unsafePerformEffect (Trace.fieldF labelStr val)
         pure val
       pure unit
-  -- DIAG: dump IPA inputs at solve time. These are the values the wrap
-  -- circuit reads from the step proof's opening via Req.Openings_proof
-  -- + deferredValues — if any differs from OCaml, localizes the bug.
   liftSnarky do
     ivpTrace "ipa.dbg.sg.x" (unwrap input.opening.sg).x
     ivpTrace "ipa.dbg.sg.y" (unwrap input.opening.sg).y
@@ -446,13 +377,10 @@ ipaFinalCheckCircuit scalarOps params input = do
     ivpTrace "ipa.dbg.u.x" (unwrap input.u).x
     ivpTrace "ipa.dbg.u.y" (unwrap input.u).y
 
-  -- 1. Extract 128-bit scalar challenges from L/R pairs
-  -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
   scalarChallenges <- labelM "ipa_extract_challenges" $
     extractScalarChallenges params input.opening.lr
 
-  -- 2. Compute lr_prod from L/R pairs and challenges
-  -- OCaml: bullet_reduce does curve ops (endo_inv/endo/add_fast) AFTER all absorptions
+  -- Every L/R absorption above precedes any curve operation here.
   lrProd <- liftSnarky $ label "ipa_bullet_reduce" $ do
     { p } <- bulletReduceCircuit @f @g
       { pairs: input.opening.lr
@@ -460,53 +388,44 @@ ipaFinalCheckCircuit scalarOps params input = do
       }
     pure p
 
-  -- 3. Build p_prime = combinedPolynomial + scale(u, CIP)
-  -- OCaml: let uc = scale_fast u advice.combined_inner_product in
-  --        combined_polynomial + uc
-  -- Right-to-left: uc first, then add
+  -- The scaling of `u` is emitted before the add.
   pPrime <- liftSnarky $ label "ipa_scale_cip" do
     cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted input.u input.deferred.combinedInnerProduct
     { p } <- label "ipa_scale_cip_add" $ addComplete input.combinedPolynomial cipU
     pure p
 
-  -- 4. Build q = p_prime + lr_prod
   q <- liftSnarky $ label "ipa_q" do
     { p } <- addComplete pPrime lrProd
     pure p
 
-  -- 5. Absorb delta point + squeeze c
-  -- OCaml: absorb sponge PC delta ; let c = squeeze_scalar sponge
-  -- This happens AFTER bullet_reduce and q computation in OCaml
+  -- `delta` is absorbed only after the bullet reduce and `q`.
   c <- labelM "ipa_squeeze_c" $ do
     absorbPoint input.opening.delta
     squeezeScalar params
 
-  -- DIAG: dump Q + c at this point
   liftSnarky do
     ivpTrace "ipa.dbg.(unwrap q).x" (unwrap q).x
     ivpTrace "ipa.dbg.(unwrap q).y" (unwrap q).y
     ivpTrace "ipa.dbg.c" (SizedF.toField c)
 
   success <- liftSnarky $ label "ipa_final_eq" $ do
-    -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
+    -- LHS: c*Q + delta
     cQ <- label "ipa_endo_q" $ endo @128 @32 q c
     { p: lhs } <- label "ipa_lhs_add" $ addComplete cQ input.opening.delta
 
-    -- 8. Compute RHS: z1*(sg + b*u) + z2*H
-    -- Note: b is provided as input and verified separately via bCorrectCircuit
+    -- RHS: z1*(sg + b*u) + z2*H, where `b` is an input here and
+    -- `bCorrectCircuit` certifies it.
     bU <- label "ipa_scale_b" $ scalarOps.scaleByShifted input.u input.deferred.b
     { p: sgPlusBU } <- label "ipa_sg_add" $ addComplete input.opening.sg bU
     z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.opening.z1
     z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.opening.z2
     { p: rhs } <- label "ipa_rhs_add" $ addComplete z1Term z2Term
 
-    -- DIAG: dump LHS + RHS at the final equation
     ivpTrace "ipa.dbg.(unwrap lhs).x" (unwrap lhs).x
     ivpTrace "ipa.dbg.(unwrap lhs).y" (unwrap lhs).y
     ivpTrace "ipa.dbg.(unwrap rhs).x" (unwrap rhs).x
     ivpTrace "ipa.dbg.(unwrap rhs).y" (unwrap rhs).y
 
-    -- 9. Check LHS == RHS
     xEqual <- equals_ (unwrap lhs).x (unwrap rhs).x
     yEqual <- equals_ (unwrap lhs).y (unwrap rhs).y
     xEqual `and_` yEqual
@@ -517,20 +436,12 @@ ipaFinalCheckCircuit scalarOps params input = do
 -- | Combined Polynomial Commitment
 -------------------------------------------------------------------------------
 
--- | Combine polynomial commitments using Horner's method with endo scalar multiplication.
+-- | The Horner combine of the commitment bases under the 128-bit
+-- | polyscale `xi`: `Q = C_0 + xi*(C_1 + xi*(… + xi*C_{n-1}))`.
 -- |
--- | Computes: Q = C_0 + xi*(C_1 + xi*(C_2 + ... + xi*C_{n-1}))
--- | where xi is a 128-bit scalar challenge (polyscale).
--- |
--- | Bases can be constants or circuit variables.
--- |
--- | Reference: Pcs_batch.combine_split_commitments in OCaml
--- | Combine polynomial commitments using Horner's method with endo scalar multiplication.
--- |
--- | `masks` provides optional keep flags per base (from actual_proofs_verified_mask for sg_old).
--- | When Just keep, OCaml's combine_split_commitments generates:
--- |   if_ keep ~then_:point ~else_:acc.point
--- | matching Opt.Maybe handling. When Nothing, the entry is unconditional (Opt.Just).
+-- | A `Just keep` mask makes that base conditional — the accumulator
+-- | passes through where the bit is false, as the proofs-verified mask
+-- | needs for `sg_old`; `Nothing` is unconditional.
 combinePolynomials
   :: forall n nPred f f' r
    . Add 1 nPred n
@@ -538,7 +449,7 @@ combinePolynomials
   => HasEndo f f'
   => PrimeField f
   => Vector n (AffinePoint (FVar f))
-  -> Vector n (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
+  -> Vector n (Maybe (BoolVar f)) -- ^ per-base keep mask
   -> SizedF 128 (FVar f)
   -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
 combinePolynomials bases masks xi = label "combine-polynomials" do
@@ -550,7 +461,6 @@ combinePolynomials bases masks xi = label "combine-polynomials" do
     ( \acc (Tuple base mKeep) -> do
         xiAcc <- endo @128 @32 acc xi
         { p } <- addComplete base xiAcc
-        -- OCaml: if_ keep ~then_:point ~else_:acc.point (for Opt.Maybe entries)
         case mKeep of
           Nothing -> pure p
           Just keep -> if_ keep p acc
@@ -562,26 +472,23 @@ combinePolynomials bases masks xi = label "combine-polynomials" do
 -- | Full Bulletproof Check
 -------------------------------------------------------------------------------
 
--- | Input for the full bulletproof verification circuit.
--- | Contains all proof data needed after the Fq-sponge transcript.
+-- | The proof data `checkBulletproof` reads, after the fq-sponge
+-- | transcript.
 type CheckBulletproofInput n f sf =
-  { -- Polyscale challenge (128-bit, from Fr-sponge; a deferred value)
+  { -- the 128-bit polyscale, a deferred value from the fr-sponge
     xi :: SizedF 128 f
   , deferred :: BulletproofDeferred sf
   , opening :: BulletproofOpening n f sf
-  -- Constant
+  -- the SRS blinding generator, a constant
   , blindingGenerator :: AffinePoint f
   }
 
--- | Full bulletproof verification circuit.
+-- | The full opening check: absorb the combined inner product, derive
+-- | `u`, combine the commitment bases, then run `ipaFinalCheckCircuit`.
 -- |
--- | Corresponds to OCaml check_bulletproof (step_verifier.ml:232-334).
--- | Absorbs CIP, computes combined polynomial, and runs IPA final check.
--- | Returns success boolean and extracted bulletproof challenges.
--- |
--- | The sponge should be in sponge_before_evaluations state (after Fq-transcript).
--- | Commitment bases are constant points from the verifier index / proof,
--- | passed separately from the circuit input.
+-- | The sponge must be in its before-evaluations state. The commitment
+-- | bases are constants from the verifier index and the proof, so they
+-- | are passed separately from the circuit input.
 checkBulletproof
   :: forall numBases numBasesPred n nPred @f f' @g sf r cr
    . Reflectable n Int
@@ -598,7 +505,7 @@ checkBulletproof
   => IpaScalarOps f cr sf
   -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> Vector numBases (AffinePoint (FVar f))
-  -> Vector numBases (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
+  -> Vector numBases (Maybe (BoolVar f)) -- ^ per-base keep mask
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) cr (IpaFinalCheckResult n f)
 checkBulletproof scalarOps params commitmentBases baseMasks input = do
@@ -609,38 +516,30 @@ checkBulletproof scalarOps params commitmentBases baseMasks input = do
         let _ = unsafePerformEffect (Trace.fieldF labelStr val)
         pure val
       pure unit
-  -- Dump the sponge STATE entering check_bulletproof (pre-CIP-absorb).
   pre <- getSponge
   liftSnarky do
     ivpTrace' "ipa.dbg.wrap_sponge_pre.s0" (Vector.index pre.state (unsafeFinite @3 0))
     ivpTrace' "ipa.dbg.wrap_sponge_pre.s1" (Vector.index pre.state (unsafeFinite @3 1))
     ivpTrace' "ipa.dbg.wrap_sponge_pre.s2" (Vector.index pre.state (unsafeFinite @3 2))
 
-  -- 1. Absorb shift_scalar(CIP) into sponge
-  -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
   labelM "bp_absorb_cip" $ do
     let cipFields = scalarOps.shiftedToAbsorbFields input.deferred.combinedInnerProduct
     for_ cipFields absorb
 
-  -- Dump sponge state after CIP absorb.
   post <- getSponge
   liftSnarky do
     ivpTrace' "ipa.dbg.wrap_sponge_post.s0" (Vector.index post.state (unsafeFinite @3 0))
     ivpTrace' "ipa.dbg.wrap_sponge_post.s1" (Vector.index post.state (unsafeFinite @3 1))
     ivpTrace' "ipa.dbg.wrap_sponge_post.s2" (Vector.index post.state (unsafeFinite @3 2))
 
-  -- 2. Derive u via group_map (squeeze BEFORE combine_poly, matching OCaml)
-  -- OCaml: let u = let t = Sponge.squeeze_field sponge in group_map t
+  -- `u` is squeezed before the bases are combined.
   u <- labelM "ipa_group_map" $ do
     t <- squeeze
     liftSnarky $ groupMapCircuit params.groupMapParams t
 
-  -- 3. Compute combined polynomial via Horner (AFTER u, matching OCaml)
-  -- OCaml: let combined_polynomial = Split_commitments.combine ...
   combinedPolynomial <- labelM "bp_combine_poly" $ liftSnarky $
     combinePolynomials commitmentBases baseMasks input.xi
 
-  -- 4. Delegate to ipaFinalCheckCircuit (u already computed)
   labelM "bp_ipa_check" $ ipaFinalCheckCircuit @f @g scalarOps params
     { u
     , combinedPolynomial

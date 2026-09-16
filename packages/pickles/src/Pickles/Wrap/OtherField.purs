@@ -1,15 +1,10 @@
--- | Wrap circuit's cross-field representation.
+-- | How the wrap circuit carries values of the other field.
 -- |
--- | The Wrap circuit operates over Fq (Pallas.ScalarField). The "other field" is
--- | Fp (Vesta.ScalarField), which is SMALLER than Fq. Values from Fp fit in a
--- | single field element, represented as Type1 (FVar f) with shift 2*t + 2^n + 1.
--- |
--- | This module provides:
--- | - Type aliases for the Wrap circuit's cross-field representation
--- | - IPA scalar ops (for checkBulletproof / ipaFinalCheck)
--- | - FOP shift ops (for wrapFinalizeOtherProof)
--- |
--- | Reference: mina/src/lib/pickles/wrap_main.ml (Other_field = Wrap.Other_field)
+-- | The wrap circuit's native field is `WrapField` (Fq); the step
+-- | proof's scalars live in `StepField` (Fp), which is smaller, so each
+-- | one fits in a single wrap-field element. The step-side counterpart
+-- | is `Pickles.Step.OtherField`, where the inclusion runs the other
+-- | way.
 module Pickles.Wrap.OtherField
   ( WrapOtherField
   , ipaScalarOps
@@ -24,18 +19,13 @@ import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShiftedType1Circuit, fro
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
--- | Wrap circuit's cross-field variable type for IPA.
--- | Represents Fp values (from the other curve) as a single field element
--- | with Type1 shift: s = 2*t + 2^n + 1.
+-- | A step-field value held in one wrap-field variable, under the
+-- | Type1 shift `s = 2*t + 2^n + 1`.
 type WrapOtherField f = Type1 f
 
--- | IPA scalar ops for the Wrap circuit.
--- |
--- | Used by checkBulletproof and ipaFinalCheck when verifying Step proofs
--- | in the Wrap circuit. Scalars (z1, z2, CIP, b) are Fp values that fit
--- | in the single-element Type1 representation.
--- |
--- | Replaces the old `type1ScalarOps` from IPA.purs.
+-- | The IPA scalar operations for the wrap circuit. `z1`, `z2`, the
+-- | combined inner product and `b` are all step-field values, so they
+-- | use the single-element Type1 representation.
 ipaScalarOps
   :: forall f r
    . FieldSizeInBits f 255
@@ -48,12 +38,9 @@ ipaScalarOps =
   , shiftedEqual: shiftedEqualType1
   }
 
--- | FOP shift ops for the Wrap circuit's finalizeOtherProof.
--- |
--- | The Wrap FOP uses Type2 shift (x + 2^n) for deferred values,
--- | matching OCaml's Shifted_value.Type2.
--- |
--- | The sealInner operation is needed for map_plonk_to_field in Wrap FOP.
+-- | The shift operations `wrapFinalizeOtherProofCircuit` uses. Deferred
+-- | values arrive under the Type2 shift `x + 2^n`, not the Type1 shift
+-- | the IPA scalars use.
 fopShiftOps
   :: forall @f r
    . FieldSizeInBits f 255

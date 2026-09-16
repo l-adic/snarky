@@ -1,24 +1,8 @@
--- | Full-proof (de)serialization for the recursion/worker-transport path.
--- |
--- | A `CompiledProof` is the prover's internal proof record — the thing a
--- | merge/recursive rule needs as an `InductivePrev`. Unlike
--- | `Pickles.Verify.VerifiableProof` (the verify-only projection that the
--- | OCaml-compatible codecs round-trip), a `CompiledProof` carries the
--- | recursive bookkeeping a *prev* needs: the per-prev `msgWrapChallenges`
--- | and `outerStepChalPolyComms` hidden behind the `widthData` existential,
--- | plus the application `statement` and the collapsed `prevEvals`.
--- |
--- | `SerializableCompiledProof` is the flat, self-describing superset of
--- | `VerifiableProof` that carries exactly those extra pieces, so a worker
--- | can reconstruct a complete, mergeable `CompiledProof` from a single
--- | value. This is **separate from** and does **not** touch the
--- | OCaml-compatible `VerifiableProof`/`Verifier` codecs in
--- | `Pickles.Prove.Codecs` — it is purely our internal transport form.
--- |
--- | The `widthData` existential is rebuilt with `mkSomeCompiledProofWidthData`
--- | (reifying the per-rule prev width back from the carried array lengths);
--- | the front-padding dummies are program constants supplied by the caller
--- | (the same `dummyIpaChallenges` / dummy wrap-sg the prover uses).
+-- | Full-proof (de)serialization for the recursion/worker-transport
+-- | path: `SerializableCompiledProof` carries everything a
+-- | `CompiledProof` holds, so a worker can rebuild a mergeable
+-- | `InductivePrev` from one value, where the verify-only codecs in
+-- | `Pickles.Prove.Codecs` carry only what verification needs.
 module Pickles.Prove.SerializeProof
   ( SerializableCompiledProof
   , WidthDummies
@@ -51,19 +35,15 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | The flat, self-describing superset of `VerifiableProof`: everything in a
--- | `CompiledProof` that the verify-only projection drops — the application
--- | `statement`, the single-value `prevEvals`, and the two per-prev
--- | `messages_for_next_*_proof` vectors a recursive prev needs.
+-- | The flat superset of `VerifiableProof`: everything in a
+-- | `CompiledProof` that the verify-only projection drops — the
+-- | application `statement`, the single-value `prevEvals`, and the two
+-- | per-prev message vectors a recursive prev needs.
 -- |
--- | The vector fields follow OCaml's `messages_for_next_{step,wrap}_proof`
--- | naming (camelCased). `VerifiableProof` already carries the other half of
--- | each message — `messages_for_next_step_proof.old_bulletproof_challenges`
--- | (its `oldBulletproofChallenges`) and
--- | `messages_for_next_wrap_proof.challenge_polynomial_commitment` (its
--- | `challengePolynomialCommitment`) — so only the dropped halves live here.
--- | The vectors are width-erased to `Array` (the per-rule prev width is reified
--- | back on reconstruct).
+-- | `VerifiableProof` already carries the other half of each message,
+-- | as `oldBulletproofChallenges` and `challengePolynomialCommitment`,
+-- | so only the dropped halves live here. The vectors are width-erased
+-- | to `Array`; the per-rule prev width is reified back on reconstruct.
 type SerializableCompiledProof stmtVal =
   { verifiable :: VerifiableProof
   , statement :: stmtVal
@@ -74,22 +54,18 @@ type SerializableCompiledProof stmtVal =
       { oldBulletproofChallenges :: Array (Vector WrapIPARounds WrapField) }
   }
 
--- | The front-padding dummies `mkSomeCompiledProofWidthData` needs to lift the
--- | `Vector width` per-prev fields to the `Vector PaddedLength` padded views.
--- | These are program constants: `dummyIpaChallenges.stepExpanded`,
--- | `dummyIpaChallenges.wrapExpanded`, and the dummy wrap sg in step field
--- | (`computeDummySgValues … .ipa.wrap.sg`) — the same values the prover packs
--- | at the `CompiledProof` construction site.
+-- | The front-padding dummies `mkSomeCompiledProofWidthData` needs to
+-- | lift the `Vector width` per-prev fields to their `Vector
+-- | PaddedLength` padded views — the same program constants the prover
+-- | packs at the `CompiledProof` construction site.
 type WidthDummies =
   { dummyOldBp :: Vector StepIPARounds StepField
   , dummyMsgWrap :: Vector WrapIPARounds WrapField
   , dummyChalPolyComm :: AffinePoint StepField
   }
 
--- | Build the front-padding `WidthDummies` from the SRSes — program constants
--- | (the prover's `dummyIpaChallenges` bp-challenge stacks and the
--- | `maxProofsVerified: 0` dummy wrap sg), independent of any program's mpvMax.
--- | Any caller of `reconstructCompiledProof`/`decodeCompiledProof` needs these.
+-- | The front-padding dummies for a given SRS pair, independent of any
+-- | program's `mpvMax`.
 mkWidthDummies :: CRS PallasG -> CRS VestaG -> WidthDummies
 mkWidthDummies pallasSrs vestaSrs =
   let
@@ -100,7 +76,6 @@ mkWidthDummies pallasSrs vestaSrs =
     , dummyChalPolyComm: dummySgsMax.ipa.wrap.sg
     }
 
--- | Project a `CompiledProof` to its self-describing serializable form.
 toSerializableCompiledProof
   :: forall mpv stmtVal
    . CompiledProof mpv stmtVal
@@ -119,12 +94,10 @@ toSerializableCompiledProof cp@(CompiledProof rec) =
     )
     rec.widthData
 
--- | Reassemble a complete, mergeable `CompiledProof` from its serializable
--- | form. The result is pinned to `PaddedLength` (the program's `mpvMax`); the
--- | per-rule prev width is reified from the carried array lengths and the
--- | `widthData` existential rebuilt with the supplied program dummies.
--- | `mpv` (the program `mpvMax`) is a phantom index on `CompiledProof`, so the
--- | result unifies with whatever the consuming program expects.
+-- | The mergeable `CompiledProof` a `SerializableCompiledProof`
+-- | describes, with the `widthData` existential rebuilt from the
+-- | carried array lengths and the supplied dummies. `mpv` is a phantom
+-- | index, so the result unifies with whatever program consumes it.
 reconstructCompiledProof
   :: forall mpv stmtVal
    . WidthDummies
@@ -153,9 +126,9 @@ reconstructCompiledProof dummies scp =
       , stepDomainLog2: vp.stepDomainLog2
       }
 
--- | Rebuild the `widthData` existential, reifying the prev width from the
--- | (equal) array lengths. `PaddedLength = 2`, so the width is one of 0/1/2 —
--- | a finite dispatch into `mkSomeCompiledProofWidthData @width @pad`.
+-- | Rebuild the `widthData` existential, reifying the prev width from
+-- | the (equal) array lengths. `PaddedLength = 2`, so the width is one
+-- | of 0/1/2 — a finite dispatch.
 rebuildWidthData
   :: WidthDummies
   -> Array (Vector StepIPARounds StepField)
@@ -200,13 +173,9 @@ rebuildWidthData dummies oldBp msgWrap outerSg =
 toVec :: forall @n a. Reflectable n Int => Array a -> Vector n a
 toVec arr = unsafePartial fromJust (Vector.toVector @n arr)
 
--- | JSON wire form of `SerializableCompiledProof`: the `verifiable` field is
--- | embedded as a nested JSON string via `Pickles.Prove.Codecs` (the same way
--- | its own `wrapProof` is a nested serde string — it carries the kimchi proof +
--- | chunked evals). The rest — the application `statement` (generic), the
--- | single-eval `prevEvals`, and the two `messages_for_next_*` vectors —
--- | serialize directly via their leaf `WriteForeign`/`ReadForeign` instances
--- | (fields as hex, `AffinePoint`, `Vector`).
+-- | JSON wire form of `SerializableCompiledProof`: `verifiable` is
+-- | embedded as a nested JSON string via `Pickles.Prove.Codecs`, and
+-- | the rest serializes through its leaf instances.
 type SerializableCompiledProofWire stmtVal =
   { verifiable :: String
   , statement :: stmtVal
@@ -228,9 +197,6 @@ fromWireSCP w = do
   verifiable <- decodeVerifiableProof w.verifiable
   pure (w { verifiable = verifiable })
 
--- | Serialize a full `CompiledProof` to JSON for worker/recursion transport.
--- | Generic over the application `statement`, which the caller's
--- | `WriteForeign` instance encodes.
 encodeCompiledProof
   :: forall mpv stmtVal
    . WriteForeign stmtVal
@@ -238,11 +204,10 @@ encodeCompiledProof
   -> String
 encodeCompiledProof = writeJSON <<< toWireSCP <<< toSerializableCompiledProof
 
--- | Parse a full `CompiledProof` from JSON. Takes the SRSes directly (any record
--- | carrying `pallasSrs`/`vestaSrs`, e.g. the app `Env`) and builds the
--- | front-padding `WidthDummies` internally, so the caller never handles them.
--- | `mpv` (the program `mpvMax`) is a phantom index, so the result unifies with
--- | whatever program consumes it.
+-- | Parse a full `CompiledProof` from JSON. Takes any record carrying
+-- | `pallasSrs`/`vestaSrs` — the app `Env` does — and builds the
+-- | front-padding `WidthDummies` itself, so the caller never handles
+-- | them.
 decodeCompiledProof
   :: forall mpv stmtVal r
    . ReadForeign stmtVal
