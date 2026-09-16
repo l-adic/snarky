@@ -1,15 +1,11 @@
--- | Conditional sponge for optional absorption.
--- |
--- | Unlike the regular sponge which tracks position at compile time,
--- | OptSponge tracks position as a circuit boolean because conditional
--- | absorption makes the position data-dependent at runtime.
--- |
--- | Reference: mina/src/lib/crypto/pickles/opt_sponge.ml
+-- | A sponge whose absorptions happen only when a circuit flag is
+-- | set. The rate position is a `BoolVar` rather than a compile-time
+-- | index, because a conditional absorb makes it data-dependent.
 module Pickles.OptSponge
   ( OptSponge
   , create
   , squeeze
-  -- Stateful monad (matching OCaml's mutable Opt_sponge.t)
+  -- * Stateful sponge monad
   , OptSpongePhase(..)
   , OptSpongeState
   , OptSpongeM(..)
@@ -38,6 +34,7 @@ import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect.Exception.Unsafe (unsafeThrow)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as RegSponge
 import Safe.Coerce (coerce)
@@ -56,7 +53,7 @@ type OptSponge f =
   , needsFinalPermuteIfEmpty :: Boolean
   }
 
--- | Create a fresh OptSponge with zero initial state.
+-- | A fresh sponge with zero state.
 create :: forall f. PrimeField f => OptSponge f
 create =
   { state: Vector.replicate (const_ zero)
@@ -64,8 +61,7 @@ create =
   , needsFinalPermuteIfEmpty: true
   }
 
--- | Squeeze the sponge after consuming all pending absorptions.
--- | Returns state[0] after the final permutation.
+-- | `state[0]` after absorbing `pending` and the final permutation.
 squeeze
   :: forall f r
    . PoseidonField f
@@ -81,12 +77,8 @@ squeeze sponge pending = do
 -- Internal
 -------------------------------------------------------------------------------
 
--- | Conditionally add x to rate position based on pos.
--- | When pos = false (0), adds to state[0]; when pos = true (1), adds to state[1].
--- |
--- | For each rate position j, witnesses s_j' and constrains:
--- |   x * flag_j = s_j' - s_j
--- | where flag_0 = NOT pos, flag_1 = pos.
+-- | Add `x` to the rate slot selected by `pos`: `state[0]` when `pos`
+-- | is false, `state[1]` when true.
 addIn
   :: forall f r
    . PrimeField f
@@ -101,7 +93,6 @@ addIn state pos x = do
     s0 = Vector.index state (unsafeFinite @3 0)
     s1 = Vector.index state (unsafeFinite @3 1)
 
-  -- Update position 0: s0' = s0 + (NOT pos) * x
   s0' <- exists do
     s0Val <- readCVar s0
     flagVal <- read iEquals0
@@ -113,7 +104,6 @@ addIn state pos x = do
     , output: s0' `sub_` s0
     }
 
-  -- Update position 1: s1' = s1 + pos * x
   s1' <- exists do
     s1Val <- readCVar s1
     flagVal <- read iEquals1
@@ -128,8 +118,9 @@ addIn state pos x = do
   pure $ Vector.modifyAt (unsafeFinite @3 0) (const s0')
     $ Vector.modifyAt (unsafeFinite @3 1) (const s1') state
 
--- | Conditional poseidon permutation.
--- | Runs the permutation, then selects between permuted and original state.
+-- | The Poseidon permutation of `state`, selected against `state`
+-- | itself by `permute`. The permutation is emitted either way, so the
+-- | constraint count does not depend on the flag.
 condPermute
   :: forall f r
    . PoseidonField f
@@ -141,8 +132,9 @@ condPermute permute state = do
   permuted <- poseidon state
   if_ permute permuted state
 
--- | Process one pair of conditional absorptions.
--- | Matches OCaml's consume_pairs fold body exactly.
+-- | Absorb two flagged values, advancing the rate position by each
+-- | flag. Absorptions are folded in pairs so that a pair costs exactly
+-- | one permutation, whatever its flags.
 consumePair
   :: forall f r
    . PoseidonField f
@@ -154,41 +146,35 @@ consumePair { state, pos: p } (Tuple first second) = do
   let { b, x } = first
   let { b: b', x: y } = second
 
-  -- Position tracking
   p' <- xor_ p b
   posAfter <- xor_ p' b'
 
-  -- Mask y by b'
   yMasked <- mul_ y (coerce b')
 
-  -- Only add y after permutation when (b=1, b'=1, p=1)
+  -- `y` lands after the permutation only when `b`, `b'` and `p` hold.
   addInYAfter <- all_ [ b, b', p ]
   let addInYBefore = not_ addInYAfter
 
-  -- Add x*b to state at position p
   xb <- mul_ x (coerce b)
   state1 <- addIn state p xb
 
-  -- Add yMasked*before_flag to state at position p'
   yBefore <- mul_ yMasked (coerce addInYBefore)
   state2 <- addIn state1 p' yBefore
 
-  -- Compute permute flag: (b && b') || (p && (b || b'))
   bOrB' <- or_ b b'
   pAndBOrB' <- and_ p bOrB'
   bAndB' <- and_ b b'
   permute <- or_ bAndB' pAndBOrB'
 
-  -- Conditional permutation
   state3 <- condPermute permute state2
 
-  -- Add yMasked*after_flag to state at position p'
   yAfter <- mul_ yMasked (coerce addInYAfter)
   state4 <- addIn state3 p' yAfter
 
   pure { state: state4, pos: posAfter }
 
--- | Consume all pending absorptions and perform final permutation.
+-- | The state after absorbing every flagged value in `input`, with a
+-- | final conditional permutation.
 consume
   :: forall f r
    . PoseidonField f
@@ -198,7 +184,6 @@ consume
   -> Snarky f (KimchiConstraint f) r (Vector 3 (FVar f))
 consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   let
-    -- Build pairs array matching OCaml's Array.init
     { pairs, leftover } =
       let
         ps = mkPairs input
@@ -212,13 +197,10 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
                 ps.pairs
           }
 
-  -- Process all pairs
   { state, pos } <- foldM consumePair { state: initState, pos: startPos } pairs
 
-  -- Compute empty_input = not (any (map fst input))
   emptyInput <- not $ any_ (map fst input)
 
-  -- Handle remainder and compute should_permute
   case leftover of
     Nothing -> do
       shouldPermute <-
@@ -252,23 +234,23 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
       go (acc { pairs = acc.pairs `Array.snoc` Tuple a b }) rest
 
 -------------------------------------------------------------------------------
--- | Stateful OptSponge monad (matches OCaml's mutable Opt_sponge.t)
+-- | Stateful sponge monad
 -------------------------------------------------------------------------------
 
--- | Sponge phase: either accumulating absorptions or in squeezed state.
+-- | Accumulating flagged absorptions, or squeezed with `n` rate
+-- | elements already handed out.
 data OptSpongePhase f
   = Absorbing { nextIndex :: BoolVar f, xs :: List (Tuple (BoolVar f) (FVar f)) }
   | OptSqueezed Int
 
--- | Full mutable-like state for the Opt sponge.
+-- | The sponge state threaded by `OptSpongeM`.
 type OptSpongeState f =
   { state :: Vector 3 (FVar f)
   , phase :: OptSpongePhase f
   , needsFinalPermuteIfEmpty :: Boolean
   }
 
--- | Stateful Opt sponge monad: a hand-rolled state monad over `Snarky`
--- | (replaces `StateT` from `transformers`).
+-- | A state monad over `Snarky` carrying an `OptSpongeState`.
 newtype OptSpongeM f c r a = OptSpongeM (OptSpongeState f -> Snarky f c r (Tuple a (OptSpongeState f)))
 
 derive instance Newtype (OptSpongeM f c r a) _
@@ -287,7 +269,7 @@ instance Bind (OptSpongeM f c r) where
 
 instance Monad (OptSpongeM f c r)
 
--- | Run an OptSpongeM computation, returning both result and final state.
+-- | Run a computation from a fresh zero-state sponge.
 runOptSpongeM
   :: forall f r a
    . PrimeField f
@@ -302,8 +284,7 @@ runOptSpongeM computation =
     , needsFinalPermuteIfEmpty: true
     }
 
--- | Run an OptSpongeM computation starting from a regular sponge.
--- | Converts the regular sponge to OptSpongeState via ofSponge, then runs.
+-- | Run a computation from the state of an existing regular sponge.
 runOptSpongeFromSponge
   :: forall f r a
    . PoseidonField f
@@ -315,7 +296,6 @@ runOptSpongeFromSponge sponge computation = do
   initState <- ofSponge sponge
   unwrap computation initState
 
--- | Lift a Snarky computation into OptSpongeM.
 liftSnarky
   :: forall f r a
    . PrimeField f
@@ -323,7 +303,8 @@ liftSnarky
   -> OptSpongeM f (KimchiConstraint f) r a
 liftSnarky ma = wrap \s -> ma <#> \a -> Tuple a s
 
--- | Absorb a (flag, value) pair. Just accumulates; processing happens at squeeze.
+-- | Queue a (flag, value) pair. Nothing is absorbed until the next
+-- | squeeze.
 optAbsorb
   :: forall f r
    . PrimeField f
@@ -335,7 +316,7 @@ optAbsorb pair = wrap \s -> pure $ Tuple unit case s.phase of
   OptSqueezed _ ->
     s { phase = Absorbing { nextIndex: false_, xs: List.singleton pair } }
 
--- | Absorb a curve point with Boolean.true_ flag (unconditional).
+-- | Queue both coordinates of a point unconditionally.
 optAbsorbPoint
   :: forall f r
    . PrimeField f
@@ -345,11 +326,8 @@ optAbsorbPoint (AffinePoint { x, y }) = do
   optAbsorb (Tuple true_ x)
   optAbsorb (Tuple true_ y)
 
--- | Squeeze a field element from the Opt sponge.
--- | Matches OCaml's Opt_sponge.squeeze exactly:
--- | - If Absorbing: consume all pending, return state[0], switch to Squeezed 1
--- | - If Squeezed n < rate: return state[n], switch to Squeezed (n+1)
--- | - If Squeezed n = rate: permute, return state[0], switch to Squeezed 1
+-- | The next rate element, absorbing anything queued first and
+-- | permuting once the rate is exhausted.
 optSqueeze
   :: forall f r
    . PoseidonField f
@@ -375,18 +353,10 @@ optSqueeze = wrap \s -> case s.phase of
     pure $ Tuple (Vector.index newState (unsafeFinite @3 0))
       (s { state = newState, phase = OptSqueezed 1, needsFinalPermuteIfEmpty = true })
 
--- | Diagnostic: flush pending absorbs and return the resulting 3-field
--- | sponge state — equivalent to the state an external reference
--- | sponge (e.g. kimchi's) would be in right before the next squeeze.
--- |
--- | After this call, the sponge is left in `OptSqueezed 0` phase with
--- | state = post-consume state. The next `optSqueeze` then returns
--- | state[0] and advances to `OptSqueezed 1` — exactly what would
--- | happen if this peek hadn't been called AND the pending absorbs
--- | had been consumed by that optSqueeze's own Absorbing branch.
--- |
--- | Safe to insert just before a `optChallenge` / `optScalarChallenge`
--- | call for debugging without changing circuit semantics.
+-- | Absorb everything queued and return the resulting 3-element
+-- | state, leaving the sponge in `OptSqueezed 0`. It emits the
+-- | constraints the next squeeze would have emitted anyway, so a peek
+-- | before a challenge adds nothing to the circuit.
 peekPreSqueezeState
   :: forall f r
    . PoseidonField f
@@ -410,8 +380,8 @@ peekPreSqueezeState = wrap \s -> case s.phase of
           }
       )
 
--- | Squeeze a challenge (lowest 128 bits, constrain_low_bits:true).
--- | Matches OCaml's Opt.challenge.
+-- | A 128-bit challenge: the low half of a squeeze, with both halves
+-- | range-checked.
 optChallenge
   :: forall f r
    . PrimeField f
@@ -423,8 +393,8 @@ optChallenge endo = do
   x <- optSqueeze
   liftSnarky $ lowest128Bits' true endo x
 
--- | Squeeze a scalar challenge (lowest 128 bits, constrain_low_bits:false).
--- | Matches OCaml's Opt.scalar_challenge.
+-- | A 128-bit scalar challenge. Only the high half is range-checked,
+-- | so the result is pinned only by `x = lo + hi * 2^128`.
 optScalarChallenge
   :: forall f r
    . PrimeField f
@@ -436,8 +406,11 @@ optScalarChallenge endo = do
   x <- optSqueeze
   liftSnarky $ lowest128Bits' false endo x
 
--- | Convert OptSponge state to a regular Sponge for continuation (e.g., bulletproof check).
--- | Only valid when the OptSponge is in Squeezed state.
+-- | The sponge as a regular `Sponge`, for code that continues on the
+-- | unconditional interface. Only defined after a squeeze: a
+-- | `RegSponge.Sponge` has no room for the queued flagged absorptions,
+-- | so converting mid-absorb would drop them and silently continue on
+-- | a different transcript.
 toRegularSponge
   :: forall f r
    . PrimeField f
@@ -448,13 +421,11 @@ toRegularSponge = wrap \s -> case s.phase of
       { state: s.state, spongeState: RegSponge.Squeezed (unsafeFinite @3 n) }
       s
   Absorbing _ ->
-    pure $ Tuple
-      { state: s.state, spongeState: RegSponge.Absorbed (unsafeFinite @3 0) }
-      s
+    unsafeThrow "toRegularSponge: still absorbing; squeeze first"
 
--- | Convert a regular sponge to OptSpongeState, matching OCaml's Opt_sponge.of_sponge.
--- |
--- | Reference: mina/src/lib/crypto/pickles/opt_sponge.ml:46-74
+-- | A regular sponge's state as an `OptSpongeState`. A sponge with
+-- | both rate slots filled is permuted here, which is why that case
+-- | alone clears `needsFinalPermuteIfEmpty`.
 ofSponge
   :: forall f r
    . PoseidonField f
@@ -482,7 +453,6 @@ ofSponge sponge = case sponge.spongeState of
         , needsFinalPermuteIfEmpty: true
         }
     _ -> do
-      -- Absorbed 2: apply permutation, reset to position 0
       permuted <- poseidon sponge.state
       pure
         { state: permuted
