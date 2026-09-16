@@ -507,8 +507,7 @@ instance (CheckedType f c avar, CheckedType f c bvar) => CheckedType f c (Tuple 
   check = genericCheck
 
 -- | `Const Unit a` has no content to check, regardless of `a`. Used
--- | by higher-kinded slot-list representations (see
--- | `Pickles.Wrap.Slots`).
+-- | by higher-kinded list representations as the nil case.
 instance CheckedType f c (Const Unit a) where
   check _ = pure unit
 

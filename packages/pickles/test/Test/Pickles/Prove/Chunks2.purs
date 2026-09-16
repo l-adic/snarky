@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -71,7 +71,7 @@ chunks2Rule _ _ = do
 -- | Single-rule carrier for chunks2: one `RulesCons` for the leaf rule,
 -- | terminated by `RulesNil`. Same shape as NRR (N=0, no prevs).
 type Chunks2Rules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -90,7 +90,7 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- @nc=1 is a placeholder for the side-loaded-slot chunks count
     -- (no side-loaded slots here; nc is irrelevant but must be pinned
     -- for `Reflectable nc Int` to resolve at module-load time).
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit @1 @1 chunks2Rule unit
+    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks2Rule Vector.nil
     let rules = tuple1 chunks2Entry
 
     logInfo "[Chunks2] compiling…"
@@ -98,7 +98,6 @@ spec = describe "Pickles.Prove.Chunks2" do
       @Chunks2Rules
       @Unit
       @Unit
-      @NoSlots
       @2
       noAdvice
       { srs: { vestaSrs, pallasSrs }

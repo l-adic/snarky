@@ -21,9 +21,10 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Slots (Compiled, Slot)
+import Pickles.Sideload.VerificationKey as SLVK
+import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
-import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -90,12 +91,12 @@ compileStepMainSimpleChainN2 params = do
       dummyAdvice
         :: StepAdvice _ _ _ _ _ _
              ( Tuple
-                 ( PerProofWitness 2 1 StepIPARounds WrapIPARounds (F StepField)
+                 ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                      (Type2 (SplitField (F StepField) Boolean))
                      Boolean
                  )
                  ( Tuple
-                     ( PerProofWitness 2 1 StepIPARounds WrapIPARounds (F StepField)
+                     ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                          (Type2 (SplitField (F StepField) Boolean))
                          Boolean
                      )
@@ -108,7 +109,7 @@ compileStepMainSimpleChainN2 params = do
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 2 1 (StatementIO (F StepField) Unit)) (Slot Compiled 2 1 (StatementIO (F StepField) Unit)))
+          @(Tuple2 (Slot 2 (StatementIO (F StepField) Unit)) (Slot 2 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
@@ -116,20 +117,20 @@ compileStepMainSimpleChainN2 params = do
           )
           @2
           @1
-          @Unit
-          @1
+          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           simpleChainN2Rule
-          { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
               (selfLog2 :< Vector.nil) :< (selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
-          , perSlotVkBlueprints: VkBlueprintShared /\ VkBlueprintShared /\ unit
+          , perSlotVkBlueprints:
+              BlueprintSelf params.lagrangeAt /\ BlueprintSelf params.lagrangeAt /\ unit
           }
           dummyWrapSg
-          -- Side-loaded VK carrier: two Cons slots,
-          -- both compiled; carrier = `Unit /\ Unit /\ Unit`.
-          (tuple2 unit unit)
+          -- Side-loaded VK carrier: two Cons slots, both compiled Self
+          -- prevs, so neither cell is read; the compile-time dummy
+          -- descriptor fills both.
+          (tuple2 SLVK.compileDummy SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

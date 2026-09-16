@@ -9,6 +9,7 @@ module Pickles.Step.Types
   , FopProofState(..)
   , ProofState(..)
   , PerProofWitness(..)
+  , perProofWitnessTyp
   ) where
 
 import Prelude
@@ -18,6 +19,7 @@ import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, tuple10, tuple2, tupl
 import Data.Vector (Vector)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
+import Pickles.Typ (Typ, arrayTyp, pairTyp, transportTyp, typOf, unitTyp)
 import Pickles.Types (StepAllEvals, WrapProofMessages, WrapProofOpening)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
@@ -320,77 +322,92 @@ instance
 -- | type as a separate parameter (see `composition_types.ml:188`). The
 -- | Pasta protocol constants only appear at top-level bindings that
 -- | instantiate the type.
-newtype PerProofWitness (n :: Int) (stepChunks :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
+newtype PerProofWitness (stepChunks :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
   { wrapProof :: WrapProof dw stepChunks (WeierstrassAffinePoint PallasG f) sf
   , proofState :: ProofState ds f b
   , prevEvals :: StepAllEvals f
-  , prevChallenges :: Vector n (UnChecked (Vector ds f))
-  , prevSgs :: Vector n (WeierstrassAffinePoint PallasG f)
+  -- | One entry per previous proof the slot's own wrap proof verified,
+  -- | so as many as that slot's `max_local_max_proofs_verified`. The
+  -- | width is not in the type: it comes from the application spec and
+  -- | reaches the circuit through `perProofWitnessTyp`.
+  , prevChallenges :: Array (UnChecked (Vector ds f))
+  , prevSgs :: Array (WeierstrassAffinePoint PallasG f)
   }
 
 -- | Tuple shape for PerProofWitness, parameterized by:
--- |   - n / stepChunks / ds / dw : vector lengths (propagated from the newtype)
+-- |   - stepChunks / ds / dw : vector lengths (propagated from the newtype)
 -- |   - x           : field element type (F f or FVar f)
 -- |   - sf          : shifted-f type
 -- |   - b           : boolean type
-type PerProofWitnessTuple n stepChunks ds dw x sf b =
+-- |
+-- | This is no longer a `CircuitType`; the two per-previous-proof fields
+-- | are arrays, so nothing can count them from the type alone. It
+-- | survives as the order `perProofWitnessTyp` lays the fields out in,
+-- | which is the order the derived instance used to lay them out in.
+type PerProofWitnessTuple stepChunks ds dw x sf b =
   Tuple5
     (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG x) sf)
     (ProofState ds x b)
     (StepAllEvals x)
-    (Vector n (UnChecked (Vector ds x)))
-    (Vector n (WeierstrassAffinePoint PallasG x))
+    (Array (UnChecked (Vector ds x)))
+    (Array (WeierstrassAffinePoint PallasG x))
 
-instance
-  ( FieldSizeInBits f m
-  , CircuitType f sf sfvar
-  , Reflectable n Int
-  , Reflectable stepChunks Int
-  , Reflectable ds Int
-  , Reflectable dw Int
-  ) =>
-  CircuitType f
-    (PerProofWitness n stepChunks ds dw (F f) sf Boolean)
-    (PerProofWitness n stepChunks ds dw (FVar f) sfvar (BoolVar f)) where
-  sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(PerProofWitnessTuple n stepChunks ds dw (F f) sf Boolean))
-  valueToFields (PerProofWitness r) = genericValueToFields
-    (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
-  fieldsToValue fs =
-    let
-      tup :: PerProofWitnessTuple n stepChunks ds dw (F f) sf Boolean
-      tup = genericFieldsToValue fs
-    in
-      uncurry5
-        ( \wrapProof proofState prevEvals prevChallenges prevSgs ->
-            PerProofWitness { wrapProof, proofState, prevEvals, prevChallenges, prevSgs }
-        )
-        tup
-  varToFields (PerProofWitness r) = genericVarToFields
-    @(PerProofWitnessTuple n stepChunks ds dw (F f) sf Boolean)
-    (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
-  fieldsToVar fs =
-    let
-      tup :: PerProofWitnessTuple n stepChunks ds dw (FVar f) sfvar (BoolVar f)
-      tup = genericFieldsToVar @(PerProofWitnessTuple n stepChunks ds dw (F f) sf Boolean) fs
-    in
-      uncurry5
-        ( \wrapProof proofState prevEvals prevChallenges prevSgs ->
-            PerProofWitness { wrapProof, proofState, prevEvals, prevChallenges, prevSgs }
-        )
-        tup
+perProofWitnessTuple
+  :: forall stepChunks ds dw x sf b
+   . PerProofWitness stepChunks ds dw x sf b
+  -> PerProofWitnessTuple stepChunks ds dw x sf b
+perProofWitnessTuple (PerProofWitness r) =
+  tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
 
-instance
-  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
-  , CheckedType StepField (KimchiConstraint StepField) (ProofState ds (FVar StepField) (BoolVar StepField))
-  , CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
-  , Reflectable n Int
-  , Reflectable ds Int
-  ) =>
-  CheckedType StepField (KimchiConstraint StepField) (PerProofWitness n stepChunks ds dw (FVar StepField) sfvar (BoolVar StepField)) where
-  check (PerProofWitness r) =
-    let
-      tup :: PerProofWitnessTuple n stepChunks ds dw (FVar StepField) sfvar (BoolVar StepField)
-      tup = tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
-    in
-      check tup
+perProofWitnessOfTuple
+  :: forall stepChunks ds dw x sf b
+   . PerProofWitnessTuple stepChunks ds dw x sf b
+  -> PerProofWitness stepChunks ds dw x sf b
+perProofWitnessOfTuple = uncurry5
+  \wrapProof proofState prevEvals prevChallenges prevSgs ->
+    PerProofWitness { wrapProof, proofState, prevEvals, prevChallenges, prevSgs }
+
+-- | A slot's per-proof witness as a value, at that slot's own
+-- | `max_local_max_proofs_verified`.
+-- |
+-- | The chain lists the five fields in `PerProofWitnessTuple` order,
+-- | which is the order the derived instance emitted before the width
+-- | left the type. `pairTyp` reproduces a product's layout, so the
+-- | allocation is unchanged; what changed is that the last two fields
+-- | are sized by the argument rather than by a type index.
+-- |
+-- | The three fields that never depended on the width still come from
+-- | the class, so only the last two are described by hand.
+perProofWitnessTyp
+  :: forall stepChunks ds dw sf sfvar
+   . Reflectable ds Int
+  => CircuitType StepField
+       (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG (F StepField)) sf)
+       (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
+  => CheckedType StepField (KimchiConstraint StepField)
+       (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
+  => CircuitType StepField
+       (ProofState ds (F StepField) Boolean)
+       (ProofState ds (FVar StepField) (BoolVar StepField))
+  => CheckedType StepField (KimchiConstraint StepField)
+       (ProofState ds (FVar StepField) (BoolVar StepField))
+  => CircuitType StepField (StepAllEvals (F StepField)) (StepAllEvals (FVar StepField))
+  => CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
+  => Int
+  -> Typ StepField (KimchiConstraint StepField)
+       (PerProofWitness stepChunks ds dw (F StepField) sf Boolean)
+       (PerProofWitness stepChunks ds dw (FVar StepField) sfvar (BoolVar StepField))
+perProofWitnessTyp width =
+  transportTyp
+    perProofWitnessTuple
+    perProofWitnessOfTuple
+    perProofWitnessTuple
+    ( pairTyp typOf
+        ( pairTyp typOf
+            ( pairTyp typOf
+                ( pairTyp (arrayTyp width typOf)
+                    (pairTyp (arrayTyp width typOf) unitTyp)
+                )
+            )
+        )
+    )

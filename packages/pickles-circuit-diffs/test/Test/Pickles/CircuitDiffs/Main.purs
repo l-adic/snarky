@@ -949,7 +949,8 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
             }
           tprStepSrsData =
-            { perSlotLagrangeAt: tprLagrangeAtD13 :< tprLagrangeAtD14 :< Vector.nil
+            { slot0LagrangeAt: tprLagrangeAtD13
+            , slot1LagrangeAt: tprLagrangeAtD14
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
             , nrrWrapSrsData: wrapTprNrrWrapSrsData
             , nrrStepSrsData: wrapTprNrrStepSrsData
@@ -1092,7 +1093,7 @@ spec bundle =
         exactMatchEff "chunks2_step_main_circuit" (fromCompiledCircuit <<< _.stepCs =<< compileStepMainChunks2 stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
-        -- * per-slot SPPW sizing  (`Slot Compiled 0 (Slot Compiled 2 …)`)
+        -- * per-slot SPPW sizing  (`Slot 0 … /\ Slot 2 … /\ Unit`)
         -- * per-slot FOP domain   (`[13, 14]`)
         -- * per-slot wrap VK      (`[Just no_rec_vk, Nothing]`)
         -- * per-slot lagrange     (`[domain 13 lookup, domain 14 lookup]`).
@@ -1128,7 +1129,8 @@ spec bundle =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           treeProofReturnSrsData =
-            { perSlotLagrangeAt: lagrangeAtD13 :< lagrangeAtD14 :< Vector.nil
+            { slot0LagrangeAt: lagrangeAtD13
+            , slot1LagrangeAt: lagrangeAtD14
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData

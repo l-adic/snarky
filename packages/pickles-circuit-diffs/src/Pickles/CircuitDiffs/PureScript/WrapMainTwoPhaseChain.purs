@@ -3,7 +3,7 @@
 -- |
 -- | * `branches = 2` (make_zero + increment).
 -- | * `step_widths = [0; 1]` (make_zero verifies 0 prevs, increment 1).
--- | * `slots = Slots1 1` (mpv=N1, single slot of width 1).
+-- | * slot widths `[1]` (mpv=N1, single slot of width 1).
 -- | * Per-branch step domains `[9; 14]` differ, so `wrap_main` goes
 -- |   through the per-branch `lagrange_with_correction` dispatch path.
 -- | * `Features.none`.
@@ -35,7 +35,6 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (Slots1)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -104,13 +103,13 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH, makeZeroStepSrsD
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- Slots1 1: mpv=1, single slot of max width 1.
+  -- mpv=1, single slot of max width 1.
   let
-    dummyAdvice :: WrapAdvice 1 1 (Slots1 1)
+    dummyAdvice :: WrapAdvice 1 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @2 @(Slots1 1) @1 config stmt dummyAdvice)
-  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    (\stmt -> wrapMain @2 @1 @1 config stmt dummyAdvice (1 :< Vector.nil))
+  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: incrementArt.stepCs
     , stepDomainLog2: incrementArt.stepDomainLog2

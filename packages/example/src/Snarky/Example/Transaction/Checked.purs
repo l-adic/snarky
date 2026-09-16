@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Ref as Ref
 import Mina.ChainId (ChainId, signaturePrefix)
-import Pickles (BranchProver(..), Compiled, CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), Slots2, StatementIO(..), Verifier, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), Verifier, compileMulti, mkRuleEntry)
 import Pickles.Step.Main (RuleOutput)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Advice (badAdvice)
@@ -251,11 +251,10 @@ type TxnStmt = StatementIO (Statement Vesta.ScalarField) NoOutput
 -- | (merge) has two `Self` slots, each width 2 (a proof of THIS mpv=2
 -- | program) at one chunk.
 type TxnSnarkRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     ( RulesCons 2
         (TxnStmt /\ TxnStmt /\ Unit)
-        (Slot Compiled 2 1 TxnStmt /\ Slot Compiled 2 1 TxnStmt /\ Unit)
-        (SlotWrapKey /\ SlotWrapKey /\ Unit)
+        (Slot 2 TxnStmt /\ Slot 2 TxnStmt /\ Unit)
         RulesNil
     )
 
@@ -299,21 +298,17 @@ compileTxCircuit chainId lagrangeCache srs = do
       @2
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @1
-      @1
       @(TxAdviceRow d ())
       (baseRule @d chainId)
-      unit
+      Vector.nil
   mergeEntry <-
     mkRuleEntry
       @2
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @1
-      @1
       @(TxAdviceRow d ())
       mergeRule
-      (tuple2 Self Self)
+      (Self :< Self :< Vector.nil)
 
   let rules = tuple2 baseEntry mergeEntry
 
@@ -322,7 +317,6 @@ compileTxCircuit chainId lagrangeCache srs = do
       @TxnSnarkRules
       @NoOutput
       @(Statement Vesta.ScalarField)
-      @(Slots2 2 2)
       @1
       badAdvice
       cfg
@@ -345,7 +339,7 @@ compileTxCircuit chainId lagrangeCache srs = do
         mergeProver (runTransferMaskM { currentTransaction: Nothing, mask })
           { appInput: statement
           , prevs: tuple2 (InductivePrev proof1 out.tag) (InductivePrev proof2 out.tag)
-          , sideloadedVKs: tuple2 unit unit
+          , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
           } >>= case _ of
           Left err -> throw $ show err
           Right res -> pure res

@@ -36,9 +36,10 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Slots (Compiled, Slot)
+import Pickles.Sideload.VerificationKey as SLVK
+import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
-import Pickles.Step.Main (RuleOutput, SlotVkBlueprintCompiled(..), stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
@@ -58,7 +59,8 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | override_wrap_domain:N1). Each slot needs its own lagrange lookup
 -- | keyed on the slot's domain size.
 type StepMainTreeProofReturnParams =
-  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup 1 StepField)
+  { slot0LagrangeAt :: LagrangeBaseLookup 1 StepField
+  , slot1LagrangeAt :: LagrangeBaseLookup 1 StepField
   , blindingH :: AffinePoint (F StepField)
   -- SRS data for compiling NRR's wrap circuit (used to derive slot 0's
   -- known wrap key).
@@ -117,12 +119,12 @@ compileStepMainTreeProofReturn params = do
       dummyAdvice
         :: StepAdvice _ _ _ _ _ _
              ( Tuple
-                 ( PerProofWitness 0 1 StepIPARounds WrapIPARounds (F StepField)
+                 ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                      (Type2 (SplitField (F StepField) Boolean))
                      Boolean
                  )
                  ( Tuple
-                     ( PerProofWitness 2 1 StepIPARounds WrapIPARounds (F StepField)
+                     ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                          (Type2 (SplitField (F StepField) Boolean))
                          Boolean
                      )
@@ -134,28 +136,30 @@ compileStepMainTreeProofReturn params = do
       dummyAdvice = unsafeCoerce unit
     compile noAdvice (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain
-          @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
+          @(Tuple2 (Slot 0 (StatementIO Unit (F StepField))) (Slot 2 (StatementIO Unit (F StepField))))
           @Unit
           @(F StepField)
           @(F StepField)
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
           @1
-          @Unit
-          @1
+          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           treeProofReturnRule
-          { perSlotLagrangeAt: params.perSlotLagrangeAt
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
               (nrrArt.stepDomainLog2 :< Vector.nil)
                 :< (selfLog2 :< Vector.nil)
                 :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints:
-              VkBlueprintConst nrrArt.wrapVk /\ VkBlueprintShared /\ unit
+              -- Heterogeneous wrap domains: slot 0 reads NRR's basis at
+              -- 2^13, slot 1 self's at 2^14. Each travels with its slot.
+              BlueprintExternal params.slot0LagrangeAt nrrArt.wrapVk
+                /\ BlueprintSelf params.slot1LagrangeAt
+                /\ unit
           }
           dummyWrapSg
-          (tuple2 unit unit)
+          (tuple2 SLVK.compileDummy SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

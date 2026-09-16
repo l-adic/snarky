@@ -23,8 +23,7 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Wrap.Advice (WrapAdvice)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -61,11 +60,11 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=0, no per_proofs; slots derived from Unit via funcdep.
   let
-    dummyAdvice :: WrapAdvice 0 1 NoSlots
+    dummyAdvice :: WrapAdvice 0 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit @1 config stmt dummyAdvice)
-  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    (\stmt -> wrapMain @1 @0 @1 config stmt dummyAdvice Vector.nil)
+  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2

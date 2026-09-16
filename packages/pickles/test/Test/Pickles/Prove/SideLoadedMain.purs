@@ -1,7 +1,7 @@
 -- | End-to-end test for the side-loaded `step_main` pipeline.
 -- |
 -- | Drives `compileMulti` over a 1-rule spec whose single prev slot is
--- | a `Slot SideLoaded` (= the prev's wrap key is supplied at
+-- | a side-loaded slot (= the prev's wrap key is supplied at
 -- | prove time rather than compile time). The test compiles an
 -- | Input-mode `No_recursion` child, drives its prover to obtain a
 -- | `CompiledProof 0`, width-lifts to the side-loaded tag's bound, and
@@ -27,7 +27,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, NoSlots, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoaded, Slot, Slots1, StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -90,14 +90,13 @@ noRecursionInputRule _ self = do
 -- | 1-rule carrier for the Input-mode No_recursion child (mpv=0,
 -- | valCarrier=Unit, no prevs).
 type NoRecursionInputRules =
-  RulesCons 0 Unit Unit Unit RulesNil
+  RulesCons 0 Unit Unit RulesNil
 
 -- | 1-rule carrier with a single side-loaded prev slot, `Width.Max = N2`.
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
-    (Tuple1 Unit)
+    (Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
     RulesNil
 
 -- | Side-loaded main rule. Asserts `1 + prev == self` OR base case,
@@ -134,15 +133,14 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
     -- (at log2 = 13, `mpv = N0` → `wrap_domains.h = 13`) becomes the
     -- runtime `wrapVk` for the side-loaded slot.
-    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField) @1 @1
+    childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
       noRecursionInputRule
-      unit
+      Vector.nil
 
     child <- withSpan "[SideLoadedMain] compile child" $ liftEffect $ compileMulti
       @NoRecursionInputRules
       @Unit
       @(F StepField)
-      @NoSlots
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }
@@ -192,16 +190,13 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @1
       @Unit
       @(F StepField)
-      @1
-      @1
       sideLoadedMainRule
-      (tuple1 unit)
+      (SideLoadedKey :< Vector.nil)
 
     parent <- withSpan "[SideLoadedMain] compile parent" $ liftEffect $ compileMulti
       @SideLoadedMainRules
       @Unit
       @(F StepField)
-      @(Slots1 2)
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }
@@ -227,7 +222,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
       , prevs: tuple1 (InductivePrev childCp2' childTag2)
-      , sideloadedVKs: childVK /\ unit
+      , sideloadedVKs: SideLoadedVk childVK /\ unit
       }
     case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)

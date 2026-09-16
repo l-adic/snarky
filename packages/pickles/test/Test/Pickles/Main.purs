@@ -10,6 +10,7 @@ import Test.Pickles.Prove.Chunks4 as Chunks4
 import Test.Pickles.Prove.Codecs as Codecs
 import Test.Pickles.Prove.CompileValidation as CompileValidation
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
+import Test.Pickles.Prove.PaddedWideSlots as PaddedWideSlots
 import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.SimpleChainN2 as SimpleChainN2
@@ -53,6 +54,7 @@ spec = beforeAll buildSharedSrs do
   Codecs.spec
   SimpleChain.spec
   SimpleChainN2.spec
+  PaddedWideSlots.spec
   Chunks2.spec
   Chunks4.spec
   SideLoadedMain.spec

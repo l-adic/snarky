@@ -49,18 +49,20 @@ import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 -- | * `stepChunks` — THIS compile's own num_chunks (the wrap wraps a
 -- |   step proof from the current compile, whose commitments are at the
 -- |   current compile's chunk count).
--- | * `slots` — the slot-list shape, a `Type -> Type` from
--- |   `Pickles.Wrap.Slots` (`NoSlots`, `Slots1 w`, or `Slots2 w0 w1`).
--- |
 -- | The commitment curve is pinned to `VestaG` (the Step proof's
 -- | commitment curve) and the field to `WrapField` (= `Vesta.BaseField`
 -- | = the native field of the wrap circuit).
-type WrapAdvice (mpv :: Int) (stepChunks :: Int) (slots :: Type -> Type) =
+type WrapAdvice (mpv :: Int) (stepChunks :: Int) =
   { whichBranch :: F WrapField
   , wrapProofState ::
       PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
   , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
-  , oldBpChals :: slots (Vector WrapIPARounds (F WrapField))
+  -- | One stack of bullet-proof challenges per slot, each as wide as
+  -- | that slot's `max_local_max_proofs_verified`. Allocated by
+  -- | `Pickles.Typ.perSlotTyp` against widths the compiler supplies, so
+  -- | the shape is a value rather than the nested `Product` of `Vector w`
+  -- | it used to be.
+  , oldBpChals :: Array (Array (Vector WrapIPARounds (F WrapField)))
   , evals :: Vector mpv (StepAllEvals (F WrapField))
   , wrapDomainIndices :: Vector mpv (F WrapField)
   , openingProof ::

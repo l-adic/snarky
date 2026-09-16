@@ -127,7 +127,7 @@ compileStepMainSideLoadedChild params = do
       -- digest — no unfinalized_proofs, no msgs_wrap entries).
       -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
       -- @valCarrier @mpvMax @nd. Implicit: input/output/prevInput
-      -- (CircuitType funcdep), mpvPad (MpvPadding), outputSize
+      -- (CircuitType funcdep), mpvPad (Add), outputSize
       -- (Mul/Add chain).
       ( \_ -> stepMain
           @Unit
@@ -138,10 +138,8 @@ compileStepMainSideLoadedChild params = do
           @0
           @1
           @Unit
-          @1
           sideLoadedChildRule
-          { perSlotLagrangeAt: Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotFopZkRows: Vector.nil
           , perSlotVkBlueprints: unit

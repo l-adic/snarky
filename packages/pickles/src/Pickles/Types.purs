@@ -285,7 +285,7 @@ instance
 -- |
 -- |   * `slotVkChunks` — Dim 3, **per-slot**. A side-loaded slot's
 -- |     own VK chunk count — a parameter of an individual
--- |     `Slot SideLoaded mpv slotVkChunks stmt`, so distinct slots in
+-- |     `Slot mpv slotVkChunks stmt`, so distinct slots in
 -- |     one compile may differ. Sites: `SLVK.VerificationKey`,
 -- |     `mkRuleEntry @… @slotVkChunks`.
 -- |

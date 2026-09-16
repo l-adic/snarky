@@ -15,7 +15,6 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
-import Data.Tuple.Nested (Tuple2)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -23,15 +22,11 @@ import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCom
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
 import Pickles.Field (StepField, WrapField)
-import Pickles.Slots (Compiled, Slot)
-import Pickles.Types (StatementIO)
 import Pickles.Wrap.Advice (WrapAdvice)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
@@ -63,18 +58,17 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   -- TPR: 2 prev slots, [NRR (n=0); self (n=2)]; slots derived from
   -- PrevsSpec via funcdep.
   let
-    dummyAdvice :: WrapAdvice 2 1 (Slots2 0 2)
+    dummyAdvice :: WrapAdvice 2 1
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
-        wrapMainForPrevs @1
-          @(Tuple2 (Slot Compiled 0 1 (StatementIO Unit (F StepField))) (Slot Compiled 2 1 (StatementIO Unit (F StepField))))
-          @1
+        wrapMain @1 @2 @1
           config
           stmt
           dummyAdvice
+          (0 :< 2 :< Vector.nil)
     )
-  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2

@@ -2,16 +2,22 @@
 -- |
 -- | Carriers are spec-indexed and phase-aware:
 -- |
--- | * Compile-time path uses the side-loaded VK descriptor directly at
--- |   side-loaded slots — synthesised pure from the spec via
--- |   `MkUnitVkCarrier` (`SLVK.compileDummy`). No kimchi
--- |   `VerifierIndex` because the in-circuit walk only reads the
--- |   descriptor; the runtime handle is not needed.
+-- | * Compile-time path uses the side-loaded VK descriptor —
+-- |   synthesised pure from the spec via `MkUnitVkCarrier`
+-- |   (`SLVK.compileDummy`). No kimchi `VerifierIndex` because the
+-- |   in-circuit walk only reads the descriptor; the runtime handle is
+-- |   not needed.
 -- |
--- | * Prove-time path uses `Bundle` at side-loaded slots — declared by
--- |   `SideloadedVKsCarrier`. Carries both halves: the descriptor (for
--- |   the in-circuit walk) and the hydrated `VerifierIndex` (for the
--- |   prover machinery).
+-- | * Prove-time path uses `SlotProveVk` — declared by
+-- |   `SideloadedVKsCarrier`. Its `Bundle` carries both halves: the
+-- |   descriptor (for the in-circuit walk) and the hydrated
+-- |   `VerifierIndex` (for the prover machinery). `NoSideLoadedVk` is
+-- |   the cell of a compiled slot, whose key is a compile-time
+-- |   constant.
+-- |
+-- | Both carriers are uniform across slots. Which slots are side-loaded
+-- | is runtime data (the slot's `SlotWrapKey`), not a type-level fact,
+-- | so neither carrier can vary its cell per slot.
 -- |
 -- | Reference: OCaml `Pickles.Side_loaded` + `step_main.ml:520-525`.
 module Pickles.Sideload.Advice
@@ -24,13 +30,13 @@ module Pickles.Sideload.Advice
 
 import Prelude
 
-import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import Pickles.Field (StepField)
-import Pickles.Sideload.Bundle (Bundle)
+import Pickles.Sideload.Bundle (SlotProveVk)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
-import Pickles.Slots (Compiled, SideLoaded, Slot)
+import Pickles.Slots (Slot)
+import Pickles.Types (WrapVkChunks)
 import Snarky.Circuit.DSL (F)
 
 -- | Prove-time spec-indexed VK carrier shape. Funcdep
@@ -38,29 +44,24 @@ import Snarky.Circuit.DSL (F)
 -- | alone.
 -- |
 -- | * `Unit` → `Unit`
--- | * `Slot Compiled n nc stmt /\ rest` → `Unit /\ restCarrier`
--- | * `Slot SideLoaded mpvMax nc stmt /\ rest` → `Bundle /\ restCarrier`
+-- | * `Slot n nc stmt /\ rest` → `SlotProveVk nc /\ restCarrier`
+-- |
+-- | Every slot gets the same cell, because whether a slot is
+-- | side-loaded is a property of its `SlotWrapKey`, not of its type.
+-- | A side-loaded slot supplies `SideLoadedVk` the runtime bundle; a
+-- | compiled slot, whose key is a compile-time constant, supplies
+-- | `NoSideLoadedVk`. The `Bundle nc` carries the slot's chunks count
+-- | (the slot's own `nc` from `Slot n nc statement`).
 class SideloadedVKsCarrier :: Type -> Type -> Constraint
 class SideloadedVKsCarrier spec carrier | spec -> carrier
 
 instance SideloadedVKsCarrier Unit Unit
 
--- | Compiled slot — wrap_key + step_domains come from compile-time-baked
--- | data, no runtime VK needed.
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot Compiled n slotVkChunks statement /\ rest)
-    (Unit /\ restCarrier)
-
--- | Side-loaded slot — runtime VK supplied via the prover input. The
--- | `Bundle nc` carries the slot's chunks count as Dim 3 (the slot's
--- | own `nc` from `Slot SideLoaded mpvMax nc statement`).
-instance
-  SideloadedVKsCarrier rest restCarrier =>
-  SideloadedVKsCarrier
-    (Slot SideLoaded mpvMax slotVkChunks statement /\ rest)
-    (Bundle slotVkChunks /\ restCarrier)
+    (Slot n statement /\ rest)
+    (SlotProveVk WrapVkChunks /\ restCarrier)
 
 -- | Prover-monad source for the spec-indexed VK carrier.
 -- |
@@ -84,10 +85,14 @@ instance
   getSideloadedVKsCarrier _ = pure (mkUnitVkCarrier @spec)
 
 -- | Synthesises a compile-time placeholder carrier matching the spec
--- | shape. Compiled slots become `Unit`; side-loaded slots become
--- | `SLVK.compileDummy`. Pure construction — no kimchi FFI required,
--- | because the placeholder is just the descriptor (the in-circuit
--- | walk reads no `VerifierIndex`).
+-- | shape: `SLVK.compileDummy` at every slot. Pure construction — no
+-- | kimchi FFI required, because the placeholder is just the descriptor
+-- | (the in-circuit walk reads no `VerifierIndex`).
+-- |
+-- | Compiled slots get a dummy descriptor they never read: the
+-- | constraint-system pass discards prover-supplied values, and a
+-- | compiled slot's blueprint routes to `ConstVk` / `SharedExistsVk`
+-- | without touching the cell at all.
 class MkUnitVkCarrier :: Type -> Type -> Constraint
 class MkUnitVkCarrier spec (carrier :: Type) | spec -> carrier where
   mkUnitVkCarrier :: carrier
@@ -97,14 +102,7 @@ instance MkUnitVkCarrier Unit Unit where
 
 instance
   MkUnitVkCarrier rest restCarrier =>
-  MkUnitVkCarrier (Slot Compiled n slotVkChunks statement /\ rest) (Unit /\ restCarrier) where
-  mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
-
-instance
-  ( MkUnitVkCarrier rest restCarrier
-  , Reflectable slotVkChunks Int
-  ) =>
   MkUnitVkCarrier
-    (Slot SideLoaded mpvMax slotVkChunks statement /\ rest)
-    (SLVK.VerificationKey slotVkChunks (F StepField) Boolean /\ restCarrier) where
+    (Slot n statement /\ rest)
+    (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest

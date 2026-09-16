@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), NoSlots, RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, FVar, const_)
@@ -49,7 +49,7 @@ nrrRule _ _ = pure
 -- | NRR's 1-rule carrier shape: a single `RulesCons` for the no-prev
 -- | rule, terminated by `RulesNil`.
 type NrrRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -60,7 +60,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
-    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
 
     let rules = tuple1 nrrEntry
 
@@ -69,7 +69,6 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       @NrrRules
       @(F StepField)
       @Unit
-      @NoSlots
       @1
       noAdvice
       { srs: { vestaSrs, pallasSrs }

@@ -27,8 +27,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainChunks2 (StepMainChunks2Params, c
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Wrap.Advice (WrapAdvice)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -91,15 +90,15 @@ compileWrapMainChunks2 { blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- `slots` derived from `@Unit` via `SlotsFromSpec` funcdep. The
+  -- mpv=0: no prev slots, so no per-slot widths. The
   -- @2 stepChunks type-app drives the wrap IVP's chunked w/z/t MSM
   -- (Pcs_batch.combine_split_commitments with num_chunks=2).
   let
-    dummyAdvice :: WrapAdvice 0 2 NoSlots
+    dummyAdvice :: WrapAdvice 0 2
     dummyAdvice = unsafeCoerce unit
   wrapCs <- compile noAdvice (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @Unit @2 config stmt dummyAdvice)
-  wrapVk <- deriveWrapVKFromCompiled @1 @2 pallasSrs wrapCs
+    (\stmt -> wrapMain @1 @0 @2 config stmt dummyAdvice Vector.nil)
+  wrapVk <- deriveWrapVKFromCompiled @2 pallasSrs wrapCs
   pure
     { stepCs: stepArt.stepCs
     , stepDomainLog2: stepArt.stepDomainLog2

@@ -27,8 +27,8 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds)
-import Prim.Int (class Add, class Compare, class Mul)
+import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
@@ -139,40 +139,21 @@ type VerifyOneResult tickD fv =
 
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
+-- | The wrap VK is one chunk (`Pickles.Types.WrapVkChunks`), so the
+-- | chunked-base layout this used to carry as fourteen constraints over
+-- | an abstract `nc` is a constant here: `tCommLen = 7`,
+-- | `nonSgBases = 45`, `totalBases = 47`. The layout itself still lives
+-- | in `incrementallyVerifyProof`, which stays generic because the wrap
+-- | side calls it at `stepChunks`, where chunking is real.
 verifyOne
-  :: forall @wrapVkChunks nd ndPred n wrapVkChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred r r1
+  :: forall nd ndPred n r r1
    . PrimeField StepField
   => Add 1 ndPred nd
   => Compare 0 nd LT
-  => Compare 0 wrapVkChunks LT
-  => Add 1 wrapVkChunksPred wrapVkChunks
   => Reflectable nd Int
-  => Reflectable wrapVkChunks Int
-  => Reflectable tCommLen Int
-  => Reflectable nonSgBases Int
-  -- Chunked base layout chain (mirrors IVP). sgOldN at the step IVP is
-  -- the fixed `PaddedLength` (= 2) baked into the input shape.
-  -- Shared `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing
-  -- because Mul's fundep would unify same-RHS counts. Layout:
-  -- xHat(nc) :: ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
-  -- coeff(15nc) :: sigma(6nc); total non-sg = 1 + 44*nc.
-  => Mul 7 wrapVkChunks tCommLen
-  => Add 1 tCommLenPred tCommLen
-  => Mul 15 wrapVkChunks wCoeffN
-  => Mul 6 wrapVkChunks indexSigmaN
-  => Mul 44 wrapVkChunks chunkBases
-  => Add 1 chunkBases nonSgBases
-  => Add 2 nonSgBases totalBases
-  => Add wrapVkChunks 1 sg1
-  => Add sg1 wrapVkChunks sg2
-  => Add sg2 indexSigmaN sg3
-  => Add sg3 wCoeffN sg4
-  => Add sg4 wCoeffN sg5
-  => Add sg5 indexSigmaN nonSgBases
-  => Add 1 totalBasesPred totalBases
   => FOP.Params nd StepField r1
-  -> VerifyOneInput n wrapVkChunks tCommLen WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
-  -> IncrementallyVerifyProofParams wrapVkChunks StepField ()
+  -> VerifyOneInput n WrapVkChunks 7 WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> IncrementallyVerifyProofParams WrapVkChunks StepField ()
   -> Snarky StepField (KimchiConstraint StepField) r (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
   -- Step 1: assert should_finalize == must_verify (step_main.ml:28)

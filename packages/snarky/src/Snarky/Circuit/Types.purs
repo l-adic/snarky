@@ -300,9 +300,8 @@ instance
 -- | instance is trivial via the `Unit Unit` case.
 -- |
 -- | This instance, together with the `Product` instance below, lets
--- | higher-kinded "functor-product slot lists" (see
--- | `Pickles.Wrap.Slots`) be allocated by `exists` without a custom
--- | newtype wrapper.
+-- | higher-kinded "functor-product lists" be allocated by `exists`
+-- | without a custom newtype wrapper.
 instance circuitTypeConst ::
   CircuitType f a avar =>
   CircuitType f (Const a b) (Const avar bvar) where

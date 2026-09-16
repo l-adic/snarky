@@ -27,12 +27,14 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
 import Data.Tuple.Nested (tuple1, tuple2)
+import Data.Vector ((:<))
+import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Effect.Ref as Ref
-import Pickles (BranchProver(..), NoSlots, PrevSlot(..), SlotWrapKey(..), Slots2, StatementIO(..), StepField, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), PrevSlot(..), SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, compileMulti, mkRuleEntry)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Circuit.DSL (F(..))
 
@@ -40,12 +42,11 @@ import Snarky.Circuit.DSL (F(..))
 -- | the NRR base, prove b0; return the b1 prove as a runnable thunk.
 prepareProve :: BenchSrs -> Effect (Aff Unit)
 prepareProve srs = do
-  nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit @1 @1 nrrRule unit
+  nrrEntry <- mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
   nrr <- compileMulti
     @NrrRules
     @(F StepField)
     @Unit
-    @NoSlots
     @1
     noAdvice
     { srs, debug: false, wrapDomainOverride: Nothing, proofCache: Nothing, lagrangeCache: Nothing }
@@ -58,14 +59,13 @@ prepareProve srs = do
       , stepNumChunks: nrr.vks.stepChunks
       }
 
-  treeEntry <- mkRuleEntry @2 @(F StepField) @(F StepField) @1 @1
+  treeEntry <- mkRuleEntry @2 @(F StepField) @(F StepField)
     benchTreeRule
-    (tuple2 (External nrrProverVKs) Self)
+    (External nrrProverVKs :< Self :< Vector.nil)
   tree <- compileMulti
     @TreeRules
     @(F StepField)
     @(F StepField)
-    @(Slots2 0 2)
     @1
     noAdvice
     { srs, debug: false, wrapDomainOverride: Just 14, proofCache: Nothing, lagrangeCache: Nothing }
@@ -87,7 +87,7 @@ prepareProve srs = do
     treeProver noAdvice
       { appInput: unit
       , prevs: tuple2 (InductivePrev nrrCp nrr.tag) basePrevSelf
-      , sideloadedVKs: tuple2 unit unit
+      , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
       } >>= case _ of
       Left e -> Exc.throw (show e)
       Right r -> pure r
@@ -98,7 +98,7 @@ prepareProve srs = do
         ( treeProver noAdvice
             { appInput: unit
             , prevs: tuple2 (InductivePrev nrrCp nrr.tag) (InductivePrev b0 tree.tag)
-            , sideloadedVKs: tuple2 unit unit
+            , sideloadedVKs: tuple2 NoSideLoadedVk NoSideLoadedVk
             }
         ) >>= case _ of
         Left e -> liftEffect $ Exc.throw (show e)

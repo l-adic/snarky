@@ -51,7 +51,6 @@ import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, 
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
-import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -66,9 +65,8 @@ import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofDa
 import Snarky.Backend.Kimchi.ProofCache (ProofCache, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..))
-import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, const_)
+import Snarky.Circuit.DSL (F(..), FVar, const_)
 import Snarky.Circuit.Kimchi (Type1, Type2, toShifted)
-import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -116,7 +114,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | Input record for `buildWrapAdvice`. Every field has a direct
 -- | correspondence to how OCaml's `wrap.ml` assembles the same data
 -- | for the wrap circuit handler.
-type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
+type BuildWrapAdviceInput (mpv :: Int) =
   { -- | The step proof being wrapped (kimchi in-memory form).
     stepProof :: Proof Vesta.G StepField
 
@@ -148,11 +146,9 @@ type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
   -- | supply dummy sgs.
   , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
 
-  -- | Heterogeneous prev wrap bp challenges, in `slots`-shaped form
-  -- | (one of `NoSlots`, `Slots1 w`, `Slots2 w0 w1` from
-  -- | `Pickles.Wrap.Slots`). Constructed via the smart constructors
-  -- | `noSlots` / `slots1` / `slots2`.
-  , prevOldBpChals :: slots (Vector WrapIPARounds (F WrapField))
+  -- | Prev wrap bp challenges, one stack per slot at that slot's own
+  -- | width. The widths ride with the data.
+  , prevOldBpChals :: Array (Array (Vector WrapIPARounds (F WrapField)))
 
   -- | Prev wrap proofs' polynomial evaluations (`StepAllEvals` per
   -- | proof, wrap-field scalars). OCaml's `prev_evals`.
@@ -174,10 +170,10 @@ mkVestaPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 -- | deterministic `pallas*` helpers exposed as non-effectful in
 -- | `Snarky.Backend.Kimchi.Proof`.
 buildWrapAdvice
-  :: forall @stepChunks mpv slots
+  :: forall @stepChunks mpv
    . Reflectable stepChunks Int
-  => BuildWrapAdviceInput mpv slots
-  -> WrapAdvice mpv stepChunks slots
+  => BuildWrapAdviceInput mpv
+  -> WrapAdvice mpv stepChunks
 buildWrapAdvice input =
   let
     -- ===== Req.Messages (step.ml commitments → wrap witness). =====
@@ -278,12 +274,12 @@ buildWrapAdvice input =
 -- |   `assembleWrapMainInput`). Drives both the compile-time shape
 -- |   check (via `CircuitType`) and the solver input.
 -- | * `advice` — the `WrapAdvice` record from `buildWrapAdvice`.
-type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) (slots :: Type -> Type) =
+type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
   { wrapMainConfig :: WrapMainConfig branches stepChunks
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
-  , advice :: WrapAdvice mpv stepChunks slots
+  , advice :: WrapAdvice mpv stepChunks
   -- | When `true`, enables prover-state debug checks, runs
   -- | `verifyProverIndex` against the solved witness, and dumps
   -- | `/tmp/ps_wrap_row_labels.txt` for debugging witness
@@ -308,10 +304,13 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) (slots 
 
 -- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
 -- | without the solver-only fields (`publicInput`, `advice`).
-type WrapCompileContext :: Int -> Int -> Type
-type WrapCompileContext branches stepChunks =
+type WrapCompileContext :: Int -> Int -> Int -> Type
+type WrapCompileContext branches mpv stepChunks =
   { wrapMainConfig :: WrapMainConfig branches stepChunks
   , crs :: CRS PallasG
+  -- | One `max_local_max_proofs_verified` per slot, in slot order. Was
+  -- | derived from a type-level carrier by `slotWidthsOf`.
+  , slotWidths :: Vector mpv Int
   }
 
 -- | Artifacts produced by `wrapCompile`. The prover / verifier index
@@ -325,6 +324,11 @@ type WrapCompileResult =
   , publicInputSize :: Int
   , builtState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
   , constraints :: Array (KimchiRow WrapField)
+  -- | The per-slot widths this circuit was compiled against. The prover
+  -- | reads them back from here rather than being handed them again, so
+  -- | the allocation it performs cannot disagree with the allocation the
+  -- | gates were built for.
+  , slotWidths :: Array Int
   }
 
 -- | Artifacts produced by `wrapProve`.
@@ -355,7 +359,7 @@ bumpWrapCsCounter = do
 -- | the advice record is never projected — the dummy value is never
 -- | forced.
 wrapCompile
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
+  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -380,13 +384,7 @@ wrapCompile
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => PadSlots slots mpv
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => WrapCompileContext branches stepChunks
+  => WrapCompileContext branches mpv stepChunks
   -> Effect WrapCompileResult
 wrapCompile ctx = do
   -- Run `wrapMain`'s circuit in the bare base monad (`Effect`) with a
@@ -395,14 +393,16 @@ wrapCompile ctx = do
   -- never projected — the `unsafeCoerce unit` bottom below is never
   -- forced.
   let
-    dummyAdvice :: WrapAdvice mpv stepChunks slots
+    dummyAdvice :: WrapAdvice mpv stepChunks
     dummyAdvice = unsafeCoerce unit
   builtState <-
     compile noAdvice
       (Proxy @(Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
       (Proxy @Unit)
       (Proxy @(KimchiConstraint WrapField))
-      (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt dummyAdvice)
+      ( \stmt -> wrapMain @branches @mpv @stepChunks ctx.wrapMainConfig stmt dummyAdvice
+          ctx.slotWidths
+      )
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) (constraintsToArray builtState.constraints)
@@ -452,6 +452,7 @@ wrapCompile ctx = do
     , publicInputSize
     , builtState
     , constraints
+    , slotWidths: Vector.toUnfoldable ctx.slotWidths
     }
 
 -- | Solve phase of the wrap prover. Takes a previously compiled
@@ -460,7 +461,7 @@ wrapCompile ctx = do
 -- | `Either EvaluationError`. The wrap circuit emits no advice, so the
 -- | row is pinned to `()` (`noAdvice`).
 wrapSolveAndProve
-  :: forall @branches @slots @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
+  :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
@@ -485,13 +486,7 @@ wrapSolveAndProve
   => Compare mpv 3 LT
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
-  => PadSlots slots mpv
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => WrapProveContext branches mpv stepChunks slots
+  => WrapProveContext branches mpv stepChunks
   -> WrapCompileResult
   -> Effect (Either EvaluationError WrapProveResult)
 wrapSolveAndProve ctx compileResult = do
@@ -503,7 +498,15 @@ wrapSolveAndProve ctx compileResult = do
            Unit
     rawSolver =
       makeSolver' { debug: ctx.debug } (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @branches @slots @stepChunks ctx.wrapMainConfig stmt ctx.advice)
+        ( \stmt -> wrapMain @branches @mpv @stepChunks ctx.wrapMainConfig stmt ctx.advice
+            -- Read back from the artifact the gates were built from, so
+            -- the allocation here cannot disagree with that one.
+            ( case Vector.toVector compileResult.slotWidths of
+                Just ws -> ws
+                Nothing -> unsafeThrow
+                  "wrapSolveAndProve: compiled slot widths do not match mpv"
+            )
+        )
 
   eRes <- rawSolver noAdvice ctx.publicInput
 

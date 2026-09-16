@@ -22,17 +22,16 @@ import Prelude
 
 import Colog (LoggerT, Message, logInfo, withSpan)
 import Data.Either (Either(..))
-import Data.Functor.Product (Product)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
 import Data.Tuple.Nested (Tuple1, tuple1, tuple2, (/\))
-import Data.Vector (Vector, (:<))
+import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), Compiled, NoSlots, PrevSlot(..), RulesCons, RulesNil, Slot, SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -115,11 +114,10 @@ incrementRule getPrevStates self = do
 -- |   * branch 0: makeZero (mpv=0, no prevs)
 -- |   * branch 1: increment (mpv=1, one self-prev)
 type TwoPhaseChainRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (Tuple1 (Slot Compiled 1 1 (StatementIO (F StepField) Unit)))
-        (Tuple1 SlotWrapKey)
+        (Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
         RulesNil
     )
 
@@ -149,15 +147,14 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 makeZeroRule unit
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) @1 @1 incrementRule (tuple1 Self)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule Vector.nil
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (Self :< Vector.nil)
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti
       @TwoPhaseChainRules
       @Unit
       @(F StepField)
-      @(Product (Vector 1) NoSlots)
       @1
       noAdvice
       cfg
@@ -185,7 +182,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB1 <- withSpan "[TwoPhaseChain] prove b1" $ liftEffect $ incrementProver noAdvice
       { appInput: F one
       , prevs: tuple1 (InductivePrev b0' output.tag)
-      , sideloadedVKs: tuple1 unit
+      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -196,7 +193,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB2 <- withSpan "[TwoPhaseChain] prove b2" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1' output.tag)
-      , sideloadedVKs: tuple1 unit
+      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -207,7 +204,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB3 <- withSpan "[TwoPhaseChain] prove b3" $ liftEffect $ incrementProver noAdvice
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2' output.tag)
-      , sideloadedVKs: tuple1 unit
+      , sideloadedVKs: tuple1 NoSideLoadedVk
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)

@@ -10,10 +10,9 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 -- | `step_main_side_loaded_main_circuit.json` — 11862 gates, pi=34.
 -- |
 -- | Same rule body as `StepMainSimpleChain.simpleChainRule`; the only
--- | difference is the spec's prev tag (`Slot SideLoaded`
--- | instead of `Slot Compiled`), which routes the slot's wrap-VK,
--- | step-domain, and max-proofs-verified through the runtime
--- | side-loaded VK.
+-- | difference is the slot's blueprint (`BlueprintSideLoaded` instead
+-- | of `BlueprintSelf`), which routes the slot's wrap-VK, step-domain,
+-- | and max-proofs-verified through the runtime side-loaded VK.
 
 import Prelude
 
@@ -29,9 +28,9 @@ import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
-import Pickles.Slots (SideLoaded, Slot)
+import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
-import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -97,7 +96,7 @@ compileStepMainSideLoadedMain params = do
     dummyAdvice
       :: StepAdvice _ _ _ _ _ _
            ( Tuple
-               ( PerProofWitness 2 1 StepIPARounds WrapIPARounds (F StepField)
+               ( PerProofWitness 1 StepIPARounds WrapIPARounds (F StepField)
                    (Type2 (SplitField (F StepField) Boolean))
                    Boolean
                )
@@ -114,7 +113,7 @@ compileStepMainSideLoadedMain params = do
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @(Tuple1 (Slot SideLoaded 2 1 (StatementIO (F StepField) Unit)))
+          @(Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
@@ -122,7 +121,6 @@ compileStepMainSideLoadedMain params = do
           @1
           @1
           @(SLVK.VerificationKey 1 (F StepField) Boolean)
-          @1
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
           -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather
@@ -130,8 +128,7 @@ compileStepMainSideLoadedMain params = do
           -- The side-loaded slot ignores `perSlotLagrangeAt` (Step.Main
           -- reads the per-domain tables from `SlotVkBlueprintSideLoaded` instead);
           -- it's still required to satisfy the Vector shape.
-          { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
-          , blindingH: params.blindingH
+          { blindingH: params.blindingH
           -- Side-loaded slots ignore this Vector —
           -- `Step.FinalizeOtherProof`'s `SideLoadedMode` synthesises
           -- the `Vector 17 [0..16]` universe from
@@ -142,7 +139,7 @@ compileStepMainSideLoadedMain params = do
               (0 :< Vector.nil) :< Vector.nil
           , perSlotFopZkRows: zkRowsByDefault :< Vector.nil
           , perSlotVkBlueprints:
-              params.sideloadedPerDomainLagrangeAt /\ unit
+              BlueprintSideLoaded params.sideloadedPerDomainLagrangeAt /\ unit
           }
           dummyWrapSg
           -- Single side-loaded slot with the dummy VK.

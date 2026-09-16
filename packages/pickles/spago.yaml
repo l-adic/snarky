@@ -3,7 +3,6 @@ package:
   dependencies:
     - arrays
     - blake2
-    - const
     - curves
     - effect
     - either
@@ -12,7 +11,6 @@ package:
     - exists
     - foldable-traversable
     - foreign
-    - functors
     - integers
     - js-bigints
     - lazy

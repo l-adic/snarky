@@ -467,7 +467,7 @@ type ExpandProofInput n nwp wrapVkChunks =
 -- | Output of `expandProof` — the witness data the step circuit
 -- | reads for one predecessor slot. Maps to OCaml's return tuple
 -- | from `expand_proof` (step.ml:515-536).
-type ExpandProofOutput n stepChunks =
+type ExpandProofOutput stepChunks =
   { sg :: AffinePoint StepField
   -- | The wrap-field deferred-value record + should_finalize flag +
   -- | sponge digest. Corresponds to OCaml `Unfinalized.Constant.t`.
@@ -490,7 +490,6 @@ type ExpandProofOutput n stepChunks =
   , xHat :: { zeta :: WrapField, omegaTimesZeta :: WrapField }
   , perProofWitness ::
       Step.PerProofWitness
-        n
         stepChunks
         StepIPARounds
         WrapIPARounds
@@ -530,7 +529,7 @@ expandProof
    . Reflectable stepChunks Int
   => Reflectable wrapVkChunks Int
   => ExpandProofInput n nwp wrapVkChunks
-  -> ExpandProofOutput n stepChunks
+  -> ExpandProofOutput stepChunks
 expandProof input =
   let
     -- ===== Step-field Type1 deferred values. =====
@@ -857,7 +856,6 @@ expandProof input =
 
     perProofWitness
       :: Step.PerProofWitness
-           n
            stepChunks
            StepIPARounds
            WrapIPARounds
@@ -868,8 +866,8 @@ expandProof input =
       { wrapProof: wrapProofKimchi
       , proofState
       , prevEvals: input.stepProofPrevEvals
-      , prevChallenges: map UnChecked input.stepPrevChallenges
-      , prevSgs: map mkPallasPt input.stepPrevSgsPadded
+      , prevChallenges: Vector.toUnfoldable (map UnChecked input.stepPrevChallenges)
+      , prevSgs: Vector.toUnfoldable (map mkPallasPt input.stepPrevSgsPadded)
       }
   in
     { sg: challengePolynomialCommitment

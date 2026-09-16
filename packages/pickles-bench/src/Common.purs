@@ -29,7 +29,7 @@ import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles (Compiled, RulesCons, RulesNil, Slot, SlotWrapKey, StatementIO(..), StepField, StepRule)
+import Pickles (RulesCons, RulesNil, Slot, StatementIO(..), StepField, StepRule)
 import Snarky.Backend.Kimchi.Impl.Pallas as P
 import Snarky.Backend.Kimchi.Impl.Vesta as V
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -82,8 +82,8 @@ benchIterations = 3
 
 type TreeProofReturnPrevsSpec =
   Tuple2
-    (Slot Compiled 0 1 (StatementIO Unit (F StepField)))
-    (Slot Compiled 2 1 (StatementIO Unit (F StepField)))
+    (Slot 0 (StatementIO Unit (F StepField)))
+    (Slot 2 (StatementIO Unit (F StepField)))
 
 -- | Verbatim `Tree_proof_return` N=2 rule + the tunable filler loop
 -- | (stack-safe `tailRecM`; `StepRule` carries `MonadRec`).
@@ -132,12 +132,11 @@ nrrRule _ _ = pure
   }
 
 type NrrRules =
-  RulesCons 0 Unit Unit Unit
+  RulesCons 0 Unit Unit
     RulesNil
 
 type TreeRules =
   RulesCons 2
     (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
     TreeProofReturnPrevsSpec
-    (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
