@@ -590,15 +590,9 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
 
     frInput :: FrSpongeInput StepField
     frInput =
-      { fqDigest: zero
+      { evals
+      , fqDigest: zero
       , prevChallengeDigest: challengesDigest
-      , ftEval1: evals.ftEval1
-      , publicEvals: evals.publicEvals
-      , zEvals: evals.zEvals
-      , indexEvals: evals.indexEvals
-      , witnessEvals: evals.witnessEvals
-      , coeffEvals: evals.coeffEvals
-      , sigmaEvals: evals.sigmaEvals
       , endo: stepEndoScalar
       }
     frResult = frSpongeChallengesPure frInput

@@ -40,7 +40,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Types (StepIPARounds, WrapIPARounds)
+import Pickles.Types (Evals, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (VerifiableProof, Verifier, dummyWrapSgOf)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Simple.JSON (readJSON, writeJSON)
@@ -54,15 +54,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | is that each polynomial's per-chunk `NonEmptyArray` becomes a plain
 -- | `Array` (simple-json has no `NonEmptyArray` codec). `PointEval` is the
 -- | record `{ zeta, omegaTimesZeta }`, so it serializes directly.
-type ChunkedAllEvalsWire f =
-  { ftEval1 :: f
-  , publicEvals :: Array (PointEval f)
-  , zEvals :: Array (PointEval f)
-  , indexEvals :: Vector 6 (Array (PointEval f))
-  , witnessEvals :: Vector 15 (Array (PointEval f))
-  , coeffEvals :: Vector 15 (Array (PointEval f))
-  , sigmaEvals :: Vector 6 (Array (PointEval f))
-  }
+type ChunkedAllEvalsWire f = Evals (Array (PointEval f)) f
 
 -- | Wire form of a `VerifiableProof`: the wrap proof becomes its serde-JSON
 -- | string, the chunked evals lose their `NonEmptyArray`s, and every other

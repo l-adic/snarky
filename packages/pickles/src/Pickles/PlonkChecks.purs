@@ -18,11 +18,10 @@
 module Pickles.PlonkChecks
   ( -- * Evaluation records
     --
-    -- `AllEvalsRow` is here only because `AllEvals` is defined over it and
-    -- PureScript requires a synonym's referents to be exported alongside it.
-    -- Nothing outside names the row; the type to write is `AllEvals`.
+    -- Both are `Pickles.Types.AllEvalsRow` at a different per-polynomial
+    -- element: the collapsed one for `AllEvals`, a `NonEmptyArray` of them
+    -- for `ChunkedAllEvals`.
     AllEvals
-  , AllEvalsRow
   , ChunkedAllEvals
   , extractEvalFields
   , absorbAllEvals
@@ -83,6 +82,7 @@ import Pickles.OptSponge as OptSponge
 import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (class MonadSponge, PureSpongeM, absorb, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar', squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Trace as Trace
+import Pickles.Types (Evals)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.CVar (negate_)
@@ -115,22 +115,7 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, po
 -- | see `ChunkedAllEvals` below.
 -- |
 -- | Reference: Plonk_types.All_evals in composition_types.ml
-type AllEvals f = Record (AllEvalsRow f ())
-
--- | `AllEvals` as an open row, so a record that carries the evaluations
--- | alongside other fields (`FrSpongeInput`) states the containment instead
--- | of repeating the seven fields.
-type AllEvalsRow :: Type -> Row Type -> Row Type
-type AllEvalsRow f r =
-  ( ftEval1 :: f -- ft polynomial eval at zeta*omega (ftEval0 is computed)
-  , publicEvals :: PointEval f
-  , zEvals :: PointEval f
-  , indexEvals :: Vector 6 (PointEval f)
-  , witnessEvals :: Vector 15 (PointEval f)
-  , coeffEvals :: Vector 15 (PointEval f)
-  , sigmaEvals :: Vector 6 (PointEval f)
-  | r
-  )
+type AllEvals f = Evals (PointEval f) f
 
 -- | The CHUNKED form of `AllEvals`: each polynomial's evaluation at zeta
 -- | / zeta·omega is a `NonEmptyArray (PointEval f)` with one entry per
@@ -143,15 +128,7 @@ type AllEvalsRow f r =
 -- | `Plonk_types.Evals.t` (`wrap.ml:25-26`). The xi-batching
 -- | `Pcs_batch.combine_split_evaluations` flattens the chunk arrays and
 -- | folds right-to-left with `acc' = chunk + xi * acc`.
-type ChunkedAllEvals f =
-  { ftEval1 :: f
-  , publicEvals :: NonEmptyArray (PointEval f)
-  , zEvals :: NonEmptyArray (PointEval f)
-  , indexEvals :: Vector 6 (NonEmptyArray (PointEval f))
-  , witnessEvals :: Vector 15 (NonEmptyArray (PointEval f))
-  , coeffEvals :: Vector 15 (NonEmptyArray (PointEval f))
-  , sigmaEvals :: Vector 6 (NonEmptyArray (PointEval f))
-  }
+type ChunkedAllEvals f = Evals (NonEmptyArray (PointEval f)) f
 
 -- | Extract the 43 always-present evaluation fields in CIP order:
 -- | z(1), index(6), witness(15), coeff(15), sigma(6).
@@ -928,13 +905,12 @@ squeezeXiR p = evalSpongeM initialSpongeCircuit do
 -- | witness (15), coefficients (15), sigma (6).
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml (lines 946-954)
-type FrSpongeInput f = Record
-  ( AllEvalsRow f
-      ( fqDigest :: f -- Fq-sponge digest before Fr-sponge
-      , prevChallengeDigest :: f -- digest of previous recursion challenges (zero for base case)
-      , endo :: f -- EndoScalar coefficient (= G::endos().1 = endo_r)
-      )
-  )
+type FrSpongeInput f =
+  { evals :: AllEvals f
+  , fqDigest :: f -- Fq-sponge digest before Fr-sponge
+  , prevChallengeDigest :: f -- digest of previous recursion challenges (zero for base case)
+  , endo :: f -- EndoScalar coefficient (= G::endos().1 = endo_r)
+  }
 
 -- | Result of Fr-sponge challenge derivation.
 -- | Contains both raw 128-bit scalar challenges and endo-expanded full field values.
@@ -963,14 +939,13 @@ frSpongeChallengesPure input =
     absorb input.prevChallengeDigest
 
     -- 2. Absorb ft_eval1
-    absorb input.ftEval1
+    absorb input.evals.ftEval1
 
     -- 3. Absorb public evals
-    absorb input.publicEvals.zeta
-    absorb input.publicEvals.omegaTimesZeta
+    absorbPointEval input.evals.publicEvals
 
     -- 4. Absorb all polynomial evaluations
-    absorbEvaluationsPure input
+    absorbEvaluationsPure input.evals
 
     -- 5. Squeeze scalar challenge for xi (raw 128-bit)
     rawXi <- squeezeScalarChallengePure
@@ -989,15 +964,9 @@ frSpongeChallengesPure input =
 -- | Kimchi's order. Unlike `absorbAllEvals` this skips `ftEval1` and the
 -- | public evals, which `frSpongeChallengesPure` absorbs earlier.
 absorbEvaluationsPure
-  :: forall f r
+  :: forall f
    . PoseidonField f
-  => { zEvals :: PointEval f
-     , indexEvals :: Vector 6 (PointEval f)
-     , witnessEvals :: Vector 15 (PointEval f)
-     , coeffEvals :: Vector 15 (PointEval f)
-     , sigmaEvals :: Vector 6 (PointEval f)
-     | r
-     }
+  => AllEvals f
   -> PureSpongeM f Unit
 absorbEvaluationsPure input = do
   absorbPointEval input.zEvals

@@ -20,6 +20,7 @@ module Pickles.Types
   , StatementIO(..)
   , WrapProofMessages(..)
   , WrapProofOpening(..)
+  , Evals
   , StepAllEvals(..)
   , PerProofUnfinalized(..)
   ) where
@@ -394,15 +395,35 @@ instance
 -- |
 -- | Each evaluation is a `PointEval` (zeta, omega*zeta) — the `PointEval` newtype
 -- | enforces zeta-first ordering.
-newtype StepAllEvals a = StepAllEvals
-  { publicEvals :: PointEval a
-  , witnessEvals :: Vector 15 (PointEval a)
-  , coeffEvals :: Vector 15 (PointEval a)
-  , zEvals :: PointEval a
-  , sigmaEvals :: Vector 6 (PointEval a)
-  , indexEvals :: Vector 6 (PointEval a)
+-- | The evaluation block of a kimchi proof, parameterised by the
+-- | per-polynomial element `pe`.
+-- |
+-- | Every view of these evaluations is this record at a different `pe`, so
+-- | the seven field names are written down once:
+-- |
+-- | * `StepAllEvals` below — `pe = PointEval a`, the allocation/wire form.
+-- | * `Pickles.PlonkChecks.AllEvals` — `pe` the bare `{ zeta, omegaTimesZeta }`
+-- |   record, the collapsed form the scalar arithmetic reads.
+-- | * `Pickles.PlonkChecks.ChunkedAllEvals` — `pe` a `NonEmptyArray` of those,
+-- |   one entry per chunk.
+-- | * `Pickles.Prove.Codecs.ChunkedAllEvalsWire` — `pe` a plain `Array` of
+-- |   those, because simple-json has no `NonEmptyArray` codec.
+-- |
+-- | Field order here is cosmetic — the wire order is pinned by the explicit
+-- | `Tuple7` in `StepAllEvals`'s `CircuitType` instance, never by RowList.
+-- |
+-- | Reference: `Plonk_types.Evals.t` in composition_types.ml.
+type Evals pe a =
+  { publicEvals :: pe
+  , witnessEvals :: Vector 15 pe
+  , coeffEvals :: Vector 15 pe
+  , zEvals :: pe
+  , sigmaEvals :: Vector 6 pe
+  , indexEvals :: Vector 6 pe
   , ftEval1 :: a
   }
+
+newtype StepAllEvals a = StepAllEvals (Evals (PointEval a) a)
 
 instance (CircuitType f a var) => CircuitType f (StepAllEvals a) (StepAllEvals var) where
   sizeInFields pf _ = genericSizeInFields pf
