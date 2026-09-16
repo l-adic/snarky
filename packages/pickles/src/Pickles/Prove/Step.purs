@@ -78,7 +78,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (AllEvals, collapsePointEval)
+import Pickles.PlonkChecks (collapsePointEval)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -93,7 +93,7 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesF
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, replicateStepSlotsCarrier)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
+import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, vestaVerifierIndexCommitments)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (UnfinalizedProof)
@@ -270,7 +270,7 @@ buildStepAdvice input =
     wrapPE :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
     wrapPE pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
 
-    wrapAE :: AllEvals StepField -> AllEvals (F StepField)
+    wrapAE :: Evals StepField -> Evals (F StepField)
     wrapAE ae =
       { ftEval1: F ae.ftEval1
       , publicEvals: wrapPE ae.publicEvals
@@ -285,15 +285,7 @@ buildStepAdvice input =
       let
         aeF = wrapAE bcd.proofDummy.prevEvals
       in
-        StepAllEvals
-          { publicEvals: PointEval aeF.publicEvals
-          , witnessEvals: map PointEval aeF.witnessEvals
-          , coeffEvals: map PointEval aeF.coeffEvals
-          , zEvals: PointEval aeF.zEvals
-          , sigmaEvals: map PointEval aeF.sigmaEvals
-          , indexEvals: map PointEval aeF.indexEvals
-          , ftEval1: aeF.ftEval1
-          }
+        AllocEvals aeF
 
     dummyFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
@@ -797,7 +789,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | Step-field polynomial evaluations from the wrap proof.
   -- | Base case: `simpleChainDummyPrevEvals`. Inductive: extracted
   -- | from the real wrap proof.
-  , wrapPrevEvals :: AllEvals StepField
+  , wrapPrevEvals :: Evals StepField
   -- | Branch data from the wrap proof's statement.
   -- | Base case: `{ domainLog2: wrapDomainLog2, proofsVerifiedMask: [false, true] }`.
   -- | Inductive: from the real wrap statement.
@@ -853,7 +845,7 @@ type BuildSlotAdviceInput inputVal stmt =
   -- | b1 this must be wrap_b0's actual `prev_evals` field (= step_b0's
   -- | openings + x_hat) so the FOP's recompute matches the fopState
   -- | claims.
-  , stepAdvicePrevEvals :: AllEvals StepField
+  , stepAdvicePrevEvals :: Evals StepField
   -- | Expanded step-field bp challenges for the single entry of
   -- | `advice.kimchiPrevChallenges` (= kimchi-level prev_challenges fed to
   -- | `pallasCreateProofWithPrev` / stored in `ProverProof.prev_challenges`).
@@ -1095,7 +1087,7 @@ buildSlotAdvice input = do
       { rounds: wrapSrsLog2, zeta: oracles.zeta, zetaOmega: wrapZetaw }
 
     wrapProofData' = vestaProofData @WrapIPARounds input.wrapProof
-    wrapAllEvals =
+    wrapEvals =
       { ftEval1: oracles.ftEval1
       -- OCaml `wrap.ml:110-116`: `x_hat = match proof.public_evals with
       -- Some x -> x | None -> O.(p_eval_1 o, p_eval_2 o)`. The oracle's
@@ -1120,10 +1112,10 @@ buildSlotAdvice input = do
 
     stepProofPrevEvals =
       let
-        pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+        pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         ae = input.wrapPrevEvals
       in
-        StepAllEvals
+        AllocEvals
           { ftEval1: F ae.ftEval1
           , publicEvals: pe ae.publicEvals
           , zEvals: pe ae.zEvals
@@ -1162,9 +1154,9 @@ buildSlotAdvice input = do
       , wrapOraclesPrevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys)
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
-      , wrapAllEvals
+      , wrapEvals
       -- Single-chunk public eval (the public-input poly has degree < domain),
-      -- sourced from the oracle's recomputed `x_hat` (see `wrapAllEvals`).
+      -- sourced from the oracle's recomputed `x_hat` (see `wrapEvals`).
       , wrapPEval0Chunks: [ oracles.publicEvals.zeta ]
       , wrapShifts
       , wrapZkRows: input.wrapZkRows
@@ -1367,15 +1359,7 @@ buildSlotAdvice input = do
               , mask1: slotBranchData.mask1
               }
           }
-      , prevEvals: StepAllEvals
-          { publicEvals: PointEval evalsForAdvice.allEvals.publicEvals
-          , witnessEvals: map PointEval evalsForAdvice.allEvals.witnessEvals
-          , coeffEvals: map PointEval evalsForAdvice.allEvals.coeffEvals
-          , zEvals: PointEval evalsForAdvice.allEvals.zEvals
-          , sigmaEvals: map PointEval evalsForAdvice.allEvals.sigmaEvals
-          , indexEvals: map PointEval evalsForAdvice.allEvals.indexEvals
-          , ftEval1: evalsForAdvice.allEvals.ftEval1
-          }
+      , prevEvals: AllocEvals evalsForAdvice.allEvals
       , prevChallenges: Vector.toUnfoldable $ map
           (\chals -> UnChecked (map F chals))
           (Vector.drop @pad input.prevChallengesForStepHash)

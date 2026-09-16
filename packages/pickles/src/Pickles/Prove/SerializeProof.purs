@@ -42,10 +42,9 @@ import Foreign (MultipleErrors)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
-import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Codecs (decodeVerifiableProof, encodeVerifiableProof)
 import Pickles.Step.Dummy (baseCaseDummies, computeDummySgValues)
-import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds)
+import Pickles.Types (Evals, PaddedLength, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (CompiledProof(..), CompiledProofWidthData(..), SomeCompiledProofWidthData, VerifiableProof, mkSomeCompiledProofWidthData, toVerifiable)
 import Simple.JSON (class ReadForeign, class WriteForeign, readJSON, writeJSON)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -68,7 +67,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 type SerializableCompiledProof stmtVal =
   { verifiable :: VerifiableProof
   , statement :: stmtVal
-  , prevEvals :: AllEvals StepField
+  , prevEvals :: Evals StepField
   , messagesForNextStepProof ::
       { challengePolynomialCommitments :: Array (AffinePoint StepField) }
   , messagesForNextWrapProof ::
@@ -211,7 +210,7 @@ toVec arr = unsafePartial fromJust (Vector.toVector @n arr)
 type SerializableCompiledProofWire stmtVal =
   { verifiable :: String
   , statement :: stmtVal
-  , prevEvals :: AllEvals StepField
+  , prevEvals :: Evals StepField
   , messagesForNextStepProof ::
       { challengePolynomialCommitments :: Array (AffinePoint StepField) }
   , messagesForNextWrapProof ::

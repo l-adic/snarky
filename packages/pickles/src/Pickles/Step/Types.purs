@@ -20,7 +20,7 @@ import Data.Vector (Vector)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField)
 import Pickles.Typ (Typ, arrayTyp, pairTyp, transportTyp, typOf, unitTyp)
-import Pickles.Types (StepAllEvals, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (AllocEvals, WrapProofMessages, WrapProofOpening)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)
@@ -325,7 +325,7 @@ instance
 newtype PerProofWitness (stepChunks :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
   { wrapProof :: WrapProof dw stepChunks (WeierstrassAffinePoint PallasG f) sf
   , proofState :: ProofState ds f b
-  , prevEvals :: StepAllEvals f
+  , prevEvals :: AllocEvals f
   -- | One entry per previous proof the slot's own wrap proof verified,
   -- | so as many as that slot's `max_local_max_proofs_verified`. The
   -- | width is not in the type: it comes from the application spec and
@@ -348,7 +348,7 @@ type PerProofWitnessTuple stepChunks ds dw x sf b =
   Tuple5
     (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG x) sf)
     (ProofState ds x b)
-    (StepAllEvals x)
+    (AllocEvals x)
     (Array (UnChecked (Vector ds x)))
     (Array (WeierstrassAffinePoint PallasG x))
 
@@ -391,8 +391,8 @@ perProofWitnessTyp
        (ProofState ds (FVar StepField) (BoolVar StepField))
   => CheckedType StepField (KimchiConstraint StepField)
        (ProofState ds (FVar StepField) (BoolVar StepField))
-  => CircuitType StepField (StepAllEvals (F StepField)) (StepAllEvals (FVar StepField))
-  => CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
+  => CircuitType StepField (AllocEvals (F StepField)) (AllocEvals (FVar StepField))
+  => CheckedType StepField (KimchiConstraint StepField) (AllocEvals (FVar StepField))
   => Int
   -> Typ StepField (KimchiConstraint StepField)
        (PerProofWitness stepChunks ds dw (F StepField) sf Boolean)

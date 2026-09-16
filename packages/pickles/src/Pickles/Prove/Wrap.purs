@@ -47,7 +47,7 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, AllocEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -150,9 +150,9 @@ type BuildWrapAdviceInput (mpv :: Int) =
   -- | width. The widths ride with the data.
   , prevOldBpChals :: Array (Array (Vector WrapIPARounds (F WrapField)))
 
-  -- | Prev wrap proofs' polynomial evaluations (`StepAllEvals` per
+  -- | Prev wrap proofs' polynomial evaluations (`AllocEvals` per
   -- | proof, wrap-field scalars). OCaml's `prev_evals`.
-  , prevEvals :: Vector mpv (StepAllEvals (F WrapField))
+  , prevEvals :: Vector mpv (AllocEvals (F WrapField))
 
   -- | Domain indices per prev wrap proof (into `all_possible_domains`).
   , prevWrapDomainIndices :: Vector mpv (F WrapField)

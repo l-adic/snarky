@@ -101,11 +101,10 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (ChunkedEvals, Evals, PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (extractWrapVKForStepHash)
 import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkExpanded, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, expandPlonkMinimal, toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -311,8 +310,8 @@ newtype CompiledProof mpv stmtVal = CompiledProof
   -- is byte-identical to the only chunk; at num_chunks>1 it is the
   -- correct Horner combine. The fully-chunked refactor of those
   -- recursive consumers is task #63's follow-up.
-  , prevEvals :: AllEvals StepField
-  , prevEvalsChunked :: ChunkedAllEvals StepField
+  , prevEvals :: Evals StepField
+  , prevEvalsChunked :: ChunkedEvals StepField
   , pEval0Chunks :: Array StepField
 
   -- For stage 2 (accumulator check): the inner step proof's IPA opening
@@ -363,7 +362,7 @@ type VerifiableProof =
   , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
   , branchData :: BranchData StepField Boolean
   , spongeDigestBeforeEvaluations :: StepField
-  , prevEvalsChunked :: ChunkedAllEvals StepField
+  , prevEvalsChunked :: ChunkedEvals StepField
   , pEval0Chunks :: Array StepField
   -- The claimed application state, as `CompiledProof.appState`.
   , appState :: Array StepField
@@ -429,7 +428,7 @@ toVerifiable (CompiledProof p) =
 type PrevProofData =
   { proof :: VerifiableProof
   , verifier :: Verifier
-  , prevEvals :: AllEvals StepField
+  , prevEvals :: Evals StepField
   , padded :: PaddedAccumulators
   }
 
@@ -560,7 +559,7 @@ expandDv verifier vp =
         , rawBulletproofChallenges: vp.rawBulletproofChallenges
         , branchData: vp.branchData
         , spongeDigestBeforeEvaluations: vp.spongeDigestBeforeEvaluations
-        , chunkedAllEvals: vp.prevEvalsChunked
+        , chunkedEvals: vp.prevEvalsChunked
         , pEval0Chunks: vp.pEval0Chunks
         , oldBulletproofChallenges: oldBpChals
         , domainLog2: vp.stepDomainLog2

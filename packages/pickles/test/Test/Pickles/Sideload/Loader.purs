@@ -61,7 +61,7 @@ import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles (StepField, StepIPARounds, VerifiableProof, Verifier, WrapField, WrapIPARounds, mkVerifier)
 import Pickles.Dummy (stepEndo, wrapEndo)
 import Pickles.Linearization.FFI (PointEval)
-import Pickles.PlonkChecks (ChunkedAllEvals)
+import Pickles.Types (ChunkedEvals)
 import Pickles.Sideload (vestaProofFromSerdeJson, vestaVerifierIndexFromSerdeJson)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
@@ -111,7 +111,7 @@ type OcamlProofWire =
   , spongeDigestBeforeEvaluations :: StepField
   , challengePolynomialCommitment :: AffinePoint WrapField
   , stepDomainLog2 :: Int
-  , prevEvalsChunked :: ChunkedAllEvals StepField
+  , prevEvalsChunked :: ChunkedEvals StepField
   , pEval0Chunks :: Array StepField
   -- mpv-many previous-proof data, carried in the proof's own statement.
   -- `prevStepSgs` + `prevStepChalsRaw` come from
@@ -396,7 +396,7 @@ decodeOcamlProofWireJson j = do
   -- prev_evals — natively chunked. `pEval0Chunks` collects the zeta
   -- evaluation of every public-input chunk (sized by num_chunks).
   prevEvalsJ <- (obj .: "prev_evals") >>= decodeJson
-  prevEvalsChunked <- decodeAllEvals prevEvalsJ
+  prevEvalsChunked <- decodeEvals prevEvalsJ
   let pEval0Chunks = map _.zeta (NEA.toArray prevEvalsChunked.publicEvals)
 
   pure
@@ -557,7 +557,7 @@ decodeOcamlByte j = do
     Nothing -> Left (TypeMismatch ("expected single-char byte string, got empty"))
 
 --------------------------------------------------------------------------------
--- AllEvals decoder
+-- Evals decoder
 --------------------------------------------------------------------------------
 
 -- | Decode `prev_evals :: Plonk_types.All_evals.t` from
@@ -565,8 +565,8 @@ decodeOcamlByte j = do
 -- | a flat `[zeta, omega_zeta]` `public_input` plus the kimchi
 -- | `proof_evaluations` (chunked-singleton) for the 6 always-on selectors,
 -- | `z`, `w` (15), `coefficients` (15) and `s` (6).
-decodeAllEvals :: Json -> Either JsonDecodeError (ChunkedAllEvals StepField)
-decodeAllEvals j = do
+decodeEvals :: Json -> Either JsonDecodeError (ChunkedEvals StepField)
+decodeEvals j = do
   obj <- decodeJson j
   ftJ <- obj .: "ft_eval1"
   ftEval1 <- decodeHex ftJ :: Either JsonDecodeError StepField
@@ -574,7 +574,7 @@ decodeAllEvals j = do
   evalsObj <- (obj .: "evals") >>= decodeJson
   publicJ <- evalsObj .: "public_input"
   -- Public input in OCaml's prev_evals dump is flat `[zeta, omega]` — a
-  -- length-1 chunk. Wrap as a singleton NEA to fit the ChunkedAllEvals
+  -- length-1 chunk. Wrap as a singleton NEA to fit the ChunkedEvals
   -- shape.
   publicEvalsFlat <- decodePointEvalFlat publicJ
   let publicEvals = NEA.singleton publicEvalsFlat

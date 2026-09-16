@@ -61,7 +61,7 @@ import Pickles.Step.Types (BranchData(..), FopProofState(..), PerProofWitness(..
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
 import Pickles.Typ (existsTyp)
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
+import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -417,7 +417,7 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
     ProofState psRec = ppw.proofState
     FopProofState fopRec = psRec.fopState
     BranchData branchDataRec = psRec.branchData
-    StepAllEvals evalsRec = ppw.prevEvals
+    AllocEvals allEvals = ppw.prevEvals
 
     fopState =
       { plonk:
@@ -435,17 +435,6 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
       , bulletproofChallenges: coerce fopRec.bulletproofChallenges
       , spongeDigest: fopRec.spongeDigest
       }
-    unwrapPointEval (PointEval pe) = { zeta: pe.zeta, omegaTimesZeta: pe.omegaTimesZeta }
-    allEvals =
-      { ftEval1: evalsRec.ftEval1
-      , publicEvals: unwrapPointEval evalsRec.publicEvals
-      , witnessEvals: map unwrapPointEval evalsRec.witnessEvals
-      , coeffEvals: map unwrapPointEval evalsRec.coeffEvals
-      , zEvals: unwrapPointEval evalsRec.zEvals
-      , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
-      , indexEvals: map unwrapPointEval evalsRec.indexEvals
-      }
-
     tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
     tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
   in

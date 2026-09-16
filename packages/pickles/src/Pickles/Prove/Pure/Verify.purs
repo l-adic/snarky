@@ -30,11 +30,11 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (ChunkedAllEvals, collapseChunkedAllEvals)
+import Pickles.PlonkChecks (collapseChunkedEvals)
 import Pickles.Prove.Pure.Common (combinedInnerProductBatchChunked, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
-import Pickles.Types (StepIPARounds)
+import Pickles.Types (ChunkedEvals, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..))
@@ -69,9 +69,9 @@ type ExpandDeferredInput n =
   -- Evals + prev-proof bp chals (= the inner step proof's data, carried
   -- by the wrap proof). Chunked form (`NonEmptyArray (PointEval f)`
   -- per polynomial); collapsed form derived internally via
-  -- `collapseChunkedAllEvals` once zeta/zetaw are known. CIP consumes
+  -- `collapseChunkedEvals` once zeta/zetaw are known. CIP consumes
   -- chunked directly via `combinedInnerProductBatchChunked`.
-  , chunkedAllEvals :: ChunkedAllEvals StepField
+  , chunkedEvals :: ChunkedEvals StepField
   , pEval0Chunks :: Array StepField
   , oldBulletproofChallenges :: Vector n (Vector StepIPARounds StepField)
 
@@ -129,12 +129,12 @@ expandDeferredForVerify input =
     -- diverge — a separate fix (out of scope for the immediate
     -- chunks2 prover witness convergence, which depends on the wrap
     -- PROVER's CIP only).
-    collapsedAllEvals = collapseChunkedAllEvals
+    collapsedEvals = collapseChunkedEvals
       { rounds: input.srsLengthLog2
       , zeta: zetaField
       , zetaOmega: zetaw
       }
-      input.chunkedAllEvals
+      input.chunkedEvals
 
     -- ===== Step 2. Sponge replay to recover xi, r. ====================
     -- OCaml: create sponge, absorb sponge_digest_before_evaluations;
@@ -146,7 +146,7 @@ expandDeferredForVerify input =
       evalPureSpongeM (initialSponge) do
         absorb input.spongeDigestBeforeEvaluations
         absorb (challengesDigest input.oldBulletproofChallenges)
-        absorb input.chunkedAllEvals.ftEval1
+        absorb input.chunkedEvals.ftEval1
         -- Absorb chunked evaluations in the order kimchi's FrSponge does:
         -- `absorb_multiple(&public_evals[0])` then `absorb_multiple(&public_evals[1])`
         -- then `absorb_evaluations(&evals)` which per polynomial absorbs
@@ -154,13 +154,13 @@ expandDeferredForVerify input =
         -- chunks). For nc=1 this matches the old collapsed single-value path;
         -- for nc>1 it absorbs each chunk, keeping the sponge state in sync
         -- with the prover's FrSponge (which also absorbed each chunk).
-        absorbChunked input.chunkedAllEvals.publicEvals
+        absorbChunked input.chunkedEvals.publicEvals
         -- to_absorption_sequence order: z, 6 index, 15 w, 15 coeff, 6 sigma
-        absorbChunked input.chunkedAllEvals.zEvals
-        for_ input.chunkedAllEvals.indexEvals absorbChunked
-        for_ input.chunkedAllEvals.witnessEvals absorbChunked
-        for_ input.chunkedAllEvals.coeffEvals absorbChunked
-        for_ input.chunkedAllEvals.sigmaEvals absorbChunked
+        absorbChunked input.chunkedEvals.zEvals
+        for_ input.chunkedEvals.indexEvals absorbChunked
+        for_ input.chunkedEvals.witnessEvals absorbChunked
+        for_ input.chunkedEvals.coeffEvals absorbChunked
+        for_ input.chunkedEvals.sigmaEvals absorbChunked
         xiChal <- squeezeScalarChallengePureF
         rChal <- squeezeScalarChallengePureF
         pure { xiRawSized: xiChal, rRawSized: rChal }
@@ -181,10 +181,10 @@ expandDeferredForVerify input =
     -- ===== Step 3. Type1.derive_plonk (wrap.ml:202-208). ==============
     derivePlonkInput =
       { plonkMinimal: input.rawPlonk
-      , w: map _.zeta (Vector.take @7 collapsedAllEvals.witnessEvals)
-      , sigma: map _.zeta collapsedAllEvals.sigmaEvals
-      , zZeta: collapsedAllEvals.zEvals.zeta
-      , zOmegaTimesZeta: collapsedAllEvals.zEvals.omegaTimesZeta
+      , w: map _.zeta (Vector.take @7 collapsedEvals.witnessEvals)
+      , sigma: map _.zeta collapsedEvals.sigmaEvals
+      , zZeta: collapsedEvals.zEvals.zeta
+      , zOmegaTimesZeta: collapsedEvals.zEvals.omegaTimesZeta
       , shifts: input.shifts
       , generator: input.generator
       , domainLog2: input.domainLog2
@@ -198,7 +198,7 @@ expandDeferredForVerify input =
     -- ===== Step 4. ft_eval0 for the step field. =======================
     ftEval0Input =
       { plonkMinimal: input.rawPlonk
-      , allEvals: collapsedAllEvals
+      , allEvals: collapsedEvals
       , pEval0Chunks: input.pEval0Chunks
       , shifts: input.shifts
       , generator: input.generator
@@ -217,10 +217,10 @@ expandDeferredForVerify input =
     -- Uses chunked evals for CIP to match OCaml's
     -- `Pcs_batch.combine_split_evaluations` xi-batching across chunks.
     cipInput =
-      { allEvals: input.chunkedAllEvals
-      , publicEvals: input.chunkedAllEvals.publicEvals
+      { allEvals: input.chunkedEvals
+      , publicEvals: input.chunkedEvals.publicEvals
       , ftEval0: stepFtEval0
-      , ftEval1: input.chunkedAllEvals.ftEval1
+      , ftEval1: input.chunkedEvals.ftEval1
       , oldBulletproofChallenges: input.oldBulletproofChallenges
       , xi: xiField
       , r: rField
@@ -261,10 +261,10 @@ expandDeferredForVerify input =
       , zeta: zetaField
       , v: xiField
       , u: rField
-      , ftEval1: input.chunkedAllEvals.ftEval1
+      , ftEval1: input.chunkedEvals.ftEval1
       , publicEvals:
-          { zeta: collapsedAllEvals.publicEvals.zeta
-          , omegaTimesZeta: collapsedAllEvals.publicEvals.omegaTimesZeta
+          { zeta: collapsedEvals.publicEvals.zeta
+          , omegaTimesZeta: collapsedEvals.publicEvals.omegaTimesZeta
           }
       , fqDigest: input.spongeDigestBeforeEvaluations
       , alphaChal: unwrapF input.rawPlonk.alpha
@@ -280,8 +280,8 @@ expandDeferredForVerify input =
     , b: toShifted (F newBpResult.b)
     , branchData: input.branchData
     , xHatEvals:
-        { zeta: collapsedAllEvals.publicEvals.zeta
-        , omegaTimesZeta: collapsedAllEvals.publicEvals.omegaTimesZeta
+        { zeta: collapsedEvals.publicEvals.zeta
+        , omegaTimesZeta: collapsedEvals.publicEvals.omegaTimesZeta
         }
     , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
     , oracles: oraclesReconstructed

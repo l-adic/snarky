@@ -74,8 +74,8 @@ import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
-import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (collapseChunkedAllEvals, collapsePointEval)
+import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
+import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
@@ -124,7 +124,7 @@ import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprint)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify
   ( CompiledProof(..)
@@ -698,7 +698,7 @@ consMkStepAdvice srs appInput slotParams headVkCell headSlot restEffect = do
             , branchData: prevData.proof.branchData
             , spongeDigestBeforeEvaluations:
                 prevData.proof.spongeDigestBeforeEvaluations
-            , chunkedAllEvals: prevData.proof.prevEvalsChunked
+            , chunkedEvals: prevData.proof.prevEvalsChunked
             , pEval0Chunks: prevData.proof.pEval0Chunks
             , oldBulletproofChallenges: prevOldBpChals
             , domainLog2: prevData.proof.stepDomainLog2
@@ -896,9 +896,9 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
           ).publicEvals
         de = bcd.dummyEvals
         pe = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
-        headPrevEvals = StepAllEvals
+        headPrevEvals = AllocEvals
           { ftEval1: F de.ftEval1
-          , publicEvals: PointEval
+          , publicEvals:
               { zeta: F dummyWrapXhat.zeta
               , omegaTimesZeta: F dummyWrapXhat.omegaTimesZeta
               }
@@ -976,13 +976,13 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
               prevWrapOracles.zeta * domainGenerator slotParams.slotWrapDomainLog2
           }
         prevWrapData = vestaProofData @WrapIPARounds prevData.proof.wrapProof
-        prevHeadPrevEvals = StepAllEvals
+        prevHeadPrevEvals = AllocEvals
           { ftEval1: F prevWrapOracles.ftEval1
           , publicEvals:
               let
                 pew = prevWrapOracles.publicEvals
               in
-                PointEval { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
+                { zeta: F pew.zeta, omegaTimesZeta: F pew.omegaTimesZeta }
           , zEvals: peWF (prevWrapCollapse prevWrapData.evals.z)
           , witnessEvals:
               map (peWF <<< prevWrapCollapse) prevWrapData.evals.w
@@ -1078,7 +1078,7 @@ type ShapeProveData mpv =
       Vector mpv
         (PerProofUnfinalized WrapIPARounds (Type2 (F WrapField)) (F WrapField) Boolean)
   , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
-  , prevEvals :: Vector mpv (StepAllEvals (F WrapField))
+  , prevEvals :: Vector mpv (AllocEvals (F WrapField))
   , prevWrapDomainIndices :: Vector mpv (F WrapField)
   , kimchiPrevEntries ::
       Vector mpv
@@ -1118,7 +1118,7 @@ type PadProveDataDummies =
         (F WrapField)
         Boolean
   , dummyPrevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
-  , dummyPrevEvals :: StepAllEvals (F WrapField)
+  , dummyPrevEvals :: AllocEvals (F WrapField)
   , dummyPrevWrapDomainIdx :: F WrapField
   , dummyKimchiPrevEntry ::
       { sgX :: StepField
@@ -3083,16 +3083,16 @@ runMultiProverBody
       , shouldFinalize: dummyUnfRaw.shouldFinalize
       }
 
-    -- `StepAllEvals (F WrapField)` lifted from `bcd.dummyEvals`
+    -- `AllocEvals (F WrapField)` lifted from `bcd.dummyEvals`
     -- (`AllEvals WrapField`). Mirrors OCaml `dummy.ml:7-20`'s
     -- `Dummy.evals` — every field, including `publicEvals`, is
     -- populated by `Ro.tock ()` draws (NOT zero placeholders). The
     -- `Ro` stream is already advanced consistently with OCaml via
     -- `baseCaseDummies { maxProofsVerified: mpvMax }`.
     de = bcdMax.dummyEvals
-    pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+    pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
 
-    dummyPrevEvalsMax = StepAllEvals
+    dummyPrevEvalsMax = AllocEvals
       { ftEval1: F de.ftEval1
       , publicEvals: pe de.publicEvals
       , zEvals: pe de.zEvals
@@ -3156,7 +3156,7 @@ runMultiProverBody
         -- per chunk. Wrap prover consumes this directly via the chunked
         -- CIP / chunked sponge replay.
         stepProofData = pallasProofData @StepIPARounds stepResult.proof
-        chunkedAllEvals =
+        chunkedEvals =
           { ftEval1: stepOracles.ftEval1
           -- Public eval from the proof's own `evals.public`. The kimchi prover
           -- always populates it (`prover.rs:996`, chunked via
@@ -3174,7 +3174,7 @@ runMultiProverBody
           , indexEvals: stepProofData.evals.indexEvals
           }
 
-        -- Collapsed (Horner-combined) view of `chunkedAllEvals`, kept on
+        -- Collapsed (Horner-combined) view of `chunkedEvals`, kept on
         -- the `CompiledProof` as a transitional shim for recursive-step
         -- consumers that still take a single-eval `AllEvals`
         -- (`Pickles.Prove.Step`'s `wrapPrevEvals` / `stepAdvicePrevEvals`).
@@ -3182,12 +3182,12 @@ runMultiProverBody
         -- at num_chunks>1 it is the correct Horner combine. The chunked
         -- refactor of those consumers is the next phase of task #63.
         stepGenSelf = domainGenerator selfStepDomainLog2
-        allEvals = collapseChunkedAllEvals
+        allEvals = collapseChunkedEvals
           { rounds: reflectType (Proxy :: Proxy StepIPARounds)
           , zeta: stepOracles.zeta
           , zetaOmega: stepOracles.zeta * stepGenSelf
           }
-          chunkedAllEvals
+          chunkedEvals
 
         outerMpv = reflectType (Proxy @mpv)
 
@@ -3199,7 +3199,7 @@ runMultiProverBody
           { proof: stepResult.proof
           , verifierIndex: stepCR.verifierIndex
           , publicInput: stepResult.publicInputs
-          , chunkedAllEvals
+          , chunkedEvals
           , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
           , domainLog2: selfStepDomainLog2
           , zkRows: selfZkRows
@@ -3348,8 +3348,8 @@ runMultiProverBody
             , branchData: wrapDv.branchData
             , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
             , prevEvals: allEvals
-            , prevEvalsChunked: chunkedAllEvals
-            -- Full `nc`-chunk public eval from the proof (see `chunkedAllEvals`
+            , prevEvalsChunked: chunkedEvals
+            -- Full `nc`-chunk public eval from the proof (see `chunkedEvals`
             -- note above); recursive consumers read this via `prevData.proof.pEval0Chunks`.
             , pEval0Chunks: map _.zeta (NonEmptyArray.toArray stepProofData.evals.public)
             , challengePolynomialCommitment: stepProofSg

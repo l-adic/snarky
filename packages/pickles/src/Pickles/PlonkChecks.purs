@@ -18,16 +18,13 @@
 module Pickles.PlonkChecks
   ( -- * Evaluation records
     --
-    -- Both are `Pickles.Types.AllEvalsRow` at a different per-polynomial
-    -- element: the collapsed one for `AllEvals`, a `NonEmptyArray` of them
-    -- for `ChunkedAllEvals`.
-    AllEvals
-  , ChunkedAllEvals
-  , extractEvalFields
-  , absorbAllEvals
+    -- The records themselves are `Pickles.Types.Evals` and
+    -- `Pickles.Types.ChunkedEvals`; these operate on them.
+    extractEvalFields
+  , absorbEvals
   -- * Chunk recombination
   , collapsePointEval
-  , collapseChunkedAllEvals
+  , collapseChunkedEvals
   -- * Domain scalars
   , omegaPowers
   , zkPolynomial
@@ -82,7 +79,7 @@ import Pickles.OptSponge as OptSponge
 import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (class MonadSponge, PureSpongeM, absorb, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar', squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Trace as Trace
-import Pickles.Types (Evals)
+import Pickles.Types (ChunkedEvals, Evals)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.CVar (negate_)
@@ -112,12 +109,10 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, po
 -- |
 -- | For the COMBINED INNER PRODUCT specifically, the original CHUNKED
 -- | evals must be xi-batched (`Pcs_batch.combine_split_evaluations`);
--- | see `ChunkedAllEvals` below.
+-- | see `ChunkedEvals` below.
 -- |
--- | Reference: Plonk_types.All_evals in composition_types.ml
-type AllEvals f = Evals (PointEval f) f
 
--- | The CHUNKED form of `AllEvals`: each polynomial's evaluation at zeta
+-- | The CHUNKED form of `Evals`: each polynomial's evaluation at zeta
 -- | / zeta·omega is a `NonEmptyArray (PointEval f)` with one entry per
 -- | chunk. For an inner proof at num_chunks=1 each array has length 1
 -- | (and the chunked combine collapses to the same result as the legacy
@@ -128,11 +123,10 @@ type AllEvals f = Evals (PointEval f) f
 -- | `Plonk_types.Evals.t` (`wrap.ml:25-26`). The xi-batching
 -- | `Pcs_batch.combine_split_evaluations` flattens the chunk arrays and
 -- | folds right-to-left with `acc' = chunk + xi * acc`.
-type ChunkedAllEvals f = Evals (NonEmptyArray (PointEval f)) f
 
 -- | Extract the 43 always-present evaluation fields in CIP order:
 -- | z(1), index(6), witness(15), coeff(15), sigma(6).
-extractEvalFields :: forall f. (PointEval f -> f) -> AllEvals f -> Vector 43 f
+extractEvalFields :: forall f. (PointEval f -> f) -> Evals f -> Vector 43 f
 extractEvalFields proj evals =
   proj evals.zEvals :<
     map proj evals.indexEvals
@@ -144,12 +138,12 @@ extractEvalFields proj evals =
 -- |
 -- | Follows Kimchi's absorption order:
 -- | ftEval1, public, z, index (6), witness (15), coeff (15), sigma (6)
-absorbAllEvals
+absorbEvals
   :: forall f m
    . MonadSponge f m
-  => AllEvals f
+  => Evals f
   -> m Unit
-absorbAllEvals evals = do
+absorbEvals evals = do
   absorb evals.ftEval1
   absorbPointEval evals.publicEvals
   absorbPointEval evals.zEvals
@@ -244,7 +238,7 @@ collapsePointEval { rounds, zeta, zetaOmega } chunks =
     , omegaTimesZeta: actualEvaluationArr (map _.omegaTimesZeta arr) zetaOmega rounds
     }
 
--- | Collapse every `NonEmptyArray (PointEval f)` in a `ChunkedAllEvals f`
+-- | Collapse every `NonEmptyArray (PointEval f)` in a `ChunkedEvals f`
 -- | into a single `PointEval f` via `collapsePointEval`. Mirrors OCaml
 -- | `Plonk_checks.evals_of_split_evals` applied to a whole `Evals.t`.
 -- |
@@ -252,13 +246,13 @@ collapsePointEval { rounds, zeta, zetaOmega } chunks =
 -- | code that wants a single value per polynomial. CIP itself does NOT
 -- | go through here — it consumes the chunked form directly (= OCaml
 -- | `Pcs_batch.combine_split_evaluations`).
-collapseChunkedAllEvals
+collapseChunkedEvals
   :: forall f
    . Semiring f
   => { rounds :: Int, zeta :: f, zetaOmega :: f }
-  -> ChunkedAllEvals f
-  -> AllEvals f
-collapseChunkedAllEvals ctx chunked =
+  -> ChunkedEvals f
+  -> Evals f
+collapseChunkedEvals ctx chunked =
   let
     collapse = collapsePointEval ctx
   in
@@ -885,7 +879,7 @@ squeezeXiR
   => FieldSizeInBits f 255
   => { spongeDigestBeforeEvaluations :: FVar f
      , challengeDigest :: Snarky f (KimchiConstraint f) cr (FVar f)
-     , allEvals :: AllEvals (FVar f)
+     , allEvals :: Evals (FVar f)
      , endo :: FVar f
      , xiConstrainLowBits :: Boolean
      }
@@ -894,7 +888,7 @@ squeezeXiR p = evalSpongeM initialSpongeCircuit do
   absorb p.spongeDigestBeforeEvaluations
   digest <- liftSnarky p.challengeDigest
   absorb digest
-  absorbAllEvals p.allEvals
+  absorbEvals p.allEvals
   xi <- squeezeScalar' p.xiConstrainLowBits { endo: p.endo }
   r <- squeezeScalarChallenge { endo: p.endo }
   pure { xi, r }
@@ -906,7 +900,7 @@ squeezeXiR p = evalSpongeM initialSpongeCircuit do
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml (lines 946-954)
 type FrSpongeInput f =
-  { evals :: AllEvals f
+  { evals :: Evals f
   , fqDigest :: f -- Fq-sponge digest before Fr-sponge
   , prevChallengeDigest :: f -- digest of previous recursion challenges (zero for base case)
   , endo :: f -- EndoScalar coefficient (= G::endos().1 = endo_r)
@@ -961,12 +955,12 @@ frSpongeChallengesPure input =
     pure { rawXi, xi, rawR, evalscale }
 
 -- | Absorb the z, selector, witness, coefficient and sigma evaluations, in
--- | Kimchi's order. Unlike `absorbAllEvals` this skips `ftEval1` and the
+-- | Kimchi's order. Unlike `absorbEvals` this skips `ftEval1` and the
 -- | public evals, which `frSpongeChallengesPure` absorbs earlier.
 absorbEvaluationsPure
   :: forall f
    . PoseidonField f
-  => AllEvals f
+  => Evals f
   -> PureSpongeM f Unit
 absorbEvaluationsPure input = do
   absorbPointEval input.zEvals

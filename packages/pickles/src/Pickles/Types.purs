@@ -16,18 +16,22 @@ module Pickles.Types
   , StepInput
   , StepStatement
   , WrapStatement
-  , PointEval(..)
   , StatementIO(..)
   , WrapProofMessages(..)
   , WrapProofOpening(..)
   , Evals
-  , StepAllEvals(..)
+  , ChunkedEvals
+  , AllocEvals(..)
   , PerProofUnfinalized(..)
   ) where
 
+import Prelude
+
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
+import Pickles.Linearization.FFI (PointEval)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..)) as ChunkedCommitmentReExports
@@ -172,37 +176,6 @@ type WrapStatement d f sf b =
 -- | Parameterized by a single element type so the same newtype works for
 -- | both value (`F f`) and var (`FVar f`) representations.
 -------------------------------------------------------------------------------
-
--- | A polynomial evaluation at the pair (zeta, zeta*omega).
--- |
--- | OCaml pairs are allocated as `(zeta_eval, omega_eval)` — zeta FIRST,
--- | then omega*zeta. A plain record `{zeta, omegaTimesZeta}` would
--- | alphabetize to (omegaTimesZeta, zeta) via RowList, which is WRONG.
--- | This newtype enforces OCaml order via nested-Tuple delegation.
-newtype PointEval a = PointEval
-  { zeta :: a
-  , omegaTimesZeta :: a
-  }
-
-instance (CircuitType f a var) => CircuitType f (PointEval a) (PointEval var) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 a a))
-  valueToFields (PointEval r) = genericValueToFields (tuple2 r.zeta r.omegaTimesZeta)
-  fieldsToValue fs =
-    let
-      tup :: Tuple2 a a
-      tup = genericFieldsToValue fs
-    in
-      uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
-  varToFields (PointEval r) = genericVarToFields @(Tuple2 a a) (tuple2 r.zeta r.omegaTimesZeta)
-  fieldsToVar fs =
-    let
-      tup :: Tuple2 var var
-      tup = genericFieldsToVar @(Tuple2 a a) fs
-    in
-      uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
-
-instance (CheckedType f c var) => CheckedType f c (PointEval var) where
-  check (PointEval r) = check (tuple2 r.zeta r.omegaTimesZeta)
 
 -- | The statement (public input to kimchi verify) of a Pickles rule.
 -- |
@@ -413,52 +386,89 @@ instance
 -- | `Tuple7` in `StepAllEvals`'s `CircuitType` instance, never by RowList.
 -- |
 -- | Reference: `Plonk_types.Evals.t` in composition_types.ml.
-type Evals pe a =
-  { publicEvals :: pe
-  , witnessEvals :: Vector 15 pe
-  , coeffEvals :: Vector 15 pe
-  , zEvals :: pe
-  , sigmaEvals :: Vector 6 pe
-  , indexEvals :: Vector 6 pe
+type Evals a =
+  { publicEvals :: PointEval a
+  , witnessEvals :: Vector 15 (PointEval a)
+  , coeffEvals :: Vector 15 (PointEval a)
+  , zEvals :: PointEval a
+  , sigmaEvals :: Vector 6 (PointEval a)
+  , indexEvals :: Vector 6 (PointEval a)
   , ftEval1 :: a
   }
 
-newtype StepAllEvals a = StepAllEvals (Evals (PointEval a) a)
+-- | `Evals` with one entry per chunk, before the Horner recombination that
+-- | `Pickles.PlonkChecks.collapseChunkedEvals` performs. At num_chunks = 1
+-- | every array has length 1 and the collapse is the identity.
+-- |
+-- | OCaml stores these as `(f array * f array)` per polynomial inside
+-- | `Plonk_types.Evals.t` (`wrap.ml:25-26`).
+type ChunkedEvals a =
+  { publicEvals :: NonEmptyArray (PointEval a)
+  , witnessEvals :: Vector 15 (NonEmptyArray (PointEval a))
+  , coeffEvals :: Vector 15 (NonEmptyArray (PointEval a))
+  , zEvals :: NonEmptyArray (PointEval a)
+  , sigmaEvals :: Vector 6 (NonEmptyArray (PointEval a))
+  , indexEvals :: Vector 6 (NonEmptyArray (PointEval a))
+  , ftEval1 :: a
+  }
 
-instance (CircuitType f a var) => CircuitType f (StepAllEvals a) (StepAllEvals var) where
-  sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a))
-  valueToFields (StepAllEvals r) = genericValueToFields
-    (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
-  fieldsToValue fs =
-    let
-      tup :: Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a
-      tup = genericFieldsToValue fs
-    in
-      uncurry7
-        ( \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
-            StepAllEvals { publicEvals, witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals, ftEval1 }
-        )
-        tup
-  varToFields (StepAllEvals r) = genericVarToFields
-    @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
-    (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
-  fieldsToVar fs =
-    let
-      tup :: Tuple7 (PointEval var) (Vector 15 (PointEval var)) (Vector 15 (PointEval var)) (PointEval var) (Vector 6 (PointEval var)) (Vector 6 (PointEval var)) var
-      tup =
-        genericFieldsToVar
-          @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
-          fs
-    in
-      uncurry7
-        ( \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
-            StepAllEvals { publicEvals, witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals, ftEval1 }
-        )
-        tup
+-- | `Evals` in allocatable form.
+-- |
+-- | The newtype exists only to carry the `CircuitType`/`CheckedType`
+-- | instances: a bare record gets the `RCircuitType` instance, which orders
+-- | fields alphabetically, and the wire order is OCaml's
+-- | `(public, witness, coefficients, z, sigma, index, ft_eval1)` with each
+-- | evaluation a pair `(zeta, omega*zeta)` — zeta FIRST. Both orders are
+-- | spelled out in the `Tuple7`/`Tuple2` below and nowhere else.
+newtype AllocEvals a = AllocEvals (Evals a)
 
-instance (CheckedType f c var) => CheckedType f c (StepAllEvals var) where
-  check (StepAllEvals r) = check (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
+-- | One evaluation as the ordered pair OCaml allocates: zeta FIRST, then
+-- | omega*zeta. The record's own field order is alphabetical and would put
+-- | them the other way round, so every crossing of this boundary goes
+-- | through `evalPair` / `pairEval`.
+evalPair :: forall a. PointEval a -> Tuple2 a a
+evalPair p = tuple2 p.zeta p.omegaTimesZeta
+
+pairEval :: forall a. Tuple2 a a -> PointEval a
+pairEval = uncurry2 \zeta omegaTimesZeta -> { zeta, omegaTimesZeta }
+
+-- | The seven blocks in OCaml's order. Paired with `evalPair` this is the
+-- | whole wire layout of an `Evals`.
+type EvalsTuple a =
+  Tuple7 (Tuple2 a a) (Vector 15 (Tuple2 a a)) (Vector 15 (Tuple2 a a)) (Tuple2 a a)
+    (Vector 6 (Tuple2 a a))
+    (Vector 6 (Tuple2 a a))
+    a
+
+evalsTuple :: forall a. Evals a -> EvalsTuple a
+evalsTuple r = tuple7 (evalPair r.publicEvals) (map evalPair r.witnessEvals)
+  (map evalPair r.coeffEvals)
+  (evalPair r.zEvals)
+  (map evalPair r.sigmaEvals)
+  (map evalPair r.indexEvals)
+  r.ftEval1
+
+tupleEvals :: forall a. EvalsTuple a -> AllocEvals a
+tupleEvals = uncurry7
+  \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 -> AllocEvals
+    { publicEvals: pairEval publicEvals
+    , witnessEvals: map pairEval witnessEvals
+    , coeffEvals: map pairEval coeffEvals
+    , zEvals: pairEval zEvals
+    , sigmaEvals: map pairEval sigmaEvals
+    , indexEvals: map pairEval indexEvals
+    , ftEval1
+    }
+
+instance (CircuitType f a var) => CircuitType f (AllocEvals a) (AllocEvals var) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(EvalsTuple a))
+  valueToFields (AllocEvals r) = genericValueToFields (evalsTuple r)
+  fieldsToValue fs = tupleEvals (genericFieldsToValue fs :: EvalsTuple a)
+  varToFields (AllocEvals r) = genericVarToFields @(EvalsTuple a) (evalsTuple r)
+  fieldsToVar fs = tupleEvals (genericFieldsToVar @(EvalsTuple a) fs :: EvalsTuple var)
+
+instance (CheckedType f c var) => CheckedType f c (AllocEvals var) where
+  check (AllocEvals r) = check (evalsTuple r)
 
 -- | Per-proof unfinalized proof: the OCaml `Unfinalized.t` allocation that
 -- | becomes part of the Step.Statement public input.

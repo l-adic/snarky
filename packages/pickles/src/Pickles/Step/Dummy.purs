@@ -44,10 +44,10 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.PlonkChecks (AllEvals, FrSpongeInput, buildChallenges, buildEvalPoint, frSpongeChallengesPure, permContribution, permScalar)
+import Pickles.PlonkChecks (FrSpongeInput, buildChallenges, buildEvalPoint, frSpongeChallengesPure, permContribution, permScalar)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
-import Pickles.Types (PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
+import Pickles.Types (Evals, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -95,7 +95,7 @@ import Type.Proxy (Proxy(..))
 -------------------------------------------------------------------------------
 
 -- | OCaml `Dummy.evals : Tock.Field.t All_evals.t` (dummy.ml:6-21).
-type DummyEvals = AllEvals WrapField
+type DummyEvals = Evals WrapField
 
 -- | OCaml `scalar_chal`/`chal` outputs share the plonk record layout
 -- | in both `Unfinalized.Constant.dummy` and `Proof.dummy.statement`.
@@ -126,7 +126,7 @@ type ProofDummy =
   { plonk :: PlonkChals StepField
   , z1 :: WrapField -- OCaml: proof.openings.proof.z_1 (tock)
   , z2 :: WrapField -- OCaml: proof.openings.proof.z_2 (tock)
-  , prevEvals :: AllEvals StepField
+  , prevEvals :: Evals StepField
   }
 
 -- | 89 tocks, matching OCaml `dummy.ml:7-21`:
@@ -227,7 +227,7 @@ proofDummy = do
 
 -- | Internal: 89 ticks in the same RTL Evals record layout as
 -- | `dummyEvals`. Extracted for clarity.
-proofDummyPrevEvals :: RoM (AllEvals StepField)
+proofDummyPrevEvals :: RoM (Evals StepField)
 proofDummyPrevEvals =
   let
     pointEval :: RoM (PointEval StepField)

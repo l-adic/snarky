@@ -39,8 +39,7 @@ import Foreign (ForeignError(..), MultipleErrors)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
-import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.Types (Evals, StepIPARounds, WrapIPARounds)
+import Pickles.Types (ChunkedEvals, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (VerifiableProof, Verifier, dummyWrapSgOf)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Simple.JSON (readJSON, writeJSON)
@@ -50,11 +49,19 @@ import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | Wire form of the chunked evals: the only difference from `ChunkedAllEvals`
+-- | Wire form of the chunked evals: the only difference from `ChunkedEvals`
 -- | is that each polynomial's per-chunk `NonEmptyArray` becomes a plain
 -- | `Array` (simple-json has no `NonEmptyArray` codec). `PointEval` is the
 -- | record `{ zeta, omegaTimesZeta }`, so it serializes directly.
-type ChunkedAllEvalsWire f = Evals (Array (PointEval f)) f
+type ChunkedEvalsWire f =
+  { publicEvals :: Array (PointEval f)
+  , witnessEvals :: Vector 15 (Array (PointEval f))
+  , coeffEvals :: Vector 15 (Array (PointEval f))
+  , zEvals :: Array (PointEval f)
+  , sigmaEvals :: Vector 6 (Array (PointEval f))
+  , indexEvals :: Vector 6 (Array (PointEval f))
+  , ftEval1 :: f
+  }
 
 -- | Wire form of a `VerifiableProof`: the wrap proof becomes its serde-JSON
 -- | string, the chunked evals lose their `NonEmptyArray`s, and every other
@@ -65,7 +72,7 @@ type VerifiableProofWire =
   , rawBulletproofChallenges :: Vector StepIPARounds (ScalarChallenge (F StepField))
   , branchData :: BranchData StepField Boolean
   , spongeDigestBeforeEvaluations :: StepField
-  , prevEvalsChunked :: ChunkedAllEvalsWire StepField
+  , prevEvalsChunked :: ChunkedEvalsWire StepField
   , pEval0Chunks :: Array StepField
   , appState :: Array StepField
   , oldBulletproofChallenges :: Array (Vector StepIPARounds StepField)
@@ -85,7 +92,7 @@ type VerifierWire =
   , stepEndo :: StepField
   }
 
-toWireEvals :: forall f. ChunkedAllEvals f -> ChunkedAllEvalsWire f
+toWireEvals :: forall f. ChunkedEvals f -> ChunkedEvalsWire f
 toWireEvals e =
   { ftEval1: e.ftEval1
   , publicEvals: NEA.toArray e.publicEvals
@@ -97,9 +104,9 @@ toWireEvals e =
   }
 
 nea :: forall a. Array a -> Either MultipleErrors (NonEmptyArray a)
-nea = maybe (Left (pure (ForeignError "ChunkedAllEvals: empty chunk array"))) Right <<< NEA.fromArray
+nea = maybe (Left (pure (ForeignError "ChunkedEvals: empty chunk array"))) Right <<< NEA.fromArray
 
-fromWireEvals :: forall f. ChunkedAllEvalsWire f -> Either MultipleErrors (ChunkedAllEvals f)
+fromWireEvals :: forall f. ChunkedEvalsWire f -> Either MultipleErrors (ChunkedEvals f)
 fromWireEvals w = do
   publicEvals <- nea w.publicEvals
   zEvals <- nea w.zEvals

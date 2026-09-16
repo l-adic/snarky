@@ -11,14 +11,14 @@
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml (finalize_other_proof)
 module Pickles.ProofWitness
-  ( -- * Polynomial Evaluations (re-exported from PlonkChecks)
-    module PlonkChecks
+  ( -- * Polynomial Evaluations (re-exported from Pickles.Types)
+    module ReExports
   -- * Complete Witness
   , ProofWitness
   ) where
 
-import Pickles.PlonkChecks (AllEvals)
-import Pickles.PlonkChecks (AllEvals) as PlonkChecks
+import Pickles.Types (Evals)
+import Pickles.Types (Evals) as ReExports
 
 -------------------------------------------------------------------------------
 -- | Complete Witness
@@ -32,5 +32,5 @@ import Pickles.PlonkChecks (AllEvals) as PlonkChecks
 -- |
 -- | Reference: step_verifier.ml finalize_other_proof
 type ProofWitness f =
-  { allEvals :: AllEvals f
+  { allEvals :: Evals f
   }

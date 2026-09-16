@@ -43,12 +43,12 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
+import Pickles.PlonkChecks (absorbEvals)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Types as Step
-import Pickles.Types (ChunkedCommitment(..), StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (AllocEvals, ChunkedCommitment(..), Evals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -89,7 +89,7 @@ import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 --      absorbs `challenges_digest`, `ft_eval1`, then the chunked
 --      public_input arrays and the `to_absorption_sequence` of all
 --      polynomial evaluation pairs. (For non-chunked, PS's
---      `absorbAllEvals` matches the OCaml order exactly.)
+--      `absorbEvals` matches the OCaml order exactly.)
 --    - Squeeze two raw 128-bit scalar challenges: `xi_chal` and
 --      `r_chal`.
 -- 6. Call `combinedInnerProductBatch` (OCaml
@@ -120,7 +120,7 @@ type ExpandDeferredInput n d =
 
   -- Polynomial evals (recombined — caller applied
   -- `Common.evalsOfSplitPoint` upstream).
-  , allEvals :: AllEvals StepField
+  , allEvals :: Evals StepField
   -- public_input evaluation at zeta, as a chunks array. For non-chunked
   -- circuits (num_chunks = 1), this is a singleton
   -- `[allEvals.publicEvals.zeta]`. Required as-is because `ftEval0`
@@ -242,14 +242,14 @@ expandDeferred input =
 
     -- Step 4b: main sponge squeezes (xi_chal, r_chal) after absorbing
     -- sponge_digest, challenges_digest, and all polynomial evaluations.
-    -- `absorbAllEvals` matches OCaml's `ft_eval1, public, z, index,
+    -- `absorbEvals` matches OCaml's `ft_eval1, public, z, index,
     -- witness, coeff, sigma` order in the non-chunked case.
     mainSqueezes
       :: { xiRaw :: SizedF 128 StepField, rRaw :: SizedF 128 StepField }
     mainSqueezes = evalPureSpongeM initialSponge do
       absorb input.spongeDigestBeforeEvaluations
       absorb challengesDigest
-      absorbAllEvals input.allEvals
+      absorbEvals input.allEvals
       xiRaw <- squeezeScalarChallengePure
       rRaw <- squeezeScalarChallengePure
       pure { xiRaw, rRaw }
@@ -362,7 +362,7 @@ type ExpandProofInput n nwp wrapVkChunks =
 
   -- Polynomial evaluations from the wrap proof, already recombined
   -- via `Common.evalsOfSplitPoint` upstream (non-chunked assumption).
-  , allEvals :: AllEvals StepField
+  , allEvals :: Evals StepField
   , pEval0Chunks :: Array StepField
 
   -- Previous-proof bulletproof challenges (raw 128-bit step-field
@@ -436,7 +436,7 @@ type ExpandProofInput n nwp wrapVkChunks =
   , wrapEndo :: WrapField
 
   -- ===== Wrap-field Type2 deferred values (`unfinalized` output) =====
-  , wrapAllEvals :: AllEvals WrapField
+  , wrapEvals :: Evals WrapField
   , wrapPEval0Chunks :: Array WrapField
   , wrapShifts :: Vector 7 WrapField
   , wrapZkRows :: Int
@@ -450,7 +450,7 @@ type ExpandProofInput n nwp wrapVkChunks =
   -- The wrap proof's embedded `prev_evals` — evaluations of the step
   -- proof it wraps, in **step field**. OCaml step.ml:390 reads this
   -- as `t.prev_evals`.
-  , stepProofPrevEvals :: StepAllEvals (F StepField)
+  , stepProofPrevEvals :: AllocEvals (F StepField)
 
   -- Pre-expanded, pre-padded step-side previous bp challenges.
   -- Caller applies `Ipa.Step.compute_challenges` to the raw ones from
@@ -674,10 +674,10 @@ expandProof input =
     -- picked by the return-type annotation).
     wrapDerivePlonkInput =
       { plonkMinimal: wrapPlonkMinimal
-      , w: map _.zeta (Vector.take @7 input.wrapAllEvals.witnessEvals)
-      , sigma: map _.zeta input.wrapAllEvals.sigmaEvals
-      , zZeta: input.wrapAllEvals.zEvals.zeta
-      , zOmegaTimesZeta: input.wrapAllEvals.zEvals.omegaTimesZeta
+      , w: map _.zeta (Vector.take @7 input.wrapEvals.witnessEvals)
+      , sigma: map _.zeta input.wrapEvals.sigmaEvals
+      , zZeta: input.wrapEvals.zEvals.zeta
+      , zOmegaTimesZeta: input.wrapEvals.zEvals.omegaTimesZeta
       , shifts: input.wrapShifts
       , generator: wrapGen
       , domainLog2: input.wrapDomainLog2
@@ -691,7 +691,7 @@ expandProof input =
     -- ft_eval0 for the wrap field — matches step.ml:487-492.
     wrapFtEval0Input =
       { plonkMinimal: wrapPlonkMinimal
-      , allEvals: input.wrapAllEvals
+      , allEvals: input.wrapEvals
       , pEval0Chunks: input.wrapPEval0Chunks
       , shifts: input.wrapShifts
       , generator: wrapGen
@@ -710,7 +710,7 @@ expandProof input =
     -- `oracles.v` = polyscale (xi), `oracles.u` = evalscale (r). Both
     -- are already endo-expanded by the FFI.
     wrapCipInput =
-      { allEvals: input.wrapAllEvals
+      { allEvals: input.wrapEvals
       -- OCaml `step.ml:464-491` folds `x_hat` (the oracle's recomputed
       -- public eval) into the combined_inner_product. Use the oracle's
       -- `publicEvals` (== the wire proof's `evals.public` for a real proof,

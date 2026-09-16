@@ -14,7 +14,7 @@
 -- |   4. (in-circuit) chooseKey + feature flag consistency
 -- |   5. Req.Step_accs        — Vector mpv of step accumulators
 -- |   6. Req.Old_bulletproof_challenges — heterogeneous slot-grouped chals
--- |   7. Req.Evals            — Vector mpv of `StepAllEvals`
+-- |   7. Req.Evals            — Vector mpv of `AllocEvals`
 -- |   8. Req.Wrap_domain_indices — Vector mpv of indices
 -- |   9. (in-circuit) FOP loop (right-to-left) + assert any [finalized; not should_finalize]
 -- |  10. (in-circuit) message hash loop (right-to-left) + assert msg_step
@@ -62,7 +62,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2po
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Typ (existsTyp, perSlotTyp, typOf)
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (WrapAdvice)
@@ -210,26 +210,12 @@ unpackUnfinalized (PerProofUnfinalized r) =
 unwrapPt :: WeierstrassAffinePoint VestaG (FVar WrapField) -> AffinePoint (FVar WrapField)
 unwrapPt (WeierstrassAffinePoint pt) = AffinePoint pt
 
--- | Project a `StepAllEvals` newtype (allocated with OCaml-ordered fields) into
--- | the `ProofWitness` record consumed by `wrapFinalizeOtherProofCircuit`. The
--- | `PointEval` newtype is unwrapped to the underlying record at the same time.
-stepAllEvalsToProofWitness
-  :: StepAllEvals (FVar WrapField)
+-- | Project the allocated evals into the `ProofWitness` record consumed by
+-- | `wrapFinalizeOtherProofCircuit`.
+allocEvalsToProofWitness
+  :: AllocEvals (FVar WrapField)
   -> ProofWitness (FVar WrapField)
-stepAllEvalsToProofWitness (StepAllEvals r) =
-  let
-    unP (PointEval pe) = pe
-  in
-    { allEvals:
-        { ftEval1: r.ftEval1
-        , publicEvals: unP r.publicEvals
-        , zEvals: unP r.zEvals
-        , indexEvals: map unP r.indexEvals
-        , witnessEvals: map unP r.witnessEvals
-        , coeffEvals: map unP r.coeffEvals
-        , sigmaEvals: map unP r.sigmaEvals
-        }
-    }
+allocEvalsToProofWitness (AllocEvals allEvals) = { allEvals }
 
 -------------------------------------------------------------------------------
 -- | Per-slot FOP body (post-Pseudo-domain).
@@ -680,7 +666,7 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
     -- below, so emission order is determined by the traversals.
     unfViews = map unpackUnfinalized prevUnfinalized
 
-    witnesses = map stepAllEvalsToProofWitness rawEvals
+    witnesses = map allocEvalsToProofWitness rawEvals
 
   -- Pseudo domains — right-to-left, matching OCaml's `Vector.map`
   -- evaluation order. We traverse the reversed `wrapDomainIndices`

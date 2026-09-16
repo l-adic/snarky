@@ -59,7 +59,8 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
-import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals, buildEvalPoint, permContribution, permScalar)
+import Pickles.PlonkChecks (buildEvalPoint, permContribution, permScalar)
+import Pickles.Types (ChunkedEvals, Evals)
 import Pickles.Trace as Trace
 import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
 import Poseidon (class PoseidonField)
@@ -161,7 +162,7 @@ computeBpChalsAndB input =
 -- | * `f` — the field in which the CIP is computed. Step-field side
 -- |   uses `StepField`; wrap-field side uses `WrapField`.
 type CombinedInnerProductBatchInput n d f =
-  { allEvals :: AllEvals f
+  { allEvals :: Evals f
   , publicEvals :: PointEval f
   , ftEval0 :: f
   , ftEval1 :: f
@@ -240,7 +241,7 @@ combinedInnerProductBatch input =
 -- | challenge polynomials remain single-valued (they have no chunked
 -- | structure in OCaml either).
 type CombinedInnerProductBatchChunkedInput n d f =
-  { allEvals :: ChunkedAllEvals f
+  { allEvals :: ChunkedEvals f
   , publicEvals :: NonEmptyArray (PointEval f)
   , ftEval0 :: f
   , ftEval1 :: f
@@ -456,7 +457,7 @@ derivePlonk input =
 -- |   target circuit.
 type FtEval0Input f =
   { plonkMinimal :: PlonkMinimal (F f)
-  , allEvals :: AllEvals f
+  , allEvals :: Evals f
   , pEval0Chunks :: Array f
   , shifts :: Vector 7 f
   , generator :: f

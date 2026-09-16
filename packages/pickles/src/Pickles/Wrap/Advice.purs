@@ -30,7 +30,7 @@ module Pickles.Wrap.Advice
 
 import Data.Vector (Vector)
 import Pickles.Field (WrapField)
-import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (AllocEvals, StepIPARounds, WrapIPARounds, WrapProofMessages, WrapProofOpening)
 import Pickles.Wrap.Types (PrevProofState)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
@@ -63,7 +63,7 @@ type WrapAdvice (mpv :: Int) (stepChunks :: Int) =
   -- | the shape is a value rather than the nested `Product` of `Vector w`
   -- | it used to be.
   , oldBpChals :: Array (Array (Vector WrapIPARounds (F WrapField)))
-  , evals :: Vector mpv (StepAllEvals (F WrapField))
+  , evals :: Vector mpv (AllocEvals (F WrapField))
   , wrapDomainIndices :: Vector mpv (F WrapField)
   , openingProof ::
       WrapProofOpening
