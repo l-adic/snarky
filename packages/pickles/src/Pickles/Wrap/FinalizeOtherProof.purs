@@ -24,7 +24,7 @@ import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.FinalizeOtherProof (Output, Params)
+import Pickles.FinalizeOtherProof (Output, Params, pow2PowSquare)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAlphaPowers)
@@ -32,8 +32,7 @@ import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (buildEvalListUnmasked, buildEvalPoint, challengeDigest, combinedInnerProduct, extractEvalFields, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
-import Pickles.ProofWitness (ProofWitness)
-import Pickles.Util.Pow2 (pow2PowSquare)
+import Pickles.Types (Evals)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
@@ -58,7 +57,7 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | Reference: wrap_verifier.ml:1511-1520
 type Input n d fv b =
   { unfinalized :: UnfinalizedProof d fv (Type2 fv) b
-  , witness :: ProofWitness fv
+  , allEvals :: Evals fv
   , prevChallenges :: Vector n (Vector d fv)
   }
 
@@ -86,7 +85,7 @@ wrapFinalizeOtherProofCircuit
   -> (FVar f -> Snarky f (KimchiConstraint f) r (FVar f))
   -> Input n d (FVar f) (BoolVar f)
   -> Snarky f (KimchiConstraint f) r (Output d f)
-wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
+wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals, prevChallenges } = label "wrap-finalize-other-proof" do
   -- Wrap is currently single-domain; access via Vector.head. Multi-
   -- domain wrap dispatch (if ever needed) would mirror Step's
   -- Pseudo.toDomain pattern in Commit C.
@@ -94,7 +93,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     ops = WrapOtherField.fopShiftOps @f
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
-    allEvals = witness.allEvals
     headDomain = Vector.head params.domains
     domain = { generator: headDomain.generator, shifts: params.shifts }
     domainLog2 = headDomain.log2

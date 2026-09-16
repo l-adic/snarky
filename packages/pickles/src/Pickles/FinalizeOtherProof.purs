@@ -17,12 +17,37 @@ module Pickles.FinalizeOtherProof
   ( Params
   , Output
   , DomainMode(..)
+  , pow2PowSquare
   ) where
+
+import Prelude
 
 import Data.Vector (Vector)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Verify.Types (BulletproofChallenges)
-import Snarky.Circuit.DSL (BoolVar, FVar)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, square_)
+import Snarky.Curves.Class (class PrimeField)
+
+-- | `x^(2^n)` by repeated squaring, emitting exactly `n` Square
+-- | constraints. Both sides' `finalize_other_proof` use it for
+-- | `zeta^(2^n)`; the wrap side also has an R1CS variant beside it that
+-- | is deliberately not this one.
+-- |
+-- | Reference: OCaml `step_verifier.ml`'s `pow2_pow`.
+pow2PowSquare
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => FVar f
+  -> Int
+  -> Snarky f c r (FVar f)
+pow2PowSquare x n = go x n
+  where
+  go acc i
+    | i <= 0 = pure acc
+    | otherwise = do
+        sq <- square_ acc
+        go sq (i - 1)
 
 -- | Domain-resolution mode for `finalize_other_proof`.
 -- |

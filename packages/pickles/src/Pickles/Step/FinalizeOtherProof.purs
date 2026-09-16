@@ -32,16 +32,15 @@ import Data.Semigroup.Foldable as Foldable1
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params)
+import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params, pow2PowSquare)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (buildEvalList, buildEvalPoint, combinedInnerProduct, extractEvalFields, knownDomainVanishingPolynomial, knownDomainWhiches, maskedChallengeDigest, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
-import Pickles.ProofWitness (ProofWitness)
+import Pickles.Types (Evals)
 import Pickles.Pseudo as Pseudo
-import Pickles.Util.Pow2 (pow2PowSquare)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
@@ -100,8 +99,11 @@ data DomainSel nd f
 type Input n d f sf b =
   { -- | Unfinalized proof from public input
     unfinalized :: UnfinalizedProof d f sf b
-  -- | Private witness data (polynomial evaluations)
-  , witness :: ProofWitness f
+  -- | Private witness data: the previous proof's polynomial evaluations.
+  -- | Domain-dependent values (zkPolynomial, zetaToNMinus1, omega powers)
+  -- | are computed in-circuit; the opening proof belongs to
+  -- | `incrementally_verify_proof`, not here.
+  , allEvals :: Evals f
   -- | Proofs-verified mask (for CIP and challenge_digest)
   , mask :: Vector n b
   -- | Old bulletproof challenges from all previous proofs
@@ -167,7 +169,7 @@ finalizeOtherProofCircuit
   -> Params nd f r2
   -> Input n d (FVar f) sf (BoolVar f)
   -> Snarky f (KimchiConstraint f) r (Output d f)
-finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
+finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
   -- Multi-domain compile-time dispatch via Pseudo (mirrors OCaml
   -- `Pseudo.Domain.to_domain`, `pseudo.ml:103-128`). For nd=1
   -- callers (single-rule), the Vector 1 of mask bits + values
@@ -202,7 +204,6 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
-    allEvals = witness.allEvals
 
   ---------------------------------------------------------------------------
   -- Step 2: Expand alpha and zeta via endo

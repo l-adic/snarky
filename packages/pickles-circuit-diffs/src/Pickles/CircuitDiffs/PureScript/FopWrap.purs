@@ -128,7 +128,7 @@ fopWrapCircuit input =
   in
     wrapFinalizeOtherProofCircuit params vanishingPoly
       { unfinalized
-      , witness: { allEvals: input.allEvals }
+      , allEvals: input.allEvals
       , prevChallenges: input.prevChallenges
       }
 

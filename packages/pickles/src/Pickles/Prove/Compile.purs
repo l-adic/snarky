@@ -17,6 +17,10 @@ module Pickles.Prove.Compile
   , ProverVKs
   , ProveError
   , StepInputs
+  -- | `Unique` is exported abstractly: `Tag` carries one as its routing
+  -- | key, so the name has to be reachable, but nothing outside builds or
+  -- | inspects one.
+  , Unique
   , Tag(..)
   , BranchProver(..)
   , RulesSpec
@@ -69,6 +73,9 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception as Exc
 import Effect.Exception.Unsafe (unsafeThrow)
+import Effect.Ref (Ref)
+import Effect.Ref as Ref
+import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
 import Pickles.Dummy (dummyIpaChallenges)
@@ -76,13 +83,15 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (collapseChunkedEvals, collapsePointEval)
-import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
+import Pickles.Prove.Slot (slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.Prove.Slot as RuntimeSlot
-import Pickles.Prove.SlotCompile as SlotCompile
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Step.VkSource (SlotVkBlueprint(..))
+import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -117,15 +126,15 @@ import Pickles.Slots (Slot)
 import Pickles.Step.Dummy
   ( baseCaseDummies
   , computeDummySgValues
+  , dummyWrapProof
   , wrapDomainLog2ForProofsVerified
   , wrapDummyUnfinalizedProof
   )
 import Pickles.Step.Dummy as Dummy
-import Pickles.Step.Main (class BuildSlotVkSources, SlotVkBlueprint)
+import Pickles.Step.Main (class BuildSlotVkSources)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
 import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
-import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify
   ( CompiledProof(..)
   , CompiledProofWidthData(..)
@@ -158,7 +167,9 @@ import Snarky.Backend.Kimchi.Proof
   , proofOraclesRec
   , proverIndexDomainLog2
   , srsBlindingGenerator
+  , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.ProofCache (ProofCache)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
@@ -183,6 +194,149 @@ import Type.Proxy (Proxy(..))
 --------------------------------------------------------------------------------
 
 type ProveError = EvaluationError
+
+--------------------------------------------------------------------------------
+-- Per-slot compile data
+--------------------------------------------------------------------------------
+--
+-- What one slot contributes to the step prover's `srsData`, computed by
+-- folding over an `Array Slot` rather than dispatching through one
+-- type-class instance per slot shape.
+--
+-- The chunk counts stay type-level: `slotNc` is the chunk count of the
+-- compile that produced *this* slot's previous proofs, including its
+-- lagrange basis, which is read at the slot source's own wrap domain. The
+-- enclosing compile's wrap-VK chunk count is a different axis and does not
+-- appear here.
+
+type SlotCompileEntry :: Int -> Type
+type SlotCompileEntry slotNc =
+  { fopDomainLog2s :: Array Int
+  , fopZkRows :: Int
+  , vkBlueprint :: SlotVkBlueprint slotNc
+  }
+
+-- | The compile-wide inputs the per-slot fold needs: the subset of
+-- | `CompileConfig` it reads, with the wrap-domain override already
+-- | resolved.
+type SlotCompileConfig =
+  { pallasSrs :: CRS PallasG
+  -- | The enclosing compile's declared `num_chunks`; `Self` slots read
+  -- | their previous step proof's `zk_rows` from it.
+  , stepNumChunks :: Int
+  -- | The enclosing rule's wrap domain log2, already resolved against
+  -- | `wrapDomainOverride`. `Self` slots use it directly.
+  , outerWrapDomainLog2 :: Int
+  -- | The number of branches the enclosing compile has, which is the
+  -- | width of every slot's `fopDomainLog2s`.
+  , branchCount :: Int
+  }
+
+-- | The per-slot lagrange basis of a wrap VK at one domain, chunked at
+-- | the compile-wide `nc`. At `nc = 1` the chunks array has length one
+-- | and this is byte-identical to the single-chunk path.
+lagrangeAtDomain
+  :: forall @nc
+   . Reflectable nc Int
+  => CRS PallasG
+  -> Int
+  -> (Int -> Vector nc (AffinePoint (F StepField)))
+lagrangeAtDomain pallasSrs domainLog2 = \i ->
+  let
+    chunksArr = ProofFFI.srsLagrangeCommitmentChunksAt pallasSrs domainLog2 i
+  in
+    case Vector.toVector @nc (map coerce chunksArr) of
+      Just v -> v
+      Nothing -> unsafeThrow
+        $ "lagrangeAtDomain: the SRS returned "
+            <> show (Array.length chunksArr)
+            <> " lagrange chunks at domainLog2="
+            <> show domainLog2
+            <> ", but this basis is declared at "
+            <> show (reflectType (Proxy @nc))
+
+-- | An external source's wrap verification key, in the commitment shape
+-- | the step advice uses. Same body as
+-- | `Pickles.Prove.Step.extractWrapVKCommsAdvice`.
+externalWrapVk
+  :: forall @nc
+   . Reflectable nc Int
+  => VerifierIndex PallasG WrapField
+  -> VerificationKey nc (WeierstrassAffinePoint PallasG (F StepField))
+externalWrapVk vk = VerificationKey
+  { sigma: map chunked comms.sigma
+  , coeff: map chunked comms.coeff
+  , index: map chunked comms.index
+  }
+  where
+  comms = vestaVerifierIndexCommitments @nc vk
+
+  wrapPt :: AffinePoint StepField -> WeierstrassAffinePoint PallasG (F StepField)
+  wrapPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
+
+  chunked = over ChunkedCommitment (map wrapPt)
+
+-- | One slot's contribution. `selfStepDomainLog2s` is the enclosing
+-- | compile's own per-branch step domains, which only exist after the
+-- | pre-pass; `Self` slots take it verbatim.
+slotCompileEntry
+  :: forall @slotNc
+   . Reflectable slotNc Int
+  => SlotCompileConfig
+  -> Array Int
+  -> RuntimeSlot.Slot
+  -> SlotCompileEntry slotNc
+slotCompileEntry cfg selfStepDomainLog2s slot =
+  { fopDomainLog2s: slotSourceDomainLog2s cfg.branchCount selfStepDomainLog2s slot
+  , fopZkRows: zkRowsForNumChunks (slotNumChunks cfg.stepNumChunks slot)
+  , vkBlueprint: blueprint
+  }
+  where
+  outer = cfg.outerWrapDomainLog2
+
+  -- This slot's lagrange basis, at its own wrap domain and its own
+  -- chunk count. Both belong to the slot: the domain is the source's,
+  -- and a chunked source has a chunked basis.
+  lagrangeAt :: Int -> Int -> Vector slotNc (AffinePoint (F StepField))
+  lagrangeAt = lagrangeAtDomain cfg.pallasSrs
+
+  slotLagrange = mkConstLagrangeBaseLookup (lagrangeAt (slotWrapDomainLog2 outer slot))
+
+  blueprint = case slot.source of
+    RuntimeSlot.SelfSource -> BlueprintSelf slotLagrange
+    RuntimeSlot.ExternalSource d ->
+      BlueprintExternal slotLagrange (externalWrapVk @slotNc d.wrapVerifierIndex)
+    -- A side-loaded slot's wrap domain is not known until prove time,
+    -- so it carries all three bases and muxes in-circuit instead.
+    RuntimeSlot.SideLoadedSource ->
+      BlueprintSideLoaded (map lagrangeAt (13 :< 14 :< 15 :< Vector.nil))
+
+-- | Opaque runtime identity token, modeled on Haskell's `Data.Unique`.
+-- | Each `newUnique` call allocates a globally fresh value that compares
+-- | unequal to every previous one, and equal only to itself.
+-- |
+-- | `Tag` below uses it as the routing key — the prover/verifier identity
+-- | tied to a single `compile` invocation. Equality and ordering let it
+-- | serve as a Map key for downstream registries (mutual-rule families,
+-- | side-loaded VKs).
+newtype Unique = Unique Int
+
+derive newtype instance Eq Unique
+derive newtype instance Ord Unique
+
+instance Show Unique where
+  show (Unique n) = "Unique#" <> show n
+
+-- | Module-local counter, allocated lazily once at module load.
+-- | `newUnique` increments it via `Ref.modify`. Sufficient for
+-- | single-threaded JS; not safe across workers, but Pickles compiles run
+-- | in a single thread.
+uniqueCounter :: Ref Int
+uniqueCounter = unsafePerformEffect (Ref.new 0)
+
+-- | Allocate a fresh `Unique`, distinct from every prior return.
+newUnique :: Effect Unique
+newUnique = Unique <$> Ref.modify (_ + 1) uniqueCounter
 
 -- | Identity bundle for a Pickles rule emitted by `compile`. Carries:
 -- |
@@ -437,7 +591,7 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
   , wrapDomainLog2: cfg.selfWrapDomainLog2
   }
   where
-  headEntry = SlotCompile.slotCompileEntry
+  headEntry = slotCompileEntry
     { pallasSrs: cfg.srs.pallasSrs
     , stepNumChunks: cfg.stepNumChunks
     , outerWrapDomainLog2: cfg.selfWrapDomainLog2

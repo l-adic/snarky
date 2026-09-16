@@ -13,13 +13,14 @@ module Pickles.IncrementallyVerifyProof
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
+  , ftComm
   , packStatement
   ) where
 
 import Prelude
 
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Foldable (for_)
+import Data.Foldable (foldM, for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
@@ -28,7 +29,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.FtComm (ftComm)
 import Pickles.IPA (checkBulletproof)
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (assertPlonkChallenges, ivpTrace, spongeTranscriptCircuit, spongeTranscriptOptCircuit)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBaseLookup, publicInputCommit)
@@ -45,10 +45,12 @@ import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, const_, label)
+import Snarky.Circuit.Curves as Curves
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, Snarky, const_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (AffinePoint(..), CurveParams)
@@ -448,5 +450,82 @@ packStatement { proofState: ps, messagesForNextStepProof } =
               )
           )
       )
+
+-------------------------------------------------------------------------------
+-- | The ft polynomial commitment
+-------------------------------------------------------------------------------
+
+-- | Compute the ft polynomial commitment in-circuit, one step of the IVP
+-- | above.
+-- |
+-- | ft_comm = scale(σ_last, perm) + reduced_t + negate(scale(reduced_t, zeta_to_domain))
+-- | where reduced_t = reduce_chunks(t_comm, zeta_to_srs), and reduce_chunks
+-- | is Horner accumulation: c[0] + scale(c[1] + scale(..., z), z).
+-- |
+-- | Reference: mina/src/lib/pickles/common.ml:227-246, which likewise keeps
+-- | this beside the rest of the shared verifier helpers rather than in a
+-- | file of its own.
+ftComm
+  :: forall stepChunks numChunksPred tCommLen tCommLenPred f r sf cr
+   . PrimeField f
+  => Add 1 numChunksPred stepChunks
+  => Add 1 tCommLenPred tCommLen
+  => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky f (KimchiConstraint f) cr (AffinePoint (FVar f))
+     | r
+     }
+  -> { sigmaLast :: Vector stepChunks (AffinePoint (FVar f))
+     , tComm :: Vector tCommLen (AffinePoint (FVar f))
+     , perm :: sf
+     , zetaToSrsLength :: sf
+     , zetaToDomainSize :: sf
+     }
+  -> Snarky f (KimchiConstraint f) cr (AffinePoint (FVar f))
+ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = label "ft-comm" do
+  -- OCaml order (common.ml:307-326): both `sigma_comm_last` and `t_comm`
+  -- are chunk arrays. Each one is collapsed via `reduce_chunks` (xi-Horner
+  -- with `zeta_to_srs_length`), THEN scaled / combined:
+  --   1. sigma_comm_last_reduced = reduce_chunks sigma_comm_last
+  --   2. f_comm                  = scale sigma_comm_last_reduced plonk.perm
+  --   3. chunked_t_comm          = reduce_chunks t_comm
+  --   4. Expression: f_comm + chunked_t_comm + negate(scale chunked_t_comm zeta_to_domain)
+  --      Due to right-to-left OCaml argument evaluation:
+  --        a. negate(scale chunked_t_comm zeta_to_domain)  [right arg of outer +]
+  --        b. f_comm + chunked_t_comm                      [left arg of outer +]
+  --        c. result + negated                              [outer +]
+
+  -- Step 0: reduce_chunks sigmaLast (Horner over zetaToSrsLength).
+  reducedSigmaLast <- hornerReduce sigmaLast
+  -- Step 1: scale(σ_last_reduced, perm)
+  fComm <- scaleByShifted reducedSigmaLast perm
+  -- Step 2: Horner reduction of t_comm chunks
+  chunkedTComm <- hornerReduce tComm
+  -- Step 3a: negate(scale(chunked_t_comm, zeta_to_domain)) [right-to-left: evaluated first]
+  zetaDomTerm <- scaleByShifted chunkedTComm zetaToDomainSize
+  negZetaDomTerm <- Curves.negate zetaDomTerm
+  -- Step 3b: f_comm + chunked_t_comm [evaluated second]
+  { p: r1 } <- addComplete fComm chunkedTComm
+  -- Step 3c: result + negated
+  { p: result } <- addComplete r1 negZetaDomTerm
+  pure result
+  where
+  -- `reduce_chunks` from OCaml `common.ml:311-318`:
+  -- res = comm[n-1]; for i = n-2 downto 0: res = comm[i] + scale res zetaToSrsLength
+  hornerReduce
+    :: forall k kPred
+     . Add 1 kPred k
+    => Vector k (AffinePoint (FVar f))
+    -> Snarky f (KimchiConstraint f) cr (AffinePoint (FVar f))
+  hornerReduce v =
+    let
+      { last, init } = Vector.unsnoc v
+    in
+      foldM
+        ( \acc chunk -> do
+            scaled <- scaleByShifted acc zetaToSrsLength
+            { p } <- addComplete chunk scaled
+            pure p
+        )
+        last
+        (Vector.reverse init)
 
 -------------------------------------------------------------------------------

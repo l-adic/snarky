@@ -13,6 +13,7 @@ module Pickles.Verify.Types
     BulletproofChallenges
   , ScalarChallenge
   -- * Plonk Deferred Values
+  , PlonkChallenges
   , PlonkMinimal
   , PlonkInCircuit
   , toPlonkMinimal
@@ -70,13 +71,19 @@ type BulletproofChallenges d f = Vector d (ScalarChallenge f)
 -- | proof, are all that's needed to derive the full In_circuit values.
 -- |
 -- | Reference: composition_types.ml:36-50 `Plonk.Minimal`
-type PlonkMinimal f =
-  { alpha :: ScalarChallenge f
-  , beta :: ScalarChallenge f
-  , gamma :: ScalarChallenge f
-  , zeta :: ScalarChallenge f
-  -- jointCombiner omitted (None for now, used for lookups)
+-- |
+-- | The four challenge names, parameterised by how they are carried:
+-- | `PlonkMinimal` holds them as 128-bit scalar challenges,
+-- | `expandPlonkMinimal` returns them endo-expanded to full field elements.
+-- | (`jointCombiner` is omitted — `None` until lookups.)
+type PlonkChallenges a =
+  { alpha :: a
+  , beta :: a
+  , gamma :: a
+  , zeta :: a
   }
+
+type PlonkMinimal f = PlonkChallenges (ScalarChallenge f)
 
 -- | PLONK In_circuit values: minimal challenges plus shifted scalars.
 -- |
@@ -103,20 +110,6 @@ toPlonkMinimal p = { alpha: p.alpha, beta: p.beta, gamma: p.gamma, zeta: p.zeta 
 -- | Plonk Expanded Values
 -------------------------------------------------------------------------------
 
--- | PLONK challenges with scalar challenges expanded to full field elements.
--- |
--- | This is the "In_circuit" representation where alpha and zeta have been
--- | converted from 128-bit scalar challenges to full field elements via
--- | the endo coefficient.
--- |
--- | Reference: composition_types.ml In_circuit.map_challenges ~scalar
-type PlonkExpanded f =
-  { alpha :: f -- expanded from ScalarChallenge
-  , beta :: f
-  , gamma :: f
-  , zeta :: f -- expanded from ScalarChallenge
-  }
-
 -- | Expand PlonkMinimal scalar challenges to full field values.
 -- |
 -- | Converts alpha and zeta from 128-bit scalar challenges to full field
@@ -131,7 +124,7 @@ expandPlonkMinimal
   => FieldSizeInBits f 255
   => f -- endo coefficient
   -> PlonkMinimal (F f)
-  -> PlonkExpanded f
+  -> PlonkChallenges f
 expandPlonkMinimal endo plonk =
   { alpha: unwrap $ toFieldPure plonk.alpha (F endo)
   , beta: unwrap $ SizedF.toField plonk.beta

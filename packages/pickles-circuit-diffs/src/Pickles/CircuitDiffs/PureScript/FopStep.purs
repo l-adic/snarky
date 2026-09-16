@@ -130,7 +130,7 @@ fopStepCircuit input =
   in
     finalizeOtherProofCircuit StepOtherField.fopShiftOps params
       { unfinalized
-      , witness: { allEvals: input.allEvals }
+      , allEvals: input.allEvals
       , mask: input.mask
       , prevChallenges: input.prevChallenges
       , domainLog2Var: input.domainLog2Var

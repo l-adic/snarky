@@ -174,7 +174,7 @@ verifyOne fopParams input ivpParams = do
         , shouldFinalize: coerce (const_ one :: FVar StepField)
         , spongeDigestBeforeEvaluations: ps.spongeDigest
         }
-    , witness: { allEvals: input.allEvals }
+    , allEvals: input.allEvals
     , mask: input.proofMask
     , prevChallenges: input.prevChallenges
     , domainLog2Var: input.branchData.domainLog2

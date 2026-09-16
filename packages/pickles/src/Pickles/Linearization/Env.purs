@@ -22,17 +22,27 @@ import Data.Int (pow) as Int
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Data.Maybe (Maybe(..))
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (fromInt)
+import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.Util.Hex (parseHex)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, pow)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, fromBigInt, pow)
 import Type.Proxy (Proxy(..))
+
+-- | Parse a hex string into a field element. The linearization tables
+-- | (`Pickles.Linearization.{Pallas,Vesta}`) carry their constants as hex
+-- | literals, and this is the only place they are read.
+parseHex :: forall f. Partial => PrimeField f => String -> f
+parseHex hex = case fromBigInt <$> BigInt.fromString hex of
+  Nothing -> unsafeThrow $ "Failed to parse Hex to BigInt: " <> hex
+  Just a -> a
 
 -- | Number of precomputed powers of α: `α^0 .. α^70`. Drives the size
 -- | of the `alphaPowers` vector consumed by

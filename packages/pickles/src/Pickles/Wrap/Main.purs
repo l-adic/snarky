@@ -55,14 +55,13 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PackedStatement (PackedStepPublicInput(..))
-import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Typ (existsTyp, perSlotTyp, typOf)
-import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (WrapAdvice)
@@ -210,12 +209,6 @@ unpackUnfinalized (PerProofUnfinalized r) =
 unwrapPt :: WeierstrassAffinePoint VestaG (FVar WrapField) -> AffinePoint (FVar WrapField)
 unwrapPt (WeierstrassAffinePoint pt) = AffinePoint pt
 
--- | Project the allocated evals into the `ProofWitness` record consumed by
--- | `wrapFinalizeOtherProofCircuit`.
-allocEvalsToProofWitness
-  :: AllocEvals (FVar WrapField)
-  -> ProofWitness (FVar WrapField)
-allocEvalsToProofWitness (AllocEvals allEvals) = { allEvals }
 
 -------------------------------------------------------------------------------
 -- | Per-slot FOP body (post-Pseudo-domain).
@@ -253,10 +246,10 @@ processOneSlotFopBody
   -> Int -- slotIdx, for label only
   -> PlonkDomain WrapField r
   -> UnfinalizedView
-  -> ProofWitness (FVar WrapField)
+  -> Evals (FVar WrapField)
   -> Vector PaddedLength (Vector WrapIPARounds (FVar WrapField)) -- pre-padded chals
   -> Snarky WrapField (KimchiConstraint WrapField) r (Vector WrapIPARounds (FVar WrapField))
-processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals = do
+processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals = do
   { finalized, expandedChallenges } <- wrapFinalizeOtherProofCircuit
     { domains:
         { generator: domain.generator, log2: fopBaseParams.domainLog2 } :< Vector.nil
@@ -274,7 +267,7 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals =
     }
     domain.vanishingPolynomial
     { unfinalized: unfView
-    , witness
+    , allEvals
     , prevChallenges: paddedChals
     }
   label ("block3-fop-assert-" <> show slotIdx) do
@@ -666,7 +659,7 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
     -- below, so emission order is determined by the traversals.
     unfViews = map unpackUnfinalized prevUnfinalized
 
-    witnesses = map allocEvalsToProofWitness rawEvals
+    witnesses = map (\(AllocEvals allEvals) -> allEvals) rawEvals
 
   -- Pseudo domains — right-to-left, matching OCaml's `Vector.map`
   -- evaluation order. We traverse the reversed `wrapDomainIndices`
