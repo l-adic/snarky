@@ -1496,12 +1496,13 @@ instance
 --
 -- The same idea as `Pickles.Step.Slots.PrevsSpec` one level up: a list
 -- over the branches rather than over one branch's prev slots. Each
--- `RulesCons` carries the three facts that vary per branch — that
--- branch's `mpv`, its prev statement types, and its prevs spec.
+-- `RulesCons` carries the two facts that vary per branch — that
+-- branch's `mpv` and its prevs spec, which fixes each slot's statement
+-- type.
 --
--- `inputVal`, `outputVal` and `prevInputVal` are not among them: they
--- parameterize the shared wrap VK's public-input layout, so they live
--- at the multi-branch level.
+-- `inputVal` and `outputVal` are not among them: they parameterize the
+-- shared wrap VK's public-input layout, so they live at the
+-- multi-branch level.
 --------------------------------------------------------------------------------
 
 -- | Kind: a type-level list of rule specs.
@@ -1511,9 +1512,9 @@ data RulesSpec
 -- | `compileMulti` itself rejects it, through `Compare 0 branches LT`.
 foreign import data RulesNil :: RulesSpec
 
--- | One branch's contribution to the rules list: its `mpv`, its prev
--- | statement types, its prevs spec, and the rest of the list.
-foreign import data RulesCons :: Int -> Type -> Type -> RulesSpec -> RulesSpec
+-- | One branch's contribution to the rules list: its `mpv`, its prevs
+-- | spec, and the rest of the list.
+foreign import data RulesCons :: Int -> Type -> RulesSpec -> RulesSpec
 
 -- | A rule's per-slot `max_proofs_verified`, in slot order, read back
 -- | as values from the `n` of each `Slot n stmt`, so the wrap
@@ -1583,7 +1584,7 @@ instance
   ( MaxOfRulesMpvs rest restMax
   , IntMax ruleMpv restMax mpvMax
   ) =>
-  MaxOfRulesMpvs (RulesCons ruleMpv valCarrier prevsSpec rest) mpvMax
+  MaxOfRulesMpvs (RulesCons ruleMpv prevsSpec rest) mpvMax
 
 -- | What `compileMulti` needs that is shared across all branches. The
 -- | per-branch data travels alongside, in the `rulesCarrier`.
@@ -1671,7 +1672,6 @@ class CompilableRulesSpec
   :: RulesSpec
   -> Type
   -> Type
-  -> Type
   -> Int
   -> Int
   -> Int
@@ -1687,7 +1687,6 @@ class
     rs
     inputVal
     outputVal
-    prevInputVal
     topBranches
     branches
     mpvMax
@@ -1742,7 +1741,6 @@ instance
   CompilableRulesSpec RulesNil
     inputVal
     outputVal
-    prevInputVal
     topBranches
     0
     mpvMax
@@ -1761,7 +1759,7 @@ instance
   buildWrapPerBranchVec _ = Vector.nil
 
 instance
-  ( CompilableRulesSpec rest inputVal outputVal prevInputVal
+  ( CompilableRulesSpec rest inputVal outputVal
       topBranches
       restBranches
       mpvMax
@@ -1790,15 +1788,15 @@ instance
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , Reflectable ruleMpv Int
+  , SlotStatementsCarrier prevsSpec valCarrier
   -- The runtime side-loaded VK carrier, bound once here so that the
   -- `RuleEntry` and the `StepAdvice` its closure takes share it.
   , SideloadedVKsCarrier prevsSpec vkCarrier
   ) =>
   CompilableRulesSpec
-    (RulesCons ruleMpv valCarrier prevsSpec rest)
+    (RulesCons ruleMpv prevsSpec rest)
     inputVal
     outputVal
-    prevInputVal
     topBranches
     branches
     mpvMax
@@ -1834,7 +1832,6 @@ instance
       @rest
       @inputVal
       @outputVal
-      @prevInputVal
       @topBranches
       @restBranches
       @mpvMax
@@ -1851,7 +1848,6 @@ instance
           @rest
           @inputVal
           @outputVal
-          @prevInputVal
           @topBranches
           @restBranches
           @mpvMax
@@ -1869,7 +1865,6 @@ instance
         @rest
         @inputVal
         @outputVal
-        @prevInputVal
         @topBranches
         @restBranches
         @mpvMax
@@ -1886,7 +1881,6 @@ instance
       @rest
       @inputVal
       @outputVal
-      @prevInputVal
       @topBranches
       @restBranches
       @mpvMax
@@ -1911,7 +1905,6 @@ instance
         @rest
         @inputVal
         @outputVal
-        @prevInputVal
         @topBranches
         @restBranches
         @mpvMax
@@ -1930,7 +1923,6 @@ instance
         @rest
         @inputVal
         @outputVal
-        @prevInputVal
         @topBranches
         @restBranches
         @mpvMax
@@ -1954,7 +1946,7 @@ instance
 --------------------------------------------------------------------------------
 
 class
-  CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax
+  CompilableRulesSpec rs inputVal outputVal topBranches branches mpvMax
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
@@ -1965,7 +1957,6 @@ class
     rs
     inputVal
     outputVal
-    prevInputVal
     topBranches
     branches
     mpvMax
@@ -2049,14 +2040,14 @@ class
 -- | pre-pass found for them. Instantiating both class parameters at
 -- | `topBranches` is what makes this the recursion's outermost call.
 runMultiCompileFull
-  :: forall @rs @inputVal @outputVal @prevInputVal @topBranches @mpvMax @r
+  :: forall @rs @inputVal @outputVal @topBranches @mpvMax @r
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
        stepProveFnsCarrier
        proversCarrier
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
+   . CompilableRulesSpecShape rs inputVal outputVal
        topBranches
        topBranches
        mpvMax
@@ -2084,7 +2075,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @rs
     @inputVal
     @outputVal
-    @prevInputVal
     @topBranches
     @topBranches
     @mpvMax
@@ -2119,7 +2109,6 @@ runMultiCompileFull handler cfg stepNumChunks rules = do
     @rs
     @inputVal
     @outputVal
-    @prevInputVal
     @topBranches
     @topBranches
     @mpvMax
@@ -2141,7 +2130,6 @@ instance
   CompilableRulesSpecShape RulesNil
     inputVal
     outputVal
-    prevInputVal
     topBranches
     0
     mpvMax
@@ -2158,7 +2146,7 @@ instance
   buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
 
 instance
-  ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
+  ( CompilableRulesSpecShape rest inputVal outputVal
       topBranches
       restBranches
       mpvMax
@@ -2200,14 +2188,12 @@ instance
   , Add 1 topBranchesPred topBranches
   , CircuitType StepField inputVal inputVar
   , CircuitType StepField outputVal outputVar
-  , CircuitType StepField prevInputVal prevInputVar
   , StepSlotsTyp prevsSpec carrier carrierFVar
   , CheckedType StepField (KimchiConstraint StepField) inputVar
   , CompilableRulesSpec
-      (RulesCons ruleMpv valCarrier prevsSpec rest)
+      (RulesCons ruleMpv prevsSpec rest)
       inputVal
       outputVal
-      prevInputVal
       topBranches
       branches
       mpvMax
@@ -2243,10 +2229,9 @@ instance
   , Add restBranches 1 branches
   ) =>
   CompilableRulesSpecShape
-    (RulesCons ruleMpv valCarrier prevsSpec rest)
+    (RulesCons ruleMpv prevsSpec rest)
     inputVal
     outputVal
-    prevInputVal
     topBranches
     branches
     mpvMax
@@ -2296,7 +2281,6 @@ instance
       @rest
       @inputVal
       @outputVal
-      @prevInputVal
       @topBranches
       @restBranches
       @mpvMax
@@ -2324,7 +2308,6 @@ instance
       @rest
       @inputVal
       @outputVal
-      @prevInputVal
       @topBranches
       @restBranches
       @mpvMax
@@ -2366,8 +2349,6 @@ instance
           @inputVar
           @outputVal
           @outputVar
-          @prevInputVal
-          @prevInputVar
           @topBranches
           @mpvMax
           @mpvPad
@@ -2386,7 +2367,6 @@ instance
       @rest
       @inputVal
       @outputVal
-      @prevInputVal
       @topBranches
       @restBranches
       @mpvMax
@@ -2458,9 +2438,9 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize vkCarrier
 -- | through `preComputeStepDomainLog2`, `stepCompile` and
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @mpvMax @outputVal @prevInputVal @r
+  :: forall @mpvMax @outputVal @r
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
-       inputVal inputVar outputVar prevInputVar
+       inputVal inputVar outputVar
        carrier carrierVar pad unfsTotal digestPlusUnfs
        compileSideloadedVkCarrier sideloadedVkCarrier blueprints
        vkSourcesCarrier
@@ -2491,7 +2471,6 @@ mkRuleEntry
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
-  => CircuitType StepField prevInputVal prevInputVar
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -2517,7 +2496,7 @@ mkRuleEntry
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) inputVar
   => SlotStatementsCarrier prevsSpec valCarrier
-  => PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  => PStepRule r prevsSpec inputVal inputVar outputVal outputVar
   -- | Where each slot's wrap VK comes from, in slot order.
   -> Vector mpv SlotWrapKey
   -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize sideloadedVkCarrier blueprints r)
@@ -2532,8 +2511,6 @@ mkRuleEntry rule slotVKs =
           @inputVar
           @outputVal
           @outputVar
-          @prevInputVal
-          @prevInputVar
           @mpvMax
           @mpvPad
           @nd
@@ -2549,8 +2526,6 @@ mkRuleEntry rule slotVKs =
           @inputVar
           @outputVal
           @outputVar
-          @prevInputVal
-          @prevInputVar
           @mpvMax
           @mpvPad
           @nd
@@ -2566,8 +2541,6 @@ mkRuleEntry rule slotVKs =
           @inputVar
           @outputVal
           @outputVar
-          @prevInputVal
-          @prevInputVar
           @mpvMax
           @mpvPad
           @nd
@@ -2581,8 +2554,8 @@ mkRuleEntry rule slotVKs =
 
 -- A local name for `StepRuleAt`, to keep the `RuleEntry` field types
 -- free of an import cycle.
-type PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar =
-  PProveStep.StepRuleAt r mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+type PStepRule r prevsSpec inputVal inputVar outputVal outputVar =
+  PProveStep.StepRuleAt r prevsSpec inputVal inputVar outputVal outputVar
 
 --------------------------------------------------------------------------------
 -- compileMulti — N-branch compile entry point.
@@ -2592,7 +2565,7 @@ type PStepRule r mpv valCarrier inputVal inputVar outputVal outputVar prevInputV
 -- compiled over all of them; and each branch gets a prover closure
 -- that bakes its own index into the wrap statement's `whichBranch`.
 --
--- `inputVal`, `outputVal` and `prevInputVal` are shared across the
+-- `inputVal` and `outputVal` are shared across the
 -- branches, because the wrap VK's public-input layout is the same for
 -- every proof under it.
 --------------------------------------------------------------------------------
@@ -2644,7 +2617,7 @@ buildStepProveCtx cfg stepNumChunks selfMpvMax slotVKs selfStepDomainLog2s =
 
 runMultiProverBody
   :: forall @prevsSpec prevsCarrier @mpv @valCarrier @carrier
-       @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
+       @inputVal @inputVar @outputVal @outputVar
        @topBranches
        @mpvMax @mpvPad @stepChunks numChunksPred
        branches branchesPred topBranchesPred
@@ -2701,7 +2674,6 @@ runMultiProverBody
   => Add 1 totalBasesMaxPred totalBasesMax
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
-  => CircuitType StepField prevInputVal prevInputVar
   => StepSlotsTyp prevsSpec carrier carrierFVar
   => CheckedType StepField (KimchiConstraint StepField) inputVar
   => AdviceHandler r
@@ -3064,7 +3036,7 @@ runMultiProverBody
             }
 
 compileMulti
-  :: forall @rs @outputVal @prevInputVal @stepChunks numChunksPred
+  :: forall @rs @outputVal @stepChunks numChunksPred
        r
        inputVal mpvMax
        branches
@@ -3076,7 +3048,7 @@ compileMulti
        proversCarrier
        branchesPred totalBases totalBasesPred
        tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
+   . CompilableRulesSpecShape rs inputVal outputVal
        branches
        branches
        mpvMax
@@ -3132,7 +3104,6 @@ compileMulti handler cfg rules = do
           @rs
           @inputVal
           @outputVal
-          @prevInputVal
           @branches
           @branches
           @mpvMax
@@ -3150,7 +3121,6 @@ compileMulti handler cfg rules = do
     @rs
     @inputVal
     @outputVal
-    @prevInputVal
     @branches
     @mpvMax
     @r
@@ -3188,7 +3158,6 @@ compileMulti handler cfg rules = do
       @rs
       @inputVal
       @outputVal
-      @prevInputVal
       @branches
       @branches
       @mpvMax
@@ -3245,7 +3214,6 @@ compileMulti handler cfg rules = do
     @rs
     @inputVal
     @outputVal
-    @prevInputVal
     @branches
     @branches
     @mpvMax

@@ -49,7 +49,7 @@ import Pickles.Slots (Slot)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
-import Pickles.Step.Slots (class StepSlotsCarrier, class StepSlotsTyp, stepSlotsTyp, traverseStepSlotsAWithVk)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, PrevValues, Prevs, mkPrevValues, prevsVector, stepSlotsTyp, traverseStepSlotsAWithVk)
 import Pickles.Step.Types (AllocBranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
@@ -78,18 +78,12 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | Rule abstraction
 -------------------------------------------------------------------------------
 
--- | What a rule's body returns: the public input of each of its `n`
--- | previous proofs, a flag per previous proof saying whether that
--- | proof must verify, and the rule's own public output.
--- |
--- | `prevInput` is the previous proofs' public-input type, tracked
--- | separately from the rule's own `input`: under output-mode or
--- | heterogeneous recursion it is the previous rules' public output
--- | instead. A rule with no public output instantiates `output` at
--- | `Unit`.
-type RuleOutput n prevInput output =
-  { prevPublicInputs :: Vector n prevInput
-  , proofMustVerify :: Vector n (BoolVar StepField)
+-- | What a rule's body returns: one `PrevStatement` per slot of its
+-- | prevs spec, packed by `toPrevs`, and the rule's own public output.
+-- | Each slot's statement has that slot's own type. A rule with no
+-- | public output instantiates `output` at `Unit`.
+type RuleOutput prevsSpec output =
+  { prevs :: Prevs prevsSpec
   , publicOutput :: output
   }
 
@@ -580,7 +574,7 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
+  :: forall @prevsSpec pad outputSize @inputVal input @outputVal output
        @valCarrier @mpvMax mpvPad @nd ndPred @cell
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
@@ -592,7 +586,7 @@ stepMain
   => Reflectable nd Int
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
+  => SlotStatementsCarrier prevsSpec valCarrier
   -- The carrier's layout as a value. `CircuitType` cannot supply it:
   -- each slot's witness holds its previous-proof data in arrays, so
   -- the variable count is not derivable from the type. The widths
@@ -620,9 +614,9 @@ stepMain
   => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
-  => ( AsProver StepField r valCarrier
+  => ( AsProver StepField r (PrevValues prevsSpec)
        -> input
-       -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput len prevInput output)
+       -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput prevsSpec output)
      )
   -> StepMainSrsData len nd blueprints
   -> AffinePoint StepField
@@ -650,16 +644,17 @@ stepMain
   -- `exists` is emitted inside `rule_main` rather than beside it. A
   -- compiled-only rule has no `BlueprintSideLoaded` slot, so
   -- `buildSlotVkSources` emits no `exists` at all.
-  { prevPublicInputs, proofMustVerify, publicOutput, perSlotVkSources } <-
+  { prevs, publicOutput, perSlotVkSources } <-
     label "rule_main" do
       perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @WrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
       -- The rule reads previous proofs' statements through this
       -- deferred getter, forced only inside the rule's own `exists`
       -- bodies.
-      result <- rule (pure advice <#> \(StepAdvice r) -> r.prevAppStates) publicInput
+      result <- rule
+        (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
+        publicInput
       pure
-        { prevPublicInputs: result.prevPublicInputs
-        , proofMustVerify: result.proofMustVerify
+        { prevs: prevsVector @len result.prevs
         , publicOutput: result.publicOutput
         , perSlotVkSources
         }
@@ -838,10 +833,10 @@ stepMain
               , index: map (over ChunkedCommitment (map unwrapPt)) slotVk.index
               }
 
-            prevInputVar = prevPublicInputs !! i
+            prev = prevs !! i
             input = buildVerifyOneInput pw
-              (varToFields @StepField @prevInputVal prevInputVar)
-              (proofMustVerify !! i)
+              prev.fields
+              prev.proofMustVerify
               (unfinalizedProofs !! i)
               (msgsWrapReal !! i)
               slotVkComms

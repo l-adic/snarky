@@ -33,12 +33,11 @@ spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
   it "throws when @stepChunks=2 but the circuit only needs 1" \{ pallasSrs, vestaSrs } -> do
     nrrEntry :: RuleEntry _ _ _ _ Unit _ _ _ _ _ <-
-      liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
+      liftEffect $ mkRuleEntry @0 @(F StepField) nrrRule Vector.nil
     let rules = tuple1 nrrEntry
     result <- withSpan "[CompileValidation] compile" $ liftEffect $ Exc.try $ compileMulti
       @NrrRules
       @(F StepField)
-      @Unit
       @2
       noAdvice
       { srs: { vestaSrs, pallasSrs }

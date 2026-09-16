@@ -27,7 +27,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -40,7 +40,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- | kimchi row, so 2^17 + 1 rows — then one 7-wire Raw Generic with
 -- | zero coefficients, which pushes the 7th permuted column's degree
 -- | above 2^17.
-chunks4Rule :: StepRule 0 Unit Unit Unit Unit Unit Unit Unit
+chunks4Rule :: StepRule Unit Unit Unit Unit Unit
 chunks4Rule _ _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
@@ -60,14 +60,13 @@ chunks4Rule _ _ = do
   addConstraint $ KimchiPad
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
 -- | Carrier for the single `chunks4Rule`, at width 0 with no prevs.
 type Chunks4Rules =
-  RulesCons 0 Unit Unit
+  RulesCons 0 Unit
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -79,13 +78,12 @@ spec = describe "Pickles.Prove.Chunks4" do
     -- step domain up to 2^18, giving four chunks. The wrap SRS has
     -- depth 2^15 and the wrap domain is overridden to 2^14, giving one
     -- chunk.
-    chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks4Rule Vector.nil
+    chunks4Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks4Rule Vector.nil
     let rules = tuple1 chunks4Entry
 
     logInfo "[Chunks4] compiling…"
     output <- withSpan "[Chunks4] compile" $ liftEffect $ compileMulti
       @Chunks4Rules
-      @Unit
       @Unit
       @4
       noAdvice

@@ -32,6 +32,7 @@ import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Slots (PrevValues, toPrevs)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (AsProver, F, Snarky, addConstraint, exists, mul_)
@@ -52,9 +53,9 @@ type StepMainChunks2Params =
 chunks2Rule
   :: forall r
    . PrimeField StepField
-  => AsProver StepField r Unit
+  => AsProver StepField r (PrevValues Unit)
   -> Unit
-  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput 0 Unit Unit)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput Unit Unit)
 chunks2Rule _ _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
@@ -74,8 +75,7 @@ chunks2Rule _ _ = do
   addConstraint $ KimchiPad
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
@@ -96,7 +96,7 @@ compileStepMainChunks2 params = do
       -- entries). Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- inputVal/outputVal both Unit — chunks2 is `Input Typ.unit`
       -- (degenerate Input mode) with `~auxiliary_typ:Typ.unit`.
-      ( \_ -> stepMain @Unit @Unit @Unit @Unit @Unit @0 @1 @Unit
+      ( \_ -> stepMain @Unit @Unit @Unit @Unit @0 @1 @Unit
           chunks2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil

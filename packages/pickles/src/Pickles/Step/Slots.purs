@@ -11,14 +11,26 @@
 -- | `PerProofWitness` values, and `vkCarrier`, the per-slot wrap-VK
 -- | sources. `traverseStepSlotsAWithVk` walks them in lockstep under
 -- | one shared chunk count per slot.
+-- |
+-- | A rule body sees the spec through two more types indexed by it:
+-- | `PrevValues`, the previous statements it reads as advice, and
+-- | `Prevs`, the previous statements it returns.
 module Pickles.Step.Slots
   ( class StepSlotsCarrier
   , class SlotStatementsCarrier
+  , class SlotPrevStatements
   , class SlotVkCarrier
   , class StepSlotsTyp
+  , PrevStatement(..)
+  , PrevValues
+  , Prevs
   , SlotWitnessVal
   , SlotWitnessVar
+  , mkPrevValues
+  , prevValues
+  , prevsVector
   , stepSlotsTyp
+  , toPrevs
   , traverseStepSlotsA
   , traverseStepSlotsAWithVk
   , replicateStepSlotsCarrier
@@ -26,11 +38,14 @@ module Pickles.Step.Slots
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (Finite, finZero, shiftSucc)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.Field (StepField)
 import Pickles.Slots (Slot)
 import Pickles.Step.Types (PerProofWitness, WrapProof, perProofWitnessTyp)
@@ -39,11 +54,13 @@ import Pickles.Typ (Typ, pairTyp, unitTyp)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar)
+import Snarky.Circuit.Types (varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 -- | `spec` → `vkCarrier`, split out of `StepSlotsCarrier` so the two
 -- | `StepSlotsCarrier` constraints a caller needs — one at value
@@ -229,3 +246,92 @@ instance
   SlotStatementsCarrier
     (Slot n statement /\ rest)
     (statement /\ restValCarrier)
+
+-- | The prover-side values of a rule's previous statements, indexed by
+-- | its prevs spec. `prevValues` opens it as the `SlotStatementsCarrier`
+-- | tuple.
+-- |
+-- | The index is what lets a rule's type name only its spec: the tuple
+-- | is computed at the `prevValues` call, where the spec is concrete.
+foreign import data PrevValues :: Type -> Type
+
+-- | The tuple of previous statements, one entry per slot.
+prevValues
+  :: forall spec values
+   . SlotStatementsCarrier spec values
+  => PrevValues spec
+  -> values
+-- The fundep `spec -> values` gives each spec exactly one carrier, so
+-- this and `mkPrevValues` only ever coerce a value back to its own type.
+prevValues = unsafeCoerce
+
+-- | Index a tuple of previous statements by the spec it was built for.
+mkPrevValues
+  :: forall @spec values
+   . SlotStatementsCarrier spec values
+  => values
+  -> PrevValues spec
+mkPrevValues = unsafeCoerce
+
+-- | One previous proof as a rule returns it: its statement, and whether
+-- | the proof must verify.
+newtype PrevStatement stmtVar = PrevStatement
+  { publicInput :: stmtVar
+  , proofMustVerify :: BoolVar StepField
+  }
+
+-- | A rule's previous statements, each already encoded to fields by its
+-- | own slot's `CircuitType`, indexed by the rule's prevs spec. Built
+-- | only by `toPrevs`.
+newtype Prevs :: Type -> Type
+newtype Prevs spec = Prevs
+  ( Array
+      { fields :: Array (FVar StepField)
+      , proofMustVerify :: BoolVar StepField
+      }
+  )
+
+-- | `spec` → the tuple a rule returns: one `PrevStatement` per slot, at
+-- | the variable type of that slot's statement.
+class SlotPrevStatements :: Type -> Type -> Constraint
+class SlotPrevStatements spec prevs | spec -> prevs where
+  toPrevs :: prevs -> Prevs spec
+
+instance SlotPrevStatements Unit Unit where
+  toPrevs _ = Prevs []
+
+instance
+  ( CircuitType StepField statement statementVar
+  , SlotPrevStatements rest restPrevs
+  ) =>
+  SlotPrevStatements
+    (Slot n statement /\ rest)
+    (PrevStatement statementVar /\ restPrevs)
+  where
+  toPrevs (PrevStatement here /\ rest) =
+    let
+      Prevs restEntries = toPrevs @rest rest
+    in
+      Prevs $ Array.cons
+        { fields: varToFields @StepField @statement here.publicInput
+        , proofMustVerify: here.proofMustVerify
+        }
+        restEntries
+
+-- | The encoded previous statements at the rule's slot count.
+prevsVector
+  :: forall @len spec
+   . Reflectable len Int
+  => Prevs spec
+  -> Vector len
+       { fields :: Array (FVar StepField)
+       , proofMustVerify :: BoolVar StepField
+       }
+prevsVector (Prevs entries) = case Vector.toVector entries of
+  Just v -> v
+  -- `toPrevs` emits one entry per slot of `spec`, and `len` is that
+  -- slot count, so a mismatch is a bug in the caller's constraints.
+  Nothing -> unsafeThrow $
+    "prevsVector: " <> show (Array.length entries)
+      <> " previous statements, expected "
+      <> show (reflectType (Proxy :: Proxy len))

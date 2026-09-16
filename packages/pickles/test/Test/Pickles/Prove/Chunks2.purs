@@ -27,7 +27,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
+import Pickles (BranchProver(..), RulesCons, RulesNil, StepField, StepRule, compileMulti, mkRuleEntry, toPrevs, toVerifiable, verify)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.DSL (F, addConstraint, exists, mul_)
@@ -40,7 +40,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- | kimchi row, so 2^16 + 1 rows — then one 7-wire Raw Generic with
 -- | zero coefficients, which pushes the 7th permuted column's degree
 -- | above 2^16.
-chunks2Rule :: StepRule 0 Unit Unit Unit Unit Unit Unit Unit
+chunks2Rule :: StepRule Unit Unit Unit Unit Unit
 chunks2Rule _ _ = do
   let
     freshZero = exists (pure (zero :: F StepField))
@@ -60,14 +60,13 @@ chunks2Rule _ _ = do
   addConstraint $ KimchiPad
     (z :< z :< z :< z :< z :< z :< z :< Vector.nil)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
 -- | Carrier for the single `chunks2Rule`, at width 0 with no prevs.
 type Chunks2Rules =
-  RulesCons 0 Unit Unit
+  RulesCons 0 Unit
     RulesNil
 
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
@@ -79,13 +78,12 @@ spec = describe "Pickles.Prove.Chunks2" do
     -- step domain up to 2^17, giving two chunks. The wrap SRS has depth
     -- 2^15 and the wrap domain is overridden to 2^14, giving one chunk
     -- and a `max_poly_size` of 32768.
-    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit @Unit chunks2Rule Vector.nil
+    chunks2Entry <- liftEffect $ mkRuleEntry @0 @Unit chunks2Rule Vector.nil
     let rules = tuple1 chunks2Entry
 
     logInfo "[Chunks2] compiling…"
     output <- withSpan "[Chunks2] compile" $ liftEffect $ compileMulti
       @Chunks2Rules
-      @Unit
       @Unit
       @2
       noAdvice

@@ -76,7 +76,7 @@ import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Step.Main (class BuildSlotVkSources, RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, replicateStepSlotsCarrier)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, PrevValues, replicateStepSlotsCarrier)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
@@ -1137,26 +1137,25 @@ buildSlotAdvice input = do
 -- |
 -- | `output` is the rule's public output: `Unit` for an Input-mode
 -- | rule, and for an Output-mode rule the value flowing back in the
--- | returned `RuleOutput`. `valCarrier` is the per-rule prev-statement
--- | carrier `Pickles.Step.Slots.SlotStatementsCarrier` derives from the
--- | rule's `prevsSpec` — `Unit` with no prevs, a right-nested `Tuple`
--- | chain otherwise.
+-- | returned `RuleOutput`. `prevsSpec` is the only place the rule names
+-- | its slots' statement types: the body opens the getter with
+-- | `prevValues` and packs its return with `toPrevs`, and both compute
+-- | their tuple from the spec.
 -- |
 -- | The prev statements are the rule's one advice need, and they arrive
--- | as the deferred `AsProver StepField r' valCarrier` getter rather
+-- | as the deferred `AsProver StepField r' (PrevValues prevsSpec)` getter rather
 -- | than through a class on the monad. The getter is consumed inside
 -- | the rule's `exists` bodies, which compile discards, so it is never
 -- | forced there. A rule needing more advice adds ordinary constraints
 -- | on its own monad.
-type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
+type StepRule prevsSpec inputVal input outputVal output =
   forall r'
    . CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
-  => AsProver StepField r' valCarrier
+  => AsProver StepField r' (PrevValues prevsSpec)
   -> input
-  -> Snarky StepField (KimchiConstraint StepField) r' (RuleOutput n prevInput output)
+  -> Snarky StepField (KimchiConstraint StepField) r' (RuleOutput prevsSpec output)
 
 -- | `StepRule` pinned to one advice row `r` — the shape the runners and
 -- | `mkRuleEntry` accept, and one a universal `StepRule` subsumes into.
@@ -1165,14 +1164,13 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
 -- | constraints: they discharge at the concrete row the entry is built
 -- | at, where the instances are in scope, with no rank-2 skolem in the
 -- | way.
-type StepRuleAt (r :: Row (Type -> Type)) (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
+type StepRuleAt (r :: Row (Type -> Type)) prevsSpec inputVal input outputVal output =
   CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
-  => AsProver StepField r valCarrier
+  => AsProver StepField r (PrevValues prevsSpec)
   -> input
-  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput n prevInput output)
+  -> Snarky StepField (KimchiConstraint StepField) r (RuleOutput prevsSpec output)
 
 -- | Ambient data the step prover needs alongside the advice and the
 -- | rule: the `StepMainSrsData` that `stepMain` consumes, the dummy sg
@@ -1299,7 +1297,7 @@ writeRowLabelsTo path publicInputSize cs = do
 -- | step domain that the real compile is then built against, which only
 -- | works if the two see the same circuit.
 buildStepCircuit
-  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
@@ -1322,7 +1320,7 @@ buildStepCircuit
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
+  => SlotStatementsCarrier prevsSpec valCarrier
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -1349,7 +1347,7 @@ buildStepCircuit
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
   -> StepProveContext len nd blueprints
-  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect
        { builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
        , kimchiRows :: Array (KimchiRow StepField)
@@ -1385,7 +1383,6 @@ buildStepCircuit handler ctx rule = do
             @prevsSpec
             @inputVal
             @outputVal
-            @prevInputVal
             @valCarrier
             @mpvMax
             @nd
@@ -1407,7 +1404,7 @@ buildStepCircuit handler ctx rule = do
 -- | The step circuit built, with the kimchi prover and verifier
 -- | indices created from its gates.
 stepCompile
-  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
@@ -1430,7 +1427,7 @@ stepCompile
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
+  => SlotStatementsCarrier prevsSpec valCarrier
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -1457,7 +1454,7 @@ stepCompile
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
   -> StepProveContext len nd blueprints
-  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect StepCompileResult
 stepCompile handler ctx rule = do
   { builtState, kimchiRows } <-
@@ -1469,8 +1466,6 @@ stepCompile handler ctx rule = do
       @input
       @outputVal
       @output
-      @prevInputVal
-      @prevInput
       @mpvMax
       @mpvPad
       @nd
@@ -1546,7 +1541,7 @@ stepCompile handler ctx rule = do
 -- | Lookup-table sizing is omitted: no current rule uses
 -- | `range_check`, `xor`, `lookup` or `runtime_tables` gates.
 preComputeStepDomainLog2
-  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
@@ -1569,7 +1564,7 @@ preComputeStepDomainLog2
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
+  => SlotStatementsCarrier prevsSpec valCarrier
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -1596,7 +1591,7 @@ preComputeStepDomainLog2
   => CheckedType StepField (KimchiConstraint StepField) input
   => AdviceHandler r
   -> StepProveContext len nd blueprints
-  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> Effect Int
 preComputeStepDomainLog2 handler ctx rule = do
   { builtState, kimchiRows } <-
@@ -1608,8 +1603,6 @@ preComputeStepDomainLog2 handler ctx rule = do
       @input
       @outputVal
       @output
-      @prevInputVal
-      @prevInput
       @mpvMax
       @mpvPad
       @nd
@@ -1642,7 +1635,7 @@ preComputeStepDomainLog2 handler ctx rule = do
 -- | Errors surface as `Either EvaluationError`, an unsatisfied
 -- | constraint system among them as `FailedAssertion`.
 stepSolveAndProve
-  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output
        @mpvMax @mpvPad @nd
        ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
@@ -1665,7 +1658,7 @@ stepSolveAndProve
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
+  => SlotStatementsCarrier prevsSpec valCarrier
   => StepSlotsTyp prevsSpec carrier carrierVar
   => StepSlotsCarrier
        prevsSpec
@@ -1690,10 +1683,9 @@ stepSolveAndProve
        carrierVar
        vkSourcesCarrier
   => CheckedType StepField (KimchiConstraint StepField) input
-  => SlotStatementsCarrier prevsSpec valCarrier
   => AdviceHandler r
   -> StepProveContext len nd blueprints
-  -> StepRuleAt r len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Effect (Either EvaluationError (StepProveResult outputSize))
@@ -1724,7 +1716,6 @@ stepSolveAndProve handler ctx rule compileResult advice = do
               @prevsSpec
               @inputVal
               @outputVal
-              @prevInputVal
               @valCarrier
               @mpvMax
               @nd

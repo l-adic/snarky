@@ -17,6 +17,7 @@ module Pickles.Step.FinalizeOtherProof
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
@@ -66,11 +67,12 @@ sideLoadedGenerators = map (const_ <<< domainGenerator) sideLoadedLog2s
 
 -- | The domain-mode dispatch, resolved once: what `maskedGen` and the
 -- | vanishing polynomial select on. `Known` carries one which-bit per
--- | compile-time candidate domain; `SideLoaded` carries the
--- | ones-prefix mask the iterative vanishing polynomial squares
--- | against, plus the one-hot which-bits over the `[0..16]` universe.
-data DomainSel nd f
-  = Known (Vector nd (BoolVar f))
+-- | distinct compile-time candidate domain, in ascending `log2`;
+-- | `SideLoaded` carries the ones-prefix mask the iterative vanishing
+-- | polynomial squares against, plus the one-hot which-bits over the
+-- | `[0..16]` universe.
+data DomainSel f
+  = Known (Array { which :: BoolVar f, generator :: FVar f, log2 :: Int })
   | SideLoaded
       { onesPrefix :: Vector 16 (BoolVar f)
       , whiches :: Vector SideLoadedDomainCount (BoolVar f)
@@ -161,8 +163,21 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
   -- `mul_ maskedGen zeta` costs one.
   ---------------------------------------------------------------------------
   domainSel <- case params.domainMode of
-    -- One which-bit per candidate domain, emitted last domain first.
-    KnownDomainsMode -> Known <$> knownDomainWhiches domainLog2Var params.domains
+    -- One which-bit per distinct candidate domain, emitted last domain
+    -- first. Candidates repeat whenever two of the source's branches
+    -- share a step domain, and an `External` source's one domain is
+    -- replicated across this compile's branches; a repeated candidate
+    -- would set two which-bits and select its domain twice.
+    KnownDomainsMode -> do
+      let
+        distinct = Array.nubByEq (\a b -> a.log2 == b.log2)
+          (Array.sortWith _.log2 (Vector.toUnfoldable params.domains))
+      whiches <- Vector.reifyVector distinct \ds ->
+        Vector.toUnfoldable <$> knownDomainWhiches domainLog2Var ds
+      pure $ Known $ Array.zipWith
+        (\which d -> { which, generator: d.generator, log2: d.log2 })
+        whiches
+        distinct
     -- Order is fixed here: the ones-prefix mask first (16 `equals_`
     -- and 16 `and_`), then the 17 one-hot which-bits over `[0..16]`
     -- descending, then the one-hot assertion. No compile-time domain
@@ -174,7 +189,7 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
       pure (SideLoaded { onesPrefix, whiches })
 
   maskedGen <- case domainSel of
-    Known whiches -> Pseudo.mask whiches (map _.generator params.domains)
+    Known ds -> Vector.reifyVector ds \v -> Pseudo.mask (map _.which v) (map _.generator v)
     SideLoaded { whiches } -> Pseudo.mask whiches sideLoadedGenerators
   zetaw <- mul_ maskedGen zeta
 
@@ -247,7 +262,7 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
   -- `zetaToNMinus1`, from the vanishing polynomial of whichever
   -- candidate domain the which-bits select.
   zetaToNMinus1 <- label "domain-vanishing-poly" case domainSel of
-    Known whiches -> knownDomainVanishingPolynomial whiches params.domains zeta
+    Known ds -> Vector.reifyVector ds \v -> knownDomainVanishingPolynomial (map _.which v) v zeta
     SideLoaded { onesPrefix } -> do
       -- The result is deliberately left unsealed, a bare `acc - 1`.
       -- Sealing it would emit one more Generic gate and throw off the

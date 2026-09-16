@@ -25,7 +25,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
 import Node.Process (lookupEnv)
-import Pickles (BranchProver(..), PrevSlot(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verifyBatch)
+import Pickles (BranchProver(..), PrevSlot(..), PrevStatement(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verifyBatch)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -42,18 +42,15 @@ import Test.Spec.Assertions (shouldEqual)
 
 -- | Branch 0: assert the public input is zero. No prevs.
 makeZeroRule
-  :: StepRule 0 Unit
+  :: StepRule Unit
        (F StepField)
        (FVar StepField)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
 makeZeroRule _ self = do
   assertEqual_ self (const_ zero)
   pure
-    { prevPublicInputs: Vector.nil
-    , proofMustVerify: Vector.nil
+    { prevs: toPrevs unit
     , publicOutput: unit
     }
 
@@ -61,22 +58,20 @@ makeZeroRule _ self = do
 -- | state. The single `Self` prev slot resolves to either branch at
 -- | proof time, which is the dispatch this fixture exercises.
 incrementRule
-  :: StepRule 1
-       (Tuple1 (StatementIO (F StepField) Unit))
+  :: StepRule IncrementPrevsSpec
        (F StepField)
        (FVar StepField)
        Unit
        Unit
-       (F StepField)
-       (FVar StepField)
 incrementRule getPrevStates self = do
-  prev <- exists $ getPrevStates <#> \(StatementIO { input } /\ _) -> input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
   assertEqual_ self (CVar.add_ (const_ one) prev)
   pure
-    { prevPublicInputs: prev :< Vector.nil
     -- Branch dispatch happens at the wrap layer, from `whichBranch`,
     -- so the prev is unconditionally verified here.
-    , proofMustVerify: true_ :< Vector.nil
+    { prevs: toPrevs $
+        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+          /\ unit
     , publicOutput: unit
     }
 
@@ -84,13 +79,16 @@ incrementRule getPrevStates self = do
 -- Rules spec
 --------------------------------------------------------------------------------
 
+-- | Branch 1's single self-prev slot, at width 1.
+type IncrementPrevsSpec =
+  Tuple1 (Slot 1 (StatementIO (F StepField) Unit))
+
 -- | The two branches: branch 0 at `mpv = 0` with no prevs, branch 1 at
 -- | `mpv = 1` with one self-prev.
 type TwoPhaseChainRules =
-  RulesCons 0 Unit Unit
+  RulesCons 0 Unit
     ( RulesCons 1
-        (Tuple1 (StatementIO (F StepField) Unit))
-        (Tuple1 (Slot 1 (StatementIO (F StepField) Unit)))
+        IncrementPrevsSpec
         RulesNil
     )
 
@@ -112,14 +110,13 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , lagrangeCache: Just lagrangeCache
         }
 
-    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) makeZeroRule Vector.nil
-    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) incrementRule (Self :< Vector.nil)
+    makeZeroEntry <- liftEffect $ mkRuleEntry @1 @Unit makeZeroRule Vector.nil
+    incrementEntry <- liftEffect $ mkRuleEntry @1 @Unit incrementRule (Self :< Vector.nil)
     let rules = tuple2 makeZeroEntry incrementEntry
     logInfo "[TwoPhaseChain] compiling…"
     output <- withSpan "[TwoPhaseChain] compile" $ liftEffect $ compileMulti
       @TwoPhaseChainRules
       @Unit
-      @(F StepField)
       @1
       noAdvice
       cfg
