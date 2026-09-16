@@ -1,14 +1,13 @@
--- | PureScript-side analog of OCaml's `Simple_chain` test
--- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:128-205`).
+-- | The self-recursive chain: one rule asserting `self == prev + 1` at
+-- | width 1, proved through five iterations b0..b4. A single
+-- | `compileMulti` call yields the `BranchProver` every iteration uses,
+-- | and each proof is round-tripped through JSON before being threaded
+-- | into the next as `InductivePrev`.
 -- |
--- | Runs the inductive rule (`prev + 1`) at `max_proofs_verified = N1`
--- | through five iterations (b0..b4) via the `Pickles.Prove.CompileMulti`
--- | API: a single 1-rule `compileMulti` call returns a `BranchProver`
--- | closure that gets invoked once per iteration with the previous
--- | proof threaded as `InductivePrev`. The full chain is then handed
--- | to `verify` for end-to-end Pickles verification (stage 1
--- | deferred-values expand, stage 2 IPA accumulator check, stage 3
--- | kimchi `batch_verify`).
+-- | The chain must verify in one batch and carry the inputs 0..4, and
+-- | three tampered variants of b1 must be rejected. It therefore fails
+-- | if serialization loses anything, if the chained statements drift,
+-- | or if the verifier stops recomputing the message digests.
 module Test.Pickles.Prove.SimpleChain
   ( spec
   , simpleChainRule
@@ -41,14 +40,10 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
--- | Simple_chain inductive rule (verbatim from OCaml `dump_simple_chain.ml:62-82`).
--- |
--- | Asserts `self == prev + 1` OR `is_base_case (self == 0)`. Reads
--- | the prev's app-state value via `getPrevAppStates` (= OCaml's
--- | `Req.Prev_input` handler), so the same compiled rule serves
--- | every iteration: b0 supplies `BasePrev { dummyStatement }`,
--- | b_{k+1} supplies `InductivePrev compiledProof_b_k tag` whose
--- | `compiledProof.statement.input` is `b_k`'s self.
+-- | Asserts `self == prev + 1`, or `self == 0` for the base case. The
+-- | prev's app state is read through `getPrevStates`, so one compiled
+-- | rule serves every iteration: b0 passes a `BasePrev` dummy
+-- | statement, b_{k+1} passes `InductivePrev` on b_k.
 simpleChainRule
   :: StepRule 1
        (Tuple1 (StatementIO (F StepField) NoOutput))
@@ -70,8 +65,8 @@ simpleChainRule getPrevStates self = do
     , publicOutput: NoOutput
     }
 
--- | Simple_chain's 1-rule carrier shape. A single self-recursive
--- | rule with mpv=1, one prev slot of width 1.
+-- | Carrier for the single rule: one self-recursive prev slot at
+-- | width 1.
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) NoOutput))
@@ -83,9 +78,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SimpleChain.json")
 
-    -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
-    -- (one prev slot); since this is the only branch, nd = 1.
-    -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
     chainEntry <- liftEffect $ mkRuleEntry @1 @NoOutput @(F StepField) simpleChainRule (Self :< Vector.nil)
 
     let rules = tuple1 chainEntry
@@ -107,10 +99,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     let BranchProver chainProver = fst output.provers
 
-    -- Every recursive prev is round-tripped through SerializeProof
-    -- (toSerializable → reconstruct); a faithful reconstruction leaves the
-    -- downstream proofs unchanged, so the verify + statement assertions below
-    -- double as the round-trip correctness check.
+    -- Every prev is round-tripped through serialization before it is
+    -- consumed, so the assertions below also witness that round trip.
     let srs = { pallasSrs, vestaSrs }
 
     let
@@ -147,9 +137,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
     verifyBatch output.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true
     logInfo "[SimpleChain] verification complete"
 
-    -- The verifier recomputes both message digests, so a recursive proof
-    -- presented with a different application state, a different previous
-    -- opening `sg`, or different previous wrap challenges must be rejected.
+    -- The verifier recomputes both message digests, so b1 presented
+    -- with a different application state, a different previous opening
+    -- `sg`, or different previous wrap challenges must be rejected.
     let vp1 = toVerifiable b1
     verify output.verifier (vp1 { appState = map (add one) vp1.appState }) `shouldEqual` false
     verify output.verifier
@@ -159,10 +149,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       (vp1 { prevWrapBulletproofChallenges = map (map (add one)) vp1.prevWrapBulletproofChallenges })
       `shouldEqual` false
 
-    -- Each iteration's app-state input must equal the value we
-    -- supplied as `appInput` to the prover. The rule asserts
-    -- `self == prev + 1` (or `self == 0` for base), so the chain's
-    -- carried inputs are the natural numbers 0..4.
+    -- Each proof's carried app state must be the `appInput` its prove
+    -- was given, which the rule pins to 0..4 along the chain.
     let
       stmtInputOf (CompiledProof p) =
         let StatementIO s = p.statement in s.input

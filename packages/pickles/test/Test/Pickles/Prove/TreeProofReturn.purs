@@ -1,31 +1,14 @@
--- | PureScript-side analog of OCaml's `Tree_proof_return` test
--- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:315-429`).
+-- | The heterogeneous-prevs case: one rule with two prev slots, an
+-- | `External` slot holding a proof of the separately compiled
+-- | `nrrRule` (width 0) and a `Self` slot (width 2), compiled with the
+-- | wrap domain overridden to 2^14.
 -- |
--- | Tree_proof_return is the heterogeneous-prevs target:
--- |
--- |   prevs = [No_recursion_return.tag; self]
--- |   max_proofs_verified = N2
--- |   per-slot widths      = [0, 2]
--- |   override_wrap_domain = N1  → wrap_domains.h = 2^14
--- |   public_input         = Output StepField
--- |
--- | Compile-API driven via `compileMulti` + `BranchProver` closures:
--- | one 1-rule compile for NRR, one 1-rule compile for the Tree rule
--- | (with the NRR compile's VKs threaded through `External` for slot 0).
--- | Iterates the full chain b0..b4 (matching SimpleChain's iteration
--- | depth):
--- |
--- |   * b0    — slot 0 = `InductivePrev nrrCp` (real NRR proof);
--- |             slot 1 = `BasePrev { output = -1 }` (dummy self).
--- |             Output = 0.
--- |   * b_k+1 — slot 0 = same NRR proof reused; slot 1 = `InductivePrev
--- |             b_k tree.tag` (the previous round's Tree proof).
--- |             Output = k+1.
--- |
--- | The rule's `proofMustVerify` for slot 1 is gated on
--- | `prevOut == -1`, so b0 skips real verification of the dummy self
--- | prev while b1+ verify the previous Tree proof. The full chain is
--- | handed to `verify` for kimchi-level batch verification.
+-- | Slot 1's `proofMustVerify` is gated on the prev's output being -1,
+-- | so b0 runs against a dummy self-prev while b1..b4 verify the
+-- | previous tree proof. The chain must produce outputs 0..4 and verify
+-- | in a single batch, so it fails if the two slots' verification keys
+-- | are crossed, if the domain override is dropped, or if the base case
+-- | stops being gated.
 module Test.Pickles.Prove.TreeProofReturn
   ( spec
   , treeProofReturnRule
@@ -89,14 +72,12 @@ nrrRule _ _ = pure
   , publicOutput: const_ zero
   }
 
--- | NRR's 1-rule carrier (same shape as the standalone NRR test). NRR
--- | output is a StepField, so the StepRule's outputVal is `F StepField`.
+-- | Carrier for the single `nrrRule`, at width 0.
 type NrrRules =
   RulesCons 0 Unit Unit
     RulesNil
 
--- | Tree_proof_return's 1-rule carrier. Two prev slots: an NRR external
--- | (mpv=0) and a self-recursive (mpv=2).
+-- | Carrier for the single `treeProofReturnRule`, at width 2.
 type TreeRules =
   RulesCons 2
     (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
@@ -108,7 +89,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
   it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/TreeProofReturn.json")
 
-    -- ===== NRR side: 1-rule compileMulti at mpvMax=0. =====
     nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
 
     let nrrRules = tuple1 nrrEntry
@@ -129,7 +109,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       nrrRules
 
     let BranchProver nrrProver = fst nrr.provers
-    -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
     logInfo "[TreeProofReturn] proving nrr"
     eNrrCp <- withSpan "[TreeProofReturn] prove nrr" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit, sideloadedVKs: unit }
@@ -137,10 +116,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right p -> pure p
 
-    -- The Tree rule's `External` slot needs the imported NRR's
-    -- `ProverVKs` shape — extracted from `nrr.vks` (multi shape) by
-    -- pulling the single branch's `StepCompileResult` out of the
-    -- 1-tuple `perBranchStep`.
+    -- The `External` slot takes the imported system's `ProverVKs`,
+    -- reassembled here from the multi-branch shape of `nrr.vks`.
     let
       nrrProverVKs =
         { stepCompileResult: fst nrr.vks.perBranchStep
@@ -149,7 +126,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , stepNumChunks: nrr.vks.stepChunks
         }
 
-    -- ===== Tree side: 1-rule compileMulti at mpvMax=2 with override. =====
     treeEntry <- liftEffect $ mkRuleEntry @2 @(F StepField) @(F StepField)
       treeProofReturnRule
       (External nrrProverVKs :< Self :< Vector.nil)
@@ -173,13 +149,12 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     let BranchProver treeProver = fst tree.provers
 
-    -- Round-trip every recursive prev (the reused NRR proof + each self-prev)
-    -- through SerializeProof; faithful reconstruction leaves the chain
-    -- byte-identical so the assertions hold.
+    -- Every prev is round-tripped through serialization before it is
+    -- consumed, so the chain closes only if that is faithful.
     let dummies = mkWidthDummies pallasSrs vestaSrs
 
-    -- The NRR proof fills slot 0 of every Tree step; round-trip + verify it
-    -- once (against its own NRR verifier), then reuse the reconstruction.
+    -- The same NRR proof fills slot 0 of every tree step, so it is
+    -- round-tripped and verified once against its own verifier.
     nrrCp' <- roundTripAndVerify dummies nrr.verifier nrrCp
 
     let
@@ -220,11 +195,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     verifyBatch tree.verifier (map toVerifiable [ b0, b1, b2, b3, b4 ]) `shouldEqual` true
     logInfo "[TreeProofReturn] verification complete"
 
-    -- The rule body computes `selfVal = if isBaseCase then 0 else
-    -- 1 + prevInput`, exposed as `publicOutput`. Base case b0 takes
-    -- `BasePrev { output = -1 }` which trips `isBaseCase` → output 0.
-    -- Each subsequent b_k+1 reads b_k's output and increments,
-    -- producing 0..4 as the running counter.
+    -- b0's dummy self-prev carries output -1, which trips the base case
+    -- to 0; each later round increments its prev's output.
     let outputOf (CompiledProof p) = let StatementIO s = p.statement in s.output
     map outputOf [ b0, b1, b2, b3, b4 ] `shouldEqual`
       [ F zero, F one, F (fromInt 2), F (fromInt 3), F (fromInt 4) ]

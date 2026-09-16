@@ -1,7 +1,6 @@
--- | Wrap-circuit-specific Pickles types. Extracted from `Pickles.Types`
--- | because their importers are confined to `Pickles.Wrap.*` /
--- | `Pickles.Prove.*` / `Pickles.Sideload.*` / circuit-diff fixtures —
--- | no step-side module imports any of these directly.
+-- | The types the wrap circuit allocates: its own public input and its
+-- | view of the step proof's proof state. Built by `Pickles.Prove.Wrap`,
+-- | read by `Pickles.Wrap.Main` and `Pickles.Verify`.
 module Pickles.Wrap.Types
   ( IvpBaseline
   , PrevProofState(..)
@@ -21,22 +20,15 @@ import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFie
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Type.Proxy (Proxy(..))
 
--- | Wrap circuit's IVP MSM base count minus the per-proof `sg_old`s.
--- | Used in `Add mpv IvpBaseline totalBases` — `totalBases` is
--- | the full count of bases the wrap IVP iterates over, and equals
--- | `mpv` (one `sg_old` per proof) plus this baseline (everything
--- | else: SRS commitments, sigma commitments, etc.). Mirrors OCaml
--- | `Nat.N45.add` in `wrap_verifier.ml:1457`.
+-- | The wrap IVP's MSM base count at one chunk, excluding the `sg_old`
+-- | of each previous proof: the commitments, sigma commitments and the
+-- | rest. The full count is `mpv + IvpBaseline`.
 type IvpBaseline = 45
 
--- | The combined wrap-circuit `Req.Proof_state` allocation: `mpv`
--- | unfinalized proofs (Type2-shifted scalars) + `messages_for_next_step_proof`.
--- |
--- | OCaml's `wrap_typ` over `Types.Step.Proof_state` puts `unfinalized_proofs`
--- | first (a Vector of length `mpv`) and `messages_for_next_step_proof` second.
--- |
--- | Reference: mina/src/lib/crypto/pickles/composition_types/composition_types.ml
--- | (`Types.Step.Proof_state.wrap_typ`) and `wrap_main.ml:267` exists call.
+-- | The step proof state the wrap circuit allocates as one witness:
+-- | `mpv` unfinalized proofs with Type2-shifted scalars, then the
+-- | messages-for-next-step digest. That field order is the allocation
+-- | order, and the `CircuitType` instance below pins it.
 newtype PrevProofState (mpv :: Int) sf f b = PrevProofState
   { unfinalizedProofs :: Vector mpv (PerProofUnfinalized WrapIPARounds sf f b)
   , messagesForNextStepProof :: f
@@ -88,69 +80,43 @@ instance
   CheckedType f c (PrevProofState mpv sfvar fvar bvar) where
   check (PrevProofState r) = check (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
 
--------------------------------------------------------------------------------
--- | Wrap statement public input (allocation-side representation)
+-- | The wrap circuit's public input, in allocation layout. The field
+-- | order below is the wire order:
 -- |
--- | This is the type that the wrap circuit's `compile` allocates as the
--- | public input for `wrapMain`. It mirrors the OCaml
--- | `Wrap.Statement.In_circuit` allocation pattern from
--- | `composition_types.ml:776-831` (`In_circuit.to_data`):
+-- |   5 fp fields, 2 challenges, 3 scalar challenges, 3 digests,
+-- |   `d` bullet-proof challenges, 1 branch-data index.
 -- |
--- |   [ fp                       (* 5: cip, b, ztSrs, ztDom, perm  *)
--- |   ; challenge                (* 2: beta, gamma                 *)
--- |   ; scalar_challenge         (* 3: alpha, zeta, xi             *)
--- |   ; digest                   (* 3: sponge, msg_wrap, msg_step  *)
--- |   ; bulletproof_challenges   (* d: 16 in production            *)
--- |   ; index                    (* 1: branch_data                 *)
--- |   ]
--- |
--- | The challenge fields are wrapped in `UnChecked (SizedF 128 f)` because
--- | OCaml's `Spec.wrap_packed_typ` allocates them via plain `Field.typ`
--- | (no bit-range check at allocation). The bit-size invariant is
--- | re-established later by the consumer that needs it (e.g.,
--- | `Scalar_challenge.to_field_checked` does the bit check inline at
--- | endo-expansion time). This mirrors the existing `PerProofUnfinalized`
--- | pattern in this module — see Step.Main.unpackUnfinalized for the
--- | corresponding `coerce` discipline.
--- |
--- | The 5 fp fields stay as `sf` (= `Type1 (FVar f)` in circuit) because
--- | their `CheckedType` instance models OCaml's `Other_field.check`
--- | (forbidden_shifted_values check). The digests and branch_data are
--- | plain `f` because OCaml allocates them as plain `Field.typ`.
+-- | Challenges carry `UnChecked` because nothing range-checks them at
+-- | allocation; the consumer that needs the 128-bit invariant
+-- | re-establishes it, as `Scalar_challenge.to_field_checked` does at
+-- | endo-expansion time. The 5 fp fields stay `sf` (`Type1 (FVar f)` in
+-- | circuit) so their `CheckedType` instance runs the
+-- | forbidden-shifted-values check; digests and branch data are plain
+-- | `f` and get no check.
 newtype StatementPacked :: Int -> Type -> Type -> Type -> Type
 newtype StatementPacked d sf f b = StatementPacked
-  { -- 5 Type1 fp fields, in OCaml `to_data` order:
-    -- combined_inner_product, b, zetaToSrsLength, zetaToDomainSize, perm
+  { -- combined_inner_product, b, zetaToSrsLength, zetaToDomainSize, perm
     fpFields :: Vector 5 sf
-  -- 2 raw challenges: beta, gamma
+  -- beta, gamma
   , challenges :: Vector 2 (UnChecked (SizedF 128 f))
-  -- 3 scalar challenges: alpha, zeta, xi
+  -- alpha, zeta, xi
   , scalarChallenges :: Vector 3 (UnChecked (SizedF 128 f))
-  -- 3 digests: sponge_digest, msg_for_next_wrap, msg_for_next_step
+  -- sponge_digest, msg_for_next_wrap, msg_for_next_step
   , digests :: Vector 3 f
-  -- d bulletproof challenges
   , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
-  -- 1 packed branch_data field
   , branchData :: f
-  -- 8 constant feature_flags slots. OCaml's `Spec.T.Constant` in
-  -- `wrap_packed_typ` still allocates the underlying `Boolean.typ` field
-  -- (with the check skipped, see spec.ml:485-494). For `Features.Full.none`
-  -- all 8 are constant `false`. The wrap_main body never reads them.
+  -- Allocated to hold the wire slots open, never read: the feature
+  -- flags are all constant `false`, and the lookup pair is one flag
+  -- plus one scalar challenge for a lookup configuration that is off.
+  -- Dropping them would shorten the public input.
   , featureFlags :: Vector 8 f
-  -- 2 lookup-parameters slots. OCaml's `Lookup_parameters.opt_spec` is
-  -- `Spec.T.Opt { inner = Struct [Scalar Challenge]; flag = use; ... }`.
-  -- For `lookup.use = No`, `Opt.constant_layout_typ` (opt.ml:118) still
-  -- allocates `tuple2 Boolean.typ inner_typ` — that's 1 boolean flag
-  -- field plus 1 scalar challenge field, both unconstrained. The wrap
-  -- circuit never reads them.
   , lookupOptFlag :: f
   , lookupOptScalarChallenge :: f
   }
 
--- | Tuple shape mirroring `to_data`. The CircuitType instance delegates
--- | through this tuple, which gives the OCaml hlist field order. The
--- | feature_flags + lookup tail is grouped into a `Tuple3` so the whole
--- | thing fits in `Tuple7`.
+-- | The wire order of `StatementPacked`, as a tuple the `CircuitType`
+-- | instance delegates through. The feature-flag and lookup tail is
+-- | grouped into a `Tuple3` so the whole thing fits in `Tuple7`.
 type StatementPackedTuple d sf x =
   Tuple7
     (Vector 5 sf)
@@ -235,15 +201,8 @@ instance
   ) =>
   CheckedType f c (StatementPacked d sfvar fvar bvar) where
   check (StatementPacked r) =
-    -- Only the fp fields get a non-trivial check (Type1's
-    -- forbidden_shifted_values, mirroring OCaml's Other_field.check).
-    -- Challenges are UnChecked → no-op. Digests, branchData, featureFlags,
-    -- and lookupOpt fields are plain f → no-op. So this `check` reduces to
-    -- just the 5 fp checks.
-    --
-    -- IMPORTANT: emit the checks in REVERSE order. OCaml's `Vector.map`
-    -- processes `f x :: map xs ~f` right-to-left (because `::` evaluates
-    -- right-to-left), so `Other_field.check` runs on `perm` first and
-    -- `combined_inner_product` last. The `Vector.reverse` here matches
-    -- that evaluation order so PI-variable copy-cycles line up with OCaml.
+    -- Only the fp fields check; every other field is `UnChecked` or a
+    -- plain `f`. The reverse is load-bearing: the checks run on `perm`
+    -- first and `combined_inner_product` last, and that order fixes
+    -- which public-input variables end up in which copy cycle.
     traverse_ check (Vector.reverse r.fpFields)

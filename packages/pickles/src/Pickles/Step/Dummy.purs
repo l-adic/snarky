@@ -1,11 +1,10 @@
--- | Deterministic dummy values for Pickles recursion bootstrapping.
+-- | Deterministic dummy values for bootstrapping Pickles recursion —
+-- | what a base case pads its empty previous-proof slots with.
 -- |
--- | Mirrors OCaml's `mina/src/lib/pickles/dummy.ml`, `ro.ml`, `unfinalized.ml`.
--- |
--- | Reference: mina/src/lib/pickles/dummy.ml, mina/src/lib/pickles/ro.ml,
--- |            mina/src/lib/pickles/unfinalized.ml
--- | Fixture: packages/pickles/test/fixtures/dummy_values.txt
--- | Generator: mina/src/lib/crypto/pickles/dump_dummy/dump_dummy.ml
+-- | Everything here is drawn from one `Ro` stream, so the order in
+-- | which these constructors are forced is part of the answer, not an
+-- | implementation detail. `computeBaseCaseDummies` fixes that order
+-- | for a given `max_proofs_verified`.
 module Pickles.Step.Dummy
   ( DummySgValues
   , computeDummySgValues
@@ -38,6 +37,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles.Constants (zkRowsByDefault)
 import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (RoM, chal, dummyIpaStepChallenges, dummyIpaWrapChallenges, evalRoM, initialRo, pow2, scalarChal, stepEndo, tick, tock, wrapEndo)
 import Pickles.Field (StepField, WrapField)
@@ -66,41 +66,25 @@ import Snarky.Types.Shifted (class Shifted, SplitField, Type2(..), fromShifted, 
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
--- | OCaml-primitive Ro-consuming dummies
+-- | Ro-consuming dummies
 -- |
--- | 1:1 translations of OCaml's three Ro-consuming dummy constructors:
+-- | These types carry only the fields that draw from `Ro`; everything
+-- | derived from them is computed at consumer level.
 -- |
--- |   OCaml                           PureScript
--- |   -----                           ----------
--- |   `Dummy.evals`                   → `dummyEvals`
--- |   `Unfinalized.Constant.dummy`    → `unfinalizedConstantDummy`
--- |   `Proof.dummy`                   → `proofDummy`
+-- | Draws per primitive, over the three independent counters:
 -- |
--- | Each primitive's output type carries EXACTLY the OCaml record fields
--- | that consume Ro, with field names matched to OCaml. Derived fields
--- | that don't consume Ro (xi, bulletproof_challenges, perm, etc.) are
--- | computed at consumer level from shared data.
--- |
--- | Ro footprint per primitive (fq, fp, chal counters are independent):
--- |
--- |   dummyEvals                89 fq,  0 fp, 0 chal
--- |   unfinalizedConstantDummy   2 fq,  0 fp, 4 chal
--- |   proofDummy                 2 fq, 89 fp, 4 chal
+-- |   dummyEvals                89 fq,  0 fp,  0 chal
+-- |   unfinalizedConstantDummy   2 fq,  0 fp,  4 chal
+-- |   proofDummy                 2 fq, 89 fp,  4 chal
 -- |   dummyIpaWrapChallenges     0 fq,  0 fp, 15 chal
 -- |   dummyIpaStepChallenges     0 fq,  0 fp, 16 chal
--- |
--- | `computeBaseCaseDummies` composes them in the order OCaml's
--- | `Pickles.compile_promise` forces them for a given `max_proofs_verified`.
--- | Verified empirically from instrumented Simple_chain (N1) and
--- | Tree_proof_return (N2) OCaml dumpers (see `/tmp/audit_sc.stderr`,
--- | `/tmp/audit_tree.stderr`).
 -------------------------------------------------------------------------------
 
--- | OCaml `Dummy.evals : Tock.Field.t All_evals.t` (dummy.ml:6-21).
+-- | The dummy evaluations, in the wrap field.
 type DummyEvals = Evals WrapField
 
--- | OCaml `scalar_chal`/`chal` outputs share the plonk record layout
--- | in both `Unfinalized.Constant.dummy` and `Proof.dummy.statement`.
+-- | The four plonk challenges — the layout shared by
+-- | `unfinalizedConstantDummy` and `proofDummy`.
 type PlonkChals f =
   { alpha :: SizedF 128 f
   , beta :: SizedF 128 f
@@ -108,47 +92,40 @@ type PlonkChals f =
   , zeta :: SizedF 128 f
   }
 
--- | OCaml `Unfinalized.Constant.dummy : Impls.Step.unfinalized_proof`
--- | (unfinalized.ml:25-106). Only the Ro-consumed fields are captured
--- | here; `xi`, `bulletproof_challenges`, `should_finalize`,
--- | `sponge_digest_before_evaluations`, and `plonk.perm/zetaToSrsLength/
--- | zetaToDomainSize` are pure/derived and reconstructed at consumer level.
+-- | The Ro-consumed fields of a dummy unfinalized proof. `xi`, the
+-- | bulletproof challenges, `shouldFinalize`, the sponge digest and
+-- | the three shifted plonk values are derived, and rebuilt by
+-- | `wrapDummyUnfinalizedProof`.
 type UnfinalizedConstantDummy =
   { plonk :: PlonkChals WrapField
-  , combinedInnerProduct :: WrapField -- OCaml: deferred_values.combined_inner_product (raw tock)
-  , b :: WrapField -- OCaml: deferred_values.b (raw tock)
+  , combinedInnerProduct :: WrapField -- ^ Unshifted.
+  , b :: WrapField -- ^ Unshifted.
   }
 
--- | OCaml `Proof.dummy : h Nat.t -> r Nat.t -> domain_log2:int -> h t`
--- | (proof.ml:115-211). Captures only the Ro-derived fields; the vector
--- | padding (challenge_polynomial_commitments using `Dummy.Ipa.*.sg`),
--- | `branch_data`, and `g0`-valued commitments are non-Ro and computed
--- | at consumer level.
+-- | The Ro-derived fields of a dummy proof. The `sg` padding, the
+-- | branch data and the `g0`-valued commitments draw nothing from
+-- | `Ro` and are built at consumer level.
 type ProofDummy =
   { plonk :: PlonkChals StepField
-  , z1 :: WrapField -- OCaml: proof.openings.proof.z_1 (tock)
-  , z2 :: WrapField -- OCaml: proof.openings.proof.z_2 (tock)
+  , z1 :: WrapField -- ^ From the opening proof.
+  , z2 :: WrapField -- ^ From the opening proof.
   , prevEvals :: Evals StepField
   }
 
--- | 89 tocks, matching OCaml `dummy.ml:7-21`:
+-- | The dummy evaluations: 89 draws from the tock stream.
 -- |
--- |   Evals.map Evaluation_lengths.default ~f:(fun n ->
--- |     let a () = Array.create ~len:n (Ro.tock ()) in (a (), a ()))
+-- | Each `(zeta, omegaTimesZeta)` pair costs two, one per array, so
+-- | the record comes to (6 selectors + 6 sigmas + 15 witness + 15
+-- | coefficients + 1 z + 1 public input) × 2 + 1 for `ftEval1` = 89.
 -- |
--- | `Array.create ~len:n (Ro.tock ())` consumes exactly one tock per
--- | `a()` call (the value is replicated, not redrawn), so each Evals
--- | field of shape `(array, array)` costs 2 tocks.
--- | Total: (6 selectors + 6 sigmas + 15 w + 15 coefficients + 1 z
--- |        + 1 public_input) × 2 + 1 ft_eval1 = 89.
--- |
--- | Record/tuple evaluation is right-to-left (OCaml).
+-- | The draw order is fixed, and runs right to left through the
+-- | record.
 dummyEvals :: RoM DummyEvals
 dummyEvals =
   let
     pointEval :: RoM (PointEval WrapField)
     pointEval = do
-      oz <- tock -- right tuple element first (OCaml RTL)
+      oz <- tock -- right element of the pair first
       z <- tock
       pure { zeta: z, omegaTimesZeta: oz }
 
@@ -158,7 +135,8 @@ dummyEvals =
       pure (Vector.reverse v)
   in
     do
-      -- Evals record RTL: selectors first, then sigma, z, coefficients, w, public_input, ft_eval1
+      -- Draw order: selectors, sigma, z, coefficients, witness,
+      -- public input, ft_eval1.
       idxEndomulScalar <- pointEval
       idxEmul <- pointEval
       idxMul <- pointEval
@@ -176,59 +154,43 @@ dummyEvals =
       ftEval1 <- tock
       pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
 
--- | 4 chals + 2 tocks, matching OCaml `unfinalized.ml:25-106`:
+-- | The Ro-consumed fields of a dummy unfinalized proof: four
+-- | challenge draws, then two tock draws.
 -- |
--- |   let alpha = scalar_chal ()    -- LTR let-bindings
--- |   let beta  = chal ()
--- |   let gamma = chal ()
--- |   let zeta  = scalar_chal ()
--- |   ...
--- |   { deferred_values = { plonk = { ... alpha; beta; gamma; zeta }
--- |                       ; combined_inner_product = Shifted_value (tock ())
--- |                       ; ...
--- |                       ; b = Shifted_value (tock ()) }
--- |   ; ... }
--- |
--- | The outer record is constructed RTL, so `b` fires before
--- | `combined_inner_product` when both `tock ()` calls execute.
+-- | The draw order is fixed. The challenges come in declaration
+-- | order, but the record around `b` and `combinedInnerProduct` is
+-- | built right to left, so `b` draws first.
 unfinalizedConstantDummy :: RoM UnfinalizedConstantDummy
 unfinalizedConstantDummy = do
   alpha <- scalarChal
   beta <- chal
   gamma <- chal
   zeta <- scalarChal
-  -- Record RTL: b first, combined_inner_product second
   b <- tock
   combinedInnerProduct <- tock
   pure { plonk: { alpha, beta, gamma, zeta }, combinedInnerProduct, b }
 
--- | 2 tocks + 89 ticks + 4 chals, matching OCaml `proof.ml:115-211`.
+-- | The Ro-derived fields of a dummy proof: two tock draws, then 89
+-- | tick draws, then four challenge draws.
 -- |
--- | Top-level record `T { statement; proof; prev_evals }` evaluation
--- | order (empirically verified from instrumented Simple_chain trace):
--- |   1. `proof` evaluates first — openings.proof.{z_2, z_1} tocks (RTL within openings.proof)
--- |   2. `prev_evals` evaluates second — 89 ticks in the same RTL record layout as `dummyEvals`
--- |   3. `statement` evaluates third — plonk.{zeta, gamma, beta, alpha} chals (RTL)
+-- | The draw order is fixed — the opening proof's `z2` then `z1`,
+-- | then the previous evaluations, then the plonk challenges from
+-- | `zeta` back to `alpha`.
 -- |
--- | `Lazy.force Dummy.evals` fires inside `openings` construction if
--- | not yet forced; for byte-parity with OCaml, callers MUST call
--- | `dummyEvals` before `proofDummy` in any fresh Ro sequence.
+-- | Callers have to run `dummyEvals` before this in any fresh `Ro`
+-- | sequence, or the streams diverge.
 proofDummy :: RoM ProofDummy
 proofDummy = do
-  -- 1. openings.proof.{z_2, z_1} RTL
   z2 <- tock
   z1 <- tock
-  -- 2. prev_evals (89 ticks)
   prevEvals <- proofDummyPrevEvals
-  -- 3. statement.proof_state.deferred_values.plonk RTL: zeta, gamma, beta, alpha
   zeta <- scalarChal
   gamma <- chal
   beta <- chal
   alpha <- scalarChal
   pure { plonk: { alpha, beta, gamma, zeta }, z1, z2, prevEvals }
 
--- | Internal: 89 ticks in the same RTL Evals record layout as
--- | `dummyEvals`. Extracted for clarity.
+-- | 89 tick draws, in the same record layout as `dummyEvals`.
 proofDummyPrevEvals :: RoM (Evals StepField)
 proofDummyPrevEvals =
   let
@@ -261,9 +223,8 @@ proofDummyPrevEvals =
       ftEval1 <- tick
       pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
 
--- | Composed base-case dummies. A compile threads its own `Ro` and
--- | calls `computeBaseCaseDummies` to obtain everything needed to pad
--- | base-case slots with Ro-derived values.
+-- | Everything a compile needs to pad its base-case slots with
+-- | Ro-derived values.
 type BaseCaseDummies =
   { ipaWrapChallenges :: Vector WrapIPARounds (SizedF 128 WrapField)
   , ipaStepChallenges :: Vector StepIPARounds (SizedF 128 StepField)
@@ -272,12 +233,8 @@ type BaseCaseDummies =
   , proofDummy :: ProofDummy
   }
 
--- | Which of `Unfinalized.Constant.dummy` vs `Proof.dummy` does
--- | `Pickles.compile_promise` force first? Verified empirically from
--- | instrumented OCaml runs:
--- |
--- |   max_proofs_verified = 1 (Simple_chain) → Proof.dummy first
--- |   max_proofs_verified = 2 (Tree)         → Unfinalized first
+-- | Which of `unfinalizedConstantDummy` and `proofDummy` draws from
+-- | `Ro` first.
 data ForceOrder = UnfinalizedFirst | ProofDummyFirst
 
 forceOrderFor :: { maxProofsVerified :: Int } -> ForceOrder
@@ -285,17 +242,13 @@ forceOrderFor { maxProofsVerified } = case maxProofsVerified of
   1 -> ProofDummyFirst
   _ -> UnfinalizedFirst
 
--- | Pure top-level accessor: the `BaseCaseDummies` for a given circuit
--- | shape. Depends ONLY on `maxProofsVerified` — a definition-time
--- | property, not a compile-derived one. Same bits everywhere the same
--- | N is used.
+-- | The `BaseCaseDummies` for a circuit shape. They depend only on
+-- | `maxProofsVerified`, so the same N gives the same bits everywhere.
 baseCaseDummies :: { maxProofsVerified :: Int } -> BaseCaseDummies
 baseCaseDummies cfg = evalRoM (computeBaseCaseDummies cfg) initialRo
 
--- | Sequences IPA challenges + the three Ro-consuming dummies in the
--- | OCaml-correct order for the given circuit shape. Consumers read
--- | the returned `BaseCaseDummies` record by semantic field name; no
--- | swaps or reinterpretation is needed.
+-- | Draw the IPA challenges and the three Ro-consuming dummies, in
+-- | the order the given circuit shape fixes.
 computeBaseCaseDummies :: { maxProofsVerified :: Int } -> RoM BaseCaseDummies
 computeBaseCaseDummies cfg = do
   ipaWrapChallenges <- dummyIpaWrapChallenges
@@ -321,9 +274,8 @@ computeBaseCaseDummies cfg = do
 -------------------------------------------------------------------------------
 -- | Derived dummy values
 -- |
--- | Consumer-level views over `BaseCaseDummies`. Each takes a
--- | `BaseCaseDummies` produced by `computeBaseCaseDummies` and derives
--- | the expanded / shifted / hashed values step/wrap circuits need.
+-- | Views over `BaseCaseDummies`: the expanded, shifted and hashed
+-- | values the step and wrap circuits actually read.
 -------------------------------------------------------------------------------
 
 type DummySgValues =
@@ -416,8 +368,8 @@ computeDummySgValues bcd pallasSrs vestaSrs =
         }
     }
 
--- | Wrap-side dummy unfinalized proof, mirroring OCaml's
--- | `Unfinalized.Constant.dummy` (unfinalized.ml:25-106).
+-- | The wrap-side dummy unfinalized proof, with its derived fields
+-- | filled in from `unfinalizedConstantDummy`.
 wrapDummyUnfinalizedProof
   :: BaseCaseDummies
   -> UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
@@ -432,9 +384,10 @@ wrapDummyUnfinalizedProof bcd =
     gammaExpanded = SizedF.toField u.plonk.gamma :: WrapField
     zetaExpanded = toFieldPure u.plonk.zeta wEndo
 
-    -- wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
+    -- The wrap domain at `proofs_verified = 2`.
     wrapDomainLog2 = 15
-    zkRows = 3
+    -- A wrap proof is always one chunk, so this never varies.
+    zkRows = zkRowsByDefault
     omega = (domainGenerator wrapDomainLog2)
     n = pow2 wrapDomainLog2
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
@@ -491,10 +444,8 @@ wrapDummyUnfinalizedProof bcd =
     , spongeDigestBeforeEvaluations: F digestDummy
     }
 
--- | Cross-field-encoded step-side dummy `PerProofUnfinalized` (value
--- | level). Used by `stepMain` to front-pad the step PI's
--- | `unfinalized_proofs` vector from `len` to `mpvMax`. Mirrors OCaml
--- | `step.ml:782-787`'s `Vector.extend_front ... Unfinalized.dummy`.
+-- | The step-side dummy `PerProofUnfinalized`, cross-field encoded.
+-- | `stepMain` front-pads its public input with these.
 mkDummyPerProofUnfinalized
   :: BaseCaseDummies
   -> PerProofUnfinalized
@@ -537,17 +488,17 @@ mkDummyPerProofUnfinalized bcd =
       , shouldFinalize: false
       }
 
--- | Step-side dummy unfinalized proof, mirroring OCaml's
--- | `Wrap_deferred_values.expand_deferred` applied to `Proof.dummy`.
+-- | The step-side dummy unfinalized proof, with its deferred values
+-- | expanded.
 -- |
--- | Called at two sites (same deferred values, differing only in d/bpChals):
--- |   Step public-input side (d = WrapIPARounds): bpChals from ipaWrapChallenges
--- |   Step FOP advice side   (d = StepIPARounds): bpChals from ipaStepChallenges
+-- | `bpChals` is a parameter because the two callers pass different
+-- | challenge vectors at different widths; the deferred values are
+-- | the same either way.
 -- |
--- | The `@n` phantom is the `most_recent_width` (= max_proofs_verified of
--- | the circuit whose base case we're padding). It drives how many copies
--- | of `Dummy.Ipa.Step.challenges` get absorbed into the challenges
--- | digest and how many `sg` eval points prepend `cipAllEvals`.
+-- | `@n` is the most-recent width — the `max_proofs_verified` of the
+-- | circuit whose base case is being padded. It sets how many copies
+-- | of the step IPA challenges are absorbed into the challenge digest
+-- | and how many `sg` eval points precede `cipAllEvals`.
 stepDummyUnfinalizedProof
   :: forall @n d sf
    . Reflectable n Int
@@ -567,7 +518,9 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     betaExpanded = SizedF.toField p.beta :: StepField
     gammaExpanded = SizedF.toField p.gamma :: StepField
     zetaExpanded = toFieldPure p.zeta stepEndoScalar
-    zkRows = 3
+    -- `domainLog2` is the previous proof's wrap domain — a step circuit
+    -- verifies wrap proofs — and a wrap proof is always one chunk.
+    zkRows = zkRowsByDefault
     omega = (domainGenerator domainLog2)
     n = pow2 domainLog2
     zetaw = zetaExpanded * omega
@@ -635,10 +588,9 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
       }
     env = fieldEnv evalPoint challenges_
     gateConstraints = evaluate PallasTokens.constantTermTokens env
-    -- `ft_eval0 = permContribution - pEval0Folded - gateConstraints`
-    -- (mirrors `Pickles.Prove.Pure.Common.ftEval0`). Here the public
-    -- evaluation is a single-chunk value (`evals.publicEvals.zeta`), so
-    -- the Horner-fold degenerates to the value itself.
+    -- `ft_eval0 = permContribution - pEval0Folded - gateConstraints`.
+    -- The public evaluation is a single chunk here, so the Horner
+    -- fold degenerates to the value itself.
     ftEval0Value = permContrib - evals.publicEvals.zeta - gateConstraints
 
     ftPointEval :: PointEval StepField
@@ -687,8 +639,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     , spongeDigestBeforeEvaluations: F (zero)
     }
 
--- | OCaml `common.ml:25-29` — maps max_proofs_verified to the
--- | `wrap_domains.h` log2 used by step FOP constructions.
+-- | The wrap-domain log2 for a given `max_proofs_verified`.
 wrapDomainLog2ForProofsVerified :: Int -> Int
 wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
   0 -> 13
@@ -696,15 +647,11 @@ wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
   2 -> 15
   _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
 
--- | The kimchi-level wrap proof body of a base case, built from a
--- | `BaseCaseDummies`.
+-- | The kimchi-level wrap proof body of a base case.
 -- |
--- | Consumes `bcd.proofDummy.{z1, z2}` and `bcd.dummyEvals` — the exact
--- | shape OCaml's `Proof.dummy` produces, threaded in from the circuit's
--- | `computeBaseCaseDummies` output, so the circuit's compile-derived Ro
--- | state stays the single source of truth.
--- |
--- | Reference: `Wrap_wire_proof.to_kimchi_proof`.
+-- | It reads `z1`, `z2` and the evaluations out of the passed
+-- | `BaseCaseDummies` rather than redrawing them, so the compile's own
+-- | `Ro` state stays the single source of truth.
 dummyWrapProof
   :: BaseCaseDummies
   -> Proof Pallas.G Vesta.BaseField
@@ -713,33 +660,28 @@ dummyWrapProof bcd =
     prf = bcd.proofDummy
     evals = bcd.dummyEvals
 
-    -- Pallas generator g0 = Tock.Curve.(to_affine_exn one). Pallas points
-    -- have coordinates in Pallas.BaseField = Vesta.ScalarField.
-    -- Generator is never the point-at-infinity, so `toAffine` is always `Just`.
+    -- The Pallas generator. It is never the point at infinity, so
+    -- `toAffine` always gives `Just`.
     g0 = unsafePartial $ fromJust (Curves.toAffine (Curves.generator :: Pallas.G))
 
     g0XY = [ g0.x, g0.y ]
 
-    -- w_comm: 15 copies of g0 as (x, y) pairs
     wComm = Array.concat (Array.replicate 15 g0XY)
 
-    -- z_comm: 1 copy of g0
     zComm = g0XY
 
-    -- t_comm: 7 copies of g0 (one per quotient-poly chunk)
+    -- One per quotient-poly chunk.
     tComm = Array.concat (Array.replicate 7 g0XY)
 
-    -- Opening proof lr: 15 (g0, g0) pairs laid out as l.x,l.y,r.x,r.y
+    -- Laid out flat as `l.x, l.y, r.x, r.y` per round.
     lr = Array.concat (Array.replicate 15 (g0XY <> g0XY))
 
     delta = g0XY
 
     sg = g0XY
 
-    -- Flatten dummyEvals into kimchi eval order
-    -- (wrap_wire_proof.ml:107-134 Evaluations.to_kimchi):
-    --   witness[0..14] | coefficients[0..14] | z | sigma[0..5]
-    --   | generic | poseidon | complete_add | mul | emul | endomul_scalar
+    -- The kimchi eval order is fixed: the 15 witness evaluations, the
+    -- 15 coefficient ones, z, the 6 sigmas, then the 6 index ones.
     flattenVec
       :: forall n
        . Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField }

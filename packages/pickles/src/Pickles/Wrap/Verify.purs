@@ -1,16 +1,5 @@
--- | Wrap verify: IVP + 4 assertions from wrap_main.ml.
--- |
--- | This is the extracted block 5 of wrap_main — the IPA verification and
--- | assertion block that runs after FOP and statement packing.
--- |
--- | The function:
--- |   1. Runs incrementallyVerifyProof (Wrap IVP, verifying a Step proof)
--- |   2. Asserts bulletproof_success
--- |   3. Asserts messages_for_next_wrap_proof hash matches (with pre-computed sponge padding)
--- |   4. Asserts sponge_digest matches
--- |   5. Asserts bp_challenges match
--- |
--- | Reference: mina/src/lib/crypto/pickles/wrap_main.ml:78-135
+-- | The wrap circuit's final block, run after finalize-other-proof and
+-- | statement packing.
 module Pickles.Wrap.Verify
   ( WrapVerifyInput
   , wrapVerify
@@ -43,26 +32,20 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | Input to wrapVerify beyond the IVP params/input.
--- | These are the assertion targets and the data for the message hash.
+-- | What `wrapVerify` needs beyond the IVP params and input.
 type WrapVerifyInput n d fv =
-  { -- Claimed values from the public input
+  { -- Claimed in the wrap statement
     spongeDigestBeforeEvaluations :: fv
   , messagesForNextWrapProofDigest :: fv
   , bulletproofChallenges :: Vector d (SizedF 128 fv)
-  -- Data for message hash (from FOP / witness)
+  -- Hashed into the messages-for-next-wrap digest
   , newBpChallenges :: Vector n (Vector WrapIPARounds fv)
-  -- Opening proof sg (for message hash)
   , sg :: AffinePoint fv
   }
 
--- | Run the Wrap IVP and assert all 4 conditions from wrap_main.ml:116-135.
--- |
--- | Specialized to the Wrap field and VestaG curve.
--- |
--- | The message hash uses a pre-computed sponge state to match OCaml's
--- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
--- | challenge vectors are absorbed offline into the sponge state.
+-- | Run the wrap IVP over `VestaG` and assert bullet-proof success,
+-- | the messages-for-next-wrap digest, the sponge digest, and the
+-- | bullet-proof challenges.
 wrapVerify
   :: forall publicInput sgOldN stepChunks numChunksPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 totalBases totalBasesPred d dPred n r cr
    . PrimeField WrapField
@@ -77,11 +60,11 @@ wrapVerify
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
   => Add 1 dPred d
-  -- Chunked base layout chain (mirrors IVP). Shared `wCoeffN` /
-  -- `indexSigmaN` mirror the IVP's collapsing because Mul's fundep
-  -- would unify same-RHS counts otherwise. Layout: xHat(nc) ::
-  -- ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
-  -- sigma(6nc); total non-sg = 1 + 44*nc.
+  -- Base layout, forwarded to the IVP: xHat(nc) :: ftComm ::
+  -- zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
+  -- sigma(6nc), so the non-sg count is `1 + 44*nc`. `wCoeffN` and
+  -- `indexSigmaN` are shared because `Mul`'s fundep would unify
+  -- same-RHS counts otherwise.
   => Mul 7 stepChunks tCommLen
   => Add 1 tCommLenPred tCommLen
   => Mul 15 stepChunks wCoeffN
@@ -101,16 +84,13 @@ wrapVerify
   -> WrapVerifyInput n d (FVar WrapField)
   -> Snarky WrapField (KimchiConstraint WrapField) cr Unit
 wrapVerify ivpParams ivpInput verifyInput = do
-  -- Run IVP
   output <- evalSpongeM initialSpongeCircuit $
     incrementallyVerifyProof @VestaG WrapOtherField.ipaScalarOps ivpParams ivpInput Nothing
 
-  -- Assertion 1: bulletproof_success (wrap_main.ml:116)
   label "ivp-assert-bp-success" $ assert_ output.success
 
-  -- Assertion 2: messages_for_next_wrap_proof hash (wrap_main.ml:117-125)
-  -- Pre-computed sponge state: index (2-n) in dummy_messages_for_next_wrap_proof_sponge_states.
-  -- n dummy vectors have already been provided as real data, so (2-n) are absorbed offline.
+  -- `n` real challenge vectors were supplied, so the sponge starts
+  -- from the state with `PaddedLength - n` dummies already absorbed.
   let
     states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
     paddingState = Vector.index states (reflectFinite @n)
@@ -122,9 +102,7 @@ wrapVerify ivpParams ivpInput verifyInput = do
       }
   label "ivp-assert-msg-wrap-hash" $ assertEqual_ verifyInput.messagesForNextWrapProofDigest computedDigest
 
-  -- Assertion 3: sponge_digest (wrap_main.ml:126-128)
   label "ivp-assert-sponge-digest" $ assertEqual_ verifyInput.spongeDigestBeforeEvaluations output.spongeDigestBeforeEvaluations
 
-  -- Assertion 4: bp_challenges match (wrap_main.ml:129-135)
   label "ivp-assert-bp-challenges" $ for_ (Vector.zip verifyInput.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2

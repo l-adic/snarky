@@ -1,16 +1,9 @@
--- | Finalize another proof's deferred values in the Wrap circuit.
+-- | The wrap circuit's half of finalize-other-proof: recheck the
+-- | deferred values the step proof it verifies left behind.
 -- |
--- | The Wrap circuit verifies a previous Step proof. Unlike the Step FOP which
--- | has domain masking and conditional challenge absorption, the Wrap FOP:
--- | - Uses a constant domain generator (no masking, zetaw = scale_(gen, zeta))
--- | - Computes omega powers as pure constants (no in-circuit inv/mul)
--- | - Uses a plain sponge for challenge digest (no OptSponge)
--- | - Has no proofs-verified mask (all sg_evals are EvalJust)
--- | - Uses Type2 shift for deferred values (x + 2^(n-1))
--- | - Uses squeeze_scalar (constrain_low_bits:false) for xi
--- | - Seals beta, gamma, and all shifted values (matching map_plonk_to_field)
--- |
--- | Reference: wrap_verifier.ml:1511-1783 `finalize_other_proof`
+-- | The step-side counterpart is `Pickles.Step.FinalizeOtherProof`. The
+-- | shared gadgets live in `Pickles.FinalizeOtherProof` and
+-- | `Pickles.PlonkChecks`.
 module Pickles.Wrap.FinalizeOtherProof
   ( Input
   , wrapFinalizeOtherProofCircuit
@@ -44,30 +37,19 @@ import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 
--------------------------------------------------------------------------------
--- | Types
--------------------------------------------------------------------------------
-
--- | Input for the Wrap circuit's FinalizeOtherProof.
--- |
--- | Unlike the Step FOP input, this has:
--- | - No `mask`: all previous proofs are always present
--- | - No `domainLog2Var`: domain is fixed at compile time
--- |
--- | Reference: wrap_verifier.ml:1511-1520
+-- | What `wrapFinalizeOtherProofCircuit` reads: the step proof's
+-- | unfinalized deferred values, its evaluations, and the `n` previous
+-- | bullet-proof challenge stacks. Every slot is always present, so
+-- | there is no mask.
 type Input n d fv b =
   { unfinalized :: UnfinalizedProof d fv (Type2 fv) b
   , allEvals :: Evals fv
   , prevChallenges :: Vector n (Vector d fv)
   }
 
--------------------------------------------------------------------------------
--- | Circuit
--------------------------------------------------------------------------------
-
--- | Finalize another proof's deferred values in the Wrap circuit.
--- |
--- | Reference: wrap_verifier.ml:1511-1783
+-- | Recompute the step proof's deferred values and report whether each
+-- | matches the claim in its statement, together with the expanded
+-- | bullet-proof challenges.
 wrapFinalizeOtherProofCircuit
   :: forall d dPred n nPred nd ndPred f f' r r2
    . Add 1 dPred d
@@ -86,9 +68,8 @@ wrapFinalizeOtherProofCircuit
   -> Input n d (FVar f) (BoolVar f)
   -> Snarky f (KimchiConstraint f) r (Output d f)
 wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals, prevChallenges } = label "wrap-finalize-other-proof" do
-  -- Wrap is currently single-domain; access via Vector.head. Multi-
-  -- domain wrap dispatch (if ever needed) would mirror Step's
-  -- Pseudo.toDomain pattern in Commit C.
+  -- `params.domains` is a singleton: the caller has already resolved
+  -- which domain this slot uses.
   let
     ops = WrapOtherField.fopShiftOps @f
     deferred = unfinalized.deferredValues
@@ -97,46 +78,30 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     domain = { generator: headDomain.generator, shifts: params.shifts }
     domainLog2 = headDomain.log2
 
-  ---------------------------------------------------------------------------
-  -- Step 1: map_plonk_to_field
-  -- OCaml: map_challenges ~f:seal ~scalar:scalar_to_field
-  -- Right-to-left record field evaluation: zeta, gamma, beta, alpha
-  ---------------------------------------------------------------------------
+  -- The order of these four is fixed by the constraint layout: zeta,
+  -- gamma, beta, alpha.
   let plonkMin = toPlonkMinimal deferred.plonk
   zeta <- label "step1_zeta" $ toField @8 plonkMin.zeta endoVar
   gamma <- label "step1_gamma" $ seal (SizedF.toField plonkMin.gamma)
   beta <- label "step1_beta" $ seal (SizedF.toField plonkMin.beta)
   alpha <- label "step1_alpha" $ toField @8 plonkMin.alpha endoVar
 
-  -- map_fields ~f:(Shifted_value.Type2.map ~f:seal)
-  -- Right-to-left: perm, zetaToDomainSize, zetaToSrsLength
+  -- Likewise fixed: perm, zetaToDomainSize, zetaToSrsLength.
   sealedPlonk <- label "step1_seal_shifted" do
     perm <- ops.sealInner deferred.plonk.perm
     zetaToDomainSize <- ops.sealInner deferred.plonk.zetaToDomainSize
     zetaToSrsLength <- ops.sealInner deferred.plonk.zetaToSrsLength
     pure { perm, zetaToDomainSize, zetaToSrsLength }
 
-  ---------------------------------------------------------------------------
-  -- Step 2: Compute zetaw
-  -- OCaml: zetaw = Field.mul domain#generator plonk.zeta
-  -- Generator is Field.constant → scale_ produces no R1CS
-  ---------------------------------------------------------------------------
   zetaw <- mul_ domain.generator zeta
 
-  ---------------------------------------------------------------------------
-  -- Step 3: Compute challenge polynomial evaluations (sg_evals)
-  -- OCaml right-to-left: zetaw tuple element first, then zeta.
-  -- Within each: right-to-left Vector.map (last element first).
-  ---------------------------------------------------------------------------
+  -- Challenge-polynomial evaluations, in fixed order: zetaw before
+  -- zeta, and within each, the last challenge first.
   sgZetaw <- label "step3_sgZetaw" $ challengePolyEvals prevChallenges zetaw
   sgZeta <- label "step3_sgZeta" $ challengePolyEvals prevChallenges zeta
 
-  ---------------------------------------------------------------------------
-  -- Step 4: Sponge operations
-  -- Plain sponge for challenge_digest (absorb all unconditionally).
-  -- squeeze_scalar for xi (constrain_low_bits:false).
-  -- squeeze_challenge for r (constrain_low_bits:true).
-  ---------------------------------------------------------------------------
+  -- A plain sponge, absorbing every challenge unconditionally. `xi` is
+  -- squeezed without the low-bit constraint, `r` with it.
   { xi: xiActual, r: rActual } <- label "step4_sponge" $ squeezeXiR
     { spongeDigestBeforeEvaluations: unfinalized.spongeDigestBeforeEvaluations
     , challengeDigest: challengeDigest prevChallenges
@@ -151,20 +116,15 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     xiRaw = SizedF.toField xiActual
     rRaw = SizedF.toField rActual
 
-  ---------------------------------------------------------------------------
-  -- Step 5: pow2_pows
-  -- OCaml computes zeta_n and zetaw_n for combined_evals (both generate
-  -- Square constraints even for single-chunk evals where result isn't used).
-  ---------------------------------------------------------------------------
+  -- Recombining chunked evaluations is a Horner fold in `zeta^n`, which
+  -- is why the reference computes both powers at this point. This port
+  -- collapses the evaluations out of circuit, in
+  -- `Pickles.Prove.Pure.Wrap`, so nothing here reads the results — but
+  -- the Square constraints are part of the circuit, so the calls stay.
   label "step5_pow2pows" do
     void $ pow2PowSquare zeta domainLog2
     void $ pow2PowSquare zetaw domainLog2
 
-  ---------------------------------------------------------------------------
-  -- Steps 6+7: PlonK env + ft_eval0
-  -- Omega powers are pure constants (generator is constant).
-  -- zetaToNMinus1 is zeta^n - 1 (no domain masking).
-  ---------------------------------------------------------------------------
   let
     pEval0 = allEvals.publicEvals.zeta
 
@@ -184,23 +144,18 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
 
     shifts = domain.shifts
 
-  -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
-  -- Must come before omega power usage to match OCaml constraint order.
+  -- `alpha^0 .. alpha^70`, shared by `ft_eval0` and the perm scalar.
+  -- Emitted before any omega power, because the order is fixed.
   alphaPowers <- label "step6_alphaPowers" $ precomputeAlphaPowers alpha
 
-  ---------------------------------------------------------------------------
-  -- Step 6: Omega powers from domain#generator (plonk_checks.ml:248-265)
-  -- When generator is Const, inv_/mul_/square_ short-circuit to constants.
-  -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
-  ---------------------------------------------------------------------------
+  -- A constant generator folds these to constants; the dynamic wrap
+  -- domain makes them emit R1CS.
   let gen = domain.generator
   omegas@{ omegaToMinus1: omegaM1, omegaToZkPlus1: omegaZkP1, omegaToZk: omegaZk } <-
     omegaPowers { generator: gen, zkRows: params.zkRows }
   zkPoly <- label "step7_zkPoly" $ zkPolynomial zeta omegas
 
-  -- zetaToNMinus1: zeta^n - 1 (no domain masking, just pow2pow and subtract)
-  -- Uses mul_ (R1CS) not square_ because this comes from plonk_checks.pow2pow
-  -- which uses F.(acc * acc), unlike wrap_verifier.pow2pow which uses Field.square.
+  -- `zeta^n - 1`, with no domain masking.
   zetaToNMinus1 <- label "step7_zetaToNMinus1" $
     vanishingPolynomial zeta
 
@@ -210,10 +165,8 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     a22 = alphaPow 22
     a23 = alphaPow 23
 
-  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term. The
-  -- permutation half is `permContributionCircuit`, shared with
-  -- the step verifier. omega_to_zk is a constant in Wrap (unlike Step where
-  -- it's a circuit var) when the domain is; the gadget is agnostic.
+  -- The permutation half of `ft_eval0`; the constant term is
+  -- subtracted below.
   permResult <- permContributionCircuit
     { w: Vector.take @7 w0
     , sigma: s0
@@ -229,9 +182,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     }
     { pEval0, alphaPow21: a21, alphaPow22: a22, alphaPow23: a23 }
 
-  -- omegaForLagrange: matches OCaml plonk_checks.ml:311-328 unnormalized_lagrange_basis
-  -- Returns the omega power for a given lagrange basis position.
-  -- Uses circuit-computed omega values (constant when domain is constant).
+  -- The omega power for one unnormalized lagrange basis position.
   let
     omegaForLagrange { zkRows: zk, offset } =
       if not zk && offset == 0 then const_ one
@@ -240,7 +191,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
       else if not zk && offset == (-2) then omegaZkP1
       else if not zk && offset == (-3) then omegaZk
       else if zk && offset == 0 then omegaZk
-      -- (true, -1) is lazy in OCaml; not used by constant_term tokens
+      -- `(true, -1)` is never requested by the constant-term tokens.
       else const_ one
 
     vanishesOnZk = const_ one
@@ -261,11 +212,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
 
   let ftEval0 = sub_ permResult constantTerm
 
-  ---------------------------------------------------------------------------
-  -- Step 8: Combined inner product
-  -- OCaml right-to-left for `+`: zetaw combine computed first.
-  -- No mask: all sg_evals are EvalJust.
-  ---------------------------------------------------------------------------
   actualCip <- combinedInnerProduct
     { xi
     , r
@@ -285,11 +231,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
   let expectedCip = ops.unshift deferred.combinedInnerProduct
   cipCorrect <- equals_ expectedCip actualCip
 
-  ---------------------------------------------------------------------------
-  -- Step 9: b_correct
-  -- Expand 16 bulletproof challenges via endo (reverse order matching
-  -- OCaml's right-to-left Vector.map evaluation).
-  ---------------------------------------------------------------------------
+  -- Endo-expanded last challenge first; the order is fixed.
   expandedChallenges <- label "step9_expandChallenges" $
     computeChallenges deferred.bulletproofChallenges endoVar
 
@@ -301,11 +243,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     , expectedB: ops.unshift deferred.b
     }
 
-  ---------------------------------------------------------------------------
-  -- Step 10: perm_correct
-  -- Inline perm scalar using shared alpha powers (a21, zkPoly).
-  -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
-  ---------------------------------------------------------------------------
   actualPerm <- label "step10_perm" $ permScalarCircuit
     { w: Vector.take @6 w0
     , sigma: s0
@@ -316,18 +253,14 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     , alphaPow21: a21
     }
 
-  -- zeta_to_srs_length computation (generates constraints even though result is voided)
+  -- `zeta^(2^srsLengthLog2)`, emitted for its constraints; the result
+  -- is discarded.
   label "step10_zetaToSrs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
 
   plonkOk <- label "step10_plonkOk" $ ops.shiftedEqual sealedPlonk.perm actualPerm
 
-  ---------------------------------------------------------------------------
-  -- Step 11: Combine all checks
-  ---------------------------------------------------------------------------
   finalized <- label "step11_finalized" $ all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
 
-  -- DIAG: dump key field values for wrap FOP so we can identify which
-  -- FOP component (cip/b/perm/xi/r) mismatches vs its claim.
   ivpTrace "wrap.fop.dbg.xi_expanded" xi
   ivpTrace "wrap.fop.dbg.xi_claim_raw" (SizedF.toField deferred.xi)
   ivpTrace "wrap.fop.dbg.xi_sponge_raw" xiRaw
@@ -345,11 +278,9 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
 
   pure { finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, challenges, expandedChallenges }
 
--- | Compute x^(2^n) using R1CS (mul) constraints.
--- |
--- | Matches OCaml's plonk_checks.pow2pow which uses F.(acc * acc).
--- | Generates R1CS constraints (co=1, cm=-1), unlike pow2PowSquare which
--- | generates Square constraints (co=-1, cm=1).
+-- | `x^(2^n)`, built from multiplication constraints. `pow2PowSquare`
+-- | computes the same value from Square constraints, so the two emit
+-- | different circuits and are not interchangeable.
 pow2PowMul
   :: forall f c r
    . PrimeField f

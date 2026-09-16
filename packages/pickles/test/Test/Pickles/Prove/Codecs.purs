@@ -1,13 +1,12 @@
--- | End-to-end test for OUT-OF-CIRCUIT pickles-proof serialization:
--- | compile + prove a real (NRR) proof, project it to a `VerifiableProof`,
--- | round-trip BOTH the proof and the `Verifier` through JSON
--- | (`Pickles.Prove.Codecs`), and confirm the decoded proof still verifies
+-- | `Pickles.Prove.Codecs` out of circuit: a real proof and its
+-- | `Verifier` both go through JSON, and the decoded proof must verify
 -- | against the decoded verifier.
 -- |
--- | This exercises: the wrap kimchi proof + wrap VK through the Rust serde
--- | codecs; the carried statement skeleton through the simple-json leaf
--- | codecs; and the reconstructed-not-serialized data (the verifier's
--- | linearization constant + the SRSes supplied to `decodeVerifier`).
+-- | That covers the wrap proof and wrap VK through the Rust serde
+-- | codecs, the carried statement skeleton through the simple-json leaf
+-- | codecs, and the data that is rebuilt rather than serialized: the
+-- | verifier's linearization constant, and the SRSes handed to
+-- | `decodeVerifier`.
 module Test.Pickles.Prove.Codecs (spec) where
 
 import Prelude
@@ -66,20 +65,18 @@ spec = describe "Pickles.Prove.Codecs" do
         Right compiledProof -> do
           let vp = toVerifiable compiledProof
 
-          -- Sanity: the proof verifies before any serialization.
+          -- The proof verifies before any serialization.
           verify output.verifier vp `shouldEqual` true
 
-          -- Round-trip the proof through JSON.
           let proofJson = encodeVerifiableProof vp
           case decodeVerifiableProof proofJson of
             Left errs -> liftEffect $ Exc.throw ("decodeVerifiableProof: " <> show errs)
             Right vp' -> do
-              -- Re-encoding the decoded proof yields identical JSON
-              -- (codec is a faithful round-trip).
+              -- Re-encoding the decode reproduces the JSON exactly.
               encodeVerifiableProof vp' `shouldEqual` proofJson
 
-              -- Round-trip the verifier through JSON; the SRSes are supplied
-              -- on decode (not embedded), the linearization is reconstructed.
+              -- The verifier's SRSes are supplied on decode rather than
+              -- embedded, and its linearization is reconstructed.
               let verifierJson = encodeVerifier output.verifier
               case decodeVerifier { pallasSrs, vestaSrs } verifierJson of
                 Left errs -> liftEffect $ Exc.throw ("decodeVerifier: " <> show errs)

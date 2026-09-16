@@ -1,7 +1,10 @@
--- | Step-circuit-specific Pickles types. Extracted from `Pickles.Types`
--- | because their importers are confined to `Pickles.Step.*` /
--- | `Pickles.Prove.*` / `Pickles.Sideload.*` / circuit-diff fixtures —
--- | no wrap-side module imports any of these directly.
+-- | The step circuit's per-proof witness — one previous proof's wrap
+-- | proof, deferred values, evaluations and carried-over challenges —
+-- | and the types it is assembled from.
+-- |
+-- | Each newtype here exists to pin a wire order: a bare record takes
+-- | `RCircuitType`'s alphabetical field order, so swapping a newtype
+-- | for its record compiles and silently changes the encoding.
 module Pickles.Step.Types
   ( UnfinalizedFieldCount
   , AllocBranchData(..)
@@ -37,34 +40,18 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Type.Proxy (Proxy(..))
 
--- | Number of step-field scalars produced when a per-proof
--- | `Unfinalized` is laid out into the step circuit's public input.
--- | Used in `Mul mpvMax UnfinalizedFieldCount unfsTotal` constraints
--- | that size the step PI's unfinalized-proofs region.
+-- | Step-field scalars one `PerProofUnfinalized` occupies in the step
+-- | circuit's public input.
 type UnfinalizedFieldCount = 32
 
--- | Per-proof branch data: which previous proof slot is in use, plus the
--- | wrap proof's domain log2.
--- |
--- | OCaml hlist order: (mask0, mask1, domainLog2). Allocation order matches
--- | the OCaml `Branch_data.typ`.
--- |
--- | The `CheckedType` instance:
--- | - Boolean checks on the masks (via Tuple3 delegation to inner instances)
--- | - Endoscalar check on `domainLog2` (matching OCaml's
--- |   `Branch_data.typ.check`, which expands the 16-bit log2 into a full
--- |   f element through the endo).
--- |
--- | The endo constant is determined by `f` via the `HasEndo` class — for
--- | `f = StepField` (= Vesta.ScalarField), the base f is Vesta.BaseField
--- | and `endoScalar @Vesta.BaseField @StepField` gives the right value.
--- |
--- | Reference: branch_data.ml, mina/src/lib/crypto/pickles/impls.ml
+-- | `BranchData` at the order the step circuit allocates it in: the two
+-- | mask bits, then `domainLog2`. The newtype exists only to pin that
+-- | order — the record's own alphabetical order puts `domainLog2`
+-- | first, and the swap compiles.
 newtype AllocBranchData f b = AllocBranchData (BranchData f b)
 
--- | The wire layout: the two mask bits first, then the domain log2
--- | (`branch_data.ml`'s hlist order). The record itself stores the mask as a
--- | `Vector 2`, so this pair is the only place the two orders meet.
+-- | The record holds the mask as a `Vector 2`, so this pair is where
+-- | the record's order and the wire order meet.
 branchTuple :: forall f b. BranchData f b -> Tuple3 b b f
 branchTuple r = tuple3
   (r.proofsVerifiedMask !! unsafeFinite @2 0)
@@ -86,8 +73,6 @@ instance
   varToFields (AllocBranchData r) = genericVarToFields @(Tuple3 b b a) (branchTuple r)
   fieldsToVar fs = tupleBranch (genericFieldsToVar @(Tuple3 b b a) fs :: Tuple3 bvar bvar fvar)
 
--- | CheckedType for the var representation: Boolean checks on the masks
--- | plus the endoscalar check on domainLog2.
 instance
   ( FieldSizeInBits f n
   , Compare 16 n LT
@@ -96,22 +81,20 @@ instance
   ) =>
   CheckedType f (KimchiConstraint f) (AllocBranchData (FVar f) (BoolVar f)) where
   check (AllocBranchData r) = label "branch-data-check" do
-    -- Boolean checks on masks + (no-op) check on domLog2 via Tuple3 delegation
+    -- Booleanity on the two masks; a no-op on `domainLog2`.
     check (branchTuple r)
-    -- Endoscalar check on domainLog2 (matches OCaml Branch_data.typ.check)
+    -- `domainLog2` is range-checked instead by expanding its 16 bits
+    -- through the endo.
     let EndoScalar e = endoScalar @basef @f
     _ <- EndoScalar.toField @1 (unsafePartial (unsafeFromField r.domainLog2) :: SizedF 16 (FVar f)) (const_ e)
     pure unit
 
--- | Combined wrap proof: messages + opening, in OCaml's `Wrap_proof.Checked.t` order.
--- |
--- | Reference: wrap_proof.ml — `{ messages; opening }` allocated via
--- | `of_hlistable` which gives field order (messages first, then opening).
+-- | A wrap proof: the prover's commitments and the opening proof, in
+-- | that order. `n` is the opening's IPA round count.
 newtype WrapProof :: Int -> Int -> Type -> Type -> Type
 newtype WrapProof n stepChunks pt sf = WrapProof
-  -- | `stepChunks` reflects kimchi's `num_chunks` for the inner wrap
-  -- | proof's polynomial commitments. Top-level call sites pin it to 1
-  -- | until the Rust FFI emits chunked output.
+  -- | `stepChunks` is the chunk count of these commitments. Every call
+  -- | site instantiates it at `Pickles.Types.WrapVkChunks`.
   { messages :: WrapProofMessages stepChunks pt
   , opening :: WrapProofOpening n pt sf
   }
@@ -147,22 +130,11 @@ instance
   CheckedType f c (WrapProof n stepChunks avar bvar) where
   check (WrapProof r) = check (tuple2 r.messages r.opening)
 
--- | FOP proof state: deferred values + sponge digest, in OCaml's to_data order.
+-- | One previous proof's deferred values and sponge digest, at the
+-- | order the step circuit allocates them in.
 -- |
--- | OCaml to_data order (from `Spec.pack` of `Per_proof_witness.proof_state`):
--- |   cip, b, zetaToSrs, zetaToDom, perm,    -- 5 plain fields (Type1 in step)
--- |   spongeDigest,                          -- digest (plain f)
--- |   beta, gamma,                           -- 2 128-bit challenges
--- |   alpha, zeta, xi,                       -- 3 128-bit scalar challenges
--- |   bulletproofChallenges                  -- Vector d of 128-bit challenges
--- |
--- | The `UnChecked (SizedF 128 f)` fields are claimed-128-bit but NOT range-checked
--- | at allocation (matching OCaml's `Challenge.typ = Typ.f`). Use
--- | `challengeToSizedF` at the boundary with FOP/IVP code that needs
--- | `SizedF 128 f`.
--- |
--- | Note: the `branchData` is allocated separately within the per-proof witness;
--- | it is NOT part of this newtype.
+-- | The `UnChecked (SizedF 128 f)` fields are claimed to be 128 bits
+-- | but are not range-checked at allocation.
 newtype FopProofState (d :: Int) f = FopProofState
   { combinedInnerProduct :: f
   , b :: f
@@ -178,8 +150,8 @@ newtype FopProofState (d :: Int) f = FopProofState
   , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
   }
 
--- | Tuple shape for FopProofState (parameterized by element type x).
--- | Used by both value (x = F f) and var (x = FVar f) instances.
+-- | `FopProofState`'s wire shape, at value (`x = F f`) or variable
+-- | (`x = FVar f`) elements.
 type FopProofStateTuple d x =
   Tuple2
     (Tuple10 x x x x x x (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)))
@@ -246,20 +218,13 @@ instance (CheckedType f c var) => CheckedType f c (FopProofState d var) where
         (tuple2 r.xi r.bulletproofChallenges)
     )
 
--- | Step proof state: deferred values + sponge digest + branch data, in
--- | the OCaml allocation order from `Wrap.Proof_state.In_circuit`'s
--- | `Spec.packed_typ` flattening.
+-- | One previous proof's deferred values together with its branch
+-- | data, in that order.
 -- |
--- | The to_data order puts the FopProofState fields first (cip, b, zetaToSrs,
--- | zetaToDom, perm, sponge, beta, gamma, alpha, zeta, xi, bpChals), then
--- | branchData (mask0, mask1, domLog2 with endoscalar check) at the end.
--- |
--- | Reference: composition_types.ml `Wrap.Proof_state` allocation
--- | `d` parameter is the step IPA round count (structurally always
--- | `StepIPARounds` for the Pasta cycle; kept polymorphic here to mirror
--- | OCaml `Proof_state.t`'s `'bulletproof_challenges` type parameter,
--- | so `Pickles.Prove.Step` and friends can stay polymorphic in `ds`
--- | and only concretize at the top-level binding).
+-- | `d` is the step IPA round count — structurally always
+-- | `StepIPARounds` for the Pasta cycle, but left polymorphic so
+-- | `Pickles.Prove.Step` and friends can stay polymorphic too and
+-- | concretize only at their top-level bindings.
 newtype ProofState (d :: Int) f b = ProofState
   { fopState :: FopProofState d f
   , branchData :: AllocBranchData f b
@@ -296,56 +261,30 @@ instance
   CheckedType f (KimchiConstraint f) (ProofState d (FVar f) (BoolVar f)) where
   check (ProofState r) = check (tuple2 r.fopState r.branchData)
 
--- | Composed per-proof witness: the OCaml `Per_proof_witness.No_app_state.t`.
+-- | Everything the step circuit allocates for one previous proof: that
+-- | proof's wrap proof, its deferred values and branch data, its
+-- | evaluations, and the challenges and commitments carried over from
+-- | the proofs it itself verified.
 -- |
--- | OCaml hlist order (5 components after dropping the Unit statement):
--- |   1. wrap_proof  : Wrap_proof.Checked.t      (messages + opening)
--- |   2. proof_state : Wrap.Proof_state.In_circuit.t  (deferred values + sponge_digest + branch_data, with msg_for_next_wrap=unit)
--- |   3. prev_proof_evals : All_evals.In_circuit.t
--- |   4. prev_challenges : (Vector field tick, max_proofs_verified) Vector
--- |   5. prev_challenge_polynomial_commitments : (inner_curve, max_proofs_verified) Vector
--- |
--- | This is one structured `exists` call in OCaml step_main:
--- |   `exists (Prev_typ.f prev_proof_typs) ~request:Req.Proof_with_datas`
--- |
--- | Reference: per_proof_witness.ml, step_main.ml
--- |
--- | Type parameters:
--- |   - `n`  : max_proofs_verified (= the outer Vector length)
--- |   - `ds` : step-side IPA round count (= `Tick.Rounds.n` = `StepIPARounds`
--- |            structurally). Parameterizes the inner `ProofState`'s
--- |            `FopProofState` and the `prevChallenges` vector length.
--- |   - `dw` : wrap-side IPA round count (= `Tock.Rounds.n` = `WrapIPARounds`
--- |            structurally). Parameterizes the inner `WrapProof`'s
--- |            opening proof length.
--- |
--- | Both `ds` and `dw` are kept polymorphic to mirror OCaml's
--- | `Per_proof_witness.t`, which takes the bulletproof-challenges vector
--- | type as a separate parameter (see `composition_types.ml:188`). The
--- | Pasta protocol constants only appear at top-level bindings that
--- | instantiate the type.
+-- | `ds` is the step-side IPA round count (`StepIPARounds`) and `dw` the
+-- | wrap-side one (`WrapIPARounds`). Both stay polymorphic so only
+-- | top-level bindings name the Pasta constants.
 newtype PerProofWitness (stepChunks :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
   { wrapProof :: WrapProof dw stepChunks (WeierstrassAffinePoint PallasG f) sf
   , proofState :: ProofState ds f b
   , prevEvals :: AllocEvals f
-  -- | One entry per previous proof the slot's own wrap proof verified,
-  -- | so as many as that slot's `max_local_max_proofs_verified`. The
-  -- | width is not in the type: it comes from the application spec and
-  -- | reaches the circuit through `perProofWitnessTyp`.
+  -- | One entry per previous proof this slot's own wrap proof
+  -- | verified. The width is not in the type: it comes from the
+  -- | application spec and reaches the circuit through
+  -- | `perProofWitnessTyp`.
   , prevChallenges :: Array (UnChecked (Vector ds f))
   , prevSgs :: Array (WeierstrassAffinePoint PallasG f)
   }
 
--- | Tuple shape for PerProofWitness, parameterized by:
--- |   - stepChunks / ds / dw : vector lengths (propagated from the newtype)
--- |   - x           : field element type (F f or FVar f)
--- |   - sf          : shifted-f type
--- |   - b           : boolean type
--- |
--- | This is no longer a `CircuitType`; the two per-previous-proof fields
--- | are arrays, so nothing can count them from the type alone. It
--- | survives as the order `perProofWitnessTyp` lays the fields out in,
--- | which is the order the derived instance used to lay them out in.
+-- | `PerProofWitness`'s field order, as a nested tuple, and the order
+-- | `perProofWitnessTyp` lays the fields out in. Not a `CircuitType`:
+-- | `prevChallenges` and `prevSgs` are arrays, so nothing can size them
+-- | from the type alone.
 type PerProofWitnessTuple stepChunks ds dw x sf b =
   Tuple5
     (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG x) sf)
@@ -369,17 +308,8 @@ perProofWitnessOfTuple = uncurry5
   \wrapProof proofState prevEvals prevChallenges prevSgs ->
     PerProofWitness { wrapProof, proofState, prevEvals, prevChallenges, prevSgs }
 
--- | A slot's per-proof witness as a value, at that slot's own
--- | `max_local_max_proofs_verified`.
--- |
--- | The chain lists the five fields in `PerProofWitnessTuple` order,
--- | which is the order the derived instance emitted before the width
--- | left the type. `pairTyp` reproduces a product's layout, so the
--- | allocation is unchanged; what changed is that the last two fields
--- | are sized by the argument rather than by a type index.
--- |
--- | The three fields that never depended on the width still come from
--- | the class, so only the last two are described by hand.
+-- | A slot's per-proof witness as a `Typ`. The first three fields come
+-- | from `CircuitType`; the two arrays are sized by `width`.
 perProofWitnessTyp
   :: forall stepChunks ds dw sf sfvar
    . Reflectable ds Int

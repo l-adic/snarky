@@ -1,24 +1,13 @@
 -- | Trace logger for byte-identical pickles transcript reproduction tests.
 -- |
--- | Sister module to OCaml's `Pickles_trace`
--- | (`mina/src/lib/crypto/pickles/pickles_trace.ml`). Both write to the file
--- | named by the `PICKLES_TRACE_FILE` env var, one line per traced value, in
--- | the format `[LABEL] DECIMAL_VALUE`. Both sides MUST emit the same labels
--- | in the same order so the resulting trace files can be diffed.
+-- | Writes one line per traced value, `[LABEL] DECIMAL_VALUE`, to the
+-- | file named by the `PICKLES_TRACE_FILE` env var. With that var unset
+-- | every function here is a no-op costing one env lookup, so circuit
+-- | code can carry trace points permanently.
 -- |
--- | When `PICKLES_TRACE_FILE` is unset, every trace function is a no-op
--- | (it pays only an env-var lookup), so production circuit code that
--- | sprinkles trace points pays effectively zero cost.
--- |
--- | Label naming convention: semantic, dot-separated, lowercase. Examples:
--- |
--- |     [step.app_state]
--- |     [step.unfinalized.0.beta]
--- |     [step.proof.public_input.0]
--- |     [wrap.statement.deferred_values.combined_inner_product]
--- |
--- | The OCaml-side helper at `mina/src/lib/crypto/pickles/pickles_trace.ml`
--- | MUST emit the same label strings for the same logical values.
+-- | Labels are semantic, dot-separated and lowercase:
+-- | `[step.unfinalized.0.beta]`,
+-- | `[wrap.statement.deferred_values.combined_inner_product]`.
 module Pickles.Trace
   ( field
   , fieldF
@@ -31,18 +20,17 @@ import JS.BigInt as BigInt
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 
--- | FFI: emit a single trace line `[LABEL] VALUE\n` to the trace file
--- | named by `PICKLES_TRACE_FILE`. No-op when the env var is unset. The
--- | underlying file handle is opened lazily on first call (truncating
--- | mode) and kept open for the lifetime of the process.
+-- A trace is only useful diffed against the reference implementation's,
+-- so the label strings and their emission order have to agree with
+-- `pickles_trace.ml` exactly. Renaming a label here breaks the diff
+-- silently: both files still parse.
+
+-- | Emit one trace line. The file handle is opened lazily on the first
+-- | call, truncating, and stays open for the life of the process.
 foreign import emitLineImpl :: String -> String -> Effect Unit
 
--- | Trace a bare prime-field element `f` as decimal.
--- |
--- | Used for the kinds of values that carry semantic meaning at the
--- | trace boundary — public inputs, sponge digests, scalar challenges,
--- | etc. The decimal representation is canonical (positive, < field
--- | order), matching what OCaml's `{Tick,Tock}.Field.to_string` emits.
+-- | Trace a prime-field element as a canonical decimal: positive and
+-- | less than the field order.
 field :: forall f. PrimeField f => String -> f -> Effect Unit
 field label x = emitLineImpl label (BigInt.toString (toBigInt x))
 

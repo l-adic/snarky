@@ -1,16 +1,8 @@
--- | Hash messages for the next Wrap proof.
+-- | The messages-for-next-wrap-proof digest: a pure form, a circuit
+-- | form, and the sponge checkpoints that keep padding out of circuit.
 -- |
--- | Computes `hash(padding_challenges, expanded_challenges, sg.x, sg.y)` where:
--- | - `padding_challenges` are dummy expanded challenges (prepended for padding)
--- | - `expanded_challenges` are the real bulletproof challenges expanded via endo
--- | - `sg` is the challenge polynomial commitment from the opening proof
--- |
--- | The serialization order follows OCaml's `wrap_hack.ml`:
--- | `[dummy_chals..., real_chals..., sg.x, sg.y]`
--- |
--- | For n=1 proof verified, padding extends to 2 vectors by prepending 1 dummy.
--- |
--- | Reference: mina/src/lib/pickles/wrap_hack.ml:45-59
+-- | Absorption order is fixed by the verifier's transcript: the padded
+-- | challenge vectors, flattened, then `sg.x`, then `sg.y`.
 module Pickles.Wrap.MessageHash
   ( hashMessagesForNextWrapProofPureGeneral
   , hashMessagesForNextWrapProofCircuit'
@@ -33,15 +25,10 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 
--- | General pure version of OCaml `Wrap_hack.hash_messages_for_next_wrap_proof`
--- | (`mina/src/lib/crypto/pickles/wrap_hack.ml:46-59`).
--- |
--- | Accepts the challenges **already padded** (caller is responsible for
--- | prepending dummies to reach `Wrap_hack.Padded_length.n = 2`). Each inner
--- | vector is an expanded wrap-field bp-challenge vector of length `d`.
--- |
--- | Serialization order matches OCaml `Messages_for_next_wrap_proof.to_field_elements`:
--- | flatten all padded challenge vectors, then append `sg.x`, `sg.y`.
+-- | The messages-for-next-wrap-proof digest, computed out of circuit.
+-- | The challenges must already be padded to `PaddedLength` by the
+-- | caller; each inner vector is one expanded bullet-proof challenge
+-- | stack of length `d`.
 hashMessagesForNextWrapProofPureGeneral
   :: forall n d f
    . PoseidonField f
@@ -69,23 +56,16 @@ hashMessagesForNextWrapProofCircuit'
      }
   -> SpongeM f (KimchiConstraint f) r (FVar f)
 hashMessagesForNextWrapProofCircuit' { sg: AffinePoint sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do
-  -- Absorb all challenge vectors in order (flattened)
   for_ allChallenges \chals ->
     Pickles.Sponge.absorbMany chals
-  -- Absorb sg point
   absorb sg.x
   absorb sg.y
-  -- Squeeze digest
   squeeze
 
--- | Pre-computed sponge states after absorbing 0, 1, or 2 dummy challenge
--- | vectors. Used to start the message hash sponge from a checkpoint,
--- | avoiding in-circuit Poseidon gates for dummy absorption.
--- |
--- | Index i = sponge state after absorbing i dummy vectors.
--- | For max_proofs_verified = n, use index (MaxProofsVerified - n).
--- |
--- | Reference: mina/src/lib/crypto/pickles/wrap_hack.ml:96-110
+-- | Sponge checkpoints indexed by `n`, the number of real challenge
+-- | vectors a slot supplies: entry `n` is the state after absorbing
+-- | `PaddedLength - n` dummies. Starting the message hash from one of
+-- | these keeps the dummy absorption out of the circuit.
 dummyPaddingSpongeStates
   :: forall d f
    . PoseidonField f
@@ -101,6 +81,6 @@ dummyPaddingSpongeStates dummyChallenges =
     Tuple _ s1 = go s0
     Tuple _ s2 = go s1
   in
-    -- Indexed by n (number of real challenge vectors provided):
-    -- index 0 = n=0 (2 dummies absorbed), index 1 = n=1, index 2 = n=2 (fresh sponge)
+    -- Reversed into index-by-`n` order: entry 0 has both dummies
+    -- absorbed, entry 2 is the fresh sponge.
     s2 :< s1 :< s0 :< Vector.nil

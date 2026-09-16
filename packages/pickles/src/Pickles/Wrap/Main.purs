@@ -1,29 +1,10 @@
--- | Wrap main circuit — the SNARK function for wrapping any step proof.
+-- | The wrap circuit: verifies one step proof, producing the proof a
+-- | later step circuit verifies in turn.
 -- |
--- | Parameterized by:
--- | - @branches: number of step circuit variants
--- | - @mpv: number of prev slots
--- |
--- | The per-slot widths of `Max_widths_by_slot.maxes` arrive as a
+-- | `branches` is the number of step-circuit variants the wrap circuit
+-- | accepts; `mpv` is the number of previous-proof slots the step
+-- | statement carries. The per-slot bullet-proof widths arrive as a
 -- | runtime `Vector mpv Int` argument, not as a type-level shape.
--- |
--- | The circuit, in OCaml exists order (matching `wrap_main.ml`):
--- |   1. Req.Which_branch     — single field
--- |   2. (in-circuit) one-hot vector + ones_vector + branch_data assert
--- |   3. Req.Proof_state      — `mpv` unfinalized proofs + msg_for_next_step
--- |   4. (in-circuit) chooseKey + feature flag consistency
--- |   5. Req.Step_accs        — Vector mpv of step accumulators
--- |   6. Req.Old_bulletproof_challenges — heterogeneous slot-grouped chals
--- |   7. Req.Evals            — Vector mpv of `AllocEvals`
--- |   8. Req.Wrap_domain_indices — Vector mpv of indices
--- |   9. (in-circuit) FOP loop (right-to-left) + assert any [finalized; not should_finalize]
--- |  10. (in-circuit) message hash loop (right-to-left) + assert msg_step
--- |  11. Req.Openings_proof   — full bulletproof opening
--- |  12. Req.Messages         — wComm/zComm/tComm
--- |  13. (in-circuit) pack_statement + split_field
--- |  14. (in-circuit) wrap_verify (IVP + 4 final assertions)
--- |
--- | Reference: mina/src/lib/crypto/pickles/wrap_main.ml
 module Pickles.Wrap.Main
   ( WrapMainConfig
   , WrapMainInput
@@ -89,80 +70,50 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (splitFieldCircuit)
 import Type.Proxy (Proxy(..))
 
--- | Public input to `wrapMain` at value level. The `StatementPacked`
--- | newtype is the OCaml-allocation-faithful representation: challenge fields
--- | are `UnChecked (SizedF 128 ...)` (matching `Spec.wrap_packed_typ` which
--- | allocates them via plain `WrapField.typ`), Type1 fp fields keep their
--- | forbidden_shifted_values check, and the field order matches OCaml's
--- | `Wrap.Statement.In_circuit.to_data` hlist layout.
+-- | Public input to `wrapMain`, at value level.
 -- |
--- | The `d` parameter is the bulletproof-challenges length, which is
--- | `Backend.Tick.Rounds.n = StepIPARounds = 16` because the wrap statement
--- | carries the STEP proof's deferred values (the wrap circuit verifies a
--- | step proof, so its public input contains the step proof's challenges).
+-- | The bullet-proof challenge length is `StepIPARounds` (16): the wrap
+-- | statement carries the deferred values of the step proof this
+-- | circuit verifies.
 type WrapMainInput :: Type
 type WrapMainInput =
   StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
 
--- | Public input to `wrapMain` at var level (what the circuit body operates on).
+-- | Public input to `wrapMain`, at var level.
 type WrapMainInputVar :: Type
 type WrapMainInputVar =
   StatementPacked StepIPARounds (Type1 (FVar WrapField)) (FVar WrapField) (BoolVar WrapField)
 
--- | Compile-time configuration for `wrapMain`.
+-- | Compile-time configuration for `wrapMain`: one step width, domain
+-- | log2 and step verification key per branch, plus the lagrange data
+-- | the public-input commitment needs.
 -- |
--- | OCaml equivalents:
--- | - stepWidths: (int, branches) Vector.t
--- | - domainLog2s: per-branch step domain log2s (we keep them as ints)
--- | - stepKeys: dummy step VKs (PallasG circuit variables)
--- | - allPossibleDomainLog2s: Wrap_verifier.all_possible_domains.
--- |
--- |   Shape `Vector 3 (Finite 16)`:
--- |   * `3` is the number of possible wrap-domain sizes
--- |     (`num_possible_domains` in OCaml): one entry per
--- |     `proofs_verified ∈ {0, 1, 2}`. Mirrors
--- |     `Common.wrap_domains` which maps those to log2s
--- |     `{13, 14, 15}`.
--- |   * `16` is the `Finite` bound = `1 + WrapIPARounds`: each log2
--- |     fits in `[0, wrap_SRS_log2 + 1) = [0, 16)` because wrap
--- |     domain size ≤ wrap SRS size = 2^WrapIPARounds.
+-- | `allPossibleDomainLog2s` holds one wrap-domain log2 per
+-- | `proofs_verified ∈ {0, 1, 2}` — in production `{13, 14, 15}`. The
+-- | `Finite 16` bound is `1 + WrapIPARounds`, since a wrap domain is at
+-- | most the wrap SRS size `2^WrapIPARounds`.
 type WrapMainConfig branches stepChunks =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
   , stepKeys :: Vector branches (StepVK stepChunks (FVar WrapField))
-  -- | Single-domain lagrange basis. Used in the "all branches share
-  -- | the same step domain" fast path (mirrors OCaml
-  -- | `wrap_verifier.ml:426-428`). Always populated; for the
-  -- | per-branch path, it carries the head domain's basis as a
-  -- | placeholder (only `perBranchLagrangeAt` is consulted).
-  -- Chunked lookup. `stepChunks` here is the STEP proof's chunks count
-  -- (Dim 1): the wrap circuit verifies a step proof whose wrap_domain
-  -- determines how the lagrange basis splits over the wrap SRS. At
-  -- chunks2 wrap, step's wrap_domain > wrap SRS max_poly_size so
-  -- stepChunks > 1 and the PI commit accumulator runs chunkwise.
+  -- Lagrange basis for the shared-domain fast path. Always populated;
+  -- when `perBranchLagrangeAt` is `Just`, it holds the head domain's
+  -- basis and is not consulted. `stepChunks` is the step proof's chunk
+  -- count: above one, the basis splits over the wrap SRS and the
+  -- public-input commitment accumulates chunkwise.
   , lagrangeAt :: LagrangeBaseLookup stepChunks WrapField
-  -- | Per-branch lagrange constants per index. `Nothing` for the
-  -- | shared-domain fast path. `Just f` when branch domains differ:
-  -- | `f i` returns one `Vector stepChunks` of constant lagrange chunks
-  -- | per branch (each at its branch's `stepDomainLog2`). The wrap
-  -- | circuit performs the 1-hot summation against `whichBranch`
-  -- | per-chunk in-circuit, mirroring OCaml `lagrange_with_correction`
-  -- | (wrap_verifier.ml:382-443) where `Array.map2_exn` reduces across
-  -- | branches at each chunk index.
+  -- Per-branch lagrange constants per index, for when branch domains
+  -- differ: `f i` gives each branch one `Vector stepChunks` of constant
+  -- chunks at that branch's own domain log2. `Nothing` selects the
+  -- shared-domain fast path.
   , perBranchLagrangeAt ::
       Maybe (Int -> Vector branches (Vector stepChunks (AffinePoint (F WrapField))))
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
   }
 
--------------------------------------------------------------------------------
--- | Internal helpers — convert structured advice into the shape consumed
--- | by the existing FOP / IVP sub-circuits.
--------------------------------------------------------------------------------
-
--- | The legacy "unfinalized proof" record shape consumed by
--- | `wrapFinalizeOtherProofCircuit`. We project a `PerProofUnfinalized` into
--- | this shape because the FOP code already speaks this dialect.
+-- | The unfinalized-proof shape `wrapFinalizeOtherProofCircuit`
+-- | consumes, projected from a `PerProofUnfinalized`.
 type UnfinalizedView =
   { deferredValues ::
       { plonk ::
@@ -210,27 +161,6 @@ unwrapPt :: WeierstrassAffinePoint VestaG (FVar WrapField) -> AffinePoint (FVar 
 unwrapPt (WeierstrassAffinePoint pt) = AffinePoint pt
 
 
--------------------------------------------------------------------------------
--- | Per-slot FOP body (post-Pseudo-domain).
--- |
--- | Encapsulates the "after domain has been computed" portion of one
--- | FOP iteration (wrap_main.ml:435-487): call
--- | `wrapFinalizeOtherProofCircuit` with the slot's pre-computed
--- | padded chals + pre-computed Pseudo domain, then emit the
--- | `assertAny_ [finalized, not should_finalize]` guard.
--- |
--- | Deliberately DOES NOT compute the Pseudo domain or padding — the
--- | caller does those in a separate phase to preserve OCaml's
--- | constraint emission order (all Pseudo computations first, then
--- | all FOP bodies — see the dedicated ordering commentary in
--- | `wrapMain`).
--- |
--- | Returns the per-slot expanded challenges (for downstream
--- | message-hash / wrap_verify wiring).
--- |
--- | `slotIdx` is only used in `label` strings.
--------------------------------------------------------------------------------
-
 type FopBodyParams f =
   { domainLog2 :: Int
   , srsLengthLog2 :: Int
@@ -239,6 +169,14 @@ type FopBodyParams f =
   , linearizationPoly :: LinearizationPoly f
   }
 
+-- | Finalize one slot's deferred values against an already-computed
+-- | `PlonkDomain` and already-padded challenges, then assert the slot
+-- | either finalized or was not to be finalized. Returns the slot's
+-- | expanded bullet-proof challenges.
+-- |
+-- | Computing the domain and the padding stays with the caller: every
+-- | slot's domain is emitted before any slot's FOP body, and that
+-- | order is part of the circuit.
 processOneSlotFopBody
   :: forall r
    . PrimeField WrapField
@@ -258,11 +196,9 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals 
     , zkRows: fopBaseParams.zkRows
     , endo: fopBaseParams.endo
     , linearizationPoly: fopBaseParams.linearizationPoly
-    -- Always `KnownDomainsMode` here. Side-loading is a step-circuit
-    -- concept (a side-loaded prev = a wrap proof of a child verified
-    -- inside the parent's STEP circuit). The wrap circuit only ever
-    -- verifies its own step branches, whose domains are known at
-    -- wrap-compile time.
+    -- Always known: the wrap circuit only verifies its own step
+    -- branches, whose domains are fixed at wrap-compile time.
+    -- Side-loading is a step-circuit concept.
     , domainMode: KnownDomainsMode
     }
     domain.vanishingPolynomial
@@ -274,16 +210,10 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView allEvals paddedChals 
     assertAny_ [ finalized, not_ unfView.shouldFinalize ]
   pure expandedChallenges
 
--------------------------------------------------------------------------------
--- | Per-slot message-hash body.
--- |
--- | Encapsulates one iteration of the message-hash loop
--- | (wrap_main.ml:489-505). The caller pre-computes the sponge state
--- | for this slot (indexed by `PaddedLength - slotWidth` into the
--- | `dummyPaddingSpongeStates` table) and passes it in; the helper
--- | absorbs `sg` + raw bp challenges and squeezes the digest.
--------------------------------------------------------------------------------
-
+-- | Absorb one slot's `sg` and its unpadded bullet-proof challenges
+-- | into the supplied sponge state, and squeeze the digest. The caller
+-- | chooses the state, which already has the slot's padding dummies
+-- | absorbed.
 hashOneSlotMessage
   :: forall r
    . PrimeField WrapField
@@ -300,12 +230,9 @@ hashOneSlotMessage slotIdx spongeState sg allChallenges =
         , allChallenges
         }
 
--- | block5 helper: project a `PerProofUnfinalized` (5 raw `Type2 (FVar f)`
--- | deferred fields, allocated by `Req.Proof_state`) into the
--- | `UnfinalizedProof` shape consumed by `PackedStepPublicInput`. Each raw
--- | deferred field is split into `(sDiv2, sOdd)` via `splitFieldCircuit` so
--- | the wrap verifier's x_hat MSM can fold the result into a single curve
--- | point.
+-- | Split each of a `PerProofUnfinalized`'s five deferred `Type2`
+-- | fields into `(sDiv2, sOdd)`, giving the `UnfinalizedProof` shape
+-- | `PackedStepPublicInput` packs for the x_hat MSM.
 splitPerProofUnfinalized
   :: forall r
    . PrimeField WrapField
@@ -339,21 +266,13 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
     , spongeDigestBeforeEvaluations: r.spongeDigest
     }
 
--------------------------------------------------------------------------------
--- | The main wrap circuit.
+-- | Allocates the per-slot bullet-proof challenges and hands them, with
+-- | the widths, to `wrapMainCore`. Everything slot-shaped lives in
+-- | these few lines.
 -- |
--- | Body order matches `wrap_main.ml` lines 222-572 verbatim. Each `exists`
--- | call mirrors one OCaml `Req.*` request.
--------------------------------------------------------------------------------
-
--- | Allocates the slot challenges and hands them, with the widths, to
--- | `wrapMainCore`. Everything slot-shaped about the wrap circuit lives
--- | in these few lines.
--- |
--- | The widths are a value: one `max_local_max_proofs_verified` per
--- | slot, supplied by whoever knows the application's rules. `mpv` is
--- | their count and stays type-level because it sizes the statement
--- | vectors the circuit reads.
+-- | `widths` carries one `max_local_max_proofs_verified` per slot, as a
+-- | value. `mpv` is their count and stays type-level because it sizes
+-- | the statement vectors the circuit reads.
 wrapMain
   :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
    . PrimeField WrapField
@@ -383,27 +302,21 @@ wrapMain
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks
-  -- | One `max_local_max_proofs_verified` per slot, in slot order.
   -> Vector mpv Int
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
 wrapMain config input advice widths =
   wrapMainCore @branches @stepChunks config input advice widths
     ( do
-        -- Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
-        -- Allocated against the widths rather than a type-level slot
-        -- shape, then front-padded to `PaddedLength` per slot, mirroring
-        -- OCaml's `Wrap_hack.Checked.pad_challenges`.
         slotsValue <- label "old-bp-chals" $ existsTyp
           (perSlotTyp (Vector.toUnfoldable widths) typOf)
           (pure advice <#> \r -> r.oldBpChals)
         pure (padPerSlot (map const_ dummyIpaChallenges.wrapExpanded) slotsValue)
     )
   where
-  -- Front-pad each slot's stack to `PaddedLength` and square the result
-  -- up to `Vector mpv (Vector PaddedLength _)`. The lengths come from
-  -- `widths`, so both conversions are total; they throw rather than
-  -- silently truncating because a mismatch here would change the
-  -- challenges the circuit absorbs.
+  -- Front-pad each slot's stack to `PaddedLength`. The lengths come
+  -- from `widths`, so both conversions are total; they throw rather
+  -- than truncate because a mismatch would change the challenges the
+  -- circuit absorbs.
   padPerSlot dummy perSlot =
     orThrow "wrapMain: slot count does not match mpv"
       ( Vector.toVector
@@ -431,12 +344,7 @@ wrapMain config input advice widths =
 -- | flattened: the per-slot widths as a plain `Vector mpv Int`, and the
 -- | padded bullet-proof challenge stacks as an action, which must stay
 -- | an action because it allocates witness variables at a fixed point
--- | in the `exists` order and moving it would change the circuit.
--- |
--- | `slots` survives only as an unconstrained variable inside
--- | `WrapAdvice`, whose sole slot-shaped field is `oldBpChals` — the one
--- | this function no longer reads. Nothing in the body below depends on
--- | the carrier's shape, which is what the extraction demonstrates.
+-- | in the `exists` order.
 wrapMainCore
   :: forall @branches @stepChunks numChunksPred mpv branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5 r
    . PrimeField WrapField
@@ -445,11 +353,11 @@ wrapMainCore
   => Reflectable nonSgBases Int
   => Compare 0 stepChunks LT
   => Add 1 numChunksPred stepChunks
-  -- Chunked base layout chain (forwarded to wrapVerify). Shared
-  -- `wCoeffN` / `indexSigmaN` mirror the IVP's collapsing because
-  -- Mul's fundep would unify same-RHS counts otherwise. Layout:
-  -- xHat(nc) :: ftComm :: zComm(nc) :: index(6nc) :: wComm(15nc) ::
-  -- coeff(15nc) :: sigma(6nc); total non-sg = 1 + 44*nc.
+  -- Base layout forwarded to `wrapVerify`: xHat(nc) :: ftComm ::
+  -- zComm(nc) :: index(6nc) :: wComm(15nc) :: coeff(15nc) ::
+  -- sigma(6nc), so the non-sg count is `1 + 44*nc`. `wCoeffN` and
+  -- `indexSigmaN` are shared because `Mul`'s fundep would unify
+  -- same-RHS counts otherwise.
   => Mul 7 stepChunks tCommLen
   => Add 1 tCommLenPred tCommLen
   => Mul 15 stepChunks wCoeffN
@@ -466,21 +374,17 @@ wrapMainCore
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  -- Forwarded to `wrapVerify` (which needs
-  -- `Add sgOldN IvpBaseline totalBases` and
-  -- `Add 1 totalBasesPred totalBases`). With `sgOldN = mpv`, these
-  -- collapse to the constraints below.
+  -- `wrapVerify`'s base-count constraints, with `sgOldN = mpv`.
   => Add mpv nonSgBases totalBases
   => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches stepChunks
   -> WrapMainInputVar
   -> WrapAdvice mpv stepChunks
-  -- | Per-slot `max_local_max_proofs_verified`, for the sponge-state
-  -- | lookup and for recovering the unpadded challenges.
+  -- Per-slot `max_local_max_proofs_verified`: selects the padding
+  -- sponge state and recovers the unpadded challenges.
   -> Vector mpv Int
-  -- | Allocates `oldBpChals` and front-pads each slot's stack to
-  -- | `PaddedLength`. An action, not a value: it must run at step 6 of
-  -- | the `exists` sequence.
+  -- Allocates `oldBpChals`, front-padded to `PaddedLength`. An action,
+  -- not a value: it must allocate between `stepAccs` and `rawEvals`.
   -> Snarky WrapField (KimchiConstraint WrapField) r
        (Vector mpv (Vector PaddedLength (Vector WrapIPARounds (FVar WrapField))))
   -> Snarky WrapField (KimchiConstraint WrapField) r Unit
@@ -493,10 +397,9 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
 
     boolToField = coerce
 
-    -- Project the StatementPacked vectors into named fields, in OCaml
-    -- `to_data` order. The `coerce` calls strip the `UnChecked` wrapper —
-    -- this is the explicit "trusted from public input" boundary the
-    -- conceptually-pure design exposes (see StatementPacked docs).
+    -- Project the `StatementPacked` vectors into named fields. The
+    -- `coerce` calls strip `UnChecked`: this is where values are taken
+    -- on trust from the public input.
     fpVec = stmtR.fpFields
     chalVec = stmtR.challenges
     scalarChalVec = stmtR.scalarChallenges
@@ -523,12 +426,9 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       , branchData: stmtR.branchData
       }
 
-  -- 1. Req.Which_branch  (wrap_main.ml:223)
   whichBranchField <- label "which-branch" $ exists $
     pure advice <#> \r -> r.whichBranch
 
-  -- 2. In-circuit derivation: one-hot vector, ones_vector, branch_data assert
-  --    (wrap_main.ml:228-256)
   whichBranch <- label "block1-one-hot" $
     Pseudo.oneHotVector @branches whichBranchField
 
@@ -536,11 +436,8 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
     Pseudo.choose whichBranch config.stepWidths
       (\w -> const_ (fromInt w))
 
-  -- One-hot ones vector: `mask_i = previousMask && (firstZero != i)`,
-  -- starting from `previousMask = true`. Returns a `Vector mpv` of the
-  -- per-slot mask booleans in slot order. For mpv=2 this matches the
-  -- old hand-unrolled `{ maskVal0, maskVal1 }` pair element-for-element
-  -- (slot index = vector index).
+  -- Per-slot mask, in slot order:
+  -- `mask_i = mask_{i-1} && (firstZero /= i)`, starting from `true`.
   maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector"
     $ map fst
     $ mapAccumM
@@ -559,13 +456,9 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
   label "block1-branch-data-assert" do
     let
       four = fromInt 4 :: WrapField
-      -- OCaml's `Branch_data.Checked.Wrap.pack` always packs to
-      -- `Nat.N2.n = 2` bits via `Vector.extend_front_exn ... Boolean.false_`,
-      -- regardless of the actual `mpv`. So the bit width is FIXED at 2
-      -- (the global Pickles cap), with `mask_i` going to bit `1 - i`.
-      -- For mpv=1: `pack [false, mask_0] = 2*mask_0` (q_c = 2).
-      -- For mpv=2: `pack [mask_1, mask_0] = mask_1 + 2*mask_0`
-      --   (matches the old hand-unrolled `maskVal1 + 2*maskVal0`).
+      -- The mask packs into a fixed 2 bits — the cap on `mpv` — not
+      -- into `mpv` bits, with `mask_i` at bit `1 - i`. So `mpv = 1`
+      -- packs to `2*mask_0` and `mpv = 2` to `mask_1 + 2*mask_0`.
       branchDataMaskWidth = 2
 
       packedMask = foldl
@@ -584,18 +477,16 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
         )
     let fourTimesDom = CVar.scale_ four domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
-    -- The wrap statement's branch_data is a single packed field (4*log2 + mask),
-    -- matching OCaml's `Branch_data.wrap_packed_typ`.
+    -- `branchData` in the wrap statement is one packed field,
+    -- `4*domainLog2 + mask`.
     assertEqual_ stmt.branchData packedBranchData
 
-  -- 3. Req.Proof_state (wrap_main.ml:257-267)
   PrevProofState pps <- label "proof-state" $ exists $
     pure advice <#> \r -> r.wrapProofState
   let
     prevUnfinalized = pps.unfinalizedProofs
     prevMsgForNextStep = pps.messagesForNextStepProof
 
-  -- 4. Block 2: chooseKey + feature flag consistency (wrap_main.ml:269-365)
   chosenVK <- chooseKey whichBranch config.stepKeys
   let
     chosenSigmaCommLast = Vector.index chosenVK.sigmaComm (unsafeFinite @7 6)
@@ -610,35 +501,20 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       , sigma: Vector.take @6 chosenVK.sigmaComm
       }
 
-  -- 5. Req.Step_accs (wrap_main.ml:367-371)
   stepAccs <- label "step-accs" $ exists $
     pure advice <#> \r -> r.stepAccs
   let stepAccsAffine = map unwrapPt stepAccs
 
-  -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
-  -- Allocates one bp-challenge stack per slot at that slot's own
-  -- width, then front-pads each to `PaddedLength` with dummy stacks,
-  -- mirroring OCaml's `Wrap_hack.Checked.pad_challenges`.
   paddedChalsAll <- allocPaddedChals
 
-  -- 7. Req.Evals (wrap_main.ml:405-415)
   rawEvals <- label "evals" $ exists $
     pure advice <#> \r -> r.evals
 
-  -- 8. Req.Wrap_domain_indices (wrap_main.ml:418-424)
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $
     pure advice <#> \r -> r.wrapDomainIndices
 
-  -- 9. FOP loop (wrap_main.ml:435-487).
-  --
-  -- OCaml's ordering, reflected exactly:
-  --   Pseudo domains first (right-to-left: slot N-1 down to slot 0)
-  --   then FOP bodies    (left-to-right: slot 0 up to slot N-1)
-  --
-  -- `processOneSlotFopBody` encapsulates ONLY the post-Pseudo FOP
-  -- portion (`wrapFinalizeOtherProofCircuit` + `assertAny_`). The
-  -- Pseudo domain computations stay inline to preserve the
-  -- all-Pseudos-before-all-FOPs emission order.
+  -- Emission order is part of the circuit: every slot's Pseudo domain
+  -- first, right-to-left, then every FOP body, left-to-right.
   let
     domainConfig =
       { shifts: LinFFI.domainShifts @WrapField
@@ -647,25 +523,16 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
     fopBaseParams =
       { domainLog2: wrapDomainLog2
       , srsLengthLog2: wrapSrsLengthLog2
-      -- OCaml `wrap_verifier.ml` passes `Plonk_checks.zk_rows_by_default`
-      -- to `finalize_other_proof` whatever the step proof's chunking.
+      -- Fixed at the default, independent of the step proof's chunking.
       , zkRows: zkRowsByDefault
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
       }
 
-    -- Per-slot views projected uniformly. These are pure lets; the
-    -- helpers consume the prepared views inside the monadic loops
-    -- below, so emission order is determined by the traversals.
     unfViews = map unpackUnfinalized prevUnfinalized
 
     witnesses = map (\(AllocEvals allEvals) -> allEvals) rawEvals
 
-  -- Pseudo domains — right-to-left, matching OCaml's `Vector.map`
-  -- evaluation order. We traverse the reversed `wrapDomainIndices`
-  -- and reverse the result so the resulting `Vector mpv (PlonkDomain
-  -- ...)` is back in slot order. The label index reflects the slot
-  -- index (post-reverse), so slot N-1 is emitted first.
   domains <- do
     let
       revIdxs = Vector.reverse (Vector.generate @mpv getFinite)
@@ -674,19 +541,14 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
     revDomains <- traverse
       ( \(Tuple slotIdx wdi) -> do
           which <- label ("block3-wrap-domain-" <> show slotIdx) $
-            -- `@3`: one-hot selector for the 3 possible wrap domains
-            -- (OCaml `num_possible_domains`).
+            -- One-hot over the 3 possible wrap domains.
             Pseudo.oneHotVector @3 wdi
-          -- `@16`: max wrap domain log2 + 1 = WrapIPARounds + 1.
+          -- Bound: max wrap domain log2 + 1 = `WrapIPARounds` + 1.
           Pseudo.toDomain @16 domainConfig which config.allPossibleDomainLog2s
       )
       revInputs
     pure (Vector.reverse revDomains)
 
-  -- FOP bodies — left-to-right (slot 0 first), matching the original
-  -- hand-unrolled order. We traverse a `Vector mpv` of slot indices
-  -- and look each piece up via `Vector.index` to keep the body
-  -- record-flat instead of nesting Tuples.
   expandedChalsAll <-
     let
       idxs = Vector.generate @mpv identity
@@ -703,20 +565,17 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
         )
         idxs
 
-  -- 10. Message hash loop (wrap_main.ml:489-505) — right-to-left.
-  -- The dummyPaddingSpongeStates table holds pre-absorbed sponge states
-  -- indexed by the slot's REAL width: index w = sponge after absorbing
-  -- `(PaddedLength - w)` dummies offline. Each per-slot hash absorbs
-  -- only the unpadded real challenges, so total in-circuit Poseidon
-  -- gates per slot = w × roundsPerVector.
+  -- Right-to-left. `dummyPaddingSpongeStates` is indexed by the slot's
+  -- real width `w`: entry `w` is the sponge after absorbing
+  -- `PaddedLength - w` dummies offline, so each slot absorbs only its
+  -- real challenges in circuit.
   let
     states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
     paddedLenInt = reflectType (Proxy @PaddedLength)
     perSlotSponge = map (\w -> Vector.index states (unsafeFinite @3 w)) slotWidths
 
-    -- Real (unpadded) challenges per slot: drop the leading padding
-    -- entries from each padded vector. Returns `Array` because the
-    -- runtime slot width erases the type-level length.
+    -- Real challenges per slot: drop the leading padding. `Array`
+    -- because the runtime slot width erases the type-level length.
     perSlotReal = Vector.zipWith
       (\w padded -> Array.drop (paddedLenInt - w) (Vector.toUnfoldable padded))
       slotWidths
@@ -736,8 +595,6 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       )
       revIdxs
     pure (Vector.reverse revMsgs)
-  -- Per-slot `msgsForWrap` trace, for diffing against the step
-  -- prover's `PI[mpv*32 + 1 + i]`.
   forWithIndex_ msgsForWrap \fi v -> do
     let i = getFinite fi
     ivpTrace ("wrap.dbg.msgsForWrap." <> show i) v
@@ -745,7 +602,6 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
   label "block4-assert-msg-step" $
     assertEqual_ stmt.messagesForNextStepProof prevMsgForNextStep
 
-  -- 11. Req.Openings_proof (wrap_main.ml:506-532)
   WrapProofOpening openingProofRec <- label "openings-proof" $ exists $
     pure advice <#> \r -> r.openingProof
   let
@@ -757,12 +613,11 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       , sg: unwrapPt openingProofRec.sg
       }
 
-  -- 12. Req.Messages (wrap_main.ml:533-541)
   WrapProofMessages messagesRec <- label "messages" $ exists $
     pure advice <#> \r -> r.messages
   let
-    -- wComm/zComm carry chunks through; tComm flattens Vector 7 (ChunkedCommitment nc pt)
-    -- to flat Vector tCommLen pt via Vector.concat (= 7 * stepChunks pieces).
+    -- `wComm` and `zComm` stay chunked; `tComm` flattens to
+    -- `7 * stepChunks` points.
     tCommChunked :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint (FVar WrapField)))
     tCommChunked = map (over ChunkedCommitment (map unwrapPt)) messagesRec.tComm
     messages =
@@ -771,18 +626,9 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       , tComm: Vector.concat (coerce tCommChunked :: Vector 7 (Vector stepChunks (AffinePoint (FVar WrapField))))
       }
 
-  -- 13. pack_statement + split_field per Type1 (wrap_main.ml:542-548)
-  -- For each PerProofUnfinalized, take its 5 raw `Type2 (FVar f)` deferred
-  -- fields, run `splitFieldCircuit` on the inner var to derive
-  -- `(sDiv2, sOdd)`, and rebuild as `Type2 (SplitField (FVar f) (BoolVar f))`
-  -- — the format the wrap verifier consumes for x_hat MSM.
   splitProofs <- label "block5-split-field" $
     traverse splitPerProofUnfinalized prevUnfinalized
 
-  -- DIAG: dump every walked field of splitProofs[0] so we can diff
-  -- against OCaml's equivalent at wrap.ml pack_statement input point.
-  -- The MSM walks these exact values, so any one that differs from
-  -- OCaml localizes the remaining xhat divergence.
   forWithIndex_ splitProofs \fi sp -> do
     let slotIdx = getFinite fi
     let unType2Split (Type2 sf) = sf
@@ -814,15 +660,12 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       , messagesForNextWrapProof: msgsForWrap
       }
 
-  -- 14. Block 6: wrapVerify (IVP + 4 assertions)
   let
     branchBools = map boolToField whichBranch
 
-    -- 1-hot masked sum of `Vector branches (AffinePoint (F WrapField))`
-    -- against `branchBools`. Mirrors OCaml `lagrange ~domain:(which_branch,
-    -- domains)` (wrap_verifier.ml:334-356): per-branch points scaled by
-    -- their branch bool, summed coordinate-wise. For 1-hot which_branch,
-    -- the result is exactly the active branch's point.
+    -- Coordinate-wise sum of the per-branch points, each scaled by its
+    -- branch bool. `whichBranch` is 1-hot, so the result is the active
+    -- branch's point.
     sumMaskByBranch
       :: Vector branches (AffinePoint (F WrapField))
       -> AffinePoint (FVar WrapField)
@@ -845,27 +688,8 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
               spTail
           )
 
-    -- Lagrange-base lookup driving `publicInputCommit`. Two paths,
-    -- mirroring OCaml `wrap_verifier.ml:382-443`
-    -- (`lagrange_with_correction`):
-    --
-    --   * Fast path (`Nothing`): all branches share the step domain
-    --     (or wrap is single-branch); the constant basis works for
-    --     every branch.
-    --   * Per-branch path (`Just`): branch domains differ; sum-mask
-    --     per-branch points via `branchBools` and produce an in-circuit
-    --     correction at scale `2^shift` for `scalarMulLeaf`.
-    --
-    -- Two byte-parity oddities below: the `Nothing` arm fakes the
-    -- 1-hot sum on `condAddPt` (OCaml's `lagrange` has no fast path,
-    -- unlike `lagrange_with_correction`); the `Just` arm carries an
-    -- unused `constant: head` to satisfy the record. `sealCondAddPt
-    -- = false` in both arms — only step side-loaded seals.
-    -- Run `sumMaskByBranch` per chunk index. Maps over stepChunks
-    -- (the inner Vector) and at each chunk position pulls one point
-    -- from each branch into a `Vector branches` for the single-chunk
-    -- 1-hot mux. For stepChunks=1 this collapses to one mux of a
-    -- branches-sized vector — bit-identical to pre-chunk behavior.
+    -- `sumMaskByBranch` per chunk index: at each chunk position, one
+    -- point from each branch is muxed by `whichBranch`.
     sumMaskByBranchChunked
       :: Vector branches (Vector stepChunks (AffinePoint (F WrapField)))
       -> Vector stepChunks (AffinePoint (FVar WrapField))
@@ -873,6 +697,17 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
       Vector.generate \fi ->
         sumMaskByBranch (map (\vc -> vc !! fi) perBranchChunkedPts)
 
+    -- Lagrange-base lookup driving `publicInputCommit`. `Nothing`:
+    -- every branch shares the step domain, so one constant basis
+    -- serves all of them. `Just`: the domains differ, so per-branch
+    -- points are 1-hot summed and an in-circuit correction at scale
+    -- `2^shift` is produced for `scalarMulLeaf`.
+    --
+    -- The `Nothing` arm still routes its constant through the 1-hot
+    -- sum on `condAddPt`, and the `Just` arm carries a `constant`
+    -- field nothing reads; both are load-bearing for the emitted
+    -- constraints. Neither arm seals `condAddPt` — only step's
+    -- side-loaded path does.
     maskedLagrangeAt :: LagrangeBaseLookup stepChunks WrapField
     maskedLagrangeAt i = case config.perBranchLagrangeAt of
       Nothing ->
@@ -887,13 +722,6 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
           , sealCondAddPt: false
           }
       Just perBranchAt ->
-        -- Per-branch chunked lagrange path (different branch step
-        -- domains). `perBranchPts :: Vector branches (Vector stepChunks
-        -- (AffinePoint _))` — each branch contributes its full chunk
-        -- array. `sumMaskByBranchChunked` does the 1-hot fold across
-        -- branches PER CHUNK, mirroring OCaml's `Array.map2_exn` reduction
-        -- pattern at `wrap_verifier.ml:354-356,442-443`. Correctness
-        -- holds uniformly across stepChunks values.
         let
           perBranchPts = perBranchAt i
           summed = sumMaskByBranchChunked perBranchPts

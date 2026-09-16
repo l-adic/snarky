@@ -1,8 +1,7 @@
--- | Negative-path tests for `compileMulti`'s structural validation
--- | checks. These confirm that the user-declared compile-time
--- | parameters (currently just `@stepChunks`) are validated against
--- | what the actual circuit needs, with a clear error message when
--- | they disagree.
+-- | The negative path of `compileMulti`'s structural validation: a
+-- | compile-time parameter the caller declares, `@stepChunks`, is
+-- | checked against what the circuit needs, and disagreement is an
+-- | error that names both numbers.
 module Test.Pickles.Prove.CompileValidation
   ( spec
   ) where
@@ -27,11 +26,9 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (fail)
 
--- | Re-uses the `Test.Pickles.Prove.NoRecursionReturn` rule (smallest
--- | available — N=0, no prev slots, ~447 gate step CS) and tries to
--- | compile it with `@stepChunks = 2`. Since the step domain log2 for
--- | this tiny rule is well below `StepIPARounds = 16`, the per-branch
--- | num_chunks is 1, and the validation must throw.
+-- | Compiles `nrrRule`, the smallest rule available, at
+-- | `@stepChunks = 2`. Its step domain is far below the 16 step IPA
+-- | rounds, so the branch needs one chunk and the compile must throw.
 spec :: SpecT (LoggerT Message Aff) SharedSrs Aff Unit
 spec = describe "Pickles.Prove.Compile.validateNumChunks" do
   it "throws when @stepChunks=2 but the circuit only needs 1" \{ pallasSrs, vestaSrs } -> do

@@ -1,18 +1,13 @@
--- | PureScript-side prove test for OCaml's `Simple_chain` at N2
--- | (`mina/src/lib/crypto/pickles/dump_simple_chain_n2/dump_simple_chain_n2.ml`):
--- | a single self-recursive rule with TWO self prev slots
--- | (`prevs = [self; self]`), `max_proofs_verified = N2`,
--- | `override_wrap_domain = N1`.
+-- | The merge shape: one self-recursive rule with two self prev slots,
+-- | at width 2 with the wrap domain overridden to 2^14. The body
+-- | asserts `self = 1 + prev1 + prev2`, short-circuited when
+-- | `self = 0`, so b0 bootstraps from two dummies and b1 and b2 each
+-- | verify two real proofs of this system.
 -- |
--- | Rule body (trivial counter): `self = 1 + prev1 + prev2`, with an
--- | `is_base_case` short-circuit when `self = 0`. The base case b0
--- | bootstraps from two dummy prevs; each subsequent node verifies two
--- | real proofs of THIS system in slots 0 and 1.
--- |
--- | This is the minimal reproduction of the merge / "Self prev in slot 0
--- | at N2" path (the constraint system matches OCaml byte-for-byte — see
--- | `step_main_simple_chain_n2_circuit` in the circuit-diffs suite — so
--- | any divergence here is prover-side, in the slot-0 witness assembly).
+-- | The constraint system is pinned separately, by
+-- | `step_main_simple_chain_n2_circuit` in the circuit-diffs suite, so
+-- | a failure here is in the prover's slot-0 witness assembly rather
+-- | than in the circuit.
 module Test.Pickles.Prove.SimpleChainN2
   ( spec
   , simpleChainN2Rule
@@ -44,9 +39,8 @@ import Test.Spec.Assertions (shouldEqual)
 
 type Stmt = StatementIO (F StepField) Unit
 
--- | Simple_chain N2 rule: `self = 1 + prev1 + prev2` (bypassed when
--- | `self = 0`). Both prev slots are self; both share the same
--- | `proof_must_verify = not is_base_case`.
+-- | Asserts `self = 1 + prev1 + prev2`, bypassed when `self = 0`. Both
+-- | slots are self prevs and share one `proofMustVerify`.
 simpleChainN2Rule
   :: StepRule 2
        (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
@@ -69,7 +63,7 @@ simpleChainN2Rule getPrevStates self = do
     , publicOutput: unit
     }
 
--- | Single-rule carrier: one rule with two self prev slots (each width 2).
+-- | Carrier for the single rule: two self prev slots, each at width 2.
 type SimpleChainN2Rules =
   RulesCons 2
     (Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit))
@@ -85,7 +79,6 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
       cfg =
         { srs: { vestaSrs, pallasSrs }
         , debug: false
-        -- Matches dump_simple_chain_n2.ml `override_wrap_domain:N1` (2^14).
         , wrapDomainOverride: Just 14
         , proofCache: cache
         , lagrangeCache: Just lagrangeCache
@@ -109,8 +102,8 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
 
     let BranchProver prover = fst out.provers
 
-    -- Round-trip every recursive prev through SerializeProof; faithful
-    -- reconstruction leaves the chain byte-identical so the assertions hold.
+    -- Every prev is round-tripped through serialization before it is
+    -- consumed, so the chain closes only if that is faithful.
     let dummies = mkWidthDummies pallasSrs vestaSrs
 
     let
@@ -129,9 +122,8 @@ spec = describe "Pickles.Prove.SimpleChainN2" do
           Left e -> liftEffect $ Exc.throw ("SimpleChainN2 prover: " <> show e)
           Right p -> pure p
 
-      -- Base case: self = 0, both prev slots dummy (proof_must_verify
-      -- false via is_base_case). Dummy statement input is irrelevant
-      -- (the `1 + prev1 + prev2 = self` check is bypassed).
+      -- The base case bypasses the sum, so the dummy statement's input
+      -- is arbitrary.
       baseDummy = BasePrev
         { dummyStatement: StatementIO { input: F zero :: F StepField, output: unit }
         }

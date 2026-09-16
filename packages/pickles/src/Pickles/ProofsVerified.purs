@@ -1,5 +1,5 @@
--- | The {N0, N1, N2} enum used as both proof-count and side-loaded
--- | wrap-domain tags. Mirrors OCaml `Pickles_base.Proofs_verified.t`.
+-- | The {N0, N1, N2} enum, used both as a proof count and as a
+-- | side-loaded wrap-domain tag.
 module Pickles.ProofsVerified
   ( ProofsVerified(..)
   , ProofsVerifiedCount
@@ -20,9 +20,9 @@ import Data.Vector as Vector
 -- | side-loaded protocol (`Width.Max = Nat.N2`).
 data ProofsVerified = N0 | N1 | N2
 
--- | Type-level cardinality of `ProofsVerified` (= 3 for {N0, N1, N2}).
--- | Used to size one-hot bool vectors and per-domain lookup tables
--- | indexed by a side-loaded VK's `actualWrapDomainSize`.
+-- | Cardinality of `ProofsVerified`, at the type level. It sizes the
+-- | one-hot bool vectors and the per-domain tables indexed by a
+-- | side-loaded VK's `actualWrapDomainSize`.
 type ProofsVerifiedCount = 3
 
 derive instance Eq ProofsVerified

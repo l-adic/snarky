@@ -1,13 +1,10 @@
--- | Deterministic randomness infrastructure used by Pickles for
--- | recursion bootstrapping (the Ro monad) plus the shared
--- | `dummyIpaChallenges` constant consumed by both step- and wrap-side
--- | circuits.
+-- | Deterministic randomness for recursion bootstrapping: the `RoM`
+-- | monad, whose draws come from a blake2s stream indexed by a
+-- | per-kind counter, and `dummyIpaChallenges`, the IPA challenges both
+-- | the step and the wrap circuits use.
 -- |
--- | Step-side dummy assembly (`BaseCaseDummies`, `dummyEvals`,
--- | `wrapDummyUnfinalizedProof`, `computeDummySgValues`, etc.) lives in
+-- | The step-side dummy assembly built on these lives in
 -- | `Pickles.Step.Dummy`.
--- |
--- | Reference: mina/src/lib/pickles/ro.ml, dummy.ml's IPA challenges.
 module Pickles.Dummy
   ( -- * Ro monad
     Ro
@@ -20,14 +17,14 @@ module Pickles.Dummy
   , chal
   , scalarChal
   , replicateChal
-  -- * Internal helpers re-used by Pickles.Step.Dummy
+  -- * Helpers shared with `Pickles.Step.Dummy`
   , pow2
   , wrapEndo
   , stepEndo
   -- * IPA challenge generators
   , dummyIpaWrapChallenges
   , dummyIpaStepChallenges
-  -- * Shared `Dummy.Ipa.{Step,Wrap}.challenges` constant
+  -- * The shared IPA challenge constant
   , dummyIpaChallenges
   ) where
 
@@ -54,7 +51,7 @@ import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
--- | Ro state and monad
+-- Ro state and monad
 -------------------------------------------------------------------------------
 
 type Ro =
@@ -66,14 +63,12 @@ type Ro =
 mkRo :: Ro
 mkRo = { tockCounter: 0, tickCounter: 0, chalCounter: 0 }
 
--- | Canonical "start" Ro state. Alias of `mkRo`, renamed to surface the
--- | intent at callsites (e.g. test setups pass `initialRo` into
--- | `evalRoM` at the top of an `RoM` block).
+-- | The starting `Ro` state: an alias of `mkRo` that reads better at a
+-- | call site.
 initialRo :: Ro
 initialRo = mkRo
 
--- | Hand-rolled pure state monad over `Ro` (replaces `State` from
--- | `transformers`).
+-- | A pure state monad over `Ro`.
 newtype RoM a = RoM (Ro -> Tuple a Ro)
 
 instance Functor RoM where
@@ -98,11 +93,12 @@ bitsToBigInt = foldr
   (\bit acc -> acc * BigInt.fromInt 2 + (if bit then BigInt.fromInt 1 else BigInt.fromInt 0))
   (BigInt.fromInt 0)
 
--- | `2^k` as a BigInt. Reduces BigInt.{fromInt,pow} noise at usage sites.
+-- | `2^k` as a `BigInt`.
 pow2 :: Int -> BigInt.BigInt
 pow2 k = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt k)
 
--- | Blake2s yields 256 bits; `@n` < 257 selects a prefix as a sized vector.
+-- | Blake2s yields 256 bits; `@n` selects a prefix of them as a sized
+-- | vector.
 bitsRandomOracle
   :: forall @n nComplement
    . Reflectable n Int
@@ -143,14 +139,10 @@ chal = RoM \ro ->
 scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
 scalarChal = chal
 
--- | Generate n challenges, reversed to match OCaml's right-to-left
--- | Vector.init evaluation.
--- |
--- | OCaml pitfall: `Vector.init n ~f:(fun _ -> Ro.scalar_chal())` evaluates
--- | the side-effecting function right-to-left — index n-1 gets chal counter 1,
--- | index 0 gets counter n. We reverse the generated vector so the stored
--- | values match OCaml's index→counter mapping. (The effect order differs,
--- | but only the chal counter is touched, so the end state is identical.)
+-- | `n` challenges, indexed against the draw order: index `n-1` holds
+-- | counter 1 and index 0 holds counter `n`, so the drawn vector is
+-- | reversed. A draw moves nothing but the counter, so the end `Ro`
+-- | state is the same either way.
 replicateChal
   :: forall @n f
    . Curves.FieldSizeInBits f 255
@@ -160,25 +152,23 @@ replicateChal
 replicateChal = Vector.reverse <$> Vector.generateA @n (\_ -> chal)
 
 -------------------------------------------------------------------------------
--- | IPA challenge generators
+-- IPA challenge generators
 -------------------------------------------------------------------------------
 
--- | 15 chals — OCaml `Dummy.Ipa.Wrap.challenges` (dummy.ml:28-33),
--- | eager module init.
+-- | The 15 wrap-side IPA challenges.
 dummyIpaWrapChallenges :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
 dummyIpaWrapChallenges = replicateChal @WrapIPARounds
 
--- | 16 chals — OCaml `Dummy.Ipa.Step.challenges` (dummy.ml:44-48),
--- | eager module init.
+-- | The 16 step-side IPA challenges.
 dummyIpaStepChallenges :: RoM (Vector StepIPARounds (SizedF 128 StepField))
 dummyIpaStepChallenges = replicateChal @StepIPARounds
 
--- | IPA challenges are force-order-invariant — `Dummy.Ipa.Wrap.challenges`
--- | and `Dummy.Ipa.Step.challenges` in OCaml are eager module-init values
--- | drawn at fixed Ro positions regardless of which circuit is compiled.
--- | We mirror that with a module-level constant so circuit-building code
--- | that only needs IPA challenges (e.g. wrap main's dummy challenge /
--- | padding sponge states) doesn't have to thread `BaseCaseDummies`.
+-- | The IPA challenges, raw and endo-expanded, for both sides.
+-- |
+-- | They sit at fixed `Ro` positions — the 15 wrap challenges first,
+-- | then the 16 step ones — whatever circuit is being compiled, so they
+-- | can be a module-level constant and code needing only these does not
+-- | have to thread a `BaseCaseDummies` through.
 dummyIpaChallenges
   :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
      , wrapExpanded :: Vector WrapIPARounds WrapField
@@ -195,7 +185,7 @@ dummyIpaChallenges =
     { wrapRaw, wrapExpanded, stepRaw, stepExpanded }
 
 -------------------------------------------------------------------------------
--- | Endo coefficients (re-used by Pickles.Step.Dummy)
+-- Endo coefficients
 -------------------------------------------------------------------------------
 
 wrapEndo :: WrapField

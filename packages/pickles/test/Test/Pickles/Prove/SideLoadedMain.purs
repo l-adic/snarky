@@ -1,14 +1,12 @@
--- | End-to-end test for the side-loaded `step_main` pipeline.
+-- | A prev slot whose wrap key arrives at prove time rather than
+-- | compile time. A no-recursion child is compiled and proved, the
+-- | proof is width-lifted to the side-loaded slot's bound, and the
+-- | parent is proved against a `Sideload.VerificationKey` built from
+-- | the child's wrap result.
 -- |
--- | Drives `compileMulti` over a 1-rule spec whose single prev slot is
--- | a side-loaded slot (= the prev's wrap key is supplied at
--- | prove time rather than compile time). The test compiles an
--- | Input-mode `No_recursion` child, drives its prover to obtain a
--- | `CompiledProof 0`, width-lifts to the side-loaded tag's bound, and
--- | runs the parent prover with `InductivePrev` against a runtime
--- | `Sideload.VerificationKey` derived from the child's wrap result.
--- |
--- | Reference: OCaml `dump_side_loaded_main.ml`.
+-- | Both proofs are verified, the child's after a round trip, so the
+-- | parent's own out-of-circuit verify path is exercised at a
+-- | side-loaded slot.
 module Test.Pickles.Prove.SideLoadedMain
   ( spec
   ) where
@@ -27,7 +25,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
@@ -47,8 +45,7 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Unsafe.Coerce (unsafeCoerce)
 
--- | Pallas generator's affine coordinates as `F StepField` (=
--- | `Pallas.BaseField` = `Vesta.ScalarField`).
+-- | The Pallas generator in affine coordinates.
 innerCurveGen :: { x :: F StepField, y :: F StepField }
 innerCurveGen =
   let
@@ -56,10 +53,10 @@ innerCurveGen =
   in
     { x: F x, y: F y }
 
--- | Input-mode No_recursion child rule (mpv=0, asserts `self == 0`).
--- | The `dummy_constraints` block emits the gate kinds (EndoMulScalar,
--- | VarBaseMul, EndoMul + on-curve) required for byte-parity with
--- | OCaml's child step CS.
+-- | The child rule: asserts `self == 0`, with no prevs. Its dummy
+-- | constraints exist to emit the gate kinds — `EndoMulScalar`,
+-- | `VarBaseMul`, `EndoMul`, on-curve — that the child step constraint
+-- | system must contain for byte parity with the reference.
 noRecursionInputRule
   :: StepRule 0
        Unit
@@ -70,10 +67,9 @@ noRecursionInputRule
        (F StepField)
        (FVar StepField)
 noRecursionInputRule _ self = do
-  -- dummy_constraints body (= OCaml `dump_side_loaded_main.ml:49-73`).
   x <- exists (pure (F (fromInt 3) :: F StepField))
-  -- Allocate `g` as WeierstrassAffinePoint so `exists` triggers
-  -- assert_on_curve (matching OCaml's Inner_curve.typ).
+  -- `g` is allocated as a `WeierstrassAffinePoint` so that `exists`
+  -- emits the on-curve assertion.
   WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar StepField) <-
     exists (pure (WeierstrassAffinePoint innerCurveGen))
   _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar StepField))
@@ -87,24 +83,25 @@ noRecursionInputRule _ self = do
     , publicOutput: unit
     }
 
--- | 1-rule carrier for the Input-mode No_recursion child (mpv=0,
--- | valCarrier=Unit, no prevs).
+-- | Carrier for the single child rule, at width 0 with no prevs.
 type NoRecursionInputRules =
   RulesCons 0 Unit Unit RulesNil
 
--- | 1-rule carrier with a single side-loaded prev slot, `Width.Max = N2`.
+-- | Carrier for the parent rule: one side-loaded prev slot at width 2.
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
     (Tuple1 (Slot 2 (StatementIO (F StepField) Unit)))
     RulesNil
 
--- | Side-loaded main rule. Asserts `1 + prev == self` OR base case,
--- | with `proofMustVerify = true_` (constant) — required for byte-
--- | parity. A non-constant `proofMustVerify` emits ~25 extra Generic
--- | gates (vanishing under `true_` constant-folding), shifting the
--- | step VK and cascading through the wrap CS's baked `step_keys`
--- | constants. Reference: OCaml `dump_side_loaded_main.ml:179`.
+-- | The parent rule: asserts `1 + prev == self`, or the base case
+-- | `self == 0`.
+-- |
+-- | `proofMustVerify` must stay the constant `true_`. A non-constant
+-- | one emits about 25 extra Generic gates that constant-folding
+-- | removes here, shifting the step verification key and cascading
+-- | through the `step_keys` constants baked into the wrap constraint
+-- | system.
 sideLoadedMainRule
   :: StepRule 1
        (Tuple1 (StatementIO (F StepField) Unit))
@@ -130,9 +127,8 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
   it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/SideLoadedMain.json")
 
-    -- Compile the Input-mode No_recursion child. Its kimchi wrap VK
-    -- (at log2 = 13, `mpv = N0` → `wrap_domains.h = 13`) becomes the
-    -- runtime `wrapVk` for the side-loaded slot.
+    -- The child's kimchi wrap verification key becomes the runtime
+    -- `wrapVk` of the parent's side-loaded slot.
     childEntry <- liftEffect $ mkRuleEntry @0 @Unit @(F StepField)
       noRecursionInputRule
       Vector.nil
@@ -153,8 +149,8 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     let BranchProver childProver = fst child.provers
 
-    -- Produce a real child b0 proof. `appInput = F zero` satisfies
-    -- the rule's `self == 0` assertion.
+    -- `appInput = F zero` is what the child's `self == 0` assertion
+    -- needs.
     eChildCp <- withSpan "[SideLoadedMain] prove child" $ liftEffect $ childProver noAdvice
       { appInput: F zero
       , prevs: unit
@@ -164,20 +160,18 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
-    -- Width-lift the child to the side-loaded tag's bound. The slot
-    -- expects `CompiledProof 2` and `Tag _ 2`; the outer `mpv` is
-    -- phantom on both, so `coerce` repacks the bound. Sound when the
-    -- actual width (0) is `≤` the new bound (2). PS analog of OCaml
-    -- `Side_loaded.Proof.of_proof`.
+    -- The slot expects `CompiledProof 2` and `Tag _ 2`, and the width
+    -- is phantom on both, so `coerce` lifts the bound. Sound only
+    -- because the child's actual width, 0, is at most 2.
     let
       childCp2 :: CompiledProof 2 (StatementIO (F StepField) Unit)
       childCp2 = coerce childCp0
 
       childTag2 = coerce child.tag
 
-    -- Assemble the runtime side-loaded VerificationKey. NRR's wrap
-    -- circuit at log2 = 13 → `actualWrapDomainSize = N0`; child mpv =
-    -- 0 → `maxProofsVerified = N0`.
+    -- The child's wrap circuit sits at domain log2 13, giving
+    -- `actualWrapDomainSize = N0`; its width 0 gives
+    -- `maxProofsVerified = N0`.
     let
       childVK = Sideload.mkBundle
         { verifierIndex: child.vks.wrap.verifierIndex
@@ -185,7 +179,6 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
         , actualWrapDomainSize: N0
         }
 
-    -- Compile the side-loaded parent.
     sideLoadedEntry <- liftEffect $ mkRuleEntry
       @1
       @Unit
@@ -211,21 +204,19 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
 
     let dummies = mkWidthDummies pallasSrs vestaSrs
 
-    -- Round-trip the side-loaded child prev through SerializeProof and assert
-    -- the reconstruction still verifies (against the child's own verifier),
-    -- then use it as the parent's prev.
+    -- The parent's prev is the reconstruction, not the original, so
+    -- the prove below only succeeds if the round trip is faithful.
     childCp2' <- roundTripAndVerify dummies child.verifier childCp2
 
-    -- Drive the parent prove with `InductivePrev`: parent self = 1,
-    -- prev = (child input = 0, wrapped child proof, child VK). The
-    -- rule's `selfCorrect = 1 + 0 == 1` holds.
+    -- Parent `self = 1` over a child whose input is 0, so the rule's
+    -- `1 + prev == self` branch is the one that holds.
     eParentCp <- withSpan "[SideLoadedMain] prove parent" $ liftEffect $ chainProver noAdvice
       { appInput: F one
       , prevs: tuple1 (InductivePrev childCp2' childTag2)
       , sideloadedVKs: SideLoadedVk childVK /\ unit
       }
-    case eParentCp of
+    parentCp <- case eParentCp of
       Left e -> liftEffect $ Exc.throw ("sideloaded chainProver: " <> show e)
-      Right _ -> pure unit
+      Right cp -> pure cp
 
-    true `shouldEqual` true
+    verify parent.verifier (toVerifiable parentCp) `shouldEqual` true
