@@ -42,8 +42,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.PlonkChecks (ChunkedAllEvals, collapseChunkedAllEvals)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
@@ -266,7 +265,7 @@ wrapComputeDeferredValues input =
     -- derived from the chunked form via Horner at `zeta^(2^srsLengthLog2)`.
     -- Consumed by ftEval0 / derivePlonk; CIP uses the chunked form
     -- directly below.
-    collapsedAllEvals = Chunks.collapseChunkedAllEvals
+    collapsedAllEvals = collapseChunkedAllEvals
       { rounds: input.srsLengthLog2
       , zeta: zetaField
       , zetaOmega: zetaw

@@ -31,11 +31,7 @@ import Pickles.Linearization.Env (AlphaPowersLen, buildCircuitEnvM, precomputeAl
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.PlonkChecks (challengeDigest, extractEvalFields, squeezeXiR)
-import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, combinedInnerProduct)
-import Pickles.PlonkChecks.Domain (omegaPowers, zkPolynomial)
-import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
-import Pickles.PlonkChecks.Permutation as Permutation
+import Pickles.PlonkChecks (buildEvalListUnmasked, buildEvalPoint, challengeDigest, combinedInnerProduct, extractEvalFields, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Util.Pow2 (pow2PowSquare)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
@@ -217,10 +213,10 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     a23 = alphaPow 23
 
   -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term. The
-  -- permutation half is `Permutation.permContributionCircuit`, shared with
+  -- permutation half is `permContributionCircuit`, shared with
   -- the step verifier. omega_to_zk is a constant in Wrap (unlike Step where
   -- it's a circuit var) when the domain is; the gadget is agnostic.
-  permResult <- Permutation.permContributionCircuit
+  permResult <- permContributionCircuit
     { w: Vector.take @7 w0
     , sigma: s0
     , z: { zeta: zZeta, omegaTimesZeta: zOmegaTimesZeta }
@@ -312,7 +308,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- Inline perm scalar using shared alpha powers (a21, zkPoly).
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
-  actualPerm <- label "step10_perm" $ Permutation.permScalarCircuit
+  actualPerm <- label "step10_perm" $ permScalarCircuit
     { w: Vector.take @6 w0
     , sigma: s0
     , zOmega: zOmegaTimesZeta

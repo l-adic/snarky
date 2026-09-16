@@ -75,7 +75,7 @@ import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.PlonkChecks (collapseChunkedAllEvals, collapsePointEval)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofsVerified (boolVecToProofsVerified)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
@@ -969,7 +969,7 @@ consShapeProveData srs slotParams sideInfo headSlot restProveData =
             }
 
         peWF = coerce :: { zeta :: WrapField, omegaTimesZeta :: WrapField } -> PointEval (F WrapField)
-        prevWrapCollapse = Chunks.collapsePointEval
+        prevWrapCollapse = collapsePointEval
           { rounds: reflectType (Proxy :: Proxy WrapIPARounds)
           , zeta: prevWrapOracles.zeta
           , zetaOmega:
@@ -3182,7 +3182,7 @@ runMultiProverBody
         -- at num_chunks>1 it is the correct Horner combine. The chunked
         -- refactor of those consumers is the next phase of task #63.
         stepGenSelf = domainGenerator selfStepDomainLog2
-        allEvals = Chunks.collapseChunkedAllEvals
+        allEvals = collapseChunkedAllEvals
           { rounds: reflectType (Proxy :: Proxy StepIPARounds)
           , zeta: stepOracles.zeta
           , zetaOmega: stepOracles.zeta * stepGenSelf

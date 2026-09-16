@@ -30,8 +30,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (ChunkedAllEvals)
-import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.PlonkChecks (ChunkedAllEvals, collapseChunkedAllEvals)
 import Pickles.Prove.Pure.Common (combinedInnerProductBatchChunked, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
@@ -130,7 +129,7 @@ expandDeferredForVerify input =
     -- diverge — a separate fix (out of scope for the immediate
     -- chunks2 prover witness convergence, which depends on the wrap
     -- PROVER's CIP only).
-    collapsedAllEvals = Chunks.collapseChunkedAllEvals
+    collapsedAllEvals = collapseChunkedAllEvals
       { rounds: input.srsLengthLog2
       , zeta: zetaField
       , zetaOmega: zetaw

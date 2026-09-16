@@ -78,8 +78,7 @@ import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (AllEvals)
-import Pickles.PlonkChecks.Chunks as Chunks
+import Pickles.PlonkChecks (AllEvals, collapsePointEval)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -1092,7 +1091,7 @@ buildSlotAdvice input = do
     wrapGen = domainGenerator input.wrapDomainLog2
     wrapZetaw = oracles.zeta * wrapGen
     wrapSrsLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
-    wrapCollapse = Chunks.collapsePointEval
+    wrapCollapse = collapsePointEval
       { rounds: wrapSrsLog2, zeta: oracles.zeta, zetaOmega: wrapZetaw }
 
     wrapProofData' = vestaProofData @WrapIPARounds input.wrapProof

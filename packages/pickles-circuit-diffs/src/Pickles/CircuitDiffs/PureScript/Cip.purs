@@ -13,7 +13,7 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (challengePolyEvals) as IPA
-import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, buildEvalListUnmasked, combinedInnerProduct)
+import Pickles.PlonkChecks (buildEvalList, buildEvalListUnmasked, combinedInnerProduct)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)

@@ -59,9 +59,7 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
-import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals)
-import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
-import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
+import Pickles.PlonkChecks (AllEvals, ChunkedAllEvals, buildEvalPoint, permContribution, permScalar)
 import Pickles.Trace as Trace
 import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
 import Poseidon (class PoseidonField)
@@ -488,7 +486,7 @@ type FtEval0Input f =
 -- | where
 -- |
 -- | * `permContribution` = `term1 - term2 + boundary` from
--- |   `Pickles.PlonkChecks.Permutation.permContribution`;
+-- |   `Pickles.PlonkChecks.permContribution`;
 -- | * `pEval0Folded` = Horner fold of `pEval0Chunks` at
 -- |   `zeta^(2^srsLengthLog2)`;
 -- | * `constantTerm` = `evaluate linearizationPoly (fieldEnv ...)`.

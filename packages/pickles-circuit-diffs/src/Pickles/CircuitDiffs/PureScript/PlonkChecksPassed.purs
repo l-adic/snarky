@@ -11,7 +11,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField, WrapField)
-import Pickles.PlonkChecks.Permutation (permScalarCircuit)
+import Pickles.PlonkChecks (permScalarCircuit)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky, pow_)

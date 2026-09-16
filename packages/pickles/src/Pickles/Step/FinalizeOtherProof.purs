@@ -38,11 +38,7 @@ import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precom
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.PlonkChecks (extractEvalFields, maskedChallengeDigest, squeezeXiR)
-import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, combinedInnerProduct)
-import Pickles.PlonkChecks.Domain (knownDomainVanishingPolynomial, knownDomainWhiches, omegaPowers, zkPolynomial)
-import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
-import Pickles.PlonkChecks.Permutation as Permutation
+import Pickles.PlonkChecks (buildEvalList, buildEvalPoint, combinedInnerProduct, extractEvalFields, knownDomainVanishingPolynomial, knownDomainWhiches, maskedChallengeDigest, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
 import Pickles.Util.Pow2 (pow2PowSquare)
@@ -370,9 +366,9 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- OCaml `step_verifier.ml` calls `Plonk_checks.ft_eval0` which is
   -- labelled `ft_eval0 / Field.Checked.mul` (~375 R1CS Generic gates
   -- for the big perm-scalar sum + boundary). The permutation half is
-  -- `Permutation.permContributionCircuit`, shared with the wrap verifier.
+  -- `permContributionCircuit`, shared with the wrap verifier.
   -- OCaml: omega_to_minus_zk_rows = omega_to_zk (circuit var, not constant).
-  permResult <- Permutation.permContributionCircuit
+  permResult <- permContributionCircuit
     { w: Vector.take @7 w0
     , sigma: s0
     , z: { zeta: zZeta, omegaTimesZeta: zOmegaTimesZeta }
@@ -470,7 +466,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Inline perm scalar using shared alpha powers (a21, zkPoly).
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
-  actualPerm <- label "perm_actual" $ Permutation.permScalarCircuit
+  actualPerm <- label "perm_actual" $ permScalarCircuit
     { w: Vector.take @6 w0
     , sigma: s0
     , zOmega: zOmegaTimesZeta
