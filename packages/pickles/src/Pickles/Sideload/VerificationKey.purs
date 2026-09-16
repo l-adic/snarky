@@ -1,16 +1,10 @@
--- | Side-loaded VK descriptor: a child's wrap VK at the protocol
--- | level, containing only the data the parent's step circuit walks.
+-- | A child's wrap verification key at the protocol level: only the
+-- | data the parent's step circuit walks. The `f` and `b` parameters
+-- | pick the value form, `(F StepField, Boolean)`, or the var form,
+-- | `(FVar f, BoolVar f)`, out of the one type.
 -- |
--- | Two type parameters select between value and var forms via the
--- | same record:
--- |
--- | * value: `VerificationKey (F StepField) Boolean`
--- | * var:   `VerificationKey (FVar f)     (BoolVar f)`
--- |
--- | No kimchi runtime handle here — that lives in
+-- | The kimchi runtime handle is not here; it lives in
 -- | `Pickles.Sideload.Bundle`.
--- |
--- | Reference: OCaml `Pickles.Side_loaded.Verification_key`.
 module Pickles.Sideload.VerificationKey
   ( VerificationKey(..)
   , compileDummy
@@ -36,23 +30,19 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
--- | Side-loaded VK at the protocol level. Three Typ-relevant fields in
--- | OCaml hlist order
--- | `[ max_proofs_verified ; actual_wrap_domain_size ; wrap_index ]`:
+-- | The three circuit-visible fields of a side-loaded VK, serialised
+-- | in the order written here — `maxProofsVerified`,
+-- | `actualWrapDomainSize`, `wrapIndex` — which is not the alphabetical
+-- | order a bare record would pick up. Hence the newtype.
 -- |
--- | * `maxProofsVerified` — the VK's mpv ∈ {N0, N1, N2}, one-hot.
+-- | `actualWrapDomainSize` is not a domain size in the integer sense.
+-- | Side-loaded wrap circuits support exactly three domain sizes,
+-- | 2^13, 2^14 and 2^15, corresponding one to one with
+-- | `maxProofsVerified ∈ {N0, N1, N2}`, so the field says which of the
+-- | three is in play, tagged by the enum rather than by the log2.
 -- |
--- | * `actualWrapDomainSize` — *not* a domain size in the integer
--- |   sense; OCaml's `Side_loaded.Domain.t` reuses
--- |   `Pickles_base.Proofs_verified.t` because side-loaded wrap
--- |   circuits support exactly three domain sizes (2^13, 2^14, 2^15)
--- |   and these correspond 1:1 to mpv ∈ {N0, N1, N2}. So this field
--- |   is "which of the three supported wrap domains is in play",
--- |   tagged by the enum value, not the literal log2.
--- |
--- | Both are stored as one-hot `Vector ProofsVerifiedCount b` because
--- | the in-circuit form has Boolean wires and cannot pattern-match on
--- | an enum.
+-- | Both enums are one-hot `Vector ProofsVerifiedCount b`: the var form
+-- | has boolean wires and cannot pattern-match on an enum.
 newtype VerificationKey :: Int -> Type -> Type -> Type
 newtype VerificationKey slotVkChunks f b = VerificationKey
   { maxProofsVerified :: Vector ProofsVerifiedCount b
@@ -106,10 +96,9 @@ instance
         )
         tup
 
--- | `CheckedType` for the var form. Each one-hot field gets boolean
--- | checks immediately followed by `assertExactlyOne` (matching OCaml
--- | `One_hot.typ`'s emission order); `wrap_index` runs its on-curve
--- | checks last.
+-- | Each one-hot field's boolean checks are immediately followed by
+-- | its `assertExactlyOne_`, and `wrapIndex`'s on-curve checks come
+-- | last. That emission order is part of the circuit.
 instance
   ( CheckedType g c (WeierstrassAffinePoint Pallas.G (FVar g))
   , CheckedType g c (BoolVar g)
@@ -128,14 +117,10 @@ instance
         $ assertExactlyOne_ (Vector.toUnfoldable r.actualWrapDomainSize)
     label "vk_wrap_index" $ check r.wrapIndex
 
--- | Module-level compile-time placeholder sized for the LARGEST
--- | possible side-loaded VK (mpv = N2, wrap_domain = N2); smaller-mpv
--- | runtime VKs mask down via their own `actualWrapDomainSize` one-hot
--- | bits. Pure construction — feeds `exists` for in-circuit allocation
--- | of the placeholder; the constraint-system pass never reads the
--- | point coordinates. Polymorphic on `slotVkChunks` (the side-loaded
--- | slot's chunk count, Dim 3); the in-circuit shape replicates the
--- | off-curve placeholder `slotVkChunks` times per commitment slot.
+-- | A placeholder sized for the largest side-loaded VK, both enums at
+-- | `N2`; a smaller runtime VK masks down through its own one-hot
+-- | bits. It feeds `exists`, and the constraint-system pass never reads
+-- | the point coordinates.
 compileDummy
   :: forall slotVkChunks
    . Reflectable slotVkChunks Int
@@ -151,12 +136,11 @@ compileDummy = mkVerificationKey
         }
   }
   where
-  -- Off-curve placeholder. Mirrors OCaml `Pickles.Side_loaded.dummy`'s
-  -- use of `Inner_curve.Constant.zero` for the wrap-VK commitments.
+  -- Off-curve placeholder.
   g :: WeierstrassAffinePoint Pallas.G (F StepField)
   g = WeierstrassAffinePoint { x: F zero, y: F zero }
 
--- | Smart constructor from the user-friendly `ProofsVerified` enum.
+-- | Builds the two one-hot fields from the `ProofsVerified` enum.
 mkVerificationKey
   :: forall slotVkChunks
    . { maxProofsVerified :: ProofsVerified

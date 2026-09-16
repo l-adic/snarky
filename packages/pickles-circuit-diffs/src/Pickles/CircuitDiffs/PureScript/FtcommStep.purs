@@ -15,7 +15,7 @@ import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (StepField)
-import Pickles.FtComm (ftComm) as FtComm
+import Pickles.IncrementallyVerifyProof (ftComm) as FtComm
 import Pickles.Step.OtherField as StepOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)

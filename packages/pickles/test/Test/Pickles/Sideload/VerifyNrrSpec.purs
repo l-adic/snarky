@@ -1,10 +1,7 @@
--- | End-to-end verify of an OCaml-produced NRR wrap proof: load the NRR
--- | fixture, then run the canonical `Pickles.Verify.verify` on the
--- | loader-assembled `Verifier` + `VerifiableProof`.
--- |
--- | Strongest cross-stack compatibility check: PS's verifier accepts an
--- | OCaml-produced wrap proof against an OCaml-produced VK, given correctly
--- | decoded deferred-values + message digests + evals.
+-- | `verify` must accept an OCaml-produced NRR wrap proof against an
+-- | OCaml-produced VK, and reject it once the application state
+-- | changes. Passing means the deferred values, message digests and
+-- | evals were all decoded correctly from the fixture.
 module Test.Pickles.Sideload.VerifyNrrSpec (spec) where
 
 import Prelude

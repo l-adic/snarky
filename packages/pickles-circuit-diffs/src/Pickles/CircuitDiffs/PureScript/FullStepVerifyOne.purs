@@ -136,7 +136,10 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
           }
       , messagesForNextWrapProof: at 284
       , mustVerify: coerce (at 285) :: BoolVar StepField
-      , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
+      , branchData:
+          { proofsVerifiedMask: mask0 :< mask1 :< Vector.nil
+          , domainLog2: at (proofStateBase + 28)
+          }
       , proofMask: (coerce mask1) :< Vector.nil
       , vkComms:
           { sigma: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _

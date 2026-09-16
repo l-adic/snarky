@@ -1,17 +1,9 @@
--- | Step circuit's cross-field representation.
+-- | The step circuit's representation of the other field.
 -- |
--- | The Step circuit operates over Fp (Vesta.ScalarField). The "other field" is
--- | Fq (Pallas.ScalarField), which is LARGER than Fp.
--- |
--- | FOP deferred values use Type1 (single field element with shift 2*t + 2^n + 1).
--- | IPA scalars use Type2 (SplitField { sDiv2, sOdd }) for the full range of Fq.
--- |
--- | This module provides:
--- | - Type aliases for the Step circuit's FOP cross-field representation
--- | - IPA scalar ops (for checkBulletproof / ipaFinalCheck)
--- | - FOP shift ops (for finalizeOtherProof)
--- |
--- | Reference: mina/src/lib/pickles/step_main.ml (Other_field = Step.Other_field)
+-- | It works over Fp; the values it defers live in Fq, the larger of
+-- | the two. Deferred values use `Type1`, a single shifted field
+-- | element; IPA scalars use `Type2`'s `SplitField`, which covers all
+-- | of Fq.
 module Pickles.Step.OtherField
   ( StepOtherField
   , fopShiftOps
@@ -24,18 +16,13 @@ import Snarky.Circuit.DSL (Bool(..), BoolVar, FVar, equals_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), fromShiftedSplitFieldCircuit, fromShiftedType1Circuit, scaleFast2, shiftedEqualType1)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
--- | Step circuit's FOP cross-field variable type.
--- | Represents Fq deferred values using Type1 shift (2*t + 2^n + 1),
--- | matching OCaml's Shifted_value.Type1 for the Step FOP.
+-- | An Fq deferred value in the step circuit: one shifted field
+-- | element.
 type StepOtherField f = Type1 f
 
--- | IPA scalar ops for the Step circuit.
--- |
--- | Used by checkBulletproof and ipaFinalCheck when verifying Wrap proofs
--- | in the Step circuit. Scalars (z1, z2, CIP, b) are Fq values that need
--- | the SplitField representation.
--- |
--- | Replaces the old `type2ScalarOps` from IPA.purs.
+-- | IPA scalar operations for the step circuit. `z1`, `z2`, the
+-- | combined inner product and `b` are Fq values, so they take the
+-- | `SplitField` representation.
 ipaScalarOps
   :: forall f r
    . FieldSizeInBits f 255
@@ -48,11 +35,8 @@ ipaScalarOps =
   , shiftedEqual: \(Type2 sf) raw -> equals_ (fromShiftedSplitFieldCircuit sf) raw
   }
 
--- | FOP shift ops for the Step circuit's finalizeOtherProof.
--- |
--- | These are the unshift/shiftedEqual operations needed by the Step FOP
--- | to verify deferred values from previous Wrap proofs.
--- | Uses Type1 shift matching OCaml's Shifted_value.Type1.
+-- | Unshift and shifted equality for the step circuit's
+-- | `finalizeOtherProof`, at `Type1`.
 fopShiftOps
   :: forall f r
    . FieldSizeInBits f 255

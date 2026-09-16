@@ -1,8 +1,8 @@
--- | Wrap verification key shape (Plonk_verification_key_evals) plus
--- | Step VK helpers (`StepVK` named-field shape, `chooseKey`).
--- |
--- | Reference: mina/src/lib/crypto/kimchi_backend/common/plonk_verification_key_evals.ml
--- |            mina/src/lib/crypto/pickles/wrap_verifier.ml:212-310
+-- | Verification key shapes, and the projections that build them out
+-- | of a kimchi `VerifierIndex`: `VerificationKey`, the positional
+-- | newtype the circuit serialises; `StepVK`, the same commitments
+-- | under names; and `chooseKey`, the in-circuit one-hot selection
+-- | across a wrap circuit's branches.
 module Pickles.VerificationKey
   ( VerificationKey(..)
   , extractWrapVKComms
@@ -44,23 +44,18 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
--- | Plonk verification key: sigma(7), coefficients(15), index(6)
--- | commitments. Each commitment carries `stepChunks` curve points
--- | (kimchi splits each polynomial commitment into `stepChunks` slices
--- | of `max_poly_size`; OCaml mirrors this with `'comm = Inner_curve.t
--- | array`).
+-- | The plonk verification key: 7 sigma, 15 coefficient and 6 index
+-- | commitments, each carrying `stepChunks` curve points, one per slice
+-- | kimchi splits the polynomial into.
 -- |
--- | OCaml hlist order: sigma_comm, coefficients_comm, index commitments
--- | (generic, psm, complete_add, mul, emul, endomul_scalar).
+-- | A newtype and not a bare record, because the `CircuitType` instance
+-- | below serialises sigma, then coefficients, then index — not the
+-- | alphabetical order a record would pick up. The six index
+-- | commitments are generic, psm, completeAdd, mul, emul,
+-- | endomulScalar, in that order.
 -- |
--- | The element type `pt` lets the same newtype serve both value and var
--- | representations on either Pasta curve; `stepChunks` matches kimchi's
--- | `comm.chunks.len()`. The wrap-VK consumer side currently fixes
--- | `stepChunks = 1` per OCaml `step_main.ml:347`
--- | (`num_chunks_by_default`), but we keep it polymorphic so the type
--- | tracks the future-extensibility flagged by the OCaml TODO.
--- |
--- | Reference: plonk_verification_key_evals.ml
+-- | `pt` lets the one type serve value and var forms on either Pasta
+-- | curve.
 newtype VerificationKey :: Int -> Type -> Type
 newtype VerificationKey stepChunks pt = VerificationKey
   { sigma :: Vector 7 (ChunkedCommitment stepChunks pt)
@@ -97,19 +92,14 @@ instance
 instance (CheckedType f c var) => CheckedType f c (VerificationKey stepChunks var) where
   check (VerificationKey r) = check (tuple3 r.sigma r.coeff r.index)
 
--- | Project σ / coeff / index commitments out of a hydrated kimchi
--- | wrap `VerifierIndex` into the in-circuit-shaped `VerificationKey`.
--- | The wrap VK's commitments are Pallas points with coordinates in
--- | Pallas.BaseField = Vesta.ScalarField (= the step circuit's field),
--- | so no cross-field coercion is needed.
+-- | A wrap `VerifierIndex`'s commitments in `VerificationKey` shape.
+-- | Its points are Pallas, whose coordinates already lie in
+-- | `StepField`, so nothing crosses fields.
 -- |
--- | Polymorphic on `wrapVkChunks` — the chunk count carried by THIS
--- | wrap VK (a property of the producing compile, not the consuming
--- | circuit). Distinct from the wrap circuit's own `stepChunks`
--- | (Dim 1, = the step proof's chunks) and from a side-loaded slot's
--- | chunks (Dim 3, = the slot's `nc`). Callers pass `@wrapVkChunks`
--- | from whichever compile produced this VK. OCaml fixes the wrap-VK
--- | consumer to `num_chunks_by_default = 1` (see `step_main.ml:347`).
+-- | `wrapVkChunks` is this VK's own chunk count — a property of the
+-- | compile that produced it, not of the circuit consuming it, and
+-- | distinct from the wrap circuit's `stepChunks` and from a
+-- | side-loaded slot's `slotVkChunks`.
 extractWrapVKComms
   :: forall @wrapVkChunks
    . Reflectable wrapVkChunks Int
@@ -128,24 +118,17 @@ extractWrapVKComms vk =
       , index: map (over ChunkedCommitment (map wrapPt)) comms.index
       }
 
--- | Verifier-index polynomial commitments, split into the three groups
--- | Pickles consumers actually work with. Layout (matches OCaml
--- | `Plonk_verification_key_evals`):
--- |   `index`  = 6 selector commitments (generic, psm, complete_add, mul,
--- |              emul, endomul_scalar)
+-- | Verifier-index polynomial commitments, in the three groups
+-- | consumers work with:
+-- |   `index`  = 6 selector commitments (generic, psm, completeAdd,
+-- |              mul, emul, endomulScalar)
 -- |   `coeff`  = 15 coefficient commitments
--- |   `sigma`  = 7 sigma commitments (6 from `*VerifierIndexColumnComms`
--- |              + 1 from `*SigmaCommLast`, snoc'd into a Vector 7)
+-- |   `sigma`  = 7 sigma commitments, the first 6 from
+-- |              `verifierIndexColumnComms` and the last from
+-- |              `sigmaCommLast`
 -- |
--- | Each commitment carries `stepChunks` curve points; both the outer
--- | Vector sizes AND the inner chunk count are static.
--- |
--- | Wrap-side consumers (where OCaml currently hardcodes
--- | `num_chunks_by_default = 1` per `step_main.ml:347`) call with
--- | `@1`; step-side consumers (`wrap_main.ml:80`'s `~num_chunks`)
--- | pass the user-supplied compile param. The specialization is
--- | pushed all the way to the consumer so the projection stays a
--- | one-liner over the raw `Snarky.Backend.Kimchi.Proof` bindings.
+-- | Each commitment carries `stepChunks` curve points; the outer sizes
+-- | and the chunk count are both static.
 type VerifierIndexCommitments :: Int -> Type -> Type
 type VerifierIndexCommitments stepChunks f =
   { index :: Vector 6 (ChunkedCommitment stepChunks (AffinePoint f))
@@ -153,10 +136,9 @@ type VerifierIndexCommitments stepChunks f =
   , sigma :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
   }
 
--- | Vector-typed split of `verifierIndexColumnComms` +
--- | `sigmaCommLast`. Used for step VK extraction (consumed by
--- | the wrap circuit). Pass `@stepChunks` matching kimchi's
--- | `comm.chunks.len()`.
+-- | `splitVkCommitments` over a step verifier index, whose VK the wrap
+-- | circuit consumes. Pass `@stepChunks` matching the chunk count on
+-- | the index's commitments.
 pallasVerifierIndexCommitments
   :: forall @stepChunks
    . Reflectable stepChunks Int
@@ -165,11 +147,8 @@ pallasVerifierIndexCommitments
 pallasVerifierIndexCommitments vk =
   splitVkCommitments @stepChunks (verifierIndexColumnComms vk) (sigmaCommLast vk)
 
--- | Vector-typed split of `verifierIndexColumnComms` +
--- | `sigmaCommLast`. Used for wrap VK extraction (consumed by
--- | the step circuit). OCaml fixes this to `@1` at
--- | `step_main.ml:347` (TODO in OCaml flags future extensibility);
--- | callers here also pass `@1` until that invariant changes.
+-- | `splitVkCommitments` over a wrap verifier index, whose VK the step
+-- | circuit consumes.
 vestaVerifierIndexCommitments
   :: forall @stepChunks
    . Reflectable stepChunks Int
@@ -178,12 +157,11 @@ vestaVerifierIndexCommitments
 vestaVerifierIndexCommitments vk =
   splitVkCommitments @stepChunks (verifierIndexColumnComms vk) (sigmaCommLast vk)
 
--- | Shared splitter. Raw layout:
--- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 commitments,
--- |   each entry an `Array (AffinePoint f)` of length stepChunks.
--- | `sigmaLast` (also chunked) is snoc'd onto `sigma6` to produce
--- | the exported `Vector 7`. Inner Arrays reshape to
--- | `Vector stepChunks` — a length mismatch panics via `fromJust'`.
+-- | Splits the raw column commitments, whose layout is fixed at
+-- | `[ index(6) ; coeff(15) ; sigma-except-last(6) ]` = 27 entries,
+-- | each an `Array (AffinePoint f)` of `stepChunks` chunks. `sigmaLast`
+-- | is snoc'd on to give the 7 sigma commitments. A chunk count that
+-- | disagrees with `@stepChunks` panics through `fromJust'`.
 splitVkCommitments
   :: forall @stepChunks f
    . Reflectable stepChunks Int
@@ -209,17 +187,10 @@ splitVkCommitments raw sigmaLast =
     , sigma: Vector.snoc (mkSigma6 (Array.drop 21 rawChunked)) sigmaLastChunked
     }
 
--- | Plonk_verification_key_evals.Step.t
--- | Non-optional fields only (optional are all Opt.Nothing for Features.none).
--- |
--- | At num_chunks > 1 (circuit domain > SRS max_poly_size), each polynomial
--- | commitment splits into `stepChunks` curve points (each chunk commits to
--- | one slice of the polynomial). OCaml mirrors this with
--- | `'comm = Inner_curve.t array`. We parameterize `StepVK` by `stepChunks`
--- | so chooseKey / chunked-MSM operations propagate per chunk.
--- |
--- | Reference: OCaml `Plonk_verification_key_evals.Step` and
--- | `wrap_verifier.ml:290-313`'s `Array.map g ~f:(Double.map …)` per chunk.
+-- | The same commitments as `VerificationKey`, under names and with
+-- | the six index commitments split out. The feature-gated commitments
+-- | are absent; they are all empty for the feature set these circuits
+-- | use.
 type StepVK :: Int -> Type -> Type
 type StepVK stepChunks f =
   { sigmaComm :: Vector 7 (ChunkedCommitment stepChunks (AffinePoint f))
@@ -232,18 +203,10 @@ type StepVK stepChunks f =
   , endomulScalarComm :: ChunkedCommitment stepChunks (AffinePoint f)
   }
 
--- | `StepVK wrapVkChunks StepField` extracted from a compiled wrap
--- | verifier index: the commitments the step circuit absorbs into the
--- | `messages_for_next_step_proof` digest (OCaml
--- | `Common.hash_messages_for_next_step_proof` on `dlog_plonk_index`).
--- | Shared by the prover (`Pickles.Prove.Step`) and the out-of-circuit
--- | verifier (`Pickles.Verify`), which recomputes that digest from the
--- | real wrap VK.
--- |
--- | `wrapVkChunks` is the wrap VK's own chunk count (Dim 2); distinct
--- | from the wrap circuit's `stepChunks` (Dim 1). OCaml fixes
--- | `wrapVkChunks = num_chunks_by_default = 1` at `step_main.ml:347`;
--- | callers pass `@1` at the specialization boundary.
+-- | A compiled wrap verifier index as a `StepVK`: the commitments that
+-- | go into the messages-for-next-step-proof digest. Built by
+-- | `Pickles.Prove.Step` and, from the real wrap VK, by the
+-- | out-of-circuit `Pickles.Verify`, which recomputes that digest.
 extractWrapVKForStepHash
   :: forall @wrapVkChunks
    . Reflectable wrapVkChunks Int
@@ -263,18 +226,9 @@ extractWrapVKForStepHash vk =
     , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
     }
 
--- | Wrap_verifier.choose_key
--- |
--- | For each branch, scales all VK commitments by the branch boolean.
--- | Then reduces across branches by pointwise addition.
--- | Optional commitments resolve to Opt.Nothing for Features.none (0 constraints).
--- |
--- | At `stepChunks > 1` each commitment is `Vector stepChunks (AffinePoint f)`
--- | and the scale / add / seal operations map over the chunk dimension
--- | (mirroring OCaml `wrap_verifier.ml:296-310`'s
--- | `Array.map g ~f:(Double.map ~f:((*) b))`).
--- |
--- | Reference: wrap_verifier.ml:212-310
+-- | The step VK a one-hot branch vector selects: every commitment
+-- | scaled by its branch boolean, summed pointwise across branches,
+-- | then sealed. Scale, add and seal all map over the chunk dimension.
 chooseKey
   :: forall stepChunks n nPred f r
    . PrimeField f
@@ -285,29 +239,26 @@ chooseKey
   -> Vector n (StepVK stepChunks (FVar f))
   -> Snarky f (KimchiConstraint f) r (StepVK stepChunks (FVar f))
 chooseKey bools keys = label "choose-key" do
-  -- OCaml Vector.map2 evaluates right-to-left via :: constructor
+  -- Traversal order here is load-bearing: branches, record fields,
+  -- vector fields and the two coordinates are all visited in reverse,
+  -- chunks forwards. These gates are diffed against the OCaml wrap
+  -- verifier's by `pickles-circuit-diffs`, so reordering any of them
+  -- changes the circuit.
   scaledRev <- traverse (\(Tuple b key) -> scaleVK b key) $
     Vector.reverse (Vector.zip bools keys)
   let scaled = Vector.reverse scaledRev
   let reduced = foldl1 addVK scaled
-  -- wrap_verifier.ml:321-322: Step.map ~f:(Double.map ~f:seal)
   sealVK reduced
   where
-  -- Scale a single curve point by the branch boolean. OCaml
-  -- `Double.map g ~f:((*) (b :> t))` evaluates y first (right-to-left).
+  -- `y` scaled before `x`.
   scalePt :: FVar f -> AffinePoint (FVar f) -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   scalePt bf (AffinePoint { x, y }) = do
     y' <- mul_ bf y
     x' <- mul_ bf x
     pure (AffinePoint { x: x', y: y' })
 
-  -- Scale every chunk of a chunked commitment. OCaml
-  -- `Array.map g ~f:(Double.map ~f:((*) b))` maps over the chunk array.
-  -- PureScript `traverse` is left-to-right; the OCaml `Array.map`
-  -- direction is unspecified for arrays of length-1, but for nc > 1
-  -- this must mirror OCaml's iteration order. OCaml's `Array.map` is
-  -- LEFT-TO-RIGHT (unlike List/Vector.map which are right-to-left via
-  -- `::`), so straight `traverse` is correct.
+  -- Chunks are the one dimension scaled first to last, so a plain
+  -- `traverse` is right here and `traverseRev` is wrong.
   scalePtChunks
     :: FVar f
     -> ChunkedCommitment stepChunks (AffinePoint (FVar f))
@@ -317,14 +268,14 @@ chooseKey bools keys = label "choose-key" do
   scaleVK :: BoolVar f -> StepVK stepChunks (FVar f) -> Snarky f (KimchiConstraint f) r (StepVK stepChunks (FVar f))
   scaleVK b vk = do
     let bf = coerce b :: FVar f
-    -- OCaml record fields evaluate right-to-left
+    -- Record fields in reverse declaration order.
     endomulScalarComm <- scalePtChunks bf vk.endomulScalarComm
     emulComm <- scalePtChunks bf vk.emulComm
     mulComm <- scalePtChunks bf vk.mulComm
     completeAddComm <- scalePtChunks bf vk.completeAddComm
     psmComm <- scalePtChunks bf vk.psmComm
     genericComm <- scalePtChunks bf vk.genericComm
-    -- Vector.map ~f also evaluates right-to-left
+    -- Vector fields likewise.
     coefficientsComm <- traverseRev (scalePtChunks bf) vk.coefficientsComm
     sigmaComm <- traverseRev (scalePtChunks bf) vk.sigmaComm
     pure
@@ -343,8 +294,7 @@ chooseKey bools keys = label "choose-key" do
     rev <- traverse f (Vector.reverse v)
     pure $ Vector.reverse rev
 
-  -- Seal all coordinates (wrap_verifier.ml:321-322)
-  -- OCaml: Double.map ~f:seal — evaluates y first
+  -- `y` sealed before `x`, as in `scalePt`.
   sealPt :: AffinePoint (FVar f) -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   sealPt (AffinePoint { x, y }) = do
     y' <- seal y

@@ -13,7 +13,8 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, stepEndo, unsafeIdx, wrapEndo)
 import Pickles.Field (StepField, WrapField)
-import Pickles.PlonkChecks (AllEvals, challengeDigest, maskedChallengeDigest, squeezeXiR)
+import Pickles.PlonkChecks (challengeDigest, maskedChallengeDigest, squeezeXiR)
+import Pickles.Types (Evals)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
@@ -43,7 +44,7 @@ allEvalsFrom
   :: forall n f
    . Vector n (FVar f)
   -> Int
-  -> { spongeDigest :: FVar f, allEvals :: AllEvals (FVar f) }
+  -> { spongeDigest :: FVar f, allEvals :: Evals (FVar f) }
 allEvalsFrom inputs base =
   let
     at i = unsafeIdx inputs (base + i)

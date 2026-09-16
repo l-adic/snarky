@@ -1,17 +1,14 @@
--- | Round-trip validation for the OCaml-emitted NRR side-load fixture
--- | (`packages/pickles/test/fixtures/sideload/nrr/`). Loads the
--- | OCaml-produced fixture, then checks:
+-- | The OCaml-emitted NRR fixture in
+-- | `packages/pickles/test/fixtures/sideload/nrr/`, from three angles:
 -- |
--- |   * the kimchi `VerifierIndex` re-serialises byte-identically via Rust
--- |     serde — cross-stack serde determinism (OCaml's `vk.serde.json`
--- |     reproduced exactly by PS's `kimchi-napi` serializer);
--- |   * the NRR statement decodes to `StepField.zero` (NRR's hard-coded
--- |     `public_output`);
--- |   * the loaded `VerifiableProof` + `Verifier` survive a full JSON
--- |     round-trip through `Pickles.Prove.Codecs` and the decoded proof
--- |     still verifies. This exercises the codec against OCaml-SOURCED
--- |     values — `Test.Pickles.Prove.Codecs` only round-trips PS-produced
--- |     proofs.
+-- |   * its kimchi `VerifierIndex` re-serializes byte-identically, so
+-- |     the `kimchi-napi` serializer reproduces `vk.serde.json` exactly;
+-- |   * its statement decodes to zero, the rule's constant output;
+-- |   * its `VerifiableProof` and `Verifier` survive a JSON round trip
+-- |     through `Pickles.Prove.Codecs`, and the decoded proof verifies.
+-- |
+-- | The codec is therefore exercised on externally produced values;
+-- | `Test.Pickles.Prove.Codecs` only round-trips proofs made here.
 module Test.Pickles.Sideload.RoundTripNrrSpec (spec) where
 
 import Prelude
@@ -40,15 +37,11 @@ spec = describe "Pickles.Sideload.NRR roundtrip" do
     fixture <- loadFixture { decodeStatement: decodeHex, statementToFields: \f -> [ f ] } { pallasSrs, vestaSrs }
       "packages/pickles/test/fixtures/sideload/nrr"
 
-    -- Cross-stack VK serde byte-identity: re-serialize the loaded VK and
-    -- check it matches OCaml's on-disk JSON.
+    -- Re-serializing the loaded VK must reproduce the on-disk JSON.
     vestaVerifierIndexToSerdeJson fixture.vk `shouldEqual` fixture.vkJson
 
-    -- NRR's public_output is hard-coded to StepField.zero.
     fixture.statement `shouldEqual` (fromInt 0 :: StepField)
 
-    -- Full codec round-trip on the OCaml-sourced proof + verifier, then
-    -- verify the decoded proof against the decoded verifier.
     let
       proofJson = encodeVerifiableProof fixture.verifiableProof
       verifierJson = encodeVerifier fixture.verifier
@@ -58,6 +51,6 @@ spec = describe "Pickles.Sideload.NRR roundtrip" do
     verifier' <- case decodeVerifier { pallasSrs, vestaSrs } verifierJson of
       Right x -> pure x
       Left e -> liftEffect (Exc.throw ("decodeVerifier: " <> show e))
-    -- Re-encoding the decoded proof yields identical JSON (faithful codec).
+    -- Re-encoding the decode reproduces the JSON exactly.
     encodeVerifiableProof vp' `shouldEqual` proofJson
     verify verifier' vp' `shouldEqual` true

@@ -1,6 +1,6 @@
--- | Environment for evaluating Kimchi constraint linearization polynomials.
--- | This record provides all operations and values needed to evaluate
--- | the Polish notation expressions in the linearization.
+-- | The operations and values a linearization token stream is
+-- | evaluated against, in a plain-field form (`Env`) and a
+-- | constraint-emitting one (`EnvM`).
 module Pickles.Linearization.Env
   ( Env
   , EnvM
@@ -19,32 +19,39 @@ import Prelude
 
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (fromInt)
+import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.Hex (parseHex)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.DSL (class BasicSystem, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, pow)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, fromBigInt, pow)
 import Type.Proxy (Proxy(..))
 
--- | Number of precomputed powers of α: `α^0 .. α^70`. Drives the size
--- | of the `alphaPowers` vector consumed by
--- | `Pickles.Linearization.Interpreter` + the two
--- | `FinalizeOtherProof` circuits. Matches OCaml
--- | `Plonk_checks.scalars_env`'s max alpha exponent.
+-- | Parse a hex string into a field element. The linearization tables
+-- | (`Pickles.Linearization.{Pallas,Vesta}`) carry their constants as hex
+-- | literals, and this is the only place they are read.
+parseHex :: forall f. Partial => PrimeField f => String -> f
+parseHex hex = case fromBigInt <$> BigInt.fromString hex of
+  Nothing -> unsafeThrow $ "Failed to parse Hex to BigInt: " <> hex
+  Just a -> a
+
+-- | The size of the `alphaPowers` vector, `α^0 .. α^70`, which the
+-- | linearization interpreter and both `finalize_other_proof` circuits
+-- | index into.
 type AlphaPowersLen = 71
 
--- | Environment providing operations for polynomial evaluation.
--- | The type parameter 'a' is the field type being used.
--- | Note: add/sub/mul are passed explicitly to avoid typeclass dictionary overhead
--- | in large generated expressions.
+-- | Evaluation over values of type `a`. Arithmetic is carried as
+-- | fields rather than taken from a `Semiring` instance, to keep
+-- | dictionary lookups out of the token loop.
 type Env a =
   { add :: a -> a -> a
   , sub :: a -> a -> a
@@ -64,12 +71,12 @@ type Env a =
   , ifFeature :: forall b. { flag :: FeatureFlag, onTrue :: Unit -> b, onFalse :: Unit -> b } -> b
   }
 
--- | Evaluation point containing polynomial evaluations at zeta and zeta*omega
--- | Type parameter 'a' is the value type (e.g., `f` for direct field values, `FVar f` for circuit variables)
+-- | The proof's polynomial evaluations, indexed the way the token
+-- | stream addresses them.
 type EvalPoint a =
   { witness :: CurrOrNext -> Finite 15 -> a
   , coefficient :: Finite 15 -> a
-  , index :: CurrOrNext -> GateType -> a -- Takes row for Curr/Next evaluation
+  , index :: CurrOrNext -> GateType -> a
   , lookupAggreg :: CurrOrNext -> a
   , lookupSorted :: CurrOrNext -> Int -> a
   , lookupTable :: CurrOrNext -> a
@@ -78,8 +85,7 @@ type EvalPoint a =
   , lookupKindIndex :: Int -> a
   }
 
--- | Challenge values from the protocol transcript
--- | Type parameter 'a' is the value type (e.g., `f` for direct field values, `FVar f` for circuit variables)
+-- | The transcript-derived values an `Env` reads.
 type Challenges a =
   { alpha :: a
   , beta :: a
@@ -89,9 +95,9 @@ type Challenges a =
   , unnormalizedLagrangeBasis :: { zkRows :: Boolean, offset :: Int } -> a
   }
 
--- | Construct a field environment for direct evaluation of linearization polynomials
--- | Note: HasEndo f f' constraint means f is our working field and endoBase gives us
--- | the endo coefficient in that field (e.g., for Pallas base field, we get Pallas endo base)
+-- | An `Env` over plain field elements. `endoBase` is the endomorphism
+-- | constant in `f` itself; `f'` is only the field `HasEndo` pairs
+-- | with it.
 fieldEnv
   :: forall f f'
    . PoseidonField f
@@ -119,16 +125,14 @@ fieldEnv evalPoint challenges =
   , jointCombiner: challenges.jointCombiner
   , beta: challenges.beta
   , gamma: challenges.gamma
-  -- All features are treated as disabled for testing, matching Rust behavior.
-  -- SkipIfNot(feat): skip when feature disabled → use onFalse (push zero)
-  -- SkipIf(feat): don't skip when feature disabled → use onTrue (evaluated)
+  -- Every feature flag reads as disabled, which for a `SkipIfNot`
+  -- pair means taking the `onFalse` branch.
   , ifFeature: \{ onFalse } -> onFalse unit
   }
 
--- | Monadic environment for direct-in-Snarky evaluation of linearization.
--- | Pure operations (add, sub, var, cell, alphaPow, constants) return FVar directly.
--- | Monadic operations (mul, pow, unnormalizedLagrangeBasis) run in monad n and create constraints.
--- | The type parameter 'n' is the monad (e.g., Snarky f c r).
+-- | An `Env` over circuit variables. The fields that cost constraints
+-- | — `mul`, `pow`, `computeZetaToNMinus1`, `lagrangeBasis` — return
+-- | in `n`; the rest are plain `FVar` arithmetic.
 type EnvM f n =
   { add :: FVar f -> FVar f -> FVar f
   , sub :: FVar f -> FVar f -> FVar f
@@ -141,23 +145,16 @@ type EnvM f n =
   , endoCoefficient :: FVar f
   , field :: String -> FVar f
   , vanishesOnZeroKnowledgeAndPreviousRows :: FVar f
-  , computeZetaToNMinus1 :: n (FVar f) -- ^ Compute zeta^n - 1 (called at most once, memoized by interpreter)
-  , lagrangeBasis :: FVar f -> { zkRows :: Boolean, offset :: Int } -> n (FVar f) -- ^ div_ zetaToNMinus1 / (zeta - omega^i)
+  , computeZetaToNMinus1 :: n (FVar f) -- ^ zeta^n - 1; the interpreter forces this at most once
+  , lagrangeBasis :: FVar f -> { zkRows :: Boolean, offset :: Int } -> n (FVar f) -- ^ (zeta^n - 1) / (zeta - omega^i)
   , jointCombiner :: FVar f
   , beta :: FVar f
   , gamma :: FVar f
   , ifFeature :: forall b. { flag :: FeatureFlag, onTrue :: Unit -> b, onFalse :: Unit -> b } -> b
   }
 
--- | Precompute α^0..α^70 via successive multiplication, producing a
--- | `Vector AlphaPowersLen (FVar f)` (71 entries). Cost: 69 R1CS
--- | constraints.
--- |
--- | Internals: seed with `[α^0, α^1] = [1, α]`, then generate α^2..α^70
--- | via a `mapAccumM` scan carrying the previous power. Each step emits
--- | one `Circuit.mul_` constraint.
--- | Type-level `Vector.append` glues the seed and the generated tail
--- | into the final `Vector 71` — no runtime length check needed.
+-- | `α^0 .. α^70`, at a cost of 69 multiplication constraints; `α^0`
+-- | and `α^1` need none.
 precomputeAlphaPowers
   :: forall f c r
    . PrimeField f
@@ -174,12 +171,9 @@ precomputeAlphaPowers alpha = label "precompute-alpha-powers" do
     (Vector.generate identity :: Vector 69 _)
   pure (Vector.append (const_ one :< alpha :< Vector.nil) rest)
 
--- | Construct a monadic circuit environment for evaluating linearization polynomials.
--- | Unlike `circuitEnv`, this environment operates directly on `FVar f` values,
--- | avoiding re-computation when stored values are loaded.
--- | The `computeZetaToNMinus1` field defers the zeta^n-1 computation to match
--- | OCaml's lazy binding (plonk_checks.ml:280), which is forced mid-evaluation
--- | at the first UnnormalizedLagrangeBasis token.
+-- | An `EnvM` for in-circuit evaluation. `computeZetaToNMinus1` is
+-- | left as an action so its constraints land at the first Lagrange
+-- | basis term, not before it.
 buildCircuitEnvM
   :: forall f f' c r
    . PrimeField f
@@ -188,8 +182,8 @@ buildCircuitEnvM
   => HasEndo f f'
   => Vector AlphaPowersLen (FVar f) -- ^ precomputed alpha powers α^0..α^70
   -> FVar f -- ^ zeta
-  -> Int -- ^ domainLog2 (for computing zeta^n - 1)
-  -> ({ zkRows :: Boolean, offset :: Int } -> FVar f) -- ^ omega power for lagrange basis (may be circuit variable)
+  -> Int -- ^ domainLog2
+  -> ({ zkRows :: Boolean, offset :: Int } -> FVar f) -- ^ omega power for the lagrange basis
   -> EvalPoint (FVar f)
   -> FVar f -- ^ vanishesOnZeroKnowledgeAndPreviousRows
   -> FVar f -- ^ beta
@@ -223,7 +217,6 @@ buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishes
   , ifFeature: \{ onFalse } -> onFalse unit
   }
 
--- | Look up MDS matrix element
 lookupMds :: forall f. PoseidonField f => Proxy f -> Int -> Int -> f
 lookupMds p row col =
   let
@@ -231,12 +224,11 @@ lookupMds p row col =
   in
     Vector.index (Vector.index matrix (unsafeFinite @3 row)) (unsafeFinite @3 col)
 
--- | Look up a cell value from the evaluation point
 lookupCell :: forall a. EvalPoint a -> Column -> CurrOrNext -> a
 lookupCell ep col row = case col of
   Witness i -> ep.witness row (unsafeFinite @15 i)
   Coefficient i -> ep.coefficient (unsafeFinite @15 i)
-  Index g -> ep.index row g -- Pass row to handle Curr/Next evaluation
+  Index g -> ep.index row g
   LookupAggreg -> ep.lookupAggreg row
   LookupSorted i -> ep.lookupSorted row i
   LookupTable -> ep.lookupTable row

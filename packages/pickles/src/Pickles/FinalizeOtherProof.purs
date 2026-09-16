@@ -1,68 +1,55 @@
--- | Shared types for the `finalize_other_proof` circuit, used on both
--- | the step side (`Pickles.Step.FinalizeOtherProof`) and wrap side
--- | (`Pickles.Wrap.FinalizeOtherProof`).
--- |
--- | Both circuits take the same compile-time `Params` (VK-derived
--- | data: domains, shifts, srs size, endo coefficient, linearization
--- | polynomial, domain-resolution mode) and produce the same `Output`
--- | shape (per-check booleans + bulletproof challenges).
--- |
--- | Each side keeps its own input record (`Pickles.Step.FinalizeOtherProof.Input`
--- | vs `Pickles.Wrap.FinalizeOtherProof.Input`) because the
--- | shifted-scalar representation differs between sides.
--- |
--- | Reference: OCaml `step_verifier.ml`, `wrap_verifier.ml`'s
--- | `finalize_other_proof`.
+-- | The `Params` and `Output` shared by the step and wrap
+-- | `finalize_other_proof` circuits. Each side keeps its own input
+-- | record, because the shifted-scalar representation differs.
 module Pickles.FinalizeOtherProof
   ( Params
   , Output
   , DomainMode(..)
+  , pow2PowSquare
   ) where
 
-import Data.Vector (Vector)
-import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.Verify.Types (BulletproofChallenges)
-import Snarky.Circuit.DSL (BoolVar, FVar)
+import Prelude
 
--- | Domain-resolution mode for `finalize_other_proof`.
--- |
--- | * `KnownDomainsMode` — compiled-rule path. `params.domains` is
--- |   the compile-time `unique_domains` Vector (typically `Vector 1`
--- |   for single-rule, larger for multi-branch self prevs). Vanishing
--- |   polynomial uses `pow2_pows` + `Pseudo.mask`.
--- | * `SideLoadedMode` — side-loaded prev. The candidate-log2
--- |   universe `Vector 17` (log2s ∈ [0..16]) is synthesized
--- |   internally from `input.domainLog2Var`; `params.domains` is
--- |   ignored. The FOP body emits 17 `equals_` gates +
--- |   `Boolean.Assert.any` for the one-hot mask and uses iterative
--- |   `if_(mask[i], square, …)` for the vanishing polynomial.
--- |
--- | Reference: OCaml `step_verifier.ml`'s `finalize_other_proof` +
--- | `side_loaded_domain`.
+import Data.Vector (Vector)
+import Pickles.DeferredValues (BulletproofChallenges)
+import Pickles.Linearization.Types (LinearizationPoly)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, square_)
+import Snarky.Curves.Class (class PrimeField)
+
+-- | `x^(2^n)` by repeated squaring, emitting exactly `n` Square
+-- | constraints.
+pow2PowSquare
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => FVar f
+  -> Int
+  -> Snarky f c r (FVar f)
+pow2PowSquare x n = go x n
+  where
+  go acc i
+    | i <= 0 = pure acc
+    | otherwise = do
+        sq <- square_ acc
+        go sq (i - 1)
+
+-- | How `finalize_other_proof` resolves the prev proof's domain.
+-- | `KnownDomainsMode` selects among the compile-time candidates in
+-- | `params.domains`; `SideLoadedMode` ignores them and selects over
+-- | the `[0..16]` log2 universe, from a domain log2 carried in the
+-- | public input.
 data DomainMode
   = KnownDomainsMode
   | SideLoadedMode
 
--- | Compile-time parameters for finalizing another proof.
+-- | What `finalize_other_proof` knows at compile time, from the
+-- | verification key.
 -- |
--- | These come from the verification key / are known at circuit compile time.
--- |
--- | - `domains`: Per-branch `{ generator, log2 }` over the `nd` possible
--- |   step-domain sizes the prev proof could have. For single-rule
--- |   callers `nd = 1`. Multi-rule (e.g. TwoPhaseChain Self prev)
--- |   passes the deduped Vector of all possible per-branch step domains.
--- |   Mirrors OCaml `domain_for_compiled`'s `unique_domains`.
--- | - `shifts`: kimchi permutation argument shifts. Single Vector
--- |   because OCaml's `Pseudo.Domain.shifts` asserts shifts are
--- |   identical across all unique domains
--- |   (`disabled_not_the_same`).
--- | - `srsLengthLog2`: Log2 of SRS length (e.g. 16)
--- | - `zkRows`: kimchi's `zk_rows` for the `scalars_env` generator powers
--- |   (OCaml `Plonk_checks.scalars_env ~zk_rows`; 3 at one chunk)
--- | - `endo`: Endomorphism coefficient for scalar challenge conversion
--- | - `linearizationPoly`: The linearization polynomial for gate constraints
--- | - `domainMode`: Whether the prev proof's domain is compile-time
--- |   known (`KnownDomainsMode`) or side-loaded (`SideLoadedMode`).
+-- | - `domains`: one `{ generator, log2 }` per step-domain size the
+-- |   prev proof could have been proved over, deduplicated, so
+-- |   `nd = 1` for a single-rule caller.
+-- | - `shifts`: one vector of kimchi permutation shifts for all of
+-- |   them; the candidate domains are required to share their shifts.
 type Params :: Int -> Type -> Row Type -> Type
 type Params nd f r =
   { domains :: Vector nd { generator :: FVar f, log2 :: Int }
@@ -75,11 +62,9 @@ type Params nd f r =
   | r
   }
 
--- | Output from finalizing another proof.
--- |
--- | - `finalized`: Boolean indicating whether all checks passed
--- | - `challenges`: The raw bulletproof challenges (128-bit scalar challenges)
--- | - `expandedChallenges`: The expanded bulletproof challenges (full field via endo)
+-- | The outcome of each deferred-value check, with `finalized` their
+-- | conjunction, alongside the prev proof's bulletproof challenges as
+-- | 128-bit values and expanded through the endomorphism.
 type Output d f =
   { finalized :: BoolVar f
   , xiCorrect :: BoolVar f

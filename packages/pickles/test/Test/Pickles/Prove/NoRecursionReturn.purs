@@ -1,16 +1,13 @@
--- | PureScript-side analog of OCaml's `No_recursion_return` test
--- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-126`).
+-- | The simplest pickles rule: no prevs, unit input, constant output
+-- | `0`. One `compileMulti` call, one prove, one verify — the smallest
+-- | end-to-end path through the system.
 -- |
--- | The simplest pickles rule: `max_proofs_verified = N0`, no prevs,
--- | Output mode (input = Unit, output = StepField), constant output `0`.
--- | Exercised here via the `Pickles.Prove.CompileMulti` API end-to-end:
--- | a 1-rule carrier dispatched through `compileMulti` returns one
--- | `BranchProver`; one invocation produces a single proof; `verify`
--- | checks it.
+-- | The proof must verify and must stop verifying once its application
+-- | state is altered, so a verifier that failed to bind the state to
+-- | the step-message digest would fail here.
 -- |
--- | `nrrRule` is exported because `Test.Pickles.Prove.CompileValidation`
--- | and `Test.Pickles.Sideload.DigestEqNrrSpec` reuse it to build a
--- | real NRR `CompiledProof`.
+-- | `nrrRule` is exported for the specs that need a real proof of it to
+-- | build on.
 module Test.Pickles.Prove.NoRecursionReturn
   ( NrrRules
   , nrrRule
@@ -37,8 +34,7 @@ import Test.Pickles.SharedSrs (SharedSrs)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
--- | The NRR inductive rule — Output mode, N=0, returns `F zero`.
--- | Reference: `mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-107`.
+-- | Returns the constant zero, with no prevs and nothing asserted.
 nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
 nrrRule _ _ = pure
   { prevPublicInputs: Vector.nil
@@ -46,8 +42,7 @@ nrrRule _ _ = pure
   , publicOutput: const_ zero
   }
 
--- | NRR's 1-rule carrier shape: a single `RulesCons` for the no-prev
--- | rule, terminated by `RulesNil`.
+-- | Carrier for the single `nrrRule`, at width 0 with no prevs.
 type NrrRules =
   RulesCons 0 Unit Unit
     RulesNil
@@ -57,9 +52,6 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
   it "compileMulti + prover.step end-to-end verify returns true" \{ pallasSrs, vestaSrs, lagrangeCache } -> do
     cache <- liftEffect $ lookupEnv "PICKLES_PROOF_CACHE_DIR" <#> map \dir -> mkProofCache (dir <> "/NoRecursionReturn.json")
 
-    -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
-    -- (NRR rule's mpv); since this is the only branch, nd = 1.
-    -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
     nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule Vector.nil
 
     let rules = tuple1 nrrEntry
@@ -80,10 +72,6 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       rules
 
     let BranchProver nrrProver = fst output.provers
-    -- Compiled-only spec (Unit) → spec-derived `vkCarrier =
-    -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
-    -- branches. Threading the field uniformly keeps the
-    -- `BranchProver` API consistent with side-loaded specs.
     logInfo "[NoRecursionReturn] proving"
     eResult <- withSpan "[NoRecursionReturn] prove" $ liftEffect $ nrrProver noAdvice
       { appInput: unit, prevs: unit, sideloadedVKs: unit }

@@ -1,48 +1,28 @@
 -- | Circuit types as values, so a shape can be chosen at runtime.
 -- |
--- | `Snarky.Circuit.DSL.Monad.exists` is type-directed: the variables it
--- | allocates are counted by a `CircuitType` instance, so the shape must
--- | be known statically. That is what forces the pickles compiler to
--- | carry a type-level slot list even though every quantity it derives
--- | from that list is an ordinary integer.
--- |
--- | The class supplies exactly three things — a size, a serialiser and a
--- | check — and the underlying primitive is already length-directed:
--- |
--- | ```
--- | exists w = do
--- |   let n = sizeInFields (Proxy @f) (Proxy @a)
--- |   vars <- Snarky \(CircuitOps ops) -> ops.existsOp n (map valueToFields w)
--- |   let v = fieldsToVar @f @a (map Var vars)
--- |   check v
--- |   pure v
--- | ```
--- |
--- | So `Typ` is that triple reified, `typOf` materialises it from the
--- | class wherever the type is still in scope, and `existsTyp` is
--- | `exists` with the dictionary passed by hand. This is OCaml pickles'
--- | arrangement: `Typ.t` there is a value carrying `store` / `read` /
--- | `alloc` / `check`, which is why `inductive_rule.ml` can hold a
--- | runtime list of previous-proof slots where this port needs one
--- | type-class instance per shape.
+-- | `Snarky.Circuit.DSL.Monad.exists` is type-directed: the variables
+-- | it allocates are counted by a `CircuitType` instance, so the shape
+-- | must be static. That is what forces the pickles compiler to carry a
+-- | type-level slot list even though every quantity it derives from
+-- | that list is an ordinary integer. `Typ` reifies the three things
+-- | the class supplies — a size, a serialiser, a check — `typOf`
+-- | materialises it where the type is still in scope, and `existsTyp`
+-- | is `exists` with the dictionary passed by hand.
 -- |
 -- | ## Why this is not in `snarky`
 -- |
--- | It adds no capability: `exists` already calls the length-directed
--- | primitive underneath. What it removes is a static guarantee, namely
--- | that the circuit-building pass and the witness-generating pass agree
--- | on how many variables to allocate. With a type-level shape they agree
--- | by construction; with a value they agree only if both read the same
--- | value.
+-- | It adds no capability; the primitive under `exists` is already
+-- | length-directed. What it removes is a static guarantee, that the
+-- | circuit-building and witness-generating passes agree on how many
+-- | variables to allocate. With a type-level shape they agree by
+-- | construction; with a value, only if both read the same value.
 -- |
--- | That obligation is dischargeable in pickles and not in general, so
--- | the primitive lives here. A slot's shape comes from the application
--- | spec, is fixed when the circuit is compiled, and is stored on the
--- | compile result for the prover to read back. A caller cannot supply a
--- | different one because there is nowhere to supply it.
--- |
--- | Do not export this beyond the pickles compiler, and do not build a
--- | `Typ` from anything a proof carries.
+-- | That obligation is dischargeable here and not in general: a slot's
+-- | shape comes from the application spec, is fixed when the circuit is
+-- | compiled, and is stored on the compile result for the prover to
+-- | read back, so there is nowhere for a caller to supply a different
+-- | one. Do not export this beyond the pickles compiler, and do not
+-- | build a `Typ` from anything a proof carries.
 module Pickles.Typ
   ( Typ
   , typOf
@@ -111,17 +91,16 @@ existsTyp t w = do
   t.check v
   pure v
   where
-  -- `existsOp` allocates `t.size` variables from the TYPE and assigns
-  -- them from these fields. Supply fewer and the tail is allocated and
-  -- never assigned, which the solver reports as `MissingVariable` at
-  -- whatever gate first reads one — arbitrarily far from the mistake,
-  -- and naming a variable index rather than the shape that was wrong.
-  -- Supply more and the surplus is dropped silently. The two numbers
-  -- meet here and nowhere else, so check them here.
+  -- `existsOp` allocates `t.size` variables from the type and assigns
+  -- them from these fields. Supply fewer and the tail is never
+  -- assigned; the solver reports `MissingVariable` at whatever gate
+  -- first reads one, arbitrarily far from the mistake and naming a
+  -- variable index rather than the shape that was wrong. Supply more
+  -- and the surplus is dropped silently. The two numbers meet here and
+  -- nowhere else.
   --
   -- Prove-time only: the circuit-building pass discards this action, so
-  -- a compile cannot reach it. That is the right scope — at build time
-  -- there is no value to disagree with.
+  -- at build time there is no value to disagree with.
   fieldsOfDeclaredSize val =
     let
       fs = t.toFields val
@@ -145,13 +124,13 @@ arrayTyp n elem =
   , check: traverse_ elem.check
   }
 
--- | One inner array per slot, each as wide as that slot's
--- | `max_local_max_proofs_verified`, all sharing an element type.
+-- | One inner array per slot, of the widths given, all sharing an
+-- | element type.
 -- |
--- | This is the shape of a rule's previous-proof slot data: one stack of
--- | bullet-proof challenges per slot, of differing widths. The
--- | type-level encoding is a nested `Product` of `Vector w`; here the
--- | widths are the argument.
+-- | The shape of a rule's previous-proof slot data: one stack of
+-- | bulletproof challenges per slot, the stacks of differing widths.
+-- | The type-level encoding nests `Vector w`; here the widths are the
+-- | argument.
 perSlotTyp
   :: forall f c val var
    . Array Int
@@ -175,29 +154,25 @@ perSlotTyp widths elem =
 -- |
 -- | Terminates a `pairTyp` chain, the way `Unit` terminates the nested
 -- | tuple a `TupleN` is made of. Taken from the class rather than
--- | written out, so that the terminator agrees with the instance by
--- | construction instead of by assertion.
+-- | written out, so the terminator agrees with the instance by
+-- | construction rather than by assertion.
 unitTyp :: forall f c. Typ f c Unit Unit
 unitTyp = typOf
 
--- | Two shapes in sequence: the left's field elements, then the right's.
+-- | Two shapes in sequence: the left's field elements, then the
+-- | right's.
 -- |
--- | This is what a derived `CircuitType` already does for a product. Its
--- | generic instance adds the two sizes, concatenates the two
--- | serialisations in order, and splits the field array at the left
--- | size. So a right-nested chain of `pairTyp` ending in `unitTyp`
--- | reproduces what the instance for the corresponding `TupleN` emits,
--- | field for field.
+-- | That is what the generic `CircuitType` instance does for a product,
+-- | so a right-nested chain of `pairTyp` ending in `unitTyp` emits,
+-- | field for field, what the corresponding `TupleN` instance emits.
+-- | The correspondence is the point: it lets a record's `Typ` be
+-- | written out by hand and still allocate the identical circuit,
+-- | provided the chain lists the fields in the order the `TupleN` did.
 -- |
--- | That correspondence is the point. It is what lets a record's `Typ`
--- | be written out by hand and still allocate the identical circuit,
--- | provided the chain lists the fields in the same order the `TupleN`
--- | did.
--- |
--- | Unlike `unitTyp` this cannot come from the class, because it
--- | combines two `Typ` values and the interesting one is `arrayTyp` at
--- | a width known only at runtime. There is no instance to take it
--- | from. The docstring above is the obligation that replaces one.
+-- | Unlike `unitTyp` this cannot be taken from the class — it combines
+-- | two `Typ` values, and the interesting one is `arrayTyp` at a width
+-- | known only at runtime. The paragraph above is the obligation that
+-- | replaces the instance.
 pairTyp
   :: forall f c leftVal leftVar rightVal rightVar
    . Typ f c leftVal leftVar

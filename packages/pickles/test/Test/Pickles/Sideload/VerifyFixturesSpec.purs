@@ -1,34 +1,18 @@
--- | End-to-end verify of OCaml-produced wrap proofs across the
--- | max_proofs_verified coverage matrix, exercising the generalized
--- | `Test.Pickles.Sideload.Loader` (which rebuilds the prev-proof message
--- | digests + `oldBulletproofChallenges` from the carried statement data):
+-- | Verifies OCaml-produced wrap proofs across the
+-- | `max_proofs_verified` matrix: three `simple_chain` proofs at mpv 1
+-- | (one self-recursive prev) and three `tree_proof_return` proofs at
+-- | mpv 2 (heterogeneous prevs). mpv 0 is covered by `VerifyNrrSpec`.
 -- |
--- |   * simple_chain      — mpv = 1, nc = 1  (one self-recursive prev; b0/b1/b2)
--- |   * tree_proof_return — mpv = 2, nc = 1  (heterogeneous prevs: NRR external
--- |                         slot + self-recursive slot; b0/b1/b2)
+-- | Each fixture must verify, and the accumulator list the verifier
+-- | rebuilds from the carried messages must be the one the prover
+-- | stored in the proof.
 -- |
--- | (NRR — mpv = 0, nc = 1 — is covered by `VerifyNrrSpec`.) Each loads via
--- | `loadFixture` with the single-field statement codec
--- | (`decodeHex` + `\f -> [f]`) and asserts the canonical verify accepts it —
--- | exercising the loader's full mpv = 0/1/2 generality at nc = 1 — and that
--- | the accumulator list the verifier rebuilds from the carried messages
--- | (`wrapAccumulators`) is the list OCaml's prover stored in the proof
--- | (`Wrap_hack.pad_accumulator` of the same data), so the verifier opens
--- | exactly the accumulators the messages name.
--- |
--- | NOTE on num_chunks > 1 (chunks2 was dropped from this matrix): a
--- | serialized chunked proof CANNOT be verified from the standard Pickles
--- | wire form. `Proof.to_repr` (`proof.ml:260`) serializes the prev-proof
--- | public-input evaluation as `(x1.(0), x2.(0))` — only chunk 0 — but the
--- | verifier's `combined_inner_product` (`wrap.ml:38,53` →
--- | `Pcs_batch.combine_split_evaluations`) needs every nc chunk. We verified
--- | this is an OCaml-side limitation, not a loader bug: OCaml's *own*
--- | `Proof.verify` fails (`dlog_check`) on a chunked proof after a
--- | `to_repr → of_repr` round-trip. `public_input_skeleton.json` is exactly that lossy
--- | form (`to_yojson_full`), so the missing chunk simply isn't in the
--- | fixture. Supporting nc > 1 would require the dumper to export the full
--- | in-memory `prev_evals` (whose own yojson preserves all chunks); until
--- | then the loader is exercised only on nc = 1 fixtures.
+-- | Every fixture here has `num_chunks = 1`. The dumped wire form keeps
+-- | only chunk 0 of the prev-proof public-input evaluation while
+-- | `combined_inner_product` needs every chunk — OCaml's own verifier
+-- | fails the same way on a chunked proof round-tripped through it — so
+-- | covering `num_chunks > 1` needs a dumper that exports the full
+-- | in-memory `prev_evals`.
 module Test.Pickles.Sideload.VerifyFixturesSpec (spec) where
 
 import Prelude
@@ -51,8 +35,8 @@ spec = describe "Pickles.Sideload.VerifyFixtures (mpv)" do
     (liftAff <<< verifyDir "packages/pickles/test/fixtures/simple_chain/wrap1")
   it "verifies simple_chain b2 (mpv=1)"
     (liftAff <<< verifyDir "packages/pickles/test/fixtures/simple_chain/wrap2")
-  -- N=2, heterogeneous prevs: slot 0 = NRR (external), slot 1 = self-recursive
-  -- Tree proof (dummy N2 in b0, real prior Tree proof in b1/b2).
+  -- Slot 0 is an external NRR proof; slot 1 is a dummy in b0 and the
+  -- prior tree proof in b1 and b2.
   it "verifies tree_proof_return b0 (mpv=2, base case)"
     (liftAff <<< verifyDir "packages/pickles/test/fixtures/tree_proof_return/wrap0")
   it "verifies tree_proof_return b1 (mpv=2)"

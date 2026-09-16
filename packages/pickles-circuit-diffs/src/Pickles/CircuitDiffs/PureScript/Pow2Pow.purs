@@ -11,7 +11,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Field (StepField)
-import Pickles.Util.Pow2 (pow2PowSquare)
+import Pickles.FinalizeOtherProof (pow2PowSquare)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F, FVar, Snarky)

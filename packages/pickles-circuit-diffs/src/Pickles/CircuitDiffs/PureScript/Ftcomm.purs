@@ -15,7 +15,7 @@ import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.Field (WrapField)
-import Pickles.FtComm (ftComm) as FtComm
+import Pickles.IncrementallyVerifyProof (ftComm) as FtComm
 import Pickles.Wrap.OtherField as WrapOtherField
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Compile (compile)

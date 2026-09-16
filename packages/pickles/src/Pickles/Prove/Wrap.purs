@@ -1,13 +1,8 @@
--- | Prover-side infrastructure for `Pickles.Wrap.Main.wrapMain`.
--- |
--- | While `Pickles.Prove.Pure.Wrap` covers the **pure** pieces of the
--- | wrap prover (deferred-values derivation + statement assembly), this
--- | module provides the **effectful** glue that feeds `wrapMain`'s
--- | `Req.*` advice during witness generation:
--- |
--- | * `WrapAdvice` (re-exported from `Pickles.Wrap.Advice`) — a record
--- |   holding all 8 advice pieces (one per OCaml `Req.*` request) with
--- |   concrete, already-computed values, passed by value into `wrapMain`.
+-- | Prover-side glue for `Pickles.Wrap.Main.wrapMain`: the `WrapAdvice`
+-- | record that feeds its witness generation, and the compile / solve /
+-- | prove driver around it. The pure half of the wrap prover —
+-- | deferred-values derivation and statement assembly — is
+-- | `Pickles.Prove.Pure.Wrap`.
 module Pickles.Prove.Wrap
   ( module Pickles.Wrap.Advice
   , BuildWrapAdviceInput
@@ -47,7 +42,7 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepAllEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -77,54 +72,19 @@ import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Advice builder
---
--- `buildWrapAdvice` assembles a `WrapAdvice` record from a step proof
--- plus the surrounding data the pickles framework carries alongside
--- it. Split of responsibilities:
---
--- * Advice pieces derivable **from the step proof itself** (its kimchi
---   in-memory form) are extracted here via the `pallas*` FFIs —
---   `messages` and `openingProof`.
--- * Advice pieces that come from the step proof's **public input**
---   (which the caller decoded upstream) are threaded through as
---   direct parameters — `prevUnfinalizedProofs`,
---   `prevMessagesForNextStepProofHash`. These are effectively the
---   step proof's own committed `Types.Statement` contents.
--- * Advice pieces that come from the step prover's **private state**
---   (= *not* committed by the step proof's public input) are also
---   direct parameters — `prevStepAccs`, `prevOldBpChals`, `prevEvals`,
---   `prevWrapDomainIndices`. OCaml's `wrap.ml` receives these via the
---   `P.Base.Step.t` record that the step prover hands to the wrap
---   prover; we do the same.
--- * `whichBranch` is a direct parameter (single-branch tests pass
---   zero; multi-branch callers select the active branch index).
---
--- Cross-field conversions:
---
--- * Step proof opening scalars `z1`/`z2` are `StepField` values; the
---   wrap statement stores them as `Type1 (F WrapField)`. We go
---   through the cross-field `Shifted (F StepField) (Type1 (F WrapField))`
---   instance.
--- * Step proof commitments are Vesta affine points with coordinates
---   in `Vesta.BaseField = WrapField`, so no cross-field conversion is
---   needed — `WeierstrassAffinePoint VestaG (F WrapField)` wraps
---   them directly.
 --------------------------------------------------------------------------------
 
--- | Input record for `buildWrapAdvice`. Every field has a direct
--- | correspondence to how OCaml's `wrap.ml` assembles the same data
--- | for the wrap circuit handler.
 type BuildWrapAdviceInput (mpv :: Int) =
-  { -- | The step proof being wrapped (kimchi in-memory form).
+  { -- | The step proof being wrapped, in kimchi in-memory form.
     stepProof :: Proof Vesta.G StepField
 
-  -- | Selected step-branch index. OCaml: `Req.Which_branch`.
+  -- | Index of the step branch being wrapped.
   , whichBranch :: F WrapField
 
   -- | mpv unfinalized proofs decoded out of the step proof's public
-  -- | input, in wrap-field Type2 form (same-field, not SplitField —
-  -- | caller unpacks via `fromShifted`/`toShifted` if their decoded
-  -- | statement uses SplitField).
+  -- | input, in same-field wrap `Type2` form. A caller whose decoded
+  -- | statement is in `SplitField` converts with
+  -- | `fromShifted`/`toShifted`.
   , prevUnfinalizedProofs ::
       Vector mpv
         ( PerProofUnfinalized
@@ -135,40 +95,36 @@ type BuildWrapAdviceInput (mpv :: Int) =
         )
 
   -- | The step-field Poseidon digest that sits in the step proof's
-  -- | public input under `messages_for_next_step_proof`. Already
-  -- | cross-field coerced to `F WrapField` by the caller (= OCaml's
-  -- | `Digest.Constant.of_tick_field`).
+  -- | public input under `messages_for_next_step_proof`, already
+  -- | cross-field coerced to `F WrapField` by the caller.
   , prevMessagesForNextStepProofHash :: F WrapField
 
-  -- | The previous wrap proofs' step accumulators (Vesta affines with
-  -- | wrap-field coords). Not in the step proof's public input —
-  -- | pickles carries these as private prover state. For base case
-  -- | supply dummy sgs.
+  -- | The previous wrap proofs' step accumulators, as Vesta affines
+  -- | with wrap-field coordinates. Not in the step proof's public
+  -- | input: pickles carries these as private prover state. Dummy sgs
+  -- | on the base case.
   , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
 
-  -- | Prev wrap bp challenges, one stack per slot at that slot's own
-  -- | width. The widths ride with the data.
+  -- | Prev wrap bulletproof challenges, one stack per slot at that
+  -- | slot's own width. The widths ride with the data.
   , prevOldBpChals :: Array (Array (Vector WrapIPARounds (F WrapField)))
 
-  -- | Prev wrap proofs' polynomial evaluations (`StepAllEvals` per
-  -- | proof, wrap-field scalars). OCaml's `prev_evals`.
-  , prevEvals :: Vector mpv (StepAllEvals (F WrapField))
+  -- | Prev wrap proofs' polynomial evaluations, one `AllocEvals` per
+  -- | proof in wrap-field scalars.
+  , prevEvals :: Vector mpv (AllocEvals (F WrapField))
 
-  -- | Domain indices per prev wrap proof (into `all_possible_domains`).
+  -- | Domain index per prev wrap proof, into `allPossibleDomainLog2s`.
   , prevWrapDomainIndices :: Vector mpv (F WrapField)
   }
 
--- | `WeierstrassAffinePoint VestaG (F WrapField)` from a raw FFI
--- | `AffinePoint WrapField`.
 mkVestaPt
   :: AffinePoint WrapField
   -> WeierstrassAffinePoint VestaG (F WrapField)
 mkVestaPt (AffinePoint pt) = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 
--- | Build the wrap-circuit advice record from the step proof + its
--- | surrounding pickles context. Pure: all FFI calls go through
--- | deterministic `pallas*` helpers exposed as non-effectful in
--- | `Snarky.Backend.Kimchi.Proof`.
+-- | The wrap-circuit advice record for a step proof and its
+-- | surrounding pickles context. Pure: the `pallas*` FFI helpers it
+-- | decodes the proof with are non-effectful.
 buildWrapAdvice
   :: forall @stepChunks mpv
    . Reflectable stepChunks Int
@@ -176,13 +132,9 @@ buildWrapAdvice
   -> WrapAdvice mpv stepChunks
 buildWrapAdvice input =
   let
-    -- ===== Req.Messages (step.ml commitments → wrap witness). =====
-    --
-    -- One eager decode of the step proof; downstream uses
-    -- field-access on the structured record.
+    -- One eager decode of the step proof, read by field access below.
     stepProofData = pallasProofData @StepIPARounds input.stepProof
 
-    -- `nc`-typed commitments, decoded + chunk-validated once at @stepChunks.
     commits = pallasProofCommitments @stepChunks input.stepProof
 
     messages = WrapProofMessages
@@ -191,13 +143,12 @@ buildWrapAdvice input =
       , tComm: map (over ChunkedCommitment (map mkVestaPt)) commits.tComm
       }
 
-    -- ===== Req.Openings_proof. =====
-    --
-    -- Step proof's bulletproof opening: lr pairs (length StepIPARounds),
-    -- delta / sg curve points, and z1/z2 scalars. The scalars are
-    -- `StepField` values; cross-field `toShifted` packs them as
-    -- `Type1 (F WrapField)` via the `Shifted (F StepField)
-    -- (Type1 (F WrapField))` instance.
+    -- The opening's `z1`/`z2` are `StepField` values, which the wrap
+    -- statement stores as `Type1 (F WrapField)`: `toShifted` packs them
+    -- through the cross-field
+    -- `Shifted (F StepField) (Type1 (F WrapField))` instance. The
+    -- commitments need none, their coordinates already being in
+    -- `Vesta.BaseField = WrapField`.
     lrVec
       :: Vector StepIPARounds
            { l :: WeierstrassAffinePoint VestaG (F WrapField)
@@ -227,7 +178,6 @@ buildWrapAdvice input =
       , sg: mkVestaPt sgPt
       }
 
-    -- ===== Req.Proof_state. =====
     wrapProofState
       :: Wrap.PrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
     wrapProofState = Wrap.PrevProofState
@@ -246,54 +196,28 @@ buildWrapAdvice input =
     }
 
 --------------------------------------------------------------------------------
--- wrapProve — compile + solve + kimchi proof creation.
---
--- Analog of OCaml `Wrap.wrap` (top-level entry point at `wrap.ml:279`).
--- Mirrors the structure of the test harness's `createTestContext'`
--- but bound to `wrapMain`, passing the `WrapAdvice` record by value,
--- and using the production endo choice (`endoScalar @f' @f`) rather
--- than the constraint-only `endoBase @f @f'` path used in tests.
---
--- The whole path runs `wrapMain` in the caller's bare monad `m`: there
--- is no bespoke prover transformer. `compile`, `makeSolver`, and
--- `runSolverT` are all monad-polymorphic; `wrapMain` reads each advice
--- piece by projecting the `WrapAdvice` value inside an `exists` body.
---
--- On a solver failure (`EvaluationError`) we throw an `Error` so the
--- driver's caller gets a standard exception instead of having to
--- pattern-match on a sum type.
+-- The wrap prover: compile, solve, kimchi proof creation
 --------------------------------------------------------------------------------
 
--- | Ambient data the wrap prover needs alongside the advice record.
--- |
--- | * `wrapMainConfig` — the step-side VKs, lagrange bases,
--- |   all-possible-domains, etc. that `wrapMain` takes as a
--- |   compile-time parameter.
--- | * `crs` — the wrap circuit's Pallas SRS.
--- | * `publicInput` — the packed wrap statement (from
--- |   `assembleWrapMainInput`). Drives both the compile-time shape
--- |   check (via `CircuitType`) and the solver input.
--- | * `advice` — the `WrapAdvice` record from `buildWrapAdvice`.
+-- | Ambient data `wrapSolveAndProve` needs alongside the advice record:
+-- | `wrapMain`'s compile-time config, the wrap circuit's Pallas SRS,
+-- | and the packed wrap statement from `assembleWrapMainInput`, which
+-- | drives both the `CircuitType` shape check and the solver input.
 type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
   { wrapMainConfig :: WrapMainConfig branches stepChunks
   , crs :: CRS PallasG
   , publicInput ::
       Wrap.StatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
   , advice :: WrapAdvice mpv stepChunks
-  -- | When `true`, enables prover-state debug checks, runs
-  -- | `verifyProverIndex` against the solved witness, and dumps
-  -- | `/tmp/ps_wrap_row_labels.txt` for debugging witness
-  -- | mismatches. Off by default — these checks are redundant once
-  -- | the wrap prover is known to be correct.
+  -- | When `true`, enables the solver's prover-state debug checks and
+  -- | dumps the row → label map to `/tmp/ps_wrap_row_labels.txt`.
   , debug :: Boolean
-  -- | Optional disk proof-cache (test/dev). Threaded from
-  -- | `CompileMultiConfig`. `Nothing` = no caching.
+  -- | Optional disk proof-cache, threaded from `CompileMultiConfig`.
+  -- | `Nothing` = no caching.
   , proofCache :: Maybe ProofCache
-  -- | Kimchi-level `prev_challenges` for `ProverProof::create_recursive`.
-  -- | Padded to `PaddedLength = 2` entries (via `Wrap_hack.pad_accumulator`).
-  -- | Each entry holds sg (Pallas point, StepField coords) + expanded
-  -- | challenges (WrapIPARounds = 15, in WrapField). Converted to Array
-  -- | at the FFI boundary.
+  -- | Kimchi-level `prev_challenges`, padded to `PaddedLength = 2`
+  -- | entries. Each holds an sg (Pallas point, step-field coordinates)
+  -- | and its expanded challenges.
   , kimchiPrevChallenges ::
       Vector PaddedLength
         { sgX :: StepField
@@ -308,15 +232,14 @@ type WrapCompileContext :: Int -> Int -> Int -> Type
 type WrapCompileContext branches mpv stepChunks =
   { wrapMainConfig :: WrapMainConfig branches stepChunks
   , crs :: CRS PallasG
-  -- | One `max_local_max_proofs_verified` per slot, in slot order. Was
-  -- | derived from a type-level carrier by `slotWidthsOf`.
+  -- | One `max_local_max_proofs_verified` per slot, in slot order.
   , slotWidths :: Vector mpv Int
   }
 
--- | Artifacts produced by `wrapCompile`. The prover / verifier index
--- | are created here so callers that split compile from solve can
--- | feed the `verifierIndex` into downstream logic (e.g. the step
--- | prover's `buildSlotAdvice`) before the solver runs.
+-- | Artifacts produced by `wrapCompile`. The prover and verifier
+-- | indices are created here so that a caller splitting compile from
+-- | solve can feed the `verifierIndex` into `buildSlotAdvice` before
+-- | the solver runs.
 type WrapCompileResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField
@@ -326,12 +249,12 @@ type WrapCompileResult =
   , constraints :: Array (KimchiRow WrapField)
   -- | The per-slot widths this circuit was compiled against. The prover
   -- | reads them back from here rather than being handed them again, so
-  -- | the allocation it performs cannot disagree with the allocation the
-  -- | gates were built for.
+  -- | its allocation cannot disagree with the one the gates were built
+  -- | for.
   , slotWidths :: Array Int
   }
 
--- | Artifacts produced by `wrapProve`.
+-- | Artifacts produced by `wrapSolveAndProve`.
 type WrapProveResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField
@@ -341,9 +264,9 @@ type WrapProveResult =
   , assignments :: Assignments.Frozen WrapField
   }
 
--- | Monotonic counter for `KIMCHI_WRAP_CS_DUMP`'s `%c` template. Each
--- | wrap-circuit compile (one per top-level rule in `compileMulti`)
--- | increments it, mirroring the AtomicUsize counter on the Rust side.
+-- | Monotonic counter for `KIMCHI_WRAP_CS_DUMP`'s `%c` template, bumped
+-- | once per wrap-circuit compile — one per top-level rule in
+-- | `compileMulti`.
 wrapCsCounter :: Ref.Ref Int
 wrapCsCounter = unsafePerformEffect (Ref.new 0)
 
@@ -353,11 +276,10 @@ bumpWrapCsCounter = do
   Ref.write (n + 1) wrapCsCounter
   pure n
 
--- | Compile phase of the wrap prover. Walks `wrapMain`'s circuit
--- | shape in `Effect` with a dummy `WrapAdvice` value. Every advice
--- | read lives inside an `exists` body, which `compile` discards, so
--- | the advice record is never projected — the dummy value is never
--- | forced.
+-- | Compile phase of the wrap prover: walks `wrapMain`'s circuit shape
+-- | with a dummy `WrapAdvice`. Every advice read lives inside an
+-- | `exists` body, which `compile` discards, so the advice record is
+-- | never projected and the dummy never forced.
 wrapCompile
   :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
@@ -387,11 +309,6 @@ wrapCompile
   => WrapCompileContext branches mpv stepChunks
   -> Effect WrapCompileResult
 wrapCompile ctx = do
-  -- Run `wrapMain`'s circuit in the bare base monad (`Effect`) with a
-  -- dummy advice value. At compile every advice read lives inside an
-  -- `exists` body, which `compile` discards, so the advice record is
-  -- never projected — the `unsafeCoerce unit` bottom below is never
-  -- forced.
   let
     dummyAdvice :: WrapAdvice mpv stepChunks
     dummyAdvice = unsafeCoerce unit
@@ -416,12 +333,9 @@ wrapCompile ctx = do
   let
     { gates, publicInputSize, constraints } = csResult
 
-    -- `cs.endo` is no longer threaded through the PS signature: the JS
-    -- impl of `createProverIndex` fetches the wrap curve's endo_base
-    -- (= Vesta.endo_base = Wrap_inner_curve.base) from the napi layer
-    -- directly. See `memory/project_simple_chain_max_poly_size_bug.md`
-    -- and the step-side fix at `Pickles.Prove.Step.purs` (commit
-    -- `20674463`) for the historical rationale.
+    -- No `cs.endo` in the argument record: `createProverIndex`'s JS
+    -- implementation fetches the wrap curve's endo_base
+    -- (= `Vesta.endo_base`) from the napi layer itself.
     proverIndex =
       createProverIndex @WrapField @PallasG
         { gates
@@ -434,10 +348,9 @@ wrapCompile ctx = do
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
 
   -- Optional dump of the wrap constraint system as JSON, gated on
-  -- `KIMCHI_WRAP_CS_DUMP`. Mirrors OCaml's `PICKLES_WRAP_CS_DUMP` in
-  -- `compile.ml`. Filename template uses `%c` (replaced with a
-  -- monotonic counter) so multi-rule compileMulti writes one file per
-  -- branch — same convention as `KIMCHI_WITNESS_DUMP`.
+  -- `KIMCHI_WRAP_CS_DUMP`. `%c` in the filename template expands to a
+  -- monotonic counter, so a multi-rule `compileMulti` writes one file
+  -- per branch.
   Process.lookupEnv "KIMCHI_WRAP_CS_DUMP" >>= case _ of
     Nothing -> pure unit
     Just pathTmpl -> do
@@ -455,11 +368,10 @@ wrapCompile ctx = do
     , slotWidths: Vector.toUnfoldable ctx.slotWidths
     }
 
--- | Solve phase of the wrap prover. Takes a previously compiled
--- | `WrapCompileResult` + the real advice + public input, runs the
--- | solver, and creates the kimchi proof. Errors surface as an explicit
--- | `Either EvaluationError`. The wrap circuit emits no advice, so the
--- | row is pinned to `()` (`noAdvice`).
+-- | Solve phase of the wrap prover: runs the solver on a compiled
+-- | circuit, the real advice and the real public input, and creates the
+-- | kimchi proof. Errors surface as `Either EvaluationError`. The wrap
+-- | circuit emits no advice, so the row is pinned to `()` (`noAdvice`).
 wrapSolveAndProve
   :: forall @branches @mpv @stepChunks numChunksPred branchesPred totalBases totalBasesPred tCommLen tCommLenPred wCoeffN indexSigmaN chunkBases nonSgBases sg1 sg2 sg3 sg4 sg5
    . CircuitGateConstructor WrapField PallasG
@@ -556,10 +468,10 @@ wrapSolveAndProve ctx compileResult = do
         , assignments
         }
 
--- | Debug helper: dump row → label mapping for the wrap circuit,
--- | so a `/tmp/ps_wrap_row_labels.txt` file can cross-reference a
--- | failing row in the kimchi witness diff against the labelled
--- | constraint source. Only fires when `WrapProveContext.debug`.
+-- | Write the wrap circuit's row → label map to
+-- | `/tmp/ps_wrap_row_labels.txt`, so a failing row in a kimchi witness
+-- | diff can be traced back to the labelled constraint that produced
+-- | it. Only fires under `WrapProveContext.debug`.
 wrapDumpRowLabels :: Array (Labeled (KimchiGate WrapField)) -> Effect Unit
 wrapDumpRowLabels constraints =
   let
@@ -598,10 +510,10 @@ extractStepVKComms vk =
     , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
     }
 
--- | Lift a constant `StepVK WrapField` into a `StepVK (FVar WrapField)`
--- | by `const_`-ing each coordinate. Used by `buildWrapMainConfigN1`
--- | because `wrapMain`'s config carries step-key commitments as circuit
--- | variables so the in-circuit `chooseKey` can scale them by a boolean.
+-- | Lift a constant `StepVK WrapField` into a `StepVK (FVar
+-- | WrapField)` by `const_`-ing each coordinate. `wrapMain`'s config
+-- | carries step-key commitments as circuit variables so that the
+-- | in-circuit `chooseKey` can scale them by a boolean.
 stepVkForCircuit
   :: forall stepChunks
    . StepVK stepChunks WrapField
@@ -622,30 +534,18 @@ stepVkForCircuit vk =
     , endomulScalarComm: cpChunk vk.endomulScalarComm
     }
 
--- | Multi-branch wrap main config. Takes per-branch data
--- | (`Vector branches { mpv, stepDomainLog2, stepVK }`) and produces a
--- | `WrapMainConfig branches` that the wrap circuit's
--- | `Pseudo.choose whichBranch` machinery dispatches over at proof
--- | time.
+-- | The `WrapMainConfig` for a set of step branches, which the wrap
+-- | circuit's `Pseudo.choose whichBranch` machinery dispatches over at
+-- | proof time.
 -- |
--- | The single-branch `buildWrapMainConfig` is degenerate-case sugar
--- | for `buildWrapMainConfigMulti @1` with a one-element vector;
--- | both produce the same `WrapMainConfig` structurally.
--- |
--- | Branch-domain dispatch mirrors OCaml's `lagrange_with_correction`
--- | (wrap_verifier.ml:382-443):
--- |
--- |   * **All branches share the same step domain** (fast path,
--- |     wrap_verifier.ml:426-428): the lagrange basis at that single
--- |     domain works for every branch — populate `lagrangeAt` from
--- |     it and set `perBranchLagrangeAt = Nothing`.
--- |   * **Branch domains differ** (per-branch path,
--- |     wrap_verifier.ml:429-443): for each index `i`, fetch one
--- |     constant lagrange point per branch (each at its branch's
--- |     `stepDomainLog2`); the wrap circuit performs the 1-hot sum
--- |     against `whichBranch` in-circuit. Populate
--- |     `perBranchLagrangeAt` from this; `lagrangeAt` is unused but
--- |     populated from the head branch's domain to satisfy the type.
+-- | The lagrange basis depends on the step domain, so it is filled one
+-- | of two ways. When every branch shares a step domain, one basis
+-- | serves all of them: `lagrangeAt` carries it and
+-- | `perBranchLagrangeAt` is `Nothing`. When the domains differ,
+-- | `perBranchLagrangeAt` carries one constant point per branch at each
+-- | index, which the circuit 1-hot sums against `whichBranch`, and
+-- | `lagrangeAt` is unused — filled from the head branch's domain only
+-- | to satisfy the type.
 buildWrapMainConfigMulti
   :: forall @branches @stepChunks branchesPred
    . Reflectable branches Int
@@ -692,12 +592,9 @@ buildWrapMainConfigMulti vestaSrs { perBranch } =
     , stepKeys:
         map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
     , lagrangeAt:
-        -- Wrap-side lagrange: chunked at chunks2. For each PI slot the
-        -- basis splits into `stepChunks = ceil(2^stepDomainLog2 /
-        -- 2^wrapMaxPolySize)` pieces. The chunked FFI returns an Array
-        -- of length stepChunks; reshape into `Vector stepChunks` here.
-        -- For nc=1 (non-chunks2 fixtures) the array has length 1 and
-        -- this is gate-identical to the pre-chunk single-point path.
+        -- Each public-input slot's lagrange basis splits into
+        -- `stepChunks = ceil(2^stepDomainLog2 / 2^wrapMaxPolySize)`
+        -- pieces, which the FFI returns as an `Array` to reshape here.
         mkConstLagrangeBaseLookup \i ->
           let
             chunksArr = srsLagrangeCommitmentChunksAt vestaSrs headDomainLog2 i

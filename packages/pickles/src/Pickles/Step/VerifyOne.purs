@@ -1,9 +1,7 @@
--- | Step main verify_one: full verification of one previous proof.
--- |
--- | Combines FOP + message hash (opt_sponge) + IVP + assertions.
--- | Matches OCaml step_main.ml:17-148 verify_one.
--- |
--- | Reference: mina/src/lib/crypto/pickles/step_main.ml
+-- | Verification of one previous proof inside the step circuit:
+-- | finalize its deferred values, recompute its
+-- | `messages_for_next_step_proof` digest, incrementally verify its wrap
+-- | proof, and combine the three into one boolean.
 module Pickles.Step.VerifyOne
   ( VerifyOneInput
   , VerifyOneResult
@@ -17,8 +15,9 @@ import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.DeferredValues (BranchData)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (Params) as FOP
 import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofParams, incrementallyVerifyProof, packStatement)
@@ -40,15 +39,15 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
--- | Specialized to StepField (Vesta scalar field = Fp).
+-- | Everything `verifyOne` reads for one previous proof: that proof's
+-- | witness, the unfinalized proof the step circuit carries for it, the
+-- | wrap VK it is checked against, and the masks.
 type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
-  { -- Per_proof_witness.app_state (flattened via CircuitType upstream).
-    -- For Input-mode rules with a single `FVar f` this is `[x]`; for
-    -- multi-field inputs it's the full field-list produced by the
-    -- input type's `varToFields`.
+  { -- The previous proof's statement, as the field list its own
+    -- `varToFields` produces.
     appStateFields :: Array fv
-  -- Per_proof_witness.wrap_proof. `tCommLen = 7 * wrapVkChunks` (flat).
+  -- The wrap proof's commitments and opening. `tCommLen` is
+  -- `7 * wrapVkChunks`, flattened.
   , wComm :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
   , zComm :: ChunkedCommitment wrapVkChunks (AffinePoint fv)
   , tComm :: Vector tCommLen (AffinePoint fv)
@@ -57,7 +56,7 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
   , z2 :: sf
   , delta :: AffinePoint fv
   , sg :: AffinePoint fv
-  -- Per_proof_witness.proof_state (Wrap deferred values used by FOP)
+  -- The wrap proof's own deferred values, finalized here.
   , proofState ::
       { plonk ::
           { alpha :: SizedF 128 fv
@@ -74,7 +73,6 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
       , bulletproofChallenges :: Vector tickD (SizedF 128 fv)
       , spongeDigest :: fv
       }
-  -- Per_proof_witness.prev_proof_evals
   , allEvals ::
       { ftEval1 :: fv
       , publicEvals :: { zeta :: fv, omegaTimesZeta :: fv }
@@ -84,10 +82,9 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
       , sigmaEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
       , indexEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
       }
-  -- Per_proof_witness.prev_challenges + prev_challenge_polynomial_commitments
+  -- Carried over from the proofs this one itself verified.
   , prevChallenges :: Vector n (Vector tickD fv)
   , prevSgs :: Vector n (AffinePoint fv)
-  -- Unfinalized proof (Step.Per_proof.In_circuit)
   , unfinalized ::
       { deferredValues ::
           { plonk ::
@@ -107,43 +104,40 @@ type VerifyOneInput n wrapVkChunks tCommLen d tickD sf fv bv =
       , shouldFinalize :: bv
       , claimedDigest :: fv
       }
-  -- Extra inputs
   , messagesForNextWrapProof :: fv
   , mustVerify :: bv
-  -- Branch data fields (used by packStatement for publicInput construction)
-  , branchData :: { mask0 :: fv, mask1 :: fv, domainLog2Var :: fv }
-  -- Mask for this proof (trimmed proofs_verified_mask, Vector n)
+  -- Read by `packStatement` into the wrap public input.
+  , branchData :: BranchData fv fv
+  -- The proofs-verified mask, trimmed to this slot's width.
   , proofMask :: Vector n bv
-  -- VK commitments for sponge_after_index and IVP
-  -- VK commitments (wrap VK consumed by step). At wrapVkChunks > 1 each
-  -- commitment is `Vector wrapVkChunks (AffinePoint fv)`. From the IVP's
-  -- perspective `wrapVkChunks` is the chunks of the proof being verified;
-  -- step verifies a wrap proof, so this is the wrap VK's chunks
-  -- (Dim 2 / `wrapVkChunks`). OCaml fixes this to 1 at
-  -- `step_main.ml:347` but the type stays polymorphic.
+  -- The wrap VK the previous proof is verified against. Its
+  -- commitments are chunked at `wrapVkChunks`, the chunk count of the
+  -- proof being verified.
   , vkComms ::
       { sigma :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
       , sigmaLast :: ChunkedCommitment wrapVkChunks (AffinePoint fv)
       , coeff :: Vector 15 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
       , index :: Vector 6 (ChunkedCommitment wrapVkChunks (AffinePoint fv))
       }
-  -- Padded sgOld (Wrap_hack.Padded_length = 2, dummy first)
+  -- `prevSgs` widened to `Pickles.Types.PaddedLength`, dummies first.
   , sgOld :: Vector 2 (AffinePoint fv)
   }
 
 type VerifyOneResult tickD fv =
-  { challenges :: Vector tickD (SizedF 128 fv) -- raw 128-bit challenges
-  , expandedChallenges :: Vector tickD fv -- expanded via endo (compound CVar)
+  { challenges :: Vector tickD (SizedF 128 fv) -- as squeezed
+  , expandedChallenges :: Vector tickD fv -- the same, through the endo
   , result :: BoolVar StepField
   }
 
--- | Full verify_one matching OCaml step_main.ml:17-148.
--- | Specialized to the Step field (Vesta scalar field = Fp).
--- | The wrap VK is one chunk (`Pickles.Types.WrapVkChunks`), so the
--- | chunked-base layout this used to carry as fourteen constraints over
--- | an abstract `nc` is a constant here: `tCommLen = 7`,
--- | `nonSgBases = 45`, `totalBases = 47`. The layout itself still lives
--- | in `incrementallyVerifyProof`, which stays generic because the wrap
+-- | The previous proof's bulletproof challenges, and a verdict that is
+-- | true when the proof both verifies and finalizes, or when
+-- | `mustVerify` is false.
+-- |
+-- | Specialized to the step field. The wrap VK is one chunk
+-- | (`Pickles.Types.WrapVkChunks`), so the chunked-base layout is
+-- | constant here — `tCommLen = 7`, `nonSgBases = 45`,
+-- | `totalBases = 47`. The layout itself lives in
+-- | `incrementallyVerifyProof`, which stays generic because the wrap
 -- | side calls it at `stepChunks`, where chunking is real.
 verifyOne
   :: forall nd ndPred n r r1
@@ -156,10 +150,8 @@ verifyOne
   -> IncrementallyVerifyProofParams WrapVkChunks StepField ()
   -> Snarky StepField (KimchiConstraint StepField) r (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
-  -- Step 1: assert should_finalize == must_verify (step_main.ml:28)
   label "step1_assert_finalize" $ assertEq input.unfinalized.shouldFinalize input.mustVerify
 
-  -- Step 2: FOP (step_main.ml:61-73)
   let ps = input.proofState
   { finalized, challenges, expandedChallenges, xiCorrect, bCorrect, cipCorrect, plonkOk } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
     { unfinalized:
@@ -173,26 +165,21 @@ verifyOne fopParams input ivpParams = do
         , shouldFinalize: coerce (const_ one :: FVar StepField)
         , spongeDigestBeforeEvaluations: ps.spongeDigest
         }
-    , witness: { allEvals: input.allEvals }
+    , allEvals: input.allEvals
     , mask: input.proofMask
     , prevChallenges: input.prevChallenges
-    , domainLog2Var: input.branchData.domainLog2Var
+    , domainLog2Var: input.branchData.domainLog2
     }
 
-  -- DIAG: emit each of the 4 FOP sub-check booleans to identify which
-  -- false one causes the "1 != 2" assertion downstream.
+  -- Each FOP sub-check traced separately, to localize a downstream
+  -- failure.
   ivpTrace "diag.fop.xiCorrect" (coerce xiCorrect)
   ivpTrace "diag.fop.bCorrect" (coerce bCorrect)
   ivpTrace "diag.fop.cipCorrect" (coerce cipCorrect)
   ivpTrace "diag.fop.plonkOk" (coerce plonkOk)
   ivpTrace "diag.fop.finalized" (coerce finalized)
 
-  -- Steps 3-4: sponge_after_index + message hash (step_main.ml:76-104)
-  -- Build per-proof data for the opt_sponge message hash.
-  -- OCaml: old_bulletproof_challenges = prev_challenges, masked by proofs_verified_mask
-  -- sgOld is padded to Padded_length=2, but the message hash uses the pre-padded sg points.
-  -- For N1: trim_front [mask0,mask1] with lte N1 N2 → [mask1], 1 proof
-  -- For N2: trim_front [mask0,mask1] with lte N2 N2 → [mask0,mask1], 2 proofs
+  -- The message hash takes the unpadded `prevSgs`, not `sgOld`.
   let
     msgHashProofs = Vector.zipWith
       (\mask (Tuple sg rawChals) -> { sg, rawChallenges: rawChals, mask })
@@ -206,8 +193,6 @@ verifyOne fopParams input ivpParams = do
       , proofs: msgHashProofs
       }
 
-  -- Step 5: Build statement and pack into publicInput (step_main.ml:88-111)
-  -- OCaml: Spec.pack(to_data(statement)) inside Step_verifier.verify
   let
     statement =
       { proofState:
@@ -217,10 +202,7 @@ verifyOne fopParams input ivpParams = do
               , xi: input.proofState.xi
               , bulletproofChallenges: input.proofState.bulletproofChallenges
               , b: input.proofState.b
-              , branchData:
-                  { domainLog2: input.branchData.domainLog2Var
-                  , proofsVerifiedMask: (coerce input.branchData.mask0) :< (coerce input.branchData.mask1) :< Vector.nil
-                  }
+              , branchData: input.branchData { proofsVerifiedMask = map coerce input.branchData.proofsVerifiedMask }
               }
           , spongeDigestBeforeEvaluations: input.proofState.spongeDigest
           , messagesForNextWrapProof: input.messagesForNextWrapProof
@@ -229,34 +211,31 @@ verifyOne fopParams input ivpParams = do
       }
     publicInput = packStatement statement
 
-  -- DIAG: emit the reconstructed wrap PI element-by-element to compare
-  -- against tock_pi.N. Confirmed fp[0..4] match byte-identical; divergence
-  -- must be in later positions (5+).
+  -- The reconstructed wrap public input, traced element by element at
+  -- its packed positions, for comparison against `tock_pi`.
   let
     Tuple fpFieldsVec (Tuple chalsVec (Tuple scalarChalsVec (Tuple digestsVec (Tuple bpChalsVec packedBranchData)))) = publicInput
   forWithIndex_ fpFieldsVec \fi (Type1 v) -> do
     let i = Data.Fin.getFinite fi
     ivpTrace ("diag.packed_pi." <> show i) v
-  -- challenges (beta, gamma) at positions 5-6
+  -- beta, gamma
   forWithIndex_ chalsVec \fi s -> do
     let i = Data.Fin.getFinite fi + 5
     ivpTrace ("diag.packed_pi." <> show i) (SizedF.toField s)
-  -- scalarChallenges (alpha, zeta, xi) at positions 7-9
+  -- alpha, zeta, xi
   forWithIndex_ scalarChalsVec \fi s -> do
     let i = Data.Fin.getFinite fi + 7
     ivpTrace ("diag.packed_pi." <> show i) (SizedF.toField s)
-  -- digests (spongeDigest, msgWrap, msgStep) at positions 10-12
+  -- spongeDigest, msgWrap, msgStep
   forWithIndex_ digestsVec \fi v -> do
     let i = Data.Fin.getFinite fi + 10
     ivpTrace ("diag.packed_pi." <> show i) v
-  -- bp chals (Vector 15) at positions 13-27
+  -- bulletproof challenges
   forWithIndex_ bpChalsVec \fi s -> do
     let i = Data.Fin.getFinite fi + 13
     ivpTrace ("diag.packed_pi." <> show i) (SizedF.toField s)
-  -- packedBranchData at position 28
   ivpTrace "diag.packed_pi.28" (SizedF.toField packedBranchData)
 
-  -- Step 6: IVP (step_main.ml:115-136)
   let
     ivpParams' = ivpParams
 
@@ -286,15 +265,13 @@ verifyOne fopParams input ivpParams = do
   output <- label "step6_ivp" $ evalSpongeM initialSpongeCircuit $
     incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams' ivpInput (Just spongeAfterIndex)
 
-  -- DIAG: emit IVP success for each slot — complements diag.fop.* to
-  -- localize the failing sub-check in verify_one's final result.
   ivpTrace "diag.ivp.success" (coerce output.success)
 
-  -- Step 7: Assert sponge digest (step_verifier.ml:1293-1294, unconditional)
   label "step7_assert_digest" $
     assertEq input.unfinalized.claimedDigest output.spongeDigestBeforeEvaluations
 
-  -- Step 8: Assert bp challenges (step_verifier.ml:1296-1311)
+  -- In the base case the expected challenge is replaced by the claimed
+  -- one, which makes the assertion vacuous.
   let isBaseCase = not_ input.mustVerify
   label "step8_assert_bp" $
     forWithIndex_ (Vector.zip input.unfinalized.deferredValues.bulletproofChallenges output.bulletproofChallenges) \i (Tuple c1 c2) -> do
@@ -302,7 +279,6 @@ verifyOne fopParams input ivpParams = do
       c2' <- label ("bp_assert_iter_" <> show idx <> "_if") $ if_ isBaseCase c1 c2
       label ("bp_assert_iter_" <> show idx <> "_eq") $ assertEq c1 c2'
 
-  -- Step 9: Final result (step_main.ml:148)
   result <- label "step9_final" do
     verifiedAndFinalized <- and_ output.success finalized
     or_ verifiedAndFinalized (not_ input.mustVerify)

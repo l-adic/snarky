@@ -1,36 +1,31 @@
--- | Monadic sponge interface for Pickles.
--- |
--- | This module provides a StateT-based wrapper around the Poseidon sponge,
--- | eliminating manual state threading when doing multiple absorbs/squeezes.
--- |
--- | Two versions are provided:
--- | - `SpongeM`: In-circuit version using Snarky
--- | - `PureSpongeM`: Pure version for testing/reference implementations
+-- | The Poseidon sponge as a monad, so a transcript can be written
+-- | once and run either in-circuit (`SpongeM`) or on plain field
+-- | elements (`PureSpongeM`).
 module Pickles.Sponge
-  ( -- Typeclass
+  ( -- * Interface
     class MonadSponge
   , absorb
   , squeeze
-  -- Helpers
+  -- * Helpers
   , absorbPoint
   , absorbMany
   , squeezeScalarChallenge
   , squeezeScalar
   , squeezeScalar'
   , squeezeScalarChallengePure
-  -- In-circuit sponge monad
+  -- * In-circuit sponge monad
   , SpongeM(..)
   , evalSpongeM
   , liftSnarky
   , labelM
   , getSponge
   , putSponge
-  -- Pure sponge monad
+  -- * Pure sponge monad
   , PureSpongeM(..)
   , runPureSpongeM
   , evalPureSpongeM
   , getSpongeState
-  -- Initial state / restore
+  -- * Initial state and restore
   , initialSponge
   , initialSpongeCircuit
   , spongeFromConstants
@@ -55,37 +50,32 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 --------------------------------------------------------------------------------
--- | MonadSponge Typeclass
+-- | Interface
 --------------------------------------------------------------------------------
 
--- | A typeclass for monads that can interact with a Fiat-Shamir sponge.
--- | This decouples the logic from the specific implementation (circuit vs pure).
+-- | Monads carrying a Fiat-Shamir sponge over `f`.
 class Monad m <= MonadSponge f m | m -> f where
-  -- | Absorb a field element into the sponge
   absorb :: f -> m Unit
-  -- | Squeeze a field element from the sponge
   squeeze :: m f
 
 --------------------------------------------------------------------------------
--- | Helper functions
+-- | Helpers
 --------------------------------------------------------------------------------
 
--- | Absorb a curve point (x and y coordinates)
+-- | Absorb a point as `x` then `y`.
 absorbPoint :: forall f m. MonadSponge f m => AffinePoint f -> m Unit
 absorbPoint (AffinePoint { x, y }) = do
   absorb x
   absorb y
 
--- | Absorb multiple field elements
 absorbMany :: forall f m t. MonadSponge f m => Foldable t => t f -> m Unit
 absorbMany = traverse_ absorb
 
 --------------------------------------------------------------------------------
--- | In-Circuit Sponge Monad: SpongeM
+-- | In-circuit sponge monad
 --------------------------------------------------------------------------------
 
--- | The in-circuit sponge monad: a hand-rolled state monad over `Snarky`
--- | (replaces `StateT` from `transformers`).
+-- | A state monad over `Snarky` carrying the sponge.
 newtype SpongeM f c r a = SpongeM (Sponge (FVar f) -> Snarky f c r (Tuple a (Sponge (FVar f))))
 
 derive instance Newtype (SpongeM f c r a) _
@@ -104,7 +94,6 @@ instance Bind (SpongeM f c r) where
 
 instance Monad (SpongeM f c r)
 
--- | Run a SpongeM computation, returning only the result
 evalSpongeM
   :: forall f c r a
    . Sponge (FVar f)
@@ -112,14 +101,13 @@ evalSpongeM
   -> Snarky f c r a
 evalSpongeM initialState computation = map fst (unwrap computation initialState)
 
--- | Lift a Snarky computation into SpongeM
 liftSnarky
   :: forall f c r a
    . Snarky f c r a
   -> SpongeM f c r a
 liftSnarky ma = SpongeM \s -> ma <#> \a -> Tuple a s
 
--- | Label a SpongeM computation (lifts Snarky label through the state)
+-- | `label`, lifted through the sponge state.
 labelM
   :: forall f c r a
    . String
@@ -127,20 +115,18 @@ labelM
   -> SpongeM f c r a
 labelM s m = SpongeM \state -> label s (unwrap m state)
 
--- | Get the current sponge state (for checkpointing)
+-- | The current sponge, to be restored later with `putSponge`.
 getSponge
   :: forall f c r
    . SpongeM f c r (Sponge (FVar f))
 getSponge = SpongeM \s -> pure (Tuple s s)
 
--- | Set the sponge state (for restoring from checkpoint)
 putSponge
   :: forall f c r
    . Sponge (FVar f)
   -> SpongeM f c r Unit
 putSponge s' = SpongeM \_ -> pure (Tuple unit s')
 
--- | MonadSponge instance for the in-circuit sponge monad
 instance
   ( PoseidonField f
   , PrimeField f
@@ -152,13 +138,8 @@ instance
   squeeze = SpongeM \sponge ->
     CircuitSponge.squeeze sponge <#> \{ result, sponge: newSponge } -> Tuple result newSponge
 
--- | Squeeze a scalar challenge (128 bits) from the sponge.
--- | This is the in-circuit version that returns a SizedF 128.
--- | Uses EndoScalar.toField as a 128-bit range check (matching OCaml's
--- | squeeze_challenge which calls lowest_128_bits with constrain_low_bits:true).
--- |
--- | Takes any record containing `endo :: FVar f` (the EndoScalar constant for
--- | challenge expansion, i.e. Wrap_inner_curve.scalar for Step, Step_inner_curve.scalar for Wrap).
+-- | A 128-bit challenge: the low half of a squeeze, with both halves
+-- | range-checked.
 squeezeScalarChallenge
   :: forall f r cr
    . PrimeField f
@@ -168,10 +149,8 @@ squeezeScalarChallenge
   -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
 squeezeScalarChallenge = squeezeScalar' true
 
--- | Squeeze a scalar challenge with constrain_low_bits:false.
--- |
--- | Matches OCaml's `squeeze_scalar` which calls `lowest_128_bits ~constrain_low_bits:false`.
--- | Only range-checks hi (not lo). Used in Wrap FOP for xi.
+-- | A 128-bit scalar challenge. Only the high half is range-checked,
+-- | so the result is pinned only by `x = lo + hi * 2^128`.
 squeezeScalar
   :: forall f r cr
    . PrimeField f
@@ -181,9 +160,8 @@ squeezeScalar
   -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
 squeezeScalar = squeezeScalar' false
 
--- | Squeeze and split to the low 128 bits, constraining them iff the flag
--- | is set (OCaml `lowest_128_bits ~constrain_low_bits`): the body of both
--- | `squeezeScalarChallenge` (`true`) and `squeezeScalar` (`false`).
+-- | The shared body: squeeze, keep the low 128 bits, and range-check
+-- | them only when `constrainLowBits` is set.
 squeezeScalar'
   :: forall f r cr
    . PrimeField f
@@ -197,11 +175,11 @@ squeezeScalar' constrainLowBits params = do
   liftSnarky $ lowest128Bits' constrainLowBits params.endo x
 
 --------------------------------------------------------------------------------
--- | Pure Sponge Monad: PureSpongeM
+-- | Pure sponge monad
 --------------------------------------------------------------------------------
 
--- | Pure sponge monad for testing and reference implementations.
--- | A hand-rolled pure state monad over the sponge.
+-- | A pure state monad over the sponge, for transcripts run outside a
+-- | circuit.
 newtype PureSpongeM f a = PureSpongeM (Sponge f -> Tuple a (Sponge f))
 
 derive instance Newtype (PureSpongeM f a) _
@@ -220,7 +198,6 @@ instance Bind (PureSpongeM f) where
 
 instance Monad (PureSpongeM f)
 
--- | Run a pure sponge computation, returning both result and final state
 runPureSpongeM
   :: forall f a
    . Sponge f
@@ -228,7 +205,6 @@ runPureSpongeM
   -> Tuple a (Sponge f)
 runPureSpongeM initialState computation = unwrap computation initialState
 
--- | Run a pure sponge computation, returning only the result
 evalPureSpongeM
   :: forall f a
    . Sponge f
@@ -236,11 +212,9 @@ evalPureSpongeM
   -> a
 evalPureSpongeM initialState computation = fst (unwrap computation initialState)
 
--- | Get the current sponge state (pure version)
 getSpongeState :: forall f. PureSpongeM f (Sponge f)
 getSpongeState = PureSpongeM \s -> Tuple s s
 
--- | MonadSponge instance for the pure sponge monad
 instance PoseidonField f => MonadSponge f (PureSpongeM f) where
   absorb x = PureSpongeM \sponge -> Tuple unit (PureSponge.absorb x sponge)
 
@@ -250,7 +224,8 @@ instance PoseidonField f => MonadSponge f (PureSpongeM f) where
     in
       Tuple result newSponge
 
--- | Squeeze a scalar challenge from the pure sponge (128 bits)
+-- | The low 128 bits of a squeeze, with no range check: the
+-- | out-of-circuit counterpart of `squeezeScalarChallenge`.
 squeezeScalarChallengePure
   :: forall f
    . PrimeField f
@@ -262,19 +237,19 @@ squeezeScalarChallengePure = do
   pure $ lowest128BitsPure x
 
 --------------------------------------------------------------------------------
--- | Initial States
+-- | Initial state and restore
 --------------------------------------------------------------------------------
 
--- | Create an initial sponge with zero state (pure version)
+-- | A sponge with zero state.
 initialSponge :: forall f. Semiring f => Sponge f
 initialSponge = create $ Vector.generate (const zero)
 
--- | Create an initial sponge with zero state (circuit version)
+-- | A sponge with zero state, as circuit constants.
 initialSpongeCircuit :: forall f. PrimeField f => Sponge (FVar f)
 initialSpongeCircuit = create $ Vector.generate (const $ const_ zero)
 
--- | Create a circuit sponge from constant field values and sponge state.
--- | Used to restore sponge state from a checkpoint (e.g., from Rust FFI).
+-- | A circuit sponge whose state is constant, for resuming from a
+-- | sponge state computed outside the circuit.
 spongeFromConstants
   :: forall f
    . PrimeField f

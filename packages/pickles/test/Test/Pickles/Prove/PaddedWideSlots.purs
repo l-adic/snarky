@@ -2,8 +2,8 @@
 -- | whose slots are wider than one.
 -- |
 -- |   * branch 0 — no prevs (`mpv = 0`)
--- |   * branch 1 — two self prevs, each a proof of THIS system, so each
--- |     slot is `Slot 2` (`mpv = 2`)
+-- |   * branch 1 — two self prevs, each a proof of this system, so
+-- |     each slot is `Slot 2` (`mpv = 2`)
 -- |
 -- | `mpvMax = 2`, so branch 0 is front-padded by two slots, and those
 -- | dummy slots are two challenge stacks wide apiece. Nothing else in
@@ -11,11 +11,11 @@
 -- | single-branch, so it pads nothing, and `TwoPhaseChain` is
 -- | two-branch but `mpvMax = 1`, so what it pads is one stack wide.
 -- |
--- | That gap let a prover-side bug live: `padShapeProveData` gave every
--- | padded slot a single stack regardless of the slot's width, so the
--- | wrap circuit allocated four and the witness supplied two. The two
--- | unassigned variables surfaced as `MissingVariable` inside `b-poly`,
--- | and only the example application caught it.
+-- | So this is where a padded slot's width is load-bearing: if
+-- | `padShapeProveData` gave every padded slot a single stack
+-- | regardless of width, the wrap circuit would allocate four and the
+-- | witness supply two, and the unassigned variables would surface as
+-- | `MissingVariable` inside `b-poly`.
 -- |
 -- | Proving branch 0 is the whole test: front-padding happens at prove
 -- | time, and the base case is where all of it is dummy. Both rule
@@ -94,8 +94,8 @@ spec = describe "Pickles.Prove.PaddedWideSlots" do
       cfg
       rules
 
-    -- Branch 0: no prevs of its own, so the wrap circuit's two slots are
-    -- both padding. This is the prove that used to fail.
+    -- Branch 0 has no prevs of its own, so both of the wrap circuit's
+    -- slots are padding.
     let BranchProver baseProver = fst output.provers
     logInfo "[PaddedWideSlots] proving the padded branch…"
     eRes <- withSpan "[PaddedWideSlots] prove branch 0" $ liftEffect $ baseProver noAdvice

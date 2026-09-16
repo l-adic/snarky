@@ -1,9 +1,7 @@
--- | Pickles-specific type aliases for the Pasta 2-cycle.
--- |
--- | Centralizes f types, IPA round counts, commitment curve aliases,
--- | and Step circuit I/O types used throughout the Pickles modules and tests.
--- |
--- | Reference: mina/src/lib/pickles/common/nat.ml, kimchi_pasta_basic.ml
+-- | Pickles' protocol constants and circuit I/O types for the Pasta
+-- | 2-cycle: IPA round counts, chunk counts, commitment curves, the
+-- | step and wrap statements, and the allocation carriers those
+-- | statements are built from.
 module Pickles.Types
   ( StepIPARounds
   , WrapIPARounds
@@ -16,18 +14,23 @@ module Pickles.Types
   , StepInput
   , StepStatement
   , WrapStatement
-  , PointEval(..)
   , StatementIO(..)
   , WrapProofMessages(..)
   , WrapProofOpening(..)
-  , StepAllEvals(..)
+  , Evals
+  , ChunkedEvals
+  , AllocEvals(..)
   , PerProofUnfinalized(..)
   ) where
 
+import Prelude
+
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
-import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
+import Pickles.DeferredValues (UnfinalizedProof, WrapDeferredValues)
+import Pickles.Linearization.FFI (PointEval)
 import Simple.JSON (class ReadForeign, class WriteForeign)
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..)) as ChunkedCommitmentReExports
 import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment)
@@ -40,78 +43,48 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
 
--- | IPA rounds in a Step (Tick / Vesta-committed) proof. Equal to
--- | `log2` of the Tick SRS size — `Rounds.Step = 16` in mina's pickles
--- | (`kimchi_pasta_basic.ml`). Step/Wrap is a pickles-protocol notion,
--- | hence the constant lives here rather than in `snarky-kimchi`.
+-- | IPA rounds in a step (Tick, Vesta-committed) proof: 16, the log2 of
+-- | the Tick SRS size. The step/wrap split is a pickles notion, so the
+-- | constant lives here rather than in `snarky-kimchi`.
 type StepIPARounds = 16
 
--- | IPA rounds in a Wrap (Tock / Pallas-committed) proof — `Rounds.Wrap = 15`.
+-- | IPA rounds in a wrap (Tock, Pallas-committed) proof: 15.
 type WrapIPARounds = 15
 
--- | Chunk count of a wrap VK's commitments: `1`. A wrap circuit's domain is
--- | 2^13, 2^14 or 2^15 by `max_proofs_verified` (`common.ml`'s
--- | `wrap_domains`) and never exceeds the Tock SRS, 2^15
--- | (`Max_degree.wrap_log2` = `WrapIPARounds`), so every wrap polynomial
--- | is one chunk. OCaml fixes the wrap-VK consumer to
--- | `num_chunks_by_default = 1` (`step_main.ml:347`), and `verify.ml`
--- | hashes each commitment as the one-element `[| x |]`.
+-- | Chunk count of a wrap VK's commitments: 1. A wrap circuit's domain
+-- | is 2^13, 2^14 or 2^15 by `max_proofs_verified` and so never exceeds
+-- | the Tock SRS, 2^15 (= `WrapIPARounds`), leaving every wrap
+-- | polynomial in one chunk.
 type WrapVkChunks = 1
 
--- | Maximum number of previous proofs verified per step. In Pickles
--- | this is the **per-compile-circuit** `max_proofs_verified` parameter
--- | — OCaml supports N0, N1, or N2 per circuit (see `pickles.ml`
--- | compile sites and `wrap_main.ml`'s locally-abstract type). The
--- | current PS port still hardcodes the 2 case, but this alias exists
--- | as the handle that will become an `mpv` type variable when
--- | `wrap_main` is polymorphized.
+-- | The `max_proofs_verified` of a compiled circuit: how many previous
+-- | proofs one of its steps verifies. Per circuit, not global.
 -- |
--- | DO NOT confuse with `PaddedLength` below — they're numerically
--- | equal in the N2 instantiation but semantically distinct.
--- |
--- | Reference: mina/src/lib/pickles/common/nat.ml (N0 | N1 | N2)
+-- | Numerically equal to `PaddedLength` at this instantiation but
+-- | unrelated to it.
 type MaxProofsVerified = 2
 
--- | Universal `Wrap_hack.Padded_length`. Defined in
--- | `wrap_hack.ml:24` as `module Padded_length = Nat.N2` — a
--- | compile-time constant of 2, unrelated to any particular circuit's
--- | `max_proofs_verified`. Used as the padding target for each slot's
--- | bp-challenge vector (`Wrap_hack.Checked.pad_challenges`), for the
--- | wrap proof's `sg` list in `Step_main`'s `sgOld`, and as the ceiling
--- | on `Proofs_verified.Prefix_mask` length (`proofs_verified.ml:70`).
+-- | The length every slot-indexed vector is padded to before hashing:
+-- | 2, Pickles-wide and independent of any circuit's
+-- | `max_proofs_verified`. It is the target for each slot's
+-- | bp-challenge vector, for the wrap proof's `sgOld` list, and the
+-- | ceiling on a proofs-verified prefix mask.
 -- |
--- | The pre-computed `dummyPaddingSpongeStates` table has exactly
--- | `PaddedLength + 1 = 3` entries (for absorbing 0, 1, or 2 dummies).
--- |
--- | This is a UNIVERSAL constant across Pickles — it does **not**
--- | vary with `max_proofs_verified`.
--- |
--- | Reference: mina/src/lib/pickles/wrap_hack.ml:24
+-- | `Pickles.Wrap.MessageHash.dummyPaddingSpongeStates` accordingly has
+-- | `PaddedLength + 1 = 3` entries, for absorbing 0, 1 or 2 dummies.
 type PaddedLength = 2
 
--- | Step proofs commit on Vesta (scalar f = Fp = StepField).
+-- | Step proofs commit on Vesta (scalar field `StepField`).
 type StepCommitmentCurve = Vesta.G
 
--- | Wrap proofs commit on Pallas (scalar f = Fq = WrapField).
+-- | Wrap proofs commit on Pallas (scalar field `WrapField`).
 type WrapCommitmentCurve = Pallas.G
 
--------------------------------------------------------------------------------
--- | Step Circuit I/O Types
--------------------------------------------------------------------------------
-
--- | Input to the Step circuit combinator.
+-- | Input to the step circuit combinator: the application input
+-- | alongside the witness data for the `n` previous proofs.
 -- |
--- | Bundles the application input with the proof witness data.
--- |
--- | Parameters:
--- | - `n`: Number of previous proofs to verify
--- | - `input`: Application-specific input type
--- | - `prevInput`: Previous proof public input type
--- | - `ds`: Step IPA rounds (phantom, carried for type bookkeeping)
--- | - `dw`: Wrap IPA rounds (used: previous Wrap proofs have dw bulletproof challenges)
--- | - `f`: Field element type
--- | - `sf`: Shifted scalar type
--- | - `b`: Boolean type
+-- | `ds` is phantom here; only `dw` is used, as a previous wrap proof
+-- | carries `dw` bulletproof challenges.
 type StepInput :: Int -> Type -> Type -> Int -> Int -> Type -> Type -> Type -> Type
 type StepInput n input prevInput ds dw f sf b =
   { appInput :: input
@@ -120,15 +93,9 @@ type StepInput n input prevInput ds dw f sf b =
   , prevChallengeDigests :: Vector n f
   }
 
--- | The Step circuit's output statement.
--- |
--- | This becomes part of the public input for the Wrap circuit to verify.
--- |
--- | The `fv` parameter is the f variable type (e.g., `FVar f` in circuits).
--- | The `sf` parameter is the shifted value type (e.g., `Type1 (FVar f)`).
--- | The `b` parameter is the boolean type (e.g., `BoolVar f`).
--- |
--- | Reference: step_main.ml:587-594 `Types.Step.Statement`
+-- | The step circuit's output statement, and so part of the public
+-- | input the wrap circuit verifies. `Pickles.PackedStatement` carries
+-- | the same shape in the field order the wire fixes.
 type StepStatement :: Int -> Int -> Int -> Type -> Type -> Type -> Type
 type StepStatement n ds dw fv sf b =
   { proofState ::
@@ -138,18 +105,8 @@ type StepStatement n ds dw fv sf b =
   , messagesForNextWrapProof :: Vector n fv
   }
 
--------------------------------------------------------------------------------
--- | Wrap Circuit I/O Types
--------------------------------------------------------------------------------
-
--- | The Wrap circuit's public input statement.
--- |
--- | Contains Wrap deferred values (with branch_data) + message digests.
--- | This is what the Step circuit packs via Spec.pack for x_hat.
--- |
--- | The `b` parameter is the boolean type (Boolean for values, BoolVar for circuit).
--- |
--- | Reference: Wrap.Statement.In_circuit.t (composition_types.ml:623-658)
+-- | The wrap circuit's public input statement: wrap deferred values —
+-- | including `branchData` — plus the two message digests.
 type WrapStatement :: Int -> Type -> Type -> Type -> Type
 type WrapStatement d f sf b =
   { proofState ::
@@ -160,70 +117,31 @@ type WrapStatement d f sf b =
   , messagesForNextStepProof :: f
   }
 
--------------------------------------------------------------------------------
--- | Building blocks for structured witness allocation
--- |
--- | These newtypes wrap records but their `CircuitType`/`CheckedType`
--- | instances delegate to an internal nested-`Tuple` representation that
--- | enforces OCaml's exact allocation order (instead of the alphabetical
--- | RowList order a record would give).
--- |
--- | Parameterized by a single element type so the same newtype works for
--- | both value (`F f`) and var (`FVar f`) representations.
--------------------------------------------------------------------------------
+-- The allocation carriers below — `StatementIO`, `WrapProofMessages`,
+-- `WrapProofOpening`, `AllocEvals`, `PerProofUnfinalized` — are
+-- newtypes rather than bare records for one reason: a record picks up
+-- `RCircuitType`, which orders fields alphabetically, and that is not
+-- the wire order. Each one's `CircuitType`/`CheckedType` instance
+-- delegates instead to a nested `Tuple` spelling the wire order out, so
+-- replacing a carrier with its record compiles and silently corrupts
+-- the encoding.
 
--- | A polynomial evaluation at the pair (zeta, zeta*omega).
+-- | A rule's statement — the public input to kimchi verify — as its
+-- | main function's `input` paired with its returned `output`. The
+-- | three public-input modes collapse into this one shape:
 -- |
--- | OCaml pairs are allocated as `(zeta_eval, omega_eval)` — zeta FIRST,
--- | then omega*zeta. A plain record `{zeta, omegaTimesZeta}` would
--- | alphabetize to (omegaTimesZeta, zeta) via RowList, which is WRONG.
--- | This newtype enforces OCaml order via nested-Tuple delegation.
-newtype PointEval a = PointEval
-  { zeta :: a
-  , omegaTimesZeta :: a
-  }
-
-instance (CircuitType f a var) => CircuitType f (PointEval a) (PointEval var) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 a a))
-  valueToFields (PointEval r) = genericValueToFields (tuple2 r.zeta r.omegaTimesZeta)
-  fieldsToValue fs =
-    let
-      tup :: Tuple2 a a
-      tup = genericFieldsToValue fs
-    in
-      uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
-  varToFields (PointEval r) = genericVarToFields @(Tuple2 a a) (tuple2 r.zeta r.omegaTimesZeta)
-  fieldsToVar fs =
-    let
-      tup :: Tuple2 var var
-      tup = genericFieldsToVar @(Tuple2 a a) fs
-    in
-      uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
-
-instance (CheckedType f c var) => CheckedType f c (PointEval var) where
-  check (PointEval r) = check (tuple2 r.zeta r.omegaTimesZeta)
-
--- | The statement (public input to kimchi verify) of a Pickles rule.
+-- |   input only     → StatementIO input Unit
+-- |   output only    → StatementIO Unit output
+-- |   input + output → StatementIO input output
 -- |
--- | Every rule's statement has at most two components: its main-function
--- | `input` and its returned `output`. Existing Pickles tests use three
--- | public-input modes (`Input typ`, `Output typ`, `Input_and_output`)
--- | captured uniformly by this single shape:
+-- | `CircuitType Unit Unit` serializes to zero fields, so an unused
+-- | side contributes nothing to the public-input array and no mode
+-- | needs special-casing.
 -- |
--- |   Input typ             → StatementIO input Unit
--- |   Output typ            → StatementIO Unit output
--- |   Input_and_output i o  → StatementIO i o
--- |
--- | `CircuitType Unit Unit` serializes to zero fields, so the "unused"
--- | side contributes no field elements to the kimchi public-input array.
--- | The byte layout matches OCaml's current conventions for all three
--- | modes without special-casing.
--- |
--- | Field order is `input` first, then `output` — matches OCaml's
--- | `Input_and_output` tuple convention. Record fields alphabetize via
--- | RowList to the same order here since `input` < `output`; we still
--- | route through explicit `Tuple2` to make the ordering contract visible
--- | at the type-class-instance site.
+-- | `input` precedes `output` on the wire. RowList happens to
+-- | alphabetize to the same order, but the instance routes through an
+-- | explicit `Tuple2` so the contract does not rest on that
+-- | coincidence.
 newtype StatementIO input output = StatementIO
   { input :: input
   , output :: output
@@ -265,48 +183,30 @@ instance
   CheckedType f c (StatementIO inputVar outputVar) where
   check (StatementIO r) = check (tuple2 r.input r.output)
 
--- | ## Chunk-count dimensions (naming convention — read this first)
--- |
--- | A kimchi polynomial commitment splits into `ceil(domain_size /
--- | SRS_max_poly_size)` curve-point chunks. Three *distinct* such
--- | counts appear throughout Pickles; they are NOT interchangeable.
--- | The type-variable names encode which one:
--- |
--- |   * `stepChunks`   — Dim 1, **compile-wide**. Chunks of the step
--- |     proof the wrap circuit verifies (step domain vs wrap SRS).
--- |     `compileMulti @stepChunks` validates every branch matches it.
--- |     Sites: `WrapMainConfig`, IVP, `FqSpongeInput`.
--- |
--- |   * `wrapVkChunks` — Dim 2, **compile-wide**. This compile's own
--- |     wrap VK, embedded in the step circuit (OCaml
--- |     `num_chunks_by_default`, `step_main.ml:347`; protocol-pinned
--- |     to 1 since the wrap domain never exceeds the wrap SRS).
--- |     Sites: `StepAdvice.wrapVerifierIndex`, `StepVK`.
--- |
--- |   * `slotVkChunks` — Dim 3, **per-slot**. A side-loaded slot's
--- |     own VK chunk count — a parameter of an individual
--- |     `Slot mpv slotVkChunks stmt`, so distinct slots in
--- |     one compile may differ. Sites: `SLVK.VerificationKey`,
--- |     `mkRuleEntry @… @slotVkChunks`.
--- |
--- | The generic `ChunkedCommitment` container — now defined in
--- | `Snarky.Backend.Kimchi.Commitment` (re-exported above) — is
--- | dimension-*agnostic*: its parameter is the neutral `chunks` (used
--- | at all three dimensions), never one of the names above.
+-- A kimchi polynomial commitment splits into `ceil(domain_size /
+-- SRS_max_poly_size)` curve-point chunks. Three distinct such counts
+-- run through Pickles and are not interchangeable, so the type variable
+-- naming one says which it is:
+--
+--   * `stepChunks` — compile-wide: the chunks of the step proof a wrap
+--     circuit verifies, step domain against wrap SRS.
+--
+--   * `wrapVkChunks` — compile-wide: this compile's own wrap VK as
+--     embedded in the step circuit, pinned to `WrapVkChunks`.
+--
+--   * `slotVkChunks` — per-slot: one slot's own VK chunk count, carried
+--     by `Pickles.Step.VkSource`'s blueprints.
+--
+-- `ChunkedCommitment` is dimension-agnostic; its parameter is the
+-- neutral `chunks`, never one of these three names.
 
--- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
+-- | A proof's protocol commitments, as allocated in the per-proof
+-- | witness. The wire order is `wComm`, `zComm`, `tComm`.
 -- |
--- | OCaml hlist order: w_comm (15), z_comm (1), t_comm (7).
--- | Reference: kimchi_types.ml prover_proof.commitments
--- |
--- | Carries `n :: Int = num_chunks` (`docs/chunking.md`). At n=1 every
--- | inner `Vector n` collapses to a singleton, which is byte-equivalent
--- | to the pre-chunking flat shapes (Vector 15 pt / pt / Vector 7 pt).
--- |   * `wComm` — 15 polynomials × n chunks each.
--- |   * `zComm` — 1 polynomial with n chunks.
--- |   * `tComm` — quotient poly's 7-chunk overhead, each sub-split into
--- |     n chunks (total `7 * n` group elements). Nested for type clarity;
--- |     CircuitType flattens to a single 7n-long vector.
+-- | `n` is the commitment's `num_chunks` (`docs/chunking.md`): 15
+-- | witness polynomials at `n` chunks each, one `z`, and the quotient
+-- | polynomial's 7 pieces at `n` chunks each. The nesting is for
+-- | reading; `CircuitType` flattens `tComm` to one `7 * n` vector.
 newtype WrapProofMessages :: Int -> Type -> Type
 newtype WrapProofMessages n pt = WrapProofMessages
   { wComm :: Vector 15 (ChunkedCommitment n pt)
@@ -340,14 +240,12 @@ instance
 instance (CheckedType f c var) => CheckedType f c (WrapProofMessages n var) where
   check (WrapProofMessages r) = check (tuple3 r.wComm r.zComm r.tComm)
 
--- | Wrap proof opening: bulletproof opening data allocated in the per-proof witness.
+-- | A proof's bulletproof opening data, as allocated in the per-proof
+-- | witness. The wire order is `lr`, `z1`, `z2`, `delta`, `sg`.
 -- |
--- | OCaml hlist order: lr (Vector n {l, r}), z1, z2, delta, sg.
--- | Reference: kimchi_types.ml opening_proof
--- |
--- | The `n` parameter is the IPA rounds count. For openings VERIFYING a step
--- | proof inside the wrap circuit, `n = StepIPARounds = 16`. For openings
--- | VERIFYING a wrap proof inside the step circuit, `n = WrapIPARounds = 15`.
+-- | `n` is the IPA round count of the proof being opened:
+-- | `StepIPARounds` for a step proof opened inside the wrap circuit,
+-- | `WrapIPARounds` for a wrap proof opened inside the step circuit.
 newtype WrapProofOpening :: Int -> Type -> Type -> Type
 newtype WrapProofOpening n pt sf = WrapProofOpening
   { lr :: Vector n { l :: pt, r :: pt }
@@ -387,14 +285,15 @@ instance
   CheckedType f c (WrapProofOpening n avar bvar) where
   check (WrapProofOpening r) = check (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
 
--- | All polynomial evaluations for the wrap proof being verified.
+-- | The evaluation block of a kimchi proof, one `PointEval` per
+-- | polynomial: public input, the 15 witness columns, the 15
+-- | coefficients, `z`, the 6 sigmas, the 6 index selectors, and
+-- | `ftEval1`.
 -- |
--- | OCaml hlist order: public_input, witness (15), coefficients (15), z, sigma (6),
--- | index_evals (6 selectors), ft_eval1.
--- |
--- | Each evaluation is a `PointEval` (zeta, omega*zeta) — the `PointEval` newtype
--- | enforces zeta-first ordering.
-newtype StepAllEvals a = StepAllEvals
+-- | Field order here is cosmetic. The wire order is pinned by the
+-- | `Tuple7` in `AllocEvals`'s `CircuitType` instance, never by
+-- | RowList.
+type Evals a =
   { publicEvals :: PointEval a
   , witnessEvals :: Vector 15 (PointEval a)
   , coeffEvals :: Vector 15 (PointEval a)
@@ -404,62 +303,81 @@ newtype StepAllEvals a = StepAllEvals
   , ftEval1 :: a
   }
 
-instance (CircuitType f a var) => CircuitType f (StepAllEvals a) (StepAllEvals var) where
-  sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a))
-  valueToFields (StepAllEvals r) = genericValueToFields
-    (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
-  fieldsToValue fs =
-    let
-      tup :: Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a
-      tup = genericFieldsToValue fs
-    in
-      uncurry7
-        ( \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
-            StepAllEvals { publicEvals, witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals, ftEval1 }
-        )
-        tup
-  varToFields (StepAllEvals r) = genericVarToFields
-    @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
-    (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
-  fieldsToVar fs =
-    let
-      tup :: Tuple7 (PointEval var) (Vector 15 (PointEval var)) (Vector 15 (PointEval var)) (PointEval var) (Vector 6 (PointEval var)) (Vector 6 (PointEval var)) var
-      tup =
-        genericFieldsToVar
-          @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
-          fs
-    in
-      uncurry7
-        ( \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
-            StepAllEvals { publicEvals, witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals, ftEval1 }
-        )
-        tup
+-- | `Evals` with one entry per chunk, before the Horner recombination
+-- | `Pickles.PlonkChecks.collapseChunkedEvals` performs. At
+-- | `num_chunks = 1` every array has length 1 and that collapse is the
+-- | identity.
+type ChunkedEvals a =
+  { publicEvals :: NonEmptyArray (PointEval a)
+  , witnessEvals :: Vector 15 (NonEmptyArray (PointEval a))
+  , coeffEvals :: Vector 15 (NonEmptyArray (PointEval a))
+  , zEvals :: NonEmptyArray (PointEval a)
+  , sigmaEvals :: Vector 6 (NonEmptyArray (PointEval a))
+  , indexEvals :: Vector 6 (NonEmptyArray (PointEval a))
+  , ftEval1 :: a
+  }
 
-instance (CheckedType f c var) => CheckedType f c (StepAllEvals var) where
-  check (StepAllEvals r) = check (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
+-- | `Evals` in allocatable form. The newtype exists only to carry the
+-- | `CircuitType`/`CheckedType` instances away from `RCircuitType`'s
+-- | alphabetical field order: the wire order is `(public, witness,
+-- | coefficients, z, sigma, index, ftEval1)`, spelled out in the
+-- | `Tuple7`/`Tuple2` below and nowhere else.
+newtype AllocEvals a = AllocEvals (Evals a)
 
--- | Per-proof unfinalized proof: the OCaml `Unfinalized.t` allocation that
--- | becomes part of the Step.Statement public input.
+-- | One evaluation as the ordered pair the wire wants: `zeta` first,
+-- | then `omega*zeta`. The record alphabetizes them the other way
+-- | round, so every crossing of this boundary goes through `evalPair` /
+-- | `pairEval`.
+evalPair :: forall a. PointEval a -> Tuple2 a a
+evalPair p = tuple2 p.zeta p.omegaTimesZeta
+
+pairEval :: forall a. Tuple2 a a -> PointEval a
+pairEval = uncurry2 \zeta omegaTimesZeta -> { zeta, omegaTimesZeta }
+
+-- | The seven blocks in wire order; with `evalPair` this is the whole
+-- | wire layout of an `Evals`.
+type EvalsTuple a =
+  Tuple7 (Tuple2 a a) (Vector 15 (Tuple2 a a)) (Vector 15 (Tuple2 a a)) (Tuple2 a a)
+    (Vector 6 (Tuple2 a a))
+    (Vector 6 (Tuple2 a a))
+    a
+
+evalsTuple :: forall a. Evals a -> EvalsTuple a
+evalsTuple r = tuple7 (evalPair r.publicEvals) (map evalPair r.witnessEvals)
+  (map evalPair r.coeffEvals)
+  (evalPair r.zEvals)
+  (map evalPair r.sigmaEvals)
+  (map evalPair r.indexEvals)
+  r.ftEval1
+
+tupleEvals :: forall a. EvalsTuple a -> AllocEvals a
+tupleEvals = uncurry7
+  \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 -> AllocEvals
+    { publicEvals: pairEval publicEvals
+    , witnessEvals: map pairEval witnessEvals
+    , coeffEvals: map pairEval coeffEvals
+    , zEvals: pairEval zEvals
+    , sigmaEvals: map pairEval sigmaEvals
+    , indexEvals: map pairEval indexEvals
+    , ftEval1
+    }
+
+instance (CircuitType f a var) => CircuitType f (AllocEvals a) (AllocEvals var) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(EvalsTuple a))
+  valueToFields (AllocEvals r) = genericValueToFields (evalsTuple r)
+  fieldsToValue fs = tupleEvals (genericFieldsToValue fs :: EvalsTuple a)
+  varToFields (AllocEvals r) = genericVarToFields @(EvalsTuple a) (evalsTuple r)
+  fieldsToVar fs = tupleEvals (genericFieldsToVar @(EvalsTuple a) fs :: EvalsTuple var)
+
+instance (CheckedType f c var) => CheckedType f c (AllocEvals var) where
+  check (AllocEvals r) = check (evalsTuple r)
+
+-- | One prev proof's unfinalized deferred values, as allocated into the
+-- | step statement's public input. The fields are written in wire
+-- | order, which the `Tuple2` split below pins.
 -- |
--- | OCaml to_data order:
--- |   cip, b, zetaToSrs, zetaToDom, perm,    -- 5 shifted fields (Type2 in step)
--- |   spongeDigest,                          -- digest (plain f)
--- |   beta, gamma,                           -- 2 128-bit challenges
--- |   alpha, zeta, xi,                       -- 3 128-bit scalar challenges
--- |   bulletproofChallenges,                 -- Vector d of 128-bit challenges
--- |   shouldFinalize                         -- bool
--- |
--- | The `UnChecked (SizedF 128 f)` fields are claimed-128-bit but NOT range-checked
--- | at allocation (matching OCaml's `Challenge.typ = Typ.f`).
--- |
--- | Type parameters:
--- | - `d`: number of bulletproof challenges
--- | - `sf`: shifted-f type (e.g., `Type2 (SplitField (F f) Boolean)`)
--- | - `f`: plain f type
--- | - `b`: boolean type
--- |
--- | Reference: unfinalized.ml
+-- | The `UnChecked (SizedF 128 f)` fields are claimed to be 128 bits
+-- | but are not range-checked at allocation.
 newtype PerProofUnfinalized (d :: Int) sf f b = PerProofUnfinalized
   { combinedInnerProduct :: sf
   , b :: sf
@@ -476,10 +394,9 @@ newtype PerProofUnfinalized (d :: Int) sf f b = PerProofUnfinalized
   , shouldFinalize :: b
   }
 
--- | Tuple shape for PerProofUnfinalized, parameterized by:
--- |   - sf: shifted-f type (sf or sfvar)
--- |   - x:  field element type (F f or FVar f)
--- |   - b:  boolean type (b or bvar)
+-- | `PerProofUnfinalized`'s wire layout. Its 13 fields exceed
+-- | `Tuple10`, the widest nested tuple, so they are carried as a
+-- | 10 + 3 split.
 type PerProofUnfinalizedTuple d sf x b =
   Tuple2
     (Tuple10 sf sf sf sf sf x (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)))
