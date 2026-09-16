@@ -162,7 +162,7 @@ ivpStepCircuit { lagrangeAt, blindingH } input = do
     ivpInput =
       { publicInput: input.publicInput
       , sgOld: constDummySg :< constDummySg :< Vector.nil
-      , sgOldMask: Vector.replicate ((const_ one))
+      , sgOldMask: Nothing
       -- VK data as circuit variables (dummy constants for circuit-diff test)
       , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:

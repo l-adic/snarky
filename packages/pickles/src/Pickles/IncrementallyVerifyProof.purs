@@ -22,6 +22,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Pickles.DeferredValues (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 import Pickles.IPA (checkBulletproof)
@@ -78,8 +79,10 @@ type IncrementallyVerifyProofParams stepChunks f r =
 type IncrementallyVerifyProofInput publicInput sgOldN stepChunks tCommLen d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
-  , sgOldMask :: Vector sgOldN fv
-  -- ^ the actual-proofs-verified keep flags for `sgOld`
+  , sgOldMask :: Maybe (Vector sgOldN fv)
+  -- ^ the actual-proofs-verified keep flags for `sgOld`: `Just` on
+  -- the wrap side, `Nothing` on the step side, whose `sgOld` bases are
+  -- all unconditional
   , deferredValues :: DeferredValues d fv sf
   -- The verifier index commitments, all at the verified proof's
   -- `stepChunks`: the step VK commitments must agree with the step
@@ -230,7 +233,9 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
             ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> "." <> show j <> ".y") pt.y
       let
         spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: ChunkedCommitment xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
-        mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
+        mask = case input.sgOldMask of
+          Just keeps -> map (coerce :: FVar f -> Bool (FVar f)) keeps
+          Nothing -> unsafeThrow "incrementallyVerifyProof: the conditional sponge needs sgOldMask"
       result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
       liftSnarky $ ivpTrace "ivp.trace.wrap.beta_squeezed" (SizedF.toField result.beta)
       pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
@@ -279,11 +284,15 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
             `Vector.append` sigmaFlat
         )
 
-    -- Only the `sgOld` bases are masked; every other base is
-    -- unconditional.
+    -- Only the wrap side's `sgOld` bases are masked; every other base
+    -- is unconditional.
+    sgOldBaseMasks :: Vector sgOldN (Maybe (BoolVar f))
+    sgOldBaseMasks = case input.sgOldMask of
+      Just keeps -> map (Just <<< coerce) keeps
+      Nothing -> Vector.replicate Nothing
+
     allBaseMasks =
-      (map (Just <<< coerce) input.sgOldMask) `Vector.append`
-        (Vector.replicate @nonSgBases Nothing)
+      sgOldBaseMasks `Vector.append` (Vector.replicate @nonSgBases Nothing)
 
   let
     bpInput =

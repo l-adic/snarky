@@ -754,7 +754,7 @@ wrapMainCore config (StatementPacked stmtR) advice slotWidths allocPaddedChals =
     fullIvpInput =
       { publicInput
       , sgOld: stepAccsAffine
-      , sgOldMask: Vector.reverse (map boolToField maskVals)
+      , sgOldMask: Just (Vector.reverse (map boolToField maskVals))
       , sigmaCommLast: chosenSigmaCommLast
       , columnComms: chosenColumnComms
       , deferredValues:

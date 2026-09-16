@@ -8,6 +8,7 @@ module Pickles.CircuitDiffs.PureScript.WrapVerify
 import Prelude
 
 import Data.Fin (getFinite)
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -63,7 +64,7 @@ wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
     fullIvpInput =
       { publicInput: ivpInput.publicInput
       , sgOld: readPt 194 :< Vector.nil
-      , sgOldMask: (const_ one) :< Vector.nil
+      , sgOldMask: Just (const_ one :< Vector.nil)
       , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
           { index: (Vector.replicate (ChunkedCommitment (Vector.singleton constDummyPt))) :: Vector 6 _

@@ -155,7 +155,7 @@ ivpWrapCircuit { lagrangeAt, blindingH } input = do
     ivpInput =
       { publicInput: input.publicInput
       , sgOld: Vector.nil
-      , sgOldMask: Vector.nil
+      , sgOldMask: Just Vector.nil
       -- VK data as circuit variables (dummy constants for circuit-diff test)
       , sigmaCommLast: ChunkedCommitment (Vector.singleton constDummyPt)
       , columnComms:
