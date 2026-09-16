@@ -32,6 +32,7 @@ import Data.Semigroup.Foldable as Foldable1
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.DeferredValues (UnfinalizedProof, toPlonkMinimal)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output, Params, pow2PowSquare)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
@@ -39,9 +40,8 @@ import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (buildEvalList, buildEvalPoint, combinedInnerProduct, extractEvalFields, knownDomainVanishingPolynomial, knownDomainWhiches, maskedChallengeDigest, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
-import Pickles.Types (Evals)
 import Pickles.Pseudo as Pseudo
-import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
+import Pickles.Types (Evals)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)

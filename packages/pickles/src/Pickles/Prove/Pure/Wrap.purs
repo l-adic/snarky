@@ -40,12 +40,12 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Pickles.DeferredValues (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (collapseChunkedEvals)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, combinedInnerProductBatchChunked, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (ChunkedEvals, StepIPARounds)
-import Pickles.Verify.Types (BranchData, PlonkInCircuit, ScalarChallenge)
 import Pickles.Wrap.Types as Wrap
 import Snarky.Backend.Kimchi.Proof (OraclesResult, Proof, pallasProofData, proofOpeningPrechallenges, proofOraclesRec)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)

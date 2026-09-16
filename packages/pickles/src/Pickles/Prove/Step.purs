@@ -73,6 +73,8 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
 import Pickles.Constants (zkRowsForNumChunks)
+import Pickles.DeferredValues (BranchData) as VT
+import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
@@ -95,8 +97,6 @@ import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, vestaVerifierIndexCommitments)
-import Pickles.Verify.Types (BranchData) as VT
-import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)

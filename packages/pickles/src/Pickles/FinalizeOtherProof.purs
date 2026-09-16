@@ -23,8 +23,8 @@ module Pickles.FinalizeOtherProof
 import Prelude
 
 import Data.Vector (Vector)
+import Pickles.DeferredValues (BulletproofChallenges)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.Verify.Types (BulletproofChallenges)
 import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, square_)
 import Snarky.Curves.Class (class PrimeField)
 

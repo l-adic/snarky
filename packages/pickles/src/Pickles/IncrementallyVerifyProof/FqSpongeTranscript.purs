@@ -43,12 +43,12 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
+import Pickles.DeferredValues (PlonkMinimal)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (SpongeM, getSponge, labelM, liftSnarky, putSponge)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedCommitment)
-import Pickles.Verify.Types (PlonkMinimal)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class BasicSystem, Bool(..), BoolVar, FVar, SizedF, Snarky, assertEq, exists, label, readCVar, true_)

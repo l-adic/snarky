@@ -29,6 +29,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Pickles.DeferredValues (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 import Pickles.IPA (checkBulletproof)
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (assertPlonkChallenges, ivpTrace, spongeTranscriptCircuit, spongeTranscriptOptCircuit)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBaseLookup, publicInputCommit)
@@ -36,7 +37,6 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Types (ChunkedCommitment(..), WrapStatement)
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 -- IvpBaseline (= 45) is the stepChunks=1 base count; here we derive the
 -- chunked count from `stepChunks` via `Mul`/`Add` constraints.
 import Poseidon (class PoseidonField)

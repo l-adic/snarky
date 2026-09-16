@@ -78,6 +78,7 @@ import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
 import Pickles.Constants (roughDomainsLog2, zkRowsForNumChunks)
+import Pickles.DeferredValues (toPlonkMinimal)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
@@ -89,9 +90,6 @@ import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Slot (slotNumChunks, slotSourceDomainLog2s, slotWrapDomainLog2)
 import Pickles.Prove.Slot as RuntimeSlot
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Step.VkSource (SlotVkBlueprint(..))
-import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -119,7 +117,8 @@ import Pickles.Prove.Wrap
   , wrapCompile
   , wrapSolveAndProve
   )
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Sideload.Advice(class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), projectVk, requireBundle, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Slot)
@@ -134,7 +133,9 @@ import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources)
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
 import Pickles.Step.Types as Step
+import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
+import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
 import Pickles.Verify
   ( CompiledProof(..)
   , CompiledProofWidthData(..)
@@ -147,7 +148,6 @@ import Pickles.Verify
   , wrapPublicInput
   , wrapPublicInputVP
   )
-import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (EQ, GT, LT)

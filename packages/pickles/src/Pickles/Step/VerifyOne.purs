@@ -19,6 +19,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.DeferredValues (BranchData)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (Params) as FOP
 import Pickles.IncrementallyVerifyProof (IncrementallyVerifyProofParams, incrementallyVerifyProof, packStatement)
@@ -28,7 +29,6 @@ import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (ChunkedCommitment, StepIPARounds, WrapIPARounds, WrapVkChunks)
-import Pickles.Verify.Types (BranchData)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)

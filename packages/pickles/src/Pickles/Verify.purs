@@ -44,29 +44,13 @@
 -- | data) mirrors how OCaml `compile_promise` returns a
 -- | `(module Proof_intf)` that wraps the verifier-needed constants plus
 -- | proofs of type `'max_proofs_verified Proof.t`.
--- | Top-level out-of-circuit Pickles verifier — the public surface
--- | for FULLY verifying a Pickles proof.
 -- |
--- | Native: `Verifier`, `mkVerifier`, `verify`, `verifyOne`,
--- | `CompiledProof`, `wrapPublicInput(Of)`.
--- |
--- | Re-exports `Pickles.Verify.Types` (`BulletproofChallenges`,
--- | `DeferredValues`, `WrapDeferredValues`, `BranchData`,
--- | `PlonkMinimal`, `PlonkInCircuit`, `ScalarChallenge`,
--- | `UnfinalizedProof`) since these appear in `Verifier`-shaped
--- | values consumers will see.
--- |
--- | `perProof` runs the stages per proof; they are internal —
--- | callers see only the bundled `verify` ("proof → yes/no"):
--- |   1. Expand deferred values from the wrap proof's minimal
--- |      skeleton.
--- |   2. Accumulator IPA-step check (Vesta-SRS MSM).
--- |   3. Recompute both message digests from the wrap VK, the claimed
--- |      application state and the carried prev-proof data.
--- |   4. Kimchi `batch_verify` on the wrap proof.
+-- | The deferred-values vocabulary this reads (`DeferredValues`,
+-- | `UnfinalizedProof`, `BranchData`, …) lives in
+-- | `Pickles.DeferredValues` and is shared with both circuits — import
+-- | it directly rather than through here.
 module Pickles.Verify
-  ( module Pickles.Verify.Types
-  , CompiledProof(..)
+  ( CompiledProof(..)
   , CompiledProofWidthData(..)
   , SomeCompiledProofWidthData
   , mkSomeCompiledProofWidthData
@@ -96,6 +80,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Constants (zkRowsForNumChunks)
+import Pickles.DeferredValues (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas) as Linearization
@@ -106,7 +91,6 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (ChunkedEvals, Evals, PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Pickles.VerificationKey (extractWrapVKForStepHash)
-import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof, WrapDeferredValues, toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Types as Wrap
 import Prim.Int (class Add)

@@ -38,6 +38,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (RoM, chal, dummyIpaStepChallenges, dummyIpaWrapChallenges, evalRoM, initialRo, pow2, scalarChal, stepEndo, tick, tock, wrapEndo)
 import Pickles.Field (StepField, WrapField)
 import Pickles.IPA (bPoly, computeB)
@@ -49,11 +50,10 @@ import Pickles.PlonkChecks (FrSpongeInput, buildChallenges, buildEvalPoint, frSp
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
 import Pickles.Types (Evals, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds)
-import Pickles.Verify.Types (UnfinalizedProof)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Backend.Kimchi.Proof (Proof, vestaMakeWireProof)
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
+import Snarky.Backend.Kimchi.Proof (Proof, vestaMakeWireProof)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), SizedF, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, unwrapF, wrapF) as SizedF

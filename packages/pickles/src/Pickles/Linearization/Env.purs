@@ -19,10 +19,10 @@ import Prelude
 
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Data.Maybe (Maybe(..))
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (fromInt)
 import JS.BigInt as BigInt

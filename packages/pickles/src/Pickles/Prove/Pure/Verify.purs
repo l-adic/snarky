@@ -28,6 +28,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Foldable (for_)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.DeferredValues (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Field (StepField)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (collapseChunkedEvals)
@@ -35,7 +36,6 @@ import Pickles.Prove.Pure.Common (combinedInnerProductBatchChunked, computeBpCha
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Types (ChunkedEvals, StepIPARounds)
-import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unwrapF, wrapF)

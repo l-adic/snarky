@@ -24,6 +24,7 @@ import Data.Int (pow) as Int
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.DeferredValues (UnfinalizedProof, toPlonkMinimal)
 import Pickles.FinalizeOtherProof (Output, Params, pow2PowSquare)
 import Pickles.IPA (bCorrectCircuit, challengePolyEvals, computeChallenges)
 import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
@@ -33,7 +34,6 @@ import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (buildEvalListUnmasked, buildEvalPoint, challengeDigest, combinedInnerProduct, extractEvalFields, omegaPowers, permContributionCircuit, permScalarCircuit, squeezeXiR, zkPolynomial)
 import Pickles.Types (Evals)
-import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)

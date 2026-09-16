@@ -1,14 +1,24 @@
--- | Core types for Pickles proof verification.
+-- | The deferred values a proof carries, and the unfinalized-proof
+-- | structures built on them.
 -- |
--- | These types are shared between Step and Wrap circuits. They define the
--- | deferred values and unfinalized proof structures used in verification.
+-- | Deferred values are the quantities a proof's verifier must check but
+-- | whose checking is deferred to the *next* circuit in the chain — the
+-- | PLONK IOP challenges, the inner-product argument's outputs, and (in a
+-- | wrap statement) `branch_data`, which the step circuit needs to know
+-- | which domain to run the other checks against.
+-- |
+-- | This is shared vocabulary, not verifier-private: `finalize_other_proof`
+-- | on both sides consumes it, `IncrementallyVerifyProof` takes it as
+-- | input, the step and wrap statements carry it, and the out-of-circuit
+-- | `Pickles.Verify` reads it last. It sits below `Pickles.Types`, which
+-- | imports it.
 -- |
 -- | Key sizes (Pasta curves):
 -- | - 128-bit scalar challenges
 -- | - 255-bit field elements
 -- |
 -- | Reference: mina/src/lib/pickles/unfinalized.ml, composition_types.ml
-module Pickles.Verify.Types
+module Pickles.DeferredValues
   ( -- * Bulletproof Challenges
     BulletproofChallenges
   , ScalarChallenge

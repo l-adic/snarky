@@ -47,7 +47,7 @@ import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, AllocEvals, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)

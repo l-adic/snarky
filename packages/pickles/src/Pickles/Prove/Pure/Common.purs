@@ -54,15 +54,15 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
+import Pickles.DeferredValues (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.PlonkChecks (buildEvalPoint, permContribution, permScalar)
-import Pickles.Types (ChunkedEvals, Evals)
 import Pickles.Trace as Trace
-import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
+import Pickles.Types (ChunkedEvals, Evals)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)

@@ -14,16 +14,16 @@ module Pickles.Step.Types
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, tuple10, tuple2, tuple3, tuple5, uncurry10, uncurry2, uncurry3, uncurry5)
-import Data.Fin (unsafeFinite)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Pickles.DeferredValues (BranchData)
 import Pickles.Field (StepField)
 import Pickles.Typ (Typ, arrayTyp, pairTyp, transportTyp, typOf, unitTyp)
 import Pickles.Types (AllocEvals, WrapProofMessages, WrapProofOpening)
-import Pickles.Verify.Types (BranchData)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)
