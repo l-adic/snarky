@@ -160,7 +160,6 @@ unpackUnfinalized (PerProofUnfinalized r) =
 unwrapPt :: WeierstrassAffinePoint VestaG (FVar WrapField) -> AffinePoint (FVar WrapField)
 unwrapPt (WeierstrassAffinePoint pt) = AffinePoint pt
 
-
 type FopBodyParams f =
   { domainLog2 :: Int
   , srsLengthLog2 :: Int

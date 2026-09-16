@@ -113,7 +113,7 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Sideload.Advice(class MkUnitVkCarrier, class SideloadedVKsCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), projectVk, requireBundle, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (Slot)
@@ -150,6 +150,7 @@ import Prim.Ordering as PrimOrdering
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (AdviceHandler)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
+import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.Proof
   ( pallasProofData
   , permutationVanishingPolynomial
@@ -164,7 +165,6 @@ import Snarky.Backend.Kimchi.Proof
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
-import Snarky.Backend.Kimchi.Commitment (ChunkedCommitment(..))
 import Snarky.Backend.Kimchi.ProofCache (ProofCache)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)

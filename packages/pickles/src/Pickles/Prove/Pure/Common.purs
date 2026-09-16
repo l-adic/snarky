@@ -3,8 +3,7 @@
 -- | product, and the `derivePlonk` / `ftEval0` derivations. Pure —
 -- | no FFI and no circuit monad.
 module Pickles.Prove.Pure.Common
-  (
-    actualEvaluation
+  ( actualEvaluation
   , BulletproofBInput
   , BulletproofBOutput
   , computeBpChalsAndB

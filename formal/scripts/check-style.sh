@@ -47,7 +47,7 @@ fi
 
 if [ "$fix" -eq 1 ]; then
   for f in "${files[@]}"; do
-    sed -i 's/[[:space:]]*$//' "$f"                       # strip trailing whitespace
+    perl -pi -e 's/[^\S\n]+$//' "$f"                    # strip trailing whitespace (portable, unlike sed -i)
     [ -n "$(tail -c1 "$f")" ] && printf '\n' >> "$f"      # ensure final newline
   done
   echo "fixed: trailing whitespace + final newline"
@@ -60,7 +60,7 @@ report() { # name, matches
 
 report "lines over 100 columns" "$(grep -nE '.{101,}' "${files[@]}" 2>/dev/null)"
 report "trailing whitespace"    "$(grep -nE '[[:blank:]]+$' "${files[@]}" 2>/dev/null)"
-report "tab characters"         "$(grep -nP '\t'       "${files[@]}" 2>/dev/null)"
+report "tab characters"         "$(grep -n $'\t'       "${files[@]}" 2>/dev/null)"
 
 nonl=""
 for f in "${files[@]}"; do [ -n "$(tail -c1 "$f")" ] && nonl="${nonl}${f}"$'\n'; done

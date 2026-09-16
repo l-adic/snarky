@@ -8,8 +8,7 @@
 -- | step-field and wrap-field instantiations, the sponge pipeline and
 -- | the kimchi FFI calls.
 module Pickles.Prove.Pure.Step
-  (
-    ExpandDeferredInput
+  ( ExpandDeferredInput
   , ExpandDeferredOutput
   , expandDeferred
   , ExpandProofInput

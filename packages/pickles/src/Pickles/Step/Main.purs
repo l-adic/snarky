@@ -310,6 +310,7 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
       , bulletproofChallenges: coerce fopRec.bulletproofChallenges
       , spongeDigest: fopRec.spongeDigest
       }
+
     tCommFlat :: Vector tCommLen (WeierstrassAffinePoint PallasG (FVar StepField))
     tCommFlat = Vector.concat (coerce msgRec.tComm :: Vector 7 (Vector stepChunks (WeierstrassAffinePoint PallasG (FVar StepField))))
   in

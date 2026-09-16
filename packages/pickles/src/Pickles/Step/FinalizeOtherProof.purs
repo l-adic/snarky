@@ -10,8 +10,7 @@
 -- | against the caller's candidate domains or, for a side-loaded
 -- | proof, against the `[0..16]` universe.
 module Pickles.Step.FinalizeOtherProof
-  (
-    Input
+  ( Input
   , finalizeOtherProofCircuit
   , mkSideLoadedOnesPrefixMask
   ) where
