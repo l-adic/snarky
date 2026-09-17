@@ -502,7 +502,6 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
       , crs: cfg.srs.vestaSrs
       , debug: cfg.debug
       , proofCache: cfg.proofCache
-      , prevProofs: []
       }
   , wrapDomainLog2: cfg.selfWrapDomainLog2
   }
@@ -1301,7 +1300,6 @@ instance CompilableSpec Unit Unit 0 Unit Unit Unit Unit where
         , crs: cfg.srs.vestaSrs
         , debug: cfg.debug
         , proofCache: cfg.proofCache
-        , prevProofs: []
         }
     , wrapDomainLog2: Dummy.wrapDomainLog2ForProofsVerified 0
     }
@@ -1342,6 +1340,7 @@ instance CompilableSpec Unit Unit 0 Unit Unit Unit Unit where
               )
         , challengePolynomialCommitments: Vector.nil
         , baseCaseWrapPublicInputs: Vector.nil
+        -- No slots, so no wrap proofs verified.
         , prevProofRefs: []
         }
 
@@ -1884,6 +1883,7 @@ instance
              carrier
              valCarrier
              vkCarrier
+        -> Array (Maybe ProofRef)
         -> Effect
              (Either EvaluationError (PProveStep.StepProveResult outputSize))
       )
@@ -2281,6 +2281,7 @@ instance
                carrier
                valCarrier
                vkCarrier
+          -> Array (Maybe ProofRef)
           -> Effect
                (Either EvaluationError (PProveStep.StepProveResult outputSize))
         )
@@ -2319,6 +2320,7 @@ instance
              carrier
              valCarrier
              vkCarrier
+        -> Array (Maybe ProofRef)
         -> Effect
              (Either EvaluationError (PProveStep.StepProveResult outputSize))
       )
@@ -2493,6 +2495,8 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize vkCarrier
            carrier
            valCarrier
            vkCarrier
+      -- Per slot, the cache key of the wrap proof verified there.
+      -> Array (Maybe ProofRef)
       -> Effect (Either EvaluationError (PProveStep.StepProveResult outputSize))
   -- | Where each slot's wrap VK comes from, in slot order.
   , slotVKs :: Vector mpv SlotWrapKey
@@ -2604,7 +2608,7 @@ mkRuleEntry rule slotVKs = do
           handler
           ctx
           rule
-    , stepProveFn: \handler ctx compileResult advice ->
+    , stepProveFn: \handler ctx compileResult advice prevProofs ->
         PProveStep.stepSolveAndProve
           @prevsSpec
           @outputSize
@@ -2621,6 +2625,7 @@ mkRuleEntry rule slotVKs = do
           rule
           compileResult
           advice
+          prevProofs
     , slotVKs
     }
 
@@ -2892,9 +2897,7 @@ runMultiProverBody
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
-  eStepResult <- r.stepProveFn handler (shape.stepProveCtx { prevProofs = prevProofRefs })
-    stepCR
-    stepAdvice
+  eStepResult <- r.stepProveFn handler shape.stepProveCtx stepCR stepAdvice prevProofRefs
   case eStepResult of
     Left e -> pure (Left e)
     Right stepResult -> do

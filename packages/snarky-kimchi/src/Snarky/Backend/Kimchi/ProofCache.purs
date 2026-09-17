@@ -24,6 +24,7 @@ module Snarky.Backend.Kimchi.ProofCache
   ( ProofCache
   , mkProofCache
   , Entry
+  , Links(..)
   , ProofRef
   , getPallasProof
   , setPallasProof
@@ -38,6 +39,7 @@ import Prelude
 
 import Data.Argonaut.Core (Json, stringify)
 import Data.Argonaut.Core (fromArray, fromNumber, fromObject, fromString, jsonNull) as Argonaut
+import Data.Array (mapMaybe)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Nullable (Nullable)
@@ -71,20 +73,43 @@ mkProofCache = ProofCache
 -- | The cache key of another entry.
 type ProofRef = { vkDigest :: String, publicInput :: String }
 
+-- | What a proof is built on: a wrap proof wraps one step proof; a step
+-- | proof verifies, per slot in slot order, a wrap proof — or nothing on
+-- | a base-case slot, whose dummy proof is not cached.
+data Links
+  = Wraps ProofRef
+  | Verifies (Array (Maybe ProofRef))
+
 -- | One cached proof: the verification key's JSON, the proof's serde
--- | JSON and the proofs it is built on — `step` on a wrap proof (the
--- | step proof it wrapped), `prevs` on a step proof (one per slot, in
--- | slot order: the wrap proof the slot verified, or `null` for a
--- | base-case slot, whose dummy proof is not cached).
-type Entry =
+-- | JSON and the proofs it is built on.
+type Entry = { vk :: String, proof :: String, links :: Links }
+
+-- | An entry on disk: the links as a `step` key on a wrap proof and a
+-- | `prevs` key on a step proof.
+type EntryJson =
   { vk :: String
   , proof :: String
   , step :: Maybe ProofRef
   , prevs :: Maybe (Array (Maybe ProofRef))
   }
 
--- | On-disk shape: `{ "<vkDigest>": { "<publicInput>": Entry } }`.
+toJson :: Entry -> EntryJson
+toJson e = case e.links of
+  Wraps step -> { vk: e.vk, proof: e.proof, step: Just step, prevs: Nothing }
+  Verifies prevs -> { vk: e.vk, proof: e.proof, step: Nothing, prevs: Just prevs }
+
+-- | An on-disk entry carries exactly one kind of link; anything else is
+-- | decode drift and reads as a miss.
+fromJson :: EntryJson -> Maybe Entry
+fromJson j = case j.step, j.prevs of
+  Just step, Nothing -> Just { vk: j.vk, proof: j.proof, links: Wraps step }
+  Nothing, Just prevs -> Just { vk: j.vk, proof: j.proof, links: Verifies prevs }
+  _, _ -> Nothing
+
 type Store = Object (Object Entry)
+
+-- | On-disk shape: `{ "<vkDigest>": { "<publicInput>": EntryJson } }`.
+type StoreJson = Object (Object EntryJson)
 
 -- | Load the store. Missing file or any decode drift => empty store
 -- | (a miss); the proof is simply regenerated. A cache must always be
@@ -97,10 +122,11 @@ loadStore path = do
   if not present then pure Object.empty
   else do
     txt <- readTextFile UTF8 path
-    pure
-      ( Object.filterKeys (isJust <<< BigInt.fromString)
-          (fromMaybe Object.empty (JSON.readJSON_ txt :: Maybe Store))
-      )
+    let
+      buckets = Object.filterKeys (isJust <<< BigInt.fromString)
+        (fromMaybe Object.empty (JSON.readJSON_ txt :: Maybe StoreJson))
+      entries = Object.fromFoldable <<< mapMaybe (\(Tuple k j) -> Tuple k <$> fromJson j) <<< Object.toUnfoldable
+    pure (map entries buckets)
 
 -- | Write the store through, creating the containing directory if
 -- | needed (recursive mkdir is idempotent — no throw if it exists).
@@ -109,7 +135,7 @@ saveStore path store = do
   case lastIndexOf (Pattern "/") path of
     Just i -> mkdir' (take i path) { recursive: true, mode: permsAll }
     Nothing -> pure unit
-  writeTextFile UTF8 path (JSON.writeJSON store)
+  writeTextFile UTF8 path (JSON.writeJSON (map (map toJson) store :: StoreJson))
 
 getEntry :: ProofCache -> String -> String -> Effect (Maybe Entry)
 getEntry (ProofCache path) vk pi = do
@@ -157,8 +183,7 @@ setPallasProof cache vkDigest vk pis proof prevs =
   setEntry cache vkDigest (piKey pis)
     { vk: pallasVerifierIndexJsonKey vk
     , proof: pallasProofToSerdeJson proof
-    , step: Nothing
-    , prevs: Just prevs
+    , links: Verifies prevs
     }
 
 -- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
@@ -185,8 +210,7 @@ setVestaProof cache vkDigest vk pis proof step =
   setEntry cache vkDigest (piKey pis)
     { vk: vestaVerifierIndexJsonKey vk
     , proof: vestaProofToSerdeJson proof
-    , step: Just step
-    , prevs: Nothing
+    , links: Wraps step
     }
 
 --------------------------------------------------------------------------------

@@ -1186,10 +1186,6 @@ type StepProveContext len nd blueprints =
   -- | Optional disk proof-cache, threaded from `CompileMultiConfig`.
   -- | `Nothing` = no caching.
   , proofCache :: Maybe ProofCache
-  -- | Per slot, the cache key of the wrap proof this step proof
-  -- | verifies there — `Nothing` on a base-case slot: recorded on the
-  -- | step proof's entry so a chain is walkable from the cache alone.
-  , prevProofs :: Array (Maybe ProofRef)
   }
 
 -- | Artifacts produced by `stepCompile`, to hand between compile, wrap
@@ -1684,8 +1680,12 @@ stepSolveAndProve
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -- Per slot, the cache key of the wrap proof this proof verifies there
+  -- (`Nothing` on a base-case slot), recorded on its cache entry so a
+  -- chain is walkable from the cache alone.
+  -> Array (Maybe ProofRef)
   -> Effect (Either EvaluationError (StepProveResult outputSize))
-stepSolveAndProve handler ctx rule compileResult advice = do
+stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
   -- solver makes `stepMain`'s whole return value public, and these
   -- FVars must not be, so they ride a Ref instead: passed into
@@ -1787,7 +1787,7 @@ stepSolveAndProve handler ctx rule compileResult advice = do
                   Nothing -> do
                     let proof = Lazy.force p
                     setPallasProof cache vkDigest compileResult.verifierIndex publicInputs proof
-                      ctx.prevProofs
+                      prevProofs
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex
