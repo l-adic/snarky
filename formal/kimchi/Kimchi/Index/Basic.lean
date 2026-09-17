@@ -209,17 +209,39 @@ theorem sigmaPoly_eq_wiring (idx : Index F n) (col : Fin permCols) :
       = Permutation.sigmaPoly idx.omega idx.zkRows idx.shifts idx.wiringPerm col :=
   rfl
 
+/-- The index of a cell in the wiring tables: column-major, `c·n + i`. -/
+private def cellIdx {n : ℕ} (c : Fin permCols × Fin n) : ℕ := (c.1 : ℕ) * n + (c.2 : ℕ)
+
+/-- The predecessor table of a gate table's wiring: at each cell's index, the cell whose
+pointer names it — one pass over the cells. A cell nothing points to has no entry. -/
+private def wiringPredTable {F : Type*} {n : ℕ} (gates : Fin n → GateRow F n) :
+    Array (Option (Fin permCols × Fin n)) :=
+  (List.finRange n).foldl
+    (fun tab i => (List.finRange permCols).foldl
+      (fun tab c => tab.setIfInBounds (cellIdx (wiringMapOf gates (c, i))) (some (c, i))) tab)
+    (Array.replicate (permCols * n) none)
+
+/-- The map a predecessor table encodes; a cell without an entry maps to itself. -/
+private def wiringPred {n : ℕ} (tab : Array (Option (Fin permCols × Fin n)))
+    (y : Fin permCols × Fin n) : Fin permCols × Fin n :=
+  ((tab[cellIdx y]?).bind id).getD y
+
 /-- Construct an index from raw data by *deciding* every law — the deserialization
-boundary: the generator and shift laws through the `Wiring.lean` certificates, the rest
-by their `Fintype`/`Decidable` instances. `none` exactly when some law fails. -/
+boundary: the generator and shift laws through the `Wiring.lean` certificates, the
+wiring's bijectivity through its predecessor table (the two round trips with the stored
+map, decided cell by cell — linear, where deciding `Bijective` outright compares every
+pair of cells), the rest by their `Fintype`/`Decidable` instances. `none` exactly when
+some law fails. -/
 def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows : ℕ)
     (omega endoBase : F) (mds : Gate.Poseidon.Mds F) (shifts : Fin permCols → F) :
     Option (Index F n) :=
+  let pred := wiringPredTable gates
   if h : (∃ k < n + 1, n = 2 ^ k)
       ∧ primitiveRootCertificate omega n = true
       ∧ cosetShiftsCertificate shifts n = true
       ∧ 3 ≤ zkRows ∧ zkRows ≤ n ∧ publicCount ≤ n - zkRows
-      ∧ Function.Bijective (wiringMapOf gates)
+      ∧ (∀ x : Fin permCols × Fin n, wiringPred pred (wiringMapOf gates x) = x)
+      ∧ (∀ y : Fin permCols × Fin n, wiringMapOf gates (wiringPred pred y) = y)
       ∧ (∀ c : Fin permCols × Fin n,
           ((c.2 : ℕ) < n - zkRows) ↔ (((wiringMapOf gates c).2 : ℕ) < n - zkRows))
       ∧ (∀ i : Fin n, (i : ℕ) < publicCount → (gates i).typ = .generic)
@@ -228,8 +250,10 @@ def build? [DecidableEq F] (gates : Fin n → GateRow F n) (publicCount zkRows :
       ∧ (∀ c : Fin permCols × Fin n, n - zkRows ≤ ((c.2 : ℕ)) → wiringMapOf gates c = c)
       ∧ (∀ i : Fin n, n - zkRows ≤ (i : ℕ) → (gates i).typ = .zero)
       ∧ (∀ i : Fin n, (i : ℕ) + 1 = n - zkRows → (gates i).typ.twoRow = false) then
-    have ⟨hpow, hprim, hcoset, hzk_three, hzk_le, hpublic_le, hbij, hregion,
+    have ⟨hpow, hprim, hcoset, hzk_three, hzk_le, hpublic_le, hleft, hright, hregion,
       hgeneric, hcoeffs, hmask_id, hmask_zero, hmask_boundary⟩ := h
+    have hbij : Function.Bijective (wiringMapOf gates) :=
+      Function.bijective_iff_has_inverse.mpr ⟨wiringPred pred, hleft, hright⟩
     have homega : IsPrimitiveRoot omega n :=
       isPrimitiveRoot_of_certificate' (let ⟨k, _, hk⟩ := hpow; ⟨k, hk⟩) hprim
     some { gates := gates, publicCount := publicCount, zkRows := zkRows
