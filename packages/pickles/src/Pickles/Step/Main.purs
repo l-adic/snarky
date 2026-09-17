@@ -43,7 +43,6 @@ import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), mkSideloadedLagrangeLookup)
-import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
 import Pickles.Slots (SlotOf)
 import Pickles.Sponge (initialSpongeCircuit)

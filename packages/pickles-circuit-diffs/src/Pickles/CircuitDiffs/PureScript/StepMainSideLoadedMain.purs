@@ -17,8 +17,8 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -72,12 +72,10 @@ sideLoadedMainRule
   -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput SideLoadedMainPrevsSpec Unit)
 sideLoadedMainRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
-    let StatementIO p1 = slot.statement in p1.input
-  -- The OCaml rule allocates the key here, between the prev statement
-  -- and the base-case comparison, and hands it to
-  -- `Side_loaded.in_circuit` without binding it to anything.
-  vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) -> slot.verificationKey
+  -- One allocation for both: the prev's statement field, then the key
+  -- the OCaml rule hands to `Side_loaded.in_circuit` without binding.
+  Tuple prev vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
+    let StatementIO p1 = slot.statement in Tuple p1.input slot.verificationKey
   isBaseCase <- equals_ (const_ zero) appState
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]

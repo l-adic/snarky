@@ -32,6 +32,7 @@ module Pickles.Prove.Compile
   , shapeProveData
   , padShapeProveData
   , class SlotKinds
+  , SlotKeySource(..)
   , slotKindsOf
   , class SlotWidths
   , slotWidthsOf
@@ -62,7 +63,7 @@ import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int.Bits as Int.Bits
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, over, unwrap, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple.Nested (type (/\), (/\))
@@ -1539,20 +1540,42 @@ instance SlotWidths Unit where
 instance (Reflectable n Int, SlotWidths rest) => SlotWidths (SlotOf k n stmt /\ rest) where
   slotWidthsOf _ = Array.cons (reflectType (Proxy @n)) (slotWidthsOf (Proxy @rest))
 
--- | Whether each slot is side-loaded, in slot order, read back from
--- | the spec's `SlotOf` kinds. `mkRuleEntry` checks the answer against
--- | the `SlotWrapKey` the caller supplies for that slot.
+-- | Where a slot's wrap verification key comes from, as a value: the
+-- | `SlotOf` kind a rule declares, and equally what a `SlotWrapKey`
+-- | supplies. `Self` and `External` are both compiled sources, so they
+-- | share a case.
+data SlotKeySource
+  = KeyFromCompile
+  | KeyFromProver
+
+derive instance Eq SlotKeySource
+
+instance Show SlotKeySource where
+  show = case _ of
+    KeyFromCompile -> "a compiled slot (Self or External)"
+    KeyFromProver -> "a side-loaded slot"
+
+-- | The source a `SlotWrapKey` supplies.
+slotWrapKeySource :: SlotWrapKey -> SlotKeySource
+slotWrapKeySource = case _ of
+  Self -> KeyFromCompile
+  External _ -> KeyFromCompile
+  SideLoadedKey -> KeyFromProver
+
+-- | Each slot's declared key source, in slot order, read back from the
+-- | spec's `SlotOf` kinds. `mkRuleEntry` checks it against the
+-- | `SlotWrapKey` the caller supplies for that slot.
 class SlotKinds (prevsSpec :: Type) where
-  slotKindsOf :: forall proxy. proxy prevsSpec -> Array Boolean
+  slotKindsOf :: forall proxy. proxy prevsSpec -> Array SlotKeySource
 
 instance SlotKinds Unit where
   slotKindsOf _ = []
 
 instance SlotKinds rest => SlotKinds (SlotOf Compiled n stmt /\ rest) where
-  slotKindsOf _ = Array.cons false (slotKindsOf (Proxy @rest))
+  slotKindsOf _ = Array.cons KeyFromCompile (slotKindsOf (Proxy @rest))
 
 instance SlotKinds rest => SlotKinds (SlotOf SideLoaded n stmt /\ rest) where
-  slotKindsOf _ = Array.cons true (slotKindsOf (Proxy @rest))
+  slotKindsOf _ = Array.cons KeyFromProver (slotKindsOf (Proxy @rest))
 
 -- | The wrap circuit's per-slot widths, overlaid from every branch's own
 -- | slot list.
@@ -2528,16 +2551,12 @@ mkRuleEntry rule slotVKs = do
   -- says the same thing at the value level. Disagreement means one of
   -- the two is a mistake, and nothing downstream would report it: the
   -- circuit follows the key, the rule's type follows the kind.
-  forWithIndex_ (slotKindsOf (Proxy @prevsSpec)) \i isSideLoadedSlot -> do
-    let
-      suppliedSideLoaded = case Array.index (Vector.toUnfoldable slotVKs) i of
-        Just SideLoadedKey -> true
-        _ -> false
-    when (isSideLoadedSlot /= suppliedSideLoaded) $ Exc.throw
-      $ "mkRuleEntry: slot " <> show i <> " is declared "
-          <> (if isSideLoadedSlot then "SideLoadedSlot" else "Slot")
-          <> " in the rule's prevs spec but its key is "
-          <> (if suppliedSideLoaded then "SideLoadedKey" else "Self or External")
+  forWithIndex_ (slotKindsOf (Proxy @prevsSpec)) \i declared -> do
+    let supplied = map slotWrapKeySource (Array.index (Vector.toUnfoldable slotVKs) i)
+    when (Just declared /= supplied) $ Exc.throw
+      $ "mkRuleEntry: slot " <> show i <> " is declared " <> show declared
+          <> " in the rule's prevs spec, but its SlotWrapKey supplies "
+          <> maybe "no key at all" show supplied
   pure $ RuleEntry
     { preComputeStepDomainLog2Fn: \handler ctx ->
         PProveStep.preComputeStepDomainLog2
