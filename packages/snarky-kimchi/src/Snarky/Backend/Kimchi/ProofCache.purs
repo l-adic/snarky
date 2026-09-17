@@ -1,33 +1,35 @@
--- | Disk proof-cache — a faithful translation of OCaml
--- | `mina/src/lib/crypto/pickles/proof_cache.ml`.
+-- | Disk proof-cache: the prover's memo of every kimchi proof a test has
+-- | produced, and the record a consumer verifies those proofs from.
 -- |
--- | A 2-level map `verification_key -> public_input -> proof`, where the
--- | proof is the kimchi `ProverProof` serde-JSON (exactly OCaml's
--- | `Backend.Tick/Tock.Proof.{to,of}_yojson`). Step and wrap proofs are
--- | cached separately, each keyed by *its own* circuit's VK digest and
--- | *its own* kimchi public-input field vector.
+-- | A 2-level map `vkDigest -> publicInput -> Entry`. The digest is
+-- | `VerifierIndex::digest()`, the value the verifier absorbs first; the
+-- | public input is the comma-joined decimal field vector. An entry holds
+-- | the verification key's JSON, the proof's serde-JSON (exactly OCaml's
+-- | `Backend.Tick/Tock.Proof.{to,of}_yojson`) and, on a wrap proof, the
+-- | key of the step proof it wrapped — so a chain is walkable from the
+-- | file alone.
 -- |
--- | Why `(vk, public_input)` is a complete key: the kimchi prover is
+-- | Why `(vkDigest, publicInput)` is a complete key: the kimchi prover is
 -- | deterministic (shared ChaCha20 seed) and, for pickles circuits, the
 -- | recursion-relevant non-deterministic advice is hash-committed into
 -- | the step statement (= the public input); remaining advice is
 -- | constraint-determined. So the public input pins the proof — no
--- | label, no prev-traversal. This is the property OCaml's `Proof_cache`
--- | itself relies on (and mina ships, with committed `proof_cache.json`
--- | per transaction_snark test).
+-- | label, no prev-traversal.
 -- |
 -- | Storage is one JSON document per test, read/written through the
--- | PureScript `node-fs` bindings; the store is the well-typed
--- | `Object (Object String)` (= `vk -> public_input -> proof`). Decode
--- | is graceful (any drift => empty store => miss => regenerate), per
--- | `proof_cache.ml`.
+-- | PureScript `node-fs` bindings. Decode is graceful: any drift is an
+-- | empty store, a miss, and the proof regenerates.
 module Snarky.Backend.Kimchi.ProofCache
   ( ProofCache
   , mkProofCache
+  , Entry
+  , StepRef
   , getPallasProof
   , setPallasProof
   , getVestaProof
   , setVestaProof
+  , piKey
+  , pallasVerifierIndexJsonKey
   , vestaVerifierIndexJsonKey
   ) where
 
@@ -36,7 +38,7 @@ import Prelude
 import Data.Argonaut.Core (Json, stringify)
 import Data.Argonaut.Core (fromArray, fromNumber, fromObject, fromString, jsonNull) as Argonaut
 import Data.Int (toNumber)
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.Nullable (Nullable)
 import Data.Nullable as Nullable
 import Data.String (Pattern(..), lastIndexOf, take)
@@ -45,6 +47,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Foreign.Object (Object)
 import Foreign.Object as Object
+import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (permsAll)
 import Node.FS.Sync (exists, mkdir', readTextFile, writeTextFile)
@@ -64,27 +67,32 @@ newtype ProofCache = ProofCache String
 mkProofCache :: String -> ProofCache
 mkProofCache = ProofCache
 
--- | One cached proof: its serde JSON, and the verification key it was
--- | proved against. The key is also this entry's bucket, so `vk` is a
--- | second copy — carried anyway so a consumer holds a whole
--- | `(vk, public input, proof)` triple without parsing a map key.
-type Entry = { proof :: String, vk :: String, digest :: String }
+-- | The cache key of another entry: the step proof a wrap proof wrapped.
+type StepRef = { vkDigest :: String, publicInput :: String }
 
--- | On-disk shape: `{ "<vkKey>": { "<publicInputKey>": Entry } }` — the
--- | natural JSON form of OCaml's `vk -> public_input -> proof`, with the
--- | key repeated inside the entry.
+-- | One cached proof: the verification key's JSON, the proof's serde
+-- | JSON and, on a wrap proof, the step proof it wrapped. A step entry
+-- | has no `step`.
+type Entry = { vk :: String, proof :: String, step :: Maybe StepRef }
+
+-- | On-disk shape: `{ "<vkDigest>": { "<publicInput>": Entry } }`.
 type Store = Object (Object Entry)
 
 -- | Load the store. Missing file or any decode drift => empty store
 -- | (a miss); the proof is simply regenerated. A cache must always be
--- | reconstructible from empty (same invariant as `proof_cache.ml`).
+-- | reconstructible from empty. Buckets whose key is not a decimal digest
+-- | are dropped, so a store written under an older keying cannot survive
+-- | the next save beside the new one.
 loadStore :: String -> Effect Store
 loadStore path = do
   present <- exists path
   if not present then pure Object.empty
   else do
     txt <- readTextFile UTF8 path
-    pure (fromMaybe Object.empty (JSON.readJSON_ txt :: Maybe Store))
+    pure
+      ( Object.filterKeys (isJust <<< BigInt.fromString)
+          (fromMaybe Object.empty (JSON.readJSON_ txt :: Maybe Store))
+      )
 
 -- | Write the store through, creating the containing directory if
 -- | needed (recursive mkdir is idempotent — no throw if it exists).
@@ -100,11 +108,11 @@ getEntry (ProofCache path) vk pi = do
   store <- loadStore path
   pure (Object.lookup vk store >>= Object.lookup pi)
 
-setEntry :: ProofCache -> String -> String -> String -> String -> Effect Unit
-setEntry (ProofCache path) vk pi proof digest = do
+setEntry :: ProofCache -> String -> String -> Entry -> Effect Unit
+setEntry (ProofCache path) vkDigest pi entry = do
   store <- loadStore path
-  let inner = fromMaybe Object.empty (Object.lookup vk store)
-  saveStore path (Object.insert vk (Object.insert pi { proof, vk, digest } inner) store)
+  let inner = fromMaybe Object.empty (Object.lookup vkDigest store)
+  saveStore path (Object.insert vkDigest (Object.insert pi entry inner) store)
 
 -- | Canonical, deterministic string for a field element (its integer
 -- | value). Stable across runs/machines.
@@ -116,60 +124,53 @@ fieldStr = show <<< toBigInt
 piKey :: forall f. PrimeField f => Array f -> String
 piKey = joinWith "," <<< map fieldStr
 
--- | VK lookup key = the full VK JSON, exactly as OCaml `Proof_cache`
--- | keys it (`proof_cache.ml:185`): a single `verification_key ->
--- | public_input -> proof` map keyed by the raw VK yojson — no digest
--- | and no curve prefix. Step (Pallas-base) and wrap (Vesta-base) VKs
--- | share the one store but can't collide: their JSON differs (distinct
--- | curve, domain, commitments). OCaml never materializes a host-side VK
--- | digest and never namespaces by curve; we follow suit.
-pallasProofVkKey :: VerifierIndex Vesta.G Pallas.BaseField -> String
-pallasProofVkKey = pallasVerifierIndexJsonKey
-
-vestaProofVkKey :: VerifierIndex Pallas.G Vesta.BaseField -> String
-vestaProofVkKey = vestaVerifierIndexJsonKey
-
 -- | Cache lookup / store for `pallas*` proofs (Vesta.G commitments,
 -- | Pallas-base-field scalars — what pickles' Tick / Step side produces).
+-- | The key is the verification key's digest, as a decimal string; a step
+-- | proof wraps nothing, so it records no `step`.
 getPallasProof
   :: ProofCache
-  -> VerifierIndex Vesta.G Pallas.BaseField
+  -> String
   -> Array Pallas.BaseField
   -> Effect (Maybe (Proof Vesta.G Pallas.BaseField))
-getPallasProof cache vk pis = do
-  m <- getEntry cache (pallasProofVkKey vk) (piKey pis)
+getPallasProof cache vkDigest pis = do
+  m <- getEntry cache vkDigest (piKey pis)
   pure (pallasProofFromSerdeJson <<< _.proof <$> m)
 
 setPallasProof
   :: ProofCache
+  -> String
   -> VerifierIndex Vesta.G Pallas.BaseField
   -> Array Pallas.BaseField
   -> Proof Vesta.G Pallas.BaseField
-  -> String
   -> Effect Unit
-setPallasProof cache vk pis proof digest =
-  setEntry cache (pallasProofVkKey vk) (piKey pis) (pallasProofToSerdeJson proof) digest
+setPallasProof cache vkDigest vk pis proof =
+  setEntry cache vkDigest (piKey pis)
+    { vk: pallasVerifierIndexJsonKey vk, proof: pallasProofToSerdeJson proof, step: Nothing }
 
 -- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
 -- | Vesta-base-field scalars — what pickles' Tock / Wrap side produces).
+-- | A wrap proof records the step proof it wrapped.
 getVestaProof
   :: ProofCache
-  -> VerifierIndex Pallas.G Vesta.BaseField
+  -> String
   -> Array Vesta.BaseField
   -> Effect (Maybe (Proof Pallas.G Vesta.BaseField))
-getVestaProof cache vk pis = do
-  m <- getEntry cache (vestaProofVkKey vk) (piKey pis)
+getVestaProof cache vkDigest pis = do
+  m <- getEntry cache vkDigest (piKey pis)
   pure (vestaProofFromSerdeJson <<< _.proof <$> m)
 
 setVestaProof
   :: ProofCache
+  -> String
   -> VerifierIndex Pallas.G Vesta.BaseField
   -> Array Vesta.BaseField
   -> Proof Pallas.G Vesta.BaseField
-  -> String
+  -> StepRef
   -> Effect Unit
-setVestaProof cache vk pis proof digest =
-  setEntry cache (vestaProofVkKey vk) (piKey pis) (vestaProofToSerdeJson proof) digest
+setVestaProof cache vkDigest vk pis proof step =
+  setEntry cache vkDigest (piKey pis)
+    { vk: vestaVerifierIndexJsonKey vk, proof: vestaProofToSerdeJson proof, step: Just step }
 
 --------------------------------------------------------------------------------
 -- VK json-key: the deterministic full-VK string used as the bucket key.
@@ -187,9 +188,9 @@ setVestaProof cache vk pis proof digest =
 -- (`srs` is rendered `null` by OCaml and the optional `lookup_index` is
 -- `None` for vanilla pickles VKs, so both are skipped).
 --
--- Only `vestaVerifierIndexJsonKey` is exported (the digest-equality test
--- consumes it); `pallasVerifierIndexJsonKey` + the `VkRaw`/helper types
--- stay private to this module.
+-- Both renderers are exported: they produce an entry's `vk` field, and the
+-- digest-equality test consumes the Vesta one. The `VkRaw`/helper types stay
+-- private to this module.
 --------------------------------------------------------------------------------
 
 pallasVerifierIndexJsonKey :: VerifierIndex Vesta.G Pallas.BaseField -> String

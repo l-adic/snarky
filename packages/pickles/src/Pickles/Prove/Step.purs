@@ -52,6 +52,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
+import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
@@ -78,7 +79,6 @@ import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, 
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
-import JS.BigInt as BigInt
 import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
@@ -1776,13 +1776,13 @@ stepSolveAndProve handler ctx rule compileResult advice = do
             case ctx.proofCache of
               Nothing -> pure $ Lazy.force p
               Just cache -> do
-                mp <- getPallasProof cache compileResult.verifierIndex publicInputs
+                let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
+                mp <- getPallasProof cache vkDigest publicInputs
                 case mp of
                   Just proof -> pure proof
                   Nothing -> do
                     let proof = Lazy.force p
-                    setPallasProof cache compileResult.verifierIndex publicInputs proof
-                      (BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex)))
+                    setPallasProof cache vkDigest compileResult.verifierIndex publicInputs proof
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex

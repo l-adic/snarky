@@ -134,7 +134,7 @@ import Pickles.Step.Slots (class SlotKindValue, class SlotStatementsCarrier, cla
 import Pickles.Step.Types as Step
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
-import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
+import Pickles.VerificationKey (VerificationKey(..), verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Verify
   ( CompiledProof(..)
   , CompiledProofWidthData(..)
@@ -169,7 +169,7 @@ import Snarky.Backend.Kimchi.Proof
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
-import Snarky.Backend.Kimchi.ProofCache (ProofCache)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, piKey)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked(..), coerceViaBits)
@@ -3037,6 +3037,10 @@ runMultiProverBody
               }
           , debug: cfg.debug
           , proofCache: cfg.proofCache
+          , step:
+              { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest stepCR.verifierIndex))
+              , publicInput: piKey stepResult.publicInputs
+              }
           , kimchiPrevChallenges: kimchiPrevPadded
           }
 

@@ -37,13 +37,13 @@ import Effect (Effect)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
+import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import JS.BigInt as BigInt
 import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments, verifierIndexDigest)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -58,7 +58,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, getVestaProof, setVestaProof)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, StepRef, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.DSL (F(..), FVar, const_)
@@ -217,6 +217,9 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
   -- | Optional disk proof-cache, threaded from `CompileMultiConfig`.
   -- | `Nothing` = no caching.
   , proofCache :: Maybe ProofCache
+  -- | The cache key of the step proof being wrapped, recorded on the
+  -- | wrap proof's entry so a chain is walkable from the cache alone.
+  , step :: StepRef
   -- | Kimchi-level `prev_challenges`, padded to `PaddedLength = 2`
   -- | entries. Each holds an sg (Pallas point, step-field coordinates)
   -- | and its expanded challenges.
@@ -454,13 +457,13 @@ wrapSolveAndProve ctx compileResult = do
         case ctx.proofCache of
           Nothing -> pure $ Lazy.force p
           Just cache -> do
-            mp <- getVestaProof cache compileResult.verifierIndex publicInputs
+            let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
+            mp <- getVestaProof cache vkDigest publicInputs
             case mp of
               Just proof -> pure proof
               Nothing -> do
                 let proof = Lazy.force p
-                setVestaProof cache compileResult.verifierIndex publicInputs proof
-                  (BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex)))
+                setVestaProof cache vkDigest compileResult.verifierIndex publicInputs proof ctx.step
                 pure proof
       pure $ Right
         { proverIndex: compileResult.proverIndex
