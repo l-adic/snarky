@@ -65,9 +65,11 @@ def wrapShifts : Fin permCols → Fq := fun i =>
      99141114743446054294525453467100398765600279346526770105380817318185104545]
     : Array ℕ)[(i : ℕ)]?.getD 0
 
-/-- The two previous-challenge vectors from `base`. -/
-def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
-  [(List.range 16).map fun i => get (base + i), (List.range 16).map fun i => get (base + 16 + i)]
+/-- The two previous-challenge vectors from `base`, `rounds` entries each. -/
+def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) (rounds : ℕ := 16) :
+    List (List (FVar (ZMod p))) :=
+  [(List.range rounds).map fun i => get (base + i),
+   (List.range rounds).map fun i => get (base + rounds + i)]
 
 open Kimchi.Verifier in
 /-- The public pair and the evaluation record from the dumps' layout, the public pair at

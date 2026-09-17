@@ -77,4 +77,59 @@ def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) (input : FopInput (FVa
 def fopStepOn (input : FopInput (FVar Fp)) : CircuitM Fp C (Pickles.FopOutput Fp) :=
   fopStepHarness (CircuitType.varToFields (val := FopInput Fp) input)
 
+/-- The wrap side's `finalize_other_proof` input at `r` rounds, by name, in the wrap
+layout's cell order: the claims, the evaluation block, `ft(ζω)`, the two previous-challenge
+vectors, and the digest last. No mask and no domain cell: the wrap side reads every
+accumulator and its domain is a constant. -/
+structure FopWrapInput (r : ℕ) (α : Type) where
+  /-- `α, β, γ, ζ` at 0–3, the five shifted claims at 4–8, `ξ` at 9, `r` challenges from 10. -/
+  claims : Vector α (10 + r)
+  /-- The public pair, 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `σ` pairs and the
+  6 selector pairs. -/
+  evals : Vector α 88
+  /-- `ft(ζω)`. -/
+  ftEval1 : α
+  /-- The two `r`-entry previous-challenge vectors. -/
+  prevChallenges : Vector α (2 * r)
+  /-- The sponge digest before evaluations. -/
+  digest : α
+
+/-- The bundle is its five components, in cell order. -/
+@[simps apply symm_apply] def FopWrapInput.equivProd {r : ℕ} {α : Type} :
+    FopWrapInput r α ≃ Vector α (10 + r) × Vector α 88 × α × Vector α (2 * r) × α where
+  toFun i := (i.claims, i.evals, i.ftEval1, i.prevChallenges, i.digest)
+  invFun p := ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2⟩
+  left_inv _ := rfl
+  right_inv _ := rfl
+
+/-- The bundle encodes as its cells, components in cell order — the wrap layout at `r`. -/
+instance instFopWrapInputCircuitType {r : ℕ} :
+    CircuitType Fq (FopWrapInput r Fq) (FopWrapInput r (FVar Fq)) :=
+  CircuitType.ofEquiv FopWrapInput.equivProd FopWrapInput.equivProd
+
+/-- The bundle is unchecked: a fixture supplies its cells, so nothing is asserted of them. -/
+instance instFopWrapInputCheckedType {r : ℕ} :
+    CheckedType Fq Cq (FopWrapInput r Fq) (FopWrapInput r (FVar Fq)) :=
+  CheckedType.ofEquiv FopWrapInput.equivProd FopWrapInput.equivProd
+
+/-- A bundle is in scope when its five components are. -/
+@[simp] theorem scoped_fopWrapInput {r : ℕ} {st : ProverState Fq} {v : FopWrapInput r (FVar Fq)} :
+    CircuitType.Scoped (val := FopWrapInput r Fq) st v ↔
+      CircuitType.Scoped (val := Vector Fq (10 + r) × Vector Fq 88 × Fq × Vector Fq (2 * r) × Fq)
+        st (FopWrapInput.equivProd v) :=
+  CircuitType.scoped_ofEquiv _ _
+
+/-- A bundle reads componentwise. -/
+@[simp] theorem reads_fopWrapInput {r : ℕ} {V : Valuation Fq} {v : FopWrapInput r (FVar Fq)}
+    {x : FopWrapInput r Fq} :
+    CircuitType.Reads V v x ↔
+      CircuitType.Reads V (FopWrapInput.equivProd v) (FopWrapInput.equivProd x) :=
+  CircuitType.reads_ofEquiv _ _
+
+/-- The wrap harness on the named bundle at a domain: its encoding is the wrap layout at
+`r`, so this is `fopWrapHarnessAt` on the same cells. -/
+def fopWrapOnAt (domainLog2 r : ℕ) (input : FopWrapInput r (FVar Fq)) :
+    CircuitM Fq Cq (Pickles.FopOutput Fq) :=
+  fopWrapHarnessAt domainLog2 r (CircuitType.varToFields (val := FopWrapInput r Fq) input)
+
 end PicklesFixture

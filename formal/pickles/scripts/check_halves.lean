@@ -13,17 +13,21 @@ inputs of a real proof — the advice code, which nothing else in the tree exerc
 decides whether the table it produced satisfies every constraint, with the success bits
 read back off it.
 
-The scalar half of the step circuit finalizes the *step* proof its verified wrap proof
-wrapped: that proof's scalar-side checks live in the step field. So one run takes a wrap
-entry of the cache, follows its `step` link to the step proof, and lays out
-`finalize_other_proof`'s input from the two: the deferred-value claims, the digest and
-the branch data from the wrap statement (the wrap entry's public input), the evaluations
-and old accumulators from the step proof.
+A scalar half finalizes the proof one level down: the step circuit's finalizes the *step*
+proof its verified wrap proof wrapped, the wrap circuit's finalizes the *wrap* proof its
+step proof verified in a slot — each proof's scalar-side checks live in the other field.
+So a step-half run takes a wrap entry of the cache, follows its `step` link, and lays out
+`finalize_other_proof`'s input from the two: the claims, the digest and the branch data
+from the wrap statement (the wrap entry's public input), the evaluations and accumulators
+from the step proof. A wrap-half run takes a step entry, follows a slot's `prevs` link to
+the wrap proof it verified, and lays the input out from that slot of the step statement
+and the wrap proof.
 
 Per run: the interpreter completes (a), the table satisfies the assembled system (b),
-`finalized` and its four conjuncts read 1 (c), and `kimchiVerify` accepts both proofs (d)
-— against the SRS they were made with (`srs-cache/`, cut to each proof's round count)
-and the Lagrange basis computed from it, memoised under `lagrange-cache/`.
+`finalized` and its four conjuncts read 1 (c), and, per step-half run, `kimchiVerify`
+accepts both proofs (d) — against the SRS they were made with (`srs-cache/`, cut to each
+proof's round count) and the Lagrange basis computed from it, memoised under
+`lagrange-cache/`.
 
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
@@ -43,18 +47,19 @@ transported by value. -/
 def toStep (x : CW.ScalarField) : Fp := (x.val : Fp)
 
 /-- One chunk of a one-chunk evaluation. -/
-def oneChunk (nm : String) (a : Array Fp) : Except String Fp :=
+def oneChunk {F : Type} (nm : String) (a : Array F) : Except String F :=
   if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
 
 /-- The evaluation block in the layout's order — the public pair, 15 `w`, 15 coefficient,
 `z`, 6 `σ`, 6 selector pairs — each pair `(ζ, ζω)` at one chunk. -/
-def evalCells (p : Kimchi.Verifier.Wire.KimchiProof CS) : Except String (Vector Fp 88) := do
-  let pair (nm : String) (e : Kimchi.Verifier.PointEvaluations (Array Fp)) :
-      Except String (List Fp) := do
+def evalCells (C : Ipa.KimchiCurve) (p : Kimchi.Verifier.Wire.KimchiProof C) :
+    Except String (Vector C.ScalarField 88) := do
+  let pair (nm : String) (e : Kimchi.Verifier.PointEvaluations (Array C.ScalarField)) :
+      Except String (List C.ScalarField) := do
     pure [← oneChunk nm e.zeta, ← oneChunk nm e.zetaOmega]
   let some pub := p.pubEvals
-    | throw "the step proof carries no public evaluations (one-chunk wire form)"
-  let mut cells : List Fp := []
+    | throw "the proof carries no public evaluations (one-chunk wire form)"
+  let mut cells : List C.ScalarField := []
   cells := cells ++ (← pair "public" pub)
   for e in p.evals.w.toList do cells := cells ++ (← pair "w" e)
   for e in p.evals.coefficients.toList do cells := cells ++ (← pair "coefficients" e)
@@ -99,31 +104,76 @@ def assemble (w : Cache.Entry CW) (s : Cache.Entry CS) :
   return ({ claims
             mask := #v[(bd % 2 : ℕ), ((bd / 2) % 2 : ℕ)]
             domainLog2 := (bd / 4 : ℕ)
-            evals := ← evalCells s.proof
+            evals := ← evalCells CS s.proof
             ftEval1 := s.proof.ftEval1
             prevChallenges
             digest := g 10 },
           ⟨s.vk.domainLog2, s.vk.omega⟩)
 
-/-- One run of the step half: the interpreter's verdict, the decided satisfiability, and
-the five bits. -/
-def runStep (dom : Pickles.KnownDomain Fp) (inp : FopInput Fp) :
-    IO (Bool × List (String × ℕ)) := do
-  let nv := CircuitType.size Fp (FopInput Fp)
-  let iv : FopInput (FVar Fp) := inputVar (F := Fp) (a := FopInput Fp)
-  let m := fopStepOnAt [dom] iv
+/-- One run of a half on a named input bundle: `build` and `prove` the harness on it, read
+the five bits off the table, and decide whether the table satisfies the assembled system. -/
+def runHalf {p : ℕ} [Fact p.Prime] {a av : Type} [CircuitType (ZMod p) a av]
+    (side : Kimchi.Fixture.PS.Side p)
+    (harness : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (Pickles.FopOutput (ZMod p)))
+    (inp : a) : IO (Bool × List (String × ℕ)) := do
+  let nv := CircuitType.size (ZMod p) a
+  let m := harness (inputVar (F := ZMod p) (a := a))
   let built := build m nv
-  let st := seed (F := Fp) (avar := FopInput (FVar Fp)) inp
+  let st := seed (F := ZMod p) (avar := av) inp
   match prove m st.nv st.env with
   | .error e => throw (IO.userError s!"prove failed: {repr e}")
-  | .ok p =>
-    let read (b : BoolVar Fp) : ℕ := ((b : CVar Fp).val p.assignments.get).val
-    let bits := [("finalized", read p.result.finalized), ("xiCorrect", read p.result.xiCorrect),
-      ("bCorrect", read p.result.bCorrect), ("cipCorrect", read p.result.cipCorrect),
-      ("plonkOk", read p.result.plonkOk)]
-    match provedSatisfies Kimchi.Fixture.PS.fpSide built p.assignments nv with
+  | .ok pr =>
+    let read (b : BoolVar (ZMod p)) : ℕ := ((b : CVar (ZMod p)).val pr.assignments.get).val
+    let bits := [("finalized", read pr.result.finalized), ("xiCorrect", read pr.result.xiCorrect),
+      ("bCorrect", read pr.result.bCorrect), ("cipCorrect", read pr.result.cipCorrect),
+      ("plonkOk", read pr.result.plonkOk)]
+    match provedSatisfies side built pr.assignments nv with
     | .error e => throw (IO.userError s!"reduction failed: {repr e}")
     | .ok sat => return (sat, bits)
+
+/-- The step half on a step-side bundle at a known domain. -/
+def runStep (dom : Pickles.KnownDomain Fp) (inp : FopInput Fp) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := FopInput Fp) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) inp
+
+/-- The wrap half on a wrap-side bundle at a domain and a round count. -/
+def runWrap (domainLog2 r : ℕ) (inp : FopWrapInput r Fq) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := FopWrapInput r Fq) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2 r) inp
+
+/-- A step-field cell as the wrap-field value it carries — a digest or a 128-bit challenge,
+transported by value. -/
+def toWrap (x : CS.ScalarField) : Fq := (x.val : Fq)
+
+/-- `finalize_other_proof`'s wrap-side input from a step entry's slot and the wrap proof that
+slot verified.
+
+The step statement (`Pickles.PackedStatement`) lays a slot out in `17 + r` cells: the five
+shifted claims `cip, b, ζ^{2^k}, ζⁿ, perm` as `(half, parity)` pairs at 0–9, the digest at
+10, `β, γ` at 11–12, `α, ζ, ξ` at 13–15, the `r` round challenges from 16, `should_finalize`
+last. A split claim's wrap-field cell is its `Type2` register `2·half + parity`. The
+evaluations and the two accumulators are the wrap proof's; the wrap side reads both
+accumulators, so the proof must carry exactly two of `r` challenges. -/
+def assembleWrap (r : ℕ) (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
+    Except String (FopWrapInput r Fq) := do
+  let c := s.publicInput
+  let base := slot * (17 + r)
+  unless base + 17 + r ≤ c.size do
+    throw s!"step public input: {c.size} cells, slot {slot} needs {base + 17 + r}"
+  let g (i : ℕ) : Fq := toWrap (c.getD (base + i) 0)
+  let t (i : ℕ) : Fq := 2 * g (2 * i) + g (2 * i + 1)
+  let claims : Vector Fq (10 + r) := Vector.ofFn fun i =>
+    match (i : ℕ) with
+    | 0 => g 13 | 1 => g 11 | 2 => g 12 | 3 => g 14
+    | 4 => t 2 | 5 => t 3 | 6 => t 4 | 7 => t 0 | 8 => t 1 | 9 => g 15
+    | k => g (16 + (k - 10))
+  let prev : List (List Fq) := w.proof.prevChallenges.toList.map (·.chals.toList)
+  unless prev.length = 2 ∧ prev.all (·.length = r) do
+    throw s!"wrap accumulators: {prev.map (·.length)}, expected two of {r}"
+  let prevCells := prev.flatten
+  let prevChallenges : Vector Fq (2 * r) ←
+    if h : prevCells.length = 2 * r then pure ⟨prevCells.toArray, by simp [h]⟩
+    else throw s!"previous challenges: {prevCells.length} cells"
+  return { claims, evals := ← evalCells CW w.proof, ftEval1 := w.proof.ftEval1, prevChallenges
+           digest := g 10 }
 
 /-- The curve's SRS cut to `k` rounds, loaded from `srs-cache/<name>.srs` once per `k`
 (decompressing the file's points dominates a load). -/
@@ -190,7 +240,27 @@ def main : IO Unit := do
       wrap={wrapOk} {t3 - t2} ms"
     runs := runs + 1
     unless sat ∧ bitsOk ∧ stepOk ∧ wrapOk do allOk := false
-  unless runs > 0 do throw (IO.userError "no wrap→step pairs to run")
+  for s in steps do
+    for (ref, slot) in s.prevs.toList.zipIdx do
+      let some (d, pi) := ref | continue
+      let some w := wraps.find? (fun w => w.vkDigest = d ∧ w.publicInputKey = pi)
+        | IO.println s!"  ✗ step {s.vkDigest.take 10}… slot {slot}: its wrap {d.take 10}… \
+            is not in the file"
+          allOk := false
+          continue
+      let r := w.proof.opening.lr.size
+      let inp ← match assembleWrap r s slot w with
+        | .error e => throw (IO.userError s!"assemble (wrap side): {e}") | .ok i => pure i
+      let t0 ← IO.monoMsNow
+      let (sat, bits) ← runWrap w.vk.domainLog2 r inp
+      let t1 ← IO.monoMsNow
+      let bitsOk := bits.all (·.2 = 1)
+      IO.println s!"  {if sat ∧ bitsOk then "✓" else "✗"} wrap half on step→wrap \
+        {d.take 10}… (slot {slot}, domain 2^{w.vk.domainLog2}, {r} rounds): satisfies={sat} \
+        bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
+      runs := runs + 1
+      unless sat ∧ bitsOk do allOk := false
+  unless runs > 0 do throw (IO.userError "no linked pairs to run")
   unless allOk do throw (IO.userError "check-halves FAILED")
-  IO.println s!"✓ {runs} step-half run(s): every table satisfies its system, every bit reads 1, \
+  IO.println s!"✓ {runs} run(s): every table satisfies its system, every bit reads 1, \
     kimchiVerify accepts every proof"

@@ -157,11 +157,11 @@ private def parsePublicInput (C : Ipa.KimchiCurve) (s : String) :
     | some v => pure (v : C.ScalarField)
     | none => throw s!"public input: not a numeral: {t.take 40}"
 
-/-- One cached proof, decoded: its key, its records, and the step proof it wrapped. -/
+/-- One cached proof, decoded: its key, its records, and the proofs it is built on. -/
 structure Entry (C : Ipa.KimchiCurve) where
   /-- The verification key's digest, as the cache keys it. -/
   vkDigest : String
-  /-- The public input's key string, as the cache keys it — what a `step` link names. -/
+  /-- The public input's key string, as the cache keys it — what a link names. -/
   publicInputKey : String
   /-- The public input. -/
   publicInput : Array C.ScalarField
@@ -171,6 +171,13 @@ structure Entry (C : Ipa.KimchiCurve) where
   proof : KimchiProof C
   /-- The cache key of the step proof this (wrap) proof wrapped. -/
   step : Option (String × String)
+  /-- Per slot of this (step) proof, the cache key of the wrap proof it verified there —
+  `none` on a base-case slot. -/
+  prevs : Array (Option (String × String))
+
+/-- A link: the cache key of another entry. -/
+private def parseRef (j : Json) : Except String (String × String) := do
+  return (← (← j.getObjVal? "vkDigest").getStr?, ← (← j.getObjVal? "publicInput").getStr?)
 
 /-- One cache entry at a curve. -/
 private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
@@ -180,14 +187,16 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
   let vkJ ← Json.parse (← (← e.getObjVal? "vk").getStr?)
   let proofJ ← Json.parse (← (← e.getObjVal? "proof").getStr?)
   let step ← match (e.getObjVal? "step").toOption with
-    | some sj => match sj with
-      | Json.null => pure none
-      | _ => pure (some (← (← sj.getObjVal? "vkDigest").getStr?,
-                         ← (← sj.getObjVal? "publicInput").getStr?))
-    | none => pure none
+    | some Json.null | none => pure none
+    | some sj => pure (some (← parseRef sj))
+  let prevs ← match (e.getObjVal? "prevs").toOption with
+    | some Json.null | none => pure #[]
+    | some pj => parseArrOf (fun r => match r with
+        | Json.null => pure none
+        | _ => some <$> parseRef r) pj
   return { vkDigest, publicInputKey := pi, publicInput := ← parsePublicInput C pi
            vk := ← parseVK C endo (d : C.BaseField) vkJ
-           proof := ← parseProof C sqrt proofJ, step }
+           proof := ← parseProof C sqrt proofJ, step, prevs }
 
 /-- A cache file at a curve. A file holds a chain's step proofs, committed on one Pasta
 curve, and its wrap proofs, committed on the other; a bucket whose points are not on
