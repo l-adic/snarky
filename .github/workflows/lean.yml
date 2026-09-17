@@ -98,6 +98,13 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake build check-cs
 
+    # The halves driver likewise: interpreted, one group-half `prove` alone is far past the
+    # runner's patience; compiled, the whole corpus is minutes. Same cache, same fee.
+    - name: Compile the halves-satisfiability driver (cached for its consumer)
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake build check-halves
+
     # Save even when the build (or a source gate rerun) failed: a red PR iteration
     # then restarts from the partial build instead of the last green one. On an exact
     # primary-key hit the save is a no-op warning.
@@ -327,6 +334,50 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         KIMCHI_FIXTURES_DIR=kimchi/fixtures \
           lake env lean --run kimchi/scripts/check_vk_correspond.lean
+
+  halves:
+    name: Circuit halves on the cached proofs
+    needs: build
+    runs-on: ubuntu-latest-large
+    defaults:
+      run:
+        working-directory: formal
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: false
+
+    - name: Setup Lean (restore the build)
+      uses: ./.github/actions/setup-lean
+
+    # The proofs come from the PureScript suite's cache (committed); the SRS they were made
+    # against is the project's, fetched as the PureScript jobs fetch it. The Lagrange bases
+    # the driver needs are computed from it at run time and memoised under
+    # formal/lagrange-cache (a few MSMs, cached across runs).
+    - name: Cache SRS files
+      uses: actions/cache@v3
+      with:
+        path: srs-cache/
+        key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    - name: Cache the Lean Lagrange bases
+      uses: actions/cache@v3
+      with:
+        path: formal/lagrange-cache/
+        key: ${{ runner.os }}-lean-lagrange
+
+    - name: Populate SRS cache
+      working-directory: .
+      run: make fetch-srs
+
+    # Every modelled half through the prover interpreter on real proofs, the table decided
+    # against the assembled system, the success bits read back, and kimchiVerify on the same
+    # proofs (pickles/scripts/check_halves.lean). Compiled by the build job; on a cache hit
+    # `lake exe` is a no-op build + run.
+    - name: Check the circuit halves are satisfied on the cached proofs
+      run: |
+        export PATH="$HOME/.elan/bin:$PATH"
+        lake exe check-halves
 
   kernel-replay:
     name: Kernel replay (lean4checker)

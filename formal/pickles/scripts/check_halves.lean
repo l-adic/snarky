@@ -130,16 +130,40 @@ def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av
     IO (Bool × List (String × ℕ)) := do
   let nv := CircuitType.size (ZMod p) a
   let m := harness (inputVar (F := ZMod p) (a := a))
+  let t0 ← IO.monoMsNow
   let built := build m nv
+  let nc := built.constraints.length
+  let t1 ← IO.monoMsNow
   let st := seed (F := ZMod p) (avar := av) inp
   match prove m st.nv st.env with
   | .error e => throw (IO.userError s!"prove failed: {repr e}")
   | .ok pr =>
+    let t2 ← IO.monoMsNow
     let read (b : BoolVar (ZMod p)) : ℕ := ((b : CVar (ZMod p)).val pr.assignments.get).val
     let bits := (bitsOf pr.result).map fun (n, b) => (n, read b)
-    match provedSatisfies side built pr.assignments nv with
-    | .error e => throw (IO.userError s!"reduction failed: {repr e}")
-    | .ok sat => return (sat, bits)
+    -- `provedSatisfies`, phase by phase
+    let (rows, gates, pubVars) := gateDataOf built nv
+    let nrows := rows.length
+    let t3 ← IO.monoMsNow
+    let env' ← match reduceProved built pr.assignments with
+      | .error e => throw (IO.userError s!"reduction failed: {repr e}") | .ok e => pure e
+    let (wit, pubs) := makeWitness env' rows pubVars
+    let nwit := wit.length
+    let t4 ← IO.monoMsNow
+    let raw := assembledRaw rows gates nv wit pubs
+    let sat ← match Kimchi.Fixture.PS.build side raw with
+      | .error e => throw (IO.userError s!"index build failed: {e}")
+      | .ok inst =>
+        let t5 ← IO.monoMsNow
+        let sat : Bool :=
+          haveI : NeZero inst.n := inst.nz
+          decide (Kimchi.Index.Satisfies inst.idx inst.wit.pub inst.wit.tab)
+        let t6 ← IO.monoMsNow
+        IO.println s!"    phases: build {t1 - t0} ms ({nc} constraints, {built.nextVar} vars) · \
+          prove {t2 - t1} ms · rows {t3 - t2} ms ({nrows} rows) · witness {t4 - t3} ms \
+          ({nwit} rows) · index build {t5 - t4} ms (n = {inst.n}) · decide {t6 - t5} ms"
+        pure sat
+    return (sat, bits)
 
 /-- The scalar half's five bits. -/
 def fopBits {F : Type} (o : Pickles.FopOutput F) : List (String × BoolVar F) :=
