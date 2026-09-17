@@ -894,15 +894,13 @@ def dummyWrapSg : AffinePoint (FVar Fp) :=
   ⟨.const 8063668238751197448664615329057427953229339439010717262869116690340613895496,
    .const 2694491010813221541025626495812026140144933943906714931997499229912601205355⟩
 
-/-- The sponge after the dummy key's index digest: `σ₀…σ₅`, `σ₆`, the 15 coefficient
-commitments and the six index commitments, each chunk's `x` then `y`, absorbed into the fresh
-sponge — 28 copies of the generator. -/
+/-- The dummy key's commitments (PS `Common`): `σ₀…σ₆`, the 15 coefficient commitments and
+the six index commitments, each one chunk at the generator — 28 copies of it. -/
+def dummyKeyComms : List (List (AffinePoint (FVar Fp))) := List.replicate 28 [pallasGenerator]
+
+/-- The sponge after the dummy key's index digest. -/
 def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
-  (List.replicate 28 pallasGenerator).foldlM
-    (fun sv P => do
-      let sv ← SpongeVar.absorb Bulletproof.IpaVesta.curve.frSponge.params sv P.x
-      SpongeVar.absorb Bulletproof.IpaVesta.curve.frSponge.params sv P.y)
-    SpongeVar.init
+  indexSponge Bulletproof.IpaVesta.curve.frSponge.params dummyKeyComms
 
 /-- The group half's cells from the 175-input layout at `get`: the claims and the opening
 from the inputs, the key's commitments and `sg_old` dummy constants. -/
@@ -911,14 +909,12 @@ def ivpStepInput (get : ℕ → FVar Fp) :
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords dummyKeyComms
   { plonk := ⟨⟨⟨get 30⟩, ⟨get 31⟩, ⟨get 32⟩, ⟨get 33⟩⟩, shifted 34, shifted 36, shifted 38⟩
     xi := ⟨get 44⟩
     deferred := ⟨shifted 40, shifted 42⟩
     sgOld := [(none, dummyWrapSg), (none, dummyWrapSg)]
-    sigmaLast := [pallasGenerator]
-    indexComms := List.replicate 6 [pallasGenerator]
-    coefficientsComm := List.replicate 15 [pallasGenerator]
-    sigmaComm := List.replicate 6 [pallasGenerator]
+    sigmaLast, indexComms, coefficientsComm, sigmaComm
     wComm := (List.range 15).map fun j => [pt (60 + 2 * j)]
     zComm := [pt 90]
     tComm := (List.range 7).map fun j => pt (92 + 2 * j)
@@ -986,28 +982,13 @@ def stepVerifyStatement (get : ℕ → FVar Fp) : Pickles.WrapStatement Fp (Type
         messagesForNextWrapProof := get 266 }
     messagesForNextStepProof := get 267 }
 
-/-- The group half's cells from the 268-input layout: the wrap proof's commitments and
-opening, the key and `sg_old` dummies; the claim cells are `verify`'s to substitute. -/
+/-- The group half's cells from the 268-input layout: the wrap proof block at 0, the key and
+`sg_old` dummies; the claim cells are `verify`'s to substitute. -/
 def stepVerifyCells (get : ℕ → FVar Fp) :
     Pickles.IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
-  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
-    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
-  let dv := (stepVerifyUnfinalized get).deferredValues
-  { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
-      dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
-    xi := dv.xi
-    deferred := ⟨dv.combinedInnerProduct, dv.b⟩
-    sgOld := [(none, dummyWrapSg), (none, dummyWrapSg)]
-    sigmaLast := [pallasGenerator]
-    indexComms := List.replicate 6 [pallasGenerator]
-    coefficientsComm := List.replicate 15 [pallasGenerator]
-    sigmaComm := List.replicate 6 [pallasGenerator]
-    wComm := (List.range 15).map fun j => [pt (2 * j)]
-    zComm := [pt 30]
-    tComm := (List.range 7).map fun j => pt (32 + 2 * j)
-    opening := { lr := (List.range 15).map fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
-                 z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
+  ivpStepInputOf (stepVerifyUnfinalized get).deferredValues
+    [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms (fun i => ⟨get i, get (i + 1)⟩)
+    (fun i => ⟨⟨get i, .unchecked (get (i + 1))⟩⟩)
 
 /-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
 side over the parsed statement, unfinalized proof and cells. -/

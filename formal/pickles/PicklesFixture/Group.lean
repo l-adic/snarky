@@ -69,14 +69,14 @@ private def keyComms {C : Bulletproof.Ipa.KimchiCurve} {F : Type} [Field F]
 
 /-- The key's cells as the group half's key records: `σ₆`, the six selectors, the 15
 coefficients, `σ₀…σ₅`. -/
-private def keyRecords {F : Type} [Field F] (comms : List (List (AffinePoint (FVar F)))) :
+def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
     List (AffinePoint (FVar F)) × List (List (AffinePoint (FVar F))) ×
       List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
   (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)
 
 /-- The sponge after a key's index digest (`VerifierIndex::digest`): every commitment's
 chunks, `x` then `y`, absorbed into the fresh sponge. -/
-private def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
+def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
     [KimchiSystem F c] (p : Poseidon.Params F) (comms : List (List (AffinePoint (FVar F)))) :
     CircuitM F c (SpongeVar F) :=
   comms.flatten.foldlM
@@ -187,26 +187,35 @@ def GroupStepInput.unfinalizedProof (inp : GroupStepInput (FVar Fp)) :
     shouldFinalize := .unchecked (g 31)
     spongeDigestBeforeEvaluations := g 10 }
 
-/-- The group half's cells: the wrap proof's commitments and opening and the two `sg_old`
-from the bundle, the key's commitments as constants; the claims are `verifyProof`'s to
-substitute from the unfinalized proof. -/
-def GroupStepInput.cells (vk : Wire.KimchiVK XhatStepCurve) (inp : GroupStepInput (FVar Fp)) :
+/-- The step circuit's group-half cells from an unfinalized proof's claims, an `sg_old` list,
+a key's commitments and a wrap proof block — `p` the point at an offset of the block, `s`
+the split scalar there: the 15 `w_comm` points at 0, `z_comm` at 30, the 7 `t_comm` points
+at 32, the 15 `(L, R)` pairs at 46, `z₁`, `z₂` at 106 and 108, `δ` at 110, `sg` at 112. -/
+def ivpStepInputOf (dv : DeferredValues Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (sgOld : List (Option (BoolVar Fp) × AffinePoint (FVar Fp)))
+    (comms : List (List (AffinePoint (FVar Fp)))) (p : ℕ → AffinePoint (FVar Fp))
+    (s : ℕ → Type2 (SplitField (FVar Fp) (BoolVar Fp))) :
     IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  let p := pointAt inp.proof
-  let s := splitAt inp.proof
-  let dv := inp.unfinalizedProof.deferredValues
-  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords (keyComms xhatStepCell vk)
+  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
   { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
       dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
     xi := dv.xi
     deferred := ⟨dv.combinedInnerProduct, dv.b⟩
-    sgOld := [(none, pointAt inp.sgOld 0), (none, pointAt inp.sgOld 2)]
-    sigmaLast, indexComms, coefficientsComm, sigmaComm
+    sgOld, sigmaLast, indexComms, coefficientsComm, sigmaComm
     wComm := (List.range 15).map fun j => [p (2 * j)]
     zComm := [p 30]
     tComm := (List.range 7).map fun j => p (32 + 2 * j)
     opening := { lr := (List.range 15).map fun j => (p (46 + 4 * j), p (48 + 4 * j))
                  z1 := s 106, z2 := s 108, delta := p 110, sg := p 112 } }
+
+/-- The group half's cells: the wrap proof's commitments and opening and the two `sg_old`
+from the bundle, the key's commitments as constants; the claims are `verifyProof`'s to
+substitute from the unfinalized proof. -/
+def GroupStepInput.cells (vk : Wire.KimchiVK XhatStepCurve) (inp : GroupStepInput (FVar Fp)) :
+    IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+  ivpStepInputOf inp.unfinalizedProof.deferredValues
+    [(none, pointAt inp.sgOld 0), (none, pointAt inp.sgOld 2)] (keyComms xhatStepCell vk)
+    (pointAt inp.proof) (splitAt inp.proof)
 
 /-- The step circuit's group half on the bundle: the key's index sponge, then
 `Pickles.verifyProof` at the deployed parameters over the bundle's records, the `x_hat`
