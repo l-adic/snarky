@@ -1,6 +1,5 @@
-import Snarky
-import Snarky.Kimchi.Backend.Compile
-import KimchiFixture.PS
+import Snarky.DSL.SizedF
+import Snarky.Kimchi.Constraint
 import Kimchi.Columns
 import Kimchi.Verifier.Kimchi
 import Pasta.Endo

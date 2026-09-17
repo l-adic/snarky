@@ -1,4 +1,5 @@
 import PicklesFixture
+import Snarky.Kimchi.Backend.Compile
 import KimchiFixture.Cache
 import BulletproofFixture.SRSLoader
 import CompElliptic.Fields.Pasta
@@ -57,9 +58,15 @@ def toStep (x : CW.ScalarField) : Fp := (x.val : Fp)
 split half or a Type1 register, all transported by value. -/
 def toWrap (x : CS.ScalarField) : Fq := (x.val : Fq)
 
-/-- One chunk of a one-chunk evaluation. -/
-def oneChunk {F : Type} (nm : String) (a : Array F) : Except String F :=
+/-- The one chunk of a one-chunk evaluation or commitment. -/
+def oneChunk {α : Type} (nm : String) (a : Array α) : Except String α :=
   if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
+
+/-- The wrap statement's packed branch data `4·domain_log2 + m₀ + 2·m₁`: `domain_log2` and
+the two mask bits in slot order. The mask reads slot `i` as "at least `2 − i` proofs", so
+the real accumulators sit in the LAST slots and padding goes in front; a step statement of
+`n ≤ 2` slots reads the last `n` bits. -/
+def unpackBranchData (bd : ℕ) : ℕ × Vector ℕ 2 := (bd / 4, #v[bd % 2, (bd / 2) % 2])
 
 /-- The evaluation block in the layout's order — the public pair, 15 `w`, 15 coefficient,
 `z`, 6 `σ`, 6 selector pairs — each pair `(ζ, ζω)` at one chunk. -/
@@ -101,10 +108,10 @@ def assemble (w : Cache.Entry CW) (s : Cache.Entry CS) :
     | 0 => g 7 | 1 => g 5 | 2 => g 6 | 3 => g 8
     | 4 => g 2 | 5 => g 3 | 6 => g 4 | 7 => g 0 | 8 => g 1 | 9 => g 9
     | k => g (13 + (k - 10))
-  let bd := (c.getD 29 0).val
-  -- Two accumulator slots of 16 challenges each, the proof's accumulators in the LAST
-  -- slots: the mask reads slot `i` as "at least `2 − i` proofs", so padding goes in front.
-  -- An absent accumulator is a zero slot, which its mask bit leaves unread.
+  let (domainLog2, mask) := unpackBranchData (c.getD 29 0).val
+  -- Two accumulator slots of 16 challenges each, the proof's accumulators in the last
+  -- slots (`unpackBranchData`). An absent accumulator is a zero slot, which its mask bit
+  -- leaves unread.
   let prev : List (List Fp) := s.proof.prevChallenges.toList.map (·.chals.toList)
   let slots := (List.replicate (2 - prev.length) [] ++ prev).take 2
   let prevCells : List Fp :=
@@ -113,8 +120,8 @@ def assemble (w : Cache.Entry CW) (s : Cache.Entry CS) :
     if h : prevCells.length = 32 then pure ⟨prevCells.toArray, by simp [h]⟩
     else throw s!"previous challenges: {prevCells.length} cells"
   return ({ claims
-            mask := #v[(bd % 2 : ℕ), ((bd / 2) % 2 : ℕ)]
-            domainLog2 := (bd / 4 : ℕ)
+            mask := mask.map fun (m : ℕ) => (m : Fp)
+            domainLog2 := (domainLog2 : Fp)
             evals := ← evalCells CS s.proof
             ftEval1 := s.proof.ftEval1
             prevChallenges
@@ -141,11 +148,11 @@ def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av
     let t2 ← IO.monoMsNow
     let read (b : BoolVar (ZMod p)) : ℕ := ((b : CVar (ZMod p)).val pr.assignments.get).val
     let bits := (bitsOf pr.result).map fun (n, b) => (n, read b)
-    -- `provedSatisfies`, phase by phase
-    let (rows, gates, pubVars) := gateDataOf built nv
+    -- `indexRoundTrip` on the proved table, phase by phase
+    let (rows, gates, pubVars) := gateDataOf (reduceBuilt built) (allocRange 0 nv).toList
     let nrows := rows.length
     let t3 ← IO.monoMsNow
-    let env' ← match reduceProved built pr.assignments with
+    let env' ← match reduceSolved built pr.assignments with
       | .error e => throw (IO.userError s!"reduction failed: {repr e}") | .ok e => pure e
     let (wit, pubs) := makeWitness env' rows pubVars
     let nwit := wit.length
@@ -196,9 +203,8 @@ def runGroupWrap (n r : ℕ) (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Ar
 the step statement's `n` slots and the step proof's `r` rounds: the wrap statement's 29
 packed scalars as they are, the step statement carried by value into the wrap field, the
 step proof's commitments and opening (`z₁`, `z₂` as their Type1 registers `(s − 2^255 − 1)/2`),
-its `n` accumulators' commitments as `sg_old`, and their keep bits off the wrap statement's
-branch data — `mask_i` packed at bit `1 − i` of the slot order, the accumulators listed in
-reverse slot order. -/
+its `n` accumulators' commitments as `sg_old`, and their keep bits: the last `n` of the wrap
+statement's branch-data bits (`unpackBranchData`). -/
 def assembleGroupWrap (n r : ℕ) (w : Cache.Entry CW) (s : Cache.Entry CS) :
     Except String (GroupWrapInput n r Fq) := do
   let c := w.publicInput
@@ -209,14 +215,12 @@ def assembleGroupWrap (n r : ℕ) (w : Cache.Entry CW) (s : Cache.Entry CS) :
     throw s!"step public input: {sc.size} cells, expected {33 * n + 1} at {n} slots"
   let stepStatement : Vector Fq (33 * n + 1) := Vector.ofFn fun i => toWrap (sc.getD i 0)
   let coords (P : CS.Point) : List Fq := [P.x, P.y]
-  let chunk (nm : String) (a : Array CS.Point) : Except String CS.Point :=
-    if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
   let type1 (z : CS.ScalarField) : Fq := toWrap (Pasta.Shifted.shiftType1 255 z)
   unless s.proof.opening.lr.size = r do
     throw s!"step opening: {s.proof.opening.lr.size} rounds, expected {r}"
   let mut cells : List Fq := []
-  for cm in s.proof.wComm.toList do cells := cells ++ coords (← chunk "w_comm" cm)
-  cells := cells ++ coords (← chunk "z_comm" s.proof.zComm)
+  for cm in s.proof.wComm.toList do cells := cells ++ coords (← oneChunk "w_comm" cm)
+  cells := cells ++ coords (← oneChunk "z_comm" s.proof.zComm)
   for P in s.proof.tComm.toList do cells := cells ++ coords P
   for lr in s.proof.opening.lr.toList do cells := cells ++ coords lr.1 ++ coords lr.2
   cells := cells ++ [type1 s.proof.opening.z1, type1 s.proof.opening.z2]
@@ -228,12 +232,12 @@ def assembleGroupWrap (n r : ℕ) (w : Cache.Entry CW) (s : Cache.Entry CS) :
   unless accs.length = n ∧ n ≤ 2 do
     throw s!"step accumulators: {accs.length}, expected {n} (at most two)"
   let mut sgs : List Fq := []
-  for rc in accs do sgs := sgs ++ coords (← chunk "sg_old" rc.comm)
+  for rc in accs do sgs := sgs ++ coords (← oneChunk "sg_old" rc.comm)
   let sgOld : Vector Fq (2 * n) ←
     if h : sgs.length = 2 * n then pure ⟨sgs.toArray, by simp [h]⟩
     else throw s!"sg_old: {sgs.length} cells"
-  let bd := (c.getD 29 0).val
-  let mask : Vector Fq n := Vector.ofFn fun i => (((bd / 2 ^ (i + 2 - n)) % 2 : ℕ) : Fq)
+  let bits := (unpackBranchData (c.getD 29 0).val).2
+  let mask : Vector Fq n := Vector.ofFn fun i => (bits.toArray[i + 2 - n]?.getD 0 : Fq)
   return { statement, stepStatement, proof, sgOld, mask }
 
 /-- The step circuit's group-half input from a step entry's slot and the wrap proof that
@@ -246,10 +250,10 @@ def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
     Except String (GroupStepInput Fp) := do
   let c := w.publicInput
   unless 30 ≤ c.size do throw s!"wrap public input: {c.size} cells"
-  let bd := (c.getD 29 0).val
+  let (domainLog2, mask) := unpackBranchData (c.getD 29 0).val
   let statement : Vector Fp 32 := Vector.ofFn fun i =>
     match (i : ℕ) with
-    | 29 => ((bd / 4 : ℕ) : Fp) | 30 => ((bd % 2 : ℕ) : Fp) | 31 => (((bd / 2) % 2 : ℕ) : Fp)
+    | 29 => (domainLog2 : Fp) | 30 => (mask[0] : Fp) | 31 => (mask[1] : Fp)
     | k => toStep (c.getD k 0)
   let sc := s.publicInput
   let base := slot * 32
@@ -257,14 +261,12 @@ def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
     throw s!"step public input: {sc.size} cells, slot {slot} needs {base + 32}"
   let unfinalized : Vector Fp 32 := Vector.ofFn fun i => sc.getD (base + i) 0
   let coords (P : CW.Point) : List Fp := [P.x, P.y]
-  let chunk (nm : String) (a : Array CW.Point) : Except String CW.Point :=
-    if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
   let split (z : CW.ScalarField) : List Fp :=
     let t := (Pasta.Shifted.shiftType2 255 z).val
     [((t / 2 : ℕ) : Fp), ((t % 2 : ℕ) : Fp)]
   let mut cells : List Fp := []
-  for cm in w.proof.wComm.toList do cells := cells ++ coords (← chunk "w_comm" cm)
-  cells := cells ++ coords (← chunk "z_comm" w.proof.zComm)
+  for cm in w.proof.wComm.toList do cells := cells ++ coords (← oneChunk "w_comm" cm)
+  cells := cells ++ coords (← oneChunk "z_comm" w.proof.zComm)
   for P in w.proof.tComm.toList do cells := cells ++ coords P
   for lr in w.proof.opening.lr.toList do cells := cells ++ coords lr.1 ++ coords lr.2
   cells := cells ++ split w.proof.opening.z1 ++ split w.proof.opening.z2
@@ -273,7 +275,7 @@ def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
     if h : cells.length = 114 then pure ⟨cells.toArray, by simp [h]⟩
     else throw s!"wrap proof block: {cells.length} cells"
   let mut sgs : List Fp := []
-  for rc in w.proof.prevChallenges.toList do sgs := sgs ++ coords (← chunk "sg_old" rc.comm)
+  for rc in w.proof.prevChallenges.toList do sgs := sgs ++ coords (← oneChunk "sg_old" rc.comm)
   let sgOld : Vector Fp 4 ←
     if h : sgs.length = 4 then pure ⟨sgs.toArray, by simp [h]⟩
     else throw s!"sg_old: {sgs.length} cells, expected two accumulators"
