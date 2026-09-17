@@ -5,9 +5,10 @@
 -- | `VerifierIndex::digest()`, the value the verifier absorbs first; the
 -- | public input is the comma-joined decimal field vector. An entry holds
 -- | the verification key's JSON, the proof's serde-JSON (exactly OCaml's
--- | `Backend.Tick/Tock.Proof.{to,of}_yojson`) and, on a wrap proof, the
--- | key of the step proof it wrapped — so a chain is walkable from the
--- | file alone.
+-- | `Backend.Tick/Tock.Proof.{to,of}_yojson`) and the keys of the proofs
+-- | it is built on — a wrap proof's the step proof it wrapped, a step
+-- | proof's the wrap proofs it verified — so a chain is walkable from
+-- | the file alone.
 -- |
 -- | Why `(vkDigest, publicInput)` is a complete key: the kimchi prover is
 -- | deterministic (shared ChaCha20 seed) and, for pickles circuits, the
@@ -23,7 +24,7 @@ module Snarky.Backend.Kimchi.ProofCache
   ( ProofCache
   , mkProofCache
   , Entry
-  , StepRef
+  , ProofRef
   , getPallasProof
   , setPallasProof
   , getVestaProof
@@ -67,13 +68,20 @@ newtype ProofCache = ProofCache String
 mkProofCache :: String -> ProofCache
 mkProofCache = ProofCache
 
--- | The cache key of another entry: the step proof a wrap proof wrapped.
-type StepRef = { vkDigest :: String, publicInput :: String }
+-- | The cache key of another entry.
+type ProofRef = { vkDigest :: String, publicInput :: String }
 
 -- | One cached proof: the verification key's JSON, the proof's serde
--- | JSON and, on a wrap proof, the step proof it wrapped. A step entry
--- | has no `step`.
-type Entry = { vk :: String, proof :: String, step :: Maybe StepRef }
+-- | JSON and the proofs it is built on — `step` on a wrap proof (the
+-- | step proof it wrapped), `prevs` on a step proof (one per slot, in
+-- | slot order: the wrap proof the slot verified, or `null` for a
+-- | base-case slot, whose dummy proof is not cached).
+type Entry =
+  { vk :: String
+  , proof :: String
+  , step :: Maybe ProofRef
+  , prevs :: Maybe (Array (Maybe ProofRef))
+  }
 
 -- | On-disk shape: `{ "<vkDigest>": { "<publicInput>": Entry } }`.
 type Store = Object (Object Entry)
@@ -127,7 +135,7 @@ piKey = joinWith "," <<< map fieldStr
 -- | Cache lookup / store for `pallas*` proofs (Vesta.G commitments,
 -- | Pallas-base-field scalars — what pickles' Tick / Step side produces).
 -- | The key is the verification key's digest, as a decimal string; a step
--- | proof wraps nothing, so it records no `step`.
+-- | proof records the wrap proofs it verified.
 getPallasProof
   :: ProofCache
   -> String
@@ -143,10 +151,15 @@ setPallasProof
   -> VerifierIndex Vesta.G Pallas.BaseField
   -> Array Pallas.BaseField
   -> Proof Vesta.G Pallas.BaseField
+  -> Array (Maybe ProofRef)
   -> Effect Unit
-setPallasProof cache vkDigest vk pis proof =
+setPallasProof cache vkDigest vk pis proof prevs =
   setEntry cache vkDigest (piKey pis)
-    { vk: pallasVerifierIndexJsonKey vk, proof: pallasProofToSerdeJson proof, step: Nothing }
+    { vk: pallasVerifierIndexJsonKey vk
+    , proof: pallasProofToSerdeJson proof
+    , step: Nothing
+    , prevs: Just prevs
+    }
 
 -- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
 -- | Vesta-base-field scalars — what pickles' Tock / Wrap side produces).
@@ -166,11 +179,15 @@ setVestaProof
   -> VerifierIndex Pallas.G Vesta.BaseField
   -> Array Vesta.BaseField
   -> Proof Pallas.G Vesta.BaseField
-  -> StepRef
+  -> ProofRef
   -> Effect Unit
 setVestaProof cache vkDigest vk pis proof step =
   setEntry cache vkDigest (piKey pis)
-    { vk: vestaVerifierIndexJsonKey vk, proof: vestaProofToSerdeJson proof, step: Just step }
+    { vk: vestaVerifierIndexJsonKey vk
+    , proof: vestaProofToSerdeJson proof
+    , step: Just step
+    , prevs: Nothing
+    }
 
 --------------------------------------------------------------------------------
 -- VK json-key: the deterministic full-VK string used as the bucket key.

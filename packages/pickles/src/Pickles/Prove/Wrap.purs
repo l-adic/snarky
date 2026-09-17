@@ -58,7 +58,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasProofCommitments, pallasProofData, srsBlindingGenerator, srsLagrangeCommitmentChunksAt, vestaCreateProofWithPrev)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, StepRef, getVestaProof, setVestaProof)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getVestaProof, setVestaProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.DSL (F(..), FVar, const_)
@@ -219,7 +219,7 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (stepChunks :: Int) =
   , proofCache :: Maybe ProofCache
   -- | The cache key of the step proof being wrapped, recorded on the
   -- | wrap proof's entry so a chain is walkable from the cache alone.
-  , step :: StepRef
+  , step :: ProofRef
   -- | Kimchi-level `prev_challenges`, padded to `PaddedLength = 2`
   -- | entries. Each holds an sg (Pallas point, step-field coordinates)
   -- | and its expanded challenges.

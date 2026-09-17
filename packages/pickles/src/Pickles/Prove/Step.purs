@@ -91,7 +91,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, getPallasProof, setPallasProof)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
@@ -1186,6 +1186,10 @@ type StepProveContext len nd blueprints =
   -- | Optional disk proof-cache, threaded from `CompileMultiConfig`.
   -- | `Nothing` = no caching.
   , proofCache :: Maybe ProofCache
+  -- | Per slot, the cache key of the wrap proof this step proof
+  -- | verifies there — `Nothing` on a base-case slot: recorded on the
+  -- | step proof's entry so a chain is walkable from the cache alone.
+  , prevProofs :: Array (Maybe ProofRef)
   }
 
 -- | Artifacts produced by `stepCompile`, to hand between compile, wrap
@@ -1783,6 +1787,7 @@ stepSolveAndProve handler ctx rule compileResult advice = do
                   Nothing -> do
                     let proof = Lazy.force p
                     setPallasProof cache vkDigest compileResult.verifierIndex publicInputs proof
+                      ctx.prevProofs
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex
