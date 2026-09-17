@@ -99,6 +99,10 @@ Bulletproof.Fixture.recombinePoint
 Bulletproof.Fixture.recombineScalar
 Bulletproof.Fixture.segmentCombinePoint
 Bulletproof.Fixture.segmentCombineScalar
+-- The SRS the PureScript suite proves against, read off its file, and the Lagrange basis a
+-- wire key needs computed from it: consumed by pickles/scripts/check_halves.lean.
+Bulletproof.Fixture.SRSLoader.loadSRS
+Bulletproof.Fixture.lagrangeBasisCached
 Bulletproof.Ipa.Wire.Proof.check
 Bulletproof.Ipa.Wire.Input.check
 -- script-surface:end

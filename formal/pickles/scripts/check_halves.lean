@@ -1,5 +1,6 @@
 import PicklesFixture
 import KimchiFixture.Cache
+import BulletproofFixture.SRSLoader
 import CompElliptic.Fields.Pasta
 
 /-!
@@ -20,11 +21,12 @@ the branch data from the wrap statement (the wrap entry's public input), the eva
 and old accumulators from the step proof.
 
 Per run: the interpreter completes (a), the table satisfies the assembled system (b),
-`finalized` and its four conjuncts read 1 (c). `kimchiVerify` on the same entries is a
-separate driver.
+`finalized` and its four conjuncts read 1 (c), and `kimchiVerify` accepts both proofs (d)
+— against the SRS they were made with (`srs-cache/`, cut to each proof's round count)
+and the Lagrange basis computed from it, memoised under `lagrange-cache/`.
 
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
-`SimpleChain.json`.
+`SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -123,6 +125,35 @@ def runStep (dom : Pickles.KnownDomain Fp) (inp : FopInput Fp) :
     | .error e => throw (IO.userError s!"reduction failed: {repr e}")
     | .ok sat => return (sat, bits)
 
+/-- The curve's SRS cut to `k` rounds, loaded from `srs-cache/<name>.srs` once per `k`
+(decompressing the file's points dominates a load). -/
+def srsAt (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (k : ℕ) : IO (SRS C.Point) := do
+  if let some σ := (← loaded.get).lookup k then return σ
+  let srsDir := (← IO.getEnv "SRS_CACHE_DIR").getD "../srs-cache"
+  let σ ← Fixture.SRSLoader.loadSRS C sqrt k s!"{srsDir}/{name}.srs"
+  loaded.modify ((k, σ) :: ·)
+  return σ
+
+/-- The wire verifier on a cache entry, its key completed with the Lagrange basis: the
+records checked at the run's chunk count and the SRS's round count, then `kimchiVerify`.
+The entry's SRS is the curve's file cut to the proof's round count; the basis is memoised
+per curve and domain. -/
+def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
+  let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let n := 2 ^ e.vk.domainLog2
+  if h : n ≤ 2 ^ σ.k then
+    let basis ← Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}.json"
+      σ n h e.vk.omega e.publicInput.size
+    let vk := { e.vk with lagrangeBasis := basis.map (#[·]) }
+    let nc := Kimchi.Verifier.Wire.runNc C σ vk
+    match vk.check nc, e.proof.check nc σ.k with
+    | some cvk, some cp => return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
+    | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
+  else throw (IO.userError s!"domain 2^{e.vk.domainLog2} above the SRS at 2^{σ.k}")
+
 def main : IO Unit := do
   let path := (← IO.getEnv "PROOF_CACHE").getD
     "../packages/pickles/test/fixtures/proof-cache/SimpleChain.json"
@@ -132,6 +163,8 @@ def main : IO Unit := do
   let (steps, _) ← match Cache.parseFile CS Kimchi.Fixture.PS.fpSide.endo vestaBase.sqrt? raw with
     | .error e => throw (IO.userError s!"step side: {e}") | .ok r => pure r
   IO.println s!"{path}: {wraps.size} wrap proofs, {steps.size} step proofs"
+  let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
+  let pallasSRS ← IO.mkRef ([] : List (ℕ × SRS CW.Point))
   let mut allOk := true
   let mut runs := 0
   for w in wraps do
@@ -149,8 +182,15 @@ def main : IO Unit := do
     IO.println s!"  {if sat ∧ bitsOk then "✓" else "✗"} step half on wrap→step \
       {d.take 10}… (domain 2^{s.vk.domainLog2}): satisfies={sat} \
       bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
+    let t2 ← IO.monoMsNow
+    let stepOk ← verifies CS "vesta" vestaBase.sqrt? vestaSRS s
+    let wrapOk ← verifies CW "pallas" pallasBase.sqrt? pallasSRS w
+    let t3 ← IO.monoMsNow
+    IO.println s!"  {if stepOk ∧ wrapOk then "✓" else "✗"} kimchiVerify: step={stepOk} \
+      wrap={wrapOk} {t3 - t2} ms"
     runs := runs + 1
-    unless sat ∧ bitsOk do allOk := false
+    unless sat ∧ bitsOk ∧ stepOk ∧ wrapOk do allOk := false
   unless runs > 0 do throw (IO.userError "no wrap→step pairs to run")
   unless allOk do throw (IO.userError "check-halves FAILED")
-  IO.println s!"✓ {runs} step-half run(s): every table satisfies its system, every bit reads 1"
+  IO.println s!"✓ {runs} step-half run(s): every table satisfies its system, every bit reads 1, \
+    kimchiVerify accepts every proof"

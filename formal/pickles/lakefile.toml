@@ -61,8 +61,9 @@ root = "scripts.bench_fop"
 
 # The satisfiability of the circuit halves on the proofs the PureScript suite cached:
 # `prove` runs the halves' advice on a real proof's inputs, the table is decided against
-# the assembled system, and the success bits are read back. Compiled, as the halves are
-# thousands of rows.
+# the assembled system, the success bits are read back, and `kimchiVerify` accepts the
+# same proofs against the project's SRS. Compiled, as the halves are thousands of rows
+# and the verifier's opening MSM spans the SRS.
 [[lean_exe]]
 name = "check-halves"
 root = "scripts.check_halves"
