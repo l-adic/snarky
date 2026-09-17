@@ -21,9 +21,12 @@ So a step-half run takes a wrap entry of the cache, follows its `step` link, and
 from the wrap statement (the wrap entry's public input), the evaluations and accumulators
 from the step proof. A wrap-half run takes a step entry, follows a slot's `prevs` link to
 the wrap proof it verified, and lays the input out from that slot of the step statement
-and the wrap proof. The same pair drives the step circuit's group half (`verifyProof`):
-the wrap statement and proof, the slot's unfinalized proof, the wrap key's commitments
-and the Lagrange bases as constants.
+and the wrap proof. The same pairs drive the two group halves: the step circuit's
+(`verifyProof`, on the step→wrap pair: the wrap statement and proof, the slot's
+unfinalized proof) and the wrap circuit's (`incrementallyVerifyProof` on the conditional
+sponge, on the wrap→step pair: the wrap statement's claims, the step statement and proof,
+the step proof's accumulators under the branch data's mask), each with the verified key's
+commitments and the Lagrange bases as constants.
 
 Per run: the interpreter completes (a), the table satisfies the assembled system (b),
 the success bits read 1 (c) — `finalized` and its four conjuncts for a scalar half, the
@@ -33,6 +36,8 @@ round count) and the Lagrange basis computed from it, memoised under `lagrange-c
 
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
+`HALVES` narrows the run to a comma-separated subset of `step`, `wrap`, `step-group`,
+`wrap-group`, `verify` (the default is all five).
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -47,6 +52,10 @@ abbrev CS := IpaVesta.curve
 representatives, the challenges are 128-bit, the digests are full elements — all
 transported by value. -/
 def toStep (x : CW.ScalarField) : Fp := (x.val : Fp)
+
+/-- A step-field cell as the wrap-field value it carries — a digest, a 128-bit challenge, a
+split half or a Type1 register, all transported by value. -/
+def toWrap (x : CS.ScalarField) : Fq := (x.val : Fq)
 
 /-- One chunk of a one-chunk evaluation. -/
 def oneChunk {F : Type} (nm : String) (a : Array F) : Except String F :=
@@ -152,6 +161,57 @@ def runGroup (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point) (h
   runHalf (a := GroupStepInput Fp) Kimchi.Fixture.PS.fpSide
     (groupStepOn vk (stepXhatTable basis) (xhatStepCell h)) (fun b => [("success", b)]) inp
 
+/-- The wrap circuit's group half on a step proof: the step key's commitments as constants,
+the Lagrange bases, the SRS's blinding base. -/
+def runGroupWrap (n r : ℕ) (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Array CS.Point)
+    (h : CS.Point) (inp : GroupWrapInput n r Fq) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := GroupWrapInput n r Fq) Kimchi.Fixture.PS.fqSide
+    (groupWrapOn vk basis (xhatWrapCell h)) (fun b => [("success", b)]) inp
+
+/-- The wrap circuit's group-half input from a wrap entry and the step proof it wrapped, at
+the step statement's `n` slots and the step proof's `r` rounds: the wrap statement's 29
+packed scalars as they are, the step statement carried by value into the wrap field, the
+step proof's commitments and opening (`z₁`, `z₂` as their Type1 registers `(s − 2^255 − 1)/2`),
+its `n` accumulators' commitments as `sg_old`, and their keep bits off the wrap statement's
+branch data — `mask_i` packed at bit `1 − i` of the slot order, the accumulators listed in
+reverse slot order. -/
+def assembleGroupWrap (n r : ℕ) (w : Cache.Entry CW) (s : Cache.Entry CS) :
+    Except String (GroupWrapInput n r Fq) := do
+  let c := w.publicInput
+  unless 30 ≤ c.size do throw s!"wrap public input: {c.size} cells"
+  let statement : Vector Fq 29 := Vector.ofFn fun i => c.getD i 0
+  let sc := s.publicInput
+  unless sc.size = 33 * n + 1 do
+    throw s!"step public input: {sc.size} cells, expected {33 * n + 1} at {n} slots"
+  let stepStatement : Vector Fq (33 * n + 1) := Vector.ofFn fun i => toWrap (sc.getD i 0)
+  let coords (P : CS.Point) : List Fq := [P.x, P.y]
+  let chunk (nm : String) (a : Array CS.Point) : Except String CS.Point :=
+    if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
+  let type1 (z : CS.ScalarField) : Fq := toWrap (Pasta.Shifted.shiftType1 255 z)
+  unless s.proof.opening.lr.size = r do
+    throw s!"step opening: {s.proof.opening.lr.size} rounds, expected {r}"
+  let mut cells : List Fq := []
+  for cm in s.proof.wComm.toList do cells := cells ++ coords (← chunk "w_comm" cm)
+  cells := cells ++ coords (← chunk "z_comm" s.proof.zComm)
+  for P in s.proof.tComm.toList do cells := cells ++ coords P
+  for lr in s.proof.opening.lr.toList do cells := cells ++ coords lr.1 ++ coords lr.2
+  cells := cells ++ [type1 s.proof.opening.z1, type1 s.proof.opening.z2]
+    ++ coords s.proof.opening.delta ++ coords s.proof.opening.sg
+  let proof : Vector Fq (52 + 4 * r) ←
+    if h : cells.length = 52 + 4 * r then pure ⟨cells.toArray, by simp [h]⟩
+    else throw s!"step proof block: {cells.length} cells"
+  let accs := s.proof.prevChallenges.toList
+  unless accs.length = n ∧ n ≤ 2 do
+    throw s!"step accumulators: {accs.length}, expected {n} (at most two)"
+  let mut sgs : List Fq := []
+  for rc in accs do sgs := sgs ++ coords (← chunk "sg_old" rc.comm)
+  let sgOld : Vector Fq (2 * n) ←
+    if h : sgs.length = 2 * n then pure ⟨sgs.toArray, by simp [h]⟩
+    else throw s!"sg_old: {sgs.length} cells"
+  let bd := (c.getD 29 0).val
+  let mask : Vector Fq n := Vector.ofFn fun i => (((bd / 2 ^ (i + 2 - n)) % 2 : ℕ) : Fq)
+  return { statement, stepStatement, proof, sgOld, mask }
+
 /-- The step circuit's group-half input from a step entry's slot and the wrap proof that
 slot verified: the wrap statement's cells (the wrap proof's public input carried by value
 into the step field, the branch data unpacked into `domain_log2` and the two mask bits),
@@ -194,10 +254,6 @@ def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
     if h : sgs.length = 4 then pure ⟨sgs.toArray, by simp [h]⟩
     else throw s!"sg_old: {sgs.length} cells, expected two accumulators"
   return { statement, unfinalized, proof, sgOld, isBaseCase := 0 }
-
-/-- A step-field cell as the wrap-field value it carries — a digest or a 128-bit challenge,
-transported by value. -/
-def toWrap (x : CS.ScalarField) : Fq := (x.val : Fq)
 
 /-- `finalize_other_proof`'s wrap-side input from a step entry's slot and the wrap proof that
 slot verified.
@@ -274,34 +330,56 @@ def main : IO Unit := do
   let (steps, _) ← match Cache.parseFile CS Kimchi.Fixture.PS.fpSide.endo vestaBase.sqrt? raw with
     | .error e => throw (IO.userError s!"step side: {e}") | .ok r => pure r
   IO.println s!"{path}: {wraps.size} wrap proofs, {steps.size} step proofs"
+  let halves := ((← IO.getEnv "HALVES").getD "step,wrap,step-group,wrap-group,verify").splitOn ","
+  let on (h : String) : Bool := halves.contains h
+  let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
   let pallasSRS ← IO.mkRef ([] : List (ℕ × SRS CW.Point))
   let mut allOk := true
   let mut runs := 0
-  for w in wraps do
+  -- One timed run of a half, its verdict folded into `allOk`.
+  let report (what : String) (run : IO (Bool × List (String × ℕ))) : IO Bool := do
+    let t0 ← IO.monoMsNow
+    let (sat, bits) ← run
+    let t1 ← IO.monoMsNow
+    let ok := sat ∧ bits.all (·.2 = 1)
+    IO.println s!"  {if ok then "✓" else "✗"} {what}: satisfies={sat} \
+      bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
+    return ok
+  for w in wraps.toList.take limit do
     let some (d, pi) := w.step | continue
     let some s := steps.find? (fun s => s.vkDigest = d ∧ s.publicInputKey = pi)
       | IO.println s!"  ✗ wrap {w.vkDigest.take 10}…: its step {d.take 10}… is not in the file"
         allOk := false
         continue
-    let (inp, dom) ← match assemble w s with
-      | .error e => throw (IO.userError s!"assemble: {e}") | .ok r => pure r
-    let t0 ← IO.monoMsNow
-    let (sat, bits) ← runStep dom inp
-    let t1 ← IO.monoMsNow
-    let bitsOk := bits.all (·.2 = 1)
-    IO.println s!"  {if sat ∧ bitsOk then "✓" else "✗"} step half on wrap→step \
-      {d.take 10}… (domain 2^{s.vk.domainLog2}): satisfies={sat} \
-      bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
-    let t2 ← IO.monoMsNow
-    let stepOk ← verifies CS "vesta" vestaBase.sqrt? vestaSRS s
-    let wrapOk ← verifies CW "pallas" pallasBase.sqrt? pallasSRS w
-    let t3 ← IO.monoMsNow
-    IO.println s!"  {if stepOk ∧ wrapOk then "✓" else "✗"} kimchiVerify: step={stepOk} \
-      wrap={wrapOk} {t3 - t2} ms"
-    runs := runs + 1
-    unless sat ∧ bitsOk ∧ stepOk ∧ wrapOk do allOk := false
-  for s in steps do
+    let pair := s!"wrap→step {d.take 10}…"
+    if on "step" then
+      let (inp, dom) ← match assemble w s with
+        | .error e => throw (IO.userError s!"assemble: {e}") | .ok r => pure r
+      let ok ← report s!"step half on {pair} (domain 2^{s.vk.domainLog2})" (runStep dom inp)
+      runs := runs + 1
+      unless ok do allOk := false
+    if on "verify" then
+      let t0 ← IO.monoMsNow
+      let stepOk ← verifies CS "vesta" vestaBase.sqrt? vestaSRS s
+      let wrapOk ← verifies CW "pallas" pallasBase.sqrt? pallasSRS w
+      let t1 ← IO.monoMsNow
+      IO.println s!"  {if stepOk ∧ wrapOk then "✓" else "✗"} kimchiVerify on {pair}: \
+        step={stepOk} wrap={wrapOk} {t1 - t0} ms"
+      runs := runs + 1
+      unless stepOk ∧ wrapOk do allOk := false
+    if on "wrap-group" then
+      let n := (s.publicInput.size - 1) / 33
+      let r := s.proof.opening.lr.size
+      let ginp ← match assembleGroupWrap n r w s with
+        | .error e => throw (IO.userError s!"assemble (wrap group half): {e}") | .ok i => pure i
+      let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
+      let basis ← basisFor CS "vesta" σS s
+      let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds)"
+        (runGroupWrap n r s.vk basis σS.h ginp)
+      runs := runs + 1
+      unless ok do allOk := false
+  for s in steps.toList.take limit do
     for (ref, slot) in s.prevs.toList.zipIdx do
       let some (d, pi) := ref | continue
       let some w := wraps.find? (fun w => w.vkDigest = d ∧ w.publicInputKey = pi)
@@ -309,31 +387,23 @@ def main : IO Unit := do
             is not in the file"
           allOk := false
           continue
+      let pair := s!"step→wrap {d.take 10}… (slot {slot})"
       let r := w.proof.opening.lr.size
-      let inp ← match assembleWrap r s slot w with
-        | .error e => throw (IO.userError s!"assemble (wrap side): {e}") | .ok i => pure i
-      let t0 ← IO.monoMsNow
-      let (sat, bits) ← runWrap w.vk.domainLog2 r inp
-      let t1 ← IO.monoMsNow
-      let bitsOk := bits.all (·.2 = 1)
-      IO.println s!"  {if sat ∧ bitsOk then "✓" else "✗"} wrap half on step→wrap \
-        {d.take 10}… (slot {slot}, domain 2^{w.vk.domainLog2}, {r} rounds): satisfies={sat} \
-        bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
-      runs := runs + 1
-      unless sat ∧ bitsOk do allOk := false
-      -- the step circuit's group half of the same wrap proof
-      let ginp ← match assembleGroup s slot w with
-        | .error e => throw (IO.userError s!"assemble (group half): {e}") | .ok i => pure i
-      let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
-      let basis ← basisFor CW "pallas" σW w
-      let t2 ← IO.monoMsNow
-      let (gsat, gbits) ← runGroup w.vk basis σW.h ginp
-      let t3 ← IO.monoMsNow
-      let gbitsOk := gbits.all (·.2 = 1)
-      IO.println s!"  {if gsat ∧ gbitsOk then "✓" else "✗"} group half on step→wrap \
-        {d.take 10}… (slot {slot}): satisfies={gsat} \
-        bits={gbits.map fun (n, v) => s!"{n}={v}"} {t3 - t2} ms"
-      unless gsat ∧ gbitsOk do allOk := false
+      if on "wrap" then
+        let inp ← match assembleWrap r s slot w with
+          | .error e => throw (IO.userError s!"assemble (wrap side): {e}") | .ok i => pure i
+        let ok ← report s!"wrap half on {pair} (domain 2^{w.vk.domainLog2}, {r} rounds)"
+          (runWrap w.vk.domainLog2 r inp)
+        runs := runs + 1
+        unless ok do allOk := false
+      if on "step-group" then
+        let ginp ← match assembleGroup s slot w with
+          | .error e => throw (IO.userError s!"assemble (group half): {e}") | .ok i => pure i
+        let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
+        let basis ← basisFor CW "pallas" σW w
+        let ok ← report s!"step group half on {pair}" (runGroup w.vk basis σW.h ginp)
+        runs := runs + 1
+        unless ok do allOk := false
   unless runs > 0 do throw (IO.userError "no linked pairs to run")
   unless allOk do throw (IO.userError "check-halves FAILED")
   IO.println s!"✓ {runs} run(s): every table satisfies its system, every bit reads 1, \
