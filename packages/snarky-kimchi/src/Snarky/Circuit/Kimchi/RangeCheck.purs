@@ -116,9 +116,10 @@ split128Below constrainLowBits endo bound x = do
   where
   two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
 
--- `lo + 2^128·hi < bound` for 128-bit `lo` and `hi`: `hi <= boundHi`, and
--- `lo <= boundLo - 1` when `hi = boundHi`. Each difference is range-checked,
--- so a negative one wraps to a large field element and fails.
+-- `lo + 2^128·hi < bound` for 128-bit `lo` and `hi`, as one range-checked
+-- difference: `boundLo - 1 - lo` when `hi = boundHi`, else `boundHi - 1 - hi`.
+-- A negative difference wraps to a large field element and fails, so the
+-- first case pins `lo < boundLo` and the second `hi < boundHi`.
 assertSplitBelow
   :: forall f r
    . PrimeField f
@@ -129,9 +130,8 @@ assertSplitBelow
   -> BigInt
   -> Snarky f (KimchiConstraint f) r Unit
 assertSplitBelow endo lo hi bound = do
-  void $ EndoScalar.toField @8 (sized (sub_ (const_ boundHi) hi)) endo
   hiIsTop <- equals_ hi (const_ boundHi)
-  d <- if_ hiIsTop (sub_ (const_ (boundLo - one)) lo) (const_ one)
+  d <- if_ hiIsTop (sub_ (const_ (boundLo - one)) lo) (sub_ (const_ (boundHi - one)) hi)
   void $ EndoScalar.toField @8 (sized d) endo
   where
   two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)

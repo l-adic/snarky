@@ -96,15 +96,16 @@ of `-1`, plus one. -/
 def fieldModulus (F : Type) [Field F] [ToNat F] : ℕ := ToNat.toNat (-1 : F) + 1
 
 /-- The limb comparison (PS `assertSplitBelow`): `lo + 2^128·hi < bound` for 128-bit limbs,
-as `hi ≤ bound / 2^128` and, where `hi` equals it, `lo ≤ bound % 2^128 - 1`. Each difference
-is range-checked, so a negative one wraps past `2^128` and fails. -/
+as one range-checked difference — where `hi` equals the bound's high limb, `bound_lo − 1 − lo`;
+elsewhere `bound_hi − 1 − hi`. A negative difference wraps past `2^128` and fails, so the
+first case pins `lo < bound_lo` and the second `hi < bound_hi`. -/
 private def assertSplitBelow [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (endo lo hi : FVar F) (bound : ℕ) : CircuitM F c PUnit := do
   let boundHi : F := ((bound / 2 ^ 128 : ℕ) : F)
   let boundLo : F := ((bound % 2 ^ 128 : ℕ) : F)
-  let _ ← EndoScalar.toField (c := c) 8 (CVar.sub_ (.const boundHi) hi) endo
   let hiIsTop ← equals hi (.const boundHi)
-  let d ← selectField hiIsTop (CVar.sub_ (.const (boundLo - 1)) lo) (.const 1)
+  let d ← selectField hiIsTop (CVar.sub_ (.const (boundLo - 1)) lo)
+    (CVar.sub_ (.const (boundHi - 1)) hi)
   let _ ← EndoScalar.toField (c := c) 8 d endo
   pure ⟨⟩
 
@@ -155,7 +156,7 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
   have htf := fun (y : FVar F) => EndoScalar.toField_spec (V := V) h2 h3 y endo
   simp only [assertSplitBelow]
   mvcgen [htf]
-  rename_i _ _ _ hd1 top _ htop _ _ hsel _ _ hd2
+  rename_i top _ htop _ _ hsel _ _ hd
   intro l h hl hh hlo hhi
   have hdm := Nat.mod_add_div bound (2 ^ 128)
   have hbh : bound / 2 ^ 128 < 2 ^ 128 := by
@@ -163,32 +164,37 @@ private theorem assertSplitBelow_below {V : Valuation F} [Field F] [DecidableEq 
     calc bound < 2 ^ 256 := hbound
       _ = 2 ^ 128 * 2 ^ 128 := by norm_num
   have hbl : bound % 2 ^ 128 < 2 ^ 128 := Nat.mod_lt _ (by positivity)
-  -- the high limb is at most the bound's
-  obtain ⟨n1, hn1, hv1, -⟩ := hd1
-  simp only [CVar.val_sub_, CVar.val, hhi] at hv1
-  have he1 : bound / 2 ^ 128 = h + n1 :=
-    hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv1)
-  rcases Nat.lt_or_ge h (bound / 2 ^ 128) with hlt | hge
-  · -- a strictly smaller high limb leaves room for any low limb
-    have hm : 2 ^ 128 * (h + 1) ≤ 2 ^ 128 * (bound / 2 ^ 128) := Nat.mul_le_mul_left _ hlt
+  obtain ⟨n, hn, hv, -⟩ := hd
+  by_cases hheq : h = bound / 2 ^ 128
+  · -- equal high limbs: the selected difference pins the low limb below the bound's
+    have htop1 : (↑top : CVar F).val V = bit true := by
+      rw [htop]
+      simp [CVar.val, hhi, hheq, bit]
+    have hd := hsel true htop1
+    simp only [if_true, CVar.val_sub_, CVar.val, hlo] at hd
+    rw [hd] at hv
+    have he : bound % 2 ^ 128 = l + n + 1 :=
+      hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv)
+    rw [← hheq] at hdm
+    nlinarith
+  · -- a smaller high limb leaves room for any low limb
+    have hne : (h : F) ≠ ((bound / 2 ^ 128 : ℕ) : F) :=
+      fun hc => hheq (hinj _ _ (by omega) (by omega) hc)
+    have htop0 : (↑top : CVar F).val V = bit false := by
+      rw [htop]
+      simpa [CVar.val, hhi, bit] using hne
+    have hd := hsel false htop0
+    simp only [Bool.false_eq_true, if_false, CVar.val_sub_, CVar.val, hhi] at hd
+    rw [hd] at hv
+    have he : bound / 2 ^ 128 = h + n + 1 :=
+      hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv)
+    have hm : 2 ^ 128 * (h + 1) ≤ 2 ^ 128 * (bound / 2 ^ 128) :=
+      Nat.mul_le_mul_left _ (by omega)
     rw [mul_add, mul_one] at hm
     generalize bound / 2 ^ 128 = bq at hm hdm
     generalize 2 ^ 128 * bq = kb at hm hdm
     generalize 2 ^ 128 * h = kh at hm ⊢
     omega
-  · -- equal high limbs: the selected difference pins the low limb below the bound's
-    have hheq : h = bound / 2 ^ 128 := by omega
-    have htop1 : (↑top : CVar F).val V = bit true := by
-      rw [htop]
-      simp [CVar.val, hhi, hheq, bit]
-    have hd := hsel true htop1
-    obtain ⟨n2, hn2, hv2, -⟩ := hd2
-    simp only [if_true, CVar.val_sub_, CVar.val, hlo] at hd
-    rw [hd] at hv2
-    have he2 : bound % 2 ^ 128 = l + n2 + 1 :=
-      hinj _ _ (by omega) (by omega) (by push_cast; linear_combination hv2)
-    rw [← hheq] at hdm
-    nlinarith
 
 /-- The modulus read off a lawful field is its cardinality: `-1`'s representative is the
 largest one. -/
@@ -216,7 +222,7 @@ number below the bound is its own cast's representative. -/
 @[complete_law]
 private theorem assertSplitBelow_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (endo lo hi : FVar F) (bound lov hiv : ℕ) (ev : F)
-    (hcard : bound ≤ LawfulToNat.card (F := F)) (hone : 1 < bound) (hnarrow : bound < 2 ^ 256)
+    (hcard : bound ≤ LawfulToNat.card (F := F)) (hnarrow : bound < 2 ^ 256)
     (hbelow : lov + 2 ^ 128 * hiv < bound) :
     Complete (F := F) (c := KimchiConstraint F)
       (fun st => CircuitType.ReadsAs (val := F) st lo (lov : F) ∧
@@ -249,37 +255,32 @@ private theorem assertSplitBelow_complete [Field F] [DecidableEq F] [ToNat F] [L
       CircuitType.reads_fvar.mpr (by
         rw [CVar.val_sub_, CircuitType.reads_fvar.mp ha.2, CircuitType.reads_fvar.mp hb.2])⟩
   simp only [assertSplitBelow]
-  -- the high limb against the bound's
-  refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨hsubR (hconst _) h.2.1, h.2.2⟩) (fun _ _ h => h)
-      (EndoScalar.toField_complete h2 h3 _ endo
-        (((bound / 2 ^ 128 : ℕ) : F) - (hiv : F)) ev ?hlt1))
-    fun _ => ?_
-  case hlt1 =>
-    rw [← Nat.cast_sub hhile, hcast _ (lt_of_le_of_lt (Nat.sub_le _ _) hbhb)]
-    exact lt_of_le_of_lt (Nat.sub_le _ _) hbhlt
   -- whether the high limb is the bound's
   refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨h.1.2.1, hconst _⟩) (fun _ _ h => h)
+    (Complete.imp (fun st h => ⟨h.2.1, hconst _⟩) (fun _ _ h => h)
       (equals_complete (c := KimchiConstraint F) hi (.const ((bound / 2 ^ 128 : ℕ) : F))
         (hiv : F) ((bound / 2 ^ 128 : ℕ) : F)))
     fun hiIsTop => ?_
-  -- the low limb against the bound's, where the high limbs agree
+  -- the difference that case selects
   refine Complete.seq (by complete_mono_tac)
-    (Complete.imp (fun st h => ⟨h.2, hsubR (hconst _) h.1.1.1, hconst _⟩) (fun _ _ h => h)
+    (Complete.imp (fun st h => ⟨h.2, hsubR (hconst _) h.1.1, hsubR (hconst _) h.1.2.1⟩)
+      (fun _ _ h => h)
       (selectField_complete (c := KimchiConstraint F) hiIsTop _ _
         (decide ((hiv : F) = ((bound / 2 ^ 128 : ℕ) : F)))
-        (((bound % 2 ^ 128 : ℕ) : F) - 1 - (lov : F)) 1))
+        (((bound % 2 ^ 128 : ℕ) : F) - 1 - (lov : F))
+        (((bound / 2 ^ 128 : ℕ) : F) - 1 - (hiv : F))))
     fun d => ?_
   refine Complete.bind
-    (Complete.imp (fun st h => ⟨h.2, h.1.1.1.2.2⟩) (fun _ _ _ => trivial)
+    (Complete.imp (fun st h => ⟨h.2, h.1.1.2.2⟩) (fun _ _ _ => trivial)
       (EndoScalar.toField_complete h2 h3 d endo
         (if decide ((hiv : F) = ((bound / 2 ^ 128 : ℕ) : F))
-          then ((bound % 2 ^ 128 : ℕ) : F) - 1 - (lov : F) else 1) ev ?hlt2))
+          then ((bound % 2 ^ 128 : ℕ) : F) - 1 - (lov : F)
+          else ((bound / 2 ^ 128 : ℕ) : F) - 1 - (hiv : F)) ev ?hlt))
     fun _ => Complete.pure_of fun _ _ => trivial
-  case hlt2 =>
+  case hlt =>
     by_cases hc : (hiv : F) = ((bound / 2 ^ 128 : ℕ) : F)
-    · have hn : hiv = bound / 2 ^ 128 := by
+    · -- equal high limbs: the low limb sits below the bound's
+      have hn : hiv = bound / 2 ^ 128 := by
         have h := congrArg ToNat.toNat hc
         rwa [hcast _ (lt_of_le_of_lt hhile hbhb), hcast _ hbhb] at h
       simp only [hc, decide_true, if_true]
@@ -289,9 +290,13 @@ private theorem assertSplitBelow_complete [Field F] [DecidableEq F] [ToNat F] [L
       rw [← Nat.cast_one, ← Nat.cast_sub (by omega), ← Nat.cast_sub (by omega),
         hcast _ (by omega)]
       omega
-    · simp only [hc, decide_false, Bool.false_eq_true, if_false]
-      rw [← Nat.cast_one, hcast 1 hone]
-      norm_num
+    · -- a smaller high limb: it sits below the bound's
+      have hn : hiv ≠ bound / 2 ^ 128 := fun h => hc (by rw [h])
+      have hlt : hiv < bound / 2 ^ 128 := lt_of_le_of_ne hhile hn
+      simp only [hc, decide_false, Bool.false_eq_true, if_false]
+      rw [← Nat.cast_one, ← Nat.cast_sub (by omega), ← Nat.cast_sub (by omega),
+        hcast _ (by omega)]
+      omega
 
 attribute [irreducible] assertSplitBelow
 
@@ -402,14 +407,6 @@ theorem lowest128Bits'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat
   have hmodle : fieldModulus F ≤ LawfulToNat.card (F := F) :=
     (fieldModulus_eq_card (F := F)).le
   have hmodnarrow : fieldModulus F < 2 ^ 256 := (fieldModulus_eq_card (F := F)) ▸ hcard
-  have hmodone : 1 < fieldModulus F := by
-    have h1 : ToNat.toNat (1 : F) ≠ 0 := fun h => by
-      have hc := LawfulToNat.cast_toNat (1 : F)
-      rw [h, Nat.cast_zero] at hc
-      exact one_ne_zero hc.symm
-    have := LawfulToNat.toNat_lt (1 : F)
-    rw [fieldModulus_eq_card]
-    omega
   have hmodbelow :
       ToNat.toNat xv % 2 ^ 128 + 2 ^ 128 * (ToNat.toNat xv / 2 ^ 128) < fieldModulus F := by
     rw [Nat.mod_add_div, fieldModulus_eq_card]
