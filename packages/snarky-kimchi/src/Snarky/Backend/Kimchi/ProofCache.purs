@@ -64,9 +64,16 @@ newtype ProofCache = ProofCache String
 mkProofCache :: String -> ProofCache
 mkProofCache = ProofCache
 
--- | On-disk shape: `{ "<vkKey>": { "<publicInputKey>": "<proofSerdeJson>" } }`
--- | — the natural JSON form of OCaml's `vk -> public_input -> proof`.
-type Store = Object (Object String)
+-- | One cached proof: its serde JSON, and the verification key it was
+-- | proved against. The key is also this entry's bucket, so `vk` is a
+-- | second copy — carried anyway so a consumer holds a whole
+-- | `(vk, public input, proof)` triple without parsing a map key.
+type Entry = { proof :: String, vk :: String }
+
+-- | On-disk shape: `{ "<vkKey>": { "<publicInputKey>": Entry } }` — the
+-- | natural JSON form of OCaml's `vk -> public_input -> proof`, with the
+-- | key repeated inside the entry.
+type Store = Object (Object Entry)
 
 -- | Load the store. Missing file or any decode drift => empty store
 -- | (a miss); the proof is simply regenerated. A cache must always be
@@ -88,16 +95,16 @@ saveStore path store = do
     Nothing -> pure unit
   writeTextFile UTF8 path (JSON.writeJSON store)
 
-getStr :: ProofCache -> String -> String -> Effect (Maybe String)
-getStr (ProofCache path) vk pi = do
+getEntry :: ProofCache -> String -> String -> Effect (Maybe Entry)
+getEntry (ProofCache path) vk pi = do
   store <- loadStore path
   pure (Object.lookup vk store >>= Object.lookup pi)
 
-setStr :: ProofCache -> String -> String -> String -> Effect Unit
-setStr (ProofCache path) vk pi val = do
+setEntry :: ProofCache -> String -> String -> String -> Effect Unit
+setEntry (ProofCache path) vk pi proof = do
   store <- loadStore path
   let inner = fromMaybe Object.empty (Object.lookup vk store)
-  saveStore path (Object.insert vk (Object.insert pi val inner) store)
+  saveStore path (Object.insert vk (Object.insert pi { proof, vk } inner) store)
 
 -- | Canonical, deterministic string for a field element (its integer
 -- | value). Stable across runs/machines.
@@ -130,8 +137,8 @@ getPallasProof
   -> Array Pallas.BaseField
   -> Effect (Maybe (Proof Vesta.G Pallas.BaseField))
 getPallasProof cache vk pis = do
-  m <- getStr cache (pallasProofVkKey vk) (piKey pis)
-  pure (pallasProofFromSerdeJson <$> m)
+  m <- getEntry cache (pallasProofVkKey vk) (piKey pis)
+  pure (pallasProofFromSerdeJson <<< _.proof <$> m)
 
 setPallasProof
   :: ProofCache
@@ -140,7 +147,7 @@ setPallasProof
   -> Proof Vesta.G Pallas.BaseField
   -> Effect Unit
 setPallasProof cache vk pis proof =
-  setStr cache (pallasProofVkKey vk) (piKey pis) (pallasProofToSerdeJson proof)
+  setEntry cache (pallasProofVkKey vk) (piKey pis) (pallasProofToSerdeJson proof)
 
 -- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
 -- | Vesta-base-field scalars — what pickles' Tock / Wrap side produces).
@@ -150,8 +157,8 @@ getVestaProof
   -> Array Vesta.BaseField
   -> Effect (Maybe (Proof Pallas.G Vesta.BaseField))
 getVestaProof cache vk pis = do
-  m <- getStr cache (vestaProofVkKey vk) (piKey pis)
-  pure (vestaProofFromSerdeJson <$> m)
+  m <- getEntry cache (vestaProofVkKey vk) (piKey pis)
+  pure (vestaProofFromSerdeJson <<< _.proof <$> m)
 
 setVestaProof
   :: ProofCache
@@ -160,7 +167,7 @@ setVestaProof
   -> Proof Pallas.G Vesta.BaseField
   -> Effect Unit
 setVestaProof cache vk pis proof =
-  setStr cache (vestaProofVkKey vk) (piKey pis) (vestaProofToSerdeJson proof)
+  setEntry cache (vestaProofVkKey vk) (piKey pis) (vestaProofToSerdeJson proof)
 
 --------------------------------------------------------------------------------
 -- VK json-key: the deterministic full-VK string used as the bucket key.
