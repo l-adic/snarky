@@ -134,7 +134,7 @@ import Pickles.Step.Slots (class SlotKindValue, class SlotStatementsCarrier, cla
 import Pickles.Step.Types as Step
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
-import Pickles.VerificationKey (VerificationKey(..), vestaVerifierIndexCommitments)
+import Pickles.VerificationKey (VerificationKey(..), verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Verify
   ( CompiledProof(..)
   , CompiledProofWidthData(..)
@@ -169,7 +169,7 @@ import Snarky.Backend.Kimchi.Proof
   , srsBlindingGenerator
   , srsLagrangeCommitmentChunksAt
   ) as ProofFFI
-import Snarky.Backend.Kimchi.ProofCache (ProofCache)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, piKey)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked(..), coerceViaBits)
@@ -567,6 +567,7 @@ consMkStepAdvice
              restVkCarrier
        , challengePolynomialCommitments :: Vector restLen (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector restLen (Array WrapField)
+       , prevProofRefs :: Array (Maybe ProofRef)
        }
   -> Effect
        { stepAdvice ::
@@ -582,6 +583,7 @@ consMkStepAdvice
              (headVkCell /\ restVkCarrier)
        , challengePolynomialCommitments :: Vector len (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector len (Array WrapField)
+       , prevProofRefs :: Array (Maybe ProofRef)
        }
 consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffect = do
   contrib <- buildSlotAdvice @w
@@ -635,6 +637,16 @@ consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffec
         contrib.challengePolynomialCommitment :< restResult.challengePolynomialCommitments
     , baseCaseWrapPublicInputs:
         slotData.wrapPublicInputArr :< restResult.baseCaseWrapPublicInputs
+    -- The cache key of this slot's wrap proof, when there is one to
+    -- verify; a base-case slot's dummy proof is not cached.
+    , prevProofRefs:
+        [ if slotData.mustVerify then
+            Just
+              { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest slotParams.slotWrapVK))
+              , publicInput: piKey slotData.wrapPublicInputArr
+              }
+          else Nothing
+        ] <> restResult.prevProofRefs
     }
   where
   slotW = reflectType (Proxy :: Proxy w)
@@ -1257,6 +1269,7 @@ class
                vkCarrier
          , challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
          , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
+         , prevProofRefs :: Array (Maybe ProofRef)
          }
 
   -- | The rule's wrap-stage data, assembled slot by slot from the
@@ -1327,6 +1340,8 @@ instance CompilableSpec Unit Unit 0 Unit Unit Unit Unit where
               )
         , challengePolynomialCommitments: Vector.nil
         , baseCaseWrapPublicInputs: Vector.nil
+        -- No slots, so no wrap proofs verified.
+        , prevProofRefs: []
         }
 
   shapeProveData _ _ _ _ _ =
@@ -1868,6 +1883,7 @@ instance
              carrier
              valCarrier
              vkCarrier
+        -> Array (Maybe ProofRef)
         -> Effect
              (Either EvaluationError (PProveStep.StepProveResult outputSize))
       )
@@ -2265,6 +2281,7 @@ instance
                carrier
                valCarrier
                vkCarrier
+          -> Array (Maybe ProofRef)
           -> Effect
                (Either EvaluationError (PProveStep.StepProveResult outputSize))
         )
@@ -2303,6 +2320,7 @@ instance
              carrier
              valCarrier
              vkCarrier
+        -> Array (Maybe ProofRef)
         -> Effect
              (Either EvaluationError (PProveStep.StepProveResult outputSize))
       )
@@ -2477,6 +2495,8 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize vkCarrier
            carrier
            valCarrier
            vkCarrier
+      -- Per slot, the cache key of the wrap proof verified there.
+      -> Array (Maybe ProofRef)
       -> Effect (Either EvaluationError (PProveStep.StepProveResult outputSize))
   -- | Where each slot's wrap VK comes from, in slot order.
   , slotVKs :: Vector mpv SlotWrapKey
@@ -2588,7 +2608,7 @@ mkRuleEntry rule slotVKs = do
           handler
           ctx
           rule
-    , stepProveFn: \handler ctx compileResult advice ->
+    , stepProveFn: \handler ctx compileResult advice prevProofs ->
         PProveStep.stepSolveAndProve
           @prevsSpec
           @outputSize
@@ -2605,6 +2625,7 @@ mkRuleEntry rule slotVKs = do
           rule
           compileResult
           advice
+          prevProofs
     , slotVKs
     }
 
@@ -2784,7 +2805,7 @@ runMultiProverBody
     -- `Self` slots.
     shape = shapeCompileData @prevsSpec perRuleCfg allStepDomainLog2s
 
-  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
+  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs, prevProofRefs } <-
     mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
       prevs
       sideloadedVKs
@@ -2876,7 +2897,7 @@ runMultiProverBody
 
     proveDataMax = padShapeProveData padDummies wrapResult.slotWidths proveData
 
-  eStepResult <- r.stepProveFn handler shape.stepProveCtx stepCR stepAdvice
+  eStepResult <- r.stepProveFn handler shape.stepProveCtx stepCR stepAdvice prevProofRefs
   case eStepResult of
     Left e -> pure (Left e)
     Right stepResult -> do
@@ -3037,6 +3058,10 @@ runMultiProverBody
               }
           , debug: cfg.debug
           , proofCache: cfg.proofCache
+          , step:
+              { vkDigest: BigInt.toString (toBigInt (verifierIndexDigest stepCR.verifierIndex))
+              , publicInput: piKey stepResult.publicInputs
+              }
           , kimchiPrevChallenges: kimchiPrevPadded
           }
 

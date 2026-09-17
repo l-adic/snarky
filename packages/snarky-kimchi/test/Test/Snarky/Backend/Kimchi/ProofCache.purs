@@ -120,13 +120,17 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
             proof = createProof @Pallas.BaseField @VestaG @Pallas.ScalarField
               { proverIndex, witness }
 
+          -- The bucket key is the verification key's digest, a decimal
+          -- string; the store only requires that shape of it.
+          let vkDigest = "12345"
+
           -- 1. Cold cache ⇒ miss.
-          missBefore <- getPallasProof cache verifierIndex publicInputs
+          missBefore <- getPallasProof cache vkDigest publicInputs
           isNothing missBefore `shouldEqual` true
 
           -- 2. Set then get ⇒ hit, and the retrieved proof verifies.
-          setPallasProof cache verifierIndex publicInputs proof
-          hit <- getPallasProof cache verifierIndex publicInputs
+          setPallasProof cache vkDigest verifierIndex publicInputs proof []
+          hit <- getPallasProof cache vkDigest publicInputs
           isJust hit `shouldEqual` true
           case hit of
             Nothing -> throw "cache hit promised by isJust but pattern was Nothing"
@@ -140,7 +144,7 @@ spec = describe "Snarky.Backend.Kimchi.ProofCache (round-trip)" do
           -- 3. Garbled store ⇒ silent miss (mirrors OCaml proof_cache.ml
           --    "any decode drift => empty store").
           FS.writeTextFile UTF8 cachePath "{ not valid json"
-          garbled <- getPallasProof cache verifierIndex publicInputs
+          garbled <- getPallasProof cache vkDigest publicInputs
           isNothing garbled `shouldEqual` true
 
           removeIfExists cachePath

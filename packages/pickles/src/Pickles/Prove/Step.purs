@@ -52,6 +52,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
+import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
@@ -78,7 +79,7 @@ import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, 
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
-import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, vestaVerifierIndexCommitments)
+import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -90,7 +91,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver')
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, crsSize, gatesToJson)
 import Snarky.Backend.Kimchi.Proof (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofOpeningPrechallenges, proofOraclesRec, vestaProofCommitments, vestaProofData)
-import Snarky.Backend.Kimchi.ProofCache (ProofCache, getPallasProof, setPallasProof)
+import Snarky.Backend.Kimchi.ProofCache (ProofCache, ProofRef, getPallasProof, setPallasProof)
 import Snarky.Backend.Kimchi.Types (CRS, Gate, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.CVar as CVar
@@ -101,7 +102,7 @@ import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, toBigInt)
 import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -1679,8 +1680,12 @@ stepSolveAndProve
   -> StepRuleAt r prevsSpec inputVal input outputVal output
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
+  -- Per slot, the cache key of the wrap proof this proof verifies there
+  -- (`Nothing` on a base-case slot), recorded on its cache entry so a
+  -- chain is walkable from the cache alone.
+  -> Array (Maybe ProofRef)
   -> Effect (Either EvaluationError (StepProveResult outputSize))
-stepSolveAndProve handler ctx rule compileResult advice = do
+stepSolveAndProve handler ctx rule compileResult advice prevProofs = do
   -- Capture channel for the rule's user `publicOutput` FVars. The
   -- solver makes `stepMain`'s whole return value public, and these
   -- FVars must not be, so they ride a Ref instead: passed into
@@ -1775,12 +1780,14 @@ stepSolveAndProve handler ctx rule compileResult advice = do
             case ctx.proofCache of
               Nothing -> pure $ Lazy.force p
               Just cache -> do
-                mp <- getPallasProof cache compileResult.verifierIndex publicInputs
+                let vkDigest = BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex))
+                mp <- getPallasProof cache vkDigest publicInputs
                 case mp of
                   Just proof -> pure proof
                   Nothing -> do
                     let proof = Lazy.force p
-                    setPallasProof cache compileResult.verifierIndex publicInputs proof
+                    setPallasProof cache vkDigest compileResult.verifierIndex publicInputs proof
+                      prevProofs
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex
