@@ -56,6 +56,7 @@ import KimchiFixture.PS
 import KimchiFixture.Cache
 import BulletproofFixture
 import BulletproofFixture.SRSLoader
+import PicklesFixture
 import FixtureKit.Parse
 import FixtureKit.Trace
 

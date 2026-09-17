@@ -21,13 +21,15 @@ So a step-half run takes a wrap entry of the cache, follows its `step` link, and
 from the wrap statement (the wrap entry's public input), the evaluations and accumulators
 from the step proof. A wrap-half run takes a step entry, follows a slot's `prevs` link to
 the wrap proof it verified, and lays the input out from that slot of the step statement
-and the wrap proof.
+and the wrap proof. The same pair drives the step circuit's group half (`verifyProof`):
+the wrap statement and proof, the slot's unfinalized proof, the wrap key's commitments
+and the Lagrange bases as constants.
 
 Per run: the interpreter completes (a), the table satisfies the assembled system (b),
-`finalized` and its four conjuncts read 1 (c), and, per step-half run, `kimchiVerify`
-accepts both proofs (d) — against the SRS they were made with (`srs-cache/`, cut to each
-proof's round count) and the Lagrange basis computed from it, memoised under
-`lagrange-cache/`.
+the success bits read 1 (c) — `finalized` and its four conjuncts for a scalar half, the
+opening's `success` for the group half — and, per step-half run, `kimchiVerify` accepts
+both proofs (d) — against the SRS they were made with (`srs-cache/`, cut to each proof's
+round count) and the Lagrange basis computed from it, memoised under `lagrange-cache/`.
 
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
@@ -111,11 +113,12 @@ def assemble (w : Cache.Entry CW) (s : Cache.Entry CS) :
           ⟨s.vk.domainLog2, s.vk.omega⟩)
 
 /-- One run of a half on a named input bundle: `build` and `prove` the harness on it, read
-the five bits off the table, and decide whether the table satisfies the assembled system. -/
-def runHalf {p : ℕ} [Fact p.Prime] {a av : Type} [CircuitType (ZMod p) a av]
+the named bits off the table, and decide whether the table satisfies the assembled system. -/
+def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av]
     (side : Kimchi.Fixture.PS.Side p)
-    (harness : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) (Pickles.FopOutput (ZMod p)))
-    (inp : a) : IO (Bool × List (String × ℕ)) := do
+    (harness : av → CircuitM (ZMod p) (KimchiConstraint (ZMod p)) β)
+    (bitsOf : β → List (String × BoolVar (ZMod p))) (inp : a) :
+    IO (Bool × List (String × ℕ)) := do
   let nv := CircuitType.size (ZMod p) a
   let m := harness (inputVar (F := ZMod p) (a := a))
   let built := build m nv
@@ -124,20 +127,73 @@ def runHalf {p : ℕ} [Fact p.Prime] {a av : Type} [CircuitType (ZMod p) a av]
   | .error e => throw (IO.userError s!"prove failed: {repr e}")
   | .ok pr =>
     let read (b : BoolVar (ZMod p)) : ℕ := ((b : CVar (ZMod p)).val pr.assignments.get).val
-    let bits := [("finalized", read pr.result.finalized), ("xiCorrect", read pr.result.xiCorrect),
-      ("bCorrect", read pr.result.bCorrect), ("cipCorrect", read pr.result.cipCorrect),
-      ("plonkOk", read pr.result.plonkOk)]
+    let bits := (bitsOf pr.result).map fun (n, b) => (n, read b)
     match provedSatisfies side built pr.assignments nv with
     | .error e => throw (IO.userError s!"reduction failed: {repr e}")
     | .ok sat => return (sat, bits)
 
+/-- The scalar half's five bits. -/
+def fopBits {F : Type} (o : Pickles.FopOutput F) : List (String × BoolVar F) :=
+  [("finalized", o.finalized), ("xiCorrect", o.xiCorrect), ("bCorrect", o.bCorrect),
+   ("cipCorrect", o.cipCorrect), ("plonkOk", o.plonkOk)]
+
 /-- The step half on a step-side bundle at a known domain. -/
 def runStep (dom : Pickles.KnownDomain Fp) (inp : FopInput Fp) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := FopInput Fp) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) inp
+  runHalf (a := FopInput Fp) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) fopBits inp
 
 /-- The wrap half on a wrap-side bundle at a domain and a round count. -/
 def runWrap (domainLog2 r : ℕ) (inp : FopWrapInput r Fq) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := FopWrapInput r Fq) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2 r) inp
+  runHalf (a := FopWrapInput r Fq) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2 r) fopBits inp
+
+/-- The step circuit's group half on a wrap proof: the wrap key's commitments as constants,
+the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
+def runGroup (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point) (h : CW.Point)
+    (inp : GroupStepInput Fp) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := GroupStepInput Fp) Kimchi.Fixture.PS.fpSide
+    (groupStepOn vk (stepXhatTable basis) (xhatStepCell h)) (fun b => [("success", b)]) inp
+
+/-- The step circuit's group-half input from a step entry's slot and the wrap proof that
+slot verified: the wrap statement's cells (the wrap proof's public input carried by value
+into the step field, the branch data unpacked into `domain_log2` and the two mask bits),
+the slot of the step statement as it is, the wrap proof's commitments and opening (`z₁`,
+`z₂` as their Type2 registers `s − 2^255`, split into a half and a parity bit), its two
+accumulators' commitments as `sg_old`, and `is_base_case = 0`: the slot is a real one. -/
+def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
+    Except String (GroupStepInput Fp) := do
+  let c := w.publicInput
+  unless 30 ≤ c.size do throw s!"wrap public input: {c.size} cells"
+  let bd := (c.getD 29 0).val
+  let statement : Vector Fp 32 := Vector.ofFn fun i =>
+    match (i : ℕ) with
+    | 29 => ((bd / 4 : ℕ) : Fp) | 30 => ((bd % 2 : ℕ) : Fp) | 31 => (((bd / 2) % 2 : ℕ) : Fp)
+    | k => toStep (c.getD k 0)
+  let sc := s.publicInput
+  let base := slot * 32
+  unless base + 32 ≤ sc.size do
+    throw s!"step public input: {sc.size} cells, slot {slot} needs {base + 32}"
+  let unfinalized : Vector Fp 32 := Vector.ofFn fun i => sc.getD (base + i) 0
+  let coords (P : CW.Point) : List Fp := [P.x, P.y]
+  let chunk (nm : String) (a : Array CW.Point) : Except String CW.Point :=
+    if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
+  let split (z : CW.ScalarField) : List Fp :=
+    let t := (Pasta.Shifted.shiftType2 255 z).val
+    [((t / 2 : ℕ) : Fp), ((t % 2 : ℕ) : Fp)]
+  let mut cells : List Fp := []
+  for cm in w.proof.wComm.toList do cells := cells ++ coords (← chunk "w_comm" cm)
+  cells := cells ++ coords (← chunk "z_comm" w.proof.zComm)
+  for P in w.proof.tComm.toList do cells := cells ++ coords P
+  for lr in w.proof.opening.lr.toList do cells := cells ++ coords lr.1 ++ coords lr.2
+  cells := cells ++ split w.proof.opening.z1 ++ split w.proof.opening.z2
+    ++ coords w.proof.opening.delta ++ coords w.proof.opening.sg
+  let proof : Vector Fp 114 ←
+    if h : cells.length = 114 then pure ⟨cells.toArray, by simp [h]⟩
+    else throw s!"wrap proof block: {cells.length} cells"
+  let mut sgs : List Fp := []
+  for rc in w.proof.prevChallenges.toList do sgs := sgs ++ coords (← chunk "sg_old" rc.comm)
+  let sgOld : Vector Fp 4 ←
+    if h : sgs.length = 4 then pure ⟨sgs.toArray, by simp [h]⟩
+    else throw s!"sg_old: {sgs.length} cells, expected two accumulators"
+  return { statement, unfinalized, proof, sgOld, isBaseCase := 0 }
 
 /-- A step-field cell as the wrap-field value it carries — a digest or a 128-bit challenge,
 transported by value. -/
@@ -185,24 +241,29 @@ def srsAt (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C
   loaded.modify ((k, σ) :: ·)
   return σ
 
-/-- The wire verifier on a cache entry, its key completed with the Lagrange basis: the
-records checked at the run's chunk count and the SRS's round count, then `kimchiVerify`.
-The entry's SRS is the curve's file cut to the proof's round count; the basis is memoised
-per curve and domain. -/
-def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
+/-- The Lagrange basis an entry's key needs — as many as its public input has cells — at its
+domain, computed from `σ` and memoised per curve and domain under `lagrange-cache/`. -/
+def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
+    IO (Array C.Point) := do
   let memoDir := (← IO.getEnv "LAGRANGE_CACHE_DIR").getD "lagrange-cache"
-  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
   let n := 2 ^ e.vk.domainLog2
   if h : n ≤ 2 ^ σ.k then
-    let basis ← Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}.json"
-      σ n h e.vk.omega e.publicInput.size
-    let vk := { e.vk with lagrangeBasis := basis.map (#[·]) }
-    let nc := Kimchi.Verifier.Wire.runNc C σ vk
-    match vk.check nc, e.proof.check nc σ.k with
-    | some cvk, some cp => return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
-    | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
+    Fixture.lagrangeBasisCached C s!"{memoDir}/{name}-2^{e.vk.domainLog2}.json" σ n h
+      e.vk.omega e.publicInput.size
   else throw (IO.userError s!"domain 2^{e.vk.domainLog2} above the SRS at 2^{σ.k}")
+
+/-- The wire verifier on a cache entry, its key completed with the Lagrange basis: the
+records checked at the run's chunk count and the SRS's round count, then `kimchiVerify`.
+The entry's SRS is the curve's file cut to the proof's round count. -/
+def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let basis ← basisFor C name σ e
+  let vk := { e.vk with lagrangeBasis := basis.map (#[·]) }
+  let nc := Kimchi.Verifier.Wire.runNc C σ vk
+  match vk.check nc, e.proof.check nc σ.k with
+  | some cvk, some cp => return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
+  | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
 
 def main : IO Unit := do
   let path := (← IO.getEnv "PROOF_CACHE").getD
@@ -260,6 +321,19 @@ def main : IO Unit := do
         bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
       runs := runs + 1
       unless sat ∧ bitsOk do allOk := false
+      -- the step circuit's group half of the same wrap proof
+      let ginp ← match assembleGroup s slot w with
+        | .error e => throw (IO.userError s!"assemble (group half): {e}") | .ok i => pure i
+      let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
+      let basis ← basisFor CW "pallas" σW w
+      let t2 ← IO.monoMsNow
+      let (gsat, gbits) ← runGroup w.vk basis σW.h ginp
+      let t3 ← IO.monoMsNow
+      let gbitsOk := gbits.all (·.2 = 1)
+      IO.println s!"  {if gsat ∧ gbitsOk then "✓" else "✗"} group half on step→wrap \
+        {d.take 10}… (slot {slot}): satisfies={gsat} \
+        bits={gbits.map fun (n, v) => s!"{n}={v}"} {t3 - t2} ms"
+      unless gsat ∧ gbitsOk do allOk := false
   unless runs > 0 do throw (IO.userError "no linked pairs to run")
   unless allOk do throw (IO.userError "check-halves FAILED")
   IO.println s!"✓ {runs} run(s): every table satisfies its system, every bit reads 1, \

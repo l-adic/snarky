@@ -811,29 +811,6 @@ the blinding `h` from `xhat_step_lagrange.json`. The leaf widths follow
 gadget takes the first leaf's correction (`corrHead`, the seed PS uses only when the first
 result is a `condAdd`) and their sum (`corrSum`), both computed natively here. -/
 
-/-- The Pallas curve of the step-side `x_hat` Lagrange bases (Fp coordinates). -/
-abbrev XhatStepCurve := Bulletproof.IpaPallas.curve
-
-open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
-/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a native Pallas point. -/
-def xhatStepCorrPt (L : ℕ) (P : XhatStepCurve.Point) : XhatStepCurve.Point :=
-  -(smulFast XhatStepCurve.E (by decide) (by decide) (2 ^ L) P)
-
-/-- A native Pallas point as a constant cell at the step field. -/
-def xhatStepCell (P : XhatStepCurve.Point) : AffinePoint (FVar Fp) := ⟨.const P.x, .const P.y⟩
-
-/-- A native Pallas point as a one-chunk constant point at the step field. -/
-def xhatStepConst (P : XhatStepCurve.Point) : Vector (AffinePoint (FVar Fp)) 1 :=
-  #v[xhatStepCell P]
-
-/-- The ladder width of step leaf `i` (`XhatStep.parseXhatStepInput`). -/
-def xhatStepWidth (i : ℕ) : ℕ :=
-  if i < 5 ∨ (10 ≤ i ∧ i < 13) then 255 else if i = 29 then 10 else 130
-
-/-- The shift correction of step leaf `i` at the Lagrange bases `pts`. -/
-def xhatStepCorr (pts : Array XhatStepCurve.Point) (i : ℕ) : XhatStepCurve.Point :=
-  xhatStepCorrPt (xhatStepWidth i) (pts[i]?.getD 0)
-
 /-- The 30 step leaves: leaf `i` reads `get i` at Lagrange base `pts[i]` with its constant
 correction, at the width `xhatStepWidth i`. -/
 def xhatStepLeaves (pts : Array XhatStepCurve.Point) (get : ℕ → FVar Fp) :
@@ -1032,14 +1009,6 @@ def stepVerifyCells (get : ℕ → FVar Fp) :
     opening := { lr := (List.range 15).map fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
                  z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
 
-/-- The `x_hat` tables at the Lagrange bases `pts`: the bases, their constant corrections,
-and the known-domain fold's seed and sum. -/
-def stepVerifyTable (pts : Array XhatStepCurve.Point) : Pickles.XhatTable Fp 1 :=
-  { bases := (List.range 30).map fun i => xhatStepConst (pts[i]?.getD 0)
-    corrs := (List.range 30).map fun i => xhatStepConst (xhatStepCorr pts i)
-    corrHead := xhatStepConst (xhatStepCorr pts 0)
-    corrSum := xhatStepConst ((List.range 30).map (xhatStepCorr pts)).sum }
-
 /-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
 side over the parsed statement, unfinalized proof and cells. -/
 def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar Fp))
@@ -1048,7 +1017,7 @@ def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar F
   let sv ← dummyIndexSponge
   let _ ← Pickles.verifyProof Pickles.IpaScalarOps.step Pickles.IpaEndo.pallas
     Bulletproof.IpaVesta.curve.frSponge.params (.const endoVestaLam) Pickles.groupMapParamsPallas
-    (fun _ => none) h (stepVerifyTable pts) sv (.unchecked (get 265)) (stepVerifyStatement get)
+    (fun _ => none) h (stepXhatTable pts) sv (.unchecked (get 265)) (stepVerifyStatement get)
     (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit
 
