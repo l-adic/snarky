@@ -17,8 +17,8 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 import Prelude
 
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -27,11 +27,11 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
-import Pickles.Slots (Slot)
+import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
+import Pickles.Slots (SideLoadedSlot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
-import Pickles.Step.Slots (PrevStatement(..), PrevValues, prevValues, toPrevs)
+import Pickles.Step.Slots (PrevValues, SideLoadedPrevStatement(..), SideLoadedPrevValue, prevValues, toPrevs)
 import Pickles.Step.Types (PerProofWitness)
 import Pickles.Types (StatementIO(..), StepIPARounds, WrapIPARounds)
 import Snarky.Backend.Advice (noAdvice)
@@ -72,7 +72,10 @@ sideLoadedMainRule
   -> Snarky StepField (KimchiConstraint StepField) r
        (RuleOutput SideLoadedMainPrevsSpec Unit)
 sideLoadedMainRule getPrevStates appState = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO p1 /\ _) -> p1.input
+  -- One allocation for both: the prev's statement field, then the key
+  -- the OCaml rule hands to `Side_loaded.in_circuit` without binding.
+  Tuple prev vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
+    let StatementIO p1 = slot.statement in Tuple p1.input slot.verificationKey
   isBaseCase <- equals_ (const_ zero) appState
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
@@ -82,14 +85,20 @@ sideLoadedMainRule getPrevStates appState = do
   -- folding. Reference: OCaml `dump_side_loaded_main.ml:179`.
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+        SideLoadedPrevStatement
+          { publicInput: StatementIO { input: prev, output: unit }
+          , proofMustVerify: true_
+          -- The OCaml rule binds nothing, and this harness reproduces
+          -- its constraint system.
+          , verificationKey: unsafeUnboundVk vk
+          }
           /\ unit
     , publicOutput: unit
     }
 
 -- | The rule's one side-loaded prev slot, at the tag's compile-time
 -- | upper bound `N2`.
-type SideLoadedMainPrevsSpec = Tuple1 (Slot 2 (StatementIO (F StepField) Unit))
+type SideLoadedMainPrevsSpec = Tuple1 (SideLoadedSlot 2 (StatementIO (F StepField) Unit))
 
 compileStepMainSideLoadedMain
   :: StepMainSideLoadedMainParams -> Effect StepArtifact
@@ -122,10 +131,9 @@ compileStepMainSideLoadedMain params = do
           @SideLoadedMainPrevsSpec
           @(F StepField)
           @Unit
-          @(Tuple1 (StatementIO (F StepField) Unit))
+          @(Tuple1 (SideLoadedPrevValue (StatementIO (F StepField) Unit)))
           @1
           @1
-          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           sideLoadedMainRule
           -- This circuit-diff harness builds `perSlotLagrangeAt` /
           -- `perSlotVkBlueprints` / `perSlotFopDomainLog2s` inline rather
@@ -147,8 +155,6 @@ compileStepMainSideLoadedMain params = do
               BlueprintSideLoaded params.sideloadedPerDomainLagrangeAt /\ unit
           }
           dummyWrapSg
-          -- Single side-loaded slot with the dummy VK.
-          (tuple1 SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

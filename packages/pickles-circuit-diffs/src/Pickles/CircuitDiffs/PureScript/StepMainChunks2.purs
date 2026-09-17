@@ -96,7 +96,7 @@ compileStepMainChunks2 params = do
       -- entries). Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- inputVal/outputVal both Unit — chunks2 is `Input Typ.unit`
       -- (degenerate Input mode) with `~auxiliary_typ:Typ.unit`.
-      ( \_ -> stepMain @Unit @Unit @Unit @Unit @0 @1 @Unit
+      ( \_ -> stepMain @Unit @Unit @Unit @Unit @0 @1
           chunks2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
@@ -104,8 +104,6 @@ compileStepMainChunks2 params = do
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg
-          -- Side-loaded VK carrier: no slots, carrier = Unit.
-          unit
           dummyAdvice
           throwawayCaptureRef
       )

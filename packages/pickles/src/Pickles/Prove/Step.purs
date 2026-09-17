@@ -68,9 +68,7 @@ import Pickles.PlonkChecks (collapsePointEval)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, mkUnitVkCarrier)
-import Pickles.Sideload.Bundle (SlotProveVk) as SideloadBundle
-import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Step.Dummy (baseCaseDummies, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
@@ -1303,7 +1301,7 @@ buildStepCircuit
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1353,11 +1351,6 @@ buildStepCircuit
        , kimchiRows :: Array (KimchiRow StepField)
        }
 buildStepCircuit handler ctx rule = do
-  -- The circuit shape depends only on `prevsSpec`, `len` and
-  -- `carrier`, so the runtime VKs are irrelevant here: every slot gets
-  -- the all-`Unit` carrier.
-  let
-    sideloadedCarrier = mkUnitVkCarrier @prevsSpec
   -- Every advice read lives inside an `exists` body, which `compile`
   -- discards, so the advice record is never projected and the
   -- `unsafeCoerce unit` bottom below is never forced.
@@ -1386,11 +1379,9 @@ buildStepCircuit handler ctx rule = do
             @valCarrier
             @mpvMax
             @nd
-            @(SLVK.VerificationKey WrapVkChunks (F StepField) Boolean)
             rule
             ctx.srsData
             ctx.dummySg
-            sideloadedCarrier
             dummyAdvice
             throwawayCaptureRef
       )
@@ -1410,7 +1401,7 @@ stepCompile
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1547,7 +1538,7 @@ preComputeStepDomainLog2
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1641,7 +1632,7 @@ stepSolveAndProve
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        pad unfsTotal digestPlusUnfs r
    . CircuitGateConstructor StepField VestaG
-  => BuildSlotVkSources (SideloadBundle.SlotProveVk WrapVkChunks) prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -1697,11 +1688,8 @@ stepSolveAndProve handler ctx rule compileResult advice = do
   -- back here. It is the only mutable channel — the read-only advice
   -- flows as a plain argument.
   captureRef <- Ref.new Nothing
-  -- Taking the side-loaded VK carrier from the advice keeps the monad
-  -- arbitrary, with no class constraint to discharge.
   let
     StepAdvice adv = advice
-    sideloadedCarrier = adv.sideloadedVKs
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
@@ -1719,11 +1707,9 @@ stepSolveAndProve handler ctx rule compileResult advice = do
               @valCarrier
               @mpvMax
               @nd
-              @(SideloadBundle.SlotProveVk WrapVkChunks)
               rule
               ctx.srsData
               ctx.dummySg
-              sideloadedCarrier
               advice
               captureRef
         )

@@ -12,7 +12,7 @@ import Prelude
 
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple2, tuple2, (/\))
+import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -21,7 +21,6 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
@@ -122,7 +121,6 @@ compileStepMainSimpleChainN2 params = do
           )
           @2
           @1
-          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           simpleChainN2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
@@ -132,10 +130,6 @@ compileStepMainSimpleChainN2 params = do
               BlueprintSelf params.lagrangeAt /\ BlueprintSelf params.lagrangeAt /\ unit
           }
           dummyWrapSg
-          -- Side-loaded VK carrier: two Cons slots, both compiled Self
-          -- prevs, so neither cell is read; the compile-time dummy
-          -- descriptor fills both.
-          (tuple2 SLVK.compileDummy SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

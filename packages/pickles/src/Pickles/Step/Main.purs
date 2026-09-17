@@ -43,13 +43,12 @@ import Pickles.IncrementallyVerifyProof.FqSpongeTranscript (ivpTrace)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), mkSideloadedLagrangeLookup)
-import Pickles.Sideload.Bundle (class HasSideLoadedVk, projectVk)
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
-import Pickles.Slots (Slot)
+import Pickles.Slots (SlotOf)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (StepAdvice(..))
 import Pickles.Step.Dummy as Dummy
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, PrevValues, Prevs, mkPrevValues, prevsVector, stepSlotsTyp, traverseStepSlotsAWithVk)
+import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, EncodedPrev, PrevValues, Prevs, mkPrevValues, prevsVector, stepSlotsTyp, traverseStepSlotsAWithVk)
 import Pickles.Step.Types (AllocBranchData(..), FopProofState(..), PerProofWitness(..), ProofState(..), UnfinalizedFieldCount, WrapProof(..))
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
@@ -101,47 +100,43 @@ type RuleOutput prevsSpec output =
 -- | chunk count fails to resolve rather than being coerced into
 -- | agreement.
 class BuildSlotVkSources
-  :: Type -> Type -> Int -> Int -> Type -> Type -> Type -> Constraint
+  :: Type -> Int -> Type -> Type -> Constraint
 class
-  BuildSlotVkSources cell prevsSpec wrapVkChunks len blueprints cellCarrier vkCarrier
-  | cell prevsSpec -> len blueprints cellCarrier
-  , prevsSpec -> vkCarrier
+  BuildSlotVkSources prevsSpec len blueprints vkCarrier
+  | prevsSpec -> len blueprints vkCarrier
   where
-  buildSlotVkSources
-    :: forall r
-     . PrimeField StepField
-    => blueprints
-    -> cellCarrier
-    -> Snarky StepField (KimchiConstraint StepField) r vkCarrier
+  buildSlotVkSources :: blueprints -> Array EncodedPrev -> vkCarrier
 
-instance BuildSlotVkSources cell Unit wrapVkChunks 0 Unit Unit Unit where
-  buildSlotVkSources _ _ = pure unit
+instance BuildSlotVkSources Unit 0 Unit Unit where
+  buildSlotVkSources _ _ = unit
 
 instance
-  ( BuildSlotVkSources cell rest wrapVkChunks restLen restScaffolds restCellCarrier restVkCarrier
-  , HasSideLoadedVk wrapVkChunks cell
-  , Reflectable wrapVkChunks Int
-  , CheckedType StepField (KimchiConstraint StepField)
-      (SLVK.VerificationKey wrapVkChunks (FVar StepField) (BoolVar StepField))
+  ( BuildSlotVkSources rest restLen restScaffolds restVkCarrier
   , Add restLen 1 len
   ) =>
-  BuildSlotVkSources cell
-    (Slot n stmt /\ rest)
-    wrapVkChunks
+  BuildSlotVkSources
+    (SlotOf k n stmt /\ rest)
     len
-    (SlotVkBlueprint wrapVkChunks /\ restScaffolds)
-    (cell /\ restCellCarrier)
-    (SlotVkSource wrapVkChunks /\ restVkCarrier)
+    (SlotVkBlueprint WrapVkChunks /\ restScaffolds)
+    (SlotVkSource WrapVkChunks /\ restVkCarrier)
   where
-  buildSlotVkSources (headBlueprint /\ restScaffolds) (headCell /\ restCellCarrier) = do
-    headSrc <- case headBlueprint of
-      BlueprintSelf lagrange -> pure (SharedExistsVk lagrange)
-      BlueprintExternal lagrange v -> pure (ConstVk lagrange v)
-      BlueprintSideLoaded headLagrange -> do
-        headVar <- exists (pure (projectVk headCell))
-        pure (SideloadedExistsVk headLagrange headVar)
-    restSrcs <- buildSlotVkSources @cell @rest @wrapVkChunks restScaffolds restCellCarrier
-    pure (headSrc /\ restSrcs)
+  buildSlotVkSources (headBlueprint /\ restScaffolds) prevs =
+    let
+      headSrc = case headBlueprint of
+        BlueprintSelf lagrange -> SharedExistsVk lagrange
+        BlueprintExternal lagrange v -> ConstVk lagrange v
+        BlueprintSideLoaded headLagrange ->
+          case Array.head prevs >>= _.verificationKey of
+            Just headVar -> SideloadedExistsVk headLagrange headVar
+            -- The slot's blueprint and its `SlotOf` kind are checked
+            -- against each other when the rule entry is built, so a
+            -- side-loaded blueprint always meets a side-loaded slot,
+            -- whose returned statement carries a key.
+            Nothing -> unsafeThrow
+              "buildSlotVkSources: a side-loaded slot returned no verification key"
+      restSrcs = buildSlotVkSources @rest restScaffolds (Array.drop 1 prevs)
+    in
+      headSrc /\ restSrcs
 
 -- | The SRS-derived and per-slot data `stepMain` needs beyond the
 -- | rule itself: one shared SRS constant, then one entry per slot,
@@ -575,12 +570,12 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output
-       @valCarrier @mpvMax mpvPad @nd ndPred @cell
+       @valCarrier @mpvMax mpvPad @nd ndPred
        len carrier carrierVar sideloadedVkCarrier vkSourcesCarrier blueprints
        unfsTotal digestPlusUnfs
        r
    . PrimeField StepField
-  => BuildSlotVkSources cell prevsSpec WrapVkChunks len blueprints sideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources prevsSpec len blueprints vkSourcesCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
@@ -620,7 +615,6 @@ stepMain
      )
   -> StepMainSrsData len nd blueprints
   -> AffinePoint StepField
-  -> sideloadedVkCarrier
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds WrapVkChunks inputVal len carrier valCarrier sideloadedVkCarrier
   -> Ref (Maybe (Array (FVar StepField)))
   -> Snarky StepField (KimchiConstraint StepField) r (Vector outputSize (FVar StepField))
@@ -632,7 +626,6 @@ stepMain
   , perSlotVkBlueprints
   }
   dummySg
-  sideloadedVkCarrier
   advice
   captureRef = do
   -- Projecting the public input out of the advice from inside the
@@ -640,24 +633,23 @@ stepMain
   -- that body, so the dummy advice is never projected.
   publicInput <- exists (pure advice <#> \(StepAdvice r) -> r.publicInput)
 
-  -- Label boundaries are externally fixed, so the side-loaded VK
-  -- `exists` is emitted inside `rule_main` rather than beside it. A
-  -- compiled-only rule has no `BlueprintSideLoaded` slot, so
-  -- `buildSlotVkSources` emits no `exists` at all.
-  { prevs, publicOutput, perSlotVkSources } <-
+  { prevs, publicOutput } <-
     label "rule_main" do
-      perSlotVkSources <- buildSlotVkSources @cell @prevsSpec @WrapVkChunks perSlotVkBlueprints sideloadedVkCarrier
       -- The rule reads previous proofs' statements through this
       -- deferred getter, forced only inside the rule's own `exists`
-      -- bodies.
+      -- bodies. A side-loaded slot's key is allocated by the rule too,
+      -- and comes back bound to the rule's statement.
       result <- rule
         (pure advice <#> \(StepAdvice r) -> mkPrevValues @prevsSpec r.prevAppStates)
         publicInput
       pure
         { prevs: prevsVector @len result.prevs
         , publicOutput: result.publicOutput
-        , perSlotVkSources
         }
+
+  let
+    perSlotVkSources =
+      buildSlotVkSources @prevsSpec @len perSlotVkBlueprints (Vector.toUnfoldable prevs)
 
   let
     publicInputFields = varToFields @StepField @inputVal publicInput

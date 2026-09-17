@@ -21,7 +21,7 @@ import Prelude
 
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple2, tuple2, (/\))
+import Data.Tuple.Nested (Tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -33,7 +33,6 @@ import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMai
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
@@ -146,7 +145,6 @@ compileStepMainTreeProofReturn params = do
           @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
           @1
-          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           treeProofReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s:
@@ -162,7 +160,6 @@ compileStepMainTreeProofReturn params = do
                 /\ unit
           }
           dummyWrapSg
-          (tuple2 SLVK.compileDummy SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

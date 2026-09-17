@@ -83,7 +83,6 @@ compileStepMainTwoPhaseChainMakeZero params = do
           @Unit
           @1
           @1
-          @Unit
           makeZeroRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
@@ -91,7 +90,6 @@ compileStepMainTwoPhaseChainMakeZero params = do
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg
-          unit
           dummyAdvice
           throwawayCaptureRef
       )

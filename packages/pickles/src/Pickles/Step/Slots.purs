@@ -18,12 +18,19 @@
 module Pickles.Step.Slots
   ( class StepSlotsCarrier
   , class SlotStatementsCarrier
+  , class SlotKindPrev
+  , class SlotKindValue
   , class SlotPrevStatements
   , class SlotVkCarrier
   , class StepSlotsTyp
+  , EncodedPrev
   , PrevStatement(..)
   , PrevValues
   , Prevs
+  , SideLoadedPrevStatement(..)
+  , SideLoadedPrevValue
+  , encodeSlotPrev
+  , mkSlotValue
   , SlotWitnessVal
   , SlotWitnessVar
   , mkPrevValues
@@ -47,7 +54,10 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.Field (StepField)
-import Pickles.Slots (Slot)
+import Pickles.Sideload.BoundVk.Internal (BoundVk(..))
+import Pickles.Sideload.Bundle (SlotProveVk, projectVk)
+import Pickles.Sideload.VerificationKey (VerificationKey) as SLVK
+import Pickles.Slots (Compiled, SideLoaded, SlotKind, SlotOf)
 import Pickles.Step.Types (PerProofWitness, WrapProof, perProofWitnessTyp)
 import Pickles.Step.VkSource (SlotVkSource)
 import Pickles.Typ (Typ, pairTyp, unitTyp)
@@ -75,7 +85,7 @@ instance SlotVkCarrier Unit Unit
 
 instance
   SlotVkCarrier rest restVk =>
-  SlotVkCarrier (Slot n statement /\ rest) (SlotVkSource WrapVkChunks /\ restVk)
+  SlotVkCarrier (SlotOf k n statement /\ rest) (SlotVkSource WrapVkChunks /\ restVk)
 
 -- | `spec` → (`len`, `pwCarrier`, `vkCarrier`), with two traversals:
 -- | one over `pwCarrier` alone, one zipping it with `vkCarrier`.
@@ -157,7 +167,7 @@ instance
   , Reflectable pad Int
   ) =>
   StepSlotsCarrier
-    (Slot n statement /\ rest)
+    (SlotOf k n statement /\ rest)
     WrapVkChunks
     ds
     dw
@@ -227,25 +237,52 @@ instance
       (WrapProof WrapIPARounds WrapVkChunks (WeierstrassAffinePoint PallasG (FVar StepField)) (Type2 (SplitField (FVar StepField) (BoolVar StepField))))
   ) =>
   StepSlotsTyp
-    (Slot n statement /\ rest)
+    (SlotOf k n statement /\ rest)
     (SlotWitnessVal WrapVkChunks /\ restVal)
     (SlotWitnessVar WrapVkChunks /\ restVar)
   where
   stepSlotsTyp =
     pairTyp (perProofWitnessTyp (reflectType (Proxy :: Proxy n))) (stepSlotsTyp @rest)
 
--- | `spec` → the per-slot statements carrier: one entry per prev,
--- | holding that prev's own `statement` type.
+-- | What one slot of kind `k` contributes to the advice a rule reads:
+-- | a compiled slot its statement alone, a side-loaded slot its
+-- | statement and the runtime key the rule has to bind.
+class SlotKindValue :: SlotKind -> Type -> Type -> Constraint
+class SlotKindValue k statement valElem | k statement -> valElem where
+  -- | Build the element from the slot's statement and whatever the
+  -- | prove call supplied for its key.
+  mkSlotValue :: statement -> SlotProveVk WrapVkChunks -> valElem
+
+instance SlotKindValue Compiled statement statement where
+  mkSlotValue statement _ = statement
+
+-- | A side-loaded slot's advice: the prev's statement, and the
+-- | verification key the prove call supplied for it.
+type SideLoadedPrevValue statement =
+  { statement :: statement
+  , verificationKey :: SLVK.VerificationKey WrapVkChunks (F StepField) Boolean
+  }
+
+instance SlotKindValue SideLoaded statement (SideLoadedPrevValue statement) where
+  -- `projectVk` throws when the slot's key is missing. The read is
+  -- deferred: the rule projects this inside an `exists` body, which
+  -- compile discards.
+  mkSlotValue statement slotVk = { statement, verificationKey: projectVk slotVk }
+
+-- | `spec` → the per-slot statements carrier: one entry per prev, at
+-- | that slot's kind and statement type.
 class SlotStatementsCarrier :: Type -> Type -> Constraint
 class SlotStatementsCarrier spec valCarrier | spec -> valCarrier
 
 instance SlotStatementsCarrier Unit Unit
 
 instance
-  SlotStatementsCarrier rest restValCarrier =>
+  ( SlotKindValue k statement valElem
+  , SlotStatementsCarrier rest restValCarrier
+  ) =>
   SlotStatementsCarrier
-    (Slot n statement /\ rest)
-    (statement /\ restValCarrier)
+    (SlotOf k n statement /\ rest)
+    (valElem /\ restValCarrier)
 
 -- | The prover-side values of a rule's previous statements, indexed by
 -- | its prevs spec. `prevValues` opens it as the `SlotStatementsCarrier`
@@ -280,19 +317,54 @@ newtype PrevStatement stmtVar = PrevStatement
   , proofMustVerify :: BoolVar StepField
   }
 
+-- | One previous proof of a side-loaded slot. The key is a `BoundVk`,
+-- | so the rule cannot return a slot whose key it has not tied to its
+-- | own statement.
+newtype SideLoadedPrevStatement stmtVar = SideLoadedPrevStatement
+  { publicInput :: stmtVar
+  , proofMustVerify :: BoolVar StepField
+  , verificationKey :: BoundVk
+  }
+
+-- | One slot's encoded entry: its statement's fields, its flag, and,
+-- | for a side-loaded slot, the key the step circuit verifies against.
+type EncodedPrev =
+  { fields :: Array (FVar StepField)
+  , proofMustVerify :: BoolVar StepField
+  , verificationKey ::
+      Maybe (SLVK.VerificationKey WrapVkChunks (FVar StepField) (BoolVar StepField))
+  }
+
 -- | A rule's previous statements, each already encoded to fields by its
 -- | own slot's `CircuitType`, indexed by the rule's prevs spec. Built
 -- | only by `toPrevs`.
 newtype Prevs :: Type -> Type
-newtype Prevs spec = Prevs
-  ( Array
-      { fields :: Array (FVar StepField)
-      , proofMustVerify :: BoolVar StepField
-      }
-  )
+newtype Prevs spec = Prevs (Array EncodedPrev)
 
--- | `spec` → the tuple a rule returns: one `PrevStatement` per slot, at
--- | the variable type of that slot's statement.
+-- | What one slot of kind `k` contributes to what a rule returns.
+class SlotKindPrev :: SlotKind -> Type -> Type -> Constraint
+class SlotKindPrev k stmtVar prevElem | k stmtVar -> prevElem where
+  encodeSlotPrev :: (stmtVar -> Array (FVar StepField)) -> prevElem -> EncodedPrev
+
+instance SlotKindPrev Compiled stmtVar (PrevStatement stmtVar) where
+  encodeSlotPrev encode (PrevStatement here) =
+    { fields: encode here.publicInput
+    , proofMustVerify: here.proofMustVerify
+    , verificationKey: Nothing
+    }
+
+instance SlotKindPrev SideLoaded stmtVar (SideLoadedPrevStatement stmtVar) where
+  encodeSlotPrev encode (SideLoadedPrevStatement here) =
+    let
+      BoundVk vk = here.verificationKey
+    in
+      { fields: encode here.publicInput
+      , proofMustVerify: here.proofMustVerify
+      , verificationKey: Just vk
+      }
+
+-- | `spec` → the tuple a rule returns: one entry per slot, at that
+-- | slot's kind and the variable type of its statement.
 class SlotPrevStatements :: Type -> Type -> Constraint
 class SlotPrevStatements spec prevs | spec -> prevs where
   toPrevs :: prevs -> Prevs spec
@@ -302,20 +374,19 @@ instance SlotPrevStatements Unit Unit where
 
 instance
   ( CircuitType StepField statement statementVar
+  , SlotKindPrev k statementVar prevElem
   , SlotPrevStatements rest restPrevs
   ) =>
   SlotPrevStatements
-    (Slot n statement /\ rest)
-    (PrevStatement statementVar /\ restPrevs)
+    (SlotOf k n statement /\ rest)
+    (prevElem /\ restPrevs)
   where
-  toPrevs (PrevStatement here /\ rest) =
+  toPrevs (here /\ rest) =
     let
       Prevs restEntries = toPrevs @rest rest
     in
       Prevs $ Array.cons
-        { fields: varToFields @StepField @statement here.publicInput
-        , proofMustVerify: here.proofMustVerify
-        }
+        (encodeSlotPrev @k (varToFields @StepField @statement) here)
         restEntries
 
 -- | The encoded previous statements at the rule's slot count.
@@ -323,10 +394,7 @@ prevsVector
   :: forall @len spec
    . Reflectable len Int
   => Prevs spec
-  -> Vector len
-       { fields :: Array (FVar StepField)
-       , proofMustVerify :: BoolVar StepField
-       }
+  -> Vector len EncodedPrev
 prevsVector (Prevs entries) = case Vector.toVector entries of
   Just v -> v
   -- `toPrevs` emits one entry per slot of `spec`, and `len` is that

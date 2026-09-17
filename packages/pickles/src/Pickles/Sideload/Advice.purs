@@ -23,7 +23,7 @@ import Effect (Effect)
 import Pickles.Field (StepField)
 import Pickles.Sideload.Bundle (SlotProveVk)
 import Pickles.Sideload.VerificationKey (VerificationKey, compileDummy) as SLVK
-import Pickles.Slots (Slot)
+import Pickles.Slots (SlotOf)
 import Pickles.Types (WrapVkChunks)
 import Snarky.Circuit.DSL (F)
 
@@ -44,7 +44,7 @@ instance SideloadedVKsCarrier Unit Unit
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
-    (Slot n statement /\ rest)
+    (SlotOf k n statement /\ rest)
     (SlotProveVk WrapVkChunks /\ restCarrier)
 
 -- | The monad a spec-indexed VK carrier is drawn from.
@@ -79,6 +79,6 @@ instance MkUnitVkCarrier Unit Unit where
 instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
-    (Slot n statement /\ rest)
+    (SlotOf k n statement /\ rest)
     (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean /\ restCarrier) where
   mkUnitVkCarrier = SLVK.compileDummy /\ mkUnitVkCarrier @rest
