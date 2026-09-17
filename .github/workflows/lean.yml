@@ -188,7 +188,7 @@ jobs:
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
         for m in Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-                 Bulletproof BulletproofFixture Schnorr Pickles; do
+                 Bulletproof BulletproofFixture Schnorr Pickles PicklesFixture; do
           lake exe runLinter "$m" || exit 1
         done
 
@@ -203,7 +203,7 @@ jobs:
         export PATH="$HOME/.elan/bin:$PATH"
         lake exe shake --cfg "$PWD/scripts/noshake.json" \
           Kimchi KimchiFixture Snarky Pasta Poseidon FixtureKit \
-          Bulletproof BulletproofFixture Schnorr Pickles
+          Bulletproof BulletproofFixture Schnorr Pickles PicklesFixture
 
     # GATE: every authored declaration must be reachable from the union of the packages'
     # roots.txt API manifests, and every script-surface root must appear in a scripts/
