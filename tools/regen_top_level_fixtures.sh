@@ -33,6 +33,12 @@ FIXTURES_DIR="${SNARKY_ROOT}/packages/pickles-circuit-diffs/circuits/ocaml"
 TMP="${TMP:-/tmp/regen_top_level_fixtures}"
 DRIVER_BIN_DIR="${SNARKY_ROOT}/mina/_build/default/src/lib/crypto/pickles"
 
+# The mina submodule's local opam switch builds and runs the drivers
+# (`mina_switch_env`: no nix, no switch or prebuilt kimchi-stubs inherited
+# from the shell).
+source "${SNARKY_ROOT}/tools/lib/common.sh"
+mina_switch_env "${SNARKY_ROOT}"
+
 source "${SNARKY_ROOT}/tools/lib/circuits.sh"
 DRIVERS=("${TOP_LEVEL_DRIVERS[@]}")
 
@@ -44,10 +50,13 @@ echo ">> Building drivers in mina..."
 echo ">> Running drivers into ${TMP}..."
 rm -rf "${TMP}"
 mkdir -p "${TMP}" "${FIXTURES_DIR}"
+# SIDELOAD_FIXTURE_DIR is read only by dump_side_loaded_main, which writes
+# the side-loaded child fixture consumed by Pickles.Sideload.MainChild.
 for d in "${DRIVERS[@]}"; do
   echo "   - ${d}"
   PICKLES_STEP_CS_DUMP="${TMP}/${d}_step_%c" \
   PICKLES_WRAP_CS_DUMP="${TMP}/${d}_wrap_%c" \
+  SIDELOAD_FIXTURE_DIR="${SNARKY_ROOT}/packages/pickles/test/fixtures/sideload_main_child" \
   KIMCHI_DETERMINISTIC_SEED=42 \
   "${DRIVER_BIN_DIR}/${d}/${d}.exe" >/dev/null
 done
@@ -160,9 +169,37 @@ mkdir -p "${NRR_FIX}"
 KIMCHI_DETERMINISTIC_SEED=42 \
   "${DRIVER_BIN_DIR}/dump_nrr_fixtures/dump_nrr_fixtures.exe" "${NRR_FIX}"
 
+# ---------------------------------------------------------------------------
+# Wrap-proof chain fixtures under packages/pickles/test/fixtures/<chain>/
+# wrap{0,1,2}, consumed by Pickles.Sideload.VerifyFixtures and LeanInputs.
+# Each driver takes its output dir as argv[1] and expects the wrap{0,1,2}
+# sub-directories to exist.
+# ---------------------------------------------------------------------------
+#
+# `wrap*/lean_inputs.json` is derived from these proofs by
+# `Test.Pickles.Sideload.LeanInputsSpec`, which writes it when absent and
+# asserts against it otherwise; the driver never touches it, so a stale
+# copy would fail that spec against the new proof. Remove it here and
+# re-derive it afterwards (see the end of this script).
+for chain in simple_chain tree_proof_return; do
+  CHAIN_FIX="${SNARKY_ROOT}/packages/pickles/test/fixtures/${chain}"
+  d="dump_${chain}_fixtures"
+  echo ">> Wrap-proof chain fixtures (${d})..."
+  mkdir -p "${CHAIN_FIX}/wrap0" "${CHAIN_FIX}/wrap1" "${CHAIN_FIX}/wrap2"
+  rm -f "${CHAIN_FIX}"/wrap*/lean_inputs.json
+  ( cd mina && dune build "src/lib/crypto/pickles/${d}/${d}.exe" )
+  KIMCHI_DETERMINISTIC_SEED=42 "${DRIVER_BIN_DIR}/${d}/${d}.exe" "${CHAIN_FIX}"
+done
+
 # Note: dump_spec_pack (stdout debug dump of Spec.pack + x_hat) and
 # dump_app_circuit_chunks2_witness (KIMCHI_WITNESS_DUMP; local witness-diff
 # only — gitignored) produce no committed fixture, so they are intentionally
 # not driven here.
 
 echo ">> Done. Fixtures regenerated in ${FIXTURES_DIR}"
+echo ">> Now re-derive what depends on the new wrap-proof chain fixtures:"
+echo "   1. npx spago test -p pickles -- --example 'Pickles.Sideload.LeanInputs'"
+echo "      (rewrites packages/pickles/test/fixtures/simple_chain/wrap1/lean_inputs.json)"
+echo "   2. tools/fixture-dump: kimchi_proof_dump_pickles on simple_chain/wrap1"
+echo "      (formal/kimchi/fixtures/kimchi_proof_pallas_pickles.json; see its README)"
+echo "   3. cd formal && scripts/check_fixtures_manifest.sh --regen"

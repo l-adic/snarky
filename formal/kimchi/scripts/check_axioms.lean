@@ -103,7 +103,6 @@ def roots : List Name :=
     `Kimchi.Verifier.kimchiVerify,
     `Kimchi.Verifier.frOracles_eq_frPrechallenges,
     `Kimchi.Verifier.fqOracles_eq_fqPrechallenges,
-    `Kimchi.Verifier.low128_of_decomp,
     `Kimchi.Verifier.Wire.KimchiProof.check,
     `Kimchi.Verifier.Wire.KimchiVK.check,
     `Kimchi.Verifier.publicCommitment_eq_sum ]

@@ -77,6 +77,8 @@ over any of them. -/
 structure PastaShape (C : KimchiCurve) : Prop where
   /-- The base field has more than 254 bits: a `2^254`-bounded integer casts faithfully. -/
   base_big : 2 ^ 254 < C.base
+  /-- The base field has at most 255 bits: the canonical 128-bit split reads below `2^256`. -/
+  base_lt : C.base < 2 ^ 255
   /-- The scalar order has 255 bits. -/
   scalar_lo : 2 ^ 254 < C.scalar
   /-- The scalar order is below `2^254 + 2^253`: the pinned full ladder wraps exactly twice. -/
@@ -144,6 +146,7 @@ theorem PastaShape.scalar_three_ne {C : KimchiCurve} (s : PastaShape C) :
 /-- Vesta has the shape: base `PALLAS_SCALAR_CARD`, scalar order `PALLAS_BASE_CARD`. -/
 theorem pastaShapeVesta : PastaShape Bulletproof.IpaVesta.curve where
   base_big := by norm_num [PALLAS_SCALAR_CARD]
+  base_lt := by norm_num [PALLAS_SCALAR_CARD]
   scalar_lo := by norm_num [PALLAS_BASE_CARD]
   scalar_hi := by norm_num [PALLAS_BASE_CARD]
   scalar_mod := by norm_num [PALLAS_BASE_CARD]
@@ -151,6 +154,7 @@ theorem pastaShapeVesta : PastaShape Bulletproof.IpaVesta.curve where
 /-- Pallas has the shape: base `PALLAS_BASE_CARD`, scalar order `PALLAS_SCALAR_CARD`. -/
 theorem pastaShapePallas : PastaShape Bulletproof.IpaPallas.curve where
   base_big := by norm_num [PALLAS_BASE_CARD]
+  base_lt := by norm_num [PALLAS_BASE_CARD]
   scalar_lo := by norm_num [PALLAS_SCALAR_CARD]
   scalar_hi := by norm_num [PALLAS_SCALAR_CARD]
   scalar_mod := by norm_num [PALLAS_SCALAR_CARD]

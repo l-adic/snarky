@@ -12,7 +12,9 @@
 # triple per stem, same shape as the other top-level fixtures).
 #
 # Required tools:
-#   - nix (to enter the mina dev shell for the OCaml build)
+#   - the mina submodule's local opam switch at `mina/_opam` (builds and
+#     runs the drivers; `mina_switch_env` in tools/lib/common.sh: no nix,
+#     no switch or prebuilt kimchi-stubs inherited from the shell)
 #   - mina submodule initialized
 #
 # Optional env:
@@ -28,16 +30,19 @@ TMP="${TMP:-/tmp/regen_chunks_fixtures}"
 DRIVER_BIN_DIR="${SNARKY_ROOT}/mina/_build/default/src/lib/crypto/pickles"
 VARIANTS="${CHUNKS_VARIANTS:-2 4 8}"
 
+source "${SNARKY_ROOT}/tools/lib/common.sh"
+mina_switch_env "${SNARKY_ROOT}"
+
 DRIVERS=()
 for n in $VARIANTS; do
   DRIVERS+=("dump_chunks${n}")
 done
 
 echo ">> Building chunks drivers in mina..."
-nix develop mina#default -c bash -c "cd mina && dune build $(
-  for d in "${DRIVERS[@]}"; do
-    printf " src/lib/crypto/pickles/%s/%s.exe" "$d" "$d"
-  done)"
+( cd mina && dune build $(
+      for d in "${DRIVERS[@]}"; do
+        printf " src/lib/crypto/pickles/%s/%s.exe" "$d" "$d"
+      done) )
 
 echo ">> Running drivers into ${TMP}..."
 rm -rf "${TMP}"

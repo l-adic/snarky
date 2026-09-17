@@ -26,15 +26,15 @@ expanded here.
   `sg_old` absorbs, as the verifiers do.
 * `FqTranscriptReads`, `FqTranscriptReadsWire`: the reading of the outputs against the wire
   verifier's `Kimchi.Verifier.fqSqueezes`, and its deployed-field form against
-  `fqPrechallenges` up to `PrechallengeAlias`.
+  `fqPrechallenges`.
 
 ## Main results
 
-* `fqSpongeTranscript_spec`: the four outputs are 128-bit decompositions of the wire
-  verifier's four raw squeezes, `β, γ` below `2¹²⁸`, the digest reads as the digest element
-  and the returned sponge as the pre-digest state.
-* `FqTranscriptReads.wire`: at a prime field of more than 254 bits, `β, γ` are the verifier's
-  prechallenges up to alias, and so are `α, ζ` once identified with 128-bit claims.
+* `fqSpongeTranscript_spec`: the four outputs are the low halves of the wire verifier's four
+  raw squeezes (`Low128`), `β, γ` below `2¹²⁸`, the digest reads as the digest element and
+  the returned sponge as the pre-digest state.
+* `FqTranscriptReads.wire`: at a prime field, `β, γ` are the verifier's prechallenges, and so
+  are `α, ζ` once identified with 128-bit claims.
 -/
 
 namespace Pickles
@@ -278,6 +278,7 @@ private theorem absorbColumns_spec (p : Poseidon.Params F)
 /-- A prechallenge squeeze reads as the low half of the value squeeze (`Low128`), as a
 prechallenge where constrained, the sponge as the squeezed state. -/
 theorem squeezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (constrainLowBits : Bool) (endo : FVar F) (sv : SpongeVar F) :
     ⦃⌜True⌝⦄ squeezePrechallenge (c := Builder V (KimchiConstraint F)) p constrainLowBits endo sv
@@ -287,13 +288,15 @@ theorem squeezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
       SpongeVar.ReadsAt V r.2 (Poseidon.squeeze p s).2⌝⦄ := by
   simp only [squeezePrechallenge]
   have hsq := SpongeVar.squeeze_spec (V := V) p hsize sv
-  have hlo := fun x => lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x
+  have hlo := fun x => builder_spec_and _ _ _
+    (lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x)
+    (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt constrainLowBits endo x)
   mvcgen [hsq, hlo]
   rename_i _ x _ hx chal _ hchal
   intro s hs
   obtain ⟨hxv, hst⟩ := hx s hs
-  obtain ⟨hiv, he, ⟨n, hn, rfl⟩, hlow⟩ := hchal
-  exact ⟨⟨n, hn, by rw [← hxv, he]⟩, fun h => reads128_of_nat (hlow h), hst⟩
+  obtain ⟨⟨-, -, -, hlow⟩, hbelow⟩ := hchal
+  exact ⟨fun lo hlo hr => hxv ▸ hbelow lo hlo hr, fun h => reads128_of_nat (hlow h), hst⟩
 
 open Kimchi.Verifier in
 /-- The reading of the transcript's outputs (`fqSpongeTranscript_spec`): with
@@ -301,7 +304,7 @@ open Kimchi.Verifier in
 `sg_old`, `x_hat`, `w_comm`, `z_comm`, `t_comm` readings, each challenge is the low half of
 its squeeze (`Low128`), `β, γ` read as prechallenges, `x_hat` reads as `xv`, the digest as
 `d` and the sponge as `warm`. -/
-def FqTranscriptReads (p : Poseidon.Params F) (indexDigest : F)
+def FqTranscriptReads [ToNat F] (p : Poseidon.Params F) (indexDigest : F)
     (sgOld xv : List (AffinePoint F)) (wComm : List (List (AffinePoint F)))
     (zComm tComm : List (AffinePoint F)) (V : Valuation F) (o : FqTranscriptOutput F) : Prop :=
   let r := fqSqueezes p indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
@@ -316,6 +319,7 @@ def FqTranscriptReads (p : Poseidon.Params F) (indexDigest : F)
 `sgv, wv, zv, tv` and `computeXHat`'s result as `xv`, the outputs satisfy
 `FqTranscriptReads` at those readings. -/
 theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F))) (sgv : List (AffinePoint F))
     (hsg : List.Forall₂ (CircuitType.Reads V) sgOld sgv)
@@ -334,7 +338,7 @@ theorem fqSpongeTranscript_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠
   have h0 := SpongeVar.absorb_spec (V := V) p hsize SpongeVar.init indexDigest
   have hpts := fun sv qs => absorbPoints_spec (V := V) p hsize sv qs
   have hcols := fun sv cols => absorbColumns_spec (V := V) p hsize sv cols
-  have hpre := fun b sv => squeezePrechallenge_spec (V := V) h2 h3 p hsize b endo sv
+  have hpre := fun b sv => squeezePrechallenge_spec (V := V) h2 h3 hsw p hsize b endo sv
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   mvcgen [h0, hpts, hx, hpts, hcols, hpre, hsq]
   rename_i _ svA _ hA svB _ hB xh _ hxh svC _ hC svD _ hD pβ _ pγ _ svE _ hE pα _ hα svF _ hF
@@ -588,6 +592,7 @@ conditional sponge reads by phase as `squeezePrechallenge_spec` does from the va
 `optSqueeze_spec` gives: the low half of the squeeze, `lo < 2¹²⁸` where constrained, and the
 sponge squeezed. -/
 theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
     (constrainLowBits : Bool) (endo : FVar F) (ov : OptSpongeVar F) :
@@ -608,21 +613,24 @@ theorem optSqueezePrechallenge_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
           (Poseidon.squeeze p (Poseidon.absorb p ps₀ ((pend.filter (·.1)).map (·.2)))).2)⌝⦄ := by
   simp only [optSqueezePrechallenge]
   have hsq := optSqueeze_spec (V := V) p hsize hall ov
-  have hlo := fun x => lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x
+  have hlo := fun x => builder_spec_and _ _ _
+    (lowest128Bits'_spec (V := V) h2 h3 constrainLowBits endo x)
+    (lowest128Bits'_below (V := V) h2 h3 hsw.inj hsw.modulus_lt constrainLowBits endo x)
   mvcgen [hsq, hlo]
   rename_i _ x _ hx chal _ hchal
-  obtain ⟨hiv, he, ⟨n, hn, rfl⟩, hlow⟩ := hchal
+  obtain ⟨⟨-, -, -, hlow⟩, hbelow⟩ := hchal
   refine ⟨fun ps hs => ?_, fun ib ps₀ pend h hne hchar => ?_⟩
   · obtain ⟨hxv, hst⟩ := hx.1 ps hs
-    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, fun h => reads128_of_nat (hlow h), hst⟩
+    exact ⟨fun lo hlo hr => hxv ▸ hbelow lo hlo hr, fun h => reads128_of_nat (hlow h), hst⟩
   · obtain ⟨hxv, hst⟩ := hx.2 ib ps₀ pend h hne hchar
-    exact ⟨⟨n, hn, by rw [← hxv, he]⟩, fun h => reads128_of_nat (hlow h), hst⟩
+    exact ⟨fun lo hlo hr => hxv ▸ hbelow lo hlo hr, fun h => reads128_of_nat (hlow h), hst⟩
 
 /-- Under any valuation satisfying the emitted constraints, with the mask bits and `sg_old`
 reading as `sgv`, `x_hat` as `xv` and the commitments as `wv, zv, tv` (`z_comm` and `t_comm`
 non-empty), at a characteristic above the absorb count, the outputs satisfy
 `FqTranscriptReads` at the kept `sg_old` readings. -/
 theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
     (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
@@ -661,7 +669,7 @@ theorem fqSpongeTranscriptOpt_spec [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) 
     (v := (true, indexDigest.val V)) (CircuitType.reads_prod.mpr ⟨reads_true, rfl⟩)
   have r3 := foldl_optAbsorbColumns_reads hw
     (foldl_optAbsorbPoint_reads hx (foldl_optAbsorbMasked_reads hsg r0))
-  have hpre := fun b ov => optSqueezePrechallenge_spec (V := V) h2 h3 p hsize hall b endo ov
+  have hpre := fun b ov => optSqueezePrechallenge_spec (V := V) h2 h3 hsw p hsize hall b endo ov
   have hsq := fun sv => SpongeVar.squeeze_spec (V := V) p hsize sv
   mvcgen [hpre, hsq]
   rename_i _ pβ _ pγ _ pα _ hα pζ _ hζ pd _ hdig hβ hγ
@@ -749,6 +757,7 @@ together with any property `P` of `computeXHat`'s result, carried to `x_hat`: gi
 `computeXHat` reads as `xv` and satisfies `P`, the output's `x_hat` satisfies `P` and the
 transcript reads at `xv` and any readings of the other cells. -/
 theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (endo indexDigest : FVar F) (sgOld : List (AffinePoint (FVar F)))
     (computeXHat : CircuitM F (Builder V (KimchiConstraint F)) (List (AffinePoint (FVar F))))
@@ -769,13 +778,14 @@ theorem fqSpongeTranscript_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) �
     computeXHat P (builder_spec_imp _ _ _ hx fun _ h => h.1) wComm zComm tComm) ?_
   rw [builder_spec_iff]
   intro nv hsat sgv wv zv tv hsg hw hz ht
-  exact (builder_spec_iff _ _).mp (fqSpongeTranscript_spec h2 h3 p hsize endo indexDigest sgOld
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscript_spec h2 h3 hsw p hsize endo indexDigest sgOld
     sgv hsg computeXHat xv (builder_spec_imp _ _ _ hx fun _ h => h.2) wComm wv hw zComm tComm
     zv tv hz ht) nv hsat
 
 /-- `fqSpongeTranscriptOpt_spec` with every reading quantified in the postcondition, together
 with the returned `x_hat`. -/
 theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
+    (hsw : SplitWidth F)
     (p : Poseidon.Params F) (hsize : p.roundConstants.size = Poseidon.fullRounds)
     (hall : ∀ j k : ℕ, j ≤ 3 → k ≤ 3 → (j : F) = k → j = k)
     (endo indexDigest : FVar F) (sgOld : List (BoolVar F × AffinePoint (FVar F)))
@@ -797,34 +807,33 @@ theorem fqSpongeTranscriptOpt_reads [ToNat F] (h2 : (2 : F) ≠ 0) (h3 : (3 : F)
     (fqSpongeTranscriptOpt_xHat p hsize endo indexDigest sgOld xHat wComm zComm tComm) ?_
   rw [builder_spec_iff]
   intro nv hsat sgv xv wv zv tv hsg hx hw hz ht hzne htne hchar
-  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec h2 h3 p hsize hall endo indexDigest
+  exact (builder_spec_iff _ _).mp (fqSpongeTranscriptOpt_spec h2 h3 hsw p hsize hall endo
+    indexDigest
     sgOld sgv hsg xHat xv hx wComm wv hw zComm tComm zv tv hz ht hzne htne hchar) nv hsat
 
 /-! ## The wire reading -/
 
 open Kimchi.Verifier in
 /-- `FqTranscriptReads` at a deployed field, against the wire verifier: with `pre` the
-verifier's `fqPrechallenges`, `β` and `γ` read as prechallenges that are its first two up to
-`PrechallengeAlias`, and `α`, `ζ`, once read as prechallenges, are its last two up to the
-alias; the digest reads as the digest element and the sponge as the pre-digest state
-(`fqOracles_eq_fqPrechallenges` carries these to `fqOracles`). -/
+verifier's `fqPrechallenges`, `β` and `γ` read as its first two, and `α`, `ζ`, once read as
+prechallenges, are its last two; the digest reads as the digest element and the sponge as the
+pre-digest state (`fqOracles_eq_fqPrechallenges` carries these to `fqOracles`). -/
 def FqTranscriptReadsWire {p : ℕ} [Fact p.Prime] (params : Poseidon.Params (ZMod p))
     (indexDigest : ZMod p) (sgOld xv : List (AffinePoint (ZMod p)))
     (wComm : List (List (AffinePoint (ZMod p)))) (zComm tComm : List (AffinePoint (ZMod p)))
     (V : Valuation (ZMod p)) (o : FqTranscriptOutput (ZMod p)) : Prop :=
   let pre := fqPrechallenges params indexDigest (sgOld.map pointCoords) (xv.map pointCoords)
     (wComm.map (·.map pointCoords)) (zComm.map pointCoords) (tComm.map pointCoords)
-  (∃ b₀, Reads128 V o.beta b₀ ∧ PrechallengeAlias p pre.1.1 b₀) ∧
-  (∃ g₀, Reads128 V o.gamma g₀ ∧ PrechallengeAlias p pre.1.2.1 g₀) ∧
-  (∀ a₀, Reads128 V o.alpha a₀ → PrechallengeAlias p pre.1.2.2.1 a₀) ∧
-  (∀ z₀, Reads128 V o.zeta z₀ → PrechallengeAlias p pre.1.2.2.2 z₀) ∧
+  (∃ b₀, Reads128 V o.beta b₀ ∧ b₀.val = pre.1.1) ∧
+  (∃ g₀, Reads128 V o.gamma g₀ ∧ g₀.val = pre.1.2.1) ∧
+  (∀ a₀, Reads128 V o.alpha a₀ → a₀.val = pre.1.2.2.1) ∧
+  (∀ z₀, Reads128 V o.zeta z₀ → z₀.val = pre.1.2.2.2) ∧
   List.Forall₂ (CircuitType.Reads V) o.xHat xv ∧
   o.digest.val V = pre.2.1 ∧ SpongeVar.ReadsAt V o.sponge pre.2.2
 
 open Kimchi.Verifier in
-/-- At a prime field of more than 254 bits, the exact reading is the wire reading
-(`low128_of_decomp`). -/
-theorem FqTranscriptReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p)
+/-- At a prime field, the exact reading is the wire reading (`Low128.exact`). -/
+theorem FqTranscriptReads.wire {p : ℕ} [Fact p.Prime]
     {params : Poseidon.Params (ZMod p)} {indexDigest : ZMod p}
     {sgOld xv : List (AffinePoint (ZMod p))} {wComm : List (List (AffinePoint (ZMod p)))}
     {zComm tComm : List (AffinePoint (ZMod p))}
@@ -832,8 +841,8 @@ theorem FqTranscriptReads.wire {p : ℕ} [Fact p.Prime] (hp : 2 ^ 254 < p)
     (h : FqTranscriptReads params indexDigest sgOld xv wComm zComm tComm V o) :
     FqTranscriptReadsWire params indexDigest sgOld xv wComm zComm tComm V o := by
   obtain ⟨lβ, lγ, lα, lζ, ⟨b₀, hbv⟩, ⟨g₀, hgv⟩, hxh, hd, hs⟩ := h
-  exact ⟨⟨b₀, hbv, lβ.alias hp hbv⟩, ⟨g₀, hgv, lγ.alias hp hgv⟩, fun _ hav => lα.alias hp hav,
-    fun _ hzv => lζ.alias hp hzv, hxh, hd, hs⟩
+  exact ⟨⟨b₀, hbv, (lβ.exact hbv).symm⟩, ⟨g₀, hgv, (lγ.exact hgv).symm⟩,
+    fun _ hav => (lα.exact hav).symm, fun _ hzv => (lζ.exact hzv).symm, hxh, hd, hs⟩
 
 /-! The gadgets are sealed after their reads: a consumer composes `fqSpongeTranscript_reads`,
 `fqSpongeTranscriptOpt_reads` and `assertPlonkChallenges_spec`, never the bodies. -/

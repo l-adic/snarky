@@ -149,8 +149,9 @@ squeezeScalarChallenge
   -> SpongeM f (KimchiConstraint f) cr (SizedF 128 (FVar f))
 squeezeScalarChallenge = squeezeScalar' true
 
--- | A 128-bit scalar challenge. Only the high half is range-checked,
--- | so the result is pinned only by `x = lo + hi * 2^128`.
+-- | A 128-bit scalar challenge. Only the high half is range-checked; the
+-- | split is asserted below the field modulus, so the result is the low
+-- | half of the canonical representative, its consumers bounding it.
 squeezeScalar
   :: forall f r cr
    . PrimeField f

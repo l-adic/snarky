@@ -585,9 +585,7 @@ Snarky.Kimchi.KimchiConstraint.instLawfulBasicSystem
 -- table, plus the derive surface the seam script's comparisons resolve.
 Snarky.Kimchi.Wire
 Snarky.Kimchi.AssembledGate
-Snarky.Kimchi.permCells
-Snarky.Kimchi.classCells
-Snarky.Kimchi.wireTarget
+Snarky.Kimchi.wireMap
 Snarky.Kimchi.assembleGates
 Snarky.Kimchi.makePublicInputRows
 Snarky.Kimchi.makeGateData

@@ -161,6 +161,36 @@ the tie to this curve's point type. -/
 def KimchiCurve.toGroup (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
   C.groupMap_E ▸ Poseidon.GroupMap.toGroup C.groupMap t
 
+/-- A point with its ordinate in the lower half (`lower_half_ordinate`, `ipa.rs`): the point
+itself when the ordinate's representative is at most `(p − 1)/2`, its negation otherwise. -/
+def KimchiCurve.lowerHalf (C : KimchiCurve) (P : SWPoint C.E) : SWPoint C.E :=
+  if (C.base - 1) / 2 < P.y.val then -P else P
+
+/-- The transcript's `U` base (`u_base`, `ipa.rs`): the map-to-curve of `t` with its ordinate
+in the lower half. -/
+def KimchiCurve.uBase (C : KimchiCurve) (t : ZMod C.base) : SWPoint C.E :=
+  C.lowerHalf (C.toGroup t)
+
+/-- A point or its negation whose ordinate lies below `(p + 1)/2` is `lowerHalf` of the
+point: the lower-half ordinate is unique, a zero ordinate being its own negation. -/
+theorem KimchiCurve.lowerHalf_eq_of_lt (C : KimchiCurve) (hodd : 2 < C.base)
+    {P Q : SWPoint C.E} (hQ : Q = P ∨ Q = -P) (hy : Q.y.val < (C.base + 1) / 2) :
+    Q = C.lowerHalf P := by
+  have hval := fun a : ZMod C.base => ZMod.val_lt a
+  unfold lowerHalf
+  rcases hQ with rfl | rfl
+  · rw [if_neg (by omega)]
+  · by_cases hz : P.y = 0
+    · have hneg : -P = P := SWPoint.ext_pair (by simp [hz])
+      rw [if_neg (by rw [hz, ZMod.val_zero]; omega), hneg]
+    · rw [if_pos]
+      haveI : NeZero P.y := ⟨hz⟩
+      have hn := ZMod.val_neg_of_ne_zero P.y
+      simp only [SWPoint.neg_y] at hy
+      have := hval P.y
+      omega
+
+
 /-- The endomorphism eigenvalue in the scalar field: what the transcript's challenge
 expansion (`endoExpand`) runs at. The eigenvalue itself is an integer on the endomorphism
 spec; this is its image in the field the challenges live in. -/
@@ -310,12 +340,12 @@ def ipaRun (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
   ipaRunAt C s₀ (cipOf inp) inp.proof
 
 /-- The verifier's Fiat–Shamir schedule from `s₀`: `ipaRun`, with the consumer's decodes
-applied — `t` mapped to the curve, the round and Schnorr prechallenges endo-expanded at the
-sponge's eigenvalue. -/
+applied — `t` mapped to the `U` base, the round and Schnorr prechallenges endo-expanded at
+the sponge's eigenvalue. -/
 def transcriptFrom (s₀ : FqSponge.S C.base) (inp : Input C k m p) :
     C.Point × Vector C.ScalarField k × C.ScalarField :=
   let r := ipaRun C s₀ inp
-  (C.toGroup r.1, r.2.1.map (fun u => endoExpand C.lam u.val),
+  (C.uBase r.1, r.2.1.map (fun u => endoExpand C.lam u.val),
     endoExpand C.lam r.2.2.val)
 
 /-- The standalone verifier's Fiat–Shamir schedule: `transcriptFrom` at the fresh
@@ -498,13 +528,13 @@ theorem ipaRun_eq_ipaPrechallenges (st : Poseidon.State C.BaseField) (inp : Inpu
   ipaRunAt_eq_ipaPrechallenges C st (cipOf inp) inp.proof
 
 /-- `transcriptFrom` from a warm state with an empty limb buffer, through
-`ipaPrechallenges`: the `U` base is the map-to-curve of `t`, the round challenges and `c`
-the endo-expansions of the packed squeezes. -/
+`ipaPrechallenges`: the `U` base is `uBase` of `t`, the round challenges and `c` the
+endo-expansions of the packed squeezes. -/
 theorem transcriptFrom_eq_ipaPrechallenges (st : Poseidon.State C.BaseField)
     (inp : Input C k m p) :
     let r := ipaPrechallenges C.sponge.params st (scalarLimbs C (shiftScalar C (cipOf inp)))
       (inp.proof.lr.toList.map (coordsPair C)) (inp.proof.delta.x, inp.proof.delta.y)
-    (transcriptFrom C ⟨st, []⟩ inp).1 = C.toGroup r.1 ∧
+    (transcriptFrom C ⟨st, []⟩ inp).1 = C.uBase r.1 ∧
     (transcriptFrom C ⟨st, []⟩ inp).2.1.toList = r.2.1.map (endoExpand C.lam) ∧
     (transcriptFrom C ⟨st, []⟩ inp).2.2 = endoExpand C.lam r.2.2 := by
   obtain ⟨h1, h2, h3⟩ := ipaRun_eq_ipaPrechallenges C st inp

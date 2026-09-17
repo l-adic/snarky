@@ -56,14 +56,15 @@ import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label, scale_)
 import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, groupMapCircuit, toField)
+import Snarky.Circuit.Kimchi.RangeCheck (split128Below)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, pow)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, modulus, pow, toBigInt)
+import Snarky.Data.EllipticCurve (AffinePoint(..))
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -535,7 +536,9 @@ checkBulletproof scalarOps params commitmentBases baseMasks input = do
   -- `u` is squeezed before the bases are combined.
   u <- labelM "ipa_group_map" $ do
     t <- squeeze
-    liftSnarky $ groupMapCircuit params.groupMapParams t
+    liftSnarky do
+      u' <- groupMapCircuit params.groupMapParams t
+      label "ipa_lower_half" $ lowerHalfPoint params.endo u'
 
   combinedPolynomial <- labelM "bp_combine_poly" $ liftSnarky $
     combinePolynomials commitmentBases baseMasks input.xi
@@ -547,4 +550,25 @@ checkBulletproof scalarOps params commitmentBases baseMasks input = do
     , opening: input.opening
     , blindingGenerator: input.blindingGenerator
     }
+
+-- | The IPA base with its ordinate in the lower half: `(x, y')` with
+-- | `y' = ±y` and `y'` at most `(p - 1)/2`. The group map leaves the
+-- | square root's sign to the prover; the native prover and verifier
+-- | take the lower-half root too.
+lowerHalfPoint
+  :: forall f r
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => FVar f
+  -> AffinePoint (FVar f)
+  -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
+lowerHalfPoint endoScalar (AffinePoint { x, y }) = do
+  isUpper :: BoolVar f <- SDSL.exists do
+    F yVal <- SDSL.readCVar y
+    pure $ toBigInt yVal >= half
+  y' <- if_ isUpper (scale_ (negate one) y) y
+  void $ split128Below true endoScalar half y'
+  pure $ AffinePoint { x, y: y' }
+  where
+  half = (modulus @f + BigInt.fromInt 1) / BigInt.fromInt 2
 

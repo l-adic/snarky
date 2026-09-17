@@ -59,16 +59,15 @@ silent masking by duplicated fixture fields).
 
 ## Regenerating
 
-From the repo root, with the nix shell:
+`tools/regen_top_level_fixtures.sh` rewrites this directory. To run the
+driver alone from the repo root, after building it with the mina
+submodule's local switch:
 
 ```
-mkdir -p packages/pickles/test/fixtures/sideload_main_child
-nix develop mina#default -c bash -c '
-  cd mina && \
-  KIMCHI_DETERMINISTIC_SEED=42 \
-  SIDELOAD_FIXTURE_DIR=../packages/pickles/test/fixtures/sideload_main_child \
-  KIMCHI_WITNESS_DUMP=../packages/pickles/test/fixtures/witness_sideload/witness_%c_regen.txt \
-  _build/default/src/lib/crypto/pickles/dump_side_loaded_main/dump_side_loaded_main.exe'
+KIMCHI_DETERMINISTIC_SEED=42 \
+SIDELOAD_FIXTURE_DIR=$PWD/packages/pickles/test/fixtures/sideload_main_child \
+KIMCHI_WITNESS_DUMP=$PWD/packages/pickles/test/fixtures/witness_sideload/witness_%c_regen.txt \
+  mina/_build/default/src/lib/crypto/pickles/dump_side_loaded_main/dump_side_loaded_main.exe
 ```
 
 The seed pins the kimchi RNG so successive regenerations are bit-identical.

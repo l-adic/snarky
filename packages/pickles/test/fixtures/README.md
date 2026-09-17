@@ -28,8 +28,9 @@ tools/regen-fixtures.sh simple   # Simple_chain trace + witnesses
 tools/regen-fixtures.sh tree     # Tree_proof_return trace
 ```
 
-Prerequisites (nix, mina submodule, kimchi-stubs static lib) are
-documented in the script header.
+Prerequisites (the mina submodule with its local opam switch at
+`mina/_opam`; no nix, no prebuilt kimchi-stubs) are documented in the
+script header and `tools/lib/common.sh`.
 
 ## Why nothing is tracked
 

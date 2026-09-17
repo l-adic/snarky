@@ -10,19 +10,22 @@ module Snarky.Circuit.Kimchi.RangeCheck
   , lowest128Bits
   , lowest128Bits'
   , lowest128BitsPure
+  , split128Below
   ) where
 
 import Prelude
 
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..))
+import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, exists, fromField, read, scale_)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, const_, equals_, exists, fromField, if_, read, scale_, sub_)
 import Snarky.Circuit.DSL as SizedF
+import Snarky.Circuit.DSL.SizedF (unsafeFromField)
 import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, toBigInt)
 
 -- | Assert that a value fits in 128 bits, using the `EndoScalar` gate as
 -- | the range check (the same primitive `lowest128Bits` uses to constrain
@@ -61,6 +64,8 @@ lowest128Bits
 lowest128Bits = lowest128Bits' true
 
 -- | Parameterized version: `constrainLowBits` controls whether lo is range-checked.
+-- | The split is checked below the field modulus, so `lo` is the low half of
+-- | `x`'s canonical representative and the prover has no alias to choose.
 -- |
 -- | - `true`: matches OCaml's `squeeze_challenge` (constrain_low_bits:true)
 -- | - `false`: matches OCaml's `squeeze_scalar` (constrain_low_bits:false, only hi checked)
@@ -72,7 +77,22 @@ lowest128Bits'
   -> FVar f -- ^ endo constant
   -> FVar f -- ^ x (sponge squeeze output)
   -> Snarky f (KimchiConstraint f) r (SizedF 128 (FVar f))
-lowest128Bits' constrainLowBits endo x = do
+lowest128Bits' constrainLowBits endo = split128Below constrainLowBits endo (modulus @f)
+
+-- | Split `x` as `lo + 2^128·hi` with `lo + 2^128·hi < bound`, range-check
+-- | `hi` (and `lo` under `constrainLowBits`) to 128 bits, and return `lo`.
+-- | When `lo` is left unchecked, its consumer must bound it for the
+-- | comparison against `bound` to hold.
+split128Below
+  :: forall f r
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => Boolean
+  -> FVar f -- ^ endo constant
+  -> BigInt -- ^ exclusive bound on `lo + 2^128·hi`
+  -> FVar f
+  -> Snarky f (KimchiConstraint f) r (SizedF 128 (FVar f))
+split128Below constrainLowBits endo bound x = do
   -- Witness lo (first) and hi (second), matching OCaml's Typ.(field * field)
   UnChecked (Tuple lo hi) <- exists do
     F xVal <- read x
@@ -91,9 +111,33 @@ lowest128Bits' constrainLowBits endo x = do
   when constrainLowBits $ void $ EndoScalar.toField @8 lo endo
   -- Assert x = lo + hi * 2^128
   assertEqual_ x (add_ (SizedF.toField lo) (scale_ (fromBigInt two128) $ SizedF.toField hi))
+  assertSplitBelow endo (SizedF.toField lo) (SizedF.toField hi) bound
   pure lo
   where
   two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+
+-- `lo + 2^128·hi < bound` for 128-bit `lo` and `hi`, as one range-checked
+-- difference: `boundLo - 1 - lo` when `hi = boundHi`, else `boundHi - 1 - hi`.
+-- A negative difference wraps to a large field element and fails, so the
+-- first case pins `lo < boundLo` and the second `hi < boundHi`.
+assertSplitBelow
+  :: forall f r
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => FVar f
+  -> FVar f
+  -> FVar f
+  -> BigInt
+  -> Snarky f (KimchiConstraint f) r Unit
+assertSplitBelow endo lo hi bound = do
+  hiIsTop <- equals_ hi (const_ boundHi)
+  d <- if_ hiIsTop (sub_ (const_ (boundLo - one)) lo) (sub_ (const_ (boundHi - one)) hi)
+  void $ EndoScalar.toField @8 (sized d) endo
+  where
+  two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+  boundLo = fromBigInt (mod bound two128) :: f
+  boundHi = fromBigInt (div bound two128) :: f
+  sized v = unsafePartial $ unsafeFromField v
 
 -- | Pure version: extract lowest 128 bits of a field element.
 lowest128BitsPure

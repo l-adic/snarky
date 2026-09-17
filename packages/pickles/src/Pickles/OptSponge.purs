@@ -393,8 +393,9 @@ optChallenge endo = do
   x <- optSqueeze
   liftSnarky $ lowest128Bits' true endo x
 
--- | A 128-bit scalar challenge. Only the high half is range-checked,
--- | so the result is pinned only by `x = lo + hi * 2^128`.
+-- | A 128-bit scalar challenge. Only the high half is range-checked; the
+-- | split is asserted below the field modulus, so the result is the low
+-- | half of the canonical representative, its consumers bounding it.
 optScalarChallenge
   :: forall f r
    . PrimeField f
