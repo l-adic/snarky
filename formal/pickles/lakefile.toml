@@ -51,3 +51,10 @@ globs = ["PicklesFixture", "PicklesFixture.+"]
 [[lean_exe]]
 name = "check-sg-ok"
 root = "scripts.check_sg_ok"
+
+# What the prover interpreter costs on a verifier-sized circuit. Compiled: the interpreted
+# path is not what a fixture check would run, so an interpreted number would not answer the
+# question.
+[[lean_exe]]
+name = "bench-fop"
+root = "scripts.bench_fop"

@@ -1,5 +1,6 @@
 import PicklesFixture.Layout
 import PicklesFixture.Fop
+import PicklesFixture.FopInput
 
 /-!
 # The pickles circuit harnesses the drivers share
