@@ -1,4 +1,5 @@
 import PicklesFixture
+import Pickles.TwoHalves
 import Snarky.Kimchi.Backend.Compile
 import KimchiFixture.Cache
 import BulletproofFixture.SRSLoader
@@ -35,10 +36,19 @@ opening's `success` for the group half — and, per step-half run, `kimchiVerify
 both proofs (d) — against the SRS they were made with (`srs-cache/`, cut to each proof's
 round count) and the Lagrange basis computed from it, memoised under `lagrange-cache/`.
 
+The carry (e): a proof's deferred `sg` obligation is an old accumulator of the next proof on
+its curve — wrap k−1's in wrap k's, through the step between them; step k−1's in step k's,
+through the wrap between them. Per linked pair, `Pickles.Carry` is decided on the two checked
+proofs (the accumulator is the predecessor's `sg` with the wire's round challenges of the
+predecessor), `AccOk` on the accumulator, `sgOk` on the predecessor, and the two verdicts
+must agree (`sgOk_iff_accOk` on the data). An unlinked accumulator — a front pad, a
+base-case slot — must satisfy `AccOk` on its own: the dummy's `sg` commits the dummy
+challenges. So no accumulator in the file is taken from the prover's list on trust.
+
 Run: `PROOF_CACHE=<file> lake exe check-halves` from `formal/`; the default is
 `SimpleChain.json`. `SRS_CACHE_DIR` and `LAGRANGE_CACHE_DIR` relocate the two caches.
 `HALVES` narrows the run to a comma-separated subset of `step`, `wrap`, `step-group`,
-`wrap-group`, `verify` (the default is all five).
+`wrap-group`, `verify`, `carry` (the default is all six).
 -/
 
 open Lean Snarky Snarky.Kimchi PicklesFixture Kimchi.Fixture Bulletproof
@@ -334,18 +344,57 @@ def basisFor (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache
       e.vk.omega e.publicInput.size
   else throw (IO.userError s!"domain 2^{e.vk.domainLog2} above the SRS at 2^{σ.k}")
 
-/-- The wire verifier on a cache entry, its key completed with the Lagrange basis: the
-records checked at the run's chunk count and the SRS's round count, then `kimchiVerify`.
-The entry's SRS is the curve's file cut to the proof's round count. -/
-def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
-  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+/-- A cache entry's checked wire records at the SRS `σ`, its key completed with the Lagrange
+basis: the records checked at one chunk (the run's chunk count, which the halves fix) and
+`σ`'s round count. -/
+def checkedAt (C : Ipa.KimchiCurve) (name : String) (σ : SRS C.Point) (e : Cache.Entry C) :
+    IO (Kimchi.Verifier.KimchiVK C 1 × Kimchi.Verifier.KimchiProof C 1 σ.k) := do
   let basis ← basisFor C name σ e
   let vk := { e.vk with lagrangeBasis := basis.map (#[·]) }
   let nc := Kimchi.Verifier.Wire.runNc C σ vk
-  match vk.check nc, e.proof.check nc σ.k with
-  | some cvk, some cp => return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
-  | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
+  if h : nc = 1 then
+    match (h ▸ vk.check nc : Option (Kimchi.Verifier.KimchiVK C 1)),
+          (h ▸ e.proof.check nc σ.k : Option (Kimchi.Verifier.KimchiProof C 1 σ.k)) with
+    | some cvk, some cp => return (cvk, cp)
+    | _, _ => throw (IO.userError "the cache entry's records failed the wire check")
+  else throw (IO.userError s!"the entry runs at {nc} chunks; the halves are one-chunk")
+
+/-- The wire verifier on a cache entry, against the curve's SRS cut to the proof's round
+count. -/
+def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) : IO Bool := do
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let (cvk, cp) ← checkedAt C name σ e
+  return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
+
+/-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
+`C`: `Carry` decided on the two checked proofs, `AccOk` on the accumulator, `sgOk` on `pred`,
+and the last two agreeing, as `sgOk_iff_accOk` says they must under `Carry`. -/
+def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (pred succ : Cache.Entry C) (slot : ℕ) :
+    IO Bool := do
+  let σ ← srsAt C name sqrt loaded pred.proof.opening.lr.size
+  unless succ.proof.opening.lr.size = σ.k do
+    throw (IO.userError s!"round counts differ: {σ.k} and {succ.proof.opening.lr.size}")
+  let (cvk, cp) ← checkedAt C name σ pred
+  let (_, cp') ← checkedAt C name σ succ
+  let E : Pickles.Env C := ⟨σ, cvk⟩
+  if h : slot < cp'.olds.size then
+    let c := Pickles.carry E cp pred.publicInput cp' ⟨slot, h⟩
+    let a := Pickles.accOk σ cp'.olds[slot]
+    let s := Pickles.sgOk E cp pred.publicInput
+    IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
+    return c && a && s && (s == a)
+  else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
+
+/-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `AccOk` on its
+own. -/
+def padOk (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (e : Cache.Entry C) (slot : ℕ) : IO Bool := do
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let (_, cp) ← checkedAt C name σ e
+  if h : slot < cp.olds.size then return Pickles.accOk σ cp.olds[slot]
+  else throw (IO.userError s!"slot {slot} beyond the {cp.olds.size} accumulators")
 
 def main : IO Unit := do
   let path := (← IO.getEnv "PROOF_CACHE").getD
@@ -356,7 +405,7 @@ def main : IO Unit := do
   let (steps, _) ← match Cache.parseFile CS Kimchi.Fixture.PS.fpSide.endo vestaBase.sqrt? raw with
     | .error e => throw (IO.userError s!"step side: {e}") | .ok r => pure r
   IO.println s!"{path}: {wraps.size} wrap proofs, {steps.size} step proofs"
-  let halves := ((← IO.getEnv "HALVES").getD "step,wrap,step-group,wrap-group,verify").splitOn ","
+  let halves := ((← IO.getEnv "HALVES").getD "step,wrap,step-group,wrap-group,verify,carry").splitOn ","
   let on (h : String) : Bool := halves.contains h
   let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
@@ -371,6 +420,13 @@ def main : IO Unit := do
     let ok := sat ∧ bits.all (·.2 = 1)
     IO.println s!"  {if ok then "✓" else "✗"} {what}: satisfies={sat} \
       bits={bits.map fun (n, v) => s!"{n}={v}"} {t1 - t0} ms"
+    return ok
+  -- One timed verdict.
+  let reportBool (what : String) (run : IO Bool) : IO Bool := do
+    let t0 ← IO.monoMsNow
+    let ok ← run
+    let t1 ← IO.monoMsNow
+    IO.println s!"  {if ok then "✓" else "✗"} {what} {t1 - t0} ms"
     return ok
   for w in wraps.toList.take limit do
     let some (d, pi) := w.step | continue
@@ -430,7 +486,62 @@ def main : IO Unit := do
         let ok ← report s!"step group half on {pair}" (runGroup w.vk basis σW.h ginp)
         runs := runs + 1
         unless ok do allOk := false
+  if on "carry" then
+    -- Wrap k−1 → wrap k through the step between them: the step's slot `j` is the wrap's
+    -- accumulator `pad + j`; the pads in front and the base-case slots are unlinked.
+    for w in wraps.toList.take limit do
+      let some (d, pi) := w.step | continue
+      let some s := steps.find? (fun s => s.vkDigest = d ∧ s.publicInputKey = pi) | continue
+      let tag := s!"wrap {w.vkDigest.take 10}…/{w.publicInputKey.take 10}…"
+      let pad := w.proof.prevChallenges.size - s.prevs.size
+      for j in List.range pad do
+        let ok ← reportBool s!"pad accumulator {j} of {tag}: AccOk" (padOk CW "pallas" pallasBase.sqrt? pallasSRS w j)
+        runs := runs + 1
+        unless ok do allOk := false
+      for (ref, j) in s.prevs.toList.zipIdx do
+        match ref with
+        | none =>
+          let ok ← reportBool s!"base-case accumulator {pad + j} of {tag}: AccOk"
+            (padOk CW "pallas" pallasBase.sqrt? pallasSRS w (pad + j))
+          runs := runs + 1
+          unless ok do allOk := false
+        | some (d', pi') =>
+          let some w' := wraps.find? (fun w => w.vkDigest = d' ∧ w.publicInputKey = pi')
+            | IO.println s!"  ✗ {tag}: its predecessor wrap {d'.take 10}… is not in the file"
+              allOk := false
+              continue
+          let ok ← reportBool s!"carry wrap→wrap into accumulator {pad + j} of {tag}"
+            (carriesInto CW "pallas" pallasBase.sqrt? pallasSRS w' w (pad + j))
+          runs := runs + 1
+          unless ok do allOk := false
+    -- Step k−1 → step k through the wrap between them: slot `j` is accumulator `j`.
+    for s in steps.toList.take limit do
+      let tag := s!"step {s.vkDigest.take 10}…/{s.publicInputKey.take 10}…"
+      for (ref, j) in s.prevs.toList.zipIdx do
+        match ref with
+        | none =>
+          let ok ← reportBool s!"base-case accumulator {j} of {tag}: AccOk"
+            (padOk CS "vesta" vestaBase.sqrt? vestaSRS s j)
+          runs := runs + 1
+          unless ok do allOk := false
+        | some (d, pi) =>
+          let some w' := wraps.find? (fun w => w.vkDigest = d ∧ w.publicInputKey = pi)
+            | IO.println s!"  ✗ {tag} slot {j}: its wrap {d.take 10}… is not in the file"
+              allOk := false
+              continue
+          let some (d2, pi2) := w'.step
+            | IO.println s!"  ✗ {tag} slot {j}: its wrap wrapped no step"
+              allOk := false
+              continue
+          let some s' := steps.find? (fun s => s.vkDigest = d2 ∧ s.publicInputKey = pi2)
+            | IO.println s!"  ✗ {tag} slot {j}: its predecessor step {d2.take 10}… is not in the file"
+              allOk := false
+              continue
+          let ok ← reportBool s!"carry step→step into accumulator {j} of {tag}"
+            (carriesInto CS "vesta" vestaBase.sqrt? vestaSRS s' s j)
+          runs := runs + 1
+          unless ok do allOk := false
   unless runs > 0 do throw (IO.userError "no linked pairs to run")
   unless allOk do throw (IO.userError "check-halves FAILED")
   IO.println s!"✓ {runs} run(s): every table satisfies its system, every bit reads 1, \
-    kimchiVerify accepts every proof"
+    kimchiVerify accepts every proof, every accumulator is carried"

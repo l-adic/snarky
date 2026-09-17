@@ -54,8 +54,9 @@ is an equivalence (`twoHalves_kimchiVerify_vesta`); the wrap circuit does not
 ## What this is not
 
 The chain: `sgOk` is a hypothesis here (pickles defers it to the next proof's batch
-opening), the message digests are two entries of `pub` like any other, and the packing
-of statements across the cycle is `verify`'s. This is the per-proof checkpoint, at one chunk.
+opening — `Carry` names the handover and `sgOk_iff_accOk` transports the equation), the
+message digests are two entries of `pub` like any other, and the packing of statements across
+the cycle is `verify`'s. This is the per-proof checkpoint, at one chunk.
 
 ## Main definitions
 
@@ -363,6 +364,59 @@ def sgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
 theorem sgOk_iff (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
     sgOk E cp pub = true ↔ SgOk E cp pub := by
   simp [sgOk, SgOk]
+
+/-! ## The deferred obligation, carried
+
+Pickles never checks `SgOk` on the proof itself. The proof's `(sg, round challenges)` becomes
+an old accumulator of the next proof on the same curve, whose batch opens it; the circuit in
+between, on the other curve, computes the challenges and passes them through its statement.
+`Carry` names that handover, and `sgOk_iff_accOk` says the deferred equation is then an
+equation on the next proof's input alone. -/
+
+/-- The accumulator equation on an old accumulator alone: its commitment is the challenge
+polynomial of its round challenges over the SRS — `SgOk` with the proof's opening and
+transcript replaced by what the next proof carries. -/
+def AccOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Prop :=
+  a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i])
+
+/-- The decidable mirror of `AccOk`. -/
+def accOk (σ : SRS C.Point) (a : Accumulator C σ.k) : Bool :=
+  decide (a.sg = msm C σ.g (bPolyCoefficients fun i => a.u[i]))
+
+/-- `accOk` reflects `AccOk`. -/
+theorem accOk_iff (σ : SRS C.Point) (a : Accumulator C σ.k) : accOk σ a = true ↔ AccOk σ a := by
+  simp [accOk, AccOk]
+
+/-- `cp'` carries `cp`'s deferred obligation as its old accumulator `i`: the accumulator's
+commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges of `cp` — the
+vector `SgOk` commits. Pickles forces this through the message digests of the statements
+between the two proofs; here it is the named hypothesis. -/
+def Carry (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) : Prop :=
+  let run := runInput C E.σ E.cvk cp pub
+  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+  cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1
+
+/-- The decidable mirror of `Carry`. -/
+def carry (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) : Bool :=
+  let run := runInput C E.σ E.cvk cp pub
+  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+  decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1)
+
+/-- `carry` reflects `Carry`. -/
+theorem carry_iff (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) :
+    carry E cp pub cp' i = true ↔ Carry E cp pub cp' i := by
+  simp [carry, Carry]
+
+/-- **The deferred obligation transports.** Under `Carry`, `cp`'s `SgOk` is the accumulator
+equation of what `cp'` carries: checkable on `cp'`'s input, without `cp`. -/
+theorem sgOk_iff_accOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) (h : Carry E cp pub cp' i) :
+    SgOk E cp pub ↔ AccOk E.σ cp'.olds[i] := by
+  obtain ⟨hsg, hu⟩ := h
+  simp only [SgOk, AccOk, hsg, hu]
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
