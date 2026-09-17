@@ -35,6 +35,15 @@ path = "../poseidon"
 name = "Pickles"
 globs = ["Pickles", "Pickles.+"]
 
+# The circuit harnesses the comparison and satisfiability drivers lay the dumps' input
+# layouts out with, and the production constants they read. Kept OUT of the `Pickles`
+# library — checking against recorded data is not part of the development — and built as
+# its own target, mirroring `KimchiFixture` beside `Kimchi`. It requires `Pickles`, which
+# is why it cannot live in `KimchiFixture`: `pickles` requires `kimchi`, not the reverse.
+[[lean_lib]]
+name = "PicklesFixture"
+globs = ["PicklesFixture", "PicklesFixture.+"]
+
 # The deferred `sg` obligation against a deployed wrap proof, compiled. Its cost is the
 # opening MSM over the wrap domain's 2^14 points, run four times (the acceptance and two
 # corruptions, plus the full verify), so native is worth the build. CI runs it interpreted

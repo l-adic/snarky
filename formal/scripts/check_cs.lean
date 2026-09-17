@@ -99,8 +99,10 @@ import Snarky.Kimchi.Circuit.EndoMul
 import Snarky.Kimchi.Circuit.VarBaseMul
 import Poseidon.Basic
 import Pasta.Endo
+import PicklesFixture
 
 open Lean Snarky Snarky.Kimchi Kimchi Kimchi.Index Kimchi.Fixture.PS CompElliptic.Fields.Pasta
+open PicklesFixture
 
 /-- Where the circuit-diffs results live (workspace-relative default, env override). -/
 def resultsDir : IO System.FilePath := do
@@ -119,17 +121,6 @@ def kindType : GateKind → GateType
   | .endoMul => .endoMul
   | .endoScalar => .endoScalar
   | .zero => .zero
-
-/-- `unpack`'s bit reads go through the canonical representative. -/
-instance : ToNat Fp := ⟨ZMod.val⟩
-
-instance : ToNat Fq := ⟨ZMod.val⟩
-
-/-- The kimchi constraint sum at the step field. -/
-abbrev C := KimchiConstraint Fp
-
-/-- The kimchi constraint sum at the wrap field. -/
-abbrev Cq := KimchiConstraint Fq
 
 /-! ## The gadget circuits (transcribed from `Test.Pickles.CircuitDiffs.Main`) -/
 
@@ -267,9 +258,6 @@ def poseidonCircuit (s : Vector (FVar Fp) 3) : CircuitM Fp C (Vector (FVar Fp) 3
   let r ← poseidon Poseidon.fpParams ⟨s[0], s[1], s[2]⟩
   pure #v[r.s0, r.s1, r.s2]
 
-/-- Vesta's GLV eigenvalue, as a scalar-field element. -/
-def endoVestaLam : Fp := (Pasta.vestaLam : ℤ)
-
 /-- `endo_scalar_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.EndoScalar.toField`
 at 8 rows and the constant Vesta eigenvalue). -/
 def endoScalarCircuit (scalar : FVar Fp) : CircuitM Fp C (FVar Fp) :=
@@ -333,10 +321,6 @@ def bCorrectCircuit (input : Vector (FVar Fp) 20) : CircuitM Fp C PUnit := do
   let _ ← Pickles.bCorrectCircuit expanded (inl.getD 16 zero) (inl.getD 17 zero)
     (inl.getD 18 zero) (Type1.fromShiftedCircuit 255 ⟨inl.getD 19 zero⟩)
   pure PUnit.unit
-
-/-- The wrap-side scalar-challenge endomorphism (OCaml `Endo.Step_inner_curve.scalar`):
-Pallas's `λ` at the wrap field. -/
-def endoPallasLam : Fq := (Pasta.pallasLam : ℤ)
 
 /-- `b_correct_wrap_circuit` (PS `bCorrectWrapCircuit`): the step layout at the wrap field,
 the challenges expanded through `endoPallasLam`, the claim Type2-unshifted. -/
@@ -534,19 +518,6 @@ linearization layout plus `p_eval0` at index 90, the same `scalars_env` prelude 
 faithfulness theorem is about — fed those as its upstream inputs. The domain is constant
 in the dump, so `ω^{n − zkRows}` is the constant `ω⁻³` and the coset shifts are constants. -/
 
-/-- The step-side coset shifts, production's Blake2b-sampled `Shifts::new` values (PS reads
-them through `domainShifts`; recorded in `kimchi/fixtures/linearization_vesta{,_emul}.json`,
-identical at both domain sizes there). They enter the dump as Generic coefficients, so the
-comparison checks them against production rather than trusting them. -/
-def stepShifts : Fin permCols → Fp := fun i =>
-  (#[1, 328286983623303317637963920346571898945724874896624808297627776768640590563,
-     91433028157768305433241271390810941046493237899366836746431422160024463706,
-     240213425742950025341713987028051046476975246675775993287051503548513551377,
-     417757293700961807788464308236931191792053554682199437460107260306038610067,
-     430348682428487492383428014506756320686619984007091686553051322507181255952,
-     326625242707153437805405281465150497418605074624614708160829052937679007395]
-    : Array ℕ)[(i : ℕ)]?.getD 0
-
 open Pickles.Linearization Kimchi.Protocol.Linearization in
 /-- The `ft_eval0` circuit under comparison, at either side. -/
 def ftEval0CsCircuit {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
@@ -584,10 +555,6 @@ the proved gadgets `Pickles.challengePolyEvals` and `Pickles.combinedInnerProduc
 has two proofs-verified mask booleans first and a Type1 claim; the wrap side no mask and a
 Type2 claim. An entry's bit is the mask bit on the step side and the constant `true_` elsewhere,
 which `selectField` folds to no row. -/
-
-/-- The two previous-challenge vectors from `base`. -/
-def prevChallengesOf {p : ℕ} (get : ℕ → FVar (ZMod p)) (base : ℕ) : List (List (FVar (ZMod p))) :=
-  [(List.range 16).map fun i => get (base + i), (List.range 16).map fun i => get (base + 16 + i)]
 
 open Pickles in
 /-- The shared body from `base` on: the challenge polynomials of both previous proofs at
@@ -681,26 +648,6 @@ below. The PS harnesses' fr-sponge slices (`SpongeChallenges`: the challenge dig
 schedule with `ξ`, `r`) are strict sub-circuits of those targets, so their byte-equality is
 checked there rather than as separate interpreter passes. -/
 
-open Kimchi.Verifier in
-/-- The public pair and the evaluation record from the dumps' layout, the public pair at
-`pubBase`: then the 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `s` pairs and the 6
-selector pairs. -/
-def evalsAt {p : ℕ} (get : ℕ → FVar (ZMod p)) (pubBase : ℕ) :
-    PointEvaluations (FVar (ZMod p)) × ProofEvaluations (FVar (ZMod p)) :=
-  let pair (i : ℕ) : PointEvaluations (FVar (ZMod p)) :=
-    ⟨get (pubBase + i), get (pubBase + i + 1)⟩
-  (pair 0,
-   { w := Vector.ofFn fun j => pair (2 + 2 * j)
-     coefficients := Vector.ofFn fun j => pair (32 + 2 * j)
-     z := pair 62
-     s := Vector.ofFn fun j => pair (64 + 2 * j)
-     genericSelector := pair 76
-     poseidonSelector := pair 78
-     completeAddSelector := pair 80
-     mulSelector := pair 82
-     emulSelector := pair 84
-     endomulScalarSelector := pair 86 })
-
 /-! ## The fq-sponge transcript circuit
 
 Transcribes `Pickles.CircuitDiffs.PureScript.FqSpongeTranscript`: the group side's
@@ -779,72 +726,16 @@ check on either side, `Pickles.finalizeOtherProofStep` at the step field's param
 151-input layout and `Pickles.finalizeOtherProofWrap` at the wrap field's over the 148-input
 layout, the wrap side's vanishing polynomial by `pow2PowMul` as the PS harness passes it. -/
 
-/-- The wrap-side coset shifts, production's `Shifts::new` values recorded in
-`kimchi/fixtures/linearization_pallas.json`. -/
-def wrapShifts : Fin permCols → Fq := fun i =>
-  (#[1, 328286983623303317637963920346571898945724874896624808297627776768640590563,
-     220790353665890403705559231885806581221301230221265349993193424985261418438,
-     211720422259245489258933986578227917398506328781182391541883955346082631533,
-     211634429328372259348572816867521795029192573698954618296359582461568682420,
-     317476258975906211462498873025720239242336777696786967497139785505242641540,
-     99141114743446054294525453467100398765600279346526770105380817318185104545]
-    : Array ℕ)[(i : ℕ)]?.getD 0
-
-open Pickles Kimchi.Verifier in
-/-- The unfinalized proof, witness and previous challenges from the dumps' layout: the five
-128-bit claims at 0–3 and 9, the shifted claims at 4–8, the 16 challenges at 10–25; then from
-`base` the public pair, 15 `w` pairs, 15 coefficient pairs, the `z` pair, 6 `σ` pairs, 6
-selector pairs, `ft(ζω)`, the two previous-challenge vectors, and the digest before
-evaluations last. -/
-def fopInputsOf {p : ℕ} {sf : Type} (mk : FVar (ZMod p) → sf) (get : ℕ → FVar (ZMod p))
-    (base : ℕ) :
-    UnfinalizedProof (ZMod p) sf × AllEvals (ZMod p) × List (List (FVar (ZMod p))) :=
-  let (pub, evals) := evalsAt get base
-  let u : UnfinalizedProof (ZMod p) sf :=
-    { deferredValues :=
-        { plonk := { alpha := ⟨get 0⟩, beta := ⟨get 1⟩, gamma := ⟨get 2⟩, zeta := ⟨get 3⟩,
-                     zetaToSrsLength := mk (get 4), zetaToDomainSize := mk (get 5),
-                     perm := mk (get 6) }
-          combinedInnerProduct := mk (get 7), b := mk (get 8), xi := ⟨get 9⟩,
-          bulletproofChallenges := (List.range 16).map fun i => ⟨get (10 + i)⟩ }
-      shouldFinalize := true_
-      spongeDigestBeforeEvaluations := get (base + 121) }
-  let w : AllEvals (ZMod p) := { ftEval1 := get (base + 88), pub, evals }
-  (u, w, prevChallengesOf get (base + 89))
-
-/-- The step side's parameters: the Vesta fr-sponge, `λ`, the `Fp` linearization and the
-step shifts, `srs_length_log2 = 16`, `zk_rows = 3`. -/
-def fopStepParams : Pickles.FopParams Fp :=
-  { sponge := Bulletproof.IpaVesta.curve.frSponge.params, endoLam := endoVestaLam,
-    endo := Kimchi.Fixture.PS.fpSide.endo, mds := Kimchi.Fixture.PS.fpSide.mds,
-    toks := Pickles.Linearization.fpTokens, shifts := stepShifts, srsLengthLog2 := 16,
-    zkRows := 3 }
-
-/-- `finalize_other_proof_step_circuit`: the mask at 26–27 (unchecked), `domain_log2` at 28,
-the evaluations from 29, one known domain of `log2 = 16`. -/
+/-- `finalize_other_proof_step_circuit` as a comparison target: the harness, output
+discarded. -/
 def finalizeOtherProofStepCircuit (input : Vector (FVar Fp) 151) : CircuitM Fp C PUnit := do
-  let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
-  let (u, w, prev) := fopInputsOf Type1.mk get 29
-  let _ ← Pickles.finalizeOtherProofStep fopStepParams
-    [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] u w [.unchecked (get 26), .unchecked (get 27)]
-    prev (get 28)
+  let _ ← fopStepHarness input
   pure PUnit.unit
 
-/-- The wrap side's parameters: the Pallas fr-sponge, `λ`, the `Fq` linearization and the
-wrap shifts, `srs_length_log2 = 15`, `zk_rows = 3`. -/
-def fopWrapParams : Pickles.FopParams Fq :=
-  { sponge := Bulletproof.IpaPallas.curve.frSponge.params, endoLam := endoPallasLam,
-    endo := Kimchi.Fixture.PS.fqSide.endo, mds := Kimchi.Fixture.PS.fqSide.mds,
-    toks := Pickles.Linearization.fqTokens, shifts := wrapShifts, srsLengthLog2 := 15,
-    zkRows := 3 }
-
-/-- `finalize_other_proof_wrap_circuit`: the evaluations from 26, the constant domain of
-`log2 = 15`, `ζⁿ − 1` by `pow2PowMul`. -/
+/-- `finalize_other_proof_wrap_circuit` as a comparison target: the harness, output
+discarded. -/
 def finalizeOtherProofWrapCircuit (input : Vector (FVar Fq) 148) : CircuitM Fq Cq PUnit := do
-  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
-  let (u, w, prev) := fopInputsOf Type2.mk get 26
-  let _ ← Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ 15))
-    15 (fun z => do let t ← Pickles.pow2PowMul z 15; pure (CVar.sub_ t (.const 1))) u w prev
+  let _ ← fopWrapHarness input
   pure PUnit.unit
 
 /-! ## The wrap column
