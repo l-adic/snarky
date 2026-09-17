@@ -43,7 +43,8 @@ import Node.Process as Process
 import Pickles.Field (StepField, WrapField)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (AllocEvals, ChunkedCommitment(..), PaddedLength, PerProofUnfinalized, StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments)
+import JS.BigInt as BigInt
+import Pickles.VerificationKey (StepVK, pallasVerifierIndexCommitments, verifierIndexDigest)
 import Pickles.Wrap.Advice (WrapAdvice)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Types as Wrap
@@ -64,6 +65,7 @@ import Snarky.Circuit.DSL (F(..), FVar, const_)
 import Snarky.Circuit.Kimchi (Type1, Type2, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
+import Snarky.Curves.Class (toBigInt)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint(..), WeierstrassAffinePoint(..))
@@ -458,6 +460,7 @@ wrapSolveAndProve ctx compileResult = do
               Nothing -> do
                 let proof = Lazy.force p
                 setVestaProof cache compileResult.verifierIndex publicInputs proof
+                  (BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex)))
                 pure proof
       pure $ Right
         { proverIndex: compileResult.proverIndex

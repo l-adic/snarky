@@ -12,6 +12,7 @@ module Pickles.VerificationKey
   , VerifierIndexCommitments
   , pallasVerifierIndexCommitments
   , vestaVerifierIndexCommitments
+  , verifierIndexDigest
   ) where
 
 import Prelude
@@ -21,16 +22,18 @@ import Data.Fin (unsafeFinite)
 import Data.Newtype (over, over2)
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable (foldl1)
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Field (StepField, WrapField)
+import Pickles.Sponge (absorbPoint, evalPureSpongeM, initialSponge, squeeze)
 import Pickles.Types (ChunkedCommitment(..))
+import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Proof (sigmaCommLast, verifierIndexColumnComms)
+import Snarky.Backend.Kimchi.Proof (class ProofFFI, sigmaCommLast, verifierIndexColumnComms)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.CVar (add_)
@@ -347,3 +350,29 @@ chooseKey bools keys = label "choose-key" do
 
   addPt :: AffinePoint (FVar f) -> AffinePoint (FVar f) -> AffinePoint (FVar f)
   addPt (AffinePoint p1) (AffinePoint p2) = AffinePoint { x: add_ p1.x p2.x, y: add_ p1.y p2.y }
+
+-- | The verification-key digest the kimchi verifier absorbs at the top of
+-- | its Fiat–Shamir transcript (`VerifierIndex::digest()`, absorbed at
+-- | `verifier.rs`'s `oracles`). Nothing transmits it — it is a function of
+-- | the key alone, and every verifier recomputes it.
+-- |
+-- | Absorption order is production's, which is not the order
+-- | `verifierIndexColumnComms` returns: all 7 sigma commitments first — its
+-- | 6 plus `sigmaCommLast` — then the 15 coefficient commitments, then the 6
+-- | selectors. Each commitment absorbs chunk by chunk as a point.
+verifierIndexDigest
+  :: forall f g c
+   . ProofFFI f g c
+  => PoseidonField c
+  => VerifierIndex g f
+  -> c
+verifierIndexDigest vk =
+  evalPureSpongeM initialSponge do
+    traverse_ (traverse_ absorbPoint) absorbed
+    squeeze
+  where
+  cols = verifierIndexColumnComms vk
+  selectors = Array.take 6 cols
+  coeffs = Array.slice 6 21 cols
+  sigmas = Array.drop 21 cols <> [ sigmaCommLast vk ]
+  absorbed = sigmas <> coeffs <> selectors

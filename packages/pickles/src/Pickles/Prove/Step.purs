@@ -78,7 +78,8 @@ import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, 
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
 import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
-import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, vestaVerifierIndexCommitments)
+import JS.BigInt as BigInt
+import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -101,7 +102,7 @@ import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, toBigInt)
 import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -1781,6 +1782,7 @@ stepSolveAndProve handler ctx rule compileResult advice = do
                   Nothing -> do
                     let proof = Lazy.force p
                     setPallasProof cache compileResult.verifierIndex publicInputs proof
+                      (BigInt.toString (toBigInt (verifierIndexDigest compileResult.verifierIndex)))
                     pure proof
           pure $ Right
             { proverIndex: compileResult.proverIndex

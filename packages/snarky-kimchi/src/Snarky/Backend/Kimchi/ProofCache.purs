@@ -68,7 +68,7 @@ mkProofCache = ProofCache
 -- | proved against. The key is also this entry's bucket, so `vk` is a
 -- | second copy — carried anyway so a consumer holds a whole
 -- | `(vk, public input, proof)` triple without parsing a map key.
-type Entry = { proof :: String, vk :: String }
+type Entry = { proof :: String, vk :: String, digest :: String }
 
 -- | On-disk shape: `{ "<vkKey>": { "<publicInputKey>": Entry } }` — the
 -- | natural JSON form of OCaml's `vk -> public_input -> proof`, with the
@@ -100,11 +100,11 @@ getEntry (ProofCache path) vk pi = do
   store <- loadStore path
   pure (Object.lookup vk store >>= Object.lookup pi)
 
-setEntry :: ProofCache -> String -> String -> String -> Effect Unit
-setEntry (ProofCache path) vk pi proof = do
+setEntry :: ProofCache -> String -> String -> String -> String -> Effect Unit
+setEntry (ProofCache path) vk pi proof digest = do
   store <- loadStore path
   let inner = fromMaybe Object.empty (Object.lookup vk store)
-  saveStore path (Object.insert vk (Object.insert pi { proof, vk } inner) store)
+  saveStore path (Object.insert vk (Object.insert pi { proof, vk, digest } inner) store)
 
 -- | Canonical, deterministic string for a field element (its integer
 -- | value). Stable across runs/machines.
@@ -145,9 +145,10 @@ setPallasProof
   -> VerifierIndex Vesta.G Pallas.BaseField
   -> Array Pallas.BaseField
   -> Proof Vesta.G Pallas.BaseField
+  -> String
   -> Effect Unit
-setPallasProof cache vk pis proof =
-  setEntry cache (pallasProofVkKey vk) (piKey pis) (pallasProofToSerdeJson proof)
+setPallasProof cache vk pis proof digest =
+  setEntry cache (pallasProofVkKey vk) (piKey pis) (pallasProofToSerdeJson proof) digest
 
 -- | Cache lookup / store for `vesta*` proofs (Pallas.G commitments,
 -- | Vesta-base-field scalars — what pickles' Tock / Wrap side produces).
@@ -165,9 +166,10 @@ setVestaProof
   -> VerifierIndex Pallas.G Vesta.BaseField
   -> Array Vesta.BaseField
   -> Proof Pallas.G Vesta.BaseField
+  -> String
   -> Effect Unit
-setVestaProof cache vk pis proof =
-  setEntry cache (vestaProofVkKey vk) (piKey pis) (vestaProofToSerdeJson proof)
+setVestaProof cache vk pis proof digest =
+  setEntry cache (vestaProofVkKey vk) (piKey pis) (vestaProofToSerdeJson proof) digest
 
 --------------------------------------------------------------------------------
 -- VK json-key: the deterministic full-VK string used as the bucket key.

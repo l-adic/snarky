@@ -31,6 +31,7 @@ import Effect.Exception (throw)
 import JS.BigInt as BigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (exists, readTextFile, writeTextFile)
+import Pickles.VerificationKey (verifierIndexDigest)
 import Pickles.Verify (verifyStages, wrapAccumulators, wrapPublicInputVP)
 import Simple.JSON (readJSON, writeJSON)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
@@ -68,6 +69,10 @@ spec = describe "Pickles.Sideload.LeanInputs" do
               (wrapAccumulators fixture.verifier fixture.verifiableProof)
         }
       path = dir <> "/lean_inputs.json"
+    -- The digest production's verifier recomputes from this key, against the
+    -- value Rust recorded for it in `formal/kimchi/fixtures/kimchi_proof_pallas_pickles.json`.
+    dec (verifierIndexDigest fixture.verifier.wrapVK) `shouldEqual`
+      "4279052005494948743128055706375583678382362068038840518138978030458004318946"
     present <- liftEffect $ exists path
     if present then do
       text <- liftEffect $ readTextFile UTF8 path
