@@ -23,7 +23,7 @@ Lagrange basis is SRS-derived and left empty here — the verifier driver fills 
 -/
 
 open Lean FixtureKit Bulletproof Bulletproof.Fixture Kimchi.Verifier Kimchi.Verifier.Wire
-open CompElliptic.CurveForms.ShortWeierstrass
+open CompElliptic.CurveForms.ShortWeierstrass (OnCurve)
 
 namespace Kimchi.Fixture.Cache
 
@@ -35,32 +35,18 @@ private def scalar (C : Ipa.KimchiCurve) (j : Json) : Except String C.ScalarFiel
 private def base (C : Ipa.KimchiCurve) (j : Json) : Except String C.BaseField :=
   Kimchi.Fixture.PS.parseHexLE (m := C.base) j
 
-/-- A point from its coordinates: on the curve, or the `(0, 0)` identity sentinel. -/
-private def mkPoint (C : Ipa.KimchiCurve) (x y : C.BaseField) : Except String C.Point :=
-  if h : OnCurve C.E.A C.E.B (x, y) then return ⟨x, y, Or.inl h⟩
-  else if h0 : (x, y) = ((0 : C.BaseField), (0 : C.BaseField)) then return ⟨x, y, Or.inr h0⟩
-  else throw "point not on the curve"
-
 /-- An uncompressed `[x, y]` hex pair (the verification key's encoding). -/
-private def pointXY (C : Ipa.KimchiCurve) (j : Json) : Except String C.Point := do
-  let (x, y) ← parsePair (base C) j
-  mkPoint C x y
+private def pointXY (C : Ipa.KimchiCurve) : Json → Except String C.Point :=
+  parseSWPoint (base C) C.E
 
-/-- A compressed point (the proof's encoding): 32 little-endian bytes of `x`, then a flag
-byte. `sqrt` is the base field's square root; the flag picks the root — `0x80` the one
-above `(p-1)/2`, `0x00` the one below — and `0x40` is the identity. -/
+/-- A compressed point (the proof's encoding): 32 little-endian bytes of `x`, then the
+arkworks flag byte, as hex. -/
 private def pointCompressed (C : Ipa.KimchiCurve)
     (sqrt : C.BaseField → Option C.BaseField) (j : Json) : Except String C.Point := do
   let s ← j.getStr?
   unless s.length = 66 do throw s!"compressed point: expected 66 hex chars, got {s.length}"
-  let x : C.BaseField := ((← Kimchi.Fixture.PS.hexLEtoNat (s.take 64).toString) : ℕ)
-  let flag ← Kimchi.Fixture.PS.hexLEtoNat (s.drop 64).toString
-  if flag = 0x40 then return ← mkPoint C 0 0
-  let some y0 := sqrt (x * x * x + C.E.A * x + C.E.B)
-    | throw "compressed point: x is not on the curve"
-  let big : C.BaseField → Bool := fun y => decide ((C.base - 1) / 2 < y.val)
-  let y := if (flag = 0x80) = big y0 then y0 else -y0
-  mkPoint C x y
+  pointOfCompressed C sqrt (← Kimchi.Fixture.PS.hexLEtoNat (s.take 64).toString)
+    (← Kimchi.Fixture.PS.hexLEtoNat (s.drop 64).toString)
 
 /-- A serde commitment: `{ chunks: [compressed point, …] }`. -/
 private def chunks (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)
@@ -198,10 +184,20 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
            vk := ← parseVK C endo (d : C.BaseField) vkJ
            proof := ← parseProof C sqrt proofJ, step, prevs }
 
+/-- Whether a cache entry's key is committed on `C`: its first permutation commitment's
+coordinates satisfy `C`'s equation. -/
+private def entryOnCurve (C : Ipa.KimchiCurve) (e : Json) : Except String Bool := do
+  let vkJ ← Json.parse (← (← e.getObjVal? "vk").getStr?)
+  let sigma ← (← vkJ.getObjVal? "evals").getObjVal? "sigmaComm"
+  let comms ← parseArrOf (parseArrOf (parsePoint (base C))) sigma
+  let some p := comms[0]?.bind (·[0]?) | throw "sigmaComm: no commitment"
+  return decide (OnCurve C.E.A C.E.B p)
+
 /-- A cache file at a curve. A file holds a chain's step proofs, committed on one Pasta
-curve, and its wrap proofs, committed on the other; a bucket whose points are not on
-`C` is the other curve's and is skipped. The result is the entries at `C` and the count
-of buckets skipped, so a caller can check the split it expects. -/
+curve, and its wrap proofs, committed on the other; a bucket whose key is not committed
+on `C` (`entryOnCurve`, decided on its first entry) is the other curve's and is skipped.
+The result is the entries at `C` and the count of buckets skipped, so a caller can check
+the split it expects. -/
 def parseFile (C : Ipa.KimchiCurve) (endo : C.ScalarField)
     (sqrt : C.BaseField → Option C.BaseField) (raw : String) :
     Except String (Array (Entry C) × ℕ) := do
@@ -211,11 +207,13 @@ def parseFile (C : Ipa.KimchiCurve) (endo : C.ScalarField)
   let mut skipped := 0
   for ⟨vkDigest, inner⟩ in buckets.toArray do
     let entries := (← inner.getObj?).toArray
+    let some (_, e0) := entries[0]? | continue
+    unless ← entryOnCurve C e0 do
+      skipped := skipped + 1
+      continue
     match entries.mapM fun ⟨pi, e⟩ => parseEntry C endo sqrt vkDigest pi e with
     | .ok es => out := out ++ es
-    | .error msg =>
-      if msg = "point not on the curve" then skipped := skipped + 1
-      else throw s!"bucket {vkDigest.take 12}…: {msg}"
+    | .error msg => throw s!"bucket {vkDigest.take 12}…: {msg}"
   return (out, skipped)
 
 end Kimchi.Fixture.Cache

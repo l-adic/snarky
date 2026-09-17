@@ -1,4 +1,4 @@
-import Bulletproof.Wire
+import BulletproofFixture
 
 /-!
 # The SRS files, loaded
@@ -6,33 +6,11 @@ import Bulletproof.Wire
 `loadSRS` reads a proof-systems `.srs` file (`srs-cache/{vesta,pallas}.srs`, the SRS the
 PureScript suite proves against) into a library `SRS`. It is the one entry point; the
 file format is an implementation detail of this module — MessagePack `[g, h]`, `g` an
-`array32` of `bin8` 33-byte arkworks-compressed points, `h` one more — so that the reader
-can be replaced without touching its callers.
+`array32` of `bin8` 33-byte arkworks-compressed points (`pointOfCompressed`), `h` one more —
+so that the reader can be replaced without touching its callers.
 -/
 
 namespace Bulletproof.Fixture.SRSLoader
-
-open CompElliptic.CurveForms.ShortWeierstrass
-
-/-- A point from its coordinates: on the curve, or the `(0, 0)` identity sentinel. -/
-private def pointOfCoords (C : Ipa.KimchiCurve) (x y : C.BaseField) :
-    Except String C.Point :=
-  if h : OnCurve C.E.A C.E.B (x, y) then return ⟨x, y, Or.inl h⟩
-  else if h0 : (x, y) = ((0 : C.BaseField), (0 : C.BaseField)) then return ⟨x, y, Or.inr h0⟩
-  else throw "point not on the curve"
-
-/-- A compressed point (arkworks' `serialize_compressed`): the `x` coordinate and a flag.
-`sqrt` is the base field's square root; the flag picks the root — `0x80` the one above
-`(p-1)/2`, `0x00` the one below — and `0x40` is the identity. -/
-private def pointOfCompressed (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)
-    (x : ℕ) (flag : ℕ) : Except String C.Point := do
-  if flag = 0x40 then return ← pointOfCoords C 0 0
-  let x : C.BaseField := x
-  let some y0 := sqrt (x * x * x + C.E.A * x + C.E.B)
-    | throw "compressed point: x is not on the curve"
-  let big : C.BaseField → Bool := fun y => decide ((C.base - 1) / 2 < y.val)
-  let y := if (flag = 0x80) = big y0 then y0 else -y0
-  pointOfCoords C x y
 
 /-- The file's first `2^k` generators and its blinding base. -/
 private def srsOfBytes (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)

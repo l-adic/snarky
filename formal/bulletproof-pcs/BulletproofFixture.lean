@@ -38,6 +38,20 @@ open CompElliptic.CurveForms.ShortWeierstrass
 def parsePt (C : Ipa.KimchiCurve) : Json → Except String C.Point :=
   parseSWPoint (parseZMod (n := C.base)) C.E
 
+/-- An arkworks-compressed point (`serialize_compressed`, as the `.srs` files and the
+PureScript proof cache store them): the `x` coordinate and a flag byte. `sqrt` is the base
+field's square root; the flag picks the root — `0x80` the one above `(p-1)/2`, `0x00` the one
+below — and `0x40` is the identity. -/
+def pointOfCompressed (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)
+    (x : ℕ) (flag : ℕ) : Except String C.Point := do
+  if flag = 0x40 then return ← swPointOfCoords C.E (0, 0)
+  let x : C.BaseField := x
+  let some y0 := sqrt (x * x * x + C.E.A * x + C.E.B)
+    | throw "compressed point: x is not on the curve"
+  let big : C.BaseField → Bool := fun y => decide ((C.base - 1) / 2 < y.val)
+  let y := if (flag = 0x80) = big y0 then y0 else -y0
+  swPointOfCoords C.E (x, y)
+
 /-- The fixture's `srs_g`/`srs_h` as a library SRS at a given round count `k` (the
 IPA fixtures carry `k` directly; the kimchi-proof fixture instead derives it from the
 domain size and calls this function at `Nat.log2 max_poly_size`). The abstract

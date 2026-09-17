@@ -57,13 +57,18 @@ def parsePoint {F : Type} (f : Json → Except String F) (j : Json) :
   parsePair f j
 
 open CompElliptic.CurveForms.ShortWeierstrass in
-/-- A `[x, y]` coordinate pair as a point on `E`: on the curve or the `(0, 0)` identity
-sentinel, with the `Valid` proof carried in the `SWPoint` (decided disjunct-wise). -/
-def parseSWPoint {F : Type} [Field F] [DecidableEq F] (f : Json → Except String F)
-    (E : SWCurve F) (j : Json) : Except String (SWPoint E) := do
-  let p ← parsePair f j
+/-- A coordinate pair as a point on `E`: on the curve or the `(0, 0)` identity sentinel,
+with the `Valid` proof carried in the `SWPoint` (decided disjunct-wise). -/
+def swPointOfCoords {F : Type} [Field F] [DecidableEq F] (E : SWCurve F) (p : F × F) :
+    Except String (SWPoint E) :=
   if h : OnCurve E.A E.B p then return ⟨p.1, p.2, Or.inl h⟩
   else if h0 : p = ((0 : F), (0 : F)) then return ⟨p.1, p.2, Or.inr h0⟩
   else throw "point not on the curve"
+
+open CompElliptic.CurveForms.ShortWeierstrass in
+/-- A `[x, y]` coordinate pair as a point on `E` (`swPointOfCoords`). -/
+def parseSWPoint {F : Type} [Field F] [DecidableEq F] (f : Json → Except String F)
+    (E : SWCurve F) (j : Json) : Except String (SWPoint E) := do
+  swPointOfCoords E (← parsePair f j)
 
 end FixtureKit
