@@ -25,8 +25,9 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Node.Process (lookupEnv)
 import Partial.Unsafe (unsafePartial)
-import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), PrevStatement(..), ProofsVerified(..), RulesCons, RulesNil, Slot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
+import Pickles (BranchProver(..), CompiledProof, PrevSlot(..), ProofsVerified(..), RulesCons, RulesNil, SideLoadedPrevStatement(..), SideLoadedSlot, SlotProveVk(..), SlotWrapKey(..), StatementIO(..), StepField, StepRule, compileMulti, mkRuleEntry, prevValues, toPrevs, toVerifiable, verify)
 import Pickles.Sideload (mkBundle) as Sideload
+import Pickles.Sideload.BoundVk.Internal (unsafeUnboundVk)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Advice (noAdvice)
 import Snarky.Backend.Kimchi.ProofCache (mkProofCache)
@@ -85,7 +86,7 @@ type NoRecursionInputRules =
 
 -- | The parent rule's one side-loaded prev slot, at width 2.
 type SideLoadedMainPrevsSpec =
-  Tuple1 (Slot 2 (StatementIO (F StepField) Unit))
+  Tuple1 (SideLoadedSlot 2 (StatementIO (F StepField) Unit))
 
 -- | Carrier for the parent rule.
 type SideLoadedMainRules =
@@ -108,13 +109,22 @@ sideLoadedMainRule
        Unit
        Unit
 sideLoadedMainRule getPrevStates self = do
-  prev <- exists $ getPrevStates <#> prevValues <#> \(StatementIO { input } /\ _) -> input
+  prev <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) ->
+    let StatementIO { input } = slot.statement in input
+  vk <- exists $ getPrevStates <#> prevValues <#> \(slot /\ _) -> slot.verificationKey
   isBaseCase <- equals_ (const_ zero) self
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
   assertAny_ [ selfCorrect, isBaseCase ]
   pure
     { prevs: toPrevs $
-        PrevStatement { publicInput: StatementIO { input: prev, output: unit }, proofMustVerify: true_ }
+        SideLoadedPrevStatement
+          { publicInput: StatementIO { input: prev, output: unit }
+          , proofMustVerify: true_
+          -- This rule's statement carries no key digest to bind the
+          -- key against, so the slot certifies only that some child
+          -- verified.
+          , verificationKey: unsafeUnboundVk vk
+          }
           /\ unit
     , publicOutput: unit
     }

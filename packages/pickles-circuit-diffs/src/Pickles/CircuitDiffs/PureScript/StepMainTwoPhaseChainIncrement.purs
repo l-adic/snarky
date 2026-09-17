@@ -24,7 +24,7 @@ import Prelude
 
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple)
-import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (Tuple1, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -33,7 +33,6 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Sideload.VerificationKey as SLVK
 import Pickles.Slots (Slot)
 import Pickles.Step.Advice (StepAdvice)
 import Pickles.Step.Main (RuleOutput, SlotVkBlueprint(..), stepMain)
@@ -120,7 +119,6 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @2
-          @(SLVK.VerificationKey 1 (F StepField) Boolean)
           incrementRule
           { blindingH: params.blindingH
           -- nd=2 dispatch list: OCaml's `domain_for_compiled`
@@ -133,7 +131,6 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           , perSlotVkBlueprints: BlueprintSelf params.lagrangeAt /\ unit
           }
           dummyWrapSg
-          (tuple1 SLVK.compileDummy)
           dummyAdvice
           throwawayCaptureRef
       )

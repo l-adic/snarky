@@ -92,7 +92,7 @@ compileStepMainNoRecursionReturn params = do
       -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
       -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @0 @1 @Unit
+      ( \_ -> stepMain @Unit @Unit @(F StepField) @Unit @0 @1
           noRecursionReturnRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
@@ -100,8 +100,6 @@ compileStepMainNoRecursionReturn params = do
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg
-          -- Side-loaded VK carrier: no slots, carrier = `Unit`.
-          unit
           dummyAdvice
           throwawayCaptureRef
       )

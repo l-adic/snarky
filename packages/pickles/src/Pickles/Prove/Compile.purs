@@ -31,6 +31,8 @@ module Pickles.Prove.Compile
   , mkStepAdvice
   , shapeProveData
   , padShapeProveData
+  , class SlotKinds
+  , slotKindsOf
   , class SlotWidths
   , slotWidthsOf
   , class CompilableRulesSpec
@@ -58,6 +60,7 @@ import Data.Either (Either(..))
 import Data.Enum (fromEnum)
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int.Bits as Int.Bits
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over, unwrap, wrap)
@@ -116,7 +119,7 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier)
 import Pickles.Sideload.Bundle (Bundle, SlotProveVk(..), projectVk, requireBundle, verifierIndex) as SideloadBundle
 import Pickles.Sideload.VerificationKey (VerificationKey(..)) as SLVK
-import Pickles.Slots (Slot)
+import Pickles.Slots (Compiled, SideLoaded, SlotOf)
 import Pickles.Step.Dummy
   ( baseCaseDummies
   , computeDummySgValues
@@ -126,7 +129,7 @@ import Pickles.Step.Dummy
   )
 import Pickles.Step.Dummy as Dummy
 import Pickles.Step.Main (class BuildSlotVkSources)
-import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp)
+import Pickles.Step.Slots (class SlotKindValue, class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, mkSlotValue)
 import Pickles.Step.Types as Step
 import Pickles.Step.VkSource (SlotVkBlueprint(..))
 import Pickles.Types (AllocEvals(..), PaddedLength, PerProofUnfinalized(..), StatementIO(..), StepIPARounds, WrapIPARounds, WrapVkChunks)
@@ -531,7 +534,7 @@ consShapeCompileData cfg selfStepDomainLog2s headSlot restShape =
 -- | has to run before the tail's.
 consMkStepAdvice
   :: forall @w wPad inputVal input prevHeadInput prevHeadStmt
-       prevHeadStmtVar prevsSpec restSpec restLen len headVkCell
+       prevHeadStmtVar prevsSpec restSpec restLen len headVkCell valElem
        restCarrier restValCarrier restVkCarrier
    . Reflectable w Int
   => Compare w 3 LT
@@ -549,6 +552,10 @@ consMkStepAdvice
      , slotWrapZkRows :: Int
      }
   -> headVkCell
+  -- | This slot's advice element, from its statement: the statement
+  -- | itself for a compiled slot, the statement and the prove call's
+  -- | key for a side-loaded one.
+  -> (prevHeadStmt -> valElem)
   -> PrevSlot prevHeadInput w prevHeadStmt
   -> Effect
        { stepAdvice ::
@@ -570,12 +577,12 @@ consMkStepAdvice
                  Boolean
                  /\ restCarrier
              )
-             (prevHeadStmt /\ restValCarrier)
+             (valElem /\ restValCarrier)
              (headVkCell /\ restVkCarrier)
        , challengePolynomialCommitments :: Vector len (AffinePoint StepField)
        , baseCaseWrapPublicInputs :: Vector len (Array WrapField)
        }
-consMkStepAdvice srs appInput slotParams headVkCell headSlot restEffect = do
+consMkStepAdvice srs appInput slotParams headVkCell mkValElem headSlot restEffect = do
   contrib <- buildSlotAdvice @w
     { publicInput: appInput
     , prevStatement: slotData.prevStatement
@@ -618,7 +625,7 @@ consMkStepAdvice srs appInput slotParams headVkCell headSlot restEffect = do
       , wrapVerifierIndex: restA.wrapVerifierIndex
       , kimchiPrevChallenges:
           contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
-      , prevAppStates: slotData.prevStatement /\ restA.prevAppStates
+      , prevAppStates: mkValElem slotData.prevStatement /\ restA.prevAppStates
       , sideloadedVKs: headVkCell /\ restA.sideloadedVKs
       }
   pure
@@ -1360,14 +1367,15 @@ instance
   , CircuitType StepField prevHeadInput prevHeadInputVar
   , CircuitType StepField prevHeadOutput prevHeadOutputVar
   , SlotStatementsCarrier rest restValCarrier
+  , SlotKindValue k (StatementIO prevHeadInput prevHeadOutput) valElem
   ) =>
   CompilableSpec
-    (Slot n (StatementIO prevHeadInput prevHeadOutput) /\ rest)
+    (SlotOf k n (StatementIO prevHeadInput prevHeadOutput) /\ rest)
     ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput)
         /\ restPrevsCarrier
     )
     mpv
-    (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
+    (valElem /\ restValCarrier)
     ( Step.PerProofWitness
         WrapVkChunks
         StepIPARounds
@@ -1398,7 +1406,9 @@ instance
     headSlot = runtimeSlotOf (reflectType (Proxy @n)) headSlotWrapKey
 
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) =
-    consMkStepAdvice @n cfg.srs appInput slotParams headVk headSlot
+    consMkStepAdvice @n cfg.srs appInput slotParams headVk
+      (\statement -> mkSlotValue @k statement headVk)
+      headSlot
       (mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs restVkCarrier)
     where
     { head: headSlotWrapKey, tail: restSlotVKs } = Vector.uncons cfg.perSlotImportedVKs
@@ -1526,8 +1536,23 @@ class SlotWidths (prevsSpec :: Type) where
 instance SlotWidths Unit where
   slotWidthsOf _ = []
 
-instance (Reflectable n Int, SlotWidths rest) => SlotWidths (Slot n stmt /\ rest) where
+instance (Reflectable n Int, SlotWidths rest) => SlotWidths (SlotOf k n stmt /\ rest) where
   slotWidthsOf _ = Array.cons (reflectType (Proxy @n)) (slotWidthsOf (Proxy @rest))
+
+-- | Whether each slot is side-loaded, in slot order, read back from
+-- | the spec's `SlotOf` kinds. `mkRuleEntry` checks the answer against
+-- | the `SlotWrapKey` the caller supplies for that slot.
+class SlotKinds (prevsSpec :: Type) where
+  slotKindsOf :: forall proxy. proxy prevsSpec -> Array Boolean
+
+instance SlotKinds Unit where
+  slotKindsOf _ = []
+
+instance SlotKinds rest => SlotKinds (SlotOf Compiled n stmt /\ rest) where
+  slotKindsOf _ = Array.cons false (slotKindsOf (Proxy @rest))
+
+instance SlotKinds rest => SlotKinds (SlotOf SideLoaded n stmt /\ rest) where
+  slotKindsOf _ = Array.cons true (slotKindsOf (Proxy @rest))
 
 -- | The wrap circuit's per-slot widths, overlaid from every branch's own
 -- | slot list.
@@ -2445,17 +2470,15 @@ mkRuleEntry
        compileSideloadedVkCarrier sideloadedVkCarrier blueprints
        vkSourcesCarrier
    . CircuitGateConstructor StepField VestaG
-  -- `prevsSpec` determines `vkSourcesCarrier`, so the compile- and
-  -- prove-path constraints share one binder for it and differ only in
-  -- their `cell`: a compile-time VK descriptor here, synthesised by
-  -- `MkUnitVkCarrier`, and a runtime bundle below. A side-loaded VK
-  -- is a wrap VK, hence `WrapVkChunks`.
-  => BuildSlotVkSources (SLVK.VerificationKey WrapVkChunks (F StepField) Boolean) prevsSpec WrapVkChunks mpv blueprints compileSideloadedVkCarrier vkSourcesCarrier
+  => BuildSlotVkSources prevsSpec mpv blueprints vkSourcesCarrier
+  -- The advice carriers: a placeholder per slot at compile time, and
+  -- the prove call's `SlotProveVk` cells, whose bundles the prover
+  -- machinery reads for a side-loaded slot's oracles.
   => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
-  -- Prove path: the cells carry a bundle at exactly the side-loaded
-  -- slots, taken from `StepAdvice.sideloadedVKs`.
-  => BuildSlotVkSources (SideloadBundle.SlotProveVk WrapVkChunks) prevsSpec WrapVkChunks mpv blueprints sideloadedVkCarrier vkSourcesCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
+  -- Each slot's `SlotOf` kind, to check against the `SlotWrapKey` the
+  -- caller supplies for it.
+  => SlotKinds prevsSpec
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2500,7 +2523,21 @@ mkRuleEntry
   -- | Where each slot's wrap VK comes from, in slot order.
   -> Vector mpv SlotWrapKey
   -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize sideloadedVkCarrier blueprints r)
-mkRuleEntry rule slotVKs =
+mkRuleEntry rule slotVKs = do
+  -- A slot's kind says where its key comes from, and its `SlotWrapKey`
+  -- says the same thing at the value level. Disagreement means one of
+  -- the two is a mistake, and nothing downstream would report it: the
+  -- circuit follows the key, the rule's type follows the kind.
+  forWithIndex_ (slotKindsOf (Proxy @prevsSpec)) \i isSideLoadedSlot -> do
+    let
+      suppliedSideLoaded = case Array.index (Vector.toUnfoldable slotVKs) i of
+        Just SideLoadedKey -> true
+        _ -> false
+    when (isSideLoadedSlot /= suppliedSideLoaded) $ Exc.throw
+      $ "mkRuleEntry: slot " <> show i <> " is declared "
+          <> (if isSideLoadedSlot then "SideLoadedSlot" else "Slot")
+          <> " in the rule's prevs spec but its key is "
+          <> (if suppliedSideLoaded then "SideLoadedKey" else "Self or External")
   pure $ RuleEntry
     { preComputeStepDomainLog2Fn: \handler ctx ->
         PProveStep.preComputeStepDomainLog2

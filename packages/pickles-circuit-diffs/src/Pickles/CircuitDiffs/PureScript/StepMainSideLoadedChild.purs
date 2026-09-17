@@ -135,7 +135,6 @@ compileStepMainSideLoadedChild params = do
           @Unit
           @0
           @1
-          @Unit
           sideLoadedChildRule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
@@ -143,7 +142,6 @@ compileStepMainSideLoadedChild params = do
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg
-          unit
           dummyAdvice
           throwawayCaptureRef
       )
