@@ -111,17 +111,6 @@ def resultsDir : IO System.FilePath := do
   | none =>
     return ".." / "packages" / "pickles-circuit-diffs" / "circuits" / "results"
 
-/-- The emitter tag as the index model's gate type (the mapping step 1 deferred to
-the assembly). -/
-def kindType : GateKind → GateType
-  | .genericPlonk => .generic
-  | .addComplete => .completeAdd
-  | .poseidon => .poseidon
-  | .varBaseMul => .varBaseMul
-  | .endoMul => .endoMul
-  | .endoScalar => .endoScalar
-  | .zero => .zero
-
 /-! ## The gadget circuits (transcribed from `Test.Pickles.CircuitDiffs.Main`) -/
 
 /-- `mul_step_circuit`: witness a zero, multiply. -/
@@ -222,34 +211,6 @@ def boolAssertCircuit (x : BoolVar Fp) : CircuitM Fp C PUnit :=
   Snarky.assert x
 
 /-! ## The comparison -/
-
-/-- An assembled circuit in the fixture's `Raw` shape (witness transposed to the
-column-major recording) — the index round-trip ingests the LEAN output, so it holds
-with or without byte-agreement. -/
-def assembledRaw {F : Type} [Zero F] (rows : List (KimchiRow F))
-    (gates : List (AssembledGate F)) (pubSize : Nat) (wit : List (Vector F 15))
-    (pubs : List F) : Raw F :=
-  { publicInputSize := pubSize
-    typs := (gates.map (kindType ·.kind)).toArray
-    coeffs := (gates.map (·.coeffs.toArray)).toArray
-    wires := (gates.map fun g =>
-      (g.wires.toList.map fun w => (w.col, w.row)).toArray).toArray
-    vars := (rows.map fun r => r.vars.toList.toArray).toArray
-    witness := ((List.range 15).map fun j =>
-      (wit.map fun row => row.toList.getD j 0).toArray).toArray
-    pub := pubs.toArray }
-
-/-- The round-trip law, decided per circuit: the compiled output padded into the
-index model builds by decision (`Index.build?` — domain shape, wiring bijectivity,
-public-row form) and the solved witness satisfies the verified checker. -/
-def indexRoundTrip {p : ℕ} [Fact p.Prime] (side : Kimchi.Fixture.PS.Side p)
-    (rows : List (KimchiRow (ZMod p))) (gates : List (AssembledGate (ZMod p)))
-    (pubSize : Nat) (wit : List (Vector (ZMod p) 15)) (pubs : List (ZMod p)) : Bool :=
-  match Kimchi.Fixture.PS.build side (assembledRaw rows gates pubSize wit pubs) with
-  | .error _ => false
-  | .ok inst =>
-    haveI : NeZero inst.n := inst.nz
-    decide (Satisfies inst.idx inst.wit.pub inst.wit.tab)
 
 /-- `poseidon_step_circuit` (the PS gadget `Snarky.Circuit.Kimchi.Poseidon.poseidon`
 at the step field's parameters; the PS `Vector 3` interface renders as the gadget's

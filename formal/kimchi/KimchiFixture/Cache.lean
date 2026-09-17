@@ -160,7 +160,9 @@ def parsePublicInput (C : Ipa.KimchiCurve) (s : String) : Except String (Array C
 structure Entry (C : Ipa.KimchiCurve) where
   /-- The verification key's digest, as the cache keys it. -/
   vkDigest : String
-  /-- The public input, as the cache keys it. -/
+  /-- The public input's key string, as the cache keys it — what a `step` link names. -/
+  publicInputKey : String
+  /-- The public input. -/
   publicInput : Array C.ScalarField
   /-- The verification key. -/
   vk : KimchiVK C
@@ -182,7 +184,7 @@ private def parseEntry (C : Ipa.KimchiCurve) (endo : C.ScalarField)
       | _ => pure (some (← (← sj.getObjVal? "vkDigest").getStr?,
                          ← (← sj.getObjVal? "publicInput").getStr?))
     | none => pure none
-  return { vkDigest, publicInput := ← parsePublicInput C pi
+  return { vkDigest, publicInputKey := pi, publicInput := ← parsePublicInput C pi
            vk := ← parseVK C endo (d : C.BaseField) vkJ
            proof := ← parseProof C sqrt proofJ, step }
 

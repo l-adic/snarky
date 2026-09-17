@@ -47,14 +47,18 @@ def fopStepParams : Pickles.FopParams Fp :=
     toks := Pickles.Linearization.fpTokens, shifts := stepShifts, srsLengthLog2 := 16,
     zkRows := 3 }
 
-/-- `finalize_other_proof_step_circuit`: the mask at 26–27 (unchecked), `domain_log2` at 28,
-the evaluations from 29, one known domain of `log2 = 16`. -/
-def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp) := do
+/-- The step side over the 151-cell layout at given known domains: the mask at 26–27
+(unchecked), `domain_log2` at 28, the evaluations from 29. -/
+def fopStepHarnessAt (domains : List (Pickles.KnownDomain Fp)) (input : Vector (FVar Fp) 151) :
+    CircuitM Fp C (Pickles.FopOutput Fp) := do
   let get (i : ℕ) : FVar Fp := input[i]?.getD (.const 0)
   let (u, w, prev) := fopInputsOf Type1.mk get 29
-  Pickles.finalizeOtherProofStep fopStepParams
-    [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] u w [.unchecked (get 26), .unchecked (get 27)]
-    prev (get 28)
+  Pickles.finalizeOtherProofStep fopStepParams domains u w
+    [.unchecked (get 26), .unchecked (get 27)] prev (get 28)
+
+/-- `finalize_other_proof_step_circuit`: the dump's one known domain of `log2 = 16`. -/
+def fopStepHarness (input : Vector (FVar Fp) 151) : CircuitM Fp C (Pickles.FopOutput Fp) :=
+  fopStepHarnessAt [⟨16, Kimchi.Fixture.PS.fpSide.omega (2 ^ 16)⟩] input
 
 /-- The wrap side's parameters: the Pallas fr-sponge, `λ`, the `Fq` linearization and the
 wrap shifts, `srs_length_log2 = 15`, `zk_rows = 3`. -/

@@ -58,3 +58,11 @@ root = "scripts.check_sg_ok"
 [[lean_exe]]
 name = "bench-fop"
 root = "scripts.bench_fop"
+
+# The satisfiability of the circuit halves on the proofs the PureScript suite cached:
+# `prove` runs the halves' advice on a real proof's inputs, the table is decided against
+# the assembled system, and the success bits are read back. Compiled, as the halves are
+# thousands of rows.
+[[lean_exe]]
+name = "check-halves"
+root = "scripts.check_halves"

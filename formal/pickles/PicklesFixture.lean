@@ -1,4 +1,5 @@
 import PicklesFixture.Layout
+import PicklesFixture.Satisfies
 import PicklesFixture.Fop
 import PicklesFixture.FopInput
 

@@ -67,8 +67,13 @@ instance instFopInputCheckedType : CheckedType Fp C (FopInput Fp) (FopInput (FVa
       CircuitType.Reads V (FopInput.equivProd v) (FopInput.equivProd x) :=
   CircuitType.reads_ofEquiv _ _
 
-/-- The step harness on the named bundle: its encoding is the flat layout, so this is
-`fopStepHarness` on the same cells. -/
+/-- The step harness on the named bundle at given known domains: its encoding is the flat
+layout, so this is `fopStepHarnessAt` on the same cells. -/
+def fopStepOnAt (domains : List (Pickles.KnownDomain Fp)) (input : FopInput (FVar Fp)) :
+    CircuitM Fp C (Pickles.FopOutput Fp) :=
+  fopStepHarnessAt domains (CircuitType.varToFields (val := FopInput Fp) input)
+
+/-- The step harness on the named bundle at the dump's domain. -/
 def fopStepOn (input : FopInput (FVar Fp)) : CircuitM Fp C (Pickles.FopOutput Fp) :=
   fopStepHarness (CircuitType.varToFields (val := FopInput Fp) input)
 
