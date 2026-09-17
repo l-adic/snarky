@@ -53,7 +53,9 @@ import Pickles
 -- explicitly: their declarations are authored code, and some are declared roots.
 import KimchiFixture.Kimchi
 import KimchiFixture.PS
+import KimchiFixture.Cache
 import BulletproofFixture
+import BulletproofFixture.SRSLoader
 import FixtureKit.Parse
 import FixtureKit.Trace
 

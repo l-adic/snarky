@@ -151,7 +151,8 @@ def parseVK (C : Ipa.KimchiCurve) (endo : C.ScalarField) (digest : C.BaseField) 
            lagrangeBasis := #[] }
 
 /-- The comma-joined decimal public input. -/
-def parsePublicInput (C : Ipa.KimchiCurve) (s : String) : Except String (Array C.ScalarField) :=
+private def parsePublicInput (C : Ipa.KimchiCurve) (s : String) :
+    Except String (Array C.ScalarField) :=
   (s.splitOn ",").toArray.mapM fun t => match t.toNat? with
     | some v => pure (v : C.ScalarField)
     | none => throw s!"public input: not a numeral: {t.take 40}"
