@@ -217,6 +217,8 @@ Pickles.twoHalves_kimchiVerify
 Pickles.twoHalves_schnorr
 Pickles.twoHalves_kimchiVerify_vesta
 Pickles.twoHalves_kimchiVerify_pallas
+Pickles.twoHalves_kimchiVerify_pallas_converse
+Pickles.ScalarHalf.wrap_olds
 Pickles.vesta_claim_tie
 Pickles.MaxProofsVerified
 Pickles.StepIPARounds

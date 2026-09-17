@@ -433,12 +433,16 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 `pre = frPrechallenges P.sponge (frTranscript d dv ft(ζω) pub e)` the verifier's two
 prechallenges (`frOracles_eq_frPrechallenges` expands them to `frOracles`' `(v, u)`), the
 `r` the checks use is `pre.2`, `xiCorrect` is a bit and, when it reads `1`, the `ξ` claim is
-`pre.1`, and `FopChecks` holds at the endo-expansions of the `ξ` claim, of `r` and of the
-challenge claims. -/
-def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p)) (n : ℕ)
-    (ω dv : ZMod p) (ms : List Bool) (cvs : List (List (ZMod p))) (u : UnfinalizedProof (ZMod p) sf)
-    (w : AllEvals (ZMod p)) (ζ α β γ permV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p)
-    (V : Valuation (ZMod p)) (o : FopOutput (ZMod p)) : Prop :=
+`pre.1` — and, where the side constrains the split's low half (`xiConstrainLowBits`), the
+converse: a `ξ` claim equal to `pre.1` makes `xiCorrect` read `1` — and `FopChecks` holds at
+the endo-expansions of the `ξ` claim, of `r` and of the challenge claims. Without the
+constraint the recomputed low half may sit at or above `2¹²⁸` (the split still below the
+modulus), so a claim equal to `pre.1` can read `xiCorrect = 0`. -/
+def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p))
+    (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
+    (cvs : List (List (ZMod p))) (u : UnfinalizedProof (ZMod p) sf) (w : AllEvals (ZMod p))
+    (ζ α β γ permV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p) (V : Valuation (ZMod p))
+    (o : FopOutput (ZMod p)) : Prop :=
   let pre := frPrechallenges P.sponge
     (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
       (w.pub.map fun x => #v[x.val V]) (w.evals.map fun x => #v[x.val V]))
@@ -446,24 +450,26 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p)) (
     Reads128 V u.deferredValues.xi ξ₀ ∧ r'.val = pre.2 ∧
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 0 ∨ (↑o.xiCorrect : CVar (ZMod p)).val V = 1) ∧
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 1 → ξ₀.val = pre.1) ∧
+    (xiConstrainLowBits = true → ξ₀.val = pre.1 → (↑o.xiCorrect : CVar (ZMod p)).val V = 1) ∧
     List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges ĉ ∧
     FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀.val)
       (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
 
 /-- At a prime field, the exact reading is the wire reading: the splits of the verifier's raw
 squeezes below the modulus are its prechallenges (`low128_of_split`), the `ξ` one once
-`xiCorrect` identifies it with the 128-bit claim. -/
+`xiCorrect` identifies it with the 128-bit claim — and, under the low-half constraint, the
+recomputed `ξ'` is that prechallenge outright, so a claim equal to it reads `xiCorrect = 1`. -/
 theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type}
     {P : FopParams (ZMod p)} {xiConstrainLowBits : Bool} {n : ℕ} {ω dv : ZMod p} {ms : List Bool}
     {cvs : List (List (ZMod p))} {u : UnfinalizedProof (ZMod p) sf} {w : AllEvals (ZMod p)}
     {ζ α β γ permV cipV bV : ZMod p} {unshiftV : ZMod p → ZMod p} {V : Valuation (ZMod p)}
     {o : FopOutput (ZMod p)}
     (h : FopReads P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o) :
-    FopReadsWire P n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o := by
-  obtain ⟨ξ₀, r', ξ', ĉ, hxival, -, hx1, ⟨h₂, -, hx2, hlt2⟩, hĉ, hxiC, hchecks⟩ := h
+    FopReadsWire P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o := by
+  obtain ⟨ξ₀, r', ξ', ĉ, hxival, hcon, hx1, ⟨h₂, -, hx2, hlt2⟩, hĉ, hxiC, hchecks⟩ := h
   haveI : Fact (1 < p) := ⟨(Fact.out : p.Prime).one_lt⟩
   refine ⟨ξ₀, r', ĉ, hxival, (low128_of_split _ r'.2 hx2 (fieldModulus_zmod p ▸ hlt2)).symm,
-    ?_, ?_, hĉ, hchecks⟩
+    ?_, ?_, ?_, hĉ, hchecks⟩
   · rw [hxiC]
     split <;> simp
   · intro hone
@@ -473,6 +479,14 @@ theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type}
       obtain ⟨h₁, -, hx, hlt⟩ := hx1 ξ₀.val ξ₀.2 heq
       exact (low128_of_split _ ξ₀.2 hx (fieldModulus_zmod p ▸ hlt)).symm
     · exact absurd hone zero_ne_one
+  · -- under the constraint the recomputed low half is the prechallenge itself
+    intro hflag hξ
+    obtain ⟨m, hm⟩ := hcon hflag
+    obtain ⟨h₁, -, hx, hlt⟩ := hx1 m.val m.2 hm
+    have hpre : m.val = _ := (low128_of_split _ m.2 hx (fieldModulus_zmod p ▸ hlt)).symm
+    rw [hxiC, if_pos]
+    rw [hm, hξ]
+    exact congrArg Nat.cast hpre
 
 open Kimchi.Protocol.Linearization in
 /-- The `ft_eval0` gadget's reading at the domain size `n`, generator `ω` and the parameters'
@@ -977,7 +991,7 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : Fp) ∧
       ∃ a₀ z₀ : Prechallenge,
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
-      FopReadsWire P (2 ^ d₀.log2) d₀.generator
+      FopReadsWire P true (2 ^ d₀.log2) d₀.generator
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
         ms cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
@@ -1011,7 +1025,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
       vanishing u w prev
     ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
-      FopReadsWire P n gen
+      FopReadsWire P false n gen
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (prev.flatten.map (·.val V)))).1
         (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)

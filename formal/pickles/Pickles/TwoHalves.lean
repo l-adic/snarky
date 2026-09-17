@@ -18,9 +18,11 @@ the two fields of the cycle, in this order:
 
 This module states the composition, with no circuit and no `mvcgen`: from the two reads
 (`IvpReads`, `FopReadsWire`) and the ties between the two circuits' cells (`HalvesTies`),
-the two bits reading `1` together with the deferred `sg`-correctness equation is the
-acceptance of `kimchiVerify` (`twoHalves_kimchiVerify`), and the two bits alone give the
-wire's Schnorr equation at honest claims (`twoHalves_schnorr`).
+the two bits reading `1` together with the deferred `sg`-correctness equation forces the
+acceptance of `kimchiVerify` (`twoHalves_kimchiVerify`), and the two bits alone force the
+wire's Schnorr equation at honest claims (`twoHalves_schnorr`); where the scalar half's `ξ`
+comparison is exact (`ScalarHalf.XiExact`) both are equivalences (`twoHalves_kimchiVerify_iff`,
+`twoHalves_iff_schnorr`).
 
 ## The arguments
 
@@ -41,8 +43,13 @@ Three kinds, kept apart:
 
 The circuit reads pin every 128-bit prechallenge to the wire's (`Low128.exact`) and the `U`
 base to the wire's `uBase`, so the bits reading `1` force `kimchiVerify`'s acceptance. The
-statements are that direction only: satisfying the circuits implies the wire verifier
-accepts.
+converse — the wire accepting at honest claims makes the bits read `1` — needs the `ξ`
+comparison to be exact: `xiCorrect` compares the claim against the low half of a split of
+the fr-sponge's squeeze, and only where the circuit range-checks that low half is the split
+canonical. The step circuit does (`xiConstrainLowBits`), so at a step proof the statement
+is an equivalence (`twoHalves_kimchiVerify_vesta`); the wrap circuit does not
+(`squeezeScalar`), so at a wrap proof the converse is stated separately under
+`ScalarHalf.XiExact` as a hypothesis (`twoHalves_kimchiVerify_pallas_converse`).
 
 ## What this is not
 
@@ -56,7 +63,8 @@ of statements across the cycle is `verify`'s. This is the per-proof checkpoint, 
 * `FopSide`, `FopParams.ofEnv`: the scalar half's side and its parameters from the
   environment;
 * `GroupHalf.Reads`, `ScalarHalf.Reads`: the circuit reads (`IvpReads`, `FopReadsWire`) at a
-  half's own cells;
+  half's own cells; `ScalarHalf.XiExact`: the `ξ` comparison exact at a half's cells, which
+  the read gives where the side constrains the low half (`ScalarHalf.xiExact_of_constrained`);
 * `HalvesTies`: the claim cells of the two halves read the same claims across the field
   crossing, the digest crosses as `castDigest`, the evaluations and old accumulators are the
   proof's.
@@ -65,11 +73,13 @@ of statements across the cycle is `verify`'s. This is the per-proof checkpoint, 
 
 * `twoHalves_schnorr`: the two bits read `1` make the claims honest and the wire's Schnorr
   equation hold; `twoHalves_kimchiVerify`: with the deferred `sg` equation, they make
-  `kimchiVerify` accept at honest claims; at a step proof (Vesta commitments: the wrap
-  circuit's group half, then the step circuit's scalar half) `twoHalves_kimchiVerify_vesta`,
-  with the claim tie unfolded (`vesta_claim_tie`); at a wrap proof (Pallas commitments: the
-  step circuit's group half, then the wrap circuit's scalar half)
-  `twoHalves_kimchiVerify_pallas`.
+  `kimchiVerify` accept at honest claims; `twoHalves_iff_schnorr`, `twoHalves_kimchiVerify_iff`:
+  the same as equivalences under `ScalarHalf.XiExact`; at a step proof (Vesta commitments:
+  the wrap circuit's group half, then the step circuit's scalar half) the equivalence
+  `twoHalves_kimchiVerify_vesta`, with the claim tie unfolded (`vesta_claim_tie`); at a wrap
+  proof (Pallas commitments: the step circuit's group half, then the wrap circuit's scalar
+  half) `twoHalves_kimchiVerify_pallas`, and its converse under the exact-`ξ` hypothesis
+  `twoHalves_kimchiVerify_pallas_converse`.
 
 ## Implementation notes
 
@@ -133,6 +143,9 @@ structure FopSide (C : KimchiCurve) (V : Valuation C.ScalarField) (sf : Type) wh
   decode : sf → C.ScalarField
   /-- The linearization token stream of the side. -/
   toks : Array Linearization.PolishToken
+  /-- Whether the side range-checks the low half of the `ξ` split (`xiConstrainLowBits`):
+  the step circuit does, the wrap circuit does not. -/
+  xiConstrainLowBits : Bool
 
 /-- The scalar half of a proof's verification, as the next circuit runs it (for a step proof,
 the following step circuit): its valuation, its side, the deferred claim cells with the fq
@@ -148,7 +161,8 @@ structure ScalarHalf (C : KimchiCurve) (sf : Type) (k : ℕ) where
   /-- The evaluation cells: `ft(ζω)`, the public pair, the proof's evaluations. -/
   evals : AllEvals C.ScalarField
   /-- The predecessor mask (`proofs_verified_mask`), one bit per slot: `true` for a real
-  predecessor, `false` for a dummy pad slot. -/
+  predecessor, `false` for a dummy pad slot. The step circuit varies it; the wrap circuit
+  absorbs every slot, so its half fixes it all-true (`ScalarHalf.wrap`). -/
   mask : Vector Bool MaxProofsVerified
   /-- The previous challenges (`prev_challenges`), per slot the `k` expanded round challenges
   of that predecessor's opening (`k` the proof's own round count, its old accumulators'), as
@@ -198,13 +212,28 @@ def ScalarHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf 
     Prop :=
   let dv := Sc.claims.deferredValues
   ∀ a₀ z₀ : Prechallenge, Reads128 Sc.V dv.plonk.alpha a₀ → Reads128 Sc.V dv.plonk.zeta z₀ →
-  FopReadsWire (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) E.cvk.n E.cvk.omega
-    (recDigest C (cp.olds.map (·.u))) Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList)
-    Sc.claims Sc.evals
+  FopReadsWire (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) Sc.side.xiConstrainLowBits
+    E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u))) Sc.mask.toList
+    (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals
     (endoExpand C.lam z₀.val) (endoExpand C.lam a₀.val)
     (dv.plonk.beta.val.val Sc.V) (dv.plonk.gamma.val.val Sc.V)
     (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.combinedInnerProduct)
     (Sc.side.decode dv.b) id Sc.V Sc.out
+
+/-- The `ξ` comparison is exact at the half: a `ξ` claim reading as the wire's fr-sponge `ξ`
+prechallenge — at the half's own digest, `ft(ζω)` and evaluation cells, the proof's recursion
+digest — makes `xiCorrect` read `1`. The read gives this where the side range-checks the low
+half of the `ξ` split (`xiExact_of_constrained`). Where it does not, the prover may witness
+a low half at or above `2¹²⁸` whose split still lies below the modulus; the recomputed `ξ'`
+then differs from the claim and `xiCorrect` reads `0`, so the exactness is a hypothesis. -/
+def ScalarHalf.XiExact (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf C sf' E.σ.k) :
+    Prop :=
+  let pre := frPrechallenges C.frSponge.params
+    (frTranscript (Sc.claims.spongeDigestBeforeEvaluations.val Sc.V)
+      (recDigest C (cp.olds.map (·.u))) (Sc.evals.ftEval1.val Sc.V)
+      (Sc.evals.pub.map fun x => #v[x.val Sc.V]) (Sc.evals.evals.map fun x => #v[x.val Sc.V]))
+  ∀ ξ₀ : Prechallenge, Reads128 Sc.V Sc.claims.deferredValues.xi ξ₀ → ξ₀.val = pre.1 →
+    (↑Sc.out.xiCorrect : CVar C.ScalarField).val Sc.V = 1
 
 end AtCells
 
@@ -274,6 +303,23 @@ structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sc
   evals : Sc.evals.evals.map (fun x => #v[x.val Sc.V]) = cp.evals
   /-- The public evaluation cells are the run's (`runPubEvals`), as its one-chunk vectors. -/
   pubEvals : Sc.evals.pub.map (fun x => #v[x.val Sc.V]) = runPubEvals C E.σ E.cvk cp pub
+
+/-- Where the side constrains the low half of the `ξ` split, the read makes the `ξ` comparison
+exact: the `α`, `ζ` cells read as prechallenges (the ties' shared readings), and the read's
+converse clause is `XiExact` at the claim the `ξ` cell reads. -/
+theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
+    (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) {G : GroupHalf C sf}
+    {Sc : ScalarHalf C sf' E.σ.k} (hflag : Sc.side.xiConstrainLowBits = true)
+    (hs : Sc.Reads E cp) (ht : HalvesTies E cp pub G Sc) : Sc.XiExact E cp := by
+  have hinjS := castInj128_of_lt _ hscalar
+  obtain ⟨a₀, -, hαSa⟩ := ht.alpha
+  obtain ⟨z₀, -, hζSz⟩ := ht.zeta
+  have hs := hs a₀ z₀ hαSa hζSz
+  simp only [FopReadsWire, FopParams.ofEnv] at hs
+  obtain ⟨ξ₀', -, -, hξS, -, -, -, hex, -, -⟩ := hs
+  intro ξ₀ hξ hpre
+  obtain rfl := Reads128.unique hinjS hξ hξS
+  exact hex hflag hpre
 
 /-- The claims are the wire's own values: `cip` is `cipOf` the run's input, `b` is
 `combinedB` at the run's round challenges, the permutation scalar is `runPScalar`, and the
@@ -460,10 +506,9 @@ private theorem pointFn_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Arra
   funext j
   fin_cases j <;> rfl
 
-/-- **The two bits make the claims honest and the wire's Schnorr equation hold.** Without
-`SgOk`: the two bits reading `1` make the claims the wire's own values and the opening's
-Schnorr equation hold at the wire's transcript — `verifyWith`'s first conjunct. -/
-theorem twoHalves_schnorr
+/-- Both directions of the Schnorr composition at once, the converse under `XiExact`: one
+proof, projected by `twoHalves_schnorr` and `twoHalves_iff_schnorr`. -/
+private theorem twoHalves_schnorr_core
     (E : Env C)
     (hbase : 2 ^ 128 < C.base)
     (hscalar : 2 ^ 128 < C.scalar)
@@ -479,12 +524,19 @@ theorem twoHalves_schnorr
     (ht : HalvesTies E cp pub G Sc) :
     let run := runInput C E.σ E.cvk cp pub
     let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
-    ((↑G.success : CVar C.BaseField).val G.V = 1
+    (((↑G.success : CVar C.BaseField).val G.V = 1
         ∧ (↑Sc.out.finalized : CVar C.ScalarField).val Sc.V = 1)
       → Sc.ClaimsHonest E cp pub ∧
         schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
           (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
-          (combineCommitments C run.polyscale run.commitments.toArray) run.proof := by
+          (combineCommitments C run.polyscale run.commitments.toArray) run.proof) ∧
+    (Sc.XiExact E cp →
+      Sc.ClaimsHonest E cp pub ∧
+        schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
+          (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
+          (combineCommitments C run.polyscale run.commitments.toArray) run.proof
+      → (↑G.success : CVar C.BaseField).val G.V = 1
+        ∧ (↑Sc.out.finalized : CVar C.ScalarField).val Sc.V = 1) := by
   intro run tr
   have hinjG := castInj128_of_lt _ hbase
   have hinjS := castInj128_of_lt _ hscalar
@@ -510,7 +562,7 @@ theorem twoHalves_schnorr
   -- the scalar half's read, at the shared `α`, `ζ`
   have hs := hs a₀ z₀ hαSa hζSz
   simp only [FopReadsWire, FopChecks, FopParams.ofEnv, id_eq] at hs
-  obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
+  obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
   have hζ : endoExpand C.lam z₀.val = (runOracles C E.σ E.cvk cp pub).zeta := by
@@ -607,15 +659,83 @@ theorem twoHalves_schnorr
   rw [hfin]
   simp only [ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
   rw [hbIff, hpermIff]
-  rintro ⟨hsG, hxiC, hb, hcip, hperm⟩
-  have hxiV := hxiF' hxiC
-  have hξv := hξrun hxiV
-  have hcip' := (hcipIff hξv).1 hcip
-  have hcipG : G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf run :=
-    ht.cip.symm.trans hcip'
-  rw [hcipG] at hiff hb
-  rw [hξv, ← ht.b, hb] at hiff
-  exact ⟨⟨hcip', hb, hperm, hxiV⟩, hiff.1 hsG⟩
+  constructor
+  · rintro ⟨hsG, hxiC, hb, hcip, hperm⟩
+    have hxiV := hxiF' hxiC
+    have hξv := hξrun hxiV
+    have hcip' := (hcipIff hξv).1 hcip
+    have hcipG : G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf run :=
+      ht.cip.symm.trans hcip'
+    rw [hcipG] at hiff hb
+    rw [hξv, ← ht.b, hb] at hiff
+    exact ⟨⟨hcip', hb, hperm, hxiV⟩, hiff.1 hsG⟩
+  · -- the converse: the exact `ξ` comparison turns the honest claim into the bit
+    rintro hxi ⟨⟨hcip, hb, hperm, hxiV⟩, hschnorr⟩
+    simp only [ScalarHalf.XiExact] at hxi
+    rw [hd, ht.ftEval1, ht.pubEvals, ht.evals] at hxi
+    obtain ⟨m, hm, hmv⟩ := hxiV
+    have hxiC := hxi m hm hmv
+    have hξv := hξrun ⟨m, hm, hmv⟩
+    have hcipG : G.side.decode G.claims.deferredValues.combinedInnerProduct = cipOf run :=
+      ht.cip.symm.trans hcip
+    rw [hcipG] at hiff ⊢
+    rw [hξv, ← ht.b, hb] at hiff
+    exact ⟨hiff.2 hschnorr, hxiC, hb, (hcipIff hξv).2 hcip, hperm⟩
+
+/-- **The two bits make the claims honest and the wire's Schnorr equation hold.** Without
+`SgOk`: the two bits reading `1` make the claims the wire's own values and the opening's
+Schnorr equation hold at the wire's transcript — `verifyWith`'s first conjunct. -/
+theorem twoHalves_schnorr
+    (E : Env C)
+    (hbase : 2 ^ 128 < C.base)
+    (hscalar : 2 ^ 128 < C.scalar)
+    (cp : KimchiProof C 1 E.σ.k)
+    (pub : Array C.ScalarField)
+    -- the group half
+    (G : GroupHalf C sf)
+    (hg : G.Reads E cp pub)
+    -- the scalar half
+    (Sc : ScalarHalf C sf' E.σ.k)
+    (hs : Sc.Reads E cp)
+    -- across the two
+    (ht : HalvesTies E cp pub G Sc) :
+    let run := runInput C E.σ E.cvk cp pub
+    let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+    ((↑G.success : CVar C.BaseField).val G.V = 1
+        ∧ (↑Sc.out.finalized : CVar C.ScalarField).val Sc.V = 1)
+      → Sc.ClaimsHonest E cp pub ∧
+        schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
+          (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
+          (combineCommitments C run.polyscale run.commitments.toArray) run.proof :=
+  (twoHalves_schnorr_core E hbase hscalar cp pub G hg Sc hs ht).1
+
+/-- **The two bits are the honest claims with the wire's Schnorr equation**, where the scalar
+half's `ξ` comparison is exact: `twoHalves_schnorr` and its converse. -/
+theorem twoHalves_iff_schnorr
+    (E : Env C)
+    (hbase : 2 ^ 128 < C.base)
+    (hscalar : 2 ^ 128 < C.scalar)
+    (cp : KimchiProof C 1 E.σ.k)
+    (pub : Array C.ScalarField)
+    -- the group half
+    (G : GroupHalf C sf)
+    (hg : G.Reads E cp pub)
+    -- the scalar half
+    (Sc : ScalarHalf C sf' E.σ.k)
+    (hs : Sc.Reads E cp)
+    (hxi : Sc.XiExact E cp)
+    -- across the two
+    (ht : HalvesTies E cp pub G Sc) :
+    let run := runInput C E.σ E.cvk cp pub
+    let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+    ((↑G.success : CVar C.BaseField).val G.V = 1
+        ∧ (↑Sc.out.finalized : CVar C.ScalarField).val Sc.V = 1)
+      ↔ Sc.ClaimsHonest E cp pub ∧
+        schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
+          (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
+          (combineCommitments C run.polyscale run.commitments.toArray) run.proof :=
+  ⟨(twoHalves_schnorr_core E hbase hscalar cp pub G hg Sc hs ht).1,
+    (twoHalves_schnorr_core E hbase hscalar cp pub G hg Sc hs ht).2 hxi⟩
 
 /-- **The two halves' bits and the deferred `sg` equation make `kimchiVerify` accept.** In the
 environment `E`, for the proof `(cp, pub)`: with the group half and the scalar half reading at
@@ -651,6 +771,36 @@ theorem twoHalves_kimchiVerify
   obtain ⟨hc, hsch⟩ := h hbits
   exact ⟨⟨hsch, hsg⟩, hc⟩
 
+/-- **The two halves accept exactly when the wire verifier does at honest claims, given the
+deferred `sg` equation**, where the scalar half's `ξ` comparison is exact:
+`twoHalves_kimchiVerify` and its converse. -/
+theorem twoHalves_kimchiVerify_iff
+    (E : Env C)
+    (hbase : 2 ^ 128 < C.base)
+    (hscalar : 2 ^ 128 < C.scalar)
+    (cp : KimchiProof C 1 E.σ.k)
+    (pub : Array C.ScalarField)
+    (hguard : Guards C E.cvk cp pub)
+    -- the group half
+    (G : GroupHalf C sf)
+    (hg : G.Reads E cp pub)
+    -- the scalar half
+    (Sc : ScalarHalf C sf' E.σ.k)
+    (hs : Sc.Reads E cp)
+    (hxi : Sc.XiExact E cp)
+    -- across the two
+    (ht : HalvesTies E cp pub G Sc) :
+    ((↑G.success : CVar C.BaseField).val G.V = 1
+        ∧ (↑Sc.out.finalized : CVar C.ScalarField).val Sc.V = 1)
+        ∧ SgOk E cp pub
+      ↔ kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
+  have h := twoHalves_iff_schnorr E hbase hscalar cp pub G hg Sc hs hxi ht
+  -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
+  simp only [transcriptFrom] at h
+  rw [h, kimchiVerify_reflects, and_iff_right hguard]
+  simp only [SgOk, verifyFrom, transcriptFrom, verifyWith_eq]
+  exact ⟨fun ⟨⟨hc, hs⟩, hsg⟩ => ⟨⟨hs, hsg⟩, hc⟩, fun ⟨⟨hs, hsg⟩, hc⟩ => ⟨⟨hc, hs⟩, hsg⟩⟩
+
 end Ties
 
 /-! ## At a step proof: Vesta commitments
@@ -672,6 +822,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 def fopStep (V : Valuation Fp) : FopSide IpaVesta.curve V (Type1 (FVar Fp)) where
   decode x := (stepShiftOps.reading (V := V) (by decide)).unshiftV (x.val.val V)
   toks := Linearization.fpTokens
+  xiConstrainLowBits := true
 
 /-- The wrap circuit's group half of a step proof: `wrapSide` at the circuit's valuation. -/
 def GroupHalf.wrap (V : Valuation Fq) (claims : UnfinalizedProof Fq (Type1 (FVar Fq)))
@@ -701,8 +852,10 @@ theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
   · intro h
     rw [h]
 
-/-- **A step proof's two halves accepting makes `kimchiVerify` accept.** The wrap circuit's
-group half, then the step circuit's scalar half, tied, with the guards. -/
+/-- **A step proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
+wrap circuit's group half, then the step circuit's scalar half, tied, with the guards; the
+step circuit range-checks the low half of its `ξ` split, so the `ξ` comparison is exact and
+the statement an equivalence. -/
 theorem twoHalves_kimchiVerify_vesta
     (E : Env IpaVesta.curve)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
@@ -726,10 +879,11 @@ theorem twoHalves_kimchiVerify_vesta
       (ScalarHalf.step Vs claimsS evals mask prevChallenges outS)) :
     ((↑successG : CVar Fq).val Vg = 1 ∧ (↑outS.finalized : CVar Fp).val Vs = 1)
         ∧ SgOk E cp pub
-      → kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
+      ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.step Vs claimsS evals mask prevChallenges outS).ClaimsHonest E cp pub :=
-  twoHalves_kimchiVerify E (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD])
-    cp pub hguard _ hg _ hs ht
+  twoHalves_kimchiVerify_iff E (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD])
+    cp pub hguard _ hg _ hs
+    (ScalarHalf.xiExact_of_constrained E (by norm_num [PALLAS_BASE_CARD]) cp pub rfl hs ht) ht
 
 end StepProof
 
@@ -749,6 +903,7 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 def fopWrap (V : Valuation Fq) : FopSide IpaPallas.curve V (Type2 (FVar Fq)) where
   decode x := (wrapShiftOps.reading (V := V)).unshiftV (x.val.val V)
   toks := Linearization.fqTokens
+  xiConstrainLowBits := false
 
 /-- The step circuit's group half of a wrap proof: `stepSide` at the circuit's valuation. -/
 def GroupHalf.step (V : Valuation Fp)
@@ -758,12 +913,37 @@ def GroupHalf.step (V : Valuation Fp)
   ⟨V, IpaScalarOps.step, stepSide V, claims, success⟩
 
 /-- The wrap circuit's scalar half of a wrap proof: `fopWrap` at the circuit's valuation, at the
-round count `k` of the finalized proof's SRS (`WrapIPARounds` when deployed). -/
+round count `k` of the finalized proof's SRS (`WrapIPARounds` when deployed), every slot
+present: the wrap circuit has no mask (`finalizeOtherProofWrap` absorbs every slot), so the
+half's is all-true. -/
 def ScalarHalf.wrap {k : ℕ} (V : Valuation Fq) (claims : UnfinalizedProof Fq (Type2 (FVar Fq)))
-    (evals : AllEvals Fq) (mask : Vector Bool MaxProofsVerified)
-    (prevChallenges : Vector (Vector Fq k) MaxProofsVerified) (out : FopOutput Fq) :
-    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k :=
-  ⟨V, fopWrap V, claims, evals, mask, prevChallenges, out⟩
+    (evals : AllEvals Fq) (prevChallenges : Vector (Vector Fq k) MaxProofsVerified)
+    (out : FopOutput Fq) : ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k :=
+  ⟨V, fopWrap V, claims, evals, Vector.replicate MaxProofsVerified true, prevChallenges, out⟩
+
+/-- At the wrap half the `olds` tie keeps every slot: the previous-challenge cells are the old
+accumulators' challenges, in order. -/
+theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
+    (claims : UnfinalizedProof Fq (Type2 (FVar Fq))) (evals : AllEvals Fq)
+    (prevChallenges : Vector (Vector Fq k) MaxProofsVerified) (out : FopOutput Fq)
+    (olds : List (List Fq)) :
+    ((List.zipWith (fun m cv => if m then [cv] else [])
+        (ScalarHalf.wrap V claims evals prevChallenges out).mask.toList
+        ((ScalarHalf.wrap V claims evals prevChallenges out).prevChallenges.toList.map
+          Vector.toList)).flatten = olds)
+      ↔ prevChallenges.toList.map Vector.toList = olds := by
+  have hkeep : ∀ (n : ℕ) (l : List (List Fq)), l.length = n →
+      (List.zipWith (fun m cv => if m then [cv] else []) (List.replicate n true) l).flatten
+        = l := by
+    intro n l hn
+    subst hn
+    induction l with
+    | nil => rfl
+    | cons x xs ih =>
+      rw [List.length_cons, List.replicate_succ, List.zipWith_cons_cons, List.flatten_cons,
+        if_pos rfl, List.singleton_append, ih]
+  simp only [ScalarHalf.wrap, Vector.toList_replicate]
+  rw [hkeep _ _ (by simp)]
 
 /-- **A wrap proof's two halves accepting makes `kimchiVerify` accept.** The step circuit's
 group half, then the wrap circuit's scalar half, tied, with the guards. -/
@@ -781,19 +961,53 @@ theorem twoHalves_kimchiVerify_pallas
     (Vs : Valuation Fq)
     (claimsS : UnfinalizedProof Fq (Type2 (FVar Fq)))
     (evals : AllEvals Fq)
-    (mask : Vector Bool MaxProofsVerified)
     (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
-    (hs : (ScalarHalf.wrap Vs claimsS evals mask prevChallenges outS).Reads E cp)
+    (hs : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).Reads E cp)
     -- across the two
     (ht : HalvesTies E cp pub (GroupHalf.step Vg claimsG successG)
-      (ScalarHalf.wrap Vs claimsS evals mask prevChallenges outS)) :
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges outS)) :
     ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
         ∧ SgOk E cp pub
       → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.wrap Vs claimsS evals mask prevChallenges outS).ClaimsHonest E cp pub :=
+        (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).ClaimsHonest E cp pub :=
   twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD]) (by norm_num [PALLAS_SCALAR_CARD])
     cp pub hguard _ hg _ hs ht
+
+/-- **`kimchiVerify` accepting at honest claims makes a wrap proof's two halves accept, where
+the wrap circuit's `ξ` comparison is exact.** The converse of `twoHalves_kimchiVerify_pallas`,
+and weaker than an equivalence by its last hypothesis: the wrap circuit's `squeezeScalar`
+leaves the low half of its `ξ` split unchecked, so a prover may witness a low half at or above
+`2¹²⁸` whose split still lies below the modulus, and `xiCorrect` then reads `0` at a claim
+equal to the wire's `ξ`. `ScalarHalf.XiExact` rules that witness out. -/
+theorem twoHalves_kimchiVerify_pallas_converse
+    (E : Env IpaPallas.curve)
+    (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
+    (pub : Array Fq)
+    (hguard : Guards IpaPallas.curve E.cvk cp pub)
+    -- the step circuit: its valuation, its statement's claims, its success bit, its read
+    (Vg : Valuation Fp)
+    (claimsG : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (successG : BoolVar Fp)
+    (hg : (GroupHalf.step Vg claimsG successG).Reads E cp pub)
+    -- the next wrap circuit: its valuation, its cells, its output, its read
+    (Vs : Valuation Fq)
+    (claimsS : UnfinalizedProof Fq (Type2 (FVar Fq)))
+    (evals : AllEvals Fq)
+    (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
+    (outS : FopOutput Fq)
+    (hs : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).Reads E cp)
+    -- across the two
+    (ht : HalvesTies E cp pub (GroupHalf.step Vg claimsG successG)
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges outS))
+    -- the exact `ξ` comparison, which the wrap circuit does not enforce
+    (hxi : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).XiExact E cp) :
+    kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
+        (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).ClaimsHonest E cp pub
+      → ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
+        ∧ SgOk E cp pub :=
+  (twoHalves_kimchiVerify_iff E (by norm_num [PALLAS_BASE_CARD])
+    (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ hg _ hs hxi ht).2
 
 end WrapProof
 
