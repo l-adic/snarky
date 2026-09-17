@@ -64,6 +64,7 @@ Snarky.instReprAffineExpression
 -- The assignment table (Assignments.lean): the partial table, its domain and extension
 -- order, and the extension operations the prover fills through.
 Snarky.Assignments
+Snarky.Assignments.instCoeFunForallVariableOption -- elaboration: `a v` on the dense table
 Snarky.Assignments.empty
 Snarky.Assignments.get
 Snarky.Assignments.extend
