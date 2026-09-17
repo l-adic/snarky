@@ -84,21 +84,19 @@ dump "add_complete_circuit" add_complete_circuit
 - Use `Impl.Field.typ` for field inputs, `Impl.Boolean.typ` for booleans, `Impl.Typ.unit` for unit returns
 - `public_input_size` = number of input fields + number of output fields
 
-### Step 2: Build and run inside `nix develop`
+### Step 2: Build and run under the mina opam switch
 
-The mina OCaml build requires `nix develop` (the pure nix shell), not `nix-shell` (which is an impure shell requiring separate opam setup).
+The mina OCaml build runs under the submodule's local opam switch at `mina/_opam`
+(populated from `mina/opam.export`; see `mina/README-dev.md`). `tools/mina-env.sh`
+puts that switch on the environment and drops any `KIMCHI_STUBS` /
+`KIMCHI_STUBS_STATIC_LIB` inherited from the shell, so dune builds kimchi-stubs from
+the in-tree proof-systems rather than copying a stale prebuilt one.
 
 ```bash
 cd mina
 
-# Enter the pure dev shell (requires submodules)
-nix develop "git+file://$(pwd)?submodules=1"
-
 # Build and run the dump executable
-dune exec src/lib/pickles/dump_circuit/dump_circuit.exe
-
-# Exit nix shell
-exit
+../tools/mina-env.sh dune exec src/lib/pickles/dump_circuit/dump_circuit.exe
 ```
 
 This writes JSON files to `mina/src/lib/pickles/dump_circuit/`.
@@ -106,7 +104,7 @@ This writes JSON files to `mina/src/lib/pickles/dump_circuit/`.
 **Gotchas**:
 - You must have git submodules initialized: `git submodule update --init --recursive`
 - Do NOT run `dune clean` — it wipes cached build artifacts and subsequent builds take a very long time
-- Do NOT use `nix-shell` — it provides a different (incomplete) OCaml environment
+- Do NOT run the dumpers from a nix shell or with a prebuilt kimchi-stubs on the environment; the wrapper exists so the switch and the stubs are the in-tree ones
 - If the build fails on unrelated modules (e.g. `dummy.ml`), check for uncommitted changes in the mina submodule with `git status` / `git diff`
 
 ### Step 3: Copy the fixture

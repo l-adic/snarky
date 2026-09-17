@@ -61,6 +61,9 @@ test-random-oracle: build-napi ## Test random-oracle package
 test-merkle-tree: build-napi ## Test merkle-tree package
 	cd packages/merkle-tree && npx spago test
 
+test-schnorr: build-napi ## Test schnorr package (its kimchi proof fixtures run through the native verifier)
+	cd packages/schnorr && npx spago test
+
 test-example: build-napi ## Test the example library (plain backend, root workspace; the TUI/web frontends are a separate backend-es workspace under packages/example/app)
 	npx spago test -p example
 
@@ -85,6 +88,8 @@ test-libs: ## Test every package EXCEPT example and pickles-circuit-diffs (each 
 	$(MAKE) test-random-oracle
 	@echo "=== Testing merkle-tree ==="
 	$(MAKE) test-merkle-tree
+	@echo "=== Testing Schnorr ==="
+	$(MAKE) test-schnorr
 	@echo "=== Testing Pickles ==="
 	$(MAKE) test-pickles
 	@echo "=== Library tests completed successfully ==="
@@ -216,13 +221,13 @@ dump-schnorr-signature-proof: ## Generate fresh Schnorr kimchi proof fixtures (3
 	mkdir -p packages/schnorr/test/fixtures/schnorr_signature_proof \
 	         packages/schnorr/test/fixtures/schnorr_signature_proof_2 \
 	         packages/schnorr/test/fixtures/schnorr_signature_proof_3
-	cd mina && KIMCHI_DETERMINISTIC_SEED=42 nix develop "git+file://$$PWD?submodules=1" --command \
+	cd mina && KIMCHI_DETERMINISTIC_SEED=42 ../tools/mina-env.sh \
 	  dune exec src/lib/crypto/pickles/dump_schnorr_signature_proof/dump_schnorr_signature_proof.exe -- \
 	  ../packages/schnorr/test/fixtures/schnorr_signature_proof
 
 .PHONY: dump-schnorr-signatures
 dump-schnorr-signatures: ## Generate raw Schnorr signature test vectors (pure-verify) under packages/schnorr/test/fixtures/schnorr_signatures
 	mkdir -p packages/schnorr/test/fixtures/schnorr_signatures
-	cd mina && nix develop "git+file://$$PWD?submodules=1" --command \
+	cd mina && ../tools/mina-env.sh \
 	  dune exec src/lib/crypto/pickles/dump_schnorr_signatures/dump_schnorr_signatures.exe -- \
 	  ../packages/schnorr/test/fixtures/schnorr_signatures

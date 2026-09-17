@@ -28,10 +28,12 @@
 #
 # Environment / prerequisites:
 #   - The mina submodule's local opam switch at `mina/_opam` (builds the
-#     OCaml dumpers; no nix, and no switch inherited from the shell).
+#     OCaml dumpers; `mina_switch_env` in tools/lib/common.sh: no nix, no
+#     switch inherited from the shell).
 #   - Cargo: dune builds kimchi-stubs itself from the in-tree
 #     proof-systems (which carries the deterministic-RNG and witness-dump
-#     patches); no prebuilt static lib.
+#     patches); no prebuilt static lib (the helper unsets KIMCHI_STUBS and
+#     KIMCHI_STUBS_STATIC_LIB so dune cannot copy a stale one).
 #   - Seed is pinned at 42 (matches the PS-side test setup).
 #
 # Exit:
@@ -45,7 +47,7 @@ source "$REPO_ROOT/tools/lib/common.sh"
 FIXTURE_DIR="$REPO_ROOT/packages/pickles/test/fixtures"
 WITNESS_DIR="$FIXTURE_DIR/witness"
 SEED=42
-MINA_SWITCH="$REPO_ROOT/mina/_opam"
+mina_switch_env "$REPO_ROOT"
 
 mode="${1:-all}"
 
@@ -77,10 +79,7 @@ run_dumper() {
   local exe_path="$1"
   local env_setup="$2"
   echo "==> Running $exe_path" >&2
-  env PATH="$MINA_SWITCH/bin:$PATH" \
-    OPAM_SWITCH_PREFIX="$MINA_SWITCH" \
-    CAML_LD_LIBRARY_PATH="$MINA_SWITCH/lib/stublibs" \
-    bash -c "
+  bash -c "
     export KIMCHI_DETERMINISTIC_SEED=$SEED
     $env_setup
     cd $REPO_ROOT/mina && \
