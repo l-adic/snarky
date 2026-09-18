@@ -68,10 +68,6 @@ def toStep (x : CW.ScalarField) : Fp := (x.val : Fp)
 split half or a Type1 register, all transported by value. -/
 def toWrap (x : CS.ScalarField) : Fq := (x.val : Fq)
 
-/-- The one chunk of a one-chunk evaluation or commitment. -/
-def oneChunk {α : Type} (nm : String) (a : Array α) : Except String α :=
-  if h : a.size = 1 then pure a[0] else throw s!"{nm}: expected one chunk, got {a.size}"
-
 /-- The wrap statement's packed branch data `4·domain_log2 + m₀ + 2·m₁`: `domain_log2` and
 the two mask bits in slot order. The mask reads slot `i` as "at least `2 − i` proofs", so
 the real accumulators sit in the LAST slots and padding goes in front; a step statement of
@@ -88,37 +84,98 @@ def allEvalsOf (C : Ipa.KimchiCurve) {k : ℕ} (cp : Kimchi.Verifier.KimchiProof
   return { ftEval1 := cp.ftEval1, pub
            evals := cp.evals.map fun (v : Vector C.ScalarField 1) => v[0] }
 
+/-- A wrap statement off a wrap proof's public input, carried into `F` by `conv`
+(`Pickles.WrapStatement.packed`'s order): `cip, b, ζ^{2^k}, ζⁿ, perm` at 0–4, `β, γ` at 5–6,
+`α, ζ, ξ` at 7–9, the three digests at 10–12 (the step proof's sponge digest first), the `k`
+round challenges from 13, the packed branch data `4·domain_log2 + m₀ + 2·m₁` last, unpacked
+(`unpackBranchData`). -/
+def wrapStatementOf {F : Type} [Field F] (conv : Fq → F) (k : ℕ) (c : Array Fq) :
+    Except String (Pickles.WrapStatement k F Bool (Type1 F)) := do
+  unless 14 + k ≤ c.size do throw s!"wrap public input: {c.size} cells at {k} rounds"
+  let g (i : ℕ) : F := conv (c.getD i 0)
+  let (domainLog2, mask) := unpackBranchData (c.getD (13 + k) 0).val
+  return { proofState :=
+             { deferredValues :=
+                 { plonk := { alpha := ⟨g 7⟩, beta := ⟨g 5⟩, gamma := ⟨g 6⟩, zeta := ⟨g 8⟩,
+                              perm := ⟨g 4⟩, zetaToSrsLength := ⟨g 2⟩, zetaToDomainSize := ⟨g 3⟩ }
+                   combinedInnerProduct := ⟨g 0⟩, b := ⟨g 1⟩, xi := ⟨g 9⟩
+                   bulletproofChallenges := Vector.ofFn fun j => ⟨g (13 + j)⟩
+                   branchData := { domainLog2 := (domainLog2 : F)
+                                   proofsVerifiedMask := mask.map (· == 1) } }
+               spongeDigestBeforeEvaluations := g 10
+               messagesForNextWrapProof := g 11 }
+           messagesForNextStepProof := g 12 }
+
+/-- A step statement off a step proof's public input, carried into `F` by `conv`, at `k`
+rounds per slot and `n` slots (`Pickles.StepStatement.packed`'s order): per slot the five
+split claims `cip, b, ζ^{2^k}, ζⁿ, perm` as `(half, parity)` pairs at 0–9, the digest at 10,
+`β, γ` at 11–12, `α, ζ, ξ` at 13–15, the `k` round challenges from 16, `should_finalize`
+last; then `messages_for_next_step_proof` and the `n` `messages_for_next_wrap_proof`
+digests. -/
+def stepStatementOf {F : Type} [Field F] (conv : Fp → F) (k n : ℕ) (c : Array Fp) :
+    Except String (Pickles.StepStatement k n F Bool (Type2 (SplitField F Bool))) := do
+  let slotSize := 17 + k
+  unless c.size = n * slotSize + 1 + n do
+    throw s!"step public input: {c.size} cells, expected {n * slotSize + 1 + n} at {n} slots \
+      of {k} rounds"
+  let g (i : ℕ) : F := conv (c.getD i 0)
+  let bit (i : ℕ) : Bool := decide (c.getD i 0 = 1)
+  let slot (s : ℕ) : Pickles.UnfinalizedProof k F Bool (Type2 (SplitField F Bool)) :=
+    let b := s * slotSize
+    let split (i : ℕ) : Type2 (SplitField F Bool) := ⟨⟨g (b + 2 * i), bit (b + 2 * i + 1)⟩⟩
+    { deferredValues :=
+        { plonk := { alpha := ⟨g (b + 13)⟩, beta := ⟨g (b + 11)⟩, gamma := ⟨g (b + 12)⟩,
+                     zeta := ⟨g (b + 14)⟩, perm := split 4, zetaToSrsLength := split 2,
+                     zetaToDomainSize := split 3 }
+          combinedInnerProduct := split 0, b := split 1, xi := ⟨g (b + 15)⟩
+          bulletproofChallenges := Vector.ofFn fun j => ⟨g (b + 16 + j)⟩ }
+      shouldFinalize := bit (b + 16 + k)
+      spongeDigestBeforeEvaluations := g (b + 10) }
+  return { proofState := { unfinalizedProofs := Vector.ofFn fun i => slot i
+                           messagesForNextStepProof := g (n * slotSize) }
+           messagesForNextWrapProof := Vector.ofFn fun i => g (n * slotSize + 1 + i) }
+
+/-- A checked one-chunk proof's cells for a group half: its commitments as affine points, the
+opening with `z₁`, `z₂` through `shift` (the side's shifted register). -/
+def ivpProofOf (C : Ipa.KimchiCurve) {k : ℕ} {sf : Type} (shift : C.ScalarField → sf)
+    (cp : Kimchi.Verifier.KimchiProof C 1 k) : Except String (IvpProof k C.BaseField sf) := do
+  let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
+  let tComm : Vector (AffinePoint C.BaseField) 7 ←
+    if h : cp.tComm.size = 7 then pure ⟨cp.tComm.map pt, by simp [h]⟩
+    else throw s!"t_comm: {cp.tComm.size} chunks, expected 7"
+  return (cp.wComm.map fun (v : Vector C.Point 1) => pt v[0], pt cp.zComm[0], tComm,
+          { lr := cp.opening.lr.map fun q => (pt q.1, pt q.2)
+            z1 := shift cp.opening.z1, z2 := shift cp.opening.z2
+            delta := pt cp.opening.delta, sg := pt cp.opening.sg })
+
+/-- A checked proof's accumulators' `sg`, as `m` affine points. -/
+def sgOldOf (C : Ipa.KimchiCurve) {k : ℕ} (m : ℕ) (cp : Kimchi.Verifier.KimchiProof C 1 k) :
+    Except String (Vector (AffinePoint C.BaseField) m) :=
+  let sgs := cp.olds.map fun a => (⟨a.sg.x, a.sg.y⟩ : AffinePoint C.BaseField)
+  if h : sgs.size = m then pure ⟨sgs, h⟩
+  else throw s!"accumulators: {sgs.size}, expected {m}"
+
 /-- The step side's `finalize_other_proof` input from a wrap entry and the checked step proof
-it wrapped, at the step proof's `k` rounds: the unfinalized proof off the wrap statement's
-cells (`Pickles.WrapStatement.packed`: `cip, b, ζ^{2^k}, ζⁿ, perm` at 0–4, `β, γ` at 5–6,
-`α, ζ, ξ` at 7–9, the three digests at 10–12 — the step proof's sponge digest first — the
-`k` round challenges from 13, the packed branch data `4·domain_log2 + m₀ + 2·m₁` last), the
-evaluations off the step proof, the mask and `domain_log2` off the branch data, and the step
-proof's accumulators' challenges in the LAST slots (`unpackBranchData`), a zero vector in an
-absent one, which its mask bit leaves unread. -/
+it wrapped, at the step proof's `k` rounds: the unfinalized proof off the wrap statement
+(`wrapStatementOf`), the evaluations off the step proof, the mask and `domain_log2` off the
+branch data, and the step proof's accumulators' challenges in the LAST slots
+(`unpackBranchData`), a zero vector in an absent one, which its mask bit leaves unread. -/
 def stepFopInput (w : Cache.Entry CW) {k : ℕ} (cpS : Kimchi.Verifier.KimchiProof CS 1 k) :
     Except String (StepFop k) := do
-  let c := w.publicInput
-  unless 14 + k ≤ c.size do throw s!"wrap public input: {c.size} cells at {k} rounds"
-  let g (i : ℕ) : Fp := toStep (c.getD i 0)
-  let (domainLog2, mask) := unpackBranchData (c.getD (13 + k) 0).val
+  let st ← wrapStatementOf toStep k w.publicInput
+  let dv := st.proofState.deferredValues
   let u : Pickles.UnfinalizedProof k Fp Bool (Type1 Fp) :=
-    { deferredValues :=
-        { plonk := { alpha := ⟨g 7⟩, beta := ⟨g 5⟩, gamma := ⟨g 6⟩, zeta := ⟨g 8⟩,
-                     perm := ⟨g 4⟩, zetaToSrsLength := ⟨g 2⟩, zetaToDomainSize := ⟨g 3⟩ }
-          combinedInnerProduct := ⟨g 0⟩, b := ⟨g 1⟩, xi := ⟨g 9⟩
-          bulletproofChallenges := Vector.ofFn fun j => ⟨g (13 + j)⟩ }
-      shouldFinalize := true
-      spongeDigestBeforeEvaluations := g 10 }
+    { deferredValues := dv.toDeferredValues, shouldFinalize := true
+      spongeDigestBeforeEvaluations := st.proofState.spongeDigestBeforeEvaluations }
   let accs := cpS.olds.toList.map (·.u)
   let slots := (List.replicate (Pickles.MaxProofsVerified - accs.length) (Vector.replicate k 0)
     ++ accs).take Pickles.MaxProofsVerified
   let prev : Vector (Vector Fp k) Pickles.MaxProofsVerified ←
     if h : slots.length = Pickles.MaxProofsVerified then pure ⟨slots.toArray, by simp [h]⟩
     else throw s!"accumulators: {accs.length}, more than {Pickles.MaxProofsVerified}"
-  return (u, ← allEvalsOf CS cpS, mask.map (· == 1), prev, (domainLog2 : Fp))
+  return (u, ← allEvalsOf CS cpS, dv.branchData.proofsVerifiedMask, prev, dv.branchData.domainLog2)
 
-/-- One run of a half on a named input bundle: `build` and `prove` the harness on it, read
+/-- One run of a half on its input: `build` and `prove` the harness on it, read
 the named bits off the table, and decide whether the table satisfies the assembled system. -/
 def runHalf {p : ℕ} [Fact p.Prime] {a av β : Type} [CircuitType (ZMod p) a av]
     (side : Kimchi.Fixture.PS.Side p)
@@ -176,127 +233,72 @@ def runStep {k : ℕ} (dom : Pickles.KnownDomain Fp) (inp : StepFop k) :
 def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : WrapFop k) : IO (Bool × List (String × ℕ)) :=
   runHalf (a := WrapFop k) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2) fopBits inp
 
-/-- The step circuit's group half on a wrap proof: the wrap key's commitments as constants,
+/-- The step circuit's group half on its records: the wrap key's commitments as constants,
 the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
-def runGroup (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point) (h : CW.Point)
-    (inp : GroupStepInput Fp) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := GroupStepInput Fp) Kimchi.Fixture.PS.fpSide
+def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point)
+    (h : CW.Point) (inp : StepGroup ks kw) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := StepGroup ks kw) Kimchi.Fixture.PS.fpSide
     (groupStepOn vk (stepXhatTable basis) (xhatStepCell h)) (fun b => [("success", b)]) inp
 
-/-- The wrap circuit's group half on a step proof: the step key's commitments as constants,
+/-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
-def runGroupWrap (n r : ℕ) (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Array CS.Point)
-    (h : CS.Point) (inp : GroupWrapInput n r Fq) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := GroupWrapInput n r Fq) Kimchi.Fixture.PS.fqSide
+def runGroupWrap {ks kw n : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Array CS.Point)
+    (h : CS.Point) (inp : WrapGroup ks kw n) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := WrapGroup ks kw n) Kimchi.Fixture.PS.fqSide
     (groupWrapOn vk basis (xhatWrapCell h)) (fun b => [("success", b)]) inp
 
-/-- The wrap circuit's group-half input from a wrap entry and the step proof it wrapped, at
-the step statement's `n` slots and the step proof's `r` rounds: the wrap statement's 29
-packed scalars as they are, the step statement carried by value into the wrap field, the
-step proof's commitments and opening (`z₁`, `z₂` as their Type1 registers `(s − 2^255 − 1)/2`),
-its `n` accumulators' commitments as `sg_old`, and their keep bits: the last `n` of the wrap
-statement's branch-data bits (`unpackBranchData`). -/
-def assembleGroupWrap (n r : ℕ) (w : Cache.Entry CW) (s : Cache.Entry CS) :
-    Except String (GroupWrapInput n r Fq) := do
-  let c := w.publicInput
-  unless 30 ≤ c.size do throw s!"wrap public input: {c.size} cells"
-  let statement : Vector Fq 29 := Vector.ofFn fun i => c.getD i 0
-  let sc := s.publicInput
-  unless sc.size = 33 * n + 1 do
-    throw s!"step public input: {sc.size} cells, expected {33 * n + 1} at {n} slots"
-  let stepStatement : Vector Fq (33 * n + 1) := Vector.ofFn fun i => toWrap (sc.getD i 0)
-  let coords (P : CS.Point) : List Fq := [P.x, P.y]
-  let type1 (z : CS.ScalarField) : Fq := toWrap (Pasta.Shifted.shiftType1 255 z)
-  unless s.proof.opening.lr.size = r do
-    throw s!"step opening: {s.proof.opening.lr.size} rounds, expected {r}"
-  let mut cells : List Fq := []
-  for cm in s.proof.wComm.toList do cells := cells ++ coords (← oneChunk "w_comm" cm)
-  cells := cells ++ coords (← oneChunk "z_comm" s.proof.zComm)
-  for P in s.proof.tComm.toList do cells := cells ++ coords P
-  for lr in s.proof.opening.lr.toList do cells := cells ++ coords lr.1 ++ coords lr.2
-  cells := cells ++ [type1 s.proof.opening.z1, type1 s.proof.opening.z2]
-    ++ coords s.proof.opening.delta ++ coords s.proof.opening.sg
-  let proof : Vector Fq (52 + 4 * r) ←
-    if h : cells.length = 52 + 4 * r then pure ⟨cells.toArray, by simp [h]⟩
-    else throw s!"step proof block: {cells.length} cells"
-  let accs := s.proof.prevChallenges.toList
-  unless accs.length = n ∧ n ≤ 2 do
-    throw s!"step accumulators: {accs.length}, expected {n} (at most two)"
-  let mut sgs : List Fq := []
-  for rc in accs do sgs := sgs ++ coords (← oneChunk "sg_old" rc.comm)
-  let sgOld : Vector Fq (2 * n) ←
-    if h : sgs.length = 2 * n then pure ⟨sgs.toArray, by simp [h]⟩
-    else throw s!"sg_old: {sgs.length} cells"
-  let bits := (unpackBranchData (c.getD 29 0).val).2
-  let mask : Vector Fq n := Vector.ofFn fun i => (bits.toArray[i + 2 - n]?.getD 0 : Fq)
-  return { statement, stepStatement, proof, sgOld, mask }
+/-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
+checked step proof at `ks` rounds, at the step statement's `n` slots: the wrap statement,
+the step statement carried by value into the wrap field, the step proof (`z₁`, `z₂` as their
+Type1 registers `(s − 2^255 − 1)/2`), its `n` accumulators' `sg`. -/
+def wrapGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (n : ℕ) {ks : ℕ}
+    (cpS : Kimchi.Verifier.KimchiProof CS 1 ks) :
+    Except String (WrapGroup ks Pickles.WrapIPARounds n) := do
+  let statement ← wrapStatementOf id ks w.publicInput
+  let st ← stepStatementOf toWrap Pickles.WrapIPARounds n s.publicInput
+  let pr ← ivpProofOf CS (fun z => ⟨toWrap (Pasta.Shifted.shiftType1 255 z)⟩) cpS
+  return (statement, st, pr, ← sgOldOf CS n cpS)
 
-/-- The step circuit's group-half input from a step entry's slot and the wrap proof that
-slot verified: the wrap statement's cells (the wrap proof's public input carried by value
-into the step field, the branch data unpacked into `domain_log2` and the two mask bits),
-the slot of the step statement as it is, the wrap proof's commitments and opening (`z₁`,
-`z₂` as their Type2 registers `s − 2^255`, split into a half and a parity bit), its two
-accumulators' commitments as `sg_old`, and `is_base_case = 0`: the slot is a real one. -/
-def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
-    Except String (GroupStepInput Fp) := do
-  let c := w.publicInput
-  unless 30 ≤ c.size do throw s!"wrap public input: {c.size} cells"
-  let (domainLog2, mask) := unpackBranchData (c.getD 29 0).val
-  let statement : Vector Fp 32 := Vector.ofFn fun i =>
-    match (i : ℕ) with
-    | 29 => (domainLog2 : Fp) | 30 => (mask[0] : Fp) | 31 => (mask[1] : Fp)
-    | k => toStep (c.getD k 0)
-  let sc := s.publicInput
-  let base := slot * 32
-  unless base + 32 ≤ sc.size do
-    throw s!"step public input: {sc.size} cells, slot {slot} needs {base + 32}"
-  let unfinalized : Vector Fp 32 := Vector.ofFn fun i => sc.getD (base + i) 0
-  let coords (P : CW.Point) : List Fp := [P.x, P.y]
-  let split (z : CW.ScalarField) : List Fp :=
+/-- The step circuit's group-half input from a wrap entry, a step entry's slot that verified
+it and the checked wrap proof at `kw` rounds: the wrap statement carried by value into the
+step field, the slot of the step statement, the wrap proof (`z₁`, `z₂` as their Type2
+registers `s − 2^255`, split into a half and a parity bit), its two accumulators' `sg`, and
+`is_base_case = false`: the slot is a real one. -/
+def stepGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ) {kw : ℕ}
+    (cpW : Kimchi.Verifier.KimchiProof CW 1 kw) :
+    Except String (StepGroup Pickles.StepIPARounds kw) := do
+  let statement ← wrapStatementOf toStep Pickles.StepIPARounds w.publicInput
+  let n := (s.publicInput.size - 1) / (18 + kw)
+  let st ← stepStatementOf id kw n s.publicInput
+  let some u := st.proofState.unfinalizedProofs.toList[slot]? | throw s!"slot {slot} of {n}"
+  let split (z : CW.ScalarField) : Type2 (SplitField Fp Bool) :=
     let t := (Pasta.Shifted.shiftType2 255 z).val
-    [((t / 2 : ℕ) : Fp), ((t % 2 : ℕ) : Fp)]
-  let mut cells : List Fp := []
-  for cm in w.proof.wComm.toList do cells := cells ++ coords (← oneChunk "w_comm" cm)
-  cells := cells ++ coords (← oneChunk "z_comm" w.proof.zComm)
-  for P in w.proof.tComm.toList do cells := cells ++ coords P
-  for lr in w.proof.opening.lr.toList do cells := cells ++ coords lr.1 ++ coords lr.2
-  cells := cells ++ split w.proof.opening.z1 ++ split w.proof.opening.z2
-    ++ coords w.proof.opening.delta ++ coords w.proof.opening.sg
-  let proof : Vector Fp 114 ←
-    if h : cells.length = 114 then pure ⟨cells.toArray, by simp [h]⟩
-    else throw s!"wrap proof block: {cells.length} cells"
-  let mut sgs : List Fp := []
-  for rc in w.proof.prevChallenges.toList do sgs := sgs ++ coords (← oneChunk "sg_old" rc.comm)
-  let sgOld : Vector Fp 4 ←
-    if h : sgs.length = 4 then pure ⟨sgs.toArray, by simp [h]⟩
-    else throw s!"sg_old: {sgs.length} cells, expected two accumulators"
-  return { statement, unfinalized, proof, sgOld, isBaseCase := 0 }
+    ⟨⟨((t / 2 : ℕ) : Fp), decide (t % 2 = 1)⟩⟩
+  let pr ← ivpProofOf CW split cpW
+  return (statement, u, pr, ← sgOldOf CW Pickles.MaxProofsVerified cpW, false)
 
 /-- The wrap side's `finalize_other_proof` input from a step entry's slot and the checked wrap
-proof that slot verified, at the wrap proof's `k` rounds.
-
-The step statement (`Pickles.PackedStatement`) lays a slot out in `17 + k` cells: the five
-shifted claims `cip, b, ζ^{2^k}, ζⁿ, perm` as `(half, parity)` pairs at 0–9, the digest at
-10, `β, γ` at 11–12, `α, ζ, ξ` at 13–15, the `k` round challenges from 16, `should_finalize`
-last. A split claim's wrap-field cell is its `Type2` register `2·half + parity`. The
-evaluations and the two accumulators are the wrap proof's; the wrap side reads both
-accumulators, so the proof must carry exactly `MaxProofsVerified`. -/
+proof that slot verified, at the wrap proof's `k` rounds: the slot of the step statement
+(`stepStatementOf`) with each split claim as its `Type2` register `2·half + parity`, the
+evaluations and the `MaxProofsVerified` accumulators off the wrap proof. -/
 def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
     (cpW : Kimchi.Verifier.KimchiProof CW 1 k) : Except String (WrapFop k) := do
-  let c := s.publicInput
-  let base := slot * (17 + k)
-  unless base + 17 + k ≤ c.size do
-    throw s!"step public input: {c.size} cells, slot {slot} needs {base + 17 + k}"
-  let g (i : ℕ) : Fq := toWrap (c.getD (base + i) 0)
-  let t (i : ℕ) : Fq := 2 * g (2 * i) + g (2 * i + 1)
+  let n := (s.publicInput.size - 1) / (18 + k)
+  let st ← stepStatementOf toWrap k n s.publicInput
+  let some u2 := st.proofState.unfinalizedProofs.toList[slot]? | throw s!"slot {slot} of {n}"
+  let t (x : Type2 (SplitField Fq Bool)) : Type2 Fq :=
+    ⟨2 * x.val.sDiv2 + (if x.val.sOdd then 1 else 0)⟩
+  let dv := u2.deferredValues
   let u : Pickles.UnfinalizedProof k Fq Bool (Type2 Fq) :=
     { deferredValues :=
-        { plonk := { alpha := ⟨g 13⟩, beta := ⟨g 11⟩, gamma := ⟨g 12⟩, zeta := ⟨g 14⟩,
-                     perm := ⟨t 4⟩, zetaToSrsLength := ⟨t 2⟩, zetaToDomainSize := ⟨t 3⟩ }
-          combinedInnerProduct := ⟨t 0⟩, b := ⟨t 1⟩, xi := ⟨g 15⟩
-          bulletproofChallenges := Vector.ofFn fun j => ⟨g (16 + j)⟩ }
+        { plonk := { alpha := dv.plonk.alpha, beta := dv.plonk.beta, gamma := dv.plonk.gamma,
+                     zeta := dv.plonk.zeta, perm := t dv.plonk.perm,
+                     zetaToSrsLength := t dv.plonk.zetaToSrsLength,
+                     zetaToDomainSize := t dv.plonk.zetaToDomainSize }
+          combinedInnerProduct := t dv.combinedInnerProduct, b := t dv.b, xi := dv.xi
+          bulletproofChallenges := dv.bulletproofChallenges }
       shouldFinalize := true
-      spongeDigestBeforeEvaluations := g 10 }
+      spongeDigestBeforeEvaluations := u2.spongeDigestBeforeEvaluations }
   let accs := cpW.olds.map (·.u)
   let prev : Vector (Vector Fq k) Pickles.MaxProofsVerified ←
     if h : accs.size = Pickles.MaxProofsVerified then pure ⟨accs, h⟩
@@ -435,14 +437,15 @@ def main : IO Unit := do
       runs := runs + 1
       unless stepOk ∧ wrapOk do allOk := false
     if on "wrap-group" then
-      let n := (s.publicInput.size - 1) / 33
+      let n := (s.publicInput.size - 1) / (18 + Pickles.WrapIPARounds)
       let r := s.proof.opening.lr.size
-      let ginp ← match assembleGroupWrap n r w s with
-        | .error e => throw (IO.userError s!"assemble (wrap group half): {e}") | .ok i => pure i
       let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS r
+      let (_, cpS) ← checkedAt CS "vesta" σS s
+      let ginp ← match wrapGroupInput w s n cpS with
+        | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok i => pure i
       let basis ← basisFor CS "vesta" σS s
       let ok ← report s!"wrap group half on {pair} ({n} slot(s), {r} rounds)"
-        (runGroupWrap n r s.vk basis σS.h ginp)
+        (runGroupWrap s.vk basis σS.h ginp)
       runs := runs + 1
       unless ok do allOk := false
   for s in steps.toList.take limit do
@@ -465,9 +468,10 @@ def main : IO Unit := do
         runs := runs + 1
         unless ok do allOk := false
       if on "step-group" then
-        let ginp ← match assembleGroup s slot w with
-          | .error e => throw (IO.userError s!"assemble (group half): {e}") | .ok i => pure i
         let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
+        let (_, cpW) ← checkedAt CW "pallas" σW w
+        let ginp ← match stepGroupInput w s slot cpW with
+          | .error e => throw (IO.userError s!"step group input: {e}") | .ok i => pure i
         let basis ← basisFor CW "pallas" σW w
         let ok ← report s!"step group half on {pair}" (runGroup w.vk basis σW.h ginp)
         runs := runs + 1

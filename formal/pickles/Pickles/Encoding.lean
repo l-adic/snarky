@@ -368,6 +368,62 @@ instance instWrapStatementCircuitType {F f w b vb sv sf : Type} {k : ℕ} [Circu
         (WrapStatement.equivProd k f b sv a) :=
   CircuitType.reads_ofEquiv _ _
 
+/-! ## The step statement -/
+
+/-- A step proof state is its slots and the step-message digest. -/
+def StepProofState.equivProd (k n : ℕ) (f bc sf : Type) :
+    StepProofState k n f bc sf ≃ Vector (UnfinalizedProof k f bc sf) n × f :=
+  ⟨fun s => (s.unfinalizedProofs, s.messagesForNextStepProof), fun p => ⟨p.1, p.2⟩,
+   fun _ => rfl, fun _ => rfl⟩
+
+instance instStepProofStateCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] :
+    CircuitType F (StepProofState k n f b sv) (StepProofState k n w vb sf) :=
+  CircuitType.ofEquiv (StepProofState.equivProd k n f b sv) (StepProofState.equivProd k n w vb sf)
+
+@[simp] theorem scoped_stepProofState {F f w b vb sv sf : Type} {k n : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] {st : ProverState F}
+    {x : StepProofState k n w vb sf} :
+    CircuitType.Scoped (val := StepProofState k n f b sv) st x ↔
+      CircuitType.Scoped (val := Vector (UnfinalizedProof k f b sv) n × f) st
+        (StepProofState.equivProd k n w vb sf x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_stepProofState {F f w b vb sv sf : Type} {k n : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F f w] [CircuitType F b vb] [CircuitType F sv sf] {V : Valuation F}
+    {x : StepProofState k n w vb sf} {a : StepProofState k n f b sv} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (StepProofState.equivProd k n w vb sf x)
+        (StepProofState.equivProd k n f b sv a) :=
+  CircuitType.reads_ofEquiv _ _
+
+/-- A step statement is its proof state and the slots' wrap-message digests. -/
+def StepStatement.equivProd (k n : ℕ) (f bc sf : Type) :
+    StepStatement k n f bc sf ≃ StepProofState k n f bc sf × Vector f n :=
+  ⟨fun s => (s.proofState, s.messagesForNextWrapProof), fun p => ⟨p.1, p.2⟩, fun _ => rfl,
+   fun _ => rfl⟩
+
+instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] :
+    CircuitType F (StepStatement k n f b sv) (StepStatement k n w vb sf) :=
+  CircuitType.ofEquiv (StepStatement.equivProd k n f b sv) (StepStatement.equivProd k n w vb sf)
+
+@[simp] theorem scoped_stepStatement {F f w b vb sv sf : Type} {k n : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] {st : ProverState F}
+    {x : StepStatement k n w vb sf} :
+    CircuitType.Scoped (val := StepStatement k n f b sv) st x ↔
+      CircuitType.Scoped (val := StepProofState k n f b sv × Vector f n) st
+        (StepStatement.equivProd k n w vb sf x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_stepStatement {F f w b vb sv sf : Type} {k n : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F f w] [CircuitType F b vb] [CircuitType F sv sf] {V : Valuation F}
+    {x : StepStatement k n w vb sf} {a : StepStatement k n f b sv} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (StepStatement.equivProd k n w vb sf x)
+        (StepStatement.equivProd k n f b sv a) :=
+  CircuitType.reads_ofEquiv _ _
+
 /-! ## The opening -/
 
 /-- An opening is its `(L, R)` rounds, the two shifted scalars, `δ` and `sg`. -/

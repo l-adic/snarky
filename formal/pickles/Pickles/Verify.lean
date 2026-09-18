@@ -67,6 +67,8 @@ inductive PackedScalar (F : Type) [Field F] where
   | b128 (s : FVar F)
   /-- A 10-bit value. -/
   | b10 (s : FVar F)
+  /-- A boolean cell: a conditional add of its base. -/
+  | bit (b : BoolVar F)
 
 /-- `Spec.pack (Wrap.Statement.In_circuit.to_data statement)` (PS `packStatement`), in walk
 order: the five shifted scalars `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ` (128), `α, ζ, ξ`
@@ -86,15 +88,50 @@ def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVa
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
-/-- The `x_hat` leaves of a wrap statement: leaf `i` is scalar `i` of `WrapStatement.packed`
-with Lagrange base `i` and its shift correction from the table (`lagrange_with_correction`). -/
-def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
-    (tab : XhatTable F nc) :
-    List (Leaf F nc) :=
+/-- The `x_hat` leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
+correction from the table (`lagrange_with_correction`); a boolean cell adds its base under
+the bit, with no correction. -/
+def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Leaf F nc) :=
   List.zipWith (fun k bc => match k with
     | .full s => Leaf.full s bc.1 bc.2
     | .b128 s => Leaf.b128 s bc.1 bc.2
-    | .b10 s => Leaf.b10 s bc.1 bc.2) st.packed (tab.bases.zip tab.corrs)
+    | .b10 s => Leaf.b10 s bc.1 bc.2
+    | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
+
+/-- The `x_hat` leaves of a wrap statement: `packLeavesOf` its packing. -/
+def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
+    (tab : XhatTable F nc) : List (Leaf F nc) :=
+  packLeavesOf st.packed tab
+
+/-- `Spec.pack` of a step statement (PS `PackedStepPublicInput`), in walk order: per slot, the
+five split claims `cip, b, ζ^{2^k}, ζⁿ, perm` as a full half and a boolean parity, the digest
+full, `β, γ, α, ζ, ξ` and the `k` round challenges 128-bit, `should_finalize` boolean; then
+`messages_for_next_step_proof` and the slots' `messages_for_next_wrap_proof` digests, full. -/
+def StepStatement.packed {n : ℕ}
+    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    List (PackedScalar F) :=
+  let slot (u : UnfinalizedProof k (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+      List (PackedScalar F) :=
+    let dv := u.deferredValues
+    let pl := dv.plonk
+    let split (x : Type2 (SplitField (FVar F) (BoolVar F))) : List (PackedScalar F) :=
+      [.full x.val.sDiv2, .bit x.val.sOdd]
+    split dv.combinedInnerProduct ++ split dv.b ++ split pl.zetaToSrsLength
+      ++ split pl.zetaToDomainSize ++ split pl.perm
+      ++ [.full u.spongeDigestBeforeEvaluations,
+          .b128 pl.beta.val, .b128 pl.gamma.val, .b128 pl.alpha.val, .b128 pl.zeta.val,
+          .b128 dv.xi.val]
+      ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
+      ++ [.bit u.shouldFinalize]
+  st.proofState.unfinalizedProofs.toList.flatMap slot
+    ++ [.full st.proofState.messagesForNextStepProof]
+    ++ st.messagesForNextWrapProof.toList.map .full
+
+/-- The boolean cells of a step statement's packing, the ones its circuit asserts boolean. -/
+def StepStatement.bits {n : ℕ}
+    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
+    List (BoolVar F) :=
+  st.packed.filterMap fun | .bit b => some b | _ => none
 
 /-- The group half's input with its claims taken from an unfinalized proof
 (`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
@@ -216,7 +253,7 @@ theorem verifyProof_reads
   have hhead : leafHeadScalar (packLeaves statement tab) := by
     obtain ⟨b, bs, hb⟩ := List.exists_cons_of_ne_nil hbases
     obtain ⟨c', cs, hc⟩ := List.exists_cons_of_ne_nil hcorrs
-    simp [packLeaves, WrapStatement.packed, leafHeadScalar, hb, hc]
+    simp [packLeaves, packLeavesOf, WrapStatement.packed, leafHeadScalar, hb, hc]
   -- `x_hat`, chunk by chunk, reads as the wire's public commitment, crossed to `C.E`
   have hXhat : ⦃⌜True⌝⦄
       (List.finRange nc).mapM (fun ci => publicInputCommitKnown

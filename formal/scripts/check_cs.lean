@@ -910,17 +910,16 @@ def ivpStepInput (get : ℕ → FVar Fp) :
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
-  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords dummyKeyComms
-  { plonk := ⟨⟨⟨get 30⟩, ⟨get 31⟩, ⟨get 32⟩, ⟨get 33⟩⟩, shifted 34, shifted 36, shifted 38⟩
-    xi := ⟨get 44⟩
-    deferred := ⟨shifted 40, shifted 42⟩
-    sgOld := [(none, dummyWrapSg), (none, dummyWrapSg)]
-    sigmaLast, indexComms, coefficientsComm, sigmaComm
-    wComm := (List.range 15).map fun j => [pt (60 + 2 * j)]
-    zComm := [pt 90]
-    tComm := (List.range 7).map fun j => pt (92 + 2 * j)
-    opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
-                 z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 } }
+  let dv : Pickles.DeferredValues Pickles.WrapIPARounds (FVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    { plonk := { alpha := ⟨get 30⟩, beta := ⟨get 31⟩, gamma := ⟨get 32⟩, zeta := ⟨get 33⟩,
+                 perm := shifted 34, zetaToSrsLength := shifted 36, zetaToDomainSize := shifted 38 }
+      combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
+      bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
+  ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+    (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
+     { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+       z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 })
 
 /-- `ivp_step_circuit`: the index-digest sponge, `Pickles.incrementallyVerifyProof` on the
 step side with `x_hat` the known-domain commitment of inputs 0–29, then the harness's
@@ -990,9 +989,14 @@ def stepVerifyStatement (get : ℕ → FVar Fp) :
 def stepVerifyCells (get : ℕ → FVar Fp) :
     Pickles.IvpInput Pickles.WrapIPARounds (FVar Fp) (BoolVar Fp)
       (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  ivpStepInputOf (stepVerifyUnfinalized get).deferredValues
-    [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms (fun i => ⟨get i, get (i + 1)⟩)
-    (fun i => ⟨⟨get i, .unchecked (get (i + 1))⟩⟩)
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  ivpInputOf (stepVerifyUnfinalized get).deferredValues
+    [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+    (Vector.ofFn fun j => pt (2 * j), pt 30, Vector.ofFn fun j => pt (32 + 2 * j),
+     { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
+       z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 })
 
 /-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
 side over the parsed statement, unfinalized proof and cells. -/
