@@ -1,4 +1,5 @@
 import PicklesFixture
+import Snarky.Compile
 
 /-!
 # What the prover interpreter costs on a real circuit
