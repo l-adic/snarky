@@ -160,30 +160,31 @@ instance instGroupStepInputCheckedType :
 
 /-- The wrap statement from the bundle's statement block. -/
 def GroupStepInput.wrapStatement (inp : GroupStepInput (FVar Fp)) :
-    WrapStatement Fp (Type1 (FVar Fp)) :=
+    WrapStatement StepIPARounds (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) :=
   let g := cell inp.statement
   { proofState :=
       { deferredValues :=
           { plonk := { alpha := ⟨g 7⟩, beta := ⟨g 5⟩, gamma := ⟨g 6⟩, zeta := ⟨g 8⟩,
                        perm := ⟨g 4⟩, zetaToSrsLength := ⟨g 2⟩, zetaToDomainSize := ⟨g 3⟩ }
             combinedInnerProduct := ⟨g 0⟩, b := ⟨g 1⟩, xi := ⟨g 9⟩
-            bulletproofChallenges := (List.range 16).map fun j => ⟨g (13 + j)⟩
+            bulletproofChallenges := Vector.ofFn fun j => ⟨g (13 + j)⟩
             branchData := { domainLog2 := g 29,
-                            proofsVerifiedMask := [.unchecked (g 30), .unchecked (g 31)] } }
+                            proofsVerifiedMask := #v[.unchecked (g 30), .unchecked (g 31)] } }
         spongeDigestBeforeEvaluations := g 10
         messagesForNextWrapProof := g 11 }
     messagesForNextStepProof := g 12 }
 
 /-- The unfinalized proof from the bundle's slot block. -/
 def GroupStepInput.unfinalizedProof (inp : GroupStepInput (FVar Fp)) :
-    UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    UnfinalizedProof WrapIPARounds (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let g := cell inp.unfinalized
   let s := splitAt inp.unfinalized
   { deferredValues :=
       { plonk := { alpha := ⟨g 13⟩, beta := ⟨g 11⟩, gamma := ⟨g 12⟩, zeta := ⟨g 14⟩,
                    perm := s 8, zetaToSrsLength := s 4, zetaToDomainSize := s 6 }
         combinedInnerProduct := s 0, b := s 2, xi := ⟨g 15⟩
-        bulletproofChallenges := (List.range 15).map fun j => ⟨g (16 + j)⟩ }
+        bulletproofChallenges := Vector.ofFn fun j => ⟨g (16 + j)⟩ }
     shouldFinalize := .unchecked (g 31)
     spongeDigestBeforeEvaluations := g 10 }
 
@@ -191,11 +192,12 @@ def GroupStepInput.unfinalizedProof (inp : GroupStepInput (FVar Fp)) :
 a key's commitments and a wrap proof block — `p` the point at an offset of the block, `s`
 the split scalar there: the 15 `w_comm` points at 0, `z_comm` at 30, the 7 `t_comm` points
 at 32, the 15 `(L, R)` pairs at 46, `z₁`, `z₂` at 106 and 108, `δ` at 110, `sg` at 112. -/
-def ivpStepInputOf (dv : DeferredValues Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+def ivpStepInputOf
+    (dv : DeferredValues WrapIPARounds (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (sgOld : List (Option (BoolVar Fp) × AffinePoint (FVar Fp)))
     (comms : List (List (AffinePoint (FVar Fp)))) (p : ℕ → AffinePoint (FVar Fp))
     (s : ℕ → Type2 (SplitField (FVar Fp) (BoolVar Fp))) :
-    IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    IvpInput WrapIPARounds (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
   { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
       dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
@@ -205,14 +207,14 @@ def ivpStepInputOf (dv : DeferredValues Fp (Type2 (SplitField (FVar Fp) (BoolVar
     wComm := (List.range 15).map fun j => [p (2 * j)]
     zComm := [p 30]
     tComm := (List.range 7).map fun j => p (32 + 2 * j)
-    opening := { lr := (List.range 15).map fun j => (p (46 + 4 * j), p (48 + 4 * j))
+    opening := { lr := Vector.ofFn fun j => (p (46 + 4 * j), p (48 + 4 * j))
                  z1 := s 106, z2 := s 108, delta := p 110, sg := p 112 } }
 
 /-- The group half's cells: the wrap proof's commitments and opening and the two `sg_old`
 from the bundle, the key's commitments as constants; the claims are `verifyProof`'s to
 substitute from the unfinalized proof. -/
 def GroupStepInput.cells (vk : Wire.KimchiVK XhatStepCurve) (inp : GroupStepInput (FVar Fp)) :
-    IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    IvpInput WrapIPARounds (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   ivpStepInputOf inp.unfinalizedProof.deferredValues
     [(none, pointAt inp.sgOld 0), (none, pointAt inp.sgOld 2)] (keyComms xhatStepCell vk)
     (pointAt inp.proof) (splitAt inp.proof)
@@ -337,7 +339,7 @@ instance instGroupWrapInputCheckedType {n r : ℕ} :
 and opening and the `sg_old` under their keep bits from the bundle, the key's commitments as
 constants. -/
 def GroupWrapInput.cells {n r : ℕ} (vk : Wire.KimchiVK XhatWrapCurve)
-    (inp : GroupWrapInput n r (FVar Fq)) : IvpInput Fq (Type1 (FVar Fq)) :=
+    (inp : GroupWrapInput n r (FVar Fq)) : IvpInput r (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
   let g := cell inp.statement
   let p := pointAt inp.proof
   let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords (keyComms xhatWrapCell vk)
@@ -350,7 +352,7 @@ def GroupWrapInput.cells {n r : ℕ} (vk : Wire.KimchiVK XhatWrapCurve)
     wComm := (List.range 15).map fun j => [p (2 * j)]
     zComm := [p 30]
     tComm := (List.range 7).map fun j => p (32 + 2 * j)
-    opening := { lr := (List.range r).map fun j => (p (46 + 4 * j), p (48 + 4 * j))
+    opening := { lr := Vector.ofFn fun j => (p (46 + 4 * j), p (48 + 4 * j))
                  z1 := ⟨cell inp.proof (46 + 4 * r)⟩, z2 := ⟨cell inp.proof (47 + 4 * r)⟩
                  delta := p (48 + 4 * r), sg := p (50 + 4 * r) } }
 

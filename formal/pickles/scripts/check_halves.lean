@@ -78,65 +78,45 @@ the real accumulators sit in the LAST slots and padding goes in front; a step st
 `n ≤ 2` slots reads the last `n` bits. -/
 def unpackBranchData (bd : ℕ) : ℕ × Vector ℕ 2 := (bd / 4, #v[bd % 2, (bd / 2) % 2])
 
-/-- The evaluation block in the layout's order — the public pair, 15 `w`, 15 coefficient,
-`z`, 6 `σ`, 6 selector pairs — each pair `(ζ, ζω)` at one chunk. -/
-def evalCells (C : Ipa.KimchiCurve) (p : Kimchi.Verifier.Wire.KimchiProof C) :
-    Except String (Vector C.ScalarField 88) := do
-  let pair (nm : String) (e : Kimchi.Verifier.PointEvaluations (Array C.ScalarField)) :
-      Except String (List C.ScalarField) := do
-    pure [← oneChunk nm e.zeta, ← oneChunk nm e.zetaOmega]
-  let some pub := p.pubEvals
-    | throw "the proof carries no public evaluations (one-chunk wire form)"
-  let mut cells : List C.ScalarField := []
-  cells := cells ++ (← pair "public" pub)
-  for e in p.evals.w.toList do cells := cells ++ (← pair "w" e)
-  for e in p.evals.coefficients.toList do cells := cells ++ (← pair "coefficients" e)
-  cells := cells ++ (← pair "z" p.evals.z)
-  for e in p.evals.s.toList do cells := cells ++ (← pair "s" e)
-  cells := cells ++ (← pair "generic" p.evals.genericSelector)
-  cells := cells ++ (← pair "poseidon" p.evals.poseidonSelector)
-  cells := cells ++ (← pair "completeAdd" p.evals.completeAddSelector)
-  cells := cells ++ (← pair "mul" p.evals.mulSelector)
-  cells := cells ++ (← pair "emul" p.evals.emulSelector)
-  cells := cells ++ (← pair "endomulScalar" p.evals.endomulScalarSelector)
-  if h : cells.length = 88 then pure ⟨cells.toArray, by simp [h]⟩
-  else throw s!"evaluation block: {cells.length} cells"
+/-- A finalized proof's evaluations off its checked wire record, at one chunk: `ft(ζω)`, the
+carried public pair, the record. -/
+def allEvalsOf (C : Ipa.KimchiCurve) {k : ℕ} (cp : Kimchi.Verifier.KimchiProof C 1 k) :
+    Except String (Pickles.AllEvals C.ScalarField) := do
+  let pub ← match cp.pubEvals with
+    | .carried pe => pure (pe.map fun (v : Vector C.ScalarField 1) => v[0])
+    | .barycentric _ => throw "the proof carries no public evaluations (one-chunk wire form)"
+  return { ftEval1 := cp.ftEval1, pub
+           evals := cp.evals.map fun (v : Vector C.ScalarField 1) => v[0] }
 
-/-- `finalize_other_proof`'s input from a wrap entry and the step entry it wrapped.
-
-The wrap statement's cells (`Pickles.WrapStatement.packed`): `cip, b, ζ^{2^k}, ζⁿ, perm` at
-0–4, `β, γ` at 5–6, `α, ζ, ξ` at 7–9, the three digests at 10–12 (the step proof's sponge
-digest first), the 16 round challenges at 13–28, the packed branch data
-`4·domain_log2 + m₀ + 2·m₁` at 29. -/
-def assemble (w : Cache.Entry CW) (s : Cache.Entry CS) :
-    Except String (FopInput Fp × Pickles.KnownDomain Fp) := do
+/-- The step side's `finalize_other_proof` input from a wrap entry and the checked step proof
+it wrapped, at the step proof's `k` rounds: the unfinalized proof off the wrap statement's
+cells (`Pickles.WrapStatement.packed`: `cip, b, ζ^{2^k}, ζⁿ, perm` at 0–4, `β, γ` at 5–6,
+`α, ζ, ξ` at 7–9, the three digests at 10–12 — the step proof's sponge digest first — the
+`k` round challenges from 13, the packed branch data `4·domain_log2 + m₀ + 2·m₁` last), the
+evaluations off the step proof, the mask and `domain_log2` off the branch data, and the step
+proof's accumulators' challenges in the LAST slots (`unpackBranchData`), a zero vector in an
+absent one, which its mask bit leaves unread. -/
+def stepFopInput (w : Cache.Entry CW) {k : ℕ} (cpS : Kimchi.Verifier.KimchiProof CS 1 k) :
+    Except String (StepFop k) := do
   let c := w.publicInput
-  unless 30 ≤ c.size do throw s!"wrap public input: {c.size} cells"
+  unless 14 + k ≤ c.size do throw s!"wrap public input: {c.size} cells at {k} rounds"
   let g (i : ℕ) : Fp := toStep (c.getD i 0)
-  let claims : Vector Fp 26 := Vector.ofFn fun i =>
-    match (i : ℕ) with
-    | 0 => g 7 | 1 => g 5 | 2 => g 6 | 3 => g 8
-    | 4 => g 2 | 5 => g 3 | 6 => g 4 | 7 => g 0 | 8 => g 1 | 9 => g 9
-    | k => g (13 + (k - 10))
-  let (domainLog2, mask) := unpackBranchData (c.getD 29 0).val
-  -- Two accumulator slots of 16 challenges each, the proof's accumulators in the last
-  -- slots (`unpackBranchData`). An absent accumulator is a zero slot, which its mask bit
-  -- leaves unread.
-  let prev : List (List Fp) := s.proof.prevChallenges.toList.map (·.chals.toList)
-  let slots := (List.replicate (2 - prev.length) [] ++ prev).take 2
-  let prevCells : List Fp :=
-    slots.flatMap fun ch => (ch ++ List.replicate 16 (0 : Fp)).take 16
-  let prevChallenges : Vector Fp 32 ←
-    if h : prevCells.length = 32 then pure ⟨prevCells.toArray, by simp [h]⟩
-    else throw s!"previous challenges: {prevCells.length} cells"
-  return ({ claims
-            mask := mask.map fun (m : ℕ) => (m : Fp)
-            domainLog2 := (domainLog2 : Fp)
-            evals := ← evalCells CS s.proof
-            ftEval1 := s.proof.ftEval1
-            prevChallenges
-            digest := g 10 },
-          ⟨s.vk.domainLog2, s.vk.omega⟩)
+  let (domainLog2, mask) := unpackBranchData (c.getD (13 + k) 0).val
+  let u : Pickles.UnfinalizedProof k Fp Bool (Type1 Fp) :=
+    { deferredValues :=
+        { plonk := { alpha := ⟨g 7⟩, beta := ⟨g 5⟩, gamma := ⟨g 6⟩, zeta := ⟨g 8⟩,
+                     perm := ⟨g 4⟩, zetaToSrsLength := ⟨g 2⟩, zetaToDomainSize := ⟨g 3⟩ }
+          combinedInnerProduct := ⟨g 0⟩, b := ⟨g 1⟩, xi := ⟨g 9⟩
+          bulletproofChallenges := Vector.ofFn fun j => ⟨g (13 + j)⟩ }
+      shouldFinalize := true
+      spongeDigestBeforeEvaluations := g 10 }
+  let accs := cpS.olds.toList.map (·.u)
+  let slots := (List.replicate (Pickles.MaxProofsVerified - accs.length) (Vector.replicate k 0)
+    ++ accs).take Pickles.MaxProofsVerified
+  let prev : Vector (Vector Fp k) Pickles.MaxProofsVerified ←
+    if h : slots.length = Pickles.MaxProofsVerified then pure ⟨slots.toArray, by simp [h]⟩
+    else throw s!"accumulators: {accs.length}, more than {Pickles.MaxProofsVerified}"
+  return (u, ← allEvalsOf CS cpS, mask.map (· == 1), prev, (domainLog2 : Fp))
 
 /-- One run of a half on a named input bundle: `build` and `prove` the harness on it, read
 the named bits off the table, and decide whether the table satisfies the assembled system. -/
@@ -187,13 +167,14 @@ def fopBits {F : Type} (o : Pickles.FopOutput F) : List (String × BoolVar F) :=
   [("finalized", o.finalized), ("xiCorrect", o.xiCorrect), ("bCorrect", o.bCorrect),
    ("cipCorrect", o.cipCorrect), ("plonkOk", o.plonkOk)]
 
-/-- The step half on a step-side bundle at a known domain. -/
-def runStep (dom : Pickles.KnownDomain Fp) (inp : FopInput Fp) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := FopInput Fp) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) fopBits inp
+/-- The step half on its records at a known domain. -/
+def runStep {k : ℕ} (dom : Pickles.KnownDomain Fp) (inp : StepFop k) :
+    IO (Bool × List (String × ℕ)) :=
+  runHalf (a := StepFop k) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) fopBits inp
 
-/-- The wrap half on a wrap-side bundle at a domain and a round count. -/
-def runWrap (domainLog2 r : ℕ) (inp : FopWrapInput r Fq) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := FopWrapInput r Fq) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2 r) fopBits inp
+/-- The wrap half on its records at a domain. -/
+def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : WrapFop k) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := WrapFop k) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2) fopBits inp
 
 /-- The step circuit's group half on a wrap proof: the wrap key's commitments as constants,
 the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
@@ -291,37 +272,36 @@ def assembleGroup (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
     else throw s!"sg_old: {sgs.length} cells, expected two accumulators"
   return { statement, unfinalized, proof, sgOld, isBaseCase := 0 }
 
-/-- `finalize_other_proof`'s wrap-side input from a step entry's slot and the wrap proof that
-slot verified.
+/-- The wrap side's `finalize_other_proof` input from a step entry's slot and the checked wrap
+proof that slot verified, at the wrap proof's `k` rounds.
 
-The step statement (`Pickles.PackedStatement`) lays a slot out in `17 + r` cells: the five
+The step statement (`Pickles.PackedStatement`) lays a slot out in `17 + k` cells: the five
 shifted claims `cip, b, ζ^{2^k}, ζⁿ, perm` as `(half, parity)` pairs at 0–9, the digest at
-10, `β, γ` at 11–12, `α, ζ, ξ` at 13–15, the `r` round challenges from 16, `should_finalize`
+10, `β, γ` at 11–12, `α, ζ, ξ` at 13–15, the `k` round challenges from 16, `should_finalize`
 last. A split claim's wrap-field cell is its `Type2` register `2·half + parity`. The
 evaluations and the two accumulators are the wrap proof's; the wrap side reads both
-accumulators, so the proof must carry exactly two of `r` challenges. -/
-def assembleWrap (r : ℕ) (s : Cache.Entry CS) (slot : ℕ) (w : Cache.Entry CW) :
-    Except String (FopWrapInput r Fq) := do
+accumulators, so the proof must carry exactly `MaxProofsVerified`. -/
+def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
+    (cpW : Kimchi.Verifier.KimchiProof CW 1 k) : Except String (WrapFop k) := do
   let c := s.publicInput
-  let base := slot * (17 + r)
-  unless base + 17 + r ≤ c.size do
-    throw s!"step public input: {c.size} cells, slot {slot} needs {base + 17 + r}"
+  let base := slot * (17 + k)
+  unless base + 17 + k ≤ c.size do
+    throw s!"step public input: {c.size} cells, slot {slot} needs {base + 17 + k}"
   let g (i : ℕ) : Fq := toWrap (c.getD (base + i) 0)
   let t (i : ℕ) : Fq := 2 * g (2 * i) + g (2 * i + 1)
-  let claims : Vector Fq (10 + r) := Vector.ofFn fun i =>
-    match (i : ℕ) with
-    | 0 => g 13 | 1 => g 11 | 2 => g 12 | 3 => g 14
-    | 4 => t 2 | 5 => t 3 | 6 => t 4 | 7 => t 0 | 8 => t 1 | 9 => g 15
-    | k => g (16 + (k - 10))
-  let prev : List (List Fq) := w.proof.prevChallenges.toList.map (·.chals.toList)
-  unless prev.length = 2 ∧ prev.all (·.length = r) do
-    throw s!"wrap accumulators: {prev.map (·.length)}, expected two of {r}"
-  let prevCells := prev.flatten
-  let prevChallenges : Vector Fq (2 * r) ←
-    if h : prevCells.length = 2 * r then pure ⟨prevCells.toArray, by simp [h]⟩
-    else throw s!"previous challenges: {prevCells.length} cells"
-  return { claims, evals := ← evalCells CW w.proof, ftEval1 := w.proof.ftEval1, prevChallenges
-           digest := g 10 }
+  let u : Pickles.UnfinalizedProof k Fq Bool (Type2 Fq) :=
+    { deferredValues :=
+        { plonk := { alpha := ⟨g 13⟩, beta := ⟨g 11⟩, gamma := ⟨g 12⟩, zeta := ⟨g 14⟩,
+                     perm := ⟨t 4⟩, zetaToSrsLength := ⟨t 2⟩, zetaToDomainSize := ⟨t 3⟩ }
+          combinedInnerProduct := ⟨t 0⟩, b := ⟨t 1⟩, xi := ⟨g 15⟩
+          bulletproofChallenges := Vector.ofFn fun j => ⟨g (16 + j)⟩ }
+      shouldFinalize := true
+      spongeDigestBeforeEvaluations := g 10 }
+  let accs := cpW.olds.map (·.u)
+  let prev : Vector (Vector Fq k) Pickles.MaxProofsVerified ←
+    if h : accs.size = Pickles.MaxProofsVerified then pure ⟨accs, h⟩
+    else throw s!"wrap accumulators: {accs.size}, expected {Pickles.MaxProofsVerified}"
+  return (u, ← allEvalsOf CW cpW, prev)
 
 /-- The curve's SRS cut to `k` rounds, loaded from `srs-cache/<name>.srs` once per `k`
 (decompressing the file's points dominates a load). -/
@@ -437,9 +417,12 @@ def main : IO Unit := do
         continue
     let pair := s!"wrap→step {d.take 10}…"
     if on "step" then
-      let (inp, dom) ← match assemble w s with
-        | .error e => throw (IO.userError s!"assemble: {e}") | .ok r => pure r
-      let ok ← report s!"step half on {pair} (domain 2^{s.vk.domainLog2})" (runStep dom inp)
+      let σS ← srsAt CS "vesta" vestaBase.sqrt? vestaSRS s.proof.opening.lr.size
+      let (_, cpS) ← checkedAt CS "vesta" σS s
+      let inp ← match stepFopInput w cpS with
+        | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
+      let ok ← report s!"step half on {pair} (domain 2^{s.vk.domainLog2})"
+        (runStep ⟨s.vk.domainLog2, s.vk.omega⟩ inp)
       runs := runs + 1
       unless ok do allOk := false
     if on "verify" then
@@ -473,10 +456,12 @@ def main : IO Unit := do
       let pair := s!"step→wrap {d.take 10}… (slot {slot})"
       let r := w.proof.opening.lr.size
       if on "wrap" then
-        let inp ← match assembleWrap r s slot w with
-          | .error e => throw (IO.userError s!"assemble (wrap side): {e}") | .ok i => pure i
+        let σW ← srsAt CW "pallas" pallasBase.sqrt? pallasSRS r
+        let (_, cpW) ← checkedAt CW "pallas" σW w
+        let inp ← match wrapFopInput s slot cpW with
+          | .error e => throw (IO.userError s!"wrap input: {e}") | .ok i => pure i
         let ok ← report s!"wrap half on {pair} (domain 2^{w.vk.domainLog2}, {r} rounds)"
-          (runWrap w.vk.domainLog2 r inp)
+          (runWrap w.vk.domainLog2 inp)
         runs := runs + 1
         unless ok do allOk := false
       if on "step-group" then
