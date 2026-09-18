@@ -405,7 +405,8 @@ def main : IO Unit := do
   let (steps, _) ← match Cache.parseFile CS Kimchi.Fixture.PS.fpSide.endo vestaBase.sqrt? raw with
     | .error e => throw (IO.userError s!"step side: {e}") | .ok r => pure r
   IO.println s!"{path}: {wraps.size} wrap proofs, {steps.size} step proofs"
-  let halves := ((← IO.getEnv "HALVES").getD "step,wrap,step-group,wrap-group,verify,carry").splitOn ","
+  let lanes := (← IO.getEnv "HALVES").getD "step,wrap,step-group,wrap-group,verify,carry"
+  let halves := lanes.splitOn ","
   let on (h : String) : Bool := halves.contains h
   let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
@@ -495,7 +496,8 @@ def main : IO Unit := do
       let tag := s!"wrap {w.vkDigest.take 10}…/{w.publicInputKey.take 10}…"
       let pad := w.proof.prevChallenges.size - s.prevs.size
       for j in List.range pad do
-        let ok ← reportBool s!"pad accumulator {j} of {tag}: AccOk" (padOk CW "pallas" pallasBase.sqrt? pallasSRS w j)
+        let ok ← reportBool s!"pad accumulator {j} of {tag}: AccOk"
+          (padOk CW "pallas" pallasBase.sqrt? pallasSRS w j)
         runs := runs + 1
         unless ok do allOk := false
       for (ref, j) in s.prevs.toList.zipIdx do
@@ -534,7 +536,8 @@ def main : IO Unit := do
               allOk := false
               continue
           let some s' := steps.find? (fun s => s.vkDigest = d2 ∧ s.publicInputKey = pi2)
-            | IO.println s!"  ✗ {tag} slot {j}: its predecessor step {d2.take 10}… is not in the file"
+            | IO.println s!"  ✗ {tag} slot {j}: its predecessor step {d2.take 10}… is not in \
+                the file"
               allOk := false
               continue
           let ok ← reportBool s!"carry step→step into accumulator {j} of {tag}"
