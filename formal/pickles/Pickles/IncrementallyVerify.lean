@@ -53,6 +53,7 @@ open scoped Kimchi
 section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+  {k : ℕ}
 
 /-- The deployed `incrementally_verify_proof` return
 (`Field.t * (`Success of Boolean.var * Bulletproof_challenge.t array)`): the fq-sponge
@@ -69,9 +70,9 @@ structure IvpOutput (F : Type) where
 /-- The deferred plonk claims the group half consumes (OCaml `plonk`, PS
 `deferredValues.plonk`): the four 128-bit challenges, asserted against the squeezes, and the
 three shifted scalars `ft_comm` scales by. -/
-structure IvpPlonk (F sf : Type) where
+structure IvpPlonk (f sf : Type) where
   /-- `α`, `β`, `γ`, `ζ`. -/
-  chals : PlonkClaims F
+  chals : PlonkClaims f
   /-- The permutation scalar claim (`perm`). -/
   perm : sf
   /-- The `ζ^{2^k}` claim (`zeta_to_srs_length`). -/
@@ -83,50 +84,51 @@ structure IvpPlonk (F sf : Type) where
 `advice`): the plonk claims, the polyscale `ξ` and the opening's `cip`, `b`. The cells the
 read `IvpReads` speaks about; the rest of `IvpInput` enters the read only through
 `IvpTies`. -/
-structure IvpClaims (F sf : Type) where
+structure IvpClaims (f sf : Type) where
   /-- The deferred plonk claims. -/
-  plonk : IvpPlonk F sf
+  plonk : IvpPlonk f sf
   /-- The deferred polyscale `ξ`, 128 bits. -/
-  xi : SizedF 128 (FVar F)
+  xi : SizedF 128 f
   /-- The deferred `cip` and `b` (`advice`). -/
   deferred : BulletproofDeferred sf
 
 /-- What the group half consumes (PS `IncrementallyVerifyProofInput`; the OCaml arguments
 `sg_old`, `plonk`, `xi`, `advice`, `verification_key`, `messages`, `opening`): the claims,
 and every commitment as its chunk list, in the key's and proof's column order. -/
-structure IvpInput (F sf : Type) extends IvpClaims F sf where
+structure IvpInput (k : ℕ) (f bc sf : Type) extends IvpClaims f sf where
   /-- The previous proofs' challenge-polynomial commitments, each under its keep bit on the
   wrap side (`Opt.Maybe (keep, p)`) and unmasked on the step side (padded with dummies). -/
-  sgOld : List (Option (BoolVar F) × AffinePoint (FVar F))
+  sgOld : List (Option bc × AffinePoint f)
   /-- The key's last permutation commitment `σ₆`, absorbed in the index digest and read by
   `ft_comm` — not a batch base. -/
-  sigmaLast : List (AffinePoint (FVar F))
+  sigmaLast : List (AffinePoint f)
   /-- The key's six selector commitments: generic, poseidon, complete-add, mul, emul,
   endomul-scalar. -/
-  indexComms : List (List (AffinePoint (FVar F)))
+  indexComms : List (List (AffinePoint f))
   /-- The key's fifteen coefficient commitments. -/
-  coefficientsComm : List (List (AffinePoint (FVar F)))
+  coefficientsComm : List (List (AffinePoint f))
   /-- The key's permutation commitments `σ₀…σ₅`. -/
-  sigmaComm : List (List (AffinePoint (FVar F)))
+  sigmaComm : List (List (AffinePoint f))
   /-- The proof's fifteen witness commitments. -/
-  wComm : List (List (AffinePoint (FVar F)))
+  wComm : List (List (AffinePoint f))
   /-- The proof's permutation-accumulator commitment. -/
-  zComm : List (AffinePoint (FVar F))
+  zComm : List (AffinePoint f)
   /-- The proof's quotient chunks. -/
-  tComm : List (AffinePoint (FVar F))
+  tComm : List (AffinePoint f)
   /-- The opening proof. -/
-  opening : BulletproofOpening F sf
+  opening : BulletproofOpening k f sf
 
 /-- The shifted scalars the circuit scales by: the three of `ft_comm` and the four of the
 opening check. -/
-def IvpInput.shifted {F sf : Type} (inp : IvpInput F sf) : List sf :=
+def IvpInput.shifted {F sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf) : List sf :=
   [inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize,
    inp.deferred.combinedInnerProduct, inp.deferred.b, inp.opening.z1, inp.opening.z2]
 
 /-- The batch bases in `to_batch` order (`step_verifier.ml:745–759`, `wrap_verifier.ml:1458–1490`):
 `sg_old` under its masks, then unmasked `x_hat`, `ft_comm`, `z`, the six selectors, the
 witness columns, the coefficients and `σ₀…σ₅`, each commitment's chunks adjacent. -/
-def IvpInput.bases {F sf : Type} (inp : IvpInput F sf) (xHat : List (AffinePoint (FVar F)))
+def IvpInput.bases {F sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
+    (xHat : List (AffinePoint (FVar F)))
     (ftc : AffinePoint (FVar F)) : List (AffinePoint (FVar F) × Option (BoolVar F)) :=
   inp.sgOld.map (fun m => (m.2, m.1))
     ++ (xHat ++ [ftc] ++ inp.zComm ++ inp.indexComms.flatten ++ inp.wComm.flatten
@@ -142,7 +144,8 @@ the placement is constraint-invariant, and the PS port asserts here); `ft_comm`;
 def incrementallyVerifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     (p : Poseidon.Params F) (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (optSponge : Bool) (blindingH : AffinePoint (FVar F)) (spongeAfterIndex : SpongeVar F)
-    (computeXHat : CircuitM F c (List (AffinePoint (FVar F)))) (inp : IvpInput F sf) :
+    (computeXHat : CircuitM F c (List (AffinePoint (FVar F))))
+    (inp : IvpInput k (FVar F) (BoolVar F) sf) :
     CircuitM F c (IvpOutput F) := do
   let (indexDigest, _) ← SpongeVar.squeeze p spongeAfterIndex
   let tr ←
@@ -183,7 +186,8 @@ ladder read speaks about (`IvpSide.ClaimOk`), and the opening's points read as t
 deferred `ξ`, `cip`, `b` are tied to nothing here: the group half scales by them as claimed,
 and the read speaks at their decodes. -/
 structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpInput C.BaseField sf)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The `sg_old` cells read as `oldsW`'s points under their bits. -/
   olds : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (inp.sgOld.map fun m => (m.2, m.1))
@@ -219,7 +223,7 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   /-- Every shifted scalar the circuit scales by is a claim the ladder read speaks about. -/
   claimOk : ∀ x ∈ inp.shifted, S.ClaimOk x
   /-- The `(L, R)` cells read as the proof's pairs. -/
-  lr : List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr
+  lr : List.Forall₂ (PairReads C.E.toAffine V) inp.opening.lr.toList
     (cp.opening.lr.toList.map fun q => (SWPoint.equivPoint C.E q.1, SWPoint.equivPoint C.E q.2))
   /-- The `δ` cell reads as the proof's. -/
   delta : OnCurveAt C.E.toAffine V inp.opening.delta (SWPoint.equivPoint C.E cp.opening.delta)
@@ -238,7 +242,7 @@ Schnorr prechallenge, the success bit reads `1` exactly when
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
 def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpClaims C.BaseField sf)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (inp : IvpClaims (FVar C.BaseField) sf)
     (o : IvpOutput C.BaseField) : Prop :=
   let pre := fqRun C cvk cp (publicCommitment C σ cvk pub)
   let r := ipaRunAt C pre.warm (S.decode inp.deferred.combinedInnerProduct) cp.opening
@@ -271,7 +275,8 @@ wider than the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
-    (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool)) : Prop where
+    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (oldsW : List (C.Point × Bool)) : Prop where
   /-- The sponge after the index digest squeezes to the key's digest. -/
   idx : ∃ s : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex s ∧
     (Poseidon.squeeze C.sponge.params s).1 = cvk.digest
@@ -288,7 +293,7 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   /-- At least one quotient chunk. -/
   t_ne : inp.tComm ≠ []
   /-- At least one round. -/
-  lr_ne : inp.opening.lr ≠ []
+  lr_ne : inp.opening.lr.toList ≠ []
   /-- The base field's characteristic exceeds the absorb count. -/
   char : ∀ k : ℕ, k ≤ 1 + 2 * (inp.sgOld.length + nc + inp.wComm.flatten.length
     + inp.zComm.length + inp.tComm.length) → (k : C.BaseField) = 0 → k = 0
@@ -456,7 +461,8 @@ private theorem streamBv_last {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc
 private theorem bases_reads {nc : ℕ} {sf : Type}
     {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
     {S : IvpSide C V ops} {σ : SRS C.Point} {cvk : KimchiVK C nc} {cp : KimchiProof C nc σ.k}
-    {pub : Array C.ScalarField} {inp : IvpInput C.BaseField sf} {oldsW : List (C.Point × Bool)}
+    {pub : Array C.ScalarField} {inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf}
+    {oldsW : List (C.Point × Bool)}
     (hties : IvpTies S σ cvk cp pub inp oldsW) {xHat : List (AffinePoint (FVar C.BaseField))}
     (hx : CommReads C V xHat (publicCommitment C σ cvk pub).toList)
     {ftc : AffinePoint (FVar C.BaseField)}
@@ -602,10 +608,10 @@ already the key's), the plonk claims asserted equal to the squeezes, `ft_comm` r
 opening check read, the output satisfies `IvpReads`. -/
 private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool))
+    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
     (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp pub inp oldsW)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
-    (hcanon : S.Canon inp.deferred.combinedInnerProduct) (hlrne : inp.opening.lr ≠ [])
+    (hcanon : S.Canon inp.deferred.combinedInnerProduct) (hlrne : inp.opening.lr.toList ≠ [])
     (hσlen : inp.sigmaLast.toArray.size = nc) (tr : FqTranscriptOutput C.BaseField)
     (hx : CommReads C V tr.xHat (publicCommitment C σ cvk pub).toList)
     (hFq : FqTranscriptReads C.sponge.params cvk.digest ((cp.olds.map (·.sg)).toList.map wirePt)
@@ -680,14 +686,14 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     have hb := bases_reads hties hx hftc
     have hbne : inp.bases tr.xHat ftc ≠ [] := by simp [IvpInput.bases]
     have hclaims : ∀ x ∈ (⟨inp.xi, inp.deferred, inp.opening, blindingH⟩ :
-        CheckBulletproofInput C.BaseField sf).scaled, S.ClaimOk x := fun x hxs =>
+        CheckBulletproofInput σ.k (FVar C.BaseField) sf).scaled, S.ClaimOk x := fun x hxs =>
       hties.claimOk x ((List.sublist_append_right [inp.plonk.perm, inp.plonk.zetaToSrsLength,
         inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
         inp.opening.z1, inp.opening.z2]).subset hxs)
     obtain ⟨U, ns, c₀, chals, hU, hns, hc, hchals, ⟨wc, hwc⟩, hiff⟩ :=
       hcb.2 _ hb hbne (streamBv_last σ cvk cp pub oldsW) hclaims ξ₀ hξ σ cp.opening.lr
         cp.opening.delta cp.opening.sg hties.lr hlrne hties.delta hties.sg hh
-    have hlrv : List.Forall₂ (CircuitType.Reads V) inp.opening.lr
+    have hlrv : List.Forall₂ (CircuitType.Reads V) inp.opening.lr.toList
         (cp.opening.lr.toList.map fun q => (wirePt q.1, wirePt q.2)) :=
       List.forall₂_map_right_iff.2
         ((List.forall₂_map_right_iff.1 hties.lr).imp fun _ _ h => pairReads_reads h)
@@ -720,7 +726,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
     (computeXHat : CircuitM C.BaseField (Builder V (KimchiConstraint C.BaseField))
       (List (AffinePoint (FVar C.BaseField))))
-    (inp : IvpInput C.BaseField sf) (oldsW : List (C.Point × Bool))
+    (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
     (h : IvpHyps S σ cvk cp pub optSponge blindingH spongeAfterIndex inp oldsW) :
@@ -831,7 +837,8 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
     (spongeAfterIndex : SpongeVar Fq)
     (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
-    (inp : IvpInput Fq (Type1 (FVar Fq))) (oldsW : List (IpaVesta.curve.Point × Bool))
+    (inp : IvpInput σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
     (h : IvpHyps (wrapSide V) σ cvk cp pub true blindingH spongeAfterIndex inp oldsW) :
@@ -850,7 +857,7 @@ theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
     (spongeAfterIndex : SpongeVar Fp)
     (computeXHat : CircuitM Fp (Builder V (KimchiConstraint Fp)) (List (AffinePoint (FVar Fp))))
-    (inp : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (inp : IvpInput σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)

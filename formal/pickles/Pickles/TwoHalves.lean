@@ -115,7 +115,7 @@ the claim cells of its statement — the deferred values it scales by, the round
 the fq digest its `incrementally_verify_proof` output is asserted equal to (`verify`) — and
 the one bit it exports, the success bit. The `IvpOutput` itself is internal: existential in
 `GroupHalf.Reads`, pinned to the claims by those assertions. -/
-structure GroupHalf (C : KimchiCurve) (sf : Type) where
+structure GroupHalf (C : KimchiCurve) (sf : Type) (k : ℕ) where
   /-- The circuit's valuation (over the base field). -/
   V : Valuation C.BaseField
   /-- The shifted-scalar operations of the side. -/
@@ -123,14 +123,14 @@ structure GroupHalf (C : KimchiCurve) (sf : Type) where
   /-- The side. -/
   side : IvpSide C V ops
   /-- The statement's claim cells: the deferred values, the round challenges, the digest. -/
-  claims : UnfinalizedProof C.BaseField sf
+  claims : UnfinalizedProof k (FVar C.BaseField) (BoolVar C.BaseField) sf
   /-- The success bit: the opening's Schnorr equation at the claims. -/
   success : BoolVar C.BaseField
 
 /-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
 `cip`, `b`. -/
-def DeferredValues.toIvpClaims {F sf : Type} (dv : DeferredValues F sf) :
-    IvpClaims F sf :=
+def DeferredValues.toIvpClaims {F sf : Type} (dv : DeferredValues k (FVar F) sf) :
+    IvpClaims (FVar F) sf :=
   ⟨⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
     dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩,
    dv.xi, ⟨dv.combinedInnerProduct, dv.b⟩⟩
@@ -158,9 +158,9 @@ structure ScalarHalf (C : KimchiCurve) (sf : Type) (k : ℕ) where
   /-- The side. -/
   side : FopSide C V sf
   /-- The deferred claim cells and the fq digest cell. -/
-  claims : UnfinalizedProof C.ScalarField sf
+  claims : UnfinalizedProof k (FVar C.ScalarField) (BoolVar C.ScalarField) sf
   /-- The evaluation cells: `ft(ζω)`, the public pair, the proof's evaluations. -/
-  evals : AllEvals C.ScalarField
+  evals : AllEvals (FVar C.ScalarField)
   /-- The predecessor mask (`proofs_verified_mask`), one bit per slot: `true` for a real
   predecessor, `false` for a dummy pad slot. The step circuit varies it; the wrap circuit
   absorbs every slot, so its half fixes it all-true (`ScalarHalf.wrap`). -/
@@ -196,12 +196,12 @@ variable {C : KimchiCurve} {sf sf' : Type}
 `IvpReads` at the half's side and claim cells, whose success bit is the exported one and whose
 digest and round prechallenges the statement's claims equal — `verify`'s two assertions. -/
 def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (G : GroupHalf C sf) : Prop :=
+    (G : GroupHalf C sf E.σ.k) : Prop :=
   ∃ o : IvpOutput C.BaseField,
     IvpReads G.side E.σ E.cvk cp pub G.claims.deferredValues.toIvpClaims o ∧
     o.success = G.success ∧
     G.claims.spongeDigestBeforeEvaluations.val G.V = o.spongeDigest.val G.V ∧
-    G.claims.deferredValues.bulletproofChallenges.map (·.val.val G.V)
+    G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
       = o.bulletproofChallenges.map (·.val.val G.V)
 
 /-- The scalar half's read: `FopReadsWire` with every parameter derived — `FopParams.ofEnv`, the
@@ -258,7 +258,7 @@ variable {C : KimchiCurve} {sf sf' : Type}
   previous-challenge cells are the proof's — prover-supplied cells against the wire objects
   the verifier judges. -/
 structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (G : GroupHalf C sf) (Sc : ScalarHalf C sf' E.σ.k) : Prop where
+    (G : GroupHalf C sf E.σ.k) (Sc : ScalarHalf C sf' E.σ.k) : Prop where
   /-- `α`: the two cells read one prechallenge. -/
   alpha : ∃ a₀ : Prechallenge,
     Reads128 G.V G.claims.deferredValues.plonk.alpha a₀ ∧
@@ -289,8 +289,8 @@ structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sc
     = G.side.decode G.claims.deferredValues.plonk.perm
   /-- The round challenges: the two cell lists read one prechallenge list. -/
   chals : ∃ ms : List Prechallenge,
-    List.Forall₂ (Reads128 G.V) G.claims.deferredValues.bulletproofChallenges ms ∧
-    List.Forall₂ (Reads128 Sc.V) Sc.claims.deferredValues.bulletproofChallenges ms
+    List.Forall₂ (Reads128 G.V) G.claims.deferredValues.bulletproofChallenges.toList ms ∧
+    List.Forall₂ (Reads128 Sc.V) Sc.claims.deferredValues.bulletproofChallenges.toList ms
   /-- The fq digest: the scalar half's cell is the cast of the group half's. -/
   digest : Sc.claims.spongeDigestBeforeEvaluations.val Sc.V
     = castDigest C (G.claims.spongeDigestBeforeEvaluations.val G.V)
@@ -309,7 +309,7 @@ structure HalvesTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sc
 exact: the `α`, `ζ` cells read as prechallenges (the ties' shared readings), and the read's
 converse clause is `XiExact` at the claim the `ξ` cell reads. -/
 theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
-    (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) {G : GroupHalf C sf}
+    (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) {G : GroupHalf C sf E.σ.k}
     {Sc : ScalarHalf C sf' E.σ.k} (hflag : Sc.side.xiConstrainLowBits = true)
     (hs : Sc.Reads E cp) (ht : HalvesTies E cp pub G Sc) : Sc.XiExact E cp := by
   have hinjS := castInj128_of_lt _ hscalar
@@ -569,7 +569,7 @@ private theorem twoHalves_schnorr_core
     (cp : KimchiProof C 1 E.σ.k)
     (pub : Array C.ScalarField)
     -- the group half
-    (G : GroupHalf C sf)
+    (G : GroupHalf C sf E.σ.k)
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
@@ -746,7 +746,7 @@ theorem twoHalves_schnorr
     (cp : KimchiProof C 1 E.σ.k)
     (pub : Array C.ScalarField)
     -- the group half
-    (G : GroupHalf C sf)
+    (G : GroupHalf C sf E.σ.k)
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
@@ -772,7 +772,7 @@ theorem twoHalves_iff_schnorr
     (cp : KimchiProof C 1 E.σ.k)
     (pub : Array C.ScalarField)
     -- the group half
-    (G : GroupHalf C sf)
+    (G : GroupHalf C sf E.σ.k)
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
@@ -805,7 +805,7 @@ theorem twoHalves_kimchiVerify
     (pub : Array C.ScalarField)
     (hguard : Guards C E.cvk cp pub)
     -- the group half
-    (G : GroupHalf C sf)
+    (G : GroupHalf C sf E.σ.k)
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
@@ -836,7 +836,7 @@ theorem twoHalves_kimchiVerify_iff
     (pub : Array C.ScalarField)
     (hguard : Guards C E.cvk cp pub)
     -- the group half
-    (G : GroupHalf C sf)
+    (G : GroupHalf C sf E.σ.k)
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
@@ -879,14 +879,16 @@ def fopStep (V : Valuation Fp) : FopSide IpaVesta.curve V (Type1 (FVar Fp)) wher
   xiConstrainLowBits := true
 
 /-- The wrap circuit's group half of a step proof: `wrapSide` at the circuit's valuation. -/
-def GroupHalf.wrap (V : Valuation Fq) (claims : UnfinalizedProof Fq (Type1 (FVar Fq)))
-    (success : BoolVar Fq) : GroupHalf IpaVesta.curve (Type1 (FVar Fq)) :=
+def GroupHalf.wrap {k : ℕ} (V : Valuation Fq)
+    (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (success : BoolVar Fq) : GroupHalf IpaVesta.curve (Type1 (FVar Fq)) k :=
   ⟨V, IpaScalarOps.wrap, wrapSide V, claims, success⟩
 
 /-- The step circuit's scalar half of a step proof: `fopStep` at the circuit's valuation, at
 the round count `k` of the finalized proof's SRS (`StepIPARounds` when deployed). -/
-def ScalarHalf.step {k : ℕ} (V : Valuation Fp) (claims : UnfinalizedProof Fp (Type1 (FVar Fp)))
-    (evals : AllEvals Fp) (mask : Vector Bool MaxProofsVerified)
+def ScalarHalf.step {k : ℕ} (V : Valuation Fp)
+    (claims : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (evals : AllEvals (FVar Fp)) (mask : Vector Bool MaxProofsVerified)
     (prevChallenges : Vector (Vector Fp k) MaxProofsVerified) (out : FopOutput Fp) :
     ScalarHalf IpaVesta.curve (Type1 (FVar Fp)) k :=
   ⟨V, fopStep V, claims, evals, mask, prevChallenges, out⟩
@@ -917,13 +919,13 @@ theorem twoHalves_kimchiVerify_vesta
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
     -- the wrap circuit: its valuation, its statement's claims, its success bit, its read
     (Vg : Valuation Fq)
-    (claimsG : UnfinalizedProof Fq (Type1 (FVar Fq)))
+    (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (successG : BoolVar Fq)
     (hg : (GroupHalf.wrap Vg claimsG successG).Reads E cp pub)
     -- the next step circuit: its valuation, its cells, its output, its read
     (Vs : Valuation Fp)
-    (claimsS : UnfinalizedProof Fp (Type1 (FVar Fp)))
-    (evals : AllEvals Fp)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (evals : AllEvals (FVar Fp))
     (mask : Vector Bool MaxProofsVerified)
     (prevChallenges : Vector (Vector Fp E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fp)
@@ -960,25 +962,27 @@ def fopWrap (V : Valuation Fq) : FopSide IpaPallas.curve V (Type2 (FVar Fq)) whe
   xiConstrainLowBits := false
 
 /-- The step circuit's group half of a wrap proof: `stepSide` at the circuit's valuation. -/
-def GroupHalf.step (V : Valuation Fp)
-    (claims : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+def GroupHalf.step {k : ℕ} (V : Valuation Fp)
+    (claims : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (success : BoolVar Fp) :
-    GroupHalf IpaPallas.curve (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    GroupHalf IpaPallas.curve (Type2 (SplitField (FVar Fp) (BoolVar Fp))) k :=
   ⟨V, IpaScalarOps.step, stepSide V, claims, success⟩
 
 /-- The wrap circuit's scalar half of a wrap proof: `fopWrap` at the circuit's valuation, at the
 round count `k` of the finalized proof's SRS (`WrapIPARounds` when deployed), every slot
 present: the wrap circuit has no mask (`finalizeOtherProofWrap` absorbs every slot), so the
 half's is all-true. -/
-def ScalarHalf.wrap {k : ℕ} (V : Valuation Fq) (claims : UnfinalizedProof Fq (Type2 (FVar Fq)))
-    (evals : AllEvals Fq) (prevChallenges : Vector (Vector Fq k) MaxProofsVerified)
+def ScalarHalf.wrap {k : ℕ} (V : Valuation Fq)
+    (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (evals : AllEvals (FVar Fq)) (prevChallenges : Vector (Vector Fq k) MaxProofsVerified)
     (out : FopOutput Fq) : ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k :=
   ⟨V, fopWrap V, claims, evals, Vector.replicate MaxProofsVerified true, prevChallenges, out⟩
 
 /-- At the wrap half the `olds` tie keeps every slot: the previous-challenge cells are the old
 accumulators' challenges, in order. -/
 theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
-    (claims : UnfinalizedProof Fq (Type2 (FVar Fq))) (evals : AllEvals Fq)
+    (claims : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (evals : AllEvals (FVar Fq))
     (prevChallenges : Vector (Vector Fq k) MaxProofsVerified) (out : FopOutput Fq)
     (olds : List (List Fq)) :
     ((List.zipWith (fun m cv => if m then [cv] else [])
@@ -1008,13 +1012,14 @@ theorem twoHalves_kimchiVerify_pallas
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     -- the step circuit: its valuation, its statement's claims, its success bit, its read
     (Vg : Valuation Fp)
-    (claimsG : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (successG : BoolVar Fp)
     (hg : (GroupHalf.step Vg claimsG successG).Reads E cp pub)
     -- the next wrap circuit: its valuation, its cells, its output, its read
     (Vs : Valuation Fq)
-    (claimsS : UnfinalizedProof Fq (Type2 (FVar Fq)))
-    (evals : AllEvals Fq)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (evals : AllEvals (FVar Fq))
     (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
     (hs : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).Reads E cp)
@@ -1041,13 +1046,14 @@ theorem twoHalves_kimchiVerify_pallas_converse
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     -- the step circuit: its valuation, its statement's claims, its success bit, its read
     (Vg : Valuation Fp)
-    (claimsG : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (successG : BoolVar Fp)
     (hg : (GroupHalf.step Vg claimsG successG).Reads E cp pub)
     -- the next wrap circuit: its valuation, its cells, its output, its read
     (Vs : Valuation Fq)
-    (claimsS : UnfinalizedProof Fq (Type2 (FVar Fq)))
-    (evals : AllEvals Fq)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
+    (evals : AllEvals (FVar Fq))
     (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
     (hs : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).Reads E cp)

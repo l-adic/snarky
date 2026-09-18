@@ -48,12 +48,12 @@ open CompElliptic.CurveForms.ShortWeierstrass
 
 section Pack
 
-variable {F : Type} [Field F] [DecidableEq F] {nc : ℕ}
+variable {F : Type} [Field F] [DecidableEq F] {nc k : ℕ}
 
 /-- `Branch_data.pack`: `4·domain_log2 + m₀ + 2·m₁`, a 10-bit value (PS `packStatement`). A
 missing mask bit reads as `0`. -/
-def BranchData.packed (bd : BranchData F) : FVar F :=
-  let bit (i : ℕ) : CVar F := match bd.proofsVerifiedMask[i]? with
+def BranchData.packed (bd : BranchData (FVar F) (BoolVar F)) : FVar F :=
+  let bit (i : ℕ) : CVar F := match bd.proofsVerifiedMask.toList[i]? with
     | some b => (↑b : CVar F)
     | none => .const 0
   CVar.add_ (CVar.scale_ 4 bd.domainLog2) (CVar.add_ (bit 0) (CVar.scale_ 2 (bit 1)))
@@ -73,7 +73,8 @@ order: the five shifted scalars `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ`
 (128), the three digests `sponge_digest, msg_wrap, msg_step` (full), the round challenges
 (128), the packed branch data (10). The shifted scalars are the step proof's `Fp` values in
 their `Type1` representative, a full field element each. -/
-def WrapStatement.packed (st : WrapStatement F (Type1 (FVar F))) : List (PackedScalar F) :=
+def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
+    List (PackedScalar F) :=
   let dv := st.proofState.deferredValues
   let pl := dv.plonk
   [.full dv.combinedInnerProduct.val, .full dv.b.val, .full pl.zetaToSrsLength.val,
@@ -82,12 +83,13 @@ def WrapStatement.packed (st : WrapStatement F (Type1 (FVar F))) : List (PackedS
    .b128 pl.alpha.val, .b128 pl.zeta.val, .b128 dv.xi.val,
    .full st.proofState.spongeDigestBeforeEvaluations,
    .full st.proofState.messagesForNextWrapProof, .full st.messagesForNextStepProof]
-  ++ dv.bulletproofChallenges.map (fun c => .b128 c.val)
+  ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
 /-- The `x_hat` leaves of a wrap statement: leaf `i` is scalar `i` of `WrapStatement.packed`
 with Lagrange base `i` and its shift correction from the table (`lagrange_with_correction`). -/
-def packLeaves (st : WrapStatement F (Type1 (FVar F))) (tab : XhatTable F nc) :
+def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
+    (tab : XhatTable F nc) :
     List (Leaf F nc) :=
   List.zipWith (fun k bc => match k with
     | .full s => Leaf.full s bc.1 bc.2
@@ -97,8 +99,9 @@ def packLeaves (st : WrapStatement F (Type1 (FVar F))) (tab : XhatTable F nc) :
 /-- The group half's input with its claims taken from an unfinalized proof
 (`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
 of `unfinalized.deferred_values`; the key, proof and `sg_old` cells as given. -/
-def IvpInput.withClaims {sf : Type} (inp : IvpInput F sf) (u : UnfinalizedProof F sf) :
-    IvpInput F sf :=
+def IvpInput.withClaims {sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) :
+    IvpInput k (FVar F) (BoolVar F) sf :=
   let dv := u.deferredValues
   { inp with
     plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
@@ -113,6 +116,7 @@ end Pack
 section Gadget
 
 variable {F c : Type} [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c] [KimchiSystem F c]
+  {ks k : ℕ}
 
 /-- `Step_verifier.verify` (`step_verifier.ml:1340`): `x_hat` from the packed statement
 (`publicInputCommitKnown`, chunk by chunk, with the constant correction seed and sum), the
@@ -123,8 +127,9 @@ def verifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Pos
     (endo : FVar F) (gm : GroupMapParams F) (sqrtF : F → Option F)
     (blindingH : AffinePoint (FVar F)) {nc : ℕ} (tab : XhatTable F nc)
     (spongeAfterIndex : SpongeVar F) (isBaseCase : BoolVar F)
-    (statement : WrapStatement F (Type1 (FVar F))) (u : UnfinalizedProof F sf)
-    (cells : IvpInput F sf) : CircuitM F c (BoolVar F) := do
+    (statement : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
+    (cells : IvpInput k (FVar F) (BoolVar F) sf) : CircuitM F c (BoolVar F) := do
   let leaves := packLeaves statement tab
   let computeXHat : CircuitM F c (List (AffinePoint (FVar F))) :=
     (List.finRange nc).mapM fun ci =>
@@ -132,7 +137,7 @@ def verifyProof {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F) (p : Pos
   let o ← incrementallyVerifyProof ops e p endo gm sqrtF false blindingH spongeAfterIndex
     computeXHat (cells.withClaims u)
   assertEqual u.spongeDigestBeforeEvaluations o.spongeDigest
-  for c12 in u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges do
+  for c12 in u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges do
     let c2' ← selectField isBaseCase c12.1.val c12.2.val
     assertEqual c12.1.val c2'
   pure o.success
@@ -143,7 +148,7 @@ end Gadget
 
 section Read
 
-variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
+variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
 /-- `verify`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
@@ -153,13 +158,15 @@ round prechallenges read as the claimed ones off the base case, pair by pair ove
 (the gadget compares the two lists as far as both reach; their lengths are the statement's
 and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
-    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (cells : IvpInput C.BaseField sf)
-    (u : UnfinalizedProof C.BaseField sf) (base : Bool) (v : BoolVar C.BaseField) : Prop :=
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
+    (cells : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
+    (v : BoolVar C.BaseField) : Prop :=
   ∃ o : IvpOutput C.BaseField,
     IvpReads S σ cvk cp pub (cells.withClaims u).toIvpClaims o ∧
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
-    (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.zip o.bulletproofChallenges,
+    (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
       p.1.val.val V = p.2.val.val V)
 
 /-- **`verify` reads as the group half at the packed statement, on either side.** On the group
@@ -185,9 +192,10 @@ theorem verifyProof_reads
     -- the unfinalized proof it is checked against, the group half's commitment cells
     (spongeAfterIndex : SpongeVar C.BaseField)
     (isBaseCase : BoolVar C.BaseField)
-    (statement : WrapStatement C.BaseField (Type1 (FVar C.BaseField)))
-    (u : UnfinalizedProof C.BaseField sf)
-    (cells : IvpInput C.BaseField sf)
+    (statement : WrapStatement ks (FVar C.BaseField) (BoolVar C.BaseField)
+      (Type1 (FVar C.BaseField)))
+    (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
+    (cells : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     -- the values the premises speak about: the base-case bit, the `sg_old` points under their
     -- bits
     (base : Bool)
@@ -259,9 +267,9 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (cp : KimchiProof IpaPallas.curve nc σ.k)
     (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
     (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
-    (statement : WrapStatement Fp (Type1 (FVar Fp)))
-    (u : UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (cells : IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (u : UnfinalizedProof σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (base : Bool) (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound pastaShapePallas V σ cvk blindingH (packLeaves statement tab))
