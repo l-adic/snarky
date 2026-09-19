@@ -86,6 +86,24 @@ Pickles.FqTranscriptReads.wire
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList
+-- The records' `CircuitType` instances (Encoding.lean): the drivers seed and allocate the
+-- gadgets' records through them (pickles/scripts/check_halves.lean, bench_fop.lean).
+Pickles.instSizedFCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instType2CircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instSplitFieldCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instPointEvaluationsCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instProofEvaluationsCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instAllEvalsCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instPlonkInCircuitCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instDeferredValuesCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instUnfinalizedProofCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instBranchDataCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instWrapDeferredValuesCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instWrapProofStateCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instWrapStatementCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instStepProofStateCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instStepStatementCircuitType -- synthesis: `CircuitType` resolution at the records
+Pickles.instBulletproofOpeningCircuitType -- synthesis: `CircuitType` resolution at the records
 -- script-surface:end
 
 -- The token alphabet (Linearization/Types.lean): the PS `Types.purs` transcription's
@@ -214,44 +232,26 @@ Pickles.incrementallyVerifyProof_step_reads
 -- root `sgOk` itself is reachable from (scripts/check_sg_ok.lean runs it on a wire proof).
 Pickles.sgOk_iff
 
--- The statement records as circuit inputs (Encoding.lean): each record's `CircuitType`
--- instance, derived from its product decomposition, owes the two reading lemmas the
--- readings gate demands; they are the record's API as a circuit input, and reach the
--- instance and the decomposition.
-Pickles.reads_sizedF
-Pickles.scoped_sizedF
-Pickles.reads_type1
-Pickles.scoped_type1
-Pickles.reads_type2
-Pickles.scoped_type2
-Pickles.reads_splitField
-Pickles.scoped_splitField
-Pickles.reads_pointEvaluations
-Pickles.scoped_pointEvaluations
-Pickles.reads_proofEvaluations
-Pickles.scoped_proofEvaluations
-Pickles.reads_allEvals
-Pickles.scoped_allEvals
-Pickles.reads_plonkInCircuit
-Pickles.scoped_plonkInCircuit
-Pickles.reads_deferredValues
-Pickles.scoped_deferredValues
-Pickles.reads_unfinalizedProof
-Pickles.scoped_unfinalizedProof
-Pickles.reads_branchData
-Pickles.scoped_branchData
-Pickles.reads_wrapDeferredValues
-Pickles.scoped_wrapDeferredValues
-Pickles.reads_wrapProofState
-Pickles.scoped_wrapProofState
-Pickles.reads_wrapStatement
-Pickles.scoped_wrapStatement
-Pickles.reads_bulletproofOpening
-Pickles.scoped_bulletproofOpening
-Pickles.reads_stepProofState
-Pickles.scoped_stepProofState
-Pickles.reads_stepStatement
-Pickles.scoped_stepStatement
+-- The statement records as circuit inputs (Encoding.lean): each record's product
+-- decomposition, whose `@[simps apply]` projection lemma is the record's whole reading API —
+-- `simp [reads_simps]` decomposes a `Reads` through it (Snarky.Encoding.Simps). The
+-- instances themselves are script-surface roots below: class resolution finds them.
+Snarky.SizedF.equivVal_apply
+Snarky.Type2.equivVal_apply
+Snarky.SplitField.equivProd_apply
+Kimchi.Verifier.PointEvaluations.equivProd_apply
+Kimchi.Verifier.ProofEvaluations.equivProd_apply
+Pickles.AllEvals.equivProd_apply
+Pickles.PlonkInCircuit.equivProd_apply
+Pickles.DeferredValues.equivProd_apply
+Pickles.UnfinalizedProof.equivProd_apply
+Pickles.BranchData.equivProd_apply
+Pickles.WrapDeferredValues.equivProd_apply
+Pickles.WrapProofState.equivProd_apply
+Pickles.WrapStatement.equivProd_apply
+Pickles.StepProofState.equivProd_apply
+Pickles.StepStatement.equivProd_apply
+Pickles.BulletproofOpening.equivProd_apply
 -- The step statement's packing (Verify.lean, beside `WrapStatement.packed`, which `verifyProof`
 -- reaches): the `x_hat` walk of a step statement and its boolean cells. Its consumer today
 -- is the wrap circuit's group half in the fixture library (`PicklesFixture.groupWrapOn`); the
