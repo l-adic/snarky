@@ -675,7 +675,7 @@ def checkBulletproofStepCircuit (blindingH : AffinePoint (FVar Fp)) (input : Vec
     ((List.range 47).map fun j => (pt (4 + 2 * j), none))
     { xi := ⟨get 3⟩
       deferred := { combinedInnerProduct := shifted 166, b := shifted 168 }
-      opening := { lr := (List.range 15).map fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
+      opening := { lr := Vector.ofFn (n := 15) fun j => (pt (98 + 4 * j), pt (100 + 4 * j))
                    z1 := shifted 162, z2 := shifted 164, delta := pt 158, sg := pt 160 }
       blindingGenerator := blindingH }
   pure PUnit.unit
@@ -727,7 +727,7 @@ def checkBulletproofWrapCircuit (blindingH : AffinePoint (FVar Fq)) (input : Vec
     bases
     { xi := ⟨get 3⟩
       deferred := { combinedInnerProduct := ⟨get 170⟩, b := ⟨get 171⟩ }
-      opening := { lr := (List.range 16).map fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
+      opening := { lr := Vector.ofFn (n := 16) fun j => (pt (100 + 4 * j), pt (102 + 4 * j))
                    z1 := ⟨get 168⟩, z2 := ⟨get 169⟩, delta := pt 164, sg := pt 166 }
       blindingGenerator := blindingH }
   pure PUnit.unit
@@ -905,21 +905,21 @@ def dummyIndexSponge : CircuitM Fp C (SpongeVar Fp) :=
 /-- The group half's cells from the 175-input layout at `get`: the claims and the opening
 from the inputs, the key's commitments and `sg_old` dummy constants. -/
 def ivpStepInput (get : ℕ → FVar Fp) :
-    Pickles.IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    Pickles.IvpInput Pickles.WrapIPARounds (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
-  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords dummyKeyComms
-  { plonk := ⟨⟨⟨get 30⟩, ⟨get 31⟩, ⟨get 32⟩, ⟨get 33⟩⟩, shifted 34, shifted 36, shifted 38⟩
-    xi := ⟨get 44⟩
-    deferred := ⟨shifted 40, shifted 42⟩
-    sgOld := [(none, dummyWrapSg), (none, dummyWrapSg)]
-    sigmaLast, indexComms, coefficientsComm, sigmaComm
-    wComm := (List.range 15).map fun j => [pt (60 + 2 * j)]
-    zComm := [pt 90]
-    tComm := (List.range 7).map fun j => pt (92 + 2 * j)
-    opening := { lr := (List.range 15).map fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
-                 z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 } }
+  let dv : Pickles.DeferredValues Pickles.WrapIPARounds (FVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    { plonk := { alpha := ⟨get 30⟩, beta := ⟨get 31⟩, gamma := ⟨get 32⟩, zeta := ⟨get 33⟩,
+                 perm := shifted 34, zetaToSrsLength := shifted 36, zetaToDomainSize := shifted 38 }
+      combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
+      bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
+  ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+    (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
+     { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+       z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 })
 
 /-- `ivp_step_circuit`: the index-digest sponge, `Pickles.incrementallyVerifyProof` on the
 step side with `x_hat` the known-domain commitment of inputs 0–29, then the harness's
@@ -954,7 +954,8 @@ Lagrange bases the same `pallasCrs15` export. -/
 /-- The unfinalized proof the verified wrap proof is checked against, from the 268-input
 layout. -/
 def stepVerifyUnfinalized (get : ℕ → FVar Fp) :
-    Pickles.UnfinalizedProof Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+    Pickles.UnfinalizedProof Pickles.WrapIPARounds (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   { deferredValues :=
@@ -962,22 +963,23 @@ def stepVerifyUnfinalized (get : ℕ → FVar Fp) :
                    perm := shifted 241, zetaToSrsLength := shifted 237,
                    zetaToDomainSize := shifted 239 }
         combinedInnerProduct := shifted 233, b := shifted 235, xi := ⟨get 248⟩
-        bulletproofChallenges := (List.range 15).map fun j => ⟨get (249 + j)⟩ }
+        bulletproofChallenges := Vector.ofFn fun j => ⟨get (249 + j)⟩ }
     shouldFinalize := true_
     spongeDigestBeforeEvaluations := get 243 }
 
 /-- The wrap statement from the 268-input layout: the proof state's claims as `Type1` cells,
 the branch data, the three digests. -/
-def stepVerifyStatement (get : ℕ → FVar Fp) : Pickles.WrapStatement Fp (Type1 (FVar Fp)) :=
+def stepVerifyStatement (get : ℕ → FVar Fp) :
+    Pickles.WrapStatement Pickles.StepIPARounds (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) :=
   { proofState :=
       { deferredValues :=
           { plonk := { alpha := ⟨get 114⟩, beta := ⟨get 115⟩, gamma := ⟨get 116⟩,
                        zeta := ⟨get 117⟩, perm := ⟨get 120⟩, zetaToSrsLength := ⟨get 118⟩,
                        zetaToDomainSize := ⟨get 119⟩ }
             combinedInnerProduct := ⟨get 121⟩, b := ⟨get 122⟩, xi := ⟨get 123⟩
-            bulletproofChallenges := (List.range 16).map fun j => ⟨get (124 + j)⟩
+            bulletproofChallenges := Vector.ofFn fun j => ⟨get (124 + j)⟩
             branchData := { domainLog2 := get 142,
-                            proofsVerifiedMask := [.unchecked (get 140), .unchecked (get 141)] } }
+                            proofsVerifiedMask := #v[.unchecked (get 140), .unchecked (get 141)] } }
         spongeDigestBeforeEvaluations := get 143
         messagesForNextWrapProof := get 266 }
     messagesForNextStepProof := get 267 }
@@ -985,10 +987,16 @@ def stepVerifyStatement (get : ℕ → FVar Fp) : Pickles.WrapStatement Fp (Type
 /-- The group half's cells from the 268-input layout: the wrap proof block at 0, the key and
 `sg_old` dummies; the claim cells are `verify`'s to substitute. -/
 def stepVerifyCells (get : ℕ → FVar Fp) :
-    Pickles.IvpInput Fp (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
-  ivpStepInputOf (stepVerifyUnfinalized get).deferredValues
-    [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms (fun i => ⟨get i, get (i + 1)⟩)
-    (fun i => ⟨⟨get i, .unchecked (get (i + 1))⟩⟩)
+    Pickles.IvpInput Pickles.WrapIPARounds (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))) :=
+  let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
+  let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  ivpInputOf (stepVerifyUnfinalized get).deferredValues
+    [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+    (Vector.ofFn fun j => pt (2 * j), pt 30, Vector.ofFn fun j => pt (32 + 2 * j),
+     { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
+       z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 })
 
 /-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
 side over the parsed statement, unfinalized proof and cells. -/

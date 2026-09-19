@@ -15,28 +15,25 @@ being measured is the walk, not the verdict.
 Run: `lake exe bench-fop` from `formal/`.
 -/
 
-open Snarky PicklesFixture CompElliptic.Fields.Pasta
+open Snarky Pickles PicklesFixture CompElliptic.Fields.Pasta
 
-/-- A placeholder bundle: the domain the step side is compiled at, every other cell zero. -/
-def dummyInput : FopInput Fp :=
-  { claims := Vector.replicate 26 0
-    mask := Vector.replicate 2 0
-    domainLog2 := 16
-    evals := Vector.replicate 88 0
-    ftEval1 := 0
-    prevChallenges := Vector.replicate 32 0
-    digest := 0 }
+/-- A placeholder input at the deployed round count: every cell zero but the domain the step
+side is compiled at. -/
+def dummyInput : StepFop StepIPARounds :=
+  let z : StepFop StepIPARounds :=
+    CircuitType.fieldsToValue (Vector.replicate (CircuitType.size Fp (StepFop StepIPARounds)) 0)
+  (z.1, z.2.1, z.2.2.1, z.2.2.2.1, 16)
 
 def main : IO Unit := do
-  let nv := CircuitType.size Fp (FopInput Fp)
-  let iv : FopInput (FVar Fp) := inputVar (F := Fp) (a := FopInput Fp)
+  let nv := CircuitType.size Fp (StepFop StepIPARounds)
+  let iv : StepFopVar StepIPARounds := inputVar (F := Fp) (a := StepFop StepIPARounds)
   let m := fopStepOn iv
   IO.println s!"input cells: {nv}"
   let t0 ← IO.monoMsNow
   let built := build m nv
   IO.println s!"build: {built.constraints.length} constraints, {built.nextVar} variables"
   let t1 ← IO.monoMsNow
-  let st := seed (F := Fp) (avar := FopInput (FVar Fp)) dummyInput
+  let st := seed (F := Fp) (avar := StepFopVar StepIPARounds) dummyInput
   match prove m st.nv st.env with
   | .error e =>
     let t2 ← IO.monoMsNow

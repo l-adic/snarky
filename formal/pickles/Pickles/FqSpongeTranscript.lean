@@ -117,19 +117,19 @@ def fqSpongeTranscript [ToNat F] (p : Poseidon.Params F) (endo indexDigest : FVa
   pure ⟨beta, gamma, alpha, zeta, xHat, digest, sv⟩
 
 /-- The four deferred plonk claims, as 128-bit values. -/
-structure PlonkClaims (F : Type) where
+structure PlonkClaims (f : Type) where
   /-- The `α` claim. -/
-  alpha : SizedF 128 (FVar F)
+  alpha : SizedF 128 f
   /-- The `β` claim. -/
-  beta : SizedF 128 (FVar F)
+  beta : SizedF 128 f
   /-- The `γ` claim. -/
-  gamma : SizedF 128 (FVar F)
+  gamma : SizedF 128 f
   /-- The `ζ` claim. -/
-  zeta : SizedF 128 (FVar F)
+  zeta : SizedF 128 f
 
 /-- Assert the squeezed prechallenges equal the deferred plonk claims (PS
 `assertPlonkChallenges`, `step_verifier.ml:706-712`): `β, γ, α, ζ` in that order. -/
-def assertPlonkChallenges (o : FqTranscriptOutput F) (claims : PlonkClaims F) :
+def assertPlonkChallenges (o : FqTranscriptOutput F) (claims : PlonkClaims (FVar F)) :
     CircuitM F c PUnit := do
   assertEqual o.beta.val claims.beta.val
   assertEqual o.gamma.val claims.gamma.val
@@ -384,7 +384,7 @@ theorem fqSpongeTranscript_xHat [ToNat F] (p : Poseidon.Params F)
 
 /-- Under any valuation satisfying the emitted constraints, each claim reads as the
 corresponding squeezed prechallenge. -/
-theorem assertPlonkChallenges_spec (o : FqTranscriptOutput F) (claims : PlonkClaims F) :
+theorem assertPlonkChallenges_spec (o : FqTranscriptOutput F) (claims : PlonkClaims (FVar F)) :
     ⦃⌜True⌝⦄ assertPlonkChallenges (c := Builder V (KimchiConstraint F)) o claims
     ⦃⇓ _ _ => ⌜claims.beta.val.val V = o.beta.val.val V ∧
       claims.gamma.val.val V = o.gamma.val.val V ∧
