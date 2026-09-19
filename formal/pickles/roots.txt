@@ -299,3 +299,13 @@ Pickles.verifyProof_step_reads
 -- `wrapVerify_wrap_reads` (the deployed Vesta instantiation, the wrap-side counterpart of
 -- `verifyProof_step_reads`) and `wrapVerify_reads` beneath it.
 Pickles.wrapVerify_kimchiVerify_vesta
+
+-- The step circuit's scalar half at an environment (StepScalarHalf.lean): `finalize_other_proof`
+-- with the verifier key's parameters and the `Fp` token stream, and the capstone that runs it
+-- — `twoHalves_kimchiVerify_vesta` as a triple about the scalar circuit, with the wrap
+-- circuit's group half assumed. The two halves run in different circuits over different
+-- fields, so no one triple covers both; each side gets a triple about its own circuit. The
+-- domain the circuit selects off `domain_log2` is tied to the key's by hypothesis (`hsel`):
+-- the branch data that forces it is bound through the `x_hat` commitment, which is not yet
+-- in the chain.
+Pickles.finalizeOtherProofStepAt_kimchiVerify_vesta
