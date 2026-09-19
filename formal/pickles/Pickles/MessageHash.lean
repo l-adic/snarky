@@ -1,5 +1,4 @@
 import Snarky.Kimchi.Circuit.Sponge
-import Snarky.Kimchi.Circuit.AddComplete
 
 /-!
 # `messages_for_next_wrap_proof`, hashed
