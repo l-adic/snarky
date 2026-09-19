@@ -91,6 +91,7 @@ import Pickles.Verify
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
+import Pickles.MessageHash
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
@@ -1010,6 +1011,23 @@ def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar F
     (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit
 
+/-! ## The `messages_for_next_wrap_proof` hash
+
+Transcribes `Pickles.CircuitDiffs.PureScript.HashMessagesWrap`: the digest the wrap circuit
+commits its accumulator advice to (`Pickles.hashMessagesForNextWrapProof`, OCaml
+`wrap_hack.ml:119-142`), from the fresh sponge, asserted against the claimed digest. The
+layout is 33 cells: the two `MaxProofsVerified` challenge vectors of `WrapIPARounds` at 0-29,
+`sg` at 30-31, the claim at 32. -/
+
+/-- `hash_messages_for_next_wrap_proof_circuit`. -/
+def hashMessagesWrapCircuit (input : Vector (FVar Fq) 33) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let digest ← Pickles.hashMessagesForNextWrapProof Bulletproof.IpaVesta.curve.sponge.params
+    SpongeVar.init
+    [(List.range 15).map fun j => get j, (List.range 15).map fun j => get (15 + j)]
+    ⟨get 30, get 31⟩
+  assertEqual digest (get 32)
+
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
 def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
@@ -1096,7 +1114,9 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       wrapTarget (a := Vector Fq 172) (b := PUnit) (checkBulletproofWrapCircuit hWrap)),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
-    ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit) ]
+    ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit),
+    ("hash_messages_for_next_wrap_proof_circuit",
+      wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 
 /-- The targets baked over a Lagrange export, each present only when its export is (a
 narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/

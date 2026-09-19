@@ -83,6 +83,11 @@ Pickles.assertPlonkChallenges_spec
 Pickles.FqTranscriptReads.wire
 
 -- script-surface:begin
+-- The `messages_for_next_wrap_proof` digest (MessageHash.lean): the wrap circuit's binding of
+-- its accumulator advice. Consumed today by scripts/check_cs.lean's transcription of the PS
+-- `HashMessagesWrap` harness; it becomes library-reachable when `Wrap.Main`'s verify block
+-- lands and the wrap capstone's hypothesis is discharged by it.
+Pickles.hashMessagesForNextWrapProof
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList
