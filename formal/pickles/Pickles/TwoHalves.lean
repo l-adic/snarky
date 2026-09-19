@@ -1,5 +1,6 @@
 import Pickles.IncrementallyVerify
 import Pickles.FinalizeOtherProof
+import Pickles.Verify
 import Kimchi.Columns
 
 /-!
@@ -109,6 +110,20 @@ structure Env (C : KimchiCurve) where
 
 /-! ## The group half -/
 
+/-- Pointwise ties along a zip give the mapped lists, at equal lengths: what a circuit that
+compares two cell lists entry by entry establishes about them as lists. -/
+private theorem map_eq_map_of_zip {α β γ : Type} {f : α → γ} {g : β → γ} :
+    ∀ {l₁ : List α} {l₂ : List β}, l₁.length = l₂.length →
+      (∀ p ∈ l₁.zip l₂, f p.1 = g p.2) → l₁.map f = l₂.map g
+  | [], [], _, _ => rfl
+  | [], _ :: _, hlen, _ => absurd hlen (by simp)
+  | _ :: _, [], hlen, _ => absurd hlen (by simp)
+  | a :: as, b :: bs, hlen, h => by
+      simp only [List.map_cons, List.cons.injEq]
+      refine ⟨h (a, b) (by simp), map_eq_map_of_zip (by simpa using hlen) fun p hp => h p ?_⟩
+      rw [List.zip_cons_cons]
+      exact List.mem_cons_of_mem _ hp
+
 /-- The group half of a proof's verification, as one circuit runs it (for a step proof, the
 wrap circuit): its valuation, its side (the ladder reading, the claim decode, the group facts),
 the claim cells of its statement — the deferred values it scales by, the round challenges and
@@ -126,14 +141,6 @@ structure GroupHalf (C : KimchiCurve) (sf : Type) (k : ℕ) where
   claims : UnfinalizedProof k (FVar C.BaseField) (BoolVar C.BaseField) sf
   /-- The success bit: the opening's Schnorr equation at the claims. -/
   success : BoolVar C.BaseField
-
-/-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
-`cip`, `b`. -/
-def DeferredValues.toIvpClaims {F sf : Type} (dv : DeferredValues k (FVar F) sf) :
-    IvpClaims (FVar F) sf :=
-  ⟨⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
-    dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩,
-   dv.xi, ⟨dv.combinedInnerProduct, dv.b⟩⟩
 
 /-! ## The scalar half -/
 
@@ -197,12 +204,7 @@ variable {C : KimchiCurve} {sf sf' : Type}
 digest and round prechallenges the statement's claims equal — `verify`'s two assertions. -/
 def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (G : GroupHalf C sf E.σ.k) : Prop :=
-  ∃ o : IvpOutput C.BaseField,
-    IvpReads G.side E.σ E.cvk cp pub G.claims.deferredValues.toIvpClaims o ∧
-    o.success = G.success ∧
-    G.claims.spongeDigestBeforeEvaluations.val G.V = o.spongeDigest.val G.V ∧
-    G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
-      = o.bulletproofChallenges.map (·.val.val G.V)
+  VerifyReads G.side E.σ E.cvk cp pub G.claims false G.success
 
 /-- The scalar half's read: `FopReadsWire` with every parameter derived — `FopParams.ofEnv`, the
 key's domain, the proof's recursion digest — and every value it checks at taken from the half's
@@ -674,11 +676,16 @@ private theorem twoHalves_schnorr_core
     rw [frOracles_eq_frPrechallenges]
   -- the round challenges: the cell lists' readings are equations of lists
   obtain ⟨ms, hmsG, hmsS⟩ := ht.chals
+  -- `verify` compares the claimed challenges with the returned ones entry by entry off the
+  -- base case; both lists have the SRS's round count, so the ties give the lists
+  have hbpc' : G.claims.deferredValues.bulletproofChallenges.toList.map (·.val.val G.V)
+      = o.bulletproofChallenges.map (·.val.val G.V) :=
+    map_eq_map_of_zip (by simp [hns.length_eq]) (hbpc rfl)
   rw [forall₂_reads128_iff] at hmsG hmsS hns hĉ
   have hĉeq : ĉ = (ipaRunAt C (fqRun C E.cvk cp (publicCommitment C E.σ E.cvk pub)).warm
       (G.side.decode G.claims.deferredValues.combinedInnerProduct) cp.opening).2.1.toList :=
     (List.map_injective_iff.mpr hinjS.prechallenge_injective (hĉ.symm.trans hmsS)).trans
-      (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc.trans hns)))
+      (List.map_injective_iff.mpr hinjG.prechallenge_injective (hmsG.symm.trans (hbpc'.trans hns)))
   -- the four checks, in wire terms
   rw [hζ, hα, hβ, hγ, hev, hpz, hpzo, ht.ftEval1] at hcipC
   rw [hζ] at hbC

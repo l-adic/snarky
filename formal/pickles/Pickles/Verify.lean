@@ -188,6 +188,14 @@ section Read
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
+/-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
+`cip`, `b`. -/
+def DeferredValues.toIvpClaims {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf) :
+    IvpClaims (FVar F) sf :=
+  ⟨⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
+    dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩,
+   dv.xi, ⟨dv.combinedInnerProduct, dv.b⟩⟩
+
 /-- `verify`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
 `sponge_digest_before_evaluations` (so the claim is the wire's digest element), and whose
@@ -196,11 +204,10 @@ round prechallenges read as the claimed ones off the base case, pair by pair ove
 and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (cells : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
     (v : BoolVar C.BaseField) : Prop :=
   ∃ o : IvpOutput C.BaseField,
-    IvpReads S σ cvk cp pub (cells.withClaims u).toIvpClaims o ∧
+    IvpReads S σ cvk cp pub u.deferredValues.toIvpClaims o ∧
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
     (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
@@ -247,7 +254,7 @@ theorem verifyProof_reads
     verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params endo
       (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
-    ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) cells u base v⌝⦄ := by
+    ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⌝⦄ := by
   obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
   -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
   have hhead : leafHeadScalar (packLeaves statement tab) := by
@@ -317,7 +324,7 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
       IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
-      (pubOf IpaPallas.curve V (packLeaves statement tab)) cells u base v⌝⦄ :=
+      (pubOf IpaPallas.curve V (packLeaves statement tab)) u base v⌝⦄ :=
   verifyProof_reads (stepSide V) pastaShapePallas σ cvk cp endo sqrtF blindingH tab
     spongeAfterIndex
     isBaseCase statement u cells base oldsW hbase htab hivp
