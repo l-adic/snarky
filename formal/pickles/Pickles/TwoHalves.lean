@@ -144,16 +144,29 @@ structure GroupHalf (C : KimchiCurve) (sf : Type) (k : ℕ) where
 
 /-! ## The scalar half -/
 
-/-- The scalar half's side: how a shifted claim cell reads as a scalar (the unshifted value
-at the valuation), and the side's linearization token stream. -/
+/-- The scalar half's side: how a shifted claim cell reads (`FopShiftOps.Reading.read`), how
+that reading unshifts, and the side's linearization token stream. The two functions are the
+gadget's own (`stepShiftOps.reading`, `wrapShiftOps.reading`), kept apart because
+`FopVerifyReads` takes them apart. -/
 structure FopSide (C : KimchiCurve) (V : Valuation C.ScalarField) (sf : Type) where
-  /-- The scalar a shifted claim cell reads as: its value, unshifted. -/
-  decode : sf → C.ScalarField
+  /-- The value a shifted claim cell reads as, still shifted. -/
+  read : sf → C.ScalarField
+  /-- The decode of a reading: the shift the side's claims carry. -/
+  unshiftV : C.ScalarField → C.ScalarField
   /-- The linearization token stream of the side. -/
   toks : Array Linearization.PolishToken
   /-- Whether the side range-checks the low half of the `ξ` split (`xiConstrainLowBits`):
   the step circuit does, the wrap circuit does not. -/
   xiConstrainLowBits : Bool
+
+/-- The scalar a shifted claim cell reads as: its value, unshifted. -/
+def FopSide.decode {C : KimchiCurve} {V : Valuation C.ScalarField} {sf : Type}
+    (S : FopSide C V sf) (x : sf) : C.ScalarField := S.unshiftV (S.read x)
+
+/-- The two functions `FopVerifyReads` takes apart, put back together: what the gadget's read
+states of a shifted claim is the half's decode of it. -/
+theorem FopSide.unshiftV_read {C : KimchiCurve} {V : Valuation C.ScalarField} {sf : Type}
+    (S : FopSide C V sf) (x : sf) : S.unshiftV (S.read x) = S.decode x := rfl
 
 /-- The scalar half of a proof's verification, as the next circuit runs it (for a step proof,
 the following step circuit): its valuation, its side, the deferred claim cells with the fq
@@ -206,22 +219,18 @@ def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sca
     (G : GroupHalf C sf E.σ.k) : Prop :=
   VerifyReads G.side E.σ E.cvk cp pub G.claims false G.success
 
-/-- The scalar half's read: `FopReadsWire` with every parameter derived — `FopParams.ofEnv`, the
-key's domain, the proof's recursion digest — and every value it checks at taken from the half's
-cells: the `α`, `ζ` cells read as prechallenges, expanded at the sponge's eigenvalue (the shape
-of `finalizeOtherProofStep_spec_fp`), `β`, `γ` as the cells' values, the three shifted claims
-through the side's decode. -/
+/-- The scalar half's read: `finalize_other_proof`'s own (`FopVerifyReads`, what both deployed
+specs conclude), at the half's cells and the environment's parameters — `FopParams.ofEnv`, the
+key's domain, the proof's recursion digest. A delegation, as `GroupHalf.Reads` is to
+`VerifyReads`: the half restates nothing the gadget already says. Where the circuit's own
+domain and digest differ from the key's and the proof's, that is a tie for the consumer to
+supply, not something this definition may absorb. -/
 def ScalarHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf C sf' E.σ.k) :
     Prop :=
-  let dv := Sc.claims.deferredValues
-  ∀ a₀ z₀ : Prechallenge, Reads128 Sc.V dv.plonk.alpha a₀ → Reads128 Sc.V dv.plonk.zeta z₀ →
-  FopReadsWire (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) Sc.side.xiConstrainLowBits
+  FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) Sc.side.xiConstrainLowBits
     E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u))) Sc.mask.toList
-    (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals
-    (endoExpand C.lam z₀.val) (endoExpand C.lam a₀.val)
-    (dv.plonk.beta.val.val Sc.V) (dv.plonk.gamma.val.val Sc.V)
-    (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.combinedInnerProduct)
-    (Sc.side.decode dv.b) id Sc.V Sc.out
+    (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+    Sc.side.read Sc.side.unshiftV Sc.V Sc.out
 
 /-- The `ξ` comparison is exact at the half: a `ξ` claim reading as the wire's fr-sponge `ξ`
 prechallenge — at the half's own digest, `ft(ζω)` and evaluation cells, the proof's recursion
@@ -317,7 +326,10 @@ theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.sca
   have hinjS := castInj128_of_lt _ hscalar
   obtain ⟨a₀, -, hαSa⟩ := ht.alpha
   obtain ⟨z₀, -, hζSz⟩ := ht.zeta
-  have hs := hs a₀ z₀ hαSa hζSz
+  simp only [ScalarHalf.Reads, FopVerifyReads] at hs
+  obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
+  obtain rfl := Reads128.unique hinjS hαSa hαS
+  obtain rfl := Reads128.unique hinjS hζSz hζS
   simp only [FopReadsWire, FopParams.ofEnv] at hs
   obtain ⟨ξ₀', -, -, hξS, -, -, -, hex, -, -⟩ := hs
   intro ξ₀ hξ hpre
@@ -616,8 +628,11 @@ private theorem twoHalves_schnorr_core
   subst hch
   rw [hsucc] at hiff
   -- the scalar half's read, at the shared `α`, `ζ`
-  have hs := hs a₀ z₀ hαSa hζSz
-  simp only [FopReadsWire, FopChecks, FopParams.ofEnv, id_eq] at hs
+  simp only [ScalarHalf.Reads, FopVerifyReads] at hs
+  obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
+  obtain rfl := Reads128.unique hinjS hαSa hαS
+  obtain rfl := Reads128.unique hinjS hζSz hζS
+  simp only [FopReadsWire, FopChecks, FopParams.ofEnv, FopSide.unshiftV_read] at hs
   obtain ⟨ξ₀', r', ĉ, hξS, hr', -, hxiF, -, hĉ, hcipC, hbC, hpermC, hfin, -⟩ := hs
   obtain rfl : ξ₀ = ξ₀' := Reads128.unique hinjS hξSx hξS
   -- the scalar half's inputs are the run's
@@ -881,7 +896,8 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 /-- The step circuit's scalar side: `Type1` claims decoded as the step reading unshifts them
 (`stepShiftOps.reading`, `Type1.fromShifted 255`), the `Fp` linearization tokens. -/
 def fopStep (V : Valuation Fp) : FopSide IpaVesta.curve V (Type1 (FVar Fp)) where
-  decode x := (stepShiftOps.reading (V := V) (by decide)).unshiftV (x.val.val V)
+  read := (stepShiftOps.reading (V := V) (by decide)).read
+  unshiftV := (stepShiftOps.reading (V := V) (by decide)).unshiftV
   toks := Linearization.fpTokens
   xiConstrainLowBits := true
 
@@ -906,8 +922,8 @@ theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
     (x : Type1 (FVar Fp))
     (y : Type1 (FVar Fq)) :
     (fopStep Vs).decode x = (wrapSide Vg).decode y ↔ x.val.val Vs = ((y.val.val Vg).val : Fp) := by
-  simp only [fopStep, stepShiftOps.reading, wrapSide, wrapDecode, Type1.fromShifted,
-    Pasta.Shifted.unshiftType1]
+  simp only [FopSide.decode, fopStep, stepShiftOps.reading, wrapSide, wrapDecode,
+    Type1.fromShifted, Pasta.Shifted.unshiftType1]
   constructor
   · intro h
     have h2 : (2 : Fp) ≠ 0 := by decide
@@ -964,7 +980,8 @@ open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 /-- The wrap circuit's scalar side: `Type2` claims decoded as the wrap reading unshifts them
 (`wrapShiftOps.reading`, `Type2.fromShifted 255`), the `Fq` linearization tokens. -/
 def fopWrap (V : Valuation Fq) : FopSide IpaPallas.curve V (Type2 (FVar Fq)) where
-  decode x := (wrapShiftOps.reading (V := V)).unshiftV (x.val.val V)
+  read := (wrapShiftOps.reading (V := V)).read
+  unshiftV := (wrapShiftOps.reading (V := V)).unshiftV
   toks := Linearization.fqTokens
   xiConstrainLowBits := false
 

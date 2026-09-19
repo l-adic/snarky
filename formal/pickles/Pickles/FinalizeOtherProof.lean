@@ -976,6 +976,28 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   rw [hz', ha', hβ, hγ, hperm] at hreads
   exact hreads
 
+open Poseidon.FqSponge in
+/-- **`finalize_other_proof`'s read**, the shape both deployed specs conclude: the `α` and
+`ζ` claims read as prechallenges, and the outputs read as `FopReadsWire` at their endo-
+expansions, with `β`, `γ` and the three shifted claims taken from the unfinalized proof's own
+cells — the shifted ones through the side's claim reading `read` (`FopShiftOps.Reading.read`).
+The parameters the two sides differ in are arguments: the low-half flag, the domain `(n, ω)`,
+the recursion digest `dv`, the predecessor mask `ms`, the reading and the shift decode. The
+eigenvalue the claims expand at is an argument too, `P.endoLam` at the deployed specs: a
+consumer that knows it by another name states the read at that name. -/
+def FopVerifyReads {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p))
+    (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
+    (cvs : List (List (ZMod p))) (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
+    (w : AllEvals (FVar (ZMod p))) (endoLam : ZMod p) (read : sf → ZMod p)
+    (unshiftV : ZMod p → ZMod p) (V : Valuation (ZMod p)) (o : FopOutput (ZMod p)) : Prop :=
+  ∃ a₀ z₀ : Prechallenge,
+    Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
+    FopReadsWire P xiConstrainLowBits n ω dv ms cvs u w
+      (endoExpand endoLam z₀.val) (endoExpand endoLam a₀.val)
+      (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
+      (read u.deferredValues.plonk.perm) (read u.deferredValues.combinedInnerProduct)
+      (read u.deferredValues.b) unshiftV V o
+
 /-! ## The deployed fields -/
 
 section Deployed
@@ -1000,15 +1022,11 @@ theorem finalizeOtherProofStep_spec_fp {V : Valuation Fp} (P : FopParams Fp)
     ⦃⌜True⌝⦄ finalizeOtherProofStep (c := Builder V (KimchiConstraint Fp)) P domains u w mask
       prev domainLog2Var
     ⦃⇓ o _ => ⌜∃ d₀, d₀ ∈ domains ∧ domainLog2Var.val V = (d₀.log2 : Fp) ∧
-      ∃ a₀ z₀ : Prechallenge,
-      Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
-      FopReadsWire P true (2 ^ d₀.log2) d₀.generator
+      FopVerifyReads P true (2 ^ d₀.log2) d₀.generator
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
-        ms cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
-        (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
-        (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
-        (u.deferredValues.b.val.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
+        ms cvs u w P.endoLam (fun x => x.val.val V)
+        (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _
     (finalizeOtherProofStep_spec (by decide) (by decide) (castInj128_of_lt _ (by decide))
       (SplitWidth.zmod (by decide) (by decide)) P hsize
@@ -1035,15 +1053,11 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
       vanishing u w prev
-    ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
-      Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
-      FopReadsWire P false n gen
-        (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
-          (prev.flatten.map (·.val V)))).1
-        (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
-        (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
-        (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
-        (u.deferredValues.b.val.val V) (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
+    ⦃⇓ o _ => ⌜FopVerifyReads P false n gen
+      (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
+        (prev.flatten.map (·.val V)))).1
+      (prev.map fun _ => true) cvs u w P.endoLam (fun x => x.val.val V)
+      (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ :=
   builder_spec_imp _ _ _
     (finalizeOtherProofWrap_spec (by decide) (by decide) (castInj128_of_lt _ (by decide))
       (SplitWidth.zmod (by decide) (by decide)) P hsize

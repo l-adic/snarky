@@ -126,6 +126,10 @@ Kimchi.Protocol.Linearization.Evals.toEnv_pow
 Kimchi.Protocol.Linearization.Evals.toEnv_sub
 Kimchi.Protocol.Linearization.Evals.toEnv_unnormalizedLagrangeBasis
 Kimchi.Protocol.Linearization.Evals.toEnv_vanishes
+-- The scalar half's refold of the gadget's two claim functions into the side's decode
+-- (TwoHalves.lean): fired by `simp only` in the two halves' proof, likewise a definitional
+-- rewrite that leaves no proof term.
+Pickles.FopSide.unshiftV_read
 
 -- The group side's opening check (CheckBulletproof.lean): the absorbed limbs, the round
 -- prechallenges and `check_bulletproof`'s transcript half, read as the wire verifier's
