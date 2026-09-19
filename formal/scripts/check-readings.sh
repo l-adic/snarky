@@ -10,7 +10,9 @@
 #
 # Left unwritten, every consumer re-derives the unfolding inline. This gate makes the
 # obligation explicit: declaring `instance … : CircuitType F (X …) (X …)` for a domain type
-# obliges a `reads_x` and a `scoped_x` in the same module.
+# obliges either a `reads_x` and a `scoped_x` in the same module, or — for an `ofEquiv`
+# instance — an `@[simps apply]` decomposition, whose projection lemma lets the
+# `reads_simps` set (Snarky.Encoding.Simps) decompose the reading generically.
 #
 # The formers themselves (`F`, `Bool`, `Unit`, `Prod`, `Vector`, `UnChecked`) are exempt:
 # their lemmas live in Snarky/Prover.lean, keyed on the former rather than on a type.
@@ -52,24 +54,33 @@ for f in "${files[@]}"; do
     # `CircuitType F (Val …) (Var …)` — the lemmas are named for the VAR head, which is
     # what a proof holds (`SpongeState` for the `Triple` value, `AffinePoint` for both).
     head=$(printf '%s' "$stripped" \
-      | sed -n 's/.*: *CircuitType [^ ]* *(\?\([A-Za-z_][A-Za-z0-9_.]*\).*/\1/p')
+      | sed -n 's/.*: *CircuitType [^ ]* *(\{0,1\}\([A-Za-z_][A-Za-z0-9_.]*\).*/\1/p')
     var=$(printf '%s' "$stripped" \
-      | sed -n 's/.*: *CircuitType [^ ]* *([^)]*) *(\?\([A-Za-z_][A-Za-z0-9_.]*\).*/\1/p')
+      | sed -n 's/.*: *CircuitType [^ ]* *([^)]*) *(\{0,1\}\([A-Za-z_][A-Za-z0-9_.]*\).*/\1/p')
     [ -n "$var" ] && head="$var"
     [ -z "$head" ] && continue
     short="${head##*.}"
     lemma="$(printf '%s' "${short:0:1}" | tr '[:upper:]' '[:lower:]')${short:1}"
     checked=$((checked + 1))
-    for kind in reads scoped; do
-      if ! grep -q "theorem ${kind}_${lemma}\b" "$f"; then
-        echo "$f:$line: CircuitType instance for '$short' has no '${kind}_${lemma}'"
-        violations=$((violations + 1))
-      fi
-    done
+    # Either style discharges the obligation: the two reading lemmas by hand, or an
+    # `ofEquiv` instance whose decomposition carries `@[simps apply]` — its projection lemma
+    # is what `simp [reads_simps]` (Snarky.Encoding.Simps) decomposes the reading with.
+    if grep -q "theorem reads_${lemma}\b" "$f" && grep -q "theorem scoped_${lemma}\b" "$f"; then
+      continue
+    fi
+    equiv=$(printf '%s' "$body" \
+      | sed -n 's/.*CircuitType\.ofEquiv (\{0,1\}\([A-Za-z_][A-Za-z0-9_.]*\).*/\1/p')
+    if [ -n "$equiv" ] \
+        && grep -Eq "@\[simps[^]]*\][[:space:]]+def[[:space:]]+(_root_\.)?([A-Za-z0-9_]+\.)*${equiv//./\\.}([[:space:]]|$)" "$f"; then
+      continue
+    fi
+    echo "$f:$line: CircuitType instance for '$short' has neither 'reads_${lemma}'/'scoped_${lemma}' nor an '@[simps apply]' decomposition"
+    violations=$((violations + 1))
   done < <(awk '
-    /^instance/ { buf = $0; ln = NR; depth = 1 }
-    depth == 1 && !/^instance/ { buf = buf " " $0 }
-    depth == 1 && /:=|where[ \t]*$/ { print ln ":" buf; depth = 0 }
+    /^instance/ { buf = $0; ln = NR; depth = 1; next }
+    depth == 1 { buf = buf " " $0 }
+    depth == 1 && /:=|where[ \t]*$/ { depth = 2; tail = 0; next }
+    depth == 2 { buf = buf " " $0; tail++; if (tail == 2) { print ln ":" buf; depth = 0 } }
   ' "$f" | grep "CircuitType")
 done
 
