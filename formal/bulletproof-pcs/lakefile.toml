@@ -43,4 +43,4 @@ globs = ["Bulletproof", "Bulletproof.+"]
 # outside the proof library (the poseidon package's FixtureKit split, likewise).
 [[lean_lib]]
 name = "BulletproofFixture"
-globs = ["BulletproofFixture"]
+globs = ["BulletproofFixture", "BulletproofFixture.+"]

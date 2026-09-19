@@ -66,16 +66,28 @@ def reduceTable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [Decida
     | .error e => .error e
     | .ok (_, s') => reduceTable cons s'
 
-/-- Compile a circuit at the kimchi backend: the base compilation, its constraints
-reduced to gates, the odd queued constraint flushed into one more packed row. -/
+/-- A built circuit reduced to kimchi gates: the builder's reduction folded over the
+constraint list from the build's counter, the odd queued constraint flushed into one more
+packed row. -/
+def reduceBuilt [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiConstraint F) α) :
+    KimchiBuilt F α :=
+  let red := reduceGates built.constraints built.nextVar initialAuxState
+  let flush := (finalizeGateQueue red.2.2.queuedGenericGate).map KimchiGate.plonk
+  ⟨built.result, red.1 ++ flush.toList, red.2.1, { red.2.2 with queuedGenericGate := none }⟩
+
+/-- Compile a circuit at the kimchi backend: the base compilation, reduced. -/
 def kimchiCompile [Field F] [DecidableEq F] [CircuitType F a avar]
     [CheckedType F (KimchiConstraint F) a avar] [CircuitType F b bvar]
     (main : avar → CircuitM F (KimchiConstraint F) bvar) : KimchiBuilt F (bvar × bvar) :=
-  let built := compile (a := a) (b := b) main
-  let red := reduceGates built.constraints built.nextVar initialAuxState
-  let flush := (finalizeGateQueue red.2.2.queuedGenericGate).map KimchiGate.plonk
-  ⟨built.result, red.1 ++ flush.toList, red.2.1,
-    { red.2.2 with queuedGenericGate := none }⟩
+  reduceBuilt (compile (a := a) (b := b) main)
+
+/-- A built circuit's table completed by the prover's reduction: the internal variables
+the gates introduced, from the build's counter. -/
+def reduceSolved [Field F] [DecidableEq F] {α : Type} (built : Built (KimchiConstraint F) α)
+    (env : Assignments F) : Except EvalError (Assignments F) :=
+  match reduceTable built.constraints ⟨built.nextVar, env⟩ with
+  | .error e => .error e
+  | .ok s => .ok s.assignments
 
 /-- Solve a circuit at the kimchi backend: the base solve, then the prover's
 reduction over the compiled constraints from the compilation's counter. -/
@@ -86,10 +98,9 @@ def kimchiSolve [Field F] [DecidableEq F] [CircuitType F a avar]
   match solve (a := a) (b := b) main input with
   | .error e => .error e
   | .ok (outVal, env) =>
-    let built := compile (a := a) (b := b) main
-    match reduceTable built.constraints ⟨built.nextVar, env⟩ with
+    match reduceSolved (compile (a := a) (b := b) main) env with
     | .error e => .error e
-    | .ok s => .ok (outVal, s.assignments)
+    | .ok env' => .ok (outVal, env')
 
 /-- The variables backing a bundle of plain variables — the witnessed public output
 slots, whose ids the assembly needs but whose numbering it does not care about. -/
@@ -99,6 +110,14 @@ def bundleVars [Add F] [Mul F] [Zero F] [CircuitType F b bvar] (v : bvar) :
     match cv with
     | CVar.var w => some w
     | _ => none
+
+/-- The rows and the assembled gate table of a reduced circuit at given public variables:
+the gates dispatched to rows, the wiring assembled over the reduction's union-find. -/
+def gateDataOf [Field F] [DecidableEq F] {α : Type} (kb : KimchiBuilt F α)
+    (pubVars : List Variable) : List (KimchiRow F) × List (AssembledGate F) × List Variable :=
+  let rows := kb.gates.flatMap (toKimchiRows (F := F))
+  let assembled := makeGateData pubVars rows kb.aux.wireState.unionFind
+  (assembled.1, assembled.2.1, pubVars)
 
 /-- The full pure pipeline: compile, dispatch the gates to rows, and assemble —
 returning the rows (public rows included), the gate table, and the public variables —
@@ -115,9 +134,6 @@ def kimchiGateData [Field F] [DecidableEq F] [A : CircuitType F a avar]
     (main : avar → CircuitM F (KimchiConstraint F) bvar) :
     List (KimchiRow F) × List (AssembledGate F) × List Variable :=
   let built := kimchiCompile (a := a) (b := b) main
-  let rows := built.gates.flatMap (toKimchiRows (F := F))
-  let pubVars := (allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2
-  let assembled := makeGateData pubVars rows built.aux.wireState.unionFind
-  (assembled.1, assembled.2.1, pubVars)
+  gateDataOf built ((allocRange 0 A.size).toList ++ bundleVars (F := F) (b := b) built.result.2)
 
 end Snarky.Kimchi

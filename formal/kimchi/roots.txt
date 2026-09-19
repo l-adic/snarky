@@ -248,6 +248,12 @@ Kimchi.Verifier.publicCommitment_eq_sum
 Kimchi.Verifier.kimchiVerify
 Kimchi.Verifier.Wire.KimchiProof.check
 Kimchi.Verifier.Wire.KimchiVK.check
+-- The PureScript proof cache, decoded into the wire records: consumed by
+-- kimchi/scripts/check_cache_decode.lean and pickles/scripts/check_halves.lean.
+Kimchi.Fixture.Cache.parseFile
+Kimchi.Fixture.Cache.Entry
+Kimchi.Fixture.Cache.parseVK
+Kimchi.Fixture.Cache.parseProof
 Kimchi.Verifier.Wire.runNc
 Kimchi.Fixture.parseVK
 Kimchi.Fixture.parseKimchiProof

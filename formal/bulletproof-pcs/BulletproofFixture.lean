@@ -38,6 +38,20 @@ open CompElliptic.CurveForms.ShortWeierstrass
 def parsePt (C : Ipa.KimchiCurve) : Json → Except String C.Point :=
   parseSWPoint (parseZMod (n := C.base)) C.E
 
+/-- An arkworks-compressed point (`serialize_compressed`, as the `.srs` files and the
+PureScript proof cache store them): the `x` coordinate and a flag byte. `sqrt` is the base
+field's square root; the flag picks the root — `0x80` the one above `(p-1)/2`, `0x00` the one
+below — and `0x40` is the identity. -/
+def pointOfCompressed (C : Ipa.KimchiCurve) (sqrt : C.BaseField → Option C.BaseField)
+    (x : ℕ) (flag : ℕ) : Except String C.Point := do
+  if flag = 0x40 then return ← swPointOfCoords C.E (0, 0)
+  let x : C.BaseField := x
+  let some y0 := sqrt (x * x * x + C.E.A * x + C.E.B)
+    | throw "compressed point: x is not on the curve"
+  let big : C.BaseField → Bool := fun y => decide ((C.base - 1) / 2 < y.val)
+  let y := if (flag = 0x80) = big y0 then y0 else -y0
+  swPointOfCoords C.E (x, y)
+
 /-- The fixture's `srs_g`/`srs_h` as a library SRS at a given round count `k` (the
 IPA fixtures carry `k` directly; the kimchi-proof fixture instead derives it from the
 domain size and calls this function at `Nat.log2 max_poly_size`). The abstract
@@ -205,5 +219,46 @@ def RawBatch.toFlatInput {C : Ipa.KimchiCurve} (raw : RawBatch C) :
     polyscale := raw.polyscale
     evalscale := raw.evalscale
     proof := raw.proof }
+
+/-! ## The Lagrange basis
+
+The Lagrange-basis commitments a kimchi key carries are SRS-derived
+(`SRS::get_lagrange_basis`), not wire data: a key read off the wire gets them computed
+here, from the SRS the proof was made against (`BulletproofFixture.SRSLoader`). -/
+
+/-- The first `count` Lagrange-basis commitments over the domain of size `n` with generator
+`ω`, at one chunk (`SRS::get_lagrange_basis` for a domain within the SRS): `L_i` has
+coefficients `ω^{-ik}/n`, committed against the first `n` generators. -/
+private def lagrangeBasis (C : Ipa.KimchiCurve) (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k)
+    (ω : C.ScalarField) (count : ℕ) : Array C.Point :=
+  let g : Fin n → C.Point := fun k => σ.g ⟨k, by omega⟩
+  let ninv : C.ScalarField := (n : C.ScalarField)⁻¹
+  (Array.range count).map fun i =>
+    let r := ω⁻¹ ^ i
+    let coeffs : Array C.ScalarField := Id.run do
+      let mut acc := Array.mkEmpty n
+      let mut c := ninv
+      for _ in [0:n] do
+        acc := acc.push c
+        c := c * r
+      return acc
+    Ipa.msm C g fun k => coeffs.getD k 0
+
+/-- A point as the fixtures' `[x, y]` decimal pair. -/
+private def pointJson {C : Ipa.KimchiCurve} (p : C.Point) : Json :=
+  Json.arr #[Json.str (toString p.x.val), Json.str (toString p.y.val)]
+
+/-- `lagrangeBasis`, memoised at `path` as a JSON array of `[x, y]` pairs: read back when
+the file holds at least `count` points, computed and written otherwise. The basis is
+fixed by the curve and the domain, which the caller's path names. -/
+def lagrangeBasisCached (C : Ipa.KimchiCurve) (path : System.FilePath) (σ : SRS C.Point)
+    (n : ℕ) (hn : n ≤ 2 ^ σ.k) (ω : C.ScalarField) (count : ℕ) : IO (Array C.Point) := do
+  if ← path.pathExists then
+    if let .ok pts := Json.parse (← IO.FS.readFile path) >>= parseArrOf (parsePt C) then
+      if count ≤ pts.size then return pts.extract 0 count
+  let pts := lagrangeBasis C σ n hn ω count
+  if let some dir := path.parent then IO.FS.createDirAll dir
+  IO.FS.writeFile path (Json.arr (pts.map pointJson)).compress
+  return pts
 
 end Bulletproof.Fixture

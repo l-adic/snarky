@@ -46,7 +46,7 @@ private def hexVal? (c : Char) : Option ℕ :=
   else none
 
 /-- A little-endian byte-hex string (byte 0 least significant) as a natural. -/
-private def hexLEtoNat (s : String) : Except String ℕ := do
+def hexLEtoNat (s : String) : Except String ℕ := do
   let cs := s.toList.toArray
   unless cs.size % 2 = 0 do throw s!"odd-length hex: {s.take 40}"
   let mut acc : ℕ := 0
@@ -59,7 +59,7 @@ private def hexLEtoNat (s : String) : Except String ℕ := do
   return acc
 
 /-- A little-endian hex string as an element of `ZMod m` (the cast reduces). -/
-private def parseHexLE {m : ℕ} (j : Json) : Except String (ZMod m) := do
+def parseHexLE {m : ℕ} (j : Json) : Except String (ZMod m) := do
   return ((← hexLEtoNat (← j.getStr?)) : ZMod m)
 
 /-- A signed decimal string (the comparison format shows values above `p/2` negated)

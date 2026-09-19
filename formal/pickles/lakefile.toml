@@ -35,6 +35,15 @@ path = "../poseidon"
 name = "Pickles"
 globs = ["Pickles", "Pickles.+"]
 
+# The circuit harnesses the comparison and satisfiability drivers lay the dumps' input
+# layouts out with, and the production constants they read. Kept OUT of the `Pickles`
+# library — checking against recorded data is not part of the development — and built as
+# its own target, mirroring `KimchiFixture` beside `Kimchi`. It requires `Pickles`, which
+# is why it cannot live in `KimchiFixture`: `pickles` requires `kimchi`, not the reverse.
+[[lean_lib]]
+name = "PicklesFixture"
+globs = ["PicklesFixture", "PicklesFixture.+"]
+
 # The deferred `sg` obligation against a deployed wrap proof, compiled. Its cost is the
 # opening MSM over the wrap domain's 2^14 points, run four times (the acceptance and two
 # corruptions, plus the full verify), so native is worth the build. CI runs it interpreted
@@ -42,3 +51,19 @@ globs = ["Pickles", "Pickles.+"]
 [[lean_exe]]
 name = "check-sg-ok"
 root = "scripts.check_sg_ok"
+
+# What the prover interpreter costs on a verifier-sized circuit. Compiled: the interpreted
+# path is not what a fixture check would run, so an interpreted number would not answer the
+# question.
+[[lean_exe]]
+name = "bench-fop"
+root = "scripts.bench_fop"
+
+# The satisfiability of the circuit halves on the proofs the PureScript suite cached:
+# `prove` runs the halves' advice on a real proof's inputs, the table is decided against
+# the assembled system, the success bits are read back, and `kimchiVerify` accepts the
+# same proofs against the project's SRS. Compiled, as the halves are thousands of rows
+# and the verifier's opening MSM spans the SRS.
+[[lean_exe]]
+name = "check-halves"
+root = "scripts.check_halves"
