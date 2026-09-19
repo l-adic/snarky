@@ -1138,8 +1138,9 @@ def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   Pickles.wrapVerify Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
     vestaBase.sqrt? h sv computeXHat wrapMsgSponge
-    [(List.range 15).map fun j => get (178 + j)] (get 177) (get 176)
-    dv.bulletproofChallenges.toList
+    [(List.range 15).map fun j => get (178 + j)] (get 177)
+    { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
+      spongeDigestBeforeEvaluations := get 176 }
     (ivpInputOf dv [(some (.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
       (wrapIvpProof pt get))
 
