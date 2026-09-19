@@ -64,8 +64,9 @@ the cycle is `verify`'s. This is the per-proof checkpoint, at one chunk.
 * `Env`, `GroupHalf`, `ScalarHalf`: the three kinds of argument;
 * `FopSide`, `FopParams.ofEnv`: the scalar half's side and its parameters from the
   environment;
-* `GroupHalf.Reads`, `ScalarHalf.Reads`: the circuit reads (`IvpReads`, `FopReadsWire`) at a
-  half's own cells; `ScalarHalf.XiExact`: the `ξ` comparison exact at a half's cells, which
+* `GroupHalf.Reads`: the group half's circuit read (`VerifyReads`) at a half's own cells —
+  the scalar half's is the gadget's `FopVerifyReads`, written at the environment's parameters
+  wherever it is needed; `ScalarHalf.XiExact`: the `ξ` comparison exact at a half's cells, which
   the read gives where the side constrains the low half (`ScalarHalf.xiExact_of_constrained`);
 * `HalvesTies`: the claim cells of the two halves read the same claims across the field
   crossing, the digest crosses as `castDigest`, the evaluations and old accumulators are the
@@ -219,19 +220,6 @@ def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sca
     (G : GroupHalf C sf E.σ.k) : Prop :=
   VerifyReads G.side E.σ E.cvk cp pub G.claims false G.success
 
-/-- The scalar half's read: `finalize_other_proof`'s own (`FopVerifyReads`, what both deployed
-specs conclude), at the half's cells and the environment's parameters — `FopParams.ofEnv`, the
-key's domain, the proof's recursion digest. A delegation, as `GroupHalf.Reads` is to
-`VerifyReads`: the half restates nothing the gadget already says. Where the circuit's own
-domain and digest differ from the key's and the proof's, that is a tie for the consumer to
-supply, not something this definition may absorb. -/
-def ScalarHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf C sf' E.σ.k) :
-    Prop :=
-  FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks) Sc.side.xiConstrainLowBits
-    E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u))) Sc.mask.toList
-    (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
-    Sc.side.read Sc.side.unshiftV Sc.V Sc.out
-
 /-- The `ξ` comparison is exact at the half: a `ξ` claim reading as the wire's fr-sponge `ξ`
 prechallenge — at the half's own digest, `ft(ζω)` and evaluation cells, the proof's recursion
 digest — makes `xiCorrect` read `1`. The read gives this where the side range-checks the low
@@ -322,11 +310,15 @@ converse clause is `XiExact` at the claim the `ξ` cell reads. -/
 theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) {G : GroupHalf C sf E.σ.k}
     {Sc : ScalarHalf C sf' E.σ.k} (hflag : Sc.side.xiConstrainLowBits = true)
-    (hs : Sc.Reads E cp) (ht : HalvesTies E cp pub G Sc) : Sc.XiExact E cp := by
+    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
+      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+      Sc.side.read Sc.side.unshiftV Sc.V Sc.out)
+    (ht : HalvesTies E cp pub G Sc) : Sc.XiExact E cp := by
   have hinjS := castInj128_of_lt _ hscalar
   obtain ⟨a₀, -, hαSa⟩ := ht.alpha
   obtain ⟨z₀, -, hζSz⟩ := ht.zeta
-  simp only [ScalarHalf.Reads, FopVerifyReads] at hs
+  simp only [FopVerifyReads] at hs
   obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
   obtain rfl := Reads128.unique hinjS hαSa hαS
   obtain rfl := Reads128.unique hinjS hζSz hζS
@@ -587,7 +579,10 @@ private theorem twoHalves_schnorr_core
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
-    (hs : Sc.Reads E cp)
+    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
+      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+      Sc.side.read Sc.side.unshiftV Sc.V Sc.out)
     -- across the two
     (ht : HalvesTies E cp pub G Sc) :
     let run := runInput C E.σ E.cvk cp pub
@@ -628,7 +623,7 @@ private theorem twoHalves_schnorr_core
   subst hch
   rw [hsucc] at hiff
   -- the scalar half's read, at the shared `α`, `ζ`
-  simp only [ScalarHalf.Reads, FopVerifyReads] at hs
+  simp only [FopVerifyReads] at hs
   obtain ⟨a₀', z₀', hαS, hζS, hs⟩ := hs
   obtain rfl := Reads128.unique hinjS hαSa hαS
   obtain rfl := Reads128.unique hinjS hζSz hζS
@@ -772,7 +767,10 @@ theorem twoHalves_schnorr
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
-    (hs : Sc.Reads E cp)
+    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
+      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+      Sc.side.read Sc.side.unshiftV Sc.V Sc.out)
     -- across the two
     (ht : HalvesTies E cp pub G Sc) :
     let run := runInput C E.σ E.cvk cp pub
@@ -798,7 +796,10 @@ theorem twoHalves_iff_schnorr
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
-    (hs : Sc.Reads E cp)
+    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
+      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+      Sc.side.read Sc.side.unshiftV Sc.V Sc.out)
     (hxi : Sc.XiExact E cp)
     -- across the two
     (ht : HalvesTies E cp pub G Sc) :
@@ -831,7 +832,10 @@ theorem twoHalves_kimchiVerify
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
-    (hs : Sc.Reads E cp)
+    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
+      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+      Sc.side.read Sc.side.unshiftV Sc.V Sc.out)
     -- across the two
     (ht : HalvesTies E cp pub G Sc) :
     ((↑G.success : CVar C.BaseField).val G.V = 1
@@ -862,7 +866,10 @@ theorem twoHalves_kimchiVerify_iff
     (hg : G.Reads E cp pub)
     -- the scalar half
     (Sc : ScalarHalf C sf' E.σ.k)
-    (hs : Sc.Reads E cp)
+    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
+      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      Sc.mask.toList (Sc.prevChallenges.toList.map Vector.toList) Sc.claims Sc.evals C.lam
+      Sc.side.read Sc.side.unshiftV Sc.V Sc.out)
     (hxi : Sc.XiExact E cp)
     -- across the two
     (ht : HalvesTies E cp pub G Sc) :
@@ -952,7 +959,11 @@ theorem twoHalves_kimchiVerify_vesta
     (mask : Vector Bool MaxProofsVerified)
     (prevChallenges : Vector (Vector Fp E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fp)
-    (hs : (ScalarHalf.step Vs claimsS evals mask prevChallenges outS).Reads E cp)
+    (hs : FopVerifyReads (p := IpaVesta.curve.scalar)
+      (FopParams.ofEnv E Linearization.fpTokens) true E.cvk.n E.cvk.omega
+      (recDigest IpaVesta.curve (cp.olds.map (·.u))) mask.toList
+      (prevChallenges.toList.map Vector.toList) claimsS evals IpaVesta.curve.lam
+      (fopStep Vs).read (fopStep Vs).unshiftV Vs outS)
     -- across the two
     (ht : HalvesTies E cp pub (GroupHalf.wrap Vg claimsG successG)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges outS)) :
@@ -1046,7 +1057,12 @@ theorem twoHalves_kimchiVerify_pallas
     (evals : AllEvals (FVar Fq))
     (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
-    (hs : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).Reads E cp)
+    (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
+      (FopParams.ofEnv E Linearization.fqTokens) false E.cvk.n E.cvk.omega
+      (recDigest IpaPallas.curve (cp.olds.map (·.u)))
+      (Vector.replicate MaxProofsVerified true).toList
+      (prevChallenges.toList.map Vector.toList) claimsS evals IpaPallas.curve.lam
+      (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
     -- across the two
     (ht : HalvesTies E cp pub (GroupHalf.step Vg claimsG successG)
       (ScalarHalf.wrap Vs claimsS evals prevChallenges outS)) :
@@ -1080,7 +1096,12 @@ theorem twoHalves_kimchiVerify_pallas_converse
     (evals : AllEvals (FVar Fq))
     (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
-    (hs : (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).Reads E cp)
+    (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
+      (FopParams.ofEnv E Linearization.fqTokens) false E.cvk.n E.cvk.omega
+      (recDigest IpaPallas.curve (cp.olds.map (·.u)))
+      (Vector.replicate MaxProofsVerified true).toList
+      (prevChallenges.toList.map Vector.toList) claimsS evals IpaPallas.curve.lam
+      (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
     -- across the two
     (ht : HalvesTies E cp pub (GroupHalf.step Vg claimsG successG)
       (ScalarHalf.wrap Vs claimsS evals prevChallenges outS))

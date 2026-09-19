@@ -190,7 +190,11 @@ theorem wrapVerify_kimchiVerify_vesta
     (mask : Vector Bool MaxProofsVerified)
     (prevChallenges : Vector (Vector Fp E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fp)
-    (hs : (ScalarHalf.step Vs claimsS evals mask prevChallenges outS).Reads E cp)
+    (hs : FopVerifyReads (p := IpaVesta.curve.scalar)
+      (FopParams.ofEnv E Linearization.fpTokens) true E.cvk.n E.cvk.omega
+      (recDigest IpaVesta.curve (cp.olds.map (·.u))) mask.toList
+      (prevChallenges.toList.map Vector.toList) claimsS evals IpaVesta.curve.lam
+      (fopStep Vs).read (fopStep Vs).unshiftV Vs outS)
     -- across the two, at whichever bit the block exports
     (ht : ∀ v : BoolVar Fq, HalvesTies E cp pub (GroupHalf.wrap Vg claimsG v)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges outS)) :
