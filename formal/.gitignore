@@ -18,3 +18,6 @@
 # Generated dependency-graph artifacts (make lean-dep-graph) — regenerate, never commit.
 /docs/module-deps.dot
 /docs/module-deps.svg
+
+# The Lagrange-basis memo the fixture drivers compute from the SRS (lagrangeBasisCached).
+/lagrange-cache/

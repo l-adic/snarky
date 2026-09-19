@@ -30,7 +30,7 @@ name = "formal"
 lintDriver = "batteries/runLinter"
 lintDriverArgs = [
   "Kimchi", "KimchiFixture", "Snarky", "Pasta", "Poseidon", "FixtureKit",
-  "Bulletproof", "BulletproofFixture", "Schnorr", "Pickles"
+  "Bulletproof", "BulletproofFixture", "Schnorr", "Pickles", "PicklesFixture"
 ]
 
 # CompElliptic pinned at the workspace level (git, l-adic fork @ 4955f1bf: upstream 2c04440 + the fintypePoints thunk) so this direct
