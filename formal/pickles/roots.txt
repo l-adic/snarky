@@ -213,6 +213,14 @@ Pickles.incrementallyVerifyProof_step_reads
 -- checkpoint carries as a hypothesis — the form the terminator runs out of circuit, and the
 -- root `sgOk` itself is reachable from (scripts/check_sg_ok.lean runs it on a wire proof).
 Pickles.sgOk_iff
+-- The chain: `Carry` names what pickles forces through its message digests — the next
+-- same-curve proof's old accumulator `i` is this proof's `sg` with the wire's round
+-- challenges — and `sgOk_iff_accOk` transports the deferred equation to that accumulator
+-- alone (`AccOk`), the form a verifier checks without the proof. `accOk_iff`, `carry_iff`
+-- reflect the decidable mirrors pickles/scripts/check_halves.lean runs on the proof cache.
+Pickles.sgOk_iff_accOk
+Pickles.accOk_iff
+Pickles.carry_iff
 Pickles.twoHalves_kimchiVerify
 Pickles.twoHalves_schnorr
 Pickles.twoHalves_kimchiVerify_vesta
