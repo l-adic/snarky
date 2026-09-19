@@ -282,9 +282,13 @@ Pickles.WrapIPARounds
 
 -- `verify` (Verify.lean, `Step_verifier.verify`): the group half with its public input fixed
 -- to the packed wrap statement's `x_hat` leaves and its outputs asserted against the
--- unfinalized proof's claims; its read on the step side, `VerifyReads`.
-Pickles.verifyProof
+-- unfinalized proof's claims; its read on the step side, `VerifyReads`. The capstone that
+-- runs it is `verifyProofAt_kimchiVerify_pallas` (StepGroupHalf.lean): unlike the wrap block
+-- this circuit computes `x_hat` itself from the key's Lagrange tables, so the public input
+-- is the packed statement's rather than a free argument, and the whole
+-- `PublicInputCommit.lean` chain hangs off it.
 Pickles.verifyProof_step_reads
+Pickles.verifyProofAt_kimchiVerify_pallas
 
 -- `Wrap.Main`'s verify block (WrapVerify.lean, PS `Pickles.Wrap.Verify.wrapVerify`): the same
 -- group half on the conditional sponge, its success bit asserted rather than returned, its

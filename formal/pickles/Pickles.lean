@@ -19,6 +19,7 @@ import Pickles.IncrementallyVerify
 import Pickles.TwoHalves
 import Pickles.Verify
 import Pickles.MessageHash
+import Pickles.StepGroupHalf
 import Pickles.StepScalarHalf
 import Pickles.WrapVerify
 
