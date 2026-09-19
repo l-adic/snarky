@@ -306,7 +306,7 @@ structure WrapGroup (ks kw n nc : ℕ) (f b : Type) where
   sgOld : Vector (AffinePoint f) n
 
 /-- A wrap-side group half is its two statements, the proof and the accumulators' `sg`. -/
-def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
+@[simps apply] def WrapGroup.equivProd (ks kw n nc : ℕ) (f b : Type) :
     WrapGroup ks kw n nc f b ≃
       WrapStatement ks f b (Type1 f) × StepStatement kw n f b (Type2 (SplitField f b)) ×
         IvpProof ks nc f (Type1 f) × Vector (AffinePoint f) n :=
@@ -317,22 +317,6 @@ instance instWrapGroupCircuitType {F : Type} {ks kw n nc : ℕ} [CircuitType F B
     CircuitType F (WrapGroup ks kw n nc F Bool) (WrapGroup ks kw n nc (FVar F) (BoolVar F)) :=
   CircuitType.ofEquiv (WrapGroup.equivProd ks kw n nc F Bool)
     (WrapGroup.equivProd ks kw n nc (FVar F) (BoolVar F))
-
-@[simp] theorem scoped_wrapGroup {F : Type} {ks kw n nc : ℕ} [CircuitType F Bool (BoolVar F)]
-    {st : ProverState F} {x : WrapGroup ks kw n nc (FVar F) (BoolVar F)} :
-    CircuitType.Scoped (val := WrapGroup ks kw n nc F Bool) st x ↔
-      CircuitType.Scoped (val := WrapStatement ks F Bool (Type1 F) ×
-        StepStatement kw n F Bool (Type2 (SplitField F Bool)) × IvpProof ks nc F (Type1 F) ×
-        Vector (AffinePoint F) n) st (WrapGroup.equivProd ks kw n nc (FVar F) (BoolVar F) x) :=
-  CircuitType.scoped_ofEquiv _ _
-
-@[simp] theorem reads_wrapGroup {F : Type} {ks kw n nc : ℕ} [Add F] [Mul F] [Zero F]
-    [CircuitType F Bool (BoolVar F)] {V : Valuation F}
-    {x : WrapGroup ks kw n nc (FVar F) (BoolVar F)} {a : WrapGroup ks kw n nc F Bool} :
-    CircuitType.Reads V x a ↔
-      CircuitType.Reads V (WrapGroup.equivProd ks kw n nc (FVar F) (BoolVar F) x)
-        (WrapGroup.equivProd ks kw n nc F Bool a) :=
-  CircuitType.reads_ofEquiv _ _
 
 namespace StepProof
 
@@ -347,7 +331,7 @@ structure GroupInput (k kw n nc : ℕ) (f b : Type) where
   newBp : Vector (Vector f kw) n
 
 /-- A group input is the group half and the expanded round challenges. -/
-def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
+@[simps apply] def GroupInput.equivProd (k kw n nc : ℕ) (f b : Type) :
     GroupInput k kw n nc f b ≃ WrapGroup k kw n nc f b × Vector (Vector f kw) n :=
   ⟨fun g => (g.group, g.newBp), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -355,21 +339,6 @@ instance instGroupInputCircuitType {F : Type} [CircuitType F Bool (BoolVar F)] :
     CircuitType F (GroupInput k kw n nc F Bool) (GroupInput k kw n nc (FVar F) (BoolVar F)) :=
   CircuitType.ofEquiv (GroupInput.equivProd k kw n nc F Bool)
     (GroupInput.equivProd k kw n nc (FVar F) (BoolVar F))
-
-@[simp] theorem scoped_groupInput {F : Type} [CircuitType F Bool (BoolVar F)]
-    {st : ProverState F} {x : GroupInput k kw n nc (FVar F) (BoolVar F)} :
-    CircuitType.Scoped (val := GroupInput k kw n nc F Bool) st x ↔
-      CircuitType.Scoped (val := WrapGroup k kw n nc F Bool × Vector (Vector F kw) n) st
-        (GroupInput.equivProd k kw n nc (FVar F) (BoolVar F) x) :=
-  CircuitType.scoped_ofEquiv _ _
-
-@[simp] theorem reads_groupInput {F : Type} [Add F] [Mul F] [Zero F]
-    [CircuitType F Bool (BoolVar F)] {V : Valuation F}
-    {x : GroupInput k kw n nc (FVar F) (BoolVar F)} {a : GroupInput k kw n nc F Bool} :
-    CircuitType.Reads V x a ↔
-      CircuitType.Reads V (GroupInput.equivProd k kw n nc (FVar F) (BoolVar F) x)
-        (GroupInput.equivProd k kw n nc F Bool a) :=
-  CircuitType.reads_ofEquiv _ _
 
 /-- The group circuit's input, as values. Unchecked: the block's own rows constrain what it
 reads. -/

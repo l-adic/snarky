@@ -230,7 +230,7 @@ structure ScalarInput (k nc : ℕ) (f b : Type) where
   fop : UnChecked (FopInput k nc f b (Type1 f))
 
 /-- A scalar-half input is its branch data and the rest. -/
-def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
+@[simps apply] def ScalarInput.equivProd (k nc : ℕ) (f b : Type) :
     ScalarInput k nc f b ≃ BranchData f b × UnChecked (FopInput k nc f b (Type1 f)) :=
   ⟨fun i => (i.branch, i.fop), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
 
@@ -243,20 +243,6 @@ instance instScalarInputCheckedType {F c f w b vb : Type} {k nc : ℕ} [Add F] [
     [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
     [CheckedType F c b vb] : CheckedType F c (ScalarInput k nc f b) (ScalarInput k nc w vb) :=
   CheckedType.ofEquiv (ScalarInput.equivProd k nc f b) (ScalarInput.equivProd k nc w vb)
-
-@[simp] theorem scoped_scalarInput {F f w b vb : Type} {k nc : ℕ} [CircuitType F f w]
-    [CircuitType F b vb] {st : ProverState F} {x : ScalarInput k nc w vb} :
-    CircuitType.Scoped (val := ScalarInput k nc f b) st x ↔
-      CircuitType.Scoped (val := BranchData f b × UnChecked (FopInput k nc f b (Type1 f))) st
-        (ScalarInput.equivProd k nc w vb x) :=
-  CircuitType.scoped_ofEquiv _ _
-
-@[simp] theorem reads_scalarInput {F f w b vb : Type} {k nc : ℕ} [Add F] [Mul F] [Zero F]
-    [CircuitType F f w] [CircuitType F b vb] {V : Valuation F} {x : ScalarInput k nc w vb}
-    {a : ScalarInput k nc f b} :
-    CircuitType.Reads V x a ↔
-      CircuitType.Reads V (ScalarInput.equivProd k nc w vb x) (ScalarInput.equivProd k nc f b a) :=
-  CircuitType.reads_ofEquiv _ _
 
 /-- The scalar circuit's input, as values. -/
 abbrev ScalarIn (k nc : ℕ) : Type := ScalarInput k nc Fp Bool

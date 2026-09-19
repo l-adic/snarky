@@ -37,7 +37,7 @@ structure StepGroup (ks kw nc : ℕ) (f b : Type) where
 
 /-- A step-side group half is the statement, the slot's claims, the proof, its `sg_old` and
 `is_base_case`. -/
-def StepGroup.equivProd (ks kw nc : ℕ) (f b : Type) :
+@[simps apply] def StepGroup.equivProd (ks kw nc : ℕ) (f b : Type) :
     StepGroup ks kw nc f b ≃
       WrapStatement ks f b (Type1 f) × UnfinalizedProof kw f b (Type2 (SplitField f b)) ×
         IvpProof kw nc f (Type2 (SplitField f b)) × Vector (AffinePoint f) MaxProofsVerified ×
@@ -49,23 +49,6 @@ instance instStepGroupCircuitType {F : Type} {ks kw nc : ℕ} [CircuitType F Boo
     CircuitType F (StepGroup ks kw nc F Bool) (StepGroup ks kw nc (FVar F) (BoolVar F)) :=
   CircuitType.ofEquiv (StepGroup.equivProd ks kw nc F Bool)
     (StepGroup.equivProd ks kw nc (FVar F) (BoolVar F))
-
-@[simp] theorem scoped_stepGroup {F : Type} {ks kw nc : ℕ} [CircuitType F Bool (BoolVar F)]
-    {st : ProverState F} {x : StepGroup ks kw nc (FVar F) (BoolVar F)} :
-    CircuitType.Scoped (val := StepGroup ks kw nc F Bool) st x ↔
-      CircuitType.Scoped (val := WrapStatement ks F Bool (Type1 F) ×
-        UnfinalizedProof kw F Bool (Type2 (SplitField F Bool)) ×
-        IvpProof kw nc F (Type2 (SplitField F Bool)) × Vector (AffinePoint F) MaxProofsVerified ×
-        Bool) st (StepGroup.equivProd ks kw nc (FVar F) (BoolVar F) x) :=
-  CircuitType.scoped_ofEquiv _ _
-
-@[simp] theorem reads_stepGroup {F : Type} {ks kw nc : ℕ} [Add F] [Mul F] [Zero F]
-    [CircuitType F Bool (BoolVar F)] {V : Valuation F}
-    {x : StepGroup ks kw nc (FVar F) (BoolVar F)} {a : StepGroup ks kw nc F Bool} :
-    CircuitType.Reads V x a ↔
-      CircuitType.Reads V (StepGroup.equivProd ks kw nc (FVar F) (BoolVar F) x)
-        (StepGroup.equivProd ks kw nc F Bool a) :=
-  CircuitType.reads_ofEquiv _ _
 
 /-- The step circuit's `x_hat` table at an environment: computed from the key's Lagrange points
 at the wrap statement's packing (`XhatTable.ofKeyKnown`). It reads the packing's kinds, never
