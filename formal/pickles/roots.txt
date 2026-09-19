@@ -286,7 +286,12 @@ Pickles.verifyProof_step_reads
 -- group half on the conditional sponge, its success bit asserted rather than returned, its
 -- accumulator advice bound to the claimed `messages_for_next_wrap_proof` digest
 -- (MessageHash.lean), reaching `VerifyReads` at a bit that reads `1`. The corpus pins the
--- block as `wrap_verify_circuit` and the digest as `hash_messages_wrap_circuit`; the
--- deployed wrap instantiation that hands the read to `twoHalves_kimchiVerify_vesta` is
--- the piece still to come.
-Pickles.wrapVerify_reads
+-- block as `wrap_verify_circuit` and the digest as `hash_messages_wrap_circuit`.
+--
+-- `wrapVerify_kimchiVerify_vesta` is the block composed with the vesta
+-- capstone: the group half discharged by the circuit, so the equivalence is between the
+-- next step circuit's `finalized` bit with `SgOk` and the deployed verifier at honest
+-- claims — the group half's success bit has left the statement. It reaches
+-- `wrapVerify_wrap_reads` (the deployed Vesta instantiation, the wrap-side counterpart of
+-- `verifyProof_step_reads`) and `wrapVerify_reads` beneath it.
+Pickles.wrapVerify_kimchiVerify_vesta

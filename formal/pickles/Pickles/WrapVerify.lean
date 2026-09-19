@@ -1,5 +1,6 @@
 import Pickles.IncrementallyVerify
 import Pickles.MessageHash
+import Pickles.TwoHalves
 import Pickles.Verify
 
 /-!
@@ -27,6 +28,13 @@ its invariant, and the success bit through `assert_spec`, so the read comes out 
 `VerifyReads` at a bit that reads `1` rather than at a returned bit. The digest assertion is
 read trivially (`builder_spec_true`): it ties the claimed digest to advice no statement of the
 group half mentions.
+
+`wrapVerify_wrap_reads` is that read at the deployed Vesta constants, and
+`wrapVerify_kimchiVerify_vesta` hands it to `twoHalves_kimchiVerify_vesta`: the step proof's
+group half is then discharged by the circuit rather than assumed, and its success bit leaves
+the equivalence — the block asserts it, so every satisfying valuation has it set. What
+remains is the next step circuit's `finalized` bit, with `SgOk`, against the deployed
+verifier at honest claims.
 -/
 
 namespace Pickles
@@ -111,6 +119,98 @@ theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     exact ⟨o.success, ⟨o, hivp', rfl, hdig, fun _ => hall⟩, hsucc⟩
 
 end Read
+
+/-! ## The read at the deployed wrap side -/
+
+section WrapRead
+
+open Std.Do Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
+
+/-- **`Wrap.Main`'s verify block reads as the group half on the wrap side**: `wrapVerify_reads`
+at `wrapSide` and the deployed Vesta constants — the conditional sponge, `sg_old` under its
+mask, the `Type1` claims. The wrap-side counterpart of `verifyProof_step_reads`. -/
+theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
+    (σ : SRS IpaVesta.curve.Point) (cvk : KimchiVK IpaVesta.curve nc)
+    (cp : KimchiProof IpaVesta.curve nc σ.k) (pub : Array Fp)
+    (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
+    (spongeAfterIndex : SpongeVar Fq)
+    (computeXHat : CircuitM Fq (Builder V (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
+    (msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
+    (claimedMsgDigest : FVar Fq)
+    (u : UnfinalizedProof σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (oldsW : List (IpaVesta.curve.Point × Bool))
+    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
+      ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
+    (h : IvpHyps (wrapSide V) σ cvk cp pub true blindingH spongeAfterIndex
+      (cells.withClaims u) oldsW) :
+    ⦃⌜True⌝⦄
+    wrapVerify (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
+      IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF blindingH spongeAfterIndex
+      computeXHat msgSponge newBpChallenges claimedMsgDigest u cells
+    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
+      VerifyReads (wrapSide V) σ cvk cp pub u false v ∧ (↑v : CVar Fq).val V = 1⌝⦄ :=
+  wrapVerify_reads (wrapSide V) σ cvk cp pub endo sqrtF blindingH spongeAfterIndex computeXHat
+    msgSponge newBpChallenges claimedMsgDigest u cells oldsW hXhat h
+
+/-! ## The vesta capstone, its group half run -/
+
+/-- **Running `Wrap.Main`'s verify block, a step proof's remaining half decides
+`kimchiVerify`.** `twoHalves_kimchiVerify_vesta` with its group half supplied by
+`wrapVerify_wrap_reads`: on any valuation satisfying the block's constraints, the next step
+circuit's `finalized` bit together with `SgOk` is equivalent to the deployed verifier
+accepting at honest claims. The group half's success bit has left the statement — the block
+asserts it. -/
+theorem wrapVerify_kimchiVerify_vesta
+    (E : Env IpaVesta.curve)
+    (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+    (pub : Array Fp)
+    (hguard : Guards IpaVesta.curve E.cvk cp pub)
+    -- the wrap circuit: its valuation, its statement's claims and the group half's cells,
+    -- the block's constants, and the group half's premises
+    (Vg : Valuation Fq)
+    (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
+    (spongeAfterIndex : SpongeVar Fq)
+    (computeXHat : CircuitM Fq (Builder Vg (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
+    (msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
+    (claimedMsgDigest : FVar Fq)
+    (oldsW : List (IpaVesta.curve.Point × Bool))
+    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
+      ⌜CommReads IpaVesta.curve Vg pts
+        (publicCommitment IpaVesta.curve E.σ E.cvk pub).toList⌝⦄)
+    (hivp : IvpHyps (wrapSide Vg) E.σ E.cvk cp pub true blindingH spongeAfterIndex
+      (cells.withClaims claimsG) oldsW)
+    -- the next step circuit: its valuation, its cells, its output, its read
+    (Vs : Valuation Fp)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (evals : AllEvals (FVar Fp))
+    (mask : Vector Bool MaxProofsVerified)
+    (prevChallenges : Vector (Vector Fp E.σ.k) MaxProofsVerified)
+    (outS : FopOutput Fp)
+    (hs : (ScalarHalf.step Vs claimsS evals mask prevChallenges outS).Reads E cp)
+    -- across the two, at whichever bit the block exports
+    (ht : ∀ v : BoolVar Fq, HalvesTies E cp pub (GroupHalf.wrap Vg claimsG v)
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges outS)) :
+    ⦃⌜True⌝⦄
+    wrapVerify (c := Builder Vg (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
+      IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF blindingH spongeAfterIndex
+      computeXHat msgSponge newBpChallenges claimedMsgDigest claimsG cells
+    ⦃⇓ _ _ => ⌜((↑outS.finalized : CVar Fp).val Vs = 1 ∧ SgOk E cp pub)
+      ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
+        (ScalarHalf.step Vs claimsS evals mask prevChallenges outS).ClaimsHonest E cp pub⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (wrapVerify_wrap_reads (V := Vg) E.σ E.cvk cp pub endo sqrtF blindingH spongeAfterIndex
+      computeXHat msgSponge newBpChallenges claimedMsgDigest claimsG cells oldsW hXhat hivp)
+    ?_
+  rintro _ ⟨v, hv, hv1⟩
+  rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG v hv Vs claimsS evals mask
+    prevChallenges outS hs (ht v)]
+  exact ⟨fun hf => ⟨⟨hv1, hf.1⟩, hf.2⟩, fun hf => ⟨hf.1.2, hf.2⟩⟩
+
+end WrapRead
 
 /-! The gadget is sealed after its read: a consumer composes `wrapVerify_reads`, never the
 body. -/
