@@ -199,18 +199,16 @@ abbrev WrapGroupVar (ks kw n : ℕ) : Type :=
     IvpProof ks (FVar Fq) (Type1 (FVar Fq)) × Vector (AffinePoint (FVar Fq)) n
 
 /-- The wrap circuit's group half on its records: the step key's index sponge, the step
-statement's booleanity checks (its packing's bits), `x_hat` over its packed leaves at the
-Lagrange bases with the blinding base, `Pickles.incrementallyVerifyProof` on the conditional
-sponge at the deployed parameters with each `sg_old` under its keep bit — the last `n` of
-the branch data's mask — then the block's assertions: the digest against the wrap
+statement's `x_hat` over its packed leaves at the Lagrange bases (whose boolean leaves
+constrain their own bits) with the blinding base, `Pickles.incrementallyVerifyProof` on
+the conditional sponge at the deployed parameters with each `sg_old` under its keep bit,
+the last `n` of the branch data's mask — then the block's assertions: the digest against the wrap
 statement's claim, each round challenge against its claim. Returns the success bit. -/
 def groupWrapOn (vk : Wire.KimchiVK XhatWrapCurve) (basis : Array XhatWrapCurve.Point)
     (blindingH : AffinePoint (FVar Fq)) {ks kw n : ℕ} (v : WrapGroupVar ks kw n) :
     CircuitM Fq Cq (BoolVar Fq) := do
   let (statement, stepStatement, pr, sgOld) := v
   let sv ← wrapIndexSponge vk
-  for b in stepStatement.bits do
-    addConstraint (BasicSystem.boolean (↑b : CVar Fq) : Cq)
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
     let P ← publicInputCommitFull (0 : Fin 1) blindingH (wrapLeaves basis stepStatement.packed)
     pure [P]

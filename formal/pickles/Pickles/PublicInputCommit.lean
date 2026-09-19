@@ -154,10 +154,24 @@ private def sumCorrectionsHead (ci : Fin nc) :
   | .b10 _ _ corr :: rest => sumCorrections ci corr[ci] rest
   | .condAdd _ _ :: rest => sumCorrectionsHead ci rest
 
+/-- The boolean leaves constrain their own bits, in walk order, before any ladder runs. PS
+`PublicInputCommit (BoolVar f)` asserts the bit inside `scalarMuls` while the leaf's scale mul
+is deferred to the fold, so every such assertion precedes the adds; this pass reproduces that
+placement, and callers do not supply the constraints themselves. -/
+private def constrainBits [BasicSystem F S] : List (Leaf F nc) → CircuitM F S PUnit
+  | [] => pure PUnit.unit
+  | .condAdd b _ :: rest => do
+      addConstraint (BasicSystem.boolean (↑b : CVar F) : S)
+      constrainBits rest
+  | .full _ _ _ :: rest => constrainBits rest
+  | .b128 _ _ _ :: rest => constrainBits rest
+  | .b10 _ _ _ :: rest => constrainBits rest
+
 /-- The full one-chunk public-input commitment (PS `publicInputCommit`, one chunk): head-seed
 the corrections into `init`, fold the ladders, negate, add `h`. -/
 def publicInputCommitFull (ci : Fin nc) (blindingH : AffinePoint (FVar F))
     (leaves : List (Leaf F nc)) : CircuitM F S (AffinePoint (FVar F)) := do
+  constrainBits leaves
   let init ← sumCorrectionsHead ci leaves
   publicInputCommitChunk ci init blindingH leaves
 
@@ -528,6 +542,21 @@ private theorem publicInputCommitChunk_net_spec (ci : Fin nc) {V : Valuation F}
   exact h
 
 omit [ToNat F] in
+/-- The bit pre-pass emits constraints and nothing else, so its triple is trivial; it exists
+so `mvcgen` can step past the pass in the commitment's specs. -/
+private theorem constrainBits_spec {V : Valuation F} :
+    ∀ leaves : List (Leaf F nc),
+      ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves ⦃⇓ _ _ => ⌜True⌝⦄
+  | [] => by simp only [constrainBits]; mvcgen
+  | .condAdd _ _ :: rest => by
+      simp only [constrainBits]
+      have ih := constrainBits_spec (V := V) rest
+      mvcgen [ih]
+  | .full _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
+  | .b128 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
+  | .b10 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
+
+omit [ToNat F] in
 /-- **The corrections-sum reads as `accv + Σ` the correction points.** Given each leaf's
 correction reads as `cp` (`condAdd`: `0`), `sumCorrections ci acc leaves` reads as
 `accv + Σ cps`. By induction on `leaves`, as `sumPoints_spec`. -/
@@ -635,8 +664,9 @@ theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
       (cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
         OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
   simp only [publicInputCommitFull]
+  have hbits := constrainBits_spec (V := V) leaves
   have hsum := sumCorrectionsHead_spec ci leaves cps hcorr hscalar
-  mvcgen [hsum]
+  mvcgen [hbits, hsum]
   rename_i _ rinit
   intro s hpost
   exact publicInputCommitChunk_net_spec ci rinit blindingH leaves Ts cps.sum Hv

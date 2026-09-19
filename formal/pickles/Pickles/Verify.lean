@@ -127,12 +127,6 @@ def StepStatement.packed {n : ℕ}
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
 
-/-- The boolean cells of a step statement's packing, the ones its circuit asserts boolean. -/
-def StepStatement.bits {n : ℕ}
-    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    List (BoolVar F) :=
-  st.packed.filterMap fun | .bit b => some b | _ => none
-
 /-- The group half's input with its claims taken from an unfinalized proof
 (`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
 of `unfinalized.deferred_values`; the key, proof and `sg_old` cells as given. -/

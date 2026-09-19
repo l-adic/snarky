@@ -761,8 +761,8 @@ def xhatCorr (L : ℕ) (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 
 def xhatBase (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
   #v[⟨.const P.x, .const P.y⟩]
 
-/-- `xhat_wrap_circuit`: the packing's six booleanity checks (walk order), then
-`Pickles.publicInputCommitFull` over the 34-leaf list — `full` at {0,2,4,6,8,10,32,33}
+/-- `xhat_wrap_circuit`: `Pickles.publicInputCommitFull` over the 34-leaf list — the boolean
+leaves constrain their own bits inside the gadget — `full` at {0,2,4,6,8,10,32,33}
 (`L = 255`), `b128` at {11..30} (`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads
 input `i` and Lagrange base `pts[i]`. -/
 def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
@@ -770,12 +770,6 @@ def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let pt (i : ℕ) : XhatCurve.Point :=
     pts[i]?.getD (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  addConstraint (BasicSystem.boolean (get 1) : Cq)
-  addConstraint (BasicSystem.boolean (get 3) : Cq)
-  addConstraint (BasicSystem.boolean (get 5) : Cq)
-  addConstraint (BasicSystem.boolean (get 7) : Cq)
-  addConstraint (BasicSystem.boolean (get 9) : Cq)
-  addConstraint (BasicSystem.boolean (get 31) : Cq)
   let full (i : ℕ) : Pickles.Leaf Fq 1 := .full (get i) (xhatBase (pt i)) (xhatCorr 255 (pt i))
   let b128 (i : ℕ) : Pickles.Leaf Fq 1 := .b128 (get i) (xhatBase (pt i)) (xhatCorr 130 (pt i))
   let cond (i : ℕ) : Pickles.Leaf Fq 1 := .condAdd (.unchecked (get i)) (xhatBase (pt i))
@@ -1066,11 +1060,6 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
       bulletproofChallenges := Vector.ofFn fun j => ⟨get (44 + j)⟩ }
   let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    -- The packing's booleanity, which PS's `PublicInputCommit (BoolVar f)` instance emits per
-    -- boolean leaf before any ladder; Lean's commit gadget omits it, so every caller supplies
-    -- it (see `xhatWrapCircuit`, `PicklesFixture.groupWrapOn`).
-    for b in (wrapStepStatement get).bits do
-      addConstraint (BasicSystem.boolean (↑b : CVar Fq) : Cq)
     let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
       (wrapLeaves pts (wrapStepStatement get).packed)
     pure [P]

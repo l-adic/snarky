@@ -262,7 +262,6 @@ Pickles.scoped_stepStatement
 -- is the wrap circuit's group half in the fixture library (`PicklesFixture.groupWrapOn`); the
 -- wrap main is the library consumer to come.
 Pickles.StepStatement.packed
-Pickles.StepStatement.bits
 -- The chain: `Carry` names what pickles forces through its message digests — the next
 -- same-curve proof's old accumulator `i` is this proof's `sg` with the wire's round
 -- challenges — and `sgOk_iff_accOk` transports the deferred equation to that accumulator
