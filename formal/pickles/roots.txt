@@ -88,6 +88,11 @@ Pickles.FqTranscriptReads.wire
 -- `HashMessagesWrap` harness; it becomes library-reachable when `Wrap.Main`'s verify block
 -- lands and the wrap capstone's hypothesis is discharged by it.
 Pickles.hashMessagesForNextWrapProof
+-- `Wrap.Main`'s verify block (WrapVerify.lean): the wrap circuit's group half plus its four
+-- assertions. Consumed today by scripts/check_cs.lean's transcription of the PS `WrapVerify`
+-- harness, which the corpus pins as `wrap_verify_circuit`; it becomes library-reachable when
+-- a reads theorem for it discharges the wrap capstone's group-half hypothesis.
+Pickles.wrapVerify
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList

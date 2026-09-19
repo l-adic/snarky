@@ -19,6 +19,7 @@ import Pickles.IncrementallyVerify
 import Pickles.TwoHalves
 import Pickles.Verify
 import Pickles.MessageHash
+import Pickles.WrapVerify
 
 /-!
 # Pickles — the in-circuit kimchi verifier
