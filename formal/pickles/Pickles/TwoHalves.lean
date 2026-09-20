@@ -106,6 +106,19 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open scoped Kimchi
 
+/-! ## Powers of two, runnable -/
+
+/-- `g ^ 2 ^ k` by `k` squarings. The generic power compiles to a recursion as deep as its
+exponent, which a `2 ^ 15`-element domain overflows the stack on. -/
+def powTwoPow {M : Type} [Monoid M] (g : M) : ℕ → M
+  | 0 => g
+  | k + 1 => powTwoPow g k * powTwoPow g k
+
+theorem powTwoPow_eq {M : Type} [Monoid M] (g : M) (k : ℕ) : powTwoPow g k = g ^ 2 ^ k := by
+  induction k with
+  | zero => simp [powTwoPow]
+  | succ k ih => rw [powTwoPow, ih, ← pow_add, ← two_mul, ← pow_succ']
+
 /-! ## The environment -/
 
 /-- The verification environment: the SRS and the verifier key of the proof under

@@ -40,17 +40,6 @@ structure KnownDomains (E : Env IpaVesta.curve) where
   /-- The key's domain is a candidate. -/
   key_mem : (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list
 
-/-- `g ^ 2 ^ k` by `k` squarings. The generic power compiles to a recursion as deep as its
-exponent, which a `2 ^ 15`-element domain overflows the stack on. -/
-def powTwoPow (g : Fp) : ℕ → Fp
-  | 0 => g
-  | k + 1 => powTwoPow g k * powTwoPow g k
-
-theorem powTwoPow_eq (g : Fp) (k : ℕ) : powTwoPow g k = g ^ 2 ^ k := by
-  induction k with
-  | zero => simp [powTwoPow]
-  | succ k ih => rw [powTwoPow, ih, ← pow_add, ← two_mul, ← pow_succ']
-
 /-- The bundle of a candidate list and the key's `log2`, where its facts hold: each is
 decidable, so a driver checks them once on the domains a proof cache uses. The generator
 orders are checked by squaring (`powTwoPow`). -/
