@@ -83,6 +83,16 @@ Pickles.assertPlonkChallenges_spec
 Pickles.FqTranscriptReads.wire
 
 -- script-surface:begin
+-- The environment's invariants as a decidable predicate, and the environment built from
+-- them (TwoHalves.lean): pickles/scripts/check_halves.lean checks them once on the key and
+-- SRS it loaded, which is what lets a driver construct an `Env` at all.
+Pickles.Env.Invariants
+Pickles.Env.ofInvariants
+-- script-surface:end
+-- The instance that decides them: reached by instance resolution at the driver's `if`, never
+-- by name, so it is rooted beside the predicate rather than anchored in a script.
+Pickles.Env.decidableInvariants
+-- script-surface:begin
 -- The batch-order constructor (CombinedInnerProduct.lean): consumed by scripts/check_cs.lean's
 -- transcription of the PureScript `Cip` harness.
 Pickles.buildEvalList
@@ -290,26 +300,13 @@ Pickles.WrapIPARounds
 Pickles.verifyProof_step_reads
 Pickles.verifyProofAt_kimchiVerify_pallas
 
--- `Wrap.Main`'s verify block (WrapVerify.lean, PS `Pickles.Wrap.Verify.wrapVerify`): the same
--- group half on the conditional sponge, its success bit asserted rather than returned, its
--- accumulator advice bound to the claimed `messages_for_next_wrap_proof` digest
--- (MessageHash.lean), reaching `VerifyReads` at a bit that reads `1`. The corpus pins the
--- block as `wrap_verify_circuit` and the digest as `hash_messages_wrap_circuit`.
---
--- `wrapVerify_kimchiVerify_vesta` is the block composed with the vesta
--- capstone: the group half discharged by the circuit, so the equivalence is between the
--- next step circuit's `finalized` bit with `SgOk` and the deployed verifier at honest
--- claims — the group half's success bit has left the statement. It reaches
--- `wrapVerify_wrap_reads` (the deployed Vesta instantiation, the wrap-side counterpart of
--- `verifyProof_step_reads`) and `wrapVerify_reads` beneath it.
-Pickles.wrapVerify_kimchiVerify_vesta
-
--- The step circuit's scalar half at an environment (StepScalarHalf.lean): `finalize_other_proof`
--- with the verifier key's parameters and the `Fp` token stream, and the capstone that runs it
--- — `twoHalves_kimchiVerify_vesta` as a triple about the scalar circuit, with the wrap
--- circuit's group half assumed. The two halves run in different circuits over different
--- fields, so no one triple covers both; each side gets a triple about its own circuit. The
--- domain the circuit selects off `domain_log2` is tied to the key's by hypothesis (`hsel`):
--- the branch data that forces it is bound through the `x_hat` commitment, which is not yet
--- in the chain.
-Pickles.finalizeOtherProofStepAt_kimchiVerify_vesta
+-- The top-level statement for a step proof (StepProof.lean): a valuation satisfying the wrap
+-- circuit's verify block (`wrapVerifyAt`, WrapVerify.lean), a valuation satisfying the next
+-- step circuit's scalar half with `finalized` set (`finalizeOtherProofStepAt`,
+-- StepScalarHalf.lean), and the ties between them, make `kimchiVerify` accept. Both circuits
+-- appear as their built constraint systems, so the group half (`wrapVerifyAt_reads`, down to
+-- `publicInputCommitFull` and the key's own `x_hat` table) and the scalar half
+-- (`finalizeOtherProofStepAt_kimchiVerify_vesta`, down to the linearization reflection) are
+-- both beneath it. What the statement no longer assumes lives in `Env` (the key's and SRS's
+-- invariants) and `KnownDomains` (the domain list's).
+Pickles.stepProof_kimchiVerify_vesta

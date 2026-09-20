@@ -360,14 +360,18 @@ def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Op
     throw (IO.userError s!"round counts differ: {σ.k} and {succ.proof.opening.lr.size}")
   let (cvk, cp) ← checkedAt C name σ pred
   let (_, cp') ← checkedAt C name σ succ
-  let E : Pickles.Env C := ⟨σ, cvk⟩
-  if h : slot < cp'.olds.size then
-    let c := Pickles.carry E cp pred.publicInput cp' ⟨slot, h⟩
-    let a := Pickles.accOk σ cp'.olds[slot]
-    let s := Pickles.sgOk E cp pred.publicInput
-    IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
-    return c && a && s && (s == a)
-  else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
+  if hE : Pickles.Env.Invariants σ cvk then
+    let E : Pickles.Env C := Pickles.Env.ofInvariants σ cvk hE
+    if h : slot < cp'.olds.size then
+      let c := Pickles.carry E cp pred.publicInput cp' ⟨slot, h⟩
+      let a := Pickles.accOk σ cp'.olds[slot]
+      let s := Pickles.sgOk E cp pred.publicInput
+      IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
+      return c && a && s && (s == a)
+    else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
+  else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
+    endo is not the curve's, zk_rows < 3, the blinding base or a Lagrange base is the \
+    identity, or there is no Lagrange basis")
 
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `AccOk` on its
 own. -/

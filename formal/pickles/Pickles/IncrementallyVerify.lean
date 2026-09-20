@@ -269,12 +269,12 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
 /-- What the group half's read assumes of its cells and constants, on the side `S`: the
 sponge after the index digest squeezes to the key's digest, the `sg_old` cells are masked as
 the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), the
-blinding cell reads as `σ.h`, the claimed `cip` is canonical for the side's ladder, and the
+claimed `cip` is canonical for the side's ladder, and the
 shape guards a key and proof satisfy: a chunk, a quotient chunk, a round, and a base field
 wider than the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
-    (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
+    (spongeAfterIndex : SpongeVar C.BaseField)
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The sponge after the index digest squeezes to the key's digest. -/
@@ -284,8 +284,6 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   mask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge
   /-- The cells read as the wire's key and proof. -/
   ties : IvpTies S σ cvk cp pub inp oldsW
-  /-- The blinding cell reads as the SRS blinding. -/
-  blinding : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h)
   /-- The claimed `cip` is canonical for the side's ladder. -/
   canon : S.Canon inp.deferred.combinedInnerProduct
   /-- At least one chunk. -/
@@ -729,14 +727,15 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
-    (h : IvpHyps S σ cvk cp pub optSponge blindingH spongeAfterIndex inp oldsW) :
+    (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
+    (h : IvpHyps S σ cvk cp pub optSponge spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap) sqrtF
       optSponge
       blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
-  obtain ⟨hIdx, hmask, hties, hh, hcanon, hnc, htne, hlrne, hchar⟩ := h
+  obtain ⟨hIdx, hmask, hties, hcanon, hnc, htne, hlrne, hchar⟩ := h
   have hσlen : inp.sigmaLast.toArray.size = nc := by
     have := hties.sigmaLast.length_eq
     simpa using this
@@ -841,13 +840,15 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
-    (h : IvpHyps (wrapSide V) σ cvk cp pub true blindingH spongeAfterIndex inp oldsW) :
+    (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaVesta.curve.E σ.h))
+    (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params endo
       groupMapParamsVesta sqrtF true blindingH spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
   incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub endo sqrtF true blindingH
-    spongeAfterIndex computeXHat inp oldsW hXhat h
+    spongeAfterIndex computeXHat inp oldsW hXhat hh h
 
 /-- **The step side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
 `stepSide` — the plain sponge, no `sg_old` masked, the claimed `cip` canonical. -/
@@ -861,13 +862,15 @@ theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)
-    (h : IvpHyps (stepSide V) σ cvk cp pub false blindingH spongeAfterIndex inp oldsW) :
+    (hh : OnCurveAt IpaPallas.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
+    (h : IvpHyps (stepSide V) σ cvk cp pub false spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
       groupMapParamsPallas sqrtF false blindingH spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
   incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub endo sqrtF false blindingH
-    spongeAfterIndex computeXHat inp oldsW hXhat h
+    spongeAfterIndex computeXHat inp oldsW hXhat hh h
 
 end Sides
 

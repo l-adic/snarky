@@ -29,12 +29,12 @@ its invariant, and the success bit through `assert_spec`, so the read comes out 
 read trivially (`builder_spec_true`): it ties the claimed digest to advice no statement of the
 group half mentions.
 
-`wrapVerify_wrap_reads` is that read at the deployed Vesta constants, and
-`wrapVerify_kimchiVerify_vesta` hands it to `twoHalves_kimchiVerify_vesta`: the step proof's
-group half is then discharged by the circuit rather than assumed, and its success bit leaves
-the equivalence — the block asserts it, so every satisfying valuation has it set. What
-remains is the next step circuit's `finalized` bit, with `SgOk`, against the deployed
-verifier at honest claims.
+`wrapVerify_wrap_reads` is that read at the deployed Vesta constants. `wrapVerifyAt` is the
+block at an environment — the blinding base the SRS's, as a constant cell, and `x_hat`
+computed the one way the deployed circuit computes it, `publicInputCommitFull` over the packed
+step statement at the key's own Lagrange table (`XhatTable.ofKey`) — and `wrapVerifyAt_reads`
+its read: the public input is then the packed statement's (`wrapPublicInput`), and what the
+table reads as is proved from the environment's invariants rather than assumed.
 -/
 
 namespace Pickles
@@ -66,6 +66,7 @@ def wrapVerify {sf : Type} {k : ℕ} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
 section Read
 
 open Std.Do Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open CompElliptic.CurveForms.ShortWeierstrass
 
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
@@ -90,7 +91,8 @@ theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
-    (h : IvpHyps S σ cvk cp pub true blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
+    (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
+    (h : IvpHyps S σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     wrapVerify (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params
       endo (.ofSpec C.groupMap) sqrtF blindingH spongeAfterIndex computeXHat msgSponge
@@ -98,7 +100,7 @@ theorem wrapVerify_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     ⦃⇓ _ _ => ⌜∃ v : BoolVar C.BaseField,
       VerifyReads S σ cvk cp pub u false v ∧ (↑v : CVar C.BaseField).val V = 1⌝⦄ := by
   have hivp := incrementallyVerifyProof_reads S σ cvk cp pub endo sqrtF true blindingH
-    spongeAfterIndex computeXHat (cells.withClaims u) oldsW hXhat h
+    spongeAfterIndex computeXHat (cells.withClaims u) oldsW hXhat hh h
   have hmsg := builder_spec_true (V := V) (c := KimchiConstraint C.BaseField)
     (hashMessagesForNextWrapProof C.sponge.params msgSponge newBpChallenges cells.opening.sg)
   simp only [wrapVerify]
@@ -126,6 +128,7 @@ section WrapRead
 
 open Std.Do Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
+open CompElliptic.CurveForms.ShortWeierstrass
 
 /-- **`Wrap.Main`'s verify block reads as the group half on the wrap side**: `wrapVerify_reads`
 at `wrapSide` and the deployed Vesta constants — the conditional sponge, `sg_old` under its
@@ -143,8 +146,9 @@ theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
-    (h : IvpHyps (wrapSide V) σ cvk cp pub true blindingH spongeAfterIndex
-      (cells.withClaims u) oldsW) :
+    (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaVesta.curve.E σ.h))
+    (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     wrapVerify (c := Builder V (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
       IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF blindingH spongeAfterIndex
@@ -152,72 +156,120 @@ theorem wrapVerify_wrap_reads {nc : ℕ} {V : Valuation Fq}
     ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
       VerifyReads (wrapSide V) σ cvk cp pub u false v ∧ (↑v : CVar Fq).val V = 1⌝⦄ :=
   wrapVerify_reads (wrapSide V) σ cvk cp pub endo sqrtF blindingH spongeAfterIndex computeXHat
-    msgSponge newBpChallenges claimedMsgDigest u cells oldsW hXhat h
+    msgSponge newBpChallenges claimedMsgDigest u cells oldsW hXhat hh h
 
-/-! ## The vesta capstone, its group half run -/
+/-! ## The block at an environment -/
 
-/-- **Running `Wrap.Main`'s verify block, a step proof's remaining half decides
-`kimchiVerify`.** `twoHalves_kimchiVerify_vesta` with its group half supplied by
-`wrapVerify_wrap_reads`: on any valuation satisfying the block's constraints, the next step
-circuit's `finalized` bit together with `SgOk` is equivalent to the deployed verifier
-accepting at honest claims. The group half's success bit has left the statement — the block
-asserts it. -/
-theorem wrapVerify_kimchiVerify_vesta
+/-- The step statement's `x_hat` leaves at the key's own table. -/
+def wrapLeavesAt {ks n : ℕ} (E : Env IpaVesta.curve)
+    (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : List (Leaf Fq 1) :=
+  packLeavesOf statement.packed (XhatTable.ofKey statement.packed E.cvk.lagrangeBasis.toList)
+
+/-- The public input the wrap circuit's statement packs to, under a valuation: what the
+verified step proof's public input must be. -/
+def wrapPublicInput {ks n : ℕ} (E : Env IpaVesta.curve) (V : Valuation Fq)
+    (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) : Array Fp :=
+  pubOf IpaVesta.curve V (wrapLeavesAt E statement)
+
+/-- The wrap circuit's verify block at an environment: the deployed Vesta constants, the SRS
+blinding base as a constant cell, and `x_hat` from the packed step statement. -/
+def wrapVerifyAt {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c] {ks n k : ℕ}
     (E : Env IpaVesta.curve)
-    (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
-    (pub : Array Fp)
-    (hguard : Guards IpaVesta.curve E.cvk cp pub)
-    -- the wrap circuit: its valuation, its statement's claims and the group half's cells,
-    -- the block's constants, and the group half's premises
-    (Vg : Valuation Fq)
-    (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (cells : IvpInput E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (endo : FVar Fq) (sqrtF : Fq → Option Fq) (blindingH : AffinePoint (FVar Fq))
-    (spongeAfterIndex : SpongeVar Fq)
-    (computeXHat : CircuitM Fq (Builder Vg (KimchiConstraint Fq)) (List (AffinePoint (FVar Fq))))
-    (msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
+    (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
     (claimedMsgDigest : FVar Fq)
-    (oldsW : List (IpaVesta.curve.Point × Bool))
-    (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
-      ⌜CommReads IpaVesta.curve Vg pts
-        (publicCommitment IpaVesta.curve E.σ E.cvk pub).toList⌝⦄)
-    (hivp : IvpHyps (wrapSide Vg) E.σ E.cvk cp pub true blindingH spongeAfterIndex
-      (cells.withClaims claimsG) oldsW)
-    -- the next step circuit: its valuation, its cells, its output, its read
-    (Vs : Valuation Fp)
-    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    (evals : AllEvals (FVar Fp))
-    (mask : Vector Bool MaxProofsVerified)
-    (prevChallenges : Vector (Vector Fp E.σ.k) MaxProofsVerified)
-    (outS : FopOutput Fp)
-    (hs : FopVerifyReads (p := IpaVesta.curve.scalar)
-      (FopParams.ofEnv E Linearization.fpTokens) true E.cvk.n E.cvk.omega
-      (recDigest IpaVesta.curve (cp.olds.map (·.u))) mask.toList
-      (prevChallenges.toList.map Vector.toList) claimsS evals IpaVesta.curve.lam
-      (fopStep Vs).read (fopStep Vs).unshiftV Vs outS)
-    -- across the two, at whichever bit the block exports
-    (ht : ∀ v : BoolVar Fq, HalvesTies E cp pub (GroupHalf.wrap Vg claimsG v)
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges outS)) :
+    (u : UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq))) : CircuitM Fq c PUnit :=
+  wrapVerify IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params
+    (.const ((Pasta.pallasLam : ℤ) : Fq)) groupMapParamsVesta vestaBase.sqrt? (constPt E.σ.h)
+    spongeAfterIndex
+    (do
+      let P ← publicInputCommitFull (0 : Fin 1) (constPt E.σ.h) (wrapLeavesAt E statement)
+      pure [P])
+    msgSponge newBpChallenges claimedMsgDigest u cells
+
+/-- A packed step statement opens with a full scalar: a slot's split `cip`, or with no slot
+the `messages_for_next_step_proof` digest. -/
+theorem StepStatement.packed_head {ks n : ℕ}
+    (st : StepStatement ks n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq)))) :
+    ∃ x rest, st.packed = .full x :: rest := by
+  unfold StepStatement.packed
+  cases st.proofState.unfinalizedProofs.toList with
+  | nil =>
+    simp only [List.flatMap_nil, List.nil_append, List.cons_append]
+    exact ⟨_, _, rfl⟩
+  | cons u us =>
+    simp only [List.flatMap_cons, List.append_assoc, List.cons_append]
+    exact ⟨_, _, rfl⟩
+
+/-- **The block at an environment reads as the group half at the packed statement.** What
+`wrapVerify_wrap_reads` takes as premises about `x_hat` and the blinding cell is proved
+here from the environment: the table is the key's by construction (`xhatBinding_const`).
+What is left is what no table can give — the statement's boolean cells are boolean, its full
+scalars avoid the ladder's sixteen-value band, and the group half's cells are the proof's. -/
+theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
+    (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
+    (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))))
+    (spongeAfterIndex msgSponge : SpongeVar Fq) (newBpChallenges : List (List (FVar Fq)))
+    (claimedMsgDigest : FVar Fq)
+    (u : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (cells : IvpInput E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (hbits : ∀ b, PackedScalar.bit b ∈ statement.packed →
+      ∃ bb : Bool, (↑b : CVar Fq).val V = bit bb)
+    (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar V leaf)
+    (hivp : ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V statement) true
+      spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
-    wrapVerify (c := Builder Vg (KimchiConstraint Fq)) IpaScalarOps.wrap IpaEndo.vesta
-      IpaVesta.curve.sponge.params endo groupMapParamsVesta sqrtF blindingH spongeAfterIndex
-      computeXHat msgSponge newBpChallenges claimedMsgDigest claimsG cells
-    ⦃⇓ _ _ => ⌜((↑outS.finalized : CVar Fp).val Vs = 1 ∧ SgOk E cp pub)
-      ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.step Vs claimsS evals mask prevChallenges outS).ClaimsHonest E cp pub⌝⦄ := by
-  refine builder_spec_imp _ _ _
-    (wrapVerify_wrap_reads (V := Vg) E.σ E.cvk cp pub endo sqrtF blindingH spongeAfterIndex
-      computeXHat msgSponge newBpChallenges claimedMsgDigest claimsG cells oldsW hXhat hivp)
-    ?_
-  rintro _ ⟨v, hv, hv1⟩
-  rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG v hv Vs claimsS evals mask
-    prevChallenges outS hs (ht v)]
-  exact ⟨fun hf => ⟨⟨hv1, hf.1⟩, hf.2⟩, fun hf => ⟨hf.1.2, hf.2⟩⟩
+    wrapVerifyAt (c := Builder V (KimchiConstraint Fq)) E statement spongeAfterIndex msgSponge
+      newBpChallenges claimedMsgDigest u cells
+    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
+      VerifyReads (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V statement) u false v ∧
+        (↑v : CVar Fq).val V = 1⌝⦄ := by
+  obtain ⟨oldsW, hivp⟩ := hivp
+  have hleaves : wrapLeavesAt E statement
+      = List.zipWith constLeaf statement.packed E.cvk.lagrangeBasis.toList := by
+    unfold wrapLeavesAt
+    exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
+  have hbind := xhatBinding_const (V := V) pastaShapeVesta (0 : Fin 1) E.σ E.cvk
+    statement.packed E.h_ne E.lagrange_ne hbits (hleaves ▸ hoff)
+  have hscalar : leafHasScalar (wrapLeavesAt E statement) := by
+    obtain ⟨x, rest, hx⟩ := statement.packed_head
+    obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
+      (l := E.cvk.lagrangeBasis.toList) (by
+        intro h0
+        have := E.lagrange_pos
+        simp [← Array.length_toList, h0] at this)
+    rw [hleaves, hx, hlb]
+    simp [constLeaf, leafHasScalar]
+  have hX : ⦃⌜True⌝⦄
+      (do
+        let P ← publicInputCommitFull (S := Builder V (KimchiConstraint Fq)) (0 : Fin 1)
+          (constPt E.σ.h) (wrapLeavesAt E statement)
+        pure [P])
+      ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve E.σ E.cvk
+        (wrapPublicInput E V statement)).toList⌝⦄ := by
+    have h0 := xHat_reads_publicCommitment pastaShapeVesta (0 : Fin 1) E.σ E.cvk
+      (constPt E.σ.h) (wrapLeavesAt E statement) _ _ (hleaves ▸ hbind) hscalar
+    have hl : ∀ pc : Vector IpaVesta.curve.Point 1, pc.toList = [pc[(0 : Fin 1)]] := by
+      intro pc
+      apply List.ext_getElem <;> simp
+      rintro i rfl
+      rfl
+    mvcgen -trivial [h0]
+    rename_i r _ hr
+    rw [CommReads, hl]
+    exact List.Forall₂.cons hr List.Forall₂.nil
+  exact wrapVerify_wrap_reads E.σ E.cvk cp _ _ _ _ spongeAfterIndex _ msgSponge newBpChallenges
+    claimedMsgDigest u cells oldsW hX (onCurveAt_constPt E.σ.h E.h_ne) hivp
 
 end WrapRead
 
-/-! The gadget is sealed after its read: a consumer composes `wrapVerify_reads`, never the
-body. -/
-attribute [irreducible] wrapVerify
+/-! The gadgets are sealed after their reads: a consumer composes `wrapVerify_reads` and
+`wrapVerifyAt_reads`, never the bodies. -/
+attribute [irreducible] wrapVerify wrapVerifyAt
 
 end Pickles

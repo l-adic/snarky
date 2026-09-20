@@ -48,7 +48,7 @@ theorem verifyProofAt_kimchiVerify_pallas
     (hbase : CircuitType.Reads Vg isBaseCase false)
     (htab : tab.Bound pastaShapePallas Vg E.σ E.cvk blindingH (packLeaves statement tab))
     (hivp : IvpHyps (stepSide Vg) E.σ E.cvk cp
-      (pubOf IpaPallas.curve Vg (packLeaves statement tab)) false blindingH spongeAfterIndex
+      (pubOf IpaPallas.curve Vg (packLeaves statement tab)) false spongeAfterIndex
       (cells.withClaims claimsG) oldsW)
     (hguard : Guards IpaPallas.curve E.cvk cp
       (pubOf IpaPallas.curve Vg (packLeaves statement tab)))
@@ -56,18 +56,18 @@ theorem verifyProofAt_kimchiVerify_pallas
     (Vs : Valuation Fq)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
     (evals : AllEvals (FVar Fq))
-    (prevChallenges : Vector (Vector Fq E.σ.k) MaxProofsVerified)
+    (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
     (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
       (FopParams.ofEnv E Linearization.fqTokens) false E.cvk.n E.cvk.omega
       (recDigest IpaPallas.curve (cp.olds.map (·.u)))
-      (Vector.replicate MaxProofsVerified true).toList
-      (prevChallenges.toList.map Vector.toList) claimsS evals IpaPallas.curve.lam
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS evals
+      IpaPallas.curve.lam
       (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
-    -- across the two, at whichever bit the circuit returns
-    (ht : ∀ v : BoolVar Fp, HalvesTies E cp
-      (pubOf IpaPallas.curve Vg (packLeaves statement tab))
-      (GroupHalf.step Vg claimsG v) (ScalarHalf.wrap Vs claimsS evals prevChallenges outS)) :
+    -- across the two
+    (ht : HalvesTies E cp (pubOf IpaPallas.curve Vg (packLeaves statement tab))
+      (GroupHalf.step Vg claimsG) (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
     ⦃⌜True⌝⦄
     verifyProofAt (c := Builder Vg (KimchiConstraint Fp)) endo sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement claimsG cells
@@ -75,13 +75,13 @@ theorem verifyProofAt_kimchiVerify_pallas
         ∧ SgOk E cp (pubOf IpaPallas.curve Vg (packLeaves statement tab))
       → kimchiVerify IpaPallas.curve E.σ E.cvk cp
           (pubOf IpaPallas.curve Vg (packLeaves statement tab)) = true ∧
-        (ScalarHalf.wrap Vs claimsS evals prevChallenges outS).ClaimsHonest E cp
+        (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp
           (pubOf IpaPallas.curve Vg (packLeaves statement tab))⌝⦄ := by
   refine builder_spec_imp _ _ _
     (verifyProof_step_reads (V := Vg) E.σ E.cvk cp endo sqrtF blindingH tab spongeAfterIndex
       isBaseCase statement claimsG cells false oldsW hbase htab hivp) ?_
   intro v hv
   exact twoHalves_kimchiVerify_pallas E cp _ hguard Vg claimsG v hv Vs claimsS evals
-    prevChallenges outS hs (ht v)
+    prevChallenges outS hs ht
 
 end Pickles

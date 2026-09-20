@@ -151,6 +151,10 @@ structure KimchiCurve extends CommitmentCurve where
   frSponge : FqSponge.Spec scalar scalar
   /-- The endomorphism the challenge expansion and the `endo_mul` ladders run on. -/
   endo : Pasta.EndoSpec E.toAffine
+  /-- The dual curve's endomorphism coefficient, an element of this curve's scalar field:
+  production's `VerifierIndex.endo` (`endos::<G::OtherCurve>().0`). A constant of the curve, so
+  a verifier key carrying any other value is malformed. -/
+  endoScalar : ZMod scalar
   /-- The SvdW map-to-curve deriving the transcript `U` base from a squeezed field element. -/
   groupMap : Poseidon.GroupMap.Spec base
   /-- The map-to-curve targets this curve. -/
@@ -650,6 +654,7 @@ abbrev curve : Ipa.KimchiCurve where
   a_zero := rfl
   card := Vesta.card_eq
   endo := Pasta.vestaEndoSpec
+  endoScalar := Pasta.pallasEndo
   groupMap := GroupMapVesta.spec
   groupMap_E := rfl
   fastMsm := fun {_} g a =>
@@ -686,6 +691,7 @@ abbrev curve : Ipa.KimchiCurve where
   a_zero := rfl
   card := Pallas.card_eq
   endo := Pasta.pallasEndoSpec
+  endoScalar := Pasta.vestaEndo
   groupMap := GroupMapPallas.spec
   groupMap_E := rfl
   fastMsm := fun {_} g a =>

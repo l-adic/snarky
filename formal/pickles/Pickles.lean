@@ -20,6 +20,7 @@ import Pickles.TwoHalves
 import Pickles.Verify
 import Pickles.MessageHash
 import Pickles.StepGroupHalf
+import Pickles.StepProof
 import Pickles.StepScalarHalf
 import Pickles.WrapVerify
 

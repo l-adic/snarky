@@ -16,15 +16,37 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
+/-- The domains a step circuit's scalar half may select from, at an environment: the
+candidate list with what every honest list satisfies — distinct sizes, each generator of its
+order, each domain holding the zero-knowledge rows — and the key's own domain among them, at
+its `log2`. -/
+structure KnownDomains (E : Env IpaVesta.curve) where
+  /-- The candidates. -/
+  list : List (KnownDomain Fp)
+  /-- Distinct sizes, as the circuit compares them. -/
+  nodup : (list.map fun d => (d.log2 : Fp)).Nodup
+  /-- Each generator has its domain's order. -/
+  generator_pow : ∀ d ∈ list, d.generator ^ 2 ^ d.log2 = 1
+  /-- Each domain holds the key's zero-knowledge rows. -/
+  zkRows_le : ∀ d ∈ list, E.cvk.zkRows ≤ 2 ^ d.log2
+  /-- `log2` of the key's domain size. -/
+  keyLog2 : ℕ
+  /-- The key's domain size is that power of two. -/
+  key_n : E.cvk.n = 2 ^ keyLog2
+  /-- The key's domain is a candidate. -/
+  key_mem : (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list
+
 /-- The step circuit's scalar half at an environment: `finalize_other_proof`'s step side with
-the verifier key's parameters and the `Fp` token stream. -/
+the verifier key's parameters, the `Fp` token stream, and the mask and previous-challenge
+cells at their static sizes. -/
 def finalizeOtherProofStepAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k : ℕ}
-    (E : Env IpaVesta.curve) (domains : List (KnownDomain Fp))
+    (E : Env IpaVesta.curve) (domains : KnownDomains E)
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (w : AllEvals (FVar Fp))
-    (mask : List (BoolVar Fp)) (prev : List (List (FVar Fp))) (domainLog2Var : FVar Fp) :
+    (mask : Vector (BoolVar Fp) MaxProofsVerified)
+    (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified) (domainLog2Var : FVar Fp) :
     CircuitM Fp c (FopOutput Fp) :=
-  finalizeOtherProofStep (FopParams.ofEnv E Linearization.fpTokens) domains u w mask prev
-    domainLog2Var
+  finalizeOtherProofStep (FopParams.ofEnv E Linearization.fpTokens) domains.list u w
+    mask.toList (prevChallenges.toList.map Vector.toList) domainLog2Var
 
 /-- A list of cells read, element by element, is the list of their values. -/
 private theorem map_val_of_forall₂_reads {V : Valuation Fp} {cs : List (FVar Fp)} {cv : List Fp}
@@ -60,82 +82,100 @@ private theorem flatten_zipWith_val {V : Valuation Fp} :
 
 /-- **Running the step circuit's scalar half, a step proof's remaining half decides
 `kimchiVerify`.** `twoHalves_kimchiVerify_vesta` as a triple about the scalar circuit, with
-the wrap circuit's group half assumed (`wrapVerify_kimchiVerify_vesta` produces it). -/
+the wrap circuit's group half assumed (`wrapVerifyAt_reads` produces it). What the circuit's
+parameters and domain list owe is the environment's and the bundle's; what is left is about
+cells: the mask is boolean, the `domain_log2` cell holds the key's, and the ties. -/
 theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     (E : Env IpaVesta.curve)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (pub : Array Fp)
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
-    -- the key's fr-sponge, endo coefficient and zk rows
-    (hsize : IpaVesta.curve.frSponge.params.roundConstants.size = Poseidon.fullRounds)
-    (hendo : E.cvk.endo = Pasta.pallasEndo)
-    (h3zk : 3 ≤ E.cvk.zkRows)
     -- the step circuit: its valuation, its cells, the domains it may select from
     (Vs : Valuation Fp)
-    (domains : List (KnownDomain Fp))
-    (hnodup : (domains.map fun d => (d.log2 : Fp)).Nodup)
-    (hdomains : ∀ d ∈ domains, E.cvk.zkRows ≤ 2 ^ d.log2 ∧ d.generator ^ 2 ^ d.log2 = 1)
+    (domains : KnownDomains E)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (evals : AllEvals (FVar Fp))
-    (maskCells : List (BoolVar Fp))
-    (prevCells : List (List (FVar Fp)))
-    (hprevlen : prevCells.flatten.length < 2 ^ 128)
+    (mask : Vector (BoolVar Fp) MaxProofsVerified)
+    (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) MaxProofsVerified)
     (domainLog2Var : FVar Fp)
-    -- the cells behind the half's vectors
-    (mask : Vector Bool MaxProofsVerified)
-    (prevChallenges : Vector (Vector Fp E.σ.k) MaxProofsVerified)
-    (hm : List.Forall₂ (CircuitType.Reads Vs) maskCells mask.toList)
-    (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs)) prevCells
-      (prevChallenges.toList.map Vector.toList))
-    -- the domain the circuit selects is the key's
-    (hsel : ∀ d₀ ∈ domains, domainLog2Var.val Vs = (d₀.log2 : Fp) →
-      2 ^ d₀.log2 = E.cvk.n ∧ d₀.generator = E.cvk.omega)
+    -- the mask cells are boolean, and the `domain_log2` cell holds the key's
+    (hmask : ∀ b ∈ mask.toList, (↑b : CVar Fp).val Vs = 0 ∨ (↑b : CVar Fp).val Vs = 1)
+    (hdom : domainLog2Var.val Vs = (domains.keyLog2 : Fp))
     -- the wrap circuit's group half, and its asserted bit
     (Vg : Valuation Fq)
     (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (successG : BoolVar Fq)
-    (hg : (GroupHalf.wrap Vg claimsG successG).Reads E cp pub)
+    (hg : (GroupHalf.wrap Vg claimsG).Reads E cp pub successG)
     (hgbit : (↑successG : CVar Fq).val Vg = 1)
-    -- across the two, at whichever output the circuit returns
-    (ht : ∀ o : FopOutput Fp, HalvesTies E cp pub (GroupHalf.wrap Vg claimsG successG)
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges o)) :
+    -- across the two
+    (ht : HalvesTies E cp pub (GroupHalf.wrap Vg claimsG)
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
     ⦃⌜True⌝⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
-      maskCells prevCells domainLog2Var
+      mask prevChallenges domainLog2Var
     ⦃⇓ o _ => ⌜SgOk E cp pub ∧ (↑o.finalized : CVar Fp).val Vs = 1
       ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.step Vs claimsS evals mask prevChallenges o).ClaimsHonest E cp pub⌝⦄ := by
+        (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest E cp pub⌝⦄ := by
   have hP : (FopParams.ofEnv E Linearization.fpTokens).endo = Pasta.pallasEndo ∧
       (FopParams.ofEnv E Linearization.fpTokens).mds = Reflect.symMds ∧
       (FopParams.ofEnv E Linearization.fpTokens).toks = Linearization.fpTokens :=
-    ⟨hendo, by rfl, rfl⟩
+    ⟨E.endo_eq, by rfl, rfl⟩
+  -- the cells read as their own values
+  have hm : List.Forall₂ (CircuitType.Reads Vs) mask.toList
+      (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1)) := by
+    refine List.forall₂_map_right_iff.2 (List.forall₂_same.2 fun b hb => ?_)
+    rw [CircuitType.reads_boolVar]
+    rcases hmask b hb with h | h <;> simp [h, bit]
+  have hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads Vs))
+      (prevChallenges.toList.map Vector.toList)
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals := by
+    refine List.forall₂_map_right_iff.2 (List.forall₂_map_left_iff.2
+      (List.forall₂_same.2 fun cs _ => ?_))
+    exact List.forall₂_map_right_iff.2
+      (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
+  have hlen : (prevChallenges.toList.map Vector.toList).flatten.length < 2 ^ 128 := by
+    have : (prevChallenges.toList.map Vector.toList).flatten.length
+        = MaxProofsVerified * E.σ.k := by
+      rw [List.length_flatten, List.map_map]
+      simp [Function.comp_def]
+    have := E.rounds_small
+    omega
   have hspec := finalizeOtherProofStep_spec_fp (V := Vs)
-    (FopParams.ofEnv E Linearization.fpTokens) hP hsize h3zk domains hnodup hdomains claimsS
-    evals maskCells mask.toList hm prevCells (prevChallenges.toList.map Vector.toList) hprev
-    hprevlen domainLog2Var
+    (FopParams.ofEnv E Linearization.fpTokens) hP IpaVesta.curve.frSponge.hsize E.zkRows_ge
+    domains.list domains.nodup
+    (fun d hd => ⟨domains.zkRows_le d hd, domains.generator_pow d hd⟩) claimsS
+    evals mask.toList _ hm (prevChallenges.toList.map Vector.toList) _ hprev hlen domainLog2Var
+  simp only [finalizeOtherProofStepAt]
   refine builder_spec_imp _ _ _ hspec ?_
   rintro o ⟨d₀, hd₀, hL, hread⟩
-  obtain ⟨hn, hω⟩ := hsel d₀ hd₀ hL
+  -- the selected domain is the key's: two candidates of one size are one candidate
+  have hd : d₀ = ⟨domains.keyLog2, E.cvk.omega⟩ :=
+    List.inj_on_of_nodup_map domains.nodup hd₀ domains.key_mem (hL.symm.trans hdom)
+  have hn : 2 ^ d₀.log2 = E.cvk.n := by rw [hd, domains.key_n]
+  have hω : d₀.generator = E.cvk.omega := by rw [hd]
   -- the circuit absorbs the kept challenge cells; their values are the proof's accumulators
   have hcells := map_map_val_of_forall₂ hprev
   have hdv : (Poseidon.squeeze (FopParams.ofEnv E Linearization.fpTokens).sponge
         (Poseidon.absorb (FopParams.ofEnv E Linearization.fpTokens).sponge Poseidon.init
           (List.zipWith (fun m cs => if m = true then cs.map (fun x => CVar.val x Vs) else [])
-            mask.toList prevCells).flatten)).1
+            (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
+            (prevChallenges.toList.map Vector.toList)).flatten)).1
       = recDigest IpaVesta.curve (cp.olds.map (·.u)) := by
     have habs : (List.zipWith (fun m cs => if m = true then cs.map (fun x => CVar.val x Vs)
-          else []) mask.toList prevCells).flatten
-        = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
-      have holds : (List.zipWith (fun m cv => if m = true then [cv] else []) mask.toList
+          else []) (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
           (prevChallenges.toList.map Vector.toList)).flatten
-          = (cp.olds.map (·.u.toList)).toList := (ht o).olds
+        = ((cp.olds.map (·.u)).toList.map Vector.toList).flatten := by
+      have holds : (List.zipWith (fun m cv => if m = true then [cv] else [])
+          (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
+          (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals).flatten
+          = (cp.olds.map (·.u.toList)).toList := ht.olds
       rw [flatten_zipWith_val, hcells, holds]
       simp [Function.comp_def]
     rw [habs]
     rfl
   rw [hn, hω, hdv] at hread
   rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    mask prevChallenges o hread (ht o)]
+    mask prevChallenges o hread ht]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 end Pickles

@@ -142,6 +142,209 @@ def IvpInput.withClaims {sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
 
 end Pack
 
+/-! ## The `x_hat` table of a key
+
+The Lagrange bases and shift corrections are data of the verifier key, so the table is
+computed from it as constant cells rather than taken as an argument and then assumed to be
+the key's. It depends on the statement's packing only through the leaf kinds: each kind has
+its own shift. -/
+
+section OfKey
+
+open WeierstrassCurve.Affine
+
+variable {C : KimchiCurve} {nc : ℕ} {V : Valuation C.BaseField}
+
+/-- A wire point as a constant cell. -/
+def constPt (P : C.Point) : AffinePoint (FVar C.BaseField) := ⟨.const P.x, .const P.y⟩
+
+theorem onCurveAt_constPt (P : C.Point) (hP : P ≠ 0) :
+    OnCurveAt C.E.toAffine V (constPt P) (SWPoint.equivPoint C.E P) :=
+  ⟨nonsingular_toW (SWPoint.onCurve_of_ne_zero hP),
+    SWPoint.equivPoint_eq_some P (SWPoint.onCurve_of_ne_zero hP)⟩
+
+/-- A leaf over constants: the Lagrange points as its base, their honest shifts as its
+correction. -/
+def constLeaf (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) : Leaf C.BaseField nc :=
+  match k with
+  | .full x => .full x (Ps.map constPt) (Ps.map fun P => constPt ((-(2 ^ 255 : ℤ)) • P))
+  | .b128 x => .b128 x (Ps.map constPt) (Ps.map fun P => constPt ((-(2 ^ 130 : ℤ)) • P))
+  | .b10 x => .b10 x (Ps.map constPt) (Ps.map fun P => constPt ((-(2 ^ 10 : ℤ)) • P))
+  | .bit b => .condAdd b (Ps.map constPt)
+
+theorem leafBaseAt_constLeaf (ci : Fin nc) (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) :
+    leafBaseAt ci (constLeaf k Ps) = constPt Ps[ci] := by
+  cases k <;> simp [constLeaf, leafBaseAt]
+
+/-- The point group has odd prime order, so a nonzero point shifted by a power of two stays
+nonzero: a constant correction cell is a finite point whenever its base is. -/
+theorem two_pow_zsmul_ne_zero (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
+    (-(2 ^ L : ℤ)) • P ≠ 0 := by
+  haveI : Fact C.scalar.Prime := inferInstance
+  have hcard : Nat.card C.Point = C.scalar := C.card
+  intro h0
+  have hdvd : (addOrderOf P : ℤ) ∣ -(2 ^ L : ℤ) := (addOrderOf_dvd_iff_zsmul_eq_zero).2 h0
+  have hord : addOrderOf P = C.scalar := by
+    have h1 : addOrderOf P ∣ C.scalar := hcard ▸ addOrderOf_dvd_natCard P
+    rcases (Nat.dvd_prime (Fact.out : C.scalar.Prime)).1 h1 with h | h
+    · exact absurd (AddMonoid.addOrderOf_eq_one_iff.1 h) hP
+    · exact h
+  rw [hord, Int.dvd_neg] at hdvd
+  have h2 : C.scalar ∣ 2 ^ L := by exact_mod_cast hdvd
+  have h3 : C.scalar ∣ 2 := (Fact.out : C.scalar.Prime).dvd_of_dvd_pow h2
+  have h4 : C.scalar ≤ 2 := Nat.le_of_dvd (by norm_num) h3
+  have := s.scalar_lo
+  omega
+
+theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :
+    (Ps.map f)[ci] = f Ps[ci] := by
+  simp [Fin.getElem_fin]
+
+/-- The correction point a constant leaf's correction cell reads as. -/
+noncomputable def constCp (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) : s.d.W.Point :=
+  match k with
+  | .full _ => (-(2 ^ 255 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
+  | .b128 _ => (-(2 ^ 130 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
+  | .b10 _ => (-(2 ^ 10 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
+  | .bit _ => 0
+
+theorem onCurveAt_shift (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
+    OnCurveAt s.d.W V (constPt ((-(2 ^ L : ℤ)) • P))
+      ((-(2 ^ L : ℤ)) • SWPoint.equivPoint C.E P) := by
+  rw [← map_zsmul]
+  exact onCurveAt_constPt _ (two_pow_zsmul_ne_zero s P hP L)
+
+theorem leafPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0)
+    (hbit : ∀ b, k = .bit b → ∃ bb : Bool, (↑b : CVar C.BaseField).val V = bit bb) :
+    LeafPre (d := s.d) ci V (constLeaf k Ps) (SWPoint.equivPoint C.E Ps[ci]) := by
+  cases k with
+  | bit b => exact ⟨by simpa [constLeaf] using onCurveAt_constPt (V := V) Ps[ci] hP, hbit b rfl⟩
+  | _ => simpa [constLeaf, LeafPre] using onCurveAt_constPt (V := V) Ps[ci] hP
+
+theorem corrPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0) :
+    CorrPre (d := s.d) ci V (constLeaf k Ps) (constCp s ci k Ps) := by
+  cases k with
+  | bit b => rfl
+  | full x =>
+    simp only [constLeaf, CorrPre, constCp]
+    rw [getElem_map_fin]
+    exact onCurveAt_shift (V := V) s _ hP 255
+  | b128 x =>
+    simp only [constLeaf, CorrPre, constCp]
+    rw [getElem_map_fin]
+    exact onCurveAt_shift (V := V) s _ hP 130
+  | b10 x =>
+    simp only [constLeaf, CorrPre, constCp]
+    rw [getElem_map_fin]
+    exact onCurveAt_shift (V := V) s _ hP 10
+
+theorem corrHonest_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0) :
+    CorrHonest s.d ci V (constLeaf k Ps) := by
+  have key : ∀ (L : ℕ) (T : s.d.W.Point),
+      OnCurveAt s.d.W V (constPt Ps[ci]) T →
+      OnCurveAt s.d.W V (constPt ((-(2 ^ L : ℤ)) • Ps[ci])) ((-(2 ^ L : ℤ)) • T) := by
+    intro L T hT
+    have hT' : T = SWPoint.equivPoint C.E Ps[ci] :=
+      OnCurveAt.eq hT (onCurveAt_constPt (V := V) Ps[ci] hP) rfl rfl
+    subst hT'
+    exact onCurveAt_shift s _ hP L
+  cases k with
+  | bit b => trivial
+  | full x =>
+    simp only [constLeaf, CorrHonest]
+    rw [getElem_map_fin, getElem_map_fin]
+    exact key 255
+  | b128 x =>
+    simp only [constLeaf, CorrHonest]
+    rw [getElem_map_fin, getElem_map_fin]
+    exact key 130
+  | b10 x =>
+    simp only [constLeaf, CorrHonest]
+    rw [getElem_map_fin, getElem_map_fin]
+    exact key 10
+
+theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α → β → γ) (g : α → β → δ) :
+    ∀ (ks : List α) (lb : List β), (∀ p ∈ ks.zip lb, R (f p.1 p.2) (g p.1 p.2)) →
+      List.Forall₂ R (List.zipWith f ks lb) (List.zipWith g ks lb)
+  | [], _, _ => by simp
+  | _ :: _, [], _ => by simp
+  | k :: ks, P :: lb, h => by
+      simp only [List.zipWith_cons_cons]
+      exact List.Forall₂.cons (h (k, P) (by simp))
+        (forall₂_zipWith R f g ks lb fun p hp => h p (by simp [hp]))
+
+/-- **The table computed from the key is bound to the key.** Constant cells — the Lagrange
+points as bases, their honest shifts as corrections, the SRS blinding base — satisfy
+`XhatBinding` given only what is not table bookkeeping: the blinding base and the Lagrange
+points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this is necessary
+too), the boolean leaves are boolean, and `offBand`. -/
+theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (ks : List (PackedScalar C.BaseField))
+    (hh : σ.h ≠ 0)
+    (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
+
+    (hbits : ∀ b, PackedScalar.bit b ∈ ks → ∃ bb : Bool, (↑b : CVar C.BaseField).val V = bit bb)
+    (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
+      Leaf.offBand C.scalar V leaf) :
+    XhatBinding s ci V σ cvk (constPt σ.h)
+      (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)
+      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks cvk.lagrangeBasis.toList)
+      (List.zipWith (constCp s ci) ks cvk.lagrangeBasis.toList) where
+  blinding := onCurveAt_constPt σ.h hh
+  pre := forall₂_zipWith _ _ _ _ _ fun p hp =>
+    leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2)
+      fun b hb => hbits b (hb ▸ (List.of_mem_zip hp).1)
+  corr := forall₂_zipWith _ _ _ _ _ fun p hp =>
+    corrPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2)
+  hon := by
+    intro leaf hl
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 hl
+    rw [List.getElem_zipWith]
+    exact corrHonest_const s ci _ _ (hL _ (List.getElem_mem _))
+  offBand := hoff
+  hsize := by simp [List.length_zipWith]
+  bases := by
+    intro i hi
+    rw [List.getElem_zipWith, leafBaseAt_constLeaf]
+    have h := onCurveAt_constPt (V := V) _ (hL _ (List.getElem_mem
+      (l := cvk.lagrangeBasis.toList) (n := i) (by
+        simp only [List.length_zipWith, Array.length_toList] at hi; simp; omega)))
+    simpa using h
+
+/-- The shift a packed scalar's ladder carries; a boolean leaf has no correction. -/
+def shiftOf : PackedScalar C.BaseField → ℤ
+  | .full _ => -(2 ^ 255 : ℤ)
+  | .b128 _ => -(2 ^ 130 : ℤ)
+  | .b10 _ => -(2 ^ 10 : ℤ)
+  | .bit _ => 0
+
+/-- The `x_hat` table computed from the key's Lagrange points, at a statement's packing. -/
+def XhatTable.ofKey (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
+    XhatTable C.BaseField nc where
+  bases := lb.map (·.map constPt)
+  corrs := List.zipWith (fun k Ps => Ps.map fun P => constPt (shiftOf k • P)) ks lb
+  corrHead := Vector.replicate nc (constPt 0)
+  corrSum := Vector.replicate nc (constPt 0)
+
+/-- The library's `packLeavesOf` at that table is the constant leaves. -/
+theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)),
+    packLeavesOf ks (XhatTable.ofKey ks lb) = List.zipWith constLeaf ks lb
+  | [], _ => by simp [packLeavesOf]
+  | _ :: _, [] => by simp [packLeavesOf, XhatTable.ofKey]
+  | k :: ks, Ps :: lb => by
+      have ih := packLeavesOf_ofKey ks lb
+      simp only [packLeavesOf, XhatTable.ofKey, List.map_cons, List.zipWith_cons_cons,
+        List.zip_cons_cons] at ih ⊢
+      refine congrArg₂ _ ?_ ih
+      cases k <;> simp [constLeaf, shiftOf]
+
+end OfKey
+
 /-! ## The gadgets -/
 
 section Gadget
@@ -242,7 +445,7 @@ theorem verifyProof_reads
     -- leaves, the group half's premises at the claims-substituted cells
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound X V σ cvk blindingH (packLeaves statement tab))
-    (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false blindingH
+    (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params endo
@@ -273,8 +476,11 @@ theorem verifyProof_reads
         (fun ci => xHatKnown_reads_publicCommitment X ci σ cvk blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
       fun pts hp => hp.imp fun _ _ h => h
+  -- the blinding cell's read is the tables' own: every chunk's binding carries it
+  have hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h) :=
+    (hxhat ⟨0, hivp.nc_pos⟩).1.blinding
   have hivp := incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
-    spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hivp
+    spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hh hivp
   have hb := CircuitType.reads_boolVar.mp hbase
   simp only [verifyProof]
   mvcgen [hivp] invariants
@@ -312,7 +518,7 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound pastaShapePallas V σ cvk blindingH (packLeaves statement tab))
     (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
-      false blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
+      false spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     verifyProof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
       IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
