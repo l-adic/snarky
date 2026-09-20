@@ -399,8 +399,7 @@ decided on a wrap entry and the step entry it wrapped — so the theorem's assum
 shown to hold together on a proof the real prover made, and its conclusion is checked at the
 public input it names:
 
-* the environment's invariants hold of the step key and its SRS (`Env.Invariants`), and the
-  SRS has a round (`hk`);
+* the environment's invariants hold of the step key and its SRS (`Env.Invariants`);
 * the file's step domains form a `KnownDomains` with this key's among them, and the wrap
   statement's `domain_log2` is the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
@@ -431,7 +430,6 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       | .error e => throw (IO.userError s!"step statement: {e}") | .ok r => pure r
     let dv := wst.proofState.deferredValues
     let hdom := decide (dv.branchData.domainLog2 = (doms.keyLog2 : Fq))
-    let hk := decide (0 < σ.k)
     -- the statement as constant cells: every reading below is the value's own
     let stVar : Pickles.StepStatement Pickles.WrapIPARounds n (FVar Fq) (BoolVar Fq)
         (Type2 (SplitField (FVar Fq) (BoolVar Fq))) := CircuitType.constVar (F := Fq) st
@@ -486,7 +484,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨(ginp, newBp)⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
-    return hk && hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
+    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
   else
     IO.println "    ✗ the step key or its SRS breaks an environment invariant"
     return false

@@ -123,6 +123,8 @@ structure Env (C : KimchiCurve) where
   /-- The round count is a round count: every slot's challenges together stay far below the
   128-bit absorb bound. -/
   rounds_small : MaxProofsVerified * σ.k < 2 ^ 128
+  /-- There is a round: an opening has an `(L, R)` pair to absorb. -/
+  rounds_pos : 0 < σ.k
   /-- The blinding base is a finite point. At the `(0, 0)` sentinel no cell reads as it
   (`onCurveAt_constPt`'s converse), so every statement over cells already assumed this. -/
   h_ne : σ.h ≠ 0
@@ -134,7 +136,7 @@ structure Env (C : KimchiCurve) where
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
 them once on what it loaded. -/
 def Env.Invariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1) : Prop :=
-  cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ MaxProofsVerified * σ.k < 2 ^ 128 ∧
+  cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧
     σ.h ≠ 0 ∧ (∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) ∧
     0 < cvk.lagrangeBasis.size
 
@@ -150,7 +152,7 @@ instance Env.decidableInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : Kim
 /-- The environment of an SRS and a key whose invariants hold. -/
 def Env.ofInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1)
     (h : Env.Invariants σ cvk) : Env C :=
-  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2⟩
+  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
 
 /-! ## The group half -/
 

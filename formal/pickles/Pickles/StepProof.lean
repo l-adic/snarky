@@ -41,7 +41,7 @@ it allocates it.
 
 The layered hypotheses the halves' reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built
 from these in the proof; the shape guards among them (`mask`, `canon`, `nc_pos`, `t_ne`,
-`lr_ne`, `char`) are proved.
+`lr_ne`, `char`) are proved — `lr_ne` from the environment's `rounds_pos`.
 -/
 
 namespace Pickles
@@ -138,8 +138,7 @@ private theorem sgOld_length_le (g : GroupVar E.σ.k kw n) : g.sgOld.length ≤ 
 circuit enforces from their own hypotheses, the shape guards proved — every `sg` cell carries
 a keep bit, the claim is canonical on the wrap side, one chunk, seven quotient chunks, a round,
 and at most `53` absorbed cells. -/
-private theorem InputReads.ivpHyps (hk : 0 < E.σ.k)
-    (hin : InputReads E cp pub domains Vg Vs g s)
+private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ g.shifted, (wrapSide Vg).ClaimOk x) :
     ∃ oldsW, IvpHyps (wrapSide Vg) E.σ E.cvk cp pub true spongeAfterIndex
@@ -168,9 +167,9 @@ private theorem InputReads.ivpHyps (hk : 0 < E.σ.k)
   case lrne =>
     intro he
     have he' : g.opening.lr.toList = [] := he
-    have := congrArg List.length he'
-    simp at this
-    omega
+    have hlen := congrArg List.length he'
+    rw [Vector.length_toList, List.length_nil] at hlen
+    exact absurd hlen (Nat.pos_iff_ne_zero.mp E.rounds_pos)
   case char =>
     intro m hm h0
     refine char_guard m (le_trans hm ?_) h0
@@ -226,14 +225,12 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (hzetaN : (wrapSide Vg).decode
         (groupInput E.σ.k kw n).claims.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaVesta.curve E.σ E.cvk cp pub)
-    -- at least one round
-    (hk : 0 < E.σ.k)
     -- of the proof itself
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
     (hsg : SgOk E cp pub) :
     kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true := by
   have hpub := hin.statement
-  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hk hvk
+  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hvk
     hclaimOk
   have hf := hin.fopTies
   have hdom := hin.domain
