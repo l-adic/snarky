@@ -336,9 +336,19 @@ jobs:
           lake env lean --run kimchi/scripts/check_vk_correspond.lean
 
   halves:
-    name: Circuit halves on the cached proofs
+    name: Circuit halves on the cached proofs (${{ matrix.cache }})
     needs: build
     runs-on: ubuntu-latest-large
+    strategy:
+      # One job per proof-cache file, side by side: a file is ten to fifteen minutes, and one
+      # failing says nothing about the other.
+      fail-fast: false
+      matrix:
+        # `SimpleChain`: one slot, one step domain, base case and recursion.
+        # `HeterogeneousPrevs`: three step domains in one system and slot widths above a
+        # rule's predecessor count. It is the file that found the driver's accumulator
+        # padding bug and two definitions that could be stated but not run.
+        cache: [SimpleChain, HeterogeneousPrevs]
     defaults:
       run:
         working-directory: formal
@@ -360,24 +370,32 @@ jobs:
         path: srs-cache/
         key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
 
+    # Keyed per file and by the file's content: each file needs its own domains' bases, a
+    # static key is never re-saved once it hits, and two jobs must not race for one key. The
+    # fallbacks start a new key from the nearest older memo instead of from nothing.
     - name: Cache the Lean Lagrange bases
       uses: actions/cache@v3
       with:
         path: formal/lagrange-cache/
-        key: ${{ runner.os }}-lean-lagrange
+        key: ${{ runner.os }}-lean-lagrange-${{ matrix.cache }}-${{ hashFiles(format('packages/pickles/test/fixtures/proof-cache/{0}.json', matrix.cache)) }}
+        restore-keys: |
+          ${{ runner.os }}-lean-lagrange-${{ matrix.cache }}-
+          ${{ runner.os }}-lean-lagrange
 
     - name: Populate SRS cache
       working-directory: .
       run: make fetch-srs
 
     # Every modelled half through the prover interpreter on real proofs, the table decided
-    # against the assembled system, the success bits read back, and kimchiVerify on the same
-    # proofs (pickles/scripts/check_halves.lean). Compiled by the build job; on a cache hit
+    # against the assembled system, the success bits read back, kimchiVerify on the same
+    # proofs, the accumulators' carry, and the top-level theorem's own circuits and hypotheses
+    # (pickles/scripts/check_halves.lean). Compiled by the build job; on a cache hit
     # `lake exe` is a no-op build + run.
     - name: Check the circuit halves are satisfied on the cached proofs
       run: |
         export PATH="$HOME/.elan/bin:$PATH"
-        lake exe check-halves
+        PROOF_CACHE=../packages/pickles/test/fixtures/proof-cache/${{ matrix.cache }}.json \
+          lake exe check-halves
 
   kernel-replay:
     name: Kernel replay (lean4checker)
