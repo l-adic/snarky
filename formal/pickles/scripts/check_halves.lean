@@ -372,9 +372,11 @@ def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Op
   if hE : Pickles.Env.Invariants σ cvk then
     let E : Pickles.Env C := Pickles.Env.ofInvariants σ cvk hE
     if h : slot < cp'.olds.size then
-      let c := Pickles.carry E cp pred.publicInput cp' ⟨slot, h⟩
+      -- `carry` and `sgOk` share the predecessor's transcript (`carrySgOk_eq`); `accOk` is
+      -- the successor's own accumulator and stays a computation of its own, since its
+      -- agreeing with `sgOk` is what the carry says
+      let (c, s) := Pickles.carrySgOk E cp pred.publicInput cp' ⟨slot, h⟩
       let a := Pickles.accOk σ cp'.olds[slot]
-      let s := Pickles.sgOk E cp pred.publicInput
       IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
       return c && a && s && (s == a)
     else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")

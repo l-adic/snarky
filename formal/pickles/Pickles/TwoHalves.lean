@@ -463,6 +463,22 @@ theorem carry_iff (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Scala
     carry E cp pub cp' i = true ↔ Carry E cp pub cp' i := by
   simp [carry, Carry]
 
+/-- `carry` and `sgOk` on one run of the predecessor's transcript. Each runs the fq-sponge,
+the public-input commitment, the fr-sponge and the IPA transcript of `cp` on its own; a driver
+that wants both verdicts gets them here for one run. The two mirrors and their reflections are
+untouched: this is definitionally their pair (`carrySgOk_eq`). -/
+def carrySgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) : Bool × Bool :=
+  let run := runInput C E.σ E.cvk cp pub
+  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+  (decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1),
+   decide (run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i])))
+
+/-- `carrySgOk` is `carry` paired with `sgOk`. -/
+theorem carrySgOk_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) :
+    carrySgOk E cp pub cp' i = (carry E cp pub cp' i, sgOk E cp pub) := rfl
+
 /-- **The deferred obligation transports.** Under `Carry`, `cp`'s `SgOk` is the accumulator
 equation of what `cp'` carries: checkable on `cp'`'s input, without `cp`. -/
 theorem sgOk_iff_accOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
