@@ -309,6 +309,12 @@ Pickles.WrapIPARounds
 Pickles.verifyProof_step_reads
 Pickles.verifyProofAt_kimchiVerify_pallas
 
+-- The wrap circuit's scalar half at an environment (WrapScalarHalf.lean): the wrap-side twin
+-- of `finalizeOtherProofStepAt_kimchiVerify_vesta` — `finalizeOtherProofWrapAt` at the key's
+-- own constant domain, run with the step circuit's group half assumed. A root until the wrap
+-- proof's top-level statement consumes it, as `stepProof_kimchiVerify_vesta` consumes its twin.
+Pickles.finalizeOtherProofWrapAt_kimchiVerify_pallas
+
 -- The top-level statement for a step proof (StepProof.lean): a valuation satisfying the wrap
 -- circuit's verify block (`groupCircuit`, WrapVerify.lean), a valuation satisfying the next
 -- step circuit's scalar half with `finalized` set (`scalarCircuit`, StepScalarHalf.lean), the
