@@ -459,11 +459,11 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- asserts `finalized`
     let (u, ev, mask, prev, d) ← match stepFopInput w cp with
       | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-    let sinp : Pickles.ScalarIn σ.k := (⟨d, mask⟩, ⟨(u, ev, prev)⟩)
-    let (satS, _) ← runHalf (a := Pickles.ScalarIn σ.k) Kimchi.Fixture.PS.fpSide
-      (fun (v : Pickles.ScalarVar σ.k) => do
-        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.ScalarIn σ.k) v
-        Pickles.scalarCircuit E doms v)
+    let sinp : Pickles.StepProof.ScalarIn σ.k := (⟨d, mask⟩, ⟨(u, ev, prev)⟩)
+    let (satS, _) ← runHalf (a := Pickles.StepProof.ScalarIn σ.k) Kimchi.Fixture.PS.fpSide
+      (fun (v : Pickles.StepProof.ScalarVar σ.k) => do
+        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.StepProof.ScalarIn σ.k) v
+        Pickles.StepProof.scalarCircuit E doms v)
       (fun _ => []) sinp
     IO.println s!"    scalarCircuit (input check, body, finalized asserted): satisfies={satS}"
     -- `hsatG`: the theorem's group circuit — the verify block with its success bit and its
@@ -476,11 +476,11 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       st.proofState.unfinalizedProofs.map fun u =>
         u.deferredValues.bulletproofChallenges.map fun c =>
           Poseidon.FqSponge.endoExpand (F := Fq) (IpaPallas.curve.lam : Fq) c.val.val
-    let (satG, _) ← runHalf (a := Pickles.GroupIn σ.k Pickles.WrapIPARounds n)
+    let (satG, _) ← runHalf (a := Pickles.StepProof.GroupIn σ.k Pickles.WrapIPARounds n)
       Kimchi.Fixture.PS.fqSide
-      (fun (v : Pickles.GroupVar σ.k Pickles.WrapIPARounds n) => do
+      (fun (v : Pickles.StepProof.GroupVar σ.k Pickles.WrapIPARounds n) => do
         let sv ← wrapIndexSponge s.vk
-        Pickles.groupCircuit E (keyComms xhatWrapCell s.vk) sv
+        Pickles.StepProof.groupCircuit E (keyComms xhatWrapCell s.vk) sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨(ginp, newBp)⟩
     IO.println s!"    groupCircuit: satisfies={satG}"

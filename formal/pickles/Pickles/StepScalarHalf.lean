@@ -10,7 +10,8 @@ scalar-side counterpart of `wrapVerifyAt_reads`. The two halves of a step proof'
 verification run in different circuits over different fields, so no one triple covers both;
 each side gets a triple about its own circuit, with the other half assumed.
 
-`scalarCircuit` is the gadget as a circuit of its input (`ScalarIn`) with `finalized`
+`StepProof.scalarCircuit` is the gadget as a circuit of its input (`StepProof.ScalarIn`) with
+`finalized`
 asserted: what the top-level statement compiles (`stepProof_kimchiVerify_vesta`).
 -/
 
@@ -221,6 +222,8 @@ theorem BranchData.mask_boolean {V : Valuation Fp} (bd : BranchData (FVar Fp) (B
   obtain ⟨bb, hbb⟩ := h.2 b hb
   cases bb <;> simp [hbb, bit]
 
+namespace StepProof
+
 /-- The scalar circuit's input: the slot's branch data, checked; its claims, the evaluations
 and the previous challenges, unchecked. -/
 abbrev ScalarIn (k : ℕ) : Type :=
@@ -299,5 +302,7 @@ theorem scalarCircuit_reads
   rename_i o _ hiff _ _
   intro hfin
   exact (hiff.mp ⟨hsg, hfin⟩).1
+
+end StepProof
 
 end Pickles

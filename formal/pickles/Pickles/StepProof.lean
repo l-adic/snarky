@@ -50,6 +50,8 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 open CompElliptic.CurveForms.ShortWeierstrass
 
+namespace StepProof
+
 /-- The group circuit's input cells: fixed by the input type. -/
 abbrev groupInput (k kw n : ℕ) : GroupVar k kw n := inputVar (F := Fq) (a := GroupIn k kw n)
 
@@ -185,6 +187,9 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
 
 end Hyp
 
+end StepProof
+
+open StepProof in
 /-- **A step proof's two circuits, satisfied, make `kimchiVerify` accept.** The wrap circuit's
 verify block and the step circuit's scalar half, each compiled over its input and satisfied,
 with the inputs reading as the wire's proof (`InputReads`), the key cells as the key

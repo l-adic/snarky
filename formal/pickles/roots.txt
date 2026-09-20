@@ -316,8 +316,8 @@ Pickles.verifyProofAt_kimchiVerify_pallas
 Pickles.finalizeOtherProofWrapAt_kimchiVerify_pallas
 
 -- The top-level statement for a step proof (StepProof.lean): a valuation satisfying the wrap
--- circuit's verify block (`groupCircuit`, WrapVerify.lean), a valuation satisfying the next
--- step circuit's scalar half with `finalized` set (`scalarCircuit`, StepScalarHalf.lean), the
+-- circuit's verify block (`StepProof.groupCircuit`, WrapVerify.lean), a valuation satisfying the next
+-- step circuit's scalar half with `finalized` set (`StepProof.scalarCircuit`, StepScalarHalf.lean), the
 -- readings of their inputs as the wire's proof (`InputReads`), of the key cells as the key
 -- (`VkReads`), and the claim ties between them (`HalvesTies`), make `kimchiVerify` accept.
 -- Both circuits appear as their compiled constraint systems, so the group half

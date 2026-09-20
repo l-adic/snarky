@@ -36,10 +36,10 @@ step statement at the key's own Lagrange table (`XhatTable.ofKey`) — and `wrap
 its read: the public input is then the packed statement's (`wrapPublicInput`), and what the
 table reads as is proved from the environment's invariants rather than assumed.
 
-`groupCircuit` is the block as a circuit of its input (`GroupIn`): the two statements, the
-step proof, its accumulators' `sg` and the slots' expanded challenges are the input's, the
-key's cells and the two sponges the circuit's constants. It is what the top-level statement
-compiles (`stepProof_kimchiVerify_vesta`).
+`StepProof.groupCircuit` is the block as a circuit of its input (`StepProof.GroupIn`): the two
+statements, the step proof, its accumulators' `sg` and the slots' expanded challenges are the
+input's, the key's cells and the two sponges the circuit's constants. It is what the top-level
+statement compiles (`stepProof_kimchiVerify_vesta`).
 -/
 
 namespace Pickles
@@ -294,6 +294,8 @@ abbrev WrapGroupVar (ks kw n : ℕ) : Type :=
     StepStatement kw n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))) ×
     IvpProof ks (FVar Fq) (Type1 (FVar Fq)) × Vector (AffinePoint (FVar Fq)) n
 
+namespace StepProof
+
 variable {k kw n : ℕ}
 
 /-- The group circuit's input: the wrap statement, the step statement, the step proof, its
@@ -371,6 +373,8 @@ def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
     (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n) : CircuitM Fq c Unit :=
   wrapVerifyAt E g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest g.claims
     (g.cells keyCells)
+
+end StepProof
 
 end Records
 
