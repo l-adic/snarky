@@ -64,10 +64,9 @@ theorem stepProof_kimchiVerify_vesta {ks n : ℕ}
       spongeAfterIndex (cells.withClaims claimsG) oldsW)
     -- the step circuit's `domain_log2` cell holds the key's
     (hdom : domainLog2Var.val Vs = (domains.keyLog2 : Fp))
-    -- booleanity no constraint of these two circuits gives: the statement's boolean cells,
-    -- the mask cells
-    (hbits : ∀ b, PackedScalar.bit b ∈ statement.packed →
-      ∃ bb : Bool, (↑b : CVar Fq).val Vg = bit bb)
+    -- the mask cells are boolean: `finalize_other_proof` does not constrain them, pickles
+    -- does where it unpacks the branch data. (The statement's boolean cells need no such
+    -- line: the wrap block's `x_hat` gadget constrains each one.)
     (hmask : ∀ b ∈ mask.toList, (↑b : CVar Fp).val Vs = 0 ∨ (↑b : CVar Fp).val Vs = 1)
     -- the statement's full scalars avoid the ladder's sixteen-value band
     (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar Vg leaf)
@@ -80,7 +79,7 @@ theorem stepProof_kimchiVerify_vesta {ks n : ℕ}
     kimchiVerify IpaVesta.curve E.σ E.cvk cp (wrapPublicInput E Vg statement) = true := by
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
     (wrapVerifyAt_reads (V := Vg) E cp statement spongeAfterIndex msgSponge newBpChallenges
-      claimedMsgDigest claimsG cells hbits hoff hivp) ng hsatG
+      claimedMsgDigest claimsG cells hoff hivp) ng hsatG
   have hS := (builder_spec_iff _ _).mp
     (finalizeOtherProofStepAt_kimchiVerify_vesta E cp _ hguard Vs domains claimsS evals mask
       prevChallenges domainLog2Var hmask hdom Vg claimsG v hv hv1 ht) ns hsatS

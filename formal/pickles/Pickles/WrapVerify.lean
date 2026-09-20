@@ -208,8 +208,9 @@ theorem StepStatement.packed_head {ks n : ℕ}
 /-- **The block at an environment reads as the group half at the packed statement.** What
 `wrapVerify_wrap_reads` takes as premises about `x_hat` and the blinding cell is proved
 here from the environment: the table is the key's by construction (`xhatBinding_const`).
-What is left is what no table can give — the statement's boolean cells are boolean, its full
-scalars avoid the ladder's sixteen-value band, and the group half's cells are the proof's. -/
+What is left is what no table can give — the statement's full scalars avoid the ladder's
+sixteen-value band, and the group half's cells are the proof's. The statement's boolean cells
+being boolean is not left: the `x_hat` gadget constrains them itself. -/
 theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
     (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
     (statement : StepStatement ks n (FVar Fq) (BoolVar Fq)
@@ -218,8 +219,6 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
     (claimedMsgDigest : FVar Fq)
     (u : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
-    (hbits : ∀ b, PackedScalar.bit b ∈ statement.packed →
-      ∃ bb : Bool, (↑b : CVar Fq).val V = bit bb)
     (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar V leaf)
     (hivp : ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V statement) true
       spongeAfterIndex (cells.withClaims u) oldsW) :
@@ -234,8 +233,10 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
       = List.zipWith constLeaf statement.packed E.cvk.lagrangeBasis.toList := by
     unfold wrapLeavesAt
     exact packLeavesOf_ofKey (C := IpaVesta.curve) _ _
-  have hbind := xhatBinding_const (V := V) pastaShapeVesta (0 : Fin 1) E.σ E.cvk
-    statement.packed E.h_ne E.lagrange_ne hbits (hleaves ▸ hoff)
+  -- the binding, under the boolean leaves' booleanity: the `x_hat` read supplies that
+  have hbind := fun hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V =>
+    xhatBinding_const (V := V) pastaShapeVesta (0 : Fin 1) E.σ E.cvk statement.packed E.h_ne
+      E.lagrange_ne (hleaves ▸ hb) (hleaves ▸ hoff)
   have hscalar : leafHasScalar (wrapLeavesAt E statement) := by
     obtain ⟨x, rest, hx⟩ := statement.packed_head
     obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil
@@ -253,7 +254,7 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
       ⦃⇓ pts _ => ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve E.σ E.cvk
         (wrapPublicInput E V statement)).toList⌝⦄ := by
     have h0 := xHat_reads_publicCommitment pastaShapeVesta (0 : Fin 1) E.σ E.cvk
-      (constPt E.σ.h) (wrapLeavesAt E statement) _ _ (hleaves ▸ hbind) hscalar
+      (constPt E.σ.h) (wrapLeavesAt E statement) _ _ (fun hb => hleaves ▸ hbind hb) hscalar
     have hl : ∀ pc : Vector IpaVesta.curve.Point 1, pc.toList = [pc[(0 : Fin 1)]] := by
       intro pc
       apply List.ext_getElem <;> simp

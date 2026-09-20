@@ -298,13 +298,14 @@ theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α 
 points as bases, their honest shifts as corrections, the SRS blinding base — satisfy
 `XhatBinding` given only what is not table bookkeeping: the blinding base and the Lagrange
 points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this is necessary
-too), the boolean leaves are boolean, and `offBand`. -/
+too), the boolean leaves are boolean — which `xHat_reads_publicCommitment` supplies from the
+gadget's own bit pre-pass — and `offBand`. -/
 theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     (cvk : KimchiVK C nc) (ks : List (PackedScalar C.BaseField))
     (hh : σ.h ≠ 0)
     (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
 
-    (hbits : ∀ b, PackedScalar.bit b ∈ ks → ∃ bb : Bool, (↑b : CVar C.BaseField).val V = bit bb)
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
     (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
       Leaf.offBand C.scalar V leaf) :
     XhatBinding s ci V σ cvk (constPt σ.h)
@@ -313,8 +314,13 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
       (List.zipWith (constCp s ci) ks cvk.lagrangeBasis.toList) where
   blinding := onCurveAt_constPt σ.h hh
   pre := forall₂_zipWith _ _ _ _ _ fun p hp =>
-    leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2)
-      fun b hb => hbits b (hb ▸ (List.of_mem_zip hp).1)
+    leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2) fun b hb => by
+      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList := by
+        rw [← List.map_uncurry_zip_eq_zipWith]
+        exact List.mem_map.2 ⟨p, hp, rfl⟩
+      have := hbits _ hmem
+      rw [hb] at this
+      exact this
   corr := forall₂_zipWith _ _ _ _ _ fun p hp =>
     corrPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2)
   hon := by

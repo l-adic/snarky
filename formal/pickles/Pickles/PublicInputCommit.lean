@@ -556,6 +556,55 @@ private theorem constrainBits_spec {V : Valuation F} :
   | .b128 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
   | .b10 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
 
+/-- A boolean leaf's bit is boolean; the scalar leaves say nothing. What the bit pre-pass
+forces of each leaf. -/
+def Leaf.bitBoolean (V : Valuation F) : Leaf F nc → Prop
+  | .condAdd b _ => ∃ bb : Bool, (↑b : CVar F).val V = bit bb
+  | _ => True
+
+omit [ToNat F] in
+/-- **The bit pre-pass makes every boolean leaf's bit boolean.** The pass is the gadget's own
+opening move, so the commitment's read assumes this of its leaves rather than asking a
+consumer for it (`builder_spec_bind_assume`). -/
+private theorem constrainBits_boolean {V : Valuation F} :
+    ∀ leaves : List (Leaf F nc),
+      ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves
+      ⦃⇓ _ _ => ⌜∀ leaf ∈ leaves, leaf.bitBoolean V⌝⦄
+  | [] => by
+      simp only [constrainBits]
+      mvcgen
+      intro leaf hl
+      exact absurd hl List.not_mem_nil
+  | .condAdd b base :: rest => by
+      simp only [constrainBits]
+      have ih := constrainBits_boolean (V := V) rest
+      mvcgen [ih]
+      rename_i hb _ _
+      intro hrest leaf hl
+      rcases List.mem_cons.1 hl with rfl | hl
+      · rcases (LawfulBasicSystem.holds_boolean V (↑b : CVar F)).mp hb with h | h
+        · exact ⟨false, by simpa [bit] using h⟩
+        · exact ⟨true, by simpa [bit] using h⟩
+      · exact hrest leaf hl
+  | .full s base corr :: rest => by
+      simp only [constrainBits]
+      refine builder_spec_imp _ _ _ (constrainBits_boolean (V := V) rest) fun _ h leaf hl => ?_
+      rcases List.mem_cons.1 hl with rfl | hl
+      · trivial
+      · exact h leaf hl
+  | .b128 s base corr :: rest => by
+      simp only [constrainBits]
+      refine builder_spec_imp _ _ _ (constrainBits_boolean (V := V) rest) fun _ h leaf hl => ?_
+      rcases List.mem_cons.1 hl with rfl | hl
+      · trivial
+      · exact h leaf hl
+  | .b10 s base corr :: rest => by
+      simp only [constrainBits]
+      refine builder_spec_imp _ _ _ (constrainBits_boolean (V := V) rest) fun _ h leaf hl => ?_
+      rcases List.mem_cons.1 hl with rfl | hl
+      · trivial
+      · exact h leaf hl
+
 omit [ToNat F] in
 /-- **The corrections-sum reads as `accv + Σ` the correction points.** Given each leaf's
 correction reads as `cp` (`condAdd`: `0`), `sumCorrections ci acc leaves` reads as
@@ -1544,7 +1593,9 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
   rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
     crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
 
-/-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The
+/-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The binding
+is asked for only under the boolean leaves' booleanity, which the gadget's bit pre-pass
+establishes itself (`constrainBits_boolean`): a consumer never supplies it. The
 in-circuit public-input obligation of the group half (`incrementally_verify_proof`):
 `publicInputCommitFull` commits to `pubOf leaves`, crossed to Mathlib's point group by
 `SWPoint.equivPoint`. The subtle half (the canonical decode — the ladder's top-bit pin —
@@ -1554,7 +1605,9 @@ in-circuit public-input obligation of the group half (`incrementally_verify_proo
 theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
-    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (Ts cps : List s.d.W.Point)
+    (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
+      XhatBinding s ci V σ cvk blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
     publicInputCommitFull (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH leaves
@@ -1563,6 +1616,16 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
         (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; simp [leafHasScalar] at hscalar
+  -- the gadget opens with the bit pre-pass, so its own rows give the leaves' booleanity
+  show ⦃⌜True⌝⦄
+    (constrainBits (S := Builder V (KimchiConstraint C.BaseField)) leaves >>= fun _ => do
+      let init ← sumCorrectionsHead ci leaves
+      publicInputCommitChunk ci init blindingH leaves)
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r
+      (SWPoint.equivPoint C.E
+        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄
+  refine builder_spec_bind_assume _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb => ?_
+  have hbind := hbind hb
   refine builder_spec_imp _ _ _
     (publicInputCommitFull_reads (d := s.d) ci blindingH leaves Ts cps
       (SWPoint.equivPoint C.E σ.h)

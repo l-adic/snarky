@@ -407,8 +407,8 @@ public input it names:
   the padding, the slots' expanded round challenges, the step opening's `sg`;
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input.
 
-The booleanity hypotheses (`hbits`, `hmask`) hold by construction here: a record's boolean
-cells are seeded from `Bool`s. -/
+The booleanity hypothesis `hmask` holds by construction here: a record's boolean cells are
+seeded from `Bool`s. -/
 def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.Entry CS))
     (loaded : IO.Ref (List (ℕ × SRS CS.Point))) : IO Bool := do
   let σ ← srsAt CS "vesta" vestaBase.sqrt? loaded s.proof.opening.lr.size
