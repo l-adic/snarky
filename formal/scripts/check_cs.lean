@@ -912,7 +912,7 @@ def ivpStepInput (get : ℕ → FVar Fp) :
                  perm := shifted 34, zetaToSrsLength := shifted 36, zetaToDomainSize := shifted 38 }
       combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
       bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
-  ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+  Pickles.ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
     (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
      { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
        z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 })
@@ -988,7 +988,7 @@ def stepVerifyCells (get : ℕ → FVar Fp) :
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
-  ivpInputOf (stepVerifyUnfinalized get).deferredValues
+  Pickles.ivpInputOf (stepVerifyUnfinalized get).deferredValues
     [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
     (Vector.ofFn fun j => pt (2 * j), pt 30, Vector.ofFn fun j => pt (32 + 2 * j),
      { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
@@ -1058,7 +1058,7 @@ def wrapIvpDv (get : ℕ → FVar Fq) : Pickles.DeferredValues 16 (FVar Fq) (Typ
 at 60, `z_comm` at 90, the 7 `t_comm` points at 92, `δ` at 106, `sg` at 108, the 16 `(L, R)`
 pairs at 110, `z₁`, `z₂` at 174-175. -/
 def wrapIvpProof (pt : ℕ → AffinePoint (FVar Fq)) (get : ℕ → FVar Fq) :
-    IvpProof 16 (FVar Fq) (Type1 (FVar Fq)) :=
+    Pickles.IvpProof 16 (FVar Fq) (Type1 (FVar Fq)) :=
   (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
    { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
      z1 := ⟨get 174⟩, z2 := ⟨get 175⟩, delta := pt 106, sg := pt 108 })
@@ -1080,7 +1080,7 @@ def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
     vestaBase.sqrt? true h sv computeXHat
-    (ivpInputOf dv [] dummyWrapKeyComms (wrapIvpProof pt get))
+    (Pickles.ivpInputOf dv [] dummyWrapKeyComms (wrapIvpProof pt get))
   assertEqual o.spongeDigest (get 176)
   for c in dv.bulletproofChallenges.toList.zip o.bulletproofChallenges do
     assertEqual c.1.val c.2.val
@@ -1118,7 +1118,7 @@ def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
     [(List.range 15).map fun j => get (178 + j)] (get 177)
     { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
       spongeDigestBeforeEvaluations := get 176 }
-    (ivpInputOf dv [(some (.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
+    (Pickles.ivpInputOf dv [(some (.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
       (wrapIvpProof pt get))
 
 /-! ## The `messages_for_next_wrap_proof` hash

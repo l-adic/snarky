@@ -269,6 +269,28 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
 
 end WrapRead
 
+/-! ## The verify block's records -/
+
+section Records
+
+open CompElliptic.Fields.Pasta
+
+/-- The wrap circuit's group half of a step proof, as values, at the wrap statement's `ks`
+rounds (the step proof's), the step statement's `kw` (its slots' wrap proofs') and its `n`
+slots: the wrap statement, the step statement, the step proof, its `n` accumulators' `sg`.
+The keep bits are the wrap statement's branch data. -/
+abbrev WrapGroup (ks kw n : ℕ) : Type :=
+  WrapStatement ks Fq Bool (Type1 Fq) × StepStatement kw n Fq Bool (Type2 (SplitField Fq Bool)) ×
+    IvpProof ks Fq (Type1 Fq) × Vector (AffinePoint Fq) n
+
+/-- `WrapGroup`, as cells. -/
+abbrev WrapGroupVar (ks kw n : ℕ) : Type :=
+  WrapStatement ks (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) ×
+    StepStatement kw n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))) ×
+    IvpProof ks (FVar Fq) (Type1 (FVar Fq)) × Vector (AffinePoint (FVar Fq)) n
+
+end Records
+
 /-! The gadgets are sealed after their reads: a consumer composes `wrapVerify_reads` and
 `wrapVerifyAt_reads`, never the bodies. -/
 attribute [irreducible] wrapVerify wrapVerifyAt

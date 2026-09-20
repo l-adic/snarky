@@ -142,6 +142,46 @@ def IvpInput.withClaims {sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
 
 end Pack
 
+/-! ## The group half's input, from its records -/
+
+section Records
+
+open Kimchi
+
+/-- The key's cells as the group half's key records: `σ₆`, the six selectors, the 15
+coefficients, `σ₀…σ₅`. -/
+def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
+    List (AffinePoint (FVar F)) × List (List (AffinePoint (FVar F))) ×
+      List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
+  (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)
+
+/-- A one-chunk proof as the group half reads it: the 15 witness commitments, `z_comm`, the 7
+quotient chunks, the opening at `k` rounds. `IvpInput` holds these as chunk lists; the
+product is their sized form, so it is a `CircuitType` by its factors. -/
+abbrev IvpProof (k : ℕ) (f sf : Type) : Type :=
+  Vector (AffinePoint f) wCols × AffinePoint f × Vector (AffinePoint f) 7 ×
+    BulletproofOpening k f sf
+
+/-- The group half's input from a proof's deferred values (its claims), the `sg_old` points
+under their keep bits, a key's commitments and the proof. -/
+def ivpInputOf {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf)
+    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
+    (comms : List (List (AffinePoint (FVar F)))) (pr : IvpProof k (FVar F) sf) :
+    IvpInput k (FVar F) (BoolVar F) sf :=
+  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
+  let (wComm, zComm, tComm, opening) := pr
+  { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
+      dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
+    xi := dv.xi
+    deferred := ⟨dv.combinedInnerProduct, dv.b⟩
+    sgOld, sigmaLast, indexComms, coefficientsComm, sigmaComm
+    wComm := wComm.toList.map ([·])
+    zComm := [zComm]
+    tComm := tComm.toList
+    opening }
+
+end Records
+
 /-! ## The `x_hat` table of a key
 
 The Lagrange bases and shift corrections are data of the verifier key, so the table is

@@ -139,7 +139,8 @@ def stepStatementOf {F : Type} [Field F] (conv : Fp → F) (k n : ℕ) (c : Arra
 /-- A checked one-chunk proof's cells for a group half: its commitments as affine points, the
 opening with `z₁`, `z₂` through `shift` (the side's shifted register). -/
 def ivpProofOf (C : Ipa.KimchiCurve) {k : ℕ} {sf : Type} (shift : C.ScalarField → sf)
-    (cp : Kimchi.Verifier.KimchiProof C 1 k) : Except String (IvpProof k C.BaseField sf) := do
+    (cp : Kimchi.Verifier.KimchiProof C 1 k) :
+    Except String (Pickles.IvpProof k C.BaseField sf) := do
   let pt (P : C.Point) : AffinePoint C.BaseField := ⟨P.x, P.y⟩
   let tComm : Vector (AffinePoint C.BaseField) 7 ←
     if h : cp.tComm.size = 7 then pure ⟨cp.tComm.map pt, by simp [h]⟩
@@ -252,8 +253,8 @@ def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Arra
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
 def runGroupWrap {ks kw n : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Array CS.Point)
-    (h : CS.Point) (inp : WrapGroup ks kw n) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := WrapGroup ks kw n) Kimchi.Fixture.PS.fqSide
+    (h : CS.Point) (inp : Pickles.WrapGroup ks kw n) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.WrapGroup ks kw n) Kimchi.Fixture.PS.fqSide
     (groupWrapOn vk basis (xhatWrapCell h)) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
@@ -262,7 +263,7 @@ the step statement carried by value into the wrap field, the step proof (`z₁`,
 Type1 registers `(s − 2^255 − 1)/2`), its `n` accumulators' `sg`. -/
 def wrapGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (n : ℕ) (pad : CS.Point) {ks : ℕ}
     (cpS : Kimchi.Verifier.KimchiProof CS 1 ks) :
-    Except String (WrapGroup ks Pickles.WrapIPARounds n) := do
+    Except String (Pickles.WrapGroup ks Pickles.WrapIPARounds n) := do
   let statement ← wrapStatementOf id ks w.publicInput
   let st ← stepStatementOf toWrap Pickles.WrapIPARounds n s.publicInput
   let pr ← ivpProofOf CS (fun z => ⟨toWrap (Pasta.Shifted.shiftType1 255 z)⟩) cpS
@@ -477,9 +478,9 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
         u.deferredValues.bulletproofChallenges.map fun c =>
           Poseidon.FqSponge.endoExpand (F := Fq) (IpaPallas.curve.lam : Fq) c.val.val
     let (satG, _) ← runHalf
-      (a := WrapGroup σ.k Pickles.WrapIPARounds n × Vector (Vector Fq Pickles.WrapIPARounds) n)
+      (a := Pickles.WrapGroup σ.k Pickles.WrapIPARounds n × Vector (Vector Fq Pickles.WrapIPARounds) n)
       Kimchi.Fixture.PS.fqSide
-      (fun (v : WrapGroupVar σ.k Pickles.WrapIPARounds n ×
+      (fun (v : Pickles.WrapGroupVar σ.k Pickles.WrapIPARounds n ×
           Vector (Vector (FVar Fq) Pickles.WrapIPARounds) n) => do
         let ((statement, stepStatement, pr, sgOld), bp) := v
         let sv ← wrapIndexSponge s.vk
@@ -489,7 +490,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
           (bp.toList.map (·.toList)) statement.proofState.messagesForNextWrapProof
           { deferredValues := dv.toDeferredValues, shouldFinalize := true_
             spongeDigestBeforeEvaluations := statement.proofState.spongeDigestBeforeEvaluations }
-          (ivpInputOf dv.toDeferredValues
+          (Pickles.ivpInputOf dv.toDeferredValues
             ((mask.zip sgOld.toList).map fun (m, P) => (some m, P))
             (keyComms xhatWrapCell s.vk) pr))
       (fun _ => []) (ginp, newBp)

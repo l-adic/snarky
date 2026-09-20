@@ -1,5 +1,6 @@
 import PicklesFixture.Layout
 import Pickles.Verify
+import Pickles.WrapVerify
 import Pickles.Encoding
 import Kimchi.Verifier.Wire
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
@@ -68,13 +69,6 @@ def keyComms {C : Bulletproof.Ipa.KimchiCurve} {F : Type}
     ++ [vk.genericComm, vk.poseidonComm, vk.completeAddComm, vk.mulComm, vk.emulComm,
         vk.endomulScalarComm].map chunks
 
-/-- The key's cells as the group half's key records: `σ₆`, the six selectors, the 15
-coefficients, `σ₀…σ₅`. -/
-def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
-    List (AffinePoint (FVar F)) × List (List (AffinePoint (FVar F))) ×
-      List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
-  (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)
-
 /-- The sponge after a key's index digest (`VerifierIndex::digest`): every commitment's
 chunks, `x` then `y`, absorbed into the fresh sponge. -/
 def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
@@ -89,33 +83,6 @@ def indexSponge {F c : Type} [Field F] [DecidableEq F] [BasicSystem F c]
 /-- The sponge after the wrap key's index digest, at the step field. -/
 def stepIndexSponge (vk : Wire.KimchiVK XhatStepCurve) : CircuitM Fp C (SpongeVar Fp) :=
   indexSponge Bulletproof.IpaVesta.curve.frSponge.params (keyComms xhatStepCell vk)
-
-/-! ## The proof part of `IvpInput` -/
-
-/-- A one-chunk proof as the group half reads it: the 15 witness commitments, `z_comm`, the 7
-quotient chunks, the opening at `k` rounds. `IvpInput` holds these as chunk lists; the
-product is their sized form, so it is a `CircuitType` by its factors. -/
-abbrev IvpProof (k : ℕ) (f sf : Type) : Type :=
-  Vector (AffinePoint f) wCols × AffinePoint f × Vector (AffinePoint f) 7 ×
-    BulletproofOpening k f sf
-
-/-- The group half's input from a proof's deferred values (its claims), the `sg_old` points
-under their keep bits, a key's commitments and the proof. -/
-def ivpInputOf {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf)
-    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
-    (comms : List (List (AffinePoint (FVar F)))) (pr : IvpProof k (FVar F) sf) :
-    IvpInput k (FVar F) (BoolVar F) sf :=
-  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
-  let (wComm, zComm, tComm, opening) := pr
-  { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
-      dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
-    xi := dv.xi
-    deferred := ⟨dv.combinedInnerProduct, dv.b⟩
-    sgOld, sigmaLast, indexComms, coefficientsComm, sigmaComm
-    wComm := wComm.toList.map ([·])
-    zComm := [zComm]
-    tComm := tComm.toList
-    opening }
 
 /-! ## The step circuit's group half, on a wrap proof -/
 
@@ -183,20 +150,6 @@ def wrapLeaves (pts : Array XhatWrapCurve.Point) (ks : List (PackedScalar Fq)) :
 /-- The sponge after the step key's index digest, at the wrap field. -/
 def wrapIndexSponge (vk : Wire.KimchiVK XhatWrapCurve) : CircuitM Fq Cq (SpongeVar Fq) :=
   indexSponge Bulletproof.IpaVesta.curve.sponge.params (keyComms xhatWrapCell vk)
-
-/-- The wrap circuit's group half of a step proof, as values, at the wrap statement's `ks`
-rounds (the step proof's), the step statement's `kw` (its slots' wrap proofs') and its `n`
-slots: the wrap statement, the step statement, the step proof, its `n` accumulators' `sg`.
-The keep bits are the wrap statement's branch data. -/
-abbrev WrapGroup (ks kw n : ℕ) : Type :=
-  WrapStatement ks Fq Bool (Type1 Fq) × StepStatement kw n Fq Bool (Type2 (SplitField Fq Bool)) ×
-    IvpProof ks Fq (Type1 Fq) × Vector (AffinePoint Fq) n
-
-/-- `WrapGroup`, as cells. -/
-abbrev WrapGroupVar (ks kw n : ℕ) : Type :=
-  WrapStatement ks (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) ×
-    StepStatement kw n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))) ×
-    IvpProof ks (FVar Fq) (Type1 (FVar Fq)) × Vector (AffinePoint (FVar Fq)) n
 
 /-- The wrap circuit's group half on its records: the step key's index sponge, the step
 statement's `x_hat` over its packed leaves at the Lagrange bases (whose boolean leaves
