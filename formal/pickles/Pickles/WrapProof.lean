@@ -21,12 +21,15 @@ valuation (`builder_spec_iff`).
   statement as the public input, the slot as one that must verify, the proof cells as the
   proof, the `sg` cells as the old accumulators, the evaluation cells as the evaluations;
 * `VkReads`: the circuit's key cells read as the key;
-* `XhatTable.Bound`: the `x_hat` tables are the key's Lagrange bases at the statement's leaves;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
 * what no circuit enforces, each its own hypothesis: the shifted claims avoid the ladder's
-  band (`hclaimOk`), the claimed `cip` is the canonical representative (`hcanon`: the step
-  side absorbs its two cells, and the ladder's range check leaves one bit of slack), the `ζ`
-  powers are the run's (`hzetaM`, `hzetaN`);
+  band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`), the claimed `cip` is
+  the canonical representative (`hcanon`: the step side absorbs its two cells, and the
+  ladder's range check leaves one bit of slack), the `ζ` powers are the run's (`hzetaM`,
+  `hzetaN`);
+* `hsum`: the constant correction sum the `x_hat` fold adds is a finite point. The table is
+  computed from the key (`xhatTableAt`), and this is the one fact about it no invariant gives:
+  a fixed relation among the key's Lagrange points that must not hold;
 * `Guards` and `SgOk`, of the proof itself.
 
 Against the step proof's statement: no domain cell (the wrap circuit's domain is a constant),
@@ -59,10 +62,10 @@ public input, the slot as one that must verify, the proof cells as the proof's c
 opening, the `sg` cells as the old accumulators' commitments; the evaluation cells as the
 proof's evaluations, the previous challenges as the old accumulators'. -/
 structure InputReads (E : Env IpaPallas.curve) (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-    (pub : Array Fq) (tab : XhatTable Fp 1) (Vg : Valuation Fp) (Vs : Valuation Fq)
+    (pub : Array Fq) (Vg : Valuation Fp) (Vs : Valuation Fq)
     (g : GroupVar ks E.σ.k) (s : ScalarVar E.σ.k) : Prop where
   /-- The wrap statement's cells are the public input. -/
-  statement : pubOf IpaPallas.curve Vg (packLeaves g.statement tab) = pub
+  statement : stepPublicInput E Vg g.statement = pub
   /-- The slot must verify: `is_base_case` reads `false`. -/
   mustVerify : CircuitType.Reads Vg g.isBaseCase false
   /-- The witness commitments. -/
@@ -99,12 +102,12 @@ structure InputReads (E : Env IpaPallas.curve) (cp : KimchiProof IpaPallas.curve
       (s.half Vs).prevVals).flatten = (cp.olds.map (·.u.toList)).toList
 
 variable {E : Env IpaPallas.curve} {cp : KimchiProof IpaPallas.curve 1 E.σ.k} {pub : Array Fq}
-  {tab : XhatTable Fp 1} {Vg : Valuation Fp} {Vs : Valuation Fq}
+  {Vg : Valuation Fp} {Vs : Valuation Fq}
   {g : GroupVar ks E.σ.k} {s : ScalarVar E.σ.k}
   {keyCells : List (List (AffinePoint (FVar Fp)))} {spongeAfterIndex : SpongeVar Fp}
 
 /-- The scalar half's proof ties are the input's readings. -/
-private theorem InputReads.fopTies (hin : InputReads E cp pub tab Vg Vs g s) :
+private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
     FopTies E cp pub (s.half Vs) :=
   ⟨hin.prevChallenges, hin.ftEval1, hin.evals, hin.pubEvals⟩
 
@@ -121,7 +124,7 @@ private theorem length_flatten_singletons {α : Type} (l : List α) :
 
 /-- The group half's hypotheses: the readings from `InputReads` and `VkReads`, what no circuit
 enforces from its own hypotheses, the shape guards proved. -/
-private theorem InputReads.ivpHyps (hin : InputReads E cp pub tab Vg Vs g s)
+private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x)
     (hcanon : (stepSide Vg).Canon g.claims.deferredValues.combinedInnerProduct) :
@@ -179,22 +182,20 @@ end WrapProof
 open WrapProof in
 /-- **A wrap proof's two circuits, satisfied, make `kimchiVerify` accept.** The step circuit's
 `verify` and the wrap circuit's scalar half, each compiled over its input and satisfied, with
-the inputs reading as the wire's proof (`InputReads`), the key cells as the key (`VkReads`),
-the `x_hat` tables bound to the key and the two circuits holding one set of deferred claims
-(`HalvesTies`): under the proof's `Guards` and `SgOk`, and what no circuit enforces,
-`kimchiVerify` accepts. -/
+the inputs reading as the wire's proof (`InputReads`), the key cells as the key (`VkReads`)
+and the two circuits holding one set of deferred claims (`HalvesTies`): under the proof's
+`Guards` and `SgOk`, and what no circuit enforces, `kimchiVerify` accepts. -/
 theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (E : Env IpaPallas.curve)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     -- the group circuit's constants
-    (tab : XhatTable Fp 1)
     (keyCells : List (List (AffinePoint (FVar Fp))))
     (spongeAfterIndex : SpongeVar Fp)
     -- the group circuit: the step circuit's verify, compiled over its input, satisfied
     (Vg : Valuation Fp)
     (hsatG : ∀ con ∈ (compile (a := GroupIn ks E.σ.k) (b := Unit)
-        (groupCircuit (c := Builder Vg (KimchiConstraint Fp)) E tab keyCells
+        (groupCircuit (c := Builder Vg (KimchiConstraint Fp)) E keyCells
           spongeAfterIndex)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the wrap finalize, compiled over its input, satisfied
     (Vs : Valuation Fq)
@@ -202,24 +203,26 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
         (scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E)).constraints,
         ConstraintHolds.Holds Vs con)
     -- the input cells read as the wire's
-    (hin : InputReads E cp pub tab Vg Vs (groupInput ks E.σ.k) (scalarInput E.σ.k))
+    (hin : InputReads E cp pub Vg Vs (groupInput ks E.σ.k) (scalarInput E.σ.k))
     -- the key cells read as the key
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
-    -- the `x_hat` tables are bound to the key
-    (htab : tab.Bound pastaShapePallas Vg E.σ E.cvk (constPt E.σ.h)
-      (packLeaves (groupInput ks E.σ.k).statement tab))
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput ks E.σ.k).half Vg) ((scalarInput E.σ.k).half Vs))
     -- what no circuit enforces
     (hclaimOk : ∀ x ∈ (groupInput ks E.σ.k).shifted, (stepSide Vg).ClaimOk x)
     (hcanon : (stepSide Vg).Canon
       (groupInput ks E.σ.k).claims.deferredValues.combinedInnerProduct)
+    (hoff : ∀ leaf ∈ stepLeavesAt E (groupInput ks E.σ.k).statement,
+      Leaf.offBand IpaPallas.curve.scalar Vg leaf)
     (hzetaM : (stepSide Vg).decode
         (groupInput ks E.σ.k).claims.deferredValues.plonk.zetaToSrsLength
       = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
     (hzetaN : (stepSide Vg).decode
         (groupInput ks E.σ.k).claims.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
+    -- the constant correction sum the `x_hat` fold adds is a finite point: one fixed relation
+    -- among the key's Lagrange points does not hold
+    (hsum : stepCorrSumAt E (groupInput ks E.σ.k).statement ≠ 0)
     -- of the proof itself
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     (hsg : SgOk E cp pub) :
@@ -231,8 +234,8 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
   have hbase := hin.mustVerify
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (groupCircuit_reads (V := Vg) E cp tab keyCells spongeAfterIndex (groupInput ks E.σ.k)
-      oldsW hbase htab hivp) _
+    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k) oldsW
+      hbase hoff hsum hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k) Vg _ v hv hv1 ht hf hzetaM hzetaN

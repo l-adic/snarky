@@ -3,10 +3,11 @@ import Pickles.TwoHalves
 /-!
 # The step circuit's group half, at an environment
 
-`Step_verifier.verify` at an environment: the deployed Pallas constants and the SRS blinding
-base as a constant cell. Unlike the wrap block this one
-computes `x_hat` itself, from the key's Lagrange tables (`XhatTable.Bound`), so the public
-input is the packed statement's rather than a free argument.
+`Step_verifier.verify` at an environment: the deployed Pallas constants, the SRS blinding base
+as a constant cell, and the `x_hat` table computed from the key's Lagrange points
+(`XhatTable.ofKeyKnown`), so the public input is the packed statement's
+(`stepPublicInput`) and what the table reads as is proved from the environment's invariants
+rather than assumed (`verifyProofAt_reads`).
 
 `WrapProof.groupCircuit` is the gadget as a circuit of its input (`WrapProof.GroupIn`) with its
 success bit asserted, and `WrapProof.groupCircuit_reads` its read: what the wrap proof's
@@ -33,18 +34,87 @@ abbrev StepGroupVar (ks kw : ℕ) : Type :=
     IvpProof kw (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) ×
     Vector (AffinePoint (FVar Fp)) MaxProofsVerified × BoolVar Fp
 
+/-- The step circuit's `x_hat` table at an environment: computed from the key's Lagrange points
+at the wrap statement's packing (`XhatTable.ofKeyKnown`). It reads the packing's kinds, never
+its cells. -/
+def xhatTableAt {ks : ℕ} (E : Env IpaPallas.curve)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : XhatTable Fp 1 :=
+  XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList
+
+/-- The `x_hat` leaves at an environment: the packed wrap statement over the key's table. -/
+def stepLeavesAt {ks : ℕ} (E : Env IpaPallas.curve)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : List (Leaf Fp 1) :=
+  packLeaves statement (xhatTableAt E statement)
+
+/-- The wire's public input of a wrap statement: the packed statement's scalars, reduced to the
+scalar field. -/
+def stepPublicInput {ks : ℕ} (E : Env IpaPallas.curve) (V : Valuation Fp)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : Array Fq :=
+  pubOf IpaPallas.curve V (stepLeavesAt E statement)
+
+/-- The constant the known-domain fold adds: the sum of the leaves' shift corrections. -/
+def stepCorrSumAt {ks : ℕ} (E : Env IpaPallas.curve)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    IpaPallas.curve.Point :=
+  corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0
+
 /-- `verify` at an environment: the deployed Pallas scalar ops, endomorphism, sponge, group
-map and square root, and the SRS blinding base as a constant cell. -/
+map and square root, the SRS blinding base as a constant cell, and the `x_hat` table the
+key's. -/
 def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
-    (E : Env IpaPallas.curve) (tab : XhatTable Fp 1) (spongeAfterIndex : SpongeVar Fp)
-    (isBaseCase : BoolVar Fp)
+    (E : Env IpaPallas.curve) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
   verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
     (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt E.σ.h)
-    tab spongeAfterIndex isBaseCase statement u cells
+    (xhatTableAt E statement) spongeAfterIndex isBaseCase statement u cells
+
+/-- **`verify` at an environment reads as the group half at the packed statement.** The table
+is the key's, so what `XhatTable.Bound` asks beyond the environment's invariants is the band
+(`hoff`) and the constant correction sum being a finite point (`hsum`): the deployed fold adds
+it with `addFast`, and no invariant of the key gives it — it is one fixed relation among the
+Lagrange points. -/
+theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve)
+    (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
+    (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (u : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (cells : IvpInput E.σ.k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (oldsW : List (IpaPallas.curve.Point × Bool))
+    (hbase : CircuitType.Reads V isBaseCase false)
+    (hoff : ∀ leaf ∈ stepLeavesAt E statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
+    (hsum : stepCorrSumAt E statement ≠ 0)
+    (hivp : IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V statement) false
+      spongeAfterIndex (cells.withClaims u) oldsW) :
+    ⦃⌜True⌝⦄
+    verifyProofAt (c := Builder V (KimchiConstraint Fp)) E spongeAfterIndex isBaseCase statement
+      u cells
+    ⦃⇓ v _ => ⌜VerifyReads (stepSide V) E.σ E.cvk cp (stepPublicInput E V statement) u false
+      v⌝⦄ := by
+  have hleaves : stepLeavesAt E statement
+      = List.zipWith (constLeaf (C := IpaPallas.curve)) statement.packed
+        E.cvk.lagrangeBasis.toList := by
+    unfold stepLeavesAt packLeaves xhatTableAt
+    exact packLeavesOf_ofKeyKnown (C := IpaPallas.curve) _ _
+  have hlb : E.cvk.lagrangeBasis.toList ≠ [] := by
+    have := E.lagrange_pos
+    intro h0
+    simp [← Array.length_toList, h0] at this
+  have htab : (xhatTableAt E statement).Bound pastaShapePallas V E.σ E.cvk (constPt E.σ.h)
+      (packLeaves statement (xhatTableAt E statement)) := by
+    have hb := bound_ofKeyKnown (V := V) pastaShapePallas E.σ E.cvk statement.packed E.h_ne
+      (fun Ps h ci => by rw [Fin.fin_one_eq_zero ci]; exact E.lagrange_ne Ps h)
+      (by simp [WrapStatement.packed]) hlb
+      (bitBoolean_constLeaf_of_isScalar _ _ statement.packed_isScalar) (hleaves ▸ hoff)
+      (fun ci => by rw [Fin.fin_one_eq_zero ci]; exact hsum)
+    rw [← hleaves] at hb
+    exact hb
+  exact verifyProof_step_reads (V := V) E.σ E.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
+    pallasBase.sqrt? (constPt E.σ.h) (xhatTableAt E statement) spongeAfterIndex isBaseCase
+    statement u cells false oldsW hbase htab hivp
 
 /-! ## The circuit of its input -/
 
@@ -100,38 +170,38 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k) :
 /-- `Step_verifier.verify` as a circuit of its input, its success bit asserted: the deployed
 `(verified ∧ finalized) ∨ ¬must_verify` at a slot that must verify. -/
 def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve)
-    (tab : XhatTable Fp 1) (keyCells : List (List (AffinePoint (FVar Fp))))
-    (spongeAfterIndex : SpongeVar Fp) (g : GroupVar ks k) : CircuitM Fp c Unit := do
-  let v ← verifyProofAt E tab spongeAfterIndex g.isBaseCase g.statement g.claims
-    (g.cells keyCells)
+    (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
+    (g : GroupVar ks k) : CircuitM Fp c Unit := do
+  let v ← verifyProofAt E spongeAfterIndex g.isBaseCase g.statement g.claims (g.cells keyCells)
   assert v
 
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
 theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-    (tab : XhatTable Fp 1) (keyCells : List (List (AffinePoint (FVar Fp))))
-    (spongeAfterIndex : SpongeVar Fp) (g : GroupVar ks E.σ.k)
-    (oldsW : List (IpaPallas.curve.Point × Bool))
+    (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
+    (g : GroupVar ks E.σ.k) (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V g.isBaseCase false)
-    (htab : tab.Bound pastaShapePallas V E.σ E.cvk (constPt E.σ.h)
-      (packLeaves g.statement tab))
-    (hivp : IvpHyps (stepSide V) E.σ E.cvk cp
-      (pubOf IpaPallas.curve V (packLeaves g.statement tab)) false spongeAfterIndex
-      ((g.cells keyCells).withClaims g.claims) oldsW) :
+    (hoff : ∀ leaf ∈ stepLeavesAt E g.statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
+    (hsum : stepCorrSumAt E g.statement ≠ 0)
+    (hivp : IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V g.statement) false
+      spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
     ⦃⌜True⌝⦄
-    groupCircuit (c := Builder V (KimchiConstraint Fp)) E tab keyCells spongeAfterIndex g
+    groupCircuit (c := Builder V (KimchiConstraint Fp)) E keyCells spongeAfterIndex g
     ⦃⇓ _ _ => ⌜∃ v : BoolVar Fp,
-      (g.half V).Reads E cp (pubOf IpaPallas.curve V (packLeaves g.statement tab)) v ∧
+      (g.half V).Reads E cp (stepPublicInput E V g.statement) v ∧
         (↑v : CVar Fp).val V = 1⌝⦄ := by
-  have hv := verifyProof_step_reads (V := V) E.σ E.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
-    pallasBase.sqrt? (constPt E.σ.h) tab spongeAfterIndex g.isBaseCase g.statement g.claims
-    (g.cells keyCells) false oldsW hbase htab hivp
-  simp only [groupCircuit, verifyProofAt]
+  have hv := verifyProofAt_reads (V := V) E cp spongeAfterIndex g.isBaseCase g.statement
+    g.claims (g.cells keyCells) oldsW hbase hoff hsum hivp
+  simp only [groupCircuit]
   mvcgen -trivial [hv]
   rename_i v _ hr _ _
   intro h1
   exact ⟨v, hr, h1⟩
 
 end WrapProof
+
+/-! The gadget is sealed after its read: a consumer composes `verifyProofAt_reads`, never the
+body. -/
+attribute [irreducible] verifyProofAt
 
 end Pickles
