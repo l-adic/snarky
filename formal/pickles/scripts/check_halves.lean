@@ -240,14 +240,14 @@ def runStep {k : ℕ} (dom : Pickles.KnownDomain Fp) (inp : StepFop k) :
   runHalf (a := StepFop k) Kimchi.Fixture.PS.fpSide (fopStepOnAt [dom]) fopBits inp
 
 /-- The wrap half on its records at a domain. -/
-def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : WrapFop k) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := WrapFop k) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2) fopBits inp
+def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : Pickles.WrapFop k) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.WrapFop k) Kimchi.Fixture.PS.fqSide (fopWrapOnAt domainLog2) fopBits inp
 
 /-- The step circuit's group half on its records: the wrap key's commitments as constants,
 the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
 def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point)
-    (h : CW.Point) (inp : StepGroup ks kw) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := StepGroup ks kw) Kimchi.Fixture.PS.fpSide
+    (h : CW.Point) (inp : Pickles.StepGroup ks kw) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.StepGroup ks kw) Kimchi.Fixture.PS.fpSide
     (groupStepOn vk (stepXhatTable basis) (xhatStepCell h)) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
@@ -276,7 +276,7 @@ registers `s − 2^255`, split into a half and a parity bit), its two accumulato
 `is_base_case = false`: the slot is a real one. -/
 def stepGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ) (pad : CW.Point)
     {kw : ℕ} (cpW : Kimchi.Verifier.KimchiProof CW 1 kw) :
-    Except String (StepGroup Pickles.StepIPARounds kw) := do
+    Except String (Pickles.StepGroup Pickles.StepIPARounds kw) := do
   let statement ← wrapStatementOf toStep Pickles.StepIPARounds w.publicInput
   let n := (s.publicInput.size - 1) / (18 + kw)
   let st ← stepStatementOf id kw n s.publicInput
@@ -292,7 +292,7 @@ proof that slot verified, at the wrap proof's `k` rounds: the slot of the step s
 (`stepStatementOf`) with each split claim as its `Type2` register `2·half + parity`, the
 evaluations and the `MaxProofsVerified` accumulators off the wrap proof. -/
 def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
-    (cpW : Kimchi.Verifier.KimchiProof CW 1 k) : Except String (WrapFop k) := do
+    (cpW : Kimchi.Verifier.KimchiProof CW 1 k) : Except String (Pickles.WrapFop k) := do
   let n := (s.publicInput.size - 1) / (18 + k)
   let st ← stepStatementOf toWrap k n s.publicInput
   let some u2 := st.proofState.unfinalizedProofs.toList[slot]? | throw s!"slot {slot} of {n}"

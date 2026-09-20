@@ -23,6 +23,16 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
+/-- The wrap side's input at `k` rounds, as values. -/
+abbrev WrapFop (k : ℕ) : Type :=
+  UnfinalizedProof k Fq Bool (Type2 Fq) × AllEvals Fq ×
+    Vector (Vector Fq k) MaxProofsVerified
+
+/-- The wrap side's input at `k` rounds, as cells. -/
+abbrev WrapFopVar (k : ℕ) : Type :=
+  UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)) × AllEvals (FVar Fq) ×
+    Vector (Vector (FVar Fq) k) MaxProofsVerified
+
 /-- The wrap circuit's scalar half at an environment: `finalize_other_proof`'s wrap side with
 the verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
 at the key's `log2` — the `Fq` token stream, and the previous-challenge cells at their static

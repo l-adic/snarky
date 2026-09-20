@@ -14,6 +14,21 @@ namespace Pickles
 open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
+/-- The step circuit's group half of a wrap proof, as values, at the wrap statement's `ks`
+and the wrap proof's `kw` rounds: the wrap statement, the unfinalized proof it is checked
+against (the step statement's slot), the wrap proof, its two `sg_old`, `is_base_case`. -/
+abbrev StepGroup (ks kw : ℕ) : Type :=
+  WrapStatement ks Fp Bool (Type1 Fp) ×
+    UnfinalizedProof kw Fp Bool (Type2 (SplitField Fp Bool)) ×
+    IvpProof kw Fp (Type2 (SplitField Fp Bool)) × Vector (AffinePoint Fp) MaxProofsVerified × Bool
+
+/-- `StepGroup`, as cells. -/
+abbrev StepGroupVar (ks kw : ℕ) : Type :=
+  WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) ×
+    UnfinalizedProof kw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) ×
+    IvpProof kw (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) ×
+    Vector (AffinePoint (FVar Fp)) MaxProofsVerified × BoolVar Fp
+
 /-- `verify` at the deployed step constants: the Pallas scalar ops, endomorphism, sponge and
 group map. -/
 def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {nc ks : ℕ}

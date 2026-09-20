@@ -1,6 +1,7 @@
 import PicklesFixture.Layout
 import Pickles.Verify
 import Pickles.WrapVerify
+import Pickles.StepGroupHalf
 import Pickles.Encoding
 import Kimchi.Verifier.Wire
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
@@ -85,21 +86,6 @@ def stepIndexSponge (vk : Wire.KimchiVK XhatStepCurve) : CircuitM Fp C (SpongeVa
   indexSponge Bulletproof.IpaVesta.curve.frSponge.params (keyComms xhatStepCell vk)
 
 /-! ## The step circuit's group half, on a wrap proof -/
-
-/-- The step circuit's group half of a wrap proof, as values, at the wrap statement's `ks`
-and the wrap proof's `kw` rounds: the wrap statement, the unfinalized proof it is checked
-against (the step statement's slot), the wrap proof, its two `sg_old`, `is_base_case`. -/
-abbrev StepGroup (ks kw : ℕ) : Type :=
-  WrapStatement ks Fp Bool (Type1 Fp) ×
-    UnfinalizedProof kw Fp Bool (Type2 (SplitField Fp Bool)) ×
-    IvpProof kw Fp (Type2 (SplitField Fp Bool)) × Vector (AffinePoint Fp) MaxProofsVerified × Bool
-
-/-- `StepGroup`, as cells. -/
-abbrev StepGroupVar (ks kw : ℕ) : Type :=
-  WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) ×
-    UnfinalizedProof kw (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) ×
-    IvpProof kw (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) ×
-    Vector (AffinePoint (FVar Fp)) MaxProofsVerified × BoolVar Fp
 
 /-- The step circuit's group half on its records: the key's index sponge, then
 `Pickles.verifyProof` at the deployed parameters over the records, the `x_hat` tables and the
