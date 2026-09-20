@@ -399,7 +399,8 @@ decided on a wrap entry and the step entry it wrapped — so the theorem's assum
 shown to hold together on a proof the real prover made, and its conclusion is checked at the
 public input it names:
 
-* the environment's invariants hold of the step key and its SRS (`Env.Invariants`);
+* the environment's invariants hold of the step key and its SRS (`Env.Invariants`), and the
+  SRS has a round (`hk`);
 * the file's step domains form a `KnownDomains` with this key's among them, and the wrap
   statement's `domain_log2` is the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
@@ -430,6 +431,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       | .error e => throw (IO.userError s!"step statement: {e}") | .ok r => pure r
     let dv := wst.proofState.deferredValues
     let hdom := decide (dv.branchData.domainLog2 = (doms.keyLog2 : Fq))
+    let hk := decide (0 < σ.k)
     -- the statement as constant cells: every reading below is the value's own
     let stVar : Pickles.StepStatement Pickles.WrapIPARounds n (FVar Fq) (BoolVar Fq)
         (Type2 (SplitField (FVar Fq) (BoolVar Fq))) := CircuitType.constVar (F := Fq) st
@@ -450,52 +452,41 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       cp.olds.size ≠ cvk.prevChallenges))
     let sg' := Pickles.sgOk E cp pub
     let kv := Kimchi.Verifier.kimchiVerify CS σ cvk cp pub
-    IO.println s!"    env=true domains={cands.map (·.log2)} key=2^{doms.keyLog2} hdom={hdom} \
+    IO.println s!"    env=true rounds={σ.k} domains={cands.map (·.log2)} \
+      key=2^{doms.keyLog2} hdom={hdom} \
       pub={pubOk} ({pub.size} cells) offBand={offOk} msgDigest={msgOk} guards={guards} \
       sgOk={sg'} kimchiVerify={kv}"
-    -- `hsatS`: the theorem's scalar circuit. Compiled, it is the branch data's check and then
-    -- `stepScalarCircuit`'s body, which asserts `finalized`; here the branch data's cells are
-    -- slots of the larger input record, so the driver pays that same check on them and runs
-    -- that same body
-    let finp ← match stepFopInput w cp with
+    -- `hsatS`: the theorem's scalar circuit, as `compile` builds it — the input's check (the
+    -- branch data's; the rest of the input is unchecked) and then `scalarCircuit`, which
+    -- asserts `finalized`
+    let (u, ev, mask, prev, d) ← match stepFopInput w cp with
       | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-    let (satS, _) ← runHalf (a := StepFop σ.k) Kimchi.Fixture.PS.fpSide
-      (fun (v : StepFopVar σ.k) => do
-        let (u, ev, mask, prev, d) := v
-        let bd : Pickles.BranchData (FVar Fp) (BoolVar Fp) := ⟨d, mask⟩
-        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.BranchData Fp Bool) bd
-        Pickles.stepScalarCircuit E doms u ev prev bd)
-      (fun _ => []) finp
-    IO.println s!"    stepScalarCircuit (input check, body, finalized asserted): \
-      satisfies={satS}"
+    let sinp : Pickles.ScalarIn σ.k := (⟨d, mask⟩, ⟨(u, ev, prev)⟩)
+    let (satS, _) ← runHalf (a := Pickles.ScalarIn σ.k) Kimchi.Fixture.PS.fpSide
+      (fun (v : Pickles.ScalarVar σ.k) => do
+        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.ScalarIn σ.k) v
+        Pickles.scalarCircuit E doms v)
+      (fun _ => []) sinp
+    IO.println s!"    scalarCircuit (input check, body, finalized asserted): satisfies={satS}"
     -- `hsatG`: the theorem's group circuit — the verify block with its success bit and its
     -- message digest asserted — on the wrap statement, the step statement and proof, and
-    -- the slots' expanded round challenges
+    -- the slots' expanded round challenges; its key cells are the step key's, as constants,
+    -- and its sponge after the index digest is that key's
     let ginp ← match wrapGroupInput w s n (σ.g ⟨0, Nat.two_pow_pos _⟩) cp with
       | .error e => throw (IO.userError s!"wrap group input: {e}") | .ok r => pure r
     let newBp : Vector (Vector Fq Pickles.WrapIPARounds) n :=
       st.proofState.unfinalizedProofs.map fun u =>
         u.deferredValues.bulletproofChallenges.map fun c =>
           Poseidon.FqSponge.endoExpand (F := Fq) (IpaPallas.curve.lam : Fq) c.val.val
-    let (satG, _) ← runHalf
-      (a := Pickles.WrapGroup σ.k Pickles.WrapIPARounds n × Vector (Vector Fq Pickles.WrapIPARounds) n)
+    let (satG, _) ← runHalf (a := Pickles.GroupIn σ.k Pickles.WrapIPARounds n)
       Kimchi.Fixture.PS.fqSide
-      (fun (v : Pickles.WrapGroupVar σ.k Pickles.WrapIPARounds n ×
-          Vector (Vector (FVar Fq) Pickles.WrapIPARounds) n) => do
-        let ((statement, stepStatement, pr, sgOld), bp) := v
+      (fun (v : Pickles.GroupVar σ.k Pickles.WrapIPARounds n) => do
         let sv ← wrapIndexSponge s.vk
-        let dv := statement.proofState.deferredValues
-        let mask := dv.branchData.proofsVerifiedMask.toList.drop (Pickles.MaxProofsVerified - n)
-        Pickles.wrapVerifyAt E stepStatement sv (SpongeVar.ofConstants (wrapMsgSpongeState n))
-          (bp.toList.map (·.toList)) statement.proofState.messagesForNextWrapProof
-          { deferredValues := dv.toDeferredValues, shouldFinalize := true_
-            spongeDigestBeforeEvaluations := statement.proofState.spongeDigestBeforeEvaluations }
-          (Pickles.ivpInputOf dv.toDeferredValues
-            ((mask.zip sgOld.toList).map fun (m, P) => (some m, P))
-            (keyComms xhatWrapCell s.vk) pr))
-      (fun _ => []) (ginp, newBp)
-    IO.println s!"    wrapVerifyAt: satisfies={satG}"
-    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
+        Pickles.groupCircuit E (keyComms xhatWrapCell s.vk) sv
+          (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
+      (fun _ => []) ⟨(ginp, newBp)⟩
+    IO.println s!"    groupCircuit: satisfies={satG}"
+    return hk && hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
   else
     IO.println "    ✗ the step key or its SRS breaks an environment invariant"
     return false

@@ -310,12 +310,13 @@ Pickles.verifyProof_step_reads
 Pickles.verifyProofAt_kimchiVerify_pallas
 
 -- The top-level statement for a step proof (StepProof.lean): a valuation satisfying the wrap
--- circuit's verify block (`wrapVerifyAt`, WrapVerify.lean), a valuation satisfying the next
--- step circuit's scalar half with `finalized` set (`finalizeOtherProofStepAt`,
--- StepScalarHalf.lean), and the ties between them, make `kimchiVerify` accept. Both circuits
--- appear as their built constraint systems, so the group half (`wrapVerifyAt_reads`, down to
--- `publicInputCommitFull` and the key's own `x_hat` table) and the scalar half
--- (`finalizeOtherProofStepAt_kimchiVerify_vesta`, down to the linearization reflection) are
--- both beneath it. What the statement no longer assumes lives in `Env` (the key's and SRS's
--- invariants) and `KnownDomains` (the domain list's).
+-- circuit's verify block (`groupCircuit`, WrapVerify.lean), a valuation satisfying the next
+-- step circuit's scalar half with `finalized` set (`scalarCircuit`, StepScalarHalf.lean), the
+-- readings of their inputs as the wire's proof (`InputReads`), of the key cells as the key
+-- (`VkReads`), and the claim ties between them (`HalvesTies`), make `kimchiVerify` accept.
+-- Both circuits appear as their compiled constraint systems, so the group half
+-- (`wrapVerifyAt_reads`, down to `publicInputCommitFull` and the key's own `x_hat` table) and
+-- the scalar half (`finalizeOtherProofStepAt_kimchiVerify_vesta`, down to the linearization
+-- reflection) are both beneath it. What the statement no longer assumes lives in `Env` (the
+-- key's and SRS's invariants) and `KnownDomains` (the domain list's).
 Pickles.stepProof_kimchiVerify_vesta

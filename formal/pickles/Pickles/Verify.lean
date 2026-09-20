@@ -180,6 +180,26 @@ def ivpInputOf {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf)
     tComm := tComm.toList
     opening }
 
+/-- The circuit's key cells read as the key. The cells are in the index digest's order —
+`σ₀…σ₆`, the 15 coefficient commitments, the six selectors, as `keyRecords` splits them — and
+the sponge after the index digest squeezes to the key's digest. -/
+structure VkReads {C : KimchiCurve} {nc : ℕ} (cvk : KimchiVK C nc) (V : Valuation C.BaseField)
+    (spongeAfterIndex : SpongeVar C.BaseField)
+    (keyCells : List (List (AffinePoint (FVar C.BaseField)))) : Prop where
+  /-- The sponge after the index digest squeezes to the key's digest. -/
+  idx : ∃ st : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex st ∧
+    (Poseidon.squeeze C.sponge.params st).1 = cvk.digest
+  /-- The six selector commitments. -/
+  index : ColumnsRead C V (keyCells.drop 22)
+    [cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm, cvk.mulComm, cvk.emulComm,
+     cvk.endomulScalarComm]
+  /-- The coefficient commitments. -/
+  coefficients : ColumnsRead C V ((keyCells.drop 7).take 15) cvk.coefficientsComm.toList
+  /-- The permutation commitments `σ₀…σ₅`. -/
+  sigma : ColumnsRead C V (keyCells.take 6) (cvk.sigmaComm.take sigmaRows).toList
+  /-- The last permutation commitment `σ₆`. -/
+  sigmaLast : CommReads C V (keyCells.getD 6 []) (cvk.sigmaComm[6]).toList
+
 end Records
 
 /-! ## The `x_hat` table of a key
