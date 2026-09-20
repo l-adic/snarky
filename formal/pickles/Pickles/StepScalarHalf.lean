@@ -133,8 +133,9 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     (hg : (GroupHalf.wrap Vg claimsG).Reads E cp pub successG)
     (hgbit : (↑successG : CVar Fq).val Vg = 1)
     -- across the two
-    (ht : HalvesTies E cp pub (GroupHalf.wrap Vg claimsG)
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
+    (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
+      (ScalarHalf.step Vs claimsS evals mask prevChallenges))
+    (hf : FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
     ⦃⌜True⌝⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
       mask prevChallenges domainLog2Var
@@ -193,14 +194,14 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
       have holds : (List.zipWith (fun m cv => if m = true then [cv] else [])
           (mask.toList.map fun (b : BoolVar Fp) => decide ((↑b : CVar Fp).val Vs = 1))
           (ScalarHalf.step Vs claimsS evals mask prevChallenges).prevVals).flatten
-          = (cp.olds.map (·.u.toList)).toList := ht.olds
+          = (cp.olds.map (·.u.toList)).toList := hf.olds
       rw [flatten_zipWith_val, hcells, holds]
       simp [Function.comp_def]
     rw [habs]
     rfl
   rw [hn, hω, hdv] at hread
   rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    mask prevChallenges o hread ht]
+    mask prevChallenges o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its branch data
@@ -255,7 +256,9 @@ theorem stepScalarCircuit_reads
     (successG : BoolVar Fq)
     (hg : (GroupHalf.wrap Vg claimsG).Reads E cp pub successG)
     (hgbit : (↑successG : CVar Fq).val Vg = 1)
-    (ht : HalvesTies E cp pub (GroupHalf.wrap Vg claimsG)
+    (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
+      (ScalarHalf.step Vs claimsS evals bd.proofsVerifiedMask prevChallenges))
+    (hf : FopTies E cp pub
       (ScalarHalf.step Vs claimsS evals bd.proofsVerifiedMask prevChallenges))
     (hsg : SgOk E cp pub) :
     ⦃⌜True⌝⦄
@@ -264,7 +267,7 @@ theorem stepScalarCircuit_reads
     ⦃⇓ _ _ => ⌜kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true⌝⦄ := by
   have hAt := finalizeOtherProofStepAt_kimchiVerify_vesta E cp pub hguard Vs domains claimsS
     evals bd.proofsVerifiedMask prevChallenges bd.domainLog2 hmask hdom Vg claimsG successG hg
-    hgbit ht
+    hgbit ht hf
   simp only [stepScalarCircuit]
   mvcgen [hAt]
   rename_i o _ hiff _ _

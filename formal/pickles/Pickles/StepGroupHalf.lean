@@ -66,8 +66,10 @@ theorem verifyProofAt_kimchiVerify_pallas
       IpaPallas.curve.lam
       (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
     -- across the two
-    (ht : HalvesTies E cp (pubOf IpaPallas.curve Vg (packLeaves statement tab))
-      (GroupHalf.step Vg claimsG) (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
+    (ht : HalvesTies (GroupHalf.step Vg claimsG)
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges))
+    (hf : FopTies E cp (pubOf IpaPallas.curve Vg (packLeaves statement tab))
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
     ⦃⌜True⌝⦄
     verifyProofAt (c := Builder Vg (KimchiConstraint Fp)) endo sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement claimsG cells
@@ -82,6 +84,6 @@ theorem verifyProofAt_kimchiVerify_pallas
       isBaseCase statement claimsG cells false oldsW hbase htab hivp) ?_
   intro v hv
   exact twoHalves_kimchiVerify_pallas E cp _ hguard Vg claimsG v hv Vs claimsS evals
-    prevChallenges outS hs ht
+    prevChallenges outS hs ht hf
 
 end Pickles

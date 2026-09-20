@@ -67,7 +67,10 @@ theorem stepProof_kimchiVerify_vesta {ks n : ℕ}
     -- the statement's full scalars avoid the ladder's sixteen-value band
     (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar Vg leaf)
     -- the glue between the two circuits, and the step circuit's inputs being the proof's
-    (ht : HalvesTies E cp (wrapPublicInput E Vg statement) (GroupHalf.wrap Vg claimsG)
+    (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
+      (ScalarHalf.step Vs claimsS evals
+        (inputVar (F := Fp) (a := BranchData Fp Bool)).proofsVerifiedMask prevChallenges))
+    (hf : FopTies E cp (wrapPublicInput E Vg statement)
       (ScalarHalf.step Vs claimsS evals
         (inputVar (F := Fp) (a := BranchData Fp Bool)).proofsVerifiedMask prevChallenges))
     -- the verifier's guards, and the deferred accumulator check
@@ -84,6 +87,6 @@ theorem stepProof_kimchiVerify_vesta {ks n : ℕ}
   -- and so are the body's
   exact (builder_spec_iff _ _).mp
     (stepScalarCircuit_reads E cp _ hguard Vs domains claimsS evals prevChallenges _ hmask hdom
-      Vg claimsG v hv hv1 ht hsg) _ fun con hc => hsatS con (mem_compile_of_mem_body hc)
+      Vg claimsG v hv hv1 ht hf hsg) _ fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles
