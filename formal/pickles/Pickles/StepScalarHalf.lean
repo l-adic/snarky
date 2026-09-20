@@ -1,3 +1,4 @@
+import Pickles.Encoding
 import Pickles.TwoHalves
 
 /-!
@@ -201,5 +202,73 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
   rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG successG hg Vs claimsS evals
     mask prevChallenges o hread ht]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
+
+/-! ## The circuit of its branch data
+
+`Step.Main` witnesses a slot's branch data — the mask and the domain's `log2` — with its
+check, and hands the checked cells to `finalize_other_proof`, which never re-checks them. So
+the gadget's read owes the mask's booleanity to whoever calls it. `stepScalarCircuit` is the
+gadget as a circuit whose input IS the branch data: compiled (`Snarky.compile`), the input's
+check is among its rows, and the booleanity follows from satisfaction instead of being
+assumed. The gadget beneath is untouched. -/
+
+/-- What the branch data's check forces of the mask: every bit is boolean. -/
+theorem BranchData.mask_boolean {V : Valuation Fp} (bd : BranchData (FVar Fp) (BoolVar Fp))
+    (h : CheckedType.post (c := Builder V (KimchiConstraint Fp)) (val := BranchData Fp Bool)
+      V bd) :
+    ∀ b ∈ bd.proofsVerifiedMask.toList,
+      (↑b : CVar Fp).val V = 0 ∨ (↑b : CVar Fp).val V = 1 := by
+  simp only [CheckedType.post] at h
+  intro b hb
+  obtain ⟨bb, hbb⟩ := h.2 b hb
+  cases bb <;> simp [hbb, bit]
+
+/-- The step circuit's scalar half as a circuit of its branch data: the input is the mask and
+the domain's `log2`, and the body pipes them to the gadget and asserts `finalized` — the
+deployed `finalized ∨ ¬should_finalize` at a slot that is finalized. -/
+def stepScalarCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {k : ℕ}
+    (E : Env IpaVesta.curve) (domains : KnownDomains E)
+    (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) (w : AllEvals (FVar Fp))
+    (prevChallenges : Vector (Vector (FVar Fp) k) MaxProofsVerified)
+    (bd : BranchData (FVar Fp) (BoolVar Fp)) : CircuitM Fp c Unit := do
+  let o ← finalizeOtherProofStepAt E domains u w bd.proofsVerifiedMask prevChallenges
+    bd.domainLog2
+  assert o.finalized
+
+/-- **The body's read.** With the mask boolean, the `domain_log2` cell the key's, the wrap
+circuit's group half and the ties, a valuation satisfying the body makes `kimchiVerify`
+accept once `SgOk` holds: `finalizeOtherProofStepAt_kimchiVerify_vesta` with `finalized`
+asserted by the circuit rather than assumed of its output. -/
+theorem stepScalarCircuit_reads
+    (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1 E.σ.k) (pub : Array Fp)
+    (hguard : Guards IpaVesta.curve E.cvk cp pub)
+    (Vs : Valuation Fp) (domains : KnownDomains E)
+    (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (evals : AllEvals (FVar Fp))
+    (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) MaxProofsVerified)
+    (bd : BranchData (FVar Fp) (BoolVar Fp))
+    (hmask : ∀ b ∈ bd.proofsVerifiedMask.toList,
+      (↑b : CVar Fp).val Vs = 0 ∨ (↑b : CVar Fp).val Vs = 1)
+    (hdom : bd.domainLog2.val Vs = (domains.keyLog2 : Fp))
+    (Vg : Valuation Fq)
+    (claimsG : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
+    (successG : BoolVar Fq)
+    (hg : (GroupHalf.wrap Vg claimsG).Reads E cp pub successG)
+    (hgbit : (↑successG : CVar Fq).val Vg = 1)
+    (ht : HalvesTies E cp pub (GroupHalf.wrap Vg claimsG)
+      (ScalarHalf.step Vs claimsS evals bd.proofsVerifiedMask prevChallenges))
+    (hsg : SgOk E cp pub) :
+    ⦃⌜True⌝⦄
+    stepScalarCircuit (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
+      prevChallenges bd
+    ⦃⇓ _ _ => ⌜kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true⌝⦄ := by
+  have hAt := finalizeOtherProofStepAt_kimchiVerify_vesta E cp pub hguard Vs domains claimsS
+    evals bd.proofsVerifiedMask prevChallenges bd.domainLog2 hmask hdom Vg claimsG successG hg
+    hgbit ht
+  simp only [stepScalarCircuit]
+  mvcgen [hAt]
+  rename_i o _ hiff _ _
+  intro hfin
+  exact (hiff.mp ⟨hsg, hfin⟩).1
 
 end Pickles

@@ -1,4 +1,5 @@
 import Snarky.Prover
+import Snarky.Witness
 import Pickles.Statement
 import Pickles.FinalizeOtherProof
 import Pickles.CheckBulletproof
@@ -273,6 +274,21 @@ def BranchData.equivProd (f bc : Type) : BranchData f bc ≃ f × Vector bc MaxP
 instance instBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w] [CircuitType F b vb] :
     CircuitType F (BranchData f b) (BranchData w vb) :=
   CircuitType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
+
+/-- The branch data's check: its cells' own, through the same decomposition — nothing on
+`domain_log2`, the boolean constraint on each mask bit. That is the first line of PureScript's
+`CheckedType (AllocBranchData …)` (`check (branchTuple r)`, `Pickles/Step/Types.purs`).
+
+Two differences from that instance, neither of which a statement about the mask depends on.
+PureScript's check goes on to range-check `domain_log2` by expanding its 16 bits through the
+endo (`EndoScalar.toField @1`); `toField_spec` is proved at 8 rows only, so that line is not
+here and this check emits fewer rows than the deployed one. And PureScript allocates the two
+mask bits before `domain_log2`, where this record's decomposition puts `domain_log2` first:
+an order of variables, which a byte comparison against a dump would see. -/
+instance instBranchDataCheckedType {F c f w b vb : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
+    [CheckedType F c b vb] : CheckedType F c (BranchData f b) (BranchData w vb) :=
+  CheckedType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
 @[simp] theorem scoped_branchData {F f w b vb : Type} [CircuitType F f w] [CircuitType F b vb]
     {st : ProverState F} {x : BranchData w vb} :

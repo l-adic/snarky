@@ -1,5 +1,6 @@
 import Pickles.StepScalarHalf
 import Pickles.WrapVerify
+import Snarky.Compile
 
 /-!
 # A step proof is verified by its two circuits
@@ -18,7 +19,10 @@ proof's accumulator (`SgOk`, `sgOk_iff_accOk`).
 
 The two halves run in different circuits over different fields, so neither is a triple's
 program here: each appears as its built constraint system, satisfied by its own valuation —
-what a triple unfolds to (`builder_spec_iff`).
+what a triple unfolds to (`builder_spec_iff`). The step circuit is compiled
+(`Snarky.compile`) with the slot's branch data as its input, so the input's check is among
+its rows and the mask's booleanity is a consequence of satisfaction, as it is in `Step.Main`,
+which checks the branch data where it allocates it.
 -/
 
 namespace Pickles
@@ -44,35 +48,28 @@ theorem stepProof_kimchiVerify_vesta {ks n : ℕ}
     (hsatG : ∀ con ∈ (build (wrapVerifyAt (c := Builder Vg (KimchiConstraint Fq)) E statement
         spongeAfterIndex msgSponge newBpChallenges claimedMsgDigest claimsG cells)
         ng).constraints, ConstraintHolds.Holds Vg con)
-    -- the step circuit's scalar half, its `finalized` bit set
+    -- the step circuit's scalar half, compiled: its input is the slot's branch data, checked
+    -- as `Step.Main` checks it on allocation, and its body asserts `finalized`
     (Vs : Valuation Fp)
     (domains : KnownDomains E)
     (claimsS : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
     (evals : AllEvals (FVar Fp))
-    (mask : Vector (BoolVar Fp) MaxProofsVerified)
     (prevChallenges : Vector (Vector (FVar Fp) E.σ.k) MaxProofsVerified)
-    (domainLog2Var : FVar Fp)
-    (ns : ℕ)
-    (hsatS : ∀ con ∈ (build (finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp))
-        E domains claimsS evals mask prevChallenges domainLog2Var) ns).constraints,
-      ConstraintHolds.Holds Vs con)
-    (hfin : (↑(build (finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp))
-        E domains claimsS evals mask prevChallenges domainLog2Var) ns).result.finalized
-        : CVar Fp).val Vs = 1)
+    (hsatS : ∀ con ∈ (compile (a := BranchData Fp Bool) (b := Unit)
+        (stepScalarCircuit (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
+          prevChallenges)).constraints, ConstraintHolds.Holds Vs con)
     -- the wrap circuit's inputs are the proof's and the key's
     (hivp : ∃ oldsW, IvpHyps (wrapSide Vg) E.σ E.cvk cp (wrapPublicInput E Vg statement) true
       spongeAfterIndex (cells.withClaims claimsG) oldsW)
-    -- the step circuit's `domain_log2` cell holds the key's
-    (hdom : domainLog2Var.val Vs = (domains.keyLog2 : Fp))
-    -- the mask cells are boolean: `finalize_other_proof` does not constrain them, pickles
-    -- does where it unpacks the branch data. (The statement's boolean cells need no such
-    -- line: the wrap block's `x_hat` gadget constrains each one.)
-    (hmask : ∀ b ∈ mask.toList, (↑b : CVar Fp).val Vs = 0 ∨ (↑b : CVar Fp).val Vs = 1)
+    -- the step circuit's `domain_log2` input holds the key's
+    (hdom : (inputVar (F := Fp) (a := BranchData Fp Bool)).domainLog2.val Vs
+      = (domains.keyLog2 : Fp))
     -- the statement's full scalars avoid the ladder's sixteen-value band
     (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar Vg leaf)
     -- the glue between the two circuits, and the step circuit's inputs being the proof's
     (ht : HalvesTies E cp (wrapPublicInput E Vg statement) (GroupHalf.wrap Vg claimsG)
-      (ScalarHalf.step Vs claimsS evals mask prevChallenges))
+      (ScalarHalf.step Vs claimsS evals
+        (inputVar (F := Fp) (a := BranchData Fp Bool)).proofsVerifiedMask prevChallenges))
     -- the verifier's guards, and the deferred accumulator check
     (hguard : Guards IpaVesta.curve E.cvk cp (wrapPublicInput E Vg statement))
     (hsg : SgOk E cp (wrapPublicInput E Vg statement)) :
@@ -80,9 +77,13 @@ theorem stepProof_kimchiVerify_vesta {ks n : ℕ}
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
     (wrapVerifyAt_reads (V := Vg) E cp statement spongeAfterIndex msgSponge newBpChallenges
       claimedMsgDigest claimsG cells hoff hivp) ng hsatG
-  have hS := (builder_spec_iff _ _).mp
-    (finalizeOtherProofStepAt_kimchiVerify_vesta E cp _ hguard Vs domains claimsS evals mask
-      prevChallenges domainLog2Var hmask hdom Vg claimsG v hv hv1 ht) ns hsatS
-  exact (hS.mp ⟨hsg, hfin⟩).1
+  -- the input check's rows are among the compiled ones, so the mask is boolean
+  have hmask := BranchData.mask_boolean (V := Vs) _
+    (CheckedType.check_sound Vs (inputVar (F := Fp) (a := BranchData Fp Bool)) _
+      fun con hc => hsatS con (mem_compile_of_mem_check hc))
+  -- and so are the body's
+  exact (builder_spec_iff _ _).mp
+    (stepScalarCircuit_reads E cp _ hguard Vs domains claimsS evals prevChallenges _ hmask hdom
+      Vg claimsG v hv hv1 ht hsg) _ fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles

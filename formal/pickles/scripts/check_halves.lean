@@ -407,8 +407,9 @@ public input it names:
   the padding, the slots' expanded round challenges, the step opening's `sg`;
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input.
 
-The booleanity hypothesis `hmask` holds by construction here: a record's boolean cells are
-seeded from `Bool`s. -/
+Booleanity is no hypothesis of the theorem any more — the statement's boolean cells are
+constrained by the `x_hat` gadget, the mask by the branch data's input check — and both sets
+of rows are among the ones decided here. -/
 def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.Entry CS))
     (loaded : IO.Ref (List (ℕ × SRS CS.Point))) : IO Bool := do
   let σ ← srsAt CS "vesta" vestaBase.sqrt? loaded s.proof.opening.lr.size
@@ -451,16 +452,21 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     IO.println s!"    env=true domains={cands.map (·.log2)} key=2^{doms.keyLog2} hdom={hdom} \
       pub={pubOk} ({pub.size} cells) offBand={offOk} msgDigest={msgOk} guards={guards} \
       sgOk={sg'} kimchiVerify={kv}"
-    -- `hsatS`, `hfin`: the theorem's scalar circuit, at the environment and the whole
-    -- candidate list, on the step proof's records
+    -- `hsatS`: the theorem's scalar circuit. Compiled, it is the branch data's check and then
+    -- `stepScalarCircuit`'s body, which asserts `finalized`; here the branch data's cells are
+    -- slots of the larger input record, so the driver pays that same check on them and runs
+    -- that same body
     let finp ← match stepFopInput w cp with
       | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-    let (satS, bitsS) ← runHalf (a := StepFop σ.k) Kimchi.Fixture.PS.fpSide
-      (fun (v : StepFopVar σ.k) =>
+    let (satS, _) ← runHalf (a := StepFop σ.k) Kimchi.Fixture.PS.fpSide
+      (fun (v : StepFopVar σ.k) => do
         let (u, ev, mask, prev, d) := v
-        Pickles.finalizeOtherProofStepAt E doms u ev mask prev d) fopBits finp
-    let finOk := bitsS.all (·.2 = 1)
-    IO.println s!"    finalizeOtherProofStepAt: satisfies={satS} bits={bitsS.map (·.2)}"
+        let bd : Pickles.BranchData (FVar Fp) (BoolVar Fp) := ⟨d, mask⟩
+        CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.BranchData Fp Bool) bd
+        Pickles.stepScalarCircuit E doms u ev prev bd)
+      (fun _ => []) finp
+    IO.println s!"    stepScalarCircuit (input check, body, finalized asserted): \
+      satisfies={satS}"
     -- `hsatG`: the theorem's group circuit — the verify block with its success bit and its
     -- message digest asserted — on the wrap statement, the step statement and proof, and
     -- the slots' expanded round challenges
@@ -488,7 +494,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
             (keyComms xhatWrapCell s.vk) pr))
       (fun _ => []) (ginp, newBp)
     IO.println s!"    wrapVerifyAt: satisfies={satG}"
-    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && finOk && satG
+    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
   else
     IO.println "    ✗ the step key or its SRS breaks an environment invariant"
     return false
