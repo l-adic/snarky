@@ -133,6 +133,10 @@ structure Env (C : KimchiCurve) where
   endo_eq : cvk.endo = C.endoScalar
   /-- At least three zero-knowledge rows (`zk_rows = 3` at one chunk; kept generic). -/
   zkRows_ge : 3 ≤ cvk.zkRows
+  /-- The key's domain holds its zero-knowledge rows. -/
+  zkRows_le : cvk.zkRows ≤ cvk.n
+  /-- The key's generator has its domain's order. -/
+  omega_pow : cvk.omega ^ cvk.n = 1
   /-- The round count is a round count: every slot's challenges together stay far below the
   128-bit absorb bound. -/
   rounds_small : MaxProofsVerified * σ.k < 2 ^ 128
@@ -147,9 +151,10 @@ structure Env (C : KimchiCurve) where
   lagrange_pos : 0 < cvk.lagrangeBasis.size
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
-them once on what it loaded. -/
+them once on what it loaded. The generator's order is checked by squaring (`powTwoPow`). -/
 def Env.Invariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1) : Prop :=
-  cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧
+  cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ cvk.zkRows ≤ cvk.n ∧
+    powTwoPow cvk.omega cvk.domainLog2 = 1 ∧ MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧
     σ.h ≠ 0 ∧ (∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) ∧
     0 < cvk.lagrangeBasis.size
 
@@ -165,7 +170,8 @@ instance Env.decidableInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : Kim
 /-- The environment of an SRS and a key whose invariants hold. -/
 def Env.ofInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1)
     (h : Env.Invariants σ cvk) : Env C :=
-  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
+  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, by rw [KimchiVK.n, ← powTwoPow_eq]; exact h.2.2.2.1,
+    h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2⟩
 
 /-! ## The group half -/
 
