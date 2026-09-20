@@ -374,9 +374,9 @@ def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option 
     envs.modify ((key, E) :: ·)
     return E
   else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
-    endo is not the curve's, zk_rows < 3 or above the domain, the generator's order is not \
-    the domain's, there is no round, the blinding base or a Lagrange base is the identity, \
-    there is no Lagrange basis, or the Lagrange basis is not the SRS's")
+    endo is not the curve's, zk_rows < 3 or above the domain, the generator is not primitive \
+    on the domain, there is no round, the blinding base is the identity, there is no \
+    Lagrange basis or one larger than the domain, or the Lagrange basis is not the SRS's")
 
 /-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
 `C`: `Carry` decided on the two checked proofs, `AccOk` on the accumulator, `sgOk` on `pred`,

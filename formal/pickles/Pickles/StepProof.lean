@@ -37,6 +37,10 @@ it allocates it.
   the run's (`hzetaM`, `hzetaN`). The permutation scalar is no hypothesis: the scalar circuit
   compares it at the transcript's challenges, which the group read gives before it opens
   (`IvpReads`), and `HalvesTies.perm` carries it across the field crossing;
+* `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
+  `Env.lagrangeRelations`). The `x_hat` table is the key's Lagrange points, commitments
+  against the SRS; that they are finite points is that the SRS has no relation at their
+  coefficient vectors, which no invariant gives;
 * `Guards` and `SgOk`, of the proof itself.
 
 The layered hypotheses the halves' reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built
@@ -230,6 +234,8 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (hzetaN : (wrapSide Vg).decode
         (groupInput E.σ.k kw n).claims.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaVesta.curve E.σ E.cvk cp pub)
+    -- the SRS has no relation at the `x_hat` table's coefficient vectors
+    (havoid : E.σ.Avoids E.lagrangeRelations)
     -- of the proof itself
     (hguard : Guards IpaVesta.curve E.cvk cp pub)
     (hsg : SgOk E cp pub) :
@@ -243,7 +249,8 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
     (wrapVerifyAt_reads (V := Vg) E cp (groupInput E.σ.k kw n).stepStatement
       spongeAfterIndex msgSponge (groupInput E.σ.k kw n).newBp (groupInput E.σ.k kw n).msgDigest
-      (groupInput E.σ.k kw n).claims ((groupInput E.σ.k kw n).cells keyCells) hoff hivp) _
+      (groupInput E.σ.k kw n).claims ((groupInput E.σ.k kw n).cells keyCells) hoff havoid
+      hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   have hmask := BranchData.mask_boolean (V := Vs) (scalarInput E.σ.k).branch
     (CheckedType.check_sound Vs (scalarInput E.σ.k) _

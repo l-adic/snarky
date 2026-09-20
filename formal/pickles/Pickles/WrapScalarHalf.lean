@@ -121,7 +121,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
       (List.forall₂_same.2 fun x _ => CircuitType.reads_fvar.2 rfl)
   have hspec := finalizeOtherProofWrap_spec_fq (V := Vs)
     (FopParams.ofEnv E Linearization.fqTokens) hP IpaPallas.curve.frSponge.hsize E.zkRows_ge
-    E.cvk.omega E.cvk.n E.zkRows_le E.omega_pow E.cvk.domainLog2 _ hvan claimsS evals
+    E.cvk.omega E.cvk.n E.zkRows_le E.omega_prim.pow_eq_one E.cvk.domainLog2 _ hvan claimsS evals
     (prevChallenges.toList.map Vector.toList) _ hprev
   simp only [finalizeOtherProofWrapAt]
   refine builder_spec_imp _ _ _ hspec ?_

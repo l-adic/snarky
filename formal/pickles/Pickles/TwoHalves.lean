@@ -119,6 +119,21 @@ theorem powTwoPow_eq {M : Type} [Monoid M] (g : M) (k : ℕ) : powTwoPow g k = g
   | zero => simp [powTwoPow]
   | succ k ih => rw [powTwoPow, ih, ← pow_add, ← two_mul, ← pow_succ']
 
+/-- An element of order dividing `2 ^ d` and not `2 ^ (d - 1)` is a primitive `2 ^ d`-th root:
+primitivity by two runs of squarings. -/
+theorem isPrimitiveRoot_two_pow {M : Type} [CommMonoid M] (g : M) (d : ℕ)
+    (h1 : powTwoPow g d = 1) (h2 : d = 0 ∨ powTwoPow g (d - 1) ≠ 1) :
+    IsPrimitiveRoot g (2 ^ d) := by
+  rw [powTwoPow_eq] at h1
+  cases d with
+  | zero =>
+      obtain rfl : g = 1 := by simpa using h1
+      simpa using IsPrimitiveRoot.one
+  | succ d =>
+      have h2' : ¬g ^ 2 ^ d = 1 := by simpa [powTwoPow_eq] using h2
+      rw [← orderOf_eq_prime_pow h2' h1]
+      exact IsPrimitiveRoot.orderOf g
+
 /-! ## The environment -/
 
 /-- The verification environment: the SRS and the verifier key of the proof under
@@ -135,8 +150,8 @@ structure Env (C : KimchiCurve) where
   zkRows_ge : 3 ≤ cvk.zkRows
   /-- The key's domain holds its zero-knowledge rows. -/
   zkRows_le : cvk.zkRows ≤ cvk.n
-  /-- The key's generator has its domain's order. -/
-  omega_pow : cvk.omega ^ cvk.n = 1
+  /-- The key's generator generates its domain. -/
+  omega_prim : IsPrimitiveRoot cvk.omega cvk.n
   /-- The round count is a round count: every slot's challenges together stay far below the
   128-bit absorb bound. -/
   rounds_small : MaxProofsVerified * σ.k < 2 ^ 128
@@ -145,10 +160,10 @@ structure Env (C : KimchiCurve) where
   /-- The blinding base is a finite point. At the `(0, 0)` sentinel no cell reads as it
   (`onCurveAt_constPt`'s converse), so every statement over cells already assumed this. -/
   h_ne : σ.h ≠ 0
-  /-- The Lagrange bases are finite points, likewise. -/
-  lagrange_ne : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0
   /-- There is a Lagrange basis: a key with none commits to no public input. -/
   lagrange_pos : 0 < cvk.lagrangeBasis.size
+  /-- The Lagrange basis is within the domain: a public input is a segment of a column. -/
+  lagrange_le : cvk.lagrangeBasis.size ≤ cvk.n
   /-- The key's domain is within the SRS. -/
   domain_le : cvk.n ≤ 2 ^ σ.k
   /-- The key's Lagrange points are the SRS's: the commitments to its domain's Lagrange
@@ -158,31 +173,64 @@ structure Env (C : KimchiCurve) where
     = (Ipa.lagrangeBasis C σ cvk.n domain_le cvk.omega cvk.lagrangeBasis.size).map (#v[·])
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
-them once on what it loaded. The generator's order is checked by squaring (`powTwoPow`); the
-Lagrange points by computing them from the SRS, the one costly check. -/
+them once on what it loaded. That the generator is primitive is checked by squaring
+(`isPrimitiveRoot_two_pow`); the Lagrange points by computing them from the SRS, the one costly
+check. -/
 def Env.Invariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1) : Prop :=
   cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ cvk.zkRows ≤ cvk.n ∧
-    powTwoPow cvk.omega cvk.domainLog2 = 1 ∧ MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧
-    σ.h ≠ 0 ∧ (∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) ∧
-    0 < cvk.lagrangeBasis.size ∧
+    (powTwoPow cvk.omega cvk.domainLog2 = 1 ∧
+      (cvk.domainLog2 = 0 ∨ powTwoPow cvk.omega (cvk.domainLog2 - 1) ≠ 1)) ∧
+    MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧ σ.h ≠ 0 ∧
+    0 < cvk.lagrangeBasis.size ∧ cvk.lagrangeBasis.size ≤ cvk.n ∧
     ∃ h : cvk.n ≤ 2 ^ σ.k, cvk.lagrangeBasis
       = (Ipa.lagrangeBasis C σ cvk.n h cvk.omega cvk.lagrangeBasis.size).map (#v[·])
 
-/-- Decided by walking the Lagrange list. The instance is pinned: left to resolution, the
-bounded `∀` over `Vector C.Point 1` goes to `Vector`'s finite-type instance, which decides it by
-enumerating the curve. -/
 instance Env.decidableInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1) :
-    Decidable (Env.Invariants σ cvk) :=
-  haveI : Decidable (∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) :=
-    List.decidableBAll _ _
-  by unfold Env.Invariants; infer_instance
+    Decidable (Env.Invariants σ cvk) := by
+  unfold Env.Invariants; infer_instance
 
 /-- The environment of an SRS and a key whose invariants hold. -/
 def Env.ofInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1)
     (h : Env.Invariants σ cvk) : Env C :=
-  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, by rw [KimchiVK.n, ← powTwoPow_eq]; exact h.2.2.2.1,
+  ⟨σ, cvk, h.1, h.2.1, h.2.2.1, isPrimitiveRoot_two_pow _ _ h.2.2.2.1.1 h.2.2.2.1.2,
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
     h.2.2.2.2.2.2.2.2.2.choose, h.2.2.2.2.2.2.2.2.2.choose_spec⟩
+
+/-! ### The relations the environment's SRS avoids -/
+
+/-- The Lagrange relations of an environment: the coefficient vectors of the key's Lagrange
+polynomials, which its Lagrange points are the commitments to. -/
+def Env.lagrangeRelations {C : KimchiCurve} (E : Env C) :
+    List (Fin (2 ^ E.σ.k) → C.ScalarField) :=
+  (List.range E.cvk.lagrangeBasis.size).map (lagrangeCoeffs E.σ.k E.cvk.n E.cvk.omega)
+
+theorem Env.lagrangeBasis_toList {C : KimchiCurve} (E : Env C) :
+    E.cvk.lagrangeBasis.toList = E.lagrangeRelations.map fun a => #v[msm C E.σ.g a] := by
+  apply List.ext_getElem?
+  intro i
+  rw [Array.getElem?_toList, E.lagrange_eq]
+  by_cases hi : i < E.cvk.lagrangeBasis.size
+  · have hs : i < (Ipa.lagrangeBasis C E.σ E.cvk.n E.domain_le E.cvk.omega
+        E.cvk.lagrangeBasis.size).size := by simpa [Ipa.lagrangeBasis] using hi
+    simp [Env.lagrangeRelations, hi, hs, getElem_lagrangeBasis]
+  · simp [Env.lagrangeRelations, Ipa.lagrangeBasis, hi]
+
+theorem Env.natCast_n_ne_zero {C : KimchiCurve} (s : PastaShape C) (E : Env C) :
+    ((E.cvk.n : ℕ) : C.ScalarField) ≠ 0 := by
+  rw [KimchiVK.n]
+  push_cast
+  exact pow_ne_zero _ s.scalar_two_ne
+
+/-- The Lagrange points are finite points, where the SRS avoids their relations. -/
+theorem Env.lagrange_ne {C : KimchiCurve} (s : PastaShape C) (E : Env C)
+    (h : E.σ.Avoids E.lagrangeRelations) :
+    ∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0 := by
+  rw [E.lagrangeBasis_toList]
+  intro Ps hPs
+  obtain ⟨a, ha, rfl⟩ := List.mem_map.1 hPs
+  obtain ⟨i, -, rfl⟩ := List.mem_map.1 ha
+  simpa using h _ ha (lagrangeCoeffs_ne_zero _ _ _ _ (by rw [KimchiVK.n]; positivity)
+    (E.natCast_n_ne_zero s))
 
 /-! ## The group half -/
 

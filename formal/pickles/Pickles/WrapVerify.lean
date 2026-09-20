@@ -225,6 +225,7 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
     (u : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (cells : IvpInput E.σ.k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)))
     (hoff : ∀ leaf ∈ wrapLeavesAt E statement, Leaf.offBand IpaVesta.curve.scalar V leaf)
+    (havoid : E.σ.Avoids E.lagrangeRelations)
     (hivp : ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V statement) true
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -241,7 +242,7 @@ theorem wrapVerifyAt_reads {ks n : ℕ} {V : Valuation Fq}
   -- the binding, under the boolean leaves' booleanity: the `x_hat` read supplies that
   have hbind := fun hb : ∀ leaf ∈ wrapLeavesAt E statement, leaf.bitBoolean V =>
     xhatBinding_const (V := V) pastaShapeVesta (0 : Fin 1) E.σ E.cvk statement.packed E.h_ne
-      E.lagrange_ne (hleaves ▸ hb) (hleaves ▸ hoff)
+      (E.lagrange_ne pastaShapeVesta havoid) (hleaves ▸ hb) (hleaves ▸ hoff)
   have hscalar : leafHasScalar (wrapLeavesAt E statement) := by
     obtain ⟨x, rest, hx⟩ := statement.packed_head
     obtain ⟨Ps, lb, hlb⟩ := List.exists_cons_of_ne_nil

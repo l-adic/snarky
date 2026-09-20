@@ -543,6 +543,82 @@ theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C
       | nil => exact absurd hl hlb
       | cons Ps lb => simp [XhatTable.ofKeyKnown, XhatTable.ofKey]
 
+/-! ### The correction sum's coefficients
+
+Where the Lagrange points are commitments `msm g a`, the correction sum is one too, at the
+coefficients `corrCoeffs`; so that it is a finite point is a relation the SRS avoids
+(`SRS.Avoids`). The vector is nonzero where the Lagrange vectors past the first sum to zero
+and the first to one: its coefficients then sum to the first leaf's shift. -/
+
+/-- The shift coefficient of a packed scalar: `-(2^L)` at its ladder width, none for a boolean
+cell. -/
+def shiftCoeff (k : PackedScalar C.BaseField) : C.ScalarField :=
+  match shiftBits k with
+  | some L => -(2 ^ L)
+  | none => 0
+
+theorem corrPt_eq_smul (k : PackedScalar C.BaseField) (P : C.Point) :
+    corrPt k P = shiftCoeff k • P := by
+  unfold corrPt shiftCoeff
+  cases shiftBits k with
+  | none => simp
+  | some L =>
+      show negShift C L P = (-(2 ^ L) : C.ScalarField) • P
+      rw [negShift_eq, ← Int.cast_smul_eq_zsmul C.ScalarField]
+      push_cast
+      rfl
+
+theorem shiftCoeff_ne_zero (s : PastaShape C) (k : PackedScalar C.BaseField)
+    (hk : k.IsScalar) : shiftCoeff k ≠ 0 := by
+  cases k <;> simp [shiftCoeff, shiftBits, PackedScalar.IsScalar, s.scalar_two_ne] at hk ⊢
+
+/-- The coefficients of the known-domain fold's correction sum, against the coefficient
+vectors `ls` of its Lagrange points. -/
+def corrCoeffs {m : ℕ} (ks : List (PackedScalar C.BaseField))
+    (ls : List (Fin m → C.ScalarField)) : Fin m → C.ScalarField :=
+  (List.zipWith (fun k a => shiftCoeff k • a) ks ls).sum
+
+/-- The correction sum is the commitment to its coefficients. -/
+theorem corrSumPt_map_msm {m : ℕ} (g : Fin m → C.Point) :
+    ∀ (ks : List (PackedScalar C.BaseField)) (ls : List (Fin m → C.ScalarField)),
+      corrSumPt ks (ls.map fun a => #v[Ipa.msm C g a]) 0 = Ipa.msm C g (corrCoeffs ks ls)
+  | [], _ => by simp [corrSumPt, corrCoeffs, Ipa.msm_zero]
+  | _ :: _, [] => by simp [corrSumPt, corrCoeffs, Ipa.msm_zero]
+  | k :: ks, a :: ls => by
+      have ih := corrSumPt_map_msm g ks ls
+      simp only [corrSumPt, corrCoeffs, List.map_cons, List.zipWith_cons_cons,
+        List.sum_cons] at ih ⊢
+      rw [ih, Ipa.msm_add, Ipa.msm_smul, corrPt_eq_smul]
+      simp
+
+private theorem sum_corrCoeffs_range' {m N : ℕ} (L : ℕ → Fin m → C.ScalarField)
+    (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) :
+    ∀ (ks : List (PackedScalar C.BaseField)) (s len : ℕ), 0 < s → s + len ≤ N →
+      ∑ j, corrCoeffs ks ((List.range' s len).map L) j = 0
+  | [], _, _, _, _ => by simp [corrCoeffs]
+  | _ :: _, _, 0, _, _ => by simp [corrCoeffs]
+  | k :: ks, s, len + 1, hs, hle => by
+      have ih := sum_corrCoeffs_range' L hL ks (s + 1) len (by omega) (by omega)
+      simp only [corrCoeffs, List.range'_succ, List.map_cons, List.zipWith_cons_cons,
+        List.sum_cons, Pi.add_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_add_distrib,
+        ← Finset.mul_sum] at ih ⊢
+      rw [ih, hL s hs (by omega)]
+      simp
+
+/-- The correction sum's coefficients sum to the first leaf's shift coefficient, where the
+first vector's sum to one and the later ones' to zero. -/
+theorem sum_corrCoeffs {m N : ℕ} (L : ℕ → Fin m → C.ScalarField) (h0 : ∑ j, L 0 j = 1)
+    (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) (k : PackedScalar C.BaseField)
+    (ks : List (PackedScalar C.BaseField)) (size : ℕ) (hpos : 0 < size) (hle : size ≤ N) :
+    ∑ j, corrCoeffs (k :: ks) ((List.range size).map L) j = shiftCoeff k := by
+  obtain ⟨len, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hpos.ne'
+  have ih := sum_corrCoeffs_range' L hL ks 1 len one_pos (by omega)
+  rw [List.range_eq_range', List.range'_succ]
+  simp only [corrCoeffs, List.map_cons, List.zipWith_cons_cons, List.sum_cons, Pi.add_apply,
+    Pi.smul_apply, smul_eq_mul, Finset.sum_add_distrib, ← Finset.mul_sum] at ih ⊢
+  rw [ih, h0]
+  simp
+
 end OfKey
 
 /-! ## The gadgets -/

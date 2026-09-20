@@ -27,9 +27,10 @@ valuation (`builder_spec_iff`).
   the canonical representative (`hcanon`: the step side absorbs its two cells, and the
   ladder's range check leaves one bit of slack), the `ζ` powers are the run's (`hzetaM`,
   `hzetaN`);
-* `hsum`: the constant correction sum the `x_hat` fold adds is a finite point. The table is
-  computed from the key (`xhatTableAt`), and this is the one fact about it no invariant gives:
-  a fixed relation among the key's Lagrange points that must not hold;
+* `havoid`: the SRS avoids the `x_hat` relations (`SRS.Avoids`, `stepRelationsAt`). The table
+  is computed from the key (`xhatTableAt`), and its points are commitments against the SRS;
+  that the Lagrange points and the constant correction sum the fold adds are finite points
+  is that the SRS has no relation at their coefficient vectors, which no invariant gives;
 * `Guards` and `SgOk`, of the proof itself.
 
 Against the step proof's statement: no domain cell (the wrap circuit's domain is a constant),
@@ -220,9 +221,8 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (hzetaN : (stepSide Vg).decode
         (groupInput ks E.σ.k).claims.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
-    -- the constant correction sum the `x_hat` fold adds is a finite point: one fixed relation
-    -- among the key's Lagrange points does not hold
-    (hsum : stepCorrSumAt E (groupInput ks E.σ.k).statement ≠ 0)
+    -- the SRS has no relation at the `x_hat` table's coefficient vectors
+    (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k).statement))
     -- of the proof itself
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
     (hsg : SgOk E cp pub) :
@@ -235,7 +235,7 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
     (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k) oldsW
-      hbase hoff hsum hivp) _
+      hbase hoff havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k) Vg _ v hv hv1 ht hf hzetaM hzetaN

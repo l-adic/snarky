@@ -304,10 +304,10 @@ Pickles.WrapIPARounds
 -- StepGroupHalf.lean), a valuation satisfying the next wrap circuit's scalar half with
 -- `finalized` set (`WrapProof.scalarCircuit`, WrapScalarHalf.lean), the readings of their
 -- inputs as the wire's proof (`WrapProof.InputReads`), of the key cells as the key (`VkReads`),
--- the `x_hat` tables bound to the key, and the claim ties (`HalvesTies`), make `kimchiVerify`
--- accept. Unlike the wrap block, `verify` computes `x_hat` itself from the key's Lagrange
--- tables, so the public input is the packed statement's, and the whole `PublicInputCommit.lean`
--- chain hangs off it (`verifyProof_step_reads`); the scalar half
+-- the SRS avoiding the `x_hat` relations (`SRS.Avoids`), and the claim ties (`HalvesTies`),
+-- make `kimchiVerify` accept. Unlike the wrap block, `verify` computes `x_hat` itself from the
+-- key's Lagrange tables, so the public input is the packed statement's, and the whole
+-- `PublicInputCommit.lean` chain hangs off it (`verifyProof_step_reads`); the scalar half
 -- (`finalizeOtherProofWrapAt_kimchiVerify_pallas`) runs at the key's own constant domain.
 Pickles.wrapProof_kimchiVerify_pallas
 
@@ -320,5 +320,7 @@ Pickles.wrapProof_kimchiVerify_pallas
 -- (`wrapVerifyAt_reads`, down to `publicInputCommitFull` and the key's own `x_hat` table) and
 -- the scalar half (`finalizeOtherProofStepAt_kimchiVerify_vesta`, down to the linearization
 -- reflection) are both beneath it. What the statement no longer assumes lives in `Env` (the
--- key's and SRS's invariants) and `KnownDomains` (the domain list's).
+-- key's and SRS's invariants) and `KnownDomains` (the domain list's). That the key's Lagrange
+-- points are finite points is no invariant: it is the SRS avoiding their relations
+-- (`SRS.Avoids`, `Env.lagrangeRelations`).
 Pickles.stepProof_kimchiVerify_vesta

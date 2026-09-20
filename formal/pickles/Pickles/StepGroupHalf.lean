@@ -52,11 +52,36 @@ def stepPublicInput {ks : ℕ} (E : Env IpaPallas.curve) (V : Valuation Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : Array Fq :=
   pubOf IpaPallas.curve V (stepLeavesAt E statement)
 
-/-- The constant the known-domain fold adds: the sum of the leaves' shift corrections. -/
-def stepCorrSumAt {ks : ℕ} (E : Env IpaPallas.curve)
+/-- The relations the step circuit's `x_hat` needs the SRS to avoid: the coefficients of the
+constant the known-domain fold adds (the sum of the leaves' shift corrections), then the
+Lagrange vectors. It reads the packing's kinds, never its cells. -/
+def stepRelationsAt {ks : ℕ} (E : Env IpaPallas.curve)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
-    IpaPallas.curve.Point :=
-  corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0
+    List (Fin (2 ^ E.σ.k) → IpaPallas.curve.ScalarField) :=
+  corrCoeffs (C := IpaPallas.curve) statement.packed E.lagrangeRelations :: E.lagrangeRelations
+
+/-- The fold's constant is a finite point where the SRS avoids its relation. The coefficient
+vector is nonzero: its coefficients sum to the first leaf's shift, the Lagrange polynomials
+past the first vanishing at `1`. -/
+private theorem corrSumPt_ne_zero {ks : ℕ} (E : Env IpaPallas.curve)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
+    (h : E.σ.Avoids (stepRelationsAt E statement)) :
+    corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0 ≠ 0 := by
+  rw [E.lagrangeBasis_toList, corrSumPt_map_msm]
+  refine h _ List.mem_cons_self fun h0 => ?_
+  obtain ⟨k, rest, hk⟩ := List.exists_cons_of_ne_nil
+    (l := statement.packed) (by simp [WrapStatement.packed])
+  have hsum := sum_corrCoeffs (C := IpaPallas.curve) (N := E.cvk.n)
+    (lagrangeCoeffs E.σ.k E.cvk.n E.cvk.omega)
+    (by rw [sum_lagrangeCoeffs _ _ _ E.omega_prim E.domain_le
+      (E.natCast_n_ne_zero pastaShapePallas) 0 (by rw [KimchiVK.n]; positivity)]; simp)
+    (fun i hi hin => by
+      rw [sum_lagrangeCoeffs _ _ _ E.omega_prim E.domain_le
+        (E.natCast_n_ne_zero pastaShapePallas) i hin, if_neg hi.ne'])
+    k rest E.cvk.lagrangeBasis.size E.lagrange_pos E.lagrange_le
+  rw [← hk, ← Env.lagrangeRelations, h0] at hsum
+  exact shiftCoeff_ne_zero pastaShapePallas k
+    (statement.packed_isScalar k (hk ▸ List.mem_cons_self)) (by simpa using hsum.symm)
 
 /-- `verify` at an environment: the deployed Pallas scalar ops, endomorphism, sponge, group
 map and square root, the SRS blinding base as a constant cell, and the `x_hat` table the
@@ -73,9 +98,9 @@ def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
 
 /-- **`verify` at an environment reads as the group half at the packed statement.** The table
 is the key's, so what `XhatTable.Bound` asks beyond the environment's invariants is the band
-(`hoff`) and the constant correction sum being a finite point (`hsum`): the deployed fold adds
-it with `addFast`, and no invariant of the key gives it — it is one fixed relation among the
-Lagrange points. -/
+(`hoff`) and that the Lagrange points and the constant correction sum are finite points: the
+deployed fold adds the sum with `addFast`. No invariant of the key gives these; they are
+relations the SRS avoids (`havoid`, `stepRelationsAt`). -/
 theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.curve)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
@@ -86,7 +111,7 @@ theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.cur
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V isBaseCase false)
     (hoff : ∀ leaf ∈ stepLeavesAt E statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
-    (hsum : stepCorrSumAt E statement ≠ 0)
+    (havoid : E.σ.Avoids (stepRelationsAt E statement))
     (hivp : IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V statement) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
@@ -106,10 +131,13 @@ theorem verifyProofAt_reads {ks : ℕ} {V : Valuation Fp} (E : Env IpaPallas.cur
   have htab : (xhatTableAt E statement).Bound pastaShapePallas V E.σ E.cvk (constPt E.σ.h)
       (packLeaves statement (xhatTableAt E statement)) := by
     have hb := bound_ofKeyKnown (V := V) pastaShapePallas E.σ E.cvk statement.packed E.h_ne
-      (fun Ps h ci => by rw [Fin.fin_one_eq_zero ci]; exact E.lagrange_ne Ps h)
+      (fun Ps h ci => by
+        rw [Fin.fin_one_eq_zero ci]
+        exact E.lagrange_ne pastaShapePallas (fun a ha => havoid a (List.mem_cons_of_mem _ ha))
+          Ps h)
       (by simp [WrapStatement.packed]) hlb
       (bitBoolean_constLeaf_of_isScalar _ _ statement.packed_isScalar) (hleaves ▸ hoff)
-      (fun ci => by rw [Fin.fin_one_eq_zero ci]; exact hsum)
+      (fun ci => by rw [Fin.fin_one_eq_zero ci]; exact corrSumPt_ne_zero E statement havoid)
     rw [← hleaves] at hb
     exact hb
   exact verifyProof_step_reads (V := V) E.σ E.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
@@ -182,7 +210,7 @@ theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve)
     (g : GroupVar ks E.σ.k) (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V g.isBaseCase false)
     (hoff : ∀ leaf ∈ stepLeavesAt E g.statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
-    (hsum : stepCorrSumAt E g.statement ≠ 0)
+    (havoid : E.σ.Avoids (stepRelationsAt E g.statement))
     (hivp : IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V g.statement) false
       spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
     ⦃⌜True⌝⦄
@@ -191,7 +219,7 @@ theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve)
       (g.half V).Reads E cp (stepPublicInput E V g.statement) v ∧
         (↑v : CVar Fp).val V = 1⌝⦄ := by
   have hv := verifyProofAt_reads (V := V) E cp spongeAfterIndex g.isBaseCase g.statement
-    g.claims (g.cells keyCells) oldsW hbase hoff hsum hivp
+    g.claims (g.cells keyCells) oldsW hbase hoff havoid hivp
   simp only [groupCircuit]
   mvcgen -trivial [hv]
   rename_i v _ hr _ _
