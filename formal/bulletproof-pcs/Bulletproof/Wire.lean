@@ -227,6 +227,130 @@ def lagrangeBasis (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k)
       return acc
     msm C g fun k => coeffs.getD k 0
 
+/-! ### The SRS relations a statement names
+
+A statement over an SRS cannot assume its generators independent: the point group has prime
+order, so any two of its points are related. What it can assume is that the SRS avoids the
+relations it names (`SRS.Avoids`): a list of coefficient vectors, none of which, if nonzero,
+commits to the identity. The Lagrange points are such commitments (`getElem_lagrangeBasis`), at
+the coefficients `lagrangeCoeffs`. -/
+
+/-- The SRS avoids a list of relations: no nonzero coefficient vector of the list commits to
+the identity. -/
+def _root_.Bulletproof.SRS.Avoids {C : KimchiCurve} (σ : SRS C.Point)
+    (R : List (Fin (2 ^ σ.k) → C.ScalarField)) : Prop :=
+  ∀ a ∈ R, a ≠ 0 → msm C σ.g a ≠ 0
+
+/-- The coefficients of the `i`-th Lagrange polynomial of the domain of size `n` with generator
+`ω`, `ω^{-ij}/n` at `j < n`, padded with zeros to an SRS of `2 ^ k` generators. -/
+def lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F) (i : ℕ) : Fin (2 ^ k) → F :=
+  fun j => if j.val < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j.val else 0
+
+theorem msm_eq {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) :
+    msm C g a = ∑ i, a i • g i := by
+  rw [msm, C.fastMsm_spec]
+  refine Finset.sum_congr rfl fun i _ => ?_
+  rw [← Nat.cast_smul_eq_nsmul C.ScalarField, ZMod.natCast_zmod_val]
+
+theorem msm_zero {n : ℕ} (g : Fin n → C.Point) : msm C g 0 = 0 := by simp [msm_eq]
+
+theorem msm_add {n : ℕ} (g : Fin n → C.Point) (a b : Fin n → C.ScalarField) :
+    msm C g (a + b) = msm C g a + msm C g b := by
+  simp [msm_eq, add_smul, Finset.sum_add_distrib]
+
+theorem msm_smul {n : ℕ} (g : Fin n → C.Point) (c : C.ScalarField)
+    (a : Fin n → C.ScalarField) : msm C g (c • a) = c • msm C g a := by
+  simp [msm_eq, mul_smul, Finset.smul_sum]
+
+private theorem geom_foldl {F : Type*} [Field F] (r : F) :
+    ∀ (l : List ℕ) (acc : Array F) (c : F),
+      (l.foldl (fun (b : MProd (Array F) F) _ => ⟨b.1.push b.2, b.2 * r⟩) ⟨acc, c⟩).1
+        = acc ++ ((List.range l.length).map fun j => c * r ^ j).toArray
+  | [], acc, c => by simp
+  | _ :: l, acc, c => by
+      rw [List.foldl_cons, geom_foldl r l, List.length_cons, List.range_succ_eq_map]
+      simp [pow_succ', mul_assoc, Function.comp_def]
+
+/-- The array `lagrangeBasis`'s loop builds is the geometric progression `c, c·r, …`. -/
+private theorem geom_loop {F : Type*} [Field F] (c r : F) (n : ℕ) (k : ℕ) :
+    (Id.run do
+      let mut acc := Array.mkEmpty n
+      let mut c := c
+      for _ in [0:n] do
+        acc := acc.push c
+        c := c * r
+      return acc).getD k 0 = if k < n then c * r ^ k else 0 := by
+  simp only [Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size, bind_pure_comp,
+    map_pure, List.forIn_pure_yield_eq_foldl]
+  rw [geom_foldl]
+  by_cases hk : k < n <;> simp [Array.getD, hk]
+
+/-- A sum against the first `n` generators is the sum against all of them at the padded
+coefficients. -/
+private theorem msm_pad (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k) (a : ℕ → C.ScalarField) :
+    msm C (fun j : Fin n => σ.g ⟨j, by omega⟩) (fun j => a j)
+      = msm C σ.g fun j => if j.val < n then a j else 0 := by
+  rw [msm_eq, msm_eq]
+  let G : ℕ → C.Point := fun j => if h : j < 2 ^ σ.k then σ.g ⟨j, h⟩ else 0
+  have hl : ∀ j : Fin n, a j • σ.g ⟨j, by omega⟩ = (fun j : ℕ => a j • G j) j := fun j => by
+    have : (j : ℕ) < 2 ^ σ.k := by omega
+    simp [G, this]
+  have hr : ∀ j : Fin (2 ^ σ.k), (if j.val < n then a j else 0) • σ.g j
+      = (fun j : ℕ => (if j < n then a j else 0) • G j) j := fun j => by simp [G]
+  calc ∑ j : Fin n, a j • σ.g ⟨j, by omega⟩
+      = ∑ j : Fin n, (fun j : ℕ => a j • G j) j := Finset.sum_congr rfl fun j _ => hl j
+    _ = ∑ j ∈ Finset.range n, a j • G j := Fin.sum_univ_eq_sum_range (fun j => a j • G j) n
+    _ = ∑ j ∈ Finset.range (2 ^ σ.k), (if j < n then a j else 0) • G j := by
+        rw [← Finset.sum_subset (Finset.range_subset_range.2 hn)]
+        · exact Finset.sum_congr rfl fun j hj => by simp [Finset.mem_range.1 hj]
+        · intro j _ hj
+          simp [Finset.mem_range.not.1 hj]
+    _ = _ := (Fin.sum_univ_eq_sum_range
+          (fun j => (if j < n then a j else 0) • G j) _).symm.trans
+        (Finset.sum_congr rfl fun j _ => (hr j).symm)
+
+/-- The Lagrange points are the commitments to the Lagrange coefficients. -/
+theorem getElem_lagrangeBasis (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k)
+    (ω : C.ScalarField) (count i : ℕ) (hi : i < (lagrangeBasis C σ n hn ω count).size) :
+    (lagrangeBasis C σ n hn ω count)[i] = msm C σ.g (lagrangeCoeffs σ.k n ω i) := by
+  simp only [lagrangeBasis, Array.getElem_map, Array.getElem_range, geom_loop]
+  unfold lagrangeCoeffs
+  rw [← msm_pad C σ n hn fun j => (n : C.ScalarField)⁻¹ * (ω⁻¹ ^ i) ^ j]
+  congr 1
+  funext j
+  simp [j.isLt]
+
+theorem lagrangeCoeffs_ne_zero {F : Type*} [Field F] (k n : ℕ) (ω : F) (i : ℕ) (hn : 0 < n)
+    (hF : (n : F) ≠ 0) : lagrangeCoeffs k n ω i ≠ 0 := by
+  intro h
+  have := congrFun h ⟨0, by positivity⟩
+  simp [lagrangeCoeffs, hn, hF] at this
+
+/-- The `i`-th Lagrange polynomial at `1`: its coefficients sum to `δ_{i0}`. -/
+theorem sum_lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F)
+    (hω : IsPrimitiveRoot ω n) (hle : n ≤ 2 ^ k) (hF : (n : F) ≠ 0) (i : ℕ) (hi : i < n) :
+    ∑ j, lagrangeCoeffs k n ω i j = if i = 0 then 1 else 0 := by
+  have h1 : ∑ j, lagrangeCoeffs k n ω i j
+      = ∑ j ∈ Finset.range n, (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j := by
+    unfold lagrangeCoeffs
+    rw [Fin.sum_univ_eq_sum_range (fun j => if j < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j else 0),
+      ← Finset.sum_subset (Finset.range_subset_range.2 hle)]
+    · exact Finset.sum_congr rfl fun j hj => by simp [Finset.mem_range.1 hj]
+    · intro j _ hj
+      simp [Finset.mem_range.not.1 hj]
+  rw [h1, ← Finset.mul_sum]
+  split_ifs with h0
+  · subst h0
+    simp [hF]
+  · have hx : ω⁻¹ ^ i ≠ 1 := by
+      rw [inv_pow, Ne, inv_eq_one]
+      exact hω.pow_ne_one_of_pos_of_lt (Nat.pos_of_ne_zero h0).ne' hi
+    have hxn : (ω⁻¹ ^ i) ^ n = 1 := by
+      rw [← pow_mul, mul_comm, pow_mul, inv_pow, hω.pow_eq_one, inv_one, one_pow]
+    have := geom_sum_mul (ω⁻¹ ^ i) n
+    rw [hxn, sub_self] at this
+    rw [(mul_eq_zero.1 this).resolve_right (sub_ne_zero.2 hx), mul_zero]
+
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
 structure Proof (C : KimchiCurve) (k : ℕ) where
