@@ -232,6 +232,24 @@ theorem Env.lagrange_ne {C : KimchiCurve} (s : PastaShape C) (E : Env C)
   simpa using h _ ha (lagrangeCoeffs_ne_zero _ _ _ _ (by rw [KimchiVK.n]; positivity)
     (E.natCast_n_ne_zero s))
 
+/-- Whether the SRS avoids the Lagrange relations, read off the key: their commitments are the
+key's Lagrange points (`lagrange_eq`), so none is the identity iff no point is. -/
+theorem Env.avoids_lagrangeRelations_iff {C : KimchiCurve} (s : PastaShape C) (E : Env C) :
+    E.σ.Avoids E.lagrangeRelations
+      ↔ ∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0 := by
+  refine ⟨E.lagrange_ne s, fun h a ha _ => ?_⟩
+  have := h #v[msm C E.σ.g a] (by rw [E.lagrangeBasis_toList]; exact List.mem_map.2 ⟨a, ha, rfl⟩)
+  simpa using this
+
+/-- Decided on the key's points, with no commitment recomputed. The bounded `∀` is pinned to
+the list walk: left to resolution it goes to `Vector`'s finite-type instance, which decides it
+by enumerating the curve. -/
+def Env.decidableAvoids {C : KimchiCurve} (s : PastaShape C) (E : Env C) :
+    Decidable (E.σ.Avoids E.lagrangeRelations) :=
+  haveI : Decidable (∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) :=
+    List.decidableBAll _ _
+  decidable_of_iff _ (E.avoids_lagrangeRelations_iff s).symm
+
 /-! ## The group half -/
 
 /-- Pointwise ties along a zip give the mapped lists, at equal lengths: what a circuit that

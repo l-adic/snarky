@@ -93,6 +93,9 @@ Pickles.Env.ofInvariants
 -- generator orders by squaring (`powTwoPow`), since the generic power recurses as deep as its
 -- exponent.
 Pickles.KnownDomains.ofList?
+-- Whether the SRS avoids the key's Lagrange relations (TwoHalves.lean), decided on the key's
+-- own Lagrange points: check_halves.lean decides the top-level statement's `havoid` with it.
+Pickles.Env.decidableAvoids
 -- script-surface:end
 -- The instance that decides them: reached by instance resolution at the driver's `if`, never
 -- by name, so it is rooted beside the predicate rather than anchored in a script.

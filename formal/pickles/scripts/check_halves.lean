@@ -418,6 +418,8 @@ public input it names:
   statement's `domain_log2` is the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
   public input (`wrapPublicInput`), and its full scalars are off the band (`hoff`);
+* the SRS avoids the key's Lagrange relations (`havoid`), decided on the key's Lagrange
+  points (`Env.decidableAvoids`), which the environment's invariants tie to the SRS;
 * the wrap statement's `messages_for_next_wrap_proof` is the digest `wrapVerifyAt` asserts:
   the padding, the slots' expanded round challenges, the step opening's `sg`;
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input.
@@ -466,9 +468,13 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       cp.olds.size ≠ cvk.prevChallenges))
     let sg' := Pickles.sgOk E cp pub
     let kv := Kimchi.Verifier.kimchiVerify CS σ cvk cp pub
+    -- `havoid`, the theorem's own hypothesis, decided on the key's Lagrange points
+    let avoidOk := @decide (E.σ.Avoids E.lagrangeRelations)
+      (E.decidableAvoids Pickles.pastaShapeVesta)
     IO.println s!"    env=true rounds={σ.k} domains={cands.map (·.log2)} \
       key=2^{doms.keyLog2} hdom={hdom} \
-      pub={pubOk} ({pub.size} cells) offBand={offOk} msgDigest={msgOk} guards={guards} \
+      pub={pubOk} ({pub.size} cells) offBand={offOk} avoids={avoidOk} msgDigest={msgOk} \
+      guards={guards} \
       sgOk={sg'} kimchiVerify={kv}"
     -- `hsatS`: the theorem's scalar circuit, as `compile` builds it — the input's check (the
     -- branch data's; the rest of the input is unchecked) and then `scalarCircuit`, which
@@ -500,7 +506,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
       (fun _ => []) ⟨(ginp, newBp)⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
-    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
+    return hdom && pubOk && offOk && msgOk && guards && sg' && kv && avoidOk && satS && satG
 
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `AccOk` on its
 own. -/
