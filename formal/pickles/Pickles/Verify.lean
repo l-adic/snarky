@@ -163,13 +163,30 @@ theorem onCurveAt_constPt (P : C.Point) (hP : P ≠ 0) :
   ⟨nonsingular_toW (SWPoint.onCurve_of_ne_zero hP),
     SWPoint.equivPoint_eq_some P (SWPoint.onCurve_of_ne_zero hP)⟩
 
+/-- The shift correction `-(2^L)·P`, computed through the curve's verified fast
+multi-scalar multiplication. The group's own `•` is a recursion as deep as its scalar, so a
+table built with it states the right point and can never be run; this one a driver runs. -/
+def negShift (C : KimchiCurve) (L : ℕ) (P : C.Point) : C.Point :=
+  -(C.fastMsm (n := 1) (fun _ => P) (fun _ => ((2 ^ L : ℕ) : ZMod C.scalar)))
+
+theorem negShift_eq (L : ℕ) (P : C.Point) : negShift C L P = (-(2 ^ L : ℤ)) • P := by
+  have hcard : C.scalar • P = 0 := by
+    have h := card_nsmul_eq_zero' (G := C.Point) (x := P)
+    rwa [C.card] at h
+  have hmod : (2 ^ L % C.scalar) • P = (2 ^ L) • P := by
+    conv_rhs => rw [← Nat.mod_add_div (2 ^ L) C.scalar, add_nsmul, mul_nsmul, hcard,
+      nsmul_zero, _root_.add_zero]
+  rw [negShift, C.fastMsm_spec, Fin.sum_univ_one, ZMod.val_natCast, hmod, neg_smul]
+  congr 1
+  exact_mod_cast (natCast_zsmul P (2 ^ L)).symm
+
 /-- A leaf over constants: the Lagrange points as its base, their honest shifts as its
 correction. -/
 def constLeaf (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) : Leaf C.BaseField nc :=
   match k with
-  | .full x => .full x (Ps.map constPt) (Ps.map fun P => constPt ((-(2 ^ 255 : ℤ)) • P))
-  | .b128 x => .b128 x (Ps.map constPt) (Ps.map fun P => constPt ((-(2 ^ 130 : ℤ)) • P))
-  | .b10 x => .b10 x (Ps.map constPt) (Ps.map fun P => constPt ((-(2 ^ 10 : ℤ)) • P))
+  | .full x => .full x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 255 P))
+  | .b128 x => .b128 x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 130 P))
+  | .b10 x => .b10 x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 10 P))
   | .bit b => .condAdd b (Ps.map constPt)
 
 theorem leafBaseAt_constLeaf (ci : Fin nc) (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) :
@@ -210,10 +227,10 @@ noncomputable def constCp (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.B
   | .bit _ => 0
 
 theorem onCurveAt_shift (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
-    OnCurveAt s.d.W V (constPt ((-(2 ^ L : ℤ)) • P))
+    OnCurveAt s.d.W V (constPt (negShift C L P))
       ((-(2 ^ L : ℤ)) • SWPoint.equivPoint C.E P) := by
-  rw [← map_zsmul]
-  exact onCurveAt_constPt _ (two_pow_zsmul_ne_zero s P hP L)
+  rw [← map_zsmul, ← negShift_eq]
+  exact onCurveAt_constPt _ (negShift_eq L P ▸ two_pow_zsmul_ne_zero s P hP L)
 
 theorem leafPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
     (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0)
@@ -246,7 +263,7 @@ theorem corrHonest_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.Ba
     CorrHonest s.d ci V (constLeaf k Ps) := by
   have key : ∀ (L : ℕ) (T : s.d.W.Point),
       OnCurveAt s.d.W V (constPt Ps[ci]) T →
-      OnCurveAt s.d.W V (constPt ((-(2 ^ L : ℤ)) • Ps[ci])) ((-(2 ^ L : ℤ)) • T) := by
+      OnCurveAt s.d.W V (constPt (negShift C L Ps[ci])) ((-(2 ^ L : ℤ)) • T) := by
     intro L T hT
     have hT' : T = SWPoint.equivPoint C.E Ps[ci] :=
       OnCurveAt.eq hT (onCurveAt_constPt (V := V) Ps[ci] hP) rfl rfl
@@ -315,18 +332,20 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
         simp only [List.length_zipWith, Array.length_toList] at hi; simp; omega)))
     simpa using h
 
-/-- The shift a packed scalar's ladder carries; a boolean leaf has no correction. -/
-def shiftOf : PackedScalar C.BaseField → ℤ
-  | .full _ => -(2 ^ 255 : ℤ)
-  | .b128 _ => -(2 ^ 130 : ℤ)
-  | .b10 _ => -(2 ^ 10 : ℤ)
-  | .bit _ => 0
+/-- The ladder width of a packed scalar's kind; a boolean leaf has no correction. -/
+def shiftBits : PackedScalar C.BaseField → Option ℕ
+  | .full _ => some 255
+  | .b128 _ => some 130
+  | .b10 _ => some 10
+  | .bit _ => none
 
-/-- The `x_hat` table computed from the key's Lagrange points, at a statement's packing. -/
+/-- The `x_hat` table computed from the key's Lagrange points, at a statement's packing. A
+boolean leaf's correction slot is never read (`packLeavesOf` drops it); it holds the base. -/
 def XhatTable.ofKey (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
     XhatTable C.BaseField nc where
   bases := lb.map (·.map constPt)
-  corrs := List.zipWith (fun k Ps => Ps.map fun P => constPt (shiftOf k • P)) ks lb
+  corrs := List.zipWith (fun k Ps => Ps.map fun P =>
+    constPt (match shiftBits k with | some L => negShift C L P | none => P)) ks lb
   corrHead := Vector.replicate nc (constPt 0)
   corrSum := Vector.replicate nc (constPt 0)
 
@@ -341,7 +360,7 @@ theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
       simp only [packLeavesOf, XhatTable.ofKey, List.map_cons, List.zipWith_cons_cons,
         List.zip_cons_cons] at ih ⊢
       refine congrArg₂ _ ?_ ih
-      cases k <;> simp [constLeaf, shiftOf]
+      cases k <;> simp [constLeaf, shiftBits]
 
 end OfKey
 

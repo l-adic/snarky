@@ -36,6 +36,30 @@ structure KnownDomains (E : Env IpaVesta.curve) where
   /-- The key's domain is a candidate. -/
   key_mem : (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list
 
+/-- `g ^ 2 ^ k` by `k` squarings. The generic power compiles to a recursion as deep as its
+exponent, which a `2 ^ 15`-element domain overflows the stack on. -/
+def powTwoPow (g : Fp) : ℕ → Fp
+  | 0 => g
+  | k + 1 => powTwoPow g k * powTwoPow g k
+
+theorem powTwoPow_eq (g : Fp) (k : ℕ) : powTwoPow g k = g ^ 2 ^ k := by
+  induction k with
+  | zero => simp [powTwoPow]
+  | succ k ih => rw [powTwoPow, ih, ← pow_add, ← two_mul, ← pow_succ']
+
+/-- The bundle of a candidate list and the key's `log2`, where its facts hold: each is
+decidable, so a driver checks them once on the domains a proof cache uses. The generator
+orders are checked by squaring (`powTwoPow`). -/
+def KnownDomains.ofList? (E : Env IpaVesta.curve) (list : List (KnownDomain Fp))
+    (keyLog2 : ℕ) : Option (KnownDomains E) :=
+  if h : (list.map fun d => (d.log2 : Fp)).Nodup ∧
+      (∀ d ∈ list, powTwoPow d.generator d.log2 = 1) ∧
+      (∀ d ∈ list, E.cvk.zkRows ≤ 2 ^ d.log2) ∧
+      E.cvk.n = 2 ^ keyLog2 ∧ (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list then
+    some ⟨list, h.1, fun d hd => powTwoPow_eq d.generator d.log2 ▸ h.2.1 d hd, h.2.2.1,
+      keyLog2, h.2.2.2.1, h.2.2.2.2⟩
+  else none
+
 /-- The step circuit's scalar half at an environment: `finalize_other_proof`'s step side with
 the verifier key's parameters, the `Fp` token stream, and the mask and previous-challenge
 cells at their static sizes. -/
