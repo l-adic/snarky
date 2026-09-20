@@ -180,11 +180,12 @@ def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
 
 /-- What the group half's read assumes of its cells (the OCaml inputs, read as the wire's
 key `cvk`, proof `cp` and the claims): the kept `sg_old` are the proof's old accumulators'
-commitments, each commitment column reads as its wire column, the shifted claims decode to the
-wire's scalars where the wire has them (`perm`, `ζ^{2^k}`, `ζⁿ`, `z₁`, `z₂`) and are claims the
-ladder read speaks about (`IvpSide.ClaimOk`), and the opening's points read as the proof's. The
-deferred `ξ`, `cip`, `b` are tied to nothing here: the group half scales by them as claimed,
-and the read speaks at their decodes. -/
+commitments, each commitment column reads as its wire column, the opening's `z₁`, `z₂` decode
+to the proof's, every shifted scalar is a claim the ladder read speaks about
+(`IvpSide.ClaimOk`), and the opening's points read as the proof's. The deferred claims are tied
+to nothing here: the group half scales by `ξ`, `cip`, `b` as claimed, and the read speaks at
+their decodes; `perm`, `ζ^{2^k}`, `ζⁿ` enter only `ft_comm`, so their being the wire's is a
+premise of the read's opening clause (`IvpReads`), not of its transcript clauses. -/
 structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
@@ -210,12 +211,6 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   sigma : ColumnsRead C V inp.sigmaComm (cvk.sigmaComm.take sigmaRows).toList
   /-- The last permutation commitment `σ₆`. -/
   sigmaLast : CommReads C V inp.sigmaLast (cvk.sigmaComm[6]).toList
-  /-- The permutation-scalar claim decodes to the wire's. -/
-  perm : S.decode inp.plonk.perm = runPScalar C σ cvk cp pub
-  /-- The `ζ^{2^k}` claim decodes to the wire's. -/
-  zetaM : S.decode inp.plonk.zetaToSrsLength = runZetaM C σ cvk cp pub
-  /-- The `ζⁿ` claim decodes to the wire's. -/
-  zetaN : S.decode inp.plonk.zetaToDomainSize = runZetaN C σ cvk cp pub
   /-- The opening's `z₁` decodes to the proof's. -/
   z1 : S.decode inp.opening.z1 = cp.opening.z1
   /-- The opening's `z₂` decodes to the proof's. -/
@@ -235,9 +230,11 @@ expands) and `r` its IPA run from the warm post-`ζ` state at the claimed `cip` 
 the claim in place of the wire's `cipOf`): (1) the digest cell is the wire's digest element;
 (2) the claimed `β`, `γ` read as `pre`'s prechallenges, and the claimed `α`, `ζ`, once read as
 prechallenges, are `pre`'s (the transcript range-checks the first two,
-`FqTranscriptReadsWire`); (3) for any prechallenge `ξ₀` the claimed `ξ` reads as, the returned
-round prechallenges read as `r`'s, and, with `U` the `uBase` of `r`'s `t` and `c₀` `r`'s
-Schnorr prechallenge, the success bit reads `1` exactly when
+`FqTranscriptReadsWire`); (3) where the claimed `perm`, `ζ^{2^k}`, `ζⁿ` decode to the wire's —
+they enter `ft_comm` alone, so (1) and (2) hold without them, which is what lets the scalar
+half's permutation check supply the first — for any prechallenge `ξ₀` the claimed `ξ` reads as,
+the returned round prechallenges read as `r`'s, and, with `U` the `uBase` of `r`'s `t` and
+`c₀` `r`'s Schnorr prechallenge, the success bit reads `1` exactly when
 `Ipa.schnorrAt` holds at `U`, the expansions of `ns` and `c₀`, the claimed `cip` and `b`, the
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
@@ -252,7 +249,10 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
   Reads128 V inp.plonk.chals.gamma pre.gamma ∧
   (∀ m, Reads128 V inp.plonk.chals.alpha m → m = pre.alpha) ∧
   (∀ m, Reads128 V inp.plonk.chals.zeta m → m = pre.zeta) ∧
-  ∀ ξ₀, Reads128 V inp.xi ξ₀ →
+  (S.decode inp.plonk.perm = runPScalar C σ cvk cp pub →
+   S.decode inp.plonk.zetaToSrsLength = runZetaM C σ cvk cp pub →
+   S.decode inp.plonk.zetaToDomainSize = runZetaN C σ cvk cp pub →
+   ∀ ξ₀, Reads128 V inp.xi ξ₀ →
     ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
       (chals : Vector C.ScalarField σ.k),
       U = C.uBase r.1 ∧
@@ -264,7 +264,7 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
           (combineCommitments C (Poseidon.FqSponge.endoExpand C.lam ξ₀.val)
             run.commitments.toArray)
-          run.proof)
+          run.proof))
 
 /-- What the group half's read assumes of its cells and constants, on the side `S`: the
 sponge after the index digest squeezes to the key's digest, the `sg_old` cells are masked as
@@ -670,14 +670,14 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     exact Subtype.ext (by rw [hα, hFq.2.2.1.exact (hasrt.2.2.1.symm.trans hm)])
   · intro m hm
     exact Subtype.ext (by rw [hζ, hFq.2.2.2.1.exact (hasrt.2.2.2.symm.trans hm)])
-  · intro ξ₀ hξ
+  · intro hperm hzetaM hzetaN ξ₀ hξ
     -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
     have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
         List sf), x ∈ inp.shifted := fun x hx =>
       (List.sublist_append_left [inp.plonk.perm, inp.plonk.zetaToSrsLength,
         inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
         inp.opening.z1, inp.opening.z2]).subset hx
-    have hftc := hft hties.perm hties.zetaM hties.zetaN
+    have hftc := hft hperm hzetaM hzetaN
       (hties.claimOk _ (hmem _ (by simp))) (hties.claimOk _ (hmem _ (by simp)))
       (hties.claimOk _ (hmem _ (by simp))) (by simpa using hties.sigmaLast) hties.t
     -- the bases read as the stream bases; the opening's points as the proof's

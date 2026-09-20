@@ -34,8 +34,9 @@ it allocates it.
 * `HalvesTies`: the two circuits hold one set of deferred claims;
 * what no circuit enforces, each its own hypothesis: the shifted claims avoid the ladder's
   band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`), the `ζ` powers are
-  the run's (`hzetaM`, `hzetaN`); and the permutation scalar (`hperm`), which the scalar
-  circuit compares but the group half's read still takes as given;
+  the run's (`hzetaM`, `hzetaN`). The permutation scalar is no hypothesis: the scalar circuit
+  compares it at the transcript's challenges, which the group read gives before it opens
+  (`IvpReads`), and `HalvesTies.perm` carries it across the field crossing;
 * `Guards` and `SgOk`, of the proof itself.
 
 The layered hypotheses the halves' reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built
@@ -140,13 +141,7 @@ and at most `53` absorbed cells. -/
 private theorem InputReads.ivpHyps (hk : 0 < E.σ.k)
     (hin : InputReads E cp pub domains Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
-    (hclaimOk : ∀ x ∈ g.shifted, (wrapSide Vg).ClaimOk x)
-    (hperm : (wrapSide Vg).decode g.claims.deferredValues.plonk.perm
-      = runPScalar IpaVesta.curve E.σ E.cvk cp pub)
-    (hzetaM : (wrapSide Vg).decode g.claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaVesta.curve E.σ E.cvk cp pub)
-    (hzetaN : (wrapSide Vg).decode g.claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaVesta.curve E.σ E.cvk cp pub) :
+    (hclaimOk : ∀ x ∈ g.shifted, (wrapSide Vg).ClaimOk x) :
     ∃ oldsW, IvpHyps (wrapSide Vg) E.σ E.cvk cp pub true spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW := by
   have hc : (g.cells keyCells).withClaims g.claims = g.cells keyCells := rfl
@@ -157,9 +152,8 @@ private theorem InputReads.ivpHyps (hk : 0 < E.σ.k)
       ties :=
         { olds := holds, olds_kept := hkept, w := hin.w, z := hin.z, t := hin.t
           index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
-          sigmaLast := hvk.sigmaLast, perm := hperm, zetaM := hzetaM, zetaN := hzetaN
-          z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk, lr := hin.lr, delta := hin.delta
-          sg := hin.sg }
+          sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
+          lr := hin.lr, delta := hin.delta, sg := hin.sg }
       canon := trivial, nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm
@@ -232,9 +226,6 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (hzetaN : (wrapSide Vg).decode
         (groupInput E.σ.k kw n).claims.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaVesta.curve E.σ E.cvk cp pub)
-    -- compared by the scalar circuit, not yet derived from it
-    (hperm : (wrapSide Vg).decode (groupInput E.σ.k kw n).claims.deferredValues.plonk.perm
-      = runPScalar IpaVesta.curve E.σ E.cvk cp pub)
     -- at least one round
     (hk : 0 < E.σ.k)
     -- of the proof itself
@@ -243,7 +234,7 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true := by
   have hpub := hin.statement
   have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hk hvk
-    hclaimOk hperm hzetaM hzetaN
+    hclaimOk
   have hf := hin.fopTies
   have hdom := hin.domain
   subst hpub
@@ -257,7 +248,7 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
       fun con hc => hsatS con (mem_compile_of_mem_check hc)).1
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs domains (scalarInput E.σ.k) hmask hdom Vg _ v hv hv1
-      ht hf hsg) _
+      ht hf hzetaM hzetaN hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles

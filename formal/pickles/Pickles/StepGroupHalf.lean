@@ -69,7 +69,13 @@ theorem verifyProofAt_kimchiVerify_pallas
     (ht : HalvesTies (GroupHalf.step Vg claimsG)
       (ScalarHalf.wrap Vs claimsS evals prevChallenges))
     (hf : FopTies E cp (pubOf IpaPallas.curve Vg (packLeaves statement tab))
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
+      (ScalarHalf.wrap Vs claimsS evals prevChallenges))
+    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
+    (hzetaM : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
+      = runZetaM IpaPallas.curve E.σ E.cvk cp (pubOf IpaPallas.curve Vg (packLeaves statement tab)))
+    (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
+      = runZetaN IpaPallas.curve E.σ E.cvk cp
+        (pubOf IpaPallas.curve Vg (packLeaves statement tab))) :
     ⦃⌜True⌝⦄
     verifyProofAt (c := Builder Vg (KimchiConstraint Fp)) endo sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement claimsG cells
@@ -84,6 +90,6 @@ theorem verifyProofAt_kimchiVerify_pallas
       isBaseCase statement claimsG cells false oldsW hbase htab hivp) ?_
   intro v hv
   exact twoHalves_kimchiVerify_pallas E cp _ hguard Vg claimsG v hv Vs claimsS evals
-    prevChallenges outS hs ht hf
+    prevChallenges outS hs ht hf hzetaM hzetaN
 
 end Pickles
