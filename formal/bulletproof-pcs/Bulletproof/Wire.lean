@@ -209,6 +209,24 @@ field inversion per addition. -/
 def msm {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) : C.Point :=
   C.fastMsm g a
 
+/-- The first `count` Lagrange-basis commitments over the domain of size `n` with generator
+`ω`, at one chunk (`SRS::get_lagrange_basis` for a domain within the SRS): `L_i` has
+coefficients `ω^{-ik}/n`, committed against the first `n` generators. -/
+def lagrangeBasis (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k)
+    (ω : C.ScalarField) (count : ℕ) : Array C.Point :=
+  let g : Fin n → C.Point := fun k => σ.g ⟨k, by omega⟩
+  let ninv : C.ScalarField := (n : C.ScalarField)⁻¹
+  (Array.range count).map fun i =>
+    let r := ω⁻¹ ^ i
+    let coeffs : Array C.ScalarField := Id.run do
+      let mut acc := Array.mkEmpty n
+      let mut c := ninv
+      for _ in [0:n] do
+        acc := acc.push c
+        c := c * r
+      return acc
+    msm C g fun k => coeffs.getD k 0
+
 /-- An IPA opening proof at round count `k` — the checked form of the wire
 `OpeningProof` (`ipa.rs`): the round count is the SRS's `σ.k`, pinned by the parse. -/
 structure Proof (C : KimchiCurve) (k : ℕ) where
