@@ -299,21 +299,17 @@ Pickles.MaxProofsVerified
 Pickles.StepIPARounds
 Pickles.WrapIPARounds
 
--- `verify` (Verify.lean, `Step_verifier.verify`): the group half with its public input fixed
--- to the packed wrap statement's `x_hat` leaves and its outputs asserted against the
--- unfinalized proof's claims; its read on the step side, `VerifyReads`. The capstone that
--- runs it is `verifyProofAt_kimchiVerify_pallas` (StepGroupHalf.lean): unlike the wrap block
--- this circuit computes `x_hat` itself from the key's Lagrange tables, so the public input
--- is the packed statement's rather than a free argument, and the whole
--- `PublicInputCommit.lean` chain hangs off it.
-Pickles.verifyProof_step_reads
-Pickles.verifyProofAt_kimchiVerify_pallas
-
--- The wrap circuit's scalar half at an environment (WrapScalarHalf.lean): the wrap-side twin
--- of `finalizeOtherProofStepAt_kimchiVerify_vesta` — `finalizeOtherProofWrapAt` at the key's
--- own constant domain, run with the step circuit's group half assumed. A root until the wrap
--- proof's top-level statement consumes it, as `stepProof_kimchiVerify_vesta` consumes its twin.
-Pickles.finalizeOtherProofWrapAt_kimchiVerify_pallas
+-- The top-level statement for a wrap proof (WrapProof.lean), the twin of the step proof's
+-- below: a valuation satisfying the step circuit's `verify` (`WrapProof.groupCircuit`,
+-- StepGroupHalf.lean), a valuation satisfying the next wrap circuit's scalar half with
+-- `finalized` set (`WrapProof.scalarCircuit`, WrapScalarHalf.lean), the readings of their
+-- inputs as the wire's proof (`WrapProof.InputReads`), of the key cells as the key (`VkReads`),
+-- the `x_hat` tables bound to the key, and the claim ties (`HalvesTies`), make `kimchiVerify`
+-- accept. Unlike the wrap block, `verify` computes `x_hat` itself from the key's Lagrange
+-- tables, so the public input is the packed statement's, and the whole `PublicInputCommit.lean`
+-- chain hangs off it (`verifyProof_step_reads`); the scalar half
+-- (`finalizeOtherProofWrapAt_kimchiVerify_pallas`) runs at the key's own constant domain.
+Pickles.wrapProof_kimchiVerify_pallas
 
 -- The top-level statement for a step proof (StepProof.lean): a valuation satisfying the wrap
 -- circuit's verify block (`StepProof.groupCircuit`, WrapVerify.lean), a valuation satisfying the next

@@ -15,6 +15,11 @@ zero-knowledge rows) is the environment's, and there is no domain cell to tie. T
 keeps every previous-challenge slot and does not constrain the low half of the `ξ` split, so
 the capstone is an implication where the step side's is an equivalence
 (`twoHalves_kimchiVerify_pallas_converse` is the converse, under `ScalarHalf.XiExact`).
+
+`WrapProof.scalarCircuit` is the gadget as a circuit of its input (`WrapProof.ScalarIn`) with
+`finalized` asserted: what the wrap proof's top-level statement compiles
+(`wrapProof_kimchiVerify_pallas`). Nothing in that input is checked on allocation — the wrap
+side has no branch data — so compiling fixes the cells and derives nothing.
 -/
 
 namespace Pickles
@@ -147,6 +152,71 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
   rintro ⟨hsg, hfin⟩
   exact twoHalves_kimchiVerify_pallas E cp pub hguard Vg claimsG successG hg Vs claimsS evals
     prevChallenges o hread ht hf hzetaM hzetaN ⟨⟨hgbit, hfin⟩, hsg⟩
+
+/-! ## The circuit of its input -/
+
+namespace WrapProof
+
+variable {k : ℕ}
+
+/-- The scalar circuit's input: the slot's claims, the evaluations, the previous challenges.
+Nothing in it is checked on input. -/
+abbrev ScalarIn (k : ℕ) : Type := UnChecked (WrapFop k)
+/-- `ScalarIn`, as cells. -/
+abbrev ScalarVar (k : ℕ) : Type := UnChecked (WrapFopVar k)
+
+/-- The slot's deferred claims. -/
+def ScalarVar.claims (s : ScalarVar k) :
+    UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)) := s.val.1
+/-- The evaluation cells. -/
+def ScalarVar.evals (s : ScalarVar k) : AllEvals (FVar Fq) := s.val.2.1
+/-- The previous challenges, one vector per slot. -/
+def ScalarVar.prev (s : ScalarVar k) : Vector (Vector (FVar Fq) k) MaxProofsVerified :=
+  s.val.2.2
+/-- The scalar circuit as a `ScalarHalf`. -/
+abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k) :
+    ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k :=
+  ScalarHalf.wrap V s.claims s.evals s.prev
+
+/-- The wrap circuit's scalar half as a circuit of its input, `finalized` asserted: the
+deployed `finalized ∨ ¬should_finalize` at a slot that is finalized. -/
+def scalarCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
+    (E : Env IpaPallas.curve) (s : ScalarVar E.σ.k) : CircuitM Fq c Unit := do
+  let o ← finalizeOtherProofWrapAt E s.claims s.evals s.prev
+  assert o.finalized
+
+/-- **The scalar circuit's read.** With the step circuit's group half and the ties, a valuation
+satisfying the body makes `kimchiVerify` accept once `SgOk` holds. -/
+theorem scalarCircuit_reads (E : Env IpaPallas.curve)
+    (cp : KimchiProof IpaPallas.curve 1 E.σ.k) (pub : Array Fq)
+    (hguard : Guards IpaPallas.curve E.cvk cp pub)
+    (Vs : Valuation Fq) (s : ScalarVar E.σ.k)
+    (Vg : Valuation Fp)
+    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
+      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
+    (successG : BoolVar Fp)
+    (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
+    (hgbit : (↑successG : CVar Fp).val Vg = 1)
+    (ht : HalvesTies (GroupHalf.step Vg claimsG) (s.half Vs))
+    (hf : FopTies E cp pub (s.half Vs))
+    (hzetaM : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
+      = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
+    (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
+      = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
+    (hsg : SgOk E cp pub) :
+    ⦃⌜True⌝⦄
+    scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E s
+    ⦃⇓ _ _ => ⌜kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true⌝⦄ := by
+  have hAt := finalizeOtherProofWrapAt_kimchiVerify_pallas E cp pub hguard Vs s.claims s.evals
+    s.prev Vg claimsG successG hg hgbit ht hf hzetaM hzetaN
+  clear hzetaM hzetaN
+  simp only [scalarCircuit]
+  mvcgen [hAt]
+  rename_i himp
+  intro hfin
+  exact (himp hsg hfin).1
+
+end WrapProof
 
 end Pickles
 
