@@ -88,6 +88,20 @@ def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVa
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
+/-- A packed scalar that is not a boolean cell. -/
+def PackedScalar.IsScalar : PackedScalar F → Prop
+  | .bit _ => False
+  | _ => True
+
+/-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
+theorem WrapStatement.packed_isScalar
+    (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
+    ∀ k ∈ st.packed, k.IsScalar := by
+  simp only [WrapStatement.packed, PackedScalar.IsScalar, List.cons_append, List.nil_append,
+    List.mem_cons, List.mem_append, List.mem_map, List.not_mem_nil, or_false, forall_eq_or_imp,
+    true_and]
+  rintro a (⟨c, -, rfl⟩ | rfl) <;> trivial
+
 /-- The `x_hat` leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
 correction from the table (`lagrange_with_correction`); a boolean cell adds its base under
 the bit, with no correction. -/
@@ -427,6 +441,107 @@ theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
         List.zip_cons_cons] at ih ⊢
       refine congrArg₂ _ ?_ ih
       cases k <;> simp [constLeaf, shiftBits]
+
+/-! ### The known-domain fold's table
+
+`publicInputCommitKnown` takes the corrections' sum as one constant, where
+`publicInputCommitFull` adds each leaf's correction. The table below carries that sum; the cell
+reads as a point only when the sum is a finite point, which no invariant of the key gives: it
+is one fixed relation among the Lagrange points. -/
+
+/-- The correction point of a packed scalar at a Lagrange point: its honest shift `-(2^L)·P`,
+none for a boolean cell. -/
+def corrPt (k : PackedScalar C.BaseField) (P : C.Point) : C.Point :=
+  match shiftBits k with
+  | some L => negShift C L P
+  | none => 0
+
+/-- The constant correction sum of the known-domain fold, at chunk `ci`. -/
+def corrSumPt (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc))
+    (ci : Fin nc) : C.Point :=
+  (List.zipWith (fun k Ps => corrPt k Ps[ci]) ks lb).sum
+
+/-- The `x_hat` table of the known-domain fold, computed from the key's Lagrange points: the
+bases and corrections of `XhatTable.ofKey`, the fold's seed the first correction, its constant
+the correction sum. -/
+def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)) : XhatTable C.BaseField nc :=
+  { XhatTable.ofKey ks lb with
+    corrHead := Vector.ofFn fun ci => constPt
+      (match ks, lb with
+       | k :: _, Ps :: _ => corrPt k Ps[ci]
+       | _, _ => 0)
+    corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks lb ci) }
+
+/-- The library's `packLeavesOf` at that table is the constant leaves. -/
+theorem packLeavesOf_ofKeyKnown (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)) :
+    packLeavesOf ks (XhatTable.ofKeyKnown ks lb) = List.zipWith constLeaf ks lb :=
+  packLeavesOf_ofKey ks lb
+
+/-- A scalar's constant leaf is trivially bit-boolean. -/
+theorem bitBoolean_constLeaf_of_isScalar (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)) (hks : ∀ k ∈ ks, k.IsScalar) :
+    ∀ leaf ∈ List.zipWith constLeaf ks lb, leaf.bitBoolean V := by
+  intro leaf hl
+  rw [← List.map_uncurry_zip_eq_zipWith] at hl
+  obtain ⟨⟨k, Ps⟩, hp, rfl⟩ := List.mem_map.1 hl
+  have hk := hks k (List.of_mem_zip hp).1
+  cases k with
+  | bit b => exact absurd hk (by simp [PackedScalar.IsScalar])
+  | _ => trivial
+
+private theorem equivPoint_corrPt (s : PastaShape C) (ci : Fin nc)
+    (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) :
+    SWPoint.equivPoint C.E (corrPt k Ps[ci]) = constCp s ci k Ps := by
+  cases k <;> simp [corrPt, shiftBits, constCp, negShift_eq, map_zsmul]
+
+/-- The correction sum, crossed to the point group, is the sum of the leaves' correction
+points. -/
+private theorem equivPoint_corrSumPt (s : PastaShape C) (ci : Fin nc)
+    (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
+    SWPoint.equivPoint C.E (corrSumPt ks lb ci)
+      = ((List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks lb).map (· ci)).sum := by
+  have hfun : (fun (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) =>
+        SWPoint.equivPoint C.E (corrPt k Ps[ci]))
+      = fun k Ps => constCp s ci k Ps := by
+    funext k Ps
+    exact equivPoint_corrPt s ci k Ps
+  rw [corrSumPt, map_list_sum, List.map_zipWith, List.map_zipWith, hfun]
+
+/-- **The known-domain table computed from the key is bound to the key.** Beyond
+`xhatBinding_const`'s premises, the correction sum is a finite point at every chunk. -/
+theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (ks : List (PackedScalar C.BaseField))
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, ∀ ci : Fin nc, Ps[ci] ≠ 0)
+    (hks : ks ≠ []) (hlb : cvk.lagrangeBasis.toList ≠ [])
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
+    (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
+      Leaf.offBand C.scalar V leaf)
+    (hsum : ∀ ci : Fin nc, corrSumPt ks cvk.lagrangeBasis.toList ci ≠ 0) :
+    (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).Bound s V σ cvk (constPt σ.h)
+      (List.zipWith constLeaf ks cvk.lagrangeBasis.toList) where
+  chunks := by
+    refine ⟨List.zipWith (fun _ Ps => fun ci => SWPoint.equivPoint C.E Ps[ci]) ks
+        cvk.lagrangeBasis.toList,
+      List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks cvk.lagrangeBasis.toList,
+      fun ci => ⟨?_, ?_⟩⟩
+    · have hb := xhatBinding_const (V := V) s ci σ cvk ks hh (fun Ps h => hL Ps h ci) hbits hoff
+      simpa only [List.map_zipWith] using hb
+    · have hc : (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).corrSum[ci]
+          = constPt (corrSumPt ks cvk.lagrangeBasis.toList ci) := by
+        simp [XhatTable.ofKeyKnown, Fin.getElem_fin]
+      rw [hc, ← equivPoint_corrSumPt s ci]
+      exact onCurveAt_constPt _ (hsum ci)
+  bases_ne := by
+    simpa [XhatTable.ofKeyKnown, XhatTable.ofKey] using hlb
+  corrs_ne := by
+    cases ks with
+    | nil => exact absurd rfl hks
+    | cons k ks =>
+      cases hl : cvk.lagrangeBasis.toList with
+      | nil => exact absurd hl hlb
+      | cons Ps lb => simp [XhatTable.ofKeyKnown, XhatTable.ofKey]
 
 end OfKey
 
