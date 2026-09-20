@@ -149,14 +149,24 @@ structure Env (C : KimchiCurve) where
   lagrange_ne : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0
   /-- There is a Lagrange basis: a key with none commits to no public input. -/
   lagrange_pos : 0 < cvk.lagrangeBasis.size
+  /-- The key's domain is within the SRS. -/
+  domain_le : cvk.n ≤ 2 ^ σ.k
+  /-- The key's Lagrange points are the SRS's: the commitments to its domain's Lagrange
+  polynomials (`Ipa.lagrangeBasis`, production's `SRS::get_lagrange_basis`), one chunk each.
+  A key carries them, but they are no data of the circuit. -/
+  lagrange_eq : cvk.lagrangeBasis
+    = (Ipa.lagrangeBasis C σ cvk.n domain_le cvk.omega cvk.lagrangeBasis.size).map (#v[·])
 
 /-- The environment's invariants, of an SRS and a key as data: decidable, so a driver checks
-them once on what it loaded. The generator's order is checked by squaring (`powTwoPow`). -/
+them once on what it loaded. The generator's order is checked by squaring (`powTwoPow`); the
+Lagrange points by computing them from the SRS, the one costly check. -/
 def Env.Invariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1) : Prop :=
   cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ cvk.zkRows ≤ cvk.n ∧
     powTwoPow cvk.omega cvk.domainLog2 = 1 ∧ MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧
     σ.h ≠ 0 ∧ (∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) ∧
-    0 < cvk.lagrangeBasis.size
+    0 < cvk.lagrangeBasis.size ∧
+    ∃ h : cvk.n ≤ 2 ^ σ.k, cvk.lagrangeBasis
+      = (Ipa.lagrangeBasis C σ cvk.n h cvk.omega cvk.lagrangeBasis.size).map (#v[·])
 
 /-- Decided by walking the Lagrange list. The instance is pinned: left to resolution, the
 bounded `∀` over `Vector C.Point 1` goes to `Vector`'s finite-type instance, which decides it by
@@ -171,7 +181,8 @@ instance Env.decidableInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : Kim
 def Env.ofInvariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1)
     (h : Env.Invariants σ cvk) : Env C :=
   ⟨σ, cvk, h.1, h.2.1, h.2.2.1, by rw [KimchiVK.n, ← powTwoPow_eq]; exact h.2.2.2.1,
-    h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+    h.2.2.2.2.2.2.2.2.2.choose, h.2.2.2.2.2.2.2.2.2.choose_spec⟩
 
 /-! ## The group half -/
 

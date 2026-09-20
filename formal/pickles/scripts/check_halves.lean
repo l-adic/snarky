@@ -359,31 +359,45 @@ def verifies (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Optio
   let (cvk, cp) ← checkedAt C name σ e
   return Kimchi.Verifier.kimchiVerify C σ cvk cp e.publicInput
 
+/-- The environment of an entry's key at its SRS, built once per key. Deciding
+`Env.Invariants` computes the key's Lagrange points from the SRS — the one costly invariant —
+so the environment is kept and handed back for every later entry under the same key. -/
+def envFor (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C)))
+    (e : Cache.Entry C) : IO (Pickles.Env C) := do
+  let key := s!"{e.vkDigest}/{e.proof.opening.lr.size}/{e.publicInput.size}"
+  if let some E := (← envs.get).lookup key then return E
+  let σ ← srsAt C name sqrt loaded e.proof.opening.lr.size
+  let (cvk, _) ← checkedAt C name σ e
+  if hE : Pickles.Env.Invariants σ cvk then
+    let E : Pickles.Env C := Pickles.Env.ofInvariants σ cvk hE
+    envs.modify ((key, E) :: ·)
+    return E
+  else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
+    endo is not the curve's, zk_rows < 3 or above the domain, the generator's order is not \
+    the domain's, there is no round, the blinding base or a Lagrange base is the identity, \
+    there is no Lagrange basis, or the Lagrange basis is not the SRS's")
+
 /-- The carry of `pred`'s deferred obligation into `succ`'s old accumulator `slot`, both on
 `C`: `Carry` decided on the two checked proofs, `AccOk` on the accumulator, `sgOk` on `pred`,
 and the last two agreeing, as `sgOk_iff_accOk` says they must under `Carry`. -/
 def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Option C.BaseField)
-    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (pred succ : Cache.Entry C) (slot : ℕ) :
-    IO Bool := do
-  let σ ← srsAt C name sqrt loaded pred.proof.opening.lr.size
-  unless succ.proof.opening.lr.size = σ.k do
-    throw (IO.userError s!"round counts differ: {σ.k} and {succ.proof.opening.lr.size}")
-  let (cvk, cp) ← checkedAt C name σ pred
-  let (_, cp') ← checkedAt C name σ succ
-  if hE : Pickles.Env.Invariants σ cvk then
-    let E : Pickles.Env C := Pickles.Env.ofInvariants σ cvk hE
-    if h : slot < cp'.olds.size then
-      -- `carry` and `sgOk` share the predecessor's transcript (`carrySgOk_eq`); `accOk` is
-      -- the successor's own accumulator and stays a computation of its own, since its
-      -- agreeing with `sgOk` is what the carry says
-      let (c, s) := Pickles.carrySgOk E cp pred.publicInput cp' ⟨slot, h⟩
-      let a := Pickles.accOk σ cp'.olds[slot]
-      IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
-      return c && a && s && (s == a)
-    else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
-  else throw (IO.userError "the key or the SRS breaks an environment invariant: the key's \
-    endo is not the curve's, zk_rows < 3, the blinding base or a Lagrange base is the \
-    identity, or there is no Lagrange basis")
+    (loaded : IO.Ref (List (ℕ × SRS C.Point))) (envs : IO.Ref (List (String × Pickles.Env C)))
+    (pred succ : Cache.Entry C) (slot : ℕ) : IO Bool := do
+  let E ← envFor C name sqrt loaded envs pred
+  unless succ.proof.opening.lr.size = E.σ.k do
+    throw (IO.userError s!"round counts differ: {E.σ.k} and {succ.proof.opening.lr.size}")
+  let (_, cp) ← checkedAt C name E.σ pred
+  let (_, cp') ← checkedAt C name E.σ succ
+  if h : slot < cp'.olds.size then
+    -- `carry` and `sgOk` share the predecessor's transcript (`carrySgOk_eq`); `accOk` is
+    -- the successor's own accumulator and stays a computation of its own, since its
+    -- agreeing with `sgOk` is what the carry says
+    let (c, s) := Pickles.carrySgOk E cp pred.publicInput cp' ⟨slot, h⟩
+    let a := Pickles.accOk E.σ cp'.olds[slot]
+    IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
+    return c && a && s && (s == a)
+  else throw (IO.userError s!"slot {slot} beyond the {cp'.olds.size} accumulators")
 
 /-- `Leaf.offBand` at the Vesta scalar order, decided: a full leaf's value avoids the sixteen
 values around `2·(p − 2^254)` at which the ladder degenerates. -/
@@ -412,11 +426,13 @@ Booleanity is no hypothesis of the theorem any more — the statement's boolean 
 constrained by the `x_hat` gadget, the mask by the branch data's input check — and both sets
 of rows are among the ones decided here. -/
 def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.Entry CS))
-    (loaded : IO.Ref (List (ℕ × SRS CS.Point))) : IO Bool := do
-  let σ ← srsAt CS "vesta" vestaBase.sqrt? loaded s.proof.opening.lr.size
-  let (cvk, cp) ← checkedAt CS "vesta" σ s
-  if hE : Pickles.Env.Invariants σ cvk then
-    let E : Pickles.Env CS := Pickles.Env.ofInvariants σ cvk hE
+    (loaded : IO.Ref (List (ℕ × SRS CS.Point)))
+    (envs : IO.Ref (List (String × Pickles.Env CS))) : IO Bool := do
+  let E ← envFor CS "vesta" vestaBase.sqrt? loaded envs s
+  let σ := E.σ
+  let cvk := E.cvk
+  let (_, cp) ← checkedAt CS "vesta" σ s
+  do
     let cands := (steps.toList.map fun t =>
       (⟨t.vk.domainLog2, t.vk.omega⟩ : Pickles.KnownDomain Fp)).eraseDups
     let some doms := Pickles.KnownDomains.ofList? E cands s.vk.domainLog2
@@ -485,9 +501,6 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
       (fun _ => []) ⟨(ginp, newBp)⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
     return hdom && pubOk && offOk && msgOk && guards && sg' && kv && satS && satG
-  else
-    IO.println "    ✗ the step key or its SRS breaks an environment invariant"
-    return false
 
 /-- An unlinked old accumulator — a front pad or a base-case slot — satisfies `AccOk` on its
 own. -/
@@ -514,6 +527,8 @@ def main : IO Unit := do
   let limit := ((← IO.getEnv "LIMIT").bind String.toNat?).getD wraps.size
   let vestaSRS ← IO.mkRef ([] : List (ℕ × SRS CS.Point))
   let pallasSRS ← IO.mkRef ([] : List (ℕ × SRS CW.Point))
+  let vestaEnvs ← IO.mkRef ([] : List (String × Pickles.Env CS))
+  let pallasEnvs ← IO.mkRef ([] : List (String × Pickles.Env CW))
   let mut allOk := true
   let mut runs := 0
   -- One timed run of a half, its verdict folded into `allOk`.
@@ -558,7 +573,8 @@ def main : IO Unit := do
       runs := runs + 1
       unless stepOk ∧ wrapOk do allOk := false
     if on "theorem" then
-      let ok ← reportBool s!"theorem hypotheses on {pair}" (theoremHyps w s steps vestaSRS)
+      let ok ← reportBool s!"theorem hypotheses on {pair}"
+        (theoremHyps w s steps vestaSRS vestaEnvs)
       runs := runs + 1
       unless ok do allOk := false
     if on "wrap-group" then
@@ -627,7 +643,7 @@ def main : IO Unit := do
               allOk := false
               continue
           let ok ← reportBool s!"carry wrap→wrap into accumulator {pad + j} of {tag}"
-            (carriesInto CW "pallas" pallasBase.sqrt? pallasSRS w' w (pad + j))
+            (carriesInto CW "pallas" pallasBase.sqrt? pallasSRS pallasEnvs w' w (pad + j))
           runs := runs + 1
           unless ok do allOk := false
     -- Step k−1 → step k through the wrap between them: slot `j` is accumulator `j`.
@@ -655,7 +671,7 @@ def main : IO Unit := do
               allOk := false
               continue
           let ok ← reportBool s!"carry step→step into accumulator {j} of {tag}"
-            (carriesInto CS "vesta" vestaBase.sqrt? vestaSRS s' s j)
+            (carriesInto CS "vesta" vestaBase.sqrt? vestaSRS vestaEnvs s' s j)
           runs := runs + 1
           unless ok do allOk := false
   unless runs > 0 do throw (IO.userError "no linked pairs to run")
