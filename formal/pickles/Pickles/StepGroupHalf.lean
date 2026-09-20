@@ -3,7 +3,8 @@ import Pickles.TwoHalves
 /-!
 # The step circuit's group half, at an environment
 
-`Step_verifier.verify` with the deployed Pallas constants. Unlike the wrap block this one
+`Step_verifier.verify` at an environment: the deployed Pallas constants and the SRS blinding
+base as a constant cell. Unlike the wrap block this one
 computes `x_hat` itself, from the key's Lagrange tables (`XhatTable.Bound`), so the public
 input is the packed statement's rather than a free argument.
 
@@ -32,18 +33,18 @@ abbrev StepGroupVar (ks kw : ℕ) : Type :=
     IvpProof kw (FVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))) ×
     Vector (AffinePoint (FVar Fp)) MaxProofsVerified × BoolVar Fp
 
-/-- `verify` at the deployed step constants: the Pallas scalar ops, endomorphism, sponge and
-group map. -/
-def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {nc ks : ℕ}
-    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
-    (tab : XhatTable Fp nc) (spongeAfterIndex : SpongeVar Fp) (isBaseCase : BoolVar Fp)
+/-- `verify` at an environment: the deployed Pallas scalar ops, endomorphism, sponge, group
+map and square root, and the SRS blinding base as a constant cell. -/
+def verifyProofAt {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] {ks k : ℕ}
+    (E : Env IpaPallas.curve) (tab : XhatTable Fp 1) (spongeAfterIndex : SpongeVar Fp)
+    (isBaseCase : BoolVar Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)))
-    {k : ℕ}
     (u : UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
     (cells : IvpInput k (FVar Fp) (BoolVar Fp) (Type2 (SplitField (FVar Fp) (BoolVar Fp)))) :
     CircuitM Fp c (BoolVar Fp) :=
-  verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
-    groupMapParamsPallas sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
+  verifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params
+    (.const ((Pasta.vestaLam : ℤ) : Fp)) groupMapParamsPallas pallasBase.sqrt? (constPt E.σ.h)
+    tab spongeAfterIndex isBaseCase statement u cells
 
 /-! ## The circuit of its input -/
 
@@ -98,35 +99,33 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k) :
 
 /-- `Step_verifier.verify` as a circuit of its input, its success bit asserted: the deployed
 `(verified ∧ finalized) ∨ ¬must_verify` at a slot that must verify. -/
-def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c]
-    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
+def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve)
     (tab : XhatTable Fp 1) (keyCells : List (List (AffinePoint (FVar Fp))))
     (spongeAfterIndex : SpongeVar Fp) (g : GroupVar ks k) : CircuitM Fp c Unit := do
-  let v ← verifyProofAt endo sqrtF blindingH tab spongeAfterIndex g.isBaseCase g.statement
-    g.claims (g.cells keyCells)
+  let v ← verifyProofAt E tab spongeAfterIndex g.isBaseCase g.statement g.claims
+    (g.cells keyCells)
   assert v
 
 /-- **The group circuit's read**: the group half's read at a bit that reads `1`. -/
 theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-    (endo : FVar Fp) (sqrtF : Fp → Option Fp) (blindingH : AffinePoint (FVar Fp))
     (tab : XhatTable Fp 1) (keyCells : List (List (AffinePoint (FVar Fp))))
     (spongeAfterIndex : SpongeVar Fp) (g : GroupVar ks E.σ.k)
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hbase : CircuitType.Reads V g.isBaseCase false)
-    (htab : tab.Bound pastaShapePallas V E.σ E.cvk blindingH (packLeaves g.statement tab))
+    (htab : tab.Bound pastaShapePallas V E.σ E.cvk (constPt E.σ.h)
+      (packLeaves g.statement tab))
     (hivp : IvpHyps (stepSide V) E.σ E.cvk cp
       (pubOf IpaPallas.curve V (packLeaves g.statement tab)) false spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW) :
     ⦃⌜True⌝⦄
-    groupCircuit (c := Builder V (KimchiConstraint Fp)) endo sqrtF blindingH tab keyCells
-      spongeAfterIndex g
+    groupCircuit (c := Builder V (KimchiConstraint Fp)) E tab keyCells spongeAfterIndex g
     ⦃⇓ _ _ => ⌜∃ v : BoolVar Fp,
       (g.half V).Reads E cp (pubOf IpaPallas.curve V (packLeaves g.statement tab)) v ∧
         (↑v : CVar Fp).val V = 1⌝⦄ := by
-  have hv := verifyProof_step_reads (V := V) E.σ E.cvk cp endo sqrtF blindingH tab
-    spongeAfterIndex g.isBaseCase g.statement g.claims (g.cells keyCells) false oldsW hbase htab
-    hivp
+  have hv := verifyProof_step_reads (V := V) E.σ E.cvk cp (.const ((Pasta.vestaLam : ℤ) : Fp))
+    pallasBase.sqrt? (constPt E.σ.h) tab spongeAfterIndex g.isBaseCase g.statement g.claims
+    (g.cells keyCells) false oldsW hbase htab hivp
   simp only [groupCircuit, verifyProofAt]
   mvcgen -trivial [hv]
   rename_i v _ hr _ _

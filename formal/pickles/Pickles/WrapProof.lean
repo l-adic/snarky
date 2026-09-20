@@ -188,16 +188,13 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (pub : Array Fq)
     -- the group circuit's constants
-    (endo : FVar Fp)
-    (sqrtF : Fp → Option Fp)
-    (blindingH : AffinePoint (FVar Fp))
     (tab : XhatTable Fp 1)
     (keyCells : List (List (AffinePoint (FVar Fp))))
     (spongeAfterIndex : SpongeVar Fp)
     -- the group circuit: the step circuit's verify, compiled over its input, satisfied
     (Vg : Valuation Fp)
     (hsatG : ∀ con ∈ (compile (a := GroupIn ks E.σ.k) (b := Unit)
-        (groupCircuit (c := Builder Vg (KimchiConstraint Fp)) endo sqrtF blindingH tab keyCells
+        (groupCircuit (c := Builder Vg (KimchiConstraint Fp)) E tab keyCells
           spongeAfterIndex)).constraints, ConstraintHolds.Holds Vg con)
     -- the scalar circuit: the wrap finalize, compiled over its input, satisfied
     (Vs : Valuation Fq)
@@ -209,7 +206,7 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     -- the key cells read as the key
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the `x_hat` tables are bound to the key
-    (htab : tab.Bound pastaShapePallas Vg E.σ E.cvk blindingH
+    (htab : tab.Bound pastaShapePallas Vg E.σ E.cvk (constPt E.σ.h)
       (packLeaves (groupInput ks E.σ.k).statement tab))
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput ks E.σ.k).half Vg) ((scalarInput E.σ.k).half Vs))
@@ -234,8 +231,8 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
   have hbase := hin.mustVerify
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (groupCircuit_reads (V := Vg) E cp endo sqrtF blindingH tab keyCells spongeAfterIndex
-      (groupInput ks E.σ.k) oldsW hbase htab hivp) _
+    (groupCircuit_reads (V := Vg) E cp tab keyCells spongeAfterIndex (groupInput ks E.σ.k)
+      oldsW hbase htab hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k) Vg _ v hv hv1 ht hf hzetaM hzetaN
