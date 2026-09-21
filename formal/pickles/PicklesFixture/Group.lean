@@ -11,12 +11,12 @@ import CompElliptic.Curves.Pasta.Fast.Projective.Core
 
 `Pickles.verifyProof` on the step side (`Step_verifier.verify`) verifies a wrap proof;
 `Pickles.incrementallyVerifyProof` on the wrap side (`Wrap_verifier.incrementally_verify_proof`,
-as `Wrap.Main`'s verify block runs it) verifies a step proof. Each half's input here is a
-product of the gadgets' own records — the statements, the unfinalized proof, the proof's
-commitments and opening (`IvpProof`), the `sg_old` points — so a fixture supplies the
-records a proof projects to, and the harness hands the allocated bundle to the gadget as it
-is, with the key's commitments and the `x_hat` tables as constants, as the deployed circuit
-has them.
+as `Wrap.Main`'s verify block runs it) verifies a step proof. Each half's input here is the
+library's record of the gadgets' own records (`Pickles.StepGroup`, `Pickles.WrapGroup`) — the
+statements, the unfinalized proof, the proof's commitments and opening (`IvpProof`), the
+`sg_old` points — so a fixture supplies the records a proof projects to, and the harness
+hands the allocated bundle to the gadget as it is, with the key's commitments and the `x_hat`
+tables as constants, as the deployed circuit has them.
 -/
 
 namespace PicklesFixture
@@ -92,14 +92,14 @@ def stepIndexSponge (vk : Wire.KimchiVK XhatStepCurve) : CircuitM Fp C (SpongeVa
 blinding base, the claims from the unfinalized proof, every `sg_old` unmasked. Returns the
 success bit; the digest and round-challenge assertions are the gadget's constraints. -/
 def groupStepOn (vk : Wire.KimchiVK XhatStepCurve) (tab : XhatTable Fp 1)
-    (blindingH : AffinePoint (FVar Fp)) {ks kw : ℕ} (v : StepGroupVar ks kw) :
+    (blindingH : AffinePoint (FVar Fp)) {ks kw : ℕ} (v : StepGroup ks kw (FVar Fp) (BoolVar Fp)) :
     CircuitM Fp C (BoolVar Fp) := do
-  let (statement, u, pr, sgOld, isBaseCase) := v
   let sv ← stepIndexSponge vk
   verifyProof IpaScalarOps.step IpaEndo.pallas Bulletproof.IpaVesta.curve.frSponge.params
-    (.const endoVestaLam) groupMapParamsPallas pallasBase.sqrt? blindingH tab sv isBaseCase
-    statement u
-    (ivpInputOf u.deferredValues (sgOld.toList.map (none, ·)) (keyComms xhatStepCell vk) pr)
+    (.const endoVestaLam) groupMapParamsPallas pallasBase.sqrt? blindingH tab sv v.isBaseCase
+    v.statement v.claims
+    (ivpInputOf v.claims.deferredValues (v.sgOld.toList.map (none, ·)) (keyComms xhatStepCell vk)
+      v.proof)
 
 /-! ## The wrap circuit's group half, on a step proof -/
 
@@ -144,21 +144,21 @@ the conditional sponge at the deployed parameters with each `sg_old` under its k
 the last `n` of the branch data's mask — then the block's assertions: the digest against the wrap
 statement's claim, each round challenge against its claim. Returns the success bit. -/
 def groupWrapOn (vk : Wire.KimchiVK XhatWrapCurve) (basis : Array XhatWrapCurve.Point)
-    (blindingH : AffinePoint (FVar Fq)) {ks kw n : ℕ} (v : WrapGroupVar ks kw n) :
+    (blindingH : AffinePoint (FVar Fq)) {ks kw n : ℕ}
+    (v : WrapGroup ks kw n (FVar Fq) (BoolVar Fq)) :
     CircuitM Fq Cq (BoolVar Fq) := do
-  let (statement, stepStatement, pr, sgOld) := v
   let sv ← wrapIndexSponge vk
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← publicInputCommitFull (0 : Fin 1) blindingH (wrapLeaves basis stepStatement.packed)
+    let P ← publicInputCommitFull (0 : Fin 1) blindingH (wrapLeaves basis v.stepStatement.packed)
     pure [P]
-  let dv := statement.proofState.deferredValues
+  let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
   let o ← incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta
     Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) groupMapParamsVesta
     vestaBase.sqrt? true blindingH sv computeXHat
-    (ivpInputOf dv.toDeferredValues ((mask.zip sgOld.toList).map fun (m, P) => (some m, P))
-      (keyComms xhatWrapCell vk) pr)
-  assertEqual statement.proofState.spongeDigestBeforeEvaluations o.spongeDigest
+    (ivpInputOf dv.toDeferredValues ((mask.zip v.sgOld.toList).map fun (m, P) => (some m, P))
+      (keyComms xhatWrapCell vk) v.proof)
+  assertEqual v.statement.proofState.spongeDigestBeforeEvaluations o.spongeDigest
   for c in dv.bulletproofChallenges.toList.zip o.bulletproofChallenges do
     assertEqual c.1.val c.2.val
   pure o.success

@@ -2,6 +2,7 @@ import Pickles.IncrementallyVerify
 import Pickles.MessageHash
 import Pickles.TwoHalves
 import Pickles.Verify
+import Pickles.Encoding
 
 /-!
 # `Wrap.Main`'s verify block
@@ -281,73 +282,134 @@ section Records
 
 open CompElliptic.Fields.Pasta
 
-/-- The wrap circuit's group half of a step proof, as values, at the wrap statement's `ks`
-rounds (the step proof's), the step statement's `kw` (its slots' wrap proofs') and its `n`
-slots: the wrap statement, the step statement, the step proof, its `n` accumulators' `sg`.
-The keep bits are the wrap statement's branch data. -/
-abbrev WrapGroup (ks kw n : ℕ) : Type :=
-  WrapStatement ks Fq Bool (Type1 Fq) × StepStatement kw n Fq Bool (Type2 (SplitField Fq Bool)) ×
-    IvpProof ks Fq (Type1 Fq) × Vector (AffinePoint Fq) n
+/-- The wrap circuit's group half of a step proof, polymorphic in its cells, at the wrap
+statement's `ks` rounds (the step proof's), the step statement's `kw` (its slots' wrap proofs')
+and its `n` slots. The keep bits of the accumulators are the wrap statement's branch data. -/
+structure WrapGroup (ks kw n : ℕ) (f b : Type) where
+  /-- The wrap statement. -/
+  statement : WrapStatement ks f b (Type1 f)
+  /-- The step statement: the verified proof's public input. -/
+  stepStatement : StepStatement kw n f b (Type2 (SplitField f b))
+  /-- The step proof. -/
+  proof : IvpProof ks f (Type1 f)
+  /-- The step proof's `n` accumulators' `sg`. -/
+  sgOld : Vector (AffinePoint f) n
 
-/-- `WrapGroup`, as cells. -/
-abbrev WrapGroupVar (ks kw n : ℕ) : Type :=
-  WrapStatement ks (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) ×
-    StepStatement kw n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))) ×
-    IvpProof ks (FVar Fq) (Type1 (FVar Fq)) × Vector (AffinePoint (FVar Fq)) n
+/-- A wrap-side group half is its two statements, the proof and the accumulators' `sg`. -/
+def WrapGroup.equivProd (ks kw n : ℕ) (f b : Type) :
+    WrapGroup ks kw n f b ≃
+      WrapStatement ks f b (Type1 f) × StepStatement kw n f b (Type2 (SplitField f b)) ×
+        IvpProof ks f (Type1 f) × Vector (AffinePoint f) n :=
+  ⟨fun g => (g.statement, g.stepStatement, g.proof, g.sgOld),
+   fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2⟩, fun _ => rfl, fun _ => rfl⟩
+
+instance instWrapGroupCircuitType {F : Type} {ks kw n : ℕ} [CircuitType F Bool (BoolVar F)] :
+    CircuitType F (WrapGroup ks kw n F Bool) (WrapGroup ks kw n (FVar F) (BoolVar F)) :=
+  CircuitType.ofEquiv (WrapGroup.equivProd ks kw n F Bool)
+    (WrapGroup.equivProd ks kw n (FVar F) (BoolVar F))
+
+@[simp] theorem scoped_wrapGroup {F : Type} {ks kw n : ℕ} [CircuitType F Bool (BoolVar F)]
+    {st : ProverState F} {x : WrapGroup ks kw n (FVar F) (BoolVar F)} :
+    CircuitType.Scoped (val := WrapGroup ks kw n F Bool) st x ↔
+      CircuitType.Scoped (val := WrapStatement ks F Bool (Type1 F) ×
+        StepStatement kw n F Bool (Type2 (SplitField F Bool)) × IvpProof ks F (Type1 F) ×
+        Vector (AffinePoint F) n) st (WrapGroup.equivProd ks kw n (FVar F) (BoolVar F) x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_wrapGroup {F : Type} {ks kw n : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F Bool (BoolVar F)] {V : Valuation F}
+    {x : WrapGroup ks kw n (FVar F) (BoolVar F)} {a : WrapGroup ks kw n F Bool} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (WrapGroup.equivProd ks kw n (FVar F) (BoolVar F) x)
+        (WrapGroup.equivProd ks kw n F Bool a) :=
+  CircuitType.reads_ofEquiv _ _
 
 namespace StepProof
 
 variable {k kw n : ℕ}
 
-/-- The group circuit's input: the wrap statement, the step statement, the step proof, its
-accumulators' `sg`, and the slots' expanded round challenges. Unchecked: the block's own rows
-constrain what it reads. -/
-abbrev GroupIn (k kw n : ℕ) : Type := UnChecked (WrapGroup k kw n × Vector (Vector Fq kw) n)
+/-- The group circuit's input, polymorphic in its cells: the wrap circuit's group half of the
+step proof, and the slots' expanded round challenges the message hash absorbs. -/
+structure GroupInput (k kw n : ℕ) (f b : Type) where
+  /-- The wrap statement, the step statement, the step proof, its accumulators' `sg`. -/
+  group : WrapGroup k kw n f b
+  /-- The slots' expanded round challenges. -/
+  newBp : Vector (Vector f kw) n
+
+/-- A group input is the group half and the expanded round challenges. -/
+def GroupInput.equivProd (k kw n : ℕ) (f b : Type) :
+    GroupInput k kw n f b ≃ WrapGroup k kw n f b × Vector (Vector f kw) n :=
+  ⟨fun g => (g.group, g.newBp), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
+
+instance instGroupInputCircuitType {F : Type} [CircuitType F Bool (BoolVar F)] :
+    CircuitType F (GroupInput k kw n F Bool) (GroupInput k kw n (FVar F) (BoolVar F)) :=
+  CircuitType.ofEquiv (GroupInput.equivProd k kw n F Bool)
+    (GroupInput.equivProd k kw n (FVar F) (BoolVar F))
+
+@[simp] theorem scoped_groupInput {F : Type} [CircuitType F Bool (BoolVar F)]
+    {st : ProverState F} {x : GroupInput k kw n (FVar F) (BoolVar F)} :
+    CircuitType.Scoped (val := GroupInput k kw n F Bool) st x ↔
+      CircuitType.Scoped (val := WrapGroup k kw n F Bool × Vector (Vector F kw) n) st
+        (GroupInput.equivProd k kw n (FVar F) (BoolVar F) x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_groupInput {F : Type} [Add F] [Mul F] [Zero F]
+    [CircuitType F Bool (BoolVar F)] {V : Valuation F}
+    {x : GroupInput k kw n (FVar F) (BoolVar F)} {a : GroupInput k kw n F Bool} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (GroupInput.equivProd k kw n (FVar F) (BoolVar F) x)
+        (GroupInput.equivProd k kw n F Bool a) :=
+  CircuitType.reads_ofEquiv _ _
+
+/-- The group circuit's input, as values. Unchecked: the block's own rows constrain what it
+reads. -/
+abbrev GroupIn (k kw n : ℕ) : Type := UnChecked (GroupInput k kw n Fq Bool)
 
 /-- `GroupIn`, as cells. -/
-abbrev GroupVar (k kw n : ℕ) : Type :=
-  UnChecked (WrapGroupVar k kw n × Vector (Vector (FVar Fq) kw) n)
+abbrev GroupVar (k kw n : ℕ) : Type := UnChecked (GroupInput k kw n (FVar Fq) (BoolVar Fq))
 
 /-- The step statement: the verified proof's public input. -/
 def GroupVar.stepStatement (g : GroupVar k kw n) :
     StepStatement kw n (FVar Fq) (BoolVar Fq) (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
-  g.val.1.2.1
+  g.val.group.stepStatement
 
 /-- The slots' expanded round challenges. -/
 def GroupVar.newBp (g : GroupVar k kw n) : List (List (FVar Fq)) :=
-  g.val.2.toList.map (·.toList)
+  g.val.newBp.toList.map (·.toList)
 
 /-- The wrap statement's `messages_for_next_wrap_proof` digest. -/
 def GroupVar.msgDigest (g : GroupVar k kw n) : FVar Fq :=
-  g.val.1.1.proofState.messagesForNextWrapProof
+  g.val.group.statement.proofState.messagesForNextWrapProof
 
 /-- The wrap statement's deferred claims, as the unfinalized proof the block verifies. -/
 def GroupVar.claims (g : GroupVar k kw n) :
     UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
-  { deferredValues := g.val.1.1.proofState.deferredValues.toDeferredValues
+  { deferredValues := g.val.group.statement.proofState.deferredValues.toDeferredValues
     shouldFinalize := true_
-    spongeDigestBeforeEvaluations := g.val.1.1.proofState.spongeDigestBeforeEvaluations }
+    spongeDigestBeforeEvaluations :=
+      g.val.group.statement.proofState.spongeDigestBeforeEvaluations }
 
 /-- The step proof's witness commitments, one chunk each. -/
 def GroupVar.wComm (g : GroupVar k kw n) : List (List (AffinePoint (FVar Fq))) :=
-  g.val.1.2.2.1.1.toList.map ([·])
+  g.val.group.proof.wComm.toList.map ([·])
 
 /-- The step proof's permutation-accumulator commitment. -/
-def GroupVar.zComm (g : GroupVar k kw n) : List (AffinePoint (FVar Fq)) := [g.val.1.2.2.1.2.1]
+def GroupVar.zComm (g : GroupVar k kw n) : List (AffinePoint (FVar Fq)) :=
+  [g.val.group.proof.zComm]
 
 /-- The step proof's quotient chunks. -/
 def GroupVar.tComm (g : GroupVar k kw n) : List (AffinePoint (FVar Fq)) :=
-  g.val.1.2.2.1.2.2.1.toList
+  g.val.group.proof.tComm.toList
 
 /-- The step proof's opening. -/
 def GroupVar.opening (g : GroupVar k kw n) : BulletproofOpening k (FVar Fq) (Type1 (FVar Fq)) :=
-  g.val.1.2.2.1.2.2.2
+  g.val.group.proof.opening
 
 /-- The accumulators' `sg`, each under its keep bit: the last `n` of the branch data's mask. -/
 def GroupVar.sgOld (g : GroupVar k kw n) : List (Option (BoolVar Fq) × AffinePoint (FVar Fq)) :=
-  let mask := g.val.1.1.proofState.deferredValues.branchData.proofsVerifiedMask.toList.drop
-    (MaxProofsVerified - n)
-  (mask.zip g.val.1.2.2.2.toList).map fun (m, P) => (some m, P)
+  let bd := g.val.group.statement.proofState.deferredValues.branchData
+  let mask := bd.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
+  (mask.zip g.val.group.sgOld.toList).map fun (m, P) => (some m, P)
 
 /-- The shifted scalars the block scales by: the claims' `perm`, `ζ^{2^k}`, `ζⁿ`, `cip`, `b`
 and the opening's `z₁`, `z₂`. -/
@@ -360,7 +422,8 @@ def GroupVar.shifted (g : GroupVar k kw n) : List (Type1 (FVar Fq)) :=
 proof. -/
 def GroupVar.cells (keyCells : List (List (AffinePoint (FVar Fq)))) (g : GroupVar k kw n) :
     IvpInput k (FVar Fq) (BoolVar Fq) (Type1 (FVar Fq)) :=
-  ivpInputOf g.val.1.1.proofState.deferredValues.toDeferredValues g.sgOld keyCells g.val.1.2.2.1
+  ivpInputOf g.val.group.statement.proofState.deferredValues.toDeferredValues g.sgOld keyCells
+    g.val.group.proof
 
 /-- The group circuit as a `GroupHalf`. -/
 abbrev GroupVar.half (V : Valuation Fq) (g : GroupVar k kw n) :

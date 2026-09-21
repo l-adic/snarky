@@ -224,30 +224,59 @@ theorem BranchData.mask_boolean {V : Valuation Fp} (bd : BranchData (FVar Fp) (B
 
 namespace StepProof
 
-/-- The scalar circuit's input: the slot's branch data, checked; its claims, the evaluations
-and the previous challenges, unchecked. -/
-abbrev ScalarIn (k : ℕ) : Type :=
-  BranchData Fp Bool × UnChecked (UnfinalizedProof k Fp Bool (Type1 Fp) × AllEvals Fp ×
-    Vector (Vector Fp k) MaxProofsVerified)
+/-- The step circuit's scalar-half input, polymorphic in its cells: the slot's branch data,
+checked on input, and the scalar half's own input, unchecked. -/
+structure ScalarInput (k : ℕ) (f b : Type) where
+  /-- The slot's branch data: the mask and the domain's `log2`. -/
+  branch : BranchData f b
+  /-- The slot's claims, the evaluations and the previous challenges. -/
+  fop : UnChecked (FopInput k f b (Type1 f))
+
+/-- A scalar-half input is its branch data and the rest. -/
+def ScalarInput.equivProd (k : ℕ) (f b : Type) :
+    ScalarInput k f b ≃ BranchData f b × UnChecked (FopInput k f b (Type1 f)) :=
+  ⟨fun i => (i.branch, i.fop), fun p => ⟨p.1, p.2⟩, fun _ => rfl, fun _ => rfl⟩
+
+instance instScalarInputCircuitType {F f w b vb : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] : CircuitType F (ScalarInput k f b) (ScalarInput k w vb) :=
+  CircuitType.ofEquiv (ScalarInput.equivProd k f b) (ScalarInput.equivProd k w vb)
+
+/-- The input's check is the branch data's: the rest is unchecked. -/
+instance instScalarInputCheckedType {F c f w b vb : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [One F] [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
+    [CheckedType F c b vb] : CheckedType F c (ScalarInput k f b) (ScalarInput k w vb) :=
+  CheckedType.ofEquiv (ScalarInput.equivProd k f b) (ScalarInput.equivProd k w vb)
+
+@[simp] theorem scoped_scalarInput {F f w b vb : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] {st : ProverState F} {x : ScalarInput k w vb} :
+    CircuitType.Scoped (val := ScalarInput k f b) st x ↔
+      CircuitType.Scoped (val := BranchData f b × UnChecked (FopInput k f b (Type1 f))) st
+        (ScalarInput.equivProd k w vb x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_scalarInput {F f w b vb : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F f w] [CircuitType F b vb] {V : Valuation F} {x : ScalarInput k w vb}
+    {a : ScalarInput k f b} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (ScalarInput.equivProd k w vb x) (ScalarInput.equivProd k f b a) :=
+  CircuitType.reads_ofEquiv _ _
+
+/-- The scalar circuit's input, as values. -/
+abbrev ScalarIn (k : ℕ) : Type := ScalarInput k Fp Bool
 
 /-- `ScalarIn`, as cells. -/
-abbrev ScalarVar (k : ℕ) : Type :=
-  BranchData (FVar Fp) (BoolVar Fp) × UnChecked (UnfinalizedProof k (FVar Fp) (BoolVar Fp)
-    (Type1 (FVar Fp)) × AllEvals (FVar Fp) × Vector (Vector (FVar Fp) k) MaxProofsVerified)
-
-/-- The slot's branch data: the mask and the domain's `log2`. -/
-def ScalarVar.branch {k : ℕ} (s : ScalarVar k) : BranchData (FVar Fp) (BoolVar Fp) := s.1
+abbrev ScalarVar (k : ℕ) : Type := ScalarInput k (FVar Fp) (BoolVar Fp)
 
 /-- The slot's deferred claims. -/
 def ScalarVar.claims {k : ℕ} (s : ScalarVar k) :
-    UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) := s.2.val.1
+    UnfinalizedProof k (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp)) := s.fop.val.claims
 
 /-- The evaluation cells. -/
-def ScalarVar.evals {k : ℕ} (s : ScalarVar k) : AllEvals (FVar Fp) := s.2.val.2.1
+def ScalarVar.evals {k : ℕ} (s : ScalarVar k) : AllEvals (FVar Fp) := s.fop.val.evals
 
 /-- The previous challenges, one vector per slot. -/
 def ScalarVar.prev {k : ℕ} (s : ScalarVar k) : Vector (Vector (FVar Fp) k) MaxProofsVerified :=
-  s.2.val.2.2
+  s.fop.val.prev
 
 /-- The scalar circuit as a `ScalarHalf`. -/
 abbrev ScalarVar.half {k : ℕ} (V : Valuation Fp) (s : ScalarVar k) :

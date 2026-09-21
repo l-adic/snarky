@@ -2,6 +2,7 @@ import Pickles.IncrementallyVerify
 import Pickles.FinalizeOtherProof
 import Pickles.PublicInputCommit
 import Pickles.Statement
+import Pickles.Encoding
 
 /-!
 # `verify` (the step side)
@@ -142,12 +143,44 @@ private def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
       List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
   (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)
 
-/-- A one-chunk proof as the group half reads it: the 15 witness commitments, `z_comm`, the 7
-quotient chunks, the opening at `k` rounds. `IvpInput` holds these as chunk lists; the
-product is their sized form, so it is a `CircuitType` by its factors. -/
-abbrev IvpProof (k : ℕ) (f sf : Type) : Type :=
-  Vector (AffinePoint f) wCols × AffinePoint f × Vector (AffinePoint f) 7 ×
-    BulletproofOpening k f sf
+/-- A one-chunk proof as the group half reads it, polymorphic in its cells like the statement
+records. `IvpInput` holds the commitments as chunk lists; this is their sized form, the shape
+a circuit input has. -/
+structure IvpProof (k : ℕ) (f sf : Type) where
+  /-- The 15 witness commitments. -/
+  wComm : Vector (AffinePoint f) wCols
+  /-- The permutation accumulator's commitment. -/
+  zComm : AffinePoint f
+  /-- The 7 quotient chunks. -/
+  tComm : Vector (AffinePoint f) 7
+  /-- The opening, at `k` rounds. -/
+  opening : BulletproofOpening k f sf
+
+/-- A proof is its witness commitments, `z_comm`, its quotient chunks and its opening. -/
+def IvpProof.equivProd (k : ℕ) (f sf : Type) :
+    IvpProof k f sf ≃
+      Vector (AffinePoint f) wCols × AffinePoint f × Vector (AffinePoint f) 7 ×
+        BulletproofOpening k f sf :=
+  ⟨fun p => (p.wComm, p.zComm, p.tComm, p.opening), fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2⟩,
+   fun _ => rfl, fun _ => rfl⟩
+
+instance instIvpProofCircuitType {F sv sf : Type} {k : ℕ} [CircuitType F sv sf] :
+    CircuitType F (IvpProof k F sv) (IvpProof k (FVar F) sf) :=
+  CircuitType.ofEquiv (IvpProof.equivProd k F sv) (IvpProof.equivProd k (FVar F) sf)
+
+@[simp] theorem scoped_ivpProof {F sv sf : Type} {k : ℕ} [CircuitType F sv sf]
+    {st : ProverState F} {x : IvpProof k (FVar F) sf} :
+    CircuitType.Scoped (val := IvpProof k F sv) st x ↔
+      CircuitType.Scoped (val := Vector (AffinePoint F) wCols × AffinePoint F ×
+        Vector (AffinePoint F) 7 × BulletproofOpening k F sv) st
+        (IvpProof.equivProd k (FVar F) sf x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_ivpProof {F sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F sv sf] {V : Valuation F} {x : IvpProof k (FVar F) sf} {a : IvpProof k F sv} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (IvpProof.equivProd k (FVar F) sf x) (IvpProof.equivProd k F sv a) :=
+  CircuitType.reads_ofEquiv _ _
 
 /-- The group half's input from a proof's deferred values (its claims), the `sg_old` points
 under their keep bits, a key's commitments and the proof. -/
@@ -156,16 +189,15 @@ def ivpInputOf {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf)
     (comms : List (List (AffinePoint (FVar F)))) (pr : IvpProof k (FVar F) sf) :
     IvpInput k (FVar F) (BoolVar F) sf :=
   let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
-  let (wComm, zComm, tComm, opening) := pr
   { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
       dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
     xi := dv.xi
     deferred := ⟨dv.combinedInnerProduct, dv.b⟩
     sgOld, sigmaLast, indexComms, coefficientsComm, sigmaComm
-    wComm := wComm.toList.map ([·])
-    zComm := [zComm]
-    tComm := tComm.toList
-    opening }
+    wComm := pr.wComm.toList.map ([·])
+    zComm := [pr.zComm]
+    tComm := pr.tComm.toList
+    opening := pr.opening }
 
 /-- The circuit's key cells read as the key. The cells are in the index digest's order —
 `σ₀…σ₆`, the 15 coefficient commitments, the six selectors, as `keyRecords` splits them — and

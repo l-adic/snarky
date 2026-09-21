@@ -151,10 +151,12 @@ def ivpProofOf (C : Ipa.KimchiCurve) {k : ℕ} {sf : Type} (shift : C.ScalarFiel
   let tComm : Vector (AffinePoint C.BaseField) 7 ←
     if h : cp.tComm.size = 7 then pure ⟨cp.tComm.map pt, by simp [h]⟩
     else throw s!"t_comm: {cp.tComm.size} chunks, expected 7"
-  return (cp.wComm.map fun (v : Vector C.Point 1) => pt v[0], pt cp.zComm[0], tComm,
-          { lr := cp.opening.lr.map fun q => (pt q.1, pt q.2)
-            z1 := shift cp.opening.z1, z2 := shift cp.opening.z2
-            delta := pt cp.opening.delta, sg := pt cp.opening.sg })
+  return { wComm := cp.wComm.map fun (v : Vector C.Point 1) => pt v[0]
+           zComm := pt cp.zComm[0]
+           tComm
+           opening := { lr := cp.opening.lr.map fun q => (pt q.1, pt q.2)
+                        z1 := shift cp.opening.z1, z2 := shift cp.opening.z2
+                        delta := pt cp.opening.delta, sg := pt cp.opening.sg } }
 
 /-- A checked proof's accumulators' `sg`, as `m` affine points: the proof's own in the LAST
 slots (`unpackBranchData`), `pad` in front of them. A proof carries one accumulator per real
@@ -252,15 +254,15 @@ def runWrap {k : ℕ} (domainLog2 : ℕ) (inp : Pickles.WrapFop k) : IO (Bool ×
 /-- The step circuit's group half on its records: the wrap key's commitments as constants,
 the `x_hat` tables at the Lagrange bases, the SRS's blinding base. -/
 def runGroup {ks kw : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CW) (basis : Array CW.Point)
-    (h : CW.Point) (inp : Pickles.StepGroup ks kw) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := Pickles.StepGroup ks kw) Kimchi.Fixture.PS.fpSide
+    (h : CW.Point) (inp : Pickles.StepGroup ks kw Fp Bool) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.StepGroup ks kw Fp Bool) Kimchi.Fixture.PS.fpSide
     (groupStepOn vk (stepXhatTable basis) (xhatStepCell h)) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group half on its records: the step key's commitments as constants,
 the Lagrange bases, the SRS's blinding base. -/
 def runGroupWrap {ks kw n : ℕ} (vk : Kimchi.Verifier.Wire.KimchiVK CS) (basis : Array CS.Point)
-    (h : CS.Point) (inp : Pickles.WrapGroup ks kw n) : IO (Bool × List (String × ℕ)) :=
-  runHalf (a := Pickles.WrapGroup ks kw n) Kimchi.Fixture.PS.fqSide
+    (h : CS.Point) (inp : Pickles.WrapGroup ks kw n Fq Bool) : IO (Bool × List (String × ℕ)) :=
+  runHalf (a := Pickles.WrapGroup ks kw n Fq Bool) Kimchi.Fixture.PS.fqSide
     (groupWrapOn vk basis (xhatWrapCell h)) (fun b => [("success", b)]) inp
 
 /-- The wrap circuit's group-half input from a wrap entry, the step entry it wrapped and the
@@ -269,11 +271,11 @@ the step statement carried by value into the wrap field, the step proof (`z₁`,
 Type1 registers `(s − 2^255 − 1)/2`), its `n` accumulators' `sg`. -/
 def wrapGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (n : ℕ) (pad : CS.Point) {ks : ℕ}
     (cpS : Kimchi.Verifier.KimchiProof CS 1 ks) :
-    Except String (Pickles.WrapGroup ks Pickles.WrapIPARounds n) := do
+    Except String (Pickles.WrapGroup ks Pickles.WrapIPARounds n Fq Bool) := do
   let statement ← wrapStatementOf id ks w.publicInput
   let st ← stepStatementOf toWrap Pickles.WrapIPARounds n s.publicInput
   let pr ← ivpProofOf CS (fun z => ⟨toWrap (Pasta.Shifted.shiftType1 255 z)⟩) cpS
-  return (statement, st, pr, ← sgOldOf CS n pad cpS)
+  return { statement, stepStatement := st, proof := pr, sgOld := ← sgOldOf CS n pad cpS }
 
 /-- The step circuit's group-half input from a wrap entry, a step entry's slot that verified
 it and the checked wrap proof at `kw` rounds: the wrap statement carried by value into the
@@ -282,7 +284,7 @@ registers `s − 2^255`, split into a half and a parity bit), its two accumulato
 `is_base_case = false`: the slot is a real one. -/
 def stepGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ) (pad : CW.Point)
     {kw : ℕ} (cpW : Kimchi.Verifier.KimchiProof CW 1 kw) :
-    Except String (Pickles.StepGroup Pickles.StepIPARounds kw) := do
+    Except String (Pickles.StepGroup Pickles.StepIPARounds kw Fp Bool) := do
   let statement ← wrapStatementOf toStep Pickles.StepIPARounds w.publicInput
   let n := (s.publicInput.size - 1) / (18 + kw)
   let st ← stepStatementOf id kw n s.publicInput
@@ -291,7 +293,8 @@ def stepGroupInput (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ) (pad :
     let t := (Pasta.Shifted.shiftType2 255 z).val
     ⟨⟨((t / 2 : ℕ) : Fp), decide (t % 2 = 1)⟩⟩
   let pr ← ivpProofOf CW split cpW
-  return (statement, u, pr, ← sgOldOf CW Pickles.MaxProofsVerified pad cpW, false)
+  return { statement, claims := u, proof := pr
+           sgOld := ← sgOldOf CW Pickles.MaxProofsVerified pad cpW, isBaseCase := false }
 
 /-- The wrap side's `finalize_other_proof` input from a step entry's slot and the checked wrap
 proof that slot verified, at the wrap proof's `k` rounds: the slot of the step statement
@@ -319,7 +322,7 @@ def wrapFopInput (s : Cache.Entry CS) (slot : ℕ) {k : ℕ}
   let prev : Vector (Vector Fq k) Pickles.MaxProofsVerified ←
     if h : accs.size = Pickles.MaxProofsVerified then pure ⟨accs, h⟩
     else throw s!"wrap accumulators: {accs.size}, expected {Pickles.MaxProofsVerified}"
-  return (u, ← allEvalsOf CW cpW, prev)
+  return { claims := u, evals := ← allEvalsOf CW cpW, prev }
 
 /-- The curve's SRS cut to `k` rounds, loaded from `srs-cache/<name>.srs` once per `k`
 (decompressing the file's points dominates a load). -/
@@ -488,7 +491,8 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     -- asserts `finalized`
     let (u, ev, mask, prev, d) ← match stepFopInput w cp with
       | .error e => throw (IO.userError s!"step input: {e}") | .ok r => pure r
-    let sinp : Pickles.StepProof.ScalarIn σ.k := (⟨d, mask⟩, ⟨(u, ev, prev)⟩)
+    let sinp : Pickles.StepProof.ScalarIn σ.k :=
+      { branch := ⟨d, mask⟩, fop := ⟨{ claims := u, evals := ev, prev }⟩ }
     let (satS, _) ← runHalf (a := Pickles.StepProof.ScalarIn σ.k) Kimchi.Fixture.PS.fpSide
       (fun (v : Pickles.StepProof.ScalarVar σ.k) => do
         CheckedType.check (c := KimchiConstraint Fp) (val := Pickles.StepProof.ScalarIn σ.k) v
@@ -511,7 +515,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
         let sv ← wrapIndexSponge s.vk
         Pickles.StepProof.groupCircuit E (keyComms xhatWrapCell s.vk) sv
           (SpongeVar.ofConstants (wrapMsgSpongeState n)) v)
-      (fun _ => []) ⟨(ginp, newBp)⟩
+      (fun _ => []) ⟨{ group := ginp, newBp }⟩
     IO.println s!"    groupCircuit: satisfies={satG}"
     return hdom && pubOk && offOk && msgOk && guards && sg' && kv && avoidOk && satS && satG
 

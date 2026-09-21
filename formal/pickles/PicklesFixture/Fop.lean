@@ -93,9 +93,9 @@ def fopWrapHarness (input : Vector (FVar Fq) 148) : CircuitM Fq Cq (Pickles.FopO
 
 The step side's input is the unfinalized proof at `k` rounds, the evaluations, the mask, the
 `MaxProofsVerified` previous-challenge vectors and `domain_log2`; the wrap side's the
-unfinalized proof, the evaluations and the previous challenges. Each is a product of the
-gadget's own records, so its `CircuitType` instance is the records' (`Pickles.Encoding`) and
-the harness passes the allocated bundle to the gadget as it is. -/
+unfinalized proof, the evaluations and the previous challenges (`Pickles.FopInput`). Each is
+built from the gadget's own records, so its `CircuitType` instance is the records'
+(`Pickles.Encoding`) and the harness passes the allocated bundle to the gadget as it is. -/
 
 /-- The step side's input at `k` rounds, as values. -/
 abbrev StepFop (k : ℕ) : Type :=
@@ -123,9 +123,8 @@ def fopStepOn {k : ℕ} (v : StepFopVar k) : CircuitM Fp C (Pickles.FopOutput Fp
 `pow2PowMul`. -/
 def fopWrapOnAt (domainLog2 : ℕ) {k : ℕ} (v : Pickles.WrapFopVar k) :
     CircuitM Fq Cq (Pickles.FopOutput Fq) :=
-  let (u, w, prev) := v
   Pickles.finalizeOtherProofWrap fopWrapParams (Kimchi.Fixture.PS.fqSide.omega (2 ^ domainLog2))
     domainLog2 (fun z => do let t ← Pickles.pow2PowMul z domainLog2; pure (CVar.sub_ t (.const 1)))
-    u w (prev.toList.map (·.toList))
+    v.claims v.evals (v.prev.toList.map (·.toList))
 
 end PicklesFixture

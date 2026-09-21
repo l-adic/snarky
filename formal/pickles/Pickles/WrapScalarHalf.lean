@@ -1,3 +1,4 @@
+import Pickles.Encoding
 import Pickles.TwoHalves
 
 /-!
@@ -29,14 +30,10 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
 /-- The wrap side's input at `k` rounds, as values. -/
-abbrev WrapFop (k : ℕ) : Type :=
-  UnfinalizedProof k Fq Bool (Type2 Fq) × AllEvals Fq ×
-    Vector (Vector Fq k) MaxProofsVerified
+abbrev WrapFop (k : ℕ) : Type := FopInput k Fq Bool (Type2 Fq)
 
 /-- The wrap side's input at `k` rounds, as cells. -/
-abbrev WrapFopVar (k : ℕ) : Type :=
-  UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)) × AllEvals (FVar Fq) ×
-    Vector (Vector (FVar Fq) k) MaxProofsVerified
+abbrev WrapFopVar (k : ℕ) : Type := FopInput k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq))
 
 /-- The wrap circuit's scalar half at an environment: `finalize_other_proof`'s wrap side with
 the verifier key's parameters and domain — its generator a constant, `ζⁿ − 1` by `pow2PowMul`
@@ -167,12 +164,12 @@ abbrev ScalarVar (k : ℕ) : Type := UnChecked (WrapFopVar k)
 
 /-- The slot's deferred claims. -/
 def ScalarVar.claims (s : ScalarVar k) :
-    UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)) := s.val.1
+    UnfinalizedProof k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)) := s.val.claims
 /-- The evaluation cells. -/
-def ScalarVar.evals (s : ScalarVar k) : AllEvals (FVar Fq) := s.val.2.1
+def ScalarVar.evals (s : ScalarVar k) : AllEvals (FVar Fq) := s.val.evals
 /-- The previous challenges, one vector per slot. -/
 def ScalarVar.prev (s : ScalarVar k) : Vector (Vector (FVar Fq) k) MaxProofsVerified :=
-  s.val.2.2
+  s.val.prev
 /-- The scalar circuit as a `ScalarHalf`. -/
 abbrev ScalarVar.half (V : Valuation Fq) (s : ScalarVar k) :
     ScalarHalf IpaPallas.curve (Type2 (FVar Fq)) k :=

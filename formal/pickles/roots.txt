@@ -276,6 +276,23 @@ Pickles.reads_stepProofState
 Pickles.scoped_stepProofState
 Pickles.reads_stepStatement
 Pickles.scoped_stepStatement
+-- The circuits' input bundles, records like the statement's, each beside the circuit that
+-- takes it: the scalar halves' input (Encoding.lean), a proof as the group half reads it
+-- (Verify.lean), the two group halves' inputs (WrapVerify.lean, StepGroupHalf.lean), and the
+-- two top-level circuits' inputs where they are more than a bundle (WrapVerify.lean,
+-- StepScalarHalf.lean).
+Pickles.reads_fopInput
+Pickles.scoped_fopInput
+Pickles.reads_ivpProof
+Pickles.scoped_ivpProof
+Pickles.reads_wrapGroup
+Pickles.scoped_wrapGroup
+Pickles.reads_stepGroup
+Pickles.scoped_stepGroup
+Pickles.StepProof.reads_groupInput
+Pickles.StepProof.scoped_groupInput
+Pickles.StepProof.reads_scalarInput
+Pickles.StepProof.scoped_scalarInput
 -- The step statement's packing (Verify.lean, beside `WrapStatement.packed`, which `verifyProof`
 -- reaches): the `x_hat` walk of a step statement and its boolean cells. Its consumer today
 -- is the wrap circuit's group half in the fixture library (`PicklesFixture.groupWrapOn`); the

@@ -440,6 +440,44 @@ instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [Cir
         (StepStatement.equivProd k n f b sv a) :=
   CircuitType.reads_ofEquiv _ _
 
+/-! ## The scalar half's input -/
+
+/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations,
+and the previous challenges, one vector per slot. -/
+structure FopInput (k : ℕ) (f bc sf : Type) where
+  /-- The slot's deferred claims. -/
+  claims : UnfinalizedProof k f bc sf
+  /-- The evaluation cells. -/
+  evals : AllEvals f
+  /-- The previous challenges, one vector per slot. -/
+  prev : Vector (Vector f k) MaxProofsVerified
+
+/-- A scalar half's input is its claims, its evaluations and its previous challenges. -/
+def FopInput.equivProd (k : ℕ) (f bc sf : Type) :
+    FopInput k f bc sf ≃
+      UnfinalizedProof k f bc sf × AllEvals f × Vector (Vector f k) MaxProofsVerified :=
+  ⟨fun i => (i.claims, i.evals, i.prev), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
+   fun _ => rfl⟩
+
+instance instFopInputCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] :
+    CircuitType F (FopInput k f b sv) (FopInput k w vb sf) :=
+  CircuitType.ofEquiv (FopInput.equivProd k f b sv) (FopInput.equivProd k w vb sf)
+
+@[simp] theorem scoped_fopInput {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] {st : ProverState F} {x : FopInput k w vb sf} :
+    CircuitType.Scoped (val := FopInput k f b sv) st x ↔
+      CircuitType.Scoped (val := UnfinalizedProof k f b sv × AllEvals f ×
+        Vector (Vector f k) MaxProofsVerified) st (FopInput.equivProd k w vb sf x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_fopInput {F f w b vb sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F f w] [CircuitType F b vb] [CircuitType F sv sf] {V : Valuation F}
+    {x : FopInput k w vb sf} {a : FopInput k f b sv} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (FopInput.equivProd k w vb sf x) (FopInput.equivProd k f b sv a) :=
+  CircuitType.reads_ofEquiv _ _
+
 /-! ## The opening -/
 
 /-- An opening is its `(L, R)` rounds, the two shifted scalars, `δ` and `sg`. -/

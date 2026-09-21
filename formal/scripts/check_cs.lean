@@ -913,9 +913,11 @@ def ivpStepInput (get : ℕ → FVar Fp) :
       combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
       bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
   Pickles.ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
-    (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
-     { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
-       z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 })
+    { wComm := Vector.ofFn fun j => pt (60 + 2 * j)
+      zComm := pt 90
+      tComm := Vector.ofFn fun j => pt (92 + 2 * j)
+      opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+                   z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 } }
 
 /-- `ivp_step_circuit`: the index-digest sponge, `Pickles.incrementallyVerifyProof` on the
 step side with `x_hat` the known-domain commitment of inputs 0–29, then the harness's
@@ -990,9 +992,11 @@ def stepVerifyCells (get : ℕ → FVar Fp) :
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
   Pickles.ivpInputOf (stepVerifyUnfinalized get).deferredValues
     [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
-    (Vector.ofFn fun j => pt (2 * j), pt 30, Vector.ofFn fun j => pt (32 + 2 * j),
-     { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
-       z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 })
+    { wComm := Vector.ofFn fun j => pt (2 * j)
+      zComm := pt 30
+      tComm := Vector.ofFn fun j => pt (32 + 2 * j)
+      opening := { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
+                   z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
 
 /-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
 side over the parsed statement, unfinalized proof and cells. -/
@@ -1059,9 +1063,11 @@ at 60, `z_comm` at 90, the 7 `t_comm` points at 92, `δ` at 106, `sg` at 108, th
 pairs at 110, `z₁`, `z₂` at 174-175. -/
 def wrapIvpProof (pt : ℕ → AffinePoint (FVar Fq)) (get : ℕ → FVar Fq) :
     Pickles.IvpProof 16 (FVar Fq) (Type1 (FVar Fq)) :=
-  (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
-   { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
-     z1 := ⟨get 174⟩, z2 := ⟨get 175⟩, delta := pt 106, sg := pt 108 })
+  { wComm := Vector.ofFn fun j => pt (60 + 2 * j)
+    zComm := pt 90
+    tComm := Vector.ofFn fun j => pt (92 + 2 * j)
+    opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+                 z1 := ⟨get 174⟩, z2 := ⟨get 175⟩, delta := pt 106, sg := pt 108 } }
 
 /-- `ivp_wrap_circuit`: the dummy key's index sponge, `Pickles.incrementallyVerifyProof` on the
 conditional sponge with `x_hat` the packed step statement's commitment, then the harness's two
