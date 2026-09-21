@@ -93,7 +93,6 @@ spongeAndChallengesStepCircuit inputs = do
     , challengeDigest: maskedChallengeDigest (maskFrom inputs) (prevChallengesFrom inputs 2)
     , allEvals: evals.allEvals
     , endo: endoVar
-    , xiConstrainLowBits: true
     }
   _ <- toField @8 xi endoVar
   void $ toField @8 r endoVar
@@ -113,7 +112,6 @@ spongeAndChallengesWrapCircuit inputs = do
     , challengeDigest: challengeDigest (prevChallengesFrom inputs 0)
     , allEvals: evals.allEvals
     , endo: endoVar
-    , xiConstrainLowBits: false
     }
   _ <- toField @8 xi endoVar
   void $ toField @8 r endoVar

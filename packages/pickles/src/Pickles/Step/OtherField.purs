@@ -30,6 +30,7 @@ ipaScalarOps
   => IpaScalarOps f r (Type2 (SplitField (FVar f) (BoolVar f)))
 ipaScalarOps =
   { scaleByShifted: \p (Type2 (SplitField t)) -> scaleFast2 @51 @254 p t
+  , scaleByCip: \p (Type2 (SplitField t)) -> scaleFast2 @51 @253 p t
   , shiftedToAbsorbFields: \(Type2 (SplitField { sDiv2, sOdd })) -> [ sDiv2, coerce sOdd ]
   , unshift: \(Type2 sf) -> fromShiftedSplitFieldCircuit sf
   , shiftedEqual: \(Type2 sf) raw -> equals_ (fromShiftedSplitFieldCircuit sf) raw

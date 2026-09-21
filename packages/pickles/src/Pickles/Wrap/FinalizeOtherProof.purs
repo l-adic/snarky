@@ -31,7 +31,7 @@ import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, all_, const_, equals_, label, mul_, pow_, seal, sub_)
+import Snarky.Circuit.DSL (class BasicSystem, BoolVar, FVar, Snarky, add_, all_, const_, equals_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -107,7 +107,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     , challengeDigest: challengeDigest prevChallenges
     , allEvals
     , endo: endoVar
-    , xiConstrainLowBits: false
     }
   xiCorrect <- label "step4_xiCorrect" $ equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
   xi <- label "step4_xi" $ toField @8 deferred.xi endoVar
@@ -253,11 +252,16 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, allEvals
     , alphaPow21: a21
     }
 
-  -- `zeta^(2^srsLengthLog2)`, emitted for its constraints; the result
-  -- is discarded.
-  label "step10_zetaToSrs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
+  actualZetaToSrs <- label "step10_zetaToSrs" $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
 
-  plonkOk <- label "step10_plonkOk" $ ops.shiftedEqual sealedPlonk.perm actualPerm
+  -- The three scalars `ft_comm` scales by, each against its claim
+  -- (`Plonk_checks.checked`): `perm`, `zeta^(2^srsLengthLog2)`, `zeta^n`.
+  permOk <- label "step10_permOk" $ ops.shiftedEqual sealedPlonk.perm actualPerm
+  zetaToSrsOk <- label "step10_zetaToSrsOk" $
+    ops.shiftedEqual sealedPlonk.zetaToSrsLength actualZetaToSrs
+  zetaToDomainOk <- label "step10_zetaToDomainOk" $
+    ops.shiftedEqual sealedPlonk.zetaToDomainSize (zetaToNMinus1 `add_` const_ one)
+  plonkOk <- label "step10_plonkOk" $ all_ [ permOk, zetaToSrsOk, zetaToDomainOk ]
 
   finalized <- label "step11_finalized" $ all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
 

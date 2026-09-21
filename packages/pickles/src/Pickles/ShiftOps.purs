@@ -20,6 +20,14 @@ type IpaScalarOps f r sf =
       AffinePoint (FVar f)
       -> sf
       -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
+  , -- | Scale by the claimed combined inner product, the one shifted
+    -- | scalar the transcript absorbs. On the step side the ladder runs
+    -- | one bit narrower, so the two cells are the canonical
+    -- | representative's; on the wrap side it is `scaleByShifted`.
+    scaleByCip ::
+      AffinePoint (FVar f)
+      -> sf
+      -> Snarky f (KimchiConstraint f) r (AffinePoint (FVar f))
   , -- | The field elements a shifted scalar absorbs as: `[t]` for
     -- | Type1, `[sDiv2, sOdd]` for Type2.
     shiftedToAbsorbFields ::
