@@ -137,7 +137,7 @@ open Kimchi
 
 /-- The key's cells as the group half's key records: `σ₆`, the six selectors, the 15
 coefficients, `σ₀…σ₅`. -/
-def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
+private def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
     List (AffinePoint (FVar F)) × List (List (AffinePoint (FVar F))) ×
       List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
   (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)

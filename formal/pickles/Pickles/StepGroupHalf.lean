@@ -37,7 +37,7 @@ abbrev StepGroupVar (ks kw : ℕ) : Type :=
 /-- The step circuit's `x_hat` table at an environment: computed from the key's Lagrange points
 at the wrap statement's packing (`XhatTable.ofKeyKnown`). It reads the packing's kinds, never
 its cells. -/
-def xhatTableAt {ks : ℕ} (E : Env IpaPallas.curve)
+private def xhatTableAt {ks : ℕ} (E : Env IpaPallas.curve)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : XhatTable Fp 1 :=
   XhatTable.ofKeyKnown (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList
 
@@ -94,7 +94,7 @@ private theorem corrSumPt_ne_zero {ks : ℕ} (E : Env IpaPallas.curve)
 /-- Whether the SRS avoids the step relations, read off the key: the correction sum's
 commitment is the sum of the key's shifted Lagrange points (`corrSumPt_map_msm`), the Lagrange
 vectors' the points themselves. -/
-theorem avoids_stepRelationsAt_iff {ks : ℕ} (E : Env IpaPallas.curve)
+private theorem avoids_stepRelationsAt_iff {ks : ℕ} (E : Env IpaPallas.curve)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
     E.σ.Avoids (stepRelationsAt E statement)
       ↔ corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0 ≠ 0

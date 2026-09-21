@@ -671,7 +671,7 @@ private theorem pubDot_append_zeros {F : Type*} [Field F] (omega pt : F) (pub : 
   rw [← Array.foldl_toList, ← Array.foldl_toList, Array.toList_append, List.foldl_append,
     Array.toList_replicate, foldl_zeros_fst]
 
-theorem publicEvalChunks_append_zeros {C : Ipa.KimchiCurve} {nc k : ℕ}
+private theorem publicEvalChunks_append_zeros {C : Ipa.KimchiCurve} {nc k : ℕ}
     (cp : KimchiProof C nc k) (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField)
     (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0) :
     publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN (pub ++ Array.replicate m 0)
@@ -704,7 +704,7 @@ private theorem sum_zip_append_zeros {nc : ℕ} (c : Fin nc) (m : ℕ) :
         List.zip_cons_cons, List.map_cons, List.sum_cons, ih, List.take_succ_cons,
         List.zip_cons_cons, List.map_cons, List.sum_cons]
 
-theorem publicCommitment_append_zeros {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+private theorem publicCommitment_append_zeros {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0) :
     publicCommitment C σ cvk (pub ++ Array.replicate m 0) = publicCommitment C σ cvk pub := by
   rw [publicCommitment_eq_sum C σ cvk pub hne,

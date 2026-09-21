@@ -1751,10 +1751,10 @@ theorem onCurveAt_constPt (P : C.Point) (hP : P ≠ 0) :
 /-- The shift correction `-(2^L)·P`, computed through the curve's verified fast
 multi-scalar multiplication. The group's own `•` is a recursion as deep as its scalar, so a
 table built with it states the right point and can never be run; this one a driver runs. -/
-def negShift (C : KimchiCurve) (L : ℕ) (P : C.Point) : C.Point :=
+private def negShift (C : KimchiCurve) (L : ℕ) (P : C.Point) : C.Point :=
   -(C.fastMsm (n := 1) (fun _ => P) (fun _ => ((2 ^ L : ℕ) : ZMod C.scalar)))
 
-theorem negShift_eq (L : ℕ) (P : C.Point) : negShift C L P = (-(2 ^ L : ℤ)) • P := by
+private theorem negShift_eq (L : ℕ) (P : C.Point) : negShift C L P = (-(2 ^ L : ℤ)) • P := by
   have hcard : C.scalar • P = 0 := by
     have h := card_nsmul_eq_zero' (G := C.Point) (x := P)
     rwa [C.card] at h
@@ -1774,13 +1774,13 @@ def constLeaf (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) : Leaf C.B
   | .b10 x => .b10 x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 10 P))
   | .bit b => .condAdd b (Ps.map constPt)
 
-theorem leafBaseAt_constLeaf (ci : Fin nc) (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) :
-    leafBaseAt ci (constLeaf k Ps) = constPt Ps[ci] := by
+private theorem leafBaseAt_constLeaf (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) : leafBaseAt ci (constLeaf k Ps) = constPt Ps[ci] := by
   cases k <;> simp [constLeaf, leafBaseAt]
 
 /-- The point group has odd prime order, so a nonzero point shifted by a power of two stays
 nonzero: a constant correction cell is a finite point whenever its base is. -/
-theorem two_pow_zsmul_ne_zero (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
+private theorem two_pow_zsmul_ne_zero (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
     (-(2 ^ L : ℤ)) • P ≠ 0 := by
   haveI : Fact C.scalar.Prime := inferInstance
   have hcard : Nat.card C.Point = C.scalar := C.card
@@ -1807,13 +1807,13 @@ noncomputable def constCp (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.B
   | .b10 _ => (-(2 ^ 10 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
   | .bit _ => 0
 
-theorem onCurveAt_shift (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
+private theorem onCurveAt_shift (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
     OnCurveAt s.d.W V (constPt (negShift C L P))
       ((-(2 ^ L : ℤ)) • SWPoint.equivPoint C.E P) := by
   rw [← map_zsmul, ← negShift_eq]
   exact onCurveAt_constPt _ (negShift_eq L P ▸ two_pow_zsmul_ne_zero s P hP L)
 
-theorem leafPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+private theorem leafPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
     (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0)
     (hbit : ∀ b, k = .bit b → ∃ bb : Bool, (↑b : CVar C.BaseField).val V = bit bb) :
     LeafPre (d := s.d) ci V (constLeaf k Ps) (SWPoint.equivPoint C.E Ps[ci]) := by
@@ -1821,7 +1821,7 @@ theorem leafPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseF
   | bit b => exact ⟨by simpa [constLeaf] using onCurveAt_constPt (V := V) Ps[ci] hP, hbit b rfl⟩
   | _ => simpa [constLeaf, LeafPre] using onCurveAt_constPt (V := V) Ps[ci] hP
 
-theorem corrPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+private theorem corrPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
     (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0) :
     CorrPre (d := s.d) ci V (constLeaf k Ps) (constCp s ci k Ps) := by
   cases k with
@@ -1839,7 +1839,7 @@ theorem corrPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseF
     rw [getElem_map_fin]
     exact onCurveAt_shift (V := V) s _ hP 10
 
-theorem corrHonest_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+private theorem corrHonest_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
     (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0) :
     CorrHonest s.d ci V (constLeaf k Ps) := by
   have key : ∀ (L : ℕ) (T : s.d.W.Point),
@@ -1910,7 +1910,7 @@ theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
     simpa using h
 
 /-- The ladder width of a packed scalar's kind; a boolean leaf has no correction. -/
-def shiftBits : PackedScalar C.BaseField → Option ℕ
+private def shiftBits : PackedScalar C.BaseField → Option ℕ
   | .full _ => some 255
   | .b128 _ => some 130
   | .b10 _ => some 10
@@ -1948,7 +1948,7 @@ is one fixed relation among the Lagrange points. -/
 
 /-- The correction point of a packed scalar at a Lagrange point: its honest shift `-(2^L)·P`,
 none for a boolean cell. -/
-def corrPt (k : PackedScalar C.BaseField) (P : C.Point) : C.Point :=
+private def corrPt (k : PackedScalar C.BaseField) (P : C.Point) : C.Point :=
   match shiftBits k with
   | some L => negShift C L P
   | none => 0
@@ -2054,7 +2054,7 @@ def shiftCoeff (k : PackedScalar C.BaseField) : C.ScalarField :=
   | some L => -(2 ^ L)
   | none => 0
 
-theorem corrPt_eq_smul (k : PackedScalar C.BaseField) (P : C.Point) :
+private theorem corrPt_eq_smul (k : PackedScalar C.BaseField) (P : C.Point) :
     corrPt k P = shiftCoeff k • P := by
   unfold corrPt shiftCoeff
   cases shiftBits k with

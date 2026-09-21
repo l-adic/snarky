@@ -315,7 +315,7 @@ structure FopTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Scala
 /-- Where the side constrains the low half of the `ξ` split, the read makes the `ξ` comparison
 exact: the `α`, `ζ` cells read as prechallenges (the ties' shared readings), and the read's
 converse clause is `XiExact` at the claim the `ξ` cell reads. -/
-theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
+private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k) {G : GroupHalf C sf E.σ.k}
     {Sc : ScalarHalf C sf' E.σ.k} {out : FopOutput C.ScalarField}
     (hflag : Sc.side.xiConstrainLowBits = true)
@@ -341,7 +341,7 @@ theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.sca
 `combinedB` at the run's round challenges, the permutation scalar is `runPScalar`, and the
 `ξ` cell reads as the run's fr-sponge `ξ` prechallenge. What the scalar half's `finalized`
 bit asserts, in wire terms. -/
-def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
+private def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (cipV bV permV : C.ScalarField) (V : Valuation C.ScalarField)
     (xi : SizedF 128 (FVar C.ScalarField)) : Prop :=
   let run := runInput C E.σ E.cvk cp pub
@@ -822,7 +822,7 @@ theorem twoHalves_schnorr
 
 /-- **The two bits are the honest claims with the wire's Schnorr equation**, where the scalar
 half's `ξ` comparison is exact: `twoHalves_schnorr` and its converse. -/
-theorem twoHalves_iff_schnorr
+private theorem twoHalves_iff_schnorr
     (E : Env C)
     (hbase : 2 ^ 128 < C.base)
     (hscalar : 2 ^ 128 < C.scalar)
@@ -904,7 +904,7 @@ theorem twoHalves_kimchiVerify
 /-- **The two halves accept exactly when the wire verifier does at honest claims, given the
 deferred `sg` equation**, where the scalar half's `ξ` comparison is exact:
 `twoHalves_kimchiVerify` and its converse. -/
-theorem twoHalves_kimchiVerify_iff
+private theorem twoHalves_kimchiVerify_iff
     (E : Env C)
     (hbase : 2 ^ 128 < C.base)
     (hscalar : 2 ^ 128 < C.scalar)
