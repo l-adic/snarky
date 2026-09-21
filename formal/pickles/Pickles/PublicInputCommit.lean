@@ -2,6 +2,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
 import Pickles.Curve
+import Pickles.ListLemmas
 
 /-!
 # The in-circuit public-input commitment (`x_hat`)
@@ -28,6 +29,12 @@ and `xHatKnown_reads_publicCommitment` cross those reads to the wire verifier's 
 (the point group, the `SWPoint.equivPoint` crossing, and the group's order killing it, so the
 integer→scalar reduction is exact — no `lowest_128_bits` slack here), instantiated at
 `pastaShapeVesta` (Vesta) and `pastaShapePallas` (Pallas).
+
+The tables the gadgets take are a verifier key's data, so the module ends by computing them:
+a packed scalar list (`PackedScalar`) against a key's Lagrange points gives the leaves
+(`packLeavesOf`) and the tables (`XhatTable.ofKey`, `XhatTable.ofKeyKnown`), bound as the
+reads require (`xhatBinding_const`, `bound_ofKeyKnown`), with the known-domain fold's
+correction sum a commitment to named coefficients (`corrCoeffs`, `corrSumPt_map_msm`).
 -/
 
 namespace Pickles
@@ -154,10 +161,24 @@ private def sumCorrectionsHead (ci : Fin nc) :
   | .b10 _ _ corr :: rest => sumCorrections ci corr[ci] rest
   | .condAdd _ _ :: rest => sumCorrectionsHead ci rest
 
+/-- The boolean leaves constrain their own bits, in walk order, before any ladder runs. PS
+`PublicInputCommit (BoolVar f)` asserts the bit inside `scalarMuls` while the leaf's scale mul
+is deferred to the fold, so every such assertion precedes the adds; this pass reproduces that
+placement, and callers do not supply the constraints themselves. -/
+private def constrainBits [BasicSystem F S] : List (Leaf F nc) → CircuitM F S PUnit
+  | [] => pure PUnit.unit
+  | .condAdd b _ :: rest => do
+      addConstraint (BasicSystem.boolean (↑b : CVar F) : S)
+      constrainBits rest
+  | .full _ _ _ :: rest => constrainBits rest
+  | .b128 _ _ _ :: rest => constrainBits rest
+  | .b10 _ _ _ :: rest => constrainBits rest
+
 /-- The full one-chunk public-input commitment (PS `publicInputCommit`, one chunk): head-seed
 the corrections into `init`, fold the ladders, negate, add `h`. -/
 def publicInputCommitFull (ci : Fin nc) (blindingH : AffinePoint (FVar F))
     (leaves : List (Leaf F nc)) : CircuitM F S (AffinePoint (FVar F)) := do
+  constrainBits leaves
   let init ← sumCorrectionsHead ci leaves
   publicInputCommitChunk ci init blindingH leaves
 
@@ -528,6 +549,70 @@ private theorem publicInputCommitChunk_net_spec (ci : Fin nc) {V : Valuation F}
   exact h
 
 omit [ToNat F] in
+/-- The bit pre-pass emits constraints and nothing else, so its triple is trivial; it exists
+so `mvcgen` can step past the pass in the commitment's specs. -/
+private theorem constrainBits_spec {V : Valuation F} :
+    ∀ leaves : List (Leaf F nc),
+      ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves ⦃⇓ _ _ => ⌜True⌝⦄
+  | [] => by simp only [constrainBits]; mvcgen
+  | .condAdd _ _ :: rest => by
+      simp only [constrainBits]
+      have ih := constrainBits_spec (V := V) rest
+      mvcgen [ih]
+  | .full _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
+  | .b128 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
+  | .b10 _ _ _ :: rest => by simp only [constrainBits]; exact constrainBits_spec (V := V) rest
+
+/-- A boolean leaf's bit is boolean; the scalar leaves say nothing. What the bit pre-pass
+forces of each leaf. -/
+def Leaf.bitBoolean (V : Valuation F) : Leaf F nc → Prop
+  | .condAdd b _ => ∃ bb : Bool, (↑b : CVar F).val V = bit bb
+  | _ => True
+
+omit [ToNat F] in
+/-- **The bit pre-pass makes every boolean leaf's bit boolean.** The pass is the gadget's own
+opening move, so the commitment's read assumes this of its leaves rather than asking a
+consumer for it (`builder_spec_bind_assume`). -/
+private theorem constrainBits_boolean {V : Valuation F} :
+    ∀ leaves : List (Leaf F nc),
+      ⦃⌜True⌝⦄ constrainBits (S := Builder V (KimchiConstraint F)) leaves
+      ⦃⇓ _ _ => ⌜∀ leaf ∈ leaves, leaf.bitBoolean V⌝⦄
+  | [] => by
+      simp only [constrainBits]
+      mvcgen
+      intro leaf hl
+      exact absurd hl List.not_mem_nil
+  | .condAdd b base :: rest => by
+      simp only [constrainBits]
+      have ih := constrainBits_boolean (V := V) rest
+      mvcgen [ih]
+      rename_i hb _ _
+      intro hrest leaf hl
+      rcases List.mem_cons.1 hl with rfl | hl
+      · rcases (LawfulBasicSystem.holds_boolean V (↑b : CVar F)).mp hb with h | h
+        · exact ⟨false, by simpa [bit] using h⟩
+        · exact ⟨true, by simpa [bit] using h⟩
+      · exact hrest leaf hl
+  | .full s base corr :: rest => by
+      simp only [constrainBits]
+      refine builder_spec_imp _ _ _ (constrainBits_boolean (V := V) rest) fun _ h leaf hl => ?_
+      rcases List.mem_cons.1 hl with rfl | hl
+      · trivial
+      · exact h leaf hl
+  | .b128 s base corr :: rest => by
+      simp only [constrainBits]
+      refine builder_spec_imp _ _ _ (constrainBits_boolean (V := V) rest) fun _ h leaf hl => ?_
+      rcases List.mem_cons.1 hl with rfl | hl
+      · trivial
+      · exact h leaf hl
+  | .b10 s base corr :: rest => by
+      simp only [constrainBits]
+      refine builder_spec_imp _ _ _ (constrainBits_boolean (V := V) rest) fun _ h leaf hl => ?_
+      rcases List.mem_cons.1 hl with rfl | hl
+      · trivial
+      · exact h leaf hl
+
+omit [ToNat F] in
 /-- **The corrections-sum reads as `accv + Σ` the correction points.** Given each leaf's
 correction reads as `cp` (`condAdd`: `0`), `sumCorrections ci acc leaves` reads as
 `accv + Σ cps`. By induction on `leaves`, as `sumPoints_spec`. -/
@@ -635,8 +720,9 @@ theorem publicInputCommitFull_spec (ci : Fin nc) {V : Valuation F}
       (cps.sum = (infos.map LeafInfo.corrDelta).sum → (∀ i ∈ infos, i.regimeOK) →
         OnCurveAt d.W V r (-(infos.map LeafInfo.netDelta).sum + Hv))⌝⦄ := by
   simp only [publicInputCommitFull]
+  have hbits := constrainBits_spec (V := V) leaves
   have hsum := sumCorrectionsHead_spec ci leaves cps hcorr hscalar
-  mvcgen [hsum]
+  mvcgen [hbits, hsum]
   rename_i _ rinit
   intro s hpost
   exact publicInputCommitChunk_net_spec ci rinit blindingH leaves Ts cps.sum Hv
@@ -1514,7 +1600,9 @@ private theorem xhat_cross (s : PastaShape C) (ci : Fin nc) {V : Valuation C.Bas
   rw [equivPoint_publicCommitment (SWPoint.equivPoint C.E) σ cvk (pubOf C V leaves) ci hne',
     crossing_list (SWPoint.equivPoint C.E) ci V cvk leaves Ts hlen hbind.hsize htie, hpm]
 
-/-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The
+/-- **The wrap-side x_hat gadget reads as the wire verifier's `publicCommitment`.** The binding
+is asked for only under the boolean leaves' booleanity, which the gadget's bit pre-pass
+establishes itself (`constrainBits_boolean`): a consumer never supplies it. The
 in-circuit public-input obligation of the group half (`incrementally_verify_proof`):
 `publicInputCommitFull` commits to `pubOf leaves`, crossed to Mathlib's point group by
 `SWPoint.equivPoint`. The subtle half (the canonical decode — the ladder's top-bit pin —
@@ -1524,7 +1612,9 @@ in-circuit public-input obligation of the group half (`incrementally_verify_proo
 theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuation C.BaseField}
     (σ : Bulletproof.SRS C.Point) (cvk : Kimchi.Verifier.KimchiVK C nc)
     (blindingH : AffinePoint (FVar C.BaseField)) (leaves : List (Leaf C.BaseField nc))
-    (Ts cps : List s.d.W.Point) (hbind : XhatBinding s ci V σ cvk blindingH leaves Ts cps)
+    (Ts cps : List s.d.W.Point)
+    (hbind : (∀ leaf ∈ leaves, leaf.bitBoolean V) →
+      XhatBinding s ci V σ cvk blindingH leaves Ts cps)
     (hscalar : leafHasScalar leaves) :
     ⦃⌜True⌝⦄
     publicInputCommitFull (S := Builder V (KimchiConstraint C.BaseField)) ci blindingH leaves
@@ -1533,6 +1623,16 @@ theorem xHat_reads_publicCommitment (s : PastaShape C) (ci : Fin nc) {V : Valuat
         (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄ := by
   have hne : leaves ≠ [] := by
     rintro rfl; simp [leafHasScalar] at hscalar
+  -- the gadget opens with the bit pre-pass, so its own rows give the leaves' booleanity
+  show ⦃⌜True⌝⦄
+    (constrainBits (S := Builder V (KimchiConstraint C.BaseField)) leaves >>= fun _ => do
+      let init ← sumCorrectionsHead ci leaves
+      publicInputCommitChunk ci init blindingH leaves)
+    ⦃⇓ r _ => ⌜OnCurveAt s.d.W V r
+      (SWPoint.equivPoint C.E
+        (Kimchi.Verifier.publicCommitment C σ cvk (pubOf C V leaves))[ci])⌝⦄
+  refine builder_spec_bind_assume _ _ _ _ (constrainBits_boolean (V := V) leaves) fun hb => ?_
+  have hbind := hbind hb
   refine builder_spec_imp _ _ _
     (publicInputCommitFull_reads (d := s.d) ci blindingH leaves Ts cps
       (SWPoint.equivPoint C.E σ.h)
@@ -1589,6 +1689,434 @@ structure XhatTable.Bound (s : PastaShape C) (V : Valuation C.BaseField)
 end Binding
 
 end XhatCrossing
+
+/-! ## Packed scalars and their leaves -/
+
+section Packed
+
+variable {F : Type} [Field F] [DecidableEq F] {nc : ℕ}
+
+/-- A packed public-input scalar with its ladder width: a full field element, a 128-bit
+value, or the 10-bit packed branch data. -/
+inductive PackedScalar (F : Type) [Field F] where
+  /-- A 255-bit field element. -/
+  | full (s : FVar F)
+  /-- A 128-bit value. -/
+  | b128 (s : FVar F)
+  /-- A 10-bit value. -/
+  | b10 (s : FVar F)
+  /-- A boolean cell: a conditional add of its base. -/
+  | bit (b : BoolVar F)
+
+/-- A packed scalar that is not a boolean cell. -/
+def PackedScalar.IsScalar : PackedScalar F → Prop
+  | .bit _ => False
+  | _ => True
+
+/-- The `x_hat` leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
+correction from the table (`lagrange_with_correction`); a boolean cell adds its base under
+the bit, with no correction. -/
+def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Leaf F nc) :=
+  List.zipWith (fun k bc => match k with
+    | .full s => Leaf.full s bc.1 bc.2
+    | .b128 s => Leaf.b128 s bc.1 bc.2
+    | .b10 s => Leaf.b10 s bc.1 bc.2
+    | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
+
+end Packed
+
+/-! ## The `x_hat` table of a key
+
+The Lagrange bases and shift corrections are data of the verifier key, so the table is
+computed from it as constant cells rather than taken as an argument and then assumed to be
+the key's. It depends on the statement's packing only through the leaf kinds: each kind has
+its own shift. -/
+
+section OfKey
+
+open Kimchi.Verifier Bulletproof Bulletproof.Ipa
+open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass
+open WeierstrassCurve.Affine
+
+variable {C : KimchiCurve} {nc : ℕ} {V : Valuation C.BaseField}
+
+/-- A wire point as a constant cell. -/
+def constPt (P : C.Point) : AffinePoint (FVar C.BaseField) := ⟨.const P.x, .const P.y⟩
+
+theorem onCurveAt_constPt (P : C.Point) (hP : P ≠ 0) :
+    OnCurveAt C.E.toAffine V (constPt P) (SWPoint.equivPoint C.E P) :=
+  ⟨nonsingular_toW (SWPoint.onCurve_of_ne_zero hP),
+    SWPoint.equivPoint_eq_some P (SWPoint.onCurve_of_ne_zero hP)⟩
+
+/-- The shift correction `-(2^L)·P`, computed through the curve's verified fast
+multi-scalar multiplication. The group's own `•` is a recursion as deep as its scalar, so a
+table built with it states the right point and can never be run; this one a driver runs. -/
+private def negShift (C : KimchiCurve) (L : ℕ) (P : C.Point) : C.Point :=
+  -(C.fastMsm (n := 1) (fun _ => P) (fun _ => ((2 ^ L : ℕ) : ZMod C.scalar)))
+
+private theorem negShift_eq (L : ℕ) (P : C.Point) : negShift C L P = (-(2 ^ L : ℤ)) • P := by
+  have hcard : C.scalar • P = 0 := by
+    have h := card_nsmul_eq_zero' (G := C.Point) (x := P)
+    rwa [C.card] at h
+  have hmod : (2 ^ L % C.scalar) • P = (2 ^ L) • P := by
+    conv_rhs => rw [← Nat.mod_add_div (2 ^ L) C.scalar, add_nsmul, mul_nsmul, hcard,
+      nsmul_zero, _root_.add_zero]
+  rw [negShift, C.fastMsm_spec, Fin.sum_univ_one, ZMod.val_natCast, hmod, neg_smul]
+  congr 1
+  exact_mod_cast (natCast_zsmul P (2 ^ L)).symm
+
+/-- A leaf over constants: the Lagrange points as its base, their honest shifts as its
+correction. -/
+def constLeaf (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) : Leaf C.BaseField nc :=
+  match k with
+  | .full x => .full x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 255 P))
+  | .b128 x => .b128 x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 130 P))
+  | .b10 x => .b10 x (Ps.map constPt) (Ps.map fun P => constPt (negShift C 10 P))
+  | .bit b => .condAdd b (Ps.map constPt)
+
+private theorem leafBaseAt_constLeaf (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) : leafBaseAt ci (constLeaf k Ps) = constPt Ps[ci] := by
+  cases k <;> simp [constLeaf, leafBaseAt]
+
+/-- The point group has odd prime order, so a nonzero point shifted by a power of two stays
+nonzero: a constant correction cell is a finite point whenever its base is. -/
+private theorem two_pow_zsmul_ne_zero (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
+    (-(2 ^ L : ℤ)) • P ≠ 0 := by
+  haveI : Fact C.scalar.Prime := inferInstance
+  have hcard : Nat.card C.Point = C.scalar := C.card
+  intro h0
+  have hdvd : (addOrderOf P : ℤ) ∣ -(2 ^ L : ℤ) := (addOrderOf_dvd_iff_zsmul_eq_zero).2 h0
+  have hord : addOrderOf P = C.scalar := by
+    have h1 : addOrderOf P ∣ C.scalar := hcard ▸ addOrderOf_dvd_natCard P
+    rcases (Nat.dvd_prime (Fact.out : C.scalar.Prime)).1 h1 with h | h
+    · exact absurd (AddMonoid.addOrderOf_eq_one_iff.1 h) hP
+    · exact h
+  rw [hord, Int.dvd_neg] at hdvd
+  have h2 : C.scalar ∣ 2 ^ L := by exact_mod_cast hdvd
+  have h3 : C.scalar ∣ 2 := (Fact.out : C.scalar.Prime).dvd_of_dvd_pow h2
+  have h4 : C.scalar ≤ 2 := Nat.le_of_dvd (by norm_num) h3
+  have := s.scalar_lo
+  omega
+
+/-- The correction point a constant leaf's correction cell reads as. -/
+noncomputable def constCp (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) : s.d.W.Point :=
+  match k with
+  | .full _ => (-(2 ^ 255 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
+  | .b128 _ => (-(2 ^ 130 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
+  | .b10 _ => (-(2 ^ 10 : ℤ)) • SWPoint.equivPoint C.E Ps[ci]
+  | .bit _ => 0
+
+private theorem onCurveAt_shift (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L : ℕ) :
+    OnCurveAt s.d.W V (constPt (negShift C L P))
+      ((-(2 ^ L : ℤ)) • SWPoint.equivPoint C.E P) := by
+  rw [← map_zsmul, ← negShift_eq]
+  exact onCurveAt_constPt _ (negShift_eq L P ▸ two_pow_zsmul_ne_zero s P hP L)
+
+private theorem leafPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0)
+    (hbit : ∀ b, k = .bit b → ∃ bb : Bool, (↑b : CVar C.BaseField).val V = bit bb) :
+    LeafPre (d := s.d) ci V (constLeaf k Ps) (SWPoint.equivPoint C.E Ps[ci]) := by
+  cases k with
+  | bit b => exact ⟨by simpa [constLeaf] using onCurveAt_constPt (V := V) Ps[ci] hP, hbit b rfl⟩
+  | _ => simpa [constLeaf, LeafPre] using onCurveAt_constPt (V := V) Ps[ci] hP
+
+private theorem corrPre_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0) :
+    CorrPre (d := s.d) ci V (constLeaf k Ps) (constCp s ci k Ps) := by
+  cases k with
+  | bit b => rfl
+  | full x =>
+    simp only [constLeaf, CorrPre, constCp]
+    rw [getElem_map_fin]
+    exact onCurveAt_shift (V := V) s _ hP 255
+  | b128 x =>
+    simp only [constLeaf, CorrPre, constCp]
+    rw [getElem_map_fin]
+    exact onCurveAt_shift (V := V) s _ hP 130
+  | b10 x =>
+    simp only [constLeaf, CorrPre, constCp]
+    rw [getElem_map_fin]
+    exact onCurveAt_shift (V := V) s _ hP 10
+
+private theorem corrHonest_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
+    (Ps : Vector C.Point nc) (hP : Ps[ci] ≠ 0) :
+    CorrHonest s.d ci V (constLeaf k Ps) := by
+  have key : ∀ (L : ℕ) (T : s.d.W.Point),
+      OnCurveAt s.d.W V (constPt Ps[ci]) T →
+      OnCurveAt s.d.W V (constPt (negShift C L Ps[ci])) ((-(2 ^ L : ℤ)) • T) := by
+    intro L T hT
+    have hT' : T = SWPoint.equivPoint C.E Ps[ci] :=
+      OnCurveAt.eq hT (onCurveAt_constPt (V := V) Ps[ci] hP) rfl rfl
+    subst hT'
+    exact onCurveAt_shift s _ hP L
+  cases k with
+  | bit b => trivial
+  | full x =>
+    simp only [constLeaf, CorrHonest]
+    rw [getElem_map_fin, getElem_map_fin]
+    exact key 255
+  | b128 x =>
+    simp only [constLeaf, CorrHonest]
+    rw [getElem_map_fin, getElem_map_fin]
+    exact key 130
+  | b10 x =>
+    simp only [constLeaf, CorrHonest]
+    rw [getElem_map_fin, getElem_map_fin]
+    exact key 10
+
+/-- **The table computed from the key is bound to the key.** Constant cells — the Lagrange
+points as bases, their honest shifts as corrections, the SRS blinding base — satisfy
+`XhatBinding` given only what is not table bookkeeping: the blinding base and the Lagrange
+points are finite (at the `(0, 0)` sentinel no cell reads as the point, so this is necessary
+too), the boolean leaves are boolean — which `xHat_reads_publicCommitment` supplies from the
+gadget's own bit pre-pass — and `offBand`. -/
+theorem xhatBinding_const (s : PastaShape C) (ci : Fin nc) (σ : SRS C.Point)
+    (cvk : KimchiVK C nc) (ks : List (PackedScalar C.BaseField))
+    (hh : σ.h ≠ 0)
+    (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, Ps[ci] ≠ 0)
+
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
+    (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
+      Leaf.offBand C.scalar V leaf) :
+    XhatBinding s ci V σ cvk (constPt σ.h)
+      (List.zipWith constLeaf ks cvk.lagrangeBasis.toList)
+      (List.zipWith (fun _ Ps => SWPoint.equivPoint C.E Ps[ci]) ks cvk.lagrangeBasis.toList)
+      (List.zipWith (constCp s ci) ks cvk.lagrangeBasis.toList) where
+  blinding := onCurveAt_constPt σ.h hh
+  pre := forall₂_zipWith _ _ _ _ _ fun p hp =>
+    leafPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2) fun b hb => by
+      have hmem : constLeaf p.1 p.2 ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList := by
+        rw [← List.map_uncurry_zip_eq_zipWith]
+        exact List.mem_map.2 ⟨p, hp, rfl⟩
+      have := hbits _ hmem
+      rw [hb] at this
+      exact this
+  corr := forall₂_zipWith _ _ _ _ _ fun p hp =>
+    corrPre_const s ci p.1 p.2 (hL _ (List.of_mem_zip hp).2)
+  hon := by
+    intro leaf hl
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 hl
+    rw [List.getElem_zipWith]
+    exact corrHonest_const s ci _ _ (hL _ (List.getElem_mem _))
+  offBand := hoff
+  hsize := by simp [List.length_zipWith]
+  bases := by
+    intro i hi
+    rw [List.getElem_zipWith, leafBaseAt_constLeaf]
+    have h := onCurveAt_constPt (V := V) _ (hL _ (List.getElem_mem
+      (l := cvk.lagrangeBasis.toList) (n := i) (by
+        simp only [List.length_zipWith, Array.length_toList] at hi; simp; omega)))
+    simpa using h
+
+/-- The ladder width of a packed scalar's kind; a boolean leaf has no correction. -/
+private def shiftBits : PackedScalar C.BaseField → Option ℕ
+  | .full _ => some 255
+  | .b128 _ => some 130
+  | .b10 _ => some 10
+  | .bit _ => none
+
+/-- The `x_hat` table computed from the key's Lagrange points, at a statement's packing. A
+boolean leaf's correction slot is never read (`packLeavesOf` drops it); it holds the base. -/
+def XhatTable.ofKey (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
+    XhatTable C.BaseField nc where
+  bases := lb.map (·.map constPt)
+  corrs := List.zipWith (fun k Ps => Ps.map fun P =>
+    constPt (match shiftBits k with | some L => negShift C L P | none => P)) ks lb
+  corrHead := Vector.replicate nc (constPt 0)
+  corrSum := Vector.replicate nc (constPt 0)
+
+/-- The library's `packLeavesOf` at that table is the constant leaves. -/
+theorem packLeavesOf_ofKey : ∀ (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)),
+    packLeavesOf ks (XhatTable.ofKey ks lb) = List.zipWith constLeaf ks lb
+  | [], _ => by simp [packLeavesOf]
+  | _ :: _, [] => by simp [packLeavesOf, XhatTable.ofKey]
+  | k :: ks, Ps :: lb => by
+      have ih := packLeavesOf_ofKey ks lb
+      simp only [packLeavesOf, XhatTable.ofKey, List.map_cons, List.zipWith_cons_cons,
+        List.zip_cons_cons] at ih ⊢
+      refine congrArg₂ _ ?_ ih
+      cases k <;> simp [constLeaf, shiftBits]
+
+/-! ### The known-domain fold's table
+
+`publicInputCommitKnown` takes the corrections' sum as one constant, where
+`publicInputCommitFull` adds each leaf's correction. The table below carries that sum; the cell
+reads as a point only when the sum is a finite point, which no invariant of the key gives: it
+is one fixed relation among the Lagrange points. -/
+
+/-- The correction point of a packed scalar at a Lagrange point: its honest shift `-(2^L)·P`,
+none for a boolean cell. -/
+private def corrPt (k : PackedScalar C.BaseField) (P : C.Point) : C.Point :=
+  match shiftBits k with
+  | some L => negShift C L P
+  | none => 0
+
+/-- The constant correction sum of the known-domain fold, at chunk `ci`. -/
+def corrSumPt (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc))
+    (ci : Fin nc) : C.Point :=
+  (List.zipWith (fun k Ps => corrPt k Ps[ci]) ks lb).sum
+
+/-- The `x_hat` table of the known-domain fold, computed from the key's Lagrange points: the
+bases and corrections of `XhatTable.ofKey`, the fold's seed the first correction, its constant
+the correction sum. -/
+def XhatTable.ofKeyKnown (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)) : XhatTable C.BaseField nc :=
+  { XhatTable.ofKey ks lb with
+    corrHead := Vector.ofFn fun ci => constPt
+      (match ks, lb with
+       | k :: _, Ps :: _ => corrPt k Ps[ci]
+       | _, _ => 0)
+    corrSum := Vector.ofFn fun ci => constPt (corrSumPt ks lb ci) }
+
+/-- The library's `packLeavesOf` at that table is the constant leaves. -/
+theorem packLeavesOf_ofKeyKnown (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)) :
+    packLeavesOf ks (XhatTable.ofKeyKnown ks lb) = List.zipWith constLeaf ks lb :=
+  packLeavesOf_ofKey ks lb
+
+/-- A scalar's constant leaf is trivially bit-boolean. -/
+theorem bitBoolean_constLeaf_of_isScalar (ks : List (PackedScalar C.BaseField))
+    (lb : List (Vector C.Point nc)) (hks : ∀ k ∈ ks, k.IsScalar) :
+    ∀ leaf ∈ List.zipWith constLeaf ks lb, leaf.bitBoolean V := by
+  intro leaf hl
+  rw [← List.map_uncurry_zip_eq_zipWith] at hl
+  obtain ⟨⟨k, Ps⟩, hp, rfl⟩ := List.mem_map.1 hl
+  have hk := hks k (List.of_mem_zip hp).1
+  cases k with
+  | bit b => exact absurd hk (by simp [PackedScalar.IsScalar])
+  | _ => trivial
+
+private theorem equivPoint_corrPt (s : PastaShape C) (ci : Fin nc)
+    (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) :
+    SWPoint.equivPoint C.E (corrPt k Ps[ci]) = constCp s ci k Ps := by
+  cases k <;> simp [corrPt, shiftBits, constCp, negShift_eq, map_zsmul]
+
+/-- The correction sum, crossed to the point group, is the sum of the leaves' correction
+points. -/
+private theorem equivPoint_corrSumPt (s : PastaShape C) (ci : Fin nc)
+    (ks : List (PackedScalar C.BaseField)) (lb : List (Vector C.Point nc)) :
+    SWPoint.equivPoint C.E (corrSumPt ks lb ci)
+      = ((List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks lb).map (· ci)).sum := by
+  have hfun : (fun (k : PackedScalar C.BaseField) (Ps : Vector C.Point nc) =>
+        SWPoint.equivPoint C.E (corrPt k Ps[ci]))
+      = fun k Ps => constCp s ci k Ps := by
+    funext k Ps
+    exact equivPoint_corrPt s ci k Ps
+  rw [corrSumPt, map_list_sum, List.map_zipWith, List.map_zipWith, hfun]
+
+/-- **The known-domain table computed from the key is bound to the key.** Beyond
+`xhatBinding_const`'s premises, the correction sum is a finite point at every chunk. -/
+theorem bound_ofKeyKnown (s : PastaShape C) (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (ks : List (PackedScalar C.BaseField))
+    (hh : σ.h ≠ 0) (hL : ∀ Ps ∈ cvk.lagrangeBasis.toList, ∀ ci : Fin nc, Ps[ci] ≠ 0)
+    (hks : ks ≠ []) (hlb : cvk.lagrangeBasis.toList ≠ [])
+    (hbits : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList, leaf.bitBoolean V)
+    (hoff : ∀ leaf ∈ List.zipWith constLeaf ks cvk.lagrangeBasis.toList,
+      Leaf.offBand C.scalar V leaf)
+    (hsum : ∀ ci : Fin nc, corrSumPt ks cvk.lagrangeBasis.toList ci ≠ 0) :
+    (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).Bound s V σ cvk (constPt σ.h)
+      (List.zipWith constLeaf ks cvk.lagrangeBasis.toList) where
+  chunks := by
+    refine ⟨List.zipWith (fun _ Ps => fun ci => SWPoint.equivPoint C.E Ps[ci]) ks
+        cvk.lagrangeBasis.toList,
+      List.zipWith (fun k Ps => fun ci => constCp s ci k Ps) ks cvk.lagrangeBasis.toList,
+      fun ci => ⟨?_, ?_⟩⟩
+    · have hb := xhatBinding_const (V := V) s ci σ cvk ks hh (fun Ps h => hL Ps h ci) hbits hoff
+      simpa only [List.map_zipWith] using hb
+    · have hc : (XhatTable.ofKeyKnown ks cvk.lagrangeBasis.toList).corrSum[ci]
+          = constPt (corrSumPt ks cvk.lagrangeBasis.toList ci) := by
+        simp [XhatTable.ofKeyKnown, Fin.getElem_fin]
+      rw [hc, ← equivPoint_corrSumPt s ci]
+      exact onCurveAt_constPt _ (hsum ci)
+  bases_ne := by
+    simpa [XhatTable.ofKeyKnown, XhatTable.ofKey] using hlb
+  corrs_ne := by
+    cases ks with
+    | nil => exact absurd rfl hks
+    | cons k ks =>
+      cases hl : cvk.lagrangeBasis.toList with
+      | nil => exact absurd hl hlb
+      | cons Ps lb => simp [XhatTable.ofKeyKnown, XhatTable.ofKey]
+
+/-! ### The correction sum's coefficients
+
+Where the Lagrange points are commitments `msm g a`, the correction sum is one too, at the
+coefficients `corrCoeffs`; so that it is a finite point is a relation the SRS avoids
+(`SRS.Avoids`). The vector is nonzero where the Lagrange vectors past the first sum to zero
+and the first to one: its coefficients then sum to the first leaf's shift. -/
+
+/-- The shift coefficient of a packed scalar: `-(2^L)` at its ladder width, none for a boolean
+cell. -/
+def shiftCoeff (k : PackedScalar C.BaseField) : C.ScalarField :=
+  match shiftBits k with
+  | some L => -(2 ^ L)
+  | none => 0
+
+private theorem corrPt_eq_smul (k : PackedScalar C.BaseField) (P : C.Point) :
+    corrPt k P = shiftCoeff k • P := by
+  unfold corrPt shiftCoeff
+  cases shiftBits k with
+  | none => simp
+  | some L =>
+      show negShift C L P = (-(2 ^ L) : C.ScalarField) • P
+      rw [negShift_eq, ← Int.cast_smul_eq_zsmul C.ScalarField]
+      push_cast
+      rfl
+
+theorem shiftCoeff_ne_zero (s : PastaShape C) (k : PackedScalar C.BaseField)
+    (hk : k.IsScalar) : shiftCoeff k ≠ 0 := by
+  cases k <;> simp [shiftCoeff, shiftBits, PackedScalar.IsScalar, s.scalar_two_ne] at hk ⊢
+
+/-- The coefficients of the known-domain fold's correction sum, against the coefficient
+vectors `ls` of its Lagrange points. -/
+def corrCoeffs {m : ℕ} (ks : List (PackedScalar C.BaseField))
+    (ls : List (Fin m → C.ScalarField)) : Fin m → C.ScalarField :=
+  (List.zipWith (fun k a => shiftCoeff k • a) ks ls).sum
+
+/-- The correction sum is the commitment to its coefficients. -/
+theorem corrSumPt_map_msm {m : ℕ} (g : Fin m → C.Point) :
+    ∀ (ks : List (PackedScalar C.BaseField)) (ls : List (Fin m → C.ScalarField)),
+      corrSumPt ks (ls.map fun a => #v[Ipa.msm C g a]) 0 = Ipa.msm C g (corrCoeffs ks ls)
+  | [], _ => by simp [corrSumPt, corrCoeffs, Ipa.msm_eq]
+  | _ :: _, [] => by simp [corrSumPt, corrCoeffs, Ipa.msm_eq]
+  | k :: ks, a :: ls => by
+      have ih := corrSumPt_map_msm g ks ls
+      simp only [corrSumPt, corrCoeffs, List.map_cons, List.zipWith_cons_cons,
+        List.sum_cons] at ih ⊢
+      rw [ih, corrPt_eq_smul]
+      simp [Ipa.msm_eq]
+
+private theorem sum_corrCoeffs_range' {m N : ℕ} (L : ℕ → Fin m → C.ScalarField)
+    (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) :
+    ∀ (ks : List (PackedScalar C.BaseField)) (s len : ℕ), 0 < s → s + len ≤ N →
+      ∑ j, corrCoeffs ks ((List.range' s len).map L) j = 0
+  | [], _, _, _, _ => by simp [corrCoeffs]
+  | _ :: _, _, 0, _, _ => by simp [corrCoeffs]
+  | k :: ks, s, len + 1, hs, hle => by
+      have ih := sum_corrCoeffs_range' L hL ks (s + 1) len (by omega) (by omega)
+      simp only [corrCoeffs, List.range'_succ, List.map_cons, List.zipWith_cons_cons,
+        List.sum_cons, Pi.add_apply, Pi.smul_apply, smul_eq_mul, Finset.sum_add_distrib,
+        ← Finset.mul_sum] at ih ⊢
+      rw [ih, hL s hs (by omega)]
+      simp
+
+/-- The correction sum's coefficients sum to the first leaf's shift coefficient, where the
+first vector's sum to one and the later ones' to zero. -/
+theorem sum_corrCoeffs {m N : ℕ} (L : ℕ → Fin m → C.ScalarField) (h0 : ∑ j, L 0 j = 1)
+    (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) (k : PackedScalar C.BaseField)
+    (ks : List (PackedScalar C.BaseField)) (size : ℕ) (hpos : 0 < size) (hle : size ≤ N) :
+    ∑ j, corrCoeffs (k :: ks) ((List.range size).map L) j = shiftCoeff k := by
+  obtain ⟨len, rfl⟩ := Nat.exists_eq_succ_of_ne_zero hpos.ne'
+  have ih := sum_corrCoeffs_range' L hL ks 1 len one_pos (by omega)
+  rw [List.range_eq_range', List.range'_succ]
+  simp only [corrCoeffs, List.map_cons, List.zipWith_cons_cons, List.sum_cons, Pi.add_apply,
+    Pi.smul_apply, smul_eq_mul, Finset.sum_add_distrib, ← Finset.mul_sum] at ih ⊢
+  rw [ih, h0]
+  simp
+
+end OfKey
 
 /-! The gadgets are sealed after their reads: a consumer composes `publicInputCommitFull_reads`,
 `publicInputCommitKnown_reads` or `xHat_reads_publicCommitment`, never the body. -/

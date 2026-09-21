@@ -2,6 +2,7 @@ import Pickles.IncrementallyVerify
 import Pickles.FinalizeOtherProof
 import Pickles.PublicInputCommit
 import Pickles.Statement
+import Pickles.Encoding
 
 /-!
 # `verify` (the step side)
@@ -58,18 +59,6 @@ def BranchData.packed (bd : BranchData (FVar F) (BoolVar F)) : FVar F :=
     | none => .const 0
   CVar.add_ (CVar.scale_ 4 bd.domainLog2) (CVar.add_ (bit 0) (CVar.scale_ 2 (bit 1)))
 
-/-- A packed public-input scalar with its ladder width: a full field element, a 128-bit
-value, or the 10-bit packed branch data. -/
-inductive PackedScalar (F : Type) [Field F] where
-  /-- A 255-bit field element. -/
-  | full (s : FVar F)
-  /-- A 128-bit value. -/
-  | b128 (s : FVar F)
-  /-- A 10-bit value. -/
-  | b10 (s : FVar F)
-  /-- A boolean cell: a conditional add of its base. -/
-  | bit (b : BoolVar F)
-
 /-- `Spec.pack (Wrap.Statement.In_circuit.to_data statement)` (PS `packStatement`), in walk
 order: the five shifted scalars `cip, b, ζ^{2^k}, ζⁿ, perm` (full), `β, γ` (128), `α, ζ, ξ`
 (128), the three digests `sponge_digest, msg_wrap, msg_step` (full), the round challenges
@@ -88,15 +77,14 @@ def WrapStatement.packed (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVa
   ++ dv.bulletproofChallenges.toList.map (fun c => .b128 c.val)
   ++ [.b10 dv.branchData.packed]
 
-/-- The `x_hat` leaves of a packed scalar list: scalar `i` with Lagrange base `i` and its shift
-correction from the table (`lagrange_with_correction`); a boolean cell adds its base under
-the bit, with no correction. -/
-def packLeavesOf (ks : List (PackedScalar F)) (tab : XhatTable F nc) : List (Leaf F nc) :=
-  List.zipWith (fun k bc => match k with
-    | .full s => Leaf.full s bc.1 bc.2
-    | .b128 s => Leaf.b128 s bc.1 bc.2
-    | .b10 s => Leaf.b10 s bc.1 bc.2
-    | .bit b => Leaf.condAdd b bc.1) ks (tab.bases.zip tab.corrs)
+/-- A packed wrap statement has no boolean cell: the branch data is one 10-bit scalar. -/
+theorem WrapStatement.packed_isScalar
+    (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F))) :
+    ∀ k ∈ st.packed, k.IsScalar := by
+  simp only [WrapStatement.packed, PackedScalar.IsScalar, List.cons_append, List.nil_append,
+    List.mem_cons, List.mem_append, List.mem_map, List.not_mem_nil, or_false, forall_eq_or_imp,
+    true_and]
+  rintro a (⟨c, -, rfl⟩ | rfl) <;> trivial
 
 /-- The `x_hat` leaves of a wrap statement: `packLeavesOf` its packing. -/
 def packLeaves (st : WrapStatement ks (FVar F) (BoolVar F) (Type1 (FVar F)))
@@ -127,12 +115,6 @@ def StepStatement.packed {n : ℕ}
     ++ [.full st.proofState.messagesForNextStepProof]
     ++ st.messagesForNextWrapProof.toList.map .full
 
-/-- The boolean cells of a step statement's packing, the ones its circuit asserts boolean. -/
-def StepStatement.bits {n : ℕ}
-    (st : StepStatement k n (FVar F) (BoolVar F) (Type2 (SplitField (FVar F) (BoolVar F)))) :
-    List (BoolVar F) :=
-  st.packed.filterMap fun | .bit b => some b | _ => none
-
 /-- The group half's input with its claims taken from an unfinalized proof
 (`step_verifier.ml:1366–1385`): `xi`, `combined_inner_product`, `b` and the plonk claims
 of `unfinalized.deferred_values`; the key, proof and `sg_old` cells as given. -/
@@ -147,6 +129,97 @@ def IvpInput.withClaims {sf : Type} (inp : IvpInput k (FVar F) (BoolVar F) sf)
     deferred := ⟨dv.combinedInnerProduct, dv.b⟩ }
 
 end Pack
+
+/-! ## The group half's input, from its records -/
+
+section Records
+
+open Kimchi
+
+/-- The key's cells as the group half's key records: `σ₆`, the six selectors, the 15
+coefficients, `σ₀…σ₅`. -/
+private def keyRecords {F : Type} (comms : List (List (AffinePoint (FVar F)))) :
+    List (AffinePoint (FVar F)) × List (List (AffinePoint (FVar F))) ×
+      List (List (AffinePoint (FVar F))) × List (List (AffinePoint (FVar F))) :=
+  (comms.getD 6 [], comms.drop 22, (comms.drop 7).take 15, comms.take 6)
+
+/-- A one-chunk proof as the group half reads it, polymorphic in its cells like the statement
+records. `IvpInput` holds the commitments as chunk lists; this is their sized form, the shape
+a circuit input has. -/
+structure IvpProof (k : ℕ) (f sf : Type) where
+  /-- The 15 witness commitments. -/
+  wComm : Vector (AffinePoint f) wCols
+  /-- The permutation accumulator's commitment. -/
+  zComm : AffinePoint f
+  /-- The 7 quotient chunks. -/
+  tComm : Vector (AffinePoint f) 7
+  /-- The opening, at `k` rounds. -/
+  opening : BulletproofOpening k f sf
+
+/-- A proof is its witness commitments, `z_comm`, its quotient chunks and its opening. -/
+def IvpProof.equivProd (k : ℕ) (f sf : Type) :
+    IvpProof k f sf ≃
+      Vector (AffinePoint f) wCols × AffinePoint f × Vector (AffinePoint f) 7 ×
+        BulletproofOpening k f sf :=
+  ⟨fun p => (p.wComm, p.zComm, p.tComm, p.opening), fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2⟩,
+   fun _ => rfl, fun _ => rfl⟩
+
+instance instIvpProofCircuitType {F sv sf : Type} {k : ℕ} [CircuitType F sv sf] :
+    CircuitType F (IvpProof k F sv) (IvpProof k (FVar F) sf) :=
+  CircuitType.ofEquiv (IvpProof.equivProd k F sv) (IvpProof.equivProd k (FVar F) sf)
+
+@[simp] theorem scoped_ivpProof {F sv sf : Type} {k : ℕ} [CircuitType F sv sf]
+    {st : ProverState F} {x : IvpProof k (FVar F) sf} :
+    CircuitType.Scoped (val := IvpProof k F sv) st x ↔
+      CircuitType.Scoped (val := Vector (AffinePoint F) wCols × AffinePoint F ×
+        Vector (AffinePoint F) 7 × BulletproofOpening k F sv) st
+        (IvpProof.equivProd k (FVar F) sf x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_ivpProof {F sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F sv sf] {V : Valuation F} {x : IvpProof k (FVar F) sf} {a : IvpProof k F sv} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (IvpProof.equivProd k (FVar F) sf x) (IvpProof.equivProd k F sv a) :=
+  CircuitType.reads_ofEquiv _ _
+
+/-- The group half's input from a proof's deferred values (its claims), the `sg_old` points
+under their keep bits, a key's commitments and the proof. -/
+def ivpInputOf {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf)
+    (sgOld : List (Option (BoolVar F) × AffinePoint (FVar F)))
+    (comms : List (List (AffinePoint (FVar F)))) (pr : IvpProof k (FVar F) sf) :
+    IvpInput k (FVar F) (BoolVar F) sf :=
+  let (sigmaLast, indexComms, coefficientsComm, sigmaComm) := keyRecords comms
+  { plonk := ⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩, dv.plonk.perm,
+      dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩
+    xi := dv.xi
+    deferred := ⟨dv.combinedInnerProduct, dv.b⟩
+    sgOld, sigmaLast, indexComms, coefficientsComm, sigmaComm
+    wComm := pr.wComm.toList.map ([·])
+    zComm := [pr.zComm]
+    tComm := pr.tComm.toList
+    opening := pr.opening }
+
+/-- The circuit's key cells read as the key. The cells are in the index digest's order —
+`σ₀…σ₆`, the 15 coefficient commitments, the six selectors, as `keyRecords` splits them — and
+the sponge after the index digest squeezes to the key's digest. -/
+structure VkReads {C : KimchiCurve} {nc : ℕ} (cvk : KimchiVK C nc) (V : Valuation C.BaseField)
+    (spongeAfterIndex : SpongeVar C.BaseField)
+    (keyCells : List (List (AffinePoint (FVar C.BaseField)))) : Prop where
+  /-- The sponge after the index digest squeezes to the key's digest. -/
+  idx : ∃ st : Poseidon.State C.BaseField, SpongeVar.ReadsAt V spongeAfterIndex st ∧
+    (Poseidon.squeeze C.sponge.params st).1 = cvk.digest
+  /-- The six selector commitments. -/
+  index : ColumnsRead C V (keyCells.drop 22)
+    [cvk.genericComm, cvk.poseidonComm, cvk.completeAddComm, cvk.mulComm, cvk.emulComm,
+     cvk.endomulScalarComm]
+  /-- The coefficient commitments. -/
+  coefficients : ColumnsRead C V ((keyCells.drop 7).take 15) cvk.coefficientsComm.toList
+  /-- The permutation commitments `σ₀…σ₅`. -/
+  sigma : ColumnsRead C V (keyCells.take 6) (cvk.sigmaComm.take sigmaRows).toList
+  /-- The last permutation commitment `σ₆`. -/
+  sigmaLast : CommReads C V (keyCells.getD 6 []) (cvk.sigmaComm[6]).toList
+
+end Records
 
 /-! ## The gadgets -/
 
@@ -188,6 +261,14 @@ section Read
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {ks : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
 
+/-- The group half's claim cells from a `DeferredValues` record: the plonk claims, `ξ`, and
+`cip`, `b`. -/
+def DeferredValues.toIvpClaims {F sf : Type} {k : ℕ} (dv : DeferredValues k (FVar F) sf) :
+    IvpClaims (FVar F) sf :=
+  ⟨⟨⟨dv.plonk.alpha, dv.plonk.beta, dv.plonk.gamma, dv.plonk.zeta⟩,
+    dv.plonk.perm, dv.plonk.zetaToSrsLength, dv.plonk.zetaToDomainSize⟩,
+   dv.xi, ⟨dv.combinedInnerProduct, dv.b⟩⟩
+
 /-- `verify`'s read: some group-half output `o` satisfying `IvpReads` at the wire's public
 input `pub`, whose success bit is the returned bit, whose digest cell reads as the claimed
 `sponge_digest_before_evaluations` (so the claim is the wire's digest element), and whose
@@ -196,11 +277,10 @@ round prechallenges read as the claimed ones off the base case, pair by pair ove
 and the opening's, not the gadget's), so the claims are the wire's `ipaRunAt` prechallenges. -/
 def VerifyReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
-    (cells : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (u : UnfinalizedProof σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (base : Bool)
     (v : BoolVar C.BaseField) : Prop :=
   ∃ o : IvpOutput C.BaseField,
-    IvpReads S σ cvk cp pub (cells.withClaims u).toIvpClaims o ∧
+    IvpReads S σ cvk cp pub u.deferredValues.toIvpClaims o ∧
     o.success = v ∧
     u.spongeDigestBeforeEvaluations.val V = o.spongeDigest.val V ∧
     (base = false → ∀ p ∈ u.deferredValues.bulletproofChallenges.toList.zip o.bulletproofChallenges,
@@ -241,13 +321,13 @@ theorem verifyProof_reads
     -- leaves, the group half's premises at the claims-substituted cells
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound X V σ cvk blindingH (packLeaves statement tab))
-    (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false blindingH
+    (hivp : IvpHyps S σ cvk cp (pubOf C V (packLeaves statement tab)) false
       spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     verifyProof (c := Builder V (KimchiConstraint C.BaseField)) ops S.curve.e C.sponge.params endo
       (.ofSpec C.groupMap)
       sqrtF blindingH tab spongeAfterIndex isBaseCase statement u cells
-    ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) cells u base v⌝⦄ := by
+    ⦃⇓ v _ => ⌜VerifyReads S σ cvk cp (pubOf C V (packLeaves statement tab)) u base v⌝⦄ := by
   obtain ⟨⟨Ts, cps, hxhat⟩, hbases, hcorrs⟩ := htab
   -- the leaves are headed by a scalar leaf: the first packed scalar is `cip`
   have hhead : leafHeadScalar (packLeaves statement tab) := by
@@ -272,8 +352,11 @@ theorem verifyProof_reads
         (fun ci => xHatKnown_reads_publicCommitment X ci σ cvk blindingH tab.corrHead[ci]
           tab.corrSum[ci] _ _ _ (hxhat ci).1 hhead (hxhat ci).2) _)
       fun pts hp => hp.imp fun _ _ h => h
+  -- the blinding cell's read is the tables' own: every chunk's binding carries it
+  have hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h) :=
+    (hxhat ⟨0, hivp.nc_pos⟩).1.blinding
   have hivp := incrementallyVerifyProof_reads S σ cvk cp _ endo sqrtF false blindingH
-    spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hivp
+    spongeAfterIndex _ (cells.withClaims u) oldsW hXhat hh hivp
   have hb := CircuitType.reads_boolVar.mp hbase
   simp only [verifyProof]
   mvcgen [hivp] invariants
@@ -311,13 +394,13 @@ theorem verifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (hbase : CircuitType.Reads V isBaseCase base)
     (htab : tab.Bound pastaShapePallas V σ cvk blindingH (packLeaves statement tab))
     (hivp : IvpHyps (stepSide V) σ cvk cp (pubOf IpaPallas.curve V (packLeaves statement tab))
-      false blindingH spongeAfterIndex (cells.withClaims u) oldsW) :
+      false spongeAfterIndex (cells.withClaims u) oldsW) :
     ⦃⌜True⌝⦄
     verifyProof (c := Builder V (KimchiConstraint Fp)) IpaScalarOps.step IpaEndo.pallas
       IpaPallas.curve.sponge.params endo groupMapParamsPallas sqrtF blindingH tab
       spongeAfterIndex isBaseCase statement u cells
     ⦃⇓ v _ => ⌜VerifyReads (stepSide V) σ cvk cp
-      (pubOf IpaPallas.curve V (packLeaves statement tab)) cells u base v⌝⦄ :=
+      (pubOf IpaPallas.curve V (packLeaves statement tab)) u base v⌝⦄ :=
   verifyProof_reads (stepSide V) pastaShapePallas σ cvk cp endo sqrtF blindingH tab
     spongeAfterIndex
     isBaseCase statement u cells base oldsW hbase htab hivp

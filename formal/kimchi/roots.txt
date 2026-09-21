@@ -237,6 +237,13 @@ Kimchi.Verifier.fqOracles_eq_fqPrechallenges
 -- Consumed from pickles (the x_hat side lemma).
 Kimchi.Verifier.publicCommitment_eq_sum
 
+-- Zero cells appended to a nonempty public input, within the size guard, change nothing the
+-- verifier computes. A deployed statement layout can end in cells that are constant zero and
+-- that no circuit reads (the wrap statement's feature flags and lookup option, with every
+-- feature off); this is why a circuit-side statement names only the cells it reads
+-- (pickles, `stepPublicInput`).
+Kimchi.Verifier.kimchiVerify_append_zeros
+
 -- The executable verifier, the wire parsers, and the rest of the surface the fixture
 -- drivers exercise (`check_kimchi_verifier.sh` runs `kimchiVerify` on five production
 -- proofs; the parsers turn dumped wire data into the checked records; the certificates

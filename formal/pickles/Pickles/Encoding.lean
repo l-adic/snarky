@@ -1,4 +1,5 @@
 import Snarky.Prover
+import Snarky.Witness
 import Pickles.Statement
 import Pickles.FinalizeOtherProof
 import Pickles.CheckBulletproof
@@ -274,6 +275,21 @@ instance instBranchDataCircuitType {F f w b vb : Type} [CircuitType F f w] [Circ
     CircuitType F (BranchData f b) (BranchData w vb) :=
   CircuitType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
 
+/-- The branch data's check: its cells' own, through the same decomposition — nothing on
+`domain_log2`, the boolean constraint on each mask bit. That is the first line of PureScript's
+`CheckedType (AllocBranchData …)` (`check (branchTuple r)`, `Pickles/Step/Types.purs`).
+
+Two differences from that instance, neither of which a statement about the mask depends on.
+PureScript's check goes on to range-check `domain_log2` by expanding its 16 bits through the
+endo (`EndoScalar.toField @1`); `toField_spec` is proved at 8 rows only, so that line is not
+here and this check emits fewer rows than the deployed one. And PureScript allocates the two
+mask bits before `domain_log2`, where this record's decomposition puts `domain_log2` first:
+an order of variables, which a byte comparison against a dump would see. -/
+instance instBranchDataCheckedType {F c f w b vb : Type} [Add F] [Mul F] [Zero F] [One F]
+    [BasicSystem F c] [CircuitType F f w] [CircuitType F b vb] [CheckedType F c f w]
+    [CheckedType F c b vb] : CheckedType F c (BranchData f b) (BranchData w vb) :=
+  CheckedType.ofEquiv (BranchData.equivProd f b) (BranchData.equivProd w vb)
+
 @[simp] theorem scoped_branchData {F f w b vb : Type} [CircuitType F f w] [CircuitType F b vb]
     {st : ProverState F} {x : BranchData w vb} :
     CircuitType.Scoped (val := BranchData f b) st x ↔
@@ -422,6 +438,44 @@ instance instStepStatementCircuitType {F f w b vb sv sf : Type} {k n : ℕ} [Cir
     CircuitType.Reads V x a ↔
       CircuitType.Reads V (StepStatement.equivProd k n w vb sf x)
         (StepStatement.equivProd k n f b sv a) :=
+  CircuitType.reads_ofEquiv _ _
+
+/-! ## The scalar half's input -/
+
+/-- What a circuit's scalar half is given for one slot: its deferred claims, the evaluations,
+and the previous challenges, one vector per slot. -/
+structure FopInput (k : ℕ) (f bc sf : Type) where
+  /-- The slot's deferred claims. -/
+  claims : UnfinalizedProof k f bc sf
+  /-- The evaluation cells. -/
+  evals : AllEvals f
+  /-- The previous challenges, one vector per slot. -/
+  prev : Vector (Vector f k) MaxProofsVerified
+
+/-- A scalar half's input is its claims, its evaluations and its previous challenges. -/
+def FopInput.equivProd (k : ℕ) (f bc sf : Type) :
+    FopInput k f bc sf ≃
+      UnfinalizedProof k f bc sf × AllEvals f × Vector (Vector f k) MaxProofsVerified :=
+  ⟨fun i => (i.claims, i.evals, i.prev), fun p => ⟨p.1, p.2.1, p.2.2⟩, fun _ => rfl,
+   fun _ => rfl⟩
+
+instance instFopInputCircuitType {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] :
+    CircuitType F (FopInput k f b sv) (FopInput k w vb sf) :=
+  CircuitType.ofEquiv (FopInput.equivProd k f b sv) (FopInput.equivProd k w vb sf)
+
+@[simp] theorem scoped_fopInput {F f w b vb sv sf : Type} {k : ℕ} [CircuitType F f w]
+    [CircuitType F b vb] [CircuitType F sv sf] {st : ProverState F} {x : FopInput k w vb sf} :
+    CircuitType.Scoped (val := FopInput k f b sv) st x ↔
+      CircuitType.Scoped (val := UnfinalizedProof k f b sv × AllEvals f ×
+        Vector (Vector f k) MaxProofsVerified) st (FopInput.equivProd k w vb sf x) :=
+  CircuitType.scoped_ofEquiv _ _
+
+@[simp] theorem reads_fopInput {F f w b vb sv sf : Type} {k : ℕ} [Add F] [Mul F] [Zero F]
+    [CircuitType F f w] [CircuitType F b vb] [CircuitType F sv sf] {V : Valuation F}
+    {x : FopInput k w vb sf} {a : FopInput k f b sv} :
+    CircuitType.Reads V x a ↔
+      CircuitType.Reads V (FopInput.equivProd k w vb sf x) (FopInput.equivProd k f b sv a) :=
   CircuitType.reads_ofEquiv _ _
 
 /-! ## The opening -/

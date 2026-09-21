@@ -91,6 +91,8 @@ import Pickles.Verify
 import CompElliptic.Curves.Pasta.Fast.Projective.Core
 import Pickles.Linearization.Fp
 import Pickles.Linearization.Fq
+import Pickles.MessageHash
+import Pickles.WrapVerify
 import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.GroupMap
 import Snarky.Kimchi.Circuit.Poseidon
@@ -760,8 +762,8 @@ def xhatCorr (L : ℕ) (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 
 def xhatBase (P : XhatCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
   #v[⟨.const P.x, .const P.y⟩]
 
-/-- `xhat_wrap_circuit`: the packing's six booleanity checks (walk order), then
-`Pickles.publicInputCommitFull` over the 34-leaf list — `full` at {0,2,4,6,8,10,32,33}
+/-- `xhat_wrap_circuit`: `Pickles.publicInputCommitFull` over the 34-leaf list — the boolean
+leaves constrain their own bits inside the gadget — `full` at {0,2,4,6,8,10,32,33}
 (`L = 255`), `b128` at {11..30} (`L = 130`), `condAdd` at {1,3,5,7,9,31}; leaf `i` reads
 input `i` and Lagrange base `pts[i]`. -/
 def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
@@ -769,12 +771,6 @@ def xhatWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
   let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
   let pt (i : ℕ) : XhatCurve.Point :=
     pts[i]?.getD (CompElliptic.CurveForms.ShortWeierstrass.SWPoint.zero XhatCurve.E)
-  addConstraint (BasicSystem.boolean (get 1) : Cq)
-  addConstraint (BasicSystem.boolean (get 3) : Cq)
-  addConstraint (BasicSystem.boolean (get 5) : Cq)
-  addConstraint (BasicSystem.boolean (get 7) : Cq)
-  addConstraint (BasicSystem.boolean (get 9) : Cq)
-  addConstraint (BasicSystem.boolean (get 31) : Cq)
   let full (i : ℕ) : Pickles.Leaf Fq 1 := .full (get i) (xhatBase (pt i)) (xhatCorr 255 (pt i))
   let b128 (i : ℕ) : Pickles.Leaf Fq 1 := .b128 (get i) (xhatBase (pt i)) (xhatCorr 130 (pt i))
   let cond (i : ℕ) : Pickles.Leaf Fq 1 := .condAdd (.unchecked (get i)) (xhatBase (pt i))
@@ -916,10 +912,12 @@ def ivpStepInput (get : ℕ → FVar Fp) :
                  perm := shifted 34, zetaToSrsLength := shifted 36, zetaToDomainSize := shifted 38 }
       combinedInnerProduct := shifted 40, b := shifted 42, xi := ⟨get 44⟩
       bulletproofChallenges := Vector.ofFn fun j => ⟨get (45 + j)⟩ }
-  ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
-    (Vector.ofFn fun j => pt (60 + 2 * j), pt 90, Vector.ofFn fun j => pt (92 + 2 * j),
-     { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
-       z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 })
+  Pickles.ivpInputOf dv [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
+    { wComm := Vector.ofFn fun j => pt (60 + 2 * j)
+      zComm := pt 90
+      tComm := Vector.ofFn fun j => pt (92 + 2 * j)
+      opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+                   z1 := shifted 170, z2 := shifted 172, delta := pt 106, sg := pt 108 } }
 
 /-- `ivp_step_circuit`: the index-digest sponge, `Pickles.incrementallyVerifyProof` on the
 step side with `x_hat` the known-domain commitment of inputs 0–29, then the harness's
@@ -992,11 +990,13 @@ def stepVerifyCells (get : ℕ → FVar Fp) :
   let pt (i : ℕ) : AffinePoint (FVar Fp) := ⟨get i, get (i + 1)⟩
   let shifted (i : ℕ) : Type2 (SplitField (FVar Fp) (BoolVar Fp)) :=
     ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
-  ivpInputOf (stepVerifyUnfinalized get).deferredValues
+  Pickles.ivpInputOf (stepVerifyUnfinalized get).deferredValues
     [(none, dummyWrapSg), (none, dummyWrapSg)] dummyKeyComms
-    (Vector.ofFn fun j => pt (2 * j), pt 30, Vector.ofFn fun j => pt (32 + 2 * j),
-     { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
-       z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 })
+    { wComm := Vector.ofFn fun j => pt (2 * j)
+      zComm := pt 30
+      tComm := Vector.ofFn fun j => pt (32 + 2 * j)
+      opening := { lr := Vector.ofFn fun j => (pt (46 + 4 * j), pt (48 + 4 * j))
+                   z1 := shifted 106, z2 := shifted 108, delta := pt 110, sg := pt 112 } }
 
 /-- `step_verify_circuit`: the index-digest sponge, then `Pickles.verifyProof` on the step
 side over the parsed statement, unfinalized proof and cells. -/
@@ -1009,6 +1009,140 @@ def stepVerifyCircuit (pts : Array XhatStepCurve.Point) (h : AffinePoint (FVar F
     (fun _ => none) h (stepXhatTable pts) sv (.unchecked (get 265)) (stepVerifyStatement get)
     (stepVerifyUnfinalized get) (stepVerifyCells get)
   pure PUnit.unit
+
+/-! ## The wrap side's `incrementally_verify_proof`
+
+Transcribes `Pickles.CircuitDiffs.PureScript.IvpWrap`: the wrap circuit's group half over a
+step proof, at the conditional sponge with no `sg_old`, the key's commitments the dummy Vesta
+generator, and `x_hat` the in-circuit-correction commitment of the packed step statement
+(`PackedStepPublicInput 1 15`, one slot at the wrap SRS's 15 rounds). The Lagrange bases are
+`xhat_wrap_lagrange.json`'s, which the PS harness builds from the same `vestaCrs16` data it
+gives `xhat_wrap_circuit`.
+
+The 177-cell layout: the statement slot at 0-31 (the five split claims as `(half, parity)`
+pairs at 0-9, the digest at 10, `β, γ` at 11-12, `α, ζ, ξ` at 13-15, the 15 round challenges
+from 16, `should_finalize` at 31), `messages_for_next_step_proof` at 32 and the slot's
+`messages_for_next_wrap_proof` at 33; then the step proof's deferred values at 34-43 with its
+16 round challenges from 44, the 15 `w_comm` points at 60, `z_comm` at 90, the 7 `t_comm`
+points at 92, `δ` at 106, `sg` at 108, the 16 `(L, R)` pairs at 110, `z₁`, `z₂` at 174-175,
+and the claimed digest at 176. -/
+
+/-- The dummy key's commitments on the wrap side (PS `dummyVestaPt`, the Vesta generator):
+`σ₀…σ₆`, the 15 coefficient commitments and the six index commitments, one chunk each. -/
+def dummyWrapKeyComms : List (List (AffinePoint (FVar Fq))) := List.replicate 28 [vestaGenerator]
+
+/-- The step statement of the wrap-side harnesses, one slot at 15 rounds, from `get`. -/
+def wrapStepStatement (get : ℕ → FVar Fq) :
+    Pickles.StepStatement 15 1 (FVar Fq) (BoolVar Fq)
+      (Type2 (SplitField (FVar Fq) (BoolVar Fq))) :=
+  let split (i : ℕ) : Type2 (SplitField (FVar Fq) (BoolVar Fq)) :=
+    ⟨⟨get i, .unchecked (get (i + 1))⟩⟩
+  { proofState :=
+      { unfinalizedProofs := #v[
+          { deferredValues :=
+              { plonk := { alpha := ⟨get 13⟩, beta := ⟨get 11⟩, gamma := ⟨get 12⟩,
+                           zeta := ⟨get 14⟩, perm := split 8, zetaToSrsLength := split 4,
+                           zetaToDomainSize := split 6 }
+                combinedInnerProduct := split 0, b := split 2, xi := ⟨get 15⟩
+                bulletproofChallenges := Vector.ofFn fun j => ⟨get (16 + j)⟩ }
+            shouldFinalize := .unchecked (get 31)
+            spongeDigestBeforeEvaluations := get 10 }]
+        messagesForNextStepProof := get 32 }
+    messagesForNextWrapProof := #v[get 33] }
+
+/-- The step proof's deferred values from the wrap-side layout: the plonk claims at 34-40,
+`cip`, `b`, `ξ` at 41-43, the 16 round challenges from 44. -/
+def wrapIvpDv (get : ℕ → FVar Fq) : Pickles.DeferredValues 16 (FVar Fq) (Type1 (FVar Fq)) :=
+  { plonk := { alpha := ⟨get 34⟩, beta := ⟨get 35⟩, gamma := ⟨get 36⟩, zeta := ⟨get 37⟩,
+               perm := ⟨get 38⟩, zetaToSrsLength := ⟨get 39⟩, zetaToDomainSize := ⟨get 40⟩ }
+    combinedInnerProduct := ⟨get 41⟩, b := ⟨get 42⟩, xi := ⟨get 43⟩
+    bulletproofChallenges := Vector.ofFn fun j => ⟨get (44 + j)⟩ }
+
+/-- The step proof's commitments and opening from the wrap-side layout: the 15 `w_comm` points
+at 60, `z_comm` at 90, the 7 `t_comm` points at 92, `δ` at 106, `sg` at 108, the 16 `(L, R)`
+pairs at 110, `z₁`, `z₂` at 174-175. -/
+def wrapIvpProof (pt : ℕ → AffinePoint (FVar Fq)) (get : ℕ → FVar Fq) :
+    Pickles.IvpProof 16 (FVar Fq) (Type1 (FVar Fq)) :=
+  { wComm := Vector.ofFn fun j => pt (60 + 2 * j)
+    zComm := pt 90
+    tComm := Vector.ofFn fun j => pt (92 + 2 * j)
+    opening := { lr := Vector.ofFn fun j => (pt (110 + 4 * j), pt (112 + 4 * j))
+                 z1 := ⟨get 174⟩, z2 := ⟨get 175⟩, delta := pt 106, sg := pt 108 } }
+
+/-- `ivp_wrap_circuit`: the dummy key's index sponge, `Pickles.incrementallyVerifyProof` on the
+conditional sponge with `x_hat` the packed step statement's commitment, then the harness's two
+assertions — the digest against input 176 and each claimed round challenge against the
+returned one. -/
+def ivpWrapCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
+    (input : Vector (FVar Fq) 177) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
+  let dv := wrapIvpDv get
+  let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
+    let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
+      (wrapLeaves pts (wrapStepStatement get).packed)
+    pure [P]
+  let o ← Pickles.incrementallyVerifyProof Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
+    Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
+    vestaBase.sqrt? true h sv computeXHat
+    (Pickles.ivpInputOf dv [] dummyWrapKeyComms (wrapIvpProof pt get))
+  assertEqual o.spongeDigest (get 176)
+  for c in dv.bulletproofChallenges.toList.zip o.bulletproofChallenges do
+    assertEqual c.1.val c.2.val
+  pure PUnit.unit
+
+/-! ## The wrap circuit's verify block
+
+Transcribes `Pickles.CircuitDiffs.PureScript.WrapVerify`: `Pickles.wrapVerify` over the same
+177-cell IVP layout as `ivp_wrap_circuit`, now with one real accumulator — `sg_old` at 194
+under a constant keep bit — followed by the claimed `messages_for_next_wrap_proof` digest at
+177 and the new round challenges at 178-192 (193 is unused: the OCaml dump computes the
+offset at 16 rounds where the wrap side has 15). -/
+
+/-- The message-hash sponge `wrap_verify_circuit` starts from: the state after absorbing the
+one dummy challenge vector that pads its single real slot to `MaxProofsVerified` (PS
+`dummyPaddingSpongeStates` at `n = 1`), so the padding costs no gates. -/
+def wrapMsgSponge : SpongeVar Fq :=
+  SpongeVar.ofConstants (Poseidon.absorb Bulletproof.IpaVesta.curve.sponge.params
+    ⟨(0, 0, 0), .absorbed 0⟩ dummyWrapChallenges)
+
+/-- `wrap_verify_circuit`. -/
+def wrapVerifyCircuit (pts : Array XhatCurve.Point) (h : AffinePoint (FVar Fq))
+    (input : Vector (FVar Fq) 196) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let pt (i : ℕ) : AffinePoint (FVar Fq) := ⟨get i, get (i + 1)⟩
+  let dv := wrapIvpDv get
+  let sv ← indexSponge Bulletproof.IpaVesta.curve.sponge.params dummyWrapKeyComms
+  let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
+    let P ← Pickles.publicInputCommitFull (0 : Fin 1) h
+      (wrapLeaves pts (wrapStepStatement get).packed)
+    pure [P]
+  Pickles.wrapVerify Pickles.IpaScalarOps.wrap Pickles.IpaEndo.vesta
+    Bulletproof.IpaVesta.curve.sponge.params (.const endoPallasLam) Pickles.groupMapParamsVesta
+    vestaBase.sqrt? h sv computeXHat wrapMsgSponge
+    [(List.range 15).map fun j => get (178 + j)] (get 177)
+    { deferredValues := dv, shouldFinalize := .unchecked (.const 1)
+      spongeDigestBeforeEvaluations := get 176 }
+    (Pickles.ivpInputOf dv [(some (.unchecked (.const 1)), pt 194)] dummyWrapKeyComms
+      (wrapIvpProof pt get))
+
+/-! ## The `messages_for_next_wrap_proof` hash
+
+Transcribes `Pickles.CircuitDiffs.PureScript.HashMessagesWrap`: the digest the wrap circuit
+commits its accumulator advice to (`Pickles.hashMessagesForNextWrapProof`, OCaml
+`wrap_hack.ml:119-142`), from the fresh sponge, asserted against the claimed digest. The
+layout is 33 cells: the two `MaxProofsVerified` challenge vectors of `WrapIPARounds` at 0-29,
+`sg` at 30-31, the claim at 32. -/
+
+/-- `hash_messages_for_next_wrap_proof_circuit`. -/
+def hashMessagesWrapCircuit (input : Vector (FVar Fq) 33) : CircuitM Fq Cq PUnit := do
+  let get (i : ℕ) : FVar Fq := input[i]?.getD (.const 0)
+  let digest ← Pickles.hashMessagesForNextWrapProof Bulletproof.IpaVesta.curve.sponge.params
+    SpongeVar.init
+    [(List.range 15).map fun j => get j, (List.range 15).map fun j => get (15 + j)]
+    ⟨get 30, get 31⟩
+  assertEqual digest (get 32)
 
 /-- The corpus under comparison: the step column, then the wrap column, at the two SRS
 blinding bases. -/
@@ -1096,7 +1230,9 @@ def targets (hStep : AffinePoint (FVar Fp)) (hWrap : AffinePoint (FVar Fq)) :
       wrapTarget (a := Vector Fq 172) (b := PUnit) (checkBulletproofWrapCircuit hWrap)),
     ("finalize_other_proof_wrap_circuit",
       wrapTarget (a := Vector Fq 148) (b := PUnit) finalizeOtherProofWrapCircuit),
-    ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit) ]
+    ("ftcomm_wrap_circuit", wrapTarget (a := Vector Fq 17) (b := PUnit) ftcommWrapCircuit),
+    ("hash_messages_for_next_wrap_proof_circuit",
+      wrapTarget (a := Vector Fq 33) (b := PUnit) hashMessagesWrapCircuit) ]
 
 /-- The targets baked over a Lagrange export, each present only when its export is (a
 narrowed local PS run regenerates one column's exports; the unfiltered run has all). -/
@@ -1113,6 +1249,10 @@ def xhatTargets (wrap : Option (Array XhatCurve.Point × AffinePoint (FVar Fq)))
       stepTarget (a := Vector Fp 268) (b := PUnit) (stepVerifyCircuit pts h)))
   ++ (wrap.toList.map fun (pts, h) =>
     ("xhat_wrap_circuit", wrapTarget (a := Vector Fq 34) (b := PUnit) (xhatWrapCircuit pts h)))
+  ++ (wrap.toList.map fun (pts, h) =>
+    ("ivp_wrap_circuit", wrapTarget (a := Vector Fq 177) (b := PUnit) (ivpWrapCircuit pts h)))
+  ++ (wrap.toList.map fun (pts, h) =>
+    ("wrap_verify_circuit", wrapTarget (a := Vector Fq 196) (b := PUnit) (wrapVerifyCircuit pts h)))
 
 /-- Load an `x_hat` Lagrange export when present. Under `KIMCHI_CS_FILTER` a missing export
 skips its target (a narrowed PS run regenerates only the selected circuits' exports); in the

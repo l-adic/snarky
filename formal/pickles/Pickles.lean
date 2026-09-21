@@ -13,11 +13,20 @@ import Pickles.FinalizeOtherProof
 import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
 import Pickles.Curve
+import Pickles.Env
+import Pickles.ListLemmas
 import Pickles.PublicInputCommit
 import Pickles.FtComm
 import Pickles.IncrementallyVerify
 import Pickles.TwoHalves
 import Pickles.Verify
+import Pickles.MessageHash
+import Pickles.StepGroupHalf
+import Pickles.StepProof
+import Pickles.StepScalarHalf
+import Pickles.WrapProof
+import Pickles.WrapScalarHalf
+import Pickles.WrapVerify
 
 /-!
 # Pickles — the in-circuit kimchi verifier

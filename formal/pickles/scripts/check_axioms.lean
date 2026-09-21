@@ -8,8 +8,9 @@ The roots are the results this package stands behind — the same list as the AP
 one per side of the cycle, the two reflection endpoints they rest on, the two `ft_eval0`
 circuit theorems built on them; the field-generic scalar-side gadget theorems (the IPA
 gadgets, the fr-sponge schedule and challenge digests, the α-table, the domain scalars and
-the mask-select); and the assembled `finalize_other_proof` theorems, generic and at the
-deployed fields. Everything else the package proves — the machine's simulation laws, the
+the mask-select); the assembled `finalize_other_proof` theorems, generic and at the
+deployed fields; and the two top-level theorems, one per curve, a proof verified by its two
+compiled circuits. Everything else the package proves — the machine's simulation laws, the
 environment's compatibility, the transport lemmas, the decided α-bound — is in their
 dependency closure, and `collectAxioms` walks the closure, so a stray axiom anywhere
 beneath them is caught here without being named.
@@ -17,9 +18,10 @@ beneath them is caught here without being named.
 `Pickles/Reflect/Certificate.lean` is the only module in this tree permitted to decide by
 `native_decide`: the two reflection certificates and the reachability facts about the
 closed streams. Only the roots that rest on the deployed token streams — the linearization,
-`ft_eval0` and deployed-field `finalize_other_proof` theorems — may carry that module's
-certificates (`deployedRoots`); the field-generic gadget and assembly theorems, and the
-rest of every closure, must reduce to the standard logical axioms alone.
+`ft_eval0` and deployed-field `finalize_other_proof` theorems, and the two top-level theorems
+above them — may carry that module's certificates (`deployedRoots`); the field-generic gadget
+and assembly theorems, and the rest of every closure, must reduce to the standard logical
+axioms alone.
 
 The discriminator is the defining module rather than a name prefix, following the kimchi
 gate: an axiom's name is forgeable from inside a matching `namespace` block, its defining
@@ -85,7 +87,9 @@ def roots : List Name :=
     `Pickles.ftComm_reads,
     `Pickles.incrementallyVerifyProof_reads,
     `Pickles.incrementallyVerifyProof_wrap_reads,
-    `Pickles.incrementallyVerifyProof_step_reads ]
+    `Pickles.incrementallyVerifyProof_step_reads,
+    `Pickles.stepProof_kimchiVerify_vesta,
+    `Pickles.wrapProof_kimchiVerify_pallas ]
 
 /-- The standard logical axioms, permitted everywhere. -/
 def allowed : List Name := [ `propext, `Classical.choice, `Quot.sound ]
@@ -105,7 +109,9 @@ def deployedRoots : List Name :=
     `Pickles.ftEval0Circuit_spec_fp,
     `Pickles.ftEval0Circuit_spec_fq,
     `Pickles.finalizeOtherProofStep_spec_fp,
-    `Pickles.finalizeOtherProofWrap_spec_fq ]
+    `Pickles.finalizeOtherProofWrap_spec_fq,
+    `Pickles.stepProof_kimchiVerify_vesta,
+    `Pickles.wrapProof_kimchiVerify_pallas ]
 
 /-- A trusted `native_decide` certificate: one defined in an upstream CompElliptic module,
 in `Pasta/Endo.lean`, or in `Pickles/Reflect/Certificate.lean`. -/

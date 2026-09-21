@@ -63,7 +63,7 @@ def main : IO Unit := do
       let check (p : Wire.KimchiProof CP) : Option (Bool × Bool) :=
         match (h ▸ vk.check nc : Option (KimchiVK CP 1)),
               (h ▸ p.check nc σ.k : Option (KimchiProof CP 1 σ.k)) with
-        | some cvk, some cp => some (kimchiVerify CP σ cvk cp pub, sgOk ⟨σ, cvk⟩ cp pub)
+        | some cvk, some cp => some (kimchiVerify CP σ cvk cp pub, sgOk σ cvk cp pub)
         | _, _ => none
       let some (verified, accepted) := check proof
         | throw (IO.userError s!"{path}: the fixture's own records failed to parse")

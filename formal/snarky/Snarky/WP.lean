@@ -104,6 +104,22 @@ theorem builder_spec_true {V : Valuation F} [ConstraintHolds F c] {α : Type}
   intro _ _
   trivial
 
+/-- What a program's prefix establishes may be assumed of the whole. A sequence's rows are
+its prefix's followed by the rest's (`build_bind`), so a valuation satisfying the whole
+satisfies the prefix, and the prefix's conclusion holds of it: a gadget that opens by
+constraining its inputs proves the rest of its specification under those constraints' reading,
+and a consumer need not supply it. -/
+theorem builder_spec_bind_assume {V : Valuation F} [ConstraintHolds F c] {α β : Type}
+    (x : CircuitM F (Builder V c) α) (f : α → CircuitM F (Builder V c) β) (Q : Prop)
+    (post : β → Prop) (hx : ⦃⌜True⌝⦄ x ⦃⇓ _ _ => ⌜Q⌝⦄)
+    (h : Q → ⦃⌜True⌝⦄ (x >>= f) ⦃⇓ r _ => ⌜post r⌝⦄) :
+    ⦃⌜True⌝⦄ (x >>= f) ⦃⇓ r _ => ⌜post r⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat
+  have hQ : Q := (builder_spec_iff x fun _ => Q).mp hx nv fun con hc =>
+    hsat con (by rw [build_bind]; exact List.mem_append_left _ hc)
+  exact (builder_spec_iff _ post).mp (h hQ) nv hsat
+
 /-- Two specifications of one program conjoin: `wp` is deterministic, so both conclusions hold
 of the one result. -/
 theorem builder_spec_and {V : Valuation F} [ConstraintHolds F c] {α : Type}

@@ -1,6 +1,7 @@
 import Pickles.FtComm
 import Pickles.FqSpongeTranscript
 import Kimchi.Columns
+import Pickles.ListLemmas
 
 /-!
 # The group half (`incrementally_verify_proof`)
@@ -178,22 +179,31 @@ def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
     Prop :=
   List.Forall₂ (fun col P => CommReads C V col P.toList) cols Ps
 
+/-- The `sg_old` cells read as the proof's old accumulators: they read as the points `oldsW`
+under their keep bits, and the kept points are the old accumulators' commitments, in order. -/
+structure OldsRead {nc k : ℕ} (V : Valuation C.BaseField)
+    (sgOld : List (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField)))
+    (cp : KimchiProof C nc k) (oldsW : List (C.Point × Bool)) : Prop where
+  /-- The cells read as `oldsW`'s points under their bits. -/
+  cells : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (sgOld.map fun m => (m.2, m.1))
+    (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2))
+  /-- The kept points are the proof's old accumulators' commitments, in order. -/
+  kept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
+
 /-- What the group half's read assumes of its cells (the OCaml inputs, read as the wire's
 key `cvk`, proof `cp` and the claims): the kept `sg_old` are the proof's old accumulators'
-commitments, each commitment column reads as its wire column, the shifted claims decode to the
-wire's scalars where the wire has them (`perm`, `ζ^{2^k}`, `ζⁿ`, `z₁`, `z₂`) and are claims the
-ladder read speaks about (`IvpSide.ClaimOk`), and the opening's points read as the proof's. The
-deferred `ξ`, `cip`, `b` are tied to nothing here: the group half scales by them as claimed,
-and the read speaks at their decodes. -/
+commitments, each commitment column reads as its wire column, the opening's `z₁`, `z₂` decode
+to the proof's, every shifted scalar is a claim the ladder read speaks about
+(`IvpSide.ClaimOk`), and the opening's points read as the proof's. The deferred claims are tied
+to nothing here: the group half scales by `ξ`, `cip`, `b` as claimed, and the read speaks at
+their decodes; `perm`, `ζ^{2^k}`, `ζⁿ` enter only `ft_comm`, so their being the wire's is a
+premise of the read's opening clause (`IvpReads`), not of its transcript clauses. -/
 structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
-  /-- The `sg_old` cells read as `oldsW`'s points under their bits. -/
-  olds : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (inp.sgOld.map fun m => (m.2, m.1))
-    (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2))
-  /-- The kept `sg_old` are the proof's old accumulators' commitments, in order. -/
-  olds_kept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
+  /-- The `sg_old` cells read as the proof's old accumulators, through `oldsW`. -/
+  olds : OldsRead V inp.sgOld cp oldsW
   /-- The witness commitments. -/
   w : ColumnsRead C V inp.wComm cp.wComm.toList
   /-- The permutation accumulator's commitment. -/
@@ -210,12 +220,6 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   sigma : ColumnsRead C V inp.sigmaComm (cvk.sigmaComm.take sigmaRows).toList
   /-- The last permutation commitment `σ₆`. -/
   sigmaLast : CommReads C V inp.sigmaLast (cvk.sigmaComm[6]).toList
-  /-- The permutation-scalar claim decodes to the wire's. -/
-  perm : S.decode inp.plonk.perm = runPScalar C σ cvk cp pub
-  /-- The `ζ^{2^k}` claim decodes to the wire's. -/
-  zetaM : S.decode inp.plonk.zetaToSrsLength = runZetaM C σ cvk cp pub
-  /-- The `ζⁿ` claim decodes to the wire's. -/
-  zetaN : S.decode inp.plonk.zetaToDomainSize = runZetaN C σ cvk cp pub
   /-- The opening's `z₁` decodes to the proof's. -/
   z1 : S.decode inp.opening.z1 = cp.opening.z1
   /-- The opening's `z₂` decodes to the proof's. -/
@@ -235,9 +239,11 @@ expands) and `r` its IPA run from the warm post-`ζ` state at the claimed `cip` 
 the claim in place of the wire's `cipOf`): (1) the digest cell is the wire's digest element;
 (2) the claimed `β`, `γ` read as `pre`'s prechallenges, and the claimed `α`, `ζ`, once read as
 prechallenges, are `pre`'s (the transcript range-checks the first two,
-`FqTranscriptReadsWire`); (3) for any prechallenge `ξ₀` the claimed `ξ` reads as, the returned
-round prechallenges read as `r`'s, and, with `U` the `uBase` of `r`'s `t` and `c₀` `r`'s
-Schnorr prechallenge, the success bit reads `1` exactly when
+`FqTranscriptReadsWire`); (3) where the claimed `perm`, `ζ^{2^k}`, `ζⁿ` decode to the wire's —
+they enter `ft_comm` alone, so (1) and (2) hold without them, which is what lets the scalar
+half's permutation check supply the first — for any prechallenge `ξ₀` the claimed `ξ` reads as,
+the returned round prechallenges read as `r`'s, and, with `U` the `uBase` of `r`'s `t` and
+`c₀` `r`'s Schnorr prechallenge, the success bit reads `1` exactly when
 `Ipa.schnorrAt` holds at `U`, the expansions of `ns` and `c₀`, the claimed `cip` and `b`, the
 wire's batch stream combined at `ξ₀`'s expansion, and the proof's opening. (The witnesses are
 stated under the `ξ` reading because the opening check's read is; they do not depend on it.) -/
@@ -252,7 +258,10 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
   Reads128 V inp.plonk.chals.gamma pre.gamma ∧
   (∀ m, Reads128 V inp.plonk.chals.alpha m → m = pre.alpha) ∧
   (∀ m, Reads128 V inp.plonk.chals.zeta m → m = pre.zeta) ∧
-  ∀ ξ₀, Reads128 V inp.xi ξ₀ →
+  (S.decode inp.plonk.perm = runPScalar C σ cvk cp pub →
+   S.decode inp.plonk.zetaToSrsLength = runZetaM C σ cvk cp pub →
+   S.decode inp.plonk.zetaToDomainSize = runZetaN C σ cvk cp pub →
+   ∀ ξ₀, Reads128 V inp.xi ξ₀ →
     ∃ (U : C.Point) (ns : List Prechallenge) (c₀ : Prechallenge)
       (chals : Vector C.ScalarField σ.k),
       U = C.uBase r.1 ∧
@@ -264,17 +273,17 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
           (combineCommitments C (Poseidon.FqSponge.endoExpand C.lam ξ₀.val)
             run.commitments.toArray)
-          run.proof)
+          run.proof))
 
 /-- What the group half's read assumes of its cells and constants, on the side `S`: the
 sponge after the index digest squeezes to the key's digest, the `sg_old` cells are masked as
 the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), the
-blinding cell reads as `σ.h`, the claimed `cip` is canonical for the side's ladder, and the
+claimed `cip` is canonical for the side's ladder, and the
 shape guards a key and proof satisfy: a chunk, a quotient chunk, a round, and a base field
 wider than the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (optSponge : Bool)
-    (blindingH : AffinePoint (FVar C.BaseField)) (spongeAfterIndex : SpongeVar C.BaseField)
+    (spongeAfterIndex : SpongeVar C.BaseField)
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
   /-- The sponge after the index digest squeezes to the key's digest. -/
@@ -284,8 +293,6 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   mask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge
   /-- The cells read as the wire's key and proof. -/
   ties : IvpTies S σ cvk cp pub inp oldsW
-  /-- The blinding cell reads as the SRS blinding. -/
-  blinding : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h)
   /-- The claimed `cip` is canonical for the side's ladder. -/
   canon : S.Canon inp.deferred.combinedInnerProduct
   /-- At least one chunk. -/
@@ -366,16 +373,6 @@ private theorem zipSeg_fst {nc : ℕ} (comm : Vector C.Point nc)
     (ev : PointEvaluations (Vector C.ScalarField nc)) : (zipSeg C comm ev).map (·.1) = comm := by
   ext i hi
   simp [zipSeg]
-
-private theorem toList_map_fst_zip {α β γ : Type} {n : ℕ} (as : Vector α n) (bs : Vector β n)
-    (f : α → γ) : List.map (fun x => f x.1) (as.toList.zip bs.toList) = as.toList.map f := by
-  show List.map (f ∘ (fun x : α × β => x.1)) _ = _
-  rw [← List.map_map, ← Vector.toList_zip, ← Vector.toList_map, Vector.map_fst_zip]
-
-private theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
-    v.flatten.toList = (v.toList.map Vector.toList).flatten := by
-  simp [Vector.flatten, Vector.toList, Function.comp_def]
-  rfl
 
 /-- The tail rows' commitments, flattened: `z`, the six selectors, the witness columns, the
 coefficients, `σ₀…σ₅`, each column's chunks adjacent. -/
@@ -477,7 +474,7 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
   have hs := hties.sigma.masked
   simp only [List.map_append, List.map_map, List.append_assoc, List.map_cons, List.map_nil,
     Function.comp_def] at hi hw hc hs ⊢
-  refine List.rel_append hties.olds ?_
+  refine List.rel_append hties.olds.cells ?_
   refine List.rel_append hx.masked ?_
   refine List.rel_append (.cons ⟨hf, rfl⟩ .nil) ?_
   refine List.rel_append hties.z.masked ?_
@@ -672,14 +669,14 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     exact Subtype.ext (by rw [hα, hFq.2.2.1.exact (hasrt.2.2.1.symm.trans hm)])
   · intro m hm
     exact Subtype.ext (by rw [hζ, hFq.2.2.2.1.exact (hasrt.2.2.2.symm.trans hm)])
-  · intro ξ₀ hξ
+  · intro hperm hzetaM hzetaN ξ₀ hξ
     -- `ft_comm` reads as `runFtComm`: the claims decode and the chunk cells read as the ties say
     have hmem : ∀ x ∈ ([inp.plonk.perm, inp.plonk.zetaToSrsLength, inp.plonk.zetaToDomainSize] :
         List sf), x ∈ inp.shifted := fun x hx =>
       (List.sublist_append_left [inp.plonk.perm, inp.plonk.zetaToSrsLength,
         inp.plonk.zetaToDomainSize] [inp.deferred.combinedInnerProduct, inp.deferred.b,
         inp.opening.z1, inp.opening.z2]).subset hx
-    have hftc := hft hties.perm hties.zetaM hties.zetaN
+    have hftc := hft hperm hzetaM hzetaN
       (hties.claimOk _ (hmem _ (by simp))) (hties.claimOk _ (hmem _ (by simp)))
       (hties.claimOk _ (hmem _ (by simp))) (by simpa using hties.sigmaLast) hties.t
     -- the bases read as the stream bases; the opening's points as the proof's
@@ -711,7 +708,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
       exact hU
     · exact List.map_injective_iff.mpr Subtype.val_injective
         ((forall₂_exact hT.2.1 hns).trans h2.symm)
-    · exact success_eq S σ cvk cp pub oldsW hties.olds_kept inp.opening.z1 inp.opening.z2
+    · exact success_eq S σ cvk cp pub oldsW hties.olds.kept inp.opening.z1 inp.opening.z2
         hties.z1 hties.z2 U chals _ _ _ _ _ hiff
 
 /-! ## The read theorem -/
@@ -729,14 +726,15 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat
       ⦃⇓ pts _ => ⌜CommReads C V pts (publicCommitment C σ cvk pub).toList⌝⦄)
-    (h : IvpHyps S σ cvk cp pub optSponge blindingH spongeAfterIndex inp oldsW) :
+    (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
+    (h : IvpHyps S σ cvk cp pub optSponge spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof ops S.curve.e C.sponge.params endo (.ofSpec C.groupMap) sqrtF
       optSponge
       blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
-  obtain ⟨hIdx, hmask, hties, hh, hcanon, hnc, htne, hlrne, hchar⟩ := h
+  obtain ⟨hIdx, hmask, hties, hcanon, hnc, htne, hlrne, hchar⟩ := h
   have hσlen : inp.sigmaLast.toArray.size = nc := by
     have := hties.sigmaLast.length_eq
     simpa using this
@@ -762,7 +760,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
-    have hsgv := olds_reads hmask hties.olds
+    have hsgv := olds_reads hmask hties.olds.cells
     have hzne : (cp.zComm.toList.map wirePt) ≠ [] := by
       intro h
       have := congrArg List.length h
@@ -792,7 +790,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     -- the kept `sg_old` readings are the olds' `sg`
     have hkept : ((oldsW.map fun b => (b.2, wirePt b.1)).filter (·.1)).map (·.2)
         = (cp.olds.map (·.sg)).toList.map wirePt := by
-      rw [← hties.olds_kept, List.filter_map, List.map_map, List.map_map]
+      rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
     rw [hkept] at hFq
     exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hcanon hlrne hσlen tr
@@ -810,9 +808,9 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all
-    obtain ⟨hsgv, hall⟩ := olds_reads_plain hmask hties.olds
+    obtain ⟨hsgv, hall⟩ := olds_reads_plain hmask hties.olds.cells
     have hkept : oldsW.map (fun b => wirePt b.1) = (cp.olds.map (·.sg)).toList.map wirePt := by
-      rw [← hties.olds_kept, List.filter_eq_self.2 hall, List.map_map]
+      rw [← hties.olds.kept, List.filter_eq_self.2 hall, List.map_map]
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.w.reads hties.z.reads hties.t.reads
     rw [hd, hkept] at hFq
@@ -841,13 +839,15 @@ theorem incrementallyVerifyProof_wrap_reads {nc : ℕ} {V : Valuation Fq}
     (oldsW : List (IpaVesta.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaVesta.curve V pts (publicCommitment IpaVesta.curve σ cvk pub).toList⌝⦄)
-    (h : IvpHyps (wrapSide V) σ cvk cp pub true blindingH spongeAfterIndex inp oldsW) :
+    (hh : OnCurveAt IpaVesta.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaVesta.curve.E σ.h))
+    (h : IvpHyps (wrapSide V) σ cvk cp pub true spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.wrap IpaEndo.vesta IpaVesta.curve.sponge.params endo
       groupMapParamsVesta sqrtF true blindingH spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads (wrapSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
   incrementallyVerifyProof_reads (wrapSide V) σ cvk cp pub endo sqrtF true blindingH
-    spongeAfterIndex computeXHat inp oldsW hXhat h
+    spongeAfterIndex computeXHat inp oldsW hXhat hh h
 
 /-- **The step side's group half reads as the wire's**: `incrementallyVerifyProof_reads` at
 `stepSide` — the plain sponge, no `sg_old` masked, the claimed `cip` canonical. -/
@@ -861,13 +861,15 @@ theorem incrementallyVerifyProof_step_reads {nc : ℕ} {V : Valuation Fp}
     (oldsW : List (IpaPallas.curve.Point × Bool))
     (hXhat : ⦃⌜True⌝⦄ computeXHat ⦃⇓ pts _ =>
       ⌜CommReads IpaPallas.curve V pts (publicCommitment IpaPallas.curve σ cvk pub).toList⌝⦄)
-    (h : IvpHyps (stepSide V) σ cvk cp pub false blindingH spongeAfterIndex inp oldsW) :
+    (hh : OnCurveAt IpaPallas.curve.E.toAffine V blindingH
+      (SWPoint.equivPoint IpaPallas.curve.E σ.h))
+    (h : IvpHyps (stepSide V) σ cvk cp pub false spongeAfterIndex inp oldsW) :
     ⦃⌜True⌝⦄
     incrementallyVerifyProof IpaScalarOps.step IpaEndo.pallas IpaPallas.curve.sponge.params endo
       groupMapParamsPallas sqrtF false blindingH spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads (stepSide V) σ cvk cp pub inp.toIvpClaims o⌝⦄ :=
   incrementallyVerifyProof_reads (stepSide V) σ cvk cp pub endo sqrtF false blindingH
-    spongeAfterIndex computeXHat inp oldsW hXhat h
+    spongeAfterIndex computeXHat inp oldsW hXhat hh h
 
 end Sides
 
