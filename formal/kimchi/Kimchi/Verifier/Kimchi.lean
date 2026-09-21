@@ -60,11 +60,12 @@ Every deferral is declared here.
   takes `ZMod`'s junk division (`x/0 = 0`) and proceeds — harmless for the theorems,
   which exclude exactly these two points (`zetaBoundaryBad`, the `+2` of `szBudget`),
   but a real algorithm-vs-algorithm difference (external-audit V-3);
-* the final check is the two bracket equations as a *deterministic* conjunction where
-  production checks one rng-weighted MSM (`r₁·A + r₂·B = 0`, fresh `thread_rng`) —
-  Lean-accept implies production-accept with probability 1, the conservative
-  direction — and this verifier checks *one* proof (= production's `batch_verify` on a
-  singleton); multi-proof batching is out of scope (external-audit V-4);
+* the final check is the two bracket equations as a conjunction, `A = 0 ∧ B = 0`, where
+  production settles one MSM, `∑ᵢ (rⁱ·Aᵢ + sⁱ·Bᵢ) = 0` at fresh `thread_rng` weights `r`, `s`.
+  This verifier checks *one* proof (= production's `batch_verify` on a singleton), where
+  both weights are `1` and production's test is `A + B = 0`: Lean-accept implies
+  production-accept, the conservative direction, and not conversely (`Bulletproof/Wire.lean`,
+  *What `verify` checks*); multi-proof batching is out of scope (external-audit V-4);
 * production's key carries the public-input count (`pub public: usize`,
   verifier_index.rs:71 — a serialized field) and `to_batch` rejects a mismatched
   argument outright (`public_input.len() != verifier_index.public`,
