@@ -97,10 +97,7 @@ structure InputReads (E : Env IpaVesta.curve) (cp : KimchiProof IpaVesta.curve 1
   /-- The opening's `z₂`. -/
   z2 : (wrapSide Vg).decode g.opening.z2 = cp.opening.z2
   /-- The `sg` cells under their keep bits; the kept ones are the old accumulators'. -/
-  olds : ∃ oldsW : List (IpaVesta.curve.Point × Bool),
-    List.Forall₂ (MaskedBaseReads IpaVesta.curve.E.toAffine Vg) (g.sgOld.map fun m => (m.2, m.1))
-      (oldsW.map fun b => (SWPoint.equivPoint IpaVesta.curve.E b.1, b.2)) ∧
-    (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
+  olds : ∃ oldsW, OldsRead Vg g.sgOld cp oldsW
   /-- The branch's domain is the key's. -/
   domain : s.branch.domainLog2.val Vs = (domains.keyLog2 : Fp)
   /-- `ft(ζω)`. -/
@@ -151,11 +148,11 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
       ((g.cells keyCells).withClaims g.claims) oldsW := by
   have hc : (g.cells keyCells).withClaims g.claims = g.cells keyCells := rfl
   rw [hc]
-  obtain ⟨oldsW, holds, hkept⟩ := hin.olds
+  obtain ⟨oldsW, holds⟩ := hin.olds
   refine ⟨oldsW,
     { idx := hvk.idx, mask := ?mask
       ties :=
-        { olds := holds, olds_kept := hkept, w := hin.w, z := hin.z, t := hin.t
+        { olds := holds, w := hin.w, z := hin.z, t := hin.t
           index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
           sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }

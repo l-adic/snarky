@@ -178,6 +178,17 @@ def ColumnsRead (C : KimchiCurve) (V : Valuation C.BaseField) {nc : ℕ}
     Prop :=
   List.Forall₂ (fun col P => CommReads C V col P.toList) cols Ps
 
+/-- The `sg_old` cells read as the proof's old accumulators: they read as the points `oldsW`
+under their keep bits, and the kept points are the old accumulators' commitments, in order. -/
+structure OldsRead {nc k : ℕ} (V : Valuation C.BaseField)
+    (sgOld : List (Option (BoolVar C.BaseField) × AffinePoint (FVar C.BaseField)))
+    (cp : KimchiProof C nc k) (oldsW : List (C.Point × Bool)) : Prop where
+  /-- The cells read as `oldsW`'s points under their bits. -/
+  cells : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (sgOld.map fun m => (m.2, m.1))
+    (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2))
+  /-- The kept points are the proof's old accumulators' commitments, in order. -/
+  kept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
+
 /-- What the group half's read assumes of its cells (the OCaml inputs, read as the wire's
 key `cvk`, proof `cp` and the claims): the kept `sg_old` are the proof's old accumulators'
 commitments, each commitment column reads as its wire column, the opening's `z₁`, `z₂` decode
@@ -190,11 +201,8 @@ structure IvpTies {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
     (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField)
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf)
     (oldsW : List (C.Point × Bool)) : Prop where
-  /-- The `sg_old` cells read as `oldsW`'s points under their bits. -/
-  olds : List.Forall₂ (MaskedBaseReads C.E.toAffine V) (inp.sgOld.map fun m => (m.2, m.1))
-    (oldsW.map fun b => (SWPoint.equivPoint C.E b.1, b.2))
-  /-- The kept `sg_old` are the proof's old accumulators' commitments, in order. -/
-  olds_kept : (oldsW.filter (·.2)).map (·.1) = (cp.olds.map (·.sg)).toList
+  /-- The `sg_old` cells read as the proof's old accumulators, through `oldsW`. -/
+  olds : OldsRead V inp.sgOld cp oldsW
   /-- The witness commitments. -/
   w : ColumnsRead C V inp.wComm cp.wComm.toList
   /-- The permutation accumulator's commitment. -/
@@ -475,7 +483,7 @@ private theorem bases_reads {nc : ℕ} {sf : Type}
   have hs := hties.sigma.masked
   simp only [List.map_append, List.map_map, List.append_assoc, List.map_cons, List.map_nil,
     Function.comp_def] at hi hw hc hs ⊢
-  refine List.rel_append hties.olds ?_
+  refine List.rel_append hties.olds.cells ?_
   refine List.rel_append hx.masked ?_
   refine List.rel_append (.cons ⟨hf, rfl⟩ .nil) ?_
   refine List.rel_append hties.z.masked ?_
@@ -709,7 +717,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
       exact hU
     · exact List.map_injective_iff.mpr Subtype.val_injective
         ((forall₂_exact hT.2.1 hns).trans h2.symm)
-    · exact success_eq S σ cvk cp pub oldsW hties.olds_kept inp.opening.z1 inp.opening.z2
+    · exact success_eq S σ cvk cp pub oldsW hties.olds.kept inp.opening.z1 inp.opening.z2
         hties.z1 hties.z2 U chals _ _ _ _ _ hiff
 
 /-! ## The read theorem -/
@@ -761,7 +769,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     rename_i _ rIdx _ hIdx' xHat _ hx tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- the transcript, at the wire readings of every absorbed cell
-    have hsgv := olds_reads hmask hties.olds
+    have hsgv := olds_reads hmask hties.olds.cells
     have hzne : (cp.zComm.toList.map wirePt) ≠ [] := by
       intro h
       have := congrArg List.length h
@@ -791,7 +799,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     -- the kept `sg_old` readings are the olds' `sg`
     have hkept : ((oldsW.map fun b => (b.2, wirePt b.1)).filter (·.1)).map (·.2)
         = (cp.olds.map (·.sg)).toList.map wirePt := by
-      rw [← hties.olds_kept, List.filter_map, List.map_map, List.map_map]
+      rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
     rw [hkept] at hFq
     exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hcanon hlrne hσlen tr
@@ -809,9 +817,9 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
     rename_i _ rIdx _ hIdx' tr _ htr' _ _ hasrt' ftc _ hft' o _ hcb'
     have hd : rIdx.1.val V = cvk.digest := (hIdx' sIdx hsIdx).1.trans hdig
     -- every old is kept: the plain sponge absorbs them all
-    obtain ⟨hsgv, hall⟩ := olds_reads_plain hmask hties.olds
+    obtain ⟨hsgv, hall⟩ := olds_reads_plain hmask hties.olds.cells
     have hkept : oldsW.map (fun b => wirePt b.1) = (cp.olds.map (·.sg)).toList.map wirePt := by
-      rw [← hties.olds_kept, List.filter_eq_self.2 hall, List.map_map]
+      rw [← hties.olds.kept, List.filter_eq_self.2 hall, List.map_map]
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.w.reads hties.z.reads hties.t.reads
     rw [hd, hkept] at hFq

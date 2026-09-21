@@ -136,7 +136,7 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
   refine ⟨(cp.olds.map (·.sg)).toList.map (·, true),
     { idx := hvk.idx, mask := ?mask
       ties :=
-        { olds := ?olds, olds_kept := ?kept, w := hin.w, z := hin.z, t := hin.t
+        { olds := ⟨?olds, ?kept⟩, w := hin.w, z := hin.z, t := hin.t
           index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
           sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }
