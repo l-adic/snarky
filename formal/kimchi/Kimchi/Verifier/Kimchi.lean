@@ -346,6 +346,15 @@ impractical at production domain sizes. -/
 def powPow2 {F : Type*} [Field F] (x : F) (k : ℕ) : F :=
   (List.range k).foldl (fun a _ => a * a) x
 
+/-- `powPow2` is the power it computes. -/
+theorem powPow2_eq {F : Type*} [Field F] (x : F) (k : ℕ) : powPow2 x k = x ^ 2 ^ k := by
+  induction k with
+  | zero => simp [powPow2]
+  | succ k ih =>
+      rw [powPow2, List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+      show powPow2 x k * powPow2 x k = _
+      rw [ih, ← pow_add, ← two_mul, ← pow_succ']
+
 /-- The shared summand of the two public evaluations (verifier.rs:338–375): over the
 public inputs, `∑ᵢ −(pt − ωⁱ)⁻¹ · pubᵢ · ωⁱ`, by a running-`ω`-power fold.
 `batch_inversion` (:346) is an optimization — per-element inversion is the same value. -/

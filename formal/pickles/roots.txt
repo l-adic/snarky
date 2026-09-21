@@ -90,7 +90,7 @@ Pickles.Env.Invariants
 Pickles.Env.ofInvariants
 -- The domain bundle built from data (StepScalarHalf.lean): check_halves.lean forms it from
 -- the step domains a proof cache uses and the key's `log2`, deciding its facts once; the
--- generator orders by squaring (`powTwoPow`), since the generic power recurses as deep as its
+-- generator orders by squaring (`powPow2`), since the generic power recurses as deep as its
 -- exponent.
 Pickles.KnownDomains.ofList?
 -- Whether the SRS avoids the key's Lagrange relations (TwoHalves.lean), decided on the key's

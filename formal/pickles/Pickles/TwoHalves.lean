@@ -106,31 +106,20 @@ open Std.Do Snarky Snarky.Kimchi Kimchi.Verifier Bulletproof Bulletproof.Ipa
 open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open scoped Kimchi
 
-/-! ## Powers of two, runnable -/
-
-/-- `g ^ 2 ^ k` by `k` squarings. The generic power compiles to a recursion as deep as its
-exponent, which a `2 ^ 15`-element domain overflows the stack on. -/
-def powTwoPow {M : Type} [Monoid M] (g : M) : ℕ → M
-  | 0 => g
-  | k + 1 => powTwoPow g k * powTwoPow g k
-
-theorem powTwoPow_eq {M : Type} [Monoid M] (g : M) (k : ℕ) : powTwoPow g k = g ^ 2 ^ k := by
-  induction k with
-  | zero => simp [powTwoPow]
-  | succ k ih => rw [powTwoPow, ih, ← pow_add, ← two_mul, ← pow_succ']
+/-! ## Primitivity, runnable -/
 
 /-- An element of order dividing `2 ^ d` and not `2 ^ (d - 1)` is a primitive `2 ^ d`-th root:
-primitivity by two runs of squarings. -/
-theorem isPrimitiveRoot_two_pow {M : Type} [CommMonoid M] (g : M) (d : ℕ)
-    (h1 : powTwoPow g d = 1) (h2 : d = 0 ∨ powTwoPow g (d - 1) ≠ 1) :
+primitivity by two runs of squarings (`powPow2`). -/
+private theorem isPrimitiveRoot_two_pow {F : Type*} [Field F] (g : F) (d : ℕ)
+    (h1 : powPow2 g d = 1) (h2 : d = 0 ∨ powPow2 g (d - 1) ≠ 1) :
     IsPrimitiveRoot g (2 ^ d) := by
-  rw [powTwoPow_eq] at h1
+  rw [powPow2_eq] at h1
   cases d with
   | zero =>
       obtain rfl : g = 1 := by simpa using h1
       simp
   | succ d =>
-      have h2' : ¬g ^ 2 ^ d = 1 := by simpa [powTwoPow_eq] using h2
+      have h2' : ¬g ^ 2 ^ d = 1 := by simpa [powPow2_eq] using h2
       rw [← orderOf_eq_prime_pow h2' h1]
       exact IsPrimitiveRoot.orderOf g
 
@@ -178,8 +167,8 @@ them once on what it loaded. That the generator is primitive is checked by squar
 check. -/
 def Env.Invariants {C : KimchiCurve} (σ : SRS C.Point) (cvk : KimchiVK C 1) : Prop :=
   cvk.endo = C.endoScalar ∧ 3 ≤ cvk.zkRows ∧ cvk.zkRows ≤ cvk.n ∧
-    (powTwoPow cvk.omega cvk.domainLog2 = 1 ∧
-      (cvk.domainLog2 = 0 ∨ powTwoPow cvk.omega (cvk.domainLog2 - 1) ≠ 1)) ∧
+    (powPow2 cvk.omega cvk.domainLog2 = 1 ∧
+      (cvk.domainLog2 = 0 ∨ powPow2 cvk.omega (cvk.domainLog2 - 1) ≠ 1)) ∧
     MaxProofsVerified * σ.k < 2 ^ 128 ∧ 0 < σ.k ∧ σ.h ≠ 0 ∧
     0 < cvk.lagrangeBasis.size ∧ cvk.lagrangeBasis.size ≤ cvk.n ∧
     ∃ h : cvk.n ≤ 2 ^ σ.k, cvk.lagrangeBasis

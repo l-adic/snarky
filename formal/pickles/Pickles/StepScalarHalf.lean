@@ -43,14 +43,14 @@ structure KnownDomains (E : Env IpaVesta.curve) where
 
 /-- The bundle of a candidate list and the key's `log2`, where its facts hold: each is
 decidable, so a driver checks them once on the domains a proof cache uses. The generator
-orders are checked by squaring (`powTwoPow`). -/
+orders are checked by squaring (`powPow2`). -/
 def KnownDomains.ofList? (E : Env IpaVesta.curve) (list : List (KnownDomain Fp))
     (keyLog2 : ℕ) : Option (KnownDomains E) :=
   if h : (list.map fun d => (d.log2 : Fp)).Nodup ∧
-      (∀ d ∈ list, powTwoPow d.generator d.log2 = 1) ∧
+      (∀ d ∈ list, powPow2 d.generator d.log2 = 1) ∧
       (∀ d ∈ list, E.cvk.zkRows ≤ 2 ^ d.log2) ∧
       E.cvk.n = 2 ^ keyLog2 ∧ (⟨keyLog2, E.cvk.omega⟩ : KnownDomain Fp) ∈ list then
-    some ⟨list, h.1, fun d hd => powTwoPow_eq d.generator d.log2 ▸ h.2.1 d hd, h.2.2.1,
+    some ⟨list, h.1, fun d hd => powPow2_eq d.generator d.log2 ▸ h.2.1 d hd, h.2.2.1,
       keyLog2, h.2.2.2.1, h.2.2.2.2⟩
   else none
 
