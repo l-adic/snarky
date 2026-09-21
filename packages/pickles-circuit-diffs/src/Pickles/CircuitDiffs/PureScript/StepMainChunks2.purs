@@ -100,7 +100,7 @@ compileStepMainChunks2 params = do
           chunks2Rule
           { blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
-          , perSlotFopZkRows: Vector.nil
+          , perSlotNumChunks: Vector.nil
           , perSlotVkBlueprints: unit
           }
           dummyWrapSg

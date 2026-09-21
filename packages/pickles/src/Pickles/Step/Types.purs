@@ -13,11 +13,15 @@ module Pickles.Step.Types
   , ProofState(..)
   , PerProofWitness(..)
   , perProofWitnessTyp
+  , chunkedEvalsTyp
   ) where
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
+import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, tuple10, tuple2, tuple3, tuple5, uncurry10, uncurry2, uncurry3, uncurry5)
 import Data.Vector (Vector, (!!), (:<))
@@ -25,11 +29,13 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.DeferredValues (BranchData)
 import Pickles.Field (StepField)
+import Pickles.Linearization.FFI (PointEval)
 import Pickles.Typ (Typ, arrayTyp, pairTyp, transportTyp, typOf, unitTyp)
-import Pickles.Types (AllocEvals, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (ChunkedEvals, WrapProofMessages, WrapProofOpening)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked, const_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
@@ -272,7 +278,10 @@ instance
 newtype PerProofWitness (stepChunks :: Int) (ds :: Int) (dw :: Int) f sf b = PerProofWitness
   { wrapProof :: WrapProof dw stepChunks (WeierstrassAffinePoint PallasG f) sf
   , proofState :: ProofState ds f b
-  , prevEvals :: AllocEvals f
+  -- | Every chunk of the previous step proof's evaluations. The chunk
+  -- | count is not in the type: like the width, it reaches the circuit
+  -- | through `perProofWitnessTyp`.
+  , prevEvals :: ChunkedEvals f
   -- | One entry per previous proof this slot's own wrap proof
   -- | verified. The width is not in the type: it comes from the
   -- | application spec and reaches the circuit through
@@ -283,13 +292,13 @@ newtype PerProofWitness (stepChunks :: Int) (ds :: Int) (dw :: Int) f sf b = Per
 
 -- | `PerProofWitness`'s field order, as a nested tuple, and the order
 -- | `perProofWitnessTyp` lays the fields out in. Not a `CircuitType`:
--- | `prevChallenges` and `prevSgs` are arrays, so nothing can size them
--- | from the type alone.
+-- | `prevEvals`, `prevChallenges` and `prevSgs` hold arrays, so nothing
+-- | can size them from the type alone.
 type PerProofWitnessTuple stepChunks ds dw x sf b =
   Tuple5
     (WrapProof dw stepChunks (WeierstrassAffinePoint PallasG x) sf)
     (ProofState ds x b)
-    (AllocEvals x)
+    (ChunkedEvals x)
     (Array (UnChecked (Vector ds x)))
     (Array (WeierstrassAffinePoint PallasG x))
 
@@ -308,8 +317,71 @@ perProofWitnessOfTuple = uncurry5
   \wrapProof proofState prevEvals prevChallenges prevSgs ->
     PerProofWitness { wrapProof, proofState, prevEvals, prevChallenges, prevSgs }
 
--- | A slot's per-proof witness as a `Typ`. The first three fields come
--- | from `CircuitType`; the two arrays are sized by `width`.
+-- | `ChunkedEvals` as a `Typ`, at `numChunks` chunks per evaluation.
+-- |
+-- | The columns run in `AllocEvals`'s order: public, witness,
+-- | coefficients, `z`, sigma, index, then `ftEval1`. Within a column
+-- | the `zeta` chunks come before the `omega*zeta` chunks, so at one
+-- | chunk the layout is `AllocEvals`'s.
+chunkedEvalsTyp
+  :: forall f c
+   . Int
+  -> Typ f c (ChunkedEvals (F f)) (ChunkedEvals (FVar f))
+chunkedEvalsTyp numChunks =
+  { size: columnCount * columnSize + 1
+  , toFields: \e ->
+      map (\(F x) -> x)
+        (Array.concatMap columnFields (columns e) <> [ e.ftEval1 ])
+  , fromVars: \vars ->
+      let
+        column i = columnOfFields
+          (Array.slice (i * columnSize) ((i + 1) * columnSize) vars)
+
+        columnVec :: forall n. Reflectable n Int => Int -> Vector n (NonEmptyArray (PointEval (FVar f)))
+        columnVec from = Vector.generate \j -> column (from + getFinite j)
+      in
+        { publicEvals: column 0
+        , witnessEvals: columnVec 1
+        , coeffEvals: columnVec 16
+        , zEvals: column 31
+        , sigmaEvals: columnVec 32
+        , indexEvals: columnVec 38
+        , ftEval1: fromJust' "chunkedEvalsTyp: ftEval1"
+            (Array.index vars (columnCount * columnSize))
+        }
+  , check: \_ -> pure unit
+  }
+  where
+  columnCount = 44
+  columnSize = 2 * numChunks
+
+  columns :: forall a. ChunkedEvals a -> Array (NonEmptyArray (PointEval a))
+  columns e =
+    [ e.publicEvals ]
+      <> Vector.toUnfoldable e.witnessEvals
+      <> Vector.toUnfoldable e.coeffEvals
+      <> [ e.zEvals ]
+      <> Vector.toUnfoldable e.sigmaEvals
+      <> Vector.toUnfoldable e.indexEvals
+
+  columnFields :: forall a. NonEmptyArray (PointEval a) -> Array a
+  columnFields chunks =
+    let
+      arr = NEA.toArray chunks
+    in
+      map _.zeta arr <> map _.omegaTimesZeta arr
+
+  columnOfFields :: forall a. Array a -> NonEmptyArray (PointEval a)
+  columnOfFields fs =
+    fromJust' "chunkedEvalsTyp: a column needs at least one chunk"
+      $ NEA.fromArray
+      $ Array.zipWith (\zeta omegaTimesZeta -> { zeta, omegaTimesZeta })
+          (Array.take numChunks fs)
+          (Array.drop numChunks fs)
+
+-- | A slot's per-proof witness as a `Typ`. The wrap proof and the
+-- | proof state come from `CircuitType`; the two arrays are sized by
+-- | `width` and the evaluations by `numChunks`.
 perProofWitnessTyp
   :: forall stepChunks ds dw sf sfvar
    . Reflectable ds Int
@@ -323,20 +395,18 @@ perProofWitnessTyp
        (ProofState ds (FVar StepField) (BoolVar StepField))
   => CheckedType StepField (KimchiConstraint StepField)
        (ProofState ds (FVar StepField) (BoolVar StepField))
-  => CircuitType StepField (AllocEvals (F StepField)) (AllocEvals (FVar StepField))
-  => CheckedType StepField (KimchiConstraint StepField) (AllocEvals (FVar StepField))
-  => Int
+  => { width :: Int, numChunks :: Int }
   -> Typ StepField (KimchiConstraint StepField)
        (PerProofWitness stepChunks ds dw (F StepField) sf Boolean)
        (PerProofWitness stepChunks ds dw (FVar StepField) sfvar (BoolVar StepField))
-perProofWitnessTyp width =
+perProofWitnessTyp { width, numChunks } =
   transportTyp
     perProofWitnessTuple
     perProofWitnessOfTuple
     perProofWitnessTuple
     ( pairTyp typOf
         ( pairTyp typOf
-            ( pairTyp typOf
+            ( pairTyp (chunkedEvalsTyp numChunks)
                 ( pairTyp (arrayTyp width typOf)
                     (pairTyp (arrayTyp width typOf) unitTyp)
                 )

@@ -30,7 +30,6 @@ import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStep
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
 import Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn (compileWrapMainNoRecursionReturn)
-import Pickles.Constants (zkRowsByDefault)
 import Pickles.Field (StepField)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Slots (Slot)
@@ -151,7 +150,7 @@ compileStepMainTreeProofReturn params = do
               (nrrArt.stepDomainLog2 :< Vector.nil)
                 :< (selfLog2 :< Vector.nil)
                 :< Vector.nil
-          , perSlotFopZkRows: zkRowsByDefault :< zkRowsByDefault :< Vector.nil
+          , perSlotNumChunks: 1 :< 1 :< Vector.nil
           , perSlotVkBlueprints:
               -- Heterogeneous wrap domains: slot 0 reads NRR's basis at
               -- 2^13, slot 1 self's at 2^14. Each travels with its slot.

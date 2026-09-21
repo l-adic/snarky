@@ -63,9 +63,8 @@ import Pickles.DeferredValues (UnfinalizedProof)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Field (StepField, WrapField)
 import Pickles.Linearization (pallas, vesta) as Linearization
-import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (collapsePointEval)
+import Pickles.PlonkChecks (collapsePointEval, mapChunkedEvals, singleChunkEvals)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
@@ -78,7 +77,7 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesF
 import Pickles.Step.Slots (class SlotStatementsCarrier, class StepSlotsCarrier, class StepSlotsTyp, PrevValues, replicateStepSlotsCarrier)
 import Pickles.Step.Types as Step
 import Pickles.Trace as Trace
-import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), Evals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
+import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..), extractWrapVKForStepHash, verifierIndexDigest, vestaVerifierIndexCommitments)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Compare, class Mul)
@@ -205,25 +204,9 @@ buildStepAdvice input =
 
     z2 = toShifted (F bcd.proofDummy.z2)
 
-    wrapPE :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
-    wrapPE pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
-
-    wrapAE :: Evals StepField -> Evals (F StepField)
-    wrapAE ae =
-      { ftEval1: F ae.ftEval1
-      , publicEvals: wrapPE ae.publicEvals
-      , zEvals: wrapPE ae.zEvals
-      , indexEvals: map wrapPE ae.indexEvals
-      , witnessEvals: map wrapPE ae.witnessEvals
-      , coeffEvals: map wrapPE ae.coeffEvals
-      , sigmaEvals: map wrapPE ae.sigmaEvals
-      }
-
-    prevEvalsDummy =
-      let
-        aeF = wrapAE bcd.proofDummy.prevEvals
-      in
-        AllocEvals aeF
+    -- One chunk: a slot whose previous step proof has more would need
+    -- the dummy at that count, which nothing here supplies.
+    prevEvalsDummy = mapChunkedEvals F (singleChunkEvals bcd.proofDummy.prevEvals)
 
     dummyFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
@@ -622,8 +605,9 @@ type BuildSlotAdviceInput inputVal stmt =
       , gamma :: SizedF 128 StepField
       , zeta :: SizedF 128 StepField
       }
-  -- | Step-field polynomial evaluations of the wrap proof.
-  , wrapPrevEvals :: Evals StepField
+  -- | Step-field polynomial evaluations of the wrap proof, every
+  -- | chunk: what `expandProof` reads.
+  , wrapPrevEvalsChunked :: ChunkedEvals StepField
   -- | Branch data from the wrap proof's statement.
   , wrapBranchData :: VT.BranchData StepField Boolean
   -- | Sponge digest before evaluations, from the wrap proof's
@@ -650,8 +634,8 @@ type BuildSlotAdviceInput inputVal stmt =
       UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
   -- | The evaluations the step finalizer reads to recompute the claimed
   -- | deferred values and check them against `fopState`. Distinct from
-  -- | `wrapPrevEvals`, which feeds `expandProof` on a separate path.
-  , stepAdvicePrevEvals :: Evals StepField
+  -- | `wrapPrevEvalsChunked`, which feeds `expandProof` on a separate path.
+  , stepAdvicePrevEvals :: ChunkedEvals StepField
   -- | The expanded step-field bulletproof challenges of the proof being
   -- | verified, for this slot's entry of `advice.kimchiPrevChallenges`
   -- | — the prev proof's `deferred_values.bulletproof_challenges` run
@@ -852,27 +836,11 @@ buildSlotAdvice input = do
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
         { domainLog2: input.wrapDomainLog2, zkRows: input.wrapZkRows, pt: oracles.zeta }
 
-    stepProofPrevEvals =
-      let
-        pe pe' = { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
-        ae = input.wrapPrevEvals
-      in
-        AllocEvals
-          { ftEval1: F ae.ftEval1
-          , publicEvals: pe ae.publicEvals
-          , zEvals: pe ae.zEvals
-          , witnessEvals: map pe ae.witnessEvals
-          , coeffEvals: map pe ae.coeffEvals
-          , sigmaEvals: map pe ae.sigmaEvals
-          , indexEvals: map pe ae.indexEvals
-          }
-
     expandProofInputRec =
       { mustVerify: input.mustVerify
       , zkRows: input.stepZkRows
       , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-      , allEvals: input.wrapPrevEvals
-      , pEval0Chunks: [ input.wrapPrevEvals.publicEvals.zeta ]
+      , chunkedEvals: input.wrapPrevEvalsChunked
       , oldBulletproofChallenges: Vector.replicate @n dummyStepBpChalsRaw
       , plonkMinimal: plonkMinimalStep
       , rawBulletproofChallenges: input.fopState.deferredValues.bulletproofChallenges
@@ -906,7 +874,6 @@ buildSlotAdvice input = do
       , wrapVanishesOnZk
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
-      , stepProofPrevEvals
       , stepPrevChallenges: map (map F) prevChalsPerSlot
       , stepPrevSgsPadded: prevCpcs
       }
@@ -1024,24 +991,6 @@ buildSlotAdvice input = do
       , tComm: map (over ChunkedCommitment (map mkPallasAffine)) wrapCommits.tComm
       }
 
-    wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
-    wrapPE' pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
-
-    evalsForAdvice =
-      let
-        ae = input.stepAdvicePrevEvals
-      in
-        { allEvals:
-            { ftEval1: F ae.ftEval1
-            , publicEvals: wrapPE' ae.publicEvals
-            , zEvals: wrapPE' ae.zEvals
-            , indexEvals: map wrapPE' ae.indexEvals
-            , witnessEvals: map wrapPE' ae.witnessEvals
-            , coeffEvals: map wrapPE' ae.coeffEvals
-            , sigmaEvals: map wrapPE' ae.sigmaEvals
-            }
-        }
-
     slotBranchData = input.wrapBranchData { domainLog2 = F input.wrapBranchData.domainLog2 }
 
     dvFop = fopState.deferredValues
@@ -1093,7 +1042,7 @@ buildSlotAdvice input = do
               }
           , branchData: Step.AllocBranchData slotBranchData
           }
-      , prevEvals: AllocEvals evalsForAdvice.allEvals
+      , prevEvals: mapChunkedEvals F input.stepAdvicePrevEvals
       , prevChallenges: Vector.toUnfoldable $ map
           (\chals -> UnChecked (map F chals))
           (Vector.drop @pad input.prevChallengesForStepHash)

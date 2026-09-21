@@ -63,6 +63,7 @@ import Pickles.Step.VkSource (SlotVkSource)
 import Pickles.Typ (Typ, pairTyp, unitTyp)
 import Pickles.Types (PaddedLength, StepIPARounds, WrapIPARounds, WrapVkChunks)
 import Prim.Int (class Add)
+import Snarky.Backend.Kimchi.Util.Fatal (fromJust')
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar)
 import Snarky.Circuit.Types (varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -219,13 +220,15 @@ type SlotWitnessVar slotVkChunks =
 -- |
 -- | It is also where the slot width crosses from the type level to the
 -- | value level: the spec declares it, and it is reflected here and
--- | handed to `perProofWitnessTyp` as an ordinary integer.
+-- | handed to `perProofWitnessTyp` as an ordinary integer. The chunk
+-- | count of each slot's previous step proof is not in the spec at
+-- | all, so the caller supplies one per slot, in slot order.
 class StepSlotsTyp :: Type -> Type -> Type -> Constraint
 class StepSlotsTyp spec valCarrier varCarrier | spec -> valCarrier varCarrier where
-  stepSlotsTyp :: Typ StepField (KimchiConstraint StepField) valCarrier varCarrier
+  stepSlotsTyp :: Array Int -> Typ StepField (KimchiConstraint StepField) valCarrier varCarrier
 
 instance StepSlotsTyp Unit Unit Unit where
-  stepSlotsTyp = unitTyp
+  stepSlotsTyp _ = unitTyp
 
 instance
   ( StepSlotsTyp rest restVal restVar
@@ -241,8 +244,14 @@ instance
     (SlotWitnessVal WrapVkChunks /\ restVal)
     (SlotWitnessVar WrapVkChunks /\ restVar)
   where
-  stepSlotsTyp =
-    pairTyp (perProofWitnessTyp (reflectType (Proxy :: Proxy n))) (stepSlotsTyp @rest)
+  stepSlotsTyp slotNumChunks =
+    let
+      { head: numChunks, tail } = fromJust' "stepSlotsTyp: fewer chunk counts than slots"
+        (Array.uncons slotNumChunks)
+    in
+      pairTyp
+        (perProofWitnessTyp { width: reflectType (Proxy :: Proxy n), numChunks })
+        (stepSlotsTyp @rest tail)
 
 -- | What one slot of kind `k` contributes to the advice a rule reads:
 -- | a compiled slot its statement alone, a side-loaded slot its

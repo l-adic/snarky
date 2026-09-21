@@ -36,6 +36,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Partial.Unsafe (unsafePartial)
+import Pickles.Constants (zkRowsForNumChunks)
 import Pickles.DeferredValues (BranchData)
 import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..))
@@ -53,7 +54,7 @@ import Pickles.Step.Types (AllocBranchData(..), FopProofState(..), PerProofWitne
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Step.VkSource (SlotVkBlueprint(..), SlotVkSource(..))
 import Pickles.Typ (existsTyp)
-import Pickles.Types (AllocEvals(..), ChunkedCommitment(..), PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
+import Pickles.Types (ChunkedCommitment(..), ChunkedEvals, PaddedLength, PerProofUnfinalized(..), StepIPARounds, WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..), WrapVkChunks)
 import Pickles.VerificationKey (VerificationKey(..))
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -149,10 +150,10 @@ type StepMainSrsData len nd blueprints =
   -- | source could have been produced at: one entry for a
   -- | single-branch source, one per branch for a multi-branch one.
   , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
-  -- | Per slot, the kimchi `zk_rows` its previous step proof's
-  -- | deferred permutation scalar was produced at:
-  -- | `zkRowsForNumChunks` of that rule's step chunk count.
-  , perSlotFopZkRows :: Vector len Int
+  -- | Per slot, the chunk count of its previous step proof. It sizes
+  -- | that proof's evaluations in the witness, and fixes the kimchi
+  -- | `zk_rows` its deferred permutation scalar was produced at.
+  , perSlotNumChunks :: Vector len Int
   -- | Per slot, the compile-time blueprint for where its wrap VK comes
   -- | from; `buildSlotVkSources` bundles in the runtime key for the
   -- | side-loaded slots. The shape mirrors `prevsSpec` slot for slot,
@@ -241,15 +242,7 @@ type ReshapedPerProofWitness n stepChunks tCommLen =
       , bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (FVar StepField))
       , spongeDigest :: FVar StepField
       }
-  , allEvals ::
-      { ftEval1 :: FVar StepField
-      , publicEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , witnessEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , coeffEvals :: Vector 15 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , zEvals :: { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , sigmaEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      , indexEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
-      }
+  , chunkedEvals :: ChunkedEvals (FVar StepField)
   , branchData :: BranchData (FVar StepField) (BoolVar StepField)
   , prevChallenges :: Vector n (Vector StepIPARounds (FVar StepField))
   , prevSgs :: Vector n (WeierstrassAffinePoint PallasG (FVar StepField))
@@ -281,7 +274,6 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
     ProofState psRec = ppw.proofState
     FopProofState fopRec = psRec.fopState
     AllocBranchData branchDataRec = psRec.branchData
-    AllocEvals allEvals = ppw.prevEvals
 
     fopState =
       { plonk:
@@ -312,7 +304,7 @@ reshapePerProofWitness _ (PerProofWitness ppw) =
     , delta: openRec.delta
     , sg: openRec.sg
     , fopState
-    , allEvals
+    , chunkedEvals: ppw.prevEvals
     , branchData:
         { proofsVerifiedMask: branchDataRec.proofsVerifiedMask
         , domainLog2: branchDataRec.domainLog2
@@ -500,7 +492,7 @@ buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dum
         , bulletproofChallenges: pw.fopState.bulletproofChallenges
         , spongeDigest: pw.fopState.spongeDigest
         }
-    , allEvals: pw.allEvals
+    , chunkedEvals: pw.chunkedEvals
     , prevChallenges: pw.prevChallenges
     , prevSgs: map unwrapPt pw.prevSgs
     , unfinalized
@@ -622,7 +614,7 @@ stepMain
   rule
   { blindingH
   , perSlotFopDomainLog2s
-  , perSlotFopZkRows
+  , perSlotNumChunks
   , perSlotVkBlueprints
   }
   dummySg
@@ -681,7 +673,7 @@ stepMain
 
   -- Each cell of the carrier is a `StepSlot` typed at its own width.
   slotsCarrier <- label "exists_prevs"
-    $ existsTyp (stepSlotsTyp @prevsSpec)
+    $ existsTyp (stepSlotsTyp @prevsSpec (Vector.toUnfoldable perSlotNumChunks))
         (pure advice <#> \(StepAdvice r) -> r.perProofSlotsCarrier)
 
   -- Uniform across slots, so one `Vector len` rather than a per-slot
@@ -803,7 +795,7 @@ stepMain
                   slotFopDomainLog2s
               , shifts: map const_ (LinFFI.domainShifts @StepField slotShiftsLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-              , zkRows: perSlotFopZkRows !! i
+              , zkRows: zkRowsForNumChunks (perSlotNumChunks !! i)
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
               , domainMode: slotConfig.fopDomainMode

@@ -17,6 +17,7 @@ import Pickles.Field (StepField)
 import Pickles.FinalizeOtherProof (DomainMode(..), Output)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
+import Pickles.PlonkChecks (singleChunkEvals)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Safe.Coerce (coerce)
@@ -130,7 +131,7 @@ fopStepCircuit input =
   in
     finalizeOtherProofCircuit StepOtherField.fopShiftOps params
       { unfinalized
-      , allEvals: input.allEvals
+      , chunkedEvals: singleChunkEvals input.allEvals
       , mask: input.mask
       , prevChallenges: input.prevChallenges
       , domainLog2Var: input.domainLog2Var

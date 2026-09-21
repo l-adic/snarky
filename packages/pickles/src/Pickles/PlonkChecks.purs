@@ -15,10 +15,17 @@ module Pickles.PlonkChecks
     -- The records themselves are `Pickles.Types.Evals` and
     -- `Pickles.Types.ChunkedEvals`; these operate on them.
     extractEvalFields
+  , extractChunkedEvalFields
   , absorbEvals
+  , absorbChunkedEvals
   -- * Chunk recombination
   , collapsePointEval
   , collapseChunkedEvals
+  , CollapsedColumns
+  , collapseChunkedEvalsCircuit
+  , hornerChunks
+  , singleChunkEvals
+  , mapChunkedEvals
   -- * Domain scalars
   , omegaPowers
   , zkPolynomial
@@ -39,12 +46,14 @@ module Pickles.PlonkChecks
   -- `combinedInnerProduct` consumes it.
   , EvalOpt
   , buildEvalList
+  , buildEvalListChunked
   , buildEvalListUnmasked
   , combinedInnerProduct
   -- * The fr-sponge schedule
   , challengeDigest
   , maskedChallengeDigest
   , squeezeXiR
+  , squeezeXiRChunked
   , FrSpongeInput
   , frSpongeChallengesPure
   ) where
@@ -114,6 +123,27 @@ absorbEvals evals = do
   traverse_ absorbPointEval evals.coeffEvals
   traverse_ absorbPointEval evals.sigmaEvals
 
+-- | `absorbEvals` over chunked evaluations: the same columns in the
+-- | same order, each column's `zeta` chunks and then its
+-- | `omegaTimesZeta` chunks.
+absorbChunkedEvals
+  :: forall f m
+   . MonadSponge f m
+  => ChunkedEvals f
+  -> m Unit
+absorbChunkedEvals evals = do
+  absorb evals.ftEval1
+  absorbChunkedPointEval evals.publicEvals
+  absorbChunkedPointEval evals.zEvals
+  traverse_ absorbChunkedPointEval evals.indexEvals
+  traverse_ absorbChunkedPointEval evals.witnessEvals
+  traverse_ absorbChunkedPointEval evals.coeffEvals
+  traverse_ absorbChunkedPointEval evals.sigmaEvals
+  where
+  absorbChunkedPointEval chunks = do
+    traverse_ (absorb <<< _.zeta) chunks
+    traverse_ (absorb <<< _.omegaTimesZeta) chunks
+
 -- | Absorb a `PointEval`: `zeta` then `omegaTimesZeta`.
 absorbPointEval
   :: forall f m
@@ -176,6 +206,33 @@ collapsePointEval { rounds, zeta, zetaOmega } chunks =
     { zeta: actualEvaluationArr (map _.zeta arr) zeta rounds
     , omegaTimesZeta: actualEvaluationArr (map _.omegaTimesZeta arr) zetaOmega rounds
     }
+
+-- | Map over every evaluation of a `ChunkedEvals`.
+mapChunkedEvals :: forall a b. (a -> b) -> ChunkedEvals a -> ChunkedEvals b
+mapChunkedEvals f e =
+  { ftEval1: f e.ftEval1
+  , publicEvals: map pe e.publicEvals
+  , zEvals: map pe e.zEvals
+  , indexEvals: map (map pe) e.indexEvals
+  , witnessEvals: map (map pe) e.witnessEvals
+  , coeffEvals: map (map pe) e.coeffEvals
+  , sigmaEvals: map (map pe) e.sigmaEvals
+  }
+  where
+  pe p = { zeta: f p.zeta, omegaTimesZeta: f p.omegaTimesZeta }
+
+-- | One-chunk `ChunkedEvals`: each evaluation as its own single
+-- | chunk. `collapseChunkedEvals` inverts it at any point.
+singleChunkEvals :: forall f. Evals f -> ChunkedEvals f
+singleChunkEvals e =
+  { ftEval1: e.ftEval1
+  , publicEvals: NEA.singleton e.publicEvals
+  , zEvals: NEA.singleton e.zEvals
+  , indexEvals: map NEA.singleton e.indexEvals
+  , witnessEvals: map NEA.singleton e.witnessEvals
+  , coeffEvals: map NEA.singleton e.coeffEvals
+  , sigmaEvals: map NEA.singleton e.sigmaEvals
+  }
 
 -- | Collapse every chunked evaluation of a `ChunkedEvals` via
 -- | `collapsePointEval`, giving one value per polynomial.
@@ -717,6 +774,107 @@ buildEvalListUnmasked x =
   in
     NEA.concat $ NEA.cons' sgEvals [ others, evals ]
 
+-- | `buildEvalList` over chunked evaluations: each column contributes
+-- | all its chunks, in chunk order, where `buildEvalList` has its one
+-- | value.
+buildEvalListChunked
+  :: forall n f
+   . { sgEvals :: Vector n (Tuple (BoolVar f) (FVar f))
+     , publicInput :: NonEmptyArray (FVar f)
+     , ftEval :: FVar f
+     , evals :: Vector 43 (NonEmptyArray (FVar f))
+     }
+  -> NonEmptyArray (EvalOpt f)
+buildEvalListChunked x =
+  let
+    sgEvals = map (\(Tuple keep eval) -> EvalMaybe keep eval) x.sgEvals
+    others = NEA.snoc (map EvalJust x.publicInput) (EvalJust x.ftEval)
+    evals = map EvalJust $ NEA.concat $ NEA.fromFoldable1 x.evals
+  in
+    NEA.prependArray (Vector.toUnfoldable sgEvals)
+      $ NEA.concat
+      $
+        NEA.cons' others [ evals ]
+
+-- | `extractEvalFields` over chunked evaluations: the same 43 columns,
+-- | each as its chunks at one evaluation point.
+extractChunkedEvalFields
+  :: forall f
+   . (PointEval f -> f)
+  -> ChunkedEvals f
+  -> Vector 43 (NonEmptyArray f)
+extractChunkedEvalFields proj evals =
+  map proj evals.zEvals :<
+    map (map proj) evals.indexEvals
+      `Vector.append` map (map proj) evals.witnessEvals
+      `Vector.append` map (map proj) evals.coeffEvals
+      `Vector.append` map (map proj) evals.sigmaEvals
+
+-- | The 43 non-public columns of a `ChunkedEvals`, each recombined to
+-- | one evaluation per point.
+type CollapsedColumns f =
+  { witnessEvals :: Vector 15 (PointEval f)
+  , coeffEvals :: Vector 15 (PointEval f)
+  , zEvals :: PointEval f
+  , sigmaEvals :: Vector 6 (PointEval f)
+  , indexEvals :: Vector 6 (PointEval f)
+  }
+
+-- | `collapseChunkedEvals` in circuit, for the 43 non-public columns:
+-- | each column's chunks recombined by Horner at `zetaPow` and
+-- | `zetaOmegaPow`, the two evaluation points raised to the SRS length.
+-- | A one-chunk column costs nothing; each further chunk costs one
+-- | multiplication.
+-- |
+-- | The emission order is fixed: index, sigma, `z`, coefficients,
+-- | witness, each vector from its last column to its first, and within
+-- | a column `omegaTimesZeta` before `zeta`.
+collapseChunkedEvalsCircuit
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => { zetaPow :: FVar f, zetaOmegaPow :: FVar f }
+  -> ChunkedEvals (FVar f)
+  -> Snarky f c r (CollapsedColumns (FVar f))
+collapseChunkedEvalsCircuit { zetaPow, zetaOmegaPow } chunked = do
+  indexEvals <- traverseRev chunked.indexEvals
+  sigmaEvals <- traverseRev chunked.sigmaEvals
+  zEvals <- collapse chunked.zEvals
+  coeffEvals <- traverseRev chunked.coeffEvals
+  witnessEvals <- traverseRev chunked.witnessEvals
+  pure { witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals }
+  where
+  collapse chunks = do
+    omegaTimesZeta <- hornerChunks zetaOmegaPow (map _.omegaTimesZeta chunks)
+    zeta <- hornerChunks zetaPow (map _.zeta chunks)
+    pure { zeta, omegaTimesZeta }
+
+  traverseRev
+    :: forall n
+     . Vector n (NonEmptyArray (PointEval (FVar f)))
+    -> Snarky f c r (Vector n (PointEval (FVar f)))
+  traverseRev v = Vector.reverse <$> traverse collapse (Vector.reverse v)
+
+-- | `∑ chunks[i] · pt^i`, by Horner from the last chunk down.
+hornerChunks
+  :: forall f c r
+   . PrimeField f
+  => BasicSystem f c
+  => FVar f
+  -> NonEmptyArray (FVar f)
+  -> Snarky f c r (FVar f)
+hornerChunks pt chunks =
+  let
+    { init, last } = NEA.unsnoc chunks
+  in
+    foldM
+      ( \acc fx -> do
+          ptAcc <- mul_ pt acc
+          pure (add_ fx ptAcc)
+      )
+      last
+      (Array.reverse init)
+
 -- | The combined inner product `combine(zeta) + r * combine(zetaw)`.
 -- | The zetaw fold is emitted first.
 combinedInnerProduct
@@ -784,11 +942,31 @@ squeezeXiR
      , endo :: FVar f
      }
   -> Snarky f (KimchiConstraint f) cr { xi :: SizedF 128 (FVar f), r :: SizedF 128 (FVar f) }
-squeezeXiR p = evalSpongeM initialSpongeCircuit do
+squeezeXiR p = squeezeXiRChunked
+  { spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
+  , challengeDigest: p.challengeDigest
+  , chunkedEvals: singleChunkEvals p.allEvals
+  , endo: p.endo
+  }
+
+-- | `squeezeXiR` over evaluations of any chunk count: every chunk is
+-- | absorbed, as the verifier's transcript absorbs them.
+squeezeXiRChunked
+  :: forall f cr
+   . PoseidonField f
+  => PrimeField f
+  => FieldSizeInBits f 255
+  => { spongeDigestBeforeEvaluations :: FVar f
+     , challengeDigest :: Snarky f (KimchiConstraint f) cr (FVar f)
+     , chunkedEvals :: ChunkedEvals (FVar f)
+     , endo :: FVar f
+     }
+  -> Snarky f (KimchiConstraint f) cr { xi :: SizedF 128 (FVar f), r :: SizedF 128 (FVar f) }
+squeezeXiRChunked p = evalSpongeM initialSpongeCircuit do
   absorb p.spongeDigestBeforeEvaluations
   digest <- liftSnarky p.challengeDigest
   absorb digest
-  absorbEvals p.allEvals
+  absorbChunkedEvals p.chunkedEvals
   xi <- squeezeScalarChallenge { endo: p.endo }
   r <- squeezeScalarChallenge { endo: p.endo }
   pure { xi, r }
