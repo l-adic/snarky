@@ -7,6 +7,7 @@ import Snarky.Kimchi.Circuit.Point
 import Pickles.FrSponge
 import Pickles.Prechallenge
 import Pickles.Curve
+import Pickles.ListLemmas
 
 /-!
 # The in-circuit IPA opening check
@@ -709,26 +710,6 @@ private theorem extractScalarChallenges_length (p : Poseidon.Params F) (endo : F
     mvcgen [hL, hpre, ih]
     rename_i _ _ _ _ _ _ _ _ _ h
     simp [h]
-
-omit [DecidableEq F] [ToNat F] in
-/-- Pairing a list with another of the same length keeps a relation on the first. -/
-private theorem forall₂_zip_left {α β γ : Type} {R : α → γ → Prop} :
-    ∀ {l₁ : List α} {l₂ : List γ} (l : List β), List.Forall₂ R l₁ l₂ → l.length = l₁.length →
-      List.Forall₂ (fun q v => R q.1 v) (l₁.zip l) l₂
-  | [], [], _, .nil, _ => .nil
-  | _ :: _, _ :: _, [], .cons _ _, h => absurd h (by simp)
-  | _ :: _, _ :: _, _ :: l, .cons hq hs, h =>
-    .cons hq (forall₂_zip_left l hs (by simpa using h))
-
-omit [DecidableEq F] [ToNat F] in
-/-- A relation on the second components of a zip, at equal lengths, is one on the list. -/
-private theorem forall₂_zip_right {α β γ : Type} {R : β → γ → Prop} :
-    ∀ {l₁ : List α} {l₂ : List β} {ns : List γ}, l₂.length = l₁.length →
-      List.Forall₂ (fun q m => R q.2 m) (l₁.zip l₂) ns → List.Forall₂ R l₂ ns
-  | [], [], _, _, h => by cases h; exact .nil
-  | _ :: _, _ :: l₂, _ :: _, hl, .cons hq hs => .cons hq (forall₂_zip_right (by simpa using hl) hs)
-  | [], _ :: _, _, hl, _ => absurd hl (by simp)
-  | _ :: _, [], _, hl, _ => absurd hl (by simp)
 
 /-- `bulletReduce_spec` with the readings carried into the postcondition. -/
 private theorem bulletReduce_spec' (e : IpaEndo F)

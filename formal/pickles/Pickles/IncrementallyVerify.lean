@@ -1,6 +1,7 @@
 import Pickles.FtComm
 import Pickles.FqSpongeTranscript
 import Kimchi.Columns
+import Pickles.ListLemmas
 
 /-!
 # The group half (`incrementally_verify_proof`)
@@ -372,16 +373,6 @@ private theorem zipSeg_fst {nc : ℕ} (comm : Vector C.Point nc)
     (ev : PointEvaluations (Vector C.ScalarField nc)) : (zipSeg C comm ev).map (·.1) = comm := by
   ext i hi
   simp [zipSeg]
-
-private theorem toList_map_fst_zip {α β γ : Type} {n : ℕ} (as : Vector α n) (bs : Vector β n)
-    (f : α → γ) : List.map (fun x => f x.1) (as.toList.zip bs.toList) = as.toList.map f := by
-  show List.map (f ∘ (fun x : α × β => x.1)) _ = _
-  rw [← List.map_map, ← Vector.toList_zip, ← Vector.toList_map, Vector.map_fst_zip]
-
-private theorem toList_flatten' {α : Type} {m n : ℕ} (v : Vector (Vector α n) m) :
-    v.flatten.toList = (v.toList.map Vector.toList).flatten := by
-  simp [Vector.flatten, Vector.toList, Function.comp_def]
-  rfl
 
 /-- The tail rows' commitments, flattened: `z`, the six selectors, the witness columns, the
 coefficients, `σ₀…σ₅`, each column's chunks adjacent. -/

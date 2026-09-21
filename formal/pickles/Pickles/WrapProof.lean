@@ -2,6 +2,7 @@ import Pickles.StepGroupHalf
 import Pickles.WrapScalarHalf
 import Pickles.Encoding
 import Snarky.Compile
+import Pickles.ListLemmas
 
 /-!
 # A wrap proof is verified by its two circuits
@@ -116,12 +117,6 @@ private theorem InputReads.fopTies (hin : InputReads E cp pub Vg Vs g s) :
 private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fp) = 0) : m = 0 := by
   have hd : PALLAS_BASE_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_BASE_CARD).mp h0
   exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_BASE_CARD]))
-
-private theorem length_flatten_singletons {α : Type} (l : List α) :
-    (l.map ([·])).flatten.length = l.length := by
-  induction l with
-  | nil => rfl
-  | cons a t ih => simpa using ih
 
 /-- The group half's hypotheses: the readings from `InputReads` and `VkReads`, what no circuit
 enforces from its own hypotheses, the shape guards proved. -/

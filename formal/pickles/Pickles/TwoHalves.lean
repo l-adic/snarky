@@ -3,6 +3,7 @@ import Pickles.IncrementallyVerify
 import Pickles.FinalizeOtherProof
 import Pickles.Verify
 import Kimchi.Columns
+import Pickles.ListLemmas
 
 /-!
 # The two halves of one proof read as `kimchiVerify`
@@ -122,20 +123,6 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge
 open scoped Kimchi
 
 /-! ## The group half -/
-
-/-- Pointwise ties along a zip give the mapped lists, at equal lengths: what a circuit that
-compares two cell lists entry by entry establishes about them as lists. -/
-private theorem map_eq_map_of_zip {α β γ : Type} {f : α → γ} {g : β → γ} :
-    ∀ {l₁ : List α} {l₂ : List β}, l₁.length = l₂.length →
-      (∀ p ∈ l₁.zip l₂, f p.1 = g p.2) → l₁.map f = l₂.map g
-  | [], [], _, _ => rfl
-  | [], _ :: _, hlen, _ => absurd hlen (by simp)
-  | _ :: _, [], hlen, _ => absurd hlen (by simp)
-  | a :: as, b :: bs, hlen, h => by
-      simp only [List.map_cons, List.cons.injEq]
-      refine ⟨h (a, b) (by simp), map_eq_map_of_zip (by simpa using hlen) fun p hp => h p ?_⟩
-      rw [List.zip_cons_cons]
-      exact List.mem_cons_of_mem _ hp
 
 /-- The group half of a proof's verification, as one circuit runs it (for a step proof, the
 wrap circuit): its valuation, its side (the ladder reading, the claim decode, the group facts),
@@ -468,20 +455,6 @@ theorem sgOk_iff_accOk (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof
 
 /-! ### Reading the wire's batch through the scalar half's rows -/
 
-/-- A zip mapped through its second component is the second list mapped. -/
-private theorem zip_map_snd {α β γ : Type} (g : β → γ) :
-    ∀ (l₁ : List α) (l₂ : List β), l₁.length = l₂.length →
-      (l₁.zip l₂).map (fun x => g x.2) = l₂.map g := fun l₁ l₂ h => by
-  rw [show (fun x : α × β => g x.2) = g ∘ Prod.snd from rfl, ← List.map_map,
-    List.map_snd_zip h.ge]
-
-/-- The head of a one-entry vector's list. -/
-private theorem vec1_headD {α : Type} (v : Vector α 1) (d : α) : v.toList.headD d = v[0] := by
-  obtain ⟨⟨l⟩, h⟩ := v
-  simp at h
-  match l, h with
-  | [a], _ => rfl
-
 /-- The chunk combination of one chunk is the chunk. -/
 private theorem combineAt_one {F : Type} [Field F] (xM : F) (v : Vector F 1) :
     combineAt xM v.toArray = v[0] := by
@@ -525,11 +498,6 @@ private theorem cip_congr {F : Type} [Field F] (ξ r : F) {m : ℕ} (rows : List
     have := List.getElem_of_eq h (i := i.val) (by simp)
     simpa [List.getElem_map, Vector.getElem_toList] using this
   rw [hi]
-
-/-- Flattening a list of singletons is mapping. -/
-private theorem flatten_singletons {α β : Type} (f : α → β) :
-    ∀ l : List α, (l.map fun x => [f x]).flatten = l.map f := fun l => by
-  induction l <;> simp_all
 
 /-- One row's segments at one chunk, as a list: its single triple. -/
 private theorem zipSeg_toList_one {C : KimchiCurve} (comm : Vector C.Point 1)

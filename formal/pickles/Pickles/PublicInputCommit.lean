@@ -2,6 +2,7 @@ import Snarky.Kimchi.Circuit.AddComplete
 import Snarky.Kimchi.Circuit.Point
 import Kimchi.Verifier.Kimchi
 import Pickles.Curve
+import Pickles.ListLemmas
 
 /-!
 # The in-circuit public-input commitment (`x_hat`)
@@ -1797,10 +1798,6 @@ theorem two_pow_zsmul_ne_zero (s : PastaShape C) (P : C.Point) (hP : P ≠ 0) (L
   have := s.scalar_lo
   omega
 
-theorem getElem_map_fin {α β : Type} {n : ℕ} (f : α → β) (Ps : Vector α n) (ci : Fin n) :
-    (Ps.map f)[ci] = f Ps[ci] := by
-  simp [Fin.getElem_fin]
-
 /-- The correction point a constant leaf's correction cell reads as. -/
 noncomputable def constCp (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.BaseField)
     (Ps : Vector C.Point nc) : s.d.W.Point :=
@@ -1867,16 +1864,6 @@ theorem corrHonest_const (s : PastaShape C) (ci : Fin nc) (k : PackedScalar C.Ba
     simp only [constLeaf, CorrHonest]
     rw [getElem_map_fin, getElem_map_fin]
     exact key 10
-
-theorem forall₂_zipWith {α β γ δ : Type} (R : γ → δ → Prop) (f : α → β → γ) (g : α → β → δ) :
-    ∀ (ks : List α) (lb : List β), (∀ p ∈ ks.zip lb, R (f p.1 p.2) (g p.1 p.2)) →
-      List.Forall₂ R (List.zipWith f ks lb) (List.zipWith g ks lb)
-  | [], _, _ => by simp
-  | _ :: _, [], _ => by simp
-  | k :: ks, P :: lb, h => by
-      simp only [List.zipWith_cons_cons]
-      exact List.Forall₂.cons (h (k, P) (by simp))
-        (forall₂_zipWith R f g ks lb fun p hp => h p (by simp [hp]))
 
 /-- **The table computed from the key is bound to the key.** Constant cells — the Lagrange
 points as bases, their honest shifts as corrections, the SRS blinding base — satisfy

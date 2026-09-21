@@ -1,6 +1,7 @@
 import Pickles.StepScalarHalf
 import Pickles.WrapVerify
 import Snarky.Compile
+import Pickles.ListLemmas
 
 /-!
 # A step proof is verified by its two circuits
@@ -125,12 +126,6 @@ private theorem InputReads.fopTies (hin : InputReads E cp pub domains Vg Vs g s)
 private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fq) = 0) : m = 0 := by
   have hd : PALLAS_SCALAR_CARD ∣ m := (ZMod.natCast_eq_zero_iff m PALLAS_SCALAR_CARD).mp h0
   exact Nat.eq_zero_of_dvd_of_lt hd (lt_of_le_of_lt hm (by norm_num [PALLAS_SCALAR_CARD]))
-
-private theorem length_flatten_singletons {α : Type} (l : List α) :
-    (l.map ([·])).flatten.length = l.length := by
-  induction l with
-  | nil => rfl
-  | cons a t ih => simpa using ih
 
 private theorem sgOld_length_le (g : GroupVar E.σ.k kw n) : g.sgOld.length ≤ 2 := by
   simp only [GroupVar.sgOld, List.length_map, List.length_zip, List.length_drop,
