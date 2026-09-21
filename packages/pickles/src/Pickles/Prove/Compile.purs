@@ -3317,11 +3317,10 @@ compileMulti handler cfg rules = do
   -- Step 4: shared verifier + tag.
   unique <- newUnique
   let
-    -- The wrap circuit's own domain log2, which the verifier needs;
-    -- the wrap circuit body itself picks per-branch lagrange bases
-    -- through `perBranchLagrangeAt` instead.
-    wrapDomainLog2 =
-      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
+    -- The wrap circuit's own domain log2, checked above against the
+    -- circuit that was built. An `External` slot over this system
+    -- reads its lagrange basis at this domain.
+    wrapDomainLog2 = actualWrapDomainLog2
 
     verifier = mkVerifier
       { wrapVK: wrapResult.verifierIndex
