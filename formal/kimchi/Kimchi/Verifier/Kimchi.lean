@@ -639,6 +639,72 @@ theorem publicCommitment_eq_sum {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C 
   refine congrArg Vector.ofFn (funext fun c => ?_)
   rw [← Array.foldl_toList, ← List.foldl_map, foldl_add_eq, _root_.zero_add]
 
+/-! ### Trailing zero cells
+
+A zero cell of the public input adds nothing to the public commitment or to the public
+evaluations, so zero cells appended to a nonempty input change nothing the verifier computes
+(`kimchiVerify_append_zeros`, below the verifier). A deployed statement layout can end in
+cells that are constant zero and that no circuit reads; this is what lets a circuit-side
+statement name only the cells it reads. -/
+
+private theorem foldl_zeros_fst {F : Type*} [Field F] (omega pt : F) :
+    ∀ (m : ℕ) (acc : F × F),
+      ((List.replicate m (0 : F)).foldl (fun (acc : F × F) pi =>
+        (acc.1 + -(pt - acc.2)⁻¹ * pi * acc.2, acc.2 * omega)) acc).1 = acc.1
+  | 0, _ => rfl
+  | m + 1, acc => by
+      rw [List.replicate_succ, List.foldl_cons, foldl_zeros_fst omega pt m]
+      simp
+
+private theorem pubDot_append_zeros {F : Type*} [Field F] (omega pt : F) (pub : Array F)
+    (m : ℕ) : pubDot omega pt (pub ++ Array.replicate m 0) = pubDot omega pt pub := by
+  unfold pubDot
+  rw [← Array.foldl_toList, ← Array.foldl_toList, Array.toList_append, List.foldl_append,
+    Array.toList_replicate, foldl_zeros_fst]
+
+theorem publicEvalChunks_append_zeros {C : Ipa.KimchiCurve} {nc k : ℕ}
+    (cp : KimchiProof C nc k) (n : ℕ) (omega zeta zetaOmega zetaN zetaOmegaN : C.ScalarField)
+    (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0) :
+    publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN (pub ++ Array.replicate m 0)
+      = publicEvalChunks cp n omega zeta zetaOmega zetaN zetaOmegaN pub := by
+  unfold publicEvalChunks publicEvals
+  rw [if_neg hne, if_neg (by rw [Array.size_append]; omega), pubDot_append_zeros,
+    pubDot_append_zeros]
+
+private theorem sum_zip_zeros {nc : ℕ} (c : Fin nc) :
+    ∀ (L : List (Vector C.Point nc)) (m : ℕ),
+      ((L.zip (List.replicate m (0 : C.ScalarField))).map
+        fun Pp => (-Pp.2).val • Pp.1[c]).sum = 0
+  | [], _ => by simp
+  | _ :: _, 0 => by simp
+  | _ :: L, m + 1 => by
+      rw [List.replicate_succ, List.zip_cons_cons, List.map_cons, List.sum_cons,
+        sum_zip_zeros c L m]
+      simp
+
+private theorem sum_zip_append_zeros {nc : ℕ} (c : Fin nc) (m : ℕ) :
+    ∀ (P : List C.ScalarField) (L : List (Vector C.Point nc)),
+      (((L.take (P.length + m)).zip (P ++ List.replicate m 0)).map
+          fun Pp => (-Pp.2).val • Pp.1[c]).sum
+        = (((L.take P.length).zip P).map fun Pp => (-Pp.2).val • Pp.1[c]).sum
+  | [], L => by simpa using sum_zip_zeros C c (L.take m) m
+  | _ :: _, [] => by simp
+  | p :: P, l :: L => by
+      have ih := sum_zip_append_zeros c m P L
+      rw [List.length_cons, Nat.add_right_comm, List.take_succ_cons, List.cons_append,
+        List.zip_cons_cons, List.map_cons, List.sum_cons, ih, List.take_succ_cons,
+        List.zip_cons_cons, List.map_cons, List.sum_cons]
+
+theorem publicCommitment_append_zeros {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0) :
+    publicCommitment C σ cvk (pub ++ Array.replicate m 0) = publicCommitment C σ cvk pub := by
+  rw [publicCommitment_eq_sum C σ cvk pub hne,
+    publicCommitment_eq_sum C σ cvk _ (by rw [Array.size_append]; omega)]
+  refine congrArg Vector.ofFn (funext fun c => ?_)
+  congr 1
+  have := sum_zip_append_zeros C c m pub.toList cvk.lagrangeBasis.toList
+  simpa [Array.toList_zip, Array.toList_extract, Array.size_append] using this
+
 /-! ## The stream combinators -/
 
 /-- Reading a flattened uniform block vector: block `q`, offset `r` sits at
@@ -811,6 +877,24 @@ def kimchiVerify {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
         evalscale := fr.r
         proof := cp.opening }
     Ipa.verifyFrom C σ o.warm inp
+
+/-- Zero cells appended to a nonempty public input, within the size guard, do not change the
+verdict. -/
+theorem kimchiVerify_append_zeros {nc : ℕ} (σ : SRS C.Point) (cvk : KimchiVK C nc)
+    (cp : KimchiProof C nc σ.k) (pub : Array C.ScalarField) (m : ℕ) (hne : pub.size ≠ 0)
+    (hL : pub.size + m ≤ cvk.lagrangeBasis.size) (hn : pub.size + m ≤ cvk.n) :
+    kimchiVerify C σ cvk cp (pub ++ Array.replicate m 0) = kimchiVerify C σ cvk cp pub := by
+  have g1 : ¬ cvk.lagrangeBasis.size < (pub ++ Array.replicate m 0).size := by
+    rw [Array.size_append, Array.size_replicate]; omega
+  have g2 : ¬ cvk.n < (pub ++ Array.replicate m (0 : C.ScalarField)).size := by
+    rw [Array.size_append, Array.size_replicate]; omega
+  have g1' : ¬ cvk.lagrangeBasis.size < pub.size := by omega
+  have g2' : ¬ cvk.n < pub.size := by omega
+  have he := fun (n : ℕ) (a b c d e : C.ScalarField) =>
+    publicEvalChunks_append_zeros cp n a b c d e pub m hne
+  unfold kimchiVerify
+  simp only [g1, g2, g1', g2', decide_false, Bool.false_or,
+    publicCommitment_append_zeros C σ cvk pub m hne, he]
 
 /-! ## The public-input view -/
 

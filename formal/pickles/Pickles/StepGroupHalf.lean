@@ -47,7 +47,15 @@ def stepLeavesAt {ks : ℕ} (E : Env IpaPallas.curve)
   packLeaves statement (xhatTableAt E statement)
 
 /-- The wire's public input of a wrap statement: the packed statement's scalars, reduced to the
-scalar field. -/
+scalar field.
+
+A deployed wrap proof's public input carries ten more cells after these: eight feature flags
+and the lookup option's flag and scalar challenge (`composition_types.ml`,
+`Wrap.Statement.In_circuit.spec`; PS `Pickles.Wrap.Types.StatementPacked`). With every optional
+feature off, which is the modeled fragment, they are constant zero and no circuit reads them,
+so the packing leaves them out. They change nothing the verifier computes
+(`Kimchi.Verifier.kimchiVerify_append_zeros`): a check against a deployed proof drops them, or
+appends them by that lemma. -/
 def stepPublicInput {ks : ℕ} (E : Env IpaPallas.curve) (V : Valuation Fp)
     (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) : Array Fq :=
   pubOf IpaPallas.curve V (stepLeavesAt E statement)
