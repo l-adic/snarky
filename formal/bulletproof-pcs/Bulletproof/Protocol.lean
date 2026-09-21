@@ -453,6 +453,14 @@ theorem assemblePoly_natDegree_lt {n c : ℕ} (hn : 0 < n) (hc : 0 < c)
 
 /-! ### Commitment recombination -/
 
+/-- The generator commitment is `F`-linear in the witness: `commitGen g` as a linear map,
+Mathlib's `Fintype.linearCombination`. -/
+def commitGenₗ {n : ℕ} (g : Fin n → G) : (Fin n → F) →ₗ[F] G :=
+  Fintype.linearCombination F g
+
+theorem commitGenₗ_apply {n : ℕ} (g : Fin n → G) (a : Fin n → F) :
+    commitGenₗ g a = commitGen g a := rfl
+
 /-- **The hiding commitment is `F`-linear** in the witness pair `(a, r)` — the
 first-class form of "commit is linear"; every recombination fact is an image of a
 module identity under this map. -/

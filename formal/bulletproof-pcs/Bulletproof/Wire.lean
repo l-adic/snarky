@@ -246,21 +246,13 @@ def _root_.Bulletproof.SRS.Avoids {C : KimchiCurve} (σ : SRS C.Point)
 def lagrangeCoeffs {F : Type*} [Field F] (k n : ℕ) (ω : F) (i : ℕ) : Fin (2 ^ k) → F :=
   fun j => if j.val < n then (n : F)⁻¹ * (ω⁻¹ ^ i) ^ j.val else 0
 
+/-- The wire's multi-scalar multiplication is the abstract scheme's generator commitment, as a
+linear map: its linearity is `map_zero`, `map_add`, `map_smul`. -/
 theorem msm_eq {n : ℕ} (g : Fin n → C.Point) (a : Fin n → C.ScalarField) :
-    msm C g a = ∑ i, a i • g i := by
-  rw [msm, C.fastMsm_spec]
+    msm C g a = commitGenₗ g a := by
+  rw [msm, C.fastMsm_spec, commitGenₗ_apply, commitGen]
   refine Finset.sum_congr rfl fun i _ => ?_
   rw [← Nat.cast_smul_eq_nsmul C.ScalarField, ZMod.natCast_zmod_val]
-
-theorem msm_zero {n : ℕ} (g : Fin n → C.Point) : msm C g 0 = 0 := by simp [msm_eq]
-
-theorem msm_add {n : ℕ} (g : Fin n → C.Point) (a b : Fin n → C.ScalarField) :
-    msm C g (a + b) = msm C g a + msm C g b := by
-  simp [msm_eq, add_smul, Finset.sum_add_distrib]
-
-theorem msm_smul {n : ℕ} (g : Fin n → C.Point) (c : C.ScalarField)
-    (a : Fin n → C.ScalarField) : msm C g (c • a) = c • msm C g a := by
-  simp [msm_eq, mul_smul, Finset.smul_sum]
 
 private theorem geom_foldl {F : Type*} [Field F] (r : F) :
     ∀ (l : List ℕ) (acc : Array F) (c : F),
@@ -290,7 +282,7 @@ coefficients. -/
 private theorem msm_pad (σ : SRS C.Point) (n : ℕ) (hn : n ≤ 2 ^ σ.k) (a : ℕ → C.ScalarField) :
     msm C (fun j : Fin n => σ.g ⟨j, by omega⟩) (fun j => a j)
       = msm C σ.g fun j => if j.val < n then a j else 0 := by
-  rw [msm_eq, msm_eq]
+  rw [msm_eq, msm_eq, commitGenₗ_apply, commitGenₗ_apply, commitGen, commitGen]
   let G : ℕ → C.Point := fun j => if h : j < 2 ^ σ.k then σ.g ⟨j, h⟩ else 0
   have hl : ∀ j : Fin n, a j • σ.g ⟨j, by omega⟩ = (fun j : ℕ => a j • G j) j := fun j => by
     have : (j : ℕ) < 2 ^ σ.k := by omega

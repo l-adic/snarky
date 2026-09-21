@@ -582,14 +582,14 @@ def corrCoeffs {m : ℕ} (ks : List (PackedScalar C.BaseField))
 theorem corrSumPt_map_msm {m : ℕ} (g : Fin m → C.Point) :
     ∀ (ks : List (PackedScalar C.BaseField)) (ls : List (Fin m → C.ScalarField)),
       corrSumPt ks (ls.map fun a => #v[Ipa.msm C g a]) 0 = Ipa.msm C g (corrCoeffs ks ls)
-  | [], _ => by simp [corrSumPt, corrCoeffs, Ipa.msm_zero]
-  | _ :: _, [] => by simp [corrSumPt, corrCoeffs, Ipa.msm_zero]
+  | [], _ => by simp [corrSumPt, corrCoeffs, Ipa.msm_eq]
+  | _ :: _, [] => by simp [corrSumPt, corrCoeffs, Ipa.msm_eq]
   | k :: ks, a :: ls => by
       have ih := corrSumPt_map_msm g ks ls
       simp only [corrSumPt, corrCoeffs, List.map_cons, List.zipWith_cons_cons,
         List.sum_cons] at ih ⊢
-      rw [ih, Ipa.msm_add, Ipa.msm_smul, corrPt_eq_smul]
-      simp
+      rw [ih, corrPt_eq_smul]
+      simp [Ipa.msm_eq]
 
 private theorem sum_corrCoeffs_range' {m N : ℕ} (L : ℕ → Fin m → C.ScalarField)
     (hL : ∀ i, 0 < i → i < N → ∑ j, L i j = 0) :
