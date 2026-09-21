@@ -79,14 +79,20 @@ hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
   digest <- label "msg_hash" do
     s1 <- label "msg_hash_absorb_app" $ foldM (flip Sponge.absorb) spongeAfterIndex appStateFields
 
-    Tuple msg _ <- label "msg_hash_opt" $ OptSponge.runOptSpongeFromSponge s1 do
-      for_ proofs \proof -> do
-        OptSponge.optAbsorb (Tuple proof.mask (unwrap proof.sg).x)
-        OptSponge.optAbsorb (Tuple proof.mask (unwrap proof.sg).y)
-        for_ proof.rawChallenges \c ->
-          OptSponge.optAbsorb (Tuple proof.mask c)
-      OptSponge.optSqueeze
-    pure msg
+    -- The opt-sponge takes over at the first masked input. With no
+    -- proofs there is none, and the plain sponge squeezes: converting
+    -- it would cost a permutation the transcript does not have.
+    if Array.null (Vector.toUnfoldable proofs :: Array _) then
+      label "msg_hash_squeeze" $ _.result <$> Sponge.squeeze s1
+    else do
+      Tuple msg _ <- label "msg_hash_opt" $ OptSponge.runOptSpongeFromSponge s1 do
+        for_ proofs \proof -> do
+          OptSponge.optAbsorb (Tuple proof.mask (unwrap proof.sg).x)
+          OptSponge.optAbsorb (Tuple proof.mask (unwrap proof.sg).y)
+          for_ proof.rawChallenges \c ->
+            OptSponge.optAbsorb (Tuple proof.mask c)
+        OptSponge.optSqueeze
+      pure msg
 
   pure { digest, spongeAfterIndex }
 
