@@ -39,7 +39,7 @@ import Pickles.Types (Evals)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, all_, and_, assertAny_, const_, equals_, if_, label, mul_, not_, pow_, square_, sub_, true_)
+import Snarky.Circuit.DSL (BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, equals_, if_, label, mul_, not_, pow_, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -208,7 +208,6 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
     , challengeDigest: maskedChallengeDigest mask prevChallenges
     , allEvals
     , endo: endoVar
-    , xiConstrainLowBits: true
     }
   xiCorrect <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
   xi <- toField @8 deferred.xi endoVar
@@ -383,11 +382,17 @@ finalizeOtherProofCircuit ops params { unfinalized, allEvals, mask, prevChalleng
     , alphaPow21: a21
     }
 
-  -- Emitted for its constraints; the value is discarded.
-  label "perm_pow_zeta_srs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
+  actualZetaToSrs <- label "perm_pow_zeta_srs" $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
 
-  plonkOk <- label "perm_shifted_equal"
+  -- The three scalars `ft_comm` scales by, each against its claim
+  -- (`Plonk_checks.checked`): `perm`, `zeta^(2^srsLengthLog2)`, `zeta^n`.
+  permOk <- label "perm_shifted_equal"
     $ ops.shiftedEqual deferred.plonk.perm actualPerm
+  zetaToSrsOk <- label "zeta_to_srs_shifted_equal"
+    $ ops.shiftedEqual deferred.plonk.zetaToSrsLength actualZetaToSrs
+  zetaToDomainOk <- label "zeta_to_domain_shifted_equal"
+    $ ops.shiftedEqual deferred.plonk.zetaToDomainSize (zetaToNMinus1 `add_` const_ one)
+  plonkOk <- all_ [ permOk, zetaToSrsOk, zetaToDomainOk ]
 
   finalized <- all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
 

@@ -3,6 +3,7 @@ import Pickles.MessageHash
 import Pickles.TwoHalves
 import Pickles.Verify
 import Pickles.Encoding
+import Pickles.LadderBand
 
 /-!
 # `Wrap.Main`'s verify block
@@ -429,14 +430,45 @@ def GroupVar.cells (keyCells : List (List (AffinePoint (FVar Fq)))) (g : GroupVa
 abbrev GroupVar.half (V : Valuation Fq) (g : GroupVar k kw n) :
     GroupHalf Bulletproof.IpaVesta.curve (Type1 (FVar Fq)) k := GroupHalf.wrap V g.claims
 
-/-- The wrap circuit's verify block as a circuit of its input: `wrapVerifyAt` at the input's
-statement, claims, accumulators and proof, the key's cells and the two sponges constants of
-the circuit. -/
+/-- The wrap circuit's verify block as a circuit of its input: the ladder band asserted on the
+cells the block scales — the seven shifted scalars and the `x_hat` full leaves
+(`Pickles.LadderBand`; a harness assertion, not part of the shared gadget) — then
+`wrapVerifyAt` at the input's statement, claims, accumulators and proof, the key's cells and
+the two sponges constants of the circuit. -/
 def groupCircuit {c : Type} [BasicSystem Fq c] [KimchiSystem Fq c]
     (E : Env Bulletproof.IpaVesta.curve) (keyCells : List (List (AffinePoint (FVar Fq))))
-    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n) : CircuitM Fq c Unit :=
+    (spongeAfterIndex msgSponge : SpongeVar Fq) (g : GroupVar k kw n) : CircuitM Fq c Unit := do
+  assertClaimsOffBandWrap g.shifted
+  assertLeavesOffBand Bulletproof.IpaVesta.curve.scalar (wrapLeavesAt E g.stepStatement)
   wrapVerifyAt E g.stepStatement spongeAfterIndex msgSponge g.newBp g.msgDigest g.claims
     (g.cells keyCells)
+
+open Std.Do in
+/-- **The group circuit's read.** Its assertions put the shifted scalars and the `x_hat` leaves
+off the ladder's band, so the verify block's read needs neither as a hypothesis: with the SRS
+avoiding the Lagrange relations and the group half's cells the proof's — given the claims are
+ones the ladder read speaks about, which the assertion supplies — a valuation satisfying the
+circuit reads as `VerifyReads` with its success bit `1`. -/
+theorem groupCircuit_reads {V : Valuation Fq} (E : Env Bulletproof.IpaVesta.curve)
+    (cp : Kimchi.Verifier.KimchiProof Bulletproof.IpaVesta.curve 1 E.σ.k)
+    (keyCells : List (List (AffinePoint (FVar Fq)))) (spongeAfterIndex msgSponge : SpongeVar Fq)
+    (g : GroupVar E.σ.k kw n) (havoid : E.σ.Avoids E.lagrangeRelations)
+    (hivp : (∀ x ∈ g.shifted, (wrapSide V).ClaimOk x) →
+      ∃ oldsW, IvpHyps (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V g.stepStatement) true
+        spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
+    ⦃⌜True⌝⦄
+    groupCircuit (c := Builder V (KimchiConstraint Fq)) E keyCells spongeAfterIndex msgSponge g
+    ⦃⇓ _ _ => ⌜∃ v : BoolVar Fq,
+      VerifyReads (wrapSide V) E.σ E.cvk cp (wrapPublicInput E V g.stepStatement) g.claims false
+        v ∧ (↑v : CVar Fq).val V = 1⌝⦄ := by
+  simp only [groupCircuit]
+  refine builder_spec_bind_of _ _ _ _ (assertClaimsOffBandWrap_spec (V := V) g.shifted)
+    fun hclaimOk _ => ?_
+  refine builder_spec_bind_of _ _ _ _
+    (assertLeavesOffBand_spec (V := V) Bulletproof.IpaVesta.curve.scalar
+      (wrapLeavesAt E g.stepStatement)) fun hoff _ => ?_
+  exact wrapVerifyAt_reads (V := V) E cp g.stepStatement spongeAfterIndex msgSponge g.newBp
+    g.msgDigest g.claims (g.cells keyCells) hoff havoid (hivp hclaimOk)
 
 end StepProof
 

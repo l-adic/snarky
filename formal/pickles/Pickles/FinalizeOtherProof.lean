@@ -140,18 +140,28 @@ def evalFields (proj : PointEvaluations (FVar F) → FVar F) (e : ProofEvaluatio
     List (FVar F) :=
   (evalRows e).map proj
 
+/-- `Plonk_checks.checked`'s comparison: each of the three scalars `ft_comm` scales by — the
+permutation scalar, `ζ^(2^srs)` and `ζⁿ` — against its claim, and the conjunction. -/
+def plonkScalarsEqual {sf : Type} (ops : FopShiftOps F c sf) (perm zetaToSrs zetaToDomain : sf)
+    (actualPerm actualZetaToSrs actualZetaToDomain : FVar F) : CircuitM F c (BoolVar F) := do
+  let permOk ← ops.shiftedEqual perm actualPerm
+  let zetaToSrsOk ← ops.shiftedEqual zetaToSrs actualZetaToSrs
+  let zetaToDomainOk ← ops.shiftedEqual zetaToDomain actualZetaToDomain
+  Snarky.all [permOk, zetaToSrsOk, zetaToDomainOk]
+
 /-- The shared body from the expanded challenges on (PS steps 3–14 on either side): `ζω`,
 the challenge polynomials at `ζω` then `ζ`, the fr-sponge with `ξ` compared to its claim,
 `ξ` and `r` expanded, the `ζ^(2^k)` rows of both points, the α-table, the generator powers,
 the zk polynomial, `ζⁿ − 1`, `ft_eval0`, the combined inner product against its claim, the
-challenges expanded and `b` against its claim, the permutation scalar, the voided
-`ζ^(2^srs)`, the shifted comparison, and the conjunction. -/
+challenges expanded and `b` against its claim, the permutation scalar, `ζ^(2^srs)`, the
+three shifted comparisons (`plonkScalarsEqual`), and the conjunction. -/
 def finalizeOtherProofCore {sf : Type} (P : FopParams F) (ops : FopShiftOps F c sf)
     (xiConstrainLowBits : Bool) (digest : CircuitM F c (FVar F)) (gen : FVar F)
     (pow2Log2 : ℕ) (vanishing : FVar F → CircuitM F c (FVar F)) (mask : List (BoolVar F))
     (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (w : AllEvals (FVar F))
     (prev : List (List (FVar F)))
-    (zeta alpha beta gamma : FVar F) (perm : sf) : CircuitM F c (FopOutput F) := do
+    (zeta alpha beta gamma : FVar F) (perm zetaToSrs zetaToDomain : sf) :
+    CircuitM F c (FopOutput F) := do
   let endoVar : FVar F := .const P.endoLam
   let zetaw ← mul gen zeta
   let sgZetaw ← challengePolyEvals zetaw prev
@@ -197,8 +207,9 @@ def finalizeOtherProofCore {sf : Type} (P : FopParams F) (ops : FopShiftOps F c 
   let bCorrect ← bCorrectCircuit expanded zeta zetaw r (ops.unshift u.deferredValues.b)
   let actualPerm ← permScalarCircuit (fun i => evals.w ⟨i, by omega⟩) evals.s evals.zOmega
     beta gamma zkPoly (alphaPows 21)
-  let _ ← Snarky.pow zeta (2 ^ P.srsLengthLog2)
-  let plonkOk ← ops.shiftedEqual perm actualPerm
+  let actualZetaToSrs ← Snarky.pow zeta (2 ^ P.srsLengthLog2)
+  let plonkOk ← plonkScalarsEqual ops perm zetaToSrs zetaToDomain actualPerm actualZetaToSrs
+    (CVar.add_ zetaToNMinus1 (.const 1))
   let finalized ← Snarky.all [xiCorrect, bCorrect, cipCorrect, plonkOk]
   pure ⟨finalized, xiCorrect, bCorrect, cipCorrect, plonkOk,
     u.deferredValues.bulletproofChallenges.toList, expanded⟩
@@ -241,11 +252,11 @@ def finalizeOtherProofStep (P : FopParams F) (domains : List (KnownDomain F))
   let maxLog2 := log2s.foldr max 0
   finalizeOtherProofCore P stepShiftOps true (maskedChallengeDigest P.sponge mask prev) gen
     P.srsLengthLog2 (knownDomainVanishingPolynomial whiches log2s maxLog2) mask u w prev
-    zeta alpha pl.beta.val pl.gamma.val pl.perm
+    zeta alpha pl.beta.val pl.gamma.val pl.perm pl.zetaToSrsLength pl.zetaToDomainSize
 
 /-- The wrap side (PS `wrapFinalizeOtherProofCircuit`): `ζ`, `γ`, `β`, `α` in that order with
 `γ`, `β` sealed, the three shifted plonk claims sealed, then the core at the constant
-generator with the plain challenge digest, `ξ` by `squeeze_scalar`, the `ζ^(2^log2)` rows
+generator with the plain challenge digest, `ξ` by `squeeze_challenge`, the `ζ^(2^log2)` rows
 and the caller's vanishing polynomial. -/
 def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
     (vanishing : FVar F → CircuitM F c (FVar F))
@@ -258,10 +269,11 @@ def finalizeOtherProofWrap (P : FopParams F) (gen : F) (domainLog2 : ℕ)
   let beta ← sealVar pl.beta.val
   let alpha ← EndoScalar.toField 8 pl.alpha.val endoVar
   let perm ← sealVar pl.perm.val
-  let _ ← sealVar pl.zetaToDomainSize.val
-  let _ ← sealVar pl.zetaToSrsLength.val
-  finalizeOtherProofCore P wrapShiftOps false (challengeDigest P.sponge prev) (.const gen)
+  let zetaToDomain ← sealVar pl.zetaToDomainSize.val
+  let zetaToSrs ← sealVar pl.zetaToSrsLength.val
+  finalizeOtherProofCore P wrapShiftOps true (challengeDigest P.sponge prev) (.const gen)
     domainLog2 vanishing (prev.map fun _ => true_) u w prev zeta alpha beta gamma ⟨perm⟩
+    ⟨zetaToSrs⟩ ⟨zetaToDomain⟩
 
 /-! ## The value side -/
 
@@ -378,10 +390,11 @@ open Kimchi.Protocol.Linearization Bulletproof Classical in
 `rows` (the kept `(b_j(ζ), b_j(ζω))` for `m_j = 1`, then `(pub(ζ), pub(ζω))`, `(ft₀, ft(ζω))`,
 the evaluation rows), `cipCorrect = [unshift(cip claim) = combinedInnerProduct ξ r rows]`,
 `bCorrect = [unshift(b claim) = combinedB cs r (ζ, ζω)]`,
-`plonkOk = [unshift(permV) = permScalar β γ α (zkpmEval n zkRows ω ζ) e]`, `finalized` the
-conjunction of the four bits reading `1`, and the expanded challenges read `cs`. -/
+`plonkOk = [unshift(permV) = permScalar β γ α (zkpmEval n zkRows ω ζ) e ∧
+unshift(zetaMV) = ζ^(2^srs) ∧ unshift(zetaNV) = ζⁿ]`, `finalized` the conjunction of the four bits
+reading `1`, and the expanded challenges read `cs`. -/
 def FopChecks (P : FopParams F) (n : ℕ) (ω : F) (ms : List Bool) (cvs : List (List F))
-    (w : AllEvals (FVar F)) (ζ α β γ permV cipV bV : F) (unshiftV : F → F)
+    (w : AllEvals (FVar F)) (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F)
     (V : Valuation F) (o : FopOutput F) (ξ r : F) (cs : List F) : Prop :=
   let e := w.evals.map (·.val V)
   let ft₀ := ftEval0 n P.zkRows ω P.shifts P.endo P.mds α β γ ζ (w.pub.zeta.val V) (linEvals e)
@@ -392,9 +405,11 @@ def FopChecks (P : FopParams F) (n : ℕ) (ω : F) (ms : List Bool) (cvs : List 
     (fun (i : Fin rows.length) (j : Fin evalPts) => ((rows.get i).toVector)[j])
   let bOk := unshiftV bV = combinedB (fun i : Fin cs.length => cs.get i) r ![ζ, ζ * ω]
   let permOk := unshiftV permV = permScalar β γ α (zkpmEval n P.zkRows ω ζ) (linEvals e)
+  let zetaMOk := unshiftV zetaMV = ζ ^ 2 ^ P.srsLengthLog2
+  let zetaNOk := unshiftV zetaNV = ζ ^ n
   (↑o.cipCorrect : CVar F).val V = (if cipOk then 1 else 0) ∧
   (↑o.bCorrect : CVar F).val V = (if bOk then 1 else 0) ∧
-  (↑o.plonkOk : CVar F).val V = (if permOk then 1 else 0) ∧
+  (↑o.plonkOk : CVar F).val V = (if permOk ∧ zetaMOk ∧ zetaNOk then 1 else 0) ∧
   (↑o.finalized : CVar F).val V
     = (if (↑o.xiCorrect : CVar F).val V = 1 ∧ (↑o.bCorrect : CVar F).val V = 1 ∧
         (↑o.cipCorrect : CVar F).val V = 1 ∧ (↑o.plonkOk : CVar F).val V = 1 then 1 else 0) ∧
@@ -416,7 +431,8 @@ and `FopChecks` holds at
 def FopReads {sf : Type} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : F)
     (ms : List Bool) (cvs : List (List F)) (u : UnfinalizedProof k (FVar F) (BoolVar F) sf)
     (w : AllEvals (FVar F))
-    (ζ α β γ permV cipV bV : F) (unshiftV : F → F) (V : Valuation F) (o : FopOutput F) : Prop :=
+    (ζ α β γ permV zetaMV zetaNV cipV bV : F) (unshiftV : F → F) (V : Valuation F)
+    (o : FopOutput F) : Prop :=
     let sq := frSqueezes P.sponge
       (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
         (w.pub.map fun x => #v[x.val V]) (w.evals.map fun x => #v[x.val V]))
@@ -432,7 +448,8 @@ def FopReads {sf : Type} (P : FopParams F) (xiConstrainLowBits : Bool) (n : ℕ)
           r'.val + 2 ^ 128 * hi < fieldModulus F) ∧
       List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges.toList ĉ ∧
       (↑o.xiCorrect : CVar F).val V = (if ξ' = (ξ₀.val : F) then 1 else 0) ∧
-      FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀.val)
+      FopChecks P n ω ms cvs w ζ α β γ permV zetaMV zetaNV cipV bV unshiftV V o
+        (endoExpand P.endoLam ξ₀.val)
         (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
 
 open Kimchi.Protocol.Linearization Poseidon.FqSponge in
@@ -449,7 +466,8 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p))
     (xiConstrainLowBits : Bool) (n : ℕ) (ω dv : ZMod p) (ms : List Bool)
     (cvs : List (List (ZMod p))) (u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf)
     (w : AllEvals (FVar (ZMod p)))
-    (ζ α β γ permV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p) (V : Valuation (ZMod p))
+    (ζ α β γ permV zetaMV zetaNV cipV bV : ZMod p) (unshiftV : ZMod p → ZMod p)
+    (V : Valuation (ZMod p))
     (o : FopOutput (ZMod p)) : Prop :=
   let pre := frPrechallenges P.sponge
     (frTranscript (u.spongeDigestBeforeEvaluations.val V) dv (w.ftEval1.val V)
@@ -460,7 +478,8 @@ def FopReadsWire {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p))
     ((↑o.xiCorrect : CVar (ZMod p)).val V = 1 → ξ₀.val = pre.1) ∧
     (xiConstrainLowBits = true → ξ₀.val = pre.1 → (↑o.xiCorrect : CVar (ZMod p)).val V = 1) ∧
     List.Forall₂ (Reads128 V) u.deferredValues.bulletproofChallenges.toList ĉ ∧
-    FopChecks P n ω ms cvs w ζ α β γ permV cipV bV unshiftV V o (endoExpand P.endoLam ξ₀.val)
+    FopChecks P n ω ms cvs w ζ α β γ permV zetaMV zetaNV cipV bV unshiftV V o
+      (endoExpand P.endoLam ξ₀.val)
       (endoExpand P.endoLam r'.val) (ĉ.map fun c => endoExpand P.endoLam c.val)
 
 /-- At a prime field, the exact reading is the wire reading: the splits of the verifier's raw
@@ -471,10 +490,13 @@ theorem FopReads.wire {p : ℕ} [Fact p.Prime] {sf : Type}
     {P : FopParams (ZMod p)} {xiConstrainLowBits : Bool} {n : ℕ} {ω dv : ZMod p} {ms : List Bool}
     {cvs : List (List (ZMod p))} {u : UnfinalizedProof k (FVar (ZMod p)) (BoolVar (ZMod p)) sf}
     {w : AllEvals (FVar (ZMod p))}
-    {ζ α β γ permV cipV bV : ZMod p} {unshiftV : ZMod p → ZMod p} {V : Valuation (ZMod p)}
+    {ζ α β γ permV zetaMV zetaNV cipV bV : ZMod p} {unshiftV : ZMod p → ZMod p}
+    {V : Valuation (ZMod p)}
     {o : FopOutput (ZMod p)}
-    (h : FopReads P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o) :
-    FopReadsWire P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV cipV bV unshiftV V o := by
+    (h : FopReads P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV zetaMV zetaNV cipV bV
+      unshiftV V o) :
+    FopReadsWire P xiConstrainLowBits n ω dv ms cvs u w ζ α β γ permV zetaMV zetaNV cipV bV
+      unshiftV V o := by
   obtain ⟨ξ₀, r', ξ', ĉ, hxival, hcon, hx1, ⟨h₂, -, hx2, hlt2⟩, hĉ, hxiC, hchecks⟩ := h
   haveI : Fact (1 < p) := ⟨(Fact.out : p.Prime).one_lt⟩
   refine ⟨ξ₀, r', ĉ, hxival, (low128_of_split _ r'.2 hx2 (fieldModulus_zmod p ▸ hlt2)).symm,
@@ -530,6 +552,36 @@ structure FopShiftOps.Reading {V : Valuation F} {sf : Type}
   cmp : ∀ (a : sf) (b : FVar F), ⦃⌜True⌝⦄ ops.shiftedEqual a b
     ⦃⇓ r _ => ⌜(↑r : CVar F).val V = if unshiftV (read a) = b.val V then 1 else 0⌝⦄
 
+open Classical in
+/-- `plonkScalarsEqual` reads `1` exactly when each claim's decode is the scalar beside it. -/
+theorem plonkScalarsEqual_spec {V : Valuation F} (hinj : CastInj128 F) {sf : Type}
+    (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (R : ops.Reading)
+    (perm zetaToSrs zetaToDomain : sf) (actualPerm actualZetaToSrs actualZetaToDomain : FVar F) :
+    ⦃⌜True⌝⦄ plonkScalarsEqual ops perm zetaToSrs zetaToDomain actualPerm actualZetaToSrs
+      actualZetaToDomain
+    ⦃⇓ r _ => ⌜(↑r : CVar F).val V =
+      if R.unshiftV (R.read perm) = actualPerm.val V ∧
+          R.unshiftV (R.read zetaToSrs) = actualZetaToSrs.val V ∧
+          R.unshiftV (R.read zetaToDomain) = actualZetaToDomain.val V then 1 else 0⌝⦄ := by
+  simp only [plonkScalarsEqual]
+  have hcmp := R.cmp
+  have hall := Snarky.all_spec (V := V) (c := KimchiConstraint F)
+  mvcgen [hcmp, hall]
+  case vc2 =>
+    intro _ _ j k hj hk hjk
+    exact hinj j k (by simp at hj; omega) (by simp at hk; omega) hjk
+  rename_i _ p _ hp zs _ hzs zd _ hzd r _
+  intro hr
+  have hbits : ∀ b ∈ [p, zs, zd], (↑b : CVar F).val V = 0 ∨ (↑b : CVar F).val V = 1 := by
+    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq, hp, hzs,
+      hzd]
+    refine ⟨?_, ?_, ?_⟩ <;> split <;> simp
+  rw [hr hbits]
+  simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq, hp, hzs, hzd]
+  by_cases h1 : R.unshiftV (R.read perm) = actualPerm.val V <;>
+    by_cases h2 : R.unshiftV (R.read zetaToSrs) = actualZetaToSrs.val V <;>
+    by_cases h3 : R.unshiftV (R.read zetaToDomain) = actualZetaToDomain.val V <;> simp [h1, h2, h3]
+
 open Kimchi.Protocol.Linearization Bulletproof Poseidon.FqSponge Classical in
 /-- Under any valuation satisfying the emitted constraints, with `ω` the generator's reading
 (non-zero by its `inv` row, and then of order dividing `n`), the mask reading as `m_j`, the
@@ -558,7 +610,8 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
     (h3zk : 3 ≤ P.zkRows) (n : ℕ) (hzk : P.zkRows ≤ n)
     {sf : Type} (ops : FopShiftOps F (Builder V (KimchiConstraint F)) sf) (R : ops.Reading)
-    (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (perm : sf) (xiConstrainLowBits : Bool)
+    (u : UnfinalizedProof k (FVar F) (BoolVar F) sf) (perm zetaToSrs zetaToDomain : sf)
+    (xiConstrainLowBits : Bool)
     (digest : CircuitM F (Builder V (KimchiConstraint F)) (FVar F))
     (dv : F) (hd : ⦃⌜True⌝⦄ digest ⦃⇓ d _ => ⌜d.val V = dv⌝⦄)
     (gen : FVar F) (hω : gen.val V ≠ 0 → gen.val V ^ n = 1) (pow2Log2 : ℕ)
@@ -570,12 +623,14 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
     (zeta alpha beta gamma : FVar F) (hft : FtEval0Hyp V P n (gen.val V)) :
     ⦃⌜True⌝⦄ finalizeOtherProofCore (c := Builder V (KimchiConstraint F)) P ops
       xiConstrainLowBits digest gen pow2Log2 vanishing mask u w prev zeta alpha beta gamma perm
+      zetaToSrs zetaToDomain
     ⦃⇓ o _ => ⌜gen.val V ≠ 0 ∧ FopReads P xiConstrainLowBits n (gen.val V) dv ms cvs u w
-      (zeta.val V) (alpha.val V) (beta.val V) (gamma.val V) (R.read perm)
-      (R.read u.deferredValues.combinedInnerProduct) (R.read u.deferredValues.b) R.unshiftV
+      (zeta.val V) (alpha.val V) (beta.val V) (gamma.val V) (R.read perm) (R.read zetaToSrs)
+      (R.read zetaToDomain) (R.read u.deferredValues.combinedInnerProduct)
+      (R.read u.deferredValues.b) R.unshiftV
       V o⌝⦄ := by
   simp only [finalizeOtherProofCore]
-  have hcmp := R.cmp perm
+  have hcmp := plonkScalarsEqual_spec (V := V) hinj ops R perm zetaToSrs zetaToDomain
   have hsg := fun pt => challengePolyEvals_spec (V := V) (c := KimchiConstraint F) pt prev cvs hprev
   have htf := EndoScalar.toField_spec (V := V) h2 h3
   have hop := fun g => omegaPowers_spec (V := V) (c := KimchiConstraint F) g P.zkRows h3zk
@@ -646,7 +701,7 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
        exact hinj j k (by simp at hj; omega) (by simp at hk; omega) hjk))
   rename_i _ zetaw _ hzw sgw _ hsgw sgz _ hsgz xr _ hsq' xiC _ hxiC xi _ hxi rr _ hr _ _ _ _ _ _
     pows _ hpows om _ hom zkp _ hzkp z1 _ hz1 ft0 _ hft0 cipA _ cipC _ hcipC expd _ hexp bC _ hbC
-    permA _ _ _ _ plonkC _ hplonk fin _ hfin hcipA hpermA
+    permA _ zM _ hzM plonkC _ hplonk fin _ hfin hcipA hpermA
   have hc : (CVar.const P.endoLam : CVar F).val V = P.endoLam := rfl
   rw [hc] at hxi hr hexp
   rw [mul_comm] at hzw
@@ -694,7 +749,9 @@ theorem finalizeOtherProofCore_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   rw [hxival] at hxiC
   rw [R.unshift, hcipv, hxi', hr', hft0] at hcipC
   rw [R.unshift, hr', hzw] at hbv
-  rw [hpv] at hplonk
+  have hzN : (CVar.add_ z1 (CVar.const 1)).val V = zeta.val V ^ n := by
+    simp [hz1 () hom.1]
+  rw [hpv, hzM, hzN] at hplonk
   have hbool := four_bits (fun b : BoolVar F => (↑b : CVar F).val V) xiC bC cipC plonkC
     _ _ _ _ hxiC hbv hcipC hplonk
   refine ⟨hom.1, ?_⟩
@@ -848,7 +905,10 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
           (List.zipWith (fun m cs => if m then cs.map (·.val V) else []) ms prev).flatten)).1
         ms cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
-        (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
+        (u.deferredValues.plonk.perm.val.val V)
+        (u.deferredValues.plonk.zetaToSrsLength.val.val V)
+        (u.deferredValues.plonk.zetaToDomainSize.val.val V)
+        (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type1.fromShifted 255 ⟨x⟩) V o⌝⦄ := by
   simp only [finalizeOtherProofStep]
   have htf := EndoScalar.toField_spec (V := V) h2 h3
@@ -867,7 +927,8 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
         (knownDomainVanishingPolynomial whiches (domains.map (·.log2))
           ((domains.map (·.log2)).foldr max 0))
         mask u w prev zeta alpha u.deferredValues.plonk.beta.val u.deferredValues.plonk.gamma.val
-        u.deferredValues.plonk.perm)
+        u.deferredValues.plonk.perm u.deferredValues.plonk.zetaToSrsLength
+        u.deferredValues.plonk.zetaToDomainSize)
       (fun n : ℕ => P.zkRows ≤ n ∧ (gen.val V ≠ 0 → gen.val V ^ n = 1) ∧
         (gen.val V ≠ 0 → ∀ z, ⦃⌜True⌝⦄ knownDomainVanishingPolynomial
           (c := Builder V (KimchiConstraint F)) whiches (domains.map (·.log2))
@@ -875,10 +936,14 @@ theorem finalizeOtherProofStep_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (fun n o => gen.val V ≠ 0 ∧ FopReads P true n (gen.val V) _ ms cvs u w (zeta.val V)
         (alpha.val V) (u.deferredValues.plonk.beta.val.val V)
         (u.deferredValues.plonk.gamma.val.val V) (u.deferredValues.plonk.perm.val.val V)
+        (u.deferredValues.plonk.zetaToSrsLength.val.val V)
+        (u.deferredValues.plonk.zetaToDomainSize.val.val V)
         (u.deferredValues.combinedInnerProduct.val.val V) (u.deferredValues.b.val.val V)
         (fun x => Type1.fromShifted 255 ⟨x⟩) V o)
       (fun n hn => finalizeOtherProofCore_spec h2 h3 hinj hsw P hsize h3zk n hn.1 stepShiftOps
-        (stepShiftOps.reading h2) u u.deferredValues.plonk.perm true _ _ hd gen hn.2.1 _ _
+        (stepShiftOps.reading h2) u u.deferredValues.plonk.perm
+        u.deferredValues.plonk.zetaToSrsLength u.deferredValues.plonk.zetaToDomainSize true _ _ hd
+        gen hn.2.1 _ _
         hn.2.2 mask ms hm w prev cvs hprev zeta alpha _ _ (hft n (gen.val V)))
   -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
   clear hd
@@ -929,8 +994,8 @@ open Kimchi.Protocol.Linearization Poseidon.FqSponge in
 /-- The wrap side: under any valuation satisfying the emitted constraints, with the constant
 generator `ω` of order dividing `n` and the caller's vanishing polynomial reading `ζⁿ − 1`, and
 `â, ẑ < 2¹²⁸` the `α, ζ` claims, the outputs read as `FopReads` at `ζ = endoExpand λ ẑ`,
-`α = endoExpand λ â`, `β, γ` the raw claims, the digest of all previous challenges, `ξ`
-unconstrained, and the Type2 decode of the shifted claims. -/
+`α = endoExpand λ â`, `β, γ` the raw claims, the digest of all previous challenges, `ξ`'s low
+half range-checked, and the Type2 decode of the shifted claims. -/
 theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0)
     (hinj : CastInj128 F) (hsw : SplitWidth F)
     (P : FopParams F) (hsize : P.sponge.roundConstants.size = Poseidon.fullRounds)
@@ -945,12 +1010,15 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       vanishing u w prev
     ⦃⇓ o _ => ⌜∃ a₀ z₀ : Prechallenge,
       Reads128 V u.deferredValues.plonk.alpha a₀ ∧ Reads128 V u.deferredValues.plonk.zeta z₀ ∧
-      FopReads P false n gen
+      FopReads P true n gen
         (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
           (prev.flatten.map (·.val V)))).1
         (prev.map fun _ => true) cvs u w (endoExpand P.endoLam z₀.val) (endoExpand P.endoLam a₀.val)
         (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
-        (u.deferredValues.plonk.perm.val.val V) (u.deferredValues.combinedInnerProduct.val.val V)
+        (u.deferredValues.plonk.perm.val.val V)
+        (u.deferredValues.plonk.zetaToSrsLength.val.val V)
+        (u.deferredValues.plonk.zetaToDomainSize.val.val V)
+        (u.deferredValues.combinedInnerProduct.val.val V)
         (u.deferredValues.b.val.val V) (fun x => Type2.fromShifted 255 ⟨x⟩) V o⌝⦄ := by
   simp only [finalizeOtherProofWrap]
   have htf := EndoScalar.toField_spec (V := V) h2 h3
@@ -959,14 +1027,15 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
       (prev.map fun _ => true) :=
     List.forall₂_map_right_iff.mpr (List.forall₂_map_left_iff.mpr
       (List.forall₂_same.mpr fun _ _ => CircuitType.reads_boolVar.mpr (by simp [true_, bit])))
-  have hcore := fun (zeta alpha beta gamma perm : FVar F) =>
+  have hcore := fun (zeta alpha beta gamma perm zetaToSrs zetaToDomain : FVar F) =>
     finalizeOtherProofCore_spec h2 h3 hinj hsw P hsize h3zk n hzk wrapShiftOps
-      wrapShiftOps.reading u ⟨perm⟩ false _ _ hd (.const gen) (fun _ => hω) domainLog2
+      wrapShiftOps.reading u ⟨perm⟩ ⟨zetaToSrs⟩ ⟨zetaToDomain⟩ true _ _ hd (.const gen)
+      (fun _ => hω) domainLog2
       vanishing (fun _ => hvan) _ _ hm w prev cvs hprev zeta alpha beta gamma hft
   -- `hd` is a fully applied triple over a concrete circuit (see `finalizeOtherProofCore_spec`)
   clear hd
   mvcgen [htf, hcore]
-  rename_i _ zeta _ hz gamma _ hγ beta _ hβ alpha _ ha perm _ hperm _ _ _ _ _ _ _ _
+  rename_i _ zeta _ hz gamma _ hγ beta _ hβ alpha _ ha perm _ hperm zd _ hzd zs _ hzs _ _
   intro _ hreads
   obtain ⟨z₀, hz₀, hzval, hz'⟩ := hz
   obtain ⟨a₀, ha₀, haval, ha'⟩ := ha
@@ -974,7 +1043,7 @@ theorem finalizeOtherProofWrap_spec {V : Valuation F} (h2 : (2 : F) ≠ 0) (h3 :
   rw [hc] at hz' ha'
   refine ⟨⟨a₀, ha₀⟩, ⟨z₀, hz₀⟩, haval, hzval, ?_⟩
   dsimp only [wrapShiftOps.reading] at hreads
-  rw [hz', ha', hβ, hγ, hperm] at hreads
+  rw [hz', ha', hβ, hγ, hperm, hzs, hzd] at hreads
   exact hreads
 
 open Poseidon.FqSponge in
@@ -996,7 +1065,9 @@ def FopVerifyReads {p : ℕ} [Fact p.Prime] {sf : Type} (P : FopParams (ZMod p))
     FopReadsWire P xiConstrainLowBits n ω dv ms cvs u w
       (endoExpand endoLam z₀.val) (endoExpand endoLam a₀.val)
       (u.deferredValues.plonk.beta.val.val V) (u.deferredValues.plonk.gamma.val.val V)
-      (read u.deferredValues.plonk.perm) (read u.deferredValues.combinedInnerProduct)
+      (read u.deferredValues.plonk.perm) (read u.deferredValues.plonk.zetaToSrsLength)
+      (read u.deferredValues.plonk.zetaToDomainSize)
+      (read u.deferredValues.combinedInnerProduct)
       (read u.deferredValues.b) unshiftV V o
 
 /-! ## The deployed fields -/
@@ -1054,7 +1125,7 @@ theorem finalizeOtherProofWrap_spec_fq {V : Valuation Fq} (P : FopParams Fq)
     (cvs : List (List Fq)) (hprev : List.Forall₂ (List.Forall₂ (CircuitType.Reads V)) prev cvs) :
     ⦃⌜True⌝⦄ finalizeOtherProofWrap (c := Builder V (KimchiConstraint Fq)) P gen domainLog2
       vanishing u w prev
-    ⦃⇓ o _ => ⌜FopVerifyReads P false n gen
+    ⦃⇓ o _ => ⌜FopVerifyReads P true n gen
       (Poseidon.squeeze P.sponge (Poseidon.absorb P.sponge Poseidon.init
         (prev.flatten.map (·.val V)))).1
       (prev.map fun _ => true) cvs u w P.endoLam (fun x => x.val.val V)

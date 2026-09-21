@@ -120,6 +120,23 @@ theorem builder_spec_bind_assume {V : Valuation F} [ConstraintHolds F c] {α β 
     hsat con (by rw [build_bind]; exact List.mem_append_left _ hc)
   exact (builder_spec_iff _ post).mp (h hQ) nv hsat
 
+/-- A prefix that establishes a fact, then a tail whose specification may use it: the
+composition's specification is the tail's. What an assertion run before a gadget buys — the
+gadget's read, with the assertion's conclusion as a premise in hand. -/
+theorem builder_spec_bind_of {V : Valuation F} [ConstraintHolds F c] {α β : Type}
+    (x : CircuitM F (Builder V c) α) (f : α → CircuitM F (Builder V c) β) (Q : Prop)
+    (post : β → Prop) (hx : ⦃⌜True⌝⦄ x ⦃⇓ _ _ => ⌜Q⌝⦄)
+    (hf : Q → ∀ a, ⦃⌜True⌝⦄ f a ⦃⇓ r _ => ⌜post r⌝⦄) :
+    ⦃⌜True⌝⦄ (x >>= f) ⦃⇓ r _ => ⌜post r⌝⦄ := by
+  rw [builder_spec_iff]
+  intro nv hsat
+  have hQ : Q := (builder_spec_iff x fun _ => Q).mp hx nv fun con hc =>
+    hsat con (by rw [build_bind]; exact List.mem_append_left _ hc)
+  have := (builder_spec_iff _ post).mp (hf hQ (build x nv).result) (build x nv).nextVar
+    fun con hc => hsat con (by rw [build_bind]; exact List.mem_append_right _ hc)
+  rw [build_bind]
+  exact this
+
 /-- Two specifications of one program conjoin: `wp` is deterministic, so both conclusions hold
 of the one result. -/
 theorem builder_spec_and {V : Valuation F} [ConstraintHolds F c] {α : Type}

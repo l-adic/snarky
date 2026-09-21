@@ -23,23 +23,22 @@ valuation (`builder_spec_iff`).
   proof, the `sg` cells as the old accumulators, the evaluation cells as the evaluations;
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
-* what no circuit enforces, each its own hypothesis: the shifted claims avoid the ladder's
-  band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`), the claimed `cip` is
-  the canonical representative (`hcanon`: the step side absorbs its two cells, and the
-  ladder's range check leaves one bit of slack), the `ζ` powers are the run's (`hzetaM`,
-  `hzetaN`);
+* what is no hypothesis, because a circuit enforces it: the three scalars `ft_comm` scales by
+  (the scalar circuit compares each, `HalvesTies` carries them over); the claimed `cip`
+  absorbing as its canonical representative (its own ladder, `scaleByCip`, pins the half one
+  bit narrower); and the ladder's band, which the group circuit asserts on the cells it
+  scales — the shifted claims and the `x_hat` full leaves (`Pickles.LadderBand`), an assertion
+  of this harness rather than of the shared gadget;
 * `havoid`: the SRS avoids the `x_hat` relations (`SRS.Avoids`, `stepRelationsAt`). The table
   is computed from the key (`xhatTableAt`), and its points are commitments against the SRS;
   that the Lagrange points and the constant correction sum the fold adds are finite points
   is that the SRS has no relation at their coefficient vectors, which no invariant gives;
 * `Guards` and `SgOk`, of the proof itself.
 
-Against the step proof's statement: no domain cell (the wrap circuit's domain is a constant),
-every `sg` slot kept, and an implication where the step side is an equivalence (the wrap
-circuit does not constrain the low half of the `ξ` split). The layered hypotheses the halves'
-reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built from these in the proof; the shape
-guards among them (`mask`, `nc_pos`, `t_ne`, `lr_ne`, `char`) are proved, and the permutation
-scalar is supplied by the scalar half.
+Against the step proof's statement: no domain cell (the wrap circuit's domain is a constant)
+and every `sg` slot kept. The layered hypotheses the halves' reads consume (`IvpHyps`,
+`IvpTies`, `FopTies`) are built from these in the proof; the shape guards among them (`mask`,
+`nc_pos`, `t_ne`, `lr_ne`, `char`) are proved.
 -/
 
 namespace Pickles
@@ -122,8 +121,7 @@ private theorem char_guard (m : ℕ) (hm : m ≤ 53) (h0 : (m : Fp) = 0) : m = 0
 enforces from its own hypotheses, the shape guards proved. -/
 private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
-    (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x)
-    (hcanon : (stepSide Vg).Canon g.claims.deferredValues.combinedInnerProduct) :
+    (hclaimOk : ∀ x ∈ g.shifted, (stepSide Vg).ClaimOk x) :
     ∃ oldsW, IvpHyps (stepSide Vg) E.σ E.cvk cp pub false spongeAfterIndex
       ((g.cells keyCells).withClaims g.claims) oldsW := by
   have hc : (g.cells keyCells).withClaims g.claims = g.cells keyCells := rfl
@@ -135,7 +133,7 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub Vg Vs g s)
           index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
           sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }
-      canon := hcanon, nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
+      nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm
     have hm' : m ∈ g.sgOld.map (none, ·) := hm
@@ -204,18 +202,6 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput ks E.σ.k).half Vg) ((scalarInput E.σ.k).half Vs))
-    -- what no circuit enforces
-    (hclaimOk : ∀ x ∈ (groupInput ks E.σ.k).shifted, (stepSide Vg).ClaimOk x)
-    (hcanon : (stepSide Vg).Canon
-      (groupInput ks E.σ.k).claims.deferredValues.combinedInnerProduct)
-    (hoff : ∀ leaf ∈ stepLeavesAt E (groupInput ks E.σ.k).statement,
-      Leaf.offBand IpaPallas.curve.scalar Vg leaf)
-    (hzetaM : (stepSide Vg).decode
-        (groupInput ks E.σ.k).claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
-    (hzetaN : (stepSide Vg).decode
-        (groupInput ks E.σ.k).claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
     -- the SRS has no relation at the `x_hat` table's coefficient vectors
     (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k).statement))
     -- of the proof itself
@@ -223,18 +209,16 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (hsg : SgOk E.σ E.cvk cp pub) :
     kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
   have hpub := hin.statement
-  obtain ⟨oldsW, hivp⟩ := hin.ivpHyps (keyCells := keyCells)
-    (spongeAfterIndex := spongeAfterIndex) hvk hclaimOk hcanon
+  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hvk
   have hf := hin.fopTies
   have hbase := hin.mustVerify
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k) oldsW
-      hbase hoff havoid hivp) _
+    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k) hbase
+      havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
-    (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k) Vg _ v hv hv1 ht hf hzetaM hzetaN
-      hsg) _
+    (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k) Vg _ v hv hv1 ht hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles

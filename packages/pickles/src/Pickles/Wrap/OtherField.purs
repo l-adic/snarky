@@ -33,6 +33,7 @@ ipaScalarOps
   => IpaScalarOps f r (WrapOtherField (FVar f))
 ipaScalarOps =
   { scaleByShifted: \p t -> scaleFast1 @51 p t
+  , scaleByCip: \p t -> scaleFast1 @51 p t
   , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
   , unshift: fromShiftedType1Circuit
   , shiftedEqual: shiftedEqualType1

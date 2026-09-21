@@ -128,12 +128,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     -- across the two
     (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges))
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaVesta.curve E.σ E.cvk cp pub)
-    (hzetaN : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaVesta.curve E.σ E.cvk cp pub) :
+    (hf : FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
     ⦃⌜True⌝⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
       mask prevChallenges domainLog2Var
@@ -199,7 +194,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     rfl
   rw [hn, hω, hdv] at hread
   rw [← twoHalves_kimchiVerify_vesta E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    mask prevChallenges o hread ht hf hzetaM hzetaN]
+    mask prevChallenges o hread ht hf]
   exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its input
@@ -311,21 +306,13 @@ theorem scalarCircuit_reads
     (hgbit : (↑successG : CVar Fq).val Vg = 1)
     (ht : HalvesTies (GroupHalf.wrap Vg claimsG) (s.half Vs))
     (hf : FopTies E cp pub (s.half Vs))
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaVesta.curve E.σ E.cvk cp pub)
-    (hzetaN : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaVesta.curve E.σ E.cvk cp pub)
     (hsg : SgOk E.σ E.cvk cp pub) :
     ⦃⌜True⌝⦄
     scalarCircuit (c := Builder Vs (KimchiConstraint Fp)) E domains s
     ⦃⇓ _ _ => ⌜kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true⌝⦄ := by
   have hAt := finalizeOtherProofStepAt_kimchiVerify_vesta E cp pub hguard Vs domains s.claims
     s.evals s.branch.proofsVerifiedMask s.prev s.branch.domainLog2 hmask hdom Vg claimsG
-    successG hg hgbit ht hf hzetaM hzetaN
-  -- the `ζ`-power equations are spent; left in context they send `mvcgen`'s closer into the
-  -- runs' definitions
-  clear hzetaM hzetaN
+    successG hg hgbit ht hf
   simp only [scalarCircuit]
   mvcgen [hAt]
   rename_i o _ hiff _ _

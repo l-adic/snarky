@@ -71,7 +71,7 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..))
 import Pickles.OptSponge as OptSponge
 import Pickles.Pseudo as Pseudo
-import Pickles.Sponge (class MonadSponge, PureSpongeM, absorb, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar', squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (class MonadSponge, PureSpongeM, absorb, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Trace as Trace
 import Pickles.Types (ChunkedEvals, Evals)
 import Poseidon (class PoseidonField)
@@ -771,9 +771,8 @@ maskedChallengeDigest mask prevChallenges =
 -- | two absorbs — then every evaluation; squeeze `xi` and `r` as
 -- | 128-bit scalar challenges.
 -- |
--- | `xiConstrainLowBits` says whether `xi`'s low 128 bits are
--- | range-checked: the step verifier sets it, the wrap verifier does
--- | not. `r`'s low bits are always checked.
+-- | Both are squeezed with their low 128 bits range-checked, on
+-- | either side, so the comparison of `xi` with its claim is exact.
 squeezeXiR
   :: forall f cr
    . PoseidonField f
@@ -783,7 +782,6 @@ squeezeXiR
      , challengeDigest :: Snarky f (KimchiConstraint f) cr (FVar f)
      , allEvals :: Evals (FVar f)
      , endo :: FVar f
-     , xiConstrainLowBits :: Boolean
      }
   -> Snarky f (KimchiConstraint f) cr { xi :: SizedF 128 (FVar f), r :: SizedF 128 (FVar f) }
 squeezeXiR p = evalSpongeM initialSpongeCircuit do
@@ -791,7 +789,7 @@ squeezeXiR p = evalSpongeM initialSpongeCircuit do
   digest <- liftSnarky p.challengeDigest
   absorb digest
   absorbEvals p.allEvals
-  xi <- squeezeScalar' p.xiConstrainLowBits { endo: p.endo }
+  xi <- squeezeScalarChallenge { endo: p.endo }
   r <- squeezeScalarChallenge { endo: p.endo }
   pure { xi, r }
 

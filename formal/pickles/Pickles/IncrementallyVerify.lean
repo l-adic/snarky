@@ -37,9 +37,10 @@ reading, the decode, the group facts, the endomorphism and map-to-curve data, th
 limbs and the two group bridges a side supplies, from which its opening check reads as the
 wire's (`IvpSide.opening_reads`); `wrapSide` and `stepSide` are the two
 deployed values and `incrementallyVerifyProof_wrap_reads` / `incrementallyVerifyProof_step_reads`
-the read at each. The step side's claimed `cip` must absorb canonically (`IvpSide.Canon`): its
-halved limb is range-checked to 254 bits, one bit more than the honest half takes, so a
-non-canonical claim would absorb limbs the wire does not.
+the read at each. The step side's claimed `cip` absorbs canonically because its own ladder
+(`scaleByCip`) range-checks the halved limb to 253 bits (`IvpSide.absorb_limbs`): at 254, one
+bit more than the honest half takes, a non-canonical claim would absorb limbs the wire does
+not.
 -/
 
 namespace Pickles
@@ -277,8 +278,7 @@ def IvpReads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK
 
 /-- What the group half's read assumes of its cells and constants, on the side `S`: the
 sponge after the index digest squeezes to the key's digest, the `sg_old` cells are masked as
-the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), the
-claimed `cip` is canonical for the side's ladder, and the
+the side's sponge expects, the cells read as the wire's key and proof (`IvpTies`), and the
 shape guards a key and proof satisfy: a chunk, a quotient chunk, a round, and a base field
 wider than the absorb count. -/
 structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : KimchiVK C nc)
@@ -293,8 +293,6 @@ structure IvpHyps {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point) (cvk : Kim
   mask : ∀ m ∈ inp.sgOld, m.1.isSome = optSponge
   /-- The cells read as the wire's key and proof. -/
   ties : IvpTies S σ cvk cp pub inp oldsW
-  /-- The claimed `cip` is canonical for the side's ladder. -/
-  canon : S.Canon inp.deferred.combinedInnerProduct
   /-- At least one chunk. -/
   nc_pos : 0 < nc
   /-- At least one quotient chunk. -/
@@ -566,11 +564,12 @@ private theorem olds_reads_plain :
   | [], _ :: _, _, h => by rw [List.map_cons] at h; cases h
   | _ :: _, [], _, h => by rw [List.map_cons] at h; cases h
 
-/-- The wire's IPA run at a canonical claim, read: its `t`, round and Schnorr prechallenges are
+/-- The wire's IPA run at a claim read through its own ladder: its `t`, round and Schnorr
+prechallenges are
 `ipaPrechallenges` at the claim's absorbed limbs and the pairs' and `δ`'s coordinate readings —
 what the opening check's transcript read (`CheckBulletproofReads`) speaks about. -/
 private theorem ipaRunAt_reads {k : ℕ} (S : IvpSide C V ops) (st : Poseidon.State C.BaseField)
-    (cip : sf) (hc : S.Canon cip) {w : S.R.wit} (hw : S.R.Pre cip w) (pr : Ipa.Proof C k) :
+    (cip : sf) {w : S.R.wit} (hw : S.R.PreCip cip w) (pr : Ipa.Proof C k) :
     let r := ipaPrechallenges C.sponge.params st ((ops.shiftedToAbsorbFields cip).map (·.val V))
       ((pr.lr.toList.map fun q => (wirePt q.1, wirePt q.2)).map coordsPair)
       ((wirePt pr.delta).x, (wirePt pr.delta).y)
@@ -579,7 +578,7 @@ private theorem ipaRunAt_reads {k : ℕ} (S : IvpSide C V ops) (st : Poseidon.St
     (ipaRunAt C ⟨st, []⟩ (S.decode cip) pr).2.2.val = r.2.2 := by
   have h := ipaRunAt_eq_ipaPrechallenges C st (S.decode cip) pr
   dsimp only at h ⊢
-  rw [← S.absorb_limbs hc hw] at h
+  rw [← S.absorb_limbs hw] at h
   simpa only [List.map_map, Function.comp_def, coordsPair, wirePt] using h
 
 /-- The success clause at the stream bases and the proof record is `IvpReads`'s, at
@@ -608,7 +607,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     (inp : IvpInput σ.k (FVar C.BaseField) (BoolVar C.BaseField) sf) (oldsW : List (C.Point × Bool))
     (blindingH : AffinePoint (FVar C.BaseField)) (hties : IvpTies S σ cvk cp pub inp oldsW)
     (hh : OnCurveAt C.E.toAffine V blindingH (SWPoint.equivPoint C.E σ.h))
-    (hcanon : S.Canon inp.deferred.combinedInnerProduct) (hlrne : inp.opening.lr.toList ≠ [])
+    (hlrne : inp.opening.lr.toList ≠ [])
     (hσlen : inp.sigmaLast.toArray.size = nc) (tr : FqTranscriptOutput C.BaseField)
     (hx : CommReads C V tr.xHat (publicCommitment C σ cvk pub).toList)
     (hFq : FqTranscriptReads C.sponge.params cvk.digest ((cp.olds.map (·.sg)).toList.map wirePt)
@@ -700,7 +699,7 @@ private theorem tail_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SRS C.Point)
     have hT := CheckBulletproofReads.wire (hcb.1 _ _ _ hFq.2.2.2.2.2.2.2.2 hlrv hδv)
     -- the wire's IPA run at the claimed `cip` is the opening check's transcript
     obtain ⟨h1, h2, h3⟩ :=
-      ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hcanon hwc cp.opening
+      ipaRunAt_reads S fqW.2.2 inp.deferred.combinedInnerProduct hwc cp.opening
     rw [h1]
     refine ⟨U, ns, c₀, chals, ?_, hns, ?_, Subtype.ext ((hT.2.2 c₀ hc).trans h3.symm), hchals,
       ?_⟩
@@ -734,7 +733,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       blindingH
       spongeAfterIndex computeXHat inp
     ⦃⇓ o _ => ⌜IvpReads S σ cvk cp pub inp.toIvpClaims o⌝⦄ := by
-  obtain ⟨hIdx, hmask, hties, hcanon, hnc, htne, hlrne, hchar⟩ := h
+  obtain ⟨hIdx, hmask, hties, hnc, htne, hlrne, hchar⟩ := h
   have hσlen : inp.sigmaLast.toArray.size = nc := by
     have := hties.sigmaLast.length_eq
     simpa using this
@@ -793,7 +792,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rw [← hties.olds.kept, List.filter_map, List.map_map, List.map_map]
       rfl
     rw [hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hcanon hlrne hσlen tr
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne hσlen tr
       (htr'.1 ▸ hx) hFq hasrt' ftc hft' o hcb'
   | false =>
     simp only [incrementallyVerifyProof, Bool.false_eq_true, if_false]
@@ -814,7 +813,7 @@ theorem incrementallyVerifyProof_reads {nc : ℕ} (S : IvpSide C V ops) (σ : SR
       rfl
     have hFq := htr'.2 _ _ _ _ hsgv hties.w.reads hties.z.reads hties.t.reads
     rw [hd, hkept] at hFq
-    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hcanon hlrne hσlen tr htr'.1
+    exact tail_reads S σ cvk cp pub inp oldsW blindingH hties hh hlrne hσlen tr htr'.1
       hFq hasrt' ftc hft' o hcb'
 
 end Assembly

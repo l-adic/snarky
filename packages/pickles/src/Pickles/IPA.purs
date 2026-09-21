@@ -391,7 +391,7 @@ ipaFinalCheckCircuit scalarOps params input = do
 
   -- The scaling of `u` is emitted before the add.
   pPrime <- liftSnarky $ label "ipa_scale_cip" do
-    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted input.u input.deferred.combinedInnerProduct
+    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByCip input.u input.deferred.combinedInnerProduct
     { p } <- label "ipa_scale_cip_add" $ addComplete input.combinedPolynomial cipU
     pure p
 

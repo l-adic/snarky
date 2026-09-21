@@ -13,9 +13,7 @@ both; each side gets a triple about its own circuit, with the other half assumed
 The domain is a constant of the circuit — the generator the key's, `ζⁿ − 1` by `pow2PowMul` at
 the key's `log2` — so what the gadget's read owes about it (the generator's order, room for the
 zero-knowledge rows) is the environment's, and there is no domain cell to tie. The wrap side
-keeps every previous-challenge slot and does not constrain the low half of the `ξ` split, so
-the capstone is an implication where the step side's is an equivalence
-(`twoHalves_kimchiVerify_pallas_converse` is the converse, under `ScalarHalf.XiExact`).
+keeps every previous-challenge slot. Like the step side's, the capstone is an equivalence.
 
 `WrapProof.scalarCircuit` is the gadget as a circuit of its input (`WrapProof.ScalarIn`) with
 `finalized` asserted: what the wrap proof's top-level statement compiles
@@ -62,8 +60,8 @@ private theorem vanishingAt_spec {V : Valuation Fq} (log2 : ℕ) (z : FVar Fq) :
   rename_i t _ ht
   simp [ht]
 
-/-- **Running the wrap circuit's scalar half, a wrap proof's remaining half makes
-`kimchiVerify` accept.** `twoHalves_kimchiVerify_pallas` as a triple about the scalar circuit,
+/-- **Running the wrap circuit's scalar half, a wrap proof's remaining half decides
+`kimchiVerify`.** `twoHalves_kimchiVerify_pallas` as a triple about the scalar circuit,
 with the step circuit's group half assumed (`verifyProof_step_reads` produces it). What the
 circuit's parameters and domain owe is the environment's; what is left is the ties. -/
 theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
@@ -86,17 +84,12 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
     -- across the two
     (ht : HalvesTies (GroupHalf.step Vg claimsG)
       (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
-    (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaPallas.curve E.σ E.cvk cp pub) :
+    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
     ⦃⌜True⌝⦄
     finalizeOtherProofWrapAt (c := Builder Vs (KimchiConstraint Fq)) E claimsS evals
       prevChallenges
     ⦃⇓ o _ => ⌜SgOk E.σ E.cvk cp pub ∧ (↑o.finalized : CVar Fq).val Vs = 1
-      → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
+      ↔ kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub⌝⦄ := by
   have hP : (FopParams.ofEnv E Linearization.fqTokens).endo = Pasta.vestaEndo ∧
       (FopParams.ofEnv E Linearization.fqTokens).mds = Reflect.symMdsQ ∧
@@ -146,9 +139,9 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
     rw [ScalarHalf.wrap_maskVals]
     simp
   rw [hdv, hmask] at hread
-  rintro ⟨hsg, hfin⟩
-  exact twoHalves_kimchiVerify_pallas E cp pub hguard Vg claimsG successG hg Vs claimsS evals
-    prevChallenges o hread ht hf hzetaM hzetaN ⟨⟨hgbit, hfin⟩, hsg⟩
+  rw [← twoHalves_kimchiVerify_pallas E cp pub hguard Vg claimsG successG hg Vs claimsS evals
+    prevChallenges o hread ht hf]
+  exact ⟨fun h => ⟨⟨hgbit, h.2⟩, h.1⟩, fun h => ⟨h.2, h.1.2⟩⟩
 
 /-! ## The circuit of its input -/
 
@@ -196,22 +189,17 @@ theorem scalarCircuit_reads (E : Env IpaPallas.curve)
     (hgbit : (↑successG : CVar Fp).val Vg = 1)
     (ht : HalvesTies (GroupHalf.step Vg claimsG) (s.half Vs))
     (hf : FopTies E cp pub (s.half Vs))
-    (hzetaM : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
-    (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
     (hsg : SgOk E.σ E.cvk cp pub) :
     ⦃⌜True⌝⦄
     scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E s
     ⦃⇓ _ _ => ⌜kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true⌝⦄ := by
   have hAt := finalizeOtherProofWrapAt_kimchiVerify_pallas E cp pub hguard Vs s.claims s.evals
-    s.prev Vg claimsG successG hg hgbit ht hf hzetaM hzetaN
-  clear hzetaM hzetaN
+    s.prev Vg claimsG successG hg hgbit ht hf
   simp only [scalarCircuit]
   mvcgen [hAt]
-  rename_i himp
+  rename_i o _ hiff _ _
   intro hfin
-  exact (himp hsg hfin).1
+  exact (hiff.mp ⟨hsg, hfin⟩).1
 
 end WrapProof
 
