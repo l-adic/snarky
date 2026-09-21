@@ -19,7 +19,7 @@
 #   tools/witness_diff.sh --pair <ocaml> <ps> [labels]  diff two raw files
 #
 # Circuits: simple_chain nrr tree_proof_return two_phase_chain sideload
-#           chunks2 chunks4 app_circuit_chunks2
+#           chunks2 chunks4 recurse_over_chunks app_circuit_chunks2
 #
 # Prereqs: the mina submodule with its opam switch (mina/README-dev.md),
 # node 23. Seed is pinned at KIMCHI_DETERMINISTIC_SEED (default 42). A
@@ -56,6 +56,11 @@ cfg() {
       echo "dump_chunks2|pickles|Test.Pickles.Main|Chunks2|step wrap" ;;
     chunks4)
       echo "dump_chunks4|pickles|Test.Pickles.Main|Chunks4|step wrap" ;;
+    recurse_over_chunks)
+      # OCaml's own test, not a dumper: a two-chunk system, then a second
+      # system whose rule takes its proof as a prev. It runs its body twice,
+      # so counters 4-7 repeat 0-3 and go unread.
+      echo "test/chunked_circuits/chunks2|pickles|Test.Pickles.Main|RecurseOverChunks|chunks2_step chunks2_wrap recurse_step recurse_wrap" ;;
     app_circuit_chunks2)
       echo "dump_app_circuit_chunks2_witness|pickles-circuit-diffs|Test.Pickles.CircuitDiffs.Main|app_circuit_chunks2 witness|app" ;;
     *) return 1 ;;
@@ -93,8 +98,13 @@ diff_pair() {
 }
 
 run_ocaml() { # circuit dumper
-  local c="$1" dumper="$2" log="/tmp/wd_${c}_oc.log"
-  local exe="src/lib/crypto/pickles/$dumper/$dumper.exe"
+  local c="$1" dumper="$2" log="/tmp/wd_${c}_oc.log" exe
+  # A bare name is a dumper in its own directory; a path names an
+  # executable under the pickles library directly.
+  case "$dumper" in
+    */*) exe="src/lib/crypto/pickles/$dumper.exe" ;;
+    *) exe="src/lib/crypto/pickles/$dumper/$dumper.exe" ;;
+  esac
   rm -f "/tmp/wd_${c}_oc_"*.witness
   # The dumpers build and run under the mina submodule's opam switch
   # (`mina_switch_env`), like the rest of the fixture tooling. A failure is
