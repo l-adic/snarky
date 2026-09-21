@@ -128,7 +128,7 @@ theorem isPrimitiveRoot_two_pow {M : Type} [CommMonoid M] (g : M) (d : ℕ)
   cases d with
   | zero =>
       obtain rfl : g = 1 := by simpa using h1
-      simpa using IsPrimitiveRoot.one
+      simp
   | succ d =>
       have h2' : ¬g ^ 2 ^ d = 1 := by simpa [powTwoPow_eq] using h2
       rw [← orderOf_eq_prime_pow h2' h1]

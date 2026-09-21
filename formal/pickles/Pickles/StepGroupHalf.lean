@@ -91,6 +91,29 @@ private theorem corrSumPt_ne_zero {ks : ℕ} (E : Env IpaPallas.curve)
   exact shiftCoeff_ne_zero pastaShapePallas k
     (statement.packed_isScalar k (hk ▸ List.mem_cons_self)) (by simpa using hsum.symm)
 
+/-- Whether the SRS avoids the step relations, read off the key: the correction sum's
+commitment is the sum of the key's shifted Lagrange points (`corrSumPt_map_msm`), the Lagrange
+vectors' the points themselves. -/
+theorem avoids_stepRelationsAt_iff {ks : ℕ} (E : Env IpaPallas.curve)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    E.σ.Avoids (stepRelationsAt E statement)
+      ↔ corrSumPt (C := IpaPallas.curve) statement.packed E.cvk.lagrangeBasis.toList 0 ≠ 0
+        ∧ ∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0 := by
+  refine ⟨fun h => ⟨corrSumPt_ne_zero E statement h, E.lagrange_ne pastaShapePallas
+    fun a ha => h a (List.mem_cons_of_mem _ ha)⟩, fun ⟨hsum, hL⟩ a ha hne => ?_⟩
+  rcases List.mem_cons.1 ha with rfl | ha
+  · rwa [E.lagrangeBasis_toList, corrSumPt_map_msm] at hsum
+  · exact (E.avoids_lagrangeRelations_iff pastaShapePallas).2 hL a ha hne
+
+/-- Decided on the key's points, with no commitment recomputed; the bounded `∀` is pinned to
+the list walk, as in `Env.decidableAvoids`. -/
+def decidableAvoidsStepRelations {ks : ℕ} (E : Env IpaPallas.curve)
+    (statement : WrapStatement ks (FVar Fp) (BoolVar Fp) (Type1 (FVar Fp))) :
+    Decidable (E.σ.Avoids (stepRelationsAt E statement)) :=
+  haveI : Decidable (∀ Ps ∈ E.cvk.lagrangeBasis.toList, Ps[(0 : Fin 1)] ≠ 0) :=
+    List.decidableBAll _ _
+  decidable_of_iff _ (avoids_stepRelationsAt_iff E statement).symm
+
 /-- `verify` at an environment: the deployed Pallas scalar ops, endomorphism, sponge, group
 map and square root, the SRS blinding base as a constant cell, and the `x_hat` table the
 key's. -/
