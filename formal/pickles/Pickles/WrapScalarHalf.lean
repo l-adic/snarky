@@ -98,7 +98,7 @@ theorem finalizeOtherProofWrapAt_kimchiVerify_pallas
     ⦃⌜True⌝⦄
     finalizeOtherProofWrapAt (c := Builder Vs (KimchiConstraint Fq)) E claimsS evals
       prevChallenges
-    ⦃⇓ o _ => ⌜SgOk E cp pub ∧ (↑o.finalized : CVar Fq).val Vs = 1
+    ⦃⇓ o _ => ⌜SgOk E.σ E.cvk cp pub ∧ (↑o.finalized : CVar Fq).val Vs = 1
       → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub⌝⦄ := by
   have hP : (FopParams.ofEnv E Linearization.fqTokens).endo = Pasta.vestaEndo ∧
@@ -203,7 +203,7 @@ theorem scalarCircuit_reads (E : Env IpaPallas.curve)
       = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
     (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
-    (hsg : SgOk E cp pub) :
+    (hsg : SgOk E.σ E.cvk cp pub) :
     ⦃⌜True⌝⦄
     scalarCircuit (c := Builder Vs (KimchiConstraint Fq)) E s
     ⦃⇓ _ _ => ⌜kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true⌝⦄ := by

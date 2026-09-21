@@ -504,22 +504,25 @@ def ScalarHalf.ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Arr
     (Sc.side.decode dv.plonk.perm) Sc.V dv.xi
 
 /-- The deferred `sg`-correctness equation of the proof's opening at the wire's round
-challenges (`verifyWith`'s second conjunct): what pickles checks one proof later. -/
-def SgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) : Prop :=
-  let run := runInput C E.σ E.cvk cp pub
-  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
-  run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i])
+challenges (`verifyWith`'s second conjunct): what pickles checks one proof later. It reads the
+SRS and the key alone, so it is stated over them and not over an `Env`. -/
+def SgOk (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) : Prop :=
+  let run := runInput C σ cvk cp pub
+  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
+  run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i])
 
 /-- The decidable mirror of `SgOk`. This is the check the terminator runs out of circuit,
 so it is the form in which the deferred obligation meets a wire proof. -/
-def sgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) : Bool :=
-  let run := runInput C E.σ E.cvk cp pub
-  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
-  decide (run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i]))
+def sgOk (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) : Bool :=
+  let run := runInput C σ cvk cp pub
+  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
+  decide (run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i]))
 
 /-- `sgOk` reflects `SgOk`. -/
-theorem sgOk_iff (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField) :
-    sgOk E cp pub = true ↔ SgOk E cp pub := by
+theorem sgOk_iff (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) : sgOk σ cvk cp pub = true ↔ SgOk σ cvk cp pub := by
   simp [sgOk, SgOk]
 
 /-! ## The deferred obligation, carried
@@ -548,46 +551,47 @@ theorem accOk_iff (σ : SRS C.Point) (a : Accumulator C σ.k) : accOk σ a = tru
 commitment is `cp`'s opening's `sg`, its challenges the wire's round challenges of `cp` — the
 vector `SgOk` commits. Pickles forces this through the message digests of the statements
 between the two proofs; here it is the named hypothesis. -/
-def Carry (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) : Prop :=
-  let run := runInput C E.σ E.cvk cp pub
-  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+def Carry (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) (cp' : KimchiProof C 1 σ.k) (i : Fin cp'.olds.size) : Prop :=
+  let run := runInput C σ cvk cp pub
+  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1
 
 /-- The decidable mirror of `Carry`. -/
-def carry (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) : Bool :=
-  let run := runInput C E.σ E.cvk cp pub
-  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+def carry (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) (cp' : KimchiProof C 1 σ.k) (i : Fin cp'.olds.size) : Bool :=
+  let run := runInput C σ cvk cp pub
+  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1)
 
 /-- `carry` reflects `Carry`. -/
-theorem carry_iff (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) :
-    carry E cp pub cp' i = true ↔ Carry E cp pub cp' i := by
+theorem carry_iff (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) (cp' : KimchiProof C 1 σ.k) (i : Fin cp'.olds.size) :
+    carry σ cvk cp pub cp' i = true ↔ Carry σ cvk cp pub cp' i := by
   simp [carry, Carry]
 
 /-- `carry` and `sgOk` on one run of the predecessor's transcript. Each runs the fq-sponge,
 the public-input commitment, the fr-sponge and the IPA transcript of `cp` on its own; a driver
 that wants both verdicts gets them here for one run. The two mirrors and their reflections are
 untouched: this is definitionally their pair (`carrySgOk_eq`). -/
-def carrySgOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) : Bool × Bool :=
-  let run := runInput C E.σ E.cvk cp pub
-  let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
+def carrySgOk (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) (cp' : KimchiProof C 1 σ.k) (i : Fin cp'.olds.size) :
+    Bool × Bool :=
+  let run := runInput C σ cvk cp pub
+  let tr := transcriptFrom C (runOracles C σ cvk cp pub).warm run
   (decide (cp'.olds[i].sg = run.proof.sg ∧ cp'.olds[i].u = tr.2.1),
-   decide (run.proof.sg = msm C E.σ.g (bPolyCoefficients fun i => tr.2.1[i])))
+   decide (run.proof.sg = msm C σ.g (bPolyCoefficients fun i => tr.2.1[i])))
 
 /-- `carrySgOk` is `carry` paired with `sgOk`. -/
-theorem carrySgOk_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) :
-    carrySgOk E cp pub cp' i = (carry E cp pub cp' i, sgOk E cp pub) := rfl
+theorem carrySgOk_eq (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) (cp' : KimchiProof C 1 σ.k) (i : Fin cp'.olds.size) :
+    carrySgOk σ cvk cp pub cp' i = (carry σ cvk cp pub cp' i, sgOk σ cvk cp pub) := rfl
 
 /-- **The deferred obligation transports.** Under `Carry`, `cp`'s `SgOk` is the accumulator
 equation of what `cp'` carries: checkable on `cp'`'s input, without `cp`. -/
-theorem sgOk_iff_accOk (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cp' : KimchiProof C 1 E.σ.k) (i : Fin cp'.olds.size) (h : Carry E cp pub cp' i) :
-    SgOk E cp pub ↔ AccOk E.σ cp'.olds[i] := by
+theorem sgOk_iff_accOk (σ : SRS C.Point) (cvk : KimchiVK C 1) (cp : KimchiProof C 1 σ.k)
+    (pub : Array C.ScalarField) (cp' : KimchiProof C 1 σ.k) (i : Fin cp'.olds.size)
+    (h : Carry σ cvk cp pub cp' i) : SgOk σ cvk cp pub ↔ AccOk σ cp'.olds[i] := by
   obtain ⟨hsg, hu⟩ := h
   simp only [SgOk, AccOk, hsg, hu]
 
@@ -1047,7 +1051,7 @@ theorem twoHalves_kimchiVerify
       = runZetaN C E.σ E.cvk cp pub) :
     ((↑success : CVar C.BaseField).val G.V = 1
         ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
-        ∧ SgOk E cp pub
+        ∧ SgOk E.σ E.cvk cp pub
       → kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
   have h := twoHalves_schnorr E hbase hscalar cp pub G success hg Sc out hs ht hf hzetaM hzetaN
   -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
@@ -1088,7 +1092,7 @@ theorem twoHalves_kimchiVerify_iff
       = runZetaN C E.σ E.cvk cp pub) :
     ((↑success : CVar C.BaseField).val G.V = 1
         ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
-        ∧ SgOk E cp pub
+        ∧ SgOk E.σ E.cvk cp pub
       ↔ kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
   have h := twoHalves_iff_schnorr E hbase hscalar cp pub G success hg Sc out hs hxi ht hf
     hzetaM hzetaN
@@ -1189,7 +1193,7 @@ theorem twoHalves_kimchiVerify_vesta
     (hzetaN : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaVesta.curve E.σ E.cvk cp pub) :
     ((↑successG : CVar Fq).val Vg = 1 ∧ (↑outS.finalized : CVar Fp).val Vs = 1)
-        ∧ SgOk E cp pub
+        ∧ SgOk E.σ E.cvk cp pub
       ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest E cp pub :=
   twoHalves_kimchiVerify_iff E (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD])
@@ -1305,7 +1309,7 @@ theorem twoHalves_kimchiVerify_pallas
     (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaPallas.curve E.σ E.cvk cp pub) :
     ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
-        ∧ SgOk E cp pub
+        ∧ SgOk E.σ E.cvk cp pub
       → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub :=
   twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD]) (by norm_num [PALLAS_SCALAR_CARD])
@@ -1355,7 +1359,7 @@ theorem twoHalves_kimchiVerify_pallas_converse
     kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub
       → ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
-        ∧ SgOk E cp pub :=
+        ∧ SgOk E.σ E.cvk cp pub :=
   (twoHalves_kimchiVerify_iff E (by norm_num [PALLAS_BASE_CARD])
     (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ outS hs hxi ht hf hzetaM
     hzetaN).2

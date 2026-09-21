@@ -137,7 +137,7 @@ theorem finalizeOtherProofStepAt_kimchiVerify_vesta
     ⦃⌜True⌝⦄
     finalizeOtherProofStepAt (c := Builder Vs (KimchiConstraint Fp)) E domains claimsS evals
       mask prevChallenges domainLog2Var
-    ⦃⇓ o _ => ⌜SgOk E cp pub ∧ (↑o.finalized : CVar Fp).val Vs = 1
+    ⦃⇓ o _ => ⌜SgOk E.σ E.cvk cp pub ∧ (↑o.finalized : CVar Fp).val Vs = 1
       ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest E cp pub⌝⦄ := by
   have hP : (FopParams.ofEnv E Linearization.fpTokens).endo = Pasta.pallasEndo ∧
@@ -287,7 +287,7 @@ theorem scalarCircuit_reads
       = runZetaM IpaVesta.curve E.σ E.cvk cp pub)
     (hzetaN : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
       = runZetaN IpaVesta.curve E.σ E.cvk cp pub)
-    (hsg : SgOk E cp pub) :
+    (hsg : SgOk E.σ E.cvk cp pub) :
     ⦃⌜True⌝⦄
     scalarCircuit (c := Builder Vs (KimchiConstraint Fp)) E domains s
     ⦃⇓ _ _ => ⌜kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true⌝⦄ := by

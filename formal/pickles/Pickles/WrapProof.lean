@@ -225,7 +225,7 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k).statement))
     -- of the proof itself
     (hguard : Guards IpaPallas.curve E.cvk cp pub)
-    (hsg : SgOk E cp pub) :
+    (hsg : SgOk E.σ E.cvk cp pub) :
     kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
   have hpub := hin.statement
   obtain ⟨oldsW, hivp⟩ := hin.ivpHyps (keyCells := keyCells)

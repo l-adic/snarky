@@ -399,7 +399,7 @@ def carriesInto (C : Ipa.KimchiCurve) (name : String) (sqrt : C.BaseField → Op
     -- `carry` and `sgOk` share the predecessor's transcript (`carrySgOk_eq`); `accOk` is
     -- the successor's own accumulator and stays a computation of its own, since its
     -- agreeing with `sgOk` is what the carry says
-    let (c, s) := Pickles.carrySgOk E cp pred.publicInput cp' ⟨slot, h⟩
+    let (c, s) := Pickles.carrySgOk E.σ E.cvk cp pred.publicInput cp' ⟨slot, h⟩
     let a := Pickles.accOk E.σ cp'.olds[slot]
     IO.println s!"    carry={c} accOk={a} sgOk(pred)={s}"
     return c && a && s && (s == a)
@@ -473,7 +473,7 @@ def theoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (steps : Array (Cache.
     let msgOk := decide (digest = wst.proofState.messagesForNextWrapProof)
     let guards := decide (¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨
       cp.olds.size ≠ cvk.prevChallenges))
-    let sg' := Pickles.sgOk E cp pub
+    let sg' := Pickles.sgOk E.σ E.cvk cp pub
     let kv := Kimchi.Verifier.kimchiVerify CS σ cvk cp pub
     -- `havoid`, the theorem's own hypothesis, decided on the key's Lagrange points
     let avoidOk := @decide (E.σ.Avoids E.lagrangeRelations)
@@ -550,7 +550,7 @@ def wrapTheoremHyps (w : Cache.Entry CW) (s : Cache.Entry CS) (slot : ℕ)
     (Pickles.decidableAvoidsStepRelations E stVar)
   let guards := decide (¬ (cvk.lagrangeBasis.size < pub.size ∨ cvk.n < pub.size ∨
     cp.olds.size ≠ cvk.prevChallenges))
-  let sg' := Pickles.sgOk E cp pub
+  let sg' := Pickles.sgOk E.σ E.cvk cp pub
   let kv := Kimchi.Verifier.kimchiVerify CW σ cvk cp pub
   IO.println s!"    env=true rounds={σ.k} key=2^{cvk.domainLog2} pub={pubOk} \
     ({pub.size} cells + 10 zeros) offBand={offOk} avoids={avoidOk} guards={guards} \
