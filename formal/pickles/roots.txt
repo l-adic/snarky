@@ -84,7 +84,7 @@ Pickles.FqTranscriptReads.wire
 
 -- script-surface:begin
 -- The environment's invariants as a decidable predicate, and the environment built from
--- them (TwoHalves.lean): pickles/scripts/check_halves.lean checks them once on the key and
+-- them (Env.lean): pickles/scripts/check_halves.lean checks them once on the key and
 -- SRS it loaded, which is what lets a driver construct an `Env` at all.
 Pickles.Env.Invariants
 Pickles.Env.ofInvariants
@@ -93,7 +93,7 @@ Pickles.Env.ofInvariants
 -- generator orders by squaring (`powPow2`), since the generic power recurses as deep as its
 -- exponent.
 Pickles.KnownDomains.ofList?
--- Whether the SRS avoids the key's Lagrange relations (TwoHalves.lean), decided on the key's
+-- Whether the SRS avoids the key's Lagrange relations (Env.lean), decided on the key's
 -- own Lagrange points: check_halves.lean decides the top-level statement's `havoid` with it.
 Pickles.Env.decidableAvoids
 -- Its twin at the step relations (StepGroupHalf.lean): the wrap proof's statement's `havoid`.
