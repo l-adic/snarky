@@ -21,10 +21,11 @@
 # Circuits: simple_chain nrr tree_proof_return two_phase_chain sideload
 #           chunks2 chunks4 app_circuit_chunks2
 #
-# Prereqs: nix (mina dev shell), mina submodule, node 23. Seed is pinned at
-# KIMCHI_DETERMINISTIC_SEED (default 42). Missing witness files report SKIP
-# (e.g. an inductive iteration the PS side hasn't reached). Exit 0 iff every
-# present pair is byte-identical.
+# Prereqs: the mina submodule with its opam switch (mina/README-dev.md),
+# node 23. Seed is pinned at KIMCHI_DETERMINISTIC_SEED (default 42). A
+# missing PS witness reports SKIP (e.g. an inductive iteration the PS side
+# hasn't reached); a missing OCaml witness is a failure. Exit 0 iff every
+# OCaml witness is present and every present pair is byte-identical.
 
 set -uo pipefail
 
@@ -61,12 +62,14 @@ cfg() {
   esac
 }
 
-# diff_pair <oc> <ps> <tag> [labels_file]  -> 0 match, 1 diverge, 2 skip
-# On divergence, reports the first (col,row) mismatch + the two values, and
-# (if given) the PS row-label-stack context for that row.
+# diff_pair <oc> <ps> <tag> [labels_file]  -> 0 match, 1 diverge or no
+# reference, 2 skip. The OCaml witness is the reference: without it nothing
+# was checked, so that is a failure. On divergence, reports the first
+# (col,row) mismatch + the two values, and (if given) the PS
+# row-label-stack context for that row.
 diff_pair() {
   local oc="$1" ps="$2" tag="$3" labels="${4:-}"
-  if [ ! -f "$oc" ]; then echo "  SKIP  $tag (OCaml witness missing)"; return 2; fi
+  if [ ! -f "$oc" ]; then echo "  FAIL  $tag (OCaml witness missing)"; return 1; fi
   if [ ! -f "$ps" ]; then echo "  SKIP  $tag (PS witness missing)"; return 2; fi
   local first
   first=$(diff <(grep -v '^#' "$oc") <(grep -v '^#' "$ps") | head -1)
@@ -90,19 +93,20 @@ diff_pair() {
 }
 
 run_ocaml() { # circuit dumper
-  local c="$1" dumper="$2"
+  local c="$1" dumper="$2" log="/tmp/wd_${c}_oc.log"
+  local exe="src/lib/crypto/pickles/$dumper/$dumper.exe"
   rm -f "/tmp/wd_${c}_oc_"*.witness
-  # Use the RELATIVE flake-ref (mina#default) from the repo root: an
-  # absolute path-ref makes nix snapshot a clean store copy that drops the
-  # dirty in-tree proof-systems submodule (missing Cargo.lock → eval error).
-  ( cd "$REPO" && nix develop mina#default -c bash -c "
-    export KIMCHI_DETERMINISTIC_SEED=$SEED
-    export KIMCHI_WITNESS_DUMP=/tmp/wd_${c}_oc_%c.witness
+  # The dumpers build and run under the mina submodule's opam switch
+  # (`mina_switch_env`), like the rest of the fixture tooling. A failure is
+  # reported with its log; the missing witnesses then fail the diff below.
+  ( mina_switch_env "$REPO"
+    export KIMCHI_DETERMINISTIC_SEED="$SEED"
+    export KIMCHI_WITNESS_DUMP="/tmp/wd_${c}_oc_%c.witness"
     export KIMCHI_WITNESS_DUMP_SIDE=oc
-    cd mina && \
-      dune build 'src/lib/crypto/pickles/$dumper/$dumper.exe' && \
-      dune exec 'src/lib/crypto/pickles/$dumper/$dumper.exe'
-  " ) >/dev/null 2>&1 || true
+    cd "$REPO/mina" && \
+      dune build "$exe" && \
+      dune exec "$exe"
+  ) >"$log" 2>&1 || echo "  OCaml dumper $dumper failed: see $log"
 }
 
 run_ps() { # circuit ps_pkg ps_main ps_example
@@ -133,7 +137,7 @@ run_circuit() {
     rc=$?; [ "$rc" -eq 1 ] && fails=$((fails + 1))
     n=$((n + 1))
   done
-  if [ "$fails" -eq 0 ]; then echo "  => $c: all present pairs match"; else echo "  => $c: $fails diverged"; fi
+  if [ "$fails" -eq 0 ]; then echo "  => $c: all present pairs match"; else echo "  => $c: $fails failed"; fi
   return "$fails"
 }
 
