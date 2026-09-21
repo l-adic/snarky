@@ -14,6 +14,7 @@ import Pickles.FqSpongeTranscript
 import Pickles.CheckBulletproof
 import Pickles.Curve
 import Pickles.Env
+import Pickles.LadderBand
 import Pickles.ListLemmas
 import Pickles.PublicInputCommit
 import Pickles.FtComm

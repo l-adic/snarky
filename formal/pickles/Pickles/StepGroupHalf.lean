@@ -1,4 +1,5 @@
 import Pickles.Encoding
+import Pickles.LadderBand
 import Pickles.TwoHalves
 
 /-!
@@ -259,10 +260,14 @@ abbrev GroupVar.half (V : Valuation Fp) (g : GroupVar ks k) :
   GroupHalf.step V g.claims
 
 /-- `Step_verifier.verify` as a circuit of its input, its success bit asserted: the deployed
-`(verified ∧ finalized) ∨ ¬must_verify` at a slot that must verify. -/
+`(verified ∧ finalized) ∨ ¬must_verify` at a slot that must verify. Before it, the ladder band
+asserted on the cells `verify` scales — the seven shifted scalars and the `x_hat` full leaves
+(`Pickles.LadderBand`; a harness assertion, not part of the shared gadget). -/
 def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaPallas.curve)
     (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
     (g : GroupVar ks k) : CircuitM Fp c Unit := do
+  assertClaimsOffBandStep g.shifted
+  assertLeavesOffBand IpaPallas.curve.scalar (stepLeavesAt E g.statement)
   let v ← verifyProofAt E spongeAfterIndex g.isBaseCase g.statement g.claims (g.cells keyCells)
   assert v
 
@@ -270,20 +275,26 @@ def groupCircuit {c : Type} [BasicSystem Fp c] [KimchiSystem Fp c] (E : Env IpaP
 theorem groupCircuit_reads {V : Valuation Fp} (E : Env IpaPallas.curve)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
     (keyCells : List (List (AffinePoint (FVar Fp)))) (spongeAfterIndex : SpongeVar Fp)
-    (g : GroupVar ks E.σ.k) (oldsW : List (IpaPallas.curve.Point × Bool))
+    (g : GroupVar ks E.σ.k)
     (hbase : CircuitType.Reads V g.isBaseCase false)
-    (hoff : ∀ leaf ∈ stepLeavesAt E g.statement, Leaf.offBand IpaPallas.curve.scalar V leaf)
     (havoid : E.σ.Avoids (stepRelationsAt E g.statement))
-    (hivp : IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V g.statement) false
-      spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
+    (hivp : (∀ x ∈ g.shifted, (stepSide V).ClaimOk x) →
+      ∃ oldsW, IvpHyps (stepSide V) E.σ E.cvk cp (stepPublicInput E V g.statement) false
+        spongeAfterIndex ((g.cells keyCells).withClaims g.claims) oldsW) :
     ⦃⌜True⌝⦄
     groupCircuit (c := Builder V (KimchiConstraint Fp)) E keyCells spongeAfterIndex g
     ⦃⇓ _ _ => ⌜∃ v : BoolVar Fp,
       (g.half V).Reads E cp (stepPublicInput E V g.statement) v ∧
         (↑v : CVar Fp).val V = 1⌝⦄ := by
+  simp only [groupCircuit]
+  refine builder_spec_bind_of _ _ _ _ (assertClaimsOffBandStep_spec (V := V) g.shifted)
+    fun hclaimOk _ => ?_
+  refine builder_spec_bind_of _ _ _ _
+    (assertLeavesOffBand_spec (V := V) IpaPallas.curve.scalar (stepLeavesAt E g.statement))
+    fun hoff _ => ?_
+  obtain ⟨oldsW, hivp⟩ := hivp hclaimOk
   have hv := verifyProofAt_reads (V := V) E cp spongeAfterIndex g.isBaseCase g.statement
     g.claims (g.cells keyCells) oldsW hbase hoff havoid hivp
-  simp only [groupCircuit]
   mvcgen -trivial [hv]
   rename_i v _ hr _ _
   intro h1

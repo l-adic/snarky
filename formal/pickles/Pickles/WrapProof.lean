@@ -23,11 +23,12 @@ valuation (`builder_spec_iff`).
   proof, the `sg` cells as the old accumulators, the evaluation cells as the evaluations;
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
-* what no circuit enforces, each its own hypothesis: the shifted claims avoid the ladder's
-  band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`). The three scalars
-  `ft_comm` scales by are no hypotheses (the scalar circuit compares each, `HalvesTies`
-  carries them over), nor is the claimed `cip` absorbing as its canonical representative: its
-  own ladder (`scaleByCip`) pins the half one bit narrower;
+* what is no hypothesis, because a circuit enforces it: the three scalars `ft_comm` scales by
+  (the scalar circuit compares each, `HalvesTies` carries them over); the claimed `cip`
+  absorbing as its canonical representative (its own ladder, `scaleByCip`, pins the half one
+  bit narrower); and the ladder's band, which the group circuit asserts on the cells it
+  scales — the shifted claims and the `x_hat` full leaves (`Pickles.LadderBand`), an assertion
+  of this harness rather than of the shared gadget;
 * `havoid`: the SRS avoids the `x_hat` relations (`SRS.Avoids`, `stepRelationsAt`). The table
   is computed from the key (`xhatTableAt`), and its points are commitments against the SRS;
   that the Lagrange points and the constant correction sum the fold adds are finite points
@@ -201,10 +202,6 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput ks E.σ.k).half Vg) ((scalarInput E.σ.k).half Vs))
-    -- what no circuit enforces
-    (hclaimOk : ∀ x ∈ (groupInput ks E.σ.k).shifted, (stepSide Vg).ClaimOk x)
-    (hoff : ∀ leaf ∈ stepLeavesAt E (groupInput ks E.σ.k).statement,
-      Leaf.offBand IpaPallas.curve.scalar Vg leaf)
     -- the SRS has no relation at the `x_hat` table's coefficient vectors
     (havoid : E.σ.Avoids (stepRelationsAt E (groupInput ks E.σ.k).statement))
     -- of the proof itself
@@ -212,14 +209,13 @@ theorem wrapProof_kimchiVerify_pallas {ks : ℕ}
     (hsg : SgOk E.σ E.cvk cp pub) :
     kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true := by
   have hpub := hin.statement
-  obtain ⟨oldsW, hivp⟩ := hin.ivpHyps (keyCells := keyCells)
-    (spongeAfterIndex := spongeAfterIndex) hvk hclaimOk
+  have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hvk
   have hf := hin.fopTies
   have hbase := hin.mustVerify
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k) oldsW
-      hbase hoff havoid hivp) _
+    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex (groupInput ks E.σ.k) hbase
+      havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs (scalarInput E.σ.k) Vg _ v hv hv1 ht hf hsg) _

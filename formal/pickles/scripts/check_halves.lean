@@ -427,7 +427,8 @@ public input it names:
 * the file's step domains form a `KnownDomains` with this key's among them, and the wrap
   statement's `domain_log2` is the key's (`hdom`);
 * the packed step statement, carried into the wrap field, reads back as the step proof's
-  public input (`wrapPublicInput`), and its full scalars are off the band (`hoff`);
+  public input (`wrapPublicInput`), and its full scalars are off the band (what the group
+  circuit's own assertion needs to be satisfiable);
 * the SRS avoids the key's Lagrange relations (`havoid`), decided on the key's Lagrange
   points (`Env.decidableAvoids`), which the environment's invariants tie to the SRS;
 * the wrap statement's `messages_for_next_wrap_proof` is the digest `wrapVerifyAt` asserts:
@@ -526,7 +527,8 @@ decided on a step entry's slot and the wrap entry that slot verified — the twi
 * the environment's invariants hold of the wrap key and its SRS (`Env.Invariants`);
 * the packed wrap statement, carried into the step field, reads back as the cells of the wrap
   proof's public input that a circuit reads (`stepPublicInput`), the wire's ten further cells
-  are zero, and its full scalars are off the band (`hoff`);
+  are zero, and its full scalars are off the band (what the group circuit's own assertion
+  needs to be satisfiable);
 * the SRS avoids the step relations (`havoid`), decided on the key's Lagrange points
   (`decidableAvoidsStepRelations`);
 * `Guards`, `SgOk`, and the conclusion `kimchiVerify`, at that public input;

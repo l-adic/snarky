@@ -33,11 +33,12 @@ it allocates it.
   old accumulators, the evaluation cells as the evaluations, the branch's domain as the key's;
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
-* what no circuit enforces, each its own hypothesis: the shifted claims avoid the ladder's
-  band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`). The three scalars
-  `ft_comm` scales by — the permutation scalar, `ζ^(2^k)`, `ζⁿ` — are no hypotheses: the scalar
-  circuit compares each at the transcript's challenges, which the group read gives before it
-  opens (`IvpReads`), and `HalvesTies` carries them across the field crossing;
+* what is no hypothesis, because a circuit enforces it: the three scalars `ft_comm` scales by
+  — the permutation scalar, `ζ^(2^k)`, `ζⁿ` — which the scalar circuit compares at the
+  transcript's challenges (the group read gives those before it opens, `IvpReads`, and
+  `HalvesTies` carries them across the field crossing); and the ladder's band, which the group
+  circuit asserts on the cells it scales — the shifted claims and the `x_hat` full leaves
+  (`Pickles.LadderBand`), an assertion of this harness rather than of the shared gadget;
 * `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
   `Env.lagrangeRelations`). The `x_hat` table is the key's Lagrange points, commitments
   against the SRS; that they are finite points is that the SRS has no relation at their
@@ -45,7 +46,7 @@ it allocates it.
 * `Guards` and `SgOk`, of the proof itself.
 
 The layered hypotheses the halves' reads consume (`IvpHyps`, `IvpTies`, `FopTies`) are built
-from these in the proof; the shape guards among them (`mask`, `canon`, `nc_pos`, `t_ne`,
+from these in the proof; the shape guards among them (`mask`, `nc_pos`, `t_ne`,
 `lr_ne`, `char`) are proved — `lr_ne` from the environment's `rounds_pos`.
 -/
 
@@ -216,10 +217,6 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (hvk : VkReads E.cvk Vg spongeAfterIndex keyCells)
     -- the two circuits hold one set of deferred claims
     (ht : HalvesTies ((groupInput E.σ.k kw n).half Vg) ((scalarInput E.σ.k).half Vs))
-    -- what no circuit enforces
-    (hclaimOk : ∀ x ∈ (groupInput E.σ.k kw n).shifted, (wrapSide Vg).ClaimOk x)
-    (hoff : ∀ leaf ∈ wrapLeavesAt E (groupInput E.σ.k kw n).stepStatement,
-      Leaf.offBand IpaVesta.curve.scalar Vg leaf)
     -- the SRS has no relation at the `x_hat` table's coefficient vectors
     (havoid : E.σ.Avoids E.lagrangeRelations)
     -- of the proof itself
@@ -228,15 +225,12 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true := by
   have hpub := hin.statement
   have hivp := hin.ivpHyps (keyCells := keyCells) (spongeAfterIndex := spongeAfterIndex) hvk
-    hclaimOk
   have hf := hin.fopTies
   have hdom := hin.domain
   subst hpub
   obtain ⟨v, hv, hv1⟩ := (builder_spec_iff _ _).mp
-    (wrapVerifyAt_reads (V := Vg) E cp (groupInput E.σ.k kw n).stepStatement
-      spongeAfterIndex msgSponge (groupInput E.σ.k kw n).newBp (groupInput E.σ.k kw n).msgDigest
-      (groupInput E.σ.k kw n).claims ((groupInput E.σ.k kw n).cells keyCells) hoff havoid
-      hivp) _
+    (groupCircuit_reads (V := Vg) E cp keyCells spongeAfterIndex msgSponge
+      (groupInput E.σ.k kw n) havoid hivp) _
     fun con hc => hsatG con (mem_compile_of_mem_body hc)
   have hmask := BranchData.mask_boolean (V := Vs) (scalarInput E.σ.k).branch
     (CheckedType.check_sound Vs (scalarInput E.σ.k) _
