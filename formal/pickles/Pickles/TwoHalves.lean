@@ -21,11 +21,10 @@ the two fields of the cycle, in this order:
 
 This module states the composition, with no circuit and no `mvcgen`: from the two reads
 (`IvpReads`, `FopReadsWire`) and the ties between the two circuits' cells (`HalvesTies`),
-the two bits reading `1` together with the deferred `sg`-correctness equation forces the
-acceptance of `kimchiVerify` (`twoHalves_kimchiVerify`), and the two bits alone force the
-wire's Schnorr equation at honest claims (`twoHalves_schnorr`); where the scalar half's `ξ`
-comparison is exact (`ScalarHalf.XiExact`) both are equivalences (`twoHalves_kimchiVerify_iff`,
-`twoHalves_iff_schnorr`).
+the two bits reading `1` together with the deferred `sg`-correctness equation is the
+acceptance of `kimchiVerify` at honest claims (`twoHalves_kimchiVerify`), and the two bits
+alone are the wire's Schnorr equation at honest claims (`twoHalves_schnorr`). Both are
+equivalences.
 
 ## Where this module sits
 
@@ -63,10 +62,9 @@ base to the wire's `uBase`, so the bits reading `1` force `kimchiVerify`'s accep
 converse — the wire accepting at honest claims makes the bits read `1` — needs the `ξ`
 comparison to be exact: `xiCorrect` compares the claim against the low half of a split of
 the fr-sponge's squeeze, and only where the circuit range-checks that low half is the split
-canonical. The step circuit does (`xiConstrainLowBits`), so at a step proof the statement
-is an equivalence (`twoHalves_kimchiVerify_vesta`); the wrap circuit does not
-(`squeezeScalar`), so at a wrap proof the converse is stated separately under
-`ScalarHalf.XiExact` as a hypothesis (`twoHalves_kimchiVerify_pallas_converse`).
+canonical. Both circuits do (`squeeze_challenge`), so the statement is an equivalence at a
+step proof (`twoHalves_kimchiVerify_vesta`) and at a wrap proof
+(`twoHalves_kimchiVerify_pallas`).
 
 ## What this is not
 
@@ -82,23 +80,20 @@ the cycle is `verify`'s. This is the per-proof checkpoint, at one chunk.
   environment;
 * `GroupHalf.Reads`: the group half's circuit read (`VerifyReads`) at a half's own cells —
   the scalar half's is the gadget's `FopVerifyReads`, written at the environment's parameters
-  wherever it is needed; `ScalarHalf.XiExact`: the `ξ` comparison exact at a half's cells, which
-  the read gives where the side constrains the low half (`ScalarHalf.xiExact_of_constrained`);
+  wherever it is needed;
 * `HalvesTies`: the claim cells of the two halves read the same claims across the field
   crossing, the digest crosses as `castDigest`; `FopTies`: the scalar half's evaluations and
   old accumulators are the proof's.
 
 ## Main results
 
-* `twoHalves_schnorr`: the two bits read `1` make the claims honest and the wire's Schnorr
-  equation hold; `twoHalves_kimchiVerify`: with the deferred `sg` equation, they make
-  `kimchiVerify` accept at honest claims; `twoHalves_iff_schnorr`, `twoHalves_kimchiVerify_iff`:
-  the same as equivalences under `ScalarHalf.XiExact`; at a step proof (Vesta commitments:
-  the wrap circuit's group half, then the step circuit's scalar half) the equivalence
+* `twoHalves_schnorr`: the two bits read `1` exactly when the claims are honest and the
+  wire's Schnorr equation holds; `twoHalves_kimchiVerify`: with the deferred `sg` equation,
+  exactly when `kimchiVerify` accepts at honest claims; at a step proof (Vesta commitments:
+  the wrap circuit's group half, then the step circuit's scalar half)
   `twoHalves_kimchiVerify_vesta`, with the claim tie unfolded (`vesta_claim_tie`); at a wrap
   proof (Pallas commitments: the step circuit's group half, then the wrap circuit's scalar
-  half) `twoHalves_kimchiVerify_pallas`, and its converse under the exact-`ξ` hypothesis
-  `twoHalves_kimchiVerify_pallas_converse`.
+  half) `twoHalves_kimchiVerify_pallas`.
 
 ## Implementation notes
 
@@ -109,11 +104,10 @@ unfolds a sponge run: `runOracles`, `transcriptFrom` are projected by `simp` to 
 permutation.
 
 The group read's opening clause is stated under the three scalars `ft_comm` scales by being the
-run's (`IvpReads`). The permutation scalar is supplied here rather than assumed: the scalar
-half's `plonkOk` compares it at the transcript's `α`, `β`, `γ`, `ζ` — the group read's
-transcript clauses, which need no opening — and `HalvesTies.perm` carries it to the group
-half's cell. The two `ζ` powers remain hypotheses (`hzetaM`, `hzetaN`): no circuit compares
-them.
+run's (`IvpReads`). All three are supplied here rather than assumed: the scalar half's
+`plonkOk` compares the permutation scalar, `ζ^(2^k)` and `ζⁿ` at the transcript's `α`, `β`,
+`γ`, `ζ` — the group read's transcript clauses, which need no opening — and the ties
+(`HalvesTies.perm`, `zetaM`, `zetaN`) carry them to the group half's cells.
 -/
 
 namespace Pickles
@@ -154,9 +148,6 @@ structure FopSide (C : KimchiCurve) (V : Valuation C.ScalarField) (sf : Type) wh
   unshiftV : C.ScalarField → C.ScalarField
   /-- The linearization token stream of the side. -/
   toks : Array Linearization.PolishToken
-  /-- Whether the side range-checks the low half of the `ξ` split (`xiConstrainLowBits`):
-  the step circuit does, the wrap circuit does not. -/
-  xiConstrainLowBits : Bool
 
 /-- The scalar a shifted claim cell reads as: its value, unshifted. -/
 def FopSide.decode {C : KimchiCurve} {V : Valuation C.ScalarField} {sf : Type}
@@ -231,11 +222,12 @@ def GroupHalf.Reads (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Sca
 
 /-- The `ξ` comparison is exact at the half: a `ξ` claim reading as the wire's fr-sponge `ξ`
 prechallenge — at the half's own digest, `ft(ζω)` and evaluation cells, the proof's recursion
-digest — makes `xiCorrect` read `1`. The read gives this where the side range-checks the low
-half of the `ξ` split (`xiExact_of_constrained`). Where it does not, the prover may witness
-a low half at or above `2¹²⁸` whose split still lies below the modulus; the recomputed `ξ'`
-then differs from the claim and `xiCorrect` reads `0`, so the exactness is a hypothesis. -/
-def ScalarHalf.XiExact (E : Env C) (cp : KimchiProof C 1 E.σ.k) (Sc : ScalarHalf C sf' E.σ.k)
+digest — makes `xiCorrect` read `1`. The read gives this (`xiExact_of_constrained`) because
+the circuit range-checks the low half of the `ξ` split: unchecked, the prover could witness a
+low half at or above `2¹²⁸` whose split still lies below the modulus, and `xiCorrect` would
+read `0` at a claim equal to the wire's `ξ`. -/
+private def ScalarHalf.XiExact (E : Env C) (cp : KimchiProof C 1 E.σ.k)
+    (Sc : ScalarHalf C sf' E.σ.k)
     (out : FopOutput C.ScalarField) : Prop :=
   let pre := frPrechallenges C.frSponge.params
     (frTranscript (Sc.claims.spongeDigestBeforeEvaluations.val Sc.V)
@@ -289,6 +281,12 @@ structure HalvesTies {k : ℕ} (G : GroupHalf C sf k) (Sc : ScalarHalf C sf' k) 
   /-- The permutation-scalar claim, likewise. -/
   perm : Sc.side.decode Sc.claims.deferredValues.plonk.perm
     = G.side.decode G.claims.deferredValues.plonk.perm
+  /-- The `ζ^(2^k)` claim, likewise. -/
+  zetaM : Sc.side.decode Sc.claims.deferredValues.plonk.zetaToSrsLength
+    = G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
+  /-- The `ζⁿ` claim, likewise. -/
+  zetaN : Sc.side.decode Sc.claims.deferredValues.plonk.zetaToDomainSize
+    = G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
   /-- The round challenges: the two cell lists read one prechallenge list. -/
   chals : ∃ ms : List Prechallenge,
     List.Forall₂ (Reads128 G.V) G.claims.deferredValues.bulletproofChallenges.toList ms ∧
@@ -312,15 +310,14 @@ structure FopTies (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.Scala
   /-- The public evaluation cells are the run's (`runPubEvals`), as its one-chunk vectors. -/
   pubEvals : Sc.evals.pub.map (fun x => #v[x.val Sc.V]) = runPubEvals C E.σ E.cvk cp pub
 
-/-- Where the side constrains the low half of the `ξ` split, the read makes the `ξ` comparison
+/-- The low half of the `ξ` split being range-checked, the read makes the `ξ` comparison
 exact: the `α`, `ζ` cells read as prechallenges (the ties' shared readings), and the read's
 converse clause is `XiExact` at the claim the `ξ` cell reads. -/
 private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128 < C.scalar)
     (cp : KimchiProof C 1 E.σ.k) {G : GroupHalf C sf E.σ.k}
     {Sc : ScalarHalf C sf' E.σ.k} {out : FopOutput C.ScalarField}
-    (hflag : Sc.side.xiConstrainLowBits = true)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
-      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
     (ht : HalvesTies G Sc) : Sc.XiExact E cp out := by
@@ -335,31 +332,34 @@ private theorem ScalarHalf.xiExact_of_constrained (E : Env C) (hscalar : 2 ^ 128
   obtain ⟨ξ₀', -, -, hξS, -, -, -, hex, -, -⟩ := hs
   intro ξ₀ hξ hpre
   obtain rfl := Reads128.unique hinjS hξ hξS
-  exact hex hflag hpre
+  exact hex trivial hpre
 
 /-- The claims are the wire's own values: `cip` is `cipOf` the run's input, `b` is
 `combinedB` at the run's round challenges, the permutation scalar is `runPScalar`, and the
 `ξ` cell reads as the run's fr-sponge `ξ` prechallenge. What the scalar half's `finalized`
 bit asserts, in wire terms. -/
 private def ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
-    (cipV bV permV : C.ScalarField) (V : Valuation C.ScalarField)
+    (cipV bV permV zetaMV zetaNV : C.ScalarField) (V : Valuation C.ScalarField)
     (xi : SizedF 128 (FVar C.ScalarField)) : Prop :=
   let run := runInput C E.σ E.cvk cp pub
   let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
   cipV = cipOf run ∧
   bV = combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn ∧
   permV = runPScalar C E.σ E.cvk cp pub ∧
+  zetaMV = runZetaM C E.σ E.cvk cp pub ∧
+  zetaNV = runZetaN C E.σ E.cvk cp pub ∧
   ∃ m : Prechallenge, Reads128 V xi m ∧
     m.val = (frPrechallenges C.frSponge.params (frTranscript (runOracles C E.σ E.cvk cp pub).digest
       (recDigest C (cp.olds.map (·.u))) cp.ftEval1 (runPubEvals C E.σ E.cvk cp pub) cp.evals)).1
 
-/-- The claims of a scalar half, as `ClaimsHonest` reads them: the three shifted claims
+/-- The claims of a scalar half, as `ClaimsHonest` reads them: the five shifted claims
 through the side's decode, the `ξ` cell at the half's valuation. -/
 def ScalarHalf.ClaimsHonest (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Array C.ScalarField)
     (Sc : ScalarHalf C sf' E.σ.k) : Prop :=
   let dv := Sc.claims.deferredValues
   Pickles.ClaimsHonest E cp pub (Sc.side.decode dv.combinedInnerProduct) (Sc.side.decode dv.b)
-    (Sc.side.decode dv.plonk.perm) Sc.V dv.xi
+    (Sc.side.decode dv.plonk.perm) (Sc.side.decode dv.plonk.zetaToSrsLength)
+    (Sc.side.decode dv.plonk.zetaToDomainSize) Sc.V dv.xi
 
 /-- The deferred `sg`-correctness equation of the proof's opening at the wire's round
 challenges (`verifyWith`'s second conjunct): what pickles checks one proof later. It reads the
@@ -576,9 +576,12 @@ private theorem pointFn_eq (E : Env C) (cp : KimchiProof C 1 E.σ.k) (pub : Arra
   funext j
   fin_cases j <;> rfl
 
-/-- Both directions of the Schnorr composition at once, the converse under `XiExact`: one
-proof, projected by `twoHalves_schnorr` and `twoHalves_iff_schnorr`. -/
-private theorem twoHalves_schnorr_core
+/-- **The two bits read `1` exactly when the claims are honest and the wire's Schnorr equation
+holds.** Without `SgOk`: the claims are the wire's own values and the opening's Schnorr equation
+holds at the wire's transcript — `verifyWith`'s first conjunct. The two `ζ` powers and the
+permutation scalar are no hypotheses: the scalar half compares all three with the transcript's
+values, and their ties carry them to the group half's cells. -/
+theorem twoHalves_schnorr
     (E : Env C)
     (hbase : 2 ^ 128 < C.base)
     (hscalar : 2 ^ 128 < C.scalar)
@@ -592,34 +595,23 @@ private theorem twoHalves_schnorr_core
     (Sc : ScalarHalf C sf' E.σ.k)
     (out : FopOutput C.ScalarField)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
-      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
     -- across the two
-    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc)
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM C E.σ E.cvk cp pub)
-    (hzetaN : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN C E.σ E.cvk cp pub) :
+    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc) :
     let run := runInput C E.σ E.cvk cp pub
     let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
-    (((↑success : CVar C.BaseField).val G.V = 1
+    ((↑success : CVar C.BaseField).val G.V = 1
         ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
-      → Sc.ClaimsHonest E cp pub ∧
+      ↔ Sc.ClaimsHonest E cp pub ∧
         schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
           (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
-          (combineCommitments C run.polyscale run.commitments.toArray) run.proof) ∧
-    (Sc.XiExact E cp out →
-      Sc.ClaimsHonest E cp pub ∧
-        schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
-          (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
-          (combineCommitments C run.polyscale run.commitments.toArray) run.proof
-      → (↑success : CVar C.BaseField).val G.V = 1
-        ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1) := by
+          (combineCommitments C run.polyscale run.commitments.toArray) run.proof := by
   intro run tr
   have hinjG := castInj128_of_lt _ hbase
   have hinjS := castInj128_of_lt _ hscalar
+  have hxi := ScalarHalf.xiExact_of_constrained E hscalar cp hs ht
   -- the shared prechallenges
   obtain ⟨a₀, hαGa, hαSa⟩ := ht.alpha
   obtain ⟨z₀, hζGz, hζSz⟩ := ht.zeta
@@ -697,21 +689,34 @@ private theorem twoHalves_schnorr_core
   -- the permutation check reads the transcript's challenges and the evaluations, not the
   -- opening: it gives the scalar half's `perm`, and the claim tie the group half's
   rw [hζ, hα, hβ, hγ, hev] at hpermC
-  have hpermIff : (↑out.plonkOk : CVar C.ScalarField).val Sc.V = 1
-      ↔ Sc.side.decode Sc.claims.deferredValues.plonk.perm = runPScalar C E.σ E.cvk cp pub := by
+  have hplonkIff : (↑out.plonkOk : CVar C.ScalarField).val Sc.V = 1
+      ↔ Sc.side.decode Sc.claims.deferredValues.plonk.perm = runPScalar C E.σ E.cvk cp pub ∧
+        Sc.side.decode Sc.claims.deferredValues.plonk.zetaToSrsLength
+          = runZetaM C E.σ E.cvk cp pub ∧
+        Sc.side.decode Sc.claims.deferredValues.plonk.zetaToDomainSize
+          = runZetaN C E.σ E.cvk cp pub := by
     simp only [hpermC, ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
-    unfold runPScalar runLinEvals
-    rw [linEvals_one]
-  by_cases hpermG : G.side.decode G.claims.deferredValues.plonk.perm
-      = runPScalar C E.σ E.cvk cp pub
+    unfold runPScalar runLinEvals runZetaM runZetaN
+    rw [linEvals_one, powPow2_eq, powPow2_eq, KimchiVK.n]
+  by_cases hG : G.side.decode G.claims.deferredValues.plonk.perm = runPScalar C E.σ E.cvk cp pub ∧
+      G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength = runZetaM C E.σ E.cvk cp pub ∧
+      G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize = runZetaN C E.σ E.cvk cp pub
   swap
-  · -- either side of the statement gives the group half's `perm`
-    refine ⟨fun hA => absurd (ht.perm.symm.trans (hpermIff.mp ?_)) hpermG,
-      fun _ hB => absurd (ht.perm.symm.trans hB.1.2.2.1) hpermG⟩
+  · -- either side of the statement gives the group half's three scalars, through the ties
+    have hGof : (Sc.side.decode Sc.claims.deferredValues.plonk.perm
+          = runPScalar C E.σ E.cvk cp pub ∧
+        Sc.side.decode Sc.claims.deferredValues.plonk.zetaToSrsLength
+          = runZetaM C E.σ E.cvk cp pub ∧
+        Sc.side.decode Sc.claims.deferredValues.plonk.zetaToDomainSize
+          = runZetaN C E.σ E.cvk cp pub) → False := fun h =>
+      hG ⟨ht.perm.symm.trans h.1, ht.zetaM.symm.trans h.2.1, ht.zetaN.symm.trans h.2.2⟩
+    refine ⟨fun hA => absurd (hplonkIff.mp ?_) hGof,
+      fun hB => absurd ⟨hB.1.2.2.1, hB.1.2.2.2.1, hB.1.2.2.2.2.1⟩ hGof⟩
     have hA2 := hA.2
     rw [hfin] at hA2
     by_contra hne
     simp [hne] at hA2
+  obtain ⟨hpermG, hzetaM, hzetaN⟩ := hG
   -- the opening clause, at the three `ft_comm` scalars
   obtain ⟨U, ns, c₀, chals, rfl, hns, rfl, rfl, hchals, hiff⟩ :=
     hξG hpermG hzetaM hzetaN ξ₀ hξGx
@@ -760,9 +765,9 @@ private theorem twoHalves_schnorr_core
   simp only [ScalarHalf.ClaimsHonest, ClaimsHonest, run, tr, transcriptFrom, hwarm, hproof]
   rw [hfin]
   simp only [ite_eq_left_iff, zero_ne_one, imp_false, Decidable.not_not]
-  rw [hbIff, hpermIff]
+  rw [hbIff, hplonkIff]
   constructor
-  · rintro ⟨hsG, hxiC, hb, hcip, hperm⟩
+  · rintro ⟨hsG, hxiC, hb, hcip, hperm, hzM, hzN⟩
     have hxiV := hxiF' hxiC
     have hξv := hξrun hxiV
     have hcip' := (hcipIff hξv).1 hcip
@@ -770,9 +775,9 @@ private theorem twoHalves_schnorr_core
       ht.cip.symm.trans hcip'
     rw [hcipG] at hiff hb
     rw [hξv, ← ht.b, hb] at hiff
-    exact ⟨⟨hcip', hb, hperm, hxiV⟩, hiff.1 hsG⟩
+    exact ⟨⟨hcip', hb, hperm, hzM, hzN, hxiV⟩, hiff.1 hsG⟩
   · -- the converse: the exact `ξ` comparison turns the honest claim into the bit
-    rintro hxi ⟨⟨hcip, hb, hperm, hxiV⟩, hschnorr⟩
+    rintro ⟨⟨hcip, hb, hperm, hzM, hzN, hxiV⟩, hschnorr⟩
     simp only [ScalarHalf.XiExact] at hxi
     rw [hd, hf.ftEval1, hf.pubEvals, hf.evals] at hxi
     obtain ⟨m, hm, hmv⟩ := hxiV
@@ -782,88 +787,14 @@ private theorem twoHalves_schnorr_core
       ht.cip.symm.trans hcip
     rw [hcipG] at hiff ⊢
     rw [hξv, ← ht.b, hb] at hiff
-    exact ⟨hiff.2 hschnorr, hxiC, hb, (hcipIff hξv).2 hcip, hperm⟩
+    exact ⟨hiff.2 hschnorr, hxiC, hb, (hcipIff hξv).2 hcip, hperm, hzM, hzN⟩
 
-/-- **The two bits make the claims honest and the wire's Schnorr equation hold.** Without
-`SgOk`: the two bits reading `1` make the claims the wire's own values and the opening's
-Schnorr equation hold at the wire's transcript — `verifyWith`'s first conjunct. -/
-theorem twoHalves_schnorr
-    (E : Env C)
-    (hbase : 2 ^ 128 < C.base)
-    (hscalar : 2 ^ 128 < C.scalar)
-    (cp : KimchiProof C 1 E.σ.k)
-    (pub : Array C.ScalarField)
-    -- the group half
-    (G : GroupHalf C sf E.σ.k)
-    (success : BoolVar C.BaseField)
-    (hg : G.Reads E cp pub success)
-    -- the scalar half
-    (Sc : ScalarHalf C sf' E.σ.k)
-    (out : FopOutput C.ScalarField)
-    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
-      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
-      Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
-      Sc.side.read Sc.side.unshiftV Sc.V out)
-    -- across the two
-    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc)
-    (hzetaM : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM C E.σ E.cvk cp pub)
-    (hzetaN : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN C E.σ E.cvk cp pub) :
-    let run := runInput C E.σ E.cvk cp pub
-    let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
-    ((↑success : CVar C.BaseField).val G.V = 1
-        ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
-      → Sc.ClaimsHonest E cp pub ∧
-        schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
-          (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
-          (combineCommitments C run.polyscale run.commitments.toArray) run.proof :=
-  (twoHalves_schnorr_core E hbase hscalar cp pub G success hg Sc out hs ht hf hzetaM hzetaN).1
-
-/-- **The two bits are the honest claims with the wire's Schnorr equation**, where the scalar
-half's `ξ` comparison is exact: `twoHalves_schnorr` and its converse. -/
-private theorem twoHalves_iff_schnorr
-    (E : Env C)
-    (hbase : 2 ^ 128 < C.base)
-    (hscalar : 2 ^ 128 < C.scalar)
-    (cp : KimchiProof C 1 E.σ.k)
-    (pub : Array C.ScalarField)
-    -- the group half
-    (G : GroupHalf C sf E.σ.k)
-    (success : BoolVar C.BaseField)
-    (hg : G.Reads E cp pub success)
-    -- the scalar half
-    (Sc : ScalarHalf C sf' E.σ.k)
-    (out : FopOutput C.ScalarField)
-    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
-      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
-      Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
-      Sc.side.read Sc.side.unshiftV Sc.V out)
-    (hxi : Sc.XiExact E cp out)
-    -- across the two
-    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc)
-    (hzetaM : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM C E.σ E.cvk cp pub)
-    (hzetaN : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN C E.σ E.cvk cp pub) :
-    let run := runInput C E.σ E.cvk cp pub
-    let tr := transcriptFrom C (runOracles C E.σ E.cvk cp pub).warm run
-    ((↑success : CVar C.BaseField).val G.V = 1
-        ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
-      ↔ Sc.ClaimsHonest E cp pub ∧
-        schnorrAt C E.σ tr.1 tr.2.1 tr.2.2 (cipOf run)
-          (combinedB (fun i => tr.2.1[i]) run.evalscale run.pointFn)
-          (combineCommitments C run.polyscale run.commitments.toArray) run.proof :=
-  ⟨(twoHalves_schnorr_core E hbase hscalar cp pub G success hg Sc out hs ht hf hzetaM hzetaN).1,
-    (twoHalves_schnorr_core E hbase hscalar cp pub G success hg Sc out hs ht hf hzetaM
-      hzetaN).2 hxi⟩
-
-/-- **The two halves' bits and the deferred `sg` equation make `kimchiVerify` accept.** In the
-environment `E`, for the proof `(cp, pub)`: with the group half and the scalar half reading at
-their cells, tied, and the guards, the success bit and the `finalized` bit reading `1` with
-`SgOk` make `kimchiVerify` accept and the claims the wire's own values. (`kimchiVerify`
-recomputes the claims and never sees the cells, so the honest-claims conjunct is what
-`finalized` adds.) -/
+/-- **The two halves accept exactly when the wire verifier does at honest claims, given the
+deferred `sg` equation.** In the environment `E`, for the proof `(cp, pub)`: with the group half
+and the scalar half reading at their cells, tied, and the guards, the success bit and the
+`finalized` bit reading `1` with `SgOk` is `kimchiVerify` accepting with the claims the wire's
+own values. (`kimchiVerify` recomputes the claims and never sees the cells, so the
+honest-claims conjunct is what `finalized` adds.) -/
 theorem twoHalves_kimchiVerify
     (E : Env C)
     (hbase : 2 ^ 128 < C.base)
@@ -879,62 +810,16 @@ theorem twoHalves_kimchiVerify
     (Sc : ScalarHalf C sf' E.σ.k)
     (out : FopOutput C.ScalarField)
     (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
-      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
+      true E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
       Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
       Sc.side.read Sc.side.unshiftV Sc.V out)
     -- across the two
-    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc)
-    (hzetaM : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM C E.σ E.cvk cp pub)
-    (hzetaN : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN C E.σ E.cvk cp pub) :
-    ((↑success : CVar C.BaseField).val G.V = 1
-        ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
-        ∧ SgOk E.σ E.cvk cp pub
-      → kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
-  have h := twoHalves_schnorr E hbase hscalar cp pub G success hg Sc out hs ht hf hzetaM hzetaN
-  -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
-  simp only [transcriptFrom] at h
-  rw [kimchiVerify_reflects, and_iff_right hguard]
-  simp only [SgOk, verifyFrom, transcriptFrom, verifyWith_eq]
-  rintro ⟨hbits, hsg⟩
-  obtain ⟨hc, hsch⟩ := h hbits
-  exact ⟨⟨hsch, hsg⟩, hc⟩
-
-/-- **The two halves accept exactly when the wire verifier does at honest claims, given the
-deferred `sg` equation**, where the scalar half's `ξ` comparison is exact:
-`twoHalves_kimchiVerify` and its converse. -/
-private theorem twoHalves_kimchiVerify_iff
-    (E : Env C)
-    (hbase : 2 ^ 128 < C.base)
-    (hscalar : 2 ^ 128 < C.scalar)
-    (cp : KimchiProof C 1 E.σ.k)
-    (pub : Array C.ScalarField)
-    (hguard : Guards C E.cvk cp pub)
-    -- the group half
-    (G : GroupHalf C sf E.σ.k)
-    (success : BoolVar C.BaseField)
-    (hg : G.Reads E cp pub success)
-    -- the scalar half
-    (Sc : ScalarHalf C sf' E.σ.k)
-    (out : FopOutput C.ScalarField)
-    (hs : FopVerifyReads (p := C.scalar) (FopParams.ofEnv E Sc.side.toks)
-      Sc.side.xiConstrainLowBits E.cvk.n E.cvk.omega (recDigest C (cp.olds.map (·.u)))
-      Sc.maskVals Sc.prevVals Sc.claims Sc.evals C.lam
-      Sc.side.read Sc.side.unshiftV Sc.V out)
-    (hxi : Sc.XiExact E cp out)
-    -- across the two
-    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc)
-    (hzetaM : G.side.decode G.claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM C E.σ E.cvk cp pub)
-    (hzetaN : G.side.decode G.claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN C E.σ E.cvk cp pub) :
+    (ht : HalvesTies G Sc) (hf : FopTies E cp pub Sc) :
     ((↑success : CVar C.BaseField).val G.V = 1
         ∧ (↑out.finalized : CVar C.ScalarField).val Sc.V = 1)
         ∧ SgOk E.σ E.cvk cp pub
       ↔ kimchiVerify C E.σ E.cvk cp pub = true ∧ Sc.ClaimsHonest E cp pub := by
-  have h := twoHalves_iff_schnorr E hbase hscalar cp pub G success hg Sc out hs hxi ht hf
-    hzetaM hzetaN
+  have h := twoHalves_schnorr E hbase hscalar cp pub G success hg Sc out hs ht hf
   -- the body reflection: under the guards, the warm-sponge IPA finish on the run's input
   simp only [transcriptFrom] at h
   rw [h, kimchiVerify_reflects, and_iff_right hguard]
@@ -963,7 +848,6 @@ def fopStep (V : Valuation Fp) : FopSide IpaVesta.curve V (Type1 (FVar Fp)) wher
   read := (stepShiftOps.reading (V := V) (by decide)).read
   unshiftV := (stepShiftOps.reading (V := V) (by decide)).unshiftV
   toks := Linearization.fpTokens
-  xiConstrainLowBits := true
 
 /-- The wrap circuit's group half of a step proof: `wrapSide` at the circuit's valuation. -/
 def GroupHalf.wrap {k : ℕ} (V : Valuation Fq)
@@ -996,9 +880,7 @@ theorem vesta_claim_tie {Vg : Valuation Fq} {Vs : Valuation Fp}
     rw [h]
 
 /-- **A step proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
-wrap circuit's group half, then the step circuit's scalar half, tied, with the guards; the
-step circuit range-checks the low half of its `ξ` split, so the `ξ` comparison is exact and
-the statement an equivalence. -/
+wrap circuit's group half, then the step circuit's scalar half, tied, with the guards. -/
 theorem twoHalves_kimchiVerify_vesta
     (E : Env IpaVesta.curve)
     (cp : KimchiProof IpaVesta.curve 1 E.σ.k)
@@ -1025,20 +907,13 @@ theorem twoHalves_kimchiVerify_vesta
     -- across the two
     (ht : HalvesTies (GroupHalf.wrap Vg claimsG)
       (ScalarHalf.step Vs claimsS evals mask prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges))
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaVesta.curve E.σ E.cvk cp pub)
-    (hzetaN : (wrapSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaVesta.curve E.σ E.cvk cp pub) :
+    (hf : FopTies E cp pub (ScalarHalf.step Vs claimsS evals mask prevChallenges)) :
     ((↑successG : CVar Fq).val Vg = 1 ∧ (↑outS.finalized : CVar Fp).val Vs = 1)
         ∧ SgOk E.σ E.cvk cp pub
       ↔ kimchiVerify IpaVesta.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.step Vs claimsS evals mask prevChallenges).ClaimsHonest E cp pub :=
-  twoHalves_kimchiVerify_iff E (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD])
-    cp pub hguard _ successG hg _ outS hs
-    (ScalarHalf.xiExact_of_constrained E (by norm_num [PALLAS_BASE_CARD]) cp rfl hs ht) ht hf
-    hzetaM hzetaN
+  twoHalves_kimchiVerify E (by norm_num [PALLAS_SCALAR_CARD]) (by norm_num [PALLAS_BASE_CARD])
+    cp pub hguard _ successG hg _ outS hs ht hf
 
 end StepProof
 
@@ -1059,7 +934,6 @@ def fopWrap (V : Valuation Fq) : FopSide IpaPallas.curve V (Type2 (FVar Fq)) whe
   read := (wrapShiftOps.reading (V := V)).read
   unshiftV := (wrapShiftOps.reading (V := V)).unshiftV
   toks := Linearization.fqTokens
-  xiConstrainLowBits := false
 
 /-- The step circuit's group half of a wrap proof: `stepSide` at the circuit's valuation. -/
 def GroupHalf.step {k : ℕ} (V : Valuation Fp)
@@ -1112,8 +986,8 @@ theorem ScalarHalf.wrap_olds {k : ℕ} (V : Valuation Fq)
         if_pos rfl, List.singleton_append, ih]
   rw [ScalarHalf.wrap_maskVals, hkeep _ _ (by simp [ScalarHalf.prevVals])]
 
-/-- **A wrap proof's two halves accepting makes `kimchiVerify` accept.** The step circuit's
-group half, then the wrap circuit's scalar half, tied, with the guards. -/
+/-- **A wrap proof's two halves accept exactly when `kimchiVerify` does at honest claims.** The
+step circuit's group half, then the wrap circuit's scalar half, tied, with the guards. -/
 theorem twoHalves_kimchiVerify_pallas
     (E : Env IpaPallas.curve)
     (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
@@ -1132,7 +1006,7 @@ theorem twoHalves_kimchiVerify_pallas
     (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
     (outS : FopOutput Fq)
     (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
-      (FopParams.ofEnv E Linearization.fqTokens) false E.cvk.n E.cvk.omega
+      (FopParams.ofEnv E Linearization.fqTokens) true E.cvk.n E.cvk.omega
       (recDigest IpaPallas.curve (cp.olds.map (·.u)))
       (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals
       (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS evals
@@ -1141,67 +1015,13 @@ theorem twoHalves_kimchiVerify_pallas
     -- across the two
     (ht : HalvesTies (GroupHalf.step Vg claimsG)
       (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
-    (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaPallas.curve E.σ E.cvk cp pub) :
+    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges)) :
     ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
         ∧ SgOk E.σ E.cvk cp pub
-      → kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
+      ↔ kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
         (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub :=
   twoHalves_kimchiVerify E (by norm_num [PALLAS_BASE_CARD]) (by norm_num [PALLAS_SCALAR_CARD])
-    cp pub hguard _ successG hg _ outS hs ht hf hzetaM hzetaN
-
-/-- **`kimchiVerify` accepting at honest claims makes a wrap proof's two halves accept, where
-the wrap circuit's `ξ` comparison is exact.** The converse of `twoHalves_kimchiVerify_pallas`,
-and weaker than an equivalence by its last hypothesis: the wrap circuit's `squeezeScalar`
-leaves the low half of its `ξ` split unchecked, so a prover may witness a low half at or above
-`2¹²⁸` whose split still lies below the modulus, and `xiCorrect` then reads `0` at a claim
-equal to the wire's `ξ`. `ScalarHalf.XiExact` rules that witness out. -/
-theorem twoHalves_kimchiVerify_pallas_converse
-    (E : Env IpaPallas.curve)
-    (cp : KimchiProof IpaPallas.curve 1 E.σ.k)
-    (pub : Array Fq)
-    (hguard : Guards IpaPallas.curve E.cvk cp pub)
-    -- the step circuit: its valuation, its statement's claims, its success bit, its read
-    (Vg : Valuation Fp)
-    (claimsG : UnfinalizedProof E.σ.k (FVar Fp) (BoolVar Fp)
-      (Type2 (SplitField (FVar Fp) (BoolVar Fp))))
-    (successG : BoolVar Fp)
-    (hg : (GroupHalf.step Vg claimsG).Reads E cp pub successG)
-    -- the next wrap circuit: its valuation, its cells, its output, its read
-    (Vs : Valuation Fq)
-    (claimsS : UnfinalizedProof E.σ.k (FVar Fq) (BoolVar Fq) (Type2 (FVar Fq)))
-    (evals : AllEvals (FVar Fq))
-    (prevChallenges : Vector (Vector (FVar Fq) E.σ.k) MaxProofsVerified)
-    (outS : FopOutput Fq)
-    (hs : FopVerifyReads (p := IpaPallas.curve.scalar)
-      (FopParams.ofEnv E Linearization.fqTokens) false E.cvk.n E.cvk.omega
-      (recDigest IpaPallas.curve (cp.olds.map (·.u)))
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).maskVals
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges).prevVals claimsS evals
-      IpaPallas.curve.lam
-      (fopWrap Vs).read (fopWrap Vs).unshiftV Vs outS)
-    -- across the two
-    (ht : HalvesTies (GroupHalf.step Vg claimsG)
-      (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    (hf : FopTies E cp pub (ScalarHalf.wrap Vs claimsS evals prevChallenges))
-    -- the `ζ` powers `ft_comm` scales by, which no circuit compares
-    (hzetaM : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaPallas.curve E.σ E.cvk cp pub)
-    (hzetaN : (stepSide Vg).decode claimsG.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaPallas.curve E.σ E.cvk cp pub)
-    -- the exact `ξ` comparison, which the wrap circuit does not enforce
-    (hxi : (ScalarHalf.wrap Vs claimsS evals prevChallenges).XiExact E cp outS) :
-    kimchiVerify IpaPallas.curve E.σ E.cvk cp pub = true ∧
-        (ScalarHalf.wrap Vs claimsS evals prevChallenges).ClaimsHonest E cp pub
-      → ((↑successG : CVar Fp).val Vg = 1 ∧ (↑outS.finalized : CVar Fq).val Vs = 1)
-        ∧ SgOk E.σ E.cvk cp pub :=
-  (twoHalves_kimchiVerify_iff E (by norm_num [PALLAS_BASE_CARD])
-    (by norm_num [PALLAS_SCALAR_CARD]) cp pub hguard _ successG hg _ outS hs hxi ht hf hzetaM
-    hzetaN).2
+    cp pub hguard _ successG hg _ outS hs ht hf
 
 end WrapProof
 

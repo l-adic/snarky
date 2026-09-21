@@ -34,10 +34,10 @@ it allocates it.
 * `VkReads`: the circuit's key cells read as the key;
 * `HalvesTies`: the two circuits hold one set of deferred claims;
 * what no circuit enforces, each its own hypothesis: the shifted claims avoid the ladder's
-  band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`), the `ζ` powers are
-  the run's (`hzetaM`, `hzetaN`). The permutation scalar is no hypothesis: the scalar circuit
-  compares it at the transcript's challenges, which the group read gives before it opens
-  (`IvpReads`), and `HalvesTies.perm` carries it across the field crossing;
+  band (`hclaimOk`) and the statement's scalars the `x_hat` band (`hoff`). The three scalars
+  `ft_comm` scales by — the permutation scalar, `ζ^(2^k)`, `ζⁿ` — are no hypotheses: the scalar
+  circuit compares each at the transcript's challenges, which the group read gives before it
+  opens (`IvpReads`), and `HalvesTies` carries them across the field crossing;
 * `havoid`: the SRS avoids the key's Lagrange relations (`SRS.Avoids`,
   `Env.lagrangeRelations`). The `x_hat` table is the key's Lagrange points, commitments
   against the SRS; that they are finite points is that the SRS has no relation at their
@@ -151,7 +151,7 @@ private theorem InputReads.ivpHyps (hin : InputReads E cp pub domains Vg Vs g s)
           index := hvk.index, coefficients := hvk.coefficients, sigma := hvk.sigma
           sigmaLast := hvk.sigmaLast, z1 := hin.z1, z2 := hin.z2, claimOk := hclaimOk
           lr := hin.lr, delta := hin.delta, sg := hin.sg }
-      canon := trivial, nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
+      nc_pos := Nat.one_pos, t_ne := ?tne, lr_ne := ?lrne, char := ?char }⟩
   case mask =>
     intro m hm
     have hm' : m ∈ g.sgOld := hm
@@ -220,12 +220,6 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
     (hclaimOk : ∀ x ∈ (groupInput E.σ.k kw n).shifted, (wrapSide Vg).ClaimOk x)
     (hoff : ∀ leaf ∈ wrapLeavesAt E (groupInput E.σ.k kw n).stepStatement,
       Leaf.offBand IpaVesta.curve.scalar Vg leaf)
-    (hzetaM : (wrapSide Vg).decode
-        (groupInput E.σ.k kw n).claims.deferredValues.plonk.zetaToSrsLength
-      = runZetaM IpaVesta.curve E.σ E.cvk cp pub)
-    (hzetaN : (wrapSide Vg).decode
-        (groupInput E.σ.k kw n).claims.deferredValues.plonk.zetaToDomainSize
-      = runZetaN IpaVesta.curve E.σ E.cvk cp pub)
     -- the SRS has no relation at the `x_hat` table's coefficient vectors
     (havoid : E.σ.Avoids E.lagrangeRelations)
     -- of the proof itself
@@ -249,7 +243,7 @@ theorem stepProof_kimchiVerify_vesta {kw n : ℕ}
       fun con hc => hsatS con (mem_compile_of_mem_check hc)).1
   exact (builder_spec_iff _ _).mp
     (scalarCircuit_reads E cp _ hguard Vs domains (scalarInput E.σ.k) hmask hdom Vg _ v hv hv1
-      ht hf hzetaM hzetaN hsg) _
+      ht hf hsg) _
     fun con hc => hsatS con (mem_compile_of_mem_body hc)
 
 end Pickles

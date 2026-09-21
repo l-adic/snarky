@@ -42,6 +42,10 @@ scalar, and the limbs a shifted scalar absorbs as (OCaml `absorb_shifted`). -/
 structure IpaScalarOps (F c sf : Type) where
   /-- Scale a point by the shifted scalar (PS `scaleByShifted`). -/
   scaleByShifted : AffinePoint (FVar F) → sf → CircuitM F c (AffinePoint (FVar F))
+  /-- Scale a point by the claimed combined inner product, the one shifted scalar the
+  transcript absorbs (PS `scaleByCip`): on the step side the ladder one bit narrower, so the
+  absorbed cells are the canonical representative's; on the wrap side `scaleByShifted`. -/
+  scaleByCip : AffinePoint (FVar F) → sf → CircuitM F c (AffinePoint (FVar F))
   /-- The limbs the shifted scalar absorbs as (PS `shiftedToAbsorbFields`). -/
   shiftedToAbsorbFields : sf → List (FVar F)
 
@@ -49,6 +53,7 @@ structure IpaScalarOps (F c sf : Type) where
 at 51 chunks over the `Type1` representative, absorbed as one limb. -/
 def IpaScalarOps.wrap : IpaScalarOps F c (Type1 (FVar F)) where
   scaleByShifted p t := scaleFast1 255 51 p t
+  scaleByCip p t := scaleFast1 255 51 p t
   shiftedToAbsorbFields t := [t.val]
 
 /-- The step side's operations (PS `Pickles.Step.OtherField.ipaScalarOps`): `scaleFast2`
@@ -56,6 +61,7 @@ at 51 chunks and 254 halved bits over the `Type2` split representative, absorbed
 halved limb then the parity bit. -/
 def IpaScalarOps.step : IpaScalarOps F c (Type2 (SplitField (FVar F) (BoolVar F))) where
   scaleByShifted p t := scaleFast2 255 51 254 p t.val.sDiv2 t.val.sOdd
+  scaleByCip p t := scaleFast2 255 51 253 p t.val.sDiv2 t.val.sOdd
   shiftedToAbsorbFields t := [t.val.sDiv2, (↑t.val.sOdd : CVar F)]
 
 /-- A side's endomorphism data with the scalar field named: the `HasEndo`, and the group order
@@ -227,7 +233,7 @@ def ipaFinalCheck {sf : Type} (ops : IpaScalarOps F c sf) (e : IpaEndo F)
     CircuitM F c (CheckBulletproofOutput F) := do
   let (chals, sv) ← extractScalarChallenges p endo sv inp.opening.lr.toList
   let lrProd ← bulletReduce e (inp.opening.lr.toList.zip chals)
-  let cipU ← ops.scaleByShifted u inp.deferred.combinedInnerProduct
+  let cipU ← ops.scaleByCip u inp.deferred.combinedInnerProduct
   let pPrime ← (·.p) <$> addFast .checkFinite combinedPolynomial cipU
   let q ← (·.p) <$> addFast .checkFinite pPrime lrProd
   let sv ← absorbPoint p sv inp.opening.delta
@@ -420,6 +426,7 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hsw : S
     extractScalarChallenges_spec (V := V) h2 h3 hsw p hsize endo sv' inp.opening.lr.toList lrv hlr
   have hbr := fun ps => builder_spec_true (bulletReduce (c := Builder V (KimchiConstraint F)) e ps)
   have hsc := fun u x => builder_spec_true (ops.scaleByShifted u x)
+  have hscc := fun u x => builder_spec_true (ops.scaleByCip u x)
   have hadd := fun f a b => builder_spec_true (addFast (c := Builder V (KimchiConstraint F)) f a b)
   have hem := fun g x => builder_spec_true
     (endoMul (c := Builder V (KimchiConstraint F)) e.d.endo 32 g x)
@@ -427,7 +434,7 @@ theorem checkBulletproof_spec (h2 : (2 : F) ≠ 0) (h3 : (3 : F) ≠ 0) (hsw : S
   have hpre := fun sv' => squeezePrechallenge_spec (V := V) h2 h3 hsw p hsize false endo sv'
   have heq := fun a b => builder_spec_true (equals (c := Builder V (KimchiConstraint F)) a b)
   have hand := fun a b => builder_spec_true (Snarky.and (c := Builder V (KimchiConstraint F)) a b)
-  mvcgen [hlimbs, hsq, hgm, hlh, hcomb, hext, hbr, hsc, hadd, hem, hδs, hpre, heq, hand]
+  mvcgen [hlimbs, hsq, hgm, hlh, hcomb, hext, hbr, hsc, hscc, hadd, hem, hδs, hpre, heq, hand]
   case vc2.W => exact e.d.W
   case vc3.ha => exact e.d.short
   case vc5.W => exact e.d.W
@@ -747,6 +754,17 @@ structure IpaScalarOps.Reading {sf : Type}
     ⦃⌜True⌝⦄ ops.scaleByShifted pt x
     ⦃⇓ r _ => ⌜∀ T : W.Point, OnCurveAt W V pt T →
       ∃ w : wit, Pre x w ∧ (Reg w → OnCurveAt W V r (dec w • T))⌝⦄
+  /-- `PreCip x w`: the witness `w` reads the claimed combined inner product `x` through its
+  own ladder (`scaleByCip`): a reading tight enough that the limbs `x` absorbs as are
+  canonical. -/
+  PreCip : sf → wit → Prop
+  /-- The `cip` ladder's reading is a reading. -/
+  preCip_pre : ∀ {x : sf} {w : wit}, PreCip x w → Pre x w
+  /-- The law of `scaleByCip`: `scale`'s, at the tighter reading. -/
+  scaleCip : ∀ (pt : AffinePoint (FVar F)) (x : sf), WellFormed x →
+    ⦃⌜True⌝⦄ ops.scaleByCip pt x
+    ⦃⇓ r _ => ⌜∀ T : W.Point, OnCurveAt W V pt T →
+      ∃ w : wit, PreCip x w ∧ (Reg w → OnCurveAt W V r (dec w • T))⌝⦄
 
 omit [ToNat F] in
 /-- The reading's scaling law with the well-formedness moved into the postcondition: the shape
@@ -786,7 +804,7 @@ theorem ipaFinalCheck_spec {sf : Type}
     ⦃⇓ o _ => ⌜∀ uv Pv : e.d.W.Point, OnCurveAt e.d.W V u uv → OnCurveAt e.d.W V combined Pv →
       o.t = t ∧ ∃ (ns : List Prechallenge) (c₀ : Prechallenge) (wcip wb w₁ w₂ : R.wit),
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
-      R.Pre inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
+      R.PreCip inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
       R.Pre inp.opening.z1 w₁ ∧ R.Pre inp.opening.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
         SchnorrPoint e.d.lam c₀.val uv Pv
@@ -802,7 +820,7 @@ theorem ipaFinalCheck_spec {sf : Type}
   have hpre := fun sv' => builder_spec_true
     (squeezePrechallenge (c := Builder V (KimchiConstraint F)) p false endo sv')
   have hem := fun g x => endoMul_spec (V := V) e.d g x
-  have hsc1 := fun pt => R.scale pt inp.deferred.combinedInnerProduct
+  have hsc1 := fun pt => R.scaleCip pt inp.deferred.combinedInnerProduct
     (hwf _ (by simp [CheckBulletproofInput.scaled]))
   have hsc2 := fun pt => R.scale pt inp.deferred.b (hwf _ (by simp [CheckBulletproofInput.scaled]))
   have hsc3 := fun pt => R.scale pt inp.opening.z1 (hwf _ (by simp [CheckBulletproofInput.scaled]))
@@ -824,7 +842,7 @@ theorem ipaFinalCheck_spec {sf : Type}
     · exact hlrne (List.length_eq_zero_iff.mp (by rw [← hlen, h]; rfl))
   obtain ⟨ns, hns, hlr'⟩ := hbr' lrv (forall₂_zip_left ext.1 hlr hlen) hzne
   obtain ⟨wcip, hpcip, hcipU⟩ := hcip uv hu
-  have hpP' := hpP _ _ hP (hcipU (hr1 _ hpcip))
+  have hpP' := hpP _ _ hP (hcipU (hr1 _ (R.preCip_pre hpcip)))
   have hq' := hq _ _ hpP' hlr'
   obtain ⟨c₀, hc₀, hcv, hcQ'⟩ := hcQ _ hq'
   have hlhs' := hlhs _ _ hcQ' hδ
@@ -896,7 +914,7 @@ theorem checkBulletproof_spec_success {sf : Type}
       (∃ (x y : F) (h : e.d.W.Nonsingular x y), U = .some x y h ∧
         ∃ m : ℕ, m < (fieldModulus F + 1) / 2 ∧ y = (m : F)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
-      R.Pre inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
+      R.PreCip inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
       R.Pre inp.opening.z1 w₁ ∧ R.Pre inp.opening.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
         SchnorrPoint e.d.lam c₀.val U (hornerCombine (endoExpandZ e.d.lam n.val) bv)
@@ -960,7 +978,7 @@ theorem checkBulletproof_spec_success_at {sf : Type}
       (∃ (x y : F) (h : W.Nonsingular x y), U = .some x y h ∧
         ∃ m : ℕ, m < (fieldModulus F + 1) / 2 ∧ y = (m : F)) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ ns.length = lrv.length ∧ Reads128 V o.c c₀ ∧
-      R.Pre inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
+      R.PreCip inp.deferred.combinedInnerProduct wcip ∧ R.Pre inp.deferred.b wb ∧
       R.Pre inp.opening.z1 w₁ ∧ R.Pre inp.opening.z2 w₂ ∧
       ((↑o.success : CVar F).val V = 1 ↔
         SchnorrPoint e.d.lam c₀.val U (hornerCombine (endoExpandZ e.d.lam n.val) bv)
@@ -1046,7 +1064,7 @@ theorem IvpCurve.eW {C : KimchiCurve} (S : IvpCurve C) : S.e.d.W = C.E.toAffine 
 
 /-- What a side supplies beyond its curve: how its shifted-scalar ladder reads (`R`); the
 scalar-field decode of a shifted claim, with the law that a ladder witness's integer decode
-casts to it; and which claims absorb canonically, with the limbs they absorb as. These are the
+casts to it; and the limbs a claimed `cip` absorbs as, at its ladder's witness. These are the
 fields that genuinely differ between the wrap side's `Type1` claims and the step side's split
 `Type2` ones. One value per deployed side: `wrapSide`, `stepSide`. -/
 structure IvpSide (C : KimchiCurve) (V : Valuation C.BaseField) {sf : Type}
@@ -1059,14 +1077,11 @@ structure IvpSide (C : KimchiCurve) (V : Valuation C.BaseField) {sf : Type}
   decode : sf → C.ScalarField
   /-- A ladder witness of a claim decodes, in the scalar field, to the claim's decode. -/
   dec_cast : ∀ {x : sf} {w : R.wit}, R.Pre x w → (R.dec w : C.ScalarField) = decode x
-  /-- A claim whose absorbed limbs are canonical: on the wrap side every `Type1` claim (its
-  ladder witness is below `2²⁵⁴`, under the scalar modulus `|Fp|`); on the step side a split
-  claim whose halved limb keeps `2·sDiv2 + sOdd` below the scalar modulus — the 254-bit range
-  check alone leaves one bit of slack, the `scale_fast2` top-bit family (#341). -/
-  Canon : sf → Prop
-  /-- At a ladder witness of a canonical claim, the limbs the claim absorbs as are the wire's
-  `scalarLimbs` of the shifted decode. -/
-  absorb_limbs : ∀ {x : sf} {w : R.wit}, Canon x → R.Pre x w →
+  /-- At the `cip` ladder's witness of a claim, the limbs the claim absorbs as are the wire's
+  `scalarLimbs` of the shifted decode: the ladder's range check makes them canonical (wrap:
+  the `Type1` cell is below `2²⁵⁴`, under the scalar modulus; step: `scaleByCip` pins the half
+  below `2²⁵³`, so `2·sDiv2 + sOdd` is below it too). -/
+  absorb_limbs : ∀ {x : sf} {w : R.wit}, R.PreCip x w →
     (ops.shiftedToAbsorbFields x).map (·.val V) = scalarLimbs C (shiftScalar C (decode x))
 variable {C : KimchiCurve} {V : Valuation C.BaseField} {sf : Type} {k : ℕ}
   {ops : IpaScalarOps C.BaseField (Builder V (KimchiConstraint C.BaseField)) sf}
@@ -1131,7 +1146,7 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
       U = C.uBase (o.t.val V) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
       chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
-      (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
+      (∃ w : S.R.wit, S.R.PreCip inp.deferred.combinedInnerProduct w) ∧
       ((↑o.success : CVar C.BaseField).val V = 1 ↔
         schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
@@ -1186,7 +1201,8 @@ private theorem IvpSide.opening_reads_at (S : IvpSide C V ops) (endo : FVar C.Ba
       rw [hy, hmy, ZMod.val_natCast, Nat.mod_eq_of_lt (by omega)]
       exact hm
     exact C.lowerHalf_eq_of_lt (by omega) hsgn hval
-  · rw [← S.dec_cast hpcip, ← S.dec_cast hpb, ← S.dec_cast hp1, ← S.dec_cast hp2, hiff,
+  · rw [← S.dec_cast (S.R.preCip_pre hpcip), ← S.dec_cast hpb, ← S.dec_cast hp1,
+      ← S.dec_cast hp2, hiff,
       ← S.curve.schnorr σ _ _ _ c₀.val _ _ _ _ ⟨lrW, δW, _, _, sgW⟩ (ns.map Subtype.val)
         (by simp [Function.comp_def]) rfl rfl]
     simp only [AddEquiv.apply_symm_apply]
@@ -1230,7 +1246,7 @@ def IvpSide.OpeningReads (S : IvpSide C V ops) (sv : SpongeVar C.BaseField)
       U = C.uBase (o.t.val V) ∧
       List.Forall₂ (Reads128 V) o.challenges ns ∧ Reads128 V o.c c₀ ∧
       chals.toList = ns.map (fun m => Poseidon.FqSponge.endoExpand C.lam m.val) ∧
-      (∃ w : S.R.wit, S.R.Pre inp.deferred.combinedInnerProduct w) ∧
+      (∃ w : S.R.wit, S.R.PreCip inp.deferred.combinedInnerProduct w) ∧
       ((↑o.success : CVar C.BaseField).val V = 1 ↔
         schnorrAt C σ U chals (Poseidon.FqSponge.endoExpand C.lam c₀.val)
           (S.decode inp.deferred.combinedInnerProduct) (S.decode inp.deferred.b)
@@ -1345,6 +1361,27 @@ theorem step_scale_reads {V : Valuation Fp} (pt : AffinePoint (FVar Fp))
   obtain ⟨z, h0, hlt, hz, hreg⟩ := hr T hT bb hbit
   exact ⟨(z, bb), ⟨hbit, h0, hlt, hz⟩, fun hR => hreg hR⟩
 
+/-- The step side's reading of the claimed `cip`: `StepLadderPre` with the half one bit
+narrower, as `scaleByCip`'s ladder pins it. -/
+def StepCipPre (V : Valuation Fp) (x : Type2 (SplitField (FVar Fp) (BoolVar Fp)))
+    (w : ℤ × Bool) : Prop :=
+  StepLadderPre V x w ∧ w.1 < 2 ^ 253
+
+/-- `IpaScalarOps.step`'s `cip` scaling reads through `scaleFast2_spec` at Pallas and 253
+halved bits, given the parity bit reads as a bit. -/
+theorem step_scaleCip_reads {V : Valuation Fp} (pt : AffinePoint (FVar Fp))
+    (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) (bb : Bool)
+    (hbit : (↑x.val.sOdd : CVar Fp).val V = bit bb) :
+    ⦃⌜True⌝⦄ (IpaScalarOps.step (c := Builder V (KimchiConstraint Fp))).scaleByCip pt x
+    ⦃⇓ r _ => ⌜∀ T : IpaEndo.pallas.d.W.Point, OnCurveAt IpaEndo.pallas.d.W V pt T →
+      ∃ w : ℤ × Bool, StepCipPre V x w ∧
+        (StepLadderReg w → OnCurveAt IpaEndo.pallas.d.W V r (stepLadderDec w • T))⌝⦄ := by
+  refine builder_spec_imp _ _ _
+    (scaleFast2_spec (V := V) HasCurve.pallas 255 51 253 (by norm_num) (by norm_num) pt
+      x.val.sDiv2 x.val.sOdd) fun r hr T hT => ?_
+  obtain ⟨z, h0, hlt, hz, hreg⟩ := hr T hT bb hbit
+  exact ⟨(z, bb), ⟨⟨hbit, h0, lt_trans hlt (by norm_num), hz⟩, hlt⟩, fun hR => hreg hR⟩
+
 /-- The step side's decode of a split scalar in the scalar field: the `Type2` unshift of the
 half's representative and the parity bit — canonical, the half being below `2²⁵⁴ < |Fp|`. -/
 def stepDecode (V : Valuation Fp) (x : Type2 (SplitField (FVar Fp) (BoolVar Fp))) : Fq :=
@@ -1380,6 +1417,9 @@ def wrapReading (V : Valuation Fq) :
   dec := wrapLadderDec
   WellFormed _ := True
   scale pt x _ := wrap_scale_reads pt x
+  PreCip := WrapLadderPre V
+  preCip_pre h := h
+  scaleCip pt x _ := wrap_scale_reads pt x
 
 /-- The step side's reading: `IpaScalarOps.step` at Pallas through `step_scale_reads`; a split
 scalar is well-formed when its parity bit reads as a bit. -/
@@ -1391,6 +1431,9 @@ def stepReading (V : Valuation Fp) :
   dec := stepLadderDec
   WellFormed x := ∃ bb : Bool, (↑x.val.sOdd : CVar Fp).val V = bit bb
   scale pt x h := h.elim fun bb hbit => step_scale_reads pt x bb hbit
+  PreCip := StepCipPre V
+  preCip_pre h := h.1
+  scaleCip pt x h := h.elim fun bb hbit => step_scaleCip_reads pt x bb hbit
 
 end Deployed
 
@@ -1761,8 +1804,7 @@ def wrapSide (V : Valuation Fq) : IvpSide IpaVesta.curve V IpaScalarOps.wrap whe
   R := wrapReading V
   decode := wrapDecode V
   dec_cast h := wrapLadderDec_cast h
-  Canon _ := True
-  absorb_limbs _ h := wrap_cip_limbs h
+  absorb_limbs h := wrap_cip_limbs h
 
 end DeployedWrap
 
@@ -1770,6 +1812,25 @@ section DeployedStep
 
 open CompElliptic.Curves.Pasta CompElliptic.CurveForms.ShortWeierstrass Poseidon.FqSponge
 open Kimchi.Gate.EndoScalar Kimchi.Gate.VarBaseMul Bulletproof Bulletproof.Ipa Pasta.Shifted
+
+/-- The `cip` ladder's pin makes the claim canonical: with the half below `2²⁵³`,
+`2·sDiv2 + sOdd` is below `2²⁵⁴`, under the scalar modulus. -/
+private theorem stepCipPre_canon {V : Valuation Fp}
+    {x : Type2 (SplitField (FVar Fp) (BoolVar Fp))} {w : ℤ × Bool} (h : StepCipPre V x w) :
+    2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val < PALLAS_SCALAR_CARD := by
+  obtain ⟨⟨hb, h0, hlt, hz⟩, h253⟩ := h
+  have hv : (((w.1 : Fp)).val : ℤ) = w.1 :=
+    toNat_intCast_of_lt PALLAS_BASE_CARD h0
+      (lt_of_lt_of_le hlt (by norm_num [PALLAS_BASE_CARD]))
+  rw [hz] at hv
+  have hhalf : (x.val.sDiv2.val V).val < 2 ^ 253 := by
+    have : ((x.val.sDiv2.val V).val : ℤ) < 2 ^ 253 := hv ▸ h253
+    exact_mod_cast this
+  have hon : ((↑x.val.sOdd : CVar Fp).val V).val ≤ 1 := by
+    rw [hb]
+    cases w.2 <;> simp [bit, ZMod.val_one]
+  have hq : (2 : ℕ) ^ 254 < PALLAS_SCALAR_CARD := by norm_num [PALLAS_SCALAR_CARD]
+  omega
 
 /-- The step circuit absorbs the claimed `cip` as its halved limb then its parity bit, and the
 wire absorbs `scalarLimbs (shiftScalar cip)`: at Pallas these agree when the claim is canonical
@@ -1826,9 +1887,7 @@ def stepSide (V : Valuation Fp) : IvpSide IpaPallas.curve V IpaScalarOps.step wh
   R := stepReading V
   decode := stepDecode V
   dec_cast h := stepLadderDec_cast h
-  Canon x := 2 * (x.val.sDiv2.val V).val + ((↑x.val.sOdd : CVar Fp).val V).val
-    < PALLAS_SCALAR_CARD
-  absorb_limbs hc h := step_cip_limbs hc h
+  absorb_limbs h := step_cip_limbs (stepCipPre_canon h) h.1
 
 end DeployedStep
 
