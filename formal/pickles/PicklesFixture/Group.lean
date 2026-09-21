@@ -49,13 +49,9 @@ def xhatStepWidth (i : ℕ) : ℕ :=
 def xhatStepCorr (pts : Array XhatStepCurve.Point) (i : ℕ) : XhatStepCurve.Point :=
   xhatStepCorrPt (xhatStepWidth i) (pts[i]?.getD 0)
 
-/-- The `x_hat` tables over the 30 packed scalars of a wrap statement at the Lagrange bases
-`pts`: the bases, their constant corrections, and the known-domain fold's seed and sum. -/
-def stepXhatTable (pts : Array XhatStepCurve.Point) : XhatTable Fp 1 :=
-  { bases := (List.range 30).map fun i => xhatStepConst (pts[i]?.getD 0)
-    corrs := (List.range 30).map fun i => xhatStepConst (xhatStepCorr pts i)
-    corrHead := xhatStepConst (xhatStepCorr pts 0)
-    corrSum := xhatStepConst ((List.range 30).map (xhatStepCorr pts)).sum }
+/-- Lagrange bases as the one-chunk points the library's `x_hat` tables are computed from. -/
+def oneChunk {C : Bulletproof.Ipa.KimchiCurve} (pts : Array C.Point) : List (Vector C.Point 1) :=
+  pts.toList.map (#v[·])
 
 /-! ## A verified key as constants -/
 
@@ -91,13 +87,11 @@ def stepIndexSponge (vk : Wire.KimchiVK XhatStepCurve) : CircuitM Fp C (SpongeVa
 `Pickles.verifyProof` at the deployed parameters over the records, the `x_hat` tables and the
 blinding base, the claims from the unfinalized proof, every `sg_old` unmasked. Returns the
 success bit; the digest and round-challenge assertions are the gadget's constraints. -/
-def groupStepOn (vk : Wire.KimchiVK XhatStepCurve) (tab : XhatTable Fp 1)
-    (blindingH : AffinePoint (FVar Fp)) {ks kw : ℕ} (v : StepGroup ks kw (FVar Fp) (BoolVar Fp)) :
+def groupStepOn (vk : Wire.KimchiVK XhatStepCurve) (basis : Array XhatStepCurve.Point)
+    (blindingH : XhatStepCurve.Point) {ks kw : ℕ} (v : StepGroup ks kw (FVar Fp) (BoolVar Fp)) :
     CircuitM Fp C (BoolVar Fp) := do
   let sv ← stepIndexSponge vk
-  verifyProof IpaScalarOps.step IpaEndo.pallas Bulletproof.IpaVesta.curve.frSponge.params
-    (.const endoVestaLam) groupMapParamsPallas pallasBase.sqrt? blindingH tab sv v.isBaseCase
-    v.statement v.claims
+  verifyProofWith blindingH (oneChunk basis) sv v.isBaseCase v.statement v.claims
     (ivpInputOf v.claims.deferredValues (v.sgOld.toList.map (none, ·)) (keyComms xhatStepCell vk)
       v.proof)
 
@@ -106,32 +100,8 @@ def groupStepOn (vk : Wire.KimchiVK XhatStepCurve) (tab : XhatTable Fp 1)
 /-- The Vesta curve of the wrap-side `x_hat` Lagrange bases (Fq coordinates). -/
 abbrev XhatWrapCurve := Bulletproof.IpaVesta.curve
 
-open CompElliptic.Curves.Pasta.Fast.Projective.Core.PPoint in
-/-- The shift correction `-(2^L)·P` at a Lagrange base `P`, as a one-chunk constant point:
-`[2^L]·P` negated coordinatewise. -/
-def xhatWrapCorr (L : ℕ) (P : XhatWrapCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
-  let Q := smulFast XhatWrapCurve.E (by decide) (by decide) (2 ^ L) P
-  #v[⟨.const Q.x, .const (-Q.y)⟩]
-
 /-- A native Vesta point as a constant cell at the wrap field. -/
 def xhatWrapCell (P : XhatWrapCurve.Point) : AffinePoint (FVar Fq) := ⟨.const P.x, .const P.y⟩
-
-/-- A native Vesta point as a one-chunk constant point at the wrap field. -/
-def xhatWrapBase (P : XhatWrapCurve.Point) : Vector (AffinePoint (FVar Fq)) 1 :=
-  #v[xhatWrapCell P]
-
-/-- The `x_hat` leaves of a packed scalar list at the Lagrange bases `pts`: leaf `i` at base
-`i`, its correction at the kind's ladder width (255 full, 130 for 128 bits, 10 bits — and a
-boolean cell has none). -/
-def wrapLeaves (pts : Array XhatWrapCurve.Point) (ks : List (PackedScalar Fq)) :
-    List (Leaf Fq 1) :=
-  ks.zipIdx.map fun (k, i) =>
-    let P := pts[i]?.getD 0
-    match k with
-    | .full s => .full s (xhatWrapBase P) (xhatWrapCorr 255 P)
-    | .b128 s => .b128 s (xhatWrapBase P) (xhatWrapCorr 130 P)
-    | .b10 s => .b10 s (xhatWrapBase P) (xhatWrapCorr 10 P)
-    | .bit b => .condAdd b (xhatWrapBase P)
 
 /-- The sponge after the step key's index digest, at the wrap field. -/
 def wrapIndexSponge (vk : Wire.KimchiVK XhatWrapCurve) : CircuitM Fq Cq (SpongeVar Fq) :=
@@ -149,7 +119,9 @@ def groupWrapOn (vk : Wire.KimchiVK XhatWrapCurve) (basis : Array XhatWrapCurve.
     CircuitM Fq Cq (BoolVar Fq) := do
   let sv ← wrapIndexSponge vk
   let computeXHat : CircuitM Fq Cq (List (AffinePoint (FVar Fq))) := do
-    let P ← publicInputCommitFull (0 : Fin 1) blindingH (wrapLeaves basis v.stepStatement.packed)
+    let P ← publicInputCommitFull (0 : Fin 1) blindingH
+      (packLeavesOf v.stepStatement.packed
+        (XhatTable.ofKey v.stepStatement.packed (oneChunk basis)))
     pure [P]
   let dv := v.statement.proofState.deferredValues
   let mask := dv.branchData.proofsVerifiedMask.toList.drop (MaxProofsVerified - n)
