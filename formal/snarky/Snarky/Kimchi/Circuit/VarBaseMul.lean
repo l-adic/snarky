@@ -13,47 +13,34 @@ import Kimchi.Gate.Semantics.EndoMul
 /-!
 # The VarBaseMul gadget
 
-Port of `Snarky.Circuit.Kimchi.VarBaseMul`
-(packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs; OCaml
-`Pickles.Plonk_curve_ops.scale_fast`): the double-add ladder `varBaseMul` — witness
-the scalar's bits, walk `acc' = 2·acc + Q` per bit with `Q = (xT, (2b−1)·yT)` in
-5-bit rows, pin the running scalar register, emit one `varBaseMul` constraint — and
-its consumers `scaleFast1` (`Type1` scalars), `scaleFast2`/`scaleFast2'` (split
-scalars for the larger-scalar-field case), and `splitFieldVar`.
+Port of `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs`, itself after
+`plonk_curve_ops.ml`. `varBaseMul` is the double-add ladder: it witnesses the scalar's bits,
+walks `acc' = 2·acc + Q` per bit with `Q = (xT, (2b−1)·yT)` in 5-bit rows, pins the running
+scalar register, and emits one `varBaseMul` constraint. Its consumers are `scaleFast1`
+(`Type1` scalars), `scaleFast2` and `scaleFast2'` (split scalars, for a scalar field larger
+than the circuit field), and `splitFieldVar`.
 
-The byte contract (allocation order, row shapes) is oracle-checked by the corpus:
-`var_base_mul_step_circuit` (`scaleFast1` at the full 255-bit ladder) and
-`scale_fast2_128_step_circuit` (`scaleFast2'` through `splitFieldVar`). The
-downstream VarBaseMul-consuming fixtures (`ftcomm`, `xhat`, the mains) stay deferred
-to the pickles buildout.
+The emitted circuits of `scaleFast1` at the full 255-bit ladder and of `scaleFast2'` at the
+128-bit split are checked against recorded fixtures (`formal/scripts/check_cs.lean`).
 
-One section per circuit: the definition, its soundness spec, its completeness law, and
-then the definition is sealed `irreducible`. Nothing below a section reasons about that
-circuit's body — the round reaches the ladder as `scaleRound_spec`/`scaleRound_complete`,
-the ladder reaches the wrappers as `varBaseMul_spec`/`varBaseMul_complete`.
+Each section holds one circuit, its soundness spec and its completeness law, and then seals
+the circuit `irreducible`: later sections reach it only through those laws.
 
-Deviations from the PS original:
-- PS batches the whole witness chain through `mkWitnessTable`/`computeVbmChain`
-  (`doubleAddChain`'s projective walk with Montgomery batch inversion); the port
-  computes each bit step sequentially from the threaded variables via the gate
-  model's `Kimchi.Gate.VarBaseMul.stepBit` — `Projective.purs` certifies the batched
-  rows equal the sequential per-step formulas, so the advice values are identical.
-  Advice-only: the emitted circuit is untouched.
-- PS's chain computation reports degenerate steps (`DivisionByZero`); the port's
-  advice is total — field division returns junk on a zero denominator instead of
-  aborting the prover run. Identical on non-degenerate inputs.
-- PS allocates each bit step's five advice values through five separate `exists`;
-  the port witnesses the quintet in one call — five fresh variables in the same
-  order, so the variable ids agree.
-- PS walks a round's five bits with an inner `mapAccumM`; the port unrolls it into
-  five sequential `witness` calls. Same calls in the same order, so the emitted
-  circuit is untouched — but the loop rules cannot walk it, so each reading's law
-  pays for the five steps separately instead of once against an invariant.
-- `s1Sq` and `s2` are witnessed and never read back — dead allocations kept for
-  OCaml variable-id parity, exactly as PS keeps them.
-- PS's type-level width bookkeeping (`FieldSizeInBits`, `Mul 5 nChunks bitsUsed`)
-  renders as the plain parameters `(n chunks : ℕ)` with `bitsUsed := 5 * chunks`;
-  the laws state the bounds the types enforced.
+## Deviations from the original
+
+- The original computes the whole witness chain in one batch (a projective walk with batch
+  inversion). Here each bit step is computed from the threaded variables by the gate model's
+  `Kimchi.Gate.VarBaseMul.stepBit`. The advice values agree; the circuit is untouched.
+- The original aborts the prover on a degenerate step. Here the advice is total: division
+  by zero returns junk. The two agree on non-degenerate inputs.
+- The original allocates each bit step's five advice values through five witness calls, and
+  walks a round's five bits with a loop. Here one call witnesses the five values, and the
+  round is unrolled into five calls. Variable ids and the circuit are unchanged, but each
+  round's law pays for the five steps separately rather than once against an invariant.
+- Two of each step's five advice values are never read back; they are kept so the variable
+  ids agree with the original.
+- The original's type-level widths become the parameters `(n chunks : ℕ)`, with `5 * chunks`
+  bits walked; the laws state the bounds the types enforced.
 -/
 
 namespace Snarky.Kimchi
@@ -64,14 +51,11 @@ variable {F c : Type}
 
 open Std.Do WeierstrassCurve.Affine
 
-/-! ## The ladder regime at the deployed curves
-
-The dictionary itself is `Snarky.Kimchi.HasCurve`; what is local here is the regime
-discharge the ladder's laws consume. -/
+/-! ## The ladder regime at Vesta -/
 
 open CompElliptic.Fields.Pasta Kimchi.Gate.VarBaseMul in
 /-- At Vesta, a `Type1` carrier off the ladder's forbidden band is in the one-wrap
-regime: the deployed order sits in the band and is `1 mod 4`. -/
+regime: the order lies between `2^254` and `2^255` and is `1 mod 4`. -/
 private theorem vesta_ladderRegime (t : Type1 Fq)
     (hband : t.toScalarZ ∉ forbiddenValues PALLAS_BASE_CARD) :
     HasCurve.vesta.LadderRegime 255 t.toScalarZ := by
@@ -84,20 +68,17 @@ private theorem vesta_ladderRegime (t : Type1 Fq)
 
 /-! ## The round
 
-One 5-bit row: the register advice, then five bit-step quintets threaded through the
-accumulator. Its laws are the wiring a trace threads (`Threads`) and, for the honest run,
-the grant that the round's cells are in scope and its reading is the gate's canonical row.
-Sealed after them — the ladder reasons about a round through its laws, never its body. -/
+One 5-bit row. Its soundness law is the wiring (`Threads`); its completeness law adds that
+the round's cells are in scope and read as the gate's canonical row. -/
 
-/-- The scalar's `n` bits LSB-first as field values, in ONE witness (PS `unpackPure`
-under a single `exists`). -/
+/-- The scalar's `n` bits LSB-first as field values, in one witness. -/
 private def lsbBitsWit [Field F] [ToNat F] (n : ℕ) (scalar : FVar F) :
     AsProver F (Vector F n) := do
   let v ← AsProver.readCVar scalar
   pure (Vector.ofFn fun i => if (ToNat.toNat v).testBit i.1 then 1 else 0)
 
-/-- Per-chunk scalar-register advice: fold `2a + b` over the chunk's five bits from
-the previous register (PS's `foldl (\\a b -> double a + b)`). -/
+/-- The scalar-register advice: fold `2a + b` over the row's five bits, from the previous
+register. -/
 private def nAccWit [Field F] (nPrev : FVar F) (bs : Vector (FVar F) 5) :
     AsProver F F := do
   let a ← AsProver.readCVar nPrev
@@ -108,8 +89,8 @@ private def nAccWit [Field F] (nPrev : FVar F) (bs : Vector (FVar F) 5) :
   let b4 ← AsProver.readCVar bs[4]
   pure (b4 + 2 * (b3 + 2 * (b2 + 2 * (b1 + 2 * (b0 + 2 * a)))))
 
-/-- One bit step's advice quintet `(s1, s1Sq, s2, xRes, yRes)`: the wired slope and
-result from the gate model's `stepBit`, plus the two dead registers. -/
+/-- One bit step's five advice values `(s1, s1Sq, s2, xRes, yRes)`: the slope and result
+from the gate model's `stepBit`, plus two values nothing reads. -/
 private def bitWit [Field F] [DecidableEq F] (t : AffinePoint (FVar F))
     (b : FVar F) (acc : AffinePoint (FVar F)) :
     AsProver F (F × F × F × F × F) := do
@@ -123,10 +104,9 @@ private def bitWit [Field F] [DecidableEq F] (t : AffinePoint (FVar F))
   let s2 := 2 * yi / (2 * xi + xb - s1Sq) - s1
   pure (s1, s1Sq, s2, xo, yo)
 
-/-- One 5-bit round (PS's `mapAccumM` body): the register advice, then five bit-step
-quintets threaded through the accumulator, collected as the gate's `ScaleRound`
-record and the next `(acc, register)` pair. Named so it carries its own law per
-reading — the caller's loop then walks one registered spec per round. -/
+/-- One 5-bit round: the register advice, then five bit steps threaded through the
+accumulator, returned as the gate's `ScaleRound` record and the next `(acc, register)` pair.
+A named circuit, so the ladder's loop walks one spec per round. -/
 def scaleRound [Field F] [DecidableEq F] [BasicSystem F c]
     (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 5) :
@@ -153,8 +133,8 @@ namespace VarBaseMul
 
 variable {F c : Type}
 
-/-- The step's grant: the round is built from the base, the accumulators either side of
-it, and the row's five bits. Structural — no valuation appears. -/
+/-- The round is wired to the base, the accumulators either side of it, and the row's five
+bits. No valuation appears. -/
 private def Threads (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 5) (r : ScaleRound F)
     (st' : AffinePoint (FVar F) × FVar F) : Prop :=
@@ -162,8 +142,7 @@ private def Threads (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × 
     (r.bit0 = bs[0] ∧ r.bit1 = bs[1] ∧ r.bit2 = bs[2] ∧ r.bit3 = bs[3] ∧ r.bit4 = bs[4])
 
 open Std.Do in
-/-- The step's spec: the round it emits is wired to the base, the accumulators either
-side, and the row's bits. -/
+/-- The round a call returns is wired to its inputs and outputs (`Threads`). -/
 @[spec] private theorem scaleRound_spec {V : Valuation F} [Field F] [DecidableEq F]
     (base : AffinePoint (FVar F)) (st : AffinePoint (FVar F) × FVar F)
     (bs : Vector (FVar F) 5) :
@@ -191,9 +170,8 @@ private def cells [Field F] (r : ScaleRound F) : List (CVar F) :=
     r.bit0, r.bit1, r.bit2, r.bit3, r.bit4,
     r.slope0, r.slope1, r.slope2, r.slope3, r.slope4, r.nPrev, r.nNext]
 
-/-- The step's grant at a table: the round is wired to the base, the accumulators either
-side and the row's bits; its cells are in scope; and its reading is the gate's canonical
-row at its own inputs. -/
+/-- `Threads`, plus: the round's cells are in scope, and it reads as the gate's canonical
+row at its inputs. -/
 private def RowGrant [Field F] [DecidableEq F] (base : AffinePoint (FVar F))
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (r : ScaleRound F)
     (acc' : AffinePoint (FVar F) × FVar F) (st : ProverState F) : Prop :=
@@ -259,9 +237,8 @@ private theorem RowGrant.mono [Field F] [DecidableEq F] (base : AffinePoint (FVa
     hcell r.bit1 (by simp [cells]), hcell r.bit2 (by simp [cells]),
     hcell r.bit3 (by simp [cells]), hcell r.bit4 (by simp [cells])]
 
-/-- One honest round: the register advice then five bit steps, each witnessing the
-gate's own `stepBit` at the cells the previous step produced. What comes back is the
-walk's row at the round's inputs. -/
+/-- The honest round returns the gate's canonical row at its inputs (`RowGrant`), and
+keeps the accumulator invariant. -/
 private theorem scaleRound_complete [Field F] [DecidableEq F] (st₁ : ProverState F)
     (base : AffinePoint (FVar F)) (hbase : base.x.Scoped st₁ ∧ base.y.Scoped st₁)
     (acc : AffinePoint (FVar F) × FVar F) (bs : Vector (FVar F) 5) (hbs : BitRow st₁ bs) :
@@ -524,29 +501,25 @@ attribute [irreducible] nAccWit bitWit scaleRound
 
 /-! ## The ladder
 
-The payload reads each round on its own — a `ScaleRound` carries all 26 cells, its outputs
-included — so the trace's job is only to say that every round shares the base, opens where
-the previous one closed, and starts at the doubled seed. That is what
-`Kimchi.Gate.VarBaseMul.Run` asks for.
+A `ScaleRound` carries all 26 of its cells, outputs included, so the constraint reads each
+round on its own. The trace only has to say that every round shares the base, opens where the
+previous one closed, and starts at the doubled seed: what `Kimchi.Gate.VarBaseMul.Run` asks.
 
-The loop emits no row of its own, so the ladder's steps owe nothing but readability, and
-every row is judged at the one `varBaseMul` constraint after the loop. What discharges it
-is the model's `chain_complete` on the honest walk, which the run's readings are shown to
-be. -/
+The loop emits no row of its own; every row is judged at the one `varBaseMul` constraint
+after it. On the honest side that constraint holds by the model's `chain_complete`, since the
+rounds read as the model's honest walk. -/
 
-/-- What `varBaseMul` hands back (PS's `{ g, lsbBits }` record): the scalar multiple
-and the scalar's full bit decomposition, which `scaleFast2` pins. -/
+/-- What `varBaseMul` returns: the scalar multiple and the scalar's bits, which
+`scaleFast1` and `scaleFast2` pin. -/
 structure VarBaseMulResult (n : ℕ) (F : Type) where
   /-- The computed multiple. -/
   g : AffinePoint (FVar F)
   /-- The scalar's `n` witnessed bits, LSB-first. -/
   lsbBits : Vector (FVar F) n
 
-/-- The variable-base scalar multiplication (PS `varBaseMul`; OCaml
-`scale_fast_unpack`): seal the base, witness the scalar's `n` LSB bits, build
-`acc = [2]·T` with one `addFast`, walk the top `5 * chunks` bits MSB-first in 5-bit
-rows — per row the register witness then five bit-step quintets — pin the final
-register to the scalar, and emit one `varBaseMul` constraint. -/
+/-- The variable-base scalar multiplication: seal the base, witness the scalar's `n` bits
+LSB-first, build `acc = [2]·T` with one `addFast`, walk the low `5 * chunks` bits MSB-first in
+5-bit rounds, emit one `varBaseMul` constraint, and pin the final register to the scalar. -/
 def varBaseMul [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks : ℕ) (base' : AffinePoint (FVar F))
     (scalar : Type1 (FVar F)) : CircuitM F c (VarBaseMulResult n F) := do
@@ -683,9 +656,9 @@ private theorem threads_rows [Field F] {base : AffinePoint (FVar F)} {V : Valuat
       List.flatMap_cons, hb0, hb1, hb2, hb3, hb4]
 
 open Kimchi.Gate.VarBaseMul (Run runBits bitsRegister bitsVal accX accY accN gateLadder) in
-/-- A satisfied trace from the doubled seed is one of the model's runs: `Run.ofList`
-takes the trace's readings, `varBaseMul_off` reads the ladder off it under the regime,
-and `chain_accN` reads the register. -/
+/-- A satisfied trace from the doubled seed is one of the model's runs (`Run.ofList`):
+its bits are bits, the register reads as their value (`chain_accN`), and under the regime
+the result is the base times their Type1 decode (`varBaseMul_off`). -/
 private theorem run_sound [Field F] [DecidableEq F] (d : HasCurve F) (V : Valuation F)
     {base P0 : AffinePoint (FVar F)} {pref : List (Vector (FVar F) 5)}
     {rounds : List (ScaleRound F)} {fin : AffinePoint (FVar F) × FVar F}
@@ -870,7 +843,7 @@ private theorem grants_walk [Field F] [DecidableEq F] (base : AffinePoint (FVar 
       rw [show ((r :: tail)[j + 1]'hi) = tail[j]'hj from rfl, hshift,
         Kimchi.Gate.VarBaseMul.chainBuild_shift, hmx, hmy, hmn]
 
-/-- A trace's grants carry its wiring: the state-free chain the sound side speaks. -/
+/-- A trace of `RowGrant`s is a trace of `Threads`. -/
 private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (FVar F)}
     {stf : ProverState F} :
     ∀ {acc fin : AffinePoint (FVar F) × FVar F} {pref : List (Vector (FVar F) 5)}
@@ -886,9 +859,9 @@ private theorem ChainAt.threads [Field F] [DecidableEq F] {base : AffinePoint (F
 end VarBaseMul
 
 open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness.** Any satisfying valuation reads the result's cells as bits whose LSB-first
-value the scalar reads as, and the result as the base multiplied by that value's Type1
-decode — under the ladder's regime, which is what prices the ladder's non-degeneracy. -/
+/-- **Soundness.** Under any satisfying valuation the first `5 * chunks` returned bits read
+as bits whose LSB-first value the scalar reads as, and, under the ladder's regime, the result
+is the base times that value's Type1 decode. -/
 theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
@@ -987,9 +960,9 @@ theorem varBaseMul_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     exact hpoint
 
 open WeierstrassCurve.Affine in
-/-- **Completeness.** From a readable on-curve base and a scalar inside the ladder's
-width, the honest run succeeds, its rows hold at every extension, and the result reads
-as the base multiplied by the Type1 unshift of the scalar's own bits. -/
+/-- **Completeness.** From an on-curve base and a scalar within the ladder's width, under
+the regime, the honest run succeeds: the returned bits read as the scalar's, and the result
+as the base times the scalar's Type1 decode. -/
 theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F))
@@ -1018,7 +991,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     ⟨h.1, reads_affinePoint.mpr (Kimchi.Gate.AddComplete.IsPoint.coords_eq h.2 ⟨hT, rfl⟩)⟩
   simp only [varBaseMul]
   complete_walk
-  -- the base base's coordinates, and the base as a curve point, off any reading state
+  -- the base's coordinates, and the base as a curve point, off any reading state
   have hscoords : ∀ {st : ProverState F},
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
         base.x.val st.env.get = xv ∧ base.y.val st.env.get = yv :=
@@ -1040,8 +1013,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         (Vector.ofFn fun i : Fin n => if (ToNat.toNat sv).testBit i.1 then 1 else 0)
         (by simp)))
     fun lsbBits => ?_
-  -- the lsbBits' landing table indexes the rest: the index carries the bit cells' scope
-  -- and canonical readings, and the base base's scope
+  -- the table after the bits indexes the rest: the bits' scope and readings, and the
+  -- base's scope
   refine Complete.instantiate
     (ι := {st₂ : ProverState F // (∀ (i : ℕ) (hi : i < n),
         (lsbBits[i]'hi).Scoped st₂ ∧
@@ -1061,8 +1034,8 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   obtain ⟨st₂, hbitfacts, hsx₂, hsy₂⟩ := i
   have hextM : Mono (F := F) fun st => st₂.nv ≤ st.nv ∧ st₂.env.Le st.env :=
     fun _ _ hnv hle h => ⟨Nat.le_trans h.1 hnv, h.2.trans hle⟩
-  -- the doubled seed: the finiteness and torsion side conditions are content the
-  -- adapter search must not invent, so this step stays on the combinators
+  -- the doubled seed, by hand: `complete_walk` must not invent its finiteness and
+  -- torsion side conditions
   refine Complete.bind
     (Complete.imp
       (fun st h => ⟨⟨hTread h.2.1, hTread h.2.1, h2T, fun _ => h2T⟩, h⟩)
@@ -1100,7 +1073,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [hP0eq]
     exact OnCurveAt.of_reads (p := p.p) (CircuitType.reads_fvar.mp hx.2)
       (CircuitType.reads_fvar.mp hy.2) hP0ns
-  -- the rows' lsbBits: the reversed prefix of the scalar's lsbBits, MSB-first
+  -- the rounds' bits: the reversed prefix of the scalar's bits
   set bsOf : ℕ → F := fun k =>
     if (ToNat.toNat sv).testBit (5 * chunks - 1 - k) then 1 else 0 with hbsOf
   set msb : List (FVar F) := (lsbBits.toList.take (5 * chunks)).reverse with hmsb
@@ -1186,7 +1159,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
       hbsbool 0 hP0ns hP0eq.symm (by rw [← hWdef, hgl]; exact hregime)
     rw [← hWdef] at h
     exact h
-  -- the rounds' readings are the walk's rows, at any table past the lsbBits
+  -- the rounds' readings are the walk's rows, at any table past the bits
   have hbitsRead : ∀ (stf : ProverState F), st₂.env.Le stf.env →
       ∀ (i : ℕ) (hi : i < ((List.range chunks).map window).length) (j : ℕ) (hj : j < 5),
         bsOf (5 * i + j)
@@ -1198,7 +1171,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     rw [hw]
     simp only [hwindow, Vector.getElem_ofFn]
     exact (hbitVal stf hlef (5 * i + j) (by omega)).symm
-  -- every row of a granting trace holds, at any env-extension of its table
+  -- every row of a granting trace holds, at any extension of its table
   have hpayAt : ∀ (st stf : ProverState F), st.env.Le stf.env →
       (st₂.nv ≤ st.nv ∧ st₂.env.Le st.env) →
       CircuitType.ReadsAs (val := AffinePoint F) st base ⟨xv, yv⟩ →
@@ -1272,7 +1245,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
   case post =>
     obtain ⟨-, ⟨hinv, hchain⟩, hext, hp2x, hp2y, hseal, -⟩ := h
     refine ⟨?_, ?_⟩
-    · -- the lsbBits read as the scalar's own, as one bundle
+    · -- the returned bits read as the scalar's
       refine ⟨CircuitType.scoped_vector.mpr fun i hi => ?_,
         CircuitType.reads_vector.mpr fun i hi => ?_⟩
       · rw [getElem_mapVec]
@@ -1282,7 +1255,7 @@ theorem varBaseMul_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
         show (lsbBits[i]'hi).val st.env.get = _
         rw [CVar.val_of_le hext.2 (hbitfacts i hi).1, (hbitfacts i hi).2]
         simp [bit]
-    · -- the point conclusion, off the sound side's own reading of the trace
+    · -- the point, from `run_sound` on the trace
       obtain ⟨-, -, -, hpoint⟩ :=
         VarBaseMul.run_sound d st.env.get (Point.some _ _ hT)
           (VarBaseMul.ChainAt.threads hchain)
@@ -1298,29 +1271,22 @@ attribute [irreducible] lsbBitsWit varBaseMul
 
 /-! ## `scaleFast1` -/
 
-/-- `scaleFast1 g a ~ [fromShifted a]·g` (PS docstring) — the `Type1` path, for a
-scalar field no larger than the circuit field. At the full width it pins the ladder's top
-bit to zero (OCaml `scale_fast`): an `n`-bit string is a unique decomposition of the packed
-scalar only below the modulus, and `t + modulus` fits below `2ⁿ` for almost every `t`. Drops
-the lsbBits. -/
-
-
+/-- The `Type1` path, for a scalar field no larger than the circuit field: `varBaseMul`,
+dropping the bits. When the ladder covers all `n` bits it pins the top bit to zero: an
+`n`-bit string decomposes the scalar uniquely only below the modulus, and both `t` and
+`t + modulus` fit below `2ⁿ` for almost every `t`. -/
 def scaleFast1 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks : ℕ) (p : AffinePoint (FVar F))
     (t : Type1 (FVar F)) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks p t
-  -- at the full field width an `n`-bit string is not a unique decomposition of the packed
-  -- scalar (`t` and `t + modulus` both fit): pin the top bit, as OCaml `scale_fast` does
-  -- and as `scaleFast2` pins the bits above its split, so the ladder runs on the canonical one
   if n ≤ 5 * chunks then
     (r.lsbBits.toList.drop (5 * chunks - 1)).forM fun bit => assertEqual bit (.const 0)
   pure r.g
 
 open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness** (`scaleFast1`). The ladder's statement in scalar currency: the result
-is the base multiplied by the Type1 unshift of an integer in the ladder's range that
-the scalar reads as. The bit list `varBaseMul` returns is what pins that integer; the
-wrapper drops it, so its law speaks of the integer alone. -/
+/-- **Soundness** (`scaleFast1`). The result is the base times the Type1 decode of an
+integer in the ladder's range that the scalar reads as, one bit narrower at the full width.
+The bits that pin the integer are dropped, so the law speaks of the integer alone. -/
 theorem scaleFast1_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks : ℕ) (hn : 5 * chunks ≤ n)
     (base : AffinePoint (FVar F)) (scalar : Type1 (FVar F)) :
@@ -1458,19 +1424,18 @@ attribute [irreducible] scaleFast1
 
 /-! ## `scaleFast2` -/
 
-/-- `scaleFast2 g (sDiv2, sOdd) ~ [2·sDiv2 + sOdd + 2^n]·g` — the split path, for a
-scalar field larger than the circuit field: run the ladder on `sDiv2`, pin its high
-bits to zero, and fold the parity in by conditionally subtracting the base. -/
+/-- The split path, `[2·sDiv2 + sOdd + 2^(5·chunks)]·g`, for a scalar field larger than
+the circuit field: run the ladder on `sDiv2`, pin its bits from `sDiv2Bits` up to zero, and
+fold the parity in by subtracting the base when `sOdd` is clear. -/
 def scaleFast2 [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (sDiv2 : FVar F) (sOdd : BoolVar F) : CircuitM F c (AffinePoint (FVar F)) := do
   let r ← varBaseMul n chunks base ⟨sDiv2⟩
   (r.lsbBits.toList.drop sDiv2Bits).forM fun bit => assertEqual bit (.const 0)
-  -- the else branch first (PS `if_ sOdd g =<< …`): `g − base` via the pure negation
+  -- the `sOdd`-clear branch first: `g − base`, by the pure negation
   let negBase : AffinePoint (FVar F) := ⟨base.x, CVar.negate_ base.y⟩
   let q ← addFast .checkFinite r.g negBase
-  -- the point conditional selects coordinatewise, `y` BEFORE `x`: PS's record `if_`
-  -- builds right-to-left (the fixture pins the emission order)
+  -- the point conditional selects `y` before `x`: the fixture pins that emission order
   let y ← select sOdd r.g.y q.p.y
   let x ← select sOdd r.g.x q.p.x
   pure ⟨x, y⟩
@@ -1568,10 +1533,9 @@ theorem scaleFast2_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
         exact ⟨hGns, hGeq⟩
 
 open WeierstrassCurve.Affine in
-/-- **Completeness** (`scaleFast2`). The honest run of the split path: the ladder on
-`sDiv2`, whose high bits vanish because the scalar fits the split's width, then the
-parity fold — whose finite subtraction is priced by the same regime, through the
-model's `ladder_off_base`. -/
+/-- **Completeness** (`scaleFast2`). The ladder's honest run on `sDiv2`, whose high bits
+vanish because it fits `sDiv2Bits`, then the parity fold; the regime keeps its subtraction
+finite (`ladder_off_base`). -/
 theorem scaleFast2_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
     (hsplit : sDiv2Bits ≤ 5 * chunks)
@@ -1770,12 +1734,12 @@ attribute [irreducible] scaleFast2
 
 /-! ## The parity split -/
 
-/-- The parity split of a field value (PS `splitField`): `s = 2·sDiv2 + sOdd`. -/
+/-- The parity split of a field value: `s = 2·sDiv2 + sOdd`. -/
 def splitField [Field F] [ToNat F] (s : F) : F × Bool :=
   let odd := (ToNat.toNat s) % 2 = 1
   ((if odd then s - 1 else s) / 2, odd)
 
-/-- The joined value of a parity split (PS `joinField`). -/
+/-- The joined value of a parity split. -/
 def joinField [Field F] (sDiv2 : F) (sOdd : Bool) : F :=
   2 * sDiv2 + (if sOdd then 1 else 0)
 
@@ -1783,8 +1747,7 @@ private def splitFieldWit [Field F] [ToNat F] (s : FVar F) : AsProver F (F × Bo
   let v ← AsProver.readCVar s
   pure (splitField v)
 
-/-- Witness a parity split and constrain it (PS `splitFieldVar`):
-`s = 2·sDiv2 + sOdd`, one linear assert. -/
+/-- Witness a parity split and assert `s = 2·sDiv2 + sOdd`. -/
 def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     (s : FVar F) : CircuitM F c (FVar F × BoolVar F) := do
   let r ← witness (val := F × Bool) (splitFieldWit s)
@@ -1792,8 +1755,8 @@ def splitFieldVar [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   pure r
 
 open Std.Do in
-/-- **Soundness** (`splitFieldVar`). The witnessed pair is a parity split of the
-scalar: a bit, and a half the one linear row pins. -/
+/-- **Soundness** (`splitFieldVar`). The witnessed pair is a bit and a half that join to
+the scalar. -/
 theorem splitFieldVar_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     [BasicSystem F c] [ConstraintHolds F c] [LawfulBasicSystem F c] (s : FVar F) :
     ⦃⌜True⌝⦄
@@ -1807,8 +1770,8 @@ theorem splitFieldVar_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
   refine ⟨bb, hbb, ?_⟩
   rw [hrow, CVar.val_add_, CVar.val_scale_, hbb]
 
-/-- **Completeness** (`splitFieldVar`). The honest split of the value the scalar reads
-as: the row it pins is the split's own equation. -/
+/-- **Completeness** (`splitFieldVar`). The honest run returns `splitField` of the value
+the scalar reads as. -/
 theorem splitFieldVar_complete [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [ConstraintHolds F c] [LawfulBasicSystem F c] (h2 : (2 : F) ≠ 0) (s : FVar F)
     (sval : F) :
@@ -1867,18 +1830,15 @@ attribute [irreducible] splitFieldWit splitFieldVar
 
 /-! ## `scaleFast2'` -/
 
-/-- The width `scaleFast2'` runs `scaleFast2` at: one below `sDiv2Bits` at the full field
-width (`n ≤ sDiv2Bits + 1`), so the ladder pins one more bit of the half; `sDiv2Bits` itself
-otherwise. -/
+/-- The width `scaleFast2'` runs `scaleFast2` at: `sDiv2Bits - 1` at the full field width
+(`n ≤ sDiv2Bits + 1`), pinning one more bit of the half; `sDiv2Bits` otherwise. -/
 def scaleFast2'Width (n sDiv2Bits : ℕ) : ℕ :=
   if n ≤ sDiv2Bits + 1 then sDiv2Bits - 1 else sDiv2Bits
 
-/-- `scaleFast2' g s ~ [s + 2^n]·g`: split the raw scalar, then `scaleFast2`. At the full
-field width the split `2·sDiv2 + sOdd = s` is an equation in the circuit field that, with
-`sDiv2` only bounded below `2^sDiv2Bits`, both `s` and `s + modulus` solve for almost every
-`s` — decoding to different multiples of the base. So `scaleFast2` then runs at
-`scaleFast2'Width`, one bit narrower (the same ladder; one more pinned bit), making the
-decomposition canonical (OCaml `scale_fast2'` at `num_bits - 1`). -/
+/-- `[s + 2^(5·chunks)]·g`: split the raw scalar, then `scaleFast2` at `scaleFast2'Width`.
+At the full field width the split is an equation in the circuit field that both `s` and
+`s + modulus` solve for almost every `s`, decoding to different multiples of the base; the
+one bit less of `sDiv2` makes the decomposition canonical. -/
 def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
     [KimchiSystem F c] (n chunks sDiv2Bits : ℕ) (base : AffinePoint (FVar F))
     (s : FVar F) : CircuitM F c (AffinePoint (FVar F)) := do
@@ -1886,8 +1846,8 @@ def scaleFast2' [Field F] [DecidableEq F] [ToNat F] [BasicSystem F c]
   scaleFast2 n chunks (scaleFast2'Width n sDiv2Bits) base sDiv2 sOdd
 
 open Std.Do WeierstrassCurve.Affine in
-/-- **Soundness** (`scaleFast2'`). The split path at a raw scalar: the ladder's half,
-the parity bit, and the multiple they name — with the scalar pinned to the split. -/
+/-- **Soundness** (`scaleFast2'`). A half and a parity bit that join to the scalar, the
+half one bit narrower at the full width, and the result is the multiple they name. -/
 theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
     (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F) :
@@ -1923,8 +1883,8 @@ theorem scaleFast2'_spec {V : Valuation F} [Field F] [DecidableEq F] [ToNat F]
 
 
 open WeierstrassCurve.Affine in
-/-- **Completeness** (`scaleFast2'`). The honest split of the scalar, then the split
-path's honest run. -/
+/-- **Completeness** (`scaleFast2'`). The honest split of the scalar, then `scaleFast2`'s
+honest run. -/
 theorem scaleFast2'_complete [Field F] [DecidableEq F] [ToNat F] [LawfulToNat F]
     (d : HasCurve F) (n chunks sDiv2Bits : ℕ) (hn : 5 * chunks ≤ n)
     (hsplit : sDiv2Bits ≤ 5 * chunks) (base : AffinePoint (FVar F)) (s : FVar F)
@@ -1956,11 +1916,10 @@ attribute [irreducible] scaleFast2'
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul
   WeierstrassCurve.Affine in
-/-- **The deployed ladder leg's honest run.** At Vesta, on a base on the curve and a
-`Type1` carrier off the ladder's forbidden band, the run succeeds and the result is the
-base scaled by the carrier's decode. The width fits and the regime holds for free here:
-a carrier's representative is below `|Fq| < 2^255`, and the band exclusion IS the
-regime. -/
+/-- **Completeness at Vesta.** On an on-curve base and a `Type1` carrier off the ladder's
+forbidden band, the run succeeds and the result is the base times the carrier's decode. The
+width and regime hold for free: the carrier is below `2^255`, and the band exclusion is
+the regime. -/
 @[complete_law]
 theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FVar Fq)}
     {xv yv : Fq} {Z : Type1 Fq} (hT : Vesta.curve.toAffine.Nonsingular xv yv)
@@ -1983,17 +1942,11 @@ theorem vesta_varBaseMul_complete {base : AffinePoint (FVar Fq)} {sv : Type1 (FV
     hfits (hdec ▸ vesta_ladderRegime Z hband)
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta Kimchi.Gate.VarBaseMul in
-/-- **The deployed ladder leg.** At Vesta, the generic law's output on a `Type1` carrier
-off the ladder's forbidden band, whose 255 witnessed bits read as a value below the
-scalar order, says the result is the base point scaled by the carrier's decode.
-
-The generic post pins the ladder's integer only through the LSB-first value of its own
-bits and guards its conclusion on an abstract `LadderRegime`; the bit bound identifies
-that integer with the carrier's canonical representative, and the deployed order
-discharges the guard. Neither is visible here.
-
-Stated on the generic law's OUTPUT rather than as a triple, for the same reason as
-`vesta_endoMul_read`: a consumer reaches it holding that output. -/
+/-- **Soundness at Vesta.** From `varBaseMul_spec`'s output on a `Type1` carrier off the
+ladder's forbidden band, whose witnessed bits read as a value below the scalar order, the
+result is the base times the carrier's decode. The bit bound makes the ladder's integer the
+carrier's canonical representative, and the band exclusion discharges the regime. Stated on
+the law's output, as `vesta_endoMul_read` is: a consumer holds that output. -/
 theorem vesta_varBaseMul_read {V : Valuation Fq} {base : AffinePoint (FVar Fq)}
     {sv : Type1 (FVar Fq)} {r : VarBaseMulResult 255 Fq} {Z : Type1 Fq}
     (hread : sv.val.val V = Z.val)

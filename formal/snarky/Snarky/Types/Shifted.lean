@@ -7,45 +7,35 @@ import Snarky.Witness
 /-!
 # Shifted scalar types
 
-Port of `Snarky.Types.Shifted`
-(packages/snarky-kimchi/src/Snarky/Types/Shifted.purs): the wrappers marking a scalar
-as SHIFTED — carried in a form whose true value the consuming ladder recovers.
-`Type1 t` stands for the scalar `2·t + 2^n + 1` (`n` the field size in bits), the
-representation used when the scalar field is no larger than the circuit field;
-`varBaseMul`'s ladder consumes it. `SplitField (sDiv2, sOdd)` carries a scalar as a
-half and a parity bit, standing for `2·sDiv2 + sOdd + 2^n`; `scaleFast2`'s ladder
-consumes it.
+Port of packages/snarky-kimchi/src/Snarky/Types/Shifted.purs: wrappers marking a scalar as
+shifted, carried in a form whose true value the consuming ladder recovers (`n` is the field
+size in bits).
 
-Deviations from the PS original:
-- The carriers ported are the `Type1` newtype and the `SplitField` pair the `varBaseMul`
-  laws speak about, and the `Type2` newtype the pickles verifiers unshift their deferred
-  values through, each with its `fromShifted` decode; the circuit-side decodes
-  `fromShiftedCircuit` are the affine unshifts. PS's `Shifted` class and the
-  forbidden-values checks are consumed only by the pickles modules and arrive with them.
-- PS bakes the width `n` into each field's `Shifted` instance (via `FieldSizeInBits`);
-  the decodes here are generic, so `n` is an explicit argument.
+- `Type1 t` stands for `2·t + 2^n + 1`, used when the scalar field is no larger than the
+  circuit field; `varBaseMul` consumes it.
+- `Type2 t` stands for `t + 2^n`, used when the scalar field is the larger of the pair.
+- `SplitField (sDiv2, sOdd)` stands for `2·sDiv2 + sOdd + 2^n`; `scaleFast2` consumes it.
+
+The decodes are generic over the ring, so `n` is an explicit argument; the circuit decodes
+are affine and emit no constraint.
 -/
 
 namespace Snarky
 
 open CompElliptic.Fields.Pasta
 
-/-- A scalar carried shifted (PS `Type1`): the wrapped value `t` stands for
-`2·t + 2^n + 1`. Phantom: the ladder consuming it realizes the shift. -/
+/-- A scalar carried shifted: the wrapped value `t` stands for `2·t + 2^n + 1`. Phantom: the
+ladder consuming it realizes the shift. -/
 structure Type1 (α : Type u) where
   /-- The shifted representative. -/
   val : α
 
-/-- The `Type1` decode (PS `fromShifted`): the representative `t` stands for
-`2·t + 2^n + 1` (PS `shift1`: shift constant `2^n + 1`, scale `1/2`). `varBaseMul` is
-an optimization that computes exactly the image of this operator, and the laws state
-its results through it, over whichever ring the consumer reads in (`F` for the wire
-pin, `ℤ` for the group scalar). -/
+/-- The `Type1` decode `2·t + 2^n + 1`, over any semiring: the circuit field for a wire,
+`ℤ` for a group scalar. -/
 def Type1.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type1 R) : R :=
   Pasta.Shifted.unshiftType1 n t.val
 
-/-- The `Type1` decode in circuit (PS `fromShiftedType1Circuit`): the affine `2·t + 2^n + 1`,
-emitting no constraint. -/
+/-- The `Type1` decode in circuit: the affine `2·t + 2^n + 1`, emitting no constraint. -/
 def Type1.fromShiftedCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ)
     (t : Type1 (FVar F)) : FVar F :=
   CVar.add_ (CVar.scale_ 2 t.val) (.const (2 ^ n + 1))
@@ -57,8 +47,7 @@ def Type1.fromShiftedCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ)
   simp [Type1.fromShiftedCircuit, Type1.fromShifted, Pasta.Shifted.unshiftType1, CVar.val,
     add_assoc]
 
-/-- The `Type1` encode in circuit (PS `ofFieldType1Circuit`, OCaml `Type1.of_field`): the
-affine `(s − 2^n − 1) / 2`, emitting no constraint. -/
+/-- The `Type1` encode in circuit: the affine `(s − 2^n − 1) / 2`, emitting no constraint. -/
 def Type1.ofFieldCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ) (s : FVar F) : FVar F :=
   CVar.scale_ 2⁻¹ (CVar.sub_ s (.const (2 ^ n + 1)))
 
@@ -70,18 +59,16 @@ def Type1.ofFieldCircuit {F : Type} [Field F] [DecidableEq F] (n : ℕ) (s : FVa
     Pasta.Shifted.shiftType1, div_eq_mul_inv]
   ring
 
-/-- A scalar carried shifted by `2^n` (PS `Type2`): the wrapped value `t` stands for
-`t + 2^n`, the representation used when the scalar field is the larger of the pair. -/
+/-- A scalar carried shifted by `2^n`: the wrapped value `t` stands for `t + 2^n`. -/
 structure Type2 (α : Type u) where
   /-- The shifted representative. -/
   val : α
 
-/-- The `Type2` decode (PS `fromShifted`): the representative `t` stands for `t + 2^n`. -/
+/-- The `Type2` decode `t + 2^n`. -/
 def Type2.fromShifted {R : Type u} [Semiring R] (n : ℕ) (t : Type2 R) : R :=
   t.val + 2 ^ n
 
-/-- The `Type2` decode in circuit (PS `fromShiftedType2Circuit`): the affine `t + 2^n`,
-emitting no constraint. -/
+/-- The `Type2` decode in circuit: the affine `t + 2^n`, emitting no constraint. -/
 def Type2.fromShiftedCircuit {F : Type} [Field F] (n : ℕ) (t : Type2 (FVar F)) : FVar F :=
   CVar.add_ t.val (.const (2 ^ n))
 
@@ -91,9 +78,8 @@ def Type2.fromShiftedCircuit {F : Type} [Field F] (n : ℕ) (t : Type2 (FVar F))
     (Type2.fromShiftedCircuit n t).val V = Type2.fromShifted n ⟨t.val.val V⟩ := by
   simp [Type2.fromShiftedCircuit, Type2.fromShifted, CVar.val]
 
-/-- A scalar carried as a half and a parity bit (PS `SplitField`), standing shifted
-for `2·sDiv2 + sOdd + 2^n`. Phantom like `Type1`: `scaleFast2`'s ladder realizes the
-shift. -/
+/-- A scalar carried as a half and a parity bit, standing for `2·sDiv2 + sOdd + 2^n`.
+Phantom like `Type1`: `scaleFast2`'s ladder realizes the shift. -/
 structure SplitField (α : Type u) (β : Type v) where
   /-- The halved representative. -/
   sDiv2 : α
@@ -102,11 +88,7 @@ structure SplitField (α : Type u) (β : Type v) where
 
 /-! ## The deployed Pasta codec
 
-PS declares its `Shifted` codec (`toShifted`/`fromShifted`) per concrete field pair,
-never over an abstract modulus pair. The pair the laws speak about is an `Fp` scalar
-carried `Type1` in `Fq` (`p < q`, `n = 255`): shift by genuine field arithmetic in the
-scalar field, transport across the boundary by canonical representative (PS
-`toBigInt`/`fromBigInt`), and decode by the same `fromShifted` operator read over `ℤ`. -/
+The deployed pair is an `Fp` scalar carried `Type1` in `Fq` (`p < q`, `n = 255`). -/
 
 /-- The carrier is phantom: a `Type1` is its representative. -/
 def Type1.equivCarrier {α : Type} : Type1 α ≃ α where
@@ -115,13 +97,12 @@ def Type1.equivCarrier {α : Type} : Type1 α ≃ α where
   left_inv _ := rfl
   right_inv _ := rfl
 
-/-- A `Type1` encodes as its one cell (PS's generic instance). -/
+/-- A `Type1` encodes as its one cell. -/
 instance instCircuitTypeType1 {F : Type} : CircuitType F (Type1 F) (Type1 (FVar F)) :=
   CircuitType.ofEquiv Type1.equivCarrier Type1.equivCarrier
 
-/-- The integer a carried representative decodes to: `fromShifted` at `n = 255` over
-`ℤ`, applied to the canonical representative — the scalar the consuming ladder computes
-with (the `BigInt` stage of PS `fromShifted`). -/
+/-- The integer scalar a `Type1 Fq` stands for: `Type1.fromShifted 255` over `ℤ` at the
+canonical representative. -/
 def Type1.toScalarZ (t : Type1 Fq) : ℤ :=
   Type1.fromShifted 255 (⟨(t.val.val : ℤ)⟩ : Type1 ℤ)
 
