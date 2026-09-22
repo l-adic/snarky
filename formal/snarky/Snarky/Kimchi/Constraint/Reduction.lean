@@ -4,76 +4,34 @@ import Snarky.Kimchi.Constraint.Types
 /-!
 # The affine-reduction layer of the kimchi backend
 
-Port of `Snarky.Constraint.Kimchi.Reduction`
-(packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Reduction.purs), itself a
-transcription of OCaml snarky's `reduce_lincom`/`completely_reduce`: the op vocabulary
-`PlonkReductionM`, the generic algorithms `reduceAffineExpression`/`reduceToVariable`
-that rewrite an affine form into `c·v` while emitting generic constraints, and the two
-concrete interpreters — the builder (rows, gate batching, wiring, constant cache) and
-the prover (witness values).
+Transcribes packages/snarky-kimchi/src/Snarky/Constraint/Kimchi/Reduction.purs: the op
+vocabulary `PlonkReductionM`, the algorithms `reduceAffineExpression`/`reduceToVariable`
+that rewrite an affine form into `c·v` while emitting generic constraints, and its two
+interpreters — the builder (rows, gate batching, wiring, constant cache) and the prover
+(witness values). Declarations keep the source's names; the anonymous record argument of
+`addEqualsConstraint` is named `EqualsConstraint`.
 
-Name map: every PS export keeps its name (`PlonkReductionM` with its three methods,
-`reduceAffineExpression`, `reduceToVariable`, `Rows`, `mkPadRow`,
-`finalizeGateQueue`, `reduceAsBuilder`, `reduceAsProver`); `completelyReduce` stays the
-private helper. `addEqualsConstraint`'s anonymous record argument gets the Lean name
-`EqualsConstraint`. PS `incrementVariable` is `+ 1` (as in the base interpreters).
+## Implementation notes
 
-Deviations from the PS original:
-- `PlonkBuilder` is `StateM`, `PlonkProver` is `StateT _ (Except EvalError)`: PS
-  hand-rolls both monads over `Effect`, but the `Effect` existed only for the mutable
-  union-find and assignment store, both pure here, and the hand-rolling was a measured
-  JS-runtime optimisation with no Lean analogue. The builder still accumulates its row
-  list newest-first and reverses once in `reduceAsBuilder` — the emission ORDER is
-  fixture bytes — the byte contract.
-- The class carries no `Monad` superclass (the algorithms take `[Monad m]` themselves),
-  and the PS functional dependency `m -> f` is recovered from argument types. PS
-  `PrimeField` splits into the weakest classes each definition needs; division appears
-  only in the builder's constant-cache normalisation.
-- `reduceAsBuilder`/`reduceAsProver` take their computation at the concrete monad: the
-  PS rank-2 argument is an abstraction firewall with no Lean consumer; PS needs it
-  because its agreement laws quantify over class-polymorphic programs, where the
-  firewall carries meaning.
-- The prover's write is guarded (`Assignments.extendFresh`), mirroring the base
-  prover's strengthening of the PS write-once contract; on counter-fresh states it
-  agrees with PS `set`.
-- PS throws on the statically-contradictory assertion `constant cl = constant cr` with
-  `cl ≠ cr`; the total Lean builder instead emits the corresponding unsatisfiable
-  generic row (`c = cl − cr`), the same move PS itself makes in the one-sided constant
-  cases. Contradiction-free circuits behave identically; a contradictory circuit now
-  compiles to an unsatisfiable system instead of crashing the compiler.
-- PS `Map.lookup/insert` on the constant cache becomes assoc-list `lookup`/cons: keys
-  are inserted only on lookup miss, so first-match lookup is map lookup. The cache's
-  iteration order is NOT fixture-observable — the dumper sorts by variable
-  (`Array.sortWith _.variable` in pickles-circuit-diffs) and the only in-code consumer
-  is `lookup` — which settles the ordering question `Constraint/Types` deferred.
+- Both interpreters thread one variable counter, borrowed from and handed back to the
+  caller (`kimchiCompile`, `kimchiSolve`). The builder accumulates rows newest-first and
+  reverses once in `reduceAsBuilder`; the emission order is fixture bytes.
+- The class has no `Monad` superclass (the algorithms take `[Monad m]`), and each
+  definition asks for the weakest field classes it needs; division appears only in the
+  builder's constant cache. `reduceAsBuilder`/`reduceAsProver` take their computation
+  at the concrete monad.
+- The prover's write is guarded (`Assignments.extendFresh`): it refuses an assigned
+  slot, and on counter-fresh states it is the plain write.
+- A statically contradictory `constant cl = constant cr` with `cl ≠ cr` emits the
+  unsatisfiable generic row `c = cl − cr`, as the one-sided constant cases do, where the
+  source throws.
+- The constant cache is an assoc list with first-match lookup. Keys are inserted only on
+  a lookup miss, so this is map lookup; the cache's order is not fixture-observable (the
+  dumps sort it by variable, and the only consumer here is `lookup`).
 
-## One shared counter — how the reducing interpreters render
-
-PS threads ONE `nextVariable` counter through user allocation and reduction-internal
-allocation: `reduceAsBuilder` borrows and returns the compile state's counter. That
-interleaving is fixture bytes, not an internal detail: gate rows record raw variable
-ids per cell — `div_step_circuit.json`'s packed generic row reads
-`variables: [0, 3, 4, 2, 3, …]`, internals `3, 4` numbered between user variables in
-program order. So the base `build`/`prove` numbering (user variables consecutive)
-cannot be reused post hoc; the kimchi backend gets its own interpreter pair over the
-same reified `CircuitM`, mirroring PS's `CompileCircuit`/`SolveCircuit` instances and
-threading the states defined here.
-
-## What is stated here
-
-Nothing semantic: this module is the computational layer only — the payloads' op
-vocabulary, the two reduction algorithms, the row emission, and the three instances.
-The builder's batching queues an incoming constraint and packs pairs into
-`emitDoubleGateRow` rows (`addGenericPlonkConstraint` below). The meaning of the
-emitted constraints and the faithfulness of the reduction are deliberately not stated
-in this package.
-
-The seam-coherence section at the end states per-op bookkeeping only: which ops move
-the shared counter, and that the prover's guarded write only extends the table.
-
-The PS package has no QuickCheck rows for this module — its tests exercise the
-circuit layer, and the fixture corpus is the oracle; the byte-equality seam replays
-it against this port.
+The module states nothing semantic: neither the meaning of the emitted constraints nor
+the faithfulness of the reduction. Its test is the fixture corpus, compared against the
+compiled constraint systems.
 -/
 
 namespace Snarky.Kimchi
@@ -82,8 +40,8 @@ open Snarky
 
 /-! ## The equals-constraint payload -/
 
-/-- The payload of `addEqualsConstraint` (the PS anonymous record): assert
-`cl·vl = cr·vr`, where an absent slot stands for the constant `1`. -/
+/-- The payload of `addEqualsConstraint`: assert `cl·vl = cr·vr`, where an absent slot
+stands for the constant `1`. -/
 structure EqualsConstraint (F : Type u) where
   /-- Left coefficient. -/
   cl : F
@@ -97,9 +55,9 @@ structure EqualsConstraint (F : Type u) where
 
 /-! ## The op vocabulary and the generic algorithms -/
 
-/-- The reduction-op vocabulary (PS `class PlonkReductionM`): allocate an internal
-variable for an affine expression, emit a generic constraint, assert a two-sided
-equality. The builder and the prover interpret it below. -/
+/-- The reduction ops: allocate an internal variable for an affine expression, emit a
+generic constraint, assert a two-sided equality. The builder and the prover interpret
+it below. -/
 class PlonkReductionM (F : Type) (m : Type → Type) where
   /-- Allocate a fresh variable standing for the given affine expression (the prover
   assigns it the expression's value; the builder only advances the counter). -/
@@ -115,9 +73,8 @@ export PlonkReductionM (createInternalVariable addGenericPlonkConstraint
 variable {F : Type} {m : Type → Type}
 
 /-- Right-recursively reduce a nonempty term list to a single scaled variable, emitting
-one generic constraint per combination step, deepest terms first (PS
-`completelyReduce`, transcribing OCaml's `completely_reduce` — the recursion direction
-is constraint-emission order, hence fixture bytes). -/
+one generic constraint per combination step, deepest terms first; the recursion
+direction is the emission order, hence fixture bytes. -/
 private def completelyReduce [Zero F] [One F] [Neg F] [Monad m] [PlonkReductionM F m]
     (single : Variable × F) : List (Variable × F) → m (Variable × F)
   | [] => pure single
@@ -130,8 +87,7 @@ private def completelyReduce [Zero F] [One F] [Neg F] [Monad m] [PlonkReductionM
     pure (vo, 1)
 
 /-- Reduce an affine form to `c·v` (`(some v, c)`) or a bare constant (`(none, c)`),
-emitting the generic constraints that pin the intermediates (PS
-`reduceAffineExpression`, transcribing OCaml's `reduce_lincom`): no terms is the
+emitting the generic constraints that pin the intermediates: no terms is the
 constant; one term folds a nonzero constant through a fresh output; two or more terms
 save the head and right-reduce the tail. Every constructed term list keeps the
 ascending-variable invariant: tails of an ascending input, and fresh outputs exceed
@@ -159,9 +115,9 @@ def reduceAffineExpression [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
         vo := some vo, m := 0, c := ae.constant.getD 0 }
     pure (some vo, 1)
 
-/-- Reduce a `CVar` all the way to a single variable (PS `reduceToVariable`): reduce
-the canonical affine form, then pin a bare constant with an equals constraint or fold a
-nonunit scale through a fresh output. -/
+/-- Reduce a `CVar` all the way to a single variable: reduce the canonical affine form,
+then pin a bare constant with an equals constraint or fold a nonunit scale through a
+fresh output. -/
 def reduceToVariable [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [Monad m]
     [PlonkReductionM F m] (x : CVar F) : m Variable := do
   let r ← reduceAffineExpression x.reduceToAffineExpression
@@ -181,7 +137,7 @@ def reduceToVariable [Add F] [Mul F] [Zero F] [One F] [Neg F] [DecidableEq F] [M
 
 /-! ## Row emission -/
 
-/-- The builder's constraint wrapper (PS `newtype Rows`): one emitted gate row. -/
+/-- The builder's constraint wrapper: one emitted gate row. -/
 structure Rows (F : Type u) where
   /-- The wrapped row. -/
   row : KimchiRow F
@@ -189,21 +145,18 @@ structure Rows (F : Type u) where
 instance : ToKimchiRows F (Rows F) where
   toKimchiRows r := [r.row]
 
-/-- The padding row: a Generic-kind row over seven wired cells and no coefficients
-(PS `mkPadRow`) — the generic equation is degenerate, so the row's only content is
-its wiring. -/
+/-- The padding row: a Generic-kind row over `permCols` wired cells and no
+coefficients, so its only content is its wiring. -/
 def mkPadRow (vs : Vector Variable 7) : Rows F :=
   ⟨{ kind := .genericPlonk,
      vars := ⟨⟨vs.toList.map some ++ List.replicate 8 none⟩, by simp⟩,
      coeffs := [] }⟩
 
-/-- The five coefficient cells of one queued constraint, in row order
-`[cl, cr, co, m, c]` (PS `constraintToCoeffs`). -/
+/-- The five coefficient cells of one queued constraint, in row order. -/
 private def constraintToCoeffs (g : GenericPlonkConstraint F) : List F :=
   [g.cl, g.cr, g.co, g.m, g.c]
 
-/-- Flush a half-full gate queue into its single-constraint row (PS
-`finalizeGateQueue`, taking the queue field rather than PS's open record). -/
+/-- Flush a half-full gate queue into its single-constraint row. -/
 def finalizeGateQueue (queued : Option (GenericPlonkConstraint F)) : Option (Rows F) :=
   queued.map fun g =>
     ⟨{ kind := .genericPlonk,
@@ -212,24 +165,21 @@ def finalizeGateQueue (queued : Option (GenericPlonkConstraint F)) : Option (Row
 
 /-! ## The builder -/
 
-/-- The builder's reduction state (PS `BuilderReductionState`): emitted rows (newest
-first — materialised forward once, in `reduceAsBuilder`), the shared variable counter,
-and the auxiliary state. -/
+/-- The builder's reduction state: emitted rows, the variable counter, and the
+auxiliary state. -/
 structure BuilderReductionState (F : Type u) where
   /-- Emitted rows, newest first. -/
   constraints : List (KimchiRow F)
-  /-- The shared variable counter (user and internal allocations interleave on it;
-  see the module docstring). -/
+  /-- The variable counter. -/
   nextVariable : Variable
   /-- The wire state and the gate queue. -/
   aux : AuxState F
 
-/-- The builder's reduction monad (PS `PlonkBuilder`, minus the `Effect` that only
-served the mutable union-find). -/
+/-- The builder's reduction monad. -/
 abbrev PlonkBuilder (F : Type) := StateM (BuilderReductionState F)
 
-/-- Pack the queued and the incoming constraint into one double Generic row — the NEW
-gate's cells first, the QUEUED gate's second, matching OCaml (PS `emitDoubleGateRow`). -/
+/-- Pack the queued and the incoming constraint into one double Generic row, the
+incoming gate's cells first. -/
 private def emitDoubleGateRow (queued new : GenericPlonkConstraint F) : KimchiRow F :=
   { kind := .genericPlonk,
     vars := ⟨⟨[new.vl, new.vr, new.vo, queued.vl, queued.vr, queued.vo] ++
@@ -237,7 +187,7 @@ private def emitDoubleGateRow (queued new : GenericPlonkConstraint F) : KimchiRo
     coeffs := constraintToCoeffs new ++ constraintToCoeffs queued }
 
 /-- Queue an incoming generic constraint, or pack it with the queued one into a
-finished row (PS `handleGateBatching`). -/
+finished row. -/
 private def handleGateBatching (newGate : GenericPlonkConstraint F) :
     PlonkBuilder F (Option (KimchiRow F)) := fun s =>
   match s.aux.queuedGenericGate with
@@ -245,22 +195,19 @@ private def handleGateBatching (newGate : GenericPlonkConstraint F) :
   | some queued =>
     (some (emitDoubleGateRow queued newGate), { s with aux.queuedGenericGate := none })
 
-/-- Merge two variables' classes in the wire state's union-find (PS `unionB`). -/
+/-- Merge two variables' classes in the wire state's union-find. -/
 private def unionB (x y : Variable) : PlonkBuilder F Unit := fun s =>
   ((), { s with aux.wireState.unionFind := s.aux.wireState.unionFind.union x y })
 
-/-- The builder's generic-constraint op: batch, and emit any finished row (the PS
-`addGenericPlonkConstraint` instance method). -/
+/-- The builder's generic-constraint op: batch, and emit any finished row. -/
 private def addGenericB (c : GenericPlonkConstraint F) : PlonkBuilder F Unit := fun s =>
   match handleGateBatching c s with
   | (none, s') => ((), s')
   | (some row, s') => ((), { s' with constraints := row :: s'.constraints })
 
-/-- The builder's allocation op: touch the fresh variable into the union-find (PS
-`findB`, result discarded), record it as internal, and advance the counter (the PS
-`createInternalVariable` instance method). The cons onto `internalVariables` is
-set-faithful because the counter is strictly increasing — the variable is never
-already present. -/
+/-- The builder's allocation op: touch the fresh variable into the union-find, record
+it as internal, and advance the counter. The cons onto `internalVariables` is
+set-faithful because the counter is strictly increasing. -/
 private def createInternalB : PlonkBuilder F Variable := fun s =>
   let nv := s.nextVariable
   let (_, uf) := s.aux.wireState.unionFind.find nv
@@ -270,13 +217,11 @@ private def createInternalB : PlonkBuilder F Variable := fun s =>
           aux.wireState.internalVariables :=
             nv :: s.aux.wireState.internalVariables })
 
-/-- The builder's equality op (the PS `addEqualsConstraint` instance method), the guard
-cascade in PS order: trivial coefficients are dropped; two variables with equal
-coefficients are WIRED (union), with unequal coefficients constrained; a variable
-against a constant first consults the constant cache — a hit wires it to the cached
-variable, a miss emits the pinning row and caches it; a zero-coefficient or
-variable-free side degenerates to a constant assertion (unsatisfiable when false — see
-the module docstring for the PS-throw rendering). -/
+/-- The builder's equality op, a guard cascade: trivial coefficients are dropped; two
+variables with equal coefficients are wired (union), with unequal ones constrained; a
+variable against a constant first consults the constant cache — a hit wires it to the
+cached variable, a miss emits the pinning row and caches it; a zero-coefficient or
+variable-free side degenerates to a constant assertion, unsatisfiable when false. -/
 private def addEqualsB [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F]
     (c : EqualsConstraint F) : PlonkBuilder F Unit :=
   if c.cl = 0 ∧ c.cr = 0 then pure ()
@@ -333,10 +278,9 @@ instance [Zero F] [Neg F] [Sub F] [Div F] [DecidableEq F] :
   addGenericPlonkConstraint := addGenericB
   addEqualsConstraint := addEqualsB
 
-/-- Run a reduction in the builder from a borrowed counter and auxiliary state (PS
-`reduceAsBuilder`): returns the result, the emitted rows in emission order (the
-newest-first accumulator reversed exactly once), and the counter and auxiliary state
-to hand back. -/
+/-- Run a reduction in the builder from a borrowed counter and auxiliary state: the
+result, the emitted rows in emission order, and the counter and auxiliary state to hand
+back. -/
 def reduceAsBuilder (nextVariable : Variable) (aux : AuxState F)
     (x : PlonkBuilder F α) : α × List (Rows F) × Variable × AuxState F :=
   let (a, s) := x.run ⟨[], nextVariable, aux⟩
@@ -344,21 +288,18 @@ def reduceAsBuilder (nextVariable : Variable) (aux : AuxState F)
 
 /-! ## The prover -/
 
-/-- The prover's reduction state (PS `ProverReductionState`): the shared counter and
-the accumulating witness table. -/
+/-- The prover's reduction state: the variable counter and the witness table. -/
 structure ProverReductionState (F : Type u) where
-  /-- The shared variable counter, in lockstep with the builder's. -/
+  /-- The variable counter, in lockstep with the builder's. -/
   nextVariable : Variable
   /-- The witness table. -/
   assignments : Assignments F
 
-/-- The prover's reduction monad (PS `PlonkProver`, the same fused state-and-error
-shape with `Effect` dropped). -/
+/-- The prover's reduction monad. -/
 abbrev PlonkProver (F : Type) := StateT (ProverReductionState F) (Except EvalError)
 
 /-- The prover's allocation op: evaluate the expression against the current table and
-assign the fresh variable its value (the PS `createInternalVariable` instance method,
-with the guarded write — see the module docstring). -/
+assign the fresh variable its value, by a guarded write. -/
 private def createInternalP [Add F] [Mul F] [Zero F] (e : AffineExpression F) :
     PlonkProver F Variable := fun s =>
   match s.assignments.extendFresh s.nextVariable (e.val s.assignments.get) with
@@ -370,35 +311,10 @@ instance [Add F] [Mul F] [Zero F] : PlonkReductionM F (PlonkProver F) where
   addGenericPlonkConstraint _ := pure ()
   addEqualsConstraint _ := pure ()
 
-/-- Run a reduction in the prover (PS `reduceAsProver`): a bare run — failure carries
-the evaluation error out. -/
+/-- Run a reduction in the prover; failure carries the evaluation error out. -/
 def reduceAsProver (s : ProverReductionState F) (x : PlonkProver F α) :
     Except EvalError (α × ProverReductionState F) :=
   x.run s
-
-/-! ## Seam coherence: the op-level facts
-
-Only `createInternalVariable` moves the shared counter — by exactly one, on both
-sides. The other builder ops touch rows, the gate queue, the union-find, and the
-constant cache; the other prover ops are inert. Stated here per op: the builder's
-counter behavior, total, and the prover op's success inversion, whose table extension
-is unconditional because the write is guarded — success implies no overwrite. -/
-
-/-! ## Seam coherence: the generic algorithms
-
-The paired-run walks: a successful prover run of each reduction algorithm pins the
-builder run from any state at the same counter — same result, same final counter —
-and only extends the prover's table. Result agreement is load-bearing: downstream
-branching consumes returned variables, so the branches agree exactly when the
-counters do. -/
-
-/-! ## Seam coherence: the composable pairing
-
-The gate reducers are `reduceToVariable` chains and structural folds, so their walks
-compose rather than re-walk: `Seam` pairs a builder run with a prover run and is
-preserved by `pure`, `bind`, and `map`; the leaves are the reduction algorithms and
-the two row-emitting ops. The per-gate walks live beside their reducers and consume
-this vocabulary. -/
 
 variable [Add F] [Mul F] [Sub F] [Div F] [Zero F] [One F] [Neg F] [DecidableEq F]
 

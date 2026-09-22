@@ -203,6 +203,8 @@ run_cmd do
   for (n, _) in env.constants.toList do
     unless isOurs n do continue
     if n.hasMacroScopes then continue
+    -- this script's own declarations have no module; they are not the library's prose
+    if (env.getModuleIdxFor? n).isNone then continue
     let some doc ← findDocString? env n | continue
     docs := docs + 1
     let owner := (userName n).getPrefix

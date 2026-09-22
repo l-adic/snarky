@@ -5,48 +5,38 @@ import Pasta.Endo
 /-!
 # The kimchi Fq-sponge
 
-The consumer-facing sponge of kimchi's Fiat–Shamir transform, transcribed from proof-systems
-`mina_poseidon` `sponge.rs` (`DefaultFqSponge`) and built on the duplex automaton of
-`Poseidon/Basic.lean`. It is generic over the curve's field pair: the sponge state lives in
-the base field `ZMod base`, and challenges land in the scalar field `ZMod scalar`. The
-field-dependent data comes from a `Spec`; everything else follows from the two
-cardinalities.
+The Fiat–Shamir sponge kimchi's verifier consumes, transcribed from proof-systems `sponge.rs`
+and built on the duplex automaton of `Poseidon/Basic.lean`. The state lives in the base field
+`ZMod base`; challenges land in the scalar field `ZMod scalar`. A `Spec` carries the Poseidon
+parameters; everything else follows from the two cardinalities.
 
 ## The limb buffer
 
-Alongside the Poseidon state, the sponge carries a buffer `lastSqueezed` of 64-bit limbs
-(`Limb`). Each raw squeeze contributes its two low limbs (128 high-entropy bits), and a
-prechallenge (`challengeNat`, 128 bits) is packed from the next two buffered limbs. Every
-absorption clears the buffer, and field-element squeezes (`challengeFq`) bypass it and clear
-it. The bounds are in the types: a limb is a `Limb`, a packed prechallenge a `Prechallenge`,
-so a consumer of a squeeze's output holds its 128-bit bound without knowing where the value
-came from.
+Alongside the Poseidon state, the sponge buffers 64-bit limbs (`lastSqueezed`). Each raw
+squeeze contributes its two low limbs, and a 128-bit prechallenge (`challengeNat`) packs the
+next two. Absorbing clears the buffer; a field-element squeeze (`challengeFq`) bypasses and
+clears it. The bounds live in the types `Limb` and `Prechallenge`.
 
 ## The endomorphism expansion
 
-A squeezed 128-bit prechallenge becomes an *effective* scalar `a·λ + b` through the
-endomorphism expansion of `endoExpand` (`sponge.rs` `to_field_with_length`, Halo §6.2). It is
-the same recoding the `EndoScalar` gate constrains in-circuit (`Kimchi.Gate.EndoScalar`,
-accumulator init `(2, 2)`).
+`endoExpand` turns a prechallenge into an effective scalar `a·λ + b` (Halo §6.2): the
+recoding `Kimchi.Gate.EndoScalar.constraints` checks in-circuit, from accumulators `(2, 2)`.
 
 ## The Pasta instantiations
 
-`FqVesta.spec` and `FqPallas.spec` supply the two sides of the Pasta cycle
-(`DefaultFqSponge<VestaParameters>` / `DefaultFqSponge<PallasParameters>`). Both are
-validated against `DefaultFqSponge` op traces by `scripts/check_fq_sponge.lean`.
+`FqVesta.spec` and `FqPallas.spec` are the two sides of the Pasta cycle, both checked against
+production op traces by `formal/poseidon/scripts/check_fq_sponge.lean`.
 -/
 
 namespace Poseidon.FqSponge
 
-/-- The field-dependent data of a curve's Fq-sponge. Everything else, including which
-`absorbFr` branch applies, is determined by the two cardinalities: a scalar absorbs directly
-when `scalar < base`, and as (high bits, low bit) when the scalar field is the larger. -/
+/-- The field-dependent data of a curve's Fq-sponge: its Poseidon parameters. The
+`absorbFr` branch is decided by the cardinalities alone. -/
 structure Spec (base scalar : ℕ) where
   /-- The Poseidon parameters over the base field. -/
   params : Params (ZMod base)
-  /-- The round-constant table covers the permutation exactly: `5 × 11` entries, no ragged
-  tail. Every consumer that runs the sponge needs this, so the spec carries it rather than
-  each of them taking it as a hypothesis. -/
+  /-- One round-constant triple per round (`fullRounds`). Carried here so that no consumer
+  takes it as a hypothesis. -/
   hsize : params.roundConstants.size = fullRounds
 
 open CompElliptic.CurveForms.ShortWeierstrass
@@ -56,9 +46,8 @@ variable {base scalar : ℕ} [Field (ZMod base)] [Field (ZMod scalar)]
 /-- A 64-bit limb of a raw squeeze. -/
 abbrev Limb := { n : ℕ // n < 2 ^ 64 }
 
-/-- A 128-bit prechallenge (`ScalarChallenge`): what every limb-packed squeeze produces,
-before its field cast (`challenge`) or endo-expansion (`squeezeChallenge`). The bound is in
-the type, so a Fiat–Shamir run's outputs carry it wherever they are consumed. -/
+/-- A 128-bit prechallenge: what a limb-packed squeeze produces, before its field cast
+(`challenge`) or endo-expansion (`squeezeChallenge`). -/
 abbrev Prechallenge := { n : ℕ // n < 2 ^ 128 }
 
 /-- A sponge in flight: the Poseidon automaton over the base field, plus its limb buffer. -/
@@ -73,43 +62,37 @@ def init : S base := ⟨Poseidon.init, []⟩
 
 
 
-/-- The two low 64-bit limbs of a squeezed element — its 128 high-entropy bits
-(`HIGH_ENTROPY_LIMBS = 2`). -/
+/-- The two low 64-bit limbs of a squeezed element. -/
 private def lowLimbs (x : ZMod base) : List Limb :=
   [⟨x.val % 2 ^ 64, Nat.mod_lt _ (Nat.two_pow_pos _)⟩,
     ⟨x.val / 2 ^ 64 % 2 ^ 64, Nat.mod_lt _ (Nat.two_pow_pos _)⟩]
 
-/-- Absorb base-field elements (`absorb_fq`): clear the buffer, absorb each. -/
+/-- Absorb base-field elements, clearing the buffer. -/
 def absorbFq (spec : Spec base scalar) (s : S base) (xs : List (ZMod base)) : S base :=
   ⟨absorb spec.params s.sponge xs, []⟩
 
-/-- Absorb a point (`absorb_g`): its `x` then its `y` coordinate, unconditionally. The
-identity is the `(0, 0)` sentinel by construction (`SWPoint.zero`), so this absorbs two
-zeros for it, exactly as production does. Branching to a single `0` here would leave the
-duplex position one slot behind production on every transcript containing an identity
-commitment. -/
+/-- Absorb a point: its `x` then its `y` coordinate, unconditionally. The identity is the
+`(0, 0)` sentinel (`SWPoint.zero`), so it absorbs two zeros, as production does; a single `0`
+would put the duplex one slot behind on any transcript with an identity commitment. -/
 def absorbG (spec : Spec base scalar) {E : SWCurve (ZMod base)} (s : S base)
     (P : SWPoint E) : S base :=
   absorbFq spec s [P.x, P.y]
 
-/-- Absorb a scalar-field element (`absorb_fr`). The branch is determined by the
-cardinalities: a smaller scalar modulus embeds directly; a larger one absorbs as its high
-bits then its low bit. -/
+/-- Absorb a scalar-field element: directly when `scalar < base`, otherwise as its high bits
+then its low bit. -/
 def absorbFr (spec : Spec base scalar) (s : S base) (x : ZMod scalar) : S base :=
   if scalar < base then
     absorbFq spec s [((x.val : ℕ) : ZMod base)]
   else
     absorbFq spec s [((x.val / 2 : ℕ) : ZMod base), ((x.val % 2 : ℕ) : ZMod base)]
 
-/-- Squeeze a raw base-field element (`challenge_fq` / `squeeze_field`): bypass and clear
-the limb buffer. -/
+/-- Squeeze a raw base-field element, bypassing and clearing the limb buffer. -/
 def challengeFq (spec : Spec base scalar) (s : S base) : ZMod base × S base :=
   let (x, sp) := squeeze spec.params s.sponge
   (x, ⟨sp, []⟩)
 
-/-- Take two 64-bit limbs from the buffer and pack them into a 128-bit value, refilling the
-buffer from the sponge as needed (`squeeze_limbs` at `CHALLENGE_LENGTH_IN_LIMBS = 2`). The
-`fuel` argument bounds the refills: each adds two limbs, so one suffices even from empty. -/
+/-- Pack the next two buffered limbs into a 128-bit value, refilling the buffer from the
+sponge as needed. Each refill adds two limbs, so one unit of fuel suffices even from empty. -/
 private def squeezeLimbsPacked (spec : Spec base scalar) :
     ℕ → S base → Prechallenge × S base
   | 0, s => (⟨0, Nat.two_pow_pos _⟩, s)
@@ -122,7 +105,7 @@ private def squeezeLimbsPacked (spec : Spec base scalar) :
       let (x, sp) := squeeze spec.params s.sponge
       squeezeLimbsPacked spec fuel ⟨sp, buf ++ lowLimbs x⟩
 
-/-- Squeeze a 128-bit prechallenge (`challenge`, before the field cast). -/
+/-- Squeeze a 128-bit prechallenge. -/
 def challengeNat (spec : Spec base scalar) (s : S base) : Prechallenge × S base :=
   squeezeLimbsPacked spec 2 s
 
@@ -138,16 +121,13 @@ theorem challengeNat_fresh (spec : Spec base scalar) (s : State (ZMod base)) :
     Subtype.mk.injEq, and_true]
   omega
 
-/-- Squeeze a 128-bit prechallenge into the scalar field (`challenge`): `challengeNat`, cast.
-The consumer's step over the run; kept as the production sponge's named operation, checked
-against its traces. -/
+/-- Squeeze a prechallenge cast into the scalar field. -/
 def challenge (spec : Spec base scalar) (s : S base) : ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
   ((n.val : ZMod scalar), s)
 
-/-- The endomorphism expansion of a 128-bit prechallenge into an effective scalar
-(`to_field_with_length`, Halo §6.2): fold the 2-bit windows from the top into the
-accumulators `a = b = 2`; the result is `a·λ + b`. -/
+/-- The endomorphism expansion of a 128-bit prechallenge (Halo §6.2): fold its 2-bit windows
+from the top into accumulators starting at `a = b = 2`; the result is `a·λ + b`. -/
 def endoExpand {F : Type*} [Field F] (lam : F) (chal : ℕ) : F :=
   let (a, b) := (List.range 64).reverse.foldl
     (fun (ab : F × F) i =>
@@ -157,10 +137,8 @@ def endoExpand {F : Type*} [Field F] (lam : F) (chal : ℕ) : F :=
     (2, 2)
   a * lam + b
 
-/-- Squeeze an effective scalar challenge (`squeeze_challenge`,
-`poly-commitment/src/commitment.rs`): `challengeNat`, endo-expanded at the spec's
-eigenvalue. The consumer's step over the run; kept as the production sponge's named
-operation, checked against its traces. -/
+/-- Squeeze an effective scalar challenge: a prechallenge endo-expanded at the eigenvalue
+`lam`. -/
 def squeezeChallenge (spec : Spec base scalar) (lam : ZMod scalar) (s : S base) :
     ZMod scalar × S base :=
   let (n, s) := challengeNat spec s
@@ -177,8 +155,7 @@ namespace FqVesta
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The Vesta side of the cycle: the `fq_kimchi` parameters and the Vesta eigenvalue
-(`DefaultFqSponge<VestaParameters>`). -/
+/-- The Vesta side of the cycle: the sponge over the Vesta base field (`fqParams`). -/
 def spec : FqSponge.Spec PALLAS_SCALAR_CARD PALLAS_BASE_CARD where
   params := fqParams
   hsize := by
@@ -192,10 +169,8 @@ namespace FqPallas
 
 open CompElliptic.Fields.Pasta CompElliptic.Curves.Pasta
 
-/-- The Pallas side of the cycle: the `fp_kimchi` parameters and the Pallas eigenvalue
-(`DefaultFqSponge<PallasParameters>`). Here the scalar field is the larger of the pair, so
-`absorbFr` takes the high-bits/low-bit branch. Nothing selects that branch but the
-cardinalities. -/
+/-- The Pallas side of the cycle: the sponge over the Pallas base field (`fpParams`). Its
+scalar field is the larger, so `absorbFr` takes the high-bits/low-bit branch. -/
 def spec : FqSponge.Spec PALLAS_BASE_CARD PALLAS_SCALAR_CARD where
   params := fpParams
   hsize := by

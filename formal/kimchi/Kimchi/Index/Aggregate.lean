@@ -4,33 +4,24 @@ import Kimchi.SchwartzZippel
 /-!
 # The full kimchi aggregate family
 
-The single constraint family behind kimchi's one quotient check, as index data
-(`linearization.rs`, `constraints_expr`). Kimchi allocates alpha powers in a shared pool:
-all gate types combine their constraint lists with the *same* powers `α⁰..α²⁰` (the pool
-is sized by the largest gate, VarBaseMul's 21 — "only the max number of constraints
-matters"), which is sound because selectors are row-disjoint; the permutation's three
-constraints are live on all rows simultaneously with the gates, so they get the next
-three powers. The public polynomial enters once, in the generic gate's `α⁰` slot
-("the generic gate must be associated with alpha^0 to make the later addition with the
-public input work"): kimchi adds the interpolant of the *negated* public inputs, so the
-slot-0 member here subtracts the positive interpolant, giving `E₁(i) − pub(i) = 0` at
-generic rows — the `Generic.withPublic` row semantics, one public input per row in
-column 0 of the first `publicCount` rows (`prover.rs`: `witness[0][0..cs.public]`).
+The constraint family behind kimchi's one quotient check, as index data (transcribes
+`linearization.rs`). All gate types share one pool of alpha powers `α⁰..α²⁰`, sized by the
+largest gate (VarBaseMul's 21); sharing is sound because selectors are row-disjoint. The
+permutation's three constraints hold on every row alongside the gates, so they take the next
+three powers. The public input enters once, in the generic gate's `α⁰` slot: kimchi adds the
+interpolant of the negated public inputs, so the slot-`0` member here subtracts the positive
+interpolant. At a generic row this is the `Generic.withPublic` row semantics, one public
+input per row in column `0` of the first `publicCount` rows.
 
-So the family has `21 + 3` members:
+The family has `21 + 3` members:
 
-* member `k < 21`: the cross-gate sum `∑ g, selectorPoly g · E_{g,k}` (a gate with fewer
-  than `k+1` constraints contributes nothing — `getD` with default `0`), minus the
-  public polynomial at `k = 0`;
-* members `21..23`: the permutation constraints at the index's wiring data, for a given
+* member `k < 21`: the cross-gate sum `∑ g, selectorPoly g · E_{g,k}`, minus the public
+  polynomial at `k = 0`; a gate with fewer than `k + 1` constraints contributes `0`;
+* members `21..23`: the permutation constraints at the index's wiring data, for an
   accumulator `z` and challenge pair `(β, γ)`.
 
-The per-gate constraint lists are the single-source gate transcriptions
-(`gateConstraints`), whose lengths match kimchi's `CONSTRAINTS` constants
-(`gateConstraints_length_*`, definitional). The separation argument recovers
-per-gate divisibility from the summed members via selector one-hotness
-(`selectorRow_eq_one`/`selectorRow_eq_zero`, collapsed row by row in
-`eval_gateMember`).
+The per-gate lists are the gate transcriptions (`gateConstraints`). Selector one-hotness
+recovers per-gate divisibility from the summed members (`eval_gateMember`).
 -/
 
 namespace Kimchi.Index
@@ -48,8 +39,8 @@ private theorem selectorRow_eq_one (idx : Index F n) {g : GateType} {i : Fin n}
     (htyp : (idx.gates i).typ = g) : idx.selectorRow g i = 1 := by
   simp [selectorRow, htyp]
 
-/-- The (positive) public-input interpolant: `pub i` at the public rows, `0` beyond.
-Kimchi commits to its negation and adds it into the generic `α⁰` slot. -/
+/-- The public-input interpolant: `pub i` at the public rows, `0` beyond. Kimchi adds its
+negation into the generic `α⁰` slot. -/
 noncomputable def pubPoly (idx : Index F n) (pub : Fin idx.publicCount → F) :
     Polynomial F :=
   columnPoly idx.omega (pubAt idx pub)
@@ -59,9 +50,8 @@ private theorem eval_pubPoly (idx : Index F n) (pub : Fin idx.publicCount → F)
     (idx.pubPoly pub).eval (idx.omega ^ (i : ℕ)) = pubAt idx pub i :=
   eval_columnPoly idx.omega_prim _ i
 
-/-- The constraint list of a gate type, over the index's column interpolants — the
-single-source gate transcriptions at the polynomial carrier. `zero` constrains
-nothing. -/
+/-- The constraint list of a gate type: its gate transcription over the index's column
+interpolants. -/
 noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin wCols → F) :
     GateType → List (Polynomial F)
   | .zero => []
@@ -76,16 +66,14 @@ noncomputable def gateConstraints (idx : Index F n) (wTab : Fin n → Fin wCols 
   | .endoScalar => Gate.EndoScalar.constraints
       (EndoScalar.polyWitness idx.omega wTab) (F := F)
 
-/-- The shared gate alpha-pool size: kimchi registers the pool at the largest gate's
-count — VarBaseMul's 21 (`linearization.rs`: "Only the max number of constraints
-matters"). -/
+/-- The shared gate alpha-pool size: the largest gate's constraint count, VarBaseMul's 21. -/
 @[reducible] def gateAlphaCount : ℕ := 21
 
-/-- The permutation's alpha count (`permutation.rs`: `CONSTRAINTS = 3`). -/
+/-- The permutation's alpha count: one power per permutation constraint. -/
 @[reducible] def permAlphaCount : ℕ := 3
 
 omit [DecidableEq F] [NeZero n] in
-/-- The lengths of the gate transcriptions match kimchi's `CONSTRAINTS` constants. -/
+/-- The constraint count of each gate transcription. -/
 private theorem gateConstraints_length (idx : Index F n) (wTab : Fin n → Fin wCols → F) :
     (idx.gateConstraints wTab .zero).length = 0
       ∧ (idx.gateConstraints wTab .generic).length = 2
@@ -105,9 +93,8 @@ noncomputable def gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
     - if k = 0 then idx.pubPoly pub else 0
 
 open Kimchi.Permutation in
-/-- **The full kimchi aggregate family** — the `21 + 3` members of the one quotient
-check, at a given accumulator `z` and permutation challenge pair `(β, γ)`: the shared
-gate pool first, then the three permutation constraints at the index's wiring data. -/
+/-- The `21 + 3` members of the one quotient check at an accumulator `z` and challenge
+pair `(β, γ)`: the shared gate pool, then the three permutation constraints. -/
 noncomputable def fullFamily (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (β γ : F) :
     Fin (gateAlphaCount + permAlphaCount) → Polynomial F :=
@@ -125,18 +112,14 @@ noncomputable def fullFamily (idx : Index F n) (pub : Fin idx.publicCount → F)
 
 /-! ## Separation: the shared pool collapses back to per-gate rows
 
-`selectorRow` is one-hot at every row — `1` at the row's own gate type, `0` at every
-other — so evaluating the `k`-th summed member at a domain node leaves exactly the live
-gate's `k`-th constraint (minus the public value in slot `0`). Divisibility of the 21
-summed members therefore pins, row by row, every constraint of whichever gate lives
-there — the per-gate grip the shared alpha pool appeared to give up. The per-gate
-`Argument.bridge` then carries the polynomial identities to `rowSatisfies`' cell
-equations; the generic slot-`0` public subtraction lands on `withPublic` by
-`Generic.withPublic_holds_iff`. -/
+`selectorRow` is one-hot at every row, so at a domain node the `k`-th summed member leaves
+only the live gate's `k`-th constraint, minus the public value in slot `0`. Divisibility of
+the 21 gate members therefore pins every constraint of each row's gate. Each gate's
+`Argument.bridge` carries the polynomial identities to the cell equations of `rowSatisfies`;
+the public subtraction lands on `Generic.withPublic_holds_iff`. -/
 
 omit [DecidableEq F] [NeZero n] in
-/-- The selector is `0` away from the row's own gate type (one-hotness, with
-`selectorRow_eq_one`). -/
+/-- The selector is `0` away from the row's own gate type. -/
 private theorem selectorRow_eq_zero (idx : Index F n) {g : GateType} {i : Fin n}
     (htyp : (idx.gates i).typ ≠ g) : idx.selectorRow g i = 0 := by
   simp [selectorRow, htyp]
@@ -150,8 +133,8 @@ theorem gateConstraints_length_le (idx : Index F n) (wTab : Fin n → Fin wCols 
 
 omit [DecidableEq F] [NeZero n] in
 /-- **Row collapse.** At a domain node, the `k`-th gate member evaluates to the live
-gate's `k`-th constraint value, minus the public value in slot `0`: every other gate's
-term dies with its selector. -/
+gate's `k`-th constraint, minus the public value in slot `0`; every other gate's term dies
+with its selector. -/
 private theorem eval_gateMember (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (k : ℕ) (i : Fin n) :
     (idx.gateMember pub wTab k).eval (idx.omega ^ (i : ℕ))
@@ -173,10 +156,8 @@ private theorem eval_gateMember (idx : Index F n) (pub : Fin idx.publicCount →
     · exact eval_zero
 
 omit [DecidableEq F] in
-/-- **A non-generic row's constraints all vanish** under divisibility of the gate
-members: the row's `k`-th member evaluation collapses to its `k`-th constraint
-(`eval_gateMember`), and the slot-`0` public term is `0` outside the public region
-(`public_generic`). -/
+/-- A non-generic row's constraints all vanish when `zH` divides the gate members: the
+slot-`0` public term is `0` there, by `public_generic`. -/
 private theorem gateConstraints_vanish_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k)
@@ -197,9 +178,8 @@ private theorem gateConstraints_vanish_of_dvd (idx : Index F n) (pub : Fin idx.p
   rwa [List.getD_eq_getElem _ _ c.isLt, ← List.get_eq_getElem] at h
 
 omit [DecidableEq F] in
-/-- **A generic row's public-folded gate holds** under divisibility of the gate members:
-slots `0` and `1` pin the two generic constraints — the first to the public value — and
-`withPublic_holds_iff` reads the pair as the `rowSatisfies` branch. -/
+/-- A generic row's public-folded gate holds when `zH` divides the gate members: slots
+`0` and `1` pin the two generic constraints, the first to the public value. -/
 private theorem generic_holds_of_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k)
@@ -234,12 +214,8 @@ private theorem forall_mem_zero_of_bridge {P : List (Polynomial F)} {L : List F}
   hb ▸ List.forall_mem_map.mpr hvan
 
 omit [DecidableEq F] in
-/-- **Gate separation.** If `Z_H` divides all 21 summed gate members, every row
-satisfies its gate branch of `rowSatisfies` — the index's `public_generic` law keeps
-non-generic gates out of the public region. Selector one-hotness undoes the sharing:
-at a row of gate `g`, slot `k` pins `g`'s `k`-th constraint, with the public value
-folded into the generic slot `0` and vanishing outside the public region on every
-other gate. -/
+/-- **Gate separation.** If `zH` divides all 21 gate members, every row satisfies its
+gate branch of `rowSatisfies`. -/
 private theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hdvd : ∀ k, k < gateAlphaCount → zH F n ∣ idx.gateMember pub wTab k) :
@@ -276,8 +252,8 @@ private theorem rowSatisfies_of_gateMember_dvd (idx : Index F n) (pub : Fin idx.
       ((EndoScalar.argument (F := F)).bridge idx.omega_prim wTab idx.coeffTable i) hvan
 
 omit [DecidableEq F] in
-/-- The gate branches of `rowSatisfies`, from divisibility of the **full family**: the
-gate members are the first `gateAlphaCount` entries of `fullFamily`. -/
+/-- The gate branches of `rowSatisfies` from divisibility of `fullFamily`, whose first
+`gateAlphaCount` entries are the gate members. -/
 private theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (β γ : F)
     (hdvd : ∀ s, zH F n ∣ idx.fullFamily pub wTab z β γ s) :
@@ -288,23 +264,15 @@ private theorem rowSatisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.
 
 /-! ## Alpha instantiation: the one quotient check
 
-Kimchi folds the whole family under a single challenge `α` — powers `α⁰..α²³` weight the
-members — and checks the fold against `t · Z_H` by evaluation. The library's deterministic
-account of "a random `α`" is now the standard **counting** Schwartz–Zippel argument
-(`Kimchi/SchwartzZippel.lean`): a *single* challenge `α`, together with a *single*
-quotient `t`, suffices to separate divisibility across the members, provided `α` avoids the
-explicit **bad set** `badAlphas (idx.fullFamily …) idx.omega n`, whose cardinality is proved
-`≤ n · (K − 1)` (`card_badAlphas_le`). No injective α-family, no Vandermonde. The evaluation
-point is likewise a single good `ζ` outside the explicit bad set
-`badZetas (aggregate α …) t n`, pinning the polynomial identity by the same counting
-argument (`zH_dvd_of_eval`). Specializing the composed engine
-`dvd_of_evalCheck` at `fullFamily` turns the shape of the one production check into
-per-member divisibility, and the separation argument takes it the rest of the way to the
-rows. -/
+Kimchi folds the family under one challenge `α`, weighting the members by `α⁰..α²³`, and
+checks the fold against `t · zH` at one evaluation point `ζ`. The counting Schwartz–Zippel
+argument of `Kimchi.SchwartzZippel` makes this deterministic: one `α` outside `badAlphas`
+(at most `n · (K − 1)` values, `card_badAlphas_le`), one quotient `t` and one `ζ` outside
+`badZetas` give divisibility of every member (`dvd_of_evalCheck`). The separation argument
+takes that to the rows. -/
 
-/-- **Divisibility of every family member from the aggregated eval-check** — the
-single-challenge `dvd_of_evalCheck` engine at the full `21 + 3` family. One `α` outside
-`badAlphas`, one quotient `t`, one good `ζ` outside `badZetas`. -/
+/-- Every member of `fullFamily` is `zH`-divisible once the aggregated eval-check passes:
+`dvd_of_evalCheck` at this family. -/
 private theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (β γ : F)
     (α : F) (hα : α ∉ badAlphas (idx.fullFamily pub wTab z β γ) idx.omega n)
@@ -318,8 +286,7 @@ private theorem fullFamily_dvd_of_evalCheck (idx : Index F n) (pub : Fin idx.pub
 
 open Kimchi.Permutation in
 omit [DecidableEq F] in
-/-- The permutation members of the full family: entries `21 + s` are the three
-permutation constraints at the index's wiring data. -/
+/-- Entries `21 + s` of `fullFamily` are the three permutation constraints. -/
 private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F) (z : Polynomial F) (β γ : F) (s : Fin 3) :
     idx.fullFamily pub wTab z β γ (Fin.natAdd gateAlphaCount s)
@@ -331,12 +298,9 @@ private theorem fullFamily_perm (idx : Index F n) (pub : Fin idx.publicCount →
   exact Fin.ext (by simp [Fin.natAdd])
 
 open Kimchi.Permutation in
-/-- **Copy-side assembly.** If at a single challenge pair `(β, γ)` — avoiding the
-counted `badBetas` / `badGammas` sets — the prover supplies an accumulator whose
-**full family** is `Z_H`-divisible, the witness takes equal values across every wire
-of the unmasked region — the copy fragment of `Satisfies` there. The permutation
-members are the family's last three entries (`fullFamily_perm`);
-`Index.copy_soundness_of_dvd` does the rest. -/
+/-- **Copy-side assembly.** At a challenge pair `(β, γ)` outside `badBetas` / `badGammas`,
+an accumulator whose `fullFamily` is `zH`-divisible forces equal values across every wire
+of the unmasked region: `Index.copy_soundness_of_dvd` at the last three members. -/
 private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
@@ -369,17 +333,15 @@ private theorem copy_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCo
 
 /-! ## The satisfiability headline: the one quotient check gives satisfiability
 
-Everything assembles: the 21 gate members give every row's gate branch (`rowSatisfies`),
-the 3 permutation members give the copy constraints on the unmasked region, the
-`masked_identity` law closes the copy conjunct over the zero-knowledge rows, and the
-`public_generic`/`public_coeffs` laws collapse the slot-`0` member at the public rows to
-the public pinning. The conclusion is `Satisfies` — the satisfiability predicate the
-derived checker decides — from nothing but the index and the shape of kimchi's one
-quotient check. -/
+The 21 gate members give every row's gate branch (`rowSatisfies`); the three permutation
+members give the copy constraints on the unmasked region, and the `masked_identity` law
+extends them over the zero-knowledge rows; the `public_generic` and `public_coeffs` laws
+turn the slot-`0` member at the public rows into the public pinning. Together these are
+`Satisfies`. -/
 
 open Kimchi.Permutation in
-/-- The whole-grid copy conjunct: the unmasked region from the permutation members,
-the masked rows trivially from the `masked_identity` law. -/
+/-- The whole-grid copy conjunct: the unmasked region from the permutation members, the
+masked rows from the `masked_identity` law. -/
 private theorem copyAll_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
@@ -452,12 +414,9 @@ private theorem publicPinned_of_rowSatisfies (idx : Index F n) (pub : Fin idx.pu
   linear_combination (h1.symm.trans (by simp only [hq0, hq1, hq2, hq3, hq4]; ring)).symm
 
 open Kimchi.Permutation in
-/-- **The satisfiability headline, divisibility form.** At a single challenge pair
-`(β, γ)` avoiding the counted `badBetas` / `badGammas` sets, an accumulator whose full
-`21 + 3` family is `Z_H`-divisible gives satisfiability at the index:
-`Satisfies idx pub wTab` — every row's gate holds with the public input
-folded in, the copy constraints hold on the whole grid, and the public rows pin the
-first witness column. -/
+/-- **Satisfiability, divisibility form.** At a challenge pair `(β, γ)` outside
+`badBetas` / `badGammas`, an accumulator whose `fullFamily` is `zH`-divisible gives
+`Satisfies idx pub wTab`. -/
 private theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
@@ -489,11 +448,9 @@ private theorem satisfies_of_fullFamily_dvd (idx : Index F n) (pub : Fin idx.pub
     idx.publicPinned_of_rowSatisfies pub wTab hrow⟩
 
 open Kimchi.Permutation in
-/-- **The satisfiability headline.** The shape of kimchi's one quotient check — at a
-single challenge pair `(β, γ)` avoiding the counted bad sets, an accumulator whose
-aggregated `21 + 3`-member family passes the derandomized eval-check against `t · Z_H`
-at one good `(α, ζ)` — gives satisfiability at the index. Composes
-`fullFamily_dvd_of_evalCheck` with `satisfies_of_fullFamily_dvd`. -/
+/-- **The satisfiability headline.** At a challenge pair `(β, γ)` outside the counted bad
+sets, an accumulator whose aggregated `fullFamily` passes the eval-check against `t · zH`
+at a good `(α, ζ)` gives `Satisfies idx pub wTab`. -/
 theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (β γ : F)
@@ -529,13 +486,10 @@ theorem satisfies_of_evalCheck (idx : Index F n) (pub : Fin idx.publicCount → 
 
 /-! ## Completeness: the gate members of a satisfied table
 
-The converse of the separation argument, feeding the completeness direction of the
-characterization: at a satisfied
-row the live gate's constraints vanish (the generic slot `0` carrying exactly the public
-value the member subtracts), every other gate's term dies with its selector, and the
-masked rows contribute nothing because they carry no gates (`masked_zero` — the zk rows
-hold randomness, and it is the selectors, not the values, that kill them). So every gate
-member vanishes on the whole domain and is divisible by `Z_H`. -/
+The converse of the separation argument. At a satisfied row the live gate's constraints
+vanish, the generic slot `0` carrying exactly the public value the member subtracts, and
+every other gate's term dies with its selector. So every gate member vanishes on the whole
+domain and is divisible by `zH`. -/
 
 omit [DecidableEq F] in
 /-- Transport row-constraint vanishing back across a gate's eval bridge. -/
@@ -545,8 +499,8 @@ private theorem forall_mem_eval_of_bridge {P : List (Polynomial F)} {L : List F}
   List.forall_mem_map.mp (hb.symm ▸ hall)
 
 omit [DecidableEq F] in
-/-- A `getD` slot of a list of vanishing evaluations vanishes (in range by membership,
-out of range by the zero default). -/
+/-- A `List.getD` slot of a list of vanishing evaluations vanishes; out of range it is
+the zero default. -/
 private theorem eval_getD_zero_of_vanish {P : List (Polynomial F)} {x : F}
     (h : ∀ E ∈ P, E.eval x = 0) (k : ℕ) : (P.getD k 0).eval x = 0 := by
   rcases Nat.lt_or_ge k P.length with hk | hk
@@ -555,9 +509,8 @@ private theorem eval_getD_zero_of_vanish {P : List (Polynomial F)} {x : F}
   · rw [List.getD_eq_default _ _ hk, eval_zero]
 
 omit [DecidableEq F] in
-/-- **A satisfied non-generic row's constraints all vanish** — the converse of
-`gateConstraints_vanish_of_dvd`, from the `rowSatisfies` branch through each gate's
-eval bridge. -/
+/-- A satisfied non-generic row's constraints all vanish: the converse of
+`gateConstraints_vanish_of_dvd`. -/
 private theorem gateConstraints_vanish_of_rowSatisfies (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F) {i : Fin n}
     (hrow : rowSatisfies idx pub wTab i) (hne : (idx.gates i).typ ≠ .generic) :
@@ -628,9 +581,8 @@ private theorem eval_gateMember_of_rowSatisfies (idx : Index F n) (pub : Fin idx
       (idx.gateConstraints_vanish_of_rowSatisfies pub wTab hrow hgen) k
 
 omit [DecidableEq F] in
-/-- **Gate-member completeness.** Every gate member of a satisfied table is divisible
-by `Z_H` — the converse of the separation argument, for every slot (slots past the
-pool are the zero polynomial). -/
+/-- **Gate-member completeness.** Every gate member of a satisfied table is divisible by
+`zH`, at every slot. -/
 private theorem gateMember_dvd_of_rowSatisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hrow : ∀ i, rowSatisfies idx pub wTab i) (k : ℕ) :
@@ -642,17 +594,14 @@ private theorem gateMember_dvd_of_rowSatisfies (idx : Index F n) (pub : Fin idx.
 
 /-! ## Completeness: the permutation members and the headline
 
-The converse assembly: a satisfied table admits honest quotient data at every
-nondegenerate challenge pair. The copy conjunct gives the grand-product identity by
-reindexing, the honest accumulator telescopes it through the three permutation
-constraints, and the gate members vanish row by row. Pointwise in `(β, γ)` — the
-completeness direction needs no challenge grid. -/
+A satisfied table admits honest quotient data at every nondegenerate challenge pair. The
+copy conjunct gives the grand-product identity by reindexing, and the honest accumulator
+telescopes it through the three permutation constraints. No challenge grid is needed. -/
 
 open Kimchi.Permutation in
 omit [DecidableEq F] in
-/-- **Permutation completeness at the index** (C2): under nondegenerate `(β, γ)`, a
-copy-invariant witness admits an accumulator whose three permutation constraints are
-`Z_H`-divisible. -/
+/-- **Permutation completeness.** At a nondegenerate `(β, γ)`, a copy-invariant witness
+admits an accumulator whose three permutation constraints are `zH`-divisible. -/
 private theorem permConstraints_dvd_of_copy (idx : Index F n) (wTab : Fin n → Fin wCols → F)
     (β γ : F)
     (hnd : Nondegenerate idx.omega idx.zkRows (idx.permWitnessPoly wTab) idx.shifts
@@ -690,13 +639,9 @@ private theorem fullFamily_gate (idx : Index F n) (pub : Fin idx.publicCount →
 
 open Kimchi.Permutation in
 omit [DecidableEq F] in
-/-- **The completeness headline** (C3). A satisfied table admits honest quotient data
-at every nondegenerate challenge pair: an accumulator `z` making the whole `21 + 3`
-family `Z_H`-divisible — gate members from row satisfaction
-(`gateMember_dvd_of_rowSatisfies`), permutation members from the copy conjunct through
-the honest accumulator (`permConstraints_dvd_of_copy`). The converse of
-`satisfies_of_fullFamily_dvd`; with it, satisfiability at a wellformed index is
-*characterized* by the shape of kimchi's one quotient check. -/
+/-- **The completeness headline.** At every nondegenerate challenge pair, a satisfied table
+admits an accumulator `z` making all of `fullFamily` `zH`-divisible. The converse of
+`satisfies_of_fullFamily_dvd`. -/
 private theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.publicCount → F)
     (wTab : Fin n → Fin wCols → F)
     (hsat : Satisfies idx pub wTab) (β γ : F)
@@ -723,10 +668,8 @@ private theorem fullFamily_dvd_of_satisfies (idx : Index F n) (pub : Fin idx.pub
 /-! ## Project-local Mathlib supplement — pigeonhole on an injective family -/
 
 omit [Field F] in
-/-- An injective family `f : Fin m → F` overshoots any finset `B` with `B.card < m`:
-some index lands outside `B`. Project-local: in the backward direction of
-`satisfies_iff_fullFamily_dvd` it picks one good `β` (resp. `γ`) from the nondegenerate
-grid, dodging the small `badBetas`/`badGammas` set. -/
+/-- An injective family `f : Fin m → F` has some value outside any finset `B` with
+`B.card < m`. -/
 private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
     (hf : Function.Injective f) (B : Finset F) (hB : B.card < m) :
     ∃ i, f i ∉ B := by
@@ -744,16 +687,11 @@ private theorem exists_notMem_of_card_lt {m : ℕ} {f : Fin m → F}
 /-! ## The characterization: satisfiability as one divisibility -/
 
 open Kimchi.Permutation in
-/-- **The characterization.** In a large enough field, a wellformed index is satisfied
-iff honest quotient data exists at every nondegenerate challenge pair — soundness and
-completeness fused into one statement. Forward is completeness, pointwise; backward
-manufactures a nondegenerate challenge grid (`exists_nondegenerate_grid`), picks one
-good pair off the counted bad sets by pigeonhole, and runs the soundness headline
-there. The field bound `hF` counts `(7n + 1)²` grid cells: with
-production's three-factor permutation mask the recurrence is live on the interior mask
-rows `[n − zkRows + 2, n − 1)`, so `Nondegenerate` (and the degenerate-pair counting
-underneath the grid) ranges over ALL `n` rows — `7n + 1` affine lines per challenge
-coordinate. Vacuous at Pasta (`(7n + 1)² ≪ 2²⁵⁵`). -/
+/-- **The characterization.** In a large enough field, a table satisfies the index iff
+honest quotient data exists at every nondegenerate challenge pair. Backward picks a good
+pair from a nondegenerate grid (`exists_nondegenerate_grid`) by pigeonhole and applies
+`satisfies_of_fullFamily_dvd`. The field bound `hF` sizes that grid; `Nondegenerate` says
+why it ranges over all `n` rows; `hF` holds at Pasta sizes. -/
 theorem satisfies_iff_fullFamily_dvd [Fintype F] (idx : Index F n)
     (pub : Fin idx.publicCount → F) (wTab : Fin n → Fin wCols → F)
     (hF : (7 * n + 1) * (7 * n + 1) ≤ Fintype.card F) :

@@ -6,39 +6,23 @@ import Kimchi.Shifted
 /-!
 # The permutation argument: constraints and quotient soundness
 
-The kimchi permutation constraints as single-source polynomial data (proof-systems
-`permutation.rs`), and their soundness under the quotient argument: the three constraints
-— the `zkpm`-gated accumulator aggregation and the two Lagrange-gated boundary pins —
-force, on the unmasked rows, exactly the hypotheses of the accumulator telescoping
-(`prod_eq_of_accumulator`), hence the grand-product equality
-`∏ⱼ shiftSide(ωʲ) = ∏ⱼ sigmaSide(ωʲ)` over the constrained region.
+The kimchi permutation constraints as polynomial data (proof-systems `permutation.rs`), and
+their soundness: if `Z_H` divides all three, then on the unmasked rows the accumulator meets
+the hypotheses of `prod_eq_of_accumulator`, so the shift-side and σ-side grand products agree.
 
-The constraints, with `zkpm(X) = (X − ω^{n−zkRows})(X − ω^{n−zkRows+1})(X − ω^{n−1})`
-(production's `permutation_vanishing_polynomial` — THREE factors at any `zkRows`, NOT
-the full `vanishes_on_last_n_rows` window; the two coincide exactly at `zkRows = 3`)
-and `L_r` the Lagrange basis at row `r` (`columnPoly` at an indicator):
+The constraints, with `L_r` the Lagrange basis at row `r`:
 
-* `zkpm · (z · ∏ᵢ (wᵢ + γ + β·shiftᵢ·X) - z(ωX) · ∏ᵢ (wᵢ + γ + β·σᵢ))` — the division-free
-  accumulator recurrence, gated off exactly the three rows where the prover breaks it:
-  the two whose successor accumulator value is randomized (`perm_aggreg` randomizes
-  `z[n−zkRows+1]` and `z[n−zkRows+2]`) and the wrap-around row `n−1`; on the remaining
-  masked rows `n−zkRows+2 … n−2` the recurrence HOLDS (the prover's fold continues
-  through them);
-* `(z - 1) · lagNumer 0` — the accumulator initialises to `1` (the pin carried by the
-  un-normalized numerator `(Xⁿ−1)/(X−1)`, the deployed verifier's form);
-* `(z - 1) · lagNumer (n-zkRows)` — the accumulator returns to `1` at the end of the
-  unmasked region.
+* `zkpm · (z · ∏ᵢ (wᵢ + γ + β·shiftᵢ·X) - z(ωX) · ∏ᵢ (wᵢ + γ + β·σᵢ))` — the accumulator
+  recurrence, gated off the three roots of `zkpm`: the two rows whose successor accumulator
+  value the prover randomizes, and the wrap-around row `n−1`. `zkpm` has three factors at
+  any `zkRows`, so the recurrence still holds on rows `n−zkRows+2 … n−2`;
+* `(z - 1) · lagNumer 0` — the accumulator starts at `1`;
+* `(z - 1) · lagNumer (n-zkRows)` — it returns to `1` at the end of the unmasked region.
 
-The permutation is not an `Argument` instance: the aggregation reads the accumulator at
-two rows (`z(X)` and `z(ωX)`) and is gated by the complement of a row set rather than a
-selector column. Its soundness therefore composes the shared quotient machinery directly
-(`zH_dvd_iff`) with two bespoke row lemmas: the
-gate's nonvanishing off the masked rows, and the Lagrange pins.
-
-The conclusion feeds the copy-soundness layer (`Permutation/Copy.lean`): at the
-challenges `(β, γ)` the two sides are the pair factors of `Kimchi.GrandProduct`, so
-the product equality at a single pair avoiding the counted bad sets forces the
-multiset equality behind the copy constraints.
+The permutation is not an `Argument` instance: the aggregation reads the accumulator at two
+rows and is gated by a row set rather than a selector column. Its soundness composes
+`zH_dvd_iff` directly with two row lemmas: the mask's nonvanishing off its roots, and the
+Lagrange pins. `copy_soundness_of_dvd` turns the product equality into the copy constraints.
 -/
 
 namespace Kimchi.Permutation
@@ -51,13 +35,9 @@ variable {F : Type*} [Field F]
 
 /-! ## The constraint data -/
 
-/-- The permutation zero-knowledge mask
-`(X − ω^{n−zkRows})(X − ω^{n−zkRows+1})(X − ω^{n−1})` — production's
-`permutation_vanishing_polynomial` (permutation.rs:112–121), a THREE-factor product at
-any `zkRows` (at `zkRows = 3` it coincides with the full `vanishes_on_last_n_rows`
-window, which is what made the windowed transcription pass every `zkRows = 3` fixture).
-It gates the accumulator recurrence off exactly the three rows the prover breaks it
-on. -/
+/-- The permutation mask: three factors at any `zkRows`, not the whole last-`zkRows` window
+(the two coincide at `zkRows = 3`). It gates the accumulator recurrence off exactly the three
+rows the prover breaks it on. -/
 noncomputable def zkpm (ω : F) (n zkRows : ℕ) : Polynomial F :=
   (X - C (ω ^ (n - zkRows))) * (X - C (ω ^ (n - zkRows + 1))) * (X - C (ω ^ (n - 1)))
 
@@ -103,10 +83,7 @@ theorem columnPoly_eq_sum_indicator {F : Type*} [Field F] {n : ℕ} {ω : F}
     exact absurd (Finset.mem_univ _) h
 
 /-- The un-normalized Lagrange numerator `(Xⁿ − 1)/(X − ω^r)`, as the scaled basis
-`n·ω^{−r}·L_r` — the boundary-pin polynomial exactly as the deployed verifier reads it
-(`ft_eval0`'s boundary quotient, `verifier.rs`). The scale matters by value, not by
-vanishing: the verifier's α-weighted equation uses this form, so the members must too
-for the linearization bridge to be an equality. -/
+`n·ω^{−r}·L_r`: the boundary-pin factor at the scale `boundaryEval` reads it. -/
 noncomputable def lagNumer (ω : F) {n : ℕ} (r : Fin n) : Polynomial F :=
   C ((n : F) * (ω ^ (r : ℕ))⁻¹) * columnPoly ω (rowIndicator r)
 
@@ -181,9 +158,8 @@ private theorem lagNumer_eq_geom {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
         eval_columnPoly hω, rowIndicator,
         if_neg (fun hEq => hir (congrArg Fin.val hEq)), mul_zero]
 
-/-- **The numerator identity**: `lagNumer r · (X − ω^r) = Xⁿ − 1`. The boundary pins'
-division-free form — the bridge to `ft_eval0`'s boundary quotient clears its
-denominators through this. -/
+/-- The numerator identity `lagNumer r · (X − ω^r) = Xⁿ − 1`: the boundary pins'
+division-free form. -/
 theorem lagNumer_mul_sub {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     (r : Fin n) :
     lagNumer ω r * (X - C (ω ^ (r : ℕ))) = zH F n := by
@@ -197,9 +173,8 @@ theorem lagNumer_mul_sub {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
     rw [← pow_mul, mul_comm, pow_mul, hω.pow_eq_one, one_pow], map_one]
   rfl
 
-/-- The three permutation constraint polynomials (`permutation.rs` / `verifier.rs`
-`ft_eval0`, deployed orientation and scale), with the boundary rows `r₀`
-(initialisation) and `r₁` (final value) explicit. -/
+/-- The three permutation constraints: the gated aggregation and the boundary pins at rows
+`r₀` (initialisation) and `r₁` (final value). -/
 noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial F)
     (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F) (r₀ r₁ : Fin n) :
     Fin 3 → Polynomial F :=
@@ -210,9 +185,8 @@ noncomputable def constraints {n : ℕ} (ω : F) (zkRows : ℕ) (z : Polynomial 
 /-! ## Row lemmas -/
 
 /-- The mask does not vanish on the unmasked rows: `zkpm(ωⁱ) ≠ 0` for `i < n - zkRows`.
-Needs `2 ≤ zkRows` so that all three root exponents lie in `[n − zkRows, n)` (at
-`zkRows = 1` the middle factor's exponent is `n`, i.e. row `0` — production never runs
-below `zkRows = 3`). -/
+Needs `2 ≤ zkRows` so that all three root exponents lie in `[n − zkRows, n)`; at
+`zkRows = 1` the middle root is row `0`. -/
 private theorem zkpm_eval_ne_zero {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n) {i : ℕ}
     (hi : i < n - zkRows) : (zkpm ω n zkRows).eval (ω ^ i) ≠ 0 := by
@@ -275,12 +249,9 @@ private theorem step_of_aggregation {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω
 
 /-! ## The headline -/
 
-/-- **Permutation quotient soundness, divisibility form.** With `Z_H` dividing each of
-the three permutation constraints, the accumulator telescopes over the unmasked region:
-the grand products of the shift side and the σ side agree,
-`∏_{j < n-zkRows} shiftSide(ωʲ) = ∏_{j < n-zkRows} sigmaSide(ωʲ)`. This is the core the
-derandomized eval-check form and the full-aggregate assembly
-(`Kimchi/Index/Aggregate.lean`) both enter through. -/
+/-- **Permutation quotient soundness.** If `Z_H` divides each of the three permutation
+constraints, the accumulator telescopes over the unmasked rows: the shift-side and σ-side
+grand products agree there. -/
 theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (z : Polynomial F) (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F)
@@ -292,18 +263,12 @@ theorem soundness_of_dvd {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 1)
   · simpa using eval_eq_one_of_boundary hω hn z _ (hdvd 2)
   · exact fun j hj => step_of_aggregation hω hn hzk2 hzkn z w σ shifts β γ (hdvd 0) hj
-/-- **Permutation completeness.** With nonvanishing σ-side row products (the
-nondegeneracy of `(β, γ)`, on EVERY row — the three-factor mask leaves the recurrence
-live on the interior zero-knowledge rows) and agreeing grand products over the
-unmasked region,
-an accumulator exists whose three permutation constraints are all divisible by `Z_H`.
-The construction mirrors production's `perm_aggreg`: the running ratio of
-`accumulator_of_prod_eq` up to the boundary row `n − zkRows` (where it returns to `1`),
-an arbitrary value on the two rows production randomizes (`z[n−zkRows+1]`,
-`z[n−zkRows+2]` — here `1`), and the running ratio RESTARTED from there: the recurrence
-rows are exactly the complement of `zkpm`'s three roots, so the fold must continue
-through the interior of the mask. The converse of `soundness_of_dvd`, pointwise in
-`(β, γ)`. -/
+/-- **Permutation completeness.** If the σ-side row products are nonzero on every row and
+the grand products agree over the unmasked rows, some accumulator makes all three
+constraints divisible by `Z_H`: the converse of `soundness_of_dvd`, pointwise in `(β, γ)`.
+The accumulator is `accumulator_of_prod_eq`'s running ratio up to row `n − zkRows`, `1` on
+the next two rows, then the ratio restarted; the recurrence is live inside the mask, hence
+nonvanishing on every row. -/
 theorem constraints_dvd_of_prods {ω : F} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : 0 < n)
     {zkRows : ℕ} (hzk2 : 2 ≤ zkRows) (hzkn : zkRows ≤ n)
     (w σ : Fin permCols → Polynomial F) (shifts : Fin permCols → F) (β γ : F)

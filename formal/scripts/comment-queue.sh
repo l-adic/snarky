@@ -9,7 +9,12 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2   # -> formal/
 
-raw=$(COMMENT_GATE_LIST=1 lake env lean scripts/check_comments.lean 2>/dev/null)
+raw=$(COMMENT_GATE_LIST=1 lake env lean scripts/check_comments.lean 2>&1)
+if printf '%s\n' "$raw" | grep -q ': error: '; then
+  printf '%s\n' "$raw" | grep ': error: ' >&2
+  echo "comment-queue: the gate failed to load; build the libraries first" >&2
+  exit 1
+fi
 
 # a violation line is "    <module-or-path>\t<what>"; the gate reports declarations by module
 # and module docstrings by path, so fold the paths into module names
