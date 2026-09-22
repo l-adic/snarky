@@ -5,36 +5,19 @@ import Snarky.Kimchi.Circuit.Poseidon
 /-!
 # The in-circuit duplex sponge
 
-Port of `Snarky.Circuit.RandomOracle.Sponge`
-(packages/random-oracle/src/Snarky/Circuit/RandomOracle/Sponge.purs): the absorb/squeeze
-automaton of `Poseidon/Basic.lean` with the width-3 state as circuit variables, the
-permutation as the `poseidon` gadget, and every absorption sealed (OCaml `add_assign`:
-`state.(i) <- seal (state.(i) + x)`).
+Transcribes packages/random-oracle/src/Snarky/Circuit/RandomOracle/Sponge.purs: the
+absorb/squeeze automaton of `Poseidon.absorb1`/`Poseidon.squeeze` with the state as
+circuit variables (a `SpongeState`, reading as a `Poseidon.Triple`), the permutation as
+the `poseidon` gadget, and every absorption sealed by `sealVar`.
 
-The state cells are the only circuit data; the duplex mode (`Poseidon.SpongeMode`) is
-metadata steering which constraints are emitted — one `poseidon` block per permutation,
-one seal per absorb, and squeeze reads are free.
+The state cells are the only circuit data; the mode (`Poseidon.SpongeMode`) is metadata
+steering which constraints are emitted: one `poseidon` block per permutation, one seal
+per absorb, and free squeeze reads.
 
-Name map: `absorb`/`squeeze` keep their names on `SpongeVar`; PS `initialState` is
-`SpongeVar.init`, PS `spongeFromConstants` is `SpongeVar.ofConstants`; the private slot
-helpers mirror `Poseidon.slot`/`Poseidon.addSlot`.
-
-One section per gadget: the definition, its soundness spec, its completeness law, and
-then the definition is sealed `irreducible`. The sponge's own reading relations come
-first, since every law is stated in them.
-
-Deviations from the PS original:
-- PS's width-3 `Vector` state renders as the gadget's `SpongeState`, reading as the
-  value sponge's `Poseidon.Triple` through its `CircuitType` instance.
-- PS's ambient `PoseidonField` class arrives as the explicit `p : Poseidon.Params F`
-  (the Poseidon gadget's deviation, inherited).
-- The rate-boundary tests are spelled `n.val = 2` as in `Poseidon.absorb1`/`squeeze`
-  (PS: `n == rate` at `rate = 2`), so the laws' branch analyses align with the value
-  sponge's.
-- No oracle-corpus circuit exercises the sponge in isolation (the corpus covers the raw
-  permutation gadget); byte-parity with PS is deferred until a sponge-bearing circuit
-  is transcribed. The laws below pin the semantics to the fixture-validated value
-  automaton.
+One section per gadget: the definition, its soundness spec, its completeness law, then
+the definition sealed `irreducible`. The reading relations come first, since every law
+is stated in them. The rate-boundary tests are spelled `n.val = 2`, as in the value
+sponge, so each law's case split matches the value automaton's.
 -/
 
 namespace Snarky.Kimchi
@@ -43,8 +26,8 @@ open Snarky
 
 variable {F c : Type}
 
-/-- An in-circuit duplex sponge (PS `Sponge (FVar f)`): the width-3 state as circuit
-variables, plus the direction/position mode shared with the value sponge. -/
+/-- An in-circuit duplex sponge: the state as circuit variables, plus the mode shared
+with the value sponge. -/
 structure SpongeVar (F : Type) where
   /-- The width-3 Poseidon state, as circuit variables. -/
   state : SpongeState F
@@ -53,21 +36,20 @@ structure SpongeVar (F : Type) where
 
 namespace SpongeVar
 
-/-- The fresh sponge (PS `initialState`): constant-zero state, `absorbed 0`. -/
+/-- The fresh sponge: constant-zero state, `absorbed 0`. -/
 def init [Zero F] : SpongeVar F :=
   ⟨⟨.const 0, .const 0, .const 0⟩, .absorbed 0⟩
 
-/-- Seed a sponge from a value-level state (PS `spongeFromConstants`): the cells as
-constants, the same mode. -/
+/-- Seed a sponge from a value-level state: the cells as constants, the same mode. -/
 def ofConstants (s : Poseidon.State F) : SpongeVar F :=
   ⟨⟨.const s.state.1, .const s.state.2.1, .const s.state.2.2⟩, s.mode⟩
 
 /-! ## Reading a sponge
 
 A circuit sponge implements a value sponge when its cells read that sponge's cells and
-the modes agree — the mode is metadata, so it must match on the nose. `ReadsAt` is the
-soundness side (a valuation), `Reads` the completeness side (scope and reading together,
-transported by `Reads.mono`); the pair mirrors `OnCurveAt`/`OnCurveAs`. -/
+the modes agree; the mode is metadata, so it must match exactly. `ReadsAt` is the
+soundness side (a valuation), `Reads` the completeness side (scope and reading, carried
+forward by `Reads.mono`), as with `OnCurveAt`/`OnCurveAs`. -/
 
 /-- The sponge's reading under a valuation: cells and mode. -/
 def ReadsAt [Add F] [Mul F] [Zero F] (V : Valuation F) (sv : SpongeVar F)
@@ -102,8 +84,8 @@ theorem Reads.readsAt [Add F] [Mul F] [Zero F] {st : ProverState F} {sv : Sponge
 
 /-! ## The rate slot -/
 
-/-- Seal `x` into rate slot `n` — `Poseidon.addSlot` over circuit variables, the PS
-operand order (`seal (add_ x state[i])`) kept. -/
+/-- Seal `x` into rate slot `n`: `Poseidon.addSlot` over circuit variables, with `x` as
+the left addend. -/
 private def addSlotVar [Field F] [DecidableEq F] [BasicSystem F c]
     (s : SpongeState F) (n : Fin 3) (x : FVar F) :
     CircuitM F c (SpongeState F) :=
@@ -230,9 +212,9 @@ attribute [irreducible] addSlotVar
 
 /-! ## Absorb -/
 
-/-- Absorb one element (PS `absorb`): seal into the next rate slot, permuting first
-when the rate is full; absorbing after a squeeze restarts at slot 0. Mirrors
-`Poseidon.absorb1` branch for branch. -/
+/-- Absorb one element: seal into the next rate slot, permuting first when the rate is
+full; absorbing after a squeeze restarts at slot 0. Mirrors `Poseidon.absorb1` branch
+for branch. -/
 def absorb [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
     (p : Poseidon.Params F) (sv : SpongeVar F) (x : FVar F) :
     CircuitM F c (SpongeVar F) :=
@@ -365,9 +347,8 @@ private theorem slotVar_scoped [Field F] {st : ProverState F} {s : SpongeState F
   | 1 => exact h.2.1
   | 2 => exact h.2.2
 
-/-- Squeeze one element (PS `squeeze`): read the next rate slot, permuting first when
-entering squeeze mode or when the block is exhausted. Mirrors `Poseidon.squeeze`
-branch for branch; reads emit no constraints. -/
+/-- Squeeze one element: read the next rate slot, permuting first when entering squeeze
+mode or when the block is exhausted. Mirrors `Poseidon.squeeze` branch for branch. -/
 def squeeze [Field F] [DecidableEq F] [BasicSystem F c] [KimchiSystem F c]
     (p : Poseidon.Params F) (sv : SpongeVar F) :
     CircuitM F c (FVar F × SpongeVar F) :=
